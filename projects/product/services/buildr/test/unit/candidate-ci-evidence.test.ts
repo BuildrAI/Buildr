@@ -16,6 +16,8 @@ import {
 } from '../verification/registry.ts';
 
 const sourceCommit: any = 'a'.repeat(40);
+const sourceTree: any = 'f'.repeat(40);
+const candidateContext: any = { purpose: 'candidate', sourceCommit, sourceTree, rehearsalIdentity: null };
 const artifact: any = {
   filename: 'buildr.tgz',
   size: 1,
@@ -33,6 +35,8 @@ function passedEvidence(workflow: any = null): any  {
     platform: shard.runner === 'macos' ? 'darwin' : 'win32',
     workflow: workflow ? { ...workflow } : null,
     sourceCommit,
+    sourceTree,
+    purpose: 'candidate',
     registryIdentity,
     artifact: shard.requiresArtifact || shard.producesArtifact ? artifact : null,
     primaryStepIds: shard.stepIds,
@@ -48,6 +52,8 @@ function passedEvidence(workflow: any = null): any  {
     platform: tuple.runner === 'macos' ? 'darwin' : 'win32',
     workflow: workflow ? { ...workflow } : null,
     sourceCommit,
+    sourceTree,
+    purpose: 'candidate',
     registryIdentity,
     artifact,
     requestedNode: tuple.requestedNode,
@@ -106,7 +112,7 @@ test('Candidate CI coverage fails closed for unowned and duplicated steps', () =
 });
 
 test('Candidate aggregate accepts one current complete evidence set', () => {
-  const result: any = aggregateCandidateCiEvidence(passedEvidence(), sourceCommit);
+  const result: any = aggregateCandidateCiEvidence(passedEvidence(), candidateContext);
   assert.equal(result.status, 'passed');
   assert.deepEqual(result.findings, []);
   assert.equal(result.evidenceIds.length, CANDIDATE_CI_SHARDS.length + CANDIDATE_CI_HOST_NODE_TUPLES.length);
@@ -118,7 +124,7 @@ test('Candidate aggregate accepts mixed attempts from the same workflow run', ()
   const complete: any = passedEvidence({ runId, runAttempt: '1', job: 'candidate-shard' });
   const retriedId: any = 'core-package-runtime-release-macos';
   complete.find((item: any) => item.id === retriedId).workflow.runAttempt = '2';
-  const result: any = aggregateCandidateCiEvidence(complete, sourceCommit, { runId, runAttempt: '2', job: 'candidate-gate' });
+  const result: any = aggregateCandidateCiEvidence(complete, candidateContext, { runId, runAttempt: '2', job: 'candidate-gate' });
   assert.equal(result.status, 'passed');
   assert.equal(result.workflow.runId, runId);
   assert.equal(result.workflow.aggregateAttempt, 2);
@@ -130,17 +136,17 @@ test('Candidate aggregate rejects cross-run and future-attempt evidence', () => 
   const runId: any = '32807422982';
   const crossRun: any = passedEvidence({ runId, runAttempt: '1', job: 'candidate-shard' });
   crossRun[0].workflow.runId = '32807924791';
-  assert.ok(aggregateCandidateCiEvidence(crossRun, sourceCommit, { runId, runAttempt: '2' }).findings.some((item: any) => item.code === 'workflow-run-mismatch'));
+  assert.ok(aggregateCandidateCiEvidence(crossRun, candidateContext, { runId, runAttempt: '2' }).findings.some((item: any) => item.code === 'workflow-run-mismatch'));
 
   const future: any = passedEvidence({ runId, runAttempt: '1', job: 'candidate-shard' });
   future[0].workflow.runAttempt = '3';
-  assert.ok(aggregateCandidateCiEvidence(future, sourceCommit, { runId, runAttempt: '2' }).findings.some((item: any) => item.code === 'workflow-attempt-future'));
-  assert.ok(aggregateCandidateCiEvidence(passedEvidence({ runId, runAttempt: '1', job: 'candidate-shard' }), sourceCommit, { runId, runAttempt: null }).findings.some((item: any) => item.code === 'workflow-aggregate-attempt-invalid'));
+  assert.ok(aggregateCandidateCiEvidence(future, candidateContext, { runId, runAttempt: '2' }).findings.some((item: any) => item.code === 'workflow-attempt-future'));
+  assert.ok(aggregateCandidateCiEvidence(passedEvidence({ runId, runAttempt: '1', job: 'candidate-shard' }), candidateContext, { runId, runAttempt: null }).findings.some((item: any) => item.code === 'workflow-aggregate-attempt-invalid'));
 });
 
 test('Candidate shard evidence retains bounded failure diagnostics', () => {
   const evidence: any = createCandidateCiEvidence({
-    kind: 'shard', id: 'runtime-windows', platform: 'win32', sourceCommit,
+    kind: 'shard', id: 'runtime-windows', platform: 'win32', sourceCommit, sourceTree, purpose: 'candidate',
     registryIdentity: candidateCiRegistryIdentity(), artifact,
     primaryStepIds: ['release-tarball-smoke'],
     startedAt: '2026-08-13T00:00:00.000Z', finishedAt: '2026-08-13T00:00:01.000Z', durationMs: 1000,
@@ -164,6 +170,8 @@ test('Candidate checkpoint retains completed evidence but is never aggregate eli
   const checkpoint: any = createCandidateCiCheckpoint({
     id: 'core-task-lifecycle-macos',
     sourceCommit,
+    sourceTree,
+    purpose: 'candidate',
     registryIdentity: candidateCiRegistryIdentity(),
     artifact,
     expectedStepIds: ['integration', 'integration-task-finish-delivery'],
@@ -177,12 +185,12 @@ test('Candidate checkpoint retains completed evidence but is never aggregate eli
     updatedAt: '2026-08-13T00:00:01.000Z',
     status: 'running',
   });
-  assert.equal(checkpoint.schemaVersion, 'buildr.candidate-ci-checkpoint/v1');
+  assert.equal(checkpoint.schemaVersion, 'buildr.candidate-ci-checkpoint/v2');
   assert.equal(checkpoint.aggregateEligible, false);
   assert.deepEqual(checkpoint.completedStepIds, ['integration']);
   assert.deepEqual(checkpoint.completedResults[0].process, { pid: 123, processGroupId: 123 });
   assert.equal(checkpoint.completedResults[0].diagnostics.stdoutDigest, `sha256-${'d'.repeat(64)}`);
-  const aggregate: any = aggregateCandidateCiEvidence([checkpoint], sourceCommit);
+  const aggregate: any = aggregateCandidateCiEvidence([checkpoint], candidateContext);
   assert.equal(aggregate.status, 'failed');
   assert.ok(aggregate.findings.some((item: any) => item.code === 'schema-invalid'));
   assert.ok(aggregate.findings.some((item: any) => item.code === 'evidence-missing'));
@@ -190,17 +198,30 @@ test('Candidate checkpoint retains completed evidence but is never aggregate eli
 
 test('Candidate aggregate rejects missing, duplicate, failed and stale evidence', () => {
   const complete: any = passedEvidence();
-  const missing: any = aggregateCandidateCiEvidence(complete.slice(1), sourceCommit);
+  const missing: any = aggregateCandidateCiEvidence(complete.slice(1), candidateContext);
   assert.ok(missing.findings.some((item: any) => item.code === 'evidence-missing' && item.id === 'preflight-macos'));
 
-  const duplicate: any = aggregateCandidateCiEvidence([...complete, complete[0]], sourceCommit);
+  const duplicate: any = aggregateCandidateCiEvidence([...complete, complete[0]], candidateContext);
   assert.ok(duplicate.findings.some((item: any) => item.code === 'duplicate-evidence'));
 
   const failed: any = structuredClone(complete);
   failed[0].status = 'failed';
-  assert.ok(aggregateCandidateCiEvidence(failed, sourceCommit).findings.some((item: any) => item.code === 'result-not-passed'));
+  assert.ok(aggregateCandidateCiEvidence(failed, candidateContext).findings.some((item: any) => item.code === 'result-not-passed'));
 
   const stale: any = structuredClone(complete);
   stale[0].sourceCommit = 'd'.repeat(40);
-  assert.ok(aggregateCandidateCiEvidence(stale, sourceCommit).findings.some((item: any) => item.code === 'source-mismatch'));
+  assert.ok(aggregateCandidateCiEvidence(stale, candidateContext).findings.some((item: any) => item.code === 'source-mismatch'));
+});
+
+test('Release rehearsal evidence is bound to purpose, tree and rehearsal identity', () => {
+  const rehearsalIdentity: any = `sha256-${'9'.repeat(64)}`;
+  const evidence: any = passedEvidence().map((item: any) => ({ ...item, purpose: 'release-rehearsal', rehearsalIdentity }));
+  const result: any = aggregateCandidateCiEvidence(evidence, { purpose: 'release-rehearsal', sourceCommit, sourceTree, rehearsalIdentity });
+  assert.equal(result.status, 'passed');
+  assert.equal(result.purpose, 'release-rehearsal');
+  assert.equal(result.sourceTree, sourceTree);
+  assert.equal(result.rehearsalIdentity, rehearsalIdentity);
+  const drifted: any = structuredClone(evidence);
+  drifted[0].sourceTree = 'e'.repeat(40);
+  assert.ok(aggregateCandidateCiEvidence(drifted, { purpose: 'release-rehearsal', sourceCommit, sourceTree, rehearsalIdentity }).findings.some((item: any) => item.code === 'source-tree-mismatch'));
 });

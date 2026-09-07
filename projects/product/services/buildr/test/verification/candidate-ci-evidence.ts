@@ -5,6 +5,12 @@ import process from 'node:process';
 import { spawnCommandSync } from '../../src/infrastructure/process.ts';
 import { readReleaseArtifact, releaseArtifactManifestName, releasePackMetadataName } from '../../tools/release/release-artifact.ts';
 import {
+  CANDIDATE_CI_AGGREGATE_SCHEMA,
+  CANDIDATE_CI_CHECKPOINT_SCHEMA,
+  CANDIDATE_CI_EVIDENCE_SCHEMA,
+  CANDIDATE_EXECUTION_PURPOSES,
+} from '../../tools/release/candidate-ci-contract.ts';
+import {
   CANDIDATE_CI_HOST_NODE_TUPLES,
   CANDIDATE_CI_PLATFORM_REPEATS,
   CANDIDATE_CI_SHARDS,
@@ -12,9 +18,7 @@ import {
 } from './registry.ts';
 import { validateCandidateCiCoverage } from './planner.ts';
 
-export const CANDIDATE_CI_EVIDENCE_SCHEMA: any = 'buildr.candidate-ci-evidence/v1';
-export const CANDIDATE_CI_AGGREGATE_SCHEMA: any = 'buildr.candidate-ci-aggregate/v1';
-export const CANDIDATE_CI_CHECKPOINT_SCHEMA: any = 'buildr.candidate-ci-checkpoint/v1';
+export { CANDIDATE_CI_AGGREGATE_SCHEMA, CANDIDATE_CI_CHECKPOINT_SCHEMA, CANDIDATE_CI_EVIDENCE_SCHEMA };
 
 const sha256: any = (value: any) => `sha256-${crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex')}`;
 const platformRunner: any = (platform: any = process.platform) => platform === 'darwin' ? 'macos' : platform === 'win32' ? 'windows' : platform;
@@ -47,6 +51,20 @@ export function resolveCandidateSourceCommit(productRoot: any, expected: any = n
   if (!/^[a-f0-9]{40,64}$/.test(sourceCommit)) throw new Error(`Candidate source commit is unavailable: ${(result.stderr || result.stdout || '').trim()}`);
   if (expected && sourceCommit !== expected) throw new Error(`Candidate source commit ${sourceCommit} does not match expected ${expected}`);
   return sourceCommit;
+}
+
+export function resolveCandidateExecutionContext(productRoot: any, sourceCommit: any, env: any = process.env): any  {
+  const treeResult: any = spawnCommandSync('git', ['rev-parse', `${sourceCommit}^{tree}`], { cwd: productRoot, encoding: 'utf8' });
+  const sourceTree: any = treeResult.status === 0 ? treeResult.stdout.trim() : '';
+  if (!/^[a-f0-9]{40,64}$/u.test(sourceTree)) throw new Error(`Candidate source tree is unavailable: ${(treeResult.stderr || treeResult.stdout || '').trim()}`);
+  const purpose: any = env.BUILDR_CANDIDATE_PURPOSE || 'candidate';
+  if (!CANDIDATE_EXECUTION_PURPOSES.includes(purpose)) throw new Error(`Candidate execution purpose is invalid: ${purpose}`);
+  const expectedTree: any = env.BUILDR_CANDIDATE_EXPECTED_SOURCE_TREE || null;
+  const rehearsalIdentity: any = env.BUILDR_RELEASE_REHEARSAL_IDENTITY || null;
+  if (expectedTree && expectedTree !== sourceTree) throw new Error(`Candidate source tree ${sourceTree} does not match expected ${expectedTree}`);
+  if (purpose === 'release-rehearsal' && !/^sha256-[a-f0-9]{64}$/u.test(rehearsalIdentity || '')) throw new Error('Release rehearsal requires a closed rehearsal identity.');
+  if (purpose === 'candidate' && rehearsalIdentity) throw new Error('Final Candidate must not carry a release rehearsal identity.');
+  return { purpose, sourceCommit, sourceTree, rehearsalIdentity };
 }
 
 export function readCandidateCiArtifact(directory: any, expectedSourceCommit: any): any  {
@@ -106,7 +124,10 @@ export function createCandidateCiCheckpoint(input: any): any  {
     schemaVersion: CANDIDATE_CI_CHECKPOINT_SCHEMA,
     kind: 'shard-checkpoint',
     id: input.id,
+    purpose: input.purpose,
     sourceCommit: input.sourceCommit,
+    sourceTree: input.sourceTree,
+    rehearsalIdentity: input.rehearsalIdentity ?? null,
     registryIdentity: input.registryIdentity,
     workflow: input.workflow ?? null,
     artifact: input.artifact ?? null,
@@ -138,6 +159,8 @@ export function createCandidateCiEvidence(input: any): any  {
   const runner: any = platformRunner(input.platform);
   if (!['shard', 'host-node'].includes(input.kind)) throw new Error(`Invalid Candidate CI evidence kind: ${input.kind}`);
   if (!/^[a-f0-9]{40,64}$/.test(input.sourceCommit || '')) throw new Error('Candidate CI evidence requires a source commit');
+  if (!/^[a-f0-9]{40,64}$/.test(input.sourceTree || '')) throw new Error('Candidate CI evidence requires a source tree');
+  if (!CANDIDATE_EXECUTION_PURPOSES.includes(input.purpose)) throw new Error('Candidate CI evidence requires a supported purpose');
   if (input.registryIdentity !== candidateCiRegistryIdentity()) throw new Error('Candidate CI evidence registry identity is not current');
   const results: any = resultProjection(input.results ?? []);
   const passed: any = input.status === 'passed' && results.every((item: any) => item.status === 'passed');
@@ -145,6 +168,7 @@ export function createCandidateCiEvidence(input: any): any  {
     schemaVersion: CANDIDATE_CI_EVIDENCE_SCHEMA,
     kind: input.kind,
     id: input.id,
+    purpose: input.purpose,
     runner: {
       os: runner,
       platform: input.platform ?? process.platform,
@@ -153,6 +177,8 @@ export function createCandidateCiEvidence(input: any): any  {
     },
     workflow: input.workflow ?? null,
     sourceCommit: input.sourceCommit,
+    sourceTree: input.sourceTree,
+    rehearsalIdentity: input.rehearsalIdentity ?? null,
     registryIdentity: input.registryIdentity,
     artifact: input.artifact ?? null,
     primaryStepIds: [...(input.primaryStepIds ?? [])],
@@ -192,7 +218,7 @@ function workflowAttempt(value: any): any  {
   return Number.isSafeInteger(attempt) && attempt > 0 ? attempt : null;
 }
 
-export function aggregateCandidateCiEvidence(evidence: any, expectedSourceCommit: any, expectedWorkflow: any = null): any  {
+export function aggregateCandidateCiEvidence(evidence: any, expectedContext: any, expectedWorkflow: any = null): any  {
   const findings: any[] = [];
   const registryIdentity: any = candidateCiRegistryIdentity();
   const expectedRunId: any = expectedWorkflow?.runId == null ? null : String(expectedWorkflow.runId);
@@ -223,7 +249,10 @@ export function aggregateCandidateCiEvidence(evidence: any, expectedSourceCommit
     }
     if (item.kind !== expectation.kind) findings.push(evidenceFinding('kind-mismatch', id, item.kind));
     if (item.runner?.os !== expectation.runner) findings.push(evidenceFinding('runner-mismatch', id, item.runner?.os));
-    if (item.sourceCommit !== expectedSourceCommit) findings.push(evidenceFinding('source-mismatch', id, item.sourceCommit));
+    if (item.sourceCommit !== expectedContext.sourceCommit) findings.push(evidenceFinding('source-mismatch', id, item.sourceCommit));
+    if (item.sourceTree !== expectedContext.sourceTree) findings.push(evidenceFinding('source-tree-mismatch', id, item.sourceTree));
+    if (item.purpose !== expectedContext.purpose) findings.push(evidenceFinding('purpose-mismatch', id, item.purpose));
+    if ((item.rehearsalIdentity ?? null) !== (expectedContext.rehearsalIdentity ?? null)) findings.push(evidenceFinding('rehearsal-identity-mismatch', id, item.rehearsalIdentity ?? null));
     if (item.registryIdentity !== registryIdentity) findings.push(evidenceFinding('registry-mismatch', id, item.registryIdentity));
     if (expectedRunId !== null) {
       const itemRunId: any = item.workflow?.runId == null ? null : String(item.workflow.runId);
@@ -239,7 +268,7 @@ export function aggregateCandidateCiEvidence(evidence: any, expectedSourceCommit
     if (expectation.requestedNode && item.requestedNode !== expectation.requestedNode) findings.push(evidenceFinding('host-node-request-mismatch', id, item.requestedNode));
     if (expectation.requiresArtifact && !item.artifact) findings.push(evidenceFinding('artifact-missing', id, null));
     if (item.artifact) {
-      if (item.artifact.sourceCommit !== expectedSourceCommit) findings.push(evidenceFinding('artifact-source-mismatch', id, item.artifact.sourceCommit));
+      if (item.artifact.sourceCommit !== expectedContext.sourceCommit) findings.push(evidenceFinding('artifact-source-mismatch', id, item.artifact.sourceCommit));
       if (!artifactIdentity) artifactIdentity = item.artifact;
       else if (JSON.stringify(item.artifact) !== JSON.stringify(artifactIdentity)) findings.push(evidenceFinding('artifact-identity-mismatch', id, item.artifact.sha256));
     }
@@ -247,7 +276,10 @@ export function aggregateCandidateCiEvidence(evidence: any, expectedSourceCommit
   for (const id of byId.keys()) if (!expected.has(id)) findings.push(evidenceFinding('unexpected-evidence', id, null));
   return {
     schemaVersion: CANDIDATE_CI_AGGREGATE_SCHEMA,
-    sourceCommit: expectedSourceCommit,
+    purpose: expectedContext.purpose,
+    sourceCommit: expectedContext.sourceCommit,
+    sourceTree: expectedContext.sourceTree,
+    rehearsalIdentity: expectedContext.rehearsalIdentity ?? null,
     registryIdentity,
     artifact: artifactIdentity,
     workflow: expectedRunId === null ? null : {

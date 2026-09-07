@@ -1,0 +1,36 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: add-release-rehearsal-gate
+operation: reconcile
+treeIdentity: implementation-working-tree@d362a6b9d92f76b7f80bdecdd144e39a2010f3f0
+impacts:
+  - type: brief
+    target: openspec/changes/add-release-rehearsal-gate/brief.md
+    reason: 记录本次发布流程改变的目标、边界与验收
+    status: updated
+    sourceIdentities:
+      - openspec/changes/add-release-rehearsal-gate/proposal.md
+  - type: flow
+    target: knowledge/flows/open-source-release.md
+    reason: 发布事实链新增正式选择前的完整演练与提升门禁
+    status: updated
+    sourceIdentities:
+      - openspec/changes/add-release-rehearsal-gate/specs/release-collection-model/spec.md
+  - type: service
+    target: knowledge/services/buildr.md
+    reason: Buildr Service新增演练owner、统一环境准备和selection promotion
+    status: updated
+    sourceIdentities:
+      - openspec/changes/add-release-rehearsal-gate/design.md
+  - type: technical-architecture
+    target: knowledge/architecture/technical.md
+    reason: Candidate执行拓扑新增同构演练用途和集中准备入口
+    status: updated
+    sourceIdentities:
+      - openspec/changes/add-release-rehearsal-gate/design.md
+  - type: glossary
+    target: knowledge/glossary.md
+    reason: 新增发布演练与候选环境准备两个长期术语
+    status: updated
+    sourceIdentities:
+      - openspec/changes/add-release-rehearsal-gate/specs/product-verification-quality/spec.md
+unresolvedItems: []

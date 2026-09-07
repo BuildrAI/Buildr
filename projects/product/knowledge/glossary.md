@@ -535,6 +535,18 @@
 - 定义：Project Testing针对exact source与唯一候选制品组织的验证目标/编排；Buildr Product由`test:candidate`及其GitHub分布式投影执行完整daily evidence并增加artifact、package、install与compatibility evidence。每个current release HEAD/tree只对应matching Product Artifact Candidate generation和唯一tarball。
 - 适用范围：显式完整Project回归、冻结release source的发布候选门禁或用户要求的full validation。
 - 避免混用：这是发布体系的产品候选，不是任务级开发状态；changed/affected开发反馈和daily-full都不等于完整Product Artifact Candidate。
+
+## 发布演练（Release Rehearsal）
+
+- 定义：正式发布集合变化前，针对current frozen release与有序待选`dev` commits形成的精确prospective commit/tree，运行与Final Candidate相同完整验证图的无公开副作用演练。
+- 适用范围：Candidate失败修复、版本材料或发布owner修复进入正式release selection前的干净macOS、Windows、Host Node、唯一artifact与全部shard验证。
+- 避免混用：不是Development affected反馈、正式release generation、Final Candidate或Publication授权；演练全绿只允许请求一次promotion，不直接改变正式release refs。
+
+## 候选环境准备（Candidate Environment Preparation）
+
+- 定义：Candidate与Release Rehearsal作业共用的唯一环境准备owner，按`base|artifact|source-runtime|host`闭合档位集中恢复锁定依赖、DTO、Test Context与源码`web-dist`。
+- 适用范围：GitHub分布式候选验证和与其同构的发布演练。
+- 避免混用：不是Release Preparation、Application Payload或普通开发环境初始化；job只选择档位，不自行拼装相同准备命令。
 - 来源：[Verification ownership](../docs/verification-ownership.md)
 
 ## 发布集合（Release Collection）
