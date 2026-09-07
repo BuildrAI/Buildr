@@ -8,6 +8,7 @@ import test from 'node:test';
 
 import { CANDIDATE_CI_AGGREGATE_SCHEMA } from '../../tools/release/candidate-ci-contract.ts';
 import {
+  assertNoConflictingPublicationRuns,
   cleanupReleaseRehearsal,
   prepareReleaseRehearsal,
   promoteReleaseRehearsal,
@@ -17,6 +18,19 @@ import {
 const version = '1.2.3-rc.1';
 const git = (repo: string, args: string[]) => execFileSync('git', args, { cwd: repo, encoding: 'utf8' }).trim();
 const digest = (value: unknown) => `sha256-${crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex')}`;
+
+test('publication recovery permits only completed unsuccessful runs when public facts remain absent', () => {
+  assert.doesNotThrow(() => assertNoConflictingPublicationRuns([
+    { displayTitle: 'Release 1.2.3-rc.1 (failed)', status: 'completed', conclusion: 'failure' },
+    { displayTitle: 'Release 1.2.3-rc.1 (cancelled)', status: 'completed', conclusion: 'cancelled' },
+  ], version));
+  assert.throws(() => assertNoConflictingPublicationRuns([
+    { displayTitle: 'Release 1.2.3-rc.1 (active)', status: 'in_progress', conclusion: '' },
+  ], version), /active protected publication run/u);
+  assert.throws(() => assertNoConflictingPublicationRuns([
+    { displayTitle: 'Release 1.2.3-rc.1 (passed)', status: 'completed', conclusion: 'success' },
+  ], version), /successful protected publication run/u);
+});
 
 function fixture(t: any) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-release-rehearsal-test-'));

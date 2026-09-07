@@ -172,8 +172,8 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           package-manager-cache: false
-      - name: Install checkout verification dependencies
-        run: npm ci
+      - name: Prepare Candidate Host Node environment
+        run: node tools/verification/candidate-environment.ts prepare --profile host
       - uses: actions/download-artifact@v7
         with:
           name: candidate-package
@@ -208,6 +208,8 @@ jobs:
         with:
           node-version: "24.15.0"
           package-manager-cache: false
+      - name: Prepare Candidate Launcher environment
+        run: node tools/verification/candidate-environment.ts prepare --profile base
       - uses: actions/download-artifact@v7
         with:
           name: candidate-package
