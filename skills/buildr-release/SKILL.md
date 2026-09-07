@@ -20,7 +20,7 @@ description: 准备、检查、发布或恢复 Buildr 版本时使用；核对�
 
 1. 检查并行任务、主工作空间与实际 Git 边界；已有发布任务先读取，不重复创建现场。
 2. 版本材料或实现需要修改时，使用正常内部开发流程先交付 `dev`。集中完成相关调用链与恢复测试；还需修复的支持任务保留进行中状态与现场。
-3. 从 `projects/product/services/buildr` 使用 `tools/development/run-development-npm exec -- node tools/release/release-orchestration-runner.ts` 调用 `prepare|inspect|publish|resume`。先读该入口的实际参数；正常准备只需版本、主工作空间、明确基线和按需选择的提交，不手工拼证据 JSON。
+3. 从 `projects/product/services/buildr` 使用 `tools/development/run-development-node tools/release/release-orchestration-runner.ts` 调用 `prepare|inspect|publish|resume`。先读该入口的实际参数；正常准备只需版本、主工作空间、明确基线和按需选择的提交，不手工拼证据 JSON。
 4. 运行未结束时跟踪同一运行编号，以简短状态说明真实进展；终态后继续同一 `prepare` 或 `resume`。明确暂态错误由工具有界恢复；相同错误再次出现则诊断，不无限重跑到绿色。
 5. 完整候选通过后核对聚合、精确源码、原包及实际覆盖。匹配的完整演练直接复用，不机械再跑一次。普通功能不默认运行完整候选或发布演练。
 6. 准备完成后展示版本、选择内容、源码、唯一产物与验证边界。只有缺少公开发布授权时才提出一次具体授权问题。已授权则调用 `publish --authorized`；平台要求而当前身份无法完成的真实审批由用户处理。

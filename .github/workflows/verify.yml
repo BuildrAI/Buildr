@@ -3,11 +3,6 @@ name: Verify Buildr
 on:
   workflow_dispatch:
     inputs:
-      diagnostic:
-        description: Temporary isolated Windows launcher investigation
-        type: boolean
-        default: false
-        required: false
       purpose:
         description: Candidate execution purpose
         required: true
@@ -161,7 +156,7 @@ jobs:
 
   candidate-plan:
     name: Candidate plan
-    if: inputs.diagnostic != true && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'dev'))
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'dev')
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
@@ -367,7 +362,7 @@ jobs:
 
   candidate-gate:
     name: Candidate gate
-    if: always() && inputs.diagnostic != true && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'dev'))
+    if: always() && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'dev'))
     needs: [candidate-plan, candidate-bootstrap, candidate-source, candidate-artifact-consumers, candidate-host-node]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -405,25 +400,3 @@ jobs:
           path: ${{ runner.temp }}/candidate-aggregate
           if-no-files-found: warn
           overwrite: true
-
-  isolated-launcher-diagnostic:
-    if: github.event_name == 'workflow_dispatch' && inputs.diagnostic == true
-    runs-on: windows-2025
-    timeout-minutes: 10
-    defaults:
-      run:
-        working-directory: projects/product/services/buildr
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ env.CANDIDATE_SOURCE_SHA }}
-      - uses: actions/setup-node@v6
-        with:
-          node-version-file: projects/product/.node-version
-          package-manager-cache: false
-      - run: node tools/verification/candidate-environment.ts prepare --profile source-runtime
-      - run: node --test test/integration/buildr-web-runtime.test.ts
-      - name: Observe Launcher under the normal runtime workload
-        env:
-          BUILDR_VERIFICATION_PROFILE: ci-workspace-limited
-        run: node test/verification/focus.ts npm-launcher-candidate runtime-adapter-parity system-runtime-recovery

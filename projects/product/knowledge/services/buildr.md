@@ -78,7 +78,7 @@ Task Record以TypeScript Domain/Application及四个SQLite Repository构成独�
 
 Service source使用Node.js ESM并支持`>=24.15.0 <25`；Product checkout以`.node-version`锁定精确development Node `24.15.0`。后端TypeScript采用`strict`、`NodeNext`、`verbatimModuleSyntax`、`erasableSyntaxOnly`和`noEmit`，并把修改的产品实现与测试迁入同一类型检查。Task Verification v4不再提供通用plan/run/reconcile；Agent直接调用Project测试工具，Application只维护Project测试地图和开发完成后的Task报告。Buildr Product自身的changed planner、Browser dispatcher、Candidate DAG和资源协调继续属于Project测试实现，不进入通用Task Verification接口。
 
-Product验证以三个正交问题解释：registry step的Static/Unit/Component/Integration/System回答证据边界，ownership与planner的affected/full回答选择范围，v3 capability的usable target与Request回答Task Delivery、Product Artifact Candidate、Published Release对象。公共`product.verification` capability通过高级provider接入唯一registry；内部DAG不进入声明或Result。Task Delivery affected/full、Product Artifact Candidate与Published Release release-only由不同Request target和selection scope决定；provider以current identity投射对应selected evidence，Quick仍只提供开发反馈，不冒充formal Task Verification。产品候选（Product Candidate）是发布体系对象，与已删除的内部任务研发聚合无关。
+测试层级说明证据边界，相关或完整选择说明执行范围；项目测试地图登记稳定测试入口，智能体直接调用并记录真实结果。完整产品候选（Product Candidate）针对精确源码和唯一产物，正式发布消费已通过的候选证明并核验当前公开事实。日常开发反馈、任务验证报告与发布结果分别说明各自已完成事项。
 
 Project `verification.yml` 只接受closed v4测试地图，声明稳定testing family、Project/Service scope、purpose、sourcePaths、testRoots、完整command或Agent入口、选择指导与requirements。它不登记每个测试文件，不保存一次性选择、运行或Task结果。Buildr自身registry、changed planner、Context runtime、Candidate和Release验证继续作为Product测试实现；它们由Agent按当前任务调用，不被提升为所有Project的通用Application。
 
@@ -127,7 +127,6 @@ Product testing以测试侧`HTTP_CONTRACT_FRESH_BUILD_FAMILIES`统一登记HTTP 
 
 - Changed plan的`selectionAudit`复用同一planner结果，逐step区分direct owner、Full展开、profile/admission和dependency closure，并投影触发path、执行边界、primary evidence owner、公共结果与目标预算。
 - Full pattern、稳定reason code和用户说明只由ownership authority声明；planner、registry、ownership、scheduler/executor、验证入口和执行基础变化分别以稳定authority reason升级daily-full。未知高风险production path缺少领域owner时阻断，不由通用Unit或CLI architecture静默兜底。
-- 2026-08-24三个近期`product.delivery`可回放样本中，2个保持affected、1个因registry execution graph变更合法Full；没有观察到普通Task无理由Full，剩余瓶颈是被正确选择的真实primary owner。本结论来自小样本，不外推长期升级率。
 
 ## 局部术语
 
