@@ -100,7 +100,7 @@
     "test:daily-full": "npm run artifacts:prepare && bash test/verification/verify-buildr-product-daily-full",
     "test:core": "npm run artifacts:prepare && bash test/verification/verify-buildr-product-core",
     "test:candidate": "npm run artifacts:prepare && bash test/verification/verify-buildr-product",
-    "test:candidate:ci": "bash test/verification/verify-buildr-product-ci",
+    "test:candidate:ci": "npm run artifacts:prepare && bash test/verification/verify-buildr-product-ci",
     "test:candidate:host": "node test/verification/candidate-ci.ts host",
     "test:candidate:aggregate": "node test/verification/candidate-ci.ts aggregate",
     "test:release": "node test/verification/release/release-smoke.ts",
