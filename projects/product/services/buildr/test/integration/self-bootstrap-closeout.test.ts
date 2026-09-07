@@ -26,7 +26,7 @@ function fixture(t: any): any  {
   fs.mkdirSync(path.join(root, 'projects', 'product', 'services', 'buildr', 'resources'), { recursive: true });
   fs.mkdirSync(path.join(root, 'projects', 'product', 'services', 'buildr', 'tools', 'development'), { recursive: true });
   fs.mkdirSync(path.join(root, 'projects', 'product', 'services', 'buildr', 'bin'), { recursive: true });
-  fs.mkdirSync(path.join(root, 'projects', 'product', 'services', 'buildr', 'package', 'launchers'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'projects', 'product', 'services', 'buildr', 'tools', 'build', 'launcher'), { recursive: true });
   fs.mkdirSync(path.join(root, 'skills', 'generated'), { recursive: true });
   fs.mkdirSync(path.join(root, '.buildr'), { recursive: true });
   const projectBridge: any = path.join(root, 'projects', 'product', 'buildr');
@@ -64,7 +64,7 @@ runtime:
   node:
     version: ${process.versions.node}
 `);
-  fs.writeFileSync(path.join(root, 'projects', 'product', 'services', 'buildr', 'package', 'launchers', 'manage.mjs'), '#!/usr/bin/env node\n', { mode: 0o755 });
+  fs.writeFileSync(path.join(root, 'projects', 'product', 'services', 'buildr', 'tools', 'build', 'launcher', 'manage.ts'), '#!/usr/bin/env node\n', { mode: 0o755 });
   fs.mkdirSync(defaultBin);
   fs.writeFileSync(path.join(defaultBin, 'buildr'), '#!/bin/sh\nexit 97\n', { mode: 0o755 });
   fs.writeFileSync(path.join(root, 'skills', 'generated', 'SKILL.md'), 'v1\n');
@@ -109,10 +109,8 @@ function executor(root: any, options: any = {}): any  {
     const productScript: any = path.join(canonicalRoot, 'projects', 'product', 'services', 'buildr', 'bin', 'buildr.mjs');
     const projectBridge: any = path.join(canonicalRoot, 'projects', 'product', 'buildr');
     const launcher: any = path.join(canonicalRoot, 'projects', 'product', 'services', 'buildr', 'tools', 'development', 'run-development-cli');
-    const launcherManager: any = path.join(canonicalRoot, 'projects', 'product', 'services', 'buildr', 'package', 'launchers', 'manage.mjs');
+    const launcherManager: any = path.join(canonicalRoot, 'projects', 'product', 'services', 'buildr', 'tools', 'build', 'launcher', 'manage.ts');
     const continuityHelper: any = path.join(canonicalRoot, 'skills', 'buildr-self-bootstrap-sync', 'scripts', 'development-web-continuity.mjs');
-    const targetLeaseDriver: any = path.join(canonicalRoot, 'projects', 'product', 'services', 'buildr', 'src', 'task', 'interfaces', 'internal', 'task-finish-target-lease-driver.mjs');
-    const maintenanceDriver: any = path.join(canonicalRoot, 'projects', 'product', 'services', 'buildr', 'src', 'task', 'interfaces', 'internal', 'task-finish-maintenance-driver.mjs');
     let resolvedExecutable: any = null;
     try { resolvedExecutable = fs.realpathSync(executable); } catch { /* unexpected commands are handled below */ }
     if (resolvedExecutable === fs.realpathSync(projectBridge)) {
@@ -167,38 +165,6 @@ function executor(root: any, options: any = {}): any  {
         fs.writeFileSync(path.join(root, 'skills', 'generated', 'SKILL.md'), 'v2\n');
         return { status: options.failSync ? 1 : 0, stdout: '{"status":"synced"}', stderr: options.failSync ? 'sync failed' : '' };
       }
-    }
-    if (executable === process.execPath && args[0] === targetLeaseDriver) {
-      if (options.realTargetLeaseDriver) return run(executable, [options.realTargetLeaseDriver, ...args.slice(1)], context.cwd);
-      const action: any = args[1];
-      const value: any = (name: any) => args[args.indexOf(name) + 1];
-      const targetIdentity: any = value('--target-identity');
-      if (options.targetLeaseHeld && action !== 'release') return {
-        status: 1,
-        stdout: JSON.stringify({
-          schemaVersion: 'buildr.task-finish-target-lease-driver-result/v1', operation: action, status: 'blocked',
-          taskId: value('--task'), runId: value('--run'), targetIdentity, resolvedTargetIdentity: targetIdentity, resolution: 'exact', lease: null,
-          existing: { taskId: 'foreign-task', runId: 'foreign-run', targetIdentity, expiresAt: new Date(Date.now() + 60_000).toISOString(), expired: false },
-        }),
-        stderr: '',
-      };
-      return {
-        status: 0,
-        stdout: JSON.stringify({
-          schemaVersion: 'buildr.task-finish-target-lease-driver-result/v1', operation: action, status: 'passed',
-          taskId: value('--task'), runId: value('--run'), targetIdentity, resolvedTargetIdentity: targetIdentity, resolution: 'exact',
-          ...(action === 'release' ? { released: true } : { lease: { token: 'self-bootstrap-lease-token', expiresAt: new Date(Date.now() + 900_000).toISOString() }, existing: null }),
-        }),
-        stderr: '',
-      };
-    }
-    if (executable === process.execPath && args[0] === maintenanceDriver) {
-      const value: any = (name: any) => args[args.indexOf(name) + 1];
-      return {
-        status: 0,
-        stdout: JSON.stringify({ schemaVersion: 'buildr.task-finish-maintenance-driver-result/v1', operation: 'maintenance', status: 'refreshed', taskId: value('--task'), runId: value('--run'), maintenance: { delivery: 'delivered', activation: 'passed', environmentCleanup: 'pending', diagnostics: 'not-opened' } }),
-        stderr: '',
-      };
     }
     if (executable === process.execPath && args[0] === launcherManager) {
       if (options.failLauncherInstall) return { status: 1, stdout: '', stderr: 'launcher manager failed' };

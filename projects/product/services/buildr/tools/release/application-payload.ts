@@ -21,9 +21,9 @@ const serviceRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url
 const MAIN_ENTRY: any = path.join(serviceRoot, 'tools/release/application-payload-entry.ts');
 const WORKER_ENTRY: any = path.join(serviceRoot, 'src/web/http/read-worker.ts');
 const RESOURCE_SOURCES: any = Object.freeze([
-  ['resources', 'product/resources', { exclude: new Set(['installation']) }],
+  ['resources', 'product/resources', { exclude: new Set(['installation', 'runtime']) }],
   ['resources/installation/launcher', 'product/resources/installation/launcher', { include: new Set(['Buildr.icns', 'Buildr.ico']) }],
-  ['package/targets/runtime', 'product/package/targets/runtime'],
+  ['resources/runtime', 'product/resources/runtime'],
   ['docs', 'product/docs', { include: new Set(['bootstrap-guide.md']) }],
   ['src/infrastructure/sqlite/migrations', 'product/src/infrastructure/sqlite/migrations'],
 ]);

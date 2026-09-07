@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
 
-import { createProductVerificationProvider } from '../../src/verification/application/product-verification-provider.ts';
+import { createProductVerificationProvider } from '../../src/modules/project-testing/application/product-verification-provider.ts';
 import { createVerificationPlan, createVerificationSelectionAudit } from './planner.ts';
 
 try {

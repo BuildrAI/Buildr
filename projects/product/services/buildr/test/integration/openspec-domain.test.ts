@@ -6,8 +6,8 @@ import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
-import { createRuntime } from '../../src/bootstrap/runtime.ts';
-import { registerOpenSpecApplication } from '../../src/task/openspec/application/openspec-application.ts';
+import { createRuntime } from '../helpers/runtime-harness.ts';
+import { registerOpenSpecApplication } from '../../src/modules/openspec/application/openspec-application.ts';
 
 function deltaSpec(statement: any = '系统 MUST 保持可移植 identity。'): any  {
   return `## ADDED Requirements\n\n### Requirement: Portable delta identity\n${statement}\n\n#### Scenario: works\n- **WHEN** delta 被解析\n- **THEN** identity MUST 可用\n`;
@@ -61,6 +61,7 @@ function diagnosticRuntime(targetRoot: any): any  {
   return registerOpenSpecApplication(runtime, {
     projectQuery: {
       projectDetail: () => ({ project: { code: 'product', source: { type: 'workspace', path: 'projects/product' } } }),
+      resolveSourceRoot: (root: string, source: { path: string }) => path.resolve(root, source.path),
     },
   });
 }

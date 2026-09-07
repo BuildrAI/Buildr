@@ -5,10 +5,10 @@ import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 
 import { createGeneratedArtifactManifest } from '../../tools/build/generated-artifacts.ts';
-import { checkRuntimeSystemDto, writeRuntimeSystemDto } from '../../tools/contracts/runtime-system-dto.ts';
-import { checkTaskProfessionalHttpDto, writeTaskProfessionalHttpDto } from '../../tools/contracts/task-professional-dto.ts';
-import { checkTaskRecordHttpDto, writeTaskRecordHttpDto } from '../../tools/contracts/task-dto.ts';
-import { checkWorkspaceAgentAssetsDtos, writeWorkspaceAgentAssetsDtos } from '../../tools/contracts/workspace-agent-assets-dto.ts';
+import { checkRuntimeSystemDto, writeRuntimeSystemDto } from '../../tools/codegen/contracts/runtime-system-dto.ts';
+import { checkTaskProfessionalHttpDto, writeTaskProfessionalHttpDto } from '../../tools/codegen/contracts/task-professional-dto.ts';
+import { checkTaskRecordHttpDto, writeTaskRecordHttpDto } from '../../tools/codegen/contracts/task-dto.ts';
+import { checkWorkspaceAgentAssetsDtos, writeWorkspaceAgentAssetsDtos } from '../../tools/codegen/contracts/workspace-agent-assets-dto.ts';
 
 function fixture(t: TestContext): string {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-contract-output-test-'));

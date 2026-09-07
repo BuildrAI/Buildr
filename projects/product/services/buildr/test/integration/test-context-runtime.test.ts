@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
-import { createTestContextPool, TEST_CONTEXTS_ENV } from '../../test/context/runtime.ts';
+import { createTestContextPool, TEST_CONTEXTS_ENV } from '../context/runtime.ts';
 
 function provider(overrides: any = {}): any  {
   return {

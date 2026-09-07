@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.ts';
 import { longRunningOperationSummary } from '../../src/infrastructure/contracts/public-json.ts';
-import { createRuntime } from '../../src/bootstrap/runtime.ts';
+import { createReleaseToolRuntime } from './runtime.ts';
 import { createExactNodeExecutionEnvironment } from '../../src/infrastructure/process.ts';
 import {
   releasePublishAuthority,
@@ -201,7 +201,7 @@ export async function runHostedReleaseTransaction(options: any = {}, dependencie
     if (!options.releaseTask) throw new Error('--release-task is required.');
     const candidateRunId: any = Number(options.candidateRunId);
     if (!Number.isSafeInteger(candidateRunId) || candidateRunId < 1) throw new Error('--candidate-run-id must be a positive GitHub run id.');
-    const runtime: any = dependencies.runtime ?? createRuntime();
+    const runtime: any = dependencies.runtime ?? createReleaseToolRuntime();
     const canonicalWorkspace = path.resolve(options.canonicalWorkspace || repo);
     const releaseTaskResult: any = runtime.inspectTask(canonicalWorkspace, options.releaseTask);
     const releaseTask: any = releaseTaskResult?.record;

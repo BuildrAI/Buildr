@@ -124,7 +124,7 @@ function classifications(changedPaths) {
     if (matches(pathname, [`${SERVICE_ROOT}/resources/manifest.yml`], [
       'skills/',
       `${SERVICE_ROOT}/resources/workspace/`,
-      `${SERVICE_ROOT}/package/targets/runtime/skills/buildr/`,
+      `${SERVICE_ROOT}/resources/runtime/skills/buildr/`,
     ])) sync.push(pathname);
     if (matches(pathname, [
       `${PRODUCT_ROOT}/buildr`,
@@ -139,7 +139,7 @@ function classifications(changedPaths) {
       `${SERVICE_ROOT}/package.json`,
       `${SERVICE_ROOT}/package-lock.json`,
       `${SERVICE_ROOT}/LICENSE`,
-    ], [`${SERVICE_ROOT}/src/web/`, `${SERVICE_ROOT}/web-dist/`, `${PRODUCT_ROOT}/services/buildr-web/`, `${SERVICE_ROOT}/package/launchers/`])) buildrWeb.push(pathname);
+    ], [`${SERVICE_ROOT}/src/web/`, `${SERVICE_ROOT}/web-dist/`, `${PRODUCT_ROOT}/services/buildr-web/`, `${SERVICE_ROOT}/tools/build/launcher/`])) buildrWeb.push(pathname);
   }
   return {
     'sync-retained-workspace': [...new Set(sync)].sort(),
@@ -556,7 +556,7 @@ export function runDirectSelfBootstrapCloseout({ workspaceRoot, taskId, baseRef,
     if (actions['install-development-buildr-web'].length) {
       start('install-buildr-web'); assertHead(successor);
       const continuity = inspectDevelopmentWebContinuity(execute, root, nodeExecutable, environment, active);
-      const installed = command(execute, nodeExecutable, [path.join(root, SERVICE_ROOT, 'package/launchers/manage.mjs'), 'install', '--channel', 'development'], root, 'install-development-buildr-web', active);
+      const installed = command(execute, nodeExecutable, [path.join(root, SERVICE_ROOT, 'tools/build/launcher/manage.ts'), 'install', '--channel', 'development'], root, 'install-development-buildr-web', active);
       requirePassed(installed, 'self-bootstrap-closeout.local-app-install-failed', '开发应用更新失败。');
       const launcher = validateDevelopmentLauncherResult(parseJson(installed, 'self-bootstrap-closeout.local-app-result-invalid', '安装结果无效。'), root, nodeExecutable, successor);
       const continuityAfter = recoverDevelopmentWebContinuity({ execute, root, nodeExecutable, successor, launcher, continuity, environment, phaseResult: active });

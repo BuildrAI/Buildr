@@ -4,9 +4,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { getRuntimeAdapter, RUNTIME_ADAPTERS, runtimeAdapterImplementationMatrix } from '../../../src/agent-assets/infrastructure/runtime/adapter-contract.ts';
-import { parseSkillsManifest } from '../../../src/agent-assets/infrastructure/runtime/skills/manifests.ts';
-import { skillProjectionOwnershipReceiptTarget } from '../../../src/agent-assets/infrastructure/runtime/skills/projection-files.ts';
+import { getRuntimeAdapter, RUNTIME_ADAPTERS, runtimeAdapterImplementationMatrix } from '../../../src/modules/agent-assets/infrastructure/runtime/adapter-contract.ts';
+import { parseSkillsManifest } from '../../../src/modules/agent-assets/persistence/skill-manifest.ts';
+import { skillProjectionOwnershipReceiptTarget } from '../../../src/modules/agent-assets/infrastructure/runtime/skills/projection-files.ts';
 import { findExecutableOnPath } from '../../../src/infrastructure/process.ts';
 import { digestRuntime, mapLimit, RuntimeVerificationHarness } from './fixture.ts';
 

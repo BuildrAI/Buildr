@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import systemFileTimingReporter, { formatSystemFileTiming } from '../../test/verification/system-file-timing-reporter.ts';
+import systemFileTimingReporter, { formatSystemFileTiming } from '../verification/system-file-timing-reporter.ts';
 
 async function collect(reporter: any): Promise<any>  {
   let output: any = '';

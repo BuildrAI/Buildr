@@ -4,8 +4,10 @@ import path from 'node:path';
 import process from 'node:process';
 import { performance } from 'node:perf_hooks';
 
-import { createRuntime } from '../../src/bootstrap/runtime.ts';
-import { createTaskListRepository } from '../../src/task/persistence/task-list-repository.ts';
+import { createRuntime, runtimeProvide } from '../../src/bootstrap/runtime.ts';
+import { createTaskListRepository } from '../../src/modules/task/persistence/task-list-repository.ts';
+import { TASK_QUERY_APPLICATION } from '../../src/modules/task/module.ts';
+import { WORKSPACE_APPLICATION, WORKSPACE_TASK_SUPPORT } from '../../src/modules/workspace/module.ts';
 
 const DEFAULT_ROWS = 1_000_000;
 const RUNS = 9;
@@ -63,11 +65,14 @@ const keep = process.argv.includes('--keep');
 const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-task-query-million-'));
 const workspaceRoot = path.join(temporaryRoot, 'workspace');
 const runtime: any = createRuntime();
+const workspace: any = runtimeProvide(runtime, WORKSPACE_APPLICATION);
+const workspaceTaskSupport: any = runtimeProvide(runtime, WORKSPACE_TASK_SUPPORT);
+const taskQuery: any = runtimeProvide(runtime, TASK_QUERY_APPLICATION);
 let databasePath = '';
 
 try {
-  runtime.initBuildr(['--target', workspaceRoot, '--name', 'task-query-benchmark', '--description', 'Disposable standalone Task query performance fixture']);
-  const opened: any = runtime.openWorkspaceStructuredStore(workspaceRoot, { writable: true });
+  workspace.initializeWorkspace({ targetRoot: workspaceRoot, name: 'task-query-benchmark', description: 'Disposable standalone Task query performance fixture', profile: 'personal', agent: null });
+  const opened: any = workspaceTaskSupport.openWorkspaceStructuredStore(workspaceRoot, { writable: true });
   const database: any = opened.database;
   if (!database) throw new Error('Benchmark workspace did not provide SQLite.');
   databasePath = path.join(workspaceRoot, '.buildr', 'local', 'workspace.sqlite');
@@ -118,24 +123,24 @@ try {
   });
   database.close();
 
-  const firstRead: any = timed(() => runtime.queryTasks(workspaceRoot, { status: 'all', pageSize: 50 }));
+  const firstRead: any = timed(() => taskQuery.queryTasks(workspaceRoot, { status: 'all', pageSize: 50 }));
   const first: any = firstRead.value;
   if (!first.nextCursor) throw new Error('Benchmark first page did not return a cursor.');
   const deepIndex = Math.min(rows - 1, Math.floor(rows * 0.6 / 4) * 4 + 3);
   const deepCursor = { statusRank: 3, updatedAt: UPDATED_AT, taskId: taskId(deepIndex) };
   const repository = createTaskListRepository();
   const metrics = [
-    sample('default-first-page', () => runtime.queryTasks(workspaceRoot, { status: 'all', pageSize: 50 }), RUNS, firstRead.elapsedMs),
-    sample('cursor-next-page', () => runtime.queryTasks(workspaceRoot, { status: 'all', pageSize: 50, cursor: first.nextCursor })),
-    sample('single-status-first-page', () => runtime.queryTasks(workspaceRoot, { status: 'completed', pageSize: 50 })),
-    sample('project-service-filter', () => runtime.queryTasks(workspaceRoot, { status: 'all', project: 'benchmark', service: 'benchmark/sparse', pageSize: 50 })),
-    sample('has-children-filter', () => runtime.queryTasks(workspaceRoot, { status: 'all', hasChildren: 'yes', pageSize: 50 })),
-    sample('without-children-filter', () => runtime.queryTasks(workspaceRoot, { status: 'all', hasChildren: 'no', pageSize: 50 })),
-    sample('retrospective-filter', () => runtime.queryTasks(workspaceRoot, { status: 'all', retrospectiveState: 'pending-decision', pageSize: 50 })),
-    sample('keyword-filter', () => runtime.queryTasks(workspaceRoot, { status: 'all', q: 'indexedneedle', pageSize: 50 })),
-    sample('deep-keyset-page', () => runtime.runWorkspaceSqliteRead(workspaceRoot, (context: any) => repository.readPage(context, { status: 'all', cursor: deepCursor, limit: 51 }))),
+    sample('default-first-page', () => taskQuery.queryTasks(workspaceRoot, { status: 'all', pageSize: 50 }), RUNS, firstRead.elapsedMs),
+    sample('cursor-next-page', () => taskQuery.queryTasks(workspaceRoot, { status: 'all', pageSize: 50, cursor: first.nextCursor })),
+    sample('single-status-first-page', () => taskQuery.queryTasks(workspaceRoot, { status: 'completed', pageSize: 50 })),
+    sample('project-service-filter', () => taskQuery.queryTasks(workspaceRoot, { status: 'all', project: 'benchmark', service: 'benchmark/sparse', pageSize: 50 })),
+    sample('has-children-filter', () => taskQuery.queryTasks(workspaceRoot, { status: 'all', hasChildren: 'yes', pageSize: 50 })),
+    sample('without-children-filter', () => taskQuery.queryTasks(workspaceRoot, { status: 'all', hasChildren: 'no', pageSize: 50 })),
+    sample('retrospective-filter', () => taskQuery.queryTasks(workspaceRoot, { status: 'all', retrospectiveState: 'pending-decision', pageSize: 50 })),
+    sample('keyword-filter', () => taskQuery.queryTasks(workspaceRoot, { status: 'all', q: 'indexedneedle', pageSize: 50 })),
+    sample('deep-keyset-page', () => workspaceTaskSupport.runWorkspaceSqliteRead(workspaceRoot, (context: any) => repository.readPage(context, { status: 'all', cursor: deepCursor, limit: 51 }))),
   ];
-  const plans = runtime.runWorkspaceSqliteRead(workspaceRoot, (context: any) => ({
+  const plans = workspaceTaskSupport.runWorkspaceSqliteRead(workspaceRoot, (context: any) => ({
     default: repository.explain(context, { status: 'all', limit: 51 }),
     status: repository.explain(context, { status: 'completed', limit: 51 }),
     structured: repository.explain(context, { status: 'all', project: 'benchmark', service: { project: 'benchmark', service: 'sparse' }, hasChildren: 'yes', limit: 51 }),

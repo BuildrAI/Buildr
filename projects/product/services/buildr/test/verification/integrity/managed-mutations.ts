@@ -30,12 +30,15 @@ productionFiles.sort();
 const allowed: any = new Map([
   ['src/infrastructure/testing/context-runtime/node-test.ts', new Set(['defaultNodeTestContextRuntime'])],
   ['src/infrastructure/testing/context-runtime/node-runner.ts', new Set(['runHost'])],
-  ['src/infrastructure/filesystem/index.ts', new Set([
-    'publishExclusiveFileLockCandidate', 'moveAndRemoveExclusiveFileLock', 'atomicWriteFile', 'copyDirectory', 'removePath', 'snapshotMutationPath', 'removeMutationRestoreTarget', 'restoreMutationSnapshot', 'withWorkspaceMutation',
+  ['src/infrastructure/filesystem/index.ts', new Set(['copyDirectory', 'removePath'])],
+  ['src/infrastructure/filesystem/atomic-files.ts', new Set(['atomicWriteFile'])],
+  ['src/infrastructure/filesystem/exclusive-file-lock.ts', new Set(['publishCandidate', 'moveAndRemove'])],
+  ['src/infrastructure/filesystem/workspace-mutation.ts', new Set([
+    'snapshotMutationPath', 'removeMutationRestoreTarget', 'restoreMutationSnapshot', 'withWorkspaceMutation',
   ])],
-  ['src/workspace/persistence/workspace-registry-repository.ts', new Set(['withWorkspaceRegistryMutation'])],
+  ['src/modules/workspace/persistence/workspace-registry-repository.ts', new Set(['withWorkspaceRegistryMutation'])],
   ['src/infrastructure/sqlite/workspace-sqlite.ts', new Set(['cleanupRetiredLocalData'])],
-  ['src/system/installation/infrastructure/npm-launcher.ts', new Set([
+  ['src/modules/installation/infrastructure/npm-launcher.ts', new Set([
     'writeMacLauncherCandidate', 'writeWindowsLauncherCandidate', 'installNpmLauncher', 'uninstallNpmLauncher',
   ])],
   ['src/web/infrastructure/instance-runtime.ts', new Set([
@@ -43,35 +46,32 @@ const allowed: any = new Map([
   ])],
   ['src/bootstrap/cli/main.ts', new Set(['writeInternalDownload'])],
   ['src/web/application/preview-lifecycle.ts', new Set(['clearOwner'])],
-  ['src/task/infrastructure/worktree-application.ts', new Set(['writeReceipt'])],
-  ['src/task/application/finish/task-finish-run.ts', new Set([
+  ['src/modules/task/infrastructure/worktree-application.ts', new Set(['writeReceipt'])],
+  ['src/modules/task/application/finish/task-finish-run.ts', new Set([
     'acquireFinishTargetLease', 'releaseFinishTargetLease',
   ])],
-  ['src/task/application/finish/task-finish-bootstrap-recovery.ts', new Set([
+  ['src/modules/task/application/finish/task-finish-bootstrap-recovery.ts', new Set([
     'atomicWriteFile', 'prepareTaskFinishBootstrapRecoveryContext', 'finalizeTaskFinishBootstrapRecovery',
   ])],
-  ['src/verification/infrastructure/resource-coordinator.ts', new Set([
-    'atomicWriteJson', 'registerTicketDirectory', 'replaceExpiredLeaseDirectory', 'releaseLeaseDirectory',
-  ])],
-  ['src/verification/application/verification-application.ts', new Set(['withRetainedControllerPlanArgs'])],
+  ['src/modules/project-testing/application/verification-application.ts', new Set(['withRetainedControllerPlanArgs'])],
   ['src/bootstrap/cli/task-finish-bootstrap.ts', new Set(['atomicWriteFile'])],
-  ['src/agent-assets/application/rules.ts', new Set(['rulesRemoveUnsafe'])],
-  ['src/agent-assets/application/skills.ts', new Set(['copySupportedSkillSource', 'skillsRemoveUnsafe'])],
-  ['src/agent-assets/application/components.ts', new Set(['removeComponentMember', 'installComponentMember'])],
-  ['src/agent-assets/application/package-maintenance/package-assets.ts', new Set(['convergeServiceManifest', 'convergeRegistryManifests'])],
-  ['src/agent-assets/application/package-maintenance.ts', new Set(['syncPackageBuiltins'])],
-  ['src/agent-assets/application/package-maintenance/builtin-lifecycle.ts', new Set(['builtinUninstallUnsafe'])],
-  ['src/agent-assets/application/package-maintenance/output.ts', new Set(['buildPackageOutput', 'packageBuild'])],
-  ['src/agent-assets/application/package-maintenance/smoke-checks.ts', new Set([
+  ['src/modules/agent-assets/application/rules.ts', new Set(['rulesRemoveUnsafe'])],
+  ['src/modules/agent-assets/application/skills.ts', new Set(['copySupportedSkillSource', 'skillsRemoveUnsafe'])],
+  ['src/modules/agent-assets/application/components.ts', new Set(['removeComponentMember', 'installComponentMember'])],
+  ['src/modules/agent-assets/application/package-maintenance/package-assets.ts', new Set(['convergeServiceManifest', 'convergeRegistryManifests'])],
+  ['src/modules/agent-assets/application/package-maintenance.ts', new Set(['syncPackageBuiltins'])],
+  ['src/modules/agent-assets/application/package-maintenance/builtin-lifecycle.ts', new Set(['builtinUninstallUnsafe'])],
+  ['src/modules/agent-assets/application/package-maintenance/output.ts', new Set(['buildPackageOutput', 'packageBuild'])],
+  ['src/modules/agent-assets/application/package-maintenance/smoke-checks.ts', new Set([
     'verifyRecursiveRules', 'verifyWorkspaceAssetLifecycle', 'verifyInitializedWorkspace',
     'verifyExistingAgentsCompatibility', 'runPackageWorkspaceSmoke', 'runPackageDomainIntegration',
     'runPackageAggregateSmoke',
   ])],
-  ['src/workspace/infrastructure/workspace-source-filesystem.ts', new Set(['withStaging', 'createWorkspaceSourceFilesystem'])],
-  ['src/workspace/application/workspace-operations.ts', new Set(['recoverWorkspaceMutation'])],
-  ['src/agent-assets/infrastructure/runtime/adapter-contract.ts', new Set(['reconcileRuntimePlan'])],
-  ['src/agent-assets/infrastructure/runtime/skills/render-plan.ts', new Set(['applySkillRenderPlan'])],
-  ['src/agent-assets/infrastructure/runtime/render-claude-code-rules.ts', new Set(['applyRulesRenderPlan'])],
+  ['src/modules/workspace/infrastructure/workspace-source-filesystem.ts', new Set(['withStaging', 'createWorkspaceSourceFilesystem'])],
+  ['src/modules/workspace/application/workspace-operations.ts', new Set(['recoverWorkspaceMutation'])],
+  ['src/modules/agent-assets/infrastructure/runtime/adapter-contract.ts', new Set(['reconcileRuntimePlan'])],
+  ['src/modules/agent-assets/infrastructure/runtime/skills/render-plan.ts', new Set(['applySkillRenderPlan'])],
+  ['src/modules/agent-assets/infrastructure/runtime/render-claude-code-rules.ts', new Set(['applyRulesRenderPlan'])],
 ]);
 
 const violations: any[] = [];

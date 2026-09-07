@@ -5,7 +5,7 @@ import test from 'node:test';
 import {
   normalizeTaskReviewResult,
   TASK_REVIEW_RESULT_SCHEMA,
-} from '../../src/task/domain/task-review.ts';
+} from '../../src/modules/task/domain/task-review.ts';
 
 function result(overrides = {}) {
   return {

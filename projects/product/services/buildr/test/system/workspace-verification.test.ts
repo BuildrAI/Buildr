@@ -5,8 +5,8 @@ import process from 'node:process';
 import test from 'node:test';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { selectWorkspaceSuites, workspaceSuiteSteps, workspaceSuites } from '../../test/verification/workspace/suites.ts';
-import { createSuiteFixture } from '../../test/verification/workspace/fixture.ts';
+import { selectWorkspaceSuites, workspaceSuiteSteps, workspaceSuites } from '../verification/workspace/suites.ts';
+import { createSuiteFixture } from '../verification/workspace/fixture.ts';
 
 const productRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const runner: any = path.join(productRoot, 'test', 'verification', 'focus.ts');

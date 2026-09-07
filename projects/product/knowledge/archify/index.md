@@ -8,6 +8,8 @@
 
 - [Buildr 系统全景图源码](system/buildr-system-overview.json)：Archify 的结构化图表源码，依据当前 Product 代码、目录结构、OpenSpec 和已登记关系编写。
 - [Buildr 系统全景图](system/buildr-system-overview.html)：由源码生成的可浏览 HTML 图表。
+- [能力、数据与副作用流源码](flows/capability-data-responsibility.json)：按命名能力、数据 owner 与副作用边界组织的结构化图表源码。
+- [能力、数据与副作用流](flows/capability-data-responsibility.html)：用于追踪关键调用、写入保护和跨模块 Binder 的可浏览 HTML 图表。
 
 JSON 是可维护源，HTML 是可重建投影。两者应保持同名、同目录，并在源码或结构发生影响图表语义的变化时一并更新；普通代码改动不自动要求重画图表。
 
@@ -27,4 +29,4 @@ JSON 是可维护源，HTML 是可重建投影。两者应保持同名、同目�
 - `technology/`：技术与部署视角
 - `flows/`：流程、时序和生命周期视角
 
-图表旁的 `*.visual-check.json` 与 `*.visual-check/` 是生成和视觉检查证据，不是新的知识事实源。
+图表旁的 `*.visual-check.json`、`*.visual-check.html` 与检查截图是生成和视觉检查证据，不是新的知识事实源。

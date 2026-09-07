@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import YAML from 'yaml';
-import { normalizeProjectVerification, parseProjectVerification, validateProjectVerification } from '../../src/verification/domain/project-verification.ts';
+import { normalizeProjectVerification, parseProjectVerification, validateProjectVerification } from '../../src/modules/project-testing/domain/project-verification.ts';
 
 function declaration() {
   return { schemaVersion: 'buildr.project-verification/v4', testing: [{ id: 'demo-unit', title: 'Demo unit', scope: { project: 'demo', services: ['api'] }, purpose: 'Validate demo logic', sourcePaths: ['src/**'], testRoots: ['test/unit/**'], full: { kind: 'command', argv: ['mvn', 'test'], cwd: '.' }, selection: ['Select related classes while developing'], requirements: ['java'] }] };

@@ -9,8 +9,8 @@ import { fileURLToPath } from 'node:url';
 import { spawn, spawnSync } from 'node:child_process';
 import { spawnCommandSync } from '../../../src/infrastructure/process.ts';
 import { resolveVerificationWorkerBudget } from '../worker-budget.ts';
-import { createConvergencePlan } from '../../../src/task/openspec/application/convergence-planner.ts';
-import { createConvergenceReceipt } from '../../../src/task/openspec/application/convergence-model.ts';
+import { createConvergencePlan } from '../../../src/modules/openspec/application/convergence-planner.ts';
+import { createConvergenceReceipt } from '../../../src/modules/openspec/application/convergence-model.ts';
 
 const productRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const buildr: any = path.join(productRoot, 'bin', 'buildr.mjs');

@@ -55,11 +55,11 @@ test('Task Retrospective Skill 只生成本机文档并由用户决定是否行�
 
 test('旧复盘 Application、Driver、能力契约和持久化实现已退出', () => {
   for (const relative of [
-    'src/task/application/task-retrospective-application.mjs',
-    'src/task/domain/task-retrospective.mjs',
-    'src/task/interfaces/http/task-retrospective-http.mjs',
-    'src/task/interfaces/internal/task-retrospective-driver.mjs',
-    'src/task/persistence/task-retrospective-repository.ts',
+    'src/modules/task/application/task-retrospective-application.mjs',
+    'src/modules/task/domain/task-retrospective.mjs',
+    'src/modules/task/interfaces/http/task-retrospective-http.mjs',
+    'src/modules/task/interfaces/internal/task-retrospective-driver.mjs',
+    'src/modules/task/persistence/task-retrospective-repository.ts',
     'resources/workspace/skills/contracts/buildr/task-retrospective/v2.md',
   ]) assert.equal(fs.existsSync(path.resolve(relative)), false, relative);
 });

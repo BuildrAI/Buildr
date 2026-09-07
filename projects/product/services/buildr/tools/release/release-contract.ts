@@ -7,7 +7,7 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.ts';
-import { parseSemver } from '../../src/system/installation/domain/release-version.ts';
+import { parseSemver } from '../../src/modules/installation/domain/release-version.ts';
 import { extractReleaseNotes } from './release-notes.ts';
 import { parseArguments, writeJson } from './release-files.ts';
 import { releasePublishAuthority } from './release-authority.ts';

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { parseFocusArgs, resolveFocusPlan } from '../../test/verification/focus.ts';
+import { parseFocusArgs, resolveFocusPlan } from '../verification/focus.ts';
 
 test('focus parser 区分 step、group、plan 和 JSON', () => {
   assert.deepEqual(parseFocusArgs(['--json', 'package-skills', 'package-skills', 'group:runtime']), {

@@ -1,12 +1,16 @@
 import * as platform from '../infrastructure/platform.ts';
 import {
   AGENT_ASSETS_CAPABILITY_QUERY,
+  AGENT_ASSETS_DIAGNOSTICS_BINDER,
+  AGENT_ASSETS_INTERNAL,
   AGENT_ASSETS_RUNTIME,
   createAgentAssetsModule,
   createAgentAssetsRuntimeModule,
-} from '../agent-assets/module.ts';
+} from '../modules/agent-assets/module.ts';
 import {
   TASK_RUNTIME_PORT,
+  TASK_CHANGE_BINDER,
+  TASK_QUERY_APPLICATION,
   TASK_MODULE,
   TASK_REVIEW_RUNTIME_PORT,
   TASK_REVIEW_MODULE,
@@ -15,114 +19,61 @@ import {
   createWorktreeProviderModule,
   createTaskVerificationModule,
   createParentCoordinationModule,
-} from '../task/module.ts';
+} from '../modules/task/module.ts';
 import { createModuleRegistry } from './module-registry.ts';
 import { createWebModule } from '../web/module.ts';
-import { createWorkspaceModule, WORKSPACE_QUERY, WORKSPACE_RUNTIME_PORT } from '../workspace/module.ts';
-import { createSystemInstallationModule, readCurrentProductIdentity } from '../system/installation/module.ts';
-import { createSystemDoctorModule, SYSTEM_DOCTOR_APPLICATION } from '../system/doctor/module.ts';
+import { createWorkspaceModule, WORKSPACE_AGENT_ASSETS_BINDER, WORKSPACE_APPLICATION, WORKSPACE_QUERY, WORKSPACE_TASK_BINDER } from '../modules/workspace/module.ts';
+import { createSystemInstallationModule, readCurrentProductIdentity, SYSTEM_INSTALLATION_APPLICATION } from '../modules/installation/module.ts';
+import { createSystemDoctorModule, SYSTEM_DOCTOR_APPLICATION } from '../modules/diagnostics/module.ts';
 import { registerInfrastructure } from '../infrastructure/index.ts';
 import { registerProjectGitObserver } from '../infrastructure/git/project-git-observer.ts';
 import { registerProductInvocation } from '../infrastructure/product-invocation/index.ts';
-import { createPublicationModule } from '../system/publication/module.ts';
-import { createOpenSpecModule } from '../task/openspec/module.ts';
-import { createChangeModule } from '../task/change/module.ts';
-import { VERIFICATION_DECLARATION, createVerificationModule } from '../verification/module.ts';
-import * as webProfileContract from '../system/installation/contracts/web-profile.ts';
+import { createPublicationModule } from '../modules/publication/module.ts';
+import { createOpenSpecModule } from '../modules/openspec/module.ts';
+import { CHANGE_APPLICATION, createChangeModule } from '../modules/task/change/module.ts';
+import { VERIFICATION_DECLARATION, createVerificationModule } from '../modules/project-testing/module.ts';
+import * as webProfileContract from '../modules/installation/contracts/web-profile.ts';
 
 const RUNTIME_CONTEXT = new WeakMap();
 
-function methodPort(runtime: any, methods: any): any  {
-  return Object.freeze(Object.fromEntries(methods.map((method: any) => [method, (...args: any[]) => runtime[method](...args)])));
-}
-
-function taskDependencies(runtime: any): any  {
-  return {
-    'workspace.structured-store': methodPort(runtime, ['assertCanonicalStructuredWorkspace', 'openWorkspaceStructuredStore', 'prepareWorkspaceStructuredStore', 'runWorkspaceTransaction', 'runWorkspaceSqliteRead']),
-    'project-service.reader': methodPort(runtime, ['readProjectRegistryRecord', 'readServiceRegistryRecord']),
-    'change.resolver': methodPort(runtime, ['resolveTaskScopedChange']),
-    'workspace.operation-memoizer': Object.freeze({
-      memoizeWorkspaceOperation: (...args: any[]) => runtime.memoizeWorkspaceOperation?.(...args),
-    }),
-  };
-}
-
-function installTaskModule(runtime: any, registry: any): any  {
-  const descriptor = registry.install(TASK_MODULE);
-  const runtimePort = registry.provide(TASK_RUNTIME_PORT);
-  Object.assign(runtime, runtimePort.methods);
-  return descriptor;
-}
-
-function installTaskReviewModule(runtime: any, registry: any): any  {
-  const descriptor = registry.install(TASK_REVIEW_MODULE);
-  const runtimePort = registry.provide(TASK_REVIEW_RUNTIME_PORT);
-  Object.assign(runtime, runtimePort.methods);
-  for (const [name, bridge] of Object.entries(runtimePort.testSupportProperties) as Array<[string, any]>) {
-    Object.defineProperty(runtime, name, {
-      configurable: true,
-      enumerable: false,
-      get: bridge.get,
-      set: bridge.set,
-    });
-  }
-  return descriptor;
-}
-
-function installTaskRuntimeModule(runtime: any, registry: any, definition: any, capability: any): any  {
-  const descriptor = registry.install(definition);
-  const runtimePort = registry.provide(capability);
-  Object.assign(runtime, runtimePort.methods);
-  for (const [name, bridge] of Object.entries(runtimePort.testSupportProperties || {}) as Array<[string, any]>) {
-    Object.defineProperty(runtime, name, {
-      configurable: true,
-      enumerable: false,
-      get: bridge.get,
-      set: bridge.set,
-    });
-  }
-  return descriptor;
-}
-
 export function createRuntime(): any  {
   const runtime: any = { ...platform };
-  const registry = createModuleRegistry({ capabilities: taskDependencies(runtime) });
   registerInfrastructure(runtime);
   registerProductInvocation(runtime);
-  registry.install(createAgentAssetsRuntimeModule(runtime));
+  const registry = createModuleRegistry();
+  registry.install(createAgentAssetsRuntimeModule());
   registry.install(createWorkspaceModule(runtime, {
     readProductIdentity: readCurrentProductIdentity,
     webProfileContract,
     agentRuntimeCapability: AGENT_ASSETS_RUNTIME,
   }));
-  Object.assign(runtime, registry.provide(WORKSPACE_RUNTIME_PORT).methods);
   registry.install(createAgentAssetsModule(runtime));
+  registry.provide(WORKSPACE_AGENT_ASSETS_BINDER).bindAgentAssets(registry.provide(AGENT_ASSETS_INTERNAL));
   registerProjectGitObserver(runtime);
   registry.install(createPublicationModule(runtime));
   registry.install(createOpenSpecModule(runtime));
+  registry.install(TASK_MODULE);
+  registry.provide(WORKSPACE_TASK_BINDER).bindTaskQuery(registry.provide(TASK_QUERY_APPLICATION));
   registry.install(createWorktreeProviderModule(runtime));
   registry.install(createChangeModule(runtime));
-  installTaskModule(runtime, registry);
+  registry.provide(TASK_CHANGE_BINDER).bindChangeResolver(registry.provide(CHANGE_APPLICATION));
   registry.install(createVerificationModule(runtime));
-  installTaskReviewModule(runtime, registry);
-  installTaskRuntimeModule(runtime, registry, createTaskVerificationModule(runtime, { verificationDeclaration: VERIFICATION_DECLARATION }), TASK_VERIFICATION_RUNTIME_PORT);
-  installTaskRuntimeModule(runtime, registry, createParentCoordinationModule(runtime), PARENT_COORDINATION_RUNTIME_PORT);
+  registry.install(TASK_REVIEW_MODULE);
+  registry.install(createTaskVerificationModule(runtime, { verificationDeclaration: VERIFICATION_DECLARATION }));
+  registry.install(createParentCoordinationModule(runtime));
   registry.install(createSystemInstallationModule(runtime));
   registry.install(createWebModule(runtime, { httpContributions: registry.contributions('http') }));
   registry.install(createSystemDoctorModule(runtime, {
     diagnosticContributions: registry.contributions('diagnostics'),
     agentRuntimeCapability: AGENT_ASSETS_RUNTIME,
     agentCapabilityQuery: AGENT_ASSETS_CAPABILITY_QUERY,
+    agentAssetsInternal: AGENT_ASSETS_INTERNAL,
     verificationDeclaration: VERIFICATION_DECLARATION,
     workspaceQuery: WORKSPACE_QUERY,
+    installationApplication: SYSTEM_INSTALLATION_APPLICATION,
+    workspaceApplication: WORKSPACE_APPLICATION,
   }));
-  const doctorApplication = registry.provide(SYSTEM_DOCTOR_APPLICATION);
-  Object.assign(runtime, {
-    doctor: doctorApplication.doctor,
-    diagnoseWorkspaceStructuredStore: doctorApplication.diagnoseWorkspaceStructuredStore,
-    gitignoreLines: doctorApplication.gitignoreLines,
-    readGitRemote: doctorApplication.readGitRemote,
-  });
+  registry.provide(AGENT_ASSETS_DIAGNOSTICS_BINDER).bindDiagnostics(registry.provide(SYSTEM_DOCTOR_APPLICATION));
   RUNTIME_CONTEXT.set(runtime, Object.freeze({ registry }));
   Object.defineProperty(runtime, '__bootstrapContributions', {
     enumerable: false,

@@ -4,7 +4,7 @@
 
 ## 后端：目录与职责
 
-根目录：`services/buildr/src/workspace/`。
+根目录：`services/buildr/src/modules/workspace/`。
 
 ```text
 workspace/
@@ -57,7 +57,7 @@ HTTP 生成类型位于 `interfaces/http/generated/`，不作为手写逻辑维�
 | 来源文件访问对象（Source Filesystem） | `resolveRoot`、`readDocument`、`withStaging`、`copy`、`publish` | 只做技术访问；是否克隆、附接和何时写登记由所属应用决定 |
 | 具名仓储（Repository） | `workspaceRepository`、`registryRepository`、`projectRepository`、`serviceRepository`、`dailyProgressRepository` | 各自的读取、解析、序列化、写入放在同一文件 |
 
-模块（Module）内部仍有旧装配别名；对外使用明确方法清单。迁移、资产同步、诊断及少量测试仍需兼容方法，未宣称彻底消除旧调用。新增消费者优先使用公开应用或窄查询（Query）能力，不把内部仓储对象重新暴露到共享运行时（Runtime）。
+模块（Module）对外只提供明确应用、窄查询、领域支持和一次性绑定器（Binder）。生产运行时（Runtime）不暴露旧扁平业务方法；测试组合便利入口只存在于`test/helpers/runtime-harness.ts`。新增消费者必须使用模块入口声明的命名能力（Named Capability），不得暴露内部仓储。
 
 管理保护（Management Fence）独立是因为它跨登记、创建和恢复保护同一管理权，不能并进某个领域的普通读写。它不是新增业务领域，也不再继续拆文件。
 

@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createBuildrApplicationTest } from '../context/buildr-node-test.ts';
-import { parentCoordinationDigest } from '../../src/task/domain/parent-coordination.ts';
+import { parentCoordinationDigest } from '../../src/modules/task/domain/parent-coordination.ts';
 
 const test = createBuildrApplicationTest('integration-parent-coordination-application');
 function fixture(t) {

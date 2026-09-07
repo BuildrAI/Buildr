@@ -14,7 +14,7 @@ const taskVerificationSkill: any = read('resources/workspace/skills/buildr/task-
 const taskVerificationReference: any = read('resources/workspace/skills/buildr/task-verification/references/project-verification-v4.md');
 const taskVerificationTemplate: any = YAML.parse(read('resources/workspace/skills/buildr/task-verification/templates/project-verification.yml'));
 const taskTriage: any = read('resources/workspace/skills/buildr/task-triage/SKILL.md');
-const buildrSkill: any = read('package/targets/runtime/skills/buildr/SKILL.md');
+const buildrSkill: any = read('resources/runtime/skills/buildr/SKILL.md');
 const packageManifest: any = YAML.parse(read('resources/manifest.yml'));
 
 test('project-testing 是无状态且无 capability binding 的独立 Skill', () => {

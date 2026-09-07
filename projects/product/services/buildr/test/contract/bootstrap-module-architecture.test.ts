@@ -4,39 +4,49 @@ import path from 'node:path';
 import test from 'node:test';
 
 import { COMMAND_CATALOG } from '../../src/bootstrap/cli/registry.ts';
-import { createRuntime, runtimeContributions, runtimeModuleSnapshot, runtimeProvide } from '../../src/bootstrap/runtime.ts';
+import { createRuntime, runtimeContributions, runtimeModuleSnapshot, runtimeProvide } from '../helpers/runtime-harness.ts';
+import { createRuntime as createProductRuntime } from '../../src/bootstrap/runtime.ts';
 import {
   AGENT_ASSETS_APPLICATION,
   AGENT_ASSETS_CAPABILITY_QUERY,
+  AGENT_ASSETS_DIAGNOSTICS_BINDER,
+  AGENT_ASSETS_INTERNAL,
   AGENT_ASSETS_RUNTIME,
-} from '../../src/agent-assets/module.ts';
+} from '../../src/modules/agent-assets/module.ts';
 import {
   TASK_QUERY_APPLICATION,
+  TASK_CHANGE_BINDER,
   TASK_RUNTIME_PORT,
   TASK_COMMAND_APPLICATION,
   TASK_REVIEW_APPLICATION,
   TASK_REVIEW_RUNTIME_PORT,
   TASK_REVIEW_PERSISTENCE_READ,
   TASK_WORKTREE_PROVIDER,
-} from '../../src/task/module.ts';
+} from '../../src/modules/task/module.ts';
 import {
   VERIFICATION_APPLICATION,
   VERIFICATION_DECLARATION,
-} from '../../src/verification/module.ts';
+} from '../../src/modules/project-testing/module.ts';
 import {
   SYSTEM_INSTALLATION_APPLICATION,
   SYSTEM_INSTALLATION_IDENTITY,
   SYSTEM_INSTALLATION_LAUNCHER,
-} from '../../src/system/installation/module.ts';
+} from '../../src/modules/installation/module.ts';
 import { WEB_INSTANCE_LIFECYCLE } from '../../src/web/module.ts';
 import {
   PROJECT_DAILY_PROGRESS_APPLICATION,
   PROJECT_APPLICATION,
   SERVICE_APPLICATION,
   WORKSPACE_QUERY,
+  WORKSPACE_DOMAIN,
+  WORKSPACE_TASK_SUPPORT,
+  WORKSPACE_TASK_BINDER,
+  WORKSPACE_INTERNAL,
+  WORKSPACE_AGENT_ASSETS_BINDER,
+  WORKSPACE_DIAGNOSTICS,
   WORKSPACE_RUNTIME_PORT,
   WORKSPACE_APPLICATION,
-} from '../../src/workspace/module.ts';
+} from '../../src/modules/workspace/module.ts';
 
 const root: any = path.resolve(import.meta.dirname, '../..');
 const read: any = (relative: any) => fs.readFileSync(path.join(root, relative), 'utf8');
@@ -49,9 +59,15 @@ test('Bootstrap 是唯一 composition root，bin 与公共 Host 不直连 Task �
   assert.doesNotMatch(bootstrap, /registerLegacyRuntime|legacy-runtime-module/);
   assert.equal(fs.existsSync(path.join(root, 'src/bootstrap/legacy-runtime-module.mjs')), false);
   assert.doesNotMatch(bootstrap, /registerTaskRecord(?:Repository|Application)/);
+  assert.doesNotMatch(bootstrap, /Object\.assign\(runtime,\s*(?:registry\.provide|runtimePort|doctorApplication)/);
+
+  const productRuntime = createProductRuntime();
+  for (const method of ['initBuildr', 'createTask', 'doctor', 'startBuildrWeb', 'listPublications', 'projectVerificationCommand', 'syncRuntime']) {
+    assert.equal(typeof productRuntime[method], 'undefined', `${method} must be available only through its named capability`);
+  }
 
   const cliHost: any = read('src/bootstrap/cli/registry.ts');
-  assert.match(cliHost, /from '..\/..\/task\/module\.ts'/);
+  assert.match(cliHost, /from '..\/..\/modules\/task\/module\.ts'/);
   assert.doesNotMatch(cliHost, /task\/interfaces\/(?:cli|http)/);
   assert.match(cliHost, /runtimeContributions\(runtime, 'cli'\)/);
 
@@ -75,7 +91,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
   }, {
     id: 'workspace-core',
     requires: [AGENT_ASSETS_RUNTIME],
-    provides: [WORKSPACE_APPLICATION, PROJECT_APPLICATION, SERVICE_APPLICATION, WORKSPACE_QUERY, WORKSPACE_RUNTIME_PORT, PROJECT_DAILY_PROGRESS_APPLICATION],
+    provides: [WORKSPACE_APPLICATION, PROJECT_APPLICATION, SERVICE_APPLICATION, WORKSPACE_QUERY, WORKSPACE_RUNTIME_PORT, WORKSPACE_INTERNAL, WORKSPACE_DOMAIN, WORKSPACE_TASK_SUPPORT, WORKSPACE_AGENT_ASSETS_BINDER, WORKSPACE_TASK_BINDER, WORKSPACE_DIAGNOSTICS, PROJECT_DAILY_PROGRESS_APPLICATION],
     contributions: {
       cli: ['init', 'bootstrap guide', 'mutation recover', 'project create', 'service create', 'project daily-progress record', 'project daily-progress inspect', 'project daily-progress list'],
       http: ['workspace-core.http'],
@@ -84,8 +100,8 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     lifecycle: 'none',
   }, {
     id: 'agent-assets',
-    requires: [WORKSPACE_APPLICATION, WORKSPACE_QUERY, AGENT_ASSETS_RUNTIME, AGENT_ASSETS_CAPABILITY_QUERY],
-    provides: [AGENT_ASSETS_APPLICATION],
+    requires: [WORKSPACE_APPLICATION, WORKSPACE_QUERY, WORKSPACE_INTERNAL, WORKSPACE_DOMAIN, AGENT_ASSETS_RUNTIME, AGENT_ASSETS_CAPABILITY_QUERY],
+    provides: [AGENT_ASSETS_APPLICATION, AGENT_ASSETS_INTERNAL, AGENT_ASSETS_DIAGNOSTICS_BINDER],
     contributions: {
       cli: [
         'package check', 'package build', 'runtime list',
@@ -109,7 +125,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     lifecycle: 'none',
   }, {
     id: 'openspec',
-    requires: [WORKSPACE_QUERY],
+    requires: [WORKSPACE_QUERY, AGENT_ASSETS_INTERNAL],
     provides: ['openspec.application', 'openspec.query'],
     contributions: {
       cli: ['openspec converge', 'openspec convergence preflight', 'openspec convergence inspect'],
@@ -117,21 +133,9 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     },
     lifecycle: 'none',
   }, {
-    id: 'task-worktree-provider',
-    requires: [],
-    provides: [TASK_WORKTREE_PROVIDER],
-    contributions: { cli: ['worktree create', 'worktree cleanup', 'worktree inspect'], http: [], diagnostics: [] },
-    lifecycle: 'none',
-  }, {
-    id: 'change',
-    requires: ['openspec.query', WORKSPACE_QUERY, TASK_WORKTREE_PROVIDER],
-    provides: ['change.application'],
-    contributions: { cli: [], http: ['change.http'], diagnostics: [] },
-    lifecycle: 'none',
-  }, {
     id: 'task',
-    requires: ['workspace.structured-store', 'project-service.reader', 'change.resolver', 'workspace.operation-memoizer'],
-    provides: [TASK_QUERY_APPLICATION, TASK_COMMAND_APPLICATION, TASK_RUNTIME_PORT],
+    requires: [WORKSPACE_TASK_SUPPORT],
+    provides: [TASK_QUERY_APPLICATION, TASK_COMMAND_APPLICATION, TASK_RUNTIME_PORT, TASK_CHANGE_BINDER],
     contributions: {
       cli: ['task create', 'task inspect', 'task update', 'task activate', 'task complete', 'task abandon'],
       http: ['task.http'],
@@ -139,14 +143,26 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     },
     lifecycle: 'none',
   }, {
+    id: 'task-worktree-provider',
+    requires: [TASK_QUERY_APPLICATION, WORKSPACE_QUERY],
+    provides: [TASK_WORKTREE_PROVIDER],
+    contributions: { cli: ['worktree create', 'worktree cleanup', 'worktree inspect'], http: [], diagnostics: [] },
+    lifecycle: 'none',
+  }, {
+    id: 'change',
+    requires: ['openspec.query', WORKSPACE_QUERY, TASK_WORKTREE_PROVIDER, TASK_QUERY_APPLICATION],
+    provides: ['change.application'],
+    contributions: { cli: [], http: ['change.http'], diagnostics: [] },
+    lifecycle: 'none',
+  }, {
     id: 'project-verification',
-    requires: [],
+    requires: [WORKSPACE_QUERY],
     provides: [VERIFICATION_APPLICATION, VERIFICATION_DECLARATION],
-    contributions: { cli: [], http: [], diagnostics: ['project-verification.diagnostics'] },
+    contributions: { cli: ['project verification inspect', 'project verification validate', 'project verification update'], http: [], diagnostics: ['project-verification.diagnostics'] },
     lifecycle: 'none',
   }, {
     id: 'task-review',
-    requires: [TASK_QUERY_APPLICATION, 'workspace.structured-store'],
+    requires: [TASK_QUERY_APPLICATION, WORKSPACE_TASK_SUPPORT],
     provides: [TASK_REVIEW_APPLICATION, TASK_REVIEW_PERSISTENCE_READ, TASK_REVIEW_RUNTIME_PORT],
     contributions: {
       cli: ['task review inspect', 'task review record'],
@@ -156,7 +172,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     lifecycle: 'none',
   }, {
     id: 'task-verification',
-    requires: [TASK_QUERY_APPLICATION, VERIFICATION_DECLARATION],
+    requires: [TASK_QUERY_APPLICATION, WORKSPACE_TASK_SUPPORT, VERIFICATION_DECLARATION],
     provides: ['task-verification.application', 'task-verification.persistence-read', 'task-verification.runtime-port'],
     contributions: { cli: ['task verification inspect', 'task verification record'], http: ['task-verification.http'], diagnostics: [] },
     lifecycle: 'none',
@@ -195,7 +211,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     lifecycle: 'none',
   }, {
     id: 'system-doctor',
-    requires: [AGENT_ASSETS_RUNTIME, AGENT_ASSETS_CAPABILITY_QUERY, VERIFICATION_DECLARATION, WORKSPACE_QUERY],
+    requires: [WORKSPACE_DIAGNOSTICS, AGENT_ASSETS_RUNTIME, AGENT_ASSETS_CAPABILITY_QUERY, AGENT_ASSETS_INTERNAL, VERIFICATION_DECLARATION, WORKSPACE_QUERY, SYSTEM_INSTALLATION_APPLICATION, WORKSPACE_APPLICATION],
     provides: ['system.doctor.application'],
     contributions: { cli: ['doctor'], http: [], diagnostics: [] },
     lifecycle: 'none',
@@ -212,8 +228,9 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     'skills add', 'skills remove', 'skills bind', 'skills unbind',
     'skill install', 'runtime check', 'skills render', 'rules render',
     'openspec converge', 'openspec convergence preflight', 'openspec convergence inspect',
-    'worktree create', 'worktree cleanup', 'worktree inspect',
     'task create', 'task inspect', 'task update', 'task activate', 'task complete', 'task abandon',
+    'worktree create', 'worktree cleanup', 'worktree inspect',
+    'project verification inspect', 'project verification validate', 'project verification update',
     'task review inspect', 'task review record',
     'task verification inspect', 'task verification record',
     'task parent inspect',
@@ -223,7 +240,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     'doctor',
   ]);
   assert.deepEqual(runtimeContributions(runtime, 'http').map((item: any) => item.id), [
-    'workspace-core.http', 'agent-assets.http', 'publication.http', 'change.http', 'task.http',
+    'workspace-core.http', 'agent-assets.http', 'publication.http', 'task.http', 'change.http',
     'task-review.http', 'task-verification.http',
     'task-parent-coordination.http', 'system-installation.release-awareness.http',
   ]);
@@ -264,28 +281,28 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
 });
 
 test('Workspace 模块使用私有组合并只拆分超界 Application', () => {
-  const moduleSource = read('src/workspace/module.ts');
+  const moduleSource = read('src/modules/workspace/module.ts');
   assert.match(moduleSource, /const privateComposition = Object\.assign\(Object\.create\(runtime\), agentRuntime\)/);
   assert.match(moduleSource, /registerWorkspaceQueryApplication\(privateComposition\)/);
   assert.match(moduleSource, /registerWorkspaceCommandApplication\(privateComposition\)/);
   assert.match(moduleSource, /registerProjectApplication\(privateComposition\)/);
   assert.match(moduleSource, /registerServiceApplication\(privateComposition\)/);
   assert.doesNotMatch(moduleSource, /registerWorkspace(?:Query|Command)Application\(runtime\)/);
-  assert.equal(fs.existsSync(path.join(root, 'src/workspace/application/workspace-application.ts')), false);
-  assert.equal(fs.existsSync(path.join(root, 'src/workspace/application/workspace-query-application.ts')), true);
-  assert.equal(fs.existsSync(path.join(root, 'src/workspace/application/workspace-command-application.ts')), true);
-  assert.equal(fs.existsSync(path.join(root, 'src/workspace/application/project-query-application.ts')), false);
-  assert.equal(fs.existsSync(path.join(root, 'src/workspace/application/project-command-application.ts')), false);
-  assert.equal(fs.existsSync(path.join(root, 'src/workspace/application/service-query-application.ts')), false);
-  assert.equal(fs.existsSync(path.join(root, 'src/workspace/application/service-command-application.ts')), false);
-  assert.equal(fs.existsSync(path.join(root, 'src/workspace/application/source-creation-support.ts')), false);
-  assert.equal(fs.existsSync(path.join(root, 'src/workspace/application/project-creation-application.ts')), false);
-  assert.equal(fs.existsSync(path.join(root, 'src/workspace/application/service-creation-application.ts')), false);
-  assert.equal(fs.existsSync(path.join(root, 'src/workspace/application/source-creation-policy.ts')), false);
+  assert.equal(fs.existsSync(path.join(root, 'src/modules/workspace/application/workspace-application.ts')), false);
+  assert.equal(fs.existsSync(path.join(root, 'src/modules/workspace/application/workspace-query-application.ts')), true);
+  assert.equal(fs.existsSync(path.join(root, 'src/modules/workspace/application/workspace-command-application.ts')), true);
+  assert.equal(fs.existsSync(path.join(root, 'src/modules/workspace/application/project-query-application.ts')), false);
+  assert.equal(fs.existsSync(path.join(root, 'src/modules/workspace/application/project-command-application.ts')), false);
+  assert.equal(fs.existsSync(path.join(root, 'src/modules/workspace/application/service-query-application.ts')), false);
+  assert.equal(fs.existsSync(path.join(root, 'src/modules/workspace/application/service-command-application.ts')), false);
+  assert.equal(fs.existsSync(path.join(root, 'src/modules/workspace/application/source-creation-support.ts')), false);
+  assert.equal(fs.existsSync(path.join(root, 'src/modules/workspace/application/project-creation-application.ts')), false);
+  assert.equal(fs.existsSync(path.join(root, 'src/modules/workspace/application/service-creation-application.ts')), false);
+  assert.equal(fs.existsSync(path.join(root, 'src/modules/workspace/application/source-creation-policy.ts')), false);
   assert.doesNotMatch(moduleSource, /Object\\.entries\\(privateComposition\\)/);
   assert.match(moduleSource, /projectRepository/);
   assert.match(moduleSource, /serviceRepository/);
-  const sourceGit = read('src/workspace/infrastructure/workspace-source-git.ts');
+  const sourceGit = read('src/modules/workspace/infrastructure/workspace-source-git.ts');
   assert.match(sourceGit, /function gitOutput/);
   assert.match(sourceGit, /function inspectAttachedGitRoot/);
 });
@@ -340,8 +357,8 @@ test('System Installation module owns installation identity, update and npm Laun
   assert.equal(typeof application.buildInstallationInventory, 'function');
 
   const cliHost: any = read('src/bootstrap/cli/registry.ts');
-  assert.match(cliHost, /from '..\/..\/system\/installation\/module\.ts'/);
-  assert.doesNotMatch(cliHost, /system\/installation\/(?:application|infrastructure|interfaces)/);
+  assert.match(cliHost, /from '..\/..\/modules\/installation\/module\.ts'/);
+  assert.doesNotMatch(cliHost, /modules\/installation\/(?:application|infrastructure|interfaces)/);
   for (const relative of [
     'src/application/cli-update.mjs',
     'src/application/npm-installation-enrollment.mjs',
@@ -377,7 +394,7 @@ test('Task Review 旧全局技术层路径已经退出', () => {
     'src/domain/task-review/task-review.mjs',
     'src/application/task-review/task-review-application.ts',
     'src/interfaces/cli/task-review.ts',
-    'src/task/persistence/review/task-review-repository.ts',
+    'src/modules/task/persistence/review/task-review-repository.ts',
   ]) assert.equal(fs.existsSync(path.join(root, relative)), false, relative);
 });
 
@@ -395,14 +412,14 @@ test('Task Retrospective 旧全局技术层路径已经退出', () => {
     'src/domain/task-retrospective/task-retrospective.mjs',
     'src/application/task-retrospective/task-retrospective-application.mjs',
     'src/application/task-retrospective-prompt.mjs',
-    'src/task/persistence/retrospective/task-retrospective-repository.ts',
+    'src/modules/task/persistence/retrospective/task-retrospective-repository.ts',
     'src/interfaces/internal/task-retrospective-driver.mjs',
     'src/interfaces/internal/task-retrospective-driver-runner.mjs',
-    'src/task/application/task-retrospective-application.mjs',
-    'src/task/domain/task-retrospective.mjs',
-    'src/task/interfaces/http/task-retrospective-http.mjs',
-    'src/task/interfaces/internal/task-retrospective-driver.mjs',
-    'src/task/persistence/task-retrospective-repository.ts',
+    'src/modules/task/application/task-retrospective-application.mjs',
+    'src/modules/task/domain/task-retrospective.mjs',
+    'src/modules/task/interfaces/http/task-retrospective-http.mjs',
+    'src/modules/task/interfaces/internal/task-retrospective-driver.mjs',
+    'src/modules/task/persistence/task-retrospective-repository.ts',
   ]) assert.equal(fs.existsSync(path.join(root, relative)), false, relative);
 });
 
@@ -416,10 +433,10 @@ test('Task 生命周期核心只保留模块内扁平技术层', () => {
     'src/application/task-overview/task-overview-application.ts',
     'src/application/task-verification/task-verification-application.mjs',
     'src/interfaces/cli/task-environment.mjs',
-    'src/task/persistence/index.mjs',
+    'src/modules/task/persistence/index.mjs',
   ]) assert.equal(fs.existsSync(path.join(root, relative)), false, relative);
 
-  assert.equal(fs.existsSync(path.join(root, 'src/task/interfaces/http/task-lifecycle-core.ts')), true);
+  assert.equal(fs.existsSync(path.join(root, 'src/modules/task/interfaces/http/task-lifecycle-core.ts')), true);
 
   const host: any = read('src/web/http/server.ts');
   assert.doesNotMatch(host, /recordParentPlan|reconcileParentPlan|readTaskEnvironmentCurrent|taskDevelopmentMatch|taskVerificationMatch/);

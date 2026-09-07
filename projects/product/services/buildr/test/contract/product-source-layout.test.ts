@@ -30,12 +30,7 @@ const canonicalServiceEntries: any[] = [
   'test',
   'tools',
 ];
-const deferredPackageFiles: any[] = [
-  'launchers/build.ts',
-  'launchers/manage.mjs',
-  'launchers/manage.ts',
-  'targets/runtime/skills/buildr/SKILL.md',
-];
+const deferredPackageFiles: any[] = [];
 const canonicalBridge: any = '#!/bin/sh\nset -eu\nproject_root=$(CDPATH= cd "${0%/*}" && pwd)\nexec "$project_root/services/buildr/tools/development/run-development-cli" "$@"\n';
 
 test('Product 治理根与 Buildr Service 实现根满足最终结构契约', () => {
@@ -102,7 +97,7 @@ test('结构 verifier 拒绝重新跟踪可重建生成物', () => {
   const trackedFiles: any[] = [
     'projects/product/services/buildr/web-dist/index.html',
     'projects/product/services/buildr/package/targets/test-context/index.js',
-    'projects/product/services/buildr/src/task/application/generated/task-dto.ts',
+    'projects/product/services/buildr/src/modules/task/application/generated/task-dto.ts',
     'projects/product/services/buildr-web/src/features/task/api/generated/task-dto.ts',
   ];
   assert.deepEqual(validateProductSourceLayout({

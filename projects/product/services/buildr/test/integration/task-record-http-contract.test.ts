@@ -3,15 +3,15 @@ import path from 'node:path';
 import process from 'node:process';
 import test, { after } from 'node:test';
 
-import { createRuntime } from '../../src/bootstrap/runtime.ts';
+import { createRuntime } from '../helpers/runtime-harness.ts';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
-import { handleTaskHttpRequest } from '../../src/task/interfaces/http/task-http.ts';
+import { handleTaskHttpRequest } from '../../src/modules/task/interfaces/http/task-http.ts';
 import {
   inspectTaskHttpContractCoverage,
   TASK_HTTP_OPERATIONS,
   TASK_HTTP_VALIDATORS,
-} from '../../src/task/interfaces/http/task-http-schema.ts';
-import { checkTaskRecordHttpDto } from '../../tools/contracts/task-dto.ts';
+} from '../../src/modules/task/interfaces/http/task-http-schema.ts';
+import { checkTaskRecordHttpDto } from '../../tools/codegen/contracts/task-dto.ts';
 import { cleanupLocalTaskLifecycleSystemContext } from '../helpers/task-lifecycle-system-context.ts';
 import { taskRecordFixture } from '../helpers/task-record-system-fixture.ts';
 

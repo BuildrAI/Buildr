@@ -6,13 +6,13 @@ import path from 'node:path';
 import test from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
 
-import { createRuntime } from '../../src/bootstrap/runtime.ts';
-import { createWorkspaceManifestRepository } from '../../src/workspace/persistence/workspace-manifest-repository.ts';
-import { createWorkspaceRegistryRepository, WORKSPACE_REGISTRY_SCHEMA } from '../../src/workspace/persistence/workspace-registry-repository.ts';
-import { registerWorkspaceManagementFence } from '../../src/workspace/infrastructure/workspace-management-fence.ts';
-import { registerWorkspaceQueryApplication } from '../../src/workspace/application/workspace-query-application.ts';
-import { registerWorkspaceCommandApplication } from '../../src/workspace/application/workspace-command-application.ts';
-import { oppositeWebProfile, resolveWebProfile } from '../../src/system/installation/contracts/web-profile.ts';
+import { createRuntime } from '../helpers/runtime-harness.ts';
+import { createWorkspaceManifestRepository } from '../../src/modules/workspace/persistence/workspace-manifest-repository.ts';
+import { createWorkspaceRegistryRepository, WORKSPACE_REGISTRY_SCHEMA } from '../../src/modules/workspace/persistence/workspace-registry-repository.ts';
+import { registerWorkspaceManagementFence } from '../../src/modules/workspace/infrastructure/workspace-management-fence.ts';
+import { registerWorkspaceQueryApplication } from '../../src/modules/workspace/application/workspace-query-application.ts';
+import { registerWorkspaceCommandApplication } from '../../src/modules/workspace/application/workspace-command-application.ts';
+import { oppositeWebProfile, resolveWebProfile } from '../../src/modules/installation/contracts/web-profile.ts';
 
 const RELEASED: any = { channel: 'npm', runtime: { role: 'host' } };
 const DEVELOPMENT: any = { channel: 'development', runtime: { role: 'development' } };

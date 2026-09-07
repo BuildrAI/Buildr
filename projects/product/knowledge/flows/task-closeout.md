@@ -47,9 +47,9 @@ flowchart TB
 ## 实现入口
 
 - 方法：`services/buildr/resources/workspace/skills/buildr/task-finish/SKILL.md`
-- 任务结果：`services/buildr/src/task/application/task-record-application.ts`
-- Worktree资源安全：`services/buildr/src/task/infrastructure/git-worktree-provider.ts`
-- 父任务协调：`services/buildr/src/task/application/parent-coordination-application.ts`
+- 任务结果：`services/buildr/src/modules/task/application/task-command-application.ts`
+- Worktree资源安全：`services/buildr/src/modules/task/infrastructure/git-worktree-provider.ts`
+- 父任务协调：`services/buildr/src/modules/task/application/parent-coordination-application.ts`
 - 发布关联：`services/buildr/tools/release/release-task-evidence-correlation.ts`
 
 首次实践及统计口径保留在设计技能的历史案例中；它不代表现行执行入口。

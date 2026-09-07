@@ -6,10 +6,10 @@ import test from 'node:test';
 import YAML from 'yaml';
 import crypto from 'node:crypto';
 
-import { getRuntimeAdapter, SUPPORTED_AGENT_IDS } from '../../src/agent-assets/infrastructure/runtime/adapter-contract.ts';
-import { assembleRuntimeProjection } from '../../src/agent-assets/infrastructure/runtime/projection.ts';
-import { buildSkillContent, buildSkillRenderPlan, hasManagedSkillMarker, resolveRenderSkills } from '../../src/agent-assets/infrastructure/runtime/skills/render-plan.ts';
-import { parseSkillProjectionReceipt } from '../../src/agent-assets/infrastructure/runtime/skills/projection-files.ts';
+import { getRuntimeAdapter, SUPPORTED_AGENT_IDS } from '../../src/modules/agent-assets/infrastructure/runtime/adapter-contract.ts';
+import { assembleRuntimeProjection } from '../../src/modules/agent-assets/infrastructure/runtime/projection.ts';
+import { buildSkillContent, buildSkillRenderPlan, hasManagedSkillMarker, resolveRenderSkills } from '../../src/modules/agent-assets/infrastructure/runtime/skills/render-plan.ts';
+import { parseSkillProjectionReceipt } from '../../src/modules/agent-assets/infrastructure/runtime/skills/projection-files.ts';
 
 const sections: any[] = ['Purpose', 'Consumer Obligations', 'Minimum Guarantees', 'Effects and Authorization', 'Result Evidence', 'Decision Points', 'Allowed Variations'];
 

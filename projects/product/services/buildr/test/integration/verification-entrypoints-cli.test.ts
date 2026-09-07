@@ -6,7 +6,7 @@ import process from 'node:process';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { PACKAGE_VERIFIERS } from '../../src/agent-assets/application/package-maintenance/verification-registry.ts';
+import { PACKAGE_VERIFIERS } from '../../src/modules/agent-assets/application/package-maintenance/verification-registry.ts';
 
 const productRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const projectRoot: any = path.resolve(productRoot, '../..');

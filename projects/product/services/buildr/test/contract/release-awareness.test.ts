@@ -12,7 +12,7 @@ function read(relative: any): any  {
 }
 
 test('产品入口 Buildr Skill 与 bootstrap guide 让 Agent 解释 GA/RC 并等待用户选择', () => {
-  const skill: any = read('package/targets/runtime/skills/buildr/SKILL.md');
+  const skill: any = read('resources/runtime/skills/buildr/SKILL.md');
   const guide: any = read('docs/bootstrap-guide.md');
   for (const content of [skill, guide]) {
     assert.match(content, /buildr update check --json/);
@@ -25,16 +25,20 @@ test('产品入口 Buildr Skill 与 bootstrap guide 让 Agent 解释 GA/RC 并�
 });
 
 test('CLI 和 Buildr Web 只暴露明确轨道选择，不提供网页 npm 更新写入口', () => {
-  const installationCli: any = read('src/system/installation/interfaces/cli/installation.ts');
-  const module: any = read('src/system/installation/module.ts');
-  const contribution: any = read('src/system/installation/interfaces/http/release-awareness-http.ts');
+  const installationCli: any = read('src/modules/installation/interfaces/cli/installation.ts');
+  const module: any = read('src/modules/installation/module.ts');
+  const contribution: any = read('src/modules/installation/interfaces/http/release-awareness-http.ts');
   const appLayout: any = fs.readFileSync(path.join(webRoot, 'src/app/AppLayout.tsx'), 'utf8');
+  const banner: any = fs.readFileSync(path.join(webRoot, 'src/features/installation/components/ReleaseAwarenessBanner.tsx'), 'utf8');
+  const api: any = fs.readFileSync(path.join(webRoot, 'src/features/installation/api/release-awareness-api.ts'), 'utf8');
   assert.match(installationCli, /Usage: buildr update \[--track <stable\|candidate>\] \[--json\]/);
   assert.match(module, /createReleaseAwarenessHttpContribution\(application\)/);
   assert.match(contribution, /request\.method !== 'GET' \|\| pathname !== '\/api\/v1\/release-awareness'/);
   assert.doesNotMatch(contribution, /request\.method === 'POST'/);
-  assert.match(appLayout, /data-release-track=\{track\.track\}/);
-  assert.match(appLayout, /复制命令/);
-  assert.match(appLayout, /交给 Agent/);
-  assert.match(appLayout, /不要修改 Workspace 数据或 Agent runtime/);
+  assert.match(appLayout, /<ReleaseAwarenessBanner openAgentAction=\{openAgentAction\}/);
+  assert.match(api, /\/api\/v1\/release-awareness/);
+  assert.match(banner, /data-release-track=\{track\.track\}/);
+  assert.match(banner, /复制命令/);
+  assert.match(banner, /交给 Agent/);
+  assert.match(banner, /不要修改 Workspace 数据或 Agent runtime/);
 });

@@ -13,7 +13,7 @@ type WebCliContribution = {
   run(runtime: WebCliRuntime, context: WebCliContext): unknown;
 };
 
-export function createWebCliContributions(): readonly WebCliContribution[] {
+export function createWebCliContributions(application: WebCliRuntime | null = null): readonly WebCliContribution[] {
   const contributions: WebCliContribution[] = [
   {
     key: "web preview start",
@@ -26,7 +26,7 @@ export function createWebCliContributions(): readonly WebCliContribution[] {
       "不提供 --task 时保留独立 checkout 预览。实例名不能接管其他健康预览，也不会替换默认 Buildr Web Runtime。"
     ],
     match: ({ domain, action, runtimeId }) => domain === 'web' && action === 'preview' && runtimeId === 'start',
-    run: (r, c) => r.manageBuildrWebPreview('start', c.argv.slice(5)),
+    run: (r, c) => (application || r).manageBuildrWebPreview('start', c.argv.slice(5)),
   },
   {
     key: "web preview list",
@@ -38,7 +38,7 @@ export function createWebCliContributions(): readonly WebCliContribution[] {
       "列出 Buildr 管理的开发预览及其 owner、URL、PID 与健康状态；不会扫描或管理其他系统进程。"
     ],
     match: ({ domain, action, runtimeId }) => domain === 'web' && action === 'preview' && runtimeId === 'list',
-    run: (r, c) => r.manageBuildrWebPreview('list', c.argv.slice(5)),
+    run: (r, c) => (application || r).manageBuildrWebPreview('list', c.argv.slice(5)),
   },
   {
     key: "web preview stop",
@@ -50,7 +50,7 @@ export function createWebCliContributions(): readonly WebCliContribution[] {
       "Task preview 必须同时提供 canonical Workspace 与 Task ID，并与 Worktree evidence、preview owner 和进程 secret 完全匹配。独立 preview 保持实例级停止。"
     ],
     match: ({ domain, action, runtimeId }) => domain === 'web' && action === 'preview' && runtimeId === 'stop',
-    run: (r, c) => r.manageBuildrWebPreview('stop', c.argv.slice(5)),
+    run: (r, c) => (application || r).manageBuildrWebPreview('stop', c.argv.slice(5)),
   },
   {
     key: "web",
@@ -70,7 +70,7 @@ export function createWebCliContributions(): readonly WebCliContribution[] {
       "任务验证工作区的并行验收可使用 web preview；每个 preview 具有独立状态和 loopback URL，不会改变默认 Buildr Web 或 Buildr Web Dev.app。"
     ],
     match: ({ domain }) => domain === 'web',
-    run: (r, c) => r.startBuildrWeb(c.argv.slice(3)),
+    run: (r, c) => (application || r).startBuildrWeb(c.argv.slice(3)),
   },
   ];
   return Object.freeze(contributions.map((contribution) => Object.freeze(contribution)));

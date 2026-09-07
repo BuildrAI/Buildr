@@ -4,7 +4,7 @@ import path from 'node:path';
 import test from 'node:test';
 import YAML from 'yaml';
 
-import { parseCapabilityContract } from '../../src/agent-assets/infrastructure/runtime/skills/manifests.ts';
+import { parseCapabilityContract } from '../../src/modules/agent-assets/persistence/skill-manifest.ts';
 
 const read: any = (relative: any) => fs.readFileSync(path.resolve(relative), 'utf8');
 
@@ -64,5 +64,5 @@ test('Task Review Application 是唯一 repository writer caller', () => {
     }
   };
   visit(sourceRoot);
-  assert.deepEqual(callers, ['task/application/task-review-application.ts']);
+  assert.deepEqual(callers, ['modules/task/application/task-review-application.ts']);
 });

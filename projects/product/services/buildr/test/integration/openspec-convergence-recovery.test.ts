@@ -3,13 +3,13 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { continueConvergenceRecoveryReceipt, createConvergenceRecoveryReceipt, inspectConvergenceRecovery } from '../../src/task/openspec/application/convergence-recovery.ts';
+import { continueConvergenceRecoveryReceipt, createConvergenceRecoveryReceipt, inspectConvergenceRecovery } from '../../src/modules/openspec/application/convergence-recovery.ts';
 import {
   applyDeterministicSyncPlan,
   DETERMINISTIC_SYNC_PLAN_SCHEMA,
   deterministicSyncContentDigest,
   deterministicSyncPlanIdentity,
-} from '../../src/task/openspec/application/deterministic-sync.ts';
+} from '../../src/modules/openspec/application/deterministic-sync.ts';
 
 function fixture(t: any): any  {
   const projectRoot: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-convergence-recovery-'));

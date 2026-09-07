@@ -3,8 +3,9 @@ import path from 'node:path';
 import process from 'node:process';
 import test from 'node:test';
 
-import { createRuntime } from '../../src/bootstrap/runtime.ts';
+import { createRuntime, runtimeContributions } from '../helpers/runtime-harness.ts';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
+import { createReleaseAwarenessHttpContribution } from '../../src/modules/installation/interfaces/http/release-awareness-http.ts';
 import { registerWorkspaceSqlite } from '../../src/infrastructure/sqlite/workspace-sqlite.ts';
 import { taskRecordFixture as fixture } from '../helpers/task-record-system-fixture.ts';
 
@@ -129,7 +130,7 @@ test('Buildr Web Runtime 提供全局只读 Release Awareness 且没有 npm 更�
   process.env.BUILDR_APP_DATA_DIR = path.join(base, 'app-data');
   t.after(() => delete process.env.BUILDR_APP_DATA_DIR);
   const runtime: any = createRuntime();
-  runtime.releaseAwareness = () => ({
+  const releaseAwareness = () => ({
     schemaVersion: 'buildr.release-awareness/v1',
     current: { version: '0.1.0-rc.12' },
     selectedTrack: 'candidate',
@@ -141,7 +142,9 @@ test('Buildr Web Runtime 提供全局只读 Release Awareness 且没有 npm 更�
     freshness: { status: 'fresh', source: 'fixture', checkedAt: '2026-08-15T00:00:00.000Z' },
     blockingReasons: [], nextActions: [],
   });
-  const instance: any = createLocalWorkspaceServer(runtime, { targetRoot: root });
+  const httpContributions = runtimeContributions(runtime, 'http').filter((item: any) => item.id !== 'system-installation.release-awareness.http');
+  httpContributions.push(createReleaseAwarenessHttpContribution({ releaseAwareness }));
+  const instance: any = createLocalWorkspaceServer(runtime, { targetRoot: root, httpContributions });
   t.after(() => new Promise((resolve: any) => instance.server.close(resolve)));
   const { url }: any = await instance.ready;
 

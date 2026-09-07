@@ -10,7 +10,7 @@ import {
   inspectPackageMetadata,
   inspectPackageVersionConsistency,
   inspectTarballFiles,
-} from '../../test/verification/release/open-source-candidate.ts';
+} from '../verification/release/open-source-candidate.ts';
 import { resolveReleaseContract } from '../../tools/release/release-contract.ts';
 import { extractReleaseNotes } from '../../tools/release/release-notes.ts';
 import { releasePublicationRepositoryRoot } from '../../tools/release/release-publication.ts';
@@ -23,7 +23,7 @@ import {
   registryVersionState,
   waitForRegistryRelease,
 } from '../../tools/release/registry-version-state.ts';
-import { cleanupReleaseSmokeRoot, resolveReleaseSmokeSource } from '../../test/verification/release/release-smoke.ts';
+import { cleanupReleaseSmokeRoot, resolveReleaseSmokeSource } from '../verification/release/release-smoke.ts';
 
 const serviceRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const workspaceRoot: any = path.resolve(serviceRoot, '../../../..');

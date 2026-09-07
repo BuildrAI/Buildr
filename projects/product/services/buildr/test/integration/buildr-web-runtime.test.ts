@@ -5,11 +5,11 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { createRuntime } from '../../src/bootstrap/runtime.ts';
+import { createRuntime } from '../helpers/runtime-harness.ts';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
-import { ensureRegisteredTarget } from '../../src/workspace/module.ts';
+import { ensureRegisteredTarget } from '../../src/modules/workspace/module.ts';
 import { registerWebInstanceLifecycle } from '../../src/web/application/instance-lifecycle.ts';
-import { assertCurrentNpmLauncherBinding, readCurrentProductIdentity } from '../../src/system/installation/module.ts';
+import { assertCurrentNpmLauncherBinding, readCurrentProductIdentity } from '../../src/modules/installation/module.ts';
 import {
   acquireBuildrWebStartLock,
   releaseBuildrWebStartLock,
@@ -22,7 +22,7 @@ import {
   writeBuildrWebInstance,
 } from '../../src/web/infrastructure/instance-runtime.ts';
 import { pickWorkspaceDirectory } from '../../src/web/infrastructure/directory-picker.ts';
-import { resolveWebProfile } from '../../src/system/installation/contracts/web-profile.ts';
+import { resolveWebProfile } from '../../src/modules/installation/contracts/web-profile.ts';
 
 function opener(platform: any): any  {
   const calls: any[] = [];

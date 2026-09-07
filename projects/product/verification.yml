@@ -73,7 +73,7 @@ testing:
       - services/buildr-web/vite.config.ts
       - services/buildr/src/web/**
       - services/buildr/tools/build/**
-      - services/buildr/tools/contracts/**
+      - services/buildr/tools/codegen/contracts/**
       - services/buildr/tools/testing/**
       - services/buildr/test/verification/web-dist.ts
       - services/buildr/test/verification/browser-selector-dispatcher.ts

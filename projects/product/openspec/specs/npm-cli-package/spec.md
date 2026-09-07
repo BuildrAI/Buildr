@@ -6,18 +6,18 @@
 ## Requirements
 
 ### Requirement: npm tarball exposes buildr command
-Buildr MUST 在 Product root 下提供 npm package metadata，使维护者能够创建以 `bin/buildr.mjs` 暴露 `buildr` executable command 的本地 npm tarball。
+Buildr MUST在 Buildr Service root 提供 npm package metadata，使维护者能够创建以 `bin/buildr.mjs` 暴露 `buildr` executable command 的本地 npm tarball。
 
 #### Scenario: Build local tarball
-- **WHEN** a maintainer runs `npm pack` from the Buildr product root
+- **WHEN** a maintainer runs `npm pack` from the Buildr Service root
 - **THEN** npm MUST create a tarball for the Buildr CLI package
 - **AND** the tarball MUST declare `buildr` bin as `bin/buildr.mjs`
-- **AND** the bin MUST delegate to the packaged `src/interfaces/cli` implementation
+- **AND** the bin MUST delegate to the packaged `src/bootstrap/cli/main.ts` implementation
 
 #### Scenario: Install tarball locally
 - **WHEN** a user installs the tarball with `npm install -g ./<tarball>` or an equivalent temporary `--prefix`
 - **THEN** the installed environment MUST provide an executable `buildr` command
-- **AND** the executable MUST NOT require `tools/`, `test/` or `scripts/`
+- **AND** the executable MUST NOT require `tools/`, `test/` or active Change artifacts
 
 ### Requirement: installed CLI uses package assets
 已安装的 `buildr` command MUST 使用 npm package 中包含的 `resources/`、`web-dist/` 和明确发布的 runtime assets，而不是要求访问 development checkout。

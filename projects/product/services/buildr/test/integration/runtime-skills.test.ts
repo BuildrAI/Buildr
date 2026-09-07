@@ -8,26 +8,26 @@ import test from 'node:test';
 import {
   parseInstallClaudeCodeBuildrSkillArgs,
   parseRenderClaudeCodeArgs,
-} from '../../src/agent-assets/infrastructure/runtime/skills/arguments.ts';
-import { parseSkillsManifest } from '../../src/agent-assets/infrastructure/runtime/skills/manifests.ts';
+} from '../../src/modules/agent-assets/infrastructure/runtime/skills/arguments.ts';
+import { parseSkillsManifest } from '../../src/modules/agent-assets/persistence/skill-manifest.ts';
 import {
   normalizeRelativePath,
   resolveSkillScope,
-} from '../../src/agent-assets/infrastructure/runtime/skills/primitives.ts';
+} from '../../src/modules/agent-assets/infrastructure/runtime/skills/primitives.ts';
 import {
   applySkillRenderPlan,
   buildAgentInstallPlanContent,
   buildSkillRenderPlan,
   buildRuntimeSkillTarget,
   hasManagedSkillMarker,
-} from '../../src/agent-assets/infrastructure/runtime/skills/render-plan.ts';
-import { REQUIRED_RENDER_CAPABILITIES, RUNTIME_ADAPTERS, SUPPORTED_AGENT_IDS, createRuntimePlan, getRuntimeAdapter, reconcileRuntimePlan, skillDestinationRoot } from '../../src/agent-assets/infrastructure/runtime/adapter-contract.ts';
-import { buildEffectiveSkillInventory, classifySkillCandidate } from '../../src/agent-assets/infrastructure/runtime/skills/inventory.ts';
+} from '../../src/modules/agent-assets/infrastructure/runtime/skills/render-plan.ts';
+import { REQUIRED_RENDER_CAPABILITIES, RUNTIME_ADAPTERS, SUPPORTED_AGENT_IDS, createRuntimePlan, getRuntimeAdapter, reconcileRuntimePlan, skillDestinationRoot } from '../../src/modules/agent-assets/infrastructure/runtime/adapter-contract.ts';
+import { buildEffectiveSkillInventory, classifySkillCandidate } from '../../src/modules/agent-assets/infrastructure/runtime/skills/inventory.ts';
 import {
   legacySkillProjectionOwnershipReceiptTarget,
   runtimeWriteModeMatches,
   skillProjectionOwnershipReceiptTarget,
-} from '../../src/agent-assets/infrastructure/runtime/skills/projection-files.ts';
+} from '../../src/modules/agent-assets/infrastructure/runtime/skills/projection-files.ts';
 
 test('Windows runtime 文件一致性忽略 POSIX executable bit', (t: any) => {
   const root: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-runtime-mode-'));

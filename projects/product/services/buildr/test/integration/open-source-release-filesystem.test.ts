@@ -7,20 +7,20 @@ import { fileURLToPath } from 'node:url';
 
 import { buildApplicationPayload } from '../../tools/release/application-payload.ts';
 import { createReleaseArtifact, readReleaseArtifact } from '../../tools/release/release-artifact.ts';
-import { inspectCandidatePaths } from '../../test/verification/release/open-source-candidate.ts';
+import { inspectCandidatePaths } from '../verification/release/open-source-candidate.ts';
 import {
   CANDIDATE_PACK_METADATA_ENV,
   CANDIDATE_RELEASE_MANIFEST_ENV,
   CANDIDATE_TARBALL_ENV,
   readSharedCandidatePackage,
-} from '../../test/verification/release/candidate-package.ts';
+} from '../verification/release/candidate-package.ts';
 import {
   preserveLauncherFailureEvidence,
   RELEASE_LAUNCHER_READINESS_TIMEOUT_MS,
   resolveReleaseSmokeSource,
   waitForWebReadiness,
-} from '../../test/verification/release/release-smoke.ts';
-import { createVerificationExecutor } from '../../test/verification/executor.ts';
+} from '../verification/release/release-smoke.ts';
+import { createVerificationExecutor } from '../verification/executor.ts';
 import { createGeneratedReleaseInputs } from '../helpers/generated-release-inputs.ts';
 
 const serviceRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');

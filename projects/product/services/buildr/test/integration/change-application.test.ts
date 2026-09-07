@@ -4,8 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { registerChangeApplication } from '../../src/task/change/application/change-application.ts';
-import { inspectChangeChecklist } from '../../src/task/openspec/application/change-checklist.ts';
+import { registerChangeApplication } from '../../src/modules/task/change/application/change-application.ts';
+import { inspectChangeChecklist } from '../../src/modules/openspec/application/change-checklist.ts';
 
 type Project = { id: string; code: string; name: string; source: { type: string; path: string } };
 type ChangeSummary = {
@@ -23,6 +23,7 @@ type Prototype = { id: string; title: string; path: string; lifecycle: string; p
 type ChangeRuntime = {
   listProjects(): { projects: Project[] };
   projectDetail(root: string, code: string): { project: Project };
+  resolveSourceRoot(root: string, source: Project['source']): string;
   readTask(root: string, taskId: string): { record: { taskId: string } };
   inspectTask(root: string, taskId: string): { record: { taskId: string; changes: Array<{ project: string; change: string }> } };
   inspectGitWorktrees(input: { workspaceRoot: string; taskId: string }): {
@@ -54,6 +55,7 @@ function fixture(): { root: string; runtime: ChangeRuntime; projectRoot: string;
       if (code !== project.code) throw Object.assign(new Error(`Project 不存在：${code}。`), { code: 'project_not_found', status: 404 });
       return { project };
     },
+    resolveSourceRoot: (workspaceRoot, source) => path.resolve(workspaceRoot, source.path),
     readTask: (_target, taskId) => ({ record: { taskId } }),
     inspectTask: (_target, taskId) => ({ record: { taskId, changes: [] } }),
     inspectGitWorktrees: () => ({ status: 'blocked', repositories: [] }),
@@ -65,7 +67,7 @@ function fixture(): { root: string; runtime: ChangeRuntime; projectRoot: string;
   };
   registerChangeApplication(runtime, {
     openSpecQuery: { inspectChangeChecklist },
-    projectQuery: { listProjects: runtime.listProjects, projectDetail: runtime.projectDetail },
+    projectQuery: { listProjects: runtime.listProjects, projectDetail: runtime.projectDetail, resolveSourceRoot: runtime.resolveSourceRoot },
     worktreeQuery: { inspectGitWorktrees: (input: { workspaceRoot: string; taskId: string }) => runtime.inspectGitWorktrees(input) },
   });
   return { root, runtime, projectRoot: path.join(root, project.source.path), project };

@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test, { after } from 'node:test';
 
-import { createRuntime } from '../../src/bootstrap/runtime.ts';
+import { createRuntime } from '../helpers/runtime-harness.ts';
 import { cleanupLocalTaskLifecycleSystemContext } from '../helpers/task-lifecycle-system-context.ts';
 import {
   runBuildr as run,

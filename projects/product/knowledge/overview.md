@@ -27,6 +27,7 @@ Buildr 是 Agent-first 的工作基础设施：治理适合长期复用的工作
 - [术语表](glossary.md)
 - [架构入口](architecture/index.md)
 - [Archify 技术图](archify/index.md)
+- [全项目代码地图](code-map/README.md)
 - [产品架构](architecture/product.md)
 - [技术架构](architecture/technical.md)
 - [项目每日演进](flows/project-daily-progress.md)

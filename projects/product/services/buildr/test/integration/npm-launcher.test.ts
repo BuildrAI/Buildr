@@ -9,14 +9,14 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { createRuntime } from '../../src/bootstrap/runtime.ts';
+import { createRuntime } from '../helpers/runtime-harness.ts';
 import { buildApplicationPayload } from '../../tools/release/application-payload.ts';
 import { createNpmPackStaging } from '../../tools/release/release-artifact.ts';
 import { createGeneratedReleaseInputs } from '../helpers/generated-release-inputs.ts';
 import {
   createProductUpdateAuthority,
   enrollProductInstallation,
-} from '../../src/system/installation/infrastructure/installation-registry.ts';
+} from '../../src/modules/installation/infrastructure/installation-registry.ts';
 import {
   installNpmLauncher,
   npmLauncherStatus,
@@ -24,15 +24,15 @@ import {
   refreshInstalledNpmLauncher,
   repairNpmLauncher,
   uninstallNpmLauncher,
-} from '../../src/system/installation/infrastructure/npm-launcher.ts';
+} from '../../src/modules/installation/infrastructure/npm-launcher.ts';
 import { registerWebInstanceLifecycle } from '../../src/web/application/instance-lifecycle.ts';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
-import { ensureRegisteredTarget } from '../../src/workspace/module.ts';
+import { ensureRegisteredTarget } from '../../src/modules/workspace/module.ts';
 import {
   clearBuildrWebInstance,
   writeBuildrWebInstance,
 } from '../../src/web/infrastructure/instance-runtime.ts';
-import { resolveWebProfile } from '../../src/system/installation/contracts/web-profile.ts';
+import { resolveWebProfile } from '../../src/modules/installation/contracts/web-profile.ts';
 
 const SOURCE_COMMIT: any = 'd4361952d7111f131b5923fedcf4b58077719eb6';
 
@@ -458,8 +458,8 @@ test('non-Windows foreground Web clears its receipt on SIGHUP', async (t: any) =
 });
 
 test('Windows Launcher PowerShell bridge preserves shortcut and root paths containing spaces', () => {
-  const npmLauncherSource: any = fs.readFileSync(new URL('../../src/system/installation/infrastructure/npm-launcher.ts', import.meta.url), 'utf8');
-  const developmentLauncherSource: any = fs.readFileSync(new URL('../../package/launchers/manage.ts', import.meta.url), 'utf8');
+  const npmLauncherSource: any = fs.readFileSync(new URL('../../src/modules/installation/infrastructure/npm-launcher.ts', import.meta.url), 'utf8');
+  const developmentLauncherSource: any = fs.readFileSync(new URL('../../tools/build/launcher/manage.ts', import.meta.url), 'utf8');
   for (const source of [npmLauncherSource, developmentLauncherSource]) {
     assert.doesNotMatch(source, /\$args\[[01]\]/);
     assert.match(source, /\$env:BUILDR_LAUNCHER_SHORTCUT/);

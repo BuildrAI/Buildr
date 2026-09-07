@@ -10,7 +10,7 @@ import {
   readCurrentInstallationOrigin,
   validateFormalInstallationOriginPayloadBinding,
   validateInstallationOrigin,
-} from '../../src/system/installation/infrastructure/installation-origin.ts';
+} from '../../src/modules/installation/infrastructure/installation-origin.ts';
 import { currentProductInvocation, productInvocationArgs } from '../../src/infrastructure/product-invocation/index.ts';
 import { canonicalApplicationPayloadIdentity } from '../../src/infrastructure/product-resources/index.ts';
 

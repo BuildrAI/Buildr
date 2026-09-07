@@ -8,10 +8,10 @@ import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { cleanupOwnedProcessGroup, cleanupTrackedDescendants, createOwnedDescendantTracker, parseProcessLineage, runVerificationBatch, runVerificationStep } from '../../test/verification/timing/parallel-runner.ts';
-import { executePlan } from '../../test/verification/plan-runner.ts';
-import { candidateStepBudget } from '../../test/verification/timing/budgets.ts';
-import { cleanupVerificationHarnessRoot, createVerificationPhaseRecorder, parseVerificationPhaseTimings } from '../../test/verification/timing/phases.ts';
+import { cleanupOwnedProcessGroup, cleanupTrackedDescendants, createOwnedDescendantTracker, parseProcessLineage, runVerificationBatch, runVerificationStep } from '../verification/timing/parallel-runner.ts';
+import { executePlan } from '../verification/plan-runner.ts';
+import { candidateStepBudget } from '../verification/timing/budgets.ts';
+import { cleanupVerificationHarnessRoot, createVerificationPhaseRecorder, parseVerificationPhaseTimings } from '../verification/timing/phases.ts';
 import {
   collectVerificationSourceIdentity,
   cleanupVerificationTimingEvidence,
@@ -20,7 +20,7 @@ import {
   formatVerificationTimingSummary,
   validateVerificationTimingEvidence,
   writeVerificationTimingEvidence,
-} from '../../test/verification/timing/evidence.ts';
+} from '../verification/timing/evidence.ts';
 
 const productRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const reporter: any = path.join(productRoot, 'test', 'verification', 'timing', 'report.ts');

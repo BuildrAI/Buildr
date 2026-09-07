@@ -4,4 +4,4 @@ export {
   coordinatedResourcesFromLimits,
   createVerificationResourceCoordinator,
   resolveVerificationCoordinationRoot,
-} from '../../src/verification/infrastructure/resource-coordinator.ts';
+} from './support/resource-coordinator.ts';

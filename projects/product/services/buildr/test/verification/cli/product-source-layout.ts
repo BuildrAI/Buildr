@@ -40,16 +40,12 @@ const requiredServiceRootEntries: any = new Set([
 ]);
 
 const forbiddenServiceRootEntries: any = new Set(['scripts']);
-const deferredPackageFiles: any = new Set([
-  'launchers/build.ts',
-  'launchers/manage.mjs',
-  'launchers/manage.ts',
-]);
+const deferredPackageFiles: any = new Set();
 
 const generatedTrackedPatterns: any[] = [
   /^projects\/product\/services\/buildr\/web-dist\//u,
   /^projects\/product\/services\/buildr\/package\/targets\/test-context\//u,
-  /^projects\/product\/services\/buildr\/src\/(?:agent-assets|task|web|workspace)\/.*\/generated\/.*-dto\.ts$/u,
+  /^projects\/product\/services\/buildr\/src\/(?:modules\/(?:agent-assets|task|workspace)|web)\/.*\/generated\/.*-dto\.ts$/u,
   /^projects\/product\/services\/buildr-web\/src\/api\/generated\/.*-dto\.ts$/u,
   /^projects\/product\/services\/buildr-web\/src\/features\/[^/]+\/.*\/generated\/.*-dto\.ts$/u,
 ];
@@ -69,7 +65,7 @@ export function validateProductSourceLayout({ projectEntries, serviceEntries, pa
     if (forbiddenServiceRootEntries.has(entry)) findings.push(`Buildr Service root must not retain ${entry}`);
   }
   for (const file of packageFiles) {
-    if (!deferredPackageFiles.has(file) && !file.startsWith('targets/runtime/')) {
+    if (!deferredPackageFiles.has(file) && !file.startsWith('targets/test-context/')) {
       findings.push(`Buildr Service package/ contains non-deferred file: ${file}`);
     }
   }

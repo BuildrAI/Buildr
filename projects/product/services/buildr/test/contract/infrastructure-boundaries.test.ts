@@ -19,28 +19,28 @@ test('Infrastructure 只保留技术机制入口，业务 Persistence 归属 Tas
     'src/infrastructure/sqlite/task-review-repository.ts',
     'src/infrastructure/sqlite/task-verification-repository.ts',
     'src/infrastructure/filesystem/task-environment-repository.ts',
-    'src/task/persistence/parent-coordination-repository.ts',
+    'src/modules/task/persistence/parent-coordination-repository.ts',
   ]) assert.equal(fs.existsSync(path.join(root, relative)), false, relative);
   for (const relative of [
-    'src/task/persistence/task-repository.ts',
-    'src/task/persistence/task-project-repository.ts',
-    'src/task/persistence/task-service-repository.ts',
-    'src/task/persistence/task-change-repository.ts',
-    'src/task/persistence/task-retrospective-document.ts',
-    'src/task/persistence/task-review-repository.ts',
-    'src/task/persistence/task-verification-repository.ts',
+    'src/modules/task/persistence/task-repository.ts',
+    'src/modules/task/persistence/task-project-repository.ts',
+    'src/modules/task/persistence/task-service-repository.ts',
+    'src/modules/task/persistence/task-change-repository.ts',
+    'src/modules/task/persistence/task-retrospective-document.ts',
+    'src/modules/task/persistence/task-review-repository.ts',
+    'src/modules/task/persistence/task-verification-repository.ts',
   ]) assert.equal(fs.existsSync(path.join(root, relative)), true, relative);
 });
 
 test('Bootstrap 只组装 Infrastructure，Task module 私有组装各自 Persistence', () => {
   const infrastructure: any = read('src/infrastructure/index.ts');
   const bootstrap: any = read('src/bootstrap/runtime.ts');
-  const taskModule: any = read('src/task/module.ts');
+  const taskModule: any = read('src/modules/task/module.ts');
   assert.match(infrastructure, /registerWorkspaceInfrastructure/);
   assert.match(infrastructure, /registerWorkspaceSqlite/);
   assert.match(infrastructure, /registerSqliteTransaction/);
   assert.match(infrastructure, /registerInfrastructure/);
-  assert.equal(fs.existsSync(path.join(root, 'src/task/persistence/index.mjs')), false);
+  assert.equal(fs.existsSync(path.join(root, 'src/modules/task/persistence/index.mjs')), false);
   for (const registration of [
     'registerTaskVerificationRepository',
     'createTaskRepository', 'createTaskProjectRepository', 'createTaskServiceRepository', 'createTaskChangeRepository',
@@ -54,17 +54,17 @@ test('Bootstrap 只组装 Infrastructure，Task module 私有组装各自 Persis
 });
 
 test('Task Record 事务由 Application 编排且 Repository 只访问所属表', () => {
-  const command = read('src/task/application/task-command-application.ts');
-  const query = read('src/task/application/task-query-application.ts');
+  const command = read('src/modules/task/application/task-command-application.ts');
+  const query = read('src/modules/task/application/task-query-application.ts');
   assert.match(command, /runWorkspaceTransaction/);
   assert.doesNotMatch(query, /node:fs|mkdirSync|ensureTaskDirectory|function taskDirectory/);
   assert.match(query, /taskRetrospectiveDocumentRelativePath/);
   for (const owner of ['taskRepository', 'taskProjectRepository', 'taskServiceRepository', 'taskChangeRepository']) assert.match(command, new RegExp(owner));
   for (const [file, ownedTable] of [
-    ['src/task/persistence/task-repository.ts', 'tasks'],
-    ['src/task/persistence/task-project-repository.ts', 'task_projects'],
-    ['src/task/persistence/task-service-repository.ts', 'task_services'],
-    ['src/task/persistence/task-change-repository.ts', 'task_changes'],
+    ['src/modules/task/persistence/task-repository.ts', 'tasks'],
+    ['src/modules/task/persistence/task-project-repository.ts', 'task_projects'],
+    ['src/modules/task/persistence/task-service-repository.ts', 'task_services'],
+    ['src/modules/task/persistence/task-change-repository.ts', 'task_changes'],
   ]) {
     const source = read(file);
     assert.doesNotMatch(source, /BEGIN IMMEDIATE|COMMIT|ROLLBACK/);

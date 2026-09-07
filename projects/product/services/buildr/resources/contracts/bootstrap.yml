@@ -43,7 +43,7 @@ bootstrapGuideForbiddenText:
   - buildr skills add
   - buildr runtime check claude-code
 
-buildrSkillPath: package/targets/runtime/skills/buildr/SKILL.md
+buildrSkillPath: resources/runtime/skills/buildr/SKILL.md
 buildrSkillMaxLines: 175
 buildrSkillRequiredSections:
   - Buildr 是什么

@@ -1,0 +1,85 @@
+import { registerChangeApplication, type ChangeRuntime, type OpenSpecQuery, type ProjectQuery, type WorktreeQuery } from './application/change-application.ts';
+import { createChangeHttpContribution } from './interfaces/http/change-http.ts';
+import { OPENSPEC_QUERY } from '../../openspec/module.ts';
+import { WORKSPACE_QUERY } from '../../workspace/module.ts';
+import { TASK_WORKTREE_PROVIDER } from '../infrastructure/git-worktree-provider.ts';
+import { TASK_QUERY_APPLICATION } from '../module.ts';
+
+export const CHANGE_MODULE_ID = 'change';
+export const CHANGE_APPLICATION = 'change.application';
+
+const METHODS = Object.freeze([
+  'listProjectChanges', 'listChanges', 'changeDetail', 'generateChangeCreatePrompt',
+  'generateChangeActionPrompt', 'resolveTaskScopedChange', 'taskScopedChangeDetail',
+  'taskUiPrototypes', 'taskUiPrototype',
+]);
+
+type ChangeModuleRequires = Record<string, unknown>;
+type Callable = (...args: unknown[]) => unknown;
+
+function dependency(requires: ChangeModuleRequires, key: string): Record<string, unknown> {
+  const value = requires[key];
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new Error(`Change module dependency is missing: ${key}`);
+  return Object.fromEntries(Object.entries(value));
+}
+
+function openSpecDependency(requires: ChangeModuleRequires): OpenSpecQuery {
+  const value = dependency(requires, OPENSPEC_QUERY);
+  if (typeof value.inspectChangeChecklist !== 'function') throw new Error('OpenSpec Query dependency is invalid.');
+  const inspectChangeChecklist = value.inspectChangeChecklist;
+  return { inspectChangeChecklist: (root) => Reflect.apply(inspectChangeChecklist, value, [root]) };
+}
+
+function projectDependency(requires: ChangeModuleRequires): ProjectQuery {
+  const value = dependency(requires, WORKSPACE_QUERY);
+  if (typeof value.projectDetail !== 'function' || typeof value.listProjects !== 'function' || typeof value.resolveSourceRoot !== 'function') throw new Error('Project Query dependency is invalid.');
+  const projectDetail = value.projectDetail;
+  const listProjects = value.listProjects;
+  const resolveSourceRoot = value.resolveSourceRoot;
+  return {
+    projectDetail: (root, code) => Reflect.apply(projectDetail, value, [root, code]),
+    listProjects: (root) => Reflect.apply(listProjects, value, [root]),
+    resolveSourceRoot: (root, source) => Reflect.apply(resolveSourceRoot, value, [root, source]),
+  };
+}
+
+function worktreeDependency(requires: ChangeModuleRequires): WorktreeQuery {
+  const value = dependency(requires, TASK_WORKTREE_PROVIDER);
+  if (typeof value.inspectGitWorktrees !== 'function') throw new Error('Worktree Query dependency is invalid.');
+  const inspectGitWorktrees = value.inspectGitWorktrees;
+  return { inspectGitWorktrees: (input) => Reflect.apply(inspectGitWorktrees, value, [input]) };
+}
+
+function runtimeMethod(runtime: ChangeRuntime, method: string): Callable {
+  return (...args) => {
+    const value = runtime[method];
+    if (typeof value !== 'function') throw new Error(`Change runtime method is missing: ${method}`);
+    return Reflect.apply(value, runtime, args);
+  };
+}
+
+export function createChangeModule(runtime: ChangeRuntime) {
+  return Object.freeze({
+    id: CHANGE_MODULE_ID,
+    requires: Object.freeze([OPENSPEC_QUERY, WORKSPACE_QUERY, TASK_WORKTREE_PROVIDER, TASK_QUERY_APPLICATION]),
+    create(requires: ChangeModuleRequires) {
+      const composition = Object.assign(Object.create(runtime), requires[TASK_QUERY_APPLICATION]) as ChangeRuntime;
+      const registered = registerChangeApplication(composition, {
+        openSpecQuery: openSpecDependency(requires),
+        projectQuery: projectDependency(requires),
+        worktreeQuery: worktreeDependency(requires),
+      });
+      const application = Object.freeze({
+        ...Object.fromEntries(METHODS.map((method) => [method, runtimeMethod(composition, method)])),
+        inspectTask: (...args: Parameters<typeof registered.inspectTask>) => registered.inspectTask(...args),
+        taskScopedChangeDetail: (...args: Parameters<typeof registered.taskScopedChangeDetail>) => registered.taskScopedChangeDetail(...args),
+        taskUiPrototypes: (...args: Parameters<typeof registered.taskUiPrototypes>) => registered.taskUiPrototypes(...args),
+        taskUiPrototype: (...args: Parameters<typeof registered.taskUiPrototype>) => registered.taskUiPrototype(...args),
+      });
+      return Object.freeze({
+        provides: { [CHANGE_APPLICATION]: application },
+        contributions: { http: [createChangeHttpContribution(application)] },
+      });
+    },
+  });
+}

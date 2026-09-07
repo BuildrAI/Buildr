@@ -1,14 +1,16 @@
 import process from 'node:process';
-import { createRuntime, runtimeContributions } from '../runtime.ts';
+import { createRuntime, runtimeContributions, runtimeProvide } from '../runtime.ts';
 import { registerCommandHelp } from './help.ts';
 import { isVersionRequest, printVersion } from './identity.ts';
 import { printCliError } from './diagnostics.ts';
-import { createGitWorktreeCliContributions, createTaskCliContributions, createTaskReviewCliContributions } from '../../task/module.ts';
-import { createOpenSpecCliContributions } from '../../task/openspec/module.ts';
-import { createWorkspaceCliContributions } from '../../workspace/module.ts';
-import { createInstallationCliContributions, createLauncherCliContributions } from '../../system/installation/module.ts';
-import { createAgentAssetsCliContributions } from '../../agent-assets/interfaces/cli/agent-assets.ts';
+import { createGitWorktreeCliContributions, createTaskCliContributions, createTaskReviewCliContributions } from '../../modules/task/module.ts';
+import { createOpenSpecCliContributions } from '../../modules/openspec/module.ts';
+import { createWorkspaceCliContributions } from '../../modules/workspace/module.ts';
+import { createInstallationCliContributions, createLauncherCliContributions } from '../../modules/installation/module.ts';
+import { createAgentAssetsCliContributions } from '../../modules/agent-assets/interfaces/cli/agent-assets.ts';
+import { AGENT_ASSETS_RUNTIME } from '../../modules/agent-assets/module.ts';
 import { WEB_CLI_GROUPS } from '../../web/interfaces/cli/web.ts';
+import { createProjectVerificationCliContributions } from '../../modules/project-testing/module.ts';
 
 const TASK_MODULE_COMMAND_SLOT = Symbol('task-module-command-contributions');
 const WORKSPACE_INIT_COMMAND_SLOT = Symbol('workspace-init-command-contribution');
@@ -55,18 +57,6 @@ const COMMAND_ROUTES: any[] = [
   WORKSPACE_BOOTSTRAP_COMMAND_SLOT,
   AGENT_ASSETS_PACKAGE_COMMAND_SLOT,
   WORKSPACE_DAILY_PROGRESS_COMMAND_SLOT,
-  ...['inspect', 'validate', 'update'].map((operation: any) => ({
-    key: `project verification ${operation}`,
-    surface: 'agent-machine',
-    summary: operation === 'inspect' ? '读取 Project 测试地图。' : operation === 'validate' ? '校验 Agent 形成的 verification.yml 候选。' : '按已观察版本更新 Project 测试地图。',
-    help: [operation === 'inspect'
-      ? 'Usage: buildr project verification inspect <project> [--target <workspace>] [--json]'
-      : operation === 'validate'
-        ? 'Usage: buildr project verification validate <project> --file <candidate.yml> [--target <workspace>] [--json]'
-        : 'Usage: buildr project verification update <project> --file <candidate.yml> --expected-identity <identity|absent> [--target <workspace>] [--json]', '', 'Task Verification Skill 指导 Agent 从真实测试代码、构建脚本、CI 与说明形成候选；Application 只校验和维护测试地图。'],
-    match: ({ domain, action, runtimeId }: any) => domain === 'project' && action === 'verification' && runtimeId === operation,
-    run: (r: any, c: any) => r.projectVerificationCommand(operation, c.argv.slice(5)),
-  })),
   TASK_MODULE_COMMAND_SLOT,
   WORKSPACE_MUTATION_COMMAND_SLOT,
   AGENT_ASSETS_RUNTIME_COMMAND_SLOT,
@@ -197,6 +187,7 @@ export const COMMAND_REGISTRY = createCommandRegistry([
   ...createOpenSpecCliContributions(),
   ...createInstallationCliContributions(),
   ...createLauncherCliContributions(),
+  ...createProjectVerificationCliContributions(),
 ]);
 export const COMMAND_CATALOG = createCommandCatalog(COMMAND_REGISTRY);
 
@@ -215,6 +206,6 @@ export function dispatch(argv: any = process.argv): any  {
   const direct = commandRegistry.find((item: any) => !item.requiresAgent && item.match(context));
   if (direct) return direct.run(runtime, context);
   const agent = commandRegistry.find((item: any) => item.requiresAgent && item.match(context));
-  if (agent && runtime.isSupportedAgent(runtimeId)) return agent.run(runtime, context);
+  if (agent && runtimeProvide(runtime, AGENT_ASSETS_RUNTIME).isSupportedAgent(runtimeId)) return agent.run(runtime, context);
   process.exit(printCliError(rawArgs, { candidates: commandCandidates(commandRegistry) }));
 }

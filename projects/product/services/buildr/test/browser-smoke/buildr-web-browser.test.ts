@@ -10,7 +10,7 @@ import { pathToFileURL } from 'node:url';
 
 import { chromium } from 'playwright-core';
 
-import { createRuntime } from '../../src/bootstrap/runtime.ts';
+import { createRuntime } from '../helpers/runtime-harness.ts';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
 import { materializeCleanProductSource } from '../helpers/clean-product-source.ts';
 import { recordVerificationResultFromEvidence } from '../helpers/task-verification-result-fixture.ts';
@@ -345,7 +345,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
   });
 
   const controller: any = materializeCleanProductSource(PRODUCT_ROOT, path.join(base, 'retained-controller'));
-  const controllerRuntime: any = (await import(`${pathToFileURL(path.join(controller.root, 'src', 'bootstrap', 'runtime.ts')).href}?browser=${Date.now()}`)).createRuntime();
+  const controllerRuntime: any = (await import(`${pathToFileURL(path.join(controller.root, 'test', 'helpers', 'runtime-harness.ts')).href}?browser=${Date.now()}`)).createRuntime();
   controllerRuntime.currentProductInvocation = (options: any = {}) => ({
     command: process.execPath,
     argsPrefix: [options.cliPath || controller.cli],

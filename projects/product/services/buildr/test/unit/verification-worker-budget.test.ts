@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { nodeContextTestArguments, nodeTestConcurrencyArguments, parseNodeTestContextSummary, workerBudgetEnvironment } from '../../test/verification/executor.ts';
-import { VERIFICATION_WORKER_BUDGET_ENV, resolveVerificationWorkerBudget } from '../../test/verification/worker-budget.ts';
+import { nodeContextTestArguments, nodeTestConcurrencyArguments, parseNodeTestContextSummary, workerBudgetEnvironment } from '../verification/executor.ts';
+import { VERIFICATION_WORKER_BUDGET_ENV, resolveVerificationWorkerBudget } from '../verification/worker-budget.ts';
 
 test('验证内部 worker budget 使用默认值并受 suite 上限约束', () => {
   assert.equal(resolveVerificationWorkerBudget({ env: {}, fallback: 14, maximum: 25, label: 'System' }), 14);

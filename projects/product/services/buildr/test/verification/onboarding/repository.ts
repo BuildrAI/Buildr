@@ -130,7 +130,7 @@ try {
   }
   const runtime: any = JSON.parse(runDevelopment(['runtime', 'list', '--json'], { env, capture: true }));
   assert(runtime.supportedAgents.includes('codex'));
-  const launcher: any = JSON.parse(run(developmentNode, [fs.realpathSync(path.join(copiedService, 'package', 'launchers', 'manage.ts')), 'install', '--channel', 'development', '--target', launcherRoot], { cwd: checkout, env, capture: true }));
+  const launcher: any = JSON.parse(run(developmentNode, [fs.realpathSync(path.join(copiedService, 'tools', 'build', 'launcher', 'manage.ts')), 'install', '--channel', 'development', '--target', launcherRoot], { cwd: checkout, env, capture: true }));
   assert.equal(launcher.installed, true);
   assert.equal(launcher.identity.channel, 'development');
   assert.equal(fs.realpathSync(launcher.identity.sourceRoot), fs.realpathSync(copiedService));

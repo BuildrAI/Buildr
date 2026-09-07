@@ -7,8 +7,8 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { resolveVerificationBase } from '../changed-paths.ts';
-import { createConvergencePlan } from '../../../src/task/openspec/application/convergence-planner.ts';
-import { normalizeOpenSpecContractText, openSpecSection, parseOpenSpecDeltaSpec } from '../../../src/task/openspec/application/delta-parser.ts';
+import { createConvergencePlan } from '../../../src/modules/openspec/application/convergence-planner.ts';
+import { normalizeOpenSpecContractText, openSpecSection, parseOpenSpecDeltaSpec } from '../../../src/modules/openspec/application/delta-parser.ts';
 
 const productRoot: any = path.resolve(process.env.BUILDR_PROJECT_ROOT ?? path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../..'));
 const gitRoot: any = execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd: productRoot, encoding: 'utf8' }).trim();

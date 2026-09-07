@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { summarizeLcov } from '../../test/verification/unit-coverage.ts';
+import { summarizeLcov } from '../verification/unit-coverage.ts';
 
 test('unit coverage summary 只统计 src 生产模块并生成版本化指标', () => {
   const summary: any = summarizeLcov([

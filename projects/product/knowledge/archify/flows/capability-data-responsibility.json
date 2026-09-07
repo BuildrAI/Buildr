@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "Buildr 调用、数据与副作用责任",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "viewBox": [1080, 600],
+    "views": [
+      { "id": "command-path", "label": "命令调用", "focus": ["cli", "registry", "capability", "application", "state"], "note": "命令适配器解析输入，应用能力执行业务，Repository 维护唯一状态。" },
+      { "id": "http-path", "label": "网页调用", "focus": ["web", "router", "capability", "application", "state"], "note": "公共 Router 只分发模块 HTTP contribution，不保留业务特判。" },
+      { "id": "derived-path", "label": "派生结果", "focus": ["state", "projection", "consumer"], "note": "runtime 投射、生成 DTO 与展示结果都可从权威输入重建。" }
+    ]
+  },
+  "stages": [
+    { "label": "入口" },
+    { "label": "分发与装配" },
+    { "label": "业务能力" },
+    { "label": "权威状态" },
+    { "label": "派生与消费" }
+  ],
+  "nodes": [
+    { "id": "cli", "type": "frontend", "label": "CLI Adapter", "sublabel": "协议适配", "stage": 0, "row": 0, "tag": "interfaces/cli", "width": 150 },
+    { "id": "web", "type": "frontend", "label": "Buildr Web", "sublabel": "页面与功能客户端", "stage": 0, "row": 2, "tag": "React", "width": 150 },
+    { "id": "registry", "type": "backend", "label": "ModuleRegistry", "sublabel": "依赖与生命周期", "stage": 1, "row": 0, "tag": "composition", "width": 140 },
+    { "id": "router", "type": "security", "label": "HTTP Host", "sublabel": "Session 与路由分发", "stage": 1, "row": 2, "tag": "loopback", "width": 150 },
+    { "id": "capability", "type": "backend", "label": "具名能力端口", "sublabel": "查询、应用、绑定", "stage": 2, "row": 0, "tag": "frozen", "width": 150 },
+    { "id": "application", "type": "backend", "label": "Application", "sublabel": "规则、用例与事务编排", "stage": 2, "row": 2, "tag": "single owner", "width": 150 },
+    { "id": "state", "type": "database", "label": "Repository + SQLite", "sublabel": "文件与 Task 数据", "stage": 3, "row": 1, "tag": "CAS / atomic", "width": 150 },
+    { "id": "resources", "type": "database", "label": "Resource Authority", "sublabel": "Schema 与交付资源", "stage": 3, "row": 3, "tag": "resources/", "width": 150, "yOffset": -10 },
+    { "id": "projection", "type": "cloud", "label": "派生与投射", "sublabel": "可重建输出", "stage": 4, "row": 1, "tag": "rebuildable", "width": 150 },
+    { "id": "consumer", "type": "external", "label": "人、Agent 与 Candidate", "sublabel": "查看、执行与验收", "stage": 4, "row": 3, "tag": "evidence", "width": 160, "yOffset": -10 }
+  ],
+  "flows": [
+    { "id": "cliDispatch", "from": "cli", "to": "registry", "label": "结构化命令输入", "classification": "request", "variant": "emphasis", "labelDy": 53 },
+    { "id": "webDispatch", "from": "web", "to": "router", "label": "同源 HTTP 请求", "classification": "request", "variant": "emphasis", "labelDy": 53 },
+    { "id": "resolvePort", "from": "registry", "to": "capability", "label": "依赖解析与冻结端口", "classification": "composition", "variant": "emphasis", "labelDy": 53 },
+    { "id": "routeContribution", "from": "router", "to": "application", "label": "HTTP contribution", "classification": "validated input", "labelDy": 53 },
+    { "id": "invokeApplication", "from": "capability", "to": "application", "label": "具名方法调用", "classification": "in-process", "labelDy": 24 },
+    { "id": "stateMutation", "from": "application", "to": "state", "label": "原子写入、事务或只读查询", "classification": "authoritative", "variant": "emphasis" },
+    { "id": "resourceRead", "from": "application", "to": "resources", "label": "读取交付源与 Schema", "classification": "versioned source" },
+    { "id": "derivedOutput", "from": "state", "to": "projection", "label": "生成派生结果", "classification": "rebuildable", "variant": "dashed", "route": "straight", "labelDy": 76, "labelDx": -70 },
+    { "id": "resourceProjection", "from": "resources", "to": "projection", "label": "构建与投射", "classification": "rebuildable", "variant": "dashed", "fromSide": "top", "toSide": "left", "via": [[745, 436], [860, 436], [860, 271]] },
+    { "id": "deliverEvidence", "from": "projection", "to": "consumer", "label": "交付可观察证据", "classification": "observable", "variant": "emphasis", "labelDy": 28 }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "责任结论", "items": ["Interface 适配协议，Application 编排业务", "Repository 维护唯一 writer 与事务边界", "派生结果可重建，不成为第二权威"] }
+  ]
+}

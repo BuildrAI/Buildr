@@ -38,8 +38,7 @@ test('runtime resources use payload resolver and SQLite is a static Node builtin
 
 test('npm pack path consumes frozen payload and admits only Launcher icon resources', () => {
   const metadata: any = JSON.parse(read('package.json'));
-  assert.equal(metadata.files.some((entry: any) => entry === 'package/' || entry.startsWith('package/launchers')), false);
-  assert.ok(metadata.files.includes('package/targets/runtime/'));
+  assert.equal(metadata.files.some((entry: any) => entry === 'package/' || entry.startsWith('tools/build/launcher')), false);
   assert.ok(metadata.files.includes('resources/'));
   assert.ok(metadata.files.includes('web-dist/'));
   assert.equal(metadata.files.some((entry: any) => entry.startsWith('tools/') || entry.startsWith('test/')), false);

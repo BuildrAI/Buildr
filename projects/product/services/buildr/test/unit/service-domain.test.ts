@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { createService, createServiceSource } from '../../src/workspace/domain/service.ts';
+import { createService, createServiceSource } from '../../src/modules/workspace/domain/service.ts';
 
 const ID: any = 'bc098bd6-08a2-4e8b-883c-3ef5b188a86d';
 const WORKSPACE_ID: any = 'f2f40b71-2382-5906-82bd-76a7927b59f3';

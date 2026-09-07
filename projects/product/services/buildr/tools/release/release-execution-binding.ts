@@ -5,7 +5,7 @@ import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-import { createRuntime } from '../../src/bootstrap/runtime.ts';
+import { createReleaseToolRuntime } from './runtime.ts';
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.ts';
 
 export const releaseExecutionBindingSchema = 'buildr.release-execution-binding/v2';
@@ -153,7 +153,7 @@ function option(argv: string[], name: string): string {
   return argv[index + 1];
 }
 
-export function resolveReleaseExecutionBinding(input: { version: string; workspace: string; repo: string }, runtimeValue: any = createRuntime()): ReleaseExecutionBinding {
+export function resolveReleaseExecutionBinding(input: { version: string; workspace: string; repo: string }, runtimeValue: any = createReleaseToolRuntime()): ReleaseExecutionBinding {
   const workspace = fs.realpathSync(path.resolve(input.workspace));
   const taskId = `release-${input.version}`;
   const task = runtimeValue.inspectTask(workspace, taskId)?.record;
@@ -169,10 +169,10 @@ if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.
     const workspace = path.resolve(option(argv, '--workspace'));
     const repo = path.resolve(option(argv, '--repo'));
     const taskId = `release-${version}`;
-    const runtime = Object.fromEntries(Object.entries(createRuntime()));
+    const runtime = createReleaseToolRuntime();
     if (typeof runtime.inspectTask !== 'function' || typeof runtime.inspectGitWorktrees !== 'function') throw new Error('Release execution runtime ports are unavailable.');
     const taskResult = Reflect.apply(runtime.inspectTask, runtime, [workspace, taskId]);
-    const worktreeResult = Reflect.apply(runtime.inspectGitWorktrees, runtime, [{ workspaceRoot: workspace, taskId }]);
+    const worktreeResult = Reflect.apply(runtime.inspectGitWorktrees, runtime, [{ workspaceRoot: workspace, taskId }]) as WorktreeResult;
     const taskValue = record(record(taskResult, 'Task result').record, 'Task record');
     if (typeof taskValue.taskId !== 'string' || typeof taskValue.status !== 'string') throw new Error('Release Task record is invalid.');
     const task: ReleaseTask = { taskId: taskValue.taskId, status: taskValue.status };

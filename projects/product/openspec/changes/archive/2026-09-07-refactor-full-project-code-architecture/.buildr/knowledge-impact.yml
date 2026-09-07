@@ -1,0 +1,59 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: refactor-full-project-code-architecture
+operation: reconcile
+treeIdentity: git:614a8e6c1e1d0354dcfce6aa1ab4f5cbbf6a4d8d+candidate
+impacts:
+  - type: brief
+    target: openspec/changes/refactor-full-project-code-architecture/brief.md
+    reason: 正式 Change 需要人类可读范围、兼容与验收入口
+    status: aligned
+    sourceIdentities:
+      - openspec/changes/refactor-full-project-code-architecture/proposal.md
+      - openspec/changes/refactor-full-project-code-architecture/design.md
+  - type: technical-architecture
+    target: knowledge/architecture/technical.md
+    reason: Service、模块、依赖、数据与工程资产结构发生整体迁移
+    status: updated
+    sourceIdentities:
+      - projects/product/services/buildr/src/bootstrap/runtime.ts
+      - projects/product/services/buildr/src/modules
+  - type: service
+    target: knowledge/services/buildr.md
+    reason: Buildr Service 源码、模块、代码生成、资源和打包路径变化
+    status: updated
+    sourceIdentities:
+      - projects/product/services/buildr/src
+      - projects/product/services/buildr/tools
+      - projects/product/services/buildr/resources
+  - type: service
+    target: knowledge/services/buildr-web.md
+    reason: 前端剩余页面、能力客户端与测试责任归位
+    status: updated
+    sourceIdentities:
+      - projects/product/services/buildr-web/src/features
+      - projects/product/services/buildr-web/src/app
+  - type: product-architecture
+    target: knowledge/code-map/README.md
+    reason: 新增全项目四层代码地图与导航
+    status: updated
+    sourceIdentities:
+      - knowledge/code-map/system-services-assets.md
+      - knowledge/code-map/modules.md
+      - knowledge/code-map/technical-layers.md
+      - knowledge/code-map/calls-data-effects.md
+  - type: technical-architecture
+    target: knowledge/archify/index.md
+    reason: 系统全景与关键调用技术图反映最终实现
+    status: updated
+    sourceIdentities:
+      - knowledge/archify/system/buildr-system-overview.json
+      - knowledge/archify/flows/capability-data-responsibility.json
+  - type: glossary
+    target: knowledge/glossary.md
+    reason: Project Testing、Task Verification、Diagnostics 与 OpenSpec 的作用域边界已存在且与最终实现一致
+    status: aligned
+    sourceIdentities:
+      - knowledge/glossary.md
+      - projects/product/services/buildr/src/modules/project-testing/module.ts
+      - projects/product/services/buildr/src/modules/task/module.ts
+unresolvedItems: []

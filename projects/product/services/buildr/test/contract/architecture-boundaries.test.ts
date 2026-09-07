@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { createRuntime, runtimeContributions, runtimeModuleSnapshot } from '../../src/bootstrap/runtime.ts';
+import { createRuntime, runtimeContributions, runtimeModuleSnapshot } from '../helpers/runtime-harness.ts';
 
 const productRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -12,15 +12,15 @@ function lines(relative: any): any  {
 }
 
 test('保留入口保持有界且 Doctor 已归属 System', () => {
-  assert.ok(lines('src/agent-assets/infrastructure/runtime/render-claude-code.ts').length <= 100);
-  assert.ok(lines('src/system/doctor/application/diagnostics.ts').length <= 250);
-  assert.ok(lines('src/agent-assets/application/package-maintenance.ts').length <= 550);
+  assert.ok(lines('src/modules/agent-assets/infrastructure/runtime/render-claude-code.ts').length <= 100);
+  assert.ok(lines('src/modules/diagnostics/application/diagnostics.ts').length <= 250);
+  assert.ok(lines('src/modules/agent-assets/application/package-maintenance.ts').length <= 550);
 });
 
 test('package verification 使用稳定 registry 且不恢复共享 smoke runner', () => {
-  const application: any = fs.readFileSync(path.join(productRoot, 'src/agent-assets/application/package-maintenance.ts'), 'utf8');
-  const smoke: any = fs.readFileSync(path.join(productRoot, 'src/agent-assets/application/package-maintenance/smoke-checks.ts'), 'utf8');
-  const registry: any = fs.readFileSync(path.join(productRoot, 'src/agent-assets/application/package-maintenance/verification-registry.ts'), 'utf8');
+  const application: any = fs.readFileSync(path.join(productRoot, 'src/modules/agent-assets/application/package-maintenance.ts'), 'utf8');
+  const smoke: any = fs.readFileSync(path.join(productRoot, 'src/modules/agent-assets/application/package-maintenance/smoke-checks.ts'), 'utf8');
+  const registry: any = fs.readFileSync(path.join(productRoot, 'src/modules/agent-assets/application/package-maintenance/verification-registry.ts'), 'utf8');
   assert.match(application, /selectPackageVerifiers/);
   assert.equal(application.match(/validatePackageStatic\(context\)/g)?.length, 1);
   for (const runner of ['runPackageWorkspaceSmoke', 'runPackageDomainIntegration', 'runPackageRuntimeIntegration']) {
@@ -52,17 +52,17 @@ test('Product platform namespace 只允许 composition root 聚合', () => {
 
 test('Windows 平台身份、Node 脚本启动与 runtime mode 使用共享 owner', () => {
   const identityConsumers: any[] = [
-    'src/task/infrastructure/git-worktree-provider.ts',
+    'src/modules/task/infrastructure/git-worktree-provider.ts',
     'src/web/application/preview-lifecycle.ts',
-    'package/launchers/manage.ts',
+    'tools/build/launcher/manage.ts',
   ];
   for (const relative of identityConsumers) {
     const source: any = fs.readFileSync(path.join(productRoot, relative), 'utf8');
     assert.match(source, /sameFilesystemPath/, `${relative} must use the shared filesystem identity owner`);
   }
-  const worktree: any = fs.readFileSync(path.join(productRoot, 'src/task/infrastructure/git-worktree-provider.ts'), 'utf8');
+  const worktree: any = fs.readFileSync(path.join(productRoot, 'src/modules/task/infrastructure/git-worktree-provider.ts'), 'utf8');
   assert.doesNotMatch(worktree, /identity\.repository\s*!==\s*item\.checkoutPath/);
-  const adapter: any = fs.readFileSync(path.join(productRoot, 'src/agent-assets/infrastructure/runtime/adapter-contract.ts'), 'utf8');
+  const adapter: any = fs.readFileSync(path.join(productRoot, 'src/modules/agent-assets/infrastructure/runtime/adapter-contract.ts'), 'utf8');
   assert.match(adapter, /runtimeWriteModeMatches/);
   assert.doesNotMatch(adapter, /ownerExecutable/);
   const closeout: any = fs.readFileSync(path.join(productRoot, '../../../../skills/buildr-self-bootstrap-sync/scripts/closeout.mjs'), 'utf8');
@@ -93,16 +93,16 @@ test('Buildr Web 实例生命周期使用扁平技术层且 HTTP Host 不拥有�
 
 test('旧 Task Development、Finish 与 Terminal Delivery runtime 已整体退出', () => {
   for (const relative of [
-    'src/task/application/finish/task-finish-application.mjs',
-    'src/task/application/task-terminal-delivery-application.ts',
-    'src/task/persistence/task-finish-repository.ts',
-    'src/task/interfaces/cli/task-terminal-delivery.mjs',
-    'src/task/interfaces/internal/task-finish-maintenance-driver.mjs',
-    'src/task/interfaces/internal/task-finish-retained-cleanup.mjs',
-    'src/task/interfaces/internal/task-finish-target-lease-driver.mjs',
+    'src/modules/task/application/finish/task-finish-application.mjs',
+    'src/modules/task/application/task-terminal-delivery-application.ts',
+    'src/modules/task/persistence/task-finish-repository.ts',
+    'src/modules/task/interfaces/cli/task-terminal-delivery.mjs',
+    'src/modules/task/interfaces/internal/task-finish-maintenance-driver.mjs',
+    'src/modules/task/interfaces/internal/task-finish-retained-cleanup.mjs',
+    'src/modules/task/interfaces/internal/task-finish-target-lease-driver.mjs',
     'src/application/task-finish',
     'src/application/task-terminal-delivery',
-    'src/task/persistence/finish',
+    'src/modules/task/persistence/finish',
     'src/interfaces/cli/task-terminal-delivery.mjs',
     'src/interfaces/internal/task-finish-maintenance-driver.mjs',
     'src/interfaces/internal/task-finish-retained-cleanup.mjs',
@@ -124,11 +124,11 @@ test('旧 Task Development、Finish 与 Terminal Delivery runtime 已整体退�
 });
 
 test('Workspace、Project 与 Service Domain 保持纯净且 Buildr Web 静态资源由构建产物交付', () => {
-  const domain: any = fs.readFileSync(path.join(productRoot, 'src/workspace/domain/workspace.ts'), 'utf8');
+  const domain: any = fs.readFileSync(path.join(productRoot, 'src/modules/workspace/domain/workspace.ts'), 'utf8');
   assert.doesNotMatch(domain, /yaml|filesystem|http|process|repository/i);
-  const projectDomain: any = fs.readFileSync(path.join(productRoot, 'src/workspace/domain/project.ts'), 'utf8');
+  const projectDomain: any = fs.readFileSync(path.join(productRoot, 'src/modules/workspace/domain/project.ts'), 'utf8');
   assert.doesNotMatch(projectDomain, /node:|yaml|filesystem|http|process|runtime|repository/i);
-  const serviceDomain: any = fs.readFileSync(path.join(productRoot, 'src/workspace/domain/service.ts'), 'utf8');
+  const serviceDomain: any = fs.readFileSync(path.join(productRoot, 'src/modules/workspace/domain/service.ts'), 'utf8');
   assert.doesNotMatch(serviceDomain, /node:|yaml|filesystem|http|process|runtime|repository/i);
   for (const relative of [
     'src/web/http/server.ts',
@@ -147,16 +147,16 @@ test('Workspace、Project 与 Service Domain 保持纯净且 Buildr Web 静态�
   assert.doesNotMatch(candidatePackage, /\['pack', productRoot/);
   assert.equal(fs.existsSync(path.join(productRoot, 'tools', 'development')), true);
   assert.equal(fs.existsSync(path.join(productRoot, 'tools', 'release')), true);
-  assert.equal(fs.existsSync(path.join(productRoot, 'src/workspace/module.ts')), true);
+  assert.equal(fs.existsSync(path.join(productRoot, 'src/modules/workspace/module.ts')), true);
   assert.equal(fs.existsSync(path.join(productRoot, 'src/domain/project/project.mjs')), false);
   assert.equal(fs.existsSync(path.join(productRoot, 'src/domain/service/service.mjs')), false);
 });
 
 test('Workspace、Project 与 Service CLI 只保留独立协议适配', () => {
   const adapters = [
-    'src/workspace/interfaces/cli/workspace.ts',
-    'src/workspace/interfaces/cli/project.ts',
-    'src/workspace/interfaces/cli/service.ts',
+    'src/modules/workspace/interfaces/cli/workspace.ts',
+    'src/modules/workspace/interfaces/cli/project.ts',
+    'src/modules/workspace/interfaces/cli/service.ts',
   ];
   for (const relative of adapters) {
     const source = fs.readFileSync(path.join(productRoot, relative), 'utf8');
@@ -166,11 +166,11 @@ test('Workspace、Project 与 Service CLI 只保留独立协议适配', () => {
   const workspaceCli = fs.readFileSync(path.join(productRoot, adapters[0]), 'utf8');
   assert.doesNotMatch(workspaceCli, /createProject|createService/);
   for (const relative of [
-    'src/workspace/application/project-application.ts',
-    'src/workspace/application/service-application.ts',
+    'src/modules/workspace/application/project-application.ts',
+    'src/modules/workspace/application/service-application.ts',
   ]) assert.equal(fs.existsSync(path.join(productRoot, relative)), true, `missing ${relative}`);
-  const projectRepository = fs.readFileSync(path.join(productRoot, 'src/workspace/persistence/project-manifest-repository.ts'), 'utf8');
-  const serviceRepository = fs.readFileSync(path.join(productRoot, 'src/workspace/persistence/service-manifest-repository.ts'), 'utf8');
+  const projectRepository = fs.readFileSync(path.join(productRoot, 'src/modules/workspace/persistence/project-manifest-repository.ts'), 'utf8');
+  const serviceRepository = fs.readFileSync(path.join(productRoot, 'src/modules/workspace/persistence/service-manifest-repository.ts'), 'utf8');
   assert.match(projectRepository, /function parseProjectsYaml/);
   assert.match(projectRepository, /function writeProjectsRegistry/);
   assert.match(serviceRepository, /function parseServicesManifestYaml/);

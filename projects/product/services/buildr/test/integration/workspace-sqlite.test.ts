@@ -5,9 +5,9 @@ import path from 'node:path';
 import test from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
 
-import { createRuntime } from '../../src/bootstrap/runtime.ts';
+import { createRuntime } from '../helpers/runtime-harness.ts';
 import { applyWorkspaceSqliteMigration, loadWorkspaceSqliteMigrations, registerWorkspaceSqlite } from '../../src/infrastructure/sqlite/workspace-sqlite.ts';
-import { buildTaskListCountStatement, buildTaskListPageStatement } from '../../src/task/persistence/task-list-repository.ts';
+import { buildTaskListCountStatement, buildTaskListPageStatement } from '../../src/modules/task/persistence/task-list-repository.ts';
 
 const SERVICE_ROOT: any = path.resolve(import.meta.dirname, '../..');
 

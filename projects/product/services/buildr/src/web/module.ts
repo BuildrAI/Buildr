@@ -1,11 +1,11 @@
 import { registerWebInstanceLifecycle } from './application/instance-lifecycle.ts';
 import { createWebCliContributions } from './interfaces/cli/web.ts';
 import { createLocalWorkspaceServer } from './http/server.ts';
-import { WORKSPACE_APPLICATION } from '../workspace/module.ts';
+import { WORKSPACE_APPLICATION } from '../modules/workspace/module.ts';
 import {
   SYSTEM_INSTALLATION_IDENTITY,
   SYSTEM_INSTALLATION_LAUNCHER,
-} from '../system/installation/module.ts';
+} from '../modules/installation/module.ts';
 import type { WebInstanceLifecycleRuntime, WebLifecycleOptions } from './application/instance-lifecycle.ts';
 
 export const WEB_MODULE_ID = 'web-instance-lifecycle';
@@ -30,7 +30,8 @@ export function createWebModule(runtime: WebInstanceLifecycleRuntime, options: {
       if (!identity?.readCurrentProductIdentity || !launcher?.assertCurrentNpmLauncherBinding || !workspace?.ensureRegisteredTarget) {
         throw new Error('Web module dependencies are incomplete.');
       }
-      registerWebInstanceLifecycle(runtime, {
+      const composition = Object.create(runtime) as WebInstanceLifecycleRuntime;
+      registerWebInstanceLifecycle(composition, {
         httpContributions,
         createLocalWorkspaceServer: (webRuntime, serverOptions) => Reflect.apply(createLocalWorkspaceServer, undefined, [webRuntime, serverOptions]),
         ensureRegisteredTarget: workspace.ensureRegisteredTarget,
@@ -38,13 +39,13 @@ export function createWebModule(runtime: WebInstanceLifecycleRuntime, options: {
         assertNpmLauncherBinding: launcher.assertCurrentNpmLauncherBinding,
       });
       const application = Object.freeze({
-        startBuildrWeb: runtime.startBuildrWeb,
-        manageBuildrWebPreview: runtime.manageBuildrWebPreview,
+        startBuildrWeb: composition.startBuildrWeb,
+        manageBuildrWebPreview: composition.manageBuildrWebPreview,
       });
       return Object.freeze({
         provides: { [WEB_INSTANCE_LIFECYCLE]: application },
         contributions: {
-          cli: createWebCliContributions(),
+          cli: createWebCliContributions(application),
           diagnostics: [Object.freeze({ id: 'web-instance-lifecycle.diagnostics', readModel: application })],
         },
       });

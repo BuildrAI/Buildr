@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { createBuildrSelfInvoker } from '../../src/agent-assets/application/package-maintenance/smoke-checks.ts';
+import { createBuildrSelfInvoker } from '../../src/modules/agent-assets/application/package-maintenance/smoke-checks.ts';
 import { productInvocationArgs } from '../../src/infrastructure/product-invocation/index.ts';
 
 function exerciseInvocation(invocation: any): any  {

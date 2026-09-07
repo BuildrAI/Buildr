@@ -10,11 +10,11 @@ include:
   - docs/resources.md
   - resources/contracts/bootstrap.yml
   - resources/installation/launcher/
-  - package/targets/runtime/
+  - resources/runtime/
 
 agentSkills:
   - id: buildr
-    path: package/targets/runtime/skills/buildr
+    path: resources/runtime/skills/buildr
     runtimes:
       - claude-code
       - codex

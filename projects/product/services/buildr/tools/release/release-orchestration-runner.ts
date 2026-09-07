@@ -7,7 +7,7 @@ import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-import { createRuntime } from '../../src/bootstrap/runtime.ts';
+import { createReleaseToolRuntime } from './runtime.ts';
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.ts';
 import { closeoutReleaseGitResources, reconcilePublishedReleaseWithDev, reconcileReleaseToMain, ensureReleaseToMainPullRequest, pushReleaseBranch, releaseCarrierBranchFor } from './release-git-convergence.ts';
 import { createReleaseSelection, selectReleaseCommit, freezeReleaseSelection, reopenReleaseSelection, inspectReleaseSelection } from './release-selection.ts';
@@ -223,7 +223,7 @@ async function closeout(options: any, dependencies: any): Promise<any>  {
   if (gitCloseout.status !== 'passed') return blocked(options, 'closeout', { evidence, context, reconciliation, gitCloseout }, steps, gitCloseout, '取得明确cleanup授权或恢复Git closeout后重试。');
 
   const root: any = path.resolve(options.canonicalWorkspace ?? options.repo ?? workspaceRoot);
-  const runtime: any = dependencies.runtime ?? createRuntime();
+  const runtime: any = dependencies.runtime ?? createReleaseToolRuntime();
   const inspectTask: any = dependencies.inspectTask ?? ((target: any, taskId: any) => runtime.inspectTask(target, taskId));
   let taskResult: any = inspectTask(root, options.releaseTask);
   let controller: any;
@@ -461,7 +461,7 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
     const token = process.env.GH_TOKEN || process.env.GITHUB_TOKEN || command(options.ghCommand || 'gh', ['auth', 'token']);
     const publicState = await observeUnpublishedRelease(options.version, { token, ...dependencies.observationOptions });
     if (publicState.status !== 'unpublished') return answer('public-state-blocked', ['先核实当前公开事实或活动发布运行；不改变已发布集合。'], { publicState });
-    const runtime = dependencies.runtime ?? createRuntime();
+    const runtime = dependencies.runtime ?? createReleaseToolRuntime();
     const taskId = `release-${options.version}`;
     const controller = (dependencies.resolveRetainedController ?? resolveRetainedController)(workspace);
     const invoke = dependencies.invokeRetainedController ?? defaultInvokeRetained;

@@ -7,7 +7,7 @@ import {
   TASK_PROFESSIONAL_HTTP_VALIDATORS,
   inspectTaskProfessionalHttpContractCoverage,
   validateTaskProfessionalRequest,
-} from '../../src/task/interfaces/http/task-professional-http-contracts.ts';
+} from '../../src/modules/task/interfaces/http/task-professional-http-contracts.ts';
 
 test('专业 HTTP catalog 为每个 operation 提供稳定 request/success/error schema', () => {
   const ids: any = TASK_PROFESSIONAL_HTTP_OPERATIONS.map((item: any) => item.id);

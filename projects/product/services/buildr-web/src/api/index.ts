@@ -6,7 +6,6 @@ import { createWorkspaceClient } from './workspace';
 import { createAgentAssetsClient } from './agentAssets';
 import { createRuntimeSystemClient } from './runtimeSystem';
 export type { ProjectResponse, WorkspaceDocument, WorkspaceResponse } from './workspace';
-export type { PublicationDetail, PublicationList, ReleaseAwareness } from './runtimeSystem';
 
 export { createApiClient } from './client';
 export type { ApiClient, ApiError } from './client';

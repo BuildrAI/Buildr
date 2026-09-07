@@ -9,8 +9,8 @@ import {
   buildInstallationInventory,
   inspectCurrentInstance,
   inspectCurrentInstanceReadiness,
-} from '../../src/system/installation/application/product-installation-status.ts';
-import { createInstallationOrigin } from '../../src/system/installation/infrastructure/installation-origin.ts';
+} from '../../src/modules/installation/application/product-installation-status.ts';
+import { createInstallationOrigin } from '../../src/modules/installation/infrastructure/installation-origin.ts';
 import { canonicalApplicationPayloadIdentity } from '../../src/infrastructure/product-resources/index.ts';
 import {
   acquireExclusiveFileLock,
@@ -25,9 +25,9 @@ import {
   readProductInstallationRegistry,
   productInstallationRegistryLockPath,
   validateProductInstallationRegistry,
-} from '../../src/system/installation/infrastructure/installation-registry.ts';
+} from '../../src/modules/installation/infrastructure/installation-registry.ts';
 
-const installationRegistryModule: any = new URL('../../src/system/installation/infrastructure/installation-registry.ts', import.meta.url).href;
+const installationRegistryModule: any = new URL('../../src/modules/installation/infrastructure/installation-registry.ts', import.meta.url).href;
 
 function origin(channel: any, version: any = '1.2.3'): any  {
   return createInstallationOrigin({

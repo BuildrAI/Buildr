@@ -114,7 +114,6 @@ export function createLocalWorkspaceRequestRouter({
       const workspaceId = apiMatch[1];
       const suffix = apiMatch[2] || '';
       const { rootPath: root } = runtime.resolveRegisteredWorkspace(workspaceId, { touch: request.method === 'GET' });
-      const taskApi = suffix === '/tasks' || suffix.startsWith('/tasks/');
       for (const contribution of httpContributions) {
         if (typeof contribution.handle !== 'function') continue;
         const contributedResponse = await contribution.handle({
@@ -130,12 +129,6 @@ export function createLocalWorkspaceRequestRouter({
         });
         if (contributedResponse === true) return;
         if (contributedResponse) return jsonResponse(response, contributedResponse.status, contributedResponse.body);
-      }
-      if (taskApi && requestUrl.searchParams.size > 0 && !(request.method === 'GET' && suffix === '/tasks')) {
-        const error: Error & Record<string, any> = new Error('Task API 不接受 query 参数。');
-        error.code = 'task_api_query_forbidden';
-        error.status = 400;
-        throw error;
       }
     }
     jsonResponse(response, 404, { error: { code: 'not_found', message: '请求的 Buildr Web 资源不存在。' } });

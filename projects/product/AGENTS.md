@@ -35,7 +35,7 @@ Agent 在 `product` Project 中的最小运行规则。
 - 新增或收紧硬门禁时，必须说明它保护的 authority 或结果不变量，以及放行会产生的具体伤害。缺失的若只是辅助 provenance、推荐流程、工具偏好或自动化信心，而当前事实仍可被检查、验证并诚实报告，则应提供诊断和 Agent 指引，不得阻断无关工作；Buildr 约束结果和副作用边界，不规定 Agent 或协作者必须采用唯一工作方式。
 - 新增或调整产品能力时，必须同时考虑 Buildr Skill 如何让 Agent 发现、理解、选择并正确使用该能力；缺少相应的 Agent 使用指引、决策边界或完成标准时，功能设计不完整。
 - Task-scoped OpenSpec Change 是产品能力、CLI 行为、上下文模型、runtime adapter 行为和架构性变更的规范 authority；不得用实现、普通文档或 Rule 替代该 Change。
-- `services/buildr/resources/manifest.yml` 声明发布边界；`services/buildr/resources/workspace/` 只放映射到用户 workspace 或 Project 的源，`services/buildr/package/targets/runtime/` 只放直接安装到 Agent runtime 的源。
+- `services/buildr/resources/manifest.yml` 声明发布边界；`services/buildr/resources/workspace/` 只放映射到用户 workspace 或 Project 的源，`services/buildr/resources/runtime/` 只放直接安装到 Agent runtime 的源。
 - `services/buildr/resources/` 是文件型交付资源 authority；`services/buildr/package/` 只允许保留有明确后续 owner 的 Runtime Skill 与 Launcher 行为实现，修改时必须同时核对初始化、更新、安装与发布边界。
 - 未集成的 Product candidate 只能存在于 current Task Environment 允许的 execution roots；不得从 candidate checkout 更新 retained 自举 workspace 或共享 user runtime。
 - `verification.yml` 是 Product 验证能力、适用性和证明范围的声明 authority；Task Verification Application 是正式验证 current Result 的唯一 authority。普通收尾依据与当前内容相符的真实验证及交付事实报告，不得把普通命令、commit 或 push 冒充正式验证结果。
