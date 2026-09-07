@@ -25,7 +25,7 @@ function fixture(t: any) {
   fs.mkdirSync(repo);
   git(repo, ['init', '-b', 'dev']);
   git(repo, ['config', 'user.name', 'Buildr Test']);
-  git(repo, ['config', 'user.email', 'buildr@example.test']);
+  git(repo, ['config', 'user.email', 'buildr@example.com']);
   fs.writeFileSync(path.join(repo, 'value.txt'), 'base\n');
   git(repo, ['add', 'value.txt']);
   git(repo, ['commit', '-m', 'base']);

@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
+import { resolveAdjacentNpmCli } from '../../tools/build/web-dist.ts';
 import { describeWebDistTree, inspectLocalWebToolchain, verifyGeneratedWebDist } from '../verification/web-dist.ts';
 
 function fixture(t: any): any  {
@@ -73,4 +74,14 @@ test('Browser build preflight只接受Buildr Web本地TypeScript和Vite', (t: an
   assert.equal(ready.status, 'ready');
   assert.ok(ready.tools.typescript.startsWith(root));
   assert.ok(ready.tools.vite.startsWith(root));
+});
+
+test('Windows web-dist通过相邻npm CLI运行而不直接spawn npm.cmd', (t: any) => {
+  const { root }: any = fixture(t);
+  const nodeExecutable = path.join(root, 'node.exe');
+  const npmCli = path.join(root, 'node_modules', 'npm', 'bin', 'npm-cli.js');
+  fs.mkdirSync(path.dirname(npmCli), { recursive: true });
+  fs.writeFileSync(nodeExecutable, 'fixture');
+  fs.writeFileSync(npmCli, 'fixture');
+  assert.equal(resolveAdjacentNpmCli(nodeExecutable, {}, 'win32'), npmCli);
 });
