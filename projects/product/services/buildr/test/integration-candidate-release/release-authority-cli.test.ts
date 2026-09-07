@@ -499,12 +499,14 @@ if(key==='repo view --json nameWithOwner') process.stdout.write(JSON.stringify({
 else if(key==='api repos/BuildrAI/Buildr/environments/npm-production') process.stdout.write(JSON.stringify({name:'npm-production'}));
 else { process.stderr.write('unexpected gh command: '+key); process.exitCode=1; }
 `, { mode: 0o755 });
+  const ghExecutable = process.platform === 'win32' ? path.join(root, 'fake-gh.cmd') : fakeGh;
+  if (process.platform === 'win32') fs.writeFileSync(ghExecutable, `@"${process.execPath}" "${fakeGh}" %*\r\n`);
   const evidencePath: any = path.join(root, 'authority-evidence.json');
   const result: any = spawnSync(process.execPath, [
     path.join(serviceRoot, 'tools', 'release', 'release-authority-preflight.ts'),
     '--repo', repo,
     '--source-commit', sourceCommit,
-    '--gh', fakeGh,
+    '--gh', ghExecutable,
     '--output', evidencePath,
   ], { cwd: serviceRoot, encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr || result.stdout);

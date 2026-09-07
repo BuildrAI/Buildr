@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { spawnSync } from 'node:child_process';
+import { spawnCommandSync } from '../../src/infrastructure/process.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
@@ -37,7 +37,7 @@ const expectedDispatchInputs: any = Object.freeze([
 const expectedNeeds: any = Object.freeze(['candidate', 'contract']);
 
 function defaultExecute(command: any, args: any, options: any = {}): any  {
-  return spawnSync(command, args, { cwd: options.cwd, encoding: 'utf8', env: options.env ?? process.env });
+  return spawnCommandSync(command, args, { cwd: options.cwd, encoding: 'utf8', env: options.env ?? process.env, timeout: 30_000 });
 }
 
 function command(execute: any, executable: any, args: any, cwd: any): any  {

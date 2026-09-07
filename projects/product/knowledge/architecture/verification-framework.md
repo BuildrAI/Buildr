@@ -321,16 +321,16 @@ Quick只表示开发期低成本反馈，focus只用于诊断；两者都不冒�
 | Task Delivery | affected | frozen Task Content | affected development evidence |
 | Full Regression | full | Task/current source | complete daily evidence |
 | Product Artifact Candidate | full | exact source + candidate artifact | artifact/package/install compatibility evidence |
-| Published Release | release-only | published artifact/result | publish, install, launcher, smoke, readback |
+| Published Release | release-only | published artifact/result | 当前权限与公开事实、原包发布、官方安装及回读；平台证明复用候选 |
 
 | 入口 | 责任 |
 | --- | --- |
 | `test:fast` | Unit、Component和低成本Static |
 | `test:changed` | affected；unknown path/owner gap执行前失败 |
 | `test:focus` | 指定primary owner定位和计时 |
-| `test:daily-full` | 52-step完整日常证据，不承担Candidate/Release专属旅程 |
+| `test:daily-full` | 完整日常证据，不承担Candidate/Release专属旅程 |
 | `test:core` | 兼容入口；转发到相同daily-full runner与内部`core` profile |
-| `test:candidate` | 66-step Product Artifact Candidate与唯一tarball |
+| `test:candidate` | 完整 Product Artifact Candidate与唯一tarball |
 | Candidate CI | 平台分片、Windows/Host Node和closed aggregate |
 | Release | 冻结source、publication、readback和Git convergence |
 

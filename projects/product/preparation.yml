@@ -16,3 +16,27 @@ entries:
     cwd: services/buildr-web
     executable: ../buildr/tools/development/run-development-npm
     args: [ci]
+  - id: buildr.source-runtime
+    title: Prepare Buildr source runtime
+    scope:
+      kind: service
+      service: buildr
+    cwd: services/buildr
+    executable: tools/development/run-development-npm
+    args: [run, candidate:prepare, --, --profile, source-runtime]
+  - id: buildr.candidate-artifact
+    title: Prepare Buildr Candidate artifact builder
+    scope:
+      kind: service
+      service: buildr
+    cwd: services/buildr
+    executable: tools/development/run-development-npm
+    args: [run, candidate:prepare, --, --profile, artifact]
+  - id: buildr.artifact-consumer
+    title: Prepare Buildr artifact consumer
+    scope:
+      kind: service
+      service: buildr
+    cwd: services/buildr
+    executable: tools/development/run-development-npm
+    args: [run, candidate:prepare, --, --profile, consumer]

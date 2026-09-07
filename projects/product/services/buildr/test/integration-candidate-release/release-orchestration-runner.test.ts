@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import path from 'node:path';
 
 import { compactReleaseOrchestration, inspectReleaseOrchestration, runReleaseOrchestration } from '../../tools/release/release-orchestration-runner.ts';
 
@@ -99,7 +100,7 @@ test('closeout completes every owner in order and emits compact timeline output'
   assert.equal(fixture.getGitCloseoutInput().publicationEvidence.identity, digest('4'));
   assert.ok(fixture.calls[0].includes('--expected-record'));
   assert.deepEqual(fixture.calls[1].slice(3, 7), ['--expected-source', `workspace=${commit('a')}`, '--delivered-ref', `workspace=${commit('a')}`]);
-  assert.deepEqual(fixture.calls.map((args: any) => args.slice(0, 3)), [['task', 'complete', 'release-1.0.0-rc.1'], ['worktree', 'cleanup', 'release-1.0.0-rc.1'], ['doctor', '--target', '/workspace']]);
+  assert.deepEqual(fixture.calls.map((args: any) => args.slice(0, 3)), [['task', 'complete', 'release-1.0.0-rc.1'], ['worktree', 'cleanup', 'release-1.0.0-rc.1'], ['doctor', '--target', path.resolve('/workspace')]]);
   assert.equal(value.lifecycle.phase, 'closed');
   assert.equal(value.timeline.terminalStatus, 'closed');
   assert.equal(value.timeline.phases.find((item: any) => item.id === 'candidate-attempt:42:2').attempt.evidence[0].disposition, 'reused');
