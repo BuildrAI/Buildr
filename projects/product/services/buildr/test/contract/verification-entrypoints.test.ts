@@ -49,6 +49,7 @@ test('product verification exposes four gates, direct layers, and one focus entr
   assert.equal(scripts['test:candidate:ci'], 'bash test/verification/verify-buildr-product-ci');
   assert.equal(scripts['test:candidate:host'], 'node test/verification/candidate-ci.ts host');
   assert.equal(scripts['test:candidate:aggregate'], 'node test/verification/candidate-ci.ts aggregate');
+  assert.equal(verificationSteps.find((step: any) => step.id === 'integration').timeoutMs, 300_000);
   assert.equal(scripts['test:release'], 'node test/verification/release/release-smoke.ts');
   assert.equal(scripts['test:launcher-platform'], 'node test/verification/release/release-smoke.ts --platform-launcher');
   assert.doesNotMatch(scripts['test:host-node'], /run-workspace-node/, 'Host Node compatibility must run on the caller-selected Node');

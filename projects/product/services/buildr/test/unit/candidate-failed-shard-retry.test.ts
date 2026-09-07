@@ -49,14 +49,9 @@ test('Candidate retry inspection selects only failed shards from one matching ru
   assert.equal(dependencies.calls.some((call: any) => call.includes('run rerun')), false);
 });
 
-test('Candidate retry requires explicit confirmation before rerun', () => {
+test('Candidate retry automatically reruns only failed jobs after matching inspection', () => {
   const dependencies: any = fixture();
-  const blocked: any = retryCandidateFailedShards({ runId, sourceCommit, ghCommand: 'gh', repo: '/fixture' }, dependencies);
-  assert.equal(blocked.status, 'blocked');
-  assert.equal(blocked.findings[0].code, 'candidate-retry-confirmation-required');
-  assert.equal(dependencies.calls.some((call: any) => call.includes('run rerun')), false);
-
-  const dispatched: any = retryCandidateFailedShards({ runId, sourceCommit, ghCommand: 'gh', repo: '/fixture', confirm: true }, dependencies);
+  const dispatched: any = retryCandidateFailedShards({ runId, sourceCommit, ghCommand: 'gh', repo: '/fixture' }, dependencies);
   assert.equal(dispatched.status, 'dispatched');
   assert.equal(dispatched.effects[0].type, 'github-candidate-failed-jobs-rerun');
   assert.equal(dependencies.calls.filter((call: any) => call.includes(`run rerun ${runId} --failed`)).length, 1);

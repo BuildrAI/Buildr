@@ -89,13 +89,6 @@ export function inspectCandidateFailedShardRetry(options: any, dependencies: any
 export function retryCandidateFailedShards(options: any, dependencies: any = {}): any  {
   const inspected: any = inspectCandidateFailedShardRetry(options, dependencies);
   if (inspected.status !== 'ready') return { ...inspected, operation: 'retry' };
-  if (options.confirm !== true) return {
-    ...inspected,
-    operation: 'retry',
-    status: 'blocked',
-    findings: [{ code: 'candidate-retry-confirmation-required' }],
-    nextActions: ['确认对matching Candidate run执行GitHub失败作业重跑。'],
-  };
   const run: any = dependencies.execute ?? execute;
   const gh: any = options.ghCommand || 'gh';
   const repo: any = options.repo || process.cwd();
@@ -114,8 +107,7 @@ function parseArgs(argv: any): any  {
   const options: any = {};
   for (let index: any = 1; index < argv.length; index += 1) {
     const key: any = argv[index];
-    if (key === '--confirm') options.confirm = true;
-    else if (key.startsWith('--')) options[key.slice(2).replaceAll('-', '')] = argv[++index];
+    if (key.startsWith('--')) options[key.slice(2).replaceAll('-', '')] = argv[++index];
   }
   return { action, options: { runId: options.runid, sourceCommit: options.sourcecommit, ghCommand: options.gh, repo: options.repo, confirm: options.confirm } };
 }
@@ -124,7 +116,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   try {
     const { action, options }: any = parseArgs(process.argv.slice(2));
     const result: any = action === 'inspect' ? inspectCandidateFailedShardRetry(options) : action === 'retry' ? retryCandidateFailedShards(options) : null;
-    if (!result) throw new Error('Usage: candidate-failed-shard-retry.ts <inspect|retry> --run-id <id> --source-commit <sha> [--repo <path>] [--gh <command>] [--confirm]');
+    if (!result) throw new Error('Usage: candidate-failed-shard-retry.ts <inspect|retry> --run-id <id> --source-commit <sha> [--repo <path>] [--gh <command>]');
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     if (result.status === 'blocked') process.exitCode = 1;
   } catch (error: any) {
