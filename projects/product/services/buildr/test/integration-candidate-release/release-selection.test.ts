@@ -97,6 +97,32 @@ test('main-only product content blocks reconciliation with zero Git writes', (t:
   assert.equal(inspectReleaseSelection({ repo: data.repo, version: data.version, devRef: 'dev' }).releaseHead, frozen.releaseHead);
 });
 
+test('main coverage recognizes renamed and transient dev paths from commit provenance', (t: any) => {
+  const data: any = fixture('0.1.0-rc.31'); t.after(() => fs.rmSync(data.root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(data.retained, 'projects/product/transient.txt'), 'temporary\n');
+  git(data.retained, 'add', '.'); git(data.retained, 'commit', '-m', 'add transient product path');
+  fs.rmSync(path.join(data.retained, 'projects/product/transient.txt'));
+  git(data.retained, 'add', '.'); git(data.retained, 'commit', '-m', 'remove transient product path');
+  git(data.retained, 'mv', 'projects/product/version.txt', 'projects/product/version-renamed.txt');
+  git(data.retained, 'commit', '-m', 'rename product path');
+  const devBaseline: any = git(data.retained, 'rev-parse', 'HEAD');
+  git(data.retained, 'push', 'origin', 'dev');
+  git(data.repo, 'reset', '--hard', devBaseline);
+  assert.equal(createReleaseSelection({ repo: data.repo, version: data.version, baseline: devBaseline, devRef: 'dev', executionBinding: data.binding() }).status, 'passed');
+  const frozen: any = freeze(data);
+
+  git(data.retained, 'checkout', '-b', 'main', data.baseline);
+  fs.writeFileSync(path.join(data.retained, 'projects/product/version.txt'), 'main value\n');
+  fs.writeFileSync(path.join(data.retained, 'projects/product/transient.txt'), 'main value\n');
+  git(data.retained, 'add', '.'); git(data.retained, 'commit', '-m', 'main changes paths already covered by dev history');
+  const mainCommit: any = git(data.retained, 'rev-parse', 'HEAD'); git(data.retained, 'push', 'origin', 'main');
+
+  const reconciled: any = reconcileReleaseSelectionWithMain({ repo: data.repo, version: data.version, devRef: 'dev', mainRef: 'origin/main', confirm: true, reason: 'pre-Candidate convergence', executionBinding: data.binding() });
+  assert.equal(reconciled.status, 'passed', JSON.stringify(reconciled));
+  assert.equal(reconciled.releaseTree, frozen.releaseTree);
+  assert.deepEqual(git(data.repo, 'rev-list', '--parents', '-n', '1', reconciled.releaseHead).split(' ').slice(1), [frozen.releaseHead, mainCommit]);
+});
+
 test('covered main history creates a two-parent commit without changing the release tree', (t: any) => {
   const data: any = fixture('0.1.0-rc.4'); t.after(() => fs.rmSync(data.root, { recursive: true, force: true }));
   create(data); select(data); const frozen: any = freeze(data);
