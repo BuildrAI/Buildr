@@ -57,9 +57,11 @@ test('release rehearsal builds a prospective -x chain without moving the formal 
 test('passed rehearsal promotes the exact commit with the prepared dev ref and cleanup removes only rehearsal refs', (t) => {
   const { repo, base, source } = fixture(t);
   const initialBinding: any = { version, head: base };
-  const prepared: any = prepareReleaseRehearsal({ version, repo, sourceDevCommits: [source], devRef: 'refs/heads/dev', executionBinding: initialBinding }, { validateExecutionBinding: () => initialBinding });
-  assert.equal(prepared.devRef, 'refs/heads/dev');
+  git(repo, ['update-ref', 'refs/remotes/origin/dev', source]);
+  const prepared: any = prepareReleaseRehearsal({ version, repo, sourceDevCommits: [source], devRef: 'origin/dev', executionBinding: initialBinding }, { validateExecutionBinding: () => initialBinding });
+  assert.equal(prepared.devRef, 'origin/dev');
   git(repo, ['switch', '-c', `codex/release-${version}`, base]);
+  git(repo, ['branch', '-f', 'dev', base]);
   const aggregate: any = {
     schemaVersion: CANDIDATE_CI_AGGREGATE_SCHEMA,
     status: 'passed',
