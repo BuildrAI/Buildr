@@ -465,7 +465,7 @@ export const verificationSteps: any = Object.freeze([
   step({ id: 'openspec-strict', name: 'openspec strict validation', executor: { type: 'openspec', args: ['validate', '--all', '--strict'] }, profiles: ['fast', 'candidate'], }),
   step({ id: 'runtime-adapter-contract', name: 'runtime adapter contract', executor: { type: 'node', file: 'test/verification/runtime/adapter-contract.ts' }, profiles: ['candidate'], groups: ['runtime'], }),
 
-  step({ id: 'integration-candidate-release', name: 'Candidate integration: release contract and Git convergence', executor: { type: 'npm', args: ['run', 'test:integration:candidate:release'] }, profiles: ['candidate'], groups: ['release'], schedulingCostMs: 60000, timeoutMs: 300_000, concurrencyClass: 'workspace-heavy' }),
+  step({ id: 'integration-candidate-release', name: 'Candidate integration: release contract and Git convergence', executor: { type: 'node', file: 'test/verification/run-node-tests.ts', args: ['test/integration-candidate-release/*.test.ts'] }, profiles: ['candidate'], groups: ['release'], schedulingCostMs: 60000, timeoutMs: 300_000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'concurrent-task-acceptance', name: 'Concurrent task workflow acceptance', executor: { type: 'node', file: 'test/verification/concurrency/task-acceptance.ts' }, profiles: ['candidate'], groups: ['windows-npm-preflight'],  schedulingCostMs: 40000, concurrencyClass: 'workspace-heavy', resources: ['workspace-saturating', 'task-lifecycle-heavy', 'app-runtime'] }),
 
   step({ id: 'host-node-contract', name: 'Host Node engine contract', executor: { type: 'node', file: 'test/verification/host-node/contract.ts' }, profiles: ['host-node'], }),
