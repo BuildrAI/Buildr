@@ -356,6 +356,14 @@ export function reconcilePublishedReleaseWithDev(options: any = {}, dependencies
     const selection: any = refs[dev]
       ? inspectReleaseSelection({ version, repo, devRef: `${remote}/${dev}` }, dependencies)
       : null;
+    const contextSelection: any = source.selection;
+    const publishedDevCommit: any = evidence.context?.convergence?.devCommit ?? null;
+    const publishedSelection: any = contextSelection
+      && selection?.selectionIdentity !== contextSelection.identity
+      && SHA.test(publishedDevCommit || '')
+      && git(repo, ['merge-base', '--is-ancestor', publishedDevCommit, refs[dev]], dependencies, { allowFailure: true }).status === 0
+      ? inspectReleaseSelection({ version, repo, devRef: publishedDevCommit }, dependencies)
+      : selection;
     const recoveryIdentity: any = identity({
       operation,
       version,
@@ -393,14 +401,14 @@ export function reconcilePublishedReleaseWithDev(options: any = {}, dependencies
         nextActions: ['恢复并核验current frozen selection；没有sourceDevCommit的内容必须先由support Task交付dev，不能从聊天或release-only标签补造。'],
       });
     }
-    const contextSelection: any = source.selection;
     const selectionMatches: any = contextSelection
+      && publishedSelection
       && contextSelection.status === 'frozen'
       && contextSelection.version === version
-      && contextSelection.identity === selection.selectionIdentity
-      && contextSelection.generation === selection.generation
-      && contextSelection.releaseHead === selection.releaseHead
-      && contextSelection.releaseTree === selection.releaseTree;
+      && contextSelection.identity === publishedSelection.selectionIdentity
+      && contextSelection.generation === publishedSelection.generation
+      && contextSelection.releaseHead === publishedSelection.releaseHead
+      && contextSelection.releaseTree === publishedSelection.releaseTree;
     if (!selectionMatches || selection.releaseHead !== expectedRelease || selection.releaseTree !== expectedTree || selection.devHead !== refs[dev]) {
       return blocked(operation, 'published-release-selection-drift', 'Publication succeeded, but the current frozen selection does not match the published context or current dev.', {
         status: 'published-but-dev-reconciliation-blocked', version, recoveryIdentity, publication: publicFacts, refs,
@@ -408,6 +416,7 @@ export function reconcilePublishedReleaseWithDev(options: any = {}, dependencies
         actualSelection: {
           status: selection.status,
           identity: selection.selectionIdentity,
+          publishedIdentity: publishedSelection?.selectionIdentity ?? null,
           generation: selection.generation,
           releaseHead: selection.releaseHead,
           releaseTree: selection.releaseTree,

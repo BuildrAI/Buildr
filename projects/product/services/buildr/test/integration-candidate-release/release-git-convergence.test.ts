@@ -19,6 +19,7 @@ import { createReleaseLifecycle } from '../../tools/release/release-lifecycle.ts
 import {
   createReleaseSelection,
   freezeReleaseSelection,
+  inspectReleaseSelection,
   selectReleaseCommit,
 } from '../../tools/release/release-selection.ts';
 import { createReleaseTransactionEvidence } from '../../tools/release/release-transaction-evidence.ts';
@@ -246,6 +247,34 @@ test('Publication后只读核验selection的dev来源，并保留dev线性历史
   assert.equal(second.status, 'passed');
   assert.equal(second.operation, 'reconcile-dev');
   assert.equal(second.identity, first.identity);
+});
+
+test('Publication上下文以精确dev提交冻结selection identity时仍可完成来源核验', (t: any) => {
+  const data: any = convergenceFixture();
+  t.after(() => fs.rmSync(data.root, { recursive: true, force: true }));
+  const exactSelection: any = inspectReleaseSelection({ version: '0.1.0-rc.5', repo: data.work, devRef: data.devCommit });
+  const { schemaVersion: _schemaVersion, identity: _identity, ...contextInput }: any = data.publicationEvidence.context;
+  const context: any = createReleaseContext({
+    ...contextInput,
+    selection: { ...contextInput.selection, identity: exactSelection.selectionIdentity },
+  });
+  const evidence: any = createReleaseTransactionEvidence({
+    context,
+    publish: data.publicationEvidence.publish,
+    outcome: 'passed',
+    publicFacts: {
+      version: '0.1.0-rc.5',
+      tagCommit: data.publicationEvidence.release.tagCommit,
+      npmDistTag: 'next',
+      registryPublished: true,
+      registryIntegrity: data.publicationEvidence.release.registryIntegrity,
+      githubRelease: data.publicationEvidence.release.githubRelease,
+      registrySmoke: 'passed',
+    },
+  });
+  const result: any = reconcilePublishedReleaseWithDev({ repo: data.work, publicationEvidence: evidence });
+  assert.equal(result.status, 'passed', JSON.stringify(result));
+  assert.equal(result.reconciliation.devHead, data.devCommit);
 });
 
 test('current dev不再包含selected source时保留Publication并阻止收尾', (t: any) => {
