@@ -184,6 +184,12 @@ export function cleanupReleaseRehearsal(preparationValue: any, options: { repo: 
   return { schemaVersion: 'buildr.release-rehearsal-cleanup/v1', status: 'cleaned', preparationIdentity: preparation.identity, effects, nextActions: [] };
 }
 
+export function assertNoConflictingPublicationRuns(runs: any[], version: string): void {
+  const matching = runs.filter((item: any) => String(item.displayTitle || '').includes(version));
+  if (matching.some((item: any) => item.status !== 'completed')) throw new Error(`An active protected publication run already exists for ${version}.`);
+  if (matching.some((item: any) => item.conclusion === 'success')) throw new Error(`A successful protected publication run already exists for ${version}.`);
+}
+
 function assertUnpublished(version: string, repo: string): void {
   const tag = run('gh', ['api', `repos/${releasePublishAuthority.repository}/git/ref/tags/v${version}`], repo, { allowFailure: true });
   if (tag.status === 0) throw new Error(`Release tag v${version} already exists.`);
@@ -191,8 +197,8 @@ function assertUnpublished(version: string, repo: string): void {
   if (release.status === 0) throw new Error(`GitHub Release v${version} already exists.`);
   const registry = run(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['view', `@buildr-ai/buildr@${version}`, 'version', '--json'], repo, { allowFailure: true });
   if (registry.status === 0) throw new Error(`npm version ${version} already exists.`);
-  const publishRuns = JSON.parse(run('gh', ['run', 'list', '--repo', releasePublishAuthority.repository, '--workflow', 'publish.yml', '--limit', '30', '--json', 'displayTitle,status,conclusion'], repo).stdout || '[]');
-  if (publishRuns.some((item: any) => String(item.displayTitle || '').includes(version))) throw new Error(`A protected publication run already exists for ${version}.`);
+  const publishRuns = JSON.parse(run('gh', ['run', 'list', '--repo', releasePublishAuthority.repository, '--workflow', 'publish.yml', '--limit', '30', '--json', 'databaseId,displayTitle,status,conclusion'], repo).stdout || '[]');
+  assertNoConflictingPublicationRuns(publishRuns, version);
 }
 
 export function promoteReleaseRehearsal(evidenceValue: any, options: { repo: string; executionBinding: any; confirm?: boolean; reason?: string }, dependencies: any = {}): any {
