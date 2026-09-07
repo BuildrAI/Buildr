@@ -226,8 +226,17 @@ jobs:
         with:
           node-version: 24.15.0
           cache: npm
-          cache-dependency-path: projects/product/services/buildr/package-lock.json
+          cache-dependency-path: |
+            projects/product/services/buildr/package-lock.json
+            projects/product/services/buildr-web/package-lock.json
       - run: npm ci
+      - name: Install Buildr Web dependencies for source-runtime shard
+        if: matrix.shard == 'core-project-task-macos' || matrix.shard == 'core-package-runtime-release-macos'
+        working-directory: projects/product/services/buildr-web
+        run: npm ci
+      - name: Prepare Buildr Web source runtime
+        if: matrix.shard == 'core-project-task-macos' || matrix.shard == 'core-package-runtime-release-macos'
+        run: node tools/development/prepare-development-web.ts
       - uses: actions/download-artifact@v7
         with:
           name: candidate-package
@@ -269,8 +278,15 @@ jobs:
         with:
           node-version: 24.15.0
           cache: npm
-          cache-dependency-path: projects/product/services/buildr/package-lock.json
+          cache-dependency-path: |
+            projects/product/services/buildr/package-lock.json
+            projects/product/services/buildr-web/package-lock.json
       - run: npm ci
+      - name: Install Buildr Web dependencies for source-runtime shard
+        working-directory: projects/product/services/buildr-web
+        run: npm ci
+      - name: Prepare Buildr Web source runtime
+        run: node tools/development/prepare-development-web.ts
       - uses: actions/download-artifact@v7
         with:
           name: candidate-package
