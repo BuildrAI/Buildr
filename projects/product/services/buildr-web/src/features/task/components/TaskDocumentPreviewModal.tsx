@@ -3,18 +3,18 @@ import { Alert, Button, Modal, Spin } from 'antd';
 import { MarkdownHost } from '../../../components/MarkdownHost';
 import { encodeProjectDocumentPath, resolveProjectMarkdownHref } from '../../../lib/projectDocuments';
 import type { TaskDocumentReference } from '../../../lib/taskDocumentLinks';
-import type { ProjectDocument } from '../hooks/useTaskArtifacts';
+import type { WorkspaceDocument } from '../hooks/useTaskArtifacts';
 
 type Props = {
   reference: TaskDocumentReference | null;
   onClose: () => void;
-  loadDocument(reference: TaskDocumentReference, documentPath: string): Promise<ProjectDocument>;
+  loadDocument(reference: TaskDocumentReference, documentPath: string): Promise<WorkspaceDocument>;
 };
 
 export function TaskDocumentPreviewModal({ reference, onClose, loadDocument }: Props) {
   const [documentPath, setDocumentPath] = useState('');
   const [history, setHistory] = useState<string[]>([]);
-  const [document, setDocument] = useState<ProjectDocument | null>(null);
+  const [document, setDocument] = useState<WorkspaceDocument | null>(null);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const requestRef = useRef(0);

@@ -5,7 +5,7 @@ import { createTaskProfessionalClient } from './task-professional';
 import { createWorkspaceClient } from './workspace';
 import { createAgentAssetsClient } from './agentAssets';
 import { createRuntimeSystemClient } from './runtimeSystem';
-export type { ProjectResponse, WorkspaceResponse } from './workspace';
+export type { ProjectResponse, WorkspaceDocument, WorkspaceResponse } from './workspace';
 export type { PublicationDetail, PublicationList, ReleaseAwareness } from './runtimeSystem';
 
 export { createApiClient } from './client';

@@ -1,12 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { api } from '../../../api';
+import { workspaceApi, type ProjectResponse, type WorkspaceResponse } from '../../../api';
 import { taskApi } from '../api/task-api';
 import type { TaskListRequest, TaskListResponse } from '../api/generated/task-dto';
 
-type WorkspacePayload = { rootPath: string; workspace: { name: string } };
-type ProjectInfo = { code: string; name: string };
-type ServiceInfo = { code: string; name: string; projectCode: string };
+export type { WorkspaceResponse } from '../../../api';
 
 export type TaskListItem = TaskListResponse['tasks'][number];
 
@@ -15,7 +13,7 @@ const TASK_PAGE_SIZE = '50';
 export function useTaskList(input: {
   workspaceId: string | null;
   filters: TaskListRequest;
-  onWorkspace(payload: WorkspacePayload): void;
+  onWorkspace(payload: WorkspaceResponse): void;
 }) {
   const [tasks, setTasks] = useState<TaskListItem[]>([]);
   const [totalTaskCount, setTotalTaskCount] = useState(0);
@@ -56,17 +54,18 @@ export function useTaskList(input: {
     try {
       const [data, workspace, projectPayload] = await Promise.all([
         taskApi.list({ ...input.filters, pageSize: TASK_PAGE_SIZE }, { signal: abort.signal }),
-        workspaceLoaded.current ? undefined : api('/api/v1/workspace', { signal: abort.signal }) as Promise<WorkspacePayload>,
-        catalogsLoaded.current ? undefined : api('/api/v1/projects', { signal: abort.signal }) as Promise<{ projects: ProjectInfo[] }>,
+        workspaceLoaded.current ? undefined : workspaceApi.read({ signal: abort.signal }),
+        catalogsLoaded.current ? undefined : workspaceApi.listProjects({ signal: abort.signal }),
       ]);
       if (generation.current !== current) return;
       if (workspace) { input.onWorkspace(workspace); workspaceLoaded.current = true; }
       if (projectPayload) {
-        setProjectNames(Object.fromEntries(projectPayload.projects.map((project) => [project.code, project.name || project.code])));
-        const entries = await Promise.all(projectPayload.projects.map(async (project) => {
+        const projects: NonNullable<ProjectResponse['projects']> = projectPayload.projects || [];
+        setProjectNames(Object.fromEntries(projects.map((project) => [project.code, project.name || project.code])));
+        const entries = await Promise.all(projects.map(async (project) => {
           try {
-            const payload = await api(`/api/v1/projects/${encodeURIComponent(project.code)}/services`, { signal: abort.signal }) as { services: ServiceInfo[] };
-            return payload.services.map((service) => [`${project.code}/${service.code}`, service.name || service.code] as const);
+            const payload = await workspaceApi.services(project.code, { signal: abort.signal });
+            return (payload.services || []).map((service) => [`${project.code}/${service.code}`, service.name || service.code] as const);
           } catch { return [] as Array<readonly [string, string]>; }
         }));
         if (generation.current !== current) return;

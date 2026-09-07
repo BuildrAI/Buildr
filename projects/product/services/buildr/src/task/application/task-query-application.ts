@@ -1,8 +1,14 @@
 import crypto from 'node:crypto';
-import fs from 'node:fs';
-import path from 'node:path';
 
-import { normalizeTaskRecord, taskRecordError } from './task-validation.ts';
+import {
+  assertTaskActionFields as assertFields,
+  normalizeTaskRecord,
+  taskActionId as taskId,
+  taskActionQualifiedReference as qualified,
+  taskActionText as text,
+  taskRecordError,
+  taskRecordErrorFields as errorFields,
+} from './task-validation.ts';
 import { Task } from '../domain/task.ts';
 import { TaskChange } from '../domain/task-change.ts';
 import { TaskProject } from '../domain/task-project.ts';
@@ -14,11 +20,10 @@ import type { TaskChangeReference, TaskPersistence, TaskQueryFilters, TaskRecord
 import type { TaskProjectRepository } from '../persistence/task-project-repository.ts';
 import type { TaskServiceRepository } from '../persistence/task-service-repository.ts';
 import type { TaskChangeRepository } from '../persistence/task-change-repository.ts';
-import type { TaskDocumentOwner, TaskRetrospectiveDocument } from '../persistence/task-retrospective-document.ts';
+import { taskRetrospectiveDocumentRelativePath, type TaskDocumentOwner, type TaskRetrospectiveDocument } from '../persistence/task-retrospective-document.ts';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../infrastructure/contracts/public-json.ts';
 import type { TaskListInputDto } from './task-dto.ts';
 
-const QUALIFIED_PATTERN = /^([A-Za-z0-9][A-Za-z0-9._-]*)\/([A-Za-z0-9][A-Za-z0-9._-]*)$/;
 const MAX_TASK_PAGE_SIZE = 100;
 
 type ChangeResolution = {
@@ -50,60 +55,6 @@ export type TaskReferenceDiagnostic = {
   code: string; message: string; details?: unknown;
 };
 
-function errorFields(error: unknown): { code: string; message: string; details?: unknown; taskRecordBusiness: boolean } {
-  if (!(error instanceof Error)) return { code: 'task_record_failed', message: String(error), taskRecordBusiness: false };
-  const value = Object.fromEntries(Object.entries(error));
-  return {
-    code: typeof value.code === 'string' ? value.code : 'task_record_failed',
-    message: error.message,
-    ...(value.details === undefined ? {} : { details: value.details }),
-    taskRecordBusiness: value.taskRecordBusiness === true,
-  };
-}
-
-function assertObject(input: unknown, label = 'Task Record action input'): asserts input is Record<string, unknown> {
-  if (!input || typeof input !== 'object' || Array.isArray(input)) throw taskRecordError('task_record_input_invalid', `${label} 必须是对象。`);
-}
-
-function assertFields(input: unknown, fields: ReadonlySet<string>, label = 'Task Record action'): asserts input is Record<string, unknown> {
-  assertObject(input, label);
-  for (const field of Object.keys(input)) {
-    if (!fields.has(field)) throw taskRecordError('task_record_field_forbidden', `${label} 不支持字段：${field}。`, 400, { field });
-  }
-}
-
-function text(value: unknown, field: string): string {
-  if (typeof value !== 'string' || !value.trim()) throw taskRecordError('task_record_field_invalid', `${field} 必须是非空字符串。`, 400, { field });
-  return value.trim();
-}
-
-function taskId(value: unknown, field: string): string {
-  const normalized = text(value, field);
-  if (!/^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/.test(normalized)) throw taskRecordError('task_record_identity_invalid', `${field} 必须是合法 Task ID。`, 400, { field, value });
-  return normalized;
-}
-
-function qualified(value: unknown, field: string, secondField: 'service'): TaskServiceReference;
-function qualified(value: unknown, field: string, secondField: 'change'): TaskChangeReference;
-function qualified(value: unknown, field: string, secondField: 'service' | 'change'): TaskServiceReference | TaskChangeReference {
-  let project: unknown;
-  let second: unknown;
-  if (typeof value === 'string') {
-    const match = value.match(QUALIFIED_PATTERN);
-    if (!match) throw taskRecordError('task_record_reference_invalid', `${field} 必须使用 project/${secondField}。`, 400, { field, value });
-    project = match[1];
-    second = match[2];
-  } else {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) throw taskRecordError('task_record_reference_invalid', `${field} 必须是限定引用。`, 400, { field });
-    const entry = Object.fromEntries(Object.entries(value));
-    project = entry.project;
-    second = entry[secondField];
-  }
-  const normalizedProject = text(project, `${field}.project`);
-  const normalizedSecond = text(second, `${field}.${secondField}`);
-  return secondField === 'service' ? { project: normalizedProject, service: normalizedSecond } : { project: normalizedProject, change: normalizedSecond };
-}
-
 function serviceKey(value: TaskServiceReference): string {
   return `${value.project}/${value.service}`;
 }
@@ -114,7 +65,7 @@ function changeKey(value: TaskChangeReference): string {
 
 function retrospectiveDocument(record: TaskRecord): { path: string; registered: TaskRecord['retrospective'] } {
   return {
-    path: `.buildr/local/task-retrospectives/${record.taskId}.md`,
+    path: taskRetrospectiveDocumentRelativePath(record.taskId),
     registered: record.retrospective,
   };
 }
@@ -186,25 +137,6 @@ export function registerTaskQueryApplication(runtime: TaskQueryApplicationRuntim
       const code = raw.code === 'workspace_store_workspace_not_canonical' ? 'task_record_workspace_not_canonical' : raw.code === 'workspace_store_workspace_invalid' ? 'task_record_workspace_invalid' : String(raw.code || 'workspace_store_failed');
       throw taskRecordError(code, failure.message, typeof raw.status === 'number' ? raw.status : 500, raw.details, typeof raw.nextAction === 'string' ? raw.nextAction : undefined);
     }
-  }
-
-  function taskDirectory(targetRoot: string, taskIdValue: string): string {
-    const root = assertCanonicalTaskWorkspace(targetRoot);
-    const normalized = taskId(taskIdValue, 'taskId');
-    const recordsRoot = path.join(root, '.buildr', 'tasks');
-    const directory = path.resolve(recordsRoot, normalized);
-    if (path.dirname(directory) !== recordsRoot) throw taskRecordError('task_record_path_escape', 'Task 专业记录路径逃逸。', 400, { taskId: normalized });
-    return directory;
-  }
-
-  function ensureTaskDirectory(targetRoot: string, taskIdValue: string, io: Pick<typeof fs, 'existsSync' | 'mkdirSync' | 'lstatSync'> = fs): string {
-    const directory = taskDirectory(targetRoot, taskIdValue);
-    for (const candidate of [path.dirname(directory), directory]) {
-      if (!io.existsSync(candidate)) io.mkdirSync(candidate);
-      const stat = io.lstatSync(candidate);
-      if (!stat.isDirectory() || stat.isSymbolicLink()) throw taskRecordError('task_record_directory_invalid', 'Task 专业记录容器必须是普通目录。', 409, { taskId: taskIdValue });
-    }
-    return directory;
   }
 
   function recordWith(task: Task, taskProjects: readonly TaskProject[], taskServices: readonly TaskService[], taskChanges: readonly TaskChange[]): TaskRecord {
@@ -473,7 +405,7 @@ export function registerTaskQueryApplication(runtime: TaskQueryApplicationRuntim
     };
   }
   return Object.assign(runtime, {
-    assertCanonicalTaskWorkspace, taskDirectory, ensureTaskDirectory,
+    assertCanonicalTaskWorkspace,
     readTaskInContext: readIn, readParentTaskContextIn: parentContext,
     readTask, prepareTask, queryTaskViews, readTaskView, readParentTaskContext,
     queryTasks, inspectTask, inspectTaskView, inspectTaskRetrospectiveDocument,

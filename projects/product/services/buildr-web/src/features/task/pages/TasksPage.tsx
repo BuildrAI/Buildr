@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Button, Empty, Form, Input, Select, Typography } from 'antd';
 import type { TaskListRequest } from '../api/generated/task-dto';
-import { useTaskList } from '../hooks/useTaskList';
+import { useTaskList, type WorkspaceResponse } from '../hooks/useTaskList';
 import { useAppShell } from '../../../app/AppShellContext';
 import { workspaceHref } from '../../../lib/labels';
 import { TaskTable } from '../components/TaskTable';
@@ -48,7 +48,7 @@ export function TasksPage() {
     ...(status !== 'all' ? { status } : {}), ...(hasChildren !== 'all' ? { hasChildren } : {}),
     ...(retrospectiveState !== 'all' ? { retrospectiveState } : {}),
   };
-  const onWorkspace = useCallback((workspace: { rootPath: string; workspace: { name: string } }) => {
+  const onWorkspace = useCallback((workspace: WorkspaceResponse) => {
     setWorkspace(workspace);
     setBreadcrumbParts([workspace.workspace.name, '任务']);
   }, [setWorkspace, setBreadcrumbParts]);

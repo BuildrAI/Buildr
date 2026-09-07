@@ -60,3 +60,20 @@ test('领域Feature不形成相互反向依赖', () => {
     }
   }
 });
+
+test('Task Feature复用Workspace Client与公共API类型', () => {
+  const taskFiles = [
+    'features/task/hooks/useTaskList.ts',
+    'features/task/hooks/useTaskDetail.ts',
+    'features/task/hooks/useTaskArtifacts.ts',
+    'features/task/hooks/useTaskEvidence.ts',
+    'features/task/hooks/useTaskActions.ts',
+  ];
+  const combined = taskFiles.map(source).join('\n');
+  assert.doesNotMatch(combined, /\bapi\s*\(/);
+  assert.match(combined, /workspaceApi\.read/);
+  assert.match(combined, /workspaceApi\.listProjects/);
+  assert.match(combined, /workspaceApi\.services/);
+  assert.match(combined, /workspaceApi\.projectDocument/);
+  assert.doesNotMatch(combined, /type ApiFailure|type WorkspacePayload|type ProjectDocument/);
+});

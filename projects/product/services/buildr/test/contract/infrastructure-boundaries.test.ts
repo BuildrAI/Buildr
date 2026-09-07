@@ -55,7 +55,10 @@ test('Bootstrap 只组装 Infrastructure，Task module 私有组装各自 Persis
 
 test('Task Record 事务由 Application 编排且 Repository 只访问所属表', () => {
   const command = read('src/task/application/task-command-application.ts');
+  const query = read('src/task/application/task-query-application.ts');
   assert.match(command, /runWorkspaceTransaction/);
+  assert.doesNotMatch(query, /node:fs|mkdirSync|ensureTaskDirectory|function taskDirectory/);
+  assert.match(query, /taskRetrospectiveDocumentRelativePath/);
   for (const owner of ['taskRepository', 'taskProjectRepository', 'taskServiceRepository', 'taskChangeRepository']) assert.match(command, new RegExp(owner));
   for (const [file, ownedTable] of [
     ['src/task/persistence/task-repository.ts', 'tasks'],

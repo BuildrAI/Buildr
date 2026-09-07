@@ -7,6 +7,10 @@ const RETROSPECTIVE_DOCUMENT_ROOT: readonly string[] = Object.freeze(['.buildr',
 const isTaskRecordId = (value: unknown): value is string => typeof value === 'string' && /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/.test(value);
 const taskRecordError = (code: string, message: string, status = 500, details?: unknown) => Object.assign(new Error(message), { code, status, details, taskRecordBusiness: true });
 
+export function taskRetrospectiveDocumentRelativePath(taskId: string): string {
+  return path.posix.join(...RETROSPECTIVE_DOCUMENT_ROOT, `${taskId}.md`);
+}
+
 export type TaskRuntime = {
   assertCanonicalTaskWorkspace(targetRoot: string): string;
   taskRetrospectiveDocumentPath?: (targetRoot: string, taskId: string) => { absolutePath: string; relativePath: string };
@@ -57,7 +61,7 @@ export function registerTaskRetrospectiveDocument<T extends TaskRuntime>(runtime
     }
     return {
       absolutePath,
-      relativePath: path.posix.join(...RETROSPECTIVE_DOCUMENT_ROOT, `${taskId}.md`),
+      relativePath: taskRetrospectiveDocumentRelativePath(taskId),
     };
   }
 

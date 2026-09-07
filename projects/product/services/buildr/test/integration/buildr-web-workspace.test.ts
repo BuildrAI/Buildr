@@ -296,9 +296,9 @@ test('任务意图以 Markdown 链接展示 Project 内的只读文档', () => {
   const sharedResolver: any = read('../buildr-web/src/lib/workspaceMarkdownReferences.ts');
   assert.match(overview, /id="task-detail-intent"[\s\S]*MarkdownHost/);
   assert.match(artifactsHook, /resolveTaskDocumentReference/);
-  assert.match(artifactsHook, /api\('\/api\/v1\/projects'\)/);
+  assert.match(artifactsHook, /workspaceApi\.listProjects\(\)/);
   assert.match(detail, /TaskDocumentPreviewModal/);
-  assert.match(artifactsHook, /\/api\/v1\/projects\/\$\{encodeURIComponent\(reference\.projectCode\)\}\/documents/);
+  assert.match(artifactsHook, /workspaceApi\.projectDocument\(reference\.projectCode, documentPath\)/);
   assert.match(prototype, /resolveProjectMarkdownHref/);
   assert.match(prototype, /相关资料/);
   assert.match(resolver, /resolveWorkspaceMarkdownReference\(href, allowedProjects, projects\)/);

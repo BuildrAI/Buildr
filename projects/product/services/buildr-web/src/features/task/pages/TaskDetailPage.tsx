@@ -20,7 +20,7 @@ import { TaskRelations } from '../components/TaskRelations';
 import { Fact, lines, type TaskTab } from '../components/shared';
 import { useTaskActions, type TaskAlert } from '../hooks/useTaskActions';
 import { useTaskArtifacts } from '../hooks/useTaskArtifacts';
-import { useTaskDetail, type WorkspacePayload } from '../hooks/useTaskDetail';
+import { useTaskDetail, type WorkspaceResponse } from '../hooks/useTaskDetail';
 import { useTaskEvidence } from '../hooks/useTaskEvidence';
 import { useTaskRequestLifecycle } from '../hooks/useTaskRequestLifecycle';
 
@@ -40,7 +40,7 @@ export function TaskDetailPage() {
   const lifecycle = useTaskRequestLifecycle();
   const href = (path: string) => workspaceHref(workspaceId, path);
 
-  const onWorkspace = useCallback((workspace: WorkspacePayload) => setWorkspace(workspace), [setWorkspace]);
+  const onWorkspace = useCallback((workspace: WorkspaceResponse) => setWorkspace(workspace), [setWorkspace]);
   const onBreadcrumb = useCallback((workspaceName: string, taskTitle: string) => {
     setBreadcrumbParts([workspaceName, '任务', taskTitle]);
   }, [setBreadcrumbParts]);

@@ -1,16 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { api } from '../../../api';
+import { workspaceApi, type WorkspaceResponse } from '../../../api';
 import { taskApi } from '../api/task-api';
 import type { TaskDetailResponse } from '../api/generated/task-dto';
 import type { TaskReadLifecycle } from './useTaskRequestLifecycle';
 
-export type WorkspacePayload = { rootPath: string; workspace: { name: string } };
+export type { WorkspaceResponse } from '../../../api';
 
 type Input = {
   taskId: string;
   lifecycle: TaskReadLifecycle;
-  onWorkspace(payload: WorkspacePayload): void;
+  onWorkspace(payload: WorkspaceResponse): void;
   onBreadcrumb(workspaceName: string, taskTitle: string): void;
 };
 
@@ -28,7 +28,7 @@ export function useTaskDetail({ taskId, lifecycle, onWorkspace, onBreadcrumb }: 
   const refresh = useCallback(async () => {
     const currentTaskId = taskId;
     const [workspace, detail] = await lifecycle.run(currentTaskId, 'detail', (signal) => Promise.all([
-      api('/api/v1/workspace', { signal }) as Promise<WorkspacePayload>,
+      workspaceApi.read({ signal }),
       taskApi.detail(currentTaskId, { signal }),
     ]));
     if (taskIdRef.current !== currentTaskId) return;

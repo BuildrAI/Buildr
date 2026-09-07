@@ -1,4 +1,13 @@
-import { normalizeTaskRecord, normalizeParentCompletion, taskRecordError } from './task-validation.ts';
+import {
+  assertTaskActionFields as assertFields,
+  normalizeTaskRecord,
+  normalizeParentCompletion,
+  taskActionId as taskId,
+  taskActionQualifiedReference as qualified,
+  taskActionText as text,
+  taskRecordError,
+  taskRecordErrorFields as errorFields,
+} from './task-validation.ts';
 import { Task } from '../domain/task.ts';
 import { TaskChange } from '../domain/task-change.ts';
 import { TaskProject } from '../domain/task-project.ts';
@@ -17,8 +26,6 @@ import type {
   TaskCreateInputDto,
   TaskUpdateInputDto,
 } from './task-dto.ts';
-
-const QUALIFIED_PATTERN = /^([A-Za-z0-9][A-Za-z0-9._-]*)\/([A-Za-z0-9][A-Za-z0-9._-]*)$/;
 
 type ChangeResolution = {
   schemaVersion: string;
@@ -73,64 +80,10 @@ type NormalizedUpdate = {
   expectedRecordDigest?: string;
 };
 
-function errorFields(error: unknown): { code: string; message: string; details?: unknown; taskRecordBusiness: boolean } {
-  if (!(error instanceof Error)) return { code: 'task_record_failed', message: String(error), taskRecordBusiness: false };
-  const value = Object.fromEntries(Object.entries(error));
-  return {
-    code: typeof value.code === 'string' ? value.code : 'task_record_failed',
-    message: error.message,
-    ...(value.details === undefined ? {} : { details: value.details }),
-    taskRecordBusiness: value.taskRecordBusiness === true,
-  };
-}
-
-function assertObject(input: unknown, label = 'Task Record action input'): asserts input is Record<string, unknown> {
-  if (!input || typeof input !== 'object' || Array.isArray(input)) throw taskRecordError('task_record_input_invalid', `${label} 必须是对象。`);
-}
-
-function assertFields(input: unknown, fields: ReadonlySet<string>, label = 'Task Record action'): asserts input is Record<string, unknown> {
-  assertObject(input, label);
-  for (const field of Object.keys(input)) {
-    if (!fields.has(field)) throw taskRecordError('task_record_field_forbidden', `${label} 不支持字段：${field}。`, 400, { field });
-  }
-}
-
-function text(value: unknown, field: string): string {
-  if (typeof value !== 'string' || !value.trim()) throw taskRecordError('task_record_field_invalid', `${field} 必须是非空字符串。`, 400, { field });
-  return value.trim();
-}
-
-function taskId(value: unknown, field: string): string {
-  const normalized = text(value, field);
-  if (!/^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/.test(normalized)) throw taskRecordError('task_record_identity_invalid', `${field} 必须是合法 Task ID。`, 400, { field, value });
-  return normalized;
-}
-
 function array(value: unknown, field: string): unknown[] {
   if (value === undefined) return [];
   if (!Array.isArray(value)) throw taskRecordError('task_record_field_invalid', `${field} 必须是数组。`, 400, { field });
   return value;
-}
-
-function qualified(value: unknown, field: string, secondField: 'service'): TaskServiceReference;
-function qualified(value: unknown, field: string, secondField: 'change'): TaskChangeReference;
-function qualified(value: unknown, field: string, secondField: 'service' | 'change'): TaskServiceReference | TaskChangeReference {
-  let project: unknown;
-  let second: unknown;
-  if (typeof value === 'string') {
-    const match = value.match(QUALIFIED_PATTERN);
-    if (!match) throw taskRecordError('task_record_reference_invalid', `${field} 必须使用 project/${secondField}。`, 400, { field, value });
-    project = match[1];
-    second = match[2];
-  } else {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) throw taskRecordError('task_record_reference_invalid', `${field} 必须是限定引用。`, 400, { field });
-    const entry = Object.fromEntries(Object.entries(value));
-    project = entry.project;
-    second = entry[secondField];
-  }
-  const normalizedProject = text(project, `${field}.project`);
-  const normalizedSecond = text(second, `${field}.${secondField}`);
-  return secondField === 'service' ? { project: normalizedProject, service: normalizedSecond } : { project: normalizedProject, change: normalizedSecond };
 }
 
 function serviceKey(value: TaskServiceReference): string {

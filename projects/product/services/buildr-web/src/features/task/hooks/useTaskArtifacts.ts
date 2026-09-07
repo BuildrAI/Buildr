@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { api } from '../../../api';
+import { workspaceApi, type ApiError, type WorkspaceDocument } from '../../../api';
 import { resolveTaskDocumentReference, type RegisteredProject, type TaskDocumentReference } from '../../../lib/taskDocumentLinks';
 import { taskApi } from '../api/task-api';
 import type { TaskDetailResponse } from '../api/generated/task-dto';
@@ -8,19 +8,12 @@ import type { ChangePayload } from '../../../components/ChangeBriefPanel';
 import type { UiPrototypeData } from '../components/PrototypeTab';
 import { isTaskReadCancelled, type TaskReadLifecycle } from './useTaskRequestLifecycle';
 
+export type { WorkspaceDocument } from '../../../api';
+
 export type TaskBriefState =
   | { kind: 'empty' }
   | { kind: 'missing'; key: string; message: string }
   | { kind: 'ready'; key: string; change: ChangePayload };
-
-export type ProjectDocument = {
-  path?: string;
-  name: string;
-  exists: boolean;
-  content: string | null;
-};
-
-type ApiFailure = Error & { code?: string };
 
 export function useTaskArtifacts(taskId: string, data: TaskDetailResponse | null, lifecycle: TaskReadLifecycle) {
   const [briefs, setBriefs] = useState<TaskBriefState[]>([]);
@@ -85,7 +78,7 @@ export function useTaskArtifacts(taskId: string, data: TaskDetailResponse | null
       if (prototypeRequestRef.current === requestId && taskIdRef.current === currentTaskId) setPrototypeData(next);
     } catch (cause) {
       if (!isTaskReadCancelled(cause) && prototypeRequestRef.current === requestId && taskIdRef.current === currentTaskId) {
-        setPrototypeError(`${(cause as ApiFailure).code || 'task_ui_prototype_read_failed'}：${cause instanceof Error ? cause.message : '读取失败'}`);
+        setPrototypeError(`${(cause as ApiError).code || 'task_ui_prototype_read_failed'}：${cause instanceof Error ? cause.message : '读取失败'}`);
         setPrototypeData(null);
       }
     } finally {
@@ -97,7 +90,7 @@ export function useTaskArtifacts(taskId: string, data: TaskDetailResponse | null
     if (!data) return;
     try {
       if (!projectRegistryRef.current) {
-        const registry = await api('/api/v1/projects') as { projects?: RegisteredProject[] };
+        const registry = await workspaceApi.listProjects();
         projectRegistryRef.current = registry.projects || [];
       }
       const reference = resolveTaskDocumentReference(linkHref, data.record.scope, projectRegistryRef.current);
@@ -113,7 +106,7 @@ export function useTaskArtifacts(taskId: string, data: TaskDetailResponse | null
   }, [data]);
 
   const loadProjectDocument = useCallback((reference: TaskDocumentReference, documentPath: string) => (
-    api(`/api/v1/projects/${encodeURIComponent(reference.projectCode)}/documents/${documentPath}`) as Promise<ProjectDocument>
+    workspaceApi.projectDocument(reference.projectCode, documentPath) as Promise<WorkspaceDocument>
   ), []);
 
   return {

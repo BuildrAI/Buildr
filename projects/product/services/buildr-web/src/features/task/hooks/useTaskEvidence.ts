@@ -1,11 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { taskProfessionalApi } from '../../../api';
+import { taskProfessionalApi, type ApiError } from '../../../api';
 import type { CoordinationResponse, ReviewsResponse, VerificationResponse } from '../../../api/generated/task-professional-http-dto';
 import type { ParentCoordinationResult } from '../components/parentCoordination';
 import { isTaskReadCancelled, type TaskReadLifecycle } from './useTaskRequestLifecycle';
-
-type ApiFailure = Error & { code?: string };
 
 export function useTaskEvidence(taskId?: string, lifecycle?: TaskReadLifecycle) {
   const [coordinationData, setCoordinationData] = useState<ParentCoordinationResult | null>(null);
@@ -32,7 +30,7 @@ export function useTaskEvidence(taskId?: string, lifecycle?: TaskReadLifecycle) 
       const next: CoordinationResponse = await run('coordination', (signal) => taskProfessionalApi.coordination(taskId, { signal }));
       if (coordinationRequest.current === requestId) setCoordinationData(next as ParentCoordinationResult);
     } catch (error) {
-      if (!isTaskReadCancelled(error) && coordinationRequest.current === requestId) setCoordinationData({ diagnostic: { code: (error as ApiFailure).code || 'parent_coordination_read_failed', message: error instanceof Error ? error.message : '读取失败' } });
+      if (!isTaskReadCancelled(error) && coordinationRequest.current === requestId) setCoordinationData({ diagnostic: { code: (error as ApiError).code || 'parent_coordination_read_failed', message: error instanceof Error ? error.message : '读取失败' } });
     } finally { if (coordinationRequest.current === requestId) setCoordinationLoading(false); }
   }, [taskId, run]);
 
@@ -44,7 +42,7 @@ export function useTaskEvidence(taskId?: string, lifecycle?: TaskReadLifecycle) 
       const next = await run('reviews', (signal) => taskProfessionalApi.reviews(taskId, { signal }));
       if (reviewRequest.current === requestId) setReviewData(next);
     } catch (error) {
-      if (!isTaskReadCancelled(error) && reviewRequest.current === requestId) setReviewError(`${(error as ApiFailure).code || 'task_review_read_failed'}：${error instanceof Error ? error.message : '读取失败'}`);
+      if (!isTaskReadCancelled(error) && reviewRequest.current === requestId) setReviewError(`${(error as ApiError).code || 'task_review_read_failed'}：${error instanceof Error ? error.message : '读取失败'}`);
     } finally { if (reviewRequest.current === requestId) setReviewLoading(false); }
   }, [taskId, run]);
 
@@ -56,7 +54,7 @@ export function useTaskEvidence(taskId?: string, lifecycle?: TaskReadLifecycle) 
       const next = await run('verification', (signal) => taskProfessionalApi.verification(taskId, { signal }));
       if (verificationRequest.current === requestId) setVerificationData(next);
     } catch (error) {
-      if (!isTaskReadCancelled(error) && verificationRequest.current === requestId) setVerificationError(`${(error as ApiFailure).code || 'task_verification_read_failed'}：${error instanceof Error ? error.message : '读取失败'}`);
+      if (!isTaskReadCancelled(error) && verificationRequest.current === requestId) setVerificationError(`${(error as ApiError).code || 'task_verification_read_failed'}：${error instanceof Error ? error.message : '读取失败'}`);
     } finally { if (verificationRequest.current === requestId) setVerificationLoading(false); }
   }, [taskId, run]);
 

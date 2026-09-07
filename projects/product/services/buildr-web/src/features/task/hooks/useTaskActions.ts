@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 
-import { taskProfessionalApi } from '../../../api';
+import { taskProfessionalApi, type ApiError } from '../../../api';
 import { confirmModal } from '../../../lib/confirm';
 import { taskStatusLabel } from '../../../lib/taskLabels';
 import { taskApi } from '../api/task-api';
@@ -13,7 +13,6 @@ import {
   type ParentCoordinationResult,
 } from '../components/parentCoordination';
 
-type ApiFailure = Error & { code?: string };
 export type TaskAlert = { message: string; error: boolean } | null;
 export type TaskActionModal = null | 'edit' | 'complete' | 'abandon';
 
@@ -70,7 +69,7 @@ export function useTaskActions({ taskId, data, refresh, refreshCoordination, sho
     setParentOptionsLoaded(false);
   }, [taskId, data]);
 
-  const showMutationError = useCallback((error: ApiFailure) => {
+  const showMutationError = useCallback((error: ApiError) => {
     onAlert({
       message: error.code === 'task_record_conflict' ? `${error.message} 请刷新本页。` : (error.message || '操作失败'),
       error: error.code !== 'task_record_conflict',
@@ -97,7 +96,7 @@ export function useTaskActions({ taskId, data, refresh, refreshCoordination, sho
       setParentTaskId(record.parentTaskId || '');
       setParentOptionsLoaded(true);
     } catch (cause) {
-      showMutationError(cause as ApiFailure);
+      showMutationError(cause as ApiError);
     } finally {
       setParentOptionsLoading(false);
     }
@@ -133,7 +132,7 @@ export function useTaskActions({ taskId, data, refresh, refreshCoordination, sho
       onAlert(null);
       setActionModal(null);
     } catch (cause) {
-      showMutationError(cause as ApiFailure);
+      showMutationError(cause as ApiError);
     } finally {
       setSaving(false);
     }
@@ -149,7 +148,7 @@ export function useTaskActions({ taskId, data, refresh, refreshCoordination, sho
       setCompletionDraft(emptyParentCompletionDraft());
       setActionModal('complete');
     } catch (cause) {
-      showMutationError(cause as ApiFailure);
+      showMutationError(cause as ApiError);
     }
   }, [taskId, showMutationError]);
 
@@ -175,7 +174,7 @@ export function useTaskActions({ taskId, data, refresh, refreshCoordination, sho
       await refreshCoordination();
       showOverview();
     } catch (cause) {
-      const failure = cause as ApiFailure;
+      const failure = cause as ApiError;
       showMutationError(failure);
       if (['parent_completion_conflict', 'task_record_conflict'].includes(failure.code || '')) {
         setCompletionDraft(emptyParentCompletionDraft());
@@ -203,7 +202,7 @@ export function useTaskActions({ taskId, data, refresh, refreshCoordination, sho
       await refresh();
       showOverview();
     } catch (cause) {
-      showMutationError(cause as ApiFailure);
+      showMutationError(cause as ApiError);
     }
   }, [taskId, abandonReason, refresh, showOverview, showMutationError]);
 

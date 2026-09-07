@@ -113,8 +113,8 @@ test('Buildr Web 只读查看双槽位且不提供后台Prompt或Result writer',
   response = await request(`${endpoint}/tasks/review-task/reviews`, { method: 'POST', headers: writeHeaders, body: '{}' });
   assert.equal(response.status, 404, 'Buildr Web must not expose direct Review Result writer');
 
-  runtime.ensureTaskDirectory(root, 'review-task');
   const environmentFile = path.join(root, '.buildr', 'tasks', 'review-task', 'environment.json');
+  fs.mkdirSync(path.dirname(environmentFile), { recursive: true });
   fs.writeFileSync(environmentFile, '{"owner":"environment-fixture"}\n');
   const taskBefore = runtime.inspectTask(root, 'review-task');
   const environmentBytes = fs.readFileSync(environmentFile);

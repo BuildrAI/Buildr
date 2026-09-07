@@ -1,7 +1,8 @@
 import { TASK_RECORD_SCHEMA, type ParentCompletion } from '../domain/task.ts';
 import type {
-  TaskRecord, TaskRecordBusinessError, TaskRecordHistory, TaskRecordResult,
+  TaskChangeReference, TaskRecord, TaskRecordBusinessError, TaskRecordHistory, TaskRecordResult,
   TaskRecordStatus, TaskRetrospectiveDocumentState, TaskRetrospectiveReference,
+  TaskServiceReference,
 } from './task-dto.ts';
 
 export const TASK_ID_SOURCE = '[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?';
@@ -19,6 +20,56 @@ export function taskRecordError(code: string, message: string, status = 400, det
     ...(nextAction === undefined ? {} : { nextAction }),
     taskRecordBusiness,
   });
+}
+
+export function taskRecordErrorFields(error: unknown): { code: string; message: string; details?: unknown; taskRecordBusiness: boolean } {
+  if (!(error instanceof Error)) return { code: 'task_record_failed', message: String(error), taskRecordBusiness: false };
+  const value = Object.fromEntries(Object.entries(error));
+  return {
+    code: typeof value.code === 'string' ? value.code : 'task_record_failed',
+    message: error.message,
+    ...(value.details === undefined ? {} : { details: value.details }),
+    taskRecordBusiness: value.taskRecordBusiness === true,
+  };
+}
+
+export function assertTaskActionFields(input: unknown, fields: ReadonlySet<string>, label = 'Task Record action'): asserts input is Record<string, unknown> {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) throw taskRecordError('task_record_input_invalid', `${label} 必须是对象。`);
+  for (const field of Object.keys(input)) {
+    if (!fields.has(field)) throw taskRecordError('task_record_field_forbidden', `${label} 不支持字段：${field}。`, 400, { field });
+  }
+}
+
+export function taskActionText(value: unknown, field: string): string {
+  if (typeof value !== 'string' || !value.trim()) throw taskRecordError('task_record_field_invalid', `${field} 必须是非空字符串。`, 400, { field });
+  return value.trim();
+}
+
+export function taskActionId(value: unknown, field: string): string {
+  const normalized = taskActionText(value, field);
+  if (!isTaskRecordId(normalized)) throw taskRecordError('task_record_identity_invalid', `${field} 必须是合法 Task ID。`, 400, { field, value });
+  return normalized;
+}
+
+export function taskActionQualifiedReference(value: unknown, field: string, secondField: 'service'): TaskServiceReference;
+export function taskActionQualifiedReference(value: unknown, field: string, secondField: 'change'): TaskChangeReference;
+export function taskActionQualifiedReference(value: unknown, field: string, secondField: 'service' | 'change'): TaskServiceReference | TaskChangeReference {
+  let project: unknown;
+  let second: unknown;
+  if (typeof value === 'string') {
+    const match = value.match(/^([A-Za-z0-9][A-Za-z0-9._-]*)\/([A-Za-z0-9][A-Za-z0-9._-]*)$/);
+    if (!match) throw taskRecordError('task_record_reference_invalid', `${field} 必须使用 project/${secondField}。`, 400, { field, value });
+    project = match[1];
+    second = match[2];
+  } else {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) throw taskRecordError('task_record_reference_invalid', `${field} 必须是限定引用。`, 400, { field });
+    const entry = Object.fromEntries(Object.entries(value));
+    project = entry.project;
+    second = entry[secondField];
+  }
+  const normalizedProject = taskActionText(project, `${field}.project`);
+  const normalizedSecond = taskActionText(second, `${field}.${secondField}`);
+  return secondField === 'service' ? { project: normalizedProject, service: normalizedSecond } : { project: normalizedProject, change: normalizedSecond };
 }
 
 export function isTaskRecordId(value: unknown): value is string {

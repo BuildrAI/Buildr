@@ -13,6 +13,7 @@ export type ProjectResponse = ProjectHttpResponseProjectReadResponse;
 export type ProjectMetadataUpdate = { revision: string; name?: string; description?: string };
 export type ServiceMetadataUpdate = { revision: string; name?: string; description?: string; type?: string };
 export type WorkspaceDocument = { path?: string; name: string; exists: boolean; content: string | null };
+type ReadOptions = Pick<RequestInit, 'signal'>;
 
 export function createWorkspaceClient(api: ApiClient) {
   return {
@@ -37,14 +38,14 @@ export function createWorkspaceClient(api: ApiClient) {
     remove(input: { revision: string; rootPath?: string; workspaceId?: string }): Promise<WorkspaceRegistry> {
       return api('/api/v1/workspaces', { method: 'DELETE', body: JSON.stringify(input) }) as Promise<WorkspaceRegistry>;
     },
-    read(): Promise<WorkspaceResponse> {
-      return api('/api/v1/workspace') as Promise<WorkspaceResponse>;
+    read(options: ReadOptions = {}): Promise<WorkspaceResponse> {
+      return api('/api/v1/workspace', options) as Promise<WorkspaceResponse>;
     },
     update(input: WorkspaceMetadataUpdateRequestMetadataUpdateRequest): Promise<WorkspaceResponse> {
       return api('/api/v1/workspace', { method: 'PUT', body: JSON.stringify(input) }) as Promise<WorkspaceResponse>;
     },
-    listProjects(): Promise<ProjectResponse> {
-      return api('/api/v1/projects') as Promise<ProjectResponse>;
+    listProjects(options: ReadOptions = {}): Promise<ProjectResponse> {
+      return api('/api/v1/projects', options) as Promise<ProjectResponse>;
     },
     project(projectCode: string): Promise<ProjectResponse> {
       return api(`/api/v1/projects/${encodeURIComponent(projectCode)}`) as Promise<ProjectResponse>;
@@ -52,11 +53,11 @@ export function createWorkspaceClient(api: ApiClient) {
     updateProject(projectCode: string, input: ProjectMetadataUpdate): Promise<ProjectResponse> {
       return api(`/api/v1/projects/${encodeURIComponent(projectCode)}`, { method: 'PUT', body: JSON.stringify(input) }) as Promise<ProjectResponse>;
     },
-    projectDocument(projectCode: string, documentPath: string): Promise<WorkspaceDocument> {
-      return api(`/api/v1/projects/${encodeURIComponent(projectCode)}/documents/${documentPath}`) as Promise<WorkspaceDocument>;
+    projectDocument(projectCode: string, documentPath: string, options: ReadOptions = {}): Promise<WorkspaceDocument> {
+      return api(`/api/v1/projects/${encodeURIComponent(projectCode)}/documents/${documentPath}`, options) as Promise<WorkspaceDocument>;
     },
-    services(projectCode: string): Promise<ProjectResponse> {
-      return api(`/api/v1/projects/${encodeURIComponent(projectCode)}/services`) as Promise<ProjectResponse>;
+    services(projectCode: string, options: ReadOptions = {}): Promise<ProjectResponse> {
+      return api(`/api/v1/projects/${encodeURIComponent(projectCode)}/services`, options) as Promise<ProjectResponse>;
     },
     service(projectCode: string, serviceCode: string): Promise<ProjectResponse> {
       return api(`/api/v1/projects/${encodeURIComponent(projectCode)}/services/${encodeURIComponent(serviceCode)}`) as Promise<ProjectResponse>;

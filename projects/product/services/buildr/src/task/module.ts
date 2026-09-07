@@ -55,7 +55,7 @@ type SharedTaskComposition = DynamicRuntime;
 
 const TASK_QUERY_METHODS = Object.freeze([
   'queryTasks', 'inspectTask', 'inspectTaskView', 'inspectTaskRetrospectiveDocument',
-  'assertCanonicalTaskWorkspace', 'taskDirectory', 'ensureTaskDirectory',
+  'assertCanonicalTaskWorkspace',
   'readTask', 'prepareTask', 'readTaskView', 'readParentTaskContext',
 ]);
 
