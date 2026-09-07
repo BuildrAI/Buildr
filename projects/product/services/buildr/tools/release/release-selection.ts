@@ -452,7 +452,7 @@ export function reconcileReleaseSelectionWithMain(options: any = {}, dependencie
     }
     if (previous) throw new Error(`Release ${state.version} already has a main reconciliation for ${previous.mainParent}; current main is not an ancestor, so a second reconciliation requires a new explicit lifecycle design.`);
     const mergeBase: any = runGit(['merge-base', releaseParent, mainCommit], repo, dependencies).stdout.trim();
-    const mainPaths: any = historyChangedPaths(mergeBase, mainCommit, repo, dependencies).filter(releaseProductPath);
+    const mainPaths: any = changedPaths(mergeBase, mainCommit, repo, dependencies).filter(releaseProductPath);
     const releasePaths: any = new Set(historyChangedPaths(mergeBase, releaseParent, repo, dependencies).filter(releaseProductPath));
     const uncoveredPaths: any = mainPaths.filter((entry: any) => !releasePaths.has(entry));
     const coverageIdentity: any = digest({ version: state.version, mainParent: mainCommit, releaseParent, mergeBase, mainPaths, releasePaths: [...releasePaths].sort(), uncoveredPaths });
