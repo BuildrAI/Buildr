@@ -45,7 +45,8 @@ test('product verification exposes four gates, direct layers, and one focus entr
   assert.equal(scripts['test:daily-full'], 'npm run artifacts:prepare && bash test/verification/verify-buildr-product-daily-full');
   assert.equal(scripts['test:core'], 'npm run artifacts:prepare && bash test/verification/verify-buildr-product-core');
   assert.equal(scripts['test:candidate'], 'npm run artifacts:prepare && bash test/verification/verify-buildr-product');
-  assert.equal(scripts['test:candidate:ci'], 'npm run artifacts:prepare && bash test/verification/verify-buildr-product-ci');
+  assert.equal(scripts['candidate:prepare'], 'node tools/verification/candidate-environment.ts prepare');
+  assert.equal(scripts['test:candidate:ci'], 'bash test/verification/verify-buildr-product-ci');
   assert.equal(scripts['test:candidate:host'], 'node test/verification/candidate-ci.ts host');
   assert.equal(scripts['test:candidate:aggregate'], 'node test/verification/candidate-ci.ts aggregate');
   assert.equal(scripts['test:release'], 'node test/verification/release/release-smoke.ts');
@@ -326,11 +327,11 @@ test('distributed Candidate creates one artifact and fans out independent consum
   assert.equal(document.jobs['candidate-core-macos'].needs, 'candidate-bootstrap');
   assert.equal(document.jobs['candidate-core-macos']['timeout-minutes'], 20);
   assert.equal(document.jobs['candidate-core-macos'].strategy['fail-fast'], false);
-  assert.deepEqual(document.jobs['candidate-core-macos'].strategy.matrix.shard, [
-    'core-task-lifecycle-macos',
-    'core-project-task-macos',
-    'core-package-runtime-release-macos',
-    'core-cli-contract-macos',
+  assert.deepEqual(document.jobs['candidate-core-macos'].strategy.matrix.include, [
+    { shard: 'core-task-lifecycle-macos', preparation: 'base' },
+    { shard: 'core-project-task-macos', preparation: 'source-runtime' },
+    { shard: 'core-package-runtime-release-macos', preparation: 'source-runtime' },
+    { shard: 'core-cli-contract-macos', preparation: 'base' },
   ]);
   const candidateTimeouts: any = verificationSteps.filter((step: any) => step.profiles.includes('candidate')).map((step: any) => step.timeoutMs);
   assert.ok(candidateTimeouts.every((timeoutMs: any) => Number.isInteger(timeoutMs) && timeoutMs > 0));

@@ -2,6 +2,21 @@ name: Verify Buildr
 
 on:
   workflow_dispatch:
+    inputs:
+      purpose:
+        description: Candidate execution purpose
+        required: true
+        default: candidate
+        type: choice
+        options: [candidate, release-rehearsal]
+      expected_source_tree:
+        description: Exact source tree required for release rehearsal
+        required: false
+        type: string
+      rehearsal_identity:
+        description: Closed release rehearsal identity
+        required: false
+        type: string
   pull_request:
     branches: [dev, main]
 
@@ -14,6 +29,9 @@ concurrency:
 
 env:
   CANDIDATE_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+  BUILDR_CANDIDATE_PURPOSE: ${{ inputs.purpose || 'candidate' }}
+  BUILDR_CANDIDATE_EXPECTED_SOURCE_TREE: ${{ inputs.expected_source_tree || '' }}
+  BUILDR_RELEASE_REHEARSAL_IDENTITY: ${{ inputs.rehearsal_identity || '' }}
 
 jobs:
   dev-feedback-macos:
@@ -154,7 +172,8 @@ jobs:
           node-version: 24.15.0
           cache: npm
           cache-dependency-path: projects/product/services/buildr/package-lock.json
-      - run: npm ci
+      - name: Prepare Candidate artifact environment
+        run: node tools/verification/candidate-environment.ts prepare --profile artifact
       - name: Run cheap Candidate preflight
         env:
           BUILDR_CANDIDATE_SOURCE_SHA: ${{ env.CANDIDATE_SOURCE_SHA }}
@@ -171,10 +190,6 @@ jobs:
           path: ${{ runner.temp }}/candidate-evidence
           if-no-files-found: warn
           overwrite: true
-
-      - name: Install Buildr Web dependencies for Candidate artifact
-        working-directory: projects/product/services/buildr-web
-        run: npm ci
 
       - name: Build the single Candidate artifact
         env:
@@ -209,11 +224,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard:
-          - core-task-lifecycle-macos
-          - core-project-task-macos
-          - core-package-runtime-release-macos
-          - core-cli-contract-macos
+        include:
+          - shard: core-task-lifecycle-macos
+            preparation: base
+          - shard: core-project-task-macos
+            preparation: source-runtime
+          - shard: core-package-runtime-release-macos
+            preparation: source-runtime
+          - shard: core-cli-contract-macos
+            preparation: base
     defaults:
       run:
         working-directory: projects/product/services/buildr
@@ -229,14 +248,8 @@ jobs:
           cache-dependency-path: |
             projects/product/services/buildr/package-lock.json
             projects/product/services/buildr-web/package-lock.json
-      - run: npm ci
-      - name: Install Buildr Web dependencies for source-runtime shard
-        if: matrix.shard == 'core-project-task-macos' || matrix.shard == 'core-package-runtime-release-macos'
-        working-directory: projects/product/services/buildr-web
-        run: npm ci
-      - name: Prepare Buildr Web source runtime
-        if: matrix.shard == 'core-project-task-macos' || matrix.shard == 'core-package-runtime-release-macos'
-        run: node tools/development/prepare-development-web.ts
+      - name: Prepare Candidate shard environment
+        run: node tools/verification/candidate-environment.ts prepare --profile ${{ matrix.preparation }}
       - uses: actions/download-artifact@v7
         with:
           name: candidate-package
@@ -281,12 +294,8 @@ jobs:
           cache-dependency-path: |
             projects/product/services/buildr/package-lock.json
             projects/product/services/buildr-web/package-lock.json
-      - run: npm ci
-      - name: Install Buildr Web dependencies for source-runtime shard
-        working-directory: projects/product/services/buildr-web
-        run: npm ci
-      - name: Prepare Buildr Web source runtime
-        run: node tools/development/prepare-development-web.ts
+      - name: Prepare Candidate shard environment
+        run: node tools/verification/candidate-environment.ts prepare --profile source-runtime
       - uses: actions/download-artifact@v7
         with:
           name: candidate-package
@@ -336,7 +345,8 @@ jobs:
           cache-dependency-path: |
             projects/product/services/buildr/package-lock.json
             projects/product/services/buildr-web/package-lock.json
-      - run: npm ci
+      - name: Prepare Candidate shard environment
+        run: node tools/verification/candidate-environment.ts prepare --profile base
       - name: Run Windows Candidate shard
         env:
           BUILDR_CANDIDATE_SOURCE_SHA: ${{ env.CANDIDATE_SOURCE_SHA }}
@@ -391,7 +401,8 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: npm
           cache-dependency-path: projects/product/services/buildr/package-lock.json
-      - run: npm ci
+      - name: Prepare Candidate Host Node environment
+        run: node tools/verification/candidate-environment.ts prepare --profile host
       - uses: actions/download-artifact@v7
         with:
           name: candidate-package

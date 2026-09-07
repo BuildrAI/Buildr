@@ -16,6 +16,7 @@ import {
   createCandidateCiEvidence,
   readCandidateCiArtifact,
   readCandidateCiEvidenceFiles,
+  resolveCandidateExecutionContext,
   resolveCandidateSourceCommit,
   writeCandidateCiEvidence,
   writeCandidateCiCheckpoint,
@@ -61,6 +62,7 @@ async function runShard(shardId: any): Promise<any>  {
   const runner: any = process.platform === 'darwin' ? 'macos' : process.platform === 'win32' ? 'windows' : process.platform;
   if (runner !== shard.runner) throw new Error(`Candidate CI shard ${shardId} requires ${shard.runner}, active runner is ${runner}`);
   const sourceCommit: any = resolveCandidateSourceCommit(productRoot, expectedSource);
+  const executionContext: any = resolveCandidateExecutionContext(productRoot, sourceCommit);
   const registryIdentity: any = candidateCiRegistryIdentity();
   const artifactDirectory: any = path.resolve(process.env.BUILDR_CANDIDATE_CI_ARTIFACT_DIR || path.join(outputRoot, 'candidate-package'));
   const externalArtifact: any = shard.requiresArtifact ? readCandidateCiArtifact(artifactDirectory, sourceCommit) : null;
@@ -78,6 +80,7 @@ async function runShard(shardId: any): Promise<any>  {
     }
     const checkpoint: any = createCandidateCiCheckpoint({
       id: shardId,
+      ...executionContext,
       sourceCommit,
       registryIdentity,
       workflow: workflowIdentity,
@@ -132,6 +135,7 @@ async function runShard(shardId: any): Promise<any>  {
   const evidence: any = createCandidateCiEvidence({
     kind: 'shard',
     id: shardId,
+    ...executionContext,
     sourceCommit,
     registryIdentity,
     workflow: workflowIdentity,
@@ -164,6 +168,7 @@ function runHostNode(tupleId: any): any  {
   assertHostNode(tuple);
   const exactNode: any = createExactNodeExecutionEnvironment({ nodeExecutable: process.execPath, env: process.env, requireNpm: true });
   const sourceCommit: any = resolveCandidateSourceCommit(productRoot, expectedSource);
+  const executionContext: any = resolveCandidateExecutionContext(productRoot, sourceCommit);
   const artifact: any = readCandidateCiArtifact(process.env.BUILDR_CANDIDATE_CI_ARTIFACT_DIR || path.join(outputRoot, 'candidate-package'), sourceCommit);
   fs.mkdirSync(outputRoot, { recursive: true });
   const startedAtMs: any = Date.now();
@@ -183,6 +188,7 @@ function runHostNode(tupleId: any): any  {
   const evidence: any = createCandidateCiEvidence({
     kind: 'host-node',
     id: tupleId,
+    ...executionContext,
     sourceCommit,
     registryIdentity: candidateCiRegistryIdentity(),
     workflow: workflowIdentity,
@@ -202,8 +208,9 @@ function runHostNode(tupleId: any): any  {
 
 function aggregate(): any  {
   const sourceCommit: any = resolveCandidateSourceCommit(productRoot, expectedSource);
+  const executionContext: any = resolveCandidateExecutionContext(productRoot, sourceCommit);
   const evidenceRoot: any = path.resolve(process.env.BUILDR_CANDIDATE_CI_EVIDENCE_DIR || outputRoot);
-  const result: any = aggregateCandidateCiEvidence(readCandidateCiEvidenceFiles(evidenceRoot), sourceCommit, workflowIdentity);
+  const result: any = aggregateCandidateCiEvidence(readCandidateCiEvidenceFiles(evidenceRoot), executionContext, workflowIdentity);
   const output: any = path.resolve(process.env.BUILDR_CANDIDATE_CI_AGGREGATE_OUTPUT || path.join(outputRoot, 'candidate-ci-aggregate.json'));
   fs.mkdirSync(path.dirname(output), { recursive: true });
   fs.writeFileSync(output, `${JSON.stringify(result, null, 2)}\n`, 'utf8');

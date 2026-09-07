@@ -24,7 +24,10 @@ Product Project: projects/product/
           ├── src/infrastructure/      │  SQLite / Git / 文件 / 进程 / 网络
           └── web-dist/ <──────────────┘  ignored本地静态输出
 
-Candidate隔离staging ── Web dist + Test Context + DTO + manifest
+Candidate Environment Preparation ── base/artifact/source-runtime/host
+├── Release Rehearsal prospective source ── 同一Candidate DAG
+└── Final Candidate source ── 同一Candidate DAG
+    └── Web dist + Test Context + DTO + manifest
 Buildr npm package
 └── CLI + Application Payload + migrations + resources + frozen web-dist
       ├── 命令行调用
@@ -212,7 +215,7 @@ Project `preparation.yml` 描述已知准备配方，`verification.yml`使用v4�
 
 Buildr Product内部验证分成控制面与执行面。`test/verification/{ownership,registry,planner,dag-scheduler,executor}.ts`组成Verification Control Plane，负责owner选择、预算准入、依赖与resource grant；公共`src/infrastructure/testing/context-runtime/*.ts`是runner-independent definition、配置identity、worker/suite/test cache、lease、reset、dirty/evict与持久Worker Host的strict TypeScript authority，向ignored本地目录或Candidate staging确定性生成标准ESM与`.d.ts`后通过`@buildr-ai/buildr/test-context`随唯一npm tarball提供，Git不保存编译副本。test-only `test/context/`只拥有Buildr immutable-seed Pool、领域provider和覆盖全部registry step的`context-runtime|hybrid|full-lifecycle`处置：一次plan内prepare并投影versioned seed identity，每个case取得独立Sandbox Lease。outer scheduler同时约束step class、跨plan协调资源和workers/processes/git/workspaceIo数值容量，`node-context-test` Host数只能消费exact grant。Context复用只消除非主要前置成本，不改变Unit/Component/Integration/System边界或primary evidence owner。
 
-Candidate 只构建一份 tarball，平台和 Host Node consumer 复用同一 artifact。正式发布不重新构建 Application Payload 或重新 `npm pack`。完整发布事实链见 [Buildr npm 发布流程](../flows/open-source-release.md)。
+Release Rehearsal与Final Candidate复用同一验证DAG、唯一tarball拓扑和`candidate-environment.ts`准备owner。演练源由current frozen release加有序待选commits形成，完整全绿后才可提升；Final Candidate仍重新构建一份正式tarball，平台和Host Node consumer复用同一artifact。正式发布不重新构建Application Payload或重新`npm pack`。完整发布事实链见 [Buildr npm 发布流程](../flows/open-source-release.md)。
 
 Product测试执行框架、Context contract、资源模型与新测试接入流程见 [Buildr Product Verification Framework](../../services/buildr/docs/verification-framework.md)。
 

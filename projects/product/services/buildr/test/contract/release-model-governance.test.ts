@@ -7,6 +7,7 @@ const SERVICE_ROOT: any = path.resolve(import.meta.dirname, '../..');
 const PRODUCT_ROOT: any = path.resolve(SERVICE_ROOT, '../..');
 const WORKSPACE_ROOT: any = path.resolve(PRODUCT_ROOT, '../..');
 const CHANGE_ROOTS: any[] = [
+  path.join(PRODUCT_ROOT, 'openspec/changes/add-release-rehearsal-gate'),
   path.join(PRODUCT_ROOT, 'openspec/changes/remove-task-development-and-legacy-finish-history'),
   path.join(PRODUCT_ROOT, 'openspec/changes/streamline-release-dispatch-and-closeout'),
   path.join(PRODUCT_ROOT, 'openspec/changes/replace-main-dev-merge-with-dev-provenance-reconciliation'),
@@ -31,6 +32,8 @@ test('release collection contract freezes one manual selection chain and fails c
     'Release生命周期动作必须独立授权且幂等',
     'reopen',
     'freezes/<generation>',
+    '发布演练必须在正式选择前构造精确预期发布源',
+    '失败候选修复必须通过全绿演练原子提升',
     '发布模块必须保持唯一owner与窄consumer边界',
   ]) assert.match(contract, new RegExp(marker.replace(/[<>/]/g, '\\$&')), marker);
   assert.match(contract, /MUST NOT自动解决、直接编辑、rebase、reset、force push/);
@@ -73,7 +76,9 @@ test('source release Skill blocks incomplete migration and does not retain the o
   assert.match(skill, /release-model-implementation-incomplete/);
   assert.match(skill, /精确`<dev-baseline>`和有序待选择dev commits/);
   assert.match(skill, /只允许`cherry-pick -x`/);
-  assert.match(skill, /reopen --confirm --reason/);
+  assert.match(skill, /release-rehearsal\.ts prepare/);
+  assert.match(skill, /release-rehearsal\.ts promote/);
+  assert.match(skill, /正式selection保持冻结/);
   assert.match(skill, /support Task terminal或交付结果都不使release协调Task completed/);
   assert.match(skill, /aggregate失败、缺失或source不匹配时，release协调Task保持active/);
   assert.match(skill, /candidate-failed-shard-retry\.ts inspect/);
@@ -89,6 +94,7 @@ test('source release Skill blocks incomplete migration and does not retain the o
   assert.match(skill, /release-orchestration-runner\.ts/);
   assert.match(skill, /prepare-dispatch/);
   assert.match(skill, /Release Phase Timeline/);
+  assert.match(skill, /同一workflow、registry、shards和统一Candidate Environment Preparation档位/);
   assert.doesNotMatch(skill, /创建明确标识的active recovery Task承载剩余准备/);
   assert.doesNotMatch(skill, /bridge-main-to-dev\.mjs/);
   assert.doesNotMatch(skill, /冻结最新`origin\/dev`/);
@@ -109,6 +115,8 @@ test('current knowledge, checklist and architecture use the same release identit
   }
   for (const term of ['发布集合（Release Collection）', '发布选择链（Release Selection Chain）', '发布源身份（Release Source Identity）', '发布生命周期（Release Lifecycle）', '发布后 dev 来源核验（Post-publication Dev Provenance Reconciliation）', '发布中间载体（Release Intermediate Carrier）']) assert.match(glossary, new RegExp(term.replace(/[()]/g, '\\$&')));
   assert.match(glossary, /发布阶段时间线（Release Phase Timeline）/);
+  assert.match(glossary, /发布演练（Release Rehearsal）/);
+  assert.match(glossary, /候选环境准备（Candidate Environment Preparation）/);
   assert.match(checklist, /release-orchestration-runner\.ts/);
   for (const owner of ['`tools/release`', '`src/system/installation`', '`src/verification`', '`src/task`', 'self-bootstrap runner', 'protected `publish.yml`']) assert.match(architecture, new RegExp(owner.replace(/[/.]/g, '\\$&')));
   assert.match(architecture, /不得直接写对方Persistence、复制专业Result或建立release旁路SQLite store/);
