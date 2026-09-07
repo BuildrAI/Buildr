@@ -548,6 +548,39 @@ test('CI and publish workflows use the supported Node runtime', () => {
     run: 'npm ci',
   });
   assert.equal(candidateBootstrapSteps.indexOf(webDependencyInstall) < artifactBuildIndex, true);
+  const sourceRuntimeCondition: any = "matrix.shard == 'core-project-task-macos' || matrix.shard == 'core-package-runtime-release-macos'";
+  const candidateCoreSteps: any[] = verifyDocument.jobs['candidate-core-macos'].steps;
+  const candidateCoreWebInstall: any = candidateCoreSteps.find((step: any) => step.name === 'Install Buildr Web dependencies for source-runtime shard');
+  const candidateCoreWebPrepare: any = candidateCoreSteps.find((step: any) => step.name === 'Prepare Buildr Web source runtime');
+  const candidateCoreRunIndex: any = candidateCoreSteps.findIndex((step: any) => step.name === 'Run macOS semantic core shard');
+  assert.deepEqual(candidateCoreWebInstall, {
+    name: 'Install Buildr Web dependencies for source-runtime shard',
+    if: sourceRuntimeCondition,
+    'working-directory': 'projects/product/services/buildr-web',
+    run: 'npm ci',
+  });
+  assert.deepEqual(candidateCoreWebPrepare, {
+    name: 'Prepare Buildr Web source runtime',
+    if: sourceRuntimeCondition,
+    run: 'node tools/development/prepare-development-web.ts',
+  });
+  assert.equal(candidateCoreSteps.indexOf(candidateCoreWebInstall) < candidateCoreSteps.indexOf(candidateCoreWebPrepare), true);
+  assert.equal(candidateCoreSteps.indexOf(candidateCoreWebPrepare) < candidateCoreRunIndex, true);
+  const candidateRuntimeWindowsSteps: any[] = verifyDocument.jobs['candidate-runtime-windows'].steps;
+  const candidateRuntimeWebInstall: any = candidateRuntimeWindowsSteps.find((step: any) => step.name === 'Install Buildr Web dependencies for source-runtime shard');
+  const candidateRuntimeWebPrepare: any = candidateRuntimeWindowsSteps.find((step: any) => step.name === 'Prepare Buildr Web source runtime');
+  const candidateRuntimeRunIndex: any = candidateRuntimeWindowsSteps.findIndex((step: any) => step.name === 'Run Windows runtime shard');
+  assert.deepEqual(candidateRuntimeWebInstall, {
+    name: 'Install Buildr Web dependencies for source-runtime shard',
+    'working-directory': 'projects/product/services/buildr-web',
+    run: 'npm ci',
+  });
+  assert.deepEqual(candidateRuntimeWebPrepare, {
+    name: 'Prepare Buildr Web source runtime',
+    run: 'node tools/development/prepare-development-web.ts',
+  });
+  assert.equal(candidateRuntimeWindowsSteps.indexOf(candidateRuntimeWebInstall) < candidateRuntimeWindowsSteps.indexOf(candidateRuntimeWebPrepare), true);
+  assert.equal(candidateRuntimeWindowsSteps.indexOf(candidateRuntimeWebPrepare) < candidateRuntimeRunIndex, true);
   assert.equal(verifyDocument.jobs['candidate-gate'].if, "always() && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'dev'))");
   assert.doesNotMatch(verifyWorkflow, /os: \[macos-latest, windows-latest\]/);
   assert.match(verifyWorkflow, /npm run test:changed -- --base/);
