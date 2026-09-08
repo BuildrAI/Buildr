@@ -21,7 +21,8 @@ services/buildr/
 ├── test/                后端和产品组合测试
 ├── resources/           文件型交付源资产
 ├── docs/                Service 说明
-└── package/             仅 ignored test-context 派生产物
+├── build/               生成类型与测试库，Git 忽略
+└── web-dist/            前端构建兼托管产物，Git 忽略
 ```
 
 根目录不按“是否会进 npm 包”分类。是否发布由 `package.json#files`、`resources/manifest.yml` 和 Application Payload 工具决定；源码职责不由发布路径反向决定。
@@ -60,7 +61,7 @@ tools/
 └── testing/             测试专用生成程序
 ```
 
-工程工具可以读取产品公开 Schema 或资源清单，但产品运行时不得依赖 `tools/`。
+工程工具可以读取产品公开 Schema 或资源清单，但正式产品运行不加载 `tools/` 源码。开发维护命令 `package check` 调用 `tools/verification/package-check.ts`；正式安装缺少开发工具时明确提示需要开发检出。
 
 ### `resources`
 
@@ -75,9 +76,9 @@ resources/
 
 `resources/runtime/skills/buildr/SKILL.md` 是 Buildr 产品入口 Skill 的源文件。`package/targets/runtime/` 已退出。
 
-### `package`
+### `build` 与 `web-dist`
 
-`package/targets/test-context/` 是 ignored 的生成输出，由 `tools/testing/test-context-build.ts` 维护。除此之外不允许在 `package/` 增加源码、资源或兼容转发入口。
+普通生成结果统一到服务 `build/`：`build/generated/` 保存协议类型，`build/test-context/` 保存公开测试库。`package/` 已无职责。前端构建仍输出到后端 `web-dist/`，生成与托管消费同一份产物。两个输出目录均被 Git 忽略，源码和构建程序不放入其中。
 
 ## Bootstrap 与命名能力
 
@@ -96,9 +97,8 @@ resources/
 
 | Binder | 关系 |
 |---|---|
-| `WORKSPACE_TASK_BINDER` | Workspace 先向 Task 提供 Project/Service reader；Task query 安装后回绑 Workspace 的 Task 摘要读取 |
 | `TASK_CHANGE_BINDER` | Task 向 Change 提供 scope；Change 安装后回绑 Task 详情所需的 resolver |
-| `AGENT_ASSETS_DIAGNOSTICS_BINDER` | Agent Assets 先贡献 diagnostics；Doctor 聚合完成后回绑 package check 所需的只读诊断端口 |
+| `AGENT_ASSETS_DIAGNOSTICS_BINDER` | Agent Assets 先贡献 diagnostics；Doctor 聚合完成后回绑 内置资产修改后所需的诊断端口 |
 
 Binder 只能绑定一次，不允许重新引入完整 Runtime。
 
@@ -108,11 +108,11 @@ Binder 只能绑定一次，不允许重新引入完整 Runtime。
 
 入口：`src/modules/workspace/module.ts`。
 
-责任包括 Workspace identity、Workspace/Project/Service registry、Source Root、每日演进、受管变更和相关 CLI/HTTP/diagnostics。内部按真实技术责任划分：
+责任包括 Workspace identity、Workspace/Project/Service registry、Source Root、受管变更和相关 CLI/HTTP/diagnostics。内部按真实技术责任划分：
 
-- `domain/`：`Workspace`、`Project`、`Service`、`SourceRoot`、`ProjectDailyProgress`；
+- `domain/`：`Workspace`、`Project`、`Service`、`SourceRoot`；每日演进位于任务子能力的领域层；
 - `application/`：命令、查询和跨 Repository 用例；业务归一化诊断也归这里；
-- `persistence/`：Workspace、Project、Service、每日演进 YAML Repository；
+- `persistence/`：Workspace、Project、Service YAML Repository；
 - `infrastructure/`：management fence、source filesystem 与 Git；
 - `interfaces/`：CLI 和 HTTP Adapter。
 
@@ -222,7 +222,7 @@ services/buildr-web/src/
 │   ├── project-daily-progress/
 │   ├── publication/
 │   └── installation/
-├── api/                  共享 transport、session、生成 DTO
+├── api/                  共享 transport、session、请求上下文
 ├── components/           跨功能展示组件
 └── lib/                  通用前端辅助
 ```
@@ -234,7 +234,7 @@ services/buildr-web/src/
 后端模块中的 JSON Schema 是协议 authority。`tools/codegen/contracts/` 从这些 Schema 生成：
 
 - 后端测试/工程消费者 DTO；
-- `buildr-web/src/api/generated/` 前端 DTO；
+- `buildr-web/build/generated/` 前端 DTO；
 - Candidate staging 中的同类产物。
 
 生成文件不手写。`contracts:generate`、`contracts:check`、两端 typecheck、Web build 与真实 HTTP contract tests 共同防止漂移。

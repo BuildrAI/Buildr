@@ -1,6 +1,3 @@
-import fs from 'node:fs';
-import path from 'node:path';
-
 import { createProjectVerificationApplication, type ProjectTestingWorkspaceQuery } from './application/project-verification-application.ts';
 import { normalizeProjectVerification, parseProjectVerification, validateProjectVerification } from './domain/project-verification.ts';
 import { projectVerificationCommand } from './interfaces/cli/project-verification.ts';
@@ -44,34 +41,7 @@ export function createVerificationModule(runtime: { atomicWriteFile(file: string
         parseProjectVerification,
         normalizeProjectVerification,
         validateProjectVerification,
-        createProjectVerificationDiagnostics: ({ addDoctorFinding }: any) => ({
-          diagnoseProjectVerification(result: any, targetRoot: string, registry: any = null) {
-            result.projectVerification = [];
-            for (const [projectCode, project] of Object.entries<any>(registry?.projects || {})) {
-              const projectRoot = workspaceQuery.resolveSourceRoot(targetRoot, project.source);
-              const file = path.join(projectRoot, 'verification.yml');
-              if (!fs.existsSync(file)) continue;
-              const relative = path.relative(targetRoot, file).split(path.sep).join('/');
-              const services = workspaceQuery.listServices(targetRoot, projectCode).services.map((service) => service.code);
-              let value;
-              let errors: string[] = [];
-              try {
-                value = parseProjectVerification(fs.readFileSync(file, 'utf8'), relative);
-                errors = validateProjectVerification(value, { projectCode, services });
-              } catch (error: any) {
-                errors = [error.message];
-              }
-              result.projectVerification.push({ project: projectCode, path: relative, valid: errors.length === 0, testingCount: Array.isArray(value?.testing) ? value.testing.length : 0 });
-              for (const message of errors) {
-                addDoctorFinding(result, 'error', 'project.verification_invalid', message, {
-                  path: relative,
-                  userActionRequired: true,
-                  suggestion: '使用 Task Verification Skill 探查项目测试体系，并通过 project verification validate/update 修复测试地图。',
-                });
-              }
-            }
-          },
-        }),
+        createProjectVerificationDiagnostics: application.createProjectVerificationDiagnostics,
       });
       return Object.freeze({
         provides: { [VERIFICATION_APPLICATION]: cliApplication, [VERIFICATION_DECLARATION]: declaration },

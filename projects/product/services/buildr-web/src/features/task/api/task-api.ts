@@ -11,7 +11,7 @@ import type {
   TaskRetrospectiveDocumentResponse,
   TaskUpdateRequest,
   TaskUpdateResponse,
-} from './generated/task-dto';
+} from '../../../../build/generated/task-dto';
 
 type ReadOptions = Pick<RequestInit, 'signal'>;
 

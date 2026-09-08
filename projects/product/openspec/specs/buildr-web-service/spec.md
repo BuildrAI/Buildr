@@ -53,7 +53,7 @@ Buildr Product Project MUST 在 canonical Service registry（`services/manifest.
 - **AND** 构建 MUST NOT 要求运行时启动 Vite 开发服务器才能生成可托管产物
 
 ### Requirement: Workspace前端必须按独立领域Feature组织
-Buildr Web MUST让Workspace、Project、Service分别拥有独立前端Feature。每个Feature MUST拥有本领域路由页面、页面局部组件和确有复杂状态的Hook；公共`pages/`与`components/` MUST NOT继续保存这些领域的第二份页面或局部组件。共享HTTP Client MAY保持在`src/api/workspace.ts`，但MUST NOT被按领域复制。
+Buildr Web MUST让Workspace、Project、Service分别拥有独立前端Feature。每个Feature MUST拥有本领域路由页面、页面局部组件和确有复杂状态的Hook；公共`pages/`与`components/` MUST NOT继续保存这些领域的第二份页面或局部组件。Workspace、Project、Service客户端 MUST归属各自Feature且每个业务请求只保留一个实现；`src/api/` MUST只提供共享传输、会话与请求上下文。
 
 #### Scenario: 路由装配三个领域页面
 - **WHEN**`App.tsx`装配Workspace、Project和Service路由
@@ -76,7 +76,7 @@ Buildr Web MUST让Workspace、Project、Service分别拥有独立前端Feature�
 - **AND**MUST NOT并入Project CRUD Hook或提升为无领域语义的通用组件
 
 ### Requirement: Buildr Web 剩余页面必须按完整功能归位
-Buildr Web MUST将 Publication 页面与能力级 client 归入 `features/publication`，将 Settings/Release Awareness 交互归入 `features/installation`，将 Task-scoped Change 页面归入 `features/task`。`src/pages` MUST不再长期保存已有明确功能 owner 的页面；App 壳 MUST只拥有路由、布局、导航、Workspace 上下文与跨页抽屉装配。
+Buildr Web MUST将 Publication 页面与能力级 client 归入 `features/publication`，将工作空间 Settings 归入 `features/workspace`、Release Awareness 归入 `features/installation`，将 Task-scoped Change 页面归入 `features/task`。`src/pages` MUST不再长期保存已有明确功能 owner 的页面；App 壳 MUST只拥有路由、布局、导航、Workspace 上下文与跨页抽屉装配。
 
 #### Scenario: 扫描前端路由与依赖
 - **WHEN** 前端架构验证扫描 `App.tsx`、`app`、`features`、`api` 与 `pages`

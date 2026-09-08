@@ -40,7 +40,11 @@ const runtime: any = createRuntime();
 const workspace: any = runtimeProvide(runtime, WORKSPACE_APPLICATION);
 const project: any = runtimeProvide(runtime, PROJECT_APPLICATION);
 const service: any = runtimeProvide(runtime, SERVICE_APPLICATION);
-const instance: any = createLocalWorkspaceServer(runtime, { targetRoot: workspaceRoot, ensureRegisteredTarget: workspace.ensureRegisteredTarget });
+const instance: any = createLocalWorkspaceServer(runtime, {
+  targetRoot: workspaceRoot,
+  ensureRegisteredTarget: workspace.ensureRegisteredTarget,
+  resolveRegisteredWorkspace: workspace.resolveRegisteredWorkspace,
+});
 try {
   const { url, initialWorkspaceId }: any = await instance.ready;
   const response: any = await fetch(`${url}/api/v1/workspaces`);
@@ -49,6 +53,9 @@ try {
   assert.equal(registry.workspaces.length, 1);
   assert.equal(registry.workspaces[0].workspace.id, initialWorkspaceId);
   assert.equal(registry.workspaces[0].rootPath, workspaceRoot);
+  const projects = await fetch(`${url}/api/v1/workspaces/${initialWorkspaceId}/projects`);
+  assert.equal(projects.status, 200);
+  assert.equal((await projects.json()).projects[0].code, 'smoke');
   assert.equal(project.listProjects(workspaceRoot).projects[0].code, 'smoke');
   assert.equal(service.listServices(workspaceRoot, 'smoke').services[0].code, 'app');
   process.stdout.write(`${JSON.stringify({

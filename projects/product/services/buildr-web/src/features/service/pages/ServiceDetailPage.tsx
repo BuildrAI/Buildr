@@ -1,7 +1,10 @@
+import { workspaceApi } from '../../workspace/api/workspace-api';
+import { type ProjectResponse } from '../../project/api/project-api';
+import { serviceApi } from '../api/service-api';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Button, Tabs } from 'antd';
-import { workspaceApi, type ProjectResponse } from '../../../api';
+
 import { useAppShell } from '../../../app/AppShellContext';
 import { MarkdownHost } from '../../../components/MarkdownHost';
 import { encodeProjectDocumentPath, resolveProjectMarkdownHref } from '../../../lib/projectDocuments';
@@ -29,7 +32,7 @@ export function ServiceDetailPage() {
   const [activeTab, setActiveTab] = useState<string>('README.md');
 
   const fetchDocument = useCallback(async (docPath: string): Promise<MarkdownDocument> => {
-    return workspaceApi.serviceDocument(projectCode, serviceCode, encodeProjectDocumentPath(docPath));
+    return serviceApi.serviceDocument(projectCode, serviceCode, encodeProjectDocumentPath(docPath));
   }, [projectCode, serviceCode]);
   const documents = useMarkdownDocumentViewer(fetchDocument, serviceDocumentMissingMessage);
 
@@ -39,8 +42,8 @@ export function ServiceDetailPage() {
       try {
         const [workspace, detail, readme] = await Promise.all([
           workspaceApi.read(),
-          workspaceApi.service(projectCode, serviceCode) as Promise<ServiceDetail>,
-          workspaceApi.serviceDocument(projectCode, serviceCode, 'README.md') as Promise<MarkdownDocument>,
+          serviceApi.service(projectCode, serviceCode) as Promise<ServiceDetail>,
+          serviceApi.serviceDocument(projectCode, serviceCode, 'README.md') as Promise<MarkdownDocument>,
         ]);
         if (cancelled) return;
         setWorkspace(workspace);

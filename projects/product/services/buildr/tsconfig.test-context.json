@@ -6,7 +6,7 @@
     "allowJs": false,
     "checkJs": false,
     "rootDir": "src/infrastructure/testing/context-runtime",
-    "outDir": "package/targets/test-context",
+    "outDir": "build/test-context",
     "declaration": true,
     "declarationMap": false,
     "sourceMap": false,

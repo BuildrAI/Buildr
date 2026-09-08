@@ -16,36 +16,25 @@ import { BUILDR_REQUIRED_BLOCK_START, GENERATED_USER_REGISTRY_RESOURCE_SOURCES, 
 import { SUPPORTED_AGENT_IDS, getRuntimeAdapter } from '../infrastructure/runtime/adapter-contract.ts';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../../infrastructure/contracts/public-json.ts';
 import { createPackageOutput } from './package-maintenance/output.ts';
-import { createPackageSmokeChecks } from './package-maintenance/smoke-checks.ts';
-import { createPackageStaticValidator } from './package-maintenance/static-validation.ts';
 import { createBuiltinReceipts } from './package-maintenance/builtin-receipts.ts';
 import { createBuiltinReplacement } from './package-maintenance/builtin-replacement.ts';
 import { retireLegacyCoreRule, retireOrphanedBuiltinSkills } from './package-maintenance/builtin-retirement.ts';
 import { createPackageSyncPlan } from './package-maintenance/sync-plan.ts';
 import { createBuiltinLifecycle } from './package-maintenance/builtin-lifecycle.ts';
 import { createCapabilityRetirement } from './package-maintenance/capability-retirement.ts';
-import { PACKAGE_VERIFIER_ENV, selectPackageVerifiers } from './package-maintenance/verification-registry.ts';
 import { validateSkillPublication } from '../infrastructure/runtime/skills/publication.ts';
 export function registerApplicationPackageMaintenance(runtime: any): any  {
   const doctor = (...args: any[]) => runtime.doctor(...args);
   const WORKSPACE_ROOT_GITIGNORE_ENTRIES = runtime.WORKSPACE_ROOT_GITIGNORE_ENTRIES;
-  const parseCommandsManifestYaml = (...args: any[]) => runtime.parseCommandsManifestYaml(...args);
-  const parseProjectCommandsYaml = (...args: any[]) => runtime.parseProjectCommandsYaml(...args);
   const isPlainObject = (...args: any[]) => runtime.isPlainObject(...args);
-  const validateCommandsManifest = (...args: any[]) => runtime.validateCommandsManifest(...args);
   const readCommandsManifestForWrite = (...args: any[]) => runtime.readCommandsManifestForWrite(...args);
   const writeCommandsManifest = (...args: any[]) => runtime.writeCommandsManifest(...args);
   const assertNoUnknownOptions = (...args: any[]) => runtime.assertNoUnknownOptions(...args);
   const positionalArgs = (...args: any[]) => runtime.positionalArgs(...args);
-  const componentMemberPaths = (...args: any[]) => runtime.componentMemberPaths(...args);
-  const packageComponentDefinition = (...args: any[]) => runtime.packageComponentDefinition(...args);
-  const packageComponentSourcePath = (...args: any[]) => runtime.packageComponentSourcePath(...args);
-  const validatePackageComponentMembers = (...args: any[]) => runtime.validatePackageComponentMembers(...args);
   const packageComponentsStatus = (...args: any[]) => runtime.packageComponentsStatus(...args);
   const readPackageManifest = (...args: any[]) => runtime.readPackageManifest(...args);
   const parseManifestFileEntry = (...args: any[]) => runtime.parseManifestFileEntry(...args);
   const collectFiles = (...args: any[]) => runtime.collectFiles(...args);
-  const validateBootstrapContract = (...args: any[]) => runtime.validateBootstrapContract(...args);
   const builtinRuleEntry = (...args: any[]) => runtime.builtinRuleEntry(...args);
   const builtinSkillEntry = (...args: any[]) => runtime.builtinSkillEntry(...args);
   const builtinCommandEntry = (...args: any[]) => runtime.builtinCommandEntry(...args);
@@ -56,21 +45,11 @@ export function registerApplicationPackageMaintenance(runtime: any): any  {
   const packageRegistryMutationPaths = (...args: any[]) => runtime.packageRegistryMutationPaths(...args);
   const assertSafeSyncMutationPaths = (...args: any[]) => runtime.assertSafeSyncMutationPaths(...args);
   const convergeRegistryManifests = (...args: any[]) => runtime.convergeRegistryManifests(...args);
-  const parseRulesManifestYaml = (...args: any[]) => runtime.parseRulesManifestYaml(...args);
   const readRulesManifestForWrite = (...args: any[]) => runtime.readRulesManifestForWrite(...args);
   const writeRulesManifest = (...args: any[]) => runtime.writeRulesManifest(...args);
-  const readSkillManifest = (...args: any[]) => runtime.readSkillManifest(...args);
-  const validateSkillManifestEntries = (...args: any[]) => runtime.validateSkillManifestEntries(...args);
-  const isManifestSourceLabel = (...args: any[]) => runtime.isManifestSourceLabel(...args);
-  const normalizeRelativePathForBuildr = (...args: any[]) => runtime.normalizeRelativePathForBuildr(...args);
-  const parseSkillSourceRef = (...args: any[]) => runtime.parseSkillSourceRef(...args);
   const readSkillsManifestForWrite = (...args: any[]) => runtime.readSkillsManifestForWrite(...args);
   const writeSkillsManifest = (...args: any[]) => runtime.writeSkillsManifest(...args);
   const manifestDocumentFor = (...args: any[]) => runtime.manifestDocumentFor(...args);
-  const parseSkillFrontmatter = (...args: any[]) => runtime.parseSkillFrontmatter(...args);
-  const parseProjectsYaml = (...args: any[]) => runtime.parseProjectsYaml(...args);
-  const validateProjectsRegistry = (...args: any[]) => runtime.validateProjectsRegistry(...args);
-  const writeServicesManifest = (...args: any[]) => runtime.writeServicesManifest(...args);
   const optionValue = (...args: any[]) => runtime.optionValue(...args);
   const ensureDirectory = (...args: any[]) => runtime.ensureDirectory(...args);
   const atomicWriteJson = (...args: any[]) => runtime.atomicWriteJson(...args);
@@ -79,8 +58,6 @@ export function registerApplicationPackageMaintenance(runtime: any): any  {
   const buildRuntimeOrphanRemovalPlan = (...args: any[]) => runtime.buildRuntimeOrphanRemovalPlan(...args);
   const productRoot = (...args: any[]) => runtime.productRoot(...args);
   const resourcesRoot = (...args: any[]) => runtime.resourcesRoot(...args);
-  const resourceWorkspaceRoot = (...args: any[]) => runtime.resourceWorkspaceRoot(...args);
-  const developmentWorkspaceRoot = (...args: any[]) => runtime.developmentWorkspaceRoot(...args);
   const appendGitignoreEntries = (...args: any[]) => runtime.appendGitignoreEntries(...args);
   const hasFlag = (...args: any[]) => runtime.hasFlag(...args);
   const toPosixRelative = (...args: any[]) => runtime.toPosixRelative(...args);
@@ -363,128 +340,6 @@ export function registerApplicationPackageMaintenance(runtime: any): any  {
   });
 
   const {
-    validateWorkspaceSkillsBaseline,
-    validateWorkspaceRulesBaseline,
-    validatePackageStatic,
-    parseJsonOutput,
-  } = createPackageStaticValidator({
-    GENERATED_USER_REGISTRY_RESOURCE_SOURCES,
-    LEGACY_PACKAGE_PATHS,
-    PACKAGE_RUNTIME_TARGET,
-    RESOURCE_WORKSPACE_ROOT,
-    SUPPORTED_AGENT_IDS,
-    collectFiles, builtinRuleEntry, builtinSkillEntry,
-    componentMemberPaths,
-    existsDirectory,
-    existsFile,
-    fs,
-    isManifestSourceLabel,
-    isPlainObject,
-    normalizeRelativePathForBuildr,
-    packageComponentDefinition,
-    packageComponentSourcePath,
-    resourceWorkspaceRoot,
-    parseCommandsManifestYaml,
-    parseProjectCommandsYaml,
-    parseManifestFileEntry,
-    parseProjectsYaml,
-    parseRulesManifestYaml,
-    parseSkillFrontmatter,
-    parseSkillSourceRef,
-    path,
-    readPackageManifest, readSkillManifest, sourcePathFromBuiltin,
-    toPosixRelative,
-    validateBootstrapContract,
-    validateCommandsManifest,
-    validatePackageComponentMembers,
-    validateProjectsRegistry,
-    validateSkillManifestEntries,
-    getRuntimeAdapter,
-    validateSkillPublication,
-  });
-  const {
-    runPackageWorkspaceSmoke,
-    runPackageDomainIntegration,
-    runPackageRuntimeIntegration,
-    runPackageAggregateSmoke,
-    validatePackageSupportTools,
-  } = createPackageSmokeChecks({
-    renderRulesManifestYaml: runtime.renderRulesManifestYaml,
-    rootRequiredBlockStatus: runtime.rootRequiredBlockStatus,
-    BUILDR_REQUIRED_BLOCK_START,
-    buildRuleDiscoveryPlan,
-    checkClaudeCodeRuntime,
-    checkCodexRuntime,
-    collectFiles,
-    ensureDirectory,
-    execFileSync,
-    existsDirectory,
-    existsFile,
-    fs,
-    hasManagedRulesMarker,
-    os,
-    parseCommandsManifestYaml,
-    parseProjectCommandsYaml,
-    parseManifestFileEntry,
-    parseProjectsYaml,
-    parseRulesManifestYaml,
-    path,
-    currentProductInvocation: runtime.currentProductInvocation, productInvocationArgs: runtime.productInvocationArgs,
-    readSkillManifest,
-    renderClaudeCodeRules,
-    resolveRuleScope,
-    spawnSync,
-    toPosixRelative,
-    writeServicesManifest,
-  });
-
-  function packageCheck(): any  {
-    const root = productRoot();
-    const workspaceRoot = developmentWorkspaceRoot();
-    const manifestPath = path.join(resourcesRoot(), 'manifest.yml');
-    const manifest = readPackageManifest();
-    const allowedVariables: any = new Set(manifest.templateVariables);
-    const files: any[] = [];
-    const problems: any[] = [];
-    const mappedEntries: any[] = [];
-
-    const context: any = { root, workspaceRoot, manifestPath, manifest, allowedVariables, files, problems, mappedEntries };
-    const selector = process.env[PACKAGE_VERIFIER_ENV] || '';
-    const selected = selectPackageVerifiers(selector);
-    const smokeContext: any = { ...context, parseJsonOutput };
-    const runners: any = {
-      static: () => {
-        validatePackageStatic(context);
-        validatePackageSupportTools(smokeContext);
-      },
-      workspace: () => runPackageWorkspaceSmoke(smokeContext),
-      commands: () => runPackageDomainIntegration(smokeContext, 'commands'),
-      rules: () => runPackageDomainIntegration(smokeContext, 'rules'),
-      skills: () => runPackageDomainIntegration(smokeContext, 'skills'),
-      runtime: () => runPackageRuntimeIntegration(smokeContext),
-    };
-    if (!selector) {
-      runners.static();
-      runPackageAggregateSmoke(smokeContext);
-    } else {
-      for (const step of selected) runners[step.runner]();
-    }
-
-    if (problems.length > 0) {
-      console.error('Buildr package check failed:');
-      for (const problem of problems) console.error(`- ${problem}`);
-      process.exit(1);
-    }
-
-    const selectorSummary = selected.map((step: any) => step.id).join(', ');
-    if (selected.some((step: any) => step.id === 'static')) {
-      console.log(`Buildr package check passed. Static validation checked ${manifest.include.length} include entries and ${files.length} files; ran ${selectorSummary}.`);
-    } else {
-      console.log(`Buildr package integration check passed. Ran ${selectorSummary}; static package validation is owned by selector static.`);
-    }
-  }
-
-  const {
     packageOutputInventory,
     packageOutputIntegrity,
     readPackageOutputReceipt,
@@ -521,9 +376,6 @@ export function registerApplicationPackageMaintenance(runtime: any): any  {
     builtinUninstall,
     builtinRestoreUnsafe,
     builtinRestore,
-    validateWorkspaceSkillsBaseline,
-    validateWorkspaceRulesBaseline,
-    packageCheck,
     packageOutputInventory,
     packageOutputIntegrity,
     readPackageOutputReceipt,

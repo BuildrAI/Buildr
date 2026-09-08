@@ -26,8 +26,8 @@ async function generate(root: string): Promise<void> {
 test('全部HTTP DTO从空显式目标生成两端闭合输出', async (t) => {
   const root = fixture(t);
   await generate(root);
-  const backend = path.join(root, 'buildr/src');
-  const web = path.join(root, 'buildr-web/src');
+  const backend = path.join(root, 'buildr/build/generated');
+  const web = path.join(root, 'buildr-web/build/generated');
   assert.equal((await checkTaskRecordHttpDto(root)).length, 0);
   assert.equal((await checkTaskProfessionalHttpDto(root)).length, 0);
   assert.equal((await checkRuntimeSystemDto(root)).length, 0);
@@ -49,8 +49,8 @@ test('相同Schema向两个全新目标生成相同DTO清单', async (t) => {
   const manifest = (target: string) => createGeneratedArtifactManifest({
     inputs: { schemas: 'current' },
     artifacts: [
-      { id: 'backend-dto', root: path.join(target, 'buildr/src') },
-      { id: 'web-dto', root: path.join(target, 'buildr-web/src') },
+      { id: 'backend-dto', root: path.join(target, 'buildr/build/generated') },
+      { id: 'web-dto', root: path.join(target, 'buildr-web/build/generated') },
     ],
   });
   assert.deepEqual(manifest(left), manifest(right));

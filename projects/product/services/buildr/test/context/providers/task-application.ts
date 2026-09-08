@@ -1,4 +1,4 @@
-import { defineTestContext } from '../../../test-context.mjs';
+import { defineTestContext } from '@buildr-ai/buildr/test-context';
 import { createRuntime } from '../../helpers/runtime-harness.ts';
 import { createTestContextPool } from '../runtime.ts';
 import { TEST_CONTEXT_PROVIDERS } from '../registry.ts';

@@ -15,10 +15,10 @@
 ## 数据与依赖
 
 - 依赖 React 19、React Router、Vite、TypeScript，以及 Ant Design 5（`antd` + 必要 icons）；UI 方向为柔和产品感，依赖与字体均由 Vite 打入 `web-dist`，禁止 CDN/远程字体/远程脚本；前端工程自有 `package-lock.json`。
-- 源码按用户能力组织在`src/features/`。Workspace、Project、Service、Task、Project Daily Progress、Publication与Installation分别拥有自己的pages/components/hooks/api；`src/app/`只负责应用壳，`src/api/`只负责共享transport、session与generated DTO，`src/components/`和`src/lib/`只放跨功能复用机制。路由级业务页面不再堆放在`src/pages/`。
+- 源码按用户能力组织在`src/features/`。Workspace、Project、Service、Task、Project Daily Progress、Publication与Installation分别拥有自己的pages/components/hooks/api；`src/app/`只负责应用壳，`src/api/`只负责共享transport、session与请求上下文，`src/components/`和`src/lib/`只放跨功能复用机制。路由级业务页面不再堆放在`src/pages/`。
 - Buildr Web源码工具链的准备入口由本Service自身的`package.json`、`package-lock.json`与项目测试地图声明；智能体在实际选择的checkout中调用受管wrapper。该准备不扩张Task scope、Change或源码写入authority，也不建立Task Environment记录。Browser build在启动Chrome前只接受本root的TypeScript/Vite，不从retained checkout、全局安装或系统PATH借用。
 - 运行时依赖 `buildr` 消费 `web-dist` 并做同源 loopback 托管；已安装或仅含 dist 的环境不要求本 Service 源码或 Vite 开发服务器存在。
-- Task固定组织为`src/features/task/{pages,hooks,components,api}`。`api/task-api.ts`消费Task-owned JSON Schema生成到`api/generated/`的ignored Task Record DTO并复用全局HTTP/session/Workspace transport；页面只组装Hook与组件，详情、动作、Evidence、关联产物和复盘分别由真实Hook管理，组件不直接调用后端Client。`src/api`不得反向依赖Task feature。Buildr Web不安装Ajv、不拥有Schema或Application authority；构建入口先生成两端DTO，再通过重复生成、typecheck、正式build与Task Browser Smoke验证。
+- Task固定组织为`src/features/task/{pages,hooks,components,api}`。`api/task-api.ts`消费Task-owned JSON Schema生成到`build/generated/`的ignored Task Record DTO并复用全局HTTP/session/Workspace transport；页面只组装Hook与组件，详情、动作、Evidence、关联产物和复盘分别由真实Hook管理，组件不直接调用后端Client。`src/api`不得反向依赖Task feature。Buildr Web不安装Ajv、不拥有Schema或Application authority；构建入口先生成两端DTO，再通过重复生成、typecheck、正式build与Task Browser Smoke验证。
 - Task professional的Review、Verification与父任务协调读取通过`src/api/task-professional.ts`消费Buildr Service按需生成的ignored DTO；Task Detail页面不拥有Schema或Application authority，也不再包含Execution Records面板。Review与Verification的“交给Agent”动作只形成携带Task ID和必要上下文的短指令，Agent再读取对应Skill与真实现场；前端typed client与后端均不存在这两类专业prompt API。
 - Release Awareness由`src/features/installation/api/release-awareness-api.ts`与`components/ReleaseAwarenessBanner.tsx`拥有；Publication list/detail由`src/features/publication/api/publication-api.ts`拥有。两者复用`src/api/runtimeSystem.ts`的共享transport与生成DTO，但页面不直接依赖宽泛Runtime/System客户端。Publication asset仍使用同源binary URL，不进入JSON client；低层`client.ts`继续返回`unknown`，Buildr Web不安装Ajv或取得后端Application authority。
 - 不引入独立 Git 仓、CDN、分域 CORS 或云端静态托管。

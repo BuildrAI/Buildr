@@ -8,7 +8,7 @@ import {
   PACKAGE_VERIFIER_ENV,
   PACKAGE_VERIFIERS,
   selectPackageVerifiers,
-} from '../../../src/modules/agent-assets/application/package-maintenance/verification-registry.ts';
+} from '../../../tools/verification/package-check/verification-registry.ts';
 
 const productRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const selector: any = process.argv[2];

@@ -59,8 +59,8 @@ export async function buildGeneratedArtifactSet(outputRoot: string, input: { sou
         vite: webMetadata.devDependencies?.vite ?? 'missing',
       },
       artifacts: [
-        { id: 'backend-dto', root: path.join(dtoRoot, 'buildr/src') },
-        { id: 'web-dto', root: path.join(dtoRoot, 'buildr-web/src') },
+        { id: 'backend-dto', root: path.join(dtoRoot, 'buildr/build/generated') },
+        { id: 'web-dto', root: path.join(dtoRoot, 'buildr-web/build/generated') },
         { id: 'test-context', root: testContextRoot },
         { id: 'web-dist', root: webDistRoot },
       ],

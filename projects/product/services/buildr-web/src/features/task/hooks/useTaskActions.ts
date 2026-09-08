@@ -1,10 +1,11 @@
+import { taskProfessionalApi } from '../api/task-professional-api';
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 
-import { taskProfessionalApi, type ApiError } from '../../../api';
+import { type ApiError } from '../../../api';
 import { confirmModal } from '../../../lib/confirm';
 import { taskStatusLabel } from '../../../lib/taskLabels';
 import { taskApi } from '../api/task-api';
-import type { TaskDetailResponse } from '../api/generated/task-dto';
+import type { TaskDetailResponse } from '../../../../build/generated/task-dto';
 import { diff, lines, parseLines, qualified } from '../components/shared';
 import {
   emptyParentCompletionDraft,

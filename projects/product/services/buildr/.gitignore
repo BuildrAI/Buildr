@@ -3,9 +3,4 @@ node_modules/
 dist/
 *.tgz
 web-dist/
-package/targets/test-context/
-src/modules/agent-assets/interfaces/http/generated/
-src/modules/task/application/generated/
-src/modules/task/interfaces/http/generated/
-src/web/http/generated/
-src/modules/workspace/interfaces/http/generated/
+build/

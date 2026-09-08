@@ -1,9 +1,10 @@
-import type { ApiClient } from './client';
+import { api } from '../../../api';
+import type { ApiClient } from '../../../api/client';
 import type {
   CoordinationResponse,
   ReviewsResponse,
   VerificationResponse,
-} from './generated/task-professional-http-dto';
+} from '../../../../build/generated/task-professional-http-dto';
 
 type ReadOptions = Pick<RequestInit, 'signal'>;
 
@@ -39,3 +40,5 @@ export function createTaskProfessionalClient(client: ApiClient) {
 }
 
 export type TaskProfessionalClient = ReturnType<typeof createTaskProfessionalClient>;
+
+export const taskProfessionalApi = createTaskProfessionalClient(api);

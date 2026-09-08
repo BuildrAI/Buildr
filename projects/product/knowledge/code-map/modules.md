@@ -4,7 +4,8 @@
 
 | 用户或产品能力 | 唯一模块入口 | 主要责任 | 主要对外端口或贡献 |
 |---|---|---|---|
-| Workspace、Project、Service 与每日演进 | `services/buildr/src/modules/workspace/module.ts` | Workspace 身份、注册表、Project/Service Manifest、Workspace mutation、每日演进 | `WORKSPACE_APPLICATION`、`WORKSPACE_QUERY`、CLI/HTTP/diagnostics |
+| Workspace、Project、Service | `services/buildr/src/modules/workspace/module.ts` | Workspace 身份、注册表、Project/Service Manifest 与 mutation | `WORKSPACE_APPLICATION`、`WORKSPACE_QUERY`、`WORKSPACE_ASSET_SUPPORT`、CLI/HTTP/diagnostics |
+| 项目每日演进 | `services/buildr/src/modules/task/module.ts` 的 `createDailyProgressModule` | `task/daily-progress/` 拥有提交、摘要、任务关联及本机 YAML | `PROJECT_DAILY_PROGRESS_APPLICATION`、CLI/HTTP |
 | Task Record、Review、Verification、父任务协调与 Worktree | `services/buildr/src/modules/task/module.ts` | Task 领域规则、SQLite 事务、查询投影、专业记录和 Git Worktree 操作 | `TASK_QUERY_APPLICATION`、Task 各端口、CLI/HTTP |
 | Task 与 OpenSpec Change 关联展示 | `services/buildr/src/modules/task/change/module.ts` | Task scope 下的 Change 定位和 HTTP 展示组合 | `CHANGE_APPLICATION`、HTTP |
 | 通用 OpenSpec | `services/buildr/src/modules/openspec/module.ts` | Change 读取、严格校验、收敛计划、条件应用与恢复 | `OPENSPEC_APPLICATION`、`OPENSPEC_QUERY`、CLI |
@@ -34,7 +35,9 @@
 | Task | `services/buildr-web/src/features/task/` | `TasksPage`、`TaskDetailPage`、`useTaskList`、`useTaskActions` |
 | Project Daily Progress | `services/buildr-web/src/features/project-daily-progress/` | `DailyProgressPanel` |
 | Publication | `services/buildr-web/src/features/publication/` | `ArticlesPage`、`ArticleDetailPage`、`publicationApi` |
-| Installation | `services/buildr-web/src/features/installation/` | `SettingsPage`、`ReleaseAwarenessBanner`、`releaseAwarenessApi` |
+| Installation | `services/buildr-web/src/features/installation/` | `ReleaseAwarenessBanner`、`releaseAwarenessApi` |
+
+工作空间设置 `SettingsPage` 属于 `features/workspace/pages/`。Workspace、Project、Service、Task 和每日演进的专用客户端位于所属 `features/*/api/`。
 
 ## 工程模块
 

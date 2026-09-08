@@ -1,5 +1,7 @@
 import process from 'node:process';
 import path from 'node:path';
+import fs from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../../../infrastructure/contracts/public-json.ts';
 import { assertNoUnknownOptions, hasFlag, optionValue, optionValueRaw, positionalArgs } from '../../../../infrastructure/cli-arguments.ts';
 
@@ -319,7 +321,14 @@ export function createAgentAssetsCliContributions(): any  {
       summary: '供 Buildr 产品维护者检查产品包发布边界和基础行为；不是 workspace onboarding 必需步骤。',
       usage: 'Usage: buildr package check',
       match: ({ domain, action }: any) => domain === 'package' && action === 'check',
-      run: (runtime: any) => runtime.packageCheck(),
+      run: (runtime: any) => {
+        const entry = path.join(runtime.productRoot(), 'tools/verification/package-check.ts');
+        if (!fs.existsSync(entry)) throw new Error('package check requires the Buildr development checkout.');
+        return execFileSync(process.execPath, [entry], {
+          stdio: 'inherit',
+          env: { ...process.env, BUILDR_NPM_ENTRY_PATH: process.env.BUILDR_NPM_ENTRY_PATH || path.join(runtime.productRoot(), 'bin/buildr.mjs') },
+        });
+      },
     }),
     route({
       key: 'package build', surface: 'maintenance',

@@ -1,5 +1,5 @@
 import { stripTypeScriptTypes } from 'node:module';
-import { capabilityKey, parseCapabilityContract, validateCapabilityIdentity } from '../../persistence/skill-manifest.ts';
+import { capabilityKey, parseCapabilityContract, validateCapabilityIdentity } from '../../../src/modules/agent-assets/persistence/skill-manifest.ts';
 
 // Type erasure preserves executable text, so English prose and string literals
 // containing the word do not count as unsafe type annotations.
@@ -354,7 +354,7 @@ export function createPackageStaticValidator(deps: any): any  {
     ]) {
       if (existsFile(path.join(root, relative))) problems.push(`Retired Task Lifecycle runtime path must not remain: ${relative}`);
     }
-    for (const relative of ['src/modules/task/module.ts', 'src/modules/task/interfaces/http/task-lifecycle-core.ts', 'src/modules/task/interfaces/http/task-professional-http-contracts.ts', '../buildr-web/src/api/task-professional.ts']) {
+    for (const relative of ['src/modules/task/module.ts', 'src/modules/task/interfaces/http/task-lifecycle-core.ts', 'src/modules/task/interfaces/http/task-professional-http-contracts.ts', '../buildr-web/src/features/task/api/task-professional-api.ts']) {
       const file = path.join(root, relative);
       if (existsFile(file) && /task-overview|inspectTaskOverview|\/overview/.test(fs.readFileSync(file, 'utf8'))) problems.push(`Retired Task Overview surface remains in ${relative}.`);
     }
@@ -447,8 +447,8 @@ export function createPackageStaticValidator(deps: any): any  {
       'src/modules/task/interfaces/http/task-professional-http-contracts.ts',
       'src/modules/task/interfaces/http/task-professional-http-mapping.ts',
       'src/modules/task/module.ts',
-      '../buildr-web/src/api/task-professional.ts',
-      '../buildr-web/src/api/generated/task-professional-http-dto.ts',
+      '../buildr-web/src/features/task/api/task-professional-api.ts',
+      '../buildr-web/build/generated/task-professional-http-dto.ts',
     ];
     for (const relative of files) {
       const file = path.join(root, relative);
@@ -480,7 +480,7 @@ export function createPackageStaticValidator(deps: any): any  {
     if (existsDirectory(sourceRoot)) {
       for (const file of collectFiles(sourceRoot)) {
         if (!/\.(?:mjs|js|ts)$/.test(file)) continue;
-        if (path.resolve(file) === path.resolve(root, 'src/modules/agent-assets/application/package-maintenance/static-validation.ts')) continue;
+        if (path.resolve(file) === path.resolve(root, 'tools/verification/package-check/static-validation.ts')) continue;
         const content = fs.readFileSync(file, 'utf8');
         if (/\.writeTaskReviewResultPersistence!?\(/.test(content)) writerCallers.push(toPosixRelative(root, file));
       }

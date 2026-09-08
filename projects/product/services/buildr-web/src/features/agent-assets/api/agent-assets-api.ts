@@ -1,10 +1,11 @@
-import type { ApiClient } from './client';
+import { api } from '../../../api';
+import type { ApiClient } from '../../../api/client';
 import type {
   AgentAssetsInventoryResponseInventoryResponse,
   AgentAssetsMutationResponseMutationResponse,
   AgentAssetsRulesAddRequestRulesAddRequest,
   AgentAssetsRulesRemoveRequestRulesRemoveRequest,
-} from './generated/agent-assets-http-dto';
+} from '../../../../build/generated/agent-assets-http-dto';
 
 export type AgentAssetsInventory = AgentAssetsInventoryResponseInventoryResponse;
 export type AgentAssetsMutation = AgentAssetsMutationResponseMutationResponse;
@@ -22,3 +23,5 @@ export function createAgentAssetsClient(api: ApiClient) {
     },
   };
 }
+
+export const agentAssetsApi = createAgentAssetsClient(api);

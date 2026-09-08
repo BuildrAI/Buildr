@@ -6,7 +6,7 @@ import test from 'node:test';
 import { createRuntimeDiagnostics } from '../../src/modules/diagnostics/application/runtime-diagnostics.ts';
 import { createScopeDiagnostics } from '../../src/modules/workspace/application/diagnostics/scope-diagnostics.ts';
 import { buildDoctorDomainHealth, buildDoctorHealth, buildDoctorRepairPlan } from '../../src/modules/diagnostics/application/result-model.ts';
-import { PACKAGE_VERIFIERS, selectPackageVerifiers } from '../../src/modules/agent-assets/application/package-maintenance/verification-registry.ts';
+import { PACKAGE_VERIFIERS, selectPackageVerifiers } from '../../tools/verification/package-check/verification-registry.ts';
 import { blockingSyncSourceIssues } from '../../src/modules/agent-assets/application/runtime-projection.ts';
 
 test('package verifier selector 保持稳定顺序、去重并拒绝未知 owner', () => {

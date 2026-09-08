@@ -20,7 +20,7 @@ export function registerSystemDoctorApplication(runtime: any) {
   const diagnoseSkillsManifestSchemas = (...args: any[]) => runtime.diagnoseSkillsManifestSchemas(...args);
   const diagnoseSkillCapabilities = (...args: any[]) => runtime.diagnoseSkillCapabilities(...args);
   const diagnoseProjectVerification = (...args: any[]) => runtime.diagnoseProjectVerification(...args);
-  const syncPackageBuiltins = (...args: any[]) => runtime.syncPackageBuiltins(...args);
+  const inspectPackageBuiltins = (targetRoot: string) => runtime.inspectPackageBuiltins(targetRoot);
   const finalizeDoctorResult = (...args: any[]) => runtime.finalizeDoctorResult(...args);
   const printDoctorReport = (...args: any[]) => runtime.printDoctorReport(...args);
   const releaseAwareness = (...args: any[]) => runtime.releaseAwareness(...args);
@@ -155,7 +155,7 @@ export function registerSystemDoctorApplication(runtime: any) {
     if (result.workspace?.initialized) diagnoseSkillCapabilities(result, targetRoot, scopes, requestedAgent);
     if (result.workspace?.initialized) {
       try {
-        const builtinStatus = syncPackageBuiltins(targetRoot, { checkOnly: true });
+        const builtinStatus = inspectPackageBuiltins(targetRoot);
         result.builtins.items = builtinStatus.findings;
         for (const finding of builtinStatus.findings.filter((item: any) => !item.component)) {
           if (finding.type === 'rule' && finding.id === 'buildr-core') {

@@ -3,12 +3,14 @@ import {
   AGENT_ASSETS_CAPABILITY_QUERY,
   AGENT_ASSETS_DIAGNOSTICS_BINDER,
   AGENT_ASSETS_INTERNAL,
+  AGENT_ASSETS_DIAGNOSTICS_READ,
   AGENT_ASSETS_RUNTIME,
   createAgentAssetsModule,
   createAgentAssetsRuntimeModule,
 } from '../modules/agent-assets/module.ts';
 import {
   TASK_RUNTIME_PORT,
+  createDailyProgressModule,
   TASK_CHANGE_BINDER,
   TASK_QUERY_APPLICATION,
   TASK_MODULE,
@@ -22,7 +24,7 @@ import {
 } from '../modules/task/module.ts';
 import { createModuleRegistry } from './module-registry.ts';
 import { createWebModule } from '../web/module.ts';
-import { createWorkspaceModule, WORKSPACE_AGENT_ASSETS_BINDER, WORKSPACE_APPLICATION, WORKSPACE_QUERY, WORKSPACE_TASK_BINDER } from '../modules/workspace/module.ts';
+import { createWorkspaceModule, WORKSPACE_AGENT_ASSETS_BINDER, WORKSPACE_APPLICATION, WORKSPACE_QUERY } from '../modules/workspace/module.ts';
 import { createSystemInstallationModule, readCurrentProductIdentity, SYSTEM_INSTALLATION_APPLICATION } from '../modules/installation/module.ts';
 import { createSystemDoctorModule, SYSTEM_DOCTOR_APPLICATION } from '../modules/diagnostics/module.ts';
 import { registerInfrastructure } from '../infrastructure/index.ts';
@@ -53,7 +55,7 @@ export function createRuntime(): any  {
   registry.install(createPublicationModule(runtime));
   registry.install(createOpenSpecModule(runtime));
   registry.install(TASK_MODULE);
-  registry.provide(WORKSPACE_TASK_BINDER).bindTaskQuery(registry.provide(TASK_QUERY_APPLICATION));
+  registry.install(createDailyProgressModule(runtime));
   registry.install(createWorktreeProviderModule(runtime));
   registry.install(createChangeModule(runtime));
   registry.provide(TASK_CHANGE_BINDER).bindChangeResolver(registry.provide(CHANGE_APPLICATION));
@@ -67,7 +69,7 @@ export function createRuntime(): any  {
     diagnosticContributions: registry.contributions('diagnostics'),
     agentRuntimeCapability: AGENT_ASSETS_RUNTIME,
     agentCapabilityQuery: AGENT_ASSETS_CAPABILITY_QUERY,
-    agentAssetsInternal: AGENT_ASSETS_INTERNAL,
+    agentAssetsInternal: AGENT_ASSETS_DIAGNOSTICS_READ,
     verificationDeclaration: VERIFICATION_DECLARATION,
     workspaceQuery: WORKSPACE_QUERY,
     installationApplication: SYSTEM_INSTALLATION_APPLICATION,

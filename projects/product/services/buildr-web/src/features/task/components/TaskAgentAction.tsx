@@ -1,6 +1,9 @@
+import { taskProfessionalApi } from '../api/task-professional-api';
+import { projectApi } from '../../project/api/project-api';
+import { serviceApi } from '../../service/api/service-api';
 import { useEffect, useState, type FormEvent } from 'react';
 import { Button, Input, Select } from 'antd';
-import { workspaceApi, taskProfessionalApi } from '../../../api';
+
 import { ACTION_LABELS, useAgentActionFeedback } from '../../../components/AgentActionFeedback';
 
 type Props = { action: string; context: Record<string, unknown>; onBack: () => void };
@@ -20,7 +23,7 @@ export function TaskAgentAction({ action, context, onBack }: Props) {
     setProjectsLoaded(false);
     void (async () => {
       try {
-        const data = await workspaceApi.listProjects();
+        const data = await projectApi.listProjects();
         if (cancelled) return;
         const availableProjects = data.projects || [];
         setProjects(availableProjects);
@@ -49,7 +52,7 @@ export function TaskAgentAction({ action, context, onBack }: Props) {
     let cancelled = false;
     void (async () => {
       try {
-        const data = await workspaceApi.services(projectCode);
+        const data = await serviceApi.services(projectCode);
         if (!cancelled) setServices(data.services || []);
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : '读取服务失败。');

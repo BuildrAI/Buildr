@@ -9,7 +9,7 @@ import { cliOutputRoot, contractOutputPaths } from './output-paths.ts';
 
 const serviceRoot: any = path.resolve(import.meta.dirname, '../../..');
 const productRoot: any = path.resolve(serviceRoot, '../..');
-const defaultOutputs: any = contractOutputPaths('modules/task/interfaces/http', 'task-professional-http-dto.ts');
+const defaultOutputs: any = contractOutputPaths('task-professional-http-dto.ts');
 
 function body(schema: any, definitionName: any): any  {
   const { $schema: _draft, $id: _identity, title: _title, ...value }: any = schema;
@@ -54,14 +54,14 @@ export async function renderTaskProfessionalHttpDto(): Promise<any>  {
 
 export async function checkTaskProfessionalHttpDto(outputRoot: any): Promise<any>  {
   const expected: any = await renderTaskProfessionalHttpDto();
-  const selected: any = contractOutputPaths('modules/task/interfaces/http', 'task-professional-http-dto.ts', outputRoot);
+  const selected: any = contractOutputPaths('task-professional-http-dto.ts', outputRoot);
   const outputs: any[] = [selected.backend, selected.web];
   return outputs.filter((output: any) => !fs.existsSync(output) || fs.readFileSync(output, 'utf8') !== expected);
 }
 
 export async function writeTaskProfessionalHttpDto(outputRoot: any = undefined): Promise<any>  {
   const expected: any = await renderTaskProfessionalHttpDto();
-  const selected: any = outputRoot ? contractOutputPaths('modules/task/interfaces/http', 'task-professional-http-dto.ts', outputRoot) : defaultOutputs;
+  const selected: any = outputRoot ? contractOutputPaths('task-professional-http-dto.ts', outputRoot) : defaultOutputs;
   const outputs: any[] = [selected.backend, selected.web];
   for (const output of outputs) {
     fs.mkdirSync(path.dirname(output), { recursive: true });
@@ -73,7 +73,7 @@ export async function writeTaskProfessionalHttpDto(outputRoot: any = undefined):
 async function main(): Promise<any>  {
   const expected: any = await renderTaskProfessionalHttpDto();
   const outputRoot: any = cliOutputRoot(process.argv.slice(2));
-  const selected: any = outputRoot ? contractOutputPaths('modules/task/interfaces/http', 'task-professional-http-dto.ts', outputRoot) : defaultOutputs;
+  const selected: any = outputRoot ? contractOutputPaths('task-professional-http-dto.ts', outputRoot) : defaultOutputs;
   const outputs: any[] = [selected.backend, selected.web];
   if (process.argv.includes('--check')) {
     const drift: any = outputs.filter((output: any) => !fs.existsSync(output) || fs.readFileSync(output, 'utf8') !== expected);

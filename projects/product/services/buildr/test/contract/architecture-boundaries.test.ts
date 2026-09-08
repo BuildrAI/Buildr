@@ -18,9 +18,9 @@ test('保留入口保持有界且 Doctor 已归属 System', () => {
 });
 
 test('package verification 使用稳定 registry 且不恢复共享 smoke runner', () => {
-  const application: any = fs.readFileSync(path.join(productRoot, 'src/modules/agent-assets/application/package-maintenance.ts'), 'utf8');
-  const smoke: any = fs.readFileSync(path.join(productRoot, 'src/modules/agent-assets/application/package-maintenance/smoke-checks.ts'), 'utf8');
-  const registry: any = fs.readFileSync(path.join(productRoot, 'src/modules/agent-assets/application/package-maintenance/verification-registry.ts'), 'utf8');
+  const application: any = fs.readFileSync(path.join(productRoot, 'tools/verification/package-check.ts'), 'utf8');
+  const smoke: any = fs.readFileSync(path.join(productRoot, 'tools/verification/package-check/smoke-checks.ts'), 'utf8');
+  const registry: any = fs.readFileSync(path.join(productRoot, 'tools/verification/package-check/verification-registry.ts'), 'utf8');
   assert.match(application, /selectPackageVerifiers/);
   assert.equal(application.match(/validatePackageStatic\(context\)/g)?.length, 1);
   for (const runner of ['runPackageWorkspaceSmoke', 'runPackageDomainIntegration', 'runPackageRuntimeIntegration']) {

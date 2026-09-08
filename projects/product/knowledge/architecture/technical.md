@@ -29,13 +29,13 @@ src/
 
 `bootstrap/runtime.ts:createRuntime()` 创建技术 Runtime，并由 `module-registry.ts` 安装模块。业务能力通过 `runtimeProvide()` 按 capability id 获取；CLI、HTTP 和 diagnostics 通过 `runtimeContributions()` 聚合。生产 Runtime 不扁平注入业务方法。
 
-Workspace↔Task、Task↔Change、Agent Assets↔Diagnostics 的真实循环由一次性 Binder 完成晚绑定，其余依赖保持单向。
+Task↔Change、Agent Assets↔Diagnostics 的真实循环由一次性 Binder 完成晚绑定，其余依赖保持单向。
 
 ## 模块与所有权
 
 | 模块 | 入口 | 核心所有权 |
 |---|---|---|
-| Workspace | `src/modules/workspace/module.ts` | Workspace/Project/Service、每日演进、受管 mutation |
+| Workspace | `src/modules/workspace/module.ts` | Workspace/Project/Service、受管 mutation |
 | Task | `src/modules/task/module.ts` | Task Record、关系、Review、Verification、父任务协调、Worktree |
 | Task Change | `src/modules/task/change/module.ts` | Task scope 的 Change 定位与展示组合 |
 | OpenSpec | `src/modules/openspec/module.ts` | 通用读取、严格验证、收敛、条件应用和恢复 |
@@ -76,7 +76,7 @@ Agent Assets Application → Capability Graph / manifest Repository
 | 当前事实 | Owner | 存储 |
 |---|---|---|
 | Workspace identity、Project/Service registry | Workspace | `.buildr/workspace.yml`、各 Manifest |
-| Project daily progress | Workspace | `.buildr/daily-progress/` |
+| Project daily progress | Task / daily-progress | `.buildr/daily-progress/` |
 | Task Record、关系、Review、Verification | Task | Workspace SQLite |
 | Agent Assets manifests 与 Capability Graph | Agent Assets | Rule/Skill/Command/Component 源资产 |
 | Agent runtime projection | Agent Assets | Agent 文件与 `.buildr/agent-runtime/` receipt |
@@ -91,13 +91,13 @@ Doctor、Web Host、Bootstrap 和 Buildr Web UI 都不是这些数据的第二 w
 - Node.js 固定为 `24.15.0` 开发基线；TypeScript 使用严格检查和 NodeNext。
 - HTTP Schema 属于后端业务模块；`tools/codegen/contracts/` 生成两端 DTO。
 - Development Launcher 位于 `tools/build/launcher/`；Agent runtime 文件型源位于 `resources/runtime/`。
-- `package/` 仅保留 ignored test-context 生成目标。
+- `build/` 保存生成类型与公开测试库；`web-dist/` 保留前端构建兼托管产物，两者均被 Git 忽略。`package/` 已无职责。
 - Application Payload 根据依赖闭包和 manifest 构建；`package.json#files` 决定 npm 文件清单。
 - Buildr 自测调度位于 `test/verification/`；产品 `project-testing` 模块只管理用户 Project 测试声明。
 
 ## 前端结构
 
-Buildr Web 以 `src/features/<capability>/` 组织页面、组件、Hooks 和专用 API。`src/api/` 只保留共享 transport、Local Session 与生成 DTO；`src/app/` 只组合应用壳。Publication、Installation 和 Task Change 已分别归入对应 Feature，不再把业务页面堆在 `src/pages/`。
+Buildr Web 以 `src/features/<capability>/` 组织页面、组件、Hooks 和专用 API。`src/api/` 只保留共享 transport、Local Session 与请求上下文；`src/app/` 只组合应用壳。Publication、Installation 和 Task Change 已分别归入对应 Feature，不再把业务页面堆在 `src/pages/`。
 
 ## 安全与一致性不变量
 

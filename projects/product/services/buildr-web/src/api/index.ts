@@ -1,11 +1,6 @@
 import { createApiClient } from './client';
 import { LocalSessionAdapter } from './LocalSessionAdapter';
 import { getWorkspaceId } from './workspaceState';
-import { createTaskProfessionalClient } from './task-professional';
-import { createWorkspaceClient } from './workspace';
-import { createAgentAssetsClient } from './agentAssets';
-import { createRuntimeSystemClient } from './runtimeSystem';
-export type { ProjectResponse, WorkspaceDocument, WorkspaceResponse } from './workspace';
 
 export { createApiClient } from './client';
 export type { ApiClient, ApiError } from './client';
@@ -17,8 +12,3 @@ export const api = createApiClient({
   sessionAdapter: new LocalSessionAdapter(),
   getWorkspaceId,
 });
-
-export const taskProfessionalApi = createTaskProfessionalClient(api);
-export const workspaceApi = createWorkspaceClient(api);
-export const agentAssetsApi = createAgentAssetsClient(api);
-export const runtimeSystemApi = createRuntimeSystemClient(api);

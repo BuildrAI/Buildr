@@ -1,7 +1,7 @@
 import { useState } from 'react';
 
 import { taskApi } from '../api/task-api';
-import type { TaskRetrospectiveDocumentResponse } from '../api/generated/task-dto';
+import type { TaskRetrospectiveDocumentResponse } from '../../../../build/generated/task-dto';
 
 function failureMessage(cause: unknown, fallbackCode: string, fallbackMessage: string): string {
   if (!(cause instanceof Error)) return `${fallbackCode}：${fallbackMessage}`;

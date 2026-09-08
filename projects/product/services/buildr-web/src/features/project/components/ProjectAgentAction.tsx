@@ -1,6 +1,7 @@
+import { projectApi } from '../api/project-api';
 import { useState, type FormEvent } from 'react';
 import { Button, Input, Select } from 'antd';
-import { workspaceApi } from '../../../api';
+
 import { ACTION_LABELS, useAgentActionFeedback } from '../../../components/AgentActionFeedback';
 
 type Props = { onBack: () => void; context?: Record<string, unknown> };
@@ -18,7 +19,7 @@ export function ProjectAgentAction({ onBack }: Props) {
     event.preventDefault();
     setError(null);
     try {
-      const result = await workspaceApi.projectCreatePrompt({
+      const result = await projectApi.projectCreatePrompt({
           name,
           description,
           code,

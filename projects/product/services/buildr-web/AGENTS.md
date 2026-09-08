@@ -14,14 +14,16 @@
 | 位置 | 职责 |
 |---|---|
 | `src/app/` | 应用壳、布局、共享上下文（Context）与跨页壳层交互 |
-| `src/features/<feature>/` | 对应功能的页面、局部组件、钩子（Hook）、客户端（Client）、纯逻辑与生成数据传输对象（DTO） |
+| `src/features/<feature>/` | 对应功能的页面、局部组件、钩子（Hook）、客户端（Client）与纯逻辑 |
+| `src/app/api/` | 本机应用退出等宿主请求 |
+| `build/generated/` | 生成的数据传输对象（DTO），被 Git 忽略 |
 | `src/components/` | 跨页复用、无单一路由绑定的公共组件 |
-| `src/api/` | 通用请求、会话（Session）、工作空间（Workspace）传输，以及尚未迁移的客户端（Client） |
+| `src/api/` | 通用请求、会话（Session）与工作空间（Workspace）请求上下文，不装配业务客户端（Client） |
 | `src/lib/` | 共享纯函数、格式化、标签映射与弱界面耦合工具 |
 | `src/theme.ts` / `src/styles.css` | Ant Design 主题变量与全局、壳层补充样式 |
 | `src/App.tsx` / `src/main.tsx` | 路由装配与启动，保持简洁 |
 
-- 已迁移功能在同一 `features/` 内扩展。仍存在的旧 `pages/` 按原边界维护，迁移后移除对应旧入口，避免并存同一页面或复制客户端（Client）。
+- 已有功能在所属 `features/` 内扩展，专用客户端（Client）位于所属功能的 `api/`。路由页面不再放在公共 `pages/`；工作空间设置属于 `features/workspace/`，避免并存同一页面或复制客户端（Client）。
 - 页面局部组件放在所属功能目录；只有真实跨页复用或明确通用界面语义时，才提升到 `components/`。公共组件和应用壳不得依赖具体页面，页面也不得直接引用其他页面的局部组件。
 - `api/` 不包含 React 组件、钩子（Hook）或业务状态，也不得反向依赖 `features/`。网络访问使用已有客户端（Client）与会话（Session）适配，页面不直接绕过它们调用 `fetch`。
 

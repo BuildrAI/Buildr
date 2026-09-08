@@ -3,16 +3,13 @@ import { ensureRegisteredTarget, registerWorkspaceCommandApplication, type Works
 import { registerWorkspaceOperations, type WorkspaceOperationsRuntime } from './application/workspace-operations.ts';
 import { registerProjectApplication, type ProjectApplicationRuntime } from './application/project-application.ts';
 import { registerServiceApplication, type ServiceApplicationRuntime } from './application/service-application.ts';
-import { registerProjectDailyProgressApplication, type ProjectDailyProgressApplicationRuntime } from './application/project-daily-progress-application.ts';
 import { createWorkspaceManifestRepository, type WorkspaceManifestRepositoryRuntime } from './persistence/workspace-manifest-repository.ts';
 import { createProjectManifestRepository, type ProjectManifestRepositoryRuntime } from './persistence/project-manifest-repository.ts';
 import { createServiceManifestRepository, type ServiceManifestRepositoryRuntime } from './persistence/service-manifest-repository.ts';
 import { createWorkspaceRegistryRepository, type WorkspaceRegistryRepositoryRuntime } from './persistence/workspace-registry-repository.ts';
-import { createProjectDailyProgressRepository, type ProjectDailyProgressRepositoryRuntime } from './persistence/project-daily-progress-repository.ts';
 import { projectCreateCommand } from './interfaces/cli/project.ts';
 import { serviceCreateCommand } from './interfaces/cli/service.ts';
 import { workspaceCommand } from './interfaces/cli/workspace.ts';
-import { projectDailyProgressCommand } from './interfaces/cli/project-daily-progress.ts';
 import { createWorkspaceHttpContribution } from './interfaces/http/workspace-http.ts';
 import { defaultAssetDescription, sourceIdentity, sourceOwnership, sourceRootKind } from './domain/source-root.ts';
 import { createWorkspaceSourceFilesystem, resolveSourceRoot } from './infrastructure/workspace-source-filesystem.ts';
@@ -29,13 +26,11 @@ type WorkspacePrivateComposition = DynamicRuntime
   & WorkspaceRegistryRepositoryRuntime
   & ProjectManifestRepositoryRuntime
   & ServiceManifestRepositoryRuntime
-  & ProjectDailyProgressRepositoryRuntime
   & WorkspaceQueryApplicationRuntime
   & WorkspaceCommandApplicationRuntime
   & WorkspaceOperationsRuntime
   & ProjectApplicationRuntime
   & ServiceApplicationRuntime
-  & ProjectDailyProgressApplicationRuntime
   & WorkspaceManagementFenceRuntime
   & WorkspaceSourceGitRuntime;
 
@@ -50,33 +45,17 @@ export { parseServicesManifest, renderServicesDomainManifest } from './persisten
 export { parseWorkspaceManifest } from './persistence/workspace-manifest-repository.ts';
 export { buildrWebDataRoot, readWorkspaceRegistryFile } from './persistence/workspace-registry-repository.ts';
 export { ensureRegisteredTarget } from './application/workspace-command-application.ts';
-export {
-  PROJECT_DAILY_PROGRESS_SCHEMA,
-  PROJECT_DAILY_PROGRESS_SCHEMA_V1,
-  createDailyProgressDocument,
-  dailyProgressError,
-  isDailyProgressDate,
-  isLegacyDailyProgressDocument,
-  normalizeDailyProgressDate,
-  normalizeDailyProgressDocument,
-  normalizeDailyProgressPayload,
-} from './domain/project-daily-progress.ts';
-
-export { groupDailyProgressCommits, localCalendarDate, normalizeDailyProgressGroup } from './application/project-daily-progress-application.ts';
-
 export const WORKSPACE_MODULE_ID = 'workspace-core';
 export const WORKSPACE_APPLICATION = 'workspace.application';
 export const PROJECT_APPLICATION = 'project.application';
 export const SERVICE_APPLICATION = 'service.application';
 export const WORKSPACE_QUERY = 'workspace.query';
 export const WORKSPACE_RUNTIME_PORT = 'workspace.runtime-port';
-export const WORKSPACE_INTERNAL = 'workspace.internal';
+export const WORKSPACE_ASSET_SUPPORT = 'workspace.asset-support';
 export const WORKSPACE_DOMAIN = 'workspace.domain';
 export const WORKSPACE_TASK_SUPPORT = 'workspace.task-support';
 export const WORKSPACE_AGENT_ASSETS_BINDER = 'workspace.agent-assets-binder';
-export const WORKSPACE_TASK_BINDER = 'workspace.task-binder';
 export const WORKSPACE_DIAGNOSTICS = 'workspace.diagnostics';
-export const PROJECT_DAILY_PROGRESS_APPLICATION = 'workspace.project-daily-progress-application';
 
 const WORKSPACE_METHODS = Object.freeze([
   'getWorkspace', 'listRegisteredWorkspaces', 'registerLocalWorkspace', 'removeRegisteredWorkspace',
@@ -91,9 +70,6 @@ const PROJECT_METHODS = Object.freeze([
 const SERVICE_METHODS = Object.freeze([
   'readServiceRegistryRecord', 'listServices', 'serviceDetail', 'serviceDocument', 'serviceMigrationPlan',
   'migrateServiceRegistry', 'updateServiceMetadata', 'generateServiceCreatePrompt', 'createServiceAsset',
-]);
-const PROJECT_DAILY_PROGRESS_METHODS = Object.freeze([
-  'recordProjectDailyProgress', 'inspectProjectDailyProgress', 'listProjectDailyProgress', 'inspectTaskDailyProgress',
 ]);
 const WORKSPACE_QUERY_METHODS = Object.freeze([
   'getWorkspace', 'readProjectRegistryRecord', 'readServiceRegistryRecord',
@@ -115,14 +91,20 @@ const LEGACY_RUNTIME_METHODS = Object.freeze([
   'initBuildr', 'bootstrapGuide', 'mutationRecover',
 ]);
 const TEST_SUPPORT_METHODS = Object.freeze([
-  'readWorkspaceRegistryPersistence', 'withWorkspaceRegistryMutation', 'writeDailyProgressDocument',
+  'readWorkspaceRegistryPersistence', 'withWorkspaceRegistryMutation',
 ]);
 
-function pick(source: any, methods: any) {
+const WORKSPACE_ASSET_METHODS = ["workspaceMigrationPlan","migrateWorkspaceMetadata","readProjectRegistryRecord","projectMigrationPlan","migrateProjectRegistry","projectsManifestPath","writeProjectRegistry","renderProjectsManifest","parseProjectsYaml","renderProjectsYaml","validateProjectsRegistry","writeProjectsRegistry","writeServiceRegistry","parseServicesManifest","renderServicesDomainManifest","parseServicesYaml","parseServicesManifestYaml","renderServicesManifestYaml","servicesManifestPath","writeServicesManifest","defaultAssetDescription","sourceIdentity","gitDefaultBranch","inferRepoKind","gitBoundaryFor","ensureGitBoundaries"] as const;
+export type WorkspaceAssetSupport = Pick<WorkspacePrivateComposition, typeof WORKSPACE_ASSET_METHODS[number]>;
+
+function pick(source: WorkspacePrivateComposition, methods: readonly string[]) {
+  for (const method of methods) {
+    if (typeof source[method] !== 'function') throw new TypeError(`Workspace dependency is missing: ${method}`);
+  }
   return Object.freeze(Object.fromEntries(methods.map((method: any) => [method, (...args: any[]) => source[method](...args)])));
 }
 
-export function createWorkspaceCliContributions(applications: { workspace?: any; project?: any; service?: any; dailyProgress?: any } = {}) {
+export function createWorkspaceCliContributions(applications: { workspace?: any; project?: any; service?: any } = {}) {
   return Object.freeze([
     Object.freeze({
       key: 'init', surface: 'primary',
@@ -180,43 +162,6 @@ export function createWorkspaceCliContributions(applications: { workspace?: any;
       match: ({ domain, action }: any) => domain === 'service' && action === 'create',
       run: (runtime: any, context: any) => serviceCreateCommand(applications.service || runtime, context.argv.slice(4)),
     }),
-    Object.freeze({
-      key: 'project daily-progress record', surface: 'agent-machine',
-      summary: '把 Agent 已构造的 Git 提交日摘要写入本机每日演进文件；Task 关联可选，不进入 Git 或 Task SQLite。',
-      help: [
-        'Usage: buildr project daily-progress record --project <code> [--date <YYYY-MM-DD>] --input <payload.json> [--target <canonical-workspace>] [--json]',
-        '       buildr project daily-progress record --schema|--example [--json]',
-        '',
-        '把 Agent 已构造的四问摘要、提交与变更文件写入 .buildr/daily-progress/<project-code>/<YYYY-MM-DD>.yml。',
-        '一天一份，校验通过后原子覆盖；他人提交不得挂 Task，存在的 Task ID 必须本机已有，否则整次失败且不写文件。',
-        '该命令写本机文件并可关联本机 Task Record，不进入 Git 或 Task SQLite，也不扫描 Git，不是 primary 人类主路径。',
-      ],
-      match: ({ domain, action, runtimeId }: any) => domain === 'project' && action === 'daily-progress' && runtimeId === 'record',
-      run: (runtime: any, context: any) => projectDailyProgressCommand(applications.dailyProgress || runtime, 'record', context.argv.slice(5)),
-    }),
-    Object.freeze({
-      key: 'project daily-progress inspect', surface: 'agent-machine',
-      summary: '只读查看某 Project 某日已保存的每日演进，并按日、人、任务投影；不创建文件。',
-      help: [
-        'Usage: buildr project daily-progress inspect --project <code> [--date <YYYY-MM-DD>] [--group day|person|task] [--target <canonical-workspace>] [--json]',
-        '',
-        '只读查看已保存的本机每日演进文件并解析仍存在的 Task 摘要。',
-        '文件不存在时返回 not-found；v1 旧文件返回 incompatible。不创建文件，也不根据 Git 或 Task 列表合成日报。',
-      ],
-      match: ({ domain, action, runtimeId }: any) => domain === 'project' && action === 'daily-progress' && runtimeId === 'inspect',
-      run: (runtime: any, context: any) => projectDailyProgressCommand(applications.dailyProgress || runtime, 'inspect', context.argv.slice(5)),
-    }),
-    Object.freeze({
-      key: 'project daily-progress list', surface: 'agent-machine',
-      summary: '只读列出某 Project 已保存的每日演进日期；不扫描 Git，不写文件。',
-      help: [
-        'Usage: buildr project daily-progress list --project <code> [--target <canonical-workspace>] [--json]',
-        '',
-        '只读列出 .buildr/daily-progress/<project-code>/ 中已保存的日期。不扫描 Git，也不把目录缺失解释为远端数据丢失。',
-      ],
-      match: ({ domain, action, runtimeId }: any) => domain === 'project' && action === 'daily-progress' && runtimeId === 'list',
-      run: (runtime: any, context: any) => projectDailyProgressCommand(applications.dailyProgress || runtime, 'list', context.argv.slice(5)),
-    }),
   ]);
 }
 
@@ -235,8 +180,6 @@ export function createWorkspaceModule(runtime: DynamicRuntime, { readProductIden
       Object.assign(privateComposition, { projectRepository }, projectRepository);
       const serviceRepository = createServiceManifestRepository(privateComposition);
       Object.assign(privateComposition, { serviceRepository }, serviceRepository);
-      const dailyProgressRepository = createProjectDailyProgressRepository(privateComposition);
-      Object.assign(privateComposition, { dailyProgressRepository }, dailyProgressRepository);
       Object.assign(privateComposition, {
         sourceFiles: createWorkspaceSourceFilesystem(),
         defaultAssetDescription,
@@ -254,7 +197,6 @@ export function createWorkspaceModule(runtime: DynamicRuntime, { readProductIden
       registerWorkspaceSourceGit(privateComposition);
       registerProjectApplication(privateComposition);
       registerServiceApplication(privateComposition);
-      registerProjectDailyProgressApplication(privateComposition);
 
       privateComposition.ensureRegisteredTarget = (targetRoot: any) => ensureRegisteredTarget(privateComposition, targetRoot);
 
@@ -278,36 +220,23 @@ export function createWorkspaceModule(runtime: DynamicRuntime, { readProductIden
         'readServiceRegistryRecord',
         'memoizeWorkspaceOperation',
       ]);
-      const dailyProgress = pick(privateComposition, PROJECT_DAILY_PROGRESS_METHODS);
       privateComposition.initBuildr = (args: string[]) => workspaceCommand(workspace as any, 'init', args);
       privateComposition.bootstrapGuide = () => workspaceCommand(workspace as any, 'bootstrap-guide');
       privateComposition.mutationRecover = (args: string[]) => workspaceCommand(workspace as any, 'mutation-recover', args);
       privateComposition.createProject = (args: string[]) => projectCreateCommand(project as any, args);
       privateComposition.createService = (args: string[]) => serviceCreateCommand(service as any, args);
       const runtimeMethods = Object.freeze({
-        ...workspace, ...project, ...service, ...query, ...dailyProgress,
+        ...workspace, ...project, ...service, ...query,
         ...pick(privateComposition, LEGACY_RUNTIME_METHODS),
         ...pick(privateComposition, TEST_SUPPORT_METHODS),
       });
       const workspaceDiagnostics = createWorkspaceDiagnostics(privateComposition);
       let agentAssetsBound = false;
-      let taskQuery: Record<string, any> | null = null;
-      privateComposition.inspectTask = (...args: any[]) => {
-        if (typeof taskQuery?.inspectTask !== 'function') throw new Error('Workspace Task Query dependency has not been bound.');
-        return taskQuery.inspectTask(...args);
-      };
       const agentAssetsBinder = Object.freeze({
         bindAgentAssets(port: Record<string, unknown>) {
           if (agentAssetsBound) throw new Error('Workspace Agent Assets dependency is already bound.');
           Object.assign(privateComposition, port);
           agentAssetsBound = true;
-        },
-      });
-      const taskBinder = Object.freeze({
-        bindTaskQuery(port: Record<string, any>) {
-          if (taskQuery) throw new Error('Workspace Task Query dependency is already bound.');
-          if (typeof port?.inspectTask !== 'function') throw new Error('Workspace Task Query dependency is invalid.');
-          taskQuery = port;
         },
       });
       return Object.freeze({
@@ -317,17 +246,15 @@ export function createWorkspaceModule(runtime: DynamicRuntime, { readProductIden
           [SERVICE_APPLICATION]: service,
           [WORKSPACE_QUERY]: query,
           [WORKSPACE_RUNTIME_PORT]: Object.freeze({ methods: runtimeMethods, testSupportMethods: TEST_SUPPORT_METHODS }),
-          [WORKSPACE_INTERNAL]: runtimeMethods,
+          [WORKSPACE_ASSET_SUPPORT]: pick(privateComposition, WORKSPACE_ASSET_METHODS),
           [WORKSPACE_DOMAIN]: domain,
           [WORKSPACE_TASK_SUPPORT]: taskSupport,
           [WORKSPACE_AGENT_ASSETS_BINDER]: agentAssetsBinder,
-          [WORKSPACE_TASK_BINDER]: taskBinder,
           [WORKSPACE_DIAGNOSTICS]: workspaceDiagnostics,
-          [PROJECT_DAILY_PROGRESS_APPLICATION]: dailyProgress,
         },
         contributions: {
-          cli: createWorkspaceCliContributions({ workspace, project, service, dailyProgress }),
-          http: [createWorkspaceHttpContribution(Object.freeze({ ...workspace, ...project, ...service, ...dailyProgress }))],
+          cli: createWorkspaceCliContributions({ workspace, project, service }),
+          http: [createWorkspaceHttpContribution(Object.freeze({ ...workspace, ...project, ...service }))],
           diagnostics: [Object.freeze({ id: 'workspace.diagnostics', readModel: workspaceDiagnostics })],
         },
       });

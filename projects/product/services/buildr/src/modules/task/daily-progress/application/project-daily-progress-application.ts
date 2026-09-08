@@ -5,7 +5,7 @@ import {
   normalizeDailyProgressDate,
   normalizeDailyProgressPayload,
 } from '../domain/project-daily-progress.ts';
-import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../../infrastructure/contracts/public-json.ts';
+import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../../../infrastructure/contracts/public-json.ts';
 
 export type ProjectDailyProgressApplicationRuntime = { dailyProgressRepository: DailyProgressRepository;
   readProjectRegistryRecord(targetRoot: string): any;
@@ -32,7 +32,7 @@ function identity(value: any, field: any) {
   return value.trim();
 }
 
-export function registerProjectDailyProgressApplication(runtime: ProjectDailyProgressApplicationRuntime) {
+export function createProjectDailyProgressApplication(runtime: ProjectDailyProgressApplicationRuntime) {
   function registeredProject(targetRoot: any, projectCode: any) {
     const code = identity(projectCode, 'project');
     const record = runtime.readProjectRegistryRecord(targetRoot);
@@ -237,13 +237,12 @@ export function registerProjectDailyProgressApplication(runtime: ProjectDailyPro
     });
   }
 
-  Object.assign(runtime, {
+  return Object.freeze({
     recordProjectDailyProgress,
     inspectProjectDailyProgress,
     listProjectDailyProgress,
     inspectTaskDailyProgress,
   });
-  return runtime;
 }
 
 // 查询参数、时钟选择与展示分组属于应用用例。

@@ -28,8 +28,7 @@ function projectContext(workspaceQuery: ProjectTestingWorkspaceQuery, targetRoot
   }
   const project = detail.project;
   const projectRoot = workspaceQuery.resolveSourceRoot(root, project.source);
-  const services = workspaceQuery.listServices(root, projectCode).services.map((service) => service.code);
-  return { root, project, projectRoot, services, file: path.join(projectRoot, 'verification.yml') };
+  return { root, project, projectRoot, file: path.join(projectRoot, 'verification.yml') };
 }
 
 function result(operation: string, status: string, project: string, values: any = {}) {
@@ -56,11 +55,12 @@ export function createProjectVerificationApplication(
     if (!fs.existsSync(context.file)) return result('inspect', 'missing', projectCode, { path: relative, identity: 'absent' });
     const content = fs.readFileSync(context.file);
     const value = parseProjectVerification(content.toString('utf8'), context.file);
-    const errors = validateProjectVerification(value, { projectCode, services: context.services });
+    const services = workspaceQuery.listServices(context.root, projectCode).services.map((service) => service.code);
+    const errors = validateProjectVerification(value, { projectCode, services });
     return result('inspect', errors.length ? 'invalid' : 'ready', projectCode, {
       path: relative,
       identity: digest(content),
-      declaration: errors.length ? value : normalizeProjectVerification(value, { projectCode, services: context.services }),
+      declaration: errors.length ? value : normalizeProjectVerification(value, { projectCode, services }),
       errors,
     });
   }
@@ -69,11 +69,12 @@ export function createProjectVerificationApplication(
     const context = projectContext(workspaceQuery, targetRoot, projectCode);
     const content = fs.readFileSync(path.resolve(file));
     const value = parseProjectVerification(content.toString('utf8'), file);
-    const errors = validateProjectVerification(value, { projectCode, services: context.services });
+    const services = workspaceQuery.listServices(context.root, projectCode).services.map((service) => service.code);
+    const errors = validateProjectVerification(value, { projectCode, services });
     return result('validate', errors.length ? 'invalid' : 'ready', projectCode, {
       path: path.resolve(file),
       identity: digest(content),
-      declaration: errors.length ? value : normalizeProjectVerification(value, { projectCode, services: context.services }),
+      declaration: errors.length ? value : normalizeProjectVerification(value, { projectCode, services }),
       errors,
     });
   }
@@ -99,5 +100,34 @@ export function createProjectVerificationApplication(
     });
   }
 
-  return Object.freeze({ inspectProjectVerification, validateProjectVerificationCandidate, updateProjectVerification });
+  function createProjectVerificationDiagnostics({ addDoctorFinding }: { addDoctorFinding: (...args: any[]) => void }) {
+    return {
+      diagnoseProjectVerification(report: any, targetRoot: string, registry: any = null) {
+        report.projectVerification = [];
+        for (const projectCode of Object.keys(registry?.projects || {})) {
+          let inspection;
+          try {
+            inspection = inspectProjectVerification(targetRoot, projectCode);
+          } catch (error) {
+            const context = projectContext(workspaceQuery, targetRoot, projectCode);
+            inspection = result('inspect', 'invalid', projectCode, {
+              path: path.relative(targetRoot, context.file).split(path.sep).join('/'),
+              errors: [error instanceof Error ? error.message : String(error)],
+            });
+          }
+          if (inspection.status === 'missing') continue;
+          report.projectVerification.push({ project: projectCode, path: inspection.path, valid: inspection.status === 'ready', testingCount: inspection.declaration?.testing?.length || 0 });
+          for (const message of inspection.errors) {
+            addDoctorFinding(report, 'error', 'project.verification_invalid', message, {
+              path: inspection.path,
+              userActionRequired: true,
+              suggestion: '使用 Task Verification Skill 探查项目测试体系，并通过 project verification validate/update 修复测试地图。',
+            });
+          }
+        }
+      },
+    };
+  }
+
+  return Object.freeze({ inspectProjectVerification, validateProjectVerificationCandidate, updateProjectVerification, createProjectVerificationDiagnostics });
 }

@@ -1,8 +1,10 @@
+import { workspaceApi } from '../../workspace/api/workspace-api';
+import { type ProjectResponse, projectApi } from '../api/project-api';
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Alert, Button, Empty, Table, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { workspaceApi, type ProjectResponse } from '../../../api';
+
 import { useAppShell } from '../../../app/AppShellContext';
 import { workspaceHref } from '../../../lib/labels';
 
@@ -29,7 +31,7 @@ export function ProjectsPage() {
       try {
         const [workspace, data] = await Promise.all([
           workspaceApi.read(),
-          workspaceApi.listProjects(),
+          projectApi.listProjects(),
         ]);
         if (cancelled) return;
         setWorkspace(workspace);

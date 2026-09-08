@@ -300,9 +300,9 @@ test('任务意图以 Markdown 链接展示 Project 内的只读文档', () => {
   const sharedResolver: any = read('../buildr-web/src/lib/workspaceMarkdownReferences.ts');
   assert.match(overview, /id="task-detail-intent"[\s\S]*MarkdownHost/);
   assert.match(artifactsHook, /resolveTaskDocumentReference/);
-  assert.match(artifactsHook, /workspaceApi\.listProjects\(\)/);
+  assert.match(artifactsHook, /projectApi\.listProjects\(\)/);
   assert.match(detail, /TaskDocumentPreviewModal/);
-  assert.match(artifactsHook, /workspaceApi\.projectDocument\(reference\.projectCode, documentPath\)/);
+  assert.match(artifactsHook, /projectApi\.projectDocument\(reference\.projectCode, documentPath\)/);
   assert.match(prototype, /resolveProjectMarkdownHref/);
   assert.match(prototype, /相关资料/);
   assert.match(resolver, /resolveWorkspaceMarkdownReference\(href, allowedProjects, projects\)/);
@@ -318,7 +318,7 @@ test('任务列表使用可取消的服务端筛选，详情首屏只读轻量�
   const actionsHook: any = read('../buildr-web/src/features/task/hooks/useTaskActions.ts');
   const tasks: any = read('../buildr-web/src/features/task/pages/TasksPage.tsx');
   const listHook: any = read('../buildr-web/src/features/task/hooks/useTaskList.ts');
-  const taskDto: any = read('../buildr-web/src/features/task/api/generated/task-dto.ts');
+  const taskDto: any = read('../buildr-web/build/generated/task-dto.ts');
   const server: any = read('src/web/http/server.ts');
   assert.match(listHook, /new AbortController\(\)/);
   assert.doesNotMatch(tasks, /matchesTaskQuery/);

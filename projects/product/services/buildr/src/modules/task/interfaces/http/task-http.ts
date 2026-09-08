@@ -3,7 +3,7 @@ import type {
   TaskAbandonRequest,
   TaskCompleteRequest,
   TaskUpdateRequest,
-} from '../../application/generated/task-dto.ts';
+} from '../../../../../build/generated/task-dto.ts';
 import {
   TASK_HTTP_OPERATIONS,
   TASK_HTTP_VALIDATORS,

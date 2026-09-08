@@ -96,9 +96,9 @@ test('结构 verifier 拒绝 scripts 根和未获许可的 package 遗留', () =
 test('结构 verifier 拒绝重新跟踪可重建生成物', () => {
   const trackedFiles: any[] = [
     'projects/product/services/buildr/web-dist/index.html',
-    'projects/product/services/buildr/package/targets/test-context/index.js',
-    'projects/product/services/buildr/src/modules/task/application/generated/task-dto.ts',
-    'projects/product/services/buildr-web/src/features/task/api/generated/task-dto.ts',
+    'projects/product/services/buildr/build/test-context/index.js',
+    'projects/product/services/buildr/build/generated/task-dto.ts',
+    'projects/product/services/buildr-web/build/generated/task-dto.ts',
   ];
   assert.deepEqual(validateProductSourceLayout({
     projectEntries: canonicalProjectEntries,

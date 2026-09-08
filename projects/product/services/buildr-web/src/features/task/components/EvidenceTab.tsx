@@ -5,7 +5,7 @@ import {
   formatDateTime,
   reviewMethodLabel,
 } from '../../../lib/taskLabels';
-import type { ReviewsResponse, VerificationResponse } from '../../../api/generated/task-professional-http-dto';
+import type { ReviewsResponse, VerificationResponse } from '../../../../build/generated/task-professional-http-dto';
 import { Fact, TechnicalDetails } from './shared';
 
 type Props = {

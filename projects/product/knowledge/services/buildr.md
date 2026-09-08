@@ -12,15 +12,16 @@ Buildr Service 提供 npm CLI、本机 HTTP Host、Workspace/Task/Agent Assets/O
 - 模块访问：`runtimeProvide(runtime, capability)`；CLI/HTTP/diagnostics 使用 contribution catalog。
 - 本机 Web：`src/web/` 拥有实例、Preview、session、static files 和路由分发，不实现业务 handler。
 
-生产 Runtime 不暴露扁平业务方法。命名能力和一次性 Binder 使依赖来源可追踪，同时避免 Workspace↔Task、Task↔Change、Agent Assets↔Diagnostics 的装配循环。
+生产 Runtime 不暴露扁平业务方法。命名能力和一次性 Binder 使依赖来源可追踪，同时避免 Task↔Change、Agent Assets↔Diagnostics 的装配循环。
 
 ## 产品模块
 
 所有后端能力位于 `src/modules/`：
 
-- `workspace/`：Workspace、Project、Service、每日演进和受管 mutation；
+- `workspace/`：Workspace、Project、Service 和受管 mutation；
 - `task/`：Task Record、Review、Verification、父任务协调和 Worktree；
 - `task/change/`：Task scope 下的 Change 展示；
+- `task/daily-progress/`：Git 提交主导、关联本地任务的每日演进；
 - `openspec/`：通用 OpenSpec 读取、收敛、验证、条件写入和恢复；
 - `agent-assets/`：Command、Rule、Skill、Component、Capability Binding 和 runtime projection；
 - `project-testing/`：Project `verification.yml` 管理；
@@ -50,7 +51,9 @@ Buildr Service 提供 npm CLI、本机 HTTP Host、Workspace/Task/Agent Assets/O
 - `test/verification/`：Buildr 自测选择、调度与资源协调；
 - `resources/runtime/`：直接安装到 Agent runtime 的文件型源；
 - `resources/workspace/`：同步到 Workspace/Project 的文件型源；
-- `package/targets/test-context/`：ignored 派生产物；`package/` 不再承载长期源码。
+- `build/test-context/`：ignored 派生产物；`package/` 不再承载长期源码。
+
+测试上下文（Test Context）在独立暂存目录编译，重复生成相同内容时保持现有文件不变，避免并行检查加载模块时出现目录被清空的窗口；内容变化采用逐文件原子替换。
 
 Buildr 产品的 `project-testing` 模块只管理用户 Project 测试声明。Buildr 自身测试执行属于 `test/`/`tools/`，Task Verification Report 仍由 Task 模块唯一写入。
 

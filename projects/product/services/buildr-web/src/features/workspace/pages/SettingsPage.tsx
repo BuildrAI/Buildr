@@ -1,6 +1,7 @@
+import { workspaceApi, type WorkspaceResponse } from '../api/workspace-api';
 import { useEffect, useState, type FormEvent } from 'react';
 import { Alert, Button, Descriptions, Form, Input, Space, Typography } from 'antd';
-import { workspaceApi, type WorkspaceResponse } from '../../../api';
+
 import { useAppShell } from '../../../app/AppShellContext';
 
 type WorkspaceData = WorkspaceResponse & { revision: string; workspace: WorkspaceResponse['workspace'] & { description: string } };

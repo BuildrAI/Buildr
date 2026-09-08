@@ -8,7 +8,7 @@ import { ProjectsSection } from './features/project/pages/ProjectsSection';
 import { ServiceDetailPage } from './features/service/pages/ServiceDetailPage';
 import { ServiceEditPage } from './features/service/pages/ServiceEditPage';
 import { ServicesPage } from './features/service/pages/ServicesPage';
-import { SettingsPage } from './features/installation/pages/SettingsPage';
+import { SettingsPage } from './features/workspace/pages/SettingsPage';
 import { TaskChangeDetailPage } from './features/task/pages/TaskChangeDetailPage';
 import { TaskDetailPage } from './features/task/pages/TaskDetailPage';
 import { TasksSection } from './features/task/pages/TasksSection';

@@ -1,6 +1,7 @@
+import { workspaceApi } from '../../workspace/api/workspace-api';
 import { useEffect, useState } from 'react';
 
-import { workspaceApi } from '../../../api';
+
 import { useAppShell } from '../../../app/AppShellContext';
 import type { ChangePayload } from '../../../components/ChangeBriefPanel';
 import { taskApi } from '../api/task-api';

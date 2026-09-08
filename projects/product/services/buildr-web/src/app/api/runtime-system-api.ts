@@ -1,7 +1,8 @@
-import type { ApiClient } from './client';
+import { api } from '../../api';
+import type { ApiClient } from '../../api/client';
 import type {
   BuildrWebStoppingResponseBuildrWebStoppingResponse,
-} from './generated/runtime-system-http-dto';
+} from '../../../build/generated/runtime-system-http-dto';
 
 export function createRuntimeSystemClient(api: ApiClient) {
   return {
@@ -10,3 +11,5 @@ export function createRuntimeSystemClient(api: ApiClient) {
     },
   };
 }
+
+export const runtimeSystemApi = createRuntimeSystemClient(api);

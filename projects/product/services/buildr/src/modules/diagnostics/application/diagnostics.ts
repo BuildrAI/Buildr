@@ -13,30 +13,12 @@ export function registerApplicationDoctor(runtime: any) {
   const componentRegistryPath = (...args: any[]) => runtime.componentRegistryPath(...args);
   const packageComponentsStatus = (...args: any[]) => runtime.packageComponentsStatus(...args);
   const managedRuntimeSkillOrphans = (...args: any[]) => runtime.managedRuntimeSkillOrphans(...args);
-  const listManagedDirectories = (...args: any[]) => runtime.listManagedDirectories(...args);
   const runtimeImplementation = (...args: any[]) => runtime.runtimeImplementation(...args);
   const readSkillManifestSchemaVersion = (...args: any[]) => runtime.readSkillManifestSchemaVersion(...args);
   const skillsManifestPath = (...args: any[]) => runtime.skillsManifestPath(...args);
-  const parseYamlValue = (...args: any[]) => runtime.parseYamlValue(...args);
-  const parseServicesManifestYaml = (...args: any[]) => runtime.parseServicesManifestYaml(...args);
-  const parseServicesManifest = (...args: any[]) => runtime.parseServicesManifest(...args);
-  const parseProjectsYaml = (...args: any[]) => runtime.parseProjectsYaml(...args);
-  const validateProjectsRegistry = (...args: any[]) => runtime.validateProjectsRegistry(...args);
-  const validateServicesManifest = (...args: any[]) => runtime.validateServicesManifest(...args);
-  const projectsManifestPath = (...args: any[]) => runtime.projectsManifestPath(...args);
-  const servicesManifestPath = (...args: any[]) => runtime.servicesManifestPath(...args);
-  const gitOutput = (...args: any[]) => runtime.gitOutput(...args);
-  const gitCurrentBranch = (...args: any[]) => runtime.gitCurrentBranch(...args);
-  const gitBoundaryFor = (...args: any[]) => runtime.gitBoundaryFor(...args);
-  const gitBoundaryIgnored = (...args: any[]) => runtime.gitBoundaryIgnored(...args);
   const toPosixRelative = (...args: any[]) => runtime.toPosixRelative(...args);
-  const existsDirectory = (...args: any[]) => runtime.existsDirectory(...args);
   const existsFile = (...args: any[]) => runtime.existsFile(...args);
   const addDoctorFinding = (...args: any[]) => runtime.addDoctorFinding(...args);
-  const buildrWorkspaceIdentity = (...args: any[]) => runtime.buildrWorkspaceIdentity(...args);
-  const observeProjectGit = (...args: any[]) => runtime.observeProjectGit(...args);
-  const sameGitIdentity = (...args: any[]) => runtime.sameGitIdentity(...args);
-  const productRoot = (...args: any[]) => runtime.productRoot(...args);
   const resolveSourceRoot = (...args: any[]) => runtime.resolveSourceRoot(...args);
   const {
     scopeParts, workspaceName, readProjectsRegistryIfExists, discoverDoctorScopes,

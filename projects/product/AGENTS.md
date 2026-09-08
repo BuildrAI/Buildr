@@ -19,7 +19,7 @@ Agent 在 `product` Project 中的最小运行规则。
 | Project rules | `AGENTS.md` | 当前 Product Project 的 Agent 工作规则 |
 | OpenSpec | `openspec/` | Buildr 产品事实、能力规范、变更和归档 |
 | Product docs | `docs/` | 产品定位、设计说明、发布和维护文档 |
-| Package assets | `services/buildr/package/` | 随包 manifest、bootstrap、workspace/runtime targets |
+| Package assets | `services/buildr/resources/` | 随包 manifest、workspace/runtime 文件源资产 |
 | Buildr 可执行实现 | `services/buildr/` | npm package、CLI、Buildr Web Runtime、`web-dist` 托管与打包、验证及维护脚本的实现根 |
 | Buildr Web 前端源码 | `services/buildr-web/` | Buildr Web Frontend Service 的 React/Vite 权威前端源码与正式构建 |
 | Compatibility bridge | `buildr` | 只加载 `services/buildr/bin/buildr.mjs` 的稳定开发入口 |
@@ -34,7 +34,7 @@ Agent 在 `product` Project 中的最小运行规则。
 - 新增或调整产品能力时，必须同时考虑 Buildr Skill 如何让 Agent 发现、理解、选择并正确使用该能力；缺少相应的 Agent 使用指引、决策边界或完成标准时，功能设计不完整。
 - Task-scoped OpenSpec Change 是产品能力、CLI 行为、上下文模型、runtime adapter 行为和架构性变更的规范 authority；不得用实现、普通文档或 Rule 替代该 Change。
 - `services/buildr/resources/manifest.yml` 声明发布边界；`services/buildr/resources/workspace/` 只放映射到用户 workspace 或 Project 的源，`services/buildr/resources/runtime/` 只放直接安装到 Agent runtime 的源。
-- `services/buildr/resources/` 是文件型交付资源 authority；`services/buildr/package/` 只允许保留有明确后续 owner 的 Runtime Skill 与 Launcher 行为实现，修改时必须同时核对初始化、更新、安装与发布边界。
+- `services/buildr/resources/` 是文件型交付资源 authority；工程实现属于 `tools/`，普通生成结果属于被 Git 忽略的 `build/`，前端构建兼托管产物属于被 Git 忽略的 `web-dist/`。修改时必须同时核对初始化、更新、安装与发布边界。
 - 未集成的产品候选只在已核对归属的隔离工作目录中执行；不得从候选工作目录更新保留的自举工作空间（Workspace）或共享用户运行时（Runtime）。
 - `verification.yml` 是 Product 验证能力、适用性和证明范围的声明 authority；Task Verification Application 是正式验证 current Result 的唯一 authority。普通收尾依据与当前内容相符的真实验证及交付事实报告，不得把普通命令、commit 或 push 冒充正式验证结果。
 - 收尾不得伪造验证或交付事实；任务结果登记、Git 交付、环境激活和资源清理保持独立。用户说“收尾”不授权 force push、merge commit、远端任务分支删除、丢弃改动或语义冲突决策。

@@ -27,9 +27,9 @@
   "type": "module",
   "exports": {
     "./test-context": {
-      "types": "./package/targets/test-context/index.d.ts",
-      "import": "./test-context.mjs",
-      "default": "./test-context.mjs"
+      "types": "./build/test-context/public.d.ts",
+      "import": "./build/test-context/public.js",
+      "default": "./build/test-context/public.js"
     },
     "./package.json": "./package.json",
     "./*": "./*"
@@ -40,8 +40,7 @@
   "files": [
     "LICENSE",
     "bin/buildr.mjs",
-    "test-context.mjs",
-    "package/targets/test-context/",
+    "build/test-context/",
     "src/",
     "README.md",
     "docs/agent-runtime-adapters.md",

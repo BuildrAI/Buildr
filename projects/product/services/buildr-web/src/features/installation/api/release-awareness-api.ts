@@ -1,5 +1,5 @@
 import { api } from '../../../api';
-import type { ReleaseAwarenessResponseReleaseAwarenessResponse } from '../../../api/generated/runtime-system-http-dto';
+import type { ReleaseAwarenessResponseReleaseAwarenessResponse } from '../../../../build/generated/runtime-system-http-dto';
 
 export type ReleaseAwareness = ReleaseAwarenessResponseReleaseAwarenessResponse;
 

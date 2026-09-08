@@ -62,7 +62,7 @@ const allowed: any = new Map([
   ['src/modules/agent-assets/application/package-maintenance.ts', new Set(['syncPackageBuiltins'])],
   ['src/modules/agent-assets/application/package-maintenance/builtin-lifecycle.ts', new Set(['builtinUninstallUnsafe'])],
   ['src/modules/agent-assets/application/package-maintenance/output.ts', new Set(['buildPackageOutput', 'packageBuild'])],
-  ['src/modules/agent-assets/application/package-maintenance/smoke-checks.ts', new Set([
+  ['tools/verification/package-check/smoke-checks.ts', new Set([
     'verifyRecursiveRules', 'verifyWorkspaceAssetLifecycle', 'verifyInitializedWorkspace',
     'verifyExistingAgentsCompatibility', 'runPackageWorkspaceSmoke', 'runPackageDomainIntegration',
     'runPackageAggregateSmoke',

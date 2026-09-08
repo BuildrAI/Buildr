@@ -3,7 +3,7 @@ import { Alert, Button, Modal, Spin } from 'antd';
 import { useTaskRetrospective } from '../hooks/useTaskRetrospective';
 import type {
   RetrospectiveDocumentReference,
-} from '../api/generated/task-dto';
+} from '../../../../build/generated/task-dto';
 import { MarkdownHost } from '../../../components/MarkdownHost';
 
 import './RetrospectiveDocumentCard.css';

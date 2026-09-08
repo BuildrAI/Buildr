@@ -30,7 +30,6 @@ const requiredServiceRootEntries: any = new Set([
   'AGENTS.md',
   'bin',
   'docs',
-  'package',
   'package-lock.json',
   'package.json',
   'resources',
@@ -43,6 +42,7 @@ const forbiddenServiceRootEntries: any = new Set(['scripts']);
 const deferredPackageFiles: any = new Set();
 
 const generatedTrackedPatterns: any[] = [
+  /^projects\/product\/services\/(?:buildr|buildr-web)\/build\//u,
   /^projects\/product\/services\/buildr\/web-dist\//u,
   /^projects\/product\/services\/buildr\/package\/targets\/test-context\//u,
   /^projects\/product\/services\/buildr\/src\/(?:modules\/(?:agent-assets|task|workspace)|web)\/.*\/generated\/.*-dto\.ts$/u,

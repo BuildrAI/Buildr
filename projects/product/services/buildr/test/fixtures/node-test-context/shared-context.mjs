@@ -1,4 +1,4 @@
-import { defineTestContext } from '../../../test-context.mjs';
+import { defineTestContext } from '@buildr-ai/buildr/test-context';
 
 const COUNT = Symbol.for('@buildr-ai/test-context/fixture-create-count');
 

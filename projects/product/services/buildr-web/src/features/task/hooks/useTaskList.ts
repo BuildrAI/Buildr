@@ -1,10 +1,13 @@
+import { workspaceApi, type WorkspaceResponse } from '../../workspace/api/workspace-api';
+import { type ProjectResponse, projectApi } from '../../project/api/project-api';
+import { serviceApi } from '../../service/api/service-api';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { workspaceApi, type ProjectResponse, type WorkspaceResponse } from '../../../api';
-import { taskApi } from '../api/task-api';
-import type { TaskListRequest, TaskListResponse } from '../api/generated/task-dto';
 
-export type { WorkspaceResponse } from '../../../api';
+import { taskApi } from '../api/task-api';
+import type { TaskListRequest, TaskListResponse } from '../../../../build/generated/task-dto';
+
+export type { WorkspaceResponse } from '../../workspace/api/workspace-api';
 
 export type TaskListItem = TaskListResponse['tasks'][number];
 
@@ -55,7 +58,7 @@ export function useTaskList(input: {
       const [data, workspace, projectPayload] = await Promise.all([
         taskApi.list({ ...input.filters, pageSize: TASK_PAGE_SIZE }, { signal: abort.signal }),
         workspaceLoaded.current ? undefined : workspaceApi.read({ signal: abort.signal }),
-        catalogsLoaded.current ? undefined : workspaceApi.listProjects({ signal: abort.signal }),
+        catalogsLoaded.current ? undefined : projectApi.listProjects({ signal: abort.signal }),
       ]);
       if (generation.current !== current) return;
       if (workspace) { input.onWorkspace(workspace); workspaceLoaded.current = true; }
@@ -64,7 +67,7 @@ export function useTaskList(input: {
         setProjectNames(Object.fromEntries(projects.map((project) => [project.code, project.name || project.code])));
         const entries = await Promise.all(projects.map(async (project) => {
           try {
-            const payload = await workspaceApi.services(project.code, { signal: abort.signal });
+            const payload = await serviceApi.services(project.code, { signal: abort.signal });
             return (payload.services || []).map((service) => [`${project.code}/${service.code}`, service.name || service.code] as const);
           } catch { return [] as Array<readonly [string, string]>; }
         }));

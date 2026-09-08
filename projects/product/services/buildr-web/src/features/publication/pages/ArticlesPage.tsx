@@ -1,7 +1,8 @@
+import { workspaceApi } from '../../workspace/api/workspace-api';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Card, Empty, List, Tag, Typography } from 'antd';
-import { workspaceApi } from '../../../api';
+
 import { useAppShell } from '../../../app/AppShellContext';
 import { workspaceHref } from '../../../lib/labels';
 import { publicationApi, type PublicationList } from '../api/publication-api';

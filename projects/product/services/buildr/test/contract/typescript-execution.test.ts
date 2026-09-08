@@ -58,7 +58,6 @@ test('source-tree JavaScript is limited to public facades and compatibility fixt
   });
   assert.deepEqual(scan('.').sort(), [
     'bin/buildr.mjs',
-    'test-context.mjs',
     'test/fixtures/node-test-context/host-failure.fixture.mjs',
     'test/fixtures/node-test-context/host-first.fixture.mjs',
     'test/fixtures/node-test-context/host-second.fixture.mjs',

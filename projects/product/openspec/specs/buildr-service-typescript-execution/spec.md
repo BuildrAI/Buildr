@@ -55,7 +55,7 @@ Buildr Application Payload MUST 在构建阶段吸收被引用的 `.ts` 并继�
 
 #### Scenario: 非 TypeScript 文件保持闭合允许清单
 - **WHEN** verifier 扫描 Git tracked Buildr Service 文件
-- **THEN** 除 `bin/buildr.mjs`、`test-context.mjs` 与明确 JavaScript 兼容夹具外不得出现 `.mjs`
+- **THEN** 除 `bin/buildr.mjs` 与明确 JavaScript 兼容夹具外不得出现 `.mjs`
 - **AND** 旧 `package/launchers/manage.mjs` 与新的生产、工具或普通测试 `.mjs` MUST使静态检查失败
 
 ### Requirement: 独立公共ESM library必须与CLI Payload采用不同编译目标

@@ -103,7 +103,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "src/modules/diagnostics/application/diagnostics.ts",
       "src/modules/diagnostics/application/result-model.ts",
       "src/modules/diagnostics/application/scope-diagnostics.ts",
-      "src/modules/agent-assets/application/package-maintenance/verification-registry.ts"
+      "tools/verification/package-check/verification-registry.ts"
     ],
     "inputExclusions": []
   },
@@ -247,10 +247,10 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   "integration-project-daily-progress": {
     "inputs": [
       "test/integration/project-daily-progress-application.test.ts",
-      "src/modules/workspace/domain/project-daily-progress.ts",
-      "src/modules/workspace/application/project-daily-progress-application.ts",
-      "src/modules/workspace/persistence/project-daily-progress-repository.ts",
-      "src/modules/workspace/interfaces/cli/project-daily-progress.ts",
+      "src/modules/task/daily-progress/domain/project-daily-progress.ts",
+      "src/modules/task/daily-progress/application/project-daily-progress-application.ts",
+      "src/modules/task/daily-progress/persistence/project-daily-progress-repository.ts",
+      "src/modules/task/daily-progress/interfaces/cli/project-daily-progress.ts",
       "src/modules/workspace/interfaces/http/workspace-http.ts",
       "src/modules/workspace/module.ts"
     ],
@@ -758,7 +758,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "src/modules/agent-assets/application/skills.ts",
       "src/modules/diagnostics/application/capability-diagnostics.ts",
       "src/modules/agent-assets/application/package-maintenance/builtin-lifecycle.ts",
-      "src/modules/agent-assets/application/package-maintenance/static-validation.ts",
+      "tools/verification/package-check/static-validation.ts",
       "src/modules/agent-assets/infrastructure/runtime/skills/**",
       "resources/workspace/skills/**",
       "resources/runtime/skills/**",

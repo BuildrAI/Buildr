@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { createBuildrSelfInvoker } from '../../src/modules/agent-assets/application/package-maintenance/smoke-checks.ts';
-import { productInvocationArgs } from '../../src/infrastructure/product-invocation/index.ts';
+import { createBuildrSelfInvoker } from '../../tools/verification/package-check/smoke-checks.ts';
+import { currentProductInvocation, productInvocationArgs } from '../../src/infrastructure/product-invocation/index.ts';
 
 function exerciseInvocation(invocation: any): any  {
   const calls: any[] = [];
@@ -36,4 +36,13 @@ test('package smoke recursive CLI calls preserve the current installation-channe
     { runner: 'exec', command: '/product/node', args: ['/product/bin/buildr.mjs', 'doctor', '--json'] },
     { runner: 'spawn', command: '/product/node', args: ['/product/bin/buildr.mjs', 'rules', 'add', 'demo'] },
   ]);
+});
+
+test('工程检查进程的子命令保留产品入口，不回到检查程序', () => {
+  const invocation = currentProductInvocation({
+    argv: ['/product/node', '/product/tools/verification/package-check.ts'],
+    env: { BUILDR_NPM_ENTRY_PATH: '/product/bin/buildr.mjs' },
+  });
+  const { calls } = exerciseInvocation(invocation);
+  assert.deepEqual(calls.map((call: any) => call.args[0]), ['/product/bin/buildr.mjs', '/product/bin/buildr.mjs']);
 });

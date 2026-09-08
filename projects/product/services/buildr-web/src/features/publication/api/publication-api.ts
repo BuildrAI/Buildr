@@ -2,7 +2,7 @@ import { api } from '../../../api';
 import type {
   PublicationDetailResponsePublicationDetailResponse,
   PublicationListResponsePublicationListResponse,
-} from '../../../api/generated/runtime-system-http-dto';
+} from '../../../../build/generated/runtime-system-http-dto';
 
 export type PublicationList = PublicationListResponsePublicationListResponse;
 export type PublicationDetail = PublicationDetailResponsePublicationDetailResponse;

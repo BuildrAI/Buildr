@@ -1,14 +1,16 @@
+import { type WorkspaceDocument } from '../../../api/client';
+import { projectApi } from '../../project/api/project-api';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { workspaceApi, type ApiError, type WorkspaceDocument } from '../../../api';
+import { type ApiError } from '../../../api';
 import { resolveTaskDocumentReference, type RegisteredProject, type TaskDocumentReference } from '../../../lib/taskDocumentLinks';
 import { taskApi } from '../api/task-api';
-import type { TaskDetailResponse } from '../api/generated/task-dto';
+import type { TaskDetailResponse } from '../../../../build/generated/task-dto';
 import type { ChangePayload } from '../../../components/ChangeBriefPanel';
 import type { UiPrototypeData } from '../components/PrototypeTab';
 import { isTaskReadCancelled, type TaskReadLifecycle } from './useTaskRequestLifecycle';
 
-export type { WorkspaceDocument } from '../../../api';
+export type { WorkspaceDocument } from '../../../api/client';
 
 export type TaskBriefState =
   | { kind: 'empty' }
@@ -90,7 +92,7 @@ export function useTaskArtifacts(taskId: string, data: TaskDetailResponse | null
     if (!data) return;
     try {
       if (!projectRegistryRef.current) {
-        const registry = await workspaceApi.listProjects();
+        const registry = await projectApi.listProjects();
         projectRegistryRef.current = registry.projects || [];
       }
       const reference = resolveTaskDocumentReference(linkHref, data.record.scope, projectRegistryRef.current);
@@ -106,7 +108,7 @@ export function useTaskArtifacts(taskId: string, data: TaskDetailResponse | null
   }, [data]);
 
   const loadProjectDocument = useCallback((reference: TaskDocumentReference, documentPath: string) => (
-    workspaceApi.projectDocument(reference.projectCode, documentPath) as Promise<WorkspaceDocument>
+    projectApi.projectDocument(reference.projectCode, documentPath) as Promise<WorkspaceDocument>
   ), []);
 
   return {

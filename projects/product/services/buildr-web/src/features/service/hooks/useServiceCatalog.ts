@@ -1,7 +1,10 @@
+import { workspaceApi } from '../../workspace/api/workspace-api';
+import { type ProjectResponse, projectApi } from '../../project/api/project-api';
+import { serviceApi } from '../api/service-api';
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
-import { workspaceApi, type ProjectResponse } from '../../../api';
+
 import { useAppShell } from '../../../app/AppShellContext';
 
 export type Project = NonNullable<ProjectResponse['projects']>[number];
@@ -23,7 +26,7 @@ export function useServiceCatalog() {
 
   useEffect(() => {
     let cancelled = false;
-    void Promise.all([workspaceApi.read(), workspaceApi.listProjects()])
+    void Promise.all([workspaceApi.read(), projectApi.listProjects()])
       .then(([workspace, data]) => {
         if (cancelled) return;
         setWorkspace(workspace);
@@ -54,7 +57,7 @@ export function useServiceCatalog() {
   useEffect(() => {
     if (!projectCode) return;
     let cancelled = false;
-    void workspaceApi.services(projectCode)
+    void serviceApi.services(projectCode)
       .then((data) => {
         if (cancelled) return;
         const project = data.project;

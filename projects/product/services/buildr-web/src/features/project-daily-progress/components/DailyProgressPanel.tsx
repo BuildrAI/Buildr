@@ -3,53 +3,11 @@ import { Link } from 'react-router-dom';
 import { Button, DatePicker } from 'antd';
 import dayjs, { type Dayjs } from 'dayjs';
 import 'dayjs/locale/zh-cn';
-import { api } from '../../../api';
+import { dailyProgressApi, type Commit, type DaySummary, type InspectResult } from '../api/daily-progress-api';
 import { workspaceHref } from '../../../lib/labels';
 import { taskStatusLabel } from '../../../lib/taskLabels';
 
 dayjs.locale('zh-cn');
-
-type TaskRef = {
-  taskId: string;
-  title: string | null;
-  status: string | null;
-  resolved: boolean;
-};
-
-type Commit = {
-  sha: string;
-  subject: string;
-  authorName: string;
-  authorEmail: string;
-  authorship: 'self' | 'other';
-  taskIds: string[];
-  tasks: TaskRef[];
-};
-
-type Group = {
-  key: string;
-  label: string;
-  commits: Commit[];
-};
-
-type DaySummary = {
-  added: string;
-  updated: string;
-  deleted: string;
-  drawbacks: string;
-};
-
-type InspectResult = {
-  status: 'inspected' | 'not-found' | 'incompatible';
-  project: string;
-  date: string;
-  group: string;
-  itemCount: number;
-  taskReferenceCount: number;
-  daySummary: DaySummary | null;
-  commits: Commit[];
-  groups: Group[];
-};
 
 const GROUPS = [
   { value: 'day', label: '按日' },
@@ -141,11 +99,9 @@ export function DailyProgressPanel({ projectCode, workspaceId, onAskAgent }: Pro
     let cancelled = false;
     setLoading(true);
     setError(null);
-    const query = new URLSearchParams({ group });
-    const suffix = date ? `/${date}` : '';
     void (async () => {
       try {
-        const next = await api(`/api/v1/projects/${encodeURIComponent(projectCode)}/daily-progress${suffix}?${query}`) as InspectResult;
+        const next = await dailyProgressApi.inspect(projectCode, date, group);
         if (cancelled) return;
         setData(next);
         if (!date) setDate(next.date);

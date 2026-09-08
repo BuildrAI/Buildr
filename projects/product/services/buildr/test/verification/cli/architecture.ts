@@ -71,7 +71,7 @@ for (const retiredRoot of ['domain', 'interfaces']) {
   }
 }
 
-for (const required of ['bin', 'src', 'resources', 'test', 'tools', 'docs', 'package']) {
+for (const required of ['bin', 'src', 'resources', 'test', 'tools', 'docs']) {
   if (!fs.statSync(path.join(productRoot, required), { throwIfNoEntry: false })?.isDirectory()) {
     problems.push(`missing Product responsibility directory: ${required}/`);
   }
@@ -125,7 +125,7 @@ for (const relative of requiredRuntime) {
   if (!fs.existsSync(path.join(sourceRoot, relative))) problems.push(`missing Product runtime module: src/${relative}`);
 }
 
-const packageSmoke: any = path.join(sourceRoot, 'modules/agent-assets/application/package-maintenance/smoke-checks.ts');
+const packageSmoke: any = path.join(productRoot, 'tools/verification/package-check/smoke-checks.ts');
 if (fs.existsSync(packageSmoke) && /runPackageSmokeChecks/.test(fs.readFileSync(packageSmoke, 'utf8'))) {
   problems.push('package verification must not restore the shared runPackageSmokeChecks monolith');
 }
@@ -136,7 +136,7 @@ const layerOf: any = (relative: any) => {
   if (relative === 'infrastructure/contracts/public-json.ts') return 'infrastructure';
   const parts: any = relative.split('/');
   if (parts[0] === 'infrastructure') return 'infrastructure';
-  const moduleOffset: any = parts[0] === 'modules' && parts[1] === 'task' && parts[2] === 'change' ? 3 : parts[0] === 'modules' ? 2 : 1;
+  const moduleOffset: any = parts[0] === 'modules' && parts[1] === 'task' && ['change', 'daily-progress'].includes(parts[2]) ? 3 : parts[0] === 'modules' ? 2 : 1;
   if (!['modules', 'web'].includes(parts[0])) return parts[0];
   if (parts.length === moduleOffset + 1 && /^module\.(?:mjs|ts)$/.test(parts[moduleOffset])) return 'module';
   return {
@@ -300,9 +300,9 @@ if (packageJson.scripts?.['test:launcher-platform'] !== 'node test/verification/
 if (!fs.existsSync(path.join(productRoot, 'test', 'verification', 'release', 'platform-launcher-invocation.ts'))) problems.push('platform Launcher integration module is missing');
 const expectedPackageExports: any = {
   './test-context': {
-    types: './package/targets/test-context/index.d.ts',
-    import: './test-context.mjs',
-    default: './test-context.mjs',
+    types: './build/test-context/public.d.ts',
+    import: './build/test-context/public.js',
+    default: './build/test-context/public.js',
   },
   './package.json': './package.json',
   './*': './*',
@@ -310,7 +310,7 @@ const expectedPackageExports: any = {
 if (JSON.stringify(packageJson.exports) !== JSON.stringify(expectedPackageExports)) {
   problems.push('package exports must expose only the documented Test Context facade and compatibility subpaths');
 }
-if (!packageJson.files?.includes('test-context.mjs')) problems.push('npm package must include the public Test Context facade');
+if (!packageJson.files?.includes('build/test-context/')) problems.push('npm package must include the generated Test Context public entry');
 
 const registry: any = path.join(sourceRoot, 'bootstrap', 'cli', 'registry.ts');
 if (fs.existsSync(registry)) {
@@ -410,8 +410,10 @@ else {
   if (!moduleSource.includes("WORKSPACE_MODULE_ID = 'workspace-core'") || !moduleSource.includes('createWorkspaceCliContributions') || !moduleSource.includes('createWorkspaceHttpContribution')) {
     problems.push('Workspace Core module must explicitly contribute CLI and HTTP adapters');
   }
-  for (const required of ['PROJECT_DAILY_PROGRESS_APPLICATION', 'createProjectDailyProgressRepository', 'registerProjectDailyProgressApplication', 'projectDailyProgressCommand']) {
-    if (!moduleSource.includes(required)) problems.push(`Workspace module must own Daily Progress ${required}`);
+  if (moduleSource.includes('WORKSPACE_TASK_BINDER') || moduleSource.includes('PROJECT_DAILY_PROGRESS_APPLICATION')) problems.push('Workspace must not own Task daily progress');
+  const taskModuleSource = fs.readFileSync(path.join(sourceRoot, 'modules/task/module.ts'), 'utf8');
+  for (const required of ['PROJECT_DAILY_PROGRESS_APPLICATION', 'createProjectDailyProgressRepository', 'createProjectDailyProgressApplication', 'createDailyProgressCliContributions']) {
+    if (!taskModuleSource.includes(required)) problems.push(`Task module must own Daily Progress ${required}`);
   }
 }
 for (const legacy of [
@@ -453,7 +455,7 @@ const legacyTaskRecordConsumers: any = new Set([
   'application/change/change-application.mjs',
   'modules/task/change/module.ts',
   'modules/task/change/interfaces/http/change-http.ts',
-  'modules/workspace/application/project-daily-progress-application.ts',
+  'modules/task/daily-progress/application/project-daily-progress-application.ts',
   'modules/workspace/module.ts',
   'modules/task/application/task-verification-application.ts',
   'modules/task/infrastructure/git-worktree-provider.ts',
@@ -506,8 +508,8 @@ if (fs.existsSync(taskVerificationInterface)) {
     problems.push('Task Verification CLI interface must adapt both actions to the shared Application');
   }
 }
-const dailyProgressApplication: any = path.join(sourceRoot, 'modules', 'workspace', 'application', 'project-daily-progress-application.ts');
-const dailyProgressInterface: any = path.join(sourceRoot, 'modules', 'workspace', 'interfaces', 'cli', 'project-daily-progress.ts');
+const dailyProgressApplication: any = path.join(sourceRoot, 'modules', 'task', 'daily-progress', 'application', 'project-daily-progress-application.ts');
+const dailyProgressInterface: any = path.join(sourceRoot, 'modules', 'task', 'daily-progress', 'interfaces', 'cli', 'project-daily-progress.ts');
 if (fs.existsSync(dailyProgressApplication)) {
   const source: any = fs.readFileSync(dailyProgressApplication, 'utf8');
   if (/node:process|process\.(?:stdout|stderr|exitCode)|projectDailyProgressCommand/.test(source)) {

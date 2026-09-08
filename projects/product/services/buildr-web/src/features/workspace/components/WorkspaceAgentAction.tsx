@@ -1,6 +1,7 @@
+import { workspaceApi } from '../api/workspace-api';
 import { useState, type FormEvent } from 'react';
 import { Button, Input } from 'antd';
-import { workspaceApi } from '../../../api';
+
 import { ACTION_LABELS, useAgentActionFeedback } from '../../../components/AgentActionFeedback';
 
 type Props = { onBack: () => void; context?: Record<string, unknown> };

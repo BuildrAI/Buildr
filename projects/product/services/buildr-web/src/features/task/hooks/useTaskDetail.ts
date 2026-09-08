@@ -1,11 +1,12 @@
+import { workspaceApi, type WorkspaceResponse } from '../../workspace/api/workspace-api';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { workspaceApi, type WorkspaceResponse } from '../../../api';
+
 import { taskApi } from '../api/task-api';
-import type { TaskDetailResponse } from '../api/generated/task-dto';
+import type { TaskDetailResponse } from '../../../../build/generated/task-dto';
 import type { TaskReadLifecycle } from './useTaskRequestLifecycle';
 
-export type { WorkspaceResponse } from '../../../api';
+export type { WorkspaceResponse } from '../../workspace/api/workspace-api';
 
 type Input = {
   taskId: string;

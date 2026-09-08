@@ -53,10 +53,10 @@ src/infrastructure/testing/context-runtime/
 ├── node-test.ts            node:test注册adapter与direct-file lifecycle
 ├── node-runner.ts          多持久Worker Host编排
 ├── node-runner-cli.ts      verification executor入口
-└── index.ts                TypeScript公共API聚合
+├── index.ts                内部实现聚合
+└── public.ts               闭合公开导出，编译后由 package exports 引用
 
-test-context.mjs            package顶层稳定facade
-package/targets/test-context/
+build/test-context/
 ├── *.js                    ignored本地输出或Candidate暂存中的标准ESM
 └── *.d.ts                  ignored本地输出或Candidate暂存中的类型声明
 tools/testing/test-context-build.ts
@@ -396,7 +396,7 @@ outer `contextLifecycle`继续保存跨进程immutable seed的prepare/reuse/mate
 - unknown owner、无效Context、不可满足资源、污染和失真预算都在安全边界失败。
 - daily-full性能目标不能削弱Product Artifact Candidate、Windows、Host Node、Launcher、npm integrity、tarball或Published Release readback/convergence证据。
 
-相关入口：`test-context.mjs`、`src/infrastructure/testing/context-runtime/`、`test/context/`、`test/verification/registry.ts`、`test/verification/planner.ts`、`test/verification/dag-scheduler.ts`、`test/verification/executor.ts`。
+相关入口：`src/infrastructure/testing/context-runtime/public.ts`、`src/infrastructure/testing/context-runtime/`、`test/context/`、`test/verification/registry.ts`、`test/verification/planner.ts`、`test/verification/dag-scheduler.ts`、`test/verification/executor.ts`。
 
 ## 发布基础设施验证
 

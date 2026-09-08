@@ -24,6 +24,35 @@ import {
 import { handleTaskHttpRequest, TASK_ID_SOURCE, type TaskHttpInput } from './interfaces/http/task-http.ts';
 import { handleTaskReviewHttpRequest } from './interfaces/http/task-review-http.ts';
 import { WORKSPACE_QUERY, WORKSPACE_TASK_SUPPORT } from '../workspace/module.ts';
+import { createProjectDailyProgressApplication, type ProjectDailyProgressApplicationRuntime } from './daily-progress/application/project-daily-progress-application.ts';
+import { createProjectDailyProgressRepository, type ProjectDailyProgressRepositoryRuntime } from './daily-progress/persistence/project-daily-progress-repository.ts';
+import { createDailyProgressCliContributions } from './daily-progress/interfaces/cli/project-daily-progress.ts';
+import { createDailyProgressHttpContribution } from './daily-progress/interfaces/http/project-daily-progress.ts';
+
+export const PROJECT_DAILY_PROGRESS_APPLICATION = 'task.project-daily-progress-application';
+export { createDailyProgressCliContributions };
+
+export function createDailyProgressModule(files: ProjectDailyProgressRepositoryRuntime) {
+  return Object.freeze({
+    id: 'task-daily-progress',
+    requires: Object.freeze([WORKSPACE_QUERY, TASK_QUERY_APPLICATION]),
+    create(requires: Record<string, Pick<ProjectDailyProgressApplicationRuntime, 'readProjectRegistryRecord' | 'inspectTask'>>) {
+      const repository = createProjectDailyProgressRepository(files);
+      const application = createProjectDailyProgressApplication({
+        dailyProgressRepository: repository,
+        readProjectRegistryRecord: requires[WORKSPACE_QUERY].readProjectRegistryRecord,
+        inspectTask: requires[TASK_QUERY_APPLICATION].inspectTask,
+      });
+      return Object.freeze({
+        provides: { [PROJECT_DAILY_PROGRESS_APPLICATION]: application },
+        contributions: {
+          cli: createDailyProgressCliContributions(application),
+          http: [createDailyProgressHttpContribution(application)],
+        },
+      });
+    },
+  });
+}
 
 export const TASK_MODULE_ID = 'task';
 export const TASK_QUERY_APPLICATION = 'task.query-application';
@@ -460,3 +489,17 @@ export function createParentCoordinationModule(runtime: DynamicRuntime) {
     },
   });
 }
+
+export {
+  PROJECT_DAILY_PROGRESS_SCHEMA,
+  PROJECT_DAILY_PROGRESS_SCHEMA_V1,
+  createDailyProgressDocument,
+  dailyProgressError,
+  isDailyProgressDate,
+  isLegacyDailyProgressDocument,
+  normalizeDailyProgressDate,
+  normalizeDailyProgressDocument,
+  normalizeDailyProgressPayload,
+} from './daily-progress/domain/project-daily-progress.ts';
+
+export { groupDailyProgressCommits, localCalendarDate, normalizeDailyProgressGroup } from './daily-progress/application/project-daily-progress-application.ts';

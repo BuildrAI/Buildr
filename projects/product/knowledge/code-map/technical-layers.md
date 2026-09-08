@@ -2,6 +2,123 @@
 
 以下位置均相对 `projects/product/services/buildr/`。
 
+## 工作空间模块目录树
+
+```text
+src/modules/workspace/
+├── module.ts                            对象装配（Composition），不拥有用例
+├── domain/                              领域模型（Domain）
+│   ├── workspace.ts                     工作空间身份
+│   ├── project.ts                       项目身份、名称和来源
+│   ├── service.ts                       服务身份、类型和来源
+│   └── source-root.ts                   来源与所有权规则
+├── application/                         应用服务（Application）
+│   ├── workspace-query-application.ts    getWorkspace：读取展示结果
+│   ├── workspace-command-application.ts 注册、更新、迁移与请求根解析
+│   ├── workspace-operations.ts          initializeWorkspace：初始化编排
+│   ├── project-application.ts           listProjects / createProjectAsset
+│   ├── service-application.ts           listServices / createServiceAsset
+│   └── diagnostics/                     本模块负责的登记和来源诊断
+├── persistence/                         数据访问（Persistence）
+│   ├── workspace-manifest-repository.ts 工作空间声明读写
+│   ├── workspace-registry-repository.ts 本机已登记工作空间读写
+│   ├── project-manifest-repository.ts   项目登记读写
+│   └── service-manifest-repository.ts   服务登记读写
+├── infrastructure/                      模块专属基础设施（Infrastructure）
+│   ├── workspace-source-filesystem.ts  来源暂存、复制和发布
+│   ├── workspace-source-git.ts          来源 Git 操作
+│   └── workspace-management-fence.ts   管理身份、锁与冲突保护
+└── interfaces/                          接口入口（Interface）
+    ├── cli/                             workspace / project / service 参数适配
+    └── http/                            登记与详情路由、协议和响应校验
+```
+
+工作空间不拥有每日演进，也不再反向绑定任务查询。资产模块只取得明确的 `WORKSPACE_ASSET_SUPPORT`，不取得全部工作空间业务与测试方法。
+
+## 任务模块目录树
+
+```text
+src/modules/task/
+├── module.ts                            任务及专业子能力的装配入口
+├── domain/                              身份、状态与自身规则
+│   ├── task.ts                          普通任务状态与结果
+│   ├── task-project.ts / task-service.ts / task-change.ts
+│   │                                    任务范围关系
+│   ├── task-review.ts                   审查结果规则
+│   ├── task-verification.ts             验证报告与适用性
+│   └── parent-coordination.ts           父任务完成约束
+├── application/                         用例、事务与结果组合
+│   ├── task-query-application.ts        queryTasks / inspectTask
+│   ├── task-command-application.ts      createTask / updateTask / completeTask
+│   ├── task-validation.ts               核心任务共享业务检查
+│   ├── task-dto.ts                      手工结果类型与生成协议类型的边界
+│   ├── task-review-application.ts       inspectTaskReview / recordTaskReview
+│   ├── task-verification-application.ts inspectTaskVerification / recordTaskVerification
+│   └── parent-coordination-application.ts inspectParentCoordination
+├── persistence/                         唯一业务存取与结果映射
+│   ├── task-repository.ts               任务主记录
+│   ├── task-project-repository.ts / task-service-repository.ts
+│   ├── task-change-repository.ts         任务范围关系
+│   ├── task-list-repository.ts           列表投影与分页查询
+│   ├── task-review-repository.ts         审查结果
+│   ├── task-verification-repository.ts   验证报告
+│   └── task-retrospective-document.ts    本机复盘文档安全读取
+├── infrastructure/git-worktree-provider.ts
+│                                        任务工作树创建、检查与安全清理
+├── interfaces/{cli,http}/               任务及专业结果协议适配
+├── change/                              任务关联 OpenSpec 的组合读取
+│   ├── module.ts
+│   ├── application/change-application.ts
+│   └── interfaces/http/
+└── daily-progress/                      本机每日演进子能力
+    ├── domain/project-daily-progress.ts  日期、提交、摘要与文件规则
+    ├── application/project-daily-progress-application.ts
+    │   ├── recordProjectDailyProgress   校验项目、提交和任务引用后保存
+    │   ├── inspectProjectDailyProgress  读取并组合当前任务信息
+    │   ├── listProjectDailyProgress     列出已保存日期
+    │   └── inspectTaskDailyProgress     查询任务关联演进
+    ├── persistence/project-daily-progress-repository.ts
+    │   ├── readDailyProgressDocument
+    │   └── writeDailyProgressDocument   唯一演进文件 writer
+    └── interfaces/
+        ├── cli/project-daily-progress.ts 命令与输出适配
+        └── http/project-daily-progress.ts 项目/任务演进只读路由
+```
+
+普通任务和专业结果使用 SQLite；每日演进使用被 Git 忽略的 YAML。属于同一模块不要求改成同一种存储，也不改变当前 Git 提交主导、关联本地任务的行为。
+
+## 资产与支撑模块目录树
+
+```text
+src/modules/agent-assets/
+├── module.ts                            资产应用、读取接口与跨模块依赖装配
+├── domain/                              能力身份、组件定义、版本规则
+├── application/
+│   ├── commands.ts / rules.ts / skills.ts / components.ts
+│   │                                    完整资产用例，按职责而非操作数拆分
+│   ├── runtime.ts / runtime-projection.ts 运行环境发现与投射编排
+│   ├── http-query.ts                    资产列表读取
+│   ├── package-maintenance.ts           内置资产同步、生命周期与资源打包
+│   └── package-maintenance/             上述用例的专属规则与技术协作
+├── persistence/                         资产声明、定义、能力图的存取
+├── infrastructure/                      版本探测、来源读取、运行环境适配
+│   └── runtime/                         原生配置生成、所有权、投射与检查
+└── interfaces/{cli,http}/               参数、协议与结果展示
+
+src/modules/project-testing/
+├── module.ts                            只装配并导出声明能力
+├── domain/project-verification.ts       声明格式与语义校验
+├── application/project-verification-application.ts
+│                                        inspect / validate / update 与只读诊断
+└── interfaces/cli/project-verification.ts 参数与结果适配
+
+src/modules/diagnostics/
+├── module.ts                            只选择必要读取能力，不注入业务 writer
+└── application/                         诊断编排、结果模型与输出
+```
+
+资产工程检查位于 `tools/verification/package-check.ts` 及其目录，不属于产品应用。`AGENT_ASSETS_DIAGNOSTICS_READ` 只提供检查；`inspectPackageBuiltins` 固定以检查模式调用资产 owner，诊断方无法请求同步写入。
+
 ## 对象装配（Composition）
 
 | 对象 | 文件 | 代表方法 | 责任 |
@@ -75,4 +192,4 @@
 - `components/`：功能内可组合视图；
 - `pages/`：路由级组合。
 
-共享 transport 位于 `src/api/client.ts`，生成 DTO 位于 `src/api/generated/`；`App.tsx` 只注册路由，`AppLayout.tsx` 只组合应用壳和跨页提示。
+共享 transport 位于 `src/api/client.ts`，生成 DTO 位于 `build/generated/`；`App.tsx` 只注册路由，`AppLayout.tsx` 只组合应用壳和跨页提示。

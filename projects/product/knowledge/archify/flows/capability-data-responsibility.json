@@ -44,6 +44,6 @@
     { "id": "deliverEvidence", "from": "projection", "to": "consumer", "label": "交付可观察证据", "classification": "observable", "variant": "emphasis", "labelDy": 28 }
   ],
   "cards": [
-    { "dot": "cyan", "title": "责任结论", "items": ["Interface 适配协议，Application 编排业务", "Repository 维护唯一 writer 与事务边界", "派生结果可重建，不成为第二权威"] }
+    { "dot": "cyan", "title": "责任结论", "items": ["接口适配协议，应用编排业务，数据访问负责存取", "每日演进属于任务模块：以 Git 提交为主，关联本地任务", "build 与 web-dist 是可重建输出，不是源码"] }
   ]
 }

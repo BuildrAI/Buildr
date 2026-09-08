@@ -37,7 +37,7 @@ src/
 
 `src/bootstrap/runtime.ts:createRuntime()` 只创建平台技术对象、注册 Infrastructure、安装模块并保存私有 Registry context。业务调用通过 `runtimeProvide(runtime, capability)`；Host 聚合通过 `runtimeContributions(runtime, type)`。生产 Runtime 不接受 `Object.assign` 式业务方法注入。
 
-真实循环依赖只使用一次性 Binder：`WORKSPACE_TASK_BINDER`、`TASK_CHANGE_BINDER`、`AGENT_ASSETS_DIAGNOSTICS_BINDER`。
+真实循环依赖只使用一次性 Binder：`TASK_CHANGE_BINDER`、`AGENT_ASSETS_DIAGNOSTICS_BINDER`。
 
 ## CLI Adapter 责任
 

@@ -185,8 +185,8 @@ test('全部 supported adapters 的产品入口保持 adapter-neutral 且不注�
     assert.ok(productSkill, runtime);
     assert.doesNotMatch(productSkill.content, /Workspace routing evidence|contract SHA-256|buildr:capability-bindings begin/, runtime);
     assert.doesNotMatch(productSkill.content, /当前 Agent Adapter|当前安装 adapter|buildr (?:sync|skill install|doctor --agent) (?:claude-code|codex|cursor|qoder|trae|trae-work|workbuddy)/, runtime);
-    assert.match(productSkill.content, /`<agent>` 只取当前宿主明确身份/, runtime);
-    assert.match(productSkill.content, /不得从 Skill 路径.*`detectedAgents` 推断宿主/, runtime);
+    assert.match(productSkill.content, /`<agent>` 使用当前宿主的明确身份/, runtime);
+    assert.match(productSkill.content, /不得从技能路径、生成标记或 Doctor 检测结果推断宿主/, runtime);
     assert.match(productSkill.content, /Doctor 的 full detail/, runtime);
     expectedContent ??= productSkill.content;
     assert.equal(productSkill.content, expectedContent, runtime);

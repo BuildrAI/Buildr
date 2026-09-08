@@ -10,7 +10,7 @@ import { cliOutputRoot, contractOutputPaths } from './output-paths.ts';
 
 const serviceRoot: any = path.resolve(import.meta.dirname, '../../..');
 const productRoot: any = path.resolve(serviceRoot, '../..');
-const defaultOutputs: any = contractOutputPaths('web/http', 'runtime-system-http-dto.ts');
+const defaultOutputs: any = contractOutputPaths('runtime-system-http-dto.ts');
 const catalogs: any = Object.freeze([
   ['buildrWeb', BUILDR_WEB_HTTP_SCHEMAS],
   ['releaseAwareness', RELEASE_AWARENESS_HTTP_SCHEMAS],
@@ -35,13 +35,13 @@ export async function renderRuntimeSystemDto(): Promise<any>  {
 
 export async function checkRuntimeSystemDto(outputRoot: any): Promise<any>  {
   const content: any = await renderRuntimeSystemDto();
-  const selected: any = contractOutputPaths('web/http', 'runtime-system-http-dto.ts', outputRoot);
+  const selected: any = contractOutputPaths('runtime-system-http-dto.ts', outputRoot);
   return [selected.backend, selected.web].filter((file: any) => !fs.existsSync(file) || fs.readFileSync(file, 'utf8') !== content);
 }
 
 export async function writeRuntimeSystemDto(outputRoot: any = undefined): Promise<any>  {
   const content: any = await renderRuntimeSystemDto();
-  const selected: any = outputRoot ? contractOutputPaths('web/http', 'runtime-system-http-dto.ts', outputRoot) : defaultOutputs;
+  const selected: any = outputRoot ? contractOutputPaths('runtime-system-http-dto.ts', outputRoot) : defaultOutputs;
   const outputs: any[] = [selected.backend, selected.web];
   for (const file of outputs) {
     fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -53,7 +53,7 @@ export async function writeRuntimeSystemDto(outputRoot: any = undefined): Promis
 async function main(): Promise<any>  {
   const content: any = await renderRuntimeSystemDto();
   const outputRoot: any = cliOutputRoot(process.argv.slice(2));
-  const selected: any = outputRoot ? contractOutputPaths('web/http', 'runtime-system-http-dto.ts', outputRoot) : defaultOutputs;
+  const selected: any = outputRoot ? contractOutputPaths('runtime-system-http-dto.ts', outputRoot) : defaultOutputs;
   const outputs: any[] = [selected.backend, selected.web];
   const drift: any = outputs.filter((file: any) => !fs.existsSync(file) || fs.readFileSync(file, 'utf8') !== content);
   if (process.argv.includes('--check')) {

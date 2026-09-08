@@ -1,7 +1,8 @@
+import { workspaceApi } from '../../workspace/api/workspace-api';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Button, Segmented } from 'antd';
-import { workspaceApi } from '../../../api';
+
 import { useAppShell } from '../../../app/AppShellContext';
 import { workspaceHref } from '../../../lib/labels';
 import { renderMarkdown } from '../../../markdown';

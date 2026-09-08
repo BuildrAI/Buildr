@@ -6,6 +6,7 @@ import { printCliError } from './diagnostics.ts';
 import { createGitWorktreeCliContributions, createTaskCliContributions, createTaskReviewCliContributions } from '../../modules/task/module.ts';
 import { createOpenSpecCliContributions } from '../../modules/openspec/module.ts';
 import { createWorkspaceCliContributions } from '../../modules/workspace/module.ts';
+import { createDailyProgressCliContributions } from '../../modules/task/module.ts';
 import { createInstallationCliContributions, createLauncherCliContributions } from '../../modules/installation/module.ts';
 import { createAgentAssetsCliContributions } from '../../modules/agent-assets/interfaces/cli/agent-assets.ts';
 import { AGENT_ASSETS_RUNTIME } from '../../modules/agent-assets/module.ts';
@@ -180,6 +181,7 @@ function createCommandCatalog(commandRegistry: any): any  {
 
 export const COMMAND_REGISTRY = createCommandRegistry([
   ...createWorkspaceCliContributions(),
+  ...createDailyProgressCliContributions(null),
   ...createAgentAssetsCliContributions(),
   ...createGitWorktreeCliContributions(),
   ...createTaskCliContributions(),

@@ -29,7 +29,7 @@ async function renderTarget(target: any): Promise<any>  {
 }
 
 export async function renderWorkspaceAgentAssetsDtos(outputRoot: any): Promise<any>  {
-  return Promise.all(targets.map(async (target: any) => ({ ...target, ...contractOutputPaths(target.backendRelative, target.name, outputRoot), content: await renderTarget(target) })));
+  return Promise.all(targets.map(async (target: any) => ({ ...target, ...contractOutputPaths(target.name, outputRoot), content: await renderTarget(target) })));
 }
 
 export async function checkWorkspaceAgentAssetsDtos(outputRoot: any): Promise<any>  {

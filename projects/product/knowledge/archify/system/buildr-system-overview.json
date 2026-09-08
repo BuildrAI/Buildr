@@ -42,8 +42,8 @@
     { "id": "runtimeProjection", "from": "capabilityModules", "to": "agentRuntime", "label": "可重建投射 + receipt", "labelAt": [1010, 560] }
   ],
   "cards": [
-    { "dot": "cyan", "title": "依赖方向", "items": ["Bootstrap 只装配，不承载业务方法", "模块通过 capability、query 与 contribution 协作", "通用 Infrastructure 不反向依赖产品模块"] },
-    { "dot": "emerald", "title": "状态责任", "items": ["Workspace 文件是长期源资产", "Task 与专业结果由同一 SQLite 事务边界维护", "Agent runtime 文件和 receipt 是可重建投射"] },
-    { "dot": "orange", "title": "工程边界", "items": ["DTO 生成器位于 tools/codegen", "Launcher 工程程序位于 tools/build", "Buildr 自测调度与辅助位于 test/verification"] }
+    { "dot": "cyan", "title": "依赖方向", "items": ["模块通过具名能力协作", "每日演进归入 task/daily-progress", "诊断只取得所需读取能力"] },
+    { "dot": "emerald", "title": "状态责任", "items": ["工作空间维护项目与服务登记", "任务和专业结果写入 SQLite", "每日演进保留本机 YAML 与提交关联"] },
+    { "dot": "orange", "title": "工程边界", "items": ["工程检查位于 tools/verification", "生成类型和测试库输出到 build", "前端构建与托管保留 web-dist"] }
   ]
 }

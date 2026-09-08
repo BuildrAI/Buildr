@@ -1,6 +1,6 @@
 import './TaskOutcomeSummary.css';
 
-import type { TaskRecord } from '../api/generated/task-dto';
+import type { TaskRecord } from '../../../../build/generated/task-dto';
 
 type Props = {
   record: TaskRecord;

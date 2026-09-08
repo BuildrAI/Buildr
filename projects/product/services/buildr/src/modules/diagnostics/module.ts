@@ -36,7 +36,21 @@ export function createSystemDoctorModule(runtime: any, {
     requires: Object.freeze(requiredCapabilities),
     create(requires: any) {
       const composition = Object.create(runtime);
-      for (const capability of requiredCapabilities) Object.assign(composition, requires[capability]);
+      Object.assign(composition, requires[WORKSPACE_DIAGNOSTICS]);
+      const copy = (capability: string | null, names: readonly string[]) => {
+        if (!capability) return;
+        for (const name of names) {
+          if (!(name in requires[capability])) throw new TypeError(`Diagnostics dependency is missing: ${capability}.${name}`);
+          composition[name] = requires[capability][name];
+        }
+      };
+      copy(agentRuntimeCapability, ['RUNTIME_ADAPTERS', 'RUNTIME_CHECKERS', 'SUPPORTED_AGENT_IDS', 'UNSUPPORTED_AGENT_GUIDANCE', 'assembleRuntimeProjection', 'getRuntimeAdapter', 'isSupportedAgent']);
+      copy(agentCapabilityQuery, ['resolveSkillCapabilityGraph']);
+      copy(agentAssetsInternal, ['assertAgentId', 'diagnoseRules', 'runCommandsCheck', 'componentRegistryPath', 'packageComponentsStatus', 'managedRuntimeSkillOrphans', 'listManagedDirectories', 'runtimeImplementation', 'readSkillManifestSchemaVersion', 'skillsManifestPath', 'inspectPackageBuiltins']);
+      copy(verificationDeclaration, ['createProjectVerificationDiagnostics']);
+      copy(workspaceQuery, ['resolveSourceRoot']);
+      copy(installationApplication, ['buildInstallationInventory', 'releaseAwareness']);
+      copy(workspaceApplication, ['diagnoseWorkspaceMetadata']);
       registerApplicationDoctor(composition);
       registerSystemDoctorApplication(composition);
       const diagnostics = Object.freeze([...diagnosticContributions]);

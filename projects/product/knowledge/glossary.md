@@ -292,6 +292,8 @@
 
 ## 项目每日演进（Project Daily Progress）
 
+- 模块归属：`task/daily-progress/`。当前单机版以 Git 提交为主、关联本地任务；企业版任务主导并辅助其他维度汇总是未来方向，不是当前数据契约。
+
 - 定义：按已登记 Project 保存的本机日历日工作摘要，权威是 canonical Workspace 根下被 Git 忽略的 YAML 文件 `.buildr/daily-progress/<project-code>/<YYYY-MM-DD>.yml`。输入是当日 Git 提交与更改文件；日摘要回答新增、更新、删除与弊端。
 - 适用范围：Agent 通过 agent-machine CLI `record` 覆盖写入当天 v2 文件；CLI、本机 HTTP 与 Buildr Web 只读 inspect/list；自己的提交可与本机已有 Task ID 做 0..N 关联。
 - 避免混用：不是 Task Record、当前认知、Verification 或 Retrospective；不进 Task SQLite、Git、Content Target 或跨机器共享。产品读取路径不生成摘要、不扫描 Git、不读取 `user.email`、不内置 cron。

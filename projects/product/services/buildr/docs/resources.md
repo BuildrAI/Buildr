@@ -14,7 +14,7 @@ Buildr Service 使用根目录 `resources/` 保存会被产品读取、复制、
 
 ## `package/` 边界
 
-`package/` 不再承载长期源码或交付资源。唯一保留的 `package/targets/test-context/` 是 ignored 派生输出，由 `tools/testing/test-context-build.ts` 生成。
+`package/` 不再承载长期源码或交付资源。唯一保留的 `build/test-context/` 是 ignored 派生输出，由 `tools/testing/test-context-build.ts` 生成。
 
 Development Launcher 工程程序位于 `tools/build/launcher/`；正式 npm Launcher 行为属于 `src/modules/installation/`。两者都不是文件型资源，不能迁回 `package/`。
 

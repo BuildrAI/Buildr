@@ -1,6 +1,7 @@
+import { type ProjectResponse, projectApi } from '../api/project-api';
 import { useEffect, useState, type FormEvent } from 'react';
 import { Alert, Button, Form, Input, Modal, Space } from 'antd';
-import { workspaceApi, type ProjectResponse } from '../../../api';
+
 
 type ProjectEditPayload = ProjectResponse & { revision: string; project: NonNullable<ProjectResponse['project']> };
 
@@ -42,7 +43,7 @@ export function ProjectEditModal({ open, projectCode, onClose, onSaved }: Props)
     setSaveError('');
     void (async () => {
       try {
-        const data = await workspaceApi.project(projectCode) as ProjectEditPayload;
+        const data = await projectApi.project(projectCode) as ProjectEditPayload;
         if (cancelled) return;
         setCurrent(data);
         setEditAlert(data.migrationRequired ? (data.nextActions || []).join(' ') : '');
@@ -64,7 +65,7 @@ export function ProjectEditModal({ open, projectCode, onClose, onSaved }: Props)
     setSaving(true);
     setSaveError('');
     try {
-      const updated = await workspaceApi.updateProject(projectCode, {
+      const updated = await projectApi.updateProject(projectCode, {
         revision: current.revision,
         name: nameInput.value,
         description: descriptionInput.value,

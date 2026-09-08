@@ -29,23 +29,24 @@ React feature page
 
 ## Runtime 装配与环依赖收敛
 
-`bootstrap/runtime.ts` 通过 `runtimeProvide()` 获取命名能力。三个真实的晚绑定关系使用一次性 Binder：
+`bootstrap/runtime.ts` 通过 `runtimeProvide()` 获取命名能力。两个真实的晚绑定关系使用一次性 Binder：
 
 | Binder | 提供方 → 消费方 | 原因 |
 |---|---|---|
-| `WORKSPACE_TASK_BINDER` | Task query → Workspace | Workspace 查询需要 Task 只读摘要，但 Workspace 必须先提供 Task 创建所需的 Project/Service reader |
 | `TASK_CHANGE_BINDER` | Change application → Task | Task 详情组合 Change；Change context 又依赖 Task scope |
-| `AGENT_ASSETS_DIAGNOSTICS_BINDER` | Doctor application → Agent Assets | Agent Assets 的 package check 需要只读诊断，而 Doctor 最后聚合 Agent Assets diagnostics |
+| `AGENT_ASSETS_DIAGNOSTICS_BINDER` | Doctor application → Agent Assets | Agent Assets 的内置资产修改后需要诊断，而 Doctor 最后聚合 Agent Assets diagnostics |
 
 Binder 只允许装配一次；它不把宽 Runtime 重新注入业务对象。
 
 ## 数据所有权
 
+每日演进的调用方向为：任务子能力 → 工作空间项目查询、任务查询、自身 YAML Repository。查询不会扫描 Git；记录不会写任务数据库。诊断通过 `AGENT_ASSETS_DIAGNOSTICS_READ` 调用固定检查模式的内置资产读取，不取得同步 writer。
+
 | 数据或产物 | 唯一责任 | 主要路径 | 写入保护 |
 |---|---|---|---|
 | Workspace identity | Workspace | `.buildr/workspace.yml` | canonical Workspace 校验、原子写 |
 | Project/Service registry | Workspace | `projects/manifest.yml`、Project 下 Service manifest | Repository parse/render、mutation journal |
-| Project daily progress | Workspace | `.buildr/daily-progress/<project>/<date>.yml` | 结构化 payload、原子覆盖 |
+| Project daily progress | Task / daily-progress | `.buildr/daily-progress/<project>/<date>.yml` | 结构化 payload、原子覆盖 |
 | Task Record/关系/Review/Verification | Task | Workspace SQLite | 单一 transaction context、`recordDigest`/report digest 条件写入 |
 | Task retrospective 文档 | Task Record | `.buildr/local/task-retrospectives/` | 固定安全路径与摘要登记 |
 | Rule/Skill/Command/Component manifests | Agent Assets | 对应 `*/manifest.yml` 与 Component 定义 | 专属 Repository、原子写、Capability Graph 校验 |

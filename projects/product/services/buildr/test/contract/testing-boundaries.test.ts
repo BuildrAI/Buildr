@@ -280,9 +280,9 @@ test('Prepared Fixture Provider只替代非主证据准备并保持独立sandbox
 test('公共Node Test Context Runtime与Buildr provider保持独立authority', () => {
   const packageMetadata: any = JSON.parse(fs.readFileSync(path.join(productRoot, 'package.json'), 'utf8'));
   assert.deepEqual(packageMetadata.exports['./test-context'], {
-    types: './package/targets/test-context/index.d.ts',
-    import: './test-context.mjs',
-    default: './test-context.mjs',
+    types: './build/test-context/public.d.ts',
+    import: './build/test-context/public.js',
+    default: './build/test-context/public.js',
   });
   const runtimeRoot: any = path.join(productRoot, 'src/infrastructure/testing/context-runtime');
   const publicSource: any = fs.readdirSync(runtimeRoot).filter((name: any) => name.endsWith('.ts'))

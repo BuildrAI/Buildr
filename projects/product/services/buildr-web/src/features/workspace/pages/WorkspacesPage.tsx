@@ -1,10 +1,11 @@
+import { workspaceApi } from '../api/workspace-api';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Alert, Button, Empty, Space, Tag, Typography } from 'antd';
 import { useAppShell } from '../../../app/AppShellContext';
 import { confirmModal } from '../../../lib/confirm';
 import { workspaceHomePath } from '../../../lib/labels';
-import { workspaceApi } from '../../../api';
+
 
 type WorkspaceEntry = (Awaited<ReturnType<typeof workspaceApi.listRegistered>>['workspaces'])[number];
 type WorkspaceRegistry = Awaited<ReturnType<typeof workspaceApi.listRegistered>>;

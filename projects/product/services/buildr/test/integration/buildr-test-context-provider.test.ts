@@ -4,7 +4,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
-import { createTestContextRuntime } from '../../test-context.mjs';
+import { createTestContextRuntime } from '@buildr-ai/buildr/test-context';
 import {
   createGitRepositoryContextProvider,
   createProjectFoundationContextProvider,

@@ -6,12 +6,12 @@
 ## Requirements
 
 ### Requirement: Product 顶层目录必须按生命周期分离
-Buildr Product Service MUST 使用 `bin/`、`src/`、`resources/`、`test/`、`tools/` 和 `docs/` 分别承载可执行入口、产品源码、文件型交付资源、测试验证、checkout-only 工程程序和文档。`web-dist/`与明确登记的 generated 目录 MAY 仅作为精确 ignore、可删除并可重建的本地构建输出存在；`package/` MUST NOT 再承载 tracked 人工源码或文件型交付 authority。Buildr/Buildr Web `src/**/generated/*-dto.ts` MUST由Schema在构建前生成且MUST NOT进入tracked tree。
+Buildr Product Service MUST 使用 `bin/`、`src/`、`resources/`、`test/`、`tools/` 和 `docs/` 分别承载可执行入口、产品源码、文件型交付资源、测试验证、checkout-only 工程程序和文档。`web-dist/`与各服务 `build/` 生成目录 MAY 仅作为精确 ignore、可删除并可重建的本地构建输出存在；`package/` MUST NOT 再承载 tracked 人工源码或文件型交付 authority。Buildr/Buildr Web `build/generated/*-dto.ts` MUST由Schema在构建前生成且MUST NOT进入tracked tree。
 
 #### Scenario: 检查完成迁移的 Product checkout
 - **WHEN** architecture verifier扫描Product Service顶层和tracked files
 - **THEN** `bin/`、`src/`、`resources/`、`test/`、`tools/`和`docs/` MUST各自只包含其声明生命周期内的tracked内容
-- **AND** `web-dist/`、登记的DTO/generated目录 MUST没有tracked文件并由精确ignore覆盖
+- **AND** `web-dist/`、`build/` 目录 MUST没有tracked文件并由精确ignore覆盖
 - **AND** `package/` MUST不存在tracked人工源码或文件型交付资源
 - **AND** tracked source、test、package metadata、docs和active OpenSpec artifacts MUST NOT把本地生成目录描述为源码authority
 
@@ -248,7 +248,7 @@ Workspace 模块 MUST 在 `src/modules/workspace` 的扁平技术层中维护纯
 
 #### Scenario: 过渡 CLI 边界
 - **WHEN** Bootstrap 构建 Workspace 命令目录
-- **THEN** Workspace、Project、Service与Daily Progress命令 MUST只来自 `modules/workspace` 的 Interface contribution
+- **THEN** Workspace、Project、Service命令 MUST只来自 `modules/workspace` 的 Interface contribution；Daily Progress命令 MUST来自 `modules/task/daily-progress` 的 Interface contribution
 - **AND** 旧 `src/workspace` 路径或共享 runtime method 注入 MUST不再存在
 
 ### Requirement: Workspace CLI必须按独立领域调用Application
@@ -270,3 +270,16 @@ Workspace、Project与Service CLI Adapter MUST分别位于`src/modules/workspace
 - **WHEN**Project或Service创建用例具有独立Git/filesystem/staging/Manifest mutation与失败清理生命周期
 - **THEN**对应领域 MUST由所属Application统一拥有创建职责；是否独立文件取决于重要隔离价值或实际体量，不得仅因存在独立逻辑单元就拆文件
 - **AND**原Application在职责和体量仍可维护时 MUST不为Query/Command目录对称继续拆分
+
+### Requirement: 工程检查与业务读取能力必须分开装配
+Buildr 自身源码布局、包静态验证和场景检查 MUST位于 `tools/verification/` 或测试工程中，不得放在产品资产应用中。工作空间对资产管理 MUST提供只包含真实消费者所需方法的 support，不得传递全量业务和测试方法集合；诊断 MUST只取得必要读取能力，内置资产检查 MUST固定使用检查模式。
+
+#### Scenario: 检查模块装配
+- **WHEN** 创建工作空间、资产和诊断模块
+- **THEN** Workspace 资产 support MUST不包含任务方法、每日演进方法或测试专用 writer
+- **AND** 诊断 MUST不取得内置资产同步写入入口，必需方法缺失 MUST在装配时显式失败
+
+#### Scenario: 开发者执行包检查
+- **WHEN** 在 Buildr 开发检出执行 `buildr package check`
+- **THEN** 命令 MUST调用工程检查入口并保留选择、输出与失败语义
+- **AND** 正式安装没有开发检查源码时 MUST给出需要开发检出的明确提示，不加载源码外的猜测路径

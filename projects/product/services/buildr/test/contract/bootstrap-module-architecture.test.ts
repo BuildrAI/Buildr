@@ -1,3 +1,6 @@
+import { AGENT_ASSETS_DIAGNOSTICS_READ } from '../../src/modules/agent-assets/module.ts';
+import { PROJECT_DAILY_PROGRESS_APPLICATION } from '../../src/modules/task/module.ts';
+import { AGENT_ASSETS_PACKAGE_CHECK_SUPPORT } from '../../src/modules/agent-assets/module.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -34,14 +37,12 @@ import {
 } from '../../src/modules/installation/module.ts';
 import { WEB_INSTANCE_LIFECYCLE } from '../../src/web/module.ts';
 import {
-  PROJECT_DAILY_PROGRESS_APPLICATION,
   PROJECT_APPLICATION,
   SERVICE_APPLICATION,
   WORKSPACE_QUERY,
   WORKSPACE_DOMAIN,
   WORKSPACE_TASK_SUPPORT,
-  WORKSPACE_TASK_BINDER,
-  WORKSPACE_INTERNAL,
+  WORKSPACE_ASSET_SUPPORT,
   WORKSPACE_AGENT_ASSETS_BINDER,
   WORKSPACE_DIAGNOSTICS,
   WORKSPACE_RUNTIME_PORT,
@@ -91,17 +92,17 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
   }, {
     id: 'workspace-core',
     requires: [AGENT_ASSETS_RUNTIME],
-    provides: [WORKSPACE_APPLICATION, PROJECT_APPLICATION, SERVICE_APPLICATION, WORKSPACE_QUERY, WORKSPACE_RUNTIME_PORT, WORKSPACE_INTERNAL, WORKSPACE_DOMAIN, WORKSPACE_TASK_SUPPORT, WORKSPACE_AGENT_ASSETS_BINDER, WORKSPACE_TASK_BINDER, WORKSPACE_DIAGNOSTICS, PROJECT_DAILY_PROGRESS_APPLICATION],
+    provides: [WORKSPACE_APPLICATION, PROJECT_APPLICATION, SERVICE_APPLICATION, WORKSPACE_QUERY, WORKSPACE_RUNTIME_PORT, WORKSPACE_ASSET_SUPPORT, WORKSPACE_DOMAIN, WORKSPACE_TASK_SUPPORT, WORKSPACE_AGENT_ASSETS_BINDER, WORKSPACE_DIAGNOSTICS],
     contributions: {
-      cli: ['init', 'bootstrap guide', 'mutation recover', 'project create', 'service create', 'project daily-progress record', 'project daily-progress inspect', 'project daily-progress list'],
+      cli: ['init', 'bootstrap guide', 'mutation recover', 'project create', 'service create'],
       http: ['workspace-core.http'],
       diagnostics: ['workspace.diagnostics'],
     },
     lifecycle: 'none',
   }, {
     id: 'agent-assets',
-    requires: [WORKSPACE_APPLICATION, WORKSPACE_QUERY, WORKSPACE_INTERNAL, WORKSPACE_DOMAIN, AGENT_ASSETS_RUNTIME, AGENT_ASSETS_CAPABILITY_QUERY],
-    provides: [AGENT_ASSETS_APPLICATION, AGENT_ASSETS_INTERNAL, AGENT_ASSETS_DIAGNOSTICS_BINDER],
+    requires: [WORKSPACE_ASSET_SUPPORT, WORKSPACE_DOMAIN, AGENT_ASSETS_RUNTIME, AGENT_ASSETS_CAPABILITY_QUERY],
+    provides: [AGENT_ASSETS_APPLICATION, AGENT_ASSETS_INTERNAL, AGENT_ASSETS_DIAGNOSTICS_READ, AGENT_ASSETS_PACKAGE_CHECK_SUPPORT, AGENT_ASSETS_DIAGNOSTICS_BINDER],
     contributions: {
       cli: [
         'package check', 'package build', 'runtime list',
@@ -141,6 +142,12 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
       http: ['task.http'],
       diagnostics: ['task.diagnostics'],
     },
+    lifecycle: 'none',
+  }, {
+    id: 'task-daily-progress',
+    requires: [WORKSPACE_QUERY, TASK_QUERY_APPLICATION],
+    provides: [PROJECT_DAILY_PROGRESS_APPLICATION],
+    contributions: { cli: ['project daily-progress record', 'project daily-progress inspect', 'project daily-progress list'], http: ['task.daily-progress.http'], diagnostics: [] },
     lifecycle: 'none',
   }, {
     id: 'task-worktree-provider',
@@ -211,14 +218,13 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     lifecycle: 'none',
   }, {
     id: 'system-doctor',
-    requires: [WORKSPACE_DIAGNOSTICS, AGENT_ASSETS_RUNTIME, AGENT_ASSETS_CAPABILITY_QUERY, AGENT_ASSETS_INTERNAL, VERIFICATION_DECLARATION, WORKSPACE_QUERY, SYSTEM_INSTALLATION_APPLICATION, WORKSPACE_APPLICATION],
+    requires: [WORKSPACE_DIAGNOSTICS, AGENT_ASSETS_RUNTIME, AGENT_ASSETS_CAPABILITY_QUERY, AGENT_ASSETS_DIAGNOSTICS_READ, VERIFICATION_DECLARATION, WORKSPACE_QUERY, SYSTEM_INSTALLATION_APPLICATION, WORKSPACE_APPLICATION],
     provides: ['system.doctor.application'],
     contributions: { cli: ['doctor'], http: [], diagnostics: [] },
     lifecycle: 'none',
   }]);
   assert.deepEqual(runtimeContributions(runtime, 'cli').map((item: any) => item.key), [
     'init', 'bootstrap guide', 'mutation recover', 'project create', 'service create',
-    'project daily-progress record', 'project daily-progress inspect', 'project daily-progress list',
     'package check', 'package build', 'runtime list',
     'commands check', 'commands add', 'commands remove',
     'component list', 'component check', 'component install', 'component uninstall',
@@ -229,6 +235,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     'skill install', 'runtime check', 'skills render', 'rules render',
     'openspec converge', 'openspec convergence preflight', 'openspec convergence inspect',
     'task create', 'task inspect', 'task update', 'task activate', 'task complete', 'task abandon',
+    'project daily-progress record', 'project daily-progress inspect', 'project daily-progress list',
     'worktree create', 'worktree cleanup', 'worktree inspect',
     'project verification inspect', 'project verification validate', 'project verification update',
     'task review inspect', 'task review record',
@@ -240,12 +247,20 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     'doctor',
   ]);
   assert.deepEqual(runtimeContributions(runtime, 'http').map((item: any) => item.id), [
-    'workspace-core.http', 'agent-assets.http', 'publication.http', 'task.http', 'change.http',
+    'workspace-core.http', 'agent-assets.http', 'publication.http', 'task.http', 'task.daily-progress.http', 'change.http',
     'task-review.http', 'task-verification.http',
     'task-parent-coordination.http', 'system-installation.release-awareness.http',
   ]);
 
   const workspace: any = runtimeProvide(runtime, WORKSPACE_APPLICATION);
+  const assetSupport = runtimeProvide(runtime, WORKSPACE_ASSET_SUPPORT);
+  for (const name of ['inspectTask', 'recordProjectDailyProgress', 'writeDailyProgressDocument', 'withWorkspaceRegistryMutation']) {
+    assert.equal(name in assetSupport, false, `asset support must not expose ${name}`);
+  }
+  const assetDiagnostics = runtimeProvide(runtime, AGENT_ASSETS_DIAGNOSTICS_READ);
+  assert.equal(typeof assetDiagnostics.inspectPackageBuiltins, 'function');
+  assert.equal('syncPackageBuiltins' in assetDiagnostics, false);
+  assert.equal('syncRuntime' in assetDiagnostics, false);
   const project: any = runtimeProvide(runtime, PROJECT_APPLICATION);
   const service: any = runtimeProvide(runtime, SERVICE_APPLICATION);
   const query: any = runtimeProvide(runtime, WORKSPACE_QUERY);
