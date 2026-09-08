@@ -634,20 +634,20 @@ Buildr guidance MUST把Snapshot `required`解释为不可安全绕过的authorit
 - **AND** MUST不要求修改Snapshot、伪造next或绕过既有fail-closed authority
 
 ### Requirement: 协作者更新必须与本地 self-bootstrap activation 排他路由
-Buildr Agent workflow MUST把远端协作者提交导致canonical Workspace前进、但当前工作没有matching Buildr Task delivery结果的情况归类为普通Workspace update。`buildr-self-bootstrap-sync` MUST只消费明确Task、真实delivered ref、retained checkout与Product Node/Doctor事实，不得从commit author、HEAD、dirty tree或缺失Task猜测适用性。
+Buildr Agent workflow MUST依据当前Workspace是否安装自举Component与已交付变化范围选择自举或普通Workspace update。命中自举范围时MUST使用唯一`buildr-self-bootstrap-sync`执行器；Task编号仅为可选说明，不查询Task状态作为门禁。真实基线、delivered ref、retained checkout与Product Node/Doctor事实继续必需；MUST NOT从commit author、缺失Task或任务终态推断适用性。
 
 #### Scenario: 普通协作者更新
-- **WHEN** selected Git provider证明canonical checkout因remote提交而前进且没有matching自举任务交付
+- **WHEN** selected Git provider证明canonical checkout因remote提交而前进且未命中自举范围
 - **THEN** Agent MUST按普通Workspace update运行适用Doctor/sync
 - **AND** MUST不启动`buildr-self-bootstrap-sync`
 
 #### Scenario: 协作者提交使 canonical tree 前进且本地没有匹配 Finish
-- **WHEN** canonical tree因协作者提交前进且没有matching当前Task交付
+- **WHEN** canonical tree因协作者提交前进且未命中自举范围
 - **THEN** 该事实 MUST按普通Workspace update处理
 - **AND** 旧Finish Result缺失 MUST不被视为异常
 
 #### Scenario: 协作者更新只造成当前 Agent managed projection stale
-- **WHEN** Doctor只报告当前Agent受管投影stale
+- **WHEN** Doctor只报告未安装自举Component的普通Workspace当前Agent受管投影stale
 - **THEN** Agent MUST按Workspace sync边界处理
 - **AND** sync结果 MUST不创建Task或自举证据
 
@@ -657,14 +657,14 @@ Buildr Agent workflow MUST把远端协作者提交导致canonical Workspace前�
 - **AND** MUST不把一次sync宣称为完整修复
 
 #### Scenario: matching自举交付
-- **WHEN** 当前工作具有明确Task、已核验delivered ref和命中Product自举范围的真实变化
-- **THEN** Agent MAY调用唯一self-bootstrap runner
+- **WHEN** 当前工作具有已核验基线、delivered ref和命中Product自举范围的真实变化，无论有无Task记录
+- **THEN** Agent MUST调用唯一self-bootstrap runner
 - **AND** runner失败 MUST只形成Activation Attention，不撤销交付或Task结果
 
 #### Scenario: 当前会话存在 matching Formal Finish Result
-- **WHEN** 历史调用方只提供旧Formal Finish Result而没有当前Task与Git交付事实
+- **WHEN** 历史调用方只提供旧Formal Finish Result而没有当前Git交付事实
 - **THEN** self-bootstrap MUST不采用该历史Result
-- **AND** 调用方 MUST改用当前Task、delivered ref与retained事实
+- **AND** 调用方 MUST改用真实基线、delivered ref与retained事实
 
 #### Scenario: workspace sync 不产生 Task 或 Finish authority
 - **WHEN** 普通Workspace update执行sync

@@ -121,8 +121,11 @@ function classifications(changedPaths) {
   const cli = [];
   const buildrWeb = [];
   for (const pathname of changedPaths) {
-    if (matches(pathname, [`${SERVICE_ROOT}/resources/manifest.yml`], [
+    if (/^projects\/.*\/AGENTS\.md$/.test(pathname) || matches(pathname, ['AGENTS.md', `${SERVICE_ROOT}/resources/manifest.yml`], [
       'skills/',
+      'rules/',
+      'components/',
+      'commands/',
       `${SERVICE_ROOT}/resources/workspace/`,
       `${SERVICE_ROOT}/resources/runtime/skills/buildr/`,
     ])) sync.push(pathname);
@@ -476,7 +479,7 @@ function option(args, name) {
   return value;
 }
 
-export function runDirectSelfBootstrapCloseout({ workspaceRoot, taskId, baseRef, deliveredRef, targetBranch, remote, agent, nodeExecutable, execute = defaultExecute, environment = process.env }) {
+export function runDirectSelfBootstrapCloseout({ workspaceRoot, taskId = null, baseRef, deliveredRef, targetBranch, remote, agent, nodeExecutable, execute = defaultExecute, environment = process.env }) {
   const root = fs.realpathSync(path.resolve(workspaceRoot));
   const phases = [];
   let active = null;
@@ -484,6 +487,7 @@ export function runDirectSelfBootstrapCloseout({ workspaceRoot, taskId, baseRef,
   let ownsLock = false;
   let delivered = false;
   let successor = null;
+  const activationIdentity = digest({ baseRef, deliveredRef, targetBranch, remote, agent });
   const result = (status, diagnostic = null) => ({ schemaVersion: SELF_BOOTSTRAP_CLOSEOUT_RESULT_SCHEMA, status, taskId, runId: null, delivery: { observed: delivered, ref: deliveredRef, remote, targetBranch }, phases, successor, diagnostic });
   const start = (id) => { active = phase(id); phases.push(active); return active; };
   const read = (args, id) => gitText(execute, root, args, id, active, 'self-bootstrap-closeout.git-observation-failed');
@@ -493,12 +497,10 @@ export function runDirectSelfBootstrapCloseout({ workspaceRoot, taskId, baseRef,
   try {
     start('preflight');
     if (!fs.existsSync(path.join(root, 'components/workspace/buildr-self-bootstrap/component.yml'))) return result('not-applicable');
-    if (!/^[a-z0-9][a-z0-9._-]*$/.test(taskId || '') || !/^[a-f0-9]{40,64}$/.test(baseRef || '') || !/^[a-f0-9]{40,64}$/.test(deliveredRef || '') || !targetBranch || !remote || !agent) throw closeoutError('self-bootstrap-closeout.direct-input-invalid', '需要明确的任务、基线和交付提交、分支、远端及宿主。');
+    if ((taskId !== null && !/^[a-z0-9][a-z0-9._-]*$/.test(taskId)) || !/^[a-f0-9]{40,64}$/.test(baseRef || '') || !/^[a-f0-9]{40,64}$/.test(deliveredRef || '') || !targetBranch || !remote || !agent) throw closeoutError('self-bootstrap-closeout.direct-input-invalid', '需要明确的基线和交付提交、分支、远端及宿主；任务编号可选。');
     if (remote.startsWith('-') || targetBranch.startsWith('-')) throw closeoutError('self-bootstrap-closeout.direct-input-invalid', '分支和远端不能是命令选项。');
     requirePassed(git(execute, root, ['check-ref-format', `refs/heads/${targetBranch}`], 'target-ref', active), 'self-bootstrap-closeout.target-invalid', '目标分支无效。');
     if (!sameFilesystemPath(read(['rev-parse', '--show-toplevel'], 'workspace-root'), root)) throw closeoutError('self-bootstrap-closeout.workspace-mismatch', '目标必须是工作空间的真实 Git 根。');
-    const task = parseJson(productCommand(execute, root, nodeExecutable, ['task', 'inspect', taskId, '--target', root, '--json'], 'task-inspect', active), 'self-bootstrap-closeout.task-invalid', '无法读取任务。');
-    if (task.record?.taskId !== taskId || task.record.status !== 'completed' || !task.record.scope?.projects?.includes('product')) throw closeoutError('self-bootstrap-closeout.task-not-completed', '自举只接受该工作空间中已经完成的产品任务；实际交付由明确提交和远端Git事实证明。');
     const scopedPaths = zeroList(read(['diff', '--name-only', '-z', baseRef, deliveredRef, '--'], 'activation-paths'));
     const actions = classifications(scopedPaths);
     if (!Object.values(actions).some((paths) => paths.length)) return result('not-applicable');
@@ -521,7 +523,10 @@ export function runDirectSelfBootstrapCloseout({ workspaceRoot, taskId, baseRef,
     if (head !== beforeRemote) {
       const parents = read(['rev-list', '--parents', '-n', '1', 'HEAD'], 'successor-parents').split(/\s+/);
       const message = read(['log', '-1', '--format=%B'], 'successor-message');
-      pendingSuccessor = parents.length === 2 && parents[1] === beforeRemote && message.includes(`Buildr-Activation-Task: ${taskId}`) && message.includes(`Buildr-Activation-Delivery: ${deliveredRef}`);
+      const trailers = message.split(/\r?\n/);
+      const matchesIdentity = trailers.includes(`Buildr-Activation-Identity: ${activationIdentity}`);
+      const matchesLegacyTask = taskId !== null && !trailers.some((line) => line.startsWith('Buildr-Activation-Identity:')) && trailers.includes(`Buildr-Activation-Task: ${taskId}`);
+      pendingSuccessor = parents.length === 2 && parents[1] === beforeRemote && (matchesIdentity || matchesLegacyTask) && trailers.includes(`Buildr-Activation-Delivery: ${deliveredRef}`);
       if (!pendingSuccessor) throw closeoutError('self-bootstrap-closeout.remote-drift', '保留分支与远端不同，且不是本次激活尚未推送的后继提交。');
     }
     markPassed(active, deliveredRef, head);
@@ -537,7 +542,7 @@ export function runDirectSelfBootstrapCloseout({ workspaceRoot, taskId, baseRef,
         requirePassed(git(execute, root, ['add', '--', ...ownedPaths], 'stage-sync', active), 'self-bootstrap-closeout.stage-failed', '精确暂存同步结果失败。');
         const staged = zeroList(read(['diff', '--cached', '--name-only', '-z'], 'staged-paths')).sort();
         if (JSON.stringify(staged) !== JSON.stringify(ownedPaths)) throw closeoutError('self-bootstrap-closeout.scope-drift', '暂存集合发生变化，未创建提交。');
-        const message = `收敛 Buildr 自举工作空间\n\nBuildr-Activation-Task: ${taskId}\nBuildr-Activation-Delivery: ${deliveredRef}`;
+        const message = `收敛 Buildr 自举工作空间\n\nBuildr-Activation-Identity: ${activationIdentity}\nBuildr-Activation-Delivery: ${deliveredRef}${taskId === null ? '' : `\nBuildr-Activation-Task: ${taskId}`}`;
         requirePassed(git(execute, root, ['commit', '-m', message], 'sync-commit', active), 'self-bootstrap-closeout.commit-failed', '同步结果提交失败。');
         const next = read(['rev-parse', 'HEAD'], 'successor');
         if (read(['rev-parse', 'HEAD^'], 'parent') !== successor) throw closeoutError('self-bootstrap-closeout.target-drift', '同步提交的父提交不匹配。');
@@ -548,7 +553,7 @@ export function runDirectSelfBootstrapCloseout({ workspaceRoot, taskId, baseRef,
       start('push'); assertHead(successor);
       const currentRemote = remoteRef(execute, root, remote, targetBranch, active);
       if (currentRemote !== successor && currentRemote !== beforeRemote) throw closeoutError('self-bootstrap-closeout.remote-drift', '远端已变化，保留本地激活提交。');
-      if (currentRemote !== successor) requirePassed(git(execute, root, ['push', remote, `HEAD:refs/heads/${targetBranch}`], 'sync-push', active), 'self-bootstrap-closeout.push-failed', '同步提交推送失败；重试同一任务和交付提交可继续。');
+      if (currentRemote !== successor) requirePassed(git(execute, root, ['push', remote, `HEAD:refs/heads/${targetBranch}`], 'sync-push', active), 'self-bootstrap-closeout.push-failed', '同步提交推送失败；使用同一基线、交付提交、目标和宿主重试可继续。');
       const after = remoteRef(execute, root, remote, targetBranch, active, 'remote-after-push');
       if (after !== successor) throw closeoutError('self-bootstrap-closeout.remote-readback-mismatch', '推送后远端提交不匹配。');
       markPassed(active, beforeRemote, after);
@@ -589,7 +594,7 @@ export function runSelfBootstrapCloseoutCommand({ args = process.argv.slice(2), 
   const detail = option(args, '--detail') || 'compact';
   if (!['compact', 'full'].includes(detail)) throw closeoutError('self-bootstrap-closeout.detail-invalid', 'detail 只支持 compact 或 full。');
   const workspaceRoot = option(args, '--target');
-  if (!workspaceRoot || !option(args, '--task')) throw closeoutError('self-bootstrap-closeout.arguments-incomplete', '需要明确的任务和工作空间。');
+  if (!workspaceRoot) throw closeoutError('self-bootstrap-closeout.arguments-incomplete', '需要明确的工作空间。');
   return runDirectSelfBootstrapCloseout({ workspaceRoot, taskId: option(args, '--task'), baseRef: option(args, '--base-ref'), deliveredRef: option(args, '--delivered-ref'), targetBranch: option(args, '--branch'), remote: option(args, '--remote'), agent: option(args, '--agent'), nodeExecutable, execute, environment });
 }
 

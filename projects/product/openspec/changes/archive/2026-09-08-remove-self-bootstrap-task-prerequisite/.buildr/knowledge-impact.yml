@@ -1,0 +1,16 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: remove-self-bootstrap-task-prerequisite
+operation: reconcile
+treeIdentity: working-tree
+impacts:
+  - type: glossary
+    target: knowledge/glossary.md
+    reason: 用户确认任务记录不是自举前置条件
+    status: updated
+    sourceIdentities: [skills/buildr-self-bootstrap-sync/SKILL.md, skills/buildr-self-bootstrap-sync/scripts/closeout.mjs]
+  - type: flow
+    target: knowledge/flows/task-closeout.md
+    reason: 自举触发条件改为真实变化
+    status: updated
+    sourceIdentities: [skills/buildr-self-bootstrap-sync/SKILL.md, skills/buildr-self-bootstrap-sync/scripts/closeout.mjs]
+unresolvedItems: []

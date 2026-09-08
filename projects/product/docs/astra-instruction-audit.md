@@ -54,4 +54,4 @@
 
 以下记录源文件审计完成时的现场，后续交付以 Git 与实际同步结果为准。当时尚未提交、推送、发布或激活受管副本；工作空间（Workspace）Doctor 为零错误、两项待同步警告：`rules.required_block_invalid` 与 `runtime.codex_stale`，分别对应旧核心区块与旧 Codex 投射尚未匹配新源文件，并非隔离验证失败。
 
-正式交付后，仍由 [唯一自举技能](../../../skills/buildr-self-bootstrap-sync/SKILL.md) 激活。该技能明确要求“任务已经完成，且明确的基线到交付提交命中实际自举输入时”才使用其执行器。本轮不补造任务或交付证据来同步受管副本。
+正式交付后，仍由 [唯一自举技能](../../../skills/buildr-self-bootstrap-sync/SKILL.md) 激活。当时该技能要求“任务已经完成，且明确的基线到交付提交命中实际自举输入时”才使用其执行器，因此审计阶段没有补造记录。后续用户明确取消任务记录前置条件，修正见 `remove-self-bootstrap-task-prerequisite`；当前适用性以真实变化和交付事实为准。

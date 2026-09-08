@@ -607,7 +607,7 @@
 
 ## 自举激活（Self-bootstrap Activation）
 
-- 定义：Buildr自举Workspace取得matching Task delivery result后，由唯一`buildr-self-bootstrap-sync` runner执行的retained sync、开发入口检查与Doctor。
+- 定义：Buildr自举Workspace的已交付真实变化命中规则、技能、组件、命令或产品运行输入时，由唯一`buildr-self-bootstrap-sync` runner执行适用同步、开发入口检查与Doctor。正式任务记录和任务完成状态不构成前置条件。
 - 适用范围：Buildr自身交付后的本机产品收敛。
 - 避免混用：不是Task Delivery或Task Record完成状态；失败只形成Activation attention，不撤销已交付成果。
 

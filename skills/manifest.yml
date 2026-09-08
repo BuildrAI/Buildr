@@ -406,7 +406,7 @@ skills:
     runtimePath: project-testing
   - id: buildr-self-bootstrap-sync
     path: buildr-self-bootstrap-sync
-    description: Buildr自举Workspace取得matching Task delivery result后，用唯一runner完成retained sync、development Buildr Web、入口验证与Doctor；失败只形成Activation attention，不撤销Delivery。普通Workspace update或没有matching Task时不适用。
+    description: Buildr 自举工作空间中的已交付改动涉及规则、技能、组件、命令或产品运行输入时使用；由唯一执行器完成适用同步、开发应用更新、入口验证与诊断。正式任务记录可选；无关改动和未安装自举组件的工作空间不适用。
     assetIdentity: workspace:f2f40b71-2382-5906-82bd-76a7927b59f3:skill:buildr-self-bootstrap-sync
     sourceIdentity: workspace:f2f40b71-2382-5906-82bd-76a7927b59f3:buildr-self-bootstrap-sync
   - id: declaration-intake

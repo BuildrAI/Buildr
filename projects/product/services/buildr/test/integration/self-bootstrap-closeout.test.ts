@@ -297,7 +297,7 @@ test('direct activation resumes only its own committed successor after push fail
   assert.equal(recovered.phases.some((stage: any) => stage.id === 'commit'), false);
 });
 
-test('direct activation preserves dirty work and rejects incomplete Task before mutation', (t: any) => {
+test('direct activation preserves dirty work regardless of Task metadata', (t: any) => {
   const current: any = directFixture(t);
   fs.writeFileSync(path.join(current.root, 'user-work.txt'), 'keep me\n');
   const blocked: any = runDirectSelfBootstrapCloseout({ ...current.input, execute: executor(current.root, current.options) });
@@ -305,8 +305,112 @@ test('direct activation preserves dirty work and rejects incomplete Task before 
   assert.equal(blocked.diagnostic.code, 'self-bootstrap-closeout.workspace-dirty');
   assert.equal(fs.readFileSync(path.join(current.root, 'user-work.txt'), 'utf8'), 'keep me\n');
   const noTask: any = runDirectSelfBootstrapCloseout({ ...current.input, execute: executor(current.root) });
-  assert.equal(noTask.diagnostic.code, 'self-bootstrap-closeout.task-not-completed');
+  assert.equal(noTask.diagnostic.code, 'self-bootstrap-closeout.workspace-dirty');
   assert.equal(git(current.root, 'rev-parse', 'HEAD'), current.input.deliveredRef);
+});
+
+test('CLI activates without a Task and never reads or writes Task records', (t: any) => {
+  const current: any = directFixture(t);
+  const calls: any[] = [];
+  const perform = executor(current.root);
+  const result: any = runSelfBootstrapCloseoutCommand({
+    args: ['--target', current.root, '--base-ref', current.baseRef, '--delivered-ref', current.input.deliveredRef,
+      '--branch', 'dev', '--remote', 'origin', '--agent', 'codex', '--node-executable', process.execPath],
+    environment: current.environment,
+    execute: (command: any, args: any, context: any) => { calls.push(args); return perform(command, args, context); },
+  });
+  assert.equal(result.status, 'passed', JSON.stringify(result));
+  assert.equal(result.taskId, null);
+  assert.equal(calls.some(args => args.includes('task')), false);
+  assert.equal(fs.readFileSync(path.join(current.root, 'skills/generated/SKILL.md'), 'utf8'), 'v2\n');
+});
+
+test('an optional unfinished or unavailable Task does not gate activation', (t: any) => {
+  const current: any = directFixture(t);
+  const calls: any[] = [];
+  const perform = executor(current.root, { taskInspectionFailures: [current.input.taskId] });
+  const result: any = runDirectSelfBootstrapCloseout({ ...current.input,
+    execute: (command: any, args: any, context: any) => { calls.push(args); return perform(command, args, context); } });
+  assert.equal(result.status, 'passed', JSON.stringify(result));
+  assert.equal(calls.some(args => args.includes('task')), false);
+});
+
+test('taskless recovery binds the delivery inputs and ignores optional Task annotation', (t: any) => {
+  const current: any = directFixture(t);
+  const input = { ...current.input, taskId: null };
+  const first: any = runDirectSelfBootstrapCloseout({ ...input, execute: executor(current.root, { failPush: true }) });
+  assert.equal(first.diagnostic.code, 'self-bootstrap-closeout.push-failed');
+  const successor = git(current.root, 'rev-parse', 'HEAD');
+  const mismatched: any = runDirectSelfBootstrapCloseout({ ...input, baseRef: input.deliveredRef, execute: executor(current.root) });
+  // An empty scope needs no activation and cannot push the pending successor.
+  assert.equal(mismatched.status, 'not-applicable');
+  assert.equal(git(current.root, 'ls-remote', 'origin', 'refs/heads/dev').split(/\s+/)[0], input.deliveredRef);
+  const wrongHost: any = runDirectSelfBootstrapCloseout({ ...input, agent: 'claude-code', execute: executor(current.root) });
+  assert.equal(wrongHost.diagnostic.code, 'self-bootstrap-closeout.remote-drift');
+  const recovered: any = runDirectSelfBootstrapCloseout({ ...input, taskId: 'optional-note', execute: executor(current.root) });
+  assert.equal(recovered.status, 'passed', JSON.stringify(recovered));
+  assert.equal(git(current.root, 'rev-parse', 'HEAD'), successor);
+  assert.equal(recovered.phases.some((stage: any) => ['sync', 'commit'].includes(stage.id)), false);
+});
+
+for (const changedPath of ['AGENTS.md', 'projects/product/AGENTS.md', 'rules/manifest.yml', 'components/workspace/buildr-self-bootstrap/contributions/task-finish.md']) {
+  test(`taskless ${changedPath} changes trigger projection`, (t: any) => {
+    const current: any = fixture(t);
+    const file = path.join(current.root, changedPath);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.appendFileSync(file, '\nupdated instruction\n');
+    git(current.root, 'add', '--', changedPath);
+    git(current.root, 'commit', '-m', 'update instruction');
+    git(current.root, 'push', 'origin', 'dev');
+    const result: any = runDirectSelfBootstrapCloseout({ workspaceRoot: current.root, baseRef: current.baseRef,
+      deliveredRef: git(current.root, 'rev-parse', 'HEAD'), targetBranch: 'dev', remote: 'origin', agent: 'codex',
+      nodeExecutable: process.execPath, environment: current.environment, execute: executor(current.root) });
+    assert.equal(result.status, 'passed', JSON.stringify(result));
+    assert.ok(result.phases.some((stage: any) => stage.id === 'sync'));
+  });
+}
+
+test('unrelated documentation does not activate or access Task records', (t: any) => {
+  const current: any = fixture(t);
+  fs.writeFileSync(path.join(current.root, 'notes.md'), 'Unrelated documentation.\n');
+  git(current.root, 'add', '--', 'notes.md');
+  git(current.root, 'commit', '-m', 'documentation');
+  git(current.root, 'push', 'origin', 'dev');
+  const calls: any[] = [];
+  const perform = executor(current.root);
+  const result: any = runDirectSelfBootstrapCloseout({ workspaceRoot: current.root, baseRef: current.baseRef,
+    deliveredRef: git(current.root, 'rev-parse', 'HEAD'), targetBranch: 'dev', remote: 'origin', agent: 'codex',
+    nodeExecutable: process.execPath, environment: current.environment,
+    execute: (command: any, args: any, context: any) => { calls.push(args); return perform(command, args, context); } });
+  assert.equal(result.status, 'not-applicable');
+  assert.equal(calls.some(args => args.includes('sync') || args.includes('task') || args[0] === 'push'), false);
+});
+
+test('taskless activation rejects a delivery absent from the remote', (t: any) => {
+  const current: any = fixture(t);
+  fs.appendFileSync(path.join(current.root, 'skills/generated/SKILL.md'), 'unpublished\n');
+  git(current.root, 'add', '--', 'skills/generated/SKILL.md');
+  git(current.root, 'commit', '-m', 'not delivered');
+  const head = git(current.root, 'rev-parse', 'HEAD');
+  const result: any = runDirectSelfBootstrapCloseout({ workspaceRoot: current.root, baseRef: current.baseRef,
+    deliveredRef: head, targetBranch: 'dev', remote: 'origin', agent: 'codex',
+    nodeExecutable: process.execPath, environment: current.environment, execute: executor(current.root) });
+  assert.equal(result.diagnostic.code, 'self-bootstrap-closeout.delivery-unconfirmed');
+  assert.equal(result.delivery.observed, false);
+  assert.equal(git(current.root, 'rev-parse', 'HEAD'), head);
+  assert.equal(result.phases.some((stage: any) => ['sync', 'commit', 'push'].includes(stage.id)), false);
+});
+
+test('legacy task-marked pending successors remain recoverable', (t: any) => {
+  const current: any = directFixture(t);
+  const first: any = runDirectSelfBootstrapCloseout({ ...current.input, execute: executor(current.root, { failPush: true }) });
+  assert.equal(first.diagnostic.code, 'self-bootstrap-closeout.push-failed');
+  git(current.root, 'commit', '--amend', '-m', `Legacy activation\n\nBuildr-Activation-Task: ${current.input.taskId}\nBuildr-Activation-Delivery: ${current.input.deliveredRef}`);
+  const legacyHead = git(current.root, 'rev-parse', 'HEAD');
+  const result: any = runDirectSelfBootstrapCloseout({ ...current.input, execute: executor(current.root) });
+  assert.equal(result.status, 'passed', JSON.stringify(result));
+  assert.equal(git(current.root, 'rev-parse', 'HEAD'), legacyHead);
+  assert.equal(result.phases.some((stage: any) => ['sync', 'commit'].includes(stage.id)), false);
 });
 
 test('runner 拒绝旧运行输入且不启动外部操作', () => {
