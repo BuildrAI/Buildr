@@ -9,6 +9,10 @@ description: 用户要求展示、生成或重跑某 Project 的每日演进，�
 
 它不是当前认知、Task 状态、Verification 或 Retrospective。产品 Application / HTTP GET **不**扫描 Git 提交、不读取 `git config user.email`、不根据 Task `updatedAt` 自动写摘要，也不内置 cron。写入前由本 Skill 收集 Git。
 
+## 查看与生成分支
+
+只要求查看时，使用下方 `inspect` 或 `list` 读取已保存内容；文件缺失或版本不兼容就报告该事实，不自动同步、扫描 Git 或生成日报。只有生成、重跑已获授权时，执行以下写入流程。
+
 ## 1. 先同步最新代码
 
 写入前必须执行与「更新 workspace」相同的同步门禁：

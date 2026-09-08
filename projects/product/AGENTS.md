@@ -29,15 +29,13 @@ Agent 在 `product` Project 中的最小运行规则。
 ## 产品边界
 
 - 随包 [内联核心规则](services/buildr/resources/workspace/AGENTS.md) 是 Buildr 产品设计与用户 Workspace 工作方式共同遵守的核心产品哲学和通用硬边界；产品能力、Rule、Skill、workflow 和 gate 不得与其冲突。`docs/buildr-product.md` 在该边界内展开产品定位、核心模型和 Roadmap，OpenSpec 继续作为具体可观察行为的规范 authority。
-- Buildr 的主要用户是 Agent；人是一等参与者，主要通过 Agent 表达目标、提供业务判断并确认重要决策。产品能力必须优先从 Agent 如何发现、理解和使用组织工作资产的视角设计，同时保证人可以低门槛参与，不能只提供面向人的操作入口与说明。
-- 产品交互优先支持 Agent 理解用户意图、自主推理下一步并引导用户使用 Buildr；能够由 Agent 判断、解释和推进的工作，不应要求人类用户先掌握 Buildr 的内部模型或命令细节。
-- Buildr 不成为另一个 Agent，也不复制 Agent 的通用理解、推理、规划、对话和专业任务执行能力。新增产品能力必须说明其长期治理、跨 Agent 复用、确定性约束或可验证诊断价值；不具备这些价值时应将工作保留给 Agent，需要复用和治理的专业动作优先沉淀为 Skill 或其他工作方法资产，不得在 Buildr 产品核心中另建推理或任务执行主体。
+- 新增产品能力必须说明长期治理、跨智能体（Agent）复用、确定性约束或可验证诊断价值；理解目标、推理和专业执行继续由智能体（Agent）负责。人应能低门槛参与，无需掌握内部模型或命令。
 - 新增或收紧硬门禁时，必须说明它保护的 authority 或结果不变量，以及放行会产生的具体伤害。缺失的若只是辅助 provenance、推荐流程、工具偏好或自动化信心，而当前事实仍可被检查、验证并诚实报告，则应提供诊断和 Agent 指引，不得阻断无关工作；Buildr 约束结果和副作用边界，不规定 Agent 或协作者必须采用唯一工作方式。
 - 新增或调整产品能力时，必须同时考虑 Buildr Skill 如何让 Agent 发现、理解、选择并正确使用该能力；缺少相应的 Agent 使用指引、决策边界或完成标准时，功能设计不完整。
 - Task-scoped OpenSpec Change 是产品能力、CLI 行为、上下文模型、runtime adapter 行为和架构性变更的规范 authority；不得用实现、普通文档或 Rule 替代该 Change。
 - `services/buildr/resources/manifest.yml` 声明发布边界；`services/buildr/resources/workspace/` 只放映射到用户 workspace 或 Project 的源，`services/buildr/resources/runtime/` 只放直接安装到 Agent runtime 的源。
 - `services/buildr/resources/` 是文件型交付资源 authority；`services/buildr/package/` 只允许保留有明确后续 owner 的 Runtime Skill 与 Launcher 行为实现，修改时必须同时核对初始化、更新、安装与发布边界。
-- 未集成的 Product candidate 只能存在于 current Task Environment 允许的 execution roots；不得从 candidate checkout 更新 retained 自举 workspace 或共享 user runtime。
+- 未集成的产品候选只在已核对归属的隔离工作目录中执行；不得从候选工作目录更新保留的自举工作空间（Workspace）或共享用户运行时（Runtime）。
 - `verification.yml` 是 Product 验证能力、适用性和证明范围的声明 authority；Task Verification Application 是正式验证 current Result 的唯一 authority。普通收尾依据与当前内容相符的真实验证及交付事实报告，不得把普通命令、commit 或 push 冒充正式验证结果。
 - 收尾不得伪造验证或交付事实；任务结果登记、Git 交付、环境激活和资源清理保持独立。用户说“收尾”不授权 force push、merge commit、远端任务分支删除、丢弃改动或语义冲突决策。
 - self-bootstrap activation 只由 root Rule 指定的唯一 owner 执行；Product Rule 不复制其路径分类、安装、CLI identity 或 Doctor 流程。

@@ -13,7 +13,7 @@ description: 用户要探查或维护 Project 测试地图，开发中选择并�
 
 每项 testing 说明目的、Project/Service scope、相关源码范围、测试根、完整入口、具体测试选择方法和环境要求。测试不存在时报告建设缺口，不在本技能中生成框架或测试。
 
-维护步骤：
+维护地图时先读取 [声明字段与边界](references/project-verification-v4.md)，再执行：
 
 1. `buildr project verification inspect <project> --target <workspace> --json` 读取当前地图。
 2. 在操作系统临时目录形成完整候选，不修改受管副本。

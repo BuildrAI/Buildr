@@ -14,3 +14,7 @@
 - 父级 `projects/product/openspec/` 是产品语义 Change 的规范 authority；本 Service 不维护第二个 OpenSpec 根。
 - 本 Service 拥有自身实现与测试；Product `verification.yml` 和 Task Verification Application 拥有交付验证声明与 current Result，命令执行位置或单次测试通过不得替代它们。
 - 发布、Candidate、本机 CLI 安装和路径迁移必须证明开发 checkout、task worktree 与 npm package 三种入口一致。
+
+## 开发验证隔离
+
+在 Buildr Product checkout 中执行 Workspace CLI / HTTP smoke 时，必须经过 `tools/development/run-isolated-workspace-smoke.ts`；标准代表性流程从 `projects/product/services/buildr` 运行 `npm run smoke:workspace`，其他已登记场景使用 runner 的 `--script` 入口。runner 独立设置 Workspace、`BUILDR_APP_DATA_DIR` 与 `BUILDR_PRODUCT_DATA_DIR`，并在成功或失败后统一清理。不得用裸 `mktemp` 启动指向默认用户 profile 的 `buildr web`，也不得把 smoke Workspace 登记写入发布版或开发版真实用户状态。此约束只保护 Buildr 自身开发 smoke，不扩大为对普通临时 Workspace 的自动删除策略。
