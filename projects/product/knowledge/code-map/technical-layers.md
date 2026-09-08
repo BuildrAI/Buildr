@@ -104,6 +104,14 @@ src/modules/agent-assets/
 ├── persistence/                         资产声明、定义、能力图的存取
 ├── infrastructure/                      版本探测、来源读取、运行环境适配
 │   └── runtime/                         原生配置生成、所有权、投射与检查
+│       ├── adapter-contract.ts          适配描述、注册、选择与声明性计划
+│       │   ├── getRuntimeAdapter / selectAdapterImplementation
+│       │   └── createRuntimeContext / createRuntimePlan
+│       ├── runtime-reconciler.ts        唯一计划文件执行者
+│       │   ├── assertRuntimeTargetPath / validateRuntimePlan
+│       │   └── reconcileRuntimePlan     比较、预检、按序写删及既有失败恢复
+│       ├── projection.ts               从源资产组装完整投射
+│       └── skills/                     技能（Skill）投射及文件字节工具
 └── interfaces/{cli,http}/               参数、协议与结果展示
 
 src/modules/project-testing/
@@ -119,6 +127,8 @@ src/modules/diagnostics/
 ```
 
 资产工程检查位于 `tools/verification/package-check.ts` 及其目录，不属于产品应用。`AGENT_ASSETS_DIAGNOSTICS_READ` 只提供检查；`inspectPackageBuiltins` 固定以检查模式调用资产 owner，诊断方无法请求同步写入。
+
+运行时（Runtime）调用方向：应用与投射组装 → `runtime-reconciler.ts` → 适配声明与既有文件工具。`adapter-contract.ts` 不导入执行器、不实现文件写删；执行器整体保留 `compareOnly`、冲突预检、`commitLast`/`removeLast` 顺序及旧回执迁移失败恢复，不扩展原有事务保证。
 
 ## 对象装配（Composition）
 
@@ -176,6 +186,8 @@ src/modules/openspec/
 ```
 
 任务详情的调用链：`change-http.ts` → `resolveTaskScopedChange` 选择受信任副本 → `OPENSPEC_QUERY.findLogicalChange` 读取内容。原型（UI Prototype）文件由 OpenSpec 发现，任务侧补充任务关联身份与副本来源。全局列表直接使用 OpenSpec 查询，不经过任务，也不扫描工作树（Worktree）。`task_changes` 关联表仍由任务维护；OpenSpec 不反向依赖任务。
+
+OpenSpec 的资产依赖只通过 `AGENT_ASSETS_OPENSPEC_SUPPORT` 获取：`assertName`、`componentDefinitionFile`、`readComponentDefinition`、`readComponentsManifestForWrite`、`runCommandsCheck`。`OpenSpecAssetSupport` 定义具体签名，`createOpenSpecAssetSupport` 校验并只选取这五项；不再注入完整的 `AGENT_ASSETS_INTERNAL`。
 
 | 技术职责 | 文件 | 代表方法或不变量 |
 |---|---|---|

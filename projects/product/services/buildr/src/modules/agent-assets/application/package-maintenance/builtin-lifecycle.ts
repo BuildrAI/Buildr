@@ -1,5 +1,9 @@
 import { selectedProviderImpacts } from '../../persistence/capability-graph-repository.ts';
-import { REQUIRED_RENDER_CAPABILITIES, createRuntimePlan, reconcileRuntimePlan } from '../../infrastructure/runtime/adapter-contract.ts';
+import {
+  REQUIRED_RENDER_CAPABILITIES,
+  createRuntimePlan,
+} from '../../infrastructure/runtime/adapter-contract.ts';
+import { reconcileRuntimePlan } from '../../infrastructure/runtime/runtime-reconciler.ts';
 import {
   legacySkillProjectionOwnershipReceiptTarget,
   skillProjectionOwnershipReceiptTarget,

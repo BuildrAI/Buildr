@@ -16,13 +16,12 @@ import {
   createRuntimeContext,
   createRuntimePlan,
   getRuntimeAdapter,
-  reconcileRuntimePlan,
   runtimeAdapterImplementationMatrix,
   runtimeDiscoveryPayload,
   selectPlatformEnvironmentProbe,
   selectAdapterImplementation,
-  validateRuntimePlan,
 } from '../../../src/modules/agent-assets/infrastructure/runtime/adapter-contract.ts';
+import { reconcileRuntimePlan, validateRuntimePlan } from '../../../src/modules/agent-assets/infrastructure/runtime/runtime-reconciler.ts';
 import { validateSkillPublication } from '../../../src/modules/agent-assets/infrastructure/runtime/skills/publication.ts';
 import { resolveSkillContributions } from '../../../src/modules/agent-assets/infrastructure/runtime/render-claude-code.ts';
 import { assembleRuntimeProjection } from '../../../src/modules/agent-assets/infrastructure/runtime/projection.ts';

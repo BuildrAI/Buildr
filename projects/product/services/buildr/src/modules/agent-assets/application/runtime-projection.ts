@@ -9,7 +9,10 @@ export function blockingSyncSourceIssues(plan: any): any  {
 }
 import { resolveRuleScope } from '../infrastructure/runtime/render-claude-code-rules.ts';
 import { assembleRuntimeProjection } from '../infrastructure/runtime/projection.ts';
-import { getRuntimeAdapter, reconcileRuntimePlan } from '../infrastructure/runtime/adapter-contract.ts';
+import {
+  getRuntimeAdapter,
+} from '../infrastructure/runtime/adapter-contract.ts';
+import { reconcileRuntimePlan } from '../infrastructure/runtime/runtime-reconciler.ts';
 import { buildEffectiveSkillInventory, classifySkillCandidate } from '../infrastructure/runtime/skills/inventory.ts';
 import {
   legacySkillProjectionOwnershipReceiptTarget,

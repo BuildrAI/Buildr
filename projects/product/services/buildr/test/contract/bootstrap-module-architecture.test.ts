@@ -9,7 +9,7 @@ import test from 'node:test';
 import { COMMAND_CATALOG } from '../../src/bootstrap/cli/registry.ts';
 import { createRuntime, runtimeContributions, runtimeModuleSnapshot, runtimeProvide } from '../helpers/runtime-harness.ts';
 import { createRuntime as createProductRuntime } from '../../src/bootstrap/runtime.ts';
-import { OPENSPEC_QUERY } from '../../src/modules/openspec/module.ts';
+import { OPENSPEC_QUERY, createOpenSpecModule } from '../../src/modules/openspec/module.ts';
 import { CHANGE_APPLICATION } from '../../src/modules/task/change/module.ts';
 
 test('OpenSpec 独占通用内容查询，任务能力只提供关联组合', () => {
@@ -25,11 +25,49 @@ test('OpenSpec 独占通用内容查询，任务能力只提供关联组合', ()
     assert.equal(query[method], undefined, method);
   }
 });
+
+test('OpenSpec 只取得五项资产支撑方法，并在装配时拒绝缺失方法', () => {
+  const runtime = createProductRuntime();
+  const support = runtimeProvide(runtime, AGENT_ASSETS_OPENSPEC_SUPPORT);
+  const methods = ['assertName', 'componentDefinitionFile', 'readComponentDefinition', 'readComponentsManifestForWrite', 'runCommandsCheck'];
+  assert.deepEqual(Object.keys(support).sort(), [...methods].sort());
+  assert.equal(Object.isFrozen(support), true);
+  assert.equal(support.syncRuntime, undefined);
+  const module = createOpenSpecModule({} as never);
+  assert.deepEqual(module.requires, [WORKSPACE_QUERY, AGENT_ASSETS_OPENSPEC_SUPPORT]);
+  for (const missing of methods) {
+    assert.throws(() => module.create({
+      [WORKSPACE_QUERY]: {} as never,
+      [AGENT_ASSETS_OPENSPEC_SUPPORT]: { ...support, [missing]: undefined },
+    }), new RegExp(`OpenSpec asset dependency is missing: ${missing}`));
+  }
+});
+
+test('OpenSpec 窄依赖保留提供者绑定、参数、返回值和异常', () => {
+  const failure = new Error('source validation failed');
+  const source = {
+    label: 'source',
+    assertName(value: string, label: string) { if (value === 'invalid' && label === 'change') throw failure; },
+    componentDefinitionFile(root: string, entry: { id: string }) { return `${this.label}:${root}/${entry.id}`; },
+    readComponentDefinition(file: string, id: string) { return { upstream: { version: `${file}:${id}` } }; },
+    readComponentsManifestForWrite(root: string) { return { components: [{ id: root }] }; },
+    runCommandsCheck(root: string) { return { commands: [{ id: root, status: 'ready', executablePath: root }] }; },
+    syncRuntime() { throw new Error('not an OpenSpec dependency'); },
+  };
+  const support = createOpenSpecAssetSupport(source);
+  assert.equal(support.componentDefinitionFile('root', { id: 'openspec' }), 'source:root/openspec');
+  assert.deepEqual(support.readComponentDefinition('file', 'openspec'), { upstream: { version: 'file:openspec' } });
+  assert.deepEqual(support.readComponentsManifestForWrite('root'), { components: [{ id: 'root' }] });
+  assert.equal(support.runCommandsCheck('root').commands[0].id, 'root');
+  assert.throws(() => support.assertName('invalid', 'change'), (error) => error === failure);
+});
 import {
   AGENT_ASSETS_APPLICATION,
   AGENT_ASSETS_CAPABILITY_QUERY,
   AGENT_ASSETS_DIAGNOSTICS_BINDER,
   AGENT_ASSETS_INTERNAL,
+  AGENT_ASSETS_OPENSPEC_SUPPORT,
+  createOpenSpecAssetSupport,
   AGENT_ASSETS_RUNTIME,
 } from '../../src/modules/agent-assets/module.ts';
 import {
@@ -118,7 +156,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
   }, {
     id: 'agent-assets',
     requires: [WORKSPACE_ASSET_SUPPORT, WORKSPACE_DOMAIN, AGENT_ASSETS_RUNTIME, AGENT_ASSETS_CAPABILITY_QUERY],
-    provides: [AGENT_ASSETS_APPLICATION, AGENT_ASSETS_INTERNAL, AGENT_ASSETS_DIAGNOSTICS_READ, AGENT_ASSETS_PACKAGE_CHECK_SUPPORT, AGENT_ASSETS_DIAGNOSTICS_BINDER],
+    provides: [AGENT_ASSETS_APPLICATION, AGENT_ASSETS_INTERNAL, AGENT_ASSETS_OPENSPEC_SUPPORT, AGENT_ASSETS_DIAGNOSTICS_READ, AGENT_ASSETS_PACKAGE_CHECK_SUPPORT, AGENT_ASSETS_DIAGNOSTICS_BINDER],
     contributions: {
       cli: [
         'package check', 'package build', 'runtime list',
@@ -142,7 +180,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     lifecycle: 'none',
   }, {
     id: 'openspec',
-    requires: [WORKSPACE_QUERY, AGENT_ASSETS_INTERNAL],
+    requires: [WORKSPACE_QUERY, AGENT_ASSETS_OPENSPEC_SUPPORT],
     provides: ['openspec.application', 'openspec.query'],
     contributions: {
       cli: ['openspec converge', 'openspec convergence preflight', 'openspec convergence inspect'],

@@ -7,10 +7,10 @@ import {
   RUNTIME_ADAPTERS,
   SUPPORTED_AGENT_IDS,
   UNSUPPORTED_AGENT_GUIDANCE,
-  reconcileRuntimePlan,
   runtimeDiscoveryPayload,
   selectAdapterImplementation,
 } from '../infrastructure/runtime/adapter-contract.ts';
+import { reconcileRuntimePlan } from '../infrastructure/runtime/runtime-reconciler.ts';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../../infrastructure/contracts/public-json.ts';
 
 export function registerDomainsRuntime(runtime: any): any  {

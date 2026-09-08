@@ -69,7 +69,7 @@ const allowed: any = new Map([
   ])],
   ['src/modules/workspace/infrastructure/workspace-source-filesystem.ts', new Set(['withStaging', 'createWorkspaceSourceFilesystem'])],
   ['src/modules/workspace/application/workspace-operations.ts', new Set(['recoverWorkspaceMutation'])],
-  ['src/modules/agent-assets/infrastructure/runtime/adapter-contract.ts', new Set(['reconcileRuntimePlan'])],
+  ['src/modules/agent-assets/infrastructure/runtime/runtime-reconciler.ts', new Set(['reconcileRuntimePlan'])],
   ['src/modules/agent-assets/infrastructure/runtime/skills/render-plan.ts', new Set(['applySkillRenderPlan'])],
   ['src/modules/agent-assets/infrastructure/runtime/render-claude-code-rules.ts', new Set(['applyRulesRenderPlan'])],
 ]);

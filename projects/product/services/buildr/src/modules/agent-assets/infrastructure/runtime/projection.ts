@@ -5,10 +5,9 @@ import {
   createRuntimeContext,
   createRuntimePlan,
   getRuntimeAdapter,
-  assertRuntimeTargetPath,
-  reconcileRuntimePlan,
   selectAdapterImplementation,
 } from './adapter-contract.ts';
+import { assertRuntimeTargetPath, reconcileRuntimePlan } from './runtime-reconciler.ts';
 import {
   buildSkillRenderPlan,
   hasManagedSkillMarker,

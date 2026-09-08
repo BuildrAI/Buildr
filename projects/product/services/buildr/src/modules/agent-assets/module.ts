@@ -20,10 +20,10 @@ import {
   UNSUPPORTED_AGENT_GUIDANCE,
   getRuntimeAdapter,
   isSupportedAgent,
-  reconcileRuntimePlan,
   runtimeDiscoveryPayload,
   selectAdapterImplementation,
 } from './infrastructure/runtime/adapter-contract.ts';
+import { reconcileRuntimePlan } from './infrastructure/runtime/runtime-reconciler.ts';
 import { hasManagedSkillMarker, parseInstallClaudeCodeBuildrSkillArgs } from './infrastructure/runtime/render-claude-code.ts';
 import {
   buildRuleDiscoveryPlan,
@@ -38,10 +38,35 @@ export const AGENT_ASSETS_APPLICATION = 'agent-assets.application';
 export const AGENT_ASSETS_RUNTIME = 'agent-assets.runtime';
 export const AGENT_ASSETS_CAPABILITY_QUERY = 'agent-assets.capability-query';
 export const AGENT_ASSETS_INTERNAL = 'agent-assets.internal';
+export const AGENT_ASSETS_OPENSPEC_SUPPORT = 'agent-assets.openspec-support';
 export const AGENT_ASSETS_DIAGNOSTICS_READ = 'agent-assets.diagnostics-read';
 export const AGENT_ASSETS_PACKAGE_CHECK_SUPPORT = 'agent-assets.package-check-support';
 export const AGENT_ASSETS_DIAGNOSTICS_BINDER = 'agent-assets.diagnostics-binder';
 export const AGENT_ASSETS_RUNTIME_MODULE_ID = 'agent-assets-runtime';
+
+type OpenSpecComponentEntry = { id: string; enabled?: boolean; state?: string; path?: string };
+export type OpenSpecAssetSupport = {
+  assertName(value: string, label: string): void;
+  componentDefinitionFile(root: string, entry: OpenSpecComponentEntry): string;
+  readComponentDefinition(file: string, id: string): { upstream?: { version?: string } };
+  readComponentsManifestForWrite(root: string): { components: OpenSpecComponentEntry[] };
+  runCommandsCheck(root: string): { commands: Array<{ id: string; status: string; version?: { current?: string }; executablePath: string; installHint?: string }> };
+};
+
+const OPENSPEC_SUPPORT_METHODS = ['assertName', 'componentDefinitionFile', 'readComponentDefinition', 'readComponentsManifestForWrite', 'runCommandsCheck'] as const satisfies readonly (keyof OpenSpecAssetSupport)[];
+
+export function createOpenSpecAssetSupport(source: OpenSpecAssetSupport): Readonly<OpenSpecAssetSupport> {
+  for (const method of OPENSPEC_SUPPORT_METHODS) {
+    if (typeof source?.[method] !== 'function') throw new TypeError(`OpenSpec asset dependency is missing: ${method}`);
+  }
+  return Object.freeze({
+    assertName: (...args: Parameters<OpenSpecAssetSupport['assertName']>) => source.assertName(...args),
+    componentDefinitionFile: (...args: Parameters<OpenSpecAssetSupport['componentDefinitionFile']>) => source.componentDefinitionFile(...args),
+    readComponentDefinition: (...args: Parameters<OpenSpecAssetSupport['readComponentDefinition']>) => source.readComponentDefinition(...args),
+    readComponentsManifestForWrite: (...args: Parameters<OpenSpecAssetSupport['readComponentsManifestForWrite']>) => source.readComponentsManifestForWrite(...args),
+    runCommandsCheck: (...args: Parameters<OpenSpecAssetSupport['runCommandsCheck']>) => source.runCommandsCheck(...args),
+  });
+}
 
 const APPLICATION_METHODS = Object.freeze([
   'rulesAdd', 'rulesRemove',
@@ -192,6 +217,7 @@ export function createAgentAssetsModule(runtime: any): any  {
         provides: {
           [AGENT_ASSETS_APPLICATION]: application,
           [AGENT_ASSETS_INTERNAL]: internal,
+          [AGENT_ASSETS_OPENSPEC_SUPPORT]: createOpenSpecAssetSupport(composition),
           [AGENT_ASSETS_DIAGNOSTICS_READ]: diagnosticsRead,
           [AGENT_ASSETS_PACKAGE_CHECK_SUPPORT]: Object.freeze({
             parseCommandsManifestYaml: composition.parseCommandsManifestYaml,

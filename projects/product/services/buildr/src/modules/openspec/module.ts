@@ -3,7 +3,7 @@ import { createChangeQuery, type ProjectQuery } from './application/change-query
 export type { ChangeQuery, ChangeModel, ChangeLifecycle, Project, PrototypePage, PrototypeDiagnostic } from './application/change-query.ts';
 import { registerOpenSpecApplication, type OpenSpecRuntime } from './application/openspec-application.ts';
 import { WORKSPACE_QUERY } from '../workspace/module.ts';
-import { AGENT_ASSETS_INTERNAL } from '../agent-assets/module.ts';
+import { AGENT_ASSETS_OPENSPEC_SUPPORT, createOpenSpecAssetSupport, type OpenSpecAssetSupport } from '../agent-assets/module.ts';
 
 export const OPENSPEC_MODULE_ID = 'openspec';
 export const OPENSPEC_APPLICATION = 'openspec.application';
@@ -81,9 +81,10 @@ export function createOpenSpecCliContributions(application: CliApplication | nul
 export function createOpenSpecModule(runtime: OpenSpecRuntime) {
   return Object.freeze({
     id: OPENSPEC_MODULE_ID,
-    requires: Object.freeze([WORKSPACE_QUERY, AGENT_ASSETS_INTERNAL]),
-    create(requires: { [WORKSPACE_QUERY]: ProjectQuery; [AGENT_ASSETS_INTERNAL]: Record<string, unknown> }) {
-      const composition = Object.assign(Object.create(runtime), requires[AGENT_ASSETS_INTERNAL]) as OpenSpecRuntime;
+    requires: Object.freeze([WORKSPACE_QUERY, AGENT_ASSETS_OPENSPEC_SUPPORT]),
+    create(requires: { [WORKSPACE_QUERY]: ProjectQuery; [AGENT_ASSETS_OPENSPEC_SUPPORT]: OpenSpecAssetSupport }) {
+      const support = createOpenSpecAssetSupport(requires[AGENT_ASSETS_OPENSPEC_SUPPORT]);
+      const composition: OpenSpecRuntime = Object.assign(Object.create(runtime), support);
       const registered = registerOpenSpecApplication(composition, { projectQuery: requires[WORKSPACE_QUERY] });
       const application = methodPort(registered, APPLICATION_METHODS);
       const query = Object.freeze({

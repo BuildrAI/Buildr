@@ -2,18 +2,13 @@ import type { OpenSpecDelta, DeltaOperation } from './delta-parser.ts';
 import type { ConvergenceContext } from './openspec-converge.ts';
 import type { ActiveChangeObservation } from './openspec-convergence-preflight.ts';
 import type { ConvergenceReceipt } from './convergence-model.ts';
+import type { OpenSpecAssetSupport } from '../../agent-assets/module.ts';
 
-type ComponentEntry = { id: string; enabled?: boolean; state?: string; path?: string };
-export type OpenSpecRuntime = {
+export type OpenSpecRuntime = OpenSpecAssetSupport & {
   usage(...args: string[]): unknown;
   isPlainObject(value: unknown): value is Record<string, unknown>;
   assertNoUnknownOptions(args: string[], allowed: Set<string>, flags: Set<string>): void;
   positionalArgs(args: string[]): string[];
-  runCommandsCheck(root: string): { commands: { id: string; status: string; version?: { current?: string }; executablePath: string; installHint?: string }[] };
-  readComponentsManifestForWrite(root: string): { components: ComponentEntry[] };
-  readComponentDefinition(file: string, id: string): { upstream?: { version?: string } };
-  componentDefinitionFile(root: string, entry: ComponentEntry): string;
-  assertName(value: string, label: string): void;
   optionValue(args: string[], name: string, fallback?: string): string;
   atomicWriteJson(file: string, value: unknown): unknown;
   atomicWriteFile(file: string, value: string): unknown;

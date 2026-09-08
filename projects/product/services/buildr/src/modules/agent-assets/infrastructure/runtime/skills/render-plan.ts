@@ -3,11 +3,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {
   REQUIRED_RENDER_CAPABILITIES,
-  assertRuntimeTargetPath,
   createRuntimePlan,
   getRuntimeAdapter,
-  reconcileRuntimePlan,
 } from '../adapter-contract.ts';
+import { assertRuntimeTargetPath, reconcileRuntimePlan } from '../runtime-reconciler.ts';
 import { FRONTMATTER_BOUNDARY, MANAGED_PREFIX, SKILL_CONTRIBUTION_MARKER, resolveSkillScope } from './primitives.ts';
 import { capabilityBindingsForSkill, resolveSkillCapabilityGraph } from '../../../persistence/capability-graph-repository.ts';
 import { resolvePackageAgentSkill, resolveSkills } from './sources.ts';

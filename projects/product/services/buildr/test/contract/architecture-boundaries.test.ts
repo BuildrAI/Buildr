@@ -63,8 +63,12 @@ test('Windows 平台身份、Node 脚本启动与 runtime mode 使用共享 owne
   const worktree: any = fs.readFileSync(path.join(productRoot, 'src/modules/task/infrastructure/git-worktree-provider.ts'), 'utf8');
   assert.doesNotMatch(worktree, /identity\.repository\s*!==\s*item\.checkoutPath/);
   const adapter: any = fs.readFileSync(path.join(productRoot, 'src/modules/agent-assets/infrastructure/runtime/adapter-contract.ts'), 'utf8');
-  assert.match(adapter, /runtimeWriteModeMatches/);
-  assert.doesNotMatch(adapter, /ownerExecutable/);
+  assert.doesNotMatch(adapter, /node:fs|projection-files|runtime-reconciler|reconcileRuntimePlan/);
+  assert.match(adapter, /function createRuntimePlan/);
+  const reconciler = fs.readFileSync(path.join(productRoot, 'src/modules/agent-assets/infrastructure/runtime/runtime-reconciler.ts'), 'utf8');
+  assert.match(reconciler, /runtimeWriteModeMatches/);
+  assert.doesNotMatch(reconciler, /ownerExecutable/);
+  assert.match(reconciler, /function reconcileRuntimePlan/);
   const closeout: any = fs.readFileSync(path.join(productRoot, '../../../../skills/buildr-self-bootstrap-sync/scripts/closeout.mjs'), 'utf8');
   assert.match(closeout, /productCommand\(execute, root, nodeExecutable/);
   assert.match(closeout, /path\.join\(root, PRODUCT_ROOT, 'buildr'\)/);

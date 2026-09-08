@@ -9,7 +9,7 @@
 | Task Record、Review、Verification、父任务协调与 Worktree | `services/buildr/src/modules/task/module.ts` | Task 领域规则、SQLite 事务、查询投影、专业记录和 Git Worktree 操作 | `TASK_QUERY_APPLICATION`、Task 各端口、CLI/HTTP |
 | Task 与 OpenSpec Change 关联展示 | `services/buildr/src/modules/task/change/module.ts` | 任务关联、工作树（Worktree）选择、副本来源和 HTTP 展示组合；内容委托 OpenSpec | `CHANGE_APPLICATION`、HTTP |
 | 通用 OpenSpec | `services/buildr/src/modules/openspec/module.ts` | 变更（Change）列表、详情、归档定位、产物与原型读取、提示词、严格校验、收敛及恢复 | `OPENSPEC_APPLICATION`、`OPENSPEC_QUERY`、CLI |
-| Agent Assets | `services/buildr/src/modules/agent-assets/module.ts` | Command、Rule、Skill、Component、Capability Binding、package maintenance 与 runtime projection | `AGENT_ASSETS_APPLICATION`、`AGENT_ASSETS_RUNTIME`、CLI/HTTP/diagnostics |
+| Agent Assets | `services/buildr/src/modules/agent-assets/module.ts` | Command、Rule、Skill、Component、Capability Binding、package maintenance 与 runtime projection；声明和文件执行各有明确所有者 | `AGENT_ASSETS_APPLICATION`、`AGENT_ASSETS_RUNTIME`、`AGENT_ASSETS_OPENSPEC_SUPPORT`、CLI/HTTP/diagnostics |
 | 用户 Project 测试声明 | `services/buildr/src/modules/project-testing/module.ts` | `verification.yml` inspect/validate/update；不拥有测试执行 | `VERIFICATION_APPLICATION`、`VERIFICATION_DECLARATION`、CLI/diagnostics |
 | Buildr installation 与 release awareness | `services/buildr/src/modules/installation/module.ts` | installation identity、update、状态、npm Launcher 和版本提示 | `SYSTEM_INSTALLATION_APPLICATION`、CLI/HTTP |
 | Doctor 聚合 | `services/buildr/src/modules/diagnostics/module.ts` | 聚合各模块只读诊断并形成统一结果 | `SYSTEM_DOCTOR_APPLICATION`、CLI |

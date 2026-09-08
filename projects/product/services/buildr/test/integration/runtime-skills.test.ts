@@ -21,13 +21,84 @@ import {
   buildRuntimeSkillTarget,
   hasManagedSkillMarker,
 } from '../../src/modules/agent-assets/infrastructure/runtime/skills/render-plan.ts';
-import { REQUIRED_RENDER_CAPABILITIES, RUNTIME_ADAPTERS, SUPPORTED_AGENT_IDS, createRuntimePlan, getRuntimeAdapter, reconcileRuntimePlan, skillDestinationRoot } from '../../src/modules/agent-assets/infrastructure/runtime/adapter-contract.ts';
+import {
+  REQUIRED_RENDER_CAPABILITIES,
+  RUNTIME_ADAPTERS,
+  SUPPORTED_AGENT_IDS,
+  createRuntimePlan,
+  getRuntimeAdapter,
+  skillDestinationRoot,
+} from '../../src/modules/agent-assets/infrastructure/runtime/adapter-contract.ts';
+import { reconcileRuntimePlan } from '../../src/modules/agent-assets/infrastructure/runtime/runtime-reconciler.ts';
 import { buildEffectiveSkillInventory, classifySkillCandidate } from '../../src/modules/agent-assets/infrastructure/runtime/skills/inventory.ts';
 import {
   legacySkillProjectionOwnershipReceiptTarget,
   runtimeWriteModeMatches,
   skillProjectionOwnershipReceiptTarget,
 } from '../../src/modules/agent-assets/infrastructure/runtime/skills/projection-files.ts';
+
+test('compareOnly 比较现有、新增和待删文件时不执行任何文件修改', (t: any) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-runtime-compare-only-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const existing = path.join(root, 'existing.txt');
+  const orphan = path.join(root, 'legacy.json');
+  const missing = path.join(root, 'missing/nested/new.txt');
+  fs.writeFileSync(existing, 'before\n', { mode: 0o600 });
+  fs.writeFileSync(orphan, 'legacy\n');
+  const before = fs.statSync(existing);
+  const plan = createRuntimePlan({
+    adapterId: 'codex', targetRoot: root, scope: '.',
+    capabilityEvidence: REQUIRED_RENDER_CAPABILITIES.map((capability) => ({ capability, supported: true })),
+    writes: [{ targetFile: existing, content: 'after\n', mode: 0o100 }, { targetFile: missing, content: 'new\n' }],
+    removals: [{ targetFile: orphan, kind: 'legacy-skill-projection-ownership-receipt', removeLast: true }],
+  });
+  for (const method of ['mkdirSync', 'mkdtempSync', 'writeFileSync', 'chmodSync', 'rmSync', 'rmdirSync', 'cpSync']) {
+    t.mock.method(fs, method, () => { throw new Error(`compareOnly must not call ${method}`); });
+  }
+  try {
+    const result = reconcileRuntimePlan(plan, { compareOnly: true });
+    assert.deepEqual(result.changed, []);
+    assert.deepEqual(result.removed, []);
+    assert.deepEqual(result.findings.map((item: any) => item.status), ['stale', 'missing', 'orphan']);
+  } finally {
+    t.mock.restoreAll();
+  }
+  assert.equal(fs.readFileSync(existing, 'utf8'), 'before\n');
+  assert.equal(fs.statSync(existing).mode, before.mode);
+  assert.equal(fs.statSync(existing).mtimeMs, before.mtimeMs);
+  assert.equal(fs.readFileSync(orphan, 'utf8'), 'legacy\n');
+  assert.equal(fs.existsSync(path.dirname(missing)), false);
+});
+
+test('文件执行保持普通写入、普通删除、最终写入、最终删除的顺序', (t: any) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-runtime-order-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const file = (name: string) => path.join(root, name);
+  fs.writeFileSync(file('stale'), 'stale');
+  fs.writeFileSync(file('legacy'), 'legacy');
+  const events: string[] = [];
+  const write = fs.writeFileSync.bind(fs);
+  const remove = fs.rmSync.bind(fs);
+  t.mock.method(fs, 'writeFileSync', (...args: Parameters<typeof fs.writeFileSync>) => {
+    events.push(`write:${path.basename(String(args[0]))}`);
+    return write(...args);
+  });
+  t.mock.method(fs, 'rmSync', (...args: Parameters<typeof fs.rmSync>) => {
+    events.push(`remove:${path.basename(String(args[0]))}`);
+    return remove(...args);
+  });
+  try {
+    reconcileRuntimePlan(createRuntimePlan({
+      adapterId: 'codex', targetRoot: root, scope: '.',
+      capabilityEvidence: REQUIRED_RENDER_CAPABILITIES.map((capability) => ({ capability, supported: true })),
+      writes: [{ targetFile: file('receipt'), content: '{}\n', commitLast: true }, { targetFile: file('payload'), content: 'payload' }],
+      removals: [{ targetFile: file('legacy'), removeLast: true }, { targetFile: file('stale') }],
+    }));
+  } finally {
+    t.mock.restoreAll();
+  }
+  assert.deepEqual(events, ['write:payload', 'remove:stale', 'write:receipt', 'remove:legacy']);
+});
 
 test('Windows runtime 文件一致性忽略 POSIX executable bit', (t: any) => {
   const root: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-runtime-mode-'));
