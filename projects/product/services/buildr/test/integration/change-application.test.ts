@@ -5,7 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 
 import { registerChangeApplication } from '../../src/modules/task/change/application/change-application.ts';
-import { inspectChangeChecklist } from '../../src/modules/openspec/application/change-checklist.ts';
+import { createChangeQuery } from '../../src/modules/openspec/application/change-query.ts';
 
 type Project = { id: string; code: string; name: string; source: { type: string; path: string } };
 type ChangeSummary = {
@@ -18,6 +18,7 @@ type ChangeSummary = {
 type ScopedResolution = {
   availability: string;
   workingCopy: { provenance: string; change: ChangeSummary } | null;
+  retainedBaseline: { provenance: string; change: ChangeSummary } | null;
 };
 type Prototype = { id: string; title: string; path: string; lifecycle: string; provenance: string };
 type ChangeRuntime = {
@@ -65,9 +66,12 @@ function fixture(): { root: string; runtime: ChangeRuntime; projectRoot: string;
     taskUiPrototypes: unavailable,
     taskUiPrototype: unavailable,
   };
+  const projectQuery = { listProjects: runtime.listProjects, projectDetail: runtime.projectDetail, resolveSourceRoot: runtime.resolveSourceRoot };
+  const openSpecQuery = createChangeQuery(projectQuery);
+  Object.assign(runtime, openSpecQuery);
   registerChangeApplication(runtime, {
-    openSpecQuery: { inspectChangeChecklist },
-    projectQuery: { listProjects: runtime.listProjects, projectDetail: runtime.projectDetail, resolveSourceRoot: runtime.resolveSourceRoot },
+    openSpecQuery,
+    projectQuery,
     worktreeQuery: { inspectGitWorktrees: (input: { workspaceRoot: string; taskId: string }) => runtime.inspectGitWorktrees(input) },
   });
   return { root, runtime, projectRoot: path.join(root, project.source.path), project };
@@ -123,6 +127,7 @@ test('Task-scoped Change优先使用matching Worktree，缺失时仍可读取ret
   const worktreeRoot = path.join(root, '.worktrees', 'reader-task');
   const candidateProjectRoot = path.join(worktreeRoot, 'projects', 'product');
   writeChange(candidateProjectRoot, 'candidate-only', { 'proposal.md': '# Candidate\n' });
+  writeChange(candidateProjectRoot, 'shared', { 'proposal.md': '# Candidate Shared\n' });
   runtime.inspectGitWorktrees = () => ({
     status: 'ready',
     repositories: [{ selector: 'workspace', entityType: 'workspace', sourcePath: '.', checkoutPath: worktreeRoot, state: 'ready' }],
@@ -131,6 +136,10 @@ test('Task-scoped Change优先使用matching Worktree，缺失时仍可读取ret
   assert.equal(candidate.availability, 'available');
   assert.equal(candidate.workingCopy?.provenance, 'task-worktree-candidate');
   assert.equal(candidate.workingCopy?.change.artifacts.proposal.content, '# Candidate\n');
+  const shared = runtime.resolveTaskScopedChange(root, 'reader-task', { project: 'product', change: 'shared' }, { includeContent: true });
+  assert.equal(shared.workingCopy?.change.artifacts.proposal.content, '# Candidate Shared\n');
+  assert.equal(shared.retainedBaseline?.provenance, 'retained-baseline');
+  assert.equal(shared.retainedBaseline?.change.artifacts.proposal.content, '# Retained\n');
 
   runtime.inspectGitWorktrees = () => ({ status: 'blocked', repositories: [] });
   const retained = runtime.resolveTaskScopedChange(root, 'reader-task', { project: 'product', change: 'shared' }, { includeContent: true });
@@ -160,4 +169,31 @@ test('Task UI Prototype使用Worktree owner并由Change内容决定展示', (t) 
   assert.equal(runtime.taskUiPrototype(root, 'prototype-task', result.prototypes[0].id).html.includes('Task Prototype'), true);
   assert.deepEqual(result.diagnostics.map(({ code }) => code), ['ui_prototype_document_incomplete']);
   assert.throws(() => runtime.taskUiPrototype(root, 'prototype-task', 'not-an-id'), (error) => coded(error, 'ui_prototype_reference_invalid'));
+});
+
+test('OpenSpec 查询独立于任务，保持全局保留副本、归档提示与文件安全边界', (t) => {
+  const { root, projectRoot, project } = fixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const query = createChangeQuery({
+    listProjects: () => ({ projects: [project] }),
+    projectDetail: () => ({ project }),
+    resolveSourceRoot: (base, source) => path.resolve(base, source.path),
+  });
+  assert.deepEqual(query.listChanges(root).changes, []);
+  assert.equal(fs.existsSync(projectRoot), false, '空列表不得创建项目目录');
+  const retained = writeChange(projectRoot, 'shared', { 'proposal.md': '# Retained\n' });
+  writeChange(path.join(root, '.worktrees/reader/projects/product'), 'candidate-only', { 'proposal.md': '# Candidate\n' });
+  writeChange(projectRoot, 'archive/2026-09-03-01-done', { 'proposal.md': '# Done\n' });
+  const outside = path.join(root, 'outside.html');
+  fs.writeFileSync(outside, '<html><head><title>Private</title></head><body><!-- buildr:ui-prototype --></body></html>');
+  fs.symlinkSync(outside, path.join(retained, 'brief.md'));
+  fs.symlinkSync(outside, path.join(retained, 'escape.html'));
+  assert.deepEqual(query.listChanges(root).changes.map((item) => item.code).sort(), ['done', 'shared']);
+  assert.equal(query.changeDetail(root, 'product', 'active~shared').change.brief.exists, false);
+  assert.equal(query.findLogicalChange(root, project, projectRoot, 'done')?.ref, 'archived~2026-09-03-01-done');
+  assert.throws(() => query.findLogicalChange(root, project, projectRoot, '../outside'), (error) => coded(error, 'change_reference_invalid'));
+  assert.deepEqual(query.discoverUiPrototypes(retained).prototypes, []);
+  assert.deepEqual(query.discoverUiPrototypes(retained).diagnostics.map((item) => item.code), ['ui_prototype_symlink_ignored']);
+  assert.equal(query.generateChangeCreatePrompt(root, { projectCode: 'product', goal: '整理' }).copiedMeansCreated, false);
+  assert.match(query.generateChangeActionPrompt(root, { projectCode: 'product', ref: 'archived~2026-09-03-01-done', action: 'continue' }).prompt, /不要修改历史归档/);
 });

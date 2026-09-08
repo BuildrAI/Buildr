@@ -9,8 +9,7 @@ export const CHANGE_MODULE_ID = 'change';
 export const CHANGE_APPLICATION = 'change.application';
 
 const METHODS = Object.freeze([
-  'listProjectChanges', 'listChanges', 'changeDetail', 'generateChangeCreatePrompt',
-  'generateChangeActionPrompt', 'resolveTaskScopedChange', 'taskScopedChangeDetail',
+  'resolveTaskScopedChange', 'taskScopedChangeDetail',
   'taskUiPrototypes', 'taskUiPrototype',
 ]);
 
@@ -25,20 +24,22 @@ function dependency(requires: ChangeModuleRequires, key: string): Record<string,
 
 function openSpecDependency(requires: ChangeModuleRequires): OpenSpecQuery {
   const value = dependency(requires, OPENSPEC_QUERY);
-  if (typeof value.inspectChangeChecklist !== 'function') throw new Error('OpenSpec Query dependency is invalid.');
-  const inspectChangeChecklist = value.inspectChangeChecklist;
-  return { inspectChangeChecklist: (root) => Reflect.apply(inspectChangeChecklist, value, [root]) };
+  if (typeof value.findLogicalChange !== 'function' || typeof value.discoverUiPrototypes !== 'function') throw new Error('OpenSpec Query dependency is invalid.');
+  const findLogicalChange = value.findLogicalChange;
+  const discoverUiPrototypes = value.discoverUiPrototypes;
+  return {
+    findLogicalChange: (...args) => Reflect.apply(findLogicalChange, value, args),
+    discoverUiPrototypes: (root) => Reflect.apply(discoverUiPrototypes, value, [root]),
+  };
 }
 
 function projectDependency(requires: ChangeModuleRequires): ProjectQuery {
   const value = dependency(requires, WORKSPACE_QUERY);
-  if (typeof value.projectDetail !== 'function' || typeof value.listProjects !== 'function' || typeof value.resolveSourceRoot !== 'function') throw new Error('Project Query dependency is invalid.');
+  if (typeof value.projectDetail !== 'function' || typeof value.resolveSourceRoot !== 'function') throw new Error('Project Query dependency is invalid.');
   const projectDetail = value.projectDetail;
-  const listProjects = value.listProjects;
   const resolveSourceRoot = value.resolveSourceRoot;
   return {
     projectDetail: (root, code) => Reflect.apply(projectDetail, value, [root, code]),
-    listProjects: (root) => Reflect.apply(listProjects, value, [root]),
     resolveSourceRoot: (root, source) => Reflect.apply(resolveSourceRoot, value, [root, source]),
   };
 }

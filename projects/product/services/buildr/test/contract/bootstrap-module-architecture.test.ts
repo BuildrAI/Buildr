@@ -9,6 +9,22 @@ import test from 'node:test';
 import { COMMAND_CATALOG } from '../../src/bootstrap/cli/registry.ts';
 import { createRuntime, runtimeContributions, runtimeModuleSnapshot, runtimeProvide } from '../helpers/runtime-harness.ts';
 import { createRuntime as createProductRuntime } from '../../src/bootstrap/runtime.ts';
+import { OPENSPEC_QUERY } from '../../src/modules/openspec/module.ts';
+import { CHANGE_APPLICATION } from '../../src/modules/task/change/module.ts';
+
+test('OpenSpec 独占通用内容查询，任务能力只提供关联组合', () => {
+  const runtime = createProductRuntime();
+  const query = runtimeProvide(runtime, OPENSPEC_QUERY);
+  const taskChanges = runtimeProvide(runtime, CHANGE_APPLICATION);
+  for (const method of ['listProjectChanges', 'listChanges', 'changeDetail', 'generateChangeCreatePrompt', 'generateChangeActionPrompt', 'findLogicalChange', 'discoverUiPrototypes']) {
+    assert.equal(typeof query[method], 'function', method);
+    assert.equal(taskChanges[method], undefined, method);
+  }
+  for (const method of ['resolveTaskScopedChange', 'taskScopedChangeDetail', 'taskUiPrototypes', 'taskUiPrototype']) {
+    assert.equal(typeof taskChanges[method], 'function', method);
+    assert.equal(query[method], undefined, method);
+  }
+});
 import {
   AGENT_ASSETS_APPLICATION,
   AGENT_ASSETS_CAPABILITY_QUERY,

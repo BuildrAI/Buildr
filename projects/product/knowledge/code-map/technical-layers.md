@@ -68,8 +68,9 @@ src/modules/task/
 ├── interfaces/{cli,http}/               任务及专业结果协议适配
 ├── change/                              任务关联 OpenSpec 的组合读取
 │   ├── module.ts
-│   ├── application/change-application.ts
-│   └── interfaces/http/
+│   ├── application/change-application.ts resolveTaskScopedChange / taskUiPrototypes
+│   │                                    选择副本与来源，调用 OpenSpec 内容查询
+│   └── interfaces/http/change-http.ts    任务关联详情和原型路由
 └── daily-progress/                      本机每日演进子能力
     ├── domain/project-daily-progress.ts  日期、提交、摘要与文件规则
     ├── application/project-daily-progress-application.ts
@@ -161,8 +162,24 @@ src/modules/diagnostics/
 
 ## OpenSpec
 
+```text
+src/modules/openspec/
+├── module.ts                            OPENSPEC_QUERY / OPENSPEC_APPLICATION 装配
+└── application/
+    ├── change-query.ts                   createChangeQuery：通用内容查询
+    │   ├── listProjectChanges / listChanges 保留项目的变更列表
+    │   ├── changeDetail / findLogicalChange 详情与活动、归档定位
+    │   ├── discoverUiPrototypes          原型文件发现及安全限制
+    │   └── generateChangeCreatePrompt / generateChangeActionPrompt
+    ├── change-checklist.ts               只读清单进度
+    └── openspec-application.ts           收敛用例及其下层协作者
+```
+
+任务详情的调用链：`change-http.ts` → `resolveTaskScopedChange` 选择受信任副本 → `OPENSPEC_QUERY.findLogicalChange` 读取内容。原型（UI Prototype）文件由 OpenSpec 发现，任务侧补充任务关联身份与副本来源。全局列表直接使用 OpenSpec 查询，不经过任务，也不扫描工作树（Worktree）。`task_changes` 关联表仍由任务维护；OpenSpec 不反向依赖任务。
+
 | 技术职责 | 文件 | 代表方法或不变量 |
 |---|---|---|
+| 内容查询 | `src/modules/openspec/application/change-query.ts` | 列表、详情、归档、产物与原型读取；局部类型和文件辅助函数同文件维护 |
 | 用例入口 | `src/modules/openspec/application/openspec-application.ts` | 解析 Project/Change context，协调 validate/converge/archive |
 | 计划 | `convergence-observer.ts`、`convergence-planner.ts`、`delta-parser.ts` | 从真实 baseline 与 delta 构造确定性计划 |
 | 条件应用 | `canonical-applier.ts`、`deterministic-sync.ts` | 临时文件、版本比较、原子 rename 与失败回滚 |

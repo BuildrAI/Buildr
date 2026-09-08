@@ -1,4 +1,6 @@
 import { inspectChangeChecklist, parseChangeChecklistText } from './application/change-checklist.ts';
+import { createChangeQuery, type ProjectQuery } from './application/change-query.ts';
+export type { ChangeQuery, ChangeModel, ChangeLifecycle, Project, PrototypePage, PrototypeDiagnostic } from './application/change-query.ts';
 import { registerOpenSpecApplication, type OpenSpecRuntime } from './application/openspec-application.ts';
 import { WORKSPACE_QUERY } from '../workspace/module.ts';
 import { AGENT_ASSETS_INTERNAL } from '../agent-assets/module.ts';
@@ -80,11 +82,12 @@ export function createOpenSpecModule(runtime: OpenSpecRuntime) {
   return Object.freeze({
     id: OPENSPEC_MODULE_ID,
     requires: Object.freeze([WORKSPACE_QUERY, AGENT_ASSETS_INTERNAL]),
-    create(requires: { [WORKSPACE_QUERY]: NonNullable<Parameters<typeof registerOpenSpecApplication>[1]>['projectQuery']; [AGENT_ASSETS_INTERNAL]: Record<string, unknown> }) {
+    create(requires: { [WORKSPACE_QUERY]: ProjectQuery; [AGENT_ASSETS_INTERNAL]: Record<string, unknown> }) {
       const composition = Object.assign(Object.create(runtime), requires[AGENT_ASSETS_INTERNAL]) as OpenSpecRuntime;
       const registered = registerOpenSpecApplication(composition, { projectQuery: requires[WORKSPACE_QUERY] });
       const application = methodPort(registered, APPLICATION_METHODS);
       const query = Object.freeze({
+        ...createChangeQuery(requires[WORKSPACE_QUERY]),
         inspectChangeChecklist,
         parseChangeChecklistText,
       });
