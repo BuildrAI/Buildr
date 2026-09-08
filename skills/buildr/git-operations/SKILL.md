@@ -19,7 +19,7 @@ description: 用户或上游智能体（Agent）已明确选择仓库（reposito
 - 精确 owned paths/hunks 或已授权 commit scope；
 - 获准改变 working tree、local history 和 remote 的具体 effects。
 
-直接用户指令、任务收尾Skill或其他上游Agent/consumer可以提供这些输入。Agent拥有交付策略、动作、目标和顺序。不得沿用历史轮次的写入授权，也不得自行补选repository、ref、remote或策略。任何输入与当前事实不一致时，在零Git写入状态返回`blocked`。
+直接用户指令、任务收尾Skill或其他上游Agent/consumer可以提供这些输入。Agent拥有交付策略、动作、目标和顺序。同一任务已明确的写入授权，在repository、operation、ref、scope与effects未变且未被撤回时继续适用；每次写入仍重验当前事实。其他任务或范围变化不能沿用旧授权，也不得自行补选repository、ref、remote或策略。任何输入与当前事实不一致时，在零Git写入状态返回`blocked`。
 
 ## 2. 保持 operation 单一
 
