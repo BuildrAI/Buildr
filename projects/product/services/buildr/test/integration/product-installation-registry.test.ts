@@ -1,3 +1,4 @@
+import { registerProductInstallationStatus } from '../../src/modules/installation/application/product-installation-status.ts';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -565,4 +566,28 @@ test('Doctor inventory不打开SQLite即可报告双registry的real root或UUID�
   assert.deepEqual(result.workspaceManagement.conflicts.map((conflict: any) => conflict.type), ['cross-channel-registration']);
   assert.equal(result.workspaceManagement.conflicts[0].workspaceId, '123e4567-e89b-42d3-a456-426614174000');
   assert.equal(fs.existsSync(path.join(workspace, '.buildr', 'local', 'workspace.sqlite')), false);
+});
+
+test('installation status application读取结构化选项且不打印或修改退出码', async (t) => {
+  const root = temporary(t);
+  const productRoot = path.join(root, 'product');
+  fs.mkdirSync(productRoot);
+  fs.writeFileSync(path.join(productRoot, 'package.json'), '{"name":"@buildr-ai/buildr","version":"1.2.3"}\n');
+  const previousExitCode = process.exitCode;
+  t.mock.method(console, 'log', () => { throw new Error('application printed'); });
+  t.mock.method(process.stdout, 'write', () => { throw new Error('application wrote stdout'); });
+  const application = registerProductInstallationStatus({ productRoot: () => productRoot });
+  const result = await application.installationStatus({
+    installationRegistryFile: path.join(root, 'absent-registry.json'),
+    developmentLauncherRoot: path.join(root, 'absent-launcher'),
+    launcherTarget: path.join(root, 'absent-npm-launcher'),
+    instanceFile: path.join(root, 'absent-instance.json'),
+    instanceDataRoots: { released: path.join(root, 'released'), development: path.join(root, 'development') },
+    webProfileOptions: { home: root, env: {} },
+    pidProbe: () => { throw new Error('unexpected pid probe'); },
+    fetchImpl: () => { throw new Error('unexpected health probe'); },
+  });
+  assert.equal(result.currentInstance.status, 'absent');
+  assert.equal(result.currentInstallation.channel, 'unknown');
+  assert.equal(process.exitCode, previousExitCode);
 });

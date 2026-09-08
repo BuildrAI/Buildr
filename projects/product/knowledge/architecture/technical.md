@@ -29,7 +29,7 @@ src/
 
 `bootstrap/runtime.ts:createRuntime()` 创建技术 Runtime，并由 `module-registry.ts` 安装模块。业务能力通过 `runtimeProvide()` 按 capability id 获取；CLI、HTTP 和 diagnostics 通过 `runtimeContributions()` 聚合。生产 Runtime 不扁平注入业务方法。
 
-Task↔Change、Agent Assets↔Diagnostics 的真实循环由一次性 Binder 完成晚绑定，其余依赖保持单向。
+Task↔Change、Agent Assets↔Diagnostics 的真实循环由一次性 Binder 完成晚绑定。资产模块内部以应用局部类型和具名函数显式连接真实协作，不再向应用注入共享可变对象。包资源解析属于资产 Repository，项目/服务登记修复属于 Workspace 应用；Doctor 与安装查询/更新的命令格式由所属接口负责。详见[内部代码地图](../code-map/technical-layers.md)与[关键调用](../code-map/calls-data-effects.md)。
 
 ## 模块与所有权
 

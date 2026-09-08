@@ -13,7 +13,6 @@ import { buildrWebDataRoot, parseWorkspaceManifest, readWorkspaceRegistryFile } 
 import { resolveApplicationPayloadRoot } from '../../../infrastructure/product-resources/index.ts';
 import { npmLauncherStatus } from '../infrastructure/npm-launcher.ts';
 import { defaultWebDataRoot, oppositeWebProfile, resolveWebProfile } from '../contracts/web-profile.ts';
-import { assertNoUnknownOptions } from '../../../infrastructure/cli-arguments.ts';
 
 function readJson(file: any) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }
@@ -21,26 +20,6 @@ function readJson(file: any) {
 
 function absent(channel: any, location: any, reason: any) {
   return { channel, status: 'absent', location, identity: null, runtime: null, reason };
-}
-
-function humanValue(value: any) {
-  return value === null || value === undefined || value === '' ? '-' : String(value);
-}
-
-function printHumanInstallation(item: any, label: any = item?.channel || 'unknown') {
-  const identity = item?.identity;
-  const runtime = item?.runtime;
-  console.log(`${label}: channel=${humanValue(item?.channel)} status=${humanValue(item?.status)} path=${humanValue(item?.location)}`);
-  console.log(`  identity: Buildr=${humanValue(identity?.version)} protocol=${humanValue(identity?.protocolIdentity)} payload=${humanValue(identity?.applicationPayloadDigest)} ownership=${humanValue(identity?.ownershipIdentity)}`);
-  console.log(`  runtime: role=${humanValue(runtime?.role)} Node=${humanValue(runtime?.version)} executable=${humanValue(runtime?.executable)} identity=${humanValue(runtime?.identity)}`);
-}
-
-function printHumanInstance(instance: any) {
-  const identity = instance?.identity;
-  const runtime = identity?.runtime;
-  console.log(`current instance: status=${humanValue(instance?.status)} readiness=${humanValue(instance?.observation?.health)} pid=${humanValue(identity?.pid)} url=${humanValue(identity?.url)}`);
-  console.log(`  identity: channel=${humanValue(identity?.channel)} Buildr=${humanValue(identity?.version)} protocol=${humanValue(identity?.protocolIdentity)} payload=${humanValue(identity?.applicationPayloadDigest)} ownership=${humanValue(identity?.ownershipIdentity)}`);
-  console.log(`  runtime: role=${humanValue(identity?.runtimeRole || runtime?.role)} Node=${humanValue(runtime?.version)} executable=${humanValue(runtime?.executable)} identity=${humanValue(runtime?.identity)}`);
 }
 
 function registeredChannel(observed: any, channel: any) {
@@ -399,27 +378,13 @@ export async function buildInstallationStatusInventory(productRoot: any, options
   };
 }
 
-export function registerProductInstallationStatus(runtime: any) {
-  async function installationStatus(args: any) {
-    assertNoUnknownOptions(args, new Set(['--json']), new Set(['--json']));
-    const result: any = await buildInstallationStatusInventory(runtime.productRoot());
-    if (args.includes('--json')) process.stdout.write(`${JSON.stringify({ schemaVersion: 'buildr.installation-status/v1', ...result }, null, 2)}\n`);
-    else {
-      for (const channel of ['npm', 'development']) printHumanInstallation(result.channels[channel]);
-      console.log(`npm launcher: status=${humanValue(result.launcher?.status)} target=${humanValue(result.launcher?.target)} binding=${humanValue(result.launcher?.binding?.bindingIdentity)}`);
-      printHumanInstallation(result.currentInstallation, 'current installation');
-      for (const profile of ['released', 'development']) {
-        console.log(`${profile} Web Data Root: ${result.instances[profile].dataRoot}`);
-        printHumanInstance(result.instances[profile]);
-      }
-      printHumanInstance(result.currentInstance);
-    }
-    return result;
+export function registerProductInstallationStatus(dependencies: { productRoot(): string }) {
+  async function installationStatus(options: Record<string, unknown> = {}) {
+    return buildInstallationStatusInventory(dependencies.productRoot(), options);
   }
-  Object.assign(runtime, {
-    buildInstallationInventory: (options: any = {}) => buildInstallationInventory(runtime.productRoot(), options),
-    buildInstallationStatusInventory: (options: any = {}) => buildInstallationStatusInventory(runtime.productRoot(), options),
+  return Object.freeze({
+    buildInstallationInventory: (options: any = {}) => buildInstallationInventory(dependencies.productRoot(), options),
+    buildInstallationStatusInventory: (options: any = {}) => buildInstallationStatusInventory(dependencies.productRoot(), options),
     installationStatus,
   });
-  return runtime;
 }

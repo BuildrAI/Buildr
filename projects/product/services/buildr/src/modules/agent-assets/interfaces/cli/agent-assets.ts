@@ -1,3 +1,4 @@
+import { writeDoctorResult } from '../../../diagnostics/interfaces/cli/doctor.ts';
 import process from 'node:process';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -217,9 +218,8 @@ function printSkillsMutationReceipt(receipt: any) {
 }
 
 function runMutationDoctor(runtime: any, targetRoot: string, scope: string | null, options: Record<string, unknown> = {}) {
-  const previousExitCode = process.exitCode;
-  runtime.doctor(scope ? ['--target', targetRoot, '--scope', scope, '--json'] : ['--target', targetRoot, '--json'], options);
-  process.exitCode = previousExitCode;
+  const result = runtime.doctor({ targetRoot, scope, ...options });
+  writeDoctorResult(result, { json: true });
 }
 
 function runSkillsAdd(application: any, args: string[]) {
@@ -381,8 +381,8 @@ export function createAgentAssetsCliContributions(): any  {
     ].map(([key, summary, usage, run]: any) => route({ key, summary, usage, match: ({ domain, action }: any) => domain === 'rules' && action === key.split(' ')[1], run })),
     ...[
       ['builtin list', '列出 Buildr 内置能力状态。', 'Usage: buildr builtin list [--target <dir>] [--json]', (runtime: any, context: any) => runtime.builtinList(context.argv.slice(4)), []],
-      ['builtin uninstall', '卸载 optional Buildr 内置能力。required 内置能力不能卸载。', 'Usage: buildr builtin uninstall <id> --target <dir> [--reason <text>]', (runtime: any, context: any) => runtime.builtinUninstall(context.argv.slice(4)), []],
-      ['builtin restore', '恢复 optional Buildr 内置能力；该命令表示明确放弃此 Builtin 的本地修改。', 'Usage: buildr builtin restore <id> --target <dir>', (runtime: any, context: any) => runtime.builtinRestore(context.argv.slice(4)), ['当当前 Builtin 声明 predecessor 时，只接管 manifest 可证明为 Buildr-managed 的旧 identity；随后运行 sync 收敛 Agent runtime。']],
+      ['builtin uninstall', '卸载 optional Buildr 内置能力。required 内置能力不能卸载。', 'Usage: buildr builtin uninstall <id> --target <dir> [--reason <text>]', (runtime: any, context: any) => runBuiltinMutation(runtime, 'builtinUninstall', context.argv.slice(4)), []],
+      ['builtin restore', '恢复 optional Buildr 内置能力；该命令表示明确放弃此 Builtin 的本地修改。', 'Usage: buildr builtin restore <id> --target <dir>', (runtime: any, context: any) => runBuiltinMutation(runtime, 'builtinRestore', context.argv.slice(4)), ['当当前 Builtin 声明 predecessor 时，只接管 manifest 可证明为 Buildr-managed 的旧 identity；随后运行 sync 收敛 Agent runtime。']],
     ].map(([key, summary, usage, run, details]: any) => route({ key, summary, usage, details, match: ({ domain, action }: any) => domain === 'builtin' && action === key.split(' ')[1], run })),
     route({
       key: 'render', surface: 'agent-machine',
@@ -430,7 +430,7 @@ export function createAgentAssetsCliContributions(): any  {
         const command = runtime.withResolvedTarget(context.args);
         const adapter = runtime.getRuntimeAdapter(context.runtimeId);
         const { targetRoot, files } = runtime.installProductRuntimeSkill(adapter.id, command.args, { repoRoot: command.targetRoot, command: `buildr skill install ${context.runtimeId}` });
-        for (const file of files) console.log(runtime.path.relative(targetRoot, file).split(runtime.path.sep).join('/'));
+        for (const file of files) console.log(path.relative(targetRoot, file).split(path.sep).join('/'));
       },
     }),
     route({
@@ -463,4 +463,10 @@ export function createAgentAssetsCliContributions(): any  {
       run: runScopedRender,
     }),
   ]);
+}
+
+function runBuiltinMutation(application: any, method: 'builtinUninstall' | 'builtinRestore', args: string[]) {
+  const result = application[method](args);
+  runMutationDoctor(application, path.resolve(optionValue(args, '--target', process.cwd())), '.');
+  return result;
 }

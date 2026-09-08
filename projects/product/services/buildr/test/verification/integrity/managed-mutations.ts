@@ -58,7 +58,7 @@ const allowed: any = new Map([
   ['src/modules/agent-assets/application/rules.ts', new Set(['rulesRemoveUnsafe'])],
   ['src/modules/agent-assets/application/skills.ts', new Set(['copySupportedSkillSource', 'skillsRemoveUnsafe'])],
   ['src/modules/agent-assets/application/components.ts', new Set(['removeComponentMember', 'installComponentMember'])],
-  ['src/modules/agent-assets/application/package-maintenance/package-assets.ts', new Set(['convergeServiceManifest', 'convergeRegistryManifests'])],
+  ['src/modules/workspace/application/registry-maintenance.ts', new Set(['convergeServiceManifest', 'convergeRegistryManifests'])],
   ['src/modules/agent-assets/application/package-maintenance.ts', new Set(['syncPackageBuiltins'])],
   ['src/modules/agent-assets/application/package-maintenance/builtin-lifecycle.ts', new Set(['builtinUninstallUnsafe'])],
   ['src/modules/agent-assets/application/package-maintenance/output.ts', new Set(['buildPackageOutput', 'packageBuild'])],

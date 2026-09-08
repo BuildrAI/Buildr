@@ -2,23 +2,44 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createRuleManifestRepository } from '../persistence/rule-manifest-repository.ts';
 
-export function registerDomainsRules(runtime: any): any  {
-  const isPlainObject = (...args: any[]) => runtime.isPlainObject(...args);
-  const componentOwnerForMember = (...args: any[]) => runtime.componentOwnerForMember(...args);
-  const isValidAssetId = (...args: any[]) => runtime.isValidAssetId(...args);
-  const assertName = (...args: any[]) => runtime.assertName(...args);
-  const normalizeRelativePathForBuildr = (...args: any[]) => runtime.normalizeRelativePathForBuildr(...args);
-  const quoteYaml = (...args: any[]) => runtime.quoteYaml(...args);
-  const atomicWriteFile = (...args: any[]) => runtime.atomicWriteFile(...args);
-  const parseYamlDocument = (...args: any[]) => runtime.parseYamlDocument(...args);
-  const assertSafeAssetTarget = (...args: any[]) => runtime.assertSafeAssetTarget(...args);
-  const withWorkspaceMutation = (...args: any[]) => runtime.withWorkspaceMutation(...args);
-  const toPosixRelative = (...args: any[]) => runtime.toPosixRelative(...args);
-  const existsDirectory = (...args: any[]) => runtime.existsDirectory(...args);
-  const existsFile = (...args: any[]) => runtime.existsFile(...args);
-  const rootRequiredBlockStatus = (...args: any[]) => runtime.rootRequiredBlockStatus(...args);
-  const assertInitializedBuildrWorkspace = (...args: any[]) => runtime.assertInitializedBuildrWorkspace(...args);
-  const addDoctorFinding = (...args: any[]) => runtime.addDoctorFinding(...args);
+export interface RulesDependencies {
+  isPlainObject: ReturnType<typeof import('./commands.ts').registerDomainsCommands>['isPlainObject'];
+  componentOwnerForMember: ReturnType<typeof import('./components.ts').registerDomainsComponents>['componentOwnerForMember'];
+  isValidAssetId: ReturnType<typeof import('./package-maintenance/package-assets.ts').registerAgentAssetsPackageAssets>['isValidAssetId'];
+  assertName: ReturnType<typeof import('./runtime.ts').registerDomainsRuntime>['assertName'];
+  normalizeRelativePathForBuildr: ReturnType<typeof import('./skills.ts').registerDomainsSkills>['normalizeRelativePathForBuildr'];
+  quoteYaml: typeof import('../../../infrastructure/filesystem/yaml.ts').quoteYaml;
+  atomicWriteFile: typeof import('../../../infrastructure/filesystem/atomic-files.ts').atomicWriteFile;
+  parseYamlDocument: typeof import('../../../infrastructure/filesystem/yaml.ts').parseYamlDocument;
+  assertSafeAssetTarget: (targetRoot: string, target: string, containerRoot: string, label?: string) => string;
+  withWorkspaceMutation: (...args: any[]) => any;
+  toPosixRelative: (...args: any[]) => any;
+  existsDirectory: (file: string) => boolean;
+  existsFile: (file: string) => boolean;
+  rootRequiredBlockStatus: typeof import('../../../infrastructure/filesystem/required-block.ts').rootRequiredBlockStatus;
+  assertInitializedBuildrWorkspace: typeof import('../../../infrastructure/filesystem/workspace-identity.ts').assertInitializedBuildrWorkspace;
+  addDoctorFinding: typeof import('../../../infrastructure/contracts/diagnostic-finding.ts').addDoctorFinding;
+}
+
+export function registerDomainsRules(dependencies: RulesDependencies) {
+  const {
+    isPlainObject,
+    componentOwnerForMember,
+    isValidAssetId,
+    assertName,
+    normalizeRelativePathForBuildr,
+    quoteYaml,
+    atomicWriteFile,
+    parseYamlDocument,
+    assertSafeAssetTarget,
+    withWorkspaceMutation,
+    toPosixRelative,
+    existsDirectory,
+    existsFile,
+    rootRequiredBlockStatus,
+    assertInitializedBuildrWorkspace,
+    addDoctorFinding,
+  } = dependencies;
 
   const { rulesManifestPath, parseRulesManifestYaml, renderRulesManifestYaml, validateRulesManifest, readRulesManifestForWrite, writeRulesManifest } = createRuleManifestRepository({
     atomicWriteFile, existsFile, isPlainObject, isValidAssetId, normalizeRelativePathForBuildr, parseYamlDocument, quoteYaml,
@@ -251,5 +272,14 @@ export function registerDomainsRules(runtime: any): any  {
     }
   }
 
-  return Object.freeze({ rulesManifestPath, parseRulesManifestYaml, renderRulesManifestYaml, validateRulesManifest, readRulesManifestForWrite, writeRulesManifest, resolveRootRulesScope, normalizeRootRulePath, buildRuleEntry, rulesAddUnsafe, rulesAdd, rulesRemoveUnsafe, rulesRemove, listMarkdownFiles, diagnoseRules });
+  return Object.freeze({
+    rulesManifestPath,
+    parseRulesManifestYaml,
+    renderRulesManifestYaml,
+    readRulesManifestForWrite,
+    writeRulesManifest,
+    rulesAdd,
+    rulesRemove,
+    diagnoseRules,
+  });
 }

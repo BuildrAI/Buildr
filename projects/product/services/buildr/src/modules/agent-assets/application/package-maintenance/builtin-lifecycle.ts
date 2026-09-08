@@ -14,7 +14,6 @@ export function createBuiltinLifecycle(deps: any): any  {
     assertInitializedBuildrWorkspace,
     assertNoUnknownOptions,
     buildRuntimeOrphanRemovalPlan,
-    doctor,
     existsDirectory,
     existsFile,
     fs,
@@ -37,12 +36,6 @@ export function createBuiltinLifecycle(deps: any): any  {
     writeRulesManifest,
     writeSkillsManifest,
   } = deps;
-
-  function runMutationDoctor(targetRoot: any): any  {
-    const previousExitCode = process.exitCode;
-    doctor(['--target', targetRoot, '--scope', '.', '--json']);
-    process.exitCode = previousExitCode;
-  }
 
   function packageBuiltinComponent(id: any): any  {
     const manifest = readPackageManifest();
@@ -165,7 +158,6 @@ export function createBuiltinLifecycle(deps: any): any  {
       ...runtimeRoots.map((root: any) => path.join(targetRoot, root)),
       path.join(targetRoot, '.buildr', 'builtin-receipts.json'),
     ], () => builtinUninstallUnsafe(args));
-    runMutationDoctor(targetRoot);
     return result;
   }
 
@@ -208,7 +200,6 @@ export function createBuiltinLifecycle(deps: any): any  {
       throw new Error(`Buildr builtin restore blocked: ${id}: ${outcome?.reason || finding.reason || 'restore preflight did not establish a writable plan'} (${outcome?.path || finding.path})`);
     }
     const result = withWorkspaceMutation(targetRoot, 'builtin.restore', preflight.affectedPaths, () => builtinRestoreUnsafe(args));
-    runMutationDoctor(targetRoot);
     return result;
   }
 

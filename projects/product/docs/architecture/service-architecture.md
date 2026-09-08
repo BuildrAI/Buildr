@@ -147,13 +147,15 @@ Task 查询使用持久化状态投影、FTS/索引和 keyset cursor；Task 详�
 Command、Rule、Skill、Component 已从“参数解析、业务规则、Manifest I/O、外部执行和输出混在应用文件”收敛为：
 
 - `domain/`：Capability identity、Component definition、Command version；
-- `application/`：只接收结构化输入并协调业务用例；
+- `application/`：协调资产用例，每个应用在同文件声明自己的依赖类型；命令、规则、技能和组件用例接收结构化输入；
 - `persistence/`：各 Manifest/定义和 Capability Graph 的唯一 I/O；
 - `infrastructure/`：命令探测、Component source、Agent adapter 和 runtime projection；
 - `interfaces/cli/agent-assets.ts`：argv 解析、结果展示和退出语义；
 - `interfaces/http/`：只做 HTTP mapping。
 
-Package maintenance 内部保留 transaction、verification、replacement/retirement 和 receipt 等有独立不变量的逻辑单元，不按文件行数机械合并。
+`module.ts` 逐一创建应用并显式传入实际方法；不向应用交付共享可变对象。组件与清单之间需要的延迟协作通过具名函数连接，内部辅助方法只在真实消费者需要时公开。运行时（Runtime）与内置资产（Builtin）的既有命令编排保留在对应协作者中，不将本轮收敛描述为全部应用已完成协议分离。
+
+包维护按实际所有权分工：`persistence/package-manifest-repository.ts` 唯一读取资源清单及文件映射；`application/package-maintenance/package-assets.ts` 维护模板补齐和同步路径，`builtin-receipts.ts:snapshot/resolveState` 继续负责实际资产比较；`workspace/application/registry-maintenance.ts` 拥有项目/服务实体登记与迁移。包同步继续在原多文件事务内调用登记维护，再由登记维护在原顺序回调资产模板和技能清单升级；不改变写入范围或迁移结果。替换、退役和回执（Receipt）等既有协作者保留。
 
 ### Project Testing
 
@@ -169,6 +171,8 @@ Buildr 自身的测试选择、进程调度、资源协调和 Candidate gate 留
 
 负责 npm installation identity、origin/registry、CLI update、release awareness、npm Launcher 绑定和平台安装。平台文件与进程副作用位于 `infrastructure/`，版本规则位于 `domain/release-version.ts`，CLI/HTTP 位于 `interfaces/`。
 
+`application/product-installation-status.ts` 的 `installationStatus(options)` 返回安装与实例结果；`application/cli-update.ts` 的 `updateCheck()`、`updateBuildr({ track })` 返回更新计划或执行结果。`interfaces/cli/installation.ts` 独占对应参数解析、打印、JSON 与退出码；安装查询的 HTTP 入口继续直接消费结果型能力。
+
 Development Launcher 的工程实现位于 `tools/build/launcher/`，它只服务当前 checkout；正式 npm Launcher 仍由 Installation 产品模块拥有。两者身份和生命周期隔离。
 
 ### Diagnostics
@@ -176,6 +180,8 @@ Development Launcher 的工程实现位于 `tools/build/launcher/`，它只服�
 入口：`src/modules/diagnostics/module.ts`。
 
 Doctor 只聚合各模块 diagnostics contribution、运行时状态、installation report 和统一结果模型。Workspace scope/service 的业务理解由 Workspace 提供；Agent Assets、Project Testing 等模块各自贡献诊断。Doctor 不取得这些模块的 writer authority。
+
+`application/doctor-application.ts:doctor(DoctorInput)` 返回完整诊断对象，不读取命令参数、打印或修改退出码。`interfaces/cli/doctor.ts:runDoctorCommand()` 负责默认参数、紧凑/完整 JSON、人类输出和退出状态；资产修改后的诊断在资产命令接口调用应用并格式化结果，保持此前的退出码。
 
 ### Publication
 

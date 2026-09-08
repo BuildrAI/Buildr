@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+import { isScriptSource } from './source-imports.ts';
+
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -555,7 +557,7 @@ const legacyRootTokens: any[] = [
 ];
 const currentRoots: any[] = ['bin', 'src', 'resources', 'test', 'docs', 'package', 'tools'];
 for (const root of currentRoots) {
-  for (const file of listFiles(path.join(productRoot, root), (item: any) => /\.(?:mjs|js|json|md|yml|yaml)$/.test(item) || !path.extname(item))) {
+  for (const file of listFiles(path.join(productRoot, root), (item: any) => (isScriptSource(item) || /\.(?:json|md|yml|yaml)$/.test(item)) || !path.extname(item))) {
     const relative: any = path.relative(productRoot, file).split(path.sep).join('/');
     const content: any = fs.readFileSync(file, 'utf8');
     const historicalDocumentation: any = relative.startsWith('docs/archive/');

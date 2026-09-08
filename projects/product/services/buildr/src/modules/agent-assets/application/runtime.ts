@@ -13,11 +13,20 @@ import {
 import { reconcileRuntimePlan } from '../infrastructure/runtime/runtime-reconciler.ts';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../../infrastructure/contracts/public-json.ts';
 
-export function registerDomainsRuntime(runtime: any): any  {
-  const assertNoUnknownOptions = (...args: any[]) => runtime.assertNoUnknownOptions(...args);
-  const isValidAssetId = (...args: any[]) => runtime.isValidAssetId(...args);
-  const hasFlag = (...args: any[]) => runtime.hasFlag(...args);
-  const existsDirectory = (...args: any[]) => runtime.existsDirectory(...args);
+export interface RuntimeApplicationDependencies {
+  assertNoUnknownOptions: typeof import('../../../infrastructure/cli-arguments.ts').assertNoUnknownOptions;
+  isValidAssetId: ReturnType<typeof import('./package-maintenance/package-assets.ts').registerAgentAssetsPackageAssets>['isValidAssetId'];
+  hasFlag: typeof import('../../../infrastructure/cli-arguments.ts').hasFlag;
+  existsDirectory: (file: string) => boolean;
+}
+
+export function registerDomainsRuntime(dependencies: RuntimeApplicationDependencies) {
+  const {
+    assertNoUnknownOptions,
+    isValidAssetId,
+    hasFlag,
+    existsDirectory,
+  } = dependencies;
 
   function assertName(value: any, label: any): any  {
     if (!isValidAssetId(value)) {

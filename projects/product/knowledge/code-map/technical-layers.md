@@ -18,6 +18,7 @@ src/modules/workspace/
 │   ├── workspace-operations.ts          initializeWorkspace：初始化编排
 │   ├── project-application.ts           listProjects / createProjectAsset
 │   ├── service-application.ts           listServices / createServiceAsset
+│   ├── registry-maintenance.ts          convergeRegistryManifests：登记发现、服务迁移与修复
 │   └── diagnostics/                     本模块负责的登记和来源诊断
 ├── persistence/                         数据访问（Persistence）
 │   ├── workspace-manifest-repository.ts 工作空间声明读写
@@ -101,7 +102,10 @@ src/modules/agent-assets/
 │   ├── http-query.ts                    资产列表读取
 │   ├── package-maintenance.ts           内置资产同步、生命周期与资源打包
 │   └── package-maintenance/             上述用例的专属规则与技术协作
+│       ├── package-assets.ts            模板补齐、同步路径
+│       └── builtin-receipts.ts          snapshot / resolveState：资产比较与回执
 ├── persistence/                         资产声明、定义、能力图的存取
+│   └── package-manifest-repository.ts   readPackageManifest / parseManifestFileEntry
 ├── infrastructure/                      版本探测、来源读取、运行环境适配
 │   └── runtime/                         原生配置生成、所有权、投射与检查
 │       ├── adapter-contract.ts          适配描述、注册、选择与声明性计划
@@ -222,3 +226,25 @@ OpenSpec 的资产依赖只通过 `AGENT_ASSETS_OPENSPEC_SUPPORT` 获取：`asse
 - `pages/`：路由级组合。
 
 共享 transport 位于 `src/api/client.ts`，生成 DTO 位于 `build/generated/`；`App.tsx` 只注册路由，`AppLayout.tsx` 只组合应用壳和跨页提示。
+
+## 诊断与安装的结果边界
+
+```text
+src/modules/diagnostics/
+├── module.ts                           显式传入诊断依赖并贡献命令入口
+├── application/
+│   ├── doctor-application.ts            doctor(DoctorInput)：返回完整结果
+│   ├── diagnostics.ts                  各诊断协作者装配
+│   └── result-model.ts                 发现项、健康与修复计划
+└── interfaces/cli/
+    ├── doctor.ts                       runDoctorCommand / writeDoctorResult
+    └── product-installation-report.ts  安装身份的人类可读输出
+
+src/modules/installation/
+├── application/
+│   ├── product-installation-status.ts  installationStatus(options)：查询结果
+│   └── cli-update.ts                   updateCheck / updateBuildr：计划与执行结果
+└── interfaces/cli/installation.ts       参数校验、JSON、人类输出与退出码
+```
+
+资产装配入口（Composition）逐项注入 `CommandsDependencies`、`SkillsDependencies`、`ComponentsDependencies` 等局部类型，只公开调用方需要的函数。私有校验、事务内辅助方法和旧解析器不成为共享运行时（Runtime）属性。

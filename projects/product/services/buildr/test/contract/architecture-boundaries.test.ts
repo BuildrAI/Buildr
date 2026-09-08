@@ -1,3 +1,4 @@
+import { isScriptSource, platformNamespaceImports } from '../verification/cli/source-imports.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -33,21 +34,24 @@ test('package verification 使用稳定 registry 且不恢复共享 smoke runner
   }
 });
 
-test('Product platform namespace 只允许 composition root 聚合', () => {
-  const sourceRoot: any = path.join(productRoot, 'src');
-  const violations: any[] = [];
-  const visit: any = (directory: any) => {
+function scanPlatformNamespaceImports(sourceRoot: string): string[] {
+  const files: { path: string; source: string }[] = [];
+  const visit = (directory: string) => {
     for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-      const file: any = path.join(directory, entry.name);
+      const file = path.join(directory, entry.name);
       if (entry.isDirectory()) visit(file);
-      else if (entry.name.endsWith('.mjs') && /import \* as platform/.test(fs.readFileSync(file, 'utf8'))) {
-        const relative: any = path.relative(productRoot, file).split(path.sep).join('/');
-        if (relative !== 'src/bootstrap/runtime.ts') violations.push(relative);
+      else if (isScriptSource(entry.name)) {
+        files.push({ path: path.relative(sourceRoot, file).split(path.sep).join('/'), source: fs.readFileSync(file, 'utf8') });
       }
     }
   };
   visit(sourceRoot);
-  assert.deepEqual(violations, []);
+  return platformNamespaceImports(files);
+}
+
+test('Product platform namespace 只允许 composition root 聚合', () => {
+  // A positive control also proves the real production tree was scanned.
+  assert.deepEqual(scanPlatformNamespaceImports(path.join(productRoot, 'src')), ['bootstrap/runtime.ts']);
 });
 
 test('Windows 平台身份、Node 脚本启动与 runtime mode 使用共享 owner', () => {
@@ -179,4 +183,30 @@ test('Workspace、Project 与 Service CLI 只保留独立协议适配', () => {
   assert.match(projectRepository, /function writeProjectsRegistry/);
   assert.match(serviceRepository, /function parseServicesManifestYaml/);
   assert.match(serviceRepository, /function writeServicesManifest/);
+});
+
+test('资产应用依赖具名且内部辅助方法不再通过共享对象暴露', () => {
+  const module = fs.readFileSync(path.join(productRoot, 'src/modules/agent-assets/module.ts'), 'utf8');
+  assert.doesNotMatch(module, /Object\.(?:assign|create)\(|methodPort\(/);
+  for (const name of ['commands', 'components', 'rules', 'skills', 'runtime', 'runtime-projection', 'package-maintenance', 'package-maintenance/package-assets', 'http-query']) {
+    const source = fs.readFileSync(path.join(productRoot, `src/modules/agent-assets/application/${name}.ts`), 'utf8');
+    assert.doesNotMatch(source, /export function register\w+\(runtime:\s*any/);
+    const exposed = source.slice(source.lastIndexOf('return Object.freeze({'));
+    assert.doesNotMatch(exposed, /commandsAddUnsafe|commandsRemoveUnsafe|skillsAddUnsafe|skillsRemoveUnsafe|builtinUninstallUnsafe|builtinRestoreUnsafe|repairProjectBaseline|normalizeServiceEntry/);
+  }
+  const assets = fs.readFileSync(path.join(productRoot, 'src/modules/agent-assets/application/package-maintenance/package-assets.ts'), 'utf8');
+  assert.doesNotMatch(assets, /readPackageComponentsManifest|readPackageBuiltinsManifest|createProjectEntity|createServiceEntity|writeServiceRegistry/);
+});
+
+test('Doctor与安装应用只返回结果，命令参数、打印和退出码归属接口', () => {
+  for (const relative of [
+    'diagnostics/application/doctor-application.ts',
+    'diagnostics/application/diagnostics.ts',
+    'diagnostics/application/capability-diagnostics.ts',
+    'installation/application/product-installation-status.ts',
+    'installation/application/cli-update.ts',
+  ]) {
+    const source = fs.readFileSync(path.join(productRoot, 'src/modules', relative), 'utf8');
+    assert.doesNotMatch(source, /process\.(?:stdout|stderr|exitCode)|console\.(?:log|error)|optionValue\(|hasFlag\(|assertNoUnknownOptions\(/, relative);
+  }
 });

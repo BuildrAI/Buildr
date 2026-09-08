@@ -12,23 +12,38 @@ import { selectedProviderImpacts } from '../persistence/capability-graph-reposit
 import { sameFilesystemPath } from '../../../infrastructure/filesystem/filesystem-path-identity.ts';
 import { createSkillRepository } from '../persistence/skill-repository.ts';
 
-export function registerDomainsSkills(runtime: any): any  {
-  const isPlainObject = (...args: any[]) => runtime.isPlainObject(...args);
-  const componentOwnerForMember = (...args: any[]) => runtime.componentOwnerForMember(...args);
-  const readPackageManifest = (...args: any[]) => runtime.readPackageManifest(...args);
-  const isValidAssetId = (...args: any[]) => runtime.isValidAssetId(...args);
-  const assertName = (...args: any[]) => runtime.assertName(...args);
-  const quoteYaml = (...args: any[]) => runtime.quoteYaml(...args);
-  const ensureDirectory = (...args: any[]) => runtime.ensureDirectory(...args);
-  const atomicWriteFile = (...args: any[]) => runtime.atomicWriteFile(...args);
-  const parseYamlDocument = (...args: any[]) => runtime.parseYamlDocument(...args);
-  const assertSafeAssetTarget = (...args: any[]) => runtime.assertSafeAssetTarget(...args);
-  const withWorkspaceMutation = (...args: any[]) => runtime.withWorkspaceMutation(...args);
-  const productRoot = (...args: any[]) => runtime.productRoot(...args);
-  const toPosixRelative = (...args: any[]) => runtime.toPosixRelative(...args);
-  const existsDirectory = (...args: any[]) => runtime.existsDirectory(...args);
-  const existsFile = (...args: any[]) => runtime.existsFile(...args);
-  const assertInitializedBuildrWorkspace = (...args: any[]) => runtime.assertInitializedBuildrWorkspace(...args);
+export interface SkillsDependencies {
+  isPlainObject: ReturnType<typeof import('./commands.ts').registerDomainsCommands>['isPlainObject'];
+  componentOwnerForMember: ReturnType<typeof import('./components.ts').registerDomainsComponents>['componentOwnerForMember'];
+  isValidAssetId: ReturnType<typeof import('./package-maintenance/package-assets.ts').registerAgentAssetsPackageAssets>['isValidAssetId'];
+  assertName: ReturnType<typeof import('./runtime.ts').registerDomainsRuntime>['assertName'];
+  ensureDirectory: (...args: any[]) => any;
+  atomicWriteFile: typeof import('../../../infrastructure/filesystem/atomic-files.ts').atomicWriteFile;
+  parseYamlDocument: typeof import('../../../infrastructure/filesystem/yaml.ts').parseYamlDocument;
+  assertSafeAssetTarget: (targetRoot: string, target: string, containerRoot: string, label?: string) => string;
+  withWorkspaceMutation: (...args: any[]) => any;
+  toPosixRelative: (...args: any[]) => any;
+  existsDirectory: (file: string) => boolean;
+  existsFile: (file: string) => boolean;
+  assertInitializedBuildrWorkspace: typeof import('../../../infrastructure/filesystem/workspace-identity.ts').assertInitializedBuildrWorkspace;
+}
+
+export function registerDomainsSkills(dependencies: SkillsDependencies) {
+  const {
+    isPlainObject,
+    componentOwnerForMember,
+    isValidAssetId,
+    assertName,
+    ensureDirectory,
+    atomicWriteFile,
+    parseYamlDocument,
+    assertSafeAssetTarget,
+    withWorkspaceMutation,
+    toPosixRelative,
+    existsDirectory,
+    existsFile,
+    assertInitializedBuildrWorkspace,
+  } = dependencies;
   const {
     manifestDocumentFor, attachManifestDocument, readSkillManifestDocument, readSkillManifest,
     readSkillManifestSchemaVersion, renderSkillsManifestYaml, renderProjectCapabilitiesYaml,
@@ -37,7 +52,6 @@ export function registerDomainsSkills(runtime: any): any  {
     atomicWriteFile, existsFile, parseYamlDocument, toPosixRelative,
     validateSkillManifestEntries: (...args) => validateSkillManifestEntries(...args),
   });
-
 
   function validateSkillManifestEntries(skills: any, manifestPath: any): any  {
     const ids: any = new Set();
@@ -164,36 +178,6 @@ export function registerDomainsSkills(runtime: any): any  {
     }
   }
 
-  function resolvePackageSkillSourceRef(sourceRef: any, options: any = {}): any  {
-    const parsed = parseSkillSourceRef(sourceRef);
-    const manifest = readPackageManifest();
-    const source = manifest.skillSources.find((entry: any) => entry.id === parsed.id);
-    if (!source) {
-      throw new Error(`Package Skill source not found: ${sourceRef}`);
-    }
-    if (!source.path || typeof source.path !== 'string') {
-      throw new Error(`Package Skill source must include path: ${source.id}`);
-    }
-    if (!Array.isArray(source.runtimes) || source.runtimes.length === 0) {
-      throw new Error(`Package Skill source must declare at least one runtime: ${source.id}`);
-    }
-    if (options.runtime && !source.runtimes.includes(options.runtime)) {
-      throw new Error(`Package Skill source ${sourceRef} does not support runtime: ${options.runtime}`);
-    }
-    if (path.isAbsolute(source.path) || source.path.startsWith('..')) {
-      throw new Error(`Package Skill source path must stay inside product root: ${source.path}`);
-    }
-    if (source.runtimePath !== undefined) {
-      normalizeRelativePathForBuildr(source.runtimePath, `Package Skill source runtimePath must stay relative: ${source.runtimePath}`);
-    }
-    const sourceDir = path.resolve(productRoot(), source.path);
-    const skillFile = path.join(sourceDir, 'SKILL.md');
-    if (!existsFile(skillFile)) {
-      throw new Error(`Package Skill source SKILL.md does not exist: ${source.path}/SKILL.md`);
-    }
-    const metadata = parseSkillFrontmatter(skillFile);
-    return { ...parsed, entry: source, sourceDir, skillFile, metadata };
-  }
 
   function scopeRootForSkills(targetRoot: any, scope: any): any  {
     if (scope === undefined || scope === null || scope === '.' || scope === 'workspace') return { scope: '.', scopeRoot: targetRoot, deprecatedScope: scope === '.' };
@@ -207,7 +191,6 @@ export function registerDomainsSkills(runtime: any): any  {
     }
     throw new Error(`Unsupported skills scope. Skills source authority is workspace: ${scope}`);
   }
-
 
   function parseSkillFrontmatter(skillFile: any): any  {
     const content = fs.readFileSync(skillFile, 'utf8');
@@ -567,5 +550,23 @@ export function registerDomainsSkills(runtime: any): any  {
     return result;
   }
 
-  return Object.freeze({ manifestDocumentFor, attachManifestDocument, readSkillManifestDocument, readSkillManifest, readSkillManifestSchemaVersion, renderSkillsManifestYaml, renderProjectCapabilitiesYaml, validateSkillManifestEntries, isManifestSourceLabel, validateSkillUrlObject, validateResolvedSkillSource, normalizeRelativePathForBuildr, parseSkillSourceRef, assertHttpUrl, resolvePackageSkillSourceRef, scopeRootForSkills, capabilityContextForScope, skillsManifestPath, readSkillsManifestForWrite, writeSkillsManifest, parseSkillFrontmatter, supportedSkillSourceEntries, inspectSkillSource, samePath, copySupportedSkillSource, skillsAddUnsafe, skillsAdd, safeSkillSourceDir, skillsRemoveUnsafe, skillsRemove, skillsBindUnsafe, skillsBind, skillsUnbind });
+  return Object.freeze({
+    manifestDocumentFor,
+    readSkillManifest,
+    readSkillManifestSchemaVersion,
+    renderSkillsManifestYaml,
+    renderProjectCapabilitiesYaml,
+    validateSkillManifestEntries,
+    isManifestSourceLabel,
+    normalizeRelativePathForBuildr,
+    parseSkillSourceRef,
+    skillsManifestPath,
+    readSkillsManifestForWrite,
+    writeSkillsManifest,
+    parseSkillFrontmatter,
+    skillsAdd,
+    skillsRemove,
+    skillsBind,
+    skillsUnbind,
+  });
 }
