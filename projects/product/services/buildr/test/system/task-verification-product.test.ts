@@ -5,8 +5,8 @@ import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 import test, { after } from 'node:test';
 import YAML from 'yaml';
-import { createRuntime } from '../../src/bootstrap/runtime.ts';
-import { taskVerificationCommand } from '../../src/task/interfaces/cli/task-verification.ts';
+import { createRuntime } from '../helpers/runtime-harness.ts';
+import { taskVerificationCommand } from '../../src/modules/task/interfaces/cli/task-verification.ts';
 import { cleanupLocalTaskLifecycleSystemContext, copyTaskLifecycleWorkspace } from '../helpers/task-lifecycle-system-context.ts';
 
 const PRODUCT_ROOT = path.resolve(import.meta.dirname, '../..'); const BUILDR = path.join(PRODUCT_ROOT, 'bin', 'buildr.mjs');

@@ -9,7 +9,7 @@ description: 用户要求采用内部流程、调整工作方式、修改默认 
 
 ## 1. 建立影响基线
 
-- 解析 Buildr workspace、实际 scope 和当前 Agent，运行 `buildr doctor --agent <agent> --target <workspace> --json`。
+- 解析 Buildr workspace、实际 scope 和当前 Agent，复用同一现场的 Doctor 诊断；缺失时运行 `buildr doctor --agent <agent> --target <workspace> --json`。需要检查依赖、绑定或跨技能影响且当前结果未包含完整能力图时，再使用 `--detail full`。
 - 读取目标 Skill 源、`skills/manifest.yml`、相关 contracts、当前 bindings 和 doctor `capabilities` graph；同时区分 Agent runtime 基于 description 的入口发现与 Skill 加载后的 dependency resolution。routing evidence 存在时，只在对应产品入口已经命中的前提下检查其内部用户意图覆盖。
 - 列出目标 Skill 提供的 capabilities、直接/递归 consumers、required/optional mode、当前 selected provider 和修改后的 blocked/degraded 风险。用户无需知道这些资产名称。
 - 修改 Buildr builtin 时不得直接编辑用户 workspace 中的受管副本；组织差异使用组织自有 provider，Buildr 产品行为变化走产品 change。

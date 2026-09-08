@@ -4,16 +4,16 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import YAML from 'yaml';
-import { PACKAGE_VERIFIERS, selectPackageVerifiers } from '../../src/agent-assets/application/package-maintenance/verification-registry.ts';
-import { createVerificationPlan } from '../../test/verification/planner.ts';
-import { CANDIDATE_CI_SHARDS, CANDIDATE_CI_HOST_NODE_TUPLES, VERIFICATION_DAILY_CORE_EXCLUSIONS, VERIFICATION_EXECUTION_PROFILES, verificationSteps } from '../../test/verification/registry.ts';
+import { PACKAGE_VERIFIERS, selectPackageVerifiers } from '../../tools/verification/package-check/verification-registry.ts';
+import { createVerificationPlan } from '../verification/planner.ts';
+import { CANDIDATE_CI_SHARDS, CANDIDATE_CI_HOST_NODE_TUPLES, VERIFICATION_DAILY_CORE_EXCLUSIONS, VERIFICATION_EXECUTION_PROFILES, verificationSteps } from '../verification/registry.ts';
 import {
   VERIFICATION_DELEGATED_INPUTS,
   VERIFICATION_FULL_SCOPE_INPUTS,
   VERIFICATION_STEP_OWNERSHIP,
   validateVerificationStepOwnership,
-} from '../../test/verification/ownership.ts';
-import { workspaceSuites } from '../../test/verification/workspace/suites.ts';
+} from '../verification/ownership.ts';
+import { workspaceSuites } from '../verification/workspace/suites.ts';
 
 const productRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const read: any = (relative: any) => fs.readFileSync(path.join(productRoot, relative), 'utf8');
@@ -130,7 +130,7 @@ test('npm Launcher candidate is registered without a platform distribution depen
   const direct: any = createVerificationPlan({ stepIds: ['npm-launcher-candidate'] });
   assert.deepEqual(direct.steps.map((step: any) => step.id), ['npm-launcher-candidate']);
   assert.equal(direct.steps[0].testing.environment.footprints.includes('network'), false);
-  assert.ok(direct.steps[0].inputs.includes('src/system/installation/**'));
+  assert.ok(direct.steps[0].inputs.includes('src/modules/installation/**'));
 });
 
 test('remote text owner includes product re-entry and payload entry boundaries', () => {

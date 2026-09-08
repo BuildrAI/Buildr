@@ -7,8 +7,8 @@ import YAML from 'yaml';
 import {
   parseCapabilityContract,
   parseSkillsManifestDocument,
-} from '../../src/agent-assets/infrastructure/runtime/skills/manifests.ts';
-import { resolveCrossProjectCapabilityContext, resolveSkillCapabilityGraph } from '../../src/agent-assets/infrastructure/runtime/skills/capabilities.ts';
+} from '../../src/modules/agent-assets/persistence/skill-manifest.ts';
+import { resolveCrossProjectCapabilityContext, resolveSkillCapabilityGraph } from '../../src/modules/agent-assets/persistence/capability-graph-repository.ts';
 
 const sections: any[] = ['Purpose', 'Consumer Obligations', 'Minimum Guarantees', 'Effects and Authorization', 'Result Evidence', 'Decision Points', 'Allowed Variations'];
 

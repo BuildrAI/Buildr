@@ -5,8 +5,8 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
-import { createRuntime } from '../../src/bootstrap/runtime.ts';
-import { createAgentAssetsCliContributions } from '../../src/agent-assets/interfaces/cli/agent-assets.ts';
+import { createRuntime } from '../helpers/runtime-harness.ts';
+import { createAgentAssetsCliContributions } from '../../src/modules/agent-assets/interfaces/cli/agent-assets.ts';
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.ts';
 
 function git(root: any, args: any): any  {
@@ -41,15 +41,9 @@ test('候选 Product checkout 只能投射自身任务验证 Workspace', (t: any
   assert.doesNotThrow(() => runtime.assertRuntimeProjectionTarget(candidate));
   let initializationCalls: any = 0;
   runtime.assertInitializedBuildrWorkspace = () => { initializationCalls += 1; };
-  let renderCalls: any = 0;
-  runtime.renderRuntime = (_agent: any, _args: any, options: any) => {
-    renderCalls += 1;
-    assert.deepEqual(options, { productSkill: true });
-    return { targetRoot: candidate, files: [], rulesActions: [], warnings: [] };
-  };
   runtime.syncRuntime('codex', ['--target', candidate]);
   assert.equal(initializationCalls, 0, 'candidate source sync must stop before workspace initialization or later mutation preparation');
-  assert.equal(renderCalls, 1);
+  assert.equal(fs.existsSync(path.join(candidate, '.agents', 'skills', 'buildr', 'SKILL.md')), true, 'projection-only sync renders the product Skill in the candidate itself');
   const compatibility: any = runtime.assertRuntimeSyncTarget(candidate, 'codex');
   assert.equal(compatibility.disposition, 'projection-only');
   assert.equal(sameFilesystemPath(compatibility.source.checkoutRoot, candidate), true);

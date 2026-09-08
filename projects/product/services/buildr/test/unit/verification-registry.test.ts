@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { validateVerificationRegistry } from '../../test/verification/planner.ts';
-import { verificationSteps } from '../../test/verification/registry.ts';
+import { validateVerificationRegistry } from '../verification/planner.ts';
+import { verificationSteps } from '../verification/registry.ts';
 
 const unit: any = verificationSteps.find((step: any) => step.id === 'unit');
 

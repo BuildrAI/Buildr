@@ -7,36 +7,40 @@
 ## Requirements
 
 ### Requirement: Agent Assets 形成独立一级模块
-Buildr Service MUST 将 Rule、Skill、Command、Component、Builtin、Capability Binding、Agent runtime adapter 与 runtime projection 的生产实现归入 `src/agent-assets/` 一级模块，并 MUST 按真实技术职责组织其 Application、Infrastructure 与 Interfaces。
+Buildr MUST 将 Rule、Skill、Command、Component、Builtin/package maintenance 与 Agent runtime projection 的产品实现收敛到 `src/modules/agent-assets/`，并在真实需要时使用 Application、Domain、Persistence、Infrastructure 与 Interface 分层。Manifest 读写、能力图与 binding 规则、用例编排、外部执行和可重建投射 MUST具有可定位的独立 owner；旧 `src/agent-assets/` MUST不再存在实现或转发。
 
 #### Scenario: 查看生产源码归属
-- **WHEN** 维护者检查 Buildr Service 的 Agent Assets 实现
-- **THEN** Rule、Skill、Command、Component、Builtin、Capability Binding 和 runtime projection 的业务编排 MUST 可从 `src/agent-assets/` 定位
-- **AND** 已迁移职责 MUST NOT 在通用 `src/application/domains` 或全局 `src/infrastructure/runtime` 保留第二套生产实现
+- **WHEN** 维护者扫描 Agent Assets 生产源码
+- **THEN** 所有业务实现 MUST位于 `src/modules/agent-assets/`
+- **AND** 参数解析与输出 MUST位于 Interfaces，业务规则 MUST位于 Domain/Application，Manifest/receipt 映射 MUST位于 Persistence，adapter/render/projection MUST位于 Infrastructure
 
 #### Scenario: 保留真实复杂子目录
-- **WHEN** package maintenance 或 runtime Skill projection 包含多个独立私有协作者
-- **THEN** Agent Assets 模块 MUST 允许在对应技术层中保留专属子目录
-- **AND** 模块 MUST NOT 为视觉对称创建没有真实职责的空 Domain、Persistence 或 Interfaces 层
+- **WHEN** runtime adapter 或 package maintenance 含多个独立维护协作者
+- **THEN** 实现 MAY保留真实能力子目录
+- **AND** MUST不为单个小函数、同一用例的镜像类型或纯转发创建目录
 
 ### Requirement: Agent Assets 模块保持事实 authority 分离
-Agent Assets 模块 MUST 保持 Workspace 源资产、Component lifecycle、Builtin source、Capability Binding 与 Agent runtime projection 的既有 authority，不得因代码进入同一模块而合并 writer 或把投射结果提升为源资产。
+Agent Assets MUST区分 Workspace 源资产 Manifest/文件、业务 capability binding 与依赖解析、Component source transaction、Agent runtime 派生投射及其 receipt。Application MUST决定用例顺序和失败语义；Persistence MUST拥有 Manifest/receipt 解析映射与条件写入；Domain MUST拥有 capability graph、binding、成员关系与 ownership 规则；Infrastructure MUST只执行 filesystem、进程、adapter、render 和 projection 技术动作。
 
 #### Scenario: 渲染 Agent runtime
-- **WHEN** Buildr 从 Workspace Rules、Skills、Components 和 capability context 生成 Agent runtime
-- **THEN** Workspace manifests 与资产内容 MUST 继续作为源资产 authority
-- **AND** runtime receipt 与 Agent 原生目标文件 MUST 继续作为可重建投射结果
-- **AND** projection MUST NOT 取得源资产 writer authority
+- **WHEN** Agent Assets 渲染或同步 runtime
+- **THEN** Application MUST先解析源资产和能力图，再调用 adapter/projection Infrastructure
+- **AND** runtime receipt MUST不被解释为源资产 authority
+- **AND** capability graph MUST不位于 `infrastructure/runtime/skills` 或其他投射目录
 
 #### Scenario: 维护 Commands
-- **WHEN** Agent Assets 处理 Command definitions 或 Project Command requirements
-- **THEN** Commands MUST 继续只声明和检查外部工具
-- **AND** Agent Assets MUST NOT 因模块迁移安装、升级或保存外部工具凭证
+- **WHEN** 用户新增、删除或检查 Command definition/requirement
+- **THEN** Interface MUST只解析公开参数并调用 Command Application
+- **AND** Application、Domain 与 Persistence MUST分别拥有策略、规则和 Manifest 写入
+- **AND** Commands MUST继续只声明和检查外部工具
+- **AND** Agent Assets MUST NOT安装、升级或保存外部工具凭证
 
 #### Scenario: 执行 Component lifecycle
-- **WHEN** Buildr 安装、更新或卸载 Component
-- **THEN** Component MUST 继续以集合级预检、唯一 ownership 和原子 source transaction 管理全部成员
-- **AND** runtime reconcile MUST 继续发生在 source transaction 成功之后
+- **WHEN** 用户安装或卸载 Component
+- **THEN** Application MUST编排成员验证、source transaction 与 runtime reconcile
+- **AND** Component MUST继续以集合级预检、唯一 ownership 和原子 source transaction 管理全部成员
+- **AND** runtime reconcile MUST继续发生在 source transaction 成功之后
+- **AND** 已提交源资产、运行时投射及部分失败 effects MUST保持既有事实地位和错误语义
 
 ### Requirement: Bootstrap 显式安装 Agent Assets 模块
 Bootstrap MUST 只通过 `agent-assets/module.mjs` 或等价公开入口安装 Agent Assets 平台，并 MUST 保持既有 CLI、HTTP、diagnostic 与 lifecycle 组装行为。
@@ -88,3 +92,28 @@ Agent Assets 平台迁移 MUST 原子更新所有生产 imports、Application Pa
 - **WHEN** 结构验证扫描生产源码和直接消费者
 - **THEN** 已迁移 Agent Assets 文件的旧路径 MUST 不再被引用
 - **AND** 不得存在重复实现或新增循环依赖
+
+### Requirement: OpenSpec 必须消费窄且具名的资产支撑能力
+OpenSpec MUST 只取得自身实际需要的资产读取与校验方法，并通过明确类型和方法可用性检查组装；MUST NOT 将完整 `AGENT_ASSETS_INTERNAL` 注入 OpenSpec。该收窄 MUST 保持既有 OpenSpec 内容查询、严格验证、收敛、归档和错误行为。
+
+#### Scenario: 组装 OpenSpec
+- **WHEN** 创建 OpenSpec 模块
+- **THEN** 资产依赖 MUST 只提供 `assertName`、`componentDefinitionFile`、`readComponentDefinition`、`readComponentsManifestForWrite` 和 `runCommandsCheck`
+- **AND** 缺少所需方法 MUST 在装配时明确失败，不延迟为执行中未知方法错误
+
+### Requirement: 适配声明与运行时文件执行必须具有独立所有者
+Agent Assets MUST 区分适配声明、选择、声明性计划与运行时（Runtime）文件执行；执行器 MUST 单向消费适配声明，不形成循环依赖。文件路径校验、内容比较、写入、删除和既有恢复逻辑 MUST 归属同一明确执行者，不在声明文件保留重复实现或转发。
+
+#### Scenario: 只比较投射计划
+- **WHEN** 使用 `compareOnly` 比较当前文件与计划
+- **THEN** 执行器 MUST 保持既有发现项与冲突信息
+- **AND** MUST 不写入、删除或修改文件权限
+
+#### Scenario: 执行投射计划
+- **WHEN** 使用迁移后的执行器应用计划
+- **THEN** MUST 保持冲突写前拒绝、路径与符号链接检查、二进制内容和执行位，以及 `commitLast`、`removeLast` 的既有顺序
+- **AND** MUST 保持既有幂等结果、异常与恢复触发范围，不把局部恢复扩大为新的事务承诺
+
+#### Scenario: 旧回执迁移失败
+- **WHEN** 已触发现有旧回执迁移恢复机制，且执行中发生失败
+- **THEN** 执行器 MUST 恢复原文件和旧回执，并保留原错误与资源清理语义

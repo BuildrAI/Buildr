@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import YAML from 'yaml';
-import { taskVerificationRecoveryAction } from '../../src/task/interfaces/cli/task-verification.ts';
+import { taskVerificationRecoveryAction } from '../../src/modules/task/interfaces/cli/task-verification.ts';
 
 const root = path.resolve(import.meta.dirname, '../..');
 const read = (relative: string) => fs.readFileSync(path.join(root, relative), 'utf8');
@@ -16,7 +16,7 @@ test('task-verification v4 keeps Agent orchestration and minimal Applications', 
 });
 
 test('Task Verification CLI provenance diagnostic points at the retained Product bridge', () => {
-  const source = read('src/task/interfaces/cli/task-verification.ts');
+  const source = read('src/modules/task/interfaces/cli/task-verification.ts');
   assert.match(source, /workspace_store_writer_provenance_forbidden/u);
   assert.match(source, /projects['"], ['"]product['"], ['"]buildr/u);
   assert.match(source, /不要绕过provenance或重新运行已经完成的测试/u);

@@ -1,6 +1,8 @@
+import { type ProjectResponse } from '../../project/api/project-api';
+import { serviceApi } from '../api/service-api';
 import { useEffect, useState, type FormEvent } from 'react';
 import { Alert, Button, Form, Input, Modal, Select, Space } from 'antd';
-import { workspaceApi, type ProjectResponse } from '../../../api';
+
 import { SERVICE_TYPE_OPTIONS } from '../../../lib/labels';
 
 type ServiceEditPayload = ProjectResponse & { revision: string; service: NonNullable<ProjectResponse['service']> };
@@ -47,7 +49,7 @@ export function ServiceEditModal({ open, projectCode, serviceCode, onClose, onSa
     setSaveError('');
     void (async () => {
       try {
-        const data = await workspaceApi.service(projectCode, serviceCode) as ServiceEditPayload;
+        const data = await serviceApi.service(projectCode, serviceCode) as ServiceEditPayload;
         if (cancelled) return;
         setCurrent(data);
         setServiceType(data.service.type);
@@ -76,7 +78,7 @@ export function ServiceEditModal({ open, projectCode, serviceCode, onClose, onSa
     setSaving(true);
     setSaveError('');
     try {
-      const updated = await workspaceApi.updateService(projectCode, serviceCode, {
+      const updated = await serviceApi.updateService(projectCode, serviceCode, {
         revision: current.revision,
         name: nameInput.value,
         description: descriptionInput.value,

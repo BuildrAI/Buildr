@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import test from 'node:test';
 
-import { registerDomainsCommands } from '../../src/agent-assets/application/commands.ts';
+import { registerDomainsCommands } from '../../src/modules/agent-assets/application/commands.ts';
 
 function runtime(): any  {
   return {

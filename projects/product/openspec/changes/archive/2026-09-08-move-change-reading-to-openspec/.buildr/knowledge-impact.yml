@@ -1,0 +1,26 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: move-change-reading-to-openspec
+operation: reconcile
+treeIdentity: sha256-c37d2ab46c136f32660944fd062778423388834baa599f916dbf3c29ceb30bca
+impacts:
+  - type: brief
+    target: brief.md
+    reason: 说明已确认的读取职责与兼容边界
+    status: updated
+    sourceIdentities: [proposal.md, design.md]
+  - type: technical-architecture
+    target: knowledge/code-map/technical-layers.md
+    reason: 更新 OpenSpec 内容查询与任务组合的目录和调用链
+    status: updated
+    sourceIdentities: [services/buildr/src/modules/openspec/module.ts, services/buildr/src/modules/task/change/module.ts]
+  - type: technical-architecture
+    target: knowledge/code-map/modules.md
+    reason: 对齐模块入口职责
+    status: updated
+    sourceIdentities: [services/buildr/src/modules/openspec/module.ts, services/buildr/src/modules/task/change/module.ts]
+  - type: glossary
+    target: knowledge/glossary.md
+    reason: 现有变更和任务范围引用术语不变
+    status: aligned
+    sourceIdentities: [openspec/specs/change-asset-indexing/spec.md]
+unresolvedItems: []

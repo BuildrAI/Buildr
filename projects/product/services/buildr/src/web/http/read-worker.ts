@@ -1,17 +1,22 @@
 import { parentPort } from 'node:worker_threads';
 
-import { createRuntime } from '../../bootstrap/runtime.ts';
+import { createRuntime, runtimeProvide } from '../../bootstrap/runtime.ts';
+import {
+  PARENT_COORDINATION_APPLICATION,
+  TASK_REVIEW_APPLICATION,
+  TASK_VERIFICATION_APPLICATION,
+} from '../../modules/task/module.ts';
 
 const runtime = createRuntime();
-const operations: Readonly<Record<string, string>> = Object.freeze({
-  reviews: 'inspectTaskReview',
-  verification: 'inspectTaskVerificationView',
-  coordination: 'inspectParentCoordination',
+const operations: Readonly<Record<string, Readonly<{ capability: string; method: string }>>> = Object.freeze({
+  reviews: Object.freeze({ capability: TASK_REVIEW_APPLICATION, method: 'inspectTaskReview' }),
+  verification: Object.freeze({ capability: TASK_VERIFICATION_APPLICATION, method: 'inspectTaskVerificationView' }),
+  coordination: Object.freeze({ capability: PARENT_COORDINATION_APPLICATION, method: 'inspectParentCoordination' }),
 });
 
 function validMessage(message: any) {
-  const method = operations[message?.operation];
-  if (!method || typeof message?.targetRoot !== 'string' || typeof message?.taskId !== 'string') return false;
+  const operation = operations[message?.operation];
+  if (!operation || typeof message?.targetRoot !== 'string' || typeof message?.taskId !== 'string') return false;
   const allowed = new Set(['id', 'operation', 'targetRoot', 'taskId']);
   return Object.keys(message).every((field: any) => allowed.has(field));
 }
@@ -29,14 +34,15 @@ if (!parentPort) throw new Error('Buildr Web read Worker requires a parent port.
 const workerPort = parentPort;
 
 workerPort.on('message', (message: any) => {
-  const method = operations[message?.operation];
+  const operation = operations[message?.operation];
   if (!validMessage(message)) {
     workerPort.postMessage({ id: message?.id ?? null, ok: false, error: { code: 'local_app_read_input_invalid', status: 400, message: 'Buildr Web read Worker input invalid.' } });
     return;
   }
   try {
     let value;
-    value = (runtime as Record<string, any>)[method](message.targetRoot, message.taskId);
+    const application = runtimeProvide(runtime, operation.capability);
+    value = application[operation.method](message.targetRoot, message.taskId);
     workerPort.postMessage({ id: message.id, ok: true, value });
   } catch (error: any) {
     workerPort.postMessage({ id: message.id, ok: false, error: serializeError(error) });

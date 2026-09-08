@@ -1,5 +1,5 @@
-import type { ParentCompletion } from '../api/generated/task-dto';
-import type { CoordinationResponse } from '../../../api/generated/task-professional-http-dto';
+import type { ParentCompletion } from '../../../../build/generated/task-dto';
+import type { CoordinationResponse } from '../../../../build/generated/task-professional-http-dto';
 
 export type ParentCoordinationResult = Partial<CoordinationResponse>;
 

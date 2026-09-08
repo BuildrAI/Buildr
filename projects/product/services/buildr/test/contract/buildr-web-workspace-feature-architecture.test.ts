@@ -21,7 +21,9 @@ test('Workspace、Project与Service前端保持独立Feature并共享唯一Works
     'features/service/components/ServiceEditModal.tsx',
     'features/project-daily-progress/components/DailyProgressPanel.tsx',
     'lib/useMarkdownDocumentViewer.ts',
-    'api/workspace.ts',
+    'features/workspace/api/workspace-api.ts',
+    'features/project/api/project-api.ts',
+    'features/service/api/service-api.ts',
   ];
   for (const relative of expected) assert.equal(fs.existsSync(path.join(webSource, relative)), true, `missing ${relative}`);
 
@@ -49,7 +51,7 @@ test('领域Feature不形成相互反向依赖', () => {
       for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
         const file = path.join(directory, entry.name);
         if (entry.isDirectory()) visit(file);
-        else if (/\.tsx?$/.test(entry.name)) files.push(file);
+        else if (/\.tsx?$/.test(entry.name) && !file.includes('/api/')) files.push(file);
       }
     };
     visit(root);
@@ -72,8 +74,8 @@ test('Task Feature复用Workspace Client与公共API类型', () => {
   const combined = taskFiles.map(source).join('\n');
   assert.doesNotMatch(combined, /\bapi\s*\(/);
   assert.match(combined, /workspaceApi\.read/);
-  assert.match(combined, /workspaceApi\.listProjects/);
-  assert.match(combined, /workspaceApi\.services/);
-  assert.match(combined, /workspaceApi\.projectDocument/);
+  assert.match(combined, /projectApi\.listProjects/);
+  assert.match(combined, /serviceApi\.services/);
+  assert.match(combined, /projectApi\.projectDocument/);
   assert.doesNotMatch(combined, /type ApiFailure|type WorkspacePayload|type ProjectDocument/);
 });

@@ -16,34 +16,34 @@ export const HTTP_CONTRACT_FRESH_BUILD_SUPPORT: any = Object.freeze([
 ]);
 
 export const HTTP_CONTRACT_FRESH_BUILD_FAMILIES: any = Object.freeze([
-  family('task-record', 'tools/contracts/task-dto.ts', [
-    'src/task/interfaces/http/task-http-schema.ts',
+  family('task-record', 'tools/codegen/contracts/task-dto.ts', [
+    'src/modules/task/interfaces/http/task-http-schema.ts',
   ], [
-    ['buildr', 'src/task/application/generated/task-dto.ts'],
-    ['buildr-web', 'src/features/task/api/generated/task-dto.ts'],
+    ['buildr', 'build/generated/task-dto.ts'],
+    ['buildr-web', 'build/generated/task-dto.ts'],
   ]),
-  family('task-professional', 'tools/contracts/task-professional-dto.ts', [
-    'src/task/interfaces/http/task-professional-http-contracts.ts',
+  family('task-professional', 'tools/codegen/contracts/task-professional-dto.ts', [
+    'src/modules/task/interfaces/http/task-professional-http-contracts.ts',
   ], [
-    ['buildr', 'src/task/interfaces/http/generated/task-professional-http-dto.ts'],
-    ['buildr-web', 'src/api/generated/task-professional-http-dto.ts'],
+    ['buildr', 'build/generated/task-professional-http-dto.ts'],
+    ['buildr-web', 'build/generated/task-professional-http-dto.ts'],
   ]),
-  family('workspace-agent-assets', 'tools/contracts/workspace-agent-assets-dto.ts', [
-    'src/workspace/interfaces/http/workspace-http-contracts.ts',
-    'src/agent-assets/interfaces/http/agent-assets-http-contracts.ts',
+  family('workspace-agent-assets', 'tools/codegen/contracts/workspace-agent-assets-dto.ts', [
+    'src/modules/workspace/interfaces/http/workspace-http-contracts.ts',
+    'src/modules/agent-assets/interfaces/http/agent-assets-http-contracts.ts',
   ], [
-    ['buildr', 'src/workspace/interfaces/http/generated/workspace-http-dto.ts'],
-    ['buildr-web', 'src/api/generated/workspace-http-dto.ts'],
-    ['buildr', 'src/agent-assets/interfaces/http/generated/agent-assets-http-dto.ts'],
-    ['buildr-web', 'src/api/generated/agent-assets-http-dto.ts'],
+    ['buildr', 'build/generated/workspace-http-dto.ts'],
+    ['buildr-web', 'build/generated/workspace-http-dto.ts'],
+    ['buildr', 'build/generated/agent-assets-http-dto.ts'],
+    ['buildr-web', 'build/generated/agent-assets-http-dto.ts'],
   ]),
-  family('runtime-system', 'tools/contracts/runtime-system-dto.ts', [
+  family('runtime-system', 'tools/codegen/contracts/runtime-system-dto.ts', [
     'src/web/http/buildr-web-http-contracts.ts',
-    'src/system/installation/interfaces/http/release-awareness-http-contracts.ts',
-    'src/system/publication/interfaces/http/publication-http-contracts.ts',
+    'src/modules/installation/interfaces/http/release-awareness-http-contracts.ts',
+    'src/modules/publication/interfaces/http/publication-http-contracts.ts',
   ], [
-    ['buildr', 'src/web/http/generated/runtime-system-http-dto.ts'],
-    ['buildr-web', 'src/api/generated/runtime-system-http-dto.ts'],
+    ['buildr', 'build/generated/runtime-system-http-dto.ts'],
+    ['buildr-web', 'build/generated/runtime-system-http-dto.ts'],
   ]),
 ]);
 

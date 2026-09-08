@@ -17,7 +17,7 @@ test('TypeScript execution foundation is strict, no-emit, and development-only',
   assert.equal(metadata.dependencies['@types/node'], undefined);
   assert.equal(lock.packages['node_modules/typescript'].version, '7.0.2');
   assert.equal(lock.packages['node_modules/@types/node'].version, '24.13.3');
-  assert.deepEqual(config.include, ['src/**/*.ts', 'tools/**/*.ts', 'package/launchers/**/*.ts']);
+  assert.deepEqual(config.include, ['src/**/*.ts', 'tools/**/*.ts']);
   const testConfig: any = JSON.parse(read('tsconfig.test.json'));
   assert.deepEqual(testConfig.include, ['test/**/*.ts']);
   assert.equal(testConfig.compilerOptions.strict, false);
@@ -58,8 +58,6 @@ test('source-tree JavaScript is limited to public facades and compatibility fixt
   });
   assert.deepEqual(scan('.').sort(), [
     'bin/buildr.mjs',
-    'package/launchers/manage.mjs',
-    'test-context.mjs',
     'test/fixtures/node-test-context/host-failure.fixture.mjs',
     'test/fixtures/node-test-context/host-first.fixture.mjs',
     'test/fixtures/node-test-context/host-second.fixture.mjs',

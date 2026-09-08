@@ -20,7 +20,7 @@ test('checkout Test Context facade runs for JavaScript and strict external TypeS
 test('generated Test Context projection is current and contains no raw TypeScript runtime dependency', () => {
   const check: any = spawnSync(node, [path.join(serviceRoot, 'tools/testing/test-context-build.ts'), 'check'], { cwd: serviceRoot, encoding: 'utf8' });
   assert.equal(check.status, 0, `${check.stdout}\n${check.stderr}`);
-  const generatedRoot: any = path.join(serviceRoot, 'package/targets/test-context');
+  const generatedRoot: any = path.join(serviceRoot, 'build/test-context');
   const files: any = fs.readdirSync(generatedRoot).sort();
   assert.equal(files.some((file: any) => file.endsWith('.ts') && !file.endsWith('.d.ts')), false);
   for (const file of files.filter((candidate: any) => candidate.endsWith('.js'))) {

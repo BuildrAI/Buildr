@@ -9,7 +9,7 @@
 buildr runtime list --json
 ```
 
-识别当前 Agent，并将 `<agent>` 固定为支持列表中对应的参数；当前支持 `claude-code`、`codex`、`cursor`、`qoder`、`trae`、`trae-work` 和 `workbuddy`。如果无法和支持列表对齐，停止 Buildr 操作，并请联系 Buildr 作者反馈该 Agent。
+识别当前 Agent，并将 `<agent>` 固定为支持列表中对应的参数；当前支持 `claude-code`、`codex`、`cursor`、`qoder`、`trae`、`trae-work` 和 `workbuddy`。如果无法和支持列表对齐，只停止依赖该 runtime 的操作，并请联系 Buildr 作者反馈该 Agent。
 
 workspace 尚未初始化时，用一个高层命令完成源资产、Buildr Skill、当前 Agent runtime render 和最终 doctor：
 
@@ -18,7 +18,7 @@ buildr init --agent <agent> --target <dir> --name <name> --profile <personal|tea
 ```
 技术初始化完成后，不把 `project create` 命令直接交给用户。Agent 应读取最终 doctor 和真实 Workspace 状态，用普通语言完成一次首次使用交接：Workspace 是人和 Agent 共同工作的顶层目录；Project 是业务、产品、系统或长期工作；Service 只在需要代码仓、应用、模块或可执行资产时接入。没有 Project 时询问用户要长期管理什么；唯一 Project 没有 Service 时询问是接入已有资产还是直接开始 Project 范围工作；范围唯一时直接邀请用户描述第一项真实目标；有多个候选时只询问消除范围歧义所必需的问题。不要生成 `WELCOME.md`、持久 checklist 或固定教学 Rule。
 已有 workspace 中，用户要求完整检查 Buildr、检查安装状态或“更新 Buildr”时，先运行 `buildr update check --json` 同时读取 GA 正式版与 RC 候选版。
-Agent 分别说明 `stable` 与 `candidate` 的可用更新，并让用户选择 GA、RC 或暂不更新。只有用户明确选择后才执行对应命令；不得自动切轨或降级：
+Agent 分别说明 `stable` 与 `candidate` 的可用更新，并让用户选择 GA、RC 或暂不更新。已有明确选择且范围未变时直接执行；缺少选择时才询问，不得自动切轨或降级：
 
 ```bash
 buildr update --track <stable|candidate>
@@ -50,7 +50,7 @@ buildr doctor --agent <agent> --target <dir> --json
 根据用户目标和 doctor 结果继续。创建或修复 Project/Service 必须来自用户意图、已有源资产、明确 repo/ref，或 doctor 指出的可修复 drift。Component 当前只支持 workspace：先用 `buildr component list/check --target <dir> --json` 核对定义和成员，再用带 `--agent <agent>` 的 install/uninstall 完成 runtime 与 doctor 闭环；CLI 不根据对象名称猜测 Component 边界。
 
 ```bash
-buildr project create <project> --target <dir> [--repo <git-url>] [--title <text>] [--description <text>]
+buildr project create <project> --target <dir> [--repo <git-url>] --name <text> [--description <text>]
 buildr service create <project>/<service> <repo-ref> --target <dir> --name <name> --description <description> --type <type> [--remote <name>] [--integration-branch <branch>]
 ```
 
@@ -76,4 +76,4 @@ buildr rules add <rule-id> --target <dir> --description <text>
 buildr rules remove <rule-id> --target <dir>
 ```
 
-如只取消注册并保留规则文件，使用 `--keep-file`；Project 规则当前通过 `projects/<project>/AGENTS.md` 维护。对象级卸载若命中 Component，必须先展示完整成员、runtime 影响以及不会删除的外部 CLI 和 Project 内容，取得二次确认后才执行。
+如只取消注册并保留规则文件，使用 `--keep-file`；Project 规则当前通过 `projects/<project>/AGENTS.md` 维护。对象级卸载若命中 Component，必须先展示完整成员、runtime 影响以及不会删除的外部 CLI 和 Project 内容，取得针对完整范围的明确确认后才执行；已有确认覆盖相同范围时无需重复询问。

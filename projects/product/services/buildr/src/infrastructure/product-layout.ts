@@ -1,5 +1,5 @@
 export const RESOURCE_WORKSPACE_ROOT = 'resources/workspace';
-export const PACKAGE_RUNTIME_TARGET = 'package/targets/runtime';
+export const PACKAGE_RUNTIME_TARGET = 'resources/runtime';
 export const BOOTSTRAP_CONTRACT_RESOURCE = 'resources/contracts/bootstrap.yml';
 
 export const GENERATED_USER_REGISTRY_RESOURCE_SOURCES = Object.freeze([

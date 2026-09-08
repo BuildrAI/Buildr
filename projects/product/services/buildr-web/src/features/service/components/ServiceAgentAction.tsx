@@ -1,6 +1,8 @@
+import { projectApi } from '../../project/api/project-api';
+import { serviceApi } from '../api/service-api';
 import { useEffect, useState, type FormEvent } from 'react';
 import { Button, Input, Select } from 'antd';
-import { workspaceApi } from '../../../api';
+
 import { ACTION_LABELS, useAgentActionFeedback } from '../../../components/AgentActionFeedback';
 
 type Props = { onBack: () => void; context?: Record<string, unknown> };
@@ -21,7 +23,7 @@ export function ServiceAgentAction({ onBack, context = {} }: Props) {
   const [projectCode, setProjectCode] = useState(String(context.projectCode || ''));
   useEffect(() => {
     let cancelled = false;
-    void workspaceApi.listProjects().then((data) => {
+    void projectApi.listProjects().then((data) => {
       if (cancelled) return;
       const projects = data.projects || [];
       setProjects(projects);
@@ -34,7 +36,7 @@ export function ServiceAgentAction({ onBack, context = {} }: Props) {
     event.preventDefault();
     setError(null);
     try {
-      const result = await workspaceApi.serviceCreatePrompt({
+      const result = await serviceApi.serviceCreatePrompt({
           projectCode,
           name,
           description,

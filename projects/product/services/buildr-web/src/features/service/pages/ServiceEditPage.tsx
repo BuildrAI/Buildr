@@ -1,7 +1,10 @@
+import { workspaceApi } from '../../workspace/api/workspace-api';
+import { type ProjectResponse } from '../../project/api/project-api';
+import { serviceApi } from '../api/service-api';
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Alert, Button, Form, Input, Space, Typography } from 'antd';
-import { workspaceApi, type ProjectResponse } from '../../../api';
+
 import { useAppShell } from '../../../app/AppShellContext';
 import { workspaceHref } from '../../../lib/labels';
 
@@ -23,7 +26,7 @@ export function ServiceEditPage() {
       try {
         const [workspace, data] = await Promise.all([
           workspaceApi.read(),
-          workspaceApi.service(projectCode, serviceCode) as Promise<ServiceEditData>,
+          serviceApi.service(projectCode, serviceCode) as Promise<ServiceEditData>,
         ]);
         if (cancelled) return;
         setWorkspace(workspace);
@@ -48,7 +51,7 @@ export function ServiceEditPage() {
     const typeInput = form.elements.namedItem('type') as HTMLInputElement;
     setSaveState('正在保存…');
     try {
-      const updated = await workspaceApi.updateService(projectCode, serviceCode, {
+      const updated = await serviceApi.updateService(projectCode, serviceCode, {
         revision: current.revision,
         name: nameInput.value,
         description: descriptionInput.value,

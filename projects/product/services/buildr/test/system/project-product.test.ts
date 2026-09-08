@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import YAML from 'yaml';
 
-import { createRuntime } from '../../src/bootstrap/runtime.ts';
+import { createRuntime } from '../helpers/runtime-harness.ts';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
 import { copyPreparedGitRepository, copyPreparedWorkspace } from '../helpers/prepared-fixtures.ts';
 
@@ -186,7 +186,9 @@ test('Project attach 登记外部 Git root 且不修改外部内容', (t: any) =
   assert.deepEqual({ head: run('git', ['rev-parse', 'HEAD'], attached).stdout, status: run('git', ['status', '--porcelain'], attached).stdout, readme: fs.readFileSync(path.join(attached, 'README.md'), 'utf8') }, before);
   assert.equal(fs.existsSync(path.join(attached, 'services', 'manifest.yml')), false);
   assert.equal(fs.existsSync(path.join(root, 'projects', 'external')), false);
-  const doctor: any = JSON.parse(runBuildr(['doctor', '--target', root, '--scope', 'projects/external', '--json', '--detail', 'full']).stdout);
+  const inspected = runBuildr(['doctor', '--target', root, '--scope', 'projects/external', '--json', '--detail', 'full']);
+  assert.ok(inspected.stdout.trim(), inspected.stderr || `Doctor exited ${inspected.status}`);
+  const doctor: any = JSON.parse(inspected.stdout);
   assert.equal(doctor.projects.find((project: any) => project.code === 'external').exists, true);
   assert.equal(doctor.findings.some((finding: any) => finding.code === 'project.missing'), false);
   assert.ok(doctor.findings.every((finding: any) => finding.domain && finding.scope && finding.ownershipUnit && Array.isArray(finding.affectedActions)));

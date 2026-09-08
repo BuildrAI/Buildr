@@ -5,7 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { execFileSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
-import { collectChangedProductPaths, resolveVerificationBase } from '../../test/verification/changed-paths.ts';
+import { collectChangedProductPaths, resolveVerificationBase } from '../verification/changed-paths.ts';
 
 test('依赖安装前可加载 changed path collector，缺少 YAML 时保守处理声明变化', () => {
   const moduleUrl: any = pathToFileURL(path.resolve(import.meta.dirname, '../verification/changed-paths.ts')).href;

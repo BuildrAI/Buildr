@@ -1,0 +1,44 @@
+import { api } from '../../../api';
+import type { ApiClient } from '../../../api/client';
+import type {
+  CoordinationResponse,
+  ReviewsResponse,
+  VerificationResponse,
+} from '../../../../build/generated/task-professional-http-dto';
+
+type ReadOptions = Pick<RequestInit, 'signal'>;
+
+function typed<T>(request: Promise<unknown>): Promise<T> {
+  return request as Promise<T>;
+}
+
+function taskPath(taskId: string, suffix: string): string {
+  return `/api/v1/tasks/${encodeURIComponent(taskId)}${suffix}`;
+}
+
+export function createTaskProfessionalClient(client: ApiClient) {
+  return Object.freeze({
+    startWorkPrompt(input: { projectCode: string; serviceCode: string; goal: string }): Promise<{ prompt: string }> {
+      return typed(client('/api/v1/prompts/start-work', { method: 'POST', body: JSON.stringify(input) }));
+    },
+    changeCreatePrompt(input: { projectCode: string; goal: string }): Promise<{ prompt: string }> {
+      return typed(client('/api/v1/prompts/change-create', { method: 'POST', body: JSON.stringify(input) }));
+    },
+    changeActionPrompt(input: { projectCode: unknown; ref: unknown; action: unknown }): Promise<{ prompt: string }> {
+      return typed(client('/api/v1/prompts/change-action', { method: 'POST', body: JSON.stringify(input) }));
+    },
+    reviews(taskId: string, options: ReadOptions = {}): Promise<ReviewsResponse> {
+      return typed(client(taskPath(taskId, '/reviews'), options));
+    },
+    verification(taskId: string, options: ReadOptions = {}): Promise<VerificationResponse> {
+      return typed(client(taskPath(taskId, '/verification'), options));
+    },
+    coordination(taskId: string, options: ReadOptions = {}): Promise<CoordinationResponse> {
+      return typed(client(taskPath(taskId, '/coordination'), options));
+    },
+  });
+}
+
+export type TaskProfessionalClient = ReturnType<typeof createTaskProfessionalClient>;
+
+export const taskProfessionalApi = createTaskProfessionalClient(api);

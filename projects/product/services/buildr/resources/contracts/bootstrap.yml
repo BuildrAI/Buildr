@@ -43,69 +43,30 @@ bootstrapGuideForbiddenText:
   - buildr skills add
   - buildr runtime check claude-code
 
-buildrSkillPath: package/targets/runtime/skills/buildr/SKILL.md
+buildrSkillPath: resources/runtime/skills/buildr/SKILL.md
 buildrSkillMaxLines: 175
 buildrSkillRequiredSections:
-  - Buildr 是什么
-  - 执行循环
-  - 任务路由
-  - 资产维护
-  - Workspace
-  - Project
-  - Service
-  - Rules
-  - Commands
-  - Skills
-  - Agent 运行时渲染
-  - 完成标准
+  - 执行与按需读取
+  - 安装与更新
+  - 工作空间更新与检出变化
+  - 专业入口
+  - 完成
 buildrSkillRequiredText:
-  - 优先使用 Buildr CLI
-  - 状态变更后确认最新 doctor 结果
-  - 根据用户目标和 doctor 结果
-  - 建立事实基线
-  - 创建或修复 Project/Service 必须来自用户意图
-  - AGENTS.md
-  - projects/manifest.yml
-  - commands/manifest.yml
-  - skills/manifest.yml
-  - buildr commands add
-  - buildr commands remove
-  - buildr commands check
-  - buildr rules add
-  - buildr rules remove
-  - "enabled: true"
-  - "state: installed"
-  - 不替 Agent 判断 optional Rule
+  - references/asset-maintenance.md
+  - references/runtime.md
   - buildr runtime list --json
-  - 当前宿主明确身份
-  - 用户明确指定其他 runtime
-  - 不得从 Skill 路径
-  - detectedAgents
   - buildr doctor --agent <agent>
-  - 不要省略 `--agent`
-  - buildr skills add
-  - --remote-source
-  - --resolved-source
-  - buildr skills remove
-  - runtime check
-  - 专项 runtime 细查
-  - rules render
-  - skills render
-  - buildr sync
-  - buildr update
-  - buildr builtin list
-  - 不得借用其他 adapter 作为 fallback
-  - task-verification
-  - task-finish
-  - task-retrospective
-  - capability-adaptation
+  - buildr init --agent <agent>
+  - buildr update check --json
+  - buildr update --track stable|candidate
+  - buildr skill install <agent> --target <dir>
+  - buildr sync <agent> --target <dir>
   - buildr.git-operations/v1
   - buildr.git-worktree-provider/v1
   - buildr.task-verification/v4
-  - components/manifest.yml
-  - buildr component install
-  - buildr component uninstall
-  - 二次确认
+  - capability-adaptation
+  - task-finish
+  - task-retrospective
 buildrSkillForbiddenText:
   - onboarding.contract.yml
   - bootstrap.contract.yml
@@ -123,11 +84,13 @@ globalForbiddenText:
   - buildr use
 
 generatedSkillRequiredText:
+  - references/asset-maintenance.md
+  - references/runtime.md
   - buildr runtime list --json
-  - 当前宿主明确身份
-  - 用户明确指定其他 runtime
-  - 不得从 Skill 路径
-  - detectedAgents
+  - 当前宿主的明确身份
+  - 用户指定其他运行时
+  - 不得从技能路径、生成标记或 Doctor 检测结果推断宿主
+  - 不借用其他适配器
   - buildr skill install <agent>
   - buildr sync <agent>
   - buildr doctor --agent <agent> --target <dir> --json

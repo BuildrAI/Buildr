@@ -16,7 +16,7 @@
 ## 2. 审计入口
 
 ```bash
-npm run test:audit:verification -- src/task/application/finish/task-finish-run.ts
+npm run test:audit:verification -- src/modules/task/application/task-command-application.ts
 npm run test:audit:verification -- --base <commit>^ --head <commit>
 ```
 
@@ -185,7 +185,7 @@ Unit 的实际粒度是：只要计划选择 `unit` step，就运行完整低成
 三个真实普通 Task 的 scope、step count 与 owner集合均未变化，所以本轮没有可归因的执行时间收益。新增的两个变化是安全修正，不是降本：
 
 - `test/verification/ownership.ts`：affected 8 steps → full 52 steps，稳定 reason为 `ownership-authority-change`；选择 authority 自身不再逃过完整验证。
-- 未知高风险 `src/task/application/**`：affected 7 steps → blocked；通用 Unit/CLI architecture owner不能再掩盖缺失的领域 primary owner。
+- 未知高风险 `src/modules/task/application/**`：affected 7 steps → blocked；通用 Unit/CLI architecture owner不能再掩盖缺失的领域 primary owner。
 
 因此当前正式结论是：在这个近期小样本中，普通 Task 没有无理由进入 Full；唯一升级由 execution graph authority 变更触发。选择规则不是主要瓶颈，剩余成本来自被正确选择的真实 primary owner，尤其是 Finish、self-bootstrap、Workspace/Worktree、进程和 capability/OpenSpec runtime 边界。继续降本必须优化这些 owner 内部的真实准备或主体成本，不能通过放宽 Full、删除证据、缓存被测选择结果或提高全局并发取得。
 

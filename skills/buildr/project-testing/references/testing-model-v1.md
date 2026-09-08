@@ -4,7 +4,7 @@
 
 ## 测试边界与编排问题
 
-| 类别 | 第一版取值 | 判断问题 |
+| 类别 | 取值 | 判断问题 |
 | --- | --- | --- |
 | 主要意图 | Development、Acceptance、Static Conformance、Delivery / Release | 为什么需要这份证据？ |
 | 执行边界 | Static、Unit、Component、Integration、System | 启动了哪些真实边界？ |
@@ -16,7 +16,7 @@
 
 ## 执行边界
 
-| 边界 | 第一版定义 |
+| 边界 | 定义 |
 | --- | --- |
 | Static | 只检查源码、schema、manifest、文档或制品结构，不启动被测系统 |
 | Unit | 同进程验证一个逻辑单元，协作者被替换，不经过真实进程、网络、数据库或 Workspace 生命周期 |
@@ -48,15 +48,11 @@ Browser / Playwright 只是执行手段。技术 smoke 属于 Development / Syst
 → 反例证据或明确 gap
 ```
 
-- 公共可观察结果包括返回值、状态转换、输出协议和公开副作用；内部调用顺序只有在交互协议本身属于契约时才是主要证据。
-- 最小关键案例按风险从正常、失败、边界和必要状态转换中选择，不要求机械覆盖每个类别。
-- Bug 回归测试应说明旧错误，并在安全可行时证明旧错误存在时测试失败；不能安全执行旧版本时保留替代证据和 gap。
-- mock、fake 与内存实现只替代外部协作者或非主要 owner 边界，不复制被测判断形成自证。
-- 涉及持久或共享状态时，按风险检查隔离、必要幂等、失败后清理和重复运行。
+断言、反例和状态隔离按 [技能正文](../SKILL.md#3-为任务设计和开发测试) 的质量要求执行；下面只补充分层与编排判断。
 
 ## 编排
 
-| 问题 | 第一版边界 |
+| 问题 | 边界 |
 | --- | --- |
 | Quick | 只组合完整低成本 Static、Unit、Component 和少量轻 Integration；它是成本约束 |
 | affected | 根据变更路径、owner 和风险选择所有直接相关证据，包括必要的重型测试 |
@@ -64,7 +60,7 @@ Browser / Playwright 只是执行手段。技术 smoke 属于 Development / Syst
 | Candidate | 表示冻结候选目标；可以承载 affected 或 full，不决定范围 |
 | Release | 表示真实发布物节点；组合 package、安装、部署、发布与发布后 smoke |
 
-`focus` 只重跑具体 step 或领域以定位故障，不声明交付完整性。Project 可以提供 `test:candidate` 这类组合入口，但入口名称不得被提升为所有 Candidate 都必须 full 的通用规则。
+`System` 不等于 Acceptance；验收必须来自需求或设计中的业务标准。`focus` 只用于失败诊断和定向选择，不声明交付完整性。Project 可以提供 `test:candidate` 这类组合入口，但入口名称不得被提升为所有 Candidate 都必须 full 的通用规则。
 
 ## Project / Service owner
 

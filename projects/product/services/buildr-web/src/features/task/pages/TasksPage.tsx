@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Button, Empty, Form, Input, Select, Typography } from 'antd';
-import type { TaskListRequest } from '../api/generated/task-dto';
+import type { TaskListRequest } from '../../../../build/generated/task-dto';
 import { useTaskList, type WorkspaceResponse } from '../hooks/useTaskList';
 import { useAppShell } from '../../../app/AppShellContext';
 import { workspaceHref } from '../../../lib/labels';

@@ -7,8 +7,8 @@ import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import test from 'node:test';
 import YAML from 'yaml';
 
-import { createRuntime } from '../../src/bootstrap/runtime.ts';
-import { renderWorkspaceManifest } from '../../src/workspace/persistence/workspace-manifest-repository.ts';
+import { createRuntime } from './runtime-harness.ts';
+import { renderWorkspaceManifest } from '../../src/modules/workspace/persistence/workspace-manifest-repository.ts';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
 import { stopPreview } from '../../src/web/application/preview-lifecycle.ts';
 import { copyPreparedWorkspace } from './prepared-fixtures.ts';

@@ -1,4 +1,4 @@
-import { contextTest } from '../../test-context.mjs';
+import { contextTest } from '@buildr-ai/buildr/test-context';
 import {
   BUILDR_APPLICATION_TEST_CONTEXTS,
   BUILDR_APPLICATION_WORKSPACE_TEST_CONTEXTS,

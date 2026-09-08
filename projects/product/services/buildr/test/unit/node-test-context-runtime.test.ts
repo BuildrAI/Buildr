@@ -4,7 +4,7 @@ import test from 'node:test';
 import {
   createTestContextRuntime,
   defineTestContext,
-} from '../../test-context.mjs';
+} from '@buildr-ai/buildr/test-context';
 
 test('matching worker configuration creates once and returns isolated leases', async () => {
   let creates: any = 0;

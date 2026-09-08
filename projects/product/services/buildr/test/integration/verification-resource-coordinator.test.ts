@@ -5,8 +5,8 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { createVerificationResourceCoordinator } from '../../src/verification/infrastructure/resource-coordinator.ts';
-import { executePlan, FULL_PLAN_RESOURCE_ID } from '../../test/verification/plan-runner.ts';
+import { createVerificationResourceCoordinator } from '../verification/support/resource-coordinator.ts';
+import { executePlan, FULL_PLAN_RESOURCE_ID } from '../verification/plan-runner.ts';
 
 function fixture(context: any): any  {
   const root: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-resource-coordinator-'));

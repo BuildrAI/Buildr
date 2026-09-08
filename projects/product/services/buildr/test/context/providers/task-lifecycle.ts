@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { createRuntime } from '../../../src/bootstrap/runtime.ts';
+import { createRuntime } from '../../helpers/runtime-harness.ts';
 import { TASK_LIFECYCLE_CONTEXT_KEY } from '../profiles.ts';
 
 export { TASK_LIFECYCLE_CONTEXT_KEY };

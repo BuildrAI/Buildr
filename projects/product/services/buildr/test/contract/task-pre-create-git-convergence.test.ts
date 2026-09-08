@@ -6,7 +6,8 @@ import YAML from 'yaml';
 
 const serviceRoot: any = path.resolve(import.meta.dirname, '../..');
 const read: any = (relative: any) => fs.readFileSync(path.join(serviceRoot, relative), 'utf8');
-const triage: any = read('resources/workspace/skills/buildr/task-triage/SKILL.md');
+const triage: any = read('resources/workspace/skills/buildr/task-triage/SKILL.md')
+  + read('resources/workspace/skills/buildr/task-triage/references/task-create-git-baseline.md');
 const gitOperations: any = read('resources/workspace/skills/buildr/git-operations/SKILL.md');
 const gitContract: any = read('resources/workspace/skills/contracts/buildr/git-operations/v1.md');
 const taskManager: any = read('resources/workspace/skills/buildr/task-manager/SKILL.md');

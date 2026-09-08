@@ -2,10 +2,10 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { writeRuntimeSystemDto } from '../contracts/runtime-system-dto.ts';
-import { writeTaskProfessionalHttpDto } from '../contracts/task-professional-dto.ts';
-import { writeTaskRecordHttpDto } from '../contracts/task-dto.ts';
-import { writeWorkspaceAgentAssetsDtos } from '../contracts/workspace-agent-assets-dto.ts';
+import { writeRuntimeSystemDto } from '../codegen/contracts/runtime-system-dto.ts';
+import { writeTaskProfessionalHttpDto } from '../codegen/contracts/task-professional-dto.ts';
+import { writeTaskRecordHttpDto } from '../codegen/contracts/task-dto.ts';
+import { writeWorkspaceAgentAssetsDtos } from '../codegen/contracts/workspace-agent-assets-dto.ts';
 import { buildTestContext } from '../testing/test-context-build.ts';
 import { createGeneratedArtifactManifest, type GeneratedArtifactManifest } from './generated-artifacts.ts';
 import { buildWebDist } from './web-dist.ts';
@@ -59,8 +59,8 @@ export async function buildGeneratedArtifactSet(outputRoot: string, input: { sou
         vite: webMetadata.devDependencies?.vite ?? 'missing',
       },
       artifacts: [
-        { id: 'backend-dto', root: path.join(dtoRoot, 'buildr/src') },
-        { id: 'web-dto', root: path.join(dtoRoot, 'buildr-web/src') },
+        { id: 'backend-dto', root: path.join(dtoRoot, 'buildr/build/generated') },
+        { id: 'web-dto', root: path.join(dtoRoot, 'buildr-web/build/generated') },
         { id: 'test-context', root: testContextRoot },
         { id: 'web-dist', root: webDistRoot },
       ],

@@ -5,11 +5,15 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { createRuntime } from '../../src/bootstrap/runtime.ts';
+import { createRuntime } from '../helpers/runtime-harness.ts';
+import { createRuntime as createProductionRuntime, runtimeProvide } from '../../src/bootstrap/runtime.ts';
+import { WORKSPACE_APPLICATION, PROJECT_APPLICATION } from '../../src/modules/workspace/module.ts';
+import { WEB_INSTANCE_LIFECYCLE } from '../../src/web/module.ts';
+import { taskRecordFixture } from '../helpers/task-record-system-fixture.ts';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
-import { ensureRegisteredTarget } from '../../src/workspace/module.ts';
+import { ensureRegisteredTarget } from '../../src/modules/workspace/module.ts';
 import { registerWebInstanceLifecycle } from '../../src/web/application/instance-lifecycle.ts';
-import { assertCurrentNpmLauncherBinding, readCurrentProductIdentity } from '../../src/system/installation/module.ts';
+import { assertCurrentNpmLauncherBinding, readCurrentProductIdentity } from '../../src/modules/installation/module.ts';
 import {
   acquireBuildrWebStartLock,
   releaseBuildrWebStartLock,
@@ -22,7 +26,7 @@ import {
   writeBuildrWebInstance,
 } from '../../src/web/infrastructure/instance-runtime.ts';
 import { pickWorkspaceDirectory } from '../../src/web/infrastructure/directory-picker.ts';
-import { resolveWebProfile } from '../../src/system/installation/contracts/web-profile.ts';
+import { resolveWebProfile } from '../../src/modules/installation/contracts/web-profile.ts';
 
 function opener(platform: any): any  {
   const calls: any[] = [];
@@ -32,6 +36,27 @@ function opener(platform: any): any  {
   };
   return { result: openDefaultBrowser('http://127.0.0.1:4321', { platform, spawnProcess }), calls };
 }
+
+test('生产 Web 装配能够解析已登记工作空间并读取项目，未知工作空间返回 404', async (t) => {
+  const { base, root } = taskRecordFixture(t, 'production-web-routing');
+  const previous = process.env.BUILDR_APP_DATA_DIR;
+  process.env.BUILDR_APP_DATA_DIR = path.join(base, 'app-data');
+  t.after(() => {
+    if (previous === undefined) delete process.env.BUILDR_APP_DATA_DIR;
+    else process.env.BUILDR_APP_DATA_DIR = previous;
+  });
+  const runtime = createProductionRuntime();
+  const workspace = runtimeProvide(runtime, WORKSPACE_APPLICATION);
+  const workspaceId = workspace.ensureRegisteredTarget(root);
+  const expected = runtimeProvide(runtime, PROJECT_APPLICATION).listProjects(root);
+  const instance = await runtimeProvide(runtime, WEB_INSTANCE_LIFECYCLE).startBuildrWeb(['--port', '0', '--no-open']);
+  t.after(() => new Promise<void>((resolve) => instance.server.close(resolve)));
+  const response = await fetch(`${instance.url}/api/v1/workspaces/${workspaceId}/projects`);
+  assert.equal(response.status, 200, await response.clone().text());
+  assert.deepEqual(await response.json(), expected);
+  const missing = await fetch(`${instance.url}/api/v1/workspaces/00000000-0000-4000-8000-000000000000/projects`);
+  assert.equal(missing.status, 404);
+});
 
 test('默认浏览器 opener 为 macOS、Windows 和 Linux 生成平台命令', () => {
   assert.deepEqual(opener('darwin').result, { command: 'open', args: ['http://127.0.0.1:4321'] });

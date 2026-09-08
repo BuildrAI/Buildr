@@ -5,7 +5,7 @@ import process from 'node:process';
 import type http from 'node:http';
 
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../infrastructure/contracts/public-json.ts';
-import { assertLauncherWebProfile, resolveWebProfile, sameWebProfile } from '../../system/installation/contracts/web-profile.ts';
+import { assertLauncherWebProfile, resolveWebProfile, sameWebProfile } from '../../modules/installation/contracts/web-profile.ts';
 import {
   clearBuildrWebInstance,
   acquireBuildrWebStartLock,
@@ -72,6 +72,7 @@ type ServerOptions = {
   previewIdentity: PreviewOwner | null;
   httpContributions: unknown[];
   ensureRegisteredTarget(root: string | null): string | null;
+  resolveRegisteredWorkspace?: (workspaceId: string, options: { touch: boolean }) => { rootPath: string };
   onShutdown(): void;
 };
 type WebRuntime = PreviewRuntime & {
@@ -84,6 +85,7 @@ export type WebLifecycleOptions = {
   httpContributions?: unknown[];
   createLocalWorkspaceServer(runtime: WebRuntime, options: ServerOptions): ServerInstance;
   ensureRegisteredTarget(root: string | null): string | null;
+  resolveRegisteredWorkspace?: (workspaceId: string, options: { touch: boolean }) => { rootPath: string };
   readProductIdentity(): ProductIdentity;
   assertNpmLauncherBinding(file: string, productIdentity: ProductIdentity): LauncherBinding;
 };
@@ -229,6 +231,7 @@ export function registerWebInstanceLifecycle(runtime: WebRuntime, options: WebLi
             previewIdentity,
             httpContributions,
             ensureRegisteredTarget: options.ensureRegisteredTarget,
+            resolveRegisteredWorkspace: options.resolveRegisteredWorkspace,
             onShutdown: () => {
               if (state) clearInstance(state, webProfile);
               if (previewIdentity) process.exit(0);

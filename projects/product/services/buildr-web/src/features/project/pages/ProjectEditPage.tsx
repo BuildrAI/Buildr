@@ -1,7 +1,9 @@
+import { workspaceApi } from '../../workspace/api/workspace-api';
+import { type ProjectResponse, projectApi } from '../api/project-api';
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Alert, Button, Form, Input, Space, Typography } from 'antd';
-import { workspaceApi, type ProjectResponse } from '../../../api';
+
 import { useAppShell } from '../../../app/AppShellContext';
 import { workspaceHref } from '../../../lib/labels';
 
@@ -22,7 +24,7 @@ export function ProjectEditPage() {
       try {
         const [workspace, data] = await Promise.all([
           workspaceApi.read(),
-          workspaceApi.project(projectCode) as Promise<ProjectEditData>,
+          projectApi.project(projectCode) as Promise<ProjectEditData>,
         ]);
         if (cancelled) return;
         setWorkspace(workspace);
@@ -46,7 +48,7 @@ export function ProjectEditPage() {
     const descriptionInput = form.elements.namedItem('description') as HTMLTextAreaElement;
     setSaveState('正在保存…');
     try {
-      const updated = await workspaceApi.updateProject(projectCode, {
+      const updated = await projectApi.updateProject(projectCode, {
         revision: current.revision,
         name: nameInput.value,
         description: descriptionInput.value,

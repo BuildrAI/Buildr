@@ -3,7 +3,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { runNodeTestContextHosts } from '../../test-context.mjs';
+import { runNodeTestContextHosts } from '@buildr-ai/buildr/test-context';
 
 const serviceRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const fixture: any = (name: any) => path.join(serviceRoot, 'test/fixtures/node-test-context', name);

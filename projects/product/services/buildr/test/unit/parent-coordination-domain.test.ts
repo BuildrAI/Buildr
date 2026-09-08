@@ -1,7 +1,7 @@
 // @ts-nocheck -- Existing behavioral suite migrated with its implementation; typing the fixture framework is outside this change.
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { normalizeParentPlan, parentCoordinationDigest, projectParentPlan } from '../../src/task/domain/parent-coordination.ts';
+import { normalizeParentPlan, parentCoordinationDigest, projectParentPlan } from '../../src/modules/task/domain/parent-coordination.ts';
 
 // Persisted historical content, not a writer for the retired coordination workflow.
 function stored(payload) {

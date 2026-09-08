@@ -25,7 +25,9 @@ const ignoredProjectRootEntries: any = new Set([
 problems.push(...validateProductSourceLayout({
   projectEntries: fs.readdirSync(projectRoot).filter((entryName: any) => !ignoredProjectRootEntries.has(entryName)),
   serviceEntries: fs.readdirSync(productRoot).filter((entryName: any) => entryName !== 'node_modules'),
-  packageFiles: trackedFiles.filter((file: any) => file.startsWith('projects/product/services/buildr/package/')).map((file: any) => file.slice('projects/product/services/buildr/package/'.length)),
+  packageFiles: trackedFiles
+    .filter((file: any) => file.startsWith('projects/product/services/buildr/package/') && fs.existsSync(path.join(repositoryRoot, file)))
+    .map((file: any) => file.slice('projects/product/services/buildr/package/'.length)),
   trackedFiles,
   bridgeSource: fs.readFileSync(path.join(projectRoot, 'buildr'), 'utf8'),
 }));
@@ -69,7 +71,7 @@ for (const retiredRoot of ['domain', 'interfaces']) {
   }
 }
 
-for (const required of ['bin', 'src', 'resources', 'test', 'tools', 'docs', 'package']) {
+for (const required of ['bin', 'src', 'resources', 'test', 'tools', 'docs']) {
   if (!fs.statSync(path.join(productRoot, required), { throwIfNoEntry: false })?.isDirectory()) {
     problems.push(`missing Product responsibility directory: ${required}/`);
   }
@@ -87,57 +89,43 @@ const requiredRuntime: any[] = [
   'bootstrap/cli/main.ts', 'bootstrap/cli/registry.ts', 'bootstrap/cli/help.ts',
   'bootstrap/cli/diagnostics.ts', 'bootstrap/cli/identity.ts',
   'bootstrap/runtime.ts', 'bootstrap/module-registry.ts',
-  'task/interfaces/cli/task-verification.ts',
-  'task/interfaces/cli/git-worktree.ts',
   'web/http/server.ts', 'web/http/router.ts', 'web/http/session.ts', 'web/http/static-files.ts', 'web/http/responses.ts', 'web/module.ts',
   'web/application/instance-lifecycle.ts', 'web/application/preview-lifecycle.ts',
   'web/infrastructure/instance-runtime.ts',
   'web/interfaces/cli/web.ts',
-  'system/doctor/module.ts', 'system/doctor/application/diagnostics.ts', 'agent-assets/application/package-maintenance.ts',
-  'agent-assets/application/package-maintenance/package-assets.ts', 'workspace/application/workspace-operations.ts',
-  'workspace/module.ts', 'workspace/application/workspace-query-application.ts', 'workspace/application/workspace-command-application.ts',
-  'workspace/infrastructure/workspace-source-filesystem.ts', 'workspace/infrastructure/workspace-source-git.ts',
-  'workspace/application/project-application.ts', 'workspace/application/service-application.ts',
-  'workspace/application/project-daily-progress-application.ts',
-  'workspace/domain/workspace.ts', 'workspace/domain/project.ts', 'workspace/domain/service.ts',
-  'workspace/domain/project-daily-progress.ts',
-  'workspace/persistence/workspace-manifest-repository.ts', 'workspace/persistence/workspace-registry-repository.ts',
-  'workspace/persistence/project-manifest-repository.ts', 'workspace/persistence/service-manifest-repository.ts',
-  'workspace/persistence/project-daily-progress-repository.ts',
-  'workspace/interfaces/cli/workspace.ts', 'workspace/interfaces/cli/project.ts', 'workspace/interfaces/cli/service.ts',
-  'workspace/interfaces/cli/cli-arguments.ts', 'workspace/interfaces/cli/project-daily-progress.ts',
-  'workspace/interfaces/http/workspace-http.ts',
-  'task/infrastructure/git-worktree-provider.ts',
-  'task/application/task-verification-application.ts', 'task/domain/task-verification.ts',
-  'task/persistence/task-review-repository.ts',
-  'task/persistence/task-verification-repository.ts',
-  'task/module.ts', 'task/domain/task.ts', 'task/domain/task-project.ts', 'task/domain/task-service.ts', 'task/domain/task-change.ts',
-  'task/domain/task-review.ts', 'task/application/task-review-application.ts', 'task/persistence/task-review-repository.ts',
-  'task/application/task-query-application.ts', 'task/application/task-command-application.ts', 'task/application/task-dto.ts', 'task/application/task-validation.ts', 'task/persistence/task-repository.ts',
-  'task/persistence/task-project-repository.ts', 'task/persistence/task-service-repository.ts', 'task/persistence/task-change-repository.ts',
-  'task/interfaces/cli/task.ts', 'task/interfaces/cli/task-review.ts',
-  'task/interfaces/http/task-http.ts', 'task/interfaces/http/task-review-http.ts',
-  'task/interfaces/http/task-lifecycle-core.ts',
-  'agent-assets/module.ts', 'agent-assets/interfaces/cli/agent-assets.ts',
-  'agent-assets/application/rules.ts', 'agent-assets/application/skills.ts',
-  'agent-assets/application/commands.ts', 'agent-assets/application/components.ts', 'task/openspec/application/openspec-application.ts',
-  'task/openspec/module.ts', 'task/change/module.ts', 'task/change/application/change-application.ts',
-  'system/publication/module.ts', 'system/publication/application/publication-application.ts',
-  'agent-assets/application/runtime.ts', 'agent-assets/application/runtime-projection.ts', 'infrastructure/contracts/public-json.ts',
+  'modules/workspace/module.ts', 'modules/workspace/application/workspace-operations.ts',
+  'modules/workspace/domain/workspace.ts', 'modules/workspace/persistence/workspace-manifest-repository.ts',
+  'modules/workspace/infrastructure/workspace-source-filesystem.ts', 'modules/workspace/interfaces/http/workspace-http.ts',
+  'modules/task/module.ts', 'modules/task/domain/task.ts', 'modules/task/application/task-query-application.ts',
+  'modules/task/application/task-command-application.ts', 'modules/task/persistence/task-repository.ts',
+  'modules/task/interfaces/cli/task.ts', 'modules/task/interfaces/http/task-http.ts',
+  'modules/task/interfaces/cli/task-verification.ts', 'modules/task/interfaces/cli/git-worktree.ts',
+  'modules/task/change/module.ts', 'modules/task/change/application/change-application.ts',
+  'modules/openspec/module.ts', 'modules/openspec/application/openspec-application.ts',
+  'modules/agent-assets/module.ts', 'modules/agent-assets/interfaces/cli/agent-assets.ts',
+  'modules/agent-assets/application/rules.ts', 'modules/agent-assets/application/skills.ts',
+  'modules/agent-assets/application/commands.ts', 'modules/agent-assets/application/components.ts',
+  'modules/agent-assets/application/package-maintenance.ts', 'modules/agent-assets/application/package-maintenance/package-assets.ts',
+  'modules/agent-assets/application/runtime.ts', 'modules/agent-assets/application/runtime-projection.ts',
+  'modules/agent-assets/persistence/capability-graph-repository.ts', 'modules/agent-assets/domain/capability-identity.ts',
+  'modules/agent-assets/persistence/skill-manifest.ts',
+  'modules/agent-assets/infrastructure/runtime/adapter-contract.ts', 'modules/agent-assets/infrastructure/runtime/render-claude-code.ts',
+  'modules/project-testing/module.ts', 'modules/project-testing/application/project-verification-application.ts',
+  'modules/installation/module.ts', 'modules/installation/domain/release-version.ts',
+  'modules/diagnostics/module.ts', 'modules/diagnostics/application/diagnostics.ts',
+  'modules/publication/module.ts', 'modules/publication/application/publication-application.ts',
+  'infrastructure/contracts/public-json.ts', 'infrastructure/contracts/diagnostic-finding.ts',
   'infrastructure/platform.ts', 'infrastructure/product-layout.ts', 'infrastructure/process.ts', 'infrastructure/filesystem/index.ts',
-  'infrastructure/contracts/declaration-intake.ts', 'system/installation/domain/release-version.ts',
+  'infrastructure/contracts/declaration-intake.ts', 'infrastructure/filesystem/atomic-files.ts',
+  'infrastructure/filesystem/exclusive-file-lock.ts', 'infrastructure/filesystem/workspace-mutation.ts',
+  'infrastructure/filesystem/path-safety.ts', 'infrastructure/filesystem/yaml.ts',
   'infrastructure/index.ts', 'infrastructure/sqlite/workspace-sqlite.ts',
-  'agent-assets/infrastructure/runtime/adapter-contract.ts', 'agent-assets/infrastructure/runtime/render-claude-code.ts',
-  'system/doctor/application/scope-diagnostics.ts', 'system/doctor/application/service-diagnostics.ts',
-  'system/doctor/application/runtime-diagnostics.ts', 'agent-assets/application/package-maintenance/static-validation.ts',
-  'agent-assets/application/package-maintenance/smoke-checks.ts', 'agent-assets/application/package-maintenance/verification-registry.ts',
-  'agent-assets/application/package-maintenance/output.ts',
 ];
 for (const relative of requiredRuntime) {
   if (!fs.existsSync(path.join(sourceRoot, relative))) problems.push(`missing Product runtime module: src/${relative}`);
 }
 
-const packageSmoke: any = path.join(sourceRoot, 'agent-assets/application/package-maintenance/smoke-checks.ts');
+const packageSmoke: any = path.join(productRoot, 'tools/verification/package-check/smoke-checks.ts');
 if (fs.existsSync(packageSmoke) && /runPackageSmokeChecks/.test(fs.readFileSync(packageSmoke, 'utf8'))) {
   problems.push('package verification must not restore the shared runPackageSmokeChecks monolith');
 }
@@ -148,11 +136,8 @@ const layerOf: any = (relative: any) => {
   if (relative === 'infrastructure/contracts/public-json.ts') return 'infrastructure';
   const parts: any = relative.split('/');
   if (parts[0] === 'infrastructure') return 'infrastructure';
-  const moduleOffset: any = (
-    (parts[0] === 'system' && ['installation', 'doctor', 'publication'].includes(parts[1]))
-    || (parts[0] === 'task' && ['change', 'openspec'].includes(parts[1]))
-  ) ? 2 : 1;
-  if (!['task', 'web', 'workspace', 'agent-assets', 'system', 'verification'].includes(parts[0]) && moduleOffset === 1) return parts[0];
+  const moduleOffset: any = parts[0] === 'modules' && parts[1] === 'task' && ['change', 'daily-progress'].includes(parts[2]) ? 3 : parts[0] === 'modules' ? 2 : 1;
+  if (!['modules', 'web'].includes(parts[0])) return parts[0];
   if (parts.length === moduleOffset + 1 && /^module\.(?:mjs|ts)$/.test(parts[moduleOffset])) return 'module';
   return {
     domain: 'domain',
@@ -173,19 +158,23 @@ const allowedTargets: any = {
   module: new Set(['interfaces', 'application', 'domain', 'infrastructure']),
 };
 const allowedCrossModulePorts: any = new Set([
-  'agent-assets/module.ts -> workspace/module.ts',
-  'web/infrastructure/instance-runtime.ts -> system/installation/module.ts',
-  'web/module.ts -> system/installation/module.ts',
-  'web/module.ts -> workspace/module.ts',
-  'bootstrap/cli/registry.ts -> task/openspec/module.ts',
-  'bootstrap/runtime.ts -> system/publication/module.ts',
-  'bootstrap/runtime.ts -> task/openspec/module.ts',
-  'bootstrap/runtime.ts -> task/change/module.ts',
-  'task/openspec/module.ts -> workspace/module.ts',
-  'task/change/module.ts -> task/openspec/module.ts',
-  'task/change/module.ts -> workspace/module.ts',
-  'system/publication/module.ts -> workspace/module.ts',
-  'verification/module.ts -> workspace/module.ts',
+  'modules/agent-assets/module.ts -> modules/workspace/module.ts',
+  'modules/diagnostics/module.ts -> modules/workspace/module.ts',
+  'modules/openspec/module.ts -> modules/agent-assets/module.ts',
+  'web/infrastructure/instance-runtime.ts -> modules/installation/module.ts',
+  'web/module.ts -> modules/installation/module.ts',
+  'web/module.ts -> modules/workspace/module.ts',
+  'bootstrap/cli/registry.ts -> modules/openspec/module.ts',
+  'bootstrap/runtime.ts -> modules/publication/module.ts',
+  'bootstrap/runtime.ts -> modules/openspec/module.ts',
+  'bootstrap/runtime.ts -> modules/task/change/module.ts',
+  'modules/openspec/module.ts -> modules/workspace/module.ts',
+  'modules/task/change/module.ts -> modules/openspec/module.ts',
+  'modules/task/change/module.ts -> modules/workspace/module.ts',
+  'modules/publication/module.ts -> modules/workspace/module.ts',
+  'modules/project-testing/module.ts -> modules/workspace/module.ts',
+  'modules/task/module.ts -> modules/workspace/module.ts',
+  'modules/task/change/module.ts -> modules/task/module.ts',
 ]);
 
 for (const file of sourceFiles) {
@@ -249,9 +238,9 @@ for (const file of sourceFiles) {
 }
 
 const facadeLimits: any = new Map([
-  ['src/agent-assets/infrastructure/runtime/render-claude-code.ts', 100],
-  ['src/system/doctor/application/diagnostics.ts', 250],
-  ['src/agent-assets/application/package-maintenance.ts', 550],
+  ['src/modules/agent-assets/infrastructure/runtime/render-claude-code.ts', 100],
+  ['src/modules/diagnostics/application/diagnostics.ts', 250],
+  ['src/modules/agent-assets/application/package-maintenance.ts', 550],
   ['test/verification/verify-buildr-product-fast', 20],
   ['test/verification/candidate.ts', 100],
 ]);
@@ -261,8 +250,8 @@ for (const [relative, limit] of facadeLimits) {
   else if (lineCount(file) > limit) problems.push(`${relative} must remain a composition facade (found ${lineCount(file)} lines, limit ${limit})`);
 }
 
-for (const module of ['arguments.ts', 'manifests.ts', 'contributions.ts', 'sources.ts', 'render-plan.ts']) {
-  if (!fs.existsSync(path.join(sourceRoot, 'agent-assets', 'infrastructure', 'runtime', 'skills', module))) problems.push(`missing runtime Skill renderer module: ${module}`);
+for (const module of ['arguments.ts', 'contributions.ts', 'sources.ts', 'render-plan.ts']) {
+  if (!fs.existsSync(path.join(sourceRoot, 'modules', 'agent-assets', 'infrastructure', 'runtime', 'skills', module))) problems.push(`missing runtime Skill renderer module: ${module}`);
 }
 const workspaceVerificationRoot: any = path.join(productRoot, 'test', 'verification', 'workspace');
 const workspaceVerificationFiles: any[] = ['fixture.ts', 'suites.ts', 'workspace-lifecycle.ts', 'ownership-recovery.ts', 'runtime-reconciliation.ts'];
@@ -311,9 +300,9 @@ if (packageJson.scripts?.['test:launcher-platform'] !== 'node test/verification/
 if (!fs.existsSync(path.join(productRoot, 'test', 'verification', 'release', 'platform-launcher-invocation.ts'))) problems.push('platform Launcher integration module is missing');
 const expectedPackageExports: any = {
   './test-context': {
-    types: './package/targets/test-context/index.d.ts',
-    import: './test-context.mjs',
-    default: './test-context.mjs',
+    types: './build/test-context/public.d.ts',
+    import: './build/test-context/public.js',
+    default: './build/test-context/public.js',
   },
   './package.json': './package.json',
   './*': './*',
@@ -321,7 +310,7 @@ const expectedPackageExports: any = {
 if (JSON.stringify(packageJson.exports) !== JSON.stringify(expectedPackageExports)) {
   problems.push('package exports must expose only the documented Test Context facade and compatibility subpaths');
 }
-if (!packageJson.files?.includes('test-context.mjs')) problems.push('npm package must include the public Test Context facade');
+if (!packageJson.files?.includes('build/test-context/')) problems.push('npm package must include the generated Test Context public entry');
 
 const registry: any = path.join(sourceRoot, 'bootstrap', 'cli', 'registry.ts');
 if (fs.existsSync(registry)) {
@@ -346,11 +335,11 @@ if (fs.existsSync(registry)) {
   if (!source.includes("runtimeContributions(runtime, 'cli')")) problems.push('command registry must merge module CLI contributions from Bootstrap');
 }
 
-const taskQueryApplication: any = path.join(sourceRoot, 'task', 'application', 'task-query-application.ts');
-const taskCommandApplication: any = path.join(sourceRoot, 'task', 'application', 'task-command-application.ts');
-const taskInterface: any = path.join(sourceRoot, 'task', 'interfaces', 'cli', 'task.ts');
-const taskRecordHttpInterface: any = path.join(sourceRoot, 'task', 'interfaces', 'http', 'task-http.ts');
-const taskRecordModule: any = path.join(sourceRoot, 'task', 'module.ts');
+const taskQueryApplication: any = path.join(sourceRoot, 'modules', 'task', 'application', 'task-query-application.ts');
+const taskCommandApplication: any = path.join(sourceRoot, 'modules', 'task', 'application', 'task-command-application.ts');
+const taskInterface: any = path.join(sourceRoot, 'modules', 'task', 'interfaces', 'cli', 'task.ts');
+const taskRecordHttpInterface: any = path.join(sourceRoot, 'modules', 'task', 'interfaces', 'http', 'task-http.ts');
+const taskRecordModule: any = path.join(sourceRoot, 'modules', 'task', 'module.ts');
 const bootstrapRuntime: any = path.join(sourceRoot, 'bootstrap', 'runtime.ts');
 const legacyRuntimeModule: any = path.join(sourceRoot, 'bootstrap', 'legacy-runtime-module.mjs');
 for (const relative of [
@@ -361,7 +350,7 @@ for (const relative of [
 ]) {
   if (fs.existsSync(path.join(sourceRoot, relative))) problems.push(`legacy Task Record implementation must be removed: src/${relative}`);
 }
-for (const relative of ['task/domain/record', 'task/application/record', 'task/persistence/record']) {
+for (const relative of ['modules/task/domain/record', 'modules/task/application/record', 'modules/task/persistence/record']) {
   if (fs.existsSync(path.join(sourceRoot, relative))) problems.push(`redundant Task Record terminal directory must be removed: src/${relative}`);
 }
 for (const application of [taskQueryApplication, taskCommandApplication]) {
@@ -396,7 +385,7 @@ if (fs.existsSync(taskRecordModule)) {
 if (fs.existsSync(path.join(sourceRoot, 'application', 'compose-runtime.mjs'))) problems.push('Application layer must not retain a composition root');
 if (fs.existsSync(bootstrapRuntime)) {
   const source: any = fs.readFileSync(bootstrapRuntime, 'utf8');
-  for (const required of ["from '../task/module.ts'", 'createModuleRegistry', 'createSystemDoctorModule', 'installTaskModule', '__bootstrapContributions']) {
+  for (const required of ["from '../modules/task/module.ts'", 'createModuleRegistry', 'createSystemDoctorModule', 'registry.install(TASK_MODULE)', 'bindChangeResolver', '__bootstrapContributions']) {
     if (!source.includes(required)) problems.push(`Bootstrap runtime must include ${required}`);
   }
   if (/registerTaskRecord(?:Repository|Application)/.test(source)) problems.push('Bootstrap runtime must not register Task Record internals directly');
@@ -414,15 +403,17 @@ if (fs.existsSync(buildrWebServer)) {
   if (/registerLocalWorkspaceAppInterface|startBuildrWeb|manageBuildrWebPreview|scheduledMaintenance/.test(source)) problems.push('Buildr Web HTTP Host must not own instance lifecycle or CLI registration');
 }
 
-const workspaceModule: any = path.join(sourceRoot, 'workspace', 'module.ts');
+const workspaceModule: any = path.join(sourceRoot, 'modules', 'workspace', 'module.ts');
 if (!fs.existsSync(workspaceModule)) problems.push('Workspace Core module entry is missing');
 else {
   const moduleSource: any = fs.readFileSync(workspaceModule, 'utf8');
   if (!moduleSource.includes("WORKSPACE_MODULE_ID = 'workspace-core'") || !moduleSource.includes('createWorkspaceCliContributions') || !moduleSource.includes('createWorkspaceHttpContribution')) {
     problems.push('Workspace Core module must explicitly contribute CLI and HTTP adapters');
   }
-  for (const required of ['PROJECT_DAILY_PROGRESS_APPLICATION', 'createProjectDailyProgressRepository', 'registerProjectDailyProgressApplication', 'projectDailyProgressCommand']) {
-    if (!moduleSource.includes(required)) problems.push(`Workspace module must own Daily Progress ${required}`);
+  if (moduleSource.includes('WORKSPACE_TASK_BINDER') || moduleSource.includes('PROJECT_DAILY_PROGRESS_APPLICATION')) problems.push('Workspace must not own Task daily progress');
+  const taskModuleSource = fs.readFileSync(path.join(sourceRoot, 'modules/task/module.ts'), 'utf8');
+  for (const required of ['PROJECT_DAILY_PROGRESS_APPLICATION', 'createProjectDailyProgressRepository', 'createProjectDailyProgressApplication', 'createDailyProgressCliContributions']) {
+    if (!taskModuleSource.includes(required)) problems.push(`Task module must own Daily Progress ${required}`);
   }
 }
 for (const legacy of [
@@ -462,27 +453,28 @@ for (const legacy of ['instance-manager.mjs', 'preview-manager.mjs', 'scheduled-
 
 const legacyTaskRecordConsumers: any = new Set([
   'application/change/change-application.mjs',
-  'task/change/module.ts',
-  'task/change/interfaces/http/change-http.ts',
-  'workspace/application/project-daily-progress-application.ts',
-  'task/application/task-verification-application.ts',
-  'task/infrastructure/git-worktree-provider.ts',
-  'task/persistence/task-retrospective-document.ts',
-  'task/persistence/task-verification-repository.ts',
+  'modules/task/change/module.ts',
+  'modules/task/change/interfaces/http/change-http.ts',
+  'modules/task/daily-progress/application/project-daily-progress-application.ts',
+  'modules/workspace/module.ts',
+  'modules/task/application/task-verification-application.ts',
+  'modules/task/infrastructure/git-worktree-provider.ts',
+  'modules/task/persistence/task-retrospective-document.ts',
+  'modules/task/persistence/task-verification-repository.ts',
   'web/http/server.ts',
   'web/application/preview-lifecycle.ts',
 ]);
 const legacyTaskRecordMethod: any = /\.(?:assertCanonicalTaskWorkspace|taskDirectory|ensureTaskDirectory|readTask|prepareTask|queryTaskViews|readTaskView|createTaskPersistence|mutateTaskPersistence|writeTaskPersistence|queryTasks|inspectTask|inspectTaskView|createTask|updateTask|activateTask|completeTask|abandonTask)\(/;
 for (const file of sourceFiles) {
   const relative: any = path.relative(sourceRoot, file).split(path.sep).join('/');
-  if (relative.startsWith('task/') || relative.startsWith('bootstrap/')) continue;
+  if (relative.startsWith('modules/task/') || relative.startsWith('bootstrap/')) continue;
   if (legacyTaskRecordMethod.test(fs.readFileSync(file, 'utf8')) && !legacyTaskRecordConsumers.has(relative)) {
     problems.push(`new wide Runtime Task Record consumer outside the explicit runtime-port baseline: src/${relative}`);
   }
 }
 
-const taskReviewApplication: any = path.join(sourceRoot, 'task', 'application', 'task-review-application.ts');
-const taskReviewInterface: any = path.join(sourceRoot, 'task', 'interfaces', 'cli', 'task-review.mjs');
+const taskReviewApplication: any = path.join(sourceRoot, 'modules', 'task', 'application', 'task-review-application.ts');
+const taskReviewInterface: any = path.join(sourceRoot, 'modules', 'task', 'interfaces', 'cli', 'task-review.ts');
 if (fs.existsSync(taskReviewApplication)) {
   const source: any = fs.readFileSync(taskReviewApplication, 'utf8');
   if (/node:process|process\.(?:stdout|stderr|exitCode)|taskReviewCommand|parseTaskReviewCli/.test(source)) {
@@ -499,8 +491,8 @@ if (fs.existsSync(taskReviewInterface)) {
   }
 }
 
-const taskVerificationApplication: any = path.join(sourceRoot, 'application', 'task-verification', 'task-verification-application.ts');
-const taskVerificationInterface: any = path.join(sourceRoot, 'interfaces', 'cli', 'task-verification.ts');
+const taskVerificationApplication: any = path.join(sourceRoot, 'modules', 'task', 'application', 'task-verification-application.ts');
+const taskVerificationInterface: any = path.join(sourceRoot, 'modules', 'task', 'interfaces', 'cli', 'task-verification.ts');
 if (fs.existsSync(taskVerificationApplication)) {
   const source: any = fs.readFileSync(taskVerificationApplication, 'utf8');
   if (/node:process|process\.(?:stdout|stderr|exitCode)|taskVerificationCommand|parseTaskVerificationCli/.test(source)) {
@@ -516,8 +508,8 @@ if (fs.existsSync(taskVerificationInterface)) {
     problems.push('Task Verification CLI interface must adapt both actions to the shared Application');
   }
 }
-const dailyProgressApplication: any = path.join(sourceRoot, 'workspace', 'application', 'project-daily-progress-application.ts');
-const dailyProgressInterface: any = path.join(sourceRoot, 'workspace', 'interfaces', 'cli', 'project-daily-progress.ts');
+const dailyProgressApplication: any = path.join(sourceRoot, 'modules', 'task', 'daily-progress', 'application', 'project-daily-progress-application.ts');
+const dailyProgressInterface: any = path.join(sourceRoot, 'modules', 'task', 'daily-progress', 'interfaces', 'cli', 'project-daily-progress.ts');
 if (fs.existsSync(dailyProgressApplication)) {
   const source: any = fs.readFileSync(dailyProgressApplication, 'utf8');
   if (/node:process|process\.(?:stdout|stderr|exitCode)|projectDailyProgressCommand/.test(source)) {
@@ -538,7 +530,7 @@ if ([buildrWebServer, buildrWebRouter].some((file: any) => fs.existsSync(file) &
 }
 
 const gitWorktreeProvider: any = path.join(sourceRoot, 'application', 'worktree', 'git-worktree-provider.mjs');
-const gitWorktreeInterface: any = path.join(sourceRoot, 'task', 'interfaces', 'cli', 'git-worktree.ts');
+const gitWorktreeInterface: any = path.join(sourceRoot, 'modules', 'task', 'interfaces', 'cli', 'git-worktree.ts');
 if (fs.existsSync(gitWorktreeProvider)) {
   const source: any = fs.readFileSync(gitWorktreeProvider, 'utf8');
   if (/process\.(?:stdout|stderr|exitCode)|gitWorktreeCommand|assertNoUnknownOptions|positionalArgs/.test(source)) {
@@ -555,7 +547,7 @@ if (fs.existsSync(gitWorktreeInterface)) {
 const legacyRootTokens: any[] = [
   'package/' + 'manifest.yml',
   'package/targets/' + 'workspace',
-  'package/launchers/' + 'assets',
+  'tools/build/launcher/' + 'assets',
   ['package', 'bootstrap'].join('/'),
   'src/web/' + 'web-dist',
   'scripts/' + 'release',

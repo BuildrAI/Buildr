@@ -4,8 +4,8 @@ import process from 'node:process';
 import { spawn } from 'node:child_process';
 import { acquireExclusiveFileLock, releaseExclusiveFileLock } from '../../infrastructure/filesystem/index.ts';
 
-import { readCurrentProductIdentity, validateNpmLauncherBinding } from '../../system/installation/module.ts';
-import { resolveWebProfile } from '../../system/installation/contracts/web-profile.ts';
+import { readCurrentProductIdentity, validateNpmLauncherBinding } from '../../modules/installation/module.ts';
+import { resolveWebProfile } from '../../modules/installation/contracts/web-profile.ts';
 
 export const INSTANCE_SCHEMA = 'buildr.local-app-instance/v2';
 const LEGACY_INSTANCE_SCHEMA = 'buildr.local-app-instance/v1';

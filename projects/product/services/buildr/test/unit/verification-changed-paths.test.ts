@@ -4,8 +4,8 @@ import {
   isSelectionOnlyPackageMetadataChange,
   isVerificationDeclarationMetadataOnlyChange,
   isVersionOnlyPackageMetadataChange,
-} from '../../test/verification/changed-paths.ts';
-import { createVerificationPlan } from '../../test/verification/planner.ts';
+} from '../verification/changed-paths.ts';
+import { createVerificationPlan } from '../verification/planner.ts';
 
 const ids: any = (plan: any) => plan.steps.map((step: any) => step.id);
 

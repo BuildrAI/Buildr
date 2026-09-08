@@ -5,11 +5,11 @@ import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
-import { installLauncher, launcherStatus, uninstallLauncher } from '../../package/launchers/manage.ts';
-import { buildLauncher } from '../../package/launchers/build.ts';
+import { installLauncher, launcherStatus, uninstallLauncher } from '../../tools/build/launcher/manage.ts';
+import { buildLauncher } from '../../tools/build/launcher/build.ts';
 
 const PRODUCT_ROOT: any = path.resolve(import.meta.dirname, '../..');
-const BUILDER: any = path.join(PRODUCT_ROOT, 'package', 'launchers', 'build.ts');
+const BUILDER: any = path.join(PRODUCT_ROOT, 'tools', 'build', 'launcher', 'build.ts');
 const CLI: any = path.join(PRODUCT_ROOT, 'bin', 'buildr.mjs');
 const builtBundles: any = new Map();
 
@@ -138,11 +138,11 @@ test('web launcher CLI只读投影npm-owned Launcher target', (t: any) => {
 
 test('development installer直接调用内部manager而不是npm-owned公开Launcher', () => {
   const installer: any = fs.readFileSync(path.join(PRODUCT_ROOT, 'tools', 'development', 'install-buildr-development'), 'utf8');
-  const manager: any = fs.readFileSync(path.join(PRODUCT_ROOT, 'package', 'launchers', 'manage.ts'), 'utf8');
-  assert.match(installer, /package\/launchers\/manage\.ts" install --channel development/u);
+  const manager: any = fs.readFileSync(path.join(PRODUCT_ROOT, 'tools', 'build', 'launcher', 'manage.ts'), 'utf8');
+  assert.match(installer, /tools\/build\/launcher\/manage\.ts" install --channel development/u);
   assert.doesNotMatch(installer, /bin\/buildr\.mjs" web launcher/u);
   assert.doesNotMatch(installer, /install-buildr-cli|command -v buildr|buildr --version/u);
-  assert.match(manager, /import \{ prepareDevelopmentWeb \} from '\.\.\/\.\.\/tools\/development\/prepare-development-web\.ts'/u);
+  assert.match(manager, /import \{ prepareDevelopmentWeb \} from '\.\.\/\.\.\/development\/prepare-development-web\.ts'/u);
   assert.ok(manager.indexOf("if (action === 'install') await prepareDevelopmentWeb()") < manager.indexOf("action === 'install' ? await installLauncher(options)"));
 });
 

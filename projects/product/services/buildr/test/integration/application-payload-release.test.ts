@@ -8,7 +8,7 @@ import test from 'node:test';
 import { buildApplicationPayload } from '../../tools/release/application-payload.ts';
 import { createNpmPackStaging, createReleaseArtifact, npmBinSource, readReleaseArtifact } from '../../tools/release/release-artifact.ts';
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.ts';
-import { createInstallationOrigin } from '../../src/system/installation/infrastructure/installation-origin.ts';
+import { createInstallationOrigin } from '../../src/modules/installation/infrastructure/installation-origin.ts';
 import { GENERATED_USER_REGISTRY_RESOURCE_SOURCES } from '../../src/infrastructure/product-layout.ts';
 import { verifyApplicationPayload } from '../../src/infrastructure/product-resources/index.ts';
 import { readSharedCandidatePackage } from '../verification/release/candidate-package.ts';
@@ -164,8 +164,8 @@ test('npm release artifact freezes one tarball with complete payload and no plat
       'runtime/buildr.cjs',
       'scripts/postinstall.mjs',
       'test-context.mjs',
-      'package/targets/test-context/index.js',
-      'package/targets/test-context/index.d.ts',
+      'build/test-context/index.js',
+      'build/test-context/index.d.ts',
       'payload/runtime/read-worker.cjs',
       'payload/product/web-dist/index.html',
       'payload/product/src/infrastructure/sqlite/migrations/0000_create_migration_ledger.sql',
@@ -348,9 +348,9 @@ test('npm package uses only its compatible host Node for CLI and on-demand Build
     assert.match(help.stdout, /Usage: buildr/);
     const developmentSchema: any = run(['__internal', 'task-development', 'planning', '--schema']);
     assert.notEqual(developmentSchema.status, 0, 'retired Task Development route must be absent');
-    assert.equal(fs.existsSync(path.join(packageRoot, 'src/task/interfaces/internal/task-development-driver.mjs')), false);
-    assert.equal(fs.existsSync(path.join(packageRoot, 'src/task/interfaces/internal/task-retrospective-driver.mjs')), false);
-    assert.equal(fs.existsSync(path.join(packageRoot, 'src/task/interfaces/internal/task-planning-identity-driver.mjs')), false);
+    assert.equal(fs.existsSync(path.join(packageRoot, 'src/modules/task/interfaces/internal/task-development-driver.mjs')), false);
+    assert.equal(fs.existsSync(path.join(packageRoot, 'src/modules/task/interfaces/internal/task-retrospective-driver.mjs')), false);
+    assert.equal(fs.existsSync(path.join(packageRoot, 'src/modules/task/interfaces/internal/task-planning-identity-driver.mjs')), false);
 
     const workflowWorkspace: any = path.join(root, 'workflow-workspace');
     fs.mkdirSync(workflowWorkspace);

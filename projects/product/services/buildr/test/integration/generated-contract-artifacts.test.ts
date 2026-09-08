@@ -5,10 +5,10 @@ import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 
 import { createGeneratedArtifactManifest } from '../../tools/build/generated-artifacts.ts';
-import { checkRuntimeSystemDto, writeRuntimeSystemDto } from '../../tools/contracts/runtime-system-dto.ts';
-import { checkTaskProfessionalHttpDto, writeTaskProfessionalHttpDto } from '../../tools/contracts/task-professional-dto.ts';
-import { checkTaskRecordHttpDto, writeTaskRecordHttpDto } from '../../tools/contracts/task-dto.ts';
-import { checkWorkspaceAgentAssetsDtos, writeWorkspaceAgentAssetsDtos } from '../../tools/contracts/workspace-agent-assets-dto.ts';
+import { checkRuntimeSystemDto, writeRuntimeSystemDto } from '../../tools/codegen/contracts/runtime-system-dto.ts';
+import { checkTaskProfessionalHttpDto, writeTaskProfessionalHttpDto } from '../../tools/codegen/contracts/task-professional-dto.ts';
+import { checkTaskRecordHttpDto, writeTaskRecordHttpDto } from '../../tools/codegen/contracts/task-dto.ts';
+import { checkWorkspaceAgentAssetsDtos, writeWorkspaceAgentAssetsDtos } from '../../tools/codegen/contracts/workspace-agent-assets-dto.ts';
 
 function fixture(t: TestContext): string {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-contract-output-test-'));
@@ -26,8 +26,8 @@ async function generate(root: string): Promise<void> {
 test('全部HTTP DTO从空显式目标生成两端闭合输出', async (t) => {
   const root = fixture(t);
   await generate(root);
-  const backend = path.join(root, 'buildr/src');
-  const web = path.join(root, 'buildr-web/src');
+  const backend = path.join(root, 'buildr/build/generated');
+  const web = path.join(root, 'buildr-web/build/generated');
   assert.equal((await checkTaskRecordHttpDto(root)).length, 0);
   assert.equal((await checkTaskProfessionalHttpDto(root)).length, 0);
   assert.equal((await checkRuntimeSystemDto(root)).length, 0);
@@ -49,8 +49,8 @@ test('相同Schema向两个全新目标生成相同DTO清单', async (t) => {
   const manifest = (target: string) => createGeneratedArtifactManifest({
     inputs: { schemas: 'current' },
     artifacts: [
-      { id: 'backend-dto', root: path.join(target, 'buildr/src') },
-      { id: 'web-dto', root: path.join(target, 'buildr-web/src') },
+      { id: 'backend-dto', root: path.join(target, 'buildr/build/generated') },
+      { id: 'web-dto', root: path.join(target, 'buildr-web/build/generated') },
     ],
   });
   assert.deepEqual(manifest(left), manifest(right));

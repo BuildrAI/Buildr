@@ -7,11 +7,12 @@ import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.ts';
+import { atomicWriteFile } from '../../src/infrastructure/filesystem/atomic-files.ts';
 import { createOwnedArtifactStaging, inventoryGeneratedArtifact } from '../build/generated-artifacts.ts';
 
 const serviceRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const config: any = path.join(serviceRoot, 'tsconfig.test-context.json');
-const target: any = path.join(serviceRoot, 'package/targets/test-context');
+const target: any = path.join(serviceRoot, 'build/test-context');
 const tsc: any = path.join(serviceRoot, 'node_modules/typescript/bin/tsc');
 
 function runCompiler(outDir: any): any  {
@@ -28,10 +29,32 @@ function runCompiler(outDir: any): any  {
 
 export function buildTestContext(outDir: any = target): any  {
   const resolved: any = path.resolve(outDir);
-  fs.rmSync(resolved, { recursive: true, force: true });
-  fs.mkdirSync(resolved, { recursive: true });
-  runCompiler(resolved);
-  return { root: resolved, files: inventoryGeneratedArtifact(resolved) };
+  fs.mkdirSync(path.dirname(resolved), { recursive: true });
+  const staging = createOwnedArtifactStaging(path.dirname(resolved), 'buildr-test-context-compile-');
+  try {
+    runCompiler(staging.root);
+    const expected = inventoryGeneratedArtifact(staging.root);
+    if (!fs.existsSync(resolved)) {
+      fs.renameSync(staging.root, resolved);
+      return { root: resolved, files: expected };
+    }
+    const current = inventoryGeneratedArtifact(resolved);
+    if (JSON.stringify(current) === JSON.stringify(expected)) return { root: resolved, files: current };
+    const previous = new Map(current.map((file) => [file.path, file]));
+    const paths = new Set(expected.map((file) => file.path));
+    // Keep readable modules in place while other verification consumers load them.
+    for (const file of expected) {
+      const before = previous.get(file.path);
+      if (before?.sha256 === file.sha256 && before.mode === file.mode) continue;
+      atomicWriteFile(path.join(resolved, file.path), fs.readFileSync(path.join(staging.root, file.path)), 'utf8', { mode: file.mode });
+    }
+    for (const file of current) {
+      if (!paths.has(file.path)) fs.unlinkSync(path.join(resolved, file.path));
+    }
+    return { root: resolved, files: inventoryGeneratedArtifact(resolved) };
+  } finally {
+    staging.cleanup();
+  }
 }
 
 function main(): any  {

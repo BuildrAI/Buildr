@@ -5,7 +5,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { performance } from 'node:perf_hooks';
 
-import { buildrWebDataRoot } from '../../workspace/module.ts';
+import { buildrWebDataRoot } from '../../modules/workspace/module.ts';
 import { sameFilesystemPath } from '../../infrastructure/filesystem/filesystem-path-identity.ts';
 import { INSTANCE_SCHEMA, healthyBuildrWebInstance, openDefaultBrowser } from '../infrastructure/instance-runtime.ts';
 

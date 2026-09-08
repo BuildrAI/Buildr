@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import test from 'node:test';
-import { createBuiltinReplacement } from '../../src/agent-assets/application/package-maintenance/builtin-replacement.ts';
+import { createBuiltinReplacement } from '../../src/modules/agent-assets/application/package-maintenance/builtin-replacement.ts';
 
 const targetRoot: any = '/workspace';
 const predecessorTarget: any = 'skills/buildr/git-ops';

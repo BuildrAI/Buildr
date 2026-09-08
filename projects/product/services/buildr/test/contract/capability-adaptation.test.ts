@@ -7,7 +7,7 @@ import YAML from 'yaml';
 const read: any = (path: any) => fs.readFileSync(path, 'utf8');
 const packageManifest: any = YAML.parse(read('resources/manifest.yml'));
 const core: any = read('resources/workspace/AGENTS.md');
-const buildrSkill: any = read('package/targets/runtime/skills/buildr/SKILL.md');
+const buildrSkill: any = read('resources/runtime/skills/buildr/SKILL.md');
 const adaptation: any = read('resources/workspace/skills/buildr/capability-adaptation/SKILL.md');
 const capabilityDocs: any = read('docs/skill-capability-contracts.md');
 

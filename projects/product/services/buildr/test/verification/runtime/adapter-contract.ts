@@ -16,17 +16,16 @@ import {
   createRuntimeContext,
   createRuntimePlan,
   getRuntimeAdapter,
-  reconcileRuntimePlan,
   runtimeAdapterImplementationMatrix,
   runtimeDiscoveryPayload,
   selectPlatformEnvironmentProbe,
   selectAdapterImplementation,
-  validateRuntimePlan,
-} from '../../../src/agent-assets/infrastructure/runtime/adapter-contract.ts';
-import { validateSkillPublication } from '../../../src/agent-assets/infrastructure/runtime/skills/publication.ts';
-import { resolveSkillContributions } from '../../../src/agent-assets/infrastructure/runtime/render-claude-code.ts';
-import { assembleRuntimeProjection } from '../../../src/agent-assets/infrastructure/runtime/projection.ts';
-import { checkRuntimeAdapter, runEnvironmentProbe } from '../../../src/agent-assets/infrastructure/runtime/check-runtime.ts';
+} from '../../../src/modules/agent-assets/infrastructure/runtime/adapter-contract.ts';
+import { reconcileRuntimePlan, validateRuntimePlan } from '../../../src/modules/agent-assets/infrastructure/runtime/runtime-reconciler.ts';
+import { validateSkillPublication } from '../../../src/modules/agent-assets/infrastructure/runtime/skills/publication.ts';
+import { resolveSkillContributions } from '../../../src/modules/agent-assets/infrastructure/runtime/render-claude-code.ts';
+import { assembleRuntimeProjection } from '../../../src/modules/agent-assets/infrastructure/runtime/projection.ts';
+import { checkRuntimeAdapter, runEnvironmentProbe } from '../../../src/modules/agent-assets/infrastructure/runtime/check-runtime.ts';
 
 const productRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const repositoryRoot: any = path.resolve(productRoot, '../../../..');

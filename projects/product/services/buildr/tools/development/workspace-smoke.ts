@@ -5,7 +5,8 @@ import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-import { createRuntime } from '../../src/bootstrap/runtime.ts';
+import { createRuntime, runtimeProvide } from '../../src/bootstrap/runtime.ts';
+import { PROJECT_APPLICATION, SERVICE_APPLICATION, WORKSPACE_APPLICATION } from '../../src/modules/workspace/module.ts';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
 
 const serviceRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -36,7 +37,14 @@ runBuildr(['project', 'create', 'smoke', '--target', workspaceRoot, '--name', 'S
 runBuildr(['service', 'create', 'smoke/app', sourceRoot, '--target', workspaceRoot, '--name', 'Smoke App', '--description', 'Workspace smoke service.', '--type', 'application']);
 
 const runtime: any = createRuntime();
-const instance: any = createLocalWorkspaceServer(runtime, { targetRoot: workspaceRoot });
+const workspace: any = runtimeProvide(runtime, WORKSPACE_APPLICATION);
+const project: any = runtimeProvide(runtime, PROJECT_APPLICATION);
+const service: any = runtimeProvide(runtime, SERVICE_APPLICATION);
+const instance: any = createLocalWorkspaceServer(runtime, {
+  targetRoot: workspaceRoot,
+  ensureRegisteredTarget: workspace.ensureRegisteredTarget,
+  resolveRegisteredWorkspace: workspace.resolveRegisteredWorkspace,
+});
 try {
   const { url, initialWorkspaceId }: any = await instance.ready;
   const response: any = await fetch(`${url}/api/v1/workspaces`);
@@ -45,8 +53,11 @@ try {
   assert.equal(registry.workspaces.length, 1);
   assert.equal(registry.workspaces[0].workspace.id, initialWorkspaceId);
   assert.equal(registry.workspaces[0].rootPath, workspaceRoot);
-  assert.equal(runtime.listProjects(workspaceRoot).projects[0].code, 'smoke');
-  assert.equal(runtime.listServices(workspaceRoot, 'smoke').services[0].code, 'app');
+  const projects = await fetch(`${url}/api/v1/workspaces/${initialWorkspaceId}/projects`);
+  assert.equal(projects.status, 200);
+  assert.equal((await projects.json()).projects[0].code, 'smoke');
+  assert.equal(project.listProjects(workspaceRoot).projects[0].code, 'smoke');
+  assert.equal(service.listServices(workspaceRoot, 'smoke').services[0].code, 'app');
   process.stdout.write(`${JSON.stringify({
     schemaVersion: 'buildr.workspace-smoke-scenario/v1',
     status: 'passed',

@@ -167,7 +167,9 @@ Buildr 管理的是长期工作资产，不直接填充模型的 context window�
 
 - [日常使用手册](projects/product/docs/manual/README.md)：安装、Workspace 准备和日常工作流程
 - [产品说明](projects/product/docs/buildr-product.md)：完整定位、核心模型、边界和 Roadmap
-- [Buildr Skill](projects/product/services/buildr/package/targets/runtime/skills/buildr/SKILL.md)：Agent 使用 Buildr 的主要入口
+- [Buildr Skill](projects/product/services/buildr/resources/runtime/skills/buildr/SKILL.md)：Agent 使用 Buildr 的主要入口
+- [Buildr 全项目代码地图](projects/product/knowledge/code-map/README.md)：从系统、模块、对象到调用、数据与副作用的四层导航
+- [Buildr 系统总览图](projects/product/knowledge/archify/system/buildr-system-overview.html)与[能力、数据及副作用流](projects/product/knowledge/archify/flows/capability-data-responsibility.html)：可交互当前态技术图
 - [CLI Reference](projects/product/services/buildr/docs/cli-reference.md)：公开命令和参数
 - [Runtime Adapters](projects/product/services/buildr/docs/agent-runtime-adapters.md)：各 Agent 的接入方式和限制
 - [OpenSpec specs](projects/product/openspec/specs/)：规范性产品行为契约

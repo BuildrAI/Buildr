@@ -87,7 +87,7 @@ test('API client 通过 LocalSessionAdapter 为写请求附加 session，并拒�
 });
 
 test('Task-scoped Change 详情先提供人类可读 Brief，再展示技术 artifacts', () => {
-  const source: any = read('../buildr-web/src/pages/TaskChangeDetailPage.tsx');
+  const source: any = read('../buildr-web/src/features/task/pages/TaskChangeDetailPage.tsx');
   const briefPanel: any = read('../buildr-web/src/components/ChangeBriefPanel.tsx');
   const styles: any = read('../buildr-web/src/styles.css');
   const markdown: any = read('../buildr-web/src/markdown.ts');
@@ -110,10 +110,11 @@ test('Task-scoped Change 详情先提供人类可读 Brief，再展示技术 art
 });
 
 test('Change 仅作为 Task-scoped 只读内容', () => {
-  const change: any = read('../buildr-web/src/pages/TaskChangeDetailPage.tsx');
+  const change: any = read('../buildr-web/src/features/task/pages/TaskChangeDetailPage.tsx');
+  const changeHook: any = read('../buildr-web/src/features/task/hooks/useTaskChangeDetail.ts');
   const app: any = read('../buildr-web/src/App.tsx');
   const server: any = read('src/web/http/server.ts');
-  assert.match(change, /\/api\/v1\/tasks\/\$\{encodeURIComponent\(taskId\)\}\/changes/);
+  assert.match(changeHook, /taskApi\.change\(taskId, projectCode, changeCode/);
   assert.doesNotMatch(change, /associate-change|addChanges|openAgentAction/);
   assert.doesNotMatch(app, /path=["']\/changes["']/);
   assert.doesNotMatch(server, /suffix === '\/changes'|change-create|change-action|addChanges/);
@@ -125,9 +126,10 @@ test('Buildr Web 提供独立文章入口、只读内容视图和受控本地图
   const index: any = read('../buildr-web/index.html');
   const server: any = read('src/web/http/server.ts');
   const staticFiles: any = read('src/web/http/static-files.ts');
-  const publicationHttp: any = read('src/system/publication/interfaces/http/publication-http.ts');
-  const detail: any = read('../buildr-web/src/pages/ArticleDetailPage.tsx');
-  const publications: any = read('../buildr-web/src/pages/ArticlesPage.tsx');
+  const publicationHttp: any = read('src/modules/publication/interfaces/http/publication-http.ts');
+  const detail: any = read('../buildr-web/src/features/publication/pages/ArticleDetailPage.tsx');
+  const publications: any = read('../buildr-web/src/features/publication/pages/ArticlesPage.tsx');
+  const publicationApi: any = read('../buildr-web/src/features/publication/api/publication-api.ts');
   assert.match(layout, /data-nav=\{item\.nav\}/);
   assert.match(layout, /nav: 'articles', label: '文章'/);
   assert.match(app, /path="articles"/);
@@ -140,6 +142,7 @@ test('Buildr Web 提供独立文章入口、只读内容视图和受控本地图
   assert.match(publicationHttp, /readPublicationAsset/);
   assert.doesNotMatch(server, /STATIC_ASSETS|features\/publications\.js/);
   assert.match(publications, /只读展示/);
+  assert.match(publicationApi, /\/api\/v1\/publications/);
   assert.match(detail, /imageResolver/);
   assert.match(detail, /assets\//);
   assert.match(detail, /返回文章目录/);
@@ -197,7 +200,7 @@ test('任务 UI Prototype 只读按需加载并在离线 opaque-origin iframe �
   const artifactsHook: any = read('../buildr-web/src/features/task/hooks/useTaskArtifacts.ts');
   const server: any = read('src/web/http/server.ts');
   const responses: any = read('src/web/http/responses.ts');
-  const changeHttp: any = read('src/task/change/interfaces/http/change-http.ts');
+  const changeHttp: any = read('src/modules/task/change/interfaces/http/change-http.ts');
   const styles: any = read('../buildr-web/src/styles.css');
   assert.match(source, /if \(tab === 'prototype'\) void artifacts\.refreshPrototype\(\)/);
   assert.match(artifactsHook, /'ui-prototypes'/);
@@ -253,7 +256,8 @@ test('任务详情面向用户的核心术语使用中文或中英文并列', ()
   const source: any = read('../buildr-web/src/features/task/pages/TaskDetailPage.tsx');
   const evidence: any = read('../buildr-web/src/features/task/components/EvidenceTab.tsx');
   const tasks: any = read('../buildr-web/src/features/task/pages/TasksPage.tsx');
-  const change: any = read('../buildr-web/src/pages/TaskChangeDetailPage.tsx');
+  const change: any = read('../buildr-web/src/features/task/pages/TaskChangeDetailPage.tsx');
+  const changeHook: any = read('../buildr-web/src/features/task/hooks/useTaskChangeDetail.ts');
   assert.match(source, /任务记录（Task Record）/);
   assert.match(evidence, /方案审查（Planning Review）/);
   assert.match(evidence, /完成审查（Completion Review）/);
@@ -273,13 +277,13 @@ test('任务详情面向用户的核心术语使用中文或中英文并列', ()
   assert.doesNotMatch(tasks, />OpenSpec Changes</);
   assert.match(change, /任务关联变更|关联变更/);
   assert.match(change, /只读展示当前任务已关联的 OpenSpec 内容/);
-  assert.match(change, /工作副本/);
-  assert.match(change, /保留基线/);
+  assert.match(changeHook, /工作副本/);
+  assert.match(changeHook, /保留基线/);
   assert.doesNotMatch(change, /openAgentAction|addChanges/);
 });
 
 test('Task-scoped Change 保持只读，不提供 Change 审查 route', () => {
-  const change: any = read('../buildr-web/src/pages/TaskChangeDetailPage.tsx');
+  const change: any = read('../buildr-web/src/features/task/pages/TaskChangeDetailPage.tsx');
   const tasks: any = read('../buildr-web/src/features/task/pages/TasksPage.tsx');
   const app: any = read('../buildr-web/src/App.tsx');
   assert.doesNotMatch(change, /openAgentAction|continue-change|review-change|associate-change/);
@@ -296,9 +300,9 @@ test('任务意图以 Markdown 链接展示 Project 内的只读文档', () => {
   const sharedResolver: any = read('../buildr-web/src/lib/workspaceMarkdownReferences.ts');
   assert.match(overview, /id="task-detail-intent"[\s\S]*MarkdownHost/);
   assert.match(artifactsHook, /resolveTaskDocumentReference/);
-  assert.match(artifactsHook, /workspaceApi\.listProjects\(\)/);
+  assert.match(artifactsHook, /projectApi\.listProjects\(\)/);
   assert.match(detail, /TaskDocumentPreviewModal/);
-  assert.match(artifactsHook, /workspaceApi\.projectDocument\(reference\.projectCode, documentPath\)/);
+  assert.match(artifactsHook, /projectApi\.projectDocument\(reference\.projectCode, documentPath\)/);
   assert.match(prototype, /resolveProjectMarkdownHref/);
   assert.match(prototype, /相关资料/);
   assert.match(resolver, /resolveWorkspaceMarkdownReference\(href, allowedProjects, projects\)/);
@@ -314,7 +318,7 @@ test('任务列表使用可取消的服务端筛选，详情首屏只读轻量�
   const actionsHook: any = read('../buildr-web/src/features/task/hooks/useTaskActions.ts');
   const tasks: any = read('../buildr-web/src/features/task/pages/TasksPage.tsx');
   const listHook: any = read('../buildr-web/src/features/task/hooks/useTaskList.ts');
-  const taskDto: any = read('../buildr-web/src/features/task/api/generated/task-dto.ts');
+  const taskDto: any = read('../buildr-web/build/generated/task-dto.ts');
   const server: any = read('src/web/http/server.ts');
   assert.match(listHook, /new AbortController\(\)/);
   assert.doesNotMatch(tasks, /matchesTaskQuery/);

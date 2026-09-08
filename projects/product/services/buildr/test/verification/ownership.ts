@@ -35,7 +35,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   "component": {
     "inputs": [
       "test/component/**",
-      "src/workspace/application/service-application.ts"
+      "src/modules/workspace/application/service-application.ts"
     ],
     "inputExclusions": []
   },
@@ -99,11 +99,11 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
     "inputs": [
       "test/integration/core-diagnostics-and-package.test.ts",
       "test/integration/project-verification-map.test.ts",
-      "src/verification/application/project-verification-diagnostics.ts",
-      "src/system/doctor/application/diagnostics.ts",
-      "src/system/doctor/application/result-model.ts",
-      "src/system/doctor/application/scope-diagnostics.ts",
-      "src/agent-assets/application/package-maintenance/verification-registry.ts"
+      "src/modules/project-testing/application/project-verification-diagnostics.ts",
+      "src/modules/diagnostics/application/diagnostics.ts",
+      "src/modules/diagnostics/application/result-model.ts",
+      "src/modules/diagnostics/application/scope-diagnostics.ts",
+      "tools/verification/package-check/verification-registry.ts"
     ],
     "inputExclusions": []
   },
@@ -116,8 +116,8 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "test/integration/openspec-deterministic-sync.test.ts",
       "test/integration/openspec-domain.test.ts",
       "test/integration/openspec-projected-validator.test.ts",
-      "src/task/change/**",
-      "src/task/openspec/**"
+      "src/modules/task/change/**",
+      "src/modules/openspec/**"
     ],
     "inputExclusions": []
   },
@@ -135,14 +135,14 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "tools/build/**",
       "tools/testing/test-context-build.ts",
       "tsconfig.test-context.json",
-      "src/verification/infrastructure/capability-runner.ts",
-      "src/verification/infrastructure/process-executor.ts",
-      "src/verification/infrastructure/owned-process.ts",
-      "src/verification/domain/verification-deadline.ts",
-      "src/verification/domain/verification-plan.ts",
-      "src/verification/infrastructure/preparation-admission.ts",
-      "src/verification/infrastructure/resource-coordinator.ts",
-      "src/verification/application/verification-application.ts",
+      "src/modules/project-testing/infrastructure/capability-runner.ts",
+      "test/verification/support/process-executor.ts",
+      "test/verification/support/owned-process.ts",
+      "test/verification/support/verification-deadline.ts",
+      "src/modules/project-testing/domain/verification-plan.ts",
+      "src/modules/project-testing/infrastructure/preparation-admission.ts",
+      "test/verification/support/resource-coordinator.ts",
+      "src/modules/project-testing/application/verification-application.ts",
       "test/verification/audit.ts",
       "test/verification/changed.ts",
       "test/verification/changed-paths.ts",
@@ -175,12 +175,12 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "test/integration/web-dist-verification.test.ts",
       "src/bootstrap/**",
       "src/infrastructure/contracts/json-schema-validator.ts",
-      "src/task/module.ts",
-      "src/task/interfaces/http/**",
-      "src/agent-assets/infrastructure/runtime/**",
-      "src/workspace/**",
+      "src/modules/task/module.ts",
+      "src/modules/task/interfaces/http/**",
+      "src/modules/agent-assets/infrastructure/runtime/**",
+      "src/modules/workspace/**",
       "src/web/**",
-      "tools/contracts/**",
+      "tools/codegen/contracts/**",
       "services/buildr-web/src/api/**",
       "services/buildr-web/src/App.tsx",
       "services/buildr-web/src/features/task/**",
@@ -196,9 +196,9 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "test/integration/product-installation-identity.test.ts",
       "test/integration/product-installation-registry.test.ts",
       "tools/release/**",
-      "src/system/installation/application/product-installation-status.ts",
-      "src/system/installation/application/npm-installation-enrollment.ts",
-      "src/system/installation/**",
+      "src/modules/installation/application/product-installation-status.ts",
+      "src/modules/installation/application/npm-installation-enrollment.ts",
+      "src/modules/installation/**",
       "src/infrastructure/product-invocation/**",
       "src/infrastructure/product-resources/**"
     ],
@@ -208,7 +208,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
     "inputs": [
       "test/integration/workspace-management-fence.test.ts",
       "test/integration/workspace-sqlite.test.ts",
-      "src/workspace/**",
+      "src/modules/workspace/**",
       "src/infrastructure/index.ts",
       "src/infrastructure/sqlite/**"
     ],
@@ -219,15 +219,15 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "test/integration/self-bootstrap-closeout.test.ts",
       "skills/buildr-self-bootstrap-sync/**",
       "resources/workspace/skills/buildr/buildr-self-bootstrap-sync/**",
-      "src/system/installation/application/release-awareness.ts"
+      "src/modules/installation/application/release-awareness.ts"
     ],
     "inputExclusions": []
   },
   "integration-task-read-models": {
     "inputs": [
-      "src/task/persistence/task-retrospective-document.ts",
-      "src/task/application/task-review-application.ts",
-      "src/task/persistence/task-review-repository.ts",
+      "src/modules/task/persistence/task-retrospective-document.ts",
+      "src/modules/task/application/task-review-application.ts",
+      "src/modules/task/persistence/task-review-repository.ts",
       "test/integration/task-review-repository.test.ts",
       "test/system/task-record-product.test.ts"
     ],
@@ -238,21 +238,21 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "test/integration/parent-coordination-application.test.ts",
       "test/integration/parent-coordination-repository.test.ts",
       "test/integration/publication-application.test.ts",
-      "src/task/application/parent-coordination-application.ts",
-      "src/task/domain/parent-coordination.ts",
-      "src/system/publication/**"
+      "src/modules/task/application/parent-coordination-application.ts",
+      "src/modules/task/domain/parent-coordination.ts",
+      "src/modules/publication/**"
     ],
     "inputExclusions": []
   },
   "integration-project-daily-progress": {
     "inputs": [
       "test/integration/project-daily-progress-application.test.ts",
-      "src/workspace/domain/project-daily-progress.ts",
-      "src/workspace/application/project-daily-progress-application.ts",
-      "src/workspace/persistence/project-daily-progress-repository.ts",
-      "src/workspace/interfaces/cli/project-daily-progress.ts",
-      "src/workspace/interfaces/http/workspace-http.ts",
-      "src/workspace/module.ts"
+      "src/modules/task/daily-progress/domain/project-daily-progress.ts",
+      "src/modules/task/daily-progress/application/project-daily-progress-application.ts",
+      "src/modules/task/daily-progress/persistence/project-daily-progress-repository.ts",
+      "src/modules/task/daily-progress/interfaces/cli/project-daily-progress.ts",
+      "src/modules/workspace/interfaces/http/workspace-http.ts",
+      "src/modules/workspace/module.ts"
     ],
     "inputExclusions": []
   },
@@ -269,7 +269,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "src/bootstrap/module-registry.ts",
       "src/bootstrap/runtime.ts",
       "src/bootstrap/cli/registry.ts",
-      "src/task/module.ts",
+      "src/modules/task/module.ts",
       "src/web/http/server.ts",
       ".github/workflows/publish.yml",
       ".github/workflows/verify.yml",
@@ -285,8 +285,8 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "tools/release/release-tag-ensure.ts",
       "tools/release/release-contract.ts",
       "tools/release/trusted-publish.ts",
-      "src/system/installation/domain/release-version.ts",
-      "src/agent-assets/infrastructure/runtime/render-claude-code.ts",
+      "src/modules/installation/domain/release-version.ts",
+      "src/modules/agent-assets/infrastructure/runtime/render-claude-code.ts",
       "test/verification/candidate.ts",
       "test/verification/candidate-ci.ts",
       "test/verification/candidate-ci-evidence.ts",
@@ -312,7 +312,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "resources/manifest.yml",
       "resources/workspace/AGENTS.md",
       "resources/workspace/skills/**",
-      "package/targets/runtime/skills/**",
+      "resources/runtime/skills/**",
       "skills/buildr-release/**",
       "docs/skill-capability-contracts.md",
       "package.json",
@@ -334,7 +334,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "test/verification/planner.ts",
       "test/verification/product-provider-entry.ts",
       "test/verification/registry.ts",
-      "src/verification/application/**",
+      "src/modules/project-testing/application/**",
       "test/verification/system-suites.ts",
       "test/verification/system.ts",
       "test/helpers/task-lifecycle-system-context.ts",
@@ -354,13 +354,13 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "test/verification/resource-coordinator.ts",
       "test/verification/timing/**",
       "test/verification/workspace/**",
-      "src/verification/infrastructure/capability-runner.ts",
-      "src/verification/infrastructure/preparation-admission.ts",
-      "src/verification/infrastructure/process-executor.ts",
-      "src/verification/infrastructure/owned-process.ts",
-      "src/verification/domain/verification-deadline.ts",
-      "src/verification/infrastructure/resource-coordinator.ts",
-      "src/verification/application/verification-application.ts",
+      "src/modules/project-testing/infrastructure/capability-runner.ts",
+      "src/modules/project-testing/infrastructure/preparation-admission.ts",
+      "test/verification/support/process-executor.ts",
+      "test/verification/support/owned-process.ts",
+      "test/verification/support/verification-deadline.ts",
+      "test/verification/support/resource-coordinator.ts",
+      "src/modules/project-testing/application/verification-application.ts",
       "test/verification/system-suites.ts",
       "test/verification/system.ts",
       "test/helpers/task-lifecycle-system-context.ts",
@@ -373,7 +373,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "test/system/public-json-contracts.test.ts",
       "src/infrastructure/contracts/public-json.ts",
       "src/bootstrap/cli/**",
-      "src/task/interfaces/cli/**",
+      "src/modules/task/interfaces/cli/**",
       "test/verification/system-suites.ts",
       "test/verification/system.ts",
       "test/helpers/task-lifecycle-system-context.ts",
@@ -384,7 +384,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   "system-openspec-contract-audit": {
     "inputs": [
       "test/system/openspec-contract-audit.test.ts",
-      "src/task/openspec/**",
+      "src/modules/openspec/**",
       "test/verification/system-suites.ts",
       "test/verification/system.ts",
       "test/helpers/task-lifecycle-system-context.ts",
@@ -398,7 +398,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "test/system/project-product.test.ts",
       "test/system/service-product.test.ts",
       "test/system/workspace-manifest-registry.test.ts",
-      "src/workspace/**",
+      "src/modules/workspace/**",
       "src/infrastructure/platform.ts",
       "src/infrastructure/product-layout.ts",
       "test/helpers/prepared-fixtures.ts",
@@ -412,10 +412,10 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   },
   "system-task-lifecycle": {
     "inputs": [
-      "src/task/persistence/task-repository.ts",
-      "src/task/persistence/task-project-repository.ts",
-      "src/task/persistence/task-service-repository.ts",
-      "src/task/persistence/task-change-repository.ts",
+      "src/modules/task/persistence/task-repository.ts",
+      "src/modules/task/persistence/task-project-repository.ts",
+      "src/modules/task/persistence/task-service-repository.ts",
+      "src/modules/task/persistence/task-change-repository.ts",
       "test/system/task-record-change-resolver.test.ts",
       "test/system/task-record-buildr-web.test.ts",
       "test/system/task-record-product.test.ts",
@@ -423,29 +423,29 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "test/system/task-verification-product.test.ts",
       "test/system/product-verification-provider-cli.test.ts",
       "src/bootstrap/**",
-      "src/task/change/**",
+      "src/modules/task/change/**",
       "test/helpers/task-record-system-fixture.ts",
       "test/helpers/task-verification-result-fixture.ts",
-      "src/task/module.ts",
-      "src/task/domain/task.ts",
-      "src/task/domain/task-project.ts",
-      "src/task/domain/task-service.ts",
-      "src/task/domain/task-change.ts",
-      "src/task/domain/task-verification.ts",
-      "src/task/domain/task-review.ts",
-      "src/task/domain/parent-coordination.ts",
-      "src/task/application/task-verification-application.ts",
-      "src/task/application/task-review-application.ts",
-      "src/task/application/parent-coordination-application.ts",
-      "src/task/application/task-query-application.ts",
-      "src/task/application/task-command-application.ts",
-      "src/task/application/task-dto.ts",
-      "src/task/application/task-validation.ts",
-      "src/task/interfaces/cli/task.ts",
-      "src/task/interfaces/cli/task-review.ts",
-      "src/task/interfaces/cli/task-verification.ts",
-      "src/task/interfaces/cli/parent-coordination.ts",
-      "src/task/interfaces/http/**",
+      "src/modules/task/module.ts",
+      "src/modules/task/domain/task.ts",
+      "src/modules/task/domain/task-project.ts",
+      "src/modules/task/domain/task-service.ts",
+      "src/modules/task/domain/task-change.ts",
+      "src/modules/task/domain/task-verification.ts",
+      "src/modules/task/domain/task-review.ts",
+      "src/modules/task/domain/parent-coordination.ts",
+      "src/modules/task/application/task-verification-application.ts",
+      "src/modules/task/application/task-review-application.ts",
+      "src/modules/task/application/parent-coordination-application.ts",
+      "src/modules/task/application/task-query-application.ts",
+      "src/modules/task/application/task-command-application.ts",
+      "src/modules/task/application/task-dto.ts",
+      "src/modules/task/application/task-validation.ts",
+      "src/modules/task/interfaces/cli/task.ts",
+      "src/modules/task/interfaces/cli/task-review.ts",
+      "src/modules/task/interfaces/cli/task-verification.ts",
+      "src/modules/task/interfaces/cli/parent-coordination.ts",
+      "src/modules/task/interfaces/http/**",
       "test/verification/system-suites.ts",
       "test/verification/system.ts",
       "test/helpers/task-lifecycle-system-context.ts",
@@ -456,7 +456,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   "system-worktree-lifecycle": {
     "inputs": [
       "test/system/worktree-create.test.ts",
-      "src/task/infrastructure/**",
+      "src/modules/task/infrastructure/**",
       "src/infrastructure/git/**",
       "test/helpers/workspace-product-suite.ts",
       "test/verification/system-suites.ts",
@@ -471,12 +471,12 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "test/system/cli-update.test.ts",
       "test/system/runtime-target-authority.test.ts",
       "test/system/workspace-runtime-recovery.test.ts",
-      "src/system/installation/application/cli-update.ts",
-      "src/system/installation/application/release-awareness.ts",
-      "src/agent-assets/application/runtime-projection.ts",
+      "src/modules/installation/application/cli-update.ts",
+      "src/modules/installation/application/release-awareness.ts",
+      "src/modules/agent-assets/application/runtime-projection.ts",
       "src/infrastructure/filesystem/**",
       "src/infrastructure/network/**",
-      "src/agent-assets/infrastructure/runtime/**",
+      "src/modules/agent-assets/infrastructure/runtime/**",
       "test/verification/system-suites.ts",
       "test/verification/system.ts",
       "test/helpers/task-lifecycle-system-context.ts",
@@ -490,12 +490,12 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "test/system/task-professional-http-contract.test.ts",
       "test/system/workspace-buildr-web-http.test.ts",
       "src/bootstrap/**",
-      "src/workspace/module.ts",
-      "src/workspace/interfaces/http/**",
-      "src/task/module.ts",
-      "src/task/change/interfaces/http/**",
-      "src/task/interfaces/http/**",
-      "src/system/publication/interfaces/http/**",
+      "src/modules/workspace/module.ts",
+      "src/modules/workspace/interfaces/http/**",
+      "src/modules/task/module.ts",
+      "src/modules/task/change/interfaces/http/**",
+      "src/modules/task/interfaces/http/**",
+      "src/modules/publication/interfaces/http/**",
       "src/web/http/**",
       "src/infrastructure/sqlite/**",
       "services/buildr-web/src/api/**",
@@ -515,7 +515,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "test/system/workspace-app-process.test.ts",
       "src/web/**",
       "src/infrastructure/process.ts",
-      "package/launchers/**",
+      "tools/build/launcher/**",
       "tools/development/run-isolated-workspace-smoke.ts",
       "tools/development/workspace-smoke.ts",
       "test/fixtures/failing-workspace-smoke.ts",
@@ -534,12 +534,12 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "test/system/workspace-runtime-recovery.test.ts",
       "test/system/worktree-create.test.ts",
       "test/helpers/task-finish-sqlite-fixture.ts",
-      "src/system/installation/application/cli-update.ts",
-      "src/task/application/finish/**",
-      "src/task/infrastructure/**",
+      "src/modules/installation/application/cli-update.ts",
+      "src/modules/task/application/finish/**",
+      "src/modules/task/infrastructure/**",
       "src/infrastructure/filesystem/**",
       "src/infrastructure/git/**",
-      "src/agent-assets/infrastructure/runtime/**",
+      "src/modules/agent-assets/infrastructure/runtime/**",
       "src/web/**",
       "resources/workspace/**",
       "services/buildr-web/package.json",
@@ -553,10 +553,10 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
     "inputs": [
       "bin/**",
       "src/bootstrap/**",
-      "src/task/interfaces/cli/**",
+      "src/modules/task/interfaces/cli/**",
       "src/web/http/server.ts",
       "src/web/**",
-      "src/task/**",
+      "src/modules/task/**",
       "src/infrastructure/contracts/public-json.ts",
       "resources/**",
       "tools/**",
@@ -582,11 +582,11 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   },
   "runtime-adapter-contract": {
     "inputs": [
-      "src/agent-assets/infrastructure/runtime/**",
-      "src/agent-assets/application/runtime.ts",
-      "src/system/doctor/application/runtime-diagnostics.ts",
+      "src/modules/agent-assets/infrastructure/runtime/**",
+      "src/modules/agent-assets/application/runtime.ts",
+      "src/modules/diagnostics/application/runtime-diagnostics.ts",
       "test/verification/runtime/adapter-contract.ts",
-      "package/targets/runtime/**",
+      "resources/runtime/**",
       "docs/agent-runtime-adapters.md"
     ],
     "inputExclusions": []
@@ -606,7 +606,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "tools/release/release-convergence.ts",
       "tools/release/release-files.ts",
       "tools/release/release-notes.ts",
-      "src/system/installation/domain/release-version.ts"
+      "src/modules/installation/domain/release-version.ts"
     ],
     "inputExclusions": []
   },
@@ -615,9 +615,9 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "test/verification/concurrency/**",
       "test/helpers/child-process-supervisor.ts",
       "test/helpers/clean-product-source.ts",
-      "src/task/infrastructure/**",
-      "src/task/application/task-verification-application.ts",
-      "src/verification/application/**",
+      "src/modules/task/infrastructure/**",
+      "src/modules/task/application/task-verification-application.ts",
+      "src/modules/project-testing/application/**",
       "src/web/application/preview-lifecycle.ts",
       "openspec/specs/concurrent-task-acceptance/**",
       "openspec/specs/task-environments/**"
@@ -661,7 +661,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       ".github/workflows/publish.yml"
     ],
     "inputExclusions": [
-      "package/launchers/**"
+      "tools/build/launcher/**"
     ]
   },
   "application-payload-release": {
@@ -678,14 +678,14 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       ".github/workflows/publish.yml"
     ],
     "inputExclusions": [
-      "package/launchers/**"
+      "tools/build/launcher/**"
     ]
   },
   "npm-launcher-candidate": {
     "inputs": [
-      "src/system/installation/**",
+      "src/modules/installation/**",
       "src/bootstrap/cli/identity.ts",
-      "src/system/installation/interfaces/cli/launcher.ts",
+      "src/modules/installation/interfaces/cli/launcher.ts",
       "src/web/http/server.ts",
       "tools/release/application-payload.ts",
       "tools/release/application-payload-entry.ts",
@@ -700,9 +700,9 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "buildr",
       "bin/buildr.mjs",
       "src/bootstrap/**",
-      "src/task/interfaces/cli/**",
-      "src/system/doctor/**",
-      "src/workspace/application/workspace-operations.ts",
+      "src/modules/task/interfaces/cli/**",
+      "src/modules/diagnostics/**",
+      "src/modules/workspace/application/workspace-operations.ts",
       "package.json",
       "package-lock.json",
       "test/verification/host-node.ts",
@@ -741,12 +741,12 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
     "inputs": [
       "src/infrastructure/testing/context-runtime/node-test.ts",
       "src/infrastructure/testing/context-runtime/node-runner.ts",
-      "src/agent-assets/application/package-maintenance/**",
-      "src/workspace/application/workspace-operations.ts",
-      "src/workspace/persistence/**",
-      "src/workspace/interfaces/cli/**",
+      "src/modules/agent-assets/application/package-maintenance/**",
+      "src/modules/workspace/application/workspace-operations.ts",
+      "src/modules/workspace/persistence/**",
+      "src/modules/workspace/interfaces/cli/**",
       "src/infrastructure/filesystem/**",
-      "src/agent-assets/infrastructure/runtime/**",
+      "src/modules/agent-assets/infrastructure/runtime/**",
       "package.json"
     ],
     "inputExclusions": []
@@ -754,14 +754,14 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   "capability-cli-integration": {
     "inputs": [
       "test/capability-cli.integration.ts",
-      "src/agent-assets/application/package-maintenance/package-assets.ts",
-      "src/agent-assets/application/skills.ts",
-      "src/system/doctor/application/capability-diagnostics.ts",
-      "src/agent-assets/application/package-maintenance/builtin-lifecycle.ts",
-      "src/agent-assets/application/package-maintenance/static-validation.ts",
-      "src/agent-assets/infrastructure/runtime/skills/**",
+      "src/modules/agent-assets/application/package-maintenance/package-assets.ts",
+      "src/modules/agent-assets/application/skills.ts",
+      "src/modules/diagnostics/application/capability-diagnostics.ts",
+      "src/modules/agent-assets/application/package-maintenance/builtin-lifecycle.ts",
+      "tools/verification/package-check/static-validation.ts",
+      "src/modules/agent-assets/infrastructure/runtime/skills/**",
       "resources/workspace/skills/**",
-      "package/targets/runtime/skills/**",
+      "resources/runtime/skills/**",
       "skills/**",
       "capabilities.yml"
     ],
@@ -771,11 +771,11 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
     "inputs": [
       "commands.yml",
       "test/commands-cli.integration.ts",
-      "src/agent-assets/application/commands.ts",
-      "src/agent-assets/application/components.ts",
-      "src/agent-assets/application/skills.ts",
-      "src/workspace/**",
-      "src/system/doctor/**",
+      "src/modules/agent-assets/application/commands.ts",
+      "src/modules/agent-assets/application/components.ts",
+      "src/modules/agent-assets/application/skills.ts",
+      "src/modules/workspace/**",
+      "src/modules/diagnostics/**",
       "src/bootstrap/cli/help.ts",
       "resources/manifest.yml"
     ],
@@ -783,8 +783,8 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   },
   "openspec-contract-fixtures": {
     "inputs": [
-      "src/task/openspec/application/openspec-application.ts",
-      "src/task/openspec/application/**",
+      "src/modules/openspec/application/openspec-application.ts",
+      "src/modules/openspec/application/**",
       "test/verification/openspec/contract.ts",
       "resources/workspace/skills/buildr/openspec-contract-guard/**"
     ],
@@ -792,8 +792,8 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   },
   "openspec-convergence-recovery": {
     "inputs": [
-      "src/task/openspec/application/openspec-application.ts",
-      "src/task/openspec/application/**",
+      "src/modules/openspec/application/openspec-application.ts",
+      "src/modules/openspec/application/**",
       "test/verification/openspec/contract.ts",
       "resources/workspace/skills/buildr/openspec-contract-guard/**",
       "resources/workspace/skills/buildr/current-knowledge-maintenance/**"
@@ -807,7 +807,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "package/**",
       "package.json",
       "package-lock.json",
-      "src/agent-assets/application/package-maintenance/**",
+      "src/modules/agent-assets/application/package-maintenance/**",
       "test/verification/package/**"
     ],
     "inputExclusions": []
@@ -817,46 +817,46 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "resources/manifest.yml",
       "resources/workspace/AGENTS.md",
       "resources/workspace/components/**",
-      "src/workspace/**",
-      "src/workspace/application/workspace-operations.ts",
-      "src/agent-assets/application/package-maintenance/**"
+      "src/modules/workspace/**",
+      "src/modules/workspace/application/workspace-operations.ts",
+      "src/modules/agent-assets/application/package-maintenance/**"
     ],
     "inputExclusions": []
   },
   "package-commands": {
     "inputs": [
       "resources/workspace/commands/**",
-      "src/agent-assets/application/commands.ts",
-      "src/agent-assets/application/package-maintenance/**"
+      "src/modules/agent-assets/application/commands.ts",
+      "src/modules/agent-assets/application/package-maintenance/**"
     ],
     "inputExclusions": []
   },
   "package-rules": {
     "inputs": [
       "resources/workspace/rules/**",
-      "src/agent-assets/application/rules.ts",
-      "src/agent-assets/infrastructure/runtime/**",
-      "src/agent-assets/application/package-maintenance/**"
+      "src/modules/agent-assets/application/rules.ts",
+      "src/modules/agent-assets/infrastructure/runtime/**",
+      "src/modules/agent-assets/application/package-maintenance/**"
     ],
     "inputExclusions": []
   },
   "package-skills": {
     "inputs": [
       "resources/workspace/skills/**",
-      "package/targets/runtime/skills/**",
-      "src/agent-assets/application/skills.ts",
-      "src/agent-assets/infrastructure/runtime/skills/**",
-      "src/agent-assets/application/package-maintenance/**"
+      "resources/runtime/skills/**",
+      "src/modules/agent-assets/application/skills.ts",
+      "src/modules/agent-assets/infrastructure/runtime/skills/**",
+      "src/modules/agent-assets/application/package-maintenance/**"
     ],
     "inputExclusions": []
   },
   "package-runtime": {
     "inputs": [
-      "package/targets/runtime/**",
+      "resources/runtime/**",
       "resources/workspace/rules/**",
-      "src/agent-assets/infrastructure/runtime/**",
-      "src/agent-assets/application/runtime.ts",
-      "src/agent-assets/application/package-maintenance/**"
+      "src/modules/agent-assets/infrastructure/runtime/**",
+      "src/modules/agent-assets/application/runtime.ts",
+      "src/modules/agent-assets/application/package-maintenance/**"
     ],
     "inputExclusions": []
   },
@@ -872,22 +872,22 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   },
   "runtime-adapter-parity": {
     "inputs": [
-      "src/agent-assets/infrastructure/runtime/**",
-      "src/agent-assets/application/runtime.ts",
-      "src/system/doctor/application/runtime-diagnostics.ts",
+      "src/modules/agent-assets/infrastructure/runtime/**",
+      "src/modules/agent-assets/application/runtime.ts",
+      "src/modules/diagnostics/application/runtime-diagnostics.ts",
       "test/verification/runtime/adapter-parity.ts",
       "test/verification/runtime/fixture.ts",
-      "package/targets/runtime/**",
+      "resources/runtime/**",
       "resources/workspace/rules/**"
     ],
     "inputExclusions": []
   },
   "workspace-lifecycle": {
     "inputs": [
-      "src/workspace/**",
-      "src/agent-assets/application/commands.ts",
-      "src/agent-assets/application/rules.ts",
-      "src/agent-assets/application/skills.ts",
+      "src/modules/workspace/**",
+      "src/modules/agent-assets/application/commands.ts",
+      "src/modules/agent-assets/application/rules.ts",
+      "src/modules/agent-assets/application/skills.ts",
       "test/verification/workspace/fixture.ts",
       "test/verification/workspace/workspace-lifecycle.ts"
     ],
@@ -895,8 +895,8 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   },
   "ownership-recovery": {
     "inputs": [
-      "src/agent-assets/application/components.ts",
-      "src/agent-assets/application/package-maintenance/**",
+      "src/modules/agent-assets/application/components.ts",
+      "src/modules/agent-assets/application/package-maintenance/**",
       "test/verification/workspace/fixture.ts",
       "test/verification/workspace/ownership-recovery.ts"
     ],
@@ -904,11 +904,11 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   },
   "runtime-reconciliation": {
     "inputs": [
-      "src/agent-assets/infrastructure/runtime/**",
-      "src/agent-assets/application/runtime.ts",
+      "src/modules/agent-assets/infrastructure/runtime/**",
+      "src/modules/agent-assets/application/runtime.ts",
       "test/verification/workspace/fixture.ts",
       "test/verification/workspace/runtime-reconciliation.ts",
-      "package/targets/runtime/**",
+      "resources/runtime/**",
       "resources/workspace/rules/**"
     ],
     "inputExclusions": []
@@ -929,8 +929,8 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   },
   "init-onboarding": {
     "inputs": [
-      "src/workspace/**",
-      "src/workspace/application/workspace-operations.ts",
+      "src/modules/workspace/**",
+      "src/modules/workspace/application/workspace-operations.ts",
       "test/verification/onboarding/init.ts",
       "resources/workspace/manifest.yml",
       "resources/workspace/AGENTS.md",
@@ -943,11 +943,11 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "buildr",
       "bin/buildr.mjs",
       "src/bootstrap/**",
-      "src/workspace/interfaces/cli/**",
-      "src/task/interfaces/cli/**",
+      "src/modules/workspace/interfaces/cli/**",
+      "src/modules/task/interfaces/cli/**",
       "src/infrastructure/contracts/public-json.ts",
-      "src/agent-assets/application/runtime.ts",
-      "src/agent-assets/infrastructure/runtime/adapter-contract.ts",
+      "src/modules/agent-assets/application/runtime.ts",
+      "src/modules/agent-assets/infrastructure/runtime/adapter-contract.ts",
       "test/verification/cli/compatibility.ts",
       "docs/cli-reference.md"
     ],
@@ -958,11 +958,11 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "buildr",
       "bin/buildr.mjs",
       "src/bootstrap/**",
-      "src/workspace/interfaces/cli/**",
-      "src/task/interfaces/cli/**",
+      "src/modules/workspace/interfaces/cli/**",
+      "src/modules/task/interfaces/cli/**",
       "src/infrastructure/contracts/public-json.ts",
-      "src/task/application/finish/task-finish-result-projection.ts",
-      "src/task/application/finish/task-finish-self-bootstrap-projection.ts",
+      "src/modules/task/application/finish/task-finish-result-projection.ts",
+      "src/modules/task/application/finish/task-finish-self-bootstrap-projection.ts",
       "src/infrastructure/product-layout.ts",
       "test/verification/cli/package-parity.ts",
       "package.json",
@@ -972,7 +972,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   },
   "service-branch-contract": {
     "inputs": [
-      "src/workspace/**",
+      "src/modules/workspace/**",
       "test/verification/onboarding/service-branch.ts",
       "services/**"
     ],
@@ -986,7 +986,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "src/infrastructure/product-invocation/**",
       "src/bootstrap/cli/main.ts",
       "tools/release/application-payload-entry.ts",
-      "src/agent-assets/application/skills.ts",
+      "src/modules/agent-assets/application/skills.ts",
       "test/verification/network/**"
     ],
     "inputExclusions": []
@@ -996,11 +996,11 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "buildr",
       "bin/buildr.mjs",
       "src/bootstrap/**",
-      "src/task/interfaces/cli/**",
-      "src/system/installation/application/cli-update.ts",
-      "src/agent-assets/application/package-maintenance/**",
-      "src/agent-assets/application/package-maintenance.ts",
-      "src/workspace/application/workspace-operations.ts",
+      "src/modules/task/interfaces/cli/**",
+      "src/modules/installation/application/cli-update.ts",
+      "src/modules/agent-assets/application/package-maintenance/**",
+      "src/modules/agent-assets/application/package-maintenance.ts",
+      "src/modules/workspace/application/workspace-operations.ts",
       "src/infrastructure/product-layout.ts",
       "package.json",
       "package-lock.json",
@@ -1011,17 +1011,17 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   },
   "managed-data-integrity": {
     "inputs": [
-      "src/agent-assets/application/package-maintenance/**",
-      "src/agent-assets/application/package-maintenance.ts",
-      "src/workspace/application/workspace-operations.ts",
-      "src/agent-assets/application/commands.ts",
-      "src/agent-assets/application/components.ts",
-      "src/agent-assets/application/rules.ts",
-      "src/agent-assets/application/skills.ts",
-      "src/workspace/**",
-      "src/system/doctor/**",
+      "src/modules/agent-assets/application/package-maintenance/**",
+      "src/modules/agent-assets/application/package-maintenance.ts",
+      "src/modules/workspace/application/workspace-operations.ts",
+      "src/modules/agent-assets/application/commands.ts",
+      "src/modules/agent-assets/application/components.ts",
+      "src/modules/agent-assets/application/rules.ts",
+      "src/modules/agent-assets/application/skills.ts",
+      "src/modules/workspace/**",
+      "src/modules/diagnostics/**",
       "src/infrastructure/filesystem/**",
-      "src/agent-assets/infrastructure/runtime/**",
+      "src/modules/agent-assets/infrastructure/runtime/**",
       "resources/manifest.yml",
       "resources/workspace/manifest.yml",
       "resources/workspace/components/**",
@@ -1065,7 +1065,7 @@ export const VERIFICATION_FULL_SCOPE_AUTHORITIES: any = Object.freeze([
   ...[
     'tsconfig.json', 'tsconfig.test-context.json', 'test-context.mjs',
     'src/infrastructure/testing/context-runtime/**', 'tools/build/**',
-    'tools/contracts/**', 'tools/testing/test-context-build.ts', 'test/context/**',
+    'tools/codegen/contracts/**', 'tools/testing/test-context-build.ts', 'test/context/**',
   ].map((pattern: any) => fullScopeAuthority(pattern, 'execution-foundation-change', 'Shared TypeScript or Test Context execution foundation changed.')),
   ...[
     'test/verification/verify-buildr-product', 'test/verification/verify-buildr-product-daily-full',

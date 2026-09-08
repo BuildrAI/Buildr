@@ -7,7 +7,7 @@ description: 用户要求为Project或Service设计、梳理或优化测试框�
 
 本 Skill 指导 Agent 理解 Project / Service 的测试框架，并在当前任务授权内设计或开发测试。它没有 Result、Receipt、Application、provider contract 或自身持久状态；长期事实只进入项目已有测试、脚本、CI、registry 或文档。
 
-开始行动时必须读取 `references/testing-model-v1.md`。项目已有约定优先；reference 只提供判断框架，不要求固定目录、命令名或测试库。
+项目已有约定优先。需要设计测试体系、重新分类或澄清边界时，读取 [测试模型](references/testing-model-v1.md)；普通实现只读取当前相关入口，不为套用模型加载全部材料。
 
 ## 1. 先读取真实项目
 
@@ -20,22 +20,11 @@ description: 用户要求为Project或Service设计、梳理或优化测试框�
 
 不要按文件名、`fast`、`unit` 或技术栈惯例猜执行成本和覆盖。没有现成框架时，只在当前实现任务确实需要且授权允许时建立最小测试入口，不借机建设通用平台。
 
-## 2. 分开判断测试边界与编排
+## 2. 确定最低充分边界
 
-测试本身分别判断：
+先写明待证明的公共结果，再按风险选择：主要意图为 Development、Acceptance、Static Conformance、Delivery / Release；执行边界为 Static、Unit、Component、Integration、System。Quick、affected/full、Candidate/Release 不是同一层级，分别说明成本约束、选择范围与验证目标；`System` 不等于 Acceptance，`focus` 只用于失败诊断和定向选择。具体定义见测试模型。项目（Project）与服务（Service）的主要事实只保留一个 `primaryEvidenceOwner`，辅助覆盖可以重叠。
 
-1. 主要意图：Development、Acceptance、Static Conformance、Delivery / Release；
-2. 执行边界：Static、Unit、Component、Integration、System。
-
-编排另外回答三个独立问题：
-
-1. 成本约束：是否进入可高频运行的 Quick；
-2. 选择范围：本次是显式 focus、按影响面选择 affected，还是完整选择 full；
-3. 验证目标：运行在开发中的目标、冻结 Candidate，还是 Release artifact。
-
-Quick、affected/full、Candidate/Release 不是同一层级的测试类型或互斥场景。冻结 Candidate 可以执行 affected，也可以在明确需要时执行 full。`System` 不等于 Acceptance；只有从提案、需求或设计验收标准派生的业务证据才是 Acceptance。`Static` 是独立执行形式。`focus` 只用于失败诊断和定向选择，不表示交付完整性。
-
-Service 负责自身代码、公开技术契约和独立交付物可判定的事实；Project 负责跨 Service 行为、治理资产、用户旅程及组合 Candidate / Release。辅助证据可以重叠，但每项关键事实只保留一个 `primaryEvidenceOwner`。
+可逆、低影响且已有检查足以覆盖的文字或配置整理，不新增只复述实现的测试。已有检查通过后，只有新改动、失败或明确未解决风险才扩大或重复验证；项目必需检查仍须完成。
 
 ## 3. 为任务设计和开发测试
 
@@ -65,13 +54,9 @@ Bug 回归测试说明它捕获的旧错误，并在安全、低成本且可复�
 
 ## 4. 编排开发与交付反馈
 
-- Quick 是成本受限的反馈组合：完整低成本 Static + Unit + Component，以及少量确实低成本的 Integration。
-- affected 按 changed paths、事实 owner 和风险选择当前任务真正受影响的证据；重型但相关的测试不能因不在 Quick 而跳过。
-- full 选择 Project 登记的完整回归证据；当 affected 选择机制自身变化或用户明确要求全量回归时使用。
-- Candidate 是冻结验证目标，不自动等于 full；普通 Candidate 可以运行 affected，完整回归 Candidate 运行 full。
-- Release 以真实发布物为目标，按需组合 package、安装、部署、发布或发布后 smoke。
+依照测试模型区分低成本反馈（Quick）、受影响范围（affected）、完整回归（full）、候选（Candidate）与发布物（Release artifact）。必要的重型测试不能因不在低成本组合中而跳过；普通实现不自动升级为发布验证。
 
-Project 应为入口记录目标耗时并用实际观测校准。registry 可以用 profile、changed inputs 和独立 capability 表达实际组合，但不要再复制一份把上述概念混为一轴的分类。入口名称与成本不符时，先报告问题，再在当前任务范围内拆分或重编排。
+按当前入口及实际耗时选择本次需要的证据。入口名称与成本不符时，在当前任务范围内提出或完成调整，不复制第二套分类清单。
 
 ## 5. 与 Task Verification 交接
 
@@ -81,4 +66,4 @@ Project Testing 可以新增或调整项目测试、脚本、registry 和说明�
 
 ## 输出
 
-简洁说明：待证明事实及公共可观察结果、关键案例与遗漏理由、owner、测试意图、执行边界、已有入口、实际成本、affected/full 选择、验证目标、新增测试的有效性证据，以及仍存在的 gap。分析请求只给建议；实现请求才修改当前任务授权内的项目资产。
+说明已证明的结果、采用的检查及范围、实际成本和未覆盖项；新增测试时补充它捕获的错误。详细分类只在框架设计或存在歧义时展开。分析请求只给建议；实现请求才修改当前任务授权内的项目资产。

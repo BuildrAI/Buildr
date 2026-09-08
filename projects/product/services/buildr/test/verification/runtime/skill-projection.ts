@@ -3,15 +3,15 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { getRuntimeAdapter, runtimeAdapterImplementationMatrix } from '../../../src/agent-assets/infrastructure/runtime/adapter-contract.ts';
-import { parseSkillsManifest } from '../../../src/agent-assets/infrastructure/runtime/skills/manifests.ts';
+import { getRuntimeAdapter, runtimeAdapterImplementationMatrix } from '../../../src/modules/agent-assets/infrastructure/runtime/adapter-contract.ts';
+import { parseSkillsManifest } from '../../../src/modules/agent-assets/persistence/skill-manifest.ts';
 import {
   enumerateSkillSourceFiles,
   parseSkillProjectionReceipt,
   runtimeFileMatches,
   sha256Integrity,
   skillProjectionOwnershipReceiptTarget,
-} from '../../../src/agent-assets/infrastructure/runtime/skills/projection-files.ts';
+} from '../../../src/modules/agent-assets/infrastructure/runtime/skills/projection-files.ts';
 import { mapLimit, RuntimeVerificationHarness } from './fixture.ts';
 
 const PACKAGE_SKILLS_ROOT: any = 'resources/workspace/skills';

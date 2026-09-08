@@ -2,11 +2,11 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import test, { after } from 'node:test';
 
-import { createRuntime } from '../../src/bootstrap/runtime.ts';
+import { createRuntime } from '../helpers/runtime-harness.ts';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
 import { cleanupLocalTaskLifecycleSystemContext } from '../helpers/task-lifecycle-system-context.ts';
 import { taskRecordFixture as fixture } from '../helpers/task-record-system-fixture.ts';
-import { TASK_PROFESSIONAL_HTTP_SCHEMAS, TASK_PROFESSIONAL_HTTP_VALIDATORS } from '../../src/task/interfaces/http/task-professional-http-contracts.ts';
+import { TASK_PROFESSIONAL_HTTP_SCHEMAS, TASK_PROFESSIONAL_HTTP_VALIDATORS } from '../../src/modules/task/interfaces/http/task-professional-http-contracts.ts';
 
 after(() => cleanupLocalTaskLifecycleSystemContext());
 

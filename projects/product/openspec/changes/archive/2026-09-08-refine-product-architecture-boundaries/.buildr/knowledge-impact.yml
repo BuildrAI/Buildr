@@ -1,0 +1,31 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: refine-product-architecture-boundaries
+operation: reconcile
+treeIdentity: sha256-0ee2b98629d353ef200c302c6d57a5b031fe809cb8dd9007102b24d229abb9be
+impacts:
+  - type: brief
+    target: brief.md
+    reason: 已确认范围与单机版兼容边界
+    status: updated
+    sourceIdentities: []
+  - type: technical-architecture
+    target: knowledge/code-map/
+    reason: 项目、服务、模块目录树及依赖归属
+    status: updated
+    sourceIdentities: [services/buildr/src/modules/task/daily-progress, services/buildr/tools/testing/test-context-build.ts, services/buildr-web/src/features]
+  - type: technical-architecture
+    target: knowledge/archify/
+    reason: 每日演进、生成路径与工程职责
+    status: updated
+    sourceIdentities: [knowledge/code-map/technical-layers.md]
+  - type: service
+    target: knowledge/services/
+    reason: 构建与模块边界
+    status: updated
+    sourceIdentities: [services/buildr/src/modules, services/buildr/tools, services/buildr-web/src/features]
+  - type: glossary
+    target: knowledge/glossary.md
+    reason: 核对每日演进、测试上下文和生成结果定义
+    status: updated
+    sourceIdentities: [openspec/specs/project-daily-progress/spec.md, services/buildr/src/modules/task/daily-progress]
+unresolvedItems: []

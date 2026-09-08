@@ -4,15 +4,16 @@ import path from 'node:path';
 import process from 'node:process';
 import test from 'node:test';
 
-import { createRuntime } from '../../src/bootstrap/runtime.ts';
+import { createRuntime, runtimeContributions } from '../helpers/runtime-harness.ts';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
 import { LOCAL_APP_HTTP_OPERATIONS, LOCAL_APP_HTTP_VALIDATORS } from '../../src/web/http/buildr-web-http-contracts.ts';
-import { RELEASE_AWARENESS_HTTP_OPERATIONS, RELEASE_AWARENESS_HTTP_VALIDATORS } from '../../src/system/installation/interfaces/http/release-awareness-http-contracts.ts';
-import { PUBLICATION_HTTP_OPERATIONS, PUBLICATION_HTTP_VALIDATORS } from '../../src/system/publication/interfaces/http/publication-http-contracts.ts';
-import { TASK_HTTP_OPERATIONS } from '../../src/task/interfaces/http/task-http-schema.ts';
-import { TASK_PROFESSIONAL_HTTP_OPERATIONS } from '../../src/task/interfaces/http/task-professional-http-contracts.ts';
-import { WORKSPACE_HTTP_OPERATIONS } from '../../src/workspace/interfaces/http/workspace-http-contracts.ts';
-import { AGENT_ASSETS_HTTP_OPERATIONS } from '../../src/agent-assets/interfaces/http/agent-assets-http-contracts.ts';
+import { RELEASE_AWARENESS_HTTP_OPERATIONS, RELEASE_AWARENESS_HTTP_VALIDATORS } from '../../src/modules/installation/interfaces/http/release-awareness-http-contracts.ts';
+import { createReleaseAwarenessHttpContribution } from '../../src/modules/installation/interfaces/http/release-awareness-http.ts';
+import { PUBLICATION_HTTP_OPERATIONS, PUBLICATION_HTTP_VALIDATORS } from '../../src/modules/publication/interfaces/http/publication-http-contracts.ts';
+import { TASK_HTTP_OPERATIONS } from '../../src/modules/task/interfaces/http/task-http-schema.ts';
+import { TASK_PROFESSIONAL_HTTP_OPERATIONS } from '../../src/modules/task/interfaces/http/task-professional-http-contracts.ts';
+import { WORKSPACE_HTTP_OPERATIONS } from '../../src/modules/workspace/interfaces/http/workspace-http-contracts.ts';
+import { AGENT_ASSETS_HTTP_OPERATIONS } from '../../src/modules/agent-assets/interfaces/http/agent-assets-http-contracts.ts';
 import { inspectHttpOperationCoverage, ownedHttpOperations } from '../../src/web/http/http-operation-coverage.ts';
 import { taskRecordFixture as fixture } from '../helpers/task-record-system-fixture.ts';
 
@@ -62,8 +63,9 @@ test('Runtime/System 真实 HTTP 契约覆盖 JSON、binary、错误与零副作
   fs.writeFileSync(path.join(publicationRoot, 'assets', 'cover.png'), Buffer.from('contract-image'));
   fs.writeFileSync(path.join(publicationRoot, 'assets', 'notes.txt'), 'not-downloadable');
 
-  runtime.releaseAwareness = releaseAwareness;
-  const instance: any = createLocalWorkspaceServer(runtime, { targetRoot: root });
+  const httpContributions = runtimeContributions(runtime, 'http').filter((item: any) => item.id !== 'system-installation.release-awareness.http');
+  httpContributions.push(createReleaseAwarenessHttpContribution({ releaseAwareness }));
+  const instance: any = createLocalWorkspaceServer(runtime, { targetRoot: root, httpContributions });
   t.after(() => new Promise((resolve: any) => instance.server.close(resolve)));
   const { url, initialWorkspaceId, instanceSecret, sessionToken }: any = await instance.ready;
   const workspaceUrl: any = `${url}/api/v1/workspaces/${initialWorkspaceId}`;

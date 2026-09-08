@@ -5,7 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import YAML from 'yaml';
 
-import { registerPublicationApplication } from '../../src/system/publication/application/publication-application.ts';
+import { registerPublicationApplication } from '../../src/modules/publication/application/publication-application.ts';
 
 function fixture(): any  {
   const root: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-publications-'));
@@ -30,9 +30,10 @@ function fixture(): any  {
   fs.writeFileSync(path.join(publicationRoot, 'assets', 'cover.png'), 'image');
   const runtime: any = {
     readProjectRegistryRecord: () => ({ root, projects: { product: { source: { type: 'workspace', path: 'projects/product' } } } }),
+    resolveSourceRoot: (workspaceRoot: string, source: { path: string }) => path.resolve(workspaceRoot, source.path),
     parseYamlDocument: (content: any) => YAML.parse(content),
   };
-  registerPublicationApplication(runtime, { projectQuery: { readProjectRegistryRecord: runtime.readProjectRegistryRecord } });
+  registerPublicationApplication(runtime, { projectQuery: { readProjectRegistryRecord: runtime.readProjectRegistryRecord, resolveSourceRoot: runtime.resolveSourceRoot } });
   return { root, publicationRoot, runtime };
 }
 

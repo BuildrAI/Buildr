@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { hasExplicitAnyType, validateTaskRecordSkillCommands, validateTaskVerificationSkillCommands } from '../../src/agent-assets/application/package-maintenance/static-validation.ts';
+import { hasExplicitAnyType, validateTaskRecordSkillCommands, validateTaskVerificationSkillCommands } from '../../tools/verification/package-check/static-validation.ts';
 
 const content: any = `说明文字不构成命令契约。
 buildr task create <id>

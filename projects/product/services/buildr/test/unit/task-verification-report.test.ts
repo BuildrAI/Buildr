@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { normalizeTaskVerificationReport } from '../../src/task/domain/task-verification.ts';
+import { normalizeTaskVerificationReport } from '../../src/modules/task/domain/task-verification.ts';
 
 function report(overrides: Record<string, unknown> = {}) {
   return {

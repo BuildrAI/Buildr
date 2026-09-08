@@ -1,10 +1,12 @@
 import { registerWorkspaceInfrastructure } from './filesystem/index.ts';
 import { registerWorkspaceSqlite } from './sqlite/workspace-sqlite.ts';
 import { registerSqliteTransaction } from './sqlite/transaction.ts';
+import * as cliArguments from './cli-arguments.ts';
+import * as value from './value.ts';
 
 /**
  * The Infrastructure composition root owns technical mechanisms only. Business
- * repositories are privately registered by their owning `src/task/module.ts`
+ * repositories are privately registered by their owning `src/modules/task/module.ts`
  * descriptor; task capabilities are installed by the bootstrap module registry.
  */
 export const INFRASTRUCTURE_CAPABILITIES = Object.freeze([
@@ -21,6 +23,8 @@ export const INFRASTRUCTURE_CAPABILITIES = Object.freeze([
 ]);
 
 export function registerInfrastructure(runtime: any, options: any = {}): any  {
+  Object.assign(runtime, cliArguments);
+  Object.assign(runtime, value);
   registerWorkspaceInfrastructure(runtime);
   registerWorkspaceSqlite(runtime, options);
   registerSqliteTransaction(runtime);

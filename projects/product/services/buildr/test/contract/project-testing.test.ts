@@ -14,7 +14,8 @@ const taskVerificationSkill: any = read('resources/workspace/skills/buildr/task-
 const taskVerificationReference: any = read('resources/workspace/skills/buildr/task-verification/references/project-verification-v4.md');
 const taskVerificationTemplate: any = YAML.parse(read('resources/workspace/skills/buildr/task-verification/templates/project-verification.yml'));
 const taskTriage: any = read('resources/workspace/skills/buildr/task-triage/SKILL.md');
-const buildrSkill: any = read('package/targets/runtime/skills/buildr/SKILL.md');
+const buildrSkill: any = read('resources/runtime/skills/buildr/SKILL.md');
+const serviceRules: any = read('AGENTS.md');
 const packageManifest: any = YAML.parse(read('resources/manifest.yml'));
 
 test('project-testing 是无状态且无 capability binding 的独立 Skill', () => {
@@ -30,10 +31,6 @@ test('project-testing 是无状态且无 capability binding 的独立 Skill', ()
   assert.equal(Object.hasOwn(packagedSkill, 'requires'), false);
   assert.equal(packageManifest.capabilityContracts.some((item: any) => item.id.includes('project-testing')), false);
   assert.equal(packageManifest.initialSkillBindings.some((item: any) => item.capability.includes('project-testing')), false);
-  assert.equal(packagedSkill.required, false);
-  assert.equal(Object.hasOwn(packagedSkill, 'provides'), false);
-  assert.equal(Object.hasOwn(packagedSkill, 'requires'), false);
-  assert.equal(packageManifest.capabilityContracts.some((item: any) => item.id.includes('project-testing')), false);
   assert.ok(packageManifest.workspaceFiles.some((entry: any) => String(entry).includes('project-testing/references/testing-model-v1.md')));
 });
 
@@ -45,7 +42,7 @@ test('project-testing 分离测试边界、成本、范围与验证目标', () =
     '成本约束', '选择范围', '验证目标',
     '`System` 不等于 Acceptance', '`focus` 只用于失败诊断',
     'primaryEvidenceOwner', '最低充分边界',
-  ]) assert.ok(projectTestingSkill.includes(required), `project-testing Skill must include ${required}`);
+  ]) assert.ok((projectTestingSkill + testingModel).includes(required), `project-testing guidance must include ${required}`);
 
   assert.equal(projectTestingSkill.includes('编排场景：Quick、Task-affected、Candidate、Release'), false);
 
@@ -93,12 +90,12 @@ test('测试建设与 Task Verification 路由保持分离', () => {
 });
 
 test('Buildr Product Workspace smoke 使用唯一隔离入口且不推断删除普通临时 Workspace', () => {
-  assert.match(buildrSkill, /必须经过 `tools\/development\/run-isolated-workspace-smoke\.ts`/);
-  assert.match(buildrSkill, /运行 `npm run smoke:workspace`/);
-  assert.match(buildrSkill, /独立设置 Workspace、`BUILDR_APP_DATA_DIR` 与 `BUILDR_PRODUCT_DATA_DIR`/);
-  assert.match(buildrSkill, /成功或失败后统一清理/);
-  assert.match(buildrSkill, /不得用裸 `mktemp` 启动指向默认用户 profile 的 `buildr web`/);
-  assert.match(buildrSkill, /不扩大为对普通临时 Workspace 的自动删除策略/);
+  assert.match(serviceRules, /必须经过 `tools\/development\/run-isolated-workspace-smoke\.ts`/);
+  assert.match(serviceRules, /运行 `npm run smoke:workspace`/);
+  assert.match(serviceRules, /独立设置 Workspace、`BUILDR_APP_DATA_DIR` 与 `BUILDR_PRODUCT_DATA_DIR`/);
+  assert.match(serviceRules, /成功或失败后统一清理/);
+  assert.match(serviceRules, /不得用裸 `mktemp` 启动指向默认用户 profile 的 `buildr web`/);
+  assert.match(serviceRules, /不扩大为对普通临时 Workspace 的自动删除策略/);
 });
 
 test('声明指导只使用 project verification v4 testing map', () => {

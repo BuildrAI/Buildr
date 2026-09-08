@@ -38,7 +38,7 @@ flowchart TB
 
 发布支持任务的完成只证明记录关联；发布能力继续独立检查冻结源码、候选验证、唯一产物、目标与授权。父任务依据整体目标和真实子任务结果验收，只有明确用户授权才能完成。子任务收尾不授权完成父任务；详见[父任务协调](task-parent-coordination.md)。
 
-已知、必要且已获授权的安全后续动作应继续做完。登记或清理失败不撤销已成立交付；必要成果未交付不能报整个目标完成。部署属于约定目标时必须完成部署；可选激活的遗留独立报告。Buildr 自举仍由原唯一脚本执行，普通业务工作空间不触发。
+已知、必要且已获授权的安全后续动作应继续做完。登记或清理失败不撤销已成立交付；必要成果未交付不能报整个目标完成。部署属于约定目标时必须完成部署；可选激活的遗留独立报告。Buildr 自举按已交付的真实改动范围交给唯一脚本执行；任务编号可选，缺少记录或任务未完成不阻塞。根及项目/服务规则、技能、组件、命令和产品运行输入命中时投射并验证；未安装自举组件的普通业务工作空间不触发。
 
 ## 旧数据和资源
 
@@ -47,9 +47,9 @@ flowchart TB
 ## 实现入口
 
 - 方法：`services/buildr/resources/workspace/skills/buildr/task-finish/SKILL.md`
-- 任务结果：`services/buildr/src/task/application/task-record-application.ts`
-- Worktree资源安全：`services/buildr/src/task/infrastructure/git-worktree-provider.ts`
-- 父任务协调：`services/buildr/src/task/application/parent-coordination-application.ts`
+- 任务结果：`services/buildr/src/modules/task/application/task-command-application.ts`
+- Worktree资源安全：`services/buildr/src/modules/task/infrastructure/git-worktree-provider.ts`
+- 父任务协调：`services/buildr/src/modules/task/application/parent-coordination-application.ts`
 - 发布关联：`services/buildr/tools/release/release-task-evidence-correlation.ts`
 
 首次实践及统计口径保留在设计技能的历史案例中；它不代表现行执行入口。

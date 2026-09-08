@@ -8,8 +8,8 @@ import {
   CANDIDATE_CI_SHARDS,
   INTEGRATION_PRIMARY_SLICES,
   verificationSteps,
-} from '../../test/verification/registry.ts';
-import { createVerificationPlan, validateCandidateCiCoverage } from '../../test/verification/planner.ts';
+} from '../verification/registry.ts';
+import { createVerificationPlan, validateCandidateCiCoverage } from '../verification/planner.ts';
 
 const serviceRoot: any = path.resolve(import.meta.dirname, '../..');
 const repositoryRoot: any = path.resolve(serviceRoot, '../../../..');

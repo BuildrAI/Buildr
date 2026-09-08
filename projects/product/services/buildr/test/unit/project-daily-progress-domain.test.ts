@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { groupDailyProgressCommits, localCalendarDate } from '../../src/workspace/application/project-daily-progress-application.ts';
+import { groupDailyProgressCommits, localCalendarDate } from '../../src/modules/task/daily-progress/application/project-daily-progress-application.ts';
 import {
   createDailyProgressDocument,
   dailyProgressError,
@@ -10,7 +10,7 @@ import {
   normalizeDailyProgressDate,
   normalizeDailyProgressDocument,
   normalizeDailyProgressPayload,
-} from '../../src/workspace/domain/project-daily-progress.ts';
+} from '../../src/modules/task/daily-progress/domain/project-daily-progress.ts';
 
 function summary(): any  {
   return {

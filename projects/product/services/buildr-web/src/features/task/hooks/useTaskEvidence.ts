@@ -1,7 +1,8 @@
+import { taskProfessionalApi } from '../api/task-professional-api';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { taskProfessionalApi, type ApiError } from '../../../api';
-import type { CoordinationResponse, ReviewsResponse, VerificationResponse } from '../../../api/generated/task-professional-http-dto';
+import { type ApiError } from '../../../api';
+import type { CoordinationResponse, ReviewsResponse, VerificationResponse } from '../../../../build/generated/task-professional-http-dto';
 import type { ParentCoordinationResult } from '../components/parentCoordination';
 import { isTaskReadCancelled, type TaskReadLifecycle } from './useTaskRequestLifecycle';
 

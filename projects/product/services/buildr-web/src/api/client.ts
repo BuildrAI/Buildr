@@ -45,3 +45,4 @@ export function createApiClient(options: {
     return body;
   };
 }
+export type WorkspaceDocument = { path?: string; name: string; exists: boolean; content: string | null };
