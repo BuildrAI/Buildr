@@ -5,7 +5,7 @@ skills:
     sourceIdentity: package:skills/buildr/task-triage
     source: buildr
     path: buildr/task-triage
-    description: 用户提出修复、实现、重构、优化、文档/测试或契约语义调整，或询问任务应走代码修改、当前事实维护还是 OpenSpec Change 时使用。
+    description: 判断修改应直接实施、维护当前事实还是进入 OpenSpec 变更，并交接所需专业动作时使用。
     enabled: true
     required: false
     state: installed
@@ -257,7 +257,7 @@ skills:
     sourceIdentity: package:skills/buildr/capability-adaptation
     source: buildr
     path: buildr/capability-adaptation
-    description: 用户要求采用内部流程、调整工作方式、修改默认 Skill 行为、创建或替换专业 Skill、卸载可能被编排的 Skill，或 Agent 准备改变 capability contract 及跨 Skill 协作边界时使用。
+    description: 采用内部流程、调整工作方式、修改或替换技能行为，或变更能力声明与绑定时使用。
     enabled: true
     required: false
     state: installed
@@ -280,7 +280,7 @@ skills:
     sourceIdentity: package:skills/buildr/task-verification
     source: buildr
     path: buildr/task-verification
-    description: 用户要探查或维护 Project 测试地图，开发中选择已有前后端测试，或开发完成后记录和查看 Task 验证报告时使用。
+    description: 选择项目已有检查、维护测试地图，或记录和查看任务验证报告时使用；测试由智能体直接调用项目工具。
     enabled: true
     required: false
     state: installed
@@ -508,7 +508,7 @@ skills:
     sourceIdentity: package:skills/buildr/code-architecture
     source: buildr
     path: buildr/code-architecture
-    description: 为任意技术栈的新功能代码组织、模块重构、文件拆并和结构审查提供架构指导；明确分层、对象职责和类型归属，并输出目录、对象、关键方法及调用关系级代码地图。
+    description: 设计代码结构、调整模块职责或审查文件拆分与合并时使用；局部实现沿用既有结构。
     enabled: true
     required: false
     state: installed

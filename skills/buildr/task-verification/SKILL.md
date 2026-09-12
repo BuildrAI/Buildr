@@ -1,6 +1,6 @@
 ---
 name: task-verification
-description: 用户要探查或维护 Project 测试地图，开发中选择并运行已有前后端测试，或开发完成后记录和查看正式 Task 验证报告时使用；不开发测试、不生成验证计划、不代跑项目测试、不决定 Task 完成。
+description: 选择项目已有检查、维护测试地图，或记录和查看任务验证报告时使用；测试由智能体直接调用项目工具。
 ---
 
 # 任务验证
@@ -13,15 +13,7 @@ description: 用户要探查或维护 Project 测试地图，开发中选择并�
 
 每项 testing 说明目的、Project/Service scope、相关源码范围、测试根、完整入口、具体测试选择方法和环境要求。测试不存在时报告建设缺口，不在本技能中生成框架或测试。
 
-维护地图时先读取 [声明字段与边界](references/project-verification-v4.md)，再执行：
-
-1. `buildr project verification inspect <project> --target <workspace> --json` 读取当前地图。
-2. 在操作系统临时目录形成完整候选，不修改受管副本。
-3. `buildr project verification validate <project> --file <candidate.yml> --target <workspace> --json` 校验。
-4. 展示新增、修改和删除的测试体系；新增外部环境或改变长期测试边界时取得用户决定，已确认入口的普通维护直接继续。
-5. `buildr project verification update <project> --file <candidate.yml> --expected-identity <identity|absent> --target <workspace> --json` 按已观察版本写入并回读；随后删除临时文件。
-
-Application 只校验 schema、Project/Service scope、安全相对路径和候选版本冲突，不替智能体理解项目或生成内容。
+维护地图时读取[地图写入步骤](references/maintain-map.md)；只选择已有检查时不加载写入步骤。
 
 ## 开发中的验证
 
@@ -31,28 +23,13 @@ Application 只校验 schema、Project/Service scope、安全相对路径和候�
 
 ## 开发完成后的任务验证
 
-开发完成后重新读取 Task 目标、当前内容、全部相关 Project 测试地图和真实改动。默认选择受影响 Service 的完整低成本回归、任务相关的本地功能或 Browser 功能测试；只有当前目标适用且环境可用时才执行环境冒烟。
+开发完成后核对任务目标、当前内容、相关测试地图与真实改动。先判断已有检查的内容、环境、目标和覆盖范围是否仍适用，复用有效结果，只补充尚未覆盖的必要检查。扩大到完整回归应有改动影响、项目必需要求或明确未解决风险作为依据；环境冒烟仅在目标适用、环境可用且已获相应授权时执行。
 
-智能体自行形成临时执行安排并直接调用工具。Buildr 不生成计划或统一运行测试。Project测试地图提供`kind: command`时，必须按声明的`cwd`与`argv`原样调用，不得把repository-owned wrapper简化为系统PATH上的裸`node`或`npm`。测试失败时先修复和重跑；完整验证结束后才形成报告。
+已有检查仍适用于当前成果且必需检查已通过时，只有新改动、失败或明确未解决风险才补充相关验证。开发阶段的真实检查经上述适用性核对后可纳入完成报告；保留原执行结果并说明复用依据，不把历史日志改写为新的执行事实。无法确认适用性的检查不作为当前成功证据。
 
-### 先选择报告writer
+智能体自行形成临时执行安排并直接调用工具。Buildr 不生成计划或统一运行测试。Project测试地图提供`kind: command`时，必须按声明的`cwd`与`argv`原样调用，不得把repository-owned wrapper简化为系统PATH上的裸`node`或`npm`。失败时在授权范围内修复并重跑受影响检查；无法完成的检查如实说明，不因阶段转换重复验证。
 
-项目检查的execution root与Task Verification Report的writer是两个独立事实。Task worktree可以运行真实检查并在操作系统临时目录形成portable report，但`task verification inspect|record`必须由canonical Workspace的合法installed或retained Buildr执行；`--target`只选择Workspace，不授予writer provenance。
-
-- Buildr Product自举Workspace：当前execution root是与canonical Workspace共享Git common directory的linked Task worktree时，第一次`inspect`前直接选择`<canonical-workspace>/projects/product/buildr`，并用同一绝对入口完成`record`；不得先调用worktree内的candidate Buildr。
-- 普通Workspace：使用该Workspace当前合法的installed或retained Buildr；不得假设存在`projects/product/buildr`。
-- candidate writer被拒绝时保留零写入事实，切换到retained入口登记同一份report；不得绕过provenance、手写SQLite或仅为登记报告重新运行已经完成的测试。
-
-报告必须说明内容版本、实际检查、`focus|task-related|full`选择、具体测试目标、`command|agent`来源、结果、摘要、耗时（可得时）、未覆盖项和结论。只有一句“测试通过”不构成有意义报告。使用：
-
-```text
-<selected-writer-buildr> task verification inspect <task-id> [--content-identity <identity>] --target <canonical-workspace> --json
-<selected-writer-buildr> task verification record <task-id> --report <json-file> --expected-report <absent|sha256-digest> --target <canonical-workspace> --json
-```
-
-记录前先用`inspect`读取真实current槽位：不存在时使用`absent`，存在时使用返回的`reportDigest`作为`--expected-report`。Application从Task scope读取当前项目测试地图identity，确认实际检查属于Task且testing family与可用地图一致，生成系统完成时间；Repository在同一事务内比较已观察摘要并原子整值替换唯一current报告。冲突时保持current不变，智能体必须重新读取真实报告和当前内容后决定重做或替换，不能自动重试。摘要只是调用参数，不进入报告业务事实。地图缺失或损坏时不否定已完成的真实测试：Application把相关检查标记为“地图不可用”，并追加明确未覆盖项；智能体不能把它说成已由地图声明。
-
-`passed`至少需要一个实际检查且所有检查均通过；只有未覆盖项不能写成`passed`。`not-passed`必须有失败检查；`incomplete`用于没有失败检查但仍有未覆盖项的情况。只有调用方在`inspect`时提供当前内容identity，Application才能判断内容是`current`还是`stale`；未提供时内容适用性为`unknown`。历史执行日志不迁移为新成功事实。
+完成本轮验证并明确未覆盖项后，读取[报告登记步骤](references/record-report.md)，选择合法写入入口并按已观察版本登记。记录报告不触发重新执行检查。
 
 ## 报告边界
 
