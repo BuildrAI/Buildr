@@ -10,7 +10,7 @@ Buildr MUST 将用户工作意图作为 Agent 工作能力适配的入口，并 
 #### Scenario: 用户表达工作方式变化
 - **WHEN** 用户要求采用内部流程、调整默认工作方式、修改 Skill 行为或替换某项专业动作
 - **THEN** Agent MUST 先判断该意图是否触达或产生跨 Skill 稳定依赖边界
-- **AND** Agent MUST 检查相关 Skill 的 `provides`、`requires`、当前 binding、routing evidence 和受影响 consumers
+- **AND** 仅当变化涉及跨技能协作、能力声明、绑定或激活时，Agent MUST 检查相关 Skill 的 `provides`、`requires`、当前 binding、routing evidence 和受影响 consumers；内部文字或操作说明整理不要求完整依赖诊断
 - **AND** Agent MUST NOT 把底层 manifest 或 binding 操作作为默认结果要求用户完成
 
 #### Scenario: 变化只属于单个 Skill 内部

@@ -1,6 +1,6 @@
 ---
 name: task-triage
-description: 用户提出修复、实现、重构、优化、文档/测试或契约语义调整，或询问任务应走代码修改、当前事实维护还是 OpenSpec Change 时使用。
+description: 判断修改应直接实施、维护当前事实还是进入 OpenSpec 变更，并交接所需专业动作时使用。
 ---
 
 # Task Triage Skill
@@ -12,17 +12,17 @@ description: 用户提出修复、实现、重构、优化、文档/测试或契
 只读任务相关范围，不做全量审计。确认：
 
 - 用户希望外部行为或长期事实如何变化；
-- 相关 canonical specs、current knowledge、active Changes、实现、测试与 registries，以及其中的事实 authority；
+- 直接相关实现和约束，以及决定当前动作所需的权威来源；
 - 完整 Git repository set，使用 Workspace/Project/Service selector，不按目录层级猜测边界；
 - 写入授权、不可逆影响和仍需用户决定的语义冲突。
 
-首次修改 proposal、Skill、代码、测试或当前知识前，从直接相关的 canonical specs、current knowledge、实现、测试与 registries 建立一次有界 authority source map。该 map 只用于当前 Agent 工作上下文，不写入 Task Record、sidecar 或其他产品 authority；后续只有 scope、authority 或相关事实变化时才增量刷新，不反复全量扫描。
+首次修改前，按改动影响核对直接相关实现和约束。小改动不要求遍历规范、知识、测试与登记信息；涉及行为、职责或权威来源变化时，再按需读取相关规范、当前认知、活跃变更、调用方、测试和登记信息，形成有界来源图（Authority Source Map）。来源图仅用于当前工作上下文，不写入任务记录或其他产品状态；只有范围或相关事实变化时才增量刷新。
 
 authority 冲突、授权或 repository set 不明、不可逆行为缺少决定，或是否进入实现仍未知时，停止对应写入，只询问会改变长期语义、责任边界或授权的最少问题。
 
 ### UI Prototype 选择
 
-若当前 Task、提案或预期实现可能产生用户可见的前端 UI 变化，向用户询问：“本次是否需要先生成界面原型（UI Prototype）？”询问只负责取得选择，不生成文件，也不改变语义治理或执行形态判断。
+新页面、主要布局或交互存在实质设计选择，且用户尚未表达原型偏好时，询问是否需要先生成界面原型（UI Prototype）。已有明确偏好继续适用；已明确设计的局部文案、样式或交互修复直接推进，不机械询问。用户主动要求原型时，按下方明确选择边界处理。
 
 只有用户在当前任务中明确确认需要，才在方案已有足够上下文、正式前端实现开始前加载 selected `ui-prototype` Skill。用户拒绝、未确认或直接要求继续时不调用 Skill，正常推进后续流程；不得创建占位文件、waiver、Result、Receipt 或 blocker。UI Prototype 不替代 OpenSpec Change、Planning Review 或正式实现。一旦当前 Task 已生成原型，除非用户明确要求忽略，后续 Agent 必须在正式前端编辑前读取全部相关原型并按其信息架构、布局和交互开发。
 
@@ -78,24 +78,9 @@ authority 冲突、授权或 repository set 不明、不可逆行为缺少决定
 
 实现型任务按共享实现区域、验证入口或失败影响面分组。直接工作可以在已确认的真实Git与owned scope中继续；选择Worktree时先取得matching provider evidence。Agent直接依据目标、OpenSpec、Git、代码、文件和专业结果推进，不创建研发聚合事实或planning snapshot。需要设计测试框架、划分测试边界、编排场景或为实现开发测试时使用`project-testing`。开发中的测试由Agent直接调用项目工具；开发完成后独立使用selected `buildr.task-verification/v4` provider，只保存有意义的Task验证报告。triage不把验证报告变成Task完成门禁。
 
-## 4. 输出契约
+## 输出
 
-以下字段用于需要结构化交接的调用；面向用户只说明分流结论、实际影响与下一步，不逐项朗读内部状态。
-
-```text
-任务分流：
-- 语义治理：code-only / spec-maintenance / change-flow / blocked
-- 执行形态：implementation / metadata-only / unknown
-- Repository set：<selectors 或 unresolved>
-- Git 基线：converged / none / blocked（仅新正式Task create；包含每个repository的integration branch/upstream与部分effects）
-- Task Record：create / inspect / none / blocked
-- Task Worktree：create / inspect / none / blocked
-- 事实依据：<最小 authority/evidence>
-- 未决事项：<none 或冲突/授权问题>
-- 下一动作：<selected capability/provider action 或用户决定>
-```
-
-只有选中 OpenSpec 时追加对应状态。任务进度直接使用 Task Record、Parent/Child、各专业公开 read model、Buildr Web 与对话表达；不得把 readiness、文件存在或单次 finding 冒充行为成功。
+面向用户说明分流结论、实际影响与下一步；需要结构化交接时，读取[交接字段](references/structured-handoff.md)。
 
 ## Guardrails
 

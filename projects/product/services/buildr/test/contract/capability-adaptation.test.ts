@@ -8,7 +8,8 @@ const read: any = (path: any) => fs.readFileSync(path, 'utf8');
 const packageManifest: any = YAML.parse(read('resources/manifest.yml'));
 const core: any = read('resources/workspace/AGENTS.md');
 const buildrSkill: any = read('resources/runtime/skills/buildr/SKILL.md');
-const adaptation: any = read('resources/workspace/skills/buildr/capability-adaptation/SKILL.md');
+const adaptation: any = read('resources/workspace/skills/buildr/capability-adaptation/SKILL.md')
+  + read('resources/workspace/skills/buildr/capability-adaptation/references/adaptation-lifecycle.md');
 const capabilityDocs: any = read('docs/skill-capability-contracts.md');
 
 test('工作能力适配从自然语言意图进入且不要求用户维护 capability 原语', () => {

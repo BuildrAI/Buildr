@@ -1027,7 +1027,20 @@ export function createPackageStaticValidator(deps: any): any  {
       } catch (error: any) {
         problems.push(error.message);
       }
-      const skillContent = fs.readFileSync(skillFile, 'utf8');
+      const skillEntry = fs.readFileSync(skillFile, 'utf8');
+      const references: Record<string, string[]> = {
+        'task-triage': ['references/structured-handoff.md'],
+        'task-verification': ['references/maintain-map.md', 'references/record-report.md'],
+        'capability-adaptation': ['references/adaptation-lifecycle.md'],
+      };
+      const skillParts = [skillEntry];
+      for (const relative of references[skill.id] || []) {
+        const reference = path.join(skillDir, relative);
+        if (!skillEntry.includes(`](${relative})`)) problems.push(`${label} must link its guidance reference: ${relative}`);
+        if (!existsFile(reference)) problems.push(`${label} guidance reference is missing: ${relative}`);
+        else skillParts.push(fs.readFileSync(reference, 'utf8'));
+      }
+      const skillContent = skillParts.join('\n');
       validateAdapterPublications(skill, skillDir, problems);
       if (skill.id === 'capability-adaptation') {
         for (const requiredText of [
@@ -1244,7 +1257,7 @@ export function createPackageStaticValidator(deps: any): any  {
         if (!(skill.requires || []).some((item: any) => item.capability === 'buildr.task-record' && item.version === 3 && item.mode === 'required')) problems.push('task-retrospective must require buildr.task-record@3.');
       }
       if (skill.id === 'task-triage') {
-        for (const requiredText of ['## 2. 两轴决策', '`code-only`', '`spec-maintenance`', '`change-flow`', '`blocked`', 'Repository set', '`implementation`', '`metadata-only`', '`unknown`', '`buildr.task-record/v3`', '待办意向', 'todo create', 'Formal Task Record本身不是编辑、构建或有界测试的通用工作许可', '不需要Worktree的直接工作不补造位置、Plan或Receipt', '`buildr.git-operations/v1`', '新正式 Task 创建前收敛逐 repository 权威基线', '`fetch` operation', '`rebase` operation', '`rebase --abort`', 'Git 基线：converged / none / blocked', '`buildr.current-knowledge-maintenance/v2`', '`buildr.git-worktree-provider/v1`', '`maintain`', '`change-required`', 'provider不ready', 'selected `buildr.task-verification/v4` provider', '## 4. 输出契约']) {
+        for (const requiredText of ['## 2. 两轴决策', '`code-only`', '`spec-maintenance`', '`change-flow`', '`blocked`', 'Repository set', '`implementation`', '`metadata-only`', '`unknown`', '`buildr.task-record/v3`', '待办意向', 'todo create', 'Formal Task Record本身不是编辑、构建或有界测试的通用工作许可', '不需要Worktree的直接工作不补造位置、Plan或Receipt', '`buildr.git-operations/v1`', '新正式 Task 创建前收敛逐 repository 权威基线', '`fetch` operation', '`rebase` operation', '`rebase --abort`', 'Git 基线：converged / none / blocked', '`buildr.current-knowledge-maintenance/v2`', '`buildr.git-worktree-provider/v1`', '`maintain`', '`change-required`', 'provider不ready', 'selected `buildr.task-verification/v4` provider']) {
           if (!skillContent.includes(requiredText)) problems.push(`task-triage Skill must include ${JSON.stringify(requiredText)}.`);
         }
         if (!(skill.requires || []).some((item: any) => item.capability === 'buildr.task-record' && item.version === 3 && item.mode === 'optional')) problems.push('task-triage must optionally require buildr.task-record@3.');

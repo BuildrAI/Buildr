@@ -1,20 +1,19 @@
 ---
 name: capability-adaptation
-description: 用户要求采用内部流程、调整工作方式、修改默认 Skill 行为、创建或替换专业 Skill、卸载可能被编排的 Skill，或 Agent 准备改变 provides、requires、capability contract、binding 及跨 Skill 协作边界时使用；负责从自然语言意图完成影响分析、候选开发、组合验证、安全激活和 runtime 同步，不要求用户理解 capability 术语。
+description: 采用内部流程、调整工作方式、修改或替换技能行为，或变更能力声明与绑定时使用。
 ---
 
 # 工作能力适配
 
 本 Skill 承载 Agent 工作能力适配（Agent-managed Capability Adaptation）。用户只拥有工作意图和关键决策；Agent 维护工作资产；Buildr 维护依赖结构和 runtime 投射；capability contract 只保护跨 Skill 最小协作边界。
 
-## 1. 建立影响基线
+## 先判断协作影响
 
-- 解析 Buildr workspace、实际 scope 和当前 Agent，复用同一现场的 Doctor 诊断；缺失时运行 `buildr doctor --agent <agent> --target <workspace> --json`。需要检查依赖、绑定或跨技能影响且当前结果未包含完整能力图时，再使用 `--detail full`。
-- 读取目标 Skill 源、`skills/manifest.yml`、相关 contracts、当前 bindings 和 doctor `capabilities` graph；同时区分 Agent runtime 基于 description 的入口发现与 Skill 加载后的 dependency resolution。routing evidence 存在时，只在对应产品入口已经命中的前提下检查其内部用户意图覆盖。
-- 列出目标 Skill 提供的 capabilities、直接/递归 consumers、required/optional mode、当前 selected provider 和修改后的 blocked/degraded 风险。用户无需知道这些资产名称。
-- 修改 Buildr builtin 时不得直接编辑用户 workspace 中的受管副本；组织差异使用组织自有 provider，Buildr 产品行为变化走产品 change。
+核对目标技能（Skill）的源文件、用户期望及现有声明，判断变化是否影响跨技能协作保证、能力声明、绑定或激活。内部文字、结构或操作说明整理且不改变这些边界时，直接维护源文件并做相关检查，不要求完整依赖图或诊断。
 
-## 2. 判断如何落地
+修改 Buildr 内置资产时，只修改产品源文件并走产品变更；组织差异使用组织自有提供者（Provider），不直接编辑受管副本。
+
+## 判断如何落地
 
 按以下顺序选择最小变化：
 
@@ -25,22 +24,13 @@ description: 用户要求采用内部流程、调整工作方式、修改默认 
 
 判断的是稳定协作边界，不是用户是否说出 capability 名字。命令、算法、merge/rebase policy 和组织工具留在 provider；只有 consumer 无法安全继续时依赖的保证进入 contract。
 
-## 3. 先开发候选，再改变当前实现
+## 按影响验证与激活
 
-- 在 canonical task worktree 或任务候选目录中修改或创建 Skill，记录当前 provider、binding 和 source integrity；不得先卸载或覆盖当前有效实现。
-- 为候选写清触发 description、职责边界、授权/停止条件和结果证据。实现既有 contract 时逐项核对 contract；新增 contract 时使用最小 frontmatter 和固定语义章节。替换顶层入口 capability provider 时，必须验证新 provider 的 description 覆盖原用户意图，并检查旧入口或其他 Skill 是否造成触发歧义；binding ready 不能替代这项验证。
-- 运行 Skill frontmatter/package 静态检查、provider 专项测试和每个受影响 consumer 的组合场景。`ready` 只表示结构可路由，不能替代行为证据。
-- 候选不满足 contract、组合验证失败或计划会产生用户未接受的 blocked consumer 时停止；保留当前实现和 binding，向用户说明真正需要决定的语义差异。
+仅当变化涉及跨技能协作、能力声明、绑定或激活时，读取[依赖基线、候选验证与激活恢复](references/adaptation-lifecycle.md)，再执行对应动作。先核对现有协作保证，按实际影响选择专项检查和组合场景；不因普通正文修改机械执行所有消费者（Consumer）的检查。
 
-## 4. 激活与恢复
+本技能（Skill）不改变既有授权；当前有效实现、写入对象和恢复边界依参考文件保护。Buildr 自举工作空间的正式激活仍交给其唯一执行器。
 
-1. 使用 `buildr skills add ... --provides/--requires` 或 `--replace` 写入已验证候选；不要要求用户手改 manifest。
-2. 安装新 provider 不会自动改变流程。确认候选可见后使用 `buildr skills bind <capability>@<version> --provider <skill-id> --scope <scope> --target <workspace>` 显式选择。
-3. 在新 binding ready 之前不卸载旧 provider；一个 Skill 提供多个仍被使用的 capabilities 时，逐项检查后才能完整卸载。
-4. 执行当前 Agent 的 `buildr sync` 或最小 scope render，再运行最终 doctor，核对受影响 consumers、runtime paths，以及已加载产品入口内部适用的 routing evidence。顶层入口发生替换时，同时确认 selected provider 已投射到 runtime，且入口 description 与激活计划一致。
-5. 激活后出现新的结构 error 时，使用记录的旧 binding 恢复选择并重新 doctor；不得留下明知 blocked 的半完成适配。已经发生且无法安全自动恢复的外部副作用必须如实报告。
-
-## 5. 面向用户交付
+## 面向用户交付
 
 默认只说明：用户要求的工作方式、实际生效 scope、Agent 修改或创建了什么能力、哪些现有工作流已验证兼容、是否有需要决策的风险。provider、consumer、binding 和命令细节只在用户询问、存在歧义或发生阻塞时展开。
 

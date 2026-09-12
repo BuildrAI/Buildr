@@ -586,7 +586,7 @@ Buildr 内置任务 Skills MUST 引导 Agent 只在当前动作成为 next execu
 
 #### Scenario: 首次修改前建立 source map
 - **WHEN** Agent 准备修改 proposal、Skill、代码、测试或当前知识
-- **THEN** guidance MUST要求从直接相关的 canonical specs、current knowledge、实现、测试与 registry 建立一次有界 authority source map
+- **THEN** guidance MUST按实际影响核对直接相关实现和约束；小改动不要求遍历规范、知识、测试与登记信息，涉及行为、职责或权威来源变化时才扩大调查并形成有界来源图（Authority Source Map）
 - **AND** 后续 MUST只在 scope、authority 或相关事实变化时增量刷新，不得把该 map 写成新的产品 authority或反复全量扫描
 
 ### Requirement: 验证范围引导必须保持计划预览与正式 evidence 分离

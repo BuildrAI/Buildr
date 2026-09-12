@@ -8,7 +8,8 @@ import YAML from 'yaml';
 const productRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const read = (relative: string): string => fs.readFileSync(path.join(productRoot, relative), 'utf8');
 
-const triageSkill = read('resources/workspace/skills/buildr/task-triage/SKILL.md');
+const triageSkill = read('resources/workspace/skills/buildr/task-triage/SKILL.md')
+  + read('resources/workspace/skills/buildr/task-triage/references/structured-handoff.md');
 const worktreeSkill = read('resources/workspace/skills/buildr/task-worktree/SKILL.md');
 const proposeSidebar = read('resources/workspace/components/buildr/openspec/contributions/openspec-propose-sidebar.md');
 const applySidebar = read('resources/workspace/components/buildr/openspec/contributions/openspec-apply-sidebar.md');
