@@ -1,7 +1,9 @@
 import { type ProjectResponse } from '../../project/api/project-api';
 import { serviceApi } from '../api/service-api';
 import { useEffect, useState, type FormEvent } from 'react';
-import { Alert, Button, Form, Input, Modal, Select, Space } from 'antd';
+import { useAppShell } from '../../../app/AppShellContext';
+import { MetadataEditDrawer } from '../../../components/MetadataEditDrawer';
+import { Alert, Form, Input, Select } from 'antd';
 
 import { SERVICE_TYPE_OPTIONS } from '../../../lib/labels';
 
@@ -23,13 +25,16 @@ type Props = {
   onSaved?: (service: ServiceEditSaved) => void;
 };
 
-export function ServiceEditModal({ open, projectCode, serviceCode, onClose, onSaved }: Props) {
+export function ServiceEditDrawer({ open, projectCode, serviceCode, onClose, onSaved }: Props) {
+  const { refreshNavigation } = useAppShell();
   const [current, setCurrent] = useState<ServiceEditPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [saveError, setSaveError] = useState('');
   const [editAlert, setEditAlert] = useState('');
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
   const [serviceType, setServiceType] = useState('');
 
   useEffect(() => {
@@ -52,6 +57,8 @@ export function ServiceEditModal({ open, projectCode, serviceCode, onClose, onSa
         const data = await serviceApi.service(projectCode, serviceCode) as ServiceEditPayload;
         if (cancelled) return;
         setCurrent(data);
+        setName(data.service.name);
+        setDescription(data.service.description || '');
         setServiceType(data.service.type);
         setEditAlert(data.migrationRequired ? (data.nextActions || []).join(' ') : '');
       } catch (err) {
@@ -71,21 +78,19 @@ export function ServiceEditModal({ open, projectCode, serviceCode, onClose, onSa
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!current || !projectCode || !serviceCode || !serviceType) return;
-    const form = event.currentTarget;
-    const nameInput = form.elements.namedItem('name') as HTMLInputElement;
-    const descriptionInput = form.elements.namedItem('description') as HTMLTextAreaElement;
+    if (!current || !projectCode || !serviceCode || !serviceType || saving) return;
     setSaving(true);
     setSaveError('');
     try {
       const updated = await serviceApi.updateService(projectCode, serviceCode, {
         revision: current.revision,
-        name: nameInput.value,
-        description: descriptionInput.value,
+        name,
+        description,
         type: serviceType,
       }) as ServiceEditPayload;
       setCurrent(updated);
       setEditAlert(updated.migrationRequired ? (updated.nextActions || []).join(' ') : '');
+      refreshNavigation();
       onSaved?.({
         code: updated.service.code,
         name: updated.service.name,
@@ -96,7 +101,7 @@ export function ServiceEditModal({ open, projectCode, serviceCode, onClose, onSa
       onClose();
     } catch (err) {
       const code = (err as { code?: string }).code;
-      setSaveError(code === 'service_revision_conflict' ? 'registry 已变化，请刷新' : (err instanceof Error ? err.message : '保存失败'));
+      setSaveError(code === 'service_revision_conflict' ? '内容已被修改。当前输入已保留，请重新打开后核对。' : (err instanceof Error ? err.message : '保存失败'));
     } finally {
       setSaving(false);
     }
@@ -105,14 +110,11 @@ export function ServiceEditModal({ open, projectCode, serviceCode, onClose, onSa
   const readOnly = Boolean(current?.migrationRequired);
 
   return (
-    <Modal
-      title="编辑服务"
-      open={open}
-      onCancel={onClose}
-      footer={null}
-      destroyOnClose
-      width={560}
-      className="service-edit-modal"
+    <MetadataEditDrawer
+      title="编辑服务" objectName={current?.service.name || serviceCode || ''}
+      open={open} onClose={onClose} saving={saving} dirty={Boolean(current && (name !== current.service.name || description !== (current.service.description || '') || serviceType !== current.service.type))}
+      disabled={readOnly || loading || !current || Boolean(loadError)}
+      formId="service-edit-form" saveButtonId="service-save-button"
     >
       {loading ? (
         <p className="page-copy">正在读取…</p>
@@ -120,7 +122,7 @@ export function ServiceEditModal({ open, projectCode, serviceCode, onClose, onSa
         <Alert type="error" showIcon message={loadError} />
       ) : current ? (
         <>
-          <p className="page-copy">仅修改稳定元数据；来源和 Git 观察状态保持只读。</p>
+          <p className="page-copy">修改服务名称、说明与类型。代码位置和来源不会改变。</p>
           <div id="service-edit-alert" className={editAlert || saveError ? '' : 'hidden'} role="status">
             {editAlert ? <Alert type="warning" showIcon message={editAlert} style={{ marginBottom: 16 }} /> : null}
             {saveError ? <Alert type="error" showIcon message={saveError} style={{ marginBottom: 16 }} /> : null}
@@ -138,7 +140,8 @@ export function ServiceEditModal({ open, projectCode, serviceCode, onClose, onSa
                   autoComplete="off"
                   required
                   disabled={readOnly || saving}
-                  defaultValue={current.service.name}
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
                 />
               </Form.Item>
               <Form.Item label="说明" required>
@@ -148,7 +151,8 @@ export function ServiceEditModal({ open, projectCode, serviceCode, onClose, onSa
                   rows={6}
                   required
                   disabled={readOnly || saving}
-                  defaultValue={current.service.description || ''}
+                  value={description}
+                  onChange={(event) => setDescription(event.target.value)}
                 />
               </Form.Item>
               <Form.Item label="类型" required>
@@ -163,16 +167,11 @@ export function ServiceEditModal({ open, projectCode, serviceCode, onClose, onSa
                   getPopupContainer={(node) => node.parentElement || document.body}
                 />
               </Form.Item>
-              <Space>
-                <Button onClick={onClose} disabled={saving}>取消</Button>
-                <Button id="service-save-button" type="primary" htmlType="submit" disabled={readOnly || saving} loading={saving}>
-                  保存修改
-                </Button>
-              </Space>
+
             </Form>
           </form>
         </>
       ) : null}
-    </Modal>
+    </MetadataEditDrawer>
   );
 }

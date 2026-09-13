@@ -1,13 +1,13 @@
 /* Buildr Web — soft product supplements on Ant Design 5 */
 
 :root {
-  --soft-bg: #f3f6f6;
+  --soft-bg: #f7f8f9;
   --soft-surface: #ffffff;
-  --soft-ink: #1e2a2a;
-  --soft-muted: #5c6b6a;
-  --soft-line: #d5e0de;
-  --soft-primary: #4f8f8a;
-  --soft-sidebar: #f7faf9;
+  --soft-ink: #252a31;
+  --soft-muted: #68717b;
+  --soft-line: #e1e5e9;
+  --soft-primary: #397d74;
+  --soft-sidebar: #f6f7f8;
   --soft-development-bg: #fff6dc;
   --soft-development-ink: #805817;
   --soft-development-line: #e2bc67;
@@ -256,7 +256,7 @@ a {
   min-width: 0;
   width: 100%;
   margin: 0;
-  padding: 28px var(--page-gutter) 56px;
+  padding: 24px var(--page-gutter) 40px;
   outline: none;
 }
 
@@ -826,19 +826,34 @@ a {
   background: var(--soft-surface);
 }
 
-.project-basics-panel {
+.panel.project-basics-panel {
   display: grid;
-  gap: 16px;
+  gap: 12px;
   margin-bottom: 20px;
+  padding: 4px 0 20px;
+  border: 0;
+  border-bottom: 1px solid var(--soft-line);
+  border-radius: 0;
+  background: transparent;
 }
 
 .project-basics-panel .detail-facts {
+  display: flex;
+  align-items: flex-start;
+  gap: 28px;
   margin: 0;
 }
+.project-basics-panel .detail-facts > div:first-child { flex: 1; min-width: 0; }
+.project-basics-panel .detail-facts > div:not(:first-child) { flex: 0 0 auto; max-width: 35%; }
+.project-basics-panel .detail-facts dd { font-size: 13px; line-height: 1.7; }
+.project-basics-panel .detail-title-row { margin-bottom: 4px; }
 
-.project-documents-panel {
-  margin-top: 0;
-  margin-bottom: 16px;
+.panel.project-documents-panel {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .project-documents-panel .ant-tabs-nav {
@@ -873,8 +888,16 @@ a {
   margin-top: 10px;
 }
 
-.project-document-body {
-  min-height: 240px;
+.project-document-body { min-height: 0; }
+.project-document-content { max-width: 880px; font-size: 14px; line-height: 1.8; }
+.project-document-content.markdown-body h1,
+.project-document-content.markdown-body h2 { font-size: 21px; letter-spacing: -.025em; }
+.project-document-content.markdown-body h3 { font-size: 17px; }
+.project-detail-header h1 { font-size: 25px; letter-spacing: -.03em; line-height: 1.35; }
+.project-detail-header { margin-bottom: 18px; }
+@media (max-width: 699px) {
+  .project-basics-panel .detail-facts { flex-direction: column; gap: 12px; }
+  .project-basics-panel .detail-facts > div:not(:first-child) { max-width: 100%; }
 }
 
 .project-document-content {
@@ -1731,52 +1754,44 @@ details summary { cursor: pointer; color: var(--soft-ink); font-size: 12px; font
   background: #fff6e5;
 }
 
-/* Shared workspace scope, top-level areas and contextual object navigation. */
-.app-frame {
-  display: flex;
-  flex: 1;
-  min-height: 0;
-  min-width: 0;
-}
-.app-sidebar {
-  flex: 0 0 236px;
-  width: 236px;
-  min-width: 0;
-  align-self: flex-start;
-  position: sticky;
-  top: 0;
-  max-height: calc(100dvh - 56px);
-  overflow-y: auto;
-  border-right: 1px solid var(--soft-line);
-  background: var(--soft-sidebar);
-}
-.app-shell:has(.resource-cockpit) .app-sidebar { height: 100%; }
-.shell-navigation { padding: 18px 12px; }
-.shell-nav-caption { margin: 0 10px 12px; color: var(--soft-muted); font-size: 12px; }
-.shell-nav-heading { display: flex; align-items: center; justify-content: space-between; padding: 0 8px 10px; }
-.shell-nav-heading > a { text-decoration: none; color: var(--soft-muted); font-size: 13px; }
-.shell-nav-heading > a.active { color: var(--soft-ink); font-weight: 650; }
-.shell-nav-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 38px;
-  padding: 9px 10px;
-  margin: 2px 0;
-  border-radius: 8px;
-  color: var(--soft-muted);
-  font-size: 13px;
-  text-decoration: none;
-  overflow-wrap: anywhere;
-}
-.shell-nav-item:hover { color: var(--soft-ink); background: #edf3f1; }
-.shell-nav-item.active { color: #326b66; background: #e4efed; font-weight: 650; }
-.shell-nav-item:focus-visible { outline: 2px solid var(--soft-primary); outline-offset: -2px; }
-.shell-project-link .anticon { font-size: 10px; flex-shrink: 0; }
-.shell-service-tree { margin: 0 0 8px 18px; border-left: 1px solid var(--soft-line); padding-left: 6px; }
-.shell-service-tree .shell-nav-item { font-size: 12px; }
-.shell-nav-hint { margin: 8px 10px; color: var(--soft-muted); font-size: 12px; }
-.shell-nav-secondary { margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--soft-line); }
+/* Shared scope and quiet, contextual navigation. */
+.app-shell .topbar { position: sticky; top: 0; z-index: 20; gap: 14px; border-color: #e8ebee; }
+.app-shell .brand-link { font-size: 14px; letter-spacing: -.02em; }
+.app-shell .brand-mark { width: 26px; height: 26px; border-radius: 7px; }
+.app-shell .workspace-switcher { height: 30px; font-size: 12px; background: #f7f8f9; border-color: #e6e9ed; }
+.app-shell .top-nav { gap: 4px; align-items: center; }
+.app-shell .top-nav a { height: 32px; padding: 0 12px; border: 0; border-radius: 6px; transition: background 120ms ease, color 120ms ease; }
+.app-shell .top-nav a.active { background: #edf3f1; color: #306b62; }
+.app-shell .topbar-actions { gap: 8px; }
+.app-frame { display: flex; flex: 1; min-height: 0; min-width: 0; }
+.app-frame:not(.is-global) > #app-view { background: #fff; }
+.app-sidebar { flex: 0 0 224px; width: 224px; min-width: 0; align-self: flex-start; position: sticky; top: 56px; height: calc(100dvh - 56px); overflow-y: auto; border-right: 1px solid #e8ebee; background: var(--soft-sidebar); }
+.app-shell:has(.resource-cockpit) .app-sidebar { position: static; height: 100%; }
+.shell-navigation { padding: 18px 10px; }
+.shell-nav-caption { margin: 0 10px 10px; color: var(--soft-muted); font-size: 11px; font-weight: 550; }
+.shell-nav-heading { display: flex; align-items: center; justify-content: space-between; padding: 0 8px 8px; }
+.shell-nav-heading > a { text-decoration: none; color: var(--soft-muted); font-size: 12px; font-weight: 550; }
+.shell-nav-heading > a.active { color: var(--soft-ink); }
+.shell-nav-heading .ant-btn { width: 28px; height: 28px; color: #76808b; }
+.shell-nav-item { display: flex; align-items: center; gap: 9px; min-height: 34px; padding: 7px 10px; margin: 2px 0; border-radius: 6px; color: #58616c; font-size: 13px; line-height: 20px; text-decoration: none; transition: background 120ms ease, color 120ms ease; }
+.shell-nav-item > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shell-nav-item > .anticon { color: #7b858e; font-size: 14px; }
+.shell-nav-item:hover { color: var(--soft-ink); background: #ebedf0; }
+.shell-nav-item.active { color: #306b62; background: #e7efec; font-weight: 600; }
+.shell-nav-item:focus-visible,.shell-project-toggle:focus-visible { outline: 2px solid var(--soft-primary); outline-offset: -2px; }
+.shell-project-row { display: flex; align-items: center; border-radius: 6px; margin: 2px 0; }
+.shell-project-row:hover { background: #ebedf0; }
+.shell-project-row.active { background: #e7efec; }
+.shell-project-row.active .shell-project-link { color: #306b62; font-weight: 600; }
+.shell-project-toggle { flex: 0 0 28px; height: 32px; display: grid; place-items: center; border: 0; border-radius: 5px; padding: 0; color: #808a94; background: transparent; cursor: pointer; }
+.shell-project-toggle:hover { background: #dfe5e6; color: var(--soft-ink); }
+.shell-project-toggle .anticon { font-size: 10px; transition: transform 160ms ease; }
+.shell-project-toggle .is-expanded { transform: rotate(90deg); }
+.shell-project-link { flex: 1; min-width: 0; padding: 7px 8px 7px 0; margin: 0; background: transparent !important; }
+.shell-service-tree { margin: 3px 0 8px 22px; padding-left: 7px; border-left: 1px solid #dde3e4; }
+.shell-service-tree .shell-nav-item { min-height: 30px; font-size: 12px; padding: 5px 8px; }
+.shell-nav-hint { margin: 8px 10px; color: var(--soft-muted); font-size: 12px; line-height: 1.6; }
+.shell-nav-secondary { margin-top: 18px; padding-top: 12px; border-top: 1px solid #e8ebee; }
 .app-shell .shell-menu-toggle { display: none; }
 .app-frame > #app-view { min-width: 0; }
 @media (max-width: 899px) {
@@ -1786,9 +1801,28 @@ details summary { cursor: pointer; color: var(--soft-ink); font-size: 12px; font
   .app-shell .topbar .brand-link strong { display: none; }
   .app-shell .topbar .workspace-switcher { max-width: 145px; }
   .app-shell .topbar .workspace-switcher .context-label { display: none; }
-  .app-shell .topbar .top-nav { height: 48px; }
-  .app-shell .topbar .top-nav a { height: 48px; padding: 0 8px; }
+  .app-shell .topbar .top-nav { height: 44px; }
+  .app-shell .topbar .top-nav a { height: 30px; padding: 0 9px; }
   .app-shell .topbar-actions { gap: 5px; }
   .app-shell .topbar #open-agent-action { padding-inline: 8px; }
   .app-shell .topbar .nav-quit { padding-inline: 5px; }
+  .shell-project-toggle { height: 36px; flex-basis: 32px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .shell-nav-item, .shell-project-toggle .anticon, .app-shell .top-nav a { transition: none; }
+}
+
+.metadata-edit-drawer .ant-drawer-mask { background: rgba(28, 36, 43, .18); }
+.metadata-edit-drawer .ant-drawer-header { padding: 20px 24px; border-bottom-color: #e8ebee; }
+.metadata-edit-heading { display: flex; flex-direction: column; gap: 4px; }
+.metadata-edit-heading > span { font-size: 17px; font-weight: 600; }
+.metadata-edit-heading small { color: var(--soft-muted); font-size: 12px; font-weight: 400; }
+.metadata-edit-drawer .ant-drawer-body { padding: 24px; }
+.metadata-edit-drawer .ant-drawer-body > .page-copy { margin-bottom: 24px; }
+.metadata-edit-drawer .ant-drawer-footer { padding: 14px 24px; border-top: 1px solid #e8ebee; background: #fff; }
+.metadata-edit-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.metadata-edit-discard p { margin: 0 0 12px; font-size: 13px; color: var(--soft-ink); }
+@media (max-width: 520px) {
+  .metadata-edit-drawer .ant-drawer-body { padding: 20px; }
+  .metadata-edit-drawer .ant-drawer-footer { padding: 14px 20px max(14px, env(safe-area-inset-bottom)); }
 }

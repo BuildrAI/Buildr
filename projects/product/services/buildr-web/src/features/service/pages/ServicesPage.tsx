@@ -4,7 +4,7 @@ import { Alert, Button, Empty, Form, Select, Table, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useAppShell } from '../../../app/AppShellContext';
 import { serviceTypeLabel, workspaceHref } from '../../../lib/labels';
-import { ServiceEditModal } from '../components/ServiceEditModal';
+import { ServiceEditDrawer } from '../components/ServiceEditDrawer';
 import { useServiceCatalog, type Service } from '../hooks/useServiceCatalog';
 
 const TableBody = (props: React.HTMLAttributes<HTMLTableSectionElement>) => (
@@ -113,7 +113,7 @@ export function ServicesPage() {
         </div>
       </section>
       <span className="hidden">{projectName}</span>
-      <ServiceEditModal
+      <ServiceEditDrawer
         open={Boolean(editServiceCode)}
         projectCode={projectCode || null}
         serviceCode={editServiceCode}

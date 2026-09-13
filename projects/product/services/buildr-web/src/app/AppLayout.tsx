@@ -76,6 +76,8 @@ export function AppLayout() {
   const [drawerContext, setDrawerContext] = useState<Record<string, unknown>>({});
   const [exited, setExited] = useState(false);
   const [taskListResetToken, setTaskListResetToken] = useState(0);
+  const [navigationRevision, setNavigationRevision] = useState(0);
+  const refreshNavigation = useCallback(() => setNavigationRevision((value) => value + 1), []);
   const [registry, setRegistry] = useState<WorkspaceEntry[]>([]);
 
   const preview = useMemo(() => readPreviewIdentity(), []);
@@ -158,6 +160,8 @@ export function AppLayout() {
 
   const shellValue = {
     workspaceId,
+    navigationRevision,
+    refreshNavigation,
     workspace,
     setWorkspace,
     openAgentAction,

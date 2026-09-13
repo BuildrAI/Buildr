@@ -1,6 +1,8 @@
 import { type ProjectResponse, projectApi } from '../api/project-api';
 import { useEffect, useState, type FormEvent } from 'react';
-import { Alert, Button, Form, Input, Modal, Space } from 'antd';
+import { useAppShell } from '../../../app/AppShellContext';
+import { MetadataEditDrawer } from '../../../components/MetadataEditDrawer';
+import { Alert, Form, Input } from 'antd';
 
 
 type ProjectEditPayload = ProjectResponse & { revision: string; project: NonNullable<ProjectResponse['project']> };
@@ -19,13 +21,16 @@ type Props = {
   onSaved?: (project: ProjectEditSaved) => void;
 };
 
-export function ProjectEditModal({ open, projectCode, onClose, onSaved }: Props) {
+export function ProjectEditDrawer({ open, projectCode, onClose, onSaved }: Props) {
+  const { refreshNavigation } = useAppShell();
   const [current, setCurrent] = useState<ProjectEditPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [saveError, setSaveError] = useState('');
   const [editAlert, setEditAlert] = useState('');
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
 
   useEffect(() => {
     if (!open || !projectCode) {
@@ -46,6 +51,8 @@ export function ProjectEditModal({ open, projectCode, onClose, onSaved }: Props)
         const data = await projectApi.project(projectCode) as ProjectEditPayload;
         if (cancelled) return;
         setCurrent(data);
+        setName(data.project.name);
+        setDescription(data.project.description || '');
         setEditAlert(data.migrationRequired ? (data.nextActions || []).join(' ') : '');
       } catch (err) {
         if (!cancelled) setLoadError(err instanceof Error ? err.message : '无法读取项目');
@@ -58,20 +65,18 @@ export function ProjectEditModal({ open, projectCode, onClose, onSaved }: Props)
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!current || !projectCode) return;
-    const form = event.currentTarget;
-    const nameInput = form.elements.namedItem('name') as HTMLInputElement;
-    const descriptionInput = form.elements.namedItem('description') as HTMLTextAreaElement;
+    if (!current || !projectCode || saving) return;
     setSaving(true);
     setSaveError('');
     try {
       const updated = await projectApi.updateProject(projectCode, {
         revision: current.revision,
-        name: nameInput.value,
-        description: descriptionInput.value,
+        name,
+        description,
       }) as ProjectEditPayload;
       setCurrent(updated);
       setEditAlert(updated.migrationRequired ? (updated.nextActions || []).join(' ') : '');
+      refreshNavigation();
       onSaved?.({
         code: updated.project.code,
         name: updated.project.name,
@@ -81,7 +86,7 @@ export function ProjectEditModal({ open, projectCode, onClose, onSaved }: Props)
       onClose();
     } catch (err) {
       const code = (err as { code?: string }).code;
-      setSaveError(code === 'project_revision_conflict' ? 'registry 已变化，请刷新' : (err instanceof Error ? err.message : '保存失败'));
+      setSaveError(code === 'project_revision_conflict' ? '内容已被修改。当前输入已保留，请重新打开后核对。' : (err instanceof Error ? err.message : '保存失败'));
     } finally {
       setSaving(false);
     }
@@ -90,14 +95,11 @@ export function ProjectEditModal({ open, projectCode, onClose, onSaved }: Props)
   const readOnly = Boolean(current?.migrationRequired);
 
   return (
-    <Modal
-      title="编辑项目"
-      open={open}
-      onCancel={onClose}
-      footer={null}
-      destroyOnClose
-      width={560}
-      className="project-edit-modal"
+    <MetadataEditDrawer
+      title="编辑项目" objectName={current?.project.name || projectCode || ''}
+      open={open} onClose={onClose} saving={saving} dirty={Boolean(current && (name !== current.project.name || description !== (current.project.description || '')))}
+      disabled={readOnly || loading || !current || Boolean(loadError)}
+      formId="project-edit-form" saveButtonId="project-save-button"
     >
       {loading ? (
         <p className="page-copy">正在读取…</p>
@@ -105,7 +107,7 @@ export function ProjectEditModal({ open, projectCode, onClose, onSaved }: Props)
         <Alert type="error" showIcon message={loadError} />
       ) : current ? (
         <>
-          <p className="page-copy">仅修改稳定元数据；身份、来源和 Git 观察状态保持只读。</p>
+          <p className="page-copy">修改项目名称与说明。代码位置和来源不会改变。</p>
           <div id="project-edit-alert" className={editAlert || saveError ? '' : 'hidden'} role="status">
             {editAlert ? <Alert type="warning" showIcon message={editAlert} style={{ marginBottom: 16 }} /> : null}
             {saveError ? <Alert type="error" showIcon message={saveError} style={{ marginBottom: 16 }} /> : null}
@@ -123,7 +125,8 @@ export function ProjectEditModal({ open, projectCode, onClose, onSaved }: Props)
                   autoComplete="off"
                   required
                   disabled={readOnly || saving}
-                  defaultValue={current.project.name}
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
                 />
               </Form.Item>
               <Form.Item label="说明" required>
@@ -133,19 +136,15 @@ export function ProjectEditModal({ open, projectCode, onClose, onSaved }: Props)
                   rows={6}
                   required
                   disabled={readOnly || saving}
-                  defaultValue={current.project.description || ''}
+                  value={description}
+                  onChange={(event) => setDescription(event.target.value)}
                 />
               </Form.Item>
-              <Space>
-                <Button onClick={onClose} disabled={saving}>取消</Button>
-                <Button id="project-save-button" type="primary" htmlType="submit" disabled={readOnly || saving} loading={saving}>
-                  保存修改
-                </Button>
-              </Space>
+
             </Form>
           </form>
         </>
       ) : null}
-    </Modal>
+    </MetadataEditDrawer>
   );
 }

@@ -11,7 +11,7 @@ import { encodeProjectDocumentPath, resolveProjectMarkdownHref } from '../../../
 import { workspaceHref } from '../../../lib/labels';
 import { DailyProgressPanel } from '../../project-daily-progress/components/DailyProgressPanel';
 import { useMarkdownDocumentViewer, type MarkdownDocument } from '../../../lib/useMarkdownDocumentViewer';
-import { ProjectEditModal } from '../components/ProjectEditModal';
+import { ProjectEditDrawer } from '../components/ProjectEditDrawer';
 
 type ProjectDetail = ProjectResponse & { revision: string; project: NonNullable<ProjectResponse['project']> };
 
@@ -177,7 +177,7 @@ export function ProjectDetailPage() {
         </div>
         )}
       </section>
-      <ProjectEditModal
+      <ProjectEditDrawer
         open={editOpen}
         projectCode={editOpen ? projectCode : null}
         onClose={() => setEditOpen(false)}

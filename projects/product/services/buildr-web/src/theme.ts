@@ -3,48 +3,48 @@ import type { ThemeConfig } from 'antd';
 /** Soft product tokens — mist teal primary, light radius, light shadow. */
 export const softProductTheme: ThemeConfig = {
   token: {
-    colorPrimary: '#4f8f8a',
+    colorPrimary: '#397d74',
     colorInfo: '#5b8fa8',
     colorSuccess: '#5a9a78',
     colorWarning: '#c4a35a',
     colorError: '#c46b6b',
-    colorBgBase: '#f3f6f6',
+    colorBgBase: '#f7f8f9',
     colorBgContainer: '#ffffff',
-    colorBgLayout: '#f3f6f6',
-    colorText: '#1e2a2a',
-    colorTextSecondary: '#5c6b6a',
-    colorBorder: '#d5e0de',
-    colorBorderSecondary: '#e4eceb',
-    borderRadius: 10,
-    borderRadiusLG: 12,
-    borderRadiusSM: 8,
+    colorBgLayout: '#f7f8f9',
+    colorText: '#252a31',
+    colorTextSecondary: '#68717b',
+    colorBorder: '#e1e5e9',
+    colorBorderSecondary: '#eceef1',
+    borderRadius: 8,
+    borderRadiusLG: 10,
+    borderRadiusSM: 6,
     fontFamily:
       '"PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "Segoe UI", system-ui, sans-serif',
     boxShadow: '0 1px 2px rgba(30, 42, 42, 0.04), 0 6px 16px rgba(30, 42, 42, 0.05)',
     boxShadowSecondary: '0 1px 2px rgba(30, 42, 42, 0.03)',
-    controlHeight: 36,
+    controlHeight: 32,
   },
   components: {
     Layout: {
-      siderBg: '#f7faf9',
+      siderBg: '#f6f7f8',
       headerBg: '#ffffff',
-      bodyBg: '#f3f6f6',
-      triggerBg: '#4f8f8a',
+      bodyBg: '#f7f8f9',
+      triggerBg: '#397d74',
     },
     Menu: {
       itemBorderRadius: 8,
       itemMarginInline: 8,
-      itemHeight: 40,
+      itemHeight: 36,
     },
     Button: {
-      borderRadius: 10,
+      borderRadius: 8,
       primaryShadow: '0 1px 2px rgba(79, 143, 138, 0.18)',
     },
     Card: {
-      borderRadiusLG: 12,
+      borderRadiusLG: 10,
     },
     Table: {
-      borderRadius: 10,
+      borderRadius: 8,
       headerBg: '#f0f5f4',
     },
     Drawer: {
@@ -53,4 +53,4 @@ export const softProductTheme: ThemeConfig = {
   },
 };
 
-export const SOFT_PRIMARY = '#4f8f8a';
+export const SOFT_PRIMARY = '#397d74';

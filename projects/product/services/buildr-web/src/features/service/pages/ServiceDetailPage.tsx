@@ -10,7 +10,7 @@ import { MarkdownHost } from '../../../components/MarkdownHost';
 import { encodeProjectDocumentPath, resolveProjectMarkdownHref } from '../../../lib/projectDocuments';
 import { serviceTypeLabel, workspaceHref } from '../../../lib/labels';
 import { useMarkdownDocumentViewer, type MarkdownDocument } from '../../../lib/useMarkdownDocumentViewer';
-import { ServiceEditModal } from '../components/ServiceEditModal';
+import { ServiceEditDrawer } from '../components/ServiceEditDrawer';
 
 type ServiceDetail = ProjectResponse & { revision: string; service: NonNullable<ProjectResponse['service']> };
 
@@ -173,7 +173,7 @@ export function ServiceDetailPage() {
           ) : null}
         </div>
       </section>
-      <ServiceEditModal
+      <ServiceEditDrawer
         open={editOpen}
         projectCode={editOpen ? projectCode : null}
         serviceCode={editOpen ? serviceCode : null}

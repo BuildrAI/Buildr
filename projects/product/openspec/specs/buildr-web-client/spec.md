@@ -111,7 +111,7 @@ Buildr Web React 客户端 MUST 在全局顶部消费 Release Awareness API并�
 - **THEN** 客户端 MUST不阻断主导航与页面内容
 
 ### Requirement: Buildr Web 壳层必须采用上下结构
-Buildr Web App Shell MUST 在顶部提供品牌、共同工作空间范围、“工作台”和“工作空间”两个区域及交给 Agent 操作，工作台 MUST 排在工作空间之前。选定范围的两个区域 MUST 共享相同 workspaceId。工作台 MUST 沿用任务列表与详情，并保留文章入口；工作空间 MUST 使用常驻左侧导航承载项目及所属服务、全部服务、技能和设置。导航标签 MUST 使用中文，项目旁 MUST 提供带可访问名称“新增项目”的加号。项目详情 MUST 保留右上角编辑入口；视觉 token、Ant Design 5 与离线 CSP 边界 MUST 保持既有约束。
+Buildr Web App Shell MUST 在顶部提供品牌、共同工作空间范围、“工作台”和“工作空间”两个区域及交给 Agent 操作，工作台 MUST 排在工作空间之前。选定范围的两个区域 MUST 共享相同 workspaceId。工作台 MUST 沿用任务列表与详情，并保留文章入口；工作空间 MUST 使用常驻左侧导航承载项目及所属服务、服务、技能和设置。导航标签 MUST 使用中文，项目旁 MUST 提供带可访问名称“新增项目”的加号。项目详情 MUST 保留右上角编辑入口；视觉 token、Ant Design 5 与离线 CSP 边界 MUST 保持既有约束。
 
 #### Scenario: 顶栏承载主导航
 - **WHEN** 用户在选定 Workspace 中切换工作台和工作空间
@@ -131,7 +131,7 @@ Buildr Web App Shell MUST 在顶部提供品牌、共同工作空间范围、“
 
 #### Scenario: 项目与服务上下文导航
 - **WHEN** 用户选择某项目或打开所属服务的详情及编辑 URL
-- **THEN** 左侧 MUST 只展开对应项目，收起其他项目，并正确标记当前对象
+- **THEN** 左侧 MUST 默认只展开对应项目，收起其他项目，并正确标记当前对象；用户之后可以独立收起项目
 - **AND** MUST 保留既有 `/projects`、`/projects/:projectCode`、`/services`、服务详情及编辑路由
 - **AND** 项目详情 MUST NOT 重复并排显示旧项目列表宿主
 
@@ -167,6 +167,24 @@ Buildr Web App Shell MUST 在顶部提供品牌、共同工作空间范围、“
 - **WHEN** 用户打开任务列表
 - **THEN** 搜索与筛选控件 MUST 出现在标题下方的同一工具行
 - **AND** MUST NOT 使用独立竖排筛选表单卡作为默认布局
+
+#### Scenario: 独立展开与折叠
+- **WHEN** 用户点击项目行的展开或收起按钮
+- **THEN** MUST 只改变该项目子项的展示，不跳转当前页面，且最多保留一个展开项目
+- **AND** 折叠操作 MUST NOT 移除当前对象的选中状态
+- **AND** 按钮 MUST 支持键盘操作并提供正确的展开状态与可访问名称
+- **WHEN** 用户点击项目名称或打开服务深链
+- **THEN** MUST 导航到对应对象并重新展示相关项目子项
+
+#### Scenario: 服务菜单名称
+- **WHEN** 用户查看工作空间导航
+- **THEN** 服务集合入口 MUST 显示“服务”，继续使用原有 `/services` 路由
+- **AND** 本次 MUST NOT 改变项目和服务的身份、归属或关联语义
+
+#### Scenario: 克制的视觉反馈
+- **WHEN** 用户悬停、聚焦或展开导航
+- **THEN** MUST 能辨认可操作目标与当前选择，正文阅读区域 MUST 保持清晰层级
+- **AND** 减少动态效果偏好 MUST 被尊重，装饰动效 MUST NOT 延迟内容或阻止操作
 
 ### Requirement: Task Intent 必须支持可点击的 Project 文档引用
 Buildr Web MUST 以受限 Markdown 展示 Task Intent，并 MUST 允许用户点击指向当前 Task scope 内已登记 Project 的 Workspace 相对 `.md` 路径，在 Task 上下文中打开只读文档预览。客户端 MUST 根据 Project registry 的真实 source path 解析引用并复用 Project Document API；MUST NOT 从目录命名猜测 Project、读取绝对路径或获得任意 Workspace 文件访问能力。
