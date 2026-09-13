@@ -748,48 +748,34 @@ Buildr Release workflow MUST让唯一`release-<version>` Task表达维护者要�
 - **THEN** Skill MUST以同一orchestration identity只恢复尚未完成的owner步骤
 - **AND** MUST NOT重跑Publication、撤销已成立effects或创建resume/finalize协调Task
 
-### Requirement: task-triage 必须在正式 Task 创建前收敛逐repository权威基线
-当 `task-triage` 已确认进入正式持久交付且需要创建新 Task Record 时，Agent MUST 在调用 Task Record `create` 前解析完整 repository set，并为每个repository从Project/Service registry声明、当前branch/upstream或用户明确选择中取得唯一integration branch与remote。Agent MUST通过selected `buildr.git-operations/v1` provider将每个clean local integration branch收敛到本次fetch后的matching remote ref。只有全部仓库成功且适用的Workspace transition check已ready时才能创建Task；Task Record Application与Task Environment MUST NOT因此获得Git mutation authority。
+### Requirement: task-triage 必须分离任务登记与代码更新
+Agent MUST 在创建或激活任务前确认用户目标、目标工作空间、任务范围、已有匹配记录与写入授权，更新已有记录时 MUST 使用已观察版本。任务登记 MUST NOT 以 Git 更新、干净工作目录、集成分支、上游引用、Git 提供者或全局 Doctor 就绪为前置。代码更新与后续专业动作 MUST 按实际用户目标及当前事实独立选择；登记成功 MUST NOT 被解释为代码、环境、验证或交付已经就绪。
 
-#### Scenario: 不同repository使用不同integration branch
-- **WHEN** Workspace与两个Service repository分别声明`dev`、`dev-pigs`与`dev-nm`及各自matching upstream
-- **THEN** task-triage MUST逐repository核对并使用声明的local/remote refs执行fetch与适用rebase
-- **AND** MUST不要求全部repository切换为`dev/origin/dev`
+#### Scenario: 仅登记或激活任务
+- **WHEN** 任务目标、范围和授权明确，记录输入合法
+- **THEN** Agent MUST 直接创建或激活任务，MUST NOT 为登记执行 fetch、rebase 或工作空间同步
 
-#### Scenario: 全部仓库已对齐或成功收敛
-- **WHEN** 完整repository set均处于各自clean integration branch、upstream匹配权威remote ref，且fetch与适用rebase全部成功
-- **THEN** task-triage MUST核对每个仓库的before/after branch、HEAD与实际effects
-- **AND** MUST仅在适用的Workspace transition check ready后调用selected Task Record provider的`create`
+#### Scenario: 本地存在未提交内容或进行中的 Git 操作
+- **WHEN** 合法任务登记范围内存在未提交内容或进行中的 Git 操作
+- **THEN** Agent MUST 保留 Git 现场并允许记录写入
+- **AND** 后续代码修改 MUST 独立核对归属和冲突，无法安全执行时只暂停对应动作
 
-#### Scenario: 本地未push commit与远端同时前进
-- **WHEN** 仓库clean、本地integration branch含未push且未共享的commit，并且fetch后matching remote ref已前进
-- **THEN** task-triage MUST将repository、`rebase` operation、local branch与matching remote ref明确交给selected Git Operations provider
-- **AND** rebase成功后 MUST以新的local commit identity继续创建前门禁
+#### Scenario: 离线或上游无法解析
+- **WHEN** 网络不可用、上游缺失或集成分支无法唯一解析，但记录目标与范围明确
+- **THEN** Agent MUST 允许合法登记，MUST NOT 猜测 dev 或修改分支与上游
 
-#### Scenario: repository目标无法唯一解析
-- **WHEN** registry、当前branch/upstream与用户选择无法形成唯一integration branch或remote/ref
-- **THEN** task-triage MUST在该repository tree/history零写入状态阻塞Task创建并报告冲突来源
-- **AND** MUST NOT猜测`dev`、自动checkout、stash、merge、force push或改变策略
+#### Scenario: Git 提供者不可用
+- **WHEN** optional Git Operations 提供者不可用且当前只需任务登记
+- **THEN** Agent MUST 使用可用的任务记录提供者完成合法登记，不将 Git 依赖提升为必需
 
-#### Scenario: repository前置事实不满足
-- **WHEN** 任一仓库不在已解析的符号integration branch、upstream不匹配、working tree/index dirty、存在进行中的Git operation，或remote/ref/共享风险无法证明
-- **THEN** task-triage MUST在该仓库tree/history零写入状态阻塞Task创建并报告当前事实
-- **AND** MUST NOT自动checkout、stash/autostash、merge、force push、选择其他分支或改变策略
+#### Scenario: 用户另行要求更新代码
+- **WHEN** 用户目标确实需要更新明确仓库与引用，并且相应授权成立
+- **THEN** Agent MUST 使用已选 Git Operations 提供者独立执行并保留实际结果
+- **AND** 更新失败 MUST NOT 撤销已成立的任务登记或扩大为无关记录写入的阻塞
 
-#### Scenario: fetch或rebase失败
-- **WHEN** 任一仓库fetch失败、remote/ref漂移、rebase失败或出现冲突
-- **THEN** task-triage MUST不调用Task Record `create`，并报告全部仓库已经发生的effects与当前Git facts
-- **AND** MUST NOT把多仓库部分成功报告为零变化或原子回滚
-
-#### Scenario: clean pre-state的rebase冲突可恢复
-- **WHEN** rebase在已证明clean的仓库发生冲突，且`rebase --abort`能恢复精确pre-rebase branch、HEAD与clean状态
-- **THEN** selected Git Operation MUST报告conflict与recovered abort effects，Task创建仍 MUST blocked
-- **AND** abort无法完成或恢复identity无法证明时 MUST保留并报告真实冲突现场
-
-#### Scenario: Git Operations provider不可用
-- **WHEN** 新正式Task创建分支无法解析ready `buildr.git-operations/v1` selected provider
-- **THEN** task-triage MUST只阻塞Git基线收敛与Task Record create
-- **AND** 纯讨论、只读探索、已有Task inspect和不依赖该动作的语义判断 MUST保持可用
+#### Scenario: 登记自身条件不成立
+- **WHEN** 任务目标、范围、授权或记录版本不明确，或记录输入非法
+- **THEN** Agent MUST 停止对应记录写入并说明最小缺口
 
 ### Requirement: 收尾技能检查不得固化过程文案
 技能检查 MUST只执行通用结构、资源完整性与能力绑定约束，不要求旧流程关键字、最低字数或最低行数。

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-定义本机每日演进文件位置、一天一份可覆盖、推进项与 Task 的 n:n 关联、署名维度、写入前同步、Agent/产品边界以及 CLI/Web 只读展示。
+定义本机每日演进文件位置、一天一份可覆盖、推进项与 Task 的 n:n 关联、署名维度、提交观察范围、Agent/产品边界以及 CLI/Web 只读展示。
 
 ## Requirements
 
@@ -49,18 +49,30 @@ Buildr 产品核心 MUST NOT 在 inspect、list 或 HTTP GET 时扫描 Git 提�
 - **THEN** Buildr MUST 返回 incompatible 或等价不可展示结果
 - **AND** MUST NOT 把旧推进项改写成提交列表
 
-### Requirement: Skill 必须在写入前同步最新代码
-产品 Skill MUST 在调用 record 之前，对 Git 管理的 Workspace 执行与「更新 workspace」相同的最新代码同步：将已选定 upstream 的安全 Git update 交给 `buildr.git-operations/v1`，成功后再运行 `buildr sync <agent>`。同步成功后 Skill MUST 收集目标日期的全部 Git 提交与更改文件，读取本机 `git config user.email`，按大小写不敏感比较 author email，声明每条提交的 `authorship`，由 Agent 撰写四问摘要并判断自己的提交是否关联已有 Task。working tree dirty、分叉冲突、upstream 不明、provider blocked、最终 Doctor 未 ready 或无法收集 Git 时，Skill MUST 停止且 MUST NOT 调用 record。
+### Requirement: Skill 必须按明确提交观察范围生成日报
+产品 Skill MUST 在生成前明确目标日期、时区和相关仓库，默认从当前本地引用收集当日提交及更改文件，固定每个引用的完整提交标识与观察时点。Skill MUST 使用本机用户邮箱按去空白、大小写不敏感比较确定 authorship，构造四问摘要与合法 Task 关联。引用、截至时间及未覆盖范围 MUST 写入现有 daySummary.drawbacks；未确认远端时 MUST 明确本地范围，MUST NOT 宣称覆盖远端最新或所有分支。生成 MUST NOT 以本地工作目录干净、Git 更新、资产同步或全局 Doctor ready 为前置；无法取得真实提交或用户必需的数据范围时 MUST 保留旧日报。
 
-#### Scenario: 同步因 dirty tree 停止
-- **WHEN** 写入前 Git update 因本地未提交改动 blocked
-- **THEN** Agent MUST 报告 blocked 原因
-- **AND** 当天每日演进文件 MUST 保持调用前状态
+#### Scenario: 本地有未提交内容
+- **WHEN** 本地提交可读取但工作目录有未提交内容
+- **THEN** Skill MUST 使用已提交内容生成日报，并说明未提交内容未纳入
+- **AND** MUST NOT 为日报执行 stash、rebase 或覆盖工作目录
 
-#### Scenario: 同步成功后写入
-- **WHEN** Git update 与适用 sync/Doctor 均成功，Agent 已收集当日提交与文件且 payload 校验通过
-- **THEN** Application MUST 写入或覆盖当天 v2 文件
-- **AND** 文件中的 Task 关联 MUST 仍指向本机 Task Record
+#### Scenario: 离线或无关诊断异常
+- **WHEN** 本地引用可读取，远端不可用或全局诊断存在与日报无关的问题
+- **THEN** Skill MUST 可生成明确标注本地观察范围的日报，不调用资产同步
+
+#### Scenario: 按需取得远端最新信息
+- **WHEN** 用户明确要求远端最新数据且相关授权成立
+- **THEN** Skill MUST 独立获取所选远端引用并直接从该引用收集提交，不要求检出或变基
+- **AND** 获取失败且用户只接受远端最新时 MUST 保留旧日报；允许本地范围时 MUST 明确降级范围
+
+#### Scenario: 无法取得提交事实
+- **WHEN** 目标无可读 Git 提交、引用不明确或数据不能满足用户必需范围
+- **THEN** Skill MUST 报告缺口且不调用 record，不伪造提交或静默缩小必需范围
+
+#### Scenario: 重复生成同一天日报
+- **WHEN** 新观察范围与已保存日报不同，准备覆盖同一天文件
+- **THEN** Skill MUST 明确范围变化，保留此前约定范围或已获授权的新范围，不静默丢失已包含仓库或引用
 
 ### Requirement: init 与 sync 必须忽略每日演进目录
 Git 管理的 Workspace 在 `init`、`update` 或 `sync` 时 MUST 幂等确保 root `.gitignore` 包含 `/.buildr/daily-progress/`。重复执行 MUST NOT 产生重复条目或改写无关 ignore 规则，也 MUST NOT 因此忽略整个 `/.buildr/`。

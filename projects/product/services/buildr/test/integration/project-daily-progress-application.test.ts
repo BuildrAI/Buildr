@@ -123,6 +123,26 @@ test('合法 record 写入 v2 YAML、覆盖重跑，且不写 Task Record', (t: 
   assert.equal(runtime.inspectTask(root, 'task-one').recordDigest, before);
 });
 
+test('本地范围日报不依赖 Git provider 或工作空间同步，并保留观察说明', (t: any) => {
+  const { root, runtime }: any = fixture(t);
+  const manifestFile = path.join(root, 'skills/manifest.yml');
+  const manifest = YAML.parse(fs.readFileSync(manifestFile, 'utf8'));
+  manifest.skills.find((item: any) => item.id === 'git-operations').state = 'uninstalled';
+  const manifestBytes = YAML.stringify(manifest, { lineWidth: 0 });
+  fs.writeFileSync(manifestFile, manifestBytes);
+  const localFile = path.join(root, 'unfinished.txt');
+  fs.writeFileSync(localFile, '保留未提交内容\n');
+  const observation = 'demo: 本地 fixture@c3a91f2，截至 2026-08-18T18:00:00+08:00；未确认远端最新，未提交内容未纳入。';
+  const input = payload();
+  input.daySummary.drawbacks = observation;
+  const result = runtime.recordProjectDailyProgress(root, { project: 'demo', date: '2026-08-18', payload: input });
+  assert.equal(result.status, 'recorded');
+  const saved = YAML.parse(fs.readFileSync(path.join(root, '.buildr/daily-progress/demo/2026-08-18.yml'), 'utf8'));
+  assert.equal(saved.daySummary.drawbacks, observation);
+  assert.equal(fs.readFileSync(manifestFile, 'utf8'), manifestBytes);
+  assert.equal(fs.readFileSync(localFile, 'utf8'), '保留未提交内容\n');
+});
+
 test('缺失 Task 或他人提交挂 Task 整次失败且不覆盖已有文件', (t: any) => {
   const { root, runtime }: any = fixture(t);
   runtime.recordProjectDailyProgress(root, { project: 'demo', date: '2026-08-18', payload: payload() });

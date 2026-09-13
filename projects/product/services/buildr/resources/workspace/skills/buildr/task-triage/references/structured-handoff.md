@@ -7,7 +7,7 @@
 - 语义治理：code-only / spec-maintenance / change-flow / blocked
 - 执行形态：implementation / metadata-only / unknown
 - Repository set：<selectors 或 unresolved>
-- Git 基线：converged / none / blocked（仅新正式Task create；包含每个repository的integration branch/upstream与部分effects）
+- 代码更新：not-requested / succeeded / blocked（仅目标要求更新时报告实际引用与效果，不作为任务登记前置）
 - Task Record：create / inspect / none / blocked
 - Task Worktree：create / inspect / none / blocked
 - 事实依据：<最小 authority/evidence>
