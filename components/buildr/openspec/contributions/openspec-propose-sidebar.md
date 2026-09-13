@@ -6,6 +6,6 @@
 
 若可能产生用户可见界面变化，只在用户明确要求后使用界面原型（UI Prototype）；已有原型且未被明确忽略时，实现应读取它。原型不是门禁或状态。
 
-完整 planning artifacts 必须通过 `openspec validate <change> --strict` 与 `buildr openspec convergence preflight`。Agent 根据当前诊断处理 active Change 冲突、Scenario 缺失、rename/identity 冲突或 projected validation，不把诊断转写为统一许可、Review Result 或 Application 状态。Planning Review 可由 Agent 按风险选择；审查对象直接使用当前 OpenSpec artifacts 或其专业接口已返回的身份。
+完整 planning artifacts 必须通过 `openspec validate <change> --strict` 与 `buildr openspec convergence preflight`。Agent 根据当前诊断处理 active Change 冲突、上游规范诊断或规范条目冲突，不把诊断转写为统一许可、Review Result 或 Application 状态。Planning Review 可由 Agent 按风险选择；审查对象直接使用当前 OpenSpec artifacts 或其专业接口已返回的身份。
 
 读取当前认知维护（Current Knowledge Maintenance）能力，创建或刷新`brief.md`，执行`assess`，并把真实知识与术语影响写入tasks和`.buildr/knowledge-impact.yml`。写`tasks.md`时只包含Change收敛前可完成的实现、当前认知和直接验证动作；任务验证、任务收尾、资源清理与Task终态不属于Change checklist。
