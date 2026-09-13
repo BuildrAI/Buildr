@@ -5,7 +5,7 @@
       "type": "skill",
       "id": "agent-first-design",
       "target": "skills/buildr/agent-first-design",
-      "integrity": "sha256-3e1785134fd411eff4544f697015729ca3fb33e40dbb89085187fa46377ddd10",
+      "integrity": "sha256-472d6bcdcab358a1d70424ae2505e2e1d526cbc1b1efc8855b4faaf96da0eee1",
       "files": [
         {
           "path": "SKILL.md",
@@ -13,7 +13,7 @@
         },
         {
           "path": "references/task-closeout.md",
-          "integrity": "sha256-8ca16f10638e8733b2b5a8cf8500f3440f1a284194325d5bf1424a85cde6413d"
+          "integrity": "sha256-919162e555a5944be7ec58a9923857e103154929d82ab78bab2cbb30fde8d6ab"
         }
       ]
     },
@@ -57,11 +57,23 @@
       "type": "skill",
       "id": "current-knowledge-maintenance",
       "target": "skills/buildr/current-knowledge-maintenance",
-      "integrity": "sha256-d4c6b1d15795ab44623e8d19cfe1b47403dae958c6427c6986941203c498d250",
+      "integrity": "sha256-5607d19ab22189d02c7261a9c1455d2dc3d9d6d987530effa7fcac9d2073ca70",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-45e253b36f88098ced50fc3e37420337603ec46efede051620d64c470fe115b2"
+          "integrity": "sha256-78bc30e094fb5fdc164aa5f882a4bc4a9be75d1f3cff5b5eabff2c1c334d05bf"
+        },
+        {
+          "path": "references/artifacts.md",
+          "integrity": "sha256-25fa2905dbc4984198431c3b429d8d147893dbc1f66f353c3479ef200d7d9c09"
+        },
+        {
+          "path": "references/change-collaboration.md",
+          "integrity": "sha256-753bae5f411192ae866e1f7e902c0addc1b0ce1555c4e6813277b7a9f87357b6"
+        },
+        {
+          "path": "references/verification.md",
+          "integrity": "sha256-958c915a00d896a78c873ed01e27ae85d9a4db8f5c33a6fc565250736c714080"
         }
       ]
     },
@@ -221,11 +233,11 @@
       "type": "skill",
       "id": "task-triage",
       "target": "skills/buildr/task-triage",
-      "integrity": "sha256-a27069120512443086e78209bb65c94c323affc811f18076233679d8005a5be0",
+      "integrity": "sha256-36881ce239b69a1dbfbc10a5d2d4a3c65e368e311f5e03c5096b089802179a92",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-8d9e82cc9342505b25c1515fc3e1ff60faae0b5ac1e06f2abe8a4ec4fd24ce70"
+          "integrity": "sha256-5a29bb6aef86495de37632d5143bb4851b5999869330291675c4e4d16a113a49"
         },
         {
           "path": "references/structured-handoff.md",
@@ -281,11 +293,11 @@
       "type": "skill",
       "id": "terminology-governance",
       "target": "skills/buildr/terminology-governance",
-      "integrity": "sha256-538fc64f8f14daaadd3676bc51dc7ebb653636b6e86ec7bb110c8231e894ea35",
+      "integrity": "sha256-2b34a6e44fd177a474a7b9f17d4203ee1af7ff9dd82f8389fde324b406bc354a",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-ef48de8ed3f1b274c6693e4d75c67351480fd254f4a6ee7604e66e473781e9ba"
+          "integrity": "sha256-20c9d05618cb6a6c3d32787da42a218fe8f6d6c2c6046f06b2f960c5601534b7"
         }
       ]
     },

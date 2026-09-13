@@ -62,7 +62,7 @@ authority 冲突、授权不明、实际 Git 操作所需的 repository set 不�
 | 待办意向 | `buildr.task-record/v3` 的 `create --status todo` | 用户已接受但尚未启动的意向、stable ID、title、intent与scope；只返回SQLite record/effects | 不运行Git基线，不创建Change或专业placeholder |
 | 正式任务登记 | `buildr.task-record/v3` 的 active `create`、todo `activate` 或 `inspect` | 明确任务标识、目标、范围、授权及已有记录；激活使用已观察版本 | 只因登记目标、范围、授权、版本或记录提供者不可用停止对应记录写入 |
 | 独立执行位置 | `buildr.git-worktree-provider/v1` 的 `create/inspect` | Task ID、canonical Workspace、branch、start point与明确repository selectors；返回实际checkout、HEAD、clean与registration | provider不可用或evidence漂移只阻塞依赖该Worktree的动作；可安全直接工作时不回退猜测 |
-| 独立 current knowledge `spec-maintenance` | `buildr.current-knowledge-maintenance/v2` 的 `maintain` | Project、targets、fact sources、授权、tree identity；返回 `aligned|updated|not-applicable` | `unresolved` 报 authority 冲突；`change-required` 重新进入 `change-flow` |
+| 独立 current knowledge `spec-maintenance` | `buildr.current-knowledge-maintenance/v3` 的 `maintain` | Project、明确范围、已知来源和授权；按范围定位三类成果并返回逐项结果 | `attention` 说明未授权建设或非关键缺口，继续无关工作；`blocked` 只停止相关动作；`change-required` 重新进入 `change-flow` |
 正式持久交付包括代码、文档、配置、Rule、Skill、OpenSpec Change、验证声明或其他准备交付的持久变化。已有Task Record或Buildr Web已创建时先inspect并核对intent/scope，不重复create；只维护已有Task metadata时不递归创建新Task。Task Record provider不可用时不得手写YAML代替；其他provider不可用时只阻塞对应分支。current knowledge provider不可用时，不得回退为无evidence的直接编辑或伪造Change。
 
 ### 父子任务

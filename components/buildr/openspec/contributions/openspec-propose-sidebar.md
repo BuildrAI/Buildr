@@ -8,4 +8,6 @@
 
 完整 planning artifacts 必须通过 `openspec validate <change> --strict` 与 `buildr openspec convergence preflight`。Agent 根据当前诊断处理 active Change 冲突、上游规范诊断或规范条目冲突，不把诊断转写为统一许可、Review Result 或 Application 状态。Planning Review 可由 Agent 按风险选择；审查对象直接使用当前 OpenSpec artifacts 或其专业接口已返回的身份。
 
-读取当前认知维护（Current Knowledge Maintenance）能力，创建或刷新`brief.md`，执行`assess`，并把真实知识与术语影响写入tasks和`.buildr/knowledge-impact.yml`。写`tasks.md`时只包含Change收敛前可完成的实现、当前认知和直接验证动作；任务验证、任务收尾、资源清理与Task终态不属于Change checklist。
+读取当前认知维护（Current Knowledge Maintenance）能力，创建或刷新`brief.md`，执行`assess`，并把真实地图、技术图、解释文档与适用术语影响写入 tasks；已有 `.buildr/knowledge-impact.yml` 时同步维护，不要求第二份影响清单。写`tasks.md`时只包含Change收敛前可完成的实现、当前认知和直接验证动作；任务验证、任务收尾、资源清理与Task终态不属于Change checklist。
+
+当前知识协作使用 `buildr.current-knowledge-maintenance/v3`。已有建设授权内连续完成成果；范围外有价值缺口先给出具体建议，辅助记录和非关键漂移只形成局部提醒，不能阻止无关验证、同步或交付。

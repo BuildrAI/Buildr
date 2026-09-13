@@ -26,7 +26,7 @@ skills:
         version: 1
         mode: optional
       - capability: buildr.current-knowledge-maintenance
-        version: 2
+        version: 3
         mode: optional
       - capability: buildr.git-worktree-provider
         version: 1
@@ -322,7 +322,7 @@ skills:
     sourceIdentity: package:skills/buildr/current-knowledge-maintenance
     source: buildr
     path: buildr/current-knowledge-maintenance
-    description: OpenSpec Change lifecycle 中评估、收敛或检查当前认知，或者没有 Change 但需要让 Project 当前认知追上已确认事实时使用。
+    description: 建设、检查或维护项目与服务的代码地图、技术图和解释文档，或在 OpenSpec 变更中判断并处理相关知识影响时使用。
     enabled: true
     required: false
     state: installed
@@ -337,13 +337,11 @@ skills:
     runtimePath: current-knowledge-maintenance
     provides:
       - capability: buildr.current-knowledge-maintenance
-        version: 1
-      - capability: buildr.current-knowledge-maintenance
-        version: 2
+        version: 3
     requires:
       - capability: buildr.terminology-governance
         version: 1
-        mode: required
+        mode: optional
   - id: task-manager
     assetIdentity: buildr:skill:task-manager
     sourceIdentity: package:skills/buildr/task-manager
@@ -526,14 +524,6 @@ contracts:
     version: 1
     path: contracts/buildr/terminology-governance/v1.md
     description: 调查、对齐并维护 Project 与 Service 的 canonical terminology。
-  - id: buildr.current-knowledge-maintenance
-    version: 1
-    path: contracts/buildr/current-knowledge-maintenance/v1.md
-    description: 按 Change 真实影响评估、收敛和检查 Brief 与 Project 当前认知。
-  - id: buildr.current-knowledge-maintenance
-    version: 2
-    path: contracts/buildr/current-knowledge-maintenance/v2.md
-    description: 按 Change 或已确认当前事实的真实影响评估、收敛、检查或独立维护 Project 当前认知。
   - id: buildr.task-finish
     version: 1
     path: contracts/buildr/task-finish/v1.md
@@ -558,16 +548,14 @@ contracts:
     version: 3
     path: contracts/buildr/task-record/v3.md
     description: 管理canonical Workspace中Task最小顶层事实及本机复盘文档摘要与决定状态。
+  - id: buildr.current-knowledge-maintenance
+    version: 3
+    path: contracts/buildr/current-knowledge-maintenance/v3.md
+    description: 按明确范围建设、检查与维护代码地图、技术图和解释文档。
 bindings:
   - capability: buildr.terminology-governance
     version: 1
     provider: terminology-governance
-  - capability: buildr.current-knowledge-maintenance
-    version: 1
-    provider: current-knowledge-maintenance
-  - capability: buildr.current-knowledge-maintenance
-    version: 2
-    provider: current-knowledge-maintenance
   - capability: buildr.task-finish
     version: 1
     provider: task-finish
@@ -586,4 +574,7 @@ bindings:
   - capability: buildr.task-record
     version: 3
     provider: task-manager
+  - capability: buildr.current-knowledge-maintenance
+    version: 3
+    provider: current-knowledge-maintenance
 workspaceId: f2f40b71-2382-5906-82bd-76a7927b59f3
