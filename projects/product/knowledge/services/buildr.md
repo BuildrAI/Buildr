@@ -57,6 +57,8 @@ Buildr Service 提供 npm CLI、本机 HTTP Host、Workspace/Task/Agent Assets/O
 
 Buildr 产品的 `project-testing` 模块只管理用户 Project 测试声明。Buildr 自身测试执行属于 `test/`/`tools/`，Task Verification Report 仍由 Task 模块唯一写入。
 
+随包资源还提供默认不启用的 Archify 可选组件（Component），通过现有组件（Component）生命周期交付固定上游版本的完整绘图技能（Skill）。项目图文件独立保存，卸载不删除图；不新增 OpenSpec 或任务交付依赖。来源与使用见 [Archify 组件说明](../../services/buildr/docs/archify-component.md)。
+
 ## Buildr Web 交接
 
 后端业务模块提供 HTTP Schema 与 contribution；`tools/codegen/contracts/` 生成 Buildr Web 使用的 DTO。Web Host 负责 loopback session、安全请求、静态托管和分发。前端负责页面状态与交互，不直接读取 Workspace 文件或 SQLite。

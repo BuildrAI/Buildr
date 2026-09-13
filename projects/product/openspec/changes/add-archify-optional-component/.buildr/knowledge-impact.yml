@@ -1,0 +1,16 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: add-archify-optional-component
+operation: reconcile
+treeIdentity: sha256-36d0eccdc3267ffdd1590560b2c98aaf44a8c26b3be661c8d55284d690e8dfb3
+impacts:
+  - type: brief
+    target: brief.md
+    reason: 说明可选安装目标与验收边界
+    status: aligned
+    sourceIdentities: [proposal.md, design.md]
+  - type: service
+    target: knowledge/services/buildr.md
+    reason: 补充随包 Archify 的可选交付事实和维护入口
+    status: updated
+    sourceIdentities: [specs/archify-component/spec.md, services/buildr/resources/manifest.yml, services/buildr/docs/archify-component.md]
+unresolvedItems: []

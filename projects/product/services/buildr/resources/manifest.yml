@@ -7,6 +7,7 @@ include:
   - docs/cli-architecture.md
   - docs/known-limitations.md
   - docs/bootstrap-guide.md
+  - docs/archify-component.md
   - docs/resources.md
   - resources/contracts/bootstrap.yml
   - resources/installation/launcher/
@@ -424,9 +425,20 @@ builtins:
       required: false
       component: openspec
       runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
+    - id: archify
+      path: resources/workspace/skills/buildr/archify
+      target: skills/buildr/archify
+      description: 使用 Archify 生成和验证架构、流程、时序、数据流与状态图，并交付可独立查看的 HTML。
+      required: false
+      component: archify
+      runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
   commands: []
 
 components:
+  - id: archify
+    path: resources/workspace/components/buildr/archify/component.yml
+    defaultEnabled: false
+    required: false
   - id: openspec
     path: resources/workspace/components/buildr/openspec/component.yml
     defaultEnabled: true

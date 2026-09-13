@@ -709,7 +709,7 @@ export function createPackageStaticValidator(deps: any): any  {
               if (!content.includes(`supportedOpenSpec: "${record.definition.upstream.version}"`)) {
                 problems.push(`OpenSpec contract guard Skill must declare supportedOpenSpec ${record.definition.upstream.version}.`);
               }
-            } else {
+            } else if (entry.id === 'openspec') {
               const expected = `generatedBy: "${record.definition.upstream.version}"`;
               if (!content.includes(expected)) problems.push(`Package Component ${entry.id} Skill generatedBy must match upstream version ${record.definition.upstream.version}: ${member}.`);
             }

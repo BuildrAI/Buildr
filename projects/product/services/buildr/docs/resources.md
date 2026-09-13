@@ -20,4 +20,6 @@ Development Launcher 工程程序位于 `tools/build/launcher/`；正式 npm Lau
 
 ## 维护检查
 
+Archify 是默认不启用的随包可选组件（Component），包含完整上游发行目录。来源、使用和升级方式见 [Archify 组件说明](archify-component.md)。
+
 资源修改需要同步检查 `resources/manifest.yml`、初始化/同步 resolver、`buildr package check`、npm tarball、Application Payload 与受影响的 Runtime/Browser 测试。开发和发布工具属于 `tools/`，验证实现属于 `test/verification/`，产品 `bin/` 与 `src/` 不依赖这两个 checkout-only 根。
