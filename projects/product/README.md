@@ -6,12 +6,14 @@
 
 ## 入口
 
-- [Buildr 产品说明](docs/buildr-product.md)
+- [Buildr 产品说明](knowledge/docs/overview.md)
 - [OpenSpec specs](openspec/specs/)
-- [当前实现事实](knowledge/overview.md)
+- [当前知识统一入口](knowledge/README.md)
+- [解释文档目录](knowledge/docs/README.md)
+- [当前能力入口](knowledge/docs/capabilities.md)
 - [Archify 技术图](knowledge/archify/index.md)
 - [Buildr Service](services/buildr/README.md)
-- [发布流程与恢复](knowledge/flows/open-source-release.md)
+- [发布流程与恢复](knowledge/docs/flows/open-source-release.md)
 
 开发阶段仍可从 workspace 根运行：
 

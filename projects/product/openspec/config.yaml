@@ -1,7 +1,7 @@
 schema: spec-driven
 
 context: |
-  Buildr 产品定位、核心模型和边界以相对本文件的 `../docs/buildr-product.md` 为准。
+  Buildr 产品定位、核心模型和边界以相对本文件的 `../knowledge/docs/overview.md` 为准。
   Buildr 自身的产品能力、CLI 行为、上下文模型、runtime adapter 行为和架构性变更必须先创建 OpenSpec change。
   OpenSpec artifact 正文使用中文；命令、路径、代码标识符和工具关键字可以保留英文。
 

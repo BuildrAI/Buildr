@@ -146,15 +146,23 @@ capabilityContracts:
     path: resources/workspace/skills/contracts/buildr/terminology-governance/v1.md
     target: skills/contracts/buildr/terminology-governance/v1.md
   - id: buildr.current-knowledge-maintenance
-    version: 1
-    description: 按 Change 真实影响评估、收敛和检查 Brief 与 Project 当前认知。
-    path: resources/workspace/skills/contracts/buildr/current-knowledge-maintenance/v1.md
-    target: skills/contracts/buildr/current-knowledge-maintenance/v1.md
-  - id: buildr.current-knowledge-maintenance
-    version: 2
-    description: 按 Change 或已确认当前事实的真实影响评估、收敛、检查或独立维护 Project 当前认知。
-    path: resources/workspace/skills/contracts/buildr/current-knowledge-maintenance/v2.md
-    target: skills/contracts/buildr/current-knowledge-maintenance/v2.md
+    version: 3
+    description: 按明确范围建设、检查与维护代码地图、技术图和解释文档。
+    path: resources/workspace/skills/contracts/buildr/current-knowledge-maintenance/v3.md
+    target: skills/contracts/buildr/current-knowledge-maintenance/v3.md
+    replaces:
+      - id: buildr.current-knowledge-maintenance
+        version: 1
+        target: skills/contracts/buildr/current-knowledge-maintenance/v1.md
+        integrity: sha256-ae0b58f004f394170420cf5a3a811b5f0716cb021b5aca6ae3e54e2a46fc3779
+        provider: current-knowledge-maintenance
+        description: 按 Change 真实影响评估、收敛和检查 Brief 与 Project 当前认知。
+      - id: buildr.current-knowledge-maintenance
+        version: 2
+        target: skills/contracts/buildr/current-knowledge-maintenance/v2.md
+        integrity: sha256-c15781d5fbc18516908f3f285057a9316364508607a4fbd00c791e1b9226f995
+        provider: current-knowledge-maintenance
+        description: 按 Change 或已确认当前事实的真实影响评估、收敛、检查或独立维护 Project 当前认知。
 initialSkillBindings:
   - capability: buildr.git-operations
     version: 1
@@ -178,10 +186,7 @@ initialSkillBindings:
     version: 1
     provider: terminology-governance
   - capability: buildr.current-knowledge-maintenance
-    version: 1
-    provider: current-knowledge-maintenance
-  - capability: buildr.current-knowledge-maintenance
-    version: 2
+    version: 3
     provider: current-knowledge-maintenance
 builtins:
   rules: []
@@ -199,7 +204,7 @@ builtins:
           version: 1
           mode: optional
         - capability: buildr.current-knowledge-maintenance
-          version: 2
+          version: 3
           mode: optional
         - capability: buildr.git-worktree-provider
           version: 1
@@ -348,17 +353,15 @@ builtins:
     - id: current-knowledge-maintenance
       path: resources/workspace/skills/buildr/current-knowledge-maintenance
       target: skills/buildr/current-knowledge-maintenance
-      description: OpenSpec Change lifecycle 中评估、收敛或检查当前认知，或者没有 Change 但需要让 Project 当前认知追上已确认事实时使用。
+      description: 建设、检查或维护项目与服务的代码地图、技术图和解释文档，或在 OpenSpec 变更中判断并处理相关知识影响时使用。
       required: false
       provides:
         - capability: buildr.current-knowledge-maintenance
-          version: 1
-        - capability: buildr.current-knowledge-maintenance
-          version: 2
+          version: 3
       requires:
         - capability: buildr.terminology-governance
           version: 1
-          mode: required
+          mode: optional
       runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: git-operations
       path: resources/workspace/skills/buildr/git-operations
@@ -462,8 +465,6 @@ workspaceFiles:
   - resources/workspace/skills/contracts/buildr/task-verification/v4.md => skills/contracts/buildr/task-verification/v4.md copy
   - resources/workspace/skills/contracts/buildr/task-finish/v1.md => skills/contracts/buildr/task-finish/v1.md copy
   - resources/workspace/skills/contracts/buildr/terminology-governance/v1.md => skills/contracts/buildr/terminology-governance/v1.md copy
-  - resources/workspace/skills/contracts/buildr/current-knowledge-maintenance/v1.md => skills/contracts/buildr/current-knowledge-maintenance/v1.md copy
-  - resources/workspace/skills/contracts/buildr/current-knowledge-maintenance/v2.md => skills/contracts/buildr/current-knowledge-maintenance/v2.md copy
   - resources/workspace/skills/buildr/task-triage/SKILL.md => skills/buildr/task-triage/SKILL.md copy
   - resources/workspace/skills/buildr/task-triage/references/structured-handoff.md => skills/buildr/task-triage/references/structured-handoff.md copy
   - resources/workspace/skills/buildr/task-triage/references/task-create-git-baseline.md => skills/buildr/task-triage/references/task-create-git-baseline.md copy
@@ -501,7 +502,11 @@ workspaceFiles:
   - resources/workspace/skills/buildr/agent-first-design/references/task-closeout.md => skills/buildr/agent-first-design/references/task-closeout.md copy
   - resources/workspace/skills/buildr/task-finish/SKILL.md => skills/buildr/task-finish/SKILL.md copy
   - resources/workspace/skills/buildr/terminology-governance/SKILL.md => skills/buildr/terminology-governance/SKILL.md copy
+  - resources/workspace/skills/contracts/buildr/current-knowledge-maintenance/v3.md => skills/contracts/buildr/current-knowledge-maintenance/v3.md copy
   - resources/workspace/skills/buildr/current-knowledge-maintenance/SKILL.md => skills/buildr/current-knowledge-maintenance/SKILL.md copy
+  - resources/workspace/skills/buildr/current-knowledge-maintenance/references/artifacts.md => skills/buildr/current-knowledge-maintenance/references/artifacts.md copy
+  - resources/workspace/skills/buildr/current-knowledge-maintenance/references/change-collaboration.md => skills/buildr/current-knowledge-maintenance/references/change-collaboration.md copy
+  - resources/workspace/skills/buildr/current-knowledge-maintenance/references/verification.md => skills/buildr/current-knowledge-maintenance/references/verification.md copy
   - resources/workspace/skills/buildr/git-operations/SKILL.md => skills/buildr/git-operations/SKILL.md copy
 
 projectDirectories:

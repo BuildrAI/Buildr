@@ -13,7 +13,7 @@ const projects: any[] = [
 test('Task 文档引用使用已登记 Project source.path 解析 Workspace 相对路径', () => {
   assert.deepEqual(
     resolveTaskDocumentReference(
-      'projects/product/docs/architecture/service-architecture.md',
+      'projects/product/knowledge/docs/architecture/service-architecture.md',
       { projects: ['product'], services: [] },
       projects,
     ),
@@ -21,8 +21,8 @@ test('Task 文档引用使用已登记 Project source.path 解析 Workspace 相�
       projectCode: 'product',
       projectName: 'Buildr Product',
       projectSourcePath: 'projects/product',
-      documentPath: 'docs/architecture/service-architecture.md',
-      workspacePath: 'projects/product/docs/architecture/service-architecture.md',
+      documentPath: 'knowledge/docs/architecture/service-architecture.md',
+      workspacePath: 'projects/product/knowledge/docs/architecture/service-architecture.md',
       resolution: 'resolved',
     },
   );

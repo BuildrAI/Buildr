@@ -162,19 +162,19 @@ test('package verifier CLI exposes stable selectors and rejects unknown selector
 test('changed verification exposes plan/json and rejects unknown options before execution', () => {
   const runner: any = path.join(productRoot, 'test', 'verification', 'changed.ts');
   const environment: any = defaultPlanningEnvironment();
-  const json: any = spawnSync(process.execPath, [runner, '--json', 'docs/buildr-product.md'], { cwd: productRoot, encoding: 'utf8', env: environment });
+  const json: any = spawnSync(process.execPath, [runner, '--json', 'knowledge/docs/overview.md'], { cwd: productRoot, encoding: 'utf8', env: environment });
   assert.equal(json.status, 0, json.stderr);
   const payload: any = JSON.parse(json.stdout);
   assert.equal(payload.schemaVersion, 'buildr.verification-plan/v1');
   assert.equal(payload.status, 'ready');
-  assert.deepEqual(payload.paths, ['docs/buildr-product.md']);
+  assert.deepEqual(payload.paths, ['knowledge/docs/overview.md']);
   assert.equal(payload.scope.mode, 'affected');
   assert.deepEqual(payload.scope.reasons.map((reason: any) => reason.code), ['affected-owner']);
   assert.deepEqual(payload.unmapped, []);
   assert.deepEqual(payload.admissionStepIds, ['typecheck', 'unit', 'component', 'contract', 'cli-architecture', 'openspec-spec-quality', 'openspec-strict']);
   assert.deepEqual(payload.steps.map((step: any) => step.id), [...payload.admissionStepIds, 'docs-quality']);
   assert.deepEqual(payload.selectionAudit.directMappings, [{
-    code: 'affected-owner', path: 'docs/buildr-product.md', owners: ['docs-quality'],
+    code: 'affected-owner', path: 'knowledge/docs/overview.md', owners: ['docs-quality'],
   }]);
   assert.deepEqual(payload.selectionAudit.layerCounts, { Static: 6, Unit: 1, Component: 1, Integration: 0, System: 0 });
   assert.equal(payload.selectionAudit.stepSelections.find((step: any) => step.stepId === 'docs-quality').selectionKinds.includes('direct-owner'), true);

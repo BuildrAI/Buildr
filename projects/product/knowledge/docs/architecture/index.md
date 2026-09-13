@@ -1,0 +1,15 @@
+# Buildr 架构
+
+Buildr 架构分为产品架构和技术架构，两者通过核心流程与 Service 说明连接：
+
+- [产品架构](product.md)：用户、角色、工作资产模型、业务能力、产品边界和信息架构。
+- [技术架构](technical.md)：Product/Service 所有权、CLI/Buildr Web/runtime adapter、registries、capability bindings、Component 和验证边界。
+- [OpenSpec Change 生命周期](../flows/openspec-change-lifecycle.md)：跨产品与技术视角的核心变更流程。
+- [项目每日演进](../flows/project-daily-progress.md)：同步代码、Agent 收集当日 Git、本机落盘与只读展示。
+- [Buildr Service](../services/buildr.md)：可执行产品实现的职责与运行边界。
+- [Archify 技术图](../../archify/index.md)：当前态模型的可视化入口，包含 Buildr 系统全景图源码和可浏览投影。
+- [全项目代码地图](../../code-map/README.md)：按系统/资产、功能/模块、技术层/对象、调用/数据/副作用四层定位实现。
+
+规范性行为以 [OpenSpec specs](../../../openspec/specs/) 为准。
+
+- [产品验证框架](verification-framework.md)：测试边界、选择、资源及发布消费覆盖；完整发布步骤见[发布流程](../flows/open-source-release.md)。

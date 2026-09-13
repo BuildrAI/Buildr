@@ -56,4 +56,4 @@ buildr web --target .
 - 支持 claude-code、codex、cursor、qoder、trae、trae-work、workbuddy 等 runtime adapter。
 - 当前不提供远程 SaaS、Agent session connector、聊天客户端或自动专业任务执行。
 
-完整产品定位和边界见 [Buildr Product](../../docs/buildr-product.md)，已知限制见 [Known Limitations](docs/known-limitations.md)。
+完整产品定位和边界见 [Buildr Product](https://github.com/BuildrAI/Buildr/blob/dev/projects/product/knowledge/docs/overview.md)，已知限制见 [Known Limitations](docs/known-limitations.md)。

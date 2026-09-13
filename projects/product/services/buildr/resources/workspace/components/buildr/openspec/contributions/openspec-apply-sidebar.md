@@ -10,4 +10,6 @@
 
 完成实现、当前认知和直接验证反馈后，完成全部Change-owned checkbox；仅在用户目标包含归档时调用`buildr openspec converge`，只同步时使用独立同步入口。不得以任务验证、任务收尾、资源清理或Task终态替代Change checklist。Converge成功后，Agent直接读取归档结果和真实代码现场继续审查、验证与交付；没有额外研发回执。
 
-实现期间执行 tasks 中的 Brief、当前认知与术语影响；发现新的长期事实影响时同步更新 tasks 与 `.buildr/knowledge-impact.yml`。实现内容完成后、最终验证前执行 `reconcile`。
+实现期间执行 tasks 中的 Brief、当前认知与术语影响；发现新的长期事实影响时同步更新 tasks 及已采用的 `.buildr/knowledge-impact.yml`。按真实影响执行 `reconcile`；仅解释文档变化时检查文档与引用，复用仍适用的代码测试。
+
+当前知识协作使用 `buildr.current-knowledge-maintenance/v3`。已有建设授权内连续完成成果；范围外有价值缺口先给出具体建议，辅助记录和非关键漂移只形成局部提醒，不能阻止无关验证、同步或交付。

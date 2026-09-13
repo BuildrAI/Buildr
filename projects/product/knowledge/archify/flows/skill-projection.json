@@ -1,0 +1,179 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "Buildr 技能源文件如何成为可发现入口",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1080,
+      540
+    ],
+    "views": [
+      {
+        "id": "source-view",
+        "label": "来源与组合",
+        "focus": [
+          "skill-source",
+          "component-source",
+          "resolved-skills",
+          "render-plan"
+        ],
+        "note": "只读取源文件并组合当前技能所需内容。"
+      },
+      {
+        "id": "write-view",
+        "label": "写入与归属",
+        "focus": [
+          "render-plan",
+          "reconciler",
+          "runtime-files",
+          "ownership"
+        ],
+        "note": "先检查冲突，再更新目录并记录投射归属。"
+      }
+    ]
+  },
+  "stages": [
+    {
+      "label": "来源"
+    },
+    {
+      "label": "组合"
+    },
+    {
+      "label": "计划"
+    },
+    {
+      "label": "检查与写入"
+    },
+    {
+      "label": "结果"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "skill-source",
+      "type": "external",
+      "label": "源技能",
+      "sublabel": "SKILL.md · references/",
+      "stage": 0,
+      "row": 0
+    },
+    {
+      "id": "component-source",
+      "type": "external",
+      "label": "组件与依赖",
+      "sublabel": "component.yml · bindings",
+      "stage": 0,
+      "row": 2
+    },
+    {
+      "id": "resolved-skills",
+      "type": "backend",
+      "label": "有效技能集合",
+      "sublabel": "resolveRenderSkills",
+      "stage": 1,
+      "row": 1
+    },
+    {
+      "id": "render-plan",
+      "type": "backend",
+      "label": "目标文件计划",
+      "sublabel": "buildSkillRenderPlan",
+      "stage": 2,
+      "row": 1
+    },
+    {
+      "id": "reconciler",
+      "type": "security",
+      "label": "核对后写入",
+      "sublabel": "reconcileRuntimePlan",
+      "stage": 3,
+      "row": 1
+    },
+    {
+      "id": "runtime-files",
+      "type": "frontend",
+      "label": "可发现目录",
+      "sublabel": ".agents/skills/",
+      "stage": 4,
+      "row": 0
+    },
+    {
+      "id": "ownership",
+      "type": "database",
+      "label": "投射归属记录",
+      "sublabel": ".buildr/agent-runtime/",
+      "stage": 4,
+      "row": 2
+    }
+  ],
+  "flows": [
+    {
+      "id": "read-source",
+      "from": "skill-source",
+      "to": "resolved-skills",
+      "label": "读取来源",
+      "variant": "emphasis"
+    },
+    {
+      "id": "compose-source",
+      "from": "component-source",
+      "to": "resolved-skills",
+      "label": "核对并组合",
+      "variant": "default"
+    },
+    {
+      "id": "prepare-files",
+      "from": "resolved-skills",
+      "to": "render-plan",
+      "label": "生成内容",
+      "variant": "emphasis"
+    },
+    {
+      "id": "check-writes",
+      "from": "render-plan",
+      "to": "reconciler",
+      "label": "提交计划",
+      "variant": "emphasis"
+    },
+    {
+      "id": "write-runtime",
+      "from": "reconciler",
+      "to": "runtime-files",
+      "label": "更新文件",
+      "variant": "emphasis"
+    },
+    {
+      "id": "write-ownership",
+      "from": "reconciler",
+      "to": "ownership",
+      "label": "记录归属",
+      "variant": "default"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "从正确位置修改",
+      "items": [
+        "普通技能来自工作空间；产品入口 buildr 来自随包资源。"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "冲突保持原文件",
+      "items": [
+        "先核对目标和归属；正文增强不会写回源技能。"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "发现不等于已加载",
+      "items": [
+        "目录生成只证明入口存在；宿主加载方式仍由各适配器声明。"
+      ]
+    }
+  ]
+}

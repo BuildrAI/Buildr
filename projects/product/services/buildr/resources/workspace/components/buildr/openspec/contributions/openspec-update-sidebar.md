@@ -4,6 +4,8 @@
 
 若修订首次明确会产生用户可见界面变化，只在用户明确要求后使用界面原型（UI Prototype）。已有原型且未被明确忽略时，后续实现应读取它；原型不是门禁或状态。
 
-scope、核心流程、影响、验收或 delta requirements 改变时，刷新 `brief.md`、重新执行当前认知 `assess`，并更新 tasks 与 `.buildr/knowledge-impact.yml`。随后运行 strict validation 和 convergence preflight。Agent 直接依据当前 artifacts 与诊断决定如何修订、是否需要重新审查；Application不另存规划快照。
+scope、核心流程、影响、验收或 delta requirements 改变时，刷新 `brief.md`、重新执行当前认知 `assess`，并更新 tasks 及已采用的 `.buildr/knowledge-impact.yml`。随后运行 strict validation 和 convergence preflight。Agent 直接依据当前 artifacts 与诊断决定如何修订、是否需要重新审查；Application不另存规划快照。
 
 `tasks.md`只保留Change收敛前可完成的工作；任务验证、任务收尾、资源清理与Task终态不属于Change checklist。
+
+当前知识协作使用 `buildr.current-knowledge-maintenance/v3`。已有建设授权内连续完成成果；范围外有价值缺口先给出具体建议，辅助记录和非关键漂移只形成局部提醒，不能阻止无关验证、同步或交付。

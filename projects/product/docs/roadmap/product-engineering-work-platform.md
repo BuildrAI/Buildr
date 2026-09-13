@@ -319,7 +319,7 @@ Buildr 组织广义上下文中的范围、关系、来源和工作资产，智�
 ## 与现有文档的关系
 
 - [任务系统重构：讨论结论与推进方式](task-system-refactoring-discussion.md)：已确认推进方法、讨论理由与尚未定案的设想；
-- [Buildr 产品（Buildr Product）](../buildr-product.md)：当前产品定位与能力；
+- [Buildr 产品（Buildr Product）](../../knowledge/docs/overview.md)：当前产品定位与能力；
 - [Buildr 智能体优先治理重构纲领](agent-first-governance-refactoring.md)：上一阶段治理边界；
 - [智能体（Agent）时代的工作基础设施](agent-work-infrastructure.md)：长期产品边界；
 - [任务生命周期架构讨论与交付跟踪](task-lifecycle-architecture.md)：现有任务体系的形成过程。

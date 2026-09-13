@@ -44,22 +44,22 @@ Buildr MUST 将产品入口、产品理解、当前事实、行为契约和历�
 - **AND** README MUST NOT 承担当前实现事实全集或产品路线图职责
 
 #### Scenario: docs 承载产品理解
-- **WHEN** Buildr 维护 `docs/` 下的当前产品文档
-- **THEN** 当前产品理解 SHOULD 聚合到 `docs/buildr-product.md` 或等价单一主文档
+- **WHEN** Buildr 维护 `knowledge/docs/` 下的当前产品文档
+- **THEN** 当前产品理解 SHOULD 聚合到 `knowledge/docs/overview.md` 或等价单一主文档
 - **AND** 该文档 SHOULD 解释产品定位、核心模型、工作资产、协作方式、runtime 高层模型、MVP 边界摘要和后续方向
 - **AND** 该文档 MUST NOT 作为当前实现事实的唯一来源
 
 #### Scenario: knowledge 承载当前事实
 - **WHEN** Buildr 记录已经实现的产品事实
-- **THEN** facts MUST be maintained in `knowledge/overview.md`、`knowledge/glossary.md`、`knowledge/architecture/`、`knowledge/flows/`、`knowledge/services/`、`knowledge/archify/` 或职责等价的 Product current-state knowledge assets
+- **THEN** facts MUST be maintained in `knowledge/docs/overview.md`、`knowledge/docs/glossary.md`、`knowledge/docs/architecture/`、`knowledge/docs/flows/`、`knowledge/docs/services/`、`knowledge/archify/` 或职责等价的 Product current-state knowledge assets
 - **AND** facts MUST be written as current-state statements aligned with `openspec/specs/` and the current implementation
-- **AND** knowledge MUST NOT include product value propositions, future roadmap, historical rationale, or design philosophy as current facts
+- **AND** knowledge/docs MUST 明确区分当前事实、产品定位、已确认设计理由与未来方向；较大的规划与历史材料 MUST 保留在 docs 中相应区域
 
 #### Scenario: 产品与技术架构分开维护
 - **WHEN** Buildr 同时记录产品模型和技术系统事实
 - **THEN** 产品架构 MUST 维护用户、角色、业务能力、领域模块、产品边界和信息架构
 - **AND** 技术架构 MUST 维护系统、Service、模块、数据所有权、接口依赖、runtime、部署和安全边界
-- **AND** `knowledge/architecture/index.md` MUST 在两类真实文档存在时提供统一摘要与导航
+- **AND** `knowledge/docs/architecture/index.md` MUST 在两类真实文档存在时提供统一摘要与导航
 
 #### Scenario: Change 只影响部分当前认知
 - **WHEN** current-knowledge assessment 只识别到一个或部分真实影响目标

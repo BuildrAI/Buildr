@@ -72,9 +72,9 @@ test('release owners consume the current Task v3 inspection port', () => {
 
 test('release documentation entry points resolve within the checkout', () => {
   const documents = [
-    path.join(PRODUCT_ROOT, 'knowledge/flows/open-source-release.md'),
-    path.join(PRODUCT_ROOT, 'knowledge/architecture/verification-framework.md'),
-    path.join(PRODUCT_ROOT, 'knowledge/services/buildr.md'),
+    path.join(PRODUCT_ROOT, 'knowledge/docs/flows/open-source-release.md'),
+    path.join(PRODUCT_ROOT, 'knowledge/docs/architecture/verification-framework.md'),
+    path.join(PRODUCT_ROOT, 'knowledge/docs/services/buildr.md'),
     path.join(WORKSPACE_ROOT, 'skills/buildr-release/SKILL.md'),
   ];
   for (const file of documents) {
