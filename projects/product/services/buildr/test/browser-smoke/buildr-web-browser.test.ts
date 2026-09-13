@@ -500,6 +500,45 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     runtime.registerLocalWorkspace({ rootPath: otherRoot, revision: current.revision });
   });
 
+  if (selected('shell')) await t.test('双区域导航、项目独占展开与手机菜单保持真实范围', async () => {
+    await page.goto(`${workspaceUrl}/tasks`);
+    assert.deepEqual(await page.locator('.top-nav a').allTextContents(), ['工作台', '工作空间']);
+    await page.locator('[data-area="workspace"]').click();
+    await page.waitForURL(`${workspaceUrl}/projects`);
+    await page.locator('[data-project-node="demo"] a').first().click();
+    await page.locator('[data-service-node="api"]').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('[data-project-node][data-expanded="true"]').count(), 1);
+    await page.locator('[data-project-node="other"] a').first().click();
+    await page.waitForURL(`${workspaceUrl}/projects/other`);
+    await page.locator('[data-project-node="other"][data-expanded="true"]').waitFor();
+    assert.equal(await page.locator('[data-project-node="demo"]').getAttribute('data-expanded'), 'false');
+    assert.equal(await page.locator('[data-project-node="other"]').getAttribute('data-expanded'), 'true');
+    await page.goto(`${workspaceUrl}/services/demo/api`);
+    await page.locator('[data-service-node="api"]').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('[data-project-node="demo"]').getAttribute('data-expanded'), 'true');
+    assert.equal(await page.locator('.resource-list-host').count(), 0);
+    await page.locator('[data-area="workbench"]').click();
+    await page.waitForURL(/\/tasks/);
+    await page.locator('[data-area="workspace"]').click();
+    await page.waitForURL(`${workspaceUrl}/services/demo/api`);
+    await page.locator('[data-nav="skills"]').click();
+    await page.locator('#skills-list').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('[data-area="workspace"]').getAttribute('class'), 'active');
+    assert.equal(await page.getByText('环境维护', { exact: true }).count(), 0);
+    assert.equal(await page.getByText('智能体配置', { exact: true }).count(), 0);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.getByRole('button', { name: '打开导航菜单', exact: true }).click();
+    await page.getByRole('dialog').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#create-project-button').count(), 1);
+    await page.getByRole('dialog').locator('[data-project-node="demo"] a').first().click();
+    await page.waitForURL(`${workspaceUrl}/projects/demo`);
+    await page.getByRole('dialog').waitFor({ state: 'hidden' });
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+    await capture(page, 'navigation-project-mobile.png');
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await capture(page, 'navigation-project-desktop.png');
+  });
+
   if (selected('articles')) await t.test('文章入口展示列表、详情和项目内配图', async () => {
     await page.goto(`${workspaceUrl}/articles`);
     await page.locator('.publication-card').first().waitFor({ state: 'visible' });

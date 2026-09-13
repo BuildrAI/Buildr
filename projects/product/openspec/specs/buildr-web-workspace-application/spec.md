@@ -436,7 +436,7 @@ Buildr 本机应用 MUST 使用紧凑的工作控制台信息层级：中文为�
 
 #### Scenario: 反映真实导航层级
 - **WHEN** 用户在工作空间内浏览目录或详情
-- **THEN** 应用 shell MUST 在顶栏显示可理解的工作空间名称与当前资源导航高亮
+- **THEN** 应用 shell MUST 在顶栏显示可理解的工作空间名称与当前区域导航高亮，并在左侧标记对应资源
 - **AND** 工作空间切换器 MUST 展示当前名称，并提供返回工作空间目录的明确入口
 
 ### Requirement: 工作空间目录与资源视图必须在窄屏保持可用
@@ -487,7 +487,7 @@ Buildr 本机应用 MUST 将 Project 与 Service 的详情呈现保持为只读�
 
 #### Scenario: 侧边栏指示当前资源
 - **WHEN** 用户打开项目、服务目录或其详情/编辑页
-- **THEN** 相应顶栏导航项 MUST 显示明显的当前状态
+- **THEN** 相应顶部区域与左侧对象 MUST 显示明显的当前状态
 - **AND** 其他导航项的样式 MUST NOT 取代当前资源项的高亮
 
 ### Requirement: 本机应用必须管理多个已登记 Workspace
@@ -536,7 +536,7 @@ Buildr MUST 让 Workspace 内页面和 API 使用已登记 `workspaceId` 作为�
 - **AND** MUST NOT 回退到当前目录或其他 Workspace
 
 ### Requirement: 全局应用必须提供 Workspace 级应用外壳与路由
-Buildr MUST 提供解释 Workspace 心智的全局 Workspace 页面，并 MUST 在选定 Workspace 下提供任务列表、设置、Project、Service 和 Change 等既有稳定路由；应用外壳 MUST 将任务、项目、服务、文章作为顶栏核心路径，进入 Workspace 后 MUST 直接打开任务列表，且 MUST NOT 再提供独立的 Workspace 开始/详情页作为默认落地页。
+Buildr MUST 提供解释 Workspace 心智的全局 Workspace 页面，并 MUST 在选定 Workspace 下提供任务列表、设置、Project、Service 和 Change 等既有稳定路由；应用外壳 MUST 将工作台和工作空间作为顶栏核心路径，并将原有资源入口放入对应区域的左侧导航，进入 Workspace 后 MUST 直接打开任务列表，且 MUST NOT 再提供独立的 Workspace 开始/详情页作为默认落地页。
 
 #### Scenario: 打开全局首页
 - **WHEN** 用户打开根路由
@@ -552,7 +552,7 @@ Buildr MUST 提供解释 Workspace 心智的全局 Workspace 页面，并 MUST �
 
 #### Scenario: 展示核心导航层级
 - **WHEN** 用户在选定 Workspace 中浏览
-- **THEN** App Shell MUST 在顶栏将“任务”“项目”“服务”“文章”展示为核心导航
+- **THEN** App Shell MUST 在顶栏依次展示“工作台”“工作空间”，任务和文章位于工作台导航，项目、服务、技能和设置位于工作空间导航
 - **AND** MUST NOT 将“开始”作为常驻主导航项
 - **AND** 用户 MUST 能通过品牌标识或工作空间切换到达当前 Workspace 的任务列表
 - **AND** `/workspaces/:workspaceId/` 与 `/workspaces/:workspaceId/overview` MUST 重定向到任务列表
@@ -855,7 +855,7 @@ Buildr Web Task 列表与详情 MUST 通过 Task Record Application read model �
 
 ### Requirement: Buildr Web 必须提供独立文章入口
 
-Buildr Web MUST 在 Workspace 级应用外壳中提供独立的“文章”导航入口，并 MUST 提供文章列表页与文章详情页；文章页面 MUST 保持只读，不得提供文章编辑、发布或平台同步操作。
+Buildr Web MUST 在 Workspace 级工作台左侧提供独立的“文章”导航入口，并 MUST 提供文章列表页与文章详情页；文章页面 MUST 保持只读，不得提供文章编辑、发布或平台同步操作。
 
 #### Scenario: 从工作空间导航打开文章
 

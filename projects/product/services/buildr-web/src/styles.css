@@ -1730,3 +1730,65 @@ details summary { cursor: pointer; color: var(--soft-ink); font-size: 12px; font
   color: #8a6a2b;
   background: #fff6e5;
 }
+
+/* Shared workspace scope, top-level areas and contextual object navigation. */
+.app-frame {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+.app-sidebar {
+  flex: 0 0 236px;
+  width: 236px;
+  min-width: 0;
+  align-self: flex-start;
+  position: sticky;
+  top: 0;
+  max-height: calc(100dvh - 56px);
+  overflow-y: auto;
+  border-right: 1px solid var(--soft-line);
+  background: var(--soft-sidebar);
+}
+.app-shell:has(.resource-cockpit) .app-sidebar { height: 100%; }
+.shell-navigation { padding: 18px 12px; }
+.shell-nav-caption { margin: 0 10px 12px; color: var(--soft-muted); font-size: 12px; }
+.shell-nav-heading { display: flex; align-items: center; justify-content: space-between; padding: 0 8px 10px; }
+.shell-nav-heading > a { text-decoration: none; color: var(--soft-muted); font-size: 13px; }
+.shell-nav-heading > a.active { color: var(--soft-ink); font-weight: 650; }
+.shell-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 9px 10px;
+  margin: 2px 0;
+  border-radius: 8px;
+  color: var(--soft-muted);
+  font-size: 13px;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.shell-nav-item:hover { color: var(--soft-ink); background: #edf3f1; }
+.shell-nav-item.active { color: #326b66; background: #e4efed; font-weight: 650; }
+.shell-nav-item:focus-visible { outline: 2px solid var(--soft-primary); outline-offset: -2px; }
+.shell-project-link .anticon { font-size: 10px; flex-shrink: 0; }
+.shell-service-tree { margin: 0 0 8px 18px; border-left: 1px solid var(--soft-line); padding-left: 6px; }
+.shell-service-tree .shell-nav-item { font-size: 12px; }
+.shell-nav-hint { margin: 8px 10px; color: var(--soft-muted); font-size: 12px; }
+.shell-nav-secondary { margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--soft-line); }
+.app-shell .shell-menu-toggle { display: none; }
+.app-frame > #app-view { min-width: 0; }
+@media (max-width: 899px) {
+  .app-sidebar { display: none; }
+  .app-shell .shell-menu-toggle { display: inline-flex; }
+  .app-shell .topbar { gap: 8px; padding: 0 12px; flex-wrap: wrap; }
+  .app-shell .topbar .brand-link strong { display: none; }
+  .app-shell .topbar .workspace-switcher { max-width: 145px; }
+  .app-shell .topbar .workspace-switcher .context-label { display: none; }
+  .app-shell .topbar .top-nav { height: 48px; }
+  .app-shell .topbar .top-nav a { height: 48px; padding: 0 8px; }
+  .app-shell .topbar-actions { gap: 5px; }
+  .app-shell .topbar #open-agent-action { padding-inline: 8px; }
+  .app-shell .topbar .nav-quit { padding-inline: 5px; }
+}

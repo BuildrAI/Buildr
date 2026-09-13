@@ -23,7 +23,7 @@ export function ProjectsPage() {
   const [state, setState] = useState('正在读取');
   const [migrationMessage, setMigrationMessage] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+
 
   useEffect(() => {
     let cancelled = false;
@@ -46,18 +46,11 @@ export function ProjectsPage() {
           setError(err instanceof Error ? err.message : '读取失败');
           setProjects([]);
         }
-      } finally {
-        if (!cancelled) setLoading(false);
+
       }
     })();
     return () => { cancelled = true; };
   }, [setWorkspace, setBreadcrumbParts]);
-
-  useEffect(() => {
-    if (selectedProjectCode || loading || error || projects.length === 0) return;
-    if (window.matchMedia('(max-width: 899px)').matches) return;
-    navigate(href(`/projects/${encodeURIComponent(projects[0].code)}`), { replace: true });
-  }, [selectedProjectCode, loading, error, projects, href, navigate]);
 
   const columns: ColumnsType<Project> = [
     {
@@ -77,11 +70,11 @@ export function ProjectsPage() {
       <section className="resource-toolbar">
         <div className="task-toolbar-main">
           <Typography.Title level={2} style={{ margin: 0 }}>项目</Typography.Title>
-          <p className="page-copy">选择左侧项目查看文档与关联服务；编辑在详情右上角完成。</p>
+          <p className="page-copy">选择项目查看文档；也可通过左侧导航进入项目和所属服务。</p>
         </div>
         <div className="task-toolbar-meta">
           <span id="projects-state" className="count-label">{state}</span>
-          <Button id="create-project-button" className="project-create-action" type="primary" size="small" onClick={() => openAgentAction('project')}>
+          <Button id="project-directory-create-button" className="project-create-action" type="primary" size="small" onClick={() => openAgentAction('project')}>
             让 Agent 创建项目
           </Button>
         </div>

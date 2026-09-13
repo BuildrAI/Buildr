@@ -12,8 +12,8 @@ export type AgentAssetsMutation = AgentAssetsMutationResponseMutationResponse;
 
 export function createAgentAssetsClient(api: ApiClient) {
   return {
-    inventory(): Promise<AgentAssetsInventory> {
-      return api('/api/v1/agent-assets') as Promise<AgentAssetsInventory>;
+    inventory(options: Pick<RequestInit, 'signal'> = {}): Promise<AgentAssetsInventory> {
+      return api('/api/v1/agent-assets', options) as Promise<AgentAssetsInventory>;
     },
     addRule(input: AgentAssetsRulesAddRequestRulesAddRequest): Promise<AgentAssetsMutation> {
       return api('/api/v1/agent-assets/rules', { method: 'POST', body: JSON.stringify(input) }) as Promise<AgentAssetsMutation>;

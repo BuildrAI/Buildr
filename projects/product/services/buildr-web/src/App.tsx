@@ -1,4 +1,5 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
+import { SkillsPage } from './features/agent-assets/pages/SkillsPage';
 import { AppLayout } from './app/AppLayout';
 import { ArticleDetailPage } from './features/publication/pages/ArticleDetailPage';
 import { ArticlesPage } from './features/publication/pages/ArticlesPage';
@@ -24,6 +25,7 @@ export function App() {
         <Route index element={<Navigate to="tasks" replace />} />
         <Route path="overview" element={<Navigate to="../tasks" replace />} />
         <Route path="settings" element={<SettingsPage />} />
+        <Route path="skills" element={<SkillsPage />} />
         <Route path="tasks" element={<TasksSection />}>
           <Route path=":taskId/changes/:projectCode/:changeCode" element={<TaskChangeDetailPage />} />
           <Route path=":taskId" element={<TaskDetailPage />} />

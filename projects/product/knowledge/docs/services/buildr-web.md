@@ -10,7 +10,7 @@
 - 开发：`npm run dev`；正式构建：`npm run build`（也可由 `buildr` 的 `npm run build:web` / `dev:web` 委托）。
 - 构建输出：本地构建默认写入sibling `buildr`顶层ignored `web-dist/`（`emptyOutDir: true`）；Browser与Candidate通过Vite `--outDir`写入隔离staging并直接消费，不比较tracked副本。
 - OpenSpec与Project测试地图仍在父级Product Project；本Service通过Service registry登记并由Buildr Web/doctor可见。
-- 全局壳层为上下结构：顶栏承载品牌、任务/项目/服务/文章导航、工作空间切换、设置、退出与交给 Agent；内容在下方。进入 Workspace 直接打开任务列表；旧开始页路由重定向到 `/tasks`。任务页与项目页宽屏为左列表、右详情；项目编辑入口在详情右上角；服务/文章仍整页切换。壳层读取 sibling `buildr` 的只读Release Awareness API，在顶栏下展示GA/RC更新；用户可以复制精确`buildr update --track stable|candidate`命令，或把同一选择交给Agent。首版不从网页执行npm更新，也不替用户决定轨道。
+- 全局壳层采用顶部区域与左侧导航：顶部依次呈现共同工作空间范围、“工作台”“工作空间”，工作台在前。工作台左侧保留任务和文章，默认进入任务列表；工作空间左侧展示项目、所属服务、全部服务、技能和设置。选中项目或服务深链时只展开所属项目，项目旁加号复用创建指令。手机通过“打开导航菜单”使用同一导航。任务列表与详情继续并排，项目详情不重复挂载旧列表宿主；项目编辑入口仍在详情右上角。原有 URL 与默认 `/tasks` 重定向保留。技能页只读已有清单，不执行安装或同步；其他详情内容本轮未重构。壳层读取 sibling `buildr` 的只读Release Awareness API，在顶栏下展示GA/RC更新；用户可以复制精确`buildr update --track stable|candidate`命令，或把同一选择交给Agent。首版不从网页执行npm更新，也不替用户决定轨道。
 
 ## 数据与依赖
 
