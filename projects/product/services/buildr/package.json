@@ -120,7 +120,7 @@
     "yaml"
   ],
   "devDependencies": {
-    "@fission-ai/openspec": "1.6.0",
+    "@fission-ai/openspec": "1.13.0",
     "@types/node": "24.13.3",
     "esbuild": "0.28.2",
     "json-schema-to-typescript": "15.0.4",

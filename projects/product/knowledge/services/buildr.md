@@ -22,7 +22,7 @@ Buildr Service 提供 npm CLI、本机 HTTP Host、Workspace/Task/Agent Assets/O
 - `task/`：Task Record、Review、Verification、父任务协调和 Worktree；
 - `task/change/`：Task scope 下的 Change 展示；
 - `task/daily-progress/`：Git 提交主导、关联本地任务的每日演进；
-- `openspec/`：通用 OpenSpec 读取、收敛、验证、条件写入和恢复；
+- `openspec/`：OpenSpec 读取、相关冲突检查、锁定上游处理和中断恢复；
 - `agent-assets/`：Command、Rule、Skill、Component、Capability Binding 和 runtime projection；
 - `project-testing/`：Project `verification.yml` 管理；
 - `installation/`：npm installation、update、release awareness 和正式 Launcher；

@@ -786,6 +786,10 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "src/modules/openspec/application/openspec-application.ts",
       "src/modules/openspec/application/**",
       "test/verification/openspec/contract.ts",
+      "test/fixtures/openspec-upstream.ts",
+      "test/integration/openspec-*.test.ts",
+      "package.json",
+      "package-lock.json",
       "resources/workspace/skills/buildr/openspec-contract-guard/**"
     ],
     "inputExclusions": []
@@ -795,6 +799,10 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "src/modules/openspec/application/openspec-application.ts",
       "src/modules/openspec/application/**",
       "test/verification/openspec/contract.ts",
+      "test/fixtures/openspec-upstream.ts",
+      "test/integration/openspec-*.test.ts",
+      "package.json",
+      "package-lock.json",
       "resources/workspace/skills/buildr/openspec-contract-guard/**",
       "resources/workspace/skills/buildr/current-knowledge-maintenance/**"
     ],

@@ -1,65 +1,38 @@
 ---
 name: openspec-contract-guard
-description: 创建、审查、实现、收敛或归档 OpenSpec change，且需要检查语义就绪、active change 冲突、隔离验证、canonical 并发漂移或恢复事实时使用。此 Skill 是 Buildr 的 OpenSpec sidebar，不修改外部 openspec-* Skills。
+description: 使用 OpenSpec 时核对相关变更冲突、明确归档范围或检查中断恢复现场；只补充上游未覆盖的 Buildr 边界。
 metadata:
   author: buildr
-  version: "1.2"
-  supportedOpenSpec: "1.6.0"
+  version: "2.0"
+  supportedOpenSpec: "1.13.0"
 ---
 
-# OpenSpec Contract Guard
+# OpenSpec 接入保护
 
-父子任务场景保持单一规范责任：同一个具体规范变化在同一时间只能由一个活跃变更负责。计划文档不复制子任务规范；父任务亲自实现集成能力时才创建自身的窄变更。范围调整后核对实际重叠，不靠重复归档覆盖冲突。
+标准规范解析、重建、正常写入及归档由已验证的 OpenSpec 1.13.0 安装负责。Buildr 只组合真实工作根与版本检查、相关变更冲突和必要中断恢复；不修改上游技能（Skill）正文。
 
-本 Skill 只保留 OpenSpec 1.6 未提供的 Buildr 契约保证：apply前的语义就绪预检、并行 active change 冲突、确定性 expected tree、隔离严格验证、条件式 canonical 写入、写后确认和基于文件事实的断点恢复。
+## 只读检查
 
-OpenSpec 1.6 负责 delta 格式与 Requirement 结构、单个 change 的规范校验、canonical spec 重建和 archive 的场景保全检查。先运行上游 `openspec validate <change> --strict`；本 Skill 不重复实现这些解析或 archive 安全规则。
+在当前工作空间（Workspace）或已核对的工作树（Worktree）中运行：
 
-本 Skill 不修改外部 `openspec-*` Skills、外部 OpenSpec CLI 或本机 CLI 安装。
-
-## 1. Apply 前门禁
-
-change artifacts complete 且上游严格验证通过后运行：
-
-```bash
-openspec validate <change> --strict
+```text
 buildr openspec convergence preflight <change> --project <project> --target <actual-work-root> --json
 ```
 
-`<actual-work-root>`必须是Agent已核对的当前Workspace或matching Worktree根。Preflight只读复用正式convergence planner、active Change scan和projected strict validation，不检查实现期checklist，不写canonical、Receipt、archive、Task或Review事实。它把blocked区分为`active-change-conflict`、`scenario-omission`、`identity-conflict`、`projected-validation`与其他`semantic-resolution-required`：Agent只处理对应依赖、Change artifact语义或用户决定，再重新运行strict与preflight，不得自动补回Scenario、选择rename或修改canonical。
+检查当前变更及相关规范条目是否被其他进行中变更修改。可证明无关的损坏内容只形成提醒；无法判断影响范围时报告最小缺口。ready 只对应本次观察，不是后续写入授权，不要求复制全项目执行隔离验证。
 
-只有preflight返回current `ready`后才继续apply。Agent直接读取当前OpenSpec artifacts，必要时使用OpenSpec返回的identity作为Planning Review subject；不调用额外规划身份接口，也不保存研发快照。Preflight `blocked`时停止apply，禁止把blocker写入Review Result代替处理。Review不是apply门禁，也不拥有、不复制或解释preflight逻辑。Buildr不提供baseline/create或阶段型check，也不创建、刷新、读取或依赖这些sidecar。
+## 按请求范围执行
 
-`ready`只绑定本次delta、canonical、全部active Change observation与OpenSpec executable/algorithm identity；任一事实变化后旧ready陈旧。它不是写入授权，也不替代实现验证。最终`buildr openspec converge`永远重新读取最新事实、重新规划并重新验证，不接受或读取旧preflight结果。
+- 实现：根据已授权目标修改代码与当前变更材料，按需要调用相关检查。
+- 只同步：执行上游 openspec-sync-specs，更新正式规范并保留变更。不调用 converge。
+- 归档：确认当前变更任务完成且归档属于用户目标后，调用 `buildr openspec converge <change> --project <project> --target <actual-work-root> --json`。该命令使用上游完整规范写入和归档流程；只有恢复现场已经证明规范全部写入时才跳过重复规范写入。
 
-## 2. 单一收敛事务
+不因阶段转换重复运行完整验证。上游命令保护与智能体直接编辑的保证不同，报告必须对应真实路径。
 
-```bash
-openspec validate <change> --strict
-buildr openspec converge <change> --project <project> --target <actual-work-root> --json
-```
+## 失败与恢复
 
-`<actual-work-root>`必须是Agent已按Git checkout、Project/Service registry与可选Worktree evidence核对的真实Change根，不得从cwd、分支名、路径相似或旧Receipt猜测。target中看不到active Change时保持零写入，按CLI next action纠正实际root。
+`buildr openspec convergence inspect <change> --project <project> --target <actual-work-root> --json` 只读检查仍存在的恢复记录与真实文件。进程中断后复用同一操作与已观察输入；全部规范已经写入时只继续归档。混合状态、输入变化或并发修改不能安全证明时返回 recovery-unprovable，保留文件及记录，不自动回滚他人修改。
 
-产品计算单一 identity/plan，在临时 Project 投射 expected files并运行 `validate --all --strict`；随后重验 delta、executable 与全部 canonical before digests，条件一致才替换文件。首次canonical mutation前写入唯一事务期`.buildr/convergence-receipt.json`；写后只确认expected digests与真实strict validation，再执行`archive --skip-specs`，正常archive成功后释放本次Receipt再返回`passed`。
+旧格式恢复材料保留并报告明确诊断；不把旧记录当作新写入授权。归档成立但记录释放失败时只处理释放，不重新同步。既有交付事实不因恢复或清理失败被撤销。
 
-## 3. OpenSpec Convergence Inspect
-
-`buildr openspec convergence inspect <change> --project <project> --target <workspace> --json`只在Converge中断、返回`recovery-unprovable`或事务终态释放失败，且对应实际Change工作根仍存在时使用。它只读比较当前事务Receipt的before/expected与canonical actual；active Change没有Receipt或Change已经archived时返回`not-applicable`。
-
-正常Converge返回`passed + archived`后，Agent重新观察当前代码、Archived Change、Canonical Specs、Git与专业结果继续工作。Review是否需要重做由Agent重新观察subject后独立判断，不影响convergence。任务收尾和资源清理不调用Inspect；Worktree清理后不得根据旧路径补造恢复现场。
-
-## 4. 失败处理
-
-- Preflight `active-change-conflict`：列出冲突Change/capability/Requirement，由Agent处理前序依赖、合并语义或重划范围。
-- Preflight `scenario-omission|identity-conflict|projected-validation|semantic-resolution-required`：在apply前停止，由Agent修订Change artifact或请求用户决定后重新检查。
-- `blocked`：列出语义冲突、冲突 change/Requirement 或 strict validation 诊断，修订 artifacts 后重试。
-- `recovery-unprovable`：canonical 出现 before/expected 之外的值、混合状态或旧 identity 链不完整；停止并人工核对，禁止自动覆盖。
-- delta identity 变化：丢弃旧 plan，以当前 canonical 重新规划，不恢复旧 before。
-- executable identity 变化：旧 validation 不复用，以当前 executable 重新投射验证。
-- archive 失败：canonical 保持 `applied-and-matched`，重试只做确认和 archive。
-- archive成功但Receipt释放失败：保持canonical和archive终态，重试Converge只完成事务Receipt release。
-- upstream strict validation 失败：修复上游诊断后再运行 Buildr 门禁。
-- CLI/Component version 不一致：使本机 OpenSpec CLI 与 Component 声明一致；Buildr 不代为安装。
-
-用户可见Preflight状态必须包含change、`ready|blocked`、readiness/plan identity、active Change observations、blockers、`effects: []`和`nextActions`；Converge状态必须包含change、`passed|blocked|recovery-unprovable`、disposition、Receipt是否已释放、耗时、命令次数和`nextActions`；Inspect另外使用`not-applicable`表达未开始或已终结。Agent不拼装内部guard命令，不解释多个Receipt，也不把preflight或事务Receipt升级为长期authority。外部`openspec-*` Skills继续承担explore、propose、update和apply；确定性sync/archive由Buildr事务持有。
+报告实际动作、状态、效果与必要下一步，不把内部过程记录当作长期产品事实。

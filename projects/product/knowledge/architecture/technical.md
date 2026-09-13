@@ -38,7 +38,7 @@ Task↔Change、Agent Assets↔Diagnostics 的真实循环由一次性 Binder �
 | Workspace | `src/modules/workspace/module.ts` | Workspace/Project/Service、受管 mutation |
 | Task | `src/modules/task/module.ts` | Task Record、关系、Review、Verification、父任务协调、Worktree |
 | Task Change | `src/modules/task/change/module.ts` | Task scope 的 Change 定位与展示组合 |
-| OpenSpec | `src/modules/openspec/module.ts` | 通用读取、严格验证、收敛、条件应用和恢复 |
+| OpenSpec | `src/modules/openspec/module.ts` | 读取、相关冲突检查、上游规范处理接入和中断恢复 |
 | Agent Assets | `src/modules/agent-assets/module.ts` | Rule、Skill、Command、Component、Capability Binding、runtime projection |
 | Project Testing | `src/modules/project-testing/module.ts` | 用户 Project `verification.yml` 的 inspect/validate/update |
 | Installation | `src/modules/installation/module.ts` | npm installation、update、release awareness、正式 Launcher |

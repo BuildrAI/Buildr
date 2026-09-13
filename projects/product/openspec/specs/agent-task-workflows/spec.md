@@ -491,24 +491,6 @@ Buildr MUST 交付唯一 Skill-only `git-operations`，并 MUST 通过 selected 
 - **THEN** provider MUST NOT 自动 stash、reset、rebase、merge、force push、改写共享历史或切换策略
 - **AND** 语义或重大风险决定 MUST 由 Agent 交还用户，恢复或重试 MUST 先重新核验事实
 
-### Requirement: OpenSpec apply、sync 和 archive 必须使用单一 convergence authority
-Buildr MUST在apply入口执行apply-ready、strict validation与proposal/delta门禁，并 MUST让独立sync/archive consumers拒绝canonical写入或归档旁路，统一转交`buildr openspec converge`。Convergence target MUST是Agent已核对的实际Change工作根，可以是当前Workspace或matching Worktree，不要求Task Environment。
-
-#### Scenario: Apply 开始实现
-- **WHEN** `openspec-apply-change`准备进行首个实现编辑
-- **THEN** prepend MUST验证apply-required artifacts complete、上游strict validation、semantic preflight与实际工作根
-- **AND**门禁未通过时 MUST blocked，delta Requirement identity或工作根发生变化后 MUST重新检查
-
-#### Scenario: 用户直接调用 sync
-- **WHEN**用户要求`openspec-sync-specs`在Buildr Workspace写入canonical specs
-- **THEN**prepend MUST拒绝上游agent-driven sync并转用`buildr openspec converge`
-- **AND**sync consumer MUST NOT要求Environment、旧研发或旧Finish状态
-
-#### Scenario: 用户直接调用 archive
-- **WHEN**用户要求`openspec-archive-change`跳过未完成tasks、spec sync或convergence直接归档
-- **THEN**prepend MUST拒绝确认绕过并转用`buildr openspec converge`
-- **AND**只有converge返回passed或幂等archived结果时才 MUST报告canonical sync/archive完成
-
 ### Requirement: task-manager Skill 必须作为 Buildr Web 与 CLI 共享的 Task Record 薄管理入口
 Buildr MUST交付现有`task-manager` workspace Skill作为`buildr.task-record/v3`默认provider，指导Agent创建、读取和维护正式Task Record。`task-manager` MUST不成为全局任务dispatcher或父任务流程总管。Buildr Web MUST作为同一Task Record Application的独立人类客户端；任一客户端 MUST不直接访问SQLite或migration scripts。
 
@@ -934,3 +916,10 @@ Buildr 投射的 Task Verification Skill MUST 在调用命令前区分项目检�
 - **WHEN** Agent 在非 Buildr Product 自举 Workspace 保存 Task Verification Report
 - **THEN** Skill MUST 指导 Agent 使用该 Workspace 当前合法的 installed/retained Buildr writer
 - **AND** MUST NOT 假设该 Workspace 存在 `projects/product/buildr`
+
+### Requirement: OpenSpec 接入必须复用上游并保持动作范围
+Buildr OpenSpec contributions MUST只补充当前工作根、相关冲突检查和必要恢复；MUST保持独立同步不归档、显式归档按目标执行，不将辅助状态提升为统一工作许可。
+
+#### Scenario: 实现或同步继续
+- **WHEN** 用户继续实现或只同步规范
+- **THEN** 智能体按授权动作工作，不默认升级为归档

@@ -5,20 +5,6 @@
 
 ## Requirements
 
-### Requirement: Buildr 只支持经过评估的 OpenSpec 集成版本
-Buildr MUST 仅将经过 Product 集成验证的 OpenSpec 上游 release 作为 OpenSpec Component 的支持版本，并使依赖、外部 Command 声明、Component metadata、上游 workflow Skill、integrity、Buildr sidebar、contract guard 和 package targets 对应同一 release。
-
-#### Scenario: 采用 OpenSpec 1.6.0
-- **WHEN** Buildr 发布包含 OpenSpec 1.6.0 的 OpenSpec Component
-- **THEN** Product source MUST 将 `@fission-ai/openspec`、OpenSpec Command version constraint、Component upstream metadata 和 guard 支持版本一致地声明为 `1.6.0`
-- **AND** Component integrity MUST 覆盖从该 release 刷新的外部 workflow Skills 和 Buildr 自有 members
-- **AND** package verification MUST 检查这些版本和成员关系，而不是只检查单个 package dependency
-
-#### Scenario: 版本声明不完整或不一致
-- **WHEN** OpenSpec integration 的任一受管版本或成员声明与其他受管声明不一致
-- **THEN** package or Component verification MUST fail
-- **AND** Buildr MUST NOT 将该 source tree 作为已支持的 OpenSpec release 交付
-
 ### Requirement: Buildr 受控交付 OpenSpec planning update workflow
 Buildr MUST 将上游 `openspec-update-change` 作为可选的 planning-only workflow Skill 交付，并保持它与 Buildr task、Component 和 contract 边界一致。
 
@@ -40,29 +26,6 @@ Buildr MUST 将上游 `openspec-update-change` 作为可选的 planning-only wor
 - **AND** sidebar MUST 只补充从 planning 转入实现前重新执行 task-worktree 决策的 Buildr 特有约束
 - **AND** sidebar MUST NOT 重复上游已有的 status/path 解析、planning-only、逐 artifact 确认或 apply 引导
 - **AND** workspace 中的上游 Skill source MUST 保持未被 Buildr 修改
-
-### Requirement: Buildr OpenSpec guard 只保留上游未提供的契约安全
-Buildr MUST 将 `openspec-contract-guard` 限定为 OpenSpec 1.6.0 未提供的跨 change、历史基线和同步证据保证，并 MUST NOT 维护第二套等价的 OpenSpec delta parser 或 archive validator。
-
-#### Scenario: 上游 1.6.0 已提供单 change 安全检查
-- **WHEN** OpenSpec 1.6.0 已验证 delta operation、Requirement existence、rebuilt spec validity 或 `MODIFIED` scenario preservation
-- **THEN** `openspec-contract-guard` MUST NOT 重复实现等价检查
-- **AND** Product tests MUST 证明这些被移除职责由锁定的上游 release 提供
-
-#### Scenario: Buildr 保留跨 change 与基线检查
-- **WHEN** change 准备进入 apply 或 canonical sync
-- **THEN** guard MUST 继续验证 proposal capability 与 delta 对齐、完整 baseline、canonical Requirement 漂移和其他 active changes 的 Requirement identity 冲突
-- **AND** 任一冲突、缺失或漂移 MUST fail closed
-
-#### Scenario: Buildr 保留 Agent-driven sync 证据
-- **WHEN** Agent 使用 `openspec-sync-specs` 修改 canonical specs
-- **THEN** guard MUST 在写入前生成绑定 baseline 和预期 delta 的 pre-sync receipt
-- **AND** guard MUST 在写入后验证 touched 与 untouched Requirements 并生成 Agent-readable post-sync result
-
-#### Scenario: 集成版本不一致
-- **WHEN** 当前 Component、Command、CLI、baseline 或 guard 版本与 Product 已评估的 OpenSpec integration 不一致
-- **THEN** guard MUST fail closed 并引导修复集成版本
-- **AND** version source consistency MUST 由 package 和 Component verification 负责验证
 
 ### Requirement: Buildr OpenSpec sidebars 只表达 Buildr 特有增量
 Buildr MUST仅在上游workflow未覆盖且Buildr consumer需要该约束时保留OpenSpec Skill Contribution，并通过Component integrity和组合测试验证固定组合。
@@ -94,3 +57,10 @@ Buildr MUST 不因 OpenSpec 1.6.0 包含 Stores beta 而在默认 OpenSpec Compo
 - **WHEN** 用户要求 Buildr 管理、迁移或依赖 OpenSpec Stores
 - **THEN** Agent MUST 说明该能力尚未纳入 Buildr 默认支持范围
 - **AND** Agent MUST 先创建独立的评估与设计 change，再改变 Buildr source assets 或 Project workflow
+
+### Requirement: OpenSpec 113 发布必须一致接入
+Buildr MUST使依赖、命令声明、组件版本、支持版本、原样上游技能与完整性一致指向 OpenSpec 1.13.0，并用实际包验证标准规范、异常与恢复兼容。
+
+#### Scenario: 升级候选验证
+- **WHEN** 准备交付升级后的 Buildr 源码
+- **THEN** 所有版本与源资产一致且相关检查通过；主机安装不被候选静默修改

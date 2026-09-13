@@ -145,7 +145,7 @@ Buildr 按用途和承诺区分三层 CLI 产品表面：
 
 该分类只控制可发现性与兼容承诺，不是权限或安全边界。`agent-machine` 与 `maintenance` 命令仍然可执行并具有 canonical help；具体授权、安全和 effects 继续由对应 Application/Skill contract 决定。
 
-当前`package check/build`、`web preview *`、`openspec converge`与`openspec convergence inspect`属于maintenance。`openspec audit`、`openspec baseline create`、阶段型`openspec check`、`openspec sync-plan`、`openspec sync-apply`与`skills migrate-project-assets`已删除；旧调用返回标准unknown-command。确定性planning/apply仅由Converge事务内部持有；Inspect只读仍存在的未决事务Receipt，正常archive或环境清理后不运行。legacy Project Skill source不受支持且当前Buildr不执行自动迁移。`package:<source-id>`是package manifest与随包Skill resolver的内部source identity，不是用户资产id或公开source scheme。`service create --rules`仅保留deprecated warning compatibility no-op；canonical Service规则入口是Service目录中的`AGENTS.md`。
+当前`package check/build`、`web preview *`、`openspec converge`与`openspec convergence inspect`属于maintenance。`openspec audit`、`openspec baseline create`、阶段型`openspec check`、`openspec sync-plan`、`openspec sync-apply`与`skills migrate-project-assets`已删除；旧调用返回标准unknown-command。标准规范解析与写入由锁定 OpenSpec 1.13.0 承担，Converge只组合相关冲突检查和中断恢复；Inspect只读仍存在的未决事务Receipt，正常archive或环境清理后不运行。legacy Project Skill source不受支持且当前Buildr不执行自动迁移。`package:<source-id>`是package manifest与随包Skill resolver的内部source identity，不是用户资产id或公开source scheme。`service create --rules`仅保留deprecated warning compatibility no-op；canonical Service规则入口是Service目录中的`AGENTS.md`。
 
 ## Runtime 投射
 

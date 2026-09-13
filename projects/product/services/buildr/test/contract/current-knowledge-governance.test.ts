@@ -104,7 +104,7 @@ test('OpenSpec Component 通过 contributions 组合且不改写 external Skill 
   assert.equal(fragments.some((item: any) => item.startsWith('task-finish#')), false);
   for (const id of ['openspec-explore', 'openspec-propose', 'openspec-update-change', 'openspec-apply-change', 'openspec-sync-specs', 'openspec-archive-change']) {
     const source: any = read(path.join(WORKSPACE_TARGET, `skills/openspec/${id}/SKILL.md`));
-    assert.match(source, /generatedBy: "1\.6\.0"/);
+    assert.match(source, /generatedBy: "1\.13\.0"/);
     assert.doesNotMatch(source, /current-knowledge-maintenance|terminology-governance/);
   }
 });

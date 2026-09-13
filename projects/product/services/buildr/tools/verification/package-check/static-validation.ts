@@ -1268,7 +1268,7 @@ export function createPackageStaticValidator(deps: any): any  {
         if (skillContent.includes('buildr openspec')) problems.push('task-triage source must not hard-code OpenSpec contract guard commands; installed Components contribute them at render time.');
       }
       if (skill.id === 'openspec-contract-guard') {
-        for (const requiredText of ['openspec validate <change> --strict', 'buildr openspec convergence preflight', '`ready|blocked`', '`scenario-omission`', '最终`buildr openspec converge`永远重新读取最新事实', 'buildr openspec converge', 'buildr openspec convergence inspect', 'passed|blocked|recovery-unprovable', '`not-applicable`', 'archive --skip-specs', '正常archive成功后释放本次Receipt', '任务收尾和资源清理不调用Inspect', '不重复实现这些解析或 archive 安全规则', '不修改外部 `openspec-*` Skills']) {
+        for (const requiredText of ['buildr openspec convergence preflight', 'buildr openspec converge', 'buildr openspec convergence inspect', 'recovery-unprovable']) {
           if (!skillContent.includes(requiredText)) problems.push(`openspec-contract-guard Skill must include ${JSON.stringify(requiredText)}.`);
         }
       }

@@ -420,7 +420,7 @@ builtins:
     - id: openspec-contract-guard
       path: resources/workspace/skills/buildr/openspec-contract-guard
       target: skills/buildr/openspec-contract-guard
-      description: 创建、收敛或归档OpenSpec Change，且需要检查active Change冲突、隔离验证、canonical并发漂移或未决事务恢复事实时使用。
+      description: 使用 OpenSpec 时核对相关变更冲突、明确归档范围或检查中断恢复现场；只补充上游未覆盖的 Buildr 边界。
       required: false
       component: openspec
       runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
