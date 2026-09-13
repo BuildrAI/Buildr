@@ -1,6 +1,6 @@
 ---
 name: project-daily-progress
-description: 用户要求展示、生成或重跑某 Project 的每日演进，或询问能否每天自动执行时使用；先同步最新代码，再收集当日 Git 提交与更改文件，由 Agent 总结四问后通过 CLI 写入本机文件。读取路径不扫描 Git、不写 Task Record、不提供产品 cron。
+description: 查看、生成或重跑项目每日演进，或询问定时执行时使用；按明确提交范围生成四问摘要，说明观察时间与未覆盖范围。
 ---
 
 # 项目每日演进
@@ -13,25 +13,25 @@ description: 用户要求展示、生成或重跑某 Project 的每日演进，�
 
 只要求查看时，使用下方 `inspect` 或 `list` 读取已保存内容；文件缺失或版本不兼容就报告该事实，不自动同步、扫描 Git 或生成日报。只有生成、重跑已获授权时，执行以下写入流程。
 
-## 1. 先同步最新代码
+## 1. 明确提交观察范围
 
-写入前必须执行与「更新 workspace」相同的同步门禁：
+生成前确认已登记项目（Project）、目标日期与时区，以及直接相关的真实 Git 仓库。默认使用各仓库当前本地引用；固定引用名称、完整提交标识和观察时点，随后按该范围读取提交。不要把所有分支的提交混入当前范围或重复统计同一提交。
 
-1. 若 Workspace 由 Git 管理，把已选定 upstream 的安全 Git update 交给 `buildr.git-operations/v1`（workspace update）。working tree dirty、分叉冲突、upstream 不明或 provider `blocked` 时停止，**不要调用 record**。
-2. 成功后再运行 `buildr sync <agent>`。最终 Doctor 未 ready 时停止，**不要调用 record**。
-3. 非 Git Workspace 跳过 Git update，但仍须在 sync/Doctor 适用时保持当前资产 current。没有 Git 时不得伪造 commits，也**不要调用 record**。
+本地提交可读时，有未提交内容、离线、缺少上游或全局诊断存在无关问题，都可继续生成。日报不要求 Git 更新、工作目录干净、资产同步或全局 Doctor ready；不为生成日报执行检出、变基（Rebase）或清理未提交内容。
 
-同步失败时报告 blocked 原因，当天每日演进文件必须保持调用前状态。
+用户要求远端最新信息时，按已有授权向 `buildr.git-operations/v1` 已选提供者（Provider）交接独立 `fetch`，再直接读取明确的远端引用，不要求改变本地分支。获取失败时，允许本地范围则明确说明；用户只接受远端最新数据时保留旧日报并报告缺口。目标没有可读 Git 提交、引用不明确或无法满足用户必需范围时，不调用 record，不伪造提交。
+
+重跑同一天前先读取已有日报，核对原观察范围；范围变化应明确说明，不静默丢失已包含的仓库或引用，只使用此前约定范围或已获授权的新范围。
 
 ## 2. 收集当日 Git 并由 Agent 总结
 
-同步成功后：
+范围明确后：
 
-1. 收集目标日期（本机日历日或用户指定 `YYYY-MM-DD`）的全部 Git 提交与更改文件。
+1. 收集目标日期（本机日历日或用户指定 `YYYY-MM-DD`）、时区和已固定引用范围内的全部 Git 提交与更改文件。
 2. 读取本机 `git config user.email`，与 commit author email 做大小写不敏感、去空白比较。
 3. 自己的提交 `authorship: self`，可挂 0..N 个**当前 Workspace 已存在**的 Task ID；没有 Task 也要写入。
 4. 他人提交 `authorship: other`，必须写入且 **不得**挂 Task。
-5. 撰写日摘要四问：`added`（新增了什么）、`updated`（更新了什么）、`deleted`（删除了什么）、`drawbacks`（有什么弊端）。
+5. 撰写日摘要四问：`added`（新增了什么）、`updated`（更新了什么）、`deleted`（删除了什么）、`drawbacks`（有什么弊端）。在已有 `daySummary.drawbacks` 中注明各仓库引用与完整提交标识、截至时间和时区、远端是否已确认及未覆盖范围，不新增字段或旁路记录；未确认远端时明确“基于本地提交，未确认远端最新”。
 
 不要手写 YAML，不要写入 Task SQLite。未提交 working tree 改动不要假装已经进日报，可写在弊端里。
 

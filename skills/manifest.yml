@@ -432,7 +432,7 @@ skills:
     sourceIdentity: package:skills/buildr/project-daily-progress
     source: buildr
     path: buildr/project-daily-progress
-    description: 用户要求展示、生成或重跑某 Project 的每日演进，或询问能否每天自动执行时使用；先同步最新代码，再收集当日 Git 提交与更改文件，由 Agent 总结四问后通过 CLI 写入本机文件。读取路径不扫描 Git、不写 Task Record、不提供产品 cron。
+    description: 查看、生成或重跑项目每日演进，或询问定时执行时使用；按明确提交范围生成四问摘要，说明观察时间与未覆盖范围。
     enabled: true
     required: false
     state: installed
