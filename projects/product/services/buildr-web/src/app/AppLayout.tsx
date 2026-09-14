@@ -1,7 +1,7 @@
 import { runtimeSystemApi } from './api/runtime-system-api';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { Button, Drawer, Dropdown, Space, Typography } from 'antd';
+import { Button, Drawer, Dropdown, Typography } from 'antd';
 import { CaretDownFilled, MenuOutlined, PlusOutlined } from '@ant-design/icons';
 import { api, setWorkspaceId } from '../api';
 import { AppShellContext, type WorkspaceShellInfo } from './AppShellContext';
@@ -9,6 +9,7 @@ import { AppNavigation } from './AppNavigation';
 import { navigationState } from './navigation';
 import { workspaceApi } from '../features/workspace/api/workspace-api';
 import { AgentActionDrawer } from './AgentActionDrawer';
+import { DrawerShell } from '../components/DrawerShell';
 import { confirmModal } from '../lib/confirm';
 import { ReleaseAwarenessBanner } from '../features/installation/components/ReleaseAwarenessBanner';
 
@@ -284,29 +285,17 @@ export function AppLayout() {
         onClick={closeAgentAction}
         aria-hidden
       />
-      <Drawer
+      <DrawerShell
         id="agent-action-drawer"
         open={drawerOpen}
         onClose={closeAgentAction}
-        width={440}
-        destroyOnClose
-        title={(
-          <Space direction="vertical" size={0}>
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>AGENT ACTION</Typography.Text>
-            <Typography.Title id="agent-action-title" level={4} style={{ margin: 0 }}>交给 Agent</Typography.Title>
-          </Space>
-        )}
-        extra={(
-          <Button
-            id="close-agent-action"
-            type="text"
-            aria-label="关闭"
-            onClick={closeAgentAction}
-          >
-            关闭
-          </Button>
-        )}
-        closable={false}
+        eyebrow="AGENT ACTION"
+        title="交给 Agent"
+        titleId="agent-action-title"
+        sub="选择要由 Agent 完成的动作"
+        closeAriaLabel="关闭"
+        closeButtonId="close-agent-action"
+        rootClassName="agent-action-shell"
       >
         <div id="agent-action-content">
           {drawerOpen ? (
@@ -316,7 +305,7 @@ export function AppLayout() {
             />
           ) : null}
         </div>
-      </Drawer>
+      </DrawerShell>
     </AppShellContext.Provider>
   );
 }

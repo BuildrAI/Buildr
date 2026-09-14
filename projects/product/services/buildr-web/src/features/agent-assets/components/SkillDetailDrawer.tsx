@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { Alert, Button, Descriptions, Drawer, Empty, List, Space, Spin, Tabs, Tag } from 'antd';
-import { CloseOutlined, ExpandOutlined } from '@ant-design/icons';
+import { Alert, Button, Descriptions, Empty, List, Space, Spin, Tabs, Tag } from 'antd';
+import { DrawerShell } from '../../../components/DrawerShell';
+import { ExpandOutlined } from '@ant-design/icons';
 import { MarkdownHost } from '../../../components/MarkdownHost';
 import { agentAssetsApi, type SkillDetail, type SkillFile, type SkillSummary } from '../api/agent-assets-api';
 import { resolveSkillLink, type SkillAction } from '../skill-presentation';
@@ -40,9 +41,10 @@ export function SkillDetailDrawer({ skill, onClose, onAction, children }: Props)
     if (resolved === filePath) return;
     if (resolved) openFile(resolved); else setFileError('该引用不在当前技能目录内，无法在这里打开。');
   };
-  return <Drawer open push={false} rootClassName="skills-detail-drawer" width={wide ? 'min(1100px, 100vw)' : 'min(720px, 100vw)'}
-    title={<div className="skills-drawer-title">{active.title}<small>{active.id}</small></div>} closable={false} keyboard={!children} maskClosable={!children} onClose={() => { if (!children) onClose(); }}
-    extra={<Space><Button type="text" icon={<ExpandOutlined />} aria-label={wide ? '收起阅读' : '展开阅读'} onClick={() => setWide(!wide)} /><Button type="text" icon={<CloseOutlined />} aria-label="关闭技能详情" onClick={onClose} /></Space>}
+  return <DrawerShell open rootClassName="skills-detail-drawer" width={wide ? 'min(1100px, 100vw)' : 'min(720px, 100vw)'}
+    title={active.title} sub={active.id} keyboard={!children} maskClosable={!children} onClose={() => { if (!children) onClose(); }}
+    extra={<Button type="text" icon={<ExpandOutlined />} aria-label={wide ? '收起阅读' : '展开阅读'} onClick={() => setWide(!wide)} />}
+    closeAriaLabel="关闭技能详情"
     footer={<div className="skills-action-footer"><span className="page-copy">基于工作空间当前源文件</span><Button onClick={() => onAction('adjust', active)}>请智能体调整</Button></div>}>
     <Tabs activeKey={tab} onChange={(value) => { setTab(value); setFilePath(value === '说明' ? 'SKILL.md' : ''); setHistory([]); setRaw(false); }} items={['说明', '相关资料', '管理'].map((label) => ({ key: label, label }))} />
     {error && <Alert type="error" message={error} action={<Button onClick={() => setRetry(retry + 1)}>重试</Button>} />}
@@ -61,5 +63,5 @@ export function SkillDetailDrawer({ skill, onClose, onAction, children }: Props)
       {active.required && <p className="page-copy">此技能为必需项，不能在这里停用。</p>}
     </>}
     {children}
-  </Drawer>;
+  </DrawerShell>;
 }

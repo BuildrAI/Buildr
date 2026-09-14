@@ -414,7 +414,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.match(await page.locator('#action-prompt-output').inputValue(), /独立工作空间/);
     await page.getByRole('button', { name: '关闭', exact: true }).click();
     await page.goto(`${workspaceUrl}/projects`);
-    await page.locator('#create-project-button').click();
+    await page.locator('#project-directory-create-button').click();
     await page.locator('#action-name').fill('独立项目');
     await page.locator('#action-description').fill('项目表单独立输入');
     await page.getByRole('button', { name: '生成项目指令', exact: true }).click();
@@ -548,36 +548,23 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     runtime.registerLocalWorkspace({ rootPath: otherRoot, revision: current.revision });
   });
 
-  if (selected('shell')) await t.test('双区域导航、项目独占展开与手机菜单保持真实范围', async () => {
+  if (selected('shell')) await t.test('平级导航、页面级页签与手机菜单保持真实范围', async () => {
     await page.goto(`${workspaceUrl}/tasks`);
     assert.deepEqual(await page.locator('.top-nav a').allTextContents(), ['工作台', '工作空间']);
     await page.locator('[data-area="workspace"]').click();
     await page.waitForURL(`${workspaceUrl}/projects`);
-    await page.locator('[data-project-node="demo"] a').first().click();
-    await page.locator('[data-service-node="api"]').waitFor({ state: 'visible' });
-    assert.equal(await page.locator('[data-project-node][data-expanded="true"]').count(), 1);
-    const beforeCollapseUrl = page.url();
-    await page.getByRole('button', { name: '收起演示项目', exact: true }).click();
-    await page.locator('[data-project-node="demo"][data-expanded="false"]').waitFor();
-    assert.equal(page.url(), beforeCollapseUrl);
-    assert.equal(await page.locator('[data-project-node="demo"] .shell-project-row').evaluate((node: any) => node.classList.contains('active')), true);
-    assert.equal(await page.locator('[data-service-node="api"]').count(), 0);
-    await page.getByRole('button', { name: '展开演示项目', exact: true }).focus();
-    await page.keyboard.press('Enter');
-    await page.locator('[data-service-node="api"]').waitFor({ state: 'visible' });
-    assert.equal(page.url(), beforeCollapseUrl);
-    await page.getByRole('button', { name: '展开另一项目', exact: true }).click();
-    await page.locator('[data-project-node="other"][data-expanded="true"]').waitFor();
-    assert.equal(page.url(), beforeCollapseUrl, '展开箭头不改变当前页面');
-    assert.equal(await page.locator('[data-project-node="demo"]').getAttribute('data-expanded'), 'false');
-    await page.locator('[data-project-node="other"] a').first().click();
-    await page.waitForURL(`${workspaceUrl}/projects/other`);
-    await page.locator('[data-project-node="other"][data-expanded="true"]').waitFor();
-    assert.equal(await page.locator('[data-project-node="demo"]').getAttribute('data-expanded'), 'false');
-    assert.equal(await page.locator('[data-project-node="other"]').getAttribute('data-expanded'), 'true');
+    await page.waitForFunction(() => [...document.querySelectorAll('.shell-navigation .shell-nav-item')].some((node: any) => node.textContent === '项目'));
+    assert.deepEqual(await page.locator('.shell-navigation .shell-nav-item').allTextContents(), ['项目', '服务', '技能', '设置']);
+    await page.locator('.pane-left .pane-tab').filter({ hasText: '项目目录' }).waitFor({ state: 'visible' });
+    await page.locator('#project-table-body tr').filter({ hasText: '演示项目' }).click();
+    await page.waitForURL(`${workspaceUrl}/projects/demo`);
+    await page.locator('.pane-left .pane-tab.on').filter({ hasText: '演示项目' }).waitFor({ state: 'visible' });
+    await page.locator('.pane-left .pane-tab').filter({ hasText: '项目目录' }).click();
+    await page.waitForURL(`${workspaceUrl}/projects`);
+    await page.locator('.pane-left .pane-tab').filter({ hasText: '演示项目' }).click();
+    await page.waitForURL(`${workspaceUrl}/projects/demo`);
     await page.goto(`${workspaceUrl}/services/demo/api`);
-    await page.locator('[data-service-node="api"]').waitFor({ state: 'visible' });
-    assert.equal(await page.locator('[data-project-node="demo"]').getAttribute('data-expanded'), 'true');
+    await page.locator('.pane-left .pane-tab.on').filter({ hasText: '演示服务' }).waitFor({ state: 'visible' });
     assert.equal(await page.locator('.resource-list-host').count(), 0);
     await page.locator('[data-area="workbench"]').click();
     await page.waitForURL(/\/tasks/);
@@ -592,9 +579,9 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.setViewportSize({ width: 390, height: 844 });
     await page.getByRole('button', { name: '打开导航菜单', exact: true }).click();
     await page.getByRole('dialog').waitFor({ state: 'visible' });
-    assert.equal(await page.locator('#create-project-button').count(), 1);
-    await page.getByRole('dialog').locator('[data-project-node="demo"] a').first().click();
-    await page.waitForURL(`${workspaceUrl}/projects/demo`);
+    assert.deepEqual(await page.getByRole('dialog').locator('.shell-nav-item').allTextContents(), ['项目', '服务', '技能', '设置']);
+    await page.getByRole('dialog').locator('[data-nav="projects"]').click();
+    await page.waitForURL(`${workspaceUrl}/projects`);
     await page.getByRole('dialog').waitFor({ state: 'hidden' });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
     await capture(page, 'navigation-project-mobile.png');
@@ -637,28 +624,31 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.waitForURL(`${workspaceUrl}/projects/demo`);
     assert.equal(await page.locator('#project-detail-name').innerText(), '演示项目');
     assert.equal(await page.locator('#project-detail-description').innerText(), '浏览器测试项目');
-    assert.equal(await page.locator('#project-service-summary').innerText(), '1 个已登记服务');
+    assert.equal(await page.locator('#project-service-count').innerText(), '1');
     assert.equal(await page.locator('#app-view input, #app-view textarea').count(), 0);
     assert.equal(await page.getByText('操作', { exact: true }).count(), 0);
     assert.equal(await page.locator('.overview-strip, .related-resource-links').count(), 0);
-    assert.equal(await page.locator('.detail-facts > div').count(), 2);
+    assert.equal(await page.locator('.ws-stat').count(), 2);
     assert.equal(await page.locator('[data-nav="projects"]').evaluate((item: any) => item.classList.contains('active')), true);
-    assert.match(await page.locator('#project-document-missing-README-md').innerText(), /未找到 README\.md/);
-    await page.getByRole('tab', { name: 'AGENTS.md', exact: true }).click();
+    await page.setViewportSize({ width: 1680, height: 900 });
+    await page.locator('[data-doc-row="readme"]').click();
+    await page.locator('.pane-right .artifact-missing').waitFor({ state: 'visible' });
+    assert.match(await page.locator('.pane-right .artifact-missing').innerText(), /未找到 README\.md/);
+    await page.locator('[data-doc-row="agents"]').click();
     await page.waitForFunction(() => {
-      const body: any = document.getElementById('project-document-AGENTS-md')?.textContent || '';
+      const body: any = document.querySelector('.pane-right .markdown-body')?.textContent || '';
       return !body.includes('正在读取') && /AGENTS\.md|Project|项目/.test(body);
     });
-    assert.match(await page.locator('#project-document-AGENTS-md').innerText(), /AGENTS\.md|Project|项目/);
-    await page.getByRole('tab', { name: '每日演进', exact: true }).click();
-    await page.locator('#progress-date').waitFor({ state: 'visible' });
-    await page.locator('#progress-date').click();
+    assert.match(await page.locator('.pane-right .markdown-body').innerText(), /AGENTS\.md|Project|项目/);
+    await page.locator('[data-doc-row="daily"]').click();
+    await page.locator('.pane-right #progress-date').waitFor({ state: 'visible' });
+    await page.locator('.pane-right #progress-date').click();
     await page.locator('.ant-picker-dropdown:visible').waitFor({ state: 'visible' });
     await page.keyboard.press('Escape');
-    await page.locator('#daily-progress-empty').waitFor({ state: 'visible' });
-    assert.match(await page.locator('#daily-progress-empty').innerText(), /需要 Agent/);
-    assert.equal(await page.locator('#progress-body input, #progress-body textarea').count(), 0);
-    assert.equal(await page.locator('[data-group]').count(), 3);
+    await page.locator('.pane-right #daily-progress-empty').waitFor({ state: 'visible' });
+    assert.match(await page.locator('.pane-right #daily-progress-empty').innerText(), /需要 Agent/);
+    assert.equal(await page.locator('.pane-right #progress-body input, .pane-right #progress-body textarea').count(), 0);
+    assert.equal(await page.locator('.pane-right [data-group]').count(), 3);
     await page.getByRole('button', { name: '编辑项目', exact: true }).click();
     await page.locator('#project-edit-form').waitFor({ state: 'visible' });
     assert.equal(await page.url(), `${workspaceUrl}/projects/demo`);
@@ -684,8 +674,9 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.getByRole('button', { name: '保存修改', exact: true }).click();
     await page.waitForFunction(() => document.getElementById('project-detail-description')?.textContent === '已在抽屉中更新');
     assert.equal(await page.locator('#project-detail-description').innerText(), '已在抽屉中更新');
-    await page.waitForFunction(() => document.querySelector('[data-project-node="demo"] .shell-project-link')?.textContent?.includes('演示项目（已更新）'));
+    await page.waitForFunction(() => [...document.querySelectorAll('.pane-left .pane-tab .pane-tab-text')].some((node: any) => node.textContent?.includes('演示项目（已更新）')));
     await page.getByRole('dialog').waitFor({ state: 'hidden' });
+    await page.setViewportSize({ width: 1280, height: 720 });
   });
 
   if (selected('service')) await t.test('服务目录在操作栏提供关联跳转，详情展示基础事实与文档', async () => {
@@ -709,17 +700,19 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.equal(await page.locator('#app-view input, #app-view textarea').count(), 0);
     assert.equal(await page.getByText('操作', { exact: true }).count(), 0);
     assert.equal(await page.locator('.overview-strip, .related-resource-links').count(), 0);
-    assert.equal(await page.locator('.detail-facts > div').count(), 3);
+    assert.equal(await page.locator('.ws-stat').count(), 2);
     assert.equal(await page.locator('[data-nav="services"]').evaluate((item: any) => item.classList.contains('active')), true);
+    await page.setViewportSize({ width: 1680, height: 900 });
+    await page.locator('[data-doc-row="readme"]').click();
     await page.waitForFunction(() => {
-      const body: any = document.getElementById('service-document-README-md')?.textContent || '';
+      const body: any = document.querySelector('.pane-right .markdown-body')?.textContent || '';
       return !body.includes('正在读取') && /Demo API|README/.test(body);
     });
-    assert.match(await page.locator('#service-document-README-md').innerText(), /Demo API|README/);
-    await page.getByRole('tab', { name: 'AGENTS.md', exact: true }).click();
+    assert.match(await page.locator('.pane-right .markdown-body').innerText(), /Demo API|README/);
+    await page.locator('[data-doc-row="agents"]').click();
     await page.waitForFunction(() => {
-      const body: any = document.getElementById('service-document-AGENTS-md')?.textContent || '';
-      return !body.includes('正在读取') && /未找到 AGENTS\.md/.test(body);
+      const body: any = document.querySelector('.pane-right .artifact-missing')?.textContent || '';
+      return /未找到 AGENTS\.md/.test(body);
     });
     await page.getByRole('button', { name: '编辑服务', exact: true }).click();
     await page.locator('#service-edit-form').waitFor({ state: 'visible' });
@@ -737,6 +730,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.waitForFunction(() => document.getElementById('service-detail-description')?.textContent === '已在抽屉中更新');
     assert.equal(await page.locator('#service-detail-description').innerText(), '已在抽屉中更新');
     await page.getByRole('dialog').waitFor({ state: 'hidden' });
+    await page.setViewportSize({ width: 1280, height: 720 });
   });
 
   if (selected('service')) await t.test('390px 下目录与详情不产生页面横向溢出', async () => {

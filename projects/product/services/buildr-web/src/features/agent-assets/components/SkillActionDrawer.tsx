@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { Button, Drawer, Input, Segmented } from 'antd';
-import { CloseOutlined, CopyOutlined, CheckOutlined } from '@ant-design/icons';
+import { Button, Input, Segmented } from 'antd';
+import { CopyOutlined, CheckOutlined } from '@ant-design/icons';
+import { DrawerShell } from '../../../components/DrawerShell';
 import type { SkillSummary } from '../api/agent-assets-api';
 import { skillActionPrompt, type SkillAction } from '../skill-presentation';
 
@@ -47,10 +48,10 @@ export function SkillActionDrawer({ open, action, skill, root, drafts, onDraftCh
     } finally { if (mounted.current) setCopying(false); }
   };
   const copied = !!prompt && copiedPrompt === prompt;
-  return <Drawer open={open} push={false} width="min(560px, 100vw)" rootClassName="skills-action-drawer"
-    title={<div className="skills-drawer-title">{title}<small>{skill?.title || '当前工作空间'}</small></div>}
-    closable={false} onClose={onClose} afterOpenChange={(visible) => { if (!visible) onClosed(); }}
-    extra={<Button type="text" aria-label="关闭技能操作" icon={<CloseOutlined />} onClick={onClose} />}
+  return <DrawerShell open={open} width="min(560px, 100vw)" rootClassName="skills-action-drawer"
+    eyebrow="AGENT ACTION" title={title} sub={skill?.title || '当前工作空间'}
+    onClose={onClose} afterOpenChange={(visible) => { if (!visible) onClosed(); }}
+    closeAriaLabel="关闭技能操作"
     footer={<div className="skills-action-footer"><span className="page-copy" role="status">{copied ? '指令已复制，尚未执行' : '尚未执行'} </span><Button type="primary" icon={copied ? <CheckOutlined aria-hidden /> : <CopyOutlined aria-hidden />} disabled={!prompt} loading={copying} onClick={() => void copy()}>{copied ? '已复制' : '复制指令'}</Button></div>}>
     {(action === 'add' || action === 'create') && <Segmented block value={kind} options={[{ label: '已有来源', value: 'add' }, { label: '描述需求', value: 'create' }]} onChange={(value) => setKind(value as SkillAction)} />}
     {needsInput ? <><label className="skills-field" htmlFor="skill-action-input">{kind === 'add' ? '目录或链接' : '你的需求'}</label><Input.TextArea id="skill-action-input" rows={5} value={input} maxLength={12000} placeholder={kind === 'add' ? '粘贴本机目录或来源链接' : '例如：优先列出最重要的三个问题…'} onChange={(event) => onDraftChange(kind, event.target.value)} /></>
@@ -59,5 +60,5 @@ export function SkillActionDrawer({ open, action, skill, root, drafts, onDraftCh
     <textarea id="skill-prompt" ref={output} className={`skills-prompt ${expanded ? 'skills-prompt-expanded' : 'skills-prompt-compact'}`} readOnly value={prompt} placeholder="填写需求后，完整指令会在这里实时更新。" />
     {copyError && <p className="skills-copy-error" role="alert">{copyError}</p>}
     <p className="skills-draft-note">关闭后保留本页草稿，刷新页面后清除。复制指令后交给智能体执行。</p>
-  </Drawer>;
+  </DrawerShell>;
 }

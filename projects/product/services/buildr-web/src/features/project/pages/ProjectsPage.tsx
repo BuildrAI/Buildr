@@ -7,6 +7,8 @@ import type { ColumnsType } from 'antd/es/table';
 
 import { useAppShell } from '../../../app/AppShellContext';
 import { workspaceHref } from '../../../lib/labels';
+import { useWorkspacePageTabs } from '../../../app/pageTabs';
+import { WorkspaceStage } from '../../../components/WorkspaceStage';
 
 type Project = NonNullable<ProjectResponse['projects']>[number];
 
@@ -23,6 +25,12 @@ export function ProjectsPage() {
   const [state, setState] = useState('正在读取');
   const [migrationMessage, setMigrationMessage] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const pageTabs = useWorkspacePageTabs(workspaceId);
+
+  useEffect(() => {
+    pageTabs.register({ key: 'dir:projects', kind: 'dir', title: '项目目录', path: href('/projects') });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspaceId]);
 
 
   useEffect(() => {
@@ -66,11 +74,12 @@ export function ProjectsPage() {
   ];
 
   return (
-    <>
+    <WorkspaceStage pageTabs={pageTabs.tabs} onClosePageTab={pageTabs.close}>
+      <div className="ws-dir-shell">
       <section className="resource-toolbar">
         <div className="task-toolbar-main">
           <Typography.Title level={2} style={{ margin: 0 }}>项目</Typography.Title>
-          <p className="page-copy">选择项目查看文档；也可通过左侧导航进入项目和所属服务。</p>
+          <p className="page-copy">选择项目进入全景，查看其文档与所属服务。</p>
         </div>
         <div className="task-toolbar-meta">
           <span id="projects-state" className="count-label">{state}</span>
@@ -104,6 +113,7 @@ export function ProjectsPage() {
           ) : null}
         </div>
       </section>
-    </>
+      </div>
+    </WorkspaceStage>
   );
 }
