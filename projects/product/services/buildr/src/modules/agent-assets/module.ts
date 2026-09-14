@@ -1,3 +1,4 @@
+import { createSkillContentQuery } from './application/skill-content-query.ts';
 import type { DoctorInput } from '../diagnostics/application/doctor-application.ts';
 import { WORKSPACE_ASSET_SUPPORT, type WorkspaceAssetSupport, WORKSPACE_ROOT_GITIGNORE_ENTRIES } from '../workspace/module.ts';
 import { registerDomainsCommands, type CommandsDependencies } from './application/commands.ts';
@@ -397,6 +398,7 @@ export function createAgentAssetsModule(infrastructure: AgentAssetsInfrastructur
         renderRulesRuntime: projection.renderRulesRuntime,
         syncRuntime: projection.syncRuntime,
         listAgentAssets: httpQuery.listAgentAssets,
+        ...createSkillContentQuery({ readSkillsManifestForWrite: skills.readSkillsManifestForWrite }),
       });
       const internal = Object.freeze({
         readPackageManifest: packageAssets.readPackageManifest,

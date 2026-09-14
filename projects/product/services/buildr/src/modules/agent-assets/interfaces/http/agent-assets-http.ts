@@ -17,7 +17,21 @@ export function createAgentAssetsHttpContribution(application: any): any  {
 
   return Object.freeze({
     id: 'agent-assets.http',
-    async handle({ request: httpRequest, suffix, root, authorizeWrite, readJsonBody }: any): Promise<any>  {
+    async handle({ request: httpRequest, suffix, searchParams, root, authorizeWrite, readJsonBody }: any): Promise<any>  {
+      if (httpRequest.method === 'GET' && suffix === '/agent-assets/skills') {
+        request('agent-assets.skills.list', {});
+        return { status: 200, body: success('agent-assets.skills.list', application.listSkills(root)) };
+      }
+      const skillMatch = suffix.match(/^\/agent-assets\/skills\/([^/]+)(\/file)?$/);
+      if (httpRequest.method === 'GET' && skillMatch) {
+        const id = decodeURIComponent(skillMatch[1]);
+        if (skillMatch[2]) {
+          const input = request('agent-assets.skills.file', { id, path: searchParams.get('file') || 'SKILL.md' });
+          return { status: 200, body: success('agent-assets.skills.file', application.skillFile(root, input.id, input.path)) };
+        }
+        request('agent-assets.skills.detail', { id });
+        return { status: 200, body: success('agent-assets.skills.detail', application.skillDetail(root, id)) };
+      }
       if (httpRequest.method === 'GET' && suffix === '/agent-assets') {
         request('agent-assets.inventory', {});
         return { status: 200, body: success('agent-assets.inventory', application.listAgentAssets(root)) };

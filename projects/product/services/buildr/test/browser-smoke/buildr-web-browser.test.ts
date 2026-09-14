@@ -435,6 +435,54 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.deepEqual(runtime.listProjects(workspaceRoot), before);
   });
 
+  if (selected('shell')) await t.test('技能资料与二级抽屉连续操作、实时指令和草稿保留', async () => {
+    await page.goto(`${workspaceUrl}/skills`);
+    await page.locator('[data-skill-id="ux-design-laws"]').waitFor({ state: 'visible' });
+    await page.reload();
+    await page.locator('#skills-search').fill('ux-design-laws');
+    await page.locator('[data-skill-id="ux-design-laws"]').click();
+    await page.getByRole('link', { name: '法则索引', exact: true }).click();
+    await page.getByRole('heading', { name: '法则索引', exact: true }).waitFor({ state: 'visible' });
+    await page.getByRole('button', { name: '请智能体调整', exact: true }).click();
+    assert.equal(await page.locator('.skills-detail-drawer').count(), 1);
+    await page.locator('#skill-action-input').fill('先列出三个最重要的问题');
+    assert.match(await page.locator('#skill-prompt').inputValue(), /先列出三个最重要的问题/);
+    assert.equal(await page.getByRole('button', { name: '生成指令', exact: true }).count(), 0);
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+    await page.getByRole('button', { name: '复制指令', exact: true }).click();
+    await page.getByRole('button', { name: '已复制', exact: true }).waitFor({ state: 'visible' });
+    assert.match(await page.evaluate(() => navigator.clipboard.readText()), /先列出三个最重要的问题/);
+    await page.locator('#skill-action-input').fill('优先五个问题');
+    assert.equal(await page.getByRole('button', { name: '复制指令', exact: true }).isEnabled(), true);
+    await page.keyboard.press('Escape');
+    await page.locator('.skills-action-drawer').waitFor({ state: 'detached' });
+    await page.getByRole('heading', { name: '法则索引', exact: true }).waitFor({ state: 'visible' });
+    await page.getByRole('button', { name: '请智能体调整', exact: true }).click();
+    assert.equal(await page.locator('#skill-action-input').inputValue(), '优先五个问题');
+    await page.evaluate(() => { Object.defineProperty(navigator.clipboard, 'writeText', { configurable: true, value: () => Promise.reject(new Error('fixture denied')) }); });
+    await page.getByRole('button', { name: '复制指令', exact: true }).click();
+    await page.getByRole('alert').filter({ hasText: '无法自动复制' }).waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#skill-prompt').evaluate((el: any) => el.selectionEnd - el.selectionStart === el.value.length), true);
+    await page.getByRole('button', { name: '关闭技能操作', exact: true }).click();
+    await page.locator('.skills-action-drawer').waitFor({ state: 'detached' });
+    await page.getByRole('button', { name: '关闭技能详情', exact: true }).click();
+    assert.equal(await page.locator('#skills-search').inputValue(), 'ux-design-laws');
+    await page.locator('#skills-search').fill('no-such-skill-xyz');
+    await page.getByRole('button', { name: '清除筛选', exact: true }).click();
+    await page.locator('#skills-add').click();
+    await page.locator('#skill-action-input').fill('https://example.invalid/skill');
+    assert.match(await page.locator('#skill-prompt').inputValue(), /example.invalid/);
+    await page.getByRole('button', { name: '关闭技能操作', exact: true }).click();
+    await page.locator('.skills-action-drawer').waitFor({ state: 'detached' });
+    await page.locator('#skills-add').click();
+    assert.equal(await page.locator('#skill-action-input').inputValue(), 'https://example.invalid/skill');
+    await page.goto(`${url}/workspaces/${otherWorkspaceId}/skills`);
+    await page.locator('#skills-add').click();
+    assert.equal(await page.locator('#skill-action-input').inputValue(), '');
+    await page.getByRole('button', { name: '关闭技能操作', exact: true }).click();
+    await page.locator('.skills-action-drawer').waitFor({ state: 'detached' });
+  });
+
   if (selected('shell')) await t.test('全局首页展示多个工作空间并进入选定上下文', async () => {
     await page.goto(url);
     await page.locator('#workspace-grid .workspace-card').first().waitFor({ state: 'visible' });
