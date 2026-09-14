@@ -57,7 +57,7 @@ skills:
     sourceIdentity: package:skills/buildr/git-operations
     source: buildr
     path: buildr/git-operations
-    description: 用户或上游智能体（Agent）已明确选择仓库（repository）、Git 操作（Git Operation）与相关引用（ref）时使用，包括无活跃任务（active Task）的直接 Git 收尾和正式任务（formal Task）的直接交付；执行 fetch、commit、push、commit+push、rebase，或检查授权、安全边界和结果证据（result evidence）；不替 Agent 选择策略，也不扩展完整 Git 命令集。
+    description: 执行已明确仓库、操作和目标的 Git 操作，核对授权、改动归属及结果；不代选策略。
     enabled: true
     required: false
     state: installed
@@ -257,7 +257,7 @@ skills:
     sourceIdentity: package:skills/buildr/capability-adaptation
     source: buildr
     path: buildr/capability-adaptation
-    description: 采用内部流程、调整工作方式、修改或替换技能行为，或变更能力声明与绑定时使用。
+    description: 修改技能行为、采用组织工作方式或调整能力声明与绑定时使用；先判断跨技能协作影响。
     enabled: true
     required: false
     state: installed
@@ -301,7 +301,7 @@ skills:
     sourceIdentity: package:skills/buildr/terminology-governance
     source: buildr
     path: buildr/terminology-governance
-    description: Agent 在探索、提案、设计、实现或文档整理中遇到新术语、同义词、一词多义、中英不一致、Context/Context Window 等概念边界，或 consumer 需要正式术语对齐 evidence 时使用。
+    description: 确立或维护长期术语定义、解决影响结论的术语歧义，或需要正式术语对齐结果时使用。
     enabled: true
     required: false
     state: installed
@@ -368,7 +368,7 @@ skills:
     sourceIdentity: package:skills/buildr/task-review
     source: buildr
     path: buildr/task-review
-    description: 用户要求审查正式 Task 的方案或完成结果、查看已有 Task Review Result，或 Agent 判断需要留下轻量审查证据时使用；不用于资产复盘、Task Verification、统一门禁或通用代码 Review。
+    description: 审查正式任务的方案或完成结果、查看或保存对应审查结果时使用；不用于通用代码审查。
     enabled: true
     required: false
     state: installed
@@ -389,7 +389,7 @@ skills:
     sourceIdentity: package:skills/buildr/project-testing
     source: buildr
     path: buildr/project-testing
-    description: 用户要求为Project或Service设计、梳理或优化测试框架，划分Static、Unit、Component、Integration、System边界，区分测试成本、affected/full范围与Candidate/Release验证目标，或实现功能后开发适量测试时使用；不用于执行正式Task Verification、维护verification.yml或记录任务验证报告。
+    description: 设计或调整测试体系、为实现开发必要测试时使用；已有检查的选择和报告交给 task-verification。
     enabled: true
     required: false
     state: installed
@@ -412,7 +412,7 @@ skills:
     sourceIdentity: package:skills/buildr/declaration-intake
     source: buildr
     path: buildr/declaration-intake
-    description: 用户要求初始化、刷新或审查Project的准备入口与任务验证声明，或Project/Service注册、首次Task scope、准备入口缺口、Verification coverage gap、构建/依赖/测试入口变化触发声明检查时使用；先只读发现并分类routine maintenance与真正需要用户决定的长期变化，再交给声明owner。
+    description: 初始化、维护准备与验证声明，或项目注册、构建和测试入口变化产生声明缺口时使用；先核对差异，再交给对应维护者。
     enabled: true
     required: false
     state: installed
@@ -488,7 +488,7 @@ skills:
     sourceIdentity: package:skills/buildr/ux-design-laws
     source: buildr
     path: buildr/ux-design-laws
-    description: 设计或审查用户界面、交互流程、信息层级与操作反馈时使用；依据用户目标和真实界面选择相关心理学法则，给出有优先级的设计方案、依据、权衡与验证方法。不用于仅实现既定设计稿、直接生成页面原型，或替代无障碍检查与用户研究。
+    description: 设计或审查界面、交互与信息层级时使用，按真实问题选择体验法则；不用于单纯实现既定设计。
     enabled: true
     required: false
     state: installed

@@ -1,10 +1,12 @@
 ## Buildr OpenSpec Sidebar
 
+已授权实现遇到可逆且范围内的普通错误时，智能体（Agent）自行定位、修复并复查受影响内容。仅在业务语义无法确定、需要扩大授权、错误对象写入、覆盖他人工作或不可逆风险时局部暂停。不得绕过命令返回的 blocked 状态、缺失的必要材料或真实检查失败；先解决其原因，再继续。
+
 应用Change前先向用户说明OpenSpec `apply` action、Change ID、实际`changeRoot`、Task ID与当前Workspace或matching Worktree根。
 
 若 artifacts 表明会产生用户可见界面变化，只在用户明确要求后使用界面原型（UI Prototype）。已有原型且未被明确忽略时，正式前端编辑前应读取它；原型不是审查、实现、验证、收敛或收尾门禁。
 
-任何实现编辑前，确认 apply-required artifacts 已完成，运行 `openspec validate <change> --strict` 和 `buildr openspec convergence preflight`。Agent 根据当前诊断处理依赖、修订 artifacts 或请求必要的用户决定；Application不另存规划快照，也不把 preflight 变成统一许可层。Planning Review 由 Agent 按目标与风险独立选择。
+进入实现前，确认 apply-required artifacts 已完成，并核对已有 `openspec validate <change> --strict` 和 `buildr openspec convergence preflight` 结果。材料与检查规则未变时复用严格验证；冲突预检还需核对相关进行中变更及规范现场。结果缺失、相关输入变化或无法确认适用性时补跑对应检查，不因阶段切换或每次编辑重复执行。Agent 根据当前诊断处理依赖、修订 artifacts 或请求必要的用户决定；Application不另存规划快照，也不把 preflight 变成统一许可层。Planning Review 由 Agent 按目标与风险独立选择。
 
 写入前核对实际Git checkout、Project/Service registry、owned scope与可选Worktree evidence；不得从cwd、branch、路径相似、旧Receipt或同一HEAD猜ownership。实现期间只编辑Change artifacts与实现内容，不预写canonical specs。
 

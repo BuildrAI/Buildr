@@ -1,6 +1,6 @@
 ---
 name: terminology-governance
-description: Agent 在探索、提案、设计、实现或文档整理中遇到新术语、同义词、一词多义、中英不一致、Context/Context Window 等概念边界，或 consumer 需要正式术语对齐 evidence 时使用。
+description: 确立或维护长期术语定义、解决影响结论的术语歧义，或需要正式术语对齐结果时使用。
 ---
 
 # 术语治理
