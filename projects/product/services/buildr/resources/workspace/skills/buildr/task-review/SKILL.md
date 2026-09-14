@@ -1,6 +1,6 @@
 ---
 name: task-review
-description: 用户要求审查正式 Task 的方案或完成结果、查看已有 Task Review Result，或 Agent 判断需要留下轻量审查证据时使用；不用于资产复盘、Task Verification、统一门禁或通用代码 Review。
+description: 审查正式任务的方案或完成结果、查看或保存对应审查结果时使用；不用于通用代码审查。
 ---
 
 # Task Review

@@ -3,6 +3,7 @@
 ## Purpose
 
 定义 Buildr 内置场景化 Skills、Agent 任务协作、OpenSpec/Git/worktree/finish 工作流和分层验证契约。
+
 ## Requirements
 
 ### Requirement: Buildr Skill 引导场景化内置 Skills
@@ -904,8 +905,20 @@ Buildr 投射的 Task Verification Skill MUST 在调用命令前区分项目检�
 - **AND** MUST NOT 假设该 Workspace 存在 `projects/product/buildr`
 
 ### Requirement: OpenSpec 接入必须复用上游并保持动作范围
-Buildr OpenSpec contributions MUST只补充当前工作根、相关冲突检查和必要恢复；MUST保持独立同步不归档、显式归档按目标执行，不将辅助状态提升为统一工作许可。
+Buildr OpenSpec contributions MUST通过自有增强片段补充当前工作根、既有授权的延续、相关检查复用和必要恢复，保持上游技能原文；MUST保持独立同步不归档、显式归档按目标执行，不将辅助状态提升为统一工作许可。
 
 #### Scenario: 实现或同步继续
 - **WHEN** 用户继续实现或只同步规范
 - **THEN** 智能体按授权动作工作，不默认升级为归档
+
+#### Scenario: 延续明确授权
+- **WHEN** 用户已明确授权同一目标的规划与实现或一组材料修订
+- **THEN** 增强指引 MUST保留该授权，在当前动作完成后接续适用动作，不按阶段或文件重复请求确认；仅规划请求仍停止于规划
+
+#### Scenario: 普通错误与真实决定
+- **WHEN** 已授权动作遇到错误
+- **THEN** 增强指引 MUST允许在范围内修复可逆错误并复查，只对无法确定的业务语义、扩大授权、不可逆风险或错误对象写入暂停；不得绕过命令的阻塞状态
+
+#### Scenario: 阶段检查复用
+- **WHEN** 从提案转入实现且已有检查仍覆盖当前内容与相关现场
+- **THEN** 增强指引 MUST复用有效结果；材料、检查规则或相关进行中变更改变时，只刷新受影响检查

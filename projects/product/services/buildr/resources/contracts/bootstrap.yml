@@ -47,20 +47,15 @@ buildrSkillPath: resources/runtime/skills/buildr/SKILL.md
 buildrSkillMaxLines: 175
 buildrSkillRequiredSections:
   - 执行与按需读取
-  - 安装与更新
-  - 工作空间更新与检出变化
   - 专业入口
   - 完成
 buildrSkillRequiredText:
-  - references/asset-maintenance.md
+  - references/asset-maintenance.md#安装与更新
+  - references/asset-maintenance.md#工作空间更新与检出变化
   - references/runtime.md
   - buildr runtime list --json
   - buildr doctor --agent <agent>
   - buildr init --agent <agent>
-  - buildr update check --json
-  - buildr update --track stable|candidate
-  - buildr skill install <agent> --target <dir>
-  - buildr sync <agent> --target <dir>
   - buildr.git-operations/v1
   - buildr.git-worktree-provider/v1
   - buildr.task-verification/v4
@@ -84,7 +79,8 @@ globalForbiddenText:
   - buildr use
 
 generatedSkillRequiredText:
-  - references/asset-maintenance.md
+  - references/asset-maintenance.md#安装与更新
+  - references/asset-maintenance.md#工作空间更新与检出变化
   - references/runtime.md
   - buildr runtime list --json
   - 当前宿主的明确身份

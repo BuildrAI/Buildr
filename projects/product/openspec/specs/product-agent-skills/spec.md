@@ -2,6 +2,7 @@
 
 ## Purpose
 定义 Buildr 产品入口 Agent Skill、workspace Skill 源资产、Project capability/applicability context、runtime 投射和场景化工作流引导契约。
+
 ## Requirements
 
 ### Requirement: 产品内置 Agent Skills
@@ -673,3 +674,11 @@ Buildr MUST 提供可选内置 `ux-design-laws` Skill，在用户设计或审查
 #### Scenario: 只选择检查而不登记报告
 - **WHEN** 当前动作仅为选择和执行相关检查
 - **THEN** `task-verification` MUST允许只读取选择指导，不要求预读报告登记或地图写入步骤
+
+#### Scenario: 自有技能描述与分支读取
+- **WHEN** 用户命中 Buildr 自有技能
+- **THEN** 描述 MUST以具体目标和触发边界为主，入口 MUST只保留当前决策及按需参考；外部技能正文保持上游原文
+
+#### Scenario: 诊断与组合验证复用
+- **WHEN** 同步已返回最终诊断或已有组合验证仍覆盖当前成果
+- **THEN** 指引 MUST消费已有结果，只在缺失、相关变化或明确未解决风险时补查；资源修改只核对实际影响的初始化、更新、安装或发布边界

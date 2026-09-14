@@ -1,6 +1,6 @@
 ---
 name: project-testing
-description: 用户要求为Project或Service设计、梳理或优化测试框架，划分Static、Unit、Component、Integration、System边界，区分测试成本、affected/full范围与Candidate/Release验证目标，或实现功能后开发适量测试时使用；不用于执行正式Task Verification、维护verification.yml或记录任务验证报告。
+description: 设计或调整测试体系、为实现开发必要测试时使用；已有检查的选择和报告交给 task-verification。
 ---
 
 # Project Testing Skill

@@ -765,8 +765,16 @@ export function createPackageStaticValidator(deps: any): any  {
         problems.push(`Package agentSkill SKILL.md does not exist: ${skill.path}/SKILL.md`);
         continue;
       }
-      const skillContent = fs.readFileSync(skillFile, 'utf8');
+      const skillEntry = fs.readFileSync(skillFile, 'utf8');
+      let skillContent = skillEntry;
       if (skill.id === 'buildr') {
+        const reference = 'references/asset-maintenance.md';
+        if (!skillEntry.includes(`](${reference}#安装与更新)`) || !skillEntry.includes(`](${reference}#工作空间更新与检出变化)`)) {
+          problems.push('Buildr Agent Skill must link its installation and workspace update guidance.');
+        }
+        const referenceFile = path.join(skillDir, reference);
+        if (!existsFile(referenceFile)) problems.push(`Buildr Agent Skill reference is missing: ${reference}`);
+        else skillContent += '\n' + fs.readFileSync(referenceFile, 'utf8');
         for (const requiredText of [
           'buildr.git-operations/v1',
           'Doctor 的 full detail',
