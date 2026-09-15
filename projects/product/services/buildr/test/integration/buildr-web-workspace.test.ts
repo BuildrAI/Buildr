@@ -122,7 +122,7 @@ test('Change 仅作为 Task-scoped 只读内容', () => {
 
 test('Buildr Web 提供独立文章入口、只读内容视图和受控本地图片资源', () => {
   const app: any = read('../buildr-web/src/App.tsx');
-  const layout: any = read('../buildr-web/src/app/AppLayout.tsx');
+  const navigation: any = read('../buildr-web/src/app/AppNavigation.tsx');
   const index: any = read('../buildr-web/index.html');
   const server: any = read('src/web/http/server.ts');
   const staticFiles: any = read('src/web/http/static-files.ts');
@@ -130,8 +130,8 @@ test('Buildr Web 提供独立文章入口、只读内容视图和受控本地图
   const detail: any = read('../buildr-web/src/features/publication/pages/ArticleDetailPage.tsx');
   const publications: any = read('../buildr-web/src/features/publication/pages/ArticlesPage.tsx');
   const publicationApi: any = read('../buildr-web/src/features/publication/api/publication-api.ts');
-  assert.match(layout, /data-nav=\{item\.nav\}/);
-  assert.match(layout, /nav: 'articles', label: '文章'/);
+  assert.match(navigation, /data-nav=\{name\}/);
+  assert.match(navigation, /item\('\/articles', '文章', 'articles'\)/);
   assert.match(app, /path="articles"/);
   assert.match(app, /path="articles\/:publicationId"/);
   assert.match(app, /ArticleDetailPage/);

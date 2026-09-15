@@ -5,8 +5,8 @@ import { pathToFileURL } from 'node:url';
 
 async function main() {
 const input = JSON.parse(fs.readFileSync(0, 'utf8'));
-input.projectRoot = fs.realpathSync(input.projectRoot);
-input.changeRoot = fs.realpathSync(input.changeRoot);
+input.projectRoot = fs.realpathSync.native(input.projectRoot);
+input.changeRoot = fs.realpathSync.native(input.changeRoot);
 let entry = fs.realpathSync(input.executable);
 if (path.basename(path.dirname(entry)).toLowerCase() === '.bin') {
   const shim = fs.readFileSync(entry, 'utf8').replaceAll('\\', '/');
@@ -61,7 +61,10 @@ for (const update of updates) {
       const validation = await new Validator().validateSpecContent(update.id, built.rebuilt);
       if (!validation.valid) throw new Error(JSON.stringify(validation.issues));
     }
-    const relative = path.relative(input.projectRoot, update.target);
+    const target = fs.existsSync(update.target)
+      ? fs.realpathSync.native(update.target)
+      : path.join(fs.realpathSync.native(path.dirname(update.target)), path.basename(update.target));
+    const relative = path.relative(input.projectRoot, target);
     if (relative.startsWith('..') || path.isAbsolute(relative)) throw new Error('Spec target escapes selected project.');
     const beforeContent = update.exists ? fs.readFileSync(update.target, 'utf8') : '';
     const hasChanges = Object.values(built.counts).some(count => Number(count) > 0);
