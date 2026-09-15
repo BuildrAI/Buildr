@@ -657,8 +657,8 @@ export function createPackageStaticValidator(deps: any): any  {
           const content = fs.readFileSync(proposeSidebar, 'utf8');
           for (const requiredText of [
             '先取得正式Task Record并核对实际工作位置',
-            '当前Workspace直接工作',
-            '需要隔离时显式创建并检查matching Worktree',
+            '创建规划文件前执行 `task-triage` 的默认隔离策略',
+            '只有用户明确要求在主开发分支修改时使用该位置',
             '`openspec new change`、`task update --add-change`',
             'Application不额外保存规划快照',
           ]) {
@@ -669,8 +669,8 @@ export function createPackageStaticValidator(deps: any): any  {
           for (const requiredText of [
             '只修订既有planning artifacts',
             '不授予实现、同步或归档权限',
-            '纯规划修订直接使用当前Change现场',
-            '必要时创建matching Worktree',
+            '纯规划修订也在写入前执行 `task-triage` 的默认隔离策略',
+            '复用已有当前任务工作树（Worktree）',
             '`openspec-apply-change`',
           ]) {
             if (!updateContent.includes(requiredText)) problems.push(`OpenSpec update sidebar must include ${JSON.stringify(requiredText)}.`);
@@ -1265,7 +1265,7 @@ export function createPackageStaticValidator(deps: any): any  {
         if (!(skill.requires || []).some((item: any) => item.capability === 'buildr.task-record' && item.version === 3 && item.mode === 'required')) problems.push('task-retrospective must require buildr.task-record@3.');
       }
       if (skill.id === 'task-triage') {
-        for (const requiredText of ['## 2. 两轴决策', '`code-only`', '`spec-maintenance`', '`change-flow`', '`blocked`', 'Repository set', '`implementation`', '`metadata-only`', '`unknown`', '`buildr.task-record/v3`', '待办意向', '任务登记与代码更新', 'Formal Task Record本身不是编辑、构建或有界测试的通用工作许可', '不需要Worktree的直接工作不补造位置、Plan或Receipt', '`buildr.current-knowledge-maintenance/v3`', '`buildr.git-worktree-provider/v1`', '`maintain`', '`change-required`', 'provider不ready', 'selected `buildr.task-verification/v4` provider']) {
+        for (const requiredText of ['## 2. 两轴决策', '`code-only`', '`spec-maintenance`', '`change-flow`', '`blocked`', 'Repository set', '`implementation`', '`metadata-only`', '`unknown`', '`buildr.task-record/v3`', '待办意向', '任务登记与代码更新', 'Formal Task Record本身不是编辑、构建或有界测试的通用工作许可', '除非用户明确要求在主开发分支修改，否则一律创建或复用当前任务的独立工作树（Worktree）', '`buildr.current-knowledge-maintenance/v3`', '`buildr.git-worktree-provider/v1`', '`maintain`', '`change-required`', 'provider不ready', 'selected `buildr.task-verification/v4` provider']) {
           if (!skillContent.includes(requiredText)) problems.push(`task-triage Skill must include ${JSON.stringify(requiredText)}.`);
         }
         if (!(skill.requires || []).some((item: any) => item.capability === 'buildr.task-record' && item.version === 3 && item.mode === 'optional')) problems.push('task-triage must optionally require buildr.task-record@3.');

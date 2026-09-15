@@ -1,7 +1,7 @@
 # OpenSpec Change 生命周期
 
 1. Agent依据用户目标、canonical specs、当前认知、实现和active Changes判断是否需要OpenSpec Change；Task Record保存Change引用，OpenSpec自己拥有proposal、design、delta specs与tasks。
-2. 需要隔离Git位置时使用matching Task Worktree；无需隔离时直接使用已确认的Workspace。OpenSpec本身不要求统一Task Environment。
+2. 首次持久文件修改前执行任务分流技能（task-triage）的默认隔离策略，创建或复用当前任务工作树（Worktree）；只有用户明确要求在主开发分支修改时使用该位置，纯规划材料同样适用。OpenSpec本身不要求统一Task Environment。
 3. `openspec-propose`创建Change并维护 Brief、真实知识影响任务及已采用的 `.buildr/knowledge-impact.yml`。Application不另存规划快照；Agent直接读取当前artifacts判断完整性和是否需要Planning Review。
 4. apply前运行`openspec validate <change> --strict`和`buildr openspec convergence preflight`。Preflight使用锁定的 OpenSpec 1.13.0 检查当前变更与相关规范冲突，不复制全项目做隔离验证；诊断由Agent处理，不转成统一许可或Review Result。
 5. `openspec-apply-change`在已确认的实际工作根内实现Change-owned tasks。开发反馈由Agent直接调用项目工具；当前知识维护按明确范围执行 `assess/reconcile`，完成已授权的代码地图、技术图与解释文档。

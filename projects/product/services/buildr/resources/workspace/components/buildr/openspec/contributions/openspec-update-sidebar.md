@@ -2,7 +2,7 @@
 
 用户已授权一组既有规划材料的修订时，在该范围内连续完成一致性修改，不逐文件重复确认。只讨论建议不构成写入授权；扩大范围、改变业务意图或出现真实语义冲突时，先完成独立且已授权的工作，再询问必要决定。本增强依据用户既有授权，不授予实现、同步或归档权限。
 
-`openspec-update-change`只修订既有planning artifacts，不授予实现、同步或归档权限。纯规划修订直接使用当前Change现场；若需要新的实现、构建、测试或资源，先核对当前Workspace，必要时创建matching Worktree，再转入`openspec-apply-change`。
+`openspec-update-change`只修订既有planning artifacts，不授予实现、同步或归档权限。纯规划修订也在写入前执行 `task-triage` 的默认隔离策略，复用已有当前任务工作树（Worktree）；只有用户明确要求在主开发分支修改时使用该位置。若需要新的实现、构建、测试或资源，核对同一实际工作根后转入`openspec-apply-change`。
 
 若修订首次明确会产生用户可见界面变化，只在用户明确要求后使用界面原型（UI Prototype）。已有原型且未被明确忽略时，后续实现应读取它；原型不是门禁或状态。
 

@@ -4,7 +4,7 @@
 
 创建 Change 前先向用户说明正在使用 OpenSpec、`propose` action 和预定 Change ID；status 解析后，在写入前报告实际 `changeRoot`。
 
-先取得正式Task Record并核对实际工作位置。Agent可以在已确认的当前Workspace直接工作；需要隔离时显式创建并检查matching Worktree，再使用返回的真实checkout。创建顺序为：`openspec new change`、`task update --add-change`、写proposal/design/specs/tasks。Application不额外保存规划快照；Agent直接读取当前artifacts判断是否完整、是否需要审查以及下一步做什么。
+先取得正式Task Record并核对实际工作位置。创建规划文件前执行 `task-triage` 的默认隔离策略，使用当前任务工作树（Worktree）的实际根；只有用户明确要求在主开发分支修改时使用该位置。创建顺序为：`openspec new change`、`task update --add-change`、写proposal/design/specs/tasks。Application不额外保存规划快照；Agent直接读取当前artifacts判断是否完整、是否需要审查以及下一步做什么。
 
 若可能产生用户可见界面变化，只在用户明确要求后使用界面原型（UI Prototype）；已有原型且未被明确忽略时，实现应读取它。原型不是门禁或状态。
 
