@@ -2,7 +2,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { spawnCommandSync } from '../../../infrastructure/process.ts';
-import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../../infrastructure/contracts/public-json.ts';
 import {
   RELEASE_TRACKS,
   buildReleaseAwareness,
@@ -19,7 +18,6 @@ import {
   inspectProductUpdateAuthority,
 } from '../infrastructure/installation-registry.ts';
 import { readApplicationPayloadManifest, resolveApplicationPayloadRoot } from '../../../infrastructure/product-resources/index.ts';
-import { assertNoUnknownOptions } from '../../../infrastructure/cli-arguments.ts';
 
 function run(command: any, args: any, options: any = {}) {
   const result = spawnCommandSync(command, args, { encoding: 'utf8', ...options });
@@ -264,94 +262,38 @@ export function executeCliUpdatePlan(plan: any, options: any = {}) {
   ], options);
 }
 
-function printPlan(plan: any, label: any) {
-  if (plan.tracks && plan.current?.version) {
-    console.log(`当前安装：${plan.current.version}`);
-    const candidate = plan.tracks.candidate;
-    const stable = plan.tracks.stable;
-    const trackText = (track: any) => {
-      if (track.status === 'update-available') return `${track.version} 可更新`;
-      if (track.status === 'current') return `${track.version}（当前版本）`;
-      if (track.status === 'behind-current') return `${track.version}（低于当前版本，不自动降级）`;
-      if (track.status === 'not-published') return '尚未发布';
-      return track.observedVersion ? `配置异常（${track.observedVersion}）` : '配置异常';
-    };
-    console.log(`RC 候选版：${trackText(candidate)}`);
-    console.log(`GA 正式版：${trackText(stable)}`);
-    for (const notice of plan.notices || []) if (!notice.command) console.log(`提示：${notice.message}`);
-    for (const action of plan.nextActions || []) console.log(`下一步：${action}`);
-    return;
-  }
-  console.log(`${label}: ${plan.status}`);
-  console.log(`mode: ${plan.mode}`);
-  if (plan.current?.version) console.log(`current: ${plan.current.version}`);
-  if (plan.available?.version) console.log(`available: ${plan.available.version}`);
-  if (plan.available?.releasedVersion) console.log(`released: ${plan.available.releasedVersion}`);
-  if (plan.current?.branch) console.log(`branch: ${plan.current.branch}`);
-  if (plan.current?.upstream) console.log(`upstream: ${plan.current.upstream}`);
-  for (const reason of plan.blockingReasons) console.log(`blocked: ${reason}`);
-  for (const action of plan.nextActions) console.log(`next: ${action}`);
-}
-
-export function registerApplicationCliUpdate(runtime: any) {
-  const productRoot = (...args: any[]) => runtime.productRoot(...args);
-  const hasFlag = (...args: any[]) => runtime.hasFlag(...args);
-  const optionValue = (...args: any[]) => runtime.optionValue(...args);
-
-  function selectedTrack(args: any) {
-    const track = optionValue(args, '--track', null);
-    if (track !== null && !(RELEASE_TRACKS as Record<string, any>)[track]) throw new Error('--track must be stable or candidate.');
-    return track;
-  }
+export function registerApplicationCliUpdate(dependencies: { productRoot(): string }) {
+  const { productRoot } = dependencies;
 
   function releaseAwareness(options: any = {}) {
     const source = options.source || identifyCliSource(productRoot(), options);
     return buildReleaseAwareness(source, options);
   }
 
-  function updateCheck(args: any) {
-    if (args.includes('--target')) throw new Error('buildr update 不接收 workspace --target；请使用 buildr sync <agent> --target <dir> 同步 workspace。');
-    assertNoUnknownOptions(args, new Set(['--json']), new Set(['--json']));
+  function updateCheck() {
     const plan = buildCliUpdatePlan(productRoot(), { purpose: 'check', persistState: true, notify: true });
-    if (hasFlag(args, '--json')) process.stdout.write(`${JSON.stringify(withJsonSchema(PUBLIC_JSON_SCHEMAS.updateCheck, plan), null, 2)}\n`);
-    else printPlan(plan, 'Buildr CLI update check');
-    if (plan.status === 'blocked') process.exitCode = 1;
     return plan;
   }
 
-  function updateBuildr(args: any) {
-    if (args.includes('--target')) throw new Error('buildr update 不接收 workspace --target；请使用 buildr sync <agent> --target <dir> 同步 workspace。');
-    assertNoUnknownOptions(args, new Set(['--json', '--track']), new Set(['--json']));
-    const json = hasFlag(args, '--json');
-    const track = selectedTrack(args);
+  function updateBuildr(input: { track?: 'stable' | 'candidate' | null } = {}) {
+    const track = input.track ?? null;
     const source = identifyCliSource(productRoot());
     if (track && source.mode === 'development') throw new Error('release track 只适用于 npm installation；development checkout 更新不接受 --track。');
     const plan = buildCliUpdatePlan(productRoot(), { track, purpose: 'update', persistState: true, notify: true });
     if (plan.status === 'blocked') {
-      if (json) process.stdout.write(`${JSON.stringify(withJsonSchema(PUBLIC_JSON_SCHEMAS.update, plan), null, 2)}\n`);
-      else printPlan(plan, 'Buildr CLI update');
-      process.exitCode = 1;
       return plan;
     }
     if (plan.strategy === 'none') {
-      if (json) process.stdout.write(`${JSON.stringify(withJsonSchema(PUBLIC_JSON_SCHEMAS.update, plan), null, 2)}\n`);
-      else printPlan(plan, 'Buildr CLI update');
       return plan;
     }
     const result = executeCliUpdatePlan(plan);
     if (!result.ok) {
       const failed = { ...plan, status: 'blocked', blockingReasons: [`CLI 更新失败：${result.stderr || result.error || 'unknown error'}`], nextActions: plan.mode === 'development' && plan.strategy === 'rebase' ? ['检查 Git rebase 状态并决定继续或中止；Buildr 不会自动解决冲突。'] : ['处理安装错误后重新运行 buildr update。'] };
-      if (json) process.stdout.write(`${JSON.stringify(withJsonSchema(PUBLIC_JSON_SCHEMAS.update, failed), null, 2)}\n`);
-      else printPlan(failed, 'Buildr CLI update');
-      process.exitCode = 1;
       return failed;
     }
     const completed = { ...plan, status: 'updated', blockingReasons: [], nextActions: ['CLI 已更新；已存在的同 ownership Buildr Web Launcher 会由 npm lifecycle 刷新。'] };
-    if (json) process.stdout.write(`${JSON.stringify(withJsonSchema(PUBLIC_JSON_SCHEMAS.update, completed), null, 2)}\n`);
-    else printPlan(completed, 'Buildr CLI update');
     return completed;
   }
 
-  Object.assign(runtime, { releaseAwareness, updateCheck, updateBuildr });
-  return runtime;
+  return Object.freeze({ releaseAwareness, updateCheck, updateBuildr });
 }

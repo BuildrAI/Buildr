@@ -1,267 +1,59 @@
+import { createPackageManifestRepository } from '../../persistence/package-manifest-repository.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import { collectFiles } from '../../../../infrastructure/filesystem/tree-files.ts';
 import { BOOTSTRAP_CONTRACT_RESOURCE } from '../../../../infrastructure/product-layout.ts';
 import { SUPPORTED_AGENT_IDS } from '../../infrastructure/runtime/adapter-contract.ts';
 
-export function registerAgentAssetsPackageAssets(runtime: any): any  {
-  const readGitRemote = (...args: any[]) => runtime.readGitRemote(...args);
-  const isPlainObject = (...args: any[]) => runtime.isPlainObject(...args);
-  const readSkillManifest = (...args: any[]) => runtime.readSkillManifest(...args);
-  const readSkillManifestSchemaVersion = (...args: any[]) => runtime.readSkillManifestSchemaVersion(...args);
-  const renderSkillsManifestYaml = (...args: any[]) => runtime.renderSkillsManifestYaml(...args);
-  const renderProjectCapabilitiesYaml = (...args: any[]) => runtime.renderProjectCapabilitiesYaml(...args);
-  const renderProjectCommandsYaml = (...args: any[]) => runtime.renderProjectCommandsYaml(...args);
-  const skillsManifestPath = (...args: any[]) => runtime.skillsManifestPath(...args);
-  const parseYamlValue = (...args: any[]) => runtime.parseYamlValue(...args);
-  const parseServicesYaml = (...args: any[]) => runtime.parseServicesYaml(...args);
-  const parseServicesManifestYaml = (...args: any[]) => runtime.parseServicesManifestYaml(...args);
-  const parseProjectsYaml = (...args: any[]) => runtime.parseProjectsYaml(...args);
-  const renderProjectsYaml = (...args: any[]) => runtime.renderProjectsYaml(...args);
-  const renderServicesManifestYaml = (...args: any[]) => runtime.renderServicesManifestYaml(...args);
-  const writeProjectsRegistry = (...args: any[]) => runtime.writeProjectsRegistry(...args);
-  const projectsManifestPath = (...args: any[]) => runtime.projectsManifestPath(...args);
-  const servicesManifestPath = (...args: any[]) => runtime.servicesManifestPath(...args);
-  const writeServicesManifest = (...args: any[]) => runtime.writeServicesManifest(...args);
-  const gitDefaultBranch = (...args: any[]) => runtime.gitDefaultBranch(...args);
-  const defaultAssetDescription = (...args: any[]) => runtime.defaultAssetDescription(...args);
-  const inferRepoKind = (...args: any[]) => runtime.inferRepoKind(...args);
-  const gitBoundaryFor = (...args: any[]) => runtime.gitBoundaryFor(...args);
-  const ensureGitBoundaries = (...args: any[]) => runtime.ensureGitBoundaries(...args);
-  const ensureDirectory = (...args: any[]) => runtime.ensureDirectory(...args);
-  const atomicWriteFile = (...args: any[]) => runtime.atomicWriteFile(...args);
-  const parseYamlDocument = (...args: any[]) => runtime.parseYamlDocument(...args);
-  const productRoot = (...args: any[]) => runtime.productRoot(...args);
-  const resourcesRoot = (...args: any[]) => runtime.resourcesRoot(...args);
-  const bootstrapContractPath = (...args: any[]) => runtime.bootstrapContractPath(...args);
-  const writeMappedFileIfMissing = (...args: any[]) => runtime.writeMappedFileIfMissing(...args);
-  const toPosixRelative = (...args: any[]) => runtime.toPosixRelative(...args);
-  const existsDirectory = (...args: any[]) => runtime.existsDirectory(...args);
-  const existsFile = (...args: any[]) => runtime.existsFile(...args);
-  const writeFileIfChanged = (...args: any[]) => runtime.writeFileIfChanged(...args);
+export interface PackageAssetsDependencies {
+  readSkillManifest: ReturnType<typeof import('../skills.ts').registerDomainsSkills>['readSkillManifest'];
+  readSkillManifestSchemaVersion: ReturnType<typeof import('../skills.ts').registerDomainsSkills>['readSkillManifestSchemaVersion'];
+  renderSkillsManifestYaml: ReturnType<typeof import('../skills.ts').registerDomainsSkills>['renderSkillsManifestYaml'];
+  renderProjectCapabilitiesYaml: ReturnType<typeof import('../skills.ts').registerDomainsSkills>['renderProjectCapabilitiesYaml'];
+  renderProjectCommandsYaml: ReturnType<typeof import('../commands.ts').registerDomainsCommands>['renderProjectCommandsYaml'];
+  skillsManifestPath: ReturnType<typeof import('../skills.ts').registerDomainsSkills>['skillsManifestPath'];
+  parseYamlValue: typeof import('../../../../infrastructure/filesystem/yaml.ts').parseYamlValue;
+  projectsManifestPath: import('../../../workspace/module.ts').WorkspaceAssetSupport['projectsManifestPath'];
+  servicesManifestPath: import('../../../workspace/module.ts').WorkspaceAssetSupport['servicesManifestPath'];
+  gitBoundaryFor: import('../../../workspace/module.ts').WorkspaceAssetSupport['gitBoundaryFor'];
+  ensureDirectory: (...args: any[]) => any;
+  atomicWriteFile: typeof import('../../../../infrastructure/filesystem/atomic-files.ts').atomicWriteFile;
+  parseYamlDocument: typeof import('../../../../infrastructure/filesystem/yaml.ts').parseYamlDocument;
+  productRoot: () => string;
+  resourcesRoot: () => string;
+  bootstrapContractPath: () => string;
+  writeMappedFileIfMissing: (...args: any[]) => any;
+  toPosixRelative: (...args: any[]) => any;
+  existsDirectory: (file: string) => boolean;
+  existsFile: (file: string) => boolean;
+  convergeRegistryManifests: import('../../../workspace/module.ts').WorkspaceAssetSupport['convergeRegistryManifests'];
+}
 
-  function readPackageManifest(): any  {
-    const manifestPath = path.join(resourcesRoot(), 'manifest.yml');
-    if (!existsFile(manifestPath)) {
-      throw new Error(`Package manifest not found: ${manifestPath}`);
-    }
+export function registerAgentAssetsPackageAssets(dependencies: PackageAssetsDependencies) {
+  const {
+    readSkillManifest,
+    readSkillManifestSchemaVersion,
+    renderSkillsManifestYaml,
+    renderProjectCapabilitiesYaml,
+    renderProjectCommandsYaml,
+    skillsManifestPath,
+    parseYamlValue,
+    projectsManifestPath,
+    servicesManifestPath,
+    gitBoundaryFor,
+    ensureDirectory,
+    atomicWriteFile,
+    parseYamlDocument,
+    productRoot,
+    resourcesRoot,
+    bootstrapContractPath,
+    writeMappedFileIfMissing,
+    toPosixRelative,
+    existsDirectory,
+    existsFile,
+  } = dependencies;
 
-    {
-      const parsed = parseYamlDocument(fs.readFileSync(manifestPath, 'utf8'), 'resources/manifest.yml');
-      return {
-        include: [],
-        agentSkills: [],
-        skillSources: [],
-        components: [],
-        workspaceDirectories: [],
-        workspaceFiles: [],
-        projectDirectories: [],
-        projectFiles: [],
-        templateVariables: [],
-        forbiddenPatterns: [],
-        ...parsed,
-        builtins: {
-          rules: parsed.builtins?.rules || [],
-          skills: parsed.builtins?.skills || [],
-          commands: parsed.builtins?.commands || [],
-        },
-      };
-    }
-
-    const manifest: any = {
-      include: [],
-      agentSkills: [],
-      skillSources: [],
-      builtins: { rules: [], skills: [], commands: [] },
-      components: [],
-      workspaceDirectories: [],
-      workspaceFiles: [],
-      projectDirectories: [],
-      projectFiles: [],
-      templateVariables: [],
-      forbiddenPatterns: [],
-    };
-    let currentList: any = null;
-    let currentPackageSkill: any = null;
-    let currentPackageSkillList: any = null;
-    let inPackageSkillRuntimes = false;
-
-    function finishPackageSkill(): any  {
-      if (!currentPackageSkill) return;
-      manifest[currentPackageSkillList].push(currentPackageSkill);
-      currentPackageSkill = null;
-      currentPackageSkillList = null;
-      inPackageSkillRuntimes = false;
-    }
-
-    for (const rawLine of fs.readFileSync(manifestPath, 'utf8').split(/\r?\n/)) {
-      const line = rawLine.trimEnd();
-      if (!line.trim() || line.trim().startsWith('#')) continue;
-
-      const keyMatch = line.match(/^([A-Za-z][A-Za-z0-9_-]*):\s*$/);
-      if (keyMatch) {
-        finishPackageSkill();
-        currentList = keyMatch![1] !== 'components' && Object.hasOwn(manifest, keyMatch![1]) && Array.isArray(manifest[keyMatch![1]]) ? keyMatch![1] : null;
-        continue;
-      }
-
-      if (currentList === 'agentSkills' || currentList === 'skillSources') {
-        const idMatch = line.trim().match(/^-\s+id:\s*(.+)$/);
-        if (idMatch) {
-          finishPackageSkill();
-          currentPackageSkill = { id: parseYamlValue(idMatch![1].trim()), runtimes: [] };
-          currentPackageSkillList = currentList;
-          continue;
-        }
-        if (!currentPackageSkill) {
-          throw new Error(`Invalid ${currentList} entry in package manifest: ${rawLine}`);
-        }
-        const pathMatch = line.trim().match(/^path:\s*(.+)$/);
-        if (pathMatch) {
-          currentPackageSkill.path = parseYamlValue(pathMatch![1].trim());
-          inPackageSkillRuntimes = false;
-          continue;
-        }
-        const runtimePathMatch = line.trim().match(/^runtimePath:\s*(.+)$/);
-        if (runtimePathMatch && currentList === 'skillSources') {
-          currentPackageSkill.runtimePath = parseYamlValue(runtimePathMatch![1].trim());
-          inPackageSkillRuntimes = false;
-          continue;
-        }
-        if (line.trim() === 'runtimes:') {
-          inPackageSkillRuntimes = true;
-          continue;
-        }
-        const runtimeMatch = line.trim().match(/^-\s+(.+)$/);
-        if (runtimeMatch && inPackageSkillRuntimes) {
-          currentPackageSkill.runtimes.push(parseYamlValue(runtimeMatch![1].trim()));
-          continue;
-        }
-        throw new Error(`Unsupported ${currentList} syntax in package manifest: ${rawLine}`);
-      }
-
-      const itemMatch = line.match(/^\s*-\s+(.+)$/);
-      if (itemMatch && currentList) {
-        manifest[currentList].push(parseYamlValue(itemMatch![1].trim()));
-      }
-    }
-    finishPackageSkill();
-    manifest.builtins = readPackageBuiltinsManifest(manifestPath);
-    manifest.components = readPackageComponentsManifest(manifestPath);
-    return manifest;
-  }
-
-  function readPackageComponentsManifest(manifestPath: any): any  {
-    const components: any[] = [];
-    let inComponents = false;
-    let current: any = null;
-    function finish(): any  {
-      if (current) components.push(current);
-      current = null;
-    }
-    for (const rawLine of fs.readFileSync(manifestPath, 'utf8').split(/\r?\n/)) {
-      const line = rawLine.trimEnd();
-      if (!line.trim() || line.trim().startsWith('#')) continue;
-      if (/^[A-Za-z][A-Za-z0-9_-]*:\s*$/.test(line)) {
-        finish();
-        inComponents = line === 'components:';
-        continue;
-      }
-      if (!inComponents) continue;
-      const idMatch = line.match(/^  - id:\s*(.+)$/);
-      if (idMatch) {
-        finish();
-        current = { id: parseYamlValue(idMatch[1].trim()) };
-        continue;
-      }
-      const fieldMatch = line.match(/^    ([A-Za-z][A-Za-z0-9_-]*):\s*(.+)$/);
-      if (fieldMatch && current) {
-        current[fieldMatch[1]] = parseYamlValue(fieldMatch[2].trim());
-        continue;
-      }
-    }
-    finish();
-    return components;
-  }
-
-  function readPackageBuiltinsManifest(manifestPath: any): any  {
-    const builtins: any = { rules: [], skills: [], commands: [] };
-    let inBuiltins = false;
-    let currentKind: any = null;
-    let currentEntry: any = null;
-    let currentObject: any = null;
-
-    function finishEntry(): any  {
-      if (!currentEntry || !currentKind) return;
-      builtins[currentKind].push(currentEntry);
-      currentEntry = null;
-      currentObject = null;
-    }
-
-    for (const rawLine of fs.readFileSync(manifestPath, 'utf8').split(/\r?\n/)) {
-      const line = rawLine.trimEnd();
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith('#')) continue;
-
-      if (/^[A-Za-z][A-Za-z0-9_-]*:\s*$/.test(line)) {
-        finishEntry();
-        inBuiltins = trimmed === 'builtins:';
-        currentKind = null;
-        continue;
-      }
-      if (!inBuiltins) continue;
-
-      const kindMatch = line.match(/^  (rules|skills|commands):\s*(?:\[\s*\])?$/);
-      if (kindMatch) {
-        finishEntry();
-        currentKind = kindMatch[1];
-        continue;
-      }
-
-      const idMatch = line.match(/^    - id:\s*(.+)$/);
-      if (idMatch && currentKind) {
-        finishEntry();
-        currentEntry = { id: parseYamlValue(idMatch[1].trim()) };
-        continue;
-      }
-
-      const objectStartMatch = line.match(/^      ([A-Za-z][A-Za-z0-9_-]*):\s*$/);
-      if (objectStartMatch && currentEntry) {
-        currentObject = objectStartMatch[1];
-        currentEntry[currentObject] = {};
-        continue;
-      }
-
-      const nestedMatch = line.match(/^        ([A-Za-z][A-Za-z0-9_-]*):\s*(.+)$/);
-      if (nestedMatch && currentEntry && currentObject) {
-        currentEntry[currentObject][nestedMatch[1]] = parseYamlValue(nestedMatch[2].trim());
-        continue;
-      }
-
-      const fieldMatch = line.match(/^      ([A-Za-z][A-Za-z0-9_-]*):\s*(.+)$/);
-      if (fieldMatch && currentEntry) {
-        currentObject = null;
-        currentEntry[fieldMatch[1]] = parseYamlValue(fieldMatch[2].trim());
-        continue;
-      }
-    }
-    finishEntry();
-
-    return builtins;
-  }
-
-  function parseManifestFileEntry(entry: any, section: any): any  {
-    const match = entry.match(/^(.+?)\s*=>\s*(.+?)(?:\s+(copy|render))?$/);
-    if (!match) {
-      throw new Error(`Invalid ${section} entry: ${entry}`);
-    }
-    return {
-      source: match[1].trim(),
-      target: match[2].trim(),
-      mode: match[3] ?? 'copy',
-      raw: entry,
-    };
-  }
+  const { readPackageManifest, parseManifestFileEntry } = createPackageManifestRepository({ resourcesRoot, existsFile, parseYamlDocument });
 
   function readSimpleYaml(file: any, listKeys: any, scalarKeys: any = []): any  {
     const result: any = {
@@ -443,22 +235,7 @@ export function registerAgentAssetsPackageAssets(runtime: any): any  {
     return path.join(targetRoot, builtin.target);
   }
 
-  function fileDiffStatus(sourceFile: any, targetFile: any): any  {
-    if (!existsFile(targetFile)) return 'missing';
-    return fs.readFileSync(sourceFile, 'utf8') === fs.readFileSync(targetFile, 'utf8') ? 'installed' : 'modified';
-  }
 
-  function directoryDiffStatus(sourceDir: any, targetDir: any): any  {
-    if (!existsDirectory(targetDir)) return 'missing';
-    for (const sourceFile of collectFiles(sourceDir)) {
-      const relative = path.relative(sourceDir, sourceFile);
-      const targetFile = path.join(targetDir, relative);
-      if (!existsFile(targetFile) || fs.readFileSync(sourceFile, 'utf8') !== fs.readFileSync(targetFile, 'utf8')) {
-        return 'modified';
-      }
-    }
-    return 'installed';
-  }
 
   function isValidAssetId(value: any): any  {
     return typeof value === 'string' && value !== '.' && value !== '..' && !/[\x00-\x1f\x7f]/.test(value) && /^[A-Za-z0-9._-]+$/.test(value);
@@ -471,55 +248,7 @@ export function registerAgentAssetsPackageAssets(runtime: any): any  {
       .sort();
   }
 
-  function normalizeProjectEntry(projectName: any, entry: any = {}, projectRoot: any = null): any  {
-    const rawRepo = isPlainObject(entry.repo) ? entry.repo : {};
-    const kind = rawRepo.kind === 'git' || rawRepo.kind === 'local'
-      ? (rawRepo.url || (projectRoot && inferRepoKind(projectRoot) === 'git') ? 'git' : 'workspace')
-      : ['workspace', 'git'].includes(rawRepo.kind) ? rawRepo.kind : projectRoot ? inferRepoKind(projectRoot) : 'workspace';
-    const repo: any = { kind };
-    if (kind === 'git') {
-      if (rawRepo.url) repo.url = rawRepo.url;
-      if (rawRepo.remote) repo.remote = rawRepo.remote;
-      if (rawRepo.defaultBranch) repo.defaultBranch = rawRepo.defaultBranch;
-      if (!repo.remote && projectRoot && existsDirectory(path.join(projectRoot, '.git'))) repo.remote = 'origin';
-      if (!repo.defaultBranch && projectRoot && existsDirectory(path.join(projectRoot, '.git'))) repo.defaultBranch = gitDefaultBranch(projectRoot);
-    }
-    return {
-      title: typeof entry.title === 'string' && entry.title ? entry.title : projectName,
-      description: typeof entry.description === 'string' && entry.description ? entry.description : defaultAssetDescription('Project', projectName),
-      path: `projects/${projectName}`,
-      repo,
-    };
-  }
-
-  function normalizeServiceEntry(serviceName: any, entry: any = {}, serviceRoot: any = null): any  {
-    const rawRepo = isPlainObject(entry.repo) ? entry.repo : {};
-    const kind = rawRepo.kind === 'git' || rawRepo.kind === 'local'
-      ? (rawRepo.url || (serviceRoot && inferRepoKind(serviceRoot) === 'git') ? 'git' : 'workspace')
-      : ['workspace', 'git'].includes(rawRepo.kind) ? rawRepo.kind : serviceRoot ? inferRepoKind(serviceRoot) : 'workspace';
-    const repo: any = { kind };
-    if (kind === 'git') {
-      if (rawRepo.url) repo.url = rawRepo.url;
-      if (rawRepo.remote) repo.remote = rawRepo.remote;
-      if (rawRepo.defaultBranch) repo.defaultBranch = rawRepo.defaultBranch;
-      if (rawRepo.branch) repo.branch = rawRepo.branch;
-      if (!repo.remote && serviceRoot && existsDirectory(path.join(serviceRoot, '.git'))) repo.remote = 'origin';
-      if (!repo.defaultBranch && serviceRoot && existsDirectory(path.join(serviceRoot, '.git'))) repo.defaultBranch = gitDefaultBranch(serviceRoot);
-      if (!repo.url && serviceRoot && existsDirectory(path.join(serviceRoot, '.git'))) {
-        const url = readGitRemote(serviceRoot, repo.remote || 'origin');
-        if (url) repo.url = url;
-      }
-    }
-    return {
-      title: typeof entry.title === 'string' && entry.title ? entry.title : serviceName,
-      description: typeof entry.description === 'string' && entry.description ? entry.description : defaultAssetDescription('Service', serviceName),
-      type: typeof entry.type === 'string' && entry.type ? entry.type : 'service',
-      path: `services/${serviceName}`,
-      repo,
-    };
-  }
-
-  function repairProjectBaseline(targetRoot: any, projectName: any, projectEntity: any, changed: any): any  {
+  function repairProjectBaseline(targetRoot: any, projectName: any, changed: any): any  {
     const manifest = readPackageManifest();
     const projectRoot = path.join(targetRoot, 'projects', projectName);
     ensureDirectory(projectRoot);
@@ -543,11 +272,6 @@ export function registerAgentAssetsPackageAssets(runtime: any): any  {
     }
     // Unsupported projects/<project>/skills is preserved verbatim. Current
     // repair/sync never creates, rewrites, merges, migrates, or deletes it.
-    const servicesFile = servicesManifestPath(projectRoot);
-    if (!existsFile(servicesFile) && !existsFile(path.join(projectRoot, 'services.yml'))) {
-      runtime.writeServiceRegistry(servicesFile, projectEntity.id, {});
-      changed.push(toPosixRelative(targetRoot, servicesFile));
-    }
   }
 
   function convergeSkillsManifestSchema(targetRoot: any, scopeRoot: any, changed: any): any  {
@@ -558,65 +282,6 @@ export function registerAgentAssetsPackageAssets(runtime: any): any  {
     const skills = readSkillManifest(file);
     atomicWriteFile(file, renderSkillsManifestYaml(skills));
     changed.push(toPosixRelative(targetRoot, file));
-  }
-
-  function convergeServiceManifest(targetRoot: any, project: any, workspaceId: any, changed: any): any  {
-    const projectName = project.code;
-    const projectRoot = path.join(targetRoot, 'projects', projectName);
-    const servicesRoot = path.join(projectRoot, 'services');
-    const manifestFile = servicesManifestPath(projectRoot);
-    const legacyFile = path.join(projectRoot, 'services.yml');
-    let legacy: any = null;
-    let entities: Record<string, any> = {};
-
-    ensureDirectory(servicesRoot);
-    if (!existsFile(manifestFile) && existsFile(legacyFile)) {
-      const legacyServices = parseServicesYaml(fs.readFileSync(legacyFile, 'utf8'));
-      legacy = { schemaVersion: 'buildr.services/v1', project: projectName, services: {} };
-      for (const [serviceName, service] of Object.entries(legacyServices)) {
-        legacy.services[serviceName] = normalizeServiceEntry(serviceName, service, path.join(servicesRoot, serviceName));
-      }
-    } else if (existsFile(manifestFile)) {
-      const content = fs.readFileSync(manifestFile, 'utf8');
-      const raw = parseServicesManifestYaml(content);
-      if (raw.schemaVersion === 'buildr.services/v2') {
-        entities = Object.fromEntries(Object.entries(runtime.parseServicesManifest(content, { projectCode: projectName }).entities).map(([code, service]: any) => [code, runtime.createServiceEntity({ ...service, workspaceId, projectId: project.id, projectCode: projectName })]));
-      } else legacy = raw;
-    } else {
-      legacy = { schemaVersion: 'buildr.services/v1', project: projectName, services: {} };
-    }
-
-    if (legacy) {
-      for (const [serviceName, service] of Object.entries(legacy.services || {})) {
-        const normalized = normalizeServiceEntry(serviceName, service, path.join(servicesRoot, serviceName));
-        const sourcePath = `projects/${projectName}/services/${serviceName}`;
-        const source = normalized.repo.kind === 'git'
-          ? { type: 'git', path: sourcePath, git: { url: normalized.repo.url || '', remote: normalized.repo.remote || 'origin', integrationBranch: normalized.repo.branch || normalized.repo.defaultBranch || '' } }
-          : { type: 'workspace', path: sourcePath };
-        entities[serviceName] = runtime.createServiceEntity({ id: runtime.crypto.randomUUID(), workspaceId, projectId: project.id, projectCode: projectName, code: serviceName, name: normalized.title, description: normalized.description, type: normalized.type, source });
-      }
-    }
-
-    for (const serviceName of listManagedDirectories(servicesRoot)) {
-      if (entities[serviceName]) continue;
-      const serviceRoot = path.join(servicesRoot, serviceName);
-      const git = runtime.observeProjectGit(serviceRoot, 'origin');
-      const source = git.repository
-        ? { type: 'git', path: `projects/${projectName}/services/${serviceName}`, git: { url: git.remoteUrl || '', remote: 'origin', integrationBranch: git.currentBranch || '' } }
-        : { type: 'workspace', path: `projects/${projectName}/services/${serviceName}` };
-      entities[serviceName] = runtime.createServiceEntity({ id: runtime.crypto.randomUUID(), workspaceId, projectId: project.id, projectCode: projectName, code: serviceName, name: serviceName, description: defaultAssetDescription('Service', serviceName), type: 'service', source });
-    }
-
-    const nextContent = runtime.renderServicesDomainManifest(project.id, entities);
-    if (!existsFile(manifestFile) || fs.readFileSync(manifestFile, 'utf8') !== nextContent) {
-      runtime.writeServiceRegistry(manifestFile, project.id, entities);
-      changed.push(toPosixRelative(targetRoot, manifestFile));
-    }
-    if (existsFile(legacyFile)) {
-      fs.rmSync(legacyFile, { force: true });
-      changed.push(toPosixRelative(targetRoot, legacyFile));
-    }
-    return { schemaVersion: 'buildr.services/v2', projectId: project.id, services: entities };
   }
 
   function missingAncestorForMutation(targetRoot: any, target: any): any  {
@@ -699,71 +364,25 @@ export function registerAgentAssetsPackageAssets(runtime: any): any  {
     return [...new Set(affectedPaths.map((item: any) => path.resolve(item)))].sort();
   }
 
-  function convergeRegistryManifests(targetRoot: any): any  {
-    const changed: any[] = [];
-    const legacyProjectsFile = path.join(targetRoot, 'projects.yml');
-    if (existsFile(legacyProjectsFile)) {
-      fs.rmSync(legacyProjectsFile, { force: true });
-      changed.push('projects.yml');
-    }
-
-    ensureDirectory(path.join(targetRoot, 'projects'));
-    const record = runtime.readProjectRegistryRecord(targetRoot);
-    if (record.registry.migrationRequired) throw new Error('Project registry migration must complete before registry convergence.');
-    const projects: any = { ...record.projects };
-
-    const projectNames = listManagedDirectories(path.join(targetRoot, 'projects'));
-    for (const projectName of projectNames) {
-      const projectRoot = path.join(targetRoot, 'projects', projectName);
-      if (!projects[projectName]) {
-        const git = runtime.observeProjectGit(projectRoot, 'origin');
-        const source = git.repository
-          ? {
-            type: 'git',
-            path: `projects/${projectName}`,
-            git: {
-              url: git.remoteUrl,
-              remote: 'origin',
-              integrationBranch: git.currentBranch,
-            },
-          }
-          : { type: 'workspace', path: `projects/${projectName}` };
-        projects[projectName] = runtime.createProjectEntity({
-          id: runtime.crypto.randomUUID(),
-          workspaceId: record.workspace.workspace.id,
-          code: projectName,
-          name: projectName,
-          description: defaultAssetDescription('Project', projectName),
-          source,
-        });
-      }
-    }
-    const nextContent = runtime.renderProjectsManifest(projects);
-    const registryFile = projectsManifestPath(targetRoot);
-    if (!existsFile(registryFile) || fs.readFileSync(registryFile, 'utf8') !== nextContent) {
-      runtime.writeProjectRegistry(registryFile, projects);
-      changed.push(toPosixRelative(targetRoot, registryFile));
-    }
-
-    for (const projectName of projectNames) {
-      repairProjectBaseline(targetRoot, projectName, projects[projectName], changed);
-      convergeServiceManifest(targetRoot, projects[projectName], record.workspace.workspace.id, changed);
-    }
-
-    convergeSkillsManifestSchema(targetRoot, targetRoot, changed);
-
-    const boundaryItems: any[] = [];
-    for (const projectName of Object.keys(projects)) {
-      const projectRoot = path.join(targetRoot, 'projects', projectName);
-      boundaryItems.push({ type: 'project', project: projectName, assetRoot: projectRoot });
-      const servicesRoot = path.join(projectRoot, 'services');
-      for (const serviceName of listManagedDirectories(servicesRoot)) {
-        boundaryItems.push({ type: 'service', project: projectName, service: serviceName, assetRoot: path.join(servicesRoot, serviceName) });
-      }
-    }
-    changed.push(...ensureGitBoundaries(targetRoot, boundaryItems));
-    return [...new Set(changed)];
+  function convergeRegistryManifests(targetRoot: string) {
+    return dependencies.convergeRegistryManifests(targetRoot, { repairProjectBaseline, convergeSkillsManifestSchema });
   }
 
-  return Object.freeze({ readPackageManifest, readPackageComponentsManifest, readPackageBuiltinsManifest, parseManifestFileEntry, collectFiles, readSimpleYaml, validateBootstrapContract, builtinRuleEntry, builtinSkillEntry, builtinCommandEntry, sourcePathFromBuiltin, targetPathFromBuiltin, fileDiffStatus, directoryDiffStatus, isValidAssetId, listManagedDirectories, normalizeProjectEntry, normalizeServiceEntry, repairProjectBaseline, convergeSkillsManifestSchema, convergeServiceManifest, missingAncestorForMutation, packageRegistryMutationPaths, assertSafeSyncMutationPaths, convergeRegistryManifests });
+  return Object.freeze({
+    readPackageManifest,
+    parseManifestFileEntry,
+    collectFiles,
+    validateBootstrapContract,
+    builtinRuleEntry,
+    builtinSkillEntry,
+    builtinCommandEntry,
+    sourcePathFromBuiltin,
+    targetPathFromBuiltin,
+    isValidAssetId,
+    listManagedDirectories,
+    missingAncestorForMutation,
+    packageRegistryMutationPaths,
+    assertSafeSyncMutationPaths,
+    convergeRegistryManifests,
+  });
 }

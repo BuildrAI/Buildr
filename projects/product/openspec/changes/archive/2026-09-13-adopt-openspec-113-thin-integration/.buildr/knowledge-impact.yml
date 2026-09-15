@@ -1,0 +1,21 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: adopt-openspec-113-thin-integration
+operation: reconcile
+treeIdentity: candidate-working-tree
+impacts:
+  - type: flow
+    target: knowledge/flows/openspec-change-lifecycle.md
+    reason: 标准规范处理改为上游执行，独立同步不归档
+    status: updated
+    sourceIdentities: [services/buildr/src/modules/openspec/application/openspec-application.ts]
+  - type: technical-architecture
+    target: knowledge/architecture/technical.md
+    reason: OpenSpec 模块职责收窄
+    status: updated
+    sourceIdentities: [services/buildr/src/modules/openspec/module.ts]
+  - type: service
+    target: knowledge/services/buildr.md
+    reason: 对齐服务职责说明
+    status: updated
+    sourceIdentities: [services/buildr/src/modules/openspec/module.ts]
+unresolvedItems: []

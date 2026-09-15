@@ -9,6 +9,8 @@ export type AgentActionContext = Record<string, unknown>;
 
 export type AppShellContextValue = {
   workspaceId: string | null;
+  navigationRevision: number;
+  refreshNavigation: () => void;
   workspace: WorkspaceShellInfo | null;
   setWorkspace: (data: { workspace: { name: string }; rootPath: string }) => void;
   openAgentAction: (action?: string, context?: AgentActionContext) => void;

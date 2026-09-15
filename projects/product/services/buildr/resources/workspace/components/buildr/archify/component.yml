@@ -1,0 +1,15 @@
+schemaVersion: buildr.component/v1
+id: archify
+kind: integration
+version: "2.16.0+buildr.1"
+source: buildr
+upstream:
+  name: archify
+  version: "2.16.0"
+members:
+  rules: []
+  skills: ["skills/buildr/archify"]
+  commandCollections: []
+  skillContributions: []
+integrity:
+  - skills/buildr/archify=sha256-f84b1e42cd6e46b46b0ea74ca42a11f20e2188232a0f177fa34c4cea0ba33bac

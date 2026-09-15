@@ -127,7 +127,13 @@ export function TasksPage() {
   useEffect(() => {
     if (selectedTaskId || loading || errorMessage || visibleTasks.length === 0) return;
     if (window.matchMedia('(max-width: 899px)').matches) return;
-    navigate(href(`/tasks/${encodeURIComponent(visibleTasks[0].record.taskId)}`), { replace: true });
+    // A list response may settle while the user is switching areas. Never
+    // let its automatic selection navigate away from the newly chosen page.
+    const timer = window.setTimeout(() => {
+      if (window.location.pathname !== href('/tasks')) return;
+      navigate(href(`/tasks/${encodeURIComponent(visibleTasks[0].record.taskId)}`), { replace: true });
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [selectedTaskId, loading, errorMessage, visibleTasks, href, navigate]);
 
   const filterPopup = (

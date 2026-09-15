@@ -5,7 +5,7 @@ description: 准备、检查、发布或恢复 Buildr 版本时使用；核对�
 
 # Buildr 发布
 
-本技能只处理 Buildr 自举工作空间的产品发布，不作为 npm 内置技能分发。开始时读取当前工作空间的 `projects/product/knowledge/flows/open-source-release.md`；[线上流程正文](https://github.com/BuildrAI/Buildr/blob/dev/projects/product/knowledge/flows/open-source-release.md)仅是同一文档的访问入口。流程、覆盖、失效和恢复规则只在那里维护。
+本技能只处理 Buildr 自举工作空间的产品发布，不作为 npm 内置技能分发。开始时读取当前工作空间的 `projects/product/knowledge/docs/flows/open-source-release.md`；[线上流程正文](https://github.com/BuildrAI/Buildr/blob/dev/projects/product/knowledge/docs/flows/open-source-release.md)仅是同一文档的访问入口。流程、覆盖、失效和恢复规则只在那里维护。
 
 ## 意图与边界
 

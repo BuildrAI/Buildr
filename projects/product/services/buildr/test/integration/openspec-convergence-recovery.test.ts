@@ -1,124 +1,40 @@
+import { spawnSync } from 'node:child_process';
+import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
-import test from 'node:test';
-import { continueConvergenceRecoveryReceipt, createConvergenceRecoveryReceipt, inspectConvergenceRecovery } from '../../src/modules/openspec/application/convergence-recovery.ts';
-import {
-  applyDeterministicSyncPlan,
-  DETERMINISTIC_SYNC_PLAN_SCHEMA,
-  deterministicSyncContentDigest,
-  deterministicSyncPlanIdentity,
-} from '../../src/modules/openspec/application/deterministic-sync.ts';
-
-function fixture(t: any): any  {
-  const projectRoot: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-convergence-recovery-'));
-  t.after(() => fs.rmSync(projectRoot, { recursive: true, force: true }));
-  const relative: any = 'openspec/specs/demo/spec.md';
-  const file: any = path.join(projectRoot, relative);
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const before: any = '# demo\n\n### Requirement: One\nBefore.\n\n#### Scenario: A\n- **WHEN** a\n- **THEN** a\n';
-  const expected: any = before.replace('Before.', 'After.');
-  fs.writeFileSync(file, expected);
-  const syncPlan: any = {
-    schemaVersion: DETERMINISTIC_SYNC_PLAN_SCHEMA,
-    change: 'demo-change', project: 'product', deltaHash: 'sha256-old', status: 'safe', blocked: [],
-    operations: [{ capability: 'demo', type: 'MODIFIED', requirement: 'One', status: 'safe', reason: 'unique-structural-result' }],
-    files: [{ path: relative, beforeDigest: deterministicSyncContentDigest(before), expectedDigest: deterministicSyncContentDigest(expected), before, expected }],
-  };
-  syncPlan.identity = deterministicSyncPlanIdentity(syncPlan);
-  const baseline: any = { schemaVersion: 'buildr.openspec-contract-baseline/v1', change: 'demo-change', project: 'product', upstreamVersion: '1.6.0', deltaHash: 'sha256-old', adopted: false, targets: [] };
-  const executableIdentity: any = { sourceKind: 'external-declared', reference: 'external:openspec', version: '1.6.0', sha256: 'binary-1' };
-  const receipt: any = {
-    schemaVersion: 'buildr.openspec-convergence-receipt/v2', change: 'demo-change', project: 'product', deltaHash: 'sha256-old', stage: 'post-sync', openspecExecutableIdentity: executableIdentity,
-    transitions: [{ stage: 'sync-plan', planIdentity: syncPlan.identity }, { stage: 'sync-apply', planIdentity: syncPlan.identity }, { stage: 'post-sync' }],
-  };
-  return { projectRoot, file, before, expected, syncPlan, baseline, executableIdentity, receipt };
-}
-
-function inspect(state: any): any  {
-  return inspectConvergenceRecovery({
-    projectRoot: state.projectRoot,
-    change: 'demo-change',
-    project: 'product',
-    newDeltaHash: 'sha256-new',
-    receipt: state.receipt,
-    baseline: state.baseline,
-    syncPlan: state.syncPlan,
-    executableIdentity: state.executableIdentity,
-  });
-}
-
-test('post-sync精确匹配时生成身份绑定的反向恢复计划', (t: any) => {
-  const state: any = fixture(t);
-  const result: any = inspect(state);
-  assert.equal(result.status, 'recoverable-stale-receipt');
-  assert.equal(result.canonicalState, 'post-sync');
-  assert.match(result.identity, /^sha256-/);
-  assert.equal(result.reversePlan.files[0].expected, state.before);
-  assert.deepEqual(result.effects, ['canonical-spec-restore', 'contract-baseline-rebind']);
-  const receipt: any = createConvergenceRecoveryReceipt(result);
-  assert.equal(receipt.stage, 'planned');
-  assert.equal(receipt.oldPlanIdentity, state.syncPlan.identity);
+import { fixture } from '../fixtures/openspec-upstream.ts';
+import { convergenceReceiptPath, runOpenSpecConvergence } from '../../src/modules/openspec/application/openspec-converge.ts';
+test('interrupted after all writes resumes archive only',t=>{
+ const f=fixture(t),receipt=f.receipt();f.input.writeReceipt(convergenceReceiptPath(f.changeRoot),receipt);
+ for(const file of receipt.files)f.write(`${f.root}/${file.path}`,file.expectedContent);
+ let skip=false;const r=runOpenSpecConvergence({...f.input,archive:(value)=>{skip=value;return f.input.archive(value);}});
+ assert.equal(r.status,'passed',JSON.stringify(r));assert.equal(skip,true);
+});
+test('concurrent edit after interruption is retained',t=>{
+ const f=fixture(t);f.input.writeReceipt(convergenceReceiptPath(f.changeRoot),f.receipt());
+ f.write(f.target,'concurrent content\n');const r=f.run();assert.equal(r.status,'recovery-unprovable');assert.equal(fs.readFileSync(f.target,'utf8'),'concurrent content\n');
+});
+test('changed delta after interruption cannot reuse old authorization',t=>{
+ const f=fixture(t);f.input.writeReceipt(convergenceReceiptPath(f.changeRoot),f.receipt());
+ const r=runOpenSpecConvergence({...f.input,context:{...f.context,delta:{...f.context.delta,hash:'changed'}}});assert.equal(r.code,'recovery-input-changed');
+});
+test('legacy recovery files are preserved and diagnosed',t=>{
+ const f=fixture(t);const file=`${f.changeRoot}/.buildr/deterministic-convergence.json`;f.write(file,'{"legacy":true}');
+ assert.equal(f.run().status,'recovery-unprovable');assert.equal(fs.readFileSync(file,'utf8'),'{"legacy":true}');
 });
 
-test('反向恢复复用确定性同步的严格验证和原子替换', (t: any) => {
-  const state: any = fixture(t);
-  const result: any = inspect(state);
-  const applied: any = applyDeterministicSyncPlan({
-    projectRoot: state.projectRoot,
-    plan: result.reversePlan,
-    validateExpected: ({ files }: any) => ({ status: 'passed', expectedDigests: Object.fromEntries(files.map((item: any) => [item.path, item.digest])) }),
-  });
-  assert.equal(applied.status, 'passed');
-  assert.equal(fs.readFileSync(state.file, 'utf8'), state.before);
-  const resumed: any = inspect(state);
-  assert.equal(resumed.status, 'recoverable-stale-receipt');
-  assert.equal(resumed.canonicalState, 'pre-sync');
-  assert.equal(resumed.identity, result.identity);
-  assert.deepEqual(resumed.effects, ['contract-baseline-rebind']);
+test('process killed after receipt persistence can restart safely',t=>{
+ const f=fixture(t);const child=spawnSync(process.execPath,['--input-type=module','-e',`
+   import fs from 'node:fs';
+   const input=JSON.parse(fs.readFileSync(0,'utf8'));
+   fs.mkdirSync(input.directory,{recursive:true});fs.writeFileSync(input.file,JSON.stringify(input.receipt));
+   process.kill(process.pid,'SIGKILL');
+ `],{input:JSON.stringify({directory:`${f.changeRoot}/.buildr`,file:convergenceReceiptPath(f.changeRoot),receipt:f.receipt()}),encoding:'utf8'});
+ assert.ok(child.signal === 'SIGKILL' || (process.platform === 'win32' && child.status !== 0), JSON.stringify({status:child.status,signal:child.signal,error:child.error?.message}));assert.equal(f.run().status,'passed');
 });
 
-test('canonical额外漂移需要语义处理且零写入', (t: any) => {
-  const state: any = fixture(t);
-  fs.writeFileSync(state.file, state.expected.replace('After.', 'External drift.'));
-  const result: any = inspect(state);
-  assert.equal(result.status, 'semantic-resolution-required');
-  assert.equal(result.code, 'convergence-recovery-canonical-drift');
-  assert.deepEqual(result.effects, []);
-  assert.match(fs.readFileSync(state.file, 'utf8'), /External drift/);
-});
-
-test('缺少旧计划或证明链不匹配时明确不可恢复', (t: any) => {
-  const state: any = fixture(t);
-  const missing: any = inspectConvergenceRecovery({
-    projectRoot: state.projectRoot, change: 'demo-change', project: 'product', newDeltaHash: 'sha256-new',
-    receipt: state.receipt, baseline: state.baseline, syncPlan: null, executableIdentity: state.executableIdentity,
-  });
-  assert.equal(missing.status, 'recovery-unprovable');
-  assert.deepEqual(missing.missingEvidence, ['deterministic-sync-plan']);
-  const mismatch: any = inspectConvergenceRecovery({
-    projectRoot: state.projectRoot, change: 'demo-change', project: 'product', newDeltaHash: 'sha256-new',
-    receipt: state.receipt, baseline: { ...state.baseline, deltaHash: 'sha256-other' }, syncPlan: state.syncPlan, executableIdentity: state.executableIdentity,
-  });
-  assert.equal(mismatch.status, 'recovery-unprovable');
-  assert.equal(mismatch.code, 'convergence-recovery-chain-mismatch');
-});
-
-test('连续delta修订轮换已完成凭证并保留历史链', (t: any) => {
-  const firstPlan: any = inspect(fixture(t));
-  const first: any = createConvergenceRecoveryReceipt(firstPlan, 'completed', [{ stage: 'completed' }]);
-  const secondPlan: any = { ...firstPlan, identity: 'sha256-second', oldDeltaHash: firstPlan.newDeltaHash, newDeltaHash: 'sha256-third' };
-  const rotated: any = continueConvergenceRecoveryReceipt(secondPlan, first);
-  assert.equal(rotated.status, 'ready');
-  assert.equal(rotated.disposition, 'rotated');
-  assert.equal(rotated.receipt.stage, 'planned');
-  assert.equal(rotated.receipt.history.length, 1);
-  assert.equal(rotated.receipt.history[0].identity, first.identity);
-  assert.equal(rotated.receipt.history[0].newDeltaHash, secondPlan.oldDeltaHash);
-  assert.equal(continueConvergenceRecoveryReceipt(secondPlan, rotated.receipt).disposition, 'resumed');
-
-  const unrelated: any = continueConvergenceRecoveryReceipt({ ...secondPlan, oldDeltaHash: 'sha256-unrelated' }, first);
-  assert.equal(unrelated.status, 'recovery-unprovable');
-  assert.equal(unrelated.code, 'convergence-recovery-receipt-mismatch');
+test('recovery detects byte changes including trailing whitespace',t=>{
+ const f=fixture(t);f.input.writeReceipt(convergenceReceiptPath(f.changeRoot),f.receipt());
+ f.write(f.target,fs.readFileSync(f.target,'utf8').replace('Existing.','Existing.  '));
+ assert.equal(f.run().status,'recovery-unprovable');assert.match(fs.readFileSync(f.target,'utf8'),/Existing\.  /);
 });

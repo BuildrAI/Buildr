@@ -436,7 +436,7 @@ Buildr 本机应用 MUST 使用紧凑的工作控制台信息层级：中文为�
 
 #### Scenario: 反映真实导航层级
 - **WHEN** 用户在工作空间内浏览目录或详情
-- **THEN** 应用 shell MUST 在顶栏显示可理解的工作空间名称与当前资源导航高亮
+- **THEN** 应用 shell MUST 在顶栏显示可理解的工作空间名称与当前区域导航高亮，并在左侧标记对应资源
 - **AND** 工作空间切换器 MUST 展示当前名称，并提供返回工作空间目录的明确入口
 
 ### Requirement: 工作空间目录与资源视图必须在窄屏保持可用
@@ -458,7 +458,7 @@ Buildr 本机应用 MUST 在桌面、约 1024px 和 390px 宽度保持可读且�
 - **AND** MUST NOT 把主导航藏进没有入口的侧栏
 
 ### Requirement: 资源详情与修改必须使用独立操作
-Buildr 本机应用 MUST 将 Project 与 Service 的详情呈现保持为只读，并以统一的标签和值展示资源身份、稳定 metadata 与来源事实；技术信息 MUST 在折叠区内沿用相同的标签和值形式。Project 编辑 MUST 从详情右上角的明确操作进入弹框，且 MUST NOT 改变当前详情 URL；Service 编辑仍可通过目录操作进入独立编辑 URL。Project 与 Service 详情 MUST NOT 内嵌所属关联资源的目录、卡片或跳转入口。Project 列表行 MUST 只展示标题与说明；Service 关联资源跳转 MUST 由服务目录行的操作列提供。
+Buildr 本机应用 MUST 将 Project 与 Service 的详情呈现保持为只读，并以统一的标签和值展示资源身份、稳定 metadata 与来源事实；技术信息 MUST 在折叠区内沿用相同的标签和值形式。Project 与 Service 常用编辑入口 MUST 使用右侧抽屉，且 MUST NOT 改变当前页面 URL；既有独立编辑 URL MUST 保持兼容。Project 与 Service 详情 MUST NOT 内嵌所属关联资源的目录、卡片或跳转入口。Project 列表行 MUST 只展示标题与说明；Service 关联资源跳转 MUST 由服务目录行的操作列提供。
 
 #### Scenario: 查看只读资源详情
 - **WHEN** 用户打开 Project 或 Service 详情
@@ -468,13 +468,13 @@ Buildr 本机应用 MUST 将 Project 与 Service 的详情呈现保持为只读�
 
 #### Scenario: 从资源目录开始修改
 - **WHEN** 用户在 Service 目录中选择“编辑”操作
-- **THEN** 页面 MUST 导航到对应资源的独立编辑 URL
+- **THEN** 页面 MUST 在当前目录打开对应资源的右侧编辑抽屉
 - **AND** 编辑页面 MUST 保持现有 metadata 白名单、revision CAS、迁移只读与反馈语义
 
 #### Scenario: 从项目详情开始修改
 - **WHEN** 用户打开项目详情
 - **THEN** 详情右上角 MUST 提供“编辑项目”操作
-- **AND** 该操作 MUST 打开编辑弹框且不离开当前详情 URL
+- **AND** 该操作 MUST 打开右侧编辑抽屉且不离开当前详情 URL
 - **AND** 项目列表 MUST NOT 再提供编辑入口
 
 #### Scenario: 从资源目录访问关联资源
@@ -487,8 +487,24 @@ Buildr 本机应用 MUST 将 Project 与 Service 的详情呈现保持为只读�
 
 #### Scenario: 侧边栏指示当前资源
 - **WHEN** 用户打开项目、服务目录或其详情/编辑页
-- **THEN** 相应顶栏导航项 MUST 显示明显的当前状态
+- **THEN** 相应顶部区域与左侧对象 MUST 显示明显的当前状态
 - **AND** 其他导航项的样式 MUST NOT 取代当前资源项的高亮
+
+#### Scenario: 编辑抽屉保存与关闭
+- **WHEN** 用户编辑项目或服务
+- **THEN** 抽屉 MUST 明确显示对象名称并在底部固定保存和取消操作
+- **AND** 保存成功 MUST 关闭抽屉并原位更新当前页面，不重置阅读位置
+- **AND** 保存失败 MUST 保持抽屉和当前输入，沿用原有并发冲突保护
+
+#### Scenario: 保护未保存内容
+- **WHEN** 有未保存修改时用户点击取消、关闭、遮罩或按 Escape
+- **THEN** MUST 在抽屉内提供继续编辑或放弃修改的明确选择
+- **AND** 保存中 MUST 阻止重复提交和关闭
+- **AND** 无修改时 MUST 可直接关闭
+
+#### Scenario: 手机编辑
+- **WHEN** viewport 宽度为390px
+- **THEN** 编辑抽屉 MUST 使用屏幕全宽，表单可滚动且底部操作仍可达
 
 ### Requirement: 本机应用必须管理多个已登记 Workspace
 Buildr MUST 在现有 Workspace 产品能力中维护本机登记 root 列表，并 MUST 以各 root 的 `.buildr/workspace.yml` 作为 Workspace 信息的事实来源。
@@ -536,7 +552,7 @@ Buildr MUST 让 Workspace 内页面和 API 使用已登记 `workspaceId` 作为�
 - **AND** MUST NOT 回退到当前目录或其他 Workspace
 
 ### Requirement: 全局应用必须提供 Workspace 级应用外壳与路由
-Buildr MUST 提供解释 Workspace 心智的全局 Workspace 页面，并 MUST 在选定 Workspace 下提供任务列表、设置、Project、Service 和 Change 等既有稳定路由；应用外壳 MUST 将任务、项目、服务、文章作为顶栏核心路径，进入 Workspace 后 MUST 直接打开任务列表，且 MUST NOT 再提供独立的 Workspace 开始/详情页作为默认落地页。
+Buildr MUST 提供解释 Workspace 心智的全局 Workspace 页面，并 MUST 在选定 Workspace 下提供任务列表、设置、Project、Service 和 Change 等既有稳定路由；应用外壳 MUST 将工作台和工作空间作为顶栏核心路径，并将原有资源入口放入对应区域的左侧导航，进入 Workspace 后 MUST 直接打开任务列表，且 MUST NOT 再提供独立的 Workspace 开始/详情页作为默认落地页。
 
 #### Scenario: 打开全局首页
 - **WHEN** 用户打开根路由
@@ -552,7 +568,7 @@ Buildr MUST 提供解释 Workspace 心智的全局 Workspace 页面，并 MUST �
 
 #### Scenario: 展示核心导航层级
 - **WHEN** 用户在选定 Workspace 中浏览
-- **THEN** App Shell MUST 在顶栏将“任务”“项目”“服务”“文章”展示为核心导航
+- **THEN** App Shell MUST 在顶栏依次展示“工作台”“工作空间”，任务和文章位于工作台导航，项目、服务、技能和设置位于工作空间导航
 - **AND** MUST NOT 将“开始”作为常驻主导航项
 - **AND** 用户 MUST 能通过品牌标识或工作空间切换到达当前 Workspace 的任务列表
 - **AND** `/workspaces/:workspaceId/` 与 `/workspaces/:workspaceId/overview` MUST 重定向到任务列表
@@ -855,7 +871,7 @@ Buildr Web Task 列表与详情 MUST 通过 Task Record Application read model �
 
 ### Requirement: Buildr Web 必须提供独立文章入口
 
-Buildr Web MUST 在 Workspace 级应用外壳中提供独立的“文章”导航入口，并 MUST 提供文章列表页与文章详情页；文章页面 MUST 保持只读，不得提供文章编辑、发布或平台同步操作。
+Buildr Web MUST 在 Workspace 级工作台左侧提供独立的“文章”导航入口，并 MUST 提供文章列表页与文章详情页；文章页面 MUST 保持只读，不得提供文章编辑、发布或平台同步操作。
 
 #### Scenario: 从工作空间导航打开文章
 
@@ -1354,3 +1370,39 @@ Buildr Web MUST只在普通搜索关键词达到3个Unicode字符后提交服务
 #### Scenario: 输入可索引关键词
 - **WHEN** 用户输入至少3个Unicode字符且短防抖结束
 - **THEN** 页面 MUST从第一批请求服务端FTS筛选结果
+
+### Requirement: 技能页必须支持连续浏览真实工作方法
+工作空间技能页 MUST 提供紧凑列表、名称标识用途搜索、来源筛选和数量。点击技能 MUST 打开可展开的右侧详情抽屉，提供说明/原文、相关资料和管理信息。关闭 MUST 保留列表上下文，切换工作空间 MUST 丢弃旧内容与陈旧响应。
+
+#### Scenario: 查找并阅读资料
+- **WHEN** 用户搜索技能并打开说明中的技能内相对文档链接
+- **THEN** 页面 MUST 在当前抽屉内读取资料并支持返回，不要求操作资源管理器
+
+#### Scenario: 空结果与读取失败
+- **WHEN** 筛选无结果或详情读取失败
+- **THEN** 页面 MUST 区分无匹配与错误，提供清除筛选或局部重试
+
+### Requirement: 技能维护交接必须表达真实执行边界
+添加已有来源、描述需求创建、调整及启停 MUST 生成携带当前工作空间和目标技能事实的可复制智能体指令。生成或复制 MUST NOT 修改技能状态、安装内容或声称执行成功；必需技能 MUST 不提供停用动作。需求 MUST 在同页实时渲染为完整指令并支持一键复制；关闭二级抽屉 MUST 保留本页按技能隔离的草稿，刷新或离开页面清除。一级详情 MUST 保持挂载及阅读状态，关闭二级或 Esc 仅回到一级。复制失败 MUST 明确提示并选中完整指令供手动复制。
+
+#### Scenario: 调整已有技能
+- **WHEN** 用户描述调整需求并复制指令
+- **THEN** 指令 MUST 包含当前工作空间与技能标识，要求核对当前源及维护归属，页面明确技能尚未修改
+
+#### Scenario: 添加技能
+- **WHEN** 用户提交目录、来源链接或创建需求
+- **THEN** 页面 MUST 仅形成可查看的交接指令，不在网页自动读取任意目录、下载、创建或安装
+
+#### Scenario: 启停交接
+- **WHEN** 用户请求启用或停用非必需技能
+- **THEN** 页面 MUST 交接必要依赖与同步检查，保留原清单状态，执行后可刷新查看真实事实
+
+#### Scenario: 技能页直接访问与刷新
+- **WHEN** 用户直接打开或刷新合法工作空间的 `/skills` 地址
+- **THEN** HTTP MUST 返回页面并重新读取当前工作空间技能，不返回资源不存在
+
+#### Scenario: 连续调整与复制
+- **WHEN** 用户在资料阅读中打开调整抽屉、输入需求并复制
+- **THEN** 指令 MUST 实时更新且不要求生成或返回修改步骤
+- **AND** 关闭二级后 MUST 恢复原资料及焦点，重新打开保留草稿
+- **AND** 修改需求后 MUST 清除针对旧指令的已复制反馈

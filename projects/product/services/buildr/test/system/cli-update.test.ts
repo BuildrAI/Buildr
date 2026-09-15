@@ -46,6 +46,7 @@ function formalOriginOptions(channel: any, version: any = '1.0.0'): any  {
       'resources/product/src/infrastructure/sqlite/migrations/0000_create_migration_ledger.sql',
       'resources/product/web-dist/index.html',
       'resources/runtime/read-worker.cjs',
+      'resources/runtime/upstream-openspec-worker.cjs',
       'runtime/buildr.cjs',
     ].map((file: any) => ({ path: file, mode: 0o644, size: 0, sha256: '0'.repeat(64) })),
   };

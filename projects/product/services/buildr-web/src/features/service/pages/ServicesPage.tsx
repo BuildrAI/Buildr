@@ -1,11 +1,13 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Alert, Button, Empty, Form, Select, Table, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useAppShell } from '../../../app/AppShellContext';
 import { serviceTypeLabel, workspaceHref } from '../../../lib/labels';
-import { ServiceEditModal } from '../components/ServiceEditModal';
+import { ServiceEditDrawer } from '../components/ServiceEditDrawer';
 import { useServiceCatalog, type Service } from '../hooks/useServiceCatalog';
+import { useWorkspacePageTabs } from '../../../app/pageTabs';
+import { WorkspaceStage } from '../../../components/WorkspaceStage';
 
 const TableBody = (props: React.HTMLAttributes<HTMLTableSectionElement>) => (
   <tbody id="service-table-body" {...props} />
@@ -17,6 +19,12 @@ export function ServicesPage() {
   const [editServiceCode, setEditServiceCode] = useState<string | null>(null);
   const catalog = useServiceCatalog();
   const { projects, projectCode, projectName, services, count, title, copy, emptyText, migrationMessage, loaded } = catalog;
+  const pageTabs = useWorkspacePageTabs(workspaceId);
+
+  useEffect(() => {
+    pageTabs.register({ key: 'dir:services', kind: 'dir', title: '服务目录', path: href('/services') });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspaceId]);
 
   const columns: ColumnsType<Service> = [
     {
@@ -52,11 +60,12 @@ export function ServicesPage() {
   ];
 
   return (
-    <>
+    <WorkspaceStage pageTabs={pageTabs.tabs} onClosePageTab={pageTabs.close}>
+      <div className="ws-dir-shell">
       <section className="resource-toolbar">
         <div>
           <Typography.Title level={2} style={{ margin: 0 }}>服务目录</Typography.Title>
-          <p className="page-copy">按项目查看已登记服务；编辑在弹框中完成。</p>
+          <p className="page-copy">按项目查看已登记服务；编辑在抽屉中完成。</p>
         </div>
         <div className="toolbar-actions">
           <span id="services-count" className="count-label">{count}</span>
@@ -113,7 +122,7 @@ export function ServicesPage() {
         </div>
       </section>
       <span className="hidden">{projectName}</span>
-      <ServiceEditModal
+      <ServiceEditDrawer
         open={Boolean(editServiceCode)}
         projectCode={projectCode || null}
         serviceCode={editServiceCode}
@@ -122,6 +131,7 @@ export function ServicesPage() {
           catalog.updateService(saved);
         }}
       />
-    </>
+      </div>
+    </WorkspaceStage>
   );
 }

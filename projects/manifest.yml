@@ -4,7 +4,7 @@ projects:
     id: 62bc8f4b-f8b6-4e8b-b40c-f93b466e3993
     workspaceId: f2f40b71-2382-5906-82bd-76a7927b59f3
     code: product
-    name: Buildr 产品自举开发
+    name: Buildr 产品
     description: Buildr 自身产品实现、随包 workspace baseline、Agent runtime adapter、OpenSpec 规范和自举开发流程。
     source:
       type: workspace

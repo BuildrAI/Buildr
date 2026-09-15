@@ -53,6 +53,9 @@ test('source-tree JavaScript is limited to public facades and compatibility fixt
     if (entry.isDirectory() && ['node_modules', 'targets'].includes(entry.name)) return [];
     const childRelative: any = relative ? `${relative}/${entry.name}` : entry.name;
     const child: any = `${directory}/${entry.name}`;
+    // Pinned upstream distribution, validated by the component integrity and lifecycle checks.
+    // Buildr-owned entry, source and tools remain subject to the TypeScript boundary.
+    if (entry.isDirectory() && childRelative === 'resources/workspace/skills/buildr/archify/assets/archify') return [];
     if (entry.isDirectory()) return scan(child, childRelative);
     return entry.isFile() && entry.name.endsWith('.mjs') ? [childRelative] : [];
   });

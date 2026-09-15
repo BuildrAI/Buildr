@@ -46,7 +46,7 @@ test('version-only exception is closed to changed package metadata paths', () =>
     /Invalid version-only package path/,
   );
   assert.throws(
-    () => createVerificationPlan({ paths: ['docs/buildr-product.md'], versionOnlyPackagePaths: ['package.json'] }),
+    () => createVerificationPlan({ paths: ['knowledge/docs/overview.md'], versionOnlyPackagePaths: ['package.json'] }),
     /not part of the changed paths/,
   );
   assert.throws(
@@ -54,7 +54,7 @@ test('version-only exception is closed to changed package metadata paths', () =>
     /Invalid selection-only metadata path/,
   );
   assert.throws(
-    () => createVerificationPlan({ paths: ['docs/buildr-product.md'], selectionOnlyPaths: ['verification.yml'] }),
+    () => createVerificationPlan({ paths: ['knowledge/docs/overview.md'], selectionOnlyPaths: ['verification.yml'] }),
     /not part of the changed paths/,
   );
 });

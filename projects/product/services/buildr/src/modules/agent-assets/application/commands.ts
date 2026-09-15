@@ -1,42 +1,82 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from '../../../infrastructure/process.ts';
-import { compareVersions, intersectVersionConstraints, parseVersion, parseVersionConstraint, versionSatisfies } from '../domain/command-version.ts';
-import { buildCommandProbeInvocation, findExecutableOnPath, probeCommandVersion } from '../infrastructure/command-version-probe.ts';
+import { intersectVersionConstraints, parseVersionConstraint, versionSatisfies } from '../domain/command-version.ts';
+import { findExecutableOnPath, probeCommandVersion } from '../infrastructure/command-version-probe.ts';
 import { createCommandManifestRepository } from '../persistence/command-manifest-repository.ts';
 
-export function registerDomainsCommands(runtime: any): any  {
-  const workspaceSymlinkSegment = (...args: any[]) => runtime.workspaceSymlinkSegment(...args);
-  const componentOwnerForMember = (...args: any[]) => runtime.componentOwnerForMember(...args);
-  const isValidAssetId = (...args: any[]) => runtime.isValidAssetId(...args);
-  const assertName = (...args: any[]) => runtime.assertName(...args);
-  const normalizeRelativePathForBuildr = (...args: any[]) => runtime.normalizeRelativePathForBuildr(...args);
-  const quoteYaml = (...args: any[]) => runtime.quoteYaml(...args);
-  const parseYamlValue = (...args: any[]) => runtime.parseYamlValue(...args);
-  const atomicWriteFile = (...args: any[]) => runtime.atomicWriteFile(...args);
-  const parseYamlDocument = (...args: any[]) => runtime.parseYamlDocument(...args);
-  const withWorkspaceMutation = (...args: any[]) => runtime.withWorkspaceMutation(...args);
-  const toPosixRelative = (...args: any[]) => runtime.toPosixRelative(...args);
-  const existsDirectory = (...args: any[]) => runtime.existsDirectory(...args);
-  const existsFile = (...args: any[]) => runtime.existsFile(...args);
-  const assertInitializedBuildrWorkspace = (...args: any[]) => runtime.assertInitializedBuildrWorkspace(...args);
-  const parseProjectsYaml = (...args: any[]) => runtime.parseProjectsYaml(...args);
-  const projectsManifestPath = (...args: any[]) => runtime.projectsManifestPath(...args);
+function isPlainObject(value: any): any  {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function stableValue(value: any): any  {
+  if (Array.isArray(value)) return value.map(stableValue);
+  if (!isPlainObject(value)) return value;
+  return Object.fromEntries(Object.keys(value).sort().map((key: any) => [key, stableValue(value[key])]));
+}
+
+function commandDefinitionIdentity(command: any): any  {
+  return {
+    id: command.id,
+    executable: command.executable,
+    purpose: command.purpose,
+    name: command.name || null,
+    description: command.description || null,
+    versionArgs: command.version?.args || null,
+    installHint: command.installHint || null,
+  };
+}
+
+export function normalizedCommandSignature(command: any): any  {
+  return JSON.stringify(stableValue(commandDefinitionIdentity(command)));
+}
+
+export interface CommandsDependencies {
+  workspaceSymlinkSegment: typeof import('../../../infrastructure/filesystem/workspace-path.ts').workspaceSymlinkSegment;
+  componentOwnerForMember: ReturnType<typeof import('./components.ts').registerDomainsComponents>['componentOwnerForMember'];
+  isValidAssetId: ReturnType<typeof import('./package-maintenance/package-assets.ts').registerAgentAssetsPackageAssets>['isValidAssetId'];
+  assertName: ReturnType<typeof import('./runtime.ts').registerDomainsRuntime>['assertName'];
+  normalizeRelativePathForBuildr: ReturnType<typeof import('./skills.ts').registerDomainsSkills>['normalizeRelativePathForBuildr'];
+  quoteYaml: typeof import('../../../infrastructure/filesystem/yaml.ts').quoteYaml;
+  atomicWriteFile: typeof import('../../../infrastructure/filesystem/atomic-files.ts').atomicWriteFile;
+  parseYamlDocument: typeof import('../../../infrastructure/filesystem/yaml.ts').parseYamlDocument;
+  withWorkspaceMutation: (...args: any[]) => any;
+  toPosixRelative: (...args: any[]) => any;
+  existsDirectory: (file: string) => boolean;
+  existsFile: (file: string) => boolean;
+  assertInitializedBuildrWorkspace: typeof import('../../../infrastructure/filesystem/workspace-identity.ts').assertInitializedBuildrWorkspace;
+  parseProjectsYaml: import('../../workspace/module.ts').WorkspaceAssetSupport['parseProjectsYaml'];
+  projectsManifestPath: import('../../workspace/module.ts').WorkspaceAssetSupport['projectsManifestPath'];
+}
+
+export function registerDomainsCommands(dependencies: CommandsDependencies) {
+  const {
+    workspaceSymlinkSegment,
+    componentOwnerForMember,
+    isValidAssetId,
+    assertName,
+    normalizeRelativePathForBuildr,
+    quoteYaml,
+    atomicWriteFile,
+    parseYamlDocument,
+    withWorkspaceMutation,
+    toPosixRelative,
+    existsDirectory,
+    existsFile,
+    assertInitializedBuildrWorkspace,
+    parseProjectsYaml,
+    projectsManifestPath,
+  } = dependencies;
 
   const {
-    PROJECT_COMMANDS_SCHEMA, normalizeCommandCollection, commandsManifestPath, projectCommandsPath,
-    assertSafeCommandCollectionTarget, listCommandsManifestPaths, parseCommandsManifestYaml,
+    commandsManifestPath, projectCommandsPath,
+    listCommandsManifestPaths, parseCommandsManifestYaml,
     parseProjectCommandsYaml, validateProjectCommandsDocument, renderProjectCommandsYaml,
     validateCommandsManifest, renderCommandsManifestYaml, readCommandsManifestForWrite, writeCommandsManifest,
   } = createCommandManifestRepository({
     atomicWriteFile, existsDirectory, existsFile, isValidAssetId, normalizeRelativePathForBuildr,
     parseYamlDocument, quoteYaml, toPosixRelative, workspaceSymlinkSegment,
   });
-
-
-  function isPlainObject(value: any): any  {
-    return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-  }
 
 
   function buildCommandEntry(id: any, input: any): any  {
@@ -129,7 +169,6 @@ export function registerDomainsCommands(runtime: any): any  {
     return withWorkspaceMutation(input.targetRoot, 'commands.remove', [path.join(input.targetRoot, 'commands')], () => commandsRemoveUnsafe(input));
   }
 
-
   function createCommandsCheckResult(targetRoot: any): any  {
     return {
       targetRoot,
@@ -152,27 +191,8 @@ export function registerDomainsCommands(runtime: any): any  {
     result.findings.push({ status, code, message, ...extra });
   }
 
-  function stableValue(value: any): any  {
-    if (Array.isArray(value)) return value.map(stableValue);
-    if (!isPlainObject(value)) return value;
-    return Object.fromEntries(Object.keys(value).sort().map((key: any) => [key, stableValue(value[key])]));
-  }
 
-  function commandDefinitionIdentity(command: any): any  {
-    return {
-      id: command.id,
-      executable: command.executable,
-      purpose: command.purpose,
-      name: command.name || null,
-      description: command.description || null,
-      versionArgs: command.version?.args || null,
-      installHint: command.installHint || null,
-    };
-  }
 
-  function normalizedCommandSignature(command: any): any  {
-    return JSON.stringify(stableValue(commandDefinitionIdentity(command)));
-  }
 
   function readRegisteredProjects(targetRoot: any): any  {
     const registryPath = projectsManifestPath(targetRoot);
@@ -529,5 +549,19 @@ export function registerDomainsCommands(runtime: any): any  {
     return runCommandsCheck(input.targetRoot, { projects: input.projects || [] });
   }
 
-  return Object.freeze({ PROJECT_COMMANDS_SCHEMA, normalizeCommandCollection, commandsManifestPath, projectCommandsPath, assertSafeCommandCollectionTarget, listCommandsManifestPaths, parseCommandsManifestYaml, parseProjectCommandsYaml, validateProjectCommandsDocument, renderProjectCommandsYaml, isPlainObject, validateCommandsManifest, renderCommandsManifestYaml, readCommandsManifestForWrite, writeCommandsManifest, buildCommandEntry, commandsAddUnsafe, commandsAdd, commandsRemoveUnsafe, commandsRemove, parseVersionConstraint, parseVersion, compareVersions, versionSatisfies, intersectVersionConstraints, findExecutableOnPath, buildCommandProbeInvocation, probeCommandVersion, createCommandsCheckResult, addCommandsFinding, stableValue, commandDefinitionIdentity, normalizedCommandSignature, readRegisteredProjects, readProjectRequirementRecords, commandRemovalBlockers, finalizeCommandsCheckResult, runCommandsCheck, commandsCheck });
+  return Object.freeze({
+    parseCommandsManifestYaml,
+    parseProjectCommandsYaml,
+    renderProjectCommandsYaml,
+    isPlainObject,
+    validateCommandsManifest,
+    renderCommandsManifestYaml,
+    readCommandsManifestForWrite,
+    writeCommandsManifest,
+    commandsAdd,
+    commandsRemove,
+    commandRemovalBlockers,
+    runCommandsCheck,
+    commandsCheck,
+  });
 }

@@ -3,7 +3,6 @@ import path from 'node:path';
 import { runFinalDoctor } from '../../../infrastructure/final-doctor-process.ts';
 import { hasManagedSkillMarker } from '../infrastructure/runtime/render-claude-code.ts';
 import { getRuntimeAdapter, isSupportedAgent } from '../infrastructure/runtime/adapter-contract.ts';
-import { capabilityKey, validateCapabilityIdentity } from '../persistence/skill-manifest.ts';
 import {
   legacySkillProjectionOwnershipReceiptRoot,
   legacySkillProjectionOwnershipReceiptTarget,
@@ -18,45 +17,85 @@ import { createComponentDefinitionDomain } from '../domain/component-definition.
 import { createComponentRepository } from '../persistence/component-repository.ts';
 import { assetIntegrity } from '../infrastructure/component-source.ts';
 
-export function registerDomainsComponents(runtime: any): any  {
-  const renderRuntime = (...args: any[]) => runtime.renderRuntime(...args);
-  const isPlainObject = (...args: any[]) => runtime.isPlainObject(...args);
-  const readPackageManifest = (...args: any[]) => runtime.readPackageManifest(...args);
-  const collectFiles = (...args: any[]) => runtime.collectFiles(...args);
-  const builtinRuleEntry = (...args: any[]) => runtime.builtinRuleEntry(...args);
-  const builtinSkillEntry = (...args: any[]) => runtime.builtinSkillEntry(...args);
-  const sourcePathFromBuiltin = (...args: any[]) => runtime.sourcePathFromBuiltin(...args);
-  const missingAncestorForMutation = (...args: any[]) => runtime.missingAncestorForMutation(...args);
-  const mutationPathFingerprint = (...args: any[]) => runtime.mutationPathFingerprint(...args);
-  const assertSafeSyncMutationPaths = (...args: any[]) => runtime.assertSafeSyncMutationPaths(...args);
-  const isValidAssetId = (...args: any[]) => runtime.isValidAssetId(...args);
-  const listManagedDirectories = (...args: any[]) => runtime.listManagedDirectories(...args);
-  const rulesManifestPath = (...args: any[]) => runtime.rulesManifestPath(...args);
-  const readRulesManifestForWrite = (...args: any[]) => runtime.readRulesManifestForWrite(...args);
-  const writeRulesManifest = (...args: any[]) => runtime.writeRulesManifest(...args);
-  const assertAgentId = (...args: any[]) => runtime.assertAgentId(...args);
-  const normalizeRelativePathForBuildr = (...args: any[]) => runtime.normalizeRelativePathForBuildr(...args);
-  const skillsManifestPath = (...args: any[]) => runtime.skillsManifestPath(...args);
-  const readSkillsManifestForWrite = (...args: any[]) => runtime.readSkillsManifestForWrite(...args);
-  const writeSkillsManifest = (...args: any[]) => runtime.writeSkillsManifest(...args);
-  const quoteYaml = (...args: any[]) => runtime.quoteYaml(...args);
-  const ensureDirectory = (...args: any[]) => runtime.ensureDirectory(...args);
-  const atomicWriteFile = (...args: any[]) => runtime.atomicWriteFile(...args);
-  const parseYamlDocument = (...args: any[]) => runtime.parseYamlDocument(...args);
-  const withWorkspaceMutation = (...args: any[]) => runtime.withWorkspaceMutation(...args);
-  const productRoot = (...args: any[]) => runtime.productRoot(...args);
-  const resourceWorkspaceRoot = (...args: any[]) => runtime.resourceWorkspaceRoot(...args);
-  const toPosixRelative = (...args: any[]) => runtime.toPosixRelative(...args);
-  const existsDirectory = (...args: any[]) => runtime.existsDirectory(...args);
-  const existsFile = (...args: any[]) => runtime.existsFile(...args);
-  const assertInitializedBuildrWorkspace = (...args: any[]) => runtime.assertInitializedBuildrWorkspace(...args);
-  const commandRemovalBlockers = (...args: any[]) => runtime.commandRemovalBlockers(...args);
-  const parseCommandsManifestYaml = (...args: any[]) => runtime.parseCommandsManifestYaml(...args);
-  const validateCommandsManifest = (...args: any[]) => runtime.validateCommandsManifest(...args);
-  const workspaceSymlinkSegment = (...args: any[]) => runtime.workspaceSymlinkSegment(...args);
+export interface ComponentsDependencies {
+  renderRuntime: ReturnType<typeof import('./runtime-projection.ts').registerApplicationRuntime>['renderRuntime'];
+  isPlainObject: ReturnType<typeof import('./commands.ts').registerDomainsCommands>['isPlainObject'];
+  readPackageManifest: ReturnType<typeof import('./package-maintenance/package-assets.ts').registerAgentAssetsPackageAssets>['readPackageManifest'];
+  collectFiles: ReturnType<typeof import('./package-maintenance/package-assets.ts').registerAgentAssetsPackageAssets>['collectFiles'];
+  builtinRuleEntry: ReturnType<typeof import('./package-maintenance/package-assets.ts').registerAgentAssetsPackageAssets>['builtinRuleEntry'];
+  builtinSkillEntry: ReturnType<typeof import('./package-maintenance/package-assets.ts').registerAgentAssetsPackageAssets>['builtinSkillEntry'];
+  sourcePathFromBuiltin: ReturnType<typeof import('./package-maintenance/package-assets.ts').registerAgentAssetsPackageAssets>['sourcePathFromBuiltin'];
+  missingAncestorForMutation: ReturnType<typeof import('./package-maintenance/package-assets.ts').registerAgentAssetsPackageAssets>['missingAncestorForMutation'];
+  mutationPathFingerprint: (...args: any[]) => any;
+  assertSafeSyncMutationPaths: ReturnType<typeof import('./package-maintenance/package-assets.ts').registerAgentAssetsPackageAssets>['assertSafeSyncMutationPaths'];
+  isValidAssetId: ReturnType<typeof import('./package-maintenance/package-assets.ts').registerAgentAssetsPackageAssets>['isValidAssetId'];
+  listManagedDirectories: ReturnType<typeof import('./package-maintenance/package-assets.ts').registerAgentAssetsPackageAssets>['listManagedDirectories'];
+  rulesManifestPath: ReturnType<typeof import('./rules.ts').registerDomainsRules>['rulesManifestPath'];
+  readRulesManifestForWrite: ReturnType<typeof import('./rules.ts').registerDomainsRules>['readRulesManifestForWrite'];
+  writeRulesManifest: ReturnType<typeof import('./rules.ts').registerDomainsRules>['writeRulesManifest'];
+  assertAgentId: ReturnType<typeof import('./runtime.ts').registerDomainsRuntime>['assertAgentId'];
+  normalizeRelativePathForBuildr: ReturnType<typeof import('./skills.ts').registerDomainsSkills>['normalizeRelativePathForBuildr'];
+  skillsManifestPath: ReturnType<typeof import('./skills.ts').registerDomainsSkills>['skillsManifestPath'];
+  readSkillsManifestForWrite: ReturnType<typeof import('./skills.ts').registerDomainsSkills>['readSkillsManifestForWrite'];
+  writeSkillsManifest: ReturnType<typeof import('./skills.ts').registerDomainsSkills>['writeSkillsManifest'];
+  quoteYaml: typeof import('../../../infrastructure/filesystem/yaml.ts').quoteYaml;
+  ensureDirectory: (...args: any[]) => any;
+  atomicWriteFile: typeof import('../../../infrastructure/filesystem/atomic-files.ts').atomicWriteFile;
+  parseYamlDocument: typeof import('../../../infrastructure/filesystem/yaml.ts').parseYamlDocument;
+  withWorkspaceMutation: (...args: any[]) => any;
+  productRoot: () => string;
+  resourceWorkspaceRoot: () => string;
+  toPosixRelative: (...args: any[]) => any;
+  existsDirectory: (file: string) => boolean;
+  existsFile: (file: string) => boolean;
+  assertInitializedBuildrWorkspace: typeof import('../../../infrastructure/filesystem/workspace-identity.ts').assertInitializedBuildrWorkspace;
+  commandRemovalBlockers: ReturnType<typeof import('./commands.ts').registerDomainsCommands>['commandRemovalBlockers'];
+  parseCommandsManifestYaml: ReturnType<typeof import('./commands.ts').registerDomainsCommands>['parseCommandsManifestYaml'];
+  validateCommandsManifest: ReturnType<typeof import('./commands.ts').registerDomainsCommands>['validateCommandsManifest'];
+  workspaceSymlinkSegment: typeof import('../../../infrastructure/filesystem/workspace-path.ts').workspaceSymlinkSegment;
+  currentProductInvocation: typeof import('../../../infrastructure/product-invocation/index.ts').currentProductInvocation;
+}
+
+export function registerDomainsComponents(dependencies: ComponentsDependencies) {
+  const {
+    renderRuntime,
+    isPlainObject,
+    readPackageManifest,
+    collectFiles,
+    builtinRuleEntry,
+    builtinSkillEntry,
+    sourcePathFromBuiltin,
+    missingAncestorForMutation,
+    mutationPathFingerprint,
+    assertSafeSyncMutationPaths,
+    isValidAssetId,
+    listManagedDirectories,
+    rulesManifestPath,
+    readRulesManifestForWrite,
+    writeRulesManifest,
+    assertAgentId,
+    normalizeRelativePathForBuildr,
+    skillsManifestPath,
+    readSkillsManifestForWrite,
+    writeSkillsManifest,
+    quoteYaml,
+    ensureDirectory,
+    atomicWriteFile,
+    parseYamlDocument,
+    withWorkspaceMutation,
+    productRoot,
+    resourceWorkspaceRoot,
+    toPosixRelative,
+    existsDirectory,
+    existsFile,
+    assertInitializedBuildrWorkspace,
+    commandRemovalBlockers,
+    parseCommandsManifestYaml,
+    validateCommandsManifest,
+    workspaceSymlinkSegment,
+  } = dependencies;
   const {
     parseComponentDefinitionYaml,
-    renderComponentDefinitionYaml,
     componentIntegrityMap,
     componentMemberPaths,
     parseSkillContributionDeclaration,
@@ -65,8 +104,6 @@ export function registerDomainsComponents(runtime: any): any  {
   } = createComponentDefinitionDomain({ isPlainObject, isValidAssetId, normalizeRelativePathForBuildr, parseYamlDocument, quoteYaml });
   const {
     componentRegistryPath,
-    parseComponentsManifestYaml,
-    validateComponentsManifest,
     renderComponentsManifestYaml,
     readComponentsManifestForWrite,
     writeComponentsManifest,
@@ -76,9 +113,6 @@ export function registerDomainsComponents(runtime: any): any  {
     atomicWriteFile, existsFile, isValidAssetId, normalizeRelativePathForBuildr, parseYamlDocument, parseComponentDefinitionYaml, quoteYaml, validateComponentDefinition,
     workspaceSymlinkSegment: (...args) => workspaceSymlinkSegment(...args),
   });
-
-
-
 
   function componentInventory(targetRoot: any, options: any = {}): any  {
     const manifest = readComponentsManifestForWrite(targetRoot);
@@ -749,7 +783,7 @@ export function registerDomainsComponents(runtime: any): any  {
       throw new Error(`Component 源资产已提交，但 ${agent} runtime reconcile 失败：${error.message}\n修复后运行：buildr sync ${agent} --target ${targetRoot}`);
     }
     const finalDoctor = (runFinalDoctor as any)({
-      invocation: runtime.currentProductInvocation(),
+      invocation: dependencies.currentProductInvocation(),
       agent,
       targetRoot,
       cwd: productRoot(),
@@ -822,5 +856,23 @@ export function registerDomainsComponents(runtime: any): any  {
     return { operation: 'uninstall', id, targetRoot, changed: [...new Set(changed)], renderedFiles: rendered.files };
   }
 
-  return Object.freeze({ componentRegistryPath, parseComponentsManifestYaml, validateComponentsManifest, renderComponentsManifestYaml, readComponentsManifestForWrite, writeComponentsManifest, parseComponentDefinitionYaml, renderComponentDefinitionYaml, componentIntegrityMap, componentMemberPaths, parseSkillContributionDeclaration, parseSkillDependencyContribution, validateComponentDefinition, assetIntegrity, readComponentDefinition, componentDefinitionFile, componentInventory, componentOwnerForMember, packageComponentEntry, packageComponentDefinition, componentMemberKind, componentBuiltinForMember, packageComponentSourcePath, validatePackageComponentMembers, legacyComponentMemberDecision, isAdoptableLegacyComponentMember, buildComponentReconcilePlan, commandCollectionReferenceIssues, removeEmptyCommandCollectionParents, removeComponentMember, installComponentMember, componentReconcileAffectedPaths, applyPackageComponent, packageComponentsStatus, planPackageComponentsSync, syncPackageComponents, assertWorkspaceComponentScope, componentListOrCheck, installWorkspaceComponent, declaredRuntimeSkillPaths, declaredRuntimeInstallPlanIds, managedRuntimeSkillOrphans, buildRuntimeOrphanRemovalPlan, reconcileComponentRuntime, componentInstall, componentUninstall });
+  return Object.freeze({
+    componentRegistryPath,
+    renderComponentsManifestYaml,
+    readComponentsManifestForWrite,
+    componentMemberPaths,
+    readComponentDefinition,
+    componentDefinitionFile,
+    componentOwnerForMember,
+    packageComponentDefinition,
+    packageComponentSourcePath,
+    validatePackageComponentMembers,
+    packageComponentsStatus,
+    syncPackageComponents,
+    componentListOrCheck,
+    managedRuntimeSkillOrphans,
+    buildRuntimeOrphanRemovalPlan,
+    componentInstall,
+    componentUninstall,
+  });
 }

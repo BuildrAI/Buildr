@@ -1,39 +1,72 @@
 import path from 'node:path';
-import process from 'node:process';
 
 import { observeGitCheckoutIdentity } from '../../../infrastructure/git/checkout-identity.ts';
-import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../../infrastructure/contracts/public-json.ts';
 import { DOCTOR_DIAGNOSTIC_PROFILE } from './result-model.ts';
 
-export function registerSystemDoctorApplication(runtime: any) {
-  const { RUNTIME_ADAPTERS, SUPPORTED_AGENT_IDS, isSupportedAgent } = runtime;
-  const discoverDoctorScopes = (...args: any[]) => runtime.discoverDoctorScopes(...args);
-  const diagnoseProjectRegistry = (...args: any[]) => runtime.diagnoseProjectRegistry(...args);
-  const diagnoseWorkspace = (...args: any[]) => runtime.diagnoseWorkspace(...args);
-  const diagnoseLegacyPractices = (...args: any[]) => runtime.diagnoseLegacyPractices(...args);
-  const diagnoseHierarchy = (...args: any[]) => runtime.diagnoseHierarchy(...args);
-  const diagnoseServices = (...args: any[]) => runtime.diagnoseServices(...args);
-  const diagnoseRuntime = (...args: any[]) => runtime.diagnoseRuntime(...args);
-  const detectManagedRuntimeAgents = (...args: any[]) => runtime.detectManagedRuntimeAgents(...args);
-  const diagnoseCommands = (...args: any[]) => runtime.diagnoseCommands(...args);
-  const diagnoseComponents = (...args: any[]) => runtime.diagnoseComponents(...args);
-  const diagnoseSkillsManifestSchemas = (...args: any[]) => runtime.diagnoseSkillsManifestSchemas(...args);
-  const diagnoseSkillCapabilities = (...args: any[]) => runtime.diagnoseSkillCapabilities(...args);
-  const diagnoseProjectVerification = (...args: any[]) => runtime.diagnoseProjectVerification(...args);
-  const inspectPackageBuiltins = (targetRoot: string) => runtime.inspectPackageBuiltins(targetRoot);
-  const finalizeDoctorResult = (...args: any[]) => runtime.finalizeDoctorResult(...args);
-  const printDoctorReport = (...args: any[]) => runtime.printDoctorReport(...args);
-  const releaseAwareness = (...args: any[]) => runtime.releaseAwareness(...args);
-  const optionValue = (...args: any[]) => runtime.optionValue(...args);
-  const hasFlag = (...args: any[]) => runtime.hasFlag(...args);
-  const assertAgentId = (...args: any[]) => runtime.assertAgentId(...args);
-  const addDoctorFinding = (...args: any[]) => runtime.addDoctorFinding(...args);
-  const diagnoseRules = (...args: any[]) => runtime.diagnoseRules(...args);
-  const diagnoseWorkspaceMetadata = (...args: any[]) => runtime.diagnoseWorkspaceMetadata(...args);
-  const diagnoseMutations = (...args: any[]) => runtime.diagnoseMutations(...args);
+export type DoctorInput = {
+  targetRoot: string;
+  scope?: string | null;
+  agent?: string | null;
+  includeInfo?: boolean;
+  skipRuntime?: boolean;
+  releaseAwarenessOptions?: Record<string, unknown>;
+};
+
+export interface DoctorDependencies {
+  discoverDoctorScopes: (...args: any[]) => any;
+  diagnoseProjectRegistry: (...args: any[]) => any;
+  diagnoseWorkspace: (...args: any[]) => any;
+  diagnoseLegacyPractices: (...args: any[]) => any;
+  diagnoseHierarchy: (...args: any[]) => any;
+  diagnoseServices: (...args: any[]) => any;
+  diagnoseRuntime: (...args: any[]) => any;
+  detectManagedRuntimeAgents: (...args: any[]) => any;
+  diagnoseCommands: (...args: any[]) => any;
+  diagnoseComponents: (...args: any[]) => any;
+  diagnoseSkillsManifestSchemas: (...args: any[]) => any;
+  diagnoseSkillCapabilities: (...args: any[]) => any;
+  diagnoseProjectVerification: (...args: any[]) => any;
+  inspectPackageBuiltins: (...args: any[]) => any;
+  finalizeDoctorResult: (...args: any[]) => any;
+  releaseAwareness: (...args: any[]) => any;
+  assertAgentId: (...args: any[]) => any;
+  addDoctorFinding: (...args: any[]) => any;
+  diagnoseRules: (...args: any[]) => any;
+  diagnoseWorkspaceMetadata: (...args: any[]) => any;
+  diagnoseMutations: (...args: any[]) => any;
+  buildInstallationInventory: (...args: any[]) => any;
+  inspectWorkspaceStructuredStore: (...args: any[]) => any;
+  RUNTIME_ADAPTERS: typeof import('../../agent-assets/infrastructure/runtime/adapter-contract.ts').RUNTIME_ADAPTERS;
+  SUPPORTED_AGENT_IDS: typeof import('../../agent-assets/infrastructure/runtime/adapter-contract.ts').SUPPORTED_AGENT_IDS;
+  isSupportedAgent: typeof import('../../agent-assets/infrastructure/runtime/adapter-contract.ts').isSupportedAgent;
+}
+
+export function registerSystemDoctorApplication(dependencies: DoctorDependencies) {
+  const { RUNTIME_ADAPTERS, SUPPORTED_AGENT_IDS, isSupportedAgent } = dependencies;
+  const discoverDoctorScopes = dependencies.discoverDoctorScopes;
+  const diagnoseProjectRegistry = dependencies.diagnoseProjectRegistry;
+  const diagnoseWorkspace = dependencies.diagnoseWorkspace;
+  const diagnoseLegacyPractices = dependencies.diagnoseLegacyPractices;
+  const diagnoseHierarchy = dependencies.diagnoseHierarchy;
+  const diagnoseServices = dependencies.diagnoseServices;
+  const diagnoseRuntime = dependencies.diagnoseRuntime;
+  const detectManagedRuntimeAgents = dependencies.detectManagedRuntimeAgents;
+  const diagnoseCommands = dependencies.diagnoseCommands;
+  const diagnoseComponents = dependencies.diagnoseComponents;
+  const diagnoseSkillsManifestSchemas = dependencies.diagnoseSkillsManifestSchemas;
+  const diagnoseSkillCapabilities = dependencies.diagnoseSkillCapabilities;
+  const diagnoseProjectVerification = dependencies.diagnoseProjectVerification;
+  const inspectPackageBuiltins = (targetRoot: string) => dependencies.inspectPackageBuiltins(targetRoot);
+  const finalizeDoctorResult = dependencies.finalizeDoctorResult;
+  const releaseAwareness = dependencies.releaseAwareness;
+  const assertAgentId = dependencies.assertAgentId;
+  const addDoctorFinding = dependencies.addDoctorFinding;
+  const diagnoseRules = dependencies.diagnoseRules;
+  const diagnoseWorkspaceMetadata = dependencies.diagnoseWorkspaceMetadata;
+  const diagnoseMutations = dependencies.diagnoseMutations;
 
   function diagnoseProductInstallation(result: any) {
-    result.productInstallation = runtime.buildInstallationInventory();
+    result.productInstallation = dependencies.buildInstallationInventory();
   }
 
   function diagnoseReleaseAwareness(result: any, options: any = {}) {
@@ -64,7 +97,7 @@ export function registerSystemDoctorApplication(runtime: any) {
       return;
     }
     try {
-      const observation = runtime.inspectWorkspaceStructuredStore(targetRoot);
+      const observation = dependencies.inspectWorkspaceStructuredStore(targetRoot);
       result.structuredStore = observation;
       if (observation.status === 'uninitialized' && includeInfo) {
         addDoctorFinding(result, 'info', 'workspace.structured_store_uninitialized', 'Workspace structured store 尚未初始化；首次合法结构化写入会创建数据库。');
@@ -78,15 +111,12 @@ export function registerSystemDoctorApplication(runtime: any) {
     }
   }
 
-  function doctor(args: any, internalOptions: any = {}) {
-    const targetRoot = path.resolve(optionValue(args, '--target', process.cwd()));
-    const requestedScope = optionValue(args, '--scope', null);
-    const requestedAgent = optionValue(args, '--agent', null);
+  function doctor(input: DoctorInput) {
+    const targetRoot = path.resolve(input.targetRoot);
+    const requestedScope = input.scope ?? null;
+    const requestedAgent = input.agent ?? null;
     if (requestedAgent !== null) assertAgentId(requestedAgent);
-    const json = hasFlag(args, '--json');
-    const detail = optionValue(args, '--detail', 'compact');
-    if (!['compact', 'full'].includes(detail)) throw new Error('--detail must be compact or full.');
-    const includeInfo = hasFlag(args, '--include-info') || hasFlag(args, '--verbose');
+    const includeInfo = input.includeInfo === true;
     const result: any = {
       targetRoot,
       scope: requestedScope || null,
@@ -134,7 +164,7 @@ export function registerSystemDoctorApplication(runtime: any) {
 
     diagnoseWorkspace(result, targetRoot);
     diagnoseProductInstallation(result);
-    diagnoseReleaseAwareness(result, internalOptions.releaseAwarenessOptions);
+    diagnoseReleaseAwareness(result, input.releaseAwarenessOptions);
     if (result.workspace?.initialized) diagnoseWorkspaceMetadata(result, targetRoot);
     if (result.workspace?.initialized) diagnoseWorkspaceStructuredStore(result, targetRoot, includeInfo);
     diagnoseMutations(result, targetRoot);
@@ -191,26 +221,12 @@ export function registerSystemDoctorApplication(runtime: any) {
     result.agentRuntime.diagnosticMode = requestedAgent ? 'selected-runtime' : 'managed-runtime-inventory';
     diagnoseComponents(result, targetRoot, includeInfo, requestedAgent, detectedAgents);
     diagnoseCommands(result, targetRoot, requestedScope && requestedScope.startsWith('projects/') ? [requestedScope.split('/')[1]] : []);
-    if (internalOptions.skipRuntime !== true) diagnoseRuntime(result, targetRoot, scopes, { includeInfo, agent: requestedAgent, detectedAgents });
+    if (input.skipRuntime !== true) diagnoseRuntime(result, targetRoot, scopes, { includeInfo, agent: requestedAgent, detectedAgents });
     finalizeDoctorResult(result);
 
-    if (json) {
-      const report = detail === 'compact' ? {
-        targetRoot: result.targetRoot, scope: result.scope, agentRuntime: result.agentRuntime,
-        productInstallation: result.productInstallation,
-        releaseAwareness: result.releaseAwareness,
-        notices: result.notices,
-        ok: result.ok, summary: result.summary, health: result.health, domainHealth: result.domainHealth,
-        findings: result.findings, repairPlan: result.repairPlan, nextSteps: result.nextSteps,
-      } : result;
-      process.stdout.write(`${JSON.stringify(withJsonSchema(PUBLIC_JSON_SCHEMAS.doctor, report), null, 2)}\n`);
-    } else {
-      printDoctorReport(result);
-    }
-    process.exitCode = result.ok ? 0 : 1;
+    return result;
   }
 
 
-  Object.assign(runtime, { doctor, diagnoseWorkspaceStructuredStore });
-  return runtime;
+  return Object.freeze({ doctor, diagnoseWorkspaceStructuredStore });
 }

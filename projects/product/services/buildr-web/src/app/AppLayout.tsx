@@ -1,11 +1,15 @@
 import { runtimeSystemApi } from './api/runtime-system-api';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, NavLink, Outlet, useNavigate, useParams } from 'react-router-dom';
-import { Button, Drawer, Dropdown, Space, Typography } from 'antd';
-import { CaretDownFilled, PlusOutlined } from '@ant-design/icons';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Link, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { Button, Drawer, Dropdown, Typography } from 'antd';
+import { CaretDownFilled, MenuOutlined, PlusOutlined } from '@ant-design/icons';
 import { api, setWorkspaceId } from '../api';
 import { AppShellContext, type WorkspaceShellInfo } from './AppShellContext';
+import { AppNavigation } from './AppNavigation';
+import { navigationState } from './navigation';
+import { workspaceApi } from '../features/workspace/api/workspace-api';
 import { AgentActionDrawer } from './AgentActionDrawer';
+import { DrawerShell } from '../components/DrawerShell';
 import { confirmModal } from '../lib/confirm';
 import { ReleaseAwarenessBanner } from '../features/installation/components/ReleaseAwarenessBanner';
 
@@ -44,52 +48,26 @@ function productTitle(webProfile: WebProfile | null): string {
   return webProfile === 'development' ? 'Buildr Web Dev' : 'Buildr Web';
 }
 
-function navClass({ isActive }: { isActive: boolean }): string {
-  return isActive ? 'active' : '';
-}
-
-function PrimaryNav({
-  workspaceHref,
-  resetTaskList,
-  onNavigate,
-}: {
-  workspaceHref: (suffix: string) => string;
-  resetTaskList: () => void;
-  onNavigate?: () => void;
-}) {
-  const items = [
-    { suffix: '/tasks', nav: 'tasks', label: '任务', onClick: resetTaskList },
-    { suffix: '/projects', nav: 'projects', label: '项目' },
-    { suffix: '/services', nav: 'services', label: '服务' },
-    { suffix: '/articles', nav: 'articles', label: '文章' },
-  ] as const;
-
-  return (
-    <nav className="top-nav" aria-label="Buildr Web 主导航">
-      {items.map((item) => (
-        <NavLink
-          key={item.nav}
-          to={workspaceHref(item.suffix)}
-          data-nav={item.nav}
-          data-workspace-route={item.suffix}
-          className={navClass}
-          onClick={() => {
-            if ('onClick' in item) item.onClick();
-            onNavigate?.();
-          }}
-        >
-          {item.label}
-        </NavLink>
-      ))}
-    </nav>
-  );
-}
-
 export function AppLayout() {
   const params = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const workspaceId = params.workspaceId ?? null;
   const isGlobal = !workspaceId;
+  const area = navigationState(location.pathname, location.search, workspaceId).area;
+  const [navigationOpen, setNavigationOpen] = useState(false);
+  const [compactNavigation, setCompactNavigation] = useState(() => window.matchMedia('(max-width: 899px)').matches);
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 899px)');
+    const update = () => { setCompactNavigation(media.matches); setNavigationOpen(false); };
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  }, []);
+  const workspaceDestination = useRef({ workspaceId, path: `/workspaces/${workspaceId}/projects` });
+  if (workspaceDestination.current.workspaceId !== workspaceId) {
+    workspaceDestination.current = { workspaceId, path: `/workspaces/${workspaceId}/projects` };
+  }
+  if (area === 'workspace' && workspaceId) workspaceDestination.current.path = location.pathname + location.search;
   setWorkspaceId(workspaceId);
 
   const [workspace, setWorkspaceState] = useState<WorkspaceShellInfo | null>(null);
@@ -99,6 +77,8 @@ export function AppLayout() {
   const [drawerContext, setDrawerContext] = useState<Record<string, unknown>>({});
   const [exited, setExited] = useState(false);
   const [taskListResetToken, setTaskListResetToken] = useState(0);
+  const [navigationRevision, setNavigationRevision] = useState(0);
+  const refreshNavigation = useCallback(() => setNavigationRevision((value) => value + 1), []);
   const [registry, setRegistry] = useState<WorkspaceEntry[]>([]);
 
   const preview = useMemo(() => readPreviewIdentity(), []);
@@ -155,6 +135,18 @@ export function AppLayout() {
     return () => controller.abort();
   }, []);
 
+  useEffect(() => {
+    if (!workspaceId) return;
+    const controller = new AbortController();
+    setWorkspaceState(null);
+    void workspaceApi.read({ signal: controller.signal }).then((data) => {
+      if (!controller.signal.aborted) setWorkspace(data);
+    }).catch(() => { /* Page-level diagnostics remain available. */ });
+    return () => controller.abort();
+  }, [workspaceId, setWorkspace]);
+
+  useEffect(() => { setNavigationOpen(false); }, [location.pathname, location.search]);
+
   const quit = async () => {
     const ok = await confirmModal({
       title: '退出 Buildr Web？',
@@ -169,6 +161,8 @@ export function AppLayout() {
 
   const shellValue = {
     workspaceId,
+    navigationRevision,
+    refreshNavigation,
     workspace,
     setWorkspace,
     openAgentAction,
@@ -200,24 +194,6 @@ export function AppLayout() {
       };
     }),
   ];
-
-  const settingsLink = !isGlobal ? (
-    <NavLink
-      to={workspaceHref('/settings')}
-      data-nav="settings"
-      data-workspace-route="/settings"
-      className={navClass}
-    >
-      设置
-    </NavLink>
-  ) : null;
-
-  const primaryNav = !isGlobal ? (
-    <PrimaryNav
-      workspaceHref={workspaceHref}
-      resetTaskList={resetTaskList}
-    />
-  ) : null;
 
   if (exited) {
     return (
@@ -251,8 +227,7 @@ export function AppLayout() {
               开发版
             </span>
           ) : null}
-          {primaryNav}
-          <div className="topbar-actions">
+
             <Dropdown menu={{ items: workspaceMenuItems }} trigger={['click']}>
               <button type="button" className="workspace-switcher" aria-label="切换工作空间">
                 <span className="context-label">工作空间</span>
@@ -262,7 +237,13 @@ export function AppLayout() {
                 <CaretDownFilled aria-hidden />
               </button>
             </Dropdown>
-            {settingsLink}
+          {!isGlobal ? <nav className="top-nav" aria-label="主导航">
+            <Link to={workspaceHref('/tasks')} data-area="workbench" aria-current={area === 'workbench' ? 'page' : undefined} className={area === 'workbench' ? 'active' : ''}
+              onClick={resetTaskList}>工作台</Link>
+            <Link to={workspaceDestination.current.path} data-area="workspace" aria-current={area === 'workspace' ? 'page' : undefined} className={area === 'workspace' ? 'active' : ''}>工作空间</Link>
+          </nav> : null}
+          <div className="topbar-actions">
+            {!isGlobal ? <Button className="shell-menu-toggle" aria-label="打开导航菜单" icon={<MenuOutlined />} onClick={() => setNavigationOpen(true)} /> : null}
             <Button id="quit-buildr" className="nav-quit" type="text" onClick={() => { void quit(); }}>
               退出
             </Button>
@@ -288,40 +269,33 @@ export function AppLayout() {
           </div>
         </header>
         <ReleaseAwarenessBanner openAgentAction={openAgentAction} />
-        <main id="app-view" tabIndex={-1} aria-live="polite">
-          <Outlet />
-        </main>
+        <div className={`app-frame${isGlobal ? ' is-global' : ''}`}>
+          {!isGlobal && !compactNavigation ? <aside className="app-sidebar"><AppNavigation key={workspaceId} /></aside> : null}
+          <main id="app-view" tabIndex={-1} aria-live="polite"><Outlet key={workspaceId} /></main>
+        </div>
       </div>
 
+      {!isGlobal ? <Drawer title="导航" placement="left" width={280} open={navigationOpen}
+        onClose={() => setNavigationOpen(false)} destroyOnClose>
+        {navigationOpen ? <AppNavigation key={workspaceId} onNavigate={() => setNavigationOpen(false)} /> : null}
+      </Drawer> : null}
       <div
         id="agent-action-backdrop"
         className={drawerOpen ? '' : 'hidden'}
         onClick={closeAgentAction}
         aria-hidden
       />
-      <Drawer
+      <DrawerShell
         id="agent-action-drawer"
         open={drawerOpen}
         onClose={closeAgentAction}
-        width={440}
-        destroyOnClose
-        title={(
-          <Space direction="vertical" size={0}>
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>AGENT ACTION</Typography.Text>
-            <Typography.Title id="agent-action-title" level={4} style={{ margin: 0 }}>交给 Agent</Typography.Title>
-          </Space>
-        )}
-        extra={(
-          <Button
-            id="close-agent-action"
-            type="text"
-            aria-label="关闭"
-            onClick={closeAgentAction}
-          >
-            关闭
-          </Button>
-        )}
-        closable={false}
+        eyebrow="AGENT ACTION"
+        title="交给 Agent"
+        titleId="agent-action-title"
+        sub="选择要由 Agent 完成的动作"
+        closeAriaLabel="关闭"
+        closeButtonId="close-agent-action"
+        rootClassName="agent-action-shell"
       >
         <div id="agent-action-content">
           {drawerOpen ? (
@@ -331,7 +305,7 @@ export function AppLayout() {
             />
           ) : null}
         </div>
-      </Drawer>
+      </DrawerShell>
     </AppShellContext.Provider>
   );
 }

@@ -17,15 +17,18 @@ projects/product/                         项目（Project）：跨服务产品�
 ├── openspec/
 │   ├── specs/                            当前规范承诺
 │   └── changes/                          变更方案、清单与历史归档
-├── docs/                                 产品解释、设计理由和维护说明
-├── knowledge/                            当前实现认知，不是第二规范
-│   ├── overview.md                       当前产品概览
-│   ├── glossary.md                       术语与语义边界
-│   ├── architecture/                     当前产品、技术和验证架构
-│   ├── services/                         各服务职责
-│   ├── flows/                            跨对象流程
+├── docs/                                 历史审计、规划、文章与导航
+├── knowledge/                            三类当前成果，不是第二规范
+│   ├── README.md                         统一阅读入口
 │   ├── code-map/                         本地图：树、对象、方法、调用
-│   └── archify/                          基于相同事实的交互技术图
+│   ├── archify/                          技术图源与可查看成果
+│   └── docs/                             面向人的当前产品与技术解释
+│       ├── overview.md                    产品概览
+│       ├── glossary.md                    术语与语义边界
+│       ├── architecture/                  产品、技术和专题架构
+│       ├── services/                      服务职责
+│       ├── flows/                         跨对象流程
+│       └── guides/                        使用、开发与运行入口
 └── services/
     ├── manifest.yml                      服务登记
     ├── buildr/                           命令行、后端、本机网页宿主
@@ -51,3 +54,8 @@ projects/product/                         项目（Project）：跨服务产品�
 - 普通生成结果：服务 `build/`；前端构建兼后端托管产物：`buildr/web-dist/`。两者均被 Git 忽略，发布时仍包含运行必需内容。
 
 每日演进属于 `task/daily-progress/`，当前单机版以 Git 提交为主再关联本地任务；未来企业版任务主导汇总不是当前实现。
+
+## 有界模块地图
+
+- [技能源文件到可发现入口](skill-projection.md)：解析、组合、计划、受管写入与数据归属；关联技术图和解释文档。
+- [统一知识入口](../README.md)：从目标选择地图、技术图或面向人的说明。

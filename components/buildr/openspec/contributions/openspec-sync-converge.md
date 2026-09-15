@@ -1,5 +1,5 @@
-## Buildr OpenSpec Convergence Boundary
+## Buildr 独立规范同步
 
-Buildr Workspace不允许通过上游`openspec-sync-specs`直接写canonical specs。用户要求同步delta时，使用Agent已核对的当前Workspace或matching Worktree根，转用单一`buildr openspec converge <change> --project <project> --target <actual-work-root> --json`事务。
+用户要求同步规范而保留变更时，按上游 openspec-sync-specs 技能（Skill）执行。先在已核对的实际工作根运行 `buildr openspec convergence preflight <change> --project <project> --target <actual-work-root> --json`，处理与当前规范有关的冲突，再按授权范围更新并核对正式规范。
 
-当前认知 reconcile、Change checklist、proposal/delta classification 与直接验证属于调用 converge 前的工作。只有 converge 返回 passed 或幂等 archived，才报告 canonical sync/archive 已完成。Agent 随后重新观察当前 artifacts、代码和专业结果继续工作；不生成研发回执或规划身份。失败时原样报告 reason、evidence 与 next actions。Convergence Inspect 只读取仍存在的未决事务 Receipt。
+本入口保持变更进行中，不调用包含归档的 `buildr openspec converge`。preflight 只证明本次观察与相关冲突检查；上游 archive 命令的程序化写入与异常回滚保证不自动覆盖智能体直接编辑规范的路径。只有用户要求归档时，转交归档入口。

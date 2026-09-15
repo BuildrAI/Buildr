@@ -6,7 +6,7 @@ services:
     workspaceId: f2f40b71-2382-5906-82bd-76a7927b59f3
     projectId: 62bc8f4b-f8b6-4e8b-b40c-f93b466e3993
     code: buildr
-    name: Buildr
+    name: Buildr 后端
     description: Buildr 的 CLI、Buildr Web Runtime、运行源码、验证、打包与发布实现。
     type: application
     source:
@@ -17,7 +17,7 @@ services:
     workspaceId: f2f40b71-2382-5906-82bd-76a7927b59f3
     projectId: 62bc8f4b-f8b6-4e8b-b40c-f93b466e3993
     code: buildr-web
-    name: Buildr Web Frontend Service
+    name: Buildr 前端
     description: Buildr Web React/Vite 前端源码与正式构建
     type: application
     source:

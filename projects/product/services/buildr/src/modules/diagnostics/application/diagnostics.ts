@@ -4,7 +4,6 @@ import { execFileSync } from '../../../infrastructure/process.ts';
 import { createRuntimeDiagnostics } from './runtime-diagnostics.ts';
 import { createCapabilityDiagnostics } from './capability-diagnostics.ts';
 import { finalizeDoctorResult } from './result-model.ts';
-import { printProductInstallationReport } from './product-installation-report.ts';
 
 export function registerApplicationDoctor(runtime: any) {
   const { RUNTIME_CHECKERS, SUPPORTED_AGENT_IDS, UNSUPPORTED_AGENT_GUIDANCE, assembleRuntimeProjection, getRuntimeAdapter, isSupportedAgent } = runtime;
@@ -54,7 +53,7 @@ export function registerApplicationDoctor(runtime: any) {
     runtimeImplementation,
     toPosixRelative,
   });
-  const { diagnoseSkillCapabilities, printCapabilityReport } = createCapabilityDiagnostics({ addDoctorFinding, isSupportedAgent, path, resolveSkillCapabilityGraph });
+  const { diagnoseSkillCapabilities } = createCapabilityDiagnostics({ addDoctorFinding, isSupportedAgent, path, resolveSkillCapabilityGraph });
   const { diagnoseProjectVerification } = createProjectVerificationDiagnostics({ addDoctorFinding, resolveSourceRoot });
 
   function diagnoseSkillsManifestSchemas(result: any, targetRoot: any, scopes: any) {
@@ -84,40 +83,6 @@ export function registerApplicationDoctor(runtime: any) {
     }
   }
 
-  function printDoctorReport(result: any) {
-    console.log(`Buildr doctor for ${result.targetRoot}`);
-    console.log(`Status: ok=${result.summary.ok} info=${result.summary.info} warning=${result.summary.warning} error=${result.summary.error}`);
-    console.log(`Health: workspaceValid=${result.health.workspaceValid} ready=${result.health.ready} actionRequired=${result.health.actionRequired} actionable=${result.health.actionableCount}`);
-    console.log('');
-
-    if (result.findings.length === 0) {
-      console.log('[ok] 未发现问题。');
-    } else {
-      for (const finding of result.findings) {
-        const location = finding.path ? ` (${finding.path})` : '';
-        console.log(`[${finding.status}] ${finding.code}${location} - ${finding.message}`);
-      }
-    }
-
-    printProductInstallationReport(result);
-
-    if (result.notices?.length) {
-      console.log('\n版本发布提示：');
-      for (const notice of result.notices) console.log(`  ${notice.message}${notice.command ? `\n  命令：${notice.command}` : ''}`);
-    }
-
-    if (result.repairPlan.length > 0) {
-      console.log('');
-      console.log('Repair plan:');
-      for (const step of result.repairPlan) {
-        console.log(`${step.id} [${step.priority}] ${step.codes.join(', ')}`);
-        if (step.suggestion) console.log(`  建议：${step.suggestion}`);
-        for (const command of step.commands || []) console.log(`  命令：${command}`);
-      }
-    }
-
-    printCapabilityReport(result);
-  }
 
   Object.assign(runtime, {
     scopeParts,
@@ -148,7 +113,6 @@ export function registerApplicationDoctor(runtime: any) {
     diagnoseSkillCapabilities,
     diagnoseProjectVerification,
     finalizeDoctorResult,
-    printDoctorReport,
   });
   return runtime;
 }

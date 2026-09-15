@@ -17,7 +17,7 @@ export type ConvergenceReceipt = Omit<ConvergencePlan, 'status' | 'blocked'> & {
   confirmation: ExecutionEvidence | null; archive: ExecutionEvidence | null; createdAt: string; updatedAt: string;
 };
 
-export const CONVERGENCE_ALGORITHM_VERSION = 4;
+export const CONVERGENCE_ALGORITHM_VERSION = 5;
 export const CONVERGENCE_PLAN_SCHEMA = 'buildr.openspec-convergence-plan/v1';
 export const CONVERGENCE_RECEIPT_SCHEMA = 'buildr.openspec-convergence-receipt/v3';
 export const CONVERGENCE_RESULT_SCHEMA = 'buildr.openspec-convergence-result/v1';
@@ -117,12 +117,13 @@ export function validateConvergenceReceipt(receipt: ConvergenceReceipt) {
     files: receipt.files,
   };
   if (!Array.isArray(receipt.files) || receipt.files.length === 0 || convergencePlanIdentity(plan) !== receipt.planIdentity) throw new Error('OpenSpec convergence receipt plan identity is invalid.');
+  const contentDigest = (text: string) => convergenceDigest(receipt.algorithmVersion >= 5 ? text : normalizeConvergenceText(text));
   for (const file of receipt.files) {
     const beforeExists = file.beforeExists !== false;
     const expectedExists = file.expectedExists !== false;
-    if ((beforeExists && convergenceDigest(normalizeConvergenceText(file.beforeContent)) !== file.beforeDigest)
+    if ((beforeExists && contentDigest(file.beforeContent) !== file.beforeDigest)
       || (!beforeExists && file.beforeDigest !== null)
-      || (expectedExists && convergenceDigest(normalizeConvergenceText(file.expectedContent)) !== file.expectedDigest)
+      || (expectedExists && contentDigest(file.expectedContent) !== file.expectedDigest)
       || (!expectedExists && file.expectedDigest !== null)) {
       throw new Error(`OpenSpec convergence receipt content digest mismatch: ${file.path}`);
     }

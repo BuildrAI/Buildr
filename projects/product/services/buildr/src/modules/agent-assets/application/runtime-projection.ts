@@ -23,27 +23,52 @@ import {
 import { createRuntimePlan } from '../infrastructure/runtime/adapter-contract.ts';
 import { observeGitCheckoutIdentity, sameFilesystemPath } from '../../../infrastructure/git/checkout-identity.ts';
 
-export function registerApplicationRuntime(runtime: any): any  {
-  const syncPackageBuiltins = (...args: any[]) => runtime.syncPackageBuiltins(...args);
-  const syncPackageComponents = (...args: any[]) => runtime.syncPackageComponents(...args);
-  const buildRuntimeOrphanRemovalPlan = (...args: any[]) => runtime.buildRuntimeOrphanRemovalPlan(...args);
-  const optionValue = (...args: any[]) => runtime.optionValue(...args);
-  const withResolvedTarget = (...args: any[]) => runtime.withResolvedTarget(...args);
+export interface RuntimeProjectionDependencies {
+  syncPackageBuiltins: ReturnType<typeof import('./package-maintenance.ts').registerApplicationPackageMaintenance>['syncPackageBuiltins'];
+  syncPackageComponents: ReturnType<typeof import('./components.ts').registerDomainsComponents>['syncPackageComponents'];
+  buildRuntimeOrphanRemovalPlan: ReturnType<typeof import('./components.ts').registerDomainsComponents>['buildRuntimeOrphanRemovalPlan'];
+  optionValue: typeof import('../../../infrastructure/cli-arguments.ts').optionValue;
+  withResolvedTarget: typeof import('../../../infrastructure/cli-arguments.ts').withResolvedTarget;
+  withWorkspaceMutation: (...args: any[]) => any;
+  assertSafeSyncMutationPaths: ReturnType<typeof import('./package-maintenance/package-assets.ts').registerAgentAssetsPackageAssets>['assertSafeSyncMutationPaths'];
+  productRoot: () => string;
+  toPosixRelative: (...args: any[]) => any;
+  assertInitializedBuildrWorkspace: typeof import('../../../infrastructure/filesystem/workspace-identity.ts').assertInitializedBuildrWorkspace;
+  workspaceMigrationPlan: import('../../workspace/module.ts').WorkspaceAssetSupport['workspaceMigrationPlan'];
+  migrateWorkspaceMetadata: import('../../workspace/module.ts').WorkspaceAssetSupport['migrateWorkspaceMetadata'];
+  openWorkspaceStructuredStore: (...args: any[]) => any;
+  workspaceStructuredStorePath: (...args: any[]) => any;
+  projectMigrationPlan: import('../../workspace/module.ts').WorkspaceAssetSupport['projectMigrationPlan'];
+  migrateProjectRegistry: import('../../workspace/module.ts').WorkspaceAssetSupport['migrateProjectRegistry'];
+
+  currentProductInvocation: typeof import('../../../infrastructure/product-invocation/index.ts').currentProductInvocation;
+}
+
+export function registerApplicationRuntime(dependencies: RuntimeProjectionDependencies) {
+  const {
+    syncPackageBuiltins,
+    syncPackageComponents,
+    buildRuntimeOrphanRemovalPlan,
+    optionValue,
+    withResolvedTarget,
+  } = dependencies;
   const skillScopeForRuleScope = (scope: string) => {
     const parts = scope.split('/');
     return parts[0] === 'projects' && parts[1] ? `projects/${parts[1]}` : '.';
   };
-  const withWorkspaceMutation = (...args: any[]) => runtime.withWorkspaceMutation(...args);
-  const assertSafeSyncMutationPaths = (...args: any[]) => runtime.assertSafeSyncMutationPaths(...args);
-  const productRoot = (...args: any[]) => runtime.productRoot(...args);
-  const toPosixRelative = (...args: any[]) => runtime.toPosixRelative(...args);
-  const assertInitializedBuildrWorkspace = (...args: any[]) => runtime.assertInitializedBuildrWorkspace(...args);
-  const workspaceMigrationPlan = (...args: any[]) => runtime.workspaceMigrationPlan(...args);
-  const migrateWorkspaceMetadata = (...args: any[]) => runtime.migrateWorkspaceMetadata(...args);
-  const openWorkspaceStructuredStore = (...args: any[]) => runtime.openWorkspaceStructuredStore(...args);
-  const workspaceStructuredStorePath = (...args: any[]) => runtime.workspaceStructuredStorePath(...args);
-  const projectMigrationPlan = (...args: any[]) => runtime.projectMigrationPlan(...args);
-  const migrateProjectRegistry = (...args: any[]) => runtime.migrateProjectRegistry(...args);
+  const {
+    withWorkspaceMutation,
+    assertSafeSyncMutationPaths,
+    productRoot,
+    toPosixRelative,
+    assertInitializedBuildrWorkspace,
+    workspaceMigrationPlan,
+    migrateWorkspaceMetadata,
+    openWorkspaceStructuredStore,
+    workspaceStructuredStorePath,
+    projectMigrationPlan,
+    migrateProjectRegistry,
+  } = dependencies;
 
   function pathIsWithin(root: any, candidate: any): any  {
     const relative = path.relative(path.resolve(root), path.resolve(candidate));
@@ -255,7 +280,7 @@ export function registerApplicationRuntime(runtime: any): any  {
     const targetRoot = path.resolve(optionValue(syncArgs, '--target', process.cwd()));
     const authority = assertRuntimeSyncTarget(targetRoot, agent);
     if (authority.disposition === 'projection-only') {
-      const rendered = runtime.renderRuntime(agent, syncArgs, { productSkill: true });
+      const rendered = renderRuntime(agent, syncArgs, { productSkill: true });
       console.warn(authority.diagnostic);
       if (rendered.files.length > 0) {
         const ruleTargets: any = new Set(rendered.rulesActions.map((item: any) => item.targetFile));
@@ -290,7 +315,7 @@ export function registerApplicationRuntime(runtime: any): any  {
       },
     });
     const rendered = renderRuntime(agent, syncArgs, { productSkill: true });
-    const productInvocation = runtime.currentProductInvocation();
+    const productInvocation = dependencies.currentProductInvocation();
     const finalDoctor = (runFinalDoctor as any)({
       invocation: productInvocation,
       agent,
@@ -322,5 +347,12 @@ export function registerApplicationRuntime(runtime: any): any  {
     console.log('doctor 通过。');
   }
 
-  return Object.freeze({ assertRuntimeProjectionTarget, assertRuntimeSyncTarget, renderRuntime, renderSkillsRuntime, renderRulesRuntime, buildSyncSourcePlan, assertSyncSourcePlanReady, syncRuntime });
+  return Object.freeze({
+    assertRuntimeProjectionTarget,
+    assertRuntimeSyncTarget,
+    renderRuntime,
+    renderSkillsRuntime,
+    renderRulesRuntime,
+    syncRuntime,
+  });
 }

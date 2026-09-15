@@ -410,7 +410,7 @@ test('changed verification writes a persistent run-level timing summary', () => 
   try {
     const timingOutput: any = path.join(root, 'timing.json');
     const diagnosticsOutput: any = path.join(root, 'diagnostics');
-    const result: any = spawnSync(process.execPath, [path.join(productRoot, 'test', 'verification', 'changed.ts'), 'docs/buildr-product.md'], {
+    const result: any = spawnSync(process.execPath, [path.join(productRoot, 'test', 'verification', 'changed.ts'), 'knowledge/docs/overview.md'], {
       cwd: productRoot,
       encoding: 'utf8',
       env: { ...process.env, BUILDR_TIMING_OUTPUT: timingOutput, BUILDR_DIAGNOSTICS_OUTPUT: diagnosticsOutput },

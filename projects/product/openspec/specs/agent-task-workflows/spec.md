@@ -3,6 +3,7 @@
 ## Purpose
 
 定义 Buildr 内置场景化 Skills、Agent 任务协作、OpenSpec/Git/worktree/finish 工作流和分层验证契约。
+
 ## Requirements
 
 ### Requirement: Buildr Skill 引导场景化内置 Skills
@@ -196,7 +197,7 @@ Buildr 的 `task-triage` Skill MUST先核对任务相关事实，再分别判断
 - **AND** MUST NOT预先写入Change、代码、Task或任何位置记录
 
 ### Requirement: task-triage 必须通过条件能力依赖交接专业动作
-`task-triage` MUST optional 依赖 `buildr.current-knowledge-maintenance/v2` 和 `buildr.task-worktree-lifecycle/v2`，并 MUST 只在相应决策分支执行前读取 contract 与 selected provider；任何 provider 不 ready MUST 只阻塞或降级对应分支，不得使无关 triage 结论不可用。
+`task-triage` MUST optional 依赖 `buildr.current-knowledge-maintenance/v3` 和 `buildr.task-worktree-lifecycle/v2`，并 MUST 只在相应决策分支执行前读取 contract 与 selected provider；任何 provider 不 ready MUST 只阻塞或降级对应分支，不得使无关 triage 结论不可用。
 
 #### Scenario: Implementation 分支缺少 worktree provider
 - **WHEN** triage 已确认 `implementation` 但 `buildr.task-worktree-lifecycle/v2` 未 ready
@@ -204,7 +205,7 @@ Buildr 的 `task-triage` Skill MUST先核对任务相关事实，再分别判断
 - **AND** semantic decision MUST 保持可见
 
 #### Scenario: 当前事实 maintain provider 不可用
-- **WHEN** triage 选择独立 `spec-maintenance` 但 `buildr.current-knowledge-maintenance/v2` 未 ready
+- **WHEN** triage 选择独立 `spec-maintenance` 但 `buildr.current-knowledge-maintenance/v3` 未 ready
 - **THEN** current knowledge 写入 MUST 停止
 - **AND** triage MUST NOT 回退为无 evidence 的直接文档编辑或伪造 Change
 
@@ -214,33 +215,33 @@ Buildr 的 `task-triage` Skill MUST先核对任务相关事实，再分别判断
 - **AND** 实际验证开始前仍 MUST 由相应 consumer 解析 selected verification provider
 
 ### Requirement: Change lifecycle 必须在最终验证前收敛 Brief 与当前认知
-Buildr OpenSpec workflow MUST 在 propose/update 阶段 assess，在 apply 阶段执行真实维护任务并 reconcile，在 sync 和 Task Finish 阶段检查 evidence；所有可能修改 delivery content 的 reconcile MUST 在对应最终验证之前完成。OpenSpec archive 后 MUST NOT 再维护 glossary 或 current knowledge。
+Buildr OpenSpec workflow MUST 通过 v3 在 propose/update 阶段按真实范围 assess，在 apply 阶段完成已授权知识任务并 reconcile；最终依据 MUST 对应真实成果。智能体（Agent）MUST 只更新被内容或运行条件变化实际影响的检查，不把固定调用顺序或辅助记录作为验证、归档或收尾的全局门禁。归档动作 MUST NOT 附带知识写入，后续独立维护仍按当前事实与授权进行。
 
 #### Scenario: Propose 创建人类入口与影响任务
 - **WHEN** `openspec-propose` 完成 proposal、design、specs 和 tasks
 - **THEN** Agent MUST 使用 selected current-knowledge provider 创建或更新 Brief 并运行 assess
-- **AND** assess 识别的真实维护目标 MUST 进入 tasks 和 knowledge-impact evidence
+- **AND** assess 识别的真实维护目标 MUST 进入 tasks 及已采用的 knowledge-impact evidence
 - **AND** 无真实影响的目标 MUST NOT 产生空文档任务
 
 #### Scenario: Update 修订 planning artifacts
 - **WHEN** `openspec-update-change` 修改 scope、流程、影响、验收或 delta requirements
 - **THEN** Agent MUST 更新 Brief 并重新运行 assess
-- **AND** tasks 和 knowledge-impact evidence MUST 与修订后的 planning artifacts 保持一致
+- **AND** tasks 及已采用的 knowledge-impact evidence MUST 与修订后的 planning artifacts 保持一致
 
 #### Scenario: Apply 发现并处理当前认知影响
 - **WHEN** `openspec-apply-change` 实现 Change tasks
-- **THEN** Agent MUST 执行已识别的 Brief、knowledge 和 terminology tasks，并把实现中新发现的真实影响加入 tasks/evidence
+- **THEN** Agent MUST 执行已识别的 Brief、knowledge 和 terminology tasks，并把实现中新发现的真实影响加入 tasks 及已采用的 evidence
 - **AND** implementation content 完成后 MUST 运行 reconcile，再进入最终 verification
 
 #### Scenario: Sync 前核对 reconcile evidence
 - **WHEN** `openspec-sync-specs` 准备把 delta specs 同步到 canonical specs
 - **THEN** Agent MUST 核对 reconcile result 对应当前 Change、canonical candidate 和 delivery tree identity
-- **AND** evidence 缺失、陈旧或 unresolved 时 MUST 停止 sync 并报告 next actions
+- **AND** 辅助 evidence 缺失或陈旧时 MUST 直接核对当前事实并报告局部缺口；只有真实语义冲突会使规范同步错误时 MUST 停止相关 sync
 
 #### Scenario: Archive 不补写当前认知
 - **WHEN** Change 已完成 sync、verification、current-knowledge inspect 并准备 archive
 - **THEN** archive MUST 只移动 Change 及其 companion/sidecar artifacts
-- **AND** archive 完成后 MUST NOT 触发 glossary、overview、architecture、flows 或 services 写入
+- **AND** archive 动作 MUST NOT 附带 glossary、overview、architecture、flows 或 services 写入；后续独立已授权维护 MUST 不改写历史 Change
 
 ### Requirement: 实现型 workflow 必须绑定 task execution context
 Buildr的Task Triage与OpenSpec Skills MUST在写入前核对实际Git checkout、Project/Service registry、owned scope和适用Worktree evidence。workflow MUST NOT要求matching Environment Receipt、统一`ready`、runtime projection或session adoption作为普通proposal、实现、构建、Review、Verification或交付前置。
@@ -491,24 +492,6 @@ Buildr MUST 交付唯一 Skill-only `git-operations`，并 MUST 通过 selected 
 - **THEN** provider MUST NOT 自动 stash、reset、rebase、merge、force push、改写共享历史或切换策略
 - **AND** 语义或重大风险决定 MUST 由 Agent 交还用户，恢复或重试 MUST 先重新核验事实
 
-### Requirement: OpenSpec apply、sync 和 archive 必须使用单一 convergence authority
-Buildr MUST在apply入口执行apply-ready、strict validation与proposal/delta门禁，并 MUST让独立sync/archive consumers拒绝canonical写入或归档旁路，统一转交`buildr openspec converge`。Convergence target MUST是Agent已核对的实际Change工作根，可以是当前Workspace或matching Worktree，不要求Task Environment。
-
-#### Scenario: Apply 开始实现
-- **WHEN** `openspec-apply-change`准备进行首个实现编辑
-- **THEN** prepend MUST验证apply-required artifacts complete、上游strict validation、semantic preflight与实际工作根
-- **AND**门禁未通过时 MUST blocked，delta Requirement identity或工作根发生变化后 MUST重新检查
-
-#### Scenario: 用户直接调用 sync
-- **WHEN**用户要求`openspec-sync-specs`在Buildr Workspace写入canonical specs
-- **THEN**prepend MUST拒绝上游agent-driven sync并转用`buildr openspec converge`
-- **AND**sync consumer MUST NOT要求Environment、旧研发或旧Finish状态
-
-#### Scenario: 用户直接调用 archive
-- **WHEN**用户要求`openspec-archive-change`跳过未完成tasks、spec sync或convergence直接归档
-- **THEN**prepend MUST拒绝确认绕过并转用`buildr openspec converge`
-- **AND**只有converge返回passed或幂等archived结果时才 MUST报告canonical sync/archive完成
-
 ### Requirement: task-manager Skill 必须作为 Buildr Web 与 CLI 共享的 Task Record 薄管理入口
 Buildr MUST交付现有`task-manager` workspace Skill作为`buildr.task-record/v3`默认provider，指导Agent创建、读取和维护正式Task Record。`task-manager` MUST不成为全局任务dispatcher或父任务流程总管。Buildr Web MUST作为同一Task Record Application的独立人类客户端；任一客户端 MUST不直接访问SQLite或migration scripts。
 
@@ -586,7 +569,7 @@ Buildr 内置任务 Skills MUST 引导 Agent 只在当前动作成为 next execu
 
 #### Scenario: 首次修改前建立 source map
 - **WHEN** Agent 准备修改 proposal、Skill、代码、测试或当前知识
-- **THEN** guidance MUST要求从直接相关的 canonical specs、current knowledge、实现、测试与 registry 建立一次有界 authority source map
+- **THEN** guidance MUST按实际影响核对直接相关实现和约束；小改动不要求遍历规范、知识、测试与登记信息，涉及行为、职责或权威来源变化时才扩大调查并形成有界来源图（Authority Source Map）
 - **AND** 后续 MUST只在 scope、authority 或相关事实变化时增量刷新，不得把该 map 写成新的产品 authority或反复全量扫描
 
 ### Requirement: 验证范围引导必须保持计划预览与正式 evidence 分离
@@ -766,48 +749,34 @@ Buildr Release workflow MUST让唯一`release-<version>` Task表达维护者要�
 - **THEN** Skill MUST以同一orchestration identity只恢复尚未完成的owner步骤
 - **AND** MUST NOT重跑Publication、撤销已成立effects或创建resume/finalize协调Task
 
-### Requirement: task-triage 必须在正式 Task 创建前收敛逐repository权威基线
-当 `task-triage` 已确认进入正式持久交付且需要创建新 Task Record 时，Agent MUST 在调用 Task Record `create` 前解析完整 repository set，并为每个repository从Project/Service registry声明、当前branch/upstream或用户明确选择中取得唯一integration branch与remote。Agent MUST通过selected `buildr.git-operations/v1` provider将每个clean local integration branch收敛到本次fetch后的matching remote ref。只有全部仓库成功且适用的Workspace transition check已ready时才能创建Task；Task Record Application与Task Environment MUST NOT因此获得Git mutation authority。
+### Requirement: task-triage 必须分离任务登记与代码更新
+Agent MUST 在创建或激活任务前确认用户目标、目标工作空间、任务范围、已有匹配记录与写入授权，更新已有记录时 MUST 使用已观察版本。任务登记 MUST NOT 以 Git 更新、干净工作目录、集成分支、上游引用、Git 提供者或全局 Doctor 就绪为前置。代码更新与后续专业动作 MUST 按实际用户目标及当前事实独立选择；登记成功 MUST NOT 被解释为代码、环境、验证或交付已经就绪。
 
-#### Scenario: 不同repository使用不同integration branch
-- **WHEN** Workspace与两个Service repository分别声明`dev`、`dev-pigs`与`dev-nm`及各自matching upstream
-- **THEN** task-triage MUST逐repository核对并使用声明的local/remote refs执行fetch与适用rebase
-- **AND** MUST不要求全部repository切换为`dev/origin/dev`
+#### Scenario: 仅登记或激活任务
+- **WHEN** 任务目标、范围和授权明确，记录输入合法
+- **THEN** Agent MUST 直接创建或激活任务，MUST NOT 为登记执行 fetch、rebase 或工作空间同步
 
-#### Scenario: 全部仓库已对齐或成功收敛
-- **WHEN** 完整repository set均处于各自clean integration branch、upstream匹配权威remote ref，且fetch与适用rebase全部成功
-- **THEN** task-triage MUST核对每个仓库的before/after branch、HEAD与实际effects
-- **AND** MUST仅在适用的Workspace transition check ready后调用selected Task Record provider的`create`
+#### Scenario: 本地存在未提交内容或进行中的 Git 操作
+- **WHEN** 合法任务登记范围内存在未提交内容或进行中的 Git 操作
+- **THEN** Agent MUST 保留 Git 现场并允许记录写入
+- **AND** 后续代码修改 MUST 独立核对归属和冲突，无法安全执行时只暂停对应动作
 
-#### Scenario: 本地未push commit与远端同时前进
-- **WHEN** 仓库clean、本地integration branch含未push且未共享的commit，并且fetch后matching remote ref已前进
-- **THEN** task-triage MUST将repository、`rebase` operation、local branch与matching remote ref明确交给selected Git Operations provider
-- **AND** rebase成功后 MUST以新的local commit identity继续创建前门禁
+#### Scenario: 离线或上游无法解析
+- **WHEN** 网络不可用、上游缺失或集成分支无法唯一解析，但记录目标与范围明确
+- **THEN** Agent MUST 允许合法登记，MUST NOT 猜测 dev 或修改分支与上游
 
-#### Scenario: repository目标无法唯一解析
-- **WHEN** registry、当前branch/upstream与用户选择无法形成唯一integration branch或remote/ref
-- **THEN** task-triage MUST在该repository tree/history零写入状态阻塞Task创建并报告冲突来源
-- **AND** MUST NOT猜测`dev`、自动checkout、stash、merge、force push或改变策略
+#### Scenario: Git 提供者不可用
+- **WHEN** optional Git Operations 提供者不可用且当前只需任务登记
+- **THEN** Agent MUST 使用可用的任务记录提供者完成合法登记，不将 Git 依赖提升为必需
 
-#### Scenario: repository前置事实不满足
-- **WHEN** 任一仓库不在已解析的符号integration branch、upstream不匹配、working tree/index dirty、存在进行中的Git operation，或remote/ref/共享风险无法证明
-- **THEN** task-triage MUST在该仓库tree/history零写入状态阻塞Task创建并报告当前事实
-- **AND** MUST NOT自动checkout、stash/autostash、merge、force push、选择其他分支或改变策略
+#### Scenario: 用户另行要求更新代码
+- **WHEN** 用户目标确实需要更新明确仓库与引用，并且相应授权成立
+- **THEN** Agent MUST 使用已选 Git Operations 提供者独立执行并保留实际结果
+- **AND** 更新失败 MUST NOT 撤销已成立的任务登记或扩大为无关记录写入的阻塞
 
-#### Scenario: fetch或rebase失败
-- **WHEN** 任一仓库fetch失败、remote/ref漂移、rebase失败或出现冲突
-- **THEN** task-triage MUST不调用Task Record `create`，并报告全部仓库已经发生的effects与当前Git facts
-- **AND** MUST NOT把多仓库部分成功报告为零变化或原子回滚
-
-#### Scenario: clean pre-state的rebase冲突可恢复
-- **WHEN** rebase在已证明clean的仓库发生冲突，且`rebase --abort`能恢复精确pre-rebase branch、HEAD与clean状态
-- **THEN** selected Git Operation MUST报告conflict与recovered abort effects，Task创建仍 MUST blocked
-- **AND** abort无法完成或恢复identity无法证明时 MUST保留并报告真实冲突现场
-
-#### Scenario: Git Operations provider不可用
-- **WHEN** 新正式Task创建分支无法解析ready `buildr.git-operations/v1` selected provider
-- **THEN** task-triage MUST只阻塞Git基线收敛与Task Record create
-- **AND** 纯讨论、只读探索、已有Task inspect和不依赖该动作的语义判断 MUST保持可用
+#### Scenario: 登记自身条件不成立
+- **WHEN** 任务目标、范围、授权或记录版本不明确，或记录输入非法
+- **THEN** Agent MUST 停止对应记录写入并说明最小缺口
 
 ### Requirement: 收尾技能检查不得固化过程文案
 技能检查 MUST只执行通用结构、资源完整性与能力绑定约束，不要求旧流程关键字、最低字数或最低行数。
@@ -934,3 +903,22 @@ Buildr 投射的 Task Verification Skill MUST 在调用命令前区分项目检�
 - **WHEN** Agent 在非 Buildr Product 自举 Workspace 保存 Task Verification Report
 - **THEN** Skill MUST 指导 Agent 使用该 Workspace 当前合法的 installed/retained Buildr writer
 - **AND** MUST NOT 假设该 Workspace 存在 `projects/product/buildr`
+
+### Requirement: OpenSpec 接入必须复用上游并保持动作范围
+Buildr OpenSpec contributions MUST通过自有增强片段补充当前工作根、既有授权的延续、相关检查复用和必要恢复，保持上游技能原文；MUST保持独立同步不归档、显式归档按目标执行，不将辅助状态提升为统一工作许可。
+
+#### Scenario: 实现或同步继续
+- **WHEN** 用户继续实现或只同步规范
+- **THEN** 智能体按授权动作工作，不默认升级为归档
+
+#### Scenario: 延续明确授权
+- **WHEN** 用户已明确授权同一目标的规划与实现或一组材料修订
+- **THEN** 增强指引 MUST保留该授权，在当前动作完成后接续适用动作，不按阶段或文件重复请求确认；仅规划请求仍停止于规划
+
+#### Scenario: 普通错误与真实决定
+- **WHEN** 已授权动作遇到错误
+- **THEN** 增强指引 MUST允许在范围内修复可逆错误并复查，只对无法确定的业务语义、扩大授权、不可逆风险或错误对象写入暂停；不得绕过命令的阻塞状态
+
+#### Scenario: 阶段检查复用
+- **WHEN** 从提案转入实现且已有检查仍覆盖当前内容与相关现场
+- **THEN** 增强指引 MUST复用有效结果；材料、检查规则或相关进行中变更改变时，只刷新受影响检查

@@ -6,7 +6,19 @@ const text: any = { type: 'string', minLength: 1 };
 const closed = (properties: any, required: any = []) => ({ type: 'object', additionalProperties: false, properties, ...(required.length ? { required } : {}) });
 const schema = (id: any, title: any, body: any) => Object.freeze({ $schema: DRAFT_2020_12, $id: `${ROOT}/${id}/v1`, title, ...body });
 
+const nullableText = { type: ['string', 'null'] };
+const skillSummary = closed({ id: text, title: text, description: { type: 'string' }, sourceLabel: text,
+  sourcePath: nullableText, sourceReference: nullableText, enabled: { type: 'boolean' }, required: { type: 'boolean' }, contentIssue: nullableText },
+  ['id', 'title', 'description', 'sourceLabel', 'sourcePath', 'sourceReference', 'enabled', 'required', 'contentIssue']);
+const skillFileEntry = closed({ path: text, size: { type: 'number' }, readable: { type: 'boolean' }, reason: nullableText }, ['path', 'size', 'readable', 'reason']);
+
 export const AGENT_ASSETS_HTTP_SCHEMAS: Readonly<Record<string, any>> = Object.freeze({
+  skillsListRequest: schema('skills/list/request', 'SkillsListRequest', closed({})),
+  skillsListResponse: schema('skills/list/response', 'SkillsListResponse', closed({ skills: { type: 'array', items: skillSummary } }, ['skills'])),
+  skillDetailRequest: schema('skills/detail/request', 'SkillDetailRequest', closed({ id: text }, ['id'])),
+  skillDetailResponse: schema('skills/detail/response', 'SkillDetailResponse', closed({ skill: skillSummary, files: { type: 'array', items: skillFileEntry }, truncated: { type: 'boolean' }, issue: nullableText }, ['skill', 'files', 'truncated', 'issue'])),
+  skillFileRequest: schema('skills/file/request', 'SkillFileRequest', closed({ id: text, path: text }, ['id', 'path'])),
+  skillFileResponse: schema('skills/file/response', 'SkillFileResponse', closed({ path: text, content: { type: 'string' }, readingContent: { type: 'string' }, format: { enum: ['markdown', 'text'] }, digest: text }, ['path', 'content', 'readingContent', 'format', 'digest'])),
   inventoryRequest: schema('inventory/request', 'AgentAssetsInventoryRequest', closed({}, [])),
   inventoryResponse: schema('inventory/response', 'AgentAssetsInventoryResponse', closed({
     schemaVersion: { const: 'buildr.agent-assets-inventory/v1' },
@@ -24,6 +36,9 @@ export const AGENT_ASSETS_HTTP_SCHEMAS: Readonly<Record<string, any>> = Object.f
 });
 
 export const AGENT_ASSETS_HTTP_OPERATIONS = Object.freeze([
+  ['agent-assets.skills.list', 'GET', '/agent-assets/skills', 'skillsListRequest', 'skillsListResponse'],
+  ['agent-assets.skills.detail', 'GET', '/agent-assets/skills/:id', 'skillDetailRequest', 'skillDetailResponse'],
+  ['agent-assets.skills.file', 'GET', '/agent-assets/skills/:id/file', 'skillFileRequest', 'skillFileResponse'],
   ['agent-assets.inventory', 'GET', '/agent-assets', 'inventoryRequest', 'inventoryResponse'],
   ['agent-assets.rules.add', 'POST', '/agent-assets/rules', 'rulesAddRequest', 'mutationResponse'],
   ['agent-assets.rules.remove', 'DELETE', '/agent-assets/rules/:id', 'rulesRemoveRequest', 'mutationResponse'],

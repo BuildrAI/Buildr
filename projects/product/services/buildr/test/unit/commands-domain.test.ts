@@ -2,9 +2,12 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import test from 'node:test';
 
-import { registerDomainsCommands } from '../../src/modules/agent-assets/application/commands.ts';
+import { normalizedCommandSignature } from '../../src/modules/agent-assets/application/commands.ts';
+import { createCommandManifestRepository } from '../../src/modules/agent-assets/persistence/command-manifest-repository.ts';
+import * as versions from '../../src/modules/agent-assets/domain/command-version.ts';
+import * as probe from '../../src/modules/agent-assets/infrastructure/command-version-probe.ts';
 
-function runtime(): any  {
+function repositoryDependencies(): any  {
   return {
     normalizeRelativePathForBuildr(value: any): any  {
       if (value.includes('..')) throw new Error('outside commands');
@@ -16,7 +19,7 @@ function runtime(): any  {
 }
 
 test('Commands domain collection normalization 保持在 commands 子树', () => {
-  const commands: any = registerDomainsCommands(runtime());
+  const commands: any = createCommandManifestRepository(repositoryDependencies());
   assert.equal(commands.normalizeCommandCollection('commands/team/manifest.yml'), 'team');
   assert.equal(commands.normalizeCommandCollection('team'), 'team');
   assert.equal(commands.normalizeCommandCollection(null), null);
@@ -26,7 +29,7 @@ test('Commands domain collection normalization 保持在 commands 子树', () =>
 });
 
 test('Commands manifest validator 直接覆盖 schema、重复 id 和 executable 错误', () => {
-  const commands: any = registerDomainsCommands(runtime());
+  const commands: any = createCommandManifestRepository(repositoryDependencies());
   assert.deepEqual(commands.validateCommandsManifest({ schemaVersion: 'buildr.commands/v1', commands: [] }), []);
   const errors: any = commands.validateCommandsManifest({
     schemaVersion: 'buildr.commands/v0',
@@ -43,43 +46,40 @@ test('Commands manifest validator 直接覆盖 schema、重复 id 和 executable
 });
 
 test('Commands version parser 和 constraint comparator 处理边界', () => {
-  const commands: any = registerDomainsCommands(runtime());
-  assert.deepEqual(commands.parseVersion('tool version 2.3.4'), [2, 3, 4]);
-  assert.deepEqual(commands.parseVersionConstraint('>=2.1.0'), { operator: '>=', version: [2, 1, 0], rawVersion: '2.1.0' });
-  assert.equal(commands.versionSatisfies([2, 3, 4], commands.parseVersionConstraint('>=2.1.0')), true);
-  assert.equal(commands.versionSatisfies([1, 9, 9], commands.parseVersionConstraint('>=2.1.0')), false);
-  assert.equal(commands.parseVersionConstraint('not-a-version'), null);
+  assert.deepEqual(versions.parseVersion('tool version 2.3.4'), [2, 3, 4]);
+  assert.deepEqual(versions.parseVersionConstraint('>=2.1.0'), { operator: '>=', version: [2, 1, 0], rawVersion: '2.1.0' });
+  assert.equal(versions.versionSatisfies([2, 3, 4], versions.parseVersionConstraint('>=2.1.0')), true);
+  assert.equal(versions.versionSatisfies([1, 9, 9], versions.parseVersionConstraint('>=2.1.0')), false);
+  assert.equal(versions.parseVersionConstraint('not-a-version'), null);
 });
 
 test('Command version probe 为 Windows shim 选择受限平台启动策略', () => {
-  const commands: any = registerDomainsCommands(runtime());
   const args: any[] = ['--version'];
-  const windowsShim: any = commands.buildCommandProbeInvocation('C:\\npm\\openspec.cmd', args, { platform: 'win32' });
+  const windowsShim: any = probe.buildCommandProbeInvocation('C:\\npm\\openspec.cmd', args, { platform: 'win32' });
   assert.deepEqual(windowsShim, { executable: 'C:\\npm\\openspec.cmd', args: ['--version'], shell: true });
   args.push('--extra');
   assert.deepEqual(windowsShim.args, ['--version'], 'probe invocation must own its token array');
-  const nativeWindows: any = commands.buildCommandProbeInvocation('C:\\tools\\openspec.exe', ['--version'], { platform: 'win32' });
+  const nativeWindows: any = probe.buildCommandProbeInvocation('C:\\tools\\openspec.exe', ['--version'], { platform: 'win32' });
   assert.equal(nativeWindows.shell, false);
-  const posix: any = commands.buildCommandProbeInvocation('/usr/local/bin/openspec', ['--version'], { platform: 'linux' });
+  const posix: any = probe.buildCommandProbeInvocation('/usr/local/bin/openspec', ['--version'], { platform: 'linux' });
   assert.equal(posix.shell, false);
 });
 
 test('Command version probe 区分启动失败与输出不可解析', () => {
-  const commands: any = registerDomainsCommands(runtime());
-  const failed: any = commands.probeCommandVersion('C:\\npm\\openspec.cmd', ['--version'], {
+  const failed: any = probe.probeCommandVersion('C:\\npm\\openspec.cmd', ['--version'], {
     platform: 'win32',
     spawn: () => ({ error: Object.assign(new Error('spawn ENOENT'), { code: 'ENOENT' }) }),
   });
   assert.equal(failed.status, 'spawn-failed');
   assert.equal(failed.error.code, 'ENOENT');
   assert.equal(failed.invocation.shell, true);
-  const unknown: any = commands.probeCommandVersion('/usr/local/bin/openspec', ['--version'], {
+  const unknown: any = probe.probeCommandVersion('/usr/local/bin/openspec', ['--version'], {
     platform: 'linux',
     spawn: () => ({ status: 0, stdout: 'OpenSpec development build', stderr: '' }),
   });
   assert.equal(unknown.status, 'unknown');
   assert.equal(unknown.invocation.shell, false);
-  const parsed: any = commands.probeCommandVersion('/usr/local/bin/openspec', ['--version'], {
+  const parsed: any = probe.probeCommandVersion('/usr/local/bin/openspec', ['--version'], {
     platform: 'linux',
     spawn: () => ({ status: 0, stdout: 'openspec 1.6.0', stderr: '' }),
   });
@@ -87,7 +87,7 @@ test('Command version probe 区分启动失败与输出不可解析', () => {
 });
 
 test('Project Commands schema 只接受 requirement references', () => {
-  const commands: any = registerDomainsCommands(runtime());
+  const commands: any = createCommandManifestRepository(repositoryDependencies());
   assert.ok(commands.validateProjectCommandsDocument({ schemaVersion: 'buildr.project-commands/v1' })
     .some((error: any) => error.includes('requirements as an array')));
   assert.deepEqual(commands.validateProjectCommandsDocument({
@@ -104,21 +104,19 @@ test('Project Commands schema 只接受 requirement references', () => {
 });
 
 test('Project Command constraints 确定性求交并在无交集时 fail closed', () => {
-  const commands: any = registerDomainsCommands(runtime());
-  assert.deepEqual(commands.intersectVersionConstraints(['>=20.0.0', '<22.0.0']), {
+  assert.deepEqual(versions.intersectVersionConstraints(['>=20.0.0', '<22.0.0']), {
     compatible: true,
     constraint: '>=20.0.0 <22.0.0',
     constraints: ['>=20.0.0', '<22.0.0'],
   });
-  assert.equal(commands.intersectVersionConstraints(['=20.0.0', '>=20.0.0']).compatible, true);
-  assert.equal(commands.intersectVersionConstraints(['>=22.0.0', '<22.0.0']).compatible, false);
-  assert.equal(commands.intersectVersionConstraints(['=20.0.0', '=21.0.0']).compatible, false);
+  assert.equal(versions.intersectVersionConstraints(['=20.0.0', '>=20.0.0']).compatible, true);
+  assert.equal(versions.intersectVersionConstraints(['>=22.0.0', '<22.0.0']).compatible, false);
+  assert.equal(versions.intersectVersionConstraints(['=20.0.0', '=21.0.0']).compatible, false);
 });
 
 test('Command definition identity 不包含 requirement constraint', () => {
-  const commands: any = registerDomainsCommands(runtime());
   const base: any = { id: 'node', executable: 'node', purpose: 'Node', version: { args: ['--version'], constraint: '>=20.0.0' } };
   const other: any = { ...base, required: false, version: { args: ['--version'], constraint: '<22.0.0' } };
-  assert.equal(commands.normalizedCommandSignature(base), commands.normalizedCommandSignature(other));
-  assert.notEqual(commands.normalizedCommandSignature(base), commands.normalizedCommandSignature({ ...base, executable: 'nodejs' }));
+  assert.equal(normalizedCommandSignature(base), normalizedCommandSignature(other));
+  assert.notEqual(normalizedCommandSignature(base), normalizedCommandSignature({ ...base, executable: 'nodejs' }));
 });

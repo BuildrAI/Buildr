@@ -1,6 +1,6 @@
 {
   "name": "@buildr-ai/buildr",
-  "version": "0.1.0-rc.32",
+  "version": "0.1.0-rc.33",
   "private": false,
   "description": "Buildr CLI for managing Agent workspace assets.",
   "license": "MIT",
@@ -49,6 +49,7 @@
     "docs/cli-architecture.md",
     "docs/known-limitations.md",
     "docs/bootstrap-guide.md",
+    "docs/archify-component.md",
     "docs/resources.md",
     "resources/",
     "resources/runtime/",
@@ -120,7 +121,7 @@
     "yaml"
   ],
   "devDependencies": {
-    "@fission-ai/openspec": "1.6.0",
+    "@fission-ai/openspec": "1.13.0",
     "@types/node": "24.13.3",
     "esbuild": "0.28.2",
     "json-schema-to-typescript": "15.0.4",

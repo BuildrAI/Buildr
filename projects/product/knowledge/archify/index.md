@@ -2,9 +2,11 @@
 
 这里保存 Buildr Product 的当前态可视化投影（visual projection）。技术图服务于人和智能体理解系统，不替代事实源，也不承担 OpenSpec 规范或变更台账职责。
 
-[返回文字架构入口](../architecture/index.md)
+[返回文字架构入口](../docs/architecture/index.md)
 
 ## 当前入口
+
+- [技能源文件到可发现入口](flows/skill-projection.html)：本次有界示范；[图源](flows/skill-projection.json)、[逐节点关系来源与边界](flows/skill-projection.md)。
 
 - [Buildr 系统全景图源码](system/buildr-system-overview.json)：Archify 的结构化图表源码，依据当前 Product 代码、目录结构、OpenSpec 和已登记关系编写。
 - [Buildr 系统全景图](system/buildr-system-overview.html)：由源码生成的可浏览 HTML 图表。
@@ -17,7 +19,7 @@ JSON 是可维护源，HTML 是可重建投影。两者应保持同名、同目�
 
 技术图的依据是当前代码及其目录/模块登记、`openspec/specs/` 的规范性行为和 `knowledge/` 中已经整理的当前态模型。图表中的证据路径用于帮助回看依据，但不把图表变成第二事实源。
 
-`knowledge/` 是当前态模型；`docs/` 面向人的解释、维护说明、设计理由和未来思考；`openspec/` 继续承载规范、Change 和历史归档。图表治理、自动漂移检测和按授权触发的维护流程暂不在本目录实现，待系统全景图确认后另行设计。
+`knowledge/` 统一代码地图、技术图与 `knowledge/docs/` 解释文档；`docs/` 保留历史、规划、文章和导航。当前知识维护技能统一承接按范围的建设与维护，不提供后台监听或自动漂移重建。
 
 ## 预留维度
 

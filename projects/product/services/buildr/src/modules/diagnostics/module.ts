@@ -1,24 +1,10 @@
+import { createDoctorCliContributions } from './interfaces/cli/doctor.ts';
 import { registerApplicationDoctor } from './application/diagnostics.ts';
 import { registerSystemDoctorApplication } from './application/doctor-application.ts';
-import { WORKSPACE_APPLICATION, WORKSPACE_DIAGNOSTICS } from '../workspace/module.ts';
+import { WORKSPACE_DIAGNOSTICS } from '../workspace/module.ts';
 
 export const SYSTEM_DOCTOR_MODULE_ID = 'system-doctor';
 export const SYSTEM_DOCTOR_APPLICATION = 'system.doctor.application';
-
-function createDoctorCliContributions(application: any) {
-  return Object.freeze([Object.freeze({
-    key: 'doctor',
-    surface: 'primary',
-    summary: '诊断 workspace 源资产和 Agent runtime render 状态。传入 --agent 时只检查该 Agent adapter。',
-    help: [
-      'Usage: buildr doctor [--agent <agent>] [--target <dir>] [--scope <.|projects/project[/services/service[/path...]]>] [--json] [--detail <compact|full>] [--include-info] [--verbose]',
-      '',
-      '诊断 workspace 源资产和 Agent runtime render 状态。传入 --agent 时只检查该 Agent adapter。JSON 默认输出 compact；完整 inventory 使用 --detail full。',
-    ],
-    match: ({ domain }: any) => domain === 'doctor',
-    run: (_runtime: any, context: any) => application.doctor(context.argv.slice(3)),
-  })]);
-}
 
 export function createSystemDoctorModule(runtime: any, {
   diagnosticContributions = [],
@@ -52,11 +38,38 @@ export function createSystemDoctorModule(runtime: any, {
       copy(installationApplication, ['buildInstallationInventory', 'releaseAwareness']);
       copy(workspaceApplication, ['diagnoseWorkspaceMetadata']);
       registerApplicationDoctor(composition);
-      registerSystemDoctorApplication(composition);
+      const doctorApplication = registerSystemDoctorApplication({
+        discoverDoctorScopes: composition.discoverDoctorScopes,
+        diagnoseProjectRegistry: composition.diagnoseProjectRegistry,
+        diagnoseWorkspace: composition.diagnoseWorkspace,
+        diagnoseLegacyPractices: composition.diagnoseLegacyPractices,
+        diagnoseHierarchy: composition.diagnoseHierarchy,
+        diagnoseServices: composition.diagnoseServices,
+        diagnoseRuntime: composition.diagnoseRuntime,
+        detectManagedRuntimeAgents: composition.detectManagedRuntimeAgents,
+        diagnoseCommands: composition.diagnoseCommands,
+        diagnoseComponents: composition.diagnoseComponents,
+        diagnoseSkillsManifestSchemas: composition.diagnoseSkillsManifestSchemas,
+        diagnoseSkillCapabilities: composition.diagnoseSkillCapabilities,
+        diagnoseProjectVerification: composition.diagnoseProjectVerification,
+        inspectPackageBuiltins: composition.inspectPackageBuiltins,
+        finalizeDoctorResult: composition.finalizeDoctorResult,
+        releaseAwareness: composition.releaseAwareness,
+        assertAgentId: composition.assertAgentId,
+        addDoctorFinding: composition.addDoctorFinding,
+        diagnoseRules: composition.diagnoseRules,
+        diagnoseWorkspaceMetadata: composition.diagnoseWorkspaceMetadata,
+        diagnoseMutations: composition.diagnoseMutations,
+        buildInstallationInventory: composition.buildInstallationInventory,
+        inspectWorkspaceStructuredStore: composition.inspectWorkspaceStructuredStore,
+        RUNTIME_ADAPTERS: composition.RUNTIME_ADAPTERS,
+        SUPPORTED_AGENT_IDS: composition.SUPPORTED_AGENT_IDS,
+        isSupportedAgent: composition.isSupportedAgent,
+      });
       const diagnostics = Object.freeze([...diagnosticContributions]);
       const application = Object.freeze({
-        doctor: (...args: any[]) => composition.doctor(...args),
-        diagnoseWorkspaceStructuredStore: (...args: any[]) => composition.diagnoseWorkspaceStructuredStore(...args),
+        doctor: (input: import('./application/doctor-application.ts').DoctorInput) => doctorApplication.doctor(input),
+        diagnoseWorkspaceStructuredStore: doctorApplication.diagnoseWorkspaceStructuredStore,
         gitignoreLines: (...args: any[]) => composition.gitignoreLines(...args),
         readGitRemote: (...args: any[]) => composition.readGitRemote(...args),
         diagnostics,

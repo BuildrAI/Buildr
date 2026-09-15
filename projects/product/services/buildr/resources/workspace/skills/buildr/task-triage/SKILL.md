@@ -1,6 +1,6 @@
 ---
 name: task-triage
-description: 用户提出修复、实现、重构、优化、文档/测试或契约语义调整，或询问任务应走代码修改、当前事实维护还是 OpenSpec Change 时使用。
+description: 判断修改应直接实施、维护当前事实还是进入 OpenSpec 变更，并交接所需专业动作时使用。
 ---
 
 # Task Triage Skill
@@ -12,17 +12,17 @@ description: 用户提出修复、实现、重构、优化、文档/测试或契
 只读任务相关范围，不做全量审计。确认：
 
 - 用户希望外部行为或长期事实如何变化；
-- 相关 canonical specs、current knowledge、active Changes、实现、测试与 registries，以及其中的事实 authority；
-- 完整 Git repository set，使用 Workspace/Project/Service selector，不按目录层级猜测边界；
+- 直接相关实现和约束，以及决定当前动作所需的权威来源；
+- 登记使用已确认的 Workspace/Project/Service scope；实际需要 Git 操作时再核对相关 repository set，不按目录层级猜测边界；
 - 写入授权、不可逆影响和仍需用户决定的语义冲突。
 
-首次修改 proposal、Skill、代码、测试或当前知识前，从直接相关的 canonical specs、current knowledge、实现、测试与 registries 建立一次有界 authority source map。该 map 只用于当前 Agent 工作上下文，不写入 Task Record、sidecar 或其他产品 authority；后续只有 scope、authority 或相关事实变化时才增量刷新，不反复全量扫描。
+首次修改前，按改动影响核对直接相关实现和约束。小改动不要求遍历规范、知识、测试与登记信息；涉及行为、职责或权威来源变化时，再按需读取相关规范、当前认知、活跃变更、调用方、测试和登记信息，形成有界来源图（Authority Source Map）。来源图仅用于当前工作上下文，不写入任务记录或其他产品状态；只有范围或相关事实变化时才增量刷新。
 
-authority 冲突、授权或 repository set 不明、不可逆行为缺少决定，或是否进入实现仍未知时，停止对应写入，只询问会改变长期语义、责任边界或授权的最少问题。
+authority 冲突、授权不明、实际 Git 操作所需的 repository set 不明、不可逆行为缺少决定，或是否进入实现仍未知时，停止对应写入，只询问会改变长期语义、责任边界或授权的最少问题。
 
 ### UI Prototype 选择
 
-若当前 Task、提案或预期实现可能产生用户可见的前端 UI 变化，向用户询问：“本次是否需要先生成界面原型（UI Prototype）？”询问只负责取得选择，不生成文件，也不改变语义治理或执行形态判断。
+新页面、主要布局或交互存在实质设计选择，且用户尚未表达原型偏好时，询问是否需要先生成界面原型（UI Prototype）。已有明确偏好继续适用；已明确设计的局部文案、样式或交互修复直接推进，不机械询问。用户主动要求原型时，按下方明确选择边界处理。
 
 只有用户在当前任务中明确确认需要，才在方案已有足够上下文、正式前端实现开始前加载 selected `ui-prototype` Skill。用户拒绝、未确认或直接要求继续时不调用 Skill，正常推进后续流程；不得创建占位文件、waiver、Result、Receipt 或 blocker。UI Prototype 不替代 OpenSpec Change、Planning Review 或正式实现。一旦当前 Task 已生成原型，除非用户明确要求忽略，后续 Agent 必须在正式前端编辑前读取全部相关原型并按其信息架构、布局和交互开发。
 
@@ -57,50 +57,24 @@ authority 冲突、授权或 repository set 不明、不可逆行为缺少决定
 
 用户已经授权实现时，先选择直接工作或matching Worktree。两种路径都在真实Git、文件ownership与副作用边界内立即推进；OpenSpec、Review、Verification与Finish直接消费实际对象和具体资源owner，不要求统一ready。
 
-| 分支 | Capability / 动作 | 必要输入与成功证据 | 失败处理 |
-|---|---|---|---|
-| 新正式 Task 的 Git 基线 | `buildr.git-operations/v1` 的独立 `fetch` 与 `rebase` | 完整 repository set 分别证明current integration branch、matching upstream与clean状态；每个 operation 返回before/after、effects与current facts，适用Workspace transition check ready | 任一目标解析、前置事实、provider、fetch、rebase、冲突恢复或Doctor blocked时不调用Task Record `create`；报告全部部分effects，不换策略 |
-| 待办意向 | `buildr.task-record/v3` 的 `create --status todo` | 用户已接受但尚未启动的意向、stable ID、title、intent与scope；只返回SQLite record/effects | 不运行Git基线，不创建Change或专业placeholder |
-| 正式持久交付 | `buildr.task-record/v3` 的 active `create`、todo `activate` 或 `inspect` | stable Task ID、title、intent、canonical Workspace 与真实 scope/Change；首次执行写入前返回 current active record | provider或Git门禁blocked时停止正式交付写入；已有active inspect不重复门禁 |
-| 独立执行位置 | `buildr.git-worktree-provider/v1` 的 `create/inspect` | Task ID、canonical Workspace、branch、start point与明确repository selectors；返回实际checkout、HEAD、clean与registration | provider不可用或evidence漂移只阻塞依赖该Worktree的动作；可安全直接工作时不回退猜测 |
-| 独立 current knowledge `spec-maintenance` | `buildr.current-knowledge-maintenance/v2` 的 `maintain` | Project、targets、fact sources、授权、tree identity；返回 `aligned|updated|not-applicable` | `unresolved` 报 authority 冲突；`change-required` 重新进入 `change-flow` |
-正式持久交付包括代码、文档、配置、Rule、Skill、OpenSpec Change、验证声明或其他准备交付的持久变化。已有Task Record或Buildr Web已创建时先inspect并核对intent/scope，不重复create，也不重新执行创建前Git基线门禁；只维护已有Task metadata时不递归创建新Task。Task Record provider不可用时不得手写YAML代替；其他provider不可用时只阻塞对应分支。current knowledge provider不可用时，不得回退为无evidence的直接编辑或伪造Change。
+需要登记待办、创建任务、选择独立位置、维护当前知识或协调父子任务时，读取[具体交接](references/structured-handoff.md)。
 
-### 父子任务
+### 任务登记与代码更新
 
-创建、准备或拆分父任务时使用`task-manager`中的父任务协调（Task Parent Coordination）方法，记录整体目标并持续整理当前计划。协调不消费环境、研发、专用贡献或审查采用事实；只有任务实际需要具体工作位置或工具时才使用对应能力。子任务依据独立目标、范围和真实前置成果创建，不继承父任务的工作位置或规范变化。父任务完成必须取得明确指向它的用户授权，不能从子任务完成或收尾推导。
-
-### 新正式 Task 创建前收敛逐 repository 权威基线
-
-只有即将创建 active Task 或把 todo 激活为 active 时，读取并执行 [逐仓库基线与恢复](references/task-create-git-baseline.md)，依次处理完整仓库集合的 `fetch` operation、`rebase` operation 与已授权的 `rebase --abort` 恢复；todo create、inspect、已有active继续、纯讨论和只读探索不执行。
+创建或激活任务时，按[登记核对与按需更新](references/task-create-git-baseline.md)确认记录所需事实。登记不要求 Git 更新、干净工作目录、集成分支、上游引用或全局诊断通过；不为登记执行 fetch、rebase 或工作空间同步。后续代码修改、更新与环境使用按实际目标独立核对，登记成功不等于这些动作已就绪。
 
 选择 `change-flow` 时，先确保正式 Task Record，再完成执行位置判断并使用适用的 `openspec-*` Skill。首次采用、状态实质变化、暂停、完成或用户询问时，从 CLI 刷新并报告 change id、resolved path、action、status、progress 和 next action/blocker；未创建时只写 `planned`，不猜测路径或进度。Buildr 自有 artifacts 和用户说明正文使用中文；命令、路径、标识符、协议字段与 OpenSpec 格式关键字可保留英文。
 
 实现型任务按共享实现区域、验证入口或失败影响面分组。直接工作可以在已确认的真实Git与owned scope中继续；选择Worktree时先取得matching provider evidence。Agent直接依据目标、OpenSpec、Git、代码、文件和专业结果推进，不创建研发聚合事实或planning snapshot。需要设计测试框架、划分测试边界、编排场景或为实现开发测试时使用`project-testing`。开发中的测试由Agent直接调用项目工具；开发完成后独立使用selected `buildr.task-verification/v4` provider，只保存有意义的Task验证报告。triage不把验证报告变成Task完成门禁。
 
-## 4. 输出契约
+## 输出
 
-以下字段用于需要结构化交接的调用；面向用户只说明分流结论、实际影响与下一步，不逐项朗读内部状态。
-
-```text
-任务分流：
-- 语义治理：code-only / spec-maintenance / change-flow / blocked
-- 执行形态：implementation / metadata-only / unknown
-- Repository set：<selectors 或 unresolved>
-- Git 基线：converged / none / blocked（仅新正式Task create；包含每个repository的integration branch/upstream与部分effects）
-- Task Record：create / inspect / none / blocked
-- Task Worktree：create / inspect / none / blocked
-- 事实依据：<最小 authority/evidence>
-- 未决事项：<none 或冲突/授权问题>
-- 下一动作：<selected capability/provider action 或用户决定>
-```
-
-只有选中 OpenSpec 时追加对应状态。任务进度直接使用 Task Record、Parent/Child、各专业公开 read model、Buildr Web 与对话表达；不得把 readiness、文件存在或单次 finding 冒充行为成功。
+面向用户说明分流结论、实际影响与下一步；需要结构化交接时，读取[交接字段](references/structured-handoff.md)。
 
 ## Guardrails
 
 - 不为过去事实补造 Change 历史，不把 current knowledge 变成第二套规范。
 - 不在正式Task首次持久交付写入后才补做Task Record或工作位置决策。
-- 不把创建前Git基线门禁塞进Task Record Application或Buildr Web，也不把多仓库操作伪装为原子transaction。
+- Git 更新只服务已确认的代码更新目标；Task Record Application和Buildr Web不执行该动作，也不把多仓库操作伪装为原子transaction。
 - 不使用未经 authority 或 CLI 确认的路径、状态、进度和完成结论。
 - 不把一次集中验证解释为覆盖尚未执行、stale 或存在 coverage gap 的适用 delivery-required capability。

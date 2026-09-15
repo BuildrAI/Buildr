@@ -709,7 +709,7 @@ export function createPackageStaticValidator(deps: any): any  {
               if (!content.includes(`supportedOpenSpec: "${record.definition.upstream.version}"`)) {
                 problems.push(`OpenSpec contract guard Skill must declare supportedOpenSpec ${record.definition.upstream.version}.`);
               }
-            } else {
+            } else if (entry.id === 'openspec') {
               const expected = `generatedBy: "${record.definition.upstream.version}"`;
               if (!content.includes(expected)) problems.push(`Package Component ${entry.id} Skill generatedBy must match upstream version ${record.definition.upstream.version}: ${member}.`);
             }
@@ -765,8 +765,16 @@ export function createPackageStaticValidator(deps: any): any  {
         problems.push(`Package agentSkill SKILL.md does not exist: ${skill.path}/SKILL.md`);
         continue;
       }
-      const skillContent = fs.readFileSync(skillFile, 'utf8');
+      const skillEntry = fs.readFileSync(skillFile, 'utf8');
+      let skillContent = skillEntry;
       if (skill.id === 'buildr') {
+        const reference = 'references/asset-maintenance.md';
+        if (!skillEntry.includes(`](${reference}#安装与更新)`) || !skillEntry.includes(`](${reference}#工作空间更新与检出变化)`)) {
+          problems.push('Buildr Agent Skill must link its installation and workspace update guidance.');
+        }
+        const referenceFile = path.join(skillDir, reference);
+        if (!existsFile(referenceFile)) problems.push(`Buildr Agent Skill reference is missing: ${reference}`);
+        else skillContent += '\n' + fs.readFileSync(referenceFile, 'utf8');
         for (const requiredText of [
           'buildr.git-operations/v1',
           'Doctor 的 full detail',
@@ -1027,7 +1035,20 @@ export function createPackageStaticValidator(deps: any): any  {
       } catch (error: any) {
         problems.push(error.message);
       }
-      const skillContent = fs.readFileSync(skillFile, 'utf8');
+      const skillEntry = fs.readFileSync(skillFile, 'utf8');
+      const references: Record<string, string[]> = {
+        'task-triage': ['references/structured-handoff.md'],
+        'task-verification': ['references/maintain-map.md', 'references/record-report.md'],
+        'capability-adaptation': ['references/adaptation-lifecycle.md'],
+      };
+      const skillParts = [skillEntry];
+      for (const relative of references[skill.id] || []) {
+        const reference = path.join(skillDir, relative);
+        if (!skillEntry.includes(`](${relative})`)) problems.push(`${label} must link its guidance reference: ${relative}`);
+        if (!existsFile(reference)) problems.push(`${label} guidance reference is missing: ${relative}`);
+        else skillParts.push(fs.readFileSync(reference, 'utf8'));
+      }
+      const skillContent = skillParts.join('\n');
       validateAdapterPublications(skill, skillDir, problems);
       if (skill.id === 'capability-adaptation') {
         for (const requiredText of [
@@ -1244,7 +1265,7 @@ export function createPackageStaticValidator(deps: any): any  {
         if (!(skill.requires || []).some((item: any) => item.capability === 'buildr.task-record' && item.version === 3 && item.mode === 'required')) problems.push('task-retrospective must require buildr.task-record@3.');
       }
       if (skill.id === 'task-triage') {
-        for (const requiredText of ['## 2. 两轴决策', '`code-only`', '`spec-maintenance`', '`change-flow`', '`blocked`', 'Repository set', '`implementation`', '`metadata-only`', '`unknown`', '`buildr.task-record/v3`', '待办意向', 'todo create', 'Formal Task Record本身不是编辑、构建或有界测试的通用工作许可', '不需要Worktree的直接工作不补造位置、Plan或Receipt', '`buildr.git-operations/v1`', '新正式 Task 创建前收敛逐 repository 权威基线', '`fetch` operation', '`rebase` operation', '`rebase --abort`', 'Git 基线：converged / none / blocked', '`buildr.current-knowledge-maintenance/v2`', '`buildr.git-worktree-provider/v1`', '`maintain`', '`change-required`', 'provider不ready', 'selected `buildr.task-verification/v4` provider', '## 4. 输出契约']) {
+        for (const requiredText of ['## 2. 两轴决策', '`code-only`', '`spec-maintenance`', '`change-flow`', '`blocked`', 'Repository set', '`implementation`', '`metadata-only`', '`unknown`', '`buildr.task-record/v3`', '待办意向', '任务登记与代码更新', 'Formal Task Record本身不是编辑、构建或有界测试的通用工作许可', '不需要Worktree的直接工作不补造位置、Plan或Receipt', '`buildr.current-knowledge-maintenance/v3`', '`buildr.git-worktree-provider/v1`', '`maintain`', '`change-required`', 'provider不ready', 'selected `buildr.task-verification/v4` provider']) {
           if (!skillContent.includes(requiredText)) problems.push(`task-triage Skill must include ${JSON.stringify(requiredText)}.`);
         }
         if (!(skill.requires || []).some((item: any) => item.capability === 'buildr.task-record' && item.version === 3 && item.mode === 'optional')) problems.push('task-triage must optionally require buildr.task-record@3.');
@@ -1255,7 +1276,7 @@ export function createPackageStaticValidator(deps: any): any  {
         if (skillContent.includes('buildr openspec')) problems.push('task-triage source must not hard-code OpenSpec contract guard commands; installed Components contribute them at render time.');
       }
       if (skill.id === 'openspec-contract-guard') {
-        for (const requiredText of ['openspec validate <change> --strict', 'buildr openspec convergence preflight', '`ready|blocked`', '`scenario-omission`', '最终`buildr openspec converge`永远重新读取最新事实', 'buildr openspec converge', 'buildr openspec convergence inspect', 'passed|blocked|recovery-unprovable', '`not-applicable`', 'archive --skip-specs', '正常archive成功后释放本次Receipt', '任务收尾和资源清理不调用Inspect', '不重复实现这些解析或 archive 安全规则', '不修改外部 `openspec-*` Skills']) {
+        for (const requiredText of ['buildr openspec convergence preflight', 'buildr openspec converge', 'buildr openspec convergence inspect', 'recovery-unprovable']) {
           if (!skillContent.includes(requiredText)) problems.push(`openspec-contract-guard Skill must include ${JSON.stringify(requiredText)}.`);
         }
       }

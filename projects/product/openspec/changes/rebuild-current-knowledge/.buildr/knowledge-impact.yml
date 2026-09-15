@@ -1,0 +1,26 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: rebuild-current-knowledge
+operation: reconcile
+impacts:
+  - type: brief
+    target: brief.md
+    reason: 本次范围、迁移与验收
+    status: aligned
+  - type: explanation
+    target: knowledge/docs/
+    reason: 当前解释唯一维护位置及相关导航
+    status: updated
+  - type: code-map
+    target: knowledge/code-map/skill-projection.md
+    reason: 代表模块实现定位和副作用
+    status: updated
+  - type: technical-diagram
+    target: knowledge/archify/flows/skill-projection.json
+    reason: 代表模块来源、组合与投射关系
+    status: updated
+unresolvedItems: []
+sourceIdentities:
+  - projects/product/services/buildr/resources/workspace/skills/buildr/current-knowledge-maintenance/
+  - projects/product/services/buildr/resources/manifest.yml
+  - projects/product/services/buildr/src/modules/agent-assets/
+validation: validation.md

@@ -1,103 +1,48 @@
 ---
 name: current-knowledge-maintenance
-description: OpenSpec Change 创建、修订、实现或同步时需要评估、收敛或检查当前认知，或者没有 Change 但需要让 Project 概览、架构、流程、Service 说明和术语追上已确认当前事实时使用。
+description: 建设、检查或维护项目与服务的代码地图、技术图和解释文档，或在 OpenSpec 变更中判断并处理相关知识影响时使用。
 ---
 
-# 当前认知维护
+# 当前知识维护
 
-本 Skill 同时是 `buildr.current-knowledge-maintenance/v1` 与 `v2` 的默认 provider，并 required 依赖 `buildr.terminology-governance/v1`。v1 保持 Change lifecycle 的 `assess`、`reconcile`、`inspect`；v2 另外支持不依附 Change 的 `maintain`，让已确认当前事实进入人类可读当前认知。
+统一建设与维护代码地图（Code Map）、技术图（Technical Diagram）和解释文档（Explanatory Documentation），让人和智能体（Agent）能够理解、定位并接续真实工作。事实依据是正式规范、当前代码、登记配置和已确认决定；三类成果表达与解释这些依据，各自按目标选择视角，没有固定生成顺序。
 
-## 1. 解析 operation 与事实范围
+本技能（Skill）提供 `buildr.current-knowledge-maintenance/v3`。通过其他能力调用时读取已解析的协作约定（Capability Contract）；直接用户请求同样按以下步骤执行，不要求先有 OpenSpec 变更。
 
-读取 runtime binding 中与 operation 匹配的 contract 和 selected terminology provider，解析 Workspace、Project、当前 tree identity 与授权范围。Change lifecycle operations 另外解析 Change、artifact paths 与已有 `.buildr/knowledge-impact.yml`。只接受：
+## 1. 确定本次范围
 
-- `assess`：proposal/update 阶段评估影响；
-- `reconcile`：实现完成、最终验证前收敛内容；
-- `inspect`：针对current tree在实现、Review或Verification前后形成完成影响分类，不把检查冒充验证execution；
-- `maintain`：没有 Change 时，让 current knowledge 追上已由权威来源确认的既有事实。
+从用户目标、真实改动或明确检查范围解析项目（Project）、服务（Service）、模块或流程，以及允许检查、维护和新建的范围。先识别哪些事实变化，再判断哪些成果可能受影响。已知目标直接读；未知位置从相关导航和来源路径定位，只检索当前相关范围。文件或提交版本变化只是检查线索，不能据此认定所有成果过时。
 
-事实顺序是 canonical specs → 当前实现与 registries → active Change artifacts → 已确认 evidence/用户决定 → archive provenance。冲突时先修正权威资产，再更新解释性 knowledge。
+确认写入前观察到的相关文件内容与版本，保留他人修改。规范与实现不一致时明确分别列出承诺和实际行为、证据及影响；按现有授权交给对应事实来源的维护动作处理，不能只改映射来掩盖冲突。
 
-## 2. 按真实影响选择目标
+## 2. 找到成果并判断价值
 
-| 目标 | 触发事实 |
-|---|---|
-| `brief.md` | 每个正式 Change；scope、流程、影响或验收变化 |
-| `overview.md` | Project 定位、用户、核心能力或全局入口 |
-| `architecture/product.md` | 角色、业务能力、领域模块、产品边界或信息架构 |
-| `architecture/technical.md` | Service 拓扑、模块边界、数据所有权、接口依赖、runtime、部署或安全 |
-| `flows/<flow-id>.md` | 用户旅程、业务状态、跨模块/Service 顺序或关键异常 |
-| `services/<service-code>.md` | Service 职责、API/事件、数据、依赖、配置或运行要求 |
-| `glossary.md` | 新增、重定义、重命名、歧义、中英不一致或所有权变化 |
+先读相关统一入口与成果自身的范围、来源、边界和关联说明，定位已有地图、技术图及解释文档。检查职责、关系、关键陈述是否仍适用，区分需要更新、无需修改、有价值的缺口和真实冲突。
 
-没有真实内容就不创建文件。产品架构与技术架构分开；跨视角流程只在 `flows/` 维护完整版本，由架构文档引用。Change lifecycle 中，无关历史知识债务进入 follow-up 信号，不扩大当前 Change；会直接导致本 Change 错误的冲突必须处理。`maintain` 只处理 consumer 明确授权的 targets，不扩大全量知识审计。
+建设或整理成果时，读取[成果种类、组织与来源](references/artifacts.md)；选择对应种类的写法。每份受维护成果的四项说明可以在正文、图源或明确导航中表达，不新建全局登记库。不因文件缺失机械建设，也不为每个模块补齐三类成果。
 
-## 3. Assess
+## 3. 承接具体授权
 
-检查 proposal、design、delta specs、tasks 和现有 knowledge，创建或更新 Brief，并把真实 impacts 转成 tasks。可在 Change 内维护：
+用户已要求建设某范围时，自行确定一组具体成果，说明覆盖范围、目标文件、表达视角、事实来源和预期用途，然后连续实施，不逐文件询问。已授权维护现有受影响内容时直接更新。
 
-```yaml
-schemaVersion: buildr.knowledge-impact/v1
-change: <change-id>
-operation: assess
-treeIdentity: <identity or planning>
-impacts:
-  - type: brief|overview|product-architecture|technical-architecture|flow|service|glossary
-    target: <relative path>
-    reason: <confirmed reason>
-    status: pending|aligned|updated|unresolved|not-applicable
-    sourceIdentities: []
-unresolvedItems: []
-```
+日常工作发现范围外值得补建的成果时，先给出上述具体建议并寻求该组建设授权。未取得授权只暂缓相关新建，继续无关开发和已成立的交付。用户明确指定的持续维护授权按其范围与期限使用；本次授权不推导永久全项目授权。
 
-Sidecar 只是 workflow evidence，不是事实源。不把 `not-applicable` 目标转换为空文档任务。
+## 4. 建设和维护
 
-## 4. Reconcile
+在授权内完成实际文件、图源、展示与引用，保留其他内容和用户修改。地图使用真实路径与必要符号；图中的节点与连线有来源；解释文档写清当前事实并显式区分未来方向与设计理由。可直接引用来源、地图或技术图，不要求复制上游内容。摘录标识来源、片段或符号与适用范围；来源相关片段变化时核对摘录，不维护脱离来源的第二份正文。
 
-在最终验证前逐项核对最终 specs、实现、registries、Brief 与 current knowledge；调用 selected terminology provider 处理术语。只更新受影响资产，记录真实 changed paths 和 source identities。若写入改变 delivery content，调用方必须使旧 verification evidence 失效。
+复用当前可用的代码分析、技术图制作和文档编写能力；按对应能力的真实适用条件使用，不把它们全部声明为每次执行的前置依赖。遇到新术语、歧义、定义或作用域变化时，才读取已绑定术语治理（Terminology Governance）提供者；普通维护沿用已确认术语。专项能力不可用只影响实际依赖它的结论。
 
-Brief 固定表达：一句话摘要、背景与问题、目标/非目标、受影响用户或角色、核心流程、关键变化、影响/风险/兼容性、验收摘要和技术 artifacts 入口。用户故事按需使用，不为填模板虚构角色或流程。Brief 不支持的新行为必须先进入 proposal/design/spec。
+OpenSpec 的 `assess|reconcile|inspect` 调用读取[变更协作与结果](references/change-collaboration.md)。独立 `maintain` 不创建或要求 OpenSpec 变更、`brief.md` 或 `.buildr/knowledge-impact.yml`；若拟写内容实际改变产品承诺，交回变更处理并保留其他已确认成果。
 
-## 5. Inspect
+## 5. 验证实际成果
 
-核对所有impacts、Brief、权威artifacts、current knowledge、current tree与terminology，并按当前Task完成结论影响返回`aligned|not-applicable|attention|blocked`。只有冲突会导致handoff遗漏必要行为、风险、兼容性或验收事实时返回`blocked`与最小unresolved items；解释性漂移、无关历史债务或不改变当前行为/authority的缺口返回`attention`与portable follow-up。不得把attention升级为全局blocked，也不得静默修改后沿用旧bytes绑定的证据。
+按[成果验证与代表场景](references/verification.md)执行适用检查。地图核对路径、符号与语义；技术图核对来源、图源和展示并实际检查必要视觉与交互；解释文档核对关键陈述、链接与事实边界；迁移更新实际消费者并保留历史。
 
-## 6. Maintain
+只重验被本次变化实际影响的内容和运行条件。仅说明变化时检查文档与引用，复用仍适用的代码测试；旧文档检查不能冒充新文档检查。来源语义没变、成果仍适用时，说明核对依据即可，不重建。
 
-`maintain` 不创建或要求 OpenSpec Change。consumer 必须提供 Project、明确 targets、fact sources、knowledge 写入授权和当前 tree identity；provider 按事实顺序核对来源，并调用 selected terminology provider 处理适用术语。
+## 6. 交付可接续结果
 
-- 事实已确认且文档无需变化：返回 `aligned`。
-- 事实已确认且目标缺失、陈旧或表述错误：只更新真实受影响 targets，返回 `updated`。
-- authority 冲突、授权不足或 tree identity 不匹配：不写入，返回 `unresolved` 和最少决策问题。
-- 候选内容会改变 SHALL/MUST、API、状态流、权限、业务规则、数据语义、兼容性或其他可观察承诺：不写入，返回 `change-required`，由 consumer 重新进入 task triage/change-flow。
-- 没有真实 current knowledge 影响：返回 `not-applicable`，不创建空文档。
+报告实际修改、依据、覆盖、未覆盖、验证与下一步，并链接可直接查看的成果。逐项区分 `aligned`、`updated`、`not-applicable`、`attention`、`blocked`、`change-required`，让调用方按具体目标判断；只在跨技能交接时使用[约定的最小结果字段](references/change-collaboration.md#结果字段)。
 
-`maintain` 不创建 Brief、`.buildr/knowledge-impact.yml` 或 archive provenance，也不修改 specs、实现、registries 或 archived Change。写入改变 delivery content 后，consumer 必须使旧 verification evidence 失效。
-
-## 7. Result Evidence
-
-返回：
-
-```text
-operation: assess | reconcile | inspect | maintain
-status: aligned | updated | unresolved | not-applicable | change-required | attention | blocked
-change: <id | none>
-project: <id/code>
-impacts: <type/target/reason/status>
-targets: <maintain targets or none>
-changedAssets: <paths or none>
-unresolvedItems: <items or none>
-sourceIdentities: <paths/specs/tree>
-treeIdentity: <current candidate identity>
-```
-
-多Project Task必须逐Project取得Result，不得让一个Project结果代表整个Task。`updated`后必须重新观察新tree；`unresolved|change-required`只影响实际依赖该知识结论的判断或动作，不能伪装aligned。Archive只移动已对齐的Change、Brief和sidecar；archive后不得再写glossary或current knowledge。
-
-## Guardrails
-
-- 不生成空文档，不把 archive 当当前事实源。
-- 不为独立 `maintain` 补造 Change、Brief 或 sidecar。
-- 不用 current knowledge 写入替代新业务语义的 change-flow。
-- 不修改 external `openspec-*` Skill 源；通过 capability binding 与 Component contribution 组合。
-- 不把 Brief、knowledge、task board 或 sidecar变成第二套规范。
-- 不接管 Agent 的理解、检索、推理和任务执行。
+辅助记录缺失、版本陈旧和非关键解释缺口先形成提醒并直接核对事实。只有会产生错误结论、越权、覆盖他人工作或掩盖真实冲突的动作局部停止。单项未完成不得冒充整组完成，也不能阻止无关工作。文件可读、可改、可独立接续才是成果；内部登记成功不证明建设完成。

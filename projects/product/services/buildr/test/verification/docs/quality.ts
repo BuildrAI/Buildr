@@ -27,7 +27,7 @@ if (explicit.length > 0) {
   }
 } else {
   for (const entry of ['README.md', 'docs']) visit(path.join(serviceRoot, entry));
-  for (const entry of ['README.md', 'docs', 'openspec']) visit(path.join(projectRoot, entry));
+  for (const entry of ['README.md', 'docs', 'knowledge', 'openspec']) visit(path.join(projectRoot, entry));
 }
 
 const problems: any[] = [];

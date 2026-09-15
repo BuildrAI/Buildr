@@ -878,28 +878,25 @@ Buildr package/runtime verification MUST 覆盖 self-bootstrap candidate 对 can
 - **THEN** activation/Doctor MUST 由 retained source 运行并报告 retained runtime identity
 - **AND** MUST NOT 把 candidate validation database 或其数据当作 canonical activation result
 
-### Requirement: Package 必须验证创建前 dev 基线收敛工作流
-Buildr package verification MUST 覆盖随包 `task-triage` 在新正式 Task 创建前条件消费 `buildr.git-operations/v1`、收敛统一 `dev` 基线并保持 Task Record 与 Environment authority 分离的行为，且 MUST 验证 source、package manifest、capability graph 与 supported Agent runtime 的一致性。
+### Requirement: Package 必须验证任务登记与 Git 更新分离
+Buildr package verification MUST 覆盖任务登记不依赖 Git 更新及全局诊断，且 MUST 验证 source、package manifest、能力依赖与运行时投射一致。验证 MUST 保留实际 Git 写入的授权、对象、引用与内容保护，不将记录成功当作代码可安全修改的证明。
 
-#### Scenario: 随包 Skill 与 capability graph 一致
-- **WHEN** Buildr 验证 workspace package 中的 `task-triage`、Git Operations contract/provider 和 Skill manifest
-- **THEN** `task-triage` MUST optional 声明 `buildr.git-operations@1` dependency，并只在新正式 Task create 分支提升为 required
-- **AND** package/runtime projection MUST 保持 provider、binding、description 与 consumer routing evidence ready
+#### Scenario: 随包技能与能力依赖一致
+- **WHEN** Buildr 验证 task-triage 与 Git Operations 声明
+- **THEN** Git Operations MUST 保持 optional，只在确实需要 Git 操作时被使用
+- **AND** 任务登记 MUST NOT 把它提升为 required
 
-#### Scenario: 成功路径先收敛再创建
-- **WHEN** fixture repository 处于 clean `dev` 且配置 `origin/dev`，并分别覆盖 aligned、behind 与未 push 本地 commit 分叉状态
-- **THEN** verification MUST 证明 task-triage 依次完成 fetch/rebase、适用 transition check，再调用 Task Record create
-- **AND** 创建出的Task Worktree checkout MUST基于收敛后的local `dev` identity
+#### Scenario: Git 条件不完整仍可登记
+- **WHEN** 隔离样例包含无上游、未提交内容或不可用 Git 提供者，且记录输入合法
+- **THEN** verification MUST 证明 Task Record create 或 activate 成功且 Git 内容与引用未被修改
 
-#### Scenario: 失败路径不创建 Task
-- **WHEN** fixture 覆盖 dirty、错误 branch/upstream、fetch failure、rebase conflict、abort recovery 与 abort failure
-- **THEN** verification MUST 证明 Task Record create 未执行，并核对实际 effects、current facts 与 blocker
-- **AND** MUST 证明没有自动 stash、merge、force push、策略切换或把部分成功伪装为零 effect
+#### Scenario: 独立 Git 操作仍受保护
+- **WHEN** 用户目标需要实际 Git 写入
+- **THEN** verification MUST 保持 Git Operations 的独立操作、范围保护和部分失败报告，不以任务登记授权替代 Git 写入授权
 
-#### Scenario: 专业 authority 保持分离
-- **WHEN** verifier检查Task Record CLI/Application、Buildr Web mutation和Worktree provider
-- **THEN** 它们 MUST保持不执行创建前fetch/rebase，Task Record schema与Worktree evidence MUST不新增该Git编排状态
-- **AND** 创建前收敛 MUST 只存在于 Agent `task-triage` consumer 与 selected Git Operations provider 的组合行为
+#### Scenario: 专业职责保持分离
+- **WHEN** verifier 检查 Task Record、Buildr Web 和 Worktree
+- **THEN** 它们 MUST 不新增创建任务前的 Git 编排或统一就绪状态
 
 ### Requirement: Package residual gate 必须退役持久化 Task Lifecycle projection
 Buildr package、checkout runtime、npm tarball与Workspace投射 MUST交付相同的Task Record、Review、Verification与父任务协调能力，并 MUST从latest runtime composition、source、manifest、docs与tests删除Task Lifecycle、Task Overview、Environment、Development、旧Finish、Contribution协调和terminal completion reader。历史连续migration文件 MAY保留为升级链事实，但latest schema与runtime MUST不存在对应current表、projection或兼容route。

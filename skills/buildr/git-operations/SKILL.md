@@ -1,6 +1,6 @@
 ---
 name: git-operations
-description: 用户或上游智能体（Agent）已明确选择仓库（repository）、Git 操作（Git Operation）与相关引用（ref）时使用，包括无活跃任务（active Task）的直接 Git 收尾和正式任务（formal Task）的直接交付；执行 fetch、commit、push、commit+push、rebase，或检查授权、安全边界和结果证据（result evidence）；不替 Agent 选择策略，也不扩展完整 Git 命令集。
+description: 执行已明确仓库、操作和目标的 Git 操作，核对授权、改动归属及结果；不代选策略。
 ---
 
 # Git Operations

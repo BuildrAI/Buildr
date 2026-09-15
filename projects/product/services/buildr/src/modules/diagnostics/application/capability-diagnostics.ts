@@ -68,21 +68,6 @@ export function createCapabilityDiagnostics({ addDoctorFinding, isSupportedAgent
     }
   }
 
-  function printCapabilityReport(result: any) {
-    if (!result.capabilities?.graphs?.some((graph: any) => graph.consumers.length > 0)) return;
-    console.log('');
-    console.log('Capability readiness（ready 只表示结构可路由）：');
-    for (const graph of result.capabilities.graphs) {
-      for (const consumer of graph.consumers) {
-        console.log(`  [${consumer.readiness}] ${graph.scope}:${consumer.consumer}${consumer.reason ? ` reason=${consumer.reason}` : ''}`);
-        for (const dependency of consumer.dependencies) {
-          const candidates = dependency.candidates.map((candidate: any) => `${candidate.id}@${candidate.scope}${candidate.runtimeAvailable === false ? '(runtime unavailable)' : ''}`).join(', ') || 'none';
-          console.log(`    ${dependency.capability}@${dependency.version} mode=${dependency.mode} readiness=${dependency.readiness} reason=${dependency.reason || 'none'} selected=${dependency.selectedProvider?.id || 'none'} candidates=${candidates}`);
-          for (const action of dependency.nextActions) console.log(`      next: ${action}`);
-        }
-      }
-    }
-  }
 
-  return { diagnoseSkillCapabilities, printCapabilityReport };
+  return { diagnoseSkillCapabilities };
 }

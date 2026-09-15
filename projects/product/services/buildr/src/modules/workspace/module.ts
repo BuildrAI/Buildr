@@ -1,3 +1,4 @@
+import { createRegistryMaintenance } from './application/registry-maintenance.ts';
 import { registerWorkspaceQueryApplication, type WorkspaceQueryApplicationRuntime } from './application/workspace-query-application.ts';
 import { ensureRegisteredTarget, registerWorkspaceCommandApplication, type WorkspaceCommandApplicationRuntime } from './application/workspace-command-application.ts';
 import { registerWorkspaceOperations, type WorkspaceOperationsRuntime } from './application/workspace-operations.ts';
@@ -94,8 +95,8 @@ const TEST_SUPPORT_METHODS = Object.freeze([
   'readWorkspaceRegistryPersistence', 'withWorkspaceRegistryMutation',
 ]);
 
-const WORKSPACE_ASSET_METHODS = ["workspaceMigrationPlan","migrateWorkspaceMetadata","readProjectRegistryRecord","projectMigrationPlan","migrateProjectRegistry","projectsManifestPath","writeProjectRegistry","renderProjectsManifest","parseProjectsYaml","renderProjectsYaml","validateProjectsRegistry","writeProjectsRegistry","writeServiceRegistry","parseServicesManifest","renderServicesDomainManifest","parseServicesYaml","parseServicesManifestYaml","renderServicesManifestYaml","servicesManifestPath","writeServicesManifest","defaultAssetDescription","sourceIdentity","gitDefaultBranch","inferRepoKind","gitBoundaryFor","ensureGitBoundaries"] as const;
-export type WorkspaceAssetSupport = Pick<WorkspacePrivateComposition, typeof WORKSPACE_ASSET_METHODS[number]>;
+const WORKSPACE_ASSET_METHODS = ["convergeRegistryManifests","workspaceMigrationPlan","migrateWorkspaceMetadata","readProjectRegistryRecord","projectMigrationPlan","migrateProjectRegistry","projectsManifestPath","writeProjectRegistry","renderProjectsManifest","parseProjectsYaml","renderProjectsYaml","validateProjectsRegistry","writeProjectsRegistry","writeServiceRegistry","parseServicesManifest","renderServicesDomainManifest","parseServicesYaml","parseServicesManifestYaml","renderServicesManifestYaml","servicesManifestPath","writeServicesManifest","defaultAssetDescription","sourceIdentity","gitDefaultBranch","inferRepoKind","gitBoundaryFor","ensureGitBoundaries"] as const;
+export type WorkspaceAssetSupport = Pick<WorkspacePrivateComposition, Exclude<typeof WORKSPACE_ASSET_METHODS[number], 'convergeRegistryManifests'>> & ReturnType<typeof createRegistryMaintenance>;
 
 function pick(source: WorkspacePrivateComposition, methods: readonly string[]) {
   for (const method of methods) {
@@ -197,6 +198,25 @@ export function createWorkspaceModule(runtime: DynamicRuntime, { readProductIden
       registerWorkspaceSourceGit(privateComposition);
       registerProjectApplication(privateComposition);
       registerServiceApplication(privateComposition);
+
+      const registryMaintenance = createRegistryMaintenance({
+        readGitRemote: privateComposition.readGitRemote,
+        isPlainObject: privateComposition.isPlainObject,
+        gitDefaultBranch: privateComposition.gitDefaultBranch,
+        defaultAssetDescription, inferRepoKind: privateComposition.inferRepoKind,
+        existsDirectory: privateComposition.existsDirectory, existsFile: privateComposition.existsFile,
+        parseServicesYaml: privateComposition.parseServicesYaml, parseServicesManifestYaml: privateComposition.parseServicesManifestYaml,
+        servicesManifestPath: privateComposition.servicesManifestPath, ensureDirectory: privateComposition.ensureDirectory,
+        toPosixRelative: privateComposition.toPosixRelative, projectsManifestPath: privateComposition.projectsManifestPath,
+        ensureGitBoundaries: privateComposition.ensureGitBoundaries,
+        parseServicesManifest: privateComposition.parseServicesManifest, createServiceEntity, createProjectEntity,
+        observeProjectGit: (...args: any[]) => runtime.observeProjectGit(...args),
+        renderServicesDomainManifest: privateComposition.renderServicesDomainManifest,
+        writeServiceRegistry: privateComposition.writeServiceRegistry,
+        readProjectRegistryRecord: privateComposition.readProjectRegistryRecord,
+        renderProjectsManifest: privateComposition.renderProjectsManifest, writeProjectRegistry: privateComposition.writeProjectRegistry,
+      });
+      privateComposition.convergeRegistryManifests = registryMaintenance.convergeRegistryManifests;
 
       privateComposition.ensureRegisteredTarget = (targetRoot: any) => ensureRegisteredTarget(privateComposition, targetRoot);
 

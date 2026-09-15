@@ -1,19 +1,9 @@
+import { SUPPORTED_AGENT_IDS, getRuntimeAdapter } from '../infrastructure/runtime/adapter-contract.ts';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
-import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
-import { execFileSync, spawnSync } from '../../../infrastructure/process.ts';
-import { checkClaudeCodeRuntime } from '../infrastructure/runtime/check-claude-code.ts';
-import { checkCodexRuntime } from '../infrastructure/runtime/check-codex.ts';
-import {
-  buildRuleDiscoveryPlan,
-  hasManagedRulesMarker,
-  renderClaudeCodeRules,
-  resolveRuleScope,
-} from '../infrastructure/runtime/render-claude-code-rules.ts';
 import { BUILDR_REQUIRED_BLOCK_START, GENERATED_USER_REGISTRY_RESOURCE_SOURCES, LEGACY_PACKAGE_PATHS, PACKAGE_RUNTIME_TARGET, RESOURCE_WORKSPACE_ROOT } from '../../../infrastructure/product-layout.ts';
-import { SUPPORTED_AGENT_IDS, getRuntimeAdapter } from '../infrastructure/runtime/adapter-contract.ts';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../../infrastructure/contracts/public-json.ts';
 import { createPackageOutput } from './package-maintenance/output.ts';
 import { createBuiltinReceipts } from './package-maintenance/builtin-receipts.ts';
@@ -22,52 +12,98 @@ import { retireLegacyCoreRule, retireOrphanedBuiltinSkills } from './package-mai
 import { createPackageSyncPlan } from './package-maintenance/sync-plan.ts';
 import { createBuiltinLifecycle } from './package-maintenance/builtin-lifecycle.ts';
 import { createCapabilityRetirement } from './package-maintenance/capability-retirement.ts';
-import { validateSkillPublication } from '../infrastructure/runtime/skills/publication.ts';
-export function registerApplicationPackageMaintenance(runtime: any): any  {
-  const doctor = (...args: any[]) => runtime.doctor(...args);
-  const WORKSPACE_ROOT_GITIGNORE_ENTRIES = runtime.WORKSPACE_ROOT_GITIGNORE_ENTRIES;
-  const isPlainObject = (...args: any[]) => runtime.isPlainObject(...args);
-  const readCommandsManifestForWrite = (...args: any[]) => runtime.readCommandsManifestForWrite(...args);
-  const writeCommandsManifest = (...args: any[]) => runtime.writeCommandsManifest(...args);
-  const assertNoUnknownOptions = (...args: any[]) => runtime.assertNoUnknownOptions(...args);
-  const positionalArgs = (...args: any[]) => runtime.positionalArgs(...args);
-  const packageComponentsStatus = (...args: any[]) => runtime.packageComponentsStatus(...args);
-  const readPackageManifest = (...args: any[]) => runtime.readPackageManifest(...args);
-  const parseManifestFileEntry = (...args: any[]) => runtime.parseManifestFileEntry(...args);
-  const collectFiles = (...args: any[]) => runtime.collectFiles(...args);
-  const builtinRuleEntry = (...args: any[]) => runtime.builtinRuleEntry(...args);
-  const builtinSkillEntry = (...args: any[]) => runtime.builtinSkillEntry(...args);
-  const builtinCommandEntry = (...args: any[]) => runtime.builtinCommandEntry(...args);
-  const sourcePathFromBuiltin = (...args: any[]) => runtime.sourcePathFromBuiltin(...args);
-  const targetPathFromBuiltin = (...args: any[]) => runtime.targetPathFromBuiltin(...args);
-  const missingAncestorForMutation = (...args: any[]) => runtime.missingAncestorForMutation(...args);
-  const mutationPathFingerprint = (...args: any[]) => runtime.mutationPathFingerprint(...args);
-  const packageRegistryMutationPaths = (...args: any[]) => runtime.packageRegistryMutationPaths(...args);
-  const assertSafeSyncMutationPaths = (...args: any[]) => runtime.assertSafeSyncMutationPaths(...args);
-  const convergeRegistryManifests = (...args: any[]) => runtime.convergeRegistryManifests(...args);
-  const readRulesManifestForWrite = (...args: any[]) => runtime.readRulesManifestForWrite(...args);
-  const writeRulesManifest = (...args: any[]) => runtime.writeRulesManifest(...args);
-  const readSkillsManifestForWrite = (...args: any[]) => runtime.readSkillsManifestForWrite(...args);
-  const writeSkillsManifest = (...args: any[]) => runtime.writeSkillsManifest(...args);
-  const manifestDocumentFor = (...args: any[]) => runtime.manifestDocumentFor(...args);
-  const optionValue = (...args: any[]) => runtime.optionValue(...args);
-  const ensureDirectory = (...args: any[]) => runtime.ensureDirectory(...args);
-  const atomicWriteJson = (...args: any[]) => runtime.atomicWriteJson(...args);
-  const assertSafeAssetTarget = (...args: any[]) => runtime.assertSafeAssetTarget(...args);
-  const withWorkspaceMutation = (...args: any[]) => runtime.withWorkspaceMutation(...args);
-  const buildRuntimeOrphanRemovalPlan = (...args: any[]) => runtime.buildRuntimeOrphanRemovalPlan(...args);
-  const productRoot = (...args: any[]) => runtime.productRoot(...args);
-  const resourcesRoot = (...args: any[]) => runtime.resourcesRoot(...args);
-  const appendGitignoreEntries = (...args: any[]) => runtime.appendGitignoreEntries(...args);
-  const hasFlag = (...args: any[]) => runtime.hasFlag(...args);
-  const toPosixRelative = (...args: any[]) => runtime.toPosixRelative(...args);
-  const existsDirectory = (...args: any[]) => runtime.existsDirectory(...args);
-  const existsFile = (...args: any[]) => runtime.existsFile(...args);
-  const ensureRootRequiredBlock = (...args: any[]) => runtime.ensureRootRequiredBlock(...args);
-  const copyFileIfChanged = (...args: any[]) => runtime.copyFileIfChanged(...args);
-  const copyDirectoryIfChanged = (...args: any[]) => runtime.copyDirectoryIfChanged(...args);
-  const removePath = (...args: any[]) => runtime.removePath(...args);
-  const assertInitializedBuildrWorkspace = (...args: any[]) => runtime.assertInitializedBuildrWorkspace(...args);
+export interface PackageMaintenanceDependencies {
+  WORKSPACE_ROOT_GITIGNORE_ENTRIES: readonly string[];
+  isPlainObject: ReturnType<typeof import('./commands.ts').registerDomainsCommands>['isPlainObject'];
+  readCommandsManifestForWrite: ReturnType<typeof import('./commands.ts').registerDomainsCommands>['readCommandsManifestForWrite'];
+  writeCommandsManifest: ReturnType<typeof import('./commands.ts').registerDomainsCommands>['writeCommandsManifest'];
+  assertNoUnknownOptions: typeof import('../../../infrastructure/cli-arguments.ts').assertNoUnknownOptions;
+  positionalArgs: typeof import('../../../infrastructure/cli-arguments.ts').positionalArgs;
+  packageComponentsStatus: ReturnType<typeof import('./components.ts').registerDomainsComponents>['packageComponentsStatus'];
+  readPackageManifest: ReturnType<typeof import('./package-maintenance/package-assets.ts').registerAgentAssetsPackageAssets>['readPackageManifest'];
+  parseManifestFileEntry: ReturnType<typeof import('./package-maintenance/package-assets.ts').registerAgentAssetsPackageAssets>['parseManifestFileEntry'];
+  collectFiles: ReturnType<typeof import('./package-maintenance/package-assets.ts').registerAgentAssetsPackageAssets>['collectFiles'];
+  builtinRuleEntry: ReturnType<typeof import('./package-maintenance/package-assets.ts').registerAgentAssetsPackageAssets>['builtinRuleEntry'];
+  builtinSkillEntry: ReturnType<typeof import('./package-maintenance/package-assets.ts').registerAgentAssetsPackageAssets>['builtinSkillEntry'];
+  builtinCommandEntry: ReturnType<typeof import('./package-maintenance/package-assets.ts').registerAgentAssetsPackageAssets>['builtinCommandEntry'];
+  sourcePathFromBuiltin: ReturnType<typeof import('./package-maintenance/package-assets.ts').registerAgentAssetsPackageAssets>['sourcePathFromBuiltin'];
+  targetPathFromBuiltin: ReturnType<typeof import('./package-maintenance/package-assets.ts').registerAgentAssetsPackageAssets>['targetPathFromBuiltin'];
+  missingAncestorForMutation: ReturnType<typeof import('./package-maintenance/package-assets.ts').registerAgentAssetsPackageAssets>['missingAncestorForMutation'];
+  mutationPathFingerprint: (...args: any[]) => any;
+  packageRegistryMutationPaths: ReturnType<typeof import('./package-maintenance/package-assets.ts').registerAgentAssetsPackageAssets>['packageRegistryMutationPaths'];
+  assertSafeSyncMutationPaths: ReturnType<typeof import('./package-maintenance/package-assets.ts').registerAgentAssetsPackageAssets>['assertSafeSyncMutationPaths'];
+  convergeRegistryManifests: ReturnType<typeof import('./package-maintenance/package-assets.ts').registerAgentAssetsPackageAssets>['convergeRegistryManifests'];
+  readRulesManifestForWrite: ReturnType<typeof import('./rules.ts').registerDomainsRules>['readRulesManifestForWrite'];
+  writeRulesManifest: ReturnType<typeof import('./rules.ts').registerDomainsRules>['writeRulesManifest'];
+  readSkillsManifestForWrite: ReturnType<typeof import('./skills.ts').registerDomainsSkills>['readSkillsManifestForWrite'];
+  writeSkillsManifest: ReturnType<typeof import('./skills.ts').registerDomainsSkills>['writeSkillsManifest'];
+  manifestDocumentFor: ReturnType<typeof import('./skills.ts').registerDomainsSkills>['manifestDocumentFor'];
+  optionValue: typeof import('../../../infrastructure/cli-arguments.ts').optionValue;
+  ensureDirectory: (...args: any[]) => any;
+  atomicWriteJson: typeof import('../../../infrastructure/filesystem/atomic-files.ts').atomicWriteJson;
+  assertSafeAssetTarget: (targetRoot: string, target: string, containerRoot: string, label?: string) => string;
+  withWorkspaceMutation: (...args: any[]) => any;
+  buildRuntimeOrphanRemovalPlan: ReturnType<typeof import('./components.ts').registerDomainsComponents>['buildRuntimeOrphanRemovalPlan'];
+  productRoot: () => string;
+  resourcesRoot: () => string;
+  appendGitignoreEntries: (...args: any[]) => any;
+  hasFlag: typeof import('../../../infrastructure/cli-arguments.ts').hasFlag;
+  toPosixRelative: (...args: any[]) => any;
+  existsDirectory: (file: string) => boolean;
+  existsFile: (file: string) => boolean;
+  ensureRootRequiredBlock: typeof import('../../../infrastructure/filesystem/required-block.ts').ensureRootRequiredBlock;
+  copyFileIfChanged: (...args: any[]) => any;
+  copyDirectoryIfChanged: (...args: any[]) => any;
+  removePath: (...args: any[]) => any;
+  assertInitializedBuildrWorkspace: typeof import('../../../infrastructure/filesystem/workspace-identity.ts').assertInitializedBuildrWorkspace;
+}
+
+export function registerApplicationPackageMaintenance(dependencies: PackageMaintenanceDependencies) {
+  const {
+    WORKSPACE_ROOT_GITIGNORE_ENTRIES,
+    isPlainObject,
+    readCommandsManifestForWrite,
+    writeCommandsManifest,
+    assertNoUnknownOptions,
+    positionalArgs,
+    packageComponentsStatus,
+    readPackageManifest,
+    parseManifestFileEntry,
+    collectFiles,
+    builtinRuleEntry,
+    builtinSkillEntry,
+    builtinCommandEntry,
+    sourcePathFromBuiltin,
+    targetPathFromBuiltin,
+    missingAncestorForMutation,
+    mutationPathFingerprint,
+    packageRegistryMutationPaths,
+    assertSafeSyncMutationPaths,
+    convergeRegistryManifests,
+    readRulesManifestForWrite,
+    writeRulesManifest,
+    readSkillsManifestForWrite,
+    writeSkillsManifest,
+    manifestDocumentFor,
+    optionValue,
+    ensureDirectory,
+    atomicWriteJson,
+    assertSafeAssetTarget,
+    withWorkspaceMutation,
+    buildRuntimeOrphanRemovalPlan,
+    productRoot,
+    resourcesRoot,
+    appendGitignoreEntries,
+    hasFlag,
+    toPosixRelative,
+    existsDirectory,
+    existsFile,
+    ensureRootRequiredBlock,
+    copyFileIfChanged,
+    copyDirectoryIfChanged,
+    removePath,
+    assertInitializedBuildrWorkspace,
+  } = dependencies;
   const {
     key: builtinReceiptKey,
     snapshot: builtinSnapshot,
@@ -311,11 +347,10 @@ export function registerApplicationPackageMaintenance(runtime: any): any  {
     }
   }
 
-  const { packageBuiltinComponent, findBuiltinManifestEntry, builtinUninstallUnsafe, builtinUninstall, builtinRestoreUnsafe, builtinRestore } = createBuiltinLifecycle({
+  const { builtinUninstall, builtinRestore } = createBuiltinLifecycle({
     assertInitializedBuildrWorkspace,
     assertNoUnknownOptions,
     buildRuntimeOrphanRemovalPlan,
-    doctor,
     existsDirectory,
     existsFile,
     fs,
@@ -340,12 +375,6 @@ export function registerApplicationPackageMaintenance(runtime: any): any  {
   });
 
   const {
-    packageOutputInventory,
-    packageOutputIntegrity,
-    readPackageOutputReceipt,
-    assertSafePackageOutput,
-    validateReplaceablePackageOutput,
-    buildPackageOutput,
     packageBuild,
   } = createPackageOutput({
     assertSafeAssetTarget,
@@ -366,22 +395,10 @@ export function registerApplicationPackageMaintenance(runtime: any): any  {
   });
 
   return Object.freeze({
-    packageBuiltinMutationPaths,
-    builtinSyncPlanSignature,
     syncPackageBuiltins,
     builtinList,
-    packageBuiltinComponent,
-    findBuiltinManifestEntry,
-    builtinUninstallUnsafe,
     builtinUninstall,
-    builtinRestoreUnsafe,
     builtinRestore,
-    packageOutputInventory,
-    packageOutputIntegrity,
-    readPackageOutputReceipt,
-    assertSafePackageOutput,
-    validateReplaceablePackageOutput,
-    buildPackageOutput,
     packageBuild,
   });
 }

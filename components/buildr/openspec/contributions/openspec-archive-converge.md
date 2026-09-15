@@ -1,5 +1,5 @@
-## Buildr OpenSpec Convergence Boundary
+## Buildr 规范归档接入
 
-Buildr Workspace不允许通过上游`openspec-archive-change`直接移动Change，也不允许以用户确认跳过未完成tasks、delta sync或deterministic convergence。用户要求归档时，使用Agent已核对的当前Workspace或matching Worktree根，转用单一`buildr openspec converge <change> --project <project> --target <actual-work-root> --json`事务。
+用户已授权归档时，在已核对的实际工作根调用 `buildr openspec converge <change> --project <project> --target <actual-work-root> --json`。该命令检查相关变更冲突，复用锁定上游执行规范写入与归档，并保留必要中断恢复。不再另行手工同步后移动目录。
 
-只有 converge 返回 passed 或幂等 archived，才报告 canonical sync/archive 已完成。Agent 随后重新观察归档结果、代码和专业结果继续工作；不生成研发回执或规划身份。失败时报告 reason、evidence 与 next actions。Convergence Inspect 只适用于未决事务现场。
+只在命令返回 passed 且实际归档成立时报告成功；失败时保留已经发生的效果。使用 `buildr openspec convergence inspect` 检查中断现场，不用归档状态替代业务交付或测试结论。只同步请求由独立同步入口处理。

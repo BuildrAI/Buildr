@@ -28,7 +28,7 @@
 
 | 功能 | 位置 | 代表入口 |
 |---|---|---|
-| 应用壳 | `services/buildr-web/src/app/` | `AppLayout`、`AppShellContext`、`AgentActionDrawer` |
+| 应用壳 | `services/buildr-web/src/app/` | `AppLayout`、`AppNavigation`、`navigationState`、`AppShellContext`、`AgentActionDrawer` |
 | Workspace | `services/buildr-web/src/features/workspace/` | `WorkspacesPage`、`WorkspaceAgentAction` |
 | Project | `services/buildr-web/src/features/project/` | `ProjectsPage`、`ProjectDetailPage`、`ProjectEditModal` |
 | Service | `services/buildr-web/src/features/service/` | `ServicesPage`、`ServiceDetailPage`、`useServiceCatalog` |
@@ -49,3 +49,7 @@
 | 测试选择与调度 | `services/buildr/test/verification/` | 只服务 Buildr 自测与 Candidate 验证，不进入产品模块 |
 | 性能基准 | `services/buildr/tools/performance/` | 隔离运行百万 Task 查询基准，不进入默认回归 |
 | 文件型交付源 | `services/buildr/resources/` | Workspace 同步、Agent runtime、安装资源 |
+
+## Web 导航框架
+
+`AppLayout` 显示共同工作空间范围和“工作台 / 工作空间”两个区域。`navigationState` 从现有路由确定区域及所属项目；`AppNavigation` 读取项目和当前项目服务，并提供单项展开与加号入口。`ProjectsSection` 只选择目录或详情，不重复承载左侧列表。`features/agent-assets/pages/SkillsPage.tsx` 只读技能清单，沿用现有客户端。界面菜单遵循本次用户确认，只显示中文。

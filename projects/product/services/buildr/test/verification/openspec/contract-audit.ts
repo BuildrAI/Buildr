@@ -7,8 +7,9 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { resolveVerificationBase } from '../changed-paths.ts';
-import { createConvergencePlan } from '../../../src/modules/openspec/application/convergence-planner.ts';
-import { normalizeOpenSpecContractText, openSpecSection, parseOpenSpecDeltaSpec } from '../../../src/modules/openspec/application/delta-parser.ts';
+import os from 'node:os';
+import { upstreamConvergencePlan } from '../../../src/modules/openspec/application/upstream-openspec.ts';
+import { normalizeConvergenceText as normalizeOpenSpecContractText } from '../../../src/modules/openspec/application/convergence-model.ts';
 
 const productRoot: any = path.resolve(process.env.BUILDR_PROJECT_ROOT ?? path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../..'));
 const gitRoot: any = execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd: productRoot, encoding: 'utf8' }).trim();
@@ -70,13 +71,7 @@ for (const file of candidatePaths) {
   const deltaFile: any = path.join(productRoot, file);
   if (!fs.existsSync(deltaFile)) continue;
   const content: any = fs.readFileSync(deltaFile, 'utf8');
-  const operations: any = parseOpenSpecDeltaSpec(content, capability);
-  if (operations.length === 0) {
-    console.error(`OpenSpec contract audit found archived delta without Requirement operations: ${file}`);
-    process.exit(1);
-  }
-  change.capabilities.set(capability, { file, content, operations });
-  change.operations.push(...operations);
+  change.capabilities.set(capability, { file, content });
   archivedChanges.set(archiveEntry, change);
 }
 
@@ -108,22 +103,26 @@ while (pendingChanges.length) {
   let selectedPlan: any = null;
   const blockedPlans: any[] = [];
   for (const [index, change] of pendingChanges.entries()) {
-    const canonicalFiles: any = new Map();
-    const capabilityPurposes: any = new Map();
-    for (const capability of change.capabilities.keys()) {
-      const current: any = replay.get(capability) || baseCanonical(capability);
-      canonicalFiles.set(capability, { path: `openspec/specs/${capability}/spec.md`, ...current });
-      const actual: any = actualCanonical(capability);
-      const purpose: any = openSpecSection(actual.content, 'Purpose').trim();
-      if (purpose) capabilityPurposes.set(capability, purpose);
-      else if (!actual.exists) capabilityPurposes.set(capability, `Historical replay placeholder for removed capability ${capability}; the final candidate does not retain this capability.`);
-    }
-    const deltaDigest: any = `sha256-${crypto.createHash('sha256').update([...change.capabilities.values()].map((item: any) => item.content).join('\0')).digest('hex')}`;
-    const plan: any = createConvergencePlan({
-      change: change.entry.replace(/^\d{4}-\d{2}-\d{2}-/, ''), project: 'product',
-      delta: { hash: deltaDigest, operations: change.operations, capabilities: change.capabilities },
-      canonicalFiles, capabilityPurposes, executableIdentity, activeConflicts: [],
-    });
+    const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-upstream-audit-'));
+    let plan: any;
+    try {
+      const changeRoot = path.join(temporary, 'openspec/changes/replay');
+      fs.mkdirSync(changeRoot, { recursive: true });
+      const originalRoot = path.join(productRoot, 'openspec/changes/archive', change.entry);
+      const metadata = path.join(originalRoot, '.openspec.yaml');
+      fs.writeFileSync(path.join(changeRoot, '.openspec.yaml'), fs.existsSync(metadata) ? fs.readFileSync(metadata) : 'schema: spec-driven\n');
+      for (const [capability, item] of change.capabilities) {
+        const current = replay.get(capability) || baseCanonical(capability);
+        const target = path.join(temporary, 'openspec/specs', capability, 'spec.md');
+        fs.mkdirSync(path.dirname(target), { recursive: true });
+        if (current.exists) fs.writeFileSync(target, current.content);
+        const deltaFile = path.join(changeRoot, 'specs', capability, 'spec.md');
+        fs.mkdirSync(path.dirname(deltaFile), { recursive: true });
+        fs.writeFileSync(deltaFile, item.content);
+      }
+      plan = upstreamConvergencePlan({ executable: path.resolve(import.meta.dirname, '../../../node_modules/.bin/openspec'), projectRoot: temporary,
+        changeRoot, change: 'replay', project: 'product', executableIdentity });
+    } finally { fs.rmSync(temporary, { recursive: true, force: true }); }
     if (plan.status === 'blocked') { blockedPlans.push({ change, plan }); continue; }
     selectedIndex = index;
     selectedPlan = plan;
@@ -131,7 +130,7 @@ while (pendingChanges.length) {
   }
   if (selectedIndex < 0) {
     const failure: any = blockedPlans[0];
-    console.error(`OpenSpec contract audit could not replay Archived Change ${failure.change.entry}: ${failure.plan.blocked.map((item: any) => item.code).join(', ')}`);
+    console.error(`OpenSpec contract audit could not replay Archived Change ${failure.change.entry}: ${failure.plan.blocked.map((item: any) => (item.message || item.code)).join(', ')}`);
     process.exit(1);
   }
   pendingChanges.splice(selectedIndex, 1);

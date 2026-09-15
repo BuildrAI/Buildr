@@ -43,8 +43,8 @@ export function createSystemInstallationModule(runtime: any) {
     requires: Object.freeze([]),
     create() {
       const composition = Object.create(runtime);
-      registerApplicationCliUpdate(composition);
-      registerProductInstallationStatus(composition);
+      Object.assign(composition, registerApplicationCliUpdate({ productRoot: runtime.productRoot }));
+      Object.assign(composition, registerProductInstallationStatus({ productRoot: runtime.productRoot }));
       registerLauncherInterface(composition);
       const application = methodPort(composition, APPLICATION_METHODS);
       const identity = Object.freeze({ readCurrentProductIdentity });

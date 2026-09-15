@@ -2,6 +2,7 @@
 
 ## Purpose
 定义 Buildr 产品入口 Agent Skill、workspace Skill 源资产、Project capability/applicability context、runtime 投射和场景化工作流引导契约。
+
 ## Requirements
 
 ### Requirement: 产品内置 Agent Skills
@@ -419,17 +420,17 @@ Buildr package MUST提供`declaration-intake` workspace Skill，description MUST
 - **AND** MUST NOT 将 `selected: codex` 或包含 `codex` 的 `detectedAgents` 解释为宿主身份验证
 
 ### Requirement: Agent Skills 必须区分 todo 创建与 active 启动
-Task Triage 与 Task Manager provider MUST 将 todo 创建视为仅写 Workspace SQLite 的已接受意向，将 active 创建或 todo 激活视为正式执行入口。只有后者 MUST 条件消费 Git Operations 完成创建前基线收敛；Task Manager Application 自身 MUST 保持不执行 Git。
+Task Triage 与 Task Manager provider MUST 将 todo 创建视为尚未启动的已接受意向，将 active 创建或 todo 激活视为工作已经开始；两者 MUST 只登记已确认的任务事实，不以 Git 更新或全局诊断为前置。Task Manager Application MUST 保持不执行 Git。后续代码与环境操作 MUST 按用户目标独立判断。
 
 #### Scenario: 复盘产生 todo
 - **WHEN** 用户同意保留复盘改进意向但未要求立即研发
-- **THEN** Agent MUST 通过 Task Manager 创建 todo 与来源关系
-- **AND** MUST NOT运行 Git baseline、准备 Environment 或创建 Change
+- **THEN** Agent MUST 通过 Task Manager 创建 todo
+- **AND** MUST NOT 为此运行 Git baseline、准备环境或创建 Change
 
 #### Scenario: 启动 todo
-- **WHEN** 用户要求开始执行已有 todo
-- **THEN** Task Triage MUST 先完成当前事实确认与 Git 基线收敛，再调用 activate
-- **AND** 任一前置门禁 blocked 时 MUST 保持 todo 不变
+- **WHEN** 用户要求开始执行已有 todo，当前目标、范围、授权和记录版本有效
+- **THEN** Agent MUST 调用 activate，不要求先完成 Git 基线收敛
+- **AND** 后续动作的局部限制 MUST NOT 改写已成立的启动事实
 
 ### Requirement: 产品入口 Buildr Skill 必须主动解释 GA 与 RC 更新
 产品入口 Buildr Skill MUST 在用户要求完整检查、安装状态检查或更新 Buildr 时运行 `buildr update check --json`，读取 stable/candidate 轨道，并用普通用户可理解的语言告知可用更新和请求用户选择。
@@ -450,12 +451,21 @@ Task Triage 与 Task Manager provider MUST 将 todo 创建视为仅写 Workspace
 - **AND** MUST NOT把该结果解释为 Workspace Doctor 失败
 
 ### Requirement: 产品内置 Skill 必须能发现并执行项目每日演进
-Buildr package MUST 提供可投射的产品 Skill，使 Agent 能发现「展示或生成项目每日演进」意图，并 MUST 引导 Agent：先同步最新代码，再收集目标日期的全部 Git 提交与更改文件，用本机 `git config user.email` 对比作者，总结四问日摘要并判断自己的提交是否关联已有 Task，最后通过 Daily Progress Application/CLI 写入 `.buildr/daily-progress/<project-code>/` 当天文件。该 Skill MUST NOT 让 Buildr 产品在读取路径扫描 Git 或自动撰写摘要，MUST NOT 把每日演进写入 Task Record，MUST NOT 为他人提交挂 Task，也 MUST NOT 要求产品 cron。
+Buildr package MUST 提供可投射的产品 Skill，使 Agent 能发现展示、生成或重跑项目每日演进的意图。查看 MUST 只读取已保存内容；生成 MUST 先明确日期、时区、相关仓库与提交范围，默认从当前本地引用收集当日 Git 提交与更改文件，按本机用户邮箱判断作者并构造四问摘要，通过 Daily Progress Application/CLI 写入。Skill MUST 披露引用、观察时间和未覆盖范围，MUST NOT 把资产同步或全局诊断作为生成前置。产品读取路径 MUST NOT 扫描 Git、写 Task Record、自动撰写摘要或提供 cron，他人提交 MUST NOT 关联 Task。
 
 #### Scenario: 用户要求生成今天的项目每日演进
-- **WHEN** 用户要求展示、生成或重跑某 Project 的每日演进
-- **THEN** Skill MUST 先执行写入前代码同步门禁
-- **AND** 成功后 MUST 收集当日 Git 提交与更改文件，再调用 Daily Progress record，而不是手写 YAML、写入 SQLite 或让页面现场合成
+- **WHEN** 用户要求生成或重跑日报且本地提交可读取
+- **THEN** Skill MUST 基于明确的本地提交范围构造合法输入并 record，不先更新代码或同步资产
+- **AND** 摘要 MUST 说明观察范围与截至时间，未确认远端时不得宣称远端最新
+
+#### Scenario: 用户只要求查看
+- **WHEN** 用户只要求查看已有日报
+- **THEN** Skill MUST inspect 或 list，不自动获取提交、生成或同步
+
+#### Scenario: 用户要求远端最新数据
+- **WHEN** 用户明确要求基于远端最新引用生成日报
+- **THEN** Skill MUST 按授权独立获取目标远端引用并说明结果，不要求检出或变基
+- **AND** 获取失败且用户只接受远端最新数据时 MUST 保留旧日报并报告缺口
 
 #### Scenario: 用户问能否每天自动跑
 - **WHEN** 用户询问每日演进是否自动执行
@@ -538,8 +548,13 @@ Package MUST投射Task Verification Skill，指导Agent探查项目测试体系�
 
 #### Scenario: 开发完成
 - **WHEN** Agent认为实现完成并准备验证
-- **THEN** Skill MUST指导Agent执行任务相关测试、相关服务低成本完整回归和适用环境冒烟
+- **THEN** Skill MUST指导Agent先核对已有检查与当前内容、环境和目标的适用性，复用有效证据，只补充未覆盖的必要检查；扩大到完整回归 MUST具有改动影响、项目必需要求或明确未解决风险的依据
 - **AND** 形成包含选择理由、实际targets、结果、gaps和结论的报告后调用record
+
+#### Scenario: 已有检查仍适用
+- **WHEN** 已有检查仍适用于当前成果且必需检查已通过，没有新改动、失败或明确未解决风险
+- **THEN** Agent MUST 复用实际结果形成报告，不因进入完成阶段或登记报告重跑检查
+- **AND** MUST 保留原执行事实并说明复用适用性，不把历史日志改写为新的执行事实
 
 ### Requirement: Package 不得投射 Task Development 或旧 Finish Skill 依赖
 Buildr package MUST不再提供`task-development` Skill、`buildr.task-development` contract/provider/binding，也 MUST不在OpenSpec、Current Knowledge、Release或Task Skills中要求Task Planning Identity、Development Receipt、Task Candidate或旧Finish Application。
@@ -550,7 +565,7 @@ Buildr package MUST不再提供`task-development` Skill、`buildr.task-developme
 - **AND** OpenSpec、Review、Verification、Environment与默认task-finish MUST保持可发现
 
 ### Requirement: UI相关工作必须由实际入口询问原型并默认遵循已有原型
-Task Triage与Buildr OpenSpec propose、update、apply contributions MUST在当前任务可能改变前端UI时询问用户是否需要UI Prototype，并只在明确确认后路由selected provider。已有原型时Agent MUST默认按其信息架构、布局和交互开发，除非用户明确要求忽略。
+Task Triage与Buildr OpenSpec propose、update、apply contributions MUST在新页面、主要布局或交互存在实质设计选择且用户尚未表达偏好时询问是否需要UI Prototype；已明确设计的局部修复 MUST直接推进，并只在明确确认后路由selected provider。已有原型时Agent MUST默认按其信息架构、布局和交互开发，除非用户明确要求忽略。
 
 #### Scenario: 用户不需要原型
 - **WHEN** 用户明确拒绝本次UI Prototype
@@ -644,3 +659,26 @@ Buildr MUST 提供可选内置 `ux-design-laws` Skill，在用户设计或审查
 - **WHEN** 后续维护发现 Laws of UX 官网新增、移除或重命名主题
 - **THEN** 维护者 MUST 在更新法则卡、索引和验证后才能改变完整性声明
 - **AND** Skill MUST 不通过运行时抓取或镜像自动改变内置内容
+
+### Requirement: 核心规则与技能指引必须按实际影响控制工作量
+随包核心规则 MUST在性能原则第 7 条末尾声明验证范围与改动影响匹配，并限定有效证据与必需检查已满足时的追加验证条件；MUST保持术语表达要求不变。`task-verification`、`task-triage`、`code-architecture`、`capability-adaptation` MUST使用简短且可区分的触发描述，正文保留决策与必要边界，较长的分支操作细节 MUST可按需读取。
+
+#### Scenario: 局部修改无需完整架构地图
+- **WHEN** 当前改动不涉及结构设计或跨模块重构，且用户未要求完整地图
+- **THEN** `code-architecture` MUST只说明相关位置和影响，不强制输出完整目录、对象、方法及调用链地图
+
+#### Scenario: 结构设计需要完整地图
+- **WHEN** 用户要求结构设计、跨模块重构或完整代码地图
+- **THEN** `code-architecture` MUST提供真实目录、主要对象、代表方法和关键调用链，区分当前与拟议结构
+
+#### Scenario: 只选择检查而不登记报告
+- **WHEN** 当前动作仅为选择和执行相关检查
+- **THEN** `task-verification` MUST允许只读取选择指导，不要求预读报告登记或地图写入步骤
+
+#### Scenario: 自有技能描述与分支读取
+- **WHEN** 用户命中 Buildr 自有技能
+- **THEN** 描述 MUST以具体目标和触发边界为主，入口 MUST只保留当前决策及按需参考；外部技能正文保持上游原文
+
+#### Scenario: 诊断与组合验证复用
+- **WHEN** 同步已返回最终诊断或已有组合验证仍覆盖当前成果
+- **THEN** 指引 MUST消费已有结果，只在缺失、相关变化或明确未解决风险时补查；资源修改只核对实际影响的初始化、更新、安装或发布边界

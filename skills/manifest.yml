@@ -5,7 +5,7 @@ skills:
     sourceIdentity: package:skills/buildr/task-triage
     source: buildr
     path: buildr/task-triage
-    description: 用户提出修复、实现、重构、优化、文档/测试或契约语义调整，或询问任务应走代码修改、当前事实维护还是 OpenSpec Change 时使用。
+    description: 判断修改应直接实施、维护当前事实还是进入 OpenSpec 变更，并交接所需专业动作时使用。
     enabled: true
     required: false
     state: installed
@@ -26,7 +26,7 @@ skills:
         version: 1
         mode: optional
       - capability: buildr.current-knowledge-maintenance
-        version: 2
+        version: 3
         mode: optional
       - capability: buildr.git-worktree-provider
         version: 1
@@ -57,7 +57,7 @@ skills:
     sourceIdentity: package:skills/buildr/git-operations
     source: buildr
     path: buildr/git-operations
-    description: 用户或上游智能体（Agent）已明确选择仓库（repository）、Git 操作（Git Operation）与相关引用（ref）时使用，包括无活跃任务（active Task）的直接 Git 收尾和正式任务（formal Task）的直接交付；执行 fetch、commit、push、commit+push、rebase，或检查授权、安全边界和结果证据（result evidence）；不替 Agent 选择策略，也不扩展完整 Git 命令集。
+    description: 执行已明确仓库、操作和目标的 Git 操作，核对授权、改动归属及结果；不代选策略。
     enabled: true
     required: false
     state: installed
@@ -109,7 +109,7 @@ skills:
     sourceIdentity: package:skills/buildr/openspec-contract-guard
     source: buildr
     path: buildr/openspec-contract-guard
-    description: 创建、收敛或归档OpenSpec Change，且需要检查active Change冲突、隔离验证、canonical并发漂移或未决事务恢复事实时使用。
+    description: 使用 OpenSpec 时核对相关变更冲突、明确归档范围或检查中断恢复现场；只补充上游未覆盖的 Buildr 边界。
     enabled: true
     required: false
     state: installed
@@ -257,7 +257,7 @@ skills:
     sourceIdentity: package:skills/buildr/capability-adaptation
     source: buildr
     path: buildr/capability-adaptation
-    description: 用户要求采用内部流程、调整工作方式、修改默认 Skill 行为、创建或替换专业 Skill、卸载可能被编排的 Skill，或 Agent 准备改变 capability contract 及跨 Skill 协作边界时使用。
+    description: 修改技能行为、采用组织工作方式或调整能力声明与绑定时使用；先判断跨技能协作影响。
     enabled: true
     required: false
     state: installed
@@ -280,7 +280,7 @@ skills:
     sourceIdentity: package:skills/buildr/task-verification
     source: buildr
     path: buildr/task-verification
-    description: 用户要探查或维护 Project 测试地图，开发中选择已有前后端测试，或开发完成后记录和查看 Task 验证报告时使用。
+    description: 选择项目已有检查、维护测试地图，或记录和查看任务验证报告时使用；测试由智能体直接调用项目工具。
     enabled: true
     required: false
     state: installed
@@ -301,7 +301,7 @@ skills:
     sourceIdentity: package:skills/buildr/terminology-governance
     source: buildr
     path: buildr/terminology-governance
-    description: Agent 在探索、提案、设计、实现或文档整理中遇到新术语、同义词、一词多义、中英不一致、Context/Context Window 等概念边界，或 consumer 需要正式术语对齐 evidence 时使用。
+    description: 确立或维护长期术语定义、解决影响结论的术语歧义，或需要正式术语对齐结果时使用。
     enabled: true
     required: false
     state: installed
@@ -322,7 +322,7 @@ skills:
     sourceIdentity: package:skills/buildr/current-knowledge-maintenance
     source: buildr
     path: buildr/current-knowledge-maintenance
-    description: OpenSpec Change lifecycle 中评估、收敛或检查当前认知，或者没有 Change 但需要让 Project 当前认知追上已确认事实时使用。
+    description: 建设、检查或维护项目与服务的代码地图、技术图和解释文档，或在 OpenSpec 变更中判断并处理相关知识影响时使用。
     enabled: true
     required: false
     state: installed
@@ -337,13 +337,11 @@ skills:
     runtimePath: current-knowledge-maintenance
     provides:
       - capability: buildr.current-knowledge-maintenance
-        version: 1
-      - capability: buildr.current-knowledge-maintenance
-        version: 2
+        version: 3
     requires:
       - capability: buildr.terminology-governance
         version: 1
-        mode: required
+        mode: optional
   - id: task-manager
     assetIdentity: buildr:skill:task-manager
     sourceIdentity: package:skills/buildr/task-manager
@@ -370,7 +368,7 @@ skills:
     sourceIdentity: package:skills/buildr/task-review
     source: buildr
     path: buildr/task-review
-    description: 用户要求审查正式 Task 的方案或完成结果、查看已有 Task Review Result，或 Agent 判断需要留下轻量审查证据时使用；不用于资产复盘、Task Verification、统一门禁或通用代码 Review。
+    description: 审查正式任务的方案或完成结果、查看或保存对应审查结果时使用；不用于通用代码审查。
     enabled: true
     required: false
     state: installed
@@ -391,7 +389,7 @@ skills:
     sourceIdentity: package:skills/buildr/project-testing
     source: buildr
     path: buildr/project-testing
-    description: 用户要求为Project或Service设计、梳理或优化测试框架，划分Static、Unit、Component、Integration、System边界，区分测试成本、affected/full范围与Candidate/Release验证目标，或实现功能后开发适量测试时使用；不用于执行正式Task Verification、维护verification.yml或记录任务验证报告。
+    description: 设计或调整测试体系、为实现开发必要测试时使用；已有检查的选择和报告交给 task-verification。
     enabled: true
     required: false
     state: installed
@@ -414,7 +412,7 @@ skills:
     sourceIdentity: package:skills/buildr/declaration-intake
     source: buildr
     path: buildr/declaration-intake
-    description: 用户要求初始化、刷新或审查Project的准备入口与任务验证声明，或Project/Service注册、首次Task scope、准备入口缺口、Verification coverage gap、构建/依赖/测试入口变化触发声明检查时使用；先只读发现并分类routine maintenance与真正需要用户决定的长期变化，再交给声明owner。
+    description: 初始化、维护准备与验证声明，或项目注册、构建和测试入口变化产生声明缺口时使用；先核对差异，再交给对应维护者。
     enabled: true
     required: false
     state: installed
@@ -432,7 +430,7 @@ skills:
     sourceIdentity: package:skills/buildr/project-daily-progress
     source: buildr
     path: buildr/project-daily-progress
-    description: 用户要求展示、生成或重跑某 Project 的每日演进，或询问能否每天自动执行时使用；先同步最新代码，再收集当日 Git 提交与更改文件，由 Agent 总结四问后通过 CLI 写入本机文件。读取路径不扫描 Git、不写 Task Record、不提供产品 cron。
+    description: 查看、生成或重跑项目每日演进，或询问定时执行时使用；按明确提交范围生成四问摘要，说明观察时间与未覆盖范围。
     enabled: true
     required: false
     state: installed
@@ -490,7 +488,7 @@ skills:
     sourceIdentity: package:skills/buildr/ux-design-laws
     source: buildr
     path: buildr/ux-design-laws
-    description: 设计或审查用户界面、交互流程、信息层级与操作反馈时使用；依据用户目标和真实界面选择相关心理学法则，给出有优先级的设计方案、依据、权衡与验证方法。不用于仅实现既定设计稿、直接生成页面原型，或替代无障碍检查与用户研究。
+    description: 设计或审查界面、交互与信息层级时使用，按真实问题选择体验法则；不用于单纯实现既定设计。
     enabled: true
     required: false
     state: installed
@@ -508,7 +506,7 @@ skills:
     sourceIdentity: package:skills/buildr/code-architecture
     source: buildr
     path: buildr/code-architecture
-    description: 为任意技术栈的新功能代码组织、模块重构、文件拆并和结构审查提供架构指导；明确分层、对象职责和类型归属，并输出目录、对象、关键方法及调用关系级代码地图。
+    description: 设计代码结构、调整模块职责或审查文件拆分与合并时使用；局部实现沿用既有结构。
     enabled: true
     required: false
     state: installed
@@ -526,14 +524,6 @@ contracts:
     version: 1
     path: contracts/buildr/terminology-governance/v1.md
     description: 调查、对齐并维护 Project 与 Service 的 canonical terminology。
-  - id: buildr.current-knowledge-maintenance
-    version: 1
-    path: contracts/buildr/current-knowledge-maintenance/v1.md
-    description: 按 Change 真实影响评估、收敛和检查 Brief 与 Project 当前认知。
-  - id: buildr.current-knowledge-maintenance
-    version: 2
-    path: contracts/buildr/current-knowledge-maintenance/v2.md
-    description: 按 Change 或已确认当前事实的真实影响评估、收敛、检查或独立维护 Project 当前认知。
   - id: buildr.task-finish
     version: 1
     path: contracts/buildr/task-finish/v1.md
@@ -558,16 +548,14 @@ contracts:
     version: 3
     path: contracts/buildr/task-record/v3.md
     description: 管理canonical Workspace中Task最小顶层事实及本机复盘文档摘要与决定状态。
+  - id: buildr.current-knowledge-maintenance
+    version: 3
+    path: contracts/buildr/current-knowledge-maintenance/v3.md
+    description: 按明确范围建设、检查与维护代码地图、技术图和解释文档。
 bindings:
   - capability: buildr.terminology-governance
     version: 1
     provider: terminology-governance
-  - capability: buildr.current-knowledge-maintenance
-    version: 1
-    provider: current-knowledge-maintenance
-  - capability: buildr.current-knowledge-maintenance
-    version: 2
-    provider: current-knowledge-maintenance
   - capability: buildr.task-finish
     version: 1
     provider: task-finish
@@ -586,4 +574,7 @@ bindings:
   - capability: buildr.task-record
     version: 3
     provider: task-manager
+  - capability: buildr.current-knowledge-maintenance
+    version: 3
+    provider: current-knowledge-maintenance
 workspaceId: f2f40b71-2382-5906-82bd-76a7927b59f3

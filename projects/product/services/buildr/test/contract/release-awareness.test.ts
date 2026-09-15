@@ -12,7 +12,9 @@ function read(relative: any): any  {
 }
 
 test('产品入口 Buildr Skill 与 bootstrap guide 让 Agent 解释 GA/RC 并等待用户选择', () => {
-  const skill: any = read('resources/runtime/skills/buildr/SKILL.md');
+  const entry: any = read('resources/runtime/skills/buildr/SKILL.md');
+  assert.match(entry, /references\/asset-maintenance\.md#安装与更新/);
+  const skill: any = entry + read('resources/runtime/skills/buildr/references/asset-maintenance.md');
   const guide: any = read('docs/bootstrap-guide.md');
   for (const content of [skill, guide]) {
     assert.match(content, /buildr update check --json/);

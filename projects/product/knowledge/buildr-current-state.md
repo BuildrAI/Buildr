@@ -1,11 +1,10 @@
-# Buildr Current State（兼容入口）
+# Buildr 当前知识入口
 
-Buildr Product 当前事实已经迁移到按职责组织的知识结构。此路径只保留为旧链接兼容入口，不再维护第二份当前事实。
+当前成果统一从 [README](README.md) 进入。原路径仅保留导航，不维护第二份正文。
 
-- [当前认知概览](overview.md)
-- [术语表](glossary.md)
-- [架构入口](architecture/index.md)
-- [核心流程](flows/openspec-change-lifecycle.md)
-- [Buildr Service](services/buildr.md)
-
-规范性行为以 [canonical specs](../openspec/specs/) 和 active Change delta specs 为准；历史 Change/archive 只作为 provenance。
+- [产品概览](docs/overview.md)
+- [术语表](docs/glossary.md)
+- [架构入口](docs/architecture/index.md)
+- [代码地图](code-map/README.md)
+- [技术图](archify/index.md)
+- [历史与规划](../docs/document-index.md)

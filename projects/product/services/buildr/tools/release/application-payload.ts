@@ -20,6 +20,7 @@ import { assertGeneratedArtifactEntry } from '../build/generated-artifacts.ts';
 const serviceRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const MAIN_ENTRY: any = path.join(serviceRoot, 'tools/release/application-payload-entry.ts');
 const WORKER_ENTRY: any = path.join(serviceRoot, 'src/web/http/read-worker.ts');
+const UPSTREAM_OPENSPEC_WORKER_ENTRY: any = path.join(serviceRoot, 'src/modules/openspec/application/upstream-openspec-worker.ts');
 const RESOURCE_SOURCES: any = Object.freeze([
   ['resources', 'product/resources', { exclude: new Set(['installation', 'runtime']) }],
   ['resources/installation/launcher', 'product/resources/installation/launcher', { include: new Set(['Buildr.icns', 'Buildr.ico']) }],
@@ -152,6 +153,7 @@ async function buildApplicationPayload(output: any, sourceCommit: any, options: 
       entryPoints: {
         'runtime/buildr': MAIN_ENTRY,
         'resources/runtime/read-worker': WORKER_ENTRY,
+        'resources/runtime/upstream-openspec-worker': UPSTREAM_OPENSPEC_WORKER_ENTRY,
       },
       outdir: destination,
       outExtension: { '.js': '.cjs' },

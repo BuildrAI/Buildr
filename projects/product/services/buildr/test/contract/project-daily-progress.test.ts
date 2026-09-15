@@ -41,7 +41,10 @@ test('CLI、HTTP 与 Skill 共用 Daily Progress Application 和稳定 JSON iden
   ]) assert.ok(json.includes(schema), schema);
   assert.ok(gitignore.includes('/.buildr/daily-progress/'));
   assert.equal(gitignore.includes('/.buildr/\n'), false);
-  for (const phrase of ['更新 workspace', 'buildr sync <agent>', '不要调用 record', 'Agent 宿主', '不要手写 YAML', '不要写入 Task SQLite', 'git config user.email']) {
+  assert.doesNotMatch(skill, /buildr sync <agent>|先同步最新代码|最终 Doctor 未 ready 时停止/);
+  assert.match(skill, /daySummary\.drawbacks/);
+  assert.match(skill, /用户只接受远端最新数据时保留旧日报/);
+  for (const phrase of ['Agent 宿主', '不要手写 YAML', '不要写入 Task SQLite', 'git config user.email']) {
     assert.ok(skill.includes(phrase), phrase);
   }
 });
