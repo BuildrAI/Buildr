@@ -12,7 +12,7 @@ if(args.includes('--list-suites')) console.log(JSON.stringify({...suites,all:[..
 else {
  const selected=args.includes('--suite')?args[args.indexOf('--suite')+1]:'all';
  const cases=selected==='all'?[...suites.contract,...suites.recovery]:suites[selected as keyof typeof suites];
- if(!cases)throw new Error(`Unknown OpenSpec suite: ${selected}`);
+ if(!cases)throw new Error(`Unknown OpenSpec fixture suite: ${selected}`);
  const result=spawnSync(process.execPath,['--test',...cases.map(name=>path.resolve(import.meta.dirname,'../../integration',`${name}.test.ts`))],{stdio:'inherit',env:process.env});
  if(result.error)throw result.error;
  process.exitCode=result.status??1;

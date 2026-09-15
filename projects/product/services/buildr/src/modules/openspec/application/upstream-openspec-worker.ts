@@ -3,11 +3,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+async function main() {
 const input = JSON.parse(fs.readFileSync(0, 'utf8'));
 input.projectRoot = fs.realpathSync(input.projectRoot);
 input.changeRoot = fs.realpathSync(input.changeRoot);
 let entry = fs.realpathSync(input.executable);
-if (/\.(cmd|ps1)$/i.test(entry)) {
+if (path.basename(path.dirname(entry)).toLowerCase() === '.bin') {
   const shim = fs.readFileSync(entry, 'utf8').replaceAll('\\', '/');
   const candidates = [path.resolve(path.dirname(entry), '../@fission-ai/openspec'), path.join(path.dirname(entry), 'node_modules/@fission-ai/openspec')];
   const root = candidates.find(candidate => fs.existsSync(path.join(candidate, 'package.json')) && shim.includes('@fission-ai/openspec/bin/openspec.js'));
@@ -72,3 +73,9 @@ for (const update of updates) {
   }
 }
 process.stdout.write(JSON.stringify({ capabilities, files, diagnostics }));
+}
+
+main().catch(error => {
+  console.error(error);
+  process.exitCode = 1;
+});

@@ -18,6 +18,7 @@ function manifest(): any  {
     'resources/product/src/infrastructure/sqlite/migrations/0000_create_migration_ledger.sql',
     'resources/product/web-dist/index.html',
     'resources/runtime/read-worker.cjs',
+    'resources/runtime/upstream-openspec-worker.cjs',
     'runtime/buildr.cjs',
   ];
   const value: any = {

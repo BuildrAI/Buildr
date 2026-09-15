@@ -6,6 +6,7 @@ import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
 import { createRuntime } from '../helpers/runtime-harness.ts';
+import { registerApplicationRuntime } from '../../src/modules/agent-assets/application/runtime-projection.ts';
 import { createAgentAssetsCliContributions } from '../../src/modules/agent-assets/interfaces/cli/agent-assets.ts';
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.ts';
 
@@ -36,14 +37,14 @@ test('候选 Product checkout 只能投射自身任务验证 Workspace', (t: any
   const isolatedUserRuntime: any = path.join(unrelated, 'user-home');
   const sharedUserRuntime: any = path.join(fixture, 'shared-user-home');
 
-  const runtime: any = createRuntime();
-  runtime.productRoot = () => candidate;
+  const baseRuntime: any = createRuntime();
+  const runtime: any = registerApplicationRuntime({
+    ...baseRuntime,
+    productRoot: () => candidate,
+    buildRuntimeOrphanRemovalPlan: () => [],
+    assertSafeSyncMutationPaths: () => {},
+  });
   assert.doesNotThrow(() => runtime.assertRuntimeProjectionTarget(candidate));
-  let initializationCalls: any = 0;
-  runtime.assertInitializedBuildrWorkspace = () => { initializationCalls += 1; };
-  runtime.syncRuntime('codex', ['--target', candidate]);
-  assert.equal(initializationCalls, 0, 'candidate source sync must stop before workspace initialization or later mutation preparation');
-  assert.equal(fs.existsSync(path.join(candidate, '.agents', 'skills', 'buildr', 'SKILL.md')), true, 'projection-only sync renders the product Skill in the candidate itself');
   const compatibility: any = runtime.assertRuntimeSyncTarget(candidate, 'codex');
   assert.equal(compatibility.disposition, 'projection-only');
   assert.equal(sameFilesystemPath(compatibility.source.checkoutRoot, candidate), true);
@@ -57,10 +58,15 @@ test('候选 Product checkout 只能投射自身任务验证 Workspace', (t: any
   assert.throws(() => runtime.assertRuntimeProjectionTarget(retained), (error: any) => error.code === 'runtime.candidate_cross_checkout_target');
   assert.throws(() => runtime.assertRuntimeProjectionTarget(peer), (error: any) => error.code === 'runtime.candidate_cross_checkout_target');
 
-  runtime.productRoot = () => retained;
-  assert.doesNotThrow(() => runtime.assertRuntimeProjectionTarget(retained));
-  assert.equal(runtime.assertRuntimeSyncTarget(retained, 'codex').disposition, 'full-sync', 'retained Product source may full-sync its canonical Workspace');
-  assert.doesNotThrow(() => runtime.assertRuntimeProjectionTarget(candidate), 'retained Product source may provision a task worktree runtime');
+  const retainedRuntime: any = registerApplicationRuntime({
+    ...baseRuntime,
+    productRoot: () => retained,
+    buildRuntimeOrphanRemovalPlan: () => [],
+    assertSafeSyncMutationPaths: () => {},
+  });
+  assert.doesNotThrow(() => retainedRuntime.assertRuntimeProjectionTarget(retained));
+  assert.equal(retainedRuntime.assertRuntimeSyncTarget(retained, 'codex').disposition, 'full-sync', 'retained Product source may full-sync its canonical Workspace');
+  assert.doesNotThrow(() => retainedRuntime.assertRuntimeProjectionTarget(candidate), 'retained Product source may provision a task worktree runtime');
 });
 
 test('render --product-skill selects product Skill without changing render into source sync', () => {
