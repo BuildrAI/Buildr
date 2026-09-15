@@ -9,7 +9,7 @@
 - 重构 Buildr Web 顶部区域、项目导航与双栏分组页签，统一 Workspace、Project、Service 和 Skill 的浏览与编辑体验。
 - 完善 Skill 详情阅读、维护动作与编辑抽屉，明确前后端 Service 显示名称和 Buildr 产品名称。
 - 内置可选 Archify 绘图组件，并补齐技能投射的代码地图、技术图和使用文档。
-- 升级 OpenSpec 至 1.13，精简任务、OpenSpec 与智能体（Agent）工作指引，解除任务登记和每日演进的同步前置。
+- 升级 OpenSpec 至 1.13，修复 npm 产物与 Windows 对声明安装的调用，并精简任务、OpenSpec 与智能体（Agent）工作指引。
 - 重组当前知识资产与维护边界，清理退役任务看板文件并同步自举 Workspace。
 
 ## 0.1.0-rc.32 - 2026-09-08

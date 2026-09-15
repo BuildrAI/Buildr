@@ -167,6 +167,7 @@ test('npm release artifact freezes one tarball with complete payload and no plat
       'build/test-context/index.js',
       'build/test-context/index.d.ts',
       'payload/runtime/read-worker.cjs',
+      'payload/runtime/upstream-openspec-worker.cjs',
       'payload/product/web-dist/index.html',
       'payload/product/src/infrastructure/sqlite/migrations/0000_create_migration_ledger.sql',
       'payload/product/resources/manifest.yml',

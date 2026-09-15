@@ -205,6 +205,7 @@ export function assertNpmTarballInventory(inventory: any): any  {
     'build/test-context/index.d.ts',
     'runtime/buildr.cjs',
     'payload/runtime/read-worker.cjs',
+    'payload/runtime/upstream-openspec-worker.cjs',
     'payload/product/package.json',
     'payload/product/resources/manifest.yml',
     'payload/product/resources/installation/launcher/Buildr.icns',

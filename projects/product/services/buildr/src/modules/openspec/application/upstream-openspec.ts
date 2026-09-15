@@ -1,6 +1,6 @@
 import process from 'node:process';
-import path from 'node:path';
 import { spawnCommandSync } from '../../../infrastructure/process.ts';
+import { resolveProductResource } from '../../../infrastructure/product-resources/index.ts';
 import type { DeltaOperation, OpenSpecDelta } from './delta-model.ts';
 import { convergenceDigest, convergenceIdentity, convergencePlanIdentity, CONVERGENCE_PLAN_SCHEMA, CONVERGENCE_ALGORITHM_VERSION, type ConvergencePlan, type ExecutableIdentity } from './convergence-model.ts';
 
@@ -9,8 +9,11 @@ type UpstreamData = {
   files: { path: string; beforeExists: boolean; beforeContent: string; expectedExists: boolean; expectedContent: string }[];
   diagnostics: { capability: string; code: string; message: string }[];
 };
+const UPSTREAM_OPENSPEC_WORKER = resolveProductResource('runtime/upstream-openspec-worker.cjs', {
+  developmentFallback: 'src/modules/openspec/application/upstream-openspec-worker.ts',
+});
 export function readUpstreamOpenSpec(executable: string, projectRoot: string, changeRoot: string, operation: 'inspect' | 'plan' = 'inspect'): UpstreamData {
-  const result = spawnCommandSync(process.execPath, [path.join(import.meta.dirname, 'upstream-openspec-worker.ts')], {
+  const result = spawnCommandSync(process.execPath, [UPSTREAM_OPENSPEC_WORKER], {
     input: JSON.stringify({ executable, projectRoot, changeRoot, operation }), encoding: 'utf8', maxBuffer: 16 * 1024 * 1024,
   });
   if (result.error || result.status !== 0) throw new Error(`OpenSpec adapter failed: ${result.error?.message || String(result.stderr).slice(0, 2000)}`);

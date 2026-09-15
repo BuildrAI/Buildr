@@ -84,6 +84,7 @@ export function validateApplicationPayloadManifest(value: any): any  {
   for (const required of [
     'runtime/buildr.cjs',
     'resources/runtime/read-worker.cjs',
+    'resources/runtime/upstream-openspec-worker.cjs',
     'resources/product/package.json',
     'resources/product/resources/manifest.yml',
     'resources/product/src/infrastructure/sqlite/migrations/0000_create_migration_ledger.sql',
