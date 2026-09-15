@@ -30,7 +30,7 @@ test('process killed after receipt persistence can restart safely',t=>{
    fs.mkdirSync(input.directory,{recursive:true});fs.writeFileSync(input.file,JSON.stringify(input.receipt));
    process.kill(process.pid,'SIGKILL');
  `],{input:JSON.stringify({directory:`${f.changeRoot}/.buildr`,file:convergenceReceiptPath(f.changeRoot),receipt:f.receipt()}),encoding:'utf8'});
- assert.equal(child.signal,'SIGKILL');assert.equal(f.run().status,'passed');
+ assert.ok(child.signal === 'SIGKILL' || (process.platform === 'win32' && child.status !== 0), JSON.stringify({status:child.status,signal:child.signal,error:child.error?.message}));assert.equal(f.run().status,'passed');
 });
 
 test('recovery detects byte changes including trailing whitespace',t=>{
