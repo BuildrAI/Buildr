@@ -32,7 +32,7 @@ test('Git provider 不可用且工作目录未提交、无上游时仍可创建�
     };
     git('init', '--initial-branch=fixture');
     git('config', 'user.name', 'Fixture');
-    git('config', 'user.email', 'fixture@example.invalid');
+    git('config', 'user.email', 'fixture@example.com');
     fs.writeFileSync(path.join(root, 'owned.txt'), 'committed\n');
     git('add', 'owned.txt');
     git('-c', 'commit.gpgsign=false', 'commit', '-m', 'fixture');
