@@ -233,19 +233,19 @@
       "type": "skill",
       "id": "task-triage",
       "target": "skills/buildr/task-triage",
-      "integrity": "sha256-c8ac673bd75bfdf1b476f27e0c2a2b333a843a66c965f464f96ba3b989cb8494",
+      "integrity": "sha256-1ad6618225ada0105d193a2e9249dc972d47b4108bf2863cb4c49ddafba3dfde",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-8f9e21cf04cc5a37e23091384325f11d33ef2ef5c51afec08dbe7bf21522d082"
+          "integrity": "sha256-6ead5a0628244d56a139b8cb54b934522299f530711f177a62c1409d186c6a21"
         },
         {
           "path": "references/structured-handoff.md",
-          "integrity": "sha256-95750c85a09d91517a249e9c82fb476e765ae9e0d38476a403319f3d50144df6"
+          "integrity": "sha256-70e10bbcb9111c2a1f8b15284a4d598f2ef8a09fff87c1e75af1e576c17f7858"
         },
         {
           "path": "references/task-create-git-baseline.md",
-          "integrity": "sha256-7cb0c614bd43bb0e7ea5ede4792501de4371a1393d6212f2099ec604b1118680"
+          "integrity": "sha256-c765d5eb38298668ad4715797853e79d36aeea82c464308af2611b484c748562"
         }
       ]
     },
@@ -281,11 +281,11 @@
       "type": "skill",
       "id": "task-worktree",
       "target": "skills/buildr/task-worktree",
-      "integrity": "sha256-aa5d90b399dc1da821798ef5244d42abdcdd337127bfff7f9acca26e2bd961bb",
+      "integrity": "sha256-7f4172c3510a82e83c84eea60f36bf0f7108c32f6486b75333615e3daff0453d",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-0076c2445bb826a39a21d7faf723cba7bcaea641a8c72d64e94b56d8e455575f"
+          "integrity": "sha256-8a7eddf2d038146fbccca69e276bd3af5824cfb99ae1a029f56a5f1a48d967bc"
         }
       ]
     },
