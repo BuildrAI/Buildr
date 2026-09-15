@@ -1,33 +1,15 @@
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode, type CSSProperties } from 'react';
+import { useLocation } from 'react-router-dom';
 import { CloseOutlined } from '@ant-design/icons';
-import { PageTabStrip, type WorkspacePageTab } from '../app/pageTabs';
+import { useWorkspacePageTabs, type WorkspacePageTab } from '../app/pageTabs';
+
+import { paneDimensions } from '../app/workspace-pages';
 
 /** 对象级页签：领域内点开的服务/文档/变更，页内对照，全关时右组退场。 */
 export type ObjectTabKind = 'svc' | 'doc' | 'chg';
 export type WorkspaceObjectTab = { key: string; kind: ObjectTabKind; title: string };
 
-const RIGHT_MIN = 420;
-const RIGHT_DEFAULT_RATIO = 0.44;
-const RIGHT_MAX_RATIO = 0.62;
-const WIDTH_KEY = 'buildr.web.pane-right-width';
 const STEP = 16;
-
-function readStoredWidth(): number | null {
-  try {
-    const value = Number(window.localStorage.getItem(WIDTH_KEY));
-    return Number.isFinite(value) && value > 0 ? value : null;
-  } catch {
-    return null;
-  }
-}
-
-function persistWidth(value: number): void {
-  try {
-    window.localStorage.setItem(WIDTH_KEY, String(value));
-  } catch {
-    /* ignore quota / private mode */
-  }
-}
 
 type Props = {
   /** 左组页面级页签。 */
@@ -46,11 +28,9 @@ type Props = {
 
 /**
  * 双栏组工作台：左组（页面级页签 + 限宽居中内容）+ 贯连可拖分隔线 + 右组（对象级页签 + 内容）。
- * 两组各自独立滚动；≤1440px 时右组由 CSS 降级为浮动层。
+ * 两组独立滚动；桌面始终并排，极窄窗口上下排列。
  */
 export function WorkspaceStage({
-  pageTabs,
-  onClosePageTab,
   children,
   objectTabs,
   activeObject,
@@ -60,33 +40,44 @@ export function WorkspaceStage({
 }: Props) {
   const hasRight = Boolean(objectTabs && objectTabs.length > 0);
   const stageRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const previousContent = useRef<{ left: number; width: number } | null>(null);
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
-  const widthRef = useRef<number | null>(null);
-  const [rightWidth, setRightWidth] = useState<number | null>(null);
+  const { ratio, setRatio, reportPaneWidth } = useWorkspacePageTabs();
+  const [stageWidth, setStageWidth] = useState(0);
+  const [draftWidth, setDraftWidth] = useState<number | null>(null);
   const [resizing, setResizing] = useState(false);
-
-  useEffect(() => { widthRef.current = readStoredWidth(); setRightWidth(widthRef.current); }, []);
-
-  const clampWidth = useCallback((value: number) => {
-    const stageWidth = stageRef.current?.getBoundingClientRect().width ?? 1600;
-    const min = RIGHT_MIN;
-    const max = Math.max(min, Math.round(stageWidth * RIGHT_MAX_RATIO));
-    return Math.round(Math.min(max, Math.max(min, value)));
+  const widthRef = useRef<number | null>(null);
+  useEffect(() => {
+    const node = stageRef.current;
+    if (!node) return;
+    const observer = new ResizeObserver(([entry]) => { if (entry.contentRect.width > 0) setStageWidth(entry.contentRect.width); });
+    observer.observe(node);
+    return () => observer.disconnect();
   }, []);
-
-  const currentWidth = useCallback(() => {
-    if (widthRef.current) return widthRef.current;
-    const stageWidth = stageRef.current?.getBoundingClientRect().width ?? 1600;
-    return clampWidth(Math.round(stageWidth * RIGHT_DEFAULT_RATIO));
-  }, [clampWidth]);
-
-  const commitWidth = useCallback((value: number) => {
+  const location = useLocation();
+  const dimensions = paneDimensions(stageWidth, ratio);
+  const rightWidth = draftWidth ?? dimensions.right;
+  useEffect(() => { reportPaneWidth(location.pathname, hasRight && stageWidth > 620 ? rightWidth + 9 : 0); }, [location.pathname, hasRight, stageWidth, rightWidth, reportPaneWidth]);
+  useLayoutEffect(() => {
+    const node = contentRef.current;
+    if (!node || !node.getClientRects().length) return;
+    node.getAnimations().forEach((animation) => animation.cancel());
+    const rect = node.getBoundingClientRect();
+    const previous = previousContent.current;
+    if (previous && !resizing && Math.abs(previous.width - rect.width) < 1 && Math.abs(previous.left - rect.left) > 1 && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      node.animate([{ transform: `translateX(${previous.left - rect.left}px)` }, { transform: 'translateX(0)' }], { duration: 180, easing: 'cubic-bezier(.2,.8,.2,1)' });
+    }
+    previousContent.current = { left: rect.left, width: rect.width };
+  }, [hasRight, rightWidth, stageWidth, resizing]);
+  const clampWidth = (value: number) => Math.min(dimensions.max, Math.max(dimensions.min, value));
+  const currentWidth = () => rightWidth;
+  const commitWidth = (value: number) => {
     const next = clampWidth(value);
     widthRef.current = next;
-    setRightWidth(next);
+    setDraftWidth(next);
     return next;
-  }, [clampWidth]);
-
+  };
   const onPointerDown = (event: PointerEvent<HTMLButtonElement>) => {
     if (event.button !== 0) return;
     event.preventDefault();
@@ -106,20 +97,21 @@ export function WorkspaceStage({
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
     setResizing(false);
-    if (widthRef.current) persistWidth(widthRef.current);
+    if (widthRef.current && stageWidth) setRatio(widthRef.current / stageWidth);
+    setDraftWidth(null);
   };
   const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
     if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
     event.preventDefault();
     const next = commitWidth(currentWidth() + (event.key === 'ArrowLeft' ? STEP : -STEP));
-    persistWidth(next);
+    if (stageWidth) setRatio(next / stageWidth);
+    setDraftWidth(null);
   };
 
   return (
-    <div ref={stageRef} className={`pane-stage${hasRight ? ' split' : ''}${resizing ? ' resizing' : ''}`}>
+    <div ref={stageRef} style={{ '--workspace-content-width': `${dimensions.content}px` } as CSSProperties} className={`pane-stage${hasRight ? ' split' : ''}${resizing ? ' resizing' : ''}`}>
       <section className="pane-group pane-left">
-        <PageTabStrip tabs={pageTabs} onClose={onClosePageTab} />
-        <div className="pane-body"><div className="pane-body-inner">{children}</div></div>
+        <div className="pane-body"><div ref={contentRef} className="pane-body-inner">{children}</div></div>
       </section>
       {hasRight ? (
         <>
@@ -127,6 +119,10 @@ export function WorkspaceStage({
             type="button"
             className="pane-divider"
             aria-label="拖拽调整两侧宽度"
+            role="separator"
+            aria-valuemin={Math.round(dimensions.min)}
+            aria-valuemax={Math.round(dimensions.max)}
+            aria-valuenow={Math.round(rightWidth)}
             aria-orientation="vertical"
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
@@ -156,6 +152,8 @@ export function WorkspaceStage({
                     <span
                       className="pane-tab-x"
                       role="button"
+                      tabIndex={0}
+                      onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); onCloseObject?.(tab.key); } }}
                       aria-label={`关闭 ${tab.title}`}
                       onClick={(event) => { event.stopPropagation(); onCloseObject?.(tab.key); }}
                     >

@@ -1,3 +1,4 @@
+import { WorkspacePages } from './WorkspacePages';
 import { runtimeSystemApi } from './api/runtime-system-api';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom';
@@ -271,7 +272,7 @@ export function AppLayout() {
         <ReleaseAwarenessBanner openAgentAction={openAgentAction} />
         <div className={`app-frame${isGlobal ? ' is-global' : ''}`}>
           {!isGlobal && !compactNavigation ? <aside className="app-sidebar"><AppNavigation key={workspaceId} /></aside> : null}
-          <main id="app-view" tabIndex={-1} aria-live="polite"><Outlet key={workspaceId} /></main>
+          <main id="app-view" tabIndex={-1} aria-live="polite"><>{workspaceId ? <WorkspacePages key={workspaceId} workspaceId={workspaceId} /> : <Outlet />}</></main>
         </div>
       </div>
 

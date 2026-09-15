@@ -2,7 +2,7 @@ import { workspaceApi } from '../../workspace/api/workspace-api';
 import { type ProjectResponse, projectApi } from '../api/project-api';
 import { serviceApi } from '../../service/api/service-api';
 import { useCallback, useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useNavigate } from 'react-router-dom';
 import { Button, Tabs, Tag } from 'antd';
 import { EditOutlined, FileTextOutlined, RightOutlined, ThunderboltOutlined } from '@ant-design/icons';
 
@@ -34,6 +34,8 @@ const DOC_ROWS: { ref: string; name: string; hint: string }[] = [
 
 /** 右组服务对象：头部 + 标签 + README/AGENTS 子页签，阅读不离开项目上下文。 */
 function ServiceObjectView({ projectCode, serviceCode, onEdit }: { projectCode: string; serviceCode: string; onEdit: () => void }) {
+  const { workspaceId } = useAppShell();
+  const navigate = useNavigate();
   const [detail, setDetail] = useState<ServiceDetail | null>(null);
   const [error, setError] = useState('');
   const [sub, setSub] = useState<'README.md' | 'AGENTS.md'>('README.md');
@@ -72,6 +74,7 @@ function ServiceObjectView({ projectCode, serviceCode, onEdit }: { projectCode: 
   const service = detail.service;
   return (
     <>
+      <div className="ws-obj-toolbar"><Button size="small" onClick={() => navigate(workspaceHref(workspaceId, `/services/${encodeURIComponent(projectCode)}/${encodeURIComponent(serviceCode)}`))}>在主区域打开 ↗</Button></div>
       <div className="ws-obj-head">
         <span className="ws-svc-ico" aria-hidden>{service.name.slice(0, 1)}</span>
         <h2>{service.name} <code>{service.code}</code></h2>

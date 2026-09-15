@@ -28,7 +28,7 @@
 
 | 功能 | 位置 | 代表入口 |
 |---|---|---|
-| 应用壳 | `services/buildr-web/src/app/` | `AppLayout`、`AppNavigation`、`navigationState`、`AppShellContext`、`AgentActionDrawer` |
+| 应用壳 | `services/buildr-web/src/app/` | `AppLayout`、`AppNavigation`、`WorkspacePages`、`PageTabStrip`、`WorkspaceTabsContext`、`navigationState`、`AppShellContext`、`AgentActionDrawer` |
 | Workspace | `services/buildr-web/src/features/workspace/` | `WorkspacesPage`、`WorkspaceAgentAction` |
 | Project | `services/buildr-web/src/features/project/` | `ProjectsPage`、`ProjectDetailPage`、`ProjectEditModal` |
 | Service | `services/buildr-web/src/features/service/` | `ServicesPage`、`ServiceDetailPage`、`useServiceCatalog` |
@@ -52,4 +52,4 @@
 
 ## Web 导航框架
 
-`AppLayout` 显示共同工作空间范围和“工作台 / 工作空间”两个区域。`navigationState` 从现有路由确定区域及所属项目；`AppNavigation` 读取项目和当前项目服务，并提供单项展开与加号入口。`ProjectsSection` 只选择目录或详情，不重复承载左侧列表。`features/agent-assets/pages/SkillsPage.tsx` 只读技能清单，沿用现有客户端。界面菜单遵循本次用户确认，只显示中文。
+`AppLayout` 显示共同工作空间范围和“工作台 / 工作空间”两个区域。`navigationState` 从现有路由确定区域及所属项目；`AppNavigation` 提供项目、服务、技能、设置四个平级入口；`WorkspacePages` 保留已访问页面及各自路由上下文，`PageTabStrip` 统一管理拖动与关闭，`workspace-pages.ts` 校验浏览器偏好并计算分屏尺寸。`ProjectsSection` 只选择目录或详情，不重复承载左侧列表。`features/agent-assets/pages/SkillsPage.tsx` 只读技能清单，沿用现有客户端。界面菜单遵循本次用户确认，只显示中文。
