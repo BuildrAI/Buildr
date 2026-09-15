@@ -6,7 +6,7 @@ import { readUpstreamOpenSpec, upstreamDelta, upstreamConvergencePlan } from '..
 import { runOpenSpecConvergence } from '../../src/modules/openspec/application/openspec-converge.ts';
 import { createConvergenceReceipt } from '../../src/modules/openspec/application/convergence-model.ts';
 import type { TestContext } from 'node:test';
-export const executable = path.resolve(import.meta.dirname, '../../node_modules/.bin/openspec');
+export const executable = path.resolve(import.meta.dirname, `../../node_modules/.bin/openspec${process.platform === 'win32' ? '.cmd' : ''}`);
 export const executableIdentity = { sourceKind: 'external-declared', reference: 'external:openspec', version: '1.13.0', sha256: 'fixture-exact-installation' };
 export const requirement = (name: string) => `### Requirement: ${name}\nThe system MUST provide ${name}.\n\n#### Scenario: ${name} works\n- **WHEN** requested\n- **THEN** the result is returned\n`;
 export function fixture(t: TestContext, delta = `## ADDED Requirements\n\n${requirement('New')}`) {

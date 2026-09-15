@@ -5,7 +5,7 @@
   "status": "pass",
   "visualReview": "pending",
   "artifact": {
-    "path": "/Users/chenjun/Buildr/.worktrees/rebuild-current-knowledge/projects/product/knowledge/archify/flows/skill-projection.html",
+    "path": "projects/product/knowledge/archify/flows/skill-projection.html",
     "sha256": "7688a4e8a42ee87a196249173d125df64d8cc8d6ef9d2f9c4530cae11396ebbb",
     "bytes": 709889
   },
