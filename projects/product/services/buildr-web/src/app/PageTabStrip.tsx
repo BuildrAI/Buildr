@@ -1,3 +1,4 @@
+import { useResourcePreview } from './resource-preview';
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -9,6 +10,7 @@ type Props = { tabs: WorkspacePageTab[]; onClose: (key: string) => void; onReord
 export function PageTabStrip({ tabs, onClose, onReorder }: Props) {
   const location = useLocation();
   const navigate = useNavigate();
+  const previews = useResourcePreview();
   const strip = useRef<HTMLDivElement>(null);
   const dragRef = useRef<Drag | null>(null);
   const positions = useRef(new Map<string, number>());
@@ -71,7 +73,7 @@ export function PageTabStrip({ tabs, onClose, onReorder }: Props) {
     <div ref={strip} className="pane-tabstrip workspace-tabstrip" role="tablist" aria-label="打开的页面" onPointerMove={move} onPointerUp={end} onPointerCancel={end}>
       {tabs.map((tab, index) => <div key={tab.key} data-page-tab={tab.key} className={`pane-tab-wrap${drag?.key === tab.key ? ' is-dragged' : ''}`} onPointerDown={(e) => start(e, tab)}>
         <button type="button" role="tab" aria-selected={tab.path === location.pathname} className={`pane-tab${tab.path === location.pathname ? ' on' : ''}`} title={`${tab.title}（Alt + 方向键调整顺序）`}
-          onClick={() => { if (!suppressed.current && tab.path !== location.pathname) navigate(tab.path); }}
+          onClick={() => { if (!suppressed.current && tab.path !== location.pathname) navigate(tab.path, { state: { resourceViews: previews?.states[tab.path] } }); }}
           onKeyDown={(e) => {
             if (e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) { e.preventDefault(); onReorder(tab.key, index + (e.key === 'ArrowLeft' ? -1 : 1)); }
             if (e.key === 'Delete') { e.preventDefault(); onClose(tab.key); }

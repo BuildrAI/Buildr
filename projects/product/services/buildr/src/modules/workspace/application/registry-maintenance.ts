@@ -145,6 +145,11 @@ export function createRegistryMaintenance(runtime: RegistryMaintenanceDependenci
   }
   function convergeRegistryManifests(targetRoot: string, assets: RegistryAssets): any  {
     const changed: any[] = [];
+    if (existsFile(path.join(targetRoot, 'services', 'manifest.yml'))) {
+      // The explicit global catalog migration has retired project-owned service writers.
+      assets.convergeSkillsManifestSchema(targetRoot, targetRoot, changed);
+      return changed;
+    }
     const legacyProjectsFile = path.join(targetRoot, 'projects.yml');
     if (existsFile(legacyProjectsFile)) {
       fs.rmSync(legacyProjectsFile, { force: true });

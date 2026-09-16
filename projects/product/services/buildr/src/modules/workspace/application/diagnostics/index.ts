@@ -18,6 +18,7 @@ export function createWorkspaceDiagnostics(runtime: any) {
     sameGitIdentity: call('sameGitIdentity'), resolveSourceRoot: call('resolveSourceRoot'),
   });
   const service = createServiceDiagnostics({
+    assetCatalog: call('assetCatalog'),
     addDoctorFinding: call('addDoctorFinding'), existsDirectory: call('existsDirectory'), existsFile: call('existsFile'), fs,
     gitBoundaryFor: call('gitBoundaryFor'), gitBoundaryIgnored: call('gitBoundaryIgnored'), gitCurrentBranch: call('gitCurrentBranch'),
     gitignoreLines: scope.gitignoreLines, listManagedDirectories: call('listManagedDirectories'),

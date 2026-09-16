@@ -1,13 +1,36 @@
-import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode, type CSSProperties } from 'react';
+import { Button, Drawer } from 'antd';
+import { useContext, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode, type CSSProperties } from 'react';
 import { useLocation } from 'react-router-dom';
 import { CloseOutlined } from '@ant-design/icons';
 import { useWorkspacePageTabs, type WorkspacePageTab } from '../app/pageTabs';
 
+import { InsideResourcePreview, useResourcePreview } from '../app/resource-preview';
 import { paneDimensions } from '../app/workspace-pages';
 
 /** 对象级页签：领域内点开的服务/文档/变更，页内对照，全关时右组退场。 */
 export type ObjectTabKind = 'svc' | 'doc' | 'chg';
 export type WorkspaceObjectTab = { key: string; kind: ObjectTabKind; title: string };
+
+export function WorkspaceStage(props: Props) {
+  const inside = useContext(InsideResourcePreview);
+  const previews = useResourcePreview(), location = useLocation();
+  const state = previews?.states[location.pathname];
+  if (inside) return <div className="resource-preview-content">
+    {props.activeObject ? <><Button type="text" className="resource-preview-back" onClick={() => { for (const tab of props.objectTabs || []) props.onCloseObject?.(tab.key); }}>← 返回详情</Button>{props.objectContent}</> : props.children}
+  </div>;
+  const resourceTabs = (state?.items || []).map(item => ({ key: `preview:${item.kind}`, kind: 'svc' as const, title: item.title }));
+  const active = state?.active ? `preview:${state.active}` : props.activeObject;
+  const resources = <InsideResourcePreview.Provider value={true}>{(state?.items || []).map(item => <div key={`${item.kind}:${item.id}`} hidden={item.kind !== state?.active}>
+    {previews?.render(item)}
+  </div>)}</InsideResourcePreview.Provider>;
+  const normalStage = <SplitWorkspaceStage {...props} onCloseAll={() => { previews?.clear(location.pathname); for (const tab of props.objectTabs || []) props.onCloseObject?.(tab.key); }} objectTabs={[...(props.objectTabs || []), ...resourceTabs]} activeObject={active}
+    onActivateObject={key => { if (key.startsWith('preview:')) previews?.activate(location.pathname, key.slice(8)); else { previews?.activate(location.pathname, ''); props.onActivateObject?.(key); } }}
+    onCloseObject={key => { if (key.startsWith('preview:')) previews?.close(location.pathname, key.slice(8)); else props.onCloseObject?.(key); }}
+    objectContent={<><div hidden={Boolean(state?.active)}>{props.objectContent}</div><div hidden={!state?.active}>{resources}</div></>}>
+    <div className="resource-main-content" onClickCapture={event => { if ((event.target as HTMLElement).closest('[data-doc-row]')) previews?.activate(location.pathname, ''); }}>{props.children}</div>
+  </SplitWorkspaceStage>;
+  return normalStage;
+}
 
 const STEP = 16;
 
@@ -24,19 +47,21 @@ type Props = {
   onCloseObject?: (key: string) => void;
   /** 当前激活对象的内容。 */
   objectContent?: ReactNode;
+  onCloseAll?: () => void;
 };
 
 /**
  * 双栏组工作台：左组（页面级页签 + 限宽居中内容）+ 贯连可拖分隔线 + 右组（对象级页签 + 内容）。
- * 两组独立滚动；桌面始终并排，极窄窗口上下排列。
+ * 两组独立滚动；宽区域并排，窄区域使用覆盖式副屏。
  */
-export function WorkspaceStage({
+function SplitWorkspaceStage({
   children,
   objectTabs,
   activeObject,
   onActivateObject,
   onCloseObject,
   objectContent,
+  onCloseAll,
 }: Props) {
   const hasRight = Boolean(objectTabs && objectTabs.length > 0);
   const stageRef = useRef<HTMLDivElement>(null);
@@ -45,6 +70,14 @@ export function WorkspaceStage({
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
   const { ratio, setRatio, reportPaneWidth } = useWorkspacePageTabs();
   const [stageWidth, setStageWidth] = useState(0);
+  const overlay = hasRight && stageWidth > 0 && stageWidth < 860;
+  const readingOrigin = useRef<HTMLElement | null>(null);
+  const wasOpen = useRef(false);
+  useEffect(() => {
+    if (hasRight && !wasOpen.current) readingOrigin.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    if (!hasRight && wasOpen.current) readingOrigin.current?.focus();
+    wasOpen.current = hasRight;
+  }, [hasRight]);
   const [draftWidth, setDraftWidth] = useState<number | null>(null);
   const [resizing, setResizing] = useState(false);
   const widthRef = useRef<number | null>(null);
@@ -58,7 +91,7 @@ export function WorkspaceStage({
   const location = useLocation();
   const dimensions = paneDimensions(stageWidth, ratio);
   const rightWidth = draftWidth ?? dimensions.right;
-  useEffect(() => { reportPaneWidth(location.pathname, hasRight && stageWidth > 620 ? rightWidth + 9 : 0); }, [location.pathname, hasRight, stageWidth, rightWidth, reportPaneWidth]);
+  useLayoutEffect(() => { if (stageRef.current?.getClientRects().length) reportPaneWidth(location.pathname, hasRight && !overlay ? rightWidth + 9 : 0); });
   useLayoutEffect(() => {
     const node = contentRef.current;
     if (!node || !node.getClientRects().length) return;
@@ -70,6 +103,7 @@ export function WorkspaceStage({
     }
     previousContent.current = { left: rect.left, width: rect.width };
   }, [hasRight, rightWidth, stageWidth, resizing]);
+  const closeReading = () => { if (onCloseAll) onCloseAll(); else for (const tab of objectTabs || []) onCloseObject?.(tab.key); };
   const clampWidth = (value: number) => Math.min(dimensions.max, Math.max(dimensions.min, value));
   const currentWidth = () => rightWidth;
   const commitWidth = (value: number) => {
@@ -109,11 +143,11 @@ export function WorkspaceStage({
   };
 
   return (
-    <div ref={stageRef} style={{ '--workspace-content-width': `${dimensions.content}px` } as CSSProperties} className={`pane-stage${hasRight ? ' split' : ''}${resizing ? ' resizing' : ''}`}>
+    <div ref={stageRef} style={{ '--workspace-content-width': `${dimensions.content}px` } as CSSProperties} className={`pane-stage${hasRight && !overlay ? ' split' : ''}${resizing ? ' resizing' : ''}`}>
       <section className="pane-group pane-left">
         <div className="pane-body"><div ref={contentRef} className="pane-body-inner">{children}</div></div>
       </section>
-      {hasRight ? (
+      {hasRight && !overlay ? (
         <>
           <button
             type="button"
@@ -167,6 +201,10 @@ export function WorkspaceStage({
           </section>
         </>
       ) : null}
+      {overlay && <Drawer open getContainer={false} rootStyle={{ position: 'absolute' }} placement="right" width={Math.min(720, Math.max(280, stageWidth - 20))} title="阅读材料" rootClassName="workspace-reading-drawer" closable={false} extra={<Button type="text" aria-label="关闭阅读" icon={<CloseOutlined />} onClick={closeReading} />} onClose={closeReading} keyboard maskClosable>
+        <div className="pane-tabstrip" role="tablist" aria-label="打开的对象">{(objectTabs || []).map(tab => <button key={tab.key} type="button" role="tab" aria-selected={activeObject === tab.key} className={`pane-tab${activeObject === tab.key ? ' on' : ''}`} onClick={() => onActivateObject?.(tab.key)}>{tab.title}</button>)}</div>
+        {objectContent}
+      </Drawer>}
     </div>
   );
 }

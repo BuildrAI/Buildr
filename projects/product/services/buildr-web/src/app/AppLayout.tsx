@@ -1,9 +1,10 @@
+import type { ResourcePreview } from './resource-preview';
 import { WorkspacePages } from './WorkspacePages';
 import { runtimeSystemApi } from './api/runtime-system-api';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { Button, Drawer, Dropdown, Typography } from 'antd';
-import { CaretDownFilled, MenuOutlined, PlusOutlined } from '@ant-design/icons';
+import { CaretDownFilled, MenuFoldOutlined, MenuUnfoldOutlined, MenuOutlined, PlusOutlined } from '@ant-design/icons';
 import { api, setWorkspaceId } from '../api';
 import { AppShellContext, type WorkspaceShellInfo } from './AppShellContext';
 import { AppNavigation } from './AppNavigation';
@@ -49,13 +50,14 @@ function productTitle(webProfile: WebProfile | null): string {
   return webProfile === 'development' ? 'Buildr Web Dev' : 'Buildr Web';
 }
 
-export function AppLayout() {
+export function AppLayout({ renderResource }: { renderResource: (item: ResourcePreview) => ReactNode }) {
   const params = useParams();
   const navigate = useNavigate();
   const location = useLocation();
   const workspaceId = params.workspaceId ?? null;
   const isGlobal = !workspaceId;
   const area = navigationState(location.pathname, location.search, workspaceId).area;
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('buildr.sidebar-collapsed') === 'true');
   const [navigationOpen, setNavigationOpen] = useState(false);
   const [compactNavigation, setCompactNavigation] = useState(() => window.matchMedia('(max-width: 899px)').matches);
   useEffect(() => {
@@ -270,9 +272,9 @@ export function AppLayout() {
           </div>
         </header>
         <ReleaseAwarenessBanner openAgentAction={openAgentAction} />
-        <div className={`app-frame${isGlobal ? ' is-global' : ''}`}>
-          {!isGlobal && !compactNavigation ? <aside className="app-sidebar"><AppNavigation key={workspaceId} /></aside> : null}
-          <main id="app-view" tabIndex={-1} aria-live="polite"><>{workspaceId ? <WorkspacePages key={workspaceId} workspaceId={workspaceId} /> : <Outlet />}</></main>
+        <div className={`app-frame${isGlobal ? ' is-global' : ''}${sidebarCollapsed && !compactNavigation ? ' sidebar-collapsed' : ''}`}>
+          {!isGlobal && !compactNavigation ? <aside className="app-sidebar"><Button type="text" className="sidebar-toggle" aria-label={sidebarCollapsed ? '展开菜单' : '折叠菜单'} title={sidebarCollapsed ? '展开菜单' : '折叠菜单'} icon={sidebarCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />} onClick={() => { setSidebarCollapsed(value => !value); localStorage.setItem('buildr.sidebar-collapsed', String(!sidebarCollapsed)); }} /><AppNavigation key={workspaceId} /></aside> : null}
+          <main id="app-view" tabIndex={-1} aria-live="polite"><>{workspaceId ? <WorkspacePages key={workspaceId} workspaceId={workspaceId} renderResource={renderResource} /> : <Outlet />}</></main>
         </div>
       </div>
 

@@ -1,9 +1,11 @@
+import { ProjectCreateDrawer } from '../components/ProjectCreateDrawer';
+import { ResourceDirectory } from '../../../components/ResourceDirectory';
+import { ProjectEditDrawer } from '../components/ProjectEditDrawer';
 import { workspaceApi } from '../../workspace/api/workspace-api';
 import { type ProjectResponse, projectApi } from '../api/project-api';
 import { useEffect, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
-import { Alert, Button, Empty, Table, Typography } from 'antd';
-import type { ColumnsType } from 'antd/es/table';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { Alert, Button } from 'antd';
 
 import { useAppShell } from '../../../app/AppShellContext';
 import { workspaceHref } from '../../../lib/labels';
@@ -12,15 +14,14 @@ import { WorkspaceStage } from '../../../components/WorkspaceStage';
 
 type Project = NonNullable<ProjectResponse['projects']>[number];
 
-const TableBody = (props: React.HTMLAttributes<HTMLTableSectionElement>) => (
-  <tbody id="project-table-body" {...props} />
-);
-
 export function ProjectsPage() {
-  const { workspaceId, setWorkspace, openAgentAction, setBreadcrumbParts } = useAppShell();
-  const { projectCode: selectedProjectCode } = useParams();
-  const navigate = useNavigate();
+  const { workspaceId, setWorkspace, setBreadcrumbParts } = useAppShell();
+  const navigate = useNavigate(), location = useLocation();
   const href = (path: string) => workspaceHref(workspaceId, path);
+  const [creating, setCreating] = useState(Boolean(location.state?.createProject));
+  const [editing, setEditing] = useState<string | null>(null);
+  const [refresh, setRefresh] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
   const [state, setState] = useState('正在读取');
   const [migrationMessage, setMigrationMessage] = useState('');
@@ -35,6 +36,7 @@ export function ProjectsPage() {
 
   useEffect(() => {
     let cancelled = false;
+    setRefreshing(true); setError(null);
     void (async () => {
       try {
         const [workspace, data] = await Promise.all([
@@ -54,66 +56,20 @@ export function ProjectsPage() {
           setError(err instanceof Error ? err.message : '读取失败');
           setProjects([]);
         }
-
-      }
+      } finally { if (!cancelled) setRefreshing(false); }
     })();
     return () => { cancelled = true; };
-  }, [setWorkspace, setBreadcrumbParts]);
+  }, [setWorkspace, setBreadcrumbParts, refresh]);
 
-  const columns: ColumnsType<Project> = [
-    {
-      title: '项目',
-      ellipsis: true,
-      render: (_value, project) => (
-        <Link className="task-row-main project-row-main" to={href(`/projects/${encodeURIComponent(project.code)}`)}>
-          <strong>{project.name}</strong>
-          {project.description ? <small>{project.description}</small> : null}
-        </Link>
-      ),
-    },
-  ];
-
-  return (
-    <WorkspaceStage pageTabs={pageTabs.tabs} onClosePageTab={pageTabs.close}>
-      <div className="ws-dir-shell">
-      <section className="resource-toolbar">
-        <div className="task-toolbar-main">
-          <Typography.Title level={2} style={{ margin: 0 }}>项目</Typography.Title>
-          <p className="page-copy">选择项目进入全景，查看其文档与所属服务。</p>
-        </div>
-        <div className="task-toolbar-meta">
-          <span id="projects-state" className="count-label">{state}</span>
-          <Button id="project-directory-create-button" className="project-create-action" type="primary" size="small" onClick={() => openAgentAction('project')}>
-            让 Agent 创建项目
-          </Button>
-        </div>
-      </section>
-      <div id="projects-migration-alert" className={migrationMessage ? '' : 'hidden'} role="status">
-        {migrationMessage ? <Alert type="warning" showIcon message={migrationMessage} style={{ marginBottom: 16 }} /> : null}
-      </div>
-      <section className="resource-list-section project-list-section">
-        <div id="project-table-wrap" className={`management-table-wrap${projects.length === 0 ? ' hidden' : ''}`}>
-          <Table
-            rowKey="code"
-            pagination={false}
-            showHeader={false}
-            tableLayout="fixed"
-            dataSource={projects}
-            columns={columns}
-            rowClassName={(project) => (project.code === selectedProjectCode ? 'project-row-active' : '')}
-            onRow={(project) => ({
-              onClick: () => navigate(href(`/projects/${encodeURIComponent(project.code)}`)),
-            })}
-            components={{ body: { wrapper: TableBody } }}
-          />
-        </div>
-        <div id="project-empty" className={`empty-state${projects.length > 0 ? ' hidden' : ''}`}>
-          {projects.length === 0 ? (
-            <Empty description={error || '当前工作空间还没有项目。先告诉 Agent 你要长期管理的业务、产品、系统或已有资产。'} />
-          ) : null}
-        </div>
-      </section>
-      </div>
-    </WorkspaceStage>
-  );
+  return <WorkspaceStage pageTabs={pageTabs.tabs} onClosePageTab={pageTabs.close}>
+    <ResourceDirectory onRefresh={() => setRefresh(value => value + 1)} refreshing={refreshing} title="项目" noun="项目" description="组织业务目标，连接服务与工作成果。" data={projects}
+      loading={state === '正在读取'} error={error || undefined} rowKey={p => p.id} name={p => p.name} summary={p => p.description}
+      searchText={p => `${p.name} ${p.code} ${p.description}`} href={p => href(`/projects/${p.code}`)} onOpen={p => navigate(href(`/projects/${p.code}`))} onEdit={p => setEditing(p.code)}
+      tableId="project-table-wrap" bodyId="project-table-body" countId="projects-state" searchId="projects-search"
+      columns={[{ title: '项目标识', width: 160, render: (_, p) => <code className="resource-code">{p.code}</code> }]}
+      notice={migrationMessage ? <Alert type="warning" message={migrationMessage} /> : null}
+      actions={<Button id="project-directory-create-button" type="primary" onClick={() => setCreating(true)}>新增项目</Button>} />
+    {creating && <ProjectCreateDrawer onClose={() => { setCreating(false); setRefresh(value => value + 1); }} />}
+    {editing && <ProjectEditDrawer open projectCode={editing} onClose={() => setEditing(null)} onSaved={saved => setProjects(items => items.map(item => item.code === saved.code ? { ...item, name: saved.name, description: saved.description } : item))} />}
+  </WorkspaceStage>;
 }

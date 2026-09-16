@@ -295,7 +295,7 @@ export function registerProjectApplication(runtime: ProjectApplicationRuntime) {
           runtime.sourceFiles.publish(staging, projectRoot);
         }
         if (attachment) {
-          const entity = createProject({ id: existingEntry?.id || runtime.crypto.randomUUID(), workspaceId: registryRecord.workspace.workspace.id, code: project, name, description, source: attachment.source });
+          const entity = createProject({ ...(existingEntry?.serviceIds !== undefined ? { serviceIds: existingEntry.serviceIds } : runtime.sourceFiles.exists(path.join(targetRoot, 'services', 'manifest.yml')) ? { serviceIds: [] } : {}), id: existingEntry?.id || runtime.crypto.randomUUID(), workspaceId: registryRecord.workspace.workspace.id, code: project, name, description, source: attachment.source });
           runtime.projectRepository.writeProjectRegistry(registryRecord.manifestPath, { ...registryRecord.projects, [project]: entity });
           changed.push(path.relative(targetRoot, registryRecord.manifestPath).split(path.sep).join('/'));
           return { operation: 'attach', project, targetRoot, created, changed, nextActions: [declarationIntakeNextAction({ trigger: 'project-registered', project })] };
@@ -309,12 +309,12 @@ export function registerProjectApplication(runtime: ProjectApplicationRuntime) {
         const source = repoRef
           ? { type: 'git', path: `projects/${project}`, git: { url: repoRef, remote, integrationBranch: integrationBranch || existingEntry?.source?.git?.integrationBranch || runtime.gitDefaultBranch(projectRoot, remote) } }
           : existingEntry?.source?.type === 'git' ? existingEntry.source : { type: 'workspace', path: `projects/${project}` };
-        const entity = createProject({ id: existingEntry?.id || runtime.crypto.randomUUID(), workspaceId: registryRecord.workspace.workspace.id, code: project, name, description, source });
+        const entity = createProject({ ...(existingEntry?.serviceIds !== undefined ? { serviceIds: existingEntry.serviceIds } : runtime.sourceFiles.exists(path.join(targetRoot, 'services', 'manifest.yml')) ? { serviceIds: [] } : {}), id: existingEntry?.id || runtime.crypto.randomUUID(), workspaceId: registryRecord.workspace.workspace.id, code: project, name, description, source });
         const serviceRegistryPath = runtime.serviceRepository.servicesManifestPath(projectRoot);
         const serviceRegistryExists = runtime.sourceFiles.exists(serviceRegistryPath);
         if (serviceRegistryExists) runtime.serviceRepository.validateServiceRegistryFile(serviceRegistryPath, { workspaceId: registryRecord.workspace.workspace.id, projectId: entity.id, projectCode: project });
         runtime.projectRepository.writeProjectRegistry(registryRecord.manifestPath, { ...registryRecord.projects, [project]: entity });
-        if (!serviceRegistryExists) {
+        if (!serviceRegistryExists && !runtime.sourceFiles.exists(path.join(targetRoot, 'services', 'manifest.yml'))) {
           runtime.serviceRepository.writeServiceRegistry(serviceRegistryPath, entity.id, {}, project);
           created.push(path.relative(targetRoot, serviceRegistryPath).split(path.sep).join('/'));
         }

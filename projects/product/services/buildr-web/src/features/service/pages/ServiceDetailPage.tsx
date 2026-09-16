@@ -1,3 +1,4 @@
+import { useLocation } from 'react-router-dom';
 import { workspaceApi } from '../../workspace/api/workspace-api';
 import { type ProjectResponse } from '../../project/api/project-api';
 import { serviceApi } from '../api/service-api';
@@ -76,7 +77,9 @@ export function ServiceDetailPage() {
   const pageTabs = useWorkspacePageTabs(workspaceId);
   const [data, setData] = useState<ServiceDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [editOpen, setEditOpen] = useState(false);
+  const editLocation = useLocation();
+  const [editOpen, setEditOpen] = useState(Boolean(editLocation.state?.editResource));
+  useEffect(() => { if (editLocation.state?.editResource) setEditOpen(true); }, [editLocation.key]);
   const [workspaceName, setWorkspaceName] = useState('');
   const [objects, setObjects] = useState<ObjTab[]>([]);
   const [activeObj, setActiveObj] = useState<string | null>(null);

@@ -148,7 +148,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     requires: [AGENT_ASSETS_RUNTIME],
     provides: [WORKSPACE_APPLICATION, PROJECT_APPLICATION, SERVICE_APPLICATION, WORKSPACE_QUERY, WORKSPACE_RUNTIME_PORT, WORKSPACE_ASSET_SUPPORT, WORKSPACE_DOMAIN, WORKSPACE_TASK_SUPPORT, WORKSPACE_AGENT_ASSETS_BINDER, WORKSPACE_DIAGNOSTICS],
     contributions: {
-      cli: ['init', 'bootstrap guide', 'mutation recover', 'project create', 'service create'],
+      cli: ['assets', 'init', 'bootstrap guide', 'mutation recover', 'project create', 'service create'],
       http: ['workspace-core.http'],
       diagnostics: ['workspace.diagnostics'],
     },
@@ -278,7 +278,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     lifecycle: 'none',
   }]);
   assert.deepEqual(runtimeContributions(runtime, 'cli').map((item: any) => item.key), [
-    'init', 'bootstrap guide', 'mutation recover', 'project create', 'service create',
+    'assets', 'init', 'bootstrap guide', 'mutation recover', 'project create', 'service create',
     'package check', 'package build', 'runtime list',
     'commands check', 'commands add', 'commands remove',
     'component list', 'component check', 'component install', 'component uninstall',

@@ -47,7 +47,8 @@ export function createScopeDiagnostics(deps: any) {
     if (parts[0] === 'shared') {
       throw new Error(`shared scopes are not supported. Put shared or foundation services under a project, for example projects/foundation/services/<service>: ${scope}`);
     }
-    if (!isRootScope && !isRootProjectScope) {
+    const isGlobalAssetScope = ['services', 'repositories'].includes(parts[0]) && parts.length >= 2 && !parts.some((part: string) => part === '..' || part === '.');
+    if (!isRootScope && !isRootProjectScope && !isGlobalAssetScope) {
       throw new Error(`Unsupported doctor scope: ${scope}`);
     }
     if (isRootProjectScope && parts.length < 2) {
@@ -76,6 +77,7 @@ export function createScopeDiagnostics(deps: any) {
       if (parts[0] === '.') {
         return [{ org: workspaceName(targetRoot), project: null, servicePath: null, scope: '.' }];
       }
+      if (['services', 'repositories'].includes(parts[0])) return [{ org: workspaceName(targetRoot), project: null, servicePath: null, scope: requestedScope, assetKind: parts[0], assetCode: parts[1] }];
       if (parts[0] === 'projects') {
         return [{
           org: workspaceName(targetRoot),

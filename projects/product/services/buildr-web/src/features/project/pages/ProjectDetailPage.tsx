@@ -1,15 +1,18 @@
+import { useLocation } from 'react-router-dom';
+import { ProjectServicesPanel } from '../components/ProjectServicesPanel';
+import { catalogChanged } from '../../workspace/api/asset-catalog-api';
 import { workspaceApi } from '../../workspace/api/workspace-api';
 import { type ProjectResponse, projectApi } from '../api/project-api';
 import { serviceApi } from '../../service/api/service-api';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { Button, Tag } from 'antd';
-import { FileTextOutlined, RightOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { Button } from 'antd';
+import { FileTextOutlined, RightOutlined, HistoryOutlined } from '@ant-design/icons';
 
 import { useAppShell } from '../../../app/AppShellContext';
 import { MarkdownHost } from '../../../components/MarkdownHost';
 import { encodeProjectDocumentPath, resolveProjectMarkdownHref } from '../../../lib/projectDocuments';
-import { serviceTypeLabel, workspaceHref } from '../../../lib/labels';
+import { workspaceHref } from '../../../lib/labels';
 import { DailyProgressPanel } from '../../project-daily-progress/components/DailyProgressPanel';
 import { useMarkdownDocumentViewer, type MarkdownDocument } from '../../../lib/useMarkdownDocumentViewer';
 import { ProjectEditDrawer } from '../components/ProjectEditDrawer';
@@ -80,7 +83,11 @@ export function ProjectDetailPage() {
   const [data, setData] = useState<ProjectDetail | null>(null);
   const [services, setServices] = useState<Service[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [editOpen, setEditOpen] = useState(false);
+  const editLocation = useLocation();
+  const [editOpen, setEditOpen] = useState(Boolean(editLocation.state?.editResource));
+  useEffect(() => { if (editLocation.state?.editResource) setEditOpen(true); }, [editLocation.key]);
+  const [refresh, setRefresh] = useState(0);
+  useEffect(() => { const update = () => setRefresh(v => v + 1); window.addEventListener(catalogChanged, update); return () => window.removeEventListener(catalogChanged, update); }, []);
   const [workspaceName, setWorkspaceName] = useState('');
   const [objects, setObjects] = useState<ObjTab[]>([]);
   const [activeObj, setActiveObj] = useState<string | null>(null);
@@ -105,7 +112,7 @@ export function ProjectDetailPage() {
       }
     })();
     return () => { cancelled = true; };
-  }, [projectCode, setWorkspace, setBreadcrumbParts]);
+  }, [projectCode, setWorkspace, setBreadcrumbParts, refresh]);
 
   useEffect(() => {
     if (!data || !workspaceId) return;
@@ -208,39 +215,9 @@ export function ProjectDetailPage() {
         </section>
 
         <div className="ws-stack">
-          <section className="panel" aria-label="服务">
-            <div className="ws-section-head">
-              <h2>服务 <span className="ws-count">{services.length} 个已登记</span></h2>
-              <Button size="small" id="project-service-create" onClick={() => openAgentAction('service', { projectCode })}>+ 接入服务</Button>
-            </div>
-            {services.length === 0 ? (
-              <p className="page-copy">还没有服务。服务是该项目的代码仓、应用、模块或可执行资产。</p>
-            ) : (
-              <div className="ws-svc-grid">
-                {services.map((service) => (
-                  <Link
-                    key={service.code}
-                    className="ws-svc-card"
-                    data-service-card={service.code}
-                    to={href(`/services/${encodeURIComponent(projectCode)}/${encodeURIComponent(service.code)}`)}
-                  >
-                    <span className="ws-svc-ico" aria-hidden>{service.name.slice(0, 1)}</span>
-                    <span className="ws-svc-main">
-                      <span className="ws-nm"><strong>{service.name}</strong><code>{service.code}</code></span>
-                      <p>{service.description || ''}</p>
-                      <span className="ws-svc-tags">
-                        <Tag color="blue">{serviceTypeLabel(service.type)}</Tag>
-                        <Tag color="gold">{service.source.type === 'git' ? 'Git' : '本地路径'}</Tag>
-                      </span>
-                    </span>
-                    <RightOutlined className="ws-go" aria-hidden />
-                  </Link>
-                ))}
-              </div>
-            )}
-          </section>
+          <ProjectServicesPanel projectCode={projectCode} />
 
-          <section className="panel" aria-label="文档">
+          <section className="resource-section" aria-label="文档">
             <div className="ws-section-head"><h2>文档 <span className="ws-count">{DOC_ROWS.length} 份</span></h2></div>
             <div className="ws-obj-list">
               {DOC_ROWS.map((doc) => (
@@ -251,7 +228,7 @@ export function ProjectDetailPage() {
                   data-doc-row={doc.ref}
                   onClick={() => openObject({ key: `doc:${doc.ref}`, kind: 'doc', ref: doc.ref })}
                 >
-                  <span className="ws-obj-ico">{doc.ref === 'daily' ? <ThunderboltOutlined /> : <FileTextOutlined />}</span>
+                  <span className="ws-obj-ico">{doc.ref === 'daily' ? <HistoryOutlined /> : <FileTextOutlined />}</span>
                   <span className="ws-obj-name">{doc.name}</span>
                   <small>{doc.hint}</small>
                   <RightOutlined className="ws-go" aria-hidden />

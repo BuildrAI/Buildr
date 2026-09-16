@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode, type ComponentProps } from 'react';
 import { Alert, Button, Descriptions, Empty, List, Space, Spin, Tabs, Tag } from 'antd';
 import { DrawerShell } from '../../../components/DrawerShell';
 import { ExpandOutlined } from '@ant-design/icons';
@@ -6,8 +6,8 @@ import { MarkdownHost } from '../../../components/MarkdownHost';
 import { agentAssetsApi, type SkillDetail, type SkillFile, type SkillSummary } from '../api/agent-assets-api';
 import { resolveSkillLink, type SkillAction } from '../skill-presentation';
 
-type Props = { children?: ReactNode; skill: SkillSummary; onClose: () => void; onAction: (action: SkillAction, skill: SkillSummary) => void };
-export function SkillDetailDrawer({ skill, onClose, onAction, children }: Props) {
+type Props = { fullPage?: boolean; children?: ReactNode; skill: SkillSummary; onClose: () => void; onAction: (action: SkillAction, skill: SkillSummary) => void };
+export function SkillDetailDrawer({ skill, onClose, onAction, children, fullPage = false }: Props) {
   const [detail, setDetail] = useState<SkillDetail | null>(null);
   const [error, setError] = useState('');
   const [retry, setRetry] = useState(0);
@@ -41,11 +41,12 @@ export function SkillDetailDrawer({ skill, onClose, onAction, children }: Props)
     if (resolved === filePath) return;
     if (resolved) openFile(resolved); else setFileError('该引用不在当前技能目录内，无法在这里打开。');
   };
-  return <DrawerShell open rootClassName="skills-detail-drawer" width={wide ? 'min(1100px, 100vw)' : 'min(720px, 100vw)'}
-    title={active.title} sub={active.id} keyboard={!children} maskClosable={!children} onClose={() => { if (!children) onClose(); }}
+  const Shell = fullPage ? SkillPageShell : DrawerShell;
+  return <Shell open rootClassName="skills-detail-drawer" width={wide ? 'min(1100px, 100vw)' : 'min(720px, 100vw)'}
+    title={active.title} sub={active.id} keyboard={!children} maskClosable={!children} onClose={() => { if (fullPage || !children) onClose(); }}
     extra={<Button type="text" icon={<ExpandOutlined />} aria-label={wide ? '收起阅读' : '展开阅读'} onClick={() => setWide(!wide)} />}
     closeAriaLabel="关闭技能详情"
-    footer={<div className="skills-action-footer"><span className="page-copy">基于工作空间当前源文件</span><Button onClick={() => onAction('adjust', active)}>请智能体调整</Button></div>}>
+    footer={<div className="skills-action-footer"><span className="page-copy">基于工作空间当前源文件</span><Button onClick={() => onAction('adjust', active)}>编辑技能</Button></div>}>
     <Tabs activeKey={tab} onChange={(value) => { setTab(value); setFilePath(value === '说明' ? 'SKILL.md' : ''); setHistory([]); setRaw(false); }} items={['说明', '相关资料', '管理'].map((label) => ({ key: label, label }))} />
     {error && <Alert type="error" message={error} action={<Button onClick={() => setRetry(retry + 1)}>重试</Button>} />}
     {reading ? <>
@@ -63,5 +64,9 @@ export function SkillDetailDrawer({ skill, onClose, onAction, children }: Props)
       {active.required && <p className="page-copy">此技能为必需项，不能在这里停用。</p>}
     </>}
     {children}
-  </DrawerShell>;
+  </Shell>;
+}
+
+function SkillPageShell({ title, sub, onClose, footer, children }: ComponentProps<typeof DrawerShell>) {
+  return <div className="ws-dir-shell"><section className="resource-toolbar"><div><h1>{title}</h1><p className="page-copy">{sub}</p></div><Button onClick={onClose}>返回技能目录</Button></section><section className="panel"><div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 20 }}>{footer}</div>{children}</section></div>;
 }

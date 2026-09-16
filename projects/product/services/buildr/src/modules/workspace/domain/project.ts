@@ -6,7 +6,7 @@ const CODE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 export type WorkspaceProjectSource = { type: 'workspace'; path: string };
 export type GitProjectSource = { type: 'git'; root?: 'attached'; path: string; git: { url: string; remote: string; integrationBranch: string } };
 export type ProjectSource = WorkspaceProjectSource | GitProjectSource;
-export type ProjectInput = { id: string; workspaceId: string; code: string; name: string; description: string; source: any };
+export type ProjectInput = { id: string; workspaceId: string; code: string; name: string; description: string; source: any; serviceIds?: string[] };
 export type Project = Readonly<Omit<ProjectInput, 'source'> & { source: ProjectSource }>;
 
 function requiredText(value: unknown, field: string) {
@@ -49,12 +49,14 @@ export function createProjectSource(source: any, code: string): ProjectSource {
   return Object.freeze({ type: 'git', ...(location.root === SOURCE_ROOT_ATTACHED ? { root: SOURCE_ROOT_ATTACHED } : {}), path: sourcePath, git });
 }
 
-export function createProject({ id, workspaceId, code, name, description, source }: ProjectInput): Project {
+export function createProject({ id, workspaceId, code, name, description, source, serviceIds }: ProjectInput): Project {
   if (!isProjectId(id)) throw new Error('Project.id must be a UUID.');
   if (!isProjectId(workspaceId)) throw new Error('Project.workspaceId must be a UUID.');
   if (!isProjectCode(code)) throw new Error('Project.code must contain only letters, digits, dots, underscores, or dashes.');
   const canonicalCode = code.trim();
+  if (serviceIds !== undefined && (!Array.isArray(serviceIds) || serviceIds.some(id => !isProjectId(id)) || new Set(serviceIds).size !== serviceIds.length)) throw new Error("Project.serviceIds must contain unique UUID references.");
   return Object.freeze({
+    ...(serviceIds !== undefined ? { serviceIds: [...serviceIds] } : {}),
     id,
     workspaceId,
     code: canonicalCode,

@@ -143,3 +143,17 @@ buildr-web/src/
 ```
 
 浏览器和候选构建使用各自隔离的暂存目录，逻辑产物名称不变。测试辅助适配器可用于准备夹具，真实网页宿主采用生产装配。
+
+## 项目、服务与代码库关系
+
+覆盖：全局对象登记与关系维护；不表示当前开发工作空间已经执行清单迁移。来源：`services/buildr/src/modules/workspace/` 的当前实现，变更 `decouple-project-service-repositories`。
+
+- `domain/asset-relationships.ts` 定义代码库实例、业务服务、关联基数及字段边界。
+- `persistence/asset-catalog-repository.ts` 读取三份清单、投影旧身份并计算版本；旧服务解析器只负责旧格式，兼容应用负责投影，避免循环引用。
+- `application/asset-relationships-application.ts` 提供 `assetCatalog`、`migrateAssetCatalog`、创建、编辑和 `updateProjectServices`，复用现有写入事务。
+- `interfaces/cli/asset-catalog.ts` 与 `interfaces/http/workspace-http.ts` 是入口，契约位于相邻 `workspace-http-contracts.ts`。
+- 前端关系操作位于 `features/project/components/ProjectServicesPanel.tsx`，全局服务和代码库列表分别由对应功能目录维护；`features/workspace/components/AssetHome.tsx` 组合共用对象详情。
+
+调用链：列表或主页 → 资产接口 → 关系应用 → 身份与当前版本校验 → 清单事务 → 新版本；Git 代码准备保持独立副作用。
+
+界面共享入口：`ResourceDirectory.tsx` 维护四类目录的表头、搜索、密度与编辑；`WorkspacePages.tsx` 和 `resource-preview.tsx` 维护按入口区分的导航状态，`WorkspaceStage.tsx` 负责分屏、覆盖式副屏与原位阅读。全局目录按服务、代码库、技能类型复用详情；项目内关联对象同样打开副屏，主卡片和文档保持不变；浏览器历史记录副屏视图，项目列表重新进入时回到主页。`CreatableResourceSelect.tsx` 共用过滤、新增、已有选项结构，`ProjectCreateDrawer.tsx` 管理项目创建草稿与提交。`ResourceDocumentPane.tsx` 负责通用材料读取，`AssetHome.tsx` 和 `SkillHome.tsx` 提供领域详情。

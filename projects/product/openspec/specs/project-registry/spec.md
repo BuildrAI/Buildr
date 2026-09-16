@@ -2,6 +2,7 @@
 
 ## Purpose
 定义 root Project registry 的结构、Project 创建与修复、Git 边界，以及从 `projects/` 目录事实收敛 registry 状态的行为。
+
 ## Requirements
 
 ### Requirement: root project registry
@@ -87,17 +88,15 @@ Buildr MUST 根据 ProjectSource 的真实 topology 与 ownership在root Workspa
 - **AND** MUST NOT向Workspace或Attached Root `.gitignore`写入由目录形状推导的规则
 
 ### Requirement: Project registry remains separate from service metadata
-Buildr MUST 将 Project registry metadata 与 service repo metadata 保存在独立 manifest files 中。
+Buildr MUST 在项目清单保存 `serviceIds` 引用，全局服务与代码来源信息 MUST 分别位于 `services/manifest.yml` 和 `repositories/manifest.yml`，不在项目条目复制。
 
 #### Scenario: Project registry 不记录 services
-- **WHEN** Buildr records Project `<project>` in `projects/manifest.yml`
-- **THEN** `projects/manifest.yml` MUST NOT record that Project's service repo list
-- **AND** service repo metadata MUST remain in `projects/<project>/services/manifest.yml`
+- **WHEN** 两个项目使用同一个服务
+- **THEN** 两个项目 MUST 引用同一稳定标识，服务与代码信息仅登记一次
 
 #### Scenario: service create 不改变 Project source
-- **WHEN** Agent executes `buildr service create <project>/<service> <repo-ref> --target <root>`
-- **THEN** Buildr MUST update `projects/<project>/services/manifest.yml`
-- **AND** Buildr MUST NOT change the Project entity's `source`
+- **WHEN** 用户创建服务或修改项目的服务引用
+- **THEN** 系统 MUST 保持项目自身 source 不变
 
 ### Requirement: MVP Project registry convergence
 Buildr MUST 通过显式 update 或 sync 将 Project directory facts 与兼容 registry 收敛为 canonical `buildr.projects/v2`，普通读取与 app 启动 MUST 保持零写入。
@@ -249,16 +248,15 @@ Project Application MUST only allow low-risk metadata updates using a registry r
 - **AND** MUST NOT merge or overwrite external changes
 
 ### Requirement: 新建 Project 必须初始化 canonical Service registry
-Buildr MUST 在创建 Project 时使用父实体 identity 初始化 `buildr.services/v2` 空 registry。
+新建项目 MUST 使用全局服务清单并保存空或明确选择的 `serviceIds`，不再创建项目内的独占服务清单。
 
 #### Scenario: 创建 Workspace Project
-- **WHEN** Project 创建成功并安装基线资产
-- **THEN** `services/manifest.yml` MUST 使用 `buildr.services/v2`
-- **AND** 顶层 `projectId` MUST 等于新 Project UUID
+- **WHEN** 用户创建项目且未选择服务
+- **THEN** 系统 MUST 创建有效项目并允许稍后维护关联
 
 #### Scenario: Project 创建回滚
-- **WHEN** Service registry 初始化失败
-- **THEN** Project create transaction MUST 不留下半完成 Project 或 registry
+- **WHEN** 项目及其新增服务或代码库草稿任一步验证失败
+- **THEN** 系统 MUST 保持提交前登记状态，不留下半完成引用
 
 ### Requirement: Project context必须识别Preparation Declaration
 Buildr MUST将已登记Project根的`preparation.yml`识别为可选Project context asset，保持Project ownership并独立于`capabilities.yml`、`commands.yml`和`verification.yml`。Project create、sync、Doctor或GET MUST不静默生成或更新该声明。

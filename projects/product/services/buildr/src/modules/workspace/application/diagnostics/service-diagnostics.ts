@@ -197,6 +197,27 @@ export function createServiceDiagnostics(deps: any) {
 
   function diagnoseServices(result: any, targetRoot: any, scopes: any, registry: any = null) {
     result.services = [];
+    if (existsFile(path.join(targetRoot, 'services', 'manifest.yml')) && deps.assetCatalog) {
+      try {
+        const catalog = deps.assetCatalog(targetRoot);
+        for (const issue of catalog.diagnostics) addDoctorFinding(result, 'warning', issue.code, issue.message, { objectId: issue.objectId, suggestion: '核对项目、服务与代码库的当前引用。' });
+        const selected = new Set(scopes.filter((scope: any) => scope.project).map((scope: any) => scope.project));
+        const assetScope = scopes.find((scope: any) => scope.assetKind);
+        for (const service of catalog.services) {
+          const projects = catalog.projects.filter((p: any) => p.serviceIds?.includes(service.id));
+          if (selected.size && !projects.some((p: any) => selected.has(p.code))) continue;
+          const repository = catalog.repositories.find((r: any) => r.id === service.repositoryId);
+          if (!repository) continue;
+          if (assetScope?.assetKind === 'services' && service.code !== assetScope.assetCode) continue;
+          if (assetScope?.assetKind === 'repositories' && repository.code !== assetScope.assetCode) continue;
+          result.services.push({ name: service.code, title: service.name, description: service.description, type: service.type, project: null, projects: projects.map((p: any) => p.code), repositoryId: repository.id, path: repository.source.path, exists: repository.available, isGitRepository: Boolean(repository.observed?.repository) });
+          if (!repository.available) addDoctorFinding(result, 'warning', 'repository.code_missing', `代码库尚未准备：${repository.code}`, { path: repository.source.path, suggestion: '让智能体按 repositories/manifest.yml 中已确认的来源与分支准备代码；不影响无关对象。' });
+        }
+      } catch (error: any) {
+        addDoctorFinding(result, 'warning', 'assets.catalog_invalid', error.message, { suggestion: '核对全局清单和迁移恢复现场。' });
+      }
+      return;
+    }
     const ignoreLines = gitignoreLines(targetRoot);
 
     for (const item of scopes) {

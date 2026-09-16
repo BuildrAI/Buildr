@@ -10,6 +10,7 @@ export const SERVICES_SCHEMA_V1 = 'buildr.services/v1';
 export const SERVICES_SCHEMA_V2 = 'buildr.services/v2';
 
 export type ServiceManifestRepositoryRuntime = {
+  readGlobalServiceRegistry?: (root: string, project: any, workspaceId: string) => any;
   assertInitializedBuildrWorkspace(root: string): void;
   atomicWriteFile(file: string, content: string): void;
   existsFile(file: string): boolean;
@@ -194,6 +195,7 @@ export function createServiceManifestRepository(runtime: ServiceManifestReposito
   function readServiceRegistryPersistence(targetRoot: any, project: any, workspaceId: any) {
     const root = path.resolve(targetRoot);
     runtime.assertInitializedBuildrWorkspace(root);
+    if (fs.existsSync(path.join(root, 'services', 'manifest.yml'))) return runtime.readGlobalServiceRegistry!(root, project, workspaceId);
     const manifestPath = serviceDomainManifestPath(root, project);
     const content = fs.readFileSync(manifestPath, 'utf8');
     return { root, manifestPath, content, revision: serviceManifestRevision(content), registry: parseServicesManifest(content, { workspaceId, projectId: project.id, projectCode: project.code }) };

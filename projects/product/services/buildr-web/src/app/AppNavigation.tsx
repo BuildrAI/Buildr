@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { UnorderedListOutlined, FileTextOutlined, FolderOutlined, AppstoreOutlined, ThunderboltOutlined, SettingOutlined } from '@ant-design/icons';
+import { UnorderedListOutlined, FileTextOutlined, FolderOutlined, BranchesOutlined, AppstoreOutlined, ThunderboltOutlined, SettingOutlined } from '@ant-design/icons';
 import { useAppShell } from './AppShellContext';
 import { navigationState } from './navigation';
 import { workspaceHref } from '../lib/labels';
@@ -20,11 +20,12 @@ export function AppNavigation({ onNavigate }: { onNavigate?: () => void }) {
     articles: <FileTextOutlined />,
     projects: <FolderOutlined />,
     services: <AppstoreOutlined />,
+    repositories: <BranchesOutlined />,
     skills: <ThunderboltOutlined />,
     settings: <SettingOutlined />,
   };
   const item = (path: string, label: string, name: string, onClick?: () => void) => (
-    <NavLink to={href(path)} data-nav={name} data-workspace-route={path}
+    <NavLink to={href(path)} data-nav={name} data-workspace-route={path} title={label} aria-label={label}
       className={({ isActive }) => `shell-nav-item${isActive ? ' active' : ''}`}
       onClick={() => { onClick?.(); onNavigate?.(); }}>{icons[name]}<span>{label}</span></NavLink>
   );
@@ -42,6 +43,7 @@ export function AppNavigation({ onNavigate }: { onNavigate?: () => void }) {
           <p className="shell-nav-caption">工作空间</p>
           {item('/projects', '项目', 'projects')}
           {item('/services', '服务', 'services')}
+          {item('/repositories', '代码库', 'repositories')}
           {item('/skills', '技能', 'skills')}
           {item('/settings', '设置', 'settings')}
         </>
