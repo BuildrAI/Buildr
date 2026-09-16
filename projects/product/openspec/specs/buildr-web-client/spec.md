@@ -117,7 +117,7 @@ Buildr Web App Shell MUST 在顶部提供品牌、共同工作空间范围、“
 - 左组 MUST 提供页面级页签条：项目目录、项目全景、服务目录、服务全景、技能、设置各自以页签呈现；打开新页面 MUST 追加或激活对应页签；页签 MUST 支持关闭，关闭当前页对应页签时 MUST 切换到剩余页签或回到目录兜底；页面级页签集合 MUST 在同一会话的页面间保持。
 - 右组 MUST 提供对象级页签条：在项目全景或服务全景内点开文档、变更等对象时，MUST 在右组以页签就地展开，MUST NOT 跳离当前领域页面；右组页签全部关闭时右组 MUST 退场，左组恢复独占。
 - 两组之间 MUST 为贯连的分隔线，MUST 支持拖拽调整右组宽度；两组的页签条在分隔线处 MUST 视觉连通；两组内容区 MUST 各自独立滚动。
-- 左组内容 MUST 限宽居中；宽度 MUST 随可用窗口自适应并设上限；右组打开时 MUST 优先收缩留白，空间足够时保持内容宽度，空间不足时才压缩内容。
+- 左组内容 MUST 限宽居中；宽度 MUST 随可用窗口自适应并设上限；右组打开且没有已保存手动比例时，左右两组 MUST 均分信息区可用宽度（不含左侧导航及中间分隔线）；已保存手动比例时 MUST 优先恢复该比例。
 - 修改项目、修改服务与交给 Agent 等动作 MUST 统一在抽屉层完成，抽屉 MUST 采用一致的壳结构（标识行、标题、副标题、关闭与底部状态区）。
 - 壳层与内容区 MUST 使用统一的白底，不得以不同区域底色分割主要分区。
 
@@ -248,6 +248,11 @@ Buildr Web App Shell MUST 在顶部提供品牌、共同工作空间范围、“
 - **THEN** MUST 在主屏追加或激活对应服务主页标签页（Tab），MUST NOT 新建服务分屏对象
 - **AND** 项目主页标签页（Tab）及其页面现场 MUST 保留，切回项目时恢复原有文档分屏与滚动状态
 - **AND** 重复打开同一服务 MUST 复用已有主屏标签页（Tab），不同项目的同名服务 MUST 保持独立身份
+
+#### Scenario: 副分屏默认左右均分
+- **WHEN** 用户没有保存手动比例并打开副分屏
+- **THEN** 左右并排时两组 MUST 等宽，缩放窗口后仍 MUST 等宽
+- **AND** 用户 MUST 可以拖动调整并保存工作空间（Workspace）比例；关闭全部副分屏标签后主屏 MUST 恢复全部信息区宽度
 
 ### Requirement: Task Intent 必须支持可点击的 Project 文档引用
 Buildr Web MUST 以受限 Markdown 展示 Task Intent，并 MUST 允许用户点击指向当前 Task scope 内已登记 Project 的 Workspace 相对 `.md` 路径，在 Task 上下文中打开只读文档预览。客户端 MUST 根据 Project registry 的真实 source path 解析引用并复用 Project Document API；MUST NOT 从目录命名猜测 Project、读取绝对路径或获得任意 Workspace 文件访问能力。

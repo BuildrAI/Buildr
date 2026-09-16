@@ -644,6 +644,34 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.setViewportSize({ width: 1680, height: 900 });
     await page.locator('[data-doc-row="readme"]').click();
     await page.locator('.pane-right .artifact-missing').waitFor({ state: 'visible' });
+    const paneSize = () => page.locator('.workspace-page:not([hidden]) .pane-stage').evaluate((stage: any) => ({
+      left: stage.querySelector('.pane-left').getBoundingClientRect().width,
+      right: stage.querySelector('.pane-right')?.getBoundingClientRect().width ?? 0,
+      total: stage.getBoundingClientRect().width,
+    }));
+    const initialPanes = await paneSize();
+    assert.ok(Math.abs(initialPanes.left - initialPanes.right) <= 1, JSON.stringify(initialPanes));
+    const separator = page.getByRole('separator', { name: '拖拽调整两侧宽度' });
+    const dividerBox = await separator.boundingBox();
+    assert.ok(dividerBox);
+    await page.mouse.move(dividerBox.x + dividerBox.width / 2, dividerBox.y + 30);
+    await page.mouse.down();
+    await page.mouse.move(dividerBox.x - 80, dividerBox.y + 30, { steps: 5 });
+    await page.mouse.up();
+    const draggedPanes = await paneSize();
+    assert.ok(draggedPanes.right > initialPanes.right + 60);
+    const storedRatio = await page.evaluate((id: string) => localStorage.getItem(`buildr.web.pane-ratio.${id}`), initialWorkspaceId);
+    assert.ok(storedRatio);
+    await page.getByRole('button', { name: '关闭 README.md', exact: true }).click();
+    const closedPanes = await paneSize();
+    assert.equal(closedPanes.right, 0);
+    assert.ok(Math.abs(closedPanes.left - closedPanes.total) <= 1);
+    await page.locator('[data-doc-row="readme"]').click();
+    assert.ok(Math.abs((await paneSize()).right - draggedPanes.right) <= 1);
+    await page.reload();
+    await page.locator('[data-doc-row="readme"]').click();
+    await page.locator('.pane-right .artifact-missing').waitFor({ state: 'visible' });
+    assert.ok(Math.abs((await paneSize()).right - draggedPanes.right) <= 1);
     assert.match(await page.locator('.pane-right .artifact-missing').innerText(), /未找到 README\.md/);
     await page.locator('[data-doc-row="agents"]').click();
     await page.waitForFunction(() => {

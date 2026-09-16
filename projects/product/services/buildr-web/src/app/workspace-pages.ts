@@ -54,7 +54,7 @@ export function readRatio(raw: string | null): number | null {
 export function paneDimensions(width: number, ratio: number | null) {
   const content = Math.max(0, Math.min(1440, Math.max(900, width * .675), width - 48));
   const min = Math.min(280, Math.max(0, (width - 9) / 2));
-  const max = Math.max(min, width - 369);
-  const desired = ratio === null ? Math.min(640, Math.max(360, width - content - 57)) : width * ratio;
+  const max = Math.max(min, (width - 9) / 2, width - 369);
+  const desired = ratio === null ? Math.max(0, (width - 9) / 2) : width * ratio;
   return { content, min, max, right: Math.min(max, Math.max(min, desired)) };
 }
