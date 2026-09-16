@@ -1,3 +1,4 @@
+import { useAppShell } from './AppShellContext';
 import { useCallback, useContext, useEffect, useLayoutEffect, useState, type ReactNode, type MouseEvent } from 'react';
 import { UNSAFE_LocationContext, useLocation, useNavigate, useOutlet } from 'react-router-dom';
 import { WorkspaceTabsContext } from './pageTabs';
@@ -12,6 +13,7 @@ function write(key: string, value: string) { try { localStorage.setItem(key, val
 
 /** Retains only visited workspace pages; each outlet keeps its own route and location. */
 export function WorkspacePages({ workspaceId, renderResource }: { workspaceId: string; renderResource: (item: ResourcePreview) => ReactNode }) {
+  const { forgetWorkspacePage } = useAppShell();
   const outlet = useOutlet();
   const location = useLocation();
   const locationValue = useContext(UNSAFE_LocationContext);
@@ -88,12 +90,13 @@ export function WorkspacePages({ workspaceId, renderResource }: { workspaceId: s
     const index = tabs.findIndex((t) => t.key === key);
     const target = tabs[index];
     if (!target) return;
+    forgetWorkspacePage(target.path);
     const next = tabs.filter((t) => t.key !== key);
     const fallback = tabForPath(workspaceId, `/workspaces/${workspaceId}/projects`)!;
     setTabs(next.length ? next : [fallback]);
     setVisited((prev) => prev.filter((p) => p.path !== target.path));
     if (target.path === location.pathname) navigate(next[Math.max(0, index - 1)]?.path || fallback.path);
-  }, [tabs, workspaceId, location.pathname, navigate]);
+  }, [tabs, workspaceId, location.pathname, navigate, forgetWorkspacePage]);
   const reorder = useCallback((key: string, index: number) => setTabs((prev) => moveTab(prev, key, index)), []);
   const setRatio = useCallback((value: number) => {
     updateRatio(value);

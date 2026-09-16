@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
+import { ProjectPreviewContext } from '../../../app/resource-preview';
+import { useCallback, useContext, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Alert, Button, Card, Descriptions, Input, Space, Tag } from 'antd';
 import { AppstoreOutlined, BranchesOutlined, FileTextOutlined, FolderOutlined, RightOutlined } from '@ant-design/icons';
@@ -14,6 +15,7 @@ import { CatalogMigration } from './CatalogMigration';
 import { AssetEditDrawer } from './AssetEditDrawer';
 
 export function AssetHome({ kind, previewId }: { kind: 'service' | 'repository'; previewId?: string }) {
+  const projectContext = useContext(ProjectPreviewContext);
   const params = useParams();
   const assetId = previewId ?? params.assetId ?? '';
   const { workspaceId } = useAppShell();
@@ -49,9 +51,9 @@ export function AssetHome({ kind, previewId }: { kind: 'service' | 'repository';
       <header className="resource-home-head"><div><p className="resource-eyebrow">{label} <span> / {item.code}</span></p><h1 id={kind === 'service' ? 'service-detail-name' : 'repository-detail-name'}>{item.name}</h1><p id={kind === 'service' ? 'service-detail-description' : 'repository-detail-description'}>{item.description || '尚未填写说明。'}</p></div><Button disabled={data.migrationRequired} onClick={() => setEditing(true)}>编辑{label}</Button></header>
       <CatalogMigration catalog={data} onSaved={catalog.setData} />
       {data.diagnostics.filter(d => d.objectId === item.id || d.objectId === repository?.id).map(d => <Alert key={d.code + d.objectId} type="warning" showIcon message={d.message} />)}
-      <section className="resource-section"><div className="resource-section-head"><h2>{kind === 'service' ? '关联项目' : '引用服务'} <span>{related.length}</span></h2></div>
+      {!(kind === 'service' && projectContext) && <section className="resource-section" data-related-resources={kind === 'service' ? 'projects' : 'services'}><div className="resource-section-head"><h2>{kind === 'service' ? '关联项目' : '引用服务'} <span>{related.length}</span></h2></div>
         {related.length ? related.map(object => <Link key={object.id} className="resource-relation-row" to={href(kind === 'service' ? `/projects/${object.code}` : `/services/${object.id}`)}><span className="resource-row-icon">{kind === 'service' ? <FolderOutlined /> : <AppstoreOutlined />}</span><span className="resource-row-text"><strong>{object.name}</strong><small>{object.description || object.code}</small></span><RightOutlined /></Link>) : <p className="resource-empty-copy">{kind === 'service' ? '还没有项目引用此服务。可在项目主页建立关联。' : '还没有服务引用此代码库。'}</p>}
-      </section>
+      </section>}
       {service && <section className="resource-section"><div className="resource-section-head"><h2>文档 <span>2</span></h2></div>
         {['README.md', 'AGENTS.md'].map(file => <button type="button" key={file} className={`resource-document-row${file === activeDocument ? ' reading' : ''}`} data-doc-row={file === 'README.md' ? 'readme' : 'agents'} onClick={() => openDocument(file)}><span className="resource-row-icon"><FileTextOutlined /></span><span className="resource-row-text"><strong>{file}</strong><small>{file === 'README.md' ? '服务说明与使用入口' : '实现规则与协作边界'}</small></span><RightOutlined /></button>)}
       </section>}

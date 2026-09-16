@@ -66,11 +66,24 @@ export function AppLayout({ renderResource }: { renderResource: (item: ResourceP
     media.addEventListener('change', update);
     return () => media.removeEventListener('change', update);
   }, []);
-  const workspaceDestination = useRef({ workspaceId, path: `/workspaces/${workspaceId}/projects` });
+  const workspaceDestination = useRef({ workspaceId, path: `/workspaces/${workspaceId}/projects`, state: location.state });
   if (workspaceDestination.current.workspaceId !== workspaceId) {
-    workspaceDestination.current = { workspaceId, path: `/workspaces/${workspaceId}/projects` };
+    workspaceDestination.current = { workspaceId, path: `/workspaces/${workspaceId}/projects`, state: null };
   }
-  if (area === 'workspace' && workspaceId) workspaceDestination.current.path = location.pathname + location.search;
+  if (area === 'workspace' && workspaceId) workspaceDestination.current = { workspaceId, path: location.pathname + location.search, state: location.state };
+  const [, refreshSectionLinks] = useState(0);
+  const sectionHistory = useRef<{ workspaceId: string | null; pages: Record<string, { to: string; state?: unknown }> }>({ workspaceId, pages: {} });
+  if (sectionHistory.current.workspaceId !== workspaceId) sectionHistory.current = { workspaceId, pages: {} };
+  const section = workspaceId ? location.pathname.slice(`/workspaces/${workspaceId}/`.length).split('/')[0] : '';
+  if (workspaceId && ['projects', 'services', 'repositories', 'skills', 'settings'].includes(section) && !/\/(new|edit)$/.test(location.pathname)) {
+    sectionHistory.current.pages[section] = { to: location.pathname + location.search + location.hash, state: location.state };
+  }
+  const workspaceMenuTarget = (name: string) => sectionHistory.current.pages[name] || { to: `/workspaces/${workspaceId}/${name}` };
+  const forgetWorkspacePage = (path: string) => {
+    let changed = false;
+    for (const [name, target] of Object.entries(sectionHistory.current.pages)) if (target.to.split(/[?#]/)[0] === path) { delete sectionHistory.current.pages[name]; changed = true; }
+    if (changed) refreshSectionLinks(value => value + 1);
+  };
   setWorkspaceId(workspaceId);
 
   const [workspace, setWorkspaceState] = useState<WorkspaceShellInfo | null>(null);
@@ -173,6 +186,8 @@ export function AppLayout({ renderResource }: { renderResource: (item: ResourceP
     setBreadcrumbParts,
     taskListResetToken,
     resetTaskList,
+    workspaceMenuTarget,
+    forgetWorkspacePage,
   };
 
   const switchWorkspace = (id: string | null) => {
@@ -243,7 +258,7 @@ export function AppLayout({ renderResource }: { renderResource: (item: ResourceP
           {!isGlobal ? <nav className="top-nav" aria-label="主导航">
             <Link to={workspaceHref('/tasks')} data-area="workbench" aria-current={area === 'workbench' ? 'page' : undefined} className={area === 'workbench' ? 'active' : ''}
               onClick={resetTaskList}>工作台</Link>
-            <Link to={workspaceDestination.current.path} data-area="workspace" aria-current={area === 'workspace' ? 'page' : undefined} className={area === 'workspace' ? 'active' : ''}>工作空间</Link>
+            <Link to={workspaceDestination.current.path} state={workspaceDestination.current.state} data-area="workspace" aria-current={area === 'workspace' ? 'page' : undefined} className={area === 'workspace' ? 'active' : ''}>工作空间</Link>
           </nav> : null}
           <div className="topbar-actions">
             {!isGlobal ? <Button className="shell-menu-toggle" aria-label="打开导航菜单" icon={<MenuOutlined />} onClick={() => setNavigationOpen(true)} /> : null}

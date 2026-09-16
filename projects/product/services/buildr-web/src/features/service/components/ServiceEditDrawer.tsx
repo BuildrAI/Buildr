@@ -112,7 +112,7 @@ export function ServiceEditDrawer({ open, projectCode, serviceCode, onClose, onS
   return (
     <MetadataEditDrawer
       title="编辑服务" objectName={current?.service.name || serviceCode || ''}
-      open={open} onClose={onClose} saving={saving} dirty={Boolean(current && (name !== current.service.name || description !== (current.service.description || '') || serviceType !== current.service.type))}
+      open={open} onClose={onClose} saving={saving}
       disabled={readOnly || loading || !current || Boolean(loadError)}
       formId="service-edit-form" saveButtonId="service-save-button"
     >

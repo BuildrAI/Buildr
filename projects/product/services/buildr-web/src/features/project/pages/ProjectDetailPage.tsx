@@ -202,7 +202,7 @@ export function ProjectDetailPage() {
         <section className="ws-hero">
           <div className="ws-hero-top">
             <div>
-              <p className="eyebrow">项目</p>
+              <p className="eyebrow"><Link to={href('/projects')} aria-label="返回项目列表">← 项目列表</Link></p>
               <h1 id="project-detail-name">{project.name}</h1>
               <p className="ws-hero-desc" id="project-detail-description">{project.description || '尚未填写项目说明。'}</p>
             </div>

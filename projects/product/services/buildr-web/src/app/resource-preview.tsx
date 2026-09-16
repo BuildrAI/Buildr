@@ -9,6 +9,7 @@ export const ResourcePreviewContext = createContext<{
   clear: (owner: string) => void;
   close: (owner: string, kind: string) => void;
 } | null>(null);
+export const ProjectPreviewContext = createContext<string | null>(null);
 export const InsideResourcePreview = createContext(false);
 export function resourcePreview(workspaceId: string, path: string): ResourcePreview | null {
   const prefix = `/workspaces/${workspaceId}/`;

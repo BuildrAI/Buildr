@@ -4,7 +4,7 @@ import { useLocation } from 'react-router-dom';
 import { CloseOutlined } from '@ant-design/icons';
 import { useWorkspacePageTabs, type WorkspacePageTab } from '../app/pageTabs';
 
-import { InsideResourcePreview, useResourcePreview } from '../app/resource-preview';
+import { InsideResourcePreview, ProjectPreviewContext, useResourcePreview } from '../app/resource-preview';
 import { paneDimensions } from '../app/workspace-pages';
 
 /** 对象级页签：领域内点开的服务/文档/变更，页内对照，全关时右组退场。 */
@@ -20,9 +20,11 @@ export function WorkspaceStage(props: Props) {
   </div>;
   const resourceTabs = (state?.items || []).map(item => ({ key: `preview:${item.kind}`, kind: 'svc' as const, title: item.title }));
   const active = state?.active ? `preview:${state.active}` : props.activeObject;
-  const resources = <InsideResourcePreview.Provider value={true}>{(state?.items || []).map(item => <div key={`${item.kind}:${item.id}`} hidden={item.kind !== state?.active}>
+  const projectPath = location.pathname.match(/\/projects\/([^/]+)$/);
+  const projectContext = projectPath && projectPath[1] !== 'new' ? decodeURIComponent(projectPath[1]) : null;
+  const resources = <ProjectPreviewContext.Provider value={projectContext}><InsideResourcePreview.Provider value={true}>{(state?.items || []).map(item => <div key={`${item.kind}:${item.id}`} hidden={item.kind !== state?.active}>
     {previews?.render(item)}
-  </div>)}</InsideResourcePreview.Provider>;
+  </div>)}</InsideResourcePreview.Provider></ProjectPreviewContext.Provider>;
   const normalStage = <SplitWorkspaceStage {...props} onCloseAll={() => { previews?.clear(location.pathname); for (const tab of props.objectTabs || []) props.onCloseObject?.(tab.key); }} objectTabs={[...(props.objectTabs || []), ...resourceTabs]} activeObject={active}
     onActivateObject={key => { if (key.startsWith('preview:')) previews?.activate(location.pathname, key.slice(8)); else { previews?.activate(location.pathname, ''); props.onActivateObject?.(key); } }}
     onCloseObject={key => { if (key.startsWith('preview:')) previews?.close(location.pathname, key.slice(8)); else props.onCloseObject?.(key); }}

@@ -156,4 +156,4 @@ buildr-web/src/
 
 调用链：列表或主页 → 资产接口 → 关系应用 → 身份与当前版本校验 → 清单事务 → 新版本；Git 代码准备保持独立副作用。
 
-界面共享入口：`ResourceDirectory.tsx` 维护四类目录的表头、搜索、密度与编辑；`WorkspacePages.tsx` 和 `resource-preview.tsx` 维护按入口区分的导航状态，`WorkspaceStage.tsx` 负责分屏、覆盖式副屏与原位阅读。全局目录按服务、代码库、技能类型复用详情；项目内关联对象同样打开副屏，主卡片和文档保持不变；浏览器历史记录副屏视图，项目列表重新进入时回到主页。`CreatableResourceSelect.tsx` 共用过滤、新增、已有选项结构，`ProjectCreateDrawer.tsx` 管理项目创建草稿与提交。`ResourceDocumentPane.tsx` 负责通用材料读取，`AssetHome.tsx` 和 `SkillHome.tsx` 提供领域详情。
+界面共享入口：`ResourceDirectory.tsx` 维护四类目录的表头、搜索、密度与编辑；`WorkspacePages.tsx` 和 `resource-preview.tsx` 维护按入口区分的导航状态，`WorkspaceStage.tsx` 负责分屏、覆盖式副屏与原位阅读。全局目录按服务、代码库、技能类型复用详情；项目内关联对象同样打开副屏，主卡片和文档保持不变；`AppLayout.tsx` 维护当前工作空间各栏目最近位置，菜单恢复路径及副屏导航状态，已关闭项目不再恢复。浏览器历史记录副屏视图，项目列表显式进入仍回到主页。`ProjectPreviewContext` 将所在项目上下文交给服务详情，仅在该上下文省略反向项目区。项目关联卡片直接使用共用选择器，选择已有服务即保存；设置页使用相同分屏容器和目录页头。`CreatableResourceSelect.tsx` 共用过滤、新增、已有选项结构，`ProjectCreateDrawer.tsx` 管理项目创建草稿与提交。`ResourceDocumentPane.tsx` 负责通用材料读取，`AssetHome.tsx` 和 `SkillHome.tsx` 提供领域详情。

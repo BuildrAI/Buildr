@@ -489,7 +489,7 @@ Buildr 本机应用 MUST 将 Project 与 Service 的详情呈现保持为只读�
 
 #### Scenario: 保护未保存内容
 - **WHEN** 有未保存修改时用户点击取消、关闭、遮罩或按 Escape
-- **THEN** MUST 在抽屉内提供继续编辑或放弃修改的明确选择
+- **THEN** MUST 直接关闭抽屉，不再显示放弃修改二次确认，未保存内容不得写入数据
 - **AND** 保存中 MUST 阻止重复提交和关闭
 - **AND** 无修改时 MUST 可直接关闭
 

@@ -572,6 +572,8 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.waitForURL(`${workspaceUrl}/projects/demo`);
     await page.locator('.workspace-tabstrip .pane-tab.on').filter({ hasText: '演示项目' }).waitFor({ state: 'visible' });
     await page.locator('[data-nav="projects"]').click();
+    await page.waitForURL(`${workspaceUrl}/projects/demo`);
+    await page.getByRole('link', { name: '返回项目列表', exact: true }).click();
     await page.waitForURL(`${workspaceUrl}/projects`);
     await page.locator('.workspace-tabstrip .pane-tab').filter({ hasText: '演示项目' }).click();
     await page.waitForURL(`${workspaceUrl}/projects/demo`);
@@ -613,6 +615,12 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
     await capture(page, 'navigation-project-mobile.png');
     await page.setViewportSize({ width: 1280, height: 720 });
+    await page.locator('#project-table-body tr').filter({ hasText: '演示项目' }).click();
+    await page.locator('[data-nav="settings"]').click();
+    await page.getByRole('button', { name: '关闭 演示项目', exact: true }).click();
+    await page.locator('[data-nav="projects"]').click();
+    await page.waitForURL(`${workspaceUrl}/projects`);
+    assert.equal(await page.getByRole('tab', { name: '演示项目', exact: true }).count(), 0);
     await capture(page, 'navigation-project-desktop.png');
   });
 
@@ -677,6 +685,25 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
 
   });
 
+  if (selected('shell')) await t.test('设置沿用目录宽度并在窄屏单列显示', async () => {
+    await page.setViewportSize({ width: 1680, height: 900 });
+    await page.goto(`${workspaceUrl}/services`);
+    const before = await page.locator('.resource-directory').boundingBox();
+    await page.locator('[data-nav="settings"]').click();
+    await page.locator('#workspace-form').waitFor({ state: 'visible' });
+    const after = await page.locator('.workspace-settings').boundingBox();
+    assert.ok(before && after && Math.abs(before.x-after.x)<1 && Math.abs(before.width-after.width)<1);
+    await page.locator('#workspace-description-input').fill('保持设置草稿');
+    await page.locator('[data-nav="services"]').click();
+    await page.locator('[data-nav="settings"]').click();
+    assert.equal(await page.locator('#workspace-description-input').inputValue(), '保持设置草稿');
+    await page.setViewportSize({ width: 390, height: 844 });
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
+    const cards = await page.locator('.workspace-settings .settings-grid > *').evaluateAll((items: HTMLElement[]) => items.map(item => ({ x: item.getBoundingClientRect().x, y: item.getBoundingClientRect().y, bottom:item.getBoundingClientRect().bottom })));
+    assert.ok(Math.abs(cards[0].x-cards[1].x)<1 && cards[1].y >= cards[0].bottom);
+    await page.setViewportSize({ width: 1280, height: 720 });
+  });
+
   if (selected('project')) await t.test('项目列表展示标题与说明，详情展示基础事实与文档', async () => {
     await page.goto(`${workspaceUrl}/projects`);
     const row: any = page.locator('#project-table-body tr').filter({ hasText: '演示项目' });
@@ -689,7 +716,8 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.equal(await page.locator('#project-detail-name').innerText(), '演示项目');
     assert.equal(await page.locator('#project-detail-description').innerText(), '浏览器测试项目');
     assert.equal(await page.locator('#project-service-count').innerText(), '1');
-    assert.equal(await page.locator('#app-view input:visible, #app-view textarea:visible').count(), 0);
+    assert.equal(await page.getByRole('combobox', { name: '关联服务', exact: true }).count(), 1);
+    assert.equal(await page.locator('#app-view textarea:visible').count(), 0);
     assert.equal(await page.getByText('操作', { exact: true }).filter({ visible: true }).count(), 0);
     assert.equal(await page.locator('.overview-strip, .related-resource-links').count(), 0);
     assert.equal(await page.locator('.ws-stat').count(), 2);
@@ -738,6 +766,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.equal(page.url(), `${workspaceUrl}/projects/demo`);
     assert.equal(await page.getByRole('tab', { name: '演示项目', exact: true }).count(), 1);
     assert.equal(await page.getByRole('tab', { name: '服务详情 关闭 服务详情', exact: true }).count(), 1);
+    assert.equal(await page.locator('.pane-right:visible [data-related-resources="projects"]').count(), 0);
     assert.equal(await page.locator('#project-detail-name').isVisible(), true);
     assert.equal(await page.getByRole('tab', { name: 'AGENTS.md 关闭 AGENTS.md', exact: true }).count(), 1);
     await page.goBack();
@@ -745,7 +774,12 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.equal(await page.locator('.workspace-page:not([hidden]) .pane-right .markdown-body:visible').innerText(), projectDocumentText);
     await page.goForward();
     await page.locator('#service-detail-name:visible').waitFor({ state: 'visible' });
+    await page.locator('[data-nav="skills"]').click();
     await page.locator('[data-nav="projects"]').click();
+    await page.waitForURL(`${workspaceUrl}/projects/demo`);
+    await page.locator('#service-detail-name:visible').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#project-detail-name').isVisible(), true);
+    await page.getByRole('link', { name: '返回项目列表', exact: true }).click();
     await page.locator('#project-table-body tr').filter({ hasText: '演示项目' }).click();
     await page.locator('#project-detail-name').waitFor({ state: 'visible' });
     assert.equal(await page.locator('#service-detail-name:visible').count(), 0);
@@ -764,9 +798,13 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.locator('#project-description').fill('已在抽屉中更新');
     await page.locator('#project-name').fill('演示项目（已更新）');
     await page.getByRole('button', { name: '取消', exact: true }).click();
-    await page.getByRole('button', { name: '继续编辑', exact: true }).waitFor({ state: 'visible' });
-    assert.equal(await page.locator('#project-description').inputValue(), '已在抽屉中更新');
-    await page.getByRole('button', { name: '继续编辑', exact: true }).click();
+    await page.getByRole('dialog').waitFor({ state: 'hidden' });
+    assert.equal(await page.locator('#project-detail-description').innerText(), '浏览器测试项目');
+    await page.getByRole('button', { name: '编辑项目', exact: true }).click();
+    await page.locator('#project-edit-form').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#project-description').inputValue(), '浏览器测试项目');
+    await page.locator('#project-description').fill('已在抽屉中更新');
+    await page.locator('#project-name').fill('演示项目（已更新）');
     const projectUpdateUrl = `${url}/api/v1/workspaces/${initialWorkspaceId}/projects/demo`;
     expectedBrowserErrors.add(projectUpdateUrl);
     const failProjectSave = async (route: any) => {
@@ -826,12 +864,32 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.deepEqual(unlinked.projects.find((p: any) => p.id === project.id).serviceIds, []);
     assert.ok(unlinked.services.some((s: any) => s.id === service.id));
     assert.ok(unlinked.repositories.some((r: any) => r.id === repository.id));
-    await page.getByRole('button', { name: '关联服务', exact: true }).click();
+    const associationUrl = `${url}/api/v1/workspaces/${initialWorkspaceId}/asset-catalog/projects/${project.id}/services`;
+    expectedBrowserErrors.add(associationUrl);
+    const rejectAssociation = (route: any) => route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: { code: 'asset_catalog_revision_conflict', message: '关联版本已变化' } }) });
+    await page.route(associationUrl, rejectAssociation);
+    await page.getByRole('combobox', { name: '关联服务', exact: true }).click();
+    await page.locator('.ant-select-item-option-content').filter({ hasText: '嵌套业务服务' }).click();
+    await page.getByRole('alert').filter({ hasText: '关联版本已变化' }).waitFor({ state: 'visible' });
+    assert.equal(await page.getByRole('link', { name: '嵌套业务服务', exact: true }).count(), 0);
+    await page.unroute(associationUrl, rejectAssociation);
     await page.getByRole('combobox', { name: '关联服务', exact: true }).click();
     await page.getByRole('textbox', { name: '过滤服务', exact: true }).fill('嵌套');
     await page.locator('.ant-select-item-option-content').filter({ hasText: '嵌套业务服务' }).click();
-    await page.getByRole('button', { name: '保存关联', exact: true }).click();
     await page.getByRole('link', { name: '嵌套业务服务', exact: true }).waitFor({ state: 'visible' });
+    assert.equal(await page.getByRole('dialog').count(), 0);
+    assert.equal(await page.locator('#project-manage-services .ant-select-selection-item').count(), 0);
+    const serviceCount = runtime.assetCatalog(workspaceRoot).services.length;
+    await page.getByRole('combobox', { name: '关联服务', exact: true }).click();
+    await page.getByRole('button', { name: '新增服务', exact: true }).click();
+    await page.getByRole('textbox', { name: '服务名称', exact: true }).fill('保留未提交草稿');
+    await page.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).click();
+    assert.equal(runtime.assetCatalog(workspaceRoot).services.length, serviceCount);
+    await page.getByRole('combobox', { name: '关联服务', exact: true }).click();
+    await page.getByRole('button', { name: '新增服务', exact: true }).click();
+    assert.equal(await page.getByRole('textbox', { name: '服务名称', exact: true }).inputValue(), '保留未提交草稿');
+    await page.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).click();
+
   });
 
   if (selected('service')) await t.test('全局服务目录进入主页，旧详情与文档保持兼容', async () => {
@@ -853,6 +911,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await detail.click();
     await page.getByRole('tab', { name: '服务详情 关闭 服务详情', exact: true }).waitFor({ state: 'visible' });
     await page.getByRole('button', { name: '编辑服务', exact: true }).waitFor({ state: 'visible' });
+    await page.locator('.pane-right:visible [data-related-resources="projects"]').waitFor({ state: 'visible' });
     await page.goto(new URL(directServiceHref, workspaceUrl).href);
     await page.getByRole('button', { name: '编辑服务', exact: true }).waitFor({ state: 'visible' });
     assert.equal(page.url(), `${workspaceUrl}/services`);
@@ -883,8 +942,6 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.equal(await page.url(), `${workspaceUrl}/services/demo/api`);
     await page.locator('#service-description').fill('已在抽屉中更新');
     await page.keyboard.press('Escape');
-    await page.getByRole('button', { name: '放弃修改', exact: true }).waitFor({ state: 'visible' });
-    await page.getByRole('button', { name: '放弃修改', exact: true }).click();
     await page.getByRole('dialog').waitFor({ state: 'hidden' });
     await page.getByRole('button', { name: '编辑服务', exact: true }).click();
     await page.locator('#service-edit-form').waitFor({ state: 'visible' });

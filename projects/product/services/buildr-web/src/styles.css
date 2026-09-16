@@ -1795,7 +1795,6 @@ details summary { cursor: pointer; color: var(--soft-ink); font-size: 12px; font
 }
 
 .metadata-edit-actions { display: flex; justify-content: flex-end; gap: 8px; }
-.metadata-edit-discard p { margin: 0 0 12px; font-size: 13px; color: var(--soft-ink); }
 @media (max-width: 560px) {
   .drawer-shell .ant-drawer-body { padding: 16px; }
   .drawer-shell .ant-drawer-footer { padding: 12px 16px max(12px, env(safe-area-inset-bottom)); }
@@ -2089,3 +2088,9 @@ details summary { cursor: pointer; color: var(--soft-ink); font-size: 12px; font
 .resource-directory-table .ant-table-content::-webkit-scrollbar { height:8px; }
 .resource-directory-table .ant-table-content::-webkit-scrollbar-track { background:#f3f6f4; }
 .resource-directory-table .ant-table-content::-webkit-scrollbar-thumb { background:#b8c7bf; border-radius:4px; }
+
+.project-associate-picker { width:220px; max-width:65%; }
+.workspace-settings .settings-grid { grid-template-columns:minmax(0,1.5fr) minmax(260px,1fr); gap:20px; }
+.workspace-settings .panel { padding:20px; border:1px solid var(--soft-line); border-radius:12px; box-shadow:none; }
+.workspace-settings .ant-descriptions-item-content { overflow-wrap:anywhere; }
+@container(max-width:740px) { .workspace-settings .settings-grid { grid-template-columns:minmax(0,1fr); } }

@@ -10,7 +10,7 @@ import { workspaceHref } from '../lib/labels';
  * 不在导航内展开项目树或所属服务；对象由页面级页签与领域全景承载。
  */
 export function AppNavigation({ onNavigate }: { onNavigate?: () => void }) {
-  const { workspaceId, resetTaskList } = useAppShell();
+  const { workspaceId, resetTaskList, workspaceMenuTarget } = useAppShell();
   const location = useLocation();
   const state = navigationState(location.pathname, location.search, workspaceId);
   const href = (path: string) => workspaceHref(workspaceId, path);
@@ -24,11 +24,12 @@ export function AppNavigation({ onNavigate }: { onNavigate?: () => void }) {
     skills: <ThunderboltOutlined />,
     settings: <SettingOutlined />,
   };
-  const item = (path: string, label: string, name: string, onClick?: () => void) => (
-    <NavLink to={href(path)} data-nav={name} data-workspace-route={path} title={label} aria-label={label}
-      className={({ isActive }) => `shell-nav-item${isActive ? ' active' : ''}`}
-      onClick={() => { onClick?.(); onNavigate?.(); }}>{icons[name]}<span>{label}</span></NavLink>
-  );
+  const item = (path: string, label: string, name: string, onClick?: () => void) => {
+    const destination = state.area === 'workspace' ? workspaceMenuTarget(name) : { to: href(path), state: undefined };
+    return <NavLink to={destination.to} state={destination.state} data-nav={name} data-workspace-route={path} title={label} aria-label={label}
+      className={`shell-nav-item${location.pathname === href(path) || location.pathname.startsWith(href(path) + '/') ? ' active' : ''}`}
+      onClick={event => { if (state.area === 'workspace' && destination.to === location.pathname + location.search + location.hash) event.preventDefault(); onClick?.(); onNavigate?.(); }}>{icons[name]}<span>{label}</span></NavLink>;
+  };
 
   return (
     <nav className="shell-navigation" aria-label={state.area === 'workbench' ? '工作台导航' : '工作空间导航'}>
