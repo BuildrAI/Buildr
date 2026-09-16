@@ -115,7 +115,7 @@ Buildr Web App Shell MUST 在顶部提供品牌、共同工作空间范围、“
 
 工作空间区域的内容区 MUST 采用双栏组页签模型：
 - 左组 MUST 提供页面级页签条：项目目录、项目全景、服务目录、服务全景、技能、设置各自以页签呈现；打开新页面 MUST 追加或激活对应页签；页签 MUST 支持关闭，关闭当前页对应页签时 MUST 切换到剩余页签或回到目录兜底；页面级页签集合 MUST 在同一会话的页面间保持。
-- 右组 MUST 提供对象级页签条：在项目全景或服务全景内点开服务、文档、变更等对象时，MUST 在右组以页签就地展开，MUST NOT 跳离当前领域页面；右组页签全部关闭时右组 MUST 退场，左组恢复独占。
+- 右组 MUST 提供对象级页签条：在项目全景或服务全景内点开文档、变更等对象时，MUST 在右组以页签就地展开，MUST NOT 跳离当前领域页面；右组页签全部关闭时右组 MUST 退场，左组恢复独占。
 - 两组之间 MUST 为贯连的分隔线，MUST 支持拖拽调整右组宽度；两组的页签条在分隔线处 MUST 视觉连通；两组内容区 MUST 各自独立滚动。
 - 左组内容 MUST 限宽居中；宽度 MUST 随可用窗口自适应并设上限；右组打开时 MUST 优先收缩留白，空间足够时保持内容宽度，空间不足时才压缩内容。
 - 修改项目、修改服务与交给 Agent 等动作 MUST 统一在抽屉层完成，抽屉 MUST 采用一致的壳结构（标识行、标题、副标题、关闭与底部状态区）。
@@ -151,16 +151,16 @@ Buildr Web App Shell MUST 在顶部提供品牌、共同工作空间范围、“
 - **AND** MUST NOT 在左侧导航展开项目树或所属服务列表
 
 #### Scenario: 独立展开与折叠
-- **WHEN** 用户在全景内点开或关闭某个服务、文档、变更对象
+- **WHEN** 用户在全景内点开或关闭某个文档、变更对象
 - **THEN** MUST 只在右组打开或关闭对应对象页签，不跳转当前页面
 - **AND** 关闭对象页签 MUST NOT 影响左组全景的选中与滚动状态
 - **AND** 页签与关闭控件 MUST 支持键盘操作并提供可访问名称
 
 #### Scenario: 领域内对象在右组就地展开
-- **WHEN** 用户在项目全景点击服务卡片或文档行，或在服务全景点击文档或变更行
+- **WHEN** 用户在项目全景点击文档行，或在服务全景点击文档或变更行
 - **THEN** 右组 MUST 出现并以新页签展示该对象内容，左组全景 MUST 保持可见可交互
 - **AND** 左组中已打开的对象 MUST 有可辨认的“阅读中”标记
-- **AND** MUST NOT 跳转离开当前领域页面，右侧服务 MUST 提供用户显式选择的“在主区域打开”入口
+- **AND** MUST NOT 跳转离开当前领域页面
 - **AND** 右组页签全部关闭时右组 MUST 退场
 
 #### Scenario: 贯连分隔线可调宽
@@ -197,7 +197,7 @@ Buildr Web App Shell MUST 在顶部提供品牌、共同工作空间范围、“
 #### Scenario: 项目页宽屏并排列表与详情
 - **WHEN** 用户在宽屏打开项目目录或项目全景
 - **THEN** 目录与全景 MUST 以页面级页签组织，项目全景 MUST 展示 hero、服务卡片与文档区
-- **AND** 点开服务或文档时右组 MUST 与左组并排展示对象页签
+- **AND** 点开文档时右组 MUST 与左组并排展示对象页签；点开服务时 MUST 在主屏打开服务主页标签页（Tab）
 - **AND** `/projects` 与 `/projects/:projectCode` 路由 MUST 保持不变
 
 #### Scenario: 项目页窄屏避免横向溢出
@@ -242,6 +242,12 @@ Buildr Web App Shell MUST 在顶部提供品牌、共同工作空间范围、“
 - **WHEN** 用户拖动页面标签调整顺序
 - **THEN** 标签 MUST 跟随指针，相邻标签 MUST 平滑让位并在松手后落位，拖动 MUST NOT 触发页面切换
 - **AND** MUST 支持键盘排序和关闭，减少动态效果偏好下 MUST 取消非必要动画
+
+#### Scenario: 项目内服务直接打开主屏主页
+- **WHEN** 用户在项目主页点击服务卡片
+- **THEN** MUST 在主屏追加或激活对应服务主页标签页（Tab），MUST NOT 新建服务分屏对象
+- **AND** 项目主页标签页（Tab）及其页面现场 MUST 保留，切回项目时恢复原有文档分屏与滚动状态
+- **AND** 重复打开同一服务 MUST 复用已有主屏标签页（Tab），不同项目的同名服务 MUST 保持独立身份
 
 ### Requirement: Task Intent 必须支持可点击的 Project 文档引用
 Buildr Web MUST 以受限 Markdown 展示 Task Intent，并 MUST 允许用户点击指向当前 Task scope 内已登记 Project 的 Workspace 相对 `.md` 路径，在 Task 上下文中打开只读文档预览。客户端 MUST 根据 Project registry 的真实 source path 解析引用并复用 Project Document API；MUST NOT 从目录命名猜测 Project、读取绝对路径或获得任意 Workspace 文件访问能力。

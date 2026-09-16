@@ -2,9 +2,9 @@ import { workspaceApi } from '../../workspace/api/workspace-api';
 import { type ProjectResponse, projectApi } from '../api/project-api';
 import { serviceApi } from '../../service/api/service-api';
 import { useCallback, useEffect, useState } from 'react';
-import { Link, useParams, useNavigate } from 'react-router-dom';
-import { Button, Tabs, Tag } from 'antd';
-import { EditOutlined, FileTextOutlined, RightOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { Link, useParams } from 'react-router-dom';
+import { Button, Tag } from 'antd';
+import { FileTextOutlined, RightOutlined, ThunderboltOutlined } from '@ant-design/icons';
 
 import { useAppShell } from '../../../app/AppShellContext';
 import { MarkdownHost } from '../../../components/MarkdownHost';
@@ -13,107 +13,21 @@ import { serviceTypeLabel, workspaceHref } from '../../../lib/labels';
 import { DailyProgressPanel } from '../../project-daily-progress/components/DailyProgressPanel';
 import { useMarkdownDocumentViewer, type MarkdownDocument } from '../../../lib/useMarkdownDocumentViewer';
 import { ProjectEditDrawer } from '../components/ProjectEditDrawer';
-import { ServiceEditDrawer } from '../../service/components/ServiceEditDrawer';
 import { useWorkspacePageTabs } from '../../../app/pageTabs';
 import { WorkspaceStage, type WorkspaceObjectTab } from '../../../components/WorkspaceStage';
 
 type ProjectDetail = ProjectResponse & { revision: string; project: NonNullable<ProjectResponse['project']> };
 type Service = NonNullable<ProjectResponse['services']>[number];
-type ServiceDetail = ProjectResponse & { revision: string; service: NonNullable<ProjectResponse['service']> };
 
-type ObjTab = { key: string; kind: 'svc' | 'doc'; ref: string };
+type ObjTab = { key: string; kind: 'doc'; ref: string };
 
 const projectDocumentMissingMessage = (path: string) => `项目内未找到 ${path}`;
-const serviceDocumentMissingMessage = (path: string) => `服务内未找到 ${path}`;
 
 const DOC_ROWS: { ref: string; name: string; hint: string }[] = [
   { ref: 'readme', name: 'README.md', hint: '项目治理根与入口' },
   { ref: 'agents', name: 'AGENTS.md', hint: '规则与授权边界' },
   { ref: 'daily', name: '每日演进', hint: '按提交范围生成的四问摘要' },
 ];
-
-/** 右组服务对象：头部 + 标签 + README/AGENTS 子页签，阅读不离开项目上下文。 */
-function ServiceObjectView({ projectCode, serviceCode, onEdit }: { projectCode: string; serviceCode: string; onEdit: () => void }) {
-  const { workspaceId } = useAppShell();
-  const navigate = useNavigate();
-  const [detail, setDetail] = useState<ServiceDetail | null>(null);
-  const [error, setError] = useState('');
-  const [sub, setSub] = useState<'README.md' | 'AGENTS.md'>('README.md');
-  const fetchDocument = useCallback(async (docPath: string): Promise<MarkdownDocument> => {
-    return serviceApi.serviceDocument(projectCode, serviceCode, encodeProjectDocumentPath(docPath));
-  }, [projectCode, serviceCode]);
-  const documents = useMarkdownDocumentViewer(fetchDocument, serviceDocumentMissingMessage);
-
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const [data, readme] = await Promise.all([
-          serviceApi.service(projectCode, serviceCode) as Promise<ServiceDetail>,
-          serviceApi.serviceDocument(projectCode, serviceCode, 'README.md') as Promise<MarkdownDocument>,
-        ]);
-        if (cancelled) return;
-        setDetail(data);
-        documents.reset(readme);
-        setSub('README.md');
-      } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : '服务不存在');
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [projectCode, serviceCode, documents.reset]);
-
-  const onRelativeLinkClick = (linkHref: string) => {
-    const resolved = resolveProjectMarkdownHref(documents.path, linkHref);
-    if (!resolved) { documents.setMessage('仅支持打开服务内的 .md 文档链接。'); return; }
-    void documents.open(resolved, { pushHistory: true });
-  };
-
-  if (error) return <p className="page-copy" role="alert">{error}</p>;
-  if (!detail) return <p className="page-copy">正在读取…</p>;
-  const service = detail.service;
-  return (
-    <>
-      <div className="ws-obj-toolbar"><Button size="small" onClick={() => navigate(workspaceHref(workspaceId, `/services/${encodeURIComponent(projectCode)}/${encodeURIComponent(serviceCode)}`))}>在主区域打开 ↗</Button></div>
-      <div className="ws-obj-head">
-        <span className="ws-svc-ico" aria-hidden>{service.name.slice(0, 1)}</span>
-        <h2>{service.name} <code>{service.code}</code></h2>
-        <Button type="text" aria-label="编辑服务" icon={<EditOutlined />} onClick={onEdit} />
-      </div>
-      <p className="ws-obj-sub">{service.description || '尚未填写服务说明。'}</p>
-      <div className="ws-tags-row">
-        <Tag color="blue">{serviceTypeLabel(service.type)}</Tag>
-        <Tag color="gold">{service.source.type === 'git' ? 'Git' : '本地路径'}</Tag>
-      </div>
-      <Tabs
-        size="small"
-        activeKey={sub}
-        onChange={(key) => {
-          setSub(key as 'README.md' | 'AGENTS.md');
-          void documents.open(key, { replaceHistory: true, pushHistory: false });
-        }}
-        items={[{ key: 'README.md', label: 'README.md' }, { key: 'AGENTS.md', label: 'AGENTS.md' }]}
-      />
-      {documents.history.length > 1 ? (
-        <div className="project-document-toolbar">
-          <button type="button" className="back-link project-document-back" onClick={documents.back}>← 返回上一篇</button>
-          <span className="project-document-path">{documents.path}</span>
-        </div>
-      ) : null}
-      {documents.loading ? (
-        <p className="page-copy">正在读取…</p>
-      ) : documents.document?.exists && documents.document.content != null ? (
-        <MarkdownHost
-          markdown={documents.document.content}
-          className="project-document-content markdown-body"
-          options={{ headingOffset: 1, allowRelativeLinks: true, allowParentRelativeLinks: true, onRelativeLinkClick }}
-        />
-      ) : (
-        <p className="artifact-missing">{documents.message || `服务根目录未找到 ${documents.path}`}</p>
-      )}
-    </>
-  );
-}
 
 /** 右组项目文档对象。 */
 function ProjectDocObjectView({ projectCode, docPath, title, hint }: { projectCode: string; docPath: string; title: string; hint: string }) {
@@ -168,8 +82,6 @@ export function ProjectDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [workspaceName, setWorkspaceName] = useState('');
-  const [editServiceCode, setEditServiceCode] = useState<string | null>(null);
-  const [serviceRefresh, setServiceRefresh] = useState(0);
   const [objects, setObjects] = useState<ObjTab[]>([]);
   const [activeObj, setActiveObj] = useState<string | null>(null);
 
@@ -220,7 +132,6 @@ export function ProjectDetailPage() {
   };
 
   const objectTitle = (tab: ObjTab): string => {
-    if (tab.kind === 'svc') return services.find((s) => s.code === tab.ref)?.name ?? tab.ref;
     return DOC_ROWS.find((d) => d.ref === tab.ref)?.name ?? tab.ref;
   };
 
@@ -260,14 +171,7 @@ export function ProjectDetailPage() {
         onActivateObject={setActiveObj}
         onCloseObject={closeObject}
         objectContent={activeTab ? (
-          activeTab.kind === 'svc' ? (
-            <ServiceObjectView
-              key={`${activeTab.ref}:${serviceRefresh}`}
-              projectCode={projectCode}
-              serviceCode={activeTab.ref}
-              onEdit={() => setEditServiceCode(activeTab.ref)}
-            />
-          ) : activeTab.ref === 'daily' ? (
+          activeTab.ref === 'daily' ? (
             <>
               <div className="ws-obj-head"><h2>每日演进</h2></div>
               <p className="ws-obj-sub">按提交范围生成的四问摘要</p>
@@ -314,12 +218,11 @@ export function ProjectDetailPage() {
             ) : (
               <div className="ws-svc-grid">
                 {services.map((service) => (
-                  <button
+                  <Link
                     key={service.code}
-                    type="button"
-                    className={`ws-svc-card${objects.some((o) => o.key === `svc:${service.code}`) ? ' reading' : ''}`}
+                    className="ws-svc-card"
                     data-service-card={service.code}
-                    onClick={() => openObject({ key: `svc:${service.code}`, kind: 'svc', ref: service.code })}
+                    to={href(`/services/${encodeURIComponent(projectCode)}/${encodeURIComponent(service.code)}`)}
                   >
                     <span className="ws-svc-ico" aria-hidden>{service.name.slice(0, 1)}</span>
                     <span className="ws-svc-main">
@@ -331,7 +234,7 @@ export function ProjectDetailPage() {
                       </span>
                     </span>
                     <RightOutlined className="ws-go" aria-hidden />
-                  </button>
+                  </Link>
                 ))}
               </div>
             )}
@@ -377,16 +280,6 @@ export function ProjectDetailPage() {
             title: saved.name,
             path: href(`/projects/${encodeURIComponent(projectCode)}`),
           });
-        }}
-      />
-      <ServiceEditDrawer
-        open={Boolean(editServiceCode)}
-        projectCode={projectCode}
-        serviceCode={editServiceCode}
-        onClose={() => setEditServiceCode(null)}
-        onSaved={(saved) => {
-          setServices((current) => current.map((s) => (s.code === saved.code ? { ...s, name: saved.name, description: saved.description, type: saved.type } : s)));
-          setServiceRefresh((v) => v + 1);
         }}
       />
     </>
