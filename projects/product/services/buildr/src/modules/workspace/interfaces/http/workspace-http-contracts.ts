@@ -31,7 +31,7 @@ const serviceEntity = {
   required: ['id', 'workspaceId', 'projectId', 'code', 'name', 'description', 'type', 'source'],
   properties: {
     id: text, workspaceId: text, projectId: text, projectCode: text,
-    code: text, name: text, description: text, type: text, source: sourceEntity,
+    code: text, name: text, description: { type: 'string' }, type: text, source: sourceEntity,
   },
 };
 const registryEntry = closed({ status: text, rootPath: text, updatedAt: text, workspace: { anyOf: [workspaceSummary, { type: 'null' }] }, error: { anyOf: [closed({ code: text, message: text }, ['message']), { type: 'null' }] }, migrationRequired: { type: 'boolean' } }, ['status', 'rootPath']);
@@ -43,7 +43,21 @@ const response = (id: any, title: any, properties: any, required: any) => Object
   ...closed(properties, required),
 });
 
+const plainText = { type: 'string' };
+const stringIds = { type: 'array', items: text, uniqueItems: true };
+const repositoryDraft = closed({ code: text, name: text, description: plainText, url: text, remote: text, integrationBranch: text }, ['code', 'url', 'integrationBranch']);
+const serviceDraft = closed({ code: text, name: text, description: plainText, type: text, repositoryId: text, modulePath: plainText, repository: repositoryDraft }, ['code', 'name']);
+const businessService = closed({ id: text, workspaceId: text, code: text, name: text, description: plainText, type: text, repositoryId: text, modulePath: plainText, legacyRefs: stringIds }, ['id', 'workspaceId', 'code', 'name', 'description', 'type', 'repositoryId', 'modulePath']);
+const repositoryInstance = closed({ id: text, workspaceId: text, code: text, name: text, description: plainText, source: sourceEntity, location: text, available: { type: 'boolean' }, observed: { type: ['object', 'null'], additionalProperties: true } }, ['id', 'workspaceId', 'code', 'name', 'description', 'source']);
+
 export const WORKSPACE_HTTP_SCHEMAS: Readonly<Record<string, any>> = Object.freeze({
+  assetCatalogResponse: response('asset-catalog/response', 'AssetCatalog', { schemaVersion: text, revision: text, migrationRequired: { type: 'boolean' }, projects: { type: 'array', items: { ...projectEntity, properties: { ...projectEntity.properties, serviceIds: stringIds } } }, services: { type: 'array', items: businessService }, repositories: { type: 'array', items: repositoryInstance }, diagnostics: { type: 'array', items: closed({ code: text, message: text, objectId: text }, ['code', 'message', 'objectId']) } }, ['schemaVersion', 'revision', 'migrationRequired', 'projects', 'services', 'repositories', 'diagnostics']),
+  assetMigrateRequest: response('asset-catalog/migrate', 'AssetMigrate', { revision: text, codeMappings: { type: 'object', additionalProperties: text } }, ['revision']),
+  assetRepositoryRequest: response('asset-catalog/repository-create', 'RepositoryCreate', { ...repositoryDraft.properties, revision: text }, ['revision', 'code', 'url', 'integrationBranch']),
+  assetServiceRequest: response('asset-catalog/service-create', 'ServiceCreate', { revision: text, service: serviceDraft, projectId: text }, ['revision', 'service']),
+  assetProjectRequest: response('asset-catalog/project-create', 'ProjectCreate', { revision: text, code: text, name: text, description: plainText, serviceIds: stringIds, newServices: { type: 'array', items: serviceDraft } }, ['revision', 'code', 'name']),
+  assetAssociateRequest: response('asset-catalog/associate', 'ProjectServices', { revision: text, serviceIds: stringIds, newServices: { type: 'array', items: serviceDraft } }, ['revision', 'serviceIds']),
+  assetUpdateRequest: response('asset-catalog/update', 'AssetUpdate', { revision: text, name: text, description: plainText, type: text, repositoryId: text, modulePath: plainText }, ['revision']),
   registryRequest: response('registry/request', 'WorkspaceRegistryRequest', {}, []),
   registerRequest: response('registry/register-request', 'WorkspaceRegisterRequest', {
     rootPath: text,
@@ -113,6 +127,13 @@ export const WORKSPACE_HTTP_SCHEMAS: Readonly<Record<string, any>> = Object.free
 });
 
 export const WORKSPACE_HTTP_OPERATIONS = Object.freeze([
+  ['assets.read', 'GET', '/asset-catalog', 'workspaceReadRequest', 'assetCatalogResponse'],
+  ['assets.migrate', 'POST', '/asset-catalog/migrate', 'assetMigrateRequest', 'assetCatalogResponse'],
+  ['assets.repositories.create', 'POST', '/asset-catalog/repositories', 'assetRepositoryRequest', 'assetCatalogResponse'],
+  ['assets.services.create', 'POST', '/asset-catalog/services', 'assetServiceRequest', 'assetCatalogResponse'],
+  ['assets.projects.create', 'POST', '/asset-catalog/projects', 'assetProjectRequest', 'assetCatalogResponse'],
+  ['assets.associate', 'PUT', '/asset-catalog/projects/:projectId/services', 'assetAssociateRequest', 'assetCatalogResponse'],
+  ['assets.update', 'PUT', '/asset-catalog/:kind/:id', 'assetUpdateRequest', 'assetCatalogResponse'],
   ['workspace.registry.list', 'GET', '/workspaces', 'registryRequest', 'registryResponse'],
   ['workspace.registry.register', 'POST', '/workspaces', 'registerRequest', 'registryResponse'],
   ['workspace.registry.pick', 'POST', '/workspaces/pick', 'pickRequest', 'pickResponse'],

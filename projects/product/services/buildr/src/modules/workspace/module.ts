@@ -1,3 +1,5 @@
+import { registerAssetRelationshipsApplication } from './application/asset-relationships-application.ts';
+import { assetCatalogCommand } from './interfaces/cli/asset-catalog.ts';
 import { createRegistryMaintenance } from './application/registry-maintenance.ts';
 import { registerWorkspaceQueryApplication, type WorkspaceQueryApplicationRuntime } from './application/workspace-query-application.ts';
 import { ensureRegisteredTarget, registerWorkspaceCommandApplication, type WorkspaceCommandApplicationRuntime } from './application/workspace-command-application.ts';
@@ -59,6 +61,7 @@ export const WORKSPACE_AGENT_ASSETS_BINDER = 'workspace.agent-assets-binder';
 export const WORKSPACE_DIAGNOSTICS = 'workspace.diagnostics';
 
 const WORKSPACE_METHODS = Object.freeze([
+  'catalogServiceDocument', 'assetCatalog', 'migrateAssetCatalog', 'createCatalogRepository', 'createCatalogService', 'createCatalogProject', 'updateProjectServices', 'updateCatalogAsset', 'repositoryPreparePrompt',
   'getWorkspace', 'listRegisteredWorkspaces', 'registerLocalWorkspace', 'removeRegisteredWorkspace',
   'resolveRegisteredWorkspace', 'workspaceMigrationPlan', 'migrateWorkspaceMetadata', 'updateWorkspaceMetadata',
   'generateWorkspaceCreatePrompt', 'inspectLocalWorkspaceCandidate', 'getWorkspaceGettingStarted',
@@ -107,6 +110,12 @@ function pick(source: WorkspacePrivateComposition, methods: readonly string[]) {
 
 export function createWorkspaceCliContributions(applications: { workspace?: any; project?: any; service?: any } = {}) {
   return Object.freeze([
+    Object.freeze({
+      key: 'assets', surface: 'agent-machine', summary: '查看或维护项目、服务、代码库及关联；写入要求当前版本。',
+      help: ['Usage: buildr assets <inspect|migrate|create|update|associate> [project|service|repository] [id] --target <workspace> [--input <json-file>] --json'],
+      match: ({ domain }: any) => domain === 'assets',
+      run: (runtime: any, context: any) => assetCatalogCommand(applications.workspace || runtime, context.argv.slice(3)),
+    }),
     Object.freeze({
       key: 'init', surface: 'primary',
       summary: '首次 onboarding 推荐传入 --agent：初始化源资产后复用完整 sync，并以最终 doctor 通过作为技术完成条件；随后由 Agent 根据真实 Project/Service 状态完成简短首次使用交接并邀请第一项工作。',
@@ -198,6 +207,7 @@ export function createWorkspaceModule(runtime: DynamicRuntime, { readProductIden
       registerWorkspaceSourceGit(privateComposition);
       registerProjectApplication(privateComposition);
       registerServiceApplication(privateComposition);
+      registerAssetRelationshipsApplication(privateComposition);
 
       const registryMaintenance = createRegistryMaintenance({
         readGitRemote: privateComposition.readGitRemote,

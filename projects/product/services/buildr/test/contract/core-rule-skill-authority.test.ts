@@ -33,8 +33,9 @@ test('Core 为用户 Workspace 提供简明且按需可视化的共性表达', (
 
 test('Core 只保留 Rule 与专业 owner 的稳定职责', () => {
   assert.match(core, /## 工作资产职责/);
-  assert.match(core, /当前作用域（scope）继承组织根（Organization\/Root）→ 项目（Project）→ 服务（Service）的 `AGENTS\.md`/);
-  assert.match(core, /项目表示业务、产品线、系统或长期工作单元/);
+  assert.match(core, /共享引用不建立唯一父项目/);
+  assert.match(core, /冲突必须显式处理/);
+  assert.match(core, /项目（Project）承载业务目标与业务约束/);
   assert.match(core, /运行时、本机状态、凭证、临时提示词（prompt）和一次性聊天不是源资产/);
   assert.match(core, /`AGENTS\.md` 只能增加当前作用域的这些内容/);
   assert.match(core, /规则不承担技能路由、命令序列、生命周期、恢复或专业状态/);

@@ -10,7 +10,7 @@
 
 - 创建或修复 Project/Service 必须来自用户意图、已有源资产、明确 repo/ref，或 doctor 指出的可修复 drift。Project 表示业务、产品线、系统或长期工作单元；canonical entity 使用 UUID `id`、所属 `workspaceId`、可读 `code`、`name`、`description` 和 `source`，`source.path` 定位文件系统位置。创建入口是 `buildr project create <code> --name <name> --description <description> --target <dir>`；独立 Git Project 再用 `--repo <url> --remote <name> --integration-branch <branch>` 声明来源，integration branch 是稳定集成目标而非当前 checkout。
 - `currentBranch`、HEAD、dirty、upstream、ahead/behind 和实际 remote URL 由 doctor/app 实时观察，不写入 Domain；分支偏移可能是合法任务状态，任何 checkout、stash、merge 或 remote 修改前都核对任务、clean 状态、ownership 和授权，不盲目纠正。
-- `projects/manifest.yml` v1 只兼容读取；使用 canonical `buildr sync <agent>` 迁移，不手工编造 UUID 或由页面静默迁移。`buildr web` 可查看 Project/Git 状态并受控修改 `name`、`description`；新增页面只生成 Agent prompt，不直接创建或 clone。
+- `projects/manifest.yml` v1 只兼容读取；使用 canonical `buildr sync <agent>` 迁移，不手工编造 UUID 或由页面静默迁移。`buildr web` 可查看 Project/Git 状态并受控修改 `name`、`description`；项目登记及关联可通过全局资产界面维护；Git 克隆仍由智能体根据明确来源执行。
 - Project可以按需维护可选`verification.yml`，只接受closed`buildr.project-verification/v4`测试地图，声明少量稳定测试体系的Project/Service scope、purpose、sourcePaths、testRoots、完整入口、选择指导与环境要求；不复制具体测试清单、Task计划或运行结果。Agent直接调用项目工具执行测试，开发完成后只通过Task Verification Application保存有意义报告。Project也可按需维护可选`preparation.yml`，声明Project-wide或Service-scoped真实准备入口；Agent只在当前动作需要时读取并直接调用，不保存Task Plan或执行状态。初始化、刷新、Project/Service注册、首次Task或专业gap先路由`declaration-intake`做只读发现；已确认入口的普通维护按 `routine-maintenance` 交给声明所有者；新增范围、能力、外部效果或长期边界变化按 `user-decision-required` 取得用户决定。
 
 ## 遗留 Practices
@@ -19,12 +19,27 @@
 - 用户决定整理时，先人工审阅内容语义：约束和值守边界迁移为 Rule，可复用专业动作和操作流程迁移为 Skill，产品事实、需求和变更迁移为 OpenSpec，其他说明保留为普通 docs。
 - 不根据文件名或正文猜测迁移类别；用户确认内容已经妥善归类且目录为空后，才由用户自行决定是否删除遗留目录。
 
-## Service
+## 服务与代码库
 
-- Service 表示代码 repo 或可执行资产；用户提供 service repo 路径、Git URL 或明确要接入服务资产时才创建。
-- canonical Service entity 使用 UUID `id`、`workspaceId`、直接父实体 `projectId`、Project 内唯一 `code`、`name`、`description`、开放词表 `type` 与 `source`；`source.path` 是 Workspace 相对完整路径，Git source 只声明 URL、remote 与稳定 `integrationBranch`。接入命令是 `buildr service create <project>/<service> <repo-ref> --target <dir> --name <name> --description <description> --type <type> [--remote <name>] [--integration-branch <branch>]`，`--branch` 只作为兼容别名。
-- Service registry 写入所属 Project 的 `services/manifest.yml`；v1 只兼容读取，修改前让 Agent 通过 canonical sync 显式迁移 v2。Service 规则入口是 Service 目录中的 `AGENTS.md`，不写入 `rules.source`。`currentBranch`、HEAD、dirty、upstream、ahead/behind 是实时观察态；偏离 `integrationBranch` 时结合当前任务判断，不自动 checkout、stash、merge 或 rebase。
-- Rules scope 使用真实 workspace 相对路径：`.`、`projects/<project>`、`projects/<project>/services/<service>` 或其任意深层目录。
+项目（Project）通过 `projects/manifest.yml` 的 `serviceIds` 引用服务（Service）；全局 `services/manifest.yml` 中每个服务只引用一个 `repositoryId`，多个服务可以共用代码库实例（Repository Instance）。实例的来源、远端和集成分支在 `repositories/manifest.yml` 维护。工作空间源码保留 workspace 来源，不虚构独立 Git 身份。
+
+先运行 `buildr assets inspect --target <workspace> --json` 读取当前对象、版本、引用和代码状态。服务规则位于 `services/<code>/AGENTS.md`；代码目录的实际规则继续适用。结合任务明确选择项目业务上下文，不把所有引用项目的规则自动拼接，也不按当前目录猜测业务归属。
+
+### 维护登记与关联
+
+使用 `buildr help assets` 查看当前维护入口。写入 JSON 输入包含刚读取的 `revision`；创建项目可包含 `serviceIds` 和 `newServices`，每个新服务选择已有 `repositoryId` 或嵌套新 `repository`。创建代码库只登记来源，界面保存不代表已克隆。关联写入通过 `assets associate <project-id>`，解除只移除项目引用，保留服务和代码。
+
+旧项目内服务清单可兼容读取；`migrationRequired` 为 true 时先检查转换后的身份、重复代码与实际目录，再显式执行 `buildr assets migrate --target <workspace> --input <json-file> --json`。迁移保留旧标识及代码位置，不按相同 Git 地址合并实例，不搬动代码。旧项目中的服务代码重名时，在迁移输入中明确提供 `codeMappings`，以旧 `project/service` 为键、新全局代码为值；核对映射后再写入。旧 `service create <project>/<service>` 仅用于尚未迁移的工作空间；迁移后使用全局资产入口。
+
+### 准备真实代码
+
+1. 沿项目引用、服务的 `repositoryId` 和可选模块目录定位目标实例；声明缺失时先从用户明确输入或可信源补齐 Git 地址与集成分支，不猜测。
+2. 核对目标位置和真实 Git 边界。新受管实例默认使用 `repositories/<code>/`；已有实例沿用声明位置，附接目录不因登记获得内容所有权。
+3. 已登记而代码缺失时，在当前任务授权内验证远端分支，克隆到空的目标位置；先暂存后发布，失败保留可核对结果。来源、权限或分支问题只阻止依赖该实例的工作。
+4. 目录已经存在时核对来源、分支和未提交内容；身份不符就停止相关写入。不得覆盖、清空、丢弃改动或为了匹配声明擅自切换共享目录分支。
+5. 验证实际目录、来源、当前提交和分支，说明已准备或失败事实。并行研发按任务使用隔离工作位置；当前任务分支不覆盖稳定集成分支声明。
+
+本地检出目录（Checkout）是代码库实例落地的位置，不另建长期业务对象。规则（Rule）保护身份、授权与内容边界；以上过程由技能（Skill）指导智能体（Agent）按真实现场执行。
 
 ## Builtins
 

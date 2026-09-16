@@ -97,7 +97,7 @@ export function ProjectEditDrawer({ open, projectCode, onClose, onSaved }: Props
   return (
     <MetadataEditDrawer
       title="编辑项目" objectName={current?.project.name || projectCode || ''}
-      open={open} onClose={onClose} saving={saving} dirty={Boolean(current && (name !== current.project.name || description !== (current.project.description || '')))}
+      open={open} onClose={onClose} saving={saving}
       disabled={readOnly || loading || !current || Boolean(loadError)}
       formId="project-edit-form" saveButtonId="project-save-button"
     >

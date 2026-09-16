@@ -1,11 +1,11 @@
 ---
 name: task-worktree
-description: 用户或上游Agent明确要求为Task创建、检查或安全清理Git worktree与本地任务分支时使用；只管理Git位置和删除安全。
+description: 按任务分流的默认隔离策略或用户要求，为任务创建、复用检查或安全清理 Git worktree 与本地任务分支时使用；只管理 Git 位置和删除安全。
 ---
 
 # Task Worktree Skill
 
-本 Skill 是 `buildr.git-worktree-provider/v1` 的默认 provider，只管理Git checkout、本地任务分支、窄Git evidence和具体删除安全。普通任务可以直接在已确认的当前checkout工作，不要求先创建Worktree。
+本 Skill 是 `buildr.git-worktree-provider/v1` 的默认 provider，只管理Git checkout、本地任务分支、窄Git evidence和具体删除安全。执行位置选择遵循[任务分流的默认隔离策略](../task-triage/SKILL.md#默认隔离)；本技能（Skill）承接创建、复用检查与清理，不自行放宽主开发分支写入例外。
 
 ## 公共动作
 
@@ -27,4 +27,4 @@ root 固定为 `<workspace-root>/.worktrees/<task-id>`；独立 Project/Service 
 
 ## 停止条件
 
-repository selector、path、Git common directory、remote、branch ownership、registered worktree 或 evidence identity 冲突时停止。任一 checkout dirty、集成 ref 无法证明或清理会影响其他 checkout 时保留现场。删除远端分支、丢弃工作和非 Git 资源需要其他明确授权。
+repository selector、path、Git common directory、remote、branch ownership、registered worktree 或 evidence identity 冲突时停止。清理时目标 checkout dirty、集成 ref 无法证明或删除会影响其他 checkout 时保留现场。创建不要求主目录干净；复用检查保留同任务未提交内容。删除远端分支、丢弃工作和非 Git 资源需要其他明确授权。

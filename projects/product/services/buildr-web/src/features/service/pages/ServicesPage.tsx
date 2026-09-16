@@ -1,137 +1,33 @@
+import { ResourceDirectory } from '../../../components/ResourceDirectory';
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { Alert, Button, Empty, Form, Select, Table, Typography } from 'antd';
-import type { ColumnsType } from 'antd/es/table';
+import { Link, useNavigate } from 'react-router-dom';
+import { Button } from 'antd';
 import { useAppShell } from '../../../app/AppShellContext';
-import { serviceTypeLabel, workspaceHref } from '../../../lib/labels';
-import { ServiceEditDrawer } from '../components/ServiceEditDrawer';
-import { useServiceCatalog, type Service } from '../hooks/useServiceCatalog';
 import { useWorkspacePageTabs } from '../../../app/pageTabs';
 import { WorkspaceStage } from '../../../components/WorkspaceStage';
-
-const TableBody = (props: React.HTMLAttributes<HTMLTableSectionElement>) => (
-  <tbody id="service-table-body" {...props} />
-);
-
+import { workspaceHref } from '../../../lib/labels';
+import { useAssetCatalog } from '../../workspace/components/useAssetCatalog';
+import { CatalogMigration } from '../../workspace/components/CatalogMigration';
+import { AssetEditDrawer } from '../../workspace/components/AssetEditDrawer';
+import { assetCatalogApi, type ServiceDraft } from '../../workspace/api/asset-catalog-api';
+import { ServiceCreateDrawer } from '../components/ServiceCreateDrawer';
 export function ServicesPage() {
-  const { workspaceId, openAgentAction } = useAppShell();
-  const href = (path: string) => workspaceHref(workspaceId, path);
-  const [editServiceCode, setEditServiceCode] = useState<string | null>(null);
-  const catalog = useServiceCatalog();
-  const { projects, projectCode, projectName, services, count, title, copy, emptyText, migrationMessage, loaded } = catalog;
-  const pageTabs = useWorkspacePageTabs(workspaceId);
-
-  useEffect(() => {
-    pageTabs.register({ key: 'dir:services', kind: 'dir', title: '服务目录', path: href('/services') });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workspaceId]);
-
-  const columns: ColumnsType<Service> = [
-    {
-      title: '名称',
-      render: (_value, service) => (
-        <>
-          <strong>{service.name}</strong>
-          <small>{service.description}</small>
-        </>
-      ),
-    },
-    { title: '代码', dataIndex: 'code', className: 'code-cell' },
-    { title: '类型', render: (_value, service) => serviceTypeLabel(service.type) },
-    { title: '来源', render: (_value, service) => (service.source.type === 'git' ? 'Git' : '本地路径') },
-    {
-      title: '操作',
-      className: 'operation-column',
-      render: (_value, service) => (
-        <div className="table-operations">
-          <Link className="table-action" to={href(`/services/${encodeURIComponent(projectCode)}/${encodeURIComponent(service.code)}`)}>详情</Link>
-          <button
-            type="button"
-            className="table-action"
-            id={`service-edit-action-${service.code}`}
-            onClick={() => setEditServiceCode(service.code)}
-          >
-            编辑
-          </button>
-          <Link className="table-action" to={href(`/projects/${encodeURIComponent(projectCode)}`)}>项目</Link>
-        </div>
-      ),
-    },
-  ];
-
-  return (
-    <WorkspaceStage pageTabs={pageTabs.tabs} onClosePageTab={pageTabs.close}>
-      <div className="ws-dir-shell">
-      <section className="resource-toolbar">
-        <div>
-          <Typography.Title level={2} style={{ margin: 0 }}>服务目录</Typography.Title>
-          <p className="page-copy">按项目查看已登记服务；编辑在抽屉中完成。</p>
-        </div>
-        <div className="toolbar-actions">
-          <span id="services-count" className="count-label">{count}</span>
-          <Button
-            id="create-service-button"
-            type="primary"
-            disabled={!projectCode}
-            onClick={() => openAgentAction('service', { projectCode })}
-          >
-            让 Agent 创建服务
-          </Button>
-        </div>
-      </section>
-      <div id="services-migration-alert" className={migrationMessage ? '' : 'hidden'} role="status">
-        {migrationMessage ? <Alert type="warning" showIcon message={migrationMessage} style={{ marginBottom: 16 }} /> : null}
-      </div>
-      <section className="list-controls">
-        <Form layout="inline">
-          <Form.Item label="所属项目">
-            <Select
-              id="service-project-select"
-              style={{ minWidth: 240 }}
-              disabled={projects.length === 0}
-              loading={projects.length === 0 && !loaded}
-              placeholder={projects.length === 0 ? '正在读取项目…' : undefined}
-              value={projectCode || undefined}
-              onChange={catalog.selectProject}
-              options={projects.map((project) => ({
-                value: project.code,
-                label: `${project.name}（${project.code}）`,
-              }))}
-            />
-          </Form.Item>
-        </Form>
-      </section>
-      <section className="resource-list-section">
-        <div className="section-heading">
-          <div>
-            <Typography.Title id="services-title" level={4} style={{ margin: 0 }}>{title}</Typography.Title>
-            <p id="services-copy" className="section-copy">{copy}</p>
-          </div>
-        </div>
-        <div id="service-empty" className={`empty-state${loaded && services.length === 0 ? '' : ' hidden'}`}>
-          {loaded && services.length === 0 ? <Empty description={emptyText} /> : null}
-        </div>
-        <div id="service-table-wrap" className={`management-table-wrap${services.length === 0 ? ' hidden' : ''}`}>
-          <Table
-            rowKey="code"
-            pagination={false}
-            dataSource={services}
-            columns={columns}
-            components={{ body: { wrapper: TableBody } }}
-          />
-        </div>
-      </section>
-      <span className="hidden">{projectName}</span>
-      <ServiceEditDrawer
-        open={Boolean(editServiceCode)}
-        projectCode={projectCode || null}
-        serviceCode={editServiceCode}
-        onClose={() => setEditServiceCode(null)}
-        onSaved={(saved) => {
-          catalog.updateService(saved);
-        }}
-      />
-      </div>
-    </WorkspaceStage>
-  );
+  const { workspaceId } = useAppShell(), navigate = useNavigate(), tabs = useWorkspacePageTabs(workspaceId), catalog = useAssetCatalog();
+  const [editing, setEditing] = useState<string | null>(null), [creating, setCreating] = useState(false), [draft, setDraft] = useState<ServiceDraft>();
+  const href = (id: string) => workspaceHref(workspaceId, `/services/${id}`);
+  useEffect(() => { tabs.register({ key: 'dir:services', kind: 'dir', title: '服务目录', path: workspaceHref(workspaceId, '/services') }); }, [workspaceId]);
+  const data = catalog.data;
+  return <WorkspaceStage pageTabs={tabs.tabs} onClosePageTab={tabs.close}>
+    <ResourceDirectory onRefresh={catalog.reload} refreshing={catalog.loading} title="服务" noun="服务" description="了解实现职责，连接业务与代码。" data={data?.services || []} loading={!data && !catalog.error} error={catalog.error}
+      rowKey={s => s.id} name={s => s.name} summary={s => s.description} searchText={s => `${s.name} ${s.code} ${s.description}`} href={s => href(s.id)} onOpen={s => navigate(href(s.id))} onEdit={s => setEditing(s.id)} editDisabled={data?.migrationRequired}
+      tableId="service-table-wrap" bodyId="service-table-body" searchId="services-search"
+      columns={[
+        { title: '关联项目', width: 170, render: (_, s) => data?.projects.filter(p => p.serviceIds?.includes(s.id)).map(p => p.name).join('、') || '尚未关联' },
+        { title: '代码库', width: 180, render: (_, s) => { const r = data?.repositories.find(r => r.id === s.repositoryId); return r ? <Link to={workspaceHref(workspaceId, `/repositories/${r.id}`)}>{r.name}</Link> : '引用缺失'; } },
+      ]}
+      notice={data && <CatalogMigration catalog={data} onSaved={catalog.setData} />}
+      actions={<Button type="primary" disabled={!data || data.migrationRequired} onClick={() => setCreating(true)}>新增服务</Button>} />
+    {data && editing && <AssetEditDrawer key={editing} catalog={data} kind="service" id={editing} onClose={() => setEditing(null)} />}
+    {data && creating && <ServiceCreateDrawer catalog={data} initial={draft} onClose={d => { setDraft(d); setCreating(false); }} onSave={async service => { await assetCatalogApi.service({ revision: data.revision, service }); setDraft(undefined); setCreating(false); }} />}
+  </WorkspaceStage>;
 }

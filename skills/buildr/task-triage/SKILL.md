@@ -1,6 +1,6 @@
 ---
 name: task-triage
-description: 判断修改应直接实施、维护当前事实还是进入 OpenSpec 变更，并交接所需专业动作时使用。
+description: 开始修改代码、文档、配置或技能等持久文件前使用；确定隔离位置，判断直接实施、事实维护或 OpenSpec 变更，并交接专业动作。
 ---
 
 # Task Triage Skill
@@ -47,15 +47,26 @@ authority 冲突、授权不明、实际 Git 操作所需的 repository set 不�
 - `metadata-only`：仅维护 OpenSpec artifacts、Rules、Skills、文档或模板，不进入代码、构建或测试。
 - `unknown`：信息不足；先澄清，不提前写 Change artifacts 或当前事实。
 
-该轴独立于语义治理。Formal Task Record本身不是编辑、构建或有界测试的通用工作许可：用户授权、repository/ref、owned scope与副作用边界均明确时，Agent可以直接工作。需要隔离Git位置时显式使用Worktree；需要依赖、代码生成或运行入口时使用Project/Service的真实wrapper、包管理器和构建工具。不得把任何位置、文件或单次命令冒充Formal Verification或cleanup事实。
+该轴独立于语义治理，也不改变下方默认隔离策略。Formal Task Record本身不是编辑、构建或有界测试的通用工作许可。需要依赖、代码生成或运行入口时使用Project/Service的真实wrapper、包管理器和构建工具；工作位置不代表Formal Verification或cleanup事实。
+
+### 默认隔离
+
+首次持久文件修改前确定执行位置：除非用户明确要求在主开发分支修改，否则一律创建或复用当前任务的独立工作树（Worktree）。代码、文档、配置、规则（Rule）、技能（Skill）、模板和 OpenSpec 材料都适用；小改动、纯规划、主目录干净或已授权实现均不构成例外。只读检查、合法任务记录和临时输出无需为此创建工作树（Worktree）。
+
+- 已有当前任务的独立位置：通过 `worktree inspect` 核对任务、真实仓库、分支与登记身份，复用返回的实际根并保留本任务未提交成果；不因新轮次或阶段转换重复创建，也不借用其他任务的位置。
+- 尚无匹配位置：向已绑定工作树（Worktree）提供者交接明确的任务标识、工作空间（Workspace）、仓库集合、任务分支与起点提交，使用 `worktree create` 返回的实际根继续。主目录的无关未提交改动不阻止创建；保留现场，不为创建而提交、暂存或清空他人内容。新位置只包含起点提交；依赖未提交成果时先核对其归属和依赖关系。
+- 用户明确要求在主开发分支修改：核对实际分支、文件归属与覆盖风险后继续；同一对象、范围与副作用的授权持续有效，无需重复确认。不为默认隔离询问用户是否接受创建。
+- 提供者不可用、仓库缺失或位置身份冲突：只停止依赖该位置的持久文件写入，继续可独立进行的只读检查和任务记录，报告具体原因；不自动回退主开发分支、猜测其他目录或初始化仓库。
+
+隔离保护并发任务的文件现场，不承诺合并无冲突；交付时仍核对目标分支与他人改动。
 
 ## 3. 条件化交接
 
-已有或刚创建的active Formal Task先`task inspect`核对目标、scope与current record identity。Agent先核对当前checkout；需要隔离时使用`worktree create|inspect`取得matching实际根。不需要Worktree的直接工作不补造位置、Plan或Receipt。
+已有或刚创建的active Formal Task先`task inspect`核对目标、scope与current record identity。按默认隔离策略取得真实执行位置后再写文件；不补造位置、Plan或Receipt。
 
 按用户目标和当前事实渐进装配专业上下文：执行当前动作前只读取相应Skill、binding、contract与直接authority，Review、Verification、OpenSpec、Parent管理和任务收尾只在真实命中时加载。不得为发现未来阶段运行Doctor full或预读完整专业Result；provider不ready时只阻塞或降级对应分支，保留其他已确认结论。
 
-用户已经授权实现时，先选择直接工作或matching Worktree。两种路径都在真实Git、文件ownership与副作用边界内立即推进；OpenSpec、Review、Verification与Finish直接消费实际对象和具体资源owner，不要求统一ready。
+用户已经授权实现时，在已按默认隔离策略确认的位置和文件ownership、副作用边界内立即推进；OpenSpec、Review、Verification与Finish直接消费实际对象和具体资源owner，不要求统一ready。
 
 需要登记待办、创建任务、选择独立位置、维护当前知识或协调父子任务时，读取[具体交接](references/structured-handoff.md)。
 
@@ -65,7 +76,7 @@ authority 冲突、授权不明、实际 Git 操作所需的 repository set 不�
 
 选择 `change-flow` 时，先确保正式 Task Record，再完成执行位置判断并使用适用的 `openspec-*` Skill。首次采用、状态实质变化、暂停、完成或用户询问时，从 CLI 刷新并报告 change id、resolved path、action、status、progress 和 next action/blocker；未创建时只写 `planned`，不猜测路径或进度。Buildr 自有 artifacts 和用户说明正文使用中文；命令、路径、标识符、协议字段与 OpenSpec 格式关键字可保留英文。
 
-实现型任务按共享实现区域、验证入口或失败影响面分组。直接工作可以在已确认的真实Git与owned scope中继续；选择Worktree时先取得matching provider evidence。Agent直接依据目标、OpenSpec、Git、代码、文件和专业结果推进，不创建研发聚合事实或planning snapshot。需要设计测试框架、划分测试边界、编排场景或为实现开发测试时使用`project-testing`。开发中的测试由Agent直接调用项目工具；开发完成后独立使用selected `buildr.task-verification/v4` provider，只保存有意义的Task验证报告。triage不把验证报告变成Task完成门禁。
+实现型任务按共享实现区域、验证入口或失败影响面分组。工作位置沿用已核对的默认隔离结果，实际Git与owned scope变化时重新判断。Agent直接依据目标、OpenSpec、Git、代码、文件和专业结果推进，不创建研发聚合事实或planning snapshot。需要设计测试框架、划分测试边界、编排场景或为实现开发测试时使用`project-testing`。开发中的测试由Agent直接调用项目工具；开发完成后独立使用selected `buildr.task-verification/v4` provider，只保存有意义的Task验证报告。triage不把验证报告变成Task完成门禁。
 
 ## 输出
 

@@ -25,7 +25,7 @@ type GitSource = {
   path?: string;
   git?: { remote?: string; url?: string; integrationBranch?: string };
 };
-type RegisteredEntity = { source: GitSource };
+type RegisteredEntity = { source: GitSource; repositorySource?: GitSource };
 type ProjectRegistry = {
   registry: { migrationRequired: boolean };
   projects: Record<string, RegisteredEntity>;
@@ -408,11 +408,18 @@ export function registerGitWorktreeProvider(runtime: GitWorktreeRuntime): GitWor
         if (!projectCode || !serviceCode || extra.length) throw new Error(`Invalid Service selector: ${selector}`);
         const project = projects.projects[projectCode];
         if (!project) throw new Error(`Unknown Project in selector: ${selector}`);
-        if (project.source.type === 'git' && !seen.has(`project:${projectCode}`)) throw new Error(`${selector} requires explicit selector project:${projectCode}.`);
+        if (project.source.type === 'git' && !seen.has(`project:${projectCode}`) && !fs.existsSync(path.join(root, 'services', 'manifest.yml'))) throw new Error(`${selector} requires explicit selector project:${projectCode}.`);
         const service = runtime.readServiceRegistryRecord(root, projectCode).services[serviceCode];
         if (!service) throw new Error(`Unknown Git worktree selector: ${selector}`);
-        if (service.source.type !== 'git') continue;
-        repositories.push(sourceDescriptor({ selector, entityType: 'service', sourcePath: requiredString(service.source.path, 'service.source.path'), source: service.source, workspaceRoot: root, checkoutRoot, branch }));
+        const source = service.repositorySource || service.source;
+        if (source.type !== 'git') continue;
+        const descriptor = sourceDescriptor({ selector, entityType: 'service', sourcePath: requiredString(source.path, 'service.source.path'), source, workspaceRoot: root, checkoutRoot, branch });
+        const shared = repositories.find(item => sameFilesystemPath(item.sourceRepository, descriptor.sourceRepository));
+        if (shared) {
+          if (shared.startPoint !== descriptor.startPoint || shared.remoteUrl !== descriptor.remoteUrl) throw new Error(`${selector} declares conflicting integration identity for a shared repository.`);
+          continue;
+        }
+        repositories.push(descriptor);
         continue;
       }
       throw new Error(`Unsupported Git worktree selector: ${selector}`);

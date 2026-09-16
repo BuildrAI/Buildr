@@ -1,8 +1,10 @@
+import type { ResourcePreview } from './resource-preview';
+import { WorkspacePages } from './WorkspacePages';
 import { runtimeSystemApi } from './api/runtime-system-api';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { Button, Drawer, Dropdown, Typography } from 'antd';
-import { CaretDownFilled, MenuOutlined, PlusOutlined } from '@ant-design/icons';
+import { CaretDownFilled, MenuFoldOutlined, MenuUnfoldOutlined, MenuOutlined, PlusOutlined } from '@ant-design/icons';
 import { api, setWorkspaceId } from '../api';
 import { AppShellContext, type WorkspaceShellInfo } from './AppShellContext';
 import { AppNavigation } from './AppNavigation';
@@ -48,13 +50,14 @@ function productTitle(webProfile: WebProfile | null): string {
   return webProfile === 'development' ? 'Buildr Web Dev' : 'Buildr Web';
 }
 
-export function AppLayout() {
+export function AppLayout({ renderResource }: { renderResource: (item: ResourcePreview) => ReactNode }) {
   const params = useParams();
   const navigate = useNavigate();
   const location = useLocation();
   const workspaceId = params.workspaceId ?? null;
   const isGlobal = !workspaceId;
   const area = navigationState(location.pathname, location.search, workspaceId).area;
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('buildr.sidebar-collapsed') === 'true');
   const [navigationOpen, setNavigationOpen] = useState(false);
   const [compactNavigation, setCompactNavigation] = useState(() => window.matchMedia('(max-width: 899px)').matches);
   useEffect(() => {
@@ -63,11 +66,24 @@ export function AppLayout() {
     media.addEventListener('change', update);
     return () => media.removeEventListener('change', update);
   }, []);
-  const workspaceDestination = useRef({ workspaceId, path: `/workspaces/${workspaceId}/projects` });
+  const workspaceDestination = useRef({ workspaceId, path: `/workspaces/${workspaceId}/projects`, state: location.state });
   if (workspaceDestination.current.workspaceId !== workspaceId) {
-    workspaceDestination.current = { workspaceId, path: `/workspaces/${workspaceId}/projects` };
+    workspaceDestination.current = { workspaceId, path: `/workspaces/${workspaceId}/projects`, state: null };
   }
-  if (area === 'workspace' && workspaceId) workspaceDestination.current.path = location.pathname + location.search;
+  if (area === 'workspace' && workspaceId) workspaceDestination.current = { workspaceId, path: location.pathname + location.search, state: location.state };
+  const [, refreshSectionLinks] = useState(0);
+  const sectionHistory = useRef<{ workspaceId: string | null; pages: Record<string, { to: string; state?: unknown }> }>({ workspaceId, pages: {} });
+  if (sectionHistory.current.workspaceId !== workspaceId) sectionHistory.current = { workspaceId, pages: {} };
+  const section = workspaceId ? location.pathname.slice(`/workspaces/${workspaceId}/`.length).split('/')[0] : '';
+  if (workspaceId && ['projects', 'services', 'repositories', 'skills', 'settings'].includes(section) && !/\/(new|edit)$/.test(location.pathname)) {
+    sectionHistory.current.pages[section] = { to: location.pathname + location.search + location.hash, state: location.state };
+  }
+  const workspaceMenuTarget = (name: string) => sectionHistory.current.pages[name] || { to: `/workspaces/${workspaceId}/${name}` };
+  const forgetWorkspacePage = (path: string) => {
+    let changed = false;
+    for (const [name, target] of Object.entries(sectionHistory.current.pages)) if (target.to.split(/[?#]/)[0] === path) { delete sectionHistory.current.pages[name]; changed = true; }
+    if (changed) refreshSectionLinks(value => value + 1);
+  };
   setWorkspaceId(workspaceId);
 
   const [workspace, setWorkspaceState] = useState<WorkspaceShellInfo | null>(null);
@@ -170,6 +186,8 @@ export function AppLayout() {
     setBreadcrumbParts,
     taskListResetToken,
     resetTaskList,
+    workspaceMenuTarget,
+    forgetWorkspacePage,
   };
 
   const switchWorkspace = (id: string | null) => {
@@ -240,7 +258,7 @@ export function AppLayout() {
           {!isGlobal ? <nav className="top-nav" aria-label="主导航">
             <Link to={workspaceHref('/tasks')} data-area="workbench" aria-current={area === 'workbench' ? 'page' : undefined} className={area === 'workbench' ? 'active' : ''}
               onClick={resetTaskList}>工作台</Link>
-            <Link to={workspaceDestination.current.path} data-area="workspace" aria-current={area === 'workspace' ? 'page' : undefined} className={area === 'workspace' ? 'active' : ''}>工作空间</Link>
+            <Link to={workspaceDestination.current.path} state={workspaceDestination.current.state} data-area="workspace" aria-current={area === 'workspace' ? 'page' : undefined} className={area === 'workspace' ? 'active' : ''}>工作空间</Link>
           </nav> : null}
           <div className="topbar-actions">
             {!isGlobal ? <Button className="shell-menu-toggle" aria-label="打开导航菜单" icon={<MenuOutlined />} onClick={() => setNavigationOpen(true)} /> : null}
@@ -269,9 +287,9 @@ export function AppLayout() {
           </div>
         </header>
         <ReleaseAwarenessBanner openAgentAction={openAgentAction} />
-        <div className={`app-frame${isGlobal ? ' is-global' : ''}`}>
-          {!isGlobal && !compactNavigation ? <aside className="app-sidebar"><AppNavigation key={workspaceId} /></aside> : null}
-          <main id="app-view" tabIndex={-1} aria-live="polite"><Outlet key={workspaceId} /></main>
+        <div className={`app-frame${isGlobal ? ' is-global' : ''}${sidebarCollapsed && !compactNavigation ? ' sidebar-collapsed' : ''}`}>
+          {!isGlobal && !compactNavigation ? <aside className="app-sidebar"><Button type="text" className="sidebar-toggle" aria-label={sidebarCollapsed ? '展开菜单' : '折叠菜单'} title={sidebarCollapsed ? '展开菜单' : '折叠菜单'} icon={sidebarCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />} onClick={() => { setSidebarCollapsed(value => !value); localStorage.setItem('buildr.sidebar-collapsed', String(!sidebarCollapsed)); }} /><AppNavigation key={workspaceId} /></aside> : null}
+          <main id="app-view" tabIndex={-1} aria-live="polite"><>{workspaceId ? <WorkspacePages key={workspaceId} workspaceId={workspaceId} renderResource={renderResource} /> : <Outlet />}</></main>
         </div>
       </div>
 

@@ -125,21 +125,21 @@ Buildr MUST allow Project `name` and `description` edits while keeping identity 
 - **AND** page MUST show a copyable Agent instruction for canonical update or sync
 
 ### Requirement: 新增 Project 必须生成可复制 Agent prompt
-Buildr MUST 以普通用户可理解的业务意图生成完整 Agent prompt，而不是直接修改 Project registry、创建目录或 clone repo；Project code 与 Git 执行声明 MUST 可以由用户显式提供，也 MUST 可以留给 Agent 提议并确认。
+Buildr MUST 保留“交给 Agent”的指令生成入口，生成或复制指令不代表执行；资源页面的直接登记遵循统一资产管理交互，代码克隆保持独立动作。
 
 #### Scenario: 生成最小 Project 意图 prompt
-- **WHEN** 用户填写 Project 名称和用途，并且没有填写 code、source 或 Git 声明
+- **WHEN** 用户选择“交给 Agent”入口，且用户填写 Project 名称和用途，并且没有填写 code、source 或 Git 声明
 - **THEN** Application MUST 返回要求 Agent 核对当前 Workspace、提出可读 code、确认 source boundary、执行 canonical Project creation 并验证结果的 prompt
 - **AND** 页面 MUST 明确说明复制 prompt 不会创建 Project
 - **AND** 页面 MUST NOT 要求用户先理解 Project asset repo、remote 或 integration branch
 
 #### Scenario: 生成 workspace Project prompt
-- **WHEN** 用户填写名称、用途和可选 code，并明确选择 workspace source
+- **WHEN** 用户选择“交给 Agent”入口，且用户填写名称、用途和可选 code，并明确选择 workspace source
 - **THEN** prompt MUST 保留用户提供的声明并要求 Agent 确认目标 Workspace、物化路径和 root Git boundary
 - **AND** prompt MUST 要求 Agent 使用 canonical Project creation 并验证结果
 
 #### Scenario: 生成 Git Project prompt
-- **WHEN** 用户提供独立 Project asset Git URL、remote 或 integration branch
+- **WHEN** 用户选择“交给 Agent”入口，且用户提供独立 Project asset Git URL、remote 或 integration branch
 - **THEN** prompt MUST 保留已经提供的声明并要求 Agent 校验 remote identity、路径、授权和稳定集成目标
 - **AND** 未提供的技术声明 MUST 由 prompt 要求 Agent 解析或询问，不得由页面猜测
 - **AND** prompt MUST NOT 要求 Buildr 盲目切换、stash 或重连既有 checkout
@@ -179,25 +179,25 @@ Project write routes MUST use the same fixed-target, same-origin, token, JSON an
 - **THEN** 页面 MUST 保持修改只读并展示由 Agent 执行显式 update/sync 的提示
 
 ### Requirement: 新增 Service 必须生成可复制 Agent prompt
-本地应用 MUST 将新增 Service 保持为 prompt-only Agent Action，并 MUST 从当前 Workspace 的 canonical Project 中选择所属关系；用户 MUST 能以名称、用途和可选来源开始，而不需要先填写完整 CLI 参数。
+Buildr MUST 保留“交给 Agent”的指令生成入口，生成或复制指令不代表执行；资源页面的直接登记遵循统一资产管理交互，代码克隆保持独立动作。
 
 #### Scenario: 生成最小 Service 意图 prompt
-- **WHEN** 用户选择一个已登记 Project，填写 Service 名称和用途，并且没有填写 code、type 或 repo ref
+- **WHEN** 用户选择“交给 Agent”入口，且用户选择一个已登记 Project，填写 Service 名称和用途，并且没有填写 code、type 或 repo ref
 - **THEN** 页面 MUST 生成要求 Agent 核对 Project identity、确认是否存在代码仓或可执行资产、补齐必要声明并调用 canonical CLI 的 prompt
 - **AND** prompt MUST NOT 假设每个 Project 都必须创建 Service
 
 #### Scenario: 生成本地来源 prompt
-- **WHEN** 用户选择 canonical Project 并提供本地目录
+- **WHEN** 用户选择“交给 Agent”入口，且用户选择 canonical Project 并提供本地目录
 - **THEN** 页面 MUST 生成要求 Agent 核对来源、物化路径、Git boundary、code/type 候选、调用 canonical CLI 并验证的完整 prompt
 - **AND** 页面 MUST NOT 直接复制目录、创建外部链接或写 registry
 
 #### Scenario: 生成 Git 来源 prompt
-- **WHEN** 用户选择 canonical Project 并提供 Git URL、remote 或 integration branch
+- **WHEN** 用户选择“交给 Agent”入口，且用户选择 canonical Project 并提供 Git URL、remote 或 integration branch
 - **THEN** prompt MUST 保留已经提供的稳定声明并要求 Agent 在写入前检查既有 repo、metadata identity 和授权
 - **AND** 未提供的 code、type、remote 或 integration branch MUST 由 Agent 解析或询问，不得由页面猜测
 
 #### Scenario: 拒绝未知所属 Project
-- **WHEN** Service prompt 请求中的 Project 不属于当前 Workspace 或已经不存在
+- **WHEN** 用户选择“交给 Agent”入口，且Service prompt 请求中的 Project 不属于当前 Workspace 或已经不存在
 - **THEN** Application MUST 在生成 prompt 前拒绝请求
 - **AND** MUST NOT 回退到第一个 Project 或其他 Workspace
 
@@ -353,32 +353,23 @@ Buildr MUST 在全局工作空间目录提供“让 Agent 创建工作空间”�
 - **AND** 全局工作空间目录 MUST 仍提供“让 Agent 创建工作空间”入口
 
 ### Requirement: 项目与服务创建必须使用抽屉式 Agent Action
-Buildr MUST 通过资源页面中的创建按钮触发统一的“交给 Agent”抽屉，并 MUST 使用“基础意图 + 高级声明”的渐进表单；页面正文 MUST NOT 平铺创建表单，抽屉 MUST NOT 把 canonical CLI 参数作为普通用户的默认必填项。
+Buildr MUST 将直接对象登记与“交给 Agent”入口区分。创建项目使用抽屉并支持可选服务，新增服务使用抽屉，内联新增代码库；顶栏继续提供不产生登记副作用的智能体动作。
 
 #### Scenario: 从项目区域创建项目
-- **WHEN** 用户点击项目区域的“创建项目”按钮
-- **THEN** 应用 MUST 打开以名称和用途为默认必填信息的 Project Agent Action
-- **AND** code、source、Git remote 和 integration branch MUST 为可选或高级声明
-- **AND** 表单 MUST 使用 Project prompt Application 用例
+- **WHEN** 用户点击项目目录的创建按钮
+- **THEN** 系统 MUST 打开项目创建抽屉，允许选择已有服务、就地新增或不关联服务
 
 #### Scenario: 从服务区域创建服务
-- **WHEN** 用户点击服务区域的“创建服务”按钮
-- **THEN** 应用 MUST 打开以所属 Project、名称和用途为默认必填信息的 Service Agent Action
-- **AND** 所属 Project MUST 从当前 Workspace canonical Project 列表选择，当前已选 Project MUST 自动带入
-- **AND** code、type、repo ref、remote 和 integration branch MUST 为可选或高级声明
-- **AND** 表单 MUST 使用 Service prompt Application 用例
+- **WHEN** 用户点击服务目录或关联选择器的新增服务
+- **THEN** 系统 MUST 打开服务抽屉，选择唯一代码库或内联填写新 Git 来源；不要求唯一父项目
 
 #### Scenario: 用户未提供技术声明
-- **WHEN** Project 或 Service Agent Action 缺少 code、type、source、remote 或 integration branch
-- **THEN** 页面 MUST 允许生成 prompt
-- **AND** prompt MUST 要求 Agent 根据真实目录、Git 与用户目标提出候选并只询问必要信息
-- **AND** Application MUST NOT 为缺失字段编造声明
+- **WHEN** 用户选择智能体动作而缺少可靠代码来源
+- **THEN** 系统 MUST 允许表达目标并让智能体查明必要信息，不编造地址、分支或代码位置
 
 #### Scenario: 从工作空间内顶栏入口选择创建类型
-- **WHEN** 用户已进入某个工作空间并点击 App Shell 的“交给 Agent”按钮
-- **THEN** 抽屉 MUST 优先展示创建 Workspace、Project、Service 和开始工作等核心动作
-- **AND** Change 等后续能力 MUST 作为次级动作呈现
-- **AND** 生成与复制结果 MUST 明确说明对象或任务尚未创建或开始
+- **WHEN** 用户打开顶栏“交给 Agent”
+- **THEN** 系统 MUST 保留项目、服务及开始工作等指令入口，并说明生成或复制不代表执行
 
 ### Requirement: 界面领域名词必须使用中文主称
 Buildr 本机应用 MUST 在用户可见界面中使用“工作空间”“项目”“服务”作为领域对象的主要名称，英文名称只能作为首次解释或技术辅助信息。任务页面及其直接的 Task-scoped 入口 MUST 对任务记录、审查结果与验证结果使用纯中文或“中文（English Term）”主称，不得使用英文-only 标题或操作名。
@@ -422,11 +413,11 @@ Buildr 本机应用 MUST 将已登记工作空间作为全局目录；进入工�
 - **AND** 保存、冲突和迁移只读反馈 MUST 明确且不得影响目录页
 
 ### Requirement: 本机应用必须以控制台级信息层级呈现资源
-Buildr 本机应用 MUST 使用紧凑的工作控制台信息层级：中文为主语言、技术身份与 Git observation 为次级信息、稳定 metadata 编辑与资源目录分离，且所有创建动作 MUST 明示为交给 Agent 的 prompt-only 行为。
+Buildr 本机应用 MUST 使用紧凑的工作控制台信息层级：中文为主语言、技术身份与 Git observation 为次级信息、稳定 metadata 编辑与资源目录分离，对象登记使用明确表单，代码准备等执行动作仍通过智能体（Agent）进行。
 
 #### Scenario: 查看资源列表
-- **WHEN** 用户打开 Project、Service 或 Change 目录
-- **THEN** 页面 MUST 提供一致的标题、数量、过滤控件与“交给 Agent 创建”主操作
+- **WHEN** 用户打开项目、服务、代码库或技能目录
+- **THEN** 页面 MUST 提供一致的标题、数量、过滤、刷新控件与“新增 xxx”主操作；技能受管内容仍通过智能体动作维护
 - **AND** 表格操作 MUST 使用一致的低强调详情链接或按钮，资源行本身不得同时承担主编辑流程
 
 #### Scenario: 查看资源详情
@@ -498,7 +489,7 @@ Buildr 本机应用 MUST 将 Project 与 Service 的详情呈现保持为只读�
 
 #### Scenario: 保护未保存内容
 - **WHEN** 有未保存修改时用户点击取消、关闭、遮罩或按 Escape
-- **THEN** MUST 在抽屉内提供继续编辑或放弃修改的明确选择
+- **THEN** MUST 直接关闭抽屉，不再显示放弃修改二次确认，未保存内容不得写入数据
 - **AND** 保存中 MUST 阻止重复提交和关闭
 - **AND** 无修改时 MUST 可直接关闭
 

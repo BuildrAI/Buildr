@@ -66,12 +66,12 @@ function legacyProject(code: any, value: any, workspaceId: any) {
 export function parseProjectsManifest(content: any, { workspaceId = null, label = 'projects/manifest.yml' }: any = {}) {
   const document = parseYaml(content, label);
   const projects = plainObject(document.projects, `${label}.projects`);
-  if (document.schemaVersion === PROJECTS_SCHEMA_V2) {
+  if ([PROJECTS_SCHEMA_V2, 'buildr.projects/v3'].includes(document.schemaVersion)) {
     closedFields(document, new Set(['schemaVersion', 'projects']), label);
     const canonical = Object.entries(projects).sort(([a]: any, [b]: any) => a.localeCompare(b)).map(([key, value]: any) => {
       if (!isProjectCode(key)) throw new Error(`projects.${key} key is invalid.`);
       const project = plainObject(value, `projects.${key}`);
-      closedFields(project, new Set(['id', 'workspaceId', 'code', 'name', 'description', 'source']), `projects.${key}`);
+      closedFields(project, new Set(['id', 'workspaceId', 'code', 'name', 'description', 'source', 'serviceIds']), `projects.${key}`);
       const source = plainObject(project.source, `projects.${key}.source`);
       closedFields(source, new Set(['type', 'root', 'path', 'git']), `projects.${key}.source`);
       if (source.git !== undefined) closedFields(plainObject(source.git, `projects.${key}.source.git`), new Set(['url', 'remote', 'integrationBranch']), `projects.${key}.source.git`);
@@ -81,7 +81,7 @@ export function parseProjectsManifest(content: any, { workspaceId = null, label 
       return entity;
     });
     const entities = Object.fromEntries(canonical.map((project: any) => [project.code, project]));
-    return { canonical: true, migrationRequired: false, schemaVersion: PROJECTS_SCHEMA_V2, projects: entities, entities, document };
+    return { canonical: true, migrationRequired: false, schemaVersion: document.schemaVersion, projects: entities, entities, document };
   }
   if (document.schemaVersion === PROJECTS_SCHEMA_V1) {
     const entities = Object.fromEntries(Object.entries(projects).sort(([a]: any, [b]: any) => a.localeCompare(b)).map(([code, value]: any) => {
@@ -96,9 +96,10 @@ export function parseProjectsManifest(content: any, { workspaceId = null, label 
 export function renderProjectsManifest(projects: any) {
   const entries = Array.isArray(projects) ? projects : Object.values(projects || {});
   const canonical = entries.map((project: any) => createProject(project)).sort((a: any, b: any) => a.code.localeCompare(b.code));
-  const document: any = { schemaVersion: PROJECTS_SCHEMA_V2, projects: {} };
+  const document: any = { schemaVersion: canonical.some((project: any) => project.serviceIds !== undefined) ? 'buildr.projects/v3' : PROJECTS_SCHEMA_V2, projects: {} };
   for (const project of canonical) {
     document.projects[project.code] = {
+      ...(project.serviceIds !== undefined ? { serviceIds: project.serviceIds } : {}),
       id: project.id,
       workspaceId: project.workspaceId,
       code: project.code,
@@ -123,7 +124,7 @@ export function parseProjectsYaml(content: string) {
 }
 
 export function renderProjectsYaml(registry: any, quoteYaml: (value: any) => string = (value) => JSON.stringify(String(value))) {
-  if (registry.schemaVersion === PROJECTS_SCHEMA_V2) return renderProjectsManifest(registry.projects || {});
+  if ([PROJECTS_SCHEMA_V2, 'buildr.projects/v3'].includes(registry.schemaVersion)) return renderProjectsManifest(registry.projects || {});
   const projects = registry.projects || {};
   const names = Object.keys(projects).sort();
   const lines = [PROJECTS_SCHEMA_V1];
@@ -143,7 +144,7 @@ export function renderProjectsYaml(registry: any, quoteYaml: (value: any) => str
 }
 
 export function validateProjectsRegistry(registry: any) {
-  if (registry?.schemaVersion === PROJECTS_SCHEMA_V2) {
+  if ([PROJECTS_SCHEMA_V2, 'buildr.projects/v3'].includes(registry?.schemaVersion)) {
     try { parseProjectsManifest(YAML.stringify(registry)); return []; } catch (error: any) { return [error.message]; }
   }
   const errors: string[] = [];

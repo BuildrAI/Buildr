@@ -1,3 +1,5 @@
+import { WorkspaceStage } from '../../../components/WorkspaceStage';
+import { useWorkspacePageTabs } from '../../../app/pageTabs';
 import { workspaceApi, type WorkspaceResponse } from '../api/workspace-api';
 import { useEffect, useState, type FormEvent } from 'react';
 import { Alert, Button, Descriptions, Form, Input, Space, Typography } from 'antd';
@@ -7,6 +9,7 @@ import { useAppShell } from '../../../app/AppShellContext';
 type WorkspaceData = WorkspaceResponse & { revision: string; workspace: WorkspaceResponse['workspace'] & { description: string } };
 
 export function SettingsPage() {
+  const tabs = useWorkspacePageTabs();
   const { setWorkspace, setBreadcrumbParts } = useAppShell();
   const [current, setCurrent] = useState<WorkspaceData | null>(null);
   const [name, setName] = useState('');
@@ -58,13 +61,13 @@ export function SettingsPage() {
   const readOnly = Boolean(current?.migrationRequired);
 
   return (
-    <>
-      <section className="page-header">
+    <WorkspaceStage pageTabs={tabs.tabs} onClosePageTab={tabs.close}><section className="resource-directory workspace-settings">
+      <header className="resource-directory-head">
         <div>
-          <Typography.Title level={2} style={{ margin: 0 }}>工作空间设置</Typography.Title>
+          <p className="resource-eyebrow">工作空间</p><h1>设置</h1>
           <p className="page-copy">只修改稳定元数据；身份、目录和数据格式版本始终保持只读。</p>
         </div>
-      </section>
+      </header>
       <div id="settings-migration" className={migrationMessage ? '' : 'hidden'} role="status">
         {migrationMessage ? <Alert type="warning" showIcon message={migrationMessage} style={{ marginBottom: 16 }} /> : null}
       </div>
@@ -120,6 +123,6 @@ export function SettingsPage() {
           </Descriptions>
         </aside>
       </section>
-    </>
+    </section></WorkspaceStage>
   );
 }

@@ -77,6 +77,34 @@ export function createWorkspaceHttpContribution(application: any) {
         application.updateWorkspaceMetadata(root, validateRequest('workspace.update', await readJsonBody()));
         return respond('workspace.update', application.getWorkspace(root));
       }
+      if (request.method === 'GET' && suffix === '/asset-catalog') return respond('assets.read', application.assetCatalog(root));
+      if (request.method === 'POST' && suffix === '/asset-catalog/migrate') {
+        authorizeWrite();
+        return respond('assets.migrate', application.migrateAssetCatalog(root, validateRequest('assets.migrate', await readJsonBody())));
+      }
+      const assetCreate = suffix.match(/^\/asset-catalog\/(projects|services|repositories)$/);
+      if (request.method === 'POST' && assetCreate) {
+        authorizeWrite();
+        const kind = assetCreate[1];
+        const id = `assets.${kind}.create`;
+        const input = validateRequest(id, await readJsonBody());
+        const method = kind === 'projects' ? 'createCatalogProject' : kind === 'services' ? 'createCatalogService' : 'createCatalogRepository';
+        return respond(id, application[method](root, input));
+      }
+      const relationship = suffix.match(/^\/asset-catalog\/projects\/([A-Za-z0-9._-]+)\/services$/);
+      if (request.method === 'PUT' && relationship) {
+        authorizeWrite();
+        return respond('assets.associate', application.updateProjectServices(root, relationship[1], validateRequest('assets.associate', await readJsonBody())));
+      }
+      const catalogDocument = suffix.match(/^\/asset-catalog\/services\/([A-Za-z0-9._-]+)\/documents\/(.+)$/);
+      if (request.method === 'GET' && catalogDocument) return ok(application.catalogServiceDocument(root, catalogDocument[1], decodeDocumentPath(catalogDocument[2], 'service')));
+      const assetUpdate = suffix.match(/^\/asset-catalog\/(project|service|repository)\/([A-Za-z0-9._-]+)$/);
+      if (request.method === 'PUT' && assetUpdate) {
+        authorizeWrite();
+        return respond('assets.update', application.updateCatalogAsset(root, assetUpdate[1], assetUpdate[2], validateRequest('assets.update', await readJsonBody())));
+      }
+      const prepare = suffix.match(/^\/asset-catalog\/repositories\/([A-Za-z0-9._-]+)\/prepare-prompt$/);
+      if (request.method === 'GET' && prepare) return ok(application.repositoryPreparePrompt(root, prepare[1]));
       if (request.method === 'GET' && suffix === '/projects') return respond('project.list', application.listProjects(root));
 
       const projectMatch = suffix.match(new RegExp(`^/projects/(${CODE})$`));

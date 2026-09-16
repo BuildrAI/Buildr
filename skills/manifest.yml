@@ -5,7 +5,7 @@ skills:
     sourceIdentity: package:skills/buildr/task-triage
     source: buildr
     path: buildr/task-triage
-    description: 判断修改应直接实施、维护当前事实还是进入 OpenSpec 变更，并交接所需专业动作时使用。
+    description: 开始修改代码、文档、配置或技能等持久文件前使用；确定隔离位置，判断直接实施、事实维护或 OpenSpec 变更，并交接专业动作。
     enabled: true
     required: false
     state: installed
@@ -36,7 +36,7 @@ skills:
     sourceIdentity: package:skills/buildr/task-worktree
     source: buildr
     path: buildr/task-worktree
-    description: 用户或上游Agent明确要求为Task创建、检查或安全清理Git worktree与本地任务分支时使用；只管理Git位置和删除安全。
+    description: 按任务分流的默认隔离策略或用户要求，为任务创建、复用检查或安全清理 Git worktree 与本地任务分支时使用；只管理 Git 位置和删除安全。
     enabled: true
     required: false
     state: installed

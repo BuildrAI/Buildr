@@ -95,6 +95,10 @@ export function resolveRuleScope(repoRoot: any, scopeInput: any): any  {
 
   if (parts[0] === '.') {
     scopeRoot = repoRoot;
+  } else if (parts[0] === 'services' || parts[0] === 'repositories') {
+    if (parts.length < 2 || !parts[1]) throw new Error(`Asset scope requires an explicit object: ${scopeInput}`);
+    scopeRoot = path.join(repoRoot, ...parts);
+    if (parts[0] === 'services') serviceRoot = path.join(repoRoot, 'services', parts[1]);
   } else if (parts[0] === 'projects') {
     if (parts.length < 2 || !parts[1]) throw new Error(`Project scope must start with projects/<project>: ${scopeInput}`);
     projectRoot = path.join(repoRoot, 'projects', parts[1]);

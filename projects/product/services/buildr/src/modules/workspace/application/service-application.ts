@@ -29,6 +29,7 @@ export type ServiceCreationInput = {
 
 export type ServiceApplicationRuntime = {
   serviceRepository: ServiceRepository;
+  updateCatalogAsset?: (...args: any[]) => any;
   sourceFiles: WorkspaceSourceFilesystem;
   inspectAttachedGitRoot(rawPath: string, targetRoot: string, remote: string, integrationBranch: string | null, label: string): { rootPath: string; url: string; integrationBranch: string };
   cloneSourceRepository(repo: string, destination: string, branch?: string | null): void;
@@ -107,7 +108,7 @@ export function registerServiceApplication(runtime: ServiceApplicationRuntime) {
       schemaVersion: record.registry.schemaVersion,
       revision: record.revision,
       migrationRequired: record.registry.migrationRequired,
-      services: Object.values(record.services),
+      services: Object.values(record.services).filter((service: any) => service.related !== false),
       nextActions: record.registry.migrationRequired ? ['请让 Agent 运行 canonical buildr sync <agent>，完成 Service registry v2 安全迁移后再修改。'] : [],
     };
   }
@@ -166,6 +167,13 @@ export function registerServiceApplication(runtime: ServiceApplicationRuntime) {
   }
 
   function updateServiceMetadata(targetRoot: any, projectCode: any, code: any, input: any) {
+    if (runtime.sourceFiles.exists?.(path.join(targetRoot, 'services', 'manifest.yml'))) {
+      const record = readServiceRegistryRecord(targetRoot, projectCode);
+      const service = record.services[code];
+      if (!service) throw serviceError('service_not_found', '服务不存在。', 404);
+      try { runtime.updateCatalogAsset!(targetRoot, 'service', service.id, input); } catch (error: any) { if (error.code === 'asset_revision_conflict') throw serviceError('service_revision_conflict', error.message, 409); throw error; }
+      return serviceDetail(targetRoot, projectCode, code);
+    }
     assertObject(input, 'service_update_invalid', 'Service 修改请求必须是对象。');
     const allowed = new Set(['revision', 'name', 'description', 'type']);
     for (const field of Object.keys(input)) if (!allowed.has(field)) throw serviceError('service_update_field_forbidden', `Service 字段不可修改：${field}。`);
@@ -199,6 +207,10 @@ export function registerServiceApplication(runtime: ServiceApplicationRuntime) {
     const name = String(input.name || '').trim();
     const description = String(input.description || '').trim();
     const type = String(input.type || '').trim();
+    if (targetRoot && runtime.sourceFiles.exists?.(path.join(targetRoot, 'services', 'manifest.yml'))) {
+      if (!name || !description) throw serviceError('service_prompt_fields_required', '请填写服务名称和用途。');
+      return { copiedMeansCreated: false, prompt: ['请在当前工作空间登记业务服务（Service）。', `名称：${name}`, `用途：${description}`, `服务代码：${code || '<请先确认>'}`, `可选项目：${projectCode || '<不预设项目>'}`, `提供的 Git 地址：${String(input.gitUrl || '').trim() || '<未提供>'}`, `提供的集成分支：${String(input.integrationBranch || '').trim() || '<未提供>'}`, '先运行 buildr assets inspect 读取当前清单、版本及代码库实例。选择明确的已有 repositoryId，或在来源和分支可靠时登记新的代码库实例；一个服务仅引用一个实例。', '使用 buildr help assets 核对 create service 与 associate 的输入；根据刚读取的 revision 写入，项目关联为独立明确关系。', '登记完成不代表代码已准备。代码缺失时在当前授权内按 repositories/ 声明准备，已有目录先核对身份和工作状态，不覆盖或切换共享分支。'].join('\n') };
+    }
     if (!projectCode || !name || !description) throw serviceError('service_prompt_fields_required', '请填写所属项目、名称和用途。');
     let project: any = null;
     if (targetRoot) project = parentRecord(targetRoot, projectCode).project;
@@ -216,6 +228,7 @@ export function registerServiceApplication(runtime: ServiceApplicationRuntime) {
   // 创建/附接：应用确定顺序与事务范围，技术对象执行物化。
   function createServiceAsset(input: ServiceCreationInput) {
     const { targetRoot, project, service, repoRef, attachRef, remote, integrationBranch } = input;
+    if (runtime.sourceFiles.exists?.(path.join(targetRoot, 'services', 'manifest.yml'))) throw serviceError('service_global_create_required', '请使用 buildr assets create service，通过 repositoryId 登记全局服务。');
     runtime.assertName(project, 'Project');
     runtime.assertName(service, 'Service');
     runtime.assertGitBranch(integrationBranch);

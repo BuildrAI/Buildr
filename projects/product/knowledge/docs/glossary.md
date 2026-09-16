@@ -384,7 +384,7 @@
 ## Git 工作树提供方（Git worktree provider）
 
 - 定义：`buildr.git-worktree-provider/v1` 的窄 provider，只创建、检查和清理 Git checkout/branch，并保存 repository、HEAD、clean、registration 与 Git effects evidence。
-- 适用范围：智能体或用户明确需要隔离Git checkout，或明确管理task worktree时。
+- 适用范围：持久文件改动默认创建或复用当前任务的工作树（Worktree）；用户明确要求在主开发分支修改时例外。只读检查无需创建。
 - 避免混用：不判断统一就绪，不拥有Runtime/CLI/依赖、projection、动态资源、恢复或总cleanup。
 - 来源：[Git worktree provider contract](../../services/buildr/resources/workspace/skills/contracts/buildr/git-worktree-provider/v1.md)
 
@@ -727,3 +727,10 @@
 - 适用范围：帮助理解当前产品与技术，可直接引用规范、代码、配置、地图、技术图及已确认决定。
 - 避免混用：不是第二套规范；未来规划、设想和设计理由必须与当前事实区分；单次 `brief.md` 不属于长期解释文档的建设前置。
 - 来源：[成果种类与组织](../../services/buildr/resources/workspace/skills/buildr/current-knowledge-maintenance/references/artifacts.md)。
+
+## 代码库实例（Repository Instance）
+
+- 定义：具有稳定身份、代码来源、集成分支及物理位置的代码基础，可由多个业务服务引用。
+- 适用范围：全局 `repositories/manifest.yml` 及资产管理接口。
+- 避免混用：同一 Git 地址不等于同一实例；本地检出目录（Checkout）是实例的落地位置，不是第四类业务对象；临时任务工作树不自动创建新实例。
+- 来源：`workspace/domain/asset-relationships.ts`、变更 `decouple-project-service-repositories`。
