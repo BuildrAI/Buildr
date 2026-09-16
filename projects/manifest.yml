@@ -1,6 +1,9 @@
-schemaVersion: buildr.projects/v2
+schemaVersion: buildr.projects/v3
 projects:
   product:
+    serviceIds:
+      - d6fc0b2d-79f0-4bb6-a26e-748ff5deb67a
+      - dc709c32-ea13-4eaa-9516-7047a6fc56a4
     id: 62bc8f4b-f8b6-4e8b-b40c-f93b466e3993
     workspaceId: f2f40b71-2382-5906-82bd-76a7927b59f3
     code: product
