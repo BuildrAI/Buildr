@@ -10,7 +10,7 @@ type Props<T extends object> = {
   title: string; description: string; noun: string; data: T[]; loading?: boolean; error?: string;
   rowKey: (item: T) => string; name: (item: T) => string; summary: (item: T) => string;
   href: (item: T) => string; onOpen: (item: T) => void; onEdit: (item: T) => void;
-  onRefresh?: () => void; refreshing?: boolean;
+  onDelete?: (item: T) => void; onRefresh?: () => void; refreshing?: boolean;
   columns?: ColumnsType<T>; actions?: ReactNode; notice?: ReactNode; filters?: ReactNode;
   searchText?: (item: T) => string; query?: string; onQueryChange?: (query: string) => void;
   searchId?: string; tableId?: string; bodyId?: string; countId?: string; listId?: string;
@@ -27,7 +27,7 @@ export function ResourceDirectory<T extends object>(props: Props<T>) {
   const columns: ColumnsType<T> = [
     { title: `${props.noun} / 说明`, key: 'name', width: 320, render: (_, item) => <div className="resource-name"><Link to={props.href(item)}>{props.name(item)}</Link><span>{props.summary(item) || '尚未填写说明'}</span></div> },
     ...(props.columns ?? []),
-    { title: '操作', key: 'actions', width: 88, fixed: 'right', align: 'right', render: (_, item) => <Button type="link" disabled={props.editDisabled} onClick={event => { event.stopPropagation(); props.onEdit(item); }}>编辑</Button> },
+    { title: '操作', key: 'actions', width: props.onDelete ? 140 : 88, fixed: 'right', align: 'right', render: (_, item) => <><Button type="link" disabled={props.editDisabled} onClick={event => { event.stopPropagation(); props.onEdit(item); }}>编辑</Button>{props.onDelete && <Button type="link" danger disabled={props.editDisabled} onClick={event => { event.stopPropagation(); props.onDelete?.(item); }}>删除</Button>}</> },
   ];
   return <section className="resource-directory">
     <header className="resource-directory-head"><div><p className="resource-eyebrow">工作空间</p><h1>{props.title}</h1><p>{props.description}</p></div><div className="resource-directory-actions">{props.onRefresh && <Button icon={<ReloadOutlined />} aria-label={`刷新${props.noun}`} title={`刷新${props.noun}`} loading={props.refreshing ?? props.loading} onClick={props.onRefresh} />}{props.actions}</div></header>

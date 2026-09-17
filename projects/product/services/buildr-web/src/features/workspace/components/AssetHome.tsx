@@ -1,7 +1,9 @@
+import { AssetDeleteDialog } from './AssetDeleteDialog';
+import { RepositoryStatus } from './RepositoryStatus';
 import { ProjectPreviewContext } from '../../../app/resource-preview';
 import { useCallback, useContext, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { Alert, Button, Card, Descriptions, Input, Space, Tag } from 'antd';
+import { Alert, Button, Card, Descriptions, Input, Space } from 'antd';
 import { AppstoreOutlined, BranchesOutlined, FileTextOutlined, FolderOutlined, RightOutlined } from '@ant-design/icons';
 import { useAppShell } from '../../../app/AppShellContext';
 import { useWorkspacePageTabs } from '../../../app/pageTabs';
@@ -20,6 +22,7 @@ export function AssetHome({ kind, previewId }: { kind: 'service' | 'repository';
   const assetId = previewId ?? params.assetId ?? '';
   const { workspaceId } = useAppShell();
   const catalog = useAssetCatalog(), tabs = useWorkspacePageTabs(workspaceId);
+  const [deleting, setDeleting] = useState(false);
   const [editing, setEditing] = useState(false), [prepareOpen, setPrepareOpen] = useState(false);
   const [prompt, setPrompt] = useState(''), [promptError, setPromptError] = useState(''), [copyState, setCopyState] = useState('');
   const [documents, setDocuments] = useState<string[]>([]), [activeDocument, setActiveDocument] = useState<string | null>(null);
@@ -48,7 +51,7 @@ export function AssetHome({ kind, previewId }: { kind: 'service' | 'repository';
     objectTabs={documents.map(file => ({ key: file, kind: 'doc', title: file }))} activeObject={activeDocument} onActivateObject={setActiveDocument} onCloseObject={closeDocument}
     objectContent={documents.map(file => <div key={file} hidden={file !== activeDocument}><ResourceDocumentPane file={file} load={loadDocument} onOpen={openDocument} /></div>)}>
     <div className="resource-home">
-      <header className="resource-home-head"><div><p className="resource-eyebrow">{label} <span> / {item.code}</span></p><h1 id={kind === 'service' ? 'service-detail-name' : 'repository-detail-name'}>{item.name}</h1><p id={kind === 'service' ? 'service-detail-description' : 'repository-detail-description'}>{item.description || '尚未填写说明。'}</p></div><Button disabled={data.migrationRequired} onClick={() => setEditing(true)}>编辑{label}</Button></header>
+      <header className="resource-home-head"><div><p className="resource-eyebrow">{label} <span> / {item.code}</span></p><h1 id={kind === 'service' ? 'service-detail-name' : 'repository-detail-name'}>{item.name}</h1><p id={kind === 'service' ? 'service-detail-description' : 'repository-detail-description'}>{item.description || '尚未填写说明。'}</p></div><Space>{kind === 'service' && <Button danger disabled={data.migrationRequired} onClick={() => setDeleting(true)}>删除服务</Button>}<Button disabled={data.migrationRequired} onClick={() => setEditing(true)}>编辑{label}</Button></Space></header>
       <CatalogMigration catalog={data} onSaved={catalog.setData} />
       {data.diagnostics.filter(d => d.objectId === item.id || d.objectId === repository?.id).map(d => <Alert key={d.code + d.objectId} type="warning" showIcon message={d.message} />)}
       {!(kind === 'service' && projectContext) && <section className="resource-section" data-related-resources={kind === 'service' ? 'projects' : 'services'}><div className="resource-section-head"><h2>{kind === 'service' ? '关联项目' : '引用服务'} <span>{related.length}</span></h2></div>
@@ -58,9 +61,10 @@ export function AssetHome({ kind, previewId }: { kind: 'service' | 'repository';
         {['README.md', 'AGENTS.md'].map(file => <button type="button" key={file} className={`resource-document-row${file === activeDocument ? ' reading' : ''}`} data-doc-row={file === 'README.md' ? 'readme' : 'agents'} onClick={() => openDocument(file)}><span className="resource-row-icon"><FileTextOutlined /></span><span className="resource-row-text"><strong>{file}</strong><small>{file === 'README.md' ? '服务说明与使用入口' : '实现规则与协作边界'}</small></span><RightOutlined /></button>)}
       </section>}
       <section className="resource-section"><div className="resource-section-head"><h2>{kind === 'service' ? '代码库' : '代码来源'}</h2>{kind === 'repository' && <Button size="small" onClick={() => void prepare()}>准备代码</Button>}</div>
-        {!repository ? <Alert type="warning" message="代码库引用缺失，请核对清单。" /> : kind === 'service' ? <div className="resource-repository-summary"><Link to={href(`/repositories/${repository.id}`)}><span className="resource-row-icon"><BranchesOutlined /></span><span><strong>{repository.name}</strong><small>{repositoryBranch(repository)}{service?.modulePath ? ` · ${service.modulePath}` : ''}</small></span><RightOutlined /></Link><Tag color={repository.available ? 'success' : 'warning'}>{repository.available ? '本地可用' : '待准备代码'}</Tag>{!repository.available && <Button type="text" onClick={() => void prepare()}>准备代码</Button>}</div> : <Descriptions className="resource-facts" column={1} colon={false} size="small" items={[{ key: 'url', label: 'Git 地址', children: String((repository.source.git as { url?: string } | undefined)?.url || '工作空间源码') }, { key: 'branch', label: '集成分支', children: <code>{repositoryBranch(repository)}</code> }, { key: 'path', label: '目录', children: <span title={repository.location}>{repository.source.path}</span> }, { key: 'state', label: '状态', children: <Tag color={repository.available ? 'success' : 'warning'}>{repository.available ? '本地可用' : '待准备代码'}</Tag> }]} />}
+        {!repository ? <Alert type="warning" message="代码库引用缺失，请核对清单。" /> : kind === 'service' ? <div className="resource-repository-summary"><Link to={href(`/repositories/${repository.id}`)}><span className="resource-row-icon"><BranchesOutlined /></span><span><strong>{repository.name}</strong><small>{repositoryBranch(repository)}{service?.modulePath ? ` · ${service.modulePath}` : ''}</small></span><RightOutlined /></Link><RepositoryStatus key={repository.id} id={repository.id} revision={data.revision} />{!repository.present && <Button type="text" onClick={() => void prepare()}>准备代码</Button>}</div> : <Descriptions className="resource-facts" column={1} colon={false} size="small" items={[{ key: 'url', label: 'Git 地址', children: String((repository.source.git as { url?: string } | undefined)?.url || '本地 Git 仓库（未声明远端）') }, { key: 'branch', label: '集成分支', children: <code>{repositoryBranch(repository)}</code> }, { key: 'path', label: '目录', children: <span title={repository.location}>{repository.source.path}</span> }, { key: 'state', label: '状态', children: <RepositoryStatus key={repository.id} id={repository.id} revision={data.revision} /> }]} />}
       </section>
     </div>
+    {deleting && <AssetDeleteDialog kind="service" id={item.id} onClose={() => setDeleting(false)} />}
     {editing && <AssetEditDrawer catalog={data} kind={kind} id={item.id} onClose={() => setEditing(false)} />}
     {prepareOpen && <DrawerShell open title="准备代码" sub={repository?.name} onClose={() => setPrepareOpen(false)} footer={<Space style={{ display: 'flex', justifyContent: 'space-between' }}><span className="page-copy" role="status">{copyState || '尚未执行'}</span><Button type="primary" disabled={!prompt} onClick={async () => { try { await navigator.clipboard.writeText(prompt); setCopyState('已复制，交给智能体执行'); } catch { setCopyState('无法自动复制，请在上方选择文本复制'); } }}>复制指令</Button></Space>}>
       <p className="page-copy">智能体（Agent）将核对代码来源与目标目录，准备缺失代码并保留已有改动。</p>

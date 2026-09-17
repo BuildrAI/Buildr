@@ -6,6 +6,7 @@ export const ResourcePreviewContext = createContext<{
   states: Record<string, PreviewState>;
   open: (owner: string, path: string) => boolean;
   activate: (owner: string, kind: string) => void;
+  remove: (kind: string, id: string) => void;
   clear: (owner: string) => void;
   close: (owner: string, kind: string) => void;
 } | null>(null);

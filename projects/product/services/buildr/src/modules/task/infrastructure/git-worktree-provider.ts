@@ -416,6 +416,8 @@ export function registerGitWorktreeProvider(runtime: GitWorktreeRuntime): GitWor
         const descriptor = sourceDescriptor({ selector, entityType: 'service', sourcePath: requiredString(source.path, 'service.source.path'), source, workspaceRoot: root, checkoutRoot, branch });
         const shared = repositories.find(item => sameFilesystemPath(item.sourceRepository, descriptor.sourceRepository));
         if (shared) {
+          // A service referencing the workspace root shares the explicitly chosen workspace checkout.
+          if (shared.entityType === 'workspace') continue;
           if (shared.startPoint !== descriptor.startPoint || shared.remoteUrl !== descriptor.remoteUrl) throw new Error(`${selector} declares conflicting integration identity for a shared repository.`);
           continue;
         }

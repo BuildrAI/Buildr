@@ -150,10 +150,14 @@ buildr-web/src/
 
 - `domain/asset-relationships.ts` 定义代码库实例、业务服务、关联基数及字段边界。
 - `persistence/asset-catalog-repository.ts` 读取三份清单、投影旧身份并计算版本；旧服务解析器只负责旧格式，兼容应用负责投影，避免循环引用。
-- `application/asset-relationships-application.ts` 提供 `assetCatalog`、`migrateAssetCatalog`、创建、编辑和 `updateProjectServices`，复用现有写入事务。
+- `application/asset-relationships-application.ts` 提供 `assetCatalog`、`listCatalogServices`、`listCatalogRepositories`、`catalogRepositoryStatus`、显式迁移/规范化、创建、编辑、删除和 `updateProjectServices`，复用现有写入事务。
 - `interfaces/cli/asset-catalog.ts` 与 `interfaces/http/workspace-http.ts` 是入口，契约位于相邻 `workspace-http-contracts.ts`。
 - 前端关系操作位于 `features/project/components/ProjectServicesPanel.tsx`，全局服务和代码库列表分别由对应功能目录维护；`features/workspace/components/AssetHome.tsx` 组合共用对象详情。
 
 调用链：列表或主页 → 资产接口 → 关系应用 → 身份与当前版本校验 → 清单事务 → 新版本；Git 代码准备保持独立副作用。
 
-界面共享入口：`ResourceDirectory.tsx` 维护四类目录的表头、搜索、密度与编辑；`WorkspacePages.tsx` 和 `resource-preview.tsx` 维护按入口区分的导航状态，`WorkspaceStage.tsx` 负责分屏、覆盖式副屏与原位阅读。全局目录按服务、代码库、技能类型复用详情；项目内关联对象同样打开副屏，主卡片和文档保持不变；`AppLayout.tsx` 维护当前工作空间各栏目最近位置，菜单恢复路径及副屏导航状态，已关闭项目不再恢复。浏览器历史记录副屏视图，项目列表显式进入仍回到主页。`ProjectPreviewContext` 将所在项目上下文交给服务详情，仅在该上下文省略反向项目区。项目关联卡片直接使用共用选择器，选择已有服务即保存；设置页使用相同分屏容器和目录页头。`CreatableResourceSelect.tsx` 共用过滤、新增、已有选项结构，`ProjectCreateDrawer.tsx` 管理项目创建草稿与提交。`ResourceDocumentPane.tsx` 负责通用材料读取，`AssetHome.tsx` 和 `SkillHome.tsx` 提供领域详情。
+界面共享入口：`ResourceDirectory.tsx` 维护四类目录的表头、搜索、密度与编辑；`WorkspacePages.tsx` 和 `resource-preview.tsx` 维护按入口区分的导航状态，`WorkspaceStage.tsx` 负责分屏、覆盖式副屏与原位阅读。全局目录按服务、代码库、技能类型复用详情；项目内关联对象同样打开副屏，主卡片和文档保持不变；`AppLayout.tsx` 维护当前工作空间各栏目最近位置，项目菜单固定返回目录，其余菜单恢复路径及副屏导航状态，已关闭项目不再恢复。浏览器历史记录副屏视图，项目列表显式进入仍回到主页。`ProjectPreviewContext` 将所在项目上下文交给服务详情，仅在该上下文省略反向项目区。项目关联卡片直接使用共用选择器，选择已有服务即保存；设置页使用相同分屏容器和目录页头。`CreatableResourceSelect.tsx` 共用过滤、新增、已有选项结构，`ProjectCreateDrawer.tsx` 管理项目创建草稿与提交。`ResourceDocumentPane.tsx` 负责通用材料读取，`AssetHome.tsx` 和 `SkillHome.tsx` 提供领域详情。
+
+服务和代码库目录分别读取 `/services`、`/repositories`，只在关系编辑或详情读取完整 `/asset-catalog`；三个读取均不扫描 Git 状态。详情的 `RepositoryStatus.tsx` 按需读取 `/repositories/:id/status`。`AssetDeleteDialog.tsx` 核对当前版本、展示受影响关系，再删除登记并关闭对象标签。
+
+诊断（Doctor）通过 `catalogRepositoryStatus` 主动观察相关仓库并按身份去重；不能把列表中尚未观察的状态解释为代码缺失。

@@ -41,12 +41,13 @@ export function createRepositoryInstance(input: any): RepositoryInstance {
   const s = input.source;
   if (!['workspace', 'git'].includes(s.type)) throw assetError('repository_source_invalid', '来源必须是 workspace 或 git。');
   if (s.root !== undefined && s.root !== 'attached') throw assetError('repository_source_invalid', '未知的代码库位置类型。');
-  const sourcePath = s.root === 'attached' ? text(s.path, '附接目录') : relativeAssetPath(s.path, '代码库路径');
+  const sourcePath = s.root === 'attached' ? text(s.path, '附接目录') : s.path === '.' ? '.' : relativeAssetPath(s.path, '代码库路径');
   if (s.root === 'attached' && (!path.isAbsolute(sourcePath) || path.normalize(sourcePath) !== sourcePath || s.type !== 'git')) throw assetError('repository_path_invalid', '附接来源必须是具有规范绝对路径的 Git 代码库。');
   if (s.type === 'workspace') {
     if (s.git) throw assetError('repository_source_invalid', '工作空间源码不能声明独立 Git 来源。');
     return Object.freeze({ ...base, source: { type: 'workspace' as const, path: sourcePath } });
   }
+  if (s.git === undefined) return Object.freeze({ ...base, source: { type: 'git' as const, path: sourcePath, ...(s.root ? { root: s.root } : {}) } });
   object(s.git, ['url', 'remote', 'integrationBranch'], 'Git 来源');
   const git = { url: text(s.git.url, 'Git 地址'), remote: text(s.git.remote, '远端名称'), integrationBranch: text(s.git.integrationBranch, '集成分支') };
   if (/\s|\0/.test(git.url) || git.url.startsWith('-')) throw assetError('repository_url_invalid', 'Git 地址无效。');

@@ -13,10 +13,12 @@ export function assetCatalogCommand(application: any, args: string[]) {
   else {
     if (!input) throw new Error('写入需要 --input <json-file>，包含当前 revision 和明确字段。');
     if (action === 'migrate') result = application.migrateAssetCatalog(root, input);
+    else if (action === 'normalize') result = application.normalizeCatalogRepositories(root, input);
+    else if (action === 'delete' && kind && id) result = application.deleteCatalogAsset(root, kind, id, input);
     else if (action === 'associate' && kind) result = application.updateProjectServices(root, kind, input);
     else if (action === 'update' && kind && id) result = application.updateCatalogAsset(root, kind, id, input);
     else if (action === 'create' && ['project', 'service', 'repository'].includes(kind)) result = application[{ project: 'createCatalogProject', service: 'createCatalogService', repository: 'createCatalogRepository' }[kind]!](root, input);
-    else throw new Error('Usage: buildr assets <inspect|migrate|create|update|associate> [kind] [id] --target <workspace> --input <json-file> --json');
+    else throw new Error('Usage: buildr assets <inspect|migrate|normalize|delete|create|update|associate> [kind] [id] --target <workspace> --input <json-file> --json');
   }
   console.log(JSON.stringify(result, null, 2));
   return result;

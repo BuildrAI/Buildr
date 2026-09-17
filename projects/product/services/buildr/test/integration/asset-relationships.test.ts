@@ -1,5 +1,7 @@
+import { createServiceDiagnostics } from '../../src/modules/workspace/application/diagnostics/service-diagnostics.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { spawnSync } from 'node:child_process';
@@ -197,4 +199,111 @@ test('partial nested catalog write rolls back all manifests and newly created ro
   assert.equal(fs.existsSync(path.join(root, 'projects/rollback')), false);
   assert.equal(fs.existsSync(path.join(root, 'services/rollback-service')), false);
   assert.equal(runtime.assetCatalog(root).revision, before.revision);
+});
+
+test('independent list HTTP contracts omit full catalog and never observe Git', async (t: any) => {
+  const { root, runtime } = setup(t);
+  let c = ready(runtime, root); c = addRepo(runtime, root, c.revision, 'light', 'dev');
+  c = runtime.createCatalogService(root, { revision: c.revision, projectId: c.projects[0].id, service: { code: 'light-api', name: 'Light', repositoryId: c.repositories[0].id } });
+  const http = createWorkspaceHttpContribution(runtime);
+  const observed = runtime.observeProjectGit;
+  runtime.observeProjectGit = () => { throw new Error('list must not scan Git'); };
+  try {
+    for (const suffix of ['/services', '/repositories', '/asset-catalog']) {
+      const response: any = await http.handle({ request: { method: 'GET' }, suffix, root });
+      assert.equal(response.status, 200);
+      assert.equal(response.body.revision, c.revision);
+      if (suffix === '/services') { assert.equal(response.body.repositories, undefined); assert.equal(response.body.services[0].repository.name, 'light'); assert.equal(response.body.services[0].projects.length, 1); }
+      if (suffix === '/repositories') { assert.equal(response.body.services, undefined); assert.equal(response.body.repositories[0].serviceCount, 1); }
+    }
+  } finally { runtime.observeProjectGit = observed; }
+});
+
+test('delete service and project uses observed revision and preserves all physical content', async (t: any) => {
+  const { root, runtime } = setup(t);
+  let c = ready(runtime, root); c = addRepo(runtime, root, c.revision, 'shared-delete', 'dev');
+  c = runtime.createCatalogService(root, { revision: c.revision, projectId: c.projects[0].id, service: { code: 'delete-api', name: 'Delete', repositoryId: c.repositories[0].id } });
+  const serviceId = c.services[0].id;
+  c = runtime.createCatalogProject(root, { revision: c.revision, code: 'other-delete', name: 'Other', serviceIds: [serviceId] });
+  const stale = c.revision;
+  c = runtime.updateCatalogAsset(root, 'service', serviceId, { revision: c.revision, name: 'Changed' });
+  assert.throws(() => runtime.deleteCatalogAsset(root, 'service', serviceId, { revision: stale }), (e: any) => e.code === 'asset_revision_conflict');
+  assert.equal(runtime.assetCatalog(root).services.length, 1);
+  const file = path.join(root, 'services/delete-api/AGENTS.md'), bytes = fs.readFileSync(file);
+  const http = createWorkspaceHttpContribution(runtime); let authorization = 0;
+  const result: any = await http.handle({ request: { method: 'DELETE' }, suffix: `/asset-catalog/service/${serviceId}`, root, authorizeWrite: () => { authorization++; }, readJsonBody: async () => ({ revision: c.revision }) });
+  assert.equal(authorization, 1); assert.equal(result.status, 200); c = result.body;
+  assert.equal(c.services.length, 0); assert.equal(c.repositories.length, 1);
+  assert.ok(c.projects.every((p: any) => !p.serviceIds.includes(serviceId)));
+  assert.deepEqual(fs.readFileSync(file), bytes);
+  c = runtime.deleteCatalogAsset(root, 'project', 'other-delete', { revision: c.revision });
+  assert.equal(c.projects.length, 1); assert.ok(fs.existsSync(path.join(root, 'projects/other-delete/AGENTS.md')));
+  assert.equal(c.repositories.length, 1);
+});
+
+function initRepository(location: string) {
+  fs.mkdirSync(location, { recursive: true });
+  const result = spawnSync('git', ['init', '--initial-branch=dev'], { cwd: location, encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+}
+
+test('register actual workspace root and attached Git roots; reject child and ordinary directories', async (t: any) => {
+  const { root, runtime } = setup(t); let c = ready(runtime, root);
+  const ordinary = path.join(root, 'ordinary'); fs.mkdirSync(ordinary);
+  assert.throws(() => runtime.createCatalogRepository(root, { revision: c.revision, code: 'bad', path: 'ordinary' }), /Git/);
+  initRepository(root);
+  c = runtime.createCatalogRepository(root, { revision: c.revision, code: 'workspace-code', path: '.' });
+  assert.equal(c.repositories[0].source.path, '.'); assert.equal(c.repositories[0].source.type, 'git');
+  assert.throws(() => runtime.createCatalogRepository(root, { revision: c.revision, code: 'child', path: 'ordinary' }), (e: any) => e.code === 'repository_not_root');
+  assert.throws(() => runtime.createCatalogRepository(root, { revision: c.revision, code: 'duplicate', path: '.' }), (e: any) => e.code === 'repository_duplicate_path');
+  const attached = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-attached-git-'));
+  t.after(() => fs.rmSync(attached, { recursive: true, force: true })); initRepository(attached);
+  c = runtime.createCatalogRepository(root, { revision: c.revision, code: 'attached', path: attached });
+  assert.equal(c.repositories[1].source.root, 'attached');
+  const http = createWorkspaceHttpContribution(runtime);
+  const status: any = await http.handle({ request: { method: 'GET' }, suffix: `/repositories/${c.repositories[0].id}/status`, root });
+  assert.equal(status.status, 200); assert.equal(status.body.available, true); assert.equal(status.body.observed.currentBranch, 'dev');
+});
+
+test('normalization merges old workspace modules by real root while retaining service identities and content', (t: any) => {
+  const { root, runtime } = setup(t); initRepository(root);
+  for (const code of ['api', 'web']) {
+    const source = path.join(root, `incoming-${code}`); fs.mkdirSync(source); fs.writeFileSync(path.join(source, 'README.md'), code);
+    runtime.createServiceAsset({ targetRoot: root, project: 'demo', service: code, repoRef: source, attachRef: null, name: code, description: 'Legacy', type: 'service', rulesSource: null, integrationBranch: null, remote: 'origin', remoteExplicit: false, json: false });
+  }
+  let c = ready(runtime, root); const identities = c.services.map((s: any) => s.id);
+  assert.equal(c.repositories.length, 2);
+  c = runtime.normalizeCatalogRepositories(root, { revision: c.revision });
+  assert.equal(c.repositories.length, 1); assert.equal(c.repositories[0].source.path, '.'); assert.equal(c.repositories[0].source.type, 'git');
+  assert.deepEqual(c.services.map((s: any) => s.id), identities);
+  for (const s of c.services) { assert.equal(s.repositoryId, c.repositories[0].id); assert.equal(s.modulePath, `projects/demo/services/${s.code}`); assert.equal(runtime.catalogServiceDocument(root, s.id, 'README.md').content, s.code); }
+  assert.equal(runtime.normalizeCatalogRepositories(root, { revision: c.revision }).revision, c.revision);
+});
+
+
+test('services sharing the workspace Git root reuse its task worktree', (t: any) => {
+  const { root, runtime } = setup(t); initRepository(root);
+  let c = ready(runtime, root);
+  c = runtime.createCatalogRepository(root, { revision: c.revision, code: 'root', path: '.' });
+  c = runtime.createCatalogService(root, { revision: c.revision, projectId: c.projects[0].id, service: { code: 'root-module', name: 'Module', repositoryId: c.repositories[0].id, modulePath: 'projects/demo' } });
+  for (const args of [['config', 'user.name', 'Test'], ['config', 'user.email', 'test@example.com'], ['add', '.'], ['commit', '-m', 'root']]) assert.equal(spawnSync('git', args, { cwd: root }).status, 0);
+  const plan = runtime.planGitWorktrees({ workspaceRoot: root, taskId: 'root-modules', branch: 'codex/root-modules', includes: ['service:demo/root-module'] });
+  assert.equal(plan.repositories.length, 1);
+  assert.equal(plan.repositories[0].sourcePath, '.');
+});
+
+
+test('Doctor explicitly checks repository state once for shared services', (t: any) => {
+  const { root, runtime } = setup(t); initRepository(root);
+  let c = ready(runtime, root);
+  c = runtime.createCatalogRepository(root, { revision: c.revision, code: 'root-doctor', path: '.' });
+  for (const code of ['doctor-one', 'doctor-two']) c = runtime.createCatalogService(root, { revision: c.revision, service: { code, name: code, repositoryId: c.repositories[0].id } });
+  let checks = 0;
+  const diagnostics = createServiceDiagnostics({ path, existsFile: fs.existsSync, assetCatalog: runtime.assetCatalog,
+    catalogRepositoryStatus: (...args: any[]) => { checks++; return runtime.catalogRepositoryStatus(...args); },
+    addDoctorFinding: (result: any, _severity: string, code: string) => result.findings.push(code),
+  });
+  const result: any = { findings: [] }; diagnostics.diagnoseServices(result, root, []);
+  assert.equal(checks, 1); assert.equal(result.services.length, 2);
+  assert.ok(result.services.every((s: any) => s.exists && s.isGitRepository)); assert.deepEqual(result.findings, []);
 });

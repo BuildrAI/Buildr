@@ -1,3 +1,4 @@
+import { AssetDeleteDialog } from '../../workspace/components/AssetDeleteDialog';
 import { useLocation } from 'react-router-dom';
 import { ProjectServicesPanel } from '../components/ProjectServicesPanel';
 import { catalogChanged } from '../../workspace/api/asset-catalog-api';
@@ -79,6 +80,7 @@ export function ProjectDetailPage() {
   const { projectCode = '' } = useParams();
   const { workspaceId, setWorkspace, setBreadcrumbParts, openAgentAction } = useAppShell();
   const href = (path: string) => workspaceHref(workspaceId, path);
+  const [deleting, setDeleting] = useState<string | null>(null);
   const pageTabs = useWorkspacePageTabs(workspaceId);
   const [data, setData] = useState<ProjectDetail | null>(null);
   const [services, setServices] = useState<Service[]>([]);
@@ -87,7 +89,7 @@ export function ProjectDetailPage() {
   const [editOpen, setEditOpen] = useState(Boolean(editLocation.state?.editResource));
   useEffect(() => { if (editLocation.state?.editResource) setEditOpen(true); }, [editLocation.key]);
   const [refresh, setRefresh] = useState(0);
-  useEffect(() => { const update = () => setRefresh(v => v + 1); window.addEventListener(catalogChanged, update); return () => window.removeEventListener(catalogChanged, update); }, []);
+  useEffect(() => { const update = (event: Event) => { const projects = (event as CustomEvent<{ projects?: { code: string }[] }>).detail?.projects; if (!projects || projects.some(p => p.code === projectCode)) setRefresh(v => v + 1); }; window.addEventListener(catalogChanged, update); return () => window.removeEventListener(catalogChanged, update); }, [projectCode]);
   const [workspaceName, setWorkspaceName] = useState('');
   const [objects, setObjects] = useState<ObjTab[]>([]);
   const [activeObj, setActiveObj] = useState<string | null>(null);
@@ -199,14 +201,14 @@ export function ProjectDetailPage() {
           )
         ) : null}
       >
-        <section className="ws-hero">
+        <section className="ws-hero">{deleting && <AssetDeleteDialog kind="project" id={deleting} onClose={() => setDeleting(null)} />}
           <div className="ws-hero-top">
             <div>
               <p className="eyebrow"><Link to={href('/projects')} aria-label="返回项目列表">← 项目列表</Link></p>
               <h1 id="project-detail-name">{project.name}</h1>
               <p className="ws-hero-desc" id="project-detail-description">{project.description || '尚未填写项目说明。'}</p>
             </div>
-            <Button id="project-edit-button" onClick={() => setEditOpen(true)}>编辑项目</Button>
+            <Button danger onClick={() => setDeleting(projectCode)}>删除项目</Button><Button id="project-edit-button" onClick={() => setEditOpen(true)}>编辑项目</Button>
           </div>
           <div className="ws-stat-band" role="list">
             <div className="ws-stat" role="listitem"><b id="project-service-count">{services.length}</b><span>已登记服务</span></div>

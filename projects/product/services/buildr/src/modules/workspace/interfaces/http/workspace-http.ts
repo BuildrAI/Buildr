@@ -77,6 +77,19 @@ export function createWorkspaceHttpContribution(application: any) {
         application.updateWorkspaceMetadata(root, validateRequest('workspace.update', await readJsonBody()));
         return respond('workspace.update', application.getWorkspace(root));
       }
+      if (request.method === 'GET' && suffix === '/services') return respond('assets.services.list', application.listCatalogServices(root));
+      if (request.method === 'GET' && suffix === '/repositories') return respond('assets.repositories.list', application.listCatalogRepositories(root));
+      const repositoryStatus = suffix.match(/^\/repositories\/([A-Za-z0-9._-]+)\/status$/);
+      if (request.method === 'GET' && repositoryStatus) return respond('assets.repository.status', application.catalogRepositoryStatus(root, repositoryStatus[1]));
+      if (request.method === 'POST' && suffix === '/asset-catalog/normalize') {
+        authorizeWrite();
+        return respond('assets.normalize', application.normalizeCatalogRepositories(root, validateRequest('assets.normalize', await readJsonBody())));
+      }
+      const assetDelete = suffix.match(/^\/asset-catalog\/(project|service)\/([A-Za-z0-9._-]+)$/);
+      if (request.method === 'DELETE' && assetDelete) {
+        authorizeWrite();
+        return respond('assets.delete', application.deleteCatalogAsset(root, assetDelete[1], assetDelete[2], validateRequest('assets.delete', await readJsonBody())));
+      }
       if (request.method === 'GET' && suffix === '/asset-catalog') return respond('assets.read', application.assetCatalog(root));
       if (request.method === 'POST' && suffix === '/asset-catalog/migrate') {
         authorizeWrite();

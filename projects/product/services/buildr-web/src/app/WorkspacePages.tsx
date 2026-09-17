@@ -1,5 +1,5 @@
 import { useAppShell } from './AppShellContext';
-import { useCallback, useContext, useEffect, useLayoutEffect, useState, type ReactNode, type MouseEvent } from 'react';
+import { useRef, useCallback, useContext, useEffect, useLayoutEffect, useState, type ReactNode, type MouseEvent } from 'react';
 import { UNSAFE_LocationContext, useLocation, useNavigate, useOutlet } from 'react-router-dom';
 import { WorkspaceTabsContext } from './pageTabs';
 import { ResourcePreviewContext, resourcePreview, type PreviewState, type ResourcePreview } from './resource-preview';
@@ -20,6 +20,14 @@ export function WorkspacePages({ workspaceId, renderResource }: { workspaceId: s
   const navigate = useNavigate();
   const current = tabForPath(workspaceId, location.pathname);
   const [previews, setPreviews] = useState<Record<string, PreviewState>>({});
+  const removedResources = useRef(new Set<string>());
+  const removePreviewResource = (kind: string, id: string) => {
+    removedResources.current.add(`${kind}:${id}`);
+    setPreviews(previous => Object.fromEntries(Object.entries(previous).map(([owner, state]) => {
+      const items = state.items.filter(item => !(item.kind === kind && item.id === id));
+      return [owner, { items, active: items.some(item => item.kind === state.active) ? state.active : items.at(-1)?.kind || null }];
+    })));
+  };
   const commitPreview = useCallback((owner: string, next: PreviewState) => {
     setPreviews(prev => ({ ...prev, [owner]: next }));
     navigate(owner, { state: { resourceViews: next } });
@@ -41,7 +49,7 @@ export function WorkspacePages({ workspaceId, renderResource }: { workspaceId: s
   };
   useEffect(() => {
     const saved = location.state?.resourceViews as PreviewState | undefined;
-    const items = Array.isArray(saved?.items) ? saved.items.map(item => resourcePreview(workspaceId, item.path)).filter((item): item is ResourcePreview => Boolean(item)) : [];
+    const items = Array.isArray(saved?.items) ? saved.items.map(item => resourcePreview(workspaceId, item.path)).filter((item): item is ResourcePreview => Boolean(item) && !removedResources.current.has(`${item!.kind}:${item!.id}`)) : [];
     setPreviews(prev => ({ ...prev, [location.pathname]: { items, active: items.some(item => item.kind === saved?.active) ? saved!.active : null } }));
   }, [location.key, location.pathname, workspaceId]);
   const captureResourceLink = (event: MouseEvent) => {
@@ -106,7 +114,7 @@ export function WorkspacePages({ workspaceId, renderResource }: { workspaceId: s
   const entries = current && !resourcePreview(workspaceId, location.pathname) && !visited.some((p) => p.path === location.pathname)
     ? [...visited, { path: location.pathname, node: outlet, location: locationValue }] : visited;
   const displayTabs = current && !resourcePreview(workspaceId, location.pathname) && !tabs.some((t) => t.key === current.key) ? [...tabs, current] : tabs;
-  return <ResourcePreviewContext.Provider value={{ render: renderResource, states: previews, open: openPreview, activate: activatePreview, close: closePreview, clear: clearPreview }}><WorkspaceTabsContext.Provider value={{ tabs: displayTabs, register, close, reorder, ratio, setRatio, reportPaneWidth }}>
+  return <ResourcePreviewContext.Provider value={{ render: renderResource, states: previews, open: openPreview, activate: activatePreview, close: closePreview, clear: clearPreview, remove: removePreviewResource }}><WorkspaceTabsContext.Provider value={{ tabs: displayTabs, register, close, reorder, ratio, setRatio, reportPaneWidth }}>
     <div className="workspace-pages" hidden={!current}>
       <div className="workspace-page-tabs" style={{ width: `calc(100% - ${paneWidths[location.pathname] || 0}px)` }}><PageTabStrip tabs={displayTabs.filter(tab => tab.kind !== 'dir')} onClose={close} onReorder={reorder} /></div>
       <div className="workspace-page-stack" onClickCapture={captureResourceLink}>

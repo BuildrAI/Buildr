@@ -1,3 +1,4 @@
+import { RepositoryFields } from '../../workspace/components/RepositoryFields';
 import { CreatableResourceSelect } from '../../../components/CreatableResourceSelect';
 import { useState } from 'react';
 import { Alert, Button, Form, Input, Space } from 'antd';
@@ -16,7 +17,7 @@ export function ServiceCreateDrawer({ catalog, onClose, onSave, initial }: { cat
       <Form.Item label="服务标识" required><Input aria-label="服务标识" required pattern="[A-Za-z0-9]([A-Za-z0-9._]|-)*" value={draft.code} onChange={e => update('code', e.target.value)} placeholder="例如 egg-business" /></Form.Item>
       <Form.Item label="实现职责"><Input.TextArea aria-label="实现职责" rows={3} value={draft.description} onChange={e => update('description', e.target.value)} /></Form.Item>
       <Form.Item label="代码库" required><CreatableResourceSelect label="代码库" value={newRepository ? undefined : draft.repositoryId} placeholder={newRepository ? '正在新增代码库' : '选择代码库'} onChange={value => { setNewRepository(false); update('repositoryId', value as string); }} onCreate={() => setNewRepository(true)} options={catalog.repositories.map(r => ({ value: r.id, label: `${r.name} · ${repositoryBranch(r)}` }))} /></Form.Item>
-      {newRepository && <section style={{ padding: 16, border: '1px solid #dbe7e1', borderRadius: 8, background: '#f7faf8', marginBottom: 20 }}><h3>新增代码库</h3><Form.Item label="代码库标识" required><Input aria-label="代码库标识" required pattern="[A-Za-z0-9]([A-Za-z0-9._]|-)*" value={repository.code} onChange={e => setRepository(r => ({ ...r, code: e.target.value }))} /></Form.Item><p className="page-copy">repositories/{repository.code || '<代码库标识>'}/</p><Form.Item label="Git 地址" required><Input aria-label="Git 地址" required value={repository.url} onChange={e => setRepository(r => ({ ...r, url: e.target.value }))} /></Form.Item><Form.Item label="集成分支" required><Input aria-label="集成分支" required value={repository.integrationBranch} onChange={e => setRepository(r => ({ ...r, integrationBranch: e.target.value }))} /></Form.Item><p className="page-copy">先登记来源，本地代码由智能体（Agent）按需准备。</p></section>}
+      {newRepository && <section style={{ padding: 16, border: '1px solid #dbe7e1', borderRadius: 8, background: '#f7faf8', marginBottom: 20 }}><h3>新增代码库</h3><RepositoryFields value={repository} onChange={setRepository} /></section>}
       <Form.Item label="模块目录"><Input value={draft.modulePath} onChange={e => update('modulePath', e.target.value)} placeholder="可选，相对代码库根目录" /></Form.Item>
     </Form></form>
   </DrawerShell>;

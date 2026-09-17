@@ -25,7 +25,7 @@ export function AppNavigation({ onNavigate }: { onNavigate?: () => void }) {
     settings: <SettingOutlined />,
   };
   const item = (path: string, label: string, name: string, onClick?: () => void) => {
-    const destination = state.area === 'workspace' ? workspaceMenuTarget(name) : { to: href(path), state: undefined };
+    const destination = state.area === 'workspace' && name !== 'projects' ? workspaceMenuTarget(name) : { to: href(path), state: undefined };
     return <NavLink to={destination.to} state={destination.state} data-nav={name} data-workspace-route={path} title={label} aria-label={label}
       className={`shell-nav-item${location.pathname === href(path) || location.pathname.startsWith(href(path) + '/') ? ' active' : ''}`}
       onClick={event => { if (state.area === 'workspace' && destination.to === location.pathname + location.search + location.hash) event.preventDefault(); onClick?.(); onNavigate?.(); }}>{icons[name]}<span>{label}</span></NavLink>;

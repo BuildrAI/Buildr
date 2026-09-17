@@ -572,8 +572,6 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.waitForURL(`${workspaceUrl}/projects/demo`);
     await page.locator('.workspace-tabstrip .pane-tab.on').filter({ hasText: '演示项目' }).waitFor({ state: 'visible' });
     await page.locator('[data-nav="projects"]').click();
-    await page.waitForURL(`${workspaceUrl}/projects/demo`);
-    await page.getByRole('link', { name: '返回项目列表', exact: true }).click();
     await page.waitForURL(`${workspaceUrl}/projects`);
     await page.locator('.workspace-tabstrip .pane-tab').filter({ hasText: '演示项目' }).click();
     await page.waitForURL(`${workspaceUrl}/projects/demo`);
@@ -776,6 +774,8 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.locator('#service-detail-name:visible').waitFor({ state: 'visible' });
     await page.locator('[data-nav="skills"]').click();
     await page.locator('[data-nav="projects"]').click();
+    await page.waitForURL(`${workspaceUrl}/projects`);
+    await page.getByRole('tab', { name: '演示项目', exact: true }).click();
     await page.waitForURL(`${workspaceUrl}/projects/demo`);
     await page.locator('#service-detail-name:visible').waitFor({ state: 'visible' });
     assert.equal(await page.locator('#project-detail-name').isVisible(), true);
@@ -957,6 +957,40 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.getByRole('button', { name: '关闭编辑', exact: true }).click();
     await page.getByRole('dialog').waitFor({ state: 'hidden' });
     await page.setViewportSize({ width: 1280, height: 720 });
+  });
+
+  if (selected('service')) await t.test('独立列表快速读取，服务和项目删除保留文件与代码库', async () => {
+    let c = runtime.assetCatalog(workspaceRoot);
+    if (c.migrationRequired) c = runtime.migrateAssetCatalog(workspaceRoot, { revision: c.revision });
+    c = runtime.createCatalogProject(workspaceRoot, { revision: c.revision, code: 'delete-browser', name: '删除验收项目', newServices: [{ code: 'delete-browser-api', name: '删除验收服务', repository: { code: 'delete-browser-code', url: 'https://example.com/delete.git', integrationBranch: 'dev' } }] });
+    const service = c.services.find((s: any) => s.code === 'delete-browser-api');
+    const requests: string[] = [];
+    const collect = (request: any) => { if (request.method() === 'GET') requests.push(request.url()); };
+    page.on('request', collect);
+    await page.goto(`${workspaceUrl}/services`);
+    await page.locator('#service-table-body tr').filter({ hasText: '删除验收服务' }).waitFor();
+    assert.ok(requests.some(url => url.endsWith('/services')));
+    assert.ok(!requests.some(url => url.endsWith('/asset-catalog')));
+    page.off('request', collect);
+    await page.locator('#service-table-body tr').filter({ hasText: '删除验收服务' }).getByRole('button', { name: '删除', exact: true }).click();
+    await page.getByRole('dialog').getByText(/将解除这些项目的引用：删除验收项目/).waitFor();
+    await page.getByRole('dialog').getByRole('button', { name: /^取\s*消$/ }).click();
+    assert.ok(runtime.assetCatalog(workspaceRoot).services.some((s: any) => s.id === service.id));
+    await page.locator('#service-table-body tr').filter({ hasText: '删除验收服务' }).getByRole('button', { name: '删除', exact: true }).click();
+    await page.getByRole('dialog').getByRole('button', { name: '删除登记', exact: true }).click();
+    await page.getByRole('dialog').waitFor({ state: 'hidden' });
+    await page.locator('#service-table-body tr').filter({ hasText: '删除验收服务' }).waitFor({ state: 'hidden' });
+    c = runtime.assetCatalog(workspaceRoot);
+    assert.ok(!c.services.some((s: any) => s.id === service.id));
+    assert.ok(c.repositories.some((r: any) => r.id === service.repositoryId));
+    assert.ok(fs.existsSync(path.join(workspaceRoot, 'services/delete-browser-api/AGENTS.md')));
+    await page.goto(`${workspaceUrl}/projects/delete-browser`);
+    await page.getByRole('button', { name: '删除项目', exact: true }).click();
+    await page.getByRole('dialog').getByRole('button', { name: '删除登记', exact: true }).click();
+    await page.waitForURL(`${workspaceUrl}/projects`);
+    await page.getByRole('dialog').waitFor({ state: 'hidden' });
+    assert.equal(await page.getByRole('tab', { name: '删除验收项目', exact: true }).count(), 0);
+    assert.ok(fs.existsSync(path.join(workspaceRoot, 'projects/delete-browser/AGENTS.md')));
   });
 
   if (selected('service')) await t.test('服务文档使用副屏，代码准备使用抽屉，窄屏关闭恢复主页', async () => {
