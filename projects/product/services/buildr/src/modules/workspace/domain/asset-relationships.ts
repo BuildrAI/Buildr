@@ -3,7 +3,7 @@ import { isProjectCode, isProjectId } from './project.ts';
 
 export type RepositoryInstance = Readonly<{
   id: string; workspaceId: string; code: string; name: string; description: string;
-  source: { type: 'workspace' | 'git'; path: string; root?: 'attached'; git?: { url: string; remote: string; integrationBranch: string } };
+  source: { type: 'workspace' | 'git'; path: string; root?: 'attached'; integrationBranch?: string; git?: { url: string; remote: string; integrationBranch: string } };
 }>;
 export type BusinessService = Readonly<{
   id: string; workspaceId: string; code: string; name: string; description: string; type: string;
@@ -34,25 +34,30 @@ export function relativeAssetPath(value: unknown, label: string, allowEmpty = fa
   if (!raw || raw === '.' || raw.includes('\0') || raw.includes('\\') || path.posix.isAbsolute(raw) || /^[A-Za-z]:/.test(raw) || raw.split('/').includes('..') || path.posix.normalize(raw) !== raw) throw assetError('asset_path_invalid', `${label} 必须是范围内的规范相对路径。`);
   return raw;
 }
+function repositoryBranch(value: unknown): string {
+  const branch = text(value, '集成分支');
+  if (/\s|\.\.|[~^:?*\[\\]|@\{|\/\/|^[-/]|[./]$|\.lock$/.test(branch) || branch === '@' || /[\x00-\x1f\x7f]/.test(branch) || branch.split('/').some(part => part.startsWith('.') || part.endsWith('.lock'))) throw assetError('repository_branch_invalid', '集成分支名称无效。');
+  return branch;
+}
 export function createRepositoryInstance(input: any): RepositoryInstance {
   object(input, ['id', 'workspaceId', 'code', 'name', 'description', 'source'], '代码库');
   const base = identity(input);
-  object(input.source, ['type', 'path', 'root', 'git'], '代码库来源');
+  object(input.source, ['type', 'path', 'root', 'git', 'integrationBranch'], '代码库来源');
   const s = input.source;
   if (!['workspace', 'git'].includes(s.type)) throw assetError('repository_source_invalid', '来源必须是 workspace 或 git。');
   if (s.root !== undefined && s.root !== 'attached') throw assetError('repository_source_invalid', '未知的代码库位置类型。');
   const sourcePath = s.root === 'attached' ? text(s.path, '附接目录') : s.path === '.' ? '.' : relativeAssetPath(s.path, '代码库路径');
   if (s.root === 'attached' && (!path.isAbsolute(sourcePath) || path.normalize(sourcePath) !== sourcePath || s.type !== 'git')) throw assetError('repository_path_invalid', '附接来源必须是具有规范绝对路径的 Git 代码库。');
+  if (s.integrationBranch !== undefined && (s.type !== 'git' || s.git !== undefined)) throw assetError('repository_branch_ambiguous', '本地集成分支只用于没有远端声明的 Git 仓库。');
   if (s.type === 'workspace') {
     if (s.git) throw assetError('repository_source_invalid', '工作空间源码不能声明独立 Git 来源。');
     return Object.freeze({ ...base, source: { type: 'workspace' as const, path: sourcePath } });
   }
-  if (s.git === undefined) return Object.freeze({ ...base, source: { type: 'git' as const, path: sourcePath, ...(s.root ? { root: s.root } : {}) } });
+  if (s.git === undefined) return Object.freeze({ ...base, source: { type: 'git' as const, path: sourcePath, ...(s.root ? { root: s.root } : {}), ...(s.integrationBranch !== undefined ? { integrationBranch: repositoryBranch(s.integrationBranch) } : {}) } });
   object(s.git, ['url', 'remote', 'integrationBranch'], 'Git 来源');
-  const git = { url: text(s.git.url, 'Git 地址'), remote: text(s.git.remote, '远端名称'), integrationBranch: text(s.git.integrationBranch, '集成分支') };
+  const git = { url: text(s.git.url, 'Git 地址'), remote: text(s.git.remote, '远端名称'), integrationBranch: repositoryBranch(s.git.integrationBranch) };
   if (/\s|\0/.test(git.url) || git.url.startsWith('-')) throw assetError('repository_url_invalid', 'Git 地址无效。');
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(git.remote)) throw assetError('repository_remote_invalid', '远端名称无效。');
-  if (/\s|\.\.|[~^:?*\[\\]|@\{|\/\/|^[-/]|[./]$|\.lock$/.test(git.integrationBranch) || git.integrationBranch === '@') throw assetError('repository_branch_invalid', '集成分支名称无效。');
   return Object.freeze({ ...base, source: { type: 'git' as const, path: sourcePath, ...(s.root ? { root: s.root } : {}), git } });
 }
 export function createBusinessService(input: any): BusinessService {

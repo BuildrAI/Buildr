@@ -27,13 +27,23 @@
 
 ### 维护登记与关联
 
-使用 `buildr help assets` 查看当前维护入口。写入 JSON 输入包含刚读取的 `revision`；创建项目可包含 `serviceIds` 和 `newServices`，每个新服务选择已有 `repositoryId` 或嵌套新 `repository`。创建代码库只登记来源，界面保存不代表已克隆。关联写入通过 `assets associate <project-id>`，解除只移除项目引用，保留服务和代码。
+使用 `buildr help assets` 查看当前维护入口。写入 JSON 输入包含刚读取的 `revision`；创建项目可包含 `serviceIds` 和 `newServices`，每个新服务选择已有 `repositoryId` 或嵌套新 `repository`。新增表单默认从 Git 地址最后一段去掉末尾斜杠与 `.git`，填写代码库标识及 `repositories/<末段>`；手动输入优先，已有代码库不自动改标识或目录。创建代码库只登记来源，界面保存不代表已克隆。关联写入通过 `assets associate <project-id>`，解除只移除项目引用，保留服务和代码。
 
 旧项目内服务清单可兼容读取；`migrationRequired` 为 true 时先检查转换后的身份、重复代码与实际目录，再显式执行 `buildr assets migrate --target <workspace> --input <json-file> --json`。迁移保留旧标识及代码位置，不按相同 Git 地址合并实例，不搬动代码。旧项目中的服务代码重名时，在迁移输入中明确提供 `codeMappings`，以旧 `project/service` 为键、新全局代码为值；核对映射后再写入。旧 `service create <project>/<service>` 仅用于尚未迁移的工作空间；迁移后使用全局资产入口。
 
 删除项目或服务登记使用 `buildr assets delete <project|service> <id> --target <workspace> --input <json-file> --json`，输入只包含当前 `revision`。先说明受影响引用；删除只移除登记及关系，保留代码、文件与历史任务。核对返回清单确认对象及相关引用已移除，不把文件保留误报为删除失败。
 
 旧 workspace 子目录登记需要归并时，先核对实际 Git 根和模块目录，再执行 `buildr assets normalize --target <workspace> --input <json-file> --json`，输入包含当前 `revision`。动作按真实根归并仓库并重算服务 `modulePath`，保留服务身份，不按相同远端合并不同目录。失败时保留原声明；成功后核对仓库数量、模块定位和旧服务文档。
+
+服务编辑可在 `assets update service <id>` 输入中提供嵌套 `repository` 草稿，与 `repositoryId` 互斥。新代码库登记和服务引用在同一事务保存；失败不留部分登记，取消草稿不写入。
+
+### 修改代码库声明
+
+使用 `buildr assets update repository <id> --target <workspace> --input <json-file> --json`，输入包含最新 `revision`，可修改 `name`、`description`、`url`、`remote`、`integrationBranch`、`path`；省略字段保留原值，空 `url` 撤销远端声明。无远端的本地仓库也能独立设置集成分支（Integration Branch）。稳定身份与服务引用保持不变。
+
+查看和编辑时通过 `/api/v1/repositories/:id/local-config` 读取真实本地远端配置，不从声明缺失推断本地未配置；已声明目标与实际不一致时分别展示，不能把当前任务分支当作集成分支。读取不写回清单。
+
+保存不执行 Git 写入。读取单仓库状态中的 `alignment` 与实际值，核对远端、根目录和服务模块；`pending` 表示尚需对齐，当前分支不同不自动要求切换。需要改远端、克隆或搬迁时先说明具体动作与影响，在相应授权内执行，保留原代码与未提交内容。后续工作树（Worktree）未显式指定起点时使用声明的集成分支，明确任务起点优先。
 
 ### 准备真实代码
 

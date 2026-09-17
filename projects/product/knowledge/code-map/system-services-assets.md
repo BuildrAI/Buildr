@@ -161,3 +161,11 @@ buildr-web/src/
 服务和代码库目录分别读取 `/services`、`/repositories`，只在关系编辑或详情读取完整 `/asset-catalog`；三个读取均不扫描 Git 状态。详情的 `RepositoryStatus.tsx` 按需读取 `/repositories/:id/status`。`AssetDeleteDialog.tsx` 核对当前版本、展示受影响关系，再删除登记并关闭对象标签。
 
 诊断（Doctor）通过 `catalogRepositoryStatus` 主动观察相关仓库并按身份去重；不能把列表中尚未观察的状态解释为代码缺失。
+
+代码库声明编辑由 `updateCatalogAsset` 接收 `url`、`remote`、`integrationBranch`、`path`，保持身份和版本校验；`RepositoryFields.tsx` 共用创建与编辑字段，`RepositoryStatus.tsx` 读取单个对象的实际值及 `alignment`。本地集成分支（Integration Branch）位于 `source.integrationBranch`，远端来源继续使用 `source.git.integrationBranch`；工作树（Worktree）提供者在未指定任务起点时读取声明。
+
+`infrastructure/repository-local-config.ts` 只读实际 Git 根、远端列表/地址和跟踪配置；`/repositories/:id/local-config` 供详情及编辑按需读取，不执行工作区状态扫描。`useRepositoryLocalConfig.ts` 隔离旧请求，编辑抽屉只补入尚未声明且未被用户修改的地址，集成分支不取当前任务分支。
+
+服务编辑的 `CreatableResourceSelect` 与创建流程一样提供过滤、新增和选项；`AssetEditDrawer` 内联维护 `RepositoryFields` 草稿，`updateCatalogAsset` 在同一清单事务中创建代码库并更新服务引用，取消不登记。
+
+`repository-defaults.ts` 为共享新增表单解析 Git 地址末段；`RepositoryFields` 自动填入标识及目录并分别保护手动值。已有仓库编辑不使用自动推导，地址变化不隐式改身份或目录。

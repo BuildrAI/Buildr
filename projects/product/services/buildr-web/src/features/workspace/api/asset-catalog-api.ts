@@ -1,6 +1,6 @@
 import type { WorkspaceDocument } from '../../../api/client';
 import { api } from '../../../api';
-import type { AssetServicesAssetServicesResponse, AssetRepositoriesAssetRepositoriesResponse, AssetRepositoryStatusAssetRepositoryStatusResponse, AssetCatalogAssetCatalogResponse, AssetUpdateAssetUpdateRequest, ProjectCreateAssetProjectRequest, ProjectServicesAssetAssociateRequest, ServiceCreateAssetServiceRequest, RepositoryCreateAssetRepositoryRequest } from '../../../../build/generated/workspace-http-dto';
+import type { AssetServicesAssetServicesResponse, AssetRepositoriesAssetRepositoriesResponse, AssetRepositoryStatusAssetRepositoryStatusResponse, AssetRepositoryLocalConfigAssetRepositoryLocalConfigResponse, AssetCatalogAssetCatalogResponse, AssetUpdateAssetUpdateRequest, ProjectCreateAssetProjectRequest, ProjectServicesAssetAssociateRequest, ServiceCreateAssetServiceRequest, RepositoryCreateAssetRepositoryRequest } from '../../../../build/generated/workspace-http-dto';
 export type AssetCatalog = AssetCatalogAssetCatalogResponse;
 export type CatalogService = AssetCatalog['services'][number];
 export type CatalogRepository = AssetCatalog['repositories'][number];
@@ -18,7 +18,8 @@ async function write(path: string, method: string, input: unknown): Promise<Asse
 export const assetCatalogApi = {
   services: (signal?: AbortSignal) => api('/api/v1/services', { signal }) as Promise<AssetServicesAssetServicesResponse>,
   repositories: (signal?: AbortSignal) => api('/api/v1/repositories', { signal }) as Promise<AssetRepositoriesAssetRepositoriesResponse>,
-  status: (id: string) => api(`/api/v1/repositories/${encodeURIComponent(id)}/status`) as Promise<AssetRepositoryStatusAssetRepositoryStatusResponse>,
+  localConfig: (id: string, signal?: AbortSignal) => api(`/api/v1/repositories/${encodeURIComponent(id)}/local-config`, { signal }) as Promise<AssetRepositoryLocalConfigAssetRepositoryLocalConfigResponse>,
+  status: (id: string, signal?: AbortSignal) => api(`/api/v1/repositories/${encodeURIComponent(id)}/status`, { signal }) as Promise<AssetRepositoryStatusAssetRepositoryStatusResponse>,
   remove: (kind: 'project' | 'service', id: string, revision: string) => write(`/${kind}/${encodeURIComponent(id)}`, 'DELETE', { revision }),
   normalize: (revision: string) => write('/normalize', 'POST', { revision }),
   serviceDocument: (id: string, file: string) => api(`${base}/services/${encodeURIComponent(id)}/documents/${encodeURIComponent(file)}`) as Promise<WorkspaceDocument>,
@@ -33,5 +34,5 @@ export const assetCatalogApi = {
 };
 export function repositoryBranch(repository: CatalogRepository): string {
   const git = repository.source.git as { integrationBranch?: string } | undefined;
-  return git?.integrationBranch || '未指定集成分支';
+  return String(repository.source.integrationBranch || git?.integrationBranch || '未指定集成分支');
 }

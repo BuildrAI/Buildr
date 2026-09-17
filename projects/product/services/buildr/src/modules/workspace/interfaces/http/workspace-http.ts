@@ -79,6 +79,8 @@ export function createWorkspaceHttpContribution(application: any) {
       }
       if (request.method === 'GET' && suffix === '/services') return respond('assets.services.list', application.listCatalogServices(root));
       if (request.method === 'GET' && suffix === '/repositories') return respond('assets.repositories.list', application.listCatalogRepositories(root));
+      const repositoryConfig = suffix.match(/^\/repositories\/([A-Za-z0-9._-]+)\/local-config$/);
+      if (request.method === 'GET' && repositoryConfig) return respond('assets.repository.local-config', application.catalogRepositoryLocalConfig(root, repositoryConfig[1]));
       const repositoryStatus = suffix.match(/^\/repositories\/([A-Za-z0-9._-]+)\/status$/);
       if (request.method === 'GET' && repositoryStatus) return respond('assets.repository.status', application.catalogRepositoryStatus(root, repositoryStatus[1]));
       if (request.method === 'POST' && suffix === '/asset-catalog/normalize') {

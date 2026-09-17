@@ -214,7 +214,7 @@ export function createServiceDiagnostics(deps: any) {
           if (!observations.has(repository.id)) observations.set(repository.id, deps.catalogRepositoryStatus(targetRoot, repository.id));
           const state = observations.get(repository.id);
           result.services.push({ name: service.code, title: service.name, description: service.description, type: service.type, project: null, projects: projects.map((p: any) => p.code), repositoryId: repository.id, path: repository.source.path, exists: repository.present, isGitRepository: Boolean(state.available && state.observed?.repository) });
-          if (!state.available) addDoctorFinding(result, 'warning', repository.present ? 'repository.identity_invalid' : 'repository.code_missing', `代码库 ${repository.code}：${state.diagnostic || '尚未准备'}`, { path: repository.source.path, suggestion: '让智能体按 repositories/manifest.yml 中已确认的来源与分支准备代码；不影响无关对象。' });
+          if (state.alignment === 'pending') addDoctorFinding(result, 'warning', repository.present ? 'repository.alignment_pending' : 'repository.code_missing', `代码库 ${repository.code}：${state.diagnostic || '尚未准备'}`, { path: repository.source.path, suggestion: '让智能体按 repositories/manifest.yml 中已确认的来源与分支准备代码；不影响无关对象。' });
         }
       } catch (error: any) {
         addDoctorFinding(result, 'warning', 'assets.catalog_invalid', error.message, { suggestion: '核对全局清单和迁移恢复现场。' });

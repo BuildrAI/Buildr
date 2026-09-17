@@ -9,3 +9,4 @@ repositories:
     source:
       type: git
       path: .
+      integrationBranch: dev

@@ -1,3 +1,4 @@
+import { readRepositoryLocalConfig } from '../infrastructure/repository-local-config.ts';
 import crypto from 'node:crypto';
 import { spawnSync } from '../../../infrastructure/process.ts';
 import fs from 'node:fs';
@@ -63,40 +64,65 @@ export function registerAssetRelationshipsApplication(runtime: Record<string, an
     if (result.status !== 0 || !result.stdout.trim()) throw assetError('repository_not_git', '目录不是 Git 仓库，请选择真实仓库根目录。');
     return fs.realpathSync(result.stdout.trim());
   }
+  function catalogRepositoryLocalConfig(root: string, id: string) {
+    const record = read(root);
+    const repository = record.catalog.repositories.find(r => r.id === id || r.code === id);
+    if (!repository) throw assetError('repository_not_found', '代码库不存在。', 404);
+    return { revision: record.revision, id: repository.id, ...readRepositoryLocalConfig(resolveSourceRoot(root, repository.source), repository.source.git?.remote) };
+  }
   function catalogRepositoryStatus(root: string, id: string) {
     const c = read(root);
     const repository = c.catalog.repositories.find(r => r.id === id || r.code === id);
     if (!repository) throw assetError('repository_not_found', '代码库不存在。', 404);
     const location = resolveSourceRoot(root, repository.source);
-    const observation = runtime.observeProjectGit(location, repository.source.git?.remote || 'origin');
+    const remote = repository.source.git?.remote || 'origin';
+    const observation = { ...runtime.observeProjectGit(location, remote), remote };
     let actualRoot: string | null = null;
     try { actualRoot = gitRoot(location); } catch { /* reported as unavailable */ }
     const validRoot = actualRoot !== null && actualRoot === fs.realpathSync(location);
     const identityConflict = Boolean(repository.source.git && (!observation.remoteUrl || !runtime.sameGitIdentity(observation.remoteUrl, repository.source.git.url)));
+    const moduleIssues: string[] = [];
+    if (validRoot) for (const service of c.catalog.services.filter(s => s.repositoryId === repository.id)) {
+      const module = path.join(location, service.modulePath);
+      if (!fs.existsSync(module) || !fs.statSync(module).isDirectory()) moduleIssues.push(`${service.name}：模块目录 ${service.modulePath || '.'} 尚未准备`);
+      else { const actual = fs.realpathSync(module); if (actual !== actualRoot && !actual.startsWith(actualRoot! + path.sep)) moduleIssues.push(`${service.name}：模块目录超出代码库范围`); }
+    }
+    const issues = [!validRoot ? '目录不是独立 Git 仓库根目录，或本地代码缺失。' : null,
+      identityConflict ? `远端 ${remote} 的实际地址与声明不一致，需要对齐。` : null, ...moduleIssues].filter((issue): issue is string => Boolean(issue));
     return { revision: c.revision, id: repository.id, available: validRoot && !identityConflict,
-      observed: observation, diagnostic: !validRoot ? '目录不是独立 Git 仓库根目录，或本地代码缺失。' : identityConflict ? '实际远端与声明不一致。' : null };
+      alignment: issues.length ? 'pending' : 'ready', observed: observation, diagnostic: issues.join('；') || null };
   }
+
   function repositoryLocationKey(root: string, repository: AssetCatalog['repositories'][number]) {
     const location = resolveSourceRoot(root, repository.source);
     return fs.existsSync(location) ? fs.realpathSync(location) : path.resolve(location);
   }
-  function repositoryFromDraft(root: string, workspaceId: string, raw: any) {
+  function repositoryFromDraft(root: string, workspaceId: string, raw: any, allowUnaligned = false) {
     object(raw, ['code', 'name', 'description', 'url', 'remote', 'integrationBranch', 'path'], '代码库');
-    const locationPath = raw.path || `repositories/${raw.code}`;
+    const locationPath = typeof raw.path === 'string' ? raw.path.trim() || `repositories/${raw.code}` : raw.path || `repositories/${raw.code}`;
     const attached = path.isAbsolute(locationPath);
     const source = { type: 'git', path: locationPath, ...(attached ? { root: 'attached' } : {}),
-      ...(raw.url ? { git: { url: raw.url, remote: raw.remote || 'origin', integrationBranch: raw.integrationBranch } } : {}) };
+      ...(raw.url ? { git: { url: raw.url, remote: raw.remote || 'origin', integrationBranch: raw.integrationBranch } } : raw.integrationBranch ? { integrationBranch: raw.integrationBranch } : {}) };
     const repository = createRepositoryInstance({ id: crypto.randomUUID(), workspaceId, code: raw.code, name: raw.name || raw.code, description: raw.description || '', source });
     const location = resolveSourceRoot(root, repository.source);
+    if (!attached) {
+      let ancestor = location;
+      while (!fs.existsSync(ancestor)) {
+        try { if (fs.lstatSync(ancestor).isSymbolicLink()) throw assetError('repository_path_invalid', '目录包含不可解析的符号链接。'); } catch (error: any) { if (error.code !== 'ENOENT') throw error; }
+        const parent = path.dirname(ancestor); if (parent === ancestor) break; ancestor = parent;
+      }
+      const real = fs.realpathSync(ancestor), workspace = fs.realpathSync(root);
+      if (real !== workspace && !real.startsWith(workspace + path.sep)) throw assetError('repository_path_invalid', '目录链接超出工作空间，请使用明确的外部绝对路径登记。');
+    }
     if (fs.existsSync(location)) {
       const real = fs.realpathSync(location), workspace = fs.realpathSync(root);
       if (!attached && real !== workspace && !real.startsWith(workspace + path.sep)) throw assetError('repository_path_invalid', '目录链接超出工作空间，请使用明确的外部绝对路径登记。');
       if (gitRoot(location) !== fs.realpathSync(location)) throw assetError('repository_not_root', '请选择 Git 仓库根目录，子目录应填写到服务的模块目录。');
-      if (repository.source.git) {
+      if (repository.source.git && !allowUnaligned) {
         const observed = runtime.observeProjectGit(location, repository.source.git.remote);
         if (!observed.remoteUrl || !runtime.sameGitIdentity(observed.remoteUrl, repository.source.git.url)) throw assetError('repository_identity_conflict', '实际远端与声明不一致。', 409);
       }
-    } else if (!raw.url || attached) throw assetError('repository_not_git', '已有代码库目录不存在；准备新代码需要明确 Git 地址和集成分支。');
+    } else if (!allowUnaligned && (!raw.url || attached)) throw assetError('repository_not_git', '已有代码库目录不存在；准备新代码需要明确 Git 地址和集成分支。');
     return repository;
   }
   function normalizeCatalogRepositories(root: string, input: any) {
@@ -258,13 +284,44 @@ export function registerAssetRelationshipsApplication(runtime: Record<string, an
     });
   }
   function updateCatalogAsset(root: string, kind: string, id: string, input: any) {
-    object(input, kind === 'service' ? ['revision', 'name', 'description', 'type', 'repositoryId', 'modulePath'] : ['revision', 'name', 'description'], '修改对象');
+    object(input, kind === 'service' ? ['revision', 'name', 'description', 'type', 'repositoryId', 'modulePath', 'repository'] : kind === 'repository' ? ['revision', 'name', 'description', 'url', 'remote', 'integrationBranch', 'path'] : ['revision', 'name', 'description'], '修改对象');
     return mutate(root, input.revision, `assets.${kind}.update`, catalog => {
       if (!['project', 'service', 'repository'].includes(kind)) throw assetError('asset_kind_invalid', '未知对象类型。');
       const collection = kind === 'project' ? catalog.projects : kind === 'service' ? catalog.services : catalog.repositories;
       const index = collection.findIndex(item => item.id === id || item.code === id);
       if (index < 0) throw assetError('asset_not_found', '对象不存在。', 404);
-      const { revision: _revision, ...patch } = input;
+      if (kind === 'repository' && ['url', 'remote', 'integrationBranch', 'path'].some(key => Object.hasOwn(input, key))) {
+        const existing = catalog.repositories[index];
+        for (const key of ['name', 'description', 'url', 'remote', 'integrationBranch', 'path']) if (Object.hasOwn(input, key) && typeof input[key] !== 'string') throw assetError('asset_input_invalid', `${key} 必须是字符串。`);
+        if (!existing.source.git && input.url === undefined && input.remote) throw assetError('repository_remote_url_required', '请同时提供 Git 地址以声明远端名称。');
+        if (input.name !== undefined && !input.name.trim()) throw assetError('asset_field_required', '请填写名称。');
+        if (input.path !== undefined && (typeof input.path !== 'string' || !input.path.trim())) throw assetError('asset_field_required', '请填写仓库目录。');
+        const replacement = repositoryFromDraft(root, existing.workspaceId, {
+          code: existing.code, name: input.name ?? existing.name, description: input.description ?? existing.description,
+          path: input.path ?? existing.source.path, url: input.url ?? existing.source.git?.url ?? '',
+          remote: input.remote ?? existing.source.git?.remote ?? 'origin',
+          integrationBranch: input.integrationBranch ?? existing.source.integrationBranch ?? existing.source.git?.integrationBranch ?? '',
+        }, true);
+        const location = resolveSourceRoot(root, replacement.source);
+        if (catalog.repositories.some(r => r.id !== existing.id && repositoryLocationKey(root, r) === repositoryLocationKey(root, replacement))) throw assetError('repository_duplicate_path', '该目录已登记为代码库，请复用已有代码库。', 409);
+        // Module declarations stay relative to the new root. Never move their files as part of saving.
+        if (fs.existsSync(location)) for (const service of catalog.services.filter(s => s.repositoryId === existing.id)) {
+          let module = path.join(location, service.modulePath);
+          while (!fs.existsSync(module) && module !== location) module = path.dirname(module);
+          const actual = fs.realpathSync(module), base = fs.realpathSync(location);
+          if (actual !== base && !actual.startsWith(base + path.sep)) throw assetError('service_module_path_forbidden', `服务 ${service.name} 的模块目录超出代码库范围。`);
+        }
+        catalog.repositories[index] = createRepositoryInstance({ ...replacement, id: existing.id });
+        return;
+      }
+      const { revision: _revision, repository: repositoryDraft, ...patch } = input;
+      if (kind === 'service' && repositoryDraft !== undefined) {
+        if (Object.hasOwn(input, 'repositoryId')) throw assetError('service_repository_ambiguous', '请选择已有代码库或新增代码库，不能同时提供。');
+        const repository = repositoryFromDraft(root, catalog.services[index].workspaceId, repositoryDraft);
+        if (catalog.repositories.some(r => repositoryLocationKey(root, r) === repositoryLocationKey(root, repository))) throw assetError('repository_duplicate_path', '该目录已登记为代码库，请复用已有代码库。', 409);
+        catalog.repositories.push(repository);
+        patch.repositoryId = repository.id;
+      }
       const updated = { ...collection[index], ...patch };
       (collection as any[])[index] = kind === 'project' ? createProject(updated as any) : kind === 'service' ? createBusinessService(updated) : createRepositoryInstance(updated);
     });
@@ -288,8 +345,8 @@ export function registerAssetRelationshipsApplication(runtime: Record<string, an
   function repositoryPreparePrompt(root: string, id: string) {
     const r = read(root).catalog.repositories.find(item => item.id === id || item.code === id);
     if (!r) throw assetError('repository_not_found', '代码库不存在。', 404);
-    return { prompt: [`准备代码库：${r.name}（${r.code}）`, `声明：${JSON.stringify(r.source)}`, '读取当前 repositories/manifest.yml，核对稳定身份、来源、集成分支和实际目录。', '已登记但代码缺失时，验证远端分支后准备至声明的实际目录；附接目录不由此动作搬迁或重建。', '代码库必须对应真实 Git 根目录；工作空间根使用 .，服务子目录用 modulePath；先读取独立 /services、/repositories 列表，状态按单个代码库读取。', '删除项目或服务只移除登记和关系，保留代码、文件与历史任务；提交前读取最新 revision 并说明影响。', '目录已存在时核对仓库来源和工作状态，不覆盖、不丢弃修改、不隐式切换分支。', '来源信息缺失时先查明，不猜测 Git 地址或分支。准备失败仅报告相关代码库问题，不撤销项目与服务关系。', '为具体任务建立隔离工作位置，读取明确项目、服务和实际代码目录的适用规则。'].join('\n'), copiedMeansPrepared: false };
+    return { prompt: [`对齐代码库声明：${r.name}（${r.code}）`, `声明：${JSON.stringify(r.source)}`, '读取当前 repositories/manifest.yml，核对稳定身份、最新版本、来源、集成分支和实际目录。', '先只读检查 Git 根目录、实际远端与服务模块；列明声明和实际的差异。声明保存不代表已执行远端改写、切换分支、克隆或搬迁。', '集成分支是后续工作的目标，不要求当前分支与之相同；仅因当前分支不同不得自动切换。', '远端或目录需要对齐时先提出具体动作与影响，在相应授权内执行；保留原目录、未提交改动和全部服务引用。', '已登记但代码缺失时，验证远端分支后准备至声明的实际目录；附接目录不由此动作搬迁或重建。', '代码库必须对应真实 Git 根目录；工作空间根使用 .，服务子目录用 modulePath；先读取独立 /services、/repositories 列表，状态按单个代码库读取。', '删除项目或服务只移除登记和关系，保留代码、文件与历史任务；提交前读取最新 revision 并说明影响。', '目录已存在时核对仓库来源和工作状态，不覆盖、不丢弃修改、不隐式切换分支。', '来源信息缺失时先查明，不猜测 Git 地址或分支。准备失败仅报告相关代码库问题，不撤销项目与服务关系。', '为具体任务建立隔离工作位置，读取明确项目、服务和实际代码目录的适用规则。'].join('\n'), copiedMeansPrepared: false };
   }
-  Object.assign(runtime, { listCatalogServices, listCatalogRepositories, catalogRepositoryStatus, normalizeCatalogRepositories, deleteCatalogAsset, readGlobalServiceRegistry, catalogServiceDocument, assetCatalog, migrateAssetCatalog, createCatalogRepository, createCatalogService, createCatalogProject, updateProjectServices, updateCatalogAsset, repositoryPreparePrompt });
+  Object.assign(runtime, { catalogRepositoryLocalConfig, listCatalogServices, listCatalogRepositories, catalogRepositoryStatus, normalizeCatalogRepositories, deleteCatalogAsset, readGlobalServiceRegistry, catalogServiceDocument, assetCatalog, migrateAssetCatalog, createCatalogRepository, createCatalogService, createCatalogProject, updateProjectServices, updateCatalogAsset, repositoryPreparePrompt });
   return runtime;
 }
