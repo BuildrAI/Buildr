@@ -4,17 +4,8 @@ repositories:
     id: 40394b3d-d44d-5bb2-a59b-932a0dd6a597
     workspaceId: f2f40b71-2382-5906-82bd-76a7927b59f3
     code: buildr
-    name: Buildr 后端
-    description: Buildr 的 CLI、Buildr Web Runtime、运行源码、验证、打包与发布实现。
+    name: Buildr 源码库
+    description: Buildr 共用 Git 仓库，包含产品治理、后端与前端源码。
     source:
-      type: workspace
-      path: projects/product/services/buildr
-  buildr-web:
-    id: de696ded-65d4-5052-a29f-1c02ae3b84df
-    workspaceId: f2f40b71-2382-5906-82bd-76a7927b59f3
-    code: buildr-web
-    name: Buildr 前端
-    description: Buildr Web React/Vite 前端源码与正式构建
-    source:
-      type: workspace
-      path: projects/product/services/buildr-web
+      type: git
+      path: .
