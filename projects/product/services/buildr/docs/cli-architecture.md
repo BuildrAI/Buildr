@@ -24,7 +24,7 @@ src/
 └── infrastructure/  通用文件、SQLite、Git、进程、资源与协议机制
 ```
 
-产品模块固定在 `src/modules/`：Workspace、Task、Agent Assets、Project Testing、OpenSpec、Installation、Diagnostics、Publication。Task scope 的 Change 组合位于 `src/modules/task/change/`。
+产品模块固定在 `src/modules/`：Workspace、Task、Agent Assets、Project Testing、OpenSpec、Knowledge、Installation、Diagnostics、Publication。Task scope 的 Change 组合位于 `src/modules/task/change/`。
 
 ## Module Registry
 

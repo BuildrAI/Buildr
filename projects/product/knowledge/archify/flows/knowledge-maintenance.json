@@ -1,0 +1,148 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "知识建设与维护的职责关系",
+    "locale": "zh-CN",
+    "quality_profile": "showcase"
+  },
+  "components": [
+    {
+      "id": "guidance",
+      "type": "external",
+      "label": "建设指导",
+      "sublabel": "OpenSpec · code-architecture",
+      "pos": [
+        40,
+        80
+      ],
+      "size": [
+        260,
+        80
+      ]
+    },
+    {
+      "id": "facts",
+      "type": "database",
+      "label": "规范与代码",
+      "sublabel": "行为承诺与实际实现",
+      "pos": [
+        40,
+        310
+      ],
+      "size": [
+        260,
+        80
+      ]
+    },
+    {
+      "id": "maintenance",
+      "type": "backend",
+      "label": "当前知识维护",
+      "sublabel": "current-knowledge-maintenance",
+      "pos": [
+        410,
+        310
+      ],
+      "size": [
+        260,
+        80
+      ]
+    },
+    {
+      "id": "methods",
+      "type": "external",
+      "label": "专业制作与术语治理",
+      "sublabel": "Archify · code-map · terminology",
+      "pos": [
+        410,
+        80
+      ],
+      "size": [
+        260,
+        80
+      ]
+    },
+    {
+      "id": "artifacts",
+      "type": "database",
+      "label": "面向人的知识成果",
+      "sublabel": "说明 · 技术图 · 代码地图",
+      "pos": [
+        780,
+        310
+      ],
+      "size": [
+        260,
+        80
+      ]
+    },
+    {
+      "id": "web",
+      "type": "frontend",
+      "label": "Buildr Web",
+      "sublabel": "理解 · 追溯 · 提出修改",
+      "pos": [
+        780,
+        540
+      ],
+      "size": [
+        260,
+        80
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "guidance-facts",
+      "from": "guidance",
+      "to": "facts",
+      "label": "指导建设",
+      "labelDy": 88
+    },
+    {
+      "id": "facts-maintenance",
+      "from": "facts",
+      "to": "maintenance",
+      "label": "事实依据"
+    },
+    {
+      "id": "methods-maintenance",
+      "from": "methods",
+      "to": "maintenance",
+      "label": "制作方法",
+      "labelDy": 88
+    },
+    {
+      "id": "maintenance-artifacts",
+      "from": "maintenance",
+      "to": "artifacts",
+      "label": "执行更新"
+    },
+    {
+      "id": "artifacts-web",
+      "from": "artifacts",
+      "to": "web",
+      "label": "只读呈现",
+      "labelDy": 88
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "开发中的维护",
+      "items": [
+        "按真实影响更新相关表达",
+        "保留未受影响成果"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "网页中的阅读",
+      "items": [
+        "同一成果内嵌或独立查看",
+        "来源变化提示待核对"
+      ]
+    }
+  ]
+}

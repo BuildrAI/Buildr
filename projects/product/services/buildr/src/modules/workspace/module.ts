@@ -1,3 +1,4 @@
+export type { AssetCatalog } from './domain/asset-relationships.ts';
 import { registerAssetRelationshipsApplication } from './application/asset-relationships-application.ts';
 import { assetCatalogCommand } from './interfaces/cli/asset-catalog.ts';
 import { createRegistryMaintenance } from './application/registry-maintenance.ts';

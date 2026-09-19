@@ -216,6 +216,12 @@ builtins:
       description: 初始化、维护准备与验证声明，或项目注册、构建和测试入口变化产生声明缺口时使用；先核对差异，再交给对应维护者。
       required: false
       runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
+    - id: code-map
+      path: resources/workspace/skills/buildr/code-map
+      target: skills/buildr/code-map
+      description: 建设、更新或检查代码地图时使用；依据真实职责、目录与文件解释实现组织，并核对受影响的来源与关联。
+      required: false
+      runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: code-architecture
       path: resources/workspace/skills/buildr/code-architecture
       target: skills/buildr/code-architecture
@@ -353,7 +359,7 @@ builtins:
     - id: current-knowledge-maintenance
       path: resources/workspace/skills/buildr/current-knowledge-maintenance
       target: skills/buildr/current-knowledge-maintenance
-      description: 建设、检查或维护项目与服务的代码地图、技术图和解释文档，或在 OpenSpec 变更中判断并处理相关知识影响时使用。
+      description: 围绕用户主题构建项目或服务的架构知识，检查或维护相关文章、技术图和代码地图，或处理开发中的知识影响时使用。
       required: false
       provides:
         - capability: buildr.current-knowledge-maintenance
@@ -469,6 +475,8 @@ workspaceFiles:
   - resources/workspace/skills/buildr/task-triage/references/structured-handoff.md => skills/buildr/task-triage/references/structured-handoff.md copy
   - resources/workspace/skills/buildr/task-triage/references/task-create-git-baseline.md => skills/buildr/task-triage/references/task-create-git-baseline.md copy
   - resources/workspace/skills/buildr/declaration-intake/SKILL.md => skills/buildr/declaration-intake/SKILL.md copy
+  - resources/workspace/skills/buildr/code-map/references/knowledge-index.md => skills/buildr/code-map/references/knowledge-index.md copy
+  - resources/workspace/skills/buildr/code-map/SKILL.md => skills/buildr/code-map/SKILL.md copy
   - resources/workspace/skills/buildr/code-architecture/SKILL.md => skills/buildr/code-architecture/SKILL.md copy
   - resources/workspace/skills/buildr/code-architecture/references/examples.md => skills/buildr/code-architecture/references/examples.md copy
   - resources/workspace/skills/buildr/project-testing/SKILL.md => skills/buildr/project-testing/SKILL.md copy
@@ -504,6 +512,7 @@ workspaceFiles:
   - resources/workspace/skills/buildr/terminology-governance/SKILL.md => skills/buildr/terminology-governance/SKILL.md copy
   - resources/workspace/skills/contracts/buildr/current-knowledge-maintenance/v3.md => skills/contracts/buildr/current-knowledge-maintenance/v3.md copy
   - resources/workspace/skills/buildr/current-knowledge-maintenance/SKILL.md => skills/buildr/current-knowledge-maintenance/SKILL.md copy
+  - resources/workspace/skills/buildr/current-knowledge-maintenance/references/architecture-knowledge.md => skills/buildr/current-knowledge-maintenance/references/architecture-knowledge.md copy
   - resources/workspace/skills/buildr/current-knowledge-maintenance/references/artifacts.md => skills/buildr/current-knowledge-maintenance/references/artifacts.md copy
   - resources/workspace/skills/buildr/current-knowledge-maintenance/references/change-collaboration.md => skills/buildr/current-knowledge-maintenance/references/change-collaboration.md copy
   - resources/workspace/skills/buildr/current-knowledge-maintenance/references/verification.md => skills/buildr/current-knowledge-maintenance/references/verification.md copy

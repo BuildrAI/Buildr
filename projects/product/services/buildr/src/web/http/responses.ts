@@ -30,16 +30,19 @@ export function binaryResponse(response: any, status: any, content: any, content
   response.end(content);
 }
 
-export function uiPrototypeHtmlResponse(response: any, content: any) {
+function isolatedHtmlResponse(response: any, content: any, downloads = false) {
   response.writeHead(200, {
     'content-type': 'text/html; charset=utf-8',
     'cache-control': 'no-store',
-    'content-security-policy': "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; connect-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'",
+    'content-security-policy': `sandbox allow-scripts${downloads ? " allow-downloads" : ""}; default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; connect-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'`,
     'referrer-policy': 'no-referrer',
     'x-content-type-options': 'nosniff',
   });
   response.end(content);
 }
+
+export function uiPrototypeHtmlResponse(response: any, content: any) { isolatedHtmlResponse(response, content); }
+export function diagramHtmlResponse(response: any, content: any) { isolatedHtmlResponse(response, content, true); }
 
 export function apiError(response: any, error: any) {
   if (response.destroyed || response.writableEnded) return;

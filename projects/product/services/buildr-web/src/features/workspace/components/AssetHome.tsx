@@ -53,7 +53,7 @@ export function AssetHome({ kind, previewId }: { kind: 'service' | 'repository';
   return <WorkspaceStage pageTabs={tabs.tabs} onClosePageTab={tabs.close}
     objectTabs={documents.map(file => ({ key: file, kind: 'doc', title: file }))} activeObject={activeDocument} onActivateObject={setActiveDocument} onCloseObject={closeDocument}
     objectContent={documents.map(file => <div key={file} hidden={file !== activeDocument}><ResourceDocumentPane file={file} load={loadDocument} onOpen={openDocument} /></div>)}>
-    <div className="resource-home">
+    <div className="resource-home">{kind === 'service' && <section className="resource-section"><h2>服务知识</h2><Link to={href(`/knowledge/service/${encodeURIComponent(assetId)}${projectContext ? `?fromProject=${encodeURIComponent(projectContext)}` : ''}`)}>理解服务架构与实现 →</Link></section>}
       <header className="resource-home-head"><div><p className="resource-eyebrow">{label} <span> / {item.code}</span></p><h1 id={kind === 'service' ? 'service-detail-name' : 'repository-detail-name'}>{item.name}</h1><p id={kind === 'service' ? 'service-detail-description' : 'repository-detail-description'}>{item.description || '尚未填写说明。'}</p></div><Space>{kind === 'service' && <Button danger disabled={data.migrationRequired} onClick={() => setDeleting(true)}>删除服务</Button>}<Button disabled={data.migrationRequired} onClick={() => setEditing(true)}>编辑{label}</Button></Space></header>
       <CatalogMigration catalog={data} onSaved={catalog.setData} />
       {data.diagnostics.filter(d => d.objectId === item.id || d.objectId === repository?.id).map(d => <Alert key={d.code + d.objectId} type="warning" showIcon message={d.message} />)}

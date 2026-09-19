@@ -30,8 +30,8 @@ export function WorkspacePages({ workspaceId, renderResource }: { workspaceId: s
   };
   const commitPreview = useCallback((owner: string, next: PreviewState) => {
     setPreviews(prev => ({ ...prev, [owner]: next }));
-    navigate(owner, { state: { resourceViews: next } });
-  }, [navigate]);
+    navigate({ pathname: owner, search: owner === location.pathname ? location.search : '', hash: owner === location.pathname ? location.hash : '' }, { state: { ...(owner === location.pathname ? location.state : {}), resourceViews: next } });
+  }, [navigate, location.pathname, location.search, location.hash, location.state]);
   const openPreview = useCallback((owner: string, path: string) => {
     const item = resourcePreview(workspaceId, path);
     if (!item) return false;
@@ -49,6 +49,7 @@ export function WorkspacePages({ workspaceId, renderResource }: { workspaceId: s
   };
   useEffect(() => {
     const saved = location.state?.resourceViews as PreviewState | undefined;
+    if (saved === undefined) return; // A primary reading navigation does not close existing comparison panes.
     const items = Array.isArray(saved?.items) ? saved.items.map(item => resourcePreview(workspaceId, item.path)).filter((item): item is ResourcePreview => Boolean(item) && !removedResources.current.has(`${item!.kind}:${item!.id}`)) : [];
     setPreviews(prev => ({ ...prev, [location.pathname]: { items, active: items.some(item => item.kind === saved?.active) ? saved!.active : null } }));
   }, [location.key, location.pathname, workspaceId]);
@@ -77,14 +78,19 @@ export function WorkspacePages({ workspaceId, renderResource }: { workspaceId: s
     if (!tabForPath(workspaceId, tab.path) || resourcePreview(workspaceId, tab.path)) return;
     setTabs((prev) => {
       const old = prev.find((t) => t.key === tab.key);
-      if (old?.title === tab.title && old.path === tab.path) return prev;
-      return old ? prev.map((t) => t.key === tab.key ? tab : t) : [...prev, tab];
+      if (old?.title === tab.title && old.kind === tab.kind) return prev;
+      return old ? prev.map((t) => t.key === tab.key ? { ...t, title: tab.title, kind: tab.kind } : t) : [...prev, tab];
     });
   }, [workspaceId]);
 
   useLayoutEffect(() => {
     if (!current || resourcePreview(workspaceId, location.pathname)) return;
-    setTabs((prev) => prev.some((t) => t.key === current.key) ? prev : [...prev, current]);
+    setTabs((prev) => {
+      const old = prev.find(t => t.key === current.key);
+      if (old?.path === current.path && old.search === location.search) return prev;
+      const next = {...current, title: old?.title || current.title, search: location.search};
+      return old ? prev.map(t => t.key === current.key ? next : t) : [...prev, next];
+    });
     setVisited((prev) => {
       const old = prev.find((entry) => entry.path === location.pathname);
       if (old?.location.location.key === location.key) return prev;
@@ -102,8 +108,8 @@ export function WorkspacePages({ workspaceId, renderResource }: { workspaceId: s
     const next = tabs.filter((t) => t.key !== key);
     const fallback = tabForPath(workspaceId, `/workspaces/${workspaceId}/projects`)!;
     setTabs(next.length ? next : [fallback]);
-    setVisited((prev) => prev.filter((p) => p.path !== target.path));
-    if (target.path === location.pathname) navigate(next[Math.max(0, index - 1)]?.path || fallback.path);
+    setVisited((prev) => prev.filter((p) => tabForPath(workspaceId, p.path)?.key !== key));
+    if (tabForPath(workspaceId, location.pathname)?.key === key) { const target = next[Math.max(0, index - 1)] || fallback; navigate({ pathname: target.path, search: target.search || "" }); }
   }, [tabs, workspaceId, location.pathname, navigate, forgetWorkspacePage]);
   const reorder = useCallback((key: string, index: number) => setTabs((prev) => moveTab(prev, key, index)), []);
   const setRatio = useCallback((value: number) => {

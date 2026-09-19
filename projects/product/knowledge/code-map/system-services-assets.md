@@ -18,6 +18,7 @@ services/buildr/
 │   │   │   ├── change/                   任务关联规范变更的读取组合
 │   │   │   └── daily-progress/           Git 提交主导的每日演进
 │   │   ├── agent-assets/                 命令、规则、技能、组件及投射
+│   │   ├── knowledge/                    知识关联、来源观察与只读呈现
 │   │   ├── openspec/                     规范变更读取、收敛和恢复
 │   │   ├── project-testing/              用户项目测试声明，非执行引擎
 │   │   ├── installation/                 安装、更新、启动器和版本感知

@@ -27,3 +27,11 @@ test('标签移动保留身份与集合，支持向前向后和边界', () => {
  assert.deepEqual(moveTab(tabs,'a',99).map(t=>t.key),['b','c','a']);
  assert.deepEqual(tabs.map(t=>t.key),['a','b','c']);
 });
+
+test('项目详情与知识共享一个项目标签，恢复旧标签去重且保留检索上下文',()=>{
+ const detail=tabForPath('w','/workspaces/w/projects/product');
+ const knowledge=tabForPath('w','/workspaces/w/knowledge/project/product');
+ assert.equal(detail.key,knowledge.key);
+ const tabs=parseTabs('w',JSON.stringify([{path:knowledge.path,title:'Buildr 产品 · 知识',search:'?view=diagrams&q=订单'},{path:detail.path,title:'Buildr 产品'}]));
+ assert.equal(tabs.length,1);assert.equal(tabs[0].title,'Buildr 产品');assert.equal(tabs[0].search,'?view=diagrams&q=订单');
+});

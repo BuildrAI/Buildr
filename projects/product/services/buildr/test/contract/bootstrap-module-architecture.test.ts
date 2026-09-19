@@ -173,6 +173,12 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     },
     lifecycle: 'none',
   }, {
+    id: 'knowledge',
+    requires: ['workspace.application','agent-assets.application'],
+    provides: ['knowledge.query'],
+    contributions: { cli: [], http: ['knowledge.http'], diagnostics: [] },
+    lifecycle: 'none',
+  }, {
     id: 'publication',
     requires: [WORKSPACE_QUERY],
     provides: ['publication.application'],
@@ -301,7 +307,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     'doctor',
   ]);
   assert.deepEqual(runtimeContributions(runtime, 'http').map((item: any) => item.id), [
-    'workspace-core.http', 'agent-assets.http', 'publication.http', 'task.http', 'task.daily-progress.http', 'change.http',
+    'workspace-core.http', 'agent-assets.http', 'knowledge.http', 'publication.http', 'task.http', 'task.daily-progress.http', 'change.http',
     'task-review.http', 'task-verification.http',
     'task-parent-coordination.http', 'system-installation.release-awareness.http',
   ]);

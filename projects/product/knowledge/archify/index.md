@@ -34,3 +34,11 @@ JSON 是可维护源，HTML 是可重建投影。两者应保持同名、同目�
 图表旁的 `*.visual-check.json`、`*.visual-check.html` 与检查截图是生成和视觉检查证据，不是新的知识事实源。
 
 本轮两图已通过 9/9 展示级检查，错误与警告均为 0；四个桌面尺寸的边界检查通过。已人工查看 1440×900 浅色与 2048×1320 深色截图，未发现节点、卡片或连线遮挡。自动视觉报告仍保留 `visualReview: pending`，人工查看结论不伪装成自动检查结果。
+
+## 知识建设与维护
+
+[职责图](flows/knowledge-maintenance.html) · [图源](flows/knowledge-maintenance.json) · [来源说明](flows/knowledge-maintenance.md) · [实现地图](../code-map/knowledge-maintenance.md)。本图表达建设指导、事实依据、维护执行与只读呈现，工作协作不代表后台自动调用。
+
+## 项目、服务与代码库
+
+[引用关系示意](flows/project-service-repositories.html) · [图源](flows/project-service-repositories.json) · [事实依据](flows/project-service-repositories.md) · [架构文章](../docs/architecture/project-service-repositories.md)。

@@ -217,6 +217,7 @@ export function ProjectDetailPage() {
         </section>
 
         <div className="ws-stack">
+          <Link className="knowledge-home-entry" to={href(`/knowledge/project/${encodeURIComponent(projectCode)}`)}><span className="knowledge-home-icon"><FileTextOutlined /></span><span><strong>项目知识</strong><span>从架构文章、技术图和代码地图，理解职责、协作与实现。</span></span><b>阅读项目知识 <RightOutlined /></b></Link>
           <ProjectServicesPanel projectCode={projectCode} />
 
           <section className="resource-section" aria-label="文档">

@@ -1,0 +1,843 @@
+schemaVersion: buildr.knowledge-index/v1
+scope:
+  kind: project
+  id: product
+objects:
+  - id: knowledge-maintenance
+    title: 知识建设与维护
+    summary: 谁指导事实建设，谁维护表达，职责落在哪些文件，以及变化后怎样跟上。
+  - id: project-service-repositories
+    title: 项目、服务与代码库如何协作
+    summary: 理解三类对象的职责、共享引用、代码定位，以及关联和分支修改的影响。
+artifacts:
+  - id: explanation
+    title: 知识建设与维护
+    kind: document
+    path: knowledge/docs/architecture/knowledge-maintenance.md
+    objects:
+      - knowledge-maintenance
+    sources:
+      - query
+      - index-model
+      - files
+      - http
+      - module
+      - page
+      - diagram-reader
+      - feedback
+      - client
+      - skill-page
+      - code-architecture
+      - current-knowledge-maintenance
+      - code-map
+      - terminology-governance
+      - archify
+      - openspec
+      - spec
+      - reading-spec
+      - tests
+      - project-terms
+      - source-reader
+      - navigation
+      - construction-prompt
+      - architecture-guide
+      - artifact-reader
+      - knowledge-catalog
+      - catalog-filter
+      - reading-state
+      - knowledge-contracts
+      - navigation-index
+      - markdown-renderer
+      - markdown-host
+      - tree-ui
+      - tree-model
+      - reading-pane
+      - code-map-spec
+    observedDigest: 109bd7ff4640b7b1de107f3dc580e47bcf731acb5c21173164c5b29911ca12e7
+    files:
+      - file-explanation
+  - id: responsibility
+    title: 知识建设与维护的职责关系
+    kind: diagram
+    path: knowledge/archify/flows/knowledge-maintenance.html
+    graphSource: knowledge/archify/flows/knowledge-maintenance.json
+    graphDigest: 4a9aae9f43cc4789f54b32d9c69f955204b2bc7a43d54ac25634f9a33a027a2f
+    objects:
+      - knowledge-maintenance
+    sources:
+      - query
+      - index-model
+      - files
+      - http
+      - module
+      - page
+      - diagram-reader
+      - feedback
+      - client
+      - skill-page
+      - code-architecture
+      - current-knowledge-maintenance
+      - code-map
+      - terminology-governance
+      - archify
+      - openspec
+      - spec
+      - reading-spec
+      - tests
+      - project-terms
+      - source-reader
+      - navigation
+      - construction-prompt
+      - architecture-guide
+    observedDigest: 5ad54afdaedef0177776cb708cce20caac74d4fbf21cddbb852fb08f65f13bcc
+    files:
+      - file-responsibility
+      - file-responsibility-graph
+      - file-responsibility-evidence
+  - id: implementation-map
+    title: 知识建设与维护的实现组织
+    kind: code-map
+    path: knowledge/code-map/knowledge-maintenance.md
+    objects:
+      - knowledge-maintenance
+    sources:
+      - query
+      - index-model
+      - files
+      - http
+      - module
+      - page
+      - diagram-reader
+      - feedback
+      - client
+      - skill-page
+      - code-architecture
+      - current-knowledge-maintenance
+      - code-map
+      - terminology-governance
+      - archify
+      - openspec
+      - spec
+      - reading-spec
+      - tests
+      - project-terms
+      - source-reader
+      - navigation
+      - construction-prompt
+      - architecture-guide
+      - artifact-reader
+      - knowledge-catalog
+      - catalog-filter
+      - reading-state
+      - knowledge-contracts
+      - navigation-index
+      - markdown-renderer
+      - markdown-host
+      - tree-ui
+      - tree-model
+      - reading-pane
+      - code-map-spec
+    observedDigest: 84c83daaff73bcc2531e304a8d3f1c12ae060cbdd6c45b25a5896a944640ca75
+    files:
+      - file-implementation-map
+      - file-explanation
+      - file-responsibility
+      - file-responsibility-graph
+      - file-responsibility-evidence
+      - file-terms
+  - id: terms
+    title: 知识建设与维护术语
+    kind: terms
+    path: knowledge/docs/knowledge-maintenance-terms.md
+    objects:
+      - knowledge-maintenance
+    sources:
+      - query
+      - index-model
+      - files
+      - http
+      - module
+      - page
+      - diagram-reader
+      - feedback
+      - client
+      - skill-page
+      - code-architecture
+      - current-knowledge-maintenance
+      - code-map
+      - terminology-governance
+      - archify
+      - openspec
+      - spec
+      - reading-spec
+      - tests
+      - project-terms
+      - source-reader
+      - navigation
+      - construction-prompt
+      - architecture-guide
+    observedDigest: 705c46aee187e6799935b8232b1743f55f13a80a03ee6c4a231db23f859fc0bd
+    files:
+      - file-terms
+  - id: system
+    title: Buildr 系统全景
+    kind: diagram
+    path: knowledge/archify/system/buildr-system-overview.html
+    objects: []
+    sources: []
+    graphSource: knowledge/archify/system/buildr-system-overview.json
+    graphDigest: 814f8a03e3d73e55a5482ad4d9f62cb17cb05d4e17bdae4fae4fad8f983d8a5c
+    observedDigest: c7b140b0f162372f310bbd6f00d325d882f8518c10572c3f36dd44b3eb586f3d
+    files:
+      - file-system
+      - file-system-graph
+  - id: responsibilities
+    title: 能力、数据与副作用
+    kind: diagram
+    path: knowledge/archify/flows/capability-data-responsibility.html
+    objects: []
+    sources: []
+    graphSource: knowledge/archify/flows/capability-data-responsibility.json
+    graphDigest: c4ad9e3db468f7d13e7aadfb4a2cf69cea363995a2cc9071844226ca6f6f383d
+    observedDigest: 8f90c4406990cd6aa9d9d879be4e57b7500c3efb6566e4eca8b8e103c9e1a618
+    files:
+      - file-responsibilities
+      - file-responsibilities-graph
+  - id: skill-projection
+    title: 技能源文件到可发现入口
+    kind: diagram
+    path: knowledge/archify/flows/skill-projection.html
+    objects: []
+    sources: []
+    graphSource: knowledge/archify/flows/skill-projection.json
+    graphDigest: ceff1cad58d94bea09d22ea63888459547979ffd3ecd7146977701c3f58c7fa9
+    observedDigest: 7688a4e8a42ee87a196249173d125df64d8cc8d6ef9d2f9c4530cae11396ebbb
+    files:
+      - file-skill-projection
+      - file-skill-projection-graph
+      - file-skill-projection-evidence
+  - id: project-relations-article
+    title: 项目、服务与代码库如何协作
+    kind: document
+    path: knowledge/docs/architecture/project-service-repositories.md
+    objects:
+      - project-service-repositories
+    sources:
+      - asset-relations-spec
+      - repository-registry-spec
+      - asset-model
+      - asset-app
+      - asset-persistence
+      - asset-http
+      - project-services-ui
+      - asset-detail-ui
+      - asset-tests
+      - scope-rules
+      - project-terms
+      - current-knowledge-maintenance
+      - archify
+      - code-map
+      - asset-cli
+      - code-architecture
+    observedDigest: 77fbcdb5f4d6e0e4cd2b0ee5aa81381fb421829f3a488b9b35d3820d2f376081
+    files:
+      - file-project-relations-article
+  - id: project-relations-map
+    title: 关系维护与代码定位的实现地图
+    kind: code-map
+    path: knowledge/code-map/project-service-repositories.md
+    objects:
+      - project-service-repositories
+    sources:
+      - asset-relations-spec
+      - repository-registry-spec
+      - asset-model
+      - asset-app
+      - asset-persistence
+      - asset-http
+      - project-services-ui
+      - asset-detail-ui
+      - asset-tests
+      - scope-rules
+      - project-terms
+      - current-knowledge-maintenance
+      - archify
+      - code-map
+      - asset-cli
+      - code-architecture
+    observedDigest: 757978783d8eaa5f332b269a5c5bbb37ba41afcf6359413f9767f5d6db94ed13
+    files:
+      - file-project-relations-map
+      - file-project-relations-article
+      - file-project-relations-diagram
+      - file-project-relations-diagram-graph
+      - file-project-relations-diagram-evidence
+  - id: project-relations-diagram
+    title: 项目、服务与代码库的引用关系
+    kind: diagram
+    path: knowledge/archify/flows/project-service-repositories.html
+    objects:
+      - project-service-repositories
+    sources:
+      - asset-relations-spec
+      - repository-registry-spec
+      - asset-model
+      - asset-app
+      - asset-persistence
+      - asset-http
+      - project-services-ui
+      - asset-detail-ui
+      - asset-tests
+      - scope-rules
+      - project-terms
+      - current-knowledge-maintenance
+      - archify
+      - code-map
+    observedDigest: cd8f79124910b3a23df844619d9fa201a480bcec056a979b9b8a6bb26a8cbaa0
+    graphSource: knowledge/archify/flows/project-service-repositories.json
+    graphDigest: 1947643adac585f601248ea6de976cd091f86e104fb64ddae7163bc09c8fd3b7
+    files:
+      - file-project-relations-diagram
+      - file-project-relations-diagram-graph
+      - file-project-relations-diagram-evidence
+sources:
+  - id: query
+    title: 读取与来源观察
+    kind: code
+    path: services/buildr/src/modules/knowledge/application/knowledge-query.ts
+    observedDigest: 52833058986a9cbd8028c4beacda99c2095dbd66e3dc234c12243d2c86bbbaac
+    summary: 组织知识读取用例：根据登记身份定位项目、服务和代码库，再读取相关成果与来源。它计算当前内容观察，不替代智能体对架构含义的判断。
+  - id: index-model
+    title: 知识对象与关联校验
+    kind: code
+    path: services/buildr/src/modules/knowledge/domain/knowledge-index.ts
+    observedDigest: c6cda33ad432993a831d5a19dc1b60b93f5449744a5b271fbf8da3eb5b1a0a30
+    summary: 定义知识对象、成果、来源及关系的结构，解析并校验局部索引。它检查身份唯一性、关联有效性和层级循环，不负责读取实际文件。
+  - id: files
+    title: 有界文件读取
+    kind: code
+    path: services/buildr/src/modules/knowledge/infrastructure/knowledge-files.ts
+    observedDigest: 3fc668cbd861c01cf8aef0ea6410deea853375329da092297ecda8a7181a24b9
+    summary: 集中处理只读文件操作，核对相对路径、真实路径、文件类型与大小，并计算内容摘要。它保护读取范围，不决定文件的业务职责。
+  - id: http
+    title: 只读协议入口
+    kind: code
+    path: services/buildr/src/modules/knowledge/interfaces/http/knowledge-http.ts
+    observedDigest: 7ecceae5b257a729d01df1f07b06f59e2755e1042502f9b8036134f09f91545a
+    summary: 知识读取的 HTTP 入口：解析请求身份，调用读取应用，并输出受校验的响应。图示通过单独隔离响应保留原 HTML；读取不修改规范或代码。
+  - id: module
+    title: 能力装配
+    kind: code
+    path: services/buildr/src/modules/knowledge/module.ts
+    observedDigest: 1f3029744bc3f636904f699982e4d7731849212518c24506d2f405bb3b29e0dd
+    summary: 装配知识模块需要的工作空间和技能来源依赖，对外公开读取能力并登记 HTTP 入口。它连接对象，不保存另一套业务事实。
+  - id: page
+    title: 知识阅读页面
+    kind: code
+    path: services/buildr-web/src/features/knowledge/pages/KnowledgePage.tsx
+    observedDigest: 5dc890e2dd2db52c048ee2ebc6dfa3612b842afa80b3b81ce2055f7783e589ff
+    summary: 组织当前知识范围、主屏详情、目录分类和关联阅读。它保持同一项目的副屏，具体文件说明与展示交给完整阅读组件。
+  - id: diagram-reader
+    title: 隔离图示阅读
+    kind: code
+    path: services/buildr-web/src/features/knowledge/components/KnowledgeDiagram.tsx
+    observedDigest: 52d6ee7927324eb46792e180baef42a742d6e80a81c60768c732a2bb11f5cd2c
+    summary: 用受隔离的框架显示原图，保留必要脚本与本地导出，同时只接收当前框架发送的已关联对象选择。它不解析或重建 Archify 的内部界面。
+  - id: feedback
+    title: 有上下文的修改意见
+    kind: code
+    path: services/buildr-web/src/features/knowledge/components/KnowledgeAgentAction.tsx
+    observedDigest: 7b18b0d610bdc3ac8763a734d85f27a71266c888e919a71542c051ff4b89d14c
+    summary: 建设主题和完善意见的接续表单。
+  - id: client
+    title: 知识接口客户端
+    kind: code
+    path: services/buildr-web/src/features/knowledge/api/knowledge-api.ts
+    observedDigest: fb65ac151fabef75ee3523c445060d04a804941a08d3a0db7f5a7e0183cf0e0f
+    summary: 沿用已有会话访问读取接口。
+  - id: skill-page
+    title: 复用的技能详情
+    kind: code
+    path: services/buildr-web/src/features/agent-assets/components/SkillHome.tsx
+    observedDigest: c8b9e3d34418ad23d4d5d08dfa0093521341522b080640c604d7511a13770261
+    summary: 共用技能详情默认读取 SKILL.md 正文，其他文件折叠检索并沿用文档阅读；切换技能时隔离文件与请求状态。
+  - id: code-architecture
+    title: 代码架构（code-architecture）
+    summary: 指导智能体（Agent）按清晰职责组织真实代码。
+    kind: skill
+    skillId: code-architecture
+    path: SKILL.md
+    link: services/buildr/resources/workspace/skills/buildr/code-architecture/SKILL.md
+    observedDigest: ae4f0abcbd57db4c6cec0c28aa7cdd3bb01e7e9c9c5c60429bb214b3a85f1aac
+  - id: current-knowledge-maintenance
+    title: 当前知识维护（current-knowledge-maintenance）
+    summary: 识别事实变化与授权范围，组织相关知识建设并核对结果。
+    kind: skill
+    skillId: current-knowledge-maintenance
+    path: SKILL.md
+    link: services/buildr/resources/workspace/skills/buildr/current-knowledge-maintenance/SKILL.md
+    observedDigest: 3de48a35ecd2564da358811962952887f3d3c48ebf79b7c53f8b0567a30c3767
+  - id: code-map
+    title: 代码地图制作（code-map）
+    summary: 解释规范、职责与协作如何落实到真实目录和文件。
+    kind: skill
+    skillId: code-map
+    path: SKILL.md
+    link: services/buildr/resources/workspace/skills/buildr/code-map/SKILL.md
+    observedDigest: 41732f7bd71c00feb1c619c98e572acf3c054bf7e006132d2d3a6866f1555d32
+  - id: terminology-governance
+    title: 术语治理（terminology-governance）
+    summary: 核对术语含义和作用域，沿用唯一解释。
+    kind: skill
+    skillId: terminology-governance
+    path: SKILL.md
+    link: services/buildr/resources/workspace/skills/buildr/terminology-governance/SKILL.md
+    observedDigest: 7f81bde1d2d6eccbdff4c5c8f71df82b76106539571b7daee5f9c3d4311bfad5
+  - id: archify
+    title: 技术图制作（Archify）
+    summary: 制作并验证关系、流程、时序等技术图及可维护图源。
+    kind: skill
+    skillId: archify
+    path: SKILL.md
+    link: services/buildr/resources/workspace/skills/buildr/archify/SKILL.md
+    observedDigest: cf43da2ed26f087241edb6373a4e3c856e4f9ac8b5211b5740038e8100f22238
+  - id: openspec
+    title: OpenSpec 规范建设
+    summary: 指导明确行为承诺、变更范围和验收要求。
+    kind: skill
+    skillId: openspec-propose
+    path: SKILL.md
+    link: services/buildr/resources/workspace/skills/openspec/openspec-propose/SKILL.md
+    observedDigest: 5060f490a1ed0b27cc1f440ae26a7da480227a17b382e9fe8fac2b47e0536ac0
+  - id: spec
+    title: 当前知识维护规范
+    kind: spec
+    path: openspec/specs/current-knowledge-maintenance/spec.md
+    observedDigest: d598711a20756395638d3d9d2c662fc4e70b39d8d3d14a0718db177c434d7ae6
+    summary: 规定当前知识维护的事实依据、成果边界、授权和逐项检查要求。它描述应该怎样协作，实际代码行为仍需分别核对。
+  - id: reading-spec
+    title: 项目知识阅读规范
+    kind: spec
+    path: openspec/specs/project-knowledge-browsing/spec.md
+    observedDigest: 856a1fb2b7be53778b7cca384e45ad0a2e88c23d7a649904b29168304569afbe
+    summary: 规定项目知识的目录、详情、副屏、文件说明、图示呈现与用户引导建设行为；属于当前正式规范。
+  - id: tests
+    title: 来源变化与读取验证
+    kind: evidence
+    path: services/buildr/test/integration/knowledge-query.test.ts
+    observedDigest: 45ed2ff6fdc186f1a79e4aeba2670f08da93fbd02041e30b3f406c74a2022765
+  - id: project-terms
+    title: 项目唯一术语解释
+    kind: evidence
+    path: knowledge/docs/glossary.md
+    observedDigest: 5c494325bddba5d51b59f77152d2b2e656448a19dd989ba4dfe7687233cb6807
+  - id: source-reader
+    title: 源码与文档阅读组件
+    kind: code
+    path: services/buildr-web/src/features/knowledge/components/KnowledgeSource.tsx
+    observedDigest: 8e6109ffc60a64d0dfd9900f2c639b64bdafd26523a558e7a3c752e9504db212
+    summary: 只读呈现源文件，提供行号、必要定位和基础语法显示；Markdown 可在阅读模式和原文之间切换。它不编辑或执行文件。
+  - id: navigation
+    title: 文中定位与图示消息校验
+    kind: code
+    path: services/buildr-web/src/features/knowledge/knowledge-navigation.ts
+    observedDigest: 97774716cad4b9b40d5d883bcb7b4f6a351e9cafecde6dadd9bf1ccc68eaeffe
+    summary: 文内路径、主题归属与图示消息校验。
+  - id: asset-relations-spec
+    title: 对象引用与修改规则
+    kind: spec
+    path: openspec/specs/workspace-asset-relationships/spec.md
+    observedDigest: 5110b576ac9fb11ba31db9f8a9810968845f8af5887415ac009ad96a30dfc0a6
+    summary: 规定项目、服务与代码库的引用基数、共享身份、修改和删除边界。它是承诺，地图同时引用实现文件说明当前怎样落实。
+  - id: repository-registry-spec
+    title: 代码库实例与分支规则
+    kind: spec
+    path: openspec/specs/repository-instance-registry/spec.md
+    observedDigest: 15610a45dc7615fbe3760e03e2900e20670d4d8281c2ccf81fc29960167f51d1
+    summary: 规定代码库实例的来源、集成分支与物理位置，以及登记与实际检出状态的区别。它约束代码定位和副本隔离。
+  - id: asset-model
+    title: 对象身份与关系约束
+    kind: code
+    path: services/buildr/src/modules/workspace/domain/asset-relationships.ts
+    observedDigest: 90a57b7594a58dcf8ad851d85beaf891816ab48f229a5eadedc8d4eeb72350ea
+    summary: 定义项目、服务与代码库实例的身份及引用规则，校验模块路径和关系有效性。实际文件位置由应用结合登记来源解析。
+  - id: asset-app
+    title: 关联、修改与代码定位
+    kind: code
+    path: services/buildr/src/modules/workspace/application/asset-relationships-application.ts
+    observedDigest: fdf8ab05966e3cc7a979c897f225ef50710d6000f1b2fc96e3421827518e2da3
+    summary: 组织创建、关联、修改、删除和代码定位用例，检查已观察版本以及其他引用方。它决定事务和副作用边界，不把修改声明自动解释为 Git 操作。
+  - id: asset-persistence
+    title: 唯一登记来源与兼容读取
+    kind: code
+    path: services/buildr/src/modules/workspace/persistence/asset-catalog-repository.ts
+    observedDigest: 7c1283d86c24a583890494690baae1df0889e0d52f6888c40571b52cac0e96eb
+    summary: 读写项目、服务和代码库的唯一文件清单，提供内容版本及兼容读取。它属于登记数据访问，没有把这些对象映射到数据库表。
+  - id: asset-http
+    title: 资产接口入口
+    kind: code
+    path: services/buildr/src/modules/workspace/interfaces/http/workspace-http.ts
+    observedDigest: 674934cf627812df01c5c96cfcf86d525a7eb32398260559ba80fc652b4641d5
+    summary: 将网页的对象登记与关系请求转换为应用调用，处理输入协议和响应。业务引用规则和版本检查留在应用与领域对象中。
+  - id: project-services-ui
+    title: 项目服务关联界面
+    kind: code
+    path: services/buildr-web/src/features/project/components/ProjectServicesPanel.tsx
+    observedDigest: c1f7502d3f892d18abc2457ea2ee5fb05cf80d2db15a2254fc471806a8ad0f3a
+    summary: 在当前项目上下文中展示和维护服务引用，保存时携带当前版本。它不创建另一份共享服务，也不直接改写底层清单。
+  - id: asset-detail-ui
+    title: 服务与代码库详情
+    kind: code
+    path: services/buildr-web/src/features/workspace/components/AssetHome.tsx
+    observedDigest: 2076ad0bebf33a394dc5e5373c907a7171a43475648c8501d8f089a96e4d2941
+    summary: 展示服务与代码库的登记职责、来源和可用操作。页面消费现有接口与身份，不按目录名称推断归属。
+  - id: asset-tests
+    title: 关系与分支回归依据
+    kind: evidence
+    path: services/buildr/test/integration/asset-relationships.test.ts
+    observedDigest: 57f17d20db557be912d75a578490ccc4910b37b68f45c78e1109db0bae39f875
+  - id: scope-rules
+    title: 工作空间作用域规则
+    kind: evidence
+    path: services/buildr/resources/workspace/AGENTS.md
+    observedDigest: 5e615d81a7ea104f03fe663d347bdbae93339b5612dab5a89deb5b4d720f3cb9
+  - id: construction-prompt
+    title: 架构知识建设交接
+    kind: code
+    path: services/buildr-web/src/features/knowledge/knowledge-request.ts
+    observedDigest: 07ce74c5517a13a564c8f195bc5808f1e77dfd552306e9cab0a42bc4e74c8435
+    summary: 将用户目标与事实观察组成接续指令。
+  - id: architecture-guide
+    title: 用户引导的架构知识建设方法
+    kind: skill
+    skillId: current-knowledge-maintenance
+    path: references/architecture-knowledge.md
+    link: services/buildr/resources/workspace/skills/buildr/current-knowledge-maintenance/references/architecture-knowledge.md
+    observedDigest: 9b5ee769f4423a6217b29c32454e14576d3d3617fd4d37b499d319cd2dff0cbe
+  - id: artifact-reader
+    title: 同一成果的阅读组件
+    kind: code
+    path: services/buildr-web/src/features/knowledge/components/KnowledgeArtifactReader.tsx
+    observedDigest: ae13d3552823565a6a94627886ffbbc7dbfbcfa0d1e38acc8a52a42569116a7c
+    summary: 统一呈现同一份文章、地图或技术图；文内预览与独立详情复用成果文件。它处理原生引用和文件树，完整图示的内部控件仍由 Archify 提供。
+  - id: knowledge-catalog
+    title: 成果目录与检索
+    kind: code
+    path: services/buildr-web/src/features/knowledge/components/KnowledgeCatalog.tsx
+    observedDigest: 6da8a1d5f111b18eefd2281a9ef19d70c239c985815e82b7b7dbfbc04e2408d2
+    summary: 三类成果的统一检索与建设入口。
+  - id: catalog-filter
+    title: 分类与关键词筛选
+    kind: code
+    path: services/buildr-web/src/features/knowledge/knowledge-catalog.ts
+    observedDigest: 124b3bd63d73f74f16e74d13e7dbee5dd0c6999d14b489c032f7a64ec307f292
+    summary: 按标题、说明和路径筛选目录。
+  - id: reading-state
+    title: 阅读请求与取消
+    kind: code
+    path: services/buildr-web/src/features/knowledge/useKnowledgeReading.ts
+    observedDigest: 739d66e35172f670c6154d6c997774bd27511e3a35e86f85ccdc9498e3c8d8ec
+    summary: 按当前范围和阅读目标发起请求，集中管理读取、失败与取消。旧请求不会把迟到内容写入新的阅读范围。
+  - id: knowledge-contracts
+    title: 知识响应契约
+    kind: code
+    path: services/buildr/src/modules/knowledge/interfaces/http/knowledge-http-contracts.ts
+    observedDigest: e62f5203a7142b91f537e819c7afc18a62b9d61e09b0850b5f4813e8a22520c5
+    summary: 定义知识读取接口的返回结构，包括范围、成果、来源和观察结果。后端返回前用它校验协议，前端生成类型也以它为依据；它不承担文件读取或知识语义判断。
+  - id: navigation-index
+    title: 当前阅读关联
+    kind: code
+    path: knowledge/index.yml
+    summary: 保存当前范围的知识对象、成果、事实来源与相关文件身份。正文仍在各自文件中；索引不会记录自身的内容摘要，避免自引用。
+  - id: asset-cli
+    title: 资产命令行入口
+    kind: code
+    path: services/buildr/src/modules/workspace/interfaces/cli/asset-catalog.ts
+    observedDigest: 864dc906a1431f74737ad6b6846996a472754060fd4fad8a5a12f43c9985b91a
+    summary: 实现 buildr assets 的命令参数处理，读取明确输入并调用登记应用。它支持检查和已授权写入，与网页复用相同应用规则。
+  - id: markdown-renderer
+    title: 共用文档与嵌套列表渲染
+    kind: code
+    path: services/buildr-web/src/markdown.ts
+    observedDigest: 2489d61256ba85b97cfb8d8b229ab31e34b68c6ae12091ba33b6bc7d9d19f068
+    summary: 共用文档渲染，保留安全链接、列表与目录层级。
+  - id: markdown-host
+    title: 文档与相对链接事件
+    kind: code
+    path: services/buildr-web/src/components/MarkdownHost.tsx
+    observedDigest: 451d7d7e4e4fd0bc29e12eb7af3948c014027e37026267d318463a4115daa1a2
+    summary: 将文档渲染接入页面及相对链接事件。
+  - id: tree-ui
+    title: 可折叠事实文件树
+    kind: code
+    path: services/buildr-web/src/features/knowledge/components/KnowledgeTree.tsx
+    summary: 呈现带职责说明的可折叠文件树。目录、左侧引导线和键盘可控制展开；业务边界由作者标记，组件不猜测技术栈或业务归属。
+    observedDigest: db25d2917e9dab802703f51ec6af51b64d8b94b5a98184c53ad109651ab7d195
+  - id: tree-model
+    title: 文件树与相关文件解析
+    kind: code
+    path: services/buildr-web/src/features/knowledge/knowledge-tree.ts
+    summary: 把原生 Markdown 文件树解析为层级，并把明确登记的相关文件组织成路径树。它只使用作者提供的文件和业务标记，不扫描或补造目录。
+    observedDigest: 00c965cb74bb519e00000e9916c113cc0f6938c3e0361d9bb5fa8a7968ea9dc0
+  - id: reading-pane
+    title: 关联阅读与文件说明
+    kind: code
+    path: services/buildr-web/src/features/knowledge/components/KnowledgeReadingPane.tsx
+    summary: 读取当前打开的成果或来源文件，显示打开时的上下文。源文件先显示已核实的总体说明，再显示实际内容；请求失败只影响这一项阅读。
+    observedDigest: 91ff4cdf8d353cab2aa968d2325a11a4b56aa81bfd47967d8cfa77879b486323
+  - id: code-map-spec
+    title: 代码地图制作规范
+    kind: spec
+    path: openspec/specs/code-map-building/spec.md
+    summary: 规定地图的内容范围、事实来源、职责解释及渐进阅读要求，约束地图如何帮助用户理解真实实现。
+    observedDigest: 19dc2799f630a3f317c9c302a6ed684056f472452f8f7f01ffefa0bcc5e54009
+  - id: file-explanation
+    title: 知识建设与维护 · 架构文章
+    kind: evidence
+    path: knowledge/docs/architecture/knowledge-maintenance.md
+    summary: 这份文件保存《知识建设与维护》的架构解释，与网页阅读使用同一正文。它是理解事实的成果，不替代规范或源码。
+    observedDigest: 109bd7ff4640b7b1de107f3dc580e47bcf731acb5c21173164c5b29911ca12e7
+  - id: file-responsibility
+    title: 知识建设与维护的职责关系 · 展示文件
+    kind: evidence
+    path: knowledge/archify/flows/knowledge-maintenance.html
+    summary: 这是《知识建设与维护的职责关系》的独立 HTML 展示，由 Archify 生成，包含图形与原生交互；它表达架构，不是实际运行记录。
+    observedDigest: 5ad54afdaedef0177776cb708cce20caac74d4fbf21cddbb852fb08f65f13bcc
+  - id: file-responsibility-graph
+    title: 知识建设与维护的职责关系 · 可维护图源
+    kind: evidence
+    path: knowledge/archify/flows/knowledge-maintenance.json
+    summary: 这是《知识建设与维护的职责关系》的可维护图源，定义节点、关系及布局。修改后由 Archify 重新生成配套展示，并核对图中的事实含义。
+    observedDigest: 4a9aae9f43cc4789f54b32d9c69f955204b2bc7a43d54ac25634f9a33a027a2f
+  - id: file-responsibility-evidence
+    title: 知识建设与维护的职责关系 · 图示依据
+    kind: evidence
+    path: knowledge/archify/flows/knowledge-maintenance.md
+    summary: 这份说明记录《知识建设与维护的职责关系》的事实依据、覆盖范围和表达限制，维护图源或展示时用它核对语义。
+    observedDigest: b46c2e4ee8b7e46f3e34185cff8db9f3cd2e4ea0602c412dd01bac11f5478d31
+  - id: file-implementation-map
+    title: 知识建设与维护的实现组织 · 地图文件
+    kind: evidence
+    path: knowledge/code-map/knowledge-maintenance.md
+    summary: 这份文件保存《知识建设与维护的实现组织》的职责、规范和实现位置地图，与网页阅读使用同一正文。它是理解事实的成果，不替代规范或源码。
+    observedDigest: 84c83daaff73bcc2531e304a8d3f1c12ae060cbdd6c45b25a5896a944640ca75
+  - id: file-terms
+    title: 知识建设与维护术语 · 术语文件
+    kind: evidence
+    path: knowledge/docs/knowledge-maintenance-terms.md
+    summary: 这份文件保存《知识建设与维护术语》的术语解释，与网页阅读使用同一正文。它是理解事实的成果，不替代规范或源码。
+    observedDigest: 705c46aee187e6799935b8232b1743f55f13a80a03ee6c4a231db23f859fc0bd
+  - id: file-system
+    title: Buildr 系统全景 · 展示文件
+    kind: evidence
+    path: knowledge/archify/system/buildr-system-overview.html
+    summary: 这是《Buildr 系统全景》的独立 HTML 展示，由 Archify 生成，包含图形与原生交互；它表达架构，不是实际运行记录。
+    observedDigest: c7b140b0f162372f310bbd6f00d325d882f8518c10572c3f36dd44b3eb586f3d
+  - id: file-system-graph
+    title: Buildr 系统全景 · 可维护图源
+    kind: evidence
+    path: knowledge/archify/system/buildr-system-overview.json
+    summary: 这是《Buildr 系统全景》的可维护图源，定义节点、关系及布局。修改后由 Archify 重新生成配套展示，并核对图中的事实含义。
+    observedDigest: 814f8a03e3d73e55a5482ad4d9f62cb17cb05d4e17bdae4fae4fad8f983d8a5c
+  - id: file-responsibilities
+    title: 能力、数据与副作用 · 展示文件
+    kind: evidence
+    path: knowledge/archify/flows/capability-data-responsibility.html
+    summary: 这是《能力、数据与副作用》的独立 HTML 展示，由 Archify 生成，包含图形与原生交互；它表达架构，不是实际运行记录。
+    observedDigest: 8f90c4406990cd6aa9d9d879be4e57b7500c3efb6566e4eca8b8e103c9e1a618
+  - id: file-responsibilities-graph
+    title: 能力、数据与副作用 · 可维护图源
+    kind: evidence
+    path: knowledge/archify/flows/capability-data-responsibility.json
+    summary: 这是《能力、数据与副作用》的可维护图源，定义节点、关系及布局。修改后由 Archify 重新生成配套展示，并核对图中的事实含义。
+    observedDigest: c4ad9e3db468f7d13e7aadfb4a2cf69cea363995a2cc9071844226ca6f6f383d
+  - id: file-skill-projection
+    title: 技能源文件到可发现入口 · 展示文件
+    kind: evidence
+    path: knowledge/archify/flows/skill-projection.html
+    summary: 这是《技能源文件到可发现入口》的独立 HTML 展示，由 Archify 生成，包含图形与原生交互；它表达架构，不是实际运行记录。
+    observedDigest: 7688a4e8a42ee87a196249173d125df64d8cc8d6ef9d2f9c4530cae11396ebbb
+  - id: file-skill-projection-graph
+    title: 技能源文件到可发现入口 · 可维护图源
+    kind: evidence
+    path: knowledge/archify/flows/skill-projection.json
+    summary: 这是《技能源文件到可发现入口》的可维护图源，定义节点、关系及布局。修改后由 Archify 重新生成配套展示，并核对图中的事实含义。
+    observedDigest: ceff1cad58d94bea09d22ea63888459547979ffd3ecd7146977701c3f58c7fa9
+  - id: file-skill-projection-evidence
+    title: 技能源文件到可发现入口 · 图示依据
+    kind: evidence
+    path: knowledge/archify/flows/skill-projection.md
+    summary: 这份说明记录《技能源文件到可发现入口》的事实依据、覆盖范围和表达限制，维护图源或展示时用它核对语义。
+    observedDigest: ba87a02874b4ef7ef7cea22c8c603b52fccba9da0088f37c801729e8e730ad90
+  - id: file-project-relations-article
+    title: 项目、服务与代码库如何协作 · 架构文章
+    kind: evidence
+    path: knowledge/docs/architecture/project-service-repositories.md
+    summary: 这份文件保存《项目、服务与代码库如何协作》的架构解释，与网页阅读使用同一正文。它是理解事实的成果，不替代规范或源码。
+    observedDigest: 77fbcdb5f4d6e0e4cd2b0ee5aa81381fb421829f3a488b9b35d3820d2f376081
+  - id: file-project-relations-map
+    title: 关系维护与代码定位的实现地图 · 地图文件
+    kind: evidence
+    path: knowledge/code-map/project-service-repositories.md
+    summary: 这份文件保存《关系维护与代码定位的实现地图》的职责、规范和实现位置地图，与网页阅读使用同一正文。它是理解事实的成果，不替代规范或源码。
+    observedDigest: 757978783d8eaa5f332b269a5c5bbb37ba41afcf6359413f9767f5d6db94ed13
+  - id: file-project-relations-diagram
+    title: 项目、服务与代码库的引用关系 · 展示文件
+    kind: evidence
+    path: knowledge/archify/flows/project-service-repositories.html
+    summary: 这是《项目、服务与代码库的引用关系》的独立 HTML 展示，由 Archify 生成，包含图形与原生交互；它表达架构，不是实际运行记录。
+    observedDigest: cd8f79124910b3a23df844619d9fa201a480bcec056a979b9b8a6bb26a8cbaa0
+  - id: file-project-relations-diagram-graph
+    title: 项目、服务与代码库的引用关系 · 可维护图源
+    kind: evidence
+    path: knowledge/archify/flows/project-service-repositories.json
+    summary: 这是《项目、服务与代码库的引用关系》的可维护图源，定义节点、关系及布局。修改后由 Archify 重新生成配套展示，并核对图中的事实含义。
+    observedDigest: 1947643adac585f601248ea6de976cd091f86e104fb64ddae7163bc09c8fd3b7
+  - id: file-project-relations-diagram-evidence
+    title: 项目、服务与代码库的引用关系 · 图示依据
+    kind: evidence
+    path: knowledge/archify/flows/project-service-repositories.md
+    summary: 这份说明记录《项目、服务与代码库的引用关系》的事实依据、覆盖范围和表达限制，维护图源或展示时用它核对语义。
+    observedDigest: 2849590e97931927ed69f3298610ec0d9a0910f2245a344cc273dfe5e6901932
+relations:
+  - from: query
+    to: knowledge-maintenance
+    kind: implements
+  - from: index-model
+    to: knowledge-maintenance
+    kind: implements
+  - from: files
+    to: knowledge-maintenance
+    kind: implements
+  - from: http
+    to: knowledge-maintenance
+    kind: implements
+  - from: module
+    to: knowledge-maintenance
+    kind: implements
+  - from: page
+    to: knowledge-maintenance
+    kind: implements
+  - from: diagram-reader
+    to: knowledge-maintenance
+    kind: implements
+  - from: feedback
+    to: knowledge-maintenance
+    kind: implements
+  - from: client
+    to: knowledge-maintenance
+    kind: implements
+  - from: skill-page
+    to: knowledge-maintenance
+    kind: implements
+  - from: code-architecture
+    to: knowledge-maintenance
+    kind: guides
+  - from: current-knowledge-maintenance
+    to: knowledge-maintenance
+    kind: guides
+  - from: code-map
+    to: knowledge-maintenance
+    kind: guides
+  - from: terminology-governance
+    to: knowledge-maintenance
+    kind: guides
+  - from: archify
+    to: knowledge-maintenance
+    kind: guides
+  - from: openspec
+    to: knowledge-maintenance
+    kind: guides
+  - from: spec
+    to: knowledge-maintenance
+    kind: based-on
+  - from: reading-spec
+    to: knowledge-maintenance
+    kind: based-on
+  - from: tests
+    to: knowledge-maintenance
+    kind: based-on
+  - from: project-terms
+    to: knowledge-maintenance
+    kind: based-on
+  - from: source-reader
+    to: knowledge-maintenance
+    kind: implements
+  - from: navigation
+    to: knowledge-maintenance
+    kind: implements
+  - from: asset-relations-spec
+    to: project-service-repositories
+    kind: based-on
+  - from: repository-registry-spec
+    to: project-service-repositories
+    kind: based-on
+  - from: asset-model
+    to: project-service-repositories
+    kind: implements
+  - from: asset-app
+    to: project-service-repositories
+    kind: implements
+  - from: asset-persistence
+    to: project-service-repositories
+    kind: implements
+  - from: asset-http
+    to: project-service-repositories
+    kind: implements
+  - from: project-services-ui
+    to: project-service-repositories
+    kind: implements
+  - from: asset-detail-ui
+    to: project-service-repositories
+    kind: implements
+  - from: asset-tests
+    to: project-service-repositories
+    kind: based-on
+  - from: scope-rules
+    to: project-service-repositories
+    kind: based-on
+  - from: construction-prompt
+    to: knowledge-maintenance
+    kind: implements
+  - from: architecture-guide
+    to: knowledge-maintenance
+    kind: guides
+  - from: current-knowledge-maintenance
+    to: project-service-repositories
+    kind: guides
+  - from: archify
+    to: project-service-repositories
+    kind: guides
+  - from: code-map
+    to: project-service-repositories
+    kind: guides
+  - from: knowledge-maintenance
+    to: artifact-reader
+    kind: implements
+  - from: knowledge-maintenance
+    to: knowledge-catalog
+    kind: implements
+  - from: knowledge-maintenance
+    to: catalog-filter
+    kind: implements
+  - from: knowledge-maintenance
+    to: reading-state
+    kind: implements
+  - from: knowledge-maintenance
+    to: knowledge-contracts
+    kind: implements
+  - from: knowledge-maintenance
+    to: navigation-index
+    kind: implements
+  - from: project-service-repositories
+    to: asset-cli
+    kind: implements
+  - from: code-architecture
+    to: project-service-repositories
+    kind: guides
+  - from: knowledge-maintenance
+    to: markdown-renderer
+    kind: implements
+  - from: knowledge-maintenance
+    to: markdown-host
+    kind: implements

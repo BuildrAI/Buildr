@@ -1,3 +1,4 @@
+import { KnowledgePage } from './features/knowledge/pages/KnowledgePage';
 import type { ResourcePreview } from './app/resource-preview';
 import { ProjectCreatePage } from './features/project/pages/ProjectCreatePage';
 import { RepositoriesPage } from './features/repository/pages/RepositoriesPage';
@@ -31,6 +32,7 @@ export function App() {
         <Route index element={<Navigate to="tasks" replace />} />
         <Route path="overview" element={<Navigate to="../tasks" replace />} />
         <Route path="settings" element={<SettingsPage />} />
+        <Route path="knowledge/:scopeKind/:scopeId" element={<KnowledgePage />} />
         <Route path="skills" element={<SkillsPage />} />
         <Route path="skills/:skillId" element={<SkillsPage />} />
         <Route path="repositories" element={<RepositoriesPage />} />

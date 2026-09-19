@@ -160,6 +160,8 @@ const allowedTargets: any = {
   module: new Set(['interfaces', 'application', 'domain', 'infrastructure']),
 };
 const allowedCrossModulePorts: any = new Set([
+  'modules/knowledge/module.ts -> modules/workspace/module.ts',
+  'modules/knowledge/module.ts -> modules/agent-assets/module.ts',
   'modules/agent-assets/module.ts -> modules/workspace/module.ts',
   'modules/diagnostics/module.ts -> modules/workspace/module.ts',
   'modules/openspec/module.ts -> modules/agent-assets/module.ts',

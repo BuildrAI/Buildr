@@ -734,3 +734,17 @@
 - 适用范围：全局 `repositories/manifest.yml` 及资产管理接口。
 - 避免混用：同一 Git 地址不等于同一实例；本地检出目录（Checkout）是实例的落地位置，不是第四类业务对象；临时任务工作树不自动创建新实例。
 - 来源：`workspace/domain/asset-relationships.ts`、变更 `decouple-project-service-repositories`。
+
+## 知识阅读关联（Knowledge Index）
+
+- 定义：按对象连接唯一成果正文、来源与阅读关系的局部文件，当前格式为 `buildr.knowledge-index/v1`。
+- 适用范围：启用 Buildr Web 知识阅读的项目（Project）或服务（Service）。
+- 避免混用：不是知识数据库、第二事实权威或普通知识维护的全局前置。
+- 来源：[知识索引模型](../../services/buildr/src/modules/knowledge/domain/knowledge-index.ts)、[阅读规范](../../openspec/specs/project-knowledge-browsing/spec.md)。
+
+## 来源观察（Source Observation）
+
+- 定义：读取已声明来源所得的实际内容摘要、可读状态和范围身份，与上次核对摘要比较时可显示变化。
+- 适用范围：知识阅读与开发中的相关成果维护。
+- 避免混用：内容一致不代表重新完成语义验证；读取不自动改写成果或更新已核对摘要。
+- 来源：[知识查询](../../services/buildr/src/modules/knowledge/application/knowledge-query.ts)、[当前知识维护](../../services/buildr/resources/workspace/skills/buildr/current-knowledge-maintenance/SKILL.md)。

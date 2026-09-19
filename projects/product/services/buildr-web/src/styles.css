@@ -2094,3 +2094,9 @@ details summary { cursor: pointer; color: var(--soft-ink); font-size: 12px; font
 .workspace-settings .panel { padding:20px; border:1px solid var(--soft-line); border-radius:12px; box-shadow:none; }
 .workspace-settings .ant-descriptions-item-content { overflow-wrap:anywhere; }
 @container(max-width:740px) { .workspace-settings .settings-grid { grid-template-columns:minmax(0,1fr); } }
+
+.skill-reference-files > summary { cursor:pointer; font-weight:600; }
+.skill-reference-files > summary span { margin-left:8px; color:#89958e; font-weight:400; }
+.skill-reference-files[open] > summary { margin-bottom:12px; }
+.skill-reference-list { max-height:320px; overflow:auto; margin-top:12px; }
+.skill-primary-document .resource-reader > header { margin-top:0; margin-bottom:16px; }

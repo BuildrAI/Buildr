@@ -13,6 +13,7 @@
 | 用户 Project 测试声明 | `services/buildr/src/modules/project-testing/module.ts` | `verification.yml` inspect/validate/update；不拥有测试执行 | `VERIFICATION_APPLICATION`、`VERIFICATION_DECLARATION`、CLI/diagnostics |
 | Buildr installation 与 release awareness | `services/buildr/src/modules/installation/module.ts` | installation identity、update、状态、npm Launcher 和版本提示 | `SYSTEM_INSTALLATION_APPLICATION`、CLI/HTTP |
 | Doctor 聚合 | `services/buildr/src/modules/diagnostics/module.ts` | 聚合各模块只读诊断并形成统一结果 | `SYSTEM_DOCTOR_APPLICATION`、CLI |
+| 知识阅读 | `services/buildr/src/modules/knowledge/module.ts` | 局部索引、范围解析、来源观察与成果只读访问 | `KNOWLEDGE_QUERY`、HTTP |
 | Publication | `services/buildr/src/modules/publication/module.ts` | 文章清单、详情和资源读取 | `PUBLICATION_APPLICATION`、HTTP |
 
 ## 后端技术宿主
@@ -33,6 +34,7 @@
 | Project | `services/buildr-web/src/features/project/` | `ProjectsPage`、`ProjectDetailPage`、`ProjectEditModal` |
 | Service | `services/buildr-web/src/features/service/` | `ServicesPage`、`ServiceDetailPage`、`useServiceCatalog` |
 | Task | `services/buildr-web/src/features/task/` | `TasksPage`、`TaskDetailPage`、`useTaskList`、`useTaskActions` |
+| 知识阅读 | `services/buildr-web/src/features/knowledge/` | `KnowledgePage`、`KnowledgeDiagram`、`KnowledgeSource`、`KnowledgeAgentAction` |
 | Project Daily Progress | `services/buildr-web/src/features/project-daily-progress/` | `DailyProgressPanel` |
 | Publication | `services/buildr-web/src/features/publication/` | `ArticlesPage`、`ArticleDetailPage`、`publicationApi` |
 | Installation | `services/buildr-web/src/features/installation/` | `ReleaseAwarenessBanner`、`releaseAwarenessApi` |

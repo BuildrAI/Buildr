@@ -285,3 +285,31 @@ test('renderMarkdown 只通过显式 resolver 渲染本地图片', async () => {
   assert.equal(image?.getAttribute('src'), '/api/v1/publications/demo/assets/assets/cover.png');
   assert.match(root.textContent, /危险/);
 });
+
+
+test('原生嵌套目录保持父子关系、可点击路径与安全转义', async () => {
+  const { renderMarkdown } = await loadRenderer();
+  const root = renderMarkdown('- `src/` — 根\n  - `domain/` — 规则\n    - [model.ts](../../src/domain/model.ts) — 实体\n  - [app.ts](../../src/app.ts) — 应用\n\n结束', {allowRelativeLinks:true,allowParentRelativeLinks:true});
+  const top = root.childNodes[0];
+  assert.equal(top.tagName, 'UL');
+  const directory = top.childNodes[0];
+  const children = directory.childNodes.find(n => n.tagName === 'UL');
+  assert.equal(children.childNodes.length, 2);
+  const nested = children.childNodes[0].childNodes.find(n => n.tagName === 'UL');
+  assert.equal(nested.querySelector('a').getAttribute('href'), '../../src/domain/model.ts');
+  assert.equal(children.childNodes[1].querySelector('a').textContent, 'app.ts');
+  assert.equal(root.childNodes[1].textContent, '结束');
+  const unsafe=renderMarkdown('- 根\n  - [危险](javascript:alert)\n  - <script>evil</script>', {allowRelativeLinks:true});
+  assert.equal(unsafe.querySelectorAll('a').length,0);
+  assert.equal(unsafe.querySelectorAll('script').length,0);
+});
+
+test('嵌套有序与任务列表保持各自类型且不会丢失相邻列表', async () => {
+  const { renderMarkdown } = await loadRenderer();
+  const root=renderMarkdown('1. 第一步\n   - [x] 已完成\n   - [ ] 待办\n2. 第二步\n- 另一组');
+  assert.equal(root.childNodes[0].tagName, 'OL');
+  assert.equal(root.childNodes[0].childNodes.length, 2);
+  assert.equal(root.childNodes[0].querySelectorAll('input').length, 2);
+  assert.equal(root.childNodes[0].querySelector('input').checked, true);
+  assert.equal(root.childNodes[1].tagName, 'UL');
+});

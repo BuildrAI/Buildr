@@ -12,7 +12,11 @@
 
 ## 从一个完整例子开始
 
+**知识建设与维护**：先读[架构说明](docs/architecture/knowledge-maintenance.md)，文中引用[职责图](archify/flows/knowledge-maintenance.html)和[实现地图](code-map/knowledge-maintenance.md)。[局部阅读关联](index.yml)让网页使用同一份成果正文。
+
 **技能源文件如何成为可发现入口**：阅读[面向人的说明](docs/architecture/buildr-skill-system.md)，需要定位时打开[代码地图](code-map/skill-projection.md)，观察关系时打开[技术图](archify/flows/skill-projection.html)。图的[来源与表达边界](archify/flows/skill-projection.md)和[可维护图源](archify/flows/skill-projection.json)与展示一起保存。
+
+**从业务目标找到代码**：阅读[项目、服务与代码库如何协作](docs/architecture/project-service-repositories.md)，从职责与修改影响理解引用模型，再看文中关系图和实现地图。
 
 ## 当前说明之外
 

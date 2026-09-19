@@ -41,6 +41,8 @@ authority 冲突、授权不明、实际 Git 操作所需的 repository set 不�
 
 若任务改变依赖、构建或测试入口，先把已确认Task scope与变更事实交给`declaration-intake`做只读差异检查；长期`preparation.yml`/`verification.yml`写入按`declaration-intake`的`routine-maintenance|user-decision-required`分类，由对应owner完成；只有后者需要新的用户决定。Triage不直接维护声明。
 
+开发开始时判断预计知识影响，最终新增、修改或删除后复核。已有知识成果受影响时，主动说明受影响成果与建议校准范围；知识维护尚未授权时等待该组授权，已有授权不重复询问。在当前授权内采用 `current-knowledge-maintenance` 维护相关图示、地图、术语和解释；按需调用专业制作方法。普通开发没有规范变化不因此建立 OpenSpec 变更，无影响内容保留，范围外缺口单独提出建议。
+
 ### 执行形态
 
 - `implementation`：修改代码、运行构建/测试，或需要长期开发上下文。

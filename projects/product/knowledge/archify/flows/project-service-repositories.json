@@ -1,0 +1,130 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "项目、服务与代码库的引用关系",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "legend": {
+      "mode": "hidden"
+    },
+    "subtitle": "业务引用与代码定位示意；不表示运行调用或部署拓扑"
+  },
+  "components": [
+    {
+      "id": "project-a",
+      "type": "external",
+      "label": "项目 A",
+      "sublabel": "按目标引用服务",
+      "pos": [
+        40,
+        70
+      ],
+      "size": [
+        210,
+        75
+      ]
+    },
+    {
+      "id": "project-b",
+      "type": "external",
+      "label": "项目 B",
+      "sublabel": "复用同一服务",
+      "pos": [
+        40,
+        355
+      ],
+      "size": [
+        210,
+        75
+      ]
+    },
+    {
+      "id": "shared-service",
+      "type": "backend",
+      "label": "共享服务",
+      "sublabel": "一个身份与一组实现职责",
+      "pos": [
+        390,
+        215
+      ],
+      "size": [
+        240,
+        85
+      ]
+    },
+    {
+      "id": "repository",
+      "type": "database",
+      "label": "代码库实例",
+      "sublabel": "登记 Git 来源与位置",
+      "pos": [
+        820,
+        215
+      ],
+      "size": [
+        230,
+        85
+      ]
+    },
+    {
+      "id": "module-files",
+      "type": "external",
+      "label": "服务代码位置",
+      "sublabel": "实例目录 + 模块路径",
+      "pos": [
+        820,
+        495
+      ],
+      "size": [
+        230,
+        75
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "a-service",
+      "from": "project-a",
+      "to": "shared-service",
+      "label": "引用"
+    },
+    {
+      "id": "b-service",
+      "from": "project-b",
+      "to": "shared-service",
+      "label": "引用"
+    },
+    {
+      "id": "service-repo",
+      "from": "shared-service",
+      "to": "repository",
+      "label": "repositoryId"
+    },
+    {
+      "id": "repo-code",
+      "from": "repository",
+      "to": "module-files",
+      "label": "modulePath",
+      "labelDy": 110
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "共享有明确身份",
+      "items": [
+        "解除一方引用保留服务与代码",
+        "服务只引用一个代码库实例"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "分支与物理位置",
+      "items": [
+        "同地址不同实例不会自动合并",
+        "登记不会自动克隆或切换分支"
+      ]
+    }
+  ]
+}
