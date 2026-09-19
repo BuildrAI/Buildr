@@ -1,6 +1,6 @@
 ---
 name: task-manager
-description: 用户要求创建、查看或修订任务记录、纠正任务状态、调整已完成任务的父子关系、完成或放弃任务时使用；维护最小业务事实和结果更正历史，不执行研发、环境、验证或交付。
+description: 创建或维护任务、记录工作进展与待处理事项、读取人的答复、纠正状态或调整父子关系时使用；维护当前工作事实，不执行研发、测试或交付。
 ---
 
 # 任务管理
@@ -25,6 +25,23 @@ buildr task abandon <id> --reason <text> --expected-record <recordDigest> --targ
 任务说明引用已登记项目文档时使用具名的工作空间相对 Markdown 链接，例如 `[方案](projects/product/docs/plan.md)`。区分链接可解析与正文可读取；文档只在隔离目录时如实说明，不复制正文冒充已交付。
 
 写前重读当前版本；冲突后重新判断，不静默重放旧输入。完成只保存已成立的结果，不执行Git、部署、验证或清理。复盘正文由Agent按用户要求写入`.buildr/local/task-retrospectives/<task-id>.md`，Task Record只登记摘要与`pending-decision|decided`。
+
+## 记录进展与接续人的答复
+
+出现值得接续的新进展、需要人决定的事项，或用户要求记录时，使用独立工作摘要（Work Context）。它不属于任务记录（Task Record）的四态和完成结果；日常执行无需为每次工具调用写日志。
+
+先运行 `buildr task work-context inspect <id> --target <workspace> --json`。保存时使用返回的 `contextDigest`；尚未登记时使用 `absent`：
+
+```text
+buildr task work-context record <id> --expected-current <absent|digest> --progress <真实进展> --next-step <下一步> [--attention-kind decision|acceptance|question --attention-reason <需要人处理的具体原因> | --clear-attention] --target <workspace> --json
+buildr task work-context respond <id> --expected-current <digest> --attention <事项id> --response <用户实际表达的意见> --target <workspace> --json
+```
+
+更新进展时省略事项参数，会保留已有请求和答复；明确提出新请求会生成新身份。只在确实需要人判断、验收或介入时登记事项，缺少报告、任务处于进行中或长时间未更新不等于需要人处理。
+
+继续相关工作前读取当前答复与真实成果。用户在网页回应后，事项变为已处理，意见和记录时间仍可读取；智能体（Agent）只代录用户实际给出的意见，不能自行代表用户作决定。答复本身不自动授权发布、删除等具体动作，也不改变任务状态。版本或事项身份冲突时重读并判断，保留用户已输入和已保存的内容，不静默覆盖。
+
+完成标准是当前摘要、事项或答复已由应用保存并可读取；之后按实际目标和原有授权继续工作。
 
 ## 修订任务事实
 

@@ -347,7 +347,7 @@ skills:
     sourceIdentity: package:skills/buildr/task-manager
     source: buildr
     path: buildr/task-manager
-    description: 用户要求创建、查看或修订任务记录、纠正任务状态、调整已完成任务的父子关系、完成或放弃任务时使用；维护最小业务事实和结果更正历史，不执行研发、环境、验证或交付。
+    description: 创建或维护任务、记录工作进展与待处理事项、读取人的答复、纠正状态或调整父子关系时使用；维护当前工作事实，不执行研发、测试或交付。
     enabled: true
     required: false
     state: installed
