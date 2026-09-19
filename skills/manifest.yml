@@ -537,6 +537,24 @@ skills:
       - trae-work
       - workbuddy
     runtimePath: code-map
+  - id: archify
+    assetIdentity: buildr:skill:archify
+    sourceIdentity: package:skills/buildr/archify
+    source: buildr
+    path: buildr/archify
+    description: 使用 Archify 生成和验证架构、流程、时序、数据流与状态图，并交付可独立查看的 HTML。
+    enabled: true
+    required: false
+    state: installed
+    runtimes:
+      - claude-code
+      - codex
+      - cursor
+      - qoder
+      - trae
+      - trae-work
+      - workbuddy
+    runtimePath: archify
 contracts:
   - id: buildr.terminology-governance
     version: 1
