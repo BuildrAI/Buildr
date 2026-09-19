@@ -322,7 +322,7 @@ skills:
     sourceIdentity: package:skills/buildr/current-knowledge-maintenance
     source: buildr
     path: buildr/current-knowledge-maintenance
-    description: 建设、检查或维护项目与服务的代码地图、技术图和解释文档，或在 OpenSpec 变更中判断并处理相关知识影响时使用。
+    description: 围绕用户主题构建项目或服务的架构知识，检查或维护相关文章、技术图和代码地图，或处理开发中的知识影响时使用。
     enabled: true
     required: false
     state: installed
@@ -519,6 +519,24 @@ skills:
       - trae-work
       - workbuddy
     runtimePath: code-architecture
+  - id: code-map
+    assetIdentity: buildr:skill:code-map
+    sourceIdentity: package:skills/buildr/code-map
+    source: buildr
+    path: buildr/code-map
+    description: 建设、更新或检查代码地图时使用；依据真实职责、目录与文件解释实现组织，并核对受影响的来源与关联。
+    enabled: true
+    required: false
+    state: installed
+    runtimes:
+      - claude-code
+      - codex
+      - cursor
+      - qoder
+      - trae
+      - trae-work
+      - workbuddy
+    runtimePath: code-map
 contracts:
   - id: buildr.terminology-governance
     version: 1
