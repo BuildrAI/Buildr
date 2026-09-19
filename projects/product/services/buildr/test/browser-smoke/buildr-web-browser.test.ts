@@ -15,6 +15,7 @@ import { WORKSPACE_APPLICATION } from '../../src/modules/workspace/module.ts';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
 import { materializeCleanProductSource } from '../helpers/clean-product-source.ts';
 import { recordVerificationResultFromEvidence } from '../helpers/task-verification-result-fixture.ts';
+import { runWorkbenchJourney } from './workbench-journey.ts';
 
 const PRODUCT_ROOT: any = path.resolve(import.meta.dirname, '../..');
 const BUILDR: any = path.join(PRODUCT_ROOT, 'bin', 'buildr.mjs');
@@ -22,7 +23,7 @@ const SELECTOR_INPUT: any = process.argv[2] ?? 'all';
 const SCREENSHOT_DIR: any = process.env.BUILDR_SCREENSHOT_DIR;
 const BROWSER_WEB_DIST_ROOT: any = process.env.BUILDR_BROWSER_WEB_DIST_ROOT;
 if (!BROWSER_WEB_DIST_ROOT) throw new Error('Browser smoke requires BUILDR_BROWSER_WEB_DIST_ROOT from the Browser dispatcher staging build.');
-const KNOWN_SELECTORS: any = new Set(['all', 'core', 'shell', 'task', 'project', 'service', 'change', 'articles']);
+const KNOWN_SELECTORS: any = new Set(['all', 'core', 'shell', 'workbench', 'task', 'project', 'service', 'change', 'articles']);
 const SELECTORS: any = new Set(SELECTOR_INPUT.split(',').map((item: any) => item.trim()).filter(Boolean));
 
 for (const selector of SELECTORS) if (!KNOWN_SELECTORS.has(selector)) throw new Error(`Unknown browser integration selector: ${selector}`);
@@ -224,6 +225,7 @@ function createSelectedFixture(root: any, controllerCli: any): any  {
   const selector: any = [...SELECTORS][0];
   if (selector === 'core') createCoreFixture(root);
   else if (selector === 'shell') createShellFixture(root);
+  else if (selector === 'workbench') createShellFixture(root);
   else if (selector === 'project') createProjectFixture(root);
   else if (selector === 'service') createServiceFixture(root);
   else if (selector === 'change') createChangeFixture(root);
@@ -318,7 +320,7 @@ async function capture(page: any, name: any): Promise<any>  {
   await page.screenshot({ path: path.join(SCREENSHOT_DIR, name), fullPage: true, animations: 'disabled' });
 }
 
-test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('all') ? 300_000 : SELECTORS.has('task') ? 300_000 : 45_000 }, async (t: any) => {
+test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('all') || SELECTORS.has('task') ? 300_000 : SELECTORS.has('workbench') ? 120_000 : 45_000 }, async (t: any) => {
   const requestedSmokeRoot: any = process.env.BUILDR_SMOKE_ROOT;
   const managedSmokeRoot: any = requestedSmokeRoot && fs.existsSync(path.join(requestedSmokeRoot, '.buildr-smoke-owner')) ? requestedSmokeRoot : null;
   const base: any = managedSmokeRoot || fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-browser-smoke-'));
@@ -443,8 +445,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.reload();
     await page.locator('#skills-search').fill('ux-design-laws');
     await page.locator('[data-skill-id="ux-design-laws"]').click();
-    await page.getByRole('button', { name: /SKILL.md/ }).click();
-    await page.getByRole('link', { name: '法则索引', exact: true }).click();
+    await page.locator('.skill-primary-document').getByRole('link', { name: '法则索引', exact: true }).click();
     await page.getByRole('heading', { name: '法则索引', exact: true }).waitFor({ state: 'visible' });
     await page.getByRole('button', { name: '← 返回详情', exact: true }).click();
     await page.getByRole('button', { name: '编辑技能', exact: true }).click();
@@ -510,15 +511,13 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     const target: any = page.locator('#workspace-grid .workspace-card').filter({ has: page.locator('h2').filter({ hasText: /^browser-smoke$/ }) });
     await unique(target, 'browser-smoke 工作空间卡片');
     await target.getByRole('link', { name: '进入工作空间' }).click();
-    await page.waitForURL(/\/workspaces\/[^/]+\/tasks(?:\/[^/]+)?$/);
-    await page.locator('#task-table-wrap').waitFor({ state: 'visible' });
+    await page.waitForURL(`${workspaceUrl}/overview`);
+    await page.locator('#workbench-overview').waitFor({ state: 'visible' });
     assert.equal((await page.locator('#shell-workspace-name').innerText()).trim(), 'browser-smoke');
     assert.equal(await page.title(), 'browser-smoke · Buildr Web Dev');
-    assert.equal(await page.locator('[data-nav="tasks"]').evaluate((item: any) => item.classList.contains('active')), true);
+    assert.equal(await page.locator('[data-nav="overview"]').evaluate((item: any) => item.classList.contains('active')), true);
     const expectedProjectCount: any = selected('articles') ? 3 : 2;
     await page.locator('#open-agent-action').click();
-    await unique(page.getByRole('button', { name: '用 Agent 开始' }), '开始工作操作');
-    await page.getByRole('button', { name: '用 Agent 开始' }).click();
     await page.locator('#action-project').waitFor({ state: 'visible' });
     await openAntdSelect(page, 'action-project');
     await page.waitForFunction(
@@ -566,7 +565,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.locator('[data-area="workspace"]').click();
     await page.waitForURL(`${workspaceUrl}/projects`);
     await page.waitForFunction(() => [...document.querySelectorAll('.shell-navigation .shell-nav-item')].some((node: any) => node.textContent === '项目'));
-    assert.deepEqual(await page.locator('.shell-navigation .shell-nav-item').allTextContents(), ['项目', '服务', '代码库', '技能', '设置']);
+    assert.deepEqual(await page.locator('.shell-navigation .shell-nav-item').allTextContents(), ['项目', '服务', '代码库', '技能', '文章', '设置']);
     assert.equal(await page.getByRole('tab', { name: '项目目录', exact: true }).count(), 0);
     await page.locator('#project-table-body tr').filter({ hasText: '演示项目' }).click();
     await page.waitForURL(`${workspaceUrl}/projects/demo`);
@@ -579,7 +578,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.locator('.workspace-tabstrip .pane-tab.on').filter({ hasText: '演示服务' }).waitFor({ state: 'visible' });
     assert.equal(await page.locator('.resource-list-host').count(), 0);
     await page.locator('[data-area="workbench"]').click();
-    await page.waitForURL(/\/tasks/);
+    await page.waitForURL(/\/(?:overview|tasks)/);
     await page.locator('[data-area="workspace"]').click();
     await page.waitForURL(`${workspaceUrl}/services/demo/api`);
     await page.locator('[data-nav="skills"]').click();
@@ -606,7 +605,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.setViewportSize({ width: 390, height: 844 });
     await page.getByRole('button', { name: '打开导航菜单', exact: true }).click();
     await page.getByRole('dialog').waitFor({ state: 'visible' });
-    assert.deepEqual(await page.getByRole('dialog').locator('.shell-nav-item').allTextContents(), ['项目', '服务', '代码库', '技能', '设置']);
+    assert.deepEqual(await page.getByRole('dialog').locator('.shell-nav-item').allTextContents(), ['项目', '服务', '代码库', '技能', '文章', '设置']);
     await page.getByRole('dialog').locator('[data-nav="projects"]').click();
     await page.waitForURL(`${workspaceUrl}/projects`);
     await page.getByRole('dialog').waitFor({ state: 'hidden' });
@@ -625,6 +624,8 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
   if (selected('articles')) await t.test('文章入口展示列表、详情和项目内配图', async () => {
     await page.goto(`${workspaceUrl}/articles`);
     await page.locator('.publication-card').first().waitFor({ state: 'visible' });
+    assert.equal(await page.locator('[data-area="workspace"]').getAttribute('class'), 'active');
+    assert.deepEqual(await page.locator('.shell-navigation .shell-nav-item').allTextContents(), ['项目', '服务', '代码库', '技能', '文章', '设置']);
     assert.equal(await page.locator('.publication-card').count(), 1);
     assert.equal(await page.locator('[data-nav="articles"]').evaluate((item: any) => item.classList.contains('active')), true);
     await page.locator('.publication-card a').click();
@@ -1280,11 +1281,11 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     // Review and Verification remain independent facts without an Environment record.
     prepareEvidenceFixture(runtime, workspaceRoot, 'browser-task');
 
-    const defaultTaskCount: any = runtime.queryTasks(workspaceRoot, { status: 'all' }).matchingTaskCount;
+    const defaultTaskCount: any = runtime.queryTasks(workspaceRoot, { status: 'open' }).matchingTaskCount;
     await page.goto(`${workspaceUrl}/tasks`);
     await page.locator('#task-table-wrap').waitFor({ state: 'visible' });
-    assert.equal(await page.locator('#task-table-body tr.ant-table-row').count(), defaultTaskCount, '默认目录必须显示全部四态任务');
-    assert.equal(await page.locator('#task-detail-id').count(), 1, '任务详情ID钩子必须唯一');
+    assert.equal(await page.locator('#task-table-body tr.ant-table-row').count(), defaultTaskCount, '默认目录必须只显示未结束任务');
+    assert.equal(await page.locator('#task-detail-id').count(), 0, '完整列表不得自动选择第一项任务');
     await page.locator('#task-filter-q').fill('绝对不会命中的任务');
     await page.locator('#task-empty').waitFor({ state: 'visible' });
     assert.match(await page.locator('#task-empty').innerText(), /当前筛选没有匹配任务/);
@@ -1302,7 +1303,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     const insertPaginationTask: any = paginationStore.database.prepare('INSERT INTO tasks(task_id, title, intent, status, result_summary, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)');
     paginationStore.database.exec('BEGIN');
     for (let index: any = 0; index < 60; index += 1) {
-      insertPaginationTask.run(`browser-page-${String(index).padStart(2, '0')}`, `滚动续载任务 ${index}`, '验证 50/40 信息流分页', 'completed', '分页浏览器夹具', '2026-08-01T00:00:00.000Z', '2026-08-01T00:00:00.000Z');
+      insertPaginationTask.run(`browser-page-${String(index).padStart(2, '0')}`, `滚动续载任务 ${index}`, '验证 50/40 信息流分页', 'todo', null, '2026-08-01T00:00:00.000Z', '2026-08-01T00:00:00.000Z');
     }
     paginationStore.database.exec('COMMIT');
     paginationStore.database.close();
@@ -1335,6 +1336,17 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     const loadedTaskIds: any[] = await page.locator('#task-table-body tr.ant-table-row').evaluateAll((rows: any[]) => rows.map((row: any) => row.getAttribute('data-task-id')));
     assert.equal(new Set(loadedTaskIds).size, loadedTaskIds.length, '滚动追加不得产生重复 Task');
     assert.equal(paginationRequests.some((requestUrl: any) => requestUrl.searchParams.get('pageSize') === '50' && requestUrl.searchParams.has('cursor')), true, '第40条附近必须使用cursor预取下一批');
+    const returnRow = page.locator('#task-table-body tr.ant-table-row').nth(45);
+    await returnRow.scrollIntoViewIfNeeded();
+    const beforeDetailScroll = await page.evaluate(() => window.scrollY);
+    assert.ok(beforeDetailScroll > 0, '完整列表必须支持真实页面滚动');
+    await returnRow.click();
+    await page.locator('#task-return').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#task-table-wrap').count(), 0, '详情不应重复挂载完整目录');
+    await page.locator('#task-return').click();
+    await page.waitForURL(`${workspaceUrl}/tasks`);
+    await page.waitForFunction((top: number) => Math.abs(window.scrollY - top) <= 2, beforeDetailScroll);
+    assert.ok(await page.locator('#task-table-body tr.ant-table-row').count() > 50, '返回应恢复先前读到的批次');
     await page.unroute(paginationRoute);
     page.off('request', observePaginationRequest);
     paginationStore = runtime.openWorkspaceStructuredStore(workspaceRoot, { writable: true });
@@ -1365,7 +1377,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
       try { await route.continue(); } catch {}
     });
     await openTaskFilterPanel(page);
-    await selectAntdOption(page, 'task-filter-status', '未结束（进行中 + 待办）');
+    await selectAntdOption(page, 'task-filter-status', '进行中');
     await applyTaskFilters(page);
     await Promise.race([
       delayedActiveStarted,
@@ -1395,7 +1407,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await applyTaskFilters(page);
     await page.waitForFunction((count: any) => document.querySelectorAll('#task-table-body tr.ant-table-row').length === count, defaultTaskCount);
     assert.equal(await page.locator('[data-nav="tasks"]').evaluate((item: any) => item.classList.contains('active')), true);
-    assert.match(await page.locator('.page-copy').first().innerText(), /正式任务由 Agent 创建/);
+    assert.match(await page.locator('.page-copy').first().innerText(), /目标、最近进展与成果/);
     assert.equal(await page.locator('#task-create-form').count(), 0);
     await openTaskFilterPanel(page);
     await selectAntdOption(page, 'task-filter-project', '演示项目');
@@ -1444,6 +1456,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.locator('#task-parent-coordination').getByRole('link', { name: '页面查看任务', exact: true }).click();
     await page.waitForURL(`${workspaceUrl}/tasks/created-in-app`);
     await page.waitForFunction((id: any) => document.getElementById('task-detail-id')?.textContent === id, 'created-in-app');
+    await page.locator('.task-technical-overview > summary').click();
     assert.equal(await page.locator('#task-detail-services').innerText(), 'demo/api');
     assert.match(await page.locator('#task-detail-changes').innerText(), /demo\/browser-flow/);
     assert.match(await page.locator('#task-detail-changes').innerText(), /打开时检查当前状态/);
@@ -1521,7 +1534,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.locator('.task-document-preview-content').getByRole('link', { name: '继续阅读', exact: true }).click();
     await page.waitForFunction(() => document.getElementById('task-document-preview-path')?.textContent?.endsWith('/more.md'));
     assert.match(await page.locator('.task-document-preview-content').innerText(), /同一项目内的相对文档链接也可打开/);
-    await page.locator('.task-document-preview-modal .ant-modal-close').click();
+    await page.getByRole('button', { name: '关闭相关资料', exact: true }).click();
     await page.locator('#task-document-preview').waitFor({ state: 'hidden' });
     if (await page.locator('.task-technical-overview').getAttribute('open') === null) await page.locator('.task-technical-overview > summary').click();
     await openTaskActionModal(page, 'task-edit-action');
@@ -1640,6 +1653,8 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await capture(page, 'local-app-task-detail-mobile.png');
     await page.setViewportSize({ width: 1280, height: 720 });
   });
+
+  if (selected('workbench')) await runWorkbenchJourney({ t, page, runtime, workspaceRoot, otherWorkspaceRoot: otherRoot, workspaceUrl, otherWorkspaceUrl: `${url}/workspaces/${otherWorkspaceId}`, expectedBrowserErrors, selectAntdOption, capture });
 
   const unexpectedBrowserErrors: any = browserErrors.filter((error: any) => ![...expectedBrowserErrors].some((expected: any) => error.includes(expected)));
   assert.deepEqual(unexpectedBrowserErrors, [], unexpectedBrowserErrors.join('\n'));

@@ -1,3 +1,4 @@
+import { ResourceActions } from '../../workbench/components/ResourceActions';
 import { AssetDeleteDialog } from '../../workspace/components/AssetDeleteDialog';
 import { useLocation } from 'react-router-dom';
 import { ProjectServicesPanel } from '../components/ProjectServicesPanel';
@@ -131,6 +132,11 @@ export function ProjectDetailPage() {
     setObjects((current) => current.some((o) => o.key === tab.key) ? current : [...current, tab]);
     setActiveObj(tab.key);
   };
+  useEffect(() => {
+    if (new URLSearchParams(editLocation.search).get('document') !== 'daily') return;
+    setObjects(current => current.some(tab => tab.key === 'doc:daily') ? current : [...current, { key: 'doc:daily', kind: 'doc', ref: 'daily' }]);
+    setActiveObj('doc:daily');
+  }, [editLocation.search]);
   const closeObject = (key: string) => {
     setObjects((current) => {
       const index = current.findIndex((o) => o.key === key);
@@ -208,7 +214,7 @@ export function ProjectDetailPage() {
               <h1 id="project-detail-name">{project.name}</h1>
               <p className="ws-hero-desc" id="project-detail-description">{project.description || '尚未填写项目说明。'}</p>
             </div>
-            <Button danger onClick={() => setDeleting(projectCode)}>删除项目</Button><Button id="project-edit-button" onClick={() => setEditOpen(true)}>编辑项目</Button>
+            <ResourceActions projectCode={projectCode} resource={{ kind: "project", key: "project:" + projectCode, label: project.name, href: href("/projects/" + encodeURIComponent(projectCode)) }} /><Button danger onClick={() => setDeleting(projectCode)}>删除项目</Button><Button id="project-edit-button" onClick={() => setEditOpen(true)}>编辑项目</Button>
           </div>
           <div className="ws-stat-band" role="list">
             <div className="ws-stat" role="listitem"><b id="project-service-count">{services.length}</b><span>已登记服务</span></div>
@@ -217,6 +223,7 @@ export function ProjectDetailPage() {
         </section>
 
         <div className="ws-stack">
+          <Link className="workbench-project-work-link" to={href('/tasks?project=' + encodeURIComponent(projectCode))}>查看这个项目的工作 <RightOutlined /></Link>
           <Link className="knowledge-home-entry" to={href(`/knowledge/project/${encodeURIComponent(projectCode)}`)}><span className="knowledge-home-icon"><FileTextOutlined /></span><span><strong>项目知识</strong><span>从架构文章、技术图和代码地图，理解职责、协作与实现。</span></span><b>阅读项目知识 <RightOutlined /></b></Link>
           <ProjectServicesPanel projectCode={projectCode} />
 

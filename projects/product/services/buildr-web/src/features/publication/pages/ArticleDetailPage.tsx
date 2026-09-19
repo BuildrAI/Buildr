@@ -1,3 +1,4 @@
+import { ResourceActions } from '../../workbench/components/ResourceActions';
 import { workspaceApi } from '../../workspace/api/workspace-api';
 import { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
@@ -96,6 +97,7 @@ export function ArticleDetailPage() {
               {`${publication.kind} · ${publication.publishedAt || '未设置发布日期'} · ${publication.sourcePath || ''}`}
             </p>
           </div>
+          <ResourceActions resource={{ kind: "article", key: "article:" + publication.id, label: publication.title, href: href("/articles/" + encodeURIComponent(publication.id)) }} />
           <span id="publication-status" className={`state publication-status ${publication.status}`}>
             {statusLabel[publication.status] || publication.status}
           </span>

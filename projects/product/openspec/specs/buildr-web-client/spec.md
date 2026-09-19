@@ -111,7 +111,7 @@ Buildr Web React 客户端 MUST 在全局顶部消费 Release Awareness API并�
 - **THEN** 客户端 MUST不阻断主导航与页面内容
 
 ### Requirement: Buildr Web 壳层必须采用上下结构
-Buildr Web App Shell MUST 在顶部提供品牌、共同工作空间范围、“工作台”和“工作空间”两个区域及交给 Agent 操作，工作台 MUST 排在工作空间之前。选定范围的两个区域 MUST 共享相同 workspaceId。工作台 MUST 沿用任务列表与详情，并保留文章入口；工作空间 MUST 使用常驻左侧导航承载项目、服务、技能和设置四个平级入口，导航标签 MUST 使用中文，四个入口 MUST 采用一致的行式呈现（图标 + 文案、相同行高），MUST NOT 在左侧导航内展开项目树或所属服务列表。项目详情与服务详情 MUST 保留右上角编辑入口；视觉 token、Ant Design 5 与离线 CSP 边界 MUST 保持既有约束。
+Buildr Web App Shell MUST 在顶部提供品牌、共同工作空间范围、“工作台”和“工作空间”两个区域及交给 Agent 操作，工作台 MUST 排在工作空间之前。选定范围的两个区域 MUST 共享相同 workspaceId。工作台 MUST 提供概览、任务与动态入口；工作空间 MUST 使用常驻左侧导航承载项目、服务、代码库、技能、文章和设置六个平级入口，导航标签 MUST 使用中文，六个入口 MUST 采用一致的行式呈现（图标 + 文案、相同行高），MUST NOT 在左侧导航内展开项目树或所属服务列表。项目详情与服务详情 MUST 保留右上角编辑入口；视觉 token、Ant Design 5 与离线 CSP 边界 MUST 保持既有约束。
 
 工作空间区域的内容区 MUST 采用双栏组页签模型：
 - 左组 MUST 提供页面级页签条：项目目录、项目全景、服务目录、服务全景、技能、设置各自以页签呈现；打开新页面 MUST 追加或激活对应页签；页签 MUST 支持关闭，关闭当前页对应页签时 MUST 切换到剩余页签或回到目录兜底；页面级页签集合 MUST 在同一会话的页面间保持。
@@ -124,17 +124,17 @@ Buildr Web App Shell MUST 在顶部提供品牌、共同工作空间范围、“
 #### Scenario: 顶栏承载主导航
 - **WHEN** 用户在选定 Workspace 中切换工作台和工作空间
 - **THEN** 顶部 MUST 依次呈现“工作台”“工作空间”，保持同一工作空间范围
-- **AND** 工作台 MUST 展示现有任务页面；工作空间 MUST 展示工作空间内容
+- **AND** 工作台 MUST 默认展示日常概览，并保留任务与动态入口；工作空间 MUST 展示工作空间内容
 - **AND** 主菜单 MUST NOT 展示环境维护分组或智能体配置入口
 
 #### Scenario: 进入 Workspace 直接打开任务列表
 - **WHEN** 用户进入可用 Workspace、点击品牌或切换工作空间
-- **THEN** MUST 打开该 Workspace 的任务列表并选中工作台
-- **AND** `/workspaces/:workspaceId/` 与 `/workspaces/:workspaceId/overview` MUST 继续重定向到任务列表
+- **THEN** MUST 打开该 Workspace 的工作概览并选中工作台
+- **AND** `/workspaces/:workspaceId/` MUST 重定向到工作概览，`/workspaces/:workspaceId/overview` MUST 直接展示概览；既有 `/tasks` 深链保持
 
 #### Scenario: 平级领域导航
 - **WHEN** 用户查看工作空间左侧导航
-- **THEN** MUST 呈现项目、服务、技能、设置四个平级入口，行式一致
+- **THEN** MUST 呈现项目、服务、代码库、技能、文章、设置六个平级入口，行式一致
 - **AND** MUST NOT 在导航内展开项目树或项目所属服务列表
 - **AND** 当前领域入口 MUST 有可辨认的选中态
 
@@ -147,7 +147,7 @@ Buildr Web App Shell MUST 在顶部提供品牌、共同工作空间范围、“
 
 #### Scenario: 项目与服务上下文导航
 - **WHEN** 用户从项目目录或服务目录选择某个项目或服务
-- **THEN** MUST 以页面级页签打开对应全景，左侧导航 MUST 保持平级四项且正确标记当前领域
+- **THEN** MUST 以页面级页签打开对应全景，左侧导航 MUST 保持平级六项且正确标记当前领域
 - **AND** MUST NOT 在左侧导航展开项目树或所属服务列表
 
 #### Scenario: 独立展开与折叠
@@ -185,14 +185,14 @@ Buildr Web App Shell MUST 在顶部提供品牌、共同工作空间范围、“
 
 #### Scenario: 任务页宽屏并排列表与详情
 - **WHEN** 用户在宽屏打开任务列表或详情
-- **THEN** 工作台内容区 MUST 保留任务列表与详情并排行为
+- **THEN** 工作台内容区 MUST 分别提供完整列表与独立详情，打开详情不得自动选择其他记录；返回 MUST 保留查询范围、分组与已浏览位置
 - **AND** `/tasks` 与 `/tasks/:taskId` 路由 MUST 保持不变
 
 #### Scenario: 任务页窄屏避免横向溢出
 - **WHEN** viewport 宽度为 390px 且用户打开任务详情
 - **THEN** 详情 MUST 可见并可操作
 - **AND** 页面主容器 MUST NOT 横向溢出
-- **AND** 任务列表 MAY 暂时不与详情并排
+- **AND** 任务列表与详情 MUST 各自可独立浏览；关联资料在宽屏并排阅读、空间不足时使用可关闭阅读层
 
 #### Scenario: 项目页宽屏并排列表与详情
 - **WHEN** 用户在宽屏打开项目目录或项目全景

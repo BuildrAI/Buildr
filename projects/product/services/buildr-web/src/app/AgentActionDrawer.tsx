@@ -30,7 +30,7 @@ export function AgentActionDrawer({ initialAction, initialContext = EMPTY_CONTEX
   if (action === 'project') return <ProjectAgentAction key={generation} {...props} />;
   if (action === 'service') return <ServiceAgentAction key={generation} {...props} />;
   if (action === 'daily-progress') return <DailyProgressAgentAction key={generation} {...props} />;
-  if (action && ['start', 'change', 'task-review', 'task-verification'].includes(action)) return <TaskAgentAction key={`${generation}:${action}`} action={action} {...props} />;
+  if (action && ['start', 'change', 'task-review', 'task-verification', 'task-continue'].includes(action)) return <TaskAgentAction key={`${generation}:${action}`} action={action} {...props} />;
   if (action === 'workspace-recovery' && typeof context.prompt === 'string') {
     return (
       <>

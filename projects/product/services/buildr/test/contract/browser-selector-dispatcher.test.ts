@@ -21,6 +21,14 @@ test('Browser dispatcher selects only affected resource selectors', () => {
   assert.equal(plan.reasons.length, 2);
 });
 
+test('Browser dispatcher covers workbench pages and shared preference interactions', () => {
+  for (const file of ['pages/WorkbenchPage.tsx', 'hooks/useWorkbench.ts', 'api/workbench-api.ts']) {
+    const plan = selectBrowserSelectors([`services/buildr-web/src/features/workbench/${file}`]);
+    assert.equal(plan.status, 'selected');
+    assert.deepEqual(plan.selectors, ['workbench']);
+  }
+});
+
 test('Browser dispatcher closes the old zero-selector success for Web package and build config', () => {
   for (const input of [
     'services/buildr-web/package.json',

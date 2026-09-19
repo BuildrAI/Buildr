@@ -1,13 +1,13 @@
 import { useAppShell } from './AppShellContext';
 import { useRef, useCallback, useContext, useEffect, useLayoutEffect, useState, type ReactNode, type MouseEvent } from 'react';
-import { UNSAFE_LocationContext, useLocation, useNavigate, useOutlet } from 'react-router-dom';
+import { UNSAFE_LocationContext, useLocation, useNavigate, useNavigationType, useOutlet } from 'react-router-dom';
 import { WorkspaceTabsContext } from './pageTabs';
 import { ResourcePreviewContext, resourcePreview, type PreviewState, type ResourcePreview } from './resource-preview';
 import { PageTabStrip } from './PageTabStrip';
 import { moveTab, parseTabs, ratioStorageKey, readRatio, tabForPath, tabsStorageKey, type WorkspacePageTab } from './workspace-pages';
 
 type LocationValue = React.ContextType<typeof UNSAFE_LocationContext>;
-type Visited = { path: string; node: ReactNode; location: LocationValue };
+type Visited = { path: string; node: ReactNode; location: LocationValue; instance: string };
 function read(key: string) { try { return localStorage.getItem(key); } catch { return null; } }
 function write(key: string, value: string) { try { localStorage.setItem(key, value); } catch { /* Private mode still permits browsing. */ } }
 
@@ -16,6 +16,9 @@ export function WorkspacePages({ workspaceId, renderResource }: { workspaceId: s
   const { forgetWorkspacePage } = useAppShell();
   const outlet = useOutlet();
   const location = useLocation();
+  const navigationType = useNavigationType();
+  const previousPagePath = useRef(location.pathname);
+  const previousPreviewLocation = useRef({ pathname: location.pathname, hadViews: location.state?.resourceViews !== undefined });
   const locationValue = useContext(UNSAFE_LocationContext);
   const navigate = useNavigate();
   const current = tabForPath(workspaceId, location.pathname);
@@ -49,10 +52,19 @@ export function WorkspacePages({ workspaceId, renderResource }: { workspaceId: s
   };
   useEffect(() => {
     const saved = location.state?.resourceViews as PreviewState | undefined;
-    if (saved === undefined) return; // A primary reading navigation does not close existing comparison panes.
+    const previous = previousPreviewLocation.current;
+    previousPreviewLocation.current = { pathname: location.pathname, hadViews: saved !== undefined };
+    if (saved === undefined) {
+      // Undoing an in-place resource opening restores the underlying document.
+      // Ordinary page/tab navigation still retains that page's comparison pane.
+      if (navigationType === 'POP' && previous.pathname === location.pathname && previous.hadViews) {
+        setPreviews(prev => ({ ...prev, [location.pathname]: { items: [], active: null } }));
+      }
+      return;
+    }
     const items = Array.isArray(saved?.items) ? saved.items.map(item => resourcePreview(workspaceId, item.path)).filter((item): item is ResourcePreview => Boolean(item) && !removedResources.current.has(`${item!.kind}:${item!.id}`)) : [];
     setPreviews(prev => ({ ...prev, [location.pathname]: { items, active: items.some(item => item.kind === saved?.active) ? saved!.active : null } }));
-  }, [location.key, location.pathname, workspaceId]);
+  }, [location.key, location.pathname, workspaceId, navigationType]);
   const captureResourceLink = (event: MouseEvent) => {
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     const link = (event.target as HTMLElement).closest('a');
@@ -84,7 +96,12 @@ export function WorkspacePages({ workspaceId, renderResource }: { workspaceId: s
   }, [workspaceId]);
 
   useLayoutEffect(() => {
+    const directory = '/workspaces/' + workspaceId + '/projects';
+    const fromDirectory = previousPagePath.current === directory && navigationType !== 'POP'
+      && location.pathname.startsWith(directory + '/') && !location.pathname.slice(directory.length + 1).includes('/');
+    previousPagePath.current = location.pathname;
     if (!current || resourcePreview(workspaceId, location.pathname)) return;
+    if (fromDirectory) setPreviews(prev => ({ ...prev, [location.pathname]: { items: [], active: null } }));
     setTabs((prev) => {
       const old = prev.find(t => t.key === current.key);
       if (old?.path === current.path && old.search === location.search) return prev;
@@ -94,10 +111,10 @@ export function WorkspacePages({ workspaceId, renderResource }: { workspaceId: s
     setVisited((prev) => {
       const old = prev.find((entry) => entry.path === location.pathname);
       if (old?.location.location.key === location.key) return prev;
-      const entry = { path: location.pathname, node: outlet, location: locationValue };
+      const entry = { path: location.pathname, node: outlet, location: locationValue, instance: fromDirectory ? location.key : old?.instance || location.key };
       return old ? prev.map((p) => p.path === entry.path ? entry : p) : [...prev, entry];
     });
-  }, [location, locationValue, outlet, current?.key]);
+  }, [location, locationValue, outlet, current?.key, navigationType, workspaceId]);
 
   useLayoutEffect(() => { write(tabsStorageKey(workspaceId), JSON.stringify(tabs)); }, [tabs, workspaceId]);
   const close = useCallback((key: string) => {
@@ -118,13 +135,13 @@ export function WorkspacePages({ workspaceId, renderResource }: { workspaceId: s
   }, [workspaceId]);
   // Render a first visit immediately; layout effect retains the same keyed container before paint.
   const entries = current && !resourcePreview(workspaceId, location.pathname) && !visited.some((p) => p.path === location.pathname)
-    ? [...visited, { path: location.pathname, node: outlet, location: locationValue }] : visited;
+    ? [...visited, { path: location.pathname, node: outlet, location: locationValue, instance: location.key }] : visited;
   const displayTabs = current && !resourcePreview(workspaceId, location.pathname) && !tabs.some((t) => t.key === current.key) ? [...tabs, current] : tabs;
   return <ResourcePreviewContext.Provider value={{ render: renderResource, states: previews, open: openPreview, activate: activatePreview, close: closePreview, clear: clearPreview, remove: removePreviewResource }}><WorkspaceTabsContext.Provider value={{ tabs: displayTabs, register, close, reorder, ratio, setRatio, reportPaneWidth }}>
     <div className="workspace-pages" hidden={!current}>
       <div className="workspace-page-tabs" style={{ width: `calc(100% - ${paneWidths[location.pathname] || 0}px)` }}><PageTabStrip tabs={displayTabs.filter(tab => tab.kind !== 'dir')} onClose={close} onReorder={reorder} /></div>
       <div className="workspace-page-stack" onClickCapture={captureResourceLink}>
-        {entries.map((entry) => <div key={entry.path} className="workspace-page" hidden={entry.path !== location.pathname || !current}>
+        {entries.map((entry) => <div key={entry.path + ":" + entry.instance} className="workspace-page" hidden={entry.path !== location.pathname || !current}>
           <UNSAFE_LocationContext.Provider value={entry.location}>{entry.node}</UNSAFE_LocationContext.Provider>
         </div>)}
       </div>

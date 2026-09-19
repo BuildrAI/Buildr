@@ -1,3 +1,4 @@
+import { checkWorkbenchDto, writeWorkbenchDto } from '../../tools/codegen/contracts/workbench-dto.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -17,6 +18,7 @@ function fixture(t: TestContext): string {
 }
 
 async function generate(root: string): Promise<void> {
+  await writeWorkbenchDto(root);
   await writeTaskRecordHttpDto(root);
   await writeTaskProfessionalHttpDto(root);
   await writeRuntimeSystemDto(root);
@@ -29,6 +31,7 @@ test('全部HTTP DTO从空显式目标生成两端闭合输出', async (t) => {
   const backend = path.join(root, 'buildr/build/generated');
   const web = path.join(root, 'buildr-web/build/generated');
   assert.equal((await checkTaskRecordHttpDto(root)).length, 0);
+  assert.equal((await checkWorkbenchDto(root)).length, 0);
   assert.equal((await checkTaskProfessionalHttpDto(root)).length, 0);
   assert.equal((await checkRuntimeSystemDto(root)).length, 0);
   assert.equal((await checkWorkspaceAgentAssetsDtos(root)).length, 0);
@@ -36,8 +39,8 @@ test('全部HTTP DTO从空显式目标生成两端闭合输出', async (t) => {
     inputs: { schemas: 'current' },
     artifacts: [{ id: 'backend-dto', root: backend }, { id: 'web-dto', root: web }],
   });
-  assert.equal(manifest.artifacts[0].files.length, 5);
-  assert.equal(manifest.artifacts[1].files.length, 5);
+  assert.equal(manifest.artifacts[0].files.length, 7);
+  assert.equal(manifest.artifacts[1].files.length, 7);
 });
 
 test('相同Schema向两个全新目标生成相同DTO清单', async (t) => {

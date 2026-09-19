@@ -1,3 +1,4 @@
+import { writeWorkbenchDto } from '../codegen/contracts/workbench-dto.ts';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -38,10 +39,12 @@ export async function buildGeneratedArtifactSet(outputRoot: string, input: { sou
     // 暂存副本用于建立候选产物身份；忽略的本地副本来自同一次模式渲染，
     // 让 TypeScript 消费方能够从干净检出编译，且不读取陈旧或已跟踪的投射。
     await writeTaskRecordHttpDto(dtoRoot);
+    await writeWorkbenchDto(dtoRoot);
     await writeTaskProfessionalHttpDto(dtoRoot);
     await writeRuntimeSystemDto(dtoRoot);
     await writeWorkspaceAgentAssetsDtos(dtoRoot);
     await writeTaskRecordHttpDto();
+    await writeWorkbenchDto();
     await writeTaskProfessionalHttpDto();
     await writeRuntimeSystemDto();
     await writeWorkspaceAgentAssetsDtos();

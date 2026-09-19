@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+import { writeWorkbenchDto } from '../codegen/contracts/workbench-dto.ts';
+
 import path from 'node:path';
 import process from 'node:process';
 
@@ -14,6 +16,7 @@ const serviceRoot = path.resolve(import.meta.dirname, '../..');
 export async function generateDevelopmentWebDtos(): Promise<string[]> {
   const outputs = [
     ...await writeTaskRecordHttpDto(),
+    ...await writeWorkbenchDto(),
     ...await writeTaskProfessionalHttpDto(),
     ...await writeRuntimeSystemDto(),
     ...await writeWorkspaceAgentAssetsDtos(),

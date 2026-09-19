@@ -1,3 +1,4 @@
+import { WORKBENCH_HTTP_OPERATIONS } from '../../src/modules/workbench/interfaces/http/workbench-http-schema.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -118,6 +119,7 @@ test('Runtime/System validators 不变异输入且全局 operation coverage 闭�
   assert.deepEqual(input, before);
 
   const coverage: any = inspectHttpOperationCoverage([
+    WORKBENCH_HTTP_OPERATIONS,
     ownedHttpOperations('task-record', TASK_HTTP_OPERATIONS),
     ownedHttpOperations('task-professional', TASK_PROFESSIONAL_HTTP_OPERATIONS),
     ownedHttpOperations('workspace', WORKSPACE_HTTP_OPERATIONS),

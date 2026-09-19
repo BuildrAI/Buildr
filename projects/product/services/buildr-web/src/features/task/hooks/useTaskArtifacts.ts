@@ -90,11 +90,13 @@ export function useTaskArtifacts(taskId: string, data: TaskDetailResponse | null
 
   const openIntentDocument = useCallback(async (linkHref: string) => {
     if (!data) return;
+    const currentTaskId = taskId;
     try {
       if (!projectRegistryRef.current) {
         const registry = await projectApi.listProjects();
         projectRegistryRef.current = registry.projects || [];
       }
+      if (taskIdRef.current !== currentTaskId) return;
       const reference = resolveTaskDocumentReference(linkHref, data.record.scope, projectRegistryRef.current);
       if (!reference) {
         setDocumentError(`无法打开“${linkHref}”：仅支持当前任务范围内已登记项目的 Markdown 文档。`);
@@ -103,9 +105,10 @@ export function useTaskArtifacts(taskId: string, data: TaskDetailResponse | null
       setDocumentError(null);
       setDocumentReference(reference);
     } catch (cause) {
+      if (taskIdRef.current !== currentTaskId) return;
       setDocumentError(cause instanceof Error ? cause.message : '读取项目文档入口失败。');
     }
-  }, [data]);
+  }, [data, taskId]);
 
   const loadProjectDocument = useCallback((reference: TaskDocumentReference, documentPath: string) => (
     projectApi.projectDocument(reference.projectCode, documentPath) as Promise<WorkspaceDocument>

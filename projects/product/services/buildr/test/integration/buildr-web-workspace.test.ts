@@ -55,8 +55,9 @@ test('React App 路由覆盖 workspace 深链并回退未知路径', () => {
   const app: any = read('../buildr-web/src/App.tsx');
   assert.match(app, /path="\/workspaces\/:workspaceId"/);
   assert.match(app, /path="tasks" element=\{<TasksSection \/>\}/);
-  assert.match(app, /<Route index element=\{<Navigate to="tasks" replace \/>\} \/>/);
-  assert.match(app, /path="overview" element=\{<Navigate to="\.\.\/tasks" replace \/>\} \/>/);
+  assert.match(app, /<Route index element=\{<Navigate to="overview" replace \/>\} \/>/);
+  assert.match(app, /path="overview" element=\{<WorkbenchPage \/>\}/);
+  assert.match(app, /path="activity" element=\{<WorkbenchActivityPage \/>\}/);
   assert.doesNotMatch(app, /OverviewPage/);
   assert.match(app, /path=":taskId"/);
   assert.match(app, /path=":taskId\/changes\/:projectCode\/:changeCode"/);
@@ -78,7 +79,7 @@ test('API client 通过 LocalSessionAdapter 为写请求附加 session，并拒�
   assert.match(adapter, /x-buildr-session/);
   assert.match(adapter, /meta\[name="buildr-session"\]/);
   assert.match(client, /sessionAdapter\.writeHeaders/);
-  assert.match(client, /if \(init\.body\)/);
+  assert.match(client, /init\.body \|\| !\['GET', 'HEAD'\]\.includes/);
   assert.match(client, /error\.code = body\.error\?\.code/);
   assert.match(client, /error\.details = body\.error\?\.details/);
   assert.doesNotMatch(client, /document\.|querySelector|buildr-session/);
@@ -120,7 +121,7 @@ test('Change 仅作为 Task-scoped 只读内容', () => {
   assert.doesNotMatch(server, /suffix === '\/changes'|change-create|change-action|addChanges/);
 });
 
-test('Buildr Web 提供独立文章入口、只读内容视图和受控本地图片资源', () => {
+test('Buildr Web 在工作空间提供独立文章入口、只读内容视图和受控本地图片资源', () => {
   const app: any = read('../buildr-web/src/App.tsx');
   const navigation: any = read('../buildr-web/src/app/AppNavigation.tsx');
   const index: any = read('../buildr-web/index.html');
@@ -132,6 +133,8 @@ test('Buildr Web 提供独立文章入口、只读内容视图和受控本地图
   const publicationApi: any = read('../buildr-web/src/features/publication/api/publication-api.ts');
   assert.match(navigation, /data-nav=\{name\}/);
   assert.match(navigation, /item\('\/articles', '文章', 'articles'\)/);
+  assert.match(navigation, /item\('\/overview', '概览', 'overview'\)/);
+  assert.match(navigation, /item\('\/activity', '动态', 'activity'\)/);
   assert.match(app, /path="articles"/);
   assert.match(app, /path="articles\/:publicationId"/);
   assert.match(app, /ArticleDetailPage/);
@@ -266,7 +269,7 @@ test('任务详情面向用户的核心术语使用中文或中英文并列', ()
   assert.doesNotMatch(evidence, />Planning Review</);
   assert.doesNotMatch(evidence, />Completion Review</);
   assert.doesNotMatch(evidence, />Verification Result</);
-  assert.match(tasks, /正式任务由 Agent 创建/);
+  assert.match(tasks, /从目标、最近进展与成果/);
   assert.match(tasks, /搜索标题、意图或编号/);
   assert.match(tasks, /全部项目/);
   assert.match(tasks, /全部服务/);
@@ -333,7 +336,8 @@ test('任务列表使用可取消的服务端筛选，详情首屏只读轻量�
   assert.match(tasks, /value: 'pending-decision', label: '等待决定'/);
   assert.match(tasks, /value: 'decided', label: '已经决定'/);
   assert.doesNotMatch(tasks, /value: 'handled'|value: 'no-action'/);
-  assert.match(tasks, /useState<TaskStatusFilter>\('all'\)/);
+  assert.match(tasks, /searchParams\.get\('status'\) \|\| 'open'/);
+  assert.match(tasks, /setDraftStatus\('open'\)/);
   assert.match(tasks, /setDraftStatus\('all'\)/);
   assert.match(listHook, /generation\.current !== current/);
   assert.match(tasks, /value: 'open', label: '未结束（进行中 \+ 待办）'/);

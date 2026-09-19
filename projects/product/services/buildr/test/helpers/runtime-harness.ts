@@ -1,3 +1,5 @@
+import { WORKBENCH_APPLICATION } from '../../src/modules/workbench/module.ts';
+import { TASK_WORK_CONTEXT_APPLICATION } from '../../src/modules/task/module.ts';
 import {
   createRuntime as createProductRuntime,
   runtimeProvide,
@@ -28,6 +30,8 @@ import { WEB_INSTANCE_LIFECYCLE } from '../../src/web/module.ts';
 export * from '../../src/bootstrap/runtime.ts';
 
 const DIRECT_CAPABILITIES = Object.freeze([
+  WORKBENCH_APPLICATION,
+  TASK_WORK_CONTEXT_APPLICATION,
   PROJECT_DAILY_PROGRESS_APPLICATION,
   AGENT_ASSETS_APPLICATION,
   AGENT_ASSETS_CAPABILITY_QUERY,

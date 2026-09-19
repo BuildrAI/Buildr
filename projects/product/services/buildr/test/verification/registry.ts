@@ -370,6 +370,8 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
     'test/integration/verification-test-files.test.ts',
   ], { schedulingCostMs: 5000, admission: true, args: ['--test-concurrency=3'] }),
   integrationSlice('integration-runtime', [
+    'test/integration/workbench-application.test.ts',
+    'test/integration/workbench-http-contract.test.ts',
     'test/integration/capability-contracts.test.ts',
     'test/integration/capability-runtime.test.ts',
     'test/integration/buildr-web-read-executor.test.ts',

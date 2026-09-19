@@ -1,4 +1,4 @@
-import { Link, useParams } from 'react-router-dom';
+import { Link, useLocation, useParams } from 'react-router-dom';
 import { Button } from 'antd';
 import { useAppShell } from '../../../app/AppShellContext';
 import { MarkdownHost } from '../../../components/MarkdownHost';
@@ -23,6 +23,7 @@ function ArtifactPanel({ label, artifact }: { label: string; artifact: Artifact 
 }
 
 export function TaskChangeDetailPage() {
+  const { state } = useLocation();
   const { taskId = '', projectCode = '', changeCode = '' } = useParams();
   const { workspaceId } = useAppShell();
   const href = (path: string) => workspaceHref(workspaceId, path);
@@ -38,7 +39,7 @@ export function TaskChangeDetailPage() {
           <h1>变更不可用</h1>
           <p className="page-copy">{error}</p>
         </section>
-        <Link to={backPath}><Button>返回任务详情</Button></Link>
+        <Link state={state} to={backPath}><Button>返回任务详情</Button></Link>
       </>
     );
   }
@@ -46,7 +47,7 @@ export function TaskChangeDetailPage() {
   if (!change) {
     return (
       <section className="page-header change-detail-header">
-        <Link className="back-link" to={backPath}>← 返回任务详情</Link>
+        <Link state={state} className="back-link" to={backPath}>← 返回任务详情</Link>
         <div className="page-header-row">
           <div>
             <p className="eyebrow">任务关联变更</p>
@@ -61,7 +62,7 @@ export function TaskChangeDetailPage() {
   return (
     <>
       <section className="page-header change-detail-header">
-        <Link className="back-link" to={backPath}>← 返回任务详情</Link>
+        <Link state={state} className="back-link" to={backPath}>← 返回任务详情</Link>
         <div className="page-header-row">
           <div>
             <p className="eyebrow">任务关联变更</p>

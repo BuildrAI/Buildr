@@ -1,3 +1,4 @@
+import { ResourceActions } from "../../workbench/components/ResourceActions";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   Link,
@@ -394,7 +395,8 @@ export function KnowledgePage() {
               </p>
             )}
           </div>
-          <Space>
+          <Space wrap>
+            <ResourceActions resource={data ? { kind: "knowledge", key: "knowledge:" + scopeKey + ":" + (artifactId || objectId || "home"), label: title, href: location.pathname + location.search } : null} />
             <Button onClick={() => setRefresh((v) => v + 1)}>刷新</Button>
             {(objectId || artifactId) && (
               <Button

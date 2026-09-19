@@ -862,7 +862,7 @@ Buildr Web Task 列表与详情 MUST 通过 Task Record Application read model �
 
 ### Requirement: Buildr Web 必须提供独立文章入口
 
-Buildr Web MUST 在 Workspace 级工作台左侧提供独立的“文章”导航入口，并 MUST 提供文章列表页与文章详情页；文章页面 MUST 保持只读，不得提供文章编辑、发布或平台同步操作。
+Buildr Web MUST 在 Workspace 级工作空间区域左侧提供独立的“文章”导航入口，并 MUST 提供文章列表页与文章详情页；文章页面 MUST 保持只读，不得提供文章编辑、发布或平台同步操作。
 
 #### Scenario: 从工作空间导航打开文章
 
@@ -1334,16 +1334,16 @@ Buildr Web MUST 把已防抖关键词、Project、Service、status、hasChildren
 - **AND** 后续响应的空filter options MUST不清空筛选控件
 
 ### Requirement: Buildr Web任务目录必须默认展示四态信息流
-Buildr Web Task列表首次进入和清除筛选 MUST使用`status=all`，并 MUST按进行中、待办、已完成、已放弃顺序连续展示；`open|todo|active|completed|abandoned` MUST继续作为显式状态筛选。选择复盘筛选时 MUST保持`all`，除非用户随后主动选择其他状态。
+Buildr Web Task列表首次进入和清除筛选 MUST使用`status=open`，并 MUST按进行中、待办顺序连续展示；显式`all`时 MUST按进行中、待办、已完成、已放弃顺序连续展示；`open|todo|active|completed|abandoned` MUST继续作为显式状态筛选。选择复盘筛选时 MUST保持`all`，除非用户随后主动选择其他状态。
 
 #### Scenario: 首次进入列表
 - **WHEN** Workspace同时包含todo、active、completed与abandoned Tasks
-- **THEN** 页面首个Task list请求 MUST携带`status=all`
-- **AND** 信息流 MUST按active、todo、completed、abandoned顺序展示首批与后续批次
+- **THEN** 页面首个Task list请求 MUST携带`status=open`
+- **AND** 信息流 MUST按active、todo顺序展示首批与后续批次，用户可显式选择全部历史
 
 #### Scenario: 清除筛选
 - **WHEN** 用户清除Task列表筛选
-- **THEN** 页面 MUST恢复`status=all`并从四态信息流首批重新读取
+- **THEN** 页面 MUST恢复`status=open`并从未结束信息流首批重新读取
 
 #### Scenario: 显式查看未结束任务
 - **WHEN** 用户选择“未结束”筛选

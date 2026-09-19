@@ -1,3 +1,4 @@
+import { WORKBENCH_MODULE } from '../modules/workbench/module.ts';
 import { createKnowledgeModule } from '../modules/knowledge/module.ts';
 import * as platform from '../infrastructure/platform.ts';
 import {
@@ -58,6 +59,7 @@ export function createRuntime(): any  {
   registry.install(createOpenSpecModule(runtime));
   registry.install(TASK_MODULE);
   registry.install(createDailyProgressModule(runtime));
+  registry.install(WORKBENCH_MODULE);
   registry.install(createWorktreeProviderModule(runtime));
   registry.install(createChangeModule(runtime));
   registry.provide(TASK_CHANGE_BINDER).bindChangeResolver(registry.provide(CHANGE_APPLICATION));

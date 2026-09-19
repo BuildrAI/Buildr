@@ -1,3 +1,8 @@
+import { createTaskWorkContextApplication } from './work-context/application/work-context-application.ts';
+import { createWorkContextHttpContribution } from './work-context/interfaces/http/work-context-http.ts';
+import { createWorkContextCliContributions } from './work-context/interfaces/cli/work-context-cli.ts';
+export type { TaskWorkContextApplication } from './work-context/application/work-context-application.ts';
+export const TASK_WORK_CONTEXT_APPLICATION = 'task.work-context-application';
 import { registerTaskQueryApplication, type TaskQueryApplicationRuntime } from './application/task-query-application.ts';
 import { registerTaskCommandApplication, type TaskCommandApplicationRuntime } from './application/task-command-application.ts';
 import { registerTaskReviewApplication, type TaskReviewApplicationRuntime } from './application/task-review-application.ts';
@@ -347,6 +352,7 @@ function createTaskModule(requires: TaskModuleRequires) {
   const queryRuntime = registerTaskQueryApplication(privateComposition as unknown as TaskQueryApplicationRuntime);
   registerTaskRetrospectiveDocument(queryRuntime);
   const commandRuntime = registerTaskCommandApplication(queryRuntime as unknown as TaskQueryApplicationRuntime & TaskCommandApplicationRuntime);
+  const workContext = createTaskWorkContextApplication(commandRuntime);
   const query = pick(queryRuntime, TASK_QUERY_METHODS);
   const command = pick(commandRuntime, TASK_COMMAND_METHODS);
   const interfaceRuntime = Object.freeze({ ...query, ...command });
@@ -363,14 +369,15 @@ function createTaskModule(requires: TaskModuleRequires) {
   });
   return Object.freeze({
     provides: {
+      [TASK_WORK_CONTEXT_APPLICATION]: workContext,
       [TASK_QUERY_APPLICATION]: query,
       [TASK_COMMAND_APPLICATION]: command,
       [TASK_RUNTIME_PORT]: runtimePortValue,
       [TASK_CHANGE_BINDER]: changeBinder,
     },
     contributions: {
-      cli: createTaskCliContributions(interfaceRuntime as TaskCommandRuntime),
-      http: [Object.freeze({
+      cli: [...createTaskCliContributions(interfaceRuntime as TaskCommandRuntime), ...createWorkContextCliContributions(workContext)],
+      http: [createWorkContextHttpContribution(workContext), Object.freeze({
         id: 'task.http',
         taskIdSource: TASK_ID_SOURCE,
         handle: (input: Omit<TaskHttpInput, 'runtime'>) => handleTaskHttpRequest({ ...input, runtime: interfaceRuntime as TaskHttpInput['runtime'] }),

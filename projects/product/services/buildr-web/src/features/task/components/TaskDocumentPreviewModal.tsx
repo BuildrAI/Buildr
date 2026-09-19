@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Alert, Button, Modal, Spin } from 'antd';
+import { Alert, Button, Spin } from 'antd';
 import { MarkdownHost } from '../../../components/MarkdownHost';
 import { encodeProjectDocumentPath, resolveProjectMarkdownHref } from '../../../lib/projectDocuments';
 import type { TaskDocumentReference } from '../../../lib/taskDocumentLinks';
@@ -18,6 +18,19 @@ export function TaskDocumentPreviewModal({ reference, onClose, loadDocument }: P
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const requestRef = useRef(0);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  const reading = Boolean(reference);
+  useEffect(() => {
+    if (!reading) return;
+    const origin = window.document.activeElement as HTMLElement | null;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || (event.target instanceof Element && event.target.closest('[role="dialog"]'))) return;
+      if (event.key === 'Escape') closeRef.current();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => { window.removeEventListener('keydown', onKey); origin?.focus(); };
+  }, [reading]);
 
   const openDocument = async (nextPath: string, pushHistory = true) => {
     if (!reference) return;
@@ -55,6 +68,7 @@ export function TaskDocumentPreviewModal({ reference, onClose, loadDocument }: P
     setDocumentPath(reference.documentPath);
     setHistory([reference.documentPath]);
     void openDocument(reference.documentPath, false);
+    return () => { requestRef.current += 1; };
   }, [reference]);
 
   const onRelativeLinkClick = (linkHref: string) => {
@@ -78,16 +92,10 @@ export function TaskDocumentPreviewModal({ reference, onClose, loadDocument }: P
     ? `${reference.projectSourcePath === '.' ? '' : `${reference.projectSourcePath}/`}${documentPath || reference.documentPath}`
     : '';
 
+  if (!reference) return null;
   return (
-    <Modal
-      title="相关资料"
-      open={Boolean(reference)}
-      onCancel={onClose}
-      footer={<Button onClick={onClose}>关闭</Button>}
-      destroyOnClose
-      width={900}
-      className="task-document-preview-modal"
-    >
+    <aside className="task-document-reader" aria-label="相关资料阅读">
+      <div className="task-document-reader-header"><strong>关联阅读</strong><Button id="task-document-close" type="text" aria-label="关闭相关资料" onClick={onClose}>关闭</Button></div>
       {reference ? (
         <div id="task-document-preview" className="task-document-preview">
           <div className="task-document-preview-heading">
@@ -117,6 +125,6 @@ export function TaskDocumentPreviewModal({ reference, onClose, loadDocument }: P
           ) : null}
         </div>
       ) : null}
-    </Modal>
+    </aside>
   );
 }

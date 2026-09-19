@@ -163,6 +163,10 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   },
   "integration-runtime": {
     "inputs": [
+      "src/modules/workbench/**",
+      "src/modules/task/work-context/**",
+      "test/integration/workbench-application.test.ts",
+      "test/integration/workbench-http-contract.test.ts",
       "test/integration/capability-contracts.test.ts",
       "test/integration/capability-runtime.test.ts",
       "test/integration/buildr-web-read-executor.test.ts",

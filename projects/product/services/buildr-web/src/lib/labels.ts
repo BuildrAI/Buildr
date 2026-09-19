@@ -6,7 +6,7 @@ export function workspaceHref(workspaceId: string | null, path: string): string 
 }
 
 export function workspaceHomePath(workspaceId: string): string {
-  return `/workspaces/${workspaceId}/tasks`;
+  return `/workspaces/${workspaceId}/overview`;
 }
 
 export function sourceTypeLabel(type: string): string {

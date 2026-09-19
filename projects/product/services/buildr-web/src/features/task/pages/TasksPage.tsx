@@ -1,23 +1,20 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { Button, Empty, Form, Input, Select, Typography } from 'antd';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { Alert, Button, Empty, Form, Input, Select, Typography } from 'antd';
 import type { TaskListRequest } from '../../../../build/generated/task-dto';
 import { useTaskList, type WorkspaceResponse } from '../hooks/useTaskList';
 import { useAppShell } from '../../../app/AppShellContext';
 import { workspaceHref } from '../../../lib/labels';
-import { TaskTable } from '../components/TaskTable';
+import { TaskTable, taskProjectGroup } from '../components/TaskTable';
+import { isIndexedTaskQuery } from '../task-search';
+import { useTaskListContexts } from '../hooks/useTaskListContexts';
 import { TaskFilters } from '../components/TaskFilters';
+import { useWorkbenchPreferences } from '../../workbench/hooks/useWorkbenchPreferences';
+import { captureTaskListPosition, loadTaskListPosition, taskListScrollHost } from '../taskNavigation';
 
 type TaskStatusFilter = NonNullable<TaskListRequest['status']>;
 type BooleanFilter = NonNullable<TaskListRequest['hasChildren']>;
 type RetrospectiveFilter = NonNullable<TaskListRequest['retrospectiveState']>;
-const EXACT_TASK_QUERY = /^#[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/;
-
-function isIndexedTaskQuery(value: string): boolean {
-  if (value === '' || EXACT_TASK_QUERY.test(value)) return true;
-  const tokens = [...new Set(value.toLowerCase().split(/[^0-9a-z\u0080-\uffff]+/u).filter(Boolean))];
-  return tokens.length > 0 && tokens.every((token) => [...token].length >= 3);
-}
 
 function projectOptionLabel(code: string, names: Record<string, string>): string {
   return names[code] || code;
@@ -31,20 +28,33 @@ function serviceOptionLabel(key: string, serviceNames: Record<string, string>): 
 
 export function TasksPage() {
   const { workspaceId, setWorkspace, setBreadcrumbParts } = useAppShell();
-  const { taskId: selectedTaskId } = useParams();
+  const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const preferences = useWorkbenchPreferences(workspaceId);
+  const [preferenceError, setPreferenceError] = useState<string | null>(null);
+  const [pendingPin, setPendingPin] = useState<string>();
+  const restorePosition = useRef(loadTaskListPosition(location.pathname + location.search));
   const navigate = useNavigate();
   const href = (path: string) => workspaceHref(workspaceId, path);
 
-  const [q, setQ] = useState('');
-  const [query, setQuery] = useState('');
+  const [q, setQ] = useState(searchParams.get('q') || '');
+  const query = searchParams.get('q') || '';
+  const updateFilters = useCallback((values: Record<string, string>) => {
+    const next = new URLSearchParams(searchParams);
+    Object.entries(values).forEach(([key, value]) => value ? next.set(key, value) : next.delete(key));
+    restorePosition.current = null;
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
   const [queryMessage, setQueryMessage] = useState('');
-  const [status, setStatus] = useState<TaskStatusFilter>('all');
-  const [project, setProject] = useState('');
-  const [service, setService] = useState('');
-  const [hasChildren, setHasChildren] = useState<BooleanFilter>('all');
-  const [retrospectiveState, setRetrospectiveState] = useState<RetrospectiveFilter>('all');
+  const rawStatus = searchParams.get('status') || 'open';
+  const status: TaskStatusFilter = ['all', 'open', 'todo', 'active', 'completed', 'abandoned'].includes(rawStatus) ? rawStatus as TaskStatusFilter : 'open';
+  const project = searchParams.get('project') || '';
+  const service = searchParams.get('service') || '';
+  const hasChildren = (['yes', 'no'].includes(searchParams.get('children') || '') ? searchParams.get('children') : 'all') as BooleanFilter;
+  const retrospectiveState = (['missing', 'pending-decision', 'decided'].includes(searchParams.get('retrospective') || '') ? searchParams.get('retrospective') : 'all') as RetrospectiveFilter;
+  const grouped = searchParams.get('group') === 'project';
   const [filterOpen, setFilterOpen] = useState(false);
-  const [draftStatus, setDraftStatus] = useState<TaskStatusFilter>('all');
+  const [draftStatus, setDraftStatus] = useState<TaskStatusFilter>('open');
   const [draftProject, setDraftProject] = useState('');
   const [draftService, setDraftService] = useState('');
   const [draftHasChildren, setDraftHasChildren] = useState<BooleanFilter>('all');
@@ -62,11 +72,13 @@ export function TasksPage() {
   }, [setWorkspace, setBreadcrumbParts]);
   const { tasks, totalTaskCount, matchingTaskCount, filterProjects, filterServices, projectNames, serviceNames, loading, loadingMore, errorMessage, loadMoreError, hasMore, loadMore, retryLoadMore } = useTaskList({ workspaceId, filters, onWorkspace });
 
+  const listContexts = useTaskListContexts(workspaceId, tasks);
+
   const draftServiceOptions = draftProject
     ? filterServices.filter((item) => item.startsWith(`${draftProject}/`))
     : filterServices;
 
-  const filtersActive = status !== 'all' || Boolean(project) || Boolean(service)
+  const filtersActive = status !== 'open' || Boolean(project) || Boolean(service)
     || hasChildren !== 'all' || retrospectiveState !== 'all';
 
   const syncFilterDraft = () => {
@@ -78,7 +90,7 @@ export function TasksPage() {
   };
 
   const resetFilterDraft = () => {
-    setDraftStatus('all');
+    setDraftStatus('open');
     setDraftProject('');
     setDraftService('');
     setDraftHasChildren('all');
@@ -86,15 +98,34 @@ export function TasksPage() {
   };
 
   const applyFilterDraft = () => {
-    setStatus(draftStatus);
-    setProject(draftProject);
-    setService(draftService);
-    setHasChildren(draftHasChildren);
-    setRetrospectiveState(draftRetrospectiveState);
+    updateFilters({ status: draftStatus, project: draftProject, service: draftService, children: draftHasChildren, retrospective: draftRetrospectiveState });
     setFilterOpen(false);
   };
 
-  const visibleTasks = tasks;
+  const visibleTasks = grouped ? [...tasks].sort((left, right) => taskProjectGroup(left, projectNames).localeCompare(taskProjectGroup(right, projectNames), 'zh-CN')) : tasks;
+  const openTask = (taskId: string) => {
+    const from = location.pathname + location.search;
+    const position = captureTaskListPosition(from, tasks.length);
+    navigate(href(`/tasks/${encodeURIComponent(taskId)}`), { state: { from, taskListPosition: position } });
+  };
+  const togglePin = async (taskId: string) => {
+    setPendingPin(taskId); setPreferenceError(null);
+    try {
+      if (preferences.has('pinned-task', taskId)) await preferences.remove('pinned-task', taskId);
+      else await preferences.set('pinned-task', taskId);
+    } catch (cause) { setPreferenceError(cause instanceof Error ? cause.message : '置顶未能保存'); }
+    finally { setPendingPin(undefined); }
+  };
+  useEffect(() => {
+    const position = restorePosition.current;
+    if (!position || loading || tasks.length === 0) return;
+    if (tasks.length < position.count && hasMore && !loadingMore && !loadMoreError) { loadMore(); return; }
+    if (loadingMore) return;
+    const host = taskListScrollHost();
+    host.scrollTo({ top: position.top });
+    restorePosition.current = null;
+  }, [tasks.length, loading, hasMore, loadingMore, loadMoreError, loadMore]);
+  useEffect(() => setQ(query), [query]);
   const prefetchTaskId = hasMore && visibleTasks.length >= 40
     ? visibleTasks[Math.max(0, visibleTasks.length - 11)]?.record.taskId
     : undefined;
@@ -104,14 +135,14 @@ export function TasksPage() {
     const searchable = isIndexedTaskQuery(value);
     setQueryMessage(searchable ? '' : '每个关键词至少输入3个字符；完整任务编号可使用 #task-id。');
     if (!searchable) return;
-    const timeout = window.setTimeout(() => setQuery(value), 200);
+    const timeout = window.setTimeout(() => { if (value !== query) updateFilters({ q: value }); }, 200);
     return () => window.clearTimeout(timeout);
-  }, [q]);
+  }, [q, query, updateFilters]);
 
   useEffect(() => {
     if (!prefetchTaskId || loadingMore || loadMoreError || typeof IntersectionObserver === 'undefined') return;
     const row = document.querySelector<HTMLElement>('#task-table-body [data-task-prefetch="true"]');
-    const root = document.querySelector<HTMLElement>('.resource-list-host .resource-list-section');
+    const root = (taskListScrollHost() instanceof HTMLElement ? taskListScrollHost() as HTMLElement : null);
     if (!row) return;
     const observer = new IntersectionObserver((entries) => {
       if (entries.some((entry) => entry.isIntersecting)) loadMore();
@@ -123,18 +154,6 @@ export function TasksPage() {
   useEffect(() => {
     setBreadcrumbParts([(document.getElementById('shell-workspace-name')?.textContent || '工作空间'), '任务']);
   }, [setBreadcrumbParts]);
-
-  useEffect(() => {
-    if (selectedTaskId || loading || errorMessage || visibleTasks.length === 0) return;
-    if (window.matchMedia('(max-width: 899px)').matches) return;
-    // A list response may settle while the user is switching areas. Never
-    // let its automatic selection navigate away from the newly chosen page.
-    const timer = window.setTimeout(() => {
-      if (window.location.pathname !== href('/tasks')) return;
-      navigate(href(`/tasks/${encodeURIComponent(visibleTasks[0].record.taskId)}`), { replace: true });
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, [selectedTaskId, loading, errorMessage, visibleTasks, href, navigate]);
 
   const filterPopup = (
     <div id="task-filter-popover" className="task-filter-popover">
@@ -223,7 +242,7 @@ export function TasksPage() {
             value={draftRetrospectiveState}
             onChange={(next) => {
               setDraftRetrospectiveState(next);
-              if (['pending-decision', 'decided'].includes(next) && ['open', 'todo', 'active'].includes(draftStatus)) {
+              if (next !== 'all') {
                 setDraftStatus('all');
               }
             }}
@@ -252,10 +271,10 @@ export function TasksPage() {
 
   return (
     <>
-      <section className="resource-toolbar">
+      <section className="resource-toolbar task-workbench-toolbar">
         <div className="task-toolbar-main">
           <Typography.Title level={2} style={{ margin: 0 }}>任务</Typography.Title>
-          <p className="page-copy">查看正式任务的顶层事实并进行有限维护。正式任务由 Agent 创建，Buildr Web 不提供创建入口。</p>
+          <p className="page-copy">从目标、最近进展与成果，找到下一步值得推进的事。</p>
         </div>
         <div className="task-toolbar-meta">
           <span id="tasks-state" className="count-label">
@@ -268,6 +287,10 @@ export function TasksPage() {
               }} />
           </div>
         </div>
+        <div className="task-state-tabs" role="tablist" aria-label="任务状态">
+          {([['open', '未结束'], ['active', '进行中'], ['todo', '待办'], ['completed', '已完成'], ['all', '全部']] as const).map(([value, label]) => <Button key={value} role="tab" aria-selected={status === value} type="text" className={status === value ? 'active' : ''} data-task-status={value} onClick={() => updateFilters({ status: value })}>{label}</Button>)}
+        </div>
+        <div className="task-workbench-filterline">
         <Input
           id="task-filter-q"
           className="task-search-slot"
@@ -278,13 +301,19 @@ export function TasksPage() {
           value={q}
           onChange={(event) => setQ(event.target.value)}
         />
+        <Select id="task-project-quick-filter" aria-label="筛选项目" value={project || 'all'} onChange={(value) => updateFilters({ project: value === 'all' ? '' : value, service: '' })} options={[{ value: 'all', label: '全部项目' }, ...filterProjects.map((value) => ({ value, label: projectOptionLabel(value, projectNames) }))]} />
+        <Button id="task-group-toggle" onClick={() => updateFilters({ group: grouped ? '' : 'project' })}>{grouped ? '按项目分组' : '不分组'}</Button>
+        </div>
         <span id="task-search-hint" className={`task-search-hint${queryMessage ? ' visible' : ''}`} role="status">{queryMessage}</span>
       </section>
-      <section className="resource-list-section">
+      {listContexts.error && <Alert type="warning" message="最近进展暂时不可读取，任务目标和已有结果仍可查看。" />}
+      {preferenceError && <Alert type="warning" message={preferenceError} closable onClose={() => setPreferenceError(null)} />}
+      <section className="resource-list-section task-workbench-list">
         <div id="task-table-wrap" className={`management-table-wrap${showTable ? '' : ' hidden'}`}>
-          <TaskTable tasks={visibleTasks} selectedTaskId={selectedTaskId} prefetchTaskId={prefetchTaskId} taskHref={(id) => href(`/tasks/${encodeURIComponent(id)}`)} onOpen={(id) => navigate(href(`/tasks/${encodeURIComponent(id)}`))} />
+          <TaskTable tasks={visibleTasks} prefetchTaskId={prefetchTaskId} projectNames={projectNames} contexts={listContexts.contexts} grouped={grouped} taskHref={(id) => href(`/tasks/${encodeURIComponent(id)}`)} onOpen={openTask} isPinned={(id) => preferences.has('pinned-task', id)} onPin={(id) => { void togglePin(id); }} pending={pendingPin} />
           <div id="task-load-more-state" className="task-load-more-state" aria-live="polite">
             {loadingMore ? '正在继续读取…' : null}
+            {hasMore && !loadingMore && !loadMoreError ? <Button onClick={loadMore}>查看更多任务</Button> : null}
             {loadMoreError ? <Button size="small" onClick={retryLoadMore}>继续读取失败，重试</Button> : null}
           </div>
         </div>
@@ -293,7 +322,7 @@ export function TasksPage() {
             <Empty
               description={errorMessage
                 || (totalTaskCount === 0
-                  ? '当前工作空间还没有正式任务记录。正式任务由 Agent 创建。'
+                  ? '当前工作空间还没有正式任务记录。可以提出一个目标，交给智能体（Agent）开始。'
                   : '当前筛选没有匹配任务。')}
             />
           ) : null}

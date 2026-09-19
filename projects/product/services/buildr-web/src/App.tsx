@@ -1,3 +1,5 @@
+import { WorkbenchPage } from './features/workbench/pages/WorkbenchPage';
+import { WorkbenchActivityPage } from './features/workbench/pages/WorkbenchActivityPage';
 import { KnowledgePage } from './features/knowledge/pages/KnowledgePage';
 import type { ResourcePreview } from './app/resource-preview';
 import { ProjectCreatePage } from './features/project/pages/ProjectCreatePage';
@@ -29,8 +31,9 @@ export function App() {
         <Route index element={<WorkspacesPage />} />
       </Route>
       <Route path="/workspaces/:workspaceId" element={<AppLayout renderResource={renderResource} />}>
-        <Route index element={<Navigate to="tasks" replace />} />
-        <Route path="overview" element={<Navigate to="../tasks" replace />} />
+        <Route index element={<Navigate to="overview" replace />} />
+        <Route path="overview" element={<WorkbenchPage />} />
+        <Route path="activity" element={<WorkbenchActivityPage />} />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="knowledge/:scopeKind/:scopeId" element={<KnowledgePage />} />
         <Route path="skills" element={<SkillsPage />} />
