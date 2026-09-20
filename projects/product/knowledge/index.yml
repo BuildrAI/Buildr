@@ -82,7 +82,8 @@ artifacts:
       - knowledge-preview-notice
       - catalog-query
       - catalog-state
-    observedDigest: 0e858a00522065d712a95908f0b81658e2cfdcce64c346244de5b61aaadb08b3
+      - knowledge-complete-reading
+    observedDigest: 46d41b18384dc9b817246b4a8c2edadfc124e1b38e00b322867ef5ff5e074370
     files:
       - file-explanation
   - id: responsibility
@@ -173,7 +174,8 @@ artifacts:
       - knowledge-preview-notice
       - catalog-query
       - catalog-state
-    observedDigest: dce31af6bde1882c1c249e1aeaeaaf9a685a3cdfd534f30db2aa22b9366c003d
+      - knowledge-complete-reading
+    observedDigest: 954a71b70241f6f61159bb96a76c5aba5fdc107ee79a2b34a0417669cda06bff
     files:
       - file-implementation-map
       - file-explanation
@@ -275,7 +277,9 @@ artifacts:
       - code-map
       - asset-cli
       - code-architecture
-    observedDigest: 77fbcdb5f4d6e0e4cd2b0ee5aa81381fb421829f3a488b9b35d3820d2f376081
+      - project-candidate-directory
+      - project-registration-ui
+    observedDigest: 0fe1e8903a3d012b7918e2ce47d1b8c9ca5eb30f9edfc72ee1e27f916950a481
     files:
       - file-project-relations-article
   - id: project-relations-map
@@ -945,7 +949,8 @@ sources:
     kind: code
     path: services/buildr-web/src/features/agent-assets/components/SkillHome.tsx
     observedDigest: 7479ae4d360b884a4be56c2940b83a0ee41ce0c6786454be9e1aeb9172af065b
-    summary: 共用技能（Skill）详情默认读取 SKILL.md 正文，其他文件折叠检索；切换技能时隔离请求状态，最近访问和收藏独立保存到工作台（Workbench）偏好。
+    summary: 共用技能（Skill）详情默认读取 SKILL.md
+      正文，其他文件折叠检索；切换技能时隔离请求状态，最近访问和收藏独立保存到工作台（Workbench）偏好。
   - id: code-architecture
     title: 代码架构（code-architecture）
     summary: 指导智能体（Agent）按清晰职责组织真实代码。
@@ -2235,6 +2240,24 @@ sources:
     kind: code
     path: services/buildr/test/browser-smoke/workbench-journey.ts
     observedDigest: 1876befbf1c6d65b2469cb07d8cf856284094bbf941da543d0aab3e391f91a43
+  - id: project-candidate-directory
+    title: 已有项目目录观察
+    kind: code
+    path: services/buildr/src/modules/workspace/infrastructure/project-candidate-directory.ts
+    summary: 只读观察未登记目录身份及本地 Git 来源，防止登记错位。
+    observedDigest: ea1a3bdf4466f71c504e9de46c96705a51294a11edb101bf79694359d50fbfe8
+  - id: project-registration-ui
+    title: 已有项目登记表单
+    kind: code
+    path: services/buildr-web/src/features/project/components/ProjectRegistrationForm.tsx
+    summary: 选择现有目录与服务，冲突时保留输入重新核对。
+    observedDigest: d3621cf1936d6c475ff2caac5e171566212ba3395ca9f3fe6eacace7d1c13a69
+  - id: knowledge-complete-reading
+    title: 完整知识阅读
+    kind: code
+    path: services/buildr-web/src/features/knowledge/useCompleteKnowledgeReading.ts
+    summary: 补齐关联阅读，取消过时请求，刷新时读取当前文件。
+    observedDigest: 579176eadcca4cfd5cd7020c8186b88767fdd04b18ea8e01ed8d05a78fd1f10c
 relations:
   - from: query
     to: knowledge-maintenance

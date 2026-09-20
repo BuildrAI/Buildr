@@ -29,7 +29,7 @@ test('独立技术图交接以图源和展示为结果，不强制创建文章',
 });
 
 test('完善地图保留已打开文件观察，不强制新建架构文章',()=>{
- const text=buildKnowledgeRequest({mode:'improve',artifactKind:'code-map',scope,relatedReadings:[{kind:'source',id:'code',observation:{revision:'r2',sources:[{id:'code',digest:'seen-now',status:'aligned'}]}}]},{...input,request:'补齐这份地图的规范文件'});
+ const text=buildKnowledgeRequest({mode:'improve',artifactKind:'code-map',scope,relatedReadings:[{kind:'source',id:'code',observation:{revision:'r2',sources:[{id:'code',digest:'seen-now',status:'readable'}]}}]},{...input,request:'补齐这份地图的规范文件'});
  for(const value of ['原位置','可折叠树','不强制新建文章','seen-now','r2'])assert.ok(text.includes(value),value);
  assert.ok(!text.includes('将实际文章及必要图'));
 });

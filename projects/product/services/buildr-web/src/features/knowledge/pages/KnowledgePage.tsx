@@ -12,6 +12,7 @@ import { useAppShell } from "../../../app/AppShellContext";
 import { useResourcePreview } from "../../../app/resource-preview";
 import { useWorkspacePageTabs } from "../../../app/pageTabs";
 import { WorkspaceStage } from "../../../components/WorkspaceStage";
+import { RefreshButton } from "../../../components/RefreshButton";
 import { workspaceHref } from "../../../lib/labels";
 import { KnowledgeCatalog } from "../components/KnowledgeCatalog";
 import { KnowledgeArtifactReader } from "../components/KnowledgeArtifactReader";
@@ -341,10 +342,7 @@ export function KnowledgePage() {
         observation: p.observation,
       })),
     });
-  const changed =
-    data?.observations.filter((o) =>
-      ["changed", "missing", "unreadable"].includes(o.status),
-    ) || [];
+  const unavailableSources = data?.observations.filter(item => ["missing", "unreadable"].includes(item.status)) || [];
   return (
     <WorkspaceStage
       pageTabs={tabs.tabs}
@@ -448,8 +446,8 @@ export function KnowledgePage() {
             )}
           </div>
           <Space wrap>
-            <ResourceActions resource={pageScope ? { kind: "knowledge", key: "knowledge:" + scopeKey + ":" + (artifactId || objectId || "home"), label: title, href: location.pathname + location.search } : null} />
-            <Button onClick={refreshPage}>刷新</Button>
+            <ResourceActions size="middle" resource={pageScope ? { kind: "knowledge", key: "knowledge:" + scopeKey + ":" + (artifactId || objectId || "home"), label: title, href: location.pathname + location.search } : null} />
+            <RefreshButton label="刷新当前知识" text="刷新" loading={pageLoading} onClick={refreshPage} />
             {(objectId || artifactId) && (
               <Button
                 disabled={!data || main.loading || Boolean(main.error)}
@@ -498,33 +496,11 @@ export function KnowledgePage() {
             {selected && (
               <p className="knowledge-summary">{selected.summary}</p>
             )}
-            {changed.length > 0 && (
-              <Alert
-                type="warning"
-                showIcon
-                message="相关文件已有变化或暂不可读，请结合当前文件理解下面内容。"
-                description={
-                  <Space wrap>
-                    {changed.map((o) => (
-                      <Button
-                        key={o.id}
-                        type="link"
-                        onClick={() => openSource(o.id)}
-                      >
-                        {index?.sources.find((s) => s.id === o.id)?.title ||
-                          o.id}{" "}
-                        ·{" "}
-                        {o.status === "changed"
-                          ? "已变化"
-                          : o.status === "missing"
-                            ? "缺失"
-                            : "不可读"}
-                      </Button>
-                    ))}
-                  </Space>
-                }
-              />
-            )}
+            {unavailableSources.length > 0 && <Alert type="warning" showIcon data-knowledge-unavailable-sources
+              message="部分来源缺失或暂不可读，其余内容仍可查看。"
+              description={<Space wrap>{unavailableSources.map(item => <Button key={item.id} type="link" onClick={() => openSource(item.id)}>
+                {index?.sources.find(source => source.id === item.id)?.title || item.id} · {item.status === "missing" ? "缺失" : "不可读"}
+              </Button>)}</Space>} />}
             {(artifactId
               ? data.artifacts?.filter((a) => a.id === artifactId) || []
               : (data.artifacts || []).filter((a) => a.kind === "document")

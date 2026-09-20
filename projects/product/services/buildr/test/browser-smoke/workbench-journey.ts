@@ -364,7 +364,7 @@ export async function runWorkbenchJourney({ t, page, runtime, workspaceRoot, oth
       const requested = page.waitForRequest(request => new URL(request.url()).pathname === overviewPath);
       await page.evaluate(() => { window.dispatchEvent(new Event('focus')); window.dispatchEvent(new Event('focus')); });
       await requested;
-      await page.getByRole('button', { name: '刷新工作概览', exact: true }).click();
+      assert.equal(await page.getByRole('button', { name: '刷新工作概览', exact: true }).isDisabled(), true, '读取期间页面刷新禁用，不能重复提交');
       await page.waitForTimeout(100);
       assert.equal(reads.filter(url => url === overviewPath).length, 1);
       assert.equal(reads.filter(url => url === `${overviewPath}/preferences`).length, 1);

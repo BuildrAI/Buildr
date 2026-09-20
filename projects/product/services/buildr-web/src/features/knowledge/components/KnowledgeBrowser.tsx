@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Alert, Button, Modal, Space, Spin } from 'antd';
 import { useAppShell } from '../../../app/AppShellContext';
+import { RefreshButton } from '../../../components/RefreshButton';
 import { useResourcePreview } from '../../../app/resource-preview';
 import { workspaceHref } from '../../../lib/labels';
 import type { KnowledgeResponse, KnowledgeScope } from '../api/knowledge-api';
@@ -17,7 +18,7 @@ import '../knowledge.css';
 import './knowledge-browser.css';
 
 type Target = { kind: 'catalog' | 'artifact' | 'object' | 'source'; id?: string; title?: string; description?: string; scope?: KnowledgeScope };
-type Entry = Target & { key: number; scrollTop: number; refresh: number };
+type Entry = Target & { key: number; scrollTop: number; refresh: number; loading: boolean };
 type Props = {
   workspaceId: string;
   scope: KnowledgeScope;
@@ -39,7 +40,7 @@ export function KnowledgeBrowser(props: Props) {
 
 function KnowledgeBrowserContent({ workspaceId, scope, initialArtifactId, initialObjectId, initialSourceId, sourceDescription, refresh = 0, onBack, backLabel = '返回详情', onTitleChange, onObserved }: Props) {
   const initial: Target = initialSourceId ? { kind: 'source', id: initialSourceId, description: sourceDescription } : initialArtifactId ? { kind: 'artifact', id: initialArtifactId } : initialObjectId ? { kind: 'object', id: initialObjectId } : { kind: 'catalog' };
-  const [history, setHistory] = useState<Entry[]>([{ ...initial, key: 0, scrollTop: 0, refresh: 0 }]);
+  const [history, setHistory] = useState<Entry[]>([{ ...initial, key: 0, scrollTop: 0, refresh: 0, loading: true }]);
   const serial = useRef(0), root = useRef<HTMLDivElement>(null);
   const current = history[history.length - 1];
   const titleChanged = useRef(onTitleChange);
@@ -50,27 +51,28 @@ function KnowledgeBrowserContent({ workspaceId, scope, initialArtifactId, initia
     const currentScope = current.scope || scope, nextScope = target.scope || scope;
     if (target.kind === current.kind && target.id === current.id && nextScope.kind === currentScope.kind && nextScope.id === currentScope.id) return;
     const scrollTop = scrollContainer()?.scrollTop || 0;
-    setHistory(items => [...items.map(item => item.key === current.key ? { ...item, scrollTop } : item), { ...target, key: ++serial.current, scrollTop: 0, refresh: 0 }]);
+    setHistory(items => [...items.map(item => item.key === current.key ? { ...item, scrollTop } : item), { ...target, key: ++serial.current, scrollTop: 0, refresh: 0, loading: true }]);
   };
   const back = () => {
     if (history.length > 1) setHistory(items => items.slice(0, -1));
     else onBack?.();
   };
   const setTitle = (key: number, title: string) => setHistory(items => items.some(item => item.key === key && item.title !== title) ? items.map(item => item.key === key ? { ...item, title } : item) : items);
-  const refreshEntry = (key: number) => setHistory(items => items.map(item => item.key === key ? { ...item, refresh: item.refresh + 1 } : item));
+  const setLoading = (key: number, loading: boolean) => setHistory(items => items.some(item => item.key === key && item.loading !== loading) ? items.map(item => item.key === key ? { ...item, loading } : item) : items);
+  const refreshEntry = (key: number) => setHistory(items => items.map(item => item.key === key ? { ...item, refresh: item.refresh + 1, loading: true } : item));
   return <div ref={root} className="knowledge-browser" data-knowledge-browser={`${scope.kind}:${scope.id}`}>
     <div className="knowledge-browser-toolbar">
       {(history.length > 1 || onBack) && <Button type="text" onClick={back}>← {history.length > 1 ? `返回${history[history.length - 2].title || '上一级'}` : backLabel}</Button>}
-      <Button size="small" onClick={() => refreshEntry(current.key)}>刷新</Button>
+      <RefreshButton size="small" label="刷新当前知识" loading={current.loading} onClick={() => refreshEntry(current.key)} />
     </div>
     {history.map(entry => <div key={entry.key} hidden={entry.key !== current.key}>
-      <KnowledgeBrowserView entry={entry} refresh={entry.refresh + refresh} active={entry.key === current.key} workspaceId={workspaceId} scope={entry.scope || scope} onOpen={open} onTitle={setTitle} onRefresh={() => refreshEntry(entry.key)} onObserved={entry.key === 0 ? onObserved : undefined} />
+      <KnowledgeBrowserView entry={entry} refresh={entry.refresh + refresh} active={entry.key === current.key} workspaceId={workspaceId} scope={entry.scope || scope} onOpen={open} onTitle={setTitle} onLoadingChange={setLoading} onRefresh={() => refreshEntry(entry.key)} onObserved={entry.key === 0 ? onObserved : undefined} />
     </div>)}
   </div>;
 }
 
-type ViewProps = { entry: Entry; refresh: number; active: boolean; workspaceId: string; scope: KnowledgeScope; onOpen: (target: Target) => void; onTitle: (key: number, title: string) => void; onRefresh: () => void; onObserved?: (data: KnowledgeResponse) => void };
-function KnowledgeBrowserView({ entry, refresh, active, workspaceId, scope, onOpen, onTitle, onRefresh, onObserved }: ViewProps) {
+type ViewProps = { entry: Entry; refresh: number; active: boolean; workspaceId: string; scope: KnowledgeScope; onOpen: (target: Target) => void; onTitle: (key: number, title: string) => void; onLoadingChange: (key: number, loading: boolean) => void; onRefresh: () => void; onObserved?: (data: KnowledgeResponse) => void };
+function KnowledgeBrowserView({ entry, refresh, active, workspaceId, scope, onOpen, onTitle, onLoadingChange, onRefresh, onObserved }: ViewProps) {
   const isCatalog = entry.kind === 'catalog';
   const [category, setCategory] = useState<KnowledgeCategory>('documents'), [query, setQuery] = useState('');
   const catalog = useKnowledgeCatalog({ workspaceId, scope, category, query, refresh, enabled: isCatalog && active });
@@ -82,8 +84,9 @@ function KnowledgeBrowserView({ entry, refresh, active, workspaceId, scope, onOp
   const pageScope = data?.scope || catalog.data?.scope;
   const loading = isCatalog ? catalog.loading : result.loading;
   const [notice, setNotice] = useState(''), [choices, setChoices] = useState<string[]>([]);
-  const root = useRef<HTMLDivElement>(null), callbacks = useRef({ onOpen, onTitle, onObserved });
-  callbacks.current = { onOpen, onTitle, onObserved };
+  const root = useRef<HTMLDivElement>(null), callbacks = useRef({ onOpen, onTitle, onObserved, onLoadingChange });
+  callbacks.current = { onOpen, onTitle, onObserved, onLoadingChange };
+  useLayoutEffect(() => { callbacks.current.onLoadingChange(entry.key, loading); }, [entry.key, loading]);
   const { openAgentAction } = useAppShell(), previews = useResourcePreview(), location = useLocation();
   const artifact = data?.artifacts?.find(item => item.id === entry.id);
   const source = data?.observations.find(item => item.id === entry.id);
@@ -148,7 +151,7 @@ function KnowledgeBrowserView({ entry, refresh, active, workspaceId, scope, onOp
     onObject: (id: string) => { const target = index?.objects.find(item => item.id === id); if (target) callbacks.current.onOpen({ kind: 'object', id, title: target.title, scope: readingScope }); },
   };
   const shownArtifacts = entry.kind === 'artifact' ? artifact ? [artifact] : [] : (data?.artifacts || []).filter(item => item.kind === 'document');
-  const changed = data?.observations.filter(item => ['changed', 'missing', 'unreadable'].includes(item.status)) || [];
+  const unavailableSources = data?.observations.filter(item => ['missing', 'unreadable'].includes(item.status)) || [];
   return <div ref={root} className="knowledge-side-reader knowledge-browser-view" data-knowledge-view={entry.kind}>
     {!isCatalog && result.loading ? <Spin /> : !isCatalog && result.error ? <Alert type="error" message={result.error} /> : (isCatalog || data) && <>
       <header className="knowledge-browser-heading"><div><p className="eyebrow">{scope.kind === 'service' ? '服务知识' : '项目知识'}</p><h2>{title}</h2></div>{entry.kind !== 'catalog' && <Button size="small" onClick={() => construct('improve')}>完善当前内容</Button>}</header>
@@ -164,11 +167,10 @@ function KnowledgeBrowserView({ entry, refresh, active, workspaceId, scope, onOp
       /> : entry.kind === 'source' ? <>
         <section className="knowledge-file-summary"><h3>文件说明</h3><p>{sourceMeta?.summary || entry.description || '这份来源尚未提供总体说明，可根据源文件补充。'}</p></section>
         <p className="knowledge-source-location">{source?.location?.title || source?.skill?.id || data?.scope.title} · {source?.path || sourceMeta?.path}</p>
-        {source && ['changed', 'missing', 'unreadable'].includes(source.status) && <Alert type="warning" message={source.diagnostic || '文件已变化，请结合当前内容确认。'} />}
         {source?.content != null ? <KnowledgeSource sourceId={entry.id || ''} content={source.content} path={source.path || ''} line={sourceMeta?.line} reading={{ ...reader, artifacts: sourceReading?.data.artifacts || [], artifact: sourceReading?.artifact || { id: `source:${entry.id}`, title, kind: 'document', path: source.path || '', objects: [], sources: [], content: source.content, digest: source.digest, status: source.status, diagnostic: source.diagnostic, diagramSize: null, graph: null } }} /> : <Alert type="warning" message={source?.diagnostic || '文件不可读'} />}
       </> : <>
         {object?.summary && <p className="knowledge-summary">{object.summary}</p>}
-        {changed.length > 0 && <Alert type="warning" message="相关文件已有变化或暂不可读，请结合当前文件理解。" description={<Space wrap>{changed.map(item => <Button key={item.id} size="small" type="link" onClick={() => openSource(item.id)}>{index?.sources.find(source => source.id === item.id)?.title || item.id}</Button>)}</Space>} />}
+        {unavailableSources.length > 0 && <Alert type="warning" data-knowledge-unavailable-sources message="部分来源缺失或暂不可读，其余内容仍可查看。" description={<Space wrap>{unavailableSources.map(item => <Button key={item.id} size="small" type="link" onClick={() => openSource(item.id)}>{index?.sources.find(source => source.id === item.id)?.title || item.id} · {item.status === 'missing' ? '缺失' : '不可读'}</Button>)}</Space>} />}
         {(shownArtifacts.length ? shownArtifacts : data?.artifacts || []).map(item => <KnowledgeArtifactReader key={item.id} {...reader} showTitle={entry.kind !== 'artifact'} artifact={item} artifacts={data?.artifacts || []} />)}
       </>}
       <Modal open={choices.length > 0} title="选择对应文件" footer={null} onCancel={() => setChoices([])}>{choices.map(id => <p key={id}><Button onClick={() => { setChoices([]); openSource(id); }}>{index?.sources.find(item => item.id === id)?.title || id}</Button></p>)}</Modal>

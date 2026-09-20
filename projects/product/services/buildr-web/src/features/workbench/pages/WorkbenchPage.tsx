@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { Alert, Button, Empty, Select, Skeleton, Tooltip } from 'antd';
-import { ArrowRightOutlined, ClockCircleOutlined, ReloadOutlined, PushpinFilled, PushpinOutlined } from '@ant-design/icons';
+import { ArrowRightOutlined, ClockCircleOutlined, PushpinFilled, PushpinOutlined } from '@ant-design/icons';
+import { RefreshButton } from '../../../components/RefreshButton';
 import { useAppShell } from '../../../app/AppShellContext';
 import { workspaceHref } from '../../../lib/labels';
 import { formatDateTime } from '../../../lib/taskLabels';
@@ -36,7 +37,7 @@ export function WorkbenchPage() {
       <div className="workbench-heading-actions">
         <Select id="workbench-project-filter" aria-label="筛选项目" value={project} onChange={value => setParams(value ? { project: value } : {})}
           options={[{ value: '', label: '全部项目' }, ...(data?.projects || []).map(item => ({ value: item.code, label: item.name }))]} />
-        <Tooltip title="刷新当前内容"><Button type="text" icon={<ReloadOutlined spin={loading} />} onClick={() => void refresh()} aria-label="刷新工作概览" /></Tooltip>
+        <RefreshButton label="刷新工作概览" loading={loading} onClick={() => void refresh()} />
       </div>
     </header>
     {error ? <Alert type="error" showIcon message="工作概览暂时不可用" description={error} action={<Button onClick={() => void refresh()}>重试</Button>} /> : null}

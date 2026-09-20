@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Page, Request } from 'playwright-core';
+import { runKnowledgeLocalReadingJourney } from './knowledge-local-reading-journey.ts';
 
 type Context = { page: Page; workspaceRoot: string; workspaceUrl: string; service: { id: string; name: string }; capture: (page: Page, name: string) => Promise<unknown> };
 
@@ -135,6 +136,8 @@ export async function runServiceKnowledgeJourney({ page, workspaceRoot, workspac
   await page.goto(`${workspaceUrl}/knowledge/service/${encodeURIComponent(service.id)}?artifact=service-intro`);
   await page.waitForURL(`${workspaceUrl}/services`);
   await browser().getByRole('link', { name: '真实实现来源', exact: true }).waitFor({ state: 'visible' });
+  await assertSingleReadingPane();
+  await runKnowledgeLocalReadingJourney({ page, workspaceRoot, serviceRoot, scopeUrl, browser, capture });
   await assertSingleReadingPane();
   await browser().getByRole('button', { name: '← 返回服务', exact: true }).click();
   await visible().locator('#service-detail-name:visible').waitFor({ state: 'visible' });

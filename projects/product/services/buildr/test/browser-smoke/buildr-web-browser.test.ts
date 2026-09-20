@@ -322,7 +322,7 @@ async function capture(page: any, name: any): Promise<any>  {
   await page.screenshot({ path: path.join(SCREENSHOT_DIR, name), fullPage: true, animations: 'disabled' });
 }
 
-test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('all') || SELECTORS.has('task') ? 300_000 : SELECTORS.has('workbench') || SELECTORS.has('articles') || SELECTORS.has('shell') ? 120_000 : 45_000 }, async (t: any) => {
+test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('all') || SELECTORS.has('task') ? 300_000 : SELECTORS.has('workbench') || SELECTORS.has('articles') || SELECTORS.has('shell') || SELECTORS.has('service') ? 120_000 : 45_000 }, async (t: any) => {
   const requestedSmokeRoot: any = process.env.BUILDR_SMOKE_ROOT;
   const managedSmokeRoot: any = requestedSmokeRoot && fs.existsSync(path.join(requestedSmokeRoot, '.buildr-smoke-owner')) ? requestedSmokeRoot : null;
   const base: any = managedSmokeRoot || fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-browser-smoke-'));
@@ -740,6 +740,32 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.setViewportSize({ width: 1280, height: 720 });
   });
 
+  if (selected('project')) await t.test('项目主页单次读取登记，服务列表不依赖旧详情请求', async () => {
+    const apiPrefix = `/api/v1/workspaces/${initialWorkspaceId}`;
+    const catalogPath = `${apiPrefix}/asset-catalog`;
+    const legacyPaths = new Set([`${apiPrefix}/projects/demo`, `${apiPrefix}/projects/demo/services`]);
+    const reads: string[] = [];
+    const observe = (request: any) => {
+      if (request.method() === 'GET') reads.push(new URL(request.url()).pathname);
+    };
+    const legacyRoute = (target: URL) => legacyPaths.has(target.pathname);
+    // A slow unused detail endpoint must not delay the visible project or service list.
+    let release!: () => void;
+    const held = new Promise<void>(resolve => { release = resolve; });
+    page.on('request', observe);
+    await page.route(legacyRoute, async (route: any) => { await held; await route.continue(); });
+    try {
+      await page.goto(`${workspaceUrl}/projects/demo`);
+      await page.locator('[data-service-card="api"]').waitFor({ state: 'visible', timeout: 5000 });
+      assert.equal(await page.locator('#project-detail-name').innerText(), '演示项目');
+      assert.equal(await page.locator('#project-service-count').innerText(), '1');
+      assert.equal(reads.filter(value => value === catalogPath).length, 1, '同一份登记供主页和面板使用');
+      assert.deepEqual(reads.filter(value => legacyPaths.has(value)), [], '不再为名称或计数请求旧详情与服务列表');
+    } finally {
+      release(); await page.unroute(legacyRoute); page.off('request', observe);
+    }
+  });
+
   if (selected('project')) await t.test('项目列表展示标题与说明，详情展示基础事实与文档', async () => {
     await page.goto(`${workspaceUrl}/projects`);
     const row: any = page.locator('#project-table-body tr').filter({ hasText: '演示项目' });
@@ -761,7 +787,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.equal(await page.locator('[data-doc-row="daily"]').count(), 0, '每日演进不再作为项目资料');
     assert.equal(await page.locator('[data-doc-row="readme"], [data-doc-row="agents"]').count(), 2);
     assert.equal(await page.getByRole('button', { name: '查看项目工作', exact: false }).count(), 1);
-    assert.equal(await page.getByRole('button', { name: '删除项目', exact: true }).count(), 0);
+    assert.equal(await page.getByRole('button', { name: '移除项目登记', exact: true }).count(), 0);
     assert.equal(await page.getByRole('button', { name: '更多项目操作', exact: true }).count(), 1);
     await page.setViewportSize({ width: 1680, height: 900 });
     const entryBoxes = await page.locator('.project-home-entry').evaluateAll((items: Element[]) => items.map(item => ({ top: item.getBoundingClientRect().top, height: item.getBoundingClientRect().height })));
@@ -921,6 +947,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.equal(repository.available, false);
     await page.getByRole('button', { name: '解除关联 嵌套业务服务', exact: true }).click();
     await page.getByRole('link', { name: '嵌套业务服务', exact: true }).waitFor({ state: 'hidden' });
+    assert.equal(await page.locator('#project-service-count').innerText(), '0');
     const unlinked = runtime.assetCatalog(workspaceRoot);
     assert.deepEqual(unlinked.projects.find((p: any) => p.id === project.id).serviceIds, []);
     assert.ok(unlinked.services.some((s: any) => s.id === service.id));
@@ -938,6 +965,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.getByRole('textbox', { name: '过滤服务', exact: true }).fill('嵌套');
     await page.locator('.ant-select-item-option-content').filter({ hasText: '嵌套业务服务' }).click();
     await page.getByRole('link', { name: '嵌套业务服务', exact: true }).waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#project-service-count').innerText(), '1');
     assert.equal(await page.getByRole('dialog').count(), 0);
     assert.equal(await page.locator('#project-manage-services .ant-select-selection-item').count(), 0);
     const serviceCount = runtime.assetCatalog(workspaceRoot).services.length;
@@ -951,6 +979,51 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.equal(await page.getByRole('textbox', { name: '服务名称', exact: true }).inputValue(), '保留未提交草稿');
     await page.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).click();
 
+  });
+
+  if (selected('project')) await t.test('移除后从已有目录重新登记，版本冲突保留输入与原文件', async () => {
+    let catalog = runtime.assetCatalog(workspaceRoot);
+    if (catalog.migrationRequired) catalog = runtime.migrateAssetCatalog(workspaceRoot, { revision: catalog.revision });
+    catalog = runtime.createCatalogProject(workspaceRoot, { revision: catalog.revision, code: 'register-browser', name: '重新登记验收项目' });
+    const original = catalog.projects.find((project: any) => project.code === 'register-browser');
+    const source = path.join(workspaceRoot, 'projects/register-browser/README.md');
+    fs.writeFileSync(source, '重新登记保留原始内容\n');
+    const missing = path.join(workspaceRoot, 'projects/register-browser/commands.yml');
+    fs.rmSync(missing);
+    await page.goto(`${workspaceUrl}/projects/register-browser`);
+    await page.getByRole('button', { name: '更多项目操作', exact: true }).click();
+    await page.getByRole('menuitem', { name: '移除项目登记', exact: true }).click();
+    await page.getByRole('dialog').getByRole('button', { name: '移除登记', exact: true }).click();
+    await page.waitForURL(`${workspaceUrl}/projects`);
+    await page.getByRole('dialog').waitFor({ state: 'hidden' });
+    await page.locator('#project-directory-create-button').click();
+    await page.getByRole('radio', { name: '登记已有项目', exact: true }).check();
+    await page.getByRole('combobox', { name: '已有项目目录', exact: true }).click();
+    await page.locator('.ant-select-item-option-content').filter({ hasText: 'projects/register-browser' }).click();
+    await page.getByRole('textbox', { name: '项目名称', exact: true }).fill('重新登记后的名称');
+    await page.getByRole('textbox', { name: '业务目标', exact: true }).fill('保留本次填写的目标');
+    const registrationUrl = `${url}/api/v1/workspaces/${initialWorkspaceId}/asset-catalog/projects/register`;
+    expectedBrowserErrors.add(registrationUrl);
+    const current = runtime.assetCatalog(workspaceRoot);
+    runtime.updateCatalogAsset(workspaceRoot, 'project', current.projects[0].id, { revision: current.revision, description: '登记期间由另一个入口修改' });
+    await page.getByRole('button', { name: '登记项目', exact: true }).click();
+    await page.locator('#project-register-error').waitFor({ state: 'visible' });
+    assert.match(await page.locator('#project-register-error').innerText(), /当前输入已保留/);
+    assert.equal(await page.getByRole('textbox', { name: '项目名称', exact: true }).inputValue(), '重新登记后的名称');
+    assert.equal(await page.getByRole('textbox', { name: '业务目标', exact: true }).inputValue(), '保留本次填写的目标');
+    await page.getByRole('button', { name: '重新核对目录', exact: true }).click();
+    await page.getByRole('button', { name: '登记项目', exact: true }).waitFor({ state: 'visible' });
+    await page.waitForFunction(() => !(document.querySelector('button[form="project-register-form"]') as HTMLButtonElement)?.disabled);
+    await capture(page, 'project-register-existing-desktop.png');
+    await page.getByRole('button', { name: '登记项目', exact: true }).click();
+    await page.waitForURL(`${workspaceUrl}/projects/register-browser`);
+    await page.locator('#project-detail-name').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#project-detail-name').innerText(), '重新登记后的名称');
+    const registered = runtime.assetCatalog(workspaceRoot).projects.find((project: any) => project.code === original.code);
+    assert.notEqual(registered.id, original.id);
+    assert.deepEqual(registered.serviceIds, []);
+    assert.equal(fs.readFileSync(source, 'utf8'), '重新登记保留原始内容\n');
+    assert.equal(fs.existsSync(missing), false);
   });
 
   if (selected('service')) await t.test('全局服务目录进入主页，旧详情与文档保持兼容', async () => {
@@ -1046,12 +1119,12 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.ok(requests.some(url => url.endsWith('/services')));
     assert.ok(!requests.some(url => url.endsWith('/asset-catalog')));
     page.off('request', collect);
-    await page.locator('#service-table-body tr').filter({ hasText: '删除验收服务' }).getByRole('button', { name: '删除', exact: true }).click();
+    await page.locator('#service-table-body tr').filter({ hasText: '删除验收服务' }).getByRole('button', { name: '移除登记', exact: true }).click();
     await page.getByRole('dialog').getByText(/将解除这些项目的引用：删除验收项目/).waitFor();
     await page.getByRole('dialog').getByRole('button', { name: /^取\s*消$/ }).click();
     assert.ok(runtime.assetCatalog(workspaceRoot).services.some((s: any) => s.id === service.id));
-    await page.locator('#service-table-body tr').filter({ hasText: '删除验收服务' }).getByRole('button', { name: '删除', exact: true }).click();
-    await page.getByRole('dialog').getByRole('button', { name: '删除登记', exact: true }).click();
+    await page.locator('#service-table-body tr').filter({ hasText: '删除验收服务' }).getByRole('button', { name: '移除登记', exact: true }).click();
+    await page.getByRole('dialog').getByRole('button', { name: '移除登记', exact: true }).click();
     await page.getByRole('dialog').waitFor({ state: 'hidden' });
     await page.locator('#service-table-body tr').filter({ hasText: '删除验收服务' }).waitFor({ state: 'hidden' });
     c = runtime.assetCatalog(workspaceRoot);
@@ -1060,8 +1133,8 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.ok(fs.existsSync(path.join(workspaceRoot, 'services/delete-browser-api/AGENTS.md')));
     await page.goto(`${workspaceUrl}/projects/delete-browser`);
     await page.getByRole('button', { name: '更多项目操作', exact: true }).click();
-    await page.getByRole('menuitem', { name: '删除项目', exact: true }).click();
-    await page.getByRole('dialog').getByRole('button', { name: '删除登记', exact: true }).click();
+    await page.getByRole('menuitem', { name: '移除项目登记', exact: true }).click();
+    await page.getByRole('dialog').getByRole('button', { name: '移除登记', exact: true }).click();
     await page.waitForURL(`${workspaceUrl}/projects`);
     await page.getByRole('dialog').waitFor({ state: 'hidden' });
     assert.equal(await page.getByRole('tab', { name: '删除验收项目', exact: true }).count(), 0);

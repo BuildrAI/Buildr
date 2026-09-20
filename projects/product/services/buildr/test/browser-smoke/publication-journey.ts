@@ -25,22 +25,24 @@ export async function runPublicationJourney({ t, page, workspaceRoot, workspaceU
     const base = new URL(apiBase), prefix = `${base.pathname}/knowledge/project/`;
     assert.equal(await entry.count(), 1, `来源 ${sourceId} 必须有唯一可点击入口`);
     await entry.waitFor({ state: 'visible' });
+    await entry.scrollIntoViewIfNeeded();
     const requested: string[] = [];
     const observe = (request: Request) => {
       const url = new URL(request.url());
       if (request.method() === 'GET') requested.push(url.origin + url.pathname);
     };
     page.on('request', observe);
+    const responsePromise = page.waitForResponse(response => {
+      const url = new URL(response.url());
+      if (response.request().method() !== 'GET' || url.origin !== base.origin || !url.pathname.startsWith(prefix)) return false;
+      const parts = url.pathname.slice(prefix.length).split('/');
+      return parts.length === 3 && Boolean(parts[0]) && parts[1] === 'sources' && decodeURIComponent(parts[2]) === sourceId;
+    });
+    // Keep a response rejection handled while the real pointer action is still pending.
+    void responsePromise.catch(() => {});
     try {
-      const [response] = await Promise.all([
-        page.waitForResponse(response => {
-          const url = new URL(response.url());
-          if (response.request().method() !== 'GET' || url.origin !== base.origin || !url.pathname.startsWith(prefix)) return false;
-          const parts = url.pathname.slice(prefix.length).split('/');
-          return parts.length === 3 && Boolean(parts[0]) && parts[1] === 'sources' && decodeURIComponent(parts[2]) === sourceId;
-        }),
-        entry.click(),
-      ]);
+      await entry.click();
+      const response = await responsePromise;
       assert.equal(response.status(), 200);
       const data = await response.json();
       assert.equal(data.scope.kind, 'project');

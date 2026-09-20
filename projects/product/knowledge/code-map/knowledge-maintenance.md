@@ -12,7 +12,7 @@
 | --- | --- |
 | 规范依据 | [当前知识维护规范](../../openspec/specs/current-knowledge-maintenance/spec.md)规定事实与成果边界；[项目知识阅读规范](../../openspec/specs/project-knowledge-browsing/spec.md)规定范围、来源观察、阅读和建设入口。 |
 | 接口入口（Interface） | 知识读取由超文本传输协议（HTTP）入口提供。没有独立知识读取命令行（CLI）命令；通过接续指令执行专业工作，不把按钮当成后台维护程序。 |
-| 应用服务（Application） | 解析项目、服务和代码库，组织成果与来源读取，计算当前观察。它决定读哪些内容，不决定架构文章的语义是否正确。 |
+| 应用服务（Application） | 解析项目、服务和代码库，组织成果与来源读取，返回当前内容和实际读取限制。它决定读哪些内容，不决定架构文章的语义是否正确。 |
 | 领域模型（Domain） | 校验对象身份、成果类型、来源关联和层级；目录模型按分类与关键词筛选，校验绑定范围、条件及索引版本的游标（Cursor）。 |
 | 数据访问与技术支撑 | 内容保存在文件中，由有界文件读取检查真实路径、类型、大小并计算摘要。当前没有知识数据库或对象关系映射（ORM）持久层。 |
 | 前端阅读 | 页面组织当前范围与固定导航；目录按 20 项分页并提前续载；目录状态保留条目、版本及阅读位置；成果组件负责正文和内嵌；读取钩子（Hook）取消过时请求；副屏独立滚动。 |
@@ -35,7 +35,7 @@
       - [knowledge-http.ts](../../services/buildr/src/modules/knowledge/interfaces/http/knowledge-http.ts) — 身份解析、有界目录分页、只读详情与隔离图示
       - [knowledge-http-contracts.ts](../../services/buildr/src/modules/knowledge/interfaces/http/knowledge-http-contracts.ts) — 对外响应结构与校验
     - `application/` — 组织阅读用例
-      - [knowledge-query.ts](../../services/buildr/src/modules/knowledge/application/knowledge-query.ts) — 定位登记范围、分别组织目录和详情读取、核对来源
+      - [knowledge-query.ts](../../services/buildr/src/modules/knowledge/application/knowledge-query.ts) — 定位登记范围、分别组织目录和详情读取、读取当前来源
     - `domain/` — 知识对象与关联规则
       - [knowledge-index.ts](../../services/buildr/src/modules/knowledge/domain/knowledge-index.ts) — 索引解析、身份与关系有效性
       - [knowledge-catalog.ts](../../services/buildr/src/modules/knowledge/domain/knowledge-catalog.ts) — 全范围检索、分页摘要和绑定版本的游标（Cursor）
@@ -106,4 +106,4 @@
     - [knowledge-maintenance.md](../archify/flows/knowledge-maintenance.md) — 图示依据与表达边界
 
 
-来源缺失或职责变化时，只影响相关表达；摘要相同不能证明语义正确。读取与保护行为的证据见[实际文件回归](../../services/buildr/test/integration/knowledge-query.test.ts)。本地图不说明正式发布状态，也不覆盖其他业务模块。
+来源缺失或职责变化时，只影响相关表达；网页直接读取当前文件，读取成功不代表语义已经核验。读取与保护行为的证据见[实际文件回归](../../services/buildr/test/integration/knowledge-query.test.ts)。本地图不说明正式发布状态，也不覆盖其他业务模块。

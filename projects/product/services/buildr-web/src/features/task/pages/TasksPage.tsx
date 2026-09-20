@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { Alert, Button, Empty, Form, Input, Select, Tooltip, Typography } from 'antd';
-import { ReloadOutlined } from '@ant-design/icons';
+import { Alert, Button, Empty, Form, Input, Select, Typography } from 'antd';
+import { RefreshButton } from '../../../components/RefreshButton';
 import type { TaskListRequest } from '../../../../build/generated/task-dto';
 import { useTaskList, type WorkspaceResponse } from '../hooks/useTaskList';
 import { useAppShell } from '../../../app/AppShellContext';
@@ -282,7 +282,7 @@ export function TasksPage() {
             {loading ? '正在读取…' : (errorMessage ? '读取失败' : (visibleTasks.length < matchingTaskCount ? `已加载 ${visibleTasks.length} / 共 ${matchingTaskCount} 个任务` : `${matchingTaskCount} 个任务`))}
           </span>
           <div className="task-list-tools">
-            <Tooltip title="刷新当前内容"><Button id="task-list-refresh" type="text" icon={<ReloadOutlined spin={loading} />} aria-label="刷新任务列表" onClick={() => void reload()} /></Tooltip>
+            <RefreshButton id="task-list-refresh" label="刷新任务列表" loading={loading} onClick={() => void reload()} />
             <TaskFilters open={filterOpen} active={filtersActive} content={filterPopup} onOpenChange={(open) => {
                 if (open) syncFilterDraft();
                 setFilterOpen(open);

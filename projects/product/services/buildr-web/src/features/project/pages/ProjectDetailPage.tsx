@@ -2,10 +2,8 @@ import { ResourceActions } from '../../workbench/components/ResourceActions';
 import { AssetDeleteDialog } from '../../workspace/components/AssetDeleteDialog';
 import { useLocation } from 'react-router-dom';
 import { ProjectServicesPanel } from '../components/ProjectServicesPanel';
-import { catalogChanged } from '../../workspace/api/asset-catalog-api';
-import { workspaceApi } from '../../workspace/api/workspace-api';
-import { type ProjectResponse, projectApi } from '../api/project-api';
-import { serviceApi } from '../../service/api/service-api';
+import { useAssetCatalog } from '../../workspace/components/useAssetCatalog';
+import { projectApi } from '../api/project-api';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Button, Dropdown } from 'antd';
@@ -21,9 +19,6 @@ import { ProjectEditDrawer } from '../components/ProjectEditDrawer';
 import { useWorkspacePageTabs } from '../../../app/pageTabs';
 import { WorkspaceStage, type WorkspaceObjectTab } from '../../../components/WorkspaceStage';
 import '../project-home.css';
-
-type ProjectDetail = ProjectResponse & { revision: string; project: NonNullable<ProjectResponse['project']> };
-type Service = NonNullable<ProjectResponse['services']>[number];
 
 type ObjTab = { key: string; kind: 'doc'; ref: string };
 
@@ -80,54 +75,32 @@ function ProjectDocObjectView({ projectCode, docPath, title, hint }: { projectCo
 export function ProjectDetailPage() {
   const { projectCode = '' } = useParams();
   const navigate = useNavigate();
-  const { workspaceId, setWorkspace, setBreadcrumbParts } = useAppShell();
+  const { workspaceId, workspace, setBreadcrumbParts } = useAppShell();
   const href = (path: string) => workspaceHref(workspaceId, path);
   const [deleting, setDeleting] = useState<string | null>(null);
   const pageTabs = useWorkspacePageTabs(workspaceId);
-  const [data, setData] = useState<ProjectDetail | null>(null);
-  const [services, setServices] = useState<Service[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const catalog = useAssetCatalog(), data = catalog.data;
+  const project = data?.projects.find(item => item.workspaceId === workspaceId && item.code === projectCode);
+  const services = data?.services.filter(service => service.workspaceId === workspaceId && project?.serviceIds?.includes(service.id)) || [];
+  const error = catalog.error || (data && !catalog.loading && !project ? '项目不存在' : null);
   const editLocation = useLocation();
   const [editOpen, setEditOpen] = useState(Boolean(editLocation.state?.editResource));
   useEffect(() => { if (editLocation.state?.editResource) setEditOpen(true); }, [editLocation.key]);
-  const [refresh, setRefresh] = useState(0);
-  useEffect(() => { const update = (event: Event) => { const projects = (event as CustomEvent<{ projects?: { code: string }[] }>).detail?.projects; if (!projects || projects.some(p => p.code === projectCode)) setRefresh(v => v + 1); }; window.addEventListener(catalogChanged, update); return () => window.removeEventListener(catalogChanged, update); }, [projectCode]);
-  const [workspaceName, setWorkspaceName] = useState('');
+  const workspaceName = workspace?.name || '工作空间';
   const [objects, setObjects] = useState<ObjTab[]>([]);
   const [activeObj, setActiveObj] = useState<string | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const [workspace, projectData, servicesData] = await Promise.all([
-          workspaceApi.read(),
-          projectApi.project(projectCode) as Promise<ProjectDetail>,
-          serviceApi.services(projectCode),
-        ]);
-        if (cancelled) return;
-        setWorkspace(workspace);
-        setWorkspaceName(workspace.workspace.name);
-        setBreadcrumbParts([workspace.workspace.name, '项目', projectData.project.name]);
-        setData(projectData);
-        setServices(servicesData.services ?? []);
-      } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : '项目不存在');
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [projectCode, setWorkspace, setBreadcrumbParts, refresh]);
-
-  useEffect(() => {
-    if (!data || !workspaceId) return;
+    if (!project || !workspaceId) return;
+    setBreadcrumbParts([workspaceName, '项目', project.name]);
     pageTabs.register({
       key: `proj:${projectCode}`,
       kind: 'proj',
-      title: data.project.name,
+      title: project.name,
       path: href(`/projects/${encodeURIComponent(projectCode)}`),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data?.project.name, projectCode, workspaceId]);
+  }, [project?.name, projectCode, workspaceId, workspaceName, setBreadcrumbParts]);
 
   const openObject = (tab: ObjTab) => {
     setObjects((current) => current.some((o) => o.key === tab.key) ? current : [...current, tab]);
@@ -163,7 +136,7 @@ export function ProjectDetailPage() {
     );
   }
 
-  if (!data) {
+  if (!data || !project) {
     return (
       <div className="page-loading">
         <span className="loader" />
@@ -172,7 +145,6 @@ export function ProjectDetailPage() {
     );
   }
 
-  const project = data.project;
   const objectTabs: WorkspaceObjectTab[] = objects.map((o) => ({ key: o.key, kind: o.kind, title: objectTitle(o) }));
   const activeTab = objects.find((o) => o.key === activeObj) ?? null;
 
@@ -203,7 +175,7 @@ export function ProjectDetailPage() {
             <div className="project-home-actions">
               <ResourceActions size="middle" projectCode={projectCode} resource={{ kind: "project", key: "project:" + projectCode, label: project.name, href: href("/projects/" + encodeURIComponent(projectCode)) }} />
               <Button id="project-edit-button" onClick={() => setEditOpen(true)}>编辑项目</Button>
-              <Dropdown trigger={['click']} menu={{ items: [{ key: 'delete', label: '删除项目', danger: true }], onClick: () => setDeleting(projectCode) }}>
+              <Dropdown trigger={['click']} menu={{ items: [{ key: 'delete', label: '移除项目登记', danger: true }], onClick: () => setDeleting(projectCode) }}>
                 <Button aria-label="更多项目操作" icon={<MoreOutlined />} />
               </Dropdown>
             </div>
@@ -234,7 +206,7 @@ export function ProjectDetailPage() {
           </Link>
         </nav>
         <div className="project-home-details">
-          <ProjectServicesPanel projectCode={projectCode} />
+          <ProjectServicesPanel projectCode={projectCode} data={data} setData={catalog.setData} />
 
           <section className="resource-section" aria-label="文档">
             <div className="ws-section-head"><h2>项目资料 <span className="ws-count">{DOC_ROWS.length} 个入口</span></h2></div>
@@ -264,11 +236,7 @@ export function ProjectDetailPage() {
         projectCode={editOpen ? projectCode : null}
         onClose={() => setEditOpen(false)}
         onSaved={(saved) => {
-          setData((current) => (
-            current
-              ? { ...current, revision: saved.revision, project: { ...current.project, name: saved.name, description: saved.description } }
-              : current
-          ));
+          catalog.reload();
           setBreadcrumbParts([workspaceName || '工作空间', '项目', saved.name]);
           pageTabs.register({
             key: `proj:${projectCode}`,

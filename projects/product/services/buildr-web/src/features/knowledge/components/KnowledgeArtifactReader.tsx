@@ -143,12 +143,11 @@ export function KnowledgeArtifactReader(props: ArtifactReaderProps) {
           );
         })
       )}
-      {((a.graph &&
-        ["changed", "missing", "unreadable"].includes(a.graph.status)) ||
-        a.status === "changed") && (
+      {a.graph && ["missing", "unreadable"].includes(a.graph.status) && (
         <Alert
           type="warning"
-          message="相关文件已有变化，这份表达需要结合当前内容确认。"
+          message={a.graph.status === "missing" ? "图源文件缺失" : "图源文件暂时不可读"}
+          description={a.graph.diagnostic}
         />
       )}
       {a.kind === "diagram" && !embedded && (

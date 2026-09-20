@@ -1,4 +1,5 @@
 import type { WorkspaceDocument } from '../../../api/client';
+import type { ProjectCandidatesProjectCandidatesResponse, ProjectRegisterProjectRegisterRequest } from '../../../../build/generated/workspace-http-dto';
 import { api } from '../../../api';
 import type { AssetServicesAssetServicesResponse, AssetRepositoriesAssetRepositoriesResponse, AssetRepositoryStatusAssetRepositoryStatusResponse, AssetRepositoryLocalConfigAssetRepositoryLocalConfigResponse, AssetCatalogAssetCatalogResponse, AssetUpdateAssetUpdateRequest, ProjectCreateAssetProjectRequest, ProjectServicesAssetAssociateRequest, ServiceCreateAssetServiceRequest, RepositoryCreateAssetRepositoryRequest } from '../../../../build/generated/workspace-http-dto';
 export type AssetCatalog = AssetCatalogAssetCatalogResponse;
@@ -8,6 +9,7 @@ export type CatalogProject = AssetCatalog['projects'][number];
 export type ServiceDraft = ServiceCreateAssetServiceRequest['service'];
 export type RepositoryDraft = Omit<RepositoryCreateAssetRepositoryRequest, 'revision'>;
 export type AssetKind = 'project' | 'service' | 'repository';
+export type ProjectCandidates = ProjectCandidatesProjectCandidatesResponse;
 const base = '/api/v1/asset-catalog';
 export const catalogChanged = 'buildr:asset-catalog-changed';
 async function write(path: string, method: string, input: unknown): Promise<AssetCatalog> {
@@ -26,6 +28,8 @@ export const assetCatalogApi = {
   read: (signal?: AbortSignal) => api(base, { signal }) as Promise<AssetCatalog>,
   migrate: (revision: string) => write('/migrate', 'POST', { revision }),
   project: (input: ProjectCreateAssetProjectRequest) => write('/projects', 'POST', input),
+  projectCandidates: (signal?: AbortSignal) => api(`${base}/project-candidates`, { signal }) as Promise<ProjectCandidates>,
+  registerProject: (input: ProjectRegisterProjectRegisterRequest) => write('/projects/register', 'POST', input),
   service: (input: ServiceCreateAssetServiceRequest) => write('/services', 'POST', input),
   repository: (input: RepositoryCreateAssetRepositoryRequest) => write('/repositories', 'POST', input),
   associate: (id: string, input: ProjectServicesAssetAssociateRequest) => write(`/projects/${encodeURIComponent(id)}/services`, 'PUT', input),

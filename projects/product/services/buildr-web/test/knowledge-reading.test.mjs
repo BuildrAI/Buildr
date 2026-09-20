@@ -12,7 +12,7 @@ test('单成果读取补齐登记的技术图和地图，并保留来源观察',
   const calls = [];
   const result = await completeKnowledgeArtifacts(response([article]), async id => {
     calls.push(id);
-    return response([id === 'diagram' ? diagram : map], { observations: [{ id: `${id}-source`, status: 'aligned' }] });
+    return response([id === 'diagram' ? diagram : map], { observations: [{ id: `${id}-source`, status: 'readable' }] });
   });
   assert.deepEqual(new Set(calls), new Set(['diagram', 'map']));
   assert.deepEqual(result.data.artifacts.map(item => item.id), ['article', 'diagram', 'map']);
@@ -49,7 +49,7 @@ test('关联读取期间索引变化时保留已读内容并提示刷新，不�
 
 const projectScope = { kind: 'project', id: 'project-id', code: 'product', directory: '/workspace/projects/product', codeRoot: '/workspace/projects/product' };
 const sourceMeta = { id: 'file-explanation', title: '正文来源', kind: 'code', path: article.path };
-const sourceBody = { id: sourceMeta.id, kind: 'code', path: article.path, content: article.content, digest: 'source-body', diagnostic: null, status: 'unreviewed', location: { kind: 'project', id: 'project-id', root: projectScope.directory } };
+const sourceBody = { id: sourceMeta.id, kind: 'code', path: article.path, content: article.content, digest: 'source-body', diagnostic: null, status: 'readable', location: { kind: 'project', id: 'project-id', root: projectScope.directory } };
 const sourceResponse = (extra = {}) => response([], { scope: projectScope, index: { ...index, sources: [sourceMeta] }, observations: [sourceBody], ...extra });
 
 test('sources响应没有成果仍从真实Markdown正文补读，元数据观察不覆盖已读原文', async () => {

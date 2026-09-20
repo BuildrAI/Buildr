@@ -744,7 +744,7 @@
 
 ## 来源观察（Source Observation）
 
-- 定义：读取已声明来源所得的实际内容摘要、可读状态和范围身份，与上次核对摘要比较时可显示变化。
+- 定义：读取已声明来源所得的当前内容摘要、可读状态和范围身份；当前本地知识阅读不与历史摘要比较。
 - 适用范围：知识阅读与开发中的相关成果维护。
-- 避免混用：内容一致不代表重新完成语义验证；读取不自动改写成果或更新已核对摘要。
+- 避免混用：读取成功不代表语义已经核验；读取不自动改写成果，也不形成历史版本或人工确认流程。
 - 来源：[知识查询](../../services/buildr/src/modules/knowledge/application/knowledge-query.ts)、[当前知识维护](../../services/buildr/resources/workspace/skills/buildr/current-knowledge-maintenance/SKILL.md)。

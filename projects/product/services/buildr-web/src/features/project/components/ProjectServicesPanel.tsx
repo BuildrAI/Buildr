@@ -1,24 +1,23 @@
 import { AppstoreOutlined, CloseOutlined, RightOutlined } from '@ant-design/icons';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Alert, Button, Card } from 'antd';
+import { Alert, Button } from 'antd';
 import { CreatableResourceSelect } from '../../../components/CreatableResourceSelect';
 import { useAppShell } from '../../../app/AppShellContext';
 import { workspaceHref } from '../../../lib/labels';
-import { assetCatalogApi, type ServiceDraft } from '../../workspace/api/asset-catalog-api';
-import { useAssetCatalog } from '../../workspace/components/useAssetCatalog';
+import { assetCatalogApi, type AssetCatalog, type ServiceDraft } from '../../workspace/api/asset-catalog-api';
 import { CatalogMigration } from '../../workspace/components/CatalogMigration';
 import { ServiceCreateDrawer } from '../../service/components/ServiceCreateDrawer';
 import './project-services-panel.css';
-export function ProjectServicesPanel({ projectCode }: { projectCode: string }) {
-  const { workspaceId } = useAppShell(), { data, error, setData } = useAssetCatalog();
+type Props = { projectCode: string; data: AssetCatalog; setData: (catalog: AssetCatalog) => void };
+export function ProjectServicesPanel({ projectCode, data, setData }: Props) {
+  const { workspaceId } = useAppShell();
   const [creating, setCreating] = useState(false), [draft, setDraft] = useState<ServiceDraft>();
   const [saving, setSaving] = useState(false), [saveError, setSaveError] = useState('');
-  if (error) return <Alert type="error" message={error} />;
-  if (!data) return <Card loading />;
-  const project = data.projects.find(p => p.code === projectCode);
+  const project = data.projects.find(p => p.workspaceId === workspaceId && p.code === projectCode);
   if (!project) return <Alert type="error" message="项目不存在" />;
-  const linkedIds = project.serviceIds || [], linked = data.services.filter(service => linkedIds.includes(service.id));
+  const linkedIds = project.serviceIds || [], services = data.services.filter(service => service.workspaceId === workspaceId);
+  const linked = services.filter(service => linkedIds.includes(service.id));
   const save = async (serviceIds: string[], newServices: ServiceDraft[] = []) => {
     setSaving(true); setSaveError('');
     try { setData(await assetCatalogApi.associate(project.id, { revision: data.revision, serviceIds, newServices })); }
@@ -28,7 +27,7 @@ export function ProjectServicesPanel({ projectCode }: { projectCode: string }) {
   return <section className="resource-section"><CatalogMigration catalog={data} onSaved={setData} />
     <div className="resource-section-head"><h2>关联服务 <span>{linked.length}</span></h2>
       <div id="project-manage-services" className="project-associate-picker"><CreatableResourceSelect label="服务" placeholder="关联服务" value={null} disabled={data.migrationRequired || saving} loading={saving}
-        options={data.services.filter(service => !linkedIds.includes(service.id)).map(service => ({ value: service.id, label: service.name }))}
+        options={services.filter(service => !linkedIds.includes(service.id)).map(service => ({ value: service.id, label: service.name }))}
         onChange={value => { void save([...linkedIds, value as string]).catch(() => {}); }} onCreate={() => setCreating(true)} /></div>
     </div>
     {saveError && <Alert type="error" showIcon message={saveError} description="关联未保存，请核对最新内容后重试。" />}

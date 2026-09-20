@@ -181,17 +181,12 @@ export function createKnowledgeQuery(deps: KnowledgeDependencies) {
   }
   function observe(
     read: () => { content: string; digest: string; path: string },
-    expected?: string,
   ) {
     try {
       const value = read();
       return {
         ...value,
-        status: expected
-          ? value.digest === expected
-            ? "aligned"
-            : "changed"
-          : "unreviewed",
+        status: "readable",
         diagnostic: null,
       };
     } catch (e) {
@@ -246,13 +241,12 @@ export function createKnowledgeQuery(deps: KnowledgeDependencies) {
       .map((s) => ({
         id: s.id,
         kind: s.kind,
-        ...observe(() => sourceRead(root, scope, s), s.observedDigest),
+        ...observe(() => sourceRead(root, scope, s)),
         ...(part === "sources" ? {} : { content: null }),
       }));
     const rendered = artifacts.map((a) => {
       const observed = observe(
         () => readKnowledgeFile(scope.directory, a.path),
-        a.observedDigest,
       );
       return {
         ...a,
@@ -261,7 +255,6 @@ export function createKnowledgeQuery(deps: KnowledgeDependencies) {
         graph: a.graphSource
           ? observe(
               () => readKnowledgeFile(scope.directory, a.graphSource!),
-              a.graphDigest,
             )
           : null,
       };

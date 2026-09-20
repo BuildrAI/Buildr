@@ -31,6 +31,8 @@ Skill 文件仍写入目标 Agent 的原生 Skills root。Buildr 为这些文件
 
 ## Workspace 与资产
 
+`buildr assets project-candidates --target <workspace> --json` 只读列出 `projects/` 内尚未登记的直接子目录及目录观察版本。使用 `buildr assets register project --target <workspace> --input <json-file> --json` 登记选择结果；输入包含 `revision`、`code`、`name`、`observation`，可选 `description` 和 `serviceIds`。写入重验清单与目录身份，只保存登记和明确选择的服务，不补写目录文件，也不自动恢复已移除项目的身份和历史关系。
+
 | 命令 | 用途 |
 |---|---|
 | `buildr init [--agent <agent>]` | 初始化 Organization/Root，写入当前受支持 CLI 的精确 Workspace Node version 并准备受管 runtime；传入 `--agent` 时一次完成 Agent runtime 与最终 doctor。 |

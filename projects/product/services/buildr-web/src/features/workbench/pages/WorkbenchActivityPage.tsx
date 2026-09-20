@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Alert, Button, DatePicker, Select, Skeleton } from 'antd';
-import { ReloadOutlined } from '@ant-design/icons';
+import { RefreshButton } from '../../../components/RefreshButton';
 import dayjs from 'dayjs';
 import { useAppShell } from '../../../app/AppShellContext';
 import { useWorkbench } from '../hooks/useWorkbench';
@@ -28,7 +28,7 @@ export function WorkbenchActivityPage() {
   return <div className="workbench-page" id="workbench-activity">
     <header className="workbench-page-heading"><div><p className="workbench-eyebrow">工作台</p><h1>动态</h1><p className="workbench-subtitle">从已生成的项目演进，了解最近的变化与影响。</p></div><div className="workbench-heading-actions">
       <Select id="activity-project-filter" aria-label="筛选项目" value={project} onChange={value => update('project', value)} options={[{ label: '全部项目', value: '' }, ...(data?.projects || []).map(item => ({ label: item.name, value: item.code }))]} />
-      <Button type="text" icon={<ReloadOutlined spin={loading} />} aria-label="刷新项目变化" onClick={refreshCurrent} />
+      <RefreshButton label="刷新项目变化" loading={loading} onClick={refreshCurrent} />
     </div></header>
     <div className="workbench-activity-toolbar">
       <div className="daily-progress-date-controls">

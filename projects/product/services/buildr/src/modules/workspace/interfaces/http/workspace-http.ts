@@ -93,6 +93,11 @@ export function createWorkspaceHttpContribution(application: any) {
         return respond('assets.delete', application.deleteCatalogAsset(root, assetDelete[1], assetDelete[2], validateRequest('assets.delete', await readJsonBody())));
       }
       if (request.method === 'GET' && suffix === '/asset-catalog') return respond('assets.read', application.assetCatalog(root));
+      if (request.method === 'GET' && suffix === '/asset-catalog/project-candidates') return respond('assets.projects.candidates', application.listProjectRegistrationCandidates(root));
+      if (request.method === 'POST' && suffix === '/asset-catalog/projects/register') {
+        authorizeWrite();
+        return respond('assets.projects.register', application.registerCatalogProject(root, validateRequest('assets.projects.register', await readJsonBody())));
+      }
       if (request.method === 'POST' && suffix === '/asset-catalog/migrate') {
         authorizeWrite();
         return respond('assets.migrate', application.migrateAssetCatalog(root, validateRequest('assets.migrate', await readJsonBody())));

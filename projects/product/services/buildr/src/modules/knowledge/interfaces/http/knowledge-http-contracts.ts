@@ -67,7 +67,7 @@ const observationFields = {
   digest: nullable,
   path: nullable,
   status: {
-    enum: ["aligned", "changed", "unreviewed", "missing", "unreadable"],
+    enum: ["readable", "missing", "unreadable"],
   },
   diagnostic: nullable,
 };

@@ -248,43 +248,41 @@ test("目录 HTTP 使用独立摘要协议，既有详情读取仍返回正文�
   validateKnowledgeResponse(detail.body);
   assert.equal(detail.body.artifacts[0].content, "# Refund\n正文内容");
   assert.equal(detail.body.index?.artifacts.length, 48);
-  assert.equal(detail.body.observations[0].status, "aligned");
+  assert.equal(detail.body.observations[0].status, "readable");
 });
 
-test("真实增改删与维护后再读，零写入且未影响成果保留", (t) => {
+test("再次读取显示当前正文与来源，无需更新旧摘要且读取不写索引", (t) => {
   const { root, put, app } = setup(t);
   const scope = { kind: "project" as const, id: "demo" };
   const indexPath = path.join(root, "projects/demo/knowledge/index.yml");
   const original = fs.readFileSync(indexPath, "utf8");
   const first = app.read(root, scope, "objects", "object");
   validateKnowledgeResponse(first);
-  assert.equal(first.observations[0].status, "aligned");
+  assert.equal(first.observations[0].status, "readable");
   assert.equal(first.observations[0].content, null);
   put("projects/demo/src/order.ts", "export const order = 2;");
+  put("projects/demo/knowledge/docs/order.md", "# 当前正文\n本地文件已修改。");
+  const latest = app.read(root, scope, "objects", "object");
+  validateKnowledgeResponse(latest);
   assert.equal(
-    app.read(root, scope, "objects", "object").observations[0].status,
-    "changed",
+    latest.observations[0].status,
+    "readable",
   );
+  assert.equal(latest.artifacts[0].content, "# 当前正文\n本地文件已修改。");
+  assert.equal(latest.artifacts[0].status, "readable");
+  assert.equal(latest.observations[0].digest, digest("export const order = 2;"));
+  assert.equal(app.read(root, scope, "sources", "code").observations[0].content, "export const order = 2;");
   assert.equal(fs.readFileSync(indexPath, "utf8"), original);
-  const updated = structuredClone(prototype);
-  updated.sources[0].observedDigest = digest("export const order = 2;");
-  put("projects/demo/knowledge/index.yml", stringify(updated));
-  assert.equal(
-    app.read(root, scope, "objects", "object").observations[0].status,
-    "aligned",
-  );
-  assert.equal(
-    app.read(root, scope, "objects", "object").artifacts[0].content,
-    first.artifacts[0].content,
-  );
+  assert.equal(fs.readFileSync(path.join(root, "projects/demo/knowledge/docs/order.md"), "utf8"), latest.artifacts[0].content);
   fs.unlinkSync(path.join(root, "projects/demo/src/order.ts"));
-  assert.equal(
-    app.read(root, scope, "objects", "object").observations[0].status,
-    "missing",
-  );
+  const missing = app.read(root, scope, "objects", "object");
+  assert.equal(missing.observations[0].status, "missing");
+  assert.equal(missing.artifacts[0].content, latest.artifacts[0].content);
+  assert.equal(missing.artifacts[0].status, "readable");
+  assert.equal(fs.readFileSync(indexPath, "utf8"), original);
   put("projects/demo/src/new.ts", "new implementation");
+  const updated = structuredClone(prototype);
   updated.sources[0].path = "src/new.ts";
-  updated.sources[0].observedDigest = digest("new implementation");
   put("projects/demo/knowledge/index.yml", stringify(updated));
   assert.equal(
     app.read(root, scope, "sources", "code").observations[0].content,
@@ -292,8 +290,37 @@ test("真实增改删与维护后再读，零写入且未影响成果保留", (t
   );
   assert.equal(
     app.read(root, scope, "objects", "object").observations[0].status,
-    "aligned",
+    "readable",
   );
+});
+
+test("旧正文、来源和图源摘要均不影响当前可读性，自引用索引无需特殊核对", (t) => {
+  const { root, put, app } = setup(t);
+  const index = structuredClone(prototype);
+  index.artifacts[0].observedDigest = digest("old document");
+  index.artifacts[0].graphSource = "knowledge/graph.json";
+  index.artifacts[0].graphDigest = digest("old graph");
+  index.sources.push({ id: "navigation-index", title: "当前索引", kind: "evidence", path: "knowledge/index.yml", observedDigest: digest("old index") });
+  index.artifacts[0].sources.push("navigation-index");
+  const original = stringify(index);
+  put("projects/demo/knowledge/index.yml", original);
+  put("projects/demo/knowledge/graph.json", '{"version":1}');
+  const first = app.read(root, { kind: "project", id: "demo" }, "artifacts", "doc");
+  validateKnowledgeResponse(first);
+  assert.equal(first.artifacts[0].status, "readable");
+  assert.equal(first.artifacts[0].graph!.status, "readable");
+  assert.equal(first.artifacts[0].graph!.content, '{"version":1}');
+  assert.ok(first.observations.every((entry) => entry.status === "readable"));
+  put("projects/demo/knowledge/graph.json", '{"version":2}');
+  const next = app.read(root, { kind: "project", id: "demo" }, "artifacts", "doc");
+  assert.equal(next.artifacts[0].graph!.content, '{"version":2}');
+  assert.equal(next.artifacts[0].graph!.digest, digest('{"version":2}'));
+  assert.equal(next.artifacts[0].graph!.status, "readable");
+  fs.unlinkSync(path.join(root, "projects/demo/knowledge/graph.json"));
+  const missing = app.read(root, { kind: "project", id: "demo" }, "artifacts", "doc");
+  assert.equal(missing.artifacts[0].graph!.status, "missing");
+  assert.equal(missing.artifacts[0].status, "readable");
+  assert.equal(fs.readFileSync(path.join(root, "projects/demo/knowledge/index.yml"), "utf8"), original);
 });
 test("错误路径、凭证、二进制、超限及符号链接仅影响相关来源", (t) => {
   const { root, put, app } = setup(t);
@@ -342,7 +369,7 @@ test("错误路径、凭证、二进制、超限及符号链接仅影响相关�
     "objects",
     "object",
   );
-  assert.equal(result.observations[0].status, "aligned");
+  assert.equal(result.observations[0].status, "readable");
   assert.equal(result.observations[1].content, null);
   assert.equal(result.observations[1].status, "unreadable");
 });
@@ -588,7 +615,7 @@ test("生产 HTTP 宿主允许知识地址刷新，隔离图示不放宽页面�
     ensureRegisteredTarget: workspace.ensureRegisteredTarget,
     resolveRegisteredWorkspace: workspace.resolveRegisteredWorkspace,
   });
-  const { url, initialWorkspaceId: id } = await instance.ready;
+  const { url, initialWorkspaceId: id, sessionToken } = await instance.ready;
   t.after(() => new Promise<void>((resolve) => instance.server.close(resolve)));
   for (const page of ["project/demo", "service/api"]) {
     const response = await fetch(`${url}/workspaces/${id}/knowledge/${page}`);
@@ -645,6 +672,27 @@ test("生产 HTTP 宿主允许知识地址刷新，隔离图示不放宽页面�
   const changed = await fetch(`${catalogUrl}?${new URLSearchParams({ cursor: page.nextCursor })}`);
   assert.equal(changed.status, 409);
   assert.equal((await changed.json()).error.code, "knowledge_catalog_changed");
+  const indexFile = path.join(project, "knowledge/index.yml");
+  const originalIndex = fs.readFileSync(indexFile, "utf8");
+  const documentFile = path.join(project, "knowledge/docs/order.md");
+  fs.mkdirSync(path.dirname(documentFile), { recursive: true });
+  fs.writeFileSync(documentFile, "# 最新本地正文\n");
+  const documentUrl = `${url}/api/v1/workspaces/${id}/knowledge/project/demo/artifacts/doc-0`;
+  const latest = await fetch(documentUrl);
+  assert.equal(latest.status, 200);
+  const currentBody = await latest.json();
+  assert.equal(currentBody.artifacts[0].content, "# 最新本地正文\n");
+  assert.equal(currentBody.artifacts[0].status, "readable");
+  const writeHeaders = { origin: url, "x-buildr-session": sessionToken, "content-type": "application/json" };
+  for (const [method, action] of [["GET", "changes"], ["POST", "confirm"], ["PUT", "content"]]) {
+    const unsupported = await fetch(`${documentUrl}/${action}`, {
+      method, headers: writeHeaders,
+      ...(method === "GET" ? {} : { body: JSON.stringify({ revision: currentBody.revision, artifactDigest: currentBody.artifacts[0].digest, content: "不得写入", sourceObservations: [] }) }),
+    });
+    assert.equal(unsupported.status, 404, `${method} ${action} must not expose a maintenance API`);
+  }
+  assert.equal(fs.readFileSync(indexFile, "utf8"), originalIndex);
+  assert.equal(fs.readFileSync(documentFile, "utf8"), "# 最新本地正文\n");
 });
 
 test("文件说明和成果文件保持独立关联，旧索引兼容且不接受未知文件标识",(t)=>{
