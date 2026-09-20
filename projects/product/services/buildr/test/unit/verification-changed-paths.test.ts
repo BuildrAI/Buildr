@@ -9,6 +9,26 @@ import { createVerificationPlan } from '../verification/planner.ts';
 
 const ids: any = (plan: any) => plan.steps.map((step: any) => step.id);
 
+for (const source of [
+  'src/modules/project-testing/application/project-verification-application.ts',
+  'src/modules/project-testing/application/project-verification-locations.ts',
+  'src/modules/project-testing/domain/project-verification.ts',
+  'src/modules/project-testing/interfaces/cli/project-verification.ts',
+  'src/modules/project-testing/module.ts',
+]) {
+  test(`testing-map changes select declaration integration checks: ${source}`, () => {
+    const plan = createVerificationPlan({ paths: [source] });
+    assert.equal(plan.scope.mode, 'affected');
+    assert.ok(ids(plan).includes('integration-declarations'), `${source} must select the testing-map update and diagnostics regression checks`);
+  });
+}
+
+test('task-report changes keep their verification owner without selecting the testing-map integration slice', () => {
+  const plan = createVerificationPlan({ paths: ['src/modules/task/application/task-verification-application.ts'] });
+  assert.equal(plan.scope.mode, 'affected');
+  assert.equal(ids(plan).includes('integration-declarations'), false);
+});
+
 test('package metadata semantic classifier only permits the three version fields', () => {
   assert.equal(isVersionOnlyPackageMetadataChange(
     'package.json',

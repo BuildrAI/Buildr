@@ -31,18 +31,17 @@ testing:
       - node
       - npm
   - id: buildr-functional
-    title: Buildr 本地功能与系统测试
+    title: Buildr 本地集成测试
     scope:
       project: product
       services:
         - buildr
-    purpose: 验证真实 CLI、SQLite、Git、HTTP、文件系统和 Workspace 生命周期
+    purpose: 验证真实 CLI、SQLite、Git、HTTP 和文件系统集成边界
     sourcePaths:
       - services/buildr/src/**
       - services/buildr/resources/**
     testRoots:
       - services/buildr/test/integration/**
-      - services/buildr/test/system/**
     full:
       kind: command
       argv:
@@ -51,14 +50,66 @@ testing:
         - test:integration
       cwd: services/buildr
     selection:
-      - 根据任务修改的 Application、接口、数据和副作用选择相关测试文件
-      - 只有相关功能需要真实系统边界时才运行对应重型测试
+      - 根据任务修改的应用（Application）、接口、数据和副作用选择相关集成测试文件
     requirements:
       - node
       - npm
       - git
+  - id: buildr-system
+    title: Buildr 系统测试
+    scope:
+      project: product
+      services:
+        - buildr
+    purpose: 验证完整公共入口、工作空间（Workspace）与任务生命周期，以及跨组件运行和恢复行为
+    sourcePaths:
+      - services/buildr/src/**
+      - services/buildr/resources/**
+    testRoots:
+      - services/buildr/test/system/**
+    full:
+      kind: command
+      argv:
+        - tools/development/run-development-npm
+        - run
+        - test:system
+      cwd: services/buildr
+    selection:
+      - 按 test/verification/system-suites.ts 的归属选择受影响系统测试，可使用 test:system --
+        --owner <suite-id>
+      - 需要完整系统回归时使用 full 入口，运行全部已登记系统测试
+    requirements:
+      - node
+      - npm
+      - git
+  - id: buildr-web-unit
+    title: Buildr Web 前端逻辑测试
+    scope:
+      project: product
+      services:
+        - buildr-web
+    purpose: 验证前端状态转换、分页导航、请求处理和输入转换等可独立判断的逻辑
+    sourcePaths:
+      - services/buildr-web/src/**
+      - services/buildr-web/package.json
+      - services/buildr-web/package-lock.json
+      - services/buildr-web/tsconfig*.json
+    testRoots:
+      - services/buildr-web/test/*.test.mjs
+    full:
+      kind: command
+      argv:
+        - ../buildr/tools/development/run-development-npm
+        - test
+      cwd: services/buildr-web
+    selection:
+      - 从真实测试文件选择与当前逻辑变化相关的检查，使用服务已有 Node.js 测试入口
+      - 需要完整前端逻辑回归时运行 full；类型构建和浏览器交互由 buildr-web 独立验证
+    requirements:
+      - node
+      - npm
   - id: buildr-web
-    title: Buildr Web 前端构建与 Browser 功能测试
+    title: Buildr Web 构建与浏览器交互测试
     scope:
       project: product
       services:
@@ -79,7 +130,6 @@ testing:
       - services/buildr/test/verification/browser-selector-dispatcher.ts
     testRoots:
       - services/buildr/test/browser-smoke/**
-      - services/buildr-web/test/**
     full:
       kind: command
       argv:
@@ -88,8 +138,8 @@ testing:
         - test:browser:smoke
       cwd: services/buildr
     selection:
-      - 开发中使用前端 typecheck、build 和受影响页面测试
-      - 开发完成后对任务相关页面运行 Playwright Browser 功能测试
+      - 根据受影响页面选择 test:browser:changed 或对应页面入口；需要完整浏览器检查时使用 full
+      - 前端逻辑测试由 buildr-web-unit 单独执行；浏览器检查通过不能替代逻辑测试
     requirements:
       - node
       - npm

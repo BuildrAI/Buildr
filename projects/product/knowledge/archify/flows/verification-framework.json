@@ -1,0 +1,181 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Buildr 如何引导测试建设与使用",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "legend": {
+      "mode": "hidden"
+    }
+  },
+  "lanes": [
+    {
+      "id": "use",
+      "label": "智能体（Agent）按本次目标使用测试"
+    },
+    {
+      "id": "improve",
+      "label": "按需补建"
+    }
+  ],
+  "mainPath": [
+    "goal",
+    "inspect",
+    "run",
+    "evidence"
+  ],
+  "nodes": [
+    {
+      "id": "goal",
+      "lane": "use",
+      "col": 0,
+      "type": "external",
+      "label": "目标与改动",
+      "sublabel": "范围、风险与验收要求",
+      "width": 170,
+      "height": 68,
+      "yOffset": 44
+    },
+    {
+      "id": "inspect",
+      "lane": "use",
+      "col": 1,
+      "type": "backend",
+      "label": "查阅项目与服务测试能力",
+      "sublabel": "当前事实 + verification.yml",
+      "width": 216,
+      "height": 68,
+      "yOffset": 44
+    },
+    {
+      "id": "run",
+      "lane": "use",
+      "col": 2,
+      "type": "backend",
+      "label": "选择并执行测试",
+      "sublabel": "项目与服务的工具与环境",
+      "width": 204,
+      "height": 68,
+      "yOffset": 44
+    },
+    {
+      "id": "evidence",
+      "lane": "use",
+      "col": 3,
+      "type": "backend",
+      "label": "核对结果与覆盖缺口",
+      "sublabel": "交付证据 · 按需保存正式报告",
+      "width": 224,
+      "height": 68,
+      "yOffset": 44
+    },
+    {
+      "id": "build",
+      "lane": "improve",
+      "col": 1,
+      "type": "backend",
+      "label": "建设或完善测试",
+      "sublabel": "project-testing · 用例与入口",
+      "width": 216,
+      "height": 68,
+      "yOffset": 44
+    },
+    {
+      "id": "declare",
+      "lane": "improve",
+      "col": 2,
+      "type": "backend",
+      "label": "核对并更新测试声明",
+      "sublabel": "入口、范围、位置与选择方式",
+      "width": 204,
+      "height": 68,
+      "yOffset": 44
+    }
+  ],
+  "edges": [
+    {
+      "id": "goal-inspect",
+      "from": "goal",
+      "to": "inspect",
+      "role": "main",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "inspect-run",
+      "from": "inspect",
+      "to": "run",
+      "label": "能力已具备",
+      "role": "main",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "run-evidence",
+      "from": "run",
+      "to": "evidence",
+      "role": "main",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "inspect-build",
+      "from": "inspect",
+      "to": "build",
+      "label": "缺所需测试",
+      "role": "branch",
+      "toSide": "top"
+    },
+    {
+      "id": "build-declare",
+      "from": "build",
+      "to": "declare",
+      "role": "branch",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "declare-run",
+      "from": "declare",
+      "to": "run",
+      "role": "branch",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "evidence-build",
+      "from": "evidence",
+      "to": "build",
+      "label": "按需补齐覆盖",
+      "role": "return",
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "project-testing · 建设测试",
+      "items": [
+        "指导智能体（Agent）设计和完善测试用例、隔离与执行入口。",
+        "各服务按目标采用合适的测试能力。"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "declaration-intake · 核对声明变化",
+      "items": [
+        "核对新增或变化的入口及声明缺口，不直接写地图。",
+        "交给 task-verification 更新 verification.yml。"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "task-verification · 使用与维护",
+      "items": [
+        "指导查阅与维护测试地图，选择检查并直接调用项目工具。",
+        "核对结果与缺口，按需通过 Buildr 保存正式报告。"
+      ]
+    }
+  ]
+}

@@ -206,7 +206,7 @@ Parent Task 与 Child Task MUST 各自拥有独立 status、result 与专业 lif
 
 #### Scenario: Parent 完成且仍有 active Child
 - **WHEN** 调用方明确完成一个仍有 active Child 的 Parent Task
-- **THEN** Application MUST 只完成 Parent Task
+- **THEN** Application MUST 按父任务完成要求拒绝写入，保持 Parent Task 当前状态
 - **AND** MUST NOT 完成、放弃、清理或改写任何 Child Task
 
 ### Requirement: Parent 候选必须按需读取
@@ -449,7 +449,7 @@ Task Record的`completed` MUST只表达已确认的任务结果摘要，不表�
 - **THEN** 原完成动作 MUST保存结果，不创建交接或旧执行记录。
 
 ### Requirement: 任务必须保留显式父任务身份
-任务 MUST 支持显式父任务身份，已有直接子任务或旧父计划也按父任务保护；建立子关系时 MUST 保留父身份，解除最后一个子关系不能消除完成保护。历史任务不补造完成授权。
+任务 MUST 支持显式父任务身份，已有真实直接子任务也按父任务保护；旧父计划仅供历史展示，不建立当前父身份；建立子关系时 MUST 保留父身份，解除最后一个子关系不能消除完成保护。历史任务不补造完成授权。
 
 #### Scenario: 尚无子任务
 - **WHEN** 创建显式父任务但尚未拆分

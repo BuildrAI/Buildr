@@ -1,409 +1,90 @@
-# Buildr 产品验证框架（Product Verification Framework）
+# 采用实例：Buildr 产品的测试与验证
 
-本文说明测试实现、选择、资源和证据边界；以下代码路径除特别注明外均相对 `services/buildr/`。发布选择、完整候选、同包消费和恢复只在[发布流程](../flows/open-source-release.md)维护。项目测试入口以[验证声明](../../../verification.yml)和[执行注册表](../../../services/buildr/test/verification/registry.ts)为准。
+Buildr 产品自身是在通用框架下建设测试能力的一个项目实例。它把测试建设、选哪些检查、怎样执行、怎样消费证据分开。通用工作方式见[完整验证框架](workspace-testing-and-verification-framework.md)；本文只解释 `product` 项目（Project）的真实实现。路径除注明外相对于 `services/buildr/`，定位入口见[实例工具地图](../../code-map/product-verification-tools.md)。
 
-本文描述 Buildr 当前真实使用的验证架构，以及公共 Node.js Test Context Runtime 的设计、API、执行宿主和接入方式。目标不是只让 Buildr 某一组测试变快，而是建立一套后续 Node.js 项目也能沿用的测试执行基础：测试声明所需 Context，Runtime 按配置身份缓存应用组装，Runner 在多个持久 Worker Host 中并行执行，provider 负责隔离、reset 和污染失效。
+## 从项目地图到执行工具
 
-本文不替代Project `verification.yml`、任务验证报告或正式Release authority；它只说明Buildr Product自身如何选择并执行产品测试。
+[项目测试地图](../../../verification.yml)目前有六个测试族（Testing Family）：`buildr-fast`、`buildr-functional`、`buildr-system`、`buildr-web-unit`、`buildr-web` 和 `buildr-environment-smoke`。前三项负责后端与工程检查；`buildr-web-unit` 负责前端逻辑；`buildr-web` 负责构建及真实页面交互；最后一项用于明确目标环境中的安装与运行检查。地图供智能体（Agent）发现稳定入口，具体文件发现、路径归属、步骤和资源另由项目工具维护。
 
-## 1. 总体架构
-
-```text
-changed / focus / daily-full / candidate
-                 │
-                 ▼
-Verification Control Plane
-ownership → registry → planner → DAG scheduler → executor
-                 │                         │
-                 │                         └─ exact worker/resource grant
-                 ▼
-Node Test Context Execution Plane
-test registration → Context-aware runner → persistent Worker Hosts
-                         │                         │
-                         │                         ├─ Context cache
-                         │                         ├─ node:test isolation=none
-                         │                         └─ test leases
-                         ▼
-Provider / Isolation Plane
-Application state │ immutable seed │ sandbox │ snapshot │ full lifecycle
-                         │
-                         ▼
-Evidence Plane
-queue/grant + create/hit/acquire/body/reset/dirty/destroy + diagnostics
-```
-
-四层 authority 相互独立：
-
-- Verification Control Plane 决定“跑什么”和“最多给多少资源”；
-- 公共 Test Context Runtime 决定“Context 如何注册、缓存和失效”；
-- provider 决定“某种技术状态如何隔离和恢复”；
-- `node:test` 继续负责 assertion、test semantics、reporter 和结果。
-
-Context Runtime 不读取 changed paths、daily-full/Candidate profile 或 Buildr Workspace；Verification planner 也不创建 Application Context。内部`core` profile只是不破坏历史plan/timing identity的daily-full兼容投射。
-
-## 2. 目录与发布边界
-
-### 2.1 公共 Runtime
-
-```text
-src/infrastructure/testing/context-runtime/
-├── types.ts                strict公共类型与泛型推导
-├── definition.ts           defineTestContext、配置规范化与identity
-├── runtime.ts              cache、scope、dependency、lease、reset、dirty/evict
-├── node-test.ts            node:test注册adapter与direct-file lifecycle
-├── node-runner.ts          多持久Worker Host编排
-├── node-runner-cli.ts      verification executor入口
-├── index.ts                内部实现聚合
-└── public.ts               闭合公开导出，编译后由 package exports 引用
-
-build/test-context/
-├── *.js                    ignored本地输出或Candidate暂存中的标准ESM
-└── *.d.ts                  ignored本地输出或Candidate暂存中的类型声明
-tools/testing/test-context-build.ts
-                           generate/check唯一生成入口
-```
-
-公共入口是：
-
-```js
-import {
-  defineTestContext,
-  createTestContextRuntime,
-  createNodeTestContextAdapter,
-  contextTest,
-  runNodeTestContextHosts,
-} from '@buildr-ai/buildr/test-context';
-```
-
-该入口进入唯一`@buildr-ai/buildr` npm tarball，不创建第二个Candidate、tarball或Release transaction。源码authority是strict TypeScript；`test-context:generate`向显式ignored或隔离目标生成标准ESM和`.d.ts`，`test-context:check`通过双临时构建与本地物化检查确定性。根`typecheck`先生成再执行strict no-emit；Candidate只复制本次artifact set中的冻结输出。package export的`types`继续指向包内声明，Node只执行生成JavaScript，不执行raw`.ts`或依赖类型擦除。
-
-公共模块只依赖Node.js标准库，不依赖Buildr CLI、Workspace、Git或SQLite。出现第二个真实消费者或独立版本需求后，可以把同一API提取到独立包；当前先用真实接入证明抽象。
-
-### 2.2 Buildr adapters
-
-```text
-test/context/
-├── profiles.mjs            outer verification可静态读取的Buildr seed profile
-├── registry.mjs            Buildr filesystem provider registry
-├── runtime.mjs             legacy/outer immutable-seed Pool adapter
-├── node-test.mjs           legacy helper兼容入口
-└── providers/
-    ├── task-lifecycle.mjs  task-lifecycle/v1 immutable Workspace seed
-    └── task-application.mjs
-        ├── buildr.task-application/v1
-        └── buildr.task-workspace/v1
-```
-
-`test/context/` 不再拥有通用 Context Runtime authority。它只实现 Buildr 特有 provider和旧 helper兼容层：outer Pool负责把不可变 seed投射给子进程；公共 Runtime负责Host内Application cache、test lease与失效。
-
-## 3. 公共 Context Definition
-
-一个definition同时描述可缓存state和每次测试取得的value：
-
-```js
-const applicationContext = defineTestContext({
-  id: 'example.application',
-  version: 1,
-  scope: 'worker',
-  parallelSafety: 'shared',
-  sourceIdentity: 'example-source/v3',
-  dependencies: [],
-  async create({ config, dependencies, identity, record }) {
-    return createApplication(config);
-  },
-  async acquire({ state, config, owner, record }) { return state; },
-  async release({ state, value, outcome, record }) {},
-  async reset({ state, record }) {},
-  async inspect({ state }) { return 'clean'; },
-  async destroy({ state, reason }) { await state.close(); },
-});
-```
-
-必填字段：
-
-- `id`：稳定 dotted/kebab identifier；
-- `version`：正整数，生命周期或兼容语义改变时升级；
-- `scope`：`worker | suite | test`；
-- `parallelSafety`：`shared | exclusive | isolated`；
-- `create()`：创建可缓存 state。
-
-可选字段包括dependencies、source identity，以及acquire/release/reset/inspect/destroy hooks。definition是closed contract；非法id/version/scope、缺少create、非法hook和dependency cycle都在test body前失败。
-
-## 4. Cache Identity
-
-每个cache entry由以下事实生成SHA-256身份：
-
-```text
-definition id/version
-+ canonical JSON configuration
-+ explicit source identity
-+ dependency identities
-+ owning scope identity
-```
-
-配置只接受可确定的JSON值：`null`、字符串、布尔、有限数字、数组和plain object；object key排序后编码。`undefined`、function、symbol、BigInt、循环对象或隐式类实例会被拒绝。
-
-同一Host、相同worker配置只`create`一次，后续记录`cache-hit`。version、config、source或dependency identity变化自动cache miss。Context object不跨进程共享；4个Host最多有4份matching Application Context，这是Node进程隔离的真实边界。
-
-## 5. Scope与生命周期
-
-| Scope | Cache寿命 | 典型用途 |
+| 责任 | 唯一主要位置 | 产生什么 |
 | --- | --- | --- |
-| `worker` | 一个持久Host进程 | Application/DI组装、只读seed pool、常驻服务 |
-| `suite` | 显式`suiteId`到`closeSuite()` | 同一测试集合共享的有界状态 |
-| `test` | 单个test lease | transaction、临时session、逐case资源 |
+| 发现测试与分组 | `test/verification/test-files.ts`、`system-suites.ts`、`registry.ts` | 真实文件集合、系统分组及集成分片 |
+| 解释改动归属 | `test/verification/ownership.ts` | 路径匹配、排除、委托及必须扩大范围的原因 |
+| 定义检查步骤 | `test/verification/registry.ts` | 步骤身份、执行器（Executor）、依赖、分类、资源需求和预算 |
+| 选择和校验 | `test/verification/planner.ts` | 受影响范围（affected）或完整范围（full）、选择理由与预算判断 |
+| 执行与协调 | `plan-runner.ts`、`dag-scheduler.ts`、`executor.ts`、`resource-coordinator.ts` | 按依赖和实际资源额度运行，汇总真实结果 |
+| 诊断与耗时 | `test/verification/timing/` | 等待、执行、清理、失败及来源身份 |
+| 报告消费 | 通用任务验证（Task Verification） | 智能体（Agent）把适用执行摘要纳入正式报告 |
 
-长生命周期Context不能依赖更短生命周期Context：worker只能依赖worker；suite可以依赖worker/suite；test可以依赖任意scope。Runtime先创建dependency，Host关闭时按创建逆序destroy。
+项目执行计划（Verification Plan）和有向无环图（DAG）属于这些测试工具。通用任务验证应用层（Task Verification Application）不生成它们，也不接管它们的日志或资源。
 
-```text
-resolve definition graph
-→ compute identity
-→ create or cache-hit
-→ wait for parallel-safety admission
-→ acquire test value
-→ run test body
-→ release value
-→ inspect
-→ reset when last lease leaves
-→ test-scope destroy / dirty evict / retain cache
-```
+## 测什么，以及一次通过能说明什么
 
-body成功、失败、超时或取消都必须release。body与cleanup同时失败时保留两个错误。
+Buildr 的验证由以下几部分共同组成。**某个入口的“完整”只相对于它声明的集合**，不能把后端、前端逻辑、页面交互和跨平台候选相互替代。
 
-## 6. 并发安全与隔离
+下表的工作目录均相对于 `projects/product/`。后端命令用 `tools/development/run-development-npm run <脚本名>`；前端使用表内给出的相邻服务包装入口（Wrapper），两者都采用项目声明的精确 Node.js 版本。
 
-- `shared`：多个test可以并发持有同一state；适用于不可变对象或明确并发安全的Application Context。
-- `exclusive`：同一entry一次只有一个lease；后续test等待并记录`wait`。
-- `isolated`：state可以共享，但`acquire()`必须返回与state不同的独立value；适用于immutable seed → sandbox、database snapshot。
-
-| 行为 | 推荐策略 |
-| --- | --- |
-| 纯Application/DI组装 | worker state；shared或exclusive reset |
-| 所有写入走同一数据库session | transaction/savepoint test value |
-| SQLite跨连接或子进程 | 每worker/test database snapshot |
-| filesystem/Workspace | immutable seed + isolated sandbox clone |
-| Git index/refs/worktree | immutable repository seed +独立worktree/sandbox |
-| CLI/process protocol | worker-owned service或独立process lease |
-| init/migration/Finish/cleanup本身是证据 | full lifecycle，不跳过前置行为 |
-
-单一数据库connection的rollback不能恢复其他进程、Git refs或文件副作用。Context共享不改变Unit/Component/Integration/System分类。
-
-## 7. Dirty、Reset与失败恢复
-
-测试可以显式标记无法安全reset的状态：
-
-```js
-control.markDirty('application', 'policy-cannot-be-reset-safely');
-```
-
-provider的`inspect()`也可返回`{ dirty: true, reason }`。显式dirty让entry在active leases归还后evict；unexpected inspect drift同时使当前test失败关闭。release/reset/destroy失败同样可见，不能静默重建后记录为passed。
-
-## 8. `node:test`注册API
-
-```js
-import { contextTest, defineTestContext } from '@buildr-ai/buildr/test-context';
-
-const application = defineTestContext({
-  id: 'orders.application', version: 1,
-  scope: 'worker', parallelSafety: 'shared',
-  create: () => createOrdersApplication({ database: 'memory' }),
-  destroy: ({ state }) => state.close(),
-});
-
-contextTest('creates an order', {
-  contexts: {
-    app: { definition: application, config: { profile: 'integration' } },
-  },
-}, async (t, { app }, control) => {
-  const result = await app.createOrder({ sku: 'A-1' });
-  t.assert.equal(result.status, 'created');
-});
-```
-
-callback参数是Node TestContext、按alias解析的values、包含identities和`markDirty()`的control。直接执行单文件时adapter建立进程本地Runtime，并在测试结束后close；不要求Buildr runner。
-
-也可以显式创建adapter：
-
-```js
-const runtime = createTestContextRuntime({ onEvent });
-const { test } = createNodeTestContextAdapter({ runtime, suiteId: import.meta.url });
-```
-
-测试发现、assertion、mock和reporter仍由实际runner负责。
-
-## 9. 持久Worker Host
-
-`node:test`默认每文件一个子进程，进程内cache无法跨文件复用。Context-aware runner将文件稳定分配给不超过grant的多个Host；每个Host执行：
-
-```text
-node --test --test-isolation=none --test-concurrency=1 <assigned files...>
-```
-
-- 一个Host连续执行多文件，module cache和Context cache持续存在；
-- 多个Host进程并行，提供CPU/IO并发；
-- Host内文件顺序执行，case并发仍服从Context安全策略；
-- Host数不超过outer `resourceGrant.workers`；
-- 任一Host失败使aggregate失败；
-- Host退出时Runtime统一destroy并写入transient evidence。
-
-不能让整个Core直接使用一个`isolation=none`进程：未注册测试可能依赖process global隔离，单进程也无法提供CPU并行。只有`node-context-test` owner进入持久Host；其他owners继续默认process isolation。
-
-## 10. Buildr provider组合与真实采用
-
-Buildr在公共Test Context Runtime上注册Application与Workspace Context。`createBuildrApplicationTest()`让Task read models、Parent/Task coordination与Project Daily Progress在独立sandbox中复用同一Host的Application组装；以初始化、migration、自举、Candidate、tarball或Launcher真实生命周期为主证据的owner继续使用`full-lifecycle`。已删除的任务研发、旧收尾与统一Task Environment不再拥有Context、owner或测试分片。
-
-真实Git、完整CLI协议、Worktree create/cleanup、Preview owner、自举与Workspace init/cleanup仍保留Integration/System主证据。Candidate/Release仍保留唯一tarball、Launcher、Host Node、Windows、npm integrity和readback/convergence。
-
-### Prepared Fixture Provider
-
-Buildr测试层现在在公共Test Context Runtime之上注册三类可复用准备组件：
-
-- `workspace-foundation/v1`：已初始化但没有业务Project的不可变Workspace；
-- `project-foundation/v1`：包含`demo` Project、但没有Service的不可变Workspace；
-- `git-repository/v1`：带`dev`基线的bare remote；每次lease复制remote并创建独立working clone。
-
-首批只迁移`system-workspace-lifecycle`中不以准备行为为主证据的case。Project create/migration/attach、Service create/migration/attach、Workspace metadata/registry、capability retirement、HTTP与Git观察仍在逐case sandbox中真实发生；Workspace init与Project foundation不再由每个case重复支付。相同机器同一基线的一次直接对照中，Project文件约从24.1秒降到14.9秒，Service文件约从18.6秒降到9.7秒，manifest文件约从31.2秒降到29.0秒，package retirement约从20.2秒降到16.6秒；并行owner墙钟约从51.3秒降到42.6秒。该owner仍是`full-lifecycle`，因为同一owner内的fresh init、identity、migration、registry和Workspace黄金证据没有被替换。
-
-其余重型旅程已按同一准则复核：
-
-- Finish曾试接Git provider，全部9个journey通过，但两轮约84.4/82.4秒，高于改造前约76.7秒，因此撤回；carrier、worktree、target transition和cleanup继续由case自己构造。
-- Candidate tarball已由plan中的唯一`candidate-artifact`生成并供后续step消费，不再建立第二套Context缓存。
-- npm安装、Launcher、Host Node与release smoke验证的正是artifact安装、进程启动、绑定、readback和shutdown；共享已启动process会替换主证据，因此保持独立。
-- 初始化、migration、自举和cleanup同样只可复用与断言无关的外层准备，不能复用正在被验证的可变结果。
-
-## 11. Verification Control Plane
-
-`test/context/dispositions.ts`为registry中每个step保存唯一Context处置：
-
-| disposition | 含义 |
-| --- | --- |
-| `context-runtime` | 可复用组装和逐case隔离均由公共Runtime/provider拥有 |
-| `hybrid` | 复用Application或immutable seed，但仍执行真实filesystem、SQLite、CLI、Git或process边界 |
-| `full-lifecycle` | stateless检查，或初始化、恢复、Finish、自举、cleanup、Candidate/Release本身就是primary evidence |
-
-处置包含稳定reason code；registry增删或重命名step而未同步处置会在执行前失败。处置不是profile：同一个`full-lifecycle` owner仍可能属于affected、Core、Candidate、Host Node或Windows显式投影。
-
-- `ownership.ts`：changed path → primary owner；
-- `registry.mjs`：step、profile、dependency、executor、Context、资源和预算；
-- `planner.mjs`：owner选择、closed validation、关键路径与预算准入；
-- `dag-scheduler.mjs`：dependency/class/named resource/numeric capacity；
-- `executor.mjs`：把exact grant转成`node-test`并发或Context Host数；
-- `plan-runner.mjs`：一次plan的outer Context、DAG和evidence。
-
-step声明contexts、isolation/reset/parallel safety、`workers/processes/git/workspaceIo` demand、跨plan resources、executor、预算和primary evidence。planner在进程启动前拒绝unknown key/executor、不可满足capacity和缺失文件。DAG只在完整grant可用时启动，inner runner不得扩大并发。
-
-## 12. 测试边界
-
-| 边界 | 主要机制 | 不应出现 |
+| 测试对象 | 真实入口与工作目录 | 证明范围及独立检查 |
 | --- | --- | --- |
-| Unit | 纯函数、同进程值、fake collaborator | filesystem、process、Git、网络、Workspace |
-| Component | 有界Application组装、in-memory/fake port | 真实filesystem、数据库、process或cleanup |
-| Integration | 真实SQLite、filesystem、Git、child CLI、module protocol | 重复完整用户/发布Journey |
-| System | 公共CLI/HTTP/Workspace/Task/Finish、自举、恢复、并发黄金旅程 | 为普通规则重复建立完整世界 |
-| Static | schema、源码、manifest、文档与declaration | 可变fixture或运行时副作用 |
+| 后端行为与工程约束 | 在 `services/buildr` 执行 `test:fast`、`test:integration`、`test:system`；日常较大范围用 `test:daily-full` | 分别检查类型与静态边界、细粒度行为、真实技术集成、完整公共入口及恢复。`test:daily-full` 执行注册表的 `core` 集合；不自动运行前端逻辑或浏览器（Browser）旅程，也不等于完整候选 |
+| 前端逻辑 | 在 `services/buildr-web` 执行 `../buildr/tools/development/run-development-npm test`，对应 `buildr-web-unit` | 运行 `test/*.test.mjs`，检查输入转换、筛选、分页等逻辑；不启动浏览器（Browser），不证明页面已正确呈现或可交互 |
+| 前端构建与真实页面旅程 | 在 `services/buildr` 执行 `test:browser:smoke`；按改动选择用 `test:browser:changed`，对应 `buildr-web` | 准备隔离构建产物并验证页面与后端协作；不执行前端 `test/*.test.mjs`。单独构建可在 `services/buildr-web` 执行 `../buildr/tools/development/run-development-npm run build`，但构建成功没有交互证明 |
+| 本机候选（Candidate） | 在 `services/buildr` 执行 `test:candidate`，由 `candidate.ts` 选择 `candidate` 集合 | 在当前机器检查源码、生成唯一压缩包并运行适用发布物检查；不产生其他平台结果，也不包含独立的前端逻辑和浏览器（Browser）旅程 |
+| 跨平台候选（Candidate）聚合 | 仓库根 `.github/workflows/verify.yml` 调用 `candidate-ci.ts` 的 `plan`、`run`、`host`、`aggregate` | 组织源码分片、单一发布物、macOS/Windows 平台检查和 macOS/Windows/Linux 宿主 Node.js（Host Node）组合；聚合校验来源、登记和发布物身份。当前集合同样未纳入前端逻辑和浏览器（Browser）旅程；其通过不等于整个产品或发布已成功 |
+| 明确目标环境中的实际运行 | `buildr-environment-smoke` 给出按目标执行的指导，无固定全局命令 | 检查指定安装或发布环境中的命令行（CLI）、HTTP 或页面入口；只证明实际观察到的环境和行为，不用开发目录测试替代它 |
 
-Application Context不是Component的同义词。复用worker Application state后，只要仍穿过真实SQLite、filesystem或Git，测试仍是Integration/System。
+[后端脚本](../../../services/buildr/package.json)、[前端脚本](../../../services/buildr-web/package.json)、[执行注册表](../../../services/buildr/test/verification/registry.ts)、[本机候选入口](../../../services/buildr/test/verification/candidate.ts)和[跨平台候选入口](../../../services/buildr/test/verification/candidate-ci.ts)共同限定上述范围。`dev` 拉取请求的持续集成（CI）还会按受影响路径单独选择浏览器（Browser）检查；这与跨平台候选聚合是不同作业，不能据前者推断后者已覆盖。
 
-## 13. 证据、选择与验证对象
+日常定向检查可用 `test:focus -- <step-id>`，用 `test:changed -- --plan` 查看选择及理由，再由 `test:changed` 执行。后者会为选中步骤组合 `fast` 前置检查，关键执行依据变化时扩大到日常完整集合。纯知识修改可选文档质量步骤并补阅读验收。选择预览、类型检查、构建、`coverage:unit` 覆盖率各自提供不同证据，不能互相冒充实际行为测试。
 
-Product验证只回答三个正交问题：
+## 真实用例怎样证明产品行为
 
-| 问题 | 权威事实 | 可选值 |
+下面列出六个现有例子，帮助理解测试对象和技术边界；链接是测试定义，不表示当前版本已经执行通过。
+
+| 用例与来源 | 在什么边界观察什么 | 证明的限制 |
 | --- | --- | --- |
-| 用什么证据证明？ | registry step `executionBoundary` | Static、Unit、Component、Integration、System |
-| 本次选择多少？ | ownership + planner | affected、full |
-| 验证什么对象、支持哪个决定？ | `verification.yml` capability + Candidate/Release workflow | frozen Task Content / Task Delivery、Product Artifact Candidate、Published Release |
+| [源码变化选中必要回归](../../../services/buildr/test/unit/verification-changed-paths.test.ts) | 对测试地图模块的应用、领域、命令行（CLI）和装配路径分别规划，断言选中 `integration-declarations` | 证明选择规则没有漏掉这些路径；被选测试仍需实际执行 |
+| [多服务测试地图解析与安全保存](../../../services/buildr/test/integration/project-verification-map.test.ts) | 使用真实临时目录和项目、服务、代码库登记，验证外部服务目录解析、不可用位置隔离、版本冲突和写入失败保留原文件 | 证明地图维护和位置诊断；不执行地图中声明的用户测试 |
+| [正式报告的命令行登记与读取](../../../services/buildr/test/system/task-verification-product.test.ts) | 通过真实命令行（CLI）进程保存报告，再读取并核对内容身份适用性；另测候选写入被拒绝时的错误投射 | 证明报告入口与身份边界；示例报告中的 `passed` 是测试输入，不是替用户执行测试 |
+| [父任务完成表单的确认规则](../../../services/buildr-web/test/parentCoordination.test.mjs) | 直接调用前端输入转换，确认默认未授权、缺少确认或子任务处置时拒绝，合法输入保留已观察版本 | 证明前端逻辑；不能代替真实表单点击或后端并发校验 |
+| [工作台回应冲突后的重读与保存](../../../services/buildr/test/browser-smoke/workbench-journey.ts) | 在真实页面输入答复，制造其他入口更新，观察 HTTP 409、保留输入、重读再保存，并核对任务记录未被改写 | 证明该页面、接口和持久化共同完成的旅程；不是全部页面或全部并发场景的证明 |
+| [压缩包离线安装后运行命令行与网页](../../../services/buildr/test/integration/application-payload-release.test.ts) | 安装实际候选（Candidate）压缩包，在隔离目录运行命令行（CLI），再按需启动网页并核对健康与发布物身份 | 证明被安装压缩包在本次宿主上的行为；跨平台结论还需各平台对应证据 |
 
-Quick只表示开发期低成本反馈，focus只用于诊断；两者都不冒充正式Task Verification。`verification.yml`声明capability级对象、选择、决定、环境与副作用；ownership唯一持有path→primary owner；registry唯一持有step、profile、dependency、resource、budget和primary evidence。planner只消费这些authority，不存在第二套执行图。
+这些例子展示从纯逻辑、技术集成、公共入口到真实页面和发布物的不同边界。新增测试应先选择能捕获目标错误的边界，再决定目录、夹具（Fixture）和运行方式，不根据文件名机械判断证明强度。
 
-| Verification target | Default selection | Object | Added evidence |
-| --- | --- | --- | --- |
-| Task Delivery | affected | frozen Task Content | affected development evidence |
-| Full Regression | full | Task/current source | complete daily evidence |
-| Product Artifact Candidate | full | exact source + candidate artifact | artifact/package/install compatibility evidence |
-| Published Release | release-only | published artifact/result | 当前权限与公开事实、原包发布、官方安装及回读；平台证明复用候选 |
+## 新测试怎样接入
 
-| 入口 | 责任 |
-| --- | --- |
-| `test:fast` | Unit、Component和低成本Static |
-| `test:changed` | affected；unknown path/owner gap执行前失败 |
-| `test:focus` | 指定primary owner定位和计时 |
-| `test:daily-full` | 完整日常证据，不承担Candidate/Release专属旅程 |
-| `test:core` | 兼容入口；转发到相同daily-full runner与内部`core` profile |
-| `test:candidate` | 完整 Product Artifact Candidate与唯一tarball |
-| Candidate CI | 平台分片、Windows/Host Node和closed aggregate |
-| Release | 冻结source、publication、readback和Git convergence |
+先确认待证明结果与最低充分边界，再同时核对两件事：**完整入口发现它，相关源码变化也能选择它。** 新文件存在、能单独运行或碰巧被单元集合覆盖，都不足以证明第二件事。
 
-affected解决任务相关性，Context解决已选测试的重复环境成本，Host grant解决安全并行。三者互补。
+1. 在最接近事实责任主体（Owner）的测试目录增加案例，复用适用夹具（Fixture）。
+2. 核对所属入口的文件发现方式。后端集成分片由 `INTEGRATION_PRIMARY_SLICES` 与排除集协作，系统测试（System）由 `SYSTEM_SUITES` 维护分组；前端逻辑由前端包的 `test/*.test.mjs` 发现，页面旅程由浏览器（Browser）选择器接入。
+3. 后端步骤在 `ownership.ts` 核对路径影响，页面旅程核对 `browser-selector-dispatcher.ts` 的选择结果；前端逻辑按测试地图与改动选择现有测试。修改选择机制时也要验证其自身。
+4. 确需新增稳定步骤时，再维护 `registry.ts` 中的执行器（Executor）、分类、真实依赖、预算和资源，以及 `test/context/dispositions.ts` 的处置。
+5. 用实际测试取得行为证据，再用选择预览确认必要步骤被选中；预览本身不算测试通过。
+6. 只有稳定入口、测试族（Testing Family）的范围或环境变化，才交给声明接入（declaration-intake）和任务验证（task-verification）维护 `verification.yml`。
 
-changed/affected只选择`Development`、`Acceptance`或`Static Conformance` owner；`Delivery / Release` owner由Candidate/Release显式承担。只命中Release owner的路径会delegated给`product.candidate-release`，不会在普通Task中隐式生成tarball、安装package或运行Launcher/release smoke。Candidate CI中`core-*`只是平台shard命名，不是daily-full membership。使用`npm run test:audit:verification -- --base <base> --head <head>`可只读查看direct owner、依赖扩张、Full reason、目标工作量、数学下限与primary evidence map；完整审计见[Product 日常验证证据与选择审计](../../../docs/verification-evidence-audit.md)。
+## 执行依赖与资源
 
-`test:changed -- --json` 的 `selectionAudit.stepSelections` 直接投影同一plan，不重新实现选择算法。每个step列出`selectionKinds`与对应trigger：`direct-owner`关联触发path，`dependency`关联引入它的parent step，`full-scope`关联稳定Full authority reason，profile/admission/explicit分别说明公共入口选择；同时列出execution boundary、primary evidence owner、public outcome和target duration。Full pattern、code和说明只在`ownership.ts`维护，planner不按文件名另建reason authority。当前稳定code包括execution graph、selection、ownership、runtime、environment、package execution metadata和其他执行基础变化；无法安全局部判断的关键authority保持Full，unknown/unowned高风险production path阻断。
+执行注册表（Registry）描述主要证明责任（`primaryEvidenceOwner`）、公共结果、真实技术边界、目标耗时与副作用。重复辅助检查可以存在，但不能把同一事实包装成多份独立主要证明。
 
+依赖图（DAG）负责等待真实前置结果；执行入口还组合其明确要求的低成本前置检查。调度器（Scheduler）同时考虑步骤类别、具名资源和 `workers/processes/git/workspaceIo` 容量。执行器（Executor）把实际授予额度传给子进程并发或持久工作进程（Worker Host），内层不能自行扩大额度。
 
-## 14. Evidence
+未知步骤、无效配置、必要依赖缺失或不可满足资源会在相关执行开始前失败。路径选择的成功状态只证明规则匹配通过，不证明待验证的公共行为或测试覆盖已经充分。
 
-step timing保存queue、demand/grant、resource wait、process cleanup、phase和diagnostic digest。`node-context-test`额外保存`testContextRuntime`：Host count、create/cache hit、acquire/release、exclusive wait、test body累计时间、provider materialize/cleanup、reset、dirty/evict、destroy和wall-clock。阶段同时提供`createDurationMs`、`acquireDurationMs`、`releaseDurationMs`、`waitDurationMs`、`resetDurationMs`与`destroyDurationMs`，使“测试体慢”与“环境组装/争用/恢复慢”可以分开判断。
+## 环境与状态隔离
 
-outer `contextLifecycle`继续保存跨进程immutable seed的prepare/reuse/materialize/release/cleanup。前者证明Host内Application Context复用，后者证明跨runner seed隔离。事件属于runner-owned transient evidence，不进入Project测试地图或任务验证报告。
+[测试上下文运行时](../guides/node-test-context-runtime.md)复用昂贵应用组装或不可变准备内容，同时保留逐案例隔离。公共实现位于 `src/infrastructure/testing/context-runtime/`，Buildr 专用提供者（Provider）位于 `test/context/providers/`。
 
-## 15. 新测试接入
+三种处置由 `test/context/dispositions.ts` 维护：`context-runtime` 由公共运行时（Runtime）管理复用和隔离，`hybrid` 保留真实文件、数据库或进程边界，`full-lifecycle` 保留被测完整生命周期或无可复用状态的检查。复用不改变测试的真实边界。
 
-1. 明确主要待证事实和最低充分边界。
-2. 选择唯一primary owner；先处理重复主证据，再优化fixture。
-3. 只有昂贵状态不是当前test主要事实时才定义Context。
-4. 声明稳定id/version、scope、parallel safety、config/source identity和dependencies。
-5. 选择shared、exclusive、transaction、snapshot、sandbox或full lifecycle。
-6. 用`contextTest()`声明alias/config，不在body手工create/cleanup同一Context。
-7. 多文件跨文件复用时，把owner executor登记为`node-context-test`。
-8. 声明真实resource demand，确保Host数只消费outer grant。
-9. 增加配置变化、exclusive wait、dirty eviction、cleanup failure、Host failure和direct-file反例。
-10. 先跑direct file/focus，再跑affected/Core，并验证Candidate/Release membership。
-11. 记录多轮wall-clock、create/hit、body/materialize/reset和残余长尾。
+工作空间（Workspace）命令行（CLI）及 HTTP 冒烟必须经 `tools/development/run-isolated-workspace-smoke.ts`：同时隔离工作目录、`BUILDR_APP_DATA_DIR` 和 `BUILDR_PRODUCT_DATA_DIR`，成功或失败后均清理。不能让测试进入真实用户应用状态。
 
-## 16. 常见错误
+前端服务（Service）负责 React/Vite 源码和构建；后端服务（Service）托管正式 `web-dist`。浏览器（Browser）验证使用隔离构建产物，页面逻辑的 `buildr-web/test/*.test.mjs`、类型检查或构建不能替代真实交互。浏览器（Browser）选择细节见 `browser-selector-dispatcher.ts`，关键页面旅程在 `test/browser-smoke/`。
 
-- 只换Vitest/Jest，不改变Workspace/Git/SQLite创建方式；
-- 把所有测试放进一个`isolation=none`进程；
-- 让worker Context依赖test Context；
-- 把可变Workspace作为shared value；
-- 用数据库rollback恢复Git、文件或其他连接；
-- 为命中cache固定错误的source identity；
-- dirty后静默重建并把当前test记为passed；
-- 因Core变快删除Candidate/Release主证据。
+## 证据如何支持交付
 
-## 17. 性能验收方法与当前基线
+日常执行保留实际结果、选择理由、来源身份、排队与资源等待、执行和清理耗时；上下文（Context）执行另记录创建、复用、取得、重置、污染失效和销毁。这些帮助定位失败与性能，属于测试工具的临时证据，不能冒充正式任务完成或发布成功。
 
-已退役模块的旧性能样本不再代表当前verification registry，也不再用于affected/Candidate选择。当前性能结论必须从现有step集合和实际timing summary重新观察。
+跨平台候选（Candidate）由[证据聚合实现](../../../services/buildr/test/verification/candidate-ci-evidence.ts)核对所需分片与宿主组合是否齐全、是否来自相同源码及登记身份、是否消费同一压缩包；缺失或身份不符会使聚合失败。本机 `test:candidate` 的结果不能替代这份聚合。正式任务报告仍须分别说明所需的前端逻辑、浏览器（Browser）旅程及目标环境检查是否实际完成。发布（Release）还涉及当前外部权限、真实发布与回读，流程和恢复由[开源发布说明](../flows/open-source-release.md)单独维护。`integration-candidate-release` 是发布专用证据，不默认纳入日常 `core`。
 
-该历史轮次的结论是180秒低于当时244秒数学下限，不能作为当时52-step集合的可达目标；它建立了Context技术框架，但不是当前预算事实。2026-08-24的current daily-full数学下限已现场复核为259秒，预算360秒。若要进一步下降，必须减少选择放大、消除重复primary evidence或优化真实生命周期body/cleanup；Product Artifact Candidate与Published Release证据不能为追求daily-full数字而下放或删除。
-
-后续跨层证据审计以27个target duration至少15秒的日常Integration/System owner建立了registry派生map。历史普通Finish提交回放证明，过宽Release artifact ownership曾让每次affected额外承担45秒目标工作量；收窄后四个样本分别从12→9、10→8、11→9、6→4 steps。该历史树为52 steps、976秒工作量与244秒下限；当前树以本节开头的现场plan-only为准。剩余成本仍需分别审计selection amplification与真实Finish、Workspace、Worktree、进程等owner body/cleanup，详见[审计报告](../../../docs/verification-evidence-audit.md)。
-
-## 18. 当前能力与下一边界
-
-已经实现：公共definition/runtime/npm入口、configuration identity、dependency graph、worker/suite/test scope、shared/exclusive/isolated lease、reset、dirty/evict、逆序destroy、direct-file adapter、多持久Host runner、outer grant约束、Host失败汇总、Buildr Application/Workspace provider、timing summary和package inventory验证。
-
-当前限制：Context只在单Host内共享；Buildr Application provider因port覆盖而exclusive；尚无通用SQLite transaction/snapshot、Git COW或Vitest adapter。后续根据测试runner自身timing和实际瓶颈决定是否增加优化，不建立通用Task Execution Record。
-
-## 19. 维护不变量
-
-- 公共Runtime在`src/infrastructure/testing/context-runtime/`，不依赖Buildr领域；Buildr provider在`test/context/providers/`。
-- `test/context/runtime.ts`只拥有Buildr immutable filesystem seed adapter，不是第二套通用Runtime。
-- Context复用不改变execution boundary或primary evidence owner。
-- shared seed只读，mutation发生在lease-owned state/sandbox。
-- outer scheduler是Host/resource budget authority，inner runner只消费grant。
-- unknown owner、无效Context、不可满足资源、污染和失真预算都在安全边界失败。
-- daily-full性能目标不能削弱Product Artifact Candidate、Windows、Host Node、Launcher、npm integrity、tarball或Published Release readback/convergence证据。
-
-相关入口：`src/infrastructure/testing/context-runtime/public.ts`、`src/infrastructure/testing/context-runtime/`、`test/context/`、`test/verification/registry.ts`、`test/verification/planner.ts`、`test/verification/dag-scheduler.ts`、`test/verification/executor.ts`。
-
-## 发布基础设施验证
-
-普通开发按改动影响选择相关测试，先核对已有结果对当前内容、环境与目标是否仍适用；完整低成本回归按项目必需要求或明确风险执行，登记报告本身不触发重跑；发布工具、构建、安装或平台代码变化时，显式选择对应真实场景。`integration-candidate-release` 属于发布专用证据，不进入日常 `core`，完整候选在 macOS、Windows 独立执行其生命周期与故障注入。源码分片只等待自身依赖，产物消费者等待唯一压缩包；聚合区分未运行、失败和已复用的成功结果。
-
-`release-consumption.ts` 是发布消费配方与覆盖关系的唯一声明。候选执行真实平台启动、宿主 Node、包/文档/版本检查和发布 npm 的无写入检查；`release-publication.ts` 消费同一声明完成临发布状态核验、受保护写入和发布后回读。配方对应的执行实现由类型检查和行为测试校验，新增发布检查必须有候选证据或明确的临发布/权限理由。
-
-任务验证报告只登记已执行的事实，不能代替候选聚合或发布事实。执行目录与报告写入者分别选择：工作树运行检查，合法的主工作空间入口登记报告。发布成功后的登记、自举或清理失败分别报告，不重新发布。
-
-历史性能测量见[验证证据审计](../../../docs/verification-evidence-audit.md)；它保留当时的执行范围与数字，不代表当前发布耗时。
+后续优化先依据当前耗时找出选择放大、重复准备、执行体或清理瓶颈。不能为追求速度删除正在证明的安装、初始化、迁移、恢复、平台或发布物边界。历史数字保留在[验证证据审计](../../../docs/verification-evidence-audit.md)，不代表当前运行结果。

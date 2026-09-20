@@ -21,3 +21,43 @@ test('v4 rejects old orchestration fields and unsafe paths', () => {
   const errors = validateProjectVerification(value, { projectCode: 'demo', services: ['api'] });
   assert.ok(errors.some((item) => item.includes('candidate'))); assert.ok(errors.some((item) => item.includes('safe relative')));
 });
+
+test('v4 location binds one project or scoped registered service without changing omitted locations', () => {
+  const value: any = declaration();
+  assert.equal(Object.hasOwn(normalizeProjectVerification(value).testing[0], 'location'), false);
+  for (const location of [{ kind: 'project' }, { kind: 'service', service: 'api' }]) {
+    value.testing[0].location = location;
+    assert.deepEqual(validateProjectVerification(value, { projectCode: 'demo', services: ['api'] }), []);
+    assert.deepEqual(normalizeProjectVerification(value).testing[0].location, location);
+  }
+});
+
+test('v4 reports malformed scopes and locations without input type failures', () => {
+  for (const services of [false, 'api', {}, 4, null]) {
+    const value: any = declaration(); value.testing[0].scope.services = services;
+    assert.ok(validateProjectVerification(value).some((error) => error.includes('scope.services must be an array')), JSON.stringify(services));
+  }
+  for (const location of [null, false, [], 'api', {}, { kind: 'repository' }, { kind: 'project', service: 'api' }, { kind: 'service' }, { kind: 'service', service: 'other' }, { kind: 'service', service: 'api', root: '/local' }]) {
+    const value: any = declaration(); value.testing[0].location = location;
+    assert.ok(validateProjectVerification(value, { services: ['api'] }).some((error) => error.includes('location')), JSON.stringify(location));
+  }
+  const malformed: any = declaration(); malformed.testing[0].scope.services = [{ toString: false }];
+  assert.ok(validateProjectVerification(malformed, { services: ['api'] }).some((error) => error.includes('scope.services[0]')));
+  const value: any = declaration(); value.testing[0].location = { kind: 'service', service: 'api' };
+  assert.ok(validateProjectVerification(value, { services: [] }).some((error) => error.includes('unknown Service api')));
+});
+
+test('v4 rejects platform-independent path escapes in all root-relative fields', () => {
+  for (const unsafe of ['/outside', '../outside', 'src/../../outside', '..\\outside', 'src\\..\\outside', '\\outside', 'C:\\outside', 'C:outside', 'src/\0outside']) {
+    for (const field of ['sourcePaths', 'testRoots', 'cwd']) {
+      const value: any = declaration();
+      if (field === 'cwd') value.testing[0].full.cwd = unsafe;
+      else value.testing[0][field] = [unsafe];
+      assert.ok(validateProjectVerification(value).some((error) => error.includes('safe relative')), `${field}: ${unsafe}`);
+    }
+  }
+  const value: any = declaration();
+  value.testing[0].sourcePaths = ['./src/**', 'src/{one,two}/**'];
+  value.testing[0].full.cwd = './module';
+  assert.deepEqual(validateProjectVerification(value), []);
+});

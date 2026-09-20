@@ -12,6 +12,10 @@ import {
   digest,
   readKnowledgeFile,
 } from "../infrastructure/knowledge-files.ts";
+import {
+  knowledgeCatalogPage,
+  type KnowledgeCatalogRequest,
+} from "../domain/knowledge-catalog.ts";
 export type KnowledgeDependencies = {
   assetCatalog(root: string): AssetCatalog;
   skillFile(root: string, id: string, path: string): { content: string };
@@ -270,5 +274,15 @@ export function createKnowledgeQuery(deps: KnowledgeDependencies) {
       diagnostics: [],
     };
   }
-  return { read };
+  function catalog(root: string, ref: ScopeRef, request: KnowledgeCatalogRequest = {}) {
+    const { scope, index, revision } = load(root, ref);
+    const scopeIdentity = digest(JSON.stringify([
+      fs.realpathSync(root), scope.kind, scope.id, scope.directory,
+    ]));
+    return {
+      scope,
+      ...knowledgeCatalogPage(index, revision, scopeIdentity, request),
+    };
+  }
+  return { read, catalog };
 }

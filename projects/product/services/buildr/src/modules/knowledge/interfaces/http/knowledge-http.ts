@@ -1,5 +1,6 @@
 import {
   KNOWLEDGE_HTTP_SCHEMAS,
+  validateKnowledgeCatalogResponse,
   validateKnowledgeResponse,
 } from "./knowledge-http-contracts.ts";
 import type { createKnowledgeQuery } from "../../application/knowledge-query.ts";
@@ -23,6 +24,25 @@ export function createKnowledgeHttpContribution(
       searchParams?: URLSearchParams;
       respond: { diagramHtml(content: string): unknown };
     }) {
+      const catalog = suffix.match(/^\/knowledge\/(project|service)\/([^/]+)\/catalog$/);
+      if (request.method === "GET" && catalog) {
+        const id = decodeURIComponent(catalog[2]);
+        if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(id))
+          return { status: 400, body: { error: "knowledge_identity_invalid" } };
+        return {
+          status: 200,
+          body: validateKnowledgeCatalogResponse(app.catalog(
+            root,
+            { kind: catalog[1] as ScopeRef["kind"], id },
+            {
+              view: searchParams?.get("view"),
+              q: searchParams?.get("q"),
+              pageSize: searchParams?.get("pageSize"),
+              cursor: searchParams?.get("cursor"),
+            },
+          )),
+        };
+      }
       const display = suffix.match(
         /^\/knowledge\/(project|service)\/([^/]+)\/artifacts\/([a-zA-Z0-9._-]+)\/view$/,
       );

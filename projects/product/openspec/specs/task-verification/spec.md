@@ -1,7 +1,7 @@
 # task-verification Specification
 
 ## Purpose
-定义 Buildr 如何通过可替换的任务验证能力解析项目政策、执行分层验证，并生成绑定候选身份、包含真实耗时且具备明确生命周期的结果证据。
+定义智能体（Agent）如何使用项目已有测试工具完成验证，以及Buildr如何为正式任务保存绑定当前内容与测试地图的独立验证报告；报告反映真实检查、未覆盖项和适用性，不执行测试，也不决定任务完成。
 ## Requirements
 
 ### Requirement: Task Verification必须维护一份独立完成报告

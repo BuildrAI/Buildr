@@ -20,6 +20,17 @@ objects:
     parent: task-system
     title: 父任务协调
     summary: 整体目标、直接子任务、总体验收与明确完成授权，各自依据当前版本。
+  - id: verification-framework
+    title: 项目与服务测试验证框架
+    summary: Buildr 如何引导智能体按用户目标，为不同项目和服务建设测试、声明能力、选择执行并交付可信结果。
+  - id: verification-product-tools
+    parent: verification-framework
+    title: Buildr 产品测试工具
+    summary: Buildr 自身的路径选择、执行注册表、资源协调、隔离与候选证据。
+  - id: verification-test-context
+    parent: verification-product-tools
+    title: Node.js 测试上下文
+    summary: 面向 Node.js 的可选能力：复用昂贵准备，保持案例隔离，管理创建、恢复和清理。
 artifacts:
   - id: explanation
     title: 知识建设与维护
@@ -68,7 +79,10 @@ artifacts:
       - workbench-preferences
       - task-source-preferences-application-8b4fe8
       - diagram-layout
-    observedDigest: 9695b70f56a2ab49ded06dbb261daf0746be926d482d03bf8c1b17ea6835beda
+      - knowledge-preview-notice
+      - catalog-query
+      - catalog-state
+    observedDigest: 0e858a00522065d712a95908f0b81658e2cfdcce64c346244de5b61aaadb08b3
     files:
       - file-explanation
   - id: responsibility
@@ -156,7 +170,10 @@ artifacts:
       - workbench-preferences
       - task-source-preferences-application-8b4fe8
       - diagram-layout
-    observedDigest: e5ec11b6e43a3ff93b6f054e8b7ce011613cdb183fd40980985fdd80e4078ce5
+      - knowledge-preview-notice
+      - catalog-query
+      - catalog-state
+    observedDigest: dce31af6bde1882c1c249e1aeaeaaf9a685a3cdfd534f30db2aa22b9366c003d
     files:
       - file-implementation-map
       - file-explanation
@@ -337,6 +354,7 @@ artifacts:
     path: knowledge/code-map/task-system.md
     objects:
       - task-system
+      - task-parent-coordination
     sources:
       - task-source-spec-ea9d2d
       - task-source-spec-f12a41
@@ -391,7 +409,15 @@ artifacts:
       - task-bootstrap-method
       - task-bootstrap-runner
       - task-bootstrap-continuity
-    observedDigest: a3af3f2255959a6a7cdd2b9aa2580f231b5e50518a7ac94c7da39e611bc746ea
+      - parent-coordination-spec
+      - parent-input-validation
+      - parent-coordination-panel
+      - parent-completion-fields
+      - parent-completion-input
+      - parent-task-actions
+      - parent-coordination-tests
+      - parent-completion-ui-tests
+    observedDigest: 13cfe823cef5d1377e523cf93bc078799d014a6d7e3c775a056ba0b3915f591a
     files:
       - task-file-task-system-md-123fb5
       - task-file-task-system-md-d14898
@@ -409,6 +435,9 @@ artifacts:
       - task-file-task-self-bootstrap-md-af104b
       - task-file-task-closeout-md-fb6d91
       - task-file-task-parent-coordination-md-117a3e
+      - parent-completion-html
+      - parent-completion-json
+      - parent-completion-evidence
   - id: task-system-flow
     title: 完整过程与角色职责
     kind: diagram
@@ -534,17 +563,335 @@ artifacts:
     objects:
       - task-parent-coordination
     sources:
+      - task-source-spec-f12a41
+      - task-source-spec-5aed6b
+      - parent-coordination-spec
+      - task-source-task-query-application-9f6269
+      - task-source-parent-coordination-application-49a9bd
+      - task-source-task-command-application-aba2e8
+      - parent-input-validation
+      - task-source-task-04c6c5
+      - task-source-task-repository-be5696
+      - task-source-work-context-application-11bb91
+      - task-source-task-4ce8a0
+      - task-source-task-http-e1bbb1
+      - task-source-skill-7b8bb2
+      - task-source-taskcompletemodal-0d6276
+      - parent-coordination-panel
+      - parent-completion-fields
+      - parent-completion-input
+      - parent-task-actions
+      - parent-coordination-tests
+      - parent-completion-ui-tests
       - task-source-2026-08-30-parent-child-task-audit-b28c38
-    observedDigest: effa30918cf447b6754a4534bdfd188d59e84680fa76ce4e0200bdb4bc5a900e
+    observedDigest: 83cdeab24bcf64d8b7efadcc49928f2b852cf32010fc4c010d330440ccb7a7a4
     files:
       - task-file-task-parent-coordination-md-117a3e
+      - parent-completion-html
+      - parent-completion-json
+      - parent-completion-evidence
+  - id: verification-overview
+    title: Buildr 项目与服务测试验证框架
+    kind: document
+    path: knowledge/docs/architecture/workspace-testing-and-verification-framework.md
+    objects:
+      - verification-framework
+    sources:
+      - verification-locations
+      - verification-file-b8970af0
+      - verification-file-bc346270
+      - verification-source-27da98a320
+      - verification-source-739faaad07
+      - verification-source-18593c6ff1
+      - task-source-skill-0ea6ac
+      - verification-source-37543ceb30
+      - verification-source-d43baaebce
+      - verification-source-15fb890b91
+      - verification-source-4e7364c5d1
+      - verification-source-31c0f13893
+      - task-source-task-verification-4ea021
+      - task-source-spec-a99380
+      - verification-intake-spec
+      - verification-source-fe945192ca
+      - verification-file-9894349f
+      - verification-source-a9829f3f69
+      - verification-file-8c3c96dd
+    observedDigest: 21affd27b3e912c6ae6c8d7b1803a3c23930d321efbd4c7923f0816c2e270028
+    files:
+      - verification-file-263d3698
+      - verification-file-9894349f
+      - verification-file-8c3c96dd
+      - verification-file-b8970af0
+      - verification-file-bc346270
+      - verification-file-e9222fb3
+      - verification-file-31b03bf7
+  - id: verification-product-architecture
+    title: 采用实例：Buildr 产品的测试与验证
+    kind: document
+    path: knowledge/docs/architecture/verification-framework.md
+    objects:
+      - verification-product-tools
+    sources:
+      - verification-file-263d3698
+      - verification-product-map-file
+      - verification-source-a9829f3f69
+      - verification-source-b5e167a6ea
+      - verification-source-23f06815b2
+      - verification-file-8c3c96dd
+      - verification-release-reference
+      - verification-history-reference
+      - verification-source-535557f7c3
+      - verification-ref-2e25071a
+      - verification-ref-afecd484
+      - verification-changed-paths
+      - verification-source-03659a2597
+      - verification-ref-fad56c76
+      - parent-completion-ui-tests
+      - verification-ref-73fbe375
+      - verification-installed-package
+      - verification-ref-e568f1e4
+    observedDigest: cc6ca5cdd68105f52d6b0b13565a2773fa49366ad62fa1fea3b956e76f0faa20
+    files:
+      - verification-file-263d3698
+      - verification-file-9894349f
+      - verification-file-8c3c96dd
+      - verification-file-b8970af0
+      - verification-file-bc346270
+      - verification-file-e9222fb3
+      - verification-file-31b03bf7
+  - id: verification-context-guide
+    title: Node.js 测试上下文：复用、隔离与生命周期
+    kind: document
+    path: knowledge/docs/guides/node-test-context-runtime.md
+    objects:
+      - verification-test-context
+    sources:
+      - verification-file-9894349f
+      - verification-source-6bc914610e
+      - verification-source-ba6db2aa02
+      - verification-context-types
+    observedDigest: f3e16c09439ebfaccd02077822e7ef789cb7d560f15622b4b08e204227b5b38a
+    files:
+      - verification-file-263d3698
+      - verification-file-9894349f
+      - verification-file-8c3c96dd
+      - verification-file-b8970af0
+      - verification-file-bc346270
+      - verification-file-e9222fb3
+      - verification-file-31b03bf7
+  - id: verification-implementation-map
+    title: 项目与服务测试验证框架的实现地图
+    kind: code-map
+    path: knowledge/code-map/verification-framework.md
+    objects:
+      - verification-framework
+      - verification-product-tools
+    sources:
+      - verification-locations
+      - verification-installed-package
+      - verification-file-263d3698
+      - verification-file-bc346270
+      - verification-source-739faaad07
+      - verification-source-18593c6ff1
+      - task-source-skill-0ea6ac
+      - task-source-skill-ee942e
+      - verification-source-27da98a320
+      - verification-intake-spec
+      - verification-source-fe945192ca
+      - task-source-spec-a99380
+      - verification-source-604151a9a5
+      - verification-source-6bc914610e
+      - verification-source-c8ee7d9bf2
+      - verification-source-d1a2938b4f
+      - verification-source-4362f9f689
+      - verification-source-4e7364c5d1
+      - verification-source-948ce80583
+      - verification-source-0fafd69549
+      - task-source-task-verification-application-68479e
+      - task-source-task-verification-4ea021
+      - task-source-task-verification-repository-470799
+      - task-source-taskagentaction-7a3c7f
+      - verification-source-c7378e723e
+      - verification-source-d68d572712
+      - verification-source-03659a2597
+      - verification-source-ab9c61c2bd
+      - verification-product-map-file
+    observedDigest: 44dce539751b25ecd0cff2610281b39a917cbdd5f1b1191bb9a852de66a7f4f3
+    files:
+      - verification-file-263d3698
+      - verification-file-9894349f
+      - verification-file-8c3c96dd
+      - verification-file-b8970af0
+      - verification-file-bc346270
+      - verification-file-e9222fb3
+      - verification-file-31b03bf7
+  - id: verification-lifecycle
+    title: Buildr 如何引导测试建设与使用
+    kind: diagram
+    path: knowledge/archify/flows/verification-framework.html
+    graphSource: knowledge/archify/flows/verification-framework.json
+    objects:
+      - verification-framework
+    sources:
+      - verification-source-15fb890b91
+      - verification-source-31c0f13893
+      - verification-source-739faaad07
+      - verification-source-18593c6ff1
+      - task-source-skill-0ea6ac
+      - verification-source-37543ceb30
+      - verification-source-d43baaebce
+      - verification-source-27da98a320
+      - verification-source-fe945192ca
+      - verification-intake-spec
+      - task-source-spec-a99380
+      - verification-source-4362f9f689
+      - verification-locations
+      - verification-source-4e7364c5d1
+      - task-source-task-verification-application-68479e
+      - task-source-task-verification-4ea021
+      - task-source-task-verification-repository-470799
+    observedDigest: 5362e373dcbc874dca21794990f0f61b7e433b39af4383684b4346a66d48b181
+    graphDigest: 0ac9549dcff1fe26866e1f012c908bbaa9e9040c86734d66665c217d0c166575
+    files:
+      - verification-file-263d3698
+      - verification-file-9894349f
+      - verification-file-8c3c96dd
+      - verification-file-b8970af0
+      - verification-file-bc346270
+      - verification-file-e9222fb3
+      - verification-file-31b03bf7
+  - id: verification-product-map
+    title: 采用实例：Buildr 产品测试工具地图
+    kind: code-map
+    path: knowledge/code-map/product-verification-tools.md
+    objects:
+      - verification-product-tools
+    sources:
+      - verification-changed-paths
+      - verification-entrypoints
+      - verification-file-263d3698
+      - verification-file-b8970af0
+      - verification-source-a9829f3f69
+      - verification-source-456f6be9e6
+      - verification-file-9894349f
+      - verification-source-07201f6210
+      - verification-source-4759f3fa18
+      - verification-source-a567a4e171
+      - verification-source-b5e167a6ea
+      - verification-source-4aba70c072
+      - verification-source-a8e6c6c2a4
+      - verification-source-11958882cd
+      - verification-source-8b321bc253
+      - verification-source-bb279cd090
+      - verification-source-54cae75589
+      - verification-source-bb45a79c77
+      - verification-source-427279b9f5
+      - verification-source-1a428d5163
+      - verification-source-c37838fbfa
+      - verification-source-23f06815b2
+      - verification-source-535557f7c3
+      - verification-source-2067de1414
+      - verification-source-57ca327cab
+      - verification-file-8c3c96dd
+      - verification-source-ba6db2aa02
+      - verification-source-340bdb46a3
+      - verification-source-31c7256483
+      - verification-source-1967483059
+      - verification-source-95e7d22b19
+      - verification-source-212eb0e812
+      - verification-source-9970cc9595
+      - verification-source-fccb281b60
+      - verification-source-117481e3e7
+      - verification-source-4e2cb05a2b
+      - verification-ref-2e25071a
+      - verification-ref-afecd484
+      - verification-ref-e568f1e4
+      - parent-completion-ui-tests
+      - verification-source-03659a2597
+      - verification-installed-package
+      - verification-ref-fad56c76
+      - verification-ref-028fd920
+      - verification-ref-73fbe375
+    files:
+      - verification-product-map-file
+    observedDigest: 8e660338e558981af019a0f3793dcc46ca8cd11fb1f3d53d8c1d2f2bc0cabffb
+  - id: task-parent-completion-flow
+    title: 父任务如何确认完成
+    kind: diagram
+    path: knowledge/archify/flows/task-parent-coordination.html
+    graphSource: knowledge/archify/flows/task-parent-coordination.json
+    graphDigest: 195c3882a7eae8b48baf4c7e766b026372b96e6cc9b188a2f3b8013623e6bb1d
+    objects:
+      - task-parent-coordination
+    sources:
+      - task-source-spec-f12a41
+      - task-source-spec-5aed6b
+      - parent-coordination-spec
+      - task-source-task-query-application-9f6269
+      - task-source-parent-coordination-application-49a9bd
+      - task-source-task-command-application-aba2e8
+      - parent-input-validation
+      - task-source-task-04c6c5
+      - task-source-task-repository-be5696
+      - task-source-work-context-application-11bb91
+      - task-source-task-4ce8a0
+      - task-source-task-http-e1bbb1
+      - task-source-skill-7b8bb2
+      - task-source-taskcompletemodal-0d6276
+      - parent-coordination-panel
+      - parent-completion-fields
+      - parent-completion-input
+      - parent-task-actions
+      - parent-coordination-tests
+      - parent-completion-ui-tests
+    files:
+      - parent-completion-html
+      - parent-completion-json
+      - parent-completion-evidence
+    observedDigest: 86f4a1cbff48189a905282eae68b4a3dc54596e6adab2e5208991a7f0b066076
 sources:
+  - id: verification-locations
+    title: 测试路径根与当前位置
+    kind: code
+    path: services/buildr/src/modules/project-testing/application/project-verification-locations.ts
+    summary: 根据登记来源观察根和命令工作目录，检查目录可访问与实际边界；逐族返回位置和局部诊断，不执行命令或写回本机绝对路径。
+    observedDigest: e35d403e216e7e848b404555571ff9253b2f777362253b9d7c7b643a0b53b339
+  - id: verification-changed-paths
+    title: 真实源码变化的测试选择回归
+    kind: code
+    path: services/buildr/test/unit/verification-changed-paths.test.ts
+    summary: 以真实源码路径验证必要步骤被选中；地图模块采用稳定职责范围，新增位置解析与命令入口也纳入声明回归。
+    observedDigest: 95b773651d7a1188f146ba5fbd7df655fc4c589517e8a5d6e7cb9e1550bfe47b
+  - id: verification-entrypoints
+    title: 产品完整入口与声明范围契约
+    kind: code
+    path: services/buildr/test/contract/verification-entrypoints.test.ts
+    summary: 核对 Buildr 自身公开测试入口、集成与系统测试族的范围及真实命令，不把这些命令强加给用户项目。
+    observedDigest: 74d1024a03b551e3f926569f3e758b5fa8d6ece5e89de0533c658e283fe1f4eb
+  - id: verification-installed-package
+    title: 安装包中的地图与报告行为
+    kind: code
+    path: services/buildr/test/integration/application-payload-release.test.ts
+    summary: 真实构建、离线安装后验证外部服务登记、地图位置解析与报告读写，证明能力不依赖开发源码目录。
+    observedDigest: eaee7027b02c7440da4ed3f53c189d0100ef8cf8d240a441187aca49fffd863d
+  - id: catalog-query
+    title: 知识目录查询与版本分页
+    kind: code
+    path: services/buildr/src/modules/knowledge/domain/knowledge-catalog.ts
+    observedDigest: 143d015a26e8adc8d0e7f468df4d694226c501a2c482a79f50cfbfe5ff78e814
+    summary: 按分类和完整关键词条件筛选索引，仅返回当前页摘要；游标（Cursor）绑定范围、条件、页大小和索引版本，拒绝混用或版本漂移。
+  - id: catalog-state
+    title: 连续目录请求状态
+    kind: code
+    path: services/buildr-web/src/features/knowledge/useKnowledgeCatalog.ts
+    observedDigest: e5dc93cd842e56549f97ecc7469a6d391a7b68d7deec0cf8aeaaba600d8ab492
+    summary: 每页读取 20 项，取消旧范围请求，合并时去重并校验版本；进入详情后保留已读目录，续页失败支持重试或刷新。
   - id: query
     title: 读取与来源观察
     kind: code
     path: services/buildr/src/modules/knowledge/application/knowledge-query.ts
-    observedDigest: 496de44b9ff4e31fa432ab624ab9e265e75d8e7140627d9d33a60f58334a2945
-    summary: 组织知识读取与当前内容观察；从当前可读原生图示 HTML 的主 SVG 提取只读尺寸，供嵌入预览适配。摘要差异只提示来源变化，不判定语义正确。
+    observedDigest: 8f266d102b95d111a35336fe7002853601b6e4249e72bc98d385fa3e54dc7a9c
+    summary: 组织目录与详情读取、解析真实登记范围，并核对正文与来源；目录仅读取有界索引，详情继续按关联读取正文和当前观察。
   - id: index-model
     title: 知识对象与关联校验
     kind: code
@@ -561,8 +908,8 @@ sources:
     title: 只读协议入口
     kind: code
     path: services/buildr/src/modules/knowledge/interfaces/http/knowledge-http.ts
-    observedDigest: 7ecceae5b257a729d01df1f07b06f59e2755e1042502f9b8036134f09f91545a
-    summary: 知识读取的 HTTP 入口：解析请求身份，调用读取应用，并输出受校验的响应。图示通过单独隔离响应保留原 HTML；读取不修改规范或代码。
+    observedDigest: d1e3d5bfd0b96e00be74e5fa1acac8d0c21f6a19c602e88dc561b7161df2f04d
+    summary: 知识读取的 HTTP 入口：分别提供有界目录分页、详情、来源和隔离图示；响应经契约校验，读取不修改知识事实。
   - id: module
     title: 能力装配
     kind: code
@@ -573,8 +920,8 @@ sources:
     title: 知识阅读页面
     kind: code
     path: services/buildr-web/src/features/knowledge/pages/KnowledgePage.tsx
-    observedDigest: 19c2f13c67bc29dc458fbb25c75c2a49803cd00692d3aed8b7ffae923cae9c26
-    summary: 组织当前知识范围、主屏详情、目录分类和关联阅读，保持同一项目的副屏；打开资料时由工作台（Workbench）组件独立记录最近访问，收藏写个人偏好，不改知识正文。
+    observedDigest: 2f112d9711872b6560343f92861b8beee02512d8baca17dab00c299ec8bdde9f
+    summary: 编排目录与正文阅读，保留目录批次和位置；主区固定面包屑并提供回顶部，关联副屏独立滚动。
   - id: diagram-reader
     title: 隔离图示阅读
     kind: code
@@ -591,8 +938,8 @@ sources:
     title: 知识接口客户端
     kind: code
     path: services/buildr-web/src/features/knowledge/api/knowledge-api.ts
-    observedDigest: fb65ac151fabef75ee3523c445060d04a804941a08d3a0db7f5a7e0183cf0e0f
-    summary: 沿用已有会话访问读取接口。
+    observedDigest: 56a2417c4c879b41f1300111d4fb036c251a8899ca6122a5180ff3378b10c2db
+    summary: 沿用已有会话分别访问目录分页和详情接口，取消过时请求。
   - id: skill-page
     title: 复用的技能详情
     kind: code
@@ -657,13 +1004,13 @@ sources:
     title: 项目知识阅读规范
     kind: spec
     path: openspec/specs/project-knowledge-browsing/spec.md
-    observedDigest: a481de530462c7363bc4e07623737dcac1fb028876d423dd1da8873ea68def3c
+    observedDigest: 53aa691980ee2eb6a3c5285cf14f13976b0477ed2d68bf165e344477d6fa215f
     summary: 约束知识分类、原生图示和关联阅读；当前展示尺寸来自安全读取的 HTML 主 SVG，文内预览按实际比例适配，独立详情保留原生功能与隔离边界。
   - id: tests
     title: 来源变化与读取验证
     kind: evidence
     path: services/buildr/test/integration/knowledge-query.test.ts
-    observedDigest: cd9eedc42a2225269b71c86a3da0752f03c713bffa2f207d011f7f224ef26c89
+    observedDigest: 7ff9bc0d52e304a7dd38085ef4607a074e10ace400be812746a5f11950b7da75
   - id: project-terms
     title: 项目唯一术语解释
     kind: evidence
@@ -762,14 +1109,14 @@ sources:
     title: 成果目录与检索
     kind: code
     path: services/buildr-web/src/features/knowledge/components/KnowledgeCatalog.tsx
-    observedDigest: 6da8a1d5f111b18eefd2281a9ef19d70c239c985815e82b7b7dbfbc04e2408d2
-    summary: 三类成果的统一检索与建设入口。
+    observedDigest: 938d9d4e62e0926f4e7e18a8a8f725f4950fff4053d978adeef27d87545eaba2
+    summary: 三类成果的分页目录；在第 15、35、55 项附近自动续载，并提供检索、失败重试和建设入口。
   - id: catalog-filter
-    title: 分类与关键词筛选
+    title: 目录分类与分页合并
     kind: code
     path: services/buildr-web/src/features/knowledge/knowledge-catalog.ts
-    observedDigest: 124b3bd63d73f74f16e74d13e7dbee5dd0c6999d14b489c032f7a64ec307f292
-    summary: 按标题、说明和路径筛选目录。
+    observedDigest: 1b60defaaa97ee0e547160d5266af212ab1265b308a59828f091016743f137ff
+    summary: 计算目录提前续载位置，并在同一范围和索引版本下合并分页、排除重复条目。
   - id: reading-state
     title: 阅读请求与取消
     kind: code
@@ -780,8 +1127,8 @@ sources:
     title: 知识响应契约
     kind: code
     path: services/buildr/src/modules/knowledge/interfaces/http/knowledge-http-contracts.ts
-    observedDigest: a6aa6a07870dab7da9cd73a70e09c4848117530c9aa3591866cc42dabaa2a7b2
-    summary: 校验知识响应及来源观察；图示尺寸是可空的只读元数据，JSON 响应不复制可执行 HTML 正文，图示仍通过隔离端点读取。
+    observedDigest: e67698c4565fc7fa3b74447cb7d0603815cd31bace428693564c6a845b5e5223
+    summary: 校验目录分页摘要、详情与来源观察的响应结构；目录不返回完整索引和正文，图示继续通过隔离端点读取。
   - id: navigation-index
     title: 当前阅读关联
     kind: code
@@ -821,8 +1168,8 @@ sources:
     title: 关联阅读与文件说明
     kind: code
     path: services/buildr-web/src/features/knowledge/components/KnowledgeReadingPane.tsx
-    summary: 读取当前打开的成果或来源文件，显示打开时的上下文。源文件先显示已核实的总体说明，再显示实际内容；请求失败只影响这一项阅读。
-    observedDigest: 91ff4cdf8d353cab2aa968d2325a11a4b56aa81bfd47967d8cfa77879b486323
+    summary: 读取当前打开的成果或来源文件，显示打开时的上下文。源文件先显示已核实的总体说明，再显示实际内容；把实际打开详情返回的索引交给页面继续解析关联；请求失败只影响这一项阅读。
+    observedDigest: 6db42828e46db5d1f817cbe8ea3130d22c51159e4bf7084a3dc4dbd941b8f610
   - id: code-map-spec
     title: 代码地图制作规范
     kind: spec
@@ -834,7 +1181,7 @@ sources:
     kind: evidence
     path: knowledge/docs/architecture/knowledge-maintenance.md
     summary: 这份文件保存《知识建设与维护》的架构解释，与网页阅读使用同一正文。它是理解事实的成果，不替代规范或源码。
-    observedDigest: 9695b70f56a2ab49ded06dbb261daf0746be926d482d03bf8c1b17ea6835beda
+    observedDigest: 0e858a00522065d712a95908f0b81658e2cfdcce64c346244de5b61aaadb08b3
   - id: file-responsibility
     title: 知识建设与维护的职责关系 · 展示文件
     kind: evidence
@@ -858,7 +1205,7 @@ sources:
     kind: evidence
     path: knowledge/code-map/knowledge-maintenance.md
     summary: 这份文件保存《知识建设与维护的实现组织》的职责、规范和实现位置地图，与网页阅读使用同一正文。它是理解事实的成果，不替代规范或源码。
-    observedDigest: e5ec11b6e43a3ff93b6f054e8b7ce011613cdb183fd40980985fdd80e4078ce5
+    observedDigest: dce31af6bde1882c1c249e1aeaeaaf9a685a3cdfd534f30db2aa22b9366c003d
   - id: file-terms
     title: 知识建设与维护术语 · 术语文件
     kind: evidence
@@ -985,7 +1332,7 @@ sources:
     title: 工作摘要应用
     kind: code
     path: services/buildr/src/modules/task/work-context/application/work-context-application.ts
-    summary: 记录摘要时区分保留、清除与新建事项；回应时核对当前事项身份，保留真实意见及时间。
+    summary: 按独立版本保存进展、事项及真实答复，回应不调用任务完成或自动启动执行。
     observedDigest: fdf20d0fbd468e90186260a4463780ecf24dd34f4727960d26f9fbedc1e1e6db
   - id: task-source-taskworkcontextcard-01a1b9
     title: 工作摘要与人的回应
@@ -1009,13 +1356,13 @@ sources:
     title: 任务事实写入
     kind: code
     path: services/buildr/src/modules/task/application/task-command-application.ts
-    summary: 在当前版本保护下维护目标、范围、关系、四态和结果；终态更正保留历史，父任务完成核对整体依据。
+    summary: 按版本维护任务事实，在同一事务内重验父子观察、子任务终态与验收覆盖，保存完成依据或保留原记录。
     observedDigest: 058a230e7c28e07c021260ab8eb6cf3e4b4e4472cb9f8c0255eba7f019b14cfa
   - id: task-source-task-04c6c5
     title: 任务领域对象
     kind: code
     path: services/buildr/src/modules/task/domain/task.ts
-    summary: 定义四种状态、完成结果、父任务完成依据、终态更正历史和本机复盘摘要。
+    summary: 任务、结果、父任务完成依据与更正历史的数据类；输入及完成规则由应用承担。
     observedDigest: 5b84983c04e6301c17542d96954ea1bb66403d856ae99b90f91c1f27e62ebeb8
   - id: task-source-transaction-619471
     title: 写入事务
@@ -1034,7 +1381,7 @@ sources:
     kind: evidence
     path: services/buildr/test/integration/workbench-application.test.ts
     summary: 覆盖摘要与答复版本保护、四态独立、偏好、首批外事项及旧库只读兼容；本次只核对其证明范围。
-    observedDigest: a360ad42b053e0d28a43959527e42f6820c0ee7dc52ef7077e34b9e163911afe
+    observedDigest: fb8a2cc2f9dc5ded7edd90dee5e8e4f89b2d994968809c0f43b0a785f4081cf6
   - id: task-source-preview-lifecycle-97736a
     title: 预览资源生命周期
     kind: code
@@ -1090,7 +1437,7 @@ sources:
     kind: code
     path: services/buildr-web/src/features/workbench/pages/WorkbenchPage.tsx
     summary: 呈现待我处理、继续推进、项目变化和常用入口，保留范围、来源与局部错误提示。
-    observedDigest: 986b7202e89588c67c89457b71c86e2c5f6b2d1e778caa83e8c70541f976986c
+    observedDigest: 23ee159df3d48c5bcdf638dfd016e7e3efed1f00e38692ea6f38da1037327db9
   - id: task-source-taskdetailpage-335bc9
     title: 任务详情页面
     kind: code
@@ -1108,7 +1455,7 @@ sources:
     kind: spec
     path: openspec/specs/task-record/spec.md
     summary: 约束最小任务事实、四态、关系、更正历史、版本保护及独立业务结果边界。
-    observedDigest: b72e29d196205c7779cc7775d8b880c4ad712052cfd2ca7c4f4cfcf24fcc6e72
+    observedDigest: e7e6b5d2589566c0b0e5087feebcee1e2d06ea256441e42f57ae25369256c3df
   - id: task-source-spec-9dbb55
     title: 审查结果规范
     kind: spec
@@ -1120,7 +1467,7 @@ sources:
     kind: spec
     path: openspec/specs/task-verification/spec.md
     summary: 约束有意义报告、实际检查、覆盖缺口、测试地图关联和合法写入来源；不代跑测试。
-    observedDigest: 321a400b0b45cace818094fd76d08e402c65afbcd99c8f7555cb167e7cb7fcea
+    observedDigest: 18c180b4ee7bb697eef49dfbc1a6ade49943da3fe23e35ea54460502fd8c71a1
   - id: task-source-task-4ce8a0
     title: 任务命令行入口
     kind: code
@@ -1137,13 +1484,13 @@ sources:
     title: 任务与关系读取
     kind: code
     path: services/buildr/src/modules/task/application/task-query-application.ts
-    summary: 读取任务业务事实、直接父子关系及引用诊断，生成记录版本和父任务完成观察。
+    summary: 读取当前记录与直接子任务，计算单任务版本及与完成相关的父子观察身份；旧计划仅供历史展示。
     observedDigest: cbb371b86d4eb82f3ab8f344fc76b4c3738308ffb3872b8fae89122f0642a06d
   - id: task-source-parent-coordination-application-49a9bd
     title: 父任务协调读取
     kind: code
     path: services/buildr/src/modules/task/application/parent-coordination-application.ts
-    summary: 返回当前总体目标、直接子任务、完成观察身份和历史计划；本身不执行完成或交付。
+    summary: 返回总体目标、直接子任务、未结束项、观察身份及完成依据；旧计划只读，不执行完成或交付。
     observedDigest: 0b2cbba5517b66b898e284d28ba6eba2aea5f6ea542ccaa362ab9efae41106a9
   - id: task-source-task-review-691fbf
     title: 审查结果约束
@@ -1225,12 +1572,10 @@ sources:
     observedDigest: c98dfe4e90f9e510cf893b9aaa4b2b25c28583476d9eabd0d489c035c0a0c4b5
   - id: task-source-skill-0ea6ac
     title: 任务验证（task-verification）
-    kind: skill
-    path: SKILL.md
-    skillId: task-verification
-    link: services/buildr/resources/workspace/skills/buildr/task-verification/SKILL.md
+    kind: code
+    path: services/buildr/resources/workspace/skills/buildr/task-verification/SKILL.md
     summary: 指导智能体（Agent）选择并执行已有检查，核对适用性后保存有意义的任务报告。
-    observedDigest: 9f96b39189f1d4caa7cb476682fe2377916d0fb5ef534c182103a715920f4537
+    observedDigest: 29d31ccfdfe5283219998c097a6c1efe6d8afe0d4ce974f2d91fb7e76544cf11
   - id: task-source-task-record-product-test-2e0e74
     title: 任务记录产品回归
     kind: evidence
@@ -1287,7 +1632,7 @@ sources:
     kind: evidence
     path: knowledge/code-map/task-system.md
     summary: 保存本主题当前解释或依据，网页与本地使用同一正文；不替代规范和代码。
-    observedDigest: a3af3f2255959a6a7cdd2b9aa2580f231b5e50518a7ac94c7da39e611bc746ea
+    observedDigest: 13cfe823cef5d1377e523cf93bc078799d014a6d7e3c775a056ba0b3915f591a
   - id: task-file-task-system-html-80857d
     title: 完整过程与角色职责 · 独立展示
     kind: evidence
@@ -1311,7 +1656,7 @@ sources:
     kind: evidence
     path: knowledge/docs/flows/task-parent-coordination.md
     summary: 保存本主题当前解释或依据，网页与本地使用同一正文；不替代规范和代码。
-    observedDigest: effa30918cf447b6754a4534bdfd188d59e84680fa76ce4e0200bdb4bc5a900e
+    observedDigest: 83cdeab24bcf64d8b7efadcc49928f2b852cf32010fc4c010d330440ccb7a7a4
   - id: task-file-task-system-json-7dffd4
     title: 完整过程与角色职责 · 可维护图源
     kind: evidence
@@ -1397,19 +1742,499 @@ sources:
     kind: code
     path: services/buildr-web/src/features/workbench/components/ResourceActions.tsx
     summary: 打开资料时记录最近访问，明确点击后保存收藏或关注；失败在独立通知层展示并按当前资源隔离，不改变知识成果和写入边界。
-    observedDigest: c550af1726c3bbe82dc73dcc46bea5192c65b7e0c22b5c93d07b6946f8ec1125
+    observedDigest: 4229a57e5360cf48adccd3ede2250f1c74e28a6a58ceb76085ed7c08f5440838
   - id: workbench-preferences
     title: 个人资料偏好请求
     kind: code
     path: services/buildr-web/src/features/workbench/hooks/useWorkbenchPreferences.tsx
     summary: 读取与维护工作台（Workbench）个人偏好，处理最近访问和收藏请求；与知识正文读取分属不同操作。
-    observedDigest: 59bffc33637049cd34225d36e1c64f9fe322b8dc11af8c2d591696663aadefe9
+    observedDigest: 18e5f89057c9da9b7df3fa55fd03f634ffa789664229c278ae79e96a846c8f97
   - id: diagram-layout
     title: 图示预览尺寸计算
     kind: code
     path: services/buildr-web/src/features/knowledge/knowledge-diagram-layout.ts
     summary: 根据原生图示尺寸和当前宿主宽度计算嵌入高度，包含原生预览内边距；尺寸未知时保留兜底。
     observedDigest: 066ef2964f3dcb6aef3fff2cac42f432c9e18258ff36b8afc8ea4a3cd7b532bc
+  - id: verification-source-739faaad07
+    title: 测试建设（project-testing）
+    summary: 从公共结果设计必要案例，维护测试及其选择映射；不写项目测试地图或正式报告
+    kind: code
+    path: services/buildr/resources/workspace/skills/buildr/project-testing/SKILL.md
+    observedDigest: 6d5e4b0bd46c205c86376106c439c9d0cf1cac8db8c13158ee72142c6a7514d2
+  - id: verification-source-18593c6ff1
+    title: 声明接入（declaration-intake）
+    summary: 对已有入口做只读发现与差异判断，区分普通维护和需要人决定的变化，交给声明维护者
+    kind: code
+    path: services/buildr/resources/workspace/skills/buildr/declaration-intake/SKILL.md
+    observedDigest: 3ace4c156f6284941f6e6b040c161aa92258cbe1bf5766ddd2b9d5a3d4608344
+  - id: verification-source-27da98a320
+    title: 测试设计与质量指导
+    summary: 指导测试质量、最低充分边界、反例、职责和稳定入口建设。
+    kind: spec
+    path: openspec/specs/project-testing-guidance/spec.md
+    observedDigest: 87d7e105ddf16d2c2f1c72106e48abe22cb56a0bafde3671fd44b2a1bca18d25
+  - id: verification-source-fe945192ca
+    title: 项目测试地图规范
+    summary: 本主题引用当前 v4 要求，解释少量稳定测试族、范围、完整入口及受控维护。
+    kind: spec
+    path: openspec/specs/project-test-capabilities/spec.md
+    observedDigest: 2b766e1d6bce6baaadd820dfc736241036baa9ec74388752631e1c344ced3121
+  - id: verification-source-604151a9a5
+    title: 产品验证质量规范
+    summary: Buildr 产品证据分类、发现、选择、资源和质量要求
+    kind: spec
+    path: openspec/specs/product-verification-quality/spec.md
+    observedDigest: 68f662c5197d3caa87619d9ee8c40d0885b396f840debeb6607def484e64a700
+  - id: verification-source-6bc914610e
+    title: 测试上下文公共契约
+    summary: 可复用测试上下文（Test Context）的公共行为
+    kind: spec
+    path: openspec/specs/node-test-context-runtime/spec.md
+    observedDigest: c42e3dbfa2a34dba9e3e8ee356949d2ac8b5d650b14ea3cf4ec11c1d78dc0813
+  - id: verification-source-a9829f3f69
+    title: Buildr 产品测试地图
+    summary: 当前四个测试族（Testing Family），供智能体（Agent）发现入口
+    kind: evidence
+    path: verification.yml
+    observedDigest: d9f63adc034b8129e80081bb3e2b1c870988db5d8d1b9c6d103d161ea63114c0
+  - id: verification-source-456f6be9e6
+    title: Buildr 产品准备入口
+    summary: 两个服务（Service）的依赖安装及产品准备入口
+    kind: evidence
+    path: preparation.yml
+    observedDigest: f6159f74196e136a3c2963c1653d29da8f8808e2e0d54b617b6b9df952793a57
+  - id: verification-source-c8ee7d9bf2
+    title: 测试地图模块装配
+    summary: 声明依赖、公开应用与声明能力、登记命令行（CLI）和诊断入口
+    kind: code
+    path: services/buildr/src/modules/project-testing/module.ts
+    observedDigest: f4d2705916807220347153c65f6c865ee80a4c16fc4cdad95824e406893ddf58
+  - id: verification-source-d1a2938b4f
+    title: 测试地图命令行入口
+    summary: 解析 inspect|validate|update 参数并委托应用
+    kind: code
+    path: services/buildr/src/modules/project-testing/interfaces/cli/project-verification.ts
+    observedDigest: b73f59a666b664d7906b38dff927ebc6038d7025317ca59a9e1183c4f4e6dc39
+  - id: verification-source-4362f9f689
+    title: 项目测试地图应用
+    summary: 读取和按版本维护地图，调用真实登记解析逐族 locations；局部目录不可用仅影响相关位置，不执行项目测试。
+    kind: code
+    path: services/buildr/src/modules/project-testing/application/project-verification-application.ts
+    observedDigest: 2836c42250859b3b89321aa361d55f77be2adf9517ef19838ab8137b9a2b473e
+  - id: verification-source-4e7364c5d1
+    title: 测试地图字段约束
+    summary: 校验 v4 地图的登记范围、项目或服务路径根绑定、安全相对路径和完整入口；省略绑定保持项目根含义，不把目录可用性混成结构合法性。
+    kind: code
+    path: services/buildr/src/modules/project-testing/domain/project-verification.ts
+    observedDigest: 80aeb2529e9df75d918b966cd85c369dd5bf7f5b32d78d636192c7045305cbe9
+  - id: verification-source-948ce80583
+    title: 验证报告命令行入口
+    summary: 读取报告文件，解析 inspect|record 及预期摘要
+    kind: code
+    path: services/buildr/src/modules/task/interfaces/cli/task-verification.ts
+    observedDigest: 58a99f162686b2bf448327ab3e94c1ca9afe5012436599692e2fd03b276f320b
+  - id: verification-source-0fafd69549
+    title: 任务专业结果接口契约
+    summary: 定义专业结果的 HTTP 输入契约，与命令行（CLI）共享应用行为
+    kind: code
+    path: services/buildr/src/modules/task/interfaces/http/task-professional-http-contracts.ts
+    observedDigest: 54a0d522840779e9da271e27be901a5fa344131d6f3fa07e72584e22df784af8
+  - id: verification-source-07201f6210
+    title: 测试文件解析与去重
+    summary: 解析安全路径、展开文件匹配并去重，空集合失败。
+    kind: code
+    path: services/buildr/test/verification/test-files.ts
+    observedDigest: 4afd0fb719033988e5b1cac8a49fd9c5ff6482391c45e77f88b839c3bac2a500
+  - id: verification-source-4759f3fa18
+    title: 系统测试分组
+    summary: 系统测试（System）分组、实际文件和有关资源
+    kind: code
+    path: services/buildr/test/verification/system-suites.ts
+    observedDigest: 31f7ca184238439838603441d29b2812be7f6bc0a7ec3937c3377ad5e0470983
+  - id: verification-source-a567a4e171
+    title: 改动路径与验证归属
+    summary: 改动路径归属、排除项、委托与扩大范围的依据
+    kind: code
+    path: services/buildr/test/verification/ownership.ts
+    observedDigest: d631e18afc0e60275be3735046bbceea3495e8cbf9402a93b1c214e92562d96b
+  - id: verification-source-b5e167a6ea
+    title: 产品验证步骤注册表
+    summary: 稳定步骤、集成分片、分类、主要证明责任、资源及候选分片
+    kind: code
+    path: services/buildr/test/verification/registry.ts
+    observedDigest: 8716317ee58c53d31adc33ba0b6257215eddbf847e4b8fe589a43b33227395d8
+  - id: verification-source-4aba70c072
+    title: 验证选择与预算校验
+    summary: 校验步骤与预算，选择范围并给出原因，组合低成本前置检查
+    kind: code
+    path: services/buildr/test/verification/planner.ts
+    observedDigest: d84b4bdd18f7cbcc20c3c623ec1e99960705ba917615c0382bfc27796de4903c
+  - id: verification-source-a8e6c6c2a4
+    title: 受影响检查入口
+    summary: 日常受影响范围（affected）的预览或执行入口
+    kind: code
+    path: services/buildr/test/verification/changed.ts
+    observedDigest: 6115cf2fcb139a4fbf7a10da6636e06639973b3f593bb5b3c40d6813739939fc
+  - id: verification-source-11958882cd
+    title: 定向检查入口
+    summary: 显式步骤、分组及目录查看入口
+    kind: code
+    path: services/buildr/test/verification/focus.ts
+    observedDigest: fe35bbc1e3649f033abac216d780e8197d223e0018875aaed9e73594e55f9506
+  - id: verification-source-8b321bc253
+    title: 项目验证执行编排
+    summary: 一次执行的准备、资源协调、调度与汇总
+    kind: code
+    path: services/buildr/test/verification/plan-runner.ts
+    observedDigest: 15648a05df4f93913fb0c861a4c96d2cddef4378a404d3b40340d979e7d21c37
+  - id: verification-source-bb279cd090
+    title: 依赖与资源调度
+    summary: 依赖、并发类别、具名资源和数字容量的调度
+    kind: code
+    path: services/buildr/test/verification/dag-scheduler.ts
+    observedDigest: d9546d7458a3cc23dfb6ff854dcd09dab743d9baa6b8a2354a7cdbcb91789636
+  - id: verification-source-54cae75589
+    title: 真实工具执行
+    summary: 将步骤和实际额度转成具体子进程调用
+    kind: code
+    path: services/buildr/test/verification/executor.ts
+    observedDigest: 381cf8733b268c0765d7c20d5d5106eba8e1f2652c2a060dea0ac8f5009a0d34
+  - id: verification-source-bb45a79c77
+    title: 并发执行资源协调
+    summary: 同机多次执行间的共享资源协调
+    kind: code
+    path: services/buildr/test/verification/resource-coordinator.ts
+    observedDigest: 6c5674125576f50c2d7d25d51689466dcfd77dbcaae8b84813f9af986e74cef3
+  - id: verification-source-427279b9f5
+    title: 浏览器检查选择与运行
+    summary: 选择页面检查，准备隔离 web-dist，通过隔离执行器（Runner）启动浏览器（Browser）测试
+    kind: code
+    path: services/buildr/test/verification/browser-selector-dispatcher.ts
+    observedDigest: c88e0f64a6255479531d377a0d0de080b54f898e56c265b3cb92afff3c8f3c66
+  - id: verification-source-1a428d5163
+    title: 验证耗时与诊断汇总
+    summary: 汇总实际步骤结果、上下文（Context）、耗时与诊断文件
+    kind: code
+    path: services/buildr/test/verification/timing/report.ts
+    observedDigest: 906d993bfaa13b7adfcce01ccfef8b4aae0218ed8e65c174c7e2f931f7c850de
+  - id: verification-source-c37838fbfa
+    title: 文档引用检查
+    summary: 检查文档相对链接存在且不越出产品根；不判断正文语义
+    kind: code
+    path: services/buildr/test/verification/docs/quality.ts
+    observedDigest: 567f013e2f5c38605929d2ffeec502957f9be52968982d3393e4b0ceab7edea1
+  - id: verification-source-23f06815b2
+    title: 后端构建与测试命令
+    summary: 稳定命令、生成物准备、测试及公开包导出
+    kind: code
+    path: services/buildr/package.json
+    observedDigest: f4638def3f04afda20fe957da17eeded4740dbf7ba6c28f92b0194d0c783c778
+  - id: verification-source-535557f7c3
+    title: 前端构建与测试命令
+    summary: 前端构建及独立逻辑测试入口
+    kind: code
+    path: services/buildr-web/package.json
+    observedDigest: 84983c2a6c9db1482f2a82809b6ee5fd379a9034d34d34da2f5b21d109d3d81b
+  - id: verification-source-2067de1414
+    title: 精确 Node.js 下的 npm 调用
+    summary: 检查当前 Node.js 是否符合项目版本，再使用相邻 npm 和相同进程环境调用真实命令。
+    kind: code
+    path: services/buildr/tools/development/run-development-npm.ts
+    observedDigest: 41471738b34ac6ea08a4bde41b3516119be550f42ee77ce0a047323dac18a554
+  - id: verification-source-57ca327cab
+    title: 工作空间冒烟隔离
+    summary: 隔离工作目录和两类应用数据目录，统一成功与失败清理
+    kind: code
+    path: services/buildr/tools/development/run-isolated-workspace-smoke.ts
+    observedDigest: b765e3a78830b6e6f3c2a51ced49e7ad26e9a77122bf9b0b6f60f9d4264f51a0
+  - id: verification-source-ba6db2aa02
+    title: 测试上下文公共导出
+    summary: 闭合公共导出，供包入口消费
+    kind: code
+    path: services/buildr/src/infrastructure/testing/context-runtime/public.ts
+    observedDigest: 0bae18edc82492f735f5cf691aab37f8768a60e2ead843188616bb4bf42c3e67
+  - id: verification-source-340bdb46a3
+    title: 上下文定义与身份
+    summary: 定义、配置规范化和身份生成
+    kind: code
+    path: services/buildr/src/infrastructure/testing/context-runtime/definition.ts
+    observedDigest: 4141a59f7bb28a7b527460ed1ddb89c03bf2991f1ecf195607e301e55a916e9d
+  - id: verification-source-31c7256483
+    title: 上下文缓存与生命周期
+    summary: 缓存、依赖、取得、归还、污染失效和销毁
+    kind: code
+    path: services/buildr/src/infrastructure/testing/context-runtime/runtime.ts
+    observedDigest: 57d8b927c01d50c3a6003bb6077b972b76971570607d82187a5034e201f54071
+  - id: verification-source-1967483059
+    title: Node.js 测试注册适配
+    summary: 注册适配及直接执行单文件的生命周期
+    kind: code
+    path: services/buildr/src/infrastructure/testing/context-runtime/node-test.ts
+    observedDigest: 1dca6d8ee1d144c5b22c10cf050e695f9c55cfaf95e1e30f493c022dbe8fd1e6
+  - id: verification-source-95e7d22b19
+    title: 持久测试进程编排
+    summary: 在外层额度内启动持久工作进程（Worker Host）并汇总结果
+    kind: code
+    path: services/buildr/src/infrastructure/testing/context-runtime/node-runner.ts
+    observedDigest: 60c3613c19a6a258048355a5fdffe9cd7288be03f9d17c6bc6482a56c13c8f4a
+  - id: verification-source-212eb0e812
+    title: 各验证步骤的复用策略
+    summary: 每个步骤采用复用、混合或完整生命周期的理由
+    kind: code
+    path: services/buildr/test/context/dispositions.ts
+    observedDigest: 3bc80885245e075f48771bdb6f254b648eea24b1d23209cf1efd2ee03ffc9e67
+  - id: verification-source-9970cc9595
+    title: 应用组装与案例隔离
+    summary: 应用组装复用、共享端口恢复与案例工作空间（Workspace）
+    kind: code
+    path: services/buildr/test/context/providers/task-application.ts
+    observedDigest: 14c14c1c752cd4c98e05b216d3c1200a473c41fa1422ca44d1db50c0396a10be
+  - id: verification-source-fccb281b60
+    title: 任务生命周期基础准备
+    summary: 任务测试所需不可变基础准备
+    kind: code
+    path: services/buildr/test/context/providers/task-lifecycle.ts
+    observedDigest: 592fbdf44a50b84db965b5a55e7e8f7a99f879ed339bb81d78f3578221240480
+  - id: verification-source-117481e3e7
+    title: 可复用项目与仓库准备
+    summary: 工作空间（Workspace）、项目（Project）与 Git 准备内容及独立副本
+    kind: code
+    path: services/buildr/test/context/providers/prepared-fixtures.ts
+    observedDigest: 148c422c08de4909fdea67ebba215b580c9cfc2daf0e3a2ec975dd6feb5e7af6
+  - id: verification-source-c7378e723e
+    title: 测试地图结构检查
+    summary: 地图结构与字段边界
+    kind: code
+    path: services/buildr/test/unit/project-verification-v4.test.ts
+    observedDigest: 6e07f43adcbc31526a60624a5a22a1e6fdada7694513b2f246cd5eb14c10a902
+  - id: verification-source-d68d572712
+    title: 验证报告结构检查
+    summary: 报告结构及结论约束
+    kind: code
+    path: services/buildr/test/unit/task-verification-report.test.ts
+    observedDigest: 5b124e3822a69e849faa348e96e37a5c70e3a68e359d33e38d23068a06a94e20
+  - id: verification-source-03659a2597
+    title: 测试地图维护行为检查
+    summary: 地图维护的真实文件与版本行为
+    kind: code
+    path: services/buildr/test/integration/project-verification-map.test.ts
+    observedDigest: f3289276720d3ecff1334ffd746ee3a6b711e2d422d2119bff1a854f8ccf9b15
+  - id: verification-source-ab9c61c2bd
+    title: 任务验证报告协作检查
+    summary: 任务、地图、当前报告与存储的协作
+    kind: code
+    path: services/buildr/test/integration/task-verification-report.test.ts
+    observedDigest: 9be1bdf9e98cd41cf61cfb6d744f8297c88369047667b8918128461661409491
+  - id: verification-source-4e2cb05a2b
+    title: 持久测试进程行为检查
+    summary: 持久工作进程（Worker Host）的复用、额度与失败
+    kind: code
+    path: services/buildr/test/integration/node-test-context-host.test.ts
+    observedDigest: 11b5d9b6ced24d1436a6f08d4977a76eedd7eda8b8d5ab25753e9156e5d3d6fc
+  - id: verification-source-37543ceb30
+    title: 测试模型与质量闭环
+    summary: 区分意图、执行边界、选择范围和验证对象，提供真实边界与案例质量判断。
+    kind: code
+    path: services/buildr/resources/workspace/skills/buildr/project-testing/references/testing-model-v1.md
+    observedDigest: 9172622134dfca4fcebf17025fc8b3d009e5b6957d85c521a17e651d26eca933
+  - id: verification-source-d43baaebce
+    title: 测试地图字段参考
+    summary: 约束 v4 稳定测试体系、完整入口和声明维护职责。
+    kind: code
+    path: services/buildr/resources/workspace/skills/buildr/task-verification/references/project-verification-v4.md
+    observedDigest: f6f685078dd875a014cc537ba66ae8e150452215a404fc5773a56978168c35de
+  - id: verification-source-15fb890b91
+    title: 地图维护操作
+    summary: 读取当前身份、形成候选、校验并按已观察版本更新。
+    kind: code
+    path: services/buildr/resources/workspace/skills/buildr/task-verification/references/maintain-map.md
+    observedDigest: 0aefff611491ecfdd7461837ddbbb2a7a80a0fb4ced0d4f093dd118f8f8c747d
+  - id: verification-source-31c0f13893
+    title: 报告登记操作
+    summary: 区分测试执行位置和合法写入者，以当前摘要保存可移植报告。
+    kind: code
+    path: services/buildr/resources/workspace/skills/buildr/task-verification/references/record-report.md
+    observedDigest: 61d82d2740a9f60216a5919e0a42a44ea550faea1479d0d5164b938fc050692f
+  - id: verification-file-263d3698
+    title: Buildr 项目与服务测试验证框架
+    kind: evidence
+    path: knowledge/docs/architecture/workspace-testing-and-verification-framework.md
+    summary: 本主题的可独立阅读或维护成果；事实来源见关联文章和实现地图。
+    observedDigest: 21affd27b3e912c6ae6c8d7b1803a3c23930d321efbd4c7923f0816c2e270028
+  - id: verification-file-9894349f
+    title: 采用实例：Buildr 产品的测试与验证
+    kind: evidence
+    path: knowledge/docs/architecture/verification-framework.md
+    summary: 本主题的可独立阅读或维护成果；事实来源见关联文章和实现地图。
+    observedDigest: cc6ca5cdd68105f52d6b0b13565a2773fa49366ad62fa1fea3b956e76f0faa20
+  - id: verification-file-8c3c96dd
+    title: Node.js 测试上下文：复用、隔离与生命周期
+    kind: evidence
+    path: knowledge/docs/guides/node-test-context-runtime.md
+    summary: 本主题的可独立阅读或维护成果；事实来源见关联文章和实现地图。
+    observedDigest: f3e16c09439ebfaccd02077822e7ef789cb7d560f15622b4b08e204227b5b38a
+  - id: verification-file-b8970af0
+    title: 项目与服务测试验证框架的实现地图
+    kind: evidence
+    path: knowledge/code-map/verification-framework.md
+    summary: 本主题的可独立阅读或维护成果；事实来源见关联文章和实现地图。
+    observedDigest: 44dce539751b25ecd0cff2610281b39a917cbdd5f1b1191bb9a852de66a7f4f3
+  - id: verification-file-bc346270
+    title: Buildr 如何引导测试建设与使用
+    kind: evidence
+    path: knowledge/archify/flows/verification-framework.html
+    summary: 使用主线与按需补建分支，以及测试建设、声明接入、任务验证三项技能的用途。
+    observedDigest: 5362e373dcbc874dca21794990f0f61b7e433b39af4383684b4346a66d48b181
+  - id: verification-file-e9222fb3
+    title: 测试建设与使用流程图源
+    kind: evidence
+    path: knowledge/archify/flows/verification-framework.json
+    summary: 六个环节表达查阅、执行、结果与按需补建；三项技能卡片解释Buildr提供的方法。
+    observedDigest: 0ac9549dcff1fe26866e1f012c908bbaa9e9040c86734d66665c217d0c166575
+  - id: verification-file-31b03bf7
+    title: 测试建设与使用图的来源与边界
+    kind: evidence
+    path: knowledge/archify/flows/verification-framework.md
+    summary: 说明主线、补建反馈与三项技能的依据，区分指导、声明写入和真实执行。
+    observedDigest: 65af6e135557d9e6e665240a725367e5b1d00b831083465d77a0df381a3bcd05
+  - id: verification-release-reference
+    title: 发布流程参考
+    summary: 说明冻结候选、同包消费、明确发布授权与公开事实回读；发布流程保持独立维护。
+    kind: evidence
+    path: knowledge/docs/flows/open-source-release.md
+    observedDigest: 2a3355a6a5d3a7e939650eb4109ce340c77e26960bb68a89cada791ccf394827
+  - id: verification-history-reference
+    title: 历史验证证据审计
+    summary: 保留旧版本的范围放大与性能测量，不作为当前耗时或当前接口事实。
+    kind: evidence
+    path: docs/verification-evidence-audit.md
+    observedDigest: b6e7bd32058d0ac8137dd99c524cd4753aa70416f2e0183c06c87fc4d0298dc6
+  - id: verification-context-types
+    title: 测试上下文公开类型
+    summary: 定义上下文配置、生存范围、并发、生命周期钩子与测试回调的严格类型。
+    kind: code
+    path: services/buildr/src/infrastructure/testing/context-runtime/types.ts
+    observedDigest: e78d16252815f35581923f934b56dcc273b621b9586dd51d11754ef1142156bf
+  - id: knowledge-preview-notice
+    kind: code
+    title: 开发中知识阅读提示
+    path: services/buildr-web/src/features/knowledge/components/KnowledgePreviewNotice.tsx
+    summary: 只在原生预览中显示开发中，区分当前知识来源目录与预览启动时的分支、提交和修改状态。
+    observedDigest: 5fc989be47d6f33b51dbf4d07172ba95fe9a16ef33beaf25f0626b4ef1106782
+  - id: verification-intake-spec
+    title: 声明接入规范
+    summary: 说明逐项目与服务发现声明、核对维护范围及责任交接；本主题的字段解释另以 v4 要求和领域模型为依据。
+    kind: spec
+    path: openspec/specs/project-declaration-intake/spec.md
+    observedDigest: f6d6eb1f87a2299f0bfe565e7c0869a2a3010dae414cb0212e2d345e9526e8b9
+  - id: verification-product-map-file
+    title: 采用实例：Buildr 产品测试工具地图
+    summary: Buildr 产品自身的选择执行与上下文复用位置，不是用户项目的必需实现。
+    kind: evidence
+    path: knowledge/code-map/product-verification-tools.md
+    observedDigest: 8e660338e558981af019a0f3793dcc46ca8cd11fb1f3d53d8c1d2f2bc0cabffb
+  - id: parent-input-validation
+    title: 任务与完成依据输入校验
+    kind: code
+    path: services/buildr/src/modules/task/application/task-validation.ts
+    summary: 校验任务输入、总体验收、逐子任务处置及授权来源和原意的结构；不判断外部成果是否已经交付。
+    observedDigest: 3a08b1771fb30ff5b85ced49a316d505b923245121fbb32d4e052cf12bcb43a3
+  - id: parent-coordination-panel
+    title: 父子成果与完成依据展示
+    kind: code
+    path: services/buildr-web/src/features/task/components/ParentCoordinationPanel.tsx
+    summary: 展示直接子任务结果、父任务完成依据和局部历史诊断，不按子任务状态自动完成父任务。
+    observedDigest: a0904eddc3776c935d95bf87438ad4cbae15f1dba61714651c59e39ce86cbe45
+  - id: parent-completion-fields
+    title: 总体验收与明确确认表单
+    kind: code
+    path: services/buildr-web/src/features/task/components/ParentCompletionFields.tsx
+    summary: 收集总体验收、逐子任务处置和明确确认；编辑内容后取消旧确认。
+    observedDigest: 8165a21812bd7d252993781f2c10765d50b4661e3b5913cb4d2a71b2c9666236
+  - id: parent-completion-input
+    title: 完成表单输入转换
+    kind: code
+    path: services/buildr-web/src/features/task/components/parentCoordination.ts
+    summary: 检查必填内容、未结束子任务和明确确认，携带当前观察身份生成完成输入。
+    observedDigest: 0a2eed6b57fabb757e6ac1c0824f13a0f7370ff47ebf0b52c498b4615d648607
+  - id: parent-task-actions
+    title: 任务页面完成与冲突处理
+    kind: code
+    path: services/buildr-web/src/features/task/hooks/useTaskActions.ts
+    summary: 完成前重读协调结果，提交记录版本与明确授权；冲突后清除旧确认并刷新当前成果。
+    observedDigest: 77d5dd43b7c44b978284cf74089d8ce1d2a52e371d6ec9c1f0ffab1d05f66b7a
+  - id: parent-completion-ui-tests
+    title: 页面完成输入检查
+    kind: code
+    path: services/buildr-web/test/parentCoordination.test.mjs
+    summary: 检查未确认不能完成、观察身份与逐子任务处置保留，以及未结束子任务拒绝。
+    observedDigest: 8eb9cb79a48753380da211b0cd92b87bcf2b552b8415513aba4b07feb534535b
+  - id: parent-coordination-tests
+    title: 父任务协调应用回归
+    kind: code
+    path: services/buildr/test/integration/parent-coordination-application.test.ts
+    summary: 以真实应用和任务记录核对父身份、直接子关系、完成授权、版本冲突、未结束子任务和历史边界。
+    observedDigest: dffcbc3b0f930bd549d8e6dca934a1dd8a1b8437265acab96931eb5e755e7e8d
+  - id: parent-coordination-spec
+    title: 父子任务协调规范
+    kind: spec
+    path: openspec/specs/parent-child-task-coordination/spec.md
+    summary: 约束整体目标、独立成果、按现场推进、总体验收与明确完成授权，不建立统一执行流程。
+    observedDigest: 330c774ca63fe43ce1b7d7cd01d99bf02606aa8518082ce229a3f9ec537cb19f
+  - id: parent-completion-html
+    title: 父任务完成 · 图示
+    kind: evidence
+    path: knowledge/archify/flows/task-parent-coordination.html
+    summary: Archify生成的当前完成时序图，展示读取、核对、授权与互斥的成功和拒绝分支。
+    observedDigest: 86f4a1cbff48189a905282eae68b4a3dc54596e6adab2e5208991a7f0b066076
+  - id: parent-completion-json
+    title: 父任务完成 · 图源
+    kind: evidence
+    path: knowledge/archify/flows/task-parent-coordination.json
+    summary: 可维护的四角色时序图源，与生成展示配对；关系以当前规范和实现为依据。
+    observedDigest: 195c3882a7eae8b48baf4c7e766b026372b96e6cc9b188a2f3b8013623e6bb1d
+  - id: parent-completion-evidence
+    title: 父任务完成 · 依据与边界
+    kind: evidence
+    path: knowledge/archify/flows/task-parent-coordination.md
+    summary: 说明各箭头的真实来源、替代入口、既有授权复用，以及软件不自动验收或完成任务的边界。
+    observedDigest: 1b39252e3e938e86b8ce52e07ff5e8a666fcf986e6fec50debd441a440ecb473
+  - id: verification-ref-2e25071a
+    title: 本机候选检查入口
+    summary: 选择当前机器的候选步骤并执行，不能产生其他平台证据。
+    kind: code
+    path: services/buildr/test/verification/candidate.ts
+    observedDigest: a5f284c3aaed1b1632f0f75fde7acfbf13f414270bfdba15292f3127dfa999f9
+  - id: verification-ref-afecd484
+    title: 跨平台候选编排入口
+    summary: 组织计划、平台分片、宿主Node.js检查与证据聚合。
+    kind: code
+    path: services/buildr/test/verification/candidate-ci.ts
+    observedDigest: c920757e9765772ceb27eab3b1a0bb7eea4082c8ede1e38a8d7080f9a87c7cd5
+  - id: verification-ref-e568f1e4
+    title: 跨平台候选证据聚合
+    summary: 核对来源、登记范围和唯一发布物身份后汇总已有实际结果。
+    kind: code
+    path: services/buildr/test/verification/candidate-ci-evidence.ts
+    observedDigest: b969aae572ca6a4bb991e954355f30d829cc6709cf8b897afeff2213ede9c53d
+  - id: verification-ref-fad56c76
+    title: 任务报告公共入口检查
+    summary: 用真实命令行核对报告登记、读取和内容适用性，不替项目执行测试。
+    kind: code
+    path: services/buildr/test/system/task-verification-product.test.ts
+    observedDigest: 094b3e06be60ea9307b9d2fd975c3cd45fbb430448f49500f56e0dfe18c948dc
+  - id: verification-ref-028fd920
+    title: 浏览器检查组装
+    summary: 组装隔离服务、浏览器与测试现场，选择旅程并清理。
+    kind: code
+    path: services/buildr/test/browser-smoke/buildr-web-browser.test.ts
+    observedDigest: 166fc1c5d44c378935c1c0365bded8c2a1033a0663ba9441622c8479919d928e
+  - id: verification-ref-73fbe375
+    title: 工作台真实交互旅程
+    summary: 核对答复冲突后的重读保存、资料阅读和偏好恢复。
+    kind: code
+    path: services/buildr/test/browser-smoke/workbench-journey.ts
+    observedDigest: 8d4e43c350a9b1bbdcd23e52b07e5713b9581f5fd0a501130d02141020b20228
 relations:
   - from: query
     to: knowledge-maintenance
@@ -1765,3 +2590,297 @@ relations:
   - from: task-system
     to: task-parent-coordination
     kind: contains
+  - from: verification-overview
+    to: verification-framework
+    kind: explains
+  - from: verification-product-architecture
+    to: verification-product-tools
+    kind: explains
+  - from: verification-context-guide
+    to: verification-test-context
+    kind: explains
+  - from: verification-implementation-map
+    to: verification-framework
+    kind: explains
+  - from: verification-lifecycle
+    to: verification-framework
+    kind: explains
+  - from: verification-source-739faaad07
+    to: verification-framework
+    kind: guides
+  - from: verification-source-18593c6ff1
+    to: verification-framework
+    kind: guides
+  - from: task-source-skill-0ea6ac
+    to: verification-framework
+    kind: guides
+  - from: task-source-skill-ee942e
+    to: verification-framework
+    kind: guides
+  - from: verification-framework
+    to: verification-source-27da98a320
+    kind: based-on
+  - from: verification-framework
+    to: verification-source-fe945192ca
+    kind: based-on
+  - from: verification-framework
+    to: task-source-spec-a99380
+    kind: based-on
+  - from: verification-framework
+    to: verification-source-604151a9a5
+    kind: based-on
+  - from: verification-framework
+    to: verification-source-6bc914610e
+    kind: based-on
+  - from: verification-source-a9829f3f69
+    to: verification-product-tools
+    kind: implements
+  - from: verification-source-456f6be9e6
+    to: verification-product-tools
+    kind: implements
+  - from: verification-source-c8ee7d9bf2
+    to: verification-framework
+    kind: implements
+  - from: verification-source-d1a2938b4f
+    to: verification-framework
+    kind: implements
+  - from: verification-source-4362f9f689
+    to: verification-framework
+    kind: implements
+  - from: verification-source-4e7364c5d1
+    to: verification-framework
+    kind: implements
+  - from: verification-source-948ce80583
+    to: verification-framework
+    kind: implements
+  - from: verification-source-0fafd69549
+    to: verification-framework
+    kind: implements
+  - from: task-source-task-verification-application-68479e
+    to: verification-framework
+    kind: implements
+  - from: task-source-task-verification-4ea021
+    to: verification-framework
+    kind: implements
+  - from: task-source-task-verification-repository-470799
+    to: verification-framework
+    kind: implements
+  - from: task-source-taskagentaction-7a3c7f
+    to: verification-framework
+    kind: implements
+  - from: verification-source-07201f6210
+    to: verification-product-tools
+    kind: implements
+  - from: verification-source-4759f3fa18
+    to: verification-product-tools
+    kind: implements
+  - from: verification-source-a567a4e171
+    to: verification-product-tools
+    kind: implements
+  - from: verification-source-b5e167a6ea
+    to: verification-product-tools
+    kind: implements
+  - from: verification-source-4aba70c072
+    to: verification-product-tools
+    kind: implements
+  - from: verification-source-a8e6c6c2a4
+    to: verification-product-tools
+    kind: implements
+  - from: verification-source-11958882cd
+    to: verification-product-tools
+    kind: implements
+  - from: verification-source-8b321bc253
+    to: verification-product-tools
+    kind: implements
+  - from: verification-source-bb279cd090
+    to: verification-product-tools
+    kind: implements
+  - from: verification-source-54cae75589
+    to: verification-product-tools
+    kind: implements
+  - from: verification-source-bb45a79c77
+    to: verification-product-tools
+    kind: implements
+  - from: verification-source-427279b9f5
+    to: verification-product-tools
+    kind: implements
+  - from: verification-source-1a428d5163
+    to: verification-product-tools
+    kind: implements
+  - from: verification-source-c37838fbfa
+    to: verification-product-tools
+    kind: implements
+  - from: verification-source-23f06815b2
+    to: verification-product-tools
+    kind: implements
+  - from: verification-source-535557f7c3
+    to: verification-product-tools
+    kind: implements
+  - from: verification-source-2067de1414
+    to: verification-product-tools
+    kind: implements
+  - from: verification-source-57ca327cab
+    to: verification-product-tools
+    kind: implements
+  - from: verification-source-ba6db2aa02
+    to: verification-product-tools
+    kind: implements
+  - from: verification-source-340bdb46a3
+    to: verification-product-tools
+    kind: implements
+  - from: verification-source-31c7256483
+    to: verification-product-tools
+    kind: implements
+  - from: verification-source-1967483059
+    to: verification-product-tools
+    kind: implements
+  - from: verification-source-95e7d22b19
+    to: verification-product-tools
+    kind: implements
+  - from: verification-source-212eb0e812
+    to: verification-product-tools
+    kind: implements
+  - from: verification-source-9970cc9595
+    to: verification-product-tools
+    kind: implements
+  - from: verification-source-fccb281b60
+    to: verification-product-tools
+    kind: implements
+  - from: verification-source-117481e3e7
+    to: verification-product-tools
+    kind: implements
+  - from: verification-source-c7378e723e
+    to: verification-framework
+    kind: implements
+  - from: verification-source-d68d572712
+    to: verification-framework
+    kind: implements
+  - from: verification-source-03659a2597
+    to: verification-framework
+    kind: implements
+  - from: verification-source-ab9c61c2bd
+    to: verification-framework
+    kind: implements
+  - from: verification-source-4e2cb05a2b
+    to: verification-product-tools
+    kind: implements
+  - from: verification-source-37543ceb30
+    to: verification-framework
+    kind: guides
+  - from: verification-source-d43baaebce
+    to: verification-framework
+    kind: guides
+  - from: verification-source-15fb890b91
+    to: verification-framework
+    kind: guides
+  - from: verification-source-31c0f13893
+    to: verification-framework
+    kind: guides
+  - from: knowledge-preview-notice
+    to: knowledge-maintenance
+    kind: implements
+  - from: verification-product-map
+    to: verification-product-tools
+    kind: explains
+  - from: catalog-query
+    to: knowledge-maintenance
+    kind: implements
+  - from: catalog-state
+    to: knowledge-maintenance
+    kind: implements
+  - from: verification-locations
+    to: verification-framework
+    kind: implements
+  - from: verification-changed-paths
+    to: verification-product-tools
+    kind: implements
+  - from: verification-entrypoints
+    to: verification-product-tools
+    kind: implements
+  - from: verification-installed-package
+    to: verification-framework
+    kind: implements
+  - from: task-parent-completion-flow
+    to: task-parent-coordination
+    kind: explains
+  - from: task-system-map
+    to: task-parent-coordination
+    kind: explains
+  - from: task-source-spec-f12a41
+    to: task-parent-coordination
+    kind: based-on
+  - from: task-source-spec-5aed6b
+    to: task-parent-coordination
+    kind: based-on
+  - from: parent-coordination-spec
+    to: task-parent-coordination
+    kind: based-on
+  - from: task-source-task-query-application-9f6269
+    to: task-parent-coordination
+    kind: implements
+  - from: task-source-parent-coordination-application-49a9bd
+    to: task-parent-coordination
+    kind: implements
+  - from: task-source-task-command-application-aba2e8
+    to: task-parent-coordination
+    kind: implements
+  - from: parent-input-validation
+    to: task-parent-coordination
+    kind: implements
+  - from: task-source-task-04c6c5
+    to: task-parent-coordination
+    kind: implements
+  - from: task-source-task-repository-be5696
+    to: task-parent-coordination
+    kind: implements
+  - from: task-source-work-context-application-11bb91
+    to: task-parent-coordination
+    kind: implements
+  - from: task-source-task-4ce8a0
+    to: task-parent-coordination
+    kind: implements
+  - from: task-source-task-http-e1bbb1
+    to: task-parent-coordination
+    kind: implements
+  - from: task-source-skill-7b8bb2
+    to: task-parent-coordination
+    kind: based-on
+  - from: task-source-taskcompletemodal-0d6276
+    to: task-parent-coordination
+    kind: implements
+  - from: parent-coordination-panel
+    to: task-parent-coordination
+    kind: implements
+  - from: parent-completion-fields
+    to: task-parent-coordination
+    kind: implements
+  - from: parent-completion-input
+    to: task-parent-coordination
+    kind: implements
+  - from: parent-task-actions
+    to: task-parent-coordination
+    kind: implements
+  - from: parent-coordination-tests
+    to: task-parent-coordination
+    kind: implements
+  - from: parent-completion-ui-tests
+    to: task-parent-coordination
+    kind: implements
+  - from: verification-ref-2e25071a
+    to: verification-product-tools
+    kind: implements
+  - from: verification-ref-afecd484
+    to: verification-product-tools
+    kind: implements
+  - from: verification-ref-e568f1e4
+    to: verification-product-tools
+    kind: implements
+  - from: verification-ref-fad56c76
+    to: verification-product-tools
+    kind: implements
+  - from: verification-ref-028fd920
+    to: verification-product-tools
+    kind: implements
+  - from: verification-ref-73fbe375
+    to: verification-product-tools
+    kind: implements

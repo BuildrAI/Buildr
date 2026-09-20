@@ -3,6 +3,28 @@
   max-width: 1180px;
   margin: auto;
 }
+.knowledge-sticky-navigation {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  background: var(--soft-surface);
+  border-bottom: 1px solid var(--soft-line);
+}
+.knowledge-sticky-navigation .ant-breadcrumb {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.knowledge-sticky-navigation > button {
+  flex: none;
+}
+.knowledge-load-more {
+  margin-top: 16px;
+}
 .knowledge-title {
   display: flex;
   align-items: center;
@@ -17,6 +39,27 @@
 .knowledge-summary {
   color: #69766e;
   line-height: 1.8;
+}
+.knowledge-preview-notice {
+  margin-bottom: 20px;
+  overflow-wrap: anywhere;
+}
+.knowledge-preview-notice summary {
+  cursor: pointer;
+}
+.knowledge-preview-notice dl {
+  display: grid;
+  gap: 4px;
+  margin: 12px 0;
+}
+.knowledge-preview-notice dt {
+  font-weight: 500;
+}
+.knowledge-preview-notice dd {
+  margin: 0 0 8px;
+}
+.knowledge-preview-notice p {
+  margin-bottom: 0;
 }
 .knowledge-artifact > header,
 .knowledge-embedded > header {

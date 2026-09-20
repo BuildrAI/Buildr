@@ -1,38 +1,24 @@
-import type { KnowledgeIndex } from "./api/knowledge-api";
+import type { KnowledgeCatalogItem, KnowledgeCatalogResponse } from "./api/knowledge-api";
 export type KnowledgeCategory = "documents" | "diagrams" | "maps";
+export type KnowledgeCatalogView = Omit<KnowledgeCatalogResponse, "items"> & { items: KnowledgeCatalogItem[] };
 export function knowledgeCategory(value: string | null): KnowledgeCategory {
   return value === "diagrams" || value === "maps" ? value : "documents";
 }
-export function knowledgeEntries(
-  index: KnowledgeIndex | null,
-  category: KnowledgeCategory,
-  query: string,
-) {
-  if (!index) return [];
-  const kinds = {
-    documents: "document",
-    diagrams: "diagram",
-    maps: "code-map",
-  };
-  const terms = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
-  return index.artifacts
-    .filter((a) => a.kind === kinds[category])
-    .map((a) => {
-      const topics = index.objects.filter((o) => a.objects.includes(o.id));
-      const summary = topics.map((o) => o.summary).join(" · ");
-      const searchable = [
-        a.title,
-        a.path,
-        summary,
-        ...topics.map((o) => o.title),
-      ]
-        .join(" ")
-        .toLocaleLowerCase();
-      return {
-        ...a,
-        summary,
-        matches: terms.every((term) => searchable.includes(term)),
-      };
-    })
-    .filter((a) => a.matches);
+export function knowledgeCatalogPrefetchId(items: KnowledgeCatalogItem[], hasMore: boolean) {
+  return hasMore && items.length >= 15 ? items[items.length - 6]?.id : undefined;
+}
+
+export function appendKnowledgeCatalogPage(current: KnowledgeCatalogView, next: KnowledgeCatalogResponse): KnowledgeCatalogView {
+  if (current.revision !== next.revision || current.scope.kind !== next.scope.kind
+    || current.scope.id !== next.scope.id || current.view !== next.view
+    || current.query !== next.query || current.pageSize !== next.pageSize) {
+    throw Object.assign(new Error("知识目录已变化，请刷新后重试。"), { code: "knowledge_catalog_changed" });
+  }
+  const known = new Set(current.items.map((item) => item.id));
+  const added = next.items.filter((item) => {
+    if (known.has(item.id)) return false;
+    known.add(item.id);
+    return true;
+  });
+  return { ...next, items: [...current.items, ...added] };
 }

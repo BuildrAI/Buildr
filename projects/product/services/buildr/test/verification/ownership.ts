@@ -100,7 +100,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
     "inputs": [
       "test/integration/core-diagnostics-and-package.test.ts",
       "test/integration/project-verification-map.test.ts",
-      "src/modules/project-testing/application/project-verification-diagnostics.ts",
+      "src/modules/project-testing/**",
       "src/modules/diagnostics/application/diagnostics.ts",
       "src/modules/diagnostics/application/result-model.ts",
       "src/modules/diagnostics/application/scope-diagnostics.ts",

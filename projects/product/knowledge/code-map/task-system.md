@@ -1,6 +1,6 @@
 # 任务系统的实现组织
 
-这张地图回答：需求怎样进入任务协作，人在哪里参与决定，方案、实现、审查和收尾分别由谁负责。以下路径相对于 Buildr 产品根目录 `projects/product/`，只展开相关业务目录，止于文件层。当前依据为 `dev` 的 `1e353c9e`。
+这张地图回答：需求怎样进入任务协作，人在哪里参与决定，方案、实现、审查和收尾分别由谁负责。以下路径相对于 Buildr 产品根目录 `projects/product/`，只展开相关业务目录，止于文件层；职责以所列规范与当前实现为依据。
 
 ## 先理解职责怎样协作
 
@@ -14,9 +14,18 @@
 | 工作基础 | Buildr 管理工作空间（Workspace）、项目与服务；治理规则（Rule）、技能（Skill）和能力绑定并投射给智能体（Agent），把方法、执行现场与用户可见入口连接起来。 |
 | 接口入口（Interface） | 命令行（CLI）与超文本传输协议（HTTP）入口接收明确动作和已观察版本，调用同一应用；指令生成不代表执行。 |
 | 应用服务（Application） | 任务应用维护目标与结果；工作摘要（Work Context）应用维护人机接续；审查与验证分别保存真实专业结论。应用不代替人作授权决定。 |
-| 领域模型（Domain） | 定义四态、父任务完成依据、摘要与事项、审查及验证报告的合法结构；状态相同不代表业务目标相同。 |
+| 领域模型（Domain） | 表达四态、父任务完成依据、摘要与事项、审查及验证报告的数据结构；任务记录的输入、关系和完成规则由应用负责。 |
 | 数据访问与技术支撑 | 本机 SQLite 保存独立当前事实；事务内比较各自摘要。工作树（Worktree）与预览（Preview）分别核验自身资源，Git 和文件继续持有实际成果。 |
 | 前端协作 | 工作台（Workbench）汇集明确关注事项；任务详情呈现目标、进展和成果；表单保留真实用户输入，冲突后重读；方案材料与代码按需并排查看。 |
+
+## 父任务协调怎样落到实现？
+
+[父任务协调文章](../docs/flows/task-parent-coordination.md)解释整体目标与独立成果的关系，[完成时序图](../archify/flows/task-parent-coordination.html)展示核对、授权、写入与拒绝分支。实现复用本地图的任务查询、写入和存储，不维护另一份父子状态。
+
+- **读取成果**：任务查询 → 父任务协调应用 → 任务详情中的 `ParentCoordinationPanel.tsx`。查询从当前父任务及直接子任务计算 `recordDigest` 与 `snapshotIdentity`；详情展示总体目标，面板展示各子任务结果和已保存的完成依据，不按子任务数量推断整体完成。
+- **明确完成**：`useTaskActions.ts` 打开表单时重读协调结果；`ParentCompletionFields.tsx` 收集总体验收、逐个子任务处置及确认；`parentCoordination.ts` 把这些输入与已观察身份组成请求。任务写入应用在同一事务内核对任务版本、父子观察身份、子任务终态和处置完整性，成功后只保存这个父任务的结果与授权依据。
+- **处理冲突**：目标、关系或结果已变化时，后端拒绝陈旧输入；`useTaskActions.ts` 关闭旧完成表单、清除旧确认并重读。智能体（Agent）或人据当前成果重新判断；软件不替用户补造授权，也不自动结束其他任务。
+- **保存答复**：工作摘要（Work Context）应用按自身版本保存事项答复，不调用任务完成写入。答复可以供智能体（Agent）继续判断，但不自动完成任务；若答复包含具体完成授权，仍须核对当前目标与成果，再调用有版本保护的完成动作。
 
 ## 规范与实现在哪里？
 
@@ -43,21 +52,22 @@
       - [cli/task.ts](../../services/buildr/src/modules/task/interfaces/cli/task.ts) — 创建、查看、修订、完成和放弃任务
       - [http/task-http.ts](../../services/buildr/src/modules/task/interfaces/http/task-http.ts) — 网页请求、输入转换与写入保护
     - `application/` — 组织任务用例
-      - [task-query-application.ts](../../services/buildr/src/modules/task/application/task-query-application.ts) — 当前记录、直接关系及版本观察
-      - [task-command-application.ts](../../services/buildr/src/modules/task/application/task-command-application.ts) — 具体任务写入、完成保护与终态更正
-      - [parent-coordination-application.ts](../../services/buildr/src/modules/task/application/parent-coordination-application.ts) — 总体目标、直接子任务及整体完成观察
+      - [task-query-application.ts](../../services/buildr/src/modules/task/application/task-query-application.ts) — 读取当前任务与直接子任务，计算单任务版本及完成相关父子观察身份
+      - [task-command-application.ts](../../services/buildr/src/modules/task/application/task-command-application.ts) — 在同一事务内重验版本、父子观察身份和子任务处置，保存明确完成依据；失败不改状态
+      - [task-validation.ts](../../services/buildr/src/modules/task/application/task-validation.ts) — 校验任务输入，以及父任务总体验收、逐子任务处置和授权来源与原意的合法结构
+      - [parent-coordination-application.ts](../../services/buildr/src/modules/task/application/parent-coordination-application.ts) — 展示总体目标、直接子任务、未结束项和既有完成依据；旧计划仅作只读历史
       - [task-review-application.ts](../../services/buildr/src/modules/task/application/task-review-application.ts) — 保存方案或实现结果的审查结论
       - [task-verification-application.ts](../../services/buildr/src/modules/task/application/task-verification-application.ts) — 保存实际检查与未覆盖项，核对报告适用性
     - `domain/` — 业务事实及约束
-      - [task.ts](../../services/buildr/src/modules/task/domain/task.ts) — 四态、结果、父任务依据与更正历史
+      - [task.ts](../../services/buildr/src/modules/task/domain/task.ts) — 任务、结果、父任务完成依据与更正历史的数据类；不执行完成校验
       - [task-review.ts](../../services/buildr/src/modules/task/domain/task-review.ts) — 被审对象、审阅范围与结论
       - [task-verification.ts](../../services/buildr/src/modules/task/domain/task-verification.ts) — 验证报告及结论约束
     - `persistence/` — 独立事实的保存
-      - [task-repository.ts](../../services/buildr/src/modules/task/persistence/task-repository.ts) — 任务主表、直接父关系与派生子关系
+      - [task-repository.ts](../../services/buildr/src/modules/task/persistence/task-repository.ts) — 任务主表、父身份和直接父关系；将完成依据随结果保存，子关系从当前记录反向读取
       - [task-review-repository.ts](../../services/buildr/src/modules/task/persistence/task-review-repository.ts) — 两类审查槽的摘要比较与保存
       - [task-verification-repository.ts](../../services/buildr/src/modules/task/persistence/task-verification-repository.ts) — 当前验证报告的原子替换
     - **`work-context/`** — 进展、待决事项与人的答复
-      - [application/work-context-application.ts](../../services/buildr/src/modules/task/work-context/application/work-context-application.ts) — 登记进展、保留或替换事项、保存答复
+      - [application/work-context-application.ts](../../services/buildr/src/modules/task/work-context/application/work-context-application.ts) — 按摘要版本登记进展、保留或替换事项、保存答复；不改任务状态或代替完成授权校验
       - [domain/work-context.ts](../../services/buildr/src/modules/task/work-context/domain/work-context.ts) — 摘要、事项身份、状态和输入约束
       - [persistence/work-context-repository.ts](../../services/buildr/src/modules/task/work-context/persistence/work-context-repository.ts) — 独立版本保护与待处理查询
       - [interfaces/http/work-context-http.ts](../../services/buildr/src/modules/task/work-context/interfaces/http/work-context-http.ts) — 网页读取、记录与回应
@@ -82,6 +92,10 @@
         - [TaskWorkContextCard.tsx](../../services/buildr-web/src/features/task/components/TaskWorkContextCard.tsx) — 人查看与回应事项，冲突保留输入
         - [TaskArtifactReader.tsx](../../services/buildr-web/src/features/task/components/TaskArtifactReader.tsx) — 并排阅读真实方案和成果材料
         - [TaskCompleteModal.tsx](../../services/buildr-web/src/features/task/components/TaskCompleteModal.tsx) — 完成摘要与父任务明确授权
+        - [ParentCoordinationPanel.tsx](../../services/buildr-web/src/features/task/components/ParentCoordinationPanel.tsx) — 展示直接子任务结果、父任务完成依据和局部历史诊断
+        - [ParentCompletionFields.tsx](../../services/buildr-web/src/features/task/components/ParentCompletionFields.tsx) — 收集总体验收、逐子任务处置与明确确认；编辑内容后取消旧确认
+        - [parentCoordination.ts](../../services/buildr-web/src/features/task/components/parentCoordination.ts) — 检查表单必填项、未结束子任务和明确确认，携带已观察身份生成完成输入
+      - [hooks/useTaskActions.ts](../../services/buildr-web/src/features/task/hooks/useTaskActions.ts) — 完成前重读、提交版本与授权；冲突后清除旧确认、刷新成果，等待重新判断
       - [hooks/useTaskWorkContext.ts](../../services/buildr-web/src/features/task/hooks/useTaskWorkContext.ts) — 刷新与取消旧请求，防止不同任务内容混入
     - **`features/workbench/`** — 日常关注入口
       - [pages/WorkbenchPage.tsx](../../services/buildr-web/src/features/workbench/pages/WorkbenchPage.tsx) — 待我处理、继续推进、项目变化与常用资料
@@ -109,6 +123,8 @@
   - [index.yml](../index.yml) — 阅读身份、来源关联与文件说明
   - `docs/architecture/`
     - [task-system.md](../docs/architecture/task-system.md) — 精简架构主文
+  - `docs/flows/`
+    - [task-parent-coordination.md](../docs/flows/task-parent-coordination.md) — 父任务职责、日常协调、总体验收与冲突处理
   - `code-map/`
     - [task-system.md](task-system.md) — 规范、职责与实现地图
   - `archify/flows/`
@@ -118,5 +134,8 @@
     - [task-system-delivery.html](../archify/flows/task-system-delivery.html) — 实现审查与交付时序
     - [task-self-bootstrap.html](../archify/flows/task-self-bootstrap.html) — 自举与安全善后时序
     - [task-system.md](../archify/flows/task-system.md) — 逐项依据、分段图源和当前表述差异
+    - [task-parent-coordination.json](../archify/flows/task-parent-coordination.json) — 父任务完成时序图源
+    - [task-parent-coordination.html](../archify/flows/task-parent-coordination.html) — 核对成果、明确授权、保存完成与拒绝分支
+    - [task-parent-coordination.md](../archify/flows/task-parent-coordination.md) — 父任务完成时序的规范与实现依据
 
-地图按职责定位文件，源码内容由当前文件提供；没有改变的实现不因改写地图重新验证。实际存储与交互的代表检查见[任务记录回归](../../services/buildr/test/system/task-record-product.test.ts)和[工作摘要与工作台回归](../../services/buildr/test/integration/workbench-application.test.ts)。
+地图按职责定位文件，源码内容由当前文件提供；没有改变的实现不因改写地图重新验证。实际存储与交互的代表检查见[任务记录回归](../../services/buildr/test/system/task-record-product.test.ts)、[父任务完成输入回归](../../services/buildr-web/test/parentCoordination.test.mjs)和[工作摘要与工作台回归](../../services/buildr/test/integration/workbench-application.test.ts)。

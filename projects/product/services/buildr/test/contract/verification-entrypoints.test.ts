@@ -104,19 +104,70 @@ test('Product live声明采用v4测试地图并保留后端、前端和环境体
   const declaration: any = YAML.parse(fs.readFileSync(path.resolve(productRoot, '../..', 'verification.yml'), 'utf8'));
   const fast: any = declaration.testing.find((item: any) => item.id === 'buildr-fast');
   const functional: any = declaration.testing.find((item: any) => item.id === 'buildr-functional');
+  const system: any = declaration.testing.find((item: any) => item.id === 'buildr-system');
   const browser: any = declaration.testing.find((item: any) => item.id === 'buildr-web');
   const environment: any = declaration.testing.find((item: any) => item.id === 'buildr-environment-smoke');
   assert.equal(declaration.schemaVersion, 'buildr.project-verification/v4');
   const fastPlan: any = createVerificationPlan({ profiles: ['fast'] });
   assert.deepEqual([...new Set(fastPlan.steps.map((step: any) => step.testing.executionBoundary))].sort(), ['Component', 'Static', 'Unit']);
   assert.deepEqual(fast.scope, { project: 'product', services: ['buildr'] });
-  assert.deepEqual(functional.testRoots, ['services/buildr/test/integration/**', 'services/buildr/test/system/**']);
+  assert.deepEqual(functional.testRoots, ['services/buildr/test/integration/**']);
+  assert.deepEqual(system.testRoots, ['services/buildr/test/system/**']);
+  for (const [family, script] of [[functional, 'test:integration'], [system, 'test:system']]) {
+    assert.deepEqual(family.scope, { project: 'product', services: ['buildr'] });
+    assert.deepEqual(family.full, {
+      kind: 'command',
+      argv: ['tools/development/run-development-npm', 'run', script],
+      cwd: 'services/buildr',
+    });
+  }
   assert.deepEqual(browser.scope, { project: 'product', services: ['buildr', 'buildr-web'] });
   assert.equal(browser.full.kind, 'command');
   assert.equal(environment.full.kind, 'agent');
   for (const owner of ['contract', 'candidate-tarball', 'application-payload-release', 'npm-launcher-candidate', 'open-source-candidate', 'release-tarball-smoke']) {
     assert.ok(verificationSteps.find((step: any) => step.id === owner).inputs.includes('.github/workflows/publish.yml'), `${owner} must own the governed release workflow`);
   }
+});
+
+test('前端逻辑与浏览器测试分别声明真实完整入口，声明测试根与实际脚本覆盖一致', () => {
+  const projectRoot: any = path.resolve(productRoot, '../..');
+  const declaration: any = YAML.parse(fs.readFileSync(path.join(projectRoot, 'verification.yml'), 'utf8'));
+  const webUnit: any = declaration.testing.find((item: any) => item.id === 'buildr-web-unit');
+  const browser: any = declaration.testing.find((item: any) => item.id === 'buildr-web');
+  assert.ok(webUnit, '前端 Node 逻辑测试需要独立测试体系；浏览器完整入口不会执行它们');
+  assert.deepEqual(webUnit.scope, { project: 'product', services: ['buildr-web'] });
+  assert.deepEqual(webUnit.testRoots, ['services/buildr-web/test/*.test.mjs']);
+  assert.deepEqual(webUnit.full, {
+    kind: 'command',
+    argv: ['../buildr/tools/development/run-development-npm', 'test'],
+    cwd: 'services/buildr-web',
+  });
+
+  const frontendRoot: any = path.resolve(projectRoot, webUnit.full.cwd);
+  const scripts: any = JSON.parse(fs.readFileSync(path.join(frontendRoot, 'package.json'), 'utf8')).scripts;
+  const [runner, flag, ...patterns]: string[] = scripts.test.trim().split(/\s+/u);
+  assert.deepEqual([runner, flag], ['node', '--test']);
+  assert.ok(patterns.length > 0, '完整入口必须选择真实测试文件');
+  const actualTestFiles: any = fs.readdirSync(path.join(frontendRoot, 'test'))
+    .filter((name: string) => name.endsWith('.test.mjs'))
+    .map((name: string) => path.join(frontendRoot, 'test', name)).sort();
+  assert.ok(actualTestFiles.length > 0, '当前前端测试目录不能为空');
+  const selectedFiles: any = [...new Set(fs.globSync(patterns, { cwd: frontendRoot }))]
+    .map((file: string) => path.resolve(frontendRoot, file)).sort();
+  const declaredFiles: any = [...new Set(fs.globSync(webUnit.testRoots, { cwd: projectRoot }))]
+    .map((file: string) => path.resolve(projectRoot, file)).sort();
+  assert.deepEqual(selectedFiles, actualTestFiles, 'package test 脚本必须执行当前全部前端逻辑测试');
+  assert.deepEqual(declaredFiles, selectedFiles, '地图不能把完整入口未执行的文件计为已覆盖');
+  const wrapper: any = path.resolve(frontendRoot, webUnit.full.argv[0]);
+  assert.equal(wrapper, path.join(productRoot, 'tools/development/run-development-npm'));
+  fs.accessSync(wrapper, fs.constants.X_OK);
+
+  assert.deepEqual(browser.testRoots, ['services/buildr/test/browser-smoke/**']);
+  assert.deepEqual(browser.full, {
+    kind: 'command',
+    argv: ['tools/development/run-development-npm', 'run', 'test:browser:smoke'],
+    cwd: 'services/buildr',
+  });
 });
 
 test('focus verification de-duplicates groups without attaching fast', () => {

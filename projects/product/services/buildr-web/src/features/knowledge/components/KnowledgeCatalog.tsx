@@ -1,4 +1,5 @@
-import { Button, Empty, Input, Tabs } from "antd";
+import { useEffect, useRef } from "react";
+import { Alert, Button, Empty, Input, Spin, Tabs } from "antd";
 import {
   ArrowRightOutlined,
   FileTextOutlined,
@@ -7,15 +8,26 @@ import {
   PlusOutlined,
   SearchOutlined,
 } from "@ant-design/icons";
-import type { KnowledgeIndex } from "../api/knowledge-api";
-import { knowledgeEntries, type KnowledgeCategory } from "../knowledge-catalog";
+import type { KnowledgeCatalogItem } from "../api/knowledge-api";
+import { knowledgeCatalogPrefetchId, type KnowledgeCategory } from "../knowledge-catalog";
 type Props = {
-  index: KnowledgeIndex | null;
+  entries: KnowledgeCatalogItem[];
+  matchingCount: number;
+  loading: boolean;
+  loadingMore: boolean;
+  hasMore: boolean;
+  error: string;
+  loadMoreError: string;
+  changed: boolean;
+  canConstruct: boolean;
   category: KnowledgeCategory;
   query: string;
   onFilter: (category: KnowledgeCategory, query: string) => void;
   onOpen: (id: string) => void;
   onConstruct: (kind: "construct" | "diagram") => void;
+  onLoadMore: () => void;
+  onRetry: () => void;
+  onRefresh: () => void;
 };
 const groups = [
   { key: "documents", label: "架构知识", icon: <FileTextOutlined /> },
@@ -23,16 +35,39 @@ const groups = [
   { key: "maps", label: "代码地图", icon: <FolderOpenOutlined /> },
 ];
 export function KnowledgeCatalog({
-  index,
+  entries,
+  matchingCount,
+  loading,
+  loadingMore,
+  hasMore,
+  error,
+  loadMoreError,
+  changed,
+  canConstruct,
   category,
   query,
   onFilter,
   onOpen,
   onConstruct,
+  onLoadMore,
+  onRetry,
+  onRefresh,
 }: Props) {
-  const entries = knowledgeEntries(index, category, query);
+  const root = useRef<HTMLElement>(null);
+  const prefetchId = knowledgeCatalogPrefetchId(entries, hasMore);
+  useEffect(() => {
+    if (!prefetchId || loading || loadingMore || loadMoreError || typeof IntersectionObserver === "undefined") return;
+    const row = root.current?.querySelector<HTMLElement>('[data-knowledge-prefetch="true"]');
+    const host = root.current?.closest<HTMLElement>(".pane-body");
+    if (!row || !host) return;
+    const observer = new IntersectionObserver((items) => {
+      if (items.some((item) => item.isIntersecting)) onLoadMore();
+    }, { root: host, threshold: 0.1 });
+    observer.observe(row);
+    return () => observer.disconnect();
+  }, [prefetchId, loading, loadingMore, loadMoreError, onLoadMore]);
   return (
-    <section className="knowledge-catalog">
+    <section ref={root} className="knowledge-catalog">
       <Tabs
         activeKey={category}
         items={groups}
@@ -50,6 +85,7 @@ export function KnowledgeCatalog({
         {category !== "maps" && (
           <Button
             type="primary"
+            disabled={!canConstruct}
             icon={<PlusOutlined />}
             onClick={() =>
               onConstruct(category === "diagrams" ? "diagram" : "construct")
@@ -67,14 +103,17 @@ export function KnowledgeCatalog({
             : "从一个问题开始，理解职责、关键协作、约束与修改影响。"}
       </p>
       <div aria-live="polite" className="knowledge-results-count">
-        {entries.length} 项{query.trim() ? "匹配结果" : "内容"}
+        {loading ? "正在读取…" : `已加载 ${entries.length} / 共 ${matchingCount} 项${query.trim() ? "匹配结果" : "内容"}`}
       </div>
-      {entries.length ? (
+      {error ? <Alert type="error" message={error} action={<Button onClick={onRefresh}>重新读取</Button>} /> : loading ? <Spin /> : entries.length ? (
         <div className="knowledge-catalog-list">
           {entries.map((a) => (
             <button
               key={a.id}
+              type="button"
               className="knowledge-entry"
+              data-knowledge-entry={a.id}
+              data-knowledge-prefetch={a.id === prefetchId ? "true" : undefined}
               onClick={() => onOpen(a.id)}
             >
               <span className="knowledge-entry-heading">
@@ -100,6 +139,13 @@ export function KnowledgeCatalog({
           )}
         </Empty>
       )}
+      <div className="knowledge-load-more" aria-live="polite">
+        {loadingMore ? "正在继续读取…" : null}
+        {loadMoreError ? <Alert type="warning" message={loadMoreError} action={changed
+          ? <Button onClick={onRefresh}>刷新目录</Button>
+          : <Button onClick={onRetry}>继续读取失败，重试</Button>} /> : null}
+        {hasMore && !loading && !loadingMore && !loadMoreError ? <Button onClick={onLoadMore}>查看更多内容</Button> : null}
+      </div>
     </section>
   );
 }

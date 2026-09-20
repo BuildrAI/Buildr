@@ -13,7 +13,10 @@ import {
   digest,
   readKnowledgeFile,
 } from "../../src/modules/knowledge/infrastructure/knowledge-files.ts";
-import { validateKnowledgeResponse } from "../../src/modules/knowledge/interfaces/http/knowledge-http-contracts.ts";
+import {
+  validateKnowledgeCatalogResponse,
+  validateKnowledgeResponse,
+} from "../../src/modules/knowledge/interfaces/http/knowledge-http-contracts.ts";
 import { createKnowledgeHttpContribution } from "../../src/modules/knowledge/interfaces/http/knowledge-http.ts";
 const prototype: KnowledgeIndex = {
   schemaVersion: "buildr.knowledge-index/v1",
@@ -100,6 +103,154 @@ function setup(t: test.TestContext) {
   });
   return { root, put, app, catalog };
 }
+function catalogIndex(): KnowledgeIndex {
+  return {
+    ...structuredClone(prototype),
+    objects: [
+      { id: "object", title: "订单 Orders", summary: "订单职责与 transaction" },
+      { id: "billing", title: "Billing", summary: "reconciliation 对账" },
+    ],
+    artifacts: [
+      ...Array.from({ length: 45 }, (_, index) => ({
+        ...structuredClone(prototype.artifacts[0]),
+        id: `doc-${index + 1}`,
+        title: index === 0 ? "Refund ROUTE" : `订单说明 ${45 - index}`,
+        path: `knowledge/docs/${index === 0 ? "refund" : `order-${index + 1}`}.md`,
+        objects: index === 0 ? ["object", "billing"] : ["object"],
+      })),
+      { ...structuredClone(prototype.artifacts[0]), id: "diagram", kind: "diagram", path: "knowledge/flow.html" },
+      { ...structuredClone(prototype.artifacts[0]), id: "map", kind: "code-map", path: "knowledge/code-map/order.md" },
+      { ...structuredClone(prototype.artifacts[0]), id: "terms", kind: "terms", path: "knowledge/terms.md" },
+    ],
+  };
+}
+
+test("知识目录按索引原序返回 20/20/5 项摘要且不读取正文和来源", (t) => {
+  const { root, put, app } = setup(t);
+  const index = catalogIndex();
+  put("projects/demo/knowledge/index.yml", stringify(index));
+  const indexPath = path.join(root, "projects/demo/knowledge/index.yml");
+  const before = fs.readFileSync(indexPath, "utf8");
+  const opens: string[] = [];
+  const originalOpen = fs.openSync;
+  t.mock.method(fs, "openSync", (...args: Parameters<typeof fs.openSync>) => {
+    opens.push(String(args[0]));
+    return originalOpen(...args);
+  });
+  const scope = { kind: "project" as const, id: "demo" };
+  const first = app.catalog(root, scope);
+  const second = app.catalog(root, scope, { cursor: first.nextCursor });
+  const last = app.catalog(root, scope, { cursor: second.nextCursor });
+  for (const page of [first, second, last]) {
+    validateKnowledgeCatalogResponse(page);
+    assert.deepEqual(Object.keys(page).sort(), [
+      "scope", "revision", "view", "query", "items", "matchingCount", "pageSize", "hasMore", "nextCursor", "diagnostics",
+    ].sort());
+    assert.equal(page.matchingCount, 45);
+    assert.equal(page.pageSize, 20);
+    assert.equal(page.revision, first.revision);
+    for (const item of page.items) assert.deepEqual(Object.keys(item).sort(), [
+      "id", "title", "kind", "path", "objects", "summary",
+    ].sort());
+  }
+  assert.deepEqual([first.items.length, second.items.length, last.items.length], [20, 20, 5]);
+  assert.deepEqual([first.hasMore, second.hasMore, last.hasMore], [true, true, false]);
+  assert.equal(last.nextCursor, null);
+  assert.deepEqual([...first.items, ...second.items, ...last.items].map((item) => item.id),
+    index.artifacts.filter((item) => item.kind === "document").map((item) => item.id));
+  assert.equal(first.items[0].summary, "订单职责与 transaction · reconciliation 对账");
+  assert.deepEqual(opens, Array(3).fill(fs.realpathSync(indexPath)));
+  assert.equal(fs.readFileSync(indexPath, "utf8"), before);
+  assert.throws(() => validateKnowledgeCatalogResponse({ ...first, index }));
+  assert.throws(() => validateKnowledgeCatalogResponse({
+    ...first, items: [{ ...first.items[0], content: "not a catalog field" }],
+  }));
+});
+
+test("知识目录分类、多词检索及规范化查询保留原有匹配范围", (t) => {
+  const { root, put, app } = setup(t);
+  put("projects/demo/knowledge/index.yml", stringify(catalogIndex()));
+  const scope = { kind: "project" as const, id: "demo" };
+  const filtered = app.catalog(root, scope, { q: "  BILLING\tREFUND  transaction 对账 " });
+  assert.equal(filtered.query, "billing refund transaction 对账");
+  assert.deepEqual(filtered.items.map((item) => item.id), ["doc-1"]);
+  assert.equal(filtered.nextCursor, null);
+  assert.deepEqual(app.catalog(root, scope, { q: "docs/order-30.md" }).items.map((item) => item.id), ["doc-30"]);
+  assert.equal(app.catalog(root, scope, { q: "missing" }).matchingCount, 0);
+  assert.deepEqual(app.catalog(root, scope, { view: "diagrams" }).items.map((item) => item.id), ["diagram"]);
+  assert.deepEqual(app.catalog(root, scope, { view: "maps" }).items.map((item) => item.id), ["map"]);
+  assert.equal(app.catalog(root, scope, { pageSize: 100 }).items.length, 20);
+  const first = app.catalog(root, scope, { q: " ORDERS   transaction ", pageSize: 10 });
+  const second = app.catalog(root, scope, { q: "orders transaction", pageSize: "10", cursor: first.nextCursor });
+  assert.equal(first.matchingCount, 45);
+  assert.equal(second.items[0].id, "doc-11");
+  for (const pageSize of [0, -1, 1.5, "2x", "", "Infinity"])
+    assert.throws(() => app.catalog(root, scope, { pageSize }), { code: "knowledge_catalog_request_invalid", status: 400 });
+  assert.throws(() => app.catalog(root, scope, { view: "sources" }), { code: "knowledge_catalog_request_invalid", status: 400 });
+});
+
+test("知识目录游标拒绝损坏、条件变化、跨范围和索引变化", (t) => {
+  const { root, put, app, catalog } = setup(t);
+  const index = catalogIndex();
+  put("projects/demo/knowledge/index.yml", stringify(index));
+  const scope = { kind: "project" as const, id: "demo" };
+  const first = app.catalog(root, scope);
+  const cursor = first.nextCursor!;
+  const token = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8"));
+  for (const value of ["", "not-json", `${cursor}=`, Buffer.from("{}").toString("base64url"),
+    Buffer.from(JSON.stringify({ ...token, offset: -1 })).toString("base64url"),
+    Buffer.from(JSON.stringify({ ...token, offset: 1000 })).toString("base64url"),
+  ]) assert.throws(() => app.catalog(root, scope, { cursor: value }), { code: "knowledge_catalog_cursor_invalid", status: 400 });
+  for (const changed of [{ view: "maps" }, { q: "different" }, { pageSize: 10 }])
+    assert.throws(() => app.catalog(root, scope, { ...changed, cursor }), { code: "knowledge_catalog_cursor_mismatch", status: 400 });
+  catalog.projects.push({ ...catalog.projects[0], id: "p2", code: "other", source: { type: "workspace", path: "projects/other" } });
+  put("projects/other/knowledge/index.yml", stringify({ ...index, scope: { kind: "project", id: "other" } }));
+  assert.throws(() => app.catalog(root, { kind: "project", id: "other" }, { cursor }), { code: "knowledge_catalog_cursor_mismatch", status: 400 });
+  const other = setup(t);
+  other.put("projects/demo/knowledge/index.yml", stringify(index));
+  assert.throws(() => other.app.catalog(other.root, scope, { cursor }), { code: "knowledge_catalog_cursor_mismatch", status: 400 });
+  assert.equal(app.catalog(root, { kind: "project", id: "p" }, { cursor }).items[0].id, "doc-21");
+  index.artifacts[0].title = "新的标题";
+  put("projects/demo/knowledge/index.yml", stringify(index));
+  assert.throws(() => app.catalog(root, scope, { cursor }), { code: "knowledge_catalog_changed", status: 409 });
+  assert.equal(app.catalog(root, scope).items[0].title, "新的标题");
+  fs.unlinkSync(path.join(root, "projects/demo/knowledge/index.yml"));
+  assert.throws(() => app.catalog(root, scope, { cursor }), { code: "knowledge_catalog_changed", status: 409 });
+  const absent = app.catalog(root, scope);
+  validateKnowledgeCatalogResponse(absent);
+  assert.equal(absent.revision, null);
+  assert.deepEqual(absent.items, []);
+  assert.equal(absent.matchingCount, 0);
+  assert.equal(absent.hasMore, false);
+  assert.equal(absent.nextCursor, null);
+  assert.deepEqual(absent.diagnostics, []);
+  assert.equal(app.read(root, scope).index, null);
+});
+
+test("目录 HTTP 使用独立摘要协议，既有详情读取仍返回正文与关联", (t) => {
+  const { root, put, app } = setup(t);
+  const index = catalogIndex();
+  put("projects/demo/knowledge/index.yml", stringify(index));
+  put("projects/demo/knowledge/docs/refund.md", "# Refund\n正文内容");
+  const http = createKnowledgeHttpContribution(app);
+  const respond = { diagramHtml: () => assert.fail("catalog cannot render HTML") };
+  const first = http.handle({ root, request: { method: "GET" }, suffix: "/knowledge/project/demo/catalog", respond,
+    searchParams: new URLSearchParams("view=documents&pageSize=20") }) as { status: number; body: ReturnType<typeof app.catalog> };
+  assert.equal(first.status, 200);
+  assert.equal(first.body.items.length, 20);
+  validateKnowledgeCatalogResponse(first.body);
+  const next = http.handle({ root, request: { method: "GET" }, suffix: "/knowledge/project/demo/catalog", respond,
+    searchParams: new URLSearchParams({ view: "documents", pageSize: "20", cursor: first.body.nextCursor! }) }) as typeof first;
+  assert.equal(next.body.items[0].id, "doc-21");
+  assert.equal(http.handle({ root, request: { method: "POST" }, suffix: "/knowledge/project/demo/catalog", respond }), null);
+  const detail = http.handle({ root, request: { method: "GET" }, suffix: "/knowledge/project/demo/artifacts/doc-1", respond }) as { status: number; body: ReturnType<typeof app.read> };
+  assert.equal(detail.status, 200);
+  validateKnowledgeResponse(detail.body);
+  assert.equal(detail.body.artifacts[0].content, "# Refund\n正文内容");
+  assert.equal(detail.body.index?.artifacts.length, 48);
+  assert.equal(detail.body.observations[0].status, "aligned");
+});
+
 test("真实增改删与维护后再读，零写入且未影响成果保留", (t) => {
   const { root, put, app } = setup(t);
   const scope = { kind: "project" as const, id: "demo" };
@@ -415,6 +566,9 @@ test("生产 HTTP 宿主允许知识地址刷新，隔离图示不放宽页面�
     sources: [],
   };
   index.sources = [];
+  index.artifacts.push(...Array.from({ length: 45 }, (_, position) => ({
+    ...structuredClone(prototype.artifacts[0]), id: `doc-${position}`, sources: [],
+  })));
   fs.writeFileSync(path.join(project, "knowledge/index.yml"), stringify(index));
   fs.writeFileSync(
     path.join(project, "knowledge/diagram.html"),
@@ -471,6 +625,26 @@ test("生产 HTTP 宿主允许知识地址刷新，隔离图示不放宽页面�
     `${url}/api/v1/workspaces/${id}/knowledge/project/demo?path=/etc/passwd`,
   );
   assert.equal(arbitrary.status, 400);
+  const catalogUrl = `${url}/api/v1/workspaces/${id}/knowledge/project/demo/catalog`;
+  const catalog = await fetch(`${catalogUrl}?view=documents&pageSize=20`);
+  assert.equal(catalog.status, 200, await catalog.clone().text());
+  const page = await catalog.json();
+  validateKnowledgeCatalogResponse(page);
+  assert.equal(page.items.length, 20);
+  assert.equal(page.matchingCount, 45);
+  assert.equal(Object.hasOwn(page, "index"), false);
+  const next = await fetch(`${catalogUrl}?${new URLSearchParams({ cursor: page.nextCursor })}`);
+  assert.equal(next.status, 200);
+  assert.equal((await next.json()).items[0].id, "doc-20");
+  const invalid = await fetch(`${catalogUrl}?cursor=broken`);
+  assert.equal(invalid.status, 400);
+  assert.equal((await invalid.json()).error.code, "knowledge_catalog_cursor_invalid");
+  const invalidPath = await fetch(`${catalogUrl}?path=/etc/passwd`);
+  assert.equal(invalidPath.status, 400);
+  fs.appendFileSync(path.join(project, "knowledge/index.yml"), "\n");
+  const changed = await fetch(`${catalogUrl}?${new URLSearchParams({ cursor: page.nextCursor })}`);
+  assert.equal(changed.status, 409);
+  assert.equal((await changed.json()).error.code, "knowledge_catalog_changed");
 });
 
 test("文件说明和成果文件保持独立关联，旧索引兼容且不接受未知文件标识",(t)=>{

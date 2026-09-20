@@ -1,5 +1,5 @@
 import { ResourceActions } from "../../workbench/components/ResourceActions";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   Link,
   useLocation,
@@ -7,6 +7,7 @@ import {
   useSearchParams,
 } from "react-router-dom";
 import { Alert, Button, Breadcrumb, Modal, Space, Spin } from "antd";
+import { ArrowUpOutlined } from "@ant-design/icons";
 import { useAppShell } from "../../../app/AppShellContext";
 import { useResourcePreview } from "../../../app/resource-preview";
 import { useWorkspacePageTabs } from "../../../app/pageTabs";
@@ -14,17 +15,19 @@ import { WorkspaceStage } from "../../../components/WorkspaceStage";
 import { workspaceHref } from "../../../lib/labels";
 import { KnowledgeCatalog } from "../components/KnowledgeCatalog";
 import { KnowledgeArtifactReader } from "../components/KnowledgeArtifactReader";
+import { KnowledgePreviewNotice } from "../components/KnowledgePreviewNotice";
 import {
   KnowledgeReadingPane,
   type KnowledgePane,
 } from "../components/KnowledgeReadingPane";
 import { useKnowledgeReading } from "../useKnowledgeReading";
+import { useKnowledgeCatalog } from "../useKnowledgeCatalog";
 import { knowledgeCategory } from "../knowledge-catalog";
 import {
   resolveKnowledgePath,
   knowledgeArtifactTarget,
 } from "../knowledge-navigation";
-import type { KnowledgeScope } from "../api/knowledge-api";
+import type { KnowledgeIndex, KnowledgeScope } from "../api/knowledge-api";
 import "../knowledge.css";
 export function KnowledgePage() {
   const { scopeKind, scopeId = "" } = useParams();
@@ -55,19 +58,43 @@ export function KnowledgePage() {
   const [referenceChoices, setReferenceChoices] = useState<string[]>([]),
     [linkNotice, setLinkNotice] = useState(""),
     [selectedReference, setSelectedReference] = useState<string | null>(null);
+  const isReading = Boolean(objectId || artifactId);
+  const catalog = useKnowledgeCatalog({ workspaceId, scope, category, query, refresh, enabled: !isReading });
   const main = useKnowledgeReading(
       scope,
       artifactId ? "artifacts" : objectId ? "objects" : undefined,
       artifactId || objectId,
       refresh,
+      isReading,
     ),
-    data = main.data,
-    index = data?.index || null;
+    data = main.data;
+  const legacy = useKnowledgeReading(scope, "artifacts", legacyReading, refresh, Boolean(legacyReading) && !isReading);
+  const [referenceIndex, setReferenceIndex] = useState<{ scope: string; index: KnowledgeIndex | null }>({ scope: scopeKey, index: null });
+  const rememberIndex = useCallback((value: KnowledgeIndex) => {
+    setReferenceIndex((previous) => previous.scope === scopeKey && previous.index === value ? previous : { scope: scopeKey, index: value });
+  }, [scopeKey]);
+  useEffect(() => {
+    const value = data?.index || legacy.data?.index;
+    if (value) rememberIndex(value);
+  }, [data?.index, legacy.data?.index, rememberIndex]);
+  const index = data?.index || legacy.data?.index || (referenceIndex.scope === scopeKey ? referenceIndex.index : null);
+  const pageScope = data?.scope || catalog.data?.scope || legacy.data?.scope;
+  const pageLoading = isReading ? main.loading : catalog.loading;
   const selected = index?.objects.find((o) => o.id === objectId),
     primaryArtifact = data?.artifacts?.find((a) => a.id === artifactId);
   const root = useRef<HTMLDivElement>(null),
     positions = useRef<Record<string, number>>({}),
-    viewKey = JSON.stringify([objectId, artifactId, category, query]);
+    viewKey = JSON.stringify([scopeKey, objectId, artifactId, category, query]);
+  const [showBackToTop, setShowBackToTop] = useState(false);
+  const scrollContext = useRef({ viewKey, loading: pageLoading });
+  scrollContext.current = { viewKey, loading: pageLoading };
+  const refreshPage = () => {
+    if (!isReading) {
+      positions.current[viewKey] = 0;
+      root.current?.closest<HTMLElement>(".pane-body")?.scrollTo({ top: 0 });
+    }
+    setRefresh((value) => value + 1);
+  };
   const baseHref = workspaceHref(
     workspaceId,
     scope.kind === "project" ? `/projects/${scopeId}` : `/services/${scopeId}`,
@@ -77,9 +104,9 @@ export function KnowledgePage() {
     selected?.title ||
     (scope.kind === "project" ? "项目知识" : "服务知识");
   useEffect(() => {
-    if (!data) return;
+    if (!pageScope) return;
     setBreadcrumbParts([
-      data.scope.title,
+      pageScope.title,
       "知识",
       ...(objectId || artifactId ? [title] : []),
     ]);
@@ -89,16 +116,28 @@ export function KnowledgePage() {
           ? `proj:${scopeId}`
           : `knowledge:service:${scopeId}`,
       kind: "proj",
-      title: data.scope.title,
+      title: pageScope.title,
       path: location.pathname,
     });
-  }, [data?.scope.id, data?.scope.title, title, scopeId, workspaceId]);
+  }, [pageScope?.id, pageScope?.title, title, scopeId, workspaceId]);
   useLayoutEffect(() => {
-    if (!main.loading)
+    if (!pageLoading)
       root.current
         ?.closest(".pane-body")
         ?.scrollTo(0, positions.current[viewKey] || 0);
-  }, [main.loading, viewKey]);
+  }, [pageLoading, viewKey]);
+  useEffect(() => {
+    const host = root.current?.closest<HTMLElement>(".pane-body");
+    if (!host) return;
+    const observeScroll = () => {
+      if (scrollContext.current.viewKey !== viewKey || scrollContext.current.loading) return;
+      positions.current[viewKey] = host.scrollTop;
+      setShowBackToTop(host.scrollTop > 160);
+    };
+    observeScroll();
+    host.addEventListener("scroll", observeScroll, { passive: true });
+    return () => host.removeEventListener("scroll", observeScroll);
+  }, [viewKey, pageLoading]);
   useEffect(() => {
     const item = index?.artifacts.find((a) => a.id === legacyReading);
     if (!item) return;
@@ -122,7 +161,7 @@ export function KnowledgePage() {
             active: key,
           };
     });
-  }, [legacyReading, index?.scope.id]);
+  }, [legacyReading, index, scopeKey]);
   const move = (next: Record<string, string | undefined>, replace = false) => {
     positions.current[viewKey] =
       root.current?.closest(".pane-body")?.scrollTop || 0;
@@ -137,7 +176,8 @@ export function KnowledgePage() {
     setParams(value, { replace, state: location.state });
   };
   const openPrimary = (id: string) => {
-    const a = index?.artifacts.find((a) => a.id === id);
+    const a = (!isReading ? catalog.data?.items.find((a) => a.id === id) : undefined)
+      || index?.artifacts.find((a) => a.id === id);
     if (a)
       move({
         ...knowledgeArtifactTarget(a, objectId),
@@ -267,8 +307,8 @@ export function KnowledgePage() {
       mode,
       readingPath: location.pathname + location.search,
       topic: title,
-      articles: index?.artifacts
-        .filter(
+      articles: (isReading ? index?.artifacts : catalog.data?.items)
+        ?.filter(
           (a) =>
             a.kind === "document" &&
             (!objectId || a.objects.includes(objectId)),
@@ -279,11 +319,11 @@ export function KnowledgePage() {
           path: a.path,
           objects: a.objects,
         })),
-      scope: data?.scope,
+      scope: pageScope,
       objectId,
       artifactId,
       artifactKind: primaryArtifact?.kind,
-      indexRevision: data?.revision,
+      indexRevision: isReading ? data?.revision : catalog.data?.revision,
       observations: data?.observations.map((o) => ({
         id: o.id,
         digest: o.digest,
@@ -327,6 +367,7 @@ export function KnowledgePage() {
                 refresh={refresh}
                 reader={reader}
                 onPrimary={openPrimary}
+                onIndex={rememberIndex}
                 onObserved={(key, observation) =>
                   setReadingState((s) =>
                     s.scope !== scopeKey || !s.items.some((p) => p.key === key)
@@ -346,6 +387,7 @@ export function KnowledgePage() {
       }
     >
       <div ref={root} className="knowledge-page">
+        <nav className="knowledge-sticky-navigation" aria-label="知识阅读导航">
         <Breadcrumb
           items={[
             ...(parentProject
@@ -366,7 +408,7 @@ export function KnowledgePage() {
               : []),
             {
               title: (
-                <Link to={baseHref}>{data?.scope.title || "返回详情"}</Link>
+                <Link to={baseHref}>{pageScope?.title || "返回详情"}</Link>
               ),
             },
             {
@@ -385,6 +427,14 @@ export function KnowledgePage() {
             ...(objectId || artifactId ? [{ title }] : []),
           ]}
         />
+        {showBackToTop && <Button
+          id="knowledge-back-to-top"
+          type="text"
+          size="small"
+          icon={<ArrowUpOutlined />}
+          onClick={() => root.current?.closest<HTMLElement>(".pane-body")?.scrollTo({ top: 0, behavior: "smooth" })}
+        >回到顶部</Button>}
+        </nav>
         <div className="knowledge-title">
           <div>
             <h1>{title}</h1>
@@ -396,8 +446,8 @@ export function KnowledgePage() {
             )}
           </div>
           <Space wrap>
-            <ResourceActions resource={data ? { kind: "knowledge", key: "knowledge:" + scopeKey + ":" + (artifactId || objectId || "home"), label: title, href: location.pathname + location.search } : null} />
-            <Button onClick={() => setRefresh((v) => v + 1)}>刷新</Button>
+            <ResourceActions resource={pageScope ? { kind: "knowledge", key: "knowledge:" + scopeKey + ":" + (artifactId || objectId || "home"), label: title, href: location.pathname + location.search } : null} />
+            <Button onClick={refreshPage}>刷新</Button>
             {(objectId || artifactId) && (
               <Button
                 disabled={!data || main.loading || Boolean(main.error)}
@@ -408,6 +458,7 @@ export function KnowledgePage() {
             )}
           </Space>
         </div>
+        <KnowledgePreviewNotice sourceDirectory={pageScope?.directory} />
         <Modal
           title="选择对应文件"
           open={referenceChoices.length > 0}
@@ -435,11 +486,11 @@ export function KnowledgePage() {
             message={linkNotice}
           />
         )}
-        {main.error ? (
+        {isReading && main.error ? (
           <Alert type="error" message={main.error} />
-        ) : main.loading ? (
+        ) : isReading && main.loading ? (
           <Spin />
-        ) : data && (objectId || artifactId) ? (
+        ) : data && isReading ? (
           <>
             {selected && (
               <p className="knowledge-summary">{selected.summary}</p>
@@ -494,14 +545,25 @@ export function KnowledgePage() {
                 />
               ))}
           </>
-        ) : data ? (
+        ) : !isReading ? (
           <KnowledgeCatalog
-            index={data.index}
+            entries={catalog.data?.items || []}
+            matchingCount={catalog.data?.matchingCount || 0}
+            loading={catalog.loading}
+            loadingMore={catalog.loadingMore}
+            hasMore={catalog.data?.hasMore || false}
+            error={catalog.error}
+            loadMoreError={catalog.loadMoreError}
+            changed={catalog.changed}
+            canConstruct={Boolean(pageScope)}
             category={category}
             query={query}
             onFilter={(view, q) => move({ view, q }, true)}
             onOpen={openPrimary}
             onConstruct={construct}
+            onLoadMore={catalog.loadMore}
+            onRetry={catalog.retryLoadMore}
+            onRefresh={refreshPage}
           />
         ) : null}
       </div>

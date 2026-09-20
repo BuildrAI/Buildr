@@ -2,7 +2,7 @@
 
 ## Purpose
 
-为Project环境准备与任务验证声明提供统一Agent接入流程，定义注册、首次Task和专业缺口触发后的只读发现、精确长期写入授权、各声明owner handoff及无持久状态边界。
+为项目准备入口与测试地图提供智能体（Agent）接入流程，定义注册、首次任务和专业缺口触发后的只读发现、真实根及范围核对、长期写入授权和声明维护者交接；接入流程不保存状态，也不执行测试。
 
 ## Requirements
 
@@ -46,23 +46,28 @@ Intake发现缺少Skill/provider时 MUST交给Capability体系，发现缺少CLI
 - **THEN** Intake MUST报告Commands诊断并保持候选未落盘或blocked
 - **AND** MUST不新增技术栈adapter或从ambient PATH选择工具
 
-### Requirement: Verification Intake 必须发现 v3 能力族候选
-Declaration Intake MUST只读检查真实测试源码、构建配置、scripts、CI、module、Tag、Suite和已注册provider，形成v3 capability family候选及精确diff。候选 MUST分别说明scope、proves、evidence、usable targets、discovery、affected/full入口和执行边界，不得把文件清单或一次性Plan落入声明。
+### Requirement: Verification Intake 必须发现当前测试地图候选
+Declaration Intake MUST只读检查真实测试源码、构建配置、scripts、CI、module、Tag、Suite和项目／服务登记，形成当前`buildr.project-verification/v4`测试地图候选及精确diff。候选 MUST分别说明`scope`、路径根绑定、`purpose`、`sourcePaths`、`testRoots`、完整`full`入口、可选`selection`和`requirements`；MUST不要求已退役的`proves`、`evidence`、`usable targets`、`discovery`或独立affected入口字段，不得把文件清单或一次性Plan落入声明。
 
 #### Scenario: 发现 Maven Service 能力
 - **WHEN** Service已有稳定Maven profile、测试源码和Tag
-- **THEN** Intake MUST展示由这些authority支持的能力族候选及缺失字段
-- **AND** MUST NOT仅按技术栈或目录名推断证明范围与affected安全性
+- **THEN** Intake MUST展示由这些authority支持的测试族候选及缺失事实
+- **AND** MUST NOT仅按技术栈或目录名推断证明范围、完整入口覆盖或选择安全性
 
-### Requirement: v2 迁移必须是显式受控声明更新
-当受控Project仍有v2声明且用户已授权本次迁移时，Intake MUST生成v2到v3的精确语义diff并交给声明owner；不能由事实证明的evidence、target、discovery或affected入口 MUST作为未决项、full fallback或coverage gap，不得通过默认值伪造。
+#### Scenario: Service 代码位于 Project 目录之外
+- **WHEN** 测试族的源码、测试和命令属于已登记的外部Service代码根
+- **THEN** Intake MUST形成使用该Service code的`location`候选，并让声明owner校验当前解析位置
+- **AND** MUST分别说明证明覆盖的`scope`与路径根，不得以`scope.services`隐式选择执行目录
+
+### Requirement: 旧声明迁移必须由真实测试事实重建当前地图
+当受控Project仍有旧版声明且用户已授权本次迁移时，Intake MUST结合真实代码和入口生成到当前v4测试地图的精确语义diff并交给声明owner；旧字段 MUST仅作为调查线索，不得机械改版本号或恢复旧执行模型。不能由事实证明的路径根、证明范围、完整入口或选择指导 MUST作为未决项或测试建设缺口，不得通过默认值伪造。
 
 #### Scenario: 旧invocation只能证明full
-- **WHEN** v2 capability只有一个稳定命令且没有可信affected selector
-- **THEN** migration MUST把它登记为v3 full入口并记录affected缺口或full fallback
-- **AND** MUST NOT复制命令为affected入口
+- **WHEN** 旧capability只有一个稳定命令且没有可信affected selector
+- **THEN** migration MUST核对该命令实际覆盖的测试范围后登记为对应测试族的`full`入口，并在`selection`中说明可用选择方式或完整执行的依据
+- **AND** MUST NOT复制命令为已退役的affected声明入口，或宣称未证明的受影响选择能力
 
 #### Scenario: 未授权Workspace
-- **WHEN** 发现不在本次受控范围内的v2声明
-- **THEN** Intake MUST报告阻塞迁移事实与目标文件
+- **WHEN** 发现不在本次受控范围内的旧版声明
+- **THEN** Intake MUST报告待迁移事实与目标文件
 - **AND** MUST NOT跨Workspace或跨Git authority直接写入

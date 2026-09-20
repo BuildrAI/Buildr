@@ -6,7 +6,7 @@ import {
   type ArtifactReaderProps,
 } from "./KnowledgeArtifactReader";
 import { KnowledgeSource } from "./KnowledgeSource";
-import type { KnowledgeScope } from "../api/knowledge-api";
+import type { KnowledgeIndex, KnowledgeScope } from "../api/knowledge-api";
 export type KnowledgePane = {
   key: string;
   kind: "artifact" | "source";
@@ -26,6 +26,7 @@ type Props = {
   refresh: number;
   reader: Omit<ArtifactReaderProps, "artifact" | "artifacts">;
   onPrimary: (id: string) => void;
+  onIndex: (index: KnowledgeIndex) => void;
   onObserved: (
     key: string,
     observation: NonNullable<KnowledgePane["observation"]>,
@@ -37,6 +38,7 @@ export function KnowledgeReadingPane({
   refresh,
   reader,
   onPrimary,
+  onIndex,
   onObserved,
 }: Props) {
   const result = useKnowledgeReading(
@@ -49,6 +51,7 @@ export function KnowledgeReadingPane({
   report.current = onObserved;
   useEffect(() => {
     if (!result.data) return;
+    if (result.data.index) onIndex(result.data.index);
     report.current(pane.key, {
       revision: result.data.revision,
       sources: result.data.observations.map((o) => ({
@@ -61,7 +64,7 @@ export function KnowledgeReadingPane({
         digest: a.digest,
       })),
     });
-  }, [result.data]);
+  }, [result.data, onIndex]);
   const source = result.data?.observations.find((s) => s.id === pane.id),
     meta = result.data?.index?.sources.find((s) => s.id === pane.id),
     artifact = result.data?.artifacts?.find((a) => a.id === pane.id);

@@ -20,6 +20,8 @@
 
 **从业务目标找到代码**：阅读[项目、服务与代码库如何协作](docs/architecture/project-service-repositories.md)，从职责与修改影响理解引用模型，再看文中关系图和实现地图。
 
+**项目与服务测试验证框架**：阅读[Buildr 如何引导测试建设与使用](docs/architecture/workspace-testing-and-verification-framework.md)，了解从零建设、多服务差异、稳定入口声明、检查选择与分范围报告；Buildr 自身是采用实例，进一步查看[产品测试架构](docs/architecture/verification-framework.md)、[测试建设与使用图](archify/flows/verification-framework.html)、[实现地图](code-map/verification-framework.md)与[上下文复用](docs/guides/node-test-context-runtime.md)。
+
 ## 当前说明之外
 
 - [正式规范](../openspec/specs/)：产品行为承诺；冲突需核对实际实现并处理。

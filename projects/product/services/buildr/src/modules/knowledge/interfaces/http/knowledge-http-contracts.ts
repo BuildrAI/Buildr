@@ -12,6 +12,16 @@ const obj = (
   required: [...new Set(required)],
 });
 const scopeRef = obj({ kind: { enum: ["project", "service"] }, id: text });
+const scope = obj({
+  kind: { enum: ["project", "service"] },
+  id: text,
+  code: text,
+  title: text,
+  directory: text,
+  codeRoot: text,
+  serviceIds: strings,
+  repositoryId: nullable,
+});
 const object = obj({ id: text, title: text, summary: text, parent: text }, [
   "id",
   "title",
@@ -80,22 +90,44 @@ const index = obj({
   },
 });
 export const KNOWLEDGE_HTTP_SCHEMAS = {
+  CatalogResponse: {
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    $id: "https://schemas.buildr.ai/http/knowledge/catalog-response",
+    title: "Knowledge",
+    ...obj({
+      scope,
+      revision: nullable,
+      view: { enum: ["documents", "diagrams", "maps"] },
+      query: text,
+      items: {
+        type: "array",
+        maxItems: 20,
+        items: {
+          title: "KnowledgeCatalogItem",
+          ...obj({
+            id: text,
+            title: text,
+            kind: { enum: ["document", "diagram", "code-map"] },
+            path: text,
+            objects: strings,
+            summary: text,
+          }),
+        },
+      },
+      matchingCount: { type: "integer", minimum: 0 },
+      pageSize: { type: "integer", minimum: 1, maximum: 20 },
+      hasMore: { type: "boolean" },
+      nextCursor: nullable,
+      diagnostics: strings,
+    }),
+  },
   Response: {
     $schema: "https://json-schema.org/draft/2020-12/schema",
     $id: "https://schemas.buildr.ai/http/knowledge/response",
     title: "Knowledge",
     ...obj(
       {
-        scope: obj({
-          kind: { enum: ["project", "service"] },
-          id: text,
-          code: text,
-          title: text,
-          directory: text,
-          codeRoot: text,
-          serviceIds: strings,
-          repositoryId: nullable,
-        }),
+        scope,
         index: { anyOf: [index, { type: "null" }] },
         revision: nullable,
         item: { anyOf: [object, source, artifact, { type: "null" }] },
@@ -161,6 +193,14 @@ export function validateKnowledgeResponse(value: unknown) {
   if (!result.valid)
     throw new Error(
       "Knowledge response contract failed: " + JSON.stringify(result.errors),
+    );
+  return value;
+}
+export function validateKnowledgeCatalogResponse(value: unknown) {
+  const result = validator.validate(KNOWLEDGE_HTTP_SCHEMAS.CatalogResponse.$id, value);
+  if (!result.valid)
+    throw new Error(
+      "Knowledge catalog response contract failed: " + JSON.stringify(result.errors),
     );
   return value;
 }

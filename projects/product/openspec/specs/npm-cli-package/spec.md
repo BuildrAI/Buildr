@@ -179,22 +179,22 @@ Buildr 全局安装 MUST NOT 猜测 Agent runtime destination 或安装 Buildr S
 - **THEN** Buildr MUST 从该 Workspace 的受管源资产更新或重建指定 Agent runtime
 - **AND** 全局 CLI 与 launcher 安装状态 MUST NOT 被该动作隐式改变
 
-### Requirement: 已安装 package 必须包含通用验证 runtime
-Buildr npm package MUST 包含 Project v2 declaration parser、显式 capability execution、process executor、被真实 claim 使用的 resource coordinator、transient evidence lifecycle、Task Verification domain/repository/Application/CLI 与 Buildr Web server dependency closure，并 MUST 继续排除 `test/verification`。Package parity MUST 在没有 Buildr 开发 checkout 的普通 Workspace 中执行代表性 command capability、记录 current Result 并 inspect applicability。
+### Requirement: 已安装 package 必须包含测试地图与任务验证报告 runtime
+Buildr npm package MUST包含当前v4 Project测试地图的读取、校验和受控更新，以及Task验证报告的domain、repository、Application、CLI与Buildr Web server dependency closure，并 MUST继续排除`test/verification`。Package parity MUST在没有Buildr开发checkout的普通Workspace中使用公开地图入口、由智能体（Agent）直接调用项目测试工具、记录current报告并inspect applicability；MUST不依赖已退役的通用capability execution、Verification Plan或Execution Record。
 
 #### Scenario: Tarball CLI 执行普通 Workspace 验证
-- **WHEN** Candidate 将 tarball 安装到临时 prefix，并在独立普通 Workspace 中运行 `buildr verification run --project <code> --capability <id> --target-identity <identity>`
-- **THEN** 命令 MUST 完成 Project v2 declaration 解析、command execution、真实 timing、可选资源协调和 transient summary 输出
-- **AND** import graph、命令 cwd 和 evidence reference MUST 不依赖开发 checkout
+- **WHEN** Candidate将tarball安装到临时prefix，并在独立普通Workspace中调用`project verification inspect|validate|update`
+- **THEN** 命令 MUST完成当前v4地图解析、校验、按已观察identity更新与当前路径根解析
+- **AND** import graph与解析位置 MUST不依赖开发checkout，实际测试 MUST由Agent直接调用项目工具
 
 #### Scenario: Tarball CLI 管理 Task current Result
-- **WHEN** 普通 Workspace 具有 active Task 且 installed CLI 调用 `task verification record|inspect`
-- **THEN** installed CLI MUST 与 checkout CLI 生成相同 Result bytes、operation JSON 和 applicability
-- **AND** Result persistence MUST 不依赖 `test/`、Product registry 特例或开发 checkout
+- **WHEN** 普通Workspace具有active Task且installed CLI调用`task verification record|inspect`
+- **THEN** installed CLI MUST与checkout CLI遵守相同报告schema、原子替换和applicability语义
+- **AND** 报告持久化 MUST不依赖`test/`、Product registry特例或开发checkout
 
 #### Scenario: Package inventory 遗漏验证依赖
-- **WHEN** execution 或 Result Application 的任一静态 runtime dependency 未进入 tarball，或 runtime import 指向 `test/`
-- **THEN** package check MUST 失败并报告缺失或越界依赖
+- **WHEN** 地图或报告Application的任一静态runtime dependency未进入tarball，或runtime import指向`test/`
+- **THEN** package check MUST失败并报告缺失或越界依赖
 
 ### Requirement: npm tarball 必须使用宿主 Node 且排除平台运行时
 `@buildr-ai/buildr` npm tarball MUST 使用满足 `engines.node` 的宿主 Node 运行完整 Buildr application payload，并 MUST 提供 CLI、`buildr web` 与本地 Launcher 管理能力。Tarball MUST NOT 包含 Node executable、Product Node、SEA、已生成 `.app`、`.pkg`、`.msi`、shortcut、installer metadata 或平台签名材料。
