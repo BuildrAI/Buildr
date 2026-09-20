@@ -113,11 +113,11 @@
       "type": "skill",
       "id": "git-operations",
       "target": "skills/buildr/git-operations",
-      "integrity": "sha256-2f5cc8ddc3917ea300550135ba7b624d9bbb768aeafb53263394caadf3769a20",
+      "integrity": "sha256-62355bf242466a0b8a569629e30bfc3bfd306cf14c57a55a1d5beb6692b63b81",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-401a5383317ffff82ea74c0fd99c0eabf51447f2a518711a0169198da6820edf"
+          "integrity": "sha256-9eff1248495529c88031c7d5b826e75dcffcdc5252187ce9543a623571b4b714"
         }
       ]
     },
@@ -193,11 +193,11 @@
       "type": "skill",
       "id": "task-finish",
       "target": "skills/buildr/task-finish",
-      "integrity": "sha256-2cffb20a587d983899e63a1be59edfe074a7a7985c252a9064130bafedabe1c9",
+      "integrity": "sha256-82499213c41d2090dd75c04fa71796097109ce2773a50ffc99e95d2ae237d9ec",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-fd90fa74dc7a493979bdc5841145428ea834b5b2b608b178a16207119ad1e04a"
+          "integrity": "sha256-039ab6d168ba4544b85c3204194d583c8d5c322e10b35ff1eeb5c2d92c7a5482"
         }
       ]
     },
@@ -205,11 +205,11 @@
       "type": "skill",
       "id": "task-manager",
       "target": "skills/buildr/task-manager",
-      "integrity": "sha256-5112faf6b0a1f86e162bb5fb43457f1eb18f2c2600406f126c6bf38beeb9370f",
+      "integrity": "sha256-65f3de0754e22cb8a9129e8d93cd5863d96353291bcdedae92be8a240185cd24",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-04717305ca3479ca62d95e0a6a70b816f1f9b821dc2171bf768607fe361c41b5"
+          "integrity": "sha256-89fdbdd3c891b387f8d8564f5c5d0253bbca4b0a4c683dade81a65e2f6da61fa"
         },
         {
           "path": "agents/openai.yaml",
@@ -273,11 +273,11 @@
       "type": "skill",
       "id": "task-verification",
       "target": "skills/buildr/task-verification",
-      "integrity": "sha256-4181469d10393099003a02ba75c2a7bbd5f853f49ce8a747be874f176c5ac03f",
+      "integrity": "sha256-af86a52ae4c8fd6b3984adf6d15dbf2fc73623af1591706d9e6b43ea46794bbc",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-29d31ccfdfe5283219998c097a6c1efe6d8afe0d4ce974f2d91fb7e76544cf11"
+          "integrity": "sha256-79aecda39c317cf803537a845edc1cc701bd810889bbf8f9d4a5c8704276b632"
         },
         {
           "path": "references/maintain-map.md",
@@ -289,7 +289,7 @@
         },
         {
           "path": "references/record-report.md",
-          "integrity": "sha256-61d82d2740a9f60216a5919e0a42a44ea550faea1479d0d5164b938fc050692f"
+          "integrity": "sha256-f1a697a92500dda9fc443a801a768496a1bc0b9283fe5bf661f17c1697feb7a0"
         },
         {
           "path": "templates/project-verification.yml",
