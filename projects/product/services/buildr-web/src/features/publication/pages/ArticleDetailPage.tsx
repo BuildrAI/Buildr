@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useContext, useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { Alert, Button, Drawer, Dropdown, Empty, Segmented, Space, Spin, Tag, message } from 'antd';
 import { CopyOutlined, DownloadOutlined, EditOutlined, MoreOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useAppShell } from '../../../app/AppShellContext';
 import { useWorkspacePageTabs } from '../../../app/pageTabs';
+import { InsideResourcePreview, useResourcePreview } from '../../../app/resource-preview';
 import { WorkspaceStage } from '../../../components/WorkspaceStage';
 import { workspaceHref } from '../../../lib/labels';
 import { ResourceActions } from '../../workbench/components/ResourceActions';
@@ -11,19 +12,29 @@ import { knowledgeApi } from '../../knowledge/api/knowledge-api';
 import { publicationApi } from '../api/publication-api';
 import { usePublication } from '../hooks/usePublication';
 import { ArticleBody, type ArticleHeading } from '../components/ArticleBody';
+import { useArticleEditor } from '../components/ArticleEditorProvider';
 import { ArticleDeleteModal } from '../components/ArticleDeleteModal';
 import { ArticleRelatedPane, type ArticleRelated } from '../components/ArticleRelatedPane';
 import { ArticleWritingDrawer } from '../components/ArticleWritingDrawer';
 import { articlePath, articleResourceKey, displayArticleDate, downloadMarkdown, publicationAssetUrl, publicationPlatform, publicationStatus, referencedAssets } from '../publication-model';
 import '../publication.css';
 
-export function ArticleDetailPage() {
-  const { publicationId = '', projectCode = 'product' } = useParams();
+type Props = {
+  preview?: { projectCode: string; publicationId: string };
+  initialView?: 'rendered' | 'source'; initialEditing?: boolean;
+};
+
+export function ArticleDetailPage({ preview, initialView, initialEditing = false }: Props = {}) {
+  const params = useParams();
+  const projectCode = preview?.projectCode || params.projectCode || 'product';
+  const publicationId = preview?.publicationId || params.publicationId || '';
+  const embedded = useContext(InsideResourcePreview), previews = useResourcePreview();
   const { workspaceId, workspace, setBreadcrumbParts } = useAppShell();
   const tabs = useWorkspacePageTabs(workspaceId), location = useLocation(), navigate = useNavigate();
   const { data, error, loading, reload } = usePublication(workspaceId, projectCode, publicationId);
-  const [view, setView] = useState<'rendered' | 'source'>(location.state?.articleView === 'source' ? 'source' : 'rendered');
+  const [view, setView] = useState<'rendered' | 'source'>(initialView || (location.state?.articleView === 'source' ? 'source' : 'rendered'));
   const [writingMethod, setWritingMethod] = useState('润色表达');
+  const openEditor = useArticleEditor();
   const [writing, setWriting] = useState(false), [deleting, setDeleting] = useState(false), [records, setRecords] = useState(false);
   const [headings, setHeadings] = useState<ArticleHeading[]>([]), [related, setRelated] = useState<ArticleRelated[]>([]), [panes, setPanes] = useState<ArticleRelated[]>([]), [activePane, setActivePane] = useState<string | null>(null);
   const [linkNotice, setLinkNotice] = useState('');
@@ -31,12 +42,20 @@ export function ArticleDetailPage() {
   const [messages, holder] = message.useMessage();
   const href = (path: string) => workspaceHref(workspaceId, path);
   const listSearch = typeof location.state?.articleListSearch === 'string' ? location.state.articleListSearch : '';
-  useEffect(() => { if (location.state?.articleView === 'source') setView('source'); }, [location.key]);
+  useEffect(() => { if (initialView) setView(initialView); else if (location.state?.articleView === 'source') setView('source'); }, [initialView, location.key]);
   useEffect(() => {
-    if (!data) return;
+    if (!initialEditing || !data) return;
+    openEditor({ projectCode, publicationId });
+    // Consume old edit links at entry; closing the stable editor needs no reader callback.
+    const path = href(articlePath(data.publication));
+    if (embedded) previews?.open(location.pathname, path);
+    else if (location.pathname.endsWith('/edit')) navigate(path, { replace: true, state: { articleListSearch: listSearch } });
+  }, [initialEditing, data?.publication.id, projectCode, publicationId, embedded, openEditor]);
+  useEffect(() => {
+    if (!data || embedded) return;
     setBreadcrumbParts([workspace?.name || '工作空间', '文章', data.publication.title]);
-    tabs.register({ key: `publication:${projectCode}:${publicationId}`, kind: 'proj', title: data.publication.title, path: location.pathname });
-  }, [data?.publication.title, workspaceId, projectCode, publicationId]);
+    tabs.register({ key: `publication:${projectCode}:${publicationId}`, kind: 'proj', title: data.publication.title, path: href(articlePath(data.publication)) });
+  }, [data?.publication.title, workspaceId, projectCode, publicationId, embedded]);
   useEffect(() => {
     const controller = new AbortController();
     void Promise.allSettled([publicationApi.list(controller.signal), knowledgeApi.read({ kind: 'project', id: projectCode }, undefined, undefined, controller.signal)]).then(([articles, knowledge]) => {
@@ -55,10 +74,10 @@ export function ArticleDetailPage() {
   const article = data?.publication;
   const resources = article && data ? referencedAssets(data.content).map(path => ({ path, asset: data.assets?.find(asset => asset.relativePath === path) })) : [];
   return <WorkspaceStage pageTabs={tabs.tabs} onClosePageTab={tabs.close} objectTabs={panes.map(pane => ({ key: pane.key, title: pane.title, kind: 'doc' }))} activeObject={activePane} onActivateObject={setActivePane} onCloseObject={key => { const next = panes.filter(pane => pane.key !== key); setPanes(next); if (activePane === key) setActivePane(next.at(-1)?.key || null); }} objectContent={<>{panes.map(pane => <div key={pane.key} hidden={activePane !== pane.key}><ArticleRelatedPane item={pane} workspaceId={workspaceId || ''} /></div>)}</>}>
-    <div className="publication-page publication-reader">{holder}<Link className="publication-back" to={href('/articles') + listSearch}>← 返回文章列表</Link>
+    <div className="publication-page publication-reader">{holder}{embedded ? <Button className="publication-back" type="link" onClick={() => previews?.close(location.pathname, 'article')}>← 返回</Button> : <Link className="publication-back" to={href('/articles') + listSearch}>← 返回文章列表</Link>}
       {error && <Alert type="error" message={data ? '正文暂时无法更新，仍显示上次读取的内容。' : '文章不可用'} description={error} action={<Button size="small" onClick={reload}>重试</Button>} />}
       {!data ? loading ? <div className="publication-loading"><Spin /><p>正在读取文章…</p></div> : <Empty description="这篇文章目前不可用" /> : article && <>
-        <header className="publication-reader-head"><div className="publication-reader-topline"><Link to={href(`/projects/${encodeURIComponent(projectCode)}`)}>{article.projectName}</Link><span>/</span><span>文章</span><Tag id="publication-status" className={`publication-state ${article.status}`}>{publicationStatus[article.status] || article.status}</Tag></div><h1 id="publication-title">{article.title}</h1>{article.summary && <p id="publication-copy" className="publication-deck">{article.summary}</p>}<div className="publication-reader-meta"><span>更新于 {displayArticleDate(article.updatedAt || article.publishedAt)}</span><span>约 {Math.max(1, Math.ceil(data.content.length / 400))} 分钟阅读</span><Space wrap className="publication-reader-actions"><ResourceActions resource={{ kind: 'article', key: articleResourceKey(article), label: article.title, href: href(articlePath(article)) }} size="middle" /><Link to={href(`${articlePath(article)}/edit`)} state={{ articleListSearch: listSearch }}><Button icon={<EditOutlined />}>编辑文章</Button></Link><Button type="primary" onClick={() => { setWritingMethod('润色表达'); setWriting(true); }}>交给智能体（Agent）完善</Button><Dropdown trigger={['click']} menu={{ items: [{ key: 'source', label: view === 'source' ? '阅读正文' : '查看原文' }, { key: 'copy', label: '复制链接' }, { key: 'export', label: '导出 Markdown' }, { key: 'records', label: '发布记录' }, { type: 'divider' }, { key: 'delete', label: '删除文章', danger: true }], onClick: ({ key }) => {
+        <header className="publication-reader-head"><div className="publication-reader-topline"><Link to={href(`/projects/${encodeURIComponent(projectCode)}`)}>{article.projectName}</Link><span>/</span><span>文章</span><Tag id="publication-status" className={`publication-state ${article.status}`}>{publicationStatus[article.status] || article.status}</Tag></div><h1 id="publication-title">{article.title}</h1>{article.summary && <p id="publication-copy" className="publication-deck">{article.summary}</p>}<div className="publication-reader-meta"><span>更新于 {displayArticleDate(article.updatedAt || article.publishedAt)}</span><span>约 {Math.max(1, Math.ceil(data.content.length / 400))} 分钟阅读</span><Space wrap className="publication-reader-actions"><ResourceActions resource={{ kind: 'article', key: articleResourceKey(article), label: article.title, href: href(articlePath(article)) }} size="middle" /><Button icon={<EditOutlined />} onClick={() => openEditor({ projectCode, publicationId })}>编辑文章</Button><Button type="primary" onClick={() => { setWritingMethod('润色表达'); setWriting(true); }}>交给智能体（Agent）完善</Button><Dropdown trigger={['click']} menu={{ items: [{ key: 'source', label: view === 'source' ? '阅读正文' : '查看原文' }, { key: 'copy', label: '复制链接' }, { key: 'export', label: '导出 Markdown' }, { key: 'records', label: '发布记录' }, { type: 'divider' }, { key: 'delete', label: '删除文章', danger: true }], onClick: ({ key }) => {
           if (key === 'source') setView(current => current === 'source' ? 'rendered' : 'source');
           if (key === 'copy') copy(new URL(href(articlePath(article)), window.location.origin).href);
           if (key === 'export') downloadMarkdown(data.source || data.content, article.sourcePath);
@@ -76,7 +95,7 @@ export function ArticleDetailPage() {
           </article>
         </div>
         {writing && <ArticleWritingDrawer projects={[{ code: projectCode, name: article.projectName }]} article={article} revision={data.revision} initialMethod={writingMethod} onClose={() => setWriting(false)} />}
-        {deleting && <ArticleDeleteModal article={article} onClose={() => setDeleting(false)} onDeleted={() => { setDeleting(false); tabs.close(`publication:${projectCode}:${publicationId}`); navigate(href('/articles') + listSearch); }} />}
+        {deleting && <ArticleDeleteModal article={article} onClose={() => setDeleting(false)} onDeleted={() => { setDeleting(false); if (embedded) previews?.remove('article', `${projectCode}:${publicationId}`); else { tabs.close(`publication:${projectCode}:${publicationId}`); navigate(href('/articles') + listSearch); } }} />}
         <Drawer open={records} width={460} title="发布记录" onClose={() => setRecords(false)}><div className="publication-context"><strong>{article.title}</strong><span>当前稿件：{publicationStatus[article.status] || article.status}</span></div><p className="publication-hint">这里记录各平台的发布情况。修改稿件后，平台内容不会自动同步。</p>{article.targets.length ? article.targets.map((target, index) => <section className="publication-record-card" key={`${target.platform}:${index}`}><div><strong>{publicationPlatform[target.platform] || target.platform}</strong><Tag className={`publication-state ${target.status}`}>{publicationStatus[target.status] || target.status}</Tag></div>{target.url && <a href={target.url} target="_blank" rel="noopener noreferrer">查看已发布原文 ↗</a>}</section>) : <Empty description="暂无发布记录" />}<Button onClick={() => { setRecords(false); setWritingMethod('改写平台版'); setWriting(true); }}>准备平台改写请求</Button></Drawer>
       </>}
     </div>

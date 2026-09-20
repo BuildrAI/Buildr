@@ -7,6 +7,46 @@ export type WorkspacePageTab = {
   search?: string;
 };
 
+type PreviewBase = { id: string; path: string; title: string };
+export type ResourcePreview =
+  | (PreviewBase & { kind: 'service' | 'repository' | 'skill'; knowledge?: { artifactId?: string; objectId?: string }; edit?: boolean })
+  | (PreviewBase & { kind: 'article'; projectCode: string; publicationId: string; view?: 'source'; edit?: boolean });
+export type PreviewState = { items: ResourcePreview[]; active: string | null };
+
+/** Resolve only supported resource identities; query values never become file paths. */
+export function resourcePreview(workspaceId: string, path: string): ResourcePreview | null {
+  const prefix = `/workspaces/${workspaceId}/`;
+  if (typeof path !== 'string' || !path.startsWith(prefix)) return null;
+  const pathname = path.split(/[?#]/)[0];
+  try {
+    const parts = pathname.slice(prefix.length).split('/').map(decodeURIComponent);
+    if (parts.some(part => !part || part === '.' || part === '..' || /[/?#\\\u0000-\u001f]/.test(part))) return null;
+    const [area, first, second, action] = parts;
+    const search = new URLSearchParams(path.includes('?') ? path.slice(path.indexOf('?') + 1).split('#')[0] : '');
+    if (area === 'articles' && (parts.length === 2 || parts.length === 3 || parts.length === 4 && action === 'edit')) {
+      const projectCode = parts.length === 2 ? 'product' : first;
+      const publicationId = parts.length === 2 ? first : second;
+      return { kind: 'article', id: `${projectCode}:${publicationId}`, projectCode, publicationId, title: '文章详情', path,
+        ...(search.get('view') === 'source' ? { view: 'source' as const } : {}), ...(action === 'edit' ? { edit: true } : {}) };
+    }
+    if (area === 'knowledge' && first === 'service' && parts.length === 3) {
+      return { kind: 'service', id: second, title: '服务详情', path, knowledge: {
+        ...(search.get('artifact') ? { artifactId: search.get('artifact')! } : {}),
+        ...(search.get('object') ? { objectId: search.get('object')! } : {}),
+      } };
+    }
+    const types = { services: ['service', '服务详情'], repositories: ['repository', '代码库详情'], skills: ['skill', '技能详情'] } as const;
+    if (parts.length !== 2 || !(area in types)) return null;
+    const [kind, title] = types[area as keyof typeof types];
+    return { kind, id: first, title, path, ...(kind === 'service' && search.get('edit') === '1' ? { edit: true } : {}) };
+  } catch { return null; }
+}
+
+export function previewOwnerPath(workspaceId: string, item: ResourcePreview): string {
+  const area = { service: 'services', repository: 'repositories', skill: 'skills', article: 'articles' }[item.kind];
+  return `/workspaces/${workspaceId}/${area}`;
+}
+
 export const tabsStorageKey = (id: string) => `buildr.web.page-tabs.${id}`;
 export const ratioStorageKey = (id: string) => `buildr.web.pane-ratio.${id}`;
 
@@ -32,30 +72,14 @@ export function tabForPath(
     };
     if (parts.length === 1 && names[area])
       return { key: `dir:${area}`, kind: "dir", title: names[area], path };
-    if (area === "articles") {
-      const isLegacy = parts.length === 2;
-      const editing = parts.length === 4 && decoded[3] === "edit";
-      if (!isLegacy && parts.length !== 3 && !editing) return null;
-      const projectCode = isLegacy ? "product" : project;
-      const publicationId = isLegacy ? project : service;
-      return {
-        key: `${editing ? "publication-edit" : "publication"}:${projectCode}:${publicationId}`,
-        kind: "proj",
-        title: publicationId,
-        path,
-      };
-    }
     if (
       area === "knowledge" &&
-      ["project", "service"].includes(project) &&
+      project === "project" &&
       service &&
       parts.length === 3
     )
       return {
-        key:
-          project === "project"
-            ? `proj:${service}`
-            : `knowledge:service:${service}`,
+        key: `proj:${service}`,
         kind: "proj",
         title: service,
         path,
@@ -63,23 +87,6 @@ export function tabForPath(
     if (area === "projects" && project === "new") return null;
     if (area === "projects" && parts.length === 2)
       return { key: `proj:${project}`, kind: "proj", title: project, path };
-    if (
-      ["services", "repositories", "skills"].includes(area) &&
-      parts.length === 2
-    )
-      return {
-        key: `${area === "services" ? "service" : area === "repositories" ? "repository" : "skill"}:${project}`,
-        kind: "svc",
-        title: project,
-        path,
-      };
-    if (area === "services" && parts.length === 3)
-      return {
-        key: `svc:${project}/${service}`,
-        kind: "svc",
-        title: service,
-        path,
-      };
   } catch {
     /* Malformed escapes are not routes. */
   }

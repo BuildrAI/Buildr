@@ -24,6 +24,7 @@ export type ArtifactReaderProps = {
   onObject: (id: string) => void;
   embedded?: boolean;
   showTitle?: boolean;
+  preserveHeading?: boolean;
   stack?: string[];
 };
 export function KnowledgeArtifactReader(props: ArtifactReaderProps) {
@@ -52,7 +53,7 @@ export function KnowledgeArtifactReader(props: ArtifactReaderProps) {
       }}
     />
   );
-  const content = (a.content || "").replace(/^# [^\n]*\n/, "");
+  const content = props.preserveHeading ? a.content || "" : (a.content || "").replace(/^# [^\n]*\n/, "");
   const title =
     a.kind === "diagram"
       ? "技术图（Technical Diagram）"
@@ -114,6 +115,7 @@ export function KnowledgeArtifactReader(props: ArtifactReaderProps) {
                 {...props}
                 artifact={linked}
                 embedded
+                preserveHeading={false}
                 stack={[...stack, linked.id]}
               />
             ) : (

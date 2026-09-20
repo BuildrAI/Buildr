@@ -22,6 +22,7 @@ import {
 } from "../components/KnowledgeReadingPane";
 import { useKnowledgeReading } from "../useKnowledgeReading";
 import { useKnowledgeCatalog } from "../useKnowledgeCatalog";
+import { useCompleteKnowledgeReading } from "../useCompleteKnowledgeReading";
 import { knowledgeCategory } from "../knowledge-catalog";
 import {
   resolveKnowledgePath,
@@ -60,10 +61,11 @@ export function KnowledgePage() {
     [selectedReference, setSelectedReference] = useState<string | null>(null);
   const isReading = Boolean(objectId || artifactId);
   const catalog = useKnowledgeCatalog({ workspaceId, scope, category, query, refresh, enabled: !isReading });
-  const main = useKnowledgeReading(
+  const main = useCompleteKnowledgeReading(
+      workspaceId || '',
       scope,
       artifactId ? "artifacts" : objectId ? "objects" : undefined,
-      artifactId || objectId,
+      artifactId || objectId || undefined,
       refresh,
       isReading,
     ),
@@ -258,7 +260,7 @@ export function KnowledgePage() {
     if (!s) return;
     rememberAnchor();
     setSelectedReference(id);
-    if (s.kind === "skill" && s.skillId) {
+    if (s.kind === "skill" && s.skillId && s.path === 'SKILL.md') {
       previews?.open(
         location.pathname,
         workspaceHref(workspaceId, `/skills/${encodeURIComponent(s.skillId)}`),
@@ -486,6 +488,7 @@ export function KnowledgePage() {
             message={linkNotice}
           />
         )}
+        {main.relatedErrors.map(error => <Alert key={error} type="warning" message={error} />)}
         {isReading && main.error ? (
           <Alert type="error" message={main.error} />
         ) : isReading && main.loading ? (

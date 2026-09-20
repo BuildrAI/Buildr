@@ -7,9 +7,9 @@ import { workspaceApi } from '../../workspace/api/workspace-api';
 import { type ProjectResponse, projectApi } from '../api/project-api';
 import { serviceApi } from '../../service/api/service-api';
 import { useCallback, useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
-import { Button } from 'antd';
-import { FileTextOutlined, RightOutlined, HistoryOutlined } from '@ant-design/icons';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Button, Dropdown } from 'antd';
+import { FileTextOutlined, RightOutlined, HistoryOutlined, ReadOutlined, MoreOutlined, ArrowRightOutlined } from '@ant-design/icons';
 
 import { useAppShell } from '../../../app/AppShellContext';
 import { MarkdownHost } from '../../../components/MarkdownHost';
@@ -20,6 +20,7 @@ import { useMarkdownDocumentViewer, type MarkdownDocument } from '../../../lib/u
 import { ProjectEditDrawer } from '../components/ProjectEditDrawer';
 import { useWorkspacePageTabs } from '../../../app/pageTabs';
 import { WorkspaceStage, type WorkspaceObjectTab } from '../../../components/WorkspaceStage';
+import '../project-home.css';
 
 type ProjectDetail = ProjectResponse & { revision: string; project: NonNullable<ProjectResponse['project']> };
 type Service = NonNullable<ProjectResponse['services']>[number];
@@ -79,6 +80,7 @@ function ProjectDocObjectView({ projectCode, docPath, title, hint }: { projectCo
 
 export function ProjectDetailPage() {
   const { projectCode = '' } = useParams();
+  const navigate = useNavigate();
   const { workspaceId, setWorkspace, setBreadcrumbParts, openAgentAction } = useAppShell();
   const href = (path: string) => workspaceHref(workspaceId, path);
   const [deleting, setDeleting] = useState<string | null>(null);
@@ -207,33 +209,44 @@ export function ProjectDetailPage() {
           )
         ) : null}
       >
-        <section className="ws-hero">{deleting && <AssetDeleteDialog kind="project" id={deleting} onClose={() => setDeleting(null)} />}
-          <div className="ws-hero-top project-home-heading">
-            <div className="project-home-summary">
-              <p className="eyebrow"><Link to={href('/projects')} aria-label="返回项目列表">← 项目列表</Link></p>
-              <h1 id="project-detail-name">{project.name}</h1>
-              <p className="ws-hero-desc" id="project-detail-description">{project.description || '尚未填写项目说明。'}</p>
-            </div>
+        <div className="project-home">
+        {deleting && <AssetDeleteDialog kind="project" id={deleting} onClose={() => setDeleting(null)} />}
+        <header className="project-home-header">
+          <div className="project-home-topline">
+            <Link className="project-home-back" to={href('/projects')} aria-label="返回项目列表">← 项目列表</Link>
             <div className="project-home-actions">
               <ResourceActions size="middle" projectCode={projectCode} resource={{ kind: "project", key: "project:" + projectCode, label: project.name, href: href("/projects/" + encodeURIComponent(projectCode)) }} />
               <Button id="project-edit-button" onClick={() => setEditOpen(true)}>编辑项目</Button>
-              <Button danger onClick={() => setDeleting(projectCode)}>删除项目</Button>
+              <Dropdown trigger={['click']} menu={{ items: [{ key: 'delete', label: '删除项目', danger: true }], onClick: () => setDeleting(projectCode) }}>
+                <Button aria-label="更多项目操作" icon={<MoreOutlined />} />
+              </Dropdown>
             </div>
           </div>
-          <div className="ws-stat-band" role="list">
-            <div className="ws-stat" role="listitem"><b id="project-service-count">{services.length}</b><span>已登记服务</span></div>
-            <div className="ws-stat" role="listitem"><b>2</b><span>项目文档</span></div>
+          <h1 id="project-detail-name">{project.name}</h1>
+          <p className="project-home-description" id="project-detail-description">{project.description || '尚未填写项目说明。'}</p>
+          <div className="project-home-context">
+            <span>{workspaceName || '工作空间'}<span className="project-home-dot">·</span><b id="project-service-count">{services.length}</b> 个关联服务</span>
+            <Button type="primary" className="project-home-work" onClick={() => navigate(href('/tasks?project=' + encodeURIComponent(projectCode)))}>查看项目工作 <ArrowRightOutlined /></Button>
           </div>
-        </section>
+        </header>
 
-        <div className="ws-stack">
-          <Link className="workbench-project-work-link" to={href('/tasks?project=' + encodeURIComponent(projectCode))}>查看这个项目的工作 <RightOutlined /></Link>
-          <Link className="knowledge-home-entry" to={href('/articles?project=' + encodeURIComponent(projectCode))}><span className="knowledge-home-icon"><FileTextOutlined /></span><span><strong>项目文章</strong><span>编写文章、整理图片与附件，从当前稿件接续写作。</span></span><b>浏览项目文章 <RightOutlined /></b></Link>
-          <Link className="knowledge-home-entry" to={href(`/knowledge/project/${encodeURIComponent(projectCode)}`)}><span className="knowledge-home-icon"><FileTextOutlined /></span><span><strong>项目知识</strong><span>从架构文章、技术图和代码地图，理解职责、协作与实现。</span></span><b>阅读项目知识 <RightOutlined /></b></Link>
+        <nav className="project-home-entries" aria-label="项目内容">
+          <Link className="project-home-entry" to={href(`/knowledge/project/${encodeURIComponent(projectCode)}`)}>
+            <span className="project-home-entry-icon knowledge"><ReadOutlined /></span>
+            <span><strong>项目知识</strong><small>理解架构、协作与代码实现</small></span>
+            <RightOutlined />
+          </Link>
+          <Link className="project-home-entry" to={href('/articles?project=' + encodeURIComponent(projectCode))}>
+            <span className="project-home-entry-icon"><FileTextOutlined /></span>
+            <span><strong>项目文章</strong><small>继续写作，整理与分享项目成果</small></span>
+            <RightOutlined />
+          </Link>
+        </nav>
+        <div className="project-home-details">
           <ProjectServicesPanel projectCode={projectCode} />
 
           <section className="resource-section" aria-label="文档">
-            <div className="ws-section-head"><h2>文档 <span className="ws-count">{DOC_ROWS.length} 份</span></h2></div>
+            <div className="ws-section-head"><h2>项目资料 <span className="ws-count">{DOC_ROWS.length} 个入口</span></h2></div>
             <div className="ws-obj-list">
               {DOC_ROWS.map((doc) => (
                 <button
@@ -252,7 +265,7 @@ export function ProjectDetailPage() {
             </div>
           </section>
         </div>
-        <p className="ws-meta-line">所属工作空间 {workspaceName || '…'}</p>
+        </div>
       </WorkspaceStage>
 
       <ProjectEditDrawer

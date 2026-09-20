@@ -25,6 +25,7 @@
 .publication-state.planned.ant-tag { color:#9a7b41; background:#faf3e6; }
 .publication-list-foot { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:18px 0; font-size:11px; color:var(--soft-muted); }
 .publication-loading { min-height:220px; display:flex; flex-direction:column; gap:16px; align-items:center; justify-content:center; color:var(--soft-muted); }
+.publication-reader { container:publication-reader / inline-size; }
 .publication-reader-head { padding-bottom:24px; margin-bottom:26px; border-bottom:1px solid var(--soft-line); }
 .publication-reader-topline { display:flex; align-items:center; flex-wrap:wrap; gap:10px; color:var(--soft-muted); font-size:12px; margin-bottom:14px; }
 .publication-reader-head h1 { margin:0 0 12px; font-size:29px; line-height:1.45; letter-spacing:-.4px; overflow-wrap:anywhere; }
@@ -77,13 +78,16 @@
 .publication-record-card { border:1px solid var(--soft-line); border-radius:9px; padding:18px; margin:18px 0; }
 .publication-record-card > div { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:13px; font-size:13px; }
 .publication-record-card a { font-size:12px; }
+.publication-editor-drawer .ant-drawer-body { padding:24px 28px; }
+.publication-editor-drawer .drawer-shell-sub { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:min(860px, 70vw); }
+.publication-editor-drawer .publication-editor { max-width:1120px; margin:0 auto; }
 .publication-editor-layout { display:grid; grid-template-columns:minmax(0,1fr) 280px; gap:28px; align-items:start; }
 .publication-editor-main { min-width:0; }
 .publication-title-input.ant-input { font-size:20px; font-weight:550; padding:11px; }
 .publication-editor-toolbar { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; font-size:12px; color:var(--soft-muted); }
 .publication-writing-area.ant-input { min-height:510px; font:13px/1.85 ui-monospace,monospace; resize:vertical; padding:15px; }
 .publication-editor-preview { min-height:510px; padding:18px; border:1px solid var(--soft-line); border-radius:8px; }
-.publication-editor-footer { border-top:1px solid var(--soft-line); padding-top:18px; margin-top:20px; display:flex; align-items:center; justify-content:space-between; gap:12px; color:var(--soft-muted); font-size:12px; }
+.publication-editor-footer { display:flex; align-items:center; justify-content:space-between; gap:12px; color:var(--soft-muted); font-size:12px; }
 .publication-edit-aside { min-width:0; display:flex; flex-direction:column; gap:18px; }
 .publication-edit-aside > section { padding:18px; background:#f8faf9; border:1px solid #e7ede9; border-radius:10px; }
 .publication-edit-aside h2 { margin:0 0 12px; font-size:13px; }
@@ -112,3 +116,20 @@
 @media(max-width:1050px) { .publication-editor-layout { grid-template-columns:1fr; } .publication-assets-list { display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); max-height:none; } .publication-assets-list > .ant-empty { grid-column:1/-1; } }
 @media(max-width:700px) { .publication-reader-head h1 { font-size:24px; } .publication-filterbar > .ant-input-affix-wrapper { width:100%; } .publication-filterbar > .ant-select { flex:1; min-width:100px; } .publication-list-count { margin-left:0; } .publication-reading-layout { display:block; } .publication-toc { display:none; } .publication-mobile-toc { display:block; margin:0 0 22px; } .publication-compare { grid-template-columns:1fr; } .publication-reader-actions .ant-space { gap:6px!important; } .publication-list-foot { align-items:flex-start; flex-wrap:wrap; } .publication-reading-assets > a { align-items:flex-start; } }
 @media(prefers-reduced-motion:reduce) { .publication-body [data-article-heading] { scroll-behavior:auto; } }
+@container publication-reader (max-width:760px) {
+  .publication-reading-layout { display:block; }
+  .publication-toc { display:none; }
+  .publication-mobile-toc { display:block; margin:0 0 22px; }
+  .publication-reader-actions { margin-left:0; width:100%; }
+  .publication-reader-head h1 { font-size:24px; }
+  .publication-reading-content { max-width:none; }
+}
+@media(max-width:700px) {
+  /* Ant Design sets the drawer width inline; editing fills the narrow viewport. */
+  .publication-editor-drawer .ant-drawer-content-wrapper { width:100vw!important; }
+  .publication-editor-drawer .ant-drawer-body { padding:18px 16px; }
+  .publication-editor-drawer .drawer-shell-sub { max-width:calc(100vw - 90px); }
+  .publication-editor-drawer .publication-writing-area.ant-input { min-height:440px; }
+  .publication-editor-footer { flex-wrap:wrap; gap:8px; }
+  .publication-editor-footer > .ant-space { margin-left:auto; }
+}

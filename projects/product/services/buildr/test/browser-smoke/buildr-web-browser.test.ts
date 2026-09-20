@@ -17,6 +17,7 @@ import { materializeCleanProductSource } from '../helpers/clean-product-source.t
 import { recordVerificationResultFromEvidence } from '../helpers/task-verification-result-fixture.ts';
 import { runWorkbenchJourney } from './workbench-journey.ts';
 import { runPublicationJourney, publicationTestPng } from './publication-journey.ts';
+import { runServiceKnowledgeJourney } from './service-knowledge-journey.ts';
 
 const PRODUCT_ROOT: any = path.resolve(import.meta.dirname, '../..');
 const BUILDR: any = path.join(PRODUCT_ROOT, 'bin', 'buildr.mjs');
@@ -576,12 +577,15 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.locator('.workspace-tabstrip .pane-tab').filter({ hasText: '演示项目' }).click();
     await page.waitForURL(`${workspaceUrl}/projects/demo`);
     await page.goto(`${workspaceUrl}/services/demo/api`);
-    await page.locator('.workspace-tabstrip .pane-tab.on').filter({ hasText: '演示服务' }).waitFor({ state: 'visible' });
-    assert.equal(await page.locator('.resource-list-host').count(), 0);
+    await page.waitForURL(`${workspaceUrl}/services`);
+    await page.locator('.pane-right:visible #service-detail-name').waitFor({ state: 'visible' });
+    assert.equal(await page.getByRole('tab', { name: '演示服务', exact: true }).count(), 0);
+    assert.equal(await page.locator('#service-table-wrap').isVisible(), true);
     await page.locator('[data-area="workbench"]').click();
     await page.waitForURL(/\/(?:overview|tasks)/);
     await page.locator('[data-area="workspace"]').click();
-    await page.waitForURL(`${workspaceUrl}/services/demo/api`);
+    await page.waitForURL(`${workspaceUrl}/services`);
+    await page.locator('.pane-right:visible #service-detail-name').waitFor({ state: 'visible' });
     await page.locator('[data-nav="skills"]').click();
     await page.locator('#skills-list').waitFor({ state: 'visible' });
     await page.locator('#skills-search').fill('保留筛选条件');
@@ -752,9 +756,30 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.equal(await page.locator('#app-view textarea:visible').count(), 0);
     assert.equal(await page.getByText('操作', { exact: true }).filter({ visible: true }).count(), 0);
     assert.equal(await page.locator('.overview-strip, .related-resource-links').count(), 0);
-    assert.equal(await page.locator('.ws-stat').count(), 2);
-    assert.equal(await page.locator('[data-nav="projects"]').evaluate((item: any) => item.classList.contains('active')), true);
+    assert.equal(await page.locator('.project-home-entries .project-home-entry').count(), 2);
+    assert.deepEqual(await page.locator('.project-home-entry strong').allTextContents(), ['项目知识', '项目文章']);
+    assert.equal(await page.getByRole('button', { name: '查看项目工作', exact: false }).count(), 1);
+    assert.equal(await page.getByRole('button', { name: '删除项目', exact: true }).count(), 0);
+    assert.equal(await page.getByRole('button', { name: '更多项目操作', exact: true }).count(), 1);
     await page.setViewportSize({ width: 1680, height: 900 });
+    const entryBoxes = await page.locator('.project-home-entry').evaluateAll((items: Element[]) => items.map(item => ({ top: item.getBoundingClientRect().top, height: item.getBoundingClientRect().height })));
+    assert.ok(Math.abs(entryBoxes[0].top - entryBoxes[1].top) < 1);
+    assert.ok(entryBoxes.every((box: { height: number }) => box.height < 125));
+    const serviceRow = page.locator('[data-service-card="api"]');
+    const serviceSpacing = await serviceRow.evaluate((link: HTMLElement) => {
+      const outer = link.getBoundingClientRect();
+      const text = link.querySelector('strong')!.getBoundingClientRect();
+      const copy = link.querySelector('small')!.getBoundingClientRect();
+      const icon = link.querySelector('.project-service-icon')!.getBoundingClientRect();
+      return { top: text.top - outer.top, bottom: outer.bottom - copy.bottom, iconTextGap: text.left - icon.right, clipped: copy.right > outer.right };
+    });
+    assert.ok(serviceSpacing.top >= 8 && serviceSpacing.bottom >= 8 && serviceSpacing.iconTextGap >= 10 && !serviceSpacing.clipped, JSON.stringify(serviceSpacing));
+    await capture(page, 'project-home-desktop.png');
+    await page.setViewportSize({ width: 390, height: 844 });
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    await capture(page, 'project-home-mobile.png');
+    await page.setViewportSize({ width: 1680, height: 900 });
+    assert.equal(await page.locator('[data-nav="projects"]').evaluate((item: any) => item.classList.contains('active')), true);
     await page.locator('[data-doc-row="readme"]').click();
     await page.locator('.pane-right .artifact-missing').waitFor({ state: 'visible' });
     const paneSize = () => page.locator('.workspace-page:not([hidden]) .pane-stage').evaluate((stage: any) => ({
@@ -927,6 +952,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
   });
 
   if (selected('service')) await t.test('全局服务目录进入主页，旧详情与文档保持兼容', async () => {
+    await page.setViewportSize({ width: 1680, height: 900 });
     await page.goto(`${workspaceUrl}/services?project=demo`);
     if (runtime.assetCatalog(workspaceRoot).migrationRequired) {
       await page.getByRole('button', { name: '迁移登记', exact: true }).click();
@@ -949,45 +975,53 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.goto(new URL(directServiceHref, workspaceUrl).href);
     await page.getByRole('button', { name: '编辑服务', exact: true }).waitFor({ state: 'visible' });
     assert.equal(page.url(), `${workspaceUrl}/services`);
-    // The historical route continues to cover existing documents and edit compatibility.
+    const service = runtime.assetCatalog(workspaceRoot).services.find((item: any) => item.name === '演示服务');
+    assert.ok(service, '旧地址必须通过真实登记定位同一服务');
+    const mainTabs = await page.locator('.workspace-tabstrip .pane-tab-text').allTextContents();
+    // The historical route resolves to the same service preview and preserves its directory.
     await page.goto(`${workspaceUrl}/services/demo/api`);
-    assert.equal(await page.locator('#service-detail-name').innerText(), '演示服务');
-    assert.equal(await page.locator('#service-detail-description').innerText(), '浏览器测试服务');
-    assert.equal(await page.locator('#service-detail-type').innerText(), '后端');
-    assert.equal(await page.locator('#app-view input:visible, #app-view textarea:visible').count(), 0);
-    assert.equal(await page.getByText('操作', { exact: true }).filter({ visible: true }).count(), 0);
-    assert.equal(await page.locator('.overview-strip, .related-resource-links').count(), 0);
-    assert.equal(await page.locator('.ws-stat').count(), 2);
+    await page.waitForURL(`${workspaceUrl}/services`);
+    await page.locator('.pane-right:visible #service-detail-name').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('.pane-right:visible #service-detail-name').innerText(), '演示服务');
+    assert.equal(await page.locator('.pane-right:visible #service-detail-description').innerText(), '浏览器测试服务');
+    assert.equal(await page.locator('.pane-right:visible input, .pane-right:visible textarea').count(), 0);
+    assert.equal(await page.locator('.workspace-page:not([hidden]) #service-table-wrap').isVisible(), true);
+    assert.equal(await page.locator('.workspace-page:not([hidden]) .pane-stage:visible').count(), 1);
+    assert.deepEqual(await page.locator('.workspace-tabstrip .pane-tab-text').allTextContents(), mainTabs);
     assert.equal(await page.locator('[data-nav="services"]').evaluate((item: any) => item.classList.contains('active')), true);
-    await page.setViewportSize({ width: 1680, height: 900 });
     await page.locator('[data-doc-row="readme"]').click();
     await page.waitForFunction(() => {
       const body: any = document.querySelector('.pane-right .markdown-body')?.textContent || '';
       return !body.includes('正在读取') && /Demo API|README/.test(body);
     });
     assert.match(await page.locator('.pane-right .markdown-body').innerText(), /Demo API|README/);
+    await page.getByRole('button', { name: '← 返回详情', exact: true }).click();
     await page.locator('[data-doc-row="agents"]').click();
-    await page.waitForFunction(() => {
-      const body: any = document.querySelector('.pane-right .artifact-missing')?.textContent || '';
-      return /未找到 AGENTS\.md/.test(body);
-    });
+    await page.locator('.pane-right:visible .resource-reader').getByRole('heading', { name: 'AGENTS.md', exact: true }).waitFor({ state: 'visible' });
+    const agentsResponse = await page.request.get(`${url}/api/v1/workspaces/${initialWorkspaceId}/asset-catalog/services/${service.id}/documents/AGENTS.md`);
+    assert.equal(agentsResponse.status(), 200);
+    const agentsDocument = await agentsResponse.json();
+    if (agentsDocument.exists) await page.locator('.pane-right:visible .resource-reader .markdown-body').waitFor({ state: 'visible' });
+    else await page.locator('.pane-right:visible .artifact-missing').getByText('未找到 AGENTS.md', { exact: true }).waitFor({ state: 'visible' });
+    await page.getByRole('button', { name: '← 返回详情', exact: true }).click();
+    await runServiceKnowledgeJourney({ page, workspaceRoot, workspaceUrl, service, capture });
     await page.getByRole('button', { name: '编辑服务', exact: true }).click();
-    await page.locator('#service-edit-form').waitFor({ state: 'visible' });
-    assert.equal(await page.url(), `${workspaceUrl}/services/demo/api`);
-    await page.locator('#service-description').fill('已在抽屉中更新');
+    await page.locator('#catalog-edit').waitFor({ state: 'visible' });
+    assert.equal(await page.url(), `${workspaceUrl}/services`);
+    await page.getByRole('textbox', { name: '说明', exact: true }).fill('已在抽屉中更新');
     await page.keyboard.press('Escape');
     await page.getByRole('dialog').waitFor({ state: 'hidden' });
     await page.getByRole('button', { name: '编辑服务', exact: true }).click();
-    await page.locator('#service-edit-form').waitFor({ state: 'visible' });
-    assert.equal(await page.locator('#service-description').inputValue(), '浏览器测试服务');
-    await page.locator('#service-description').fill('已在抽屉中更新');
+    await page.locator('#catalog-edit').waitFor({ state: 'visible' });
+    assert.equal(await page.getByRole('textbox', { name: '说明', exact: true }).inputValue(), '浏览器测试服务');
+    await page.getByRole('textbox', { name: '说明', exact: true }).fill('已在抽屉中更新');
     await page.getByRole('button', { name: '保存修改', exact: true }).click();
     await page.waitForFunction(() => document.getElementById('service-detail-description')?.textContent === '已在抽屉中更新');
     assert.equal(await page.locator('#service-detail-description').innerText(), '已在抽屉中更新');
     await page.getByRole('dialog').waitFor({ state: 'hidden' });
     await page.goto(`${workspaceUrl}/services/demo/api/edit`);
-    await page.locator('#service-edit-form').waitFor({ state: 'visible' });
-    assert.equal(page.url(), `${workspaceUrl}/services/demo/api`);
+    await page.locator('#catalog-edit').waitFor({ state: 'visible' });
+    assert.equal(page.url(), `${workspaceUrl}/services`);
     await page.getByRole('button', { name: '关闭编辑', exact: true }).click();
     await page.getByRole('dialog').waitFor({ state: 'hidden' });
     await page.setViewportSize({ width: 1280, height: 720 });
@@ -998,6 +1032,10 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     if (c.migrationRequired) c = runtime.migrateAssetCatalog(workspaceRoot, { revision: c.revision });
     c = runtime.createCatalogProject(workspaceRoot, { revision: c.revision, code: 'delete-browser', name: '删除验收项目', newServices: [{ code: 'delete-browser-api', name: '删除验收服务', repository: { code: 'delete-browser-code', url: 'https://example.com/delete.git', integrationBranch: 'dev' } }] });
     const service = c.services.find((s: any) => s.code === 'delete-browser-api');
+    // Reload restores previews from history; explicitly close the prior service before measuring a directory-only request.
+    const closeService = page.getByRole('button', { name: '关闭 服务详情', exact: true });
+    if (await closeService.count()) await closeService.click();
+    await page.locator('.workspace-page:not([hidden]) .pane-right').waitFor({ state: 'hidden' });
     const requests: string[] = [];
     const collect = (request: any) => { if (request.method() === 'GET') requests.push(request.url()); };
     page.on('request', collect);
@@ -1019,7 +1057,8 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.ok(c.repositories.some((r: any) => r.id === service.repositoryId));
     assert.ok(fs.existsSync(path.join(workspaceRoot, 'services/delete-browser-api/AGENTS.md')));
     await page.goto(`${workspaceUrl}/projects/delete-browser`);
-    await page.getByRole('button', { name: '删除项目', exact: true }).click();
+    await page.getByRole('button', { name: '更多项目操作', exact: true }).click();
+    await page.getByRole('menuitem', { name: '删除项目', exact: true }).click();
     await page.getByRole('dialog').getByRole('button', { name: '删除登记', exact: true }).click();
     await page.waitForURL(`${workspaceUrl}/projects`);
     await page.getByRole('dialog').waitFor({ state: 'hidden' });
@@ -1213,9 +1252,13 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.setViewportSize({ width: 390, height: 844 });
     await page.locator('[data-doc-row="readme"]').click();
     await page.getByRole('dialog', { name: '阅读材料' }).waitFor({ state: 'visible' });
-    assert.equal(await page.locator('.workspace-page:not([hidden]) .pane-right').count(), 0);
+    assert.equal(await page.locator('.workspace-page:not([hidden]) .pane-right:visible').count(), 1);
+    assert.equal(await page.getByRole('dialog', { name: '阅读材料' }).getAttribute('aria-modal'), 'true');
+    assert.equal(await page.locator('.workspace-page:not([hidden]) .pane-reading-mask:visible').count(), 1);
+    assert.equal(await page.locator('.workspace-page:not([hidden]) .pane-left').getAttribute('inert'), '');
     await page.getByRole('button', { name: '关闭阅读', exact: true }).click();
     await page.getByRole('dialog', { name: '阅读材料' }).waitFor({ state: 'hidden' });
+    assert.equal(await page.locator('.workspace-page:not([hidden]) .pane-left').getAttribute('inert'), null);
     assert.equal(await page.getByRole('heading', { name: '服务', exact: true }).isVisible(), true);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
     await page.setViewportSize({ width: 1280, height: 720 });

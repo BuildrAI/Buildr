@@ -1,14 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "antd";
-import { MarkdownHost } from "../../../components/MarkdownHost";
+import { KnowledgeArtifactReader, type ArtifactReaderProps } from './KnowledgeArtifactReader';
 export function KnowledgeSource({
   content,
   path,
   line,
+  sourceId,
+  reading,
 }: {
   content: string;
   path: string;
   line?: number;
+  sourceId: string;
+  reading: ArtifactReaderProps;
 }) {
   const [raw, setRaw] = useState(false),
     focus = useRef<HTMLSpanElement>(null);
@@ -17,8 +21,8 @@ export function KnowledgeSource({
   }, [path]);
   useEffect(() => {
     focus.current?.scrollIntoView({ block: "center" });
-  }, [content, line]);
-  const markdown = path.endsWith(".md");
+  }, [content, line, raw]);
+  const markdown = path.toLowerCase().endsWith(".md");
   const color = /\.[cm]?[jt]sx?$/.test(path);
   const tokens = (value: string) =>
     !color
@@ -44,14 +48,14 @@ export function KnowledgeSource({
             </span>
           ));
   return (
-    <>
+    <div data-knowledge-source={sourceId}>
       {markdown && (
         <Button size="small" onClick={() => setRaw(!raw)}>
           {raw ? "阅读模式" : "查看原文"}
         </Button>
       )}
       {markdown && !raw ? (
-        <MarkdownHost markdown={content} className="markdown-body" />
+        <div data-rendered-source><KnowledgeArtifactReader {...reading} showTitle={false} preserveHeading /></div>
       ) : (
         <pre className="knowledge-source" aria-label="只读来源">
           {content.split("\n").map((text, i) => (
@@ -67,6 +71,6 @@ export function KnowledgeSource({
           ))}
         </pre>
       )}
-    </>
+    </div>
   );
 }

@@ -15,7 +15,7 @@ test('图示消息只接受当前隔离框架的已关联对象',()=>{
 });
 test('知识路由仅接受当前工作空间的项目或服务范围',()=>{
  assert.equal(tabForPath('w','/workspaces/w/knowledge/project/product').key,'proj:product');
- assert.equal(tabForPath('w','/workspaces/w/knowledge/service/api').key,'knowledge:service:api');
+ assert.equal(tabForPath('w','/workspaces/w/knowledge/service/api'),null);
  for(const path of ['/workspaces/x/knowledge/project/product','/workspaces/w/knowledge/repository/a','/workspaces/w/knowledge/project/%2e%2e'])assert.equal(tabForPath('w',path),null);
 });
 

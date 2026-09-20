@@ -17,6 +17,7 @@ import { AgentActionDrawer } from './AgentActionDrawer';
 import { DrawerShell } from '../components/DrawerShell';
 import { confirmModal } from '../lib/confirm';
 import { ReleaseAwarenessBanner } from '../features/installation/components/ReleaseAwarenessBanner';
+import { ArticleEditorProvider } from '../features/publication/components/ArticleEditorProvider';
 
 type PreviewIdentity = {
   instance: string;
@@ -338,7 +339,7 @@ export function AppLayout({ renderResource }: { renderResource: (item: ResourceP
         <ReleaseAwarenessBanner openAgentAction={openAgentAction} />
         <div className={`app-frame${isGlobal ? ' is-global' : ''}${sidebarCollapsed && !compactNavigation ? ' sidebar-collapsed' : ''}`}>
           {!isGlobal && !compactNavigation ? <aside className="app-sidebar"><Button type="text" className="sidebar-toggle" aria-label={sidebarCollapsed ? '展开菜单' : '折叠菜单'} title={sidebarCollapsed ? '展开菜单' : '折叠菜单'} icon={sidebarCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />} onClick={() => { setSidebarCollapsed(value => !value); localStorage.setItem('buildr.sidebar-collapsed', String(!sidebarCollapsed)); }} /><AppNavigation key={workspaceId} /></aside> : null}
-          <main id="app-view" tabIndex={-1} aria-live="polite"><>{workspaceId ? <WorkspacePages key={workspaceId} workspaceId={workspaceId} renderResource={renderResource} /> : <Outlet />}</></main>
+          <main id="app-view" tabIndex={-1} aria-live="polite"><>{workspaceId ? <ArticleEditorProvider key={workspaceId} workspaceId={workspaceId}><WorkspacePages workspaceId={workspaceId} renderResource={renderResource} /></ArticleEditorProvider> : <Outlet />}</></main>
         </div>
       </div>
 

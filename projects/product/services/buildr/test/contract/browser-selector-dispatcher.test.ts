@@ -92,3 +92,10 @@ test('changed planner gives Buildr Web Runtime HTTP its narrow System owner', ()
   assert.ok(ids.includes('system-buildr-web-http'));
   assert.equal(ids.includes('system'), false);
 });
+
+
+test('Browser dispatcher covers shared reading and publication components', () => {
+  assert.deepEqual(selectBrowserSelectors(['services/buildr-web/src/features/publication/components/ArticleEditorDrawer.tsx']).selectors, ['articles']);
+  assert.deepEqual(selectBrowserSelectors(['services/buildr-web/src/features/knowledge/components/KnowledgeBrowser.tsx']).selectors, ['project', 'service', 'articles']);
+  assert.deepEqual(selectBrowserSelectors(['services/buildr-web/src/app/WorkspacePages.tsx']).selectors, ['shell', 'project', 'service', 'articles']);
+});

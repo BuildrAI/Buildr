@@ -97,7 +97,13 @@ export function selectBrowserSelectors(changedPaths: any): any  {
     }
     if (originalValue.startsWith('services/buildr-web/src/')) {
       if (originalValue.includes('/features/workbench/')) add(plan, 'workbench', originalValue, 'Daily workbench overview, preferences or activity interaction changed.');
-      else if (originalValue.includes('/features/knowledge/')) add(plan, 'project', originalValue, 'Knowledge reading belongs to the project and service reading journey.');
+      else if (originalValue.includes('/features/knowledge/')) {
+        for (const selector of ['project', 'service', 'articles']) add(plan, selector, originalValue, 'Knowledge reading is shared by project, service and article journeys.');
+      }
+      else if (originalValue.includes('/features/publication/')) add(plan, 'articles', originalValue, 'Article readers, editors, resources and publication state changed.');
+      else if (originalValue.includes('/app/') || originalValue.includes('/components/WorkspaceStage')) {
+        for (const selector of ['shell', 'project', 'service', 'articles']) add(plan, selector, originalValue, 'Workspace navigation and split reading are shared across resource journeys.');
+      }
       else if (/\/(?:pages\/)?(?:[Pp]roject|[Pp]rojects)/.test(originalValue) || originalValue.includes('/pages/Project')) add(plan, 'project', originalValue, 'Project page or interaction changed.');
       else if (/\/(?:pages\/)?(?:[Ss]ervice|[Ss]ervices)/.test(originalValue) || originalValue.includes('/pages/Service')) add(plan, 'service', originalValue, 'Service page or interaction changed.');
       else if (/\/(?:pages\/)?(?:[Cc]hange|[Cc]hanges)|TaskChange/.test(originalValue) || originalValue.includes('/pages/TaskChange') || originalValue.includes('AgentAction')) add(plan, 'change', originalValue, 'Change page or Agent Action interaction changed.');

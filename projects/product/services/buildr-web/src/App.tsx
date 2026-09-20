@@ -23,7 +23,11 @@ import { TaskDetailPage } from './features/task/pages/TaskDetailPage';
 import { TasksSection } from './features/task/pages/TasksSection';
 import { WorkspacesPage } from './features/workspace/pages/WorkspacesPage';
 
-function renderResource(item: ResourcePreview) { return item.kind === 'skill' ? <SkillsPage previewId={item.id} /> : <AssetHome kind={item.kind} previewId={item.id} />; }
+function renderResource(item: ResourcePreview) {
+  if (item.kind === 'article') return <ArticleDetailPage preview={{ projectCode: item.projectCode, publicationId: item.publicationId }} initialView={item.view} initialEditing={item.edit} />;
+  if (item.kind === 'skill') return <SkillsPage previewId={item.id} />;
+  return <AssetHome kind={item.kind} previewId={item.id} knowledge={item.knowledge} initialEditing={item.edit} />;
+}
 
 export function App() {
   return (

@@ -4,7 +4,7 @@ import { UNSAFE_LocationContext, useLocation, useNavigate, useNavigationType, us
 import { WorkspaceTabsContext } from './pageTabs';
 import { ResourcePreviewContext, resourcePreview, type PreviewState, type ResourcePreview } from './resource-preview';
 import { PageTabStrip } from './PageTabStrip';
-import { moveTab, parseTabs, ratioStorageKey, readRatio, tabForPath, tabsStorageKey, type WorkspacePageTab } from './workspace-pages';
+import { moveTab, parseTabs, previewOwnerPath, ratioStorageKey, readRatio, tabForPath, tabsStorageKey, type WorkspacePageTab } from './workspace-pages';
 
 type LocationValue = React.ContextType<typeof UNSAFE_LocationContext>;
 type Visited = { path: string; node: ReactNode; location: LocationValue; instance: string };
@@ -22,6 +22,7 @@ export function WorkspacePages({ workspaceId, renderResource }: { workspaceId: s
   const locationValue = useContext(UNSAFE_LocationContext);
   const navigate = useNavigate();
   const current = tabForPath(workspaceId, location.pathname);
+  const directPreview = resourcePreview(workspaceId, location.pathname + location.search);
   const [previews, setPreviews] = useState<Record<string, PreviewState>>({});
   const removedResources = useRef(new Set<string>());
   const removePreviewResource = (kind: string, id: string) => {
@@ -62,7 +63,7 @@ export function WorkspacePages({ workspaceId, renderResource }: { workspaceId: s
       }
       return;
     }
-    const items = Array.isArray(saved?.items) ? saved.items.map(item => resourcePreview(workspaceId, item.path)).filter((item): item is ResourcePreview => Boolean(item) && !removedResources.current.has(`${item!.kind}:${item!.id}`)) : [];
+    const items = Array.isArray(saved?.items) ? saved.items.map(item => resourcePreview(workspaceId, item?.path)).filter((item): item is ResourcePreview => Boolean(item) && !removedResources.current.has(`${item!.kind}:${item!.id}`)).filter((item, index, all) => all.findIndex(other => other.kind === item.kind) === index) : [];
     setPreviews(prev => ({ ...prev, [location.pathname]: { items, active: items.some(item => item.kind === saved?.active) ? saved!.active : null } }));
   }, [location.key, location.pathname, workspaceId, navigationType]);
   const captureResourceLink = (event: MouseEvent) => {
@@ -70,16 +71,17 @@ export function WorkspacePages({ workspaceId, renderResource }: { workspaceId: s
     const link = (event.target as HTMLElement).closest('a');
     if (!link || link.target === '_blank' || link.hasAttribute('download')) return;
     const url = new URL(link.href, window.location.href);
-    if (url.origin === window.location.origin && openPreview(location.pathname, url.pathname)) { event.preventDefault(); event.stopPropagation(); }
+    if (url.origin === window.location.origin && openPreview(location.pathname, url.pathname + url.search + url.hash)) { event.preventDefault(); event.stopPropagation(); }
   };
   useEffect(() => {
     if (location.pathname === `/workspaces/${workspaceId}/projects/new`) { navigate(`/workspaces/${workspaceId}/projects`, { replace: true, state: { createProject: true } }); return; }
-    const preview = resourcePreview(workspaceId, location.pathname);
+    const preview = resourcePreview(workspaceId, location.pathname + location.search);
     if (preview) {
-      const owner = location.pathname.slice(0, location.pathname.lastIndexOf('/'));
-      navigate(owner, { replace: true, state: { resourceViews: { items: [preview], active: preview.kind } } });
+      const owner = previewOwnerPath(workspaceId, preview);
+      const listSearch = preview.kind === 'article' && typeof location.state?.articleListSearch === 'string' && location.state.articleListSearch.startsWith('?') ? location.state.articleListSearch : '';
+      navigate({ pathname: owner, search: listSearch }, { replace: true, state: { resourceViews: { items: [preview], active: preview.kind } } });
     }
-  }, [workspaceId, location.pathname, navigate]);
+  }, [workspaceId, location.pathname, location.search, navigate]);
   const [tabs, setTabs] = useState(() => parseTabs(workspaceId, read(tabsStorageKey(workspaceId))));
   const [ratio, updateRatio] = useState(() => readRatio(read(ratioStorageKey(workspaceId))));
   const [paneWidths, setPaneWidths] = useState<Record<string, number>>({});
@@ -126,7 +128,7 @@ export function WorkspacePages({ workspaceId, renderResource }: { workspaceId: s
     const fallback = tabForPath(workspaceId, `/workspaces/${workspaceId}/projects`)!;
     setTabs(next.length ? next : [fallback]);
     setVisited((prev) => prev.filter((p) => tabForPath(workspaceId, p.path)?.key !== key));
-    if (tabForPath(workspaceId, location.pathname)?.key === key) { const target = next[Math.max(0, index - 1)] || fallback; navigate({ pathname: target.path, search: target.search || "" }); }
+    if (tabForPath(workspaceId, location.pathname)?.key === key) { const remaining = next.filter(tab => tab.kind === 'proj'); const target = remaining.at(-1) || fallback; navigate({ pathname: target.path, search: target.search || "" }); }
   }, [tabs, workspaceId, location.pathname, navigate, forgetWorkspacePage]);
   const reorder = useCallback((key: string, index: number) => setTabs((prev) => moveTab(prev, key, index)), []);
   const setRatio = useCallback((value: number) => {
@@ -146,6 +148,6 @@ export function WorkspacePages({ workspaceId, renderResource }: { workspaceId: s
         </div>)}
       </div>
     </div>
-    {!current ? outlet : null}
+    {!current && !directPreview ? outlet : null}
   </WorkspaceTabsContext.Provider></ResourcePreviewContext.Provider>;
 }

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { tabForPath, parseTabs, paneDimensions, readRatio, moveTab, ratioStorageKey } from '../src/app/workspace-pages.ts';
+import { tabForPath, parseTabs, paneDimensions, readRatio, moveTab, ratioStorageKey, resourcePreview, previewOwnerPath } from '../src/app/workspace-pages.ts';
 test('恢复页签只接受当前工作空间已支持的路由并去重', () => {
  const valid={path:'/workspaces/a/skills',title:'技能'};
  const raw=JSON.stringify([valid,valid,{path:'/workspaces/b/skills'},{path:'https://example.com'},{path:'/workspaces/a/projects/%2e%2e'},{path:'/workspaces/a/services/p/s/edit'}]);
@@ -9,17 +9,31 @@ test('恢复页签只接受当前工作空间已支持的路由并去重', () =>
  assert.equal(tabForPath('a','/workspaces/a/settings'),null);
 });
 
-test('文章页签保留项目身份，阅读和编辑独立，旧地址保持同一篇文章', () => {
- const legacy=tabForPath('w','/workspaces/w/articles/shared');
- const product=tabForPath('w','/workspaces/w/articles/product/shared');
- const other=tabForPath('w','/workspaces/w/articles/other/shared');
- const edit=tabForPath('w','/workspaces/w/articles/product/shared/edit');
- assert.equal(legacy.key,product.key);
- assert.notEqual(product.key,other.key);
- assert.notEqual(product.key,edit.key);
- assert.equal(tabForPath('w','/workspaces/w/articles/product/shared/unknown'),null);
- const restored=parseTabs('w',JSON.stringify([legacy,product,other,edit,{path:'/workspaces/w/settings'},{path:'/workspaces/w/articles/%2e%2e/shared'}]));
- assert.deepEqual(restored.map(t=>t.key),[legacy.key,other.key,edit.key]);
+test('文章阅读编辑复用副屏身份，跨项目不混用，旧主标签恢复被清理', () => {
+ const paths=['/workspaces/w/articles/shared','/workspaces/w/articles/product/shared','/workspaces/w/articles/other/shared','/workspaces/w/articles/product/shared/edit'];
+ const [legacy,product,other,edit]=paths.map(path=>resourcePreview('w',path));
+ assert.equal(legacy.id,product.id);
+ assert.notEqual(product.id,other.id);
+ assert.equal(product.id,edit.id);
+ assert.equal(edit.edit,true);
+ assert.equal(previewOwnerPath('w',edit),'/workspaces/w/articles');
+ assert.equal(resourcePreview('w','/workspaces/w/articles/product/shared?view=source').view,'source');
+ assert.equal(resourcePreview('w','/workspaces/w/articles/product/shared/unknown'),null);
+ for(const path of paths)assert.equal(tabForPath('w',path),null);
+ const restored=parseTabs('w',JSON.stringify([...paths.map(path=>({path})),{path:'/workspaces/w/projects/product',title:'产品'},{path:'/workspaces/w/knowledge/service/api'},{path:'/workspaces/w/services/product/api'}]));
+ assert.deepEqual(restored.map(t=>t.key),['proj:product']);
+});
+test('服务知识保持同一服务副屏身份，直接地址回到服务目录',()=>{
+ const service=resourcePreview('w','/workspaces/w/services/api');
+ const knowledge=resourcePreview('w','/workspaces/w/knowledge/service/api?artifact=architecture&object=runtime');
+ assert.equal(knowledge.kind,service.kind);assert.equal(knowledge.id,service.id);
+ assert.deepEqual(knowledge.knowledge,{artifactId:'architecture',objectId:'runtime'});
+ assert.equal(previewOwnerPath('w',knowledge),'/workspaces/w/services');
+ assert.equal(resourcePreview('w','/workspaces/w/services/api?edit=1').edit,true);
+ assert.equal(resourcePreview('w','/workspaces/w/services/product/api'),null);
+});
+test('副屏拒绝跨工作空间、错误层级与不安全身份',()=>{
+ for(const path of ['/workspaces/other/articles/product/a','/workspaces/w/articles/%2e%2e/a','/workspaces/w/articles/product/a%2fb','/workspaces/w/articles/product/%00','/workspaces/w/articles/product/a/edit/extra','/workspaces/w/knowledge/repository/a','/workspaces/w/services/%2e%2e','/workspaces/w/skills/a/extra','https://example.com/workspaces/w/services/a'])assert.equal(resourcePreview('w',path),null,path);
 });
 test('默认分屏均分信息区并保留主内容限宽', () => {
  for (const width of [621, 700, 1000, 1216, 1832, 2336]) {
