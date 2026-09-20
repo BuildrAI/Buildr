@@ -6,12 +6,13 @@ import { runtimeSystemApi } from './api/runtime-system-api';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { Button, Drawer, Dropdown, Typography } from 'antd';
-import { CaretDownFilled, MenuFoldOutlined, MenuUnfoldOutlined, MenuOutlined, PlusOutlined } from '@ant-design/icons';
+import { AppstoreOutlined, CaretDownFilled, CheckOutlined, MenuFoldOutlined, MenuUnfoldOutlined, MenuOutlined, PlusOutlined, SettingOutlined } from '@ant-design/icons';
 import { api, setWorkspaceId } from '../api';
 import { AppShellContext, type WorkspaceShellInfo } from './AppShellContext';
 import { AppNavigation } from './AppNavigation';
 import { navigationState } from './navigation';
-import { workspaceApi } from '../features/workspace/api/workspace-api';
+import { workspaceApi, type WorkspaceResponse } from '../features/workspace/api/workspace-api';
+import { WorkspaceSettingsDrawer } from '../features/workspace/components/WorkspaceSettingsDrawer';
 import { AgentActionDrawer } from './AgentActionDrawer';
 import { DrawerShell } from '../components/DrawerShell';
 import { confirmModal } from '../lib/confirm';
@@ -57,6 +58,8 @@ export function AppLayout({ renderResource }: { renderResource: (item: ResourceP
   const navigate = useNavigate();
   const location = useLocation();
   const workspaceId = params.workspaceId ?? null;
+  const activeWorkspaceId = useRef(workspaceId);
+  activeWorkspaceId.current = workspaceId;
   const isGlobal = !workspaceId;
   const area = navigationState(location.pathname, location.search, workspaceId).area;
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('buildr.sidebar-collapsed') === 'true');
@@ -77,7 +80,7 @@ export function AppLayout({ renderResource }: { renderResource: (item: ResourceP
   const sectionHistory = useRef<{ workspaceId: string | null; pages: Record<string, { to: string; state?: unknown }> }>({ workspaceId, pages: {} });
   if (sectionHistory.current.workspaceId !== workspaceId) sectionHistory.current = { workspaceId, pages: {} };
   const section = workspaceId ? location.pathname.slice(`/workspaces/${workspaceId}/`.length).split('/')[0] : '';
-  if (workspaceId && ['projects', 'services', 'repositories', 'skills', 'articles', 'settings'].includes(section) && !/\/(new|edit)$/.test(location.pathname)) {
+  if (workspaceId && ['projects', 'services', 'repositories', 'skills', 'articles'].includes(section) && !/\/(new|edit)$/.test(location.pathname)) {
     sectionHistory.current.pages[section] = { to: location.pathname + location.search + location.hash, state: location.state };
   }
   const workspaceMenuTarget = (name: string) => sectionHistory.current.pages[name] || { to: `/workspaces/${workspaceId}/${name}` };
@@ -99,6 +102,16 @@ export function AppLayout({ renderResource }: { renderResource: (item: ResourceP
   const [navigationRevision, setNavigationRevision] = useState(0);
   const refreshNavigation = useCallback(() => setNavigationRevision((value) => value + 1), []);
   const [registry, setRegistry] = useState<WorkspaceEntry[]>([]);
+  const [workspaceRegistryRevision, setWorkspaceRegistryRevision] = useState(0);
+  const [settingsWorkspaceId, setSettingsWorkspaceId] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const settingsRouteWorkspace = useRef(workspaceId);
+  useEffect(() => {
+    if (settingsRouteWorkspace.current !== workspaceId) {
+      setSettingsOpen(false);
+      settingsRouteWorkspace.current = workspaceId;
+    }
+  }, [workspaceId]);
 
   const preview = useMemo(() => readPreviewIdentity(), []);
   const webProfile = useMemo(() => readWebProfile(), []);
@@ -120,6 +133,17 @@ export function AppLayout({ renderResource }: { renderResource: (item: ResourceP
     setWorkspaceState({ name: data.workspace.name, rootPath: data.rootPath });
     document.title = `${data.workspace.name} · ${productTitle(webProfile)}`;
   }, [webProfile]);
+
+  const openWorkspaceSettings = useCallback((id: string) => {
+    setSettingsWorkspaceId(id);
+    setSettingsOpen(true);
+  }, []);
+
+  const workspaceSettingsSaved = (id: string, data: WorkspaceResponse) => {
+    if (id === activeWorkspaceId.current) setWorkspace(data);
+    setRegistry(entries => entries.map(entry => entry.workspace?.id === id ? { ...entry, workspace: data.workspace } : entry));
+    setWorkspaceRegistryRevision(value => value + 1);
+  };
 
   const openAgentAction = useCallback((action?: string, context: Record<string, unknown> = {}) => {
     setDrawerWorkspaceId(workspaceId);
@@ -162,13 +186,13 @@ export function AppLayout({ renderResource }: { renderResource: (item: ResourceP
       }
     })();
     return () => controller.abort();
-  }, []);
+  }, [workspaceRegistryRevision]);
 
   useEffect(() => {
     if (!workspaceId) return;
     const controller = new AbortController();
     setWorkspaceState(null);
-    void workspaceApi.read({ signal: controller.signal }).then((data) => {
+    void workspaceApi.readById(workspaceId, { signal: controller.signal }).then((data) => {
       if (!controller.signal.aborted) setWorkspace(data);
     }).catch(() => { /* Page-level diagnostics remain available. */ });
     return () => controller.abort();
@@ -194,6 +218,8 @@ export function AppLayout({ renderResource }: { renderResource: (item: ResourceP
     refreshNavigation,
     workspace,
     setWorkspace,
+    openWorkspaceSettings,
+    workspaceRegistryRevision,
     openAgentAction,
     breadcrumbParts,
     setBreadcrumbParts,
@@ -208,22 +234,30 @@ export function AppLayout({ renderResource }: { renderResource: (item: ResourceP
   };
 
   const workspaceMenuItems = [
-    {
-      key: 'all',
-      label: '全部工作空间',
-      onClick: () => switchWorkspace(null),
-    },
-    { type: 'divider' as const },
     ...registry.map((entry) => {
       const id = entry.workspace?.id;
       const name = entry.workspace?.name || id || entry.rootPath;
       return {
         key: id || entry.rootPath,
         disabled: !id || entry.status !== 'ready',
+        icon: id === workspaceId ? <CheckOutlined /> : undefined,
         label: name,
         onClick: id ? () => switchWorkspace(id) : undefined,
       };
     }),
+    { type: 'divider' as const },
+    ...(workspaceId ? [{
+      key: 'settings',
+      icon: <SettingOutlined />,
+      label: <span data-action="workspace-settings">工作空间设置</span>,
+      onClick: () => openWorkspaceSettings(workspaceId),
+    }] : []),
+    {
+      key: 'all',
+      icon: <AppstoreOutlined />,
+      label: '全部工作空间',
+      onClick: () => switchWorkspace(null),
+    },
   ];
 
   if (exited) {
@@ -339,6 +373,8 @@ export function AppLayout({ renderResource }: { renderResource: (item: ResourceP
           ) : null}
         </div>
       </DrawerShell>
+      <WorkspaceSettingsDrawer open={settingsOpen} workspaceId={settingsWorkspaceId}
+        onClose={() => setSettingsOpen(false)} onSaved={workspaceSettingsSaved} />
     </WorkbenchPreferencesProvider>
     </AppShellContext.Provider>
   );

@@ -36,7 +36,7 @@ export function validateResourceHref(href: string, workspaceId: string): string 
   const url = new URL(href, 'http://buildr.local');
   const suffix = url.pathname.slice(`/workspaces/${workspaceId}`.length);
   const code = '[A-Za-z0-9%][A-Za-z0-9%._-]*';
-  const route = new RegExp(`^/(?:overview|activity|settings|tasks(?:/${code}(?:/changes/${code}/${code})?)?|projects(?:/${code})?|services(?:/${code}(?:/${code})?)?|repositories(?:/${code})?|skills(?:/${code})?|articles(?:/${code})?|knowledge/(?:project|service)/${code})/?$`);
+  const route = new RegExp(`^/(?:overview|activity|settings|tasks(?:/${code}(?:/changes/${code}/${code})?)?|projects(?:/${code})?|services(?:/${code}(?:/${code})?)?|repositories(?:/${code})?|skills(?:/${code})?|articles(?:/${code}(?:/${code})?)?|knowledge/(?:project|service)/${code})/?$`);
   if (!route.test(suffix) || ['root', 'target', 'path', 'workspaceId'].some((key) => url.searchParams.has(key))) throw workbenchError('workbench_resource_forbidden', '资源地址不属于可收藏的站内页面。');
   return href;
 }

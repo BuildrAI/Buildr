@@ -9,6 +9,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import { SkillsPage } from './features/agent-assets/pages/SkillsPage';
 import { AppLayout } from './app/AppLayout';
 import { ArticleDetailPage } from './features/publication/pages/ArticleDetailPage';
+import { ArticleEditPage } from './features/publication/pages/ArticleEditPage';
 import { ArticlesPage } from './features/publication/pages/ArticlesPage';
 import { ProjectDetailPage } from './features/project/pages/ProjectDetailPage';
 import { ProjectEditPage } from './features/project/pages/ProjectEditPage';
@@ -54,6 +55,8 @@ export function App() {
         <Route path="services/:projectCode/:serviceCode" element={<ServiceDetailPage />} />
         <Route path="services/:projectCode/:serviceCode/edit" element={<ServiceEditPage />} />
         <Route path="articles" element={<ArticlesPage />} />
+        <Route path="articles/:projectCode/:publicationId/edit" element={<ArticleEditPage />} />
+        <Route path="articles/:projectCode/:publicationId" element={<ArticleDetailPage />} />
         <Route path="articles/:publicationId" element={<ArticleDetailPage />} />
         <Route path="*" element={<Navigate to="." replace />} />
       </Route>

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { Alert, Button, Empty, Form, Input, Select, Typography } from 'antd';
+import { Alert, Button, Empty, Form, Input, Select, Tooltip, Typography } from 'antd';
+import { ReloadOutlined } from '@ant-design/icons';
 import type { TaskListRequest } from '../../../../build/generated/task-dto';
 import { useTaskList, type WorkspaceResponse } from '../hooks/useTaskList';
 import { useAppShell } from '../../../app/AppShellContext';
@@ -70,9 +71,9 @@ export function TasksPage() {
     setWorkspace(workspace);
     setBreadcrumbParts([workspace.workspace.name, '任务']);
   }, [setWorkspace, setBreadcrumbParts]);
-  const { tasks, totalTaskCount, matchingTaskCount, filterProjects, filterServices, projectNames, serviceNames, loading, loadingMore, errorMessage, loadMoreError, hasMore, loadMore, retryLoadMore } = useTaskList({ workspaceId, filters, onWorkspace });
+  const { tasks, totalTaskCount, matchingTaskCount, filterProjects, filterServices, projectNames, serviceNames, loading, loadingMore, errorMessage, loadMoreError, hasMore, loadMore, retryLoadMore, reload, revision } = useTaskList({ workspaceId, filters, onWorkspace });
 
-  const listContexts = useTaskListContexts(workspaceId, tasks);
+  const listContexts = useTaskListContexts(workspaceId, tasks, revision);
 
   const draftServiceOptions = draftProject
     ? filterServices.filter((item) => item.startsWith(`${draftProject}/`))
@@ -266,8 +267,8 @@ export function TasksPage() {
     </div>
   );
 
-  const showTable = visibleTasks.length > 0 && !errorMessage;
-  const showEmpty = !loading && (Boolean(errorMessage) || visibleTasks.length === 0);
+  const showTable = visibleTasks.length > 0;
+  const showEmpty = !loading && visibleTasks.length === 0;
 
   return (
     <>
@@ -281,6 +282,7 @@ export function TasksPage() {
             {loading ? '正在读取…' : (errorMessage ? '读取失败' : (visibleTasks.length < matchingTaskCount ? `已加载 ${visibleTasks.length} / 共 ${matchingTaskCount} 个任务` : `${matchingTaskCount} 个任务`))}
           </span>
           <div className="task-list-tools">
+            <Tooltip title="刷新当前内容"><Button id="task-list-refresh" type="text" icon={<ReloadOutlined spin={loading} />} aria-label="刷新任务列表" onClick={() => void reload()} /></Tooltip>
             <TaskFilters open={filterOpen} active={filtersActive} content={filterPopup} onOpenChange={(open) => {
                 if (open) syncFilterDraft();
                 setFilterOpen(open);
@@ -306,6 +308,7 @@ export function TasksPage() {
         </div>
         <span id="task-search-hint" className={`task-search-hint${queryMessage ? ' visible' : ''}`} role="status">{queryMessage}</span>
       </section>
+      {errorMessage && <Alert type="error" showIcon message="任务列表刷新失败" description={errorMessage} action={<Button onClick={() => void reload()}>重试</Button>} />}
       {listContexts.error && <Alert type="warning" message="最近进展暂时不可读取，任务目标和已有结果仍可查看。" />}
       {preferenceError && <Alert type="warning" message={preferenceError} closable onClose={() => setPreferenceError(null)} />}
       <section className="resource-list-section task-workbench-list">

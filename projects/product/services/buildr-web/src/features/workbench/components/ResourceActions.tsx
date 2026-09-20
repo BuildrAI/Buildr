@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Button, notification, Tooltip } from 'antd';
-import { StarFilled, StarOutlined } from '@ant-design/icons';
+import { PushpinFilled, PushpinOutlined, StarFilled, StarOutlined } from '@ant-design/icons';
 import { useAppShell } from '../../../app/AppShellContext';
 import { useWorkbenchPreferences } from '../hooks/useWorkbenchPreferences';
 import type { WorkbenchVisitRequest } from '../api/workbench-api';
 
 export type WorkbenchResource = WorkbenchVisitRequest;
 
-export function ResourceActions({ resource, projectCode }: { resource: WorkbenchResource | null; projectCode?: string }) {
+export function ResourceActions({ resource, projectCode, size = 'small' }: { resource: WorkbenchResource | null; projectCode?: string; size?: 'small' | 'middle' }) {
   const { workspaceId } = useAppShell();
   const { has, set, remove, recordVisit, loading } = useWorkbenchPreferences(workspaceId);
   const [busy, setBusy] = useState(false);
@@ -61,9 +61,9 @@ export function ResourceActions({ resource, projectCode }: { resource: Workbench
   };
   return <span ref={anchor} className="workbench-resource-actions">
     {noticeHolder}
-    {projectCode ? <Button size="small" disabled={loading} loading={busy} onClick={() => void toggle(true)} icon={following ? <StarFilled /> : <StarOutlined />} data-follow-project={projectCode}>{following ? '已关注' : '关注项目'}</Button> : null}
-    <Tooltip title={saved ? '从常用入口取消收藏' : '加入工作台常用入口'}>
-      <Button size="small" disabled={loading} loading={busy} onClick={() => void toggle()} icon={saved ? <StarFilled /> : <StarOutlined />} aria-label={saved ? '取消收藏当前资料' : '收藏当前资料'} data-save-resource={resource.key}>{saved ? '已收藏' : '收藏'}</Button>
-    </Tooltip>
+    {projectCode ? <Tooltip title="在工作台快速进入此项目，并优先查看其每日演进"><Button size={size} disabled={loading} loading={busy} onClick={() => void toggle(true)} icon={following ? <PushpinFilled /> : <PushpinOutlined />} data-follow-project={projectCode}>{following ? '已关注项目' : '关注项目'}</Button></Tooltip> : null}
+    {!projectCode && <Tooltip title={saved ? '从常用入口取消收藏' : '加入工作台常用入口'}>
+      <Button size={size} disabled={loading} loading={busy} onClick={() => void toggle()} icon={saved ? <StarFilled /> : <StarOutlined />} aria-label={saved ? '取消收藏当前资料' : '收藏当前资料'} data-save-resource={resource.key}>{saved ? '已收藏' : '收藏'}</Button>
+    </Tooltip>}
   </span>;
 }

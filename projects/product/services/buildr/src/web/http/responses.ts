@@ -21,11 +21,13 @@ export function textResponse(response: any, status: any, content: any, contentTy
   response.end(content);
 }
 
-export function binaryResponse(response: any, status: any, content: any, contentType: any) {
+export function binaryResponse(response: any, status: any, content: any, contentType: any, options?: { disposition: 'inline' | 'attachment'; filename: string }) {
+  const encodedFilename = options ? encodeURIComponent(options.filename).replace(/[!'()*]/g, value => `%${value.charCodeAt(0).toString(16).toUpperCase()}`) : '';
   response.writeHead(status, {
     'content-type': contentType,
     'cache-control': 'no-store',
     'x-content-type-options': 'nosniff',
+    ...(options ? { 'content-disposition': `${options.disposition}; filename*=UTF-8''${encodedFilename}`, 'content-security-policy': "sandbox; default-src 'none'" } : {}),
   });
   response.end(content);
 }

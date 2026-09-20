@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { UnorderedListOutlined, FileTextOutlined, FolderOutlined, BranchesOutlined, AppstoreOutlined, ThunderboltOutlined, SettingOutlined, HistoryOutlined, HomeOutlined, RightOutlined } from '@ant-design/icons';
+import { UnorderedListOutlined, FileTextOutlined, FolderOutlined, BranchesOutlined, AppstoreOutlined, ThunderboltOutlined, HistoryOutlined, HomeOutlined, RightOutlined } from '@ant-design/icons';
 import { useWorkbenchPreferences } from '../features/workbench/hooks/useWorkbenchPreferences';
 import { useAppShell } from './AppShellContext';
 import { navigationState } from './navigation';
@@ -26,10 +26,9 @@ export function AppNavigation({ onNavigate }: { onNavigate?: () => void }) {
     services: <AppstoreOutlined />,
     repositories: <BranchesOutlined />,
     skills: <ThunderboltOutlined />,
-    settings: <SettingOutlined />,
   };
   const item = (path: string, label: string, name: string, onClick?: () => void) => {
-    const destination = state.area === 'workspace' && name !== 'projects' ? workspaceMenuTarget(name) : { to: href(path), state: undefined };
+    const destination = state.area === 'workspace' && !['projects', 'articles'].includes(name) ? workspaceMenuTarget(name) : { to: href(path), state: undefined };
     return <NavLink to={destination.to} state={destination.state} data-nav={name} data-workspace-route={path} title={label} aria-label={label}
       className={`shell-nav-item${location.pathname === href(path) || location.pathname.startsWith(href(path) + '/') ? ' active' : ''}`}
       onClick={event => { if (state.area === 'workspace' && destination.to === location.pathname + location.search + location.hash) event.preventDefault(); onClick?.(); onNavigate?.(); }}>{icons[name]}<span>{label}</span></NavLink>;
@@ -52,7 +51,6 @@ export function AppNavigation({ onNavigate }: { onNavigate?: () => void }) {
             ))}
             {!(preferences?.items || []).some(entry => entry.kind === 'followed-project') ? <p className="workbench-nav-empty">在项目主页关注后，从这里快速进入。</p> : null}
           </div>
-          <NavLink className="shell-nav-item workbench-workspace-link" to={href('/projects')}><FolderOutlined /><span>浏览工作空间</span></NavLink>
         </>
       ) : (
         <>
@@ -62,7 +60,6 @@ export function AppNavigation({ onNavigate }: { onNavigate?: () => void }) {
           {item('/repositories', '代码库', 'repositories')}
           {item('/skills', '技能', 'skills')}
           {item('/articles', '文章', 'articles')}
-          {item('/settings', '设置', 'settings')}
         </>
       )}
     </nav>

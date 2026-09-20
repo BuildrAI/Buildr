@@ -1,13 +1,13 @@
 export const MAX_JSON_BODY_BYTES = 32 * 1024;
 
-export function readJsonBody(request: any) {
+export function readJsonBody(request: any, maxBytes = MAX_JSON_BODY_BYTES) {
   return new Promise((resolve: any, reject: any) => {
     let size = 0;
     let tooLarge = false;
     const chunks: any[] = [];
     request.on('data', (chunk: any) => {
       size += chunk.length;
-      if (size > MAX_JSON_BODY_BYTES) tooLarge = true;
+      if (size > maxBytes) tooLarge = true;
       else chunks.push(chunk);
     });
     request.on('end', () => {

@@ -208,13 +208,17 @@ export function ProjectDetailPage() {
         ) : null}
       >
         <section className="ws-hero">{deleting && <AssetDeleteDialog kind="project" id={deleting} onClose={() => setDeleting(null)} />}
-          <div className="ws-hero-top">
-            <div>
+          <div className="ws-hero-top project-home-heading">
+            <div className="project-home-summary">
               <p className="eyebrow"><Link to={href('/projects')} aria-label="返回项目列表">← 项目列表</Link></p>
               <h1 id="project-detail-name">{project.name}</h1>
               <p className="ws-hero-desc" id="project-detail-description">{project.description || '尚未填写项目说明。'}</p>
             </div>
-            <ResourceActions projectCode={projectCode} resource={{ kind: "project", key: "project:" + projectCode, label: project.name, href: href("/projects/" + encodeURIComponent(projectCode)) }} /><Button danger onClick={() => setDeleting(projectCode)}>删除项目</Button><Button id="project-edit-button" onClick={() => setEditOpen(true)}>编辑项目</Button>
+            <div className="project-home-actions">
+              <ResourceActions size="middle" projectCode={projectCode} resource={{ kind: "project", key: "project:" + projectCode, label: project.name, href: href("/projects/" + encodeURIComponent(projectCode)) }} />
+              <Button id="project-edit-button" onClick={() => setEditOpen(true)}>编辑项目</Button>
+              <Button danger onClick={() => setDeleting(projectCode)}>删除项目</Button>
+            </div>
           </div>
           <div className="ws-stat-band" role="list">
             <div className="ws-stat" role="listitem"><b id="project-service-count">{services.length}</b><span>已登记服务</span></div>
@@ -224,6 +228,7 @@ export function ProjectDetailPage() {
 
         <div className="ws-stack">
           <Link className="workbench-project-work-link" to={href('/tasks?project=' + encodeURIComponent(projectCode))}>查看这个项目的工作 <RightOutlined /></Link>
+          <Link className="knowledge-home-entry" to={href('/articles?project=' + encodeURIComponent(projectCode))}><span className="knowledge-home-icon"><FileTextOutlined /></span><span><strong>项目文章</strong><span>编写文章、整理图片与附件，从当前稿件接续写作。</span></span><b>浏览项目文章 <RightOutlined /></b></Link>
           <Link className="knowledge-home-entry" to={href(`/knowledge/project/${encodeURIComponent(projectCode)}`)}><span className="knowledge-home-icon"><FileTextOutlined /></span><span><strong>项目知识</strong><span>从架构文章、技术图和代码地图，理解职责、协作与实现。</span></span><b>阅读项目知识 <RightOutlined /></b></Link>
           <ProjectServicesPanel projectCode={projectCode} />
 

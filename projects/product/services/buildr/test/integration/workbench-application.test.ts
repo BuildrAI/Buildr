@@ -68,6 +68,22 @@ test('逐项偏好幂等与范围隔离，拒绝外部和逃逸链接，最近�
   assert.equal(runtime.inspectTask(root, 'planned-task').recordDigest, task.recordDigest);
 });
 
+test('文章收藏保留项目身份和旧Product地址，并拒绝越界资源', (t) => {
+  const { root } = taskRecordFixture(t, 'workbench-article-refs');
+  const runtime = createRuntime();
+  const workspaceId = runtime.getWorkspace(root).workspace.id;
+  const endpoint = `/workspaces/${workspaceId}`;
+  runtime.putWorkbenchPreference(root, 'saved-resource', 'article:shared', { label: '旧文章', href: `${endpoint}/articles/shared` });
+  runtime.putWorkbenchPreference(root, 'saved-resource', 'article:demo:shared', { label: '演示项目文章', href: `${endpoint}/articles/demo/shared` });
+  runtime.putWorkbenchPreference(root, 'saved-resource', 'article:other:shared', { label: '另一项目文章', href: `${endpoint}/articles/other/shared` });
+  const resources = runtime.inspectWorkbenchPreferences(root).items.filter((item: any) => item.kind === 'saved-resource');
+  assert.equal(resources.length, 3);
+  assert.equal(new Set(resources.map((item: any) => item.href)).size, 3);
+  for (const href of [`${endpoint}/articles/demo/shared/edit`, `${endpoint}/articles/demo/%2e%2e`, `${endpoint}/articles/demo/shared?path=/etc`, '/workspaces/another/articles/demo/shared']) {
+    assert.throws(() => runtime.putWorkbenchPreference(root, 'saved-resource', 'bad-article', { label: '拒绝', href }), (error: any) => error.code === 'workbench_resource_forbidden');
+  }
+});
+
 test('首批外置顶和事项按身份查得，跨项目任务不重复，日报局部错误', (t) => {
   const { root } = taskRecordFixture(t, 'workbench-overview');
   const runtime = createRuntime();

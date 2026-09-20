@@ -6,7 +6,20 @@ test('恢复页签只接受当前工作空间已支持的路由并去重', () =>
  const raw=JSON.stringify([valid,valid,{path:'/workspaces/b/skills'},{path:'https://example.com'},{path:'/workspaces/a/projects/%2e%2e'},{path:'/workspaces/a/services/p/s/edit'}]);
  assert.deepEqual(parseTabs('a',raw).map(t=>t.key),['dir:skills']);
  assert.deepEqual(parseTabs('a','invalid'),[]);
- assert.equal(tabForPath('a','/workspaces/a/settings').title,'设置');
+ assert.equal(tabForPath('a','/workspaces/a/settings'),null);
+});
+
+test('文章页签保留项目身份，阅读和编辑独立，旧地址保持同一篇文章', () => {
+ const legacy=tabForPath('w','/workspaces/w/articles/shared');
+ const product=tabForPath('w','/workspaces/w/articles/product/shared');
+ const other=tabForPath('w','/workspaces/w/articles/other/shared');
+ const edit=tabForPath('w','/workspaces/w/articles/product/shared/edit');
+ assert.equal(legacy.key,product.key);
+ assert.notEqual(product.key,other.key);
+ assert.notEqual(product.key,edit.key);
+ assert.equal(tabForPath('w','/workspaces/w/articles/product/shared/unknown'),null);
+ const restored=parseTabs('w',JSON.stringify([legacy,product,other,edit,{path:'/workspaces/w/settings'},{path:'/workspaces/w/articles/%2e%2e/shared'}]));
+ assert.deepEqual(restored.map(t=>t.key),[legacy.key,other.key,edit.key]);
 });
 test('默认分屏均分信息区并保留主内容限宽', () => {
  for (const width of [621, 700, 1000, 1216, 1832, 2336]) {

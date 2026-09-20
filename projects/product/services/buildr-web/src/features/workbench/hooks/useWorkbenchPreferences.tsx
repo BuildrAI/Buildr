@@ -28,50 +28,61 @@ export function WorkbenchPreferencesProvider({ workspaceId, children }: { worksp
   const [revision, setRevision] = useState(0);
   const client = useMemo(() => createWorkbenchClient(api, workspaceId || undefined), [workspaceId]);
   const generation = useRef(0), readController = useRef<AbortController | null>(null);
+  const pending = useRef<Promise<void> | null>(null);
   const currentWorkspace = useRef(workspaceId);
   currentWorkspace.current = workspaceId;
-  const refresh = useCallback(async () => {
-    if (!workspaceId) return;
-    const seq = ++generation.current;
-    readController.current?.abort();
-    const controller = new AbortController();
-    readController.current = controller;
-    setLoading(true);
-    try {
-      const data = await client.preferences({ signal: controller.signal });
-      if (controller.signal.aborted || seq !== generation.current || currentWorkspace.current !== workspaceId) return;
-      setPreferences(data); setError('');
-    } catch (err) {
-      if (!controller.signal.aborted && seq === generation.current && currentWorkspace.current === workspaceId) {
-        setError(err instanceof Error ? err.message : '个人关注信息暂时不可用');
+  const refresh = useCallback((force = false): Promise<void> => {
+    if (!workspaceId) return Promise.resolve();
+    if (pending.current && !force) return pending.current;
+    const promise = (async () => {
+      const seq = ++generation.current;
+      readController.current?.abort();
+      const controller = new AbortController();
+      readController.current = controller;
+      setLoading(true);
+      try {
+        const data = await client.preferences({ signal: controller.signal });
+        if (controller.signal.aborted || seq !== generation.current || currentWorkspace.current !== workspaceId) return;
+        setPreferences(data); setError('');
+      } catch (err) {
+        if (!controller.signal.aborted && seq === generation.current && currentWorkspace.current === workspaceId) {
+          setError(err instanceof Error ? err.message : '个人关注信息暂时不可用');
+        }
+      } finally {
+        if (!controller.signal.aborted && seq === generation.current && currentWorkspace.current === workspaceId) setLoading(false);
       }
-    } finally {
-      if (!controller.signal.aborted && seq === generation.current && currentWorkspace.current === workspaceId) setLoading(false);
-    }
+    })();
+    pending.current = promise;
+    void promise.finally(() => { if (pending.current === promise) pending.current = null; });
+    return promise;
   }, [client, workspaceId]);
   useEffect(() => {
     setPreferences(null); setError('');
     void refresh();
-    const onFocus = () => { void refresh(); };
+    const onFocus = () => { if (document.visibilityState === 'visible') void refresh(); };
     window.addEventListener('focus', onFocus);
-    return () => { ++generation.current; readController.current?.abort(); window.removeEventListener('focus', onFocus); };
+    document.addEventListener('visibilitychange', onFocus);
+    return () => {
+      ++generation.current; pending.current = null; readController.current?.abort();
+      window.removeEventListener('focus', onFocus); document.removeEventListener('visibilitychange', onFocus);
+    };
   }, [refresh]);
   const set = useCallback(async (kind: PreferenceKind, key: string, input: PreferenceValue = {}) => {
     if (!workspaceId) throw new Error('请先选择工作空间');
     await client.setPreference(kind, key, input);
     if (currentWorkspace.current !== workspaceId) return;
-    setRevision(value => value + 1); await refresh();
+    setRevision(value => value + 1); await refresh(true);
   }, [client, workspaceId, refresh]);
   const remove = useCallback(async (kind: PreferenceKind, key: string) => {
     if (!workspaceId) throw new Error('请先选择工作空间');
     await client.removePreference(kind, key);
     if (currentWorkspace.current !== workspaceId) return;
-    setRevision(value => value + 1); await refresh();
+    setRevision(value => value + 1); await refresh(true);
   }, [client, workspaceId, refresh]);
   const recordVisit = useCallback(async (input: WorkbenchVisitRequest) => {
     if (!workspaceId) return;
     await client.visit(input);
-    if (currentWorkspace.current === workspaceId) await refresh();
+    if (currentWorkspace.current === workspaceId) await refresh(true);
   }, [client, workspaceId, refresh]);
   const value = useMemo<Preferences>(() => ({
     workspaceId, preferences, data: preferences, loading, error, revision, refresh,

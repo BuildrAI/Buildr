@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { Alert, Button, Empty, Select, Skeleton, Tooltip } from 'antd';
-import { ArrowRightOutlined, ClockCircleOutlined, ReloadOutlined, StarFilled, StarOutlined } from '@ant-design/icons';
+import { ArrowRightOutlined, ClockCircleOutlined, ReloadOutlined, PushpinFilled, PushpinOutlined } from '@ant-design/icons';
 import { useAppShell } from '../../../app/AppShellContext';
 import { workspaceHref } from '../../../lib/labels';
 import { formatDateTime } from '../../../lib/taskLabels';
@@ -86,7 +86,7 @@ export function WorkbenchPage() {
           <section className="workbench-rail-card">
             <div className="workbench-section-heading"><h2>关注的项目</h2><Link className="workbench-link" to={href('/projects')}>全部 <ArrowRightOutlined /></Link></div>
             {(followed.length ? followed.map(item => ({ code: item.key, name: item.label })) : data.projects.slice(0, 5)).map(item => (
-              <div className="workbench-project-row" key={item.code}><Link to={href('/projects/' + encodeURIComponent(item.code))}><span className="workbench-project-dot" /><strong>{item.name}</strong></Link><Button type="text" size="small" loading={busyProject === item.code} aria-label={(prefs.has('followed-project', item.code) ? '取消关注：' : '关注：') + item.name} icon={prefs.has('followed-project', item.code) ? <StarFilled /> : <StarOutlined />} onClick={() => void toggleProject(item.code)} /></div>
+              <div className="workbench-project-row" key={item.code}><Link to={href('/projects/' + encodeURIComponent(item.code))}><span className="workbench-project-dot" /><strong>{item.name}</strong></Link><Button type="text" size="small" loading={busyProject === item.code} aria-label={(prefs.has('followed-project', item.code) ? '取消关注：' : '关注：') + item.name} icon={prefs.has('followed-project', item.code) ? <PushpinFilled /> : <PushpinOutlined />} onClick={() => void toggleProject(item.code)} /></div>
             ))}
             {!followed.length ? <p className="workbench-muted">关注后，可从侧栏快速回到项目。</p> : null}
           </section>

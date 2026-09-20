@@ -28,10 +28,23 @@ export function tabForPath(
       services: "服务目录",
       repositories: "代码库目录",
       skills: "技能",
-      settings: "设置",
+      articles: "文章",
     };
     if (parts.length === 1 && names[area])
       return { key: `dir:${area}`, kind: "dir", title: names[area], path };
+    if (area === "articles") {
+      const isLegacy = parts.length === 2;
+      const editing = parts.length === 4 && decoded[3] === "edit";
+      if (!isLegacy && parts.length !== 3 && !editing) return null;
+      const projectCode = isLegacy ? "product" : project;
+      const publicationId = isLegacy ? project : service;
+      return {
+        key: `${editing ? "publication-edit" : "publication"}:${projectCode}:${publicationId}`,
+        kind: "proj",
+        title: publicationId,
+        path,
+      };
+    }
     if (
       area === "knowledge" &&
       ["project", "service"].includes(project) &&

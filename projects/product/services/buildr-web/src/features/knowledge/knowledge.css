@@ -106,6 +106,7 @@
     padding: 12px;
   }
 }
+
 .knowledge-token-string {
   color: #8a591e;
 }
@@ -276,6 +277,18 @@
   .knowledge-side-reader {
     padding: 16px;
   }
+}
+
+@container (max-width: 620px) {
+  .knowledge-home-entry {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr);
+    align-items: start;
+    gap: 12px;
+    padding: 20px;
+  }
+  .knowledge-home-icon { padding: 10px; font-size: 24px; }
+  .knowledge-home-entry b { grid-column: 2; margin-left: 0; }
 }
 
 .knowledge-tree {
