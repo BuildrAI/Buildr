@@ -75,11 +75,10 @@ export function WorkbenchPage() {
               {data.planned.hasMore ? <Link to={href('/tasks?status=todo' + (project ? '&project=' + encodeURIComponent(project) : ''))}>更多待办</Link> : null}
             </div>
           </section>
-          <section>
-            <div className="workbench-section-heading"><h2>项目变化</h2><Link className="workbench-link" to={href('/activity' + (project ? '?project=' + encodeURIComponent(project) : ''))}>更多动态 <ArrowRightOutlined /></Link></div>
-            <WorkbenchDailyProgress data={data.dailyProgress} project={project} onRefresh={() => void refresh()} />
-            {data.recentResults.items.length ? <div className="workbench-recent-results"><h3>近期完成</h3>{data.recentResults.items.slice(0, 3).map(item => <WorkbenchTaskRow key={item.task.record.taskId} item={item} compact projectNames={projectNames} onError={setActionError} />)}<Link className="workbench-link" to={href('/tasks?status=completed' + (project ? '&project=' + encodeURIComponent(project) : ''))}>查看完成记录 <ArrowRightOutlined /></Link></div> : null}
-          </section>
+          {data.recentResults.items.length ? <section className="workbench-recent-results">
+            <div className="workbench-section-heading"><h2>近期完成</h2><Link className="workbench-link" to={href('/tasks?status=completed' + (project ? '&project=' + encodeURIComponent(project) : ''))}>查看完成记录 <ArrowRightOutlined /></Link></div>
+            {data.recentResults.items.slice(0, 3).map(item => <WorkbenchTaskRow key={item.task.record.taskId} item={item} compact projectNames={projectNames} onError={setActionError} />)}
+          </section> : null}
         </div>
         <aside className="workbench-rail">
           <WorkbenchResources />
@@ -89,6 +88,10 @@ export function WorkbenchPage() {
               <div className="workbench-project-row" key={item.code}><Link to={href('/projects/' + encodeURIComponent(item.code))}><span className="workbench-project-dot" /><strong>{item.name}</strong></Link><Button type="text" size="small" loading={busyProject === item.code} aria-label={(prefs.has('followed-project', item.code) ? '取消关注：' : '关注：') + item.name} icon={prefs.has('followed-project', item.code) ? <PushpinFilled /> : <PushpinOutlined />} onClick={() => void toggleProject(item.code)} /></div>
             ))}
             {!followed.length ? <p className="workbench-muted">关注后，可从侧栏快速回到项目。</p> : null}
+          </section>
+          <section className="workbench-rail-card workbench-daily-card">
+            <div className="workbench-section-heading"><h2>每日演进</h2><Link className="workbench-link" to={href('/activity' + (project ? '?project=' + encodeURIComponent(project) : ''))}>更多动态 <ArrowRightOutlined /></Link></div>
+            <WorkbenchDailyProgress data={data.dailyProgress} project={project} compact onRefresh={() => void refresh()} />
           </section>
           <p className="workbench-observed">读取于 {formatDateTime(data.observedAt)}<br />工作进展按实际记录展示。</p>
         </aside>
