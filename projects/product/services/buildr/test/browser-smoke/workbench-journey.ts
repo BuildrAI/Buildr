@@ -33,7 +33,10 @@ export async function runWorkbenchJourney({ t, page, runtime, workspaceRoot, oth
   runtime.recordProjectDailyProgress(workspaceRoot, {
     project: 'other', date: '2026-09-19', payload: {
       daySummary: { added: '工作台浏览器场景中的真实每日摘要。', updated: '调整项目入口。', deleted: '无删除。', drawbacks: '只覆盖明确提交，不包含未提交内容。' },
-      commits: [{ sha: 'acb1234', subject: '登记工作台浏览器场景。', authorName: 'Browser Fixture', authorEmail: 'fixture@example.com', authorship: 'self', taskIds: [crossId] }],
+      commits: [
+        { sha: 'acb1234', subject: '登记工作台浏览器场景。', authorName: 'Browser Fixture', authorEmail: 'fixture@example.com', authorship: 'self', taskIds: [crossId] },
+        { sha: 'bca5678', subject: '协作者补充项目入口。', authorName: 'Collaborator Fixture', authorEmail: 'collaborator@example.com', authorship: 'other', taskIds: [] },
+      ],
       files: [{ path: 'README.md', kind: 'modified' }],
     },
   });
@@ -70,7 +73,9 @@ export async function runWorkbenchJourney({ t, page, runtime, workspaceRoot, oth
     await page.waitForURL(`${workspaceUrl}/overview`);
     await page.locator(`[data-attention-task="${crossId}"]`).waitFor({ state: 'visible' });
     assert.deepEqual(await page.locator('.shell-navigation [data-nav]').allTextContents(), ['概览', '任务', '动态']);
-    assert.equal(await page.locator('#workbench-attention [data-attention-task]').count(), 1, '只有明确登记的事项进入待我处理');
+    assert.equal(await page.locator('#workbench-attention [data-attention-task]').count(), 1, '只有明确登记的事项进入等我回应');
+    assert.equal(await page.locator('#workbench-attention').getByRole('heading', { name: /等我回应/ }).count(), 1);
+    assert.match(await page.locator('#workbench-attention').innerText(), /决定、验收或补充信息/);
     assert.match(await page.locator('#workbench-attention').innerText(), /请确认两项项目采用同一工作方向/);
     assert.equal(await page.locator(`#workbench-active [data-workbench-task="${crossId}"]`).count(), 1);
     assert.match(await page.locator('#workbench-daily-progress').innerText(), /工作台浏览器场景中的真实每日摘要/);
@@ -116,6 +121,109 @@ export async function runWorkbenchJourney({ t, page, runtime, workspaceRoot, oth
     await page.locator('#workbench-attention').waitFor({ state: 'visible' });
     assert.equal(await page.locator('#workbench-attention [data-attention-task]').count(), 0);
     assert.match(await page.locator('#workbench-attention').innerText(), /没有|暂无/);
+    assert.match(await page.locator('#workbench-attention').innerText(), /决定、验收或补充信息/);
+    const emptyAttention = await page.locator('#workbench-attention').boundingBox();
+    assert.ok(emptyAttention && emptyAttention.height <= 100, '没有待回应事项时应紧凑呈现，不保留大块空卡片');
+    const emptyStatus = await page.locator('#workbench-attention [role="status"]').boundingBox();
+    assert.ok(emptyStatus && emptyStatus.height <= 40, '空态应是一行状态说明');
+  });
+
+  await t.test('历史每日演进从概览和动态进入同一详情，日期与分组可刷新并随任务返回', async () => {
+    const progressPath = path.join(workspaceRoot, '.buildr/daily-progress/other/2026-09-19.yml');
+    const savedProgress = fs.readFileSync(progressPath, 'utf8');
+    await page.goto(`${workspaceUrl}/overview?project=other`);
+    await page.locator('#workbench-daily-progress').getByRole('link', { name: /查看每日演进/ }).click();
+    await page.waitForURL(current => current.pathname === `${workspacePath}/activity` && current.searchParams.get('project') === 'other' && current.searchParams.get('date') === '2026-09-19');
+    await page.locator('[data-progress-item="acb1234"]').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#progress-date').inputValue(), '2026-09-19', '历史摘要不能退回今天');
+    assert.equal(await page.locator('#progress-body [data-progress-item]').count(), 2);
+    assert.match(await page.locator('#progress-body').innerText(), /工作台浏览器场景中的真实每日摘要/);
+    assert.equal(await page.locator('[data-nav="activity"]').evaluate((element: HTMLElement) => element.classList.contains('active')), true);
+    assert.equal(await page.locator('.pane-right #progress-body').count(), 0, '完整详情属于动态页');
+    await page.setViewportSize({ width: 390, height: 844 });
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, '每日演进完整详情在窄屏不横向溢出');
+    await capture(page, 'workbench-daily-progress-mobile.png');
+    await page.setViewportSize({ width: 1280, height: 720 });
+
+    await page.locator('[data-group="person"]').click();
+    await page.waitForURL(current => current.searchParams.get('group') === 'person');
+    await page.locator('#progress-body .progress-group').getByRole('heading', { name: /Collaborator Fixture/ }).waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#progress-body [data-progress-item]').count(), 2, '按人保留自己的与他人的提交');
+    await page.locator('[data-group="task"]').click();
+    await page.waitForURL(current => current.searchParams.get('group') === 'task');
+    await page.locator('#progress-body .progress-group').getByRole('heading', { name: new RegExp(crossTitle) }).waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#progress-body [data-progress-item]').count(), 1, '按任务只聚合已关联的自己的提交');
+    const taskGroupUrl = page.url();
+    await page.reload();
+    await page.locator('[data-group="task"][aria-pressed="true"]').waitFor({ state: 'visible' });
+    await page.locator('[data-progress-item="acb1234"]').waitFor({ state: 'visible' });
+    assert.equal(page.url(), taskGroupUrl);
+    assert.equal(await page.locator('#progress-date').inputValue(), '2026-09-19');
+
+    await page.locator('#activity-generate-button').click();
+    await page.locator('#action-prompt-output').waitFor({ state: 'visible' });
+    const prompt = await page.locator('#action-prompt-output').inputValue();
+    assert.match(prompt, /--project other/);
+    assert.match(prompt, /--date 2026-09-19/);
+    assert.equal(fs.readFileSync(progressPath, 'utf8'), savedProgress, '生成入口只准备指令，不写演进文件');
+    await page.locator('#close-agent-action').click();
+    await page.locator('[data-progress-item="acb1234"]').getByRole('link').filter({ hasText: crossTitle }).click();
+    await page.waitForURL(`${workspaceUrl}/tasks/${crossId}`);
+    await page.locator('#task-return').click();
+    await page.waitForURL(taskGroupUrl);
+    await page.locator('[data-progress-item="acb1234"]').waitFor({ state: 'visible' });
+
+    await page.locator('#workbench-activity').getByRole('button', { name: '后一天', exact: true }).click();
+    await page.waitForURL(current => current.searchParams.get('date') === '2026-09-20');
+    await page.locator('#daily-progress-empty').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#progress-body [data-progress-item]').count(), 0, '空日期不能残留上一日提交');
+    await page.locator('#empty-agent-action').click();
+    await page.locator('#action-prompt-output').waitFor({ state: 'visible' });
+    assert.match(await page.locator('#action-prompt-output').inputValue(), /--project other --date 2026-09-20/);
+    await page.locator('#close-agent-action').click();
+    await page.locator('#workbench-activity').getByRole('button', { name: '前一天', exact: true }).click();
+    await page.waitForURL(taskGroupUrl);
+    await page.locator('[data-progress-item="acb1234"]').waitFor({ state: 'visible' });
+    await page.locator('#activity-latest-button').click();
+    await page.waitForURL(current => current.pathname === `${workspacePath}/activity` && current.searchParams.get('project') === 'other' && !current.searchParams.has('date') && !current.searchParams.has('group'));
+    await page.locator('#workbench-daily-progress').getByRole('link', { name: /查看每日演进/ }).click();
+    await page.waitForURL(current => current.searchParams.get('project') === 'other' && current.searchParams.get('date') === '2026-09-19');
+    await page.locator('[data-progress-item="bca5678"]').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('[data-group="day"]').getAttribute('aria-pressed'), 'true');
+  });
+
+  await t.test('旧项目每日演进链接保留项目日期和分组，缺省日期按本机今天转换', async () => {
+    await page.goto(`${workspaceUrl}/projects/other?document=daily&date=2026-09-19&group=person`);
+    await page.waitForURL(current => current.pathname === `${workspacePath}/activity` && current.searchParams.get('project') === 'other' && current.searchParams.get('date') === '2026-09-19' && current.searchParams.get('group') === 'person');
+    await page.locator('[data-progress-item="bca5678"]').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#progress-date').inputValue(), '2026-09-19');
+    assert.equal(await page.locator('[data-group="person"]').getAttribute('aria-pressed'), 'true');
+    assert.equal(new URL(page.url()).searchParams.has('document'), false);
+    const today = await page.evaluate(() => {
+      const date = new Date();
+      return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    });
+    await page.goto(`${workspaceUrl}/projects/other?document=daily`);
+    await page.waitForURL(current => current.pathname === `${workspacePath}/activity` && current.searchParams.get('project') === 'other' && current.searchParams.get('date') === today);
+    assert.equal(await page.locator('#progress-date').inputValue(), today);
+
+    await page.goto(`${workspaceUrl}/projects/other?document=daily&date=2026-09-19&group=person`);
+    await page.waitForURL(current => current.pathname === `${workspacePath}/activity` && current.searchParams.get('project') === 'other' && current.searchParams.get('date') === '2026-09-19' && current.searchParams.get('group') === 'person');
+    await page.locator('[data-progress-item="bca5678"]').waitFor({ state: 'visible' });
+    await page.locator('[data-area="workspace"]').click();
+    await page.waitForURL(`${workspaceUrl}/projects/other`);
+    await page.locator('#project-activity-link').waitFor({ state: 'visible' });
+    assert.equal(page.url(), `${workspaceUrl}/projects/other`, '切回工作空间不能恢复已迁移的每日演进查询参数');
+    assert.equal(await page.locator('#project-detail-name').innerText(), otherProjectName);
+    await page.reload();
+    await page.locator('#project-activity-link').waitFor({ state: 'visible' });
+    assert.equal(page.url(), `${workspaceUrl}/projects/other`, '项目主页刷新后不能再次跳回动态');
+    assert.equal(await page.locator('#workbench-activity').count(), 0);
+    await page.locator('[data-area="workbench"]').click();
+    await page.waitForURL(`${workspaceUrl}/overview`);
+    await page.locator('[data-nav="activity"]').click();
+    await page.waitForURL(`${workspaceUrl}/activity`);
+    await page.locator('#workbench-activity').waitFor({ state: 'visible' });
   });
 
   await t.test('逐项偏好由真实界面保存，刷新后恢复且不改变任务状态', async () => {

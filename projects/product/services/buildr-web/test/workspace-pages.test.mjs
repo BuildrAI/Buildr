@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { tabForPath, parseTabs, paneDimensions, readRatio, moveTab, ratioStorageKey, resourcePreview, previewOwnerPath } from '../src/app/workspace-pages.ts';
+import { tabForPath, parseTabs, paneDimensions, readRatio, moveTab, ratioStorageKey, resourcePreview, previewOwnerPath, workspacePageSearch } from '../src/app/workspace-pages.ts';
 test('恢复页签只接受当前工作空间已支持的路由并去重', () => {
  const valid={path:'/workspaces/a/skills',title:'技能'};
  const raw=JSON.stringify([valid,valid,{path:'/workspaces/b/skills'},{path:'https://example.com'},{path:'/workspaces/a/projects/%2e%2e'},{path:'/workspaces/a/services/p/s/edit'}]);
@@ -61,4 +61,19 @@ test('项目详情与知识共享一个项目标签，恢复旧标签去重且�
  assert.equal(detail.key,knowledge.key);
  const tabs=parseTabs('w',JSON.stringify([{path:knowledge.path,title:'Buildr 产品 · 知识',search:'?view=diagrams&q=订单'},{path:detail.path,title:'Buildr 产品'}]));
  assert.equal(tabs.length,1);assert.equal(tabs[0].title,'Buildr 产品');assert.equal(tabs[0].search,'?view=diagrams&q=订单');
+});
+
+test('旧每日演进跳转不会成为工作空间或项目标签的恢复目标', () => {
+ const path='/workspaces/w/projects/product';
+ const search='?document=daily&date=2026-09-19&group=person';
+ assert.equal(workspacePageSearch('w',path,search),'');
+ assert.equal(workspacePageSearch('w',path,search+'&q=kept'),'?q=kept');
+ const restored=parseTabs('w',JSON.stringify([{path,title:'Buildr 产品',search}]));
+ assert.equal(restored.length,1);
+ assert.equal(restored[0].path,path);
+ assert.equal(restored[0].search,'');
+ for(const other of ['/workspaces/other/projects/product','/workspaces/w/knowledge/project/product','/workspaces/w/projects/product/edit']) {
+  assert.equal(workspacePageSearch('w',other,search),search);
+ }
+ assert.equal(workspacePageSearch('w',path,'?document=readme&date=2026-09-19'),'?document=readme&date=2026-09-19');
 });

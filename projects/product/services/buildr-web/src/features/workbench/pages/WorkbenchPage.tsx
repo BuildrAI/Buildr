@@ -32,7 +32,7 @@ export function WorkbenchPage() {
   };
   return <div className="workbench-page" id="workbench-overview">
     <header className="workbench-page-heading">
-      <div><p className="workbench-eyebrow">{new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' })}</p><h1>工作概览</h1><p className="workbench-subtitle">{data ? data.attention.total + ' 件事需要你处理，' + data.active.total + ' 项工作正在推进。' : '从关注事项、工作进展和共同资料开始。'}</p></div>
+      <div><p className="workbench-eyebrow">{new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' })}</p><h1>工作概览</h1><p className="workbench-subtitle">{data ? data.attention.total + ' 件事等待你回应，' + data.active.total + ' 项工作正在推进。' : '从关注事项、工作进展和共同资料开始。'}</p></div>
       <div className="workbench-heading-actions">
         <Select id="workbench-project-filter" aria-label="筛选项目" value={project} onChange={value => setParams(value ? { project: value } : {})}
           options={[{ value: '', label: '全部项目' }, ...(data?.projects || []).map(item => ({ value: item.code, label: item.name }))]} />
@@ -44,9 +44,14 @@ export function WorkbenchPage() {
     {loading && !data ? <div className="workbench-loading" aria-label="正在读取工作概览"><Skeleton active /><Skeleton active /></div> : null}
     {data ? <>
       <section id="workbench-attention" className="workbench-attention">
-        <div className="workbench-section-heading"><h2>待我处理 <span className="workbench-count">{data.attention.total}</span></h2>{data.attention.hasMore ? <Link to={href('/tasks?status=all' + (project ? '&project=' + encodeURIComponent(project) : ''))}>查看全部任务 <ArrowRightOutlined /></Link> : null}</div>
+        <div className="workbench-section-heading workbench-attention-heading">
+          <h2>等我回应 <span className="workbench-count">{data.attention.total}</span></h2>
+          {!data.attention.items.length && !data.attention.diagnostic ? <span className="workbench-attention-empty" role="status"><span className="workbench-quiet-dot" />暂无等待回应的事项</span> : null}
+          {data.attention.hasMore ? <Link to={href('/tasks?status=all' + (project ? '&project=' + encodeURIComponent(project) : ''))}>查看全部任务 <ArrowRightOutlined /></Link> : null}
+        </div>
+        <p className="workbench-attention-description">需要你决定、验收或补充信息的事项。</p>
         {data.attention.diagnostic ? <Alert type="warning" message={data.attention.diagnostic.message} /> : null}
-        <div className="workbench-attention-grid">
+        {data.attention.items.length ? <div className="workbench-attention-grid">
           {data.attention.items.map(({ task, workContext }) => {
             const attention = workContext.context?.attention;
             if (!attention || attention.state !== 'pending') return null;
@@ -58,8 +63,7 @@ export function WorkbenchPage() {
               <footer><span>{task.record.scope.projects.map(code => projectNames[code] || code).join('、') || '工作空间范围'}</span><Link to={taskPath} state={{ from }}><Button size="small">{attention.kind === 'decision' ? '查看方案' : attention.kind === 'acceptance' ? '查看成果' : '查看问题'} <ArrowRightOutlined /></Button></Link></footer>
             </article>;
           })}
-        </div>
-        {!data.attention.items.length && !data.attention.diagnostic ? <div className="workbench-attention-empty"><span className="workbench-quiet-dot" /><div><strong>暂时没有需要你处理的事</strong><p>可以继续手头的工作，或查看最近的变化。</p></div></div> : null}
+        </div> : null}
       </section>
       <div className="workbench-home-grid">
         <div className="workbench-main-stack">

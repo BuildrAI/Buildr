@@ -93,6 +93,17 @@ export function tabForPath(
   return null;
 }
 
+/** Remember the project home, rather than replaying a retired daily-progress redirect. */
+export function workspacePageSearch(workspaceId: string, path: string, search: string): string {
+  if (!path.startsWith(`/workspaces/${workspaceId}/projects/`) || tabForPath(workspaceId, path)?.kind !== 'proj') return search;
+  const params = new URLSearchParams(search);
+  if (params.get('document') !== 'daily') return search;
+  params.delete('document');
+  params.delete('date');
+  params.delete('group');
+  return params.size ? `?${params}` : '';
+}
+
 export function parseTabs(id: string, raw: string | null): WorkspacePageTab[] {
   try {
     const input: unknown = JSON.parse(raw || "[]");
@@ -110,7 +121,7 @@ export function parseTabs(id: string, raw: string | null): WorkspacePageTab[] {
         item.search.startsWith("?") &&
         item.search.length <= 4000
       )
-        tab.search = item.search;
+        tab.search = workspacePageSearch(id, item.path, item.search);
       result.push(tab);
     }
     return result;

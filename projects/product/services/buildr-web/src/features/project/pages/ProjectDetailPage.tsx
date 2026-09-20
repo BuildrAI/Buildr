@@ -15,7 +15,7 @@ import { useAppShell } from '../../../app/AppShellContext';
 import { MarkdownHost } from '../../../components/MarkdownHost';
 import { encodeProjectDocumentPath, resolveProjectMarkdownHref } from '../../../lib/projectDocuments';
 import { workspaceHref } from '../../../lib/labels';
-import { DailyProgressPanel } from '../../project-daily-progress/components/DailyProgressPanel';
+import { dailyProgressActivityPath, legacyDailyProgressPath } from '../../project-daily-progress/dailyProgressNavigation';
 import { useMarkdownDocumentViewer, type MarkdownDocument } from '../../../lib/useMarkdownDocumentViewer';
 import { ProjectEditDrawer } from '../components/ProjectEditDrawer';
 import { useWorkspacePageTabs } from '../../../app/pageTabs';
@@ -32,7 +32,6 @@ const projectDocumentMissingMessage = (path: string) => `项目内未找到 ${pa
 const DOC_ROWS: { ref: string; name: string; hint: string }[] = [
   { ref: 'readme', name: 'README.md', hint: '项目治理根与入口' },
   { ref: 'agents', name: 'AGENTS.md', hint: '规则与授权边界' },
-  { ref: 'daily', name: '每日演进', hint: '按提交范围生成的四问摘要' },
 ];
 
 /** 右组项目文档对象。 */
@@ -81,7 +80,7 @@ function ProjectDocObjectView({ projectCode, docPath, title, hint }: { projectCo
 export function ProjectDetailPage() {
   const { projectCode = '' } = useParams();
   const navigate = useNavigate();
-  const { workspaceId, setWorkspace, setBreadcrumbParts, openAgentAction } = useAppShell();
+  const { workspaceId, setWorkspace, setBreadcrumbParts } = useAppShell();
   const href = (path: string) => workspaceHref(workspaceId, path);
   const [deleting, setDeleting] = useState<string | null>(null);
   const pageTabs = useWorkspacePageTabs(workspaceId);
@@ -135,10 +134,9 @@ export function ProjectDetailPage() {
     setActiveObj(tab.key);
   };
   useEffect(() => {
-    if (new URLSearchParams(editLocation.search).get('document') !== 'daily') return;
-    setObjects(current => current.some(tab => tab.key === 'doc:daily') ? current : [...current, { key: 'doc:daily', kind: 'doc', ref: 'daily' }]);
-    setActiveObj('doc:daily');
-  }, [editLocation.search]);
+    const activityPath = legacyDailyProgressPath(projectCode, editLocation.search);
+    if (activityPath) navigate(workspaceHref(workspaceId, activityPath), { replace: true });
+  }, [editLocation.search, projectCode, workspaceId, navigate]);
   const closeObject = (key: string) => {
     setObjects((current) => {
       const index = current.findIndex((o) => o.key === key);
@@ -188,17 +186,6 @@ export function ProjectDetailPage() {
         onActivateObject={setActiveObj}
         onCloseObject={closeObject}
         objectContent={activeTab ? (
-          activeTab.ref === 'daily' ? (
-            <>
-              <div className="ws-obj-head"><h2>每日演进</h2></div>
-              <p className="ws-obj-sub">按提交范围生成的四问摘要</p>
-              <DailyProgressPanel
-                projectCode={projectCode}
-                workspaceId={workspaceId}
-                onAskAgent={() => openAgentAction('daily-progress', { projectCode, date: new Date().toISOString().slice(0, 10) })}
-              />
-            </>
-          ) : (
             <ProjectDocObjectView
               key={activeTab.ref}
               projectCode={projectCode}
@@ -206,7 +193,6 @@ export function ProjectDetailPage() {
               title={activeTab.ref === 'agents' ? 'AGENTS.md' : 'README.md'}
               hint={activeTab.ref === 'agents' ? '规则与授权边界' : '项目治理根与入口'}
             />
-          )
         ) : null}
       >
         <div className="project-home">
@@ -241,6 +227,11 @@ export function ProjectDetailPage() {
             <span><strong>项目文章</strong><small>继续写作，整理与分享项目成果</small></span>
             <RightOutlined />
           </Link>
+          <Link id="project-activity-link" className="project-home-entry" to={href(dailyProgressActivityPath(projectCode))}>
+            <span className="project-home-entry-icon"><HistoryOutlined /></span>
+            <span><strong>项目动态</strong><small>查看每日演进、提交与变化影响</small></span>
+            <RightOutlined />
+          </Link>
         </nav>
         <div className="project-home-details">
           <ProjectServicesPanel projectCode={projectCode} />
@@ -256,7 +247,7 @@ export function ProjectDetailPage() {
                   data-doc-row={doc.ref}
                   onClick={() => openObject({ key: `doc:${doc.ref}`, kind: 'doc', ref: doc.ref })}
                 >
-                  <span className="ws-obj-ico">{doc.ref === 'daily' ? <HistoryOutlined /> : <FileTextOutlined />}</span>
+                  <span className="ws-obj-ico"><FileTextOutlined /></span>
                   <span className="ws-obj-name">{doc.name}</span>
                   <small>{doc.hint}</small>
                   <RightOutlined className="ws-go" aria-hidden />

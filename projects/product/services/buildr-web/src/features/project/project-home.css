@@ -9,7 +9,7 @@
 .project-home-context b { color: var(--soft-ink); font-weight: 550; }
 .project-home-dot { padding: 0 10px; color: #c1cac6; }
 .project-home-work { display: inline-flex; align-items: center; gap: 12px; height: 36px; padding: 0 16px; }
-.project-home-entries { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 24px 0; }
+.project-home-entries { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); gap: 16px; margin: 24px 0; }
 .project-home-entry { display: flex; align-items: center; gap: 14px; padding: 20px; border: 1px solid var(--soft-line); border-radius: 12px; color: var(--soft-ink); background: #fff; transition: border-color .15s, background .15s; }
 .project-home-entry:hover { color: var(--soft-ink); border-color: #a5c6be; background: #f8fbfa; }
 .project-home-entry:focus-visible { outline: 2px solid var(--soft-primary); outline-offset: 3px; }

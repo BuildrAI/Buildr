@@ -2,6 +2,7 @@ import { WorkbenchPreferencesProvider } from '../features/workbench/hooks/useWor
 import { WorkbenchSearch } from '../features/workbench/components/WorkbenchSearch';
 import type { ResourcePreview } from './resource-preview';
 import { WorkspacePages } from './WorkspacePages';
+import { workspacePageSearch } from './workspace-pages';
 import { runtimeSystemApi } from './api/runtime-system-api';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom';
@@ -63,6 +64,7 @@ export function AppLayout({ renderResource }: { renderResource: (item: ResourceP
   activeWorkspaceId.current = workspaceId;
   const isGlobal = !workspaceId;
   const area = navigationState(location.pathname, location.search, workspaceId).area;
+  const retainedSearch = workspaceId ? workspacePageSearch(workspaceId, location.pathname, location.search) : location.search;
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('buildr.sidebar-collapsed') === 'true');
   const [navigationOpen, setNavigationOpen] = useState(false);
   const [compactNavigation, setCompactNavigation] = useState(() => window.matchMedia('(max-width: 899px)').matches);
@@ -76,13 +78,13 @@ export function AppLayout({ renderResource }: { renderResource: (item: ResourceP
   if (workspaceDestination.current.workspaceId !== workspaceId) {
     workspaceDestination.current = { workspaceId, path: `/workspaces/${workspaceId}/projects`, state: null };
   }
-  if (area === 'workspace' && workspaceId) workspaceDestination.current = { workspaceId, path: location.pathname + location.search, state: location.state };
+  if (area === 'workspace' && workspaceId) workspaceDestination.current = { workspaceId, path: location.pathname + retainedSearch, state: location.state };
   const [, refreshSectionLinks] = useState(0);
   const sectionHistory = useRef<{ workspaceId: string | null; pages: Record<string, { to: string; state?: unknown }> }>({ workspaceId, pages: {} });
   if (sectionHistory.current.workspaceId !== workspaceId) sectionHistory.current = { workspaceId, pages: {} };
   const section = workspaceId ? location.pathname.slice(`/workspaces/${workspaceId}/`.length).split('/')[0] : '';
   if (workspaceId && ['projects', 'services', 'repositories', 'skills', 'articles'].includes(section) && !/\/(new|edit)$/.test(location.pathname)) {
-    sectionHistory.current.pages[section] = { to: location.pathname + location.search + location.hash, state: location.state };
+    sectionHistory.current.pages[section] = { to: location.pathname + retainedSearch + location.hash, state: location.state };
   }
   const workspaceMenuTarget = (name: string) => sectionHistory.current.pages[name] || { to: `/workspaces/${workspaceId}/${name}` };
   const forgetWorkspacePage = (path: string) => {

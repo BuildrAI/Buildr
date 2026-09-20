@@ -417,7 +417,7 @@ artifacts:
       - parent-task-actions
       - parent-coordination-tests
       - parent-completion-ui-tests
-    observedDigest: 13cfe823cef5d1377e523cf93bc078799d014a6d7e3c775a056ba0b3915f591a
+    observedDigest: 26a08db913bf68a5a2979c8ebc531ebd12091d3e4e70347b91c28003d9c5edbd
     files:
       - task-file-task-system-md-123fb5
       - task-file-task-system-md-d14898
@@ -1436,8 +1436,8 @@ sources:
     title: 工作概览页面
     kind: code
     path: services/buildr-web/src/features/workbench/pages/WorkbenchPage.tsx
-    summary: 呈现待我处理、继续推进、项目变化和常用入口，保留范围、来源与局部错误提示。
-    observedDigest: 23ee159df3d48c5bcdf638dfd016e7e3efed1f00e38692ea6f38da1037327db9
+    summary: 呈现等我回应、继续推进、项目变化和常用入口；回应仅来自明确的决定、验收或补充信息请求，无请求时紧凑展示，保留范围、来源与局部错误提示。
+    observedDigest: fca9f8f19f1d50079d5959f0e7956f4cddf77704b47a07a64be78e5833f2832b
   - id: task-source-taskdetailpage-335bc9
     title: 任务详情页面
     kind: code
@@ -1632,7 +1632,7 @@ sources:
     kind: evidence
     path: knowledge/code-map/task-system.md
     summary: 保存本主题当前解释或依据，网页与本地使用同一正文；不替代规范和代码。
-    observedDigest: 13cfe823cef5d1377e523cf93bc078799d014a6d7e3c775a056ba0b3915f591a
+    observedDigest: 26a08db913bf68a5a2979c8ebc531ebd12091d3e4e70347b91c28003d9c5edbd
   - id: task-file-task-system-html-80857d
     title: 完整过程与角色职责 · 独立展示
     kind: evidence
@@ -2228,13 +2228,13 @@ sources:
     summary: 组装隔离服务、浏览器与测试现场，选择旅程并清理。
     kind: code
     path: services/buildr/test/browser-smoke/buildr-web-browser.test.ts
-    observedDigest: 166fc1c5d44c378935c1c0365bded8c2a1033a0663ba9441622c8479919d928e
+    observedDigest: 6ea125e981ccd3b6e23e23c9a8dcef3f301da7ecb83f627a64d82cac2599810d
   - id: verification-ref-73fbe375
     title: 工作台真实交互旅程
     summary: 核对答复冲突后的重读保存、资料阅读和偏好恢复。
     kind: code
     path: services/buildr/test/browser-smoke/workbench-journey.ts
-    observedDigest: 8d4e43c350a9b1bbdcd23e52b07e5713b9581f5fd0a501130d02141020b20228
+    observedDigest: 1876befbf1c6d65b2469cb07d8cf856284094bbf941da543d0aab3e391f91a43
 relations:
   - from: query
     to: knowledge-maintenance

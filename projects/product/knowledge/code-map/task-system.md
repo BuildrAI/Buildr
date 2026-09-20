@@ -98,7 +98,7 @@
       - [hooks/useTaskActions.ts](../../services/buildr-web/src/features/task/hooks/useTaskActions.ts) — 完成前重读、提交版本与授权；冲突后清除旧确认、刷新成果，等待重新判断
       - [hooks/useTaskWorkContext.ts](../../services/buildr-web/src/features/task/hooks/useTaskWorkContext.ts) — 刷新与取消旧请求，防止不同任务内容混入
     - **`features/workbench/`** — 日常关注入口
-      - [pages/WorkbenchPage.tsx](../../services/buildr-web/src/features/workbench/pages/WorkbenchPage.tsx) — 待我处理、继续推进、项目变化与常用资料
+      - [pages/WorkbenchPage.tsx](../../services/buildr-web/src/features/workbench/pages/WorkbenchPage.tsx) — 等我回应（明确的决定、验收或补充信息请求）、继续推进、项目变化与常用资料；没有回应请求时紧凑展示
 
 ## 哪些专业方法指导执行？
 

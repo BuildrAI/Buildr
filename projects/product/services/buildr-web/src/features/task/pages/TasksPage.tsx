@@ -312,13 +312,13 @@ export function TasksPage() {
       {listContexts.error && <Alert type="warning" message="最近进展暂时不可读取，任务目标和已有结果仍可查看。" />}
       {preferenceError && <Alert type="warning" message={preferenceError} closable onClose={() => setPreferenceError(null)} />}
       <section className="resource-list-section task-workbench-list">
-        <div id="task-table-wrap" className={`management-table-wrap${showTable ? '' : ' hidden'}`}>
+        <div id="task-table-wrap" className={showTable ? undefined : 'hidden'}>
           <TaskTable tasks={visibleTasks} prefetchTaskId={prefetchTaskId} projectNames={projectNames} contexts={listContexts.contexts} grouped={grouped} taskHref={(id) => href(`/tasks/${encodeURIComponent(id)}`)} onOpen={openTask} isPinned={(id) => preferences.has('pinned-task', id)} onPin={(id) => { void togglePin(id); }} pending={pendingPin} />
-          <div id="task-load-more-state" className="task-load-more-state" aria-live="polite">
+          {(loadingMore || hasMore || loadMoreError) && <div id="task-load-more-state" className="task-load-more-state" aria-live="polite">
             {loadingMore ? '正在继续读取…' : null}
             {hasMore && !loadingMore && !loadMoreError ? <Button onClick={loadMore}>查看更多任务</Button> : null}
             {loadMoreError ? <Button size="small" onClick={retryLoadMore}>继续读取失败，重试</Button> : null}
-          </div>
+          </div>}
         </div>
         <div id="task-empty" className={`empty-state${showEmpty ? '' : ' hidden'}`}>
           {showEmpty ? (

@@ -4,7 +4,7 @@ import { UNSAFE_LocationContext, useLocation, useNavigate, useNavigationType, us
 import { WorkspaceTabsContext } from './pageTabs';
 import { ResourcePreviewContext, resourcePreview, type PreviewState, type ResourcePreview } from './resource-preview';
 import { PageTabStrip } from './PageTabStrip';
-import { moveTab, parseTabs, previewOwnerPath, ratioStorageKey, readRatio, tabForPath, tabsStorageKey, type WorkspacePageTab } from './workspace-pages';
+import { moveTab, parseTabs, previewOwnerPath, ratioStorageKey, readRatio, tabForPath, tabsStorageKey, workspacePageSearch, type WorkspacePageTab } from './workspace-pages';
 
 type LocationValue = React.ContextType<typeof UNSAFE_LocationContext>;
 type Visited = { path: string; node: ReactNode; location: LocationValue; instance: string };
@@ -104,10 +104,11 @@ export function WorkspacePages({ workspaceId, renderResource }: { workspaceId: s
     previousPagePath.current = location.pathname;
     if (!current || resourcePreview(workspaceId, location.pathname)) return;
     if (fromDirectory) setPreviews(prev => ({ ...prev, [location.pathname]: { items: [], active: null } }));
+    const search = workspacePageSearch(workspaceId, location.pathname, location.search);
     setTabs((prev) => {
       const old = prev.find(t => t.key === current.key);
-      if (old?.path === current.path && old.search === location.search) return prev;
-      const next = {...current, title: old?.title || current.title, search: location.search};
+      if (old?.path === current.path && old.search === search) return prev;
+      const next = {...current, title: old?.title || current.title, search};
       return old ? prev.map(t => t.key === current.key ? next : t) : [...prev, next];
     });
     setVisited((prev) => {

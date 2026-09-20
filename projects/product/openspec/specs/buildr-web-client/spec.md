@@ -272,7 +272,7 @@ Buildr Web MUST 以受限 Markdown 展示 Task Intent，并 MUST 允许用户点
 - **AND** 系统 MUST NOT 新增附件状态、Planning gate 或第二 Task writer
 
 ### Requirement: 项目详情必须提供每日演进视图
-Buildr Web 项目详情 MUST 提供「每日演进」视图，默认展示本机今天的文件，并 MUST 支持按日、按人、按任务切换。视图 MUST 列出日摘要四问与提交列表，MUST NOT 列出变更文件；自己的已关联提交 MUST 提供可导航 Task，自己的未关联提交与他人提交 MUST 展示且无 Task 芯片。页面 MUST NOT 提供写入或编辑控件，生成或重跑 MUST 交给 Agent。日期控件 MUST 使用 DatePicker（`#progress-date`），MUST NOT 在 `#progress-body` 内放置 `input`/`textarea`。
+Buildr Web 项目详情 MUST 提供“项目动态”入口并打开已筛选该项目的统一动态页面。完整每日演进 MUST 在动态页面按所选项目与日期展示，并 MUST 支持按日、按人、按任务切换。旧项目每日演进地址 MUST 转入统一动态页，有日期时保留该日期，无日期时沿用本机今天。视图 MUST 列出日摘要四问与提交列表，MUST NOT 列出变更文件；自己的已关联提交 MUST 提供可导航 Task，自己的未关联提交与他人提交 MUST 展示且无 Task 芯片。页面 MUST NOT 提供写入或编辑控件，生成或重跑 MUST 交给 Agent。日期控件 MUST 使用 DatePicker（`#progress-date`），MUST NOT 在 `#progress-body` 内放置 `input`/`textarea`。
 
 #### Scenario: 打开有当天文件的项目
 - **WHEN** 用户打开某 Project 的每日演进视图且当天 v2 文件存在
@@ -284,6 +284,10 @@ Buildr Web 项目详情 MUST 提供「每日演进」视图，默认展示本机
 - **WHEN** 当天文件不存在
 - **THEN** 页面 MUST 展示空态并说明由 Agent 生成
 - **AND** MUST NOT 根据 Git 提交或任务列表自动填充
+
+#### Scenario: 旧项目每日演进地址
+- **WHEN** 用户打开旧项目每日演进链接
+- **THEN** 页面 MUST 转到动态页中的同一项目与日期，且不再打开项目资料副屏
 
 ### Requirement: Buildr Web Task 详情必须提供 UI Prototype 视图
 Buildr Web Task 详情 MUST 提供独立“原型”一级视图，按需读取当前 Task 关联 Change 中可发现的一个或多个 UI Prototype 页面，并 MUST 允许用户在页面列表中选择和操作当前页面。页面 MUST 同时说明 UI Prototype 是实现参考而非正式设计、canonical spec 或像素级验收标准。当当前页面可在舞台中展示时，原型舞台 MUST 提供「新窗口打开」控件，并用新窗口打开该页面同一 Task-scoped 内容 URL。
