@@ -31,6 +31,23 @@ test('record stores one meaningful completion report and inspect derives content
   assert.equal(runtime.inspectTaskVerification(root, 'demo-task', { contentIdentity: 'git:tree-two' }).slot.applicability.status, 'stale');
 });
 
+test('packaged report input example records through the real application without response-only fields', (t: any) => {
+  const { root, runtime } = fixture(t);
+  const guide = fs.readFileSync(path.resolve(import.meta.dirname, '../../resources/workspace/skills/buildr/task-verification/references/record-report.md'), 'utf8');
+  const example = guide.match(/```json\n([\s\S]*?)\n```/u);
+  assert.ok(example, 'The report guide must provide a copyable JSON request');
+  const input = JSON.parse(example[1]);
+  const recorded = runtime.recordTaskVerification(root, 'demo-task', { ...input, expectedReportDigest: 'absent' });
+  assert.equal(recorded.status, 'recorded');
+  assert.equal(recorded.slot.report.taskId, 'demo-task');
+  assert.equal(recorded.slot.report.checks[0].mapStatus, 'declared');
+  assert.equal(recorded.slot.report.declarations[0].status, 'ready');
+  const inspected = runtime.inspectTaskVerification(root, 'demo-task', { contentIdentity: input.contentIdentity });
+  assert.equal(inspected.slot.applicability.status, 'current');
+  assert.deepEqual(inspected.slot.report.conclusion, input.conclusion);
+  assert.deepEqual(inspected.slot.report.checks[0].targets, input.checks[0].targets);
+});
+
 test('report rejects empty evidence and contradictory passed conclusion', (t: any) => {
   const { root, runtime } = fixture(t);
   assert.throws(() => runtime.recordTaskVerification(root, 'demo-task', { contentIdentity: 'one', contentSummary: 'One', checks: [], gaps: [], conclusion: { outcome: 'incomplete', summary: 'Nothing checked' } }), { code: 'task_verification_report_empty' });

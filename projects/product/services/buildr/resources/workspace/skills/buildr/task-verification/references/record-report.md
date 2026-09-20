@@ -8,13 +8,45 @@
 - 普通Workspace：使用该Workspace当前合法的installed或retained Buildr；不得假设存在`projects/product/buildr`。
 - candidate writer被拒绝时保留零写入事实，切换到retained入口登记同一份report；不得绕过provenance、手写SQLite或仅为登记报告重新运行已经完成的测试。
 
-报告必须说明内容版本、实际检查、`focus|task-related|full`选择、具体测试目标、`command|agent`来源、结果、摘要、耗时（可得时）、未覆盖项和结论。只有一句“测试通过”不构成有意义报告。使用：
+## 构造写入输入
+
+`--report` 文件只提交 `contentIdentity`、`contentSummary`、`checks`、`gaps`、`conclusion` 五个顶层字段。下面是最小完整结构示例：将 `demo`、`demo-unit` 替换为任务范围内的真实项目代码与该项目地图声明的测试族标识，其余字段也按真实已执行检查填写。`contentIdentity` 必须对应已核验内容版本，示例不能充当成功测试事实。
+
+```json
+{
+  "contentIdentity": "<已核验的内容版本>",
+  "contentSummary": "<内容范围及已有检查仍适用的依据>",
+  "checks": [
+    {
+      "id": "unit-check",
+      "project": "demo",
+      "testing": "demo-unit",
+      "selection": "focus",
+      "targets": ["test/unit/example.test.ts"],
+      "source": "command",
+      "outcome": "passed",
+      "summary": "<实际命令、检查范围与执行结果>"
+    }
+  ],
+  "gaps": [],
+  "conclusion": {
+    "outcome": "passed",
+    "summary": "<已验证边界与整体结论>"
+  }
+}
+```
+
+`selection` 使用 `focus|task-related|full`，`source` 使用 `command|agent`；`targets` 填实际测试目标，服务范围适用时增加 `service`，已知耗时可增加非负整数 `durationMs`。未覆盖项按 `{"project":"demo","testing":"smoke","reason":"实际未覆盖原因"}` 填入 `gaps`，适用时增加 `service`。保留原执行事实；只有一句“测试通过”不足以说明实际验证。
+
+读取结果不是写入模板：`schemaVersion`、`taskId`、`scope`、`content`、`declarations`、`completedAt`、`checks[].mapStatus`、`applicability` 和报告摘要都由应用生成或派生，不放入输入文件。已观察摘要只通过 `--expected-report` 传递，命令行（CLI）将其转为应用参数 `expectedReportDigest`。
+
+## 读取与登记
 
 ```text
 <selected-writer-buildr> task verification inspect <task-id> [--content-identity <identity>] --target <canonical-workspace> --json
 <selected-writer-buildr> task verification record <task-id> --report <json-file> --expected-report <absent|sha256-digest> --target <canonical-workspace> --json
 ```
 
-记录前先用`inspect`读取真实current槽位：不存在时使用`absent`，存在时使用返回的`reportDigest`作为`--expected-report`。Application从Task scope读取当前项目测试地图identity，确认实际检查属于Task且testing family与可用地图一致，生成系统完成时间；Repository在同一事务内比较已观察摘要并原子整值替换唯一current报告。冲突时保持current不变，智能体必须重新读取真实报告和当前内容后决定重做或替换，不能自动重试。摘要只是调用参数，不进入报告业务事实。地图缺失或损坏时不否定已完成的真实测试：Application把相关检查标记为“地图不可用”，并追加明确未覆盖项；智能体不能把它说成已由地图声明。
+记录前用 `inspect` 读取真实当前报告：`slot.present` 为 `false` 时使用 `absent`，否则将 `slot.reportDigest` 传给 `--expected-report`。应用核对任务处于 `active`、检查属于任务范围且与可用地图一致；在事务中比较已观察摘要并原子替换唯一当前报告，冲突时保留原值。冲突后重读真实报告和当前内容再决定，不能自动重试。地图缺失或损坏时仍可记录真实检查，应用派生“地图不可用”并补充未覆盖项，不能声称已由地图声明。
 
-`passed`至少需要一个实际检查且所有检查均通过；只有未覆盖项不能写成`passed`。`not-passed`必须有失败检查；`incomplete`用于没有失败检查但仍有未覆盖项的情况。只有调用方在`inspect`时提供当前内容identity，Application才能判断内容是`current`还是`stale`；未提供时内容适用性为`unknown`。历史执行日志不迁移为新成功事实。
+`passed` 至少需要一个实际检查且全部通过；`not-passed` 必须有失败检查；`incomplete` 用于没有失败但仍有必要边界未覆盖的情况。查看当前适用性时传入真实 `--content-identity`；未提供时内容适用性为 `unknown`，不据此重新测试。登记结果已返回当前报告、`slot.reportDigest` 和适用性，可直接核对；仅响应丢失、冲突或相关事实变化时补读。
