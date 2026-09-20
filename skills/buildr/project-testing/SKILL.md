@@ -66,7 +66,7 @@ Bug 回归测试说明它捕获的旧错误，并在安全、低成本且可复�
 
 ## 5. 与 Task Verification 交接
 
-Project Testing 可以新增或调整项目测试、脚本、registry 和说明，但不写 `verification.yml`。当测试入口已存在且稳定，需要声明、选择、执行或记录正式 Task Result 时，交给 `task-verification`。
+Project Testing 可以新增或调整项目测试、脚本、registry 和说明，但不写 `verification.yml`。当测试入口已存在且稳定，需要声明、选择、执行或记录正式任务验证报告（Task Verification Report）时，交给 `task-verification`。
 
 测试暂不存在时，明确报告测试建设 gap；不要伪造 capability。Task Verification 发现的 coverage gap 如需开发测试，也回到本 Skill 或后续实现任务处理。
 
