@@ -1407,7 +1407,7 @@ sources:
     skillId: task-finish
     link: services/buildr/resources/workspace/skills/buildr/task-finish/SKILL.md
     summary: 组合 Git、业务工具、已有任务登记和具体资源所有者善后，分别报告成果。
-    observedDigest: 738d046b3d44556f9cbd9529eba9f9e3fb4e15a2006c8e4e1960d12984118020
+    observedDigest: fd90fa74dc7a493979bdc5841145428ea834b5b2b608b178a16207119ad1e04a
   - id: task-source-spec-05a13b
     title: 自举编排规范残留
     kind: spec
