@@ -298,7 +298,7 @@ test("HTTP GET 读取真实成果，图示经受限 HTML 响应，非读取动�
   put("projects/demo/knowledge/index.yml", stringify(index));
   put(
     "projects/demo/knowledge/diagram.html",
-    "<html><body>diagram</body></html>",
+    '<html><body><svg viewBox="0 0 16 16"></svg><svg viewBox="0 0 1550 760" aria-labelledby="archify-diagram-title archify-diagram-description">diagram</svg></body></html>',
   );
   let html = "";
   const http = createKnowledgeHttpContribution(app);
@@ -321,9 +321,13 @@ test("HTTP GET 读取真实成果，图示经受限 HTML 响应，非读取动�
     request: { method: "GET" },
     suffix: "/knowledge/project/demo/objects/object",
     respond,
-  }) as { status: number; body: unknown };
+  }) as { status: number; body: { artifacts: Array<{ content: null; diagramSize: { width: number; height: number } | null }> } };
   assert.equal(result.status, 200);
-  assert.ok(result.body);
+  assert.deepEqual(result.body.artifacts[0].diagramSize, { width: 1550, height: 760 });
+  assert.equal(result.body.artifacts[0].content, null);
+  assert.throws(() => validateKnowledgeResponse({ ...result.body, artifacts: [
+    { ...result.body.artifacts[0], diagramSize: { width: 0, height: 760 } },
+  ] }));
   assert.equal(
     http.handle({
       root,
@@ -334,6 +338,36 @@ test("HTTP GET 读取真实成果，图示经受限 HTML 响应，非读取动�
     true,
   );
   assert.match(html, /diagram/);
+});
+
+test("图示尺寸来自当前主 SVG，缺失、非法及非图示尺寸局部回退", (t) => {
+  const { root, put, app } = setup(t);
+  const index = structuredClone(prototype);
+  index.artifacts[0] = { ...index.artifacts[0], kind: "diagram", path: "knowledge/diagram.html", graphSource: "knowledge/graph.json" };
+  put("projects/demo/knowledge/index.yml", stringify(index));
+  put("projects/demo/knowledge/graph.json", '{"meta":{"viewBox":[10,10]}}');
+  const read = () => app.read(root, { kind: "project", id: "demo" }, "objects", "object").artifacts[0];
+  for (const [viewBox, expected] of [
+    ["0 0 1080 688", { width: 1080, height: 688 }],
+    ["-10, -20, 1.38e3, 740", { width: 1380, height: 740 }],
+    ["0 0 0 740", null], ["0 0 1380 -740", null],
+    ["0 0 Infinity 740", null], ["0 0 1e999 740", null],
+    ["0 0 0x500 740", null], ["1380 740", null], ["", null],
+  ] as const) {
+    put("projects/demo/knowledge/diagram.html", `<svg aria-labelledby='archify-diagram-title' viewBox='${viewBox}'></svg>`);
+    assert.deepEqual(read().diagramSize, expected, viewBox);
+  }
+  for (const html of ['<svg viewBox="0 0 1380 740"></svg>', '<svg aria-labelledby="archify-diagram-title"></svg>']) {
+    put("projects/demo/knowledge/diagram.html", html);
+    assert.equal(read().diagramSize, null);
+  }
+  fs.unlinkSync(path.join(root, "projects/demo/knowledge/diagram.html"));
+  assert.equal(read().diagramSize, null);
+  assert.equal(read().status, "missing");
+  index.artifacts[0].kind = "document";
+  put("projects/demo/knowledge/index.yml", stringify(index));
+  put("projects/demo/knowledge/diagram.html", '<svg aria-labelledby="archify-diagram-title" viewBox="0 0 1380 740"></svg>');
+  assert.equal(read().diagramSize, null);
 });
 
 test("技能详情附加字段保持窄读取协议", (t) => {

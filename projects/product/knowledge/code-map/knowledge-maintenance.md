@@ -16,6 +16,7 @@
 | 领域模型（Domain） | 校验对象身份、成果类型、来源关联和层级，拒绝重复身份、无效关联和循环。 |
 | 数据访问与技术支撑 | 内容保存在文件中，由有界文件读取检查真实路径、类型、大小并计算摘要。当前没有知识数据库或对象关系映射（ORM）持久层。 |
 | 前端阅读 | 页面组织当前范围；目录组件负责检索；成果组件负责正文和内嵌；读取钩子（Hook）取消过时请求；副屏复用同一成果、源码阅读和已有技能详情。 |
+| 个人资料偏好 | 知识页和技能详情复用资料入口，另行记录最近访问、维护收藏；工作台应用校验当前工作空间（Workspace）内的对象与站内地址并保存偏好，不改写知识成果。 |
 
 ## 规范与实现在哪里？
 
@@ -40,6 +41,9 @@
     - `infrastructure/` — 文件技术操作
       - [knowledge-files.ts](../../services/buildr/src/modules/knowledge/infrastructure/knowledge-files.ts) — 路径、文本、大小与内容摘要
     - [module.ts](../../services/buildr/src/modules/knowledge/module.ts) — 接入工作空间与技能来源，装配读取能力
+  - **`services/buildr/src/modules/workbench/`** — 独立的工作台个人偏好
+    - `application/` — 组织偏好读取与逐项写入
+      - [preferences-application.ts](../../services/buildr/src/modules/workbench/application/preferences-application.ts) — 校验对象身份和站内地址，保存收藏与最近访问，不修改知识正文
   - `services/buildr-web/src/` — 前端代码
     - **`features/knowledge/`** — 面向人的知识阅读
       - `pages/`
@@ -47,12 +51,13 @@
       - `components/`
         - [KnowledgeCatalog.tsx](../../services/buildr-web/src/features/knowledge/components/KnowledgeCatalog.tsx) — 三类成果的统一检索与建设入口
         - [KnowledgeArtifactReader.tsx](../../services/buildr-web/src/features/knowledge/components/KnowledgeArtifactReader.tsx) — 同一正文的内嵌和独立阅读
-        - [KnowledgeDiagram.tsx](../../services/buildr-web/src/features/knowledge/components/KnowledgeDiagram.tsx) — 隔离图示与合法对象定位
+        - [KnowledgeDiagram.tsx](../../services/buildr-web/src/features/knowledge/components/KnowledgeDiagram.tsx) — 隔离图示、按当前宽度适配嵌入预览与合法对象定位
         - [KnowledgeTree.tsx](../../services/buildr-web/src/features/knowledge/components/KnowledgeTree.tsx) — 紧凑目录、业务边界与折叠操作
         - [KnowledgeReadingPane.tsx](../../services/buildr-web/src/features/knowledge/components/KnowledgeReadingPane.tsx) — 保留关联阅读，先解释文件再显示原文
         - [KnowledgeSource.tsx](../../services/buildr-web/src/features/knowledge/components/KnowledgeSource.tsx) — 只读源码、行号和文档模式
         - [KnowledgeAgentAction.tsx](../../services/buildr-web/src/features/knowledge/components/KnowledgeAgentAction.tsx) — 建设主题和完善意见的接续表单
       - [useKnowledgeReading.ts](../../services/buildr-web/src/features/knowledge/useKnowledgeReading.ts) — 请求状态、取消与范围切换保护
+      - [knowledge-diagram-layout.ts](../../services/buildr-web/src/features/knowledge/knowledge-diagram-layout.ts) — 原生图示比例、宿主宽度与嵌入高度计算
       - [knowledge-tree.ts](../../services/buildr-web/src/features/knowledge/knowledge-tree.ts) — 原生文件树与明确相关文件的结构解析
       - [knowledge-catalog.ts](../../services/buildr-web/src/features/knowledge/knowledge-catalog.ts) — 按标题、说明和路径筛选目录
       - [knowledge-navigation.ts](../../services/buildr-web/src/features/knowledge/knowledge-navigation.ts) — 文内路径、主题归属与图示消息校验
@@ -61,6 +66,11 @@
         - [knowledge-api.ts](../../services/buildr-web/src/features/knowledge/api/knowledge-api.ts) — 沿用已有会话访问读取接口
     - **`features/agent-assets/components/`** — 共用技能阅读
       - [SkillHome.tsx](../../services/buildr-web/src/features/agent-assets/components/SkillHome.tsx) — 默认预览技能正文，按需查找参考文件
+    - **`features/workbench/`** — 资料入口与个人偏好
+      - `components/`
+        - [ResourceActions.tsx](../../services/buildr-web/src/features/workbench/components/ResourceActions.tsx) — 知识页与技能详情共用的收藏入口，记录最近访问并独立提示保存失败
+      - `hooks/`
+        - [useWorkbenchPreferences.tsx](../../services/buildr-web/src/features/workbench/hooks/useWorkbenchPreferences.tsx) — 按工作空间（Workspace）缓存偏好、调用独立读写接口并防止过时响应串入新范围
     - [markdown.ts](../../services/buildr-web/src/markdown.ts) — 共用文档渲染，保留安全链接、列表与目录层级
     - [components/MarkdownHost.tsx](../../services/buildr-web/src/components/MarkdownHost.tsx) — 将文档渲染接入页面及相对链接事件
 

@@ -6,7 +6,8 @@
 |---|---|---|---|
 | Workspace、Project、Service | `services/buildr/src/modules/workspace/module.ts` | Workspace 身份、注册表、Project/Service Manifest 与 mutation | `WORKSPACE_APPLICATION`、`WORKSPACE_QUERY`、`WORKSPACE_ASSET_SUPPORT`、CLI/HTTP/diagnostics |
 | 项目每日演进 | `services/buildr/src/modules/task/module.ts` 的 `createDailyProgressModule` | `task/daily-progress/` 拥有提交、摘要、任务关联及本机 YAML | `PROJECT_DAILY_PROGRESS_APPLICATION`、CLI/HTTP |
-| Task Record、Review、Verification、父任务协调与 Worktree | `services/buildr/src/modules/task/module.ts` | Task 领域规则、SQLite 事务、查询投影、专业记录和 Git Worktree 操作 | `TASK_QUERY_APPLICATION`、Task 各端口、CLI/HTTP |
+| 任务记录（Task Record）、工作摘要（Work Context）、审查、验证、父任务协调与工作树（Worktree） | `services/buildr/src/modules/task/module.ts` | 任务事实、独立进展与人的答复、专业结果和 Git 位置；详见[任务系统地图](task-system.md) | `TASK_QUERY_APPLICATION`、`TASK_WORK_CONTEXT_APPLICATION` 与各专业端口 |
+| 日常工作台（Workbench） | `services/buildr/src/modules/workbench/module.ts` | 有界组合任务、摘要、项目和每日演进；独立保存偏好 | `WORKBENCH_APPLICATION`、命令行（CLI）与超文本传输协议（HTTP）入口 |
 | Task 与 OpenSpec Change 关联展示 | `services/buildr/src/modules/task/change/module.ts` | 任务关联、工作树（Worktree）选择、副本来源和 HTTP 展示组合；内容委托 OpenSpec | `CHANGE_APPLICATION`、HTTP |
 | 通用 OpenSpec | `services/buildr/src/modules/openspec/module.ts` | 变更（Change）列表、详情、归档定位、产物与原型读取、提示词、严格校验、收敛及恢复 | `OPENSPEC_APPLICATION`、`OPENSPEC_QUERY`、CLI |
 | Agent Assets | `services/buildr/src/modules/agent-assets/module.ts` | Command、Rule、Skill、Component、Capability Binding、package maintenance 与 runtime projection；声明和文件执行各有明确所有者 | `AGENT_ASSETS_APPLICATION`、`AGENT_ASSETS_RUNTIME`、`AGENT_ASSETS_OPENSPEC_SUPPORT`、CLI/HTTP/diagnostics |
@@ -34,6 +35,7 @@
 | Project | `services/buildr-web/src/features/project/` | `ProjectsPage`、`ProjectDetailPage`、`ProjectEditModal` |
 | Service | `services/buildr-web/src/features/service/` | `ServicesPage`、`ServiceDetailPage`、`useServiceCatalog` |
 | Task | `services/buildr-web/src/features/task/` | `TasksPage`、`TaskDetailPage`、`useTaskList`、`useTaskActions` |
+| 日常工作台（Workbench） | `services/buildr-web/src/features/workbench/` | `WorkbenchPage`、`WorkbenchActivityPage`、`useWorkbench`、`useWorkbenchPreferences` |
 | 知识阅读 | `services/buildr-web/src/features/knowledge/` | `KnowledgePage`、`KnowledgeDiagram`、`KnowledgeSource`、`KnowledgeAgentAction` |
 | Project Daily Progress | `services/buildr-web/src/features/project-daily-progress/` | `DailyProgressPanel` |
 | Publication | `services/buildr-web/src/features/publication/` | `ArticlesPage`、`ArticleDetailPage`、`publicationApi` |

@@ -1,0 +1,157 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "从需求讨论到方案与实施授权",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "column_fit": "spread",
+    "viewBox": [
+      1060,
+      640
+    ],
+    "legend": {
+      "mode": "auto",
+      "entries": {
+        "default": {
+          "label": "读取或执行"
+        },
+        "emphasis": {
+          "label": "提交专业结论"
+        },
+        "security": {
+          "label": "人的决定与授权"
+        },
+        "return": {
+          "label": "返回当前事实"
+        }
+      }
+    }
+  },
+  "participants": [
+    {
+      "id": "human",
+      "type": "external",
+      "label": "人",
+      "sublabel": "目标 · 决定 · 授权 · 验收"
+    },
+    {
+      "id": "agent",
+      "type": "backend",
+      "label": "智能体（Agent）",
+      "sublabel": "理解 · 判断 · 执行 · 交付"
+    },
+    {
+      "id": "buildr",
+      "type": "frontend",
+      "label": "Buildr",
+      "sublabel": "工作方法 · 事实接口 · 动作保护"
+    },
+    {
+      "id": "artifacts",
+      "type": "database",
+      "label": "真实工作现场",
+      "sublabel": "OpenSpec · 代码 · Git · 运行结果"
+    }
+  ],
+  "messages": [
+    {
+      "id": "discuss-goal",
+      "from": "human",
+      "to": "agent",
+      "y": 175,
+      "label": "讨论需求：目标、范围与约束",
+      "variant": "default"
+    },
+    {
+      "id": "triage-read",
+      "from": "agent",
+      "to": "buildr",
+      "y": 207,
+      "label": "任务分流：读取范围、方法和已有记录",
+      "variant": "default"
+    },
+    {
+      "id": "prepare-worktree",
+      "from": "agent",
+      "to": "buildr",
+      "y": 239,
+      "label": "登记任务；创建工作树（Worktree）",
+      "variant": "default"
+    },
+    {
+      "id": "return-location",
+      "from": "buildr",
+      "to": "agent",
+      "y": 271,
+      "label": "返回独立目录、分支与当前记录版本",
+      "variant": "return"
+    },
+    {
+      "id": "write-openspec",
+      "from": "agent",
+      "to": "artifacts",
+      "y": 303,
+      "label": "通过 OpenSpec 写提案、设计、规格与清单",
+      "variant": "default"
+    },
+    {
+      "id": "planning-review",
+      "from": "agent",
+      "to": "buildr",
+      "y": 335,
+      "label": "方案审查：完成审阅后保存结论",
+      "variant": "emphasis"
+    },
+    {
+      "id": "record-attention",
+      "from": "agent",
+      "to": "buildr",
+      "label": "登记方案入口、进展与待决事项",
+      "variant": "default",
+      "y": 367
+    },
+    {
+      "id": "read-attention",
+      "from": "buildr",
+      "to": "human",
+      "label": "网页：呈现方案与明确待处理事项",
+      "variant": "return",
+      "y": 399
+    },
+    {
+      "id": "respond-plan",
+      "from": "human",
+      "to": "buildr",
+      "label": "保存方案意见与实施授权〔需要时〕",
+      "variant": "security",
+      "y": 431
+    },
+    {
+      "id": "reread-answer",
+      "from": "agent",
+      "to": "buildr",
+      "label": "继续前读取人的答复与当前版本",
+      "variant": "default",
+      "y": 463
+    },
+    {
+      "id": "return-answer",
+      "from": "buildr",
+      "to": "agent",
+      "label": "返回真实答复；执行仍由智能体发起",
+      "variant": "return",
+      "y": 495
+    }
+  ],
+  "cards": [
+    {
+      "dot": "amber",
+      "title": "本段边界",
+      "items": [
+        "已有授权继续有效；需要人作新决定时，才提出具体问题。",
+        "Buildr 保存当前事实，智能体（Agent）负责审阅、实施和接续。"
+      ]
+    }
+  ]
+}

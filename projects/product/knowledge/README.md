@@ -12,6 +12,8 @@
 
 ## 从一个完整例子开始
 
+**从对话到任务收尾**：阅读[任务系统架构](docs/architecture/task-system.md)，贯通工作摘要（Work Context）、人的答复、实施与验证、代码交付、自举激活及安全善后；文中连接职责总图、分段时序与[实现地图](code-map/task-system.md)。
+
 **知识建设与维护**：先读[架构说明](docs/architecture/knowledge-maintenance.md)，文中引用[职责图](archify/flows/knowledge-maintenance.html)和[实现地图](code-map/knowledge-maintenance.md)。[局部阅读关联](index.yml)让网页使用同一份成果正文。
 
 **技能源文件如何成为可发现入口**：阅读[面向人的说明](docs/architecture/buildr-skill-system.md)，需要定位时打开[代码地图](code-map/skill-projection.md)，观察关系时打开[技术图](archify/flows/skill-projection.html)。图的[来源与表达边界](archify/flows/skill-projection.md)和[可维护图源](archify/flows/skill-projection.json)与展示一起保存。

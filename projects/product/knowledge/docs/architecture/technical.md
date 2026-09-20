@@ -36,7 +36,8 @@ Task↔Change、Agent Assets↔Diagnostics 的真实循环由一次性 Binder �
 | 模块 | 入口 | 核心所有权 |
 |---|---|---|
 | Workspace | `src/modules/workspace/module.ts` | Workspace/Project/Service、受管 mutation |
-| Task | `src/modules/task/module.ts` | Task Record、关系、Review、Verification、父任务协调、Worktree |
+| 任务（Task） | `src/modules/task/module.ts` | 任务记录（Task Record）、工作摘要（Work Context）、关系、审查、验证、父任务协调与工作树（Worktree） |
+| 工作台（Workbench） | `src/modules/workbench/module.ts` | 有界读取任务、摘要与已有每日演进，独立保存本机偏好；见[完整任务系统](task-system.md) |
 | Task Change | `src/modules/task/change/module.ts` | Task scope 的 Change 定位与展示组合 |
 | OpenSpec | `src/modules/openspec/module.ts` | 读取、相关冲突检查、上游规范处理接入和中断恢复 |
 | Agent Assets | `src/modules/agent-assets/module.ts` | Rule、Skill、Command、Component、Capability Binding、runtime projection |

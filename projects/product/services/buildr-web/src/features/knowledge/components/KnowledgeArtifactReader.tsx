@@ -96,6 +96,7 @@ export function KnowledgeArtifactReader(props: ArtifactReaderProps) {
           src={`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/knowledge/${scope.kind}/${encodeURIComponent(scope.id)}/artifacts/${encodeURIComponent(a.id)}/view?v=${a.digest}${embedded ? "&embed=1" : ""}`}
           title={a.title}
           compact={embedded}
+          diagramSize={a.diagramSize}
           objects={a.objects}
           onObject={props.onObject}
         />

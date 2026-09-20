@@ -1,5 +1,7 @@
 # 任务体系架构路线图
 
+> 本文保留任务体系退役与职责收敛阶段的路线图。最新行为请阅读[任务系统架构](../../knowledge/docs/architecture/task-system.md)：其中已纳入持久写入默认隔离、工作摘要（Work Context）、人的答复及自举成功边界。下文的阶段性“当前”表述不作为最新实现说明。
+
 ## 当前结论
 
 Buildr不设置统一任务研发或任务环境模块。一个正常任务由智能体（Agent）依据目标和真实现场，按需组合Worktree、OpenSpec、当前认知（Current Knowledge）、任务审查（Task Review）、任务验证（Task Verification）、Git、业务工具、Preview与任务收尾（Task Finish）。

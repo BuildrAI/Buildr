@@ -6,6 +6,10 @@
 
 ## 当前入口
 
+- [任务系统：完整过程与角色职责](flows/task-system.html)：人、智能体（Agent）与 Buildr 的完整协作；[图源](flows/task-system.json)、[事实依据](flows/task-system.md)。
+- [需求、方案与实施授权](flows/task-system-planning.html)：方案阅读、人的答复与主动接续；[图源](flows/task-system-planning.json)、[依据](flows/task-system-planning.md)。
+- [实现审查与代码交付](flows/task-system-delivery.html)：实施、两类检查、验收授权与实际交付；[图源](flows/task-system-delivery.json)、[依据](flows/task-system-delivery.md)。
+- [自举激活与安全善后](flows/task-self-bootstrap.html)：唯一执行器的条件动作、提交与成功标准；[图源](flows/task-self-bootstrap.json)、[事实依据](flows/task-self-bootstrap.md)。
 - [技能源文件到可发现入口](flows/skill-projection.html)：本次有界示范；[图源](flows/skill-projection.json)、[逐节点关系来源与边界](flows/skill-projection.md)。
 
 - [Buildr 系统全景图源码](system/buildr-system-overview.json)：Archify 的结构化图表源码，依据当前 Product 代码、目录结构、OpenSpec 和已登记关系编写。

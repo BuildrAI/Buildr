@@ -417,6 +417,7 @@
 .knowledge-side-reader .knowledge-diagram-actions { display: flex; justify-content: flex-end; margin-bottom: 8px; }
 .knowledge-diagram-host > .knowledge-diagram { height: clamp(520px,72vh,800px); }
 .knowledge-diagram-host.is-preview > .knowledge-diagram { height: auto; aspect-ratio: 1.6; min-height: 220px; }
+.knowledge-diagram-host.is-preview.has-intrinsic-size > .knowledge-diagram { aspect-ratio: auto; min-height: 0; }
 .knowledge-diagram-expanded { height: calc(100vh - 130px); }
 
 .knowledge-tree-node.business-boundary > .knowledge-tree-row .knowledge-tree-folder { font-weight: 600; }

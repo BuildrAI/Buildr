@@ -23,6 +23,23 @@ export type KnowledgeDependencies = {
     issue?: string | null;
   };
 };
+function readDiagramSize(content: string | null) {
+  if (!content) return null;
+  // Read only the authored main SVG, never a toolbar icon or stale graph source.
+  for (const [tag] of content.matchAll(/<svg\b[^>]*>/gi)) {
+    const labelledBy = tag.match(/\saria-labelledby\s*=\s*(["'])(.*?)\1/i)?.[2];
+    if (!labelledBy?.split(/\s+/).includes("archify-diagram-title")) continue;
+    const viewBox = tag.match(/\sviewBox\s*=\s*(["'])(.*?)\1/i)?.[2];
+    const values = viewBox?.trim().split(/[\s,]+/);
+    if (!values || values.length !== 4 || values.some((value) =>
+      !/^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i.test(value))) return null;
+    const [x, y, width, height] = values.map(Number);
+    return [x, y, width, height].every(Number.isFinite) && width > 0 && height > 0
+      ? { width, height }
+      : null;
+  }
+  return null;
+}
 export function createKnowledgeQuery(deps: KnowledgeDependencies) {
   function resolve(root: string, ref: ScopeRef) {
     const catalog = deps.assetCatalog(root);
@@ -228,19 +245,23 @@ export function createKnowledgeQuery(deps: KnowledgeDependencies) {
         ...observe(() => sourceRead(root, scope, s), s.observedDigest),
         ...(part === "sources" ? {} : { content: null }),
       }));
-    const rendered = artifacts.map((a) => ({
-      ...a,
-      ...observe(
+    const rendered = artifacts.map((a) => {
+      const observed = observe(
         () => readKnowledgeFile(scope.directory, a.path),
         a.observedDigest,
-      ),
-      graph: a.graphSource
-        ? observe(
-            () => readKnowledgeFile(scope.directory, a.graphSource!),
-            a.graphDigest,
-          )
-        : null,
-    }));
+      );
+      return {
+        ...a,
+        ...observed,
+        diagramSize: a.kind === "diagram" ? readDiagramSize(observed.content) : null,
+        graph: a.graphSource
+          ? observe(
+              () => readKnowledgeFile(scope.directory, a.graphSource!),
+              a.graphDigest,
+            )
+          : null,
+      };
+    });
     return {
       ...base,
       item,

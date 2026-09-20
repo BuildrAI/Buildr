@@ -2,22 +2,40 @@ import { selectedKnowledgeObject } from "../knowledge-navigation";
 import { useEffect, useRef, useState } from "react";
 import { Button, Modal } from "antd";
 import { FullscreenOutlined } from "@ant-design/icons";
+import { knowledgeDiagramPreviewHeight, type KnowledgeDiagramSize } from "../knowledge-diagram-layout";
 export function KnowledgeDiagram({
   src,
   title,
   objects,
   onObject,
   compact = false,
+  diagramSize,
 }: {
   src: string;
   title: string;
   objects: string[];
   onObject: (id: string) => void;
   compact?: boolean;
+  diagramSize?: KnowledgeDiagramSize | null;
 }) {
-  const frame = useRef<HTMLIFrameElement>(null),
+  const host = useRef<HTMLDivElement>(null),
+    frame = useRef<HTMLIFrameElement>(null),
     largeFrame = useRef<HTMLIFrameElement>(null),
+    [previewWidth, setPreviewWidth] = useState(0),
     [expanded, setExpanded] = useState(false);
+  const previewHeight = compact
+    ? knowledgeDiagramPreviewHeight(previewWidth, diagramSize)
+    : null;
+  useEffect(() => {
+    if (!compact || !diagramSize || !host.current) return;
+    const element = host.current;
+    setPreviewWidth(element.getBoundingClientRect().width);
+    const observer = new ResizeObserver(([entry]) => {
+      setPreviewWidth(entry.contentRect.width);
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [compact, diagramSize?.width, diagramSize?.height]);
   useEffect(() => {
     const receive = (event: MessageEvent) => {
       const id = selectedKnowledgeObject(
@@ -31,7 +49,7 @@ export function KnowledgeDiagram({
     return () => window.removeEventListener("message", receive);
   }, [objects, onObject, expanded]);
   return (
-    <div className={`knowledge-diagram-host${compact ? " is-preview" : ""}`}>
+    <div ref={host} className={`knowledge-diagram-host${compact ? " is-preview" : ""}${previewHeight !== null ? " has-intrinsic-size" : ""}`}>
       {!compact && (
         <div className="knowledge-diagram-actions">
           <Button
@@ -47,6 +65,7 @@ export function KnowledgeDiagram({
         className="knowledge-diagram"
         title={title}
         src={src}
+        style={previewHeight !== null ? { height: previewHeight } : undefined}
         sandbox="allow-scripts allow-downloads"
         referrerPolicy="no-referrer"
       />

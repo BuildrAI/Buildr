@@ -1,0 +1,125 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "从实施审查到代码交付",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "column_fit": "spread",
+    "viewBox": [
+      1060,
+      510
+    ],
+    "legend": {
+      "mode": "auto",
+      "entries": {
+        "default": {
+          "label": "读取或执行"
+        },
+        "emphasis": {
+          "label": "提交专业结论"
+        },
+        "security": {
+          "label": "人的决定与授权"
+        },
+        "return": {
+          "label": "返回当前事实"
+        }
+      }
+    }
+  },
+  "participants": [
+    {
+      "id": "human",
+      "type": "external",
+      "label": "人",
+      "sublabel": "目标 · 决定 · 授权 · 验收"
+    },
+    {
+      "id": "agent",
+      "type": "backend",
+      "label": "智能体（Agent）",
+      "sublabel": "理解 · 判断 · 执行 · 交付"
+    },
+    {
+      "id": "buildr",
+      "type": "frontend",
+      "label": "Buildr",
+      "sublabel": "工作方法 · 事实接口 · 动作保护"
+    },
+    {
+      "id": "artifacts",
+      "type": "database",
+      "label": "真实工作现场",
+      "sublabel": "OpenSpec · 代码 · Git · 运行结果"
+    }
+  ],
+  "messages": [
+    {
+      "id": "implement",
+      "from": "agent",
+      "to": "artifacts",
+      "y": 175,
+      "label": "实施：修改代码，执行测试并维护知识",
+      "variant": "default"
+    },
+    {
+      "id": "converge-change",
+      "from": "agent",
+      "to": "artifacts",
+      "y": 207,
+      "label": "收敛规范与知识；按目标处理归档",
+      "variant": "default"
+    },
+    {
+      "id": "completion-review",
+      "from": "agent",
+      "to": "buildr",
+      "y": 239,
+      "label": "实现结果审查与任务验证：保存实际结论",
+      "variant": "emphasis"
+    },
+    {
+      "id": "present-result",
+      "from": "agent",
+      "to": "human",
+      "y": 271,
+      "label": "展示成果、检查结论与未解决事项",
+      "variant": "default"
+    },
+    {
+      "id": "authorize-finish",
+      "from": "human",
+      "to": "agent",
+      "y": 303,
+      "label": "验收并授权收尾〔尚未授权时〕",
+      "variant": "security"
+    },
+    {
+      "id": "deliver-git",
+      "from": "agent",
+      "to": "artifacts",
+      "y": 335,
+      "label": "收尾：精确提交、集成、普通推送并回读",
+      "variant": "default"
+    },
+    {
+      "id": "complete-record",
+      "from": "agent",
+      "to": "buildr",
+      "y": 367,
+      "label": "登记已有任务结果，沿用已观察版本",
+      "variant": "default"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "amber",
+      "title": "本段边界",
+      "items": [
+        "已有授权继续有效；需要人作新决定时，才提出具体问题。",
+        "Buildr 保存当前事实，智能体（Agent）负责审阅、实施和接续。"
+      ]
+    }
+  ]
+}

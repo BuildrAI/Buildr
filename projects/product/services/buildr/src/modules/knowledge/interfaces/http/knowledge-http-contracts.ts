@@ -105,6 +105,10 @@ export const KNOWLEDGE_HTTP_SCHEMAS = {
             {
               ...artifactFields,
               ...observationFields,
+              diagramSize: { anyOf: [obj({
+                width: { type: "number", exclusiveMinimum: 0 },
+                height: { type: "number", exclusiveMinimum: 0 },
+              }), { type: "null" }] },
               graph: { anyOf: [observation, { type: "null" }] },
             },
             [
@@ -115,6 +119,7 @@ export const KNOWLEDGE_HTTP_SCHEMAS = {
               "objects",
               "sources",
               ...Object.keys(observationFields),
+              "diagramSize",
               "graph",
             ],
           ),

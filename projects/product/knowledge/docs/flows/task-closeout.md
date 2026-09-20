@@ -2,6 +2,8 @@
 
 收尾与交付在日常对话中可以表示同一目标：结束本轮工作，把成果交到约定位置，登记已有任务结果，处理可安全处理的临时资源，并交代遗留事项。
 
+完整前序与当前依据见[任务系统架构](../architecture/task-system.md)和[实现地图](../../code-map/task-system.md)；这里聚焦交付、登记和善后。2026-09-20 已按 `dev` 的 `1e353c9e` 核对相关职责。
+
 ## 职责
 
 ```mermaid
@@ -34,7 +36,7 @@ flowchart TB
 
 ## 已完成事实与后续动作
 
-任务完成记录不等于机器交付证明。旧专业记录不可读时，完成状态仍由任务记录表达，相关异常单独显示；只有匹配历史证明才能展示 `delivered`。
+任务完成记录不等于机器交付证明。完成状态由任务记录（Task Record）表达，代码与业务交付从 Git、文件和实际系统核对；当前完成动作不读取旧收尾执行记录，也不从历史字段补造 `delivered`。工作摘要（Work Context）的进展、待处理事项与人的答复独立保存，答复或验收意见本身不自动完成任务。
 
 发布支持任务的完成只证明记录关联；发布能力继续独立检查冻结源码、候选验证、唯一产物、目标与授权。父任务依据整体目标和真实子任务结果验收，只有明确用户授权才能完成。子任务收尾不授权完成父任务；详见[父任务协调](task-parent-coordination.md)。
 
@@ -46,11 +48,12 @@ flowchart TB
 
 ## 实现入口
 
-- 方法：`services/buildr/resources/workspace/skills/buildr/task-finish/SKILL.md`
-- 任务结果：`services/buildr/src/modules/task/application/task-command-application.ts`
-- Worktree资源安全：`services/buildr/src/modules/task/infrastructure/git-worktree-provider.ts`
-- 父任务协调：`services/buildr/src/modules/task/application/parent-coordination-application.ts`
-- 发布关联：`services/buildr/tools/release/release-task-evidence-correlation.ts`
+- [收尾与交付方法](../../../services/buildr/resources/workspace/skills/buildr/task-finish/SKILL.md)。
+- [任务结果写入](../../../services/buildr/src/modules/task/application/task-command-application.ts)。
+- [工作树（Worktree）资源安全](../../../services/buildr/src/modules/task/infrastructure/git-worktree-provider.ts)。
+- [父任务协调](../../../services/buildr/src/modules/task/application/parent-coordination-application.ts)。
+- [自举完整分支与来源](../../archify/flows/task-self-bootstrap.md)。
+- [发布关联](../../../services/buildr/tools/release/release-task-evidence-correlation.ts)。
 
 首次实践及统计口径保留在设计技能的历史案例中；它不代表现行执行入口。
 

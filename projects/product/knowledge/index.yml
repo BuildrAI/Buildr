@@ -9,6 +9,17 @@ objects:
   - id: project-service-repositories
     title: 项目、服务与代码库如何协作
     summary: 理解三类对象的职责、共享引用、代码定位，以及关联和分支修改的影响。
+  - id: task-system
+    title: 从需求讨论到任务收尾
+    summary: 人、智能体（Agent）与 Buildr 在需求、方案、实现、审查、交付和自举中的职责、交互及授权。
+  - id: task-closeout
+    parent: task-system
+    title: 收尾与交付
+    summary: 实际成果交付、已有任务结果登记、自举适用性与资源安全善后。
+  - id: task-parent-coordination
+    parent: task-system
+    title: 父任务协调
+    summary: 整体目标、直接子任务、总体验收与明确完成授权，各自依据当前版本。
 artifacts:
   - id: explanation
     title: 知识建设与维护
@@ -53,7 +64,11 @@ artifacts:
       - tree-model
       - reading-pane
       - code-map-spec
-    observedDigest: 109bd7ff4640b7b1de107f3dc580e47bcf731acb5c21173164c5b29911ca12e7
+      - resource-actions
+      - workbench-preferences
+      - task-source-preferences-application-8b4fe8
+      - diagram-layout
+    observedDigest: 9695b70f56a2ab49ded06dbb261daf0746be926d482d03bf8c1b17ea6835beda
     files:
       - file-explanation
   - id: responsibility
@@ -137,7 +152,11 @@ artifacts:
       - tree-model
       - reading-pane
       - code-map-spec
-    observedDigest: 84c83daaff73bcc2531e304a8d3f1c12ae060cbdd6c45b25a5896a944640ca75
+      - resource-actions
+      - workbench-preferences
+      - task-source-preferences-application-8b4fe8
+      - diagram-layout
+    observedDigest: e5ec11b6e43a3ff93b6f054e8b7ce011613cdb183fd40980985fdd80e4078ce5
     files:
       - file-implementation-map
       - file-explanation
@@ -300,13 +319,232 @@ artifacts:
       - file-project-relations-diagram
       - file-project-relations-diagram-graph
       - file-project-relations-diagram-evidence
+  - id: task-system-article
+    title: 从需求讨论到任务收尾
+    kind: document
+    path: knowledge/docs/architecture/task-system.md
+    objects:
+      - task-system
+    sources:
+      - task-source-skill-f75bad
+      - task-source-skill-d5bb46
+    observedDigest: f44cbe4e41b875d55bd2ad899571cf9f5cdf0d2fe8e4cff82251642b30498898
+    files:
+      - task-file-task-system-md-123fb5
+  - id: task-system-map
+    title: 任务系统的实现组织
+    kind: code-map
+    path: knowledge/code-map/task-system.md
+    objects:
+      - task-system
+    sources:
+      - task-source-spec-ea9d2d
+      - task-source-spec-f12a41
+      - task-source-spec-5aed6b
+      - task-source-spec-9dbb55
+      - task-source-spec-a99380
+      - task-source-agent-assets-module
+      - task-source-workspace-query
+      - task-source-task-4ce8a0
+      - task-source-task-http-e1bbb1
+      - task-source-task-query-application-9f6269
+      - task-source-task-command-application-aba2e8
+      - task-source-parent-coordination-application-49a9bd
+      - task-source-task-review-application-089e42
+      - task-source-task-verification-application-68479e
+      - task-source-task-04c6c5
+      - task-source-task-review-691fbf
+      - task-source-task-verification-4ea021
+      - task-source-task-repository-be5696
+      - task-source-task-review-repository-44ff85
+      - task-source-task-verification-repository-470799
+      - task-source-work-context-application-11bb91
+      - task-source-work-context-ca9c7e
+      - task-source-work-context-repository-7418e3
+      - task-source-work-context-http-9257a1
+      - task-source-work-context-cli-9a134a
+      - task-source-git-worktree-provider-d1b252
+      - task-source-module-19a342
+      - task-source-workbench-application-d9c5aa
+      - task-source-preferences-application-8b4fe8
+      - task-source-workspace-sqlite-e9a67c
+      - task-source-transaction-619471
+      - task-source-preview-lifecycle-97736a
+      - task-source-taskdetailpage-335bc9
+      - task-source-taskagentaction-7a3c7f
+      - task-source-taskworkcontextcard-01a1b9
+      - task-source-taskartifactreader-bb7503
+      - task-source-taskcompletemodal-0d6276
+      - task-source-usetaskworkcontext-ac9540
+      - task-source-workbenchpage-16ae2b
+      - task-source-skill-f75bad
+      - openspec
+      - task-source-skill-7b8bb2
+      - task-source-skill-2263b0
+      - task-source-skill-d5bb46
+      - task-source-skill-0ea6ac
+      - task-source-skill-ee942e
+      - current-knowledge-maintenance
+      - navigation-index
+      - task-source-task-record-product-test-2e0e74
+      - task-source-workbench-application-test-e5f6d2
+      - task-bootstrap-method
+      - task-bootstrap-runner
+      - task-bootstrap-continuity
+    observedDigest: a3af3f2255959a6a7cdd2b9aa2580f231b5e50518a7ac94c7da39e611bc746ea
+    files:
+      - task-file-task-system-md-123fb5
+      - task-file-task-system-md-d14898
+      - task-file-task-system-html-80857d
+      - task-file-task-system-json-7dffd4
+      - task-file-task-system-md-f8e83e
+      - task-file-task-system-planning-html
+      - task-file-task-system-planning-json
+      - task-file-task-system-planning-md
+      - task-file-task-system-delivery-html
+      - task-file-task-system-delivery-json
+      - task-file-task-system-delivery-md
+      - task-file-task-self-bootstrap-html-c98d7e
+      - task-file-task-self-bootstrap-json-4d99c5
+      - task-file-task-self-bootstrap-md-af104b
+      - task-file-task-closeout-md-fb6d91
+      - task-file-task-parent-coordination-md-117a3e
+  - id: task-system-flow
+    title: 完整过程与角色职责
+    kind: diagram
+    path: knowledge/archify/flows/task-system.html
+    objects:
+      - task-system
+    sources:
+      - scope-rules
+      - task-source-skill-f75bad
+      - task-source-agent-assets-module
+      - task-source-workspace-query
+      - task-source-task-command-application-aba2e8
+      - task-source-git-worktree-provider-d1b252
+      - openspec
+      - task-source-skill-d5bb46
+      - task-source-task-review-application-089e42
+      - task-source-skill-0ea6ac
+      - current-knowledge-maintenance
+      - task-source-task-verification-application-68479e
+      - task-source-skill-ee942e
+      - task-source-workbench-application-d9c5aa
+      - task-source-work-context-application-11bb91
+      - task-source-taskworkcontextcard-01a1b9
+      - task-source-spec-05a13b
+      - task-source-spec-a77bcf
+      - task-source-spec-ea9d2d
+      - task-source-spec-a0e711
+      - task-bootstrap-method
+      - task-bootstrap-runner
+      - task-bootstrap-continuity
+    observedDigest: 299aea012d9e299e18ebb7c5f645ed551c11cea71bb80424a84570aaedc78d4b
+    graphSource: knowledge/archify/flows/task-system.json
+    graphDigest: 3921d694181b1bbb247e12eab8ffe2fd2d509d63bb25b4ba7ef45a0df749eadc
+    files:
+      - task-file-task-system-html-80857d
+      - task-file-task-system-json-7dffd4
+      - task-file-task-system-md-f8e83e
+  - id: task-system-planning
+    title: 需求、方案与实施授权
+    kind: diagram
+    path: knowledge/archify/flows/task-system-planning.html
+    objects:
+      - task-system
+    sources:
+      - scope-rules
+      - task-source-skill-f75bad
+      - task-source-task-command-application-aba2e8
+      - task-source-git-worktree-provider-d1b252
+      - openspec
+      - task-source-skill-d5bb46
+      - task-source-task-review-application-089e42
+      - task-source-work-context-application-11bb91
+      - task-source-workbenchpage-16ae2b
+      - task-source-taskworkcontextcard-01a1b9
+      - task-source-skill-7b8bb2
+    observedDigest: d9cb69fcc5c75ff597283d56cd4217d92c33fbbaca3c77f10b6b9f2646866865
+    graphSource: knowledge/archify/flows/task-system-planning.json
+    graphDigest: e6bf58ab2b0370305bd52fe105df0fe948bf5b5eeb80168c058473f5b49d9677
+    files:
+      - task-file-task-system-planning-html
+      - task-file-task-system-planning-json
+      - task-file-task-system-planning-md
+  - id: task-system-delivery
+    title: 实现审查与代码交付
+    kind: diagram
+    path: knowledge/archify/flows/task-system-delivery.html
+    objects:
+      - task-system
+    sources:
+      - task-source-skill-0ea6ac
+      - current-knowledge-maintenance
+      - task-openspec-apply
+      - task-source-task-review-application-089e42
+      - task-source-task-verification-application-68479e
+      - task-source-skill-ee942e
+      - task-source-task-command-application-aba2e8
+    observedDigest: 93ab8db603951eb6156881d8cca250bbfe20b6d4b9a54c386131f5e10222dc50
+    graphSource: knowledge/archify/flows/task-system-delivery.json
+    graphDigest: ef9e6430333e58a8d07d1f7438a71b87593199db9a0b33f23df0c757080879e0
+    files:
+      - task-file-task-system-delivery-html
+      - task-file-task-system-delivery-json
+      - task-file-task-system-delivery-md
+  - id: task-system-bootstrap
+    title: 自举激活与安全善后
+    kind: diagram
+    path: knowledge/archify/flows/task-self-bootstrap.html
+    objects:
+      - task-system
+    sources:
+      - task-source-git-worktree-provider-d1b252
+      - task-source-preview-lifecycle-97736a
+      - task-source-self-bootstrap-closeout-test-2c0ed6
+      - task-bootstrap-method
+      - task-bootstrap-runner
+      - task-bootstrap-continuity
+    observedDigest: c003f9a712afe6212f9253944fd4702964c33e6417d6006bae57c7df55c31047
+    graphSource: knowledge/archify/flows/task-self-bootstrap.json
+    graphDigest: 6cbee98a95f09ee3243335f74cd170ca450d6f15629d7b28c2c982a24aba8796
+    files:
+      - task-file-task-self-bootstrap-html-c98d7e
+      - task-file-task-self-bootstrap-json-4d99c5
+      - task-file-task-self-bootstrap-md-af104b
+  - id: task-system-closeout
+    title: 收尾与交付
+    kind: document
+    path: knowledge/docs/flows/task-closeout.md
+    objects:
+      - task-closeout
+    sources:
+      - task-source-skill-ee942e
+      - task-source-task-command-application-aba2e8
+      - task-source-git-worktree-provider-d1b252
+      - task-source-parent-coordination-application-49a9bd
+      - task-source-release-task-evidence-correlation-60b024
+    observedDigest: 83fe58a41389851e91f6d50cc8935f2e4d0940f307e6652cb10548339c688ee5
+    files:
+      - task-file-task-closeout-md-fb6d91
+  - id: task-system-parent
+    title: 父任务协调
+    kind: document
+    path: knowledge/docs/flows/task-parent-coordination.md
+    objects:
+      - task-parent-coordination
+    sources:
+      - task-source-2026-08-30-parent-child-task-audit-b28c38
+    observedDigest: effa30918cf447b6754a4534bdfd188d59e84680fa76ce4e0200bdb4bc5a900e
+    files:
+      - task-file-task-parent-coordination-md-117a3e
 sources:
   - id: query
     title: 读取与来源观察
     kind: code
     path: services/buildr/src/modules/knowledge/application/knowledge-query.ts
-    observedDigest: 52833058986a9cbd8028c4beacda99c2095dbd66e3dc234c12243d2c86bbbaac
-    summary: 组织知识读取用例：根据登记身份定位项目、服务和代码库，再读取相关成果与来源。它计算当前内容观察，不替代智能体对架构含义的判断。
+    observedDigest: 496de44b9ff4e31fa432ab624ab9e265e75d8e7140627d9d33a60f58334a2945
+    summary: 组织知识读取与当前内容观察；从当前可读原生图示 HTML 的主 SVG 提取只读尺寸，供嵌入预览适配。摘要差异只提示来源变化，不判定语义正确。
   - id: index-model
     title: 知识对象与关联校验
     kind: code
@@ -335,14 +573,14 @@ sources:
     title: 知识阅读页面
     kind: code
     path: services/buildr-web/src/features/knowledge/pages/KnowledgePage.tsx
-    observedDigest: 5dc890e2dd2db52c048ee2ebc6dfa3612b842afa80b3b81ce2055f7783e589ff
-    summary: 组织当前知识范围、主屏详情、目录分类和关联阅读。它保持同一项目的副屏，具体文件说明与展示交给完整阅读组件。
+    observedDigest: 19c2f13c67bc29dc458fbb25c75c2a49803cd00692d3aed8b7ffae923cae9c26
+    summary: 组织当前知识范围、主屏详情、目录分类和关联阅读，保持同一项目的副屏；打开资料时由工作台（Workbench）组件独立记录最近访问，收藏写个人偏好，不改知识正文。
   - id: diagram-reader
     title: 隔离图示阅读
     kind: code
     path: services/buildr-web/src/features/knowledge/components/KnowledgeDiagram.tsx
-    observedDigest: 52d6ee7927324eb46792e180baef42a742d6e80a81c60768c732a2bb11f5cd2c
-    summary: 用受隔离的框架显示原图，保留必要脚本与本地导出，同时只接收当前框架发送的已关联对象选择。它不解析或重建 Archify 的内部界面。
+    observedDigest: 483b09abb9919b577319e4c9d003b7cf3ea5e8d696cf15bf295908c385fa1835
+    summary: 用隔离框架显示原图；已知原生尺寸的嵌入预览随实际宽度匹配高度，未知格式保留兜底，独立详情保留缩放和说明。只接受当前框架的已关联对象选择。
   - id: feedback
     title: 有上下文的修改意见
     kind: code
@@ -359,8 +597,8 @@ sources:
     title: 复用的技能详情
     kind: code
     path: services/buildr-web/src/features/agent-assets/components/SkillHome.tsx
-    observedDigest: c8b9e3d34418ad23d4d5d08dfa0093521341522b080640c604d7511a13770261
-    summary: 共用技能详情默认读取 SKILL.md 正文，其他文件折叠检索并沿用文档阅读；切换技能时隔离文件与请求状态。
+    observedDigest: 7479ae4d360b884a4be56c2940b83a0ee41ce0c6786454be9e1aeb9172af065b
+    summary: 共用技能（Skill）详情默认读取 SKILL.md 正文，其他文件折叠检索；切换技能时隔离请求状态，最近访问和收藏独立保存到工作台（Workbench）偏好。
   - id: code-architecture
     title: 代码架构（code-architecture）
     summary: 指导智能体（Agent）按清晰职责组织真实代码。
@@ -419,13 +657,13 @@ sources:
     title: 项目知识阅读规范
     kind: spec
     path: openspec/specs/project-knowledge-browsing/spec.md
-    observedDigest: 856a1fb2b7be53778b7cca384e45ad0a2e88c23d7a649904b29168304569afbe
-    summary: 规定项目知识的目录、详情、副屏、文件说明、图示呈现与用户引导建设行为；属于当前正式规范。
+    observedDigest: a481de530462c7363bc4e07623737dcac1fb028876d423dd1da8873ea68def3c
+    summary: 约束知识分类、原生图示和关联阅读；当前展示尺寸来自安全读取的 HTML 主 SVG，文内预览按实际比例适配，独立详情保留原生功能与隔离边界。
   - id: tests
     title: 来源变化与读取验证
     kind: evidence
     path: services/buildr/test/integration/knowledge-query.test.ts
-    observedDigest: 45ed2ff6fdc186f1a79e4aeba2670f08da93fbd02041e30b3f406c74a2022765
+    observedDigest: cd9eedc42a2225269b71c86a3da0752f03c713bffa2f207d011f7f224ef26c89
   - id: project-terms
     title: 项目唯一术语解释
     kind: evidence
@@ -518,8 +756,8 @@ sources:
     title: 同一成果的阅读组件
     kind: code
     path: services/buildr-web/src/features/knowledge/components/KnowledgeArtifactReader.tsx
-    observedDigest: ae13d3552823565a6a94627886ffbbc7dbfbcfa0d1e38acc8a52a42569116a7c
-    summary: 统一呈现同一份文章、地图或技术图；文内预览与独立详情复用成果文件。它处理原生引用和文件树，完整图示的内部控件仍由 Archify 提供。
+    observedDigest: d44f23c4ed27609da4876538611200716fbf940fef9111956bd34340250b5aec
+    summary: 统一读取文章、地图或技术图；文内预览与独立详情复用成果文件，并向图示宿主传递只读尺寸，原生控件仍由 Archify 提供。
   - id: knowledge-catalog
     title: 成果目录与检索
     kind: code
@@ -542,8 +780,8 @@ sources:
     title: 知识响应契约
     kind: code
     path: services/buildr/src/modules/knowledge/interfaces/http/knowledge-http-contracts.ts
-    observedDigest: e62f5203a7142b91f537e819c7afc18a62b9d61e09b0850b5f4813e8a22520c5
-    summary: 定义知识读取接口的返回结构，包括范围、成果、来源和观察结果。后端返回前用它校验协议，前端生成类型也以它为依据；它不承担文件读取或知识语义判断。
+    observedDigest: a6aa6a07870dab7da9cd73a70e09c4848117530c9aa3591866cc42dabaa2a7b2
+    summary: 校验知识响应及来源观察；图示尺寸是可空的只读元数据，JSON 响应不复制可执行 HTML 正文，图示仍通过隔离端点读取。
   - id: navigation-index
     title: 当前阅读关联
     kind: code
@@ -596,7 +834,7 @@ sources:
     kind: evidence
     path: knowledge/docs/architecture/knowledge-maintenance.md
     summary: 这份文件保存《知识建设与维护》的架构解释，与网页阅读使用同一正文。它是理解事实的成果，不替代规范或源码。
-    observedDigest: 109bd7ff4640b7b1de107f3dc580e47bcf731acb5c21173164c5b29911ca12e7
+    observedDigest: 9695b70f56a2ab49ded06dbb261daf0746be926d482d03bf8c1b17ea6835beda
   - id: file-responsibility
     title: 知识建设与维护的职责关系 · 展示文件
     kind: evidence
@@ -614,13 +852,13 @@ sources:
     kind: evidence
     path: knowledge/archify/flows/knowledge-maintenance.md
     summary: 这份说明记录《知识建设与维护的职责关系》的事实依据、覆盖范围和表达限制，维护图源或展示时用它核对语义。
-    observedDigest: b46c2e4ee8b7e46f3e34185cff8db9f3cd2e4ea0602c412dd01bac11f5478d31
+    observedDigest: cb7d88f97dc3eb5109d96ccdb4fa2407fcdc4bb8dd2aa50468655c32ef89efe0
   - id: file-implementation-map
     title: 知识建设与维护的实现组织 · 地图文件
     kind: evidence
     path: knowledge/code-map/knowledge-maintenance.md
     summary: 这份文件保存《知识建设与维护的实现组织》的职责、规范和实现位置地图，与网页阅读使用同一正文。它是理解事实的成果，不替代规范或源码。
-    observedDigest: 84c83daaff73bcc2531e304a8d3f1c12ae060cbdd6c45b25a5896a944640ca75
+    observedDigest: e5ec11b6e43a3ff93b6f054e8b7ce011613cdb183fd40980985fdd80e4078ce5
   - id: file-terms
     title: 知识建设与维护术语 · 术语文件
     kind: evidence
@@ -699,6 +937,479 @@ sources:
     path: knowledge/archify/flows/project-service-repositories.md
     summary: 这份说明记录《项目、服务与代码库的引用关系》的事实依据、覆盖范围和表达限制，维护图源或展示时用它核对语义。
     observedDigest: 2849590e97931927ed69f3298610ec0d9a0910f2245a344cc273dfe5e6901932
+  - id: task-source-spec-ea9d2d
+    title: 任务工作方式规范
+    kind: spec
+    path: openspec/specs/agent-task-workflows/spec.md
+    summary: 约束技能（Skill）协作、任务分流和默认隔离；仍保留旧工作树自动准备表述，文章单列差异。
+    observedDigest: c259e8cb84f3fc7b46e29f252f6d1a0de29b176d6df4a4ccd47a7244086480c1
+  - id: task-source-module-19a342
+    title: 任务能力装配
+    kind: code
+    path: services/buildr/src/modules/task/module.ts
+    summary: 组合任务读写、审查、验证、父任务和工作摘要（Work Context）能力，并登记公开接口。
+    observedDigest: e8c1e6861e1bb4599a9ce8ccac243dc213b4e84b7995c5ec1b1c9774f4cb5def
+  - id: task-source-workbench-application-d9c5aa
+    title: 工作概览读取
+    kind: code
+    path: services/buildr/src/modules/workbench/application/workbench-application.ts
+    summary: 有界组合明确待处理事项、任务、偏好及已有每日演进；按身份去重并局部报告来源失败。
+    observedDigest: ca03dcfdd690015cc3b50b20bec2662e06bac402f28d1e86c1451e203744795e
+  - id: task-source-taskagentaction-7a3c7f
+    title: 开始与接续指令
+    kind: code
+    path: services/buildr-web/src/features/task/components/TaskAgentAction.tsx
+    summary: 按真实范围准备开始、接续、审查或验证指令；接续时重读任务和摘要，终态任务要求新目标。
+    observedDigest: cad410d2275e2f2e47f9b167645c8a89f1afd3ec2ba61065f5a5781396ada5eb
+  - id: task-source-skill-f75bad
+    title: 任务分流（task-triage）
+    kind: skill
+    path: SKILL.md
+    skillId: task-triage
+    link: services/buildr/resources/workspace/skills/buildr/task-triage/SKILL.md
+    summary: 分别判断语义、执行形态和独立工作位置；只在实际命中时交接专业方法。
+    observedDigest: fb4d848ed62f164c51560aebd555d752f7a61700e7c2ca9c00d9a0a9930be7b0
+  - id: task-source-git-worktree-provider-d1b252
+    title: Git 工作树安全
+    kind: code
+    path: services/buildr/src/modules/task/infrastructure/git-worktree-provider.ts
+    summary: 解析真实代码库集合，预检身份和归属，创建或检查独立位置，删除前复核源版本与成果保留。
+    observedDigest: 0d0db4a11616b217663527e867d7f32663b93f8daabca4ad7b4e6b6a18d3cd7a
+  - id: task-source-spec-5aed6b
+    title: 工作摘要规范
+    kind: spec
+    path: openspec/specs/task-work-context/spec.md
+    summary: 约束独立进展、明确事项、人的答复、并发版本保护和多入口共享事实。
+    observedDigest: 08a7e1fe06777ad4d245a84efb21d5019ef11616ebef7d9cdfdfb0dc5ce50059
+  - id: task-source-work-context-application-11bb91
+    title: 工作摘要应用
+    kind: code
+    path: services/buildr/src/modules/task/work-context/application/work-context-application.ts
+    summary: 记录摘要时区分保留、清除与新建事项；回应时核对当前事项身份，保留真实意见及时间。
+    observedDigest: fdf20d0fbd468e90186260a4463780ecf24dd34f4727960d26f9fbedc1e1e6db
+  - id: task-source-taskworkcontextcard-01a1b9
+    title: 工作摘要与人的回应
+    kind: code
+    path: services/buildr-web/src/features/task/components/TaskWorkContextCard.tsx
+    summary: 显示进展、下一步和明确事项，携带摘要与事项身份保存答复；冲突保留输入并支持重读。
+    observedDigest: d275ba4f7b349ac9243ca4ec254273d50c9280e4210f119383ea0ba6504e5172
+  - id: task-source-usetaskworkcontext-ac9540
+    title: 工作摘要读取状态
+    kind: code
+    path: services/buildr-web/src/features/task/hooks/useTaskWorkContext.ts
+    summary: 管理当前任务的摘要请求、刷新和取消，避免旧任务的迟到响应覆盖新任务内容。
+    observedDigest: c407f296560bdfbbae04dda569e2594e5076fef7a0c7c9d34d08d6aee1826544
+  - id: task-source-work-context-repository-7418e3
+    title: 工作摘要存取
+    kind: code
+    path: services/buildr/src/modules/task/work-context/persistence/work-context-repository.ts
+    summary: 用独立摘要保护当前内容，在事务内拒绝覆盖；有界查询明确待处理项，保持旧库只读兼容。
+    observedDigest: 4001f097206ff14463c3f07c558179cfbdfc07a8f9d38f73b7e981ff15e5f4d1
+  - id: task-source-task-command-application-aba2e8
+    title: 任务事实写入
+    kind: code
+    path: services/buildr/src/modules/task/application/task-command-application.ts
+    summary: 在当前版本保护下维护目标、范围、关系、四态和结果；终态更正保留历史，父任务完成核对整体依据。
+    observedDigest: 058a230e7c28e07c021260ab8eb6cf3e4b4e4472cb9f8c0255eba7f019b14cfa
+  - id: task-source-task-04c6c5
+    title: 任务领域对象
+    kind: code
+    path: services/buildr/src/modules/task/domain/task.ts
+    summary: 定义四种状态、完成结果、父任务完成依据、终态更正历史和本机复盘摘要。
+    observedDigest: 5b84983c04e6301c17542d96954ea1bb66403d856ae99b90f91c1f27e62ebeb8
+  - id: task-source-transaction-619471
+    title: 写入事务
+    kind: code
+    path: services/buildr/src/infrastructure/sqlite/transaction.ts
+    summary: 以 BEGIN IMMEDIATE 管理具体写入，统一提交或回滚，并提供受控数据库上下文。
+    observedDigest: 1ca707e1cd0ea1070036eb790300a2a8620a67f0a171902dbec033d9bdf1b598
+  - id: task-source-workspace-sqlite-e9a67c
+    title: 本机结构化存储
+    kind: code
+    path: services/buildr/src/infrastructure/sqlite/workspace-sqlite.ts
+    summary: 定位真实工作空间及本机数据库，保护合法写入来源、读写会话与迁移边界。
+    observedDigest: d486246134ba5773fa9b0515a176a6d075024b545974dc6d562454734e122f23
+  - id: task-source-workbench-application-test-e5f6d2
+    title: 工作台与摘要应用回归
+    kind: evidence
+    path: services/buildr/test/integration/workbench-application.test.ts
+    summary: 覆盖摘要与答复版本保护、四态独立、偏好、首批外事项及旧库只读兼容；本次只核对其证明范围。
+    observedDigest: a360ad42b053e0d28a43959527e42f6820c0ee7dc52ef7077e34b9e163911afe
+  - id: task-source-preview-lifecycle-97736a
+    title: 预览资源生命周期
+    kind: code
+    path: services/buildr/src/web/application/preview-lifecycle.ts
+    summary: 保存预览实例、目录、代码身份和受管进程，创建及停止时核对具体所有者，失败保留可诊断现场。
+    observedDigest: 075ffc10f76b8233267faba44fb124625ffac8e2fb847f09cc9d79f3f58cbd4b
+  - id: task-source-task-review-application-089e42
+    title: 审查结果应用
+    kind: code
+    path: services/buildr/src/modules/task/application/task-review-application.ts
+    summary: 核对活动任务和被审对象，组织方案及完成审查两个独立结果槽的版本化保存。
+    observedDigest: d69704569f48b0e04ce4102334074d35ce88fcb57f397e799878942544cf9670
+  - id: task-source-task-verification-application-68479e
+    title: 验证报告应用
+    kind: code
+    path: services/buildr/src/modules/task/application/task-verification-application.ts
+    summary: 将真实检查关联到任务范围与当前测试地图，保存报告并在读取时计算内容及声明适用性。
+    observedDigest: eebccbab686d73d82d2269f073ae0defc5c5e052a09740336c0e3ad16b95ba27
+  - id: task-source-skill-ee942e
+    title: 收尾与交付（task-finish）
+    kind: skill
+    path: SKILL.md
+    skillId: task-finish
+    link: services/buildr/resources/workspace/skills/buildr/task-finish/SKILL.md
+    summary: 组合 Git、业务工具、已有任务登记和具体资源所有者善后，分别报告成果。
+    observedDigest: 738d046b3d44556f9cbd9529eba9f9e3fb4e15a2006c8e4e1960d12984118020
+  - id: task-source-spec-05a13b
+    title: 自举编排规范残留
+    kind: spec
+    path: openspec/specs/task-closeout-orchestration/spec.md
+    summary: 该文件仍含任务完成前置要求，与现行唯一脚本及已确认移除决定不一致，作为差异依据保留。
+    observedDigest: 86c543f9aa1ced42eaeb92295032aeb3c3b6abed9aa26d48509d85fd1d6936c0
+  - id: task-source-spec-a77bcf
+    title: 已确认的自举前置移除
+    kind: spec
+    path: openspec/changes/archive/2026-09-08-remove-self-bootstrap-task-prerequisite/specs/agent-task-workflows/spec.md
+    summary: 归档变更明确以已交付范围决定自举适用性，任务记录及完成状态不作为前置条件。
+    observedDigest: 65ea216b4cd74f2e07f0686e6239a0f14f79a29409e122b8b77b4444a649495b
+  - id: task-source-spec-a0e711
+    title: 任务环境退役规范
+    kind: spec
+    path: openspec/specs/task-environments/spec.md
+    summary: 约束工作树（Worktree）窄职责和具体资源所有者；普通编辑的旧位置表述与新版默认隔离存在差异。
+    observedDigest: ddb0ec796f051b207d9db33dcb7b1836b983a03961bcb1eb54103c0b1239cbf5
+  - id: task-source-preferences-application-8b4fe8
+    title: 偏好维护应用
+    kind: code
+    path: services/buildr/src/modules/workbench/application/preferences-application.ts
+    summary: 校验任务或项目身份与站内资源引用，逐项维护置顶、接下来、关注、收藏和最近访问。
+    observedDigest: c249174fe9cfee3c1dbb7320a2ae7f2022091ea1a08b848e9aaa399b60fa4913
+  - id: task-source-workbenchpage-16ae2b
+    title: 工作概览页面
+    kind: code
+    path: services/buildr-web/src/features/workbench/pages/WorkbenchPage.tsx
+    summary: 呈现待我处理、继续推进、项目变化和常用入口，保留范围、来源与局部错误提示。
+    observedDigest: 986b7202e89588c67c89457b71c86e2c5f6b2d1e778caa83e8c70541f976986c
+  - id: task-source-taskdetailpage-335bc9
+    title: 任务详情页面
+    kind: code
+    path: services/buildr-web/src/features/task/pages/TaskDetailPage.tsx
+    summary: 组织任务目标、工作摘要（Work Context）、关联成果与专业结果阅读，保留当前任务上下文。
+    observedDigest: 34f7fd2ad68b743bf59391b2cef7fc3641f9be889b2d20fed9a586a0ee416e4b
+  - id: task-source-taskartifactreader-bb7503
+    title: 任务成果并排阅读
+    kind: code
+    path: services/buildr-web/src/features/task/components/TaskArtifactReader.tsx
+    summary: 展示当前已读取的规范变化材料，按真实路径切换并保留原任务上下文；不任意扫描其他文件。
+    observedDigest: 3afd8c27e842bedadb92c9c534a263b6330a786e307079b62736a73bee8e275d
+  - id: task-source-spec-f12a41
+    title: 任务记录规范
+    kind: spec
+    path: openspec/specs/task-record/spec.md
+    summary: 约束最小任务事实、四态、关系、更正历史、版本保护及独立业务结果边界。
+    observedDigest: b72e29d196205c7779cc7775d8b880c4ad712052cfd2ca7c4f4cfcf24fcc6e72
+  - id: task-source-spec-9dbb55
+    title: 审查结果规范
+    kind: spec
+    path: openspec/specs/task-review-results/spec.md
+    summary: 约束方案与完成审查的可选结果槽、真实对象身份、原子保存和独立职责。
+    observedDigest: 5024268ac65c1ad9b9774c9952d5348679ee9aaf1c42cba6464f535b35da5ea8
+  - id: task-source-spec-a99380
+    title: 任务验证规范
+    kind: spec
+    path: openspec/specs/task-verification/spec.md
+    summary: 约束有意义报告、实际检查、覆盖缺口、测试地图关联和合法写入来源；不代跑测试。
+    observedDigest: 321a400b0b45cace818094fd76d08e402c65afbcd99c8f7555cb167e7cb7fcea
+  - id: task-source-task-4ce8a0
+    title: 任务命令行入口
+    kind: code
+    path: services/buildr/src/modules/task/interfaces/cli/task.ts
+    summary: 解析任务创建、读取、修订、激活、完成和放弃参数，将具体操作交给任务应用。
+    observedDigest: 09a3f44f40ab3f4766f098a240e2ae9cd6f5e3893ee93cfad9d52e9c63760cf7
+  - id: task-source-task-http-e1bbb1
+    title: 任务网页接口
+    kind: code
+    path: services/buildr/src/modules/task/interfaces/http/task-http.ts
+    summary: 处理任务查询和具体状态写入，请求转换与写入授权和业务应用职责分离。
+    observedDigest: a694264c5bae726663dad8c306839be541d7151ac1fce4b654b98b10e856badc
+  - id: task-source-task-query-application-9f6269
+    title: 任务与关系读取
+    kind: code
+    path: services/buildr/src/modules/task/application/task-query-application.ts
+    summary: 读取任务业务事实、直接父子关系及引用诊断，生成记录版本和父任务完成观察。
+    observedDigest: cbb371b86d4eb82f3ab8f344fc76b4c3738308ffb3872b8fae89122f0642a06d
+  - id: task-source-parent-coordination-application-49a9bd
+    title: 父任务协调读取
+    kind: code
+    path: services/buildr/src/modules/task/application/parent-coordination-application.ts
+    summary: 返回当前总体目标、直接子任务、完成观察身份和历史计划；本身不执行完成或交付。
+    observedDigest: 0b2cbba5517b66b898e284d28ba6eba2aea5f6ea542ccaa362ab9efae41106a9
+  - id: task-source-task-review-691fbf
+    title: 审查结果约束
+    kind: code
+    path: services/buildr/src/modules/task/domain/task-review.ts
+    summary: 约束两类审查、真实对象身份、方法、已审与未审范围及结论，拒绝无效输入。
+    observedDigest: 3339f4b9d4236e3a54a88730454acdf898d7c6ac671547f48c23f28143e7d6b4
+  - id: task-source-task-verification-4ea021
+    title: 验证报告约束
+    kind: code
+    path: services/buildr/src/modules/task/domain/task-verification.ts
+    summary: 约束内容身份、实际检查、未覆盖项和三类结论；报告内容须与实际结果声明一致。
+    observedDigest: 852eb8466ef666300c8f76c973a8b11eac86cff883a4000f048dc66f907fbac3
+  - id: task-source-task-repository-be5696
+    title: 任务记录存取
+    kind: code
+    path: services/buildr/src/modules/task/persistence/task-repository.ts
+    summary: 读取和写入任务主表，保存直接父关系与显式父身份，批量派生反向关系并读取保留历史。
+    observedDigest: 4b9aa766cc85e5f6eb02931a1c04b57a9440c9f5c5705b0c39ef9100bd0dca91
+  - id: task-source-task-review-repository-44ff85
+    title: 审查结果存取
+    kind: code
+    path: services/buildr/src/modules/task/persistence/task-review-repository.ts
+    summary: 对同类当前审查结果计算摘要，在事务内比较调用方版本后原子替换，并核对保存内容。
+    observedDigest: 0506822048f2fa68a73cf1bfcae7adb3331cb0330e14c90a2eec8a40efaadb58
+  - id: task-source-task-verification-repository-470799
+    title: 验证报告存取
+    kind: code
+    path: services/buildr/src/modules/task/persistence/task-verification-repository.ts
+    summary: 维护每个任务的一份当前验证报告，事务内比较报告摘要并核对写后内容及查询字段。
+    observedDigest: 4bd6a9e8cbfc67afa0851ba3d264d3280ce6c0953bfe4551eec4faf11432429c
+  - id: task-source-work-context-ca9c7e
+    title: 工作摘要数据约束
+    kind: code
+    path: services/buildr/src/modules/task/work-context/domain/work-context.ts
+    summary: 定义进展、下一步、事项、答复及严格请求结构；区分待处理和已答复状态。
+    observedDigest: 373a8dd39451fc43c6c4f6f43f4a8aba726e63fbd2817f7618850fcfc54183a2
+  - id: task-source-work-context-cli-9a134a
+    title: 工作摘要命令行
+    kind: code
+    path: services/buildr/src/modules/task/work-context/interfaces/cli/work-context-cli.ts
+    summary: 解析读取、记录和回应动作，把已观察摘要、进展、事项或答复交给同一应用。
+    observedDigest: f22853a3ec054bb0bb8ed4e709801970f697b862ec2f9dabb6d74b48cbbe9e1d
+  - id: task-source-work-context-http-9257a1
+    title: 工作摘要网页接口
+    kind: code
+    path: services/buildr/src/modules/task/work-context/interfaces/http/work-context-http.ts
+    summary: 提供单项与批量读取、摘要写入和回应入口；写入检查会话，并复用同一应用规则。
+    observedDigest: 9c769df20daa14fcf365b534789f57a77a91534541122ebfd77e2d3d3ac482d5
+  - id: task-source-taskcompletemodal-0d6276
+    title: 任务完成表单
+    kind: code
+    path: services/buildr-web/src/features/task/components/TaskCompleteModal.tsx
+    summary: 基于传入的任务及父任务观察收集完成摘要、验收与明确授权，通过提交回调保存；组件不直接执行交付。
+    observedDigest: e9efa365c4c54d26eeb96fc7c5e3461b1032bb57d6981a861a3f498d64f9cbe0
+  - id: task-source-skill-7b8bb2
+    title: 任务管理（task-manager）
+    kind: skill
+    path: SKILL.md
+    skillId: task-manager
+    link: services/buildr/resources/workspace/skills/buildr/task-manager/SKILL.md
+    summary: 维护任务事实、独立工作摘要（Work Context）与真实答复；父任务完成需明确授权和总体验收。
+    observedDigest: 04717305ca3479ca62d95e0a6a70b816f1f9b821dc2171bf768607fe361c41b5
+  - id: task-source-skill-2263b0
+    title: 工作树管理（task-worktree）
+    kind: skill
+    path: SKILL.md
+    skillId: task-worktree
+    link: services/buildr/resources/workspace/skills/buildr/task-worktree/SKILL.md
+    summary: 创建、检查和安全清理指定任务的 Git 位置，核验真实交付输入后保护具体删除。
+    observedDigest: 8a7eddf2d038146fbccca69e276bd3af5824cfb99ae1a029f56a5f1a48d967bc
+  - id: task-source-skill-d5bb46
+    title: 任务审查（task-review）
+    kind: skill
+    path: SKILL.md
+    skillId: task-review
+    link: services/buildr/resources/workspace/skills/buildr/task-review/SKILL.md
+    summary: 按真实对象与风险完成方案或结果审阅，使用当前摘要保存独立结论。
+    observedDigest: c98dfe4e90f9e510cf893b9aaa4b2b25c28583476d9eabd0d489c035c0a0c4b5
+  - id: task-source-skill-0ea6ac
+    title: 任务验证（task-verification）
+    kind: skill
+    path: SKILL.md
+    skillId: task-verification
+    link: services/buildr/resources/workspace/skills/buildr/task-verification/SKILL.md
+    summary: 指导智能体（Agent）选择并执行已有检查，核对适用性后保存有意义的任务报告。
+    observedDigest: 9f96b39189f1d4caa7cb476682fe2377916d0fb5ef534c182103a715920f4537
+  - id: task-source-task-record-product-test-2e0e74
+    title: 任务记录产品回归
+    kind: evidence
+    path: services/buildr/test/system/task-record-product.test.ts
+    summary: 覆盖任务动作、四态、引用、父子关系、更正与并发版本保护。
+    observedDigest: 90ed7688b19a311eec913fbef5525d83cf9e15fbc529ef422bb3c9c0fbe85fbc
+  - id: task-source-self-bootstrap-closeout-test-2c0ed6
+    title: 自举分支回归
+    kind: evidence
+    path: services/buildr/test/integration/self-bootstrap-closeout.test.ts
+    summary: 通过模拟命令执行核对适用范围、真实交付输入、任务可选及恢复；不代替实际安装和最终诊断。
+    observedDigest: eeb0c534b93b60636cee00b62763f1834c0d0bca2f93840a1758a52bea865efd
+  - id: task-source-release-task-evidence-correlation-60b024
+    title: 发布任务关联
+    kind: code
+    path: services/buildr/tools/release/release-task-evidence-correlation.ts
+    summary: 只关联完成的发布支持任务与发布输入，任务状态不是候选、产物或发布成功证明。
+    observedDigest: d62d1bddf0ea1368c705ad802be9e50c0d68049cf55d4423edc66065e23ff02d
+  - id: task-source-2026-08-30-parent-child-task-audit-b28c38
+    title: 父子任务改造前梳理 · 关联阅读
+    kind: evidence
+    path: docs/archive/2026-08-30-parent-child-task-audit.md
+    summary: 已有主题解释，供任务系统进一步阅读和追溯；具体行为仍以该文引用的规范、代码及登记为依据。
+    observedDigest: 5054b1f903f806f96c5d47039b45550d5d6f4ac9a3e6785aa1aebcd4fd61cdae
+  - id: task-bootstrap-method
+    path: SKILL.md
+    title: 自举激活（buildr-self-bootstrap-sync）
+    summary: 已交付输入命中时，由唯一执行器完成适用同步、开发应用更新、入口验证及最终诊断；任务编号可选。
+    kind: skill
+    skillId: buildr-self-bootstrap-sync
+    observedDigest: a07798f60e907e70a0398400485a901b66a1d2d3d7b0257a4abe29056ac14f20
+  - id: task-bootstrap-runner
+    path: scripts/closeout.mjs
+    title: 自举唯一执行器
+    summary: 核对基线和交付、按路径选择动作，完成同步后继提交及推送、开发应用更新、显式入口核验和最终 Doctor；不写任务状态。
+    kind: skill
+    skillId: buildr-self-bootstrap-sync
+    observedDigest: 76740435b1fed6a837440403c11649035e4ed23605ff5b3218850f8d1168be69
+  - id: task-bootstrap-continuity
+    path: scripts/development-web-continuity.mjs
+    title: 开发实例连续性
+    summary: 观察原开发实例，恢复已证明健康的实例到固定端口4458，并核对旧进程和新启动器、源码及 Node 身份。
+    kind: skill
+    skillId: buildr-self-bootstrap-sync
+    observedDigest: ed2d216d881af95122c594325d0b93cc5109a7fca5f0e851cca55c365c5b56f1
+  - id: task-file-task-system-md-123fb5
+    title: 从需求讨论到任务收尾 · 正文
+    kind: evidence
+    path: knowledge/docs/architecture/task-system.md
+    summary: 保存本主题当前解释或依据，网页与本地使用同一正文；不替代规范和代码。
+    observedDigest: f44cbe4e41b875d55bd2ad899571cf9f5cdf0d2fe8e4cff82251642b30498898
+  - id: task-file-task-system-md-d14898
+    title: 任务系统的实现组织 · 正文
+    kind: evidence
+    path: knowledge/code-map/task-system.md
+    summary: 保存本主题当前解释或依据，网页与本地使用同一正文；不替代规范和代码。
+    observedDigest: a3af3f2255959a6a7cdd2b9aa2580f231b5e50518a7ac94c7da39e611bc746ea
+  - id: task-file-task-system-html-80857d
+    title: 完整过程与角色职责 · 独立展示
+    kind: evidence
+    path: knowledge/archify/flows/task-system.html
+    summary: 由同目录图源经 Archify 生成并检查的独立交互展示。
+    observedDigest: 299aea012d9e299e18ebb7c5f645ed551c11cea71bb80424a84570aaedc78d4b
+  - id: task-file-task-self-bootstrap-html-c98d7e
+    title: 自举激活与安全善后 · 独立展示
+    kind: evidence
+    path: knowledge/archify/flows/task-self-bootstrap.html
+    summary: 由同目录图源经 Archify 生成并检查的独立交互展示。
+    observedDigest: c003f9a712afe6212f9253944fd4702964c33e6417d6006bae57c7df55c31047
+  - id: task-file-task-closeout-md-fb6d91
+    title: 收尾与交付 · 正文
+    kind: evidence
+    path: knowledge/docs/flows/task-closeout.md
+    summary: 保存本主题当前解释或依据，网页与本地使用同一正文；不替代规范和代码。
+    observedDigest: 83fe58a41389851e91f6d50cc8935f2e4d0940f307e6652cb10548339c688ee5
+  - id: task-file-task-parent-coordination-md-117a3e
+    title: 父任务协调 · 正文
+    kind: evidence
+    path: knowledge/docs/flows/task-parent-coordination.md
+    summary: 保存本主题当前解释或依据，网页与本地使用同一正文；不替代规范和代码。
+    observedDigest: effa30918cf447b6754a4534bdfd188d59e84680fa76ce4e0200bdb4bc5a900e
+  - id: task-file-task-system-json-7dffd4
+    title: 完整过程与角色职责 · 可维护图源
+    kind: evidence
+    path: knowledge/archify/flows/task-system.json
+    summary: 定义本图参与者、阶段和交互；需与实际来源及展示一起维护。
+    observedDigest: 3921d694181b1bbb247e12eab8ffe2fd2d509d63bb25b4ba7ef45a0df749eadc
+  - id: task-file-task-system-md-f8e83e
+    title: 完整过程与角色职责 · 事实依据
+    kind: evidence
+    path: knowledge/archify/flows/task-system.md
+    summary: 保存本主题当前解释或依据，网页与本地使用同一正文；不替代规范和代码。
+    observedDigest: 6e7f172242e9ac792a0d82f4380866ce1ff69d36e31a3a9da4e446600c87fcf6
+  - id: task-file-task-self-bootstrap-json-4d99c5
+    title: 自举激活与安全善后 · 可维护图源
+    kind: evidence
+    path: knowledge/archify/flows/task-self-bootstrap.json
+    summary: 定义本图参与者、阶段和交互；需与实际来源及展示一起维护。
+    observedDigest: 6cbee98a95f09ee3243335f74cd170ca450d6f15629d7b28c2c982a24aba8796
+  - id: task-file-task-self-bootstrap-md-af104b
+    title: 自举激活与安全善后 · 事实依据
+    kind: evidence
+    path: knowledge/archify/flows/task-self-bootstrap.md
+    summary: 保存本主题当前解释或依据，网页与本地使用同一正文；不替代规范和代码。
+    observedDigest: 05a2083ed7ff947b8775f66159e0700b535387b706fe0e59b259a86a60b54938
+  - id: task-file-task-system-planning-html
+    title: 需求、方案与实施授权 · 独立展示
+    kind: evidence
+    path: knowledge/archify/flows/task-system-planning.html
+    summary: 由同目录图源经 Archify 生成并检查的独立交互展示。
+    observedDigest: d9cb69fcc5c75ff597283d56cd4217d92c33fbbaca3c77f10b6b9f2646866865
+  - id: task-file-task-system-planning-json
+    title: 需求、方案与实施授权 · 可维护图源
+    kind: evidence
+    path: knowledge/archify/flows/task-system-planning.json
+    summary: 定义本图参与者、阶段和交互；需与实际来源及展示一起维护。
+    observedDigest: e6bf58ab2b0370305bd52fe105df0fe948bf5b5eeb80168c058473f5b49d9677
+  - id: task-file-task-system-planning-md
+    title: 需求、方案与实施授权 · 事实依据
+    kind: evidence
+    path: knowledge/archify/flows/task-system-planning.md
+    summary: 保存本主题当前解释或依据，网页与本地使用同一正文；不替代规范和代码。
+    observedDigest: 0d2c9c04f679231ae22f9e0f56d9a73356d0a0957b8db50222514b8ad3de8c97
+  - id: task-file-task-system-delivery-html
+    title: 实现审查与代码交付 · 独立展示
+    kind: evidence
+    path: knowledge/archify/flows/task-system-delivery.html
+    summary: 由同目录图源经 Archify 生成并检查的独立交互展示。
+    observedDigest: 93ab8db603951eb6156881d8cca250bbfe20b6d4b9a54c386131f5e10222dc50
+  - id: task-file-task-system-delivery-json
+    title: 实现审查与代码交付 · 可维护图源
+    kind: evidence
+    path: knowledge/archify/flows/task-system-delivery.json
+    summary: 定义本图参与者、阶段和交互；需与实际来源及展示一起维护。
+    observedDigest: ef9e6430333e58a8d07d1f7438a71b87593199db9a0b33f23df0c757080879e0
+  - id: task-file-task-system-delivery-md
+    title: 实现审查与代码交付 · 事实依据
+    kind: evidence
+    path: knowledge/archify/flows/task-system-delivery.md
+    summary: 保存本主题当前解释或依据，网页与本地使用同一正文；不替代规范和代码。
+    observedDigest: bd171fa00ec123ab7ce13f2ed964cef9a18f828a6aa63db22e3b7e5d77c7ddd9
+  - id: task-openspec-apply
+    title: 规范实施（openspec-apply-change）
+    kind: skill
+    skillId: openspec-apply-change
+    path: SKILL.md
+    link: services/buildr/resources/workspace/skills/openspec/openspec-apply-change/SKILL.md
+    summary: 指导智能体（Agent）按当前方案实施、检查并处理适用收敛，实际动作继续遵守用户授权与当前工作空间边界。
+    observedDigest: aa0ff6db53c670a33df77456beb9d7d924a5c7b30d2b70579ba1ca7e98e3b202
+  - id: task-source-agent-assets-module
+    title: 工作资产的治理与投射
+    kind: code
+    path: services/buildr/src/modules/agent-assets/module.ts
+    summary: 组装规则（Rule）、技能（Skill）、能力绑定与运行时投射，为智能体（Agent）提供可发现的工作方法与能力。
+    observedDigest: a0ba7c116568290a1df0e8630993b21150c664e4bc746468a83daec06b6fc46e
+  - id: task-source-workspace-query
+    title: 工作空间与项目入口
+    kind: code
+    path: services/buildr/src/modules/workspace/application/workspace-query-application.ts
+    summary: 按同一工作空间（Workspace）身份读取项目、服务和登记事实，向用户及智能体（Agent）提供一致的工作现场入口。
+    observedDigest: 273255a836901c03f9249d8111467a41b11f170364bc5266019a1ec2c86036d6
+  - id: resource-actions
+    title: 资料访问与收藏反馈
+    kind: code
+    path: services/buildr-web/src/features/workbench/components/ResourceActions.tsx
+    summary: 打开资料时记录最近访问，明确点击后保存收藏或关注；失败在独立通知层展示并按当前资源隔离，不改变知识成果和写入边界。
+    observedDigest: c550af1726c3bbe82dc73dcc46bea5192c65b7e0c22b5c93d07b6946f8ec1125
+  - id: workbench-preferences
+    title: 个人资料偏好请求
+    kind: code
+    path: services/buildr-web/src/features/workbench/hooks/useWorkbenchPreferences.tsx
+    summary: 读取与维护工作台（Workbench）个人偏好，处理最近访问和收藏请求；与知识正文读取分属不同操作。
+    observedDigest: 59bffc33637049cd34225d36e1c64f9fe322b8dc11af8c2d591696663aadefe9
+  - id: diagram-layout
+    title: 图示预览尺寸计算
+    kind: code
+    path: services/buildr-web/src/features/knowledge/knowledge-diagram-layout.ts
+    summary: 根据原生图示尺寸和当前宿主宽度计算嵌入高度，包含原生预览内边距；尺寸未知时保留兜底。
+    observedDigest: 066ef2964f3dcb6aef3fff2cac42f432c9e18258ff36b8afc8ea4a3cd7b532bc
 relations:
   - from: query
     to: knowledge-maintenance
@@ -841,3 +1552,216 @@ relations:
   - from: knowledge-maintenance
     to: markdown-host
     kind: implements
+  - from: resource-actions
+    to: knowledge-maintenance
+    kind: implements
+  - from: workbench-preferences
+    to: knowledge-maintenance
+    kind: implements
+  - from: task-source-preferences-application-8b4fe8
+    to: knowledge-maintenance
+    kind: implements
+  - from: diagram-layout
+    to: knowledge-maintenance
+    kind: implements
+  - from: task-source-skill-f75bad
+    to: task-system
+    kind: guides
+  - from: task-source-skill-d5bb46
+    to: task-system
+    kind: guides
+  - from: task-source-spec-ea9d2d
+    to: task-system
+    kind: based-on
+  - from: task-source-spec-f12a41
+    to: task-system
+    kind: based-on
+  - from: task-source-spec-5aed6b
+    to: task-system
+    kind: based-on
+  - from: task-source-spec-9dbb55
+    to: task-system
+    kind: based-on
+  - from: task-source-spec-a99380
+    to: task-system
+    kind: based-on
+  - from: task-source-agent-assets-module
+    to: task-system
+    kind: implements
+  - from: task-source-workspace-query
+    to: task-system
+    kind: implements
+  - from: task-source-task-4ce8a0
+    to: task-system
+    kind: implements
+  - from: task-source-task-http-e1bbb1
+    to: task-system
+    kind: implements
+  - from: task-source-task-query-application-9f6269
+    to: task-system
+    kind: implements
+  - from: task-source-task-command-application-aba2e8
+    to: task-system
+    kind: implements
+  - from: task-source-parent-coordination-application-49a9bd
+    to: task-system
+    kind: implements
+  - from: task-source-task-review-application-089e42
+    to: task-system
+    kind: implements
+  - from: task-source-task-verification-application-68479e
+    to: task-system
+    kind: implements
+  - from: task-source-task-04c6c5
+    to: task-system
+    kind: implements
+  - from: task-source-task-review-691fbf
+    to: task-system
+    kind: implements
+  - from: task-source-task-verification-4ea021
+    to: task-system
+    kind: implements
+  - from: task-source-task-repository-be5696
+    to: task-system
+    kind: implements
+  - from: task-source-task-review-repository-44ff85
+    to: task-system
+    kind: implements
+  - from: task-source-task-verification-repository-470799
+    to: task-system
+    kind: implements
+  - from: task-source-work-context-application-11bb91
+    to: task-system
+    kind: implements
+  - from: task-source-work-context-ca9c7e
+    to: task-system
+    kind: implements
+  - from: task-source-work-context-repository-7418e3
+    to: task-system
+    kind: implements
+  - from: task-source-work-context-http-9257a1
+    to: task-system
+    kind: implements
+  - from: task-source-work-context-cli-9a134a
+    to: task-system
+    kind: implements
+  - from: task-source-git-worktree-provider-d1b252
+    to: task-system
+    kind: implements
+  - from: task-source-module-19a342
+    to: task-system
+    kind: implements
+  - from: task-source-workbench-application-d9c5aa
+    to: task-system
+    kind: implements
+  - from: task-source-preferences-application-8b4fe8
+    to: task-system
+    kind: implements
+  - from: task-source-workspace-sqlite-e9a67c
+    to: task-system
+    kind: implements
+  - from: task-source-transaction-619471
+    to: task-system
+    kind: implements
+  - from: task-source-preview-lifecycle-97736a
+    to: task-system
+    kind: implements
+  - from: task-source-taskdetailpage-335bc9
+    to: task-system
+    kind: implements
+  - from: task-source-taskagentaction-7a3c7f
+    to: task-system
+    kind: implements
+  - from: task-source-taskworkcontextcard-01a1b9
+    to: task-system
+    kind: implements
+  - from: task-source-taskartifactreader-bb7503
+    to: task-system
+    kind: implements
+  - from: task-source-taskcompletemodal-0d6276
+    to: task-system
+    kind: implements
+  - from: task-source-usetaskworkcontext-ac9540
+    to: task-system
+    kind: implements
+  - from: task-source-workbenchpage-16ae2b
+    to: task-system
+    kind: implements
+  - from: openspec
+    to: task-system
+    kind: guides
+  - from: task-source-skill-7b8bb2
+    to: task-system
+    kind: guides
+  - from: task-source-skill-2263b0
+    to: task-system
+    kind: guides
+  - from: task-source-skill-0ea6ac
+    to: task-system
+    kind: guides
+  - from: task-source-skill-ee942e
+    to: task-system
+    kind: guides
+  - from: current-knowledge-maintenance
+    to: task-system
+    kind: guides
+  - from: navigation-index
+    to: task-system
+    kind: implements
+  - from: task-source-task-record-product-test-2e0e74
+    to: task-system
+    kind: based-on
+  - from: task-source-workbench-application-test-e5f6d2
+    to: task-system
+    kind: based-on
+  - from: task-bootstrap-method
+    to: task-system
+    kind: guides
+  - from: task-bootstrap-runner
+    to: task-system
+    kind: guides
+  - from: task-bootstrap-continuity
+    to: task-system
+    kind: guides
+  - from: scope-rules
+    to: task-system
+    kind: based-on
+  - from: task-source-spec-05a13b
+    to: task-system
+    kind: based-on
+  - from: task-source-spec-a77bcf
+    to: task-system
+    kind: based-on
+  - from: task-source-spec-a0e711
+    to: task-system
+    kind: based-on
+  - from: task-openspec-apply
+    to: task-system
+    kind: guides
+  - from: task-source-self-bootstrap-closeout-test-2c0ed6
+    to: task-system
+    kind: based-on
+  - from: task-source-skill-ee942e
+    to: task-closeout
+    kind: guides
+  - from: task-source-task-command-application-aba2e8
+    to: task-closeout
+    kind: implements
+  - from: task-source-git-worktree-provider-d1b252
+    to: task-closeout
+    kind: implements
+  - from: task-source-parent-coordination-application-49a9bd
+    to: task-closeout
+    kind: implements
+  - from: task-source-release-task-evidence-correlation-60b024
+    to: task-closeout
+    kind: implements
+  - from: task-source-2026-08-30-parent-child-task-audit-b28c38
+    to: task-parent-coordination
+    kind: based-on
+  - from: task-system
+    to: task-closeout
+    kind: contains
+  - from: task-system
+    to: task-parent-coordination
+    kind: contains

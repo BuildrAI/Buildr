@@ -107,7 +107,6 @@
 .workbench-recent-results>h3{font-size:12px;color:#8c9c90;font-weight:500;margin:0 0 8px}
 .workbench-recent-results>.workbench-task-row{padding-inline:0}
 .workbench-resource-actions{display:inline-flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:7px}
-.workbench-resource-actions>.ant-alert{font-size:11px;max-width:330px}
 .workbench-resource-actions .anticon-star{color:#789c86}
 .workbench-followed-navigation{margin-top:29px}
 .workbench-followed-navigation .shell-nav-item{font-size:12px}
