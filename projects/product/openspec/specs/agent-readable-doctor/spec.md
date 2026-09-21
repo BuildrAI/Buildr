@@ -2,6 +2,7 @@
 
 ## Purpose
 定义 Buildr doctor 的 Agent-readable 诊断行为，包括 workspace 层级、Service registry、Git 忽略和 runtime 状态。
+
 ## Requirements
 
 ### Requirement: doctor 提供 Agent-readable 诊断
@@ -418,6 +419,14 @@ Buildr doctor MUST保留`ok`的既有无error语义，并独立报告workspace v
 - **THEN** 顶层 inventory warning MUST 设置 `userActionRequired: false`
 - **AND** MUST NOT 进入 `repairPlan` 或 `nextSteps`
 - **AND** 无关domain/action MUST NOT因该runtime blocked
+
+#### Scenario: 宿主安装形态缺席不降低 readiness
+- **WHEN** selected runtime 的 Rules 与 Skills 投射 identity 已核对一致，该 scope 唯一存在的 runtime warning 是该 runtime 安装形态或版本无法自动确认
+- **THEN** 该 warning MUST 设置 `userActionRequired: false`
+- **AND** MUST NOT 计入 `health.actionableCount` 或使 `health.ready` 变为 false
+- **AND** `repairPlan` 与 `nextSteps` MUST NOT 为其生成修复动作或 render/sync 命令
+- **AND** Doctor MUST 继续公开该 runtime 的 activation guidance 与探测证据
+- **AND** 同一 scope 若另有投射缺失、过期或冲突等行动型 finding，`health.ready` 仍 MUST 为 false
 
 ### Requirement: doctor 声明默认与专项诊断层级
 Buildr doctor MUST 在 Agent-readable 结果中声明默认核心、条件通用和显式专项诊断边界。
