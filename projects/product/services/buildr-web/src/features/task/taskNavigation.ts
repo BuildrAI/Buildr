@@ -1,7 +1,7 @@
 type TaskListPosition = { top: number; count: number };
 const storageKey = (from: string) => `buildr.task-list-position:${from}`;
 export function taskListScrollHost(): Window | HTMLElement {
-  return document.querySelector('.task-workspace')?.closest<HTMLElement>('.workspace-page') || window;
+  return document.querySelector('#task-table-wrap')?.closest<HTMLElement>('.pane-body, .workspace-page') || window;
 }
 export function captureTaskListPosition(from: string, count: number): TaskListPosition {
   const host = taskListScrollHost();

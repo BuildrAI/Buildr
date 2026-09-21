@@ -518,6 +518,10 @@ export function registerGitWorktreeProvider(runtime: GitWorktreeRuntime): GitWor
   function inspectGitWorktrees({ workspaceRoot, taskId }: InspectInput): WorktreeResult {
     try {
       const root = fs.realpathSync(runtime.assertCanonicalTaskWorkspace(workspaceRoot));
+      const repository = git(root, ['rev-parse', '--show-toplevel'], { env: { ...process.env, LC_ALL: 'C' } });
+      if (repository.status === 128 && /not a git repository/i.test(repository.stderr) && !fs.existsSync(path.join(root, '.git'))) {
+        return result('inspect', 'blocked', taskId, null, [], [], { code: 'git_worktree_evidence_missing', message: 'This Workspace has no Git worktree association.' });
+      }
       const stored = readGitWorktreeEvidence(root, taskId, { optional: true });
       if (!stored) return result('inspect', 'blocked', taskId, gitWorktreeEvidencePath(root, taskId), [], [], { code: 'git_worktree_evidence_missing', message: 'Git worktree evidence was not found.' });
       const repositories = stored.evidence.repositories.map((record) => {

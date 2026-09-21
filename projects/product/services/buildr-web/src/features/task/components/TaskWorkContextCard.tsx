@@ -1,70 +1,37 @@
-import { useEffect, useRef, useState } from 'react';
-import { Alert, Button, Input, Modal, Spin } from 'antd';
+import { Alert, Button, Input, Select } from 'antd';
 import type { TaskWorkContextResponse } from '../../../../build/generated/workbench-dto';
-import { workbenchApi } from '../../workbench/api/workbench-api';
+import { DrawerShell } from '../../../components/DrawerShell';
 import { formatDateTime } from '../../../lib/taskLabels';
+import type { useTaskContextEditor } from '../hooks/useTaskContextEditor';
+import { taskStageLabels, type TaskStage } from './taskWorkContent';
 
-const attentionLabel = { decision: '等待你的决定', acceptance: '等待你验收', question: '需要你介入' };
-type Props = { taskId: string; data: TaskWorkContextResponse | null; loading: boolean; error: string | null; refresh(): Promise<TaskWorkContextResponse | null> };
-
-export function TaskWorkContextCard({ taskId, data, loading, error, refresh }: Props) {
-  const taskRef = useRef(taskId);
-  taskRef.current = taskId;
-  const [mode, setMode] = useState<'edit' | 'respond' | null>(null);
-  const [snapshot, setSnapshot] = useState<TaskWorkContextResponse | null>(null);
-  const [progress, setProgress] = useState('');
-  const [nextStep, setNextStep] = useState('');
-  const [response, setResponse] = useState('');
-  const [message, setMessage] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [conflict, setConflict] = useState(false);
-  useEffect(() => { setMode(null); setSnapshot(null); setMessage(null); setResponse(''); setConflict(false); setSaving(false); }, [taskId]);
+type Editor = ReturnType<typeof useTaskContextEditor>;
+const attentionLabel = { decision: '等待你的决定', acceptance: '等待你确认', question: '需要补充信息' };
+export function TaskWorkContextCard({ data, error, onRead, onRespond, onAcceptance, active }: {
+  active: boolean; onAcceptance(): void; data: TaskWorkContextResponse | null; error: string | null; onRead(): void; onRespond(): void;
+}) {
   const context = data?.context;
   const attention = context?.attention;
-  const open = (next: 'edit' | 'respond') => {
-    if (!data) return;
-    setSnapshot(data); setProgress(context?.progress || ''); setNextStep(context?.nextStep || ''); setResponse(''); setMessage(null); setConflict(false); setMode(next);
-  };
-  const save = async () => {
-    if (!snapshot) return;
-    setSaving(true); setMessage(null);
-    try {
-      if (mode === 'respond') {
-        const currentAttention = snapshot.context?.attention;
-        if (!response.trim() || !currentAttention || !snapshot.contextDigest) { setMessage('请填写你的意见。'); return; }
-        await workbenchApi.respond(taskId, { expectedContextDigest: snapshot.contextDigest, attentionId: currentAttention.id, response: response.trim() });
-      } else {
-        await workbenchApi.recordContext(taskId, { expectedContextDigest: snapshot.contextDigest || 'absent', progress: progress.trim(), nextStep: nextStep.trim() });
-      }
-      if (taskRef.current !== taskId) return;
-      setMode(null); await refresh();
-    } catch (cause) {
-      if (taskRef.current !== taskId) return;
-      const value = cause as Error & { status?: number; code?: string };
-      const isConflict = value.status === 409 || Boolean(value.code?.includes('conflict')) || Boolean(value.code?.includes('resolved'));
-      setConflict(isConflict);
-      setMessage(isConflict ? '当前事项或工作摘要已经变化。你的输入已保留，请重新读取后核对，再决定是否保存。' : value.message || '保存失败，请重试。');
-    } finally { if (taskRef.current === taskId) setSaving(false); }
-  };
-  const reread = async () => {
-    const next = await refresh();
-    if (next && taskRef.current === taskId) { setSnapshot(next); setConflict(false); setMessage('已读取当前内容；请核对下方事项和你的输入，再保存。'); }
-  };
-  const responseAvailable = snapshot?.context?.attention?.state === 'pending';
-  return <section id="task-work-context" className="task-work-context">
-    {error && <Alert type="warning" message={error} action={<Button size="small" onClick={() => void refresh()}>重新读取</Button>} />}
-    {loading && !data ? <Spin size="small" /> : null}
-    {attention && <section id="task-attention" className={`task-attention-card ${attention.state}`}>
-      <span className="task-attention-label">{attention.state === 'resolved' ? '已记录你的意见' : attentionLabel[attention.kind]}</span>
-      <h2 id="task-attention-reason">{attention.reason}</h2>
-      {attention.response ? <><p id="task-attention-response">{attention.response.text}</p><small>{formatDateTime(attention.response.recordedAt)}</small></> : <Button id="task-attention-respond" type="primary" onClick={() => open('respond')}>{attention.kind === 'acceptance' ? '记录验收意见' : attention.kind === 'question' ? '回复这个问题' : '记录我的决定'}</Button>}
-    </section>}
-    <div className="task-context-heading"><h2>当前进展与下一步</h2><div><Button type="text" size="small" loading={loading} onClick={() => void refresh()}>刷新摘要</Button><Button id="task-context-edit" size="small" disabled={!data} onClick={() => open('edit')}>更新摘要</Button></div></div>
-    <div className="task-context-grid"><div><h3>最近进展</h3><p id="task-context-progress">{context?.progress || '尚未记录最近进展'}</p></div><div><h3>下一步</h3><p id="task-context-next-step">{context?.nextStep || '尚未记录下一步'}</p></div></div>
-    <p className="task-context-source">{context ? `摘要更新于 ${formatDateTime(context.updatedAt)}` : '当前还没有工作摘要'} · 进展来自最近一次记录。</p>
-    <Modal title={mode === 'respond' ? '记录你的意见' : '更新工作摘要'} open={mode !== null} onCancel={() => setMode(null)} footer={<><Button onClick={() => setMode(null)}>取消</Button><Button id="task-context-save" type="primary" loading={saving} disabled={conflict || (mode === 'respond' && !responseAvailable)} onClick={() => void save()}>保存</Button></>} destroyOnClose>
-      {message && <Alert id="task-context-message" type={conflict ? 'warning' : 'info'} showIcon message={message} action={conflict ? <Button id="task-context-reread" onClick={() => void reread()}>重新读取</Button> : undefined} />}
-      {mode === 'respond' ? <><p className="task-context-modal-reason">{snapshot?.context?.attention?.reason || '这条事项已经不存在'}</p>{!responseAvailable && <Alert type="info" message="当前事项已经处理或撤回，请关闭后查看最新内容。" />}<label className="task-context-field">你的意见与下一步<Input.TextArea id="task-attention-response-input" rows={5} value={response} onChange={(event) => setResponse(event.target.value)} placeholder="写下确认的方向或需要调整的地方…" /></label><p className="task-context-source">保存后保留你的意见，事项移出待处理；任务状态保持不变。</p></> : <><label className="task-context-field">最近进展<Input.TextArea id="task-context-progress-input" rows={4} value={progress} onChange={(event) => setProgress(event.target.value)} /></label><label className="task-context-field">下一步<Input.TextArea id="task-context-next-input" rows={3} value={nextStep} onChange={(event) => setNextStep(event.target.value)} /></label><p className="task-context-source">只更新工作摘要，已有事项和答复继续保留。</p></>}
-    </Modal>
+  if (!context && !error) return null;
+  return <section id="task-work-context" className="task-situation">
+    {error && <Alert type="warning" message={error} />}
+    <div className="task-situation-row"><span>{active && context?.stage ? `当前 · ${taskStageLabels[context.stage].title}` : '最近进展'}</span><button type="button" className="task-situation-read" onClick={onRead}><span id="task-context-progress">{context?.progress || '尚未记录进展'}</span></button></div>
+    {attention?.state === 'pending' && attention.kind !== 'acceptance' && <div id="task-attention" className="task-situation-attention"><div><span>{attentionLabel[attention.kind]}</span><p id="task-attention-reason">{attention.reason}</p></div><Button id="task-attention-respond" type="primary" onClick={onRespond}>{attention.kind === 'question' ? '回复问题' : '记录决定'}</Button></div>}
+    {attention?.state === 'pending' && attention.kind === 'acceptance' && <Button className="task-acceptance-prompt" type="link" size="small" onClick={onAcceptance}>等待你确认成果 →</Button>}
+    {attention?.response && attention.kind !== 'acceptance' && <button type="button" className="task-situation-response" onClick={onRead}>已记录你的意见 · {formatDateTime(attention.response.recordedAt)}</button>}
   </section>;
+}
+
+export function TaskContextDrawer({ editor, title }: { editor: Editor; title: string }) {
+  const responseAvailable = editor.snapshot?.context?.attention?.state === 'pending';
+  return <DrawerShell open={editor.mode !== null} title={editor.mode === 'respond' ? '记录你的意见' : '更新工作摘要'} sub={title} onClose={editor.close} closeDisabled={editor.saving} maskClosable={!editor.saving} keyboard={!editor.saving}
+    footer={<div className="actions"><Button disabled={editor.saving} onClick={editor.close}>取消</Button><Button id="task-context-save" type="primary" loading={editor.saving} disabled={editor.conflict || (editor.mode === 'respond' && !responseAvailable)} onClick={() => void editor.save()}>保存</Button></div>}>
+    {editor.message && <Alert id="task-context-message" type={editor.conflict ? 'warning' : 'info'} showIcon message={editor.message} action={editor.conflict ? <Button id="task-context-reread" onClick={() => void editor.reread()}>重新读取</Button> : undefined} />}
+    {editor.mode === 'respond' ? <><p className="task-context-modal-reason">{editor.snapshot?.context?.attention?.reason || '这条事项已经不存在'}</p>{!responseAvailable && <Alert type="info" message="当前事项已处理或撤回，请关闭后查看最新内容。" />}<label className="task-context-field">你的意见与下一步<Input.TextArea id="task-attention-response-input" rows={6} value={editor.response} onChange={event => editor.setResponse(event.target.value)} /></label><p className="section-copy">保存意见供智能体（Agent）继续工作，任务状态保持不变。</p></> : <>
+      <label className="task-context-field">当前节点<Select id="task-context-stage-input" value={editor.stage || ''} onChange={value => editor.setStage(value ? value as TaskStage : null)} options={[{ value: '', label: '未记录' }, ...Object.entries(taskStageLabels).map(([value, stage]) => ({ value, label: stage.title }))]} /></label>
+      <label className="task-context-field">最近进展<Input.TextArea id="task-context-progress-input" rows={5} value={editor.progress} onChange={event => editor.setProgress(event.target.value)} /></label>
+      <label className="task-context-field">下一步<Input.TextArea id="task-context-next-input" rows={3} value={editor.nextStep} onChange={event => editor.setNextStep(event.target.value)} /></label>
+      {editor.message && editor.snapshot?.context && <details><summary>最新保存的内容</summary><p>{editor.snapshot.context.progress}</p><p>{editor.snapshot.context.nextStep}</p><p>{editor.snapshot.context.stage ? taskStageLabels[editor.snapshot.context.stage].title : '未记录当前节点'}</p></details>}
+    </>}
+  </DrawerShell>;
 }

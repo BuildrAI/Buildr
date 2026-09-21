@@ -3,10 +3,10 @@ import path from 'node:path';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../../infrastructure/contracts/public-json.ts';
 import { normalizeTaskReviewResult, taskReviewError, type TaskReviewResult, type TaskReviewType } from '../domain/task-review.ts';
 import type { TaskPersistence } from './task-dto.ts';
-import type { TaskReviewPersistence, TaskReviewRepositoryRuntime } from '../persistence/task-review-repository.ts';
+import type { TaskReviewHistoryEntry, TaskReviewRepositoryRuntime } from '../persistence/task-review-repository.ts';
 import type { TransactionContext } from '../../../infrastructure/sqlite/transaction.ts';
 
-type ReviewSlot = { path: string; present: boolean; result: TaskReviewResult | null; resultDigest: string | null; observedAt: string | null };
+type ReviewSlot = { path: string; present: boolean; result: TaskReviewResult | null; resultDigest: string | null; observedAt: string | null; history: TaskReviewHistoryEntry[] };
 type ReviewSlots = { planning: ReviewSlot; completion: ReviewSlot };
 export type TaskReviewApplicationRuntime = Omit<TaskReviewRepositoryRuntime, 'readTask'> & {
   readTask(targetRoot: string, taskId: string): TaskPersistence;
@@ -37,9 +37,9 @@ export function registerTaskReviewApplication<T extends TaskReviewApplicationRun
     if (!runtime.readTaskReviewResultPersistence || !runtime.taskReviewResultPath) throw new Error('Task Review Repository ports are unavailable.');
     const persisted = runtime.readTaskReviewResultPersistence(targetRoot, taskId, reviewType, { optional: true });
     if (!persisted) {
-      return { path: runtime.taskReviewResultPath(targetRoot, taskId, reviewType), present: false, result: null, resultDigest: null, observedAt: null };
+      return { path: runtime.taskReviewResultPath(targetRoot, taskId, reviewType), present: false, result: null, resultDigest: null, observedAt: null, history: [] };
     }
-    return { path: persisted.file, present: true, result: persisted.result, resultDigest: persisted.resultDigest, observedAt: persisted.observedAt };
+    return { path: persisted.file, present: true, result: persisted.result, resultDigest: persisted.resultDigest, observedAt: persisted.observedAt, history: persisted.history || [] };
   }
 
   function slots(targetRoot: string, taskId: string, input: unknown = {}): ReviewSlots {

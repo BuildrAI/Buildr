@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode, type ComponentProps } from 'react'
 import { Alert, Button, Descriptions, Empty, List, Space, Spin, Tabs, Tag } from 'antd';
 import { DrawerShell } from '../../../components/DrawerShell';
 import { ExpandOutlined } from '@ant-design/icons';
-import { MarkdownHost } from '../../../components/MarkdownHost';
+import { MarkdownReader } from '../../../components/MarkdownReader';
 import { agentAssetsApi, type SkillDetail, type SkillFile, type SkillSummary } from '../api/agent-assets-api';
 import { resolveSkillLink, type SkillAction } from '../skill-presentation';
 
@@ -16,7 +16,6 @@ export function SkillDetailDrawer({ skill, onClose, onAction, children, fullPage
   const [filePath, setFilePath] = useState('SKILL.md');
   const [file, setFile] = useState<SkillFile | null>(null);
   const [fileError, setFileError] = useState('');
-  const [raw, setRaw] = useState(false);
   const [history, setHistory] = useState<string[]>([]);
   useEffect(() => {
     const controller = new AbortController(); setDetail(null); setError('');
@@ -34,7 +33,7 @@ export function SkillDetailDrawer({ skill, onClose, onAction, children, fullPage
   const active = detail?.skill || skill;
   const openFile = (path: string, remember = true) => {
     if (remember) setHistory((value) => [...value, filePath]);
-    setFilePath(path); setRaw(false); setTab('相关资料');
+    setFilePath(path); setTab('相关资料');
   };
   const onLink = (href: string) => {
     const resolved = resolveSkillLink(filePath, href);
@@ -47,11 +46,11 @@ export function SkillDetailDrawer({ skill, onClose, onAction, children, fullPage
     extra={<Button type="text" icon={<ExpandOutlined />} aria-label={wide ? '收起阅读' : '展开阅读'} onClick={() => setWide(!wide)} />}
     closeAriaLabel="关闭技能详情"
     footer={<div className="skills-action-footer"><span className="page-copy">基于工作空间当前源文件</span><Button onClick={() => onAction('adjust', active)}>编辑技能</Button></div>}>
-    <Tabs activeKey={tab} onChange={(value) => { setTab(value); setFilePath(value === '说明' ? 'SKILL.md' : ''); setHistory([]); setRaw(false); }} items={['说明', '相关资料', '管理'].map((label) => ({ key: label, label }))} />
+    <Tabs activeKey={tab} onChange={(value) => { setTab(value); setFilePath(value === '说明' ? 'SKILL.md' : ''); setHistory([]); }} items={['说明', '相关资料', '管理'].map((label) => ({ key: label, label }))} />
     {error && <Alert type="error" message={error} action={<Button onClick={() => setRetry(retry + 1)}>重试</Button>} />}
     {reading ? <>
-      <div className="skills-file-toolbar"><Space>{tab === '相关资料' && <Button type="text" onClick={() => { const previous = history.at(-1); setHistory((value) => value.slice(0, -1)); if (previous) { setFilePath(previous); setTab(previous === 'SKILL.md' ? '说明' : '相关资料'); } else setFilePath(''); setRaw(false); }}>← 返回</Button>}<span>{filePath}</span></Space><Button type="text" disabled={!file} onClick={() => setRaw(!raw)}>{raw ? '阅读模式' : '查看原文'}</Button></div>
-      {fileError ? <Alert type="warning" showIcon message={fileError} action={<Button onClick={() => setRetry(retry + 1)}>重试</Button>} /> : !file ? <Spin aria-label="正在读取技能文件" /> : raw || file.format === 'text' ? <pre className="skills-source">{file.content}</pre> : <MarkdownHost key={file.path} markdown={file.readingContent} className="markdown-body" options={{ allowRelativeLinks: true, allowParentRelativeLinks: true, onRelativeLinkClick: onLink }} />}
+      {fileError ? <Alert type="warning" showIcon message={fileError} action={<Button onClick={() => setRetry(retry + 1)}>重试</Button>} /> : !file ? <Spin aria-label="正在读取技能文件" /> : file.format === 'text' ? <><div className="skills-file-toolbar"><Space>{tab === '相关资料' && <Button type="text" onClick={() => { const previous = history.at(-1); setHistory((value) => value.slice(0, -1)); if (previous) { setFilePath(previous); setTab(previous === 'SKILL.md' ? '说明' : '相关资料'); } else setFilePath(''); }}>← 返回</Button>}<span>{filePath}</span></Space></div><pre className="skills-source">{file.content}</pre></> : <MarkdownReader key={file.path} path={file.path} content={file.readingContent} source={file.content} toolbarStart={<Space>{tab === '相关资料' && <Button type="text" onClick={() => { const previous = history.at(-1); setHistory((value) => value.slice(0, -1)); if (previous) { setFilePath(previous); setTab(previous === 'SKILL.md' ? '说明' : '相关资料'); } else setFilePath(''); }}>← 返回</Button>}<span>{filePath}</span></Space>} options={{ allowRelativeLinks: true, allowParentRelativeLinks: true, onRelativeLinkClick: onLink }} />}
+
     </> : tab === '相关资料' ? <>
       {detail?.issue && <Alert type="warning" message={detail.issue} />}
       {detail?.truncated && <Alert type="info" message="文件列表已达到展示上限，部分内容未列出。" />}

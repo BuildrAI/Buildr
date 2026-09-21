@@ -9,6 +9,7 @@ export type WorkspacePageTab = {
 
 type PreviewBase = { id: string; path: string; title: string };
 export type ResourcePreview =
+  | (PreviewBase & { kind: 'task' })
   | (PreviewBase & { kind: 'service' | 'repository' | 'skill'; knowledge?: { artifactId?: string; objectId?: string }; edit?: boolean })
   | (PreviewBase & { kind: 'article'; projectCode: string; publicationId: string; view?: 'source'; edit?: boolean });
 export type PreviewState = { items: ResourcePreview[]; active: string | null };
@@ -23,6 +24,7 @@ export function resourcePreview(workspaceId: string, path: string): ResourcePrev
     if (parts.some(part => !part || part === '.' || part === '..' || /[/?#\\\u0000-\u001f]/.test(part))) return null;
     const [area, first, second, action] = parts;
     const search = new URLSearchParams(path.includes('?') ? path.slice(path.indexOf('?') + 1).split('#')[0] : '');
+    if (area === 'tasks' && parts.length === 2) return { kind: 'task', id: first, title: '任务详情', path };
     if (area === 'articles' && (parts.length === 2 || parts.length === 3 || parts.length === 4 && action === 'edit')) {
       const projectCode = parts.length === 2 ? 'product' : first;
       const publicationId = parts.length === 2 ? first : second;
@@ -43,8 +45,21 @@ export function resourcePreview(workspaceId: string, path: string): ResourcePrev
 }
 
 export function previewOwnerPath(workspaceId: string, item: ResourcePreview): string {
-  const area = { service: 'services', repository: 'repositories', skill: 'skills', article: 'articles' }[item.kind];
+  const area = { service: 'services', repository: 'repositories', skill: 'skills', article: 'articles', task: 'tasks' }[item.kind];
   return `/workspaces/${workspaceId}/${area}`;
+}
+
+/** A task deep link can restore its originating list filters without leaving that list. */
+export function previewOwnerSearch(workspaceId: string, item: ResourcePreview, state: unknown): string {
+  if (!state || typeof state !== 'object') return '';
+  if (item.kind === 'article' && 'articleListSearch' in state) {
+    return typeof state.articleListSearch === 'string' && state.articleListSearch.startsWith('?') ? state.articleListSearch : '';
+  }
+  if (item.kind !== 'task' || !('from' in state) || typeof state.from !== 'string' || !state.from.startsWith('/') || state.from.includes('\\')) return '';
+  try {
+    const source = new URL(state.from, 'http://buildr.local');
+    return source.origin === 'http://buildr.local' && source.pathname === previewOwnerPath(workspaceId, item) ? source.search : '';
+  } catch { return ''; }
 }
 
 export const tabsStorageKey = (id: string) => `buildr.web.page-tabs.${id}`;
@@ -69,6 +84,7 @@ export function tabForPath(
       repositories: "代码库目录",
       skills: "技能",
       articles: "文章",
+      tasks: "任务",
     };
     if (parts.length === 1 && names[area])
       return { key: `dir:${area}`, kind: "dir", title: names[area], path };

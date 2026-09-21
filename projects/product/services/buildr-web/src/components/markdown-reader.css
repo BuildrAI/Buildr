@@ -1,0 +1,5 @@
+.markdown-reader { min-width:0; }
+.markdown-reader-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; color:var(--soft-muted); font-size:11px; margin-bottom:18px; }
+.markdown-reader-toolbar > span { min-width:0; overflow-wrap:anywhere; }
+.markdown-reader-toolbar .ant-btn { flex:none; color:var(--soft-muted); font-size:12px; }
+.markdown-reader-source { margin:0; padding:16px; background:var(--soft-bg,#f6f8f7); border:1px solid var(--soft-line); border-radius:6px; white-space:pre-wrap; overflow-wrap:anywhere; font:12px/1.8 ui-monospace,SFMono-Regular,Consolas,monospace; }

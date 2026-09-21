@@ -52,6 +52,7 @@ const REVIEW_RESULT = closed({
 const SLOT = closed({
   path: NON_EMPTY, present: { type: 'boolean' }, result: nullable(REVIEW_RESULT),
   resultDigest: nullable(NON_EMPTY), observedAt: nullable(NON_EMPTY),
+  history: array(closed({ result: REVIEW_RESULT, resultDigest: NON_EMPTY, observedAt: NON_EMPTY }, ['result', 'resultDigest', 'observedAt'])),
 }, ['path', 'present', 'result', 'resultDigest']);
 const OPERATION_BASE = {
   schemaVersion: NON_EMPTY, operation: NON_EMPTY, status: NON_EMPTY, taskId: NON_EMPTY,

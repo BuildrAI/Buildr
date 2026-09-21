@@ -77,6 +77,6 @@ test('Task Feature复用Workspace Client与公共API类型', () => {
   assert.match(combined, /workspaceApi\.read/);
   assert.match(combined, /projectApi\.listProjects/);
   assert.match(combined, /serviceApi\.services/);
-  assert.match(combined, /projectApi\.projectDocument/);
+  assert.match(combined, /taskApi\.projectDocument/);
   assert.doesNotMatch(combined, /type ApiFailure|type WorkspacePayload|type ProjectDocument/);
 });

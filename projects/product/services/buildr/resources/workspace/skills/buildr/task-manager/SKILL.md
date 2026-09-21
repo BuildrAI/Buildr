@@ -33,9 +33,11 @@ buildr task abandon <id> --reason <text> --expected-record <recordDigest> --targ
 先运行 `buildr task work-context inspect <id> --target <workspace> --json`。保存时使用返回的 `contextDigest`；尚未登记时使用 `absent`：
 
 ```text
-buildr task work-context record <id> --expected-current <absent|digest> --progress <真实进展> --next-step <下一步> [--attention-kind decision|acceptance|question --attention-reason <需要人处理的具体原因> | --clear-attention] --target <workspace> --json
+buildr task work-context record <id> --expected-current <absent|digest> --progress <真实进展> --next-step <下一步> [--stage <当前节点> | --clear-stage] [--attention-kind decision|acceptance|question --attention-reason <需要人处理的具体原因> | --clear-attention] --target <workspace> --json
 buildr task work-context respond <id> --expected-current <digest> --attention <事项id> --response <用户实际表达的意见> --target <workspace> --json
 ```
+
+有值得接续的阶段变化时，用 `--stage` 记录当前节点：`requirements|design|planning-review|implementation|implementation-review|verification|acceptance|closeout`。它描述正在处理的工作，不是完成证明或执行顺序；验证失败后回到实现修复就记录 `implementation`。省略保留原节点，`--clear-stage` 清除；无需为每次工具调用更新。
 
 更新进展时省略事项参数，会保留已有请求和答复；明确提出新请求会生成新身份。只在确实需要人判断、验收或介入时登记事项，缺少报告、任务处于进行中或长时间未更新不等于需要人处理。
 

@@ -16,7 +16,7 @@ export const WORKBENCH_MODULE = Object.freeze({
     const tasks = Object.freeze({ inspect: taskQuery.inspectTaskView, list: taskQuery.queryTasks });
     const preferences = createPreferencesApplication({
       store: { runWorkspaceSqliteRead: store.runWorkspaceSqliteRead, runWorkspaceTransaction: store.runWorkspaceTransaction },
-      tasks: { inspect: tasks.inspect },
+      tasks: { inspect: taskQuery.readTask, titles: taskQuery.readTaskTitles },
       workspace: { get: workspace.getWorkspace, projects: workspace.readProjectRegistryRecord },
     });
     const application = Object.freeze({ ...preferences, ...createWorkbenchApplication({

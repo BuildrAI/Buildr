@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import test from 'node:test';
 
+import { createChangeHttpContribution } from '../../src/modules/task/change/interfaces/http/change-http.ts';
 import { createBoundedBuildrWebReadExecutor } from '../../src/web/http/read-executor.ts';
 
 function fakeWorkerFactory({ delayMs = 20, failFirst = false, metrics }: any): any  {
@@ -97,4 +98,40 @@ test('Worker failure 只结算当前请求并恢复固定容量', async () => {
   } finally {
     await executor.close();
   }
+});
+
+
+test('任务材料使用同一有界只读队列，只传任务范围字段', async () => {
+ const metrics:any={calls:0,active:0,maxActive:0,started:[],messages:[]};
+ const executor=createBoundedBuildrWebReadExecutor({workerCount:1,queueLimit:4,workerFactory:fakeWorkerFactory({metrics})});
+ try {
+  await executor.run('change',{...input('task-a'),project:'demo',change:'one'});
+  await executor.run('documents',{...input('task-a'),project:'demo',documentPath:'docs/one.md'});
+  await executor.run('prototypes',input('task-a'));
+  await executor.run('prototype',{...input('task-a'),prototypeId:'a'.repeat(32)});
+  assert.equal(metrics.maxActive,1);
+  assert.equal(metrics.messages[0].project,'demo'); assert.equal(metrics.messages[0].change,'one');
+  assert.equal(metrics.messages[1].documentPath,'docs/one.md');
+  assert.throws(() => executor.run('change',{...input('task-a'),project:'../other',change:'one'}));
+  assert.throws(() => executor.run('documents',{...input('task-a'),project:'demo',documentPath:'docs/one.md',arbitraryCommand:'read'}));
+  assert.throws(() => executor.run('reviews',{...input('task-a'),project:'demo'}));
+ } finally {await executor.close();}
+});
+
+
+test('材料HTTP入口直接交给有界读取器，主线程不再读取文件或任务详情', async () => {
+ const calls:any[]=[];let html='';
+ const http=createChangeHttpContribution();
+ const submitTaskRead=async (operation:string,taskId:string,input?:Record<string,string>) => {calls.push({operation,taskId,input});return {html:'<p>preview</p>'};};
+ const context={request:{method:'GET'},root:'/tmp/read-only-scope',respond:{uiPrototypeHtml:(value:string)=>{html=value;}},submitTaskRead};
+ await http.handle({...context,suffix:'/tasks/task-a/changes/demo/change-a'});
+ await http.handle({...context,suffix:'/tasks/task-a/documents/demo/docs/one%20two.md'});
+ await http.handle({...context,suffix:'/tasks/task-a/ui-prototypes'});
+ await http.handle({...context,suffix:'/tasks/task-a/ui-prototypes/'+'a'.repeat(32)});
+ assert.deepEqual(calls.map(item=>item.operation),['change','documents','prototypes','prototype']);
+ assert.deepEqual(calls[0].input,{project:'demo',change:'change-a'});
+ assert.deepEqual(calls[1].input,{project:'demo',documentPath:'docs/one two.md'});
+ assert.equal(html,'<p>preview</p>');
+ await assert.rejects(http.handle({...context,suffix:'/tasks/task-a/documents/demo/%ZZ.md'}));
+ assert.equal(await http.handle({...context,request:{method:'POST'},suffix:'/tasks/task-a/ui-prototypes'}),null);
 });

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { taskApi } from '../api/task-api';
 import type { TaskRetrospectiveDocumentResponse } from '../../../../build/generated/task-dto';
@@ -15,24 +15,36 @@ export function useTaskRetrospective(taskId: string, recordDigest: string, onRec
   const [updating, setUpdating] = useState(false);
   const [document, setDocument] = useState<TaskRetrospectiveDocumentResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const taskRef = useRef(taskId);
+  taskRef.current = taskId;
+  const requestRef = useRef(0);
+  useEffect(() => {
+    setDocument(null); setError(null); setLoading(false); setUpdating(false);
+    return () => { requestRef.current += 1; };
+  }, [taskId]);
 
-  const load = async () => {
+  const load = useCallback(async () => {
+    if (taskRef.current !== taskId) return;
+    const requestId = ++requestRef.current;
     setOpen(true);
     setLoading(true);
     setError(null);
+    setDocument(null);
     try {
-      setDocument(await taskApi.retrospectiveDocument(taskId));
+      const next = await taskApi.retrospectiveDocument(taskId);
+      if (requestId === requestRef.current && taskRef.current === taskId) setDocument(next);
     } catch (cause) {
+      if (requestId !== requestRef.current || taskRef.current !== taskId) return;
       setError(failureMessage(cause, 'task_retrospective_document_read_failed', '读取失败'));
       setDocument(null);
     } finally {
-      setLoading(false);
+      if (requestId === requestRef.current && taskRef.current === taskId) setLoading(false);
     }
-  };
+  }, [taskId]);
 
   const markDecided = async () => {
     const digest = document?.actualDigest;
-    if (!digest) return;
+    if (!digest || loading || updating) return false;
     setUpdating(true);
     setError(null);
     try {
@@ -41,12 +53,17 @@ export function useTaskRetrospective(taskId: string, recordDigest: string, onRec
         retrospectiveState: 'decided',
         retrospectiveDocumentDigest: digest,
       });
+      if (taskRef.current !== taskId) return false;
+      requestRef.current += 1;
       await onRecordUpdated();
-      setDocument((current) => current ? { ...current, registeredState: 'decided', effectiveState: 'decided' } : current);
+      await load();
+      return true;
     } catch (cause) {
+      if (taskRef.current !== taskId) return false;
       setError(failureMessage(cause, 'task_retrospective_decision_failed', '更新失败'));
+      return false;
     } finally {
-      setUpdating(false);
+      if (taskRef.current === taskId) setUpdating(false);
     }
   };
 

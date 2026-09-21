@@ -90,3 +90,36 @@ test('损坏current与terminal Task均fail closed，terminal仍可读取既有Re
   assert.equal(runtime.inspectTaskReview(root, 'demo-task').slots.planning.present, true);
   assert.throws(() => runtime.recordTaskReview(root, 'demo-task', input('planning', runtime.inspectTaskReview(root, 'demo-task').slots.planning.resultDigest)), (error) => error.code === 'task_review_task_terminal');
 });
+
+
+test('每次完整审查保留被替换结果，冲突与事务失败不追加，类型历史独立', (t) => {
+  const { root, runtime } = fixture(t);
+  const first = runtime.recordTaskReview(root, 'demo-task', input('planning', 'absent', { conclusion: { outcome: 'changes-requested', summary: '需要修订' }, findings: ['明确保存冲突'] }));
+  const second = runtime.recordTaskReview(root, 'demo-task', input('planning', first.slots.planning.resultDigest, { subjectIdentity: 'planning:identity-2' }));
+  assert.deepEqual(second.slots.planning.history.map(entry => entry.result), [first.slots.planning.result]);
+  assert.equal(second.slots.planning.history[0].resultDigest, first.slots.planning.resultDigest);
+  runtime.recordTaskReview(root, 'demo-task', input('completion'));
+  assert.throws(() => runtime.recordTaskReview(root, 'demo-task', input('planning', first.slots.planning.resultDigest)), error => error.code === 'task_review_current_conflict');
+  const opened = runtime.openWorkspaceStructuredStore(root, { writable: true });
+  opened.database.exec("CREATE TRIGGER reject_history_update BEFORE UPDATE ON task_review_current BEGIN SELECT RAISE(ABORT, 'rollback history'); END;");
+  opened.database.close();
+  assert.throws(() => runtime.recordTaskReview(root, 'demo-task', input('planning', second.slots.planning.resultDigest)), /rollback history/);
+  const read = runtime.inspectTaskReview(root, 'demo-task');
+  assert.deepEqual(read.slots.planning.history, second.slots.planning.history);
+  assert.equal(read.slots.planning.resultDigest, second.slots.planning.resultDigest);
+  assert.deepEqual(read.slots.completion.history, []);
+});
+
+test('旧库只读保持当前审查且不迁移，合法替换后保留原结果', (t) => {
+  const { root, runtime } = fixture(t);
+  const first = runtime.recordTaskReview(root, 'demo-task', input());
+  const opened = runtime.openWorkspaceStructuredStore(root, { writable: true });
+  opened.database.exec('DROP TABLE task_review_history; DELETE FROM schema_migrations WHERE version = 34;');
+  opened.database.close();
+  assert.deepEqual(runtime.inspectTaskReview(root, 'demo-task').slots.planning.history, []);
+  const checked = runtime.openWorkspaceStructuredStore(root, { writable: false });
+  assert.equal(checked.database.prepare('SELECT max(version) AS version FROM schema_migrations').get().version, 33);
+  checked.database.close();
+  const next = runtime.recordTaskReview(root, 'demo-task', input('planning', first.slots.planning.resultDigest, { subjectIdentity: 'planning:identity-2' }));
+  assert.deepEqual(next.slots.planning.history[0].result, first.slots.planning.result);
+});

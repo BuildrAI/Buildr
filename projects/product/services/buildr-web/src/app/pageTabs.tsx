@@ -12,6 +12,8 @@ export type WorkspaceTabsState = {
   setRatio: (ratio: number) => void;
 };
 export const WorkspaceTabsContext = createContext<WorkspaceTabsState | null>(null);
+/** Cached views stay mounted; their portal surfaces follow the visible page and resource. */
+export const WorkspaceViewActiveContext = createContext(true);
 export function useWorkspacePageTabs(_workspaceId?: string | null): WorkspaceTabsState {
   const state = useContext(WorkspaceTabsContext);
   if (!state) throw new Error('Workspace page tabs require the workspace page host');

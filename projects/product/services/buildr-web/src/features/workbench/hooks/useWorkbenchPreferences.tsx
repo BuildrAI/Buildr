@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { api } from '../../../api';
+import { createPreferenceWriteQueue } from './preferenceWriteQueue';
 import {
   createWorkbenchClient, type PreferenceKind, type WorkbenchPreferencesResponse, type WorkbenchVisitRequest,
 } from '../api/workbench-api';
@@ -27,13 +28,15 @@ export function WorkbenchPreferencesProvider({ workspaceId, children }: { worksp
   const [error, setError] = useState('');
   const [revision, setRevision] = useState(0);
   const client = useMemo(() => createWorkbenchClient(api, workspaceId || undefined), [workspaceId]);
+  const writes = useMemo(() => createPreferenceWriteQueue(), [client]);
+  const currentClient = useRef(client);
+  currentClient.current = client;
   const generation = useRef(0), readController = useRef<AbortController | null>(null);
   const pending = useRef<Promise<void> | null>(null);
-  const currentWorkspace = useRef(workspaceId);
-  currentWorkspace.current = workspaceId;
-  const refresh = useCallback((force = false): Promise<void> => {
+  const refresh = useCallback((): Promise<void> => {
     if (!workspaceId) return Promise.resolve();
-    if (pending.current && !force) return pending.current;
+    if (writes.pending) return writes.settled();
+    if (pending.current) return pending.current;
     const promise = (async () => {
       const seq = ++generation.current;
       readController.current?.abort();
@@ -42,20 +45,20 @@ export function WorkbenchPreferencesProvider({ workspaceId, children }: { worksp
       setLoading(true);
       try {
         const data = await client.preferences({ signal: controller.signal });
-        if (controller.signal.aborted || seq !== generation.current || currentWorkspace.current !== workspaceId) return;
+        if (controller.signal.aborted || seq !== generation.current || currentClient.current !== client) return;
         setPreferences(data); setError('');
       } catch (err) {
-        if (!controller.signal.aborted && seq === generation.current && currentWorkspace.current === workspaceId) {
+        if (!controller.signal.aborted && seq === generation.current && currentClient.current === client) {
           setError(err instanceof Error ? err.message : '个人关注信息暂时不可用');
         }
       } finally {
-        if (!controller.signal.aborted && seq === generation.current && currentWorkspace.current === workspaceId) setLoading(false);
+        if (!controller.signal.aborted && seq === generation.current && currentClient.current === client) setLoading(false);
       }
     })();
     pending.current = promise;
     void promise.finally(() => { if (pending.current === promise) pending.current = null; });
     return promise;
-  }, [client, workspaceId]);
+  }, [client, workspaceId, writes]);
   useEffect(() => {
     setPreferences(null); setError('');
     void refresh();
@@ -67,23 +70,33 @@ export function WorkbenchPreferencesProvider({ workspaceId, children }: { worksp
       window.removeEventListener('focus', onFocus); document.removeEventListener('visibilitychange', onFocus);
     };
   }, [refresh]);
+  const mutate = useCallback((operation: () => Promise<WorkbenchPreferencesResponse>, notify: boolean) => writes.run(async () => {
+    if (currentClient.current === client) {
+      ++generation.current;
+      readController.current?.abort();
+      pending.current = null;
+    }
+    try {
+      const data = await operation();
+      if (currentClient.current !== client) return;
+      setPreferences(data); setError('');
+      if (notify) setRevision(value => value + 1);
+    } finally {
+      if (currentClient.current === client) setLoading(false);
+    }
+  }), [client, writes]);
   const set = useCallback(async (kind: PreferenceKind, key: string, input: PreferenceValue = {}) => {
     if (!workspaceId) throw new Error('请先选择工作空间');
-    await client.setPreference(kind, key, input);
-    if (currentWorkspace.current !== workspaceId) return;
-    setRevision(value => value + 1); await refresh(true);
-  }, [client, workspaceId, refresh]);
+    await mutate(() => client.setPreference(kind, key, input), true);
+  }, [client, workspaceId, mutate]);
   const remove = useCallback(async (kind: PreferenceKind, key: string) => {
     if (!workspaceId) throw new Error('请先选择工作空间');
-    await client.removePreference(kind, key);
-    if (currentWorkspace.current !== workspaceId) return;
-    setRevision(value => value + 1); await refresh(true);
-  }, [client, workspaceId, refresh]);
+    await mutate(() => client.removePreference(kind, key), true);
+  }, [client, workspaceId, mutate]);
   const recordVisit = useCallback(async (input: WorkbenchVisitRequest) => {
     if (!workspaceId) return;
-    await client.visit(input);
-    if (currentWorkspace.current === workspaceId) await refresh(true);
-  }, [client, workspaceId, refresh]);
+    await mutate(() => client.visit(input), false);
+  }, [client, workspaceId, mutate]);
   const value = useMemo<Preferences>(() => ({
     workspaceId, preferences, data: preferences, loading, error, revision, refresh,
     has: (kind, key) => Boolean(preferences?.items.some(item => item.kind === kind && item.key === key)),

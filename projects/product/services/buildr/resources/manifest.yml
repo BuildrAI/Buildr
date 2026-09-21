@@ -107,7 +107,7 @@ capabilityContracts:
         description: 管理 canonical Workspace 中正式 Task 的最小顶层记录。
   - id: buildr.task-review
     version: 2
-    description: 对正式 Task 的实际方案或完成结果执行可选语义审查并维护两个独立 current Result。
+    description: 对正式 Task 的实际方案或完成结果执行可选语义审查，维护两类当前结果及完整审查历史。
     path: resources/workspace/skills/contracts/buildr/task-review/v2.md
     target: skills/contracts/buildr/task-review/v2.md
     replaces:

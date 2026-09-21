@@ -4,7 +4,8 @@ import { transactionDatabase, type TransactionContext } from '../../../infrastru
 import { assertTaskReviewType, normalizeTaskReviewResult, taskReviewError, type TaskReviewBusinessError, type TaskReviewResult, type TaskReviewType } from '../domain/task-review.ts';
 type SqlRow = Record<string, SQLOutputValue>;
 type StructuredStore = { present: boolean; database: DatabaseSync };
-export type TaskReviewPersistence = { root: string; file: string; content: string; resultDigest: string; result: TaskReviewResult; subjectIdentity: string; outcome: string; observedAt: string; created?: boolean };
+export type TaskReviewHistoryEntry = { result: TaskReviewResult; resultDigest: string; observedAt: string };
+export type TaskReviewPersistence = { root: string; file: string; content: string; resultDigest: string; result: TaskReviewResult; subjectIdentity: string; outcome: string; observedAt: string; created?: boolean; history?: TaskReviewHistoryEntry[] };
 export type TaskReviewRepositoryRuntime = {
   assertCanonicalStructuredWorkspace(targetRoot: string): string;
   openWorkspaceStructuredStore(targetRoot: string, options: { writable: boolean }): StructuredStore;
@@ -61,6 +62,7 @@ export function registerTaskReviewRepository<T extends TaskReviewRepositoryRunti
     let opened;
     try {
       opened = runtime.openWorkspaceStructuredStore(root, { writable: false });
+      opened.database.exec('BEGIN');
       const row = opened.database.prepare('SELECT result_json, subject_identity, outcome, updated_at FROM task_review_current WHERE task_id = ? AND review_type = ?').get(taskId, reviewType);
       if (!row) {
         if (optional) return null;
@@ -69,9 +71,16 @@ export function registerTaskReviewRepository<T extends TaskReviewRepositoryRunti
       const serialized = stringColumn(row, 'result_json');
       const result = decode(serialized, taskId, reviewType);
       if (stringColumn(row, 'subject_identity') !== result.subjectIdentity || stringColumn(row, 'outcome') !== result.conclusion.outcome || stringColumn(row, 'updated_at') !== result.completedAt) throw taskReviewError('task_review_query_fields_inconsistent', `${locator(taskId, reviewType)} 查询字段与Result不一致。`, 409, { taskId, reviewType });
-      return persistence(root, taskId, reviewType, serialized, result, row);
+      const hasHistory = opened.database.prepare("SELECT name FROM sqlite_master WHERE name = 'task_review_history'").get();
+      if (!hasHistory && Number(opened.database.prepare('SELECT max(version) AS version FROM schema_migrations').get()?.version) >= 34) throw taskReviewError('task_review_history_invalid', '审查历史表缺失，请保留数据库现场。', 409);
+      const history = hasHistory ? opened.database.prepare('SELECT result_json FROM task_review_history WHERE task_id = ? AND review_type = ? ORDER BY id').all(taskId, reviewType).map((item) => {
+        const content = stringColumn(item, 'result_json');
+        const saved = decode(content, taskId, reviewType);
+        return { result: saved, resultDigest: digest(content), observedAt: saved.completedAt };
+      }) : [];
+      return { ...persistence(root, taskId, reviewType, serialized, result, row), history };
     } catch (error) { throw asError(error, '读取', taskId, reviewType); }
-    finally { try { opened?.database?.close(); } catch {} }
+    finally { try { opened?.database?.exec('ROLLBACK'); } catch {} try { opened?.database?.close(); } catch {} }
   }
   function writeTaskReviewResultPersistence(targetRoot: string, result: TaskReviewResult, { expectedCurrentDigest }: { expectedCurrentDigest: string }, transaction: TransactionContext): TaskReviewPersistence & { created: boolean } {
     const root = runtime.assertCanonicalStructuredWorkspace(targetRoot);
@@ -94,6 +103,7 @@ export function registerTaskReviewRepository<T extends TaskReviewRepositoryRunti
         const existed = Boolean(current);
         const currentDigest = current ? digest(stringColumn(current, 'result_json')) : 'absent';
         if (expectedCurrentDigest !== currentDigest) throw taskReviewError('task_review_current_conflict', 'Task Review current已变化，拒绝覆盖。', 409, { taskId: normalized.taskId, reviewType: normalized.reviewType, expectedCurrentDigest, currentDigest }, '重新inspect current slot后决定是否重做或替换Review。');
+        if (current) database.prepare('INSERT INTO task_review_history(task_id, review_type, result_json) VALUES (?, ?, ?)').run(normalized.taskId, normalized.reviewType, stringColumn(current, 'result_json'));
         database.prepare(`INSERT INTO task_review_current(task_id, review_type, result_json, subject_identity, outcome, updated_at) VALUES (?, ?, ?, ?, ?, ?)
           ON CONFLICT(task_id, review_type) DO UPDATE SET result_json = excluded.result_json, subject_identity = excluded.subject_identity, outcome = excluded.outcome, updated_at = excluded.updated_at`)
           .run(normalized.taskId, normalized.reviewType, serialized, normalized.subjectIdentity, normalized.conclusion.outcome, normalized.completedAt);

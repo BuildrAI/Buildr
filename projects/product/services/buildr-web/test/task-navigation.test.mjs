@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { taskReturnPath } from '../src/features/task/taskNavigation.ts';
+import { taskListScrollHost, taskReturnPath } from '../src/features/task/taskNavigation.ts';
 import { isIndexedTaskQuery } from '../src/features/task/task-search.ts';
 
 test('任务返回保留同一工作空间的列表条件和概览来源', () => {
@@ -20,4 +20,21 @@ test('列表与全局搜索共享索引边界，短关键词不提交，完整�
   assert.equal(isIndexedTaskQuery('#ui'), true);
   assert.equal(isIndexedTaskQuery('#ui/escape'), false);
   assert.equal(isIndexedTaskQuery(''), true);
+});
+
+test('任务列表滚动与预取定位到分屏主屏，缺少页面时回退到窗口', () => {
+  const previousDocument = globalThis.document;
+  const previousWindow = globalThis.window;
+  const pane = { scrollTop: 160 };
+  const fallback = {};
+  try {
+    globalThis.window = fallback;
+    globalThis.document = { querySelector(selector) { assert.equal(selector, '#task-table-wrap'); return { closest(target) { assert.equal(target, '.pane-body, .workspace-page'); return pane; } }; } };
+    assert.equal(taskListScrollHost(), pane);
+    globalThis.document = { querySelector() { return null; } };
+    assert.equal(taskListScrollHost(), fallback);
+  } finally {
+    if (previousDocument === undefined) delete globalThis.document; else globalThis.document = previousDocument;
+    if (previousWindow === undefined) delete globalThis.window; else globalThis.window = previousWindow;
+  }
 });

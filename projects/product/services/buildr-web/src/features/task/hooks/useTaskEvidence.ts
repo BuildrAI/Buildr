@@ -66,8 +66,8 @@ export function useTaskEvidence(taskId?: string, lifecycle?: TaskReadLifecycle) 
 
   useEffect(() => {
     resetEvidence();
-    if (taskId) void refreshCoordination();
-  }, [taskId, resetEvidence, refreshCoordination]);
+    if (taskId) { void refreshCoordination(); void refreshReview(); void refreshVerification(); }
+  }, [taskId, resetEvidence, refreshCoordination, refreshReview, refreshVerification]);
 
   return {
     coordinationData, coordinationLoading, reviewData, reviewLoading, reviewError,

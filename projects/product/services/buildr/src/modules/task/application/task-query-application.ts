@@ -195,6 +195,12 @@ export function registerTaskQueryApplication(runtime: TaskQueryApplicationRuntim
     return runtime.runWorkspaceSqliteRead(root, (context) => readIn(context, root, taskIdValue));
   }
 
+  function readTaskTitles(targetRoot: string, taskIds: string[]): Map<string, string> {
+    const root = assertCanonicalTaskWorkspace(targetRoot);
+    const ids = [...new Set(taskIds.map(value => taskId(value, 'taskId')))];
+    return runtime.runWorkspaceSqliteRead(root, context => tasks.titles(context, ids));
+  }
+
   function prepareTask(targetRoot: string, taskIdValue: string): TaskPersistence {
     const root = assertCanonicalTaskWorkspace(targetRoot);
     runtime.prepareWorkspaceStructuredStore(root);
@@ -436,7 +442,7 @@ export function registerTaskQueryApplication(runtime: TaskQueryApplicationRuntim
   return Object.assign(runtime, {
     assertCanonicalTaskWorkspace,
     readTaskInContext: readIn, readParentTaskContextIn: parentContext,
-    readTask, prepareTask, queryTaskViews, readTaskView, readParentTaskContext,
+    readTask, readTaskTitles, prepareTask, queryTaskViews, readTaskView, readParentTaskContext,
     queryTasks, inspectTask, inspectTaskView, inspectTaskRetrospectiveDocument,
     renderTaskResult: result, resolveTaskChangeReferences: resolveChangeReferences,
   });

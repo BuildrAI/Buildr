@@ -88,3 +88,20 @@
 .task-change-links-overview h3 { font-size:12px; color:var(--soft-muted); font-weight:500; margin:0 0 8px; }
 .task-change-links-overview .task-change-link { display:block; padding:9px 12px; border:1px solid var(--soft-line); border-radius:7px; width:100%; font-size:12px; }
 .task-change-links-overview .task-change-link small { display:block; margin-top:3px; }
+
+/* Match the resource directories while retaining task-specific server filtering. */
+.task-list-table { min-width:0; }
+.task-compact-table .ant-table-tbody > tr > td { padding:9px 10px; cursor:pointer; vertical-align:middle; }
+.task-compact-table .ant-table-thead > tr > th { padding:9px 10px; font-size:12px; font-weight:500; color:var(--soft-muted); }
+.task-compact-copy { min-width:0; }
+.task-compact-copy .task-row-main { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.task-compact-copy .task-row-main strong { font-size:13px; font-weight:500; line-height:1.5; }
+.task-compact-copy .task-row-summary { display:block; white-space:nowrap; text-overflow:ellipsis; overflow:hidden; margin:2px 0 0; font-size:11px; line-height:1.5; }
+.task-compact-status { display:flex; flex-direction:column; align-items:flex-start; gap:3px; }
+.task-compact-status .lifecycle-badge { font-size:11px; padding:2px 6px; }
+.task-row-time { color:var(--soft-muted); font-size:11px; white-space:nowrap; }
+.task-compact-table .task-project-group { padding:2px 0 5px; }
+.task-compact-table .ant-table-cell:last-child { padding-right:5px; padding-left:0; }
+
+.task-list-table .task-compact-table .ant-table-tbody > tr > td { height:58px; padding:8px 18px; }
+.task-list-table .task-compact-table .ant-table-thead > tr > th { padding:9px 18px; }

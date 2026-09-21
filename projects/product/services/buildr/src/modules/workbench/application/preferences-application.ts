@@ -4,18 +4,32 @@ import { validateWorkbenchInput, validatePreferenceIdentity, validateResourceHre
 
 export type PreferenceDependencies = {
   store: PreferenceStoreRuntime;
-  tasks: { inspect(root: string, taskId: string): any };
+  tasks: { inspect(root: string, taskId: string): any; titles(root: string, taskIds: string[]): Map<string, string> };
   workspace: { get(root: string): any; projects(root: string): any };
 };
 export function createPreferencesApplication(dependencies: PreferenceDependencies) {
   const repository = createPreferencesRepository(dependencies.store);
   function inspectWorkbenchPreferences(root: string): WorkbenchPreferencesResponse {
-    const items = repository.list(root).map((preference) => {
-      if (!['pinned-task', 'planned-task', 'followed-project'].includes(preference.kind)) return preference;
-      try {
-        const object = preference.kind === 'followed-project' ? dependencies.workspace.projects(root).projects[preference.key] : dependencies.tasks.inspect(root, preference.key).record;
-        return { ...preference, label: object ? String(object.title || object.name) : `不可用 · ${preference.label}` };
-      } catch { return { ...preference, label: `暂不可读 · ${preference.label}` }; }
+    const stored = repository.list(root);
+    const taskIds = [...new Set(stored.filter(item => item.kind === 'pinned-task' || item.kind === 'planned-task').map(item => item.key))];
+    let titles: Map<string, string> | null = new Map();
+    try { if (taskIds.length) titles = dependencies.tasks.titles(root, taskIds); } catch { titles = null; }
+    let projects: Record<string, { name?: string }> | null = {};
+    try { if (stored.some(item => item.kind === 'followed-project')) projects = dependencies.workspace.projects(root).projects; } catch { projects = null; }
+    const fallbackTitles = new Map<string, string>();
+    const items = stored.map(preference => {
+      if (preference.kind === 'followed-project') {
+        const project = projects?.[preference.key];
+        return { ...preference, label: projects === null ? `暂不可读 · ${preference.label}` : project ? String(project.name) : `不可用 · ${preference.label}` };
+      }
+      if (preference.kind !== 'pinned-task' && preference.kind !== 'planned-task') return preference;
+      if (titles) return { ...preference, label: titles.get(preference.key) || `不可用 · ${preference.label}` };
+      // A malformed object must not hide other readable task labels.
+      if (!fallbackTitles.has(preference.key)) {
+        try { fallbackTitles.set(preference.key, dependencies.tasks.inspect(root, preference.key).record.title); }
+        catch { fallbackTitles.set(preference.key, `暂不可读 · ${preference.label}`); }
+      }
+      return { ...preference, label: fallbackTitles.get(preference.key)! };
     });
     return { schemaVersion: 'buildr.workbench-preferences/v1', items };
   }

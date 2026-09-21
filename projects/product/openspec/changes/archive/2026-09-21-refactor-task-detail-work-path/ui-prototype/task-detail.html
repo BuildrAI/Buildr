@@ -1,0 +1,1062 @@
+<!doctype html>
+<!-- buildr:ui-prototype -->
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none';">
+<title>任务详情 · Buildr</title>
+<style>
+:root{--ink:#252a31;--muted:#747d84;--line:#e4e8e9;--soft:#f6f8f8;--teal:#397d74;--teal-dark:#28685f;--teal-bg:#edf5f2;--amber:#98702e;--amber-bg:#fbf5e8;--red:#b95858;--red-bg:#fcf0ee;--blue:#527c94;--blue-bg:#eff5f8;--radius:10px;--global:176px;font-family:"PingFang SC","Hiragino Sans GB","Segoe UI",system-ui,sans-serif;color:var(--ink);background:#fff;font-synthesis:none}
+*{box-sizing:border-box}body{margin:0;font-size:14px;line-height:1.65}button,input,textarea,select{font:inherit}button,a,input,textarea,select{-webkit-tap-highlight-color:transparent}button{cursor:pointer}button{color:inherit}a{color:var(--teal);text-decoration:none}button:focus-visible,a:focus-visible,select:focus-visible,textarea:focus-visible,input:focus-visible,summary:focus-visible{outline:3px solid #8fc8bb;outline-offset:3px}button:disabled{cursor:not-allowed;opacity:.45}h1,h2,h3,h4,p{margin:0}h1{font-size:26px;letter-spacing:-.55px;line-height:1.45;font-weight:650}h2{font-size:20px;line-height:1.5;font-weight:620;letter-spacing:-.2px}h3{font-size:15px;font-weight:620}h4{font-size:14px;font-weight:600}svg{width:18px;height:18px;vertical-align:middle;flex-shrink:0}small{font-size:12px}hr{border:0;border-top:1px solid var(--line);margin:25px 0}[hidden]{display:none!important}.muted{color:var(--muted)}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px}.eyebrow{font-size:11px;letter-spacing:.09em;color:var(--muted);font-weight:600;text-transform:uppercase}.english{display:block;font-size:10px;color:#89908f;font-weight:400;line-height:1.4;letter-spacing:.05px}.pill{display:inline-flex;align-items:center;gap:5px;white-space:nowrap;font-size:11px;font-weight:500;line-height:22px;padding:0 8px;border-radius:5px;background:#f0f2f3;color:#737c83}.pill.green{background:var(--teal-bg);color:var(--teal-dark)}.pill.amber{background:var(--amber-bg);color:var(--amber)}.pill.red{background:var(--red-bg);color:var(--red)}.pill.blue{background:var(--blue-bg);color:var(--blue)}.dot{width:6px;height:6px;border-radius:50%;background:currentColor;display:inline-block}.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:33px;border:1px solid var(--line);background:white;border-radius:7px;padding:5px 12px;font-size:12px;line-height:1.5;transition:.16s}.btn:hover{border-color:#b6cdc5;background:#fbfdfc}.btn.primary{background:var(--teal);color:#fff;border-color:var(--teal)}.btn.primary:hover{background:var(--teal-dark)}.btn.quiet{background:transparent;border-color:transparent;color:var(--muted)}.btn.quiet:hover{background:var(--soft);color:var(--teal)}.btn.icon{width:32px;padding:5px}.text-btn{padding:0;border:0;background:none;color:var(--teal);font-size:12px;display:inline-flex;gap:4px;align-items:center}.text-btn:hover{color:var(--teal-dark);text-decoration:underline}.tag{border:1px solid var(--line);border-radius:5px;padding:2px 7px;font-size:11px;color:#697571;white-space:nowrap}.row{display:flex;align-items:center;gap:10px}.between{display:flex;align-items:center;justify-content:space-between;gap:16px}.wrap{flex-wrap:wrap}.stack{display:flex;flex-direction:column;gap:18px}.spacer{flex:1}.thin{font-size:12px;color:var(--muted)}.term-inline{font-size:10px;color:#7b8886;margin-left:4px;font-weight:400}
+.previewbar{min-height:36px;background:#f7f4ed;border-bottom:1px solid #e9e5da;display:flex;align-items:center;padding:5px 22px;gap:9px;font-size:11px;color:#7b7463;position:relative;z-index:20}.previewbar strong{font-weight:600;color:#665d4a}.previewbar select{margin-left:3px;background:#fffdf7;border:1px solid #dfd9ca;padding:3px 24px 3px 8px;border-radius:5px;color:#655d4c;font-size:11px;max-width:180px}.previewbar label{display:flex;align-items:center;gap:7px}.previewbar .preview-info{margin-right:auto}.topbar{height:55px;display:flex;align-items:center;padding:0 24px;gap:24px;border-bottom:1px solid var(--line);background:white;position:relative;z-index:15}.brand{display:flex;align-items:center;gap:9px;font-weight:650;font-size:14px;white-space:nowrap}.logo{width:27px;height:27px;display:grid;place-items:center;border-radius:7px;background:var(--teal);color:white;font-size:16px;font-weight:600}.dev{font-size:9px;color:#a07829;background:#fff8e7;border:1px solid #ead095;border-radius:10px;padding:0px 6px;margin-left:-3px}.workspace-switch{font-size:11px;background:#f6f8f8;border:1px solid var(--line);padding:3px 8px;border-radius:5px;display:flex;align-items:center;gap:10px;color:#69727a}.workspace-switch b{font-weight:500;color:var(--ink)}.topnav{display:flex;align-items:center;gap:9px;height:100%;font-size:12px}.topnav span{padding:6px 11px;border-radius:5px;color:var(--muted)}.topnav .selected{color:var(--teal-dark);background:var(--teal-bg);font-weight:600}.avatar{height:25px;width:25px;background:#ecf0ef;border:1px solid #e0e6e3;color:#597068;display:grid;place-items:center;border-radius:50%;font-size:10px;font-weight:600}.globalnav{width:var(--global);position:absolute;left:0;top:91px;bottom:0;min-height:calc(100vh - 91px);padding:22px 12px;background:#fafbfb;border-right:1px solid var(--line)}.globalnav .caption{font-size:10px;color:#8b9296;padding:0 12px;margin-bottom:9px;letter-spacing:.04em}.globalnav button{width:100%;text-align:left;display:flex;align-items:center;gap:10px;background:none;border:0;padding:8px 12px;border-radius:6px;margin-bottom:4px;color:#7b8488;font-size:12px}.globalnav button svg{width:15px;height:15px}.globalnav button.active{background:#e8f0ed;color:var(--teal-dark);font-weight:600}.globalnav button:hover{background:#f0f4f2}.globalnav .project-block{margin-top:34px}.project-dot{width:6px;height:6px;background:#6ea48a;border-radius:2px}.globalnav .bottom-note{margin:36px 12px 0;padding-top:15px;border-top:1px solid var(--line);font-size:10px;color:#9a9fa2}.main{margin-left:var(--global);padding:25px 34px 55px;max-width:1690px}.page-top{margin-bottom:15px}.breadcrumb{font-size:11px;color:#929b9e;display:flex;align-items:center;gap:10px}.breadcrumb b{font-weight:400;color:#66736f}.back{display:flex;align-items:center;gap:6px;color:#76877f;border:0;background:none;padding:0;font-size:11px}.title-line{display:flex;gap:14px;align-items:center}.task-description{color:#7a8488;font-size:12px;margin-top:7px;max-width:940px}.task-meta{display:flex;gap:15px;align-items:center;margin-top:13px;font-size:11px;color:#87908d;flex-wrap:wrap}.task-meta .sep{height:10px;border-left:1px solid #dce2de}.task-head{margin-bottom:20px}.authorization{display:flex;align-items:center;gap:8px;background:#f6f8f7;border:1px solid #e7ece9;padding:8px 12px;border-radius:7px;color:#737f79;font-size:11px;margin-top:18px}.authorization svg{width:14px;height:14px;color:#749488}.authorization b{font-weight:500;color:#49675b}.authorization .text-btn{margin-left:auto;white-space:nowrap;font-size:11px}.current-banner{margin-bottom:24px;background:linear-gradient(100deg,#eef6f2,#f8fbf9 90%);border:1px solid #dcebe3;border-radius:9px;padding:16px 19px;display:flex;gap:13px;align-items:flex-start}.current-icon{height:31px;width:31px;display:grid;place-items:center;border-radius:8px;background:#dfeee5;color:var(--teal);flex-shrink:0;margin-top:2px}.current-banner.amber{background:linear-gradient(100deg,#fbf6eb,#fdfbf6);border-color:#ebdfc5}.current-banner.amber .current-icon{background:#f2e7d0;color:var(--amber)}.current-banner h3{font-size:14px;margin-bottom:4px}.current-banner p{font-size:12px;color:#7a8980;line-height:1.75}.current-banner.amber p{color:#928366}.current-banner .right{margin-left:auto;flex-shrink:0;align-self:center}.current-banner .stamp{font-size:10px;color:#92a097;white-space:nowrap;margin-top:4px}.work-layout{display:grid;grid-template-columns:214px minmax(0,1fr);gap:27px;align-items:start}.process-panel{position:sticky;top:18px;border-right:1px solid var(--line);padding-right:17px}.process-caption{display:flex;align-items:center;justify-content:space-between;margin:0 10px 10px}.process-caption span{font-size:10px;color:#9da5a0}.process-caption strong{font-size:11px;font-weight:500;color:#7c8881;letter-spacing:.05em}.process-home{border:1px solid transparent;background:transparent;padding:10px 10px;display:flex;width:100%;align-items:center;gap:10px;border-radius:7px;font-size:12px;font-weight:550;text-align:left;margin-bottom:13px}.process-home.active{background:var(--teal-bg);color:var(--teal-dark)}.process-home svg{width:16px;height:16px}.process-step{position:relative;display:grid;grid-template-columns:24px 1fr;gap:9px;align-items:start;text-align:left;width:100%;border:1px solid transparent;border-radius:7px;background:transparent;min-height:63px;padding:9px 8px;margin-bottom:2px;transition:.15s}.process-step:hover{background:#f6f8f7}.process-step.active{background:#f0f6f3;border-color:#dfebe3}.step-number{margin-top:2px;height:22px;width:22px;border:1px solid #dce3df;border-radius:50%;display:grid;place-items:center;font-size:10px;color:#97a09b;background:white;position:relative;z-index:1}.process-step:not(:last-child):after{content:"";position:absolute;top:33px;bottom:-12px;left:18px;width:1px;background:#e5ebe7;z-index:0}.step-number.done{background:#f0f6f2;color:#668773;border-color:#dfeae2}.step-number.current{background:var(--teal);border-color:var(--teal);color:#fff}.step-number.attention{background:#faf2e1;border-color:#ead9b7;color:var(--amber)}.step-number svg{width:12px;height:12px}.step-label{display:flex;justify-content:space-between;align-items:center;font-size:12px;font-weight:520;line-height:1.5;gap:4px}.step-caption{font-size:10px;color:#9aa49e;margin-top:4px;line-height:1.4}.step-caption.current{color:var(--teal)}.step-caption.attention{color:#ad8345}.process-foot{margin:17px 8px 0;padding-top:14px;border-top:1px solid var(--line);font-size:10px;color:#a0a8a3}.process-foot .row{margin-top:8px;gap:7px}.content{min-width:0;padding-bottom:22px}.content-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:19px;gap:16px}.content-head .subline{font-size:11px;color:#94a098;margin-top:5px}.content-head h2 .number{font-size:12px;color:#92a19a;margin-right:7px;font-weight:400}.section-title{display:flex;justify-content:space-between;align-items:center;margin-bottom:13px}.section-title h3{font-size:14px}.section-title .small{font-size:10px;color:#9da5a0}.report-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:25px}.report-card{padding:15px 16px 13px;border:1px solid var(--line);border-radius:9px;text-align:left;background:#fff;position:relative;transition:.18s;min-height:145px}.report-card:hover{border-color:#b5cfc0;transform:translateY(-2px);box-shadow:0 4px 14px #233a2f08}.report-card .report-label{font-size:12px;font-weight:500}.report-card .english{margin-top:2px}.report-card .report-state{display:flex;align-items:center;gap:8px;margin-top:15px;font-size:16px;font-weight:580}.report-card .report-state svg{width:18px;height:18px}.report-card.green .report-state{color:#457e60}.report-card.amber .report-state{color:#a78442}.report-card.red .report-state{color:var(--red)}.report-card .report-description{font-size:11px;color:#909a94;margin-top:7px;line-height:1.5}.report-card .arrow{position:absolute;right:14px;top:17px;color:#a9b5ad}.report-card .arrow svg{width:13px;height:13px}.panel{border:1px solid var(--line);border-radius:9px;background:white;overflow:hidden}.panel-pad{padding:19px 21px}.panel-heading{padding:15px 20px;border-bottom:1px solid #eef1ef;display:flex;justify-content:space-between;align-items:center}.panel-heading h3{font-size:13px}.result-table{width:100%;border-collapse:collapse;font-size:12px;line-height:1.65}.result-table th{text-align:left;font-size:10px;color:#929c96;font-weight:500;padding:10px 16px;background:#fafcfb;border-bottom:1px solid #edf1ee}.result-table td{padding:14px 16px;vertical-align:top;border-bottom:1px solid #eef1ef}.result-table tr:last-child td{border-bottom:0}.result-table .table-sub{font-size:10px;color:#98a09c;margin-top:4px}.result-table .title{font-weight:500;color:#49554e}.result-table .status-col{width:125px}.result-table .action-col{width:86px;white-space:nowrap}.result-table tr.clickable{cursor:pointer}.result-table tr.clickable:hover{background:#fbfcfb}.overview-bottom{display:grid;grid-template-columns:1.05fr 1fr;gap:26px;margin-top:25px}.plain-list{display:flex;flex-direction:column;gap:15px}.next-item{display:flex;gap:10px;align-items:flex-start;font-size:12px}.next-item .n{width:19px;height:19px;border:1px solid #e4eae6;border-radius:4px;display:grid;place-items:center;flex-shrink:0;color:#9aa79f;font-size:10px;margin-top:1px}.next-item p{font-size:11px;color:#8d9992;margin-top:3px}.timeline{margin-top:7px}.event{position:relative;padding:0 0 18px 21px;border-left:1px solid #e5ebe7;margin-left:4px;font-size:12px}.event:last-child{border-left-color:transparent;padding-bottom:0}.event:before{content:"";position:absolute;left:-4px;top:6px;width:7px;height:7px;border-radius:50%;background:#b5c9bd;border:2px solid white;box-shadow:0 0 0 1px #d7e4db}.event.latest:before{background:var(--teal);box-shadow:0 0 0 1px #b6d4c0}.event .time{font-size:10px;color:#9da6a1;margin-bottom:3px}.event p{font-size:11px;color:#8b9690;margin-top:3px}.event button{font-size:11px;margin-top:3px}.notice{padding:13px 15px;border:1px solid #e5ece7;background:#f6faf7;border-radius:7px;font-size:12px;line-height:1.8;color:#6b7f72;display:flex;gap:10px}.notice svg{width:16px;height:16px;margin-top:3px}.notice.amber{background:#fcf8f0;border-color:#ede2cc;color:#947a4c}.notice.blue{background:#f4f8fa;border-color:#e0eaf0;color:#6f8999}.notice.red{background:#fcf3f1;border-color:#eed7d1;color:#a56659}.notice .text-btn{font-size:11px}.document{font-size:13px;color:#647169;line-height:1.95}.document h3{font-size:14px;color:#36473c;margin:22px 0 8px}.document h3:first-child{margin-top:0}.document ul,.document ol{margin:6px 0 0;padding-left:19px}.document li{padding:4px 0}.document .lead{font-size:15px;color:#43594b;line-height:1.9}.document .quote{border-left:2px solid #c3d5c8;padding:8px 14px;background:#f8faf8;color:#819186;font-size:12px;margin:12px 0}.document .source{font-size:10px;color:#a0aaa3;padding-top:17px;margin-top:20px;border-top:1px solid #edf1ee}.requirements{display:grid;grid-template-columns:1fr 1fr;gap:22px}.requirements .wide{grid-column:1/-1}.bullet-line{display:flex;gap:9px;margin-bottom:11px;font-size:12px}.bullet-line .tick{color:#729880;margin-top:1px}.bullet-line p{font-size:11px;color:#95a096;margin-top:2px}.doc-link{display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:7px;padding:11px 12px;background:white;width:100%;text-align:left;font-size:12px;transition:.15s}.doc-link:hover{background:#f8fbf9;border-color:#c9d9ce}.doc-link .file-icon{background:#f0f5f1;color:#7c9885;border-radius:6px;width:30px;height:34px;display:grid;place-items:center;flex-shrink:0}.doc-link .file-icon svg{width:17px;height:17px}.doc-link small{color:#a1aaa4;font-size:10px;display:block}.doc-link .arrow{margin-left:auto;color:#9daa9f}.link-grid{display:grid;grid-template-columns:1fr 1fr;gap:11px}.version-select{font-size:11px;padding:6px 26px 6px 9px;border:1px solid var(--line);border-radius:6px;background:white;color:#738277;max-width:240px}.conclusion{padding:18px 20px;border:1px solid #d9e7dc;background:#f4f9f4;border-radius:8px;display:flex;gap:11px;align-items:flex-start;margin-bottom:18px}.conclusion>svg{color:#659277;margin-top:2px;width:21px;height:21px}.conclusion h3{color:#466b51;font-size:15px;margin-bottom:4px}.conclusion p{font-size:12px;color:#849489;line-height:1.8}.conclusion.amber{background:#fcf8f0;border-color:#ece0c7}.conclusion.amber>svg,.conclusion.amber h3{color:#9f7c3c}.conclusion.red{background:#fcf3f1;border-color:#eddbd6}.conclusion.red>svg,.conclusion.red h3{color:#ac675c}.conclusion.gray{background:#f7f9f8;border-color:#e5ebe7}.facts-row{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:14px;padding:13px 0 20px;font-size:11px}.facts-row dt{font-size:10px;color:#9da79f;margin-bottom:5px}.facts-row dd{margin:0;color:#6b7a70;line-height:1.8}.finding{border:1px solid var(--line);border-radius:8px;margin-bottom:10px;overflow:hidden}.finding summary{list-style:none;display:flex;align-items:center;gap:10px;padding:13px 15px;cursor:pointer;font-size:12px}.finding summary::-webkit-details-marker{display:none}.finding summary .finding-id{color:#a4aea7;font-size:10px}.finding summary .chevron{margin-left:auto;color:#93a398;transition:transform .15s}.finding[open] summary .chevron{transform:rotate(90deg)}.finding summary .pill{margin-left:auto}.finding summary .pill+.chevron{margin-left:0}.finding-content{padding:0 15px 15px 47px;font-size:12px;color:#7a8a7e;line-height:1.9}.finding-content .fix{margin-top:9px;color:#5e7c66;padding-top:9px;border-top:1px solid #edf1ee}.history-strip{display:flex;align-items:center;gap:8px;padding-top:18px;border-top:1px solid var(--line);margin-top:23px;color:#99a49c;font-size:11px;flex-wrap:wrap}.history-chip{background:white;border:1px solid var(--line);padding:5px 10px;border-radius:6px;text-align:left;color:#7d8b80;font-size:11px}.history-chip.selected{border-color:#abc6b4;color:#4b7458;background:#f4f9f5}.history-chip small{font-size:9px;display:block;color:#9caaa0}.check-summary{display:flex;gap:28px;border-bottom:1px solid var(--line);padding:16px 18px}.check-summary .value{font-size:23px;line-height:1.2;color:#49795b;font-weight:550;margin-right:6px}.check-summary .value.red{color:var(--red)}.check-summary .value.muted{color:#96a298}.check-summary .label{font-size:10px;color:#939d96}.filters{display:flex;gap:5px;margin:17px 0 10px}.filter{background:white;border:1px solid transparent;border-radius:5px;padding:4px 10px;font-size:11px;color:#8a988e}.filter.active{background:#edf4ef;border-color:#dfe9e1;color:#4d765b}.activity-note{border:1px dashed #cfddd2;padding:13px 15px;border-radius:7px;font-size:12px;color:#718b78;margin-bottom:18px;background:#fafcfa}.activity-note b{font-weight:550;color:#5a7963}.activity-note p{margin-top:5px;font-size:11px;color:#92a097}.decision{padding:20px;border:1px solid #e8d9b7;border-radius:9px;background:#fffdf9}.decision h3{font-size:15px;margin-bottom:7px}.decision p{font-size:12px;color:#958971;line-height:1.85}.options{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:15px}.option{padding:12px;border:1px solid #e4e5db;border-radius:7px;cursor:pointer;display:flex;align-items:flex-start;gap:8px;font-size:12px;background:white}.option:has(input:checked){background:#f7faf4;border-color:#a8c19d}.option input{accent-color:var(--teal);margin-top:5px}.option small{font-size:10px;color:#9a9e90;display:block;line-height:1.7;margin-top:4px}.field{display:block;margin:15px 0 6px;font-size:11px;color:#899281}.textarea{width:100%;resize:vertical;min-height:90px;border:1px solid #dfe5df;border-radius:7px;padding:10px 12px;background:white;font-size:12px;color:#53695a;line-height:1.8}.decision-footer{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-top:13px;font-size:10px;color:#a09e8f}.empty{min-height:270px;display:flex;align-items:center;justify-content:center;text-align:center;flex-direction:column;padding:35px;color:#98a39b}.empty .empty-icon{width:48px;height:48px;background:#f4f7f4;border-radius:13px;display:grid;place-items:center;margin-bottom:17px;color:#9aaa9f}.empty .empty-icon svg{width:23px;height:23px}.empty h3{font-size:14px;color:#788b7d;margin-bottom:7px;font-weight:500}.empty p{font-size:12px;max-width:330px}.empty .btn{margin-top:18px}.acceptance-list{display:flex;flex-direction:column;gap:0}.acceptance-row{display:flex;gap:13px;padding:16px 0;border-bottom:1px solid #edf0ed}.acceptance-row:last-child{border-bottom:0}.acceptance-row .tick{color:#749b7c;margin-top:3px}.acceptance-row h4{font-size:12px}.acceptance-row p{font-size:11px;color:#95a197;margin-top:4px;line-height:1.8}.acceptance-actions{background:#f8faf8;border:1px solid var(--line);padding:17px 19px;border-radius:8px;margin-top:20px;display:flex;align-items:center;gap:10px}.acceptance-actions p{font-size:11px;color:#8c9a8e;flex:1}.delivery-row{display:flex;gap:14px;align-items:flex-start;padding:16px 0;border-bottom:1px solid #edf0ed;font-size:12px}.delivery-row:last-child{border:0}.delivery-row svg{color:#75a082;flex-shrink:0;margin-top:3px}.delivery-row .copy{flex:1}.delivery-row small{display:block;font-size:11px;color:#96a499;margin-top:4px}.mini-flow{display:flex;gap:8px;align-items:center;margin:17px 0;font-size:12px}.mini-flow .box{padding:14px 12px;border:1px solid #e3eae4;border-radius:7px;flex:1;background:#fbfcfb;text-align:center}.mini-flow>svg{color:#b1bcb3;width:16px}.mini-flow small{display:block;color:#9eaaa1;font-size:10px;margin-top:4px}
+.overlay{position:fixed;inset:0;background:#172b2333;z-index:70;display:flex;justify-content:flex-end;backdrop-filter:blur(1px)}.drawer{width:min(630px,93vw);height:100vh;background:white;box-shadow:-8px 0 40px #0d21111c;display:flex;flex-direction:column;animation:slide-in .18s ease-out}.drawer-header{padding:20px 25px;border-bottom:1px solid var(--line);display:flex;align-items:flex-start;gap:10px}.drawer-header h2{font-size:17px}.drawer-header p{font-size:11px;color:#9ba69e;margin-top:4px}.drawer-body{padding:24px 27px;overflow-y:auto;flex:1}.drawer-footer{padding:14px 25px;border-top:1px solid var(--line);font-size:11px;color:#a0aaa2;display:flex;justify-content:space-between;align-items:center}.drawer code{font-family:ui-monospace,Menlo,monospace;font-size:11px;background:#f1f5f1;padding:2px 4px;border-radius:3px;color:#64806b}.drawer pre{white-space:pre-wrap;word-break:break-word;background:#f6f8f6;border:1px solid #e5ebe5;border-radius:8px;padding:16px;font-size:11px;line-height:1.9;color:#69816d}.modal-overlay{align-items:center;justify-content:center}.modal{width:min(540px,90vw);border-radius:12px;background:white;padding:25px;box-shadow:0 10px 50px #12271729;max-height:90vh;overflow:auto}.modal h2{font-size:19px}.modal .modal-copy{font-size:12px;color:#89988c;line-height:1.9;margin:12px 0 17px}.modal-footer{display:flex;justify-content:flex-end;gap:9px;margin-top:20px}.toast{position:fixed;left:50%;bottom:27px;transform:translateX(-50%);padding:11px 18px;border:1px solid #dce7de;border-radius:8px;background:#fff;box-shadow:0 5px 25px #1932241a;z-index:100;color:#65806d;font-size:12px;display:flex;align-items:center;gap:8px;max-width:90vw}.toast svg{width:16px;height:16px}.footer-note{margin-top:24px;padding-top:12px;border-top:1px solid #edf1ee;font-size:10px;color:#a4ada6;display:flex;justify-content:space-between}.skeleton{height:12px;border-radius:4px;background:#eef2ee;margin-bottom:14px;animation:pulse 1s infinite alternate}.reader-state{display:flex;gap:7px;margin-bottom:18px;padding-bottom:12px;border-bottom:1px solid #eef1ee;font-size:10px;color:#a0aaa1}.reader-state button{background:none;border:0;padding:1px 4px;font-size:10px;color:#849286}.reader-state button.active{color:var(--teal);font-weight:600}.conflict{font-size:11px;color:var(--amber);background:var(--amber-bg);padding:10px 12px;border-radius:7px;margin:12px 0}.prototype-mini{border:1px solid #e1e7e2;border-radius:8px;overflow:hidden;margin:16px 0}.prototype-mini .mini-head{background:#f4f8f4;padding:11px 14px;border-bottom:1px solid #e1e7e2;font-size:11px;color:#7d9384}.prototype-mini .mini-body{padding:19px}.prototype-mini h3{font-size:15px}.prototype-mini .compare{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin:15px 0;font-size:11px}.prototype-mini .compare>div{padding:10px;border-radius:6px;background:#faf5f3;color:#a37f72}.prototype-mini .compare>div+div{background:#f0f7ef;color:#6e916c}.prototype-mini .compare small{display:block;margin-bottom:7px;font-size:10px}.question-count{background:#e9f0e9;color:#78937b;border-radius:4px;padding:1px 5px;font-size:9px;margin-left:3px}@keyframes slide-in{from{transform:translateX(20px);opacity:.4}to{transform:none;opacity:1}}@keyframes pulse{from{opacity:.4}to{opacity:1}}@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+@media(min-width:1650px){.main{padding:30px 48px 60px}.work-layout{grid-template-columns:230px minmax(0,1fr);gap:37px}.process-step{min-height:67px}.content{max-width:1110px}.current-banner{max-width:1380px}}
+@media(max-width:1200px){:root{--global:64px}.globalnav{padding:20px 7px}.globalnav .caption,.globalnav button span,.globalnav .bottom-note{display:none}.globalnav button{justify-content:center;padding:10px}.globalnav .project-block{margin-top:28px}.globalnav .project-dot{display:block}.main{padding:23px 24px 40px}.work-layout{grid-template-columns:190px minmax(0,1fr);gap:21px}.process-panel{padding-right:12px}.report-card{padding:13px 12px}.report-card .report-label{font-size:11px}.report-card .report-state{font-size:14px}.overview-bottom{gap:20px}.topbar{gap:17px}}
+@media(max-width:800px){.previewbar .preview-info{font-size:0}.previewbar .preview-info strong{font-size:10px}.previewbar{padding:5px 12px}.topbar{padding:0 15px;gap:14px}.workspace-switch,.topnav,.topbar>.btn.icon{display:none}.globalnav{display:none}.main{margin-left:0;padding:18px 17px 30px}.task-head h1{font-size:21px}.title-line{flex-wrap:wrap;gap:6px}.page-top{gap:5px}.work-layout{display:flex;flex-direction:column;gap:18px}.process-panel{position:static;width:100%;border:0;padding:0;overflow:auto}.process-caption,.process-foot{display:none}.process-home{display:none}.steps{display:flex;gap:6px}.process-step{min-width:126px;width:126px;min-height:65px;grid-template-columns:19px 1fr;padding:8px;gap:6px;margin:0;border-color:#e9eeea}.step-number{width:18px;height:18px;font-size:9px}.process-step:after{display:none}.step-label{font-size:11px}.step-caption{font-size:9px}.step-label .english{display:none}.content{width:100%}.report-grid{gap:7px}.report-card{padding:11px 9px;min-height:134px}.report-card .arrow{display:none}.report-card .report-state{font-size:13px;gap:5px}.report-card .report-state svg{width:14px}.report-card .report-description{font-size:10px}.report-card .english{font-size:8px}.overview-bottom{grid-template-columns:1fr;gap:23px}.requirements,.link-grid{grid-template-columns:1fr}.current-banner{padding:13px;gap:10px}.current-banner .right{display:none}.current-banner h3{font-size:13px}.current-banner p{font-size:11px}.authorization{align-items:flex-start;gap:6px;font-size:10px}.authorization .text-btn{font-size:10px}.task-meta{gap:8px;font-size:10px}.result-table th,.result-table td{padding:11px 10px}.result-table .status-col{width:95px}.result-table .action-col{width:60px}.facts-row{grid-template-columns:1fr 1fr;gap:12px}.facts-row>div:first-child{grid-column:1/-1}.options{grid-template-columns:1fr}.acceptance-actions{flex-wrap:wrap}.acceptance-actions p{flex-basis:100%}.content-head{gap:8px}.version-select{max-width:160px}.finding-content{padding-left:17px}.finding summary{flex-wrap:wrap;gap:7px}.main .footer-note{gap:10px}.topbar .btn.primary{font-size:10px;min-height:29px}.task-head .title-line .pill{font-size:10px}.breadcrumb{font-size:10px}.page-top .btn{font-size:10px;min-height:27px}.document{font-size:12px}.check-summary{gap:19px}.check-summary .value{font-size:20px}}
+
+/* Keep the current task and stage navigation available while reading. */
+.previewbar{position:sticky;top:0;z-index:30}
+.topbar{position:sticky;top:36px;z-index:29}
+.globalnav{position:fixed;top:91px;min-height:0}
+.process-foot{display:none}
+.process-panel{top:109px;max-height:calc(100vh - 125px);overflow-y:auto;scrollbar-width:thin;scrollbar-color:#dce5de transparent}
+.process-step{min-height:57px;padding:7px 8px}
+.process-step .english{font-size:9px;line-height:1.25}
+.step-label{line-height:1.4}
+.step-caption{display:block;font-size:10px;line-height:1.35;margin-top:2px}
+.content{scroll-margin-top:109px}
+@media(max-width:800px){.process-panel{max-height:none;overflow-y:hidden}.process-step{min-height:61px}.process-step .english{display:none}.content{scroll-margin-top:108px}}
+/* Focused task overview, with professional evidence disclosed on demand. */
+.main{padding:25px 36px 36px;max-width:1400px}
+.globalnav .bottom-note{display:none}
+.focus-page{max-width:1110px;margin:0 auto}
+.focus-crumb{display:flex;align-items:center;gap:9px;color:#a2aba5;font-size:11px;margin-bottom:17px}
+.focus-crumb .back{font-size:11px}
+.focus-crumb .spacer{flex:1}
+.focus-heading{display:flex;gap:13px;align-items:center;margin-bottom:8px}
+.focus-heading h1{font-size:25px;letter-spacing:-.6px;line-height:1.4}
+.focus-goal{font-size:12px;color:#77887c;line-height:1.8;margin-bottom:22px}
+.focus-now{border:1px solid #dae8de;border-radius:10px;background:#f5f9f5;padding:16px 20px;margin-bottom:26px}
+.focus-now.tone-amber{background:#fcf8ef;border-color:#eaddc1}
+.focus-now.tone-red{background:#fcf4f1;border-color:#ebdcd4}
+.focus-now .now-meta{display:flex;align-items:center;gap:8px;color:#859a89;font-size:10px;margin-bottom:7px}
+.focus-now.tone-amber .now-meta{color:#a28b5c}
+.focus-now.tone-red .now-meta{color:#ae8676}
+.focus-now .now-meta .latest{margin-left:auto;color:#9ca79d;font-size:10px}
+.focus-now .now-main{display:flex;align-items:center;gap:18px}
+.focus-now .now-text{flex:1;min-width:0}
+.focus-now h2{font-size:17px;line-height:1.5;color:#365b43;font-weight:580;letter-spacing:-.2px}
+.focus-now.tone-amber h2{color:#80632f}
+.focus-now.tone-red h2{color:#8c6050}
+.focus-now p{font-size:12px;color:#7e9184;margin-top:5px;line-height:1.75;max-width:760px}
+.focus-now.tone-amber p{color:#9d8d6d}
+.focus-now.tone-red p{color:#a48a7f}
+.focus-now .btn{min-width:97px;flex-shrink:0;font-size:11px}
+.focus-grid{display:grid;grid-template-columns:1.08fr 1fr;gap:35px;margin-bottom:25px}
+.focus-group-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
+.focus-group-head h2{font-size:14px;font-weight:600;letter-spacing:0;color:#435349}
+.focus-group-head .text-btn{font-size:11px}
+.focus-outcome{display:flex;align-items:center;gap:10px;padding:13px 0;border-bottom:1px solid #edf1ed;min-height:64px}
+.focus-outcome:last-child{border-bottom:0}
+.outcome-mark{width:23px;height:23px;border:1px solid #dfe8e0;border-radius:7px;display:grid;place-items:center;color:#75927c;flex-shrink:0;background:#f8faf8}
+.outcome-mark svg{width:12px;height:12px}
+.outcome-mark.wait{color:#b99c68;background:#fcf9f0;border-color:#ebe0c9}
+.outcome-copy{flex:1;min-width:0}
+.outcome-copy h3{font-size:12px;line-height:1.5;font-weight:530}
+.outcome-copy p{font-size:11px;color:#98a399;margin-top:4px;line-height:1.5}
+.outcome-open{border:0;background:none;color:#9aa79d;padding:5px;display:flex;border-radius:5px}
+.outcome-open:hover{color:var(--teal);background:#f0f6f1}
+.outcome-open svg{width:14px;height:14px}
+.focus-quality{border:1px solid #e5ebe5;border-radius:9px;overflow:hidden;background:#fff}
+.quality-row{display:block;text-align:left;width:100%;background:white;border:0;border-bottom:1px solid #edf1ed;padding:12px 15px;cursor:pointer}
+.quality-row:last-child{border-bottom:0}
+.quality-row:hover{background:#f9fcf9}
+.quality-top{display:flex;align-items:center;gap:8px;margin-bottom:4px}
+.quality-top strong{font-size:12px;font-weight:530}
+.quality-top .label-english{font-size:9px;font-weight:400;color:#9aa69e}
+.quality-top .pill{margin-left:auto;font-size:10px;line-height:19px;padding:0 6px}
+.quality-top svg{width:12px;height:12px;color:#acb9af}
+.quality-summary{color:#8b9a8e;font-size:11px;line-height:1.65}
+.focus-bottom{display:flex;align-items:center;gap:0;border-top:1px solid #e7ece7;padding-top:15px}
+.secondary-link{display:flex;align-items:center;gap:7px;color:#7e9083;border:0;background:none;padding:4px 13px;font-size:11px;border-right:1px solid #e4eae4}
+.secondary-link:first-child{padding-left:0}
+.secondary-link:last-of-type{border:0}
+.secondary-link svg{width:14px;height:14px;color:#9fb0a3}
+.secondary-link:hover{color:var(--teal)}
+.focus-bottom .quiet-note{margin-left:auto;font-size:10px;color:#a1aea3;white-space:nowrap}
+.sheet-wide{width:min(770px,92vw)}
+.sheet-wide .drawer-header{padding:18px 23px}
+.sheet-wide .drawer-header h2{font-size:18px}
+.sheet-wide .drawer-header p{font-size:10px}
+.sheet-wide .drawer-body{padding:20px 24px}
+.sheet-wide .content-head{margin-bottom:11px;justify-content:flex-end}
+.sheet-wide .content-head>div:first-child{display:none}
+.sheet-wide .content-head:has(>div:only-child){display:none}
+.sheet-wide .footer-note{font-size:9px}
+.sheet-wide .report-grid{gap:8px}
+.sheet-wide .report-card{min-height:104px;padding:11px}
+.sheet-wide .report-card .report-state{margin-top:9px;font-size:14px}
+.sheet-wide .report-card .report-description{font-size:10px}
+.sheet-wide .facts-row{gap:9px;font-size:11px}
+.sheet-wide .result-table td{padding:11px 12px}
+.sheet-wide .history-strip{font-size:10px}
+.sheet-wide .history-chip{padding:5px 8px;font-size:10px}
+.sheet-topback{width:30px;height:30px;border:1px solid var(--line);border-radius:6px;background:white;display:grid;place-items:center;color:#8ca192;flex-shrink:0;margin-top:3px}
+.sheet-topback svg{width:14px;height:14px}
+.sheet-topback:hover{background:#f2f7f2}
+.reader-provenance{color:#96a49a;font-size:10px;display:flex;gap:6px;align-items:center}
+.reader-provenance svg{width:13px;height:13px}
+.sheet-process{display:flex;flex-direction:column;margin-bottom:22px}
+.sheet-step{display:grid;grid-template-columns:26px 1fr auto;gap:11px;align-items:center;padding:12px 2px;border:0;border-bottom:1px solid #edf1ed;background:white;text-align:left;cursor:pointer}
+.sheet-step:hover{background:#fafcf9}
+.sheet-step .step-index{width:22px;height:22px;border:1px solid #e4ebe4;border-radius:50%;color:#9cac9d;display:grid;place-items:center;font-size:10px}
+.sheet-step .step-index svg{width:12px;height:12px;color:#769b7c}
+.sheet-step h3{font-size:12px;font-weight:500}
+.sheet-step p{font-size:10px;color:#91a096;margin-top:3px}
+.sheet-step .stage-en{font-size:9px;color:#a1afa4;margin-left:5px;font-weight:400}
+.sheet-section{margin-top:23px}
+.sheet-section:first-child{margin-top:0}
+.sheet-section>h3{font-size:12px;font-weight:580;margin-bottom:10px;color:#68806d}
+.sheet-section .doc-link{margin-bottom:8px}
+.sheet-section .doc-link small{line-height:1.7}
+.professional-details{border:1px solid #e3eae3;border-radius:8px;padding:0 14px;margin-top:19px}
+.professional-details>summary{font-size:11px;color:#8b9e8e;cursor:pointer;padding:12px 0}
+.professional-details[open]>summary{border-bottom:1px solid #edf1ed;margin-bottom:10px}
+.professional-details .document{font-size:11px;padding-bottom:12px}
+.professional-details .document h3{font-size:12px;margin-top:14px}
+.document-note{font-size:10px;color:#9ca89e;margin:12px 0}
+.scope-note{border-left:2px solid #d7e5d7;padding:6px 12px;font-size:12px;color:#7b947e;line-height:1.9;margin:14px 0}
+.details-actions{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0}
+.muted-link{font-size:10px;color:#928b76;text-decoration:underline;text-underline-offset:2px;margin-right:10px}
+@media(min-width:1650px){.main{padding:32px 48px 50px}.focus-grid{gap:50px}.focus-heading h1{font-size:27px}.focus-now{padding:20px 23px}.focus-outcome{min-height:71px}.quality-row{padding:14px 18px}}
+@media(max-width:1200px){.main{padding:24px 28px}.focus-grid{gap:25px}.quality-top .label-english{font-size:9px}.focus-bottom .quiet-note{display:none}}
+@media(max-width:800px){.main{padding:20px 18px}.focus-heading h1{font-size:21px}.focus-heading{gap:9px;align-items:flex-start}.focus-heading .pill{margin-top:6px}.focus-grid{grid-template-columns:1fr;gap:23px}.focus-now{padding:15px;margin-bottom:22px}.focus-now .now-main{align-items:flex-start;flex-direction:column;gap:12px}.focus-now h2{font-size:16px}.focus-now .now-meta{flex-wrap:wrap}.focus-goal{margin-bottom:18px;font-size:11px}.focus-bottom{flex-wrap:wrap;gap:8px}.secondary-link{padding:3px 9px;font-size:10px}.sheet-wide{width:95vw}.sheet-wide .drawer-body{padding:18px}.sheet-wide .drawer-header{padding:16px 18px}.focus-crumb .quiet-note{display:none}.focus-now .now-meta .latest{font-size:9px}.previewbar .muted-link{display:none}}
+
+.globalnav [data-icon]{display:inline-flex!important}
+.outcome-copy h3,.quality-top strong{font-size:13px}
+.outcome-copy p,.quality-summary{font-size:12px;color:#7f9084}
+
+/* Explain the task in reading order; attach conclusions to their subjects. */
+.focus-page{max-width:940px;margin:0 auto}
+.main{padding-top:25px}
+.story-location{display:flex;align-items:center;gap:10px;font-size:11px;color:#a1aca3;margin-bottom:20px}
+.story-location .back{font-size:11px}
+.story-title{display:flex;align-items:center;gap:13px;margin-bottom:31px}
+.story-title h1{font-size:24px;font-weight:620;color:#34453a;letter-spacing:-.45px;line-height:1.5}
+.story{padding-left:32px}
+.story-section{position:relative;padding-bottom:24px;margin-bottom:22px;border-bottom:1px solid #e8ede7}
+.story-section:before{content:"";position:absolute;left:-24px;top:28px;bottom:-32px;width:1px;background:#e5ece4}
+.story-section:last-child{border-bottom:0;padding-bottom:0;margin-bottom:0}
+.story-section:last-child:before{display:none}
+.story-number{position:absolute;left:-33px;top:2px;border:1px solid #dfe9dd;border-radius:50%;background:#f7faf5;color:#8b9f86;display:grid;place-items:center;font-size:10px;height:21px;width:21px}
+.story-head{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:12px}
+.story-head h2{font-size:16px;font-weight:600;color:#41553f;letter-spacing:0}
+.story-head .text-btn{font-size:11px}
+.story-body{font-size:13px;line-height:1.95;color:#73866f;max-width:815px}
+.story-open-plan{font-size:11px;min-height:30px;padding:4px 10px;color:#63835d}
+.story-plan{display:flex;flex-direction:column;gap:9px;font-size:13px}
+.story-plan>div{display:grid;grid-template-columns:68px 1fr;gap:13px}
+.story-plan span{color:#4d6646;font-weight:500}
+.story-plan p{color:#85947d;line-height:1.75}
+.story-evidence{margin-top:16px;padding:11px 13px;background:#f7faf5;border:1px solid #e8eee4;border-radius:7px}
+.story-conclusion{display:inline-flex;align-items:center;gap:7px;text-align:left;border:0;background:transparent;padding:0;color:#889983;font-size:12px;cursor:pointer}
+.story-conclusion>svg:first-child{width:15px;height:15px;color:#8ea989}
+.story-conclusion>svg:last-child{width:11px;height:11px;color:#a9b7a3}
+.story-conclusion b{font-size:11px;font-weight:550;color:#719367}
+.story-conclusion small{font-size:9px;color:#a0ae98;font-weight:400}
+.story-conclusion.amber b,.story-conclusion.amber>svg:first-child{color:#b09b61}
+.story-conclusion:hover{color:#3f6a33;text-decoration:underline;text-underline-offset:3px}
+.story-evidence-note{font-size:11px;line-height:1.75;color:#97a28d;margin-top:5px}
+.story-progress-title{font-size:14px;font-weight:500;line-height:1.8;color:#536c4a;margin-bottom:12px}
+.story-checks{display:flex;align-items:center;gap:25px;flex-wrap:wrap}
+.story-next{display:flex;align-items:center;gap:14px;margin-top:14px}
+.story-next p{font-size:12px;color:#99a68e;line-height:1.85;flex:1}
+.story-next .btn{font-size:11px}
+.story-footer{padding:17px 0 0 32px;border-top:1px solid #e8ede7;margin-top:24px;display:flex;align-items:center;justify-content:space-between;font-size:10px;color:#adb6a3}
+.story-footer .text-btn{font-size:11px}
+.story-question{display:flex;gap:16px;align-items:center;margin-top:16px;background:#fbf7ec;border:1px solid #ebe0c3;border-radius:7px;padding:13px}
+.story-question>div{flex:1}
+.story-question strong{font-size:12px;font-weight:550;color:#947c42}
+.story-question p{font-size:11px;color:#aa9a73;margin-top:3px}
+.story-question .btn{font-size:11px}
+.brief-index .doc-link{margin-bottom:9px}
+@media(max-width:800px){.story-title h1{font-size:20px}.story-title{align-items:flex-start;gap:8px}.story-title .pill{margin-top:5px}.story{padding-left:27px}.story-number{left:-28px}.story-section:before{left:-18px}.story-body{font-size:12px}.story-head h2{font-size:15px}.story-plan{font-size:12px}.story-plan>div{grid-template-columns:60px 1fr;gap:8px}.story-checks{gap:12px;align-items:flex-start;flex-direction:column}.story-head{gap:6px}.story-next,.story-question{align-items:flex-start;flex-direction:column}.story-footer{padding-left:27px}.story-conclusion small{font-size:8px}.story-progress-title{font-size:13px}}
+
+.main{max-width:1510px;padding:23px 28px 34px}.focus-page{max-width:1210px;margin:0 auto}
+.path-breadcrumb{display:flex;align-items:center;gap:11px;font-size:11px;color:#a1aaa4;margin-bottom:15px}
+.path-breadcrumb .back,.path-breadcrumb .text-btn{font-size:11px}
+.path-task-title{display:flex;gap:13px;align-items:center;margin-bottom:11px}
+.path-task-title h1{font-size:23px;line-height:1.55;letter-spacing:-.4px;color:#34463c;font-weight:620}
+.path-goal{display:flex;align-items:baseline;gap:11px;font-size:13px;color:#6f8474}
+.path-goal>span{font-size:10px;color:#9dac9e;border:1px solid #e6ece6;border-radius:4px;padding:1px 5px;white-space:nowrap}
+.path-goal p{line-height:1.8}
+.path-situation{display:flex;justify-content:space-between;gap:15px;align-items:center;padding:12px 0 15px;margin:8px 0 19px;border-bottom:1px solid #e6ede7}
+.path-situation>div{display:flex;gap:8px;align-items:center;font-size:11px;color:#819785}
+.path-situation svg{width:14px;height:14px;color:#94b19b}
+.path-situation .btn{font-size:11px;min-height:29px}
+.path-no-action{font-size:10px;color:#8ba490;white-space:nowrap}
+.path-overview{margin-bottom:23px}
+.path-map-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+.path-map-head h2{font-size:13px;font-weight:570;color:#687e6d;letter-spacing:0}
+.path-map-head>span{font-size:10px;color:#a9b3aa}
+.path-nodes{display:grid;grid-template-columns:repeat(var(--node-count),minmax(0,1fr));gap:14px;align-items:start}
+.path-node{position:relative;background:white;border:1px solid #e2e9e3;border-radius:8px;transition:border-color .15s;min-width:0}
+.path-node:not(:last-child):after{content:"→";position:absolute;right:-12px;top:43px;font-size:12px;color:#b9c8bc}
+.path-node.selected{border-color:#87aa91;box-shadow:0 0 0 2px #eef4ef}
+.path-node.current .path-node-main{background:#f0f7f2;border-radius:7px 7px 0 0}
+.path-node.future{border-style:dashed;background:#fdfefd}
+.path-node.future .path-node-main{color:#a1ada3}
+.path-node-main{display:flex;flex-direction:column;text-align:left;width:100%;padding:12px 10px 10px;border:0;background:transparent;min-height:125px}
+.path-node-main:hover{background:#f7faf7}
+.path-node-stage{font-size:11px;font-weight:500;color:#87998b}
+.path-node-stage small{display:block;font-size:8px;font-weight:400;color:#abb5ac;line-height:1.35;min-height:21px;margin-top:2px}
+.path-node-main strong{font-size:12px;line-height:1.6;font-weight:580;color:#4a6551;min-height:38px;display:block;margin-top:5px}
+.path-node.future .path-node-main strong{color:#9bab9d;font-weight:450}
+.path-node-state{display:flex;gap:5px;align-items:center;color:#a2afa5;font-size:9px;line-height:1.4;margin-top:auto;padding-top:9px}
+.path-node-state svg{width:11px;height:11px;color:#7ea689}
+.path-node-state i{width:5px;height:5px;border-radius:50%;background:#4e8a65;box-shadow:0 0 0 3px #e2eee4;margin-right:3px}
+.path-node.current .path-node-state{color:#558768}
+.path-proof{display:flex;width:100%;align-items:center;justify-content:space-between;gap:4px;padding:7px 8px;border:0;border-top:1px solid #e9eee9;background:#f9fbf8;border-radius:0 0 7px 7px;color:#88988b;font-size:9px;text-align:left}
+.path-proof b{font-weight:500;font-size:9px;white-space:nowrap;color:#a3afa3}
+.path-proof b.green{color:#6c9977}.path-proof b.amber{color:#b39b5a}
+.path-proof:hover,.path-proof.selected{background:#eaf4ed;color:#567e60}
+.path-loop{display:flex;justify-content:center;gap:6px;align-items:center;font-size:10px;color:#9aac9c;margin-top:12px}
+.path-loop span{font-size:15px;color:#a5b7a7}
+.path-loop button{font-size:10px;color:#91a596;border:0;border-bottom:1px dashed #d5e0d5;background:transparent;padding:0 0 1px}
+.path-fold-note{margin:11px 0 0;color:#a1afa2;font-size:10px}
+.path-panel{border:1px solid #e1e9e2;border-radius:10px;background:white;overflow:hidden}
+.path-panel>header{display:flex;justify-content:space-between;gap:15px;align-items:center;padding:17px 20px;border-bottom:1px solid #edf1ed;background:#fafcf9}
+.path-panel-context{font-size:10px;color:#8ca08f}
+.path-panel-context small{font-size:9px;color:#aab6ac}
+.path-panel h2{font-size:16px;line-height:1.5;letter-spacing:0;font-weight:580;margin-top:5px;color:#465f4c}
+.path-panel>header>.text-btn{font-size:11px;white-space:nowrap}
+.path-detail-rows{padding:4px 20px}
+.path-detail-rows>div{display:grid;grid-template-columns:112px 1fr;gap:20px;align-items:start;padding:12px 0;border-bottom:1px solid #eef2ed}
+.path-detail-rows>div:last-child{border:0}
+.path-detail-rows span{font-size:12px;color:#788e7d;font-weight:500}
+.path-detail-rows p{font-size:12px;line-height:1.8;color:#8b9e8f}
+.path-small-note{font-size:11px;color:#98a99b;line-height:1.85;padding:13px 20px;border-top:1px solid #edf1eb}
+.path-small-note.warning{color:#a69461;background:#fcfaf1}
+.path-verdict{display:flex;align-items:center;gap:9px;padding:15px 20px;background:#f4f9f3;border-bottom:1px solid #e9f0e6;color:#75967b;font-size:12px}
+.path-verdict svg{width:17px;height:17px}
+.path-verdict strong{font-weight:550;white-space:nowrap}
+.path-verdict span{font-size:11px;color:#91a693}
+.path-verdict.amber{background:#fcf8eb;color:#ab995c}
+.path-check-list{padding:3px 20px}
+.path-check-list>div{display:flex;gap:20px;justify-content:space-between;align-items:center;padding:15px 0;border-bottom:1px solid #eef2ed;font-size:12px;color:#718b78}
+.path-check-list>div:last-child{border-bottom:0}
+.path-why{border-top:1px solid #edf1eb;margin:0;padding:12px 20px 14px;color:#9aab9c}
+.path-why summary{font-size:11px;cursor:pointer}
+.path-why p{font-size:10px;color:#a6b3a5;margin-top:10px}
+.path-rework{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:15px}
+.path-rework span{padding:6px 10px;background:#f4f7f1;border:1px solid #e6ecdf;border-radius:5px;font-size:11px;color:#8fa184}
+.path-rework svg{width:13px;height:13px;color:#b2bea6}
+.path-rework .live{background:#f8f4e4;border-color:#e6ddbd;color:#ad985a}
+.path-inline-link{margin:10px 20px 16px;font-size:11px}
+.path-compare{display:flex;align-items:center;justify-content:center;gap:35px;padding:16px 20px 22px}
+.path-compare>div{border:1px solid #e4ece0;background:#fafcf7;border-radius:7px;min-width:145px;padding:13px 22px}
+.path-compare small{display:block;font-size:10px;color:#a0ad94}
+.path-compare b{display:block;font-size:20px;color:#7a9666;font-weight:500;margin-top:5px}
+.path-compare svg{color:#a6b896}
+.path-footer{display:flex;align-items:center;justify-content:space-between;gap:20px;padding-top:15px;font-size:10px;color:#acb7a7}
+.path-footer .text-btn{font-size:11px;color:#8fa185}
+.path-question{display:flex;gap:10px;align-items:center;background:#fcf8ea;padding:14px 20px;border-top:1px solid #f0e8cd;color:#a08b52;font-size:12px}
+.path-question>span{flex:1}
+.path-question>.btn{font-size:11px}
+.previewbar #task-case{max-width:220px}
+@media(min-width:1500px){.main{padding:30px 40px}.path-node-main{min-height:135px;padding:14px}.path-node-stage{font-size:12px}.path-node-main strong{font-size:13px}.path-proof{padding:9px 12px;font-size:10px}.path-proof b{font-size:10px}.path-panel>header{padding:20px 24px}}
+@media(max-width:800px){.path-task-title{align-items:flex-start;gap:9px}.path-task-title h1{font-size:20px}.path-task-title .pill{margin-top:6px}.path-goal{font-size:12px}.path-situation{align-items:flex-start}.path-situation>div{font-size:10px}.path-no-action{display:none}.path-overview{overflow-x:auto;padding-bottom:7px}.path-nodes{min-width:750px}.path-map-head{position:sticky;left:0}.path-panel>header{padding:15px;flex-wrap:wrap;gap:9px}.path-panel h2{font-size:15px}.path-detail-rows{padding:3px 15px}.path-detail-rows>div{grid-template-columns:85px 1fr;gap:12px}.path-detail-rows p,.path-detail-rows span{font-size:11px}.path-check-list{padding:3px 15px}.path-check-list>div{font-size:11px}.path-verdict{flex-wrap:wrap;padding:13px 15px}.path-compare{gap:20px}.path-compare>div{min-width:100px;padding:12px 14px}.path-question{flex-wrap:wrap;padding:13px 15px}.previewbar #task-case{max-width:170px}.previewbar #scenario-control{display:none}}
+
+.node-content-panel>header{padding:16px 20px}
+.node-content-panel>header h2{margin:0;font-size:16px}
+.node-content-panel>header h2 small{font-size:10px;color:#a3b0a6;font-weight:400}
+.node-content-panel>header p{font-size:12px;color:#8b9d90;line-height:1.8;margin-top:5px}
+.node-doc-tabs{display:flex;gap:6px;border-bottom:1px solid #e7ede7;padding:0 18px;flex-wrap:wrap}
+.node-doc-tabs button{border:0;border-bottom:2px solid transparent;background:white;padding:12px 14px;font-size:12px;color:#8ca08f}
+.node-doc-tabs button[aria-selected=true]{color:#477b57;border-bottom-color:#70977a}
+.node-doc-tabs button:hover{background:#f7faf7}
+.node-paper{padding:20px 24px;font-size:13px;line-height:1.9;color:#738c79}
+.node-paper h3{font-size:16px;color:#49634e;margin:12px 0;font-weight:580}
+.node-paper h4{font-size:13px;color:#57765e;margin:18px 0 5px}
+.node-paper p{margin:5px 0}
+.node-paper ul{padding-left:18px;margin:7px 0}
+.node-paper li{margin:5px 0}
+.node-paper-file{display:flex;gap:7px;align-items:center;color:#a4b0a4;font-size:10px}
+.node-paper-file svg{width:13px;height:13px}
+.node-paper-file code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;overflow-wrap:anywhere}
+.node-empty{padding:26px 24px;color:#9caa9d;font-size:13px;min-height:85px}
+.node-checklist{list-style:none;padding:0!important}
+.node-checklist li{display:flex;gap:9px;align-items:center;margin:10px 0;color:#7f9884;font-size:13px}
+.node-checklist li>span{width:15px;height:15px;display:grid;place-items:center;border:1px solid #d5e1d5;border-radius:3px;flex-shrink:0}
+.node-checklist li>span.done{background:#eef6ef;color:#789d7d}
+.node-checklist li svg{width:11px;height:11px}
+.node-progress{padding:18px 24px;font-size:12px;line-height:1.9;color:#8ba28f}
+.node-progress.compact{padding:12px 24px;background:#faf8ef;color:#a39463}
+.node-progress b{font-weight:550;color:#6b8b73;display:block;margin:10px 0 4px}
+.node-progress b:first-child{margin-top:0}
+.node-progress .text-btn{margin-top:10px;font-size:11px}
+.node-paper .node-progress{border-top:1px solid #edf1e9;padding:15px 0 0;margin-top:16px}
+.node-direct-link{padding:0 24px 18px;font-size:11px}
+.node-review-records{padding:8px 24px 16px}
+.node-review-record{border-bottom:1px solid #e7eee5;padding:0}
+.node-review-record:last-child{border:0}
+.node-review-record summary{display:flex;align-items:center;gap:13px;list-style:none;padding:15px 0;cursor:pointer;font-size:12px;color:#789580}
+.node-review-record summary:before{content:"›";color:#a4b59e}
+.node-review-record[open] summary:before{content:"⌄"}
+.node-review-record summary small{font-size:11px;color:#a3b19b}
+.node-review-record summary .pill{margin-left:auto;font-size:10px}
+.node-review-record p{font-size:12px;line-height:1.9;color:#8ba181;padding:0 0 15px 17px;margin:0}
+.node-result{display:flex;align-items:center;gap:10px;padding:18px 24px;border-bottom:1px solid #eaf0e5;flex-wrap:wrap;font-size:12px;color:#739169}
+.node-result>span:first-child{font-weight:500}
+.node-result p{flex-basis:100%;color:#92a585;line-height:1.8;margin:2px 0 0}
+.node-check-details{padding:0 24px 18px;color:#9bab8f;font-size:11px}
+.node-check-details summary{cursor:pointer}
+.node-check-details .path-check-list{padding:5px 0 0}
+.node-actions{display:flex;gap:9px;margin-top:14px}
+.node-decision{margin:0 24px 20px}
+.path-footer{justify-content:flex-end}
+@media(max-width:800px){.node-paper,.node-progress,.node-result{padding:17px}.node-content-panel>header{padding:15px 17px}.node-doc-tabs{padding:0 8px;gap:1px}.node-doc-tabs button{padding:10px 9px;font-size:11px}.node-review-records{padding:5px 17px 12px}.node-review-record summary{gap:8px;flex-wrap:wrap}.node-review-record summary small{font-size:10px}.node-decision{margin:0 17px 16px}.node-empty{padding:24px 17px}}
+
+.node-file-row{display:flex;align-items:center;gap:12px;text-align:left;width:100%;padding:16px 22px;border:0;border-bottom:1px solid #eaf0e6;background:#fff;cursor:pointer}
+.node-file-row:last-child{border-bottom:0}
+.node-file-row:hover{background:#f9fcf7}
+.node-file-icon{width:31px;height:36px;display:grid;place-items:center;border-radius:6px;background:#f1f7ed;color:#9aac8a;flex-shrink:0}
+.node-file-icon svg{width:17px;height:17px}
+.node-file-copy{flex:1;min-width:0}
+.node-file-copy strong{font-size:13px;font-weight:550;color:#5b7950}
+.node-file-copy code{display:inline;margin-left:10px;font-size:10px;color:#a9b398;overflow-wrap:anywhere}
+.node-file-copy small{display:block;font-size:12px;color:#9ba98d;margin-top:4px}
+.node-file-row>svg{width:13px;height:13px;color:#b0bca0;flex-shrink:0}
+.node-record-list{padding:0 22px}
+.node-record-row{display:block;text-align:left;width:100%;padding:15px 0;border:0;border-bottom:1px solid #eaf0e5;background:white;cursor:pointer}
+.node-record-row:last-child{border-bottom:0}
+.node-record-row:hover{background:#f9fbf7}
+.node-record-line{display:flex;align-items:center;gap:12px}
+.node-record-line strong{font-size:12px;color:#688758;font-weight:530}
+.node-record-line small{font-size:11px;color:#a0ad92}
+.node-record-line .pill{margin-left:auto;font-size:10px}
+.node-record-line>svg{width:12px;height:12px;color:#acb99a}
+.node-record-summary{display:block;font-size:12px;line-height:1.8;color:#97a689;margin-top:6px}
+.side-reader{position:fixed;top:91px;right:0;bottom:0;width:440px;z-index:15;background:#fff;border-left:1px solid #dfe7da;display:flex;flex-direction:column;box-shadow:-3px 0 12px #32451f04}
+.side-reader-header{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;border-bottom:1px solid #e6ece0;padding:18px 21px;background:#fbfcf9}
+.side-reader-header>div{min-width:0}
+.side-reader-header span{font-size:10px;color:#a4b092}
+.side-reader-header h2{font-size:17px;line-height:1.6;color:#587545;letter-spacing:0;margin-top:4px;font-weight:580;outline:0}
+.side-reader-header p{font-size:10px;color:#adb797;line-height:1.7;overflow-wrap:anywhere;margin-top:4px}
+.side-reader-body{flex:1;overflow-y:auto;overscroll-behavior:contain;padding:18px 22px 30px}
+.side-reader-body .node-paper{padding:0}
+.side-reader-body .node-paper-file{display:none}
+.side-reader-body .node-paper h3{font-size:16px}
+.side-reader-body .node-progress{padding:14px 0}
+.side-reader-body .node-result{padding:10px 0 16px}
+.side-reader-body .path-check-list{padding:4px 0}
+.side-reader-body .path-detail-rows{padding:0}
+.side-reader-body .path-detail-rows>div{grid-template-columns:85px 1fr;gap:12px}
+.side-reader-body .document{font-size:12px}
+.side-reader-body .node-empty{padding:18px 0}
+body.has-read-side .main{margin-right:440px;max-width:none}
+body.has-read-side .path-overview{overflow-x:auto;padding-bottom:6px}
+body.has-read-side .path-nodes{min-width:710px}
+body.has-read-side .path-situation{align-items:flex-start;flex-wrap:wrap}
+body.has-read-side .path-situation>div{min-width:0}
+body.has-read-side .path-task-title{align-items:flex-start}
+body.has-read-side .path-task-title h1{font-size:21px}
+body.has-read-side .path-goal{align-items:flex-start}
+body.has-read-side .node-file-copy code{display:block;margin:3px 0 0}
+body.has-read-side .node-record-line{flex-wrap:wrap}
+.writer-overlay{z-index:70;justify-content:flex-end;align-items:stretch}
+.writer-drawer{width:min(490px,95vw);height:100vh;background:white;box-shadow:-8px 0 30px #27391c22}
+.writer-drawer .drawer-header{padding:22px 24px}
+.writer-label{font-size:10px;color:#99a68b}
+.writer-drawer h2{font-size:18px;margin-top:5px}
+.writer-body{padding:21px 24px;flex:1;overflow-y:auto}
+.writer-body .textarea{font-size:13px;line-height:1.95}
+.writer-body .field{font-size:12px;margin-top:0}
+.writer-body .decision{border:0;padding:0}
+.writer-body .decision-footer{flex-wrap:wrap;justify-content:flex-end}
+.writer-footer{border-top:1px solid #e8ede2;padding:16px 24px;display:flex;gap:9px;justify-content:flex-end}
+.writer-body .modal-copy{font-size:12px;line-height:1.9;color:#95a389;margin:0 0 17px}
+@media(min-width:1700px){.side-reader{width:580px}body.has-read-side .main{margin-right:580px}.side-reader-body{padding:23px 28px}.side-reader-header{padding:22px 28px}}
+@media(max-width:800px){.side-reader{width:50vw}body.has-read-side .main{margin-right:50vw;padding-left:12px;padding-right:12px}.side-reader-header{padding:14px 12px}.side-reader-body{padding:15px 12px}.side-reader-header h2{font-size:15px}.side-reader-header p{font-size:9px}.node-file-row{padding:14px 16px}.node-record-list{padding:0 16px}.node-record-line{gap:7px;flex-wrap:wrap}body.has-read-side .path-task-title h1{font-size:17px}.node-file-copy code{display:block;margin-left:0}.side-reader-body .path-detail-rows>div{grid-template-columns:1fr;gap:3px}}
+
+</style>
+</head>
+<body>
+<div class="previewbar"><span class="preview-info"><strong>界面原型（UI Prototype）</strong> · 示例数据</span><label for="task-case">示例任务<select id="task-case" aria-label="切换示例任务"><option value="feature">项目登记与知识处理</option><option value="bug">修复旧页面覆盖新记录</option><option value="config">调整开发环境缓存时长</option></select></label><label id="scenario-control" for="scenario-select">情形<select id="scenario-select" aria-label="切换原型场景"><option value="progress">正常推进 · 补充验证</option><option value="repair">验证未通过 · 修复中</option><option value="review">方案审查 · 返工</option><option value="change">需求变更 · 等待决定</option><option value="acceptance">成果就绪 · 等待验收</option><option value="completed">已交付 · 收尾完成</option><option value="empty">任务需求 · 暂无记录</option><option value="gap">验证不完整 · 未覆盖项</option></select></label><button class="text-btn" id="reset-demo" style="font-size:10px;color:#8a816c">重置</button></div>
+<header class="topbar"><div class="brand"><span class="logo">B</span>Buildr Web<span class="dev">开发版</span></div><div class="workspace-switch">工作空间 <b>Buildr</b><span>⌄</span></div><nav class="topnav" aria-label="主要入口"><span class="selected">工作台</span><span>工作空间</span></nav><span class="spacer"></span><span class="avatar" aria-label="当前用户">陈</span><button class="btn primary" data-action="new-goal">＋ 提出新目标</button></header>
+<aside class="globalnav" aria-label="工作台导航"><div class="caption">工作台</div><button data-action="node" data-node="overview"><span data-icon="grid"></span><span>概览</span></button><button class="active" data-action="node" data-node="overview"><span data-icon="list"></span><span>任务</span></button><button data-action="reader" data-doc="activity"><span data-icon="clock"></span><span>动态</span></button><div class="project-block"><div class="caption">我关注的项目</div><button data-action="reader" data-doc="scope"><i class="project-dot"></i><span>Buildr 产品</span></button></div><div class="bottom-note">目标清晰，工作可接续。</div></aside>
+<main class="main" id="main"><div class="focus-page" id="task-first-layer" aria-live="polite"></div></main>
+<div id="overlay-root"></div><div id="toast-root" role="status" aria-live="polite"></div>
+<script>
+
+'use strict';
+const icons={grid:'<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',list:'<path d="M9 6h12M9 12h12M9 18h12"/><path d="M3 6h.01M3 12h.01M3 18h.01" stroke-width="3"/>',clock:'<circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3 2"/>',check:'<path d="m5 12 4 4L19 6"/>',circleCheck:'<circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/>',arrow:'<path d="M5 12h14m-5-5 5 5-5 5"/>',left:'<path d="M19 12H5m5-5-5 5 5 5"/>',chevron:'<path d="m9 5 7 7-7 7"/>',file:'<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h5"/>',shield:'<path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6z"/><path d="m8 12 3 3 5-6"/>',spark:'<path d="m12 3 2.6 6.4L21 12l-6.4 2.6L12 21l-2.6-6.4L3 12l6.4-2.6z"/>',info:'<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7h.01"/>',alert:'<path d="m12 3 10 18H2zM12 9v5M12 17h.01"/>',close:'<path d="m6 6 12 12M18 6 6 18"/>',star:'<path d="m12 3 2.7 5.6 6.3.9-4.5 4.4 1.1 6.1-5.6-2.9L6.4 20l1.1-6.1L3 9.5l6.3-.9z"/>',dots:'<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',code:'<path d="m8 6-6 6 6 6m8-12 6 6-6 6m-3-15-2 18"/>',message:'<path d="M21 15a3 3 0 0 1-3 3H8l-5 4V6a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3z"/><path d="M7 8h10M7 12h7"/>',box:'<path d="m12 3 9 5-9 5-9-5zM3 8v10l9 5 9-5V8M12 13v10M7 5.8l9 5"/>',git:'<circle cx="6" cy="5" r="3"/><circle cx="6" cy="19" r="3"/><circle cx="18" cy="6" r="3"/><path d="M6 8v8M18 9a9 9 0 0 1-9 9"/>',play:'<path d="m8 4 13 8-13 8z"/>',edit:'<path d="m16 3 5 5-12 12-6 1 1-6zM13 6l5 5"/>',refresh:'<path d="M20 8a8 8 0 0 0-14-3L3 8m0-5v5h5M4 16a8 8 0 0 0 14 3l3-3m0 5v-5h-5"/>'};
+const icon=(name)=>'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+(icons[name]||icons.file)+'</svg>';
+const esc=(s)=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const pill=(label,tone='')=>'<span class="pill '+tone+'">'+label+'</span>';
+const nodes=[['requirements','任务需求','Task Requirements'],['design','方案设计','Solution Design'],['planning','方案审查','Planning Review'],['implementation','开发实现','Implementation'],['review','实现审查','Implementation Review'],['verification','开发验证','Development Verification'],['acceptance','用户确认','User Acceptance'],['closeout','任务收尾','Task Closeout']];
+const scenarios={
+ progress:{tone:'green',current:'verification',headline:'正在复验知识确认操作，补齐最后一项检查',detail:'保存冲突已修复，正在针对当前实现重新验证。其余已通过且未受影响的检查继续复用。',status:'进行中',stage:'开发验证',time:'15:42',human:false},
+ review:{tone:'green',current:'design',headline:'根据第一轮审查意见，修订版本确认的处理方式',detail:'两项方案问题已定位。智能体（Agent）将完善方案并再次审查，无需你逐步确认。',status:'进行中',stage:'方案设计',time:'11:26',human:false},
+ change:{tone:'amber',current:'requirements',headline:'需要你决定：本次是否增加批量确认能力',detail:'新增诉求超出原定单篇处理范围，会改变操作方式与验收条件。已完成内容继续保留。',status:'进行中',stage:'任务需求',time:'16:08',human:true},
+ acceptance:{tone:'amber',current:'acceptance',headline:'开发与验证已完成，等待你查看实际成果',detail:'三项预期变化均已实现，两个审查和开发验证已有结论。请核对效果并记录验收意见。',status:'进行中',stage:'用户确认',time:'16:32',human:true},
+ completed:{tone:'green',current:'closeout',headline:'成果已交付，任务收尾已完成',detail:'本次成果已集成到开发分支，开发版已更新，任务工作目录已安全清理。没有待处理事项。',status:'已完成',stage:'任务收尾',time:'17:10',human:false},
+ empty:{tone:'green',current:'verification',headline:'正在复验知识确认操作，补齐最后一项检查',detail:'当前工作按已明确的目标继续推进，尚未补充任务需求记录。',status:'进行中',stage:'开发验证',time:'15:42',human:false}
+};
+const state={scenario:'progress',node:'overview',round:2,filter:'all',accepted:false,responded:false,response:'',decision:'keep',reqSaved:'',star:false,drawer:null,readerState:'normal',conflict:false};
+let lastFocused=null,toastTimer=null;
+function scenario(){return scenarios[state.scenario]}
+function nodeStatus(id){const index=nodes.findIndex(n=>n[0]===id);if(state.scenario==='completed')return['已完成','done'];if(state.scenario==='review'){if(index===0)return['已记录','done'];if(index===1)return['修订中','current'];if(index===2)return['第 1 轮 · 需要修改','attention'];return['尚未开始','idle']}
+ if(state.scenario==='change'){if(index===0)return[state.responded?'意见已记录':'变更待决定',state.responded?'done':'attention'];if(index===1)return['等待范围确定','attention'];if(index<=5)return[index===2?'原方案结论保留':'原范围成果保留','done'];return['尚未开始','idle']}
+ if(state.scenario==='acceptance'){if(index<6)return['已完成','done'];if(index===6)return[state.adjustment?'已提出调整':state.accepted?'已确认':'等待你验收',state.accepted?'done':'attention'];return[state.accepted?'等待接续':'尚未开始','idle']}
+ if(state.scenario==='empty'&&id==='requirements'&&!state.reqSaved)return['暂无记录','idle'];if(index<5)return[index===0?'已记录':index===2||index===4?'第 2 轮 · 已通过':'已完成','done'];if(index===5)return['第 2 轮 · 补充验证中','current'];return['尚未开始','idle'];}
+function currentRound(){return state.scenario==='review'?1:2}
+function reportState(id){if(id==='planning'&&state.scenario==='review')return['需要修改','amber','第 1 轮 · 方案 v1'];if(state.scenario==='review')return['尚未开始','','尚未形成结论'];if(id==='verification'){if(['acceptance','completed'].includes(state.scenario))return['已通过','green','第 2 轮 · 当前实现'];if(state.scenario==='change')return['原范围已通过','green','新范围待确定'];return['补充验证中','amber','上一轮有 1 项未通过']};return['已通过','green',state.scenario==='change'?'原范围结论保留':'第 2 轮 · '+(id==='planning'?'方案 v2':'当前实现')];}
+function docLink(id,title,desc,kind='file'){return '<button class="doc-link" data-action="reader" data-doc="'+id+'"><span class="file-icon">'+icon(kind)+'</span><span>'+title+'<small>'+desc+'</small></span><span class="arrow">'+icon('chevron')+'</span></button>'}
+function contentHead(title,en,extra='',index=''){return '<div class="content-head"><div><h2>'+(index?'<span class="number">'+index+'</span>':'')+title+'</h2><div class="subline">'+en+'</div></div>'+extra+'</div>'}
+function notice(text,tone=''){return '<div class="notice '+tone+'">'+icon('info')+'<div>'+text+'</div></div>'}
+function footer(){return '<div class="footer-note"><span>内容与结果来自本任务记录及关联成果</span><span>最近更新 · 今天 '+scenario().time+'</span></div>'}
+function timeline(compact=false){let items;
+ if(state.scenario==='review')items=[['11:26','方案进入修订','根据两个问题完善版本边界。','design'],['11:12','第一轮方案审查结束','需要修改，已记录问题与建议。','planning'],['10:08','本次范围已授权实施','按既定范围自主推进至提交验收。','authorization']];
+ else if(state.scenario==='completed')items=[['17:10','任务收尾已完成','成果交付与必要清理已有记录。','closeout'],['16:48','用户确认当前成果','按已有授权继续收尾。','acceptance'],['16:32','第二轮验证通过','针对修复内容补验，其余结果复用。','verification']];
+ else if(state.scenario==='acceptance')items=[['16:32','开发验证已有完整结论','受影响的检查通过，成果可供验收。','verification'],['15:36','实现复审通过','保存冲突的修复已核对。','review'],['15:28','修复保存冲突','旧页面提交不会覆盖新的确认。','implementation']];
+ else if(state.scenario==='change')items=[['16:08','新增批量确认诉求','超出原定单篇处理范围，等待决定。','requirements'],['15:56','原范围验证完成','原有成果和验证结论继续保留。','verification'],['15:36','实现复审通过','对应原定范围的实现。','review']];
+ else items=[['15:42','开始补充验证','针对保存冲突修复重新检查。','verification'],['15:36','实现复审通过','已核对修正内容和受影响边界。','review'],['15:18','发现一项保存冲突','第一轮验证未通过，已进入修复。','verification']];
+ if(!compact&&state.scenario!=='review')items=items.concat([['14:20','完成本轮实现','三个功能点进入实现审查。','implementation'],['12:05','第二轮方案审查通过','两项问题已修订并复核。','planning'],['10:08','明确任务目标与授权','需求在进入任务后补充记录。','requirements']]);
+ return '<div class="timeline">'+items.map((it,i)=>'<div class="event '+(i===0?'latest':'')+'"><div class="time">今天 '+it[0]+'</div><div>'+it[1]+'</div><p>'+it[2]+'</p><button class="text-btn" data-action="'+(it[3]==='authorization'?'reader':'node')+'" data-'+(it[3]==='authorization'?'doc':'node')+'="'+it[3]+'">查看相关内容 '+icon('chevron')+'</button></div>').join('')+'</div>';
+}
+function requirementContent(){
+ const head=contentHead('任务需求','Task Requirements · 在任务推进中补充需要保留的内容','<button class="btn" data-action="edit-requirements">'+icon('edit')+'编辑</button>','01');
+ if(state.scenario==='empty'&&!state.reqSaved)return head+'<div class="panel"><div class="empty"><div class="empty-icon">'+icon('file')+'</div><h3>暂无记录</h3><p>有需要保留的内容时再补充。</p><button class="btn" data-action="edit-requirements">补充内容</button></div></div>'+footer();
+ if(state.reqSaved)return head+'<div class="panel panel-pad document"><h3>补充内容</h3><p style="white-space:pre-wrap">'+esc(state.reqSaved)+'</p><div class="source">用户刚刚更新 · 仅保存在本页示例中</div></div>'+footer();
+ return head+(state.scenario==='change'?decisionBox()+'<div style="height:22px"></div>':'')+
+ '<div class="panel panel-pad document"><p class="lead">已有项目重新登记时保留文件；操作后看到最新内容；知识来源变化后，用户能看懂变化并继续处理。</p><div class="requirements"><section><h3>需要解决的问题</h3><ul><li>项目移除登记后，重新加入的入口不够明确。</li><li>不同操作后的页面刷新行为不一致。</li><li>知识来源变化后，缺少清楚的查看和处理方式。</li></ul></section><section><h3>本次范围</h3><ul><li>已有项目登记及原文件保留。</li><li>同一页面内更新结果与操作反馈。</li><li>单篇知识的差异、确认、编辑与接续。</li></ul></section><section class="wide"><h3>验收时重点看什么</h3><div class="bullet-line"><span class="tick">'+icon('check')+'</span><div>重新登记后，目录和文件保持原样。<p>只恢复登记，不迁移或覆盖原有内容。</p></div></div><div class="bullet-line"><span class="tick">'+icon('check')+'</span><div>完成操作后，页面显示一致的当前结果。<p>连续操作或旧页面提交时，不静默覆盖新的内容。</p></div></div><div class="bullet-line"><span class="tick">'+icon('check')+'</span><div>知识确认对应用户实际查看过的版本。<p>来源再次变化后，仍能识别新的变化。</p></div></div></section></div><div class="source">进入任务后补充 · 今天 10:08 · 来源：已明确的目标与讨论结论</div></div><div style="margin-top:15px">'+notice('本次实施已获授权。约定范围内由智能体（Agent）持续推进，完成后提交验收。')+'</div>'+footer();
+}
+function decisionBox(){if(state.responded)return '<div class="conclusion"><span>'+icon('circleCheck')+'</span><div><h3>你的决定已记录</h3><p>'+esc(state.response||'保持本次范围，批量确认另行讨论。')+'</p><p style="margin-top:8px;font-size:11px">等待智能体（Agent）读取并接续；尚未产生后续修改记录。</p></div></div>';
+ return '<section class="decision"><div class="between"><span class="eyebrow">需要你的决定</span>'+pill('新增范围','amber')+'</div><h3 style="margin-top:10px">本次是否增加“批量确认知识”能力？</h3><p>原方案只包含单篇处理。批量确认需要明确选取范围、逐篇版本检查与部分失败的处理，会增加本轮设计和验证工作。</p><div class="options"><label class="option"><input type="radio" name="decision" value="keep" '+(state.decision==='keep'?'checked':'')+'><span>保持本次范围 '+pill('建议','green')+'<small>先完成单篇处理，批量能力另行讨论。</small></span></label><label class="option"><input type="radio" name="decision" value="expand" '+(state.decision==='expand'?'checked':'')+'><span>将批量确认纳入本次<small>继续完善方案，复审并补充相关验证。</small></span></label></div><label class="field" for="decision-response">补充意见</label><textarea class="textarea" id="decision-response" placeholder="可以补充你的考虑、约束或其他方向…">'+esc(state.response)+'</textarea>'+(state.conflict?'<div class="conflict">事项内容刚刚发生变化，你的输入已保留。<button class="text-btn" data-action="reread-decision">重新读取并核对</button></div>':'')+'<div class="decision-footer"><span>保存后保留意见，供智能体（Agent）接续。</span><button class="btn primary" data-action="save-decision" '+(state.conflict?'disabled':'')+'>记录我的决定</button></div></section>';
+}
+function designContent(){const early=state.scenario==='review',version=early?'v1 · 修订中':'v2 · 当前方案';return contentHead('方案设计','Solution Design · 当前做法、关键选择与影响范围','<button class="btn" data-action="reader" data-doc="design">查看完整方案 '+icon('arrow')+'</button>','02')+
+ (early?'<div style="margin-bottom:18px">'+notice('第一轮方案审查（Planning Review）发现两项问题，正在完善版本确认边界。<br><button class="text-btn" data-action="node" data-node="planning">查看审查意见 '+icon('arrow')+'</button>','amber')+'</div>':state.scenario==='change'?'<div style="margin-bottom:18px">'+notice('以下仍为原定单篇处理方案。新增范围确定后，才修订受影响部分。','amber')+'</div>':'')+
+ '<div class="panel panel-pad document"><div class="between"><span class="eyebrow">当前方案</span>'+pill(version,early?'amber':'green')+'</div><h3 style="font-size:17px;margin-top:15px">让操作始终对应用户正在查看的内容</h3><p>复用已有登记能力，明确读取与保存边界。页面在操作后更新同一份当前内容；确认知识时保留实际查看的来源版本。</p><div class="mini-flow"><div class="box">查看当前内容<small>明确对象与版本</small></div>'+icon('arrow')+'<div class="box">作出操作<small>登记、编辑或确认</small></div>'+icon('arrow')+'<div class="box">展示当前结果<small>冲突时保留输入</small></div></div><h3>三个实现要点</h3><ol><li><strong>重新登记：</strong>选择已有目录后检查登记关系，保留目录内文件。</li><li><strong>页面更新：</strong>以操作返回的当前结果更新页面，并处理旧读取请求。</li><li><strong>知识处理：</strong>差异、确认和编辑使用同一来源身份；再次变化时明确提示。</li></ol></div><section style="margin-top:22px"><div class="section-title"><h3>这轮方案调整了什么</h3><span class="small">v1 → v2</span></div><div class="panel"><table class="result-table"><thead><tr><th>原做法</th><th>调整后</th></tr></thead><tbody><tr><td>确认保存时使用最新来源版本</td><td><span class="title">使用用户实际查看过的版本</span><div class="table-sub">避免尚未查看的变化被一并确认。</div></td></tr><tr><td>保存冲突后直接刷新页面</td><td><span class="title">保留输入，重读后由用户核对</span><div class="table-sub">避免丢失正在编辑的内容。</div></td></tr></tbody></table></div></section><div class="link-grid" style="margin-top:18px">'+docLink('design','完整设计说明','目标、边界与关键选择')+docLink('prototype','知识变化处理页面','查看相关页面示意')+'</div>'+footer();
+}
+function implementationContent(){if(state.scenario==='review')return contentHead('开发实现','Implementation','', '04')+'<div class="panel"><div class="empty"><div class="empty-icon">'+icon('code')+'</div><h3>尚未开始</h3><p>当前正在修订方案，完成复审后继续实现。</p><button class="btn" data-action="node" data-node="design">查看当前方案</button></div></div>'+footer();
+ return contentHead('开发实现','Implementation · 已实现内容、修正与当前代码','<button class="btn" data-action="reader" data-doc="code">'+icon('git')+'查看代码变化</button>','04')+
+ '<div class="conclusion"><span>'+icon('circleCheck')+'</span><div><h3>三个功能点已实现，保存冲突已修复</h3><p>当前实现包含本轮修正。相关改动已复审，开发验证（Development Verification）按实际影响继续推进。</p></div></div>'+
+ '<div class="panel"><table class="result-table"><thead><tr><th>实现内容</th><th>当前情况</th><th></th></tr></thead><tbody><tr><td><b class="title">已有项目重新登记</b><div class="table-sub">恢复登记关系，保留目录和文件。</div></td><td>'+pill('已实现','green')+'</td><td><button class="text-btn" data-action="reader" data-doc="registration">查看</button></td></tr><tr><td><b class="title">统一页面刷新</b><div class="table-sub">隔离旧请求，操作后更新当前结果。</div></td><td>'+pill('已实现','green')+'</td><td><button class="text-btn" data-action="reader" data-doc="refresh">查看</button></td></tr><tr><td><b class="title">知识变化处理</b><div class="table-sub">查看差异、版本确认、编辑与接续入口。</div></td><td>'+pill('已实现','green')+'</td><td><button class="text-btn" data-action="reader" data-doc="knowledge">查看</button></td></tr></tbody></table></div>'+
+ '<section style="margin-top:23px"><div class="section-title"><h3>最近一次修正</h3>'+pill('来自验证反馈','amber')+'</div><div class="panel panel-pad document"><h3>旧页面提交时，保留已经保存的新确认</h3><p>第一轮检查发现：两个页面先后确认知识时，旧页面提交可能覆盖新记录。修正后，保存前核对当前版本；发生冲突时保留用户输入，并提示重新读取。</p><div style="margin-top:15px" class="row"><button class="text-btn" data-action="node" data-node="review">查看实现复审 '+icon('arrow')+'</button><button class="text-btn" data-action="node" data-node="verification">查看相关验证 '+icon('arrow')+'</button></div></div></section>'+
+ '<div class="facts-row"><div><dt>对应方案</dt><dd>方案 v2 · 原定三个功能点</dd></div><div><dt>当前内容</dt><dd class="mono">c4f83aa · 示例版本</dd></div><div><dt>最近修正</dt><dd>今天 15:36</dd></div></div>'+footer();
+}
+function finding(id,title,detail,fix,resolved=true,level='重要'){return '<details class="finding"><summary><span class="finding-id">'+id+'</span><span>'+title+'</span>'+pill(resolved?'已处理':'待处理',resolved?'green':'amber')+'<span class="chevron">'+icon('chevron')+'</span></summary><div class="finding-content"><span class="tag">'+level+'</span><p style="margin-top:8px">'+detail+'</p><div class="fix"><strong>'+(resolved?'处理与复核：':'建议：')+'</strong>'+fix+'</div></div></details>'}
+function reviewContent(type){
+ const planning=type==='planning',n=nodes.find(n=>n[0]===type),notStarted=state.scenario==='review'&&!planning;
+ let round=state.round;if(state.scenario==='review')round=1;const older=round===1,changed=state.scenario==='change';
+ const head=contentHead(n[1],n[2]+' · 对象、问题与结论',notStarted?'':'<select class="version-select" id="round-select" aria-label="选择审查轮次">'+(state.scenario!=='review'?'<option value="2" '+(!older?'selected':'')+'>第 2 轮 · 最新结论</option>':'')+'<option value="1" '+(older?'selected':'')+'>第 1 轮 · '+(state.scenario==='review'?'当前结论':'历史结果')+'</option></select>',planning?'03':'05');
+ if(notStarted)return head+'<div class="panel"><div class="empty"><div class="empty-icon">'+icon('file')+'</div><h3>尚未形成实现审查结论</h3><p>开发尚未开始，当前没有需要展示的完整结果。</p></div></div>'+footer();
+ const title=older?'需要修改':'审查通过',subject=planning?(older?'方案 v1':'方案 v2'):(older?'实现 91be720':'实现 c4f83aa');
+ const summary=planning?(older?'版本确认与冲突处理存在两处不明确，需要完善后复审。':'版本确认与冲突处理已明确，原定范围的方案可以实施。'):(older?'发现一处旧读取响应可能覆盖新内容，需要修正后复审。':'已检查本轮修正，未发现阻碍当前目标的实现问题。');
+ let findings=planning?finding('P-01','确认对象必须是用户实际查看的版本','用户查看后，来源可能再次发生变化。如果保存时使用最新版本，会将用户尚未查看的变化一并确认。',older?'把确认绑定到用户查看时的来源身份，并处理版本变化。':'已在方案 v2 中明确查看身份与保存校验，复审通过。',!older)+finding('P-02','保存冲突时应保留用户输入','原方案只写“冲突时刷新”，没有交代正在编辑的内容如何处理。',older?'保留输入，提示重读当前内容，再由用户核对。':'补充了保留输入、重读和显式冲突提示的交互。',!older,'一般'):
+ finding('I-01','避免旧响应覆盖操作后的当前内容','连续操作时，较早的读取请求可能晚于保存返回。旧响应不应覆盖更新后的页面状态。',older?'为读取请求保留当前对象身份，忽略已过期响应。':'已修正请求隔离，并核对新增、移除与确认操作的共同入口。',!older)+(!older?finding('I-02','复核保存冲突的修复','第一轮开发验证（Development Verification）发现两个页面并发确认时，新记录可能被覆盖。','已核对保存前版本检查和冲突分支；相关检查继续由开发验证（Development Verification）确认。',true):'');
+ return head+(older&&state.scenario!=='review'?'<div style="margin-bottom:15px">'+notice('这是第 1 轮的历史结果，针对'+subject+'。后续修正与新结论单独保留。','blue')+'</div>':changed?'<div style="margin-bottom:15px">'+notice('本结论对应原定范围。新增批量确认尚待决定，相关影响将在范围确定后核对。','amber')+'</div>':'')+
+ '<div class="conclusion '+(older?'amber':'')+'">'+icon(older?'alert':'circleCheck')+'<div><h3>'+title+'</h3><p>'+summary+'</p></div></div>'+
+ '<dl class="facts-row"><div><dt>本轮对象</dt><dd>'+subject+' · '+(planning?'项目登记、页面更新、单篇知识处理':'当前开发成果与本轮修正')+'</dd></div><div><dt>审查方式</dt><dd>独立智能体（Agent）审查</dd></div><div><dt>完成时间</dt><dd>今天 '+(planning?(older?'11:12':'12:05'):(older?'14:48':'15:36'))+'</dd></div></dl>'+
+ '<div class="section-title"><h3>问题与处理</h3><span class="small">'+(planning?'2 项':older?'1 项':'2 项')+' · '+(older?'需要修正':'已复核')+'</span></div>'+findings+
+ '<div class="panel panel-pad document" style="margin-top:19px"><h3>本轮查看的内容</h3><p>'+(planning?'需求范围、实现思路、版本确认规则、异常处理和验收条件。':'真实代码差异、任务目标与方案的一致性、错误处理，以及已有检查所证明的边界。')+'</p><h3>未覆盖内容</h3><p>'+(planning?'尚未开始的实际实现，以及不在本次范围内的批量处理。':'正式发布与生产环境效果，不属于本轮实现审查（Implementation Review）的证明范围。')+'</p></div>'+
+ '<div class="history-strip"><span>历次结果</span><button class="history-chip '+(older?'selected':'')+'" data-action="round" data-round="1">第 1 轮 · 需要修改<small>'+ (planning?'方案 v1':'实现 91be720')+'</small></button>'+(state.scenario!=='review'?'<span>→</span><button class="history-chip '+(!older?'selected':'')+'" data-action="round" data-round="2">第 2 轮 · 已通过<small>'+(planning?'方案 v2':'实现 c4f83aa')+'</small></button>':'')+'<span class="spacer"></span><button class="text-btn" data-action="reader" data-doc="'+type+'-report">查看完整结果 '+icon('arrow')+'</button></div>'+footer();
+}
+const checks=[
+ ['项目重新登记后原文件保持不变','本地功能检查','passed','登记前后核对目录与文件内容。'],
+ ['操作后页面显示同一份当前内容','页面交互检查','passed','登记、移除、编辑后内容一致。'],
+ ['来源再次变化后保留新的变化提示','页面交互检查','passed','旧确认只覆盖已经查看的来源。'],
+ ['编辑保存后能够再次读取当前内容','本地功能检查','passed','保存、重读和返回页面均正常。'],
+ ['旧页面确认不覆盖新记录','并发场景检查','failed','第一轮发现覆盖问题，已修复，正在补验。']
+];
+function verificationContent(){
+ const early=state.scenario==='review',ready=['acceptance','completed','change'].includes(state.scenario),historical=state.round===1,working=!ready&&!historical;
+ const head=contentHead('开发验证','Development Verification · 实际检查、结果与未覆盖内容',early?'':'<select id="round-select" class="version-select" aria-label="选择验证轮次"><option value="2" '+(!historical?'selected':'')+'>第 2 轮 · '+(ready?'已通过':'补充验证中')+'</option><option value="1" '+(historical?'selected':'')+'>第 1 轮 · 未通过</option></select>','06');
+ if(early)return head+'<div class="panel"><div class="empty"><div class="empty-icon">'+icon('circleCheck')+'</div><h3>尚未形成开发验证结论</h3><p>开发中的检查按实际需要执行，完整结论在当前成果核对后展示。</p></div></div>'+footer();
+ let activity=working?'<div class="activity-note"><div class="row">'+icon('clock')+'<b>第 2 轮 · 补充验证中</b><span class="spacer"></span><span class="thin">进展记录 15:42</span></div><p>正在复验“旧页面确认不覆盖新记录”。本轮尚未形成完整报告；下方区分复用结果与正在执行的检查。</p></div>':'';
+ const title=historical?'第一轮未通过':working?'修复后正在补充检查':'第二轮验证通过';
+ const summary=historical?'5 项检查中有 1 项失败，问题已交回实现环节修正。':working?'4 项未受影响的检查继续复用，保存冲突相关检查正在重新执行。':'保存冲突相关检查重新通过，其余检查经适用性核对后复用。';
+ let rows=checks.map((c,i)=>({title:c[0],family:c[1],result:i===4?(historical?'failed':working?'pending':'passed'):'passed',detail:i===4?(historical?'旧页面提交可能覆盖新记录。':working?'针对实现 c4f83aa 重新执行。':'修复后重新执行，当前实现通过。'):c[3],reused:!historical&&i<4}));
+ const filtered=state.filter==='all'?rows:rows.filter(c=>state.filter===c.result);
+ return head+(historical?'<div style="margin-bottom:15px">'+notice('历史结果 · 对应实现 91be720。该失败记录保留，后续修复不会改写原结论。','blue')+'</div>':'')+activity+
+ '<div class="conclusion '+(historical?'red':working?'gray':'')+'">'+icon(historical?'alert':working?'clock':'circleCheck')+'<div><h3>'+title+'</h3><p>'+summary+'</p></div></div>'+
+ '<dl class="facts-row"><div><dt>验证对象</dt><dd>'+(historical?'实现 91be720':'当前实现 c4f83aa')+' · 原定三个功能点</dd></div><div><dt>实际执行者</dt><dd>智能体（Agent）调用项目工具</dd></div><div><dt>'+(working?'最新进展':'完成时间')+'</dt><dd>今天 '+(historical?'15:18':working?'15:42':state.scenario==='change'?'15:56':'16:32')+'</dd></div></dl>'+
+ '<div class="panel"><div class="check-summary"><div><span class="value">'+(historical||working?'4':'5')+'</span><span class="label">项通过'+(working?'并复用':'')+'</span></div><div><span class="value '+(historical?'red':'muted')+'">'+(historical?'1':'0')+'</span><span class="label">项失败</span></div><div><span class="value muted">'+(working?'1':'0')+'</span><span class="label">项正在补验</span></div></div><div style="padding:0 16px"><div class="filters" role="group" aria-label="检查结果筛选">'+[['all','全部'],['passed','已通过'],['failed','未通过'],['pending','补验中']].map(f=>'<button class="filter '+(state.filter===f[0]?'active':'')+'" data-action="filter" data-filter="'+f[0]+'" aria-pressed="'+(state.filter===f[0])+'">'+f[1]+'</button>').join('')+'</div></div><table class="result-table"><thead><tr><th>实际检查</th><th class="status-col">结果</th><th class="action-col"></th></tr></thead><tbody>'+filtered.map(c=>'<tr><td><div class="title">'+c.title+'</div><div class="table-sub">'+c.family+' · '+c.detail+'</div></td><td>'+pill(c.result==='failed'?'未通过':c.result==='pending'?'补验中':'已通过',c.result==='failed'?'red':c.result==='pending'?'amber':'green')+(c.reused?'<div class="table-sub">复用有效结果</div>':'')+'</td><td><button class="text-btn" data-action="reader" data-doc="'+(c.result==='failed'?'failed-check':'check-detail')+'">详情</button></td></tr>').join('')+(!filtered.length?'<tr><td colspan="3" style="text-align:center;padding:24px;color:#99a79d">没有这一类检查结果</td></tr>':'')+'</tbody></table></div>'+
+ '<div style="margin-top:19px">'+notice('未覆盖：正式版本发布与生产环境效果。本任务交付开发版功能，不以本报告证明生产环境已经生效。')+'</div>'+
+ '<div class="history-strip"><span>验证历程</span><button class="history-chip '+(historical?'selected':'')+'" data-action="round" data-round="1">第 1 轮 · 未通过<small>发现保存冲突</small></button><span>→</span><button class="history-chip" data-action="node" data-node="implementation">修正实现<small>保留版本校验</small></button><span>→</span><button class="history-chip '+(!historical?'selected':'')+'" data-action="round" data-round="2">第 2 轮 · '+(ready?'已通过':'补充验证')+'<small>针对修复内容</small></button></div>'+footer();
+}
+function acceptanceContent(){
+ const available=['acceptance','completed'].includes(state.scenario),confirmed=state.accepted||state.scenario==='completed';
+ const head=contentHead('用户确认','User Acceptance · 对照目标查看成果并记录意见','', '07');
+ if(state.adjustment)return head+'<div class="conclusion amber">'+icon('message')+'<div><h3>已记录你的调整意见</h3><p>'+esc(state.adjustment)+'</p></div></div><div class="panel panel-pad document"><h3>等待智能体（Agent）接续</h3><p>接续时先核对影响，再在已授权范围内修正、复审和验证。需要新的业务取舍时再提出问题。</p><p style="margin-top:10px">当前仍显示提出调整时的成果，尚未记录后续修改，不能视为已验收。</p><button class="text-btn" style="margin-top:18px" data-action="node" data-node="overview">查看当前成果 '+icon('arrow')+'</button></div>'+footer();
+ if(!available)return head+'<div class="panel"><div class="empty"><div class="empty-icon">'+icon('message')+'</div><h3>尚未提交用户确认</h3><p>当前工作仍在推进，完成后会在这里集中展示成果与相关结论。</p><button class="btn" data-action="node" data-node="overview">查看当前进展</button></div></div>'+footer();
+ return head+(confirmed?'<div class="conclusion">'+icon('circleCheck')+'<div><h3>已记录你的确认</h3><p>'+esc(state.response||'当前结果符合预期，可以按约定范围完成收尾。')+'</p><p style="font-size:11px;margin-top:6px">针对方案 v2 与实现 c4f83aa · '+(state.scenario==='completed'?'今天 16:48':'刚刚')+'</p></div></div>':
+ '<div class="conclusion">'+icon('circleCheck')+'<div><h3>本次成果已具备验收条件</h3><p>两个审查与开发验证（Development Verification）已完成。请重点查看下面三个实际变化。</p></div></div>')+
+ '<div class="panel panel-pad"><div class="acceptance-list">'+[['重新登记已有项目','恢复登记后，目录和文件保持原样。','registration'],['页面内容及时更新','操作后显示当前结果，旧响应不会覆盖新内容。','refresh'],['知识变化可查看和处理','确认绑定到已查看版本，编辑冲突时保留输入。','knowledge']].map(r=>'<div class="acceptance-row"><span class="tick">'+icon('circleCheck')+'</span><div style="flex:1"><h4>'+r[0]+'</h4><p>'+r[1]+'</p></div><button class="text-btn" data-action="reader" data-doc="'+r[2]+'">查看成果 '+icon('arrow')+'</button></div>').join('')+'</div></div>'+
+ '<div class="report-grid" style="margin:18px 0">'+['planning','review','verification'].map(id=>{const n=nodes.find(n=>n[0]===id);return '<button class="report-card green" data-action="node" data-node="'+id+'"><div class="report-label">'+n[1]+'</div><span class="english">('+n[2]+')</span><div class="report-state">'+icon('circleCheck')+'已通过</div><div class="report-description">第 2 轮 · 对应本次成果</div></button>'}).join('')+'</div>'+
+ notice('本次范围为开发版功能，未包含正式版本发布。批量确认不在本次范围内。')+
+ (confirmed?'<div class="acceptance-actions"><p>'+(state.scenario==='completed'?'你的意见与后续交付结果均已保留。':'意见已保存，等待智能体（Agent）接续。')+'</p><button class="btn" data-action="node" data-node="closeout">查看收尾情况</button></div>':'<div class="acceptance-actions"><p>确认针对当前成果，意见将随对应版本保留。</p><button class="btn" data-action="adjust">提出调整</button><button class="btn primary" data-action="accept">确认结果</button></div>')+footer();
+}
+function closeoutContent(){
+ const done=state.scenario==='completed',handoff=state.scenario==='acceptance'&&state.accepted;
+ const head=contentHead('任务收尾','Task Closeout · 实际交付、结果登记与必要清理','', '08');
+ if(!done)return head+'<div class="panel"><div class="empty"><div class="empty-icon">'+icon('box')+'</div><h3>'+(handoff?'等待智能体（Agent）接续收尾':'尚未开始收尾')+'</h3><p>'+(handoff?'你的验收意见已保存，后续交付和清理会在这里展示实际结果。':'当前成果与用户意见核对后，按已有授权完成必要交付和收尾。')+'</p><button class="btn" data-action="node" data-node="'+(handoff?'acceptance':'overview')+'">'+(handoff?'查看已确认意见':'查看当前进展')+'</button></div></div>'+footer();
+ return head+'<div class="conclusion">'+icon('circleCheck')+'<div><h3>任务已完成</h3><p>成果已交付到约定位置，开发版已更新，相关临时资源已安全处理。</p></div></div><div class="panel panel-pad">'+[
+ ['git','代码已集成','开发分支 dev · c4f83aa（示例版本）','查看变化','code'],
+ ['box','开发版已更新','原定三个功能点可从开发版入口查看。','查看成果','knowledge'],
+ ['file','任务结果已登记','需求、方案、两类审查、验证与用户意见可继续回看。','查看确认','acceptance'],
+ ['circleCheck','工作目录已清理','本任务临时目录已处理，没有未交付内容。','','']
+ ].map(r=>'<div class="delivery-row">'+icon(r[0])+'<div class="copy"><strong>'+r[1]+'</strong><small>'+r[2]+'</small></div>'+(r[3]?'<button class="text-btn" data-action="'+(r[4]==='acceptance'?'node':'reader')+'" data-'+(r[4]==='acceptance'?'node':'doc')+'="'+r[4]+'">'+r[3]+'</button>':pill('已核对','green'))+'</div>').join('')+'</div><div style="margin-top:18px">'+notice('没有待处理遗留。本次未执行正式版本发布。')+'</div><div style="margin-top:24px"><div class="section-title"><h3>完成摘要</h3></div><div class="document"><p>已有项目可重新登记且保留原文件；操作后的页面内容保持一致；单篇知识支持查看变化、版本确认、编辑与交给智能体（Agent）接续。实现问题经过修正和复核，相关检查通过，用户已确认当前成果。</p></div></div>'+footer();
+}
+const documents={
+ design:{title:'方案设计',subtitle:'Solution Design · 方案 v2 · 示例内容',body:()=>'<div class="document"><p class="lead">围绕已有登记和知识处理能力，保持当前事实一致。</p><h3>项目重新登记</h3><p>选择现有目录后，核对项目身份与登记关系。仅恢复登记，不复制、移动或覆盖目录内文件。</p><h3>页面内容更新</h3><p>操作成功后更新当前对象。较早发起的读取不能覆盖较新的结果；切换对象时清理旧请求。</p><h3>知识变化与确认</h3><p>用户先查看对应来源的变化，再确认所见版本。保存前核对当前记录，遇到并发变化时返回冲突、保留输入并允许重读。</p><h3>本轮选择</h3><p>继续复用现有事实来源与版本保护。仅对受影响的页面和保存边界做调整。</p><h3>范围与验收</h3><ul><li>已有文件不变。</li><li>操作结果一致。</li><li>确认不能覆盖尚未查看的新变化。</li><li>保存冲突不丢失输入。</li></ul><div class="source">方案 v2 · 今天 11:48 · 此处为原型示例，不是实际项目文件</div></div>'},
+ authorization:{title:'实施约定',subtitle:'授权范围与停点',body:()=>'<div class="document"><h3>已明确的范围</h3><p>完成已有项目重新登记、页面更新一致性、单篇知识变化处理三项工作。</p><h3>推进方式</h3><p>智能体（Agent）在范围内持续进行设计、审查、开发、修正与验证。普通技术问题自行处理，需要业务取舍或改变已定范围时再请用户决定。</p><h3>约定停点</h3><p>完成开发并形成相关结论后，提交用户验收。没有额外的中途确认要求。</p><h3>确认后的收尾</h3><p>依据验收意见与已有授权完成开发分支交付、结果登记和必要清理。本次不包含正式版本发布。</p><div class="quote">“按这三个方向实施，完成后我看一下结果；中途需要改变范围再和我确认。”</div><div class="source">示例授权 · 今天 10:08 · 不代表真实任务已获得该授权</div></div>'},
+ scope:{title:'任务信息',subtitle:'目标、范围与关联对象',body:()=>'<div class="document"><h3>任务标识</h3><p class="mono">improve-project-registration-and-knowledge-actions</p><h3>所属项目</h3><p>Buildr 产品</p><h3>涉及服务（Service）</h3><p>Buildr 本机应用、Buildr Web 前端</p><h3>父子关系</h3><p>独立任务，没有直接子任务。</p><h3>关联方案</h3><p>项目登记与知识处理体验 · 方案 v2</p><h3>当前结果</h3><p>'+scenario().headline+'</p></div>'},
+ activity:{title:'重要变化',subtitle:'保留关键进展、决定与结果',body:()=>timeline(false)},
+ registration:{title:'已有项目重新登记',subtitle:'成果说明 · 原型示例',body:()=>'<div class="document"><h3>用户现在可以做什么</h3><p>在项目入口选择已有目录，恢复项目登记，并继续使用原来的文件。</p><div class="prototype-mini"><div class="mini-head">工作空间 / 项目</div><div class="mini-body"><h3>登记已有项目</h3><p style="font-size:11px;margin-top:6px">选择已有项目目录，保留目录中的内容。</p><div style="border:1px solid #dfe7df;padding:10px;border-radius:5px;margin:15px 0;font-size:12px">projects / my-project</div><div class="row">'+pill('目录已存在','green')+'<span style="font-size:10px;color:#92a393">当前未登记</span></div><div style="margin-top:17px">'+pill('登记后文件保持原样','green')+'</div></div></div><h3>已有检查</h3><p>核对登记前后文件内容一致；重复登记会给出明确提示。</p><button class="text-btn" data-action="node" data-node="verification">查看开发验证（Development Verification） '+icon('arrow')+'</button></div>'},
+ refresh:{title:'页面更新一致性',subtitle:'成果说明 · 原型示例',body:()=>'<div class="document"><h3>实际变化</h3><p>完成登记、移除或保存后，同一页面展示同一份当前结果。旧读取请求返回时，不覆盖操作后的新状态。</p><div class="mini-flow"><div class="box">执行操作</div>'+icon('arrow')+'<div class="box">收到当前结果</div>'+icon('arrow')+'<div class="box">更新同一页面</div></div><h3>本轮修正</h3><p>补齐对象切换、连续操作和过期响应的隔离。</p><h3>结果依据</h3><p>相关页面交互检查已完成；详细对象与执行结果在开发验证（Development Verification）节点查看。</p><button class="text-btn" data-action="node" data-node="verification">查看检查结果 '+icon('arrow')+'</button></div>'},
+ knowledge:{title:'知识变化处理',subtitle:'成果说明 · 原型示例',body:()=>knowledgePreview()},
+ prototype:{title:'知识处理页面示意',subtitle:'相关页面原型（UI Prototype）',body:()=>knowledgePreview()},
+ code:{title:'本次代码变化',subtitle:'实现 c4f83aa · 示例版本',body:()=>'<div class="document"><h3>变化范围</h3><ul><li>项目重新登记入口及校验。</li><li>页面请求与更新处理。</li><li>知识确认版本校验与冲突反馈。</li></ul><h3>保存冲突修正</h3><pre>读取用户查看时的来源版本\n核对当前保存记录\n\n版本一致：保存本次确认\n版本不一致：保留当前结果，返回冲突\n\n界面保留用户输入，提供重新读取入口</pre><p>这里展示原型中的变化摘要，正式页面应打开对应的真实代码差异。</p><div style="margin-top:18px">'+docLink('review-report','实现审查结果','本轮修正的核对范围与结论')+'</div></div>'},
+ 'planning-report':{title:'方案审查结果',subtitle:'Planning Review · 完整结果示意',body:()=>fullReviewReport(true)},
+ 'review-report':{title:'实现审查结果',subtitle:'Implementation Review · 完整结果示意',body:()=>fullReviewReport(false)},
+ 'failed-check':{title:'保存冲突检查 · 未通过',subtitle:'第 1 轮 · 实现 91be720',body:()=>'<div class="document"><div class="conclusion red">'+icon('alert')+'<div><h3>旧页面提交覆盖了新确认</h3><p>本条保留原始检查结果，不因后续修复而改写。</p></div></div><h3>实际检查</h3><ol><li>两个页面读取同一知识记录。</li><li>第一个页面保存新的确认。</li><li>第二个页面提交旧版本的确认。</li></ol><h3>预期结果</h3><p>拒绝旧版本提交，保留已保存的新确认，并保留用户输入。</p><h3>实际结果</h3><p>旧页面的提交覆盖了新记录。</p><h3>后续处理</h3><p>实现中已补充保存前版本检查，并完成相关复审。第二轮针对修复内容重新验证。</p><button class="text-btn" data-action="node" data-node="implementation">查看修正 '+icon('arrow')+'</button></div>'},
+ 'check-detail':{title:'检查结果详情',subtitle:'开发验证（Development Verification）',body:()=>'<div class="document"><h3>检查对象与范围</h3><p>当前原定功能范围：已有项目登记、页面更新和单篇知识处理。</p><h3>已执行与复用</h3><p>未受本轮修复影响的检查，经核对仍适用于当前内容，继续复用原始结果。保存冲突相关检查针对本次修复重新执行。</p><h3>验证结论的边界</h3><p>本结果证明对应开发内容，不证明正式版本已发布或生产环境已生效。</p><div class="source">原型示例 · 真实页面应连接所选检查的对象、入口、结果与执行记录</div></div>'},
+ continue:{title:'接续这项工作',subtitle:'准备交给智能体（Agent）的工作指令',body:()=>'<div class="document"><p>当前入口准备工作指令。请在使用的智能体（Agent）中接续；本页不会自动启动执行。</p><label class="field" for="continuation-text">当前工作与接续要求</label><textarea id="continuation-text" class="textarea" rows="11" readonly>继续任务：完善项目登记与知识处理体验。\n+\n+先读取当前任务目标、已有授权、最新用户意见与实际成果。\n+当前进展：'+esc(scenario().headline)+'。\n+\n+在已授权范围内继续设计、审查、开发、修正和验证。仅在目标、范围或关键技术取舍需要人决定时提问。\n+记录值得接续的进展，保留历次审查与验证结论，完成后按约定提交用户验收。</textarea><div class="notice" style="margin-top:14px">'+icon('info')+'<div>指令准备完成不代表执行已经开始。</div></div></div>'}
+};
+function knowledgePreview(){return '<div class="document"><h3>当前变化与处理方式</h3><p>先看清来源变化，再决定确认、编辑或交给智能体（Agent）处理。</p><div class="prototype-mini"><div class="mini-head">项目知识 / 项目与服务登记</div><div class="mini-body"><div class="between"><h3>项目与服务登记</h3>'+pill('来源有变化','amber')+'</div><div class="compare"><div><small>原有说明</small>移除项目后，需要手动重新配置登记关系。</div><div><small>当前来源</small>支持从已有目录重新登记，保留原文件。</div></div><p style="font-size:11px;color:#829381">确认仅针对当前查看的来源版本。</p><div class="row wrap" style="margin-top:16px">'+pill('查看差异')+pill('确认当前版本','green')+pill('编辑正文')+'</div></div></div><h3>关键边界</h3><p>来源再次变化时重新提示；保存冲突时保留输入，不静默覆盖。</p><button class="text-btn" data-action="node" data-node="verification">查看开发验证（Development Verification） '+icon('arrow')+'</button></div>'}
+function fullReviewReport(planning){const old=state.round===1||state.scenario==='review';return '<div class="document"><div class="row">'+pill(old?'需要修改':'已通过',old?'amber':'green')+'<span class="thin">第 '+(old?'1':'2')+' 轮</span></div><h3>审查对象</h3><p>'+(planning?'当前方案与验收边界':'本次实现及修正内容')+'，对应'+(planning?(old?'方案 v1':'方案 v2'):(old?'实现 91be720':'实现 c4f83aa'))+'。</p><h3>审查方式</h3><p>独立智能体（Agent）完成核对。</p><h3>主要结论</h3><p>'+(old?'存在需要修改的问题，见本轮问题列表。':'受影响问题已修正并复核，未发现阻碍当前目标的遗漏。')+'</p><h3>已查看</h3><p>'+(planning?'需求与范围、实现方案、版本边界、冲突交互、验收条件。':'真实变化、实现与需求的一致性、错误分支以及相关检查结果。')+'</p><h3>未覆盖</h3><p>本次范围之外的能力与正式发布效果。</p><div class="source">本页为报告呈现示意，未执行真实项目审查</div></div>'}
+scenarios.gap={tone:'amber',current:'verification',headline:'仍缺少一项浏览器兼容检查',detail:'当前功能检查已通过，但旧版本浏览器环境不可用，尚不能确认这部分兼容性。',status:'进行中',stage:'开发验证',time:'16:10',human:false};
+state.trail=[];
+state.sheet=null;
+state.adjustment='';
+const stageRenderers={requirements:requirementContent,design:designContent,planning:()=>reviewContent('planning'),implementation:implementationContent,review:()=>reviewContent('review'),verification:()=>state.scenario==='gap'?gapVerification():verificationContent(),acceptance:acceptanceContent,closeout:closeoutContent};
+const sourceNames={requirements:'任务记录（Task Record）与已保存的用户意见',design:'OpenSpec · 当前设计与行为约定',planning:'任务审查（Task Review）· 方案结论',implementation:'实际代码与工作摘要（Work Context）',review:'任务审查（Task Review）· 实现结论',verification:'任务验证（Task Verification）与本轮进展',acceptance:'用户针对当前成果保存的意见',closeout:'实际交付结果与任务完成记录'};
+function focusData(){
+ if(state.adjustment)return{label:'意见已记录',title:'你的调整意见已保存，等待接续',text:state.adjustment,tone:'',action:'查看我的意见',node:'acceptance'};
+ if(state.scenario==='change'&&state.responded)return{label:'决定已记录',title:'范围决定已保存，等待智能体（Agent）接续',text:state.response,tone:'',action:'查看决定',node:'requirements'};
+ if(state.scenario==='acceptance'&&state.accepted)return{label:'确认已记录',title:'成果已确认，等待接续收尾',text:'你的确认对应当前成果。交付和清理尚未产生新的执行记录。',tone:'',action:'查看确认',node:'acceptance'};
+ return {
+ progress:{label:'继续推进 · 无需你操作',title:'只剩保存冲突的复验，完成后提交验收',text:'问题已修复并复审；未受影响的检查继续复用。',tone:'',action:'查看验证',node:'verification'},
+ empty:{label:'继续推进 · 无需你操作',title:'只剩保存冲突的复验，完成后提交验收',text:'问题已修复并复审；未受影响的检查继续复用。',tone:'',action:'查看验证',node:'verification'},
+ review:{label:'方案修订 · 无需你操作',title:'正在修订“确认哪个版本”的处理方式',text:'审查发现两处边界问题，修正并复审后继续开发。',tone:'amber',action:'查看审查意见',node:'planning'},
+ change:{label:'需要你决定',title:'本次要加入批量确认吗？',text:'这会扩大原定范围，需要补充设计和验证；已完成的单篇处理成果保留。',tone:'amber',action:'查看影响并决定',node:'requirements'},
+ acceptance:{label:'等待你验收',title:'三个功能点已完成，请确认实际效果',text:'方案与实现已审查，相关检查通过。确认后按已有约定收尾。',tone:'amber',action:'查看成果并确认',node:'acceptance'},
+ completed:{label:'任务已完成',title:'成果已交付，开发版已更新',text:'约定范围内的工作已完成，没有待处理遗留；本次未包含正式发布。',tone:'',action:'查看交付结果',node:'closeout'},
+ gap:{label:'验证不完整 · 尚有缺口',title:'旧版本浏览器的兼容性还没有得到验证',text:'现有检查已通过；兼容环境暂不可用，需要补齐这一项才能给出完整结论。',tone:'amber',action:'查看缺口',node:'verification'}
+ }[state.scenario];
+}
+function qualityData(id){
+ if(state.scenario==='review')return id==='planning'?['需要修改','amber','确认对象与冲突处理存在两处边界问题。']:['尚未形成','','当前还没有这项结论。'];
+ if(state.scenario==='change')return ['原范围有效','',id==='planning'?'新增批量能力待定，原方案结论保留。':id==='review'?'结论针对原定单篇处理的实现。':'已通过的检查只证明原定范围。'];
+ if(id==='verification'){
+  if(state.scenario==='gap')return['不完整','amber','兼容性检查未执行，不能据此宣称全部通过。'];
+  if(['acceptance','completed'].includes(state.scenario))return['已通过','green','保存冲突已复验，原定范围的检查完整。'];
+  return['补验中','amber','修复已复审，最后一项检查等待结果。'];
+ }
+ return ['已通过','green',id==='planning'?'版本确认与冲突边界已明确。':'保存冲突已修复，相关实现已复核。'];
+}
+function render(){
+ const f=focusData(),s=scenario(),early=state.scenario==='review',done=state.scenario==='completed';
+ document.getElementById('scenario-select').value=state.scenario;
+ const outcomes=[
+ ['重新登记已有项目','保留已有目录和文件。','registration',false],
+ ['统一页面更新','操作后显示一致的当前内容。','refresh',false],
+ ['处理知识来源变化','查看差异、确认版本并继续处理。','knowledge',['progress','empty','gap'].includes(state.scenario)]
+ ];
+ document.getElementById('task-first-layer').innerHTML=
+ '<div class="focus-crumb"><button class="back" data-action="task-list">'+icon('left')+'任务</button><span>/</span><span>Buildr 产品</span><span class="spacer"></span><button class="text-btn" data-action="reader" data-doc="task-information">'+icon('dots')+'任务信息</button></div>'+
+ '<div class="focus-heading"><h1>完善项目登记与知识处理体验</h1>'+pill(s.status,done?'green':'')+'</div>'+
+ '<p class="focus-goal">让项目能重新登记、页面结果保持一致，让知识变化可查看和处理。</p>'+
+ '<section class="focus-now tone-'+f.tone+'" aria-label="当前重点"><div class="now-meta"><span class="dot"></span><span>'+f.label+'</span><span class="latest">最近记录 · 今天 '+s.time+'</span></div><div class="now-main"><div class="now-text"><h2>'+f.title+'</h2><p>'+esc(f.text)+'</p></div><button class="btn '+((s.human&&!state.accepted&&!state.responded&&!state.adjustment)?'primary':'')+'" data-action="node" data-node="'+f.node+'">'+f.action+' '+icon('arrow')+'</button></div></section>'+
+ '<div class="focus-grid"><section aria-labelledby="outcomes-title"><div class="focus-group-head"><h2 id="outcomes-title">'+(early?'准备做成什么':'本次成果')+'</h2><button class="text-btn" data-action="reader" data-doc="needs-and-plan">需求与方案 '+icon('chevron')+'</button></div>'+
+ outcomes.map((r,i)=>'<div class="focus-outcome"><span class="outcome-mark '+(early||r[3]?'wait':'')+'">'+icon(early?'file':r[3]?'clock':'check')+'</span><div class="outcome-copy"><h3>'+r[0]+'</h3><p>'+r[1]+(early?'':' '+(done?'已交付。':r[3]?'尚有检查待补。':'已实现。'))+'</p></div><button class="outcome-open" aria-label="查看'+r[0]+'" data-action="reader" data-doc="'+r[2]+'">'+icon('arrow')+'</button></div>').join('')+'</section>'+
+ '<section aria-labelledby="quality-title"><div class="focus-group-head"><h2 id="quality-title">审查与验证</h2></div><div class="focus-quality">'+['planning','review','verification'].map(id=>{const n=nodes.find(n=>n[0]===id),q=qualityData(id);return '<button class="quality-row" data-action="node" data-node="'+id+'" aria-label="查看'+n[1]+'：'+q[0]+'"><span class="quality-top"><strong>'+n[1]+'</strong><span class="label-english">('+n[2]+')</span>'+pill(q[0],q[1])+icon('chevron')+'</span><span class="quality-summary">'+q[2]+'</span></button>'}).join('')+'</div></section></div>'+
+ '<nav class="focus-bottom" aria-label="进一步查看"><button class="secondary-link" data-action="reader" data-doc="whole-process">'+icon('list')+'完整过程</button><button class="secondary-link" data-action="reader" data-doc="materials">'+icon('file')+'资料与记录</button><button class="secondary-link" data-action="reader" data-doc="authorization">'+icon('shield')+'授权约定</button><span class="quiet-note">按已授权范围推进，重要变化及时记录</span></nav>';
+ document.querySelectorAll('[data-icon]').forEach(el=>el.innerHTML=icon(el.dataset.icon));document.querySelectorAll('.globalnav button').forEach(el=>el.setAttribute('aria-label',el.textContent.trim()));
+}
+function stageState(id){
+ if(id==='requirements'&&state.scenario!=='change')return[state.scenario==='empty'&&!state.reqSaved?'暂无记录':'已记录',state.scenario==='empty'&&!state.reqSaved?'idle':'done'];
+ if(state.scenario==='gap'&&id==='verification')return['结论不完整','attention'];
+ return nodeStatus(id);
+}
+function wholeProcess(){
+ return '<div class="sheet-process">'+nodes.map((n,i)=>{const st=stageState(n[0]);return '<button class="sheet-step" data-action="node" data-node="'+n[0]+'"><span class="step-index">'+(st[1]==='done'?icon('check'):String(i+1).padStart(2,'0'))+'</span><span><h3>'+n[1]+'<span class="stage-en">('+n[2]+')</span></h3><p>'+st[0]+'</p></span>'+icon('chevron')+'</button>'}).join('')+'</div><details class="professional-details"><summary>重要变化与接续记录</summary><div style="padding:12px 0">'+timeline(false)+'</div></details>';
+}
+function gapVerification(){
+ return '<div class="conclusion amber">'+icon('alert')+'<div><h3>验证不完整</h3><p>已有检查通过，但旧版本浏览器环境不可用，未能完成兼容性检查。</p></div></div><div class="section-title"><h3>尚未覆盖的内容</h3></div><div class="panel panel-pad document"><h3>旧版本浏览器中的保存与确认操作</h3><p>原因：当前检查环境不可用，尚未实际执行。</p><p style="margin-top:8px">影响：现有结果能证明当前开发环境中的行为，不能证明旧版本浏览器兼容性。</p><h3>下一步</h3><p>准备对应环境并补充这部分检查。其余适用结果继续保留。</p></div><div style="margin-top:20px">'+notice('本结论来自任务验证（Task Verification）的未覆盖项。缺少结果不会被显示为“已通过”。','amber')+'</div><div class="details-actions"><button class="btn" data-action="reader" data-doc="testing-details">查看已执行检查</button></div>';
+}
+documents['needs-and-plan']={title:'需求与方案',subtitle:'目标、设计与行为约定',body:()=>'<div class="document"><p class="lead">恢复已有项目登记，统一操作结果，并让单篇知识的变化可理解、可处理。</p><div class="scope-note">关键选择：确认绑定到用户实际查看的版本；发生冲突时保留用户输入。</div></div><section class="sheet-section"><h3>理解本次工作</h3>'+docLink('requirement-entry','任务需求（Task Requirements）',state.scenario==='empty'&&!state.reqSaved?'暂无补充记录':'目标、问题、约束和验收条件')+docLink('design-entry','方案设计（Solution Design）',state.scenario==='review'?'当前正在修订版本确认边界':'关键选择、理由和本轮方案变化')+docLink('prototype','界面原型（UI Prototype）','查看相关操作的页面示意')+'</section><section class="sheet-section"><h3>OpenSpec 关联内容</h3>'+docLink('behavior-spec','行为约定（Specification）','用户操作应产生什么结果')+docLink('implementation-list','实施清单（Implementation Tasks）','具体开发事项与完成记录')+'</section><details class="professional-details"><summary>查看原始材料与来源</summary><div class="document"><p>关联变更：improve-project-registration-and-knowledge-actions</p><p>提案、设计、规格与实施清单分别来自 proposal.md、design.md、specs/、tasks.md。此原型展示示例摘录；正式页面读取原有文件。</p></div></details>'};
+documents['requirement-entry']={title:'任务需求',subtitle:'Task Requirements',body:()=>'<div id="content">'+requirementContent()+'</div>'};
+documents['design-entry']={title:'方案设计',subtitle:'Solution Design · OpenSpec',body:()=>'<div id="content">'+designContent()+'</div>'};
+documents['whole-process']={title:'完整过程',subtitle:'按需回看每个节点的内容与结果',body:wholeProcess};
+documents['materials']={title:'资料与记录',subtitle:'本任务关联的成果与依据',body:()=>'<section class="sheet-section"><h3>需求与设计</h3>'+docLink('needs-and-plan','需求与方案','OpenSpec 材料与任务需求')+docLink('prototype','相关页面原型（UI Prototype）','知识变化处理页面')+'</section><section class="sheet-section"><h3>实现与交付</h3>'+docLink('code','代码变化','本次实现与最近一次修正','git')+docLink('delivery-entry','交付情况',state.scenario==='completed'?'开发版已更新，任务已完成':'查看实际交付和遗留情况','box')+'</section><section class="sheet-section"><h3>相关知识</h3>'+docLink('knowledge-context','项目登记与知识处理说明','解释本次涉及的职责和操作边界')+'</section><section class="sheet-section"><h3>人的意见与工作记录</h3>'+docLink('activity','重要变化','方案调整、关键进展和结论')+docLink('authorization','授权约定','已授权范围与约定停点')+'</section><details class="professional-details"><summary>技术资料</summary><div class="document"><p>用于深入核对当前工作位置、准备情况、测试入口与原始来源。</p><div class="details-actions"><button class="btn" data-action="reader" data-doc="workspace-details">工作位置与准备</button><button class="btn" data-action="reader" data-doc="testing-details">检查入口与覆盖</button><button class="btn" data-action="reader" data-doc="task-information">任务与关联对象</button></div></div></details>'};
+documents['task-information']={title:'任务信息',subtitle:'目标、范围与协作',body:()=>documents.scope.body()+'<div class="details-actions"><button class="btn" data-action="reader" data-doc="authorization">授权约定</button><button class="btn" data-action="reader" data-doc="continue">准备接续指令</button></div><details class="professional-details"><summary>专业能力与当前工作基础</summary><div class="document"><p>任务记录（Task Record）维护目标和结果；工作摘要（Work Context）维护进展、待决事项和答复。OpenSpec、任务审查（Task Review）与任务验证（Task Verification）分别提供对应内容。</p><p>工作位置、知识材料与交付结果保持各自来源。当前任务没有直接子任务，也没有已登记的复盘文档。</p></div></details>'};
+documents['delivery-entry']={title:'任务收尾',subtitle:'Task Closeout · 实际结果',body:()=>'<div id="content">'+closeoutContent()+'</div>'};
+documents['behavior-spec']={title:'行为约定',subtitle:'Specification · OpenSpec 示例摘录',body:()=>'<div class="document"><h3>已有项目重新登记</h3><p>当用户选择一个合法的已有目录时，恢复项目登记关系，并保持目录内的现有文件不变。</p><h3>知识版本确认</h3><p>确认只针对用户实际查看过的来源版本。来源再次变化时，仍应显示新的变化。</p><h3>并发保存</h3><p>保存时发现记录已变化，应拒绝陈旧提交、保留当前结果和用户输入，允许重新读取后核对。</p><div class="source">原始依据：OpenSpec specs/ · 页面摘要不替代正式规范</div></div>'};
+documents['implementation-list']={title:'实施清单',subtitle:'Implementation Tasks · OpenSpec',body:()=>'<div class="document"><p>具体开发事项及完成记录。清单数量不表示整体目标完成百分比。</p><h3>实施事项</h3><ul><li>已有目录的重新登记入口及校验。</li><li>页面读取与操作结果的一致性处理。</li><li>知识差异展示与版本确认。</li><li>保存冲突的输入保留与重读。</li></ul><h3>当前剩余</h3><p>'+(state.scenario==='completed'?'本次清单已完成；完整目标以实际成果、确认和交付为准。':state.scenario==='review'?'当前正在修订方案，实施清单尚未开始执行。':'按当前进展完成相关验证与用户确认，并接续交付。')+'</p><div class="source">示例对应 tasks.md · 不复制为另一份独立任务状态</div></div>'};
+documents['knowledge-context']={title:'相关知识',subtitle:'当前知识维护（Current Knowledge Maintenance）',body:()=>'<div class="document"><h3>项目登记与文件的关系</h3><p>登记描述工作空间中的项目关联，已有目录及文件继续作为内容来源。移除和恢复登记不应隐式迁移内容。</p><h3>知识来源与确认的关系</h3><p>来源变化、当前解释文档、用户确认是不同事实。确认只覆盖已经查看的来源，不能消除后来发生的变化。</p><h3>相关材料</h3><p>架构说明、技术图（Technical Diagram）和代码地图（Code Map）作为可直接阅读的材料，按本次影响核对维护。</p><div class="source">示例说明 · 正式页面关联实际知识文件和维护结果</div></div>'};
+documents['workspace-details']={title:'工作位置与准备',subtitle:'工作树（Worktree）与准备声明',body:()=>'<div class="document"><h3>工作位置</h3><p>本次开发使用独立工作目录；任务记录继续保存在原工作空间。</p><h3>准备情况</h3><p>依赖与工具按项目实际入口准备。只有确实影响推进的问题，才进入任务首屏的当前进展。</p><h3>查看范围</h3><p>分支、目录、准备命令和诊断属于技术详情。本原型不执行真实命令，也不创建工作目录。</p></div>'};
+documents['testing-details']={title:'检查入口与覆盖',subtitle:'项目测试（Project Testing）与验证声明',body:()=>'<div class="document"><h3>检查如何选择</h3><p>根据目标和实际改动选择已有检查，覆盖用户使用的相关行为。缺少必要检查时，在开发范围内补齐。</p><h3>当前检查</h3><ul><li>重新登记前后文件保持一致。</li><li>页面操作后内容一致。</li><li>来源变化后的版本确认。</li><li>编辑内容保存与重读。</li><li>旧页面提交不会覆盖新记录。</li></ul><h3>专业依据</h3><p>项目 verification.yml 描述稳定测试体系与真实入口。完整结果来自任务验证（Task Verification）；原始命令和日志按需展开。</p><div class="source">没有引入独立测试岗位的测试方案、测试案例或测试执行流程</div></div>'};
+function renderContent(){render();if(state.sheet)paintSheet();}
+function renderHeader(){render();}
+function stageDescriptor(id){const n=nodes.find(n=>n[0]===id);return{title:n[1],subtitle:n[2],body:()=>'<div id="content">'+stageRenderers[id]()+'</div>',source:sourceNames[id]};}
+function sheetDescriptor(){return state.sheet.type==='stage'?stageDescriptor(state.sheet.id):documents[state.sheet.id];}
+function paintSheet(){
+ if(!state.sheet)return;const d=sheetDescriptor();if(!d)return;
+ const body=state.readerState==='error'?'<div class="empty"><div class="empty-icon">'+icon('alert')+'</div><h3>材料暂时无法读取</h3><p>当前任务与已保存结论仍可查看。</p><button class="btn" data-action="reader-state" data-state="normal">重新读取</button></div>':state.readerState==='loading'?'<div role="status"><div class="skeleton" style="width:55%"></div><div class="skeleton"></div><div class="skeleton" style="width:82%"></div><p class="thin">正在读取材料…</p><button class="btn" data-action="reader-state" data-state="normal">模拟读取完成</button></div>':d.body();
+ document.getElementById('overlay-root').innerHTML='<div class="overlay" data-action="backdrop-close"><section class="drawer sheet-wide" role="dialog" aria-modal="true" aria-labelledby="drawer-title"><header class="drawer-header">'+(state.trail.length?'<button class="sheet-topback" data-action="sheet-back" aria-label="返回上一层">'+icon('left')+'</button>':'')+'<div><h2 id="drawer-title">'+d.title+'</h2><p>'+d.subtitle+'</p></div><span class="spacer"></span><button class="btn quiet icon" data-action="close" aria-label="关闭详情">'+icon('close')+'</button></header><div class="drawer-body">'+body+'</div><footer class="drawer-footer"><span class="reader-provenance">'+icon('file')+(d.source||'关联材料 · 示例内容')+'</span><button class="text-btn" data-action="close">返回任务</button></footer></section></div>';
+ document.body.style.overflow='hidden';document.querySelector('.drawer [data-action="close"]').focus();
+}
+function openReader(id,keep=false){if(!documents[id])return;if(!keep){if(state.sheet)state.trail.push({...state.sheet,round:state.round,filter:state.filter});else lastFocused=document.activeElement;}state.sheet={type:'document',id};state.drawer=id;paintSheet();}
+function goNode(id){
+ if(id==='overview'){closeOverlay();window.scrollTo(0,0);return;}
+ if(!stageRenderers[id])return;
+ if(state.sheet)state.trail.push({...state.sheet,round:state.round,filter:state.filter});else lastFocused=document.activeElement;
+ state.node=id;state.round=currentRound();state.filter='all';state.readerState='normal';state.sheet={type:'stage',id};state.drawer=id;paintSheet();updateHash();
+}
+function closeOverlay(restore=true){document.getElementById('overlay-root').innerHTML='';document.body.style.overflow='';state.sheet=null;state.drawer=null;state.trail=[];state.readerState='normal';state.node='overview';updateHash();if(restore&&lastFocused?.isConnected)lastFocused.focus();}
+function modal(title,body,actions){state.returnSheet=state.sheet;state.returnTrail=state.trail.slice();lastFocused=document.activeElement;document.getElementById('overlay-root').innerHTML='<div class="overlay modal-overlay" data-action="backdrop-close"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><div class="between"><h2 id="modal-title">'+title+'</h2><button class="btn quiet icon" data-action="cancel-modal" aria-label="关闭对话框">'+icon('close')+'</button></div>'+body+'<div class="modal-footer"><button class="btn" data-action="cancel-modal">取消</button>'+actions+'</div></section></div>';document.body.style.overflow='hidden';(document.querySelector('.modal textarea')||document.querySelector('.modal button')).focus();}
+function cancelModal(){if(state.returnSheet){state.sheet=state.returnSheet;state.trail=state.returnTrail;paintSheet();}else closeOverlay();}
+function toast(text){clearTimeout(toastTimer);document.getElementById('toast-root').innerHTML='<div class="toast">'+icon('circleCheck')+esc(text)+'</div>';toastTimer=setTimeout(()=>document.getElementById('toast-root').innerHTML='',3400);}
+function updateHash(){history.replaceState(null,'','#'+state.scenario+'/'+state.node);}
+function setScenario(id){if(!scenarios[id])return;closeOverlay(false);Object.assign(state,{scenario:id,node:'overview',round:id==='review'?1:2,filter:'all',accepted:false,responded:false,response:'',decision:'keep',reqSaved:'',adjustment:'',conflict:false,sheet:null,trail:[]});render();updateHash();window.scrollTo(0,0);}
+function afterRecord(stage){render();state.sheet={type:'stage',id:stage};state.node=stage;paintSheet();updateHash();}
+document.addEventListener('change',e=>{if(e.target.id==='scenario-select')setScenario(e.target.value);if(e.target.id==='round-select'){state.round=Number(e.target.value);state.filter='all';paintSheet();}if(e.target.name==='decision')state.decision=e.target.value;});
+document.addEventListener('input',e=>{if(e.target.id==='decision-response')state.response=e.target.value;});
+document.addEventListener('click',e=>{
+ const el=e.target.closest('[data-action]');if(!el)return;const a=el.dataset.action;
+ if(a==='backdrop-close'){if(e.target===el)document.querySelector('.modal')?cancelModal():closeOverlay();return;}
+ if(a==='node')return goNode(el.dataset.node);
+ if(a==='reader'){state.readerState='normal';return openReader(el.dataset.doc);}
+ if(a==='reader-state'){state.readerState=el.dataset.state;return paintSheet();}
+ if(a==='close')return closeOverlay();
+ if(a==='cancel-modal')return cancelModal();
+ if(a==='sheet-back'){const last=state.trail.pop();if(last){state.sheet={type:last.type,id:last.id};state.round=last.round;state.filter=last.filter;state.node=last.type==='stage'?last.id:'overview';state.readerState='normal';paintSheet();updateHash();}return;}
+ if(a==='round'){state.round=Number(el.dataset.round);state.filter='all';return paintSheet();}
+ if(a==='filter'){state.filter=el.dataset.filter;return paintSheet();}
+ if(a==='edit-requirements')return modal('任务需求（Task Requirements）','<p class="modal-copy">补充需要保留的内容，可以为空。</p><label class="field" for="requirement-input">目标、问题或约束</label><textarea class="textarea" id="requirement-input" rows="7">'+esc(state.reqSaved||(state.scenario==='empty'?'':'已有项目可重新登记，保留原文件；页面结果一致；知识变化可查看和处理。'))+'</textarea>','<button class="btn primary" data-action="save-requirements">保存内容</button>');
+ if(a==='save-requirements'){state.reqSaved=document.getElementById('requirement-input').value.trim();if(!state.reqSaved)state.scenario='empty';afterRecord('requirements');return toast('内容已保存在本页示例中');}
+ if(a==='save-decision'){state.response=document.getElementById('decision-response').value.trim()||(state.decision==='keep'?'保持本次范围，批量确认另行讨论。':'将批量确认纳入本次，请更新方案并核对相关影响。');state.responded=true;afterRecord('requirements');return toast('决定已记录，等待接续');}
+ if(a==='reread-decision'){state.conflict=false;paintSheet();return;}
+ if(a==='accept')return modal('确认当前成果','<p class="modal-copy">对应方案 v2 与实现 c4f83aa。确认后在已有授权范围内接续收尾。</p><label class="field" for="acceptance-response">验收意见</label><textarea class="textarea" id="acceptance-response" rows="4">结果符合预期，可以按约定收尾。</textarea>','<button class="btn primary" data-action="save-acceptance">保存确认</button>');
+ if(a==='save-acceptance'){const value=document.getElementById('acceptance-response').value.trim();if(!value)return toast('请填写验收意见');state.response=value;state.accepted=true;afterRecord('acceptance');return toast('确认已保存，尚未执行收尾');}
+ if(a==='adjust')return modal('提出调整','<p class="modal-copy">智能体（Agent）读取后核对影响，按已有授权接续处理。</p><label class="field" for="adjustment-response">需要调整的内容</label><textarea class="textarea" id="adjustment-response" rows="5" placeholder="说明哪些结果需要调整…"></textarea>','<button class="btn primary" data-action="save-adjustment">记录意见</button>');
+ if(a==='save-adjustment'){const value=document.getElementById('adjustment-response').value.trim();if(!value)return toast('请填写调整内容');state.adjustment=value;state.accepted=false;afterRecord('acceptance');return toast('调整意见已记录');}
+ if(a==='new-goal')return modal('提出新目标','<p class="modal-copy">先保留你的想法，明确后再进入任务。</p><label class="field" for="new-goal">希望解决什么问题</label><textarea class="textarea" id="new-goal" rows="5"></textarea>','<button class="btn primary" data-action="save-new-goal">保留本页草稿</button>');
+ if(a==='save-new-goal'){state.goalDraft=document.getElementById('new-goal').value;closeOverlay();return toast('仅保留本页草稿，未创建任务');}
+ if(a==='task-list')return modal('任务','<p class="modal-copy">当前原型中的任务</p><button class="doc-link" data-action="node" data-node="overview">'+icon('list')+'完善项目登记与知识处理体验</button>','');
+});
+document.getElementById('reset-demo').addEventListener('click',()=>state.caseKey==='feature'?setScenario(state.scenario):changeCase(state.caseKey));
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){document.querySelector('.modal')?cancelModal():closeOverlay();return;}if(e.key==='Tab'){const dialog=document.querySelector('[role="dialog"]');if(!dialog)return;const items=[...dialog.querySelectorAll('button:not([disabled]),textarea,input,select,summary,a[href]')].filter(x=>x.offsetParent!==null);if(e.shiftKey&&document.activeElement===items[0]){e.preventDefault();items.at(-1)?.focus();}else if(!e.shiftKey&&document.activeElement===items.at(-1)){e.preventDefault();items[0]?.focus();}}});
+function restoreHash(){const [sc,n]=location.hash.slice(1).split('/');if(scenarios[sc])state.scenario=sc;state.node='overview';state.round=currentRound();render();if(n&&n!=='overview'&&stageRenderers[n])goNode(n);}
+window.addEventListener('hashchange',restoreHash);
+function storyProgress(){
+ if(state.adjustment)return{title:'已收到调整意见，等待接续处理。',next:'智能体（Agent）将先核对影响，再继续修改和检查。',action:'查看我的意见',node:'acceptance'};
+ if(state.scenario==='change'&&state.responded)return{title:'已收到你的范围决定。',next:'原有成果保留，等待智能体（Agent）按决定接续。',action:'查看决定',node:'requirements'};
+ if(state.scenario==='acceptance'&&state.accepted)return{title:'你已确认当前成果，等待接续收尾。',next:'实际交付和清理尚未产生新的执行记录。',action:'查看确认',node:'acceptance'};
+ return{
+ progress:{title:'三项功能已实现，正在复验保存冲突。',next:'复验通过后提交你确认。目前无需你操作。'},
+ empty:{title:'三项功能已实现，正在复验保存冲突。',next:'复验通过后提交你确认。目前无需你操作。'},
+ review:{title:'正在根据审查意见修订方案。',next:'修正后重新审查，再继续开发。目前无需你操作。'},
+ change:{title:'原定范围已实现，新增需求尚待决定。',next:'请先明确是否把批量确认纳入本次，已有成果会保留。'},
+ acceptance:{title:'三项功能已完成，相关检查通过。',next:'请查看实际效果；确认后按已有约定收尾。',action:'查看成果并确认',node:'acceptance'},
+ completed:{title:'成果已交付，开发版已更新。',next:'没有待处理遗留。本次未包含正式发布。',action:'查看交付结果',node:'closeout'},
+ gap:{title:'功能已实现，但兼容性验证还不完整。',next:'旧版本浏览器环境暂不可用，需要补齐这部分检查。',action:'查看验证缺口',node:'verification'}
+ }[state.scenario];
+}
+function inlineConclusion(id){
+ const n=nodes.find(n=>n[0]===id),q=qualityData(id);
+ return '<button class="story-conclusion '+q[1]+'" data-action="node" data-node="'+id+'" aria-label="查看'+n[1]+'：'+q[0]+'">'+icon(q[1]==='green'?'circleCheck':q[1]==='amber'?'clock':'file')+'<span>'+n[1]+'<small>（'+n[2]+'）</small></span><b>'+q[0]+'</b>'+icon('chevron')+'</button>';
+}
+function render(){
+ const s=scenario(),p=storyProgress(),early=state.scenario==='review',changed=state.scenario==='change',empty=state.scenario==='empty'&&!state.reqSaved;
+ document.getElementById('scenario-select').value=state.scenario;
+ document.getElementById('task-first-layer').innerHTML=
+ '<div class="story-location"><button class="back" data-action="task-list">'+icon('left')+'任务</button><span>/</span><span>Buildr 产品</span></div>'+
+ '<header class="story-title"><h1>完善项目登记与知识处理体验</h1>'+pill(s.status,s.status==='已完成'?'green':'')+'</header>'+
+ '<div class="story"><section class="story-section" aria-label="理解任务需求"><span class="story-number">1</span><div class="story-head"><h2>要解决什么</h2><button class="text-btn" data-action="node" data-node="requirements">查看需求 '+icon('chevron')+'</button></div>'+
+ '<p class="story-body">'+(empty?'任务目标是完善已有项目登记、页面更新和知识变化处理。尚未补充独立的需求记录。':'用户移除项目后，需要能把已有目录重新登记，保留原文件；知识来源变化后，需要看清变化并确认或修改，操作后的页面结果也要保持一致。')+'</p>'+
+ (changed&&!state.responded?'<div class="story-question"><div><strong>新增诉求：还要支持批量确认吗？</strong><p>这会扩大原定的单篇处理范围，需要你决定。</p></div><button class="btn primary" data-action="node" data-node="requirements">查看影响并决定</button></div>':'')+'</section>'+
+ '<section class="story-section" aria-label="理解当前方案"><span class="story-number">2</span><div class="story-head"><h2>准备怎么做</h2><button class="btn story-open-plan" data-action="node" data-node="design">阅读完整方案 '+icon('arrow')+'</button></div>'+
+ '<div class="story-plan"><div><span>项目登记</span><p>复用已有目录，仅恢复登记关系，保持文件不变。</p></div><div><span>页面更新</span><p>统一操作后的更新，避免旧结果覆盖新内容。</p></div><div><span>知识处理</span><p>展示差异，确认用户已看过的版本；保存冲突时保留输入。</p></div></div>'+
+ '<div class="story-evidence">'+inlineConclusion('planning')+'<p class="story-evidence-note">'+(early?'当前方案有两处边界问题，正在修订。':changed?'此结论对应原定方案，新增范围尚未确认。':'以上方案已审查，版本确认与冲突处理的边界已明确。')+'</p></div></section>'+
+ '<section class="story-section" aria-label="理解实际进展"><span class="story-number">3</span><div class="story-head"><h2>实际做到哪了</h2><button class="text-btn" data-action="node" data-node="implementation">查看实现 '+icon('chevron')+'</button></div><p class="story-progress-title">'+p.title+'</p>'+
+ '<div class="story-checks">'+inlineConclusion('review')+inlineConclusion('verification')+'</div>'+
+ '<div class="story-next"><p>'+p.next+'</p>'+(p.action?'<button class="btn primary" data-action="node" data-node="'+p.node+'">'+p.action+' '+icon('arrow')+'</button>':'')+'</div></section></div>'+
+ '<div class="story-footer"><button class="text-btn" data-action="reader" data-doc="task-details">完整过程与资料 '+icon('chevron')+'</button><span>最近记录 · '+((state.accepted||state.responded||state.adjustment)?'刚刚':'今天 '+s.time)+'</span></div>';
+ document.querySelectorAll('[data-icon]').forEach(el=>el.innerHTML=icon(el.dataset.icon));
+ document.querySelectorAll('.globalnav button').forEach(el=>el.setAttribute('aria-label',el.textContent.trim()));
+}
+function detailIndex(){
+ return '<div class="brief-index">'+docLink('needs-and-plan','需求与方案','任务需求、OpenSpec 设计与行为约定')+docLink('whole-process','完整开发过程','回看八个节点及重要变化')+docLink('materials','资料与记录','实际代码、相关知识与原始材料')+docLink('authorization','授权约定','已授权范围与约定停点')+docLink('task-information','任务信息','范围、关系与接续入口')+'</div>';
+}
+documents['task-details']={title:'完整过程与资料',subtitle:'本任务的内容与依据',body:detailIndex};
+
+state.caseKey='feature';
+state.pathSelection=null;
+const pathLabels={requirements:['任务需求','Task Requirements'],design:['方案设计','Solution Design'],implementation:['开发实现','Implementation'],verification:['开发验证','Development Verification'],acceptance:['用户确认','User Acceptance'],closeout:['任务收尾','Task Closeout'],planning:['方案审查','Planning Review'],review:['实现审查','Implementation Review']};
+function workCase(){
+ if(state.caseKey==='bug')return{
+  key:'bug',title:'修复旧页面确认覆盖新记录的问题',goal:'旧页面提交时，新的确认不被覆盖，用户输入不丢失。',status:'进行中',time:'15:42',current:'verification',next:'复验原问题，检查冲突时是否保留输入。',attention:null,
+  nodes:[['requirements','问题与处理','保存缺少版本校验','done',['planning']],['implementation','修复实现','补齐校验与冲突处理','done',['review']],['verification','开发验证','复验原问题','current',[]],['closeout','任务收尾','验证后交付','idle',[]]],
+  needs:[['现在','旧页面可能覆盖已经更新的确认。'],['完成后','拒绝陈旧提交，保留新记录与用户输入。']],
+  plan:[['修复点','保存前比较已查看的记录版本。'],['冲突处理','返回明确提示，保留输入，允许重新读取。']],
+  changes:[['版本校验','已补齐'],['冲突反馈','已修正']],
+  checks:[['旧页面提交不会覆盖新记录','复验中','amber'],['冲突后用户输入保留','已通过','green']],
+  source:'处理说明来自任务需求；本例沿用已有行为约定，无需另建 OpenSpec 变更。',note:'方案与两个审查均有记录；局部修改用简短内容即可说明。'
+ };
+ if(state.caseKey==='config')return{
+  key:'config',title:'把开发环境缓存时间调整为 5 分钟',goal:'本地开发修改后更快看到更新，生产环境配置保持不变。',status:'已完成',time:'11:24',current:'closeout',next:'本地配置已生效，没有待处理事项。',attention:null,
+  nodes:[['requirements','调整说明','30 分钟 → 5 分钟','done',['planning']],['implementation','修改与核对','值、范围、效果已核对','done',['review','verification']],['closeout','交付结果','本地配置已生效','done',[]]],
+  needs:[['当前值','30 分钟'],['目标值','5 分钟'],['范围','仅本地开发环境']],
+  plan:[['调整','修改本地开发配置中的缓存时长。'],['边界','保持生产环境配置不变。']],
+  changes:[['缓存时长','已改为 5 分钟'],['生产环境','未改动']],
+  checks:[['配置可正常读取','已通过','green'],['实际缓存时长为 5 分钟','已通过','green'],['生产环境配置未变化','已通过','green']],
+  source:'调整说明与结果保存在本任务，具体值与检查结果来自配置和实际读取。',note:'修改与核对合并呈现，里面仍能查看审查与验证。'
+ };
+ const early=state.scenario==='review',ready=['acceptance','completed','change'].includes(state.scenario);
+ let current=scenario().current; if(state.accepted)current='closeout';
+ const labels={
+ requirements:state.scenario==='empty'?'目标已明确':'3 项要求已明确',
+ design:early?'修订版本确认规则':'3 项要求的实现方案',
+ implementation:early?'尚未开始':'3 项功能已实现',
+ verification:early?'开发后验证':state.scenario==='gap'?'兼容检查未覆盖':ready?'相关检查通过':'保存冲突补验中',
+ acceptance:state.accepted?'你的意见已记录':state.scenario==='completed'?'已确认':'结果提交你确认',
+ closeout:state.scenario==='completed'?'开发版已更新':state.accepted?'等待接续交付':'交付与必要清理'
+ };
+ const attention=state.scenario==='change'&&!state.responded?{text:'新增批量确认需要你决定',action:'查看并决定',key:'requirements'}:state.scenario==='acceptance'&&!state.accepted&&!state.adjustment?{text:'成果已就绪，等待你验收',action:'查看并确认',key:'acceptance'}:null;
+ return{
+  key:'feature',title:'完善项目登记与知识处理体验',goal:'已有项目可重新登记，文件不变；页面及时更新，知识变化能查看和确认。',status:scenario().status,time:scenario().time,current,next:storyProgress().next.replace('目前无需你操作。',''),attention,
+  nodes:['requirements','design','implementation','verification','acceptance','closeout'].map(id=>{let st=stageState(id)[1];if(id===current&&!['completed','change'].includes(state.scenario))st='current';return[id,pathLabels[id][0],labels[id],st,id==='design'?['planning']:id==='implementation'?['review']:[]]}),
+  needs:[['项目登记','移除登记后，能重新登记已有目录且不改文件。'],['页面更新','操作后显示一致的当前结果。'],['知识处理','看清变化，确认所见版本，或继续编辑。']],
+  plan:[['重新登记','复用已有目录，只恢复登记关系。'],['页面更新','统一更新入口，隔离过期响应。'],['知识处理','展示差异；确认所见版本；冲突时保留输入。']],
+  changes:[['已有项目重新登记',early?'尚未开始':'已实现'],['页面更新一致性',early?'尚未开始':'已实现'],['知识变化处理',early?'尚未开始':'已实现，冲突已修复']],
+  checks:early?[]:state.scenario==='gap'?[['原定功能检查','已通过','green'],['旧版本浏览器兼容性','未执行','amber']]:[['旧页面确认不覆盖新记录',ready?'已通过':'补验中',ready?'green':'amber'],['其他 4 项检查','已通过，可复用','green']],
+  source:'需求、当前方案和实施清单关联 OpenSpec；两类审查与开发验证保留各自结论。',note:'本轮保存冲突已修复并复审，只补相关验证。'
+ };
+}
+function pathProof(key){
+ if(state.caseKey==='feature')return qualityData(key);
+ if(key==='verification'&&state.caseKey==='bug')return['复验中','amber','正在针对原问题复验。'];
+ return['已通过','green',key==='planning'?'处理方式与范围已核对。':key==='review'?'实际修改与约定一致。':'本次检查已通过。'];
+}
+function parentKey(key,m){const node=m.nodes.find(n=>n[0]===key||n[4].includes(key));return node?node[0]:key;}
+function selectPath(key){
+ state.pathSelection=key;state.node='overview';render();updateHash();document.querySelector('[data-action="path-select"][data-key="'+key+'"]')?.focus({preventScroll:true});
+}
+function detailRows(rows){return '<div class="path-detail-rows">'+rows.map(r=>'<div><span>'+r[0]+'</span><p>'+r[1]+'</p></div>').join('')+'</div>';}
+function pathPanel(m,key){
+ const isProof=key==='planning'||key==='review';
+ const isVerification=key==='verification';
+ const human=key==='acceptance';
+ const title=isProof?(key==='planning'?'这个做法是否妥当？':'实际修改是否符合约定？'):key==='requirements'?'这项任务要得到什么？':key==='design'?'如何满足这些要求？':key==='implementation'?'已经改了什么？':isVerification?'哪些结果已经得到证明？':human?'需要我确认什么？':'成果到哪里了？';
+ let body='',action='完整内容与依据';
+ if(isProof){
+  const q=pathProof(key),early=state.caseKey==='feature'&&state.scenario==='review';
+  body='<div class="path-verdict '+q[1]+'">'+icon(q[1]==='green'?'circleCheck':'alert')+'<strong>'+q[0]+'</strong><span>'+q[2]+'</span></div>';
+  if(state.caseKey==='feature'&&key==='planning')body+=detailRows([['确认版本',early?'不能把未查看的新变化一并确认。':'已明确只确认用户查看过的版本。'],['保存冲突',early?'需要说明如何保留用户输入。':'已明确保留输入，再重读核对。']]);
+  else if(state.caseKey==='feature'&&key==='review')body+=detailRows([['本轮复核','旧响应隔离、保存前版本校验与冲突分支。'],['证明边界','实现逻辑已复核，运行结果见开发验证。']]);
+  else body+=detailRows([['审阅范围',key==='planning'?'本任务的处理办法与影响范围。':'实际修改和原定要求是否一致。'],['结论','没有需要修改的遗留问题。']]);
+  action='查看完整审查';
+ } else if(key==='requirements'){
+  body=detailRows(m.needs);
+  if(m.key==='feature'&&state.scenario==='empty')body+='<div class="path-small-note">附加需求记录为空，任务目标仍保留。</div>';
+  if(m.attention&&m.attention.key==='requirements')body+='<div class="path-question">'+icon('message')+'<span>是否把批量确认加入本次范围？这会增加设计和验证工作。</span><button class="btn primary" data-action="path-decision">记录我的决定</button></div>';
+  if(m.key==='feature'&&state.responded)body+='<div class="path-small-note">你的决定已保存，等待智能体（Agent）接续。</div>';
+  action='查看需求与范围';
+ } else if(key==='design'){
+  body=detailRows(m.plan)+'<div class="path-small-note">关键取舍：确认“用户看过的版本”，避免未查看的新变化被一并确认。</div>';
+  action='阅读完整方案';
+ } else if(key==='implementation'){
+  body=detailRows(m.changes);
+  if(m.key==='config')body+='<div class="path-compare"><div><small>修改前</small><b>30 分钟</b></div>'+icon('arrow')+'<div><small>修改后</small><b>5 分钟</b></div></div>';
+  else body+='<button class="text-btn path-inline-link" data-action="path-select" data-key="review">查看这份实现的审查 '+icon('arrow')+'</button>';
+  action=m.key==='config'?'查看修改与核对依据':'查看实现与代码变化';
+ } else if(isVerification){
+  const early=m.key==='feature'&&state.scenario==='review';
+  body=early?'<div class="path-small-note">尚未开始开发，当前没有验证结论。</div>':'<div class="path-check-list">'+m.checks.map(c=>'<div><span>'+c[0]+'</span>'+pill(c[1],c[2])+'</div>').join('')+'</div>';
+  if(m.key==='feature'&&state.scenario==='gap')body+='<div class="path-small-note warning">兼容环境不可用，尚不能给出完整结论。</div>';
+  else if(m.key!=='config'&&!early)body+='<details class="path-why"><summary>为什么需要补验？</summary><div class="path-rework"><span>发现覆盖</span>'+icon('arrow')+'<span>修正实现</span>'+icon('arrow')+'<span>实现复审</span>'+icon('arrow')+'<span class="live">补验</span></div><p>旧结果仍保留，只重新检查受修复影响的部分。</p></details>';
+  action='查看检查与历次结果';
+ } else if(human){
+  if(state.accepted)body='<div class="path-verdict green">'+icon('circleCheck')+'<strong>你的确认已记录</strong><span>等待接续收尾。</span></div>';
+  else if(state.adjustment)body='<div class="path-small-note">你的调整意见已保存，等待核对影响并继续处理。</div>';
+  else if(state.scenario==='acceptance'||state.scenario==='completed')body=detailRows([['登记后的文件','目录与文件保持原样。'],['页面结果','操作后显示一致的当前内容。'],['知识处理','确认所见版本，冲突时保留输入。']]);
+  else body='<div class="path-small-note">验证完成后，再提交当前成果供你确认。</div>';
+  action='查看成果与验收意见';
+ } else {
+  const done=m.status==='已完成';
+  body=detailRows(done?(m.key==='config'?[['当前结果','本地缓存时长已生效为 5 分钟。'],['范围核对','生产环境配置保持不变。'],['遗留事项','无。']]:[['实际交付','成果已集成到开发分支，开发版已更新。'],['任务结果','当前成果与用户确认已登记。'],['遗留事项','无；本次未包含正式发布。']]):[['当前情况','尚未交付。'],['下一步',m.key==='bug'?'验证通过后按已有授权交付修复。':state.accepted?'读取已保存的确认，接续交付与必要清理。':'完成相关验证和约定验收后交付。']]);
+  action='查看交付依据';
+ }
+ return '<section class="path-panel" aria-label="所选内容"><header><div><span class="path-panel-context">正在查看 · '+(pathLabels[key]?.[0]||key)+'<small>（'+(pathLabels[key]?.[1]||'')+'）</small></span><h2>'+title+'</h2></div><button class="text-btn" data-action="path-deep" data-key="'+key+'">'+action+' '+icon('arrow')+'</button></header>'+body+'</section>';
+}
+function render(){
+ const m=workCase();let selected=state.pathSelection;
+ if(!selected||!m.nodes.some(n=>n[0]===selected||n[4].includes(selected)))selected=m.current;
+ state.pathSelection=selected;
+ document.getElementById('scenario-select').value=state.scenario;
+ const caseControl=document.getElementById('task-case');if(caseControl)caseControl.value=state.caseKey;
+ const sceneControl=document.getElementById('scenario-control');if(sceneControl)sceneControl.hidden=state.caseKey!=='feature';
+ const selectedParent=parentKey(selected,m);
+ const participant=m.attention?'<button class="btn primary" data-action="path-attention">'+m.attention.action+' '+icon('arrow')+'</button>':'<span class="path-no-action">'+(state.accepted||state.responded||state.adjustment?'意见已记录，等待接续':m.status==='已完成'?'无需你处理':'当前无需你操作')+'</span>';
+ document.getElementById('task-first-layer').innerHTML=
+ '<div class="path-breadcrumb"><button class="back" data-action="task-list">'+icon('left')+'任务</button><span>/ Buildr 产品</span><span class="spacer"></span><button class="text-btn" data-action="path-control">参与与约定</button></div>'+
+ '<header class="path-task-title"><h1>'+m.title+'</h1>'+pill(m.status,m.status==='已完成'?'green':'')+'</header>'+
+ '<div class="path-goal"><span>目标</span><p>'+m.goal+'</p></div>'+
+ '<div class="path-situation"><div>'+icon(m.attention?'message':'spark')+'<span>'+(state.adjustment?'意见已记录，等待核对影响；尚未执行修改。':m.attention?m.attention.text:m.next)+'</span></div>'+participant+'</div>'+
+ '<section class="path-overview" aria-labelledby="path-heading"><div class="path-map-head"><h2 id="path-heading">工作路径</h2><span>点击节点查看内容</span></div><div class="path-nodes" style="--node-count:'+m.nodes.length+'">'+m.nodes.map(n=>{
+   const current=n[0]===m.current&&m.status!=='已完成';const active=n[0]===selectedParent;const english=pathLabels[n[0]][1];
+   return '<article class="path-node '+(active?'selected ':'')+(current?'current ':'')+(n[3]==='idle'?'future':'')+'"><button class="path-node-main" data-action="path-select" data-key="'+n[0]+'" aria-pressed="'+(selected===n[0])+'" aria-label="查看'+n[1]+'"><span class="path-node-stage">'+n[1]+'<small>('+english+')</small></span><strong>'+n[2]+'</strong><span class="path-node-state">'+(current?'<i></i>当前':n[3]==='done'?icon('check')+'已有结果':n[3]==='attention'?'待处理':'待进行')+'</span></button>'+n[4].map(k=>{const q=pathProof(k);return '<button class="path-proof '+(selected===k?'selected':'')+'" data-action="path-select" data-key="'+k+'" aria-label="查看'+pathLabels[k][0]+'"><span>'+pathLabels[k][0]+'</span><b class="'+q[1]+'">'+(q[1]==='green'?'✓':'•')+' '+q[0]+'</b></button>'}).join('')+'</article>';
+ }).join('')+'</div>'+
+ (m.key==='feature'&&!['review','change'].includes(state.scenario)?'<div class="path-loop"><span>↶</span><button data-action="path-select" data-key="verification">一次修复后，只重新检查受影响的内容</button></div>':m.key!=='feature'?'<p class="path-fold-note">'+m.note+'</p>':'')+
+ '</section>'+pathPanel(m,selected)+
+ '<footer class="path-footer"><span>最近记录 · 今天 '+m.time+'</span></footer>';
+ document.querySelectorAll('[data-icon]').forEach(el=>el.innerHTML=icon(el.dataset.icon));
+ document.querySelectorAll('.globalnav button').forEach(el=>el.setAttribute('aria-label',el.textContent.trim()));
+}
+function changeCase(key){if(!['feature','bug','config'].includes(key))return;closeOverlay(false);Object.assign(state,{caseKey:key,scenario:'progress',node:'overview',pathSelection:null,accepted:false,responded:false,adjustment:'',response:'',reqSaved:'',trail:[],sheet:null});render();updateHash();window.scrollTo(0,0);}
+function setScenario(id){if(!scenarios[id])return;closeOverlay(false);Object.assign(state,{caseKey:'feature',scenario:id,node:'overview',pathSelection:null,round:id==='review'?1:2,filter:'all',accepted:false,responded:false,response:'',decision:'keep',reqSaved:'',adjustment:'',conflict:false,sheet:null,trail:[]});render();updateHash();}
+function updateHash(){history.replaceState(null,'','#'+(state.caseKey==='feature'?state.scenario:state.caseKey)+'/overview');}
+function openCaseSource(key){
+ const m=workCase(),label=pathLabels[key]||['相关材料','Source'];
+ if(m.key==='feature'){goNode(key);return;}
+ documents['case-professional-source']={title:label[0],subtitle:label[1]+' · '+m.title,source:'本任务的示例事实',body:()=>{
+  const isReview=key==='planning'||key==='review';
+  return '<div class="document"><p class="lead">'+m.goal+'</p><h3>当前对象</h3><p>'+m.title+'，限定于本次局部修改。</p>'+
+   (key==='requirements'||key==='design'?detailRows(m.needs)+detailRows(m.plan):key==='verification'?'<h3>实际检查</h3>'+m.checks.map(c=>'<p>'+c[0]+'：'+c[1]+'</p>').join('')+(m.key==='bug'?'<p>复验尚在进行，本轮没有完整验证报告。</p>':'<p>本地配置的读取、实际效果和影响范围均已核对。</p>'):
+   isReview?'<h3>结论</h3><p>'+pathProof(key)[2]+'</p><h3>已查看</h3><p>'+ (key==='planning'?'任务目标、处理办法、影响范围与必要检查。':'本次修改、错误分支和与原定要求的一致性。')+'</p><h3>方式与范围</h3><p>智能体（Agent）自审，仅针对本任务涉及的局部内容。</p>':
+   key==='implementation'?detailRows(m.changes):'<h3>实际结果</h3><p>'+(m.key==='config'?'本地缓存时长为 5 分钟，生产配置保持不变。':'尚未交付；验证完成后接续。')+'</p>')+
+   '<h3>来源与边界</h3><p>'+m.source+'</p><div class="source">原型示例，不是实际执行记录。</div></div>';
+ }};
+ openReader('case-professional-source');
+}
+documents['case-control']={title:'参与与约定',subtitle:'人的决定与智能体（Agent）的推进边界',body:()=>{
+ const m=workCase();return '<div class="document"><h3>当前目标</h3><p>'+m.goal+'</p><h3>已授权的推进范围</h3><p>'+ (m.key==='config'?'调整本地开发配置并核对生效结果。':m.key==='bug'?'按原有行为约定定位、修复、审查和验证；完成后交付。':'完成原定三个功能点，持续设计、审查、实现与验证，之后提交用户验收。')+'</p><h3>什么时候需要你</h3><p>出现需要改变目标、范围或关键取舍的问题时，明确给出影响与选择。已有授权持续有效，不在每个节点重复询问。</p><div class="details-actions"><button class="btn" data-action="path-feedback">提出意见或调整目标</button></div><h3>已保存的意见</h3><p>'+esc(state.adjustment||state.response||'尚无新增意见。')+'</p></div>';
+}};
+document.addEventListener('change',e=>{if(e.target.id==='task-case')changeCase(e.target.value)});
+document.addEventListener('click',e=>{
+ const el=e.target.closest('[data-action]');if(!el)return;
+ const a=el.dataset.action;
+ if(a==='path-select')selectPath(el.dataset.key);
+ if(a==='path-deep')openCaseSource(el.dataset.key);
+ if(a==='path-control')openReader('case-control');
+ if(a==='path-attention'){state.pathSelection=workCase().attention?.key||workCase().current;render();if(state.pathSelection==='acceptance')goNode('acceptance');else goNode('requirements');}
+ if(a==='path-decision')goNode('requirements');
+ if(a==='path-more'){if(state.caseKey==='feature')openReader('task-details');else openReader('case-control');}
+ if(a==='path-feedback')modal('提出意见或调整目标','<p class="modal-copy">意见会与当前任务关联，供智能体（Agent）核对影响后接续。</p><label class="field" for="path-feedback">你的意见</label><textarea class="textarea" id="path-feedback" rows="5" placeholder="说明希望调整的目标、范围或处理方式…"></textarea>','<button class="btn primary" data-action="save-path-feedback">记录意见</button>');
+ if(a==='save-path-feedback'){const value=document.getElementById('path-feedback').value.trim();if(!value)return toast('请填写意见');state.adjustment=value;closeOverlay(false);render();toast('意见已记录，等待接续；尚未执行修改。');}
+});
+function restoreHash(){const [s]=location.hash.slice(1).split('/');if(s==='bug'||s==='config')state.caseKey=s;else {state.caseKey='feature';if(scenarios[s])state.scenario=s;}state.node='overview';state.pathSelection=null;state.round=currentRound();render();}
+
+state.docTabs={};
+scenarios.repair={tone:'amber',current:'implementation',headline:'验证未通过，正在修复保存冲突',detail:'修复后复审并再次验证。',status:'进行中',stage:'开发实现',time:'15:24',human:false};
+const originalStoryProgress=storyProgress;
+storyProgress=function(){return state.scenario==='repair'?{title:'验证发现保存冲突，正在修复。',next:'修复完成后复审，再次验证。'}:originalStoryProgress();};
+const originalWorkCase=workCase;
+workCase=function(){
+ const m=originalWorkCase();
+ if(m.key==='feature'&&state.scenario==='repair'){
+  m.current='implementation';m.time='15:24';m.next='保存冲突修复后复审，再次验证。';
+  m.nodes=m.nodes.map(n=>n[0]==='implementation'?[n[0],n[1],'正在修复保存冲突','current',n[4]]:n[0]==='verification'?[n[0],n[1],'未通过，已转修复','attention',n[4]]:n);
+ }
+ return m;
+};
+const originalPathProof=pathProof;
+pathProof=function(key){if(state.caseKey==='feature'&&state.scenario==='repair'&&key==='review')return['待复审','amber','修复完成后追加审查。'];return originalPathProof(key);};
+const nodeDescriptions={
+ requirements:'brief.md：本次需求、问题或任务说明。',
+ design:'提案说明改什么，设计说明怎么做，规范说明应满足的行为。',
+ planning:'每次方案审查追加一条记录，保留结论、问题和修改过程。',
+ implementation:'tasks.md 展示实施清单；当前实现或修复进展直接记录在这里。',
+ review:'每次实现审查追加一条记录，保留当次对象和结论。',
+ verification:'显示当前验证结果，以及失败后的修复、复验进展。',
+ acceptance:'记录用户对当前成果的确认或调整意见。',
+ closeout:'记录完成摘要、交付位置和遗留事项。'
+};
+function paper(file,title,body){return '<article class="node-paper"><div class="node-paper-file">'+icon('file')+'<code>'+file+'</code></div><h3>'+title+'</h3>'+body+'</article>';}
+function briefContent(m){
+ if(m.key==='feature'&&state.scenario==='empty')return '<div class="node-empty">暂无需求或说明。</div>';
+ if(state.reqSaved)return paper('brief.md','任务说明','<p style="white-space:pre-wrap">'+esc(state.reqSaved)+'</p>');
+ if(m.key!=='feature')return '<article class="node-paper"><h3>任务说明</h3><p>'+m.goal+'</p>'+detailRows(m.needs)+'</article>';
+ return paper('brief.md','完善项目登记与知识处理体验','<p>完善已有项目登记和知识变化处理，让用户能继续使用已有内容，并看清操作后的结果。</p><h4>本次需求</h4><ul><li>移除登记后，可以重新登记已有项目，保留目录和文件。</li><li>完成操作后，页面显示一致的当前结果。</li><li>知识来源变化后，可以查看差异、确认已查看的版本或继续编辑。</li></ul><h4>本次范围</h4><p>处理单篇知识，不包含批量确认；本轮交付开发版功能。</p>');
+}
+function planContent(tab,m){
+ if(m.key!=='feature')return '<article class="node-paper"><h3>处理说明</h3>'+detailRows(m.plan)+'</article>';
+ if(tab==='proposal')return paper('proposal.md','提案','<h4>为什么做</h4><p>项目重新登记入口不明确，操作后的页面结果不一致，知识变化缺少清楚的处理方式。</p><h4>改变什么</h4><ul><li>增加已有项目重新登记入口。</li><li>统一同一页面的更新行为。</li><li>提供知识差异、版本确认、编辑与接续操作。</li></ul><h4>范围</h4><p>保留已有文件与现有能力，不引入批量知识确认。</p>');
+ if(tab==='knowledge-spec')return paper('specs/project-knowledge-browsing/spec.md','规范：知识变化处理','<h4>确认所见版本</h4><p>用户确认后，只覆盖本次已经查看过的来源版本。来源再次变化时，仍显示新的变化。</p><h4>保存发生冲突</h4><p>拒绝陈旧提交，保留当前记录及用户输入，允许重新读取后核对。</p>');
+ if(tab==='workspace-spec')return paper('specs/workspace-asset-management-interactions/spec.md','规范：登记与页面更新','<h4>已有项目重新登记</h4><p>登记合法的已有目录时，恢复登记关系，目录内文件保持不变。</p><h4>操作后的当前内容</h4><p>操作成功后显示同一份当前结果，过期读取响应不得覆盖新的内容。</p>');
+ return paper('design.md','设计方案','<h4>项目重新登记</h4><p>复用已有目录及登记能力，只恢复关联，不移动或覆盖文件。</p><h4>页面更新</h4><p>统一操作后的读取与更新方式，隔离旧请求，避免旧结果覆盖新内容。</p><h4>知识变化处理</h4><p>查看差异后，按用户实际看过的版本确认。保存前核对当前记录，冲突时保留输入并提示重读。</p><h4>关键取舍</h4><p>确认“用户已经看过的版本”，避免把尚未查看的新变化一并确认。</p>');
+}
+function implementationContentSimple(m){
+ if(m.key!=='feature')return '<article class="node-paper"><h3>实现记录</h3>'+detailRows(m.changes)+'<p class="node-progress">'+m.next+'</p></article>';
+ const early=state.scenario==='review',repair=state.scenario==='repair',finished=['acceptance','completed','change'].includes(state.scenario);
+ const tasks=[['增加已有项目重新登记入口',!early],['统一页面操作后的更新行为',!early],['实现知识差异查看、确认和编辑',!early],['修复并发保存时的确认覆盖问题',!early&&!repair],['完成本次相关验证',finished]];
+ return paper('tasks.md','实施清单','<ul class="node-checklist">'+tasks.map(t=>'<li><span class="'+(t[1]?'done':'')+'">'+(t[1]?icon('check'):'')+'</span>'+t[0]+'</li>').join('')+'</ul><div class="node-progress"><b>当前进展</b><p>'+ (early?'尚未开始实现，正在修订方案。':repair?'验证发现保存冲突，正在修复。修复后复审并再次验证。':finished?'本次实现与相关验证已完成。':'保存冲突已修复并复审，正在再次验证。')+'</p></div>')+(!early&&!repair?'<div class="node-direct-link"><button class="text-btn" data-action="reader" data-doc="code">查看已有代码变更 '+icon('arrow')+'</button></div>':'');
+}
+function reviewItems(key,m){
+ const planning=key==='planning',early=m.key==='feature'&&state.scenario==='review',repair=m.key==='feature'&&state.scenario==='repair';
+ if(early&&!planning)return [];
+ if(m.key!=='feature')return[{when:'本次审查',object:planning?'当前处理说明':'本次修改',passed:true,text:planning?'处理方式和影响范围已核对。':'修改符合原定要求，没有需要修改的遗留问题。'}];
+ if(planning){const rows=[{when:'第 1 次 · 11:12',object:'方案 v1',passed:false,text:'确认版本与冲突处理不明确，需要补充：只确认所见版本，冲突时保留用户输入。'}];if(!early)rows.push({when:'第 2 次 · 12:05',object:'方案 v2',passed:true,text:'上述两项已修订并复核，方案通过。'});return rows;}
+ const rows=[{when:'第 1 次 · 14:58',object:'原定功能实现',passed:true,text:'已核对实现与任务要求的一致性。'}];if(!repair)rows.push({when:'第 2 次 · 15:36',object:'保存冲突修复',passed:true,text:'已复核保存前的版本校验与冲突处理，修复通过审查。'});return rows;
+}
+function reviewRecords(key,m){
+ const rows=reviewItems(key,m);if(!rows.length)return '<div class="node-empty">暂无审查记录。</div>';
+ return (m.key==='feature'&&state.scenario==='repair'&&key==='review'?'<div class="node-progress compact">修复完成后再追加复审记录。</div>':'')+'<div class="node-record-list">'+rows.map((r,i)=>'<button class="node-record-row" data-action="node-review-read" data-key="'+key+'" data-index="'+i+'"><span class="node-record-line"><strong>'+r.when+'</strong><small>'+r.object+'</small>'+pill(r.passed?'通过':'需要修改',r.passed?'green':'amber')+icon('chevron')+'</span><span class="node-record-summary">'+r.text+'</span></button>').join('')+'</div>';
+}
+function verificationResult(m,full=false){
+ const early=m.key==='feature'&&state.scenario==='review',repair=m.key==='feature'&&state.scenario==='repair',gap=m.key==='feature'&&state.scenario==='gap',passed=m.key==='config'||(m.key==='feature'&&['acceptance','completed','change'].includes(state.scenario));
+ if(early)return '<div class="node-empty">尚未开始验证。</div>';
+ if(gap)return '<div class="node-result"><span>当前进度</span>'+pill('待补齐','amber')+'<p>旧版本浏览器环境不可用，尚未形成完整验证结论。</p></div><div class="node-progress"><b>下一步</b><p>补齐兼容性检查；已有通过结果保留。</p></div>';
+ let result=passed?'通过':m.key==='bug'?'验证中':'未通过';
+ let explanation=passed?'本次相关检查已通过。':m.key==='bug'?'正在复验原问题，尚未形成完整结论。':'最近一次完整验证发现保存冲突。';
+ let progress=passed?(m.status==='已完成'?'结果已用于本次交付。':'提交当前成果供用户确认。'):repair?'正在修复保存冲突；修复后复审并再次验证。':m.key==='bug'?'核对旧页面提交是否被拒绝，以及输入是否保留。':'保存冲突已修复并复审，当前正在再次验证。';
+ return '<div class="node-result"><span>'+(result==='验证中'?'当前进度':'验证结果')+'</span>'+pill(result,passed?'green':result==='未通过'?'red':'amber')+'<p>'+explanation+'</p></div>'+
+ '<div class="node-progress"><b>当前进展</b><p>'+progress+'</p>'+(!passed&&m.key!=='config'?'<button class="text-btn" data-action="path-select" data-key="implementation">查看实现 / 修复 '+icon('arrow')+'</button>':'')+'</div>'+
+ (full?'<div class="path-check-list">'+m.checks.map((c,i)=>{const failed=!passed&&m.key==='feature'&&i===0;return '<div><span>'+c[0]+'</span>'+pill(failed?'未通过':c[1],failed?'red':c[2])+'</div>'}).join('')+'</div>':'<div class="node-direct-link"><button class="text-btn" data-action="node-read" data-id="verification">查看验证结果 '+icon('arrow')+'</button></div>');
+}
+function confirmationRecord(m){
+ const ready=m.key==='feature'&&['acceptance','completed'].includes(state.scenario);
+ if(state.accepted||m.key==='feature'&&state.scenario==='completed')return '<div class="node-result"><span>确认结果</span>'+pill('已确认','green')+'<p>'+esc(state.response||'当前成果符合预期，可以按约定收尾。')+'</p></div>';
+ if(state.adjustment)return '<div class="node-progress"><b>用户意见</b><p>'+esc(state.adjustment)+'</p><p>已记录，等待接续。</p></div>';
+ if(!ready)return '<div class="node-empty">尚未提交用户确认。</div>';
+ return '<div class="node-progress"><p>本次实现与验证已完成，请确认结果或提出调整。</p><div class="node-actions"><button class="btn primary" data-action="accept">确认结果</button><button class="btn" data-action="adjust">提出调整</button></div></div>';
+}
+function closeoutRecord(m){
+ if(m.status!=='已完成')return '<div class="node-empty">'+(state.accepted?'用户已确认，等待接续收尾。':'尚未收尾。')+'</div>';
+ return '<div class="node-progress"><b>完成摘要</b><p>'+ (m.key==='config'?'开发环境缓存时长已调整为 5 分钟，生产环境配置保持不变。':'已有项目可重新登记，页面更新保持一致，知识变化支持查看、确认和编辑。')+'</p><b>交付位置</b><p>'+ (m.key==='config'?'本地开发配置已生效。':'代码已集成到开发分支，开发版已更新。')+'</p><b>遗留事项</b><p>无。</p></div>';
+}
+function nodeFile(id,title,file,description){return '<button class="node-file-row" data-action="node-read" data-id="'+id+'"><span class="node-file-icon">'+icon('file')+'</span><span class="node-file-copy"><strong>'+title+'</strong><code>'+file+'</code><small>'+description+'</small></span>'+icon('chevron')+'</button>';}
+function pathPanel(m,key){
+ const label=pathLabels[key]||['相关内容',''];let desc=nodeDescriptions[key]||'',body='',maintenance='';
+ if(key==='requirements'){
+  body=m.key==='feature'&&state.scenario==='empty'&&!state.reqSaved?'<div class="node-empty">暂无需求或说明。</div>':nodeFile('brief','需求或说明',m.key==='feature'?'brief.md':'已有任务说明','本次需要解决的问题、目标和范围。');
+  maintenance='<button class="btn quiet" data-action="edit-requirements">编辑说明</button>';
+  if(m.attention&&m.attention.key==='requirements')body+='<div class="node-progress"><p>新增批量确认需要你决定。</p><button class="btn primary" data-action="node-decision-edit">记录决定</button></div>';
+ }else if(key==='design'){
+  body=m.key==='feature'?nodeFile('proposal','提案','proposal.md','为什么做、改变什么、范围是什么。')+nodeFile('design','设计','design.md','实现做法、关键取舍与边界。')+nodeFile('knowledge-spec','规范：知识处理','specs/project-knowledge-browsing/spec.md','知识处理应满足的行为。')+nodeFile('workspace-spec','规范：登记与更新','specs/workspace-asset-management-interactions/spec.md','项目登记和页面更新应满足的行为。'):nodeFile('design','处理说明','已有任务说明','本次修改的做法与影响范围。');
+ }else if(key==='implementation'){
+  body=nodeFile('tasks',m.key==='feature'?'实施清单':'实现记录',m.key==='feature'?'tasks.md':'已有进展记录','当前完成事项与实现、修复进展。')+'<div class="node-progress"><b>当前进展</b><p>'+ (state.scenario==='repair'?'正在修复保存冲突，之后复审并再次验证。':state.scenario==='review'?'尚未开始开发。':m.next)+'</p></div>';
+ }else if(key==='planning'||key==='review')body=reviewRecords(key,m);
+ else if(key==='verification')body=verificationResult(m);
+ else if(key==='acceptance')body=confirmationRecord(m);
+ else body=closeoutRecord(m);
+ if(m.key!=='feature'&&key==='requirements')desc='已有的任务目标与说明。';
+ if(m.key!=='feature'&&key==='implementation')desc='已有实现记录和当前进展。';
+ return '<section class="path-panel node-content-panel" aria-label="所选内容"><header><div><h2>'+label[0]+'<small>（'+label[1]+'）</small></h2><p>'+desc+'</p></div>'+maintenance+'</header>'+body+'</section>';
+}
+function afterRecord(stage){closeOverlay(false);state.pathSelection=stage;state.node='overview';render();updateHash();}
+
+state.readRef=null;
+state.writerActive=false;
+state.writerSnapshot=null;
+function ensureReadSide(){
+ if(document.getElementById('read-side'))return;
+ const pane=document.createElement('aside');pane.id='read-side';pane.className='side-reader';pane.hidden=true;pane.setAttribute('aria-label','副屏阅读');document.body.appendChild(pane);
+}
+function nodeReadDescription(id){
+ const m=workCase();
+ if(id==='brief')return{title:'需求或说明',file:m.key==='feature'?'brief.md':'已有任务说明',body:()=>{
+  let body=briefContent(m);
+  if(m.attention?.key==='requirements')body+='<div class="node-progress"><b>待决定</b><p>是否把批量确认纳入本次范围？这会增加设计与验证工作。</p><button class="btn primary" data-action="node-decision-edit">记录决定</button></div>';
+  if(state.responded)body+='<div class="node-progress"><b>你的意见</b><p>'+esc(state.response)+'</p></div>';
+  return body;
+ }};
+ if(['proposal','design','knowledge-spec','workspace-spec'].includes(id)){
+  const meta={proposal:['提案','proposal.md'],design:['设计','design.md'],'knowledge-spec':['规范：知识处理','specs/project-knowledge-browsing/spec.md'],'workspace-spec':['规范：登记与更新','specs/workspace-asset-management-interactions/spec.md']}[id];
+  return{title:meta[0],file:m.key==='feature'?meta[1]:'已有处理说明',body:()=>planContent(id,m)};
+ }
+ if(id==='tasks')return{title:m.key==='feature'?'实施清单':'实现记录',file:m.key==='feature'?'tasks.md':'已有进展记录',body:()=>implementationContentSimple(m).replace(/<div class="node-direct-link">[\s\S]*?<\/div>$/,'')};
+ if(id==='verification')return{title:'验证结果',file:'当前结果与修复进展',body:()=>verificationResult(m,true)};
+ if(id==='acceptance')return{title:'用户确认',file:'当前成果与用户意见',body:()=>detailRows(m.changes)+confirmationRecord(m)};
+ if(id==='closeout')return{title:'任务收尾',file:'完成摘要与实际交付',body:()=>closeoutRecord(m)};
+ return{title:'内容',file:'暂无记录',body:()=>'<div class="node-empty">暂无内容。</div>'};
+}
+function currentReadDescription(){
+ const r=state.readRef;if(!r)return null;
+ if(r.kind==='node')return nodeReadDescription(r.id);
+ if(r.kind==='review'){
+  const m=workCase(),item=reviewItems(r.key,m)[r.index],title=r.key==='planning'?'方案审查':'实现审查';
+  if(!item)return{title,file:'暂无记录',body:()=>'<div class="node-empty">暂无该条记录。</div>'};
+  return{title:title+' · '+item.when,file:item.object,body:()=>'<article class="node-paper"><div class="row">'+pill(item.passed?'通过':'需要修改',item.passed?'green':'amber')+'</div><h4>审查对象</h4><p>'+item.object+'</p><h4>结论与问题</h4><p>'+item.text+'</p><h4>审查范围</h4><p>'+ (r.key==='planning'?'本次要求、处理办法及其边界。':'本次实际修改、错误处理和与约定的一致性。')+'</p></article>'};
+ }
+ const d=documents[r.id];return d?{title:d.title,file:d.subtitle,body:d.body}:{title:'内容',file:'暂无记录',body:()=>'<div class="node-empty">暂无内容。</div>'};
+}
+function paintReadSide(focus=false){
+ if(!state.readRef)return;ensureReadSide();const d=currentReadDescription();if(!d)return;
+ const el=document.getElementById('read-side');el.hidden=false;
+ el.innerHTML='<header class="side-reader-header"><div><span>副屏阅读</span><h2 id="read-title" tabindex="-1">'+d.title+'</h2><p>'+d.file+'</p></div><button class="btn quiet icon" data-action="read-side-close" aria-label="关闭副屏">'+icon('close')+'</button></header><div class="side-reader-body">'+d.body()+'</div>';
+ document.body.classList.add('has-read-side');
+ if(focus)document.getElementById('read-title').focus({preventScroll:true});
+}
+function openNodeRead(id){state.readRef={kind:'node',id};paintReadSide(true);}
+function closeReadSide(){
+ const el=document.getElementById('read-side');if(el){el.hidden=true;el.innerHTML='';}
+ document.body.classList.remove('has-read-side');state.readRef=null;state.sheet=null;state.drawer=null;state.trail=[];
+}
+function openReader(id){
+ const direct={design:'design','behavior-spec':'knowledge-spec','implementation-list':'tasks','requirement-entry':'brief','design-entry':'design','delivery-entry':'closeout'};
+ if(direct[id])return openNodeRead(direct[id]);
+ if(id==='planning-report'||id==='review-report'){const key=id==='planning-report'?'planning':'review';state.readRef={kind:'review',key,index:Math.max(0,reviewItems(key,workCase()).length-1)};paintReadSide(true);return;}
+ if(['materials','task-details','needs-and-plan','whole-process'].includes(id)){selectPath(id==='needs-and-plan'?'design':'requirements');return;}
+ state.readRef={kind:'legacy',id};paintReadSide(true);
+}
+function paintSheet(){if(!state.sheet)return;if(state.sheet.type==='stage')goNode(state.sheet.id);else openReader(state.sheet.id);}
+function goNode(id){
+ if(id==='overview'){closeOverlay(false);return;}
+ const direct={requirements:'brief',design:'design',implementation:'tasks',verification:'verification',acceptance:'acceptance',closeout:'closeout'};
+ if(direct[id])return openNodeRead(direct[id]);
+ if(id==='planning'||id==='review'){state.readRef={kind:'review',key:id,index:Math.max(0,reviewItems(id,workCase()).length-1)};paintReadSide(true);}
+}
+function modal(title,body,actions){
+ state.writerSnapshot={response:state.response,decision:state.decision,reqSaved:state.reqSaved,adjustment:state.adjustment,accepted:state.accepted,responded:state.responded};
+ state.writerActive=true;lastFocused=document.activeElement;
+ document.getElementById('overlay-root').innerHTML='<div class="overlay writer-overlay" data-action="backdrop-close"><section class="drawer writer-drawer" role="dialog" aria-modal="true" aria-labelledby="writer-title"><header class="drawer-header"><div><span class="writer-label">数据维护</span><h2 id="writer-title">'+title+'</h2></div><span class="spacer"></span><button class="btn quiet icon" data-action="cancel-modal" aria-label="关闭维护抽屉">'+icon('close')+'</button></header><div class="writer-body">'+body+'</div><footer class="writer-footer"><button class="btn" data-action="cancel-modal">取消</button>'+actions+'</footer></section></div>';
+ document.body.style.overflow='hidden';(document.querySelector('.writer-drawer textarea')||document.querySelector('.writer-drawer input')||document.querySelector('.writer-drawer button')).focus();
+}
+function closeOverlay(cancel=true){
+ if(state.writerActive&&cancel&&state.writerSnapshot)Object.assign(state,state.writerSnapshot);
+ document.getElementById('overlay-root').innerHTML='';document.body.style.overflow='';state.writerActive=false;state.writerSnapshot=null;
+ if(cancel&&lastFocused?.isConnected)lastFocused.focus();
+}
+function cancelModal(){closeOverlay(true);paintReadSide(false);}
+function openDecisionDrawer(){modal('记录你的决定',decisionBox(),'');}
+function briefEditorText(m){
+ if(state.reqSaved)return state.reqSaved;
+ if(m.key==='feature'&&state.scenario==='empty')return '';
+ return m.goal+'\n\n'+m.needs.map(r=>r[0]+'：'+r[1]).join('\n');
+}
+const previousRender=render;
+render=function(){previousRender();paintReadSide(false);};
+const previousChangeCase=changeCase;
+changeCase=function(key){closeReadSide();previousChangeCase(key);};
+const previousSetScenario=setScenario;
+setScenario=function(id){closeReadSide();previousSetScenario(id);};
+document.addEventListener('click',e=>{
+ const el=e.target.closest('[data-action]');if(!el)return;const action=el.dataset.action;
+ if(action==='node-read'){e.stopImmediatePropagation();openNodeRead(el.dataset.id);}
+ else if(action==='node-review-read'){e.stopImmediatePropagation();state.readRef={kind:'review',key:el.dataset.key,index:Number(el.dataset.index)};paintReadSide(true);}
+ else if(action==='read-side-close'){e.stopImmediatePropagation();closeReadSide();}
+ else if(action==='edit-requirements'){
+  e.stopImmediatePropagation();const m=workCase();
+  modal('编辑需求或说明','<label class="field" for="requirement-input">内容</label><textarea class="textarea" id="requirement-input" rows="13" placeholder="没有需要补充的内容时可以留空。">'+esc(briefEditorText(m))+'</textarea>','<button class="btn primary" data-action="save-requirements">保存内容</button>');
+ }
+ else if(action==='node-decision-edit'||action==='path-decision'){e.stopImmediatePropagation();openDecisionDrawer();}
+ else if(action==='path-attention'){
+  e.stopImmediatePropagation();const key=workCase().attention?.key||'requirements';selectPath(key);openNodeRead(key==='acceptance'?'acceptance':'brief');
+ }
+},true);
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!state.writerActive&&state.readRef)closeReadSide();});
+
+document.addEventListener("keydown",e=>{if(e.key==="Escape"&&state.writerActive){e.stopImmediatePropagation();cancelModal();}},true);
+
+restoreHash();
+
+</script>
+</body>
+</html>

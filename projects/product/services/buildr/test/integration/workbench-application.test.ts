@@ -4,6 +4,7 @@ import path from 'node:path';
 import test, { after } from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
 import { createRuntime } from '../helpers/runtime-harness.ts';
+import { createPreferencesApplication } from '../../src/modules/workbench/application/preferences-application.ts';
 import { taskRecordFixture, runBuildrJson } from '../helpers/task-record-system-fixture.ts';
 import { cleanupLocalTaskLifecycleSystemContext } from '../helpers/task-lifecycle-system-context.ts';
 import { applyWorkspaceSqliteMigration, loadWorkspaceSqliteMigrations } from '../../src/infrastructure/sqlite/workspace-sqlite.ts';
@@ -132,7 +133,7 @@ test('有效0032数据库只读可用且字节与迁移台账不变，首次明�
   assert.equal(read.prepare('SELECT max(version) AS v FROM schema_migrations').get()?.v, 32); read.close();
   runtime.putWorkbenchPreference(root, 'pinned-task', 'legacy');
   const upgraded = new DatabaseSync(file, { readOnly: true });
-  assert.equal(upgraded.prepare('SELECT max(version) AS v FROM schema_migrations').get()?.v, 33); upgraded.close();
+  assert.equal(upgraded.prepare('SELECT max(version) AS v FROM schema_migrations').get()?.v, 34); upgraded.close();
 });
 
 test('命令行与应用读取相同摘要和偏好', (t) => {
@@ -147,4 +148,49 @@ test('命令行与应用读取相同摘要和偏好', (t) => {
   const overview = runBuildrJson(['workbench', 'inspect', '--target', root]);
   conforms('WorkbenchResponse', overview);
   assert.equal(overview.preferences.items[0].key, 'cli-task');
+});
+
+
+test('当前节点允许回到实现，省略保留、明确清除且错误输入不写入', (t) => {
+  const { root } = taskRecordFixture(t, 'work-stage');
+  const runtime = createRuntime();
+  const original = record(runtime, root, 'stage-task');
+  let value = runtime.recordTaskWorkContext(root, 'stage-task', { expectedContextDigest: 'absent', progress: '验证发现问题', nextStep: '修复后复验', stage: 'verification' });
+  conforms('TaskWorkContextResponse', value);
+  value = runtime.recordTaskWorkContext(root, 'stage-task', { expectedContextDigest: value.contextDigest, progress: '正在修复', nextStep: '复审后再验证', stage: 'implementation' });
+  assert.equal(value.context.stage, 'implementation');
+  value = runtime.recordTaskWorkContext(root, 'stage-task', { expectedContextDigest: value.contextDigest, progress: '修复完成', nextStep: '复审' });
+  assert.equal(value.context.stage, 'implementation');
+  assert.throws(() => runtime.recordTaskWorkContext(root, 'stage-task', { expectedContextDigest: value.contextDigest, progress: '无效', nextStep: '无效', stage: 'running' }), (error: any) => error.code === 'task_work_context_input_invalid');
+  assert.equal(runtime.inspectTaskWorkContext(root, 'stage-task').contextDigest, value.contextDigest);
+  value = runtime.recordTaskWorkContext(root, 'stage-task', { expectedContextDigest: value.contextDigest, progress: '无当前节点', nextStep: '继续核对', stage: null });
+  assert.equal(value.context.stage, null);
+  assert.equal(runtime.inspectTask(root, 'stage-task').recordDigest, original.recordDigest);
+});
+
+
+test('偏好标签批量读取，重复任务身份只查一次且名称不使用过期缓存', t => {
+  const {root} = taskRecordFixture(t, 'preference-label-batch');
+  const runtime = createRuntime();
+  const task = record(runtime, root, 'label-task', 'todo');
+  runtime.putWorkbenchPreference(root, 'pinned-task', 'label-task');
+  runtime.putWorkbenchPreference(root, 'planned-task', 'label-task');
+  runtime.putWorkbenchPreference(root, 'followed-project', 'demo');
+  runtime.putWorkbenchPreference(root, 'followed-project', 'other');
+  let batchReads = 0, projectReads = 0;
+  const preferences = createPreferencesApplication({
+    store: runtime,
+    tasks: {
+      titles: (root, ids) => { batchReads++; assert.deepEqual(ids, ['label-task']); return runtime.readTaskTitles(root, ids); },
+      inspect: () => { throw new Error('正常读取偏好不应逐项读取任务详情'); },
+    },
+    workspace: {get: runtime.getWorkspace, projects: root => {projectReads++; return runtime.readProjectRegistryRecord(root);}},
+  });
+  const first = preferences.inspectWorkbenchPreferences(root);
+  assert.equal(batchReads, 1); assert.equal(projectReads, 1);
+  assert.equal(first.items.filter(item => item.key === 'label-task' && item.label === 'label-task').length, 2);
+  runtime.updateTask(root, 'label-task', {expectedRecordDigest: task.recordDigest, title: '已更新名称'});
+  const second = preferences.inspectWorkbenchPreferences(root);
+  assert.equal(batchReads, 2); assert.equal(projectReads, 2);
+  assert.equal(second.items.filter(item => item.key === 'label-task' && item.label === '已更新名称').length, 2);
 });

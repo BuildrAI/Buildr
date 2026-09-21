@@ -1,4 +1,4 @@
-import type { ApiClient } from '../../../api/client';
+import type { ApiClient, WorkspaceDocument } from '../../../api/client';
 import { api } from '../../../api';
 import type {
   TaskAbandonRequest,
@@ -38,6 +38,9 @@ export function createTaskClient(client: ApiClient) {
     },
     change(taskId: string, project: string, change: string, options: ReadOptions = {}): Promise<unknown> {
       return client(`/api/v1/tasks/${encodeURIComponent(taskId)}/changes/${encodeURIComponent(project)}/${encodeURIComponent(change)}`, options);
+    },
+    projectDocument(taskId: string, project: string, encodedPath: string, options: ReadOptions = {}): Promise<WorkspaceDocument & { provenance: string }> {
+      return typed(client(`/api/v1/tasks/${encodeURIComponent(taskId)}/documents/${encodeURIComponent(project)}/${encodedPath}`, options));
     },
     prototypes(taskId: string, options: ReadOptions = {}): Promise<unknown> {
       return client(`/api/v1/tasks/${encodeURIComponent(taskId)}/ui-prototypes`, options);

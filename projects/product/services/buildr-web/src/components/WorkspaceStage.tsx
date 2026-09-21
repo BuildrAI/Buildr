@@ -2,7 +2,7 @@ import { Button } from 'antd';
 import { useContext, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode, type CSSProperties } from 'react';
 import { useLocation } from 'react-router-dom';
 import { CloseOutlined, FullscreenExitOutlined, FullscreenOutlined } from '@ant-design/icons';
-import { useWorkspacePageTabs, type WorkspacePageTab } from '../app/pageTabs';
+import { useWorkspacePageTabs, WorkspaceViewActiveContext, type WorkspacePageTab } from '../app/pageTabs';
 
 import { InsideResourcePreview, ProjectPreviewContext, useResourcePreview } from '../app/resource-preview';
 import { paneDimensions } from '../app/workspace-pages';
@@ -14,6 +14,7 @@ export type WorkspaceObjectTab = { key: string; kind: ObjectTabKind; title: stri
 
 export function WorkspaceStage(props: Props) {
   const inside = useContext(InsideResourcePreview);
+  const viewActive = useContext(WorkspaceViewActiveContext);
   const previews = useResourcePreview(), location = useLocation();
   const state = previews?.states[location.pathname];
   const previewRoot = useRef<HTMLDivElement>(null);
@@ -40,7 +41,7 @@ export function WorkspaceStage(props: Props) {
   const projectPath = location.pathname.match(/\/projects\/([^/]+)$/);
   const projectContext = projectPath && projectPath[1] !== 'new' ? decodeURIComponent(projectPath[1]) : null;
   const resources = <ProjectPreviewContext.Provider value={projectContext}><InsideResourcePreview.Provider value={true}>{(state?.items || []).map(item => <div key={`${item.kind}:${item.id}`} hidden={item.kind !== state?.active}>
-    {previews?.render(item)}
+    <WorkspaceViewActiveContext.Provider value={viewActive && item.kind === state?.active}>{previews?.render(item)}</WorkspaceViewActiveContext.Provider>
   </div>)}</InsideResourcePreview.Provider></ProjectPreviewContext.Provider>;
   const normalStage = <SplitWorkspaceStage {...props} onCloseAll={() => { previews?.clear(location.pathname); for (const tab of props.objectTabs || []) props.onCloseObject?.(tab.key); }} objectTabs={[...(props.objectTabs || []), ...resourceTabs]} activeObject={active}
     onActivateObject={key => { if (key.startsWith('preview:')) previews?.activate(location.pathname, key.slice(8)); else { previews?.activate(location.pathname, ''); props.onActivateObject?.(key); } }}

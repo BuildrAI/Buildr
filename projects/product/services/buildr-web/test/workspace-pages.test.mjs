@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { tabForPath, parseTabs, paneDimensions, readRatio, moveTab, ratioStorageKey, resourcePreview, previewOwnerPath, workspacePageSearch } from '../src/app/workspace-pages.ts';
+import { tabForPath, parseTabs, paneDimensions, readRatio, moveTab, ratioStorageKey, resourcePreview, previewOwnerPath, previewOwnerSearch, workspacePageSearch } from '../src/app/workspace-pages.ts';
 test('恢复页签只接受当前工作空间已支持的路由并去重', () => {
  const valid={path:'/workspaces/a/skills',title:'技能'};
  const raw=JSON.stringify([valid,valid,{path:'/workspaces/b/skills'},{path:'https://example.com'},{path:'/workspaces/a/projects/%2e%2e'},{path:'/workspaces/a/services/p/s/edit'}]);
@@ -31,6 +31,17 @@ test('服务知识保持同一服务副屏身份，直接地址回到服务目�
  assert.equal(previewOwnerPath('w',knowledge),'/workspaces/w/services');
  assert.equal(resourcePreview('w','/workspaces/w/services/api?edit=1').edit,true);
  assert.equal(resourcePreview('w','/workspaces/w/services/product/api'),null);
+});
+test('任务详情复用资源副屏，任务列表保持主屏，旧详情深链能恢复列表筛选', () => {
+ const task=resourcePreview('w','/workspaces/w/tasks/fix-save-conflict');
+ assert.deepEqual(task,{kind:'task',id:'fix-save-conflict',title:'任务详情',path:'/workspaces/w/tasks/fix-save-conflict'});
+ assert.equal(previewOwnerPath('w',task),'/workspaces/w/tasks');
+ assert.equal(tabForPath('w',task.path),null);
+ assert.equal(tabForPath('w','/workspaces/w/tasks').key,'dir:tasks');
+ assert.equal(previewOwnerSearch('w',task,{from:'/workspaces/w/tasks?status=active&project=product&group=project'}),'?status=active&project=product&group=project');
+ for(const from of ['/workspaces/other/tasks?status=all','/workspaces/w/overview?q=kept','//example.com/workspaces/w/tasks?q=kept','/workspaces/w/tasks/../services?q=kept','https://example.com/workspaces/w/tasks?q=kept'])assert.equal(previewOwnerSearch('w',task,{from}),'');
+ assert.equal(previewOwnerSearch('w',task,null),'');
+ for(const path of ['/workspaces/w/tasks/id/changes/product/change','/workspaces/w/tasks/%2e%2e','/workspaces/w/tasks/a%2fb','/workspaces/w/tasks/%00'])assert.equal(resourcePreview('w',path),null,path);
 });
 test('副屏拒绝跨工作空间、错误层级与不安全身份',()=>{
  for(const path of ['/workspaces/other/articles/product/a','/workspaces/w/articles/%2e%2e/a','/workspaces/w/articles/product/a%2fb','/workspaces/w/articles/product/%00','/workspaces/w/articles/product/a/edit/extra','/workspaces/w/knowledge/repository/a','/workspaces/w/services/%2e%2e','/workspaces/w/skills/a/extra','https://example.com/workspaces/w/services/a'])assert.equal(resourcePreview('w',path),null,path);

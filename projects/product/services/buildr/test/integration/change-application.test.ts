@@ -36,6 +36,7 @@ type ChangeRuntime = {
   resolveTaskScopedChange(root: string, taskId: string, reference: { project: string; change: string }, options?: { includeContent?: boolean }): ScopedResolution;
   taskUiPrototypes(root: string, taskId: string): { taskId: string; prototypes: Prototype[]; diagnostics: Array<{ code: string }> };
   taskUiPrototype(root: string, taskId: string, id: string): { html: string };
+  taskProjectDocument(root: string, taskId: string, project: string, documentPath: string): { content: string | null; exists: boolean; provenance: string };
 };
 
 function unavailable(): never {
@@ -65,6 +66,7 @@ function fixture(): { root: string; runtime: ChangeRuntime; projectRoot: string;
     resolveTaskScopedChange: unavailable,
     taskUiPrototypes: unavailable,
     taskUiPrototype: unavailable,
+    taskProjectDocument: unavailable,
   };
   const projectQuery = { listProjects: runtime.listProjects, projectDetail: runtime.projectDetail, resolveSourceRoot: runtime.resolveSourceRoot };
   const openSpecQuery = createChangeQuery(projectQuery);
@@ -196,4 +198,34 @@ test('OpenSpec 查询独立于任务，保持全局保留副本、归档提示�
   assert.deepEqual(query.discoverUiPrototypes(retained).diagnostics.map((item) => item.code), ['ui_prototype_symlink_ignored']);
   assert.equal(query.generateChangeCreatePrompt(root, { projectCode: 'product', goal: '整理' }).copiedMeansCreated, false);
   assert.match(query.generateChangeActionPrompt(root, { projectCode: 'product', ref: 'archived~2026-09-03-01-done', action: 'continue' }).prompt, /不要修改历史归档/);
+});
+
+
+test('任务文档读取工作树未提交内容，相对文件不回退且拒绝越界与符号链接', (t) => {
+  const { root, runtime, projectRoot } = fixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const worktreeRoot = path.join(root, '.worktrees', 'reader-task');
+  const candidateRoot = path.join(worktreeRoot, 'projects/product');
+  writeChange(projectRoot, 'shared', { 'brief.md': 'retained brief', 'proposal.md': 'retained design' });
+  writeChange(candidateRoot, 'shared', { 'brief.md': 'worktree brief', 'proposal.md': 'worktree design' });
+  fs.mkdirSync(path.join(projectRoot, 'docs')); fs.mkdirSync(path.join(candidateRoot, 'docs'));
+  fs.writeFileSync(path.join(projectRoot, 'docs/task.md'), 'main copy');
+  fs.writeFileSync(path.join(candidateRoot, 'docs/task.md'), 'uncommitted worktree copy');
+  fs.writeFileSync(path.join(projectRoot, 'docs/only-main.md'), 'main only');
+  runtime.inspectTask = (_target, taskId) => ({ record: { taskId, changes: [{ project: 'product', change: 'shared' }] } });
+  runtime.inspectGitWorktrees = () => ({ status: 'ready', repositories: [{ selector: 'workspace', entityType: 'workspace', sourcePath: '.', checkoutPath: worktreeRoot, state: 'ready' }] });
+  assert.equal(runtime.taskProjectDocument(root, 'reader-task', 'product', 'docs/task.md').content, 'uncommitted worktree copy');
+  assert.equal(runtime.taskProjectDocument(root, 'reader-task', 'product', 'docs/only-main.md').exists, false);
+  assert.equal(runtime.taskProjectDocument(root, 'reader-task', 'product', 'docs/task.md').provenance, 'task-worktree-candidate');
+  for (const file of ['../AGENTS.md', '/etc/passwd', 'docs/task.txt']) assert.throws(() => runtime.taskProjectDocument(root, 'reader-task', 'product', file), error => coded(error, 'task_document_path_forbidden'));
+  assert.throws(() => runtime.taskProjectDocument(root, 'reader-task', 'unrelated', 'docs/task.md'), error => coded(error, 'task_document_scope_forbidden'));
+  fs.symlinkSync(path.join(projectRoot, 'docs/task.md'), path.join(candidateRoot, 'docs/link.md'));
+  assert.throws(() => runtime.taskProjectDocument(root, 'reader-task', 'product', 'docs/link.md'), error => coded(error, 'task_document_path_forbidden'));
+  fs.rmSync(path.join(candidateRoot, 'openspec/changes/shared'), { recursive: true });
+  assert.equal(runtime.resolveTaskScopedChange(root, 'reader-task', { project: 'product', change: 'shared' }).availability, 'unavailable');
+  runtime.inspectGitWorktrees = () => ({ status: 'blocked', repositories: [{ selector: 'workspace', entityType: 'workspace', sourcePath: '.', checkoutPath: worktreeRoot, state: 'blocked' }] });
+  assert.equal(runtime.resolveTaskScopedChange(root, 'reader-task', { project: 'product', change: 'shared' }).availability, 'unavailable');
+  assert.throws(() => runtime.taskProjectDocument(root, 'reader-task', 'product', 'docs/task.md'), error => coded(error, 'task_worktree_unavailable'));
+  runtime.inspectGitWorktrees = () => ({ status: 'blocked', repositories: [] });
+  assert.equal(runtime.taskProjectDocument(root, 'reader-task', 'product', 'docs/task.md').content, 'main copy');
 });

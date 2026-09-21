@@ -10,7 +10,7 @@ export type ProjectQuery = {
   projectDetail(root: string, code: string): { project: Project };
   resolveSourceRoot(root: string, source: Project['source']): string;
 };
-export type WorktreeQuery = { inspectGitWorktrees(input: { workspaceRoot: string; taskId: string }): { status: string; repositories: WorktreeRepository[] } };
+export type WorktreeQuery = { inspectGitWorktrees(input: { workspaceRoot: string; taskId: string }): { status: string; repositories: WorktreeRepository[]; diagnostic?: { code: string; message: string } | null } };
 type ChangeReference = { project: string; change: string };
 type ChangeWorkingCopy = { provenance: string; root: string; change: ChangeModel };
 type ChangeResolution = {
@@ -24,7 +24,7 @@ type ChangeResolution = {
 };
 export type ChangeRuntime = {
   readTask(root: string, taskId: string): unknown;
-  inspectTask(root: string, taskId: string): { record: { changes: ChangeReference[] } };
+  inspectTask(root: string, taskId: string): { record: { changes: ChangeReference[]; scope?: { projects: string[]; services: Array<{ project: string; service: string }> } } };
   [key: string]: unknown;
 };
 type ChangeApplicationOptions = { openSpecQuery?: OpenSpecQuery; projectQuery?: ProjectQuery; worktreeQuery?: WorktreeQuery };
@@ -88,14 +88,18 @@ export function registerChangeApplication(runtime: ChangeRuntime, options: Chang
   function taskScopedProjectRoot(targetRoot: string, taskId: string, projectCode: string, project: Project): string | null {
     if (!worktreeQuery || typeof worktreeQuery.inspectGitWorktrees !== 'function') return null;
     const inspected = worktreeQuery.inspectGitWorktrees({ workspaceRoot: targetRoot, taskId });
-    if (inspected.status !== 'ready') return null;
+    if (inspected.status !== 'ready' && !inspected.repositories.length) {
+      if (!inspected.diagnostic || inspected.diagnostic.code === 'git_worktree_evidence_missing') return null;
+      throw changeError('task_worktree_unavailable', '任务工作树当前不可读取，请核对工作树关联后重试。', 409);
+    }
     const direct = inspected.repositories.find((repository) => repository.selector === `project:${projectCode}`);
     if (direct) {
-      if (direct.entityType !== 'project' || direct.sourcePath !== project.source.path || direct.state !== 'ready') return null;
+      if (direct.entityType !== 'project' || direct.sourcePath !== project.source.path || direct.state !== 'ready') throw changeError('task_worktree_unavailable', '任务项目工作树身份已变化，不能读取主目录替代。', 409);
       return path.resolve(direct.checkoutPath);
     }
     const workspace = inspected.repositories.find((repository) => repository.selector === 'workspace');
-    if (!workspace || workspace.entityType !== 'workspace' || workspace.sourcePath !== '.' || workspace.state !== 'ready') return null;
+    if (!workspace) return null;
+    if (workspace.entityType !== 'workspace' || workspace.sourcePath !== '.' || workspace.state !== 'ready') throw changeError('task_worktree_unavailable', '任务工作树身份已变化，不能读取主目录替代。', 409);
     const executionRoot = path.resolve(workspace.checkoutPath);
     const candidate = requiredProjectQuery.resolveSourceRoot(executionRoot, project.source);
     return inside(executionRoot, candidate) ? candidate : null;
@@ -116,12 +120,17 @@ export function registerChangeApplication(runtime: ChangeRuntime, options: Chang
       }
     }
     const { project, projectRoot } = projectContext(requiredProjectQuery, targetRoot, projectCode);
-    const candidateRoot = taskAvailable ? taskScopedProjectRoot(targetRoot, taskId, projectCode, project) : null;
+    let candidateRoot: string | null;
+    try { candidateRoot = taskAvailable ? taskScopedProjectRoot(targetRoot, taskId, projectCode, project) : null; }
+    catch (cause) {
+      const failure = cause as ChangeError;
+      return { schemaVersion: 'buildr.task-scoped-change-reference/v1', taskId, reference: { project: projectCode, change: changeCode }, availability: 'unavailable', workingCopy: null, retainedBaseline: null, diagnostic: { code: failure.code || 'task_worktree_unavailable', message: failure.message } };
+    }
     const candidate = candidateRoot && isDirectory(candidateRoot) ? requiredOpenSpecQuery.findLogicalChange(candidateRoot, project, candidateRoot, changeCode, includeContent) : null;
     const retained = requiredOpenSpecQuery.findLogicalChange(targetRoot, project, projectRoot, changeCode, includeContent);
     const working = candidate && candidateRoot
       ? { provenance: 'task-worktree-candidate', root: candidateRoot, change: candidate }
-      : retained
+      : !candidateRoot && retained
         ? { provenance: retained.lifecycle === 'active' ? 'retained-active' : 'retained-archive', root: projectRoot, change: retained }
         : null;
     return {
@@ -130,15 +139,39 @@ export function registerChangeApplication(runtime: ChangeRuntime, options: Chang
       reference: { project: projectCode, change: changeCode },
       availability: working ? 'available' : 'unavailable',
       workingCopy: working,
-      retainedBaseline: candidate && retained ? { provenance: retained.lifecycle === 'active' ? 'retained-baseline' : 'retained-archive', root: projectRoot, change: retained } : null,
-      diagnostic: working ? null : { code: 'task_change_unavailable', message: `OpenSpec Change 当前不可用：${projectCode}/${changeCode}。` },
+      retainedBaseline: candidateRoot && retained ? { provenance: retained.lifecycle === 'active' ? 'retained-baseline' : 'retained-archive', root: projectRoot, change: retained } : null,
+      diagnostic: working ? null : { code: 'task_change_unavailable', message: `${candidateRoot ? '任务工作树中未找到' : '当前未找到'} OpenSpec Change：${projectCode}/${changeCode}。` },
     };
   }
 
   function taskScopedChangeDetail(targetRoot: string, taskId: string, projectCode: string, changeCode: string): { resolution: ChangeResolution } {
-    const resolution = resolveTaskScopedChange(targetRoot, taskId, { project: projectCode, change: changeCode }, { includeContent: true });
+    const task = runtime.inspectTask(targetRoot, taskId);
+    if (!task.record.changes.some(reference => reference.project === projectCode && reference.change === changeCode)) throw changeError('task_change_not_associated', '这个变更未关联当前任务。', 404);
+    const resolution = resolveTaskScopedChange(targetRoot, taskId, { project: projectCode, change: changeCode }, { includeContent: true, taskRecordObserved: true });
     if (resolution.availability !== 'available') throw changeError('change_not_found', resolution.diagnostic?.message || 'Change 不存在。', 404, resolution.reference);
     return { resolution };
+  }
+
+  function taskProjectDocument(targetRoot: string, taskId: string, projectCode: string, documentPath: string) {
+    const task = runtime.inspectTask(targetRoot, taskId);
+    const scope = task.record.scope;
+    if (!scope?.projects.includes(projectCode) && !scope?.services.some(service => service.project === projectCode) && !task.record.changes.some(reference => reference.project === projectCode)) throw changeError('task_document_scope_forbidden', '文档不在当前任务的项目范围内。', 403);
+    const { project, projectRoot } = projectContext(requiredProjectQuery, targetRoot, projectCode);
+    const candidateRoot = taskScopedProjectRoot(targetRoot, taskId, projectCode, project);
+    const sourceRoot = candidateRoot || projectRoot;
+    const raw = typeof documentPath === 'string' ? documentPath : '';
+    const relative = path.posix.normalize(raw);
+    if (!raw || raw.includes('\\') || raw.includes('\0') || path.isAbsolute(raw) || /^[A-Za-z]:/.test(raw) || !relative.endsWith('.md') || !inside(sourceRoot, path.resolve(sourceRoot, relative))) throw changeError('task_document_path_forbidden', '只允许读取当前项目内的 Markdown 文档。', 400);
+    let current = sourceRoot;
+    for (const segment of relative.split('/')) {
+      current = path.join(current, segment);
+      const stat = fs.lstatSync(current, { throwIfNoEntry: false });
+      if (stat?.isSymbolicLink()) throw changeError('task_document_path_forbidden', '不能通过符号链接读取任务文档。', 400);
+    }
+    const file = path.resolve(sourceRoot, relative);
+    const stat = fs.statSync(file, { throwIfNoEntry: false });
+    if (stat && (!stat.isFile() || stat.size > 512 * 1024)) throw changeError('task_document_unreadable', '任务文档不是可读取的普通文件或超过 512 KB。', 400);
+    return { schemaVersion: 'buildr.task-project-document/v1', projectCode, path: relative, name: path.posix.basename(relative), exists: Boolean(stat), content: stat ? fs.readFileSync(file, 'utf8') : null, provenance: candidateRoot ? 'task-worktree-candidate' : 'retained-project' };
   }
 
   function taskUiPrototypeEntries(targetRoot: string, taskId: string): { taskId: string; prototypes: TaskPrototype[]; diagnostics: PrototypeDiagnostic[] } {
@@ -213,6 +246,7 @@ export function registerChangeApplication(runtime: ChangeRuntime, options: Chang
   return Object.assign(runtime, {
     resolveTaskScopedChange,
     taskScopedChangeDetail,
+    taskProjectDocument,
     taskUiPrototypes,
     taskUiPrototype,
   });

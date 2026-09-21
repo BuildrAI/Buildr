@@ -1,10 +1,10 @@
 import { useAppShell } from './AppShellContext';
 import { useRef, useCallback, useContext, useEffect, useLayoutEffect, useState, type ReactNode, type MouseEvent } from 'react';
 import { UNSAFE_LocationContext, useLocation, useNavigate, useNavigationType, useOutlet } from 'react-router-dom';
-import { WorkspaceTabsContext } from './pageTabs';
+import { WorkspaceTabsContext, WorkspaceViewActiveContext } from './pageTabs';
 import { ResourcePreviewContext, resourcePreview, type PreviewState, type ResourcePreview } from './resource-preview';
 import { PageTabStrip } from './PageTabStrip';
-import { moveTab, parseTabs, previewOwnerPath, ratioStorageKey, readRatio, tabForPath, tabsStorageKey, workspacePageSearch, type WorkspacePageTab } from './workspace-pages';
+import { moveTab, parseTabs, previewOwnerPath, previewOwnerSearch, ratioStorageKey, readRatio, tabForPath, tabsStorageKey, workspacePageSearch, type WorkspacePageTab } from './workspace-pages';
 
 type LocationValue = React.ContextType<typeof UNSAFE_LocationContext>;
 type Visited = { path: string; node: ReactNode; location: LocationValue; instance: string };
@@ -78,7 +78,7 @@ export function WorkspacePages({ workspaceId, renderResource }: { workspaceId: s
     const preview = resourcePreview(workspaceId, location.pathname + location.search);
     if (preview) {
       const owner = previewOwnerPath(workspaceId, preview);
-      const listSearch = preview.kind === 'article' && typeof location.state?.articleListSearch === 'string' && location.state.articleListSearch.startsWith('?') ? location.state.articleListSearch : '';
+      const listSearch = previewOwnerSearch(workspaceId, preview, location.state);
       navigate({ pathname: owner, search: listSearch }, { replace: true, state: { resourceViews: { items: [preview], active: preview.kind } } });
     }
   }, [workspaceId, location.pathname, location.search, navigate]);
@@ -145,7 +145,7 @@ export function WorkspacePages({ workspaceId, renderResource }: { workspaceId: s
       <div className="workspace-page-tabs" style={{ width: `calc(100% - ${paneWidths[location.pathname] || 0}px)` }}><PageTabStrip tabs={displayTabs.filter(tab => tab.kind !== 'dir')} onClose={close} onReorder={reorder} /></div>
       <div className="workspace-page-stack" onClickCapture={captureResourceLink}>
         {entries.map((entry) => <div key={entry.path + ":" + entry.instance} className="workspace-page" hidden={entry.path !== location.pathname || !current}>
-          <UNSAFE_LocationContext.Provider value={entry.location}>{entry.node}</UNSAFE_LocationContext.Provider>
+          <WorkspaceViewActiveContext.Provider value={entry.path === location.pathname && Boolean(current)}><UNSAFE_LocationContext.Provider value={entry.location}>{entry.node}</UNSAFE_LocationContext.Provider></WorkspaceViewActiveContext.Provider>
         </div>)}
       </div>
     </div>

@@ -1,4 +1,3 @@
-import { type WorkspaceDocument } from '../../../api/client';
 import { projectApi } from '../../project/api/project-api';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -15,7 +14,7 @@ export type { WorkspaceDocument } from '../../../api/client';
 export type TaskBriefState =
   | { kind: 'empty' }
   | { kind: 'missing'; key: string; message: string }
-  | { kind: 'ready'; key: string; change: ChangePayload };
+  | { kind: 'ready'; key: string; change: ChangePayload; provenance: string };
 
 export function useTaskArtifacts(taskId: string, data: TaskDetailResponse | null, lifecycle: TaskReadLifecycle) {
   const [briefs, setBriefs] = useState<TaskBriefState[]>([]);
@@ -26,10 +25,12 @@ export function useTaskArtifacts(taskId: string, data: TaskDetailResponse | null
   const [documentError, setDocumentError] = useState<string | null>(null);
   const taskIdRef = useRef(taskId);
   const prototypeRequestRef = useRef(0);
+  const briefsRequestRef = useRef(0);
   const projectRegistryRef = useRef<RegisteredProject[] | null>(null);
   taskIdRef.current = taskId;
 
   const loadBriefs = useCallback(async (references: TaskDetailResponse['record']['changes']) => {
+    const requestId = ++briefsRequestRef.current;
     if (!references.length) {
       setBriefs([{ kind: 'empty' }]);
       return;
@@ -40,8 +41,8 @@ export function useTaskArtifacts(taskId: string, data: TaskDetailResponse | null
       try {
         const detail = await lifecycle.run(currentTaskId, `change:${key}`, (signal) => (
           taskApi.change(currentTaskId, reference.project, reference.change, { signal })
-        )) as { resolution: { workingCopy: { change: ChangePayload } } };
-        return { kind: 'ready' as const, key, change: detail.resolution.workingCopy.change };
+        )) as { resolution: { workingCopy: { change: ChangePayload; provenance: string } } };
+        return { kind: 'ready' as const, key, change: detail.resolution.workingCopy.change, provenance: detail.resolution.workingCopy.provenance };
       } catch (cause) {
         return {
           kind: 'missing' as const,
@@ -50,15 +51,15 @@ export function useTaskArtifacts(taskId: string, data: TaskDetailResponse | null
         };
       }
     }));
-    if (taskIdRef.current === currentTaskId) setBriefs(results);
+    if (taskIdRef.current === currentTaskId && briefsRequestRef.current === requestId) setBriefs(results);
   }, [taskId, lifecycle]);
 
   useEffect(() => {
-    setBriefs([]);
     if (data?.record.taskId === taskId) void loadBriefs(data.record.changes);
   }, [taskId, data?.record.taskId, data?.record.changes, loadBriefs]);
 
   useEffect(() => {
+    setBriefs([]);
     setPrototypeData(null);
     setPrototypeError(null);
     setPrototypeLoading(false);
@@ -110,12 +111,29 @@ export function useTaskArtifacts(taskId: string, data: TaskDetailResponse | null
     }
   }, [data, taskId]);
 
+  const openChangeDocument = useCallback(async (changeKey: string, documentPath: string) => {
+    const currentTaskId = taskId;
+    try {
+      if (!projectRegistryRef.current) projectRegistryRef.current = (await projectApi.listProjects()).projects || [];
+      if (taskIdRef.current !== currentTaskId) return;
+      const projectCode = changeKey.split('/')[0];
+      const project = projectRegistryRef.current.find(item => item.code === projectCode);
+      if (!project) throw new Error('文档所属项目当前不可读取。');
+      const prefix = project.source?.path === '.' ? '' : `${project.source?.path || ''}/`;
+      const href = prefix && documentPath.startsWith(prefix) ? documentPath : `${prefix}${documentPath}`;
+      const reference = resolveTaskDocumentReference(href, { projects: [projectCode], services: [] }, [project]);
+      if (!reference) throw new Error('链接不在当前项目的可读文档范围内。');
+      setDocumentError(null); setDocumentReference(reference);
+    } catch (cause) { if (taskIdRef.current === currentTaskId) setDocumentError(cause instanceof Error ? cause.message : '文档当前不可读取。'); }
+  }, [taskId]);
+
   const loadProjectDocument = useCallback((reference: TaskDocumentReference, documentPath: string) => (
-    projectApi.projectDocument(reference.projectCode, documentPath) as Promise<WorkspaceDocument>
-  ), []);
+    taskApi.projectDocument(taskId, reference.projectCode, documentPath)
+  ), [taskId]);
 
   return {
     briefs,
+    refreshBriefs: () => data ? loadBriefs(data.record.changes) : Promise.resolve(),
     prototypeData,
     prototypeLoading,
     prototypeError,
@@ -123,6 +141,7 @@ export function useTaskArtifacts(taskId: string, data: TaskDetailResponse | null
     documentReference,
     documentError,
     openIntentDocument,
+    openChangeDocument,
     closeDocument: () => setDocumentReference(null),
     loadProjectDocument,
   };

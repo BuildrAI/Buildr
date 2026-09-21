@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Button, Table, Tooltip } from 'antd';
 import { PushpinFilled, PushpinOutlined } from '@ant-design/icons';
@@ -29,33 +30,38 @@ export function TaskTable({ tasks, prefetchTaskId, projectNames, contexts, group
   onPin(taskId: string): void;
   pending?: string;
 }) {
+  const root = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(0);
+  useEffect(() => {
+    if (!root.current) return;
+    const observer = new ResizeObserver(([entry]) => setWidth(entry.contentRect.width));
+    observer.observe(root.current);
+    return () => observer.disconnect();
+  }, []);
   const columns: ColumnsType<TaskListItem> = [
-    { title: '任务', render: (_value, item, index) => {
-      const record = item.record;
-      const context = contexts[record.taskId]?.context;
+    { title: '任务 / 进展', key: 'task', render: (_value, item, index) => {
+      const record = item.record, context = contexts[record.taskId]?.context;
       const group = taskProjectGroup(item, projectNames);
       const showGroup = grouped && (index === 0 || group !== taskProjectGroup(tasks[index - 1], projectNames));
       return <>
         {showGroup && <div className="task-project-group">{group}</div>}
-        <div className="task-rich-row">
-          <span className={`task-status-symbol ${record.status}`} aria-label={taskStatusLabel(record.status)} />
-          <div className="task-rich-copy">
-            <Link className="task-row-main" to={taskHref(record.taskId)} onClick={(event) => { event.preventDefault(); event.stopPropagation(); onOpen(record.taskId); }}><strong>{record.title}</strong></Link>
-            <p className="task-row-summary">{summary(context?.progress || record.result?.summary || record.intent) || '尚未记录工作目标'}</p>
-            <div className="task-row-meta">
-              {record.scope.projects.length ? record.scope.projects.map((project) => <span key={project} className="task-project-label">{projectNames[project] || project}</span>) : <span>工作空间</span>}
-              <span>更新于 {formatDateTime(record.updatedAt)}</span>
-              {item.taskRelations.children.length > 0 && <span>含 {item.taskRelations.children.length} 项子任务</span>}
-              {record.parentTaskId && <span>子任务</span>}
-              {context?.attention?.state === 'pending' && <span className="task-attention-label">{context.attention.kind === 'acceptance' ? '等待验收' : context.attention.kind === 'question' ? '需要介入' : '等待决定'}</span>}
-              {record.retrospective?.state === 'pending-decision' && <span className="task-attention-label">复盘等待决定</span>}
-            </div>
-            <small className="task-row-id">{record.taskId}</small>
-          </div>
+        <div className="task-compact-copy">
+          <Link className="task-row-main" title={`${record.taskId} · ${group}`} to={taskHref(record.taskId)} onClick={event => { event.stopPropagation(); if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); onOpen(record.taskId); }}><strong>{record.title}</strong></Link>
+          <p className="task-row-summary">{summary((record.status === 'completed' || record.status === 'abandoned') ? record.result?.summary || record.intent : context?.progress || record.intent)}</p>
         </div>
       </>;
     } },
-    { title: '状态', width: 104, render: (_value, item) => <div className="task-rich-actions"><span className={`lifecycle-badge ${item.record.status}`}>{taskStatusLabel(item.record.status)}</span><Tooltip title={isPinned(item.record.taskId) ? '取消置顶' : '置顶这项工作'}><Button type="text" size="small" loading={pending === item.record.taskId} aria-label={`${isPinned(item.record.taskId) ? '取消置顶' : '置顶'}：${item.record.title}`} icon={isPinned(item.record.taskId) ? <PushpinFilled /> : <PushpinOutlined />} onClick={(event) => { event.stopPropagation(); onPin(item.record.taskId); }} /></Tooltip></div> },
+    ...(width >= 570 && !grouped ? [{ title: '项目', key: 'project', width: 120, ellipsis: true, render: (_value: unknown, item: TaskListItem) => taskProjectGroup(item, projectNames) }] : []),
+    { title: '状态', key: 'status', width: 88, render: (_value, item) => {
+      const attention = contexts[item.record.taskId]?.context?.attention;
+      return <div className="task-compact-status"><span className={`lifecycle-badge ${item.record.status}`}>{taskStatusLabel(item.record.status)}</span>{attention?.state === 'pending' && <small className="task-attention-label">{attention.kind === 'acceptance' ? '等待验收' : attention.kind === 'question' ? '需要答复' : '等待决定'}</small>}{item.record.retrospective?.state === 'pending-decision' && <small className="task-attention-label">复盘待决定</small>}</div>;
+    } },
+    ...(width >= 740 ? [{ title: '更新', key: 'updated', width: 138, render: (_value: unknown, item: TaskListItem) => {
+      const recorded = item.record.updatedAt, progress = contexts[item.record.taskId]?.context?.updatedAt;
+      const time = progress && progress > recorded ? progress : recorded;
+      return <time className="task-row-time" title={formatDateTime(time)}>{formatDateTime(time).replace(/:\d{2}$/, '')}</time>;
+    } }] : []),
+    { title: '', key: 'pin', width: 54, align: 'right', render: (_value, item) => <Tooltip title={isPinned(item.record.taskId) ? '取消置顶' : '置顶这项工作'}><Button type="text" size="small" loading={pending === item.record.taskId} aria-label={`${isPinned(item.record.taskId) ? '取消置顶' : '置顶'}：${item.record.title}`} icon={isPinned(item.record.taskId) ? <PushpinFilled /> : <PushpinOutlined />} onClick={event => { event.stopPropagation(); onPin(item.record.taskId); }} /></Tooltip> },
   ];
-  return <Table className="task-rich-table" rowKey={(item) => item.record.taskId} pagination={false} showHeader={false} tableLayout="fixed" dataSource={tasks} columns={columns} onRow={(item) => ({ onClick: () => onOpen(item.record.taskId), 'data-task-id': item.record.taskId, ...(item.record.taskId === prefetchTaskId ? { 'data-task-prefetch': 'true' } : {}) })} components={{ body: { wrapper: TableBody } }} />;
+  return <div ref={root} className="resource-directory-table task-list-table"><Table className="task-compact-table" rowKey={(item) => item.record.taskId} pagination={false} showHeader tableLayout="fixed" dataSource={tasks} columns={columns} onRow={(item) => ({ onClick: () => onOpen(item.record.taskId), 'data-task-id': item.record.taskId, ...(item.record.taskId === prefetchTaskId ? { 'data-task-prefetch': 'true' } : {}) })} components={{ body: { wrapper: TableBody } }} /></div>;
 }

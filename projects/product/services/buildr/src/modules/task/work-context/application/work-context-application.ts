@@ -19,7 +19,7 @@ export function createTaskWorkContextApplication(runtime: WorkContextRuntime) {
     runtime.readTask(root, taskId);
     return repository.mutate(root, taskId, input.expectedContextDigest, (current) => {
       const now = new Date().toISOString();
-      return { progress: input.progress.trim(), nextStep: input.nextStep.trim(), updatedAt: now, attention: input.attention === undefined ? current?.attention || null : input.attention === null ? null : { id: crypto.randomUUID(), kind: input.attention.kind, reason: input.attention.reason.trim(), state: 'pending', createdAt: now, response: null } };
+      return { ...(input.stage !== undefined ? { stage: input.stage } : current?.stage !== undefined ? { stage: current.stage } : {}), progress: input.progress.trim(), nextStep: input.nextStep.trim(), updatedAt: now, attention: input.attention === undefined ? current?.attention || null : input.attention === null ? null : { id: crypto.randomUUID(), kind: input.attention.kind, reason: input.attention.reason.trim(), state: 'pending', createdAt: now, response: null } };
     });
   }
   function respondTaskWorkContext(root: string, taskId: string, input: TaskWorkContextRespondRequest): TaskWorkContextResponse {

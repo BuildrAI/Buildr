@@ -87,7 +87,7 @@ function validateAppliedMigrations(database: any, scripts: any, { allowPending }
   }
   const pending = scripts.slice(applied.length);
   // This additive migration leaves every existing table readable; reads never apply it.
-  const workbenchReadCompatible = pending.length === 1 && pending[0].name === '0033_add_daily_workbench.sql';
+  const workbenchReadCompatible = pending.every((script: { name: string }) => ['0033_add_daily_workbench.sql', '0034_add_task_review_history.sql'].includes(script.name));
   if (pending.length && !allowPending && !workbenchReadCompatible) throw structuredStoreError('workspace_store_migration_required', `Workspace structured store 需要应用 ${pending.length} 个 migration。`, 409, { currentVersion: applied.at(-1)?.version ?? null, targetVersion: scripts.at(-1).version }, '执行一个合法 structured-store mutation 以原子升级数据库。');
   return { applied, pending };
 }

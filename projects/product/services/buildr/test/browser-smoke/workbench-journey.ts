@@ -95,7 +95,7 @@ export async function runWorkbenchJourney({ t, page, runtime, workspaceRoot, oth
   await t.test('人的回应保存到同一工作摘要并移出事项，任务记录保持不变', async () => {
     await page.goto(`${workspaceUrl}/overview`);
     await page.locator(`[data-attention-task="${crossId}"]`).getByRole('link', { name: crossTitle, exact: true }).click();
-    await page.waitForURL(`${workspaceUrl}/tasks/${crossId}`);
+    await page.locator('#task-detail-id').filter({ hasText: crossId }).waitFor({ state: 'visible' });
     await page.locator('#task-work-context').waitFor({ state: 'visible' });
     assert.match(await page.locator('#task-work-context').innerText(), /已经梳理两项关联项目的当前资料/);
     await page.locator('#task-attention-respond').click();
@@ -126,6 +126,24 @@ export async function runWorkbenchJourney({ t, page, runtime, workspaceRoot, oth
     assert.ok(emptyAttention && emptyAttention.height <= 100, '没有待回应事项时应紧凑呈现，不保留大块空卡片');
     const emptyStatus = await page.locator('#workbench-attention [role="status"]').boundingBox();
     assert.ok(emptyStatus && emptyStatus.height <= 40, '空态应是一行状态说明');
+  });
+
+  await t.test('任务抽屉随缓存页隐藏，浏览器前进恢复未保存草稿', async () => {
+    await page.goto(`${workspaceUrl}/overview`);
+    await page.locator(`#workbench-active [data-workbench-task="${crossId}"]`).getByRole('link', { name: crossTitle, exact: true }).click();
+    await page.locator('#task-detail-id').filter({ hasText: crossId }).waitFor({ state: 'visible' });
+    await page.locator('#task-more-actions').click(); await page.locator('#task-edit-action').click();
+    await page.locator('#task-edit-title').fill('浏览器返回时保留的任务进展草稿');
+    await page.goBack();
+    await page.waitForURL(`${workspaceUrl}/overview`, { timeout: 10000 });
+    await page.locator('#task-edit-title').waitFor({ state: 'hidden' });
+    assert.equal(await page.getByRole('dialog').count(), 0, '隐藏任务页不得保留可见的维护对话框');
+    await page.locator('#workbench-attention').click({ trial: true });
+    await page.goForward();
+    await page.locator('#task-edit-title').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#task-edit-title').inputValue(), '浏览器返回时保留的任务进展草稿');
+    await page.locator('#task-edit-title').press('Escape');
+    assert.notEqual(runtime.inspectTask(workspaceRoot, crossId).record.title, '浏览器返回时保留的任务进展草稿', '关闭保留中的草稿不会写入任务');
   });
 
   await t.test('历史每日演进从概览和动态进入同一详情，日期与分组可刷新并随任务返回', async () => {
@@ -168,9 +186,9 @@ export async function runWorkbenchJourney({ t, page, runtime, workspaceRoot, oth
     assert.equal(fs.readFileSync(progressPath, 'utf8'), savedProgress, '生成入口只准备指令，不写演进文件');
     await page.locator('#close-agent-action').click();
     await page.locator('[data-progress-item="acb1234"]').getByRole('link').filter({ hasText: crossTitle }).click();
-    await page.waitForURL(`${workspaceUrl}/tasks/${crossId}`);
-    await page.locator('#task-return').click();
-    await page.waitForURL(taskGroupUrl);
+    await page.locator('#task-detail-id').filter({ hasText: crossId }).waitFor({ state: 'visible' });
+    await page.goBack();
+    await page.waitForURL(taskGroupUrl, { timeout: 10000 });
     await page.locator('[data-progress-item="acb1234"]').waitFor({ state: 'visible' });
 
     await page.locator('#workbench-activity').getByRole('button', { name: '后一天', exact: true }).click();
@@ -232,23 +250,26 @@ export async function runWorkbenchJourney({ t, page, runtime, workspaceRoot, oth
     await page.getByRole('button', { name: `取消置顶：${crossTitle}`, exact: true }).waitFor({ state: 'visible' });
     await page.getByRole('button', { name: `关注：${demoProjectName}`, exact: true }).click();
     await page.getByRole('button', { name: `取消关注：${demoProjectName}`, exact: true }).waitFor({ state: 'visible' });
+    const initialPreferencesRead = page.waitForResponse(response => response.request().method() === 'GET' && response.url().endsWith('/workbench/preferences'));
     await page.goto(`${workspaceUrl}/tasks/${nextId}`);
+    await initialPreferencesRead;
+    let preferenceReadsAfterWrite = 0;
+    const countPreferenceReads = (request: any) => { if (request.method() === 'GET' && request.url().endsWith('/workbench/preferences')) preferenceReadsAfterWrite++; };
+    page.on('request', countPreferenceReads);
+    await page.locator('#task-more-actions').click();
     await page.locator('#task-plan-next').click();
+    await page.locator('#task-more-actions').click();
     await page.locator('#task-plan-next').filter({ hasText: '移出接下来' }).waitFor({ state: 'visible' });
-    await page.getByRole('button', { name: '收藏当前资料', exact: true }).click();
-    await page.getByRole('button', { name: '取消收藏当前资料', exact: true }).waitFor({ state: 'visible' });
+    await page.keyboard.press('Escape');
+    page.off('request', countPreferenceReads);
+    assert.equal(preferenceReadsAfterWrite, 0, '偏好写入直接采用权威响应，不再重复GET读取');
+    assert.equal(await page.getByRole('button', {name:'收藏当前资料',exact:true}).count(),0, '任务详情只保留一种任务组织方式，不重复收藏');
     await page.reload();
-    await page.locator('#task-plan-next').filter({ hasText: '移出接下来' }).waitFor({ state: 'visible' });
-    assert.equal(await page.getByRole('button', { name: '取消收藏当前资料', exact: true }).count(), 1);
-    await page.getByRole('button', { name: '取消收藏当前资料', exact: true }).click();
-    await page.getByRole('button', { name: '收藏当前资料', exact: true }).waitFor({ state: 'visible' });
-    const afterRemoval = await read('/workbench/preferences');
-    assert.equal(afterRemoval.items.some((item: { kind: string; key: string }) => item.kind === 'saved-resource' && item.key === `task:${nextId}`), false);
-    assert.ok(afterRemoval.items.some((item: { kind: string; key: string }) => item.kind === 'planned-task' && item.key === nextId), '取消收藏保留独立的接下来偏好');
-    await page.getByRole('button', { name: '收藏当前资料', exact: true }).click();
-    await page.getByRole('button', { name: '取消收藏当前资料', exact: true }).waitFor({ state: 'visible' });
+    await page.locator('#task-more-actions').click();
+    await page.locator('#task-plan-next').filter({hasText:'移出接下来'}).waitFor({state:'visible'});
+    await page.keyboard.press('Escape');
     const preferences = await read('/workbench/preferences');
-    for (const [kind, key] of [['pinned-task', crossId], ['planned-task', nextId], ['followed-project', 'demo'], ['saved-resource', `task:${nextId}`], ['recent-resource', `task:${nextId}`]]) {
+    for (const [kind, key] of [['pinned-task', crossId], ['planned-task', nextId], ['followed-project', 'demo'], ['recent-resource', `task:${nextId}`]]) {
       assert.ok(preferences.items.some((item: { kind: string; key: string }) => item.kind === kind && item.key === key), `${kind}/${key} 已持久保存`);
     }
     assert.equal(runtime.inspectTask(workspaceRoot, nextId).record.status, 'todo');
@@ -258,6 +279,11 @@ export async function runWorkbenchJourney({ t, page, runtime, workspaceRoot, oth
     const plannedLink = page.locator(`#workbench-planned a[href="${workspacePath}/tasks/${nextId}"]`);
     await plannedLink.waitFor({ state: 'visible' });
     assert.equal(await plannedLink.innerText(), nextTitle);
+    await page.locator('#workbench-resources').getByText('最近打开', {exact:true}).click();
+    await page.locator('#workbench-resources').getByRole('link').filter({ hasText: nextTitle }).waitFor({ state: 'visible' });
+    await page.locator('#workbench-resources').getByRole('button', {name:`收藏：${nextTitle}`, exact:true}).click();
+    await page.locator('#workbench-resources').getByRole('button', {name:`取消收藏：${nextTitle}`, exact:true}).waitFor({state:'visible'});
+    await page.locator('#workbench-resources').getByText('已收藏', {exact:true}).click();
     await page.locator('#workbench-resources').getByRole('link').filter({ hasText: nextTitle }).waitFor({ state: 'visible' });
     assert.equal(await page.locator(`.workbench-followed-navigation a[href="${workspacePath}/projects/demo"]`).innerText(), demoProjectName);
   });
@@ -271,18 +297,26 @@ export async function runWorkbenchJourney({ t, page, runtime, workspaceRoot, oth
     assert.match(await page.locator('#task-table-body').innerText(), /跨项目工作/);
     const listUrl = page.url();
     await crossRow.click();
-    await page.waitForURL(`${workspaceUrl}/tasks/${crossId}`);
+    await page.locator('#task-detail-id').filter({ hasText: crossId }).waitFor({ state: 'visible' });
+    assert.equal(page.url(), listUrl, '任务副屏保持列表筛选 URL');
+    assert.equal(await crossRow.isVisible(), true, '副屏打开时列表仍在主屏');
+    assert.equal(await page.locator('.pane-stage:visible').count(), 1);
+    assert.equal(await page.locator('.pane-right:visible').count(), 1);
+    assert.equal(await page.locator('[data-task-node=requirements]').getAttribute('aria-pressed'), 'true');
+    assert.match(await page.locator('#task-node-content').innerText(), /暂无补充需求或说明/);
     await page.locator('#task-detail-intent').getByRole('link', { name: '工作台关联资料', exact: true }).click();
     await page.locator('.task-document-preview-content').getByText('这是当前项目的真实文件内容，用于接续目标并阅读成果。', { exact: true }).waitFor({ state: 'visible' });
-    const mainBox = await page.locator('#task-detail-main').boundingBox();
-    const readerBox = await page.locator('#task-document-preview').boundingBox();
-    assert.ok(mainBox && readerBox && readerBox.x >= mainBox.x + mainBox.width - 1, '桌面资料应在正文右侧并排阅读');
+    const mainBox = await page.locator('.pane-left').boundingBox();
+    const readerBox = await page.locator('.pane-right').boundingBox();
+    assert.ok(mainBox && readerBox && readerBox.x >= mainBox.x + mainBox.width - 1, '桌面保留任务列表，资料在同一副屏内阅读');
+    assert.equal(await page.locator('.pane-stage:visible').count(), 1, '打开相关文档不得增加嵌套分屏');
     await page.setViewportSize({ width: 390, height: 844 });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
-    await page.getByRole('button', { name: '关闭相关资料', exact: true }).click();
+    await page.locator('#task-document-close').click();
     await page.locator('#task-document-preview').waitFor({ state: 'hidden' });
+    await page.locator('#task-node-content').waitFor({ state: 'visible' });
     await page.setViewportSize({ width: 1280, height: 720 });
-    await page.locator('#task-return').click();
+    await page.getByRole('button', {name:'关闭 任务详情', exact:true}).click();
     await page.waitForURL(listUrl);
     await crossRow.waitFor({ state: 'visible' });
     assert.equal(await page.locator('#task-filter-q').inputValue(), '工作台');
@@ -377,7 +411,7 @@ export async function runWorkbenchJourney({ t, page, runtime, workspaceRoot, oth
 
   await t.test('接续指令读取最新答复，终态只准备新目标而不重开任务', async () => {
     await page.goto(`${workspaceUrl}/tasks/${crossId}`);
-    await page.locator('#task-continue').click();
+    await page.locator('#task-more-actions').click(); await page.locator('#task-continue').click();
     await page.locator('#task-continue-prepare').click();
     await page.locator('#action-prompt-output').waitFor({ state: 'visible' });
     const prompt = await page.locator('#action-prompt-output').inputValue();
@@ -390,7 +424,7 @@ export async function runWorkbenchJourney({ t, page, runtime, workspaceRoot, oth
     const before = runtime.inspectTask(workspaceRoot, 'workbench-finished');
     const taskCount = runtime.queryTasks(workspaceRoot, { status: 'all' }).matchingTaskCount;
     await page.goto(`${workspaceUrl}/tasks/workbench-finished`);
-    await page.locator('#task-continue').filter({ hasText: '基于成果开展新工作' }).click();
+    await page.locator('#task-more-actions').click(); await page.locator('#task-continue').filter({ hasText: '基于成果生成新任务指令' }).click();
     await page.locator('#task-continue-goal').fill('基于已有成果，补充下一阶段的目标。');
     await page.locator('#task-continue-prepare').click();
     await page.locator('#action-prompt-output').waitFor({ state: 'visible' });
@@ -460,16 +494,16 @@ export async function runWorkbenchJourney({ t, page, runtime, workspaceRoot, oth
     await page.getByRole('menuitem', { name: 'browser-smoke', exact: true }).click();
     await page.waitForURL(`${workspaceUrl}/overview`);
     await page.locator(`#workbench-active [data-workbench-task="${crossId}"]`).getByRole('link', { name: crossTitle, exact: true }).click();
-    await page.locator('#task-continue').click();
+    await page.locator('#task-more-actions').click(); await page.locator('#task-continue').click();
     await page.locator('#task-continue-goal').waitFor({ state: 'visible' });
     await page.goBack();
     await page.waitForURL(`${workspaceUrl}/overview`);
     await page.goBack();
-    await page.waitForURL(`${otherWorkspaceUrl}/tasks/${crossId}`);
+    await page.waitForURL(`${otherWorkspaceUrl}/tasks`);
     await page.locator('#task-detail-title').filter({ hasText: '第二工作空间的同名任务' }).waitFor({ state: 'visible' });
     await page.locator('#task-continue-goal').waitFor({ state: 'hidden' });
     assert.equal(await page.locator('#agent-action-drawer').isVisible(), false, '其他工作空间不得保留旧任务交接抽屉');
-    await page.locator('#task-continue').click();
+    await page.locator('#task-more-actions').click(); await page.locator('#task-continue').click();
     await page.locator('#task-continue-prepare').click();
     await page.locator('#action-prompt-output').waitFor({ state: 'visible' });
     const prompt = await page.locator('#action-prompt-output').inputValue();

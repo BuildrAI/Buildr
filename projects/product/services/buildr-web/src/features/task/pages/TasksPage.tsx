@@ -5,6 +5,7 @@ import { RefreshButton } from '../../../components/RefreshButton';
 import type { TaskListRequest } from '../../../../build/generated/task-dto';
 import { useTaskList, type WorkspaceResponse } from '../hooks/useTaskList';
 import { useAppShell } from '../../../app/AppShellContext';
+import { useResourcePreview } from '../../../app/resource-preview';
 import { workspaceHref } from '../../../lib/labels';
 import { TaskTable, taskProjectGroup } from '../components/TaskTable';
 import { isIndexedTaskQuery } from '../task-search';
@@ -28,8 +29,9 @@ function serviceOptionLabel(key: string, serviceNames: Record<string, string>): 
 }
 
 export function TasksPage() {
-  const { workspaceId, setWorkspace, setBreadcrumbParts } = useAppShell();
+  const { workspaceId, setWorkspace, setBreadcrumbParts, taskListResetToken } = useAppShell();
   const location = useLocation();
+  const previews = useResourcePreview();
   const [searchParams, setSearchParams] = useSearchParams();
   const preferences = useWorkbenchPreferences(workspaceId);
   const [preferenceError, setPreferenceError] = useState<string | null>(null);
@@ -44,8 +46,8 @@ export function TasksPage() {
     const next = new URLSearchParams(searchParams);
     Object.entries(values).forEach(([key, value]) => value ? next.set(key, value) : next.delete(key));
     restorePosition.current = null;
-    setSearchParams(next, { replace: true });
-  }, [searchParams, setSearchParams]);
+    setSearchParams(next, { replace: true, state: location.state });
+  }, [searchParams, setSearchParams, location.state]);
   const [queryMessage, setQueryMessage] = useState('');
   const rawStatus = searchParams.get('status') || 'open';
   const status: TaskStatusFilter = ['all', 'open', 'todo', 'active', 'completed', 'abandoned'].includes(rawStatus) ? rawStatus as TaskStatusFilter : 'open';
@@ -72,6 +74,12 @@ export function TasksPage() {
     setBreadcrumbParts([workspace.workspace.name, '任务']);
   }, [setWorkspace, setBreadcrumbParts]);
   const { tasks, totalTaskCount, matchingTaskCount, filterProjects, filterServices, projectNames, serviceNames, loading, loadingMore, errorMessage, loadMoreError, hasMore, loadMore, retryLoadMore, reload, revision } = useTaskList({ workspaceId, filters, onWorkspace });
+  const observedResetToken = useRef(taskListResetToken);
+  useEffect(() => {
+    if (observedResetToken.current === taskListResetToken) return;
+    observedResetToken.current = taskListResetToken;
+    void reload();
+  }, [taskListResetToken, reload]);
 
   const listContexts = useTaskListContexts(workspaceId, tasks, revision);
 
@@ -107,6 +115,7 @@ export function TasksPage() {
   const openTask = (taskId: string) => {
     const from = location.pathname + location.search;
     const position = captureTaskListPosition(from, tasks.length);
+    if (previews?.open(location.pathname, href(`/tasks/${encodeURIComponent(taskId)}`))) return;
     navigate(href(`/tasks/${encodeURIComponent(taskId)}`), { state: { from, taskListPosition: position } });
   };
   const togglePin = async (taskId: string) => {
@@ -275,7 +284,7 @@ export function TasksPage() {
       <section className="resource-toolbar task-workbench-toolbar">
         <div className="task-toolbar-main">
           <Typography.Title level={2} style={{ margin: 0 }}>任务</Typography.Title>
-          <p className="page-copy">从目标、最近进展与成果，找到下一步值得推进的事。</p>
+
         </div>
         <div className="task-toolbar-meta">
           <span id="tasks-state" className="count-label">
