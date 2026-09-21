@@ -44,7 +44,7 @@ test('fresh Workspace 按完整 SQL scripts 初始化且重复只读打开零写
   assert.equal(writable.version, latest);
   assert.deepEqual(writable.database.prepare('SELECT version, name FROM schema_migrations ORDER BY version').all().map((row: any) => ({ ...row })), migrations.map(({ version, name }: any) => ({ version, name })));
   assert.deepEqual(writable.database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all().map((row: any) => row.name), [
-    'schema_migrations', 'task_changes', 'task_projects', 'task_review_current',
+    'schema_migrations', 'task_changes', 'task_projects', 'task_review_current', 'task_review_history',
     'task_search', 'task_search_config', 'task_search_data', 'task_search_docsize', 'task_search_idx',
     'task_services', 'task_verification_current', 'task_work_context_current', 'tasks', 'workbench_preferences',
   ]);
