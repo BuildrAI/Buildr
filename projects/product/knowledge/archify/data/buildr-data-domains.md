@@ -29,3 +29,5 @@
 Archify 使用 `architecture` 类型，根据同名 JSON 生成 HTML。交付时使用 `validate`、`deliver` 和 `visual-check` 检查；图源与展示必须一起更新，不直接修改生成 HTML。
 
 本次生成通过 9 项检查，布局错误和警告均为零；四个桌面尺寸的边界检查通过。已查看 1440×900 浅色和 2048×1320 深色截图，节点与连线未发现遮挡。自动报告保留自身的 `visualReview: pending`，不以自动截图冒充人工阅读结论。
+
+已在 Buildr Web Dev 的主文中打开总图。应用的内容安全策略（Content Security Policy，CSP）拦截了 Archify 展示模板中的 Google Fonts 外部样式引用，图仍使用后备字体显示；这是应用内的非阻断警告，不属于上述生成器布局检查的零警告结论。未放宽应用安全策略，也未手工改写生成 HTML。

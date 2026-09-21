@@ -56,6 +56,7 @@ artifacts:
     graphSource: knowledge/archify/data/buildr-data-domains.json
     objects: [data-design]
     sources: [data-identity-source, data-catalog-source, data-skills-source, data-sqlite-source, data-domain-evidence]
+    files: [data-domain-html, data-domain-json, data-domain-evidence]
   - id: data-sqlite-explanation
     title: Buildr 数据库表设计
     kind: document
@@ -69,6 +70,7 @@ artifacts:
     graphSource: knowledge/archify/data/workspace-sqlite-erd.dot.txt
     objects: [data-sqlite]
     sources: [data-sqlite-source, data-task-table-source, data-review-history-source, data-sqlite-evidence]
+    files: [data-sqlite-html, data-sqlite-dot, data-sqlite-svg, data-sqlite-evidence]
   - id: data-local-explanation
     title: 本机数据与恢复边界
     kind: document
@@ -897,6 +899,26 @@ artifacts:
       - parent-completion-evidence
     observedDigest: 86f4a1cbff48189a905282eae68b4a3dc54596e6adab2e5208991a7f0b066076
 sources:
+  - id: data-domain-html
+    title: 数据领域总图展示
+    kind: evidence
+    path: knowledge/archify/data/buildr-data-domains.html
+  - id: data-domain-json
+    title: 数据领域总图图源
+    kind: evidence
+    path: knowledge/archify/data/buildr-data-domains.json
+  - id: data-sqlite-html
+    title: 数据库关系图展示
+    kind: evidence
+    path: knowledge/archify/data/workspace-sqlite-erd.html
+  - id: data-sqlite-dot
+    title: 数据库关系图 Graphviz 图源
+    kind: evidence
+    path: knowledge/archify/data/workspace-sqlite-erd.dot.txt
+  - id: data-sqlite-svg
+    title: 数据库关系图矢量图
+    kind: evidence
+    path: knowledge/archify/data/workspace-sqlite-erd.svg
   - id: data-identity-source
     title: 数据对象身份与关系约束
     kind: code
