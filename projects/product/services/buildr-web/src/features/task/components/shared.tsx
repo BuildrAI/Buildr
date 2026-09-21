@@ -1,27 +1,8 @@
-import type { ReactNode } from 'react';
 import type {
   TaskDetailResponse,
   TaskRecord,
   TaskRelationSummary,
 } from '../../../../build/generated/task-dto';
-
-export function Fact({ label, value }: { label: string; value: ReactNode }) {
-  return (
-    <div>
-      <dt>{label}</dt>
-      <dd>{value}</dd>
-    </div>
-  );
-}
-
-export function TechnicalDetails({ value }: { value: string }) {
-  return (
-    <details className="technical-details compact">
-      <summary>技术信息</summary>
-      <small className="review-result-path">{value}</small>
-    </details>
-  );
-}
 
 export function lines(values: string[], secondField?: never): string;
 export function lines(values: Array<{ project: string; service: string }>, secondField: 'service'): string;

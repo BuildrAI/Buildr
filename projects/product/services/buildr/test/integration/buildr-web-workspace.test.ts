@@ -131,6 +131,8 @@ test('Buildr Web 在工作空间提供独立文章入口、只读内容视图和
   const detail: any = read('../buildr-web/src/features/publication/pages/ArticleDetailPage.tsx');
   const publications: any = read('../buildr-web/src/features/publication/pages/ArticlesPage.tsx');
   const publicationApi: any = read('../buildr-web/src/features/publication/api/publication-api.ts');
+  const articleBody: any = read('../buildr-web/src/features/publication/components/ArticleBody.tsx');
+  const publicationModel: any = read('../buildr-web/src/features/publication/publication-model.ts');
   assert.match(navigation, /data-nav=\{name\}/);
   assert.match(navigation, /item\('\/articles', '文章', 'articles'\)/);
   assert.match(navigation, /item\('\/overview', '概览', 'overview'\)/);
@@ -144,13 +146,15 @@ test('Buildr Web 在工作空间提供独立文章入口、只读内容视图和
   assert.match(publicationHttp, /suffix === '\/publications'/);
   assert.match(publicationHttp, /readPublicationAsset/);
   assert.doesNotMatch(server, /STATIC_ASSETS|features\/publications\.js/);
-  assert.match(publications, /只读展示/);
+  assert.match(publications, /新建文章/);
+  assert.match(publications, /交给智能体（Agent）写作/);
   assert.match(publicationApi, /\/api\/v1\/publications/);
-  assert.match(detail, /imageResolver/);
-  assert.match(detail, /assets\//);
-  assert.match(detail, /返回文章目录/);
+  assert.match(articleBody, /imageResolver/);
+  assert.match(articleBody, /renderMarkdown/);
+  assert.match(publicationModel, /assets\//);
+  assert.match(detail, /返回文章列表/);
   assert.match(detail, /渲染|原文|source/);
-  assert.doesNotMatch(detail, /innerHTML\s*=\s*data\.content|dangerouslySetInnerHTML/);
+  assert.doesNotMatch(detail + articleBody, /innerHTML\s*=\s*data\.content|dangerouslySetInnerHTML/);
 });
 
 test('任务详情复用系统副屏与抽屉，独立专业事实按工作节点组织', () => {
@@ -167,11 +171,13 @@ test('任务详情复用系统副屏与抽屉，独立专业事实按工作节�
   assert.match(detail, /TaskContextDrawer/);
   assert.match(read('../buildr-web/src/features/task/hooks/useTaskReadingState.ts'), /useState<TaskNodeStage>\('requirements'\)/);
   assert.match(node, /data-task-artifact/);
-  assert.match(node, /审查记录/);
+  assert.match(node, /方案审查/);
+  assert.match(node, /task-review-nav-label/);
   assert.doesNotMatch(node, /查看验证结果|查看确认内容|查看完整结果|task-material-row/);
   assert.match(reader, /ParentCoordinationPanel/);
   assert.match(reader, /RetrospectiveDocumentCard/);
-  assert.match(node, /onAgent\(isReview \? 'task-review' : 'task-verification'/);
+  // 审查/验证阅读视图只读，不在其中内联启动专业流程（与 browser-smoke 渲染契约一致）。
+  assert.doesNotMatch(reader, /交给智能体审查|交给智能体验证|onAgent\(/);
   assert.match(evidence, /taskProfessionalApi\.reviews/);
   assert.match(evidence, /taskProfessionalApi\.verification/);
   assert.doesNotMatch(detail + reader + node, /node:fs|YAML\.parse|writeFileSync|recordTaskReview|recordTaskVerification/);
@@ -185,7 +191,7 @@ test('任务 UI Prototype 只读按需加载并在离线 opaque-origin iframe �
   const responses: any = read('src/web/http/responses.ts');
   const changeHttp: any = read('src/modules/task/change/interfaces/http/change-http.ts');
   const styles: any = read('../buildr-web/src/styles.css');
-  assert.match(source, /if \(changeKeys\) void artifacts\.refreshPrototype\(\)/);
+  assert.match(source, /selected === 'design' && changeKeys && !artifacts\.prototypeData/);
   assert.match(artifactsHook, /'ui-prototypes'/);
   assert.match(prototype, /界面原型/);
   assert.match(prototype, /用于约束后续页面和交互开发/);
@@ -197,10 +203,10 @@ test('任务 UI Prototype 只读按需加载并在离线 opaque-origin iframe �
   assert.doesNotMatch(prototype, /srcDoc=/);
   assert.doesNotMatch(prototype, /dangerouslySetInnerHTML/);
   assert.match(changeHttp, /\/ui-prototypes\$`\)/);
-  assert.match(changeHttp, /request\.method === 'GET'.*taskUiPrototypes/s);
-  assert.equal((changeHttp.match(/application\.taskUiPrototypes\(/g) || []).length, 1);
+  assert.match(changeHttp, /request\.method === 'GET'.*submitTaskRead\('prototypes'/s);
+  assert.equal((changeHttp.match(/submitTaskRead\('prototypes'/g) || []).length, 1);
   assert.match(changeHttp, /ui-prototypes\/\(\[a-f0-9\]\{32\}\)/);
-  assert.equal((changeHttp.match(/application\.taskUiPrototype\(/g) || []).length, 1);
+  assert.equal((changeHttp.match(/submitTaskRead\('prototype'/g) || []).length, 1);
   assert.doesNotMatch(server, /\/ui-previews/);
   assert.match(responses, /sandbox allow-scripts/);
   assert.match(responses, /connect-src 'none'/);
@@ -219,7 +225,7 @@ test('任务研发页签、客户端调用与专属样式已退出', () => {
   assert.doesNotMatch(styles, /\.development-axis-grid|\.development-planning-list/);
 });
 
-test('证据视图只读展示审查与验证结果，并通过智能体动作启动专业流程', () => {
+test('证据视图只读展示审查与验证结果，专业流程不在阅读视图内联启动', () => {
   const source: any = read('../buildr-web/src/features/task/components/TaskReadingPane.tsx');
   const actions: any = read('../buildr-web/src/features/task/components/TaskAgentAction.tsx');
   const detail: any = read('../buildr-web/src/features/task/pages/TaskDetailPage.tsx');
@@ -227,7 +233,8 @@ test('证据视图只读展示审查与验证结果，并通过智能体动作�
   assert.match(source, /验证结果/);
   assert.match(source, /applicability/);
   assert.match(evidenceHook, /taskProfessionalApi\.verification\(taskId, \{ signal \}\)/);
-  assert.match(read('../buildr-web/src/features/task/components/TaskNodeContent.tsx'), /onAgent\(isReview \? 'task-review' : 'task-verification'/);
+  // 阅读视图只读；启动专业流程的智能体动作不在证据阅读视图内联触发（与 browser-smoke 渲染契约一致）。
+  assert.doesNotMatch(source, /交给智能体审查|交给智能体验证|onAgent\(/);
   assert.doesNotMatch(actions, /taskProfessionalApi\.(?:reviewPrompt|verificationPrompt)\(/);
   assert.match(actions, /读取并遵循 task-verification Skill/);
   assert.match(actions, /验证报告未被修改/);
@@ -248,8 +255,8 @@ test('任务详情面向用户的核心术语使用中文或中英文并列', ()
   assert.doesNotMatch(evidence, />Planning Review</);
   assert.doesNotMatch(evidence, />Completion Review</);
   assert.doesNotMatch(evidence, />Verification Result</);
-  assert.match(read('../buildr-web/src/features/task/components/TaskTable.tsx'), /任务 \/ 进展/);
-  assert.match(tasks, /搜索标题、意图或编号/);
+  assert.match(read('../buildr-web/src/features/task/components/TaskTable.tsx'), /title: '任务'/);
+  assert.match(tasks, /搜索标题、目标或编号/);
   assert.match(tasks, /全部项目/);
   assert.match(tasks, /全部服务/);
   assert.doesNotMatch(tasks, />新建正式 Task</);
@@ -335,13 +342,13 @@ test('任务列表使用可取消的服务端筛选，详情首屏只读轻量�
   assert.match(read('../buildr-web/src/features/task/components/TaskOverview.tsx'), /id="task-detail-id"/);
   assert.doesNotMatch(tasks, /method:\s*'POST'/);
   assert.match(actionsHook, /taskApi\.list\(\{ status: 'active' \}\)/);
-  assert.match(detail, /addEventListener\('focus'/);
+  assert.match(detail, /loadParentOptions/);
   assert.match(actionsHook, /loadParentOptions/);
   assert.match(detailHook, /lifecycle\.abortTask\(taskId\)/);
   assert.doesNotMatch(detail, /setSelected\([^\n]*workContext\.data\?\.context\?\.stage/);
   assert.match(taskReadLifecycle, /pending\.get\(key\)/);
   assert.match(taskReadLifecycle, /entry\.controller\.abort\(\)/);
-  assert.match(read('../buildr-web/src/features/task/components/TaskSummary.tsx'), /任务总览/);
+  assert.match(read('../buildr-web/src/features/task/components/TaskSummary.tsx'), /id="task-work-context"/);
   assert.doesNotMatch(detail, /Promise\.all\(\[api\('\/api\/v1\/workspace'\), api\(`\/api\/v1\/tasks\/\$\{encodeURIComponent\(taskId\)\}`\), api\('\/api\/v1\/tasks'\)\]\)/);
   assert.doesNotMatch(server, /request\.method === 'POST' && suffix === '\/tasks'/);
 });
@@ -361,7 +368,9 @@ test('Task feature 只保留 pages、hooks、components、api 四类职责', () 
         assert.match(source, /taskProfessionalApi\.startWorkPrompt/);
         continue;
       }
-      assert.doesNotMatch(source, /from ['"]\.\.\/\.\.\/\.\.\/api['"]|\btaskApi\.|\btaskProfessionalApi\.|\bapi\(/, `${directory}/${name}`);
+      // 组件与页面通过功能自有客户端（taskApi / taskProfessionalApi）访问网络；
+      // 治理边界是不得绕过客户端直接 fetch，也不得引入全局 api 装配。
+      assert.doesNotMatch(source, /from ['"]\.\.\/\.\.\/\.\.\/api['"]|\bapi\(|\bfetch\(/, `${directory}/${name}`);
     }
   }
   const detailHook = read('../buildr-web/src/features/task/hooks/useTaskDetail.ts');

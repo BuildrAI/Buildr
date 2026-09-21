@@ -294,15 +294,19 @@ try {
   ], MAX_PARALLEL_WORKSPACES, (scenario: any) => scenario(seed));
 
   const contexts: any = await mapLimit(supportedAdapters, MAX_PARALLEL_WORKSPACES, (adapterId: any) => prepareAdapterContext(seed, adapterId, lifecycleAdapters));
-  const qoder: any = contexts.find((context: any) => context.adapterId === 'qoder');
-  const gitExecutable: any = findExecutableOnPath('git');
-  assert.ok(gitExecutable, 'runtime parity requires Git while isolating the Qoder installation probe');
-  const isolatedBin: any = harness.createTemporaryDirectory('buildr-runtime-probe-path-');
-  fs.symlinkSync(gitExecutable, path.join(isolatedBin, 'git'));
-  const missingQoderEnvironment: any = await harness.runAsync(['runtime', 'check', 'qoder', '--scope', '.', '--target', qoder.workspace], { env: { PATH: isolatedBin } });
-  assert.match(missingQoderEnvironment.stdout, /\[warning\] \. - Qoder installation probe failed\./);
-  assert.match(missingQoderEnvironment.stdout, /installation: missing \(any\)/);
-  assert.match(missingQoderEnvironment.stdout, /desktop: missing/);
+  // The Qoder installation probe only spawns `defaults`/`qoder` commands on darwin; elsewhere it is a
+  // manual probe, so isolating PATH to prove a missing install is both meaningless and would drop git.
+  if (process.platform === 'darwin') {
+    const qoder: any = contexts.find((context: any) => context.adapterId === 'qoder');
+    const gitExecutable: any = findExecutableOnPath('git');
+    assert.ok(gitExecutable, 'runtime parity requires Git while isolating the Qoder installation probe');
+    const isolatedBin: any = harness.createTemporaryDirectory('buildr-runtime-probe-path-');
+    fs.symlinkSync(gitExecutable, path.join(isolatedBin, 'git'));
+    const missingQoderEnvironment: any = await harness.runAsync(['runtime', 'check', 'qoder', '--scope', '.', '--target', qoder.workspace], { env: { PATH: isolatedBin } });
+    assert.match(missingQoderEnvironment.stdout, /\[warning\] \. - Qoder installation probe failed\./);
+    assert.match(missingQoderEnvironment.stdout, /installation: missing \(any\)/);
+    assert.match(missingQoderEnvironment.stdout, /desktop: missing/);
+  }
 
   const codexDoctor: any = contexts.find((context: any) => context.adapterId === 'codex').doctor;
   assert.equal(codexDoctor.runtime.claudeCode.length, 0);

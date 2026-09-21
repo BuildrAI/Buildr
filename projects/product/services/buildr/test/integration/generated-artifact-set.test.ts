@@ -58,8 +58,8 @@ test('Candidate输入从空暂存生成闭合且可重复的artifact set', async
     'test-context': first.testContextRoot,
     'web-dist': first.webDistRoot,
   });
-  assert.equal(first.manifest.artifacts.find((artifact) => artifact.id === 'backend-dto')?.files.length, 5);
-  assert.equal(first.manifest.artifacts.find((artifact) => artifact.id === 'web-dto')?.files.length, 5);
+  assert.equal(first.manifest.artifacts.find((artifact) => artifact.id === 'backend-dto')?.files.length, 7);
+  assert.equal(first.manifest.artifacts.find((artifact) => artifact.id === 'web-dto')?.files.length, 7);
   const libraryFiles = first.manifest.artifacts.find((artifact) => artifact.id === 'test-context')?.files.map((file) => file.path) || [];
   assert.equal(libraryFiles.length, 16);
   assert.ok(libraryFiles.includes('public.js'));
