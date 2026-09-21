@@ -12,7 +12,6 @@ import {
   skillProjectionOwnershipReceiptRoot,
   skillProjectionOwnershipReceiptsEquivalent,
   skillProjectionOwnershipReceiptTarget,
-  skillProjectionReceiptRootSlug,
 } from '../infrastructure/runtime/skills/projection-files.ts';
 import { createComponentDefinitionDomain } from '../domain/component-definition.ts';
 import { createComponentRepository } from '../persistence/component-repository.ts';
@@ -678,16 +677,14 @@ export function registerDomainsComponents(dependencies: ComponentsDependencies) 
     const receiptsByKey: any = new Map();
     const locations: any[] = [];
     for (const root of roots) {
-      const rootSlug = skillProjectionReceiptRootSlug(root, primaryRoot);
-      locations.push({ root, legacy: false, dir: skillProjectionOwnershipReceiptRoot(targetRoot, 'workspace', agent), target: (runtimePath: any) => skillProjectionOwnershipReceiptTarget(targetRoot, 'workspace', agent, runtimePath, rootSlug) });
+      locations.push({ root, legacy: false, dir: skillProjectionOwnershipReceiptRoot(targetRoot, 'workspace', agent), target: (runtimePath: any) => skillProjectionOwnershipReceiptTarget(targetRoot, 'workspace', agent, runtimePath) });
       locations.push({ root, legacy: true, dir: legacySkillProjectionOwnershipReceiptRoot(targetRoot, root, agent), target: (runtimePath: any) => legacySkillProjectionOwnershipReceiptTarget(targetRoot, root, agent, runtimePath) });
     }
     for (const location of locations) {
       for (const receiptFile of existsDirectory(location.dir) ? collectFiles(location.dir) : []) {
         if (!receiptFile.endsWith('.json')) continue;
         const receipt = readSkillProjectionReceipt(receiptFile, { adapterId: agent, destination: 'workspace' });
-        const receiptRoot = location.legacy ? location.root : receipt.runtimeRoot || primaryRoot;
-        if (!roots.includes(receiptRoot)) throw new Error(`Runtime Skill projection ownership receipt declares an undeclared Skill root: ${receiptFile}`);
+        const receiptRoot = location.legacy ? location.root : primaryRoot;
         if (receiptRoot !== location.root) continue;
         const expectedReceipt = location.target(receipt.runtimePath);
         if (path.resolve(expectedReceipt) !== path.resolve(receiptFile)) throw new Error(`Runtime Skill projection ownership receipt target mismatch: ${receiptFile}`);
@@ -705,17 +702,16 @@ export function registerDomainsComponents(dependencies: ComponentsDependencies) 
       const targetDir = path.join(targetRoot, root, 'skills', ...runtimePath.split('/'));
       orphans.push({ runtimePath, root, path: toPosixRelative(targetRoot, targetDir), targetDir, ...receiptEntry });
     }
-    // A root this adapter mirrors (or shares with other adapters) can hold Skill
-    // directories another adapter owns; that adapter's receipt proves ownership,
+    // A Skills root shared with other adapters (`.agents` for codex/cursor/trae) can
+    // hold directories another adapter owns; that adapter's receipt proves ownership,
     // so this adapter must neither claim nor block on them.
     const claimedBySiblingReceipt = (root: any, runtimePath: any) => SUPPORTED_AGENT_IDS.some((other: any) => {
       if (other === adapter.id) return false;
       const otherPrimary = getRuntimeAdapter(other).traits.skills.root;
       const otherRoots = getRuntimeAdapter(other).traits.skills.destinations?.workspace?.roots || [otherPrimary];
       if (!otherRoots.includes(root)) return false;
-      const slug = skillProjectionReceiptRootSlug(root, otherPrimary);
       return [
-        skillProjectionOwnershipReceiptTarget(targetRoot, 'workspace', other, runtimePath, slug),
+        skillProjectionOwnershipReceiptTarget(targetRoot, 'workspace', other, runtimePath),
         legacySkillProjectionOwnershipReceiptTarget(targetRoot, root, other, runtimePath),
       ].some((file: any) => existsFile(file));
     });

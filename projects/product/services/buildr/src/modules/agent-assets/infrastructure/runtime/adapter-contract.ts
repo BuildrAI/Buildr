@@ -103,15 +103,11 @@ function validateSkillPublicationExtensions(skills: any, label: any, errors: any
   }
 }
 
-function skillWorkspaceRoots(root: any, mirrorRoots: any): any  {
-  return [root, ...(mirrorRoots || [])];
-}
-
 function normalizeSkillDestinations(skills: any): any  {
   const workspaceBase = skills.destinations?.workspace || { supported: true, root: skills.root };
   const user = skills.destinations?.user || { supported: true, root: skills.root };
   const workspace = { ...workspaceBase };
-  if (workspace.supported !== false) workspace.roots = skillWorkspaceRoots(workspace.root, skills.mirrorRoots);
+  if (workspace.supported !== false) workspace.roots = [workspace.root];
   return {
     workspace,
     user,
@@ -175,16 +171,6 @@ function validateAdapterTraits(descriptor: any, options: any = {}): any  {
   if (!skills?.implementation || !implementations.skills.has(skills.implementation)) errors.push(`adapter ${descriptor.id} has no registered skills implementation: ${skills?.implementation || '<missing>'}`);
   if (!isSafeRuntimeRoot(skills?.root)) errors.push(`adapter ${descriptor.id} skills root is unsafe: ${skills?.root || '<missing>'}`);
   if (skills?.kind === 'agents-compatible' && skills.root !== '.agents') errors.push(`adapter ${descriptor.id} agents-compatible skills root must be .agents`);
-  if (skills?.mirrorRoots !== undefined) {
-    if (!Array.isArray(skills.mirrorRoots) || skills.mirrorRoots.length === 0) errors.push(`adapter ${descriptor.id} skills mirrorRoots must be a non-empty array`);
-    else {
-      if (new Set(skills.mirrorRoots).size !== skills.mirrorRoots.length) errors.push(`adapter ${descriptor.id} skills mirrorRoots contains duplicates`);
-      for (const mirror of skills.mirrorRoots) {
-        if (!isSafeRuntimeRoot(mirror)) errors.push(`adapter ${descriptor.id} skills mirror root is unsafe: ${mirror || '<missing>'}`);
-        else if (mirror === skills.root) errors.push(`adapter ${descriptor.id} skills mirror root must differ from the primary root: ${mirror}`);
-      }
-    }
-  }
   validateSkillPublicationExtensions(skills || {}, `adapter ${descriptor.id} skills`, errors);
   const destinations = normalizeSkillDestinations(skills || {});
   for (const destination of ['workspace', 'user']) {
@@ -235,7 +221,7 @@ function ruleCapability(traits: any): any  {
 }
 
 function renderCapabilities(traits: any): any  {
-  const roots = skillWorkspaceRoots(traits.skills.root, traits.skills.mirrorRoots);
+  const roots = [traits.skills.root];
   const targets = (suffix: any) => roots.map((root: any) => `${root}/${suffix}`);
   return {
     'rules-entry': ruleCapability(traits),
@@ -257,7 +243,7 @@ function runtimeTargets(traits: any): any  {
   const rules = traits.rules.kind === 'native-recursive'
     ? ['AGENTS.md']
     : [traits.rules.targetPattern.replace('<source-dir>/', '').replace('<workspace-root>/', '')];
-  return [...rules, ...skillWorkspaceRoots(traits.skills.root, traits.skills.mirrorRoots).flatMap((root: any) => [`${root}/skills/`, `${root}/buildr/skill-install-plans/`])];
+  return [...rules, ...[traits.skills.root].flatMap((root: any) => [`${root}/skills/`, `${root}/buildr/skill-install-plans/`])];
 }
 
 export function createRuntimeAdapterDescriptor(value: any, options: any = {}): any  {
@@ -423,14 +409,13 @@ const DESCRIPTORS: any[] = [
         kind: 'vendor-root',
         implementation: 'filesystem-skills',
         root: '.qoder',
-        // Qoder desktop builds discover the shared `.agents/skills` standard root, while the
-        // documented Qoder CLI project root stays `.qoder/skills`; both are Buildr-managed.
-        mirrorRoots: ['.agents'],
         discovery: {
           evidence: 'partial',
           roots: [
             { source: 'workspace', destination: 'workspace', root: '.qoder', basis: 'documented-project-root' },
-            { source: 'workspace', destination: 'workspace', root: '.agents', basis: 'shared-agents-root', hostConfigured: 'skills.loadFromAgentsDirectory' },
+            // Shared standard root: desktop builds discover it, but it is written by the
+            // adapters that declare it as their own runtime root, never by `qoder`.
+            { source: 'workspace', destination: 'workspace', root: '.agents', basis: 'shared-agents-root', hostConfigured: 'skills.loadFromAgentsDirectory', buildrManaged: false },
             { source: 'user', destination: 'user', root: '.qoder', basis: 'documented-user-root' },
           ],
           opaqueSources: ['plugin', 'system', 'admin'],
@@ -470,7 +455,7 @@ const DESCRIPTORS: any[] = [
       },
     },
     recommendedCommands: recommendedCommands('qoder'),
-    evidence: { rules: 'official-documentation-and-local-intake', skills: 'official-documentation-dual-root-and-install-form-observation' },
+    evidence: { rules: 'official-documentation-and-local-intake', skills: 'official-documentation-and-install-form-observation' },
   }),
   createRuntimeAdapterDescriptor({
     id: 'trae',

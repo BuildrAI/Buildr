@@ -7,7 +7,6 @@ import { reconcileRuntimePlan } from '../../infrastructure/runtime/runtime-recon
 import {
   legacySkillProjectionOwnershipReceiptTarget,
   skillProjectionOwnershipReceiptTarget,
-  skillProjectionReceiptRootSlug,
 } from '../../infrastructure/runtime/skills/projection-files.ts';
 
 export function createBuiltinLifecycle(deps: any): any  {
@@ -117,25 +116,23 @@ export function createBuiltinLifecycle(deps: any): any  {
       }
       changed.push(toPosixRelative(targetRoot, writeSkillsManifest(targetRoot, found.manifest)));
       const runtimePath = found.entry.runtimePath || id;
-      const ownersByRuntimeRoot: any = new Map();
+      const agentsByRuntimeRoot: any = new Map();
       for (const agent of SUPPORTED_AGENT_IDS) {
-        const primaryRoot = getRuntimeAdapter(agent).traits.skills.root;
         for (const runtimeRoot of workspaceSkillsRoots(agent)) {
-          if (!ownersByRuntimeRoot.has(runtimeRoot)) ownersByRuntimeRoot.set(runtimeRoot, []);
-          ownersByRuntimeRoot.get(runtimeRoot).push({ agent, rootSlug: skillProjectionReceiptRootSlug(runtimeRoot, primaryRoot) });
+          if (!agentsByRuntimeRoot.has(runtimeRoot)) agentsByRuntimeRoot.set(runtimeRoot, []);
+          agentsByRuntimeRoot.get(runtimeRoot).push(agent);
         }
       }
-      for (const [runtimeRoot, owners] of ownersByRuntimeRoot) {
-        const receiptOwners = owners.filter((owner: any) => [
-          skillProjectionOwnershipReceiptTarget(targetRoot, 'workspace', owner.agent, runtimePath, owner.rootSlug),
-          legacySkillProjectionOwnershipReceiptTarget(targetRoot, runtimeRoot, owner.agent, runtimePath),
+      for (const [runtimeRoot, agents] of agentsByRuntimeRoot) {
+        const receiptAgents = agents.filter((agent: any) => [
+          skillProjectionOwnershipReceiptTarget(targetRoot, 'workspace', agent, runtimePath),
+          legacySkillProjectionOwnershipReceiptTarget(targetRoot, runtimeRoot, agent, runtimePath),
         ].some((file: any) => existsFile(file)));
         // A shared filesystem Skills root can retain receipts for more than one
-        // adapter, including adapters that only mirror that root. Consume those
-        // receipts before considering the legacy SKILL.md-only fallback, so valid
-        // vendor files are never mislabeled as unknown user content by a sibling adapter.
-        for (const owner of receiptOwners.length > 0 ? receiptOwners : [owners[0]]) {
-          const agent: any = owner.agent;
+        // adapter. Consume those receipts before considering the legacy
+        // SKILL.md-only fallback, so valid vendor files are never mislabeled as
+        // unknown user content by a sibling adapter.
+        for (const agent of receiptAgents.length > 0 ? receiptAgents : [agents[0]]) {
           const removals = buildRuntimeOrphanRemovalPlan(targetRoot, agent, '.', { runtimePath }).map((item: any) => ({ ...item, targetFile: item.path }));
           if (removals.length === 0) continue;
           const result = reconcileRuntimePlan(createRuntimePlan({

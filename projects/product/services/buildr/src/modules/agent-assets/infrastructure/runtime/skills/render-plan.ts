@@ -20,7 +20,6 @@ import {
   renderSkillProjectionReceipt,
   runtimeWriteBuffer,
   sha256Integrity,
-  skillProjectionReceiptRootSlug,
 } from './projection-files.ts';
 
 export function hasManagedSkillMarker(content: any): any  {
@@ -345,7 +344,6 @@ export function buildSkillRenderPlan(repoRoot: any, targetRoot: any, skills: any
 
   for (const projection of byRuntimePath.values()) {
     for (const root of roots) {
-      const rootSlug = skillProjectionReceiptRootSlug(root, primaryRoot);
       const rootTargetDir = path.join(targetRoot, root, 'skills', ...projection.runtimePath.split('/'));
       const scope = root === primaryRoot ? projection : {
         ...projection,
@@ -359,7 +357,6 @@ export function buildSkillRenderPlan(repoRoot: any, targetRoot: any, skills: any
         adapterId: runtime,
         runtimePath: projection.runtimePath,
         runtimeSkillDir: scope.targetDir,
-        rootSlug,
       });
       const receiptFile = receiptObservation.canonicalFile;
       const previousReceipt = receiptObservation.receipt;
@@ -403,7 +400,6 @@ export function buildSkillRenderPlan(repoRoot: any, targetRoot: any, skills: any
         sourceWorkspaceId: projection.skill.workspaceId || options.sourceWorkspaceId || sha256Integrity(Buffer.from(path.resolve(repoRoot), 'utf8')),
         sourceDigest: digestInventory(scope.writes, true),
         renderDigest: digestInventory(scope.writes),
-        runtimeRoot: rootSlug ? root : null,
         capabilityBindings: capabilityBindingReceipt(projection.skill.capabilityBindings),
         sources: projection.sources,
         files: inventory,

@@ -702,9 +702,9 @@
 
 ## Skill 投射所有权回执（Skill Projection Ownership Receipt）
 
-- 定义：Buildr 为某个 destination、Agent adapter、runtime Skill path 与目标根（Runtime Root）保存的本机控制状态，用文件 inventory、identity 和 digest 证明 Buildr 对该次 Skill 投射的更新权与清理权。
-- 适用范围：`.buildr/agent-runtime/<workspace|user>/<adapter>/skill-projection-ownership-receipts/`，以及 render、inventory、Doctor、Component/builtin lifecycle 的所有权判断。destination 声明多个目标根时每个根各有一条回执：主根沿用 `<skillId>.json`，其他根使用 `<skillId>--root-<slug>.json` 并记录 `runtimeRoot`。
-- 避免混用：不是 Agent 消费的 Skill、源资产、执行证据或可提交到 Git 的 portable receipt；旧 `<runtime-root>/buildr/skill-projection-receipts/` 只是受控迁移输入，不是第二 authority。单根回执只证明该根的归属与漂移，不代替其他根的判断。
+- 定义：Buildr 为某个 destination、Agent adapter 与 runtime Skill path 保存的本机控制状态，用文件 inventory、identity 和 digest 证明 Buildr 对该次 Skill 投射的更新权与清理权。
+- 适用范围：`.buildr/agent-runtime/<workspace|user>/<adapter>/skill-projection-ownership-receipts/`，以及 render、inventory、Doctor、Component/builtin lifecycle 的所有权判断。
+- 避免混用：不是 Agent 消费的 Skill、源资产、执行证据或可提交到 Git 的 portable receipt；旧 `<runtime-root>/buildr/skill-projection-receipts/` 只是受控迁移输入，不是第二 authority。多个 adapter 共享同一 Skills 根时，回执只证明其所属 adapter 的更新权与清理权，他方回执所在目录不是本 adapter 的 orphan，也不构成冲突。
 - 来源：[Workspace-first runtime projection specification](../../openspec/specs/workspace-first-runtime-projection/spec.md)
 
 ## 安装形态（Runtime Installation Surface）

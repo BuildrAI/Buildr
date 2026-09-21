@@ -20,7 +20,7 @@
 | 组件 | 哪些资产作为一组安装、更新、卸载 | `components/manifest.yml`、`component.yml` |
 | 内容增强 | 哪段正文要插入哪个 Skill | Component `skillFragments` |
 | 能力依赖 | 当前 Skill 安全继续前需要什么稳定保证 | contracts、`provides`、`requires`、bindings |
-| 运行时投射 | 当前 Agent 最终能发现和读取什么 | adapter runtime Skills roots、`.buildr` receipts、Doctor |
+| 运行时投射 | 当前 Agent 最终能发现和读取什么 | adapter runtime Skills root、`.buildr` receipts、Doctor |
 
 `contract`、`provider`、`consumer`、`binding` 是“能力依赖”的内部展开。普通使用者不需要先理解这些词；只有在替换工作方式、依赖受阻或做诊断时才需要展开。
 
@@ -169,7 +169,7 @@ Workspace destination 的 Skill projection receipt 位于：
 
 User destination 则位于 user home 的 `.buildr/agent-runtime/user/<adapter>/...`。receipt 记录 source/render identity、受管文件 inventory、文件 integrity 和 executable 状态；consumer receipt 还记录本次局部 capability binding 的 contract digest、provenance、readiness 与 selected provider 快照。
 
-一个 adapter 可以在同一 destination 声明多个 Skills 目标根（例如 `qoder` 的主根 `.qoder/skills/` 与镜像根 `.agents/skills/`）。此时同一 Skill 每个根各有一条 receipt：主根沿用 `<skillId>.json`，其他根使用 `<skillId>--root-<slug>.json` 并在记录内写明 `runtimeRoot`。因此漂移、stale 判断和 orphan 清理都按根独立成立，不因一个根过期而判定其他根过期。
+一个 Skill 在其适配器声明的目标根上各有一份 receipt。多个适配器可以共享同一个根（`.agents/skills` 同时是 `codex`、`cursor`、`trae` 的 runtime root），此时"谁拥有这个目录"由该根下是否存在对应 receipt 决定：其他适配器已持有 receipt 的目录，本适配器既不安删也不报冲突。`qoder` 只写入 `.qoder/skills`；`.agents/skills` 对它只是宿主开关控制的共享**发现**根，不作为写入目标。
 
 receipt 是 Buildr 本机控制状态：
 

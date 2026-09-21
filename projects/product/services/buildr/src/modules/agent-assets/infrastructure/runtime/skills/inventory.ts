@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { getRuntimeAdapter } from '../adapter-contract.ts';
-import { enumerateSkillSourceFiles, observeSkillProjectionOwnershipReceipt, sha256Integrity, skillProjectionReceiptRootSlug } from './projection-files.ts';
+import { enumerateSkillSourceFiles, observeSkillProjectionOwnershipReceipt, sha256Integrity } from './projection-files.ts';
 import { parseSkillFrontmatterName } from './primitives.ts';
 
 function inventoryDigest(files: any): any  {
@@ -34,7 +34,6 @@ function receiptForRuntimePath({ targetRoot, destination, adapter, runtimePath, 
     adapterId: adapter.id,
     runtimePath,
     runtimeSkillDir,
-    rootSlug: skillProjectionReceiptRootSlug(root, adapter.traits.skills.root),
   });
   return { file: observation.receiptFile, receipt: observation.receipt, migration: observation.migration };
 }

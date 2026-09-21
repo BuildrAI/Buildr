@@ -95,7 +95,7 @@ function assertAdapterSpecificProjection(workspace: any, adapterId: any): any  {
   if (adapterId === 'qoder') {
     assert.ok(fs.readdirSync(path.join(workspace, '.qoder', 'rules', 'buildr')).some((file: any) => file.endsWith('.md')));
     assert.ok(fs.existsSync(path.join(workspace, '.qoder', 'skills', 'buildr', 'SKILL.md')));
-    assert.ok(fs.existsSync(path.join(workspace, '.agents', 'skills', 'buildr', 'SKILL.md')), 'Qoder must mirror the same Skill into the shared .agents root');
+    assert.equal(fs.existsSync(path.join(workspace, '.agents', 'skills', 'buildr')), false, 'Qoder must not project into the shared .agents root');
   }
   if (adapterId === 'workbuddy') {
     assert.ok(fs.readFileSync(path.join(workspace, 'CODEBUDDY.md'), 'utf8').includes('不得读取不相关兄弟目录'));

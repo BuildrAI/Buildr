@@ -227,19 +227,13 @@ const fakeValue: any = {
 };
 assert.throws(() => createRuntimeAdapterDescriptor({ ...fakeValue, traits: { ...fakeValue.traits, rules: { ...fakeValue.traits.rules, kind: 'unknown' } } }, { implementations: fakeImplementations }), /rules trait is invalid/);
 assert.throws(() => createRuntimeAdapterDescriptor({ ...fakeValue, traits: { ...fakeValue.traits, skills: { ...fakeValue.traits.skills, root: '../escape' } } }, { implementations: fakeImplementations }), /skills root is unsafe/);
-const withSkills = (extra: any): any => ({ ...fakeValue, traits: { ...fakeValue.traits, skills: { ...fakeValue.traits.skills, ...extra } } });
-const mirrorDescriptor: any = createRuntimeAdapterDescriptor(withSkills({ mirrorRoots: ['.mirror'] }), { implementations: fakeImplementations });
-assert.deepEqual(mirrorDescriptor.traits.skills.destinations.workspace.roots, ['.fake', '.mirror']);
-assert.deepEqual(mirrorDescriptor.traits.skills.destinations.user.roots, undefined);
-assert.deepEqual(mirrorDescriptor.renderCapabilities['workspace-project-skills'].targets, ['.fake/skills/<skill>/SKILL.md', '.mirror/skills/<skill>/SKILL.md']);
-assert.deepEqual(mirrorDescriptor.renderCapabilities['skill-install-plans'].targets, ['.fake/buildr/skill-install-plans/<skill>.md', '.mirror/buildr/skill-install-plans/<skill>.md']);
-assert(mirrorDescriptor.runtimeTargets.includes('.mirror/skills/'), 'mirror root must be a declared runtime target');
-assert.deepEqual(skillDestinationRoots(mirrorDescriptor, 'workspace', '/workspace'), ['/workspace/.fake', '/workspace/.mirror']);
-assert.deepEqual(skillDestinationRoots(mirrorDescriptor, 'user', '/workspace', { userHome: '/home/user' }), ['/home/user/.fake']);
-assert.throws(() => createRuntimeAdapterDescriptor(withSkills({ mirrorRoots: ['../escape'] }), { implementations: fakeImplementations }), /skills mirror root is unsafe/);
-assert.throws(() => createRuntimeAdapterDescriptor(withSkills({ mirrorRoots: ['.fake'] }), { implementations: fakeImplementations }), /mirror root must differ from the primary root/);
-assert.throws(() => createRuntimeAdapterDescriptor(withSkills({ mirrorRoots: ['.mirror', '.mirror'] }), { implementations: fakeImplementations }), /mirrorRoots contains duplicates/);
-assert.throws(() => createRuntimeAdapterDescriptor(withSkills({ mirrorRoots: [] }), { implementations: fakeImplementations }), /mirrorRoots must be a non-empty array/);
+const singleRootDescriptor: any = createRuntimeAdapterDescriptor(fakeValue, { implementations: fakeImplementations });
+assert.deepEqual(singleRootDescriptor.traits.skills.destinations.workspace.roots, ['.fake']);
+assert.deepEqual(singleRootDescriptor.traits.skills.destinations.user.roots, undefined);
+assert.deepEqual(singleRootDescriptor.renderCapabilities['workspace-project-skills'].targets, ['.fake/skills/<skill>/SKILL.md']);
+assert.deepEqual(singleRootDescriptor.renderCapabilities['skill-install-plans'].targets, ['.fake/buildr/skill-install-plans/<skill>.md']);
+assert.deepEqual(skillDestinationRoots(singleRootDescriptor, 'workspace', '/workspace'), ['/workspace/.fake']);
+assert.deepEqual(skillDestinationRoots(singleRootDescriptor, 'user', '/workspace', { userHome: '/home/user' }), ['/home/user/.fake']);
 assert.throws(
   () => createRuntimeAdapterDescriptor({ ...fakeValue, traits: { ...fakeValue.traits, checker: { ...fakeValue.traits.checker, installationProbe: { kind: 'any', probes: [] } } } }, { implementations: fakeImplementations }),
   /any probe requires a non-empty probes array/,
