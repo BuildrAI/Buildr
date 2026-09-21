@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { runFinalDoctor } from '../../../infrastructure/final-doctor-process.ts';
 import { hasManagedSkillMarker } from '../infrastructure/runtime/render-claude-code.ts';
-import { getRuntimeAdapter, isSupportedAgent } from '../infrastructure/runtime/adapter-contract.ts';
+import { SUPPORTED_AGENT_IDS, getRuntimeAdapter, isSupportedAgent } from '../infrastructure/runtime/adapter-contract.ts';
 import {
   legacySkillProjectionOwnershipReceiptRoot,
   legacySkillProjectionOwnershipReceiptTarget,
@@ -705,10 +705,25 @@ export function registerDomainsComponents(dependencies: ComponentsDependencies) 
       const targetDir = path.join(targetRoot, root, 'skills', ...runtimePath.split('/'));
       orphans.push({ runtimePath, root, path: toPosixRelative(targetRoot, targetDir), targetDir, ...receiptEntry });
     }
+    // A root this adapter mirrors (or shares with other adapters) can hold Skill
+    // directories another adapter owns; that adapter's receipt proves ownership,
+    // so this adapter must neither claim nor block on them.
+    const claimedBySiblingReceipt = (root: any, runtimePath: any) => SUPPORTED_AGENT_IDS.some((other: any) => {
+      if (other === adapter.id) return false;
+      const otherPrimary = getRuntimeAdapter(other).traits.skills.root;
+      const otherRoots = getRuntimeAdapter(other).traits.skills.destinations?.workspace?.roots || [otherPrimary];
+      if (!otherRoots.includes(root)) return false;
+      const slug = skillProjectionReceiptRootSlug(root, otherPrimary);
+      return [
+        skillProjectionOwnershipReceiptTarget(targetRoot, 'workspace', other, runtimePath, slug),
+        legacySkillProjectionOwnershipReceiptTarget(targetRoot, root, other, runtimePath),
+      ].some((file: any) => existsFile(file));
+    });
     for (const root of roots) {
       const skillsRoot = path.join(targetRoot, root, 'skills');
       for (const runtimePath of listManagedDirectories(skillsRoot)) {
         if (receiptsByKey.has(`${root}\u0000${runtimePath}`)) continue;
+        if (claimedBySiblingReceipt(root, runtimePath)) continue;
         if (declared.has(runtimePath) && options.runtimePath !== runtimePath) continue;
         const targetDir = path.join(skillsRoot, runtimePath);
         if (fs.lstatSync(targetDir).isSymbolicLink()) continue;

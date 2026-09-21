@@ -18,6 +18,7 @@ Buildr MUST 将产品 Buildr Skill、workspace Skills 和 Skill install plans �
 - **THEN** Buildr MUST 将同一受管 asset 同时投射到 `.agents/skills/<skill>/SKILL.md` 与 `.qoder/skills/<skill>/SKILL.md`
 - **AND** 两个 root MUST 各自使用独立 destination 控制的所有权回执，MUST NOT 用符号链接或内容复制伪装另一根已受管
 - **AND** 当某根失去对应 source 时，同一范围 reconcile MUST 只清理该根的 orphan 受管目标
+- **AND** 与其他 adapter 共享的 root 中，已由该 adapter 所有权回执声明的同路径目标 MUST NOT 被本 adapter 声明为 orphan 或报告为冲突，清理由持有回执的 adapter 执行
 - **AND** Skill 名称冲突 preflight MUST 在写入任一根之前覆盖两个 root 的已有 inventory，并保持整次零写入
 
 #### Scenario: Qoder 按安装形态声明 Skills 发现语义

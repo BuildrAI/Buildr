@@ -167,11 +167,11 @@ async function verifyLifecycle(context: any): Promise<any>  {
     const renderedFinish: any = fs.readFileSync(path.join(runtimeRoot, 'skills', 'task-finish', 'SKILL.md'), 'utf8');
     assert.ok(renderedFinish.includes('已有任务结果登记'));
     assert.ok(renderedFinish.includes('task complete --expected-record <recordDigest>'));
-    assert.ok(renderedFinish.includes('没有匹配任务就继续实际工作，不补建记录'));
-    assert.ok(renderedFinish.includes('不重新交付已成立的成果'));
+    assert.ok(renderedFinish.includes('没有匹配任务就交付实际成果，不补建记录'));
+    assert.ok(renderedFinish.includes('复用已经成立的交付事实'));
     assert.ok(renderedFinish.includes('--expected-source'));
     assert.ok(renderedFinish.includes('--delivered-ref'));
-    assert.ok(renderedFinish.includes('收尾不建立统一验证记录、聚合流程状态或新的证明文件'));
+    assert.ok(renderedFinish.includes('不因收尾、归档材料移动或提交编号变化重跑测试'));
     assert.ok(!renderedFinish.includes('preflight → prepare → verify → deliver → cleanup'));
     assert.ok(!renderedFinish.includes('task finish reconcile'));
     assert.ok(!renderedFinish.includes('buildr:contribution openspec#pre-spec-sync'));

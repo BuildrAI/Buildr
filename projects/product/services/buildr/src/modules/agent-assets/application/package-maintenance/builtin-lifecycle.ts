@@ -7,6 +7,7 @@ import { reconcileRuntimePlan } from '../../infrastructure/runtime/runtime-recon
 import {
   legacySkillProjectionOwnershipReceiptTarget,
   skillProjectionOwnershipReceiptTarget,
+  skillProjectionReceiptRootSlug,
 } from '../../infrastructure/runtime/skills/projection-files.ts';
 
 export function createBuiltinLifecycle(deps: any): any  {
@@ -36,6 +37,11 @@ export function createBuiltinLifecycle(deps: any): any  {
     writeRulesManifest,
     writeSkillsManifest,
   } = deps;
+
+  function workspaceSkillsRoots(agent: any): any  {
+    const traits: any = getRuntimeAdapter(agent).traits.skills;
+    return traits.destinations?.workspace?.roots || [traits.root];
+  }
 
   function packageBuiltinComponent(id: any): any  {
     const manifest = readPackageManifest();
@@ -111,22 +117,25 @@ export function createBuiltinLifecycle(deps: any): any  {
       }
       changed.push(toPosixRelative(targetRoot, writeSkillsManifest(targetRoot, found.manifest)));
       const runtimePath = found.entry.runtimePath || id;
-      const agentsByRuntimeRoot: any = new Map();
+      const ownersByRuntimeRoot: any = new Map();
       for (const agent of SUPPORTED_AGENT_IDS) {
-        const runtimeRoot = getRuntimeAdapter(agent).traits.skills.root;
-        if (!agentsByRuntimeRoot.has(runtimeRoot)) agentsByRuntimeRoot.set(runtimeRoot, []);
-        agentsByRuntimeRoot.get(runtimeRoot).push(agent);
+        const primaryRoot = getRuntimeAdapter(agent).traits.skills.root;
+        for (const runtimeRoot of workspaceSkillsRoots(agent)) {
+          if (!ownersByRuntimeRoot.has(runtimeRoot)) ownersByRuntimeRoot.set(runtimeRoot, []);
+          ownersByRuntimeRoot.get(runtimeRoot).push({ agent, rootSlug: skillProjectionReceiptRootSlug(runtimeRoot, primaryRoot) });
+        }
       }
-      for (const [runtimeRoot, agents] of agentsByRuntimeRoot) {
-        const receiptAgents = agents.filter((agent: any) => [
-          skillProjectionOwnershipReceiptTarget(targetRoot, 'workspace', agent, runtimePath),
-          legacySkillProjectionOwnershipReceiptTarget(targetRoot, runtimeRoot, agent, runtimePath),
+      for (const [runtimeRoot, owners] of ownersByRuntimeRoot) {
+        const receiptOwners = owners.filter((owner: any) => [
+          skillProjectionOwnershipReceiptTarget(targetRoot, 'workspace', owner.agent, runtimePath, owner.rootSlug),
+          legacySkillProjectionOwnershipReceiptTarget(targetRoot, runtimeRoot, owner.agent, runtimePath),
         ].some((file: any) => existsFile(file)));
         // A shared filesystem Skills root can retain receipts for more than one
-        // adapter. Consume those receipts before considering the legacy
-        // SKILL.md-only fallback, so valid vendor files are never mislabeled as
-        // unknown user content by a sibling adapter.
-        for (const agent of receiptAgents.length > 0 ? receiptAgents : [agents[0]]) {
+        // adapter, including adapters that only mirror that root. Consume those
+        // receipts before considering the legacy SKILL.md-only fallback, so valid
+        // vendor files are never mislabeled as unknown user content by a sibling adapter.
+        for (const owner of receiptOwners.length > 0 ? receiptOwners : [owners[0]]) {
+          const agent: any = owner.agent;
           const removals = buildRuntimeOrphanRemovalPlan(targetRoot, agent, '.', { runtimePath }).map((item: any) => ({ ...item, targetFile: item.path }));
           if (removals.length === 0) continue;
           const result = reconcileRuntimePlan(createRuntimePlan({
@@ -150,7 +159,7 @@ export function createBuiltinLifecycle(deps: any): any  {
 
   function builtinUninstall(args: any): any  {
     const targetRoot = path.resolve(optionValue(args, '--target', process.cwd()));
-    const runtimeRoots: any[] = [...new Set(SUPPORTED_AGENT_IDS.map((agent: any) => getRuntimeAdapter(agent).traits.skills.root))];
+    const runtimeRoots: any[] = [...new Set(SUPPORTED_AGENT_IDS.flatMap((agent: any) => workspaceSkillsRoots(agent)))];
     const result = withWorkspaceMutation(targetRoot, 'builtin.uninstall', [
       path.join(targetRoot, 'rules'),
       path.join(targetRoot, 'skills'),

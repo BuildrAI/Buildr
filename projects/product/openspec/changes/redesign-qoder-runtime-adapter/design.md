@@ -36,6 +36,9 @@
 **D4：行动性判定按"是否能否定已成立事实"划分。**
 环境探测未确认不再单独置 `userActionRequired: true`；投射缺失/过期/冲突继续要求行动。实现落点是 `check-runtime.ts` 的 `environmentFindings`，其结论交由 doctor 既有的"聚合全部非行动型 runtime warnings"规则处理，因此 `ready` 语义只在该场景放宽，其他 runtime finding 不变。选择该点而非修改 `result-model.ts`：readiness 计算规则本身没有变化，变化的只是单条 finding 的行动性属性。
 
+**D5：共享根的 orphan 判定以"其他 adapter 的回执"作为归属证明，而不只看本 adapter 的回执。**
+`builtin uninstall` 原先按 adapter 的**主根**分组，再在组内挑选有回执的 adapter；qoder 写入 `.agents` 后，`.agents` 组只剩 codex/cursor/trae，qoder 的镜像回执无人认领，兜底的 codex 把该目录判为"非 Buildr 管理的额外文件"并阻塞卸载。改为按 adapter 声明的**全部** workspace roots 分组（含镜像根，回执查找按该根计算 slug），并在 `managedRuntimeSkillOrphans` 的无回执扫描分支跳过"同根同路径已被其他 adapter 回执声明"的目录——既不安删，也不报冲突。曾考虑：只修 uninstall 侧的分组（否决：`renderSkillsRuntime` 收尾的 orphan 复查走同一扫描，任何 adapter 在共享根看到他人未声明的目录都会误报，规则应落在归属判断本身）。
+
 ## Risks / Trade-offs
 
 - 两个根内容漂移 → 投射由同一 plan 一次生成，check 与 doctor 对每个根独立出具 identity，任一根过期仍是 actionable `stale`。
