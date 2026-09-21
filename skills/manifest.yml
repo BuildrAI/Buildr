@@ -579,7 +579,7 @@ contracts:
   - id: buildr.task-review
     version: 2
     path: contracts/buildr/task-review/v2.md
-    description: 对正式 Task 的实际方案或完成结果执行可选语义审查并维护两个独立 current Result。
+    description: 对正式 Task 的实际方案或完成结果执行可选语义审查，维护两类当前结果及完整审查历史。
   - id: buildr.task-record
     version: 3
     path: contracts/buildr/task-record/v3.md
