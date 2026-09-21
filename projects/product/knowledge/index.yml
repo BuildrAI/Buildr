@@ -3,6 +3,17 @@ scope:
   kind: project
   id: product
 objects:
+  - id: data-design
+    title: Buildr 数据全景与领域设计
+    summary: 从业务含义、身份、关联、存储和修改约束理解全部数据领域，不把本机事实误当缓存。
+  - id: data-sqlite
+    parent: data-design
+    title: 数据库表与实体关系
+    summary: 当前 SQLite 普通表、全文检索、完整字段、主外键、关系基数及应用层引用的区别。
+  - id: data-local
+    parent: data-design
+    title: 本机数据与恢复边界
+    summary: 安装、应用、投射、工作位置与恢复记录的范围、写入者和丢失影响。
   - id: knowledge-maintenance
     title: 知识建设与维护
     summary: 谁指导事实建设，谁维护表达，职责落在哪些文件，以及变化后怎样跟上。
@@ -32,6 +43,38 @@ objects:
     title: Node.js 测试上下文
     summary: 面向 Node.js 的可选能力：复用昂贵准备，保持案例隔离，管理创建、恢复和清理。
 artifacts:
+  - id: data-design-explanation
+    title: Buildr 数据全景与领域设计
+    kind: document
+    path: knowledge/docs/architecture/buildr-data-design.md
+    objects: [data-design]
+    sources: [data-identity-source, data-catalog-source, data-skills-source, data-sqlite-source, index-model]
+  - id: data-domain-diagram
+    title: 数据领域与事实归属
+    kind: diagram
+    path: knowledge/archify/data/buildr-data-domains.html
+    graphSource: knowledge/archify/data/buildr-data-domains.json
+    objects: [data-design]
+    sources: [data-identity-source, data-catalog-source, data-skills-source, data-sqlite-source, data-domain-evidence]
+  - id: data-sqlite-explanation
+    title: Buildr 数据库表设计
+    kind: document
+    path: knowledge/docs/architecture/buildr-database-tables.md
+    objects: [data-sqlite]
+    sources: [data-sqlite-source, data-task-table-source, data-review-history-source, data-review-storage-source]
+  - id: data-sqlite-diagram
+    title: 数据库实体关系图（ERD）
+    kind: diagram
+    path: knowledge/archify/data/workspace-sqlite-erd.html
+    graphSource: knowledge/archify/data/workspace-sqlite-erd.dot.txt
+    objects: [data-sqlite]
+    sources: [data-sqlite-source, data-task-table-source, data-review-history-source, data-sqlite-evidence]
+  - id: data-local-explanation
+    title: 本机数据与恢复边界
+    kind: document
+    path: knowledge/docs/architecture/buildr-local-data.md
+    objects: [data-local]
+    sources: [data-installation-source, data-mutation-source, data-convergence-source, data-daily-source]
   - id: explanation
     title: 知识建设与维护
     kind: document
@@ -854,6 +897,58 @@ artifacts:
       - parent-completion-evidence
     observedDigest: 86f4a1cbff48189a905282eae68b4a3dc54596e6adab2e5208991a7f0b066076
 sources:
+  - id: data-identity-source
+    title: 数据对象身份与关系约束
+    kind: code
+    path: services/buildr/src/modules/workspace/domain/asset-relationships.ts
+  - id: data-catalog-source
+    title: 数据对象清单与旧登记映射
+    kind: code
+    path: services/buildr/src/modules/workspace/persistence/asset-catalog-repository.ts
+  - id: data-skills-source
+    title: 技能身份、能力声明与绑定
+    kind: code
+    path: services/buildr/src/modules/agent-assets/persistence/skill-manifest.ts
+  - id: data-sqlite-source
+    title: SQLite 连接与迁移边界
+    kind: code
+    path: services/buildr/src/infrastructure/sqlite/workspace-sqlite.ts
+  - id: data-task-table-source
+    title: 当前任务表定义
+    kind: code
+    path: services/buildr/src/infrastructure/sqlite/migrations/0031_finalize_task_record.sql
+  - id: data-review-history-source
+    title: 审查历史表定义
+    kind: code
+    path: services/buildr/src/infrastructure/sqlite/migrations/0034_add_task_review_history.sql
+  - id: data-review-storage-source
+    title: 审查当前结果与历史写入
+    kind: code
+    path: services/buildr/src/modules/task/persistence/task-review-repository.ts
+  - id: data-installation-source
+    title: 本机安装登记
+    kind: code
+    path: services/buildr/src/modules/installation/infrastructure/installation-registry.ts
+  - id: data-mutation-source
+    title: 多文件写入恢复现场
+    kind: code
+    path: services/buildr/src/infrastructure/filesystem/workspace-mutation.ts
+  - id: data-convergence-source
+    title: OpenSpec 归档恢复记录
+    kind: code
+    path: services/buildr/src/modules/openspec/application/openspec-converge.ts
+  - id: data-daily-source
+    title: 每日演进文件持久化
+    kind: code
+    path: services/buildr/src/modules/task/daily-progress/persistence/project-daily-progress-repository.ts
+  - id: data-domain-evidence
+    title: 数据领域图的来源与边界
+    kind: evidence
+    path: knowledge/archify/data/buildr-data-domains.md
+  - id: data-sqlite-evidence
+    title: 数据库表图的来源与边界
+    kind: evidence
+    path: knowledge/archify/data/workspace-sqlite-erd.md
   - id: verification-locations
     title: 测试路径根与当前位置
     kind: code
@@ -2259,6 +2354,21 @@ sources:
     summary: 补齐关联阅读，取消过时请求，刷新时读取当前文件。
     observedDigest: 579176eadcca4cfd5cd7020c8186b88767fdd04b18ea8e01ed8d05a78fd1f10c
 relations:
+  - from: data-design-explanation
+    to: data-design
+    kind: explains
+  - from: data-domain-diagram
+    to: data-design
+    kind: explains
+  - from: data-sqlite-explanation
+    to: data-sqlite
+    kind: explains
+  - from: data-sqlite-diagram
+    to: data-sqlite
+    kind: explains
+  - from: data-local-explanation
+    to: data-local
+    kind: explains
   - from: query
     to: knowledge-maintenance
     kind: implements

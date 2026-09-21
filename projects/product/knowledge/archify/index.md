@@ -6,6 +6,9 @@
 
 ## 当前入口
 
+- [数据领域与事实归属](data/buildr-data-domains.html)：领域关系阅读总图；[图源](data/buildr-data-domains.json)、[依据](data/buildr-data-domains.md)、[数据设计正文](../docs/architecture/buildr-data-design.md)。
+- [数据库实体关系图（Entity Relationship Diagram，ERD）](data/workspace-sqlite-erd.html)：真实表、字段与关联；[Graphviz 图源](data/workspace-sqlite-erd.dot.txt)、[矢量图](data/workspace-sqlite-erd.svg)、[依据](data/workspace-sqlite-erd.md)。本图使用 Graphviz 表达表字段和鸟脚表示法（Crow’s Foot），不是 Archify 架构图，也不改变现有生成器。
+
 - [任务系统：完整过程与角色职责](flows/task-system.html)：人、智能体（Agent）与 Buildr 的完整协作；[图源](flows/task-system.json)、[事实依据](flows/task-system.md)。
 - [需求、方案与实施授权](flows/task-system-planning.html)：方案阅读、人的答复与主动接续；[图源](flows/task-system-planning.json)、[依据](flows/task-system-planning.md)。
 - [实现审查与代码交付](flows/task-system-delivery.html)：实施、两类检查、验收授权与实际交付；[图源](flows/task-system-delivery.json)、[依据](flows/task-system-delivery.md)。

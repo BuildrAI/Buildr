@@ -1,0 +1,1002 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>Buildr · SQLite 实体关系与字段说明</title>
+<style>
+:root{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;color:#203542;background:#f4f6f8;font-size:16px;line-height:1.65}
+*{box-sizing:border-box}body{margin:0}a{color:#255b82;text-underline-offset:3px}a:hover{color:#173c55}button,input{font:inherit}button{cursor:pointer;border:1px solid #adbac4;background:#fff;border-radius:6px;padding:6px 12px;color:#243b49}button:hover{background:#edf3f7}button:disabled{opacity:.45;cursor:default}button:focus-visible,input:focus-visible,a:focus-visible,#viewport:focus-visible{outline:3px solid #5385ad;outline-offset:3px}
+header{max-width:1500px;margin:auto;padding:28px 32px 18px}header p{margin:8px 0;color:#506774}h1{font-size:30px;letter-spacing:-.5px;line-height:1.3;margin:0 0 10px}.eyebrow{font-size:13px;font-weight:650;letter-spacing:1px;color:#587180;margin-bottom:8px}nav{display:flex;gap:10px 24px;flex-wrap:wrap;font-size:14px}.facts{display:flex;gap:8px;flex-wrap:wrap;margin:18px 0 0}.facts span{background:#e6edf1;padding:3px 10px;border-radius:4px;font-size:13px}.viewer{margin:0 24px;border:1px solid #ccd6dd;border-radius:10px;background:white;overflow:hidden;box-shadow:0 2px 6px #152f4010}.toolbar{display:flex;gap:10px 18px;align-items:center;flex-wrap:wrap;padding:14px 18px;background:#f9fafb;border-bottom:1px solid #d5dfe4}.controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.toolbar label,.toolbar output{font-size:14px}.toolbar input[type=range]{width:145px;accent-color:#476f8f}.toolbar input[type=search]{width:250px;max-width:100%;border:1px solid #adbac4;border-radius:6px;padding:7px 10px;background:#fff}.toolbar output{min-width:45px;font-variant-numeric:tabular-nums}.search-status{font-size:13px;color:#506774;overflow-wrap:anywhere;min-height:22px}.legend{padding:12px 18px;font-size:13px;border-bottom:1px solid #d5dfe4;display:flex;flex-wrap:wrap;gap:8px 24px;align-items:center}.legend span{display:inline-flex;align-items:center;gap:7px}.line{display:inline-block;width:34px;border-top:2px solid #486171}.line.logical{border-top-style:dotted;border-color:#919998}.line.sync{border-top-style:dashed;border-color:#597ba4}.help{font-size:13px;color:#596e7c;padding:8px 18px;margin:0;border-top:1px solid #d5dfe4}#viewport{height:76vh;min-height:480px;max-height:960px;overflow:auto;position:relative;background:#fff;overscroll-behavior:contain}#canvas{width:max-content;line-height:0}#canvas>svg{display:block;max-width:none;max-height:none}#canvas g.node.matched>polygon,#canvas g.node.matched>path{stroke:#aa7526;stroke-width:2.5}#canvas g.node.matched text.hit{fill:#995c06;font-weight:700}#canvas g.node.active-match>polygon,#canvas g.node.active-match>path{stroke:#bc7414;stroke-width:4}
+article{max-width:1220px;margin:32px auto;padding:32px 40px 48px;background:white;border:1px solid #d8e0e5;border-radius:10px;overflow-wrap:anywhere}article h1{font-size:28px}article h2{font-size:22px;border-top:1px solid #dae2e7;padding-top:25px;margin-top:36px;scroll-margin-top:18px}article h3{font-size:18px;margin-top:26px}article p{margin:12px 0}article li{margin:9px 0}article code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.9em;background:#eef2f5;border-radius:3px;padding:2px 4px}article pre{overflow:auto;background:#eef2f5;padding:16px;border-radius:6px;line-height:1.5}article pre code{padding:0}.table-wrap{max-width:100%;overflow-x:auto;margin:18px 0}table{border-collapse:collapse;width:100%;font-size:14px}th,td{padding:10px 12px;text-align:left;border:1px solid #d5dfe5;vertical-align:top}th{background:#edf2f5;font-weight:650}tr:nth-child(even) td{background:#fafbfc}footer{max-width:1220px;margin:18px auto 32px;padding:0 24px;color:#536b7a;font-size:13px}.notice{padding:10px 14px;border-left:3px solid #9a7b40;background:#fbf8f0}.jump{margin:24px 0;padding:14px;background:#f3f6f8;border-radius:6px;display:flex;gap:8px 18px;flex-wrap:wrap;font-size:14px}
+@media(max-width:700px){header{padding:20px 16px}h1{font-size:25px}.viewer{margin:0 8px}.toolbar{padding:10px}article{margin:20px 8px;padding:22px 16px}.toolbar input[type=search]{width:205px}#viewport{height:70vh;min-height:400px}.legend{padding:10px}.facts{margin-top:12px}}
+@media print{body{background:#fff}.toolbar,.help,.jump{display:none}.viewer{overflow:visible;margin:0;border:0}#viewport{overflow:visible;height:auto;max-height:none;min-height:0}#canvas,#canvas>svg{width:100%!important;height:auto!important}article{border:0;margin:0;padding:20px 0}.table-wrap{overflow:visible}h2,h3{break-after:avoid}tr{break-inside:avoid}}
+</style>
+</head>
+<body>
+<header>
+<div class="eyebrow">Buildr / 数据知识 / 物理结构</div>
+<h1>SQLite 实体关系图（ERD）</h1>
+<p>看清每张表的字段、主键（PK）、外键（FK）、可空性（Nullability）与基数（Cardinality）。以迁移 <code>0000..0034</code> 为准，不把文件实体或内嵌对象画成数据库表。</p>
+<nav aria-label="文档与图源">
+<a href="#fields">完整字段与约束说明 ↓</a>
+<a href="workspace-sqlite-erd.svg">独立矢量图（SVG）</a>
+<a href="workspace-sqlite-erd.dot.txt">Graphviz 图源</a>
+<a href="workspace-sqlite-erd.md">图示范围与维护说明</a>
+<a href="../../docs/architecture/buildr-database-tables.md">Markdown 附录</a>
+</nav>
+<div class="facts"><span>10 张普通表 · 50 字段</span><span>1 张检索虚拟表 · 4 张内部影子表</span><span>8 个外键（FK）· 13 个显式索引（Index）</span><span>内联内容 · 无网络依赖</span></div>
+</header>
+<main>
+<section class="viewer" aria-label="可缩放实体关系图">
+<div class="toolbar">
+<div class="controls" aria-label="缩放控制">
+<button id="zoom-out" type="button" aria-label="缩小图示">−</button>
+<label for="zoom">缩放</label><input id="zoom" type="range" min="25" max="200" step="5" value="100"><output id="zoom-value" for="zoom">100%</output>
+<button id="zoom-in" type="button" aria-label="放大图示">＋</button>
+<button id="reset" type="button">重置至任务表</button>
+</div>
+<div class="controls">
+<label for="search">搜索表名或字段</label><input id="search" type="search" placeholder="如 task_id、审查、context_json" autocomplete="off" spellcheck="false">
+<button id="next" type="button" disabled>下一项</button>
+</div>
+<div id="search-status" class="search-status" role="status" aria-live="polite">输入名称定位；也可用浏览器页面搜索阅读下方全文。</div>
+</div>
+<div class="legend" aria-label="图例">
+<span><i class="line" aria-hidden="true"></i>实线：SQL 外键（FK）</span>
+<span><i class="line logical" aria-hidden="true"></i>点线：逻辑引用（Logical Reference）</span>
+<span><i class="line sync" aria-hidden="true"></i>蓝色虚线：检索同步或引擎维护</span>
+<span>双竖线 = 1；圈＋竖线 = 0..1；圈＋鸟脚 = 0..N；审查上限另标 0..2</span>
+<span>主键（PK）数字表示复合列顺序；唯一约束（UQ）；否* = 整数键自动分配，不存空值</span>
+</div>
+<div id="viewport" tabindex="0" aria-label="图示滚动区；方向键可滚动，搜索可定位表">
+<div id="canvas">
+<!-- diagram:start -->
+<svg role="img" aria-label="Buildr SQLite 实体关系图，含完整字段、主外键与鸟脚基数" width="2549pt" height="2222pt"
+ viewBox="0.00 0.00 2548.98 2222.10" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(28.8 2193.3)">
+<title>workspace_sqlite_erd</title>
+<polygon fill="#ffffff" stroke="none" points="-28.8,28.8 -28.8,-2193.3 2520.18,-2193.3 2520.18,28.8 -28.8,28.8"/>
+<text text-anchor="middle" x="423.12" y="-2137.7" font-family="PingFang SC" font-size="24.00" fill="#172b3a">Buildr · 工作空间（Workspace）SQLite 实体关系图（ERD）</text>
+<text text-anchor="middle" x="423.12" y="-2103.95" font-family="PingFang SC" font-size="24.00" fill="#172b3a">迁移 0000—0034 ｜ 10 普通表 · 1 全文检索（FTS5）虚拟表 · 4 内部影子表</text>
+<text text-anchor="middle" x="423.12" y="-2070.2" font-family="PingFang SC" font-size="24.00" fill="#172b3a">字段完整展开；正文大小阅读，可缩放与滚动。</text>
+<g id="clust1" class="cluster">
+<title>cluster_scope</title>
+<path fill="#ffffff" stroke="#dce4e8" d="M341.25,-845.5C341.25,-845.5 663.25,-845.5 663.25,-845.5 669.25,-845.5 675.25,-851.5 675.25,-857.5 675.25,-857.5 675.25,-1764.5 675.25,-1764.5 675.25,-1770.5 669.25,-1776.5 663.25,-1776.5 663.25,-1776.5 341.25,-1776.5 341.25,-1776.5 335.25,-1776.5 329.25,-1770.5 329.25,-1764.5 329.25,-1764.5 329.25,-857.5 329.25,-857.5 329.25,-851.5 335.25,-845.5 341.25,-845.5"/>
+<text text-anchor="middle" x="482.38" y="-1754.45" font-family="PingFang SC" font-size="19.00" fill="#172b3a">任务范围关联 · 项目 / 服务 / 变更</text>
+</g>
+<g id="clust3" class="cluster">
+<title>cluster_results</title>
+<path fill="#ffffff" stroke="#dce4e8" d="M1657.38,-407.5C1657.38,-407.5 2022.12,-407.5 2022.12,-407.5 2028.12,-407.5 2034.12,-413.5 2034.12,-419.5 2034.12,-419.5 2034.12,-2013.5 2034.12,-2013.5 2034.12,-2019.5 2028.12,-2025.5 2022.12,-2025.5 2022.12,-2025.5 1657.38,-2025.5 1657.38,-2025.5 1651.38,-2025.5 1645.38,-2019.5 1645.38,-2013.5 1645.38,-2013.5 1645.38,-419.5 1645.38,-419.5 1645.38,-413.5 1651.38,-407.5 1657.38,-407.5"/>
+<text text-anchor="middle" x="1756.5" y="-2003.45" font-family="PingFang SC" font-size="19.00" fill="#172b3a">当前专业记录与审查历史</text>
+</g>
+<g id="clust5" class="cluster">
+<title>cluster_infrastructure</title>
+<path fill="#ffffff" stroke="#dce4e8" d="M2105.12,-426.5C2105.12,-426.5 2471.38,-426.5 2471.38,-426.5 2477.38,-426.5 2483.38,-432.5 2483.38,-438.5 2483.38,-438.5 2483.38,-1891.5 2483.38,-1891.5 2483.38,-1897.5 2477.38,-1903.5 2471.38,-1903.5 2471.38,-1903.5 2105.12,-1903.5 2105.12,-1903.5 2099.12,-1903.5 2093.12,-1897.5 2093.12,-1891.5 2093.12,-1891.5 2093.12,-438.5 2093.12,-438.5 2093.12,-432.5 2099.12,-426.5 2105.12,-426.5"/>
+<text text-anchor="middle" x="2194.88" y="-1881.45" font-family="PingFang SC" font-size="19.00" fill="#172b3a">基础设施与工作台偏好</text>
+</g>
+<!-- tasks -->
+<g id="entity&#45;tasks" class="node">
+<title>tasks</title>
+<polygon fill="#e3edf1" stroke="none" points="965.25,-1398.38 965.25,-1436.12 1361.5,-1436.12 1361.5,-1398.38 965.25,-1398.38"/>
+<text text-anchor="start" x="1120.25" y="-1414.88" font-family="PingFang SC" font-weight="bold" font-size="15.00">任务 · tasks</text>
+<text text-anchor="start" x="973.25" y="-1376.12" font-family="PingFang SC" font-size="15.00">14 列 · STRICT · 隐式 rowid 供检索同步</text>
+<polygon fill="#f3f6f8" stroke="none" points="965.25,-1322.88 965.25,-1360.62 1198.75,-1360.62 1198.75,-1322.88 965.25,-1322.88"/>
+<text text-anchor="start" x="1067" y="-1338.38" font-family="PingFang SC" font-size="15.00">字段</text>
+<polygon fill="#f3f6f8" stroke="none" points="1198.75,-1322.88 1198.75,-1360.62 1279.25,-1360.62 1279.25,-1322.88 1198.75,-1322.88"/>
+<text text-anchor="start" x="1224" y="-1338.38" font-family="PingFang SC" font-size="15.00">类型</text>
+<polygon fill="#f3f6f8" stroke="none" points="1279.25,-1322.88 1279.25,-1360.62 1315.5,-1360.62 1315.5,-1322.88 1279.25,-1322.88"/>
+<text text-anchor="start" x="1289.88" y="-1338.38" font-family="PingFang SC" font-size="15.00">键</text>
+<polygon fill="#f3f6f8" stroke="none" points="1315.5,-1322.88 1315.5,-1360.62 1361.5,-1360.62 1361.5,-1322.88 1315.5,-1322.88"/>
+<text text-anchor="start" x="1323.5" y="-1338.38" font-family="PingFang SC" font-size="15.00">可空</text>
+<text text-anchor="start" x="973.25" y="-1300.62" font-family="PingFang SC" font-size="15.00">task_id</text>
+<text text-anchor="start" x="1220.25" y="-1300.62" font-family="PingFang SC" font-size="15.00">TEXT</text>
+<text text-anchor="start" x="1287.25" y="-1300.62" font-family="PingFang SC" font-size="15.00">PK</text>
+<text text-anchor="start" x="1331" y="-1300.62" font-family="PingFang SC" font-size="15.00">否</text>
+<text text-anchor="start" x="973.25" y="-1262.88" font-family="PingFang SC" font-size="15.00">title</text>
+<text text-anchor="start" x="1220.25" y="-1262.88" font-family="PingFang SC" font-size="15.00">TEXT</text>
+<text text-anchor="start" x="1289.88" y="-1262.88" font-family="PingFang SC" font-size="15.00">—</text>
+<text text-anchor="start" x="1331" y="-1262.88" font-family="PingFang SC" font-size="15.00">否</text>
+<text text-anchor="start" x="973.25" y="-1225.12" font-family="PingFang SC" font-size="15.00">intent</text>
+<text text-anchor="start" x="1220.25" y="-1225.12" font-family="PingFang SC" font-size="15.00">TEXT</text>
+<text text-anchor="start" x="1289.88" y="-1225.12" font-family="PingFang SC" font-size="15.00">—</text>
+<text text-anchor="start" x="1331" y="-1225.12" font-family="PingFang SC" font-size="15.00">否</text>
+<text text-anchor="start" x="973.25" y="-1187.38" font-family="PingFang SC" font-size="15.00">status</text>
+<text text-anchor="start" x="1220.25" y="-1187.38" font-family="PingFang SC" font-size="15.00">TEXT</text>
+<text text-anchor="start" x="1289.88" y="-1187.38" font-family="PingFang SC" font-size="15.00">—</text>
+<text text-anchor="start" x="1331" y="-1187.38" font-family="PingFang SC" font-size="15.00">否</text>
+<text text-anchor="start" x="973.25" y="-1149.62" font-family="PingFang SC" font-size="15.00">result_summary</text>
+<text text-anchor="start" x="1220.25" y="-1149.62" font-family="PingFang SC" font-size="15.00">TEXT</text>
+<text text-anchor="start" x="1289.88" y="-1149.62" font-family="PingFang SC" font-size="15.00">—</text>
+<text text-anchor="start" x="1331" y="-1149.62" font-family="PingFang SC" font-size="15.00">是</text>
+<text text-anchor="start" x="973.25" y="-1111.88" font-family="PingFang SC" font-size="15.00">created_at</text>
+<text text-anchor="start" x="1220.25" y="-1111.88" font-family="PingFang SC" font-size="15.00">TEXT</text>
+<text text-anchor="start" x="1289.88" y="-1111.88" font-family="PingFang SC" font-size="15.00">—</text>
+<text text-anchor="start" x="1331" y="-1111.88" font-family="PingFang SC" font-size="15.00">否</text>
+<text text-anchor="start" x="973.25" y="-1074.12" font-family="PingFang SC" font-size="15.00">updated_at</text>
+<text text-anchor="start" x="1220.25" y="-1074.12" font-family="PingFang SC" font-size="15.00">TEXT</text>
+<text text-anchor="start" x="1289.88" y="-1074.12" font-family="PingFang SC" font-size="15.00">—</text>
+<text text-anchor="start" x="1331" y="-1074.12" font-family="PingFang SC" font-size="15.00">否</text>
+<text text-anchor="start" x="973.25" y="-1036.38" font-family="PingFang SC" font-size="15.00">parent_task_id</text>
+<text text-anchor="start" x="1220.25" y="-1036.38" font-family="PingFang SC" font-size="15.00">TEXT</text>
+<text text-anchor="start" x="1287.62" y="-1036.38" font-family="PingFang SC" font-size="15.00">FK</text>
+<text text-anchor="start" x="1331" y="-1036.38" font-family="PingFang SC" font-size="15.00">是</text>
+<text text-anchor="start" x="973.25" y="-998.62" font-family="PingFang SC" font-size="15.00">is_parent</text>
+<text text-anchor="start" x="1206.75" y="-998.62" font-family="PingFang SC" font-size="15.00">INTEGER</text>
+<text text-anchor="start" x="1289.88" y="-998.62" font-family="PingFang SC" font-size="15.00">—</text>
+<text text-anchor="start" x="1331" y="-998.62" font-family="PingFang SC" font-size="15.00">否</text>
+<text text-anchor="start" x="973.25" y="-960.88" font-family="PingFang SC" font-size="15.00">parent_completion_json</text>
+<text text-anchor="start" x="1220.25" y="-960.88" font-family="PingFang SC" font-size="15.00">TEXT</text>
+<text text-anchor="start" x="1289.88" y="-960.88" font-family="PingFang SC" font-size="15.00">—</text>
+<text text-anchor="start" x="1331" y="-960.88" font-family="PingFang SC" font-size="15.00">是</text>
+<text text-anchor="start" x="973.25" y="-923.12" font-family="PingFang SC" font-size="15.00">result_history_json</text>
+<text text-anchor="start" x="1220.25" y="-923.12" font-family="PingFang SC" font-size="15.00">TEXT</text>
+<text text-anchor="start" x="1289.88" y="-923.12" font-family="PingFang SC" font-size="15.00">—</text>
+<text text-anchor="start" x="1331" y="-923.12" font-family="PingFang SC" font-size="15.00">否</text>
+<text text-anchor="start" x="973.25" y="-885.38" font-family="PingFang SC" font-size="15.00">legacy_parent_plan_json</text>
+<text text-anchor="start" x="1220.25" y="-885.38" font-family="PingFang SC" font-size="15.00">TEXT</text>
+<text text-anchor="start" x="1289.88" y="-885.38" font-family="PingFang SC" font-size="15.00">—</text>
+<text text-anchor="start" x="1331" y="-885.38" font-family="PingFang SC" font-size="15.00">是</text>
+<text text-anchor="start" x="973.25" y="-847.62" font-family="PingFang SC" font-size="15.00">retrospective_state</text>
+<text text-anchor="start" x="1220.25" y="-847.62" font-family="PingFang SC" font-size="15.00">TEXT</text>
+<text text-anchor="start" x="1289.88" y="-847.62" font-family="PingFang SC" font-size="15.00">—</text>
+<text text-anchor="start" x="1331" y="-847.62" font-family="PingFang SC" font-size="15.00">是</text>
+<text text-anchor="start" x="973.25" y="-809.88" font-family="PingFang SC" font-size="15.00">retrospective_document_digest</text>
+<text text-anchor="start" x="1220.25" y="-809.88" font-family="PingFang SC" font-size="15.00">TEXT</text>
+<text text-anchor="start" x="1289.88" y="-809.88" font-family="PingFang SC" font-size="15.00">—</text>
+<text text-anchor="start" x="1331" y="-809.88" font-family="PingFang SC" font-size="15.00">是</text>
+<polygon fill="#f3f6f8" stroke="none" points="965.25,-734.88 965.25,-794.38 1361.5,-794.38 1361.5,-734.88 965.25,-734.88"/>
+<text text-anchor="start" x="973.25" y="-772.12" font-family="PingFang SC" font-size="15.00">is_parent 默认 0；result_history_json 默认 &#39;[]&#39;</text>
+<text text-anchor="start" x="973.25" y="-750.38" font-family="PingFang SC" font-size="15.00">父完成、更正与复盘引用在本表，不是独立实体表</text>
+<polygon fill="none" stroke="#466777" points="964.25,-733.88 964.25,-1437.12 1362.5,-1437.12 1362.5,-733.88 964.25,-733.88"/>
+</g>
+<!-- tasks&#45;&gt;tasks -->
+<g id="edge4" class="edge">
+<title>tasks:w&#45;&gt;tasks:w</title>
+<path fill="none" stroke="#486171" stroke-width="1.4" d="M952.61,-1308.33C890.26,-1326.81 787.62,-1317.17 787.62,-1171.88 787.62,-1030.54 884.75,-1017.56 947.43,-1033.97"/>
+<polygon fill="#486171" stroke="#486171" stroke-width="1.4" points="962.81,-1299.81 965.89,-1308.8 964.09,-1309.42 961.01,-1300.43 962.81,-1299.81"/>
+<polyline fill="none" stroke="#486171" stroke-width="1.4" points="965.25,-1304 960.76,-1305.54"/>
+<ellipse fill="none" stroke="#486171" stroke-width="1.4" cx="956.5" cy="-1307" rx="3.8" ry="3.8"/>
+<polygon fill="#486171" stroke="#486171" stroke-width="1.4" points="955.77,-1036.68 963.49,-1043.67 960.73,-1038.29 964.36,-1039.46 964.36,-1039.46 964.36,-1039.46 960.73,-1038.29 966.12,-1035.54 955.77,-1036.68"/>
+<ellipse fill="none" stroke="#486171" stroke-width="1.4" cx="949.86" cy="-1034.76" rx="3.8" ry="3.8"/>
+<text text-anchor="middle" x="660.88" y="-1091.9" font-family="PingFang SC" font-size="13.00" fill="#334c5b">每子任务 0..1 父任务；每父任务 0..N 子任务</text>
+<text text-anchor="middle" x="660.88" y="-1073.15" font-family="PingFang SC" font-size="13.00" fill="#334c5b">parent_task_id → task_id · SET NULL</text>
+</g>
+<!-- task_verification_current -->
+<g id="entity&#45;task_verification_current" class="node">
+<title>task_verification_current</title>
+<polygon fill="#eaf0f3" stroke="none" points="1695.25,-1193.62 1695.25,-1231.38 1984.25,-1231.38 1984.25,-1193.62 1695.25,-1193.62"/>
+<text text-anchor="start" x="1713.75" y="-1210.12" font-family="PingFang SC" font-weight="bold" font-size="15.00">当前验证 · task_verification_current</text>
+<polygon fill="#f3f6f8" stroke="none" points="1695.25,-1155.88 1695.25,-1193.62 1811,-1193.62 1811,-1155.88 1695.25,-1155.88"/>
+<text text-anchor="start" x="1738.12" y="-1171.38" font-family="PingFang SC" font-size="15.00">字段</text>
+<polygon fill="#f3f6f8" stroke="none" points="1811,-1155.88 1811,-1193.62 1864.5,-1193.62 1864.5,-1155.88 1811,-1155.88"/>
+<text text-anchor="start" x="1822.75" y="-1171.38" font-family="PingFang SC" font-size="15.00">类型</text>
+<polygon fill="#f3f6f8" stroke="none" points="1864.5,-1155.88 1864.5,-1193.62 1938.25,-1193.62 1938.25,-1155.88 1864.5,-1155.88"/>
+<text text-anchor="start" x="1893.88" y="-1171.38" font-family="PingFang SC" font-size="15.00">键</text>
+<polygon fill="#f3f6f8" stroke="none" points="1938.25,-1155.88 1938.25,-1193.62 1984.25,-1193.62 1984.25,-1155.88 1938.25,-1155.88"/>
+<text text-anchor="start" x="1946.25" y="-1171.38" font-family="PingFang SC" font-size="15.00">可空</text>
+<text text-anchor="start" x="1703.25" y="-1133.62" font-family="PingFang SC" font-size="15.00">task_id</text>
+<text text-anchor="start" x="1819" y="-1133.62" font-family="PingFang SC" font-size="15.00">TEXT</text>
+<text text-anchor="start" x="1872.5" y="-1133.62" font-family="PingFang SC" font-size="15.00">PK / FK</text>
+<text text-anchor="start" x="1953.75" y="-1133.62" font-family="PingFang SC" font-size="15.00">否</text>
+<text text-anchor="start" x="1703.25" y="-1095.88" font-family="PingFang SC" font-size="15.00">result_json</text>
+<text text-anchor="start" x="1819" y="-1095.88" font-family="PingFang SC" font-size="15.00">TEXT</text>
+<text text-anchor="start" x="1893.88" y="-1095.88" font-family="PingFang SC" font-size="15.00">—</text>
+<text text-anchor="start" x="1953.75" y="-1095.88" font-family="PingFang SC" font-size="15.00">否</text>
+<text text-anchor="start" x="1703.25" y="-1058.12" font-family="PingFang SC" font-size="15.00">target_identity</text>
+<text text-anchor="start" x="1819" y="-1058.12" font-family="PingFang SC" font-size="15.00">TEXT</text>
+<text text-anchor="start" x="1893.88" y="-1058.12" font-family="PingFang SC" font-size="15.00">—</text>
+<text text-anchor="start" x="1953.75" y="-1058.12" font-family="PingFang SC" font-size="15.00">否</text>
+<text text-anchor="start" x="1703.25" y="-1020.38" font-family="PingFang SC" font-size="15.00">outcome</text>
+<text text-anchor="start" x="1819" y="-1020.38" font-family="PingFang SC" font-size="15.00">TEXT</text>
+<text text-anchor="start" x="1893.88" y="-1020.38" font-family="PingFang SC" font-size="15.00">—</text>
+<text text-anchor="start" x="1953.75" y="-1020.38" font-family="PingFang SC" font-size="15.00">否</text>
+<text text-anchor="start" x="1703.25" y="-982.62" font-family="PingFang SC" font-size="15.00">updated_at</text>
+<text text-anchor="start" x="1819" y="-982.62" font-family="PingFang SC" font-size="15.00">TEXT</text>
+<text text-anchor="start" x="1893.88" y="-982.62" font-family="PingFang SC" font-size="15.00">—</text>
+<text text-anchor="start" x="1953.75" y="-982.62" font-family="PingFang SC" font-size="15.00">否</text>
+<text text-anchor="start" x="1742.25" y="-944.88" font-family="PingFang SC" font-size="15.00">STRICT · WITHOUT ROWID</text>
+<text text-anchor="start" x="1742.25" y="-923.12" font-family="PingFang SC" font-size="15.00">仅保留当前值；无验证历史表</text>
+<polygon fill="none" stroke="#7e929d" points="1694.25,-906.62 1694.25,-1232.38 1985.25,-1232.38 1985.25,-906.62 1694.25,-906.62"/>
+</g>
+<!-- tasks&#45;&gt;task_verification_current -->
+<g id="edge5" class="edge">
+<title>tasks:e&#45;&gt;task_verification_current:w</title>
+<path fill="none" stroke="#486171" stroke-width="1.4" d="M1370.7,-1299.87C1415.3,-1277.42 1628.64,-1170.03 1682.09,-1143.12"/>
+<polygon fill="#486171" stroke="#486171" stroke-width="1.4" points="1365.48,-1307.82 1361.21,-1299.33 1362.91,-1298.48 1367.18,-1306.96 1365.48,-1307.82"/>
+<polyline fill="none" stroke="#486171" stroke-width="1.4" points="1362.5,-1304 1366.74,-1301.86"/>
+<polygon fill="#486171" stroke="#486171" stroke-width="1.4" points="1369.73,-1305.68 1365.46,-1297.19 1367.15,-1296.34 1371.42,-1304.83 1369.73,-1305.68"/>
+<polyline fill="none" stroke="#486171" stroke-width="1.4" points="1366.74,-1301.86 1370.99,-1299.73"/>
+<polygon fill="#486171" stroke="#486171" stroke-width="1.4" points="1691.27,-1133.18 1695.54,-1141.67 1693.84,-1142.52 1689.57,-1134.04 1691.27,-1133.18"/>
+<polyline fill="none" stroke="#486171" stroke-width="1.4" points="1694.25,-1137 1690.01,-1139.14"/>
+<ellipse fill="none" stroke="#486171" stroke-width="1.4" cx="1685.99" cy="-1141.16" rx="3.8" ry="3.8"/>
+<text text-anchor="middle" x="1530.88" y="-1284.36" font-family="PingFang SC" font-size="13.00" fill="#334c5b">每任务 0..1 项</text>
+<text text-anchor="middle" x="1530.88" y="-1265.61" font-family="PingFang SC" font-size="13.00" fill="#334c5b">每项 1 任务 · CASCADE</text>
+</g>
+<!-- task_review_current -->
+<g id="entity&#45;task_review_current" class="node">
+<title>task_review_current</title>
+<polygon fill="#eaf0f3" stroke="none" points="1687.75,-774.38 1687.75,-812.12 1991.75,-812.12 1991.75,-774.38 1687.75,-774.38"/>
+<text text-anchor="start" x="1730.25" y="-790.88" font-family="PingFang SC" font-weight="bold" font-size="15.00">当前审查 · task_review_current</text>
+<polygon fill="#f3f6f8" stroke="none" points="1687.75,-736.62 1687.75,-774.38 1812.5,-774.38 1812.5,-736.62 1687.75,-736.62"/>
+<text text-anchor="start" x="1735.12" y="-752.12" font-family="PingFang SC" font-size="15.00">字段</text>
+<polygon fill="#f3f6f8" stroke="none" points="1812.5,-736.62 1812.5,-774.38 1866,-774.38 1866,-736.62 1812.5,-736.62"/>
+<text text-anchor="start" x="1824.25" y="-752.12" font-family="PingFang SC" font-size="15.00">类型</text>
+<polygon fill="#f3f6f8" stroke="none" points="1866,-736.62 1866,-774.38 1945.75,-774.38 1945.75,-736.62 1866,-736.62"/>
+<text text-anchor="start" x="1898.38" y="-752.12" font-family="PingFang SC" font-size="15.00">键</text>
+<polygon fill="#f3f6f8" stroke="none" points="1945.75,-736.62 1945.75,-774.38 1991.75,-774.38 1991.75,-736.62 1945.75,-736.62"/>
+<text text-anchor="start" x="1953.75" y="-752.12" font-family="PingFang SC" font-size="15.00">可空</text>
+<text text-anchor="start" x="1695.75" y="-714.38" font-family="PingFang SC" font-size="15.00">task_id</text>
+<text text-anchor="start" x="1820.5" y="-714.38" font-family="PingFang SC" font-size="15.00">TEXT</text>
+<text text-anchor="start" x="1874" y="-714.38" font-family="PingFang SC" font-size="15.00">PK1 / FK</text>
+<text text-anchor="start" x="1961.25" y="-714.38" font-family="PingFang SC" font-size="15.00">否</text>
+<text text-anchor="start" x="1695.75" y="-676.62" font-family="PingFang SC" font-size="15.00">review_type</text>
+<text text-anchor="start" x="1820.5" y="-676.62" font-family="PingFang SC" font-size="15.00">TEXT</text>
+<text text-anchor="start" x="1891.25" y="-676.62" font-family="PingFang SC" font-size="15.00">PK2</text>
+<text text-anchor="start" x="1961.25" y="-676.62" font-family="PingFang SC" font-size="15.00">否</text>
+<text text-anchor="start" x="1695.75" y="-638.88" font-family="PingFang SC" font-size="15.00">result_json</text>
+<text text-anchor="start" x="1820.5" y="-638.88" font-family="PingFang SC" font-size="15.00">TEXT</text>
+<text text-anchor="start" x="1898.38" y="-638.88" font-family="PingFang SC" font-size="15.00">—</text>
+<text text-anchor="start" x="1961.25" y="-638.88" font-family="PingFang SC" font-size="15.00">否</text>
+<text text-anchor="start" x="1695.75" y="-601.12" font-family="PingFang SC" font-size="15.00">subject_identity</text>
+<text text-anchor="start" x="1820.5" y="-601.12" font-family="PingFang SC" font-size="15.00">TEXT</text>
+<text text-anchor="start" x="1898.38" y="-601.12" font-family="PingFang SC" font-size="15.00">—</text>
+<text text-anchor="start" x="1961.25" y="-601.12" font-family="PingFang SC" font-size="15.00">否</text>
+<text text-anchor="start" x="1695.75" y="-563.38" font-family="PingFang SC" font-size="15.00">outcome</text>
+<text text-anchor="start" x="1820.5" y="-563.38" font-family="PingFang SC" font-size="15.00">TEXT</text>
+<text text-anchor="start" x="1898.38" y="-563.38" font-family="PingFang SC" font-size="15.00">—</text>
+<text text-anchor="start" x="1961.25" y="-563.38" font-family="PingFang SC" font-size="15.00">否</text>
+<text text-anchor="start" x="1695.75" y="-525.62" font-family="PingFang SC" font-size="15.00">updated_at</text>
+<text text-anchor="start" x="1820.5" y="-525.62" font-family="PingFang SC" font-size="15.00">TEXT</text>
+<text text-anchor="start" x="1898.38" y="-525.62" font-family="PingFang SC" font-size="15.00">—</text>
+<text text-anchor="start" x="1961.25" y="-525.62" font-family="PingFang SC" font-size="15.00">否</text>
+<text text-anchor="start" x="1742.25" y="-487.88" font-family="PingFang SC" font-size="15.00">STRICT · WITHOUT ROWID</text>
+<text text-anchor="start" x="1710" y="-466.12" font-family="PingFang SC" font-size="15.00">review_type ∈ {planning, completion}</text>
+<text text-anchor="start" x="1743" y="-444.38" font-family="PingFang SC" font-size="15.00">每类型 0..1；每任务合计 0..2</text>
+<polygon fill="none" stroke="#7e929d" points="1686.75,-427.88 1686.75,-813.12 1992.75,-813.12 1992.75,-427.88 1686.75,-427.88"/>
+</g>
+<!-- tasks&#45;&gt;task_review_current -->
+<g id="edge6" class="edge">
+<title>tasks:e&#45;&gt;task_review_current:w</title>
+<path fill="none" stroke="#486171" stroke-width="1.4" d="M1366.5,-1295.56C1383.05,-1260.6 1445.38,-1129 1445.38,-1129 1445.38,-1129 1632.25,-810.61 1677.14,-734.13"/>
+<polygon fill="#486171" stroke="#486171" stroke-width="1.4" points="1367.2,-1305.17 1358.61,-1301.11 1359.43,-1299.39 1368.01,-1303.46 1367.2,-1305.17"/>
+<polyline fill="none" stroke="#486171" stroke-width="1.4" points="1362.5,-1304 1364.53,-1299.71"/>
+<polygon fill="#486171" stroke="#486171" stroke-width="1.4" points="1369.23,-1300.88 1360.65,-1296.82 1361.46,-1295.1 1370.05,-1299.16 1369.23,-1300.88"/>
+<polyline fill="none" stroke="#486171" stroke-width="1.4" points="1364.53,-1299.71 1366.57,-1295.41"/>
+<polygon fill="#486171" stroke="#486171" stroke-width="1.4" points="1681.7,-726.35 1690.2,-720.32 1684.35,-721.85 1686.28,-718.56 1686.28,-718.56 1686.28,-718.56 1684.35,-721.85 1682.83,-715.99 1681.7,-726.35"/>
+<ellipse fill="none" stroke="#486171" stroke-width="1.4" cx="1678.56" cy="-731.7" rx="3.8" ry="3.8"/>
+<text text-anchor="middle" x="1530.88" y="-1154.15" font-family="PingFang SC" font-size="13.00" fill="#334c5b">每任务 0..2 项（每类型 0..1）</text>
+<text text-anchor="middle" x="1530.88" y="-1135.4" font-family="PingFang SC" font-size="13.00" fill="#334c5b">每项 1 任务 · CASCADE</text>
+</g>
+<!-- task_review_history -->
+<g id="entity&#45;task_review_history" class="node">
+<title>task_review_history</title>
+<polygon fill="#eaf0f3" stroke="none" points="1680.62,-1931.62 1680.62,-1969.38 1998.88,-1969.38 1998.88,-1931.62 1680.62,-1931.62"/>
+<text text-anchor="start" x="1715.62" y="-1948.12" font-family="PingFang SC" font-weight="bold" font-size="15.00">被替换的审查 · task_review_history</text>
+<polygon fill="#f3f6f8" stroke="none" points="1680.62,-1893.88 1680.62,-1931.62 1792.81,-1931.62 1792.81,-1893.88 1680.62,-1893.88"/>
+<text text-anchor="start" x="1721.72" y="-1909.38" font-family="PingFang SC" font-size="15.00">字段</text>
+<polygon fill="#f3f6f8" stroke="none" points="1792.81,-1893.88 1792.81,-1931.62 1887.75,-1931.62 1887.75,-1893.88 1792.81,-1893.88"/>
+<text text-anchor="start" x="1825.28" y="-1909.38" font-family="PingFang SC" font-size="15.00">类型</text>
+<polygon fill="#f3f6f8" stroke="none" points="1887.75,-1893.88 1887.75,-1931.62 1938.44,-1931.62 1938.44,-1893.88 1887.75,-1893.88"/>
+<text text-anchor="start" x="1905.59" y="-1909.38" font-family="PingFang SC" font-size="15.00">键</text>
+<polygon fill="#f3f6f8" stroke="none" points="1938.44,-1893.88 1938.44,-1931.62 1998.88,-1931.62 1998.88,-1893.88 1938.44,-1893.88"/>
+<text text-anchor="start" x="1953.66" y="-1909.38" font-family="PingFang SC" font-size="15.00">可空</text>
+<text text-anchor="start" x="1688.62" y="-1871.62" font-family="PingFang SC" font-size="15.00">id</text>
+<text text-anchor="start" x="1808.03" y="-1871.62" font-family="PingFang SC" font-size="15.00">INTEGER</text>
+<text text-anchor="start" x="1902.97" y="-1871.62" font-family="PingFang SC" font-size="15.00">PK</text>
+<text text-anchor="start" x="1957.41" y="-1871.62" font-family="PingFang SC" font-size="15.00">否*</text>
+<text text-anchor="start" x="1688.62" y="-1833.88" font-family="PingFang SC" font-size="15.00">task_id</text>
+<text text-anchor="start" x="1821.53" y="-1833.88" font-family="PingFang SC" font-size="15.00">TEXT</text>
+<text text-anchor="start" x="1903.34" y="-1833.88" font-family="PingFang SC" font-size="15.00">FK</text>
+<text text-anchor="start" x="1961.16" y="-1833.88" font-family="PingFang SC" font-size="15.00">否</text>
+<text text-anchor="start" x="1688.62" y="-1796.12" font-family="PingFang SC" font-size="15.00">review_type</text>
+<text text-anchor="start" x="1821.53" y="-1796.12" font-family="PingFang SC" font-size="15.00">TEXT</text>
+<text text-anchor="start" x="1905.59" y="-1796.12" font-family="PingFang SC" font-size="15.00">—</text>
+<text text-anchor="start" x="1961.16" y="-1796.12" font-family="PingFang SC" font-size="15.00">否</text>
+<text text-anchor="start" x="1688.62" y="-1758.38" font-family="PingFang SC" font-size="15.00">result_json</text>
+<text text-anchor="start" x="1821.53" y="-1758.38" font-family="PingFang SC" font-size="15.00">TEXT</text>
+<text text-anchor="start" x="1905.59" y="-1758.38" font-family="PingFang SC" font-size="15.00">—</text>
+<text text-anchor="start" x="1961.16" y="-1758.38" font-family="PingFang SC" font-size="15.00">否</text>
+<text text-anchor="start" x="1748.25" y="-1720.62" font-family="PingFang SC" font-size="15.00">STRICT · id 是 rowid 别名</text>
+<text text-anchor="start" x="1727.25" y="-1698.88" font-family="PingFang SC" font-size="15.00">旧当前值先入本表，再替换当前值</text>
+<text text-anchor="start" x="1688.62" y="-1677.12" font-family="PingFang SC" font-size="15.00">没有指向 task_review_current 的外键（FK）</text>
+<polygon fill="none" stroke="#7e929d" points="1679.62,-1660.62 1679.62,-1970.38 1999.88,-1970.38 1999.88,-1660.62 1679.62,-1660.62"/>
+</g>
+<!-- tasks&#45;&gt;task_review_history -->
+<g id="edge7" class="edge">
+<title>tasks:e&#45;&gt;task_review_history:w</title>
+<path fill="none" stroke="#486171" stroke-width="1.4" d="M1366.28,-1312.59C1382.49,-1349.47 1445.38,-1492.5 1445.38,-1492.5 1445.38,-1492.5 1623.12,-1754.1 1668.95,-1821.54"/>
+<polygon fill="#486171" stroke="#486171" stroke-width="1.4" points="1358.53,-1306.78 1367.23,-1302.96 1368,-1304.7 1359.3,-1308.52 1358.53,-1306.78"/>
+<polyline fill="none" stroke="#486171" stroke-width="1.4" points="1362.5,-1304 1364.41,-1308.35"/>
+<polygon fill="#486171" stroke="#486171" stroke-width="1.4" points="1360.45,-1311.13 1369.14,-1307.31 1369.91,-1309.05 1361.21,-1312.87 1360.45,-1311.13"/>
+<polyline fill="none" stroke="#486171" stroke-width="1.4" points="1364.41,-1308.35 1366.32,-1312.7"/>
+<polygon fill="#486171" stroke="#486171" stroke-width="1.4" points="1674.02,-1829 1675.83,-1839.27 1676.96,-1833.32 1679.1,-1836.48 1679.1,-1836.48 1679.1,-1836.48 1676.96,-1833.32 1682.9,-1834.46 1674.02,-1829"/>
+<ellipse fill="none" stroke="#486171" stroke-width="1.4" cx="1670.53" cy="-1823.87" rx="3.8" ry="3.8"/>
+<text text-anchor="middle" x="1530.88" y="-1760.53" font-family="PingFang SC" font-size="13.00" fill="#334c5b">每任务 0..N 项</text>
+<text text-anchor="middle" x="1530.88" y="-1741.78" font-family="PingFang SC" font-size="13.00" fill="#334c5b">每项 1 任务 · CASCADE</text>
+</g>
+<!-- task_work_context_current -->
+<g id="entity&#45;task_work_context_current" class="node">
+<title>task_work_context_current</title>
+<polygon fill="#eaf0f3" stroke="none" points="1666.38,-1528.75 1666.38,-1566.5 2013.12,-1566.5 2013.12,-1528.75 1666.38,-1528.75"/>
+<text text-anchor="start" x="1690.5" y="-1545.25" font-family="PingFang SC" font-weight="bold" font-size="15.00">当前工作摘要 · task_work_context_current</text>
+<polygon fill="#f3f6f8" stroke="none" points="1666.38,-1491 1666.38,-1528.75 1799.38,-1528.75 1799.38,-1491 1666.38,-1491"/>
+<text text-anchor="start" x="1717.88" y="-1506.5" font-family="PingFang SC" font-size="15.00">字段</text>
+<polygon fill="#f3f6f8" stroke="none" points="1799.38,-1491 1799.38,-1528.75 1866.38,-1528.75 1866.38,-1491 1799.38,-1491"/>
+<text text-anchor="start" x="1817.88" y="-1506.5" font-family="PingFang SC" font-size="15.00">类型</text>
+<polygon fill="#f3f6f8" stroke="none" points="1866.38,-1491 1866.38,-1528.75 1953.62,-1528.75 1953.62,-1491 1866.38,-1491"/>
+<text text-anchor="start" x="1902.5" y="-1506.5" font-family="PingFang SC" font-size="15.00">键</text>
+<polygon fill="#f3f6f8" stroke="none" points="1953.62,-1491 1953.62,-1528.75 2013.12,-1528.75 2013.12,-1491 1953.62,-1491"/>
+<text text-anchor="start" x="1968.38" y="-1506.5" font-family="PingFang SC" font-size="15.00">可空</text>
+<text text-anchor="start" x="1674.38" y="-1468.75" font-family="PingFang SC" font-size="15.00">task_id</text>
+<text text-anchor="start" x="1814.12" y="-1468.75" font-family="PingFang SC" font-size="15.00">TEXT</text>
+<text text-anchor="start" x="1881.12" y="-1468.75" font-family="PingFang SC" font-size="15.00">PK / FK</text>
+<text text-anchor="start" x="1975.88" y="-1468.75" font-family="PingFang SC" font-size="15.00">否</text>
+<text text-anchor="start" x="1674.38" y="-1431" font-family="PingFang SC" font-size="15.00">context_json</text>
+<text text-anchor="start" x="1814.12" y="-1431" font-family="PingFang SC" font-size="15.00">TEXT</text>
+<text text-anchor="start" x="1902.5" y="-1431" font-family="PingFang SC" font-size="15.00">—</text>
+<text text-anchor="start" x="1975.88" y="-1431" font-family="PingFang SC" font-size="15.00">否</text>
+<text text-anchor="start" x="1674.38" y="-1393.25" font-family="PingFang SC" font-size="15.00">attention_state</text>
+<text text-anchor="start" x="1814.12" y="-1393.25" font-family="PingFang SC" font-size="15.00">TEXT</text>
+<text text-anchor="start" x="1902.5" y="-1393.25" font-family="PingFang SC" font-size="15.00">—</text>
+<text text-anchor="start" x="1975.88" y="-1393.25" font-family="PingFang SC" font-size="15.00">是</text>
+<text text-anchor="start" x="1674.38" y="-1355.5" font-family="PingFang SC" font-size="15.00">updated_at</text>
+<text text-anchor="start" x="1814.12" y="-1355.5" font-family="PingFang SC" font-size="15.00">TEXT</text>
+<text text-anchor="start" x="1902.5" y="-1355.5" font-family="PingFang SC" font-size="15.00">—</text>
+<text text-anchor="start" x="1975.88" y="-1355.5" font-family="PingFang SC" font-size="15.00">否</text>
+<text text-anchor="start" x="1674.38" y="-1317.75" font-family="PingFang SC" font-size="15.00">STRICT · attention_state ∈ {pending, resolved}</text>
+<text text-anchor="start" x="1708.12" y="-1296" font-family="PingFang SC" font-size="15.00">无事项对象时 attention_state 为 NULL</text>
+<polygon fill="none" stroke="#7e929d" points="1665.38,-1279.5 1665.38,-1567.5 2014.12,-1567.5 2014.12,-1279.5 1665.38,-1279.5"/>
+</g>
+<!-- tasks&#45;&gt;task_work_context_current -->
+<g id="edge8" class="edge">
+<title>tasks:e&#45;&gt;task_work_context_current:w</title>
+<path fill="none" stroke="#486171" stroke-width="1.4" d="M1370.6,-1308.5C1412.37,-1331.68 1603.37,-1437.71 1653.37,-1465.46"/>
+<polygon fill="#486171" stroke="#486171" stroke-width="1.4" points="1361.03,-1308.61 1365.64,-1300.31 1367.3,-1301.23 1362.69,-1309.54 1361.03,-1308.61"/>
+<polyline fill="none" stroke="#486171" stroke-width="1.4" points="1362.5,-1304 1366.65,-1306.31"/>
+<polygon fill="#486171" stroke="#486171" stroke-width="1.4" points="1365.18,-1310.92 1369.79,-1302.61 1371.45,-1303.54 1366.84,-1311.84 1365.18,-1310.92"/>
+<polyline fill="none" stroke="#486171" stroke-width="1.4" points="1366.65,-1306.31 1370.81,-1308.61"/>
+<polygon fill="#486171" stroke="#486171" stroke-width="1.4" points="1666.85,-1467.51 1662.24,-1475.82 1660.58,-1474.89 1665.19,-1466.59 1666.85,-1467.51"/>
+<polyline fill="none" stroke="#486171" stroke-width="1.4" points="1665.38,-1472.12 1661.22,-1469.82"/>
+<ellipse fill="none" stroke="#486171" stroke-width="1.4" cx="1657.29" cy="-1467.64" rx="3.8" ry="3.8"/>
+<text text-anchor="middle" x="1530.88" y="-1469.09" font-family="PingFang SC" font-size="13.00" fill="#334c5b">每任务 0..1 项</text>
+<text text-anchor="middle" x="1530.88" y="-1450.34" font-family="PingFang SC" font-size="13.00" fill="#334c5b">每项 1 任务 · CASCADE</text>
+</g>
+<!-- task_search -->
+<g id="entity&#45;task_search" class="node">
+<title>task_search</title>
+<polygon fill="#edf1f7" stroke="none" points="2119,-755.5 2119,-793.25 2457.5,-793.25 2457.5,-755.5 2119,-755.5"/>
+<text text-anchor="start" x="2176.12" y="-772" font-family="PingFang SC" font-weight="bold" font-size="15.00">全文检索（FTS5）· task_search</text>
+<polygon fill="#f3f6f8" stroke="none" points="2119,-717.75 2119,-755.5 2295.5,-755.5 2295.5,-717.75 2119,-717.75"/>
+<text text-anchor="start" x="2192.25" y="-733.25" font-family="PingFang SC" font-size="15.00">字段</text>
+<polygon fill="#f3f6f8" stroke="none" points="2295.5,-717.75 2295.5,-755.5 2359.5,-755.5 2359.5,-717.75 2295.5,-717.75"/>
+<text text-anchor="start" x="2312.5" y="-733.25" font-family="PingFang SC" font-size="15.00">类型</text>
+<polygon fill="#f3f6f8" stroke="none" points="2359.5,-717.75 2359.5,-755.5 2393.5,-755.5 2393.5,-717.75 2359.5,-717.75"/>
+<text text-anchor="start" x="2369" y="-733.25" font-family="PingFang SC" font-size="15.00">键</text>
+<polygon fill="#f3f6f8" stroke="none" points="2393.5,-717.75 2393.5,-755.5 2457.5,-755.5 2457.5,-717.75 2393.5,-717.75"/>
+<text text-anchor="start" x="2410.5" y="-733.25" font-family="PingFang SC" font-size="15.00">可空</text>
+<text text-anchor="start" x="2127" y="-695.5" font-family="PingFang SC" font-size="15.00">task_id</text>
+<text text-anchor="start" x="2305" y="-695.5" font-family="PingFang SC" font-size="15.00">未声明</text>
+<text text-anchor="start" x="2369" y="-695.5" font-family="PingFang SC" font-size="15.00">—</text>
+<text text-anchor="start" x="2403" y="-695.5" font-family="PingFang SC" font-size="15.00">未约束</text>
+<text text-anchor="start" x="2127" y="-657.75" font-family="PingFang SC" font-size="15.00">title</text>
+<text text-anchor="start" x="2305" y="-657.75" font-family="PingFang SC" font-size="15.00">未声明</text>
+<text text-anchor="start" x="2369" y="-657.75" font-family="PingFang SC" font-size="15.00">—</text>
+<text text-anchor="start" x="2403" y="-657.75" font-family="PingFang SC" font-size="15.00">未约束</text>
+<text text-anchor="start" x="2127" y="-620" font-family="PingFang SC" font-size="15.00">intent</text>
+<text text-anchor="start" x="2305" y="-620" font-family="PingFang SC" font-size="15.00">未声明</text>
+<text text-anchor="start" x="2369" y="-620" font-family="PingFang SC" font-size="15.00">—</text>
+<text text-anchor="start" x="2403" y="-620" font-family="PingFang SC" font-size="15.00">未约束</text>
+<text text-anchor="start" x="2127" y="-582.25" font-family="PingFang SC" font-size="15.00">task_search（隐藏列）</text>
+<text text-anchor="start" x="2305" y="-582.25" font-family="PingFang SC" font-size="15.00">未声明</text>
+<text text-anchor="start" x="2369" y="-582.25" font-family="PingFang SC" font-size="15.00">—</text>
+<text text-anchor="start" x="2403" y="-582.25" font-family="PingFang SC" font-size="15.00">未约束</text>
+<text text-anchor="start" x="2127" y="-544.5" font-family="PingFang SC" font-size="15.00">rank（隐藏列）</text>
+<text text-anchor="start" x="2305" y="-544.5" font-family="PingFang SC" font-size="15.00">未声明</text>
+<text text-anchor="start" x="2369" y="-544.5" font-family="PingFang SC" font-size="15.00">—</text>
+<text text-anchor="start" x="2403" y="-544.5" font-family="PingFang SC" font-size="15.00">未约束</text>
+<text text-anchor="start" x="2127" y="-506.75" font-family="PingFang SC" font-size="15.00">content=&#39;tasks&#39;；content_rowid=&#39;rowid&#39;</text>
+<text text-anchor="start" x="2127" y="-485" font-family="PingFang SC" font-size="15.00">tokenize=&#39;trigram&#39;；rowid 映射并非外键（FK）</text>
+<text text-anchor="start" x="2130.75" y="-463.25" font-family="PingFang SC" font-size="15.00">源表三列非空，不等于此虚拟表声明了非空约束</text>
+<polygon fill="none" stroke="#718598" points="2118,-446.75 2118,-794.25 2458.5,-794.25 2458.5,-446.75 2118,-446.75"/>
+</g>
+<!-- tasks&#45;&gt;task_search -->
+<g id="edge12" class="edge">
+<title>tasks&#45;&gt;task_search</title>
+<path fill="none" stroke="#597ba4" stroke-width="1.4" stroke-dasharray="5,2" d="M1362.45,-786.33C1495.03,-586.08 1645.38,-359 1645.38,-359 1645.38,-359 2034.12,-359 2034.12,-359 2034.12,-359 2068.15,-394.16 2111.26,-438.69"/>
+<polygon fill="#597ba4" stroke="#597ba4" stroke-width="1.4" points="2108.65,-440.77 2117.64,-445.28 2113.42,-436.14 2108.65,-440.77"/>
+<text text-anchor="middle" x="1839.75" y="-384.15" font-family="PingFang SC" font-size="13.00" fill="#597ba4">rowid 对应 · 非外键（FK）</text>
+<text text-anchor="middle" x="1839.75" y="-365.4" font-family="PingFang SC" font-size="13.00" fill="#597ba4">插入 / 更新 / 删除触发器同步</text>
+</g>
+<!-- legend -->
+<g id="diagram&#45;legend" class="node">
+<title>legend</title>
+<text text-anchor="start" x="941.38" y="-616.12" font-family="PingFang SC" font-weight="bold" font-size="15.00">图例与阅读边界</text>
+<text text-anchor="start" x="941.38" y="-573.38" font-family="PingFang SC" font-size="15.00">主键（PK）；外键（FK）；唯一约束（UQ）</text>
+<text text-anchor="start" x="941.38" y="-551.62" font-family="PingFang SC" font-size="15.00">PK1 / PK2 / PK3 是同一复合主键的列顺序</text>
+<text text-anchor="start" x="941.38" y="-529.88" font-family="PingFang SC" font-size="15.00">可空性（Nullability）按实际存储约束标注</text>
+<text text-anchor="start" x="941.38" y="-508.12" font-family="PingFang SC" font-size="15.00">否*：INTEGER PRIMARY KEY 不存 NULL，输入 NULL 自动分配</text>
+<text text-anchor="start" x="969.88" y="-486.38" font-family="PingFang SC" font-size="15.00">严格类型表（STRICT）；无行号表（WITHOUT ROWID）</text>
+<text text-anchor="start" x="941.38" y="-444.62" font-family="PingFang SC" font-size="15.00">实线 + 鸟脚（Crow&#39;s Foot）＝ SQL 外键（FK）</text>
+<text text-anchor="start" x="941.38" y="-422.88" font-family="PingFang SC" font-size="15.00">双竖线 1；圈+竖线 0..1；圈+鸟脚 0..N</text>
+<text text-anchor="start" x="941.38" y="-401.12" font-family="PingFang SC" font-size="15.00">基数（Cardinality）数字标在关系说明中；0..2 用数字补充</text>
+<text text-anchor="start" x="941.38" y="-379.38" font-family="PingFang SC" font-size="15.00">点线＝逻辑引用（Logical Reference），不施加数据库约束</text>
+<text text-anchor="start" x="953" y="-357.62" font-family="PingFang SC" font-size="15.00">蓝色虚线＝触发器同步（Trigger Sync）或引擎内部维护</text>
+<text text-anchor="start" x="941.38" y="-315.88" font-family="PingFang SC" font-size="15.00">所有任务附属表的 task_id 删除级联（CASCADE）</text>
+<text text-anchor="start" x="941.38" y="-294.12" font-family="PingFang SC" font-size="15.00">tasks.parent_task_id 删除置空（SET NULL）</text>
+<text text-anchor="start" x="941.38" y="-272.38" font-family="PingFang SC" font-size="15.00">所有外键（FK）更新动作均为 NO ACTION</text>
+<text text-anchor="start" x="941.38" y="-250.62" font-family="PingFang SC" font-size="15.00">结构化文本（JSON）存于 TEXT，不另建实体表</text>
+<text text-anchor="start" x="941.38" y="-228.88" font-family="PingFang SC" font-size="15.00">来源：migrations/0000..0034；说明：workspace&#45;sqlite&#45;erd.md</text>
+<text text-anchor="start" x="1033.25" y="-207.12" font-family="PingFang SC" font-size="15.00">Graphviz 原生生成；不是 Archify 产物</text>
+<polygon fill="none" stroke="#c9d3d9" points="930.38,-188.62 930.38,-640.38 1396.38,-640.38 1396.38,-188.62 930.38,-188.62"/>
+</g>
+<!-- tasks&#45;&gt;legend -->
+<!-- task_projects -->
+<g id="entity&#45;task_projects" class="node">
+<title>task_projects</title>
+<polygon fill="#eaf0f3" stroke="none" points="379.88,-1017.12 379.88,-1054.88 624.62,-1054.88 624.62,-1017.12 379.88,-1017.12"/>
+<text text-anchor="start" x="400.62" y="-1033.62" font-family="PingFang SC" font-weight="bold" font-size="15.00">任务关联项目 · task_projects</text>
+<polygon fill="#f3f6f8" stroke="none" points="379.88,-979.38 379.88,-1017.12 445.38,-1017.12 445.38,-979.38 379.88,-979.38"/>
+<text text-anchor="start" x="397.62" y="-994.88" font-family="PingFang SC" font-size="15.00">字段</text>
+<polygon fill="#f3f6f8" stroke="none" points="445.38,-979.38 445.38,-1017.12 498.88,-1017.12 498.88,-979.38 445.38,-979.38"/>
+<text text-anchor="start" x="457.12" y="-994.88" font-family="PingFang SC" font-size="15.00">类型</text>
+<polygon fill="#f3f6f8" stroke="none" points="498.88,-979.38 498.88,-1017.12 578.62,-1017.12 578.62,-979.38 498.88,-979.38"/>
+<text text-anchor="start" x="531.25" y="-994.88" font-family="PingFang SC" font-size="15.00">键</text>
+<polygon fill="#f3f6f8" stroke="none" points="578.62,-979.38 578.62,-1017.12 624.62,-1017.12 624.62,-979.38 578.62,-979.38"/>
+<text text-anchor="start" x="586.62" y="-994.88" font-family="PingFang SC" font-size="15.00">可空</text>
+<text text-anchor="start" x="387.88" y="-957.12" font-family="PingFang SC" font-size="15.00">task_id</text>
+<text text-anchor="start" x="453.38" y="-957.12" font-family="PingFang SC" font-size="15.00">TEXT</text>
+<text text-anchor="start" x="506.88" y="-957.12" font-family="PingFang SC" font-size="15.00">PK1 / FK</text>
+<text text-anchor="start" x="594.12" y="-957.12" font-family="PingFang SC" font-size="15.00">否</text>
+<text text-anchor="start" x="387.88" y="-919.38" font-family="PingFang SC" font-size="15.00">project</text>
+<text text-anchor="start" x="453.38" y="-919.38" font-family="PingFang SC" font-size="15.00">TEXT</text>
+<text text-anchor="start" x="524.12" y="-919.38" font-family="PingFang SC" font-size="15.00">PK2</text>
+<text text-anchor="start" x="594.12" y="-919.38" font-family="PingFang SC" font-size="15.00">否</text>
+<text text-anchor="start" x="404.75" y="-881.62" font-family="PingFang SC" font-size="15.00">STRICT · WITHOUT ROWID</text>
+<polygon fill="none" stroke="#7e929d" points="378.88,-865.12 378.88,-1055.88 625.62,-1055.88 625.62,-865.12 378.88,-865.12"/>
+</g>
+<!-- task_projects&#45;&gt;tasks -->
+<g id="edge1" class="edge">
+<title>task_projects:e&#45;&gt;tasks:w</title>
+<path fill="none" stroke="#486171" stroke-width="1.4" d="M639.02,-973.46C691.64,-1024.38 881.38,-1208 881.38,-1208 881.38,-1208 939.29,-1275.08 958.29,-1297.1"/>
+<polygon fill="#486171" stroke="#486171" stroke-width="1.4" points="632.79,-967.43 628.93,-957.75 629.04,-963.8 626.3,-961.15 626.3,-961.15 626.3,-961.15 629.04,-963.8 622.99,-963.9 632.79,-967.43"/>
+<ellipse fill="none" stroke="#486171" stroke-width="1.4" cx="637.25" cy="-971.75" rx="3.8" ry="3.8"/>
+<polygon fill="#486171" stroke="#486171" stroke-width="1.4" points="967.22,-1300.18 960.03,-1306.38 958.79,-1304.95 965.98,-1298.74 967.22,-1300.18"/>
+<polyline fill="none" stroke="#486171" stroke-width="1.4" points="964.25,-1304 961.15,-1300.4"/>
+<polygon fill="#486171" stroke="#486171" stroke-width="1.4" points="964.12,-1296.58 956.93,-1302.79 955.69,-1301.35 962.88,-1295.14 964.12,-1296.58"/>
+<polyline fill="none" stroke="#486171" stroke-width="1.4" points="961.15,-1300.4 958.04,-1296.81"/>
+<text text-anchor="middle" x="810.12" y="-1233.15" font-family="PingFang SC" font-size="13.00" fill="#334c5b">每任务 0..N 项</text>
+<text text-anchor="middle" x="810.12" y="-1214.4" font-family="PingFang SC" font-size="13.00" fill="#334c5b">每项 1 任务 · CASCADE</text>
+</g>
+<!-- task_services -->
+<g id="entity&#45;task_services" class="node">
+<title>task_services</title>
+<polygon fill="#eaf0f3" stroke="none" points="350.25,-1360.88 350.25,-1398.62 654.25,-1398.62 654.25,-1360.88 350.25,-1360.88"/>
+<text text-anchor="start" x="400.25" y="-1377.38" font-family="PingFang SC" font-weight="bold" font-size="15.00">任务关联服务 · task_services</text>
+<polygon fill="#f3f6f8" stroke="none" points="350.25,-1323.12 350.25,-1360.88 430.56,-1360.88 430.56,-1323.12 350.25,-1323.12"/>
+<text text-anchor="start" x="375.41" y="-1338.62" font-family="PingFang SC" font-size="15.00">字段</text>
+<polygon fill="#f3f6f8" stroke="none" points="430.56,-1323.12 430.56,-1360.88 498.88,-1360.88 498.88,-1323.12 430.56,-1323.12"/>
+<text text-anchor="start" x="449.72" y="-1338.62" font-family="PingFang SC" font-size="15.00">类型</text>
+<polygon fill="#f3f6f8" stroke="none" points="498.88,-1323.12 498.88,-1360.88 593.44,-1360.88 593.44,-1323.12 498.88,-1323.12"/>
+<text text-anchor="start" x="538.66" y="-1338.62" font-family="PingFang SC" font-size="15.00">键</text>
+<polygon fill="#f3f6f8" stroke="none" points="593.44,-1323.12 593.44,-1360.88 654.25,-1360.88 654.25,-1323.12 593.44,-1323.12"/>
+<text text-anchor="start" x="608.84" y="-1338.62" font-family="PingFang SC" font-size="15.00">可空</text>
+<text text-anchor="start" x="358.25" y="-1300.88" font-family="PingFang SC" font-size="15.00">task_id</text>
+<text text-anchor="start" x="445.97" y="-1300.88" font-family="PingFang SC" font-size="15.00">TEXT</text>
+<text text-anchor="start" x="514.28" y="-1300.88" font-family="PingFang SC" font-size="15.00">PK1 / FK</text>
+<text text-anchor="start" x="616.34" y="-1300.88" font-family="PingFang SC" font-size="15.00">否</text>
+<text text-anchor="start" x="358.25" y="-1263.12" font-family="PingFang SC" font-size="15.00">project</text>
+<text text-anchor="start" x="445.97" y="-1263.12" font-family="PingFang SC" font-size="15.00">TEXT</text>
+<text text-anchor="start" x="531.53" y="-1263.12" font-family="PingFang SC" font-size="15.00">PK2</text>
+<text text-anchor="start" x="616.34" y="-1263.12" font-family="PingFang SC" font-size="15.00">否</text>
+<text text-anchor="start" x="358.25" y="-1225.38" font-family="PingFang SC" font-size="15.00">service</text>
+<text text-anchor="start" x="445.97" y="-1225.38" font-family="PingFang SC" font-size="15.00">TEXT</text>
+<text text-anchor="start" x="531.53" y="-1225.38" font-family="PingFang SC" font-size="15.00">PK3</text>
+<text text-anchor="start" x="616.34" y="-1225.38" font-family="PingFang SC" font-size="15.00">否</text>
+<text text-anchor="start" x="404.75" y="-1187.62" font-family="PingFang SC" font-size="15.00">STRICT · WITHOUT ROWID</text>
+<text text-anchor="start" x="358.25" y="-1165.88" font-family="PingFang SC" font-size="15.00">没有指向 task_projects 的复合外键（FK）</text>
+<polygon fill="none" stroke="#7e929d" points="349.25,-1149.38 349.25,-1399.62 655.25,-1399.62 655.25,-1149.38 349.25,-1149.38"/>
+</g>
+<!-- task_projects&#45;&gt;task_services -->
+<!-- task_services&#45;&gt;tasks -->
+<g id="edge2" class="edge">
+<title>task_services:e&#45;&gt;tasks:w</title>
+<path fill="none" stroke="#486171" stroke-width="1.4" d="M674.11,-1304.23C732.95,-1304.19 911.72,-1304.04 954.82,-1304.01"/>
+<polygon fill="#486171" stroke="#486171" stroke-width="1.4" points="665.22,-1304.24 655.71,-1299.97 660,-1304.25 656.19,-1304.25 656.19,-1304.25 656.19,-1304.25 660,-1304.25 655.72,-1308.52 665.22,-1304.24"/>
+<ellipse fill="none" stroke="#486171" stroke-width="1.4" cx="671.42" cy="-1304.24" rx="3.8" ry="3.8"/>
+<polygon fill="#486171" stroke="#486171" stroke-width="1.4" points="963.3,-1299.25 963.3,-1308.75 961.4,-1308.75 961.4,-1299.25 963.3,-1299.25"/>
+<polyline fill="none" stroke="#486171" stroke-width="1.4" points="964.25,-1304 959.5,-1304"/>
+<polygon fill="#486171" stroke="#486171" stroke-width="1.4" points="958.55,-1299.25 958.55,-1308.75 956.65,-1308.76 956.65,-1299.26 958.55,-1299.25"/>
+<polyline fill="none" stroke="#486171" stroke-width="1.4" points="959.5,-1304 954.75,-1304.01"/>
+<text text-anchor="middle" x="810.12" y="-1329.33" font-family="PingFang SC" font-size="13.00" fill="#334c5b">每任务 0..N 项</text>
+<text text-anchor="middle" x="810.12" y="-1310.58" font-family="PingFang SC" font-size="13.00" fill="#334c5b">每项 1 任务 · CASCADE</text>
+</g>
+<!-- task_changes -->
+<g id="entity&#45;task_changes" class="node">
+<title>task_changes</title>
+<polygon fill="#eaf0f3" stroke="none" points="357,-1683 357,-1720.75 647.5,-1720.75 647.5,-1683 357,-1683"/>
+<text text-anchor="start" x="399.5" y="-1699.5" font-family="PingFang SC" font-weight="bold" font-size="15.00">任务关联变更 · task_changes</text>
+<polygon fill="#f3f6f8" stroke="none" points="357,-1645.25 357,-1683 468.25,-1683 468.25,-1645.25 357,-1645.25"/>
+<text text-anchor="start" x="397.62" y="-1660.75" font-family="PingFang SC" font-size="15.00">字段</text>
+<polygon fill="#f3f6f8" stroke="none" points="468.25,-1645.25 468.25,-1683 521.75,-1683 521.75,-1645.25 468.25,-1645.25"/>
+<text text-anchor="start" x="480" y="-1660.75" font-family="PingFang SC" font-size="15.00">类型</text>
+<polygon fill="#f3f6f8" stroke="none" points="521.75,-1645.25 521.75,-1683 601.5,-1683 601.5,-1645.25 521.75,-1645.25"/>
+<text text-anchor="start" x="554.12" y="-1660.75" font-family="PingFang SC" font-size="15.00">键</text>
+<polygon fill="#f3f6f8" stroke="none" points="601.5,-1645.25 601.5,-1683 647.5,-1683 647.5,-1645.25 601.5,-1645.25"/>
+<text text-anchor="start" x="609.5" y="-1660.75" font-family="PingFang SC" font-size="15.00">可空</text>
+<text text-anchor="start" x="365" y="-1623" font-family="PingFang SC" font-size="15.00">task_id</text>
+<text text-anchor="start" x="476.25" y="-1623" font-family="PingFang SC" font-size="15.00">TEXT</text>
+<text text-anchor="start" x="529.75" y="-1623" font-family="PingFang SC" font-size="15.00">PK1 / FK</text>
+<text text-anchor="start" x="617" y="-1623" font-family="PingFang SC" font-size="15.00">否</text>
+<text text-anchor="start" x="365" y="-1585.25" font-family="PingFang SC" font-size="15.00">project</text>
+<text text-anchor="start" x="476.25" y="-1585.25" font-family="PingFang SC" font-size="15.00">TEXT</text>
+<text text-anchor="start" x="547" y="-1585.25" font-family="PingFang SC" font-size="15.00">PK2</text>
+<text text-anchor="start" x="617" y="-1585.25" font-family="PingFang SC" font-size="15.00">否</text>
+<text text-anchor="start" x="365" y="-1547.5" font-family="PingFang SC" font-size="15.00">change_name</text>
+<text text-anchor="start" x="476.25" y="-1547.5" font-family="PingFang SC" font-size="15.00">TEXT</text>
+<text text-anchor="start" x="547" y="-1547.5" font-family="PingFang SC" font-size="15.00">PK3</text>
+<text text-anchor="start" x="617" y="-1547.5" font-family="PingFang SC" font-size="15.00">否</text>
+<text text-anchor="start" x="404.75" y="-1509.75" font-family="PingFang SC" font-size="15.00">STRICT · WITHOUT ROWID</text>
+<polygon fill="none" stroke="#7e929d" points="356,-1493.25 356,-1721.75 648.5,-1721.75 648.5,-1493.25 356,-1493.25"/>
+</g>
+<!-- task_services&#45;&gt;task_changes -->
+<!-- task_changes&#45;&gt;tasks -->
+<g id="edge3" class="edge">
+<title>task_changes:e&#45;&gt;tasks:w</title>
+<path fill="none" stroke="#486171" stroke-width="1.4" d="M661.67,-1612.93C715.59,-1557.88 918.57,-1350.64 957.7,-1310.69"/>
+<polygon fill="#486171" stroke="#486171" stroke-width="1.4" points="655.48,-1619.25 645.77,-1623.05 651.82,-1622.98 649.16,-1625.71 649.16,-1625.71 649.16,-1625.71 651.82,-1622.98 651.88,-1629.03 655.48,-1619.25"/>
+<ellipse fill="none" stroke="#486171" stroke-width="1.4" cx="659.82" cy="-1614.82" rx="3.8" ry="3.8"/>
+<polygon fill="#486171" stroke="#486171" stroke-width="1.4" points="960.19,-1301.35 966.98,-1308 965.65,-1309.36 958.86,-1302.71 960.19,-1301.35"/>
+<polyline fill="none" stroke="#486171" stroke-width="1.4" points="964.25,-1304 960.93,-1307.39"/>
+<polygon fill="#486171" stroke="#486171" stroke-width="1.4" points="956.87,-1304.75 963.65,-1311.4 962.33,-1312.75 955.54,-1306.11 956.87,-1304.75"/>
+<polyline fill="none" stroke="#486171" stroke-width="1.4" points="960.93,-1307.39 957.6,-1310.79"/>
+<text text-anchor="middle" x="810.12" y="-1556.27" font-family="PingFang SC" font-size="13.00" fill="#334c5b">每任务 0..N 项</text>
+<text text-anchor="middle" x="810.12" y="-1537.52" font-family="PingFang SC" font-size="13.00" fill="#334c5b">每项 1 任务 · CASCADE</text>
+</g>
+<!-- task_verification_current&#45;&gt;task_review_current -->
+<!-- task_review_current&#45;&gt;task_review_history -->
+<!-- task_review_current&#45;&gt;task_search -->
+<!-- task_review_history&#45;&gt;task_work_context_current -->
+<!-- search_shadows -->
+<g id="entity&#45;search_shadows" class="node">
+<title>search_shadows</title>
+<polygon fill="#edf1f7" stroke="none" points="2122.38,-1030 2122.38,-1067.75 2454.12,-1067.75 2454.12,-1030 2122.38,-1030"/>
+<text text-anchor="start" x="2130.38" y="-1046.5" font-family="PingFang SC" font-weight="bold" font-size="15.00">全文检索内部影子表（FTS5 Shadow Tables）</text>
+<text text-anchor="start" x="2130.38" y="-1007.75" font-family="PingFang SC" font-size="15.00">task_search_config · 配置</text>
+<text text-anchor="start" x="2130.38" y="-986" font-family="PingFang SC" font-size="15.00">task_search_data · 索引数据块</text>
+<text text-anchor="start" x="2130.38" y="-964.25" font-family="PingFang SC" font-size="15.00">task_search_docsize · 文档词数</text>
+<text text-anchor="start" x="2139.38" y="-942.5" font-family="PingFang SC" font-size="15.00">task_search_idx · 索引段定位</text>
+<text text-anchor="start" x="2153.25" y="-904.75" font-family="PingFang SC" font-size="15.00">引擎维护；仅列清单，不展开为业务实体</text>
+<polygon fill="none" stroke="#a1acb6" points="2121.38,-888.25 2121.38,-1068.75 2455.12,-1068.75 2455.12,-888.25 2121.38,-888.25"/>
+</g>
+<!-- task_search&#45;&gt;search_shadows -->
+<g id="edge13" class="edge">
+<title>task_search&#45;&gt;search_shadows</title>
+<path fill="none" stroke="#597ba4" stroke-width="1.4" stroke-dasharray="5,2" d="M2288.25,-793.99C2288.25,-822.42 2288.25,-851.03 2288.25,-876.95"/>
+<polygon fill="#597ba4" stroke="#597ba4" stroke-width="1.4" points="2284.93,-876.66 2288.25,-886.16 2291.58,-876.66 2284.93,-876.66"/>
+<text text-anchor="middle" x="2275.88" y="-838.27" font-family="PingFang SC" font-size="13.00" fill="#334c5b">引擎维护（非业务关系）</text>
+</g>
+<!-- task_search&#45;&gt;search_shadows -->
+<!-- schema_migrations -->
+<g id="entity&#45;schema_migrations" class="node">
+<title>schema_migrations</title>
+<polygon fill="#edf1f7" stroke="none" points="2114.12,-1389.88 2114.12,-1427.62 2462.38,-1427.62 2462.38,-1389.88 2114.12,-1389.88"/>
+<text text-anchor="start" x="2179.5" y="-1406.38" font-family="PingFang SC" font-weight="bold" font-size="15.00">迁移账本 · schema_migrations</text>
+<polygon fill="#f3f6f8" stroke="none" points="2114.12,-1352.12 2114.12,-1389.88 2226.12,-1389.88 2226.12,-1352.12 2114.12,-1352.12"/>
+<text text-anchor="start" x="2155.12" y="-1367.62" font-family="PingFang SC" font-size="15.00">字段</text>
+<polygon fill="#f3f6f8" stroke="none" points="2226.12,-1352.12 2226.12,-1389.88 2330.62,-1389.88 2330.62,-1352.12 2226.12,-1352.12"/>
+<text text-anchor="start" x="2263.38" y="-1367.62" font-family="PingFang SC" font-size="15.00">类型</text>
+<polygon fill="#f3f6f8" stroke="none" points="2330.62,-1352.12 2330.62,-1389.88 2392.38,-1389.88 2392.38,-1352.12 2330.62,-1352.12"/>
+<text text-anchor="start" x="2354" y="-1367.62" font-family="PingFang SC" font-size="15.00">键</text>
+<polygon fill="#f3f6f8" stroke="none" points="2392.38,-1352.12 2392.38,-1389.88 2462.38,-1389.88 2462.38,-1352.12 2392.38,-1352.12"/>
+<text text-anchor="start" x="2412.38" y="-1367.62" font-family="PingFang SC" font-size="15.00">可空</text>
+<text text-anchor="start" x="2122.12" y="-1329.88" font-family="PingFang SC" font-size="15.00">version</text>
+<text text-anchor="start" x="2246.12" y="-1329.88" font-family="PingFang SC" font-size="15.00">INTEGER</text>
+<text text-anchor="start" x="2351.38" y="-1329.88" font-family="PingFang SC" font-size="15.00">PK</text>
+<text text-anchor="start" x="2416.12" y="-1329.88" font-family="PingFang SC" font-size="15.00">否*</text>
+<text text-anchor="start" x="2122.12" y="-1292.12" font-family="PingFang SC" font-size="15.00">name</text>
+<text text-anchor="start" x="2259.62" y="-1292.12" font-family="PingFang SC" font-size="15.00">TEXT</text>
+<text text-anchor="start" x="2350.62" y="-1292.12" font-family="PingFang SC" font-size="15.00">UQ</text>
+<text text-anchor="start" x="2419.88" y="-1292.12" font-family="PingFang SC" font-size="15.00">否</text>
+<text text-anchor="start" x="2122.12" y="-1254.38" font-family="PingFang SC" font-size="15.00">checksum</text>
+<text text-anchor="start" x="2259.62" y="-1254.38" font-family="PingFang SC" font-size="15.00">TEXT</text>
+<text text-anchor="start" x="2354" y="-1254.38" font-family="PingFang SC" font-size="15.00">—</text>
+<text text-anchor="start" x="2419.88" y="-1254.38" font-family="PingFang SC" font-size="15.00">否</text>
+<text text-anchor="start" x="2122.12" y="-1216.62" font-family="PingFang SC" font-size="15.00">applied_at</text>
+<text text-anchor="start" x="2259.62" y="-1216.62" font-family="PingFang SC" font-size="15.00">TEXT</text>
+<text text-anchor="start" x="2354" y="-1216.62" font-family="PingFang SC" font-size="15.00">—</text>
+<text text-anchor="start" x="2419.88" y="-1216.62" font-family="PingFang SC" font-size="15.00">否</text>
+<text text-anchor="start" x="2122.12" y="-1178.88" font-family="PingFang SC" font-size="15.00">STRICT · version 是 rowid 别名 · 无外键（FK）</text>
+<polygon fill="none" stroke="#7e929d" points="2113.12,-1162.38 2113.12,-1428.62 2463.38,-1428.62 2463.38,-1162.38 2113.12,-1162.38"/>
+</g>
+<!-- search_shadows&#45;&gt;schema_migrations -->
+<!-- workbench_preferences -->
+<g id="entity&#45;workbench_preferences" class="node">
+<title>workbench_preferences</title>
+<polygon fill="#edf1f7" stroke="none" points="2140.75,-1809.62 2140.75,-1847.38 2435.75,-1847.38 2435.75,-1809.62 2140.75,-1809.62"/>
+<text text-anchor="start" x="2157" y="-1826.12" font-family="PingFang SC" font-weight="bold" font-size="15.00">工作台偏好 · workbench_preferences</text>
+<polygon fill="#f3f6f8" stroke="none" points="2140.75,-1771.88 2140.75,-1809.62 2248.81,-1809.62 2248.81,-1771.88 2140.75,-1771.88"/>
+<text text-anchor="start" x="2179.78" y="-1787.38" font-family="PingFang SC" font-size="15.00">字段</text>
+<polygon fill="#f3f6f8" stroke="none" points="2248.81,-1771.88 2248.81,-1809.62 2316.38,-1809.62 2316.38,-1771.88 2248.81,-1771.88"/>
+<text text-anchor="start" x="2267.59" y="-1787.38" font-family="PingFang SC" font-size="15.00">类型</text>
+<polygon fill="#f3f6f8" stroke="none" points="2316.38,-1771.88 2316.38,-1809.62 2375.69,-1809.62 2375.69,-1771.88 2316.38,-1771.88"/>
+<text text-anchor="start" x="2338.53" y="-1787.38" font-family="PingFang SC" font-size="15.00">键</text>
+<polygon fill="#f3f6f8" stroke="none" points="2375.69,-1771.88 2375.69,-1809.62 2435.75,-1809.62 2435.75,-1771.88 2375.69,-1771.88"/>
+<text text-anchor="start" x="2390.72" y="-1787.38" font-family="PingFang SC" font-size="15.00">可空</text>
+<text text-anchor="start" x="2148.75" y="-1749.62" font-family="PingFang SC" font-size="15.00">kind</text>
+<text text-anchor="start" x="2263.84" y="-1749.62" font-family="PingFang SC" font-size="15.00">TEXT</text>
+<text text-anchor="start" x="2332.91" y="-1749.62" font-family="PingFang SC" font-size="15.00">PK1</text>
+<text text-anchor="start" x="2398.22" y="-1749.62" font-family="PingFang SC" font-size="15.00">否</text>
+<text text-anchor="start" x="2148.75" y="-1711.88" font-family="PingFang SC" font-size="15.00">object_key</text>
+<text text-anchor="start" x="2263.84" y="-1711.88" font-family="PingFang SC" font-size="15.00">TEXT</text>
+<text text-anchor="start" x="2331.41" y="-1711.88" font-family="PingFang SC" font-size="15.00">PK2</text>
+<text text-anchor="start" x="2398.22" y="-1711.88" font-family="PingFang SC" font-size="15.00">否</text>
+<text text-anchor="start" x="2148.75" y="-1674.12" font-family="PingFang SC" font-size="15.00">label</text>
+<text text-anchor="start" x="2263.84" y="-1674.12" font-family="PingFang SC" font-size="15.00">TEXT</text>
+<text text-anchor="start" x="2338.53" y="-1674.12" font-family="PingFang SC" font-size="15.00">—</text>
+<text text-anchor="start" x="2398.22" y="-1674.12" font-family="PingFang SC" font-size="15.00">否</text>
+<text text-anchor="start" x="2148.75" y="-1636.38" font-family="PingFang SC" font-size="15.00">href</text>
+<text text-anchor="start" x="2263.84" y="-1636.38" font-family="PingFang SC" font-size="15.00">TEXT</text>
+<text text-anchor="start" x="2338.53" y="-1636.38" font-family="PingFang SC" font-size="15.00">—</text>
+<text text-anchor="start" x="2398.22" y="-1636.38" font-family="PingFang SC" font-size="15.00">否</text>
+<text text-anchor="start" x="2148.75" y="-1598.62" font-family="PingFang SC" font-size="15.00">updated_at</text>
+<text text-anchor="start" x="2263.84" y="-1598.62" font-family="PingFang SC" font-size="15.00">TEXT</text>
+<text text-anchor="start" x="2338.53" y="-1598.62" font-family="PingFang SC" font-size="15.00">—</text>
+<text text-anchor="start" x="2398.22" y="-1598.62" font-family="PingFang SC" font-size="15.00">否</text>
+<text text-anchor="start" x="2159.62" y="-1560.88" font-family="PingFang SC" font-size="15.00">STRICT · 保留 rowid · 无外键（FK）</text>
+<text text-anchor="start" x="2148.75" y="-1539.12" font-family="PingFang SC" font-size="15.00">kind + object_key 去重，不级联删除目标</text>
+<polygon fill="none" stroke="#7e929d" points="2139.75,-1522.62 2139.75,-1848.38 2436.75,-1848.38 2436.75,-1522.62 2139.75,-1522.62"/>
+</g>
+<!-- schema_migrations&#45;&gt;workbench_preferences -->
+<!-- preference_targets -->
+<g id="entity&#45;preference_targets" class="node">
+<title>preference_targets</title>
+<polygon fill="#f7f7f5" stroke="#adb2b0" points="1379.88,-95 940.88,-95 940.88,0 1385.88,0 1385.88,-89 1379.88,-95"/>
+<polyline fill="none" stroke="#adb2b0" points="1379.88,-95 1379.88,-89"/>
+<polyline fill="none" stroke="#adb2b0" points="1385.88,-89 1379.88,-89"/>
+<text text-anchor="middle" x="1163.38" y="-76.75" font-family="PingFang SC" font-size="15.00">偏好对象（非新增 SQL 表）</text>
+<text text-anchor="middle" x="1163.38" y="-55" font-family="PingFang SC" font-size="15.00">object_key 按 kind 解释：</text>
+<text text-anchor="middle" x="1163.38" y="-33.25" font-family="PingFang SC" font-size="15.00">任务 ID / 项目代码 / 资源键</text>
+<text text-anchor="middle" x="1163.38" y="-11.5" font-family="PingFang SC" font-size="15.00">可定位 tasks 或文件及页面；仅逻辑引用（Logical Reference）</text>
+</g>
+<!-- workbench_preferences&#45;&gt;preference_targets -->
+<g id="edge14" class="edge">
+<title>workbench_preferences:w&#45;&gt;preference_targets</title>
+<path fill="none" stroke="#919998" stroke-width="1.4" stroke-dasharray="1,5" d="M2139.75,-1715.25C2139.75,-1715.25 2034.12,-2036.5 2034.12,-2036.5 2034.12,-2036.5 1645.38,-2036.5 1645.38,-2036.5 1645.38,-2036.5 1445.38,-1783.5 1445.38,-1783.5 1445.38,-1783.5 1396.38,-165.5 1396.38,-165.5 1396.38,-165.5 1322.97,-128.16 1258.74,-95.5"/>
+<text text-anchor="middle" x="1839.75" y="-2042.9" font-family="PingFang SC" font-size="13.00" fill="#334c5b">按 kind 解析；无外键（FK）</text>
+</g>
+<!-- file_entities -->
+<g id="entity&#45;file_entities" class="node">
+<title>file_entities</title>
+<polygon fill="#f7f7f5" stroke="#adb2b0" points="683.88,-1910 314.62,-1910 314.62,-1815 689.88,-1815 689.88,-1904 683.88,-1910"/>
+<polyline fill="none" stroke="#adb2b0" points="683.88,-1910 683.88,-1904"/>
+<polyline fill="none" stroke="#adb2b0" points="689.88,-1904 683.88,-1904"/>
+<text text-anchor="middle" x="502.25" y="-1891.75" font-family="PingFang SC" font-size="15.00">文件实体（非 SQL 表）</text>
+<text text-anchor="middle" x="502.25" y="-1870" font-family="PingFang SC" font-size="15.00">项目（Project）· 服务（Service）· 变更（Change）</text>
+<text text-anchor="middle" x="502.25" y="-1848.25" font-family="PingFang SC" font-size="15.00">分别由登记文件与 OpenSpec 文件承载</text>
+<text text-anchor="middle" x="502.25" y="-1826.5" font-family="PingFang SC" font-size="15.00">数据库没有 projects / services / changes 实体表</text>
+</g>
+<!-- file_entities&#45;&gt;task_projects -->
+<g id="edge9" class="edge">
+<title>file_entities&#45;&gt;task_projects:w</title>
+<path fill="none" stroke="#919998" stroke-width="1.4" stroke-dasharray="1,5" d="M382.36,-1814.58C345.59,-1799.88 314.62,-1787.5 314.62,-1787.5 314.62,-1787.5 191.31,-1697.88 191.31,-1697.88 191.31,-1697.88 191.31,-1679.12 191.31,-1679.12 191.31,-1679.12 314.62,-1125.5 314.62,-1125.5 314.62,-1125.5 378.88,-922.75 378.88,-922.75"/>
+<text text-anchor="middle" x="187.62" y="-1685.53" font-family="PingFang SC" font-size="13.00" fill="#334c5b">project 逻辑引用</text>
+</g>
+<!-- file_entities&#45;&gt;task_services -->
+<g id="edge10" class="edge">
+<title>file_entities&#45;&gt;task_services:w</title>
+<path fill="none" stroke="#919998" stroke-width="1.4" stroke-dasharray="1,5" d="M382.36,-1814.58C345.59,-1799.88 314.62,-1787.5 314.62,-1787.5 314.62,-1787.5 162.06,-1604.88 162.06,-1604.88 162.06,-1604.88 162.06,-1586.12 162.06,-1586.12 162.06,-1586.12 349.25,-1266.5 349.25,-1266.5"/>
+<text text-anchor="middle" x="187.62" y="-1592.53" font-family="PingFang SC" font-size="13.00" fill="#334c5b">project + service 逻辑引用</text>
+</g>
+<!-- file_entities&#45;&gt;task_changes -->
+<g id="edge11" class="edge">
+<title>file_entities&#45;&gt;task_changes:w</title>
+<path fill="none" stroke="#919998" stroke-width="1.4" stroke-dasharray="1,5" d="M356,-1588.62C356,-1588.62 268.5,-1759 268.5,-1759 268.5,-1759 268.5,-1777.75 268.5,-1777.75 268.5,-1777.75 317.95,-1795.47 371.37,-1814.61"/>
+<text text-anchor="middle" x="367.88" y="-1765.4" font-family="PingFang SC" font-size="13.00" fill="#334c5b">project + change_name 逻辑引用</text>
+</g>
+<!-- legend&#45;&gt;preference_targets -->
+</g>
+</svg>
+<!-- diagram:end -->
+</div>
+</div>
+<p class="help">默认以正文大小定位 <code>tasks</code>。横向与纵向滚动查看全图；不自动缩小到一屏。所有任务附属表删除级联（CASCADE），父任务引用删除置空（SET NULL）。图形由本机 Graphviz 生成，不是 Archify 产物。</p>
+<noscript><p class="notice">脚本未启用：图示和下方完整说明仍可滚动阅读；可使用浏览器缩放与页面搜索。</p></noscript>
+</section>
+<article id="fields" aria-label="完整字段与数据库约束说明">
+<!-- fields:start -->
+<nav class="jump" aria-label="字段说明目录"><a href="#section-1">1. 范围与事实依据</a><a href="#section-2">2. 关系、基数与删除行为</a><a href="#section-3">3. 任务主记录：`tasks`</a><a href="#section-4">4. 范围关联：`task_projects`、`task_services`、`task_changes`</a><a href="#section-5">5. 当前验证：`task_verification_current`</a><a href="#section-6">6. 当前审查：`task_review_current`</a><a href="#section-7">7. 审查替换历史：`task_review_history`</a><a href="#section-8">8. 当前工作摘要：`task_work_context_current`</a><a href="#section-9">9. 工作台偏好：`workbench_preferences`</a><a href="#section-10">10. 迁移账本：`schema_migrations`</a><a href="#section-11">11. 全文检索与内部影子表</a><a href="#section-12">12. 当前显式索引清单</a><a href="#section-13">13. 外键之外的完整性边界</a><a href="#section-14">14. 维护与验收边界</a></nav>
+<h1>Buildr 数据库表与实体关系</h1>
+<p>本文是 <a href="../../docs/architecture/buildr-data-design.md">Buildr 数据全景与领域设计</a> 的物理存储附录。本附录只解释 <code>workspace.sqlite</code> 的当前表、字段、关系与数据库之外的校验，不代替全领域事实主线，也不把文件对象画成不存在的数据库表。</p>
+<p>阅读入口：<a href="workspace-sqlite-erd.html">独立交互阅读页</a> · <a href="workspace-sqlite-erd.svg">原尺寸矢量图</a> · <a href="workspace-sqlite-erd.dot.txt">Graphviz 图源</a> · <a href="workspace-sqlite-erd.md">图示范围与维护说明</a>。阅读页内联图形与本附录，不需要网络；图形保留正文大小，可缩放与滚动，而非强制压成一屏缩略图。</p>
+<h2 id="section-1">1. 范围与事实依据</h2>
+<p>基线是 <a href="../../../services/buildr/src/infrastructure/sqlite/migrations">迁移目录</a> 的 <code>0000</code> 至 <code>0034</code>，不是把历史建表语句全部相加。核对方法是在空内存数据库 <code>:memory:</code> 按顺序执行全部 35 个脚本，遵循 <code>-- buildr:foreign-keys-off</code> 标记，再读取 <code>sqlite_schema</code>、<code>PRAGMA table_xinfo</code>、<code>PRAGMA foreign_key_list</code> 和 <code>PRAGMA index_list</code>。未打开或读取真实 <code>workspace.sqlite</code> 中的业务数据。</p>
+<p>重放后的持久结构为 <strong>10 张普通表、1 张全文检索虚拟表（FTS5 Virtual Table）、4 张内部影子表（Shadow Table）</strong>，以及 13 个显式索引（Index）、3 个检索同步触发器（Trigger）。普通表共 50 个声明字段。迁移中的临时断言表和已删除旧表不属于当前结构；约束自动建立的索引不计入这 13 个显式索引。</p>
+<ul>
+<li>所有普通表均为严格类型表（STRICT）。<code>task_projects</code>、<code>task_services</code>、<code>task_changes</code>、<code>task_verification_current</code>、<code>task_review_current</code> 还采用无行号表（WITHOUT ROWID）；其余普通表保留隐式 <code>rowid</code>。</li>
+<li><code>tasks.task_id</code> 是文本主键（Primary Key，PK），不是 <code>rowid</code> 别名。<code>task_review_history.id</code>、<code>schema_migrations.version</code> 是整数主键（INTEGER PRIMARY KEY），也是 <code>rowid</code> 别名；没有 <code>AUTOINCREMENT</code>。</li>
+<li>主键（PK）数字后缀表示复合主键中的顺序；外键（Foreign Key，FK）不等于逻辑引用（Logical Reference）；唯一约束（Unique Constraint，UQ）不是主键。</li>
+<li>字段表中的可空性（Nullability）表示实际存储能否为 <code>NULL</code>，不代表某个业务状态是否允许缺省。两个整数主键虽在 <code>table_xinfo</code> 中显示 <code>notnull=0</code>，实际不会存储空值：省略或传入 <code>NULL</code> 会分配整数键。</li>
+<li>结构化文本（JSON）仍以 <code>TEXT</code> 存储。对象、数组及其中的引用不自动成为独立实体表，也不自动受外键（FK）保护。</li>
+</ul>
+<p>本图由本机 Graphviz 生成，使用鸟脚表示法（Crow&#x27;s Foot Notation）。它不是 Archify 产物；目录位置沿用项目已有技术图目录，不表示扩展了 Archify 能力。</p>
+<h2 id="section-2">2. 关系、基数与删除行为</h2>
+<p>实线是 SQL 外键（FK）；端点双竖线代表恰好一项，圈加竖线代表零或一项，圈加鸟脚代表零至多项。数字给出基数（Cardinality）上限，尤其是鸟脚本身无法表达的 <code>0..2</code>。点线只表示逻辑引用（Logical Reference），蓝色虚线表示触发器同步（Trigger Sync）或检索引擎内部维护。</p>
+<div class="table-wrap"><table><thead><tr><th scope="col">被引用对象</th><th scope="col">引用字段</th><th scope="col">每个被引用对象可有多少引用记录</th><th scope="col">每个引用记录对应多少被引用对象</th><th scope="col">删除动作</th></tr></thead><tbody>
+<tr><td><code>tasks.task_id</code></td><td><code>tasks.parent_task_id</code></td><td><code>0..N</code> 个子任务</td><td><code>0..1</code> 个父任务</td><td><code>SET NULL</code>，删除父任务后子任务保留</td></tr>
+<tr><td><code>tasks.task_id</code></td><td><code>task_projects.task_id</code></td><td><code>0..N</code></td><td><code>1</code></td><td><code>CASCADE</code></td></tr>
+<tr><td><code>tasks.task_id</code></td><td><code>task_services.task_id</code></td><td><code>0..N</code></td><td><code>1</code></td><td><code>CASCADE</code></td></tr>
+<tr><td><code>tasks.task_id</code></td><td><code>task_changes.task_id</code></td><td><code>0..N</code></td><td><code>1</code></td><td><code>CASCADE</code></td></tr>
+<tr><td><code>tasks.task_id</code></td><td><code>task_verification_current.task_id</code></td><td><code>0..1</code></td><td><code>1</code></td><td><code>CASCADE</code></td></tr>
+<tr><td><code>tasks.task_id</code></td><td><code>task_review_current.task_id</code></td><td><code>0..2</code>，每种 <code>review_type</code> 为 <code>0..1</code></td><td><code>1</code></td><td><code>CASCADE</code></td></tr>
+<tr><td><code>tasks.task_id</code></td><td><code>task_review_history.task_id</code></td><td><code>0..N</code></td><td><code>1</code></td><td><code>CASCADE</code></td></tr>
+<tr><td><code>tasks.task_id</code></td><td><code>task_work_context_current.task_id</code></td><td><code>0..1</code></td><td><code>1</code></td><td><code>CASCADE</code></td></tr>
+</tbody></table></div>
+<p>上述 8 个外键（FK）的更新动作均为默认 <code>NO ACTION</code>。删除级联（CASCADE）针对真实删除行，不等于任务进入 <code>completed</code> 或 <code>abandoned</code> 后清空附属记录。<a href="../../../services/buildr/src/infrastructure/sqlite/workspace-sqlite.ts">数据库连接与迁移实现</a> 在正常连接上启用 <code>PRAGMA foreign_keys = ON</code>，仅重建被引用表的特定迁移临时关闭它并核对一致性。</p>
+<p>以下关系不能画成 SQL 外键（FK）：</p>
+<ul>
+<li><code>project</code>、<code>service</code>、<code>change_name</code> 引用文件承载的项目（Project）、服务（Service）、变更（Change）。没有 <code>projects</code>、<code>services</code> 或 <code>changes</code> 实体表；三个 <code>task_*</code> 关联表只保存任务范围引用。</li>
+<li><code>task_services</code> 没有 <code>(task_id, project)</code> 到 <code>task_projects</code> 的复合外键（FK）；<code>task_changes</code> 同样没有这样的约束。</li>
+<li><code>task_review_history</code> 只引用 <code>tasks</code>，没有到 <code>task_review_current</code> 的外键（FK）。保存旧值的动作是应用写入，不是数据库触发器。</li>
+<li><code>workbench_preferences.object_key</code> 按 <code>kind</code> 解释，可能定位任务、项目或其他资源。目标不存在时，数据库不会自动拒绝该偏好或级联删除它。</li>
+<li><code>task_search.rowid</code> 对应 <code>tasks.rowid</code> 是检索同步，不是声明的外键（FK），也不能把 <code>task_search.task_id</code> 标成主键（PK）。</li>
+</ul>
+<h2 id="section-3">3. 任务主记录：<code>tasks</code></h2>
+<p>职责：保存任务身份、目标、当前状态、结果，以及父子关系、终态更正记录与复盘文档引用。当前完整定义来自 <a href="../../../services/buildr/src/infrastructure/sqlite/migrations/0031_finalize_task_record.sql">0031</a>；检索排序补充来自 <a href="../../../services/buildr/src/infrastructure/sqlite/migrations/0032_add_task_query_indexes.sql">0032</a>。</p>
+<div class="table-wrap"><table><thead><tr><th scope="col">字段</th><th scope="col">类型</th><th scope="col">键</th><th scope="col">可空</th><th scope="col">释义与默认值</th></tr></thead><tbody>
+<tr><td><code>task_id</code></td><td><code>TEXT</code></td><td>主键（PK）</td><td>否</td><td>稳定任务标识</td></tr>
+<tr><td><code>title</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td>简短标题</td></tr>
+<tr><td><code>intent</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td>目标与意图</td></tr>
+<tr><td><code>status</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td><code>todo</code>、<code>active</code>、<code>completed</code>、<code>abandoned</code></td></tr>
+<tr><td><code>result_summary</code></td><td><code>TEXT</code></td><td>—</td><td>是</td><td>终态结果摘要；未终结时为空</td></tr>
+<tr><td><code>created_at</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td>创建时间</td></tr>
+<tr><td><code>updated_at</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td>最近修改时间</td></tr>
+<tr><td><code>parent_task_id</code></td><td><code>TEXT</code></td><td>外键（FK）</td><td>是</td><td>父任务标识；删除父任务时置空</td></tr>
+<tr><td><code>is_parent</code></td><td><code>INTEGER</code></td><td>—</td><td>否</td><td>是否已标识为父任务；默认 <code>0</code>，值为 <code>0</code> 或 <code>1</code></td></tr>
+<tr><td><code>parent_completion_json</code></td><td><code>TEXT</code></td><td>—</td><td>是</td><td>父任务完成证据对象的结构化文本（JSON）</td></tr>
+<tr><td><code>result_history_json</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td>终态结果更正历史数组的结构化文本（JSON）；默认 <code>&#x27;[]&#x27;</code></td></tr>
+<tr><td><code>legacy_parent_plan_json</code></td><td><code>TEXT</code></td><td>—</td><td>是</td><td>迁移保留的旧父任务计划结构化文本（JSON），不是当前计划表</td></tr>
+<tr><td><code>retrospective_state</code></td><td><code>TEXT</code></td><td>—</td><td>是</td><td><code>pending-decision</code> 或 <code>decided</code></td></tr>
+<tr><td><code>retrospective_document_digest</code></td><td><code>TEXT</code></td><td>—</td><td>是</td><td>复盘文档内容摘要，格式为 <code>sha256-</code> 加 64 位小写十六进制</td></tr>
+</tbody></table></div>
+<p>关键约束：<code>task_id</code> 非空，仅含小写字母、数字及 <code>._-</code>，首尾必须为小写字母或数字；<code>title</code>、<code>intent</code> 去首尾空白后非空。两时间字段须可由 SQLite <code>datetime()</code> 解释，<code>updated_at &gt;= created_at</code> 是文本比较。<code>parent_task_id</code> 不能等于自身；该检查不证明整条祖先链无环。</p>
+<p><code>parent_completion_json</code> 与 <code>legacy_parent_plan_json</code> 的 SQL 检查仅要求非空时 <code>json_valid()</code>；<code>result_history_json</code> 额外要求根为数组。数据库未对前两者要求根为对象。复盘状态与摘要须同时为空，或同时存在且任务已终结。</p>
+<p>终态摘要的检查表达式意图是 <code>todo/active</code> 没有摘要、<code>completed/abandoned</code> 摘要非空，但 SQLite 的 <code>CHECK</code> 在表达式为 <code>NULL</code> 时也允许写入，故不能据此声称数据库本身拒绝所有缺失终态摘要。应用的完整记录校验在 <a href="../../../services/buildr/src/modules/task/application/task-validation.ts">task-validation.ts</a>，与 SQL 约束必须分层理解。</p>
+<p><a href="../../../services/buildr/src/modules/task/domain/task.ts">任务领域对象</a> 定义 <code>Task</code>、<code>ParentCompletion</code>、<code>TaskResultHistory</code>、<code>TaskRetrospective</code>；<a href="../../../services/buildr/src/modules/task/domain/parent-coordination.ts">父任务计划领域定义</a> 解释迁移遗留计划。这里只解释对象职责，不复制完整结构。</p>
+<p>父任务完成证据位于 <code>parent_completion_json</code>，终态更正保存到 <code>result_history_json</code>，复盘状态及文档摘要位于两个 <code>retrospective_*</code> 字段；它们不是过去的完成表、执行表或复盘当前表。<a href="../../../services/buildr/src/modules/task/persistence/task-repository.ts">持久化映射</a> 把这些字段组成任务对象；<code>is_parent</code> 写入采用 <code>MAX(is_parent, ?)</code> 并可被显式标记，不等价于“此刻存在子任务”。复盘 Markdown 正文不在本表。</p>
+<h2 id="section-4">4. 范围关联：<code>task_projects</code>、<code>task_services</code>、<code>task_changes</code></h2>
+<p>三个表均来自 <a href="../../../services/buildr/src/infrastructure/sqlite/migrations/0001_create_task_store.sql">0001</a>，保存任务与文件实体的关联，而非项目或服务本身的属性。</p>
+<h3><code>task_projects</code>：任务涉及的项目</h3>
+<div class="table-wrap"><table><thead><tr><th scope="col">字段</th><th scope="col">类型</th><th scope="col">键</th><th scope="col">可空</th><th scope="col">释义</th></tr></thead><tbody>
+<tr><td><code>task_id</code></td><td><code>TEXT</code></td><td>主键（PK）第 1 列、外键（FK）</td><td>否</td><td>所属任务</td></tr>
+<tr><td><code>project</code></td><td><code>TEXT</code></td><td>主键（PK）第 2 列</td><td>否</td><td>项目代码，文件实体逻辑引用（Logical Reference）</td></tr>
+</tbody></table></div>
+<h3><code>task_services</code>：任务涉及的服务</h3>
+<div class="table-wrap"><table><thead><tr><th scope="col">字段</th><th scope="col">类型</th><th scope="col">键</th><th scope="col">可空</th><th scope="col">释义</th></tr></thead><tbody>
+<tr><td><code>task_id</code></td><td><code>TEXT</code></td><td>主键（PK）第 1 列、外键（FK）</td><td>否</td><td>所属任务</td></tr>
+<tr><td><code>project</code></td><td><code>TEXT</code></td><td>主键（PK）第 2 列</td><td>否</td><td>项目代码</td></tr>
+<tr><td><code>service</code></td><td><code>TEXT</code></td><td>主键（PK）第 3 列</td><td>否</td><td>与项目代码一起定位服务的逻辑引用（Logical Reference）</td></tr>
+</tbody></table></div>
+<h3><code>task_changes</code>：任务涉及的变更</h3>
+<div class="table-wrap"><table><thead><tr><th scope="col">字段</th><th scope="col">类型</th><th scope="col">键</th><th scope="col">可空</th><th scope="col">释义</th></tr></thead><tbody>
+<tr><td><code>task_id</code></td><td><code>TEXT</code></td><td>主键（PK）第 1 列、外键（FK）</td><td>否</td><td>所属任务</td></tr>
+<tr><td><code>project</code></td><td><code>TEXT</code></td><td>主键（PK）第 2 列</td><td>否</td><td>项目代码</td></tr>
+<tr><td><code>change_name</code></td><td><code>TEXT</code></td><td>主键（PK）第 3 列</td><td>否</td><td>OpenSpec 变更名称；领域字段名为 <code>change</code></td></tr>
+</tbody></table></div>
+<p>各复合主键（PK）避免同一任务内重复关联。<code>project</code>、<code>service</code>、<code>change_name</code> 均非空，只含大小写字母、数字及 <code>._-</code>，且首字符必须为字母或数字；它们与小写任务标识的规则不同。</p>
+<p><a href="../../../services/buildr/src/modules/task/application/task-command-application.ts">task-command-application.ts</a> 的 <code>assertScopeReferencesAvailable</code> 读取项目及服务登记，<code>assertChangeReferencesAvailable</code> 核对实际可解析的变更；不是通过不存在的目标表校验。<a href="../../../services/buildr/src/modules/task/change/application/change-application.ts">变更解析实现</a> 定位当前工作副本及保留副本中的 OpenSpec 文件。类型映射分别见 <a href="../../../services/buildr/src/modules/task/domain/task-project.ts">TaskProject</a>、<a href="../../../services/buildr/src/modules/task/domain/task-service.ts">TaskService</a>、<a href="../../../services/buildr/src/modules/task/domain/task-change.ts">TaskChange</a>。</p>
+<h2 id="section-5">5. 当前验证：<code>task_verification_current</code></h2>
+<p>职责：每个任务最多保存一份当前验证报告。当前定义来自 <a href="../../../services/buildr/src/infrastructure/sqlite/migrations/0023_refactor_task_verification_report.sql">0023</a>。</p>
+<div class="table-wrap"><table><thead><tr><th scope="col">字段</th><th scope="col">类型</th><th scope="col">键</th><th scope="col">可空</th><th scope="col">释义</th></tr></thead><tbody>
+<tr><td><code>task_id</code></td><td><code>TEXT</code></td><td>主键（PK）、外键（FK）</td><td>否</td><td>所属任务</td></tr>
+<tr><td><code>result_json</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td>验证报告的结构化文本（JSON）</td></tr>
+<tr><td><code>target_identity</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td>报告 <code>content.identity</code> 的查询列</td></tr>
+<tr><td><code>outcome</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td><code>passed</code>、<code>not-passed</code>、<code>incomplete</code></td></tr>
+<tr><td><code>updated_at</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td>报告 <code>completedAt</code> 的查询列</td></tr>
+</tbody></table></div>
+<p>SQL 检查 <code>json_valid(result_json)</code>，并比较 <code>schemaVersion = &#x27;buildr.task-verification-report/v1&#x27;</code> 及 <code>taskId = task_id</code>；查询身份去首尾空白后非空，时间可解析。缺失的结构化文本（JSON）键可能让比较得到 <code>NULL</code> 而通过 <code>CHECK</code>，因此这不是完整对象校验。</p>
+<p><a href="../../../services/buildr/src/modules/task/domain/task-verification.ts">task-verification.ts</a> 定义和校验报告对象，包括范围、被验证内容、声明引用、检查、缺口与结论。<a href="../../../services/buildr/src/modules/task/persistence/task-verification-repository.ts">task-verification-repository.ts</a> 在读写时核对对象与查询列一致性，写前比较 <code>expectedReportDigest</code>。其第 59–66 行只更新当前表，<strong>没有验证历史表，也不会自动保存被替换的旧报告</strong>。</p>
+<h2 id="section-6">6. 当前审查：<code>task_review_current</code></h2>
+<p>职责：每个任务为 <code>planning</code>、<code>completion</code> 各保留至多一份当前审查。来自 <a href="../../../services/buildr/src/infrastructure/sqlite/migrations/0027_migrate_task_review_result_v2.sql">0027</a>。</p>
+<div class="table-wrap"><table><thead><tr><th scope="col">字段</th><th scope="col">类型</th><th scope="col">键</th><th scope="col">可空</th><th scope="col">释义</th></tr></thead><tbody>
+<tr><td><code>task_id</code></td><td><code>TEXT</code></td><td>主键（PK）第 1 列、外键（FK）</td><td>否</td><td>所属任务</td></tr>
+<tr><td><code>review_type</code></td><td><code>TEXT</code></td><td>主键（PK）第 2 列</td><td>否</td><td><code>planning</code> 或 <code>completion</code></td></tr>
+<tr><td><code>result_json</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td>审查结果的结构化文本（JSON）</td></tr>
+<tr><td><code>subject_identity</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td>被审查对象身份的查询列</td></tr>
+<tr><td><code>outcome</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td><code>accepted</code> 或 <code>changes-requested</code></td></tr>
+<tr><td><code>updated_at</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td>结果 <code>completedAt</code> 的查询列</td></tr>
+</tbody></table></div>
+<p>复合主键（PK）与两值类型检查共同形成每任务 <code>0..2</code> 的上限，不是笼统的无限多。SQL 要求有效的结构化文本（JSON）对象，比较 <code>schemaVersion = &#x27;buildr.task-review-result/v2&#x27;</code>、<code>taskId</code> 和 <code>reviewType</code>；查询身份非空，时间可解析。缺失键的比较同样存在 <code>CHECK(NULL)</code> 边界；完整字段和查询列一致性由 <a href="../../../services/buildr/src/modules/task/domain/task-review.ts">task-review.ts</a> 与 <a href="../../../services/buildr/src/modules/task/persistence/task-review-repository.ts">task-review-repository.ts</a> 校验。</p>
+<p>审查对象含审查方法、已审内容、未覆盖项、发现及结论；这些是单个 <code>result_json</code> 内的结构化文本（JSON），不是额外子表。</p>
+<h2 id="section-7">7. 审查替换历史：<code>task_review_history</code></h2>
+<p>职责：保留同任务、同类型的被替换审查结果。来自 <a href="../../../services/buildr/src/infrastructure/sqlite/migrations/0034_add_task_review_history.sql">0034</a>。</p>
+<div class="table-wrap"><table><thead><tr><th scope="col">字段</th><th scope="col">类型</th><th scope="col">键</th><th scope="col">可空</th><th scope="col">释义</th></tr></thead><tbody>
+<tr><td><code>id</code></td><td><code>INTEGER</code></td><td>主键（PK）、<code>rowid</code> 别名</td><td>否*</td><td>插入时分配的整数键；不是时间戳</td></tr>
+<tr><td><code>task_id</code></td><td><code>TEXT</code></td><td>外键（FK）</td><td>否</td><td>所属任务</td></tr>
+<tr><td><code>review_type</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td><code>planning</code> 或 <code>completion</code></td></tr>
+<tr><td><code>result_json</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td>旧审查结果的完整结构化文本（JSON）</td></tr>
+</tbody></table></div>
+<p><code>否*</code> 表示省略或传入 <code>NULL</code> 会分配整数键，不会存储空值。SQL 只检查类型取值与 <code>json_valid()</code>，未强制该对象的完整结构、内部任务身份或类型一致性；读取时沿用当前审查的领域校验。</p>
+<p><strong>先保存旧值，再替换当前值</strong>：在 <a href="../../../services/buildr/src/modules/task/persistence/task-review-repository.ts#L100-L109">task-review-repository.ts 第 100–109 行</a>，同一事务先读取并校验当前记录及 <code>expectedCurrentDigest</code>；已有当前值时将原始 <code>result_json</code> 插入历史表，然后更新当前表。首次创建没有旧值，不产生历史行。历史行没有指向当前表的外键（FK），也没有独立 <code>updated_at</code>；读出的 <code>observedAt</code> 来自旧结果的 <code>completedAt</code>，按 <code>id</code> 排序。该表不是任务所有变动的通用事件流水。</p>
+<h2 id="section-8">8. 当前工作摘要：<code>task_work_context_current</code></h2>
+<p>职责：每任务一份可接续的工作摘要及待处理意见。来自 <a href="../../../services/buildr/src/infrastructure/sqlite/migrations/0033_add_daily_workbench.sql">0033</a>。</p>
+<div class="table-wrap"><table><thead><tr><th scope="col">字段</th><th scope="col">类型</th><th scope="col">键</th><th scope="col">可空</th><th scope="col">释义</th></tr></thead><tbody>
+<tr><td><code>task_id</code></td><td><code>TEXT</code></td><td>主键（PK）、外键（FK）</td><td>否</td><td>所属任务</td></tr>
+<tr><td><code>context_json</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td>工作摘要对象的结构化文本（JSON）</td></tr>
+<tr><td><code>attention_state</code></td><td><code>TEXT</code></td><td>—</td><td>是</td><td><code>pending</code> 或 <code>resolved</code>；没有意见对象时为 <code>NULL</code></td></tr>
+<tr><td><code>updated_at</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td>摘要的更新时间查询列</td></tr>
+</tbody></table></div>
+<p>SQL 只检查有效的结构化文本（JSON）、可空的状态取值和可解析时间，不检查查询列等于对象字段。<a href="../../../services/buildr/src/modules/task/work-context/domain/work-context.ts">work-context.ts</a> 定义进展、下一步、可选阶段、意见与答复；<code>context_json</code> 保存的是其中的摘要对象，不是整个响应封套。</p>
+<p><a href="../../../services/buildr/src/modules/task/work-context/persistence/work-context-repository.ts">work-context-repository.ts</a> 写入前比较摘要，校验已解决意见必须具有答复，并从对象派生 <code>attention_state</code> 与 <code>updated_at</code>。读取当前对象只查询 <code>context_json</code>，待处理列表使用 <code>attention_state</code>；SQL 不独立保证这两份表示一直相符。</p>
+<h2 id="section-9">9. 工作台偏好：<code>workbench_preferences</code></h2>
+<p>职责：保存置顶、计划、关注、收藏及最近访问。来自 <a href="../../../services/buildr/src/infrastructure/sqlite/migrations/0033_add_daily_workbench.sql">0033</a>，无外键（FK）。</p>
+<div class="table-wrap"><table><thead><tr><th scope="col">字段</th><th scope="col">类型</th><th scope="col">键</th><th scope="col">可空</th><th scope="col">释义</th></tr></thead><tbody>
+<tr><td><code>kind</code></td><td><code>TEXT</code></td><td>主键（PK）第 1 列</td><td>否</td><td>偏好类型</td></tr>
+<tr><td><code>object_key</code></td><td><code>TEXT</code></td><td>主键（PK）第 2 列</td><td>否</td><td>类型范围内的目标键，长度 <code>1..300</code></td></tr>
+<tr><td><code>label</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td>显示名称，去首尾空白后非空</td></tr>
+<tr><td><code>href</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td>可打开的页面地址，去首尾空白后非空</td></tr>
+<tr><td><code>updated_at</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td>可解析的更新时间</td></tr>
+</tbody></table></div>
+<p><code>kind</code> 仅允许 <code>pinned-task</code>、<code>planned-task</code>、<code>followed-project</code>、<code>saved-resource</code>、<code>recent-resource</code>。复合主键（PK）只在同类型内去重，<code>object_key</code> 本身不全局唯一。该表不是无行号表（WITHOUT ROWID）；最近访问的排序实际使用 <code>updated_at DESC, rowid DESC</code>。</p>
+<p><a href="../../../services/buildr/src/modules/workbench/application/preferences-application.ts">preferences-application.ts</a> 按类型解析任务或项目，添加计划项时要求任务为 <code>todo</code>，目标不可读时展示诊断名称而非伪造存在。<a href="../../../services/buildr/src/modules/workbench/domain/workbench.ts">workbench.ts</a> 校验目标键与当前工作空间内的允许页面地址；<a href="../../../services/buildr/src/modules/workbench/persistence/preferences-repository.ts">preferences-repository.ts</a> 限制每类非最近偏好最多 500 项，最近访问保留 30 项。这些是应用约束，不是 SQL 外键（FK）、检查约束或删除触发器。</p>
+<h2 id="section-10">10. 迁移账本：<code>schema_migrations</code></h2>
+<p>职责：记录实际应用的迁移版本、脚本名称、脚本摘要与时间。来自 <a href="../../../services/buildr/src/infrastructure/sqlite/migrations/0000_create_migration_ledger.sql">0000</a>，无业务关联。</p>
+<div class="table-wrap"><table><thead><tr><th scope="col">字段</th><th scope="col">类型</th><th scope="col">键</th><th scope="col">可空</th><th scope="col">释义</th></tr></thead><tbody>
+<tr><td><code>version</code></td><td><code>INTEGER</code></td><td>主键（PK）、<code>rowid</code> 别名</td><td>否*</td><td>非负版本号；应用明确写入迁移版本</td></tr>
+<tr><td><code>name</code></td><td><code>TEXT</code></td><td>唯一约束（UQ）</td><td>否</td><td><code>0000_name.sql</code> 形式的迁移文件名</td></tr>
+<tr><td><code>checksum</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td><code>sha256-</code> 加 64 位小写十六进制</td></tr>
+<tr><td><code>applied_at</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td>可由 SQLite 解析的应用时间</td></tr>
+</tbody></table></div>
+<p><code>否*</code> 的含义与历史表整数主键相同；不是建议让数据库自行选择迁移版本。名称的 SQL 检查包含四位数字前缀、下划线、受限名称字符与 <code>.sql</code> 后缀。<a href="../../../services/buildr/src/infrastructure/sqlite/workspace-sqlite.ts">workspace-sqlite.ts</a> 负责脚本版本连续性、账本与当前脚本名称及摘要一致性、迁移执行和账本写入。单独重放 SQL 得到的是结构，不应把空内存账本当成真实安装的迁移记录。</p>
+<h2 id="section-11">11. 全文检索与内部影子表</h2>
+<p><code>task_search</code> 来自 <a href="../../../services/buildr/src/infrastructure/sqlite/migrations/0032_add_task_query_indexes.sql">0032</a>，使用外部内容全文检索（External-content FTS5）：<code>content=&#x27;tasks&#x27;</code>、<code>content_rowid=&#x27;rowid&#x27;</code>、<code>tokenize=&#x27;trigram&#x27;</code>。正文仍由 <code>tasks</code> 提供；初次创建执行 <code>rebuild</code>。</p>
+<div class="table-wrap"><table><thead><tr><th scope="col">字段</th><th scope="col">声明类型</th><th scope="col">键</th><th scope="col">可空性声明</th><th scope="col">释义</th></tr></thead><tbody>
+<tr><td><code>task_id</code></td><td>未声明</td><td>无主键（PK）/外键（FK）</td><td>未约束</td><td>被检索的任务标识</td></tr>
+<tr><td><code>title</code></td><td>未声明</td><td>—</td><td>未约束</td><td>被检索的任务标题</td></tr>
+<tr><td><code>intent</code></td><td>未声明</td><td>—</td><td>未约束</td><td>被检索的任务意图</td></tr>
+<tr><td><code>task_search</code></td><td>未声明，隐藏列</td><td>—</td><td>未约束</td><td>全文检索（FTS5）的同名命令接口列</td></tr>
+<tr><td><code>rank</code></td><td>未声明，隐藏列</td><td>—</td><td>未约束</td><td>全文检索（FTS5）的排序接口列</td></tr>
+</tbody></table></div>
+<p>三个可见列没有 SQL 类型、主键（PK）或非空声明，不能因为源表使用 <code>TEXT NOT NULL</code> 就给虚拟表虚构相同约束。两个隐藏列来自 <code>table_xinfo</code>，不是迁移显式声明的业务字段；<code>rowid</code> 是引擎文档标识，不属于上述五个声明/隐藏列清单。</p>
+<div class="table-wrap"><table><thead><tr><th scope="col">触发器（Trigger）</th><th scope="col">同步动作</th></tr></thead><tbody>
+<tr><td><code>tasks_search_after_insert</code></td><td>用 <code>new.rowid</code> 及三列新值写入检索表</td></tr>
+<tr><td><code>tasks_search_after_delete</code></td><td>用 <code>old.rowid</code> 及三列旧值发出检索删除命令</td></tr>
+<tr><td><code>tasks_search_after_update</code></td><td>仅监听 <code>task_id/title/intent</code> 更新；先删旧检索内容，再写新内容</td></tr>
+</tbody></table></div>
+<p>以下四个内部影子表（Shadow Table）由全文检索（FTS5）引擎维护，仅归为基础设施，不展开为业务实体，也不建议直接写入：</p>
+<div class="table-wrap"><table><thead><tr><th scope="col">表名</th><th scope="col">职责</th></tr></thead><tbody>
+<tr><td><code>task_search_config</code></td><td>引擎配置</td></tr>
+<tr><td><code>task_search_data</code></td><td>索引数据块</td></tr>
+<tr><td><code>task_search_docsize</code></td><td>每文档的词数统计</td></tr>
+<tr><td><code>task_search_idx</code></td><td>索引段定位信息</td></tr>
+</tbody></table></div>
+<p>外部内容模式没有额外 <code>task_search_content</code> 表。隐式 <code>rowid</code> 相等与触发器同步是实现关系，不是声明的一对一外键（FK）约束。</p>
+<h2 id="section-12">12. 当前显式索引清单</h2>
+<p>下表列出所有 13 个显式索引（Index）。主键（PK）及唯一约束（UQ）的自动支持结构另算；检索引擎内部结构也不并入此表。</p>
+<div class="table-wrap"><table><thead><tr><th scope="col">表</th><th scope="col">索引名称</th><th scope="col">键及顺序</th><th scope="col">用途</th></tr></thead><tbody>
+<tr><td><code>tasks</code></td><td><code>tasks_status_updated_at_idx</code></td><td><code>status, updated_at DESC, task_id</code></td><td>按状态筛选和时间排序</td></tr>
+<tr><td><code>tasks</code></td><td><code>tasks_updated_at_idx</code></td><td><code>updated_at DESC, task_id</code></td><td>全部任务时间顺序</td></tr>
+<tr><td><code>tasks</code></td><td><code>tasks_parent_task_idx</code></td><td><code>parent_task_id, task_id</code></td><td>查找子任务</td></tr>
+<tr><td><code>tasks</code></td><td><code>tasks_retrospective_state_idx</code></td><td><code>retrospective_state, updated_at DESC, task_id</code></td><td>按复盘状态查询</td></tr>
+<tr><td><code>tasks</code></td><td><code>tasks_feed_order_idx</code></td><td>状态映射表达式、<code>updated_at DESC, task_id</code></td><td><code>active=0, todo=1, completed=2, abandoned=3</code> 的列表顺序</td></tr>
+<tr><td><code>task_projects</code></td><td><code>task_projects_project_idx</code></td><td><code>project, task_id</code></td><td>项目范围反查任务</td></tr>
+<tr><td><code>task_services</code></td><td><code>task_services_identity_idx</code></td><td><code>project, service, task_id</code></td><td>服务范围反查任务</td></tr>
+<tr><td><code>task_changes</code></td><td><code>task_changes_identity_idx</code></td><td><code>project, change_name, task_id</code></td><td>变更反查任务</td></tr>
+<tr><td><code>task_verification_current</code></td><td><code>task_verification_current_target_idx</code></td><td><code>target_identity, updated_at DESC, task_id</code></td><td>按报告目标身份查询</td></tr>
+<tr><td><code>task_review_current</code></td><td><code>task_review_current_subject_idx</code></td><td><code>review_type, subject_identity, updated_at DESC, task_id</code></td><td>按审查类型及对象身份查询</td></tr>
+<tr><td><code>task_review_history</code></td><td><code>task_review_history_task_idx</code></td><td><code>task_id, review_type, id</code></td><td>同任务同类型审查历史顺序</td></tr>
+<tr><td><code>task_work_context_current</code></td><td><code>task_work_context_attention_idx</code></td><td><code>attention_state, updated_at DESC, task_id</code></td><td>待处理意见队列</td></tr>
+<tr><td><code>workbench_preferences</code></td><td><code>workbench_preferences_recent_idx</code></td><td><code>kind, updated_at DESC, object_key</code></td><td>类型与时间维度访问</td></tr>
+</tbody></table></div>
+<h2 id="section-13">13. 外键之外的完整性边界</h2>
+<p>关系图不代表所有业务合法性都由数据库保证。以下边界必须回到实际应用与领域文件理解：</p>
+<ol>
+<li>父子关系：SQL 禁止直接自引用；<a href="../../../services/buildr/src/modules/task/application/task-command-application.ts#L139-L151">task-command-application.ts 第 139–151 行</a> 还要求新关联的父任务为 <code>active</code>，沿祖先链检查循环。普通外键（FK）不表达这些条件。</li>
+<li>文件实体：范围引用、变更可用性与当前工作副本位置由登记读取和实际文件解析决定，不由 SQL 表自动保证。</li>
+<li>并发写入：当前审查、验证、工作摘要以及适用任务修改使用已观察内容摘要检查冲突。摘要是运行时计算，不是本图遗漏的 <code>digest</code> 数据库列。</li>
+<li>对象校验：<code>json_valid()</code> 不等于业务对象合法；<code>CHECK</code> 的未知值 <code>NULL</code> 也不会自动失败。审查、验证及工作摘要分别有领域校验和不同的查询列一致性行为，不能混为统一数据库保证。</li>
+<li>结果与历史：审查替换保留旧值，验证只保留当前值；任务终态更正历史在 <code>tasks.result_history_json</code>，不是 <code>task_review_history</code>。父完成证据、复盘状态和复盘文档摘要同样属于任务主记录。</li>
+<li>偏好：目标键解析、页面地址限制、数量限制由应用执行；删除任务不会自动级联删除偏好行。</li>
+</ol>
+<h2 id="section-14">14. 维护与验收边界</h2>
+<p>迁移结构变化时，应先在 <code>:memory:</code> 重放到新的末版本，核对当前表而非累加历史表；同步更新此附录、图源、矢量图与内联阅读页。领域文件变化但物理表不变时，只调整相关解释，不虚构数据库迁移。</p>
+<p>已核对结构重放、图源生成、脚本语法与相对链接，并在浏览器检查字体、关系连线、缩放上下限、搜索命中与空结果、下一项及重置。实体关系图（ERD）在 1440×900、1920×1080、2048×1320 下无页面横向溢出；图内按原尺寸滚动，不以缩小到不可读代替完整字段展示。产品知识读取器已验证正文和图源可读；完整 Buildr Web 应用内的导航尚未验收，独立阅读检查不冒充应用验收。</p>
+<!-- fields:end -->
+</article>
+</main>
+<footer>仅在空内存数据库 <code>:memory:</code> 重放结构，未读取真实业务数据。本页离线可用，来源文件链接仅供同目录知识树中继续查阅；全领域主线 <code>buildr-data-design.md</code> 为预留入口。尚未进行浏览器视觉与交互验收。</footer>
+<script>
+'use strict';
+(() => {
+  const viewport = document.getElementById('viewport');
+  const svg = document.querySelector('#canvas > svg');
+  if (!svg) return;
+  const zoomInput = document.getElementById('zoom');
+  const zoomValue = document.getElementById('zoom-value');
+  const search = document.getElementById('search');
+  const next = document.getElementById('next');
+  const status = document.getElementById('search-status');
+  const zoomOut = document.getElementById('zoom-out');
+  const zoomIn = document.getElementById('zoom-in');
+  const nodes = Array.from(svg.querySelectorAll('g.node[id^="entity-"]'));
+  const baseWidth = svg.viewBox.baseVal.width;
+  const baseHeight = svg.viewBox.baseVal.height;
+  let scale = 1;
+  let matches = [];
+  let matchIndex = -1;
+  function setScale(value) {
+    const previous = scale;
+    const centerX = viewport.scrollLeft + viewport.clientWidth / 2;
+    const centerY = viewport.scrollTop + viewport.clientHeight / 2;
+    scale = Math.max(0.25, Math.min(2, value));
+    svg.style.width = `${baseWidth * scale}px`;
+    svg.style.height = `${baseHeight * scale}px`;
+    zoomInput.value = String(Math.round(scale * 100));
+    zoomValue.value = `${Math.round(scale * 100)}%`;
+    viewport.scrollLeft = centerX * scale / previous - viewport.clientWidth / 2;
+    viewport.scrollTop = centerY * scale / previous - viewport.clientHeight / 2;
+    zoomOut.disabled = scale <= 0.25;
+    zoomIn.disabled = scale >= 2;
+  }
+  function focusNode(node) {
+    if (!node) return;
+    const box = node.getBoundingClientRect();
+    const frame = viewport.getBoundingClientRect();
+    viewport.scrollLeft += box.left - frame.left + box.width / 2 - viewport.clientWidth / 2;
+    viewport.scrollTop += box.top - frame.top + box.height / 2 - viewport.clientHeight / 2;
+  }
+  function showMatch() {
+    nodes.forEach(node => node.classList.remove('active-match'));
+    if (!matches.length) return;
+    const node = matches[matchIndex];
+    node.classList.add('active-match');
+    const name = node.querySelector('title')?.textContent || node.id;
+    status.textContent = `${matchIndex + 1} / ${matches.length} 个匹配表或说明组 · ${name}`;
+    focusNode(node);
+  }
+  function updateSearch() {
+    const query = search.value.trim().toLocaleLowerCase();
+    matches = [];
+    nodes.forEach(node => {
+      let matched = false;
+      node.classList.remove('active-match');
+      node.querySelectorAll('text').forEach(text => {
+        const hit = Boolean(query) && text.textContent.toLocaleLowerCase().includes(query);
+        text.classList.toggle('hit', hit);
+        matched ||= hit;
+      });
+      node.classList.toggle('matched', matched);
+      if (matched) matches.push(node);
+    });
+    matchIndex = matches.length ? 0 : -1;
+    next.disabled = matches.length < 2;
+    if (matches.length) showMatch();
+    else status.textContent = query ? '图中无匹配；可用浏览器页面搜索检查下方完整说明。' : '输入名称定位；也可用浏览器页面搜索阅读下方全文。';
+  }
+  function advance() {
+    if (!matches.length) return;
+    matchIndex = (matchIndex + 1) % matches.length;
+    showMatch();
+  }
+  function reset() {
+    search.value = '';
+    updateSearch();
+    setScale(1);
+    focusNode(document.getElementById('entity-tasks'));
+  }
+  zoomInput.addEventListener('input', () => setScale(Number(zoomInput.value) / 100));
+  zoomOut.addEventListener('click', () => setScale(scale - 0.1));
+  zoomIn.addEventListener('click', () => setScale(scale + 0.1));
+  document.getElementById('reset').addEventListener('click', reset);
+  search.addEventListener('input', updateSearch);
+  search.addEventListener('keydown', event => {
+    if (event.key === 'Enter') { event.preventDefault(); advance(); }
+    if (event.key === 'Escape') { search.value = ''; updateSearch(); }
+  });
+  next.addEventListener('click', advance);
+  requestAnimationFrame(reset);
+})();
+</script>
+</body>
+</html>

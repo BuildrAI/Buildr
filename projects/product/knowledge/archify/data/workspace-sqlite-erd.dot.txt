@@ -1,0 +1,195 @@
+// Buildr workspace.sqlite 物理实体关系图（ERD）。仅覆盖迁移 0000..0034 的当前结构。
+// 来源（相对此图源）：../../../services/buildr/src/infrastructure/sqlite/migrations/
+// 语义来源：../../../services/buildr/src/modules/task/{domain,persistence}/
+// 说明：workspace-sqlite-erd.md；完整字段附录：../../docs/architecture/buildr-database-tables.md
+// Graphviz 原生图源；不是 Archify 产物。只在 :memory: 重放迁移，不读取真实业务数据。
+// 无形连线仅用于布局；有形实线全部为 SQL 外键（FK）。
+digraph workspace_sqlite_erd {
+  graph [rankdir=LR, newrank=true, bgcolor="#ffffff", pad="0.4", nodesep="0.65", ranksep="1.35", splines=polyline,
+    fontname="PingFang SC", fontsize=24, fontcolor="#172b3a", labelloc=t, labeljust=l,
+    label="Buildr · 工作空间（Workspace）SQLite 实体关系图（ERD）\n迁移 0000—0034 ｜ 10 普通表 · 1 全文检索（FTS5）虚拟表 · 4 内部影子表\n字段完整展开；正文大小阅读，可缩放与滚动。"];
+  node [shape=plain, fontname="PingFang SC", fontsize=15];
+  edge [fontname="PingFang SC", fontsize=13, color="#486171", fontcolor="#334c5b", penwidth=1.4,
+    arrowsize=0.95, dir=both, arrowtail=teetee, arrowhead=crowodot];
+
+  tasks [id="entity-tasks", label=<
+    <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="8" COLOR="#466777">
+      <TR><TD COLSPAN="4" BGCOLOR="#e3edf1"><B>任务 · tasks</B></TD></TR>
+      <TR><TD COLSPAN="4" ALIGN="LEFT">14 列 · STRICT · 隐式 rowid 供检索同步</TD></TR>
+      <TR><TD BGCOLOR="#f3f6f8">字段</TD><TD BGCOLOR="#f3f6f8">类型</TD><TD BGCOLOR="#f3f6f8">键</TD><TD BGCOLOR="#f3f6f8">可空</TD></TR>
+      <TR><TD PORT="task_id" ALIGN="LEFT">task_id</TD><TD>TEXT</TD><TD>PK</TD><TD PORT="task_id_out">否</TD></TR>
+      <TR><TD ALIGN="LEFT">title</TD><TD>TEXT</TD><TD>—</TD><TD>否</TD></TR>
+      <TR><TD ALIGN="LEFT">intent</TD><TD>TEXT</TD><TD>—</TD><TD>否</TD></TR>
+      <TR><TD ALIGN="LEFT">status</TD><TD>TEXT</TD><TD>—</TD><TD>否</TD></TR>
+      <TR><TD ALIGN="LEFT">result_summary</TD><TD>TEXT</TD><TD>—</TD><TD>是</TD></TR>
+      <TR><TD ALIGN="LEFT">created_at</TD><TD>TEXT</TD><TD>—</TD><TD>否</TD></TR>
+      <TR><TD ALIGN="LEFT">updated_at</TD><TD>TEXT</TD><TD>—</TD><TD>否</TD></TR>
+      <TR><TD PORT="parent_task_id" ALIGN="LEFT">parent_task_id</TD><TD>TEXT</TD><TD>FK</TD><TD>是</TD></TR>
+      <TR><TD ALIGN="LEFT">is_parent</TD><TD>INTEGER</TD><TD>—</TD><TD>否</TD></TR>
+      <TR><TD ALIGN="LEFT">parent_completion_json</TD><TD>TEXT</TD><TD>—</TD><TD>是</TD></TR>
+      <TR><TD ALIGN="LEFT">result_history_json</TD><TD>TEXT</TD><TD>—</TD><TD>否</TD></TR>
+      <TR><TD ALIGN="LEFT">legacy_parent_plan_json</TD><TD>TEXT</TD><TD>—</TD><TD>是</TD></TR>
+      <TR><TD ALIGN="LEFT">retrospective_state</TD><TD>TEXT</TD><TD>—</TD><TD>是</TD></TR>
+      <TR><TD ALIGN="LEFT">retrospective_document_digest</TD><TD>TEXT</TD><TD>—</TD><TD>是</TD></TR>
+      <TR><TD COLSPAN="4" ALIGN="LEFT" BGCOLOR="#f3f6f8">is_parent 默认 0；result_history_json 默认 '[]'<BR ALIGN="LEFT"/>父完成、更正与复盘引用在本表，不是独立实体表</TD></TR>
+    </TABLE>>];
+
+  subgraph cluster_scope {
+    label="任务范围关联 · 项目 / 服务 / 变更"; fontsize=19; color="#dce4e8"; style=rounded; margin=20;
+    task_projects [id="entity-task_projects", label=<
+      <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="8" COLOR="#7e929d">
+        <TR><TD COLSPAN="4" BGCOLOR="#eaf0f3"><B>任务关联项目 · task_projects</B></TD></TR>
+        <TR><TD BGCOLOR="#f3f6f8">字段</TD><TD BGCOLOR="#f3f6f8">类型</TD><TD BGCOLOR="#f3f6f8">键</TD><TD BGCOLOR="#f3f6f8">可空</TD></TR>
+        <TR><TD PORT="task_id" ALIGN="LEFT">task_id</TD><TD>TEXT</TD><TD>PK1 / FK</TD><TD PORT="task_id_out">否</TD></TR>
+        <TR><TD PORT="project" ALIGN="LEFT">project</TD><TD>TEXT</TD><TD>PK2</TD><TD>否</TD></TR>
+        <TR><TD COLSPAN="4">STRICT · WITHOUT ROWID</TD></TR>
+      </TABLE>>];
+    task_services [id="entity-task_services", label=<
+      <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="8" COLOR="#7e929d">
+        <TR><TD COLSPAN="4" BGCOLOR="#eaf0f3"><B>任务关联服务 · task_services</B></TD></TR>
+        <TR><TD BGCOLOR="#f3f6f8">字段</TD><TD BGCOLOR="#f3f6f8">类型</TD><TD BGCOLOR="#f3f6f8">键</TD><TD BGCOLOR="#f3f6f8">可空</TD></TR>
+        <TR><TD PORT="task_id" ALIGN="LEFT">task_id</TD><TD>TEXT</TD><TD>PK1 / FK</TD><TD PORT="task_id_out">否</TD></TR>
+        <TR><TD PORT="project" ALIGN="LEFT">project</TD><TD>TEXT</TD><TD>PK2</TD><TD>否</TD></TR>
+        <TR><TD ALIGN="LEFT">service</TD><TD>TEXT</TD><TD>PK3</TD><TD>否</TD></TR>
+        <TR><TD COLSPAN="4">STRICT · WITHOUT ROWID<BR/>没有指向 task_projects 的复合外键（FK）</TD></TR>
+      </TABLE>>];
+    task_changes [id="entity-task_changes", label=<
+      <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="8" COLOR="#7e929d">
+        <TR><TD COLSPAN="4" BGCOLOR="#eaf0f3"><B>任务关联变更 · task_changes</B></TD></TR>
+        <TR><TD BGCOLOR="#f3f6f8">字段</TD><TD BGCOLOR="#f3f6f8">类型</TD><TD BGCOLOR="#f3f6f8">键</TD><TD BGCOLOR="#f3f6f8">可空</TD></TR>
+        <TR><TD PORT="task_id" ALIGN="LEFT">task_id</TD><TD>TEXT</TD><TD>PK1 / FK</TD><TD PORT="task_id_out">否</TD></TR>
+        <TR><TD PORT="project" ALIGN="LEFT">project</TD><TD>TEXT</TD><TD>PK2</TD><TD>否</TD></TR>
+        <TR><TD ALIGN="LEFT">change_name</TD><TD>TEXT</TD><TD>PK3</TD><TD>否</TD></TR>
+        <TR><TD COLSPAN="4">STRICT · WITHOUT ROWID</TD></TR>
+      </TABLE>>];
+    {rank=same; task_projects; task_services; task_changes;}
+  }
+
+  subgraph cluster_results {
+    label="当前专业记录与审查历史"; fontsize=19; color="#dce4e8"; style=rounded; margin=20;
+    task_verification_current [id="entity-task_verification_current", label=<
+      <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="8" COLOR="#7e929d">
+        <TR><TD COLSPAN="4" BGCOLOR="#eaf0f3"><B>当前验证 · task_verification_current</B></TD></TR>
+        <TR><TD BGCOLOR="#f3f6f8">字段</TD><TD BGCOLOR="#f3f6f8">类型</TD><TD BGCOLOR="#f3f6f8">键</TD><TD BGCOLOR="#f3f6f8">可空</TD></TR>
+        <TR><TD PORT="task_id" ALIGN="LEFT">task_id</TD><TD>TEXT</TD><TD>PK / FK</TD><TD>否</TD></TR>
+        <TR><TD ALIGN="LEFT">result_json</TD><TD>TEXT</TD><TD>—</TD><TD>否</TD></TR>
+        <TR><TD ALIGN="LEFT">target_identity</TD><TD>TEXT</TD><TD>—</TD><TD>否</TD></TR>
+        <TR><TD ALIGN="LEFT">outcome</TD><TD>TEXT</TD><TD>—</TD><TD>否</TD></TR>
+        <TR><TD ALIGN="LEFT">updated_at</TD><TD>TEXT</TD><TD>—</TD><TD>否</TD></TR>
+        <TR><TD COLSPAN="4">STRICT · WITHOUT ROWID<BR/>仅保留当前值；无验证历史表</TD></TR>
+      </TABLE>>];
+    task_review_current [id="entity-task_review_current", label=<
+      <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="8" COLOR="#7e929d">
+        <TR><TD COLSPAN="4" BGCOLOR="#eaf0f3"><B>当前审查 · task_review_current</B></TD></TR>
+        <TR><TD BGCOLOR="#f3f6f8">字段</TD><TD BGCOLOR="#f3f6f8">类型</TD><TD BGCOLOR="#f3f6f8">键</TD><TD BGCOLOR="#f3f6f8">可空</TD></TR>
+        <TR><TD PORT="task_id" ALIGN="LEFT">task_id</TD><TD>TEXT</TD><TD>PK1 / FK</TD><TD PORT="task_id_out">否</TD></TR>
+        <TR><TD ALIGN="LEFT">review_type</TD><TD>TEXT</TD><TD>PK2</TD><TD>否</TD></TR>
+        <TR><TD ALIGN="LEFT">result_json</TD><TD>TEXT</TD><TD>—</TD><TD>否</TD></TR>
+        <TR><TD ALIGN="LEFT">subject_identity</TD><TD>TEXT</TD><TD>—</TD><TD>否</TD></TR>
+        <TR><TD ALIGN="LEFT">outcome</TD><TD>TEXT</TD><TD>—</TD><TD>否</TD></TR>
+        <TR><TD ALIGN="LEFT">updated_at</TD><TD>TEXT</TD><TD>—</TD><TD>否</TD></TR>
+        <TR><TD COLSPAN="4">STRICT · WITHOUT ROWID<BR/>review_type ∈ {planning, completion}<BR/>每类型 0..1；每任务合计 0..2</TD></TR>
+      </TABLE>>];
+    task_review_history [id="entity-task_review_history", label=<
+      <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="8" COLOR="#7e929d">
+        <TR><TD COLSPAN="4" BGCOLOR="#eaf0f3"><B>被替换的审查 · task_review_history</B></TD></TR>
+        <TR><TD BGCOLOR="#f3f6f8">字段</TD><TD BGCOLOR="#f3f6f8">类型</TD><TD BGCOLOR="#f3f6f8">键</TD><TD BGCOLOR="#f3f6f8">可空</TD></TR>
+        <TR><TD ALIGN="LEFT">id</TD><TD>INTEGER</TD><TD>PK</TD><TD>否*</TD></TR>
+        <TR><TD PORT="task_id" ALIGN="LEFT">task_id</TD><TD>TEXT</TD><TD>FK</TD><TD>否</TD></TR>
+        <TR><TD ALIGN="LEFT">review_type</TD><TD>TEXT</TD><TD>—</TD><TD>否</TD></TR>
+        <TR><TD ALIGN="LEFT">result_json</TD><TD>TEXT</TD><TD>—</TD><TD>否</TD></TR>
+        <TR><TD COLSPAN="4">STRICT · id 是 rowid 别名<BR/>旧当前值先入本表，再替换当前值<BR/>没有指向 task_review_current 的外键（FK）</TD></TR>
+      </TABLE>>];
+    task_work_context_current [id="entity-task_work_context_current", label=<
+      <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="8" COLOR="#7e929d">
+        <TR><TD COLSPAN="4" BGCOLOR="#eaf0f3"><B>当前工作摘要 · task_work_context_current</B></TD></TR>
+        <TR><TD BGCOLOR="#f3f6f8">字段</TD><TD BGCOLOR="#f3f6f8">类型</TD><TD BGCOLOR="#f3f6f8">键</TD><TD BGCOLOR="#f3f6f8">可空</TD></TR>
+        <TR><TD PORT="task_id" ALIGN="LEFT">task_id</TD><TD>TEXT</TD><TD>PK / FK</TD><TD>否</TD></TR>
+        <TR><TD ALIGN="LEFT">context_json</TD><TD>TEXT</TD><TD>—</TD><TD>否</TD></TR>
+        <TR><TD ALIGN="LEFT">attention_state</TD><TD>TEXT</TD><TD>—</TD><TD>是</TD></TR>
+        <TR><TD ALIGN="LEFT">updated_at</TD><TD>TEXT</TD><TD>—</TD><TD>否</TD></TR>
+        <TR><TD COLSPAN="4">STRICT · attention_state ∈ {pending, resolved}<BR/>无事项对象时 attention_state 为 NULL</TD></TR>
+      </TABLE>>];
+    {rank=same; task_verification_current; task_review_current; task_review_history; task_work_context_current;}
+  }
+
+  subgraph cluster_infrastructure {
+    label="基础设施与工作台偏好"; fontsize=19; color="#dce4e8"; style=rounded; margin=20;
+    task_search [id="entity-task_search", label=<
+      <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="8" COLOR="#718598">
+        <TR><TD COLSPAN="4" BGCOLOR="#edf1f7"><B>全文检索（FTS5）· task_search</B></TD></TR>
+        <TR><TD BGCOLOR="#f3f6f8">字段</TD><TD BGCOLOR="#f3f6f8">类型</TD><TD BGCOLOR="#f3f6f8">键</TD><TD BGCOLOR="#f3f6f8">可空</TD></TR>
+        <TR><TD ALIGN="LEFT">task_id</TD><TD>未声明</TD><TD>—</TD><TD>未约束</TD></TR>
+        <TR><TD ALIGN="LEFT">title</TD><TD>未声明</TD><TD>—</TD><TD>未约束</TD></TR>
+        <TR><TD ALIGN="LEFT">intent</TD><TD>未声明</TD><TD>—</TD><TD>未约束</TD></TR>
+        <TR><TD ALIGN="LEFT">task_search（隐藏列）</TD><TD>未声明</TD><TD>—</TD><TD>未约束</TD></TR>
+        <TR><TD ALIGN="LEFT">rank（隐藏列）</TD><TD>未声明</TD><TD>—</TD><TD>未约束</TD></TR>
+        <TR><TD COLSPAN="4" ALIGN="LEFT">content='tasks'；content_rowid='rowid'<BR ALIGN="LEFT"/>tokenize='trigram'；rowid 映射并非外键（FK）<BR ALIGN="LEFT"/>源表三列非空，不等于此虚拟表声明了非空约束</TD></TR>
+      </TABLE>>];
+    search_shadows [id="entity-search_shadows", label=<
+      <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="8" COLOR="#a1acb6">
+        <TR><TD BGCOLOR="#edf1f7"><B>全文检索内部影子表（FTS5 Shadow Tables）</B></TD></TR>
+        <TR><TD ALIGN="LEFT">task_search_config · 配置<BR ALIGN="LEFT"/>task_search_data · 索引数据块<BR ALIGN="LEFT"/>task_search_docsize · 文档词数<BR ALIGN="LEFT"/>task_search_idx · 索引段定位</TD></TR>
+        <TR><TD>引擎维护；仅列清单，不展开为业务实体</TD></TR>
+      </TABLE>>];
+    schema_migrations [id="entity-schema_migrations", label=<
+      <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="8" COLOR="#7e929d">
+        <TR><TD COLSPAN="4" BGCOLOR="#edf1f7"><B>迁移账本 · schema_migrations</B></TD></TR>
+        <TR><TD BGCOLOR="#f3f6f8">字段</TD><TD BGCOLOR="#f3f6f8">类型</TD><TD BGCOLOR="#f3f6f8">键</TD><TD BGCOLOR="#f3f6f8">可空</TD></TR>
+        <TR><TD ALIGN="LEFT">version</TD><TD>INTEGER</TD><TD>PK</TD><TD>否*</TD></TR>
+        <TR><TD ALIGN="LEFT">name</TD><TD>TEXT</TD><TD>UQ</TD><TD>否</TD></TR>
+        <TR><TD ALIGN="LEFT">checksum</TD><TD>TEXT</TD><TD>—</TD><TD>否</TD></TR>
+        <TR><TD ALIGN="LEFT">applied_at</TD><TD>TEXT</TD><TD>—</TD><TD>否</TD></TR>
+        <TR><TD COLSPAN="4">STRICT · version 是 rowid 别名 · 无外键（FK）</TD></TR>
+      </TABLE>>];
+    workbench_preferences [id="entity-workbench_preferences", label=<
+      <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="8" COLOR="#7e929d">
+        <TR><TD COLSPAN="4" BGCOLOR="#edf1f7"><B>工作台偏好 · workbench_preferences</B></TD></TR>
+        <TR><TD BGCOLOR="#f3f6f8">字段</TD><TD BGCOLOR="#f3f6f8">类型</TD><TD BGCOLOR="#f3f6f8">键</TD><TD BGCOLOR="#f3f6f8">可空</TD></TR>
+        <TR><TD ALIGN="LEFT">kind</TD><TD>TEXT</TD><TD>PK1</TD><TD>否</TD></TR>
+        <TR><TD PORT="object_key" ALIGN="LEFT">object_key</TD><TD>TEXT</TD><TD>PK2</TD><TD>否</TD></TR>
+        <TR><TD ALIGN="LEFT">label</TD><TD>TEXT</TD><TD>—</TD><TD>否</TD></TR>
+        <TR><TD ALIGN="LEFT">href</TD><TD>TEXT</TD><TD>—</TD><TD>否</TD></TR>
+        <TR><TD ALIGN="LEFT">updated_at</TD><TD>TEXT</TD><TD>—</TD><TD>否</TD></TR>
+        <TR><TD COLSPAN="4">STRICT · 保留 rowid · 无外键（FK）<BR/>kind + object_key 去重，不级联删除目标</TD></TR>
+      </TABLE>>];
+    {rank=same; task_search; search_shadows; schema_migrations; workbench_preferences;}
+  }
+
+  file_entities [id="entity-file_entities", shape=note, style=filled, fillcolor="#f7f7f5", color="#adb2b0",
+    label="文件实体（非 SQL 表）\n项目（Project）· 服务（Service）· 变更（Change）\n分别由登记文件与 OpenSpec 文件承载\n数据库没有 projects / services / changes 实体表"];
+  preference_targets [id="entity-preference_targets", shape=note, style=filled, fillcolor="#f7f7f5", color="#adb2b0",
+    label="偏好对象（非新增 SQL 表）\nobject_key 按 kind 解释：\n任务 ID / 项目代码 / 资源键\n可定位 tasks 或文件及页面；仅逻辑引用（Logical Reference）"];
+  legend [id="diagram-legend", shape=plain, label=<
+    <TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="10" COLOR="#c9d3d9">
+      <TR><TD ALIGN="LEFT"><B>图例与阅读边界</B></TD></TR>
+      <TR><TD ALIGN="LEFT">主键（PK）；外键（FK）；唯一约束（UQ）<BR ALIGN="LEFT"/>PK1 / PK2 / PK3 是同一复合主键的列顺序<BR ALIGN="LEFT"/>可空性（Nullability）按实际存储约束标注<BR ALIGN="LEFT"/>否*：INTEGER PRIMARY KEY 不存 NULL，输入 NULL 自动分配<BR ALIGN="LEFT"/>严格类型表（STRICT）；无行号表（WITHOUT ROWID）</TD></TR>
+      <TR><TD ALIGN="LEFT">实线 + 鸟脚（Crow's Foot）＝ SQL 外键（FK）<BR ALIGN="LEFT"/>双竖线 1；圈+竖线 0..1；圈+鸟脚 0..N<BR ALIGN="LEFT"/>基数（Cardinality）数字标在关系说明中；0..2 用数字补充<BR ALIGN="LEFT"/>点线＝逻辑引用（Logical Reference），不施加数据库约束<BR ALIGN="LEFT"/>蓝色虚线＝触发器同步（Trigger Sync）或引擎内部维护</TD></TR>
+      <TR><TD ALIGN="LEFT">所有任务附属表的 task_id 删除级联（CASCADE）<BR ALIGN="LEFT"/>tasks.parent_task_id 删除置空（SET NULL）<BR ALIGN="LEFT"/>所有外键（FK）更新动作均为 NO ACTION<BR ALIGN="LEFT"/>结构化文本（JSON）存于 TEXT，不另建实体表<BR ALIGN="LEFT"/>来源：migrations/0000..0034；说明：workspace-sqlite-erd.md<BR ALIGN="LEFT"/>Graphviz 原生生成；不是 Archify 产物</TD></TR>
+    </TABLE>>];
+
+  task_projects:task_id_out:e -> tasks:task_id:w [arrowtail=crowodot, arrowhead=teetee, label="每任务 0..N 项\n每项 1 任务 · CASCADE"];
+  task_services:task_id_out:e -> tasks:task_id:w [arrowtail=crowodot, arrowhead=teetee, label="每任务 0..N 项\n每项 1 任务 · CASCADE"];
+  task_changes:task_id_out:e -> tasks:task_id:w [arrowtail=crowodot, arrowhead=teetee, label="每任务 0..N 项\n每项 1 任务 · CASCADE"];
+  tasks:task_id:w -> tasks:parent_task_id:w [arrowtail=teeodot, arrowhead=crowodot, label="每子任务 0..1 父任务；每父任务 0..N 子任务\nparent_task_id → task_id · SET NULL"];
+  tasks:task_id_out:e -> task_verification_current:task_id:w [arrowhead=teeodot, label="每任务 0..1 项\n每项 1 任务 · CASCADE"];
+  tasks:task_id_out:e -> task_review_current:task_id:w [label="每任务 0..2 项（每类型 0..1）\n每项 1 任务 · CASCADE"];
+  tasks:task_id_out:e -> task_review_history:task_id:w [label="每任务 0..N 项\n每项 1 任务 · CASCADE"];
+  tasks:task_id_out:e -> task_work_context_current:task_id:w [arrowhead=teeodot, label="每任务 0..1 项\n每项 1 任务 · CASCADE"];
+
+  file_entities -> task_projects:project:w [constraint=false, dir=none, style=dotted, color="#919998", label="project 逻辑引用"];
+  file_entities -> task_services:project:w [constraint=false, dir=none, style=dotted, color="#919998", label="project + service 逻辑引用"];
+  file_entities -> task_changes:project:w [constraint=false, dir=none, style=dotted, color="#919998", label="project + change_name 逻辑引用"];
+  tasks -> task_search [constraint=false, dir=forward, arrowhead=normal, style=dashed, color="#597ba4", fontcolor="#597ba4", label="rowid 对应 · 非外键（FK）\n插入 / 更新 / 删除触发器同步"];
+  task_search -> search_shadows [constraint=false, dir=forward, arrowhead=normal, style=dashed, color="#597ba4", label="引擎维护（非业务关系）"];
+  workbench_preferences:object_key:w -> preference_targets [constraint=false, dir=none, style=dotted, color="#919998", label="按 kind 解析；无外键（FK）"];
+
+  // 以下仅为排版，不表示数据关系。
+  task_review_current -> task_search [style=invis, weight=2];
+  {rank=same; file_entities; task_projects; task_services; task_changes;}
+  {rank=same; tasks; legend; preference_targets;}
+  task_projects -> task_services -> task_changes [style=invis, weight=10];
+  task_verification_current -> task_review_current -> task_review_history -> task_work_context_current [style=invis, weight=10];
+  task_search -> search_shadows -> schema_migrations -> workbench_preferences [style=invis, weight=10];
+  tasks -> legend -> preference_targets [style=invis, weight=10];
+}
