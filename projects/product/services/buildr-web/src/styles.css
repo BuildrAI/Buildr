@@ -403,14 +403,19 @@ a {
 .task-list-tools {
   display: flex;
   align-items: center;
-  gap: 0;
+  gap: 4px;
   flex-shrink: 0;
   margin-left: auto;
 }
 
 .task-list-tools .ant-btn {
-  width: 32px;
+  width: auto;
+  flex-shrink: 0;
   color: var(--soft-muted);
+}
+
+.task-list-tools .ant-btn-icon-only {
+  width: 32px;
 }
 
 .task-list-tools .ant-btn.is-active,
