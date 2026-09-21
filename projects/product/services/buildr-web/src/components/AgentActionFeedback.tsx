@@ -51,7 +51,7 @@ export function useAgentActionFeedback(backToChooser: () => void) {
       </div>
       <p className="drawer-copy">
         {verb === '创建'
-          ? `先描述你的意图，再生成交给 Agent 的指令。复制指令不代表${noun}已经创建。`
+          ? `先描述你的目标，再生成交给 Agent 的指令。复制指令不代表${noun}已经创建。`
           : `选择已登记范围并描述目标。Buildr 只完成交接，不会在页面内${verb}任务。`}
       </p>
       <div id="agent-action-error" className={error ? '' : 'hidden'} role="alert" style={{ marginBottom: 12 }}>

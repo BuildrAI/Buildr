@@ -283,9 +283,16 @@
 - 避免混用：普通对话、只读探索、临时操作或 Agent runtime 中泛称的 task/thread 不会自动成为正式任务；Formal Task Record也不是普通编辑、构建或有界测试的通用工作许可。
 - 来源：canonical `openspec/specs/task-record/spec.md`（本 Change convergence 时建立）。
 
+## 任务目标（Task Goal）
+
+- 定义：任务希望实现的结果及必要范围、约束，是判断工作方向与验收成果的依据。
+- 适用范围：任务创建、搜索、列表、详情、编辑、智能体（Agent）接续和审查；面向用户统一称为“目标”。现有 `intent` 字段及 `--intent` 参数表示同一目标，保持兼容。
+- 避免混用：“意图”不再作为任务目标的展示名称；目标不等于最近进展或交付结果。其他语境中的自然语言意图、技能意图识别和测试分类不属于此字段。
+- 来源：[任务记录规范](../../openspec/specs/task-record/spec.md)、[任务页面规范](../../openspec/specs/buildr-web-client/spec.md)及用户对任务目标名称的明确决定。
+
 ## 任务记录（Task Record）
 
-- 定义：正式任务在 canonical Workspace 中的最小顶层事实，保存 Task ID、标题、意图、scope、Change、顶层状态、终态摘要，以及可选本机复盘文档的摘要与决定状态。
+- 定义：正式任务在 canonical Workspace 中的最小顶层事实，保存 Task ID、标题、目标、scope、Change、顶层状态、终态摘要，以及可选本机复盘文档的摘要与决定状态。
 - 适用范围：Workspace Structured Store中的closed v3 Task、直接父任务/子任务关系，以及create、inspect、update、activate、complete、abandon。
 - 避免混用：父任务/子任务只表达协调层级。Task Record不保存复盘正文、处置说明、来源关系、环境、action item或其他专业事实。
 - 来源：canonical `openspec/specs/task-record/spec.md`（本 Change convergence 时建立）。
@@ -342,7 +349,7 @@
 ## 协调任务（Coordinating Task）
 
 - 定义：通过直接父任务/子任务关系管理一个或多个独立子Task的普通Task。
-- 适用范围：用Task本身承载整体意图，并通过直接Children拆分可独立交付的工作。
+- 适用范围：用Task本身承载整体目标，并通过直接Children拆分可独立交付的工作。
 - 避免混用：不是独立Board Domain、总调度器或状态聚合器；其终态仍由人或Agent明确决定。
 - 来源：[任务生命周期架构讨论稿](../../docs/roadmap/task-lifecycle-architecture.md)
 
@@ -615,14 +622,14 @@
 
 ## 方案审查（Planning Review）
 
-- 定义：Task Review 对当前 Task Intent 与计划上下文执行的审查，Result绑定调用方实际审阅对象的稳定`subjectIdentity`。
+- 定义：Task Review 对当前 任务目标（Task Goal） 与计划上下文执行的审查，Result绑定调用方实际审阅对象的稳定`subjectIdentity`。
 - 适用范围：实现前方案检查；没有执行时 planning slot 可以不存在。
 - 避免混用：不要求所有Task固定为OpenSpec artifacts；OpenSpec计划先通过Semantic Readiness Preflight。Planning Review不拥有、保存、复制或解释preflight检查。
 - 来源：[Agent task workflow specification](../../openspec/specs/agent-task-workflows/spec.md)
 
 ## 完成审查（Completion Review）
 
-- 定义：Task Review 对实现、证据与 Task Intent 整体一致性的审查，Result必须绑定真实完成对象的稳定`subjectIdentity`。
+- 定义：Task Review 对实现、证据与 任务目标（Task Goal） 整体一致性的审查，Result必须绑定真实完成对象的稳定`subjectIdentity`。
 - 适用范围：当前代码tree/commit、文件产物、部署结果或外部系统结果；没有执行时completion slot可以不存在。
 - 避免混用：不生成完成对象，不替代Task Verification。
 - 来源：canonical `openspec/specs/task-review-results/spec.md`（本 Change converge 时建立）

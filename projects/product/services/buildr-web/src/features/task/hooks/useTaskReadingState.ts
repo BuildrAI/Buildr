@@ -12,11 +12,11 @@ export function useTaskReadingState(taskId: string) {
   const extraContent = trail.at(-1) || null;
   const readingKey = `${selected}:${choices[selected] || ''}:${choices[`${selected}:review`] || ''}`;
   const remember = () => {
-    const host = rootRef.current?.closest('.pane-body');
+    const host = rootRef.current?.querySelector('.task-node-reading');
     if (host) positions.current[readingKey] = host.scrollTop;
   };
   useEffect(() => {
-    const root = rootRef.current, host = root?.closest('.pane-body');
+    const root = rootRef.current, host = root?.querySelector('.task-node-reading');
     if (!root || !host || appliedKey.current === readingKey) return;
     // Markdown fills its DOM in a passive effect; restore only after content is ready.
     const restore = () => {

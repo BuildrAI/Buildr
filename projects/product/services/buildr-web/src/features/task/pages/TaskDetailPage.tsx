@@ -1,7 +1,7 @@
 import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Alert, Button, Dropdown, Spin } from 'antd';
-import { MoreOutlined } from '@ant-design/icons';
+import { MoreOutlined, UnorderedListOutlined } from '@ant-design/icons';
 import { useAppShell } from '../../../app/AppShellContext';
 import { InsideResourcePreview } from '../../../app/resource-preview';
 import { DrawerShell } from '../../../components/DrawerShell';
@@ -27,6 +27,7 @@ import { useTaskEvidence } from '../hooks/useTaskEvidence';
 import { useTaskWorkContext } from '../hooks/useTaskWorkContext';
 import { isTaskReadCancelled, useTaskRequestLifecycle } from '../hooks/useTaskRequestLifecycle';
 import { useTaskContextEditor } from '../hooks/useTaskContextEditor';
+import { useTaskChecklist } from '../hooks/useTaskChecklist';
 import { useTaskReadingState } from '../hooks/useTaskReadingState';
 import '../task-detail.css';
 
@@ -44,6 +45,7 @@ export function TaskDetailPage({ taskId: providedTaskId }: { taskId?: string } =
   const currentTask = useRef(taskId);
   currentTask.current = taskId;
   const [alert, setAlert] = useState<TaskAlert>(null);
+  const checklist = useTaskChecklist(taskId, reading.rootRef);
   const [refreshing, setRefreshing] = useState(false);
   const [readerRefreshToken, setReaderRefreshToken] = useState(0);
   const lifecycle = useTaskRequestLifecycle();
@@ -86,6 +88,7 @@ export function TaskDetailPage({ taskId: providedTaskId }: { taskId?: string } =
   const documents = taskDocuments(artifacts.briefs);
   const continueWork = () => openAgentAction('task-continue', { taskId, title: record.title, intent: record.intent, status: record.status, projects: record.scope.projects, services: record.scope.services, result: record.result?.summary, progress: workContext.data?.context?.progress, nextStep: workContext.data?.context?.nextStep });
   const readContent = (target: TaskReadTarget, inDrawer = false) => <TaskReadingPane embedded inDrawer={inDrawer} refreshToken={readerRefreshToken} target={target} task={data} context={workContext.data?.context} artifacts={artifacts} evidence={evidence} workspaceId={workspaceId} href={href} onRead={reading.openExtra} onClose={closeExtraContent} onRespond={() => editor.open('respond')} onRelativeLink={link => void artifacts.openIntentDocument(link)} refreshTask={refreshTaskAndList} />;
+  const checklistTrigger = <Button id="task-checklist-toggle" size="small" type="text" icon={<UnorderedListOutlined />} aria-expanded={checklist.open} aria-controls="task-checklist-panel" onPointerEnter={event => checklist.enter('trigger', event.pointerType)} onPointerLeave={event => checklist.exit('trigger', event.pointerType)} onBlur={checklist.leave} onFocus={checklist.cancel} onKeyDown={event => { if (event.key === 'Escape' && checklist.open) { event.preventDefault(); event.stopPropagation(); checklist.close(); } }} onClick={checklist.toggle}>实施清单</Button>;
   const headerActions = <>
     <RefreshButton id="task-detail-refresh" label="刷新任务" size="small" loading={refreshing} onClick={() => void refresh()} />
     <Dropdown menu={{ items: [
@@ -100,18 +103,18 @@ export function TaskDetailPage({ taskId: providedTaskId }: { taskId?: string } =
     } }} trigger={['click']}><Button id="task-more-actions" size="small" type="text" icon={<MoreOutlined />} aria-label="更多任务操作" /></Dropdown>
   </>;
   return <article ref={reading.rootRef} className="task-detail-page" id="task-detail-main" data-task-id={taskId}>
-    <TaskOverview actions={headerActions} record={record} onRelativeLink={link => void artifacts.openIntentDocument(link)} onReadIntent={() => reading.openExtra({ kind: 'intent', title: '目标与说明' })} />
+    <TaskOverview actions={headerActions} record={record} onRelativeLink={link => void artifacts.openIntentDocument(link)} />
     {visitError && <Alert type="warning" message={visitError} />}
     {alert && <Alert id="task-detail-alert" type={alert.error ? 'error' : 'success'} message={alert.message} closable onClose={() => setAlert(null)} />}
     {data.referenceDiagnostics.length > 0 && <Alert id="task-reference-diagnostics" type="warning" message={`部分引用不可用：${data.referenceDiagnostics.map(item => item.message).join('；')}`} />}
-    <TaskSummary briefs={artifacts.briefs} task={data} context={workContext.data} error={workContext.error} href={href} onRespond={() => editor.open('respond')} onOpen={(node, content) => { selectNode(node); if (content) reading.choose(node, content); if (content === 'review') reading.choose(`${node}:review`, ''); }} />
-    <div className="task-detail-layout">
+    <TaskSummary task={data} context={workContext.data} error={workContext.error} href={href} onRespond={() => editor.open('respond')} onOpen={(node, content) => { selectNode(node); if (content) reading.choose(node, content); if (content === 'review') reading.choose(`${node}:review`, ''); }} />
+    <TaskWorkPath actions={checklistTrigger} record={record} context={workContext.data?.context} selected={selected} onSelect={selectNode} />
+    <div className={`task-detail-layout${checklist.open && checklist.pinned ? ' checklist-pinned' : ''}`}>
       <div className="task-detail-reading">
-    <TaskWorkPath record={record} context={workContext.data?.context} selected={selected} onSelect={selectNode} />
     <TaskNodeContent choices={reading.choices} onChoose={reading.choose} selected={selected} record={record} documents={documents} briefs={artifacts.briefs} reviews={evidence.reviewData} verification={evidence.verificationData} reviewError={evidence.reviewError} verificationError={evidence.verificationError} reviewLoading={evidence.reviewLoading} verificationLoading={evidence.verificationLoading} prototypeCount={artifacts.prototypeData?.prototypes.length || 0} prototypeError={artifacts.prototypeError} hasRetrospective={Boolean(data.retrospectiveDocument.registered)} hasCoordination={data.taskRelations.children.length > 0} renderContent={readContent} />
 
       </div>
-    <TaskChecklist briefs={artifacts.briefs} documents={documents} renderContent={readContent} />
+    <TaskChecklist open={checklist.open} pinned={checklist.pinned} canPin={checklist.canPin} onTogglePin={checklist.togglePin} onPointerEnter={event => checklist.enter('panel', event.pointerType)} onPointerLeave={event => checklist.exit('panel', event.pointerType)} onFocusCapture={checklist.cancel} onBlurCapture={checklist.leave} onClose={() => { checklist.close(); reading.rootRef.current?.querySelector<HTMLButtonElement>('#task-checklist-toggle')?.focus(); }} briefs={artifacts.briefs} documents={documents} renderContent={readContent} />
     </div>
     <DrawerShell open={Boolean(extraContent)} title={extraContent?.kind === 'document' ? '引用文档' : extraContent?.title || '查看内容'} sub={record.title} width={720} rootClassName="task-reading-drawer" onClose={closeReadingDrawer} closeAriaLabel="关闭内容阅读" extra={<RefreshButton id="task-reading-refresh" label="刷新内容" size="small" loading={refreshing} onClick={() => void refresh(false)} />}>
       {extraContent && readContent(extraContent, true)}

@@ -308,7 +308,7 @@ export function TasksPage() {
           type="search"
           allowClear
           autoComplete="off"
-          placeholder="搜索标题、意图或编号"
+          placeholder="搜索标题、目标或编号"
           value={q}
           onChange={(event) => setQ(event.target.value)}
         />

@@ -3,21 +3,19 @@ import { Link } from 'react-router-dom';
 import type { TaskDetailResponse } from '../../../../build/generated/task-dto';
 import type { TaskWorkContextResponse } from '../../../../build/generated/workbench-dto';
 import { formatDateTime, taskStatusLabel } from '../../../lib/taskLabels';
-import type { TaskBriefState } from '../hooks/useTaskArtifacts';
-import { sourceLabel, type TaskNodeStage } from './taskWorkContent';
+import { type TaskNodeStage } from './taskWorkContent';
 
-export function TaskSummary({ briefs, task, context: response, error, onOpen, onRespond, href }: {
-  briefs: TaskBriefState[]; task:TaskDetailResponse; context:TaskWorkContextResponse|null; error:string|null;
+export function TaskSummary({ task, context: response, error, onOpen, onRespond, href }: {
+  task:TaskDetailResponse; context:TaskWorkContextResponse|null; error:string|null;
   onOpen(node:TaskNodeStage, content?:string):void; onRespond():void; href(path:string):string;
 }) {
   const record=task.record, context=response?.context, attention=context?.attention;
   const updated=[record.updatedAt,context?.updatedAt].filter((value):value is string=>Boolean(value)).sort().at(-1)!;
   return <section id="task-work-context" className="task-header-context" aria-label="任务信息">
     <div className="task-metadata-line">
-      <span>项目：{record.scope.projects.length ? record.scope.projects.map((project,index)=><span key={project}>{index ? '、' : ''}<Link to={href(`/projects/${encodeURIComponent(project)}`)}>{project}</Link></span>) : '工作空间'}</span>
-      {briefs.map(item=>item.kind==='ready'?<span key={item.key}>{sourceLabel(item.provenance)} · {item.key}</span>:null)}
+      <span className="task-scope-links">项目：{record.scope.projects.length ? record.scope.projects.map((project,index)=><span key={project}>{index ? '、' : ''}<Link to={href(`/projects/${encodeURIComponent(project)}`)}>{project}</Link></span>) : '工作空间'}</span>
+      {record.scope.services.length > 0 && <span className="task-scope-links">服务：{record.scope.services.map((item, index) => <span key={`${item.project}/${item.service}`}>{index ? '、' : ''}<Link to={href(`/services/${encodeURIComponent(item.project)}/${encodeURIComponent(item.service)}`)}>{item.service}</Link></span>)}</span>}
       <time title={formatDateTime(updated)}>最后更新 {formatDateTime(updated).replace(/:\d{2}$/,'')}</time>
-      {record.scope.services.length>0 && <span>服务：{record.scope.services.map(item=>`${item.project}/${item.service}`).join('、')}</span>}
       {task.taskRelations.parent && <span id="task-detail-parent"><Link to={href(`/tasks/${encodeURIComponent(task.taskRelations.parent.taskId)}`)}>父任务：{task.taskRelations.parent.title}</Link> · {taskStatusLabel(task.taskRelations.parent.status)}</span>}
       {task.taskRelations.children.length>0 && <Button type="link" size="small" onClick={()=>onOpen('closeout','coordination')}>{task.taskRelations.children.length} 项子任务</Button>}
     </div>

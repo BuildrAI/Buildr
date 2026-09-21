@@ -39,15 +39,18 @@ export function TaskTable({ tasks, prefetchTaskId, projectNames, contexts, group
     return () => observer.disconnect();
   }, []);
   const columns: ColumnsType<TaskListItem> = [
-    { title: '任务 / 进展', key: 'task', render: (_value, item, index) => {
+    { title: '任务', key: 'task', render: (_value, item, index) => {
       const record = item.record, context = contexts[record.taskId]?.context;
+      const result = record.status === 'completed' || record.status === 'abandoned';
+      const preview = result ? record.result?.summary : context?.progress;
+      const previewLabel = preview ? (result ? '结果：' : '进展：') : '';
       const group = taskProjectGroup(item, projectNames);
       const showGroup = grouped && (index === 0 || group !== taskProjectGroup(tasks[index - 1], projectNames));
       return <>
         {showGroup && <div className="task-project-group">{group}</div>}
         <div className="task-compact-copy">
           <Link className="task-row-main" title={`${record.taskId} · ${group}`} to={taskHref(record.taskId)} onClick={event => { event.stopPropagation(); if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); onOpen(record.taskId); }}><strong>{record.title}</strong></Link>
-          <p className="task-row-summary">{summary((record.status === 'completed' || record.status === 'abandoned') ? record.result?.summary || record.intent : context?.progress || record.intent)}</p>
+          <p className="task-row-summary">{previewLabel}{summary(preview || record.intent)}</p>
         </div>
       </>;
     } },

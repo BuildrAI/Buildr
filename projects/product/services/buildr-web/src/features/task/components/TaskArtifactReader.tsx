@@ -14,8 +14,8 @@ export function taskChangeArtifacts(change: ChangePayload): Array<{ label: strin
   ];
 }
 
-export function TaskArtifactReader({ change, artifactPath, onClose, onSelect, onProjectDocument, embedded = false }: {
-  embedded?: boolean; change: ChangePayload;
+export function TaskArtifactReader({ change, artifactPath, onClose, onSelect, onProjectDocument, sourceDescription, embedded = false }: {
+  sourceDescription?: string; embedded?: boolean; change: ChangePayload;
   artifactPath: string;
   onClose(): void;
   onSelect(path: string): void;
@@ -49,7 +49,7 @@ export function TaskArtifactReader({ change, artifactPath, onClose, onSelect, on
     <div id={embedded ? undefined : "task-artifact-reader"} className="task-document-preview">
       <div className="task-document-preview-heading" hidden={embedded}><div><strong>{selected?.label || '关联成果'}</strong><small>{change.name}</small></div></div>
       {message && <Alert type="info" message={message} />}
-      {selected?.artifact.exists && selected.artifact.content?.trim() ? <MarkdownReader path={artifactPath} content={selected.artifact.content} className="task-document-preview-content markdown-body" options={{ headingOffset: 1, allowRelativeLinks: true, allowParentRelativeLinks: true, onRelativeLinkClick: followLink }} /> : <Alert type="info" message="当前文档为空或没有可读取的正文。" />}
+      {selected?.artifact.exists && selected.artifact.content?.trim() ? <MarkdownReader toolbarStart={<span title={`${sourceDescription ? `${sourceDescription} · ` : ''}${artifactPath}`}>{artifactPath.split('/').at(-1)}</span>} path={artifactPath} content={selected.artifact.content} className="task-document-preview-content markdown-body" options={{ headingOffset: 1, allowRelativeLinks: true, allowParentRelativeLinks: true, onRelativeLinkClick: followLink }} /> : <Alert type="info" message="当前文档为空或没有可读取的正文。" />}
     </div>
   </aside>;
 }
