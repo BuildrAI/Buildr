@@ -1,0 +1,15 @@
+.task-type-badge{display:inline-block;margin-left:8px;padding:1px 7px;border-radius:5px;background:var(--soft-primary-soft,#e7efec);color:var(--soft-primary,#397d74);font-size:11px;font-weight:400;white-space:nowrap}
+.task-list-table .task-row-summary{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.composite-task-reader{flex:1;min-height:0;overflow:auto;padding:22px 10px 24px 0}
+.composite-task-counts{display:flex;flex-wrap:wrap;gap:24px;border-bottom:1px solid var(--soft-line,#e3e7eb);padding-bottom:22px;margin-bottom:24px}
+.composite-task-counts button{border:0;background:none;padding:0;color:var(--soft-muted,#7b8490);cursor:pointer;font:inherit;font-size:12px}
+.composite-task-counts b{font-size:21px;margin-right:6px;color:var(--soft-text,#252a31)}
+.composite-task-counts button:hover b{color:var(--soft-primary,#397d74);text-decoration:underline}
+.composite-task-toolbar{display:flex;gap:10px;margin-bottom:18px;flex-wrap:wrap}.composite-task-toolbar>.ant-input{flex:1;min-width:100px}.composite-task-picker{width:170px}.composite-task-toolbar>.ant-select{min-width:110px}
+.composite-end-row{display:flex;align-items:center;gap:14px;padding:15px 0;border-bottom:1px solid var(--soft-line,#e3e7eb)}.composite-end-row>span:first-child{flex:1;min-width:0}.composite-end-row .ant-select{width:150px;flex:none}.composite-end-note{display:block;margin-top:24px}.composite-end-note>span{font-size:12px;color:var(--soft-muted)}.composite-end-note textarea{margin-top:8px}
+@media(max-width:600px){.composite-end-row{flex-wrap:wrap}.composite-end-row>span:first-child{flex-basis:100%}}
+
+.task-row-heading{display:flex;align-items:baseline;min-width:0}.task-row-heading .task-row-main{flex:0 1 auto;min-width:0}.task-row-heading .task-type-badge{flex:none}
+
+.task-goal-preview{width:min(520px,75vw);max-height:min(440px,65vh);overflow:auto;line-height:1.8}.task-goal-preview .markdown-body{font-size:13px}.task-goal-summary{cursor:help}.task-goal-summary:focus-visible{outline:2px solid var(--soft-primary,#397d74);outline-offset:2px}
+.task-list-table .ant-table-tbody>tr.ant-table-row:hover>td,.task-list-table .ant-table-tbody>tr.ant-table-row:focus-within>td{background:var(--soft-primary-soft,#e7efec)}

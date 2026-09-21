@@ -189,3 +189,49 @@ test('旧父计划不再建立当前父身份，终态事实仍按普通任务�
   assert.equal(corrected.record.intent, 'A corrected goal');
   assert.equal(corrected.record.resultHistory[0].intent, before.record.intent);
 });
+
+test('explicit composite end accepts empty note and atomically applies mixed dispositions', (t) => {
+  const f = fixture(t); f.create('parent', { isParent: true });
+  for (const id of ['keep', 'done', 'stop']) f.create(id, { parentTaskId: 'parent' });
+  const view = f.runtime.inspectParentCoordination(f.root, 'parent');
+  const result = f.runtime.endTask(f.root, 'parent', { expectedRecordDigest: view.recordDigest, expectedSnapshot: view.completion.snapshotIdentity, status: 'completed', children: [{ taskId: 'keep', action: 'detach' }, { taskId: 'done', action: 'complete' }, { taskId: 'stop', action: 'abandon' }] });
+  assert.equal(result.record.status, 'completed');
+  assert.equal(f.inspect('keep').record.parentTaskId, null); assert.equal(f.inspect('keep').record.status, 'active');
+  assert.equal(f.inspect('done').record.status, 'completed'); assert.equal(f.inspect('stop').record.status, 'abandoned');
+  assert.equal(result.record.result.summary, '用户确认组合任务已完成。');
+  assert.equal(result.record.result.parentCompletion.acceptance.children.length, 3);
+});
+
+test('composite end refuses stale membership and incomplete selections without any write', (t) => {
+  const f = fixture(t); f.create('parent', { isParent: true }); f.create('first', { parentTaskId: 'parent' });
+  const stale = f.runtime.inspectParentCoordination(f.root, 'parent'); f.create('second', { parentTaskId: 'parent' });
+  const input = { expectedRecordDigest: stale.recordDigest, expectedSnapshot: stale.completion.snapshotIdentity, status: 'abandoned', children: [{ taskId: 'first', action: 'complete' }] };
+  assert.throws(() => f.runtime.endTask(f.root, 'parent', input), { code: 'parent_completion_conflict' });
+  const fresh = f.runtime.inspectParentCoordination(f.root, 'parent');
+  assert.throws(() => f.runtime.endTask(f.root, 'parent', { ...input, expectedSnapshot: fresh.completion.snapshotIdentity }), { code: 'parent_completion_children_mismatch' });
+  assert.equal(f.inspect('parent').record.status, 'active'); assert.equal(f.inspect('first').record.status, 'active');
+});
+
+test('nested composites require independent end and ordinary empty composites remain filterable', (t) => {
+  const f = fixture(t); f.create('parent', { isParent: true }); f.create('nested', { isParent: true, parentTaskId: 'parent' }); f.create('ordinary');
+  const view = f.runtime.inspectParentCoordination(f.root, 'parent');
+  const input = { expectedRecordDigest: view.recordDigest, expectedSnapshot: view.completion.snapshotIdentity, status: 'abandoned', children: [{ taskId: 'nested', action: 'complete' }] };
+  assert.throws(() => f.runtime.endTask(f.root, 'parent', input), { code: 'parent_completion_nested_parent' });
+  f.runtime.endTask(f.root, 'parent', { ...input, children: [{ taskId: 'nested', action: 'detach' }] });
+  assert.equal(f.inspect('nested').record.status, 'active');
+  const composite = f.runtime.queryTasks(f.root, { taskType: 'composite', status: 'all' });
+  assert.deepEqual(composite.tasks.map(item => item.record.taskId).sort(), ['nested', 'parent']);
+  assert.equal(composite.matchingTaskCount, 2);
+  const ordinary = f.runtime.queryTasks(f.root, { taskType: 'ordinary', status: 'all' });
+  assert.deepEqual(ordinary.tasks.map(item => item.record.taskId), ['ordinary']);
+});
+
+test('composite end rolls back child changes if the final parent write fails', (t) => {
+  const f = fixture(t); f.create('parent', { isParent: true }); f.create('child', { parentTaskId: 'parent' });
+  const before = f.inspect('child'); const view = f.runtime.inspectParentCoordination(f.root, 'parent');
+  const store = f.runtime.openWorkspaceStructuredStore(f.root, { writable: true });
+  store.database.exec("CREATE TRIGGER fail_parent_end BEFORE UPDATE ON tasks WHEN NEW.task_id = 'parent' BEGIN SELECT RAISE(ABORT, 'injected parent write failure'); END"); store.database.close();
+  assert.throws(() => f.runtime.endTask(f.root, 'parent', { expectedRecordDigest: view.recordDigest, expectedSnapshot: view.completion.snapshotIdentity, status: 'completed', children: [{ taskId: 'child', action: 'complete' }] }), /injected parent write failure/);
+  assert.equal(f.inspect('child').recordDigest, before.recordDigest);
+  assert.equal(f.inspect('parent').record.status, 'active');
+});

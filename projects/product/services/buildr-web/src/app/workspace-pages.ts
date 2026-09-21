@@ -10,6 +10,8 @@ export type WorkspacePageTab = {
 type PreviewBase = { id: string; path: string; title: string };
 export type ResourcePreview =
   | (PreviewBase & { kind: 'task' })
+  | (PreviewBase & { kind: 'composite-task' })
+  | (PreviewBase & { kind: 'task-document'; taskId: string; projectCode: string; file: string })
   | (PreviewBase & { kind: 'service' | 'repository' | 'skill'; knowledge?: { artifactId?: string; objectId?: string }; edit?: boolean })
   | (PreviewBase & { kind: 'article'; projectCode: string; publicationId: string; view?: 'source'; edit?: boolean });
 export type PreviewState = { items: ResourcePreview[]; active: string | null };
@@ -24,7 +26,12 @@ export function resourcePreview(workspaceId: string, path: string): ResourcePrev
     if (parts.some(part => !part || part === '.' || part === '..' || /[/?#\\\u0000-\u001f]/.test(part))) return null;
     const [area, first, second, action] = parts;
     const search = new URLSearchParams(path.includes('?') ? path.slice(path.indexOf('?') + 1).split('#')[0] : '');
-    if (area === 'tasks' && parts.length === 2) return { kind: 'task', id: first, title: '任务详情', path };
+    if (area === 'tasks' && parts.length === 2) return { kind: search.get('taskType') === 'composite' ? 'composite-task' : 'task', id: first, title: search.get('taskType') === 'composite' ? '组合任务' : '普通任务', path };
+    if (area === 'tasks' && parts.length === 3 && second === 'document') {
+      const projectCode = search.get('project') || '', file = search.get('file') || '';
+      if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(projectCode) || !file.endsWith('.md') || file.split('/').some(segment => !segment || segment === '..' || segment === '.') || /[\\\x00]/.test(file) || file.startsWith('/')) return null;
+      return { kind: 'task-document', id: `${first}:${projectCode}:${file}`, taskId: first, projectCode, file, title: '文档', path };
+    }
     if (area === 'articles' && (parts.length === 2 || parts.length === 3 || parts.length === 4 && action === 'edit')) {
       const projectCode = parts.length === 2 ? 'product' : first;
       const publicationId = parts.length === 2 ? first : second;
@@ -45,7 +52,7 @@ export function resourcePreview(workspaceId: string, path: string): ResourcePrev
 }
 
 export function previewOwnerPath(workspaceId: string, item: ResourcePreview): string {
-  const area = { service: 'services', repository: 'repositories', skill: 'skills', article: 'articles', task: 'tasks' }[item.kind];
+  const area = { service: 'services', repository: 'repositories', skill: 'skills', article: 'articles', task: 'tasks', 'composite-task': 'tasks', 'task-document': 'tasks' }[item.kind];
   return `/workspaces/${workspaceId}/${area}`;
 }
 
@@ -55,7 +62,7 @@ export function previewOwnerSearch(workspaceId: string, item: ResourcePreview, s
   if (item.kind === 'article' && 'articleListSearch' in state) {
     return typeof state.articleListSearch === 'string' && state.articleListSearch.startsWith('?') ? state.articleListSearch : '';
   }
-  if (item.kind !== 'task' || !('from' in state) || typeof state.from !== 'string' || !state.from.startsWith('/') || state.from.includes('\\')) return '';
+  if (!['task', 'composite-task', 'task-document'].includes(item.kind) || !('from' in state) || typeof state.from !== 'string' || !state.from.startsWith('/') || state.from.includes('\\')) return '';
   try {
     const source = new URL(state.from, 'http://buildr.local');
     return source.origin === 'http://buildr.local' && source.pathname === previewOwnerPath(workspaceId, item) ? source.search : '';

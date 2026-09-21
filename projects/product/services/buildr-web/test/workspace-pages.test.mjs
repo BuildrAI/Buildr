@@ -34,7 +34,7 @@ test('服务知识保持同一服务副屏身份，直接地址回到服务目�
 });
 test('任务详情复用资源副屏，任务列表保持主屏，旧详情深链能恢复列表筛选', () => {
  const task=resourcePreview('w','/workspaces/w/tasks/fix-save-conflict');
- assert.deepEqual(task,{kind:'task',id:'fix-save-conflict',title:'任务详情',path:'/workspaces/w/tasks/fix-save-conflict'});
+ assert.deepEqual(task,{kind:'task',id:'fix-save-conflict',title:'普通任务',path:'/workspaces/w/tasks/fix-save-conflict'});
  assert.equal(previewOwnerPath('w',task),'/workspaces/w/tasks');
  assert.equal(tabForPath('w',task.path),null);
  assert.equal(tabForPath('w','/workspaces/w/tasks').key,'dir:tasks');
@@ -87,4 +87,14 @@ test('旧每日演进跳转不会成为工作空间或项目标签的恢复目�
   assert.equal(workspacePageSearch('w',other,search),search);
  }
  assert.equal(workspacePageSearch('w',path,'?document=readme&date=2026-09-19'),'?document=readme&date=2026-09-19');
+});
+
+test('组合任务与普通任务副屏身份独立，文档路径限制在相对范围',()=>{
+ const ordinary=resourcePreview('w','/workspaces/w/tasks/child');
+ const composite=resourcePreview('w','/workspaces/w/tasks/parent?taskType=composite');
+ assert.equal(ordinary.kind,'task'); assert.equal(composite.kind,'composite-task');
+ assert.equal(previewOwnerPath('w',composite),'/workspaces/w/tasks');
+ const doc=resourcePreview('w','/workspaces/w/tasks/parent/document?project=product&file=docs%2Fplan.md');
+ assert.equal(doc.kind,'task-document'); assert.equal(doc.file,'docs/plan.md');
+ for(const file of ['../secret.md','/secret.md','a/../../secret.md','a\\b.md']) assert.equal(resourcePreview('w',`/workspaces/w/tasks/parent/document?project=product&file=${encodeURIComponent(file)}`),null);
 });

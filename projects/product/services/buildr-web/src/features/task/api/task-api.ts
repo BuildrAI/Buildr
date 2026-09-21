@@ -1,6 +1,8 @@
 import type { ApiClient, WorkspaceDocument } from '../../../api/client';
 import { api } from '../../../api';
 import type {
+  TaskEndRequest,
+  TaskEndResponse,
   TaskAbandonRequest,
   TaskAbandonResponse,
   TaskCompleteRequest,
@@ -59,6 +61,9 @@ export function createTaskClient(client: ApiClient) {
         method: 'POST',
         body: JSON.stringify(input),
       }));
+    },
+    end(taskId: string, input: TaskEndRequest): Promise<TaskEndResponse> {
+      return typed(client(`/api/v1/tasks/${encodeURIComponent(taskId)}/end`, { method: 'POST', body: JSON.stringify(input) }));
     },
     abandon(taskId: string, input: TaskAbandonRequest): Promise<TaskAbandonResponse> {
       return typed(client(`/api/v1/tasks/${encodeURIComponent(taskId)}/abandon`, {

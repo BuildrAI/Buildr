@@ -65,7 +65,7 @@ export function useTaskActions({ taskId, data, refresh, refreshCoordination, sho
     setProjectsText(lines(record.scope.projects));
     setServicesText(lines(record.scope.services, 'service'));
     setParentTaskId(record.parentTaskId || '');
-    const options: Array<{ value: string; label: string }> = [{ value: '', label: '无父任务（独立任务）' }];
+    const options: Array<{ value: string; label: string }> = [{ value: '', label: '不关联组合任务' }];
     if (record.parentTaskId && data.taskRelations.parent) {
       const parent = data.taskRelations.parent;
       options.push({ value: parent.taskId, label: `${parent.title} · ${parent.taskId} · ${taskStatusLabel(parent.status)}` });
@@ -112,7 +112,7 @@ export function useTaskActions({ taskId, data, refresh, refreshCoordination, sho
     try {
       const list = await taskApi.list({ status: 'active' });
       const record = current.record;
-      const options: Array<{ value: string; label: string }> = [{ value: '', label: '无父任务（独立任务）' }];
+      const options: Array<{ value: string; label: string }> = [{ value: '', label: '不关联组合任务' }];
       if (record.parentTaskId && current.taskRelations.parent) {
         const parent = current.taskRelations.parent;
         options.push({ value: parent.taskId, label: `${parent.title} · ${parent.taskId} · ${taskStatusLabel(parent.status)}` });

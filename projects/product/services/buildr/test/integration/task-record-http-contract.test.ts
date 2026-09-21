@@ -27,12 +27,13 @@ function assertSchema(operationId: any, kind: any, value: any): any  {
 }
 
 test('Task Record contract catalog、DTO drift 与未迁移诊断保持局部', async () => {
-  assert.equal(TASK_HTTP_OPERATIONS.length, 6);
+  assert.equal(TASK_HTTP_OPERATIONS.length, 7);
   assert.deepEqual(TASK_HTTP_OPERATIONS.map((operation: any) => operation.id), [
     'task-record.list',
     'task-record.detail',
     'task-record.update',
     'task-record.complete',
+    'task-record.end',
     'task-record.abandon',
     'task-record.retrospective-document',
   ]);
@@ -186,5 +187,18 @@ test('六个 Task Record operation 的真实 HTTP 成功与错误响应匹配 Sc
   assertSchema('task-record.complete', 'success', response.body);
   assert.equal(response.body.record.result.parentCompletion.authorization.source, 'test:user-confirmation');
   assert.equal(runtime.inspectTask(root, 'http-child').record.status, 'completed');
+
+  runtime.createTask(root, { taskId: 'http-end', title: '组合结束', intent: 'HTTP end', isParent: true });
+  runtime.createTask(root, { taskId: 'http-end-child', title: '继续推进', intent: '独立', parentTaskId: 'http-end' });
+  const ending: any = (await request(`${endpoint}/http-end/coordination`)).body;
+  const endInput = { expectedRecordDigest: ending.recordDigest, expectedSnapshot: ending.completion.snapshotIdentity, status: 'abandoned', children: [{ taskId: 'http-end-child', action: 'detach' }] };
+  response = await request(`${endpoint}/http-end/end`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(endInput) });
+  assert.equal(response.status, 403);
+  response = await request(`${endpoint}/http-end/end`, { method: 'POST', headers: writeHeaders, body: JSON.stringify(endInput) });
+  assert.equal(response.status, 200, JSON.stringify(response.body));
+  assertSchema('task-record.end', 'success', response.body);
+  assert.equal(response.body.record.status, 'abandoned');
+  assert.equal(runtime.inspectTask(root, 'http-end-child').record.parentTaskId, null);
+  assert.equal(runtime.inspectTask(root, 'http-end-child').record.status, 'active');
 
 });

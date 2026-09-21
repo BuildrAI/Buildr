@@ -16,7 +16,7 @@ export function TaskEditModal(props: {
     <span hidden={props.editState === '可以修改'} id="task-edit-state" className="state">{props.editState}</span>
     <form id="task-edit-form" className="prompt-grid" onSubmit={props.onSubmit}>
       <label>标题<Input id="task-edit-title" required value={props.title} onChange={(event) => props.setTitle(event.target.value)} /></label>
-      <label>所属父任务<Select id="task-edit-parent" style={{ width: '100%' }} value={props.parentTaskId} loading={props.parentOptionsLoading} onDropdownVisibleChange={(open) => { if (open) props.onOpenParents(); }} onChange={(value) => props.setParentTaskId(value ?? '')} options={props.parentOptions} /></label>
+      <label>所属组合<Select id="task-edit-parent" style={{ width: '100%' }} value={props.parentTaskId} loading={props.parentOptionsLoading} onDropdownVisibleChange={(open) => { if (open) props.onOpenParents(); }} onChange={(value) => props.setParentTaskId(value ?? '')} options={props.parentOptions} /></label>
       <label className="full">目标与说明<Input.TextArea id="task-edit-intent" rows={3} required value={props.intent} onChange={(event) => props.setIntent(event.target.value)} /><small className="context-help">支持 Markdown 链接；工作空间内的文档请使用相对路径，例如 projects/product/docs/example.md。</small></label>
       <label>项目范围<Input.TextArea id="task-edit-projects" rows={3} value={props.projects} onChange={(event) => props.setProjects(event.target.value)} /></label>
       <label>服务范围（项目编码/服务编码）<Input.TextArea id="task-edit-services" rows={3} value={props.services} onChange={(event) => props.setServices(event.target.value)} /></label>

@@ -1,9 +1,12 @@
+import { CompositeTaskContent } from '../components/CompositeTaskContent';
+import { CompositeTaskEndDrawer } from '../components/CompositeTaskEndDrawer';
+import { taskDocumentHref } from '../components/TaskLinkedDocument';
 import { useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useLocation, useParams } from 'react-router-dom';
 import { Alert, Button, Dropdown, Spin } from 'antd';
 import { MoreOutlined, UnorderedListOutlined } from '@ant-design/icons';
 import { useAppShell } from '../../../app/AppShellContext';
-import { InsideResourcePreview } from '../../../app/resource-preview';
+import { useResourcePreview, InsideResourcePreview } from '../../../app/resource-preview';
 import { DrawerShell } from '../../../components/DrawerShell';
 import { RefreshButton } from '../../../components/RefreshButton';
 import { workspaceHref } from '../../../lib/labels';
@@ -33,6 +36,9 @@ import '../task-detail.css';
 
 export function TaskDetailPage({ taskId: providedTaskId }: { taskId?: string } = {}) {
   const params = useParams();
+  const previewContext = useResourcePreview();
+  const location = useLocation();
+  const [endOpen, setEndOpen] = useState(false);
   const taskId = providedTaskId || params.taskId || '';
   const insidePreview = useContext(InsideResourcePreview);
   const { workspaceId, setWorkspace, setBreadcrumbParts, openAgentAction, resetTaskList } = useAppShell();
@@ -53,6 +59,7 @@ export function TaskDetailPage({ taskId: providedTaskId }: { taskId?: string } =
   const onWorkspace = useCallback((workspace: WorkspaceResponse) => setWorkspace(workspace), [setWorkspace]);
   const onBreadcrumb = useCallback((workspaceName: string, title: string) => { if (!insidePreview) setBreadcrumbParts([workspaceName, '任务', title]); }, [insidePreview, setBreadcrumbParts]);
   const detail = useTaskDetail({ taskId, lifecycle, onWorkspace, onBreadcrumb });
+  useEffect(() => { if (detail.data) previewContext?.identifyTask(location.pathname, taskId, detail.data.record.isParent === true); }, [detail.data?.record.taskId, detail.data?.record.isParent, previewContext, location.pathname, taskId]);
   const refreshTaskAndList = useCallback(async () => { resetTaskList(); await detail.refresh(); }, [resetTaskList, detail.refresh]);
   const evidence = useTaskEvidence(taskId, lifecycle);
   const artifacts = useTaskArtifacts(taskId, detail.data, lifecycle);
@@ -62,7 +69,11 @@ export function TaskDetailPage({ taskId: providedTaskId }: { taskId?: string } =
   useEffect(() => { setAlert(null); }, [taskId]);
   useEffect(() => { if (artifacts.documentError) setAlert({ message: artifacts.documentError, error: true }); }, [artifacts.documentError]);
   useEffect(() => {
-    if (artifacts.documentReference) reading.openExtra({ kind: 'document', title: artifacts.documentReference.documentPath.split('/').at(-1) || '相关文档', reference: artifacts.documentReference });
+    if (artifacts.documentReference) {
+      const ref = artifacts.documentReference;
+      if (!previewContext?.open(location.pathname, taskDocumentHref(workspaceId, taskId, ref.projectCode, ref.documentPath))) reading.openExtra({ kind: 'document', title: ref.documentPath.split('/').at(-1) || '相关文档', reference: ref });
+      else artifacts.closeDocument();
+    }
   }, [artifacts.documentReference]);
   const changeKeys = detail.data?.record.changes.map(change => `${change.project}/${change.change}`).join('|') || '';
   useEffect(() => { if (selected === 'design' && changeKeys && !artifacts.prototypeData && !artifacts.prototypeError) void artifacts.refreshPrototype(); }, [taskId, selected, changeKeys, artifacts.refreshPrototype]);
@@ -94,10 +105,11 @@ export function TaskDetailPage({ taskId: providedTaskId }: { taskId?: string } =
     <Dropdown menu={{ items: [
       { key: 'continue', label: <span id="task-continue">{terminal ? '基于成果生成新任务指令' : '生成接续指令'}</span> },
       ...(record.status === 'todo' ? [{key:'plan', label:<span id="task-plan-next">{preferences.has('planned-task', taskId) ? '移出接下来' : '加入接下来'}</span>}] : []),
-      ...(!terminal ? [{ key: 'edit', label: <span id="task-edit-action">编辑任务</span> }, {key:'complete',label:<span id="task-complete-action">登记完成</span>}, {type:'divider' as const}, { key: 'abandon', label: <span id="task-abandon-action">放弃任务</span>, danger: true }] : []),
+      ...(!terminal ? [{ key: 'edit', label: <span id="task-edit-action">编辑任务</span> }, {key:'complete',label:<span id="task-complete-action">{record.isParent ? '结束组合任务' : '登记完成'}</span>}, ...(!record.isParent ? [{type:'divider' as const}, { key: 'abandon', label: <span id="task-abandon-action">放弃任务</span>, danger: true }] : [])] : []),
     ], onClick: ({ key }) => {
       if (key === 'continue') continueWork();
       else if (key === 'plan') void (preferences.has('planned-task', taskId) ? preferences.remove('planned-task', taskId) : preferences.set('planned-task', taskId)).catch(cause => setAlert({message:cause instanceof Error ? cause.message : '安排未能保存', error:true}));
+      else if ((key === 'complete' || key === 'abandon') && record.isParent) setEndOpen(true);
       else if (key === 'complete') void actions.completion.open();
       else actions.setActionModal(key as 'edit' | 'abandon');
     } }} trigger={['click']}><Button id="task-more-actions" size="small" type="text" icon={<MoreOutlined />} aria-label="更多任务操作" /></Dropdown>
@@ -108,6 +120,7 @@ export function TaskDetailPage({ taskId: providedTaskId }: { taskId?: string } =
     {alert && <Alert id="task-detail-alert" type={alert.error ? 'error' : 'success'} message={alert.message} closable onClose={() => setAlert(null)} />}
     {data.referenceDiagnostics.length > 0 && <Alert id="task-reference-diagnostics" type="warning" message={`部分引用不可用：${data.referenceDiagnostics.map(item => item.message).join('；')}`} />}
     <TaskSummary task={data} context={workContext.data} error={workContext.error} href={href} onRespond={() => editor.open('respond')} onOpen={(node, content) => { selectNode(node); if (content) reading.choose(node, content); if (content === 'review') reading.choose(`${node}:review`, ''); }} />
+    {record.isParent ? <CompositeTaskContent task={data} coordination={evidence.coordinationData} loading={evidence.coordinationLoading} briefs={artifacts.briefs} refresh={async () => { await refresh(); }} onEnd={() => setEndOpen(true)} href={href} onDocument={(key, path) => void artifacts.openChangeDocument(key, path)} /> : <>
     <TaskWorkPath actions={checklistTrigger} record={record} context={workContext.data?.context} selected={selected} onSelect={selectNode} />
     <div className={`task-detail-layout${checklist.open && checklist.pinned ? ' checklist-pinned' : ''}`}>
       <div className="task-detail-reading">
@@ -116,6 +129,8 @@ export function TaskDetailPage({ taskId: providedTaskId }: { taskId?: string } =
       </div>
     <TaskChecklist open={checklist.open} pinned={checklist.pinned} canPin={checklist.canPin} onTogglePin={checklist.togglePin} onPointerEnter={event => checklist.enter('panel', event.pointerType)} onPointerLeave={event => checklist.exit('panel', event.pointerType)} onFocusCapture={checklist.cancel} onBlurCapture={checklist.leave} onClose={() => { checklist.close(); reading.rootRef.current?.querySelector<HTMLButtonElement>('#task-checklist-toggle')?.focus(); }} briefs={artifacts.briefs} documents={documents} renderContent={readContent} />
     </div>
+    </>}
+    <CompositeTaskEndDrawer taskId={taskId} open={endOpen} onClose={() => setEndOpen(false)} onSaved={async () => { await refresh(); resetTaskList(); }} />
     <DrawerShell open={Boolean(extraContent)} title={extraContent?.kind === 'document' ? '引用文档' : extraContent?.title || '查看内容'} sub={record.title} width={720} rootClassName="task-reading-drawer" onClose={closeReadingDrawer} closeAriaLabel="关闭内容阅读" extra={<RefreshButton id="task-reading-refresh" label="刷新内容" size="small" loading={refreshing} onClick={() => void refresh(false)} />}>
       {extraContent && readContent(extraContent, true)}
     </DrawerShell>

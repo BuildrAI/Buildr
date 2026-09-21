@@ -1,4 +1,5 @@
 import type {
+  TaskEndRequest,
   TaskAbandonRequest,
   TaskAbandonResponse,
   TaskCompleteRequest,
@@ -47,7 +48,7 @@ export type TaskRecordBusinessError = Error & {
 export type TaskPersistence = { root: string; record: TaskRecord; recordDigest: string };
 export type TaskRelation = { taskId: string; title: string; status: TaskStatus };
 export type TaskView = TaskPersistence & { taskRelations: { parent: TaskRelation | null; children: TaskRelation[] } };
-export type TaskQueryFilters = { q?: string; project?: string; service?: TaskServiceReference; status?: string; hasChildren?: string; retrospectiveState?: string; pageSize?: number; cursor?: string };
+export type TaskQueryFilters = { q?: string; project?: string; service?: TaskServiceReference; status?: string; hasChildren?: string; taskType?: string; retrospectiveState?: string; pageSize?: number; cursor?: string };
 
 export type TaskCreateInputDto = {
   taskId: string;
@@ -65,6 +66,7 @@ export type TaskActivateInputDto = { expectedRecordDigest: string };
 export type TaskListInputDto = TaskListRequest;
 export type TaskUpdateInputDto = TaskUpdateRequest;
 export type TaskCompleteInputDto = TaskCompleteRequest;
+export type TaskEndInputDto = TaskEndRequest;
 export type TaskAbandonInputDto = TaskAbandonRequest;
 export type TaskListOutputDto = TaskListResponse;
 export type TaskDetailOutputDto = TaskDetailResponse;

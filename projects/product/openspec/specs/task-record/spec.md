@@ -765,3 +765,22 @@ Task Query Application MUST通过独立只读Task list repository取得分页边
 - **WHEN**调用方提交至少3个Unicode字符的普通关键词
 - **THEN**repository MUST通过FTS5 trigram派生索引筛选title、intent与task_id
 - **AND**Task返回内容 MUST仍从canonical tasks及关系表组装
+
+### Requirement: 组合任务支持显式原子结束
+Task Record MUST提供显式组合结束动作，接收当前记录版本、完整父子观察身份、已完成或放弃、未结束直接子任务处置和可选说明。处置 MUST精确覆盖当前未结束子任务并且不重复；独立推进只解除关系，完成或放弃仅改变明确选择的普通任务。未结束嵌套组合 MUST仅允许独立推进，不递归验收。全部变更 MUST在同一事务内完成，失败不修改任何任务。直接 complete/abandon 入口保持原语义。
+
+#### Scenario: 无备注结束组合
+- **WHEN** 用户确认完成或放弃组合，所有未结束普通子任务选择独立推进、完成或放弃，未填写备注
+- **THEN** 系统 MUST应用明确选择并记录中性动作说明，独立推进任务状态保持不变
+- **AND** 系统 MUST不伪造验证通过或成果交付声明
+
+#### Scenario: 子任务变化导致冲突
+- **WHEN** 观察后新增子任务或相关任务发生变化
+- **THEN** 系统 MUST拒绝旧观察的结束请求并保持所有任务原样
+
+### Requirement: 任务类型过滤保留空组合身份
+任务列表 MUST支持按普通任务或组合任务身份过滤，空组合 MUST仍归入组合任务；既有有无子任务过滤保持兼容。
+
+#### Scenario: 空组合过滤
+- **WHEN** 用户筛选组合任务
+- **THEN** 列表 MUST包含已标记组合身份但当前无子任务的记录

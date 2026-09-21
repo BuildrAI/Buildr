@@ -19,12 +19,14 @@ import { ServiceEditPage } from './features/service/pages/ServiceEditPage';
 import { ServicesPage } from './features/service/pages/ServicesPage';
 import { SettingsPage } from './features/workspace/pages/SettingsPage';
 import { TaskChangeDetailPage } from './features/task/pages/TaskChangeDetailPage';
+import { TaskLinkedDocument } from './features/task/components/TaskLinkedDocument';
 import { TaskDetailPage } from './features/task/pages/TaskDetailPage';
 import { TasksSection } from './features/task/pages/TasksSection';
 import { WorkspacesPage } from './features/workspace/pages/WorkspacesPage';
 
 function renderResource(item: ResourcePreview) {
-  if (item.kind === 'task') return <TaskDetailPage taskId={item.id} />;
+  if (item.kind === 'task-document') return <TaskLinkedDocument item={item} />;
+  if (item.kind === 'task' || item.kind === 'composite-task') return <TaskDetailPage taskId={item.id} />;
   if (item.kind === 'article') return <ArticleDetailPage preview={{ projectCode: item.projectCode, publicationId: item.publicationId }} initialView={item.view} initialEditing={item.edit} />;
   if (item.kind === 'skill') return <SkillsPage previewId={item.id} />;
   return <AssetHome kind={item.kind} previewId={item.id} knowledge={item.knowledge} initialEditing={item.edit} />;

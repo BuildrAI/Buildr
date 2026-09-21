@@ -15,7 +15,7 @@ import { useWorkbenchPreferences } from '../../workbench/hooks/useWorkbenchPrefe
 import { captureTaskListPosition, loadTaskListPosition, taskListScrollHost } from '../taskNavigation';
 
 type TaskStatusFilter = NonNullable<TaskListRequest['status']>;
-type BooleanFilter = NonNullable<TaskListRequest['hasChildren']>;
+type BooleanFilter = NonNullable<TaskListRequest['taskType']>;
 type RetrospectiveFilter = NonNullable<TaskListRequest['retrospectiveState']>;
 
 function projectOptionLabel(code: string, names: Record<string, string>): string {
@@ -32,6 +32,9 @@ export function TasksPage() {
   const { workspaceId, setWorkspace, setBreadcrumbParts, taskListResetToken } = useAppShell();
   const location = useLocation();
   const previews = useResourcePreview();
+  const previewState = previews?.states[location.pathname];
+  const activePreview = previewState?.items.find(item => item.kind === previewState.active);
+  const activeTaskId = activePreview?.kind === 'task-document' ? activePreview.taskId : activePreview && ['task', 'composite-task'].includes(activePreview.kind) ? activePreview.id : undefined;
   const [searchParams, setSearchParams] = useSearchParams();
   const preferences = useWorkbenchPreferences(workspaceId);
   const [preferenceError, setPreferenceError] = useState<string | null>(null);
@@ -53,7 +56,7 @@ export function TasksPage() {
   const status: TaskStatusFilter = ['all', 'open', 'todo', 'active', 'completed', 'abandoned'].includes(rawStatus) ? rawStatus as TaskStatusFilter : 'open';
   const project = searchParams.get('project') || '';
   const service = searchParams.get('service') || '';
-  const hasChildren = (['yes', 'no'].includes(searchParams.get('children') || '') ? searchParams.get('children') : 'all') as BooleanFilter;
+  const hasChildren = (['ordinary', 'composite'].includes(searchParams.get('type') || '') ? searchParams.get('type') : 'all') as BooleanFilter;
   const retrospectiveState = (['missing', 'pending-decision', 'decided'].includes(searchParams.get('retrospective') || '') ? searchParams.get('retrospective') : 'all') as RetrospectiveFilter;
   const grouped = searchParams.get('group') === 'project';
   const [filterOpen, setFilterOpen] = useState(false);
@@ -66,7 +69,7 @@ export function TasksPage() {
   const filters: TaskListRequest = {
     ...(query ? { q: query } : {}),
     ...(project ? { project } : {}), ...(service ? { service } : {}),
-    status, ...(hasChildren !== 'all' ? { hasChildren } : {}),
+    status, ...(hasChildren !== 'all' ? { taskType: hasChildren } : {}),
     ...(retrospectiveState !== 'all' ? { retrospectiveState } : {}),
   };
   const onWorkspace = useCallback((workspace: WorkspaceResponse) => {
@@ -107,7 +110,7 @@ export function TasksPage() {
   };
 
   const applyFilterDraft = () => {
-    updateFilters({ status: draftStatus, project: draftProject, service: draftService, children: draftHasChildren, retrospective: draftRetrospectiveState });
+    updateFilters({ status: draftStatus, project: draftProject, service: draftService, type: draftHasChildren, retrospective: draftRetrospectiveState });
     setFilterOpen(false);
   };
 
@@ -115,8 +118,8 @@ export function TasksPage() {
   const openTask = (taskId: string) => {
     const from = location.pathname + location.search;
     const position = captureTaskListPosition(from, tasks.length);
-    if (previews?.open(location.pathname, href(`/tasks/${encodeURIComponent(taskId)}`))) return;
-    navigate(href(`/tasks/${encodeURIComponent(taskId)}`), { state: { from, taskListPosition: position } });
+    if (previews?.open(location.pathname, href(`/tasks/${encodeURIComponent(taskId)}${tasks.find(item => item.record.taskId === taskId)?.record.isParent ? '?taskType=composite' : ''}`))) return;
+    navigate(href(`/tasks/${encodeURIComponent(taskId)}${tasks.find(item => item.record.taskId === taskId)?.record.isParent ? '?taskType=composite' : ''}`), { state: { from, taskListPosition: position } });
   };
   const togglePin = async (taskId: string) => {
     setPendingPin(taskId); setPreferenceError(null);
@@ -230,7 +233,7 @@ export function TasksPage() {
             ]}
           />
         </Form.Item>
-        <Form.Item label="子任务">
+        <Form.Item label="任务类型">
           <Select
             id="task-filter-children"
             popupMatchSelectWidth
@@ -239,8 +242,8 @@ export function TasksPage() {
             onChange={setDraftHasChildren}
             options={[
               { value: 'all', label: '不限' },
-              { value: 'yes', label: '有直接 Child' },
-              { value: 'no', label: '无直接 Child' },
+              { value: 'composite', label: '组合任务' },
+              { value: 'ordinary', label: '普通任务' },
             ]}
           />
         </Form.Item>
@@ -322,7 +325,7 @@ export function TasksPage() {
       {preferenceError && <Alert type="warning" message={preferenceError} closable onClose={() => setPreferenceError(null)} />}
       <section className="resource-list-section task-workbench-list">
         <div id="task-table-wrap" className={showTable ? undefined : 'hidden'}>
-          <TaskTable tasks={visibleTasks} prefetchTaskId={prefetchTaskId} projectNames={projectNames} contexts={listContexts.contexts} grouped={grouped} taskHref={(id) => href(`/tasks/${encodeURIComponent(id)}`)} onOpen={openTask} isPinned={(id) => preferences.has('pinned-task', id)} onPin={(id) => { void togglePin(id); }} pending={pendingPin} />
+          <TaskTable activeTaskId={activeTaskId} tasks={visibleTasks} prefetchTaskId={prefetchTaskId} projectNames={projectNames} contexts={listContexts.contexts} grouped={grouped} taskHref={(id) => href(`/tasks/${encodeURIComponent(id)}${tasks.find(item => item.record.taskId === id)?.record.isParent ? '?taskType=composite' : ''}`)} onOpen={openTask} isPinned={(id) => preferences.has('pinned-task', id)} onPin={(id) => { void togglePin(id); }} pending={pendingPin} />
           {(loadingMore || hasMore || loadMoreError) && <div id="task-load-more-state" className="task-load-more-state" aria-live="polite">
             {loadingMore ? '正在继续读取…' : null}
             {hasMore && !loadingMore && !loadMoreError ? <Button onClick={loadMore}>查看更多任务</Button> : null}

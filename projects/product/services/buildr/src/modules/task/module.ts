@@ -100,7 +100,7 @@ const TASK_QUERY_METHODS = Object.freeze([
 ]);
 
 const TASK_COMMAND_METHODS = Object.freeze([
-  'createTask', 'updateTask', 'activateTask', 'completeTask',
+  'createTask', 'updateTask', 'activateTask', 'completeTask', 'endTask',
   'abandonTask',
 ]);
 

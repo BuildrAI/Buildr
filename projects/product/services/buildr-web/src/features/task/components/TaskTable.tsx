@@ -1,3 +1,5 @@
+import { taskListScrollHost } from '../taskNavigation';
+import { TaskGoalSummary } from './TaskGoalSummary';
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Button, Table, Tooltip } from 'antd';
@@ -9,16 +11,13 @@ import type { TaskListItem } from '../hooks/useTaskList';
 
 const TableBody = (props: React.HTMLAttributes<HTMLTableSectionElement>) => <tbody id="task-table-body" {...props} />;
 
-function summary(value: string) {
-  return value.replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').replace(/[#*`>]/g, '').replace(/\s+/g, ' ').trim();
-}
-
 export function taskProjectGroup(item: TaskListItem, projectNames: Record<string, string>) {
   const projects = item.record.scope.projects;
   return projects.length > 1 ? '跨项目工作' : projects.length === 1 ? (projectNames[projects[0]] || projects[0]) : '工作空间';
 }
 
-export function TaskTable({ tasks, prefetchTaskId, projectNames, contexts, grouped, taskHref, onOpen, isPinned, onPin, pending }: {
+export function TaskTable({ activeTaskId, tasks, prefetchTaskId, projectNames, contexts, grouped, taskHref, onOpen, isPinned, onPin, pending }: {
+  activeTaskId?: string;
   tasks: TaskListItem[];
   prefetchTaskId?: string;
   projectNames: Record<string, string>;
@@ -38,19 +37,26 @@ export function TaskTable({ tasks, prefetchTaskId, projectNames, contexts, group
     observer.observe(root.current);
     return () => observer.disconnect();
   }, []);
+  useEffect(() => {
+    if (!activeTaskId || !root.current) return;
+    const row = [...root.current.querySelectorAll<HTMLElement>('[data-task-id]')].find(item => item.dataset.taskId === activeTaskId);
+    if (!row) return;
+    const host = taskListScrollHost();
+    const bounds = row.getBoundingClientRect();
+    const frame = host instanceof Window ? { top: 0, bottom: window.innerHeight } : host.getBoundingClientRect();
+    const delta = bounds.top < frame.top ? bounds.top - frame.top : bounds.bottom > frame.bottom ? bounds.bottom - frame.bottom : 0;
+    if (delta) host.scrollBy({ top: delta });
+  }, [activeTaskId, tasks.length]);
   const columns: ColumnsType<TaskListItem> = [
     { title: '任务', key: 'task', render: (_value, item, index) => {
-      const record = item.record, context = contexts[record.taskId]?.context;
-      const result = record.status === 'completed' || record.status === 'abandoned';
-      const preview = result ? record.result?.summary : context?.progress;
-      const previewLabel = preview ? (result ? '结果：' : '进展：') : '';
+      const record = item.record;
       const group = taskProjectGroup(item, projectNames);
       const showGroup = grouped && (index === 0 || group !== taskProjectGroup(tasks[index - 1], projectNames));
       return <>
         {showGroup && <div className="task-project-group">{group}</div>}
         <div className="task-compact-copy">
-          <Link className="task-row-main" title={`${record.taskId} · ${group}`} to={taskHref(record.taskId)} onClick={event => { event.stopPropagation(); if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); onOpen(record.taskId); }}><strong>{record.title}</strong></Link>
-          <p className="task-row-summary">{previewLabel}{summary(preview || record.intent)}</p>
+          <div className="task-row-heading"><Link className="task-row-main" title={`${record.taskId} · ${group}`} to={taskHref(record.taskId)} onClick={event => { event.stopPropagation(); if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); onOpen(record.taskId); }}><strong>{record.title}</strong></Link>{record.isParent && <span className="task-type-badge">组合任务</span>}</div>
+          <TaskGoalSummary goal={record.intent} />
         </div>
       </>;
     } },
@@ -66,5 +72,5 @@ export function TaskTable({ tasks, prefetchTaskId, projectNames, contexts, group
     } }] : []),
     { title: '', key: 'pin', width: 54, align: 'right', render: (_value, item) => <Tooltip title={isPinned(item.record.taskId) ? '取消置顶' : '置顶这项工作'}><Button type="text" size="small" loading={pending === item.record.taskId} aria-label={`${isPinned(item.record.taskId) ? '取消置顶' : '置顶'}：${item.record.title}`} icon={isPinned(item.record.taskId) ? <PushpinFilled /> : <PushpinOutlined />} onClick={event => { event.stopPropagation(); onPin(item.record.taskId); }} /></Tooltip> },
   ];
-  return <div ref={root} className="resource-directory-table task-list-table"><Table className="task-compact-table" rowKey={(item) => item.record.taskId} pagination={false} showHeader tableLayout="fixed" dataSource={tasks} columns={columns} onRow={(item) => ({ onClick: () => onOpen(item.record.taskId), 'data-task-id': item.record.taskId, ...(item.record.taskId === prefetchTaskId ? { 'data-task-prefetch': 'true' } : {}) })} components={{ body: { wrapper: TableBody } }} /></div>;
+  return <div ref={root} className="resource-directory-table task-list-table"><Table className="task-compact-table" rowKey={(item) => item.record.taskId} pagination={false} rowClassName={item => item.record.taskId === activeTaskId ? 'task-row-current' : ''} showHeader tableLayout="fixed" dataSource={tasks} columns={columns} onRow={(item) => ({ onClick: () => onOpen(item.record.taskId), 'data-task-id': item.record.taskId, 'aria-current': item.record.taskId === activeTaskId ? true : undefined, ...(item.record.taskId === prefetchTaskId ? { 'data-task-prefetch': 'true' } : {}) })} components={{ body: { wrapper: TableBody } }} /></div>;
 }

@@ -44,6 +44,17 @@ export function WorkspacePages({ workspaceId, renderResource }: { workspaceId: s
     commitPreview(owner, { items: state.items.some(p => p.kind === item.kind) ? state.items.map(p => p.kind === item.kind ? item : p) : [...state.items, item], active: item.kind });
     return true;
   }, [workspaceId, previews, commitPreview]);
+  const identifyTask = useCallback((owner: string, id: string, composite: boolean) => {
+    const state = previews[owner];
+    if (!state) return;
+    const existing = state.items.find(item => ['task', 'composite-task'].includes(item.kind) && item.id === id);
+    const kind = composite ? 'composite-task' : 'task';
+    if (!existing || existing.kind === kind) return;
+    const path = existing.path.split('?')[0] + (composite ? '?taskType=composite' : '');
+    const next = resourcePreview(workspaceId, path)!;
+    const items = state.items.filter(item => item !== existing && item.kind !== kind).concat(next);
+    commitPreview(owner, { items, active: state.active === existing.kind ? kind : state.active });
+  }, [previews, workspaceId, commitPreview]);
   const activatePreview = (owner: string, kind: string) => { const state = previews[owner]; if (state) commitPreview(owner, { ...state, active: kind }); };
   const clearPreview = (owner: string) => commitPreview(owner, { items: [], active: null });
   const closePreview = (owner: string, kind: string) => {
@@ -140,7 +151,7 @@ export function WorkspacePages({ workspaceId, renderResource }: { workspaceId: s
   const entries = current && !resourcePreview(workspaceId, location.pathname) && !visited.some((p) => p.path === location.pathname)
     ? [...visited, { path: location.pathname, node: outlet, location: locationValue, instance: location.key }] : visited;
   const displayTabs = current && !resourcePreview(workspaceId, location.pathname) && !tabs.some((t) => t.key === current.key) ? [...tabs, current] : tabs;
-  return <ResourcePreviewContext.Provider value={{ render: renderResource, states: previews, open: openPreview, activate: activatePreview, close: closePreview, clear: clearPreview, remove: removePreviewResource }}><WorkspaceTabsContext.Provider value={{ tabs: displayTabs, register, close, reorder, ratio, setRatio, reportPaneWidth }}>
+  return <ResourcePreviewContext.Provider value={{ render: renderResource, states: previews, open: openPreview, identifyTask, activate: activatePreview, close: closePreview, clear: clearPreview, remove: removePreviewResource }}><WorkspaceTabsContext.Provider value={{ tabs: displayTabs, register, close, reorder, ratio, setRatio, reportPaneWidth }}>
     <div className="workspace-pages" hidden={!current}>
       <div className="workspace-page-tabs" style={{ width: `calc(100% - ${paneWidths[location.pathname] || 0}px)` }}><PageTabStrip tabs={displayTabs.filter(tab => tab.kind !== 'dir')} onClose={close} onReorder={reorder} /></div>
       <div className="workspace-page-stack" onClickCapture={captureResourceLink}>

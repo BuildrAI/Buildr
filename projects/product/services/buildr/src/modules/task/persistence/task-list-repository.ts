@@ -15,6 +15,7 @@ export type TaskListQuery = {
   service?: { project: string; service: string };
   status?: string;
   hasChildren?: string;
+  taskType?: string;
   retrospectiveState?: string;
   cursor?: TaskListCursor;
   limit?: number;
@@ -107,6 +108,8 @@ function appendConditions(input: TaskListQuery, includeCursor: boolean, shape: Q
   if (input.status === 'open') conditions.push("tasks.status IN ('active', 'todo')");
   else if (exactStatus(input.status)) { conditions.push('tasks.status = ?'); parameters.push(input.status as string); }
   if (input.hasChildren === 'yes' && !shape.childrenHandled) conditions.push('EXISTS (SELECT 1 FROM tasks child WHERE child.parent_task_id = tasks.task_id)');
+  if (input.taskType === 'composite') conditions.push('tasks.is_parent = 1');
+  if (input.taskType === 'ordinary') conditions.push('tasks.is_parent = 0');
   if (input.hasChildren === 'no') conditions.push('tasks.task_id NOT IN (SELECT parent_task_id FROM tasks INDEXED BY tasks_parent_task_idx WHERE parent_task_id IS NOT NULL)');
   if (input.retrospectiveState === 'missing') conditions.push('tasks.retrospective_state IS NULL');
   else if (input.retrospectiveState && input.retrospectiveState !== 'all') {
@@ -142,7 +145,7 @@ export function buildTaskListPageStatement(input: TaskListQuery): { sql: string;
 }
 
 export function buildTaskListCountStatement(input: TaskListQuery): { sql: string; parameters: SQLInputValue[] } {
-  if (input.hasChildren === 'no' && !input.search && !input.project && !input.service
+  if (!input.taskType && input.hasChildren === 'no' && !input.search && !input.project && !input.service
     && (!input.retrospectiveState || input.retrospectiveState === 'all')) {
     const statusSql = input.status === 'open' ? "status IN ('active', 'todo')" : exactStatus(input.status) ? 'status = ?' : '';
     const totalWhere = statusSql ? `WHERE all_tasks.${statusSql}` : '';

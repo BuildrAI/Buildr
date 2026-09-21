@@ -4,8 +4,8 @@ import { MarkdownHost } from './MarkdownHost';
 import { resolveProjectMarkdownHref } from '../lib/projectDocuments';
 
 export type ResourceDocument = { path: string; exists: boolean; content: string | null; format?: string };
-export function ResourceDocumentPane({ file, load, onOpen }: {
-  file: string; load: (file: string) => Promise<ResourceDocument>; onOpen: (file: string) => void;
+export function ResourceDocumentPane({ file, load, onOpen, showHeader = true }: {
+  showHeader?: boolean; file: string; load: (file: string) => Promise<ResourceDocument>; onOpen: (file: string) => void;
 }) {
   const [document, setDocument] = useState<ResourceDocument | null>(null);
   const [error, setError] = useState('');
@@ -17,7 +17,7 @@ export function ResourceDocumentPane({ file, load, onOpen }: {
     return () => { active = false; };
   }, [file, load, retry]);
   return <article className="resource-reader">
-    <header><p className="resource-eyebrow">文档</p><h2>{file}</h2></header>
+    {showHeader ? <header><p className="resource-eyebrow">文档</p><h2>{file}</h2></header> : <p className="task-document-label">{file.split('/').at(-1)}</p>}
     {error ? <Alert type="error" message={error} action={<Button onClick={() => setRetry(r => r + 1)}>重试</Button>} /> : !document ? <Skeleton active paragraph={{ rows: 6 }} /> : !document.exists || document.content === null ? <p className="artifact-missing">未找到 {file}</p> : document.format === 'text' ? <pre className="resource-source">{document.content}</pre> : <MarkdownHost markdown={document.content} className="markdown-body" options={{ headingOffset: 1, allowRelativeLinks: true, allowParentRelativeLinks: true, onRelativeLinkClick: href => { const next = resolveProjectMarkdownHref(file, href); if (next) onOpen(next); else setError('链接不在当前对象的可读材料范围内。'); } }} />}
   </article>;
 }

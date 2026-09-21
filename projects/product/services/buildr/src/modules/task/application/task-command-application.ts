@@ -20,6 +20,7 @@ import type { TaskServiceRepository } from '../persistence/task-service-reposito
 import type { TaskChangeRepository } from '../persistence/task-change-repository.ts';
 import type { TaskDocumentOwner, TaskRetrospectiveDocument } from '../persistence/task-retrospective-document.ts';
 import type {
+  TaskEndInputDto,
   TaskAbandonInputDto,
   TaskActivateInputDto,
   TaskCompleteInputDto,
@@ -458,8 +459,55 @@ export function registerTaskCommandApplication(runtime: TaskCommandApplicationRu
     const summary = text(input.reason, 'reason');
     return mutate(targetRoot, taskIdValue, 'abandon', { expectedRecordDigest: input.expectedRecordDigest }, (current) => ({ ...current, status: 'abandoned', result: { summary } }));
   }
+  function endTask(targetRoot: string, taskIdValue: string, input: TaskEndInputDto) {
+    assertFields(input, new Set(['expectedRecordDigest', 'expectedSnapshot', 'status', 'summary', 'children']), 'Task end');
+    if (!['completed', 'abandoned'].includes(input.status) || !Array.isArray(input.children) || (input.summary !== undefined && (typeof input.summary !== 'string' || input.summary.length > 20000))) throw taskRecordError('task_record_field_invalid', '组合结束输入无效。', 400);
+    const root = assertCanonicalTaskWorkspace(targetRoot);
+    const effects: TaskEffect[] = [];
+    const written = runtime.runWorkspaceTransaction(root, (context) => {
+      const current = runtime.readTaskInContext(context, root, taskIdValue);
+      assertExpectedDigest(current, input.expectedRecordDigest);
+      if (!['todo', 'active'].includes(current.record.status)) throw taskRecordError('task_record_terminal', '组合任务已经结束。', 409);
+      const parent = runtime.readParentTaskContextIn(context, root, taskIdValue, current.record);
+      if (!parent.isParent) throw taskRecordError('parent_completion_not_parent', '此操作仅适用于组合任务。', 409);
+      if (!input.expectedSnapshot || input.expectedSnapshot !== parent.snapshotIdentity) throw taskRecordError('parent_completion_conflict', '组合任务或子任务已变化，请重新核对。', 409);
+      const open = parent.children.filter(child => ['todo', 'active'].includes(child.status));
+      const selections = new Map<string, string>();
+      for (const child of input.children) {
+        assertFields(child, new Set(['taskId', 'action']), 'Child disposition');
+        if (selections.has(child.taskId) || !['detach', 'complete', 'abandon'].includes(child.action)) throw taskRecordError('parent_completion_children_mismatch', '子任务处置无效或重复。', 400);
+        selections.set(child.taskId, child.action);
+      }
+      if (selections.size !== open.length || open.some(child => !selections.has(child.taskId))) throw taskRecordError('parent_completion_children_mismatch', '请核对所有未结束子任务。', 409);
+      // Validate every selection before writing; nested composites retain independent authorization.
+      for (const child of open) {
+        if (selections.get(child.taskId) !== 'detach' && runtime.readParentTaskContextIn(context, root, child.taskId, child).isParent) throw taskRecordError('parent_completion_nested_parent', '组合子任务需在其自身页面结束，或选择独立推进。', 409);
+      }
+      const timestamp = nowIso();
+      for (const child of open) {
+        const action = selections.get(child.taskId);
+        const next: TaskRecord = action === 'detach' ? { ...child, parentTaskId: null, updatedAt: timestamp }
+          : { ...child, status: action === 'complete' ? 'completed' : 'abandoned', result: { summary: action === 'complete' ? '用户在结束组合任务时确认此任务已完成。' : '用户在结束组合任务时明确放弃此任务。' }, updatedAt: timestamp };
+        tasks.update(context, domainTask(normalizeTaskRecord(next)));
+        effects.push(effect(action === 'detach' ? 'unlinked' : 'updated', child.taskId));
+      }
+      const summary = input.summary?.trim() || (input.status === 'completed' ? '用户确认组合任务已完成。' : '用户明确放弃组合任务。');
+      const after = runtime.readParentTaskContextIn(context, root, taskIdValue, current.record);
+      const parentCompletion: ParentCompletion = {
+        expectedSnapshot: input.expectedSnapshot,
+        acceptance: { summary, children: parent.children.map(child => ({ taskId: child.taskId, summary: selections.get(child.taskId) === 'detach' ? '解除所属关系，保持原状态独立推进。' : after.children.find(item => item.taskId === child.taskId)?.result?.summary || '保留已有任务结果。' })) },
+        authorization: { source: 'buildr-web:explicit-composite-end', statement: `用户明确提交组合任务 ${taskIdValue} 的${input.status === 'completed' ? '完成' : '放弃'}与逐项子任务处置。` }, recordedAt: timestamp,
+      };
+      const next = normalizeTaskRecord({ ...current.record, isParent: true, status: input.status, result: { summary, ...(input.status === 'completed' ? { parentCompletion } : {}) }, updatedAt: timestamp });
+      tasks.update(context, domainTask(next));
+      effects.push(effect('updated', taskIdValue));
+      return runtime.readTaskInContext(context, root, taskIdValue);
+    });
+    return runtime.renderTaskResult(input.status === 'completed' ? 'complete' : 'abandon', input.status, written, effects);
+  }
+
   return Object.assign(runtime, {
     createTaskPersistence, mutateTaskPersistence, writeTaskPersistence,
-    createTask, updateTask, activateTask, completeTask, abandonTask,
+    createTask, updateTask, activateTask, completeTask, abandonTask, endTask,
   });
 }

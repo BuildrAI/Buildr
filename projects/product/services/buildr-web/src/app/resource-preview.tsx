@@ -6,6 +6,7 @@ export const ResourcePreviewContext = createContext<{
   render: (item: ResourcePreview) => ReactNode;
   states: Record<string, PreviewState>;
   open: (owner: string, path: string) => boolean;
+  identifyTask: (owner: string, id: string, composite: boolean) => void;
   activate: (owner: string, kind: string) => void;
   remove: (kind: string, id: string) => void;
   clear: (owner: string) => void;

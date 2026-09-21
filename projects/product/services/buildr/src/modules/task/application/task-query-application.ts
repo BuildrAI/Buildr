@@ -89,7 +89,7 @@ function cursorIdentity(filters: TaskQueryFilters): string {
   return digestRecord({
     q: filters.q ?? '', project: filters.project ?? null,
     service: filters.service ? serviceKey(filters.service) : null,
-    status: filters.status ?? 'all', hasChildren: filters.hasChildren ?? 'all', retrospectiveState: filters.retrospectiveState ?? 'all',
+    ...(filters.taskType ? { taskType: filters.taskType } : {}), status: filters.status ?? 'all', hasChildren: filters.hasChildren ?? 'all', retrospectiveState: filters.retrospectiveState ?? 'all',
     pageSize: filters.pageSize ?? null,
   });
 }
@@ -221,7 +221,7 @@ export function registerTaskQueryApplication(runtime: TaskQueryApplicationRuntim
       const decodedCursor = filters.cursor ? decodeTaskCursor(filters.cursor, cursorIdentity(filters)) : null;
       const tableFilters = {
         search: taskSearch(filters.q), project: filters.project, service: filters.service,
-        status: filters.status, hasChildren: filters.hasChildren, retrospectiveState: filters.retrospectiveState,
+        taskType: filters.taskType, status: filters.status, hasChildren: filters.hasChildren, retrospectiveState: filters.retrospectiveState,
       };
       if (decodedCursor) {
         const statusRanks: Record<string, number[]> = { active: [0], todo: [1], completed: [2], abandoned: [3], open: [0, 1], all: [0, 1, 2, 3] };
@@ -283,7 +283,7 @@ export function registerTaskQueryApplication(runtime: TaskQueryApplicationRuntim
     return runtime.runWorkspaceSqliteRead(root, (context) => parentContext(context, root, taskIdValue));
   }
   function normalizedQueryFilters(input: TaskListInputDto = {}): TaskQueryFilters {
-    assertFields(input, new Set(['q', 'project', 'service', 'status', 'hasChildren', 'retrospectiveState', 'pageSize', 'cursor']), 'Task query');
+    assertFields(input, new Set(['q', 'project', 'service', 'status', 'hasChildren', 'taskType', 'retrospectiveState', 'pageSize', 'cursor']), 'Task query');
     const filters: TaskQueryFilters = {};
     if (input.q !== undefined && String(input.q).trim()) filters.q = String(input.q).trim();
     if (input.project !== undefined && String(input.project).trim()) filters.project = text(input.project, 'project');
@@ -291,6 +291,10 @@ export function registerTaskQueryApplication(runtime: TaskQueryApplicationRuntim
     if (input.status !== undefined) {
       if (typeof input.status !== 'string' || !['open', 'todo', 'active', 'completed', 'abandoned', 'all'].includes(input.status)) throw taskRecordError('task_record_filter_invalid', 'status 只支持 open、todo、active、completed、abandoned 或 all。', 400, { field: 'status', value: input.status });
       filters.status = input.status;
+    }
+    if (input.taskType !== undefined) {
+      if (typeof input.taskType !== 'string' || !['ordinary', 'composite', 'all'].includes(input.taskType)) throw taskRecordError('task_record_filter_invalid', '任务类型无效。', 400);
+      filters.taskType = input.taskType;
     }
     if (input.hasChildren !== undefined) {
       if (typeof input.hasChildren !== 'string' || !['yes', 'no', 'all'].includes(input.hasChildren)) throw taskRecordError('task_record_filter_invalid', 'hasChildren 只支持 yes、no 或 all。', 400, { field: 'hasChildren', value: input.hasChildren });
@@ -401,7 +405,7 @@ export function registerTaskQueryApplication(runtime: TaskQueryApplicationRuntim
       filters: {
         q: filters.q ?? '', project: filters.project ?? null,
         service: filters.service ? serviceKey(filters.service) : null,
-        status: filters.status ?? 'all', hasChildren: filters.hasChildren ?? 'all', retrospectiveState: filters.retrospectiveState ?? 'all',
+        ...(filters.taskType ? { taskType: filters.taskType } : {}), status: filters.status ?? 'all', hasChildren: filters.hasChildren ?? 'all', retrospectiveState: filters.retrospectiveState ?? 'all',
       },
       filterOptions: persistence.filterOptions ? {
         projects: persistence.filterOptions.projects,
