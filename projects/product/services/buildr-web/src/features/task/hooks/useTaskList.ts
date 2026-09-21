@@ -1,4 +1,3 @@
-import { workspaceApi, type WorkspaceResponse } from '../../workspace/api/workspace-api';
 import { type ProjectResponse, projectApi } from '../../project/api/project-api';
 import { serviceApi } from '../../service/api/service-api';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -7,8 +6,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { taskApi } from '../api/task-api';
 import type { TaskListRequest, TaskListResponse } from '../../../../build/generated/task-dto';
 
-export type { WorkspaceResponse } from '../../workspace/api/workspace-api';
-
 export type TaskListItem = TaskListResponse['tasks'][number];
 
 const TASK_PAGE_SIZE = '50';
@@ -16,7 +13,6 @@ const TASK_PAGE_SIZE = '50';
 export function useTaskList(input: {
   workspaceId: string | null;
   filters: TaskListRequest;
-  onWorkspace(payload: WorkspaceResponse): void;
 }) {
   const [tasks, setTasks] = useState<TaskListItem[]>([]);
   const [totalTaskCount, setTotalTaskCount] = useState(0);
@@ -40,9 +36,33 @@ export function useTaskList(input: {
   visibleCount.current = tasks.length;
   const loadMoreController = useRef<AbortController | null>(null);
   const attemptedCursors = useRef(new Set<string>());
-  const workspaceLoaded = useRef(false);
-  const catalogsLoaded = useRef(false);
-  const catalogWorkspace = useRef(input.workspaceId);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
+  const [catalogRevision, setCatalogRevision] = useState(0);
+  const retryCatalogs = useCallback(() => setCatalogRevision(value => value + 1), []);
+  useEffect(() => {
+    const abort = new AbortController();
+    setProjectNames({}); setServiceNames({}); setCatalogError(null);
+    if (!input.workspaceId) return;
+    void (async () => {
+      try {
+        const payload = await projectApi.listProjects({ signal: abort.signal });
+        if (abort.signal.aborted) return;
+        const projects: NonNullable<ProjectResponse['projects']> = payload.projects || [];
+        setProjectNames(Object.fromEntries(projects.map(project => [project.code, project.name || project.code])));
+        const entries = await Promise.allSettled(projects.map(async project => {
+          const services = await serviceApi.services(project.code, { signal: abort.signal });
+          return (services.services || []).map(service => [`${project.code}/${service.code}`, service.name || service.code] as const);
+        }));
+        if (abort.signal.aborted) return;
+        setServiceNames(Object.fromEntries(entries.flatMap(entry => entry.status === 'fulfilled' ? entry.value : [])));
+        const failure = entries.find(entry => entry.status === 'rejected');
+        if (failure?.status === 'rejected') setCatalogError(failure.reason instanceof Error ? failure.reason.message : '部分服务名称暂不可读');
+      } catch (error) {
+        if (!abort.signal.aborted) setCatalogError(error instanceof Error ? error.message : '项目与服务名称暂不可读');
+      }
+    })();
+    return () => abort.abort();
+  }, [input.workspaceId, catalogRevision]);
   const filtersKey = JSON.stringify(input.filters);
   const scopeKey = JSON.stringify([input.workspaceId, filtersKey]);
 
@@ -62,22 +82,12 @@ export function useTaskList(input: {
         setHasMore(false);
         setNextCursor(null);
       }
-      if (catalogWorkspace.current !== input.workspaceId) {
-        catalogWorkspace.current = input.workspaceId;
-        workspaceLoaded.current = false;
-        catalogsLoaded.current = false;
-        setProjectNames({}); setServiceNames({});
-      }
       setLoadingMore(false);
       setLoadMoreError(null);
       setLoading(true);
       setErrorMessage(null);
       try {
-        const [data, workspace, projectPayload] = await Promise.all([
-          taskApi.list({ ...input.filters, pageSize: TASK_PAGE_SIZE }, { signal: abort.signal }),
-          workspaceLoaded.current ? undefined : workspaceApi.read({ signal: abort.signal }),
-          catalogsLoaded.current ? undefined : projectApi.listProjects({ signal: abort.signal }),
-        ]);
+        const data = await taskApi.list({ ...input.filters, pageSize: TASK_PAGE_SIZE }, { signal: abort.signal });
         if (abort.signal.aborted || generation.current !== current) return;
         // Refresh the visible window without sending a larger, unsupported page size.
         let lastPage = data;
@@ -88,20 +98,6 @@ export function useTaskList(input: {
           lastPage = await taskApi.list({ ...input.filters, pageSize: TASK_PAGE_SIZE, cursor: lastPage.nextCursor }, { signal: abort.signal });
           if (abort.signal.aborted || generation.current !== current) return;
           lastPage.tasks.forEach(item => refreshed.set(item.record.taskId, item));
-        }
-        if (workspace) { input.onWorkspace(workspace); workspaceLoaded.current = true; }
-        if (projectPayload) {
-          const projects: NonNullable<ProjectResponse['projects']> = projectPayload.projects || [];
-          setProjectNames(Object.fromEntries(projects.map((project) => [project.code, project.name || project.code])));
-          const entries = await Promise.all(projects.map(async (project) => {
-            try {
-              const payload = await serviceApi.services(project.code, { signal: abort.signal });
-              return (payload.services || []).map((service) => [`${project.code}/${service.code}`, service.name || service.code] as const);
-            } catch { return [] as Array<readonly [string, string]>; }
-          }));
-          if (abort.signal.aborted || generation.current !== current) return;
-          setServiceNames(Object.fromEntries(entries.flat()));
-          catalogsLoaded.current = true;
         }
         loadedScope.current = scopeKey;
         setTasks([...refreshed.values()]);
@@ -124,7 +120,7 @@ export function useTaskList(input: {
     pending.current = { scope: scopeKey, promise };
     void promise.finally(() => { if (pending.current?.promise === promise) pending.current = null; });
     return promise;
-  }, [input.workspaceId, filtersKey, scopeKey, input.onWorkspace]);
+  }, [input.workspaceId, filtersKey, scopeKey]);
 
   const requestMore = useCallback(async (retry = false) => {
     if (!input.workspaceId || !hasMore || !nextCursor || loading || loadingMore) return;
@@ -176,6 +172,6 @@ export function useTaskList(input: {
 
   return {
     tasks, totalTaskCount, matchingTaskCount, filterProjects, filterServices, projectNames, serviceNames,
-    loading, loadingMore, errorMessage, loadMoreError, hasMore, loadMore, retryLoadMore, reload: load, revision,
+    catalogError, retryCatalogs, loading, loadingMore, errorMessage, loadMoreError, hasMore, loadMore, retryLoadMore, reload: load, revision,
   };
 }

@@ -3,7 +3,7 @@ import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { Alert, Button, Empty, Form, Input, Select, Typography } from 'antd';
 import { RefreshButton } from '../../../components/RefreshButton';
 import type { TaskListRequest } from '../../../../build/generated/task-dto';
-import { useTaskList, type WorkspaceResponse } from '../hooks/useTaskList';
+import { useTaskList } from '../hooks/useTaskList';
 import { useAppShell } from '../../../app/AppShellContext';
 import { useResourcePreview } from '../../../app/resource-preview';
 import { workspaceHref } from '../../../lib/labels';
@@ -29,7 +29,7 @@ function serviceOptionLabel(key: string, serviceNames: Record<string, string>): 
 }
 
 export function TasksPage() {
-  const { workspaceId, setWorkspace, setBreadcrumbParts, taskListResetToken } = useAppShell();
+  const { workspaceId, workspace, setBreadcrumbParts, taskListResetToken } = useAppShell();
   const location = useLocation();
   const previews = useResourcePreview();
   const previewState = previews?.states[location.pathname];
@@ -72,11 +72,7 @@ export function TasksPage() {
     status, ...(hasChildren !== 'all' ? { taskType: hasChildren } : {}),
     ...(retrospectiveState !== 'all' ? { retrospectiveState } : {}),
   };
-  const onWorkspace = useCallback((workspace: WorkspaceResponse) => {
-    setWorkspace(workspace);
-    setBreadcrumbParts([workspace.workspace.name, '任务']);
-  }, [setWorkspace, setBreadcrumbParts]);
-  const { tasks, totalTaskCount, matchingTaskCount, filterProjects, filterServices, projectNames, serviceNames, loading, loadingMore, errorMessage, loadMoreError, hasMore, loadMore, retryLoadMore, reload, revision } = useTaskList({ workspaceId, filters, onWorkspace });
+  const { tasks, totalTaskCount, matchingTaskCount, filterProjects, filterServices, projectNames, serviceNames, catalogError, retryCatalogs, loading, loadingMore, errorMessage, loadMoreError, hasMore, loadMore, retryLoadMore, reload, revision } = useTaskList({ workspaceId, filters });
   const observedResetToken = useRef(taskListResetToken);
   useEffect(() => {
     if (observedResetToken.current === taskListResetToken) return;
@@ -173,8 +169,8 @@ export function TasksPage() {
   }, [prefetchTaskId, loadingMore, loadMoreError, loadMore]);
 
   useEffect(() => {
-    setBreadcrumbParts([(document.getElementById('shell-workspace-name')?.textContent || '工作空间'), '任务']);
-  }, [setBreadcrumbParts]);
+    setBreadcrumbParts([workspace?.name || '工作空间', '任务']);
+  }, [workspace?.name, setBreadcrumbParts]);
 
   const filterPopup = (
     <div id="task-filter-popover" className="task-filter-popover">
@@ -329,6 +325,7 @@ export function TasksPage() {
         </div>
         <span id="task-search-hint" className={`task-search-hint${queryMessage ? ' visible' : ''}`} role="status">{queryMessage}</span>
       </section>
+      {catalogError && <Alert type="warning" showIcon message="部分项目或服务名称暂不可读，仍可浏览任务" description={catalogError} action={<Button onClick={retryCatalogs}>重试名称读取</Button>} />}
       {errorMessage && <Alert type="error" showIcon message="任务列表刷新失败" description={errorMessage} action={<Button onClick={() => void reload()}>重试</Button>} />}
       {listContexts.error && <Alert type="warning" message="最近进展暂时不可读取，任务目标和已有结果仍可查看。" />}
       {preferenceError && <Alert type="warning" message={preferenceError} closable onClose={() => setPreferenceError(null)} />}
