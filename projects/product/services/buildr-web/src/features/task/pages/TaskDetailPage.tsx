@@ -41,7 +41,7 @@ export function TaskDetailPage({ taskId: providedTaskId }: { taskId?: string } =
   const [endOpen, setEndOpen] = useState(false);
   const taskId = providedTaskId || params.taskId || '';
   const insidePreview = useContext(InsideResourcePreview);
-  const { workspaceId, setWorkspace, setBreadcrumbParts, openAgentAction, resetTaskList } = useAppShell();
+  const { workspaceId, workspace, setWorkspace, setBreadcrumbParts, openAgentAction, resetTaskList } = useAppShell();
   const workContext = useTaskWorkContext(taskId);
   const preferences = useWorkbenchPreferences(workspaceId);
   const refreshContextAndList = useCallback(() => { resetTaskList(); return workContext.refresh(); }, [resetTaskList, workContext.refresh]);
@@ -58,10 +58,14 @@ export function TaskDetailPage({ taskId: providedTaskId }: { taskId?: string } =
   const href = (path: string) => workspaceHref(workspaceId, path);
   const onWorkspace = useCallback((workspace: WorkspaceResponse) => setWorkspace(workspace), [setWorkspace]);
   const onBreadcrumb = useCallback((workspaceName: string, title: string) => { if (!insidePreview) setBreadcrumbParts([workspaceName, '任务', title]); }, [insidePreview, setBreadcrumbParts]);
-  const detail = useTaskDetail({ taskId, lifecycle, onWorkspace, onBreadcrumb });
+  const detail = useTaskDetail({ taskId, lifecycle, onWorkspace, onBreadcrumb, workspaceName: workspace?.name });
   useEffect(() => { if (detail.data) previewContext?.identifyTask(location.pathname, taskId, detail.data.record.isParent === true); }, [detail.data?.record.taskId, detail.data?.record.isParent, previewContext, location.pathname, taskId]);
   const refreshTaskAndList = useCallback(async () => { resetTaskList(); await detail.refresh(); }, [resetTaskList, detail.refresh]);
-  const evidence = useTaskEvidence(taskId, lifecycle);
+  const evidence = useTaskEvidence(taskId, lifecycle, {
+    reviews: detail.data?.record.taskId === taskId && !detail.data.record.isParent && (selected === 'design' || selected === 'implementation'),
+    verification: detail.data?.record.taskId === taskId && !detail.data.record.isParent && selected === 'implementation',
+    coordination: detail.data?.record.taskId === taskId && (Boolean(detail.data.record.isParent) || extraContent?.kind === 'coordination' || (selected === 'closeout' && reading.choices.closeout === 'coordination')),
+  });
   const artifacts = useTaskArtifacts(taskId, detail.data, lifecycle);
   const preserveReading = useCallback(() => {}, []);
   const visitError = useTaskVisit(workspaceId, detail.data?.record);
@@ -80,7 +84,7 @@ export function TaskDetailPage({ taskId: providedTaskId }: { taskId?: string } =
   const refresh = useCallback(async (includePrototype = selected === 'design') => {
     setRefreshing(true);
     try {
-      const results = await Promise.allSettled([detail.refresh(), workContext.refresh(), evidence.refreshReview(), evidence.refreshVerification(), evidence.refreshCoordination(), ...(includePrototype ? [artifacts.refreshPrototype()] : [])]);
+      const results = await Promise.allSettled([detail.refresh(), workContext.refresh(), evidence.refreshLoaded(), ...(includePrototype ? [artifacts.refreshPrototype()] : [])]);
       const taskRead = results[0];
       if (currentTask.current === taskId && taskRead.status === 'rejected' && !isTaskReadCancelled(taskRead.reason)) setAlert({ message: '任务信息刷新失败，当前仍显示上次读取的内容。请重试。', error: true });
     } finally {
@@ -89,7 +93,7 @@ export function TaskDetailPage({ taskId: providedTaskId }: { taskId?: string } =
         setReaderRefreshToken(value => value + 1);
       }
     }
-  }, [taskId, selected, detail.refresh, workContext.refresh, evidence.refreshReview, evidence.refreshVerification, evidence.refreshCoordination, artifacts.refreshPrototype]);
+  }, [taskId, selected, detail.refresh, workContext.refresh, evidence.refreshLoaded, artifacts.refreshPrototype]);
   const closeExtraContent = () => { reading.closeExtra(); artifacts.closeDocument(); };
   const closeReadingDrawer = () => { reading.clearExtra(); artifacts.closeDocument(); };
   if (detail.error) return <Alert type="warning" message="任务不可用" description={detail.error} />;

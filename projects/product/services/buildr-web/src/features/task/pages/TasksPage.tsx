@@ -90,7 +90,7 @@ export function TasksPage() {
     ? filterServices.filter((item) => item.startsWith(`${draftProject}/`))
     : filterServices;
 
-  const filtersActive = status !== 'open' || Boolean(project) || Boolean(service)
+  const filtersActive = Boolean(query) || status !== 'open' || Boolean(project) || Boolean(service)
     || hasChildren !== 'all' || retrospectiveState !== 'all';
 
   const syncFilterDraft = () => {
@@ -107,6 +107,14 @@ export function TasksPage() {
     setDraftService('');
     setDraftHasChildren('all');
     setDraftRetrospectiveState('all');
+  };
+
+  const resetFilters = () => {
+    setQ('');
+    setQueryMessage('');
+    resetFilterDraft();
+    updateFilters({ q: '', status: 'open', project: '', service: '', type: '', retrospective: '', children: '' });
+    setFilterOpen(false);
   };
 
   const applyFilterDraft = () => {
@@ -295,6 +303,7 @@ export function TasksPage() {
           </span>
           <div className="task-list-tools">
             <RefreshButton id="task-list-refresh" label="刷新任务列表" loading={loading} onClick={() => void reload()} />
+            {filtersActive && <Button id="task-filter-reset" type="text" onClick={resetFilters}>重置筛选</Button>}
             <TaskFilters open={filterOpen} active={filtersActive} content={filterPopup} onOpenChange={(open) => {
                 if (open) syncFilterDraft();
                 setFilterOpen(open);

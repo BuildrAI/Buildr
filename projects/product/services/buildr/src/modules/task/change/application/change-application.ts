@@ -23,7 +23,7 @@ type ChangeResolution = {
   diagnostic: { code: string; message: string } | null;
 };
 export type ChangeRuntime = {
-  readTask(root: string, taskId: string): unknown;
+  readTask(root: string, taskId: string): { record: { changes: ChangeReference[] } };
   inspectTask(root: string, taskId: string): { record: { changes: ChangeReference[]; scope?: { projects: string[]; services: Array<{ project: string; service: string }> } } };
   [key: string]: unknown;
 };
@@ -145,7 +145,7 @@ export function registerChangeApplication(runtime: ChangeRuntime, options: Chang
   }
 
   function taskScopedChangeDetail(targetRoot: string, taskId: string, projectCode: string, changeCode: string): { resolution: ChangeResolution } {
-    const task = runtime.inspectTask(targetRoot, taskId);
+    const task = runtime.readTask(targetRoot, taskId);
     if (!task.record.changes.some(reference => reference.project === projectCode && reference.change === changeCode)) throw changeError('task_change_not_associated', '这个变更未关联当前任务。', 404);
     const resolution = resolveTaskScopedChange(targetRoot, taskId, { project: projectCode, change: changeCode }, { includeContent: true, taskRecordObserved: true });
     if (resolution.availability !== 'available') throw changeError('change_not_found', resolution.diagnostic?.message || 'Change 不存在。', 404, resolution.reference);

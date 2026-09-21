@@ -194,3 +194,22 @@ test('偏好标签批量读取，重复任务身份只查一次且名称不使�
   assert.equal(batchReads, 2); assert.equal(projectReads, 2);
   assert.equal(second.items.filter(item => item.key === 'label-task' && item.label === '已更新名称').length, 2);
 });
+
+
+test('批量工作摘要保留顺序、空值、去重、任务存在性和损坏诊断', (t) => {
+  const { root } = taskRecordFixture(t, 'work-context-batch');
+  const runtime = createRuntime();
+  record(runtime, root, 'batch-first'); record(runtime, root, 'batch-empty');
+  const saved = runtime.recordTaskWorkContext(root, 'batch-first', { expectedContextDigest: 'absent', progress: '已核对', nextStep: '继续验证' });
+  const bulk = runtime.inspectTaskWorkContexts(root, ['batch-empty', 'batch-first', 'batch-empty']);
+  conforms('TaskWorkContextsResponse', bulk);
+  assert.deepEqual(bulk.items.map((item: any) => item.taskId), ['batch-empty', 'batch-first']);
+  assert.equal(bulk.items[0].context, null);
+  assert.deepEqual(bulk.items[1], saved);
+  assert.deepEqual(runtime.inspectTaskWorkContexts(root, []).items, []);
+  assert.throws(() => runtime.inspectTaskWorkContexts(root, ['batch-first', 'missing-task']), (error: any) => error.code === 'task_record_not_found');
+  const db = new DatabaseSync(path.join(root, '.buildr/local/workspace.sqlite'));
+  try { db.prepare('UPDATE task_work_context_current SET context_json = ? WHERE task_id = ?').run('{}', 'batch-first'); }
+  finally { db.close(); }
+  assert.throws(() => runtime.inspectTaskWorkContexts(root, ['batch-first']), (error: any) => error.code === 'task_work_context_invalid');
+});

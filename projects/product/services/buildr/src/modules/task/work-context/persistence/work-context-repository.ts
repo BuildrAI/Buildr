@@ -25,13 +25,14 @@ function decode(taskId: string, serialized: string): TaskWorkContextResponse {
   } catch { throw error('task_work_context_invalid', '任务工作摘要无法读取，请保留数据库现场。', 409, { taskId }); }
 }
 export function createWorkContextRepository(runtime: WorkContextStoreRuntime) {
+  function readIn(context: SqliteReadContext, taskId: string): TaskWorkContextResponse {
+    const db = sqliteContextDatabaseOrNull(context);
+    if (!available(db)) return empty(taskId);
+    const row = db.prepare('SELECT context_json FROM task_work_context_current WHERE task_id = ?').get(taskId);
+    return row ? decode(taskId, String(row.context_json)) : empty(taskId);
+  }
   function read(root: string, taskId: string): TaskWorkContextResponse {
-    return runtime.runWorkspaceSqliteRead(root, (transaction) => {
-      const db = sqliteContextDatabaseOrNull(transaction);
-      if (!available(db)) return empty(taskId);
-      const row = db.prepare('SELECT context_json FROM task_work_context_current WHERE task_id = ?').get(taskId);
-      return row ? decode(taskId, String(row.context_json)) : empty(taskId);
-    });
+    return runtime.runWorkspaceSqliteRead(root, context => readIn(context, taskId));
   }
   function mutate(root: string, taskId: string, expected: string, transform: (current: TaskWorkContext | null) => TaskWorkContext): TaskWorkContextResponse {
     return runtime.runWorkspaceTransaction(root, (transaction) => {
@@ -56,5 +57,5 @@ export function createWorkContextRepository(runtime: WorkContextStoreRuntime) {
       return { total: Number(db.prepare(`SELECT COUNT(*) AS n FROM task_work_context_current c ${where}`).get(...parameters)?.n || 0), taskIds: db.prepare(`SELECT task_id FROM task_work_context_current c ${where} ORDER BY updated_at DESC, task_id LIMIT ?`).all(...parameters, limit).map((row) => String(row.task_id)) };
     });
   }
-  return Object.freeze({ read, mutate, pending });
+  return Object.freeze({ read, readIn, mutate, pending });
 }

@@ -173,15 +173,6 @@ export function useTaskList(input: {
     };
   }, [load]);
 
-  useEffect(() => {
-    const onVisible = () => { if (document.visibilityState === 'visible') void load(); };
-    window.addEventListener('focus', onVisible);
-    document.addEventListener('visibilitychange', onVisible);
-    return () => {
-      window.removeEventListener('focus', onVisible);
-      document.removeEventListener('visibilitychange', onVisible);
-    };
-  }, [load]);
 
   return {
     tasks, totalTaskCount, matchingTaskCount, filterProjects, filterServices, projectNames, serviceNames,

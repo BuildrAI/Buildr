@@ -62,12 +62,8 @@ export function WorkbenchPreferencesProvider({ workspaceId, children }: { worksp
   useEffect(() => {
     setPreferences(null); setError('');
     void refresh();
-    const onFocus = () => { if (document.visibilityState === 'visible') void refresh(); };
-    window.addEventListener('focus', onFocus);
-    document.addEventListener('visibilitychange', onFocus);
     return () => {
       ++generation.current; pending.current = null; readController.current?.abort();
-      window.removeEventListener('focus', onFocus); document.removeEventListener('visibilitychange', onFocus);
     };
   }, [refresh]);
   const mutate = useCallback((operation: () => Promise<WorkbenchPreferencesResponse>, notify: boolean) => writes.run(async () => {

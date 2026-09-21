@@ -6,7 +6,8 @@ import type { CoordinationResponse, ReviewsResponse, VerificationResponse } from
 import type { ParentCoordinationResult } from '../components/parentCoordination';
 import { isTaskReadCancelled, type TaskReadLifecycle } from './useTaskRequestLifecycle';
 
-export function useTaskEvidence(taskId?: string, lifecycle?: TaskReadLifecycle) {
+export function useTaskEvidence(taskId: string, lifecycle: TaskReadLifecycle, needed: { reviews: boolean; verification: boolean; coordination: boolean }) {
+  const requested = useRef({ reviews: false, verification: false, coordination: false });
   const [coordinationData, setCoordinationData] = useState<ParentCoordinationResult | null>(null);
   const [coordinationLoading, setCoordinationLoading] = useState(false);
   const [reviewData, setReviewData] = useState<ReviewsResponse | null>(null);
@@ -66,13 +67,26 @@ export function useTaskEvidence(taskId?: string, lifecycle?: TaskReadLifecycle) 
 
   useEffect(() => {
     resetEvidence();
-    if (taskId) { void refreshCoordination(); void refreshReview(); void refreshVerification(); }
-  }, [taskId, resetEvidence, refreshCoordination, refreshReview, refreshVerification]);
+    requested.current = { reviews: false, verification: false, coordination: false };
+    return resetEvidence;
+  }, [taskId, resetEvidence]);
+
+  useEffect(() => {
+    if (needed.coordination && !requested.current.coordination) { requested.current.coordination = true; void refreshCoordination(); }
+    if (needed.reviews && !requested.current.reviews) { requested.current.reviews = true; void refreshReview(); }
+    if (needed.verification && !requested.current.verification) { requested.current.verification = true; void refreshVerification(); }
+  }, [taskId, needed.coordination, needed.reviews, needed.verification, refreshCoordination, refreshReview, refreshVerification]);
+
+  const refreshLoaded = useCallback(() => Promise.all([
+    ...(requested.current.coordination ? [refreshCoordination()] : []),
+    ...(requested.current.reviews ? [refreshReview()] : []),
+    ...(requested.current.verification ? [refreshVerification()] : []),
+  ]), [refreshCoordination, refreshReview, refreshVerification]);
 
   return {
     coordinationData, coordinationLoading, reviewData, reviewLoading, reviewError,
     verificationData, verificationLoading, verificationError,
     refreshCoordination, refreshReview, refreshVerification,
-    resetEvidence,
+    resetEvidence, refreshLoaded,
   };
 }

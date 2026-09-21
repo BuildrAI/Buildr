@@ -25,7 +25,7 @@ type ChangeRuntime = {
   listProjects(): { projects: Project[] };
   projectDetail(root: string, code: string): { project: Project };
   resolveSourceRoot(root: string, source: Project['source']): string;
-  readTask(root: string, taskId: string): { record: { taskId: string } };
+  readTask(root: string, taskId: string): { record: { taskId: string; changes: Array<{ project: string; change: string }> } };
   inspectTask(root: string, taskId: string): { record: { taskId: string; changes: Array<{ project: string; change: string }> } };
   inspectGitWorktrees(input: { workspaceRoot: string; taskId: string }): {
     status: string;
@@ -34,6 +34,7 @@ type ChangeRuntime = {
   listChanges(root: string): { changes: ChangeSummary[] };
   changeDetail(root: string, project: string, ref: string): { change: ChangeSummary };
   resolveTaskScopedChange(root: string, taskId: string, reference: { project: string; change: string }, options?: { includeContent?: boolean }): ScopedResolution;
+  taskScopedChangeDetail(root: string, taskId: string, project: string, change: string): { resolution: ScopedResolution };
   taskUiPrototypes(root: string, taskId: string): { taskId: string; prototypes: Prototype[]; diagnostics: Array<{ code: string }> };
   taskUiPrototype(root: string, taskId: string, id: string): { html: string };
   taskProjectDocument(root: string, taskId: string, project: string, documentPath: string): { content: string | null; exists: boolean; provenance: string };
@@ -58,12 +59,13 @@ function fixture(): { root: string; runtime: ChangeRuntime; projectRoot: string;
       return { project };
     },
     resolveSourceRoot: (workspaceRoot, source) => path.resolve(workspaceRoot, source.path),
-    readTask: (_target, taskId) => ({ record: { taskId } }),
+    readTask: (_target, taskId) => ({ record: { taskId, changes: [] } }),
     inspectTask: (_target, taskId) => ({ record: { taskId, changes: [] } }),
     inspectGitWorktrees: () => ({ status: 'blocked', repositories: [] }),
     listChanges: unavailable,
     changeDetail: unavailable,
     resolveTaskScopedChange: unavailable,
+    taskScopedChangeDetail: unavailable,
     taskUiPrototypes: unavailable,
     taskUiPrototype: unavailable,
     taskProjectDocument: unavailable,
@@ -228,4 +230,22 @@ test('任务文档读取工作树未提交内容，相对文件不回退且拒�
   assert.throws(() => runtime.taskProjectDocument(root, 'reader-task', 'product', 'docs/task.md'), error => coded(error, 'task_worktree_unavailable'));
   runtime.inspectGitWorktrees = () => ({ status: 'blocked', repositories: [] });
   assert.equal(runtime.taskProjectDocument(root, 'reader-task', 'product', 'docs/task.md').content, 'main copy');
+});
+
+
+test('读取任务材料只解析关联目标并保留关联授权检查', (t) => {
+  const { root, runtime, projectRoot } = fixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  writeChange(projectRoot, 'read-target', { 'proposal.md': '# Current content\n' });
+  runtime.readTask = (_root, taskId) => ({ record: { taskId, changes: [{ project: 'product', change: 'read-target' }] } });
+  runtime.inspectTask = () => { throw new Error('不应为材料授权解析完整任务及其他材料'); };
+  let resolutions = 0;
+  runtime.inspectGitWorktrees = () => { resolutions += 1; return { status: 'ready', repositories: [] }; };
+  const result = runtime.taskScopedChangeDetail(root, 'reader-task', 'product', 'read-target');
+  assert.equal(result.resolution.workingCopy?.change.artifacts.proposal.content, '# Current content\n');
+  assert.equal(resolutions, 1);
+  assert.throws(() => runtime.taskScopedChangeDetail(root, 'reader-task', 'product', 'unrelated'), error => coded(error, 'task_change_not_associated'));
+  assert.equal(resolutions, 1);
+  runtime.readTask = () => { throw Object.assign(new Error('不存在'), { code: 'task_record_not_found' }); };
+  assert.throws(() => runtime.taskScopedChangeDetail(root, 'missing', 'product', 'read-target'), error => coded(error, 'task_record_not_found'));
 });
