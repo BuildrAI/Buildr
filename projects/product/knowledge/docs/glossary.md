@@ -702,10 +702,17 @@
 
 ## Skill 投射所有权回执（Skill Projection Ownership Receipt）
 
-- 定义：Buildr 为某个 destination、Agent adapter 与 runtime Skill path 保存的本机控制状态，用文件 inventory、identity 和 digest 证明 Buildr 对该次 Skill 投射的更新权与清理权。
-- 适用范围：`.buildr/agent-runtime/<workspace|user>/<adapter>/skill-projection-ownership-receipts/`，以及 render、inventory、Doctor、Component/builtin lifecycle 的所有权判断。
-- 避免混用：不是 Agent 消费的 Skill、源资产、执行证据或可提交到 Git 的 portable receipt；旧 `<runtime-root>/buildr/skill-projection-receipts/` 只是受控迁移输入，不是第二 authority。
+- 定义：Buildr 为某个 destination、Agent adapter、runtime Skill path 与目标根（Runtime Root）保存的本机控制状态，用文件 inventory、identity 和 digest 证明 Buildr 对该次 Skill 投射的更新权与清理权。
+- 适用范围：`.buildr/agent-runtime/<workspace|user>/<adapter>/skill-projection-ownership-receipts/`，以及 render、inventory、Doctor、Component/builtin lifecycle 的所有权判断。destination 声明多个目标根时每个根各有一条回执：主根沿用 `<skillId>.json`，其他根使用 `<skillId>--root-<slug>.json` 并记录 `runtimeRoot`。
+- 避免混用：不是 Agent 消费的 Skill、源资产、执行证据或可提交到 Git 的 portable receipt；旧 `<runtime-root>/buildr/skill-projection-receipts/` 只是受控迁移输入，不是第二 authority。单根回执只证明该根的归属与漂移，不代替其他根的判断。
 - 来源：[Workspace-first runtime projection specification](../../openspec/specs/workspace-first-runtime-projection/spec.md)
+
+## 安装形态（Runtime Installation Surface）
+
+- 定义：同一个智能体运行时（Agent Runtime）在产品本机被安装与使用的形态，由 adapter traits 的 `surfaces` 声明，封闭取值 `ide`、`cli`、`desktop`、`cloud`；每种形态各自可被自动探测或明确标注为 `manual`。
+- 适用范围：runtime adapter descriptor、`runtime check` 的 installation/version 探测与逐形态报告、按形态给出的 activation 与确认 guidance。
+- 避免混用：不是 Buildr 自身对 command 的“CLI 产品表面（CLI Product Surface）”分类；也不是 Skills 投射的目标根（Runtime Root）——目标根说明技能目录写在哪里，安装形态说明宿主以哪种方式被安装使用，一种安装形态可以消费多个目标根。探测不到某种形态只说明该形态未被自动证明，不否定已核对的投射事实。
+- 来源：canonical `openspec/specs/workspace-first-runtime-projection/spec.md` 的 surface trait 与探测要求（本 Change convergence 时更新）。
 
 ## 收尾与交付（Closeout and Delivery）
 

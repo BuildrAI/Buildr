@@ -18,7 +18,7 @@ export const ADAPTER_TRAIT_CATALOG = Object.freeze({
   surfaces: Object.freeze(['ide', 'cli', 'desktop', 'cloud']),
   activation: Object.freeze(['immediate', 'path-read', 'session-start', 'explicit-reload']),
   checker: Object.freeze(['projection']),
-  environmentProbe: Object.freeze(['none', 'command', 'manual']),
+  environmentProbe: Object.freeze(['none', 'command', 'manual', 'any']),
 });
 
 export const BUILTIN_ADAPTER_IMPLEMENTATIONS = Object.freeze({
@@ -103,9 +103,15 @@ function validateSkillPublicationExtensions(skills: any, label: any, errors: any
   }
 }
 
+function skillWorkspaceRoots(root: any, mirrorRoots: any): any  {
+  return [root, ...(mirrorRoots || [])];
+}
+
 function normalizeSkillDestinations(skills: any): any  {
-  const workspace = skills.destinations?.workspace || { supported: true, root: skills.root };
+  const workspaceBase = skills.destinations?.workspace || { supported: true, root: skills.root };
   const user = skills.destinations?.user || { supported: true, root: skills.root };
+  const workspace = { ...workspaceBase };
+  if (workspace.supported !== false) workspace.roots = skillWorkspaceRoots(workspace.root, skills.mirrorRoots);
   return {
     workspace,
     user,
@@ -129,7 +135,7 @@ function normalizeImplementationCatalog(value: any = {}): any  {
   };
 }
 
-function validateEnvironmentProbe(probe: any, label: any, errors: any): any  {
+function validateEnvironmentProbe(probe: any, label: any, errors: any, depth: any = 0): any  {
   if (!probe || !ADAPTER_TRAIT_CATALOG.environmentProbe.includes(probe.kind)) {
     errors.push(`${label} kind is invalid: ${probe?.kind || '<missing>'}`);
     return;
@@ -140,6 +146,12 @@ function validateEnvironmentProbe(probe: any, label: any, errors: any): any  {
     if (!Number.isInteger(probe.timeoutMs) || probe.timeoutMs < 100 || probe.timeoutMs > 10000) errors.push(`${label} command timeoutMs must be between 100 and 10000`);
   }
   if (probe.kind === 'manual' && !probe.guidance) errors.push(`${label} manual guidance is required`);
+  if (probe.surface !== undefined && !ADAPTER_TRAIT_CATALOG.surfaces.includes(probe.surface)) errors.push(`${label} surface is invalid: ${probe.surface}`);
+  if (probe.kind === 'any') {
+    if (!Array.isArray(probe.probes) || probe.probes.length === 0) errors.push(`${label} any probe requires a non-empty probes array`);
+    else if (depth > 0) errors.push(`${label} any probes must not nest`);
+    else probe.probes.forEach((child: any, index: any) => validateEnvironmentProbe(child, `${label} probes[${index}]`, errors, depth + 1));
+  }
 }
 
 function validateAdapterTraits(descriptor: any, options: any = {}): any  {
@@ -163,11 +175,24 @@ function validateAdapterTraits(descriptor: any, options: any = {}): any  {
   if (!skills?.implementation || !implementations.skills.has(skills.implementation)) errors.push(`adapter ${descriptor.id} has no registered skills implementation: ${skills?.implementation || '<missing>'}`);
   if (!isSafeRuntimeRoot(skills?.root)) errors.push(`adapter ${descriptor.id} skills root is unsafe: ${skills?.root || '<missing>'}`);
   if (skills?.kind === 'agents-compatible' && skills.root !== '.agents') errors.push(`adapter ${descriptor.id} agents-compatible skills root must be .agents`);
+  if (skills?.mirrorRoots !== undefined) {
+    if (!Array.isArray(skills.mirrorRoots) || skills.mirrorRoots.length === 0) errors.push(`adapter ${descriptor.id} skills mirrorRoots must be a non-empty array`);
+    else {
+      if (new Set(skills.mirrorRoots).size !== skills.mirrorRoots.length) errors.push(`adapter ${descriptor.id} skills mirrorRoots contains duplicates`);
+      for (const mirror of skills.mirrorRoots) {
+        if (!isSafeRuntimeRoot(mirror)) errors.push(`adapter ${descriptor.id} skills mirror root is unsafe: ${mirror || '<missing>'}`);
+        else if (mirror === skills.root) errors.push(`adapter ${descriptor.id} skills mirror root must differ from the primary root: ${mirror}`);
+      }
+    }
+  }
   validateSkillPublicationExtensions(skills || {}, `adapter ${descriptor.id} skills`, errors);
   const destinations = normalizeSkillDestinations(skills || {});
   for (const destination of ['workspace', 'user']) {
     const entry = destinations[destination];
-    if (entry.supported !== false && !isSafeRuntimeRoot(entry.root)) errors.push(`adapter ${descriptor.id} ${destination} Skill destination root is unsafe: ${entry.root || '<missing>'}`);
+    if (entry.supported === false) continue;
+    for (const root of destination === 'workspace' ? (entry.roots || [entry.root]) : [entry.root]) {
+      if (!isSafeRuntimeRoot(root)) errors.push(`adapter ${descriptor.id} ${destination} Skill destination root is unsafe: ${root || '<missing>'}`);
+    }
   }
   if (!['complete', 'partial'].includes(destinations.discovery.evidence)) errors.push(`adapter ${descriptor.id} Skill discovery evidence must be complete or partial`);
   if (!Array.isArray(destinations.discovery.roots)) errors.push(`adapter ${descriptor.id} Skill discovery roots must be an array`);
@@ -210,12 +235,13 @@ function ruleCapability(traits: any): any  {
 }
 
 function renderCapabilities(traits: any): any  {
-  const root = traits.skills.root;
+  const roots = skillWorkspaceRoots(traits.skills.root, traits.skills.mirrorRoots);
+  const targets = (suffix: any) => roots.map((root: any) => `${root}/${suffix}`);
   return {
     'rules-entry': ruleCapability(traits),
-    'product-buildr-skill': { supported: true, mode: 'install', writesFiles: true, targets: [`${root}/skills/buildr/SKILL.md`] },
-    'workspace-project-skills': { supported: true, mode: 'rendered', writesFiles: true, targets: [`${root}/skills/<skill>/SKILL.md`] },
-    'skill-install-plans': { supported: true, mode: 'plan', writesFiles: true, targets: [`${root}/buildr/skill-install-plans/<skill>.md`] },
+    'product-buildr-skill': { supported: true, mode: 'install', writesFiles: true, targets: targets('skills/buildr/SKILL.md') },
+    'workspace-project-skills': { supported: true, mode: 'rendered', writesFiles: true, targets: targets('skills/<skill>/SKILL.md') },
+    'skill-install-plans': { supported: true, mode: 'plan', writesFiles: true, targets: targets('buildr/skill-install-plans/<skill>.md') },
     'runtime-check': {
       supported: true,
       mode: 'diagnostic',
@@ -231,7 +257,7 @@ function runtimeTargets(traits: any): any  {
   const rules = traits.rules.kind === 'native-recursive'
     ? ['AGENTS.md']
     : [traits.rules.targetPattern.replace('<source-dir>/', '').replace('<workspace-root>/', '')];
-  return [...rules, `${traits.skills.root}/skills/`, `${traits.skills.root}/buildr/skill-install-plans/`];
+  return [...rules, ...skillWorkspaceRoots(traits.skills.root, traits.skills.mirrorRoots).flatMap((root: any) => [`${root}/skills/`, `${root}/buildr/skill-install-plans/`])];
 }
 
 export function createRuntimeAdapterDescriptor(value: any, options: any = {}): any  {
@@ -261,11 +287,17 @@ export function createRuntimeAdapterDescriptor(value: any, options: any = {}): a
 }
 
 export function skillDestinationRoot(adapterOrId: any, destination: any, workspaceRoot: any, options: any = {}): any  {
+  return skillDestinationRoots(adapterOrId, destination, workspaceRoot, options)[0];
+}
+
+export function skillDestinationRoots(adapterOrId: any, destination: any, workspaceRoot: any, options: any = {}): any  {
   const adapter = typeof adapterOrId === 'string' ? getRuntimeAdapter(adapterOrId) : adapterOrId;
   if (!['workspace', 'user'].includes(destination)) throw new Error(`Unsupported Skill destination: ${destination}. Use workspace or user.`);
   const descriptor = adapter.traits.skills.destinations[destination];
   if (!descriptor || descriptor.supported === false) throw new Error(`Skill destination ${destination} is unsupported for ${adapter.id}.`);
-  return path.resolve(destination === 'workspace' ? workspaceRoot : (options.userHome || os.homedir()), descriptor.root);
+  const base = destination === 'workspace' ? workspaceRoot : (options.userHome || os.homedir());
+  const roots = destination === 'workspace' ? (descriptor.roots || [descriptor.root]) : [descriptor.root];
+  return roots.map((root: any) => path.resolve(base, root));
 }
 
 function recommendedCommands(id: any): any  {
@@ -387,17 +419,58 @@ const DESCRIPTORS: any[] = [
         targetPattern: '<workspace-root>/.qoder/rules/buildr/<source-id>.md', maxChars: 100000,
         diagnostics: renderedRulesDiagnostics('Qoder vendor rule file', 'qoder'),
       },
-      skills: { kind: 'vendor-root', implementation: 'filesystem-skills', root: '.qoder' },
-      surfaces: [{ kind: 'ide' }],
+      skills: {
+        kind: 'vendor-root',
+        implementation: 'filesystem-skills',
+        root: '.qoder',
+        // Qoder desktop builds discover the shared `.agents/skills` standard root, while the
+        // documented Qoder CLI project root stays `.qoder/skills`; both are Buildr-managed.
+        mirrorRoots: ['.agents'],
+        discovery: {
+          evidence: 'partial',
+          roots: [
+            { source: 'workspace', destination: 'workspace', root: '.qoder', basis: 'documented-project-root' },
+            { source: 'workspace', destination: 'workspace', root: '.agents', basis: 'shared-agents-root', hostConfigured: 'skills.loadFromAgentsDirectory' },
+            { source: 'user', destination: 'user', root: '.qoder', basis: 'documented-user-root' },
+          ],
+          opaqueSources: ['plugin', 'system', 'admin'],
+          precedence: 'user-overrides-project',
+        },
+      },
+      surfaces: [{ kind: 'ide' }, { kind: 'cli' }],
       activation: { rules: 'path-read', skills: 'explicit-reload', reloadGuidance: 'Run /skills reload when available, or start a new Qoder session.' },
       checker: {
-        kind: 'projection', implementation: 'projection', resultKey: 'qoder',
-        installationProbe: { kind: 'command', executable: 'qoder', args: ['--version'], timeoutMs: 3000 },
-        versionProbe: { kind: 'command', executable: 'qoder', args: ['--version'], timeoutMs: 3000 },
+        kind: 'projection',
+        implementation: 'projection',
+        resultKey: 'qoder',
+        // Qoder ships as a desktop app, a VS Code style IDE and a separate CLI; only the CLI puts
+        // `qoder` on PATH, so presence must be proven per installation form.
+        installationProbe: selectPlatformEnvironmentProbe({
+          command: {
+            kind: 'any',
+            probes: [
+              { kind: 'command', surface: 'desktop', executable: 'defaults', args: ['read', '/Applications/Qoder.app/Contents/Info', 'CFBundleIdentifier'], timeoutMs: 3000 },
+              { kind: 'command', surface: 'ide', executable: 'defaults', args: ['read', '/Applications/Qoder IDE.app/Contents/Info', 'CFBundleIdentifier'], timeoutMs: 3000 },
+              { kind: 'command', surface: 'cli', executable: 'qoder', args: ['--version'], timeoutMs: 3000 },
+            ],
+          },
+          guidance: 'Confirm the Qoder desktop app, Qoder IDE or Qoder CLI installation for the surface you are using.',
+        }),
+        versionProbe: selectPlatformEnvironmentProbe({
+          command: {
+            kind: 'any',
+            probes: [
+              { kind: 'command', surface: 'cli', executable: 'qoder', args: ['--version'], timeoutMs: 3000 },
+              { kind: 'command', surface: 'ide', executable: 'defaults', args: ['read', '/Applications/Qoder IDE.app/Contents/Info', 'CFBundleShortVersionString'], timeoutMs: 3000 },
+              { kind: 'command', surface: 'desktop', executable: 'defaults', args: ['read', '/Applications/Qoder.app/Contents/Info', 'CFBundleShortVersionString'], timeoutMs: 3000 },
+            ],
+          },
+          guidance: 'Read the Qoder version from the installed surface: `qoder --version`, or the app bundle version in /Applications.',
+        }),
       },
     },
     recommendedCommands: recommendedCommands('qoder'),
-    evidence: { rules: 'official-documentation-and-local-intake', skills: 'official-documentation-and-local-intake' },
+    evidence: { rules: 'official-documentation-and-local-intake', skills: 'official-documentation-dual-root-and-install-form-observation' },
   }),
   createRuntimeAdapterDescriptor({
     id: 'trae',

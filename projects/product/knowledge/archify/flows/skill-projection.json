@@ -30,7 +30,7 @@
           "runtime-files",
           "ownership"
         ],
-        "note": "先检查冲突，再更新目录并记录投射归属。"
+        "note": "先检查冲突，再按目标根更新目录，并逐根记录投射归属。"
       }
     ]
   },
@@ -96,7 +96,7 @@
       "id": "runtime-files",
       "type": "frontend",
       "label": "可发现目录",
-      "sublabel": ".agents/skills/",
+      "sublabel": "主根与镜像根 skills/",
       "stage": 4,
       "row": 0
     },
@@ -142,14 +142,14 @@
       "id": "write-runtime",
       "from": "reconciler",
       "to": "runtime-files",
-      "label": "更新文件",
+      "label": "逐根更新文件",
       "variant": "emphasis"
     },
     {
       "id": "write-ownership",
       "from": "reconciler",
       "to": "ownership",
-      "label": "记录归属",
+      "label": "按根记录归属",
       "variant": "default"
     }
   ],
@@ -165,7 +165,8 @@
       "dot": "rose",
       "title": "冲突保持原文件",
       "items": [
-        "先核对目标和归属；正文增强不会写回源技能。"
+        "先核对目标和归属；正文增强不会写回源技能。",
+        "主根与镜像根各有一条归属记录，只有漂移的根被判为过期。"
       ]
     },
     {

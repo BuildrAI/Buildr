@@ -5,10 +5,7 @@ import { getRuntimeAdapter } from './adapter-contract.ts';
 import { checkRuntimeProjection, printRuntimeProjectionReport } from './projection.ts';
 import { parseRenderClaudeCodeArgs } from './render-claude-code.ts';
 
-export function runEnvironmentProbe(probe: any, options: any = {}): any  {
-  if (probe.kind === 'none') return { status: 'not-checked', probe: 'none' };
-  if (probe.kind === 'manual') return { status: 'manual', probe: 'manual', guidance: probe.guidance };
-  const spawn = options.spawn || spawnSync;
+function runCommandEnvironmentProbe(probe: any, options: any, spawn: any): any  {
   const result = spawn(probe.executable, probe.args, {
     encoding: 'utf8',
     timeout: probe.timeoutMs,
@@ -16,15 +13,45 @@ export function runEnvironmentProbe(probe: any, options: any = {}): any  {
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   const evidence = [result.stdout, result.stderr].filter(Boolean).join('\n').trim();
-  if (result.error?.code === 'ENOENT') return { status: 'missing', probe: 'command', executable: probe.executable, args: probe.args, evidence: result.error.message };
-  if (result.error) return { status: 'missing', probe: 'command', executable: probe.executable, args: probe.args, evidence: result.error.message };
+  const surface = probe.surface ? { surface: probe.surface } : {};
+  if (result.error?.code === 'ENOENT') return { status: 'missing', probe: 'command', ...surface, executable: probe.executable, args: probe.args, evidence: result.error.message };
+  if (result.error) return { status: 'missing', probe: 'command', ...surface, executable: probe.executable, args: probe.args, evidence: result.error.message };
   return {
     status: result.status === 0 ? 'ok' : 'missing',
     probe: 'command',
+    ...surface,
     executable: probe.executable,
     args: probe.args,
     exitCode: result.status,
     ...(evidence ? { evidence } : {}),
+  };
+}
+
+export function runEnvironmentProbe(probe: any, options: any = {}): any  {
+  if (probe.kind === 'none') return { status: 'not-checked', probe: 'none' };
+  if (probe.kind === 'manual') return { status: 'manual', probe: 'manual', guidance: probe.guidance };
+  if (probe.kind === 'command') return runCommandEnvironmentProbe(probe, options, options.spawn || spawnSync);
+  const spawn = options.spawn || spawnSync;
+  const surfaces: any[] = [];
+  for (const child of probe.probes || []) {
+    const outcome = runEnvironmentProbe(child, { ...options, spawn });
+    surfaces.push(outcome);
+    if (outcome.status === 'ok') {
+      return {
+        status: 'ok',
+        probe: 'any',
+        surface: outcome.surface || null,
+        surfaces,
+        ...(outcome.evidence ? { evidence: outcome.evidence } : {}),
+      };
+    }
+  }
+  return {
+    status: 'missing',
+    probe: 'any',
+    surfaces,
+    ...(probe.guidance ? { guidance: probe.guidance } : {}),
+    evidence: surfaces.map((item: any) => `${item.surface || item.probe}: ${item.status}`).join(' | '),
   };
 }
 
@@ -40,23 +67,25 @@ function prerequisiteFindings(adapter: any): any  {
   }));
 }
 
-function environmentFindings(adapter: any, checks: any): any  {
+export function environmentFindings(adapter: any, checks: any): any  {
   const findings: any[] = [];
+  const codeId = adapter.id.replaceAll('-', '_');
   if (checks.installation.status === 'missing') {
     findings.push({
       status: 'warning', path: '.', adapter: adapter.id,
-      code: `runtime.${adapter.id.replaceAll('-', '_')}_installation_missing`,
+      code: `runtime.${codeId}_installation_missing`,
       message: `${adapter.displayName} installation probe failed.`,
       suggestion: checks.installation.evidence || `Install ${adapter.displayName} or verify its command/application path.`,
-      userActionRequired: true,
+      // A host install form we cannot auto-prove never contradicts verified projection facts.
+      userActionRequired: false,
     });
   } else if (checks.installation.status === 'ok' && checks.version.status === 'missing') {
     findings.push({
       status: 'warning', path: '.', adapter: adapter.id,
-      code: `runtime.${adapter.id.replaceAll('-', '_')}_version_unavailable`,
+      code: `runtime.${codeId}_version_unavailable`,
       message: `${adapter.displayName} version probe failed.`,
       suggestion: checks.version.evidence || `Verify the installed ${adapter.displayName} version manually.`,
-      userActionRequired: true,
+      userActionRequired: false,
     });
   }
   return findings;
@@ -89,6 +118,9 @@ export function printRuntimeAdapterCheckReport(result: any): any  {
   for (const [name, check] of Object.entries(result.environmentChecks) as Array<[string, any]>) {
     const evidence = check.evidence ? ` - ${check.evidence.replaceAll('\n', ' | ')}` : '';
     console.log(`  ${name}: ${check.status} (${check.probe})${evidence}`);
+    for (const surface of check.surfaces || []) {
+      console.log(`    ${surface.surface || surface.probe}: ${surface.status}${surface.evidence ? ` - ${String(surface.evidence).split('\n')[0]}` : ''}`);
+    }
     if (check.guidance) console.log(`    ${check.guidance}`);
   }
   console.log(`Activation: rules=${result.activation.rules} skills=${result.activation.skills}`);

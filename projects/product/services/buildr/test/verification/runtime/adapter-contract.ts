@@ -20,6 +20,7 @@ import {
   runtimeDiscoveryPayload,
   selectPlatformEnvironmentProbe,
   selectAdapterImplementation,
+  skillDestinationRoots,
 } from '../../../src/modules/agent-assets/infrastructure/runtime/adapter-contract.ts';
 import { reconcileRuntimePlan, validateRuntimePlan } from '../../../src/modules/agent-assets/infrastructure/runtime/runtime-reconciler.ts';
 import { validateSkillPublication } from '../../../src/modules/agent-assets/infrastructure/runtime/skills/publication.ts';
@@ -160,6 +161,28 @@ const commandProbe: any = runEnvironmentProbe(
 assert.equal(commandProbe.status, 'ok');
 assert.deepEqual(spawnCalls[0], ['tool', ['--version'], { encoding: 'utf8', timeout: 3000, shell: false, stdio: ['ignore', 'pipe', 'pipe'] }]);
 
+const qoderInstallProbe: any = RUNTIME_ADAPTERS.qoder.traits.checker.installationProbe;
+assert.equal(qoderInstallProbe.kind, 'any');
+assert.deepEqual(qoderInstallProbe.probes.map((item: any) => item.surface), ['desktop', 'ide', 'cli']);
+const anyProbeSpawns: any[] = [];
+const anyProbeHit: any = runEnvironmentProbe(qoderInstallProbe, {
+  spawn: (executable: any, args: any) => {
+    anyProbeSpawns.push([executable, args]);
+    if (executable === 'defaults' && String(args[1]).includes('Qoder.app')) return { status: 1, stdout: '', stderr: 'does not exist', error: Object.assign(new Error('failed'), { code: 'ENOENT' }) };
+    return { status: 0, stdout: 'com.qoder.ide', stderr: '' };
+  },
+});
+assert.equal(anyProbeHit.status, 'ok');
+assert.equal(anyProbeHit.surface, 'ide');
+assert.equal(anyProbeHit.surfaces.length, 2, 'a later install form must not be probed once one matched');
+assert.equal(anyProbeSpawns.every(([, args]: any) => typeof args[0] === 'string'), true);
+const anyProbeMiss: any = runEnvironmentProbe(qoderInstallProbe, {
+  spawn: () => ({ status: 1, stdout: '', stderr: 'absent', error: Object.assign(new Error('ENOENT'), { code: 'ENOENT' }) }),
+});
+assert.equal(anyProbeMiss.status, 'missing');
+assert.equal(anyProbeMiss.surfaces.length, 3);
+assert.match(anyProbeMiss.evidence, /desktop: missing \| ide: missing \| cli: missing/);
+
 assert.throws(() => getRuntimeAdapter('fake-runtime'), /Unsupported Agent runtime/);
 assert.throws(() => createRuntimeAdapterRegistry([{ id: 'fake-runtime', runtimeTargets: [], renderCapabilities: {}, recommendedCommands: {} }], { testOnly: true }), /Invalid runtime adapter registry/);
 
@@ -204,6 +227,31 @@ const fakeValue: any = {
 };
 assert.throws(() => createRuntimeAdapterDescriptor({ ...fakeValue, traits: { ...fakeValue.traits, rules: { ...fakeValue.traits.rules, kind: 'unknown' } } }, { implementations: fakeImplementations }), /rules trait is invalid/);
 assert.throws(() => createRuntimeAdapterDescriptor({ ...fakeValue, traits: { ...fakeValue.traits, skills: { ...fakeValue.traits.skills, root: '../escape' } } }, { implementations: fakeImplementations }), /skills root is unsafe/);
+const withSkills = (extra: any): any => ({ ...fakeValue, traits: { ...fakeValue.traits, skills: { ...fakeValue.traits.skills, ...extra } } });
+const mirrorDescriptor: any = createRuntimeAdapterDescriptor(withSkills({ mirrorRoots: ['.mirror'] }), { implementations: fakeImplementations });
+assert.deepEqual(mirrorDescriptor.traits.skills.destinations.workspace.roots, ['.fake', '.mirror']);
+assert.deepEqual(mirrorDescriptor.traits.skills.destinations.user.roots, undefined);
+assert.deepEqual(mirrorDescriptor.renderCapabilities['workspace-project-skills'].targets, ['.fake/skills/<skill>/SKILL.md', '.mirror/skills/<skill>/SKILL.md']);
+assert.deepEqual(mirrorDescriptor.renderCapabilities['skill-install-plans'].targets, ['.fake/buildr/skill-install-plans/<skill>.md', '.mirror/buildr/skill-install-plans/<skill>.md']);
+assert(mirrorDescriptor.runtimeTargets.includes('.mirror/skills/'), 'mirror root must be a declared runtime target');
+assert.deepEqual(skillDestinationRoots(mirrorDescriptor, 'workspace', '/workspace'), ['/workspace/.fake', '/workspace/.mirror']);
+assert.deepEqual(skillDestinationRoots(mirrorDescriptor, 'user', '/workspace', { userHome: '/home/user' }), ['/home/user/.fake']);
+assert.throws(() => createRuntimeAdapterDescriptor(withSkills({ mirrorRoots: ['../escape'] }), { implementations: fakeImplementations }), /skills mirror root is unsafe/);
+assert.throws(() => createRuntimeAdapterDescriptor(withSkills({ mirrorRoots: ['.fake'] }), { implementations: fakeImplementations }), /mirror root must differ from the primary root/);
+assert.throws(() => createRuntimeAdapterDescriptor(withSkills({ mirrorRoots: ['.mirror', '.mirror'] }), { implementations: fakeImplementations }), /mirrorRoots contains duplicates/);
+assert.throws(() => createRuntimeAdapterDescriptor(withSkills({ mirrorRoots: [] }), { implementations: fakeImplementations }), /mirrorRoots must be a non-empty array/);
+assert.throws(
+  () => createRuntimeAdapterDescriptor({ ...fakeValue, traits: { ...fakeValue.traits, checker: { ...fakeValue.traits.checker, installationProbe: { kind: 'any', probes: [] } } } }, { implementations: fakeImplementations }),
+  /any probe requires a non-empty probes array/,
+);
+assert.throws(
+  () => createRuntimeAdapterDescriptor({ ...fakeValue, traits: { ...fakeValue.traits, checker: { ...fakeValue.traits.checker, installationProbe: { kind: 'any', probes: [{ kind: 'command', executable: 'bad name!', args: [], timeoutMs: 3000 }] } } } }, { implementations: fakeImplementations }),
+  /probes\[0\] command executable must be a static command name/,
+);
+assert.throws(
+  () => createRuntimeAdapterDescriptor({ ...fakeValue, traits: { ...fakeValue.traits, checker: { ...fakeValue.traits.checker, installationProbe: { kind: 'any', probes: [{ kind: 'any', probes: [{ kind: 'none' }] }] } } } }, { implementations: fakeImplementations }),
+  /any probes must not nest/,
+);
 assert.throws(() => createRuntimeAdapterDescriptor({ ...fakeValue, traits: { ...fakeValue.traits, skills: { ...fakeValue.traits.skills, publicationExtensions: [{ path: '../escape', format: 'openai-skill-metadata' }] } } }, { implementations: fakeImplementations }), /publicationExtensions\[0\] path is unsafe/);
 assert.throws(() => createRuntimeAdapterDescriptor({ ...fakeValue, traits: { ...fakeValue.traits, skills: { ...fakeValue.traits.skills, publicationExtensions: [{ path: 'agents\/openai.yaml', format: 'unknown' }] } } }, { implementations: fakeImplementations }), /publicationExtensions\[0\] format is invalid/);
 assert.throws(() => createRuntimeAdapterDescriptor({ ...fakeValue, traits: { ...fakeValue.traits, skills: { ...fakeValue.traits.skills, publicationExtensions: [{ path: 'agents\/openai.yaml', format: 'openai-skill-metadata' }, { path: 'agents\/openai.yaml', format: 'openai-skill-metadata' }] } } }, { implementations: fakeImplementations }), /duplicate path/);

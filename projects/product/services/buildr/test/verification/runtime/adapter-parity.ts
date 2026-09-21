@@ -95,6 +95,7 @@ function assertAdapterSpecificProjection(workspace: any, adapterId: any): any  {
   if (adapterId === 'qoder') {
     assert.ok(fs.readdirSync(path.join(workspace, '.qoder', 'rules', 'buildr')).some((file: any) => file.endsWith('.md')));
     assert.ok(fs.existsSync(path.join(workspace, '.qoder', 'skills', 'buildr', 'SKILL.md')));
+    assert.ok(fs.existsSync(path.join(workspace, '.agents', 'skills', 'buildr', 'SKILL.md')), 'Qoder must mirror the same Skill into the shared .agents root');
   }
   if (adapterId === 'workbuddy') {
     assert.ok(fs.readFileSync(path.join(workspace, 'CODEBUDDY.md'), 'utf8').includes('不得读取不相关兄弟目录'));
@@ -296,9 +297,12 @@ try {
   const qoder: any = contexts.find((context: any) => context.adapterId === 'qoder');
   const gitExecutable: any = findExecutableOnPath('git');
   assert.ok(gitExecutable, 'runtime parity requires Git while isolating the Qoder installation probe');
-  const missingQoderEnvironment: any = await harness.runAsync(['runtime', 'check', 'qoder', '--scope', '.', '--target', qoder.workspace], { env: { PATH: path.dirname(gitExecutable) } });
+  const isolatedBin: any = harness.createTemporaryDirectory('buildr-runtime-probe-path-');
+  fs.symlinkSync(gitExecutable, path.join(isolatedBin, 'git'));
+  const missingQoderEnvironment: any = await harness.runAsync(['runtime', 'check', 'qoder', '--scope', '.', '--target', qoder.workspace], { env: { PATH: isolatedBin } });
   assert.match(missingQoderEnvironment.stdout, /\[warning\] \. - Qoder installation probe failed\./);
-  assert.match(missingQoderEnvironment.stdout, /installation: missing \(command\)/);
+  assert.match(missingQoderEnvironment.stdout, /installation: missing \(any\)/);
+  assert.match(missingQoderEnvironment.stdout, /desktop: missing/);
 
   const codexDoctor: any = contexts.find((context: any) => context.adapterId === 'codex').doctor;
   assert.equal(codexDoctor.runtime.claudeCode.length, 0);
