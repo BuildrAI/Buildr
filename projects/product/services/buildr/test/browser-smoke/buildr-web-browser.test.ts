@@ -1149,6 +1149,52 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.ok(fs.existsSync(path.join(workspaceRoot, 'projects/delete-browser/AGENTS.md')));
   });
 
+  if (selected('service')) await t.test('连续编辑三个服务使用新读取版本，真实冲突仍保留输入', async () => {
+    let c = runtime.assetCatalog(workspaceRoot);
+    if (c.migrationRequired) c = runtime.migrateAssetCatalog(workspaceRoot, { revision: c.revision });
+    c = runtime.createCatalogProject(workspaceRoot, {
+      revision: c.revision, code: 'sequential-edit', name: '连续编辑项目',
+      newServices: [1, 2, 3].map(n => ({ code: `sequential-${n}`, name: `连续编辑服务${n}`, repository: { code: `sequential-code-${n}`, url: `https://example.com/sequential-${n}.git`, integrationBranch: 'main' } })),
+    });
+    const catalogUrl = `${url}/api/v1/workspaces/${initialWorkspaceId}/asset-catalog`;
+    // Keep the fresh read behind the initial render so a cached snapshot cannot
+    // accidentally pass by winning the network race.
+    const delayRead = async (route: any) => {
+      const response = await route.fetch();
+      await new Promise(resolve => setTimeout(resolve, 150));
+      await route.fulfill({ response });
+    };
+    await page.route(catalogUrl, delayRead);
+    try {
+      await page.goto(`${workspaceUrl}/services`);
+      for (const n of [1, 2, 3]) {
+        await page.locator('#service-table-body tr').filter({ hasText: `连续编辑服务${n}` }).getByRole('button', { name: '编辑', exact: true }).click();
+        await page.getByRole('textbox', { name: '名称', exact: true }).fill(`已修改服务${n}`);
+        const saved = page.waitForResponse((response: any) => response.request().method() === 'PUT' && response.url().includes('/asset-catalog/service/'));
+        await page.locator('#catalog-edit-save').click();
+        assert.equal((await saved).status(), 200, `第 ${n} 次保存不应误报版本冲突`);
+        await page.getByRole('dialog').waitFor({ state: 'hidden' });
+        await page.locator('#service-table-body tr').filter({ hasText: `已修改服务${n}` }).waitFor();
+      }
+      await page.locator('#service-table-body tr').filter({ hasText: '已修改服务3' }).getByRole('button', { name: '编辑', exact: true }).click();
+      await page.getByRole('textbox', { name: '名称', exact: true }).fill('保留我的输入');
+      c = runtime.assetCatalog(workspaceRoot);
+      const service = c.services.find((s: any) => s.code === 'sequential-3');
+      runtime.updateCatalogAsset(workspaceRoot, 'service', service.id, { revision: c.revision, name: '另一入口修改' });
+      const updateUrl = `${catalogUrl}/service/${service.id}`;
+      expectedBrowserErrors.add(updateUrl);
+      const rejected = page.waitForResponse((response: any) => response.request().method() === 'PUT' && response.url() === updateUrl);
+      await page.locator('#catalog-edit-save').click();
+      assert.equal((await rejected).status(), 409);
+      assert.equal(await page.getByRole('textbox', { name: '名称', exact: true }).inputValue(), '保留我的输入');
+      assert.equal(runtime.assetCatalog(workspaceRoot).services.find((s: any) => s.id === service.id).name, '另一入口修改');
+      await page.getByRole('button', { name: '关闭编辑', exact: true }).click();
+      await page.getByRole('dialog').waitFor({ state: 'hidden' });
+    } finally {
+      await page.unroute(catalogUrl, delayRead);
+    }
+  });
+
   if (selected('service')) await t.test('代码库完整声明可编辑，本地分支独立保存且实际 Git 保持不变', async () => {
     let c = runtime.assetCatalog(workspaceRoot);
     if (c.migrationRequired) c = runtime.migrateAssetCatalog(workspaceRoot, { revision: c.revision });
