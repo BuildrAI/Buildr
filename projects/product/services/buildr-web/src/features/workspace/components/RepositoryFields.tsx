@@ -1,3 +1,4 @@
+import { DirectoryCandidateSelect } from './DirectoryCandidateSelect';
 import { useRef } from 'react';
 import { repositoryCodeFromUrl } from './repository-defaults';
 import { Form, Input } from 'antd';
@@ -7,7 +8,7 @@ export function RepositoryFields({ value, onChange, editing = false }: { value: 
   const update = (key: keyof RepositoryDraft, text: string) => {
     if (key === 'code') manualCode.current = true;
     if (key === 'path') manualPath.current = true;
-    const next = { ...value, [key]: text };
+    const next = { ...value, [key]: text, ...(key === 'path' ? { observation: undefined } : {}) };
     if (key === 'url' && !editing) {
       const code = repositoryCodeFromUrl(text);
       if (!manualCode.current) next.code = code;
@@ -17,6 +18,7 @@ export function RepositoryFields({ value, onChange, editing = false }: { value: 
   };
   const addressField = <Form.Item label="Git 地址" required={!value.path}><Input aria-label="Git 地址" required={!value.path} value={value.url || ''} onChange={e => update('url', e.target.value)} placeholder="已有本地仓库可留空" /></Form.Item>;
   return <>
+    {!editing && <Form.Item label="已有代码库目录"><DirectoryCandidateSelect kind="repository" value={value.observation ? value.path : undefined} onChange={candidate => { if (candidate) { manualPath.current = true; onChange({ ...value, path: candidate.path, observation: candidate.observation, code: value.code || candidate.code, url: value.url || candidate.url || '' }); } else onChange({ ...value, path: undefined, observation: undefined }); }} /></Form.Item>}
     {!editing && addressField}
     {!editing && <Form.Item label="代码库标识" required help="根据 Git 地址自动填写，可手动修改"><Input aria-label="代码库标识" required value={value.code} onChange={e => update('code', e.target.value)} /></Form.Item>}
     <Form.Item label="仓库目录" required={editing}><Input required={editing} aria-label="仓库目录" value={value.path || ''} onChange={e => update('path', e.target.value)} placeholder={`默认 repositories/${value.code || '<标识>'}`} /></Form.Item>

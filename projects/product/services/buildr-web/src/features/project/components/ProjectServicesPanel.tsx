@@ -39,6 +39,6 @@ export function ProjectServicesPanel({ projectCode, data, setData }: Props) {
       </Link>
       <Button className="resource-unlink" aria-label={`解除关联 ${service.name}`} title="解除关联" icon={<CloseOutlined />} type="text" disabled={data.migrationRequired || saving} onClick={() => { void save(linkedIds.filter(id => id !== service.id)).catch(() => {}); }} />
     </li>)}</ul> : <p className="page-copy project-service-empty">尚未关联服务，可以选择已有服务或新增。</p>}
-    {creating && <ServiceCreateDrawer catalog={data} initial={draft} onClose={value => { setDraft(value); setCreating(false); }} onSave={async service => { await save(linkedIds, [service]); setDraft(undefined); setCreating(false); }} />}
+    {creating && <ServiceCreateDrawer projectCode={projectCode} catalog={data} initial={draft} onClose={value => { setDraft(value); setCreating(false); }} onSave={async service => { await save(linkedIds, [service]); setDraft(undefined); setCreating(false); }} />}
   </section>;
 }

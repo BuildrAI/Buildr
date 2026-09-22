@@ -3,6 +3,7 @@
 ## Purpose
 
 定义 workspace Skill 源资产、Project capability/applicability context、类型、manifest schema 和 Agent runtime 投射契约。
+
 ## Requirements
 
 ### Requirement: Skills registry 必须复用 canonical Workspace identity
@@ -309,3 +310,21 @@ Buildr 向 runtime `SKILL.md` 注入 adapter context 时 MUST 将其限制为投
 - **WHEN** Buildr 为任一 supported adapter 生成产品入口 Buildr Skill
 - **THEN** 生成的 `SKILL.md` MUST NOT 包含“当前 Agent Adapter”、当前安装 adapter 声明或固定 adapter 维护命令
 - **AND** 各 adapter 的 runtime root、activation 和 checker MUST 继续由 adapter registry 决定
+
+### Requirement: 技能移除保留源文件
+技能网页与 skills remove MUST 只移除登记，保留本地源目录及其全部内容；组件受管约束和能力影响披露 MUST 继续有效。移除 MUST 不执行运行时同步或声称已有投射消失。
+
+#### Scenario: 移除本地技能
+- **WHEN** 用户移除不受组件管理的本地技能
+- **THEN** 清单不再包含该技能，源文件字节不变，结果说明投射需另行同步
+
+### Requirement: 技能新增支持已有目录与新建
+网页 MUST 展示 skills/ 下未登记且合法的本地技能目录，支持登记原目录而不复制、改写源内容；不选已有目录时 MUST 允许按标识、描述和正文创建新技能。清单版本、目录身份、技能名称和受管归属 MUST 在写入前核对。
+
+#### Scenario: 重新登记保留技能
+- **WHEN** 用户选择移除后保留的技能目录
+- **THEN** 系统登记其实际路径，保留 SKILL.md 及随附文件
+
+#### Scenario: 新建失败
+- **WHEN** 技能标识重复、目录被替换或目标已存在
+- **THEN** 系统拒绝覆盖，不留下部分登记或新文件

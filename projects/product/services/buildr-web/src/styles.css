@@ -2012,6 +2012,10 @@ details summary { cursor: pointer; color: var(--soft-ink); font-size: 12px; font
 .resource-directory-table { border:1px solid var(--soft-line); border-radius:10px; overflow:hidden; background:white; }
 .resource-directory-table > div { overflow-x:auto; }
 .resource-directory-table .ant-table { width:100%; }
+.resource-directory-table .resource-directory-action-cell { white-space:nowrap; }
+.resource-directory-row-actions { display:inline-flex; align-items:center; gap:4px; flex-wrap:nowrap; }
+.resource-directory-row-actions .ant-btn { padding-inline:4px; height:28px; color:var(--soft-muted); }
+.resource-directory-row-actions .ant-btn:not(:disabled):hover { color:var(--soft-primary); }
 .resource-directory-table .ant-table-thead > tr > th { padding:12px 18px; background:#f6f8f7; color:#6d7771; font-size:12px; font-weight:500; border-bottom:1px solid var(--soft-line); }
 .resource-directory-table .ant-table-thead > tr > th::before { display:none; }
 .resource-directory-table .ant-table-tbody > tr > td { padding:16px 18px; height:76px; font-size:13px; border-bottom:1px solid #edf0ee; }
@@ -2129,3 +2133,6 @@ details summary { cursor: pointer; color: var(--soft-ink); font-size: 12px; font
 .skill-reference-files[open] > summary { margin-bottom:12px; }
 .skill-reference-list { max-height:320px; overflow:auto; margin-top:12px; }
 .skill-primary-document .resource-reader > header { margin-top:0; margin-bottom:16px; }
+
+.resource-directory-picker { display:flex; gap:8px; align-items:center; }
+.resource-directory-picker > .ant-select { flex:1; min-width:0; }

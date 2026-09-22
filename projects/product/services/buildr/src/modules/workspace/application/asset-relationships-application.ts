@@ -1,3 +1,4 @@
+import { catalogDirectoryPaths, observeCatalogDirectory } from '../infrastructure/catalog-directory-candidates.ts';
 import { readRepositoryLocalConfig } from '../infrastructure/repository-local-config.ts';
 import crypto from 'node:crypto';
 import { spawnSync } from '../../../infrastructure/process.ts';
@@ -99,7 +100,7 @@ export function registerAssetRelationshipsApplication(runtime: Record<string, an
     return fs.existsSync(location) ? fs.realpathSync(location) : path.resolve(location);
   }
   function repositoryFromDraft(root: string, workspaceId: string, raw: any, allowUnaligned = false) {
-    object(raw, ['code', 'name', 'description', 'url', 'remote', 'integrationBranch', 'path'], '代码库');
+    object(raw, ['code', 'name', 'description', 'url', 'remote', 'integrationBranch', 'path', 'observation'], '代码库');
     const locationPath = typeof raw.path === 'string' ? raw.path.trim() || `repositories/${raw.code}` : raw.path || `repositories/${raw.code}`;
     const attached = path.isAbsolute(locationPath);
     const source = { type: 'git', path: locationPath, ...(attached ? { root: 'attached' } : {}),
@@ -158,39 +159,51 @@ export function registerAssetRelationshipsApplication(runtime: Record<string, an
   }
   function deleteCatalogAsset(root: string, kind: string, id: string, input: any) {
     object(input, ['revision'], '删除登记');
-    if (!['project', 'service'].includes(kind)) throw assetError('asset_kind_invalid', '仅支持删除项目和服务登记。');
+    if (!['project', 'service', 'repository'].includes(kind)) throw assetError('asset_kind_invalid', '仅支持移除项目、服务和代码库登记。');
     return mutate(root, input.revision, `assets.${kind}.delete`, catalog => {
-      const collection = kind === 'project' ? catalog.projects : catalog.services;
+      const collection = kind === 'project' ? catalog.projects : kind === 'service' ? catalog.services : catalog.repositories;
       const item = collection.find(x => x.id === id || x.code === id);
       if (!item) throw assetError('asset_not_found', '对象不存在。', 404);
       if (kind === 'project') catalog.projects = catalog.projects.filter(p => p.id !== item.id);
-      else {
+      else if (kind === 'repository') {
+        const references = catalog.services.filter(s => s.repositoryId === item.id);
+        if (references.length) throw assetError('repository_in_use', `请先调整这些服务的代码库引用：${references.map(s => s.name).join('、')}。`, 409);
+        catalog.repositories = catalog.repositories.filter(r => r.id !== item.id);
+      } else {
         catalog.services = catalog.services.filter(s => s.id !== item.id);
         catalog.projects = catalog.projects.map(p => ({ ...p, serviceIds: p.serviceIds.filter(s => s !== item.id) }));
       }
     });
   }
-  function mutate(root: string, revision: unknown, operation: string, change: (catalog: AssetCatalog, workspaceId: string) => void, migration = false, registration?: ProjectDirectoryCandidate) {
+  function mutate(root: string, revision: unknown, operation: string, change: (catalog: AssetCatalog, workspaceId: string, directories: { serviceId: string; path: string; observation?: string }[]) => void, migration = false, registration?: ProjectDirectoryCandidate) {
     if (typeof revision !== 'string' || !revision) throw assetError('asset_revision_required', '请提供当前清单版本。');
     const before = read(root);
     if (before.revision !== revision) throw assetError('asset_revision_conflict', '内容已被其他操作修改，请重新读取后核对。', 409);
     if (before.migrationRequired && !migration) throw assetError('asset_migration_required', '请先显式迁移旧服务登记，再修改全局关系。', 409);
     const next = structuredClone(before.catalog);
-    change(next, before.workspaceId);
+    const directories: { serviceId: string; path: string; observation?: string }[] = [];
+    change(next, before.workspaceId, directories);
     validateAssetCatalog(next, before.workspaceId, migration ? undefined : before.catalog);
     const content = renderAssetCatalog(next);
     const newProjects = next.projects.filter(p => !before.catalog.projects.some(old => old.id === p.id));
     const newServices = next.services.filter(s => !before.catalog.services.some(old => old.id === s.id));
     const createdProjects = newProjects.filter(p => p.code !== registration?.code);
-    const roots = [...createdProjects.map(p => `projects/${p.code}`), ...newServices.map(s => `services/${s.code}`)];
+    const roots = [...createdProjects.map(p => `projects/${p.code}`), ...newServices.filter(s => !directories.some(d => d.serviceId === s.id)).map(s => `services/${s.code}`), ...directories.filter(d => !d.observation).map(d => d.path)];
     for (const relative of roots) {
       assertCatalogFile(root, relative);
       if (fs.existsSync(path.join(root, relative))) throw assetError('asset_directory_occupied', `目录已存在，不能覆盖：${relative}。`, 409);
     }
     const files = [...CATALOG_FILES.map(file => path.join(root, file)), ...roots.map(relative => path.join(root, relative))];
     for (const file of CATALOG_FILES) assertCatalogFile(root, file);
+    const checkDirectories = () => { for (const directory of directories) {
+      if (directory.path !== '.') assertCatalogFile(root, directory.path);
+      if (directory.observation) { if (observeCatalogDirectory(root, directory.path).observation !== directory.observation) throw assetError('asset_directory_changed', '目录已变化，请重新选择。', 409); }
+      else if (fs.existsSync(path.join(root, directory.path))) throw assetError('asset_directory_occupied', '服务目录已存在，请选择已有目录。', 409);
+    } };
+    checkDirectories();
     return runtime.withWorkspaceMutation(root, operation, files, () => {
       if (read(root).revision !== revision) throw assetError('asset_revision_conflict', '保存前清单已变化，请重新核对。', 409);
+      checkDirectories();
       if (registration && inspectProjectCandidateDirectory(root, registration.code).observation !== registration.observation) throw assetError('project_directory_changed', '项目目录或来源已变化，请重新核对后登记。', 409);
       for (const project of createdProjects) {
         const destination = path.join(root, 'projects', project.code);
@@ -204,7 +217,8 @@ export function registerAssetRelationshipsApplication(runtime: Record<string, an
         runtime.trackWrite(root, path.join(destination, 'capabilities.yml'), runtime.renderProjectCapabilitiesYaml(), []);
         runtime.trackWrite(root, path.join(destination, 'commands.yml'), runtime.renderProjectCommandsYaml(), []);
       }
-      for (const service of newServices) runtime.atomicWriteFile(path.join(root, 'services', service.code, 'AGENTS.md'), `# ${service.name}\n\n服务（Service）：${service.code}。代码库实例（Repository Instance）：${service.repositoryId}。\n按任务明确选择项目（Project）上下文，并读取被引用代码库目录中的适用规则。\n`);
+      for (const directory of directories.filter(d => !d.observation)) runtime.atomicWriteFile(path.join(root, directory.path, 'AGENTS.md'), `# ${next.services.find(s => s.id === directory.serviceId)!.name}\n`);
+      for (const service of newServices.filter(s => !directories.some(d => d.serviceId === s.id))) runtime.atomicWriteFile(path.join(root, 'services', service.code, 'AGENTS.md'), `# ${service.name}\n\n服务（Service）：${service.code}。代码库实例（Repository Instance）：${service.repositoryId}。\n按任务明确选择项目（Project）上下文，并读取被引用代码库目录中的适用规则。\n`);
       for (const file of CATALOG_FILES) { assertCatalogFile(root, file); runtime.atomicWriteFile(path.join(root, file), content[file]); }
       return assetCatalog(root);
     });
@@ -225,24 +239,67 @@ export function registerAssetRelationshipsApplication(runtime: Record<string, an
     }, true);
   }
   function createCatalogRepository(root: string, input: any) {
-    const { revision, ...draft } = input;
-    return mutate(root, revision, 'assets.repository.create', (catalog, workspaceId) => {
+    const { revision, observation, ...draft } = input;
+    if (observation && observeCatalogDirectory(root, draft.path).observation !== observation) throw assetError('asset_directory_changed', '目录已变化，请重新选择。', 409);
+    return mutate(root, revision, 'assets.repository.create', (catalog, workspaceId, directories) => {
+      if (observation && observeCatalogDirectory(root, draft.path).observation !== observation) throw assetError('asset_directory_changed', '目录已变化，请重新选择。', 409);
       const repository = repositoryFromDraft(root, workspaceId, draft);
       if (catalog.repositories.some(r => repositoryLocationKey(root, r) === repositoryLocationKey(root, repository))) throw assetError('repository_duplicate_path', '该目录已登记为代码库，请复用已有代码库。', 409);
       catalog.repositories.push(repository);
+      if (observation) directories.push({ serviceId: `repository:${repository.id}`, path: draft.path, observation });
     });
   }
-  function addService(root: string, catalog: AssetCatalog, workspaceId: string, raw: any) {
-    object(raw, ['code', 'name', 'description', 'type', 'repositoryId', 'modulePath', 'repository'], '新增服务');
+  function addService(root: string, catalog: AssetCatalog, workspaceId: string, raw: any, directories: { serviceId: string; path: string; observation?: string }[] = [], parentCode?: string) {
+    object(raw, ['code', 'name', 'description', 'type', 'repositoryId', 'modulePath', 'repository', 'directoryMode', 'directoryPath', 'directoryObservation', 'projectCode'], '新增服务');
     if (raw.repository && raw.repositoryId) throw assetError('service_repository_ambiguous', '请选择已有代码库或新增代码库，不能同时提供。');
     let repositoryId = raw.repositoryId;
+    let serviceDirectory: { path: string; observation?: string } | undefined;
+    let modulePath = raw.modulePath || '';
+    if (raw.directoryMode) {
+      if (!['existing', 'create'].includes(raw.directoryMode)) throw assetError('asset_input_invalid', '未知目录选择方式。');
+      const projectCode = parentCode || raw.projectCode;
+      const directory = raw.directoryMode === 'existing' ? raw.directoryPath : `projects/${projectCode}/services/${raw.code}`;
+      if (!/^projects\/[A-Za-z0-9][A-Za-z0-9._-]*\/services\/[A-Za-z0-9][A-Za-z0-9._-]*$/.test(directory || '')) throw assetError('service_directory_invalid', '请选择项目及有效的服务目录。');
+      assertCatalogFile(root, directory);
+      const ownerCode = directory.split('/')[1];
+      if (!catalog.projects.some(p => p.code === ownerCode)) throw assetError('project_not_found', '请先登记服务所在项目。');
+      serviceDirectory = { path: directory };
+      if (raw.directoryMode === 'existing') {
+        if (!raw.directoryObservation || observeCatalogDirectory(root, directory).observation !== raw.directoryObservation) throw assetError('asset_directory_changed', '服务目录已变化，请重新选择。', 409);
+        serviceDirectory.observation = raw.directoryObservation;
+      } else if (fs.existsSync(path.join(root, directory))) throw assetError('asset_directory_occupied', '服务目录已存在，请选择已有目录。', 409);
+      const location = path.resolve(root, directory);
+      if (catalog.services.some(s => { const r = catalog.repositories.find(r => r.id === s.repositoryId); return r && path.resolve(resolveSourceRoot(root, r.source), s.modulePath) === location; })) throw assetError('service_directory_registered', '该服务目录已登记。', 409);
+      if (!raw.repository && !repositoryId) {
+        let ancestor = location; while (!fs.existsSync(ancestor)) ancestor = path.dirname(ancestor);
+        let actual = ''; try { actual = gitRoot(ancestor); } catch { /* New standalone code can be prepared later. */ }
+        const repositoryRoot = actual || location;
+        let repository = catalog.repositories.find(r => repositoryLocationKey(root, r) === repositoryRoot);
+        if (!repository) {
+          let code = `${raw.code}-code`, suffix = 2; while (catalog.repositories.some(r => r.code === code)) code = `${raw.code}-code-${suffix++}`;
+          const relative = path.relative(fs.realpathSync(root), repositoryRoot).split(path.sep).join('/') || '.';
+          const attached = relative.startsWith('../') || relative === '..';
+          repository = createRepositoryInstance({ id: crypto.randomUUID(), workspaceId, code, name: code, description: '', source: { type: 'git', path: attached ? repositoryRoot : relative, ...(attached ? { root: 'attached' } : {}) } });
+          catalog.repositories.push(repository);
+        }
+        repositoryId = repository.id;
+      }
+    }
     if (raw.repository) {
       const repository = repositoryFromDraft(root, workspaceId, raw.repository);
       if (catalog.repositories.some(r => repositoryLocationKey(root, r) === repositoryLocationKey(root, repository))) throw assetError('repository_duplicate_path', '该目录已登记为代码库，请复用已有代码库。', 409);
       catalog.repositories.push(repository); repositoryId = repository.id;
     }
-    const service = createBusinessService({ id: crypto.randomUUID(), workspaceId, code: raw.code, name: raw.name, description: raw.description || '', type: raw.type || 'service', repositoryId, modulePath: raw.modulePath || '' });
+    if (serviceDirectory) {
+      const repository = catalog.repositories.find(r => r.id === repositoryId);
+      if (!repository) throw assetError('repository_not_found', '代码库不存在。');
+      const relative = path.relative(resolveSourceRoot(root, repository.source), path.resolve(root, serviceDirectory.path)).split(path.sep).join('/');
+      if (relative === '..' || relative.startsWith('../') || path.isAbsolute(relative)) throw assetError('service_directory_outside_repository', '所选代码库不包含服务目录，请使用自动识别或选择对应代码库。');
+      modulePath = relative;
+    }
+    const service = createBusinessService({ id: crypto.randomUUID(), workspaceId, code: raw.code, name: raw.name, description: raw.description || '', type: raw.type || 'service', repositoryId, modulePath });
     catalog.services.push(service);
+    if (serviceDirectory) directories.push({ ...serviceDirectory, serviceId: service.id });
     return service;
   }
 
@@ -252,8 +309,11 @@ export function registerAssetRelationshipsApplication(runtime: Record<string, an
   }
   function createCatalogService(root: string, input: any) {
     object(input, ['revision', 'service', 'projectId'], '新增服务');
-    return mutate(root, input.revision, 'assets.service.create', (catalog, workspaceId) => {
-      const service = addService(root, catalog, workspaceId, input.service);
+    return mutate(root, input.revision, 'assets.service.create', (catalog, workspaceId, directories) => {
+      const parent = input.projectId ? catalog.projects.find(p => p.id === input.projectId) : undefined;
+      const service = addService(root, catalog, workspaceId, input.service, directories, parent?.code);
+      const inferredCode = input.service.directoryMode === 'existing' ? input.service.directoryPath?.split('/')[1] : input.service.projectCode;
+      if (!input.projectId && inferredCode) input = { ...input, projectId: catalog.projects.find(p => p.code === inferredCode)?.id };
       if (input.projectId) {
         const project = catalog.projects.find(p => p.id === input.projectId);
         if (!project) throw assetError('project_not_found', '项目不存在。', 404);
@@ -264,13 +324,14 @@ export function registerAssetRelationshipsApplication(runtime: Record<string, an
   }
   function createCatalogProject(root: string, input: any) {
     object(input, ['revision', 'code', 'name', 'description', 'serviceIds', 'newServices'], '新增项目');
-    return mutate(root, input.revision, 'assets.project.create', (catalog, workspaceId) => {
+    return mutate(root, input.revision, 'assets.project.create', (catalog, workspaceId, directories) => {
       const project = createProject({ id: crypto.randomUUID(), workspaceId, code: input.code, name: input.name, description: input.description || `项目 ${input.name}`, source: { type: 'workspace', path: `projects/${input.code}` }, serviceIds: input.serviceIds ?? [] });
       if (input.newServices !== undefined && !Array.isArray(input.newServices)) throw assetError('asset_input_invalid', '新增服务必须为数组。');
+      catalog.projects.push({ ...project, serviceIds: project.serviceIds || [] });
       const serviceIds = [...(project.serviceIds ?? [])];
-      for (const raw of input.newServices ?? []) serviceIds.push(addService(root, catalog, workspaceId, raw).id);
+      for (const raw of input.newServices ?? []) serviceIds.push(addService(root, catalog, workspaceId, raw, directories, project.code).id);
       const linkedProject = { ...project, serviceIds };
-      catalog.projects.push(linkedProject);
+      catalog.projects[catalog.projects.length - 1] = linkedProject;
       preserveProjectReferences(catalog, linkedProject);
     });
   }
@@ -315,15 +376,30 @@ export function registerAssetRelationshipsApplication(runtime: Record<string, an
   }
   function updateProjectServices(root: string, id: string, input: any) {
     object(input, ['revision', 'serviceIds', 'newServices'], '项目服务关联');
-    return mutate(root, input.revision, 'assets.project.services', (catalog, workspaceId) => {
+    return mutate(root, input.revision, 'assets.project.services', (catalog, workspaceId, directories) => {
       const project = catalog.projects.find(p => p.id === id || p.code === id);
       if (!project) throw assetError('project_not_found', '项目不存在。', 404);
       if (!Array.isArray(input.serviceIds)) throw assetError('project_services_invalid', '请选择服务集合。');
       project.serviceIds = [...input.serviceIds];
       if (input.newServices !== undefined && !Array.isArray(input.newServices)) throw assetError('asset_input_invalid', '新增服务必须为数组。');
-      for (const raw of input.newServices ?? []) project.serviceIds.push(addService(root, catalog, workspaceId, raw).id);
+      for (const raw of input.newServices ?? []) project.serviceIds.push(addService(root, catalog, workspaceId, raw, directories, project.code).id);
       preserveProjectReferences(catalog, project);
     });
+  }
+  function listCatalogDirectoryCandidates(root: string, kind: 'service' | 'repository') {
+    const current = read(root), scan = catalogDirectoryPaths(root, kind);
+    const registered = new Set(kind === 'repository' ? current.catalog.repositories.map(r => repositoryLocationKey(root, r)) : current.catalog.services.flatMap(s => { const r = current.catalog.repositories.find(r => r.id === s.repositoryId); return r ? [path.resolve(resolveSourceRoot(root, r.source), s.modulePath)] : []; }));
+    const candidates: { path: string; code: string; observation: string; projectCode?: string; url?: string }[] = [];
+    const deadline = Date.now() + 5000;
+    for (const relative of scan.paths) {
+      if (Date.now() > deadline || candidates.length >= 200) { scan.diagnostics.push({ code: 'directory_candidates_limited', path: relative, message: '候选核对达到上限，请稍后重新读取。' }); break; }
+      try {
+        const observed = observeCatalogDirectory(root, relative), actual = fs.realpathSync(path.resolve(root, relative));
+        if (registered.has(actual) || kind === 'repository' && observed.repositoryRoot !== actual) continue;
+        candidates.push({ path: relative, code: path.basename(actual), observation: observed.observation, ...(kind === 'service' ? { projectCode: relative.split('/')[1] } : { url: observed.url }) });
+      } catch (error: any) { scan.diagnostics.push({ code: error.code || 'directory_unavailable', path: relative, message: error.message }); }
+    }
+    return { revision: current.revision, candidates, diagnostics: scan.diagnostics };
   }
   function updateCatalogAsset(root: string, kind: string, id: string, input: any) {
     object(input, kind === 'service' ? ['revision', 'name', 'description', 'type', 'repositoryId', 'modulePath', 'repository'] : kind === 'repository' ? ['revision', 'name', 'description', 'url', 'remote', 'integrationBranch', 'path'] : ['revision', 'name', 'description'], '修改对象');
@@ -387,8 +463,8 @@ export function registerAssetRelationshipsApplication(runtime: Record<string, an
   function repositoryPreparePrompt(root: string, id: string) {
     const r = read(root).catalog.repositories.find(item => item.id === id || item.code === id);
     if (!r) throw assetError('repository_not_found', '代码库不存在。', 404);
-    return { prompt: [`对齐代码库声明：${r.name}（${r.code}）`, `声明：${JSON.stringify(r.source)}`, '读取当前 repositories/manifest.yml，核对稳定身份、最新版本、来源、集成分支和实际目录。', '先只读检查 Git 根目录、实际远端与服务模块；列明声明和实际的差异。声明保存不代表已执行远端改写、切换分支、克隆或搬迁。', '集成分支是后续工作的目标，不要求当前分支与之相同；仅因当前分支不同不得自动切换。', '远端或目录需要对齐时先提出具体动作与影响，在相应授权内执行；保留原目录、未提交改动和全部服务引用。', '已登记但代码缺失时，验证远端分支后准备至声明的实际目录；附接目录不由此动作搬迁或重建。', '代码库必须对应真实 Git 根目录；工作空间根使用 .，服务子目录用 modulePath；先读取独立 /services、/repositories 列表，状态按单个代码库读取。', '删除项目或服务只移除登记和关系，保留代码、文件与历史任务；提交前读取最新 revision 并说明影响。', '目录已存在时核对仓库来源和工作状态，不覆盖、不丢弃修改、不隐式切换分支。', '来源信息缺失时先查明，不猜测 Git 地址或分支。准备失败仅报告相关代码库问题，不撤销项目与服务关系。', '为具体任务建立隔离工作位置，读取明确项目、服务和实际代码目录的适用规则。'].join('\n'), copiedMeansPrepared: false };
+    return { prompt: [`对齐代码库声明：${r.name}（${r.code}）`, `声明：${JSON.stringify(r.source)}`, '读取当前 repositories/manifest.yml，核对稳定身份、最新版本、来源、集成分支和实际目录。', '先只读检查 Git 根目录、实际远端与服务模块；列明声明和实际的差异。声明保存不代表已执行远端改写、切换分支、克隆或搬迁。', '集成分支是后续工作的目标，不要求当前分支与之相同；仅因当前分支不同不得自动切换。', '远端或目录需要对齐时先提出具体动作与影响，在相应授权内执行；保留原目录、未提交改动和全部服务引用。', '已登记但代码缺失时，验证远端分支后准备至声明的实际目录；附接目录不由此动作搬迁或重建。', '代码库必须对应真实 Git 根目录；工作空间根使用 .，服务子目录用 modulePath；先读取独立 /services、/repositories 列表，状态按单个代码库读取。', '移除项目、服务或未被引用的代码库只取消登记和关系，保留代码、文件与历史任务；提交前读取最新 revision 并说明影响。', '目录已存在时核对仓库来源和工作状态，不覆盖、不丢弃修改、不隐式切换分支。', '来源信息缺失时先查明，不猜测 Git 地址或分支。准备失败仅报告相关代码库问题，不撤销项目与服务关系。', '为具体任务建立隔离工作位置，读取明确项目、服务和实际代码目录的适用规则。'].join('\n'), copiedMeansPrepared: false };
   }
-  Object.assign(runtime, { catalogRepositoryLocalConfig, listCatalogServices, listCatalogRepositories, catalogRepositoryStatus, normalizeCatalogRepositories, deleteCatalogAsset, readGlobalServiceRegistry, catalogServiceDocument, assetCatalog, migrateAssetCatalog, createCatalogRepository, createCatalogService, createCatalogProject, listProjectRegistrationCandidates, registerCatalogProject, updateProjectServices, updateCatalogAsset, repositoryPreparePrompt });
+  Object.assign(runtime, { listCatalogDirectoryCandidates, catalogRepositoryLocalConfig, listCatalogServices, listCatalogRepositories, catalogRepositoryStatus, normalizeCatalogRepositories, deleteCatalogAsset, readGlobalServiceRegistry, catalogServiceDocument, assetCatalog, migrateAssetCatalog, createCatalogRepository, createCatalogService, createCatalogProject, listProjectRegistrationCandidates, registerCatalogProject, updateProjectServices, updateCatalogAsset, repositoryPreparePrompt });
   return runtime;
 }

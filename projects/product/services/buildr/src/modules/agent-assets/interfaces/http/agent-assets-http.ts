@@ -22,6 +22,18 @@ export function createAgentAssetsHttpContribution(application: any): any  {
         request('agent-assets.skills.list', {});
         return { status: 200, body: success('agent-assets.skills.list', application.listSkills(root)) };
       }
+      if (httpRequest.method === 'GET' && suffix === '/agent-assets/skill-candidates') return { status: 200, body: success('agent-assets.skills.candidates', application.skillRegistrationCandidates(root)) };
+      if (httpRequest.method === 'POST' && suffix === '/agent-assets/skills') {
+        authorizeWrite();
+        return { status: 200, body: success('agent-assets.skills.register', application.registerLocalSkill(root, request('agent-assets.skills.register', await readJsonBody()))) };
+      }
+      const removal = suffix.match(/^\/agent-assets\/skills\/([^/]+)\/removal$/);
+      if (httpRequest.method === 'GET' && removal) return { status: 200, body: success('agent-assets.skills.removal', application.skillRemoval(root, decodeURIComponent(removal[1]))) };
+      const removeSkill = suffix.match(/^\/agent-assets\/skills\/([^/]+)$/);
+      if (httpRequest.method === 'DELETE' && removeSkill) {
+        authorizeWrite();
+        return { status: 200, body: success('agent-assets.skills.remove', application.removeRegisteredSkill(root, decodeURIComponent(removeSkill[1]), request('agent-assets.skills.remove', await readJsonBody()))) };
+      }
       const skillMatch = suffix.match(/^\/agent-assets\/skills\/([^/]+)(\/file)?$/);
       if (httpRequest.method === 'GET' && skillMatch) {
         const id = decodeURIComponent(skillMatch[1]);
