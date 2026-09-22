@@ -5,7 +5,7 @@
   "status": "pass",
   "visualReview": "pending",
   "artifact": {
-    "path": "/Users/chenjun/Buildr/.worktrees/document-buildr-data-design/projects/product/knowledge/archify/data/buildr-data-domains.html",
+    "path": "buildr-data-domains.html",
     "sha256": "fe506f90a528388f606dad96a1bfdf69ba29d020a87388641fcc4039601b3df7",
     "bytes": 709767
   },

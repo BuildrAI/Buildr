@@ -5,7 +5,7 @@
   "status": "pass",
   "visualReview": "pending",
   "artifact": {
-    "path": "/Users/chenjun/Buildr/.worktrees/qoder-single-skills-root/projects/product/knowledge/archify/flows/skill-projection.html",
+    "path": "skill-projection.html",
     "sha256": "466b80c1f9949c58c53d6c516441b6ea06eed40ff1eb378b1386330337a7ec74",
     "bytes": 710012
   },

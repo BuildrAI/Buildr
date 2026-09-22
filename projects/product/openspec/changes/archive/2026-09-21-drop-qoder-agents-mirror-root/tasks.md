@@ -26,6 +26,6 @@
 
 - 2.4 检查现场（Node 24.15.0；worktree 先执行 `npm install` 与 `npm run artifacts:prepare`）：`test:unit` 229/229、`test:contract` 205/205、`npm run typecheck` 无 `error TS`。`test:integration` 409 项中 3 项失败，均与本变更无关且在 main checkout 同样复现：`buildr-web-workspace`（worktree 未安装 `../buildr-web` 依赖）与 `workspace-sqlite`（期望表清单缺 `task_review_history`）。`test/verification/runtime/adapter-contract.ts` 与 `adapter-parity.ts` 均通过，后者覆盖 7 个 adapter 的完整生命周期，含"qoder 不产生 `.agents/skills/buildr`"。
 - 2.4 契约用例 `knowledge-artifacts.test.ts` 先失败后修复：它要求代码地图点名的符号真实存在于源码，回退知识文档里对 `skillProjectionReceiptRootSlug` 的引用后转绿。该用例是本变更与当前知识一致性的有效门禁。
-- 实机验证（正式自举工作空间 `/Users/chenjun/Buildr`，用本 worktree 的产品 CLI 只读检查）：`runtime check qoder` 由 `missing=30 stale=9` 变为 `ok=171 info=10 warning=0 missing=0 stale=0 orphan=0 conflict=0`；安装形态探测仍为 `installation: ok (any) - com.qoder.app`、`version: ok (any) - 1.31.1`。
+- 实机验证（正式自举工作空间 `~/Buildr`，用本 worktree 的产品 CLI 只读检查）：`runtime check qoder` 由 `missing=30 stale=9` 变为 `ok=171 info=10 warning=0 missing=0 stale=0 orphan=0 conflict=0`；安装形态探测仍为 `installation: ok (any) - com.qoder.app`、`version: ok (any) - 1.31.1`。
 - 3.2 交付证据：Archify `validate` 与 `deliver` 的 showcase 9 项检查 0 错误 0 警告，`visual-check` status pass（四个桌面尺寸不溢出），并人工查看 1440×900 浅色截图，确认节点与结论文案已回退为单根表述。
 - 4.1 场景保留约束：OpenSpec 的 MODIFIED 不允许按名称丢弃主 spec 已有场景，同一 requirement 也不能同时出现在 ADDED 与 REMOVED，因此 `Qoder 双 Skills root 投射` 场景名保留、正文改写为禁止性承诺（见 design D5）。

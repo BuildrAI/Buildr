@@ -2,7 +2,7 @@
 
 本文件保留原型阶段的范围与检查。正式实现已完成本轮开发，当前结果见 [verification.md](../verification.md)；原型中的快照和未实现标识不代表最新产品源代码。
 
-[打开当前原型](maintenance.html) · [整体方案](../../../../../docs/roadmap/knowledge-construction-and-maintenance-pilot.md)
+[整体方案](../../../../../docs/roadmap/knowledge-construction-and-maintenance-pilot.md)
 
 ## 本版阅读方式
 
@@ -34,4 +34,4 @@
 
 ## 本地查看
 
-`maintenance.html` 为自包含 HTML，可直接打开，也可通过仅监听本机的静态服务器查看。当前预览使用 `127.0.0.1:8766`；服务停止后重新启动即可，不依赖后台状态。
+自包含原型 `maintenance.html`（约 2.6 MB，内联了 `knowledge/archify/` 下 3 张展示图的完整 HTML）已从公开仓库移除，以满足开源候选单文件 1 MB 上限；它仍保留在 Git 历史（提交 `ea815fc7`），需要时可在本机检出查看，或按 archify 流程重新生成。旧原型 `knowledge.html` 体积合规，继续保留。
