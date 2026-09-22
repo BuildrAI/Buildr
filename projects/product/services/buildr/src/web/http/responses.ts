@@ -21,25 +21,30 @@ export function textResponse(response: any, status: any, content: any, contentTy
   response.end(content);
 }
 
-export function binaryResponse(response: any, status: any, content: any, contentType: any) {
+export function binaryResponse(response: any, status: any, content: any, contentType: any, options?: { disposition: 'inline' | 'attachment'; filename: string }) {
+  const encodedFilename = options ? encodeURIComponent(options.filename).replace(/[!'()*]/g, value => `%${value.charCodeAt(0).toString(16).toUpperCase()}`) : '';
   response.writeHead(status, {
     'content-type': contentType,
     'cache-control': 'no-store',
     'x-content-type-options': 'nosniff',
+    ...(options ? { 'content-disposition': `${options.disposition}; filename*=UTF-8''${encodedFilename}`, 'content-security-policy': "sandbox; default-src 'none'" } : {}),
   });
   response.end(content);
 }
 
-export function uiPrototypeHtmlResponse(response: any, content: any) {
+function isolatedHtmlResponse(response: any, content: any, downloads = false) {
   response.writeHead(200, {
     'content-type': 'text/html; charset=utf-8',
     'cache-control': 'no-store',
-    'content-security-policy': "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; connect-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'",
+    'content-security-policy': `sandbox allow-scripts${downloads ? " allow-downloads" : ""}; default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; connect-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'`,
     'referrer-policy': 'no-referrer',
     'x-content-type-options': 'nosniff',
   });
   response.end(content);
 }
+
+export function uiPrototypeHtmlResponse(response: any, content: any) { isolatedHtmlResponse(response, content); }
+export function diagramHtmlResponse(response: any, content: any) { isolatedHtmlResponse(response, content, true); }
 
 export function apiError(response: any, error: any) {
   if (response.destroyed || response.writableEnded) return;

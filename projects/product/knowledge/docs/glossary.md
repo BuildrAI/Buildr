@@ -283,9 +283,16 @@
 - 避免混用：普通对话、只读探索、临时操作或 Agent runtime 中泛称的 task/thread 不会自动成为正式任务；Formal Task Record也不是普通编辑、构建或有界测试的通用工作许可。
 - 来源：canonical `openspec/specs/task-record/spec.md`（本 Change convergence 时建立）。
 
+## 任务目标（Task Goal）
+
+- 定义：任务希望实现的结果及必要范围、约束，是判断工作方向与验收成果的依据。
+- 适用范围：任务创建、搜索、列表、详情、编辑、智能体（Agent）接续和审查；面向用户统一称为“目标”。现有 `intent` 字段及 `--intent` 参数表示同一目标，保持兼容。
+- 避免混用：“意图”不再作为任务目标的展示名称；目标不等于最近进展或交付结果。其他语境中的自然语言意图、技能意图识别和测试分类不属于此字段。
+- 来源：[任务记录规范](../../openspec/specs/task-record/spec.md)、[任务页面规范](../../openspec/specs/buildr-web-client/spec.md)及用户对任务目标名称的明确决定。
+
 ## 任务记录（Task Record）
 
-- 定义：正式任务在 canonical Workspace 中的最小顶层事实，保存 Task ID、标题、意图、scope、Change、顶层状态、终态摘要，以及可选本机复盘文档的摘要与决定状态。
+- 定义：正式任务在 canonical Workspace 中的最小顶层事实，保存 Task ID、标题、目标、scope、Change、顶层状态、终态摘要，以及可选本机复盘文档的摘要与决定状态。
 - 适用范围：Workspace Structured Store中的closed v3 Task、直接父任务/子任务关系，以及create、inspect、update、activate、complete、abandon。
 - 避免混用：父任务/子任务只表达协调层级。Task Record不保存复盘正文、处置说明、来源关系、环境、action item或其他专业事实。
 - 来源：canonical `openspec/specs/task-record/spec.md`（本 Change convergence 时建立）。
@@ -342,7 +349,7 @@
 ## 协调任务（Coordinating Task）
 
 - 定义：通过直接父任务/子任务关系管理一个或多个独立子Task的普通Task。
-- 适用范围：用Task本身承载整体意图，并通过直接Children拆分可独立交付的工作。
+- 适用范围：用Task本身承载整体目标，并通过直接Children拆分可独立交付的工作。
 - 避免混用：不是独立Board Domain、总调度器或状态聚合器；其终态仍由人或Agent明确决定。
 - 来源：[任务生命周期架构讨论稿](../../docs/roadmap/task-lifecycle-architecture.md)
 
@@ -615,14 +622,14 @@
 
 ## 方案审查（Planning Review）
 
-- 定义：Task Review 对当前 Task Intent 与计划上下文执行的审查，Result绑定调用方实际审阅对象的稳定`subjectIdentity`。
+- 定义：Task Review 对当前 任务目标（Task Goal） 与计划上下文执行的审查，Result绑定调用方实际审阅对象的稳定`subjectIdentity`。
 - 适用范围：实现前方案检查；没有执行时 planning slot 可以不存在。
 - 避免混用：不要求所有Task固定为OpenSpec artifacts；OpenSpec计划先通过Semantic Readiness Preflight。Planning Review不拥有、保存、复制或解释preflight检查。
 - 来源：[Agent task workflow specification](../../openspec/specs/agent-task-workflows/spec.md)
 
 ## 完成审查（Completion Review）
 
-- 定义：Task Review 对实现、证据与 Task Intent 整体一致性的审查，Result必须绑定真实完成对象的稳定`subjectIdentity`。
+- 定义：Task Review 对实现、证据与 任务目标（Task Goal） 整体一致性的审查，Result必须绑定真实完成对象的稳定`subjectIdentity`。
 - 适用范围：当前代码tree/commit、文件产物、部署结果或外部系统结果；没有执行时completion slot可以不存在。
 - 避免混用：不生成完成对象，不替代Task Verification。
 - 来源：canonical `openspec/specs/task-review-results/spec.md`（本 Change converge 时建立）
@@ -697,8 +704,15 @@
 
 - 定义：Buildr 为某个 destination、Agent adapter 与 runtime Skill path 保存的本机控制状态，用文件 inventory、identity 和 digest 证明 Buildr 对该次 Skill 投射的更新权与清理权。
 - 适用范围：`.buildr/agent-runtime/<workspace|user>/<adapter>/skill-projection-ownership-receipts/`，以及 render、inventory、Doctor、Component/builtin lifecycle 的所有权判断。
-- 避免混用：不是 Agent 消费的 Skill、源资产、执行证据或可提交到 Git 的 portable receipt；旧 `<runtime-root>/buildr/skill-projection-receipts/` 只是受控迁移输入，不是第二 authority。
+- 避免混用：不是 Agent 消费的 Skill、源资产、执行证据或可提交到 Git 的 portable receipt；旧 `<runtime-root>/buildr/skill-projection-receipts/` 只是受控迁移输入，不是第二 authority。多个 adapter 共享同一 Skills 根时，回执只证明其所属 adapter 的更新权与清理权，他方回执所在目录不是本 adapter 的 orphan，也不构成冲突。
 - 来源：[Workspace-first runtime projection specification](../../openspec/specs/workspace-first-runtime-projection/spec.md)
+
+## 安装形态（Runtime Installation Surface）
+
+- 定义：同一个智能体运行时（Agent Runtime）在产品本机被安装与使用的形态，由 adapter traits 的 `surfaces` 声明，封闭取值 `ide`、`cli`、`desktop`、`cloud`；每种形态各自可被自动探测或明确标注为 `manual`。
+- 适用范围：runtime adapter descriptor、`runtime check` 的 installation/version 探测与逐形态报告、按形态给出的 activation 与确认 guidance。
+- 避免混用：不是 Buildr 自身对 command 的“CLI 产品表面（CLI Product Surface）”分类；也不是 Skills 投射的目标根（Runtime Root）——目标根说明技能目录写在哪里，安装形态说明宿主以哪种方式被安装使用，一种安装形态可以消费多个目标根。探测不到某种形态只说明该形态未被自动证明，不否定已核对的投射事实。
+- 来源：canonical `openspec/specs/workspace-first-runtime-projection/spec.md` 的 surface trait 与探测要求（本 Change convergence 时更新）。
 
 ## 收尾与交付（Closeout and Delivery）
 
@@ -734,3 +748,17 @@
 - 适用范围：全局 `repositories/manifest.yml` 及资产管理接口。
 - 避免混用：同一 Git 地址不等于同一实例；本地检出目录（Checkout）是实例的落地位置，不是第四类业务对象；临时任务工作树不自动创建新实例。
 - 来源：`workspace/domain/asset-relationships.ts`、变更 `decouple-project-service-repositories`。
+
+## 知识阅读关联（Knowledge Index）
+
+- 定义：按对象连接唯一成果正文、来源与阅读关系的局部文件，当前格式为 `buildr.knowledge-index/v1`。
+- 适用范围：启用 Buildr Web 知识阅读的项目（Project）或服务（Service）。
+- 避免混用：不是知识数据库、第二事实权威或普通知识维护的全局前置。
+- 来源：[知识索引模型](../../services/buildr/src/modules/knowledge/domain/knowledge-index.ts)、[阅读规范](../../openspec/specs/project-knowledge-browsing/spec.md)。
+
+## 来源观察（Source Observation）
+
+- 定义：读取已声明来源所得的当前内容摘要、可读状态和范围身份；当前本地知识阅读不与历史摘要比较。
+- 适用范围：知识阅读与开发中的相关成果维护。
+- 避免混用：读取成功不代表语义已经核验；读取不自动改写成果，也不形成历史版本或人工确认流程。
+- 来源：[知识查询](../../services/buildr/src/modules/knowledge/application/knowledge-query.ts)、[当前知识维护](../../services/buildr/resources/workspace/skills/buildr/current-knowledge-maintenance/SKILL.md)。

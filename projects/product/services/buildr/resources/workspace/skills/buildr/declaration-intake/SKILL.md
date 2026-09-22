@@ -8,7 +8,7 @@ description: 初始化、维护准备与验证声明，或项目注册、构建�
 本 Skill 是 Project Declaration Intake 的 Agent 编排入口。它只管理两类 Project-owned 长期声明：
 
 - `projects/<project>/preparation.yml`：Agent按需调用哪些Project/Service真实准备入口；
-- `projects/<project>/verification.yml`：怎么验证 Task 交付目标。
+- `projects/<project>/verification.yml`：项目有哪些稳定测试体系、在哪里发现并执行。
 
 Intake 不保存状态、不拥有 schema 或 writer，也不管理 `capabilities.yml`、`commands.yml`。缺少 Skill/provider 时交给 Capability 体系；缺少 CLI/runtime 时只报告 Commands/Doctor 诊断。
 
@@ -27,7 +27,7 @@ Intake 不保存状态、不拥有 schema 或 writer，也不管理 `capabilitie
 - 明确的 package/build/test wrapper、lockfile或配置、CI与项目文档；
 - 当前 Commands/Capability readiness，仅用于外部依赖诊断。
 
-对每个 scope 输出：trigger、当前声明状态、Preparation Recipe 候选/差异、Verification Capability 候选/差异、证据、外部缺口和建议写入。没有稳定事实时标记 gap，不创建技术栈 adapter、测试、wrapper 或工具安装方案。
+对每个 scope 输出：trigger、当前声明状态、Preparation Recipe 候选/差异、测试地图候选/差异、证据、外部缺口和建议写入。测试地图候选区分证明覆盖范围与路径根，核对完整入口实际覆盖的测试；字段以 `task-verification` 的当前声明参考为准。旧声明只提供调查线索，结合真实入口重建当前地图，不机械替换版本号。没有稳定事实时标记 gap，不创建技术栈 adapter、测试、wrapper 或工具安装方案。
 
 Discovery、Project/Service注册、Buildr Web GET、Doctor与Task Finish均不得创建、修改或删除长期声明。
 
@@ -35,17 +35,17 @@ Discovery、Project/Service注册、Buildr Web GET、Doctor与Task Finish均不�
 
 任何写入前都先展示精确diff，并按以下closed条件分类：
 
-- `routine-maintenance`：只让声明追上当前用户目标和已登记scope内已经确认的wrapper、lockfile、build/test入口或既有authority；不新增/删除Project或Service scope，不改变discovery、usable targets或affected/full/provider边界，不引入capability、外部效果、安全例外，且authority无冲突。Agent可以在当前用户目标授权内直接交给owner维护并验证，无需让用户承担内部声明步骤。
-- `user-decision-required`：新增/删除scope，改变discovery、usable targets或affected/full/provider边界，引入新的capability、外部效果或安全例外，或authority证据冲突。必须在写入前请求用户确认精确变化。
+- `routine-maintenance`：只让声明追上当前用户目标和已登记scope内已经确认的wrapper、lockfile、build/test入口或既有authority；不新增/删除Project或Service scope，不改变证明范围、路径根、完整入口覆盖或环境边界，不引入新的测试体系、外部效果或安全例外，且authority无冲突。Agent可以在当前用户目标授权内直接交给owner维护并验证，无需让用户承担内部声明步骤。
+- `user-decision-required`：新增/删除scope，改变证明范围、路径根、完整入口覆盖或环境边界，引入新的测试体系、外部效果或安全例外，或authority证据冲突，且当前授权尚未覆盖该变化。必须在写入前请求用户确认精确变化。
 
 分类与展示至少包含：
 
 - 精确目标文件；
-- 新增、修改或删除的 Recipe/Capability identity 与 scope；
+- 新增、修改或删除的 Recipe／测试族身份与 scope；
 - 关键 invocation、inputs/outputs、environment/effects 差异；
 - 尚未解决的 Commands/Capability 或测试建设缺口。
 
-`user-decision-required`没有确认时只报告当前缺口与候选；不得用触发检查、Formal Task或一次宽泛确认覆盖两个文件、新增scope或其他长期决策。`routine-maintenance`也不得静默扩大scope、伪造capability或绕过owner，只是不为已确认事实重复请求人类授权。
+`user-decision-required`没有确认时只报告当前缺口与候选；触发检查或Formal Task本身不授予额外写入权。当前有效授权已覆盖对象、长期变化与副作用时直接继续，不按轮次重复确认。`routine-maintenance`也不得静默扩大scope、伪造测试能力或绕过owner。
 
 ## 4. 交给声明 owner
 

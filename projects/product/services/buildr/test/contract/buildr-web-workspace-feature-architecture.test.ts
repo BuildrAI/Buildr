@@ -39,7 +39,8 @@ test('Workspace、Project与Service前端保持独立Feature并共享唯一Works
   const app = source('App.tsx');
   for (const domain of ['workspace', 'project', 'service']) assert.match(app, new RegExp(`features/${domain}/pages/`));
   assert.match(source('features/project/pages/ProjectDetailPage.tsx'), /useMarkdownDocumentViewer/);
-  assert.match(source('features/service/pages/ServiceDetailPage.tsx'), /useMarkdownDocumentViewer/);
+  assert.match(source('features/workspace/components/AssetHome.tsx'), /ResourceDocumentPane/);
+  assert.doesNotMatch(source('features/service/pages/ServiceDetailPage.tsx'), /MarkdownHost|renderMarkdown/);
   assert.match(source('features/project/pages/ProjectDetailPage.tsx'), /project-daily-progress/);
 });
 
@@ -76,6 +77,6 @@ test('Task Feature复用Workspace Client与公共API类型', () => {
   assert.match(combined, /workspaceApi\.read/);
   assert.match(combined, /projectApi\.listProjects/);
   assert.match(combined, /serviceApi\.services/);
-  assert.match(combined, /projectApi\.projectDocument/);
+  assert.match(combined, /taskApi\.projectDocument/);
   assert.doesNotMatch(combined, /type ApiFailure|type WorkspacePayload|type ProjectDocument/);
 });

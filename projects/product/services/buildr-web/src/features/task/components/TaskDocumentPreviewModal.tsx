@@ -1,23 +1,39 @@
 import { useEffect, useRef, useState } from 'react';
-import { Alert, Button, Modal, Spin } from 'antd';
-import { MarkdownHost } from '../../../components/MarkdownHost';
+import { Alert, Button, Spin } from 'antd';
+import { MarkdownReader } from '../../../components/MarkdownReader';
 import { encodeProjectDocumentPath, resolveProjectMarkdownHref } from '../../../lib/projectDocuments';
 import type { TaskDocumentReference } from '../../../lib/taskDocumentLinks';
 import type { WorkspaceDocument } from '../hooks/useTaskArtifacts';
 
 type Props = {
+  embedded?: boolean;
   reference: TaskDocumentReference | null;
+  refreshToken?: number;
   onClose: () => void;
   loadDocument(reference: TaskDocumentReference, documentPath: string): Promise<WorkspaceDocument>;
 };
 
-export function TaskDocumentPreviewModal({ reference, onClose, loadDocument }: Props) {
+export function TaskDocumentPreviewModal({ reference, onClose, loadDocument, refreshToken = 0, embedded = false }: Props) {
   const [documentPath, setDocumentPath] = useState('');
   const [history, setHistory] = useState<string[]>([]);
   const [document, setDocument] = useState<WorkspaceDocument | null>(null);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const requestRef = useRef(0);
+  const observedRefreshToken = useRef(refreshToken);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  const reading = Boolean(reference);
+  useEffect(() => {
+    if (!reading) return;
+    const origin = window.document.activeElement as HTMLElement | null;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || (event.target instanceof Element && event.target.closest('[role="dialog"]'))) return;
+      if (event.key === 'Escape') closeRef.current();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => { window.removeEventListener('keydown', onKey); origin?.focus(); };
+  }, [reading]);
 
   const openDocument = async (nextPath: string, pushHistory = true) => {
     if (!reference) return;
@@ -55,7 +71,15 @@ export function TaskDocumentPreviewModal({ reference, onClose, loadDocument }: P
     setDocumentPath(reference.documentPath);
     setHistory([reference.documentPath]);
     void openDocument(reference.documentPath, false);
+    return () => { requestRef.current += 1; };
   }, [reference]);
+
+  useEffect(() => {
+    if (observedRefreshToken.current === refreshToken) return;
+    observedRefreshToken.current = refreshToken;
+    // Re-read the current relative document without resetting its navigation history.
+    if (reference) void openDocument(documentPath || reference.documentPath, false);
+  }, [refreshToken]);
 
   const onRelativeLinkClick = (linkHref: string) => {
     const resolved = resolveProjectMarkdownHref(documentPath, linkHref);
@@ -78,34 +102,28 @@ export function TaskDocumentPreviewModal({ reference, onClose, loadDocument }: P
     ? `${reference.projectSourcePath === '.' ? '' : `${reference.projectSourcePath}/`}${documentPath || reference.documentPath}`
     : '';
 
+  if (!reference) return null;
   return (
-    <Modal
-      title="相关资料"
-      open={Boolean(reference)}
-      onCancel={onClose}
-      footer={<Button onClick={onClose}>关闭</Button>}
-      destroyOnClose
-      width={900}
-      className="task-document-preview-modal"
-    >
+    <aside className="task-document-reader" aria-label="相关资料阅读">
+      <div className="task-document-reader-header" hidden={embedded}><strong>关联阅读</strong><Button id="task-document-close" type="text" aria-label="关闭相关资料" onClick={onClose}>关闭</Button></div>
       {reference ? (
         <div id="task-document-preview" className="task-document-preview">
           <div className="task-document-preview-heading">
-            <div>
-              <strong id="task-document-preview-name">{document?.name || reference.documentPath.split('/').at(-1)}</strong>
-              <small>{reference.projectName}</small>
+            <div className="task-document-source-line">
+              <small>{reference.projectName} · {!document ? '正在读取' : 'provenance' in document && (document as WorkspaceDocument & { provenance: string }).provenance === 'task-worktree-candidate' ? '任务工作树（Worktree）' : '保留目录'}</small><code id="task-document-preview-path" className="task-document-preview-path">{visibleWorkspacePath}</code>
             </div>
             {history.length > 1 ? <Button size="small" onClick={goBack}>返回上一文档</Button> : null}
           </div>
-          <code id="task-document-preview-path" className="task-document-preview-path">{visibleWorkspacePath}</code>
-          <p id="task-document-preview-resolution" className="task-document-preview-resolution">
+          <p hidden={embedded} id="task-document-preview-resolution" className="task-document-preview-resolution">
             引用已解析 · {loading ? '正在确认正文' : document?.exists && document.content != null ? '正文当前可读取' : '正文当前不可读取'}
           </p>
           {message ? <Alert id="task-document-preview-message" type="warning" showIcon message={message} /> : null}
           {loading ? <div className="task-document-preview-loading"><Spin size="small" /> 正在读取文档…</div> : null}
           {!loading && document?.exists && document.content != null ? (
-            <MarkdownHost
-              markdown={document.content}
+            <MarkdownReader
+              toolbarStart={<span id="task-document-preview-name">{document?.name || reference.documentPath.split('/').at(-1)}</span>}
+              path={documentPath}
+              content={document.content}
               className="task-document-preview-content markdown-body"
               options={{
                 headingOffset: 1,
@@ -117,6 +135,6 @@ export function TaskDocumentPreviewModal({ reference, onClose, loadDocument }: P
           ) : null}
         </div>
       ) : null}
-    </Modal>
+    </aside>
   );
 }

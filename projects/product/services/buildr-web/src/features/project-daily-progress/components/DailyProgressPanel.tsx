@@ -1,13 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { Button, DatePicker } from 'antd';
-import dayjs, { type Dayjs } from 'dayjs';
-import 'dayjs/locale/zh-cn';
+import { Link, useLocation } from 'react-router-dom';
+import { Alert, Button, Skeleton } from 'antd';
 import { dailyProgressApi, type Commit, type DaySummary, type InspectResult } from '../api/daily-progress-api';
 import { workspaceHref } from '../../../lib/labels';
 import { taskStatusLabel } from '../../../lib/taskLabels';
-
-dayjs.locale('zh-cn');
+import type { DailyProgressGroup } from '../dailyProgressNavigation';
+import '../daily-progress.css';
 
 const GROUPS = [
   { value: 'day', label: '按日' },
@@ -22,26 +20,17 @@ const SUMMARY_CARDS = [
   { key: 'drawbacks', title: '有什么弊端' },
 ] as const;
 
-function shiftDate(value: string, days: number) {
-  const [year, month, day] = value.split('-').map(Number);
-  const date = new Date(year, month - 1, day + days);
-  const nextYear = date.getFullYear();
-  const nextMonth = String(date.getMonth() + 1).padStart(2, '0');
-  const nextDay = String(date.getDate()).padStart(2, '0');
-  return `${nextYear}-${nextMonth}-${nextDay}`;
-}
-
-function TaskChips({ commit, href }: { commit: Commit; href: (path: string) => string }) {
+function TaskChips({ commit, href, from }: { commit: Commit; href: (path: string) => string; from: string }) {
   if (commit.authorship !== 'self' || !commit.tasks.length) return null;
   return (
     <>
       {commit.tasks.map((task) => (
         task.resolved ? (
-          <Link key={task.taskId} className="progress-task-chip" to={href(`/tasks/${encodeURIComponent(task.taskId)}`)}>
+          <Link key={task.taskId} className="progress-task-chip" to={href(`/tasks/${encodeURIComponent(task.taskId)}`)} state={{ from }}>
             {task.title || task.taskId} · {taskStatusLabel(task.status || '')}
           </Link>
         ) : (
-          <span key={task.taskId} className="progress-task-chip unresolved" title="本机已无此 Task">
+          <span key={task.taskId} className="progress-task-chip unresolved" title="本机已无此任务">
             {task.taskId} · 未解析
           </span>
         )
@@ -50,7 +39,7 @@ function TaskChips({ commit, href }: { commit: Commit; href: (path: string) => s
   );
 }
 
-function CommitCard({ commit, href }: { commit: Commit; href: (path: string) => string }) {
+function CommitCard({ commit, href, from }: { commit: Commit; href: (path: string) => string; from: string }) {
   return (
     <article className="commit-item" data-progress-item={commit.sha}>
       <div className="commit-top">
@@ -62,7 +51,7 @@ function CommitCard({ commit, href }: { commit: Commit; href: (path: string) => 
       <p className="commit-subject">{commit.subject}</p>
       <div className="commit-meta">
         <span className="author-chip">{commit.authorName} · {commit.authorEmail}</span>
-        <TaskChips commit={commit} href={href} />
+        <TaskChips commit={commit} href={href} from={from} />
       </div>
     </article>
   );
@@ -84,60 +73,52 @@ function SummaryGrid({ summary }: { summary: DaySummary }) {
 type Props = {
   projectCode: string;
   workspaceId: string | null;
+  date: string;
+  group: DailyProgressGroup;
+  refreshKey: number;
+  onGroupChange: (group: DailyProgressGroup) => void;
   onAskAgent: () => void;
 };
 
-export function DailyProgressPanel({ projectCode, workspaceId, onAskAgent }: Props) {
+type ReadState = { key: string; data: InspectResult | null; loading: boolean; error: string | null };
+
+export function DailyProgressPanel({ projectCode, workspaceId, date, group, refreshKey, onGroupChange, onAskAgent }: Props) {
+  const location = useLocation();
+  const from = location.pathname + location.search;
   const href = (path: string) => workspaceHref(workspaceId, path);
-  const [date, setDate] = useState('');
-  const [group, setGroup] = useState<'day' | 'person' | 'task'>('day');
-  const [data, setData] = useState<InspectResult | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [focusRefresh, setFocusRefresh] = useState(0);
+  const readKey = JSON.stringify([workspaceId, projectCode, date, group, refreshKey, focusRefresh]);
+  const [read, setRead] = useState<ReadState>({ key: '', data: null, loading: true, error: null });
+  const { data, loading, error } = read.key === readKey ? read : { data: null, loading: true, error: null };
 
   useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
+    const onFocus = () => { if (document.visibilityState === 'visible') setFocusRefresh(value => value + 1); };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onFocus);
+    return () => { window.removeEventListener('focus', onFocus); document.removeEventListener('visibilitychange', onFocus); };
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setRead({ key: readKey, data: null, loading: true, error: null });
     void (async () => {
       try {
-        const next = await dailyProgressApi.inspect(projectCode, date, group);
-        if (cancelled) return;
-        setData(next);
-        if (!date) setDate(next.date);
+        const next = await dailyProgressApi.inspect(projectCode, date, group, { signal: controller.signal });
+        if (!controller.signal.aborted) setRead({ key: readKey, data: next, loading: false, error: null });
       } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : '无法读取每日演进');
-      } finally {
-        if (!cancelled) setLoading(false);
+        if (!controller.signal.aborted) setRead({ key: readKey, data: null, loading: false, error: err instanceof Error ? err.message : '无法读取每日演进' });
       }
     })();
-    return () => { cancelled = true; };
-  }, [projectCode, date, group]);
+    return () => { controller.abort(); };
+  }, [projectCode, date, group, readKey]);
 
   const emptyCopy = data?.status === 'incompatible'
-    ? '当天文件仍是旧形状，需要 Agent 先同步最新代码，再收集当日 Git 提交后重跑覆盖。页面不会根据 Git 自动填充。'
-    : '需要 Agent 先同步最新代码，再拉取当日 Git 提交与更改文件，对比本机 user.email 后总结新增、更新、删除与弊端，并判断是否关联 Task。页面不会根据 Git 自动填充。';
+    ? '这一天的摘要格式较旧，可交给智能体（Agent）按已确认的提交范围重新生成。'
+    : '可交给智能体（Agent）根据这一天的本地提交生成摘要，并说明覆盖范围。';
 
   return (
-    <section className="project-document-body daily-progress-panel" aria-label="每日演进">
+    <section className="daily-progress-panel" aria-label="每日演进" data-progress-project={projectCode} data-progress-date={date}>
       <div className="progress-toolbar">
-        <div className="date-field">
-          <span>日期</span>
-          <Button size="small" onClick={() => date && setDate(shiftDate(date, -1))} disabled={!date}>前一天</Button>
-          <DatePicker
-            id="progress-date"
-            size="small"
-            allowClear={false}
-            inputReadOnly
-            format="YYYY-MM-DD"
-            value={date ? dayjs(date) : null}
-            aria-label="选择日期"
-            onChange={(next: Dayjs | null) => {
-              if (next?.isValid()) setDate(next.format('YYYY-MM-DD'));
-            }}
-          />
-          <Button size="small" onClick={() => date && setDate(shiftDate(date, 1))} disabled={!date}>后一天</Button>
-        </div>
         <div className="segmented" role="group" aria-label="分组方式">
           {GROUPS.map((item) => (
             <button
@@ -146,38 +127,38 @@ export function DailyProgressPanel({ projectCode, workspaceId, onAskAgent }: Pro
               data-group={item.value}
               className={group === item.value ? 'active' : undefined}
               aria-pressed={group === item.value}
-              onClick={() => setGroup(item.value)}
+              onClick={() => onGroupChange(item.value)}
             >
               {item.label}
             </button>
           ))}
         </div>
         <span className="progress-meta" id="progress-meta">
-          {data?.status === 'inspected' ? `本机 · ${data.itemCount} 条提交 · 关联 ${data.taskReferenceCount} 个 Task` : data?.status === 'incompatible' ? '本机 · 当天文件不兼容' : '本机 · 当天还没有文件'}
+          {loading ? '正在读取…' : data?.status === 'inspected' ? `${data.itemCount} 条提交 · 关联 ${data.taskReferenceCount} 个任务` : data?.status === 'incompatible' ? '当天摘要格式不兼容' : error ? '摘要暂不可用' : '当天还没有摘要'}
         </span>
       </div>
-      <p className="progress-hint">只读展示当天已保存的摘要。生成或重跑请用右上角「交给 Agent」，页面不提供写入或编辑，打开时也不会扫描 Git。</p>
       <div id="progress-body">
-        {loading ? <p className="page-copy">正在读取…</p> : null}
-        {error ? <p className="alert error">{error}</p> : null}
+        {loading ? <Skeleton active /> : null}
+        {error ? <Alert type="error" showIcon message={error} action={<Button onClick={() => setFocusRefresh(value => value + 1)}>重试</Button>} /> : null}
         {!loading && !error && data?.status !== 'inspected' ? (
           <div className="empty-state" id="daily-progress-empty">
-            <h2>{data?.status === 'incompatible' ? '当天文件需要按 Git 提交重跑' : '这一天还没有每日演进'}</h2>
+            <h2>{data?.status === 'incompatible' ? '这一天的摘要需要重新生成' : '这一天还没有每日演进'}</h2>
             <p>{emptyCopy}</p>
-            <Button type="primary" id="empty-agent-action" onClick={onAskAgent}>交给 Agent</Button>
+            <Button type="primary" id="empty-agent-action" onClick={onAskAgent}>生成每日演进</Button>
           </div>
         ) : null}
         {!loading && !error && data?.status === 'inspected' && data.daySummary ? (
           <>
-            {group !== 'task' ? <SummaryGrid summary={data.daySummary} /> : null}
+            <SummaryGrid summary={data.daySummary} />
             {group === 'task' ? <p className="progress-hint">按任务只聚合已关联的自己的提交；他人提交不进入任务分组。</p> : null}
             {data.groups.map((section) => (
               <section key={section.key} className="progress-group">
-                {group === 'day' ? <h3>今日提交</h3> : <h3>{section.label}</h3>}
-                {section.commits.map((commit) => <CommitCard key={`${section.key}-${commit.sha}`} commit={commit} href={href} />)}
+                {group === 'day' ? <h3>提交记录</h3> : <h3>{section.label}</h3>}
+                {section.commits.map((commit) => <CommitCard key={`${section.key}-${commit.sha}`} commit={commit} href={href} from={from} />)}
               </section>
             ))}
-            <p className="local-note">文件保存在本机 .buildr/daily-progress/{data.project}/{data.date}.yml，不进 Git。提交列表由 Agent 写入；打开页面时不会 git log。</p>
+            {!data.groups.some(section => section.commits.length) ? <p className="progress-hint">{group === 'task' ? '这一天没有关联任务的自己的提交。' : '这份摘要没有提交记录。'}</p> : null}
+            <p className="local-note">仅展示这一天已保存的摘要与提交，具体覆盖范围见摘要说明。</p>
           </>
         ) : null}
       </div>

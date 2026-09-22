@@ -12,7 +12,7 @@ import {
   readReleaseAwarenessState,
 } from '../../src/modules/installation/application/release-awareness.ts';
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.ts';
-import { createInstallationOrigin } from '../../src/modules/installation/infrastructure/installation-origin.ts';
+import { createInstallationOrigin, readCurrentInstallationOrigin } from '../../src/modules/installation/infrastructure/installation-origin.ts';
 import { createProductUpdateAuthority } from '../../src/modules/installation/infrastructure/installation-registry.ts';
 import { canonicalApplicationPayloadIdentity } from '../../src/infrastructure/product-resources/index.ts';
 
@@ -83,6 +83,17 @@ test('CLI 来源识别关联 Git workspace 中的 Product Project 与 Buildr Ser
   assert.equal(source.mode, 'development');
   assert.equal(sameFilesystemPath(source.projectRoot, path.join(root, 'projects', 'product')), true);
   assert.deepEqual(source.service, { projectCode: 'product', code: 'buildr' });
+  fs.writeFileSync(path.join(root, 'untracked.txt'), 'keep this work');
+  const full = readCurrentInstallationOrigin(productRoot);
+  const identityOnly = readCurrentInstallationOrigin(productRoot, { includeWorkingTree: false });
+  assert.equal(full.dirty, true);
+  assert.equal('dirty' in identityOnly, false);
+  assert.equal(identityOnly.ownershipIdentity, full.ownershipIdentity);
+  assert.deepEqual(identifyCliSource(productRoot), source);
+  const plan = buildCliUpdatePlan(productRoot, { fetch: false, registryLookup: () => ({ latest: '1.0.0', next: '1.0.0' }) });
+  assert.equal(plan.current.dirty, true);
+  assert.equal(plan.strategy, 'none');
+  assert.ok(plan.blockingReasons.some((message: string) => message.includes('未提交')));
 });
 
 test('无法证明来源时 fail closed', (t: any) => {

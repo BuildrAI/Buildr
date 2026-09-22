@@ -201,6 +201,7 @@ export function createServiceDiagnostics(deps: any) {
       try {
         const catalog = deps.assetCatalog(targetRoot);
         for (const issue of catalog.diagnostics) addDoctorFinding(result, 'warning', issue.code, issue.message, { objectId: issue.objectId, suggestion: '核对项目、服务与代码库的当前引用。' });
+        const observations = new Map<string, any>();
         const selected = new Set(scopes.filter((scope: any) => scope.project).map((scope: any) => scope.project));
         const assetScope = scopes.find((scope: any) => scope.assetKind);
         for (const service of catalog.services) {
@@ -210,8 +211,10 @@ export function createServiceDiagnostics(deps: any) {
           if (!repository) continue;
           if (assetScope?.assetKind === 'services' && service.code !== assetScope.assetCode) continue;
           if (assetScope?.assetKind === 'repositories' && repository.code !== assetScope.assetCode) continue;
-          result.services.push({ name: service.code, title: service.name, description: service.description, type: service.type, project: null, projects: projects.map((p: any) => p.code), repositoryId: repository.id, path: repository.source.path, exists: repository.available, isGitRepository: Boolean(repository.observed?.repository) });
-          if (!repository.available) addDoctorFinding(result, 'warning', 'repository.code_missing', `代码库尚未准备：${repository.code}`, { path: repository.source.path, suggestion: '让智能体按 repositories/manifest.yml 中已确认的来源与分支准备代码；不影响无关对象。' });
+          if (!observations.has(repository.id)) observations.set(repository.id, deps.catalogRepositoryStatus(targetRoot, repository.id));
+          const state = observations.get(repository.id);
+          result.services.push({ name: service.code, title: service.name, description: service.description, type: service.type, project: null, projects: projects.map((p: any) => p.code), repositoryId: repository.id, path: repository.source.path, exists: repository.present, isGitRepository: Boolean(state.available && state.observed?.repository) });
+          if (state.alignment === 'pending') addDoctorFinding(result, 'warning', repository.present ? 'repository.alignment_pending' : 'repository.code_missing', `代码库 ${repository.code}：${state.diagnostic || '尚未准备'}`, { path: repository.source.path, suggestion: '让智能体按 repositories/manifest.yml 中已确认的来源与分支准备代码；不影响无关对象。' });
         }
       } catch (error: any) {
         addDoctorFinding(result, 'warning', 'assets.catalog_invalid', error.message, { suggestion: '核对全局清单和迁移恢复现场。' });

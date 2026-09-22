@@ -41,11 +41,11 @@
       "type": "skill",
       "id": "code-architecture",
       "target": "skills/buildr/code-architecture",
-      "integrity": "sha256-9884f6602818dfec0187cfe76ba1b096d98c1c894e2ff445de9f985854d1754b",
+      "integrity": "sha256-e9cd450fdfd0391bc873f9da2510091636c204a8a4229990943333c4cc9e5d4d",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-d3c989987eb96cfc88f1ce86d8b31f835b71b08a59b1ef37db91003ecffc4980"
+          "integrity": "sha256-ae4f0abcbd57db4c6cec0c28aa7cdd3bb01e7e9c9c5c60429bb214b3a85f1aac"
         },
         {
           "path": "references/examples.md",
@@ -55,13 +55,33 @@
     },
     {
       "type": "skill",
-      "id": "current-knowledge-maintenance",
-      "target": "skills/buildr/current-knowledge-maintenance",
-      "integrity": "sha256-5607d19ab22189d02c7261a9c1455d2dc3d9d6d987530effa7fcac9d2073ca70",
+      "id": "code-map",
+      "target": "skills/buildr/code-map",
+      "integrity": "sha256-a8ce9955855f477eee83822feddba27ee6b1cd95e309cf69bfd2efff2aaeed46",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-78bc30e094fb5fdc164aa5f882a4bc4a9be75d1f3cff5b5eabff2c1c334d05bf"
+          "integrity": "sha256-41732f7bd71c00feb1c619c98e572acf3c054bf7e006132d2d3a6866f1555d32"
+        },
+        {
+          "path": "references/knowledge-index.md",
+          "integrity": "sha256-d006583bc2228f371acb0c1599dd9db0ee7cadcee8dffe5114b576673a9a46b1"
+        }
+      ]
+    },
+    {
+      "type": "skill",
+      "id": "current-knowledge-maintenance",
+      "target": "skills/buildr/current-knowledge-maintenance",
+      "integrity": "sha256-bb0a9840487aa6c73958f253fc2b8afd3141f431e63da530ce22408d54f74ffe",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "integrity": "sha256-313d68a4f7cc4f3c58ebb4674bafeafa1999740e20749d62a30d6e82c0a3a1b6"
+        },
+        {
+          "path": "references/architecture-knowledge.md",
+          "integrity": "sha256-696232ce6cf6c0f86a5c8266d268d167ba2356e06a906a94301c439c56a20ded"
         },
         {
           "path": "references/artifacts.md",
@@ -69,11 +89,11 @@
         },
         {
           "path": "references/change-collaboration.md",
-          "integrity": "sha256-753bae5f411192ae866e1f7e902c0addc1b0ce1555c4e6813277b7a9f87357b6"
+          "integrity": "sha256-518cf26115a9a1ef066d97150f26cacb7a411d0eeb5754f8bcbf3bafad09df09"
         },
         {
           "path": "references/verification.md",
-          "integrity": "sha256-958c915a00d896a78c873ed01e27ae85d9a4db8f5c33a6fc565250736c714080"
+          "integrity": "sha256-92b5b0c74976259d31b14589f7da21bd00516d4a9e8b810ed8e2a742ffada14e"
         }
       ]
     },
@@ -81,11 +101,11 @@
       "type": "skill",
       "id": "declaration-intake",
       "target": "skills/buildr/declaration-intake",
-      "integrity": "sha256-4fe9114d368776bf7e6a6e3dec0e2535406029e50ad4a91b17a64354c52827d4",
+      "integrity": "sha256-187e755e799337fe9741f3eb3f98a280f6e4f4c4910f6c7ffb7a9cb410e8bc7a",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-de8546067670aef592c785bc9d047a4c2c4119e1808a93d64ed9676d222aab92"
+          "integrity": "sha256-3ace4c156f6284941f6e6b040c161aa92258cbe1bf5766ddd2b9d5a3d4608344"
         }
       ]
     },
@@ -93,11 +113,11 @@
       "type": "skill",
       "id": "git-operations",
       "target": "skills/buildr/git-operations",
-      "integrity": "sha256-2f5cc8ddc3917ea300550135ba7b624d9bbb768aeafb53263394caadf3769a20",
+      "integrity": "sha256-62355bf242466a0b8a569629e30bfc3bfd306cf14c57a55a1d5beb6692b63b81",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-401a5383317ffff82ea74c0fd99c0eabf51447f2a518711a0169198da6820edf"
+          "integrity": "sha256-9eff1248495529c88031c7d5b826e75dcffcdc5252187ce9543a623571b4b714"
         }
       ]
     },
@@ -129,11 +149,11 @@
       "type": "skill",
       "id": "project-testing",
       "target": "skills/buildr/project-testing",
-      "integrity": "sha256-5a52890d6da51933c03e262e0fbbc9b9249a92597688cc09b9fe2f152898f96e",
+      "integrity": "sha256-2359002207cb754e35133754da4d779da49b1af2395b3a5134c1559709b4239f",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-06e355ec0675b58ed2aab95baa24e53058a37b26463c53ab882a715c1a60ec3b"
+          "integrity": "sha256-6d5e4b0bd46c205c86376106c439c9d0cf1cac8db8c13158ee72142c6a7514d2"
         },
         {
           "path": "references/testing-model-v1.md",
@@ -173,11 +193,11 @@
       "type": "skill",
       "id": "task-finish",
       "target": "skills/buildr/task-finish",
-      "integrity": "sha256-fa626a86138c8bb7d7cd5dc5e9caed0e1723bb463f418fac2ffda552b94497db",
+      "integrity": "sha256-82499213c41d2090dd75c04fa71796097109ce2773a50ffc99e95d2ae237d9ec",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-738d046b3d44556f9cbd9529eba9f9e3fb4e15a2006c8e4e1960d12984118020"
+          "integrity": "sha256-039ab6d168ba4544b85c3204194d583c8d5c322e10b35ff1eeb5c2d92c7a5482"
         }
       ]
     },
@@ -185,11 +205,11 @@
       "type": "skill",
       "id": "task-manager",
       "target": "skills/buildr/task-manager",
-      "integrity": "sha256-cc56989a54004946ce65366a8c8f0ecd97c018e18c0d6dd2e3a3d9137d4eb6ee",
+      "integrity": "sha256-2d9b6943a36ad3ae44bb1e2977ea1de7589331f0596833b140a2b15f23ae6693",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-ae2a343fab9e6560247163c3173a2eda50b761fbd1e4294869ccf0f91b93d12c"
+          "integrity": "sha256-260b3a4341f413edd31c9b18a44c5155494cd97cf9dded4e023b7c1839e334e3"
         },
         {
           "path": "agents/openai.yaml",
@@ -217,11 +237,11 @@
       "type": "skill",
       "id": "task-review",
       "target": "skills/buildr/task-review",
-      "integrity": "sha256-bccd6c9009f4ccc3ff75eeb2916871b44397108695159fd2c1aa1a5952616216",
+      "integrity": "sha256-b1648eb56e5e05acbd2eb8005bbd8e4417a0c85dcb826f957780f4af18d33332",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-c98dfe4e90f9e510cf893b9aaa4b2b25c28583476d9eabd0d489c035c0a0c4b5"
+          "integrity": "sha256-a02ce5f6ef906a5c585caaafdaff9cca448b0c60a6f997c97b2583abbae42063"
         },
         {
           "path": "agents/openai.yaml",
@@ -233,11 +253,11 @@
       "type": "skill",
       "id": "task-triage",
       "target": "skills/buildr/task-triage",
-      "integrity": "sha256-1ad6618225ada0105d193a2e9249dc972d47b4108bf2863cb4c49ddafba3dfde",
+      "integrity": "sha256-6f732edde2c9d8494758482c0a38a767de840ae85b4eaa30ce58b042afe996ac",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-6ead5a0628244d56a139b8cb54b934522299f530711f177a62c1409d186c6a21"
+          "integrity": "sha256-fb4d848ed62f164c51560aebd555d752f7a61700e7c2ca9c00d9a0a9930be7b0"
         },
         {
           "path": "references/structured-handoff.md",
@@ -253,27 +273,27 @@
       "type": "skill",
       "id": "task-verification",
       "target": "skills/buildr/task-verification",
-      "integrity": "sha256-18bb9b43d1ef44a22ba866ec0bfbcce0ccb2892be3898502cb8f16410a441ad8",
+      "integrity": "sha256-af86a52ae4c8fd6b3984adf6d15dbf2fc73623af1591706d9e6b43ea46794bbc",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-9f96b39189f1d4caa7cb476682fe2377916d0fb5ef534c182103a715920f4537"
+          "integrity": "sha256-79aecda39c317cf803537a845edc1cc701bd810889bbf8f9d4a5c8704276b632"
         },
         {
           "path": "references/maintain-map.md",
-          "integrity": "sha256-e282fca424aab3ead8f6a27aded0ddda7cbdf62aeaab8f4e4bdcb93d089ff7e3"
+          "integrity": "sha256-0aefff611491ecfdd7461837ddbbb2a7a80a0fb4ced0d4f093dd118f8f8c747d"
         },
         {
           "path": "references/project-verification-v4.md",
-          "integrity": "sha256-45ccea9bb08d60dbeabd15acdfa3a5d3ceb1b717d51b5c53cec8b17ee17ce150"
+          "integrity": "sha256-f6f685078dd875a014cc537ba66ae8e150452215a404fc5773a56978168c35de"
         },
         {
           "path": "references/record-report.md",
-          "integrity": "sha256-61d82d2740a9f60216a5919e0a42a44ea550faea1479d0d5164b938fc050692f"
+          "integrity": "sha256-f1a697a92500dda9fc443a801a768496a1bc0b9283fe5bf661f17c1697feb7a0"
         },
         {
           "path": "templates/project-verification.yml",
-          "integrity": "sha256-c609664e494129c087daef77dc8e8da874e16eece77af543757ab1a6841b2f22"
+          "integrity": "sha256-0298a8d9c934373dfd092c5659c524ca953bd6bb5c0c9ac6174dd179969a89ca"
         }
       ]
     },

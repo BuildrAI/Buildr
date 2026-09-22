@@ -21,6 +21,14 @@ test('Browser dispatcher selects only affected resource selectors', () => {
   assert.equal(plan.reasons.length, 2);
 });
 
+test('Browser dispatcher covers workbench pages and shared preference interactions', () => {
+  for (const file of ['pages/WorkbenchPage.tsx', 'hooks/useWorkbench.ts', 'api/workbench-api.ts']) {
+    const plan = selectBrowserSelectors([`services/buildr-web/src/features/workbench/${file}`]);
+    assert.equal(plan.status, 'selected');
+    assert.deepEqual(plan.selectors, ['workbench']);
+  }
+});
+
 test('Browser dispatcher closes the old zero-selector success for Web package and build config', () => {
   for (const input of [
     'services/buildr-web/package.json',
@@ -83,4 +91,11 @@ test('changed planner gives Buildr Web Runtime HTTP its narrow System owner', ()
   const ids: any = plan.steps.map((step: any) => step.id);
   assert.ok(ids.includes('system-buildr-web-http'));
   assert.equal(ids.includes('system'), false);
+});
+
+
+test('Browser dispatcher covers shared reading and publication components', () => {
+  assert.deepEqual(selectBrowserSelectors(['services/buildr-web/src/features/publication/components/ArticleEditorDrawer.tsx']).selectors, ['articles']);
+  assert.deepEqual(selectBrowserSelectors(['services/buildr-web/src/features/knowledge/components/KnowledgeBrowser.tsx']).selectors, ['project', 'service', 'articles']);
+  assert.deepEqual(selectBrowserSelectors(['services/buildr-web/src/app/WorkspacePages.tsx']).selectors, ['shell', 'project', 'service', 'articles']);
 });

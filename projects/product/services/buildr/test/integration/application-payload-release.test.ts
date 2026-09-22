@@ -359,6 +359,88 @@ test('npm package uses only its compatible host Node for CLI and on-demand Build
     assert.equal(initialized.status, 0, initialized.stderr || initialized.stdout);
     const project: any = run(['project', 'create', 'demo', '--target', workflowWorkspace, '--name', 'Demo', '--description', 'Installed workflow route fixture.']);
     assert.equal(project.status, 0, project.stderr || project.stdout);
+
+    const external = path.join(root, 'external-service');
+    fs.mkdirSync(path.join(external, 'checks'), { recursive: true });
+    fs.writeFileSync(path.join(external, 'README.md'), '# External service\n');
+    fs.writeFileSync(path.join(external, 'checks/readme.test.mjs'), "import assert from 'node:assert/strict';\nimport fs from 'node:fs';\nimport test from 'node:test';\ntest('service README', () => assert.match(fs.readFileSync(new URL('../README.md', import.meta.url), 'utf8'), /External service/));\n");
+    for (const args of [
+      ['init', '-b', 'main'],
+      ['add', '.'],
+      ['-c', 'user.name=Buildr Test', '-c', 'user.email=buildr@example.com', 'commit', '-m', 'External service fixture'],
+      ['remote', 'add', 'origin', external],
+    ]) {
+      const result = spawnSync('git', args, { cwd: external, encoding: 'utf8' });
+      assert.equal(result.status, 0, result.stderr || result.stdout);
+    }
+    // Service attachment and Task creation may inspect Git; preserve the narrow
+    // Host Node environment above for all ordinary CLI and Web assertions.
+    const runWithGit = (args: string[]) => spawnSync(process.execPath, [cli, ...args], {
+      cwd: root, env: { ...runtimeEnv, PATH: process.env.PATH }, encoding: 'utf8',
+    });
+    const attached = runWithGit(['service', 'create', 'demo/external', '--attach', external, '--integration-branch', 'main', '--target', workflowWorkspace, '--name', 'External', '--description', 'Installed verification fixture', '--type', 'backend', '--json']);
+    assert.equal(attached.status, 0, attached.stderr || attached.stdout);
+    const declaration = {
+      schemaVersion: 'buildr.project-verification/v4',
+      testing: [{
+        id: 'external-tests', title: 'External service tests',
+        scope: { project: 'demo', services: ['external'] },
+        purpose: 'Validate the external service README',
+        location: { kind: 'service', service: 'external' },
+        sourcePaths: ['README.md'], testRoots: ['checks/**'],
+        full: { kind: 'command', argv: ['node', '--test', 'readme.test.mjs'], cwd: 'checks' },
+        requirements: ['node'],
+      }],
+    };
+    const mapFile = path.join(root, 'external-verification.json');
+    fs.writeFileSync(mapFile, JSON.stringify(declaration));
+    const projectVerification = (operation: string, args: string[] = []) => {
+      const result = run(['project', 'verification', operation, 'demo', ...args, '--target', workflowWorkspace, '--json']);
+      assert.equal(result.status, 0, result.stderr || result.stdout);
+      return JSON.parse(result.stdout);
+    };
+    const expectedLocation = {
+      testing: 'external-tests', kind: 'service', service: 'external',
+      root: fs.realpathSync(external), cwd: fs.realpathSync(path.join(external, 'checks')),
+      status: 'ready', diagnostics: [],
+    };
+    const validated = projectVerification('validate', ['--file', mapFile]);
+    assert.equal(validated.status, 'ready');
+    assert.deepEqual(validated.locations, [expectedLocation]);
+    const updated = projectVerification('update', ['--file', mapFile, '--expected-identity', 'absent']);
+    assert.equal(updated.status, 'updated');
+    assert.deepEqual(updated.locations, [expectedLocation]);
+    const inspected = projectVerification('inspect');
+    assert.equal(inspected.identity, updated.identity);
+    assert.deepEqual(inspected.declaration.testing[0].location, declaration.testing[0].location);
+    assert.deepEqual(inspected.locations, [expectedLocation]);
+
+    const taskId = 'installed-verification';
+    const createdTask = runWithGit(['task', 'create', taskId, '--title', 'Installed verification', '--intent', 'Record the external service test gap', '--status', 'active', '--service', 'demo/external', '--target', workflowWorkspace, '--json']);
+    assert.equal(createdTask.status, 0, createdTask.stderr || createdTask.stdout);
+    const reportFile = path.join(root, 'verification-report.json');
+    const gap = { project: 'demo', service: 'external', testing: 'external-tests', reason: 'The installed CLI verified the declaration location; the service test command was not executed.' };
+    fs.writeFileSync(reportFile, JSON.stringify({
+      contentIdentity: 'fixture:installed-verification', contentSummary: 'External service declaration',
+      checks: [], gaps: [gap],
+      conclusion: { outcome: 'incomplete', summary: 'The service test command remains unexecuted.' },
+    }));
+    const recordedResult = run(['task', 'verification', 'record', taskId, '--report', reportFile, '--expected-report', 'absent', '--target', workflowWorkspace, '--json']);
+    assert.equal(recordedResult.status, 0, recordedResult.stderr || recordedResult.stdout);
+    const recorded = JSON.parse(recordedResult.stdout);
+    assert.equal(recorded.status, 'recorded');
+    assert.deepEqual(recorded.slot.report.checks, []);
+    assert.deepEqual(recorded.slot.report.gaps, [gap]);
+    assert.equal(recorded.slot.report.declarations[0].status, 'ready');
+    assert.equal(recorded.slot.report.declarations[0].identity, updated.identity);
+    assert.equal(recorded.slot.report.conclusion.outcome, 'incomplete');
+    const reportInspectionResult = run(['task', 'verification', 'inspect', taskId, '--content-identity', 'fixture:installed-verification', '--target', workflowWorkspace, '--json']);
+    assert.equal(reportInspectionResult.status, 0, reportInspectionResult.stderr || reportInspectionResult.stdout);
+    const reportInspection = JSON.parse(reportInspectionResult.stdout);
+    assert.deepEqual(reportInspection.slot.report, recorded.slot.report);
+    assert.equal(reportInspection.slot.applicability.status, 'current');
+    assert.equal(JSON.stringify(reportInspection.slot.report).includes(fs.realpathSync(external)), false, 'portable reports must not persist local location paths');
+
     const planningIdentity: any = run(['__internal', 'task-planning-identity', 'inspect', '--task', 'planning-route-fixture', '--target', workflowWorkspace]);
     assert.notEqual(planningIdentity.status, 0, 'retired Planning Identity route must be absent');
 

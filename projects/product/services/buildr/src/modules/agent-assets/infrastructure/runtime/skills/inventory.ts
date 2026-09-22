@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { getRuntimeAdapter, skillDestinationRoot } from '../adapter-contract.ts';
+import { getRuntimeAdapter } from '../adapter-contract.ts';
 import { enumerateSkillSourceFiles, observeSkillProjectionOwnershipReceipt, sha256Integrity } from './projection-files.ts';
 import { parseSkillFrontmatterName } from './primitives.ts';
 
@@ -26,16 +26,22 @@ function walkSkillDirectories(root: any, output: any = []): any  {
   return output;
 }
 
-function receiptForRuntimePath({ targetRoot, destination, adapter, runtimePath, runtimeSkillDir }: any): any  {
+function receiptForRuntimePath({ targetRoot, destination, adapter, runtimePath, runtimeSkillDir, root }: any): any  {
   const observation = observeSkillProjectionOwnershipReceipt({
     targetRoot,
-    runtimeRoot: adapter.traits.skills.destinations[destination].root,
+    runtimeRoot: root,
     destination,
     adapterId: adapter.id,
     runtimePath,
     runtimeSkillDir,
   });
   return { file: observation.receiptFile, receipt: observation.receipt, migration: observation.migration };
+}
+
+function destinationRelativeRoots(adapter: any, destination: any): any  {
+  const descriptor = adapter.traits.skills.destinations[destination];
+  if (destination !== 'workspace') return [descriptor.root];
+  return descriptor.roots || [descriptor.root];
 }
 
 export function buildEffectiveSkillInventory({ adapterId, workspaceRoot, userHome, candidateIds = null }: any): any  {
@@ -45,32 +51,34 @@ export function buildEffectiveSkillInventory({ adapterId, workspaceRoot, userHom
   const entries: any[] = [];
   for (const destination of ['workspace', 'user']) {
     const targetRoot = destination === 'workspace' ? workspaceRoot : resolvedUserHome;
-    const destinationRoot = skillDestinationRoot(adapter, destination, workspaceRoot, { userHome: resolvedUserHome });
-    const skillsRoot = path.join(destinationRoot, 'skills');
-    for (const directory of walkSkillDirectories(skillsRoot)) {
-      const skillFile = path.join(directory, 'SKILL.md');
-      let skillId;
-      try { skillId = parseSkillFrontmatterName(skillFile); } catch { continue; }
-      if (wanted && !wanted.has(skillId)) continue;
-      const runtimePath = path.relative(skillsRoot, directory).split(path.sep).join('/');
-      const files = enumerateSkillSourceFiles(directory);
-      const { file: receiptFile, receipt, migration } = receiptForRuntimePath({ targetRoot, destination, adapter, runtimePath, runtimeSkillDir: directory });
-      entries.push({
-        skillId,
-        runtimePath,
-        destination,
-        path: directory,
-        sourceCategory: receipt ? 'buildr-managed' : 'external-filesystem',
-        receiptPath: receipt ? receiptFile : null,
-        receipt,
-        receiptMigration: migration,
-        assetIdentity: receipt?.assetIdentity || null,
-        sourceIdentity: receipt?.sourceIdentity || null,
-        sourceWorkspaceId: receipt?.sourceWorkspaceId || null,
-        sourceDigest: receipt?.sourceDigest || inventoryDigest(files),
-        renderDigest: receipt?.renderDigest || inventoryDigest(files),
-        files: files.map((file: any) => ({ path: file.relativePath, integrity: sha256Integrity(file.content), executable: file.executable })),
-      });
+    for (const relativeRoot of destinationRelativeRoots(adapter, destination)) {
+      const skillsRoot = path.join(targetRoot, relativeRoot, 'skills');
+      for (const directory of walkSkillDirectories(skillsRoot)) {
+        const skillFile = path.join(directory, 'SKILL.md');
+        let skillId;
+        try { skillId = parseSkillFrontmatterName(skillFile); } catch { continue; }
+        if (wanted && !wanted.has(skillId)) continue;
+        const runtimePath = path.relative(skillsRoot, directory).split(path.sep).join('/');
+        const files = enumerateSkillSourceFiles(directory);
+        const { file: receiptFile, receipt, migration } = receiptForRuntimePath({ targetRoot, destination, adapter, runtimePath, runtimeSkillDir: directory, root: relativeRoot });
+        entries.push({
+          skillId,
+          runtimePath,
+          destination,
+          root: relativeRoot,
+          path: directory,
+          sourceCategory: receipt ? 'buildr-managed' : 'external-filesystem',
+          receiptPath: receipt ? receiptFile : null,
+          receipt,
+          receiptMigration: migration,
+          assetIdentity: receipt?.assetIdentity || null,
+          sourceIdentity: receipt?.sourceIdentity || null,
+          sourceWorkspaceId: receipt?.sourceWorkspaceId || null,
+          sourceDigest: receipt?.sourceDigest || inventoryDigest(files),
+          renderDigest: receipt?.renderDigest || inventoryDigest(files),
+          files: files.map((file: any) => ({ path: file.relativePath, integrity: sha256Integrity(file.content), executable: file.executable })),
+        });
+      }
     }
   }
   return {

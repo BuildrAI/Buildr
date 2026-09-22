@@ -1,0 +1,17 @@
+.daily-progress-date-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.daily-progress-panel { padding-top: 4px; }
+.daily-progress-panel .progress-toolbar { justify-content: space-between; padding-bottom: 16px; border-bottom: 1px solid var(--soft-line); }
+.daily-progress-panel .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 20px 0 28px; }
+.daily-progress-panel .summary-card { padding: 18px 20px; }
+.daily-progress-panel .summary-card h3 { margin-bottom: 10px; color: var(--soft-ink); font-size: 14px; }
+.daily-progress-panel .summary-card p { color: var(--soft-muted); font-size: 14px; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; }
+.daily-progress-panel .commit-item { overflow-wrap: anywhere; }
+.daily-progress-panel .commit-subject { font-weight: 550; }
+.daily-progress-panel .empty-state { padding: 44px 20px; border: 1px solid var(--soft-line); border-radius: 12px; background: var(--soft-sidebar); }
+.daily-progress-panel .empty-state p { max-width: 540px; margin-inline: auto; line-height: 1.8; }
+.daily-progress-panel .local-note { margin-top: 24px; }
+@media (max-width: 600px) {
+  .daily-progress-panel .summary-grid { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .daily-progress-panel .summary-card { padding: 16px; }
+  .daily-progress-date-controls .ant-btn { padding-inline: 10px; }
+}

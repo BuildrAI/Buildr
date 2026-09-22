@@ -133,7 +133,11 @@ test('Buildr Web Task API 提供轻量查询与既有任务维护，不暴露创
     retrospectiveDocumentDigest: retrospectiveDocument.actualDigest,
   });
   const readExecutor: any = {
-    run: (operation: any, input: any) => Promise.resolve(runtime[{ reviews: 'inspectTaskReview', verification: 'inspectTaskVerificationView', coordination: 'inspectParentCoordination' }[operation]](input.targetRoot, input.taskId)),
+    run: (operation: any, input: any) => {
+      const methods = { reviews: 'inspectTaskReview', verification: 'inspectTaskVerificationView', coordination: 'inspectParentCoordination', change: 'taskScopedChangeDetail', documents: 'taskProjectDocument', prototypes: 'taskUiPrototypes', prototype: 'taskUiPrototype' };
+      const extra = operation === 'change' ? [input.project, input.change] : operation === 'documents' ? [input.project, input.documentPath] : operation === 'prototype' ? [input.prototypeId] : [];
+      return Promise.resolve(runtime[methods[operation]](input.targetRoot, input.taskId, ...extra));
+    },
     close: async () => {},
   };
   const instance: any = createLocalWorkspaceServer(runtime, { targetRoot: root, readExecutor });

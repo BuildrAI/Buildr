@@ -5,6 +5,8 @@ testing:
     scope:
       project: replace-with-project-code
       services: []
+    location:
+      kind: project
     purpose: Explain what this testing family proves
     sourcePaths: [src/**]
     testRoots: [test/**]

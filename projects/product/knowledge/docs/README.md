@@ -8,6 +8,10 @@
 | 核心概念与术语 | [术语表](glossary.md)；概念关系见概览与产品架构 | 稳定名称、定义、作用域和区别；不为一次任务建立私有术语表 |
 | 产品架构 | [产品架构](architecture/product.md) | 角色、能力、领域和产品边界；规划明确标注 |
 | 技术架构 | [技术架构](architecture/technical.md)、[服务分层](architecture/service-architecture.md) | 系统组成、模块、依赖和数据归属；实现细节链接地图 |
+| 数据设计 | [数据全景与领域设计](architecture/buildr-data-design.md)、[数据库表设计](architecture/buildr-database-tables.md)、[本机数据与恢复](architecture/buildr-local-data.md) | 业务对象、身份、关联、真实存储与修改约束；连接领域总图和实体关系图（Entity Relationship Diagram，ERD） |
+| 知识建设与维护 | [架构说明](architecture/knowledge-maintenance.md)、[阅读用词说明](knowledge-maintenance-terms.md) | 文中直接引用图和地图，来源变化后按影响维护 |
+| 对象关系与代码定位 | [项目、服务与代码库如何协作](architecture/project-service-repositories.md) | 解释共享引用、真实代码位置与修改影响 |
+| 完整任务系统 | [从用户对话到任务收尾](architecture/task-system.md) | 工作台（Workbench）、工作摘要（Work Context）答复闭环、独立记录、实施验证、交付与自举激活；列明当前规范残留 |
 | 专题架构 | [技能体系](architecture/buildr-skill-system.md)、[项目声明](architecture/buildr-project-declaration-system.md)、[通用测试与验证](architecture/workspace-testing-and-verification-framework.md)、[Product 验证框架](architecture/verification-framework.md)、[门禁分类](architecture/governance-gate-taxonomy.md) | 分别解释对应机制；通用测试模型与 Buildr 产品自身测试框架保持不同范围 |
 | 关键流程 | [变更处理](flows/openspec-change-lifecycle.md)、[任务交付](flows/task-closeout.md)、[父任务协调](flows/task-parent-coordination.md)、[每日演进](flows/project-daily-progress.md)、[发布与恢复](flows/open-source-release.md) | 从目标到结果的参与者、关键顺序、异常和边界；不重复完整调用实现 |
 | 服务说明 | [Buildr](services/buildr.md)、[Buildr Web](services/buildr-web.md) | 服务职责、对外能力、数据和依赖；模块专题按价值放入对应架构说明 |

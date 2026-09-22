@@ -77,7 +77,27 @@ export function createWorkspaceHttpContribution(application: any) {
         application.updateWorkspaceMetadata(root, validateRequest('workspace.update', await readJsonBody()));
         return respond('workspace.update', application.getWorkspace(root));
       }
+      if (request.method === 'GET' && suffix === '/services') return respond('assets.services.list', application.listCatalogServices(root));
+      if (request.method === 'GET' && suffix === '/repositories') return respond('assets.repositories.list', application.listCatalogRepositories(root));
+      const repositoryConfig = suffix.match(/^\/repositories\/([A-Za-z0-9._-]+)\/local-config$/);
+      if (request.method === 'GET' && repositoryConfig) return respond('assets.repository.local-config', application.catalogRepositoryLocalConfig(root, repositoryConfig[1]));
+      const repositoryStatus = suffix.match(/^\/repositories\/([A-Za-z0-9._-]+)\/status$/);
+      if (request.method === 'GET' && repositoryStatus) return respond('assets.repository.status', application.catalogRepositoryStatus(root, repositoryStatus[1]));
+      if (request.method === 'POST' && suffix === '/asset-catalog/normalize') {
+        authorizeWrite();
+        return respond('assets.normalize', application.normalizeCatalogRepositories(root, validateRequest('assets.normalize', await readJsonBody())));
+      }
+      const assetDelete = suffix.match(/^\/asset-catalog\/(project|service)\/([A-Za-z0-9._-]+)$/);
+      if (request.method === 'DELETE' && assetDelete) {
+        authorizeWrite();
+        return respond('assets.delete', application.deleteCatalogAsset(root, assetDelete[1], assetDelete[2], validateRequest('assets.delete', await readJsonBody())));
+      }
       if (request.method === 'GET' && suffix === '/asset-catalog') return respond('assets.read', application.assetCatalog(root));
+      if (request.method === 'GET' && suffix === '/asset-catalog/project-candidates') return respond('assets.projects.candidates', application.listProjectRegistrationCandidates(root));
+      if (request.method === 'POST' && suffix === '/asset-catalog/projects/register') {
+        authorizeWrite();
+        return respond('assets.projects.register', application.registerCatalogProject(root, validateRequest('assets.projects.register', await readJsonBody())));
+      }
       if (request.method === 'POST' && suffix === '/asset-catalog/migrate') {
         authorizeWrite();
         return respond('assets.migrate', application.migrateAssetCatalog(root, validateRequest('assets.migrate', await readJsonBody())));

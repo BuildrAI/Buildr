@@ -13,6 +13,8 @@ export type AppShellContextValue = {
   refreshNavigation: () => void;
   workspace: WorkspaceShellInfo | null;
   setWorkspace: (data: { workspace: { name: string }; rootPath: string }) => void;
+  openWorkspaceSettings: (workspaceId: string) => void;
+  workspaceRegistryRevision: number;
   openAgentAction: (action?: string, context?: AgentActionContext) => void;
   breadcrumbParts: string[];
   setBreadcrumbParts: (parts: string[]) => void;

@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Buildr 数据领域与事实归属",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "viewBox": [1220, 700],
+    "legend": {"mode": "hidden"}
+  },
+  "components": [
+    {"id":"workspace","type":"backend","label":"工作空间（Workspace）","sublabel":"身份、登记与治理范围","pos":[60,60],"size":[280,90]},
+    {"id":"project","type":"backend","label":"项目（Project）","sublabel":"目标、声明与服务引用","pos":[470,60],"size":[280,90]},
+    {"id":"service","type":"backend","label":"服务（Service）","sublabel":"实现职责与代码位置","pos":[880,60],"size":[280,90]},
+    {"id":"assets","type":"database","label":"文件中的工作资产","sublabel":"规则、技能、组件、命令","pos":[60,285],"size":[280,90]},
+    {"id":"task","type":"database","label":"任务（Task）","sublabel":"目标、范围、父子关系、结果","pos":[470,285],"size":[280,90]},
+    {"id":"repository","type":"external","label":"代码库实例","sublabel":"Repository Instance · Git / 路径","pos":[880,285],"size":[280,90]},
+    {"id":"projection","type":"backend","label":"运行时投射（Projection）","sublabel":"可重建入口 + 所有权回执","pos":[60,510],"size":[280,90]},
+    {"id":"records","type":"database","label":"独立的协作记录","sublabel":"工作摘要、审查、验证","pos":[470,510],"size":[280,90]},
+    {"id":"knowledge","type":"database","label":"文件中的规范与知识","sublabel":"OpenSpec · knowledge/","pos":[880,510],"size":[280,90]}
+  ],
+  "connections": [
+    {"from":"workspace","to":"project","label":"登记"},
+    {"from":"project","to":"service","label":"共享引用"},
+    {"from":"workspace","to":"assets","label":"保存源资产","labelDy":80},
+    {"from":"assets","to":"projection","label":"受管生成","labelDy":80},
+    {"from":"project","to":"task","label":"范围关联","labelDy":80},
+    {"from":"task","to":"records","label":"以 task_id 关联","labelDy":80},
+    {"from":"service","to":"repository","label":"引用一个实例","labelDy":80},
+    {"from":"task","to":"knowledge","label":"引用，不复制正文","variant":"dashed"}
+  ],
+  "cards": [
+    {"dot":"cyan","title":"这不是数据库表图","items":["框表示领域对象或数据集合；箭头表示已命名关系，不表达表级外键。"]},
+    {"dot":"emerald","title":"本机记录也是事实","items":["任务与协作记录保存在 SQLite；文件、Git 与外部系统仍各自拥有原始成果。"]}
+  ]
+}

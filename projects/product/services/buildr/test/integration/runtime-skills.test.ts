@@ -268,6 +268,58 @@ test('完整 Skill 目录跨 adapter 投射字节、权限、回执与 stale 清
   assert.equal(fs.existsSync(path.join(runtimeDir, 'assets', 'sample.bin')), false);
 });
 
+test('Qoder 只投射 .qoder 单一 Skills root，回执与 stale 清理都不涉及共享根', (t: any) => {
+  const sandbox: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-qoder-single-root-'));
+  const sourceDir: any = path.join(sandbox, 'source');
+  const targetRoot: any = path.join(sandbox, 'target');
+  t.after(() => fs.rmSync(sandbox, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(sourceDir, 'assets'), { recursive: true });
+  fs.mkdirSync(targetRoot, { recursive: true });
+  fs.writeFileSync(path.join(sourceDir, 'SKILL.md'), '---\nname: single-demo\ndescription: single root demo\n---\n\n# Single Demo\n');
+  fs.writeFileSync(path.join(sourceDir, 'assets', 'note.md'), '# note\n');
+  const skill: any = { id: 'single-demo', sourceDir, sourceFile: path.join(sourceDir, 'SKILL.md'), origin: 'workspace', runtimePath: 'team/single-demo', declaredScope: '.' };
+
+  const plan: any = buildSkillRenderPlan(sandbox, targetRoot, [skill], 'qoder');
+  const relative: any = plan.writes.map((item: any) => path.relative(targetRoot, item.targetFile).split(path.sep).join('/'));
+  for (const file of ['SKILL.md', 'assets/note.md']) {
+    assert.ok(relative.includes(`.qoder/skills/team/single-demo/${file}`), `.qoder missing ${file}`);
+  }
+  assert.equal(relative.filter((item: any) => item.startsWith('.agents/')).length, 0, 'qoder must not project into the shared .agents root');
+  const receipt: any = skillProjectionOwnershipReceiptTarget(targetRoot, 'workspace', 'qoder', 'team/single-demo');
+  assert.ok(relative.includes(path.relative(targetRoot, receipt).split(path.sep).join('/')), 'a single receipt covers the single root');
+
+  applySkillRenderPlan(plan, targetRoot);
+  assert.equal(JSON.parse(fs.readFileSync(receipt, 'utf8')).runtimeRoot, undefined, 'receipts keep the single-root shape');
+
+  fs.rmSync(path.join(sourceDir, 'assets', 'note.md'));
+  const stale: any = buildSkillRenderPlan(sandbox, targetRoot, [skill], 'qoder');
+  assert.deepEqual(
+    stale.removals.map((item: any) => path.relative(targetRoot, item.targetFile).split(path.sep).join('/')),
+    ['.qoder/skills/team/single-demo/assets/note.md'],
+  );
+  applySkillRenderPlan(stale, targetRoot);
+  assert.equal(fs.existsSync(path.join(targetRoot, '.qoder', 'skills', 'team', 'single-demo', 'assets', 'note.md')), false);
+});
+
+test('Qoder effective inventory 只覆盖自身写入根，共享根内容不改变候选判定', (t: any) => {
+  const workspace: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-qoder-shared-root-'));
+  t.after(() => fs.rmSync(workspace, { recursive: true, force: true }));
+  const sharedDir: any = path.join(workspace, '.agents', 'skills', 'team', 'single-demo');
+  fs.mkdirSync(sharedDir, { recursive: true });
+  fs.writeFileSync(path.join(sharedDir, 'SKILL.md'), '---\nname: single-demo\ndescription: foreign shared copy\n---\n\n# Foreign\n');
+  const inventory: any = buildEffectiveSkillInventory({ adapterId: 'qoder', workspaceRoot: workspace, candidateIds: ['single-demo'] });
+  assert.deepEqual(inventory.entries.map((entry: any) => entry.root), [], 'the shared .agents root is discovery-only for qoder');
+  const ownDir: any = path.join(workspace, '.qoder', 'skills', 'team', 'single-demo');
+  fs.mkdirSync(ownDir, { recursive: true });
+  fs.writeFileSync(path.join(ownDir, 'SKILL.md'), '---\nname: single-demo\ndescription: foreign qoder copy\n---\n\n# Foreign\n');
+  const withOwn: any = buildEffectiveSkillInventory({ adapterId: 'qoder', workspaceRoot: workspace, candidateIds: ['single-demo'] });
+  assert.equal(withOwn.entries.length, 1);
+  assert.equal(withOwn.entries[0].root, '.qoder');
+  const verdict: any = classifySkillCandidate({ skillId: 'single-demo', assetIdentity: 'product:single-demo', renderDigest: 'sha256-0000000000000000000000000000000000000000000000000000000000000000' }, withOwn, 'workspace');
+  assert.equal(verdict.status, 'name_conflict');
+  assert.equal(verdict.blocking, true, 'an occupied own root must still block the projection');
+});
+
 test('Skill 投射所有权回执按 destination 与 adapter 隔离，并保留嵌套 runtime path', () => {
   const workspace: any = '/tmp/buildr-workspace';
   assert.equal(

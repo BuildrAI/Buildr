@@ -1,3 +1,8 @@
+import { createTaskWorkContextApplication } from './work-context/application/work-context-application.ts';
+import { createWorkContextHttpContribution } from './work-context/interfaces/http/work-context-http.ts';
+import { createWorkContextCliContributions } from './work-context/interfaces/cli/work-context-cli.ts';
+export type { TaskWorkContextApplication } from './work-context/application/work-context-application.ts';
+export const TASK_WORK_CONTEXT_APPLICATION = 'task.work-context-application';
 import { registerTaskQueryApplication, type TaskQueryApplicationRuntime } from './application/task-query-application.ts';
 import { registerTaskCommandApplication, type TaskCommandApplicationRuntime } from './application/task-command-application.ts';
 import { registerTaskReviewApplication, type TaskReviewApplicationRuntime } from './application/task-review-application.ts';
@@ -91,11 +96,11 @@ type SharedTaskComposition = DynamicRuntime;
 const TASK_QUERY_METHODS = Object.freeze([
   'queryTasks', 'inspectTask', 'inspectTaskView', 'inspectTaskRetrospectiveDocument',
   'assertCanonicalTaskWorkspace',
-  'readTask', 'prepareTask', 'readTaskView', 'readParentTaskContext',
+  'readTask', 'readTaskTitles', 'prepareTask', 'readTaskView', 'readParentTaskContext',
 ]);
 
 const TASK_COMMAND_METHODS = Object.freeze([
-  'createTask', 'updateTask', 'activateTask', 'completeTask',
+  'createTask', 'updateTask', 'activateTask', 'completeTask', 'endTask',
   'abandonTask',
 ]);
 
@@ -304,7 +309,7 @@ export function createTaskReviewCliContributions(application: TaskReviewCliRunti
   return Object.freeze([
     {
       key: 'task review inspect', surface: 'agent-machine',
-      summary: '只读返回 Planning/Completion 两个可选槽位及 response-only resultDigest；不判断对当前现场的适用性。',
+      summary: '只读返回 Planning/Completion 当前结果及历次完整审查；不判断对当前现场的适用性。',
       help: [
         'Usage: buildr task review inspect <task-id> [--target <canonical-workspace>] [--json]',
         '',
@@ -315,11 +320,11 @@ export function createTaskReviewCliContributions(application: TaskReviewCliRunti
     },
     {
       key: 'task review record', surface: 'agent-machine',
-      summary: '只接收一份完整语义结果并原子替换对应 current 槽位；不接受完整 YAML、caller path、schemaVersion、taskId、completedAt、revision、current 或 applicability。',
+      summary: '只接收一份完整语义结果，原子保留旧结果并更新对应 current 槽位；不接受完整 YAML、caller path、schemaVersion、taskId、completedAt、revision、current 或 applicability。',
       help: [
         'Usage: buildr task review record <task-id> --type <planning|completion> --subject-identity <identity> --method <self|independent-agent|human> --reviewed <subject> ... [--uncovered <subject>::<reason> ...] [--finding <text> ...] --outcome <accepted|changes-requested> --summary <text> --expected-current <absent|sha256-digest> [--target <canonical-workspace>] [--json]',
         '',
-        '只接收一份完整语义结果并原子替换对应 current 槽位；不接受完整 YAML、caller path、schemaVersion、taskId、completedAt、revision、current 或 applicability。',
+        '只接收一份完整语义结果，原子保留旧结果并更新对应 current 槽位；不接受完整 YAML、caller path、schemaVersion、taskId、completedAt、revision、current 或 applicability。',
         '中断、缺少审查对象identity、并发冲突或结论不完整时不写入。该命令只写Review current，不执行Git、验证、交付、Task完成或清理。',
       ],
       match: ({ domain, action, runtimeId }: CliMatch) => domain === 'task' && action === 'review' && runtimeId === 'record',
@@ -347,6 +352,7 @@ function createTaskModule(requires: TaskModuleRequires) {
   const queryRuntime = registerTaskQueryApplication(privateComposition as unknown as TaskQueryApplicationRuntime);
   registerTaskRetrospectiveDocument(queryRuntime);
   const commandRuntime = registerTaskCommandApplication(queryRuntime as unknown as TaskQueryApplicationRuntime & TaskCommandApplicationRuntime);
+  const workContext = createTaskWorkContextApplication(commandRuntime);
   const query = pick(queryRuntime, TASK_QUERY_METHODS);
   const command = pick(commandRuntime, TASK_COMMAND_METHODS);
   const interfaceRuntime = Object.freeze({ ...query, ...command });
@@ -363,14 +369,15 @@ function createTaskModule(requires: TaskModuleRequires) {
   });
   return Object.freeze({
     provides: {
+      [TASK_WORK_CONTEXT_APPLICATION]: workContext,
       [TASK_QUERY_APPLICATION]: query,
       [TASK_COMMAND_APPLICATION]: command,
       [TASK_RUNTIME_PORT]: runtimePortValue,
       [TASK_CHANGE_BINDER]: changeBinder,
     },
     contributions: {
-      cli: createTaskCliContributions(interfaceRuntime as TaskCommandRuntime),
-      http: [Object.freeze({
+      cli: [...createTaskCliContributions(interfaceRuntime as TaskCommandRuntime), ...createWorkContextCliContributions(workContext)],
+      http: [createWorkContextHttpContribution(workContext), Object.freeze({
         id: 'task.http',
         taskIdSource: TASK_ID_SOURCE,
         handle: (input: Omit<TaskHttpInput, 'runtime'>) => handleTaskHttpRequest({ ...input, runtime: interfaceRuntime as TaskHttpInput['runtime'] }),

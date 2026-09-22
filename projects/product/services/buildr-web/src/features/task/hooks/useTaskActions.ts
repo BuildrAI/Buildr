@@ -42,12 +42,16 @@ export function useTaskActions({ taskId, data, refresh, refreshCoordination, sho
   const [completionDraft, setCompletionDraft] = useState<ParentCompletionDraft>(emptyParentCompletionDraft);
   const [completeSummary, setCompleteSummary] = useState('');
   const [abandonReason, setAbandonReason] = useState('');
-  const [actionModal, setActionModal] = useState<TaskActionModal>(null);
+  const [actionModal, setModal] = useState<TaskActionModal>(null);
+  const editSnapshot = useRef<TaskDetailResponse | null>(null);
+  const [editLatest, setEditLatest] = useState<TaskDetailResponse | null>(null);
   const dataRef = useRef(data);
   dataRef.current = data;
 
+  useEffect(() => { setModal(null); editSnapshot.current = null; setEditLatest(null); }, [taskId]);
   useEffect(() => {
-    setActionModal(null);
+    if (actionModal !== null) return;
+    setModal(null);
     setEditState('可以修改');
     setCompleteSummary('');
     setAbandonReason('');
@@ -61,7 +65,7 @@ export function useTaskActions({ taskId, data, refresh, refreshCoordination, sho
     setProjectsText(lines(record.scope.projects));
     setServicesText(lines(record.scope.services, 'service'));
     setParentTaskId(record.parentTaskId || '');
-    const options: Array<{ value: string; label: string }> = [{ value: '', label: '无 Parent（独立 Task）' }];
+    const options: Array<{ value: string; label: string }> = [{ value: '', label: '不关联组合任务' }];
     if (record.parentTaskId && data.taskRelations.parent) {
       const parent = data.taskRelations.parent;
       options.push({ value: parent.taskId, label: `${parent.title} · ${parent.taskId} · ${taskStatusLabel(parent.status)}` });
@@ -70,10 +74,33 @@ export function useTaskActions({ taskId, data, refresh, refreshCoordination, sho
     setParentOptionsLoaded(false);
   }, [taskId, data]);
 
+  const setActionModal = (mode: TaskActionModal) => {
+    if (mode === 'edit' && dataRef.current) {
+      const value = dataRef.current; editSnapshot.current = value; setEditLatest(null); setEditState('可以修改');
+      setTitle(value.record.title); setIntent(value.record.intent); setProjectsText(lines(value.record.scope.projects)); setServicesText(lines(value.record.scope.services, 'service')); setParentTaskId(value.record.parentTaskId || '');
+    }
+    setModal(mode);
+  };
+  const rereadEdit = async () => {
+    try {
+      const latest = await taskApi.detail(taskId);
+      if (latest.record.taskId !== dataRef.current?.record.taskId) return;
+      const previous = editSnapshot.current?.record;
+      if (previous) {
+        setTitle(draft => draft === previous.title ? latest.record.title : draft);
+        setIntent(draft => draft === previous.intent ? latest.record.intent : draft);
+        setProjectsText(draft => draft === lines(previous.scope.projects) ? lines(latest.record.scope.projects) : draft);
+        setServicesText(draft => draft === lines(previous.scope.services, 'service') ? lines(latest.record.scope.services, 'service') : draft);
+        setParentTaskId(draft => draft === (previous.parentTaskId || '') ? latest.record.parentTaskId || '' : draft);
+      }
+      editSnapshot.current = latest; setEditLatest(latest); setEditState('已重读，请核对后保存'); await refresh();
+    } catch (error) { showMutationError(error as ApiError); }
+  };
+
   const showMutationError = useCallback((error: ApiError) => {
     onAlert({
-      message: error.code === 'task_record_conflict' ? `${error.message} 请刷新本页。` : (error.message || '操作失败'),
-      error: error.code !== 'task_record_conflict',
+      message: error.code === 'task_record_conflict' ? `${error.message} 输入已保留，请重新读取并核对后保存。` : (error.message || '操作失败'),
+      error: true,
     });
     setEditState(error.code === 'task_record_conflict' ? '记录已变化' : '保存失败');
   }, [onAlert]);
@@ -85,7 +112,7 @@ export function useTaskActions({ taskId, data, refresh, refreshCoordination, sho
     try {
       const list = await taskApi.list({ status: 'active' });
       const record = current.record;
-      const options: Array<{ value: string; label: string }> = [{ value: '', label: '无 Parent（独立 Task）' }];
+      const options: Array<{ value: string; label: string }> = [{ value: '', label: '不关联组合任务' }];
       if (record.parentTaskId && current.taskRelations.parent) {
         const parent = current.taskRelations.parent;
         options.push({ value: parent.taskId, label: `${parent.title} · ${parent.taskId} · ${taskStatusLabel(parent.status)}` });
@@ -105,8 +132,8 @@ export function useTaskActions({ taskId, data, refresh, refreshCoordination, sho
 
   const save = useCallback(async (event: FormEvent) => {
     event.preventDefault();
-    const current = dataRef.current;
-    if (!current) return;
+    const current = editSnapshot.current || dataRef.current;
+    if (!current || saving || editState === '记录已变化') return;
     setSaving(true);
     setEditState('正在保存…');
     const record = current.record;
@@ -137,7 +164,7 @@ export function useTaskActions({ taskId, data, refresh, refreshCoordination, sho
     } finally {
       setSaving(false);
     }
-  }, [taskId, projectsText, servicesText, parentTaskId, title, intent, refresh, onAlert, showMutationError]);
+  }, [taskId, projectsText, servicesText, parentTaskId, title, intent, refresh, onAlert, showMutationError, saving, editState]);
 
   const openComplete = useCallback(async () => {
     const current = dataRef.current;
@@ -214,7 +241,7 @@ export function useTaskActions({ taskId, data, refresh, refreshCoordination, sho
       editState, title, intent, projectsText, servicesText, parentTaskId,
       parentOptions, parentOptionsLoading, saving,
       setTitle, setIntent, setProjectsText, setServicesText, setParentTaskId,
-      loadParentOptions, save,
+      loadParentOptions, save, reread: rereadEdit, latest: editLatest,
     },
     completion: {
       snapshot: completionSnapshot, draft: completionDraft, summary: completeSummary,

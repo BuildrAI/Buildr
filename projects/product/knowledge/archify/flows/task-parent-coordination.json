@@ -1,0 +1,185 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "父任务如何确认完成",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "column_fit": "spread",
+    "viewBox": [
+      1080,
+      690
+    ]
+  },
+  "participants": [
+    {
+      "id": "person",
+      "type": "external",
+      "label": "人",
+      "sublabel": "目标、验收与授权"
+    },
+    {
+      "id": "caller",
+      "type": "frontend",
+      "label": "调用入口",
+      "sublabel": "智能体（Agent）或网页"
+    },
+    {
+      "id": "application",
+      "type": "backend",
+      "label": "Buildr",
+      "sublabel": "检查与保存任务"
+    },
+    {
+      "id": "records",
+      "type": "database",
+      "label": "任务记录",
+      "sublabel": "父子关系、状态与结果"
+    }
+  ],
+  "segments": [
+    {
+      "from": 148,
+      "to": 265,
+      "label": "读取当前事实"
+    },
+    {
+      "from": 277,
+      "to": 338,
+      "label": "核对与授权"
+    },
+    {
+      "from": 350,
+      "to": 438,
+      "label": "提交并重验"
+    },
+    {
+      "from": 450,
+      "to": 539,
+      "label": "通过分支"
+    },
+    {
+      "from": 551,
+      "to": 625,
+      "label": "拒绝分支"
+    }
+  ],
+  "messages": [
+    {
+      "id": "inspect",
+      "from": "caller",
+      "to": "application",
+      "y": 165,
+      "label": "读取当前父子观察"
+    },
+    {
+      "id": "read-records",
+      "from": "application",
+      "to": "records",
+      "y": 193,
+      "label": "读取父任务与直接子任务"
+    },
+    {
+      "id": "records-return",
+      "from": "records",
+      "to": "application",
+      "y": 221,
+      "label": "目标、关系、状态与结果",
+      "variant": "return"
+    },
+    {
+      "id": "snapshot-return",
+      "from": "application",
+      "to": "caller",
+      "y": 249,
+      "label": "记录版本与父子观察版本",
+      "variant": "return",
+      "note": "recordDigest 与 snapshotIdentity 分别约束父记录和父子完成上下文。"
+    },
+    {
+      "id": "acceptance",
+      "from": "caller",
+      "to": "person",
+      "y": 292,
+      "label": "核对总体验收和逐项处置",
+      "note": "智能体核对实际成果；网页入口由人填写验收说明。Buildr 不代替成果验收。"
+    },
+    {
+      "id": "authorize",
+      "from": "person",
+      "to": "caller",
+      "y": 322,
+      "label": "明确完成授权（已有仍有效）",
+      "variant": "security",
+      "note": "授权必须覆盖当前父任务目标与完成动作；已有有效授权不必重复询问。"
+    },
+    {
+      "id": "submit-completion",
+      "from": "caller",
+      "to": "application",
+      "y": 365,
+      "label": "提交完成请求与依据",
+      "variant": "emphasis",
+      "note": "携带 expectedRecordDigest、parentCompletion.expectedSnapshot、acceptance、authorization 和完成摘要。"
+    },
+    {
+      "id": "transaction-read",
+      "from": "application",
+      "to": "records",
+      "y": 393,
+      "label": "事务内重读并核对版本",
+      "note": "同时检查授权字段、全部直接子任务终态和逐项验收覆盖。"
+    },
+    {
+      "id": "current-records",
+      "from": "records",
+      "to": "application",
+      "y": 421,
+      "label": "当前父子记录",
+      "variant": "return"
+    },
+    {
+      "id": "persist-completion",
+      "from": "application",
+      "to": "records",
+      "y": 465,
+      "label": "通过：保存状态与验收依据",
+      "variant": "emphasis",
+      "note": "同一事务保存 status=completed 与 result.parentCompletion；不改变子任务状态。"
+    },
+    {
+      "id": "completed-result",
+      "from": "application",
+      "to": "caller",
+      "y": 493,
+      "label": "返回已保存的父任务结果",
+      "variant": "return"
+    },
+    {
+      "id": "show-result",
+      "from": "caller",
+      "to": "person",
+      "y": 521,
+      "label": "展示完成结果与依据",
+      "variant": "return"
+    },
+    {
+      "id": "reject-completion",
+      "from": "application",
+      "to": "caller",
+      "y": 568,
+      "label": "未结束、已变化或处置不全",
+      "variant": "security",
+      "note": "拒绝完成且不写入：缺少授权或验收依据、直接子任务尚未结束、父子观察已变化或逐项处置未精确覆盖。通过与拒绝是互斥分支。"
+    },
+    {
+      "id": "reread-after-rejection",
+      "from": "caller",
+      "to": "application",
+      "y": 606,
+      "label": "处理后重读、重新核对",
+      "variant": "default",
+      "note": "回到读取当前事实；重新评估目标、实际成果和已有授权，不自动重试完成。"
+    }
+  ]
+}

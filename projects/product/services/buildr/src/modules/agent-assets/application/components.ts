@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { runFinalDoctor } from '../../../infrastructure/final-doctor-process.ts';
 import { hasManagedSkillMarker } from '../infrastructure/runtime/render-claude-code.ts';
-import { getRuntimeAdapter, isSupportedAgent } from '../infrastructure/runtime/adapter-contract.ts';
+import { SUPPORTED_AGENT_IDS, getRuntimeAdapter, isSupportedAgent } from '../infrastructure/runtime/adapter-contract.ts';
 import {
   legacySkillProjectionOwnershipReceiptRoot,
   legacySkillProjectionOwnershipReceiptTarget,
@@ -669,43 +669,64 @@ export function registerDomainsComponents(dependencies: ComponentsDependencies) 
   }
 
   function managedRuntimeSkillOrphans(targetRoot: any, agent: any, options: any = {}): any  {
-    const runtimeRoot = getRuntimeAdapter(agent).traits.skills.root;
-    const skillsRoot = path.join(targetRoot, runtimeRoot, 'skills');
+    const adapter = getRuntimeAdapter(agent);
+    const primaryRoot = adapter.traits.skills.root;
+    const roots: any[] = adapter.traits.skills.destinations?.workspace?.roots || [primaryRoot];
     const declared = declaredRuntimeSkillPaths(targetRoot, agent);
     const orphans: any[] = [];
-    const receiptRuntimePaths: any = new Set();
-    const receiptsByRuntimePath: any = new Map();
-    const receiptRoots: any[] = [
-      { root: skillProjectionOwnershipReceiptRoot(targetRoot, 'workspace', agent), target: (runtimePath: any) => skillProjectionOwnershipReceiptTarget(targetRoot, 'workspace', agent, runtimePath) },
-      { root: legacySkillProjectionOwnershipReceiptRoot(targetRoot, runtimeRoot, agent), target: (runtimePath: any) => legacySkillProjectionOwnershipReceiptTarget(targetRoot, runtimeRoot, agent, runtimePath) },
-    ];
-    for (const location of receiptRoots) {
-      for (const receiptFile of existsDirectory(location.root) ? collectFiles(location.root) : []) {
+    const receiptsByKey: any = new Map();
+    const locations: any[] = [];
+    for (const root of roots) {
+      locations.push({ root, legacy: false, dir: skillProjectionOwnershipReceiptRoot(targetRoot, 'workspace', agent), target: (runtimePath: any) => skillProjectionOwnershipReceiptTarget(targetRoot, 'workspace', agent, runtimePath) });
+      locations.push({ root, legacy: true, dir: legacySkillProjectionOwnershipReceiptRoot(targetRoot, root, agent), target: (runtimePath: any) => legacySkillProjectionOwnershipReceiptTarget(targetRoot, root, agent, runtimePath) });
+    }
+    for (const location of locations) {
+      for (const receiptFile of existsDirectory(location.dir) ? collectFiles(location.dir) : []) {
         if (!receiptFile.endsWith('.json')) continue;
         const receipt = readSkillProjectionReceipt(receiptFile, { adapterId: agent, destination: 'workspace' });
+        const receiptRoot = location.legacy ? location.root : primaryRoot;
+        if (receiptRoot !== location.root) continue;
         const expectedReceipt = location.target(receipt.runtimePath);
         if (path.resolve(expectedReceipt) !== path.resolve(receiptFile)) throw new Error(`Runtime Skill projection ownership receipt target mismatch: ${receiptFile}`);
-        const existing = receiptsByRuntimePath.get(receipt.runtimePath);
+        const key = `${receiptRoot}\u0000${receipt.runtimePath}`;
+        const existing = receiptsByKey.get(key);
         if (existing && !skillProjectionOwnershipReceiptsEquivalent(existing.receipt, receipt)) {
           throw new Error(`Skill projection ownership receipt conflict; canonical and legacy receipts differ, so no files were changed: ${receipt.runtimePath}`);
         }
-        receiptsByRuntimePath.set(receipt.runtimePath, { receipt, receiptFiles: [...(existing?.receiptFiles || []), receiptFile] });
+        receiptsByKey.set(key, { receipt, receiptFiles: [...(existing?.receiptFiles || []), receiptFile] });
       }
     }
-    for (const [runtimePath, receiptEntry] of receiptsByRuntimePath) {
-      receiptRuntimePaths.add(runtimePath);
+    for (const [key, receiptEntry] of receiptsByKey) {
+      const [root, runtimePath] = key.split('\u0000');
       if (declared.has(runtimePath) && options.runtimePath !== runtimePath) continue;
-      const targetDir = path.join(skillsRoot, ...runtimePath.split('/'));
-      orphans.push({ runtimePath, path: toPosixRelative(targetRoot, targetDir), targetDir, ...receiptEntry });
+      const targetDir = path.join(targetRoot, root, 'skills', ...runtimePath.split('/'));
+      orphans.push({ runtimePath, root, path: toPosixRelative(targetRoot, targetDir), targetDir, ...receiptEntry });
     }
-    for (const runtimePath of listManagedDirectories(skillsRoot)) {
-      if (receiptRuntimePaths.has(runtimePath)) continue;
-      if (declared.has(runtimePath) && options.runtimePath !== runtimePath) continue;
-      const targetDir = path.join(skillsRoot, runtimePath);
-      if (fs.lstatSync(targetDir).isSymbolicLink()) continue;
-      const skillFile = path.join(targetDir, 'SKILL.md');
-      if (!existsFile(skillFile) || !hasManagedSkillMarker(fs.readFileSync(skillFile, 'utf8'))) continue;
-      orphans.push({ runtimePath, path: toPosixRelative(targetRoot, targetDir), targetDir });
+    // A Skills root shared with other adapters (`.agents` for codex/cursor/trae) can
+    // hold directories another adapter owns; that adapter's receipt proves ownership,
+    // so this adapter must neither claim nor block on them.
+    const claimedBySiblingReceipt = (root: any, runtimePath: any) => SUPPORTED_AGENT_IDS.some((other: any) => {
+      if (other === adapter.id) return false;
+      const otherPrimary = getRuntimeAdapter(other).traits.skills.root;
+      const otherRoots = getRuntimeAdapter(other).traits.skills.destinations?.workspace?.roots || [otherPrimary];
+      if (!otherRoots.includes(root)) return false;
+      return [
+        skillProjectionOwnershipReceiptTarget(targetRoot, 'workspace', other, runtimePath),
+        legacySkillProjectionOwnershipReceiptTarget(targetRoot, root, other, runtimePath),
+      ].some((file: any) => existsFile(file));
+    });
+    for (const root of roots) {
+      const skillsRoot = path.join(targetRoot, root, 'skills');
+      for (const runtimePath of listManagedDirectories(skillsRoot)) {
+        if (receiptsByKey.has(`${root}\u0000${runtimePath}`)) continue;
+        if (claimedBySiblingReceipt(root, runtimePath)) continue;
+        if (declared.has(runtimePath) && options.runtimePath !== runtimePath) continue;
+        const targetDir = path.join(skillsRoot, runtimePath);
+        if (fs.lstatSync(targetDir).isSymbolicLink()) continue;
+        const skillFile = path.join(targetDir, 'SKILL.md');
+        if (!existsFile(skillFile) || !hasManagedSkillMarker(fs.readFileSync(skillFile, 'utf8'))) continue;
+        orphans.push({ runtimePath, root, path: toPosixRelative(targetRoot, targetDir), targetDir });
+      }
     }
     return orphans;
   }
@@ -714,6 +735,8 @@ export function registerDomainsComponents(dependencies: ComponentsDependencies) 
     if (scope !== '.') return [];
     const removals: any[] = [];
     const conflicts: any[] = [];
+    const orphanAdapter = getRuntimeAdapter(agent);
+    const roots: any[] = orphanAdapter.traits.skills.destinations?.workspace?.roots || [orphanAdapter.traits.skills.root];
     for (const orphan of managedRuntimeSkillOrphans(targetRoot, agent, options)) {
       if (options.runtimePath && orphan.runtimePath !== options.runtimePath) continue;
       if (orphan.receipt) {
@@ -758,17 +781,19 @@ export function registerDomainsComponents(dependencies: ComponentsDependencies) 
         removals.push({ type: 'directory', path: orphan.targetDir });
       }
     }
-    const runtimeRoot = getRuntimeAdapter(agent).traits.skills.root;
-    const plansRoot = path.join(targetRoot, runtimeRoot, 'buildr', 'skill-install-plans');
     const declaredPlans = declaredRuntimeInstallPlanIds(targetRoot, agent);
-    if (!options.runtimePath && existsDirectory(plansRoot)) {
-      for (const name of fs.readdirSync(plansRoot).sort()) {
-        if (!name.endsWith('.md') || declaredPlans.has(name.slice(0, -3))) continue;
-        const file = path.join(plansRoot, name);
-        if (!existsFile(file)) continue;
-        const content = fs.readFileSync(file, 'utf8');
-        if (!content.includes('<!-- Generated by Buildr. Agent action required.')) continue;
-        removals.push({ type: 'file', path: file });
+    if (!options.runtimePath) {
+      for (const root of roots) {
+        const plansRoot = path.join(targetRoot, root, 'buildr', 'skill-install-plans');
+        if (!existsDirectory(plansRoot)) continue;
+        for (const name of fs.readdirSync(plansRoot).sort()) {
+          if (!name.endsWith('.md') || declaredPlans.has(name.slice(0, -3))) continue;
+          const file = path.join(plansRoot, name);
+          if (!existsFile(file)) continue;
+          const content = fs.readFileSync(file, 'utf8');
+          if (!content.includes('<!-- Generated by Buildr. Agent action required.')) continue;
+          removals.push({ type: 'file', path: file });
+        }
       }
     }
     if (conflicts.length) throw new Error(`无法清理旧运行时文件：\n- ${conflicts.join('\n- ')}`);

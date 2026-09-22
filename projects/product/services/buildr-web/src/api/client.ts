@@ -28,7 +28,7 @@ export function createApiClient(options: {
 
   return async function api(resource: string, init: RequestInit = {}) {
     const headers = new Headers(init.headers || {});
-    if (init.body) {
+    if (init.body || !['GET', 'HEAD'].includes((init.method || 'GET').toUpperCase())) {
       const writeHeaders = options.sessionAdapter.writeHeaders();
       for (const [key, value] of Object.entries(writeHeaders)) {
         if (!headers.has(key)) headers.set(key, value);

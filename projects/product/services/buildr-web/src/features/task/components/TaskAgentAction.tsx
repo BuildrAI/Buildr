@@ -1,3 +1,5 @@
+import { taskApi } from '../api/task-api';
+import { workbenchApi } from '../../workbench/api/workbench-api';
 import { taskProfessionalApi } from '../api/task-professional-api';
 import { projectApi } from '../../project/api/project-api';
 import { serviceApi } from '../../service/api/service-api';
@@ -16,6 +18,8 @@ export function TaskAgentAction({ action, context, onBack }: Props) {
   const [services, setServices] = useState<Array<{ code: string; name: string }>>([]);
   const [projectCode, setProjectCode] = useState(String(context.projectCode || ''));
   const [serviceCode, setServiceCode] = useState('');
+  const [continuationGoal, setContinuationGoal] = useState('');
+  const [preparingContinuation, setPreparingContinuation] = useState(false);
   const [goal, setGoal] = useState(String(context.goal || ''));
   useEffect(() => {
     if (action !== 'start' && action !== 'change') return;
@@ -119,6 +123,46 @@ export function TaskAgentAction({ action, context, onBack }: Props) {
     ].join('\n'), ACTION_LABELS['task-verification'], '验证报告未被修改。');
   };
 
+
+  if (action === 'task-continue') {
+    const terminal = context.status === 'completed' || context.status === 'abandoned';
+    const submitContinue = async (event: FormEvent) => {
+      event.preventDefault(); setError(null); setPreparingContinuation(true);
+      try {
+        const taskId = String(context.taskId || '');
+        const [current, work] = await Promise.all([taskApi.detail(taskId), workbenchApi.context(taskId)]);
+        const record = current.record;
+        const ended = record.status === 'completed' || record.status === 'abandoned';
+        if (ended && !continuationGoal.trim()) { setError('请描述基于已有成果，希望继续完成的新目标。'); return; }
+        showResult([
+          ended ? `请基于已结束任务「${record.title}」的成果开展新工作。` : `请继续任务「${record.title}」。`,
+          `任务身份：${taskId}`,
+          `当前状态：${record.status}`,
+          `所属项目：${record.scope.projects.join('、') || '当前工作空间'}`,
+          `相关服务：${record.scope.services.map(item => `${item.project}/${item.service}`).join('、') || '未限定'}`,
+          '', `原目标：${record.intent}`,
+          `最近进展：${work.context?.progress || '尚未记录'}`,
+          `下一步：${work.context?.nextStep || '尚未记录'}`,
+          ...(record.result?.summary ? [`已有结果：${record.result.summary}`] : []),
+          ...(work.context?.attention?.response ? [`已记录的用户意见：${work.context.attention.response.text}`] : []),
+          ...(continuationGoal.trim() ? ['', `${ended ? '新目标' : '补充要求'}：${continuationGoal.trim()}`] : []),
+          '', '请重新核对当前任务记录、工作摘要、成果和适用规则，再在已有授权范围内继续。',
+          ended ? '原任务保持结束状态；先按新目标确定工作范围与必要记录，不重开或改写原结果。' : '工作状态不表示智能体正在运行；按当前真实进展继续。',
+          '只有需要用户作出具体判断时才登记明确待处理事项。记录真实进展前先读取当前摘要版本，并保留已有用户答复。',
+        ].join('\n'), '工作指令', '尚未启动执行或创建新的任务记录。');
+      } catch (cause) { setError(cause instanceof Error ? cause.message : '读取当前工作失败'); }
+      finally { setPreparingContinuation(false); }
+    };
+    return <>
+      {formHeader(terminal ? '新工作' : '当前工作', '准备')}
+      <form id="agent-action-form" onSubmit={(event) => void submitContinue(event)}>
+        <div className="context-help"><strong>{String(context.title || context.taskId || '')}</strong><p>{terminal ? '已有成果作为新工作的背景，原任务保持结束状态。' : '准备指令时重新读取目标、范围、进展和已有意见。'}</p></div>
+        <label>{terminal ? '基于成果，希望完成什么？' : '补充要求（可选）'}<Input.TextArea id="task-continue-goal" rows={4} required={terminal} value={continuationGoal} onChange={(event) => setContinuationGoal(event.target.value)} /></label>
+        <div className="actions"><Button id="task-continue-prepare" type="primary" htmlType="submit" loading={preparingContinuation}>准备工作指令</Button></div>
+      </form>
+      {promptResult('工作指令', '尚未启动执行或创建新的任务记录。')}
+    </>;
+  }
 
   if (action === 'start') {
     return (

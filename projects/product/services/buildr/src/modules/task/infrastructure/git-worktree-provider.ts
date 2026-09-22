@@ -23,6 +23,7 @@ type WorktreeIdentity = { repository: string; branch: string; head: string; clea
 type GitSource = {
   type?: string;
   path?: string;
+  integrationBranch?: string;
   git?: { remote?: string; url?: string; integrationBranch?: string };
 };
 type RegisteredEntity = { source: GitSource; repositorySource?: GitSource };
@@ -363,7 +364,7 @@ export function registerGitWorktreeProvider(runtime: GitWorktreeRuntime): GitWor
     const remoteUrl = remote ? gitText(sourceRepository, ['remote', 'get-url', remote]) : null;
     if (remote && !remoteUrl) throw new Error(`${input.selector} declared remote is missing: ${remote}`);
     if (input.source.git?.url && !runtime.sameGitIdentity(input.source.git.url, remoteUrl)) throw new Error(`${input.selector} remote identity conflicts with its registry declaration.`);
-    let resolvedStart = input.startPoint ?? input.source.git?.integrationBranch ?? 'HEAD';
+    let resolvedStart = input.startPoint ?? input.source.integrationBranch ?? input.source.git?.integrationBranch ?? 'HEAD';
     if (git(sourceRepository, ['rev-parse', '--verify', `${resolvedStart}^{commit}`]).status !== 0 && remote) {
       const remoteStart = `${remote}/${resolvedStart}`;
       if (git(sourceRepository, ['rev-parse', '--verify', `${remoteStart}^{commit}`]).status === 0) resolvedStart = remoteStart;
@@ -382,7 +383,7 @@ export function registerGitWorktreeProvider(runtime: GitWorktreeRuntime): GitWor
     };
   }
 
-  function planGitWorktrees({ workspaceRoot, taskId, branch, startPoint = 'HEAD', includes = [] }: PrepareInput): GitWorktreePlan {
+  function planGitWorktrees({ workspaceRoot, taskId, branch, startPoint, includes = [] }: PrepareInput): GitWorktreePlan {
     const root = fs.realpathSync(runtime.assertCanonicalTaskWorkspace(workspaceRoot));
     if (!TASK_ID_PATTERN.test(taskId)) throw new Error(`Invalid task id: ${taskId}`);
     if (!branch) throw new Error('Git worktree plan requires branch.');
@@ -413,9 +414,14 @@ export function registerGitWorktreeProvider(runtime: GitWorktreeRuntime): GitWor
         if (!service) throw new Error(`Unknown Git worktree selector: ${selector}`);
         const source = service.repositorySource || service.source;
         if (source.type !== 'git') continue;
-        const descriptor = sourceDescriptor({ selector, entityType: 'service', sourcePath: requiredString(source.path, 'service.source.path'), source, workspaceRoot: root, checkoutRoot, branch });
+        const descriptor = sourceDescriptor({ selector, entityType: 'service', sourcePath: requiredString(source.path, 'service.source.path'), source, workspaceRoot: root, checkoutRoot, branch, startPoint: sameFilesystemPath(path.resolve(root, source.path!), root) ? startPoint : undefined });
         const shared = repositories.find(item => sameFilesystemPath(item.sourceRepository, descriptor.sourceRepository));
         if (shared) {
+          // A service referencing the workspace root shares the explicitly chosen workspace checkout.
+          if (shared.entityType === 'workspace') {
+            if (startPoint === undefined && (source.integrationBranch || source.git?.integrationBranch)) shared.startPoint = descriptor.startPoint;
+            continue;
+          }
           if (shared.startPoint !== descriptor.startPoint || shared.remoteUrl !== descriptor.remoteUrl) throw new Error(`${selector} declares conflicting integration identity for a shared repository.`);
           continue;
         }
@@ -512,6 +518,10 @@ export function registerGitWorktreeProvider(runtime: GitWorktreeRuntime): GitWor
   function inspectGitWorktrees({ workspaceRoot, taskId }: InspectInput): WorktreeResult {
     try {
       const root = fs.realpathSync(runtime.assertCanonicalTaskWorkspace(workspaceRoot));
+      const repository = git(root, ['rev-parse', '--show-toplevel'], { env: { ...process.env, LC_ALL: 'C' } });
+      if (repository.status === 128 && /not a git repository/i.test(repository.stderr) && !fs.existsSync(path.join(root, '.git'))) {
+        return result('inspect', 'blocked', taskId, null, [], [], { code: 'git_worktree_evidence_missing', message: 'This Workspace has no Git worktree association.' });
+      }
       const stored = readGitWorktreeEvidence(root, taskId, { optional: true });
       if (!stored) return result('inspect', 'blocked', taskId, gitWorktreeEvidencePath(root, taskId), [], [], { code: 'git_worktree_evidence_missing', message: 'Git worktree evidence was not found.' });
       const repositories = stored.evidence.repositories.map((record) => {

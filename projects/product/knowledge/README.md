@@ -12,7 +12,17 @@
 
 ## 从一个完整例子开始
 
+**从对话到任务收尾**：阅读[任务系统架构](docs/architecture/task-system.md)，贯通工作摘要（Work Context）、人的答复、实施与验证、代码交付、自举激活及安全善后；文中连接职责总图、分段时序与[实现地图](code-map/task-system.md)。
+
+**知识建设与维护**：先读[架构说明](docs/architecture/knowledge-maintenance.md)，文中引用[职责图](archify/flows/knowledge-maintenance.html)和[实现地图](code-map/knowledge-maintenance.md)。[局部阅读关联](index.yml)让网页使用同一份成果正文。
+
 **技能源文件如何成为可发现入口**：阅读[面向人的说明](docs/architecture/buildr-skill-system.md)，需要定位时打开[代码地图](code-map/skill-projection.md)，观察关系时打开[技术图](archify/flows/skill-projection.html)。图的[来源与表达边界](archify/flows/skill-projection.md)和[可维护图源](archify/flows/skill-projection.json)与展示一起保存。
+
+**从业务目标找到代码**：阅读[项目、服务与代码库如何协作](docs/architecture/project-service-repositories.md)，从职责与修改影响理解引用模型，再看文中关系图和实现地图。
+
+**从数据理解系统**：阅读[数据全景与领域设计](docs/architecture/buildr-data-design.md)，先理解原始事实、关联和存储边界，再对照[数据库表设计](docs/architecture/buildr-database-tables.md)、[实体关系图（Entity Relationship Diagram，ERD）](archify/data/workspace-sqlite-erd.html)与[本机数据说明](docs/architecture/buildr-local-data.md)。
+
+**项目与服务测试验证框架**：阅读[Buildr 如何引导测试建设与使用](docs/architecture/workspace-testing-and-verification-framework.md)，了解从零建设、多服务差异、稳定入口声明、检查选择与分范围报告；Buildr 自身是采用实例，进一步查看[产品测试架构](docs/architecture/verification-framework.md)、[测试建设与使用图](archify/flows/verification-framework.html)、[实现地图](code-map/verification-framework.md)与[上下文复用](docs/guides/node-test-context-runtime.md)。
 
 ## 当前说明之外
 

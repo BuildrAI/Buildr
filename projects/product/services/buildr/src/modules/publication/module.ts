@@ -5,7 +5,7 @@ import { WORKSPACE_QUERY } from '../workspace/module.ts';
 export const PUBLICATION_MODULE_ID = 'publication';
 export const PUBLICATION_APPLICATION = 'publication.application';
 
-const METHODS = Object.freeze(['listPublications', 'publicationDetail', 'readPublicationAsset']);
+const METHODS = Object.freeze(['listPublications', 'publicationDetail', 'readPublicationAsset', 'createPublication', 'updatePublication', 'deletePublication', 'publicationAssets', 'uploadPublicationAsset']);
 
 export function createPublicationModule(runtime: any) {
   return Object.freeze({

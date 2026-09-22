@@ -10,7 +10,7 @@ import { executeVerificationCommand } from './support/process-executor.ts';
 
 import { collectChangedProductPaths } from './changed-paths.ts';
 
-export const BROWSER_SELECTORS: any = Object.freeze(['core', 'shell', 'project', 'service', 'change', 'task', 'articles']);
+export const BROWSER_SELECTORS: any = Object.freeze(['core', 'shell', 'workbench', 'project', 'service', 'change', 'task', 'articles']);
 
 const productRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const projectRoot: any = path.resolve(productRoot, '../..');
@@ -96,7 +96,15 @@ export function selectBrowserSelectors(changedPaths: any): any  {
       continue;
     }
     if (originalValue.startsWith('services/buildr-web/src/')) {
-      if (/\/(?:pages\/)?(?:[Pp]roject|[Pp]rojects)/.test(originalValue) || originalValue.includes('/pages/Project')) add(plan, 'project', originalValue, 'Project page or interaction changed.');
+      if (originalValue.includes('/features/workbench/')) add(plan, 'workbench', originalValue, 'Daily workbench overview, preferences or activity interaction changed.');
+      else if (originalValue.includes('/features/knowledge/')) {
+        for (const selector of ['project', 'service', 'articles']) add(plan, selector, originalValue, 'Knowledge reading is shared by project, service and article journeys.');
+      }
+      else if (originalValue.includes('/features/publication/')) add(plan, 'articles', originalValue, 'Article readers, editors, resources and publication state changed.');
+      else if (originalValue.includes('/app/') || originalValue.includes('/components/WorkspaceStage')) {
+        for (const selector of ['shell', 'project', 'service', 'articles']) add(plan, selector, originalValue, 'Workspace navigation and split reading are shared across resource journeys.');
+      }
+      else if (/\/(?:pages\/)?(?:[Pp]roject|[Pp]rojects)/.test(originalValue) || originalValue.includes('/pages/Project')) add(plan, 'project', originalValue, 'Project page or interaction changed.');
       else if (/\/(?:pages\/)?(?:[Ss]ervice|[Ss]ervices)/.test(originalValue) || originalValue.includes('/pages/Service')) add(plan, 'service', originalValue, 'Service page or interaction changed.');
       else if (/\/(?:pages\/)?(?:[Cc]hange|[Cc]hanges)|TaskChange/.test(originalValue) || originalValue.includes('/pages/TaskChange') || originalValue.includes('AgentAction')) add(plan, 'change', originalValue, 'Change page or Agent Action interaction changed.');
       else if (/\/(?:pages\/)?(?:[Tt]ask|[Tt]asks)|task-record/.test(originalValue) || originalValue.includes('/pages/Task')) add(plan, 'task', originalValue, 'Task page, tab or lifecycle interaction changed.');

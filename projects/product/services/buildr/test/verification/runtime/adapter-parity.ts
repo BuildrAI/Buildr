@@ -95,6 +95,7 @@ function assertAdapterSpecificProjection(workspace: any, adapterId: any): any  {
   if (adapterId === 'qoder') {
     assert.ok(fs.readdirSync(path.join(workspace, '.qoder', 'rules', 'buildr')).some((file: any) => file.endsWith('.md')));
     assert.ok(fs.existsSync(path.join(workspace, '.qoder', 'skills', 'buildr', 'SKILL.md')));
+    assert.equal(fs.existsSync(path.join(workspace, '.agents', 'skills', 'buildr')), false, 'Qoder must not project into the shared .agents root');
   }
   if (adapterId === 'workbuddy') {
     assert.ok(fs.readFileSync(path.join(workspace, 'CODEBUDDY.md'), 'utf8').includes('不得读取不相关兄弟目录'));
@@ -166,11 +167,11 @@ async function verifyLifecycle(context: any): Promise<any>  {
     const renderedFinish: any = fs.readFileSync(path.join(runtimeRoot, 'skills', 'task-finish', 'SKILL.md'), 'utf8');
     assert.ok(renderedFinish.includes('已有任务结果登记'));
     assert.ok(renderedFinish.includes('task complete --expected-record <recordDigest>'));
-    assert.ok(renderedFinish.includes('没有匹配任务就继续实际工作，不补建记录'));
-    assert.ok(renderedFinish.includes('不重新交付已成立的成果'));
+    assert.ok(renderedFinish.includes('没有匹配任务就交付实际成果，不补建记录'));
+    assert.ok(renderedFinish.includes('复用已经成立的交付事实'));
     assert.ok(renderedFinish.includes('--expected-source'));
     assert.ok(renderedFinish.includes('--delivered-ref'));
-    assert.ok(renderedFinish.includes('收尾不建立统一验证记录、聚合流程状态或新的证明文件'));
+    assert.ok(renderedFinish.includes('不因收尾、归档材料移动或提交编号变化重跑测试'));
     assert.ok(!renderedFinish.includes('preflight → prepare → verify → deliver → cleanup'));
     assert.ok(!renderedFinish.includes('task finish reconcile'));
     assert.ok(!renderedFinish.includes('buildr:contribution openspec#pre-spec-sync'));
@@ -293,12 +294,19 @@ try {
   ], MAX_PARALLEL_WORKSPACES, (scenario: any) => scenario(seed));
 
   const contexts: any = await mapLimit(supportedAdapters, MAX_PARALLEL_WORKSPACES, (adapterId: any) => prepareAdapterContext(seed, adapterId, lifecycleAdapters));
-  const qoder: any = contexts.find((context: any) => context.adapterId === 'qoder');
-  const gitExecutable: any = findExecutableOnPath('git');
-  assert.ok(gitExecutable, 'runtime parity requires Git while isolating the Qoder installation probe');
-  const missingQoderEnvironment: any = await harness.runAsync(['runtime', 'check', 'qoder', '--scope', '.', '--target', qoder.workspace], { env: { PATH: path.dirname(gitExecutable) } });
-  assert.match(missingQoderEnvironment.stdout, /\[warning\] \. - Qoder installation probe failed\./);
-  assert.match(missingQoderEnvironment.stdout, /installation: missing \(command\)/);
+  // The Qoder installation probe only spawns `defaults`/`qoder` commands on darwin; elsewhere it is a
+  // manual probe, so isolating PATH to prove a missing install is both meaningless and would drop git.
+  if (process.platform === 'darwin') {
+    const qoder: any = contexts.find((context: any) => context.adapterId === 'qoder');
+    const gitExecutable: any = findExecutableOnPath('git');
+    assert.ok(gitExecutable, 'runtime parity requires Git while isolating the Qoder installation probe');
+    const isolatedBin: any = harness.createTemporaryDirectory('buildr-runtime-probe-path-');
+    fs.symlinkSync(gitExecutable, path.join(isolatedBin, 'git'));
+    const missingQoderEnvironment: any = await harness.runAsync(['runtime', 'check', 'qoder', '--scope', '.', '--target', qoder.workspace], { env: { PATH: isolatedBin } });
+    assert.match(missingQoderEnvironment.stdout, /\[warning\] \. - Qoder installation probe failed\./);
+    assert.match(missingQoderEnvironment.stdout, /installation: missing \(any\)/);
+    assert.match(missingQoderEnvironment.stdout, /desktop: missing/);
+  }
 
   const codexDoctor: any = contexts.find((context: any) => context.adapterId === 'codex').doctor;
   assert.equal(codexDoctor.runtime.claudeCode.length, 0);

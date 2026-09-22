@@ -92,6 +92,16 @@ export function createTaskRepository() {
       const statement = query(input);
       return db.prepare(statement.sql).all(...statement.parameters).map(mapTask);
     },
+    titles(context: SqliteContext, taskIds: string[]): Map<string, string> {
+      const db = database(context), result = new Map<string, string>();
+      if (!db) return result;
+      for (let offset = 0; offset < taskIds.length; offset += 400) {
+        const batch = taskIds.slice(offset, offset + 400);
+        const rows = db.prepare(`SELECT task_id, title FROM tasks WHERE task_id IN (${batch.map(() => '?').join(',')})`).all(...batch);
+        for (const row of rows) result.set(stringColumn(row, 'task_id'), stringColumn(row, 'title'));
+      }
+      return result;
+    },
     count(context: SqliteContext): number {
       const db = database(context);
       if (!db) return 0;

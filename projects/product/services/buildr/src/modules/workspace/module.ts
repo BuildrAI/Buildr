@@ -1,3 +1,4 @@
+export type { AssetCatalog } from './domain/asset-relationships.ts';
 import { registerAssetRelationshipsApplication } from './application/asset-relationships-application.ts';
 import { assetCatalogCommand } from './interfaces/cli/asset-catalog.ts';
 import { createRegistryMaintenance } from './application/registry-maintenance.ts';
@@ -61,7 +62,8 @@ export const WORKSPACE_AGENT_ASSETS_BINDER = 'workspace.agent-assets-binder';
 export const WORKSPACE_DIAGNOSTICS = 'workspace.diagnostics';
 
 const WORKSPACE_METHODS = Object.freeze([
-  'catalogServiceDocument', 'assetCatalog', 'migrateAssetCatalog', 'createCatalogRepository', 'createCatalogService', 'createCatalogProject', 'updateProjectServices', 'updateCatalogAsset', 'repositoryPreparePrompt',
+  'catalogRepositoryLocalConfig', 'listCatalogServices', 'listCatalogRepositories', 'catalogRepositoryStatus', 'normalizeCatalogRepositories', 'deleteCatalogAsset',
+  'catalogServiceDocument', 'assetCatalog', 'migrateAssetCatalog', 'createCatalogRepository', 'createCatalogService', 'createCatalogProject', 'listProjectRegistrationCandidates', 'registerCatalogProject', 'updateProjectServices', 'updateCatalogAsset', 'repositoryPreparePrompt',
   'getWorkspace', 'listRegisteredWorkspaces', 'registerLocalWorkspace', 'removeRegisteredWorkspace',
   'resolveRegisteredWorkspace', 'workspaceMigrationPlan', 'migrateWorkspaceMetadata', 'updateWorkspaceMetadata',
   'generateWorkspaceCreatePrompt', 'inspectLocalWorkspaceCandidate', 'getWorkspaceGettingStarted',
@@ -112,7 +114,7 @@ export function createWorkspaceCliContributions(applications: { workspace?: any;
   return Object.freeze([
     Object.freeze({
       key: 'assets', surface: 'agent-machine', summary: '查看或维护项目、服务、代码库及关联；写入要求当前版本。',
-      help: ['Usage: buildr assets <inspect|migrate|create|update|associate> [project|service|repository] [id] --target <workspace> [--input <json-file>] --json'],
+      help: ['Usage: buildr assets <inspect|project-candidates|migrate|normalize|delete|create|register|update|associate> [project|service|repository] [id] --target <workspace> [--input <json-file>] --json'],
       match: ({ domain }: any) => domain === 'assets',
       run: (runtime: any, context: any) => assetCatalogCommand(applications.workspace || runtime, context.argv.slice(3)),
     }),

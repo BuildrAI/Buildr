@@ -1,3 +1,4 @@
+import { KnowledgeAgentAction } from '../features/knowledge/components/KnowledgeAgentAction';
 import { useEffect, useState } from 'react';
 import { Button, Input } from 'antd';
 import { useAgentActionFeedback } from '../components/AgentActionFeedback';
@@ -24,11 +25,12 @@ export function AgentActionDrawer({ initialAction, initialContext = EMPTY_CONTEX
   }, [initialAction, initialContext, setCopyState]);
   const backToChooser = () => { setAction(undefined); setContext({}); setCopyState(''); };
   const props = { context, onBack: backToChooser };
+  if (action === 'knowledge') return <KnowledgeAgentAction key={generation} {...props} />;
   if (action === 'workspace') return <WorkspaceAgentAction key={generation} {...props} />;
   if (action === 'project') return <ProjectAgentAction key={generation} {...props} />;
   if (action === 'service') return <ServiceAgentAction key={generation} {...props} />;
   if (action === 'daily-progress') return <DailyProgressAgentAction key={generation} {...props} />;
-  if (action && ['start', 'change', 'task-review', 'task-verification'].includes(action)) return <TaskAgentAction key={`${generation}:${action}`} action={action} {...props} />;
+  if (action && ['start', 'change', 'task-review', 'task-verification', 'task-continue'].includes(action)) return <TaskAgentAction key={`${generation}:${action}`} action={action} {...props} />;
   if (action === 'workspace-recovery' && typeof context.prompt === 'string') {
     return (
       <>

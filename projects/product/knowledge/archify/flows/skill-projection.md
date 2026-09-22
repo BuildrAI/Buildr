@@ -15,8 +15,8 @@
 | `resolved-skills` | `render-plan.ts` 的 `resolveRenderSkills` 返回附带局部能力视图的普通技能 |
 | `render-plan`、`prepare-files` | `buildSkillRenderPlan` 与 `buildSkillContent` 构造正文、附属文件及归属记录计划 |
 | `reconciler`、`check-writes` | `application/runtime-projection.ts` 的 `renderSkillsRuntime` 在目标与发现冲突检查后将计划交给 `reconcileRuntimePlan` |
-| `runtime-files`、`write-runtime` | `buildRuntimeSkillDirectory` 使用 `getRuntimeAdapter` 的布局；协调器写入实际改变的受管目标 |
-| `ownership`、`write-ownership` | `buildSkillProjectionReceipt` 构造本机记录，由计划的记录写入分支保存；目录内容通常先于标记为 `commitLast` 的记录 |
+| `runtime-files`、`write-runtime` | `adapter-contract.ts` 的 `skillDestinationRoots` 给出该 destination 的目标根，`buildRuntimeSkillDirectory` 按根使用 `getRuntimeAdapter` 的布局；协调器写入实际改变的受管目标 |
+| `ownership`、`write-ownership` | `buildSkillProjectionReceipt` 构造本机记录，由计划的记录写入分支保存；目录内容通常先于标记为 `commitLast` 的记录。共享同一根的其他 adapter 由各自回执界定归属 |
 
 排除：全部规则投射、远程来源读取细节、所有安装模式、全部适配器布局、宿主实际会话加载，以及任意写入失败下的通用事务保证。产品入口 `buildr` 从随包来源独立进入相同计划机制，卡片仅说明其来源，未在主图展开。
 

@@ -1,3 +1,4 @@
+import { WORKBENCH_HTTP_OPERATIONS } from '../../src/modules/workbench/interfaces/http/workbench-http-schema.ts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -61,7 +62,8 @@ test('Runtime/System 真实 HTTP 契约覆盖 JSON、binary、错误与零副作
   fs.mkdirSync(path.join(publicationRoot, 'assets'), { recursive: true });
   fs.writeFileSync(path.join(publicationRoot, 'article.md'), '---\nid: contract-article\ntitle: 契约文章\nkind: product-article\nstatus: published\npublished_at: 2026-08-23\ntargets:\n  - platform: local-app\n    status: published\n---\n\n# 契约文章\n');
   fs.writeFileSync(path.join(publicationRoot, 'assets', 'cover.png'), Buffer.from('contract-image'));
-  fs.writeFileSync(path.join(publicationRoot, 'assets', 'notes.txt'), 'not-downloadable');
+  fs.writeFileSync(path.join(publicationRoot, 'assets', 'notes.txt'), 'downloadable notes');
+  fs.writeFileSync(path.join(publicationRoot, 'assets', 'unsafe.html'), '<script>bad</script>');
 
   const httpContributions = runtimeContributions(runtime, 'http').filter((item: any) => item.id !== 'system-installation.release-awareness.http');
   httpContributions.push(createReleaseAwarenessHttpContribution({ releaseAwareness }));
@@ -96,8 +98,80 @@ test('Runtime/System 真实 HTTP 契约覆盖 JSON、binary、错误与零副作
   assert.deepEqual(Buffer.from(await response.arrayBuffer()), Buffer.from('contract-image'));
 
   response = await fetch(`${workspaceUrl}/publications/contract-article/assets/assets/notes.txt`);
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get('content-disposition'), /^attachment;/);
+  assert.equal(await response.text(), 'downloadable notes');
+  response = await fetch(`${workspaceUrl}/publications/contract-article/assets/assets/unsafe.html`);
   assert.equal(response.status, 400);
   validate(PUBLICATION_HTTP_VALIDATORS, PUBLICATION_HTTP_OPERATIONS, 'system-publication.asset', 'error', await response.json());
+
+  const headers = { origin: url, 'x-buildr-session': sessionToken, 'content-type': 'application/json' };
+  const projectUrl = `${workspaceUrl}/projects/product/publications`;
+  response = await fetch(projectUrl, { method: 'POST', headers: { ...headers, 'x-buildr-session': 'wrong' }, body: JSON.stringify({ title: 'unauthorized' }) });
+  assert.equal(response.status, 403);
+  assert.equal((await response.json()).error.code, 'session_forbidden');
+  response = await fetch(projectUrl, { method: 'POST', headers: { ...headers, origin: 'https://example.com' }, body: JSON.stringify({ title: 'wrong origin' }) });
+  assert.equal(response.status, 403);
+  assert.equal((await response.json()).error.code, 'origin_forbidden');
+  response = await fetch(projectUrl, { method: 'POST', headers, body: JSON.stringify({ title: 'path rejected', path: '/tmp/escape' }) });
+  assert.equal(response.status, 400);
+  assert.equal((await response.json()).error.code, 'publication_http_request_invalid');
+  response = await fetch(projectUrl, { method: 'POST', headers, body: JSON.stringify({ id: 'http-draft', title: 'HTTP 草稿', content: 'a'.repeat(40 * 1024) }) });
+  assert.equal(response.status, 200);
+  const created = await response.json();
+  validate(PUBLICATION_HTTP_VALIDATORS, PUBLICATION_HTTP_OPERATIONS, 'system-publication.create', 'success', created);
+  const articleUrl = `${projectUrl}/http-draft`;
+  response = await fetch(`${articleUrl}/assets`, { method: 'POST', headers, body: JSON.stringify({ revision: created.revision, filename: '说明.txt', contentBase64: Buffer.from('z'.repeat(40 * 1024)).toString('base64') }) });
+  assert.equal(response.status, 200);
+  const uploaded = await response.json();
+  validate(PUBLICATION_HTTP_VALIDATORS, PUBLICATION_HTTP_OPERATIONS, 'system-publication.upload', 'success', uploaded);
+  assert.equal(uploaded.revision, created.revision);
+  response = await fetch(`${articleUrl}/assets/${encodeURIComponent(uploaded.asset.relativePath)}`);
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get('content-disposition'), /^attachment; filename\*=UTF-8''/);
+  assert.match(response.headers.get('content-security-policy'), /sandbox/);
+  assert.equal((await response.text()).length, 40 * 1024);
+  response = await fetch(`${articleUrl}/assets`);
+  validate(PUBLICATION_HTTP_VALIDATORS, PUBLICATION_HTTP_OPERATIONS, 'system-publication.assets', 'success', await response.json());
+  const update = { revision: created.revision, title: '保存后的标题', summary: '摘要', status: 'planned', content: `[说明](${uploaded.asset.relativePath})` };
+  response = await fetch(articleUrl, { method: 'PUT', headers, body: JSON.stringify(update) });
+  assert.equal(response.status, 200);
+  const saved = await response.json();
+  validate(PUBLICATION_HTTP_VALIDATORS, PUBLICATION_HTTP_OPERATIONS, 'system-publication.update', 'success', saved);
+  assert.notEqual(saved.revision, created.revision);
+  response = await fetch(articleUrl, { method: 'PUT', headers, body: JSON.stringify(update) });
+  assert.equal(response.status, 409);
+  assert.equal((await response.json()).error.code, 'publication_revision_conflict');
+  response = await fetch(articleUrl, { method: 'DELETE', headers, body: JSON.stringify({ revision: created.revision }) });
+  assert.equal(response.status, 409);
+  response = await fetch(articleUrl, { method: 'DELETE', headers, body: JSON.stringify({ revision: saved.revision }) });
+  assert.equal(response.status, 200);
+  validate(PUBLICATION_HTTP_VALIDATORS, PUBLICATION_HTTP_OPERATIONS, 'system-publication.delete', 'success', await response.json());
+  assert.equal(fs.existsSync(path.join(publicationRoot, uploaded.asset.relativePath)), true);
+  response = await fetch(articleUrl);
+  assert.equal(response.status, 404);
+
+  response = await fetch(projectUrl, { method: 'POST', headers, body: JSON.stringify({ id: 'assets', title: '合法的 assets 文章 ID' }) });
+  assert.equal(response.status, 200);
+  response = await fetch(`${projectUrl}/assets`);
+  const namedAssets = await response.json();
+  validate(PUBLICATION_HTTP_VALIDATORS, PUBLICATION_HTTP_OPERATIONS, 'system-publication.project-detail', 'success', namedAssets);
+  assert.equal(namedAssets.publication.id, 'assets');
+  response = await fetch(`${projectUrl}/assets`, { method: 'PUT', headers, body: JSON.stringify({ revision: namedAssets.revision, title: '可以正常修改', summary: '', content: '', status: 'draft' }) });
+  assert.equal(response.status, 200);
+  const savedAssets = await response.json();
+  response = await fetch(`${projectUrl}/assets`, { method: 'DELETE', headers, body: JSON.stringify({ revision: savedAssets.revision }) });
+  assert.equal(response.status, 200);
+
+  response = await fetch(projectUrl, { method: 'POST', headers, body: JSON.stringify({ title: 'oversized', content: 'x'.repeat(1024 * 1024) }) });
+  assert.equal(response.status, 413);
+  assert.equal((await response.json()).error.code, 'request_body_too_large');
+  response = await fetch(`${projectUrl}/contract-article/assets`, { method: 'POST', headers, body: JSON.stringify({ revision: 'old', filename: 'large.txt', contentBase64: 'x'.repeat(14 * 1024 * 1024) }) });
+  assert.equal(response.status, 413);
+  assert.equal((await response.json()).error.code, 'request_body_too_large');
+  response = await fetch(`${url}/api/v1/app/quit`, { method: 'POST', headers, body: JSON.stringify({ padding: 'x'.repeat(33 * 1024) }) });
+  assert.equal(response.status, 413, 'unrelated endpoint retains 32 KiB default');
+  assert.equal((await response.json()).error.code, 'request_body_too_large');
 
   let shutdownCalls: any = 0;
   const originalClose: any = instance.server.close.bind(instance.server);
@@ -118,6 +192,7 @@ test('Runtime/System validators 不变异输入且全局 operation coverage 闭�
   assert.deepEqual(input, before);
 
   const coverage: any = inspectHttpOperationCoverage([
+    WORKBENCH_HTTP_OPERATIONS,
     ownedHttpOperations('task-record', TASK_HTTP_OPERATIONS),
     ownedHttpOperations('task-professional', TASK_PROFESSIONAL_HTTP_OPERATIONS),
     ownedHttpOperations('workspace', WORKSPACE_HTTP_OPERATIONS),

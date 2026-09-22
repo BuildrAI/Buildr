@@ -47,6 +47,7 @@ const allowed: any = new Map([
   ['src/bootstrap/cli/main.ts', new Set(['writeInternalDownload'])],
   ['src/web/application/preview-lifecycle.ts', new Set(['clearOwner'])],
   ['src/modules/task/infrastructure/worktree-application.ts', new Set(['writeReceipt'])],
+  ['src/modules/publication/application/publication-application.ts', new Set(['createPublication', 'uploadPublicationAsset'])],
   ['src/modules/task/application/finish/task-finish-run.ts', new Set([
     'acquireFinishTargetLease', 'releaseFinishTargetLease',
   ])],

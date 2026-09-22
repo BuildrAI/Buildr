@@ -5,7 +5,7 @@ description: 审查正式任务的方案或完成结果、查看或保存对应�
 
 # Task Review
 
-本 Skill 是 `buildr.task-review/v2` 的默认 provider。Agent 完成判断，Task Review Application 只保存两份可选结果。
+本 Skill 是 `buildr.task-review/v2` 的默认 provider。Agent 完成判断，Task Review Application 保存方案与实现结果的独立当前结论及历次完整审查。
 
 ## 1. 确认审查目标
 
@@ -43,6 +43,8 @@ Review 是可选证据。Task Verification、任务收尾和 Parent 管理都不
 ```text
 buildr task review record <task-id> --type <planning|completion> --subject-identity <identity> --method <self|independent-agent|human> --reviewed <subject> ... [--uncovered <subject>::<reason> ...] [--finding <text> ...] --outcome <accepted|changes-requested> --summary <text> --expected-current <absent|sha256-digest> --target <canonical-workspace> --json
 ```
+
+同类型新结果记录成功时，应用（Application）在同一事务中保留旧完整结果；`inspect` 返回当前结果与 `history`。历史帮助理解修改过程，不自动证明当前对象已通过。
 
 并发冲突时重新 inspect，重新核对现场后决定是否重做或替换；不得盲目重试。Agent、工具或人工流程在完整结论前中断时不要调用 record，也不要写 draft/blocked 占位。
 

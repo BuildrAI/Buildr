@@ -173,6 +173,12 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     },
     lifecycle: 'none',
   }, {
+    id: 'knowledge',
+    requires: ['workspace.application','agent-assets.application'],
+    provides: ['knowledge.query'],
+    contributions: { cli: [], http: ['knowledge.http'], diagnostics: [] },
+    lifecycle: 'none',
+  }, {
     id: 'publication',
     requires: [WORKSPACE_QUERY],
     provides: ['publication.application'],
@@ -190,10 +196,10 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
   }, {
     id: 'task',
     requires: [WORKSPACE_TASK_SUPPORT],
-    provides: [TASK_QUERY_APPLICATION, TASK_COMMAND_APPLICATION, TASK_RUNTIME_PORT, TASK_CHANGE_BINDER],
+    provides: ['task.work-context-application', TASK_QUERY_APPLICATION, TASK_COMMAND_APPLICATION, TASK_RUNTIME_PORT, TASK_CHANGE_BINDER],
     contributions: {
-      cli: ['task create', 'task inspect', 'task update', 'task activate', 'task complete', 'task abandon'],
-      http: ['task.http'],
+      cli: ['task create', 'task inspect', 'task update', 'task activate', 'task complete', 'task abandon', 'task work-context inspect', 'task work-context record', 'task work-context respond'],
+      http: ['task-work-context.http', 'task.http'],
       diagnostics: ['task.diagnostics'],
     },
     lifecycle: 'none',
@@ -202,6 +208,12 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     requires: [WORKSPACE_QUERY, TASK_QUERY_APPLICATION],
     provides: [PROJECT_DAILY_PROGRESS_APPLICATION],
     contributions: { cli: ['project daily-progress record', 'project daily-progress inspect', 'project daily-progress list'], http: ['task.daily-progress.http'], diagnostics: [] },
+    lifecycle: 'none',
+  }, {
+    id: 'workbench',
+    requires: [TASK_QUERY_APPLICATION, 'task.work-context-application', PROJECT_DAILY_PROGRESS_APPLICATION, WORKSPACE_QUERY, WORKSPACE_TASK_SUPPORT],
+    provides: ['workbench.application'],
+    contributions: { cli: ['workbench'], http: ['workbench.http'], diagnostics: [] },
     lifecycle: 'none',
   }, {
     id: 'task-worktree-provider',
@@ -289,7 +301,9 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     'skill install', 'runtime check', 'skills render', 'rules render',
     'openspec converge', 'openspec convergence preflight', 'openspec convergence inspect',
     'task create', 'task inspect', 'task update', 'task activate', 'task complete', 'task abandon',
+    'task work-context inspect', 'task work-context record', 'task work-context respond',
     'project daily-progress record', 'project daily-progress inspect', 'project daily-progress list',
+    'workbench',
     'worktree create', 'worktree cleanup', 'worktree inspect',
     'project verification inspect', 'project verification validate', 'project verification update',
     'task review inspect', 'task review record',
@@ -301,7 +315,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     'doctor',
   ]);
   assert.deepEqual(runtimeContributions(runtime, 'http').map((item: any) => item.id), [
-    'workspace-core.http', 'agent-assets.http', 'publication.http', 'task.http', 'task.daily-progress.http', 'change.http',
+    'workspace-core.http', 'agent-assets.http', 'knowledge.http', 'publication.http', 'task-work-context.http', 'task.http', 'task.daily-progress.http', 'workbench.http', 'change.http',
     'task-review.http', 'task-verification.http',
     'task-parent-coordination.http', 'system-installation.release-awareness.http',
   ]);

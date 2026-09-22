@@ -37,6 +37,11 @@ export function createBuiltinLifecycle(deps: any): any  {
     writeSkillsManifest,
   } = deps;
 
+  function workspaceSkillsRoots(agent: any): any  {
+    const traits: any = getRuntimeAdapter(agent).traits.skills;
+    return traits.destinations?.workspace?.roots || [traits.root];
+  }
+
   function packageBuiltinComponent(id: any): any  {
     const manifest = readPackageManifest();
     for (const kind of ['rules', 'skills', 'commands']) {
@@ -113,9 +118,10 @@ export function createBuiltinLifecycle(deps: any): any  {
       const runtimePath = found.entry.runtimePath || id;
       const agentsByRuntimeRoot: any = new Map();
       for (const agent of SUPPORTED_AGENT_IDS) {
-        const runtimeRoot = getRuntimeAdapter(agent).traits.skills.root;
-        if (!agentsByRuntimeRoot.has(runtimeRoot)) agentsByRuntimeRoot.set(runtimeRoot, []);
-        agentsByRuntimeRoot.get(runtimeRoot).push(agent);
+        for (const runtimeRoot of workspaceSkillsRoots(agent)) {
+          if (!agentsByRuntimeRoot.has(runtimeRoot)) agentsByRuntimeRoot.set(runtimeRoot, []);
+          agentsByRuntimeRoot.get(runtimeRoot).push(agent);
+        }
       }
       for (const [runtimeRoot, agents] of agentsByRuntimeRoot) {
         const receiptAgents = agents.filter((agent: any) => [
@@ -150,7 +156,7 @@ export function createBuiltinLifecycle(deps: any): any  {
 
   function builtinUninstall(args: any): any  {
     const targetRoot = path.resolve(optionValue(args, '--target', process.cwd()));
-    const runtimeRoots: any[] = [...new Set(SUPPORTED_AGENT_IDS.map((agent: any) => getRuntimeAdapter(agent).traits.skills.root))];
+    const runtimeRoots: any[] = [...new Set(SUPPORTED_AGENT_IDS.flatMap((agent: any) => workspaceSkillsRoots(agent)))];
     const result = withWorkspaceMutation(targetRoot, 'builtin.uninstall', [
       path.join(targetRoot, 'rules'),
       path.join(targetRoot, 'skills'),

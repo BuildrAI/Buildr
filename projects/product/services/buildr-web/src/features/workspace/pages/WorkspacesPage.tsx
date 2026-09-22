@@ -2,6 +2,7 @@ import { workspaceApi } from '../api/workspace-api';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Alert, Button, Empty, Space, Tag, Typography } from 'antd';
+import { SettingOutlined } from '@ant-design/icons';
 import { useAppShell } from '../../../app/AppShellContext';
 import { confirmModal } from '../../../lib/confirm';
 import { workspaceHomePath } from '../../../lib/labels';
@@ -14,9 +15,10 @@ type Options = {
   stayOnCatalog: boolean;
   onOpenWorkspace: (workspaceId: string, replace: boolean) => void;
   onRecoveryPrompt: (prompt: string) => void;
+  workspaceRegistryRevision: number;
 };
 
-function useWorkspaceCatalog({ stayOnCatalog, onOpenWorkspace, onRecoveryPrompt }: Options) {
+function useWorkspaceCatalog({ stayOnCatalog, onOpenWorkspace, onRecoveryPrompt, workspaceRegistryRevision }: Options) {
   const [registry, setRegistry] = useState<WorkspaceRegistry | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
@@ -35,7 +37,7 @@ function useWorkspaceCatalog({ stayOnCatalog, onOpenWorkspace, onRecoveryPrompt 
         if (ready.length === 1 && ready[0].workspace?.id) onOpenWorkspace(ready[0].workspace.id, true);
       })
       .catch((error: Error) => setMessage(error.message));
-  }, [load, onOpenWorkspace, stayOnCatalog]);
+  }, [load, onOpenWorkspace, stayOnCatalog, workspaceRegistryRevision]);
 
   const remove = useCallback(async (entry: WorkspaceEntry) => {
     if (!registry) return;
@@ -77,7 +79,7 @@ export function WorkspacesPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const stayOnCatalog = searchParams.get('catalog') === '1';
-  const { openAgentAction, setBreadcrumbParts } = useAppShell();
+  const { openAgentAction, setBreadcrumbParts, openWorkspaceSettings, workspaceRegistryRevision } = useAppShell();
   const onOpenWorkspace = useCallback((workspaceId: string, replace: boolean) => {
     navigate(workspaceHomePath(workspaceId), { replace });
   }, [navigate]);
@@ -88,6 +90,7 @@ export function WorkspacesPage() {
     stayOnCatalog,
     onOpenWorkspace,
     onRecoveryPrompt,
+    workspaceRegistryRevision,
   });
 
   useEffect(() => {
@@ -150,7 +153,7 @@ export function WorkspacesPage() {
             </>
           );
           return (
-            <article className="workspace-card" key={entry.rootPath}>
+            <article className={`workspace-card${ready && entry.workspace?.id ? ' has-settings' : ''}`} key={entry.rootPath} data-workspace-id={entry.workspace?.id}>
               {ready && entry.workspace?.id ? (
                 <Link className="workspace-card-main" to={workspaceHomePath(entry.workspace.id)}>
                   {main}
@@ -160,6 +163,11 @@ export function WorkspacesPage() {
                   {main}
                 </div>
               )}
+              {ready && entry.workspace?.id ? <Button
+                className="workspace-card-settings" type="text" icon={<SettingOutlined />}
+                aria-label={`设置工作空间：${entry.workspace.name}`} title="工作空间设置"
+                onClick={() => openWorkspaceSettings(entry.workspace!.id)}
+              /> : null}
               <Button
                 className="workspace-remove"
                 size="small"

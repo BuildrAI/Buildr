@@ -12,3 +12,9 @@ components:
     enabled: true
     required: false
     state: "installed"
+  - id: "archify"
+    source: "buildr"
+    path: "components/buildr/archify"
+    enabled: true
+    required: false
+    state: "installed"

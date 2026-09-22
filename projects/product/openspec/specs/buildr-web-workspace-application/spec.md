@@ -258,12 +258,12 @@ Buildr MUST 将 Workspace 概览呈现为“开始”页，根据真实 Workspac
 - **AND** MUST NOT 将该参数保存、回显为当前 Project 或传给 Agent 工作动作
 
 ### Requirement: Workspace 设置必须承载受控 metadata 修改
-Buildr MUST 将当前 Workspace 的 metadata 编辑与只读技术事实放在 Workspace 设置页面，并继续复用现有白名单、迁移只读和 revision compare-and-swap 契约。
+Buildr MUST 将明确目标 Workspace 的 metadata 编辑放在共用设置抽屉，并继续复用现有白名单、迁移只读和 revision compare-and-swap 契约。
 
 #### Scenario: 查看 Workspace 设置
-- **WHEN** 用户打开 `/settings/workspace`
-- **THEN** 页面 MUST 展示可编辑的 `name`、`description`
-- **AND** MUST 将 `id`、root path、schema identity 和 revision 显示为只读事实
+- **WHEN** 用户通过顶部工作空间选择菜单、工作空间卡片或旧设置地址打开设置
+- **THEN** 抽屉 MUST 明确目标工作空间并展示可编辑的 `name`、`description`
+- **AND** MUST 只以辅助辨认的一行显示只读 root path，不展示 `id`、schema identity 和 revision；程序继续保留其身份和并发校验用途
 
 #### Scenario: 保存 Workspace 设置
 - **WHEN** 用户基于当前 revision 保存合法的 `name` 或 `description`
@@ -272,8 +272,17 @@ Buildr MUST 将当前 Workspace 的 metadata 编辑与只读技术事实放在 W
 
 #### Scenario: Workspace 设置发生 revision conflict
 - **WHEN** 外部 Agent、Git、编辑器或其他页面会话已改变 Workspace manifest
-- **THEN** 设置页 MUST 提示用户刷新后重新判断
+- **THEN** 抽屉 MUST 保留用户输入，并提供最新内容供重新判断
 - **AND** MUST NOT 自动 merge 或覆盖真实文件
+
+#### Scenario: 从其他工作空间卡片编辑
+- **WHEN** 用户从目录中的某张工作空间卡片打开设置
+- **THEN** 读取与保存 MUST 显式使用该卡片身份，不借用当前全局工作空间或目录清单版本
+- **AND** 保存 MUST 更新该卡片，只有修改当前工作空间时才刷新其顶部名称；页面位置和浏览范围 MUST 保留
+
+#### Scenario: 取消或异常
+- **WHEN** 用户取消修改，或工作空间存在迁移要求、身份冲突、路径不可用
+- **THEN** 取消 MUST 零写入；异常 MUST 只限制相关保存并给出明确诊断
 
 ### Requirement: 项目与服务独立视图必须保留现有能力
 Buildr MUST 为项目与服务提供独立管理视图和稳定的项目详情上下文，且二者现有 read、metadata update、diagnostic 和 prompt-only 行为 MUST 保持可用。
@@ -543,7 +552,7 @@ Buildr MUST 让 Workspace 内页面和 API 使用已登记 `workspaceId` 作为�
 - **AND** MUST NOT 回退到当前目录或其他 Workspace
 
 ### Requirement: 全局应用必须提供 Workspace 级应用外壳与路由
-Buildr MUST 提供解释 Workspace 心智的全局 Workspace 页面，并 MUST 在选定 Workspace 下提供任务列表、设置、Project、Service 和 Change 等既有稳定路由；应用外壳 MUST 将工作台和工作空间作为顶栏核心路径，并将原有资源入口放入对应区域的左侧导航，进入 Workspace 后 MUST 直接打开任务列表，且 MUST NOT 再提供独立的 Workspace 开始/详情页作为默认落地页。
+Buildr MUST 提供解释 Workspace 心智的全局 Workspace 页面，并 MUST 在选定 Workspace 下提供任务列表、设置、Project、Service 和 Change 等既有稳定路由；应用外壳 MUST 将工作台和工作空间作为顶栏核心路径，并将资源入口放入对应区域的左侧导航，设置入口归属顶部工作空间选择菜单，进入 Workspace 后 MUST 直接打开工作概览，且 MUST NOT 再提供独立的 Workspace 开始/详情页作为默认落地页。
 
 #### Scenario: 打开全局首页
 - **WHEN** 用户打开根路由
@@ -554,15 +563,15 @@ Buildr MUST 提供解释 Workspace 心智的全局 Workspace 页面，并 MUST �
 
 #### Scenario: 进入 Workspace
 - **WHEN** 用户选择一个可用 Workspace
-- **THEN** 页面 MUST 导航到 `/workspaces/:workspaceId/tasks`
+- **THEN** 页面 MUST 导航到 `/workspaces/:workspaceId/overview`
 - **AND** Workspace 内导航 MUST 保持该 `workspaceId` 上下文
 
 #### Scenario: 展示核心导航层级
 - **WHEN** 用户在选定 Workspace 中浏览
-- **THEN** App Shell MUST 在顶栏依次展示“工作台”“工作空间”，任务和文章位于工作台导航，项目、服务、技能和设置位于工作空间导航
+- **THEN** App Shell MUST 在顶栏依次展示“工作台”“工作空间”，概览、任务和动态位于工作台导航，项目、服务、代码库、技能和文章位于工作空间导航；设置 MUST 位于顶部工作空间选择菜单及工作空间卡片
 - **AND** MUST NOT 将“开始”作为常驻主导航项
-- **AND** 用户 MUST 能通过品牌标识或工作空间切换到达当前 Workspace 的任务列表
-- **AND** `/workspaces/:workspaceId/` 与 `/workspaces/:workspaceId/overview` MUST 重定向到任务列表
+- **AND** 用户 MUST 能通过品牌标识或工作空间切换到达当前 Workspace 的工作概览
+- **AND** `/workspaces/:workspaceId/` MUST 到达工作概览，`/workspaces/:workspaceId/overview` MUST 展示工作概览
 - **AND** Service 视图 MUST 显示当前所属 Project，breadcrumb 或页头 MUST 表达 Workspace、Project 与 Service 层级
 - **AND** Change 与未来 Rules、Skills 等能力 MUST 进入次级区域但保持既有路由可访问
 
@@ -647,7 +656,7 @@ Buildr MUST 允许用户从当前 Workspace 选择 canonical Project、可选 Se
 
 ### Requirement: 文章读取必须保护 Workspace 与 publication 资源边界
 
-文章列表、详情和图片资源 API MUST 只接受已登记 Workspace 身份、已发现的 publication ID 和固定目录内的合法相对资源名；MUST 拒绝任意 `target`、`root`、`path`、路径穿越、符号链接和固定 publication root 之外的文件。
+文章列表、详情和资源 API MUST 只接受已登记 Workspace 身份、合法项目及已发现的 publication ID 和固定目录内的合法相对资源名；MUST 拒绝任意 `target`、`root`、`path`、路径穿越、符号链接和固定 publication root 之外的文件。
 
 #### Scenario: 拒绝任意文件系统路径
 
@@ -666,6 +675,11 @@ Buildr MUST 允许用户从当前 Workspace 选择 canonical Project、可选 Se
 - **WHEN** 图片资源名包含路径穿越、指向 publication root 外部或解析为符号链接
 - **THEN** API MUST 拒绝请求并返回明确诊断
 - **AND** MUST NOT 返回文件内容
+
+#### Scenario: 下载文章附件
+- **WHEN** 有效文章引用 `assets/` 下允许类型的普通附件
+- **THEN** API MUST 按受控类型返回文件，并以下载方式提供非图片附件
+- **AND** HTML、脚本及其他可执行内容 MUST NOT 以内联文档执行
 
 ### Requirement: Task 概览必须以关联 Change Brief 为主要说明
 Buildr Web MUST 仅在 Task 详情概览中，从该 Task Record 已保存的 Change 引用读取关联 Change，并 MUST 将每个可用的 Change Brief 作为主要人类可读说明。Task title、intent、范围和其他 Task 专业事实 MUST 保持可读，但 MUST NOT 取代 Brief 成为关联 Change 的主要说明。
@@ -862,7 +876,7 @@ Buildr Web Task 列表与详情 MUST 通过 Task Record Application read model �
 
 ### Requirement: Buildr Web 必须提供独立文章入口
 
-Buildr Web MUST 在 Workspace 级工作台左侧提供独立的“文章”导航入口，并 MUST 提供文章列表页与文章详情页；文章页面 MUST 保持只读，不得提供文章编辑、发布或平台同步操作。
+Buildr Web MUST 在 Workspace 级工作空间区域左侧提供独立的“文章”导航入口，并 MUST 提供文章列表页与文章详情页；文章页面 MUST 支持受控新建、编辑、删除确认及资源引用；外部平台发布与同步仍需独立授权和真实能力。
 
 #### Scenario: 从工作空间导航打开文章
 
@@ -875,22 +889,32 @@ Buildr Web MUST 在 Workspace 级工作台左侧提供独立的“文章”导�
 - **WHEN** 用户从文章列表选择一篇有效文章
 - **THEN** 应用 MUST 展示文章标题、发布状态、发布目标和渲染后的 Markdown 正文
 - **AND** 页面 MUST 提供返回文章列表的可用链接
-- **AND** 页面 MUST NOT 提供修改文章正文或发布状态的写操作
+- **AND** 页面 MUST 提供基于当前版本的正文与稿件状态编辑，并将平台发布记录与当前稿件分开表达
+
+#### Scenario: 阅读与列表往返
+- **WHEN** 用户搜索、按项目或稿件状态筛选、收藏文章并打开阅读页后返回
+- **THEN** 页面 MUST 保留原列表条件，以工作空间、项目和文章标识识别同一资料
+- **AND** MUST 提供正文目录、原文、导出、资源及相关材料的阅读入口
+
+#### Scenario: 智能体写作交接
+- **WHEN** 用户准备起草、润色、审校或平台改写请求
+- **THEN** 页面 MUST 携带真实项目、文章和当前来源版本，并明确仅准备请求、尚未执行
+- **AND** 用户修改目标或材料后 MUST 重新准备请求，不得复制旧目标的结果
 
 ### Requirement: Buildr Web 必须从 canonical publication source 只读投影文章
 
-Buildr Web MUST 通过 Application read model 读取已登记 Workspace 中 Product Project 的 `docs/publications/` Markdown 文件；HTTP/Web MUST NOT 直接扫描任意 root/path、读取 SQLite 中的文章副本或创建第二份文章正文。
+Buildr Web MUST 通过 Application read model 读取已登记 Workspace 中可读取受控项目的 `docs/publications/` Markdown 文件；HTTP/Web MUST NOT 直接扫描任意 root/path、读取 SQLite 中的文章副本或创建第二份文章正文。
 
 #### Scenario: 读取文章列表
 
 - **WHEN** Buildr Web 请求当前 Workspace 的文章列表
-- **THEN** Application MUST 根据 registered Workspace 和 Product Project source 解析固定 publication root
-- **AND** MUST 返回有效文章的稳定 ID、标题、类型、状态、发布日期和发布目标
+- **THEN** Application MUST 根据 registered Workspace 和每个明确 Project source 解析固定 publication root
+- **AND** MUST 返回有效文章的项目标识、稳定 ID、标题、摘要、类型、稿件状态、发布日期、更新时间、当前版本和发布目标
 - **AND** MUST 排除 `README.md`、隐藏文件和缺少有效文章 ID/标题的 Markdown 文件
 
 #### Scenario: publication 目录不存在或为空
 
-- **WHEN** Product Project 没有 `docs/publications/` 目录或目录中没有有效文章
+- **WHEN** 一个受控 Project 没有 `docs/publications/` 目录或目录中没有有效文章
 - **THEN** API MUST 返回成功的空列表或明确的 `empty` read-model 状态
 - **AND** Buildr Web MUST 展示“暂无文章”空状态
 - **AND** MUST NOT 阻塞工作空间、项目、服务、任务或变更页面
@@ -900,6 +924,15 @@ Buildr Web MUST 通过 Application read model 读取已登记 Workspace 中 Prod
 - **WHEN** 用户请求不存在或已移除的 publication ID
 - **THEN** API MUST 返回稳定的 not-found 诊断
 - **AND** Buildr Web MUST 展示文章不可用状态及返回文章列表的链接
+
+#### Scenario: 相同文章标识存在于两个项目
+- **WHEN** 两个项目各自维护相同 publication ID
+- **THEN** 列表、详情、编辑、资源和收藏 MUST 按项目与文章的组合身份区分
+- **AND** 旧 `/publications/:id` 和旧文章页面地址 MUST 继续解析 Product 项目，不猜测其他项目
+
+#### Scenario: 单个项目不可读取
+- **WHEN** 一个项目不在受控范围或来源暂时不可读
+- **THEN** 聚合目录 MUST 表达该项目局部诊断，其余可读取项目继续提供内容
 
 ### Requirement: Buildr Web Markdown 视图必须支持受控本地图片
 
@@ -1334,16 +1367,16 @@ Buildr Web MUST 把已防抖关键词、Project、Service、status、hasChildren
 - **AND** 后续响应的空filter options MUST不清空筛选控件
 
 ### Requirement: Buildr Web任务目录必须默认展示四态信息流
-Buildr Web Task列表首次进入和清除筛选 MUST使用`status=all`，并 MUST按进行中、待办、已完成、已放弃顺序连续展示；`open|todo|active|completed|abandoned` MUST继续作为显式状态筛选。选择复盘筛选时 MUST保持`all`，除非用户随后主动选择其他状态。
+Buildr Web Task列表首次进入和清除筛选 MUST使用`status=open`，并 MUST按进行中、待办顺序连续展示；显式`all`时 MUST按进行中、待办、已完成、已放弃顺序连续展示；`open|todo|active|completed|abandoned` MUST继续作为显式状态筛选。选择复盘筛选时 MUST保持`all`，除非用户随后主动选择其他状态。
 
 #### Scenario: 首次进入列表
 - **WHEN** Workspace同时包含todo、active、completed与abandoned Tasks
-- **THEN** 页面首个Task list请求 MUST携带`status=all`
-- **AND** 信息流 MUST按active、todo、completed、abandoned顺序展示首批与后续批次
+- **THEN** 页面首个Task list请求 MUST携带`status=open`
+- **AND** 信息流 MUST按active、todo顺序展示首批与后续批次，用户可显式选择全部历史
 
 #### Scenario: 清除筛选
 - **WHEN** 用户清除Task列表筛选
-- **THEN** 页面 MUST恢复`status=all`并从四态信息流首批重新读取
+- **THEN** 页面 MUST恢复`status=open`并从未结束信息流首批重新读取
 
 #### Scenario: 显式查看未结束任务
 - **WHEN** 用户选择“未结束”筛选
@@ -1363,11 +1396,11 @@ Buildr Web MUST只在普通搜索关键词达到3个Unicode字符后提交服务
 - **THEN** 页面 MUST从第一批请求服务端FTS筛选结果
 
 ### Requirement: 技能页必须支持连续浏览真实工作方法
-工作空间技能页 MUST 提供紧凑列表、名称标识用途搜索、来源筛选和数量。点击技能 MUST 打开可展开的右侧详情抽屉，提供说明/原文、相关资料和管理信息。关闭 MUST 保留列表上下文，切换工作空间 MUST 丢弃旧内容与陈旧响应。
+工作空间技能页 MUST 提供紧凑列表、名称标识用途搜索、来源筛选和数量。点击技能 MUST 打开同类复用的右侧详情分屏，提供说明/原文、相关资料和管理信息。关闭 MUST 保留列表上下文，切换工作空间 MUST 丢弃旧内容与陈旧响应。
 
 #### Scenario: 查找并阅读资料
 - **WHEN** 用户搜索技能并打开说明中的技能内相对文档链接
-- **THEN** 页面 MUST 在当前抽屉内读取资料并支持返回，不要求操作资源管理器
+- **THEN** 页面 MUST 在当前分屏内读取资料并支持返回，不要求操作资源管理器
 
 #### Scenario: 空结果与读取失败
 - **WHEN** 筛选无结果或详情读取失败
@@ -1397,3 +1430,35 @@ Buildr Web MUST只在普通搜索关键词达到3个Unicode字符后提交服务
 - **THEN** 指令 MUST 实时更新且不要求生成或返回修改步骤
 - **AND** 关闭二级后 MUST 恢复原资料及焦点，重新打开保留草稿
 - **AND** 修改需求后 MUST 清除针对旧指令的已复制反馈
+
+### Requirement: 文章修改必须使用当前项目文件版本
+文章新建、更新和删除 MUST 写入已登记受控项目的 `docs/publications/`；读取 MUST 零写入。更新和删除 MUST 校验当前文章版本，保留未修改的前置元数据（Front Matter）和平台发布记录，不创建数据库正文副本。所有 HTTP 写入 MUST 复用本机会话、同源及有界请求检查。
+
+#### Scenario: 创建和修改文章
+- **WHEN** 用户在明确项目中新建或基于当前 revision 保存合法标题、摘要、正文和稿件状态
+- **THEN** 应用 MUST 返回实际保存的同一文章及新 revision，重新打开仍可读取
+- **AND** 既有 `id`、平台记录和非本次修改的元数据 MUST 保留
+
+#### Scenario: 外部修改发生冲突
+- **WHEN** 文件已被其他入口修改，而保存或删除使用旧 revision
+- **THEN** 应用 MUST 拒绝覆盖，页面 MUST 保留用户输入并允许读取最新稿件比较
+
+#### Scenario: 删除含共享资源的文章
+- **WHEN** 用户确认删除当前版本的文章
+- **THEN** 应用 MUST 只删除该文章，MUST NOT 自动删除同目录资源或外部发布内容
+
+### Requirement: 编辑器必须管理文章的本地资源与引用
+编辑器 MUST 展示当前文章引用的图片与附件，并能浏览所属项目 `docs/publications/assets/` 的资源。上传 MUST 使用明确文章身份和 revision，生成不覆盖已有文件的名称；成功后 MUST 返回真实相对路径，可插入图片或附件 Markdown 引用。上传成功与正文保存 MUST 分别表达。
+
+#### Scenario: 编辑已有图片文章
+- **WHEN** 用户打开含 `![alt](assets/name.webp)` 的既有文章
+- **THEN** 编辑器和阅读页 MUST 展示该图片与路径，保存未修改正文后引用 MUST 仍可使用
+
+#### Scenario: 上传并插入图片和附件
+- **WHEN** 用户上传允许类型和体积内的图片或附件
+- **THEN** 文件 MUST 写入所属项目固定 `assets/` 目录，返回唯一相对名称，页面 MUST 可预览或下载并插入正确引用
+- **AND** 同名文件 MUST NOT 被静默覆盖；未插入或未保存正文 MUST NOT 被表示为引用已保存
+
+#### Scenario: 不安全的资源输入
+- **WHEN** 上传或读取包含路径穿越、符号链接、未允许类型、伪造图片或超限内容
+- **THEN** 操作 MUST 局部拒绝并保留已有文章与资源，其余阅读仍可用

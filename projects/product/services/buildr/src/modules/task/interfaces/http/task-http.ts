@@ -1,5 +1,6 @@
 import { TASK_ID_SOURCE } from '../../application/task-validation.ts';
 import type {
+  TaskEndRequest,
   TaskAbandonRequest,
   TaskCompleteRequest,
   TaskUpdateRequest,
@@ -11,7 +12,7 @@ import {
 
 export { TASK_ID_SOURCE };
 
-const TASK_QUERY_FIELDS = new Set(['q', 'project', 'service', 'status', 'hasChildren', 'retrospectiveState', 'pageSize', 'cursor']);
+const TASK_QUERY_FIELDS = new Set(['q', 'project', 'service', 'status', 'hasChildren', 'taskType', 'retrospectiveState', 'pageSize', 'cursor']);
 const TASK_RECORD_PATH = new RegExp(`^/tasks/(${TASK_ID_SOURCE})$`);
 const TASK_RETROSPECTIVE_DOCUMENT_PATH = new RegExp(`^/tasks/(${TASK_ID_SOURCE})/retrospective-document$`);
 const TASK_COMPLETE_PATH = new RegExp(`^/tasks/(${TASK_ID_SOURCE})/complete$`);
@@ -26,6 +27,7 @@ type TaskHttpRuntime = {
   inspectTaskView(root: string, taskId: string): unknown;
   updateTask(root: string, taskId: string, input: unknown): unknown;
   completeTask(root: string, taskId: string, input: unknown): unknown;
+  endTask(root: string, taskId: string, input: unknown): unknown;
   abandonTask(root: string, taskId: string, input: unknown): unknown;
 };
 export type TaskHttpInput = {
@@ -119,6 +121,14 @@ export async function handleTaskHttpRequest({ request, suffix, searchParams, roo
     authorizeWrite();
     const input = validateRequest('task-record.complete', await readBody<TaskCompleteRequest>(null, 'Task complete'), 'Task complete');
     return { status: 200, body: runtime.completeTask(root, taskCompleteMatch[1], input) };
+  }
+
+  const taskEndMatch = suffix.match(new RegExp(`^/tasks/(${TASK_ID_SOURCE})/end$`));
+  if (request.method === 'POST' && taskEndMatch) {
+    authorizeWrite();
+    if (searchParams.size) throw Object.assign(new Error('组合结束不接受 query 参数。'), { code: 'task_api_query_forbidden', status: 400 });
+    const input = validateRequest('task-record.end', await readBody<TaskEndRequest>(null, 'Task end'), 'Task end');
+    return { status: 200, body: runtime.endTask(root, taskEndMatch[1], input) };
   }
 
   const taskAbandonMatch = suffix.match(TASK_ABANDON_PATH);

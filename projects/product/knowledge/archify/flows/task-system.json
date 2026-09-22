@@ -1,0 +1,340 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "任务系统：完整过程与角色职责",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "legend": {
+      "mode": "hidden"
+    },
+    "viewBox": [
+      1380,
+      740
+    ]
+  },
+  "components": [
+    {
+      "id": "discuss",
+      "type": "external",
+      "label": "讨论需求",
+      "pos": [
+        34.4,
+        75
+      ],
+      "size": [
+        129.0,
+        64
+      ]
+    },
+    {
+      "id": "triage",
+      "type": "backend",
+      "label": "任务分流",
+      "pos": [
+        34.4,
+        310
+      ],
+      "size": [
+        129.0,
+        64
+      ]
+    },
+    {
+      "id": "foundation",
+      "type": "frontend",
+      "label": "工作方法与工作空间",
+      "pos": [
+        232.2,
+        570
+      ],
+      "size": [
+        180.6,
+        84
+      ],
+      "sublabel": "规则与技能 · 项目与隔离"
+    },
+    {
+      "id": "proposal",
+      "type": "backend",
+      "label": "OpenSpec 方案",
+      "pos": [
+        258.0,
+        310
+      ],
+      "size": [
+        129.0,
+        64
+      ]
+    },
+    {
+      "id": "planning-review",
+      "type": "backend",
+      "label": "方案审查",
+      "pos": [
+        481.6,
+        310
+      ],
+      "size": [
+        129.0,
+        64
+      ]
+    },
+    {
+      "id": "authorize",
+      "type": "external",
+      "label": "确认方案与实施授权",
+      "pos": [
+        481.6,
+        75
+      ],
+      "size": [
+        129.0,
+        64
+      ]
+    },
+    {
+      "id": "implement",
+      "type": "backend",
+      "label": "实现与测试",
+      "pos": [
+        705.2,
+        310
+      ],
+      "size": [
+        129.0,
+        64
+      ]
+    },
+    {
+      "id": "completion-review",
+      "type": "backend",
+      "label": "实现结果审查与验证",
+      "pos": [
+        928.8,
+        310
+      ],
+      "size": [
+        129.0,
+        64
+      ]
+    },
+    {
+      "id": "accept",
+      "type": "external",
+      "label": "验收与收尾授权",
+      "pos": [
+        928.8,
+        75
+      ],
+      "size": [
+        129.0,
+        64
+      ]
+    },
+    {
+      "id": "deliver",
+      "type": "backend",
+      "label": "代码交付与收尾",
+      "pos": [
+        1152.4,
+        310
+      ],
+      "size": [
+        129.0,
+        64
+      ]
+    },
+    {
+      "id": "collaboration",
+      "type": "database",
+      "label": "工作台与过程成果",
+      "pos": [
+        679.4,
+        570
+      ],
+      "size": [
+        180.6,
+        84
+      ],
+      "sublabel": "进展 · 审查 · 验证 · 答复"
+    },
+    {
+      "id": "delivery-support",
+      "type": "frontend",
+      "label": "交付支撑与自举",
+      "pos": [
+        1126.6,
+        570
+      ],
+      "size": [
+        180.6,
+        84
+      ],
+      "sublabel": "结果登记 · 同步 · 激活"
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "人：目标、决定与授权",
+      "wraps": [
+        "discuss",
+        "authorize",
+        "accept"
+      ],
+      "pad": 24
+    },
+    {
+      "kind": "region",
+      "label": "智能体（Agent）：判断并执行",
+      "wraps": [
+        "triage",
+        "proposal",
+        "planning-review",
+        "implement",
+        "completion-review",
+        "deliver"
+      ],
+      "pad": 24
+    },
+    {
+      "kind": "region",
+      "label": "Buildr：连接人与智能体（Agent）的工作基础与协作入口",
+      "wraps": [
+        "foundation",
+        "collaboration",
+        "delivery-support"
+      ],
+      "pad": 24
+    }
+  ],
+  "connections": [
+    {
+      "id": "discuss-triage",
+      "from": "discuss",
+      "to": "triage",
+      "label": "理解目标",
+      "labelAt": [
+        98.9,
+        220
+      ]
+    },
+    {
+      "id": "triage-worktree",
+      "from": "triage",
+      "to": "foundation",
+      "label": "选择能力与隔离位置"
+    },
+    {
+      "id": "worktree-proposal",
+      "from": "foundation",
+      "to": "proposal",
+      "label": "读取方法与实际位置",
+      "labelAt": [
+        322.5,
+        475
+      ]
+    },
+    {
+      "id": "proposal-review",
+      "from": "proposal",
+      "to": "planning-review"
+    },
+    {
+      "id": "review-authorize",
+      "from": "planning-review",
+      "to": "authorize",
+      "label": "展示方案与待决事项"
+    },
+    {
+      "id": "authorize-implement",
+      "from": "authorize",
+      "to": "implement",
+      "label": "授权范围明确",
+      "variant": "security",
+      "labelAt": [
+        589.1,
+        220
+      ]
+    },
+    {
+      "id": "implement-review",
+      "from": "implement",
+      "to": "completion-review"
+    },
+    {
+      "id": "review-accept",
+      "from": "completion-review",
+      "to": "accept",
+      "label": "展示成果与检查结论"
+    },
+    {
+      "id": "accept-deliver",
+      "from": "accept",
+      "to": "deliver",
+      "label": "交付范围明确",
+      "variant": "security"
+    },
+    {
+      "id": "deliver-bootstrap",
+      "from": "deliver",
+      "to": "delivery-support",
+      "label": "已交付范围与真实结果",
+      "labelAt": [
+        1216.9,
+        475
+      ],
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "implement-context",
+      "from": "implement",
+      "to": "collaboration",
+      "label": "保存成果、重读意见",
+      "labelAt": [
+        769.7,
+        475
+      ],
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "human-context",
+      "from": "authorize",
+      "to": "collaboration",
+      "label": "工作台查看与答复",
+      "labelAt": [
+        593.4,
+        485
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Buildr 提供工作基础，智能体（Agent）执行",
+      "items": [
+        "治理规则（Rule）、技能（Skill）与能力绑定，管理工作空间（Workspace）、项目和隔离位置。",
+        "方法贯穿需求、OpenSpec、两类审查、实现、交付与自举；不只在图中的三个交接点生效。"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "过程中的成果可查看、可接续",
+      "items": [
+        "工作台（Workbench）和任务页汇集目标、进展、待决事项、方案、审查、验证及交付结果。",
+        "Buildr 保存关键结构化事实并链接真实文件；完整对话和逐次工具日志仍属于智能体（Agent）的会话。"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "人决定与授权，具体能力保护写入",
+      "items": [
+        "已有授权在同一范围内延续；网页答复不自动执行，智能体（Agent）继续前重读。",
+        "记录完成、Git 交付、自举成功与资源清理分别核验；局部失败保留已成立成果。"
+      ]
+    }
+  ]
+}

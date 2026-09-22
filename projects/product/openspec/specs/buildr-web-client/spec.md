@@ -111,10 +111,10 @@ Buildr Web React 客户端 MUST 在全局顶部消费 Release Awareness API并�
 - **THEN** 客户端 MUST不阻断主导航与页面内容
 
 ### Requirement: Buildr Web 壳层必须采用上下结构
-Buildr Web App Shell MUST 在顶部提供品牌、共同工作空间范围、“工作台”和“工作空间”两个区域及交给 Agent 操作，工作台 MUST 排在工作空间之前。选定范围的两个区域 MUST 共享相同 workspaceId。工作台 MUST 沿用任务列表与详情，并保留文章入口；工作空间 MUST 使用常驻左侧导航承载项目、服务、技能和设置四个平级入口，导航标签 MUST 使用中文，四个入口 MUST 采用一致的行式呈现（图标 + 文案、相同行高），MUST NOT 在左侧导航内展开项目树或所属服务列表。项目详情与服务详情 MUST 保留右上角编辑入口；视觉 token、Ant Design 5 与离线 CSP 边界 MUST 保持既有约束。
+Buildr Web App Shell MUST 在顶部提供品牌、共同工作空间范围、“工作台”和“工作空间”两个区域及交给 Agent 操作，工作台 MUST 排在工作空间之前。选定范围的两个区域 MUST 共享相同 workspaceId。工作台 MUST 提供概览、任务与动态入口；工作空间 MUST 使用常驻左侧导航承载项目、服务、代码库、技能、文章和设置六个平级入口，导航标签 MUST 使用中文，六个入口 MUST 采用一致的行式呈现（图标 + 文案、相同行高），MUST NOT 在左侧导航内展开项目树或所属服务列表。项目详情与服务详情 MUST 保留右上角编辑入口；视觉 token、Ant Design 5 与离线 CSP 边界 MUST 保持既有约束。
 
 工作空间区域的内容区 MUST 采用双栏组页签模型：
-- 左组 MUST 提供页面级页签条：项目目录、项目全景、服务目录、服务全景、技能、设置各自以页签呈现；打开新页面 MUST 追加或激活对应页签；页签 MUST 支持关闭，关闭当前页对应页签时 MUST 切换到剩余页签或回到目录兜底；页面级页签集合 MUST 在同一会话的页面间保持。
+- 左组 MUST 仅为项目主页及同项目知识提供可复用的主标签；目录由菜单定位，不重复显示主标签。服务、代码库、技能、文章及服务知识 MUST 使用副屏；主标签支持关闭并保留同工作空间现场，全部关闭回项目目录。
 - 右组 MUST 提供对象级页签条：在项目全景或服务全景内点开文档、变更等对象时，MUST 在右组以页签就地展开，MUST NOT 跳离当前领域页面；右组页签全部关闭时右组 MUST 退场，左组恢复独占。
 - 两组之间 MUST 为贯连的分隔线，MUST 支持拖拽调整右组宽度；两组的页签条在分隔线处 MUST 视觉连通；两组内容区 MUST 各自独立滚动。
 - 左组内容 MUST 限宽居中；宽度 MUST 随可用窗口自适应并设上限；右组打开且没有已保存手动比例时，左右两组 MUST 均分信息区可用宽度（不含左侧导航及中间分隔线）；已保存手动比例时 MUST 优先恢复该比例。
@@ -124,31 +124,30 @@ Buildr Web App Shell MUST 在顶部提供品牌、共同工作空间范围、“
 #### Scenario: 顶栏承载主导航
 - **WHEN** 用户在选定 Workspace 中切换工作台和工作空间
 - **THEN** 顶部 MUST 依次呈现“工作台”“工作空间”，保持同一工作空间范围
-- **AND** 工作台 MUST 展示现有任务页面；工作空间 MUST 展示工作空间内容
+- **AND** 工作台 MUST 默认展示日常概览，并保留任务与动态入口；工作空间 MUST 展示工作空间内容
 - **AND** 主菜单 MUST NOT 展示环境维护分组或智能体配置入口
 
 #### Scenario: 进入 Workspace 直接打开任务列表
 - **WHEN** 用户进入可用 Workspace、点击品牌或切换工作空间
-- **THEN** MUST 打开该 Workspace 的任务列表并选中工作台
-- **AND** `/workspaces/:workspaceId/` 与 `/workspaces/:workspaceId/overview` MUST 继续重定向到任务列表
+- **THEN** MUST 打开该 Workspace 的工作概览并选中工作台
+- **AND** `/workspaces/:workspaceId/` MUST 重定向到工作概览，`/workspaces/:workspaceId/overview` MUST 直接展示概览；既有 `/tasks` 深链保持
 
 #### Scenario: 平级领域导航
 - **WHEN** 用户查看工作空间左侧导航
-- **THEN** MUST 呈现项目、服务、技能、设置四个平级入口，行式一致
+- **THEN** MUST 呈现项目、服务、代码库、技能、文章、设置六个平级入口，行式一致
 - **AND** MUST NOT 在导航内展开项目树或项目所属服务列表
 - **AND** 当前领域入口 MUST 有可辨认的选中态
 
 #### Scenario: 页面级页签生命周期
-- **WHEN** 用户从项目目录进入项目全景，或从服务目录进入服务全景
-- **THEN** 左组页签条 MUST 追加对应全景页签并激活，目录页签保持存在
-- **AND** 点击既有页签 MUST 切换回对应页面
-- **AND** 关闭页签 MUST 将其移除；关闭当前页对应页签时 MUST 切换到剩余页签，全部关闭时 MUST 打开项目目录标签
-- **AND** 页面级页签集合 MUST 在会话内跨页面保持
+- **WHEN** 用户从项目目录进入项目主页
+- **THEN** 左组 MUST 追加或激活同一项目主标签，目录不新增可见主标签
+- **AND** 点击既有标签 MUST 恢复对应页面现场，关闭全部主标签 MUST 返回项目目录
+- **AND** 页面级标签集合 MUST 在同一工作空间内跨页面保持
 
 #### Scenario: 项目与服务上下文导航
-- **WHEN** 用户从项目目录或服务目录选择某个项目或服务
-- **THEN** MUST 以页面级页签打开对应全景，左侧导航 MUST 保持平级四项且正确标记当前领域
-- **AND** MUST NOT 在左侧导航展开项目树或所属服务列表
+- **WHEN** 用户从项目目录或服务目录选择项目或服务
+- **THEN** 项目 MUST 打开可复用主标签，服务 MUST 使用同类复用副屏并保留目录
+- **AND** 左侧导航 MUST 保持平级入口且正确标记当前领域，不展开项目树或所属服务列表
 
 #### Scenario: 独立展开与折叠
 - **WHEN** 用户在全景内点开或关闭某个文档、变更对象
@@ -157,11 +156,9 @@ Buildr Web App Shell MUST 在顶部提供品牌、共同工作空间范围、“
 - **AND** 页签与关闭控件 MUST 支持键盘操作并提供可访问名称
 
 #### Scenario: 领域内对象在右组就地展开
-- **WHEN** 用户在项目全景点击文档行，或在服务全景点击文档或变更行
-- **THEN** 右组 MUST 出现并以新页签展示该对象内容，左组全景 MUST 保持可见可交互
-- **AND** 左组中已打开的对象 MUST 有可辨认的“阅读中”标记
-- **AND** MUST NOT 跳转离开当前领域页面
-- **AND** 右组页签全部关闭时右组 MUST 退场
+- **WHEN** 用户在项目主页打开文档或服务，或在服务副屏打开文档与变更
+- **THEN** 主屏项目或目录 MUST 保持；项目文档在右组标签展示，服务下级资料在原副屏位置阅读且可返回
+- **AND** 关闭全部右组标签 MUST 恢复主区域，不新增第三分屏
 
 #### Scenario: 贯连分隔线可调宽
 - **WHEN** 右组存在且用户拖拽两组之间的分隔线
@@ -171,7 +168,7 @@ Buildr Web App Shell MUST 在顶部提供品牌、共同工作空间范围、“
 
 #### Scenario: 详情保持通栏
 - **WHEN** 用户从服务或文章目录进入详情
-- **THEN** 详情 MUST 替换对应区域的主要内容，不重复挂载旧资源列表宿主
+- **THEN** 详情 MUST 在副屏展示并保留来源目录；展开阅读时复用同一详情内容
 - **AND** 当前区域的左侧导航 MUST 保持可达
 
 #### Scenario: 项目与服务路由保持
@@ -185,26 +182,25 @@ Buildr Web App Shell MUST 在顶部提供品牌、共同工作空间范围、“
 
 #### Scenario: 任务页宽屏并排列表与详情
 - **WHEN** 用户在宽屏打开任务列表或详情
-- **THEN** 工作台内容区 MUST 保留任务列表与详情并排行为
+- **THEN** 工作台内容区 MUST 分别提供完整列表与独立详情，打开详情不得自动选择其他记录；返回 MUST 保留查询范围、分组与已浏览位置
 - **AND** `/tasks` 与 `/tasks/:taskId` 路由 MUST 保持不变
 
 #### Scenario: 任务页窄屏避免横向溢出
 - **WHEN** viewport 宽度为 390px 且用户打开任务详情
 - **THEN** 详情 MUST 可见并可操作
 - **AND** 页面主容器 MUST NOT 横向溢出
-- **AND** 任务列表 MAY 暂时不与详情并排
+- **AND** 任务列表与详情 MUST 各自可独立浏览；关联资料在宽屏并排阅读、空间不足时使用可关闭阅读层
 
 #### Scenario: 项目页宽屏并排列表与详情
-- **WHEN** 用户在宽屏打开项目目录或项目全景
-- **THEN** 目录与全景 MUST 以页面级页签组织，项目全景 MUST 展示 hero、服务卡片与文档区
-- **AND** 点开文档时右组 MUST 与左组并排展示对象页签；点开服务时 MUST 在主屏打开服务主页标签页（Tab）
+- **WHEN** 用户在宽屏打开项目目录或项目主页
+- **THEN** 项目主页 MUST 使用可复用主标签，展示项目简介、工作入口、文章与知识、关联服务和项目资料
+- **AND** 文档与服务 MUST 在副屏打开并保留主页
 - **AND** `/projects` 与 `/projects/:projectCode` 路由 MUST 保持不变
 
 #### Scenario: 项目页窄屏避免横向溢出
-- **WHEN** viewport 宽度为 390px 且用户打开项目全景
-- **THEN** 详情 MUST 可见并可操作
-- **AND** 页面主容器 MUST NOT 横向溢出
-- **AND** 极窄移动窗口右组 MAY 降级为上下排列，MUST NOT 遮挡主内容
+- **WHEN** viewport 宽度为 390px 且用户打开项目主页
+- **THEN** 详情 MUST 可见可操作且主容器无横向溢出
+- **AND** 副屏在并排空间不足时 MUST 使用可关闭阅读层，关闭恢复主内容
 
 #### Scenario: 列表筛选保持一行
 - **WHEN** 用户打开任务列表或项目、服务目录
@@ -217,10 +213,9 @@ Buildr Web App Shell MUST 在顶部提供品牌、共同工作空间范围、“
 - **AND** 本次 MUST NOT 改变项目和服务的身份、归属或关联语义
 
 #### Scenario: 窄屏降级
-- **WHEN** 桌面窗口宽度为 1440px 或较窄桌面且打开右组
-- **THEN** 两组 MUST 保持并排、独立滚动且可拖动分隔线，MUST NOT 自动覆盖主内容；极窄移动窗口 MAY 上下排列
-- **WHEN** viewport 宽度为 390px 且用户打开任务详情或项目详情
-- **THEN** 详情 MUST 可见并可操作，页面主容器 MUST NOT 横向溢出
+- **WHEN** 可用容器宽度不足以并排阅读且打开右组
+- **THEN** 副屏 MUST 使用可关闭、可键盘返回的覆盖式阅读层，关闭后恢复原主屏
+- **AND** viewport 宽度为 390px 时主要操作 MUST 可见，页面不得横向溢出
 
 #### Scenario: 克制的视觉反馈
 - **WHEN** 用户悬停、聚焦或操作导航、页签与分隔线
@@ -244,10 +239,9 @@ Buildr Web App Shell MUST 在顶部提供品牌、共同工作空间范围、“
 - **AND** MUST 支持键盘排序和关闭，减少动态效果偏好下 MUST 取消非必要动画
 
 #### Scenario: 项目内服务直接打开主屏主页
-- **WHEN** 用户在项目主页点击服务卡片
-- **THEN** MUST 在主屏追加或激活对应服务主页标签页（Tab），MUST NOT 新建服务分屏对象
-- **AND** 项目主页标签页（Tab）及其页面现场 MUST 保留，切回项目时恢复原有文档分屏与滚动状态
-- **AND** 重复打开同一服务 MUST 复用已有主屏标签页（Tab），不同项目的同名服务 MUST 保持独立身份
+- **WHEN** 用户在项目主页点击服务卡片或访问旧服务详情地址
+- **THEN** MUST 按登记身份在副屏打开或复用服务详情，MUST NOT 新增服务主标签
+- **AND** 项目主页及已有文档现场 MUST 保留；旧地址无法解析时 MUST 显示局部错误而不猜测身份
 
 #### Scenario: 副分屏默认左右均分
 - **WHEN** 用户没有保存手动比例并打开副分屏
@@ -255,7 +249,7 @@ Buildr Web App Shell MUST 在顶部提供品牌、共同工作空间范围、“
 - **AND** 用户 MUST 可以拖动调整并保存工作空间（Workspace）比例；关闭全部副分屏标签后主屏 MUST 恢复全部信息区宽度
 
 ### Requirement: Task Intent 必须支持可点击的 Project 文档引用
-Buildr Web MUST 以受限 Markdown 展示 Task Intent，并 MUST 允许用户点击指向当前 Task scope 内已登记 Project 的 Workspace 相对 `.md` 路径，在 Task 上下文中打开只读文档预览。客户端 MUST 根据 Project registry 的真实 source path 解析引用并复用 Project Document API；MUST NOT 从目录命名猜测 Project、读取绝对路径或获得任意 Workspace 文件访问能力。
+Buildr Web MUST 以受限 Markdown 展示 Task Intent，并 MUST 允许用户点击指向当前 Task scope 内已登记 Project 的 Workspace 相对 `.md` 路径，在 Task 上下文中打开只读文档预览。客户端 MUST 根据 Project registry 的真实 source path 解析引用并复用任务范围文档接口选择当前工作树或保留项目根；MUST NOT 从目录命名猜测 Project、读取绝对路径或获得任意 Workspace 文件访问能力。
 
 #### Scenario: 查看任务引用的架构文档
 - **WHEN** Task Intent 包含一个带用户可读名称、且路径位于 Task scope 内已登记 Project 的 Markdown 链接
@@ -269,7 +263,7 @@ Buildr Web MUST 以受限 Markdown 展示 Task Intent，并 MUST 允许用户点
 
 #### Scenario: 继续浏览同一 Project 内的 Markdown 文档
 - **WHEN** 用户在 Task 文档预览中点击当前文档的相对 `.md` 链接
-- **THEN** 页面 MUST 使用同一 Project Document API 打开解析后的 Project 内文档
+- **THEN** 页面 MUST 使用同一任务范围文档接口 打开解析后的 Project 内文档
 - **AND** 越出 Project 或非 Markdown 的链接 MUST 被拒绝
 
 #### Scenario: Intent 仍由 Task Record 管理
@@ -278,7 +272,7 @@ Buildr Web MUST 以受限 Markdown 展示 Task Intent，并 MUST 允许用户点
 - **AND** 系统 MUST NOT 新增附件状态、Planning gate 或第二 Task writer
 
 ### Requirement: 项目详情必须提供每日演进视图
-Buildr Web 项目详情 MUST 提供「每日演进」视图，默认展示本机今天的文件，并 MUST 支持按日、按人、按任务切换。视图 MUST 列出日摘要四问与提交列表，MUST NOT 列出变更文件；自己的已关联提交 MUST 提供可导航 Task，自己的未关联提交与他人提交 MUST 展示且无 Task 芯片。页面 MUST NOT 提供写入或编辑控件，生成或重跑 MUST 交给 Agent。日期控件 MUST 使用 DatePicker（`#progress-date`），MUST NOT 在 `#progress-body` 内放置 `input`/`textarea`。
+Buildr Web 项目详情 MUST 提供“项目动态”入口并打开已筛选该项目的统一动态页面。完整每日演进 MUST 在动态页面按所选项目与日期展示，并 MUST 支持按日、按人、按任务切换。旧项目每日演进地址 MUST 转入统一动态页，有日期时保留该日期，无日期时沿用本机今天。视图 MUST 列出日摘要四问与提交列表，MUST NOT 列出变更文件；自己的已关联提交 MUST 提供可导航 Task，自己的未关联提交与他人提交 MUST 展示且无 Task 芯片。页面 MUST NOT 提供写入或编辑控件，生成或重跑 MUST 交给 Agent。日期控件 MUST 使用 DatePicker（`#progress-date`），MUST NOT 在 `#progress-body` 内放置 `input`/`textarea`。
 
 #### Scenario: 打开有当天文件的项目
 - **WHEN** 用户打开某 Project 的每日演进视图且当天 v2 文件存在
@@ -291,8 +285,12 @@ Buildr Web 项目详情 MUST 提供「每日演进」视图，默认展示本机
 - **THEN** 页面 MUST 展示空态并说明由 Agent 生成
 - **AND** MUST NOT 根据 Git 提交或任务列表自动填充
 
+#### Scenario: 旧项目每日演进地址
+- **WHEN** 用户打开旧项目每日演进链接
+- **THEN** 页面 MUST 转到动态页中的同一项目与日期，且不再打开项目资料副屏
+
 ### Requirement: Buildr Web Task 详情必须提供 UI Prototype 视图
-Buildr Web Task 详情 MUST 提供独立“原型”一级视图，按需读取当前 Task 关联 Change 中可发现的一个或多个 UI Prototype 页面，并 MUST 允许用户在页面列表中选择和操作当前页面。页面 MUST 同时说明 UI Prototype 是实现参考而非正式设计、canonical spec 或像素级验收标准。当当前页面可在舞台中展示时，原型舞台 MUST 提供「新窗口打开」控件，并用新窗口打开该页面同一 Task-scoped 内容 URL。
+Buildr Web Task 详情 MUST 在方案设计节点提供实际已有“原型”的文档切换项，按需读取当前 Task 关联 Change 中可发现的一个或多个 UI Prototype 页面，并 MUST 允许用户在页面列表中选择和操作当前页面。页面 MUST 同时说明 UI Prototype 是实现参考而非正式设计、canonical spec 或像素级验收标准。当当前页面可在舞台中展示时，原型舞台 MUST 提供「新窗口打开」控件，并用新窗口打开该页面同一 Task-scoped 内容 URL。
 
 #### Scenario: Task 存在多个原型页面
 - **WHEN** 只读 API 返回两个或以上 UI Prototype 页面
@@ -301,7 +299,7 @@ Buildr Web Task 详情 MUST 提供独立“原型”一级视图，按需读取�
 
 #### Scenario: Task 没有可发现原型
 - **WHEN** Task 没有关联 Change、Change 暂不可用或关联 Change 中没有带新标记的 HTML
-- **THEN** 原型视图 MUST 展示明确空态或诊断
+- **THEN** 对应节点 MUST 展示必要的空态或诊断
 - **AND** MUST NOT 改变 Task 状态或隐藏其他详情视图
 
 #### Scenario: 用新窗口打开当前原型页面
@@ -347,12 +345,12 @@ Buildr Web MUST 在不含 `allow-same-origin` 的 sandbox iframe 中运行每个
 - **AND** 该文档 MUST 继续处于 opaque origin，不能读取 Buildr session 或父页面 DOM
 
 ### Requirement: Buildr Web 必须统一具名 Workspace 相对 Markdown 引用
-Task、Project与Service页面 MUST使用共享解析规则处理带用户可读名称的Workspace相对`.md`引用，根据已登记Project `source.path`与页面scope解析到Project Document API，并分别表达“引用可解析”与“正文当前可读取”。页面 MUST NOT按目录约定猜测Project、读取绝对路径、扫描Workspace或因正文当前不可读而改写引用。
+Task、Project与Service页面 MUST使用共享解析规则处理带用户可读名称的Workspace相对`.md`引用，根据已登记Project `source.path`与页面scope解析到具名项目；Task使用任务范围文档接口，Project和Service使用各自文档接口，并分别表达“引用可解析”与“正文当前可读取”。页面 MUST NOT按目录约定猜测Project、读取绝对路径、扫描Workspace或因正文当前不可读而改写引用。
 
 #### Scenario: 在Task中打开具名文档引用
 - **WHEN** Task Intent包含位于Task scope已登记Project内的具名Workspace相对Markdown链接
 - **THEN** 页面 MUST显示链接名称并在解析成功后标记引用scope
-- **AND** 只有Project Document API成功返回后才 MUST显示正文当前可读取
+- **AND** 只有对应文档接口成功返回后才 MUST显示正文当前可读取
 
 #### Scenario: Project或Service文档继续相对导航
 - **WHEN** 用户在Project或Service文档正文中点击同一Project内的相对Markdown链接
@@ -386,11 +384,11 @@ Buildr Web MUST在Task概览显示复盘文档固定本机路径与`无复盘文
 - **AND** MUST不创建后续Task或处置说明
 
 ### Requirement: Task详情必须直接展示Task Record与独立专业事实
-Buildr Web MUST在默认概览直接展示Task Record目标、状态、结果、Change、父子关系和复盘摘要；Review与Verification只在证据页按需独立读取，父任务协调只在适用Task显示。页面 MUST不请求Task Overview、组合统一推进状态或根据专业结果推断Task能否完成。
+Buildr Web MUST在任务详情直接展示Task Record目标、状态及默认任务需求正文；结果在收尾节点展示，Change、父子关系和复盘在对应阅读入口展示。Review与Verification MUST独立读取并在所选节点直接呈现完整结果，父任务协调只在适用Task显示。页面 MUST不请求Task Overview、组合统一推进状态或根据专业结果推断Task能否完成。
 
 #### Scenario: 普通Task没有专业结果
 - **WHEN** Task只有Task Record且没有Review或Verification
-- **THEN** 默认概览 MUST正常显示目标和当前结果
+- **THEN** 任务详情 MUST正常显示目标，已有结果仍可在收尾节点读取
 - **AND** 专业结果缺失 MUST不形成Task错误或全局阻塞
 
 #### Scenario: 专业读取失败
@@ -449,3 +447,210 @@ Buildr Web MUST 在工作空间左侧提供“技能”入口，只读取现有�
 - **WHEN** 用户打开 `/workspaces/:workspaceId/skills`
 - **THEN** MUST 只读呈现当前 Workspace 技能；空集合和读取失败 MUST 明确表达
 - **AND** MUST 不影响任务、项目或服务页面导航
+
+### Requirement: 任务详情必须按工作路径直接组织已有内容
+默认页面 MUST在列表旁的现有副屏紧凑展示标题、编码、目标和状态，再以紧凑标签连接任务需求、方案设计、开发实现和任务收尾；方案审查 MUST在方案设计内，实现审查和开发验证 MUST在开发实现内，用户确认 MUST在任务收尾内。默认 MUST选中任务需求并直接显示正文，切换节点 MUST直接显示对应文档或完整结果，多份材料 MUST在同层切换，不经过文件入口或资料目录中转。
+
+#### Scenario: 读取完整任务
+- **WHEN** Task拥有 brief.md、proposal.md、design.md、tasks.md、规范文件及专业结果
+- **THEN** 需求节点 MUST直接预览 brief，设计节点 MUST默认显示 proposal 正文并可切换 design/specs，实施清单 MUST在非模态浮窗中按需显示，实施节点 MUST显示实现审查与开发验证摘要，设计与实现内部的审查 MUST默认显示最新结论并可切换历次记录，开发实现内的验证 MUST直接展示当前结果及检查依据，收尾 MUST集中使用用户确认及交付记录
+- **AND** 多个关联变更 MUST标识材料来源，原始正文保持其自身权威
+
+#### Scenario: 简单任务与空内容
+- **WHEN** Task没有方案材料或部分节点没有记录
+- **THEN** 页面 MUST保持四个主节点并如实显示空内容；MUST NOT强制创建文档、报告、子任务或错误状态
+- **AND** brief缺失 MUST显示暂无补充需求或说明，任务目标仍可读
+
+#### Scenario: 当前工作与阅读选择不同
+- **WHEN** 智能体记录 implementation 表示验证失败后的修复，而用户在方案设计内选择方案审查
+- **THEN** 页面 MUST同时保留实现处的当前标记与方案设计及其内部方案审查的阅读选中态，显示保存的失败结果与当前实现标记
+- **AND** 没有明确 stage 时 MUST不标记当前节点；MUST NOT从文件存在、清单数量或 active 状态推断当前节点、自动执行或通过
+
+### Requirement: 任务详情阅读与数据维护必须遵循统一交互
+任务列表点击任务 MUST通过现有系统分屏在副屏展示任务详情，主屏列表、筛选与滚动 MUST保持。节点文档、用户答复与收尾 MUST在该详情内直接显示；引用文档 MUST复用现有抽屉阅读；审查与验证 MUST在节点目录右侧阅读，实施清单 MUST在非模态浮窗中按需显示，不创建第三分屏或嵌套分屏。维护任务、进展和答复 MUST使用统一抽屉。关闭任务副屏 MUST恢复原列表，深链 MUST仍可定位该任务；页面 MUST复用现有主题、控件与窄屏阅读规则。
+
+#### Scenario: 阅读过程中维护
+- **WHEN** 用户在任务副屏直接阅读方案后，在抽屉修改任务或记录答复并保存或取消
+- **THEN** 抽屉 MUST关闭并保留阅读上下文，保存后刷新相关事实；取消不得改变原内容
+
+#### Scenario: 并发冲突
+- **WHEN** 用户基于旧摘要或事项身份保存
+- **THEN** 抽屉 MUST保留输入并提供重读与核对；MUST NOT静默覆盖、关闭或自动重放
+
+#### Scenario: 深入专业结论
+- **WHEN** 用户在设计/实现内选择审查或在开发实现内选择验证
+- **THEN** 节点目录右侧 MUST直接展示时间、结论、问题及未覆盖范围，并保持各自专业来源
+- **AND** MUST NOT把历史通过、缺少记录或用户答复解释为当前验收、通用授权或任务完成
+
+### Requirement: 任务材料必须读取任务的实际文件现场
+任务详情 MUST按任务关联、项目范围与受管工作树（Worktree）证据选择实际文件根；存在可用工作树时 MUST读取其中未提交的需求、方案、规范、清单、原型及任务引用的项目文档。副屏 MUST标识来源，不能混用保留副本正文。
+
+#### Scenario: 工作树与主目录不同
+- **WHEN** 同一相对文档在工作树中已修改而主目录仍是旧内容
+- **THEN** 页面 MUST展示工作树正文；后续相对文档链接 MUST保持该任务现场
+
+#### Scenario: 工作树缺失或身份漂移
+- **WHEN** 已关联的工作树无法证明身份，或选定工作树中的文件缺失
+- **THEN** 对应入口 MUST显示明确诊断或缺失，MUST NOT静默使用主目录同名文件冒充当前内容
+- **AND** 已安全清理工作树、当前无工作树关联时 MUST可读取保留目录或归档内容并标明来源
+
+#### Scenario: 限定文档范围
+- **WHEN** 请求文档不属于任务项目范围、路径越界、为符号链接或非 Markdown
+- **THEN** 任务文档入口 MUST拒绝读取，不能成为任意文件读取接口
+
+#### Scenario: 从列表查看并切换任务
+- **WHEN** 用户在筛选后的任务列表点击任务，再切换另一个任务
+- **THEN** 系统 MUST复用已有副屏，主屏列表保持可操作且不重置筛选、已加载批次或滚动；MUST NOT创建嵌套分屏
+- **AND** 每个新打开的任务 MUST默认显示任务需求正文，后台当前节点变化不得强制改变阅读选择
+
+### Requirement: 节点阅读必须连续且内容按判断需要取舍
+页面 MUST记住每个节点选中的文档、审查记录与阅读位置，关联阅读返回 MUST恢复原上下文；打开新任务 MUST默认需求。页面 MUST优先呈现实际阶段、结论、问题及未覆盖范围，MUST NOT堆叠重复标题、无内容栏目或内部结果摘要值。历史通过 MUST明确表达为最近保存的结论，不能推导当前版本通过。
+
+#### Scenario: 对照方案与实现
+- **WHEN** 用户选择设计文档，切到开发实现，再返回方案设计
+- **THEN** 页面 MUST保持所选设计文档和阅读位置，不退回默认提案
+
+#### Scenario: 多份需求名称相同
+- **WHEN** 任务关联多个变更且均有 brief
+- **THEN** 需求内容选项 MUST用关联变更名称区分；单文件 MUST直接显示正文
+
+#### Scenario: 收尾中确认成果
+- **WHEN** 任务具有待验收事项或已记录用户意见
+- **THEN** 任务收尾 MUST显示该事项及现有答复动作，保存意见 MUST不自动完成任务
+
+### Requirement: 任务总览与列表必须优先呈现判断所需事实
+任务详情 MUST直接显示任务目标、状态、当前节点标记和待人处理事项，范围与实际更新时点 MUST可直接获知，不通过通用任务信息目录中转。任务列表 MUST有表头并采用紧凑分列，标题与进展最多占两行，项目、状态、更新时点按空间显示；编号 MUST不占额外列表行。
+
+#### Scenario: 从紧凑列表进入任务
+- **WHEN** 用户在列表打开任务副屏
+- **THEN** 列表 MUST保持筛选与位置，详情总览 MUST可直接解释当前工作；窄布局 MUST保持任务和状态可读且不产生页面横向溢出
+
+#### Scenario: 必要操作与原文引用
+- **WHEN** 用户阅读任务与已有材料
+- **THEN** 界面 MUST保留原文中的有效文档引用，MUST NOT为同一材料重复显示技术目录入口；接续指令 MUST明确是生成指令，完成登记 MUST在任务级更多菜单，普通阅读 MUST不要求人工更新进展
+
+#### Scenario: 避免多层导航和结论重复
+- **WHEN** 用户查看方案设计或开发实现
+- **THEN** 页面 MUST用单一节点导航与节点左侧内容目录组织正文，审查和验证在所属节点目录列出并可直接读取报告
+- **AND** 页面 MUST NOT在总览、节点选项和报告中重复堆叠同一检查状态；宽副屏总览可在正文侧边展示，窄副屏 MUST回流且不挤压正文
+
+#### Scenario: 恢复窗口焦点
+- **WHEN** 用户切离浏览器后再次返回
+- **THEN** 任务详情 MUST NOT因窗口 focus 或 visibilitychange 自动重新读取
+- **AND** 用户明确刷新和维护后的必要更新 MUST继续有效
+
+#### Scenario: 全局清单与来源
+- **WHEN** 任务材料可读取
+- **THEN** 简介下方属性行 MUST呈现可辨识的项目链接、紧随项目的服务链接与最后更新时间，实施清单 MUST默认隐藏，并由详情标签行右侧入口打开锚定详情内容区右边界的非模态浮窗，顶部 MUST NOT展示归档来源杂项，实际材料来源 MUST在文档阅读器中可查，节点正文 MUST NOT重复来源脚注
+- **AND** 阅读抽屉关闭后 MUST保留节点文档及阅读位置
+
+#### Scenario: 统一文件与记录阅读
+- **WHEN** 用户选择节点文档、历次审查或验证记录
+- **THEN** 页面 MUST在节点左侧目录标记当前选择，并在右侧展示内容；多次审查 MUST直接列出次数、日期和结论而非藏于菜单
+- **AND** Markdown 文档 MUST复用共享阅读组件，可在渲染正文与实际原文之间切换
+
+#### Scenario: 随时登记完成
+- **WHEN** 任务处于可维护状态且用户打开任务级操作菜单
+- **THEN** 页面 MUST提供登记完成，与编辑和放弃处于同级，且 MUST保留原有并发与适用授权校验
+
+#### Scenario: 精简重复信息与目录层级
+- **WHEN** 用户读取任务详情
+- **THEN** 编码 MUST位于标题下方；顶部 MUST NOT重复展示常规阶段进展和下一步，必要待人处理事项 MUST保持可见
+- **AND** 规范项 MUST以规范分组与文件子项展示，审查记录 MUST作为具名审查分组的子项展示；报告 MUST NOT追加单独审查对象或内部版本区块，原专业事实 MUST保持不变
+
+#### Scenario: 统一目录与专业结果呈现
+- **WHEN** 用户浏览规范、审查记录或验证结果
+- **THEN** 规范与审查 MUST采用同级分组和统一子项缩进，审查正文 MUST标明所选次数
+- **AND** 验证单项状态仅在与总结果一致且只有一项时可不重复展示，其他情况 MUST逐项就近展示；所有检查摘要、未覆盖项和适用性 MUST保留
+
+#### Scenario: 完整目标与摘要语义
+- **WHEN** 用户阅读任务列表与详情
+- **THEN** 详情目标 MUST完整自适应显示，不限制高度或要求展开；列表表头 MUST为“任务”，目标摘要 MUST直接展示正文而不加“目标：”前缀，进展与结果 MUST保留标识，并保留原有摘要来源优先级；面向用户的任务字段、搜索提示和创建引导 MUST统一使用“目标”，兼容字段 `intent` 保持不变
+
+#### Scenario: 清单浮窗与正文独立滚动
+- **WHEN** 用户打开实施清单或阅读较长节点正文
+- **THEN** 清单浮窗 MUST从详情内容区右侧向左展开，MUST NOT使用浏览器右边界或模态遮罩、焦点陷阱；MUST支持标签行右侧入口开关、关闭按钮和 Esc，标题保持可见、清单正文独立滚动
+- **AND** 核心正文与节点目录 MUST在各自区域内滚动，顶部目标与节点导航 MUST保持可见；节点切换与浮窗开关 MUST保留相应阅读位置；普通分屏、展开阅读与窄屏 MUST避免越界
+
+#### Scenario: 用户确认时间位置
+- **WHEN** 用户打开任务收尾中的用户确认
+- **THEN** 已答复时间 MUST显示在标题下、事项和答复正文前；尚未答复时 MUST显示事项创建时间且不伪造答复时间
+
+### Requirement: 实施清单支持悬浮及固定阅读
+实施清单 MUST在标签行右侧提供入口，显示区域 MUST限定在标签下方；悬浮宽度约520px且不得越界。鼠标悬停 MUST打开，离开入口与清单共同区域350ms后 MUST隐藏，移回 MUST取消隐藏。键盘及触屏 MUST可用。固定后 MUST按内容区约35%占位并以竖线分隔，目录、正文与清单 MUST独立滚动；取消固定 MUST保持展开直到离开后延迟隐藏。模式切换 MUST保留阅读位置；窄布局 MUST保持悬浮。
+
+#### Scenario: 临时查看及持续对照
+- **WHEN** 用户悬停入口、移入清单并选择固定
+- **THEN** 清单 MUST在标签下方显示，移动过程不消失；固定后离开 MUST保持显示并挤占正文区域
+- **AND** 取消固定后 MUST恢复覆盖展示，离开后延迟隐藏，清单位置 MUST保持
+
+### Requirement: 组合任务使用精简阅读页面
+Buildr Web MUST将组合详情分为概览、子任务和验收。标题后只标记组合任务；列表只展示标题、状态与至多一行任务目标及悬停全文预览，不重复目标和归属。概览 MUST先展示可点击的子任务状态数量，下方直接读取一份已有方案文档，无方案时如实提示。
+
+#### Scenario: 统计过滤
+- **WHEN** 用户点击某状态数量
+- **THEN** 页面 MUST进入子任务并按该状态过滤
+
+### Requirement: 任务副屏分别复用组合与普通标签
+主屏 MUST保留任务列表，副屏 MUST分别复用组合任务、普通任务与引用文档阅读标签。普通任务之间切换 MUST不替换组合标签。
+
+#### Scenario: 从组合进入多个子任务
+- **WHEN** 用户依次打开两个普通子任务
+- **THEN** 副屏 MUST只复用普通任务标签并保留组合标签及原筛选
+
+### Requirement: 子任务关联复用选择交互且不提供新增
+关联选择器 MUST支持不传新增行为时完全隐藏新增入口。组合任务 MUST仅提供搜索、关联已有任务与解除关联；普通任务仍可调整所属组合。
+
+#### Scenario: 关联已有任务
+- **WHEN** 用户从选择器选中合法普通任务
+- **THEN** 系统 MUST按当前版本保存所属关系并刷新关联列表，不修改任务状态
+
+### Requirement: 组合结束使用单页确认
+页面 MUST列出未结束子任务，默认独立推进，可选择放弃或已完成。组合结果 MUST允许已完成或放弃，整体备注选填且无逐任务备注。一次明确提交调用原子结束动作。陈旧观察冲突 MUST保留输入并要求重新核对。
+
+#### Scenario: 无备注直接提交
+- **WHEN** 用户选择结果并提交而未填写备注
+- **THEN** 页面 MUST允许提交，不要求第二次勾选确认
+
+### Requirement: 任务内容时间统一前置
+普通与组合任务的报告、用户确认、结果等内容 MUST将对应记录时间放在标题下、正文前，不在正文后重复展示相同时间。
+
+#### Scenario: 阅读组合验收结果
+- **WHEN** 用户打开已完成组合的验收页面
+- **THEN** 页面 MUST依次显示标题、记录时间和验收内容
+
+### Requirement: 当前任务定位与长目标可读性
+任务列表 MUST按副屏当前任务高亮对应条目，并在已加载且符合筛选的列表内滚动定位；不得为定位静默改变筛选条件。任务详情 MUST允许完整目标超过可视高度时滚动整个详情，保留下方节点与内容的可访问性。
+
+#### Scenario: 切换副屏任务
+- **WHEN** 用户切换普通任务与组合任务标签
+- **THEN** 列表 MUST同步高亮对应的已加载任务
+
+#### Scenario: 目标包含历史方案
+- **WHEN** 目标正文超过详情可视高度
+- **THEN** 用户 MUST能够滚动到下方概览、子任务和验收并阅读其内容
+
+### Requirement: 任务阅读优先加载所需内容
+任务详情 MUST优先呈现任务主体和当前阅读节点；未打开节点的审查、验证、协调读取 MUST NOT成为当前正文显示的前置条件。按需读取 MUST保持读取中、错误和重试可见，快速切换任务 MUST NOT显示上一任务的响应。主动刷新 MUST能够取得已打开内容的当前事实。
+
+#### Scenario: 打开普通任务需求
+- **WHEN** 用户打开普通任务并查看任务需求
+- **THEN** 页面 MUST读取需求材料，MUST NOT主动请求尚未查看的审查、验证或组合协调信息
+
+#### Scenario: 阅读报告并快速切换任务
+- **WHEN** 用户打开开发实现后切换另一任务
+- **THEN** 所需报告 MUST按需读取，旧任务响应 MUST NOT覆盖新任务；已读节点返回时 MUST复用当前任务内容
+
+### Requirement: 任务列表刷新由明确操作触发
+任务列表及共用个人偏好 MUST NOT仅因窗口获得焦点或页面重新可见而自动刷新。首次进入、筛选改变、主动刷新及成功修改后的必要更新 MUST继续有效。
+
+#### Scenario: 切离浏览器后返回
+- **WHEN** 用户离开并返回任务列表
+- **THEN** 列表与个人偏好 MUST不产生由 focus 或 visibilitychange 触发的读取，已加载内容、筛选与滚动 MUST保持
+
+### Requirement: 任务筛选可以从页面直接重置
+任务列表 MUST在已应用筛选或搜索偏离默认时，在漏斗旁提供直接生效的“重置筛选”。动作 MUST清空搜索、项目、服务、任务类型、复盘筛选并恢复未结束状态，关闭筛选弹层且保留分组方式。默认条件下 MUST隐藏入口；弹层中的重置 MUST继续仅修改草稿直到确认。
+
+#### Scenario: 外部清除组合筛选
+- **WHEN** 用户组合搜索、服务和复盘条件后点击外部重置
+- **THEN** 页面 MUST立即按默认未结束条件读取第一批，输入与地址条件 MUST一致，分组 MUST保持，无需二次确认

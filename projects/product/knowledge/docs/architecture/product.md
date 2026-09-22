@@ -45,7 +45,7 @@ Buildr 主要建设 Task Context 所依赖的长期资产基础与共享工作�
 - 任务收尾（Task Finish）：由智能体依据技能组合已有工具完成成果交付、已有任务结果登记和安全善后。无任务不创建，多仓库逐项保留结果；参与者和实现职责见 [任务收尾](../flows/task-closeout.md)。
 - Git Operations：一个 Skill-only `buildr.git-operations/v1` capability，为 consumer 已选定的单次 Git Operation 提供授权、安全默认值、前后 identity 与最小 Result；它无状态，不选择操作、目标或顺序，也不拥有 Task Finish 编排。
 - 父任务协调（Task Parent Coordination）使用目标、可读计划与真实任务结果，不传播工作位置、验证或交付事实。人明确授权父任务完成，完整说明见[父任务协调](../flows/task-parent-coordination.md)。
-- Task coordination：当前只组合普通Task、父任务/子任务关系、各专业公开read model与Buildr Web页面投影，不提供统一下一步、跨专业门禁、独立Board Domain或静态Board writer。独立Task Overview已删除；旧Parent Plan只作为Task-owned历史字段读取。
+- 任务协作（Task Coordination）：组合任务记录（Task Record）、父子关系、工作摘要（Work Context）与独立专业结果。工作摘要（Work Context）保存人或智能体（Agent）明确登记的进展、下一步、待处理事项与答复；工作台（Workbench）按这些当前事实提供关注入口和独立偏好，不从四态或缺失报告推断待处理。保存答复不会自动启动执行或完成任务。完整边界见[任务系统架构](task-system.md)。旧父计划继续作为历史字段读取。
 
 ## 产品边界
 

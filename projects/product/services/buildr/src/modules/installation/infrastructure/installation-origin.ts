@@ -117,7 +117,7 @@ function git(root: any, args: any) {
   return result.status === 0 ? String(result.stdout || '').trim() : null;
 }
 
-function developmentOrigin(productRoot: any, metadata: any) {
+function developmentOrigin(productRoot: any, metadata: any, { includeWorkingTree = true }: any = {}) {
   const gitRoot = git(productRoot, ['rev-parse', '--show-toplevel']);
   if (!gitRoot) return null;
   let canonicalGitRoot;
@@ -146,7 +146,7 @@ function developmentOrigin(productRoot: any, metadata: any) {
     ...createInstallationOrigin(base),
     sourceRoot: canonicalProductRoot,
     gitRoot: canonicalGitRoot,
-    dirty: Boolean(git(productRoot, ['status', '--porcelain=v1', '--untracked-files=normal'])),
+    ...(includeWorkingTree ? { dirty: Boolean(git(productRoot, ['status', '--porcelain=v1', '--untracked-files=normal'])) } : {}),
   };
 }
 
@@ -200,7 +200,7 @@ export function readCurrentInstallationOrigin(productRoot: any, options: any = {
     }
   }
   if (invalid.length) return unknownOrigin(metadata, invalid);
-  const development = developmentOrigin(root, metadata);
+  const development = developmentOrigin(root, metadata, options);
   if (development) return Object.freeze({ ...development, receipt: { authority: 'git-worktree', file: null } });
   return unknownOrigin(metadata, ['没有 installation-origin receipt，且 product root 不是 canonical Buildr Service Git checkout。']);
 }

@@ -134,6 +134,7 @@ export const TASK_HTTP_SCHEMAS = Object.freeze({
     service: { type: 'string', pattern: QUALIFIED_PATTERN },
     status: { enum: ['open', 'todo', 'active', 'completed', 'abandoned', 'all'] },
     hasChildren: { enum: ['yes', 'no', 'all'] },
+    taskType: { enum: ['ordinary', 'composite', 'all'] },
     retrospectiveState: { enum: ['missing', 'pending-decision', 'decided', 'all'] },
     pageSize: { type: 'string', pattern: '^(?:[1-9]|[1-9][0-9]|100)$' },
     cursor: nonEmptyText,
@@ -146,6 +147,7 @@ export const TASK_HTTP_SCHEMAS = Object.freeze({
       service: nullable({ type: 'string', pattern: QUALIFIED_PATTERN }),
       status: { enum: ['open', 'todo', 'active', 'completed', 'abandoned', 'all'] },
       hasChildren: { enum: ['yes', 'no', 'all'] },
+    taskType: { enum: ['ordinary', 'composite', 'all'] },
       retrospectiveState: { enum: ['missing', 'pending-decision', 'decided', 'all'] },
     }, ['q', 'project', 'service', 'status', 'hasChildren', 'retrospectiveState']),
     filterOptions: nullable(closed({ projects: arrayOf(nonEmptyText), services: arrayOf({ type: 'string', pattern: QUALIFIED_PATTERN }) }, ['projects', 'services'])),
@@ -194,6 +196,14 @@ export const TASK_HTTP_SCHEMAS = Object.freeze({
     parentCompletion: { $ref: '#/$defs/ParentCompletion' },
   }, ['expectedRecordDigest', 'summary']), defs),
   completeResponse: schema('complete/response', 'TaskCompleteResponse', { $ref: '#/$defs/TaskRecordMutationResponse' }, defs),
+  endRequest: schema('end/request', 'TaskEndRequest', closed({
+    expectedRecordDigest: nonEmptyText,
+    expectedSnapshot: nonEmptyText,
+    status: { enum: ['completed', 'abandoned'] },
+    summary: { type: 'string', maxLength: 20000 },
+    children: arrayOf(closed({ taskId: { $ref: '#/$defs/TaskId' }, action: { enum: ['detach', 'complete', 'abandon'] } }, ['taskId', 'action'])),
+  }, ['expectedRecordDigest', 'expectedSnapshot', 'status', 'children']), defs),
+  endResponse: schema('end/response', 'TaskEndResponse', { $ref: '#/$defs/TaskRecordMutationResponse' }, defs),
   abandonRequest: schema('abandon/request', 'TaskAbandonRequest', closed({
     expectedRecordDigest: nonEmptyText,
     reason: nonEmptyText,
@@ -231,6 +241,7 @@ export const TASK_HTTP_OPERATIONS = Object.freeze([
   operation('task-record.detail', 'GET', '/tasks/:taskId', 'detailRequest', 'detailResponse'),
   operation('task-record.update', 'PATCH', '/tasks/:taskId', 'updateRequest', 'updateResponse'),
   operation('task-record.complete', 'POST', '/tasks/:taskId/complete', 'completeRequest', 'completeResponse'),
+  operation('task-record.end', 'POST', '/tasks/:taskId/end', 'endRequest', 'endResponse'),
   operation('task-record.abandon', 'POST', '/tasks/:taskId/abandon', 'abandonRequest', 'abandonResponse'),
   operation('task-record.retrospective-document', 'GET', '/tasks/:taskId/retrospective-document', 'retrospectiveDocumentRequest', 'retrospectiveDocumentResponse'),
 ]);

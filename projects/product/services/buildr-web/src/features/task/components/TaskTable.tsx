@@ -1,22 +1,76 @@
+import { taskListScrollHost } from '../taskNavigation';
+import { TaskGoalSummary } from './TaskGoalSummary';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Table } from 'antd';
+import { Button, Table, Tooltip } from 'antd';
+import { PushpinFilled, PushpinOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
-
-import { taskStatusLabel } from '../../../lib/taskLabels';
+import { formatDateTime, taskStatusLabel } from '../../../lib/taskLabels';
+import type { TaskWorkContextResponse } from '../../../../build/generated/workbench-dto';
 import type { TaskListItem } from '../hooks/useTaskList';
 
 const TableBody = (props: React.HTMLAttributes<HTMLTableSectionElement>) => <tbody id="task-table-body" {...props} />;
 
-export function TaskTable({ tasks, selectedTaskId, prefetchTaskId, taskHref, onOpen }: {
+export function taskProjectGroup(item: TaskListItem, projectNames: Record<string, string>) {
+  const projects = item.record.scope.projects;
+  return projects.length > 1 ? '跨项目工作' : projects.length === 1 ? (projectNames[projects[0]] || projects[0]) : '工作空间';
+}
+
+export function TaskTable({ activeTaskId, tasks, prefetchTaskId, projectNames, contexts, grouped, taskHref, onOpen, isPinned, onPin, pending }: {
+  activeTaskId?: string;
   tasks: TaskListItem[];
-  selectedTaskId?: string;
   prefetchTaskId?: string;
+  projectNames: Record<string, string>;
+  grouped: boolean;
+  contexts: Record<string, TaskWorkContextResponse>;
   taskHref(taskId: string): string;
   onOpen(taskId: string): void;
+  isPinned(taskId: string): boolean;
+  onPin(taskId: string): void;
+  pending?: string;
 }) {
+  const root = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(0);
+  useEffect(() => {
+    if (!root.current) return;
+    const observer = new ResizeObserver(([entry]) => setWidth(entry.contentRect.width));
+    observer.observe(root.current);
+    return () => observer.disconnect();
+  }, []);
+  useEffect(() => {
+    if (!activeTaskId || !root.current) return;
+    const row = [...root.current.querySelectorAll<HTMLElement>('[data-task-id]')].find(item => item.dataset.taskId === activeTaskId);
+    if (!row) return;
+    const host = taskListScrollHost();
+    const bounds = row.getBoundingClientRect();
+    const frame = host instanceof Window ? { top: 0, bottom: window.innerHeight } : host.getBoundingClientRect();
+    const delta = bounds.top < frame.top ? bounds.top - frame.top : bounds.bottom > frame.bottom ? bounds.bottom - frame.bottom : 0;
+    if (delta) host.scrollBy({ top: delta });
+  }, [activeTaskId, tasks.length]);
   const columns: ColumnsType<TaskListItem> = [
-    { title: '任务', ellipsis: true, render: (_value, item) => <Link className="task-row-main" to={taskHref(item.record.taskId)}><strong>{item.record.title}</strong><small className="task-row-id">{item.record.taskId}</small></Link> },
-    { title: '状态', width: 88, render: (_value, item) => <span className={`lifecycle-badge ${item.record.status}`}>{taskStatusLabel(item.record.status)}</span> },
+    { title: '任务', key: 'task', render: (_value, item, index) => {
+      const record = item.record;
+      const group = taskProjectGroup(item, projectNames);
+      const showGroup = grouped && (index === 0 || group !== taskProjectGroup(tasks[index - 1], projectNames));
+      return <>
+        {showGroup && <div className="task-project-group">{group}</div>}
+        <div className="task-compact-copy">
+          <div className="task-row-heading"><Link className="task-row-main" title={`${record.taskId} · ${group}`} to={taskHref(record.taskId)} onClick={event => { event.stopPropagation(); if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); onOpen(record.taskId); }}><strong>{record.title}</strong></Link>{record.isParent && <span className="task-type-badge">组合任务</span>}</div>
+          <TaskGoalSummary goal={record.intent} />
+        </div>
+      </>;
+    } },
+    ...(width >= 570 && !grouped ? [{ title: '项目', key: 'project', width: 120, ellipsis: true, render: (_value: unknown, item: TaskListItem) => taskProjectGroup(item, projectNames) }] : []),
+    { title: '状态', key: 'status', width: 88, render: (_value, item) => {
+      const attention = contexts[item.record.taskId]?.context?.attention;
+      return <div className="task-compact-status"><span className={`lifecycle-badge ${item.record.status}`}>{taskStatusLabel(item.record.status)}</span>{attention?.state === 'pending' && <small className="task-attention-label">{attention.kind === 'acceptance' ? '等待验收' : attention.kind === 'question' ? '需要答复' : '等待决定'}</small>}{item.record.retrospective?.state === 'pending-decision' && <small className="task-attention-label">复盘待决定</small>}</div>;
+    } },
+    ...(width >= 740 ? [{ title: '更新', key: 'updated', width: 138, render: (_value: unknown, item: TaskListItem) => {
+      const recorded = item.record.updatedAt, progress = contexts[item.record.taskId]?.context?.updatedAt;
+      const time = progress && progress > recorded ? progress : recorded;
+      return <time className="task-row-time" title={formatDateTime(time)}>{formatDateTime(time).replace(/:\d{2}$/, '')}</time>;
+    } }] : []),
+    { title: '', key: 'pin', width: 54, align: 'right', render: (_value, item) => <Tooltip title={isPinned(item.record.taskId) ? '取消置顶' : '置顶这项工作'}><Button type="text" size="small" loading={pending === item.record.taskId} aria-label={`${isPinned(item.record.taskId) ? '取消置顶' : '置顶'}：${item.record.title}`} icon={isPinned(item.record.taskId) ? <PushpinFilled /> : <PushpinOutlined />} onClick={event => { event.stopPropagation(); onPin(item.record.taskId); }} /></Tooltip> },
   ];
-  return <Table rowKey={(item) => item.record.taskId} pagination={false} showHeader={false} tableLayout="fixed" dataSource={tasks} columns={columns} rowClassName={(item) => item.record.taskId === selectedTaskId ? 'task-row-active' : ''} onRow={(item) => ({ onClick: () => onOpen(item.record.taskId), 'data-task-id': item.record.taskId, ...(item.record.taskId === prefetchTaskId ? { 'data-task-prefetch': 'true' } : {}) })} components={{ body: { wrapper: TableBody } }} />;
+  return <div ref={root} className="resource-directory-table task-list-table"><Table className="task-compact-table" rowKey={(item) => item.record.taskId} pagination={false} rowClassName={item => item.record.taskId === activeTaskId ? 'task-row-current' : ''} showHeader tableLayout="fixed" dataSource={tasks} columns={columns} onRow={(item) => ({ onClick: () => onOpen(item.record.taskId), 'data-task-id': item.record.taskId, 'aria-current': item.record.taskId === activeTaskId ? true : undefined, ...(item.record.taskId === prefetchTaskId ? { 'data-task-prefetch': 'true' } : {}) })} components={{ body: { wrapper: TableBody } }} /></div>;
 }

@@ -1,19 +1,24 @@
+import { WorkbenchPreferencesProvider } from '../features/workbench/hooks/useWorkbenchPreferences';
+import { WorkbenchSearch } from '../features/workbench/components/WorkbenchSearch';
 import type { ResourcePreview } from './resource-preview';
 import { WorkspacePages } from './WorkspacePages';
+import { workspacePageSearch } from './workspace-pages';
 import { runtimeSystemApi } from './api/runtime-system-api';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { Button, Drawer, Dropdown, Typography } from 'antd';
-import { CaretDownFilled, MenuFoldOutlined, MenuUnfoldOutlined, MenuOutlined, PlusOutlined } from '@ant-design/icons';
+import { AppstoreOutlined, CaretDownFilled, CheckOutlined, MenuFoldOutlined, MenuUnfoldOutlined, MenuOutlined, PlusOutlined, SettingOutlined } from '@ant-design/icons';
 import { api, setWorkspaceId } from '../api';
 import { AppShellContext, type WorkspaceShellInfo } from './AppShellContext';
 import { AppNavigation } from './AppNavigation';
 import { navigationState } from './navigation';
-import { workspaceApi } from '../features/workspace/api/workspace-api';
+import { workspaceApi, type WorkspaceResponse } from '../features/workspace/api/workspace-api';
+import { WorkspaceSettingsDrawer } from '../features/workspace/components/WorkspaceSettingsDrawer';
 import { AgentActionDrawer } from './AgentActionDrawer';
 import { DrawerShell } from '../components/DrawerShell';
 import { confirmModal } from '../lib/confirm';
 import { ReleaseAwarenessBanner } from '../features/installation/components/ReleaseAwarenessBanner';
+import { ArticleEditorProvider } from '../features/publication/components/ArticleEditorProvider';
 
 type PreviewIdentity = {
   instance: string;
@@ -55,8 +60,11 @@ export function AppLayout({ renderResource }: { renderResource: (item: ResourceP
   const navigate = useNavigate();
   const location = useLocation();
   const workspaceId = params.workspaceId ?? null;
+  const activeWorkspaceId = useRef(workspaceId);
+  activeWorkspaceId.current = workspaceId;
   const isGlobal = !workspaceId;
   const area = navigationState(location.pathname, location.search, workspaceId).area;
+  const retainedSearch = workspaceId ? workspacePageSearch(workspaceId, location.pathname, location.search) : location.search;
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('buildr.sidebar-collapsed') === 'true');
   const [navigationOpen, setNavigationOpen] = useState(false);
   const [compactNavigation, setCompactNavigation] = useState(() => window.matchMedia('(max-width: 899px)').matches);
@@ -70,13 +78,13 @@ export function AppLayout({ renderResource }: { renderResource: (item: ResourceP
   if (workspaceDestination.current.workspaceId !== workspaceId) {
     workspaceDestination.current = { workspaceId, path: `/workspaces/${workspaceId}/projects`, state: null };
   }
-  if (area === 'workspace' && workspaceId) workspaceDestination.current = { workspaceId, path: location.pathname + location.search, state: location.state };
+  if (area === 'workspace' && workspaceId) workspaceDestination.current = { workspaceId, path: location.pathname + retainedSearch, state: location.state };
   const [, refreshSectionLinks] = useState(0);
   const sectionHistory = useRef<{ workspaceId: string | null; pages: Record<string, { to: string; state?: unknown }> }>({ workspaceId, pages: {} });
   if (sectionHistory.current.workspaceId !== workspaceId) sectionHistory.current = { workspaceId, pages: {} };
   const section = workspaceId ? location.pathname.slice(`/workspaces/${workspaceId}/`.length).split('/')[0] : '';
-  if (workspaceId && ['projects', 'services', 'repositories', 'skills', 'settings'].includes(section) && !/\/(new|edit)$/.test(location.pathname)) {
-    sectionHistory.current.pages[section] = { to: location.pathname + location.search + location.hash, state: location.state };
+  if (workspaceId && ['projects', 'services', 'repositories', 'skills', 'articles'].includes(section) && !/\/(new|edit)$/.test(location.pathname)) {
+    sectionHistory.current.pages[section] = { to: location.pathname + retainedSearch + location.hash, state: location.state };
   }
   const workspaceMenuTarget = (name: string) => sectionHistory.current.pages[name] || { to: `/workspaces/${workspaceId}/${name}` };
   const forgetWorkspacePage = (path: string) => {
@@ -89,6 +97,7 @@ export function AppLayout({ renderResource }: { renderResource: (item: ResourceP
   const [workspace, setWorkspaceState] = useState<WorkspaceShellInfo | null>(null);
   const [breadcrumbParts, setBreadcrumbParts] = useState<string[]>(['工作空间']);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerWorkspaceId, setDrawerWorkspaceId] = useState<string | null>(null);
   const [drawerAction, setDrawerAction] = useState<string | undefined>();
   const [drawerContext, setDrawerContext] = useState<Record<string, unknown>>({});
   const [exited, setExited] = useState(false);
@@ -96,6 +105,16 @@ export function AppLayout({ renderResource }: { renderResource: (item: ResourceP
   const [navigationRevision, setNavigationRevision] = useState(0);
   const refreshNavigation = useCallback(() => setNavigationRevision((value) => value + 1), []);
   const [registry, setRegistry] = useState<WorkspaceEntry[]>([]);
+  const [workspaceRegistryRevision, setWorkspaceRegistryRevision] = useState(0);
+  const [settingsWorkspaceId, setSettingsWorkspaceId] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const settingsRouteWorkspace = useRef(workspaceId);
+  useEffect(() => {
+    if (settingsRouteWorkspace.current !== workspaceId) {
+      setSettingsOpen(false);
+      settingsRouteWorkspace.current = workspaceId;
+    }
+  }, [workspaceId]);
 
   const preview = useMemo(() => readPreviewIdentity(), []);
   const webProfile = useMemo(() => readWebProfile(), []);
@@ -118,11 +137,23 @@ export function AppLayout({ renderResource }: { renderResource: (item: ResourceP
     document.title = `${data.workspace.name} · ${productTitle(webProfile)}`;
   }, [webProfile]);
 
+  const openWorkspaceSettings = useCallback((id: string) => {
+    setSettingsWorkspaceId(id);
+    setSettingsOpen(true);
+  }, []);
+
+  const workspaceSettingsSaved = (id: string, data: WorkspaceResponse) => {
+    if (id === activeWorkspaceId.current) setWorkspace(data);
+    setRegistry(entries => entries.map(entry => entry.workspace?.id === id ? { ...entry, workspace: data.workspace } : entry));
+    setWorkspaceRegistryRevision(value => value + 1);
+  };
+
   const openAgentAction = useCallback((action?: string, context: Record<string, unknown> = {}) => {
+    setDrawerWorkspaceId(workspaceId);
     setDrawerAction(action);
     setDrawerContext(context);
     setDrawerOpen(true);
-  }, []);
+  }, [workspaceId]);
 
   const closeAgentAction = useCallback(() => {
     setDrawerOpen(false);
@@ -130,13 +161,22 @@ export function AppLayout({ renderResource }: { renderResource: (item: ResourceP
     setDrawerContext({});
   }, []);
 
+  // An action belongs to the workspace in which the user opened it.
+  // Hide it synchronously on scope change, then discard its old context.
+  const visibleDrawer = drawerOpen && drawerWorkspaceId === workspaceId;
+  useEffect(() => {
+    setDrawerOpen(false);
+    setDrawerAction(undefined);
+    setDrawerContext({});
+  }, [workspaceId]);
+
   const resetTaskList = useCallback(() => {
     setTaskListResetToken((value) => value + 1);
   }, []);
 
   useEffect(() => {
-    document.body.classList.toggle('drawer-open', drawerOpen);
-  }, [drawerOpen]);
+    document.body.classList.toggle('drawer-open', visibleDrawer);
+  }, [visibleDrawer]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -149,13 +189,13 @@ export function AppLayout({ renderResource }: { renderResource: (item: ResourceP
       }
     })();
     return () => controller.abort();
-  }, []);
+  }, [workspaceRegistryRevision]);
 
   useEffect(() => {
     if (!workspaceId) return;
     const controller = new AbortController();
     setWorkspaceState(null);
-    void workspaceApi.read({ signal: controller.signal }).then((data) => {
+    void workspaceApi.readById(workspaceId, { signal: controller.signal }).then((data) => {
       if (!controller.signal.aborted) setWorkspace(data);
     }).catch(() => { /* Page-level diagnostics remain available. */ });
     return () => controller.abort();
@@ -181,6 +221,8 @@ export function AppLayout({ renderResource }: { renderResource: (item: ResourceP
     refreshNavigation,
     workspace,
     setWorkspace,
+    openWorkspaceSettings,
+    workspaceRegistryRevision,
     openAgentAction,
     breadcrumbParts,
     setBreadcrumbParts,
@@ -191,26 +233,34 @@ export function AppLayout({ renderResource }: { renderResource: (item: ResourceP
   };
 
   const switchWorkspace = (id: string | null) => {
-    navigate(id ? `/workspaces/${id}/tasks` : '/?catalog=1');
+    navigate(id ? `/workspaces/${id}/overview` : '/?catalog=1');
   };
 
   const workspaceMenuItems = [
-    {
-      key: 'all',
-      label: '全部工作空间',
-      onClick: () => switchWorkspace(null),
-    },
-    { type: 'divider' as const },
     ...registry.map((entry) => {
       const id = entry.workspace?.id;
       const name = entry.workspace?.name || id || entry.rootPath;
       return {
         key: id || entry.rootPath,
         disabled: !id || entry.status !== 'ready',
+        icon: id === workspaceId ? <CheckOutlined /> : undefined,
         label: name,
         onClick: id ? () => switchWorkspace(id) : undefined,
       };
     }),
+    { type: 'divider' as const },
+    ...(workspaceId ? [{
+      key: 'settings',
+      icon: <SettingOutlined />,
+      label: <span data-action="workspace-settings">工作空间设置</span>,
+      onClick: () => openWorkspaceSettings(workspaceId),
+    }] : []),
+    {
+      key: 'all',
+      icon: <AppstoreOutlined />,
+      label: '全部工作空间',
+      onClick: () => switchWorkspace(null),
+    },
   ];
 
   if (exited) {
@@ -226,12 +276,13 @@ export function AppLayout({ renderResource }: { renderResource: (item: ResourceP
 
   return (
     <AppShellContext.Provider value={shellValue}>
-      <div className="app-shell">
+      <WorkbenchPreferencesProvider key={workspaceId || "global"} workspaceId={workspaceId}>
+      <div className={"app-shell area-" + area}>
         <header className="topbar">
           <Link
             className="brand-link"
-            to={isGlobal ? '/' : workspaceHref('/tasks')}
-            aria-label="当前工作空间任务列表"
+            to={isGlobal ? '/' : workspaceHref('/overview')}
+            aria-label="当前工作空间概览"
           >
             <span className="brand-mark">B</span>
             <strong>Buildr Web</strong>
@@ -256,11 +307,12 @@ export function AppLayout({ renderResource }: { renderResource: (item: ResourceP
               </button>
             </Dropdown>
           {!isGlobal ? <nav className="top-nav" aria-label="主导航">
-            <Link to={workspaceHref('/tasks')} data-area="workbench" aria-current={area === 'workbench' ? 'page' : undefined} className={area === 'workbench' ? 'active' : ''}
-              onClick={resetTaskList}>工作台</Link>
+            <Link to={workspaceHref('/overview')} data-area="workbench" aria-current={area === 'workbench' ? 'page' : undefined} className={area === 'workbench' ? 'active' : ''}
+              >工作台</Link>
             <Link to={workspaceDestination.current.path} state={workspaceDestination.current.state} data-area="workspace" aria-current={area === 'workspace' ? 'page' : undefined} className={area === 'workspace' ? 'active' : ''}>工作空间</Link>
           </nav> : null}
           <div className="topbar-actions">
+            {!isGlobal ? <WorkbenchSearch key={workspaceId} /> : null}
             {!isGlobal ? <Button className="shell-menu-toggle" aria-label="打开导航菜单" icon={<MenuOutlined />} onClick={() => setNavigationOpen(true)} /> : null}
             <Button id="quit-buildr" className="nav-quit" type="text" onClick={() => { void quit(); }}>
               退出
@@ -279,9 +331,9 @@ export function AppLayout({ renderResource }: { renderResource: (item: ResourceP
                 id="open-agent-action"
                 type="primary"
                 icon={<PlusOutlined />}
-                onClick={() => openAgentAction()}
+                onClick={() => openAgentAction(area === "workbench" ? "start" : undefined)}
               >
-                交给 Agent
+                {area === "workbench" ? "提出新目标" : "交给 Agent"}
               </Button>
             ) : null}
           </div>
@@ -289,7 +341,7 @@ export function AppLayout({ renderResource }: { renderResource: (item: ResourceP
         <ReleaseAwarenessBanner openAgentAction={openAgentAction} />
         <div className={`app-frame${isGlobal ? ' is-global' : ''}${sidebarCollapsed && !compactNavigation ? ' sidebar-collapsed' : ''}`}>
           {!isGlobal && !compactNavigation ? <aside className="app-sidebar"><Button type="text" className="sidebar-toggle" aria-label={sidebarCollapsed ? '展开菜单' : '折叠菜单'} title={sidebarCollapsed ? '展开菜单' : '折叠菜单'} icon={sidebarCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />} onClick={() => { setSidebarCollapsed(value => !value); localStorage.setItem('buildr.sidebar-collapsed', String(!sidebarCollapsed)); }} /><AppNavigation key={workspaceId} /></aside> : null}
-          <main id="app-view" tabIndex={-1} aria-live="polite"><>{workspaceId ? <WorkspacePages key={workspaceId} workspaceId={workspaceId} renderResource={renderResource} /> : <Outlet />}</></main>
+          <main id="app-view" tabIndex={-1} aria-live="polite"><>{workspaceId ? <ArticleEditorProvider key={workspaceId} workspaceId={workspaceId}><WorkspacePages workspaceId={workspaceId} renderResource={renderResource} /></ArticleEditorProvider> : <Outlet />}</></main>
         </div>
       </div>
 
@@ -299,13 +351,13 @@ export function AppLayout({ renderResource }: { renderResource: (item: ResourceP
       </Drawer> : null}
       <div
         id="agent-action-backdrop"
-        className={drawerOpen ? '' : 'hidden'}
+        className={visibleDrawer ? '' : 'hidden'}
         onClick={closeAgentAction}
         aria-hidden
       />
       <DrawerShell
         id="agent-action-drawer"
-        open={drawerOpen}
+        open={visibleDrawer}
         onClose={closeAgentAction}
         eyebrow="AGENT ACTION"
         title="交给 Agent"
@@ -316,7 +368,7 @@ export function AppLayout({ renderResource }: { renderResource: (item: ResourceP
         rootClassName="agent-action-shell"
       >
         <div id="agent-action-content">
-          {drawerOpen ? (
+          {visibleDrawer ? (
             <AgentActionDrawer
               initialAction={drawerAction}
               initialContext={drawerContext}
@@ -324,6 +376,9 @@ export function AppLayout({ renderResource }: { renderResource: (item: ResourceP
           ) : null}
         </div>
       </DrawerShell>
+      <WorkspaceSettingsDrawer open={settingsOpen} workspaceId={settingsWorkspaceId}
+        onClose={() => setSettingsOpen(false)} onSaved={workspaceSettingsSaved} />
+    </WorkbenchPreferencesProvider>
     </AppShellContext.Provider>
   );
 }

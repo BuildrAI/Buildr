@@ -1,0 +1,151 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "已交付代码的自举激活与安全善后",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "column_fit": "spread",
+    "viewBox": [
+      1060,
+      640
+    ],
+    "legend": {
+      "mode": "auto",
+      "entries": {
+        "default": {
+          "label": "具体执行"
+        },
+        "return": {
+          "label": "返回事实"
+        }
+      }
+    }
+  },
+  "participants": [
+    {
+      "id": "agent",
+      "type": "backend",
+      "label": "智能体（Agent）",
+      "sublabel": "核验交付 · 发起与接续"
+    },
+    {
+      "id": "runner",
+      "type": "frontend",
+      "label": "自举执行器",
+      "sublabel": "Buildr 唯一激活程序"
+    },
+    {
+      "id": "retained",
+      "type": "database",
+      "label": "保留工作空间",
+      "sublabel": "Git · 工作资产 · 运行现场"
+    },
+    {
+      "id": "app",
+      "type": "external",
+      "label": "开发应用与入口",
+      "sublabel": "Buildr Web · Node · Doctor"
+    }
+  ],
+  "messages": [
+    {
+      "id": "invoke",
+      "from": "agent",
+      "to": "runner",
+      "y": 175,
+      "label": "传入已交付提交、基线、分支与宿主",
+      "variant": "default"
+    },
+    {
+      "id": "preflight",
+      "from": "runner",
+      "to": "retained",
+      "y": 207,
+      "label": "核对目标、干净状态、远端包含与锁",
+      "variant": "default"
+    },
+    {
+      "id": "observed",
+      "from": "retained",
+      "to": "runner",
+      "y": 239,
+      "label": "返回当前 Git 事实",
+      "variant": "return"
+    },
+    {
+      "id": "sync",
+      "from": "runner",
+      "to": "retained",
+      "y": 271,
+      "label": "按范围同步并渲染工作资产",
+      "variant": "default"
+    },
+    {
+      "id": "commit",
+      "from": "runner",
+      "to": "retained",
+      "y": 303,
+      "label": "有同步改动时：精确提交与普通推送",
+      "variant": "default"
+    },
+    {
+      "id": "install",
+      "from": "runner",
+      "to": "app",
+      "y": 335,
+      "label": "适用时更新应用，恢复原健康实例",
+      "variant": "default"
+    },
+    {
+      "id": "identity",
+      "from": "runner",
+      "to": "app",
+      "y": 367,
+      "label": "以保留 Node 核对入口与源码身份",
+      "variant": "default"
+    },
+    {
+      "id": "doctor",
+      "from": "runner",
+      "to": "app",
+      "y": 399,
+      "label": "使用同一入口执行最终 Doctor",
+      "variant": "default"
+    },
+    {
+      "id": "health",
+      "from": "app",
+      "to": "runner",
+      "y": 431,
+      "label": "返回健康结果：要求 health.ready",
+      "variant": "return"
+    },
+    {
+      "id": "result",
+      "from": "runner",
+      "to": "agent",
+      "y": 463,
+      "label": "返回激活结果与已发生事实",
+      "variant": "return"
+    },
+    {
+      "id": "cleanup",
+      "from": "agent",
+      "to": "retained",
+      "y": 495,
+      "label": "交付核验后，通过原所有者安全清理",
+      "variant": "default"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "amber",
+      "title": "独立结果与恢复",
+      "items": [
+        "只处理适用的已交付范围；任务编号可选，既有交付不因激活失败被撤销。",
+        "同步、提交、应用更新、入口与诊断分别核验；资源由原所有者独立清理。"
+      ]
+    }
+  ]
+}

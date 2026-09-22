@@ -144,6 +144,32 @@ function createList(ordered, items, doc, linkOptions) {
   return list;
 }
 
+// Preserve native Markdown nesting so linked file trees remain ordinary documents.
+function listItem(line) {
+  const match = line?.match(/^([ \t]*)([-*]|\d+\.)\s+(.+)$/);
+  return match ? { indent: match[1].replace(/\t/g, '    ').length, ordered: /\d/.test(match[2]), text: match[3] } : null;
+}
+function readList(lines, start, doc, linkOptions) {
+  const first = listItem(lines[start]);
+  const list = doc.createElement(first.ordered ? 'ol' : 'ul');
+  let index = start;
+  while (index < lines.length) {
+    const item = listItem(lines[index]);
+    if (!item || item.indent !== first.indent || item.ordered !== first.ordered) break;
+    const single = createList(first.ordered, [item.text], doc, linkOptions);
+    const li = single.childNodes[0];
+    if (single.className.includes('task-list')) list.className = 'task-list';
+    list.append(li);
+    index++;
+    while (listItem(lines[index])?.indent > first.indent) {
+      const child = readList(lines, index, doc, linkOptions);
+      li.append(child.list);
+      index = child.index;
+    }
+  }
+  return { list, index };
+}
+
 function createHorizontalRule(doc) {
   return doc.createElement('hr');
 }
@@ -260,29 +286,10 @@ export function renderMarkdown(markdown: string, docOrOptions: Document | Markdo
       continue;
     }
 
-    const unordered = line.match(/^[-*]\s+(.+)$/);
-    if (unordered) {
-      const items = [];
-      while (index < lines.length) {
-        const item = lines[index].match(/^[-*]\s+(.+)$/);
-        if (!item) break;
-        items.push(item[1]);
-        index += 1;
-      }
-      root.append(createList(false, items, doc, linkOptions));
-      continue;
-    }
-
-    const ordered = line.match(/^\d+\.\s+(.+)$/);
-    if (ordered) {
-      const items = [];
-      while (index < lines.length) {
-        const item = lines[index].match(/^\d+\.\s+(.+)$/);
-        if (!item) break;
-        items.push(item[1]);
-        index += 1;
-      }
-      root.append(createList(true, items, doc, linkOptions));
+    if (listItem(line)) {
+      const result = readList(lines, index, doc, linkOptions);
+      root.append(result.list);
+      index = result.index;
       continue;
     }
 

@@ -100,7 +100,7 @@ Buildr MUST 提供 Agent-machine CLI，至少支持对明确 Project 的 `record
 - **AND** MUST NOT 创建文件
 
 ### Requirement: Buildr Web 必须只读展示每日演进
-Buildr Web 项目详情 MUST 提供「每日演进」视图，默认展示本机今天，并 MUST 支持按日、按人、按任务切换。按日 MUST 展示日摘要四问与提交列表，MUST NOT 展示变更文件列表。自己的、已关联 Task 的提交 MUST 提供可导航 Task 芯片；自己的未关联提交 MUST 展示且无 Task 芯片；他人提交 MUST 展示作者且无 Task 芯片。Task 详情 MUST 只展示引用了该 Task 的条目。页面 MUST NOT 提供写入、删除或编辑控件；生成或重跑 MUST 交给 Agent。本机 HTTP API MUST 只读、Project-scoped 或 Task-scoped，MUST NOT 接受文件系统路径。
+Buildr Web MUST 在统一动态页面提供项目每日演进完整视图，按所选项目与日期读取，并 MUST 支持按日、按人、按任务切换。项目主页和工作概览 MUST 到达该视图，具体摘要入口 MUST 传递摘要日期，旧项目入口未提供日期时 MUST 沿用本机今天。按日 MUST 展示日摘要四问与提交列表，MUST NOT 展示变更文件列表。自己的、已关联 Task 的提交 MUST 提供可导航 Task 芯片；自己的未关联提交 MUST 展示且无 Task 芯片；他人提交 MUST 展示作者且无 Task 芯片。Task 详情 MUST 只展示引用了该 Task 的条目。页面 MUST NOT 提供写入、删除或编辑控件；生成或重跑 MUST 交给 Agent。本机 HTTP API MUST 只读、Project-scoped 或 Task-scoped，MUST NOT 接受文件系统路径。
 
 #### Scenario: 项目页按日查看
 - **WHEN** 用户打开已有当天 v2 文件的 Project 每日演进视图

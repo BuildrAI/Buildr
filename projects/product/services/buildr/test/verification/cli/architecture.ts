@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+import { isAllowedProductLayerImport } from './product-layer-boundaries.ts';
+
 import { isScriptSource } from './source-imports.ts';
 
 import fs from 'node:fs';
@@ -134,50 +136,6 @@ if (fs.existsSync(packageSmoke) && /runPackageSmokeChecks/.test(fs.readFileSync(
 
 const sourceFiles: any = listFiles(sourceRoot, (file: any) => /\.(?:mjs|ts)$/u.test(file));
 const graph: any = new Map();
-const layerOf: any = (relative: any) => {
-  if (relative === 'infrastructure/contracts/public-json.ts') return 'infrastructure';
-  const parts: any = relative.split('/');
-  if (parts[0] === 'infrastructure') return 'infrastructure';
-  const moduleOffset: any = parts[0] === 'modules' && parts[1] === 'task' && ['change', 'daily-progress'].includes(parts[2]) ? 3 : parts[0] === 'modules' ? 2 : 1;
-  if (!['modules', 'web'].includes(parts[0])) return parts[0];
-  if (parts.length === moduleOffset + 1 && /^module\.(?:mjs|ts)$/.test(parts[moduleOffset])) return 'module';
-  return {
-    domain: 'domain',
-    application: 'application',
-    persistence: 'infrastructure',
-    infrastructure: 'infrastructure',
-    interfaces: 'interfaces',
-    http: 'interfaces',
-    contracts: 'domain',
-  }[parts[moduleOffset]] || parts[0];
-};
-const allowedTargets: any = {
-  bootstrap: new Set(['bootstrap', 'interfaces', 'application', 'domain', 'infrastructure', 'module']),
-  domain: new Set(['domain']),
-  application: new Set(['application', 'domain', 'infrastructure', 'module']),
-  infrastructure: new Set(['infrastructure', 'domain']),
-  interfaces: new Set(['bootstrap', 'interfaces', 'application', 'domain', 'infrastructure', 'module']),
-  module: new Set(['interfaces', 'application', 'domain', 'infrastructure']),
-};
-const allowedCrossModulePorts: any = new Set([
-  'modules/agent-assets/module.ts -> modules/workspace/module.ts',
-  'modules/diagnostics/module.ts -> modules/workspace/module.ts',
-  'modules/openspec/module.ts -> modules/agent-assets/module.ts',
-  'web/infrastructure/instance-runtime.ts -> modules/installation/module.ts',
-  'web/module.ts -> modules/installation/module.ts',
-  'web/module.ts -> modules/workspace/module.ts',
-  'bootstrap/cli/registry.ts -> modules/openspec/module.ts',
-  'bootstrap/runtime.ts -> modules/publication/module.ts',
-  'bootstrap/runtime.ts -> modules/openspec/module.ts',
-  'bootstrap/runtime.ts -> modules/task/change/module.ts',
-  'modules/openspec/module.ts -> modules/workspace/module.ts',
-  'modules/task/change/module.ts -> modules/openspec/module.ts',
-  'modules/task/change/module.ts -> modules/workspace/module.ts',
-  'modules/publication/module.ts -> modules/workspace/module.ts',
-  'modules/project-testing/module.ts -> modules/workspace/module.ts',
-  'modules/task/module.ts -> modules/workspace/module.ts',
-  'modules/task/change/module.ts -> modules/task/module.ts',
-]);
 
 for (const file of sourceFiles) {
   const relative: any = path.relative(sourceRoot, file).split(path.sep).join('/');
@@ -205,10 +163,7 @@ for (const file of sourceFiles) {
     if (!target.startsWith(sourceRoot + path.sep)) continue;
     const targetRelative: any = path.relative(sourceRoot, target).split(path.sep).join('/');
     edges.push(targetRelative);
-    const sourceLayer: any = layerOf(relative);
-    const targetLayer: any = layerOf(targetRelative);
-    if (!allowedTargets[sourceLayer]?.has(targetLayer)
-      && !allowedCrossModulePorts.has(`${relative} -> ${targetRelative}`)) {
+    if (!isAllowedProductLayerImport(relative, targetRelative)) {
       problems.push(`reverse Product layer import: src/${relative} -> src/${targetRelative}`);
     }
   }

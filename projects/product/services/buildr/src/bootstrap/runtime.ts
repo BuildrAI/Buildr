@@ -1,3 +1,5 @@
+import { WORKBENCH_MODULE } from '../modules/workbench/module.ts';
+import { createKnowledgeModule } from '../modules/knowledge/module.ts';
 import * as platform from '../infrastructure/platform.ts';
 import {
   AGENT_ASSETS_CAPABILITY_QUERY,
@@ -52,10 +54,12 @@ export function createRuntime(): any  {
   registry.install(createAgentAssetsModule(runtime));
   registry.provide(WORKSPACE_AGENT_ASSETS_BINDER).bindAgentAssets(registry.provide(AGENT_ASSETS_INTERNAL));
   registerProjectGitObserver(runtime);
+  registry.install(createKnowledgeModule());
   registry.install(createPublicationModule(runtime));
   registry.install(createOpenSpecModule(runtime));
   registry.install(TASK_MODULE);
   registry.install(createDailyProgressModule(runtime));
+  registry.install(WORKBENCH_MODULE);
   registry.install(createWorktreeProviderModule(runtime));
   registry.install(createChangeModule(runtime));
   registry.provide(TASK_CHANGE_BINDER).bindChangeResolver(registry.provide(CHANGE_APPLICATION));

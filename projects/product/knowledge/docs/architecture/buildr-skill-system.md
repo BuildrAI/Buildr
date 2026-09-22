@@ -169,6 +169,8 @@ Workspace destination 的 Skill projection receipt 位于：
 
 User destination 则位于 user home 的 `.buildr/agent-runtime/user/<adapter>/...`。receipt 记录 source/render identity、受管文件 inventory、文件 integrity 和 executable 状态；consumer receipt 还记录本次局部 capability binding 的 contract digest、provenance、readiness 与 selected provider 快照。
 
+一个 Skill 在其适配器声明的目标根上各有一份 receipt。多个适配器可以共享同一个根（`.agents/skills` 同时是 `codex`、`cursor`、`trae` 的 runtime root），此时"谁拥有这个目录"由该根下是否存在对应 receipt 决定：其他适配器已持有 receipt 的目录，本适配器既不安删也不报冲突。`qoder` 只写入 `.qoder/skills`；`.agents/skills` 对它只是宿主开关控制的共享**发现**根，不作为写入目标。
+
 receipt 是 Buildr 本机控制状态：
 
 - 不放进 runtime Skill 目录；

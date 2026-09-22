@@ -8,6 +8,8 @@ import { createScopeDiagnostics } from '../../src/modules/workspace/application/
 import { buildDoctorDomainHealth, buildDoctorHealth, buildDoctorRepairPlan } from '../../src/modules/diagnostics/application/result-model.ts';
 import { PACKAGE_VERIFIERS, selectPackageVerifiers } from '../../tools/verification/package-check/verification-registry.ts';
 import { blockingSyncSourceIssues } from '../../src/modules/agent-assets/application/runtime-projection.ts';
+import { environmentFindings } from '../../src/modules/agent-assets/infrastructure/runtime/check-runtime.ts';
+import { RUNTIME_ADAPTERS } from '../../src/modules/agent-assets/infrastructure/runtime/adapter-contract.ts';
 
 test('package verifier selector 保持稳定顺序、去重并拒绝未知 owner', () => {
   assert.deepEqual(selectPackageVerifiers().map((item: any) => item.id), PACKAGE_VERIFIERS.map((item: any) => item.id));
@@ -107,6 +109,26 @@ test('runtime doctor 聚合 warning 时保留 actionability 与来源摘要', ()
   ]);
   assert.equal(mixed.findings[0].userActionRequired, true);
   assert.deepEqual(mixed.findings[0].runtimeFindingCodes, ['runtime.advisory', 'runtime.manual_check']);
+});
+
+test('Qoder 安装形态探测缺席不降低 readiness，投射过期仍然阻塞', () => {
+  const envFindings: any = environmentFindings(RUNTIME_ADAPTERS.qoder, {
+    installation: { status: 'missing', probe: 'any', evidence: 'desktop: missing | ide: missing | cli: missing' },
+    version: { status: 'missing', probe: 'any' },
+  });
+  assert.deepEqual(envFindings.map((item: any) => item.code), ['runtime.qoder_installation_missing']);
+  assert.equal(envFindings[0].userActionRequired, false);
+  const only: any = diagnoseRuntimeWarnings(envFindings);
+  assert.equal(only.findings[0].userActionRequired, false);
+  assert.deepEqual(only.findings[0].runtimeFindingCodes, ['runtime.qoder_installation_missing']);
+  assert.equal(buildDoctorHealth({ workspace: { identity: { state: 'valid' } }, findings: only.findings }).ready, true);
+  assert.deepEqual(buildDoctorRepairPlan(only.findings), []);
+
+  const withStale: any = diagnoseRuntimeWarnings([
+    ...envFindings,
+    { status: 'stale', code: 'runtime.qoder_rules_stale', path: '.', userActionRequired: true },
+  ]);
+  assert.equal(buildDoctorHealth({ workspace: { identity: { state: 'valid' } }, findings: withStale.findings }).ready, false);
 });
 
 test('doctor scope parser 只接受 root/project 层级并稳定发现显式 scope', () => {

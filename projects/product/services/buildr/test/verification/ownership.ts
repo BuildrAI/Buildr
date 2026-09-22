@@ -41,6 +41,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   },
   "integration": {
     "inputs": [
+      "src/modules/knowledge/**",
       "test/integration/**",
       "test/verification/integration.ts",
       "test/verification/worker-budget.ts",
@@ -99,7 +100,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
     "inputs": [
       "test/integration/core-diagnostics-and-package.test.ts",
       "test/integration/project-verification-map.test.ts",
-      "src/modules/project-testing/application/project-verification-diagnostics.ts",
+      "src/modules/project-testing/**",
       "src/modules/diagnostics/application/diagnostics.ts",
       "src/modules/diagnostics/application/result-model.ts",
       "src/modules/diagnostics/application/scope-diagnostics.ts",
@@ -162,6 +163,10 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   },
   "integration-runtime": {
     "inputs": [
+      "src/modules/workbench/**",
+      "src/modules/task/work-context/**",
+      "test/integration/workbench-application.test.ts",
+      "test/integration/workbench-http-contract.test.ts",
       "test/integration/capability-contracts.test.ts",
       "test/integration/capability-runtime.test.ts",
       "test/integration/buildr-web-read-executor.test.ts",

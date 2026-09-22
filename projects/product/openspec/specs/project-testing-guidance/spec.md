@@ -2,7 +2,7 @@
 
 ## Purpose
 
-定义无状态 Project Testing Skill，指导 Agent 基于 Project / Service 真实技术栈建立测试边界、事实 owner 与 Quick / Task-affected / Candidate / Release 编排；不创建测试结果、持久状态或通用 QA 平台。
+定义无状态的项目测试指导技能（Project Testing Skill），指导智能体（Agent）基于项目（Project）与服务（Service）的真实技术栈建设测试、明确待证明事实和执行边界。已有检查的选择、执行与正式任务报告交给 `task-verification`；本技能不创建独立结果、持久状态或通用测试平台。
 
 ## Requirements
 
@@ -66,7 +66,7 @@ Agent 在开发 Development Tests 时 MUST 先读取项目已有测试框架、�
 #### Scenario: 需要真实技术边界
 - **WHEN** 待证明事实是 CLI argv、Git 操作、数据库协议或 HTTP 集成行为
 - **THEN** Agent MUST 使用相应 Integration 边界
-- **AND** MUST 保持该测试可由 Task-affected 或 Candidate 按真实成本选择
+- **AND** MUST 保持该测试可按真实成本选入受影响检查或适用的候选产物（Candidate）检查
 
 ### Requirement: 第一版验收测试必须保持占位边界
 Project Testing MUST 将 Acceptance 定义为从提案、需求或设计验收标准派生的业务证据。第一版 MAY 在提案或设计阶段识别验收案例和未来自动化边界，但 MUST NOT 自动建设通用浏览器、移动端、性能、安全或其他 QA 平台；没有需求来源和实际执行事实时 MUST NOT 宣称业务验收完成。
@@ -121,7 +121,7 @@ mock、fake 或内存实现 MUST 只隔离外部协作者或不属于当前主�
 - **AND** 在幂等属于目标事实时 MUST 验证重复执行不会产生额外错误状态
 
 ### Requirement: 共享 helper 改动必须优先运行最低成本兼容 canary
-Agent 修改被多个 action、状态或公共入口复用的 validation/helper 时，Project Testing guidance MUST要求先检查完整调用面，并从现有 tests 与可用 changed-plan reasons 中选择至少一个能证明既有公共行为的最低成本兼容 canary。focused regression MUST作为 Development feedback，且 MUST NOT替代最终 Task-affected 或 Candidate Formal Verification authority。
+智能体（Agent）修改被多个操作、状态或公共入口复用的校验与辅助逻辑时，`project-testing` MUST要求先检查完整调用面，并从现有测试及项目工具可提供的选择理由中选取至少一个能区分兼容回归的最低成本检查（Canary）。定向回归（Focused Regression）MUST先作为开发反馈，MUST NOT仅凭该检查通过就宣称任务或候选产物的全部必要边界已验证。开发完成后，`task-verification` MUST核对当前内容、环境、目标与覆盖范围，复用仍然适用的真实检查，只补充尚未覆盖的必要检查；MUST NOT因为反馈阶段不同而重复执行有效检查。
 
 #### Scenario: 通用必填字段 helper 覆盖多个 action
 - **WHEN** 一次变更收紧共享 required-field helper，但需求只针对部分 action
@@ -131,7 +131,7 @@ Agent 修改被多个 action、状态或公共入口复用的 validation/helper 
 #### Scenario: changed plan 提供 owner reasons
 - **WHEN** Project 的 plan-only 输出已经把共享 owner 映射到受影响测试并提供 reasons
 - **THEN** Agent MUST使用这些 reasons 选择 focused canary并说明其覆盖的旧行为
-- **AND** MUST不把 plan preview 或 canary 结果冒充 Formal Verification Result
+- **AND** MUST不把计划预览（Plan Preview）当作执行证据，也不得把单项检查结果直接冒充开发完成后的任务验证报告（Task Verification Report）；真实检查经适用性核对后可以作为报告中的实际检查
 
 #### Scenario: 单个 canary 无法证明调用面
 - **WHEN** 调用面检查发现多个独立公共边界，且一个既有测试不能覆盖主要风险
@@ -139,7 +139,7 @@ Agent 修改被多个 action、状态或公共入口复用的 validation/helper 
 - **AND** MUST不为了追求固定低耗时而遗漏已识别兼容路径
 
 ### Requirement: Project Testing 必须建立可发现的稳定测试能力
-Agent建设或调整测试时 MUST同时核对事实owner、Static/Unit/Component/Integration/System边界、稳定构建入口以及可供声明发现的module、source、Tag或Suite authority。Project Testing MUST NOT直接写Verification Result或把每个测试复制进`verification.yml`。
+Agent建设或调整测试时 MUST同时核对事实owner、Static/Unit/Component/Integration/System边界、稳定构建入口以及可供声明发现的module、source、Tag或Suite authority。`project-testing` MUST将已存在且稳定的测试入口交给 `task-verification` 维护测试地图；`declaration-intake` MAY先发现并整理入口与声明的差异。`project-testing` MUST NOT直接写任务验证报告（Task Verification Report）或 `verification.yml`，MUST NOT把每个测试复制进地图。
 
 #### Scenario: 新增 Service 单元测试
 - **WHEN** Agent为Service公共逻辑建立Unit证据
@@ -155,7 +155,12 @@ Project Testing MUST把Task Delivery、Product Artifact Candidate、Published Re
 - **AND** MUST NOT因命令耗时较低就声称它是可信affected
 
 ### Requirement: 缺失测试能力必须交回建设与声明流程
-当Task Verification报告coverage gap或unknown owner时，Project Testing MUST只在用户授权的实现范围内建设最低充分测试，并把稳定入口交给Declaration Intake；它 MUST NOT在Formal Verification执行中临时生成测试或自动扩大长期声明。
+`task-verification` 发现缺少测试、测试失配或选择机制漏选时，`project-testing` MUST在用户授权的实现范围内补齐最低充分测试及必要选择映射，并把已稳定的入口交给声明维护者。智能体（Agent）MUST根据新增或修改后的当前内容执行相关检查，再核对既有检查的内容、环境、目标与覆盖范围适用性；本轮检查结束后由 `task-verification` 记录实际结果及剩余缺口，检查失败或无法完成时 MUST如实报告，不要求全部通过才能保存报告。MUST NOT因进入验证或交付阶段而禁止必要补测，也 MUST NOT把尚未建设的能力声明为已经存在，或无依据扩大长期声明。
+
+#### Scenario: 完成核对时发现缺失测试
+- **WHEN** 智能体（Agent）准备完成验证时发现当前授权范围内的必要行为没有测试，或项目选择机制漏掉了已有必要测试
+- **THEN** `project-testing` MUST补齐相关测试或选择映射，并验证修正后的真实行为；稳定入口变化时 MUST交给 `task-verification` 维护对应测试族（Testing Family）
+- **AND** `task-verification` MUST基于修正后的当前内容、当前测试地图和有效执行证据记录报告，明确未覆盖项，MUST NOT把修正前的日志改写为修正后的新执行事实
 
 #### Scenario: Pig前端只有lint和build
 - **WHEN** 只读发现存在lint/build scripts但没有能证明目标行为的测试

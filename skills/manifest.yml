@@ -322,7 +322,7 @@ skills:
     sourceIdentity: package:skills/buildr/current-knowledge-maintenance
     source: buildr
     path: buildr/current-knowledge-maintenance
-    description: 建设、检查或维护项目与服务的代码地图、技术图和解释文档，或在 OpenSpec 变更中判断并处理相关知识影响时使用。
+    description: 围绕用户主题构建项目或服务的架构知识，检查或维护相关文章、技术图和代码地图，或处理开发中的知识影响时使用。
     enabled: true
     required: false
     state: installed
@@ -347,7 +347,7 @@ skills:
     sourceIdentity: package:skills/buildr/task-manager
     source: buildr
     path: buildr/task-manager
-    description: 用户要求创建、查看或修订任务记录、纠正任务状态、调整已完成任务的父子关系、完成或放弃任务时使用；维护最小业务事实和结果更正历史，不执行研发、环境、验证或交付。
+    description: 创建或维护任务、记录工作进展与待处理事项、读取人的答复、纠正状态或调整父子关系时使用；维护当前工作事实，不执行研发、测试或交付。
     enabled: true
     required: false
     state: installed
@@ -519,6 +519,42 @@ skills:
       - trae-work
       - workbuddy
     runtimePath: code-architecture
+  - id: code-map
+    assetIdentity: buildr:skill:code-map
+    sourceIdentity: package:skills/buildr/code-map
+    source: buildr
+    path: buildr/code-map
+    description: 建设、更新或检查代码地图时使用；依据真实职责、目录与文件解释实现组织，并核对受影响的来源与关联。
+    enabled: true
+    required: false
+    state: installed
+    runtimes:
+      - claude-code
+      - codex
+      - cursor
+      - qoder
+      - trae
+      - trae-work
+      - workbuddy
+    runtimePath: code-map
+  - id: archify
+    assetIdentity: buildr:skill:archify
+    sourceIdentity: package:skills/buildr/archify
+    source: buildr
+    path: buildr/archify
+    description: 使用 Archify 生成和验证架构、流程、时序、数据流与状态图，并交付可独立查看的 HTML。
+    enabled: true
+    required: false
+    state: installed
+    runtimes:
+      - claude-code
+      - codex
+      - cursor
+      - qoder
+      - trae
+      - trae-work
+      - workbuddy
+    runtimePath: archify
 contracts:
   - id: buildr.terminology-governance
     version: 1
@@ -543,7 +579,7 @@ contracts:
   - id: buildr.task-review
     version: 2
     path: contracts/buildr/task-review/v2.md
-    description: 对正式 Task 的实际方案或完成结果执行可选语义审查并维护两个独立 current Result。
+    description: 对正式 Task 的实际方案或完成结果执行可选语义审查，维护两类当前结果及完整审查历史。
   - id: buildr.task-record
     version: 3
     path: contracts/buildr/task-record/v3.md

@@ -4,13 +4,14 @@ import path from 'node:path';
 import YAML from 'yaml';
 
 import { normalizeProjectVerification, parseProjectVerification, validateProjectVerification } from '../domain/project-verification.ts';
+import { resolveProjectVerificationLocations, type ProjectTestingService, type ProjectTestingSource } from './project-verification-locations.ts';
 
 const digest = (value: Buffer | string) => `sha256-${crypto.createHash('sha256').update(value).digest('hex')}`;
 
 export type ProjectTestingWorkspaceQuery = {
-  projectDetail(root: string, code: string): { project: { code: string; source: { type?: string; path: string } } };
-  listServices(root: string, projectCode: string): { services: Array<{ code: string }> };
-  resolveSourceRoot(root: string, source: { type?: string; path: string }): string;
+  projectDetail(root: string, code: string): { project: { code: string; source: ProjectTestingSource } };
+  listServices(root: string, projectCode: string): { services: ProjectTestingService[] };
+  resolveSourceRoot(root: string, source: ProjectTestingSource): string;
 };
 
 type ProjectVerificationFileMutations = Readonly<{
@@ -40,6 +41,7 @@ function result(operation: string, status: string, project: string, values: any 
     path: values.path || null,
     identity: values.identity || null,
     declaration: values.declaration || null,
+    locations: values.locations || [],
     errors: values.errors || [],
     effects: values.effects || [],
   };
@@ -49,19 +51,30 @@ export function createProjectVerificationApplication(
   workspaceQuery: ProjectTestingWorkspaceQuery,
   mutations: ProjectVerificationFileMutations,
 ) {
+  function analyze(value: unknown, context: ReturnType<typeof projectContext>) {
+    const services = workspaceQuery.listServices(context.root, context.project.code).services;
+    const validationContext = { projectCode: context.project.code, services: services.map((service) => service.code) };
+    const errors = validateProjectVerification(value, validationContext);
+    if (errors.length) return { declaration: value, errors, locations: [] };
+    const declaration = normalizeProjectVerification(value, validationContext);
+    const locations = resolveProjectVerificationLocations(declaration.testing, {
+      workspaceRoot: context.root, projectRoot: context.projectRoot, services,
+      resolveSourceRoot: (root, source) => workspaceQuery.resolveSourceRoot(root, source),
+    });
+    return { declaration, errors, locations };
+  }
+
   function inspectProjectVerification(targetRoot: string, projectCode: string) {
     const context = projectContext(workspaceQuery, targetRoot, projectCode);
     const relative = path.relative(context.root, context.file).split(path.sep).join('/');
     if (!fs.existsSync(context.file)) return result('inspect', 'missing', projectCode, { path: relative, identity: 'absent' });
     const content = fs.readFileSync(context.file);
     const value = parseProjectVerification(content.toString('utf8'), context.file);
-    const services = workspaceQuery.listServices(context.root, projectCode).services.map((service) => service.code);
-    const errors = validateProjectVerification(value, { projectCode, services });
-    return result('inspect', errors.length ? 'invalid' : 'ready', projectCode, {
+    const analysis = analyze(value, context);
+    return result('inspect', analysis.errors.length ? 'invalid' : 'ready', projectCode, {
       path: relative,
       identity: digest(content),
-      declaration: errors.length ? value : normalizeProjectVerification(value, { projectCode, services }),
-      errors,
+      ...analysis,
     });
   }
 
@@ -69,13 +82,11 @@ export function createProjectVerificationApplication(
     const context = projectContext(workspaceQuery, targetRoot, projectCode);
     const content = fs.readFileSync(path.resolve(file));
     const value = parseProjectVerification(content.toString('utf8'), file);
-    const services = workspaceQuery.listServices(context.root, projectCode).services.map((service) => service.code);
-    const errors = validateProjectVerification(value, { projectCode, services });
-    return result('validate', errors.length ? 'invalid' : 'ready', projectCode, {
+    const analysis = analyze(value, context);
+    return result('validate', analysis.errors.length ? 'invalid' : 'ready', projectCode, {
       path: path.resolve(file),
       identity: digest(content),
-      declaration: errors.length ? value : normalizeProjectVerification(value, { projectCode, services }),
-      errors,
+      ...analysis,
     });
   }
 
@@ -96,6 +107,7 @@ export function createProjectVerificationApplication(
       path: relative,
       identity: digest(content),
       declaration: parseProjectVerification(content.toString('utf8'), context.file),
+      locations: candidate.locations,
       effects: [{ type: current === 'absent' ? 'created' : 'updated', path: relative }],
     });
   }

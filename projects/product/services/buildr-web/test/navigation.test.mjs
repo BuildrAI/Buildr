@@ -2,10 +2,14 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { navigationState } from '../src/app/navigation.ts';
 
-test('task change and article deep links stay within the workbench', () => {
-  for (const path of ['tasks/id/changes/product/change', 'articles/article']) {
+test('daily overview and task deep links stay within the workbench', () => {
+  for (const path of ['overview', 'activity', 'tasks/id/changes/product/change']) {
     assert.equal(navigationState(`/workspaces/w/${path}`, '', 'w').area, 'workbench');
   }
+});
+test('articles belong to workspace and the default route is overview', () => {
+  assert.equal(navigationState('/workspaces/w/articles/article', '', 'w').area, 'workspace');
+  assert.equal(navigationState('/workspaces/w/', '', 'w').resource, 'overview');
 });
 test('service edit deep links and service filters resolve their project', () => {
   assert.deepEqual(navigationState('/workspaces/w/services/a%20b/api/edit', '', 'w'), {

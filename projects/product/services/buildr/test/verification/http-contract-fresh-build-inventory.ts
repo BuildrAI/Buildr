@@ -16,6 +16,11 @@ export const HTTP_CONTRACT_FRESH_BUILD_SUPPORT: any = Object.freeze([
 ]);
 
 export const HTTP_CONTRACT_FRESH_BUILD_FAMILIES: any = Object.freeze([
+  family('workbench', 'tools/codegen/contracts/workbench-dto.ts', [
+    'src/modules/workbench/interfaces/http/workbench-http-schema.ts',
+    'src/modules/workbench/domain/workbench.ts',
+    'src/modules/task/work-context/domain/work-context.ts',
+  ], [['buildr', 'build/generated/workbench-dto.ts'], ['buildr-web', 'build/generated/workbench-dto.ts']]),
   family('task-record', 'tools/codegen/contracts/task-dto.ts', [
     'src/modules/task/interfaces/http/task-http-schema.ts',
   ], [

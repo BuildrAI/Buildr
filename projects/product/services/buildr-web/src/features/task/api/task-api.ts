@@ -1,6 +1,8 @@
-import type { ApiClient } from '../../../api/client';
+import type { ApiClient, WorkspaceDocument } from '../../../api/client';
 import { api } from '../../../api';
 import type {
+  TaskEndRequest,
+  TaskEndResponse,
   TaskAbandonRequest,
   TaskAbandonResponse,
   TaskCompleteRequest,
@@ -39,6 +41,9 @@ export function createTaskClient(client: ApiClient) {
     change(taskId: string, project: string, change: string, options: ReadOptions = {}): Promise<unknown> {
       return client(`/api/v1/tasks/${encodeURIComponent(taskId)}/changes/${encodeURIComponent(project)}/${encodeURIComponent(change)}`, options);
     },
+    projectDocument(taskId: string, project: string, encodedPath: string, options: ReadOptions = {}): Promise<WorkspaceDocument & { provenance: string }> {
+      return typed(client(`/api/v1/tasks/${encodeURIComponent(taskId)}/documents/${encodeURIComponent(project)}/${encodedPath}`, options));
+    },
     prototypes(taskId: string, options: ReadOptions = {}): Promise<unknown> {
       return client(`/api/v1/tasks/${encodeURIComponent(taskId)}/ui-prototypes`, options);
     },
@@ -56,6 +61,9 @@ export function createTaskClient(client: ApiClient) {
         method: 'POST',
         body: JSON.stringify(input),
       }));
+    },
+    end(taskId: string, input: TaskEndRequest): Promise<TaskEndResponse> {
+      return typed(client(`/api/v1/tasks/${encodeURIComponent(taskId)}/end`, { method: 'POST', body: JSON.stringify(input) }));
     },
     abandon(taskId: string, input: TaskAbandonRequest): Promise<TaskAbandonResponse> {
       return typed(client(`/api/v1/tasks/${encodeURIComponent(taskId)}/abandon`, {

@@ -3,7 +3,7 @@ import { Worker } from 'node:worker_threads';
 import { resolveProductResource } from '../../infrastructure/product-resources/index.ts';
 
 const TASK_ID_PATTERN = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/u;
-const OPERATIONS = new Set(['reviews', 'verification', 'coordination']);
+const OPERATIONS = new Set(['reviews', 'verification', 'coordination', 'change', 'documents', 'prototypes', 'prototype']);
 const DEFAULT_WORKER_COUNT = 2;
 const DEFAULT_QUEUE_LIMIT = 32;
 const WORKER_PATH = resolveProductResource('runtime/read-worker.cjs', {
@@ -35,7 +35,14 @@ function validateRequest(operation: any, input: any) {
   if (input.signal !== undefined && (typeof input.signal !== 'object' || typeof input.signal.addEventListener !== 'function')) {
     throw readExecutorError('local_app_read_signal_invalid', 'Buildr Web read executor signal 不合法。', 400);
   }
-  const allowed = new Set(['targetRoot', 'taskId', 'signal']);
+  const extra = operation === 'change' ? ['project', 'change'] : operation === 'documents' ? ['project', 'documentPath'] : operation === 'prototype' ? ['prototypeId'] : [];
+  for (const field of extra) {
+    if (typeof input[field] !== 'string' || !input[field]) throw readExecutorError('local_app_read_input_invalid', `Buildr Web read ${field} 无效。`, 400);
+  }
+  if (extra.includes('project') && !/^[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(input.project)) throw readExecutorError('local_app_read_input_invalid', 'Project 标识无效。', 400);
+  if (operation === 'change' && !TASK_ID_PATTERN.test(input.change)) throw readExecutorError('local_app_read_input_invalid', 'Change 标识无效。', 400);
+  if (operation === 'prototype' && !/^[a-f0-9]{32}$/u.test(input.prototypeId)) throw readExecutorError('local_app_read_input_invalid', 'Prototype 标识无效。', 400);
+  const allowed = new Set(['targetRoot', 'taskId', 'signal', ...extra]);
   for (const field of Object.keys(input)) {
     if (!allowed.has(field)) throw readExecutorError('local_app_read_field_forbidden', `Buildr Web read executor 不支持字段：${field}。`, 400, { field });
   }
@@ -159,9 +166,10 @@ export function createBoundedBuildrWebReadExecutor({ workerCount = DEFAULT_WORKE
           operation: item.operation,
           targetRoot: item.targetRoot,
           taskId: item.taskId,
-          ...(item.view === undefined ? {} : { view: item.view }),
-          ...(item.recordId === undefined ? {} : { recordId: item.recordId }),
-          ...(item.filename === undefined ? {} : { filename: item.filename }),
+          ...(item.project === undefined ? {} : { project: item.project }),
+          ...(item.change === undefined ? {} : { change: item.change }),
+          ...(item.documentPath === undefined ? {} : { documentPath: item.documentPath }),
+          ...(item.prototypeId === undefined ? {} : { prototypeId: item.prototypeId }),
         });
       } catch (error: any) {
         state.item = null;
@@ -186,9 +194,10 @@ export function createBoundedBuildrWebReadExecutor({ workerCount = DEFAULT_WORKE
         operation,
         targetRoot: input.targetRoot,
         taskId: input.taskId,
-        view: input.view,
-        recordId: input.recordId,
-        filename: input.filename,
+        project: input.project,
+        change: input.change,
+        documentPath: input.documentPath,
+        prototypeId: input.prototypeId,
         state: 'queued',
         settled: false,
         workerState: null,

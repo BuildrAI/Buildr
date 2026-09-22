@@ -35,7 +35,11 @@ projects/product/                         项目（Project）：跨服务产品�
     └── buildr-web/                       React 页面和前端交互
 ```
 
+[关系维护与代码定位](project-service-repositories.md)连接对象约束、登记读取、应用写入与前端操作。
+
 ## 逐层阅读
+
+[知识建设与维护](knowledge-maintenance.md)从工作方法、读取与页面、成果位置三个职责区解释实际文件。
 
 1. [服务与工程目录树](system-services-assets.md)：两个服务每一级目录放什么、生成什么、谁负责打包。
 2. [功能与模块索引](modules.md)：从用户能力定位后端模块与前端功能。
@@ -57,5 +61,8 @@ projects/product/                         项目（Project）：跨服务产品�
 
 ## 有界模块地图
 
+- [项目与服务测试验证框架](verification-framework.md)：Buildr 提供的测试建设方法、项目地图与任务报告；产品自身的实现另见[采用实例工具地图](product-verification-tools.md)。
+
+- [任务系统](task-system.md)：工作台（Workbench）、人机答复、任务及专业事实、工作位置、交付与自举执行器。
 - [技能源文件到可发现入口](skill-projection.md)：解析、组合、计划、受管写入与数据归属；关联技术图和解释文档。
 - [统一知识入口](../README.md)：从目标选择地图、技术图或面向人的说明。

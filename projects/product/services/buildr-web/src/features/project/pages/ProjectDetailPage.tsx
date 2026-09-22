@@ -1,26 +1,24 @@
+import { ResourceActions } from '../../workbench/components/ResourceActions';
+import { AssetDeleteDialog } from '../../workspace/components/AssetDeleteDialog';
 import { useLocation } from 'react-router-dom';
 import { ProjectServicesPanel } from '../components/ProjectServicesPanel';
-import { catalogChanged } from '../../workspace/api/asset-catalog-api';
-import { workspaceApi } from '../../workspace/api/workspace-api';
-import { type ProjectResponse, projectApi } from '../api/project-api';
-import { serviceApi } from '../../service/api/service-api';
+import { useAssetCatalog } from '../../workspace/components/useAssetCatalog';
+import { projectApi } from '../api/project-api';
 import { useCallback, useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
-import { Button } from 'antd';
-import { FileTextOutlined, RightOutlined, HistoryOutlined } from '@ant-design/icons';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Button, Dropdown } from 'antd';
+import { FileTextOutlined, RightOutlined, HistoryOutlined, ReadOutlined, MoreOutlined, ArrowRightOutlined } from '@ant-design/icons';
 
 import { useAppShell } from '../../../app/AppShellContext';
 import { MarkdownHost } from '../../../components/MarkdownHost';
 import { encodeProjectDocumentPath, resolveProjectMarkdownHref } from '../../../lib/projectDocuments';
 import { workspaceHref } from '../../../lib/labels';
-import { DailyProgressPanel } from '../../project-daily-progress/components/DailyProgressPanel';
+import { dailyProgressActivityPath, legacyDailyProgressPath } from '../../project-daily-progress/dailyProgressNavigation';
 import { useMarkdownDocumentViewer, type MarkdownDocument } from '../../../lib/useMarkdownDocumentViewer';
 import { ProjectEditDrawer } from '../components/ProjectEditDrawer';
 import { useWorkspacePageTabs } from '../../../app/pageTabs';
 import { WorkspaceStage, type WorkspaceObjectTab } from '../../../components/WorkspaceStage';
-
-type ProjectDetail = ProjectResponse & { revision: string; project: NonNullable<ProjectResponse['project']> };
-type Service = NonNullable<ProjectResponse['services']>[number];
+import '../project-home.css';
 
 type ObjTab = { key: string; kind: 'doc'; ref: string };
 
@@ -29,7 +27,6 @@ const projectDocumentMissingMessage = (path: string) => `项目内未找到 ${pa
 const DOC_ROWS: { ref: string; name: string; hint: string }[] = [
   { ref: 'readme', name: 'README.md', hint: '项目治理根与入口' },
   { ref: 'agents', name: 'AGENTS.md', hint: '规则与授权边界' },
-  { ref: 'daily', name: '每日演进', hint: '按提交范围生成的四问摘要' },
 ];
 
 /** 右组项目文档对象。 */
@@ -77,58 +74,42 @@ function ProjectDocObjectView({ projectCode, docPath, title, hint }: { projectCo
 
 export function ProjectDetailPage() {
   const { projectCode = '' } = useParams();
-  const { workspaceId, setWorkspace, setBreadcrumbParts, openAgentAction } = useAppShell();
+  const navigate = useNavigate();
+  const { workspaceId, workspace, setBreadcrumbParts } = useAppShell();
   const href = (path: string) => workspaceHref(workspaceId, path);
+  const [deleting, setDeleting] = useState<string | null>(null);
   const pageTabs = useWorkspacePageTabs(workspaceId);
-  const [data, setData] = useState<ProjectDetail | null>(null);
-  const [services, setServices] = useState<Service[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const catalog = useAssetCatalog(), data = catalog.data;
+  const project = data?.projects.find(item => item.workspaceId === workspaceId && item.code === projectCode);
+  const services = data?.services.filter(service => service.workspaceId === workspaceId && project?.serviceIds?.includes(service.id)) || [];
+  const error = catalog.error || (data && !catalog.loading && !project ? '项目不存在' : null);
   const editLocation = useLocation();
   const [editOpen, setEditOpen] = useState(Boolean(editLocation.state?.editResource));
   useEffect(() => { if (editLocation.state?.editResource) setEditOpen(true); }, [editLocation.key]);
-  const [refresh, setRefresh] = useState(0);
-  useEffect(() => { const update = () => setRefresh(v => v + 1); window.addEventListener(catalogChanged, update); return () => window.removeEventListener(catalogChanged, update); }, []);
-  const [workspaceName, setWorkspaceName] = useState('');
+  const workspaceName = workspace?.name || '工作空间';
   const [objects, setObjects] = useState<ObjTab[]>([]);
   const [activeObj, setActiveObj] = useState<string | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const [workspace, projectData, servicesData] = await Promise.all([
-          workspaceApi.read(),
-          projectApi.project(projectCode) as Promise<ProjectDetail>,
-          serviceApi.services(projectCode),
-        ]);
-        if (cancelled) return;
-        setWorkspace(workspace);
-        setWorkspaceName(workspace.workspace.name);
-        setBreadcrumbParts([workspace.workspace.name, '项目', projectData.project.name]);
-        setData(projectData);
-        setServices(servicesData.services ?? []);
-      } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : '项目不存在');
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [projectCode, setWorkspace, setBreadcrumbParts, refresh]);
-
-  useEffect(() => {
-    if (!data || !workspaceId) return;
+    if (!project || !workspaceId) return;
+    setBreadcrumbParts([workspaceName, '项目', project.name]);
     pageTabs.register({
       key: `proj:${projectCode}`,
       kind: 'proj',
-      title: data.project.name,
+      title: project.name,
       path: href(`/projects/${encodeURIComponent(projectCode)}`),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data?.project.name, projectCode, workspaceId]);
+  }, [project?.name, projectCode, workspaceId, workspaceName, setBreadcrumbParts]);
 
   const openObject = (tab: ObjTab) => {
     setObjects((current) => current.some((o) => o.key === tab.key) ? current : [...current, tab]);
     setActiveObj(tab.key);
   };
+  useEffect(() => {
+    const activityPath = legacyDailyProgressPath(projectCode, editLocation.search);
+    if (activityPath) navigate(workspaceHref(workspaceId, activityPath), { replace: true });
+  }, [editLocation.search, projectCode, workspaceId, navigate]);
   const closeObject = (key: string) => {
     setObjects((current) => {
       const index = current.findIndex((o) => o.key === key);
@@ -155,7 +136,7 @@ export function ProjectDetailPage() {
     );
   }
 
-  if (!data) {
+  if (!data || !project) {
     return (
       <div className="page-loading">
         <span className="loader" />
@@ -164,7 +145,6 @@ export function ProjectDetailPage() {
     );
   }
 
-  const project = data.project;
   const objectTabs: WorkspaceObjectTab[] = objects.map((o) => ({ key: o.key, kind: o.kind, title: objectTitle(o) }));
   const activeTab = objects.find((o) => o.key === activeObj) ?? null;
 
@@ -178,17 +158,6 @@ export function ProjectDetailPage() {
         onActivateObject={setActiveObj}
         onCloseObject={closeObject}
         objectContent={activeTab ? (
-          activeTab.ref === 'daily' ? (
-            <>
-              <div className="ws-obj-head"><h2>每日演进</h2></div>
-              <p className="ws-obj-sub">按提交范围生成的四问摘要</p>
-              <DailyProgressPanel
-                projectCode={projectCode}
-                workspaceId={workspaceId}
-                onAskAgent={() => openAgentAction('daily-progress', { projectCode, date: new Date().toISOString().slice(0, 10) })}
-              />
-            </>
-          ) : (
             <ProjectDocObjectView
               key={activeTab.ref}
               projectCode={projectCode}
@@ -196,29 +165,51 @@ export function ProjectDetailPage() {
               title={activeTab.ref === 'agents' ? 'AGENTS.md' : 'README.md'}
               hint={activeTab.ref === 'agents' ? '规则与授权边界' : '项目治理根与入口'}
             />
-          )
         ) : null}
       >
-        <section className="ws-hero">
-          <div className="ws-hero-top">
-            <div>
-              <p className="eyebrow"><Link to={href('/projects')} aria-label="返回项目列表">← 项目列表</Link></p>
-              <h1 id="project-detail-name">{project.name}</h1>
-              <p className="ws-hero-desc" id="project-detail-description">{project.description || '尚未填写项目说明。'}</p>
+        <div className="project-home">
+        {deleting && <AssetDeleteDialog kind="project" id={deleting} onClose={() => setDeleting(null)} />}
+        <header className="project-home-header">
+          <div className="project-home-topline">
+            <Link className="project-home-back" to={href('/projects')} aria-label="返回项目列表">← 项目列表</Link>
+            <div className="project-home-actions">
+              <ResourceActions size="middle" projectCode={projectCode} resource={{ kind: "project", key: "project:" + projectCode, label: project.name, href: href("/projects/" + encodeURIComponent(projectCode)) }} />
+              <Button id="project-edit-button" onClick={() => setEditOpen(true)}>编辑项目</Button>
+              <Dropdown trigger={['click']} menu={{ items: [{ key: 'delete', label: '移除项目登记', danger: true }], onClick: () => setDeleting(projectCode) }}>
+                <Button aria-label="更多项目操作" icon={<MoreOutlined />} />
+              </Dropdown>
             </div>
-            <Button id="project-edit-button" onClick={() => setEditOpen(true)}>编辑项目</Button>
           </div>
-          <div className="ws-stat-band" role="list">
-            <div className="ws-stat" role="listitem"><b id="project-service-count">{services.length}</b><span>已登记服务</span></div>
-            <div className="ws-stat" role="listitem"><b>2</b><span>项目文档</span></div>
+          <h1 id="project-detail-name">{project.name}</h1>
+          <p className="project-home-description" id="project-detail-description">{project.description || '尚未填写项目说明。'}</p>
+          <div className="project-home-context">
+            <span>{workspaceName || '工作空间'}<span className="project-home-dot">·</span><b id="project-service-count">{services.length}</b> 个关联服务</span>
+            <Button type="primary" className="project-home-work" onClick={() => navigate(href('/tasks?project=' + encodeURIComponent(projectCode)))}>查看项目工作 <ArrowRightOutlined /></Button>
           </div>
-        </section>
+        </header>
 
-        <div className="ws-stack">
-          <ProjectServicesPanel projectCode={projectCode} />
+        <nav className="project-home-entries" aria-label="项目内容">
+          <Link className="project-home-entry" to={href(`/knowledge/project/${encodeURIComponent(projectCode)}`)}>
+            <span className="project-home-entry-icon knowledge"><ReadOutlined /></span>
+            <span><strong>项目知识</strong><small>理解架构、协作与代码实现</small></span>
+            <RightOutlined />
+          </Link>
+          <Link className="project-home-entry" to={href('/articles?project=' + encodeURIComponent(projectCode))}>
+            <span className="project-home-entry-icon"><FileTextOutlined /></span>
+            <span><strong>项目文章</strong><small>继续写作，整理与分享项目成果</small></span>
+            <RightOutlined />
+          </Link>
+          <Link id="project-activity-link" className="project-home-entry" to={href(dailyProgressActivityPath(projectCode))}>
+            <span className="project-home-entry-icon"><HistoryOutlined /></span>
+            <span><strong>项目动态</strong><small>查看每日演进、提交与变化影响</small></span>
+            <RightOutlined />
+          </Link>
+        </nav>
+        <div className="project-home-details">
+          <ProjectServicesPanel projectCode={projectCode} data={data} setData={catalog.setData} />
 
           <section className="resource-section" aria-label="文档">
-            <div className="ws-section-head"><h2>文档 <span className="ws-count">{DOC_ROWS.length} 份</span></h2></div>
+            <div className="ws-section-head"><h2>项目资料 <span className="ws-count">{DOC_ROWS.length} 个入口</span></h2></div>
             <div className="ws-obj-list">
               {DOC_ROWS.map((doc) => (
                 <button
@@ -228,7 +219,7 @@ export function ProjectDetailPage() {
                   data-doc-row={doc.ref}
                   onClick={() => openObject({ key: `doc:${doc.ref}`, kind: 'doc', ref: doc.ref })}
                 >
-                  <span className="ws-obj-ico">{doc.ref === 'daily' ? <HistoryOutlined /> : <FileTextOutlined />}</span>
+                  <span className="ws-obj-ico"><FileTextOutlined /></span>
                   <span className="ws-obj-name">{doc.name}</span>
                   <small>{doc.hint}</small>
                   <RightOutlined className="ws-go" aria-hidden />
@@ -237,7 +228,7 @@ export function ProjectDetailPage() {
             </div>
           </section>
         </div>
-        <p className="ws-meta-line">所属工作空间 {workspaceName || '…'}</p>
+        </div>
       </WorkspaceStage>
 
       <ProjectEditDrawer
@@ -245,11 +236,7 @@ export function ProjectDetailPage() {
         projectCode={editOpen ? projectCode : null}
         onClose={() => setEditOpen(false)}
         onSaved={(saved) => {
-          setData((current) => (
-            current
-              ? { ...current, revision: saved.revision, project: { ...current.project, name: saved.name, description: saved.description } }
-              : current
-          ));
+          catalog.reload();
           setBreadcrumbParts([workspaceName || '工作空间', '项目', saved.name]);
           pageTabs.register({
             key: `proj:${projectCode}`,
