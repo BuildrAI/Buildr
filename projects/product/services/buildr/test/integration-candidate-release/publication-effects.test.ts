@@ -6,6 +6,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { completePublicationEffects } from '../../tools/release/release-publication.ts';
+import { publishFrozenArtifact } from '../../tools/release/trusted-publish.ts';
 import { createReleaseArtifactFixture } from '../helpers/release-artifact-fixture.ts';
 import { readReleaseArtifact } from '../../tools/release/release-artifact.ts';
 
@@ -125,3 +126,90 @@ test('publication effects use the real artifact and recover each external partia
     });
   }
 });
+
+test('publishFrozenArtifact converges on delayed registry propagation without republishing', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-publish-readback-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const sourceRepo = path.join(root, 'source');
+  fs.mkdirSync(sourceRepo);
+  git(sourceRepo, ['init', '-b', 'main']);
+  git(sourceRepo, ['config', 'user.name', 'Buildr Test']);
+  git(sourceRepo, ['config', 'user.email', 'buildr@example.com']);
+  fs.writeFileSync(path.join(sourceRepo, 'value'), 'source');
+  git(sourceRepo, ['add', 'value']); git(sourceRepo, ['commit', '-m', 'source']);
+  const source = git(sourceRepo, ['rev-parse', 'HEAD']);
+  const built = await createReleaseArtifactFixture(path.join(root, 'artifact'), source);
+  const artifact = readReleaseArtifact(built.manifestPath);
+  const version = artifact.manifest.version;
+  const npmTag = version.includes('-') ? 'next' : 'latest';
+
+  let published = false;
+  let visible = false;
+  let puts = 0;
+  let reads = 0;
+  const server = http.createServer((req, res) => {
+    const json = (status: number, body: unknown) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(body)); };
+    if (req.method === 'PUT') { puts++; published = true; return json(201, {}); }
+    if (req.url?.endsWith(`/${version}`)) {
+      reads++;
+      if (published && reads >= 3) visible = true;
+      return json(visible ? 200 : 404, { name: '@buildr-ai/buildr', version, dist: { integrity: artifact.manifest.integrity } });
+    }
+    return json(200, { name: '@buildr-ai/buildr', 'dist-tags': { latest: '0.0.1', next: published ? version : null } });
+  });
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise<void>(resolve => { server.closeAllConnections(); server.close(() => resolve()); }));
+  const api = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  const fetchImpl: typeof fetch = (url, init) => fetch(`${api}${new URL(String(url)).pathname}`, init);
+  const result = await publishFrozenArtifact({ manifestPath: built.manifestPath, npmTag }, {
+    fetchImpl,
+    publish: async (args: string[]) => {
+      assert.equal(args[0], artifact.tarball, 'the exact prebuilt tarball is consumed');
+      const response = await fetch(`${api}/registry-write`, { method: 'PUT', body: fs.readFileSync(args[0]!) });
+      return { status: response.status === 201 ? 0 : 1, stdout: '', stderr: '' };
+    },
+    registryWait: { attempts: 6, delayMs: 1 },
+  });
+  assert.equal(result.status, 'passed', JSON.stringify(result));
+  assert.equal(result.action, 'published');
+  assert.equal(puts, 1, 'npm publish is dispatched exactly once even though the registry propagated late');
+  assert.ok(reads >= 3, `readback polled until propagation converged (reads=${reads})`);
+});
+
+test('publishFrozenArtifact reports unconfirmed after the bounded window and never republishes', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-publish-unconfirmed-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const sourceRepo = path.join(root, 'source');
+  fs.mkdirSync(sourceRepo);
+  git(sourceRepo, ['init', '-b', 'main']);
+  git(sourceRepo, ['config', 'user.name', 'Buildr Test']);
+  git(sourceRepo, ['config', 'user.email', 'buildr@example.com']);
+  fs.writeFileSync(path.join(sourceRepo, 'value'), 'source');
+  git(sourceRepo, ['add', 'value']); git(sourceRepo, ['commit', '-m', 'source']);
+  const source = git(sourceRepo, ['rev-parse', 'HEAD']);
+  const built = await createReleaseArtifactFixture(path.join(root, 'artifact'), source);
+  const artifact = readReleaseArtifact(built.manifestPath);
+  const version = artifact.manifest.version;
+  const npmTag = version.includes('-') ? 'next' : 'latest';
+
+  let publishCalls = 0;
+  const server = http.createServer((req, res) => {
+    const json = (status: number, body: unknown) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(body)); };
+    if (req.url?.endsWith(`/${version}`)) return json(404, {});
+    return json(200, { name: '@buildr-ai/buildr', 'dist-tags': { latest: '0.0.1', next: null } });
+  });
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise<void>(resolve => { server.closeAllConnections(); server.close(() => resolve()); }));
+  const api = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  const fetchImpl: typeof fetch = (url, init) => fetch(`${api}${new URL(String(url)).pathname}`, init);
+  const result = await publishFrozenArtifact({ manifestPath: built.manifestPath, npmTag }, {
+    fetchImpl,
+    publish: async () => { publishCalls++; return { status: 0, stdout: '', stderr: '' }; },
+    registryWait: { attempts: 3, delayMs: 1 },
+  });
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.action, 'readback-required');
+  assert.equal(result.diagnostic.code, 'npm-publication-unconfirmed');
+  assert.equal(publishCalls, 1, 'the bounded window expires without a second publish');
+});
+

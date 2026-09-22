@@ -12,7 +12,7 @@ import { WEB_INSTANCE_LIFECYCLE } from '../../src/web/module.ts';
 import { taskRecordFixture } from '../helpers/task-record-system-fixture.ts';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
 import { ensureRegisteredTarget } from '../../src/modules/workspace/module.ts';
-import { registerWebInstanceLifecycle } from '../../src/web/application/instance-lifecycle.ts';
+import { registerWebInstanceLifecycle, handoffWaitBudget } from '../../src/web/application/instance-lifecycle.ts';
 import { assertCurrentNpmLauncherBinding, readCurrentProductIdentity } from '../../src/modules/installation/module.ts';
 import {
   acquireBuildrWebStartLock,
@@ -168,4 +168,24 @@ test('Web start lock preserves incomplete/live owners, recovers a dead legacy PI
   assert.equal(releaseBuildrWebStartLock(first), false);
   assert.equal(acquireBuildrWebStartLock(profile).owner, false);
   assert.equal(releaseBuildrWebStartLock(successor), true);
+});
+
+test('launcher handoff wait budget keeps the local default and widens only under CI or explicit override', () => {
+  const local = handoffWaitBudget({});
+  assert.deepEqual(local, { attempts: 40, intervalMs: 50 }, 'non-CI budget is millisecond-equivalent to the pre-change runtime default');
+  assert.equal(local.attempts * local.intervalMs, 2000);
+
+  const ci = handoffWaitBudget({ CI: 'true' });
+  assert.equal(ci.intervalMs, 50);
+  assert.ok(ci.attempts > local.attempts, 'CI widens the handoff budget');
+  assert.ok(ci.attempts * ci.intervalMs >= 60000, 'CI budget absorbs loaded-runner shutdown latency');
+
+  const overridden = handoffWaitBudget({ BUILDR_LAUNCHER_HANDOFF_WAIT_MS: '5000' });
+  assert.deepEqual(overridden, { attempts: 100, intervalMs: 50 });
+
+  const ciOverrideWins = handoffWaitBudget({ CI: 'true', BUILDR_LAUNCHER_HANDOFF_WAIT_MS: '1000' });
+  assert.deepEqual(ciOverrideWins, { attempts: 20, intervalMs: 50 }, 'explicit override takes precedence over CI auto-detection');
+
+  const invalidOverride = handoffWaitBudget({ BUILDR_LAUNCHER_HANDOFF_WAIT_MS: 'not-a-number' });
+  assert.deepEqual(invalidOverride, { attempts: 40, intervalMs: 50 }, 'invalid override falls back to the local default');
 });
