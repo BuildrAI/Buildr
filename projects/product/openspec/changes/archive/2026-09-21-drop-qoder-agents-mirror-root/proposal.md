@@ -2,7 +2,7 @@
 
 `redesign-qoder-runtime-adapter` 让 `qoder` 同时投射 `.qoder/skills`（主根）与 `.agents/skills`（镜像根）。正式自举工作空间的实机激活暴露该前提不成立：
 
-1. 镜像根对 Qoder 自身没有增加任何可见性。`.qoder/skills` 是 Qoder 官方文档承诺的项目级发现根，桌面 App、Qoder IDE 与 Qoder CLI 都读取它（本机直接证据：当前 Qoder 会话从 `/Users/chenjun/Buildr/.qoder/skills/` 加载了 `archify` 与 `terminology-governance`）。桌面 App 只是**额外**读取 `.agents/skills`，而该目录在装了 `codex`/`cursor`/`trae` 的工作空间里本来就有内容，Qoder 已经看得见。
+1. 镜像根对 Qoder 自身没有增加任何可见性。`.qoder/skills` 是 Qoder 官方文档承诺的项目级发现根，桌面 App、Qoder IDE 与 Qoder CLI 都读取它（本机直接证据：当前 Qoder 会话从 `~/Buildr/.qoder/skills/` 加载了 `archify` 与 `terminology-governance`）。桌面 App 只是**额外**读取 `.agents/skills`，而该目录在装了 `codex`/`cursor`/`trae` 的工作空间里本来就有内容，Qoder 已经看得见。
 2. 镜像根与共享根的真实归属冲突。渲染出的 `SKILL.md` 正文含 adapter 相关的能力绑定（capability binding）provider 路径：`codex` 写在 `.agents/skills/task-finish/SKILL.md` 的 provider 路径是 `.agents/skills/task-manager/SKILL.md`，而 `qoder` 期望同一文件里是 `.qoder/skills/task-manager/SKILL.md`。两者字节不同，`reconcileRuntimePlan` 正确地拒绝覆盖他方受管文件，于是 `runtime check qoder` 稳定报出 `missing=30`（镜像回执从未写出）与 `stale=9`（他人文件被判为 qoder 过期），最终诊断 `runtime.qoder_stale` 阻塞自举激活。
 
 即双根投射没有换来任何发现能力，只把 `qoder` 推到别的 adapter 已持有的共享根上争抢同一批路径。

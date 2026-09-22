@@ -1,6 +1,6 @@
 ## 背景与问题
 
-`redesign-qoder-runtime-adapter` 合并进 dev（`8b436249`）并收敛后，正式自举工作空间执行 `buildr-self-bootstrap-sync` 收尾：`sync qoder` 与开发应用更新均通过，最终诊断 blocked 于 `runtime.qoder_stale`。现场核对（2026-09-21，dev @ `8b436249`，`/Users/chenjun/Buildr`）：
+`redesign-qoder-runtime-adapter` 合并进 dev（`8b436249`）并收敛后，正式自举工作空间执行 `buildr-self-bootstrap-sync` 收尾：`sync qoder` 与开发应用更新均通过，最终诊断 blocked 于 `runtime.qoder_stale`。现场核对（2026-09-21，dev @ `8b436249`，`~/Buildr`）：
 
 - `runtime check qoder` 报 `ok=298 missing=30 stale=9 conflict=0`，`missing` 全部是从未写出的镜像根回执，`stale` 全部是 `codex` 已受管的 `.agents/skills/*/SKILL.md`。
 - 逐字节对比同一技能：`.agents/skills/task-finish/SKILL.md`（codex 投射）内能力绑定 provider 路径为 `.agents/skills/task-manager/SKILL.md`，而 `.qoder/skills/task-finish/SKILL.md`（qoder 投射）为 `.qoder/skills/task-manager/SKILL.md`。同一 `.agents` 路径不可能同时是两者，`reconcile` 拒写是正确行为。
