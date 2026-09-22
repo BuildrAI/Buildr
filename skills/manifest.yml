@@ -322,7 +322,7 @@ skills:
     sourceIdentity: package:skills/buildr/current-knowledge-maintenance
     source: buildr
     path: buildr/current-knowledge-maintenance
-    description: 围绕用户主题构建项目或服务的架构知识，检查或维护相关文章、技术图和代码地图，或处理开发中的知识影响时使用。
+    description: 理解或探索项目与服务、建设结构化项目知识，检查维护已有说明、视图和代码地图，或处理开发中的知识影响时使用。
     enabled: true
     required: false
     state: installed
