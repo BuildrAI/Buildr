@@ -12,6 +12,41 @@ type Context = {
   capture: (page: Page, name: string) => Promise<unknown>;
 };
 
+/** Both the wide sidebar and the narrow disclosure keep the same topic controls. */
+export async function openKnowledgeTopicDirectory(root: Locator) {
+  const disclosure = root.locator('[data-knowledge-topic-disclosure]:visible');
+  if (await disclosure.count() && await disclosure.getAttribute('open') === null) await disclosure.locator('summary').click();
+}
+
+export async function selectKnowledgeChildTopic(root: Locator, parentId: string, childId: string) {
+  await openKnowledgeTopicDirectory(root);
+  const child = root.locator(`[data-knowledge-topic="${childId}"]:visible`);
+  if (!await child.isVisible()) await root.locator(`[data-knowledge-topic-toggle="${parentId}"]:visible`).click();
+  await child.click();
+}
+
+/** Exercise the real shared action drawer without handing work to an agent. */
+export async function verifyKnowledgeQuestionHandoff(page: Page, trigger: Locator, expectedContext: string[]) {
+  await trigger.click();
+  const action = page.locator('.knowledge-action');
+  const generate = action.getByRole('button', { name: '生成了解指令', exact: true });
+  await generate.waitFor({ state: 'visible' });
+  assert.equal(await generate.isDisabled(), true, '追问必须有问题');
+  await action.getByRole('textbox', { name: '知识追问问题', exact: true }).fill('这里的职责为什么分开？请核查当前实现。');
+  await generate.click();
+  const prompt = await action.getByRole('textbox', { name: '架构知识指令', exact: true }).inputValue();
+  for (const value of expectedContext) assert.ok(prompt.includes(value), value);
+  assert.match(prompt, /本次仅授权只读调查和回答/);
+  assert.match(prompt, /重新读取相关最新规范、代码和登记配置/);
+  assert.doesNotMatch(prompt, /即请求在指定范围建设|将实际文章|将更新后的地图/);
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+  await action.getByRole('button', { name: '复制给智能体', exact: true }).click();
+  await action.getByRole('status').filter({ hasText: '已复制' }).waitFor({ state: 'visible' });
+  assert.equal(await page.evaluate(() => navigator.clipboard.readText()), prompt);
+  await page.locator('#close-agent-action').click();
+  await action.waitFor({ state: 'detached' });
+}
+
 /** Reading follows current files; fixture edits never leave this isolated workspace. */
 export async function runKnowledgeLocalReadingJourney({ page, workspaceRoot, serviceRoot, scopeUrl, browser, capture }: Context) {
   const realWorkspace = fs.realpathSync(workspaceRoot), realService = fs.realpathSync(serviceRoot);
@@ -85,6 +120,18 @@ export async function runKnowledgeLocalReadingJourney({ page, workspaceRoot, ser
     await reader().getByText('本地正文已更新，刷新后直接阅读。', { exact: true }).waitFor({ state: 'visible' });
     await assertReadingOnly();
     assert.equal(await reader().locator('[data-knowledge-unavailable-sources]').count(), 0);
+    await verifyKnowledgeQuestionHandoff(page, reader().getByRole('button', { name: '追问当前内容', exact: true }), ['service-intro', 'service-readme', '"kind": "service"']);
+    await reader().getByRole('button', { name: '完善当前内容', exact: true }).click();
+    const maintenance = page.locator('.knowledge-action');
+    await maintenance.getByRole('textbox', { name: '知识修改意见', exact: true }).fill('请补充职责取舍的说明');
+    await maintenance.getByRole('button', { name: '生成完善指令', exact: true }).click();
+    const maintenancePrompt = await maintenance.getByRole('textbox', { name: '架构知识指令', exact: true }).inputValue();
+    assert.match(maintenancePrompt, /请补充职责取舍的说明/);
+    assert.match(maintenancePrompt, /即请求在指定范围建设/);
+    assert.doesNotMatch(maintenancePrompt, /本次仅授权只读调查/);
+    await page.locator('#close-agent-action').click();
+    await maintenance.waitFor({ state: 'detached' });
+    await waitForReader();
     await capture(page, 'knowledge-local-reading.png');
 
     const [sourceRead] = await Promise.all([nextRead(sourceUrl), reader().getByRole('link', { name: '真实实现来源', exact: true }).click()]);
@@ -93,6 +140,7 @@ export async function runKnowledgeLocalReadingJourney({ page, workspaceRoot, ser
     await sourceReader().getByRole('heading', { name: '文件说明', exact: true }).waitFor({ state: 'visible' });
     assert.match(await sourceReader().innerText(), /本地来源已更新/);
     await assertReadingOnly();
+    await verifyKnowledgeQuestionHandoff(page, sourceReader().getByRole('button', { name: '追问当前内容', exact: true }), ['service-readme', sourceData.observations.find((item: { id: string }) => item.id === 'service-readme').digest]);
     await browser().getByRole('button', { name: '← 返回服务阅读验证', exact: true }).click();
     await waitForReader();
 

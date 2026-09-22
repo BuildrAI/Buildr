@@ -4,7 +4,7 @@ import { useLocation } from 'react-router-dom';
 import { ProjectServicesPanel } from '../components/ProjectServicesPanel';
 import { useAssetCatalog } from '../../workspace/components/useAssetCatalog';
 import { projectApi } from '../api/project-api';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useContext, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Button, Dropdown } from 'antd';
 import { FileTextOutlined, RightOutlined, HistoryOutlined, ReadOutlined, MoreOutlined, ArrowRightOutlined } from '@ant-design/icons';
@@ -16,7 +16,9 @@ import { workspaceHref } from '../../../lib/labels';
 import { dailyProgressActivityPath, legacyDailyProgressPath } from '../../project-daily-progress/dailyProgressNavigation';
 import { useMarkdownDocumentViewer, type MarkdownDocument } from '../../../lib/useMarkdownDocumentViewer';
 import { ProjectEditDrawer } from '../components/ProjectEditDrawer';
-import { useWorkspacePageTabs } from '../../../app/pageTabs';
+import { useWorkspacePageTabs, WorkspaceViewActiveContext } from '../../../app/pageTabs';
+import { useKnowledgeNavigation } from '../../knowledge/useKnowledgeNavigation';
+import { canInitializeKnowledge, knowledgeInitializationContext } from '../../knowledge/knowledge-initialize';
 import { WorkspaceStage, type WorkspaceObjectTab } from '../../../components/WorkspaceStage';
 import '../project-home.css';
 
@@ -75,12 +77,15 @@ function ProjectDocObjectView({ projectCode, docPath, title, hint }: { projectCo
 export function ProjectDetailPage() {
   const { projectCode = '' } = useParams();
   const navigate = useNavigate();
-  const { workspaceId, workspace, setBreadcrumbParts } = useAppShell();
+  const { workspaceId, workspace, setBreadcrumbParts, openAgentAction } = useAppShell();
   const href = (path: string) => workspaceHref(workspaceId, path);
   const [deleting, setDeleting] = useState<string | null>(null);
   const pageTabs = useWorkspacePageTabs(workspaceId);
   const catalog = useAssetCatalog(), data = catalog.data;
   const project = data?.projects.find(item => item.workspaceId === workspaceId && item.code === projectCode);
+  const active = useContext(WorkspaceViewActiveContext);
+  const knowledge = useKnowledgeNavigation(workspaceId, { kind: 'project', id: project?.id || projectCode }, 0, Boolean(project) && active);
+  const needsKnowledge = canInitializeKnowledge(knowledge);
   const services = data?.services.filter(service => service.workspaceId === workspaceId && project?.serviceIds?.includes(service.id)) || [];
   const error = catalog.error || (data && !catalog.loading && !project ? '项目不存在' : null);
   const editLocation = useLocation();
@@ -189,9 +194,15 @@ export function ProjectDetailPage() {
         </header>
 
         <nav className="project-home-entries" aria-label="项目内容">
-          <Link className="project-home-entry" to={href(`/knowledge/project/${encodeURIComponent(projectCode)}`)}>
+          <Link className="project-home-entry" to={href(`/knowledge/project/${encodeURIComponent(projectCode)}`)}
+            data-knowledge-initialize={needsKnowledge || undefined} data-knowledge-initialize-action={needsKnowledge || undefined}
+            onClick={event => {
+              if (!needsKnowledge || !knowledge.data || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+              event.preventDefault();
+              openAgentAction('knowledge', knowledgeInitializationContext(knowledge.data, href(`/knowledge/project/${encodeURIComponent(projectCode)}`)));
+            }}>
             <span className="project-home-entry-icon knowledge"><ReadOutlined /></span>
-            <span><strong>项目知识</strong><small>理解架构、协作与代码实现</small></span>
+            <span><strong>{needsKnowledge ? '建立项目知识' : '项目知识'}</strong><small>{needsKnowledge ? '先建立对项目的整体认识' : '理解目标、主要部分与关键过程'}</small></span>
             <RightOutlined />
           </Link>
           <Link className="project-home-entry" to={href('/articles?project=' + encodeURIComponent(projectCode))}>

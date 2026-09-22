@@ -78,7 +78,7 @@ export function knowledgeCatalogPage(
 
   const terms = query.split(" ").filter(Boolean);
   const matching = (index?.artifacts ?? [])
-    .filter((artifact) => artifact.kind === kinds[view])
+    .filter((artifact) => artifact.kind === kinds[view] || (view === "documents" && artifact.kind === "terms"))
     .map((artifact) => {
       const topics = index!.objects.filter((object) => artifact.objects.includes(object.id));
       const summary = topics.map((object) => object.summary).join(" · ");

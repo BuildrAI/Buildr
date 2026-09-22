@@ -18,6 +18,7 @@ import { recordVerificationResultFromEvidence } from '../helpers/task-verificati
 import { runWorkbenchJourney } from './workbench-journey.ts';
 import { runPublicationJourney, publicationTestPng } from './publication-journey.ts';
 import { runServiceKnowledgeJourney } from './service-knowledge-journey.ts';
+import { runProjectKnowledgeInitializationJourney } from './knowledge-initialization-journey.ts';
 
 const PRODUCT_ROOT: any = path.resolve(import.meta.dirname, '../..');
 const BUILDR: any = path.join(PRODUCT_ROOT, 'bin', 'buildr.mjs');
@@ -330,7 +331,7 @@ async function capture(page: any, name: any): Promise<any>  {
   await page.screenshot({ path: path.join(SCREENSHOT_DIR, name), fullPage: true, animations: 'disabled' });
 }
 
-test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('all') || SELECTORS.has('task') ? 300_000 : SELECTORS.has('workbench') || SELECTORS.has('articles') || SELECTORS.has('shell') || SELECTORS.has('service') ? 120_000 : 45_000 }, async (t: any) => {
+test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('all') || SELECTORS.has('task') ? 300_000 : SELECTORS.has('workbench') || SELECTORS.has('articles') || SELECTORS.has('shell') || SELECTORS.has('service') ? 120_000 : SELECTORS.has('project') ? 75_000 : 45_000 }, async (t: any) => {
   const requestedSmokeRoot: any = process.env.BUILDR_SMOKE_ROOT;
   const managedSmokeRoot: any = requestedSmokeRoot && fs.existsSync(path.join(requestedSmokeRoot, '.buildr-smoke-owner')) ? requestedSmokeRoot : null;
   const base: any = managedSmokeRoot || fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-browser-smoke-'));
@@ -748,6 +749,10 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.setViewportSize({ width: 1280, height: 720 });
   });
 
+  if (selected('project')) await t.test('空项目首次建设有默认目标，打开与复制不执行写入，错误读取不误判为空', { timeout: 25_000 }, async () => {
+    await runProjectKnowledgeInitializationJourney({ page, workspaceRoot, workspaceUrl, expectedBrowserErrors, capture });
+  });
+
   if (selected('project')) await t.test('项目主页单次读取登记，服务列表不依赖旧详情请求', async () => {
     const apiPrefix = `/api/v1/workspaces/${initialWorkspaceId}`;
     const catalogPath = `${apiPrefix}/asset-catalog`;
@@ -791,7 +796,8 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.equal(await page.getByText('操作', { exact: true }).filter({ visible: true }).count(), 0);
     assert.equal(await page.locator('.overview-strip, .related-resource-links').count(), 0);
     assert.equal(await page.locator('.project-home-entries .project-home-entry').count(), 3);
-    assert.deepEqual(await page.locator('.project-home-entry strong').allTextContents(), ['项目知识', '项目文章', '项目动态']);
+    await page.locator('.project-home-entries [data-knowledge-initialize-action]:visible').waitFor({ state: 'visible' });
+    assert.deepEqual(await page.locator('.project-home-entry strong').allTextContents(), ['建立项目知识', '项目文章', '项目动态']);
     assert.equal(await page.locator('[data-doc-row="daily"]').count(), 0, '每日演进不再作为项目资料');
     assert.equal(await page.locator('[data-doc-row="readme"], [data-doc-row="agents"]').count(), 2);
     assert.equal(await page.getByRole('button', { name: '查看项目工作', exact: false }).count(), 1);

@@ -277,5 +277,18 @@ export function createKnowledgeQuery(deps: KnowledgeDependencies) {
       ...knowledgeCatalogPage(index, revision, scopeIdentity, request),
     };
   }
-  return { read, catalog };
+  function navigation(root: string, ref: ScopeRef) {
+    const { scope, index, revision } = load(root, ref);
+    return {
+      scope,
+      revision,
+      entryObject: index?.entryObject ?? null,
+      artifactCount: index?.artifacts.length ?? 0,
+      topics: (index?.objects || []).map(({ id, title, summary, parent }) => ({
+        id, title, summary, parent: parent ?? null,
+      })),
+      diagnostics: [],
+    };
+  }
+  return { read, catalog, navigation };
 }

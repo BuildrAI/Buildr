@@ -6,7 +6,7 @@ import {
   useParams,
   useSearchParams,
 } from "react-router-dom";
-import { Alert, Button, Breadcrumb, Modal, Space, Spin } from "antd";
+import { Alert, Button, Breadcrumb, Empty, Modal, Space, Spin } from "antd";
 import { ArrowUpOutlined } from "@ant-design/icons";
 import { useAppShell } from "../../../app/AppShellContext";
 import { useResourcePreview } from "../../../app/resource-preview";
@@ -17,14 +17,23 @@ import { workspaceHref } from "../../../lib/labels";
 import { KnowledgeCatalog } from "../components/KnowledgeCatalog";
 import { KnowledgeArtifactReader } from "../components/KnowledgeArtifactReader";
 import { KnowledgePreviewNotice } from "../components/KnowledgePreviewNotice";
+import { KnowledgeTopicNavigation } from "../components/KnowledgeTopicNavigation";
+import { KnowledgeTopicStart } from "../components/KnowledgeTopicStart";
+import { KnowledgeTopicTabs } from "../components/KnowledgeTopicTabs";
+import { KnowledgeTopicChildren } from "../components/KnowledgeTopicChildren";
+import { KnowledgeInitialize } from "../components/KnowledgeInitialize";
+import { canInitializeKnowledge, knowledgeInitializationContext } from "../knowledge-initialize";
 import {
   KnowledgeReadingPane,
   type KnowledgePane,
 } from "../components/KnowledgeReadingPane";
 import { useKnowledgeReading } from "../useKnowledgeReading";
 import { useKnowledgeCatalog } from "../useKnowledgeCatalog";
+import { useKnowledgeNavigation } from "../useKnowledgeNavigation";
 import { useCompleteKnowledgeReading } from "../useCompleteKnowledgeReading";
 import { knowledgeCategory } from "../knowledge-catalog";
+import type { KnowledgeActionMode } from "../knowledge-request";
+import { knowledgeEntryObject, knowledgeReadingTopics, knowledgeSelectedTopic, knowledgeTopicArtifacts, knowledgeTopicTrail } from "../knowledge-topics";
 import {
   resolveKnowledgePath,
   knowledgeArtifactTarget,
@@ -49,6 +58,8 @@ export function KnowledgePage() {
     parentProject = params.get("fromProject"),
     category = knowledgeCategory(params.get("view")),
     query = params.get("q") || "";
+  const browseAll = params.get("browse") === "all";
+  const explicitCatalog = browseAll || params.has("q") || params.has("reading") || (params.has("view") && params.get("view") !== "documents");
   const [refresh, setRefresh] = useState(0),
     [readingState, setReadingState] = useState<{
       scope: string;
@@ -61,7 +72,18 @@ export function KnowledgePage() {
     [linkNotice, setLinkNotice] = useState(""),
     [selectedReference, setSelectedReference] = useState<string | null>(null);
   const isReading = Boolean(objectId || artifactId);
-  const catalog = useKnowledgeCatalog({ workspaceId, scope, category, query, refresh, enabled: !isReading });
+  const navigation = useKnowledgeNavigation(workspaceId, scope, refresh);
+  const navigationTopics = navigation.data?.topics || [];
+  const showCatalog = !isReading && (explicitCatalog || (!navigation.loading && !navigationTopics.length));
+  const catalog = useKnowledgeCatalog({ workspaceId, scope, category, query, refresh, enabled: showCatalog });
+  useEffect(() => {
+    if (!navigation.data || navigation.loading) return;
+    const entry = knowledgeEntryObject(params, navigation.data);
+    if (!entry) return;
+    const next = new URLSearchParams(params);
+    next.set("object", entry);
+    setParams(next, { replace: true, state: location.state });
+  }, [navigation.data, navigation.loading, location.search]);
   const main = useCompleteKnowledgeReading(
       workspaceId || '',
       scope,
@@ -71,6 +93,7 @@ export function KnowledgePage() {
       isReading,
     ),
     data = main.data;
+  const needsInitialize = canInitializeKnowledge(navigation, data, catalog.data);
   const legacy = useKnowledgeReading(scope, "artifacts", legacyReading, refresh, Boolean(legacyReading) && !isReading);
   const [referenceIndex, setReferenceIndex] = useState<{ scope: string; index: KnowledgeIndex | null }>({ scope: scopeKey, index: null });
   const rememberIndex = useCallback((value: KnowledgeIndex) => {
@@ -80,14 +103,19 @@ export function KnowledgePage() {
     const value = data?.index || legacy.data?.index;
     if (value) rememberIndex(value);
   }, [data?.index, legacy.data?.index, rememberIndex]);
-  const index = data?.index || legacy.data?.index || (referenceIndex.scope === scopeKey ? referenceIndex.index : null);
-  const pageScope = data?.scope || catalog.data?.scope || legacy.data?.scope;
-  const pageLoading = isReading ? main.loading : catalog.loading;
-  const selected = index?.objects.find((o) => o.id === objectId),
+  const index = data ? data.index : legacy.data ? legacy.data.index : (referenceIndex.scope === scopeKey ? referenceIndex.index : null);
+  const topics = knowledgeReadingTopics(data?.index, navigationTopics);
+  const pageScope = data?.scope || catalog.data?.scope || legacy.data?.scope || navigation.data?.scope;
+  const pageLoading = isReading ? main.loading : showCatalog ? catalog.loading : navigation.loading;
+  const selected = index?.objects.find((o) => o.id === objectId) || topics.find(topic => topic.id === objectId),
     primaryArtifact = data?.artifacts?.find((a) => a.id === artifactId);
+  const selectedTopic = knowledgeSelectedTopic(topics, objectId, primaryArtifact?.objects);
+  const topicTrail = knowledgeTopicTrail(topics, selectedTopic);
+  const shownArtifacts = artifactId ? (data?.artifacts || []).filter(artifact => artifact.id === artifactId)
+    : knowledgeTopicArtifacts(data?.artifacts || [], category);
   const root = useRef<HTMLDivElement>(null),
     positions = useRef<Record<string, number>>({}),
-    viewKey = JSON.stringify([scopeKey, objectId, artifactId, category, query]);
+    viewKey = JSON.stringify([scopeKey, objectId, artifactId, category, query, browseAll]);
   const [showBackToTop, setShowBackToTop] = useState(false);
   const scrollContext = useRef({ viewKey, loading: pageLoading });
   scrollContext.current = { viewKey, loading: pageLoading };
@@ -186,6 +214,7 @@ export function KnowledgePage() {
         ...knowledgeArtifactTarget(a, objectId),
         view: category,
         q: query,
+        browse: browseAll ? "all" : undefined,
       });
   };
   const readingAnchor = useRef<HTMLElement | null>(null);
@@ -305,8 +334,9 @@ export function KnowledgePage() {
     onOpen: (id: string) => openPane("artifact", id),
     onObject: (id: string) => move({ object: id, view: category, q: query }),
   };
-  const construct = (mode: "construct" | "diagram" | "improve") =>
-    openAgentAction("knowledge", {
+  const construct = (mode: KnowledgeActionMode) =>
+    openAgentAction("knowledge", mode === "initialize" && navigation.data
+      ? knowledgeInitializationContext(navigation.data, location.pathname + location.search) : {
       mode,
       readingPath: location.pathname + location.search,
       topic: title,
@@ -326,7 +356,7 @@ export function KnowledgePage() {
       objectId,
       artifactId,
       artifactKind: primaryArtifact?.kind,
-      indexRevision: isReading ? data?.revision : catalog.data?.revision,
+      indexRevision: isReading ? data?.revision : catalog.data?.revision || navigation.data?.revision,
       observations: data?.observations.map((o) => ({
         id: o.id,
         digest: o.digest,
@@ -416,14 +446,17 @@ export function KnowledgePage() {
                 objectId || artifactId ? (
                   <Button
                     type="link"
-                    onClick={() => move({ view: category, q: query })}
+                    onClick={() => move({ browse: "all", view: category, q: query })}
                   >
-                    {scope.kind === "project" ? "项目知识" : "服务知识"}
+                    全部资料
                   </Button>
                 ) : (
                   "知识"
                 ),
             },
+            ...(artifactId ? topicTrail : topicTrail.slice(0, -1)).map(topic => ({
+              title: <Button type="link" onClick={() => move({ object: topic.id, view: "documents" })}>{topic.title}</Button>,
+            })),
             ...(objectId || artifactId ? [{ title }] : []),
           ]}
         />
@@ -449,16 +482,29 @@ export function KnowledgePage() {
             <ResourceActions size="middle" resource={pageScope ? { kind: "knowledge", key: "knowledge:" + scopeKey + ":" + (artifactId || objectId || "home"), label: title, href: location.pathname + location.search } : null} />
             <RefreshButton label="刷新当前知识" text="刷新" loading={pageLoading} onClick={refreshPage} />
             {(objectId || artifactId) && (
-              <Button
-                disabled={!data || main.loading || Boolean(main.error)}
-                onClick={() => construct("improve")}
-              >
-                完善当前内容
-              </Button>
+              <>
+                <Button
+                  disabled={!data || main.loading || Boolean(main.error)}
+                  onClick={() => construct("ask")}
+                >
+                  追问当前内容
+                </Button>
+                <Button
+                  disabled={!data || main.loading || Boolean(main.error)}
+                  onClick={() => construct("improve")}
+                >
+                  完善当前内容
+                </Button>
+              </>
             )}
           </Space>
         </div>
         <KnowledgePreviewNotice sourceDirectory={pageScope?.directory} />
+        <KnowledgeTopicNavigation topics={topics} selected={selectedTopic} allSelected={showCatalog}
+          loading={navigation.loading} error={navigation.error} onRetry={refreshPage}
+          onSelect={id => move({ object: id, view: "documents" })}
+          onAll={() => move({ browse: "all", view: category, q: query })}>
+        {needsInitialize && <KnowledgeInitialize kind={scope.kind} onInitialize={() => construct("initialize")} onExplore={() => construct("explore")} />}
         <Modal
           title="选择对应文件"
           open={referenceChoices.length > 0}
@@ -492,19 +538,20 @@ export function KnowledgePage() {
         ) : isReading && main.loading ? (
           <Spin />
         ) : data && isReading ? (
-          <>
+          <section data-knowledge-topic-content={objectId || undefined}>
             {selected && (
               <p className="knowledge-summary">{selected.summary}</p>
             )}
+            {objectId && !artifactId && <KnowledgeTopicChildren topics={topics} parent={objectId}
+              onSelect={id => move({ object: id, view: "documents" })} />}
+            {objectId && !artifactId && <KnowledgeTopicTabs category={category}
+              onChange={view => move({ object: objectId, view, q: query, browse: browseAll ? "all" : undefined }, true)} />}
             {unavailableSources.length > 0 && <Alert type="warning" showIcon data-knowledge-unavailable-sources
               message="部分来源缺失或暂不可读，其余内容仍可查看。"
               description={<Space wrap>{unavailableSources.map(item => <Button key={item.id} type="link" onClick={() => openSource(item.id)}>
                 {index?.sources.find(source => source.id === item.id)?.title || item.id} · {item.status === "missing" ? "缺失" : "不可读"}
               </Button>)}</Space>} />}
-            {(artifactId
-              ? data.artifacts?.filter((a) => a.id === artifactId) || []
-              : (data.artifacts || []).filter((a) => a.kind === "document")
-            ).map((a) => (
+            {shownArtifacts.map((a) => (
               <KnowledgeArtifactReader
                 key={a.id}
                 {...reader}
@@ -513,18 +560,9 @@ export function KnowledgePage() {
                 artifacts={data.artifacts || []}
               />
             ))}
-            {!artifactId &&
-              !data.artifacts?.some((a) => a.kind === "document") &&
-              data.artifacts?.map((a) => (
-                <KnowledgeArtifactReader
-                  key={a.id}
-                  {...reader}
-                  artifact={a}
-                  artifacts={data.artifacts || []}
-                />
-              ))}
-          </>
-        ) : !isReading ? (
+            {!shownArtifacts.length && !needsInitialize && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="这个主题下暂时没有此类资料。" />}
+          </section>
+        ) : showCatalog && !needsInitialize ? (
           <KnowledgeCatalog
             entries={catalog.data?.items || []}
             matchingCount={catalog.data?.matchingCount || 0}
@@ -537,14 +575,17 @@ export function KnowledgePage() {
             canConstruct={Boolean(pageScope)}
             category={category}
             query={query}
-            onFilter={(view, q) => move({ view, q }, true)}
+            onFilter={(view, q) => move({ browse: "all", view, q }, true)}
             onOpen={openPrimary}
             onConstruct={construct}
             onLoadMore={catalog.loadMore}
             onRetry={catalog.retryLoadMore}
             onRefresh={refreshPage}
           />
-        ) : null}
+        ) : !isReading && navigation.loading ? <Spin /> : !isReading && !needsInitialize && topics.length ? <KnowledgeTopicStart topics={topics}
+          onSelect={id => move({ object: id, view: "documents" })}
+          onExplore={() => construct("explore")} onConstruct={() => construct("construct")} /> : null}
+        </KnowledgeTopicNavigation>
       </div>
     </WorkspaceStage>
   );

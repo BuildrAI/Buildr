@@ -41,6 +41,13 @@ test('全部HTTP DTO从空显式目标生成两端闭合输出', async (t) => {
   });
   assert.equal(manifest.artifacts[0].files.length, 7);
   assert.equal(manifest.artifacts[1].files.length, 7);
+  for (const directory of [backend, web]) {
+    const knowledgeDto = fs.readFileSync(path.join(directory, 'knowledge-http-dto.ts'), 'utf8');
+    assert.match(knowledgeDto, /export interface Knowledge_NavigationResponse/);
+    assert.match(knowledgeDto, /entryObject: string \| null/);
+    assert.match(knowledgeDto, /artifactCount: number/);
+    assert.match(knowledgeDto, /entryObject\?: string/);
+  }
 });
 
 test('相同Schema向两个全新目标生成相同DTO清单', async (t) => {

@@ -26,20 +26,9 @@
 
 ## 三层管线
 
-```mermaid
-flowchart TD
-    A["源资产"] --> B["组合成有效 Skill"]
-    B --> C["按 Agent adapter 投射 runtime"]
-    C --> D["Doctor 诊断"]
-    C --> E[".buildr ownership receipt"]
+技能源文件先组合为当前技能（Skill）的有效内容，再按目标环境投射为可发现入口。下图展开这条主线中的来源、组合、计划和写入关系；它以 Codex 为例，不表示宿主已经加载了技能（Skill）。
 
-    A1["package 产品入口 buildr"] --> A
-    A2["Workspace Skills"] --> A
-    A3["外部 Skill 作为 Component 成员"] --> A
-
-    B1["内容增强 Contribution"] --> B
-    B2["consumer-local 能力依赖"] --> B
-```
+![技能源文件如何成为可发现入口](../../archify/flows/skill-projection.html)
 
 ### 1. 源资产
 
@@ -180,18 +169,15 @@ receipt 是 Buildr 本机控制状态：
 
 ## Agent 如何使用
 
-```mermaid
-flowchart TD
-    U["用户意图"] --> S["runtime 按 description 发现 Skill"]
-    S --> Q{"Skill 是否声明 requires?"}
-    Q -- "否" --> P["执行当前 playbook"]
-    Q -- "是" --> L["读取 consumer-local binding"]
-    L --> R{"readiness"}
-    R -- "ready/degraded" --> C["读取 contract 与 selected provider"]
-    R -- "blocked" --> D["停止 provider-dependent action"]
-    D --> F["用 Doctor full 查看原因和修复动作"]
-    C --> P
-```
+智能体（Agent）从用户意图出发，根据描述找到技能（Skill），再判断当前动作是否依赖其他能力：
+
+| 当前情况 | 怎样继续 |
+| --- | --- |
+| 没有声明能力依赖 | 按当前技能（Skill）的工作方法执行 |
+| 已声明依赖，状态为 `ready` 或 `degraded` | 读取当前调用方的局部绑定、能力契约（Capability Contract）与已选提供者（Provider），核对具体动作所需条件后执行 |
+| 相关依赖为 `blocked` | 只暂停依赖它的动作，通过 Doctor 查看原因及修复建议；其他可安全执行的工作继续 |
+
+依赖可路由不代表本次工作已经完成，实际结果仍按目标核验。
 
 产品入口是一个特殊入口，但遵循相同原则：先由 description 命中，再只解析当前意图需要的 route。
 

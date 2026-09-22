@@ -75,6 +75,7 @@ const observation = obj(observationFields);
 const index = obj({
   schemaVersion: { const: "buildr.knowledge-index/v1" },
   scope: scopeRef,
+  entryObject: text,
   objects: { type: "array", items: object },
   sources: { type: "array", items: source },
   artifacts: { type: "array", items: artifact },
@@ -88,8 +89,25 @@ const index = obj({
       },
     }),
   },
-});
+}, ["schemaVersion", "scope", "objects", "sources", "artifacts", "relations"]);
 export const KNOWLEDGE_HTTP_SCHEMAS = {
+  NavigationResponse: {
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    $id: "https://schemas.buildr.ai/http/knowledge/navigation-response",
+    title: "Knowledge",
+    ...obj({
+      scope,
+      revision: nullable,
+      entryObject: nullable,
+      artifactCount: { type: "integer", minimum: 0, maximum: 500 },
+      topics: {
+        type: "array",
+        maxItems: 500,
+        items: obj({ id: text, title: text, summary: text, parent: nullable }),
+      },
+      diagnostics: strings,
+    }),
+  },
   CatalogResponse: {
     $schema: "https://json-schema.org/draft/2020-12/schema",
     $id: "https://schemas.buildr.ai/http/knowledge/catalog-response",
@@ -107,7 +125,7 @@ export const KNOWLEDGE_HTTP_SCHEMAS = {
           ...obj({
             id: text,
             title: text,
-            kind: { enum: ["document", "diagram", "code-map"] },
+            kind: { enum: ["document", "diagram", "code-map", "terms"] },
             path: text,
             objects: strings,
             summary: text,
@@ -201,6 +219,14 @@ export function validateKnowledgeCatalogResponse(value: unknown) {
   if (!result.valid)
     throw new Error(
       "Knowledge catalog response contract failed: " + JSON.stringify(result.errors),
+    );
+  return value;
+}
+export function validateKnowledgeNavigationResponse(value: unknown) {
+  const result = validator.validate(KNOWLEDGE_HTTP_SCHEMAS.NavigationResponse.$id, value);
+  if (!result.valid)
+    throw new Error(
+      "Knowledge navigation response contract failed: " + JSON.stringify(result.errors),
     );
   return value;
 }
