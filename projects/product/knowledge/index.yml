@@ -90,6 +90,12 @@ artifacts:
     observedDigest: ea583a16298ad3e1fe29c8758c9885941c0217264a91340c87f3625e8e7bd1ea
     files:
       - overview-file
+  - id: product-capabilities-article
+    title: Buildr 当前能力与边界
+    kind: document
+    path: knowledge/docs/capabilities.md
+    objects: [product-overview]
+    sources: [overview-positioning-spec, file-project-relations-article, overview-skill-system, task-file-task-system-md-123fb5, data-sqlite-source]
   - id: data-design-explanation
     title: Buildr 数据全景与领域设计
     kind: document
@@ -1060,6 +1066,58 @@ sources:
     kind: code
     path: services/buildr/src/modules/agent-assets/infrastructure/runtime/runtime-reconciler.ts
     summary: "核对目标安全、当前内容与归属，发现计划冲突时保持零写入；正常时更新实际变化文件并处理已证明可清理目标。"
+  - id: product-reference-cli
+    title: Buildr 命令参考
+    kind: evidence
+    path: services/buildr/docs/cli-reference.md
+  - id: product-reference-adapters
+    title: 运行时适配说明
+    kind: evidence
+    path: services/buildr/docs/agent-runtime-adapters.md
+  - id: product-reference-knowledge
+    title: 当前知识入口
+    kind: evidence
+    path: knowledge/README.md
+  - id: product-reference-usage
+    title: 日常使用手册
+    kind: evidence
+    path: knowledge/docs/guides/usage.md
+  - id: product-reference-daily-progress
+    title: 项目每日演进
+    kind: evidence
+    path: knowledge/docs/flows/project-daily-progress.md
+  - id: product-reference-limitations
+    title: 已知限制
+    kind: evidence
+    path: services/buildr/docs/known-limitations.md
+  - id: product-reference-product-architecture
+    title: 产品架构
+    kind: evidence
+    path: knowledge/docs/architecture/product.md
+  - id: product-reference-technical-architecture
+    title: 技术架构
+    kind: evidence
+    path: knowledge/docs/architecture/technical.md
+  - id: product-reference-code-map
+    title: 全项目代码地图
+    kind: evidence
+    path: knowledge/code-map/README.md
+  - id: product-reference-diagrams
+    title: 技术图目录
+    kind: evidence
+    path: knowledge/archify/index.md
+  - id: product-reference-buildr-service
+    title: Buildr Service
+    kind: evidence
+    path: knowledge/docs/services/buildr.md
+  - id: product-reference-web-service
+    title: Buildr Web Frontend Service
+    kind: evidence
+    path: knowledge/docs/services/buildr-web.md
+  - id: product-reference-openspec-lifecycle
+    title: OpenSpec 变更生命周期
+    kind: evidence
+    path: knowledge/docs/flows/openspec-change-lifecycle.md
   - id: overview-directions
     title: 后续产品方向
     kind: evidence

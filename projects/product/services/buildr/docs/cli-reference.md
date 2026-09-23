@@ -15,19 +15,68 @@
 
 ## 首次使用
 
+以下命令由智能体（Agent）执行，或供选择手动操作的人参考。先检查已有安装，并使用满足安装包 `engines.node` 要求的 Node.js；已有工作内容应保留，不重复初始化或擅自覆盖。
+
+### 安装 Buildr
+
+首次安装从 npm 官方仓库获取 `@buildr-ai/buildr`，可用版本与 `next` 指向以该仓库为准：
+
 ```bash
+npm install --global @buildr-ai/buildr@next
+buildr --version
 buildr installation status --json
-buildr runtime list --json
-buildr init --agent <claude-code|codex|cursor|qoder|trae|trae-work|workbuddy> --target <workspace> --name <name> --description <description> --profile <personal|team|company>
+buildr bootstrap guide
 ```
 
-用户要求Agent“安装Buildr”时，只从npm Registry安装`@buildr-ai/buildr`；它包含完整CLI与`buildr web`并使用满足`engines.node`的Host Node。普通安装默认不修改Applications或Start Menu；只有用户显式执行`buildr web launcher install`才创建绑定同一npm安装的本机图形入口。全局安装不写Agent runtime Skill；`init --agent`在目标Workspace首次投射Buildr Skill，`sync`/`render`负责后续收敛。
+安装包包含命令行工具（CLI）与 Buildr Web。用户明确需要 macOS 或 Windows 的本机图形入口时，再安装 Buildr Web 启动器（Launcher），将其绑定到同一 npm 安装：
 
-`init --agent` 是默认首次 onboarding 入口：它先初始化源资产，再复用完整 `sync` 执行 source update、产品 Buildr Skill 安装、workspace destination 投射和最终 doctor。`init`/`sync` 不隐式写用户级 Skills。
+```bash
+buildr web launcher install
+```
+
+其他平台通过下文的 `buildr web --target "<dir>"` 打开 Buildr Web。
+
+全局安装与启动器（Launcher）不会向尚未确认的工作空间（Workspace）写入内容，也不会安装智能体（Agent）的技能（Skill）；这些在确认目录并初始化时完成。
+
+### 确认目录并初始化
+
+安装后读取 `buildr bootstrap guide` 的当前说明，向用户确认目标目录；用户也可以在智能体（Agent）工具中打开目录后要求初始化。核对当前智能体（Agent）的身份与支持情况：
+
+```bash
+buildr runtime list --json
+```
+
+将下面的占位内容替换为已确认的值；`<agent>` 使用当前工具对应的标识，`<profile>` 选择 `personal`、`team` 或 `company`，`<dir>` 是工作空间（Workspace）根目录：
+
+```bash
+buildr init --agent "<agent>" --target "<dir>" --name "<name>" --description "<description>" --profile "<profile>"
+```
+
+`init --agent` 会先初始化源资产，再复用完整 `sync`，为当前智能体（Agent）安装或更新 Buildr 技能（Skill）、投射当前工作空间（Workspace）的内容，并给出最终诊断。根据实际结果确认准备状态，再引导用户维护项目（Project）、按需关联服务（Service），开始第一项工作。`init` 与 `sync` 不隐式安装用户级技能（Skill）。
+
+### 打开 Buildr Web
+
+打开已初始化的工作空间（Workspace）：
+
+```bash
+buildr web --target "<dir>"
+```
+
+启动器（Launcher）的状态检查、修复或卸载使用 `buildr web launcher status|repair|uninstall`。
+
+工具支持情况与使用注意事项见[运行时适配参考](agent-runtime-adapters.md)。
+
+### 后续维护
+
+已有安装与工作空间（Workspace）的更新，按当前 Buildr 技能（Skill）处理。更新产品与更新工作空间（Workspace）是不同动作，不能以其中一项代替另一项；不要自行切换已选版本轨道或降级。
 
 Skill 文件仍写入目标 Agent 的原生 Skills root。Buildr 为这些文件保存的所有权回执属于 `.buildr/agent-runtime/<workspace|user>/<adapter>/skill-projection-ownership-receipts/` 本机控制状态，并由 `init`、`sync`、`skills render` 和 Doctor 统一维护；`/.buildr/agent-runtime/` 默认忽略 Git。旧 runtime-root 回执只作为一次性迁移输入，有效且能证明当前文件时自动迁移，冲突或漂移时零写入停止。
 
-`buildr update`只更新receipt证明的当前安装渠道：development checkout使用Git安全更新，npm使用同一package/prefix，platform只协调匹配架构、摘要与签名的完整installer；unknown来源fail closed。它不接收`--target`、不读取workspace，也不修改Workspace Node。用户要求“更新workspace”或“同步workspace”时，Agent先判断workspace root是否由Git管理：Git workspace解析 `buildr.git-operations/v1` binding，并向selected provider提供明确 workspace、upstream 和 update operation，成功后执行`buildr sync <agent> --target <workspace>`；非 Git workspace 直接 sync。required provider blocked或Git决策点会阻止后续sync，Agent 不自动 stash、reset、rebase、merge 或覆盖；Git更新成功后不重复询问 sync。`buildr sync`自身不隐式执行 Git 更新，只按`.buildr/workspace.yml`恢复Workspace Node与runtime assets，不更新Buildr产品渠道。
+`buildr update` 只更新安装回执（Installation Receipt）证明的当前 npm 安装或开发检出（Development Checkout）：前者更新同一安装位置中的软件包，后者按 Git 状态更新源码；来源不明时停止。它不接收 `--target`，不负责同步工作空间（Workspace）。
+
+用户要求“更新工作空间”或“同步工作空间”时，智能体（Agent）先判断根目录是否由 Git 管理：受 Git 管理时，按 `buildr.git-operations/v1` 能力绑定（Capability Binding）选择提供者（Provider），明确目标目录、上游和更新动作，成功后执行 `buildr sync <agent> --target <workspace>`；不受 Git 管理时直接同步。所需提供者（Provider）不可用，或遇到本地改动、分叉、冲突等需要决定的情况时，停止相关更新与同步并保留现场，不自动执行 `stash`、`reset`、`rebase`、`merge` 或覆盖文件。Git 更新成功后不重复询问同步。
+
+`buildr sync` 同步当前本地工作空间（Workspace）的产品源能力，安装产品入口技能（Skill），投射当前智能体运行时（Agent Runtime）并执行最终诊断（Doctor）；它不隐式更新 Git 或 Buildr 产品安装。
 
 ## Workspace 与资产
 
@@ -39,7 +88,7 @@ Skill 文件仍写入目标 Agent 的原生 Skills root。Buildr 为这些文件
 
 | 命令 | 用途 |
 |---|---|
-| `buildr init [--agent <agent>]` | 初始化 Organization/Root，写入当前受支持 CLI 的精确 Workspace Node version 并准备受管 runtime；传入 `--agent` 时一次完成 Agent runtime 与最终 doctor。 |
+| `buildr init [--agent <agent>]` | 初始化工作空间（Workspace）源资产；传入 `--agent` 时继续完整同步，安装产品入口技能（Skill）、投射智能体运行时（Agent Runtime）并执行最终诊断（Doctor）。 |
 | `buildr web [--target <workspace>] [--no-open]` | 启动或复用只监听 `127.0.0.1` 的默认本机 Web 应用；默认打开浏览器，登记和切换多个 Workspace，`--target` 登记并打开指定 Workspace。 |
 | `buildr web preview start|list|stop` | 启动、查看或停止隔离的开发预览。带 `--task <task-id> --target <canonical-workspace>` 时，Preview使用matching Task Worktree并保存精确owner；停止时复核Worktree evidence与进程secret。不带Task时保持独立checkout preview。 |
 | `buildr installation status [--json]` | 分别报告receipt证明的npm CLI、Buildr Web Launcher、Buildr Web Dev、当前安装与当前Web实例的版本、路径、runtime role、protocol、payload和ownership identity；不扫描PATH。 |
@@ -62,7 +111,7 @@ Skill 文件仍写入目标 Agent 的原生 Skills root。Buildr 为这些文件
 | `buildr commands check [--project <project> ...]` | 按显式 Project task context 合并 requirements 并观察本机环境；无 Project 时只检查 workspace defaults。 |
 | `buildr component list/check/install/uninstall` | 管理 workspace 级 Rules、Skills、Command collections 与声明式 Skill Contribution。 |
 | `buildr builtin list/uninstall/restore` | 查看或维护 Buildr 内置能力；required 能力不能卸载。`restore` 表示明确放弃该 Builtin 的本地修改；replacement 只接管可证明为 Buildr-managed 的 predecessor，恢复 source 后再运行 `sync <agent>` 收敛 runtime。 |
-| `buildr update [check]` | 按installation receipt检查或更新当前npm/platform/development渠道；不维护workspace或Workspace Node。 |
+| `buildr update [check]` | 按安装回执（Installation Receipt）检查或更新当前 npm 安装或开发检出（Development Checkout）；不负责工作空间（Workspace）同步。 |
 
 新 Workspace 使用 `.buildr/workspace.yml` 的 `buildr.workspace/v1` schema，并与 `skills/manifest.yml.workspaceId` 共享同一 UUID。旧 metadata 可以在 `buildr web` 中只读查看；`buildr sync <agent>` 通过同一 source transaction 显式迁移两份 Manifest，identity 冲突时零写入失败。页面修改使用 revision compare-and-swap，不自动覆盖 Agent、Git 或编辑器已经产生的外部变化。
 
@@ -89,9 +138,9 @@ Git provider evidence使用`buildr.git-worktree-evidence/v1`，保存在Git comm
 | 命令 | 用途 |
 |---|---|
 | `buildr runtime list` | 查看 supported adapters、capabilities 和推荐命令。 |
-| `buildr doctor` | 只读聚合workspace、npm/platform/development/current instance安装身份、main process runtime role、独立Workspace Node声明/runtime、registries、Components和Commands；不要求main process Node等于Workspace Node。 |
+| `buildr doctor` | 只读检查工作空间（Workspace）资产、当前产品安装、智能体运行时（Agent Runtime）投射及已声明的外部命令（Command），报告问题与修复建议。 |
 | `buildr render <agent>` | 组合投射 Rules entry 与 workspace Skills 到 workspace destination，不安装产品入口 Skill。 |
-| `buildr sync <agent>` | 同步当前本地 workspace checkout 中的产品源能力、按既有精确声明恢复 Workspace Node runtime，并准备当前 Agent runtime。 |
+| `buildr sync <agent>` | 同步本地工作空间（Workspace）的产品源能力，安装产品入口技能（Skill）、投射智能体运行时（Agent Runtime）并执行最终诊断（Doctor）。 |
 | `buildr runtime check <agent>` | 专项比较某个 scope 的 runtime 期望状态。 |
 | `buildr skill install <agent>` | 只安装产品入口 Buildr Skill。 |
 | `buildr mutation recover <id>` | 从完整 transaction journal/backup 恢复未完成 source mutation。 |
