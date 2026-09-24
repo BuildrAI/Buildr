@@ -2,194 +2,107 @@
 
 中文 | [English](README.en.md)
 
-## Buildr，Agent 的工作基础设施
+## 人、企业与智能体（Agent）共同工作的基础设施
 
-限制 Agent 工作结果的，不只是模型能力，还有它能拿到什么、能不能接着已有积累继续做。
+Buildr 把项目资料、代码位置和经过验证的工作方法组织在一起。人可以查看、维护这些内容并参与判断，智能体（Agent）据此理解目标、选择方法并推进工作。
 
-Buildr 是 Agent 的工作基础设施。它把个人和组织的工作事实与工作方法沉淀为工作资产，让 Agent 可以接着已有积累，把事情从想法持续推进到交付。
+你向智能体（Agent）提出目标，在 Buildr Web 中查看资料、进展和成果。积累下来的事实和方法由个人或企业掌握，可以跨任务、跨智能体（Agent）复用，减少重复解释背景和从头摸索的成本。
 
-**让组织的工作方式，成为所有 Agent 的共同能力。**
+## 可以怎样用
 
-Agent 可用的工作事实覆盖得越广，能做的就越多；经过验证的工作方法积累得越多，工作就越稳、越好。
+- **从想法推进到交付。** 在同一个智能体（Agent）对话中梳理需求、形成方案，再推进实现、验证和交付。Buildr 组织各阶段可用的资料与方法，你参与关键判断并给予必要授权。
+- **让不同岗位基于同一份资料协作。** 产品人员维护需求和业务规则，设计、开发和测试人员通过各自的智能体（Agent）查找相关资料与代码。发现问题后修正对应资料，后续工作从更新后的依据继续。
+- **把做成事情的方法留下来。** 将经过验证的发布步骤、测试经验或业务处理方式整理成技能（Skill），连同相关资料持续维护。后续的任务和参与者可以复用这些方法，更换智能体（Agent）时也能保留已有积累。
 
-你指挥，Agent 构建；资产归你，Agent 可换。
+## 快速开始
 
-## 快速开始：只需三步
+把这份 README 交给智能体（Agent），让它帮你完成安装和准备。下面的示例可以直接发给它。参与 Buildr 自身开发，见下方[自举说明](#buildr-自举self-bootstrapping开发者与协作者)。
 
-### 1. 安装或更新 Buildr
+### 1. 安装 Buildr
 
-把这份 README 发给 Agent，然后说“帮我安装 Buildr”，或者手动执行：
+告诉智能体（Agent）：
 
-```bash
-npm install --global @buildr-ai/buildr@next
-```
+> 参考 https://github.com/BuildrAI/Buildr，帮我安装 Buildr。
 
-当前仓库候选版本为 `0.1.0-rc.24`；可安装版本与 `next` 指向始终以 npm 官方 Registry 为准。
+智能体（Agent）按[安装与初始化说明](projects/product/services/buildr/docs/cli-reference.md#首次使用)完成安装和验证。在 macOS 或 Windows 上，也可以让它安装 Buildr Web 启动器（Launcher）。
 
-如需 Buildr Web 本机入口：
+官方 npm 包名为 `@buildr-ai/buildr`。
 
-```bash
-buildr web launcher install
-```
+### 2. 初始化工作空间（Workspace）
 
-已经安装过时，直接告诉 Agent“帮我更新 Buildr”。
+工作空间（Workspace）是你和智能体（Agent）共同使用的工作目录。安装后，告诉智能体（Agent）你希望使用哪个目录；也可以先在使用智能体（Agent）的应用中打开目标目录，再说：
 
-### 2. 初始化或更新 Workspace
+> 初始化 Buildr 工作空间。
 
-进入你的工作目录，对 Agent 说：
+有些应用把打开目录称为“打开项目”。这里选择的是本地目录，Buildr 中的项目（Project）则用于组织某项业务或长期工作。
 
-```text
-用 Buildr 管理这个工作空间。
-```
-
-已有 Workspace 则说：
-
-```text
-帮我更新这个 Workspace。
-```
-
-初始化或更新 Workspace 时，Buildr 会同时为当前 Agent 安装或更新 Buildr Skill。
-
-更新 Buildr 是更新本机产品；更新 Workspace 是更新工作资产和 Agent runtime，两者互不代替。
+通常，将共同维护、由同一方管理的工作内容放在一个工作空间（Workspace）中。个人或小企业可以先从一个开始；较大的企业再按业务单元或事业部划分。
 
 ### 3. 直接开始工作
 
-Workspace 准备好后，直接告诉 Agent 你要建立什么，或者要完成什么工作：
+初始化完成后，直接告诉智能体（Agent）你的目标，例如：
 
-```text
-创建一个叫 Buildr 的项目，代码仓库是 https://github.com/xxx（可选）。
-```
+> 把这个需求梳理成方案，结合已有资料完成实现和验证，准备交付。
 
-```text
-在 Buildr 项目下创建一个 buildr 服务，代码仓库是 https://github.com/xxx（可选）。
-```
+智能体（Agent）会根据目标创建或选择项目（Project）；涉及代码、应用或模块时，再关联相应的服务（Service）和代码库。你也可以在 Buildr Web 中查看资料与进展，维护这些对象及其关联。
 
-```text
-开发一个功能：任务收尾后，复盘整个任务。要求重点分析执行耗时、重复尝试和可以改进的地方。
-```
+工作完成后，说“收尾”，由智能体（Agent）完成已授权的交付和整理。
 
-项目可以直接承载工作；只有存在代码仓、应用、模块或其他可执行资产时，才需要按需创建服务。
+### 以后需要更新时
 
-你不需要先学习 Buildr 命令，Agent 会使用 Buildr 管理工作资产，然后继续实际工作。
+在目标工作空间（Workspace）的对话中，告诉智能体（Agent）：
 
-## 三个核心价值
+> 更新 Buildr 和工作空间。
 
-### 1. 一个 Agent 窗口，从产品到发布
+当前版本主要在本机运行。工作资产（Work Asset）以文件保存，可通过 Git 协作；任务（Task）等过程记录保存在本机数据库，不会自动跨机器同步。完整能力与适用范围见[当前能力与边界](projects/product/knowledge/docs/capabilities.md)。
 
-一个需求可以持续基于同一套工作资产，从 PRD、设计、开发、测试一路推进到 CI/CD 和上线。
+## 为什么需要 Buildr
 
-如果每一步都要重新解释背景、搬运文档，Agent 就不可能稳定完成整件事。Buildr 让 Agent 完成当前阶段后，直接基于已有事实和方法进入下一阶段。
+企业拥有文档、代码、数据和软件，但把它们用于具体工作，仍需要人去寻找、理解和串联。关键做法常留在个人经验里；即使写成文档，后来的人也需要重新理解和尝试。
 
-**Buildr 自己已经跑通这条链路**：从讨论、OpenSpec 提案到开发实现、测试，再到 Git、GitHub Actions 和 npm 发布，都在同一个 Agent 窗口里完成。
+**拥有生产资料，不等于拥有持续运用这些资料的能力。** 对个人也一样：背景散落在代码仓、文档和对话中，换一次任务或智能体（Agent），就可能需要重新整理和解释。
 
-团队协作也一样：产品在项目（Project）中维护 PRD、Specs 和项目事实；内容发生变化后，设计、开发和测试的 Agent 后续都从更新后的事实继续工作。
+智能体（Agent）能够处理复杂信息、辅助思考和执行工作，Buildr 则组织它开展工作所需的资料、方法和使用入口。人和智能体（Agent）可以在已有积累上继续工作，也可以把实践中得到的新认识和方法补充进来，让下一次工作有更好的起点。
 
-### 2. 资产归你，Agent 随便换
+## 使命与愿景
 
-不同团队、不同任务会用不同 Agent。如果把规则和技能绑死在某个 Agent 里，换 Agent 就得从头迁移一遍。
+**使命：** 组织分散的工作资料与专业方法，让人和智能体（Agent）基于共同的依据协作，把工作做好。
 
-Buildr 不是另一个 Agent，也不和 Agent 抢活。它把 Agent 干活需要的工作资产和入口准备好，再把工作交给 Agent。工作资产保存在独立的工作空间（Workspace）中，由个人或组织掌控；换的是 Agent，不是你积累的东西。
+**愿景：** 让个人借助智能体（Agent）拓展能力，让企业把积累转化为能够传承、不断成长的组织能力。
 
-目前已适配 7 种 Agent，资产一套，入口不同。
+## 三方如何共同工作
 
-### 3. 人和团队变了，资产还在
+| 参与者 | 负责什么 | Buildr 提供的支持 |
+|------|----------------|------------------|
+| 人 | 提出目标与想法，参与讨论，作出决定、给予授权并验收成果 | 查看资料、进展与成果，参与维护和判断 |
+| 企业 | 组织工作并承担责任，维护属于企业的长期资产 | 持续维护资料、经验和方法，供成员与智能体（Agent）发现和复用 |
+| 智能体（Agent） | 理解目标、查找依据、选择方法，执行工作并交付成果 | 可发现、可核对的资料与方法，以及可用的工具和明确的授权边界 |
 
-关键的工作方法、项目事实如果只存在个人经验、本机文件或聊天记录里，人员变动就没了。后来的人再强，也得重新理解项目、试错、建立方法。
+三方使用的是同一套工作资料与方法：企业持续维护它们，人参与完善和判断，智能体（Agent）根据当前目标选择相关内容开展工作。
 
-Buildr 把工作资产保存在文件系统中，可使用 Git 管理。个人可以跨任务、跨项目复用自己的方法；团队和组织也不会因为人员变化失去已经积累的项目事实、规则和技能。后来的人通过 Agent，可以更快在已有基础上继续工作。
+工作中经过确认、值得复用的内容，可以继续维护为工作资产（Work Asset）。个人可以从自己的项目和方法开始，企业则在日常协作中积累和完善这些资产。
 
-## Buildr 如何工作
+## Buildr 自举（Self-Bootstrapping）：开发者与协作者
 
-Buildr 把工作方法和工作事实，组织成 Agent 可发现、可选择、可使用的工作资产：
+**Buildr 也用自身来组织开发工作。** 本仓库就是它的开发工作空间（Workspace），保存产品设计、研发方法和代码。普通用户按前面的安装步骤开始使用即可。
 
-- **工作方法**：怎么干活——规则、技能、命令，是个人或组织完成工作的能力
-- **工作事实**：干的是什么——项目文档、Specs、服务信息、代码仓库，以及它们之间的关系
+参与开发时，获取本仓库，在使用智能体（Agent）的应用中打开仓库根目录，告诉它：
 
-人指挥 Agent，Agent 管理资产：
+> 我想参与 Buildr 开发，请阅读仓库规则和产品开发说明，准备当前源码的开发环境。
 
-```text
-你说“把团队的发布流程整理成 Skill”
-  → Agent 通过 Buildr Skill 理解意图
-    → 调用 Buildr CLI 执行
-      → 发布流程沉淀为可复用的 Skill，并渲染到 Agent runtime
-```
+这是已有的工作空间（Workspace），不要当作空目录重新初始化。产品治理事实位于 `projects/product/`，可执行实现位于 `projects/product/services/buildr/`，Buildr Web 前端位于 `projects/product/services/buildr-web/`。
 
-Agent 使用 Buildr 的核心入口是 **Buildr CLI + Buildr Skill**：
+开发使用仓库内的 `projects/product/buildr`，不依赖或替换本机全局安装的 `buildr`；依赖、构建和测试命令从相应服务（Service）目录执行。具体位置见[产品开发入口](projects/product/README.md)，开始修改前阅读[贡献指南](CONTRIBUTING.md)。
 
-- **Buildr CLI**：负责创建、更新、同步和诊断工作资产
-- **Buildr Skill**：告诉 Agent 如何理解目标、选择并验证 Buildr CLI 操作
+从仓库根目录运行 `projects/product/buildr runtime list --json`，可以查看当前支持的智能体运行时（Agent Runtime）。
 
-Buildr 将工作资产的源文件保存在文件系统中，可使用 Git 管理；Agent runtime 由这些源文件渲染生成。核心模型是：
+## 深入阅读
 
-```text
-工作空间（Workspace，个人 / 团队 / 企业）
-  └── 项目（Project）
-        └── 服务（Service）
-```
+| 你想了解什么 | 阅读入口 |
+|--------------|----------|
+| 了解产品 | [产品说明](projects/product/knowledge/docs/overview.md)：协作关系、详细场景与工作组织；[当前能力与边界](projects/product/knowledge/docs/capabilities.md)：已经能做什么；[产品方向](projects/product/docs/roadmap/product-directions.md)：下一步往哪里走 |
+| 开始使用 | [日常使用手册](projects/product/knowledge/docs/guides/usage.md)：表达目标、参与判断和接续工作；[命令与适配参考](projects/product/services/buildr/docs/cli-reference.md)：手动操作及深入使用入口 |
+| 接入智能体 | [运行时适配参考](projects/product/services/buildr/docs/agent-runtime-adapters.md)：各智能体（Agent）的接入位置、刷新方式与支持边界 |
+| 参与开发 | [产品开发入口](projects/product/README.md)：源码与开发位置；[当前知识](projects/product/knowledge/README.md)：架构、代码地图与技术图；[贡献指南](CONTRIBUTING.md)：参与约定 |
 
-一个 Workspace 的文件系统结构如下：
-
-```text
-workspace/
-├── rules/                 # Agent 遵守的规则和边界
-├── skills/                # 可复用的专业动作和工作流
-├── components/            # 一组规则、技能和命令的统一生命周期
-├── commands/              # 外部 CLI 的声明与检查
-├── projects/
-│   └── <project>/
-│       ├── 项目文档 · Specs · capabilities.yml
-│       └── services/
-│           └── <service>/ # 代码仓、应用、模块
-└── Agent runtime 入口      # 渲染后的原生入口，可重建，非事实源
-```
-
-| 对象 | 说明 |
-|------|------|
-| 工作空间（Workspace） | 个人、团队或企业的工作目录和 Skill 唯一治理根 |
-| 项目（Project） | 业务或产品单元，保存项目事实、Skill applicability、capability bindings 和服务关系 |
-| 服务（Service） | 项目使用的代码仓、应用或模块 |
-
-Skill 只在工作空间的 `skills/` 维护，然后 render 到两种 Agent runtime destination：`workspace` 表示当前工作目录可发现，`user` 表示当前用户的所有工作空间可发现。项目不复制 Skill 内容，也不被 Buildr 当作安装隔离层；若某个 Skill 只适用于一个项目，由该项目的 `capabilities.yml` 表达业务适用性。
-
-Buildr 管理的是长期工作资产，不直接填充模型的 context window。Agent 根据当前任务发现和选择相关内容，形成自己的任务上下文。Agent 负责理解、检索、推理和专业执行；Buildr 负责工作资产治理、确定性状态变更、runtime 投射、完整性保护和诊断。
-
-## 当前能力
-
-- 一个工作空间（Workspace）管理多个项目（Project）；每个项目可按需要管理多个服务（Service）
-- 规则、工作空间级 Skills、组件和命令等资产的统一管理；Skill 支持 user/workspace destination 与同名冲突预检
-- 管理任务（Task）从规划、环境、开发、审查、验证到交付和复盘的过程事实
-- Buildr Web：在本机浏览器中查看和管理工作空间、项目、服务、文档、任务、验证与执行记录；当前仍在持续完善
-- 支持 7 个 Agent runtime adapter（claude-code、codex、cursor、qoder、trae、trae-work、workbuddy）
-
-详细边界见[已知限制](projects/product/services/buildr/docs/known-limitations.md)。
-
-## 文档
-
-- [当前知识统一入口](projects/product/knowledge/README.md)：代码地图、技术图与面向人的解释文档
-
-- [日常使用手册](projects/product/knowledge/docs/guides/usage.md)：安装、Workspace 准备和日常工作流程
-- [产品说明](projects/product/knowledge/docs/overview.md)：定位、核心模型、当前边界与未来方向入口
-- [Buildr Skill](projects/product/services/buildr/resources/runtime/skills/buildr/SKILL.md)：Agent 使用 Buildr 的主要入口
-- [Buildr 全项目代码地图](projects/product/knowledge/code-map/README.md)：从系统、模块、对象到调用、数据与副作用的四层导航
-- [Buildr 系统总览图](projects/product/knowledge/archify/system/buildr-system-overview.html)与[能力、数据及副作用流](projects/product/knowledge/archify/flows/capability-data-responsibility.html)：可交互当前态技术图
-- [CLI Reference](projects/product/services/buildr/docs/cli-reference.md)：公开命令和参数
-- [Runtime Adapters](projects/product/services/buildr/docs/agent-runtime-adapters.md)：各 Agent 的接入方式和限制
-- [OpenSpec specs](projects/product/openspec/specs/)：规范性产品行为契约
-
-## Buildr 自举 workspace：开发者与协作者
-
-普通用户只需安装 npm 版本，不需要克隆本仓库。参与 Buildr 开发时：
-
-```bash
-git clone https://github.com/BuildrAI/Buildr.git
-cd Buildr/projects/product
-npm ci
-./buildr --help
-./buildr runtime list --json
-```
-
-开发 checkout 使用仓库内的 `projects/product/buildr`，不依赖 PATH 中的全局 `buildr`。Product 治理事实位于 `projects/product/`，CLI 与 runtime 实现在 `services/buildr/`，Buildr Web 前端在 `services/buildr-web/`。
-
-开始修改前请阅读[贡献指南](CONTRIBUTING.md)。
-
-[贡献指南](CONTRIBUTING.md) · [安全报告](SECURITY.md) · [MIT License](LICENSE) · [GitHub Issues](https://github.com/BuildrAI/Buildr/issues)
+[安全报告](SECURITY.md) · [MIT License](LICENSE) · [GitHub Issues](https://github.com/BuildrAI/Buildr/issues)

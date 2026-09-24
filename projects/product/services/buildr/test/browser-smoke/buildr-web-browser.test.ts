@@ -18,6 +18,7 @@ import { recordVerificationResultFromEvidence } from '../helpers/task-verificati
 import { runWorkbenchJourney } from './workbench-journey.ts';
 import { runPublicationJourney, publicationTestPng } from './publication-journey.ts';
 import { runServiceKnowledgeJourney } from './service-knowledge-journey.ts';
+import { runProjectKnowledgeInitializationJourney } from './knowledge-initialization-journey.ts';
 
 const PRODUCT_ROOT: any = path.resolve(import.meta.dirname, '../..');
 const BUILDR: any = path.join(PRODUCT_ROOT, 'bin', 'buildr.mjs');
@@ -330,7 +331,7 @@ async function capture(page: any, name: any): Promise<any>  {
   await page.screenshot({ path: path.join(SCREENSHOT_DIR, name), fullPage: true, animations: 'disabled' });
 }
 
-test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('all') || SELECTORS.has('task') ? 300_000 : SELECTORS.has('workbench') || SELECTORS.has('articles') || SELECTORS.has('shell') || SELECTORS.has('service') ? 120_000 : 45_000 }, async (t: any) => {
+test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('all') || SELECTORS.has('task') ? 300_000 : SELECTORS.has('workbench') || SELECTORS.has('articles') || SELECTORS.has('shell') || SELECTORS.has('service') || SELECTORS.has('project') ? 120_000 : 45_000 }, async (t: any) => {
   const requestedSmokeRoot: any = process.env.BUILDR_SMOKE_ROOT;
   const managedSmokeRoot: any = requestedSmokeRoot && fs.existsSync(path.join(requestedSmokeRoot, '.buildr-smoke-owner')) ? requestedSmokeRoot : null;
   const base: any = managedSmokeRoot || fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-browser-smoke-'));
@@ -493,14 +494,17 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.locator('#skills-search').fill('no-such-skill-xyz');
     await page.getByRole('button', { name: '清除搜索', exact: true }).click();
     await page.locator('#skills-add').click();
+    await page.getByRole('button', { name: '通过智能体接入外部技能或生成内容', exact: true }).click();
     await page.locator('#skill-action-input').fill('https://example.invalid/skill');
     assert.match(await page.locator('#skill-prompt').inputValue(), /example.invalid/);
     await page.getByRole('button', { name: '关闭技能操作', exact: true }).click();
     await page.locator('.skills-action-drawer').waitFor({ state: 'detached' });
     await page.locator('#skills-add').click();
+    await page.getByRole('button', { name: '通过智能体接入外部技能或生成内容', exact: true }).click();
     assert.equal(await page.locator('#skill-action-input').inputValue(), 'https://example.invalid/skill');
     await page.goto(`${url}/workspaces/${otherWorkspaceId}/skills`);
     await page.locator('#skills-add').click();
+    await page.getByRole('button', { name: '通过智能体接入外部技能或生成内容', exact: true }).click();
     assert.equal(await page.locator('#skill-action-input').inputValue(), '');
     await page.getByRole('button', { name: '关闭技能操作', exact: true }).click();
     await page.locator('.skills-action-drawer').waitFor({ state: 'detached' });
@@ -748,6 +752,10 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.setViewportSize({ width: 1280, height: 720 });
   });
 
+  if (selected('project')) await t.test('空项目首次建设有默认目标，打开与复制不执行写入，错误读取不误判为空', { timeout: 25_000 }, async () => {
+    await runProjectKnowledgeInitializationJourney({ page, workspaceRoot, workspaceUrl, expectedBrowserErrors, capture });
+  });
+
   if (selected('project')) await t.test('项目主页单次读取登记，服务列表不依赖旧详情请求', async () => {
     const apiPrefix = `/api/v1/workspaces/${initialWorkspaceId}`;
     const catalogPath = `${apiPrefix}/asset-catalog`;
@@ -791,11 +799,12 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.equal(await page.getByText('操作', { exact: true }).filter({ visible: true }).count(), 0);
     assert.equal(await page.locator('.overview-strip, .related-resource-links').count(), 0);
     assert.equal(await page.locator('.project-home-entries .project-home-entry').count(), 3);
-    assert.deepEqual(await page.locator('.project-home-entry strong').allTextContents(), ['项目知识', '项目文章', '项目动态']);
+    await page.locator('.project-home-entries [data-knowledge-initialize-action]:visible').waitFor({ state: 'visible' });
+    assert.deepEqual(await page.locator('.project-home-entry strong').allTextContents(), ['建立项目知识', '项目文章', '项目动态']);
     assert.equal(await page.locator('[data-doc-row="daily"]').count(), 0, '每日演进不再作为项目资料');
     assert.equal(await page.locator('[data-doc-row="readme"], [data-doc-row="agents"]').count(), 2);
     assert.equal(await page.getByRole('button', { name: '查看项目工作', exact: false }).count(), 1);
-    assert.equal(await page.getByRole('button', { name: '移除项目登记', exact: true }).count(), 0);
+    assert.equal(await page.getByRole('button', { name: /^移\s*除$/ }).count(), 0);
     assert.equal(await page.getByRole('button', { name: '更多项目操作', exact: true }).count(), 1);
     await page.setViewportSize({ width: 1680, height: 900 });
     const entryBoxes = await page.locator('.project-home-entry').evaluateAll((items: Element[]) => items.map(item => ({ top: item.getBoundingClientRect().top, height: item.getBoundingClientRect().height })));
@@ -921,6 +930,25 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.setViewportSize({ width: 1280, height: 720 });
   });
 
+  if (selected('project')) await t.test('代码库已有目录可以移除并重新登记且保留 Git 内容', async () => {
+    const repositoryPath = 'repositories/browser-retained', location = path.join(workspaceRoot, repositoryPath);
+    fs.mkdirSync(location, { recursive: true }); runGit(location, ['init', '-b', 'main']); fs.writeFileSync(path.join(location, 'keep.txt'), 'repository bytes');
+    if (runtime.assetCatalog(workspaceRoot).migrationRequired) runtime.migrateAssetCatalog(workspaceRoot, { revision: runtime.assetCatalog(workspaceRoot).revision });
+    await page.goto(`${workspaceUrl}/repositories`);
+    for (let round = 0; round < 2; round++) {
+      await page.getByRole('button', { name: '新增代码库', exact: true }).click();
+      await page.getByRole('combobox', { name: '已有代码库目录', exact: true }).click();
+      await page.getByTitle(repositoryPath, { exact: true }).click();
+      await page.getByRole('button', { name: '登记代码库', exact: true }).click();
+      await page.locator('#repository-create').waitFor({ state: 'detached' });
+      const row = page.locator('#repository-table-wrap tr').filter({ hasText: 'browser-retained' }); await row.waitFor();
+      await row.getByRole('button', { name: /^移\s*除$/ }).click();
+      await page.getByRole('dialog').getByRole('button', { name: /^移\s*除$/ }).click();
+      await row.waitFor({ state: 'hidden' });
+      assert.equal(fs.readFileSync(path.join(location, 'keep.txt'), 'utf8'), 'repository bytes'); assert.ok(fs.existsSync(path.join(location, '.git')));
+    }
+  });
+
   if (selected('project')) await t.test('项目连续新增服务和代码库仅在外层提交时保存', async () => {
     await page.goto(`${workspaceUrl}/projects/new`);
     const migration = page.getByRole('button', { name: '迁移登记', exact: true });
@@ -952,7 +980,10 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     const repository = saved.repositories.find((r: any) => r.code === 'nested-code');
     assert.deepEqual(project.serviceIds, [service.id]);
     assert.equal(service.repositoryId, repository.id);
-    assert.equal(repository.available, false);
+    assert.equal(repository.present, true);
+    assert.equal(repository.source.path, 'projects/nested-project/services/nested-business');
+    assert.equal(runtime.catalogRepositoryStatus(workspaceRoot, repository.id).available, false);
+    assert.ok(fs.existsSync(path.join(workspaceRoot, repository.source.path, 'AGENTS.md')));
     await page.getByRole('button', { name: '解除关联 嵌套业务服务', exact: true }).click();
     await page.getByRole('link', { name: '嵌套业务服务', exact: true }).waitFor({ state: 'hidden' });
     assert.equal(await page.locator('#project-service-count').innerText(), '0');
@@ -1000,8 +1031,8 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     fs.rmSync(missing);
     await page.goto(`${workspaceUrl}/projects/register-browser`);
     await page.getByRole('button', { name: '更多项目操作', exact: true }).click();
-    await page.getByRole('menuitem', { name: '移除项目登记', exact: true }).click();
-    await page.getByRole('dialog').getByRole('button', { name: '移除登记', exact: true }).click();
+    await page.getByRole('menuitem', { name: /^移\s*除$/ }).click();
+    await page.getByRole('dialog').getByRole('button', { name: /^移\s*除$/ }).click();
     await page.waitForURL(`${workspaceUrl}/projects`);
     await page.getByRole('dialog').waitFor({ state: 'hidden' });
     await page.locator('#project-directory-create-button').click();
@@ -1110,6 +1141,57 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.setViewportSize({ width: 1280, height: 720 });
   });
 
+  if (selected('service')) await t.test('目录登记流程移除后保留文件，服务与技能均可重新选择', async () => {
+    const directoryPath = 'projects/demo/services/retained-browser';
+    const directory = path.join(workspaceRoot, directoryPath);
+    fs.mkdirSync(directory, { recursive: true }); fs.writeFileSync(path.join(directory, 'keep.txt'), 'browser retained');
+    await page.goto(`${workspaceUrl}/services`);
+    for (let round = 0; round < 2; round++) {
+      await page.getByRole('button', { name: '新增服务', exact: true }).click();
+      await page.getByRole('textbox', { name: '服务名称', exact: true }).fill('目录登记服务');
+      await page.getByRole('textbox', { name: '服务标识', exact: true }).fill('retained-browser');
+      await page.getByRole('combobox', { name: '已有服务目录', exact: true }).click();
+      await page.getByTitle(directoryPath, { exact: true }).click();
+      await page.getByRole('button', { name: '添加服务', exact: true }).click();
+      await page.locator('#catalog-service-create').waitFor({ state: 'detached' });
+      const row = page.locator('#service-table-body tr').filter({ hasText: '目录登记服务' });
+      await row.waitFor();
+      await row.getByRole('button', { name: /^移\s*除$/ }).click();
+      await page.getByRole('dialog').getByRole('button', { name: /^移\s*除$/ }).click();
+      await row.waitFor({ state: 'hidden' });
+      assert.equal(fs.readFileSync(path.join(directory, 'keep.txt'), 'utf8'), 'browser retained');
+      assert.equal(fs.existsSync(path.join(directory, 'AGENTS.md')), false);
+    }
+    await page.getByRole('button', { name: '新增服务', exact: true }).click();
+    await page.getByRole('textbox', { name: '服务名称', exact: true }).fill('新目录服务');
+    await page.getByRole('textbox', { name: '服务标识', exact: true }).fill('new-directory-browser');
+    await page.getByRole('combobox', { name: '所在项目', exact: true }).click();
+    await page.getByTitle('演示项目', { exact: true }).click();
+    await page.getByRole('button', { name: '添加服务', exact: true }).click();
+    await page.locator('#catalog-service-create').waitFor({ state: 'detached' });
+    assert.ok(fs.existsSync(path.join(workspaceRoot, 'projects/demo/services/new-directory-browser/AGENTS.md')));
+    await page.goto(`${workspaceUrl}/skills`);
+    await page.locator('#skills-add').click();
+    await page.getByRole('textbox', { name: '技能标识', exact: true }).fill('retained-browser-skill');
+    await page.getByRole('textbox', { name: '技能描述', exact: true }).fill('保留文件');
+    await page.getByRole('textbox', { name: '技能正文', exact: true }).fill('# 浏览器保留技能\n\n正文不改写。');
+    await page.getByRole('button', { name: '保存技能', exact: true }).click();
+    await page.locator('#skill-registration').waitFor({ state: 'detached' });
+    const skillFile = path.join(workspaceRoot, 'skills/retained-browser-skill/SKILL.md'), bytes = fs.readFileSync(skillFile);
+    const skillRow = page.locator('[data-skill-id="retained-browser-skill"]');
+    await skillRow.getByRole('button', { name: /^移\s*除$/ }).click();
+    await page.getByRole('dialog').getByRole('button', { name: /^移\s*除$/ }).click();
+    await skillRow.waitFor({ state: 'hidden' }); assert.deepEqual(fs.readFileSync(skillFile), bytes);
+    await page.locator('#skills-add').click();
+    await page.getByRole('combobox', { name: '已有技能目录', exact: true }).click();
+    await page.getByTitle('skills/retained-browser-skill', { exact: true }).click();
+    await page.getByRole('button', { name: '保存技能', exact: true }).click();
+    await page.locator('#skill-registration').waitFor({ state: 'detached' }); await skillRow.waitFor();
+    assert.deepEqual(fs.readFileSync(skillFile), bytes);
+    await page.goto(`${workspaceUrl}/services`);
+    await page.locator('#service-table-body a[href*="/services/"]').filter({ hasText: /^演示服务$/ }).click();
+  });
+
   if (selected('service')) await t.test('独立列表快速读取，服务和项目删除保留文件与代码库', async () => {
     let c = runtime.assetCatalog(workspaceRoot);
     if (c.migrationRequired) c = runtime.migrateAssetCatalog(workspaceRoot, { revision: c.revision });
@@ -1127,12 +1209,12 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.ok(requests.some(url => url.endsWith('/services')));
     assert.ok(!requests.some(url => url.endsWith('/asset-catalog')));
     page.off('request', collect);
-    await page.locator('#service-table-body tr').filter({ hasText: '删除验收服务' }).getByRole('button', { name: '移除登记', exact: true }).click();
+    await page.locator('#service-table-body tr').filter({ hasText: '删除验收服务' }).getByRole('button', { name: /^移\s*除$/ }).click();
     await page.getByRole('dialog').getByText(/将解除这些项目的引用：删除验收项目/).waitFor();
     await page.getByRole('dialog').getByRole('button', { name: /^取\s*消$/ }).click();
     assert.ok(runtime.assetCatalog(workspaceRoot).services.some((s: any) => s.id === service.id));
-    await page.locator('#service-table-body tr').filter({ hasText: '删除验收服务' }).getByRole('button', { name: '移除登记', exact: true }).click();
-    await page.getByRole('dialog').getByRole('button', { name: '移除登记', exact: true }).click();
+    await page.locator('#service-table-body tr').filter({ hasText: '删除验收服务' }).getByRole('button', { name: /^移\s*除$/ }).click();
+    await page.getByRole('dialog').getByRole('button', { name: /^移\s*除$/ }).click();
     await page.getByRole('dialog').waitFor({ state: 'hidden' });
     await page.locator('#service-table-body tr').filter({ hasText: '删除验收服务' }).waitFor({ state: 'hidden' });
     c = runtime.assetCatalog(workspaceRoot);
@@ -1141,12 +1223,58 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.ok(fs.existsSync(path.join(workspaceRoot, 'services/delete-browser-api/AGENTS.md')));
     await page.goto(`${workspaceUrl}/projects/delete-browser`);
     await page.getByRole('button', { name: '更多项目操作', exact: true }).click();
-    await page.getByRole('menuitem', { name: '移除项目登记', exact: true }).click();
-    await page.getByRole('dialog').getByRole('button', { name: '移除登记', exact: true }).click();
+    await page.getByRole('menuitem', { name: /^移\s*除$/ }).click();
+    await page.getByRole('dialog').getByRole('button', { name: /^移\s*除$/ }).click();
     await page.waitForURL(`${workspaceUrl}/projects`);
     await page.getByRole('dialog').waitFor({ state: 'hidden' });
     assert.equal(await page.getByRole('tab', { name: '删除验收项目', exact: true }).count(), 0);
     assert.ok(fs.existsSync(path.join(workspaceRoot, 'projects/delete-browser/AGENTS.md')));
+  });
+
+  if (selected('service')) await t.test('连续编辑三个服务使用新读取版本，真实冲突仍保留输入', async () => {
+    let c = runtime.assetCatalog(workspaceRoot);
+    if (c.migrationRequired) c = runtime.migrateAssetCatalog(workspaceRoot, { revision: c.revision });
+    c = runtime.createCatalogProject(workspaceRoot, {
+      revision: c.revision, code: 'sequential-edit', name: '连续编辑项目',
+      newServices: [1, 2, 3].map(n => ({ code: `sequential-${n}`, name: `连续编辑服务${n}`, repository: { code: `sequential-code-${n}`, url: `https://example.com/sequential-${n}.git`, integrationBranch: 'main' } })),
+    });
+    const catalogUrl = `${url}/api/v1/workspaces/${initialWorkspaceId}/asset-catalog`;
+    // Keep the fresh read behind the initial render so a cached snapshot cannot
+    // accidentally pass by winning the network race.
+    const delayRead = async (route: any) => {
+      const response = await route.fetch();
+      await new Promise(resolve => setTimeout(resolve, 150));
+      await route.fulfill({ response });
+    };
+    await page.route(catalogUrl, delayRead);
+    try {
+      await page.goto(`${workspaceUrl}/services`);
+      for (const n of [1, 2, 3]) {
+        await page.locator('#service-table-body tr').filter({ hasText: `连续编辑服务${n}` }).getByRole('button', { name: '编辑', exact: true }).click();
+        await page.getByRole('textbox', { name: '名称', exact: true }).fill(`已修改服务${n}`);
+        const saved = page.waitForResponse((response: any) => response.request().method() === 'PUT' && response.url().includes('/asset-catalog/service/'));
+        await page.locator('#catalog-edit-save').click();
+        assert.equal((await saved).status(), 200, `第 ${n} 次保存不应误报版本冲突`);
+        await page.getByRole('dialog').waitFor({ state: 'hidden' });
+        await page.locator('#service-table-body tr').filter({ hasText: `已修改服务${n}` }).waitFor();
+      }
+      await page.locator('#service-table-body tr').filter({ hasText: '已修改服务3' }).getByRole('button', { name: '编辑', exact: true }).click();
+      await page.getByRole('textbox', { name: '名称', exact: true }).fill('保留我的输入');
+      c = runtime.assetCatalog(workspaceRoot);
+      const service = c.services.find((s: any) => s.code === 'sequential-3');
+      runtime.updateCatalogAsset(workspaceRoot, 'service', service.id, { revision: c.revision, name: '另一入口修改' });
+      const updateUrl = `${catalogUrl}/service/${service.id}`;
+      expectedBrowserErrors.add(updateUrl);
+      const rejected = page.waitForResponse((response: any) => response.request().method() === 'PUT' && response.url() === updateUrl);
+      await page.locator('#catalog-edit-save').click();
+      assert.equal((await rejected).status(), 409);
+      assert.equal(await page.getByRole('textbox', { name: '名称', exact: true }).inputValue(), '保留我的输入');
+      assert.equal(runtime.assetCatalog(workspaceRoot).services.find((s: any) => s.id === service.id).name, '另一入口修改');
+      await page.getByRole('button', { name: '关闭编辑', exact: true }).click();
+      await page.getByRole('dialog').waitFor({ state: 'hidden' });
+    } finally {
+      await page.unroute(catalogUrl, delayRead);
+    }
   });
 
   if (selected('service')) await t.test('代码库完整声明可编辑，本地分支独立保存且实际 Git 保持不变', async () => {

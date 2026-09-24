@@ -22,9 +22,9 @@ Give this README to an Agent and say “Install Buildr for me,” or run:
 npm install --global @buildr-ai/buildr@next
 ```
 
-The current repository candidate is `0.1.0-rc.24`; available versions and the `next` dist-tag are always determined by the official npm Registry.
+Available versions and the `next` dist-tag are determined by the official npm Registry.
 
-For an optional local Buildr Web launcher:
+For an optional local Buildr Web launcher on macOS or Windows:
 
 ```bash
 buildr web launcher install
@@ -163,9 +163,9 @@ See [Known Limitations](projects/product/services/buildr/docs/known-limitations.
 
 ## Documentation
 
-- [Daily Manual](projects/product/docs/manual/README.md): installation, Workspace preparation, and daily workflows
-- [Buildr Product](projects/product/docs/buildr-product.md): complete positioning, core model, boundaries, and Roadmap
-- [Buildr Skill](projects/product/services/buildr/package/targets/runtime/skills/buildr/SKILL.md): the primary entry point for Agents using Buildr
+- [Daily Manual](projects/product/knowledge/docs/guides/usage.md): expressing goals, participating in decisions, and continuing work
+- [Buildr Product](projects/product/knowledge/docs/overview.md): positioning, collaboration, use cases, and links to current capabilities and future directions
+- [Buildr Skill](projects/product/services/buildr/resources/runtime/skills/buildr/SKILL.md): the primary entry point for Agents using Buildr
 - [CLI Reference](projects/product/services/buildr/docs/cli-reference.md): public commands and parameters
 - [Runtime Adapters](projects/product/services/buildr/docs/agent-runtime-adapters.md): integration paths and limitations for each Agent
 - [OpenSpec Specifications](projects/product/openspec/specs/): normative product behavior contracts
@@ -174,12 +174,14 @@ See [Known Limitations](projects/product/services/buildr/docs/known-limitations.
 
 Regular users only need the npm package and do not need to clone this repository. To contribute to Buildr:
 
+Use the exact Node.js version declared in [`projects/product/.node-version`](projects/product/.node-version), or point `BUILDR_NODE` to that executable.
+
 ```bash
 git clone https://github.com/BuildrAI/Buildr.git
-cd Buildr/projects/product
-npm ci
-./buildr --help
-./buildr runtime list --json
+cd Buildr/projects/product/services/buildr
+./tools/development/run-development-npm ci
+../../buildr --help
+../../buildr runtime list --json
 ```
 
 A development checkout uses the repository's `projects/product/buildr` entry instead of the global `buildr` on PATH. Product governance lives under `projects/product/`; the CLI and runtime are implemented in `services/buildr/`, and the Buildr Web frontend lives in `services/buildr-web/`.

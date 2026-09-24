@@ -23,7 +23,7 @@
 
 项目（Project）通过 `projects/manifest.yml` 的 `serviceIds` 引用服务（Service）；全局 `services/manifest.yml` 中每个服务只引用一个 `repositoryId`，多个服务可以共用代码库实例（Repository Instance）。实例的来源、远端和集成分支在 `repositories/manifest.yml` 维护。新代码库使用 git 来源并对应真实 Git 根目录；工作空间自身仓库使用路径 `.`，服务子目录写入 `modulePath`。已有本地仓库允许不声明远端；旧 workspace 来源只兼容读取，不虚构 Git 地址或集成分支。
 
-先运行 `buildr assets inspect --target <workspace> --json` 读取当前对象、版本和引用；这不是 Git 状态检查。界面服务与代码库列表分别使用 `/api/v1/services`、`/api/v1/repositories`；单仓库状态通过 `/api/v1/repositories/:id/status` 按需读取，完整关系接口不扫描 Git。服务规则位于 `services/<code>/AGENTS.md`；代码目录的实际规则继续适用。结合任务明确选择项目业务上下文，不把所有引用项目的规则自动拼接，也不按当前目录猜测业务归属。
+先运行 `buildr assets inspect --target <workspace> --json` 读取当前对象、版本和引用；这不是 Git 状态检查。界面服务与代码库列表分别使用 `/api/v1/services`、`/api/v1/repositories`；单仓库状态通过 `/api/v1/repositories/:id/status` 按需读取，完整关系接口不扫描 Git。新目录流程的服务规则位于实际服务目录；旧 `services/<code>/AGENTS.md` 保留兼容读取，代码目录的实际规则继续适用。结合任务明确选择项目业务上下文，不把所有引用项目的规则自动拼接，也不按当前目录猜测业务归属。
 
 ### 维护登记与关联
 
@@ -31,11 +31,19 @@
 
 旧项目内服务清单可兼容读取；`migrationRequired` 为 true 时先检查转换后的身份、重复代码与实际目录，再显式执行 `buildr assets migrate --target <workspace> --input <json-file> --json`。迁移保留旧标识及代码位置，不按相同 Git 地址合并实例，不搬动代码。旧项目中的服务代码重名时，在迁移输入中明确提供 `codeMappings`，以旧 `project/service` 为键、新全局代码为值；核对映射后再写入。旧 `service create <project>/<service>` 仅用于尚未迁移的工作空间；迁移后使用全局资产入口。
 
-删除项目或服务登记使用 `buildr assets delete <project|service> <id> --target <workspace> --input <json-file> --json`，输入只包含当前 `revision`。先说明受影响引用；删除只移除登记及关系，保留代码、文件与历史任务。核对返回清单确认对象及相关引用已移除，不把文件保留误报为删除失败。
+移除项目、服务或未被引用的代码库登记使用 `buildr assets remove <project|service|repository> <id> --target <workspace> --input <json-file> --json`，输入只包含当前 `revision`。先说明受影响引用；移除只取消登记及关系，保留代码、文件与历史任务。核对返回清单确认对象及相关引用已移除，不把文件保留误报为删除失败。
 
 旧 workspace 子目录登记需要归并时，先核对实际 Git 根和模块目录，再执行 `buildr assets normalize --target <workspace> --input <json-file> --json`，输入包含当前 `revision`。动作按真实根归并仓库并重算服务 `modulePath`，保留服务身份，不按相同远端合并不同目录。失败时保留原声明；成功后核对仓库数量、模块定位和旧服务文档。
 
 服务编辑可在 `assets update service <id>` 输入中提供嵌套 `repository` 草稿，与 `repositoryId` 互斥。新代码库登记和服务引用在同一事务保存；失败不留部分登记，取消草稿不写入。
+
+### 已有目录与新建
+
+项目使用 `assets project-candidates` 和 `assets register project`；服务使用 `assets service-candidates`，创建输入的 `service.directoryMode` 为 `existing` 时提供候选 `directoryPath` 和 `directoryObservation`，为 `create` 时提供 `projectCode`，在 `projects/<项目>/services/<服务标识>/` 新建。项目内嵌新增由父项目提供位置。系统解析并复用代码库，内部 `modulePath` 不作为服务目录选择输入；未准备的代码库不得报告为可用。
+
+代码库使用 `assets repository-candidates` 选择尚未登记的真实仓库根，创建输入包含 `path` 和候选 `observation`。保留外部绝对路径输入；不执行克隆、搬迁或远端改写。被服务引用的代码库必须先调整引用再移除。
+
+技能网页支持选择 `skills/` 下未登记目录，或新建本地技能；通过命令重新登记保留目录时使用 `skills add --source <原目录>`。移除只取消登记，已有投射需另行同步，不声称其他会话已卸载。永久删除代码和文件属于未来独立功能；兼容的 `assets delete` 仍只取消登记，不可作为永久删除入口。
 
 ### 修改代码库声明
 
@@ -99,7 +107,7 @@
 - Workspace 是唯一 Skill source authority：源资产位于 workspace `skills/manifest.yml` 与 `skills/<skill-id>/`。Project 只在 `capabilities.yml` 引用 workspace Skill 并声明 requirements/bindings/applicability，不作为安装或可见性边界。
 - 本地作者型 Skill 可以只适用于某个 Project，但内容仍在 workspace 维护，由 Project applicability 表达业务范围；远端发布型 Skill 适合已发布或外部维护的 Skill。
 - Buildr 随包场景化流程通过 workspace Skills 承载；Rule 保留 Agent 价值观、边界和约束。
-- 本地作者型：`buildr skills add [<id>] --source <skill-dir> --target <workspace>`；删除用 `buildr skills remove <id> --target <workspace>`。旧 `--scope .` 只作 deprecated 兼容；Project scope 已不受支持。
+- 本地作者型：`buildr skills add [<id>] --source <skill-dir> --target <workspace>`；移除登记用 `buildr skills remove <id> --target <workspace>`，保留本地源目录和全部文件；组件受管技能继续走组件维护入口，不能借此删除成员。旧 `--scope .` 只作 deprecated 兼容；Project scope 已不受支持。
 - 本地作者型和 package Skill 的完整源目录可包含 `SKILL.md` 以及 `agents/`、`assets/`、`examples/`、`references/`、`scripts/`、`templates/`；render 保留随附文件的原始字节与 owner executable 状态，只有 `SKILL.md` 会注入 managed marker、contributions、capability bindings 和 adapter context。
 - 通用 Skill 合法性和 Codex 发布都只要求有效 `SKILL.md`，`name` 与 `description` 承担发现和路由。adapter-specific optional extensions 由目标 runtime descriptor 独立校验：Codex/OpenAI 只校验已经存在的 `agents/openai.yaml`，缺失不阻塞、不生成也不反写；其他 adapter 可保留但不消费已有 vendor metadata。Skill 正文使用模板或脚本时，从当前 runtime `SKILL.md` 所在目录解析相对路径，核心行为不得依赖 vendor metadata。
 - Provider/consumer 声明使用可重复的 `--provides <capability>@<version>` 和 `--requires <capability>@<version>:<required|optional>`；显式选择用 `buildr skills bind <capability>@<version> --provider <skill-id> --scope <scope> --target <dir>`，取消选择用 `skills unbind`。

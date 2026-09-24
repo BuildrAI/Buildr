@@ -104,8 +104,8 @@ const clearInstance = (expected: WebInstance | null, profile: WebProfile): boole
 const instanceDisposition: (instance: WebInstance, binding: LauncherBinding) => InstanceDisposition = npmLauncherInstanceDisposition;
 const matchesBinding: (instance: WebInstance, binding: LauncherBinding) => boolean = matchesNpmLauncherBinding;
 const shutdownInstance: (instance: WebInstance) => Promise<unknown> = requestBuildrWebInstanceShutdown;
-const waitForExit: (instance: WebInstance, options: { profile: WebProfile }) => Promise<{ status: string }> = waitForBuildrWebInstanceExit;
-const waitForInstance = (options: { profile: WebProfile; match: ((instance: WebInstance) => boolean) | null }): Promise<WebInstance | null> => Reflect.apply(waitForBuildrWebInstance, undefined, [options]);
+const waitForExit: (instance: WebInstance, options: { profile: WebProfile; attempts?: number; intervalMs?: number }) => Promise<{ status: string }> = waitForBuildrWebInstanceExit;
+const waitForInstance = (options: { profile: WebProfile; match: ((instance: WebInstance) => boolean) | null; attempts?: number; intervalMs?: number }): Promise<WebInstance | null> => Reflect.apply(waitForBuildrWebInstance, undefined, [options]);
 const writeInstance: (runtime: WebRuntime, instance: WebInstance) => string = writeBuildrWebInstance;
 const launcherFromEnvironment: () => LauncherIdentity | null = readLauncherIdentityFromEnvironment;
 const openBrowser: (url: string) => void = openDefaultBrowser;
@@ -116,6 +116,24 @@ function errorDetails(error: unknown): BuildrError {
 
 function codedError(message: string, code: string, status?: number, details?: unknown): BuildrError {
   return Object.assign(new Error(message), { code, status, details });
+}
+
+// Launcher handoff waits for an old instance to exit and a concurrent one to
+// become healthy. The local default is intentionally tight (2s) so a real hang
+// surfaces fast with a clear error; loaded CI runners need a larger budget for
+// the same graceful shutdown, so widen only there (or via explicit override).
+const HANDOFF_WAIT_INTERVAL_MS = 50;
+const HANDOFF_WAIT_LOCAL_ATTEMPTS = 40;
+const HANDOFF_WAIT_CI_ATTEMPTS = 1200;
+const HANDOFF_WAIT_OVERRIDE_ENV = 'BUILDR_LAUNCHER_HANDOFF_WAIT_MS';
+
+export function handoffWaitBudget(env: Record<string, string | undefined> = process.env): { attempts: number; intervalMs: number } {
+  const raw = env[HANDOFF_WAIT_OVERRIDE_ENV];
+  const overrideMs = raw === undefined || raw === '' ? Number.NaN : Number(raw);
+  if (Number.isFinite(overrideMs) && overrideMs > 0) {
+    return { attempts: Math.max(1, Math.ceil(overrideMs / HANDOFF_WAIT_INTERVAL_MS)), intervalMs: HANDOFF_WAIT_INTERVAL_MS };
+  }
+  return { attempts: env.CI ? HANDOFF_WAIT_CI_ATTEMPTS : HANDOFF_WAIT_LOCAL_ATTEMPTS, intervalMs: HANDOFF_WAIT_INTERVAL_MS };
 }
 
 export function registerWebInstanceLifecycle(runtime: WebRuntime, options: WebLifecycleOptions): WebRuntime {
@@ -136,6 +154,7 @@ export function registerWebInstanceLifecycle(runtime: WebRuntime, options: WebLi
     const launcherIdentity = npmLauncherBinding || launcherFromEnvironment();
     const previewIdentity = readPreviewIdentityFromEnvironment();
     const webProfile = resolveProfile(productIdentity);
+    const handoffWait = handoffWaitBudget();
     assertProfile(launcherIdentity, webProfile, { productIdentity, productRoot: runtime.productRoot() });
     const initialWorkspaceId = targetRoot ? options.ensureRegisteredTarget(targetRoot) : null;
 
@@ -186,7 +205,7 @@ export function registerWebInstanceLifecycle(runtime: WebRuntime, options: WebLi
 
     const startLock = acquireLock(webProfile);
     if (!startLock.owner) {
-      const started = await waitForInstance({ profile: webProfile, match: npmLauncherBinding ? (value) => matchesBinding(value, npmLauncherBinding) : null });
+      const started = await waitForInstance({ profile: webProfile, match: npmLauncherBinding ? (value) => matchesBinding(value, npmLauncherBinding) : null, ...handoffWait });
       if (!started) throw codedError(npmLauncherBinding ? '并发 Launcher 没有在预期时间内启动当前 binding 的健康 Buildr Web；未把旧实例视为托管成功。' : '另一个 Buildr 启动进程没有在预期时间内就绪，请稍后重试。', npmLauncherBinding ? 'launcher_handoff_concurrent_wait_timeout' : 'web_start_wait_timeout');
       assertCompatibleInstance(started);
       return reuseInstance(started);
@@ -206,7 +225,7 @@ export function registerWebInstanceLifecycle(runtime: WebRuntime, options: WebLi
         if (disposition.disposition === 'reuse') return reuseInstance(currentHealthy, startLock);
         if (!['handoff-cli', 'handoff-launcher'].includes(disposition.disposition)) throw launcherConflict(disposition, currentHealthy);
         await shutdownInstance(currentHealthy);
-        const exit = await waitForExit(currentHealthy, { profile: webProfile });
+        const exit = await waitForExit(currentHealthy, { profile: webProfile, ...handoffWait });
         if (exit.status !== 'exited') throw codedError(
           exit.status === 'replaced' ? 'Launcher 交接期间实例 receipt 被另一实例替换，已保留现场并停止启动。' : '旧 Buildr Web 未在预期时间内完成认证退出，已保留现场并停止启动。',
           exit.status === 'replaced' ? 'launcher_handoff_receipt_replaced' : 'launcher_handoff_shutdown_timeout',

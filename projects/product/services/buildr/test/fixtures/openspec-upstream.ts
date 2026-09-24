@@ -9,16 +9,19 @@ import type { TestContext } from 'node:test';
 export const executable = path.resolve(import.meta.dirname, `../../node_modules/.bin/openspec${process.platform === 'win32' ? '.cmd' : ''}`);
 export const executableIdentity = { sourceKind: 'external-declared', reference: 'external:openspec', version: '1.13.0', sha256: 'fixture-exact-installation' };
 export const requirement = (name: string) => `### Requirement: ${name}\nThe system MUST provide ${name}.\n\n#### Scenario: ${name} works\n- **WHEN** requested\n- **THEN** the result is returned\n`;
-export function fixture(t: TestContext, delta = `## ADDED Requirements\n\n${requirement('New')}`) {
+export function fixture(t: TestContext, delta = `## ADDED Requirements\n\n${requirement('New')}`, options: { capability?: string; prewriteTarget?: boolean } = {}) {
+  const capability = options.capability ?? 'demo';
+  const prewriteTarget = options.prewriteTarget ?? true;
   const root = fs.mkdtempSync(path.join(os.tmpdir(),'buildr-upstream-openspec-'));
   t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
   const changeRoot=path.join(root,'openspec/changes/change-a');
-  const target=path.join(root,'openspec/specs/demo/spec.md');
+  const target=path.join(root,`openspec/specs/${capability}/spec.md`);
   const write=(file:string,content:string)=>{fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,content);};
-  write(target,`# demo Specification\n\n## Purpose\n\nThis fixture describes a public behavior with enough context for upstream strict validation.\n\n## Requirements\n\n${requirement('Existing')}`);
-  write(path.join(changeRoot,'specs/demo/spec.md'),delta);
+  if (prewriteTarget) write(target,`# ${capability} Specification\n\n## Purpose\n\nThis fixture describes a public behavior with enough context for upstream strict validation.\n\n## Requirements\n\n${requirement('Existing')}`);
+  write(path.join(changeRoot,`specs/${capability}/spec.md`),delta);
   write(path.join(changeRoot,'.openspec.yaml'),'schema: spec-driven\n');
-  write(path.join(changeRoot,'proposal.md'),'## Why\n\nTest upstream integration.\n\n## What Changes\n\nAdd behavior.\n\n## Capabilities\n\n### Modified Capabilities\n\n- `demo`: Update behavior.\n');
+  const capabilitiesHeading = prewriteTarget ? '### Modified Capabilities' : '### Added Capabilities';
+  write(path.join(changeRoot,'proposal.md'),`## Why\n\nTest upstream integration.\n\n## What Changes\n\nAdd behavior.\n\n## Capabilities\n\n${capabilitiesHeading}\n\n- \`${capability}\`: Update behavior.\n`);
   write(path.join(changeRoot,'tasks.md'),'## 1. Implementation\n\n- [x] 1.1 Implement behavior\n');
   const data=readUpstreamOpenSpec(executable,root,changeRoot);
   const context={change:'change-a',project:'demo',projectRoot:root,changeRoot,delta:upstreamDelta(data)};

@@ -1,3 +1,4 @@
+import { createSkillRegistration } from './skill-registration.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import YAML from 'yaml';
@@ -412,17 +413,6 @@ export function registerDomainsSkills(dependencies: SkillsDependencies) {
     return { action, providerId, impacts };
   }
 
-  function safeSkillSourceDir(scopeRoot: any, skillPath: any): any  {
-    const normalized = normalizeRelativePathForBuildr(skillPath, `Skill path must stay inside skills root: ${skillPath}`);
-    const skillsRoot = path.join(scopeRoot, 'skills');
-    const sourceDir = path.resolve(skillsRoot, normalized);
-    const relative = path.relative(skillsRoot, sourceDir);
-    if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) {
-      throw new Error(`Refusing to delete unsafe Skill path: ${skillPath}`);
-    }
-    return assertSafeAssetTarget(scopeRoot, sourceDir, skillsRoot, 'Skill delete target');
-  }
-
   function skillsRemoveUnsafe(input: any): any  {
     const { id, targetRoot, scopeInput = null } = input;
     assertName(id, 'Skill id');
@@ -441,30 +431,14 @@ export function registerDomainsSkills(dependencies: SkillsDependencies) {
       if (owner) throw new Error(`Skill is managed by Component ${owner}: skills/${removed.path}. Use buildr component lifecycle commands.`);
     }
     manifest.splice(existingIndex, 1);
-    const updatedPaths: any[] = [];
-    let assetLabel = 'Skill 源资产';
-    if (removed.path) {
-      const sharedReference = manifest.find((skill: any) => skill.path === removed.path);
-      if (sharedReference) {
-        throw new Error(`Refusing to remove Skill source shared by another manifest entry: ${removed.path}`);
-      }
-      const sourceDir = safeSkillSourceDir(scopeRoot, removed.path);
-      const manifestPath = writeSkillsManifest(scopeRoot, manifest);
-      updatedPaths.push(manifestPath);
-      if (existsDirectory(sourceDir)) fs.rmSync(sourceDir, { recursive: true, force: true });
-      updatedPaths.push(sourceDir);
-    } else {
-      const manifestPath = writeSkillsManifest(scopeRoot, manifest);
-      updatedPaths.push(manifestPath);
-      assetLabel = 'Skill 远端资产';
-    }
-    return { action: '删除', targetRoot, id, updatedPaths, skippedEntries: [], nextAction: '如果当前 Agent runtime 已渲染该 Skill，按当前 Agent runtime 能力执行 Skills render、runtime check 或 doctor。', assetLabel, deprecatedScope, impacts: impact?.impacts || [] };
+    const manifestPath = writeSkillsManifest(scopeRoot, manifest);
+    return { action: '移除', targetRoot, id, updatedPaths: [manifestPath], skippedEntries: [], nextAction: '源目录和文件已保留；已有运行时投射需另行同步，不代表已经移除。', assetLabel: 'Skill 登记', deprecatedScope, impacts: impact?.impacts || [] };
   }
 
   function skillsRemove(input: any): any  {
     const { targetRoot, scopeInput = null } = input;
     const { scopeRoot } = scopeRootForSkills(targetRoot, scopeInput);
-    const result = withWorkspaceMutation(targetRoot, 'skills.remove', [path.join(scopeRoot, 'skills')], () => skillsRemoveUnsafe(input));
+    const result = withWorkspaceMutation(targetRoot, 'skills.remove', [path.join(scopeRoot, 'skills/manifest.yml')], () => skillsRemoveUnsafe(input));
     return result;
   }
 
@@ -550,7 +524,9 @@ export function registerDomainsSkills(dependencies: SkillsDependencies) {
     return result;
   }
 
+  const registration = createSkillRegistration({ read: readSkillsManifestForWrite, write: writeSkillsManifest, owner: componentOwnerForMember, inspect: inspectSkillSource, mutate: withWorkspaceMutation, writeFile: atomicWriteFile, remove: skillsRemoveUnsafe, impacts: discloseSelectedProviderImpact, assertName, assertWorkspace: assertInitializedBuildrWorkspace });
   return Object.freeze({
+    ...registration,
     manifestDocumentFor,
     readSkillManifest,
     readSkillManifestSchemaVersion,

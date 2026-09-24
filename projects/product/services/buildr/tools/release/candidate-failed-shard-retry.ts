@@ -11,9 +11,9 @@ function execute(command: any, args: any, options: any = {}): any  {
   return spawnCommandSync(command, args, { encoding: 'utf8', ...options });
 }
 
-function invoke(run: any, command: any, args: any, cwd: any): any  {
-  const result: any = run(command, args, { cwd });
-  if (result.status !== 0) throw new Error(`${command} ${args.join(' ')} failed: ${String(result.stderr || result.stdout || '').trim()}`);
+function invoke(run: any, command: any, args: any, cwd: any, timeout = 30_000): any  {
+  const result: any = run(command, args, { cwd, timeout });
+  if (result.status !== 0) throw new Error(`${command} ${args.join(' ')} failed: ${String(result.stderr || result.stdout || result.error?.message || '').trim()}`);
   return String(result.stdout || '').trim();
 }
 
@@ -80,7 +80,7 @@ export function inspectCandidateFailedShardRetry(options: any, dependencies: any
   if (aggregate?.conclusion !== 'failure') findings.push({ code: 'candidate-aggregate-not-failed', actual: aggregate?.conclusion ?? null });
   let failureClass = 'diagnosis-required';
   if (findings.length === 0) {
-    const log = invoke(run, gh, ['run', 'view', String(runId), '--repo', releasePublishAuthority.repository, '--log-failed'], repo);
+    const log = invoke(run, gh, ['run', 'view', String(runId), '--repo', releasePublishAuthority.repository, '--log-failed'], repo, 90_000);
     failureClass = classifyCandidateFailure(log);
     if (failureClass !== 'transient') findings.push({ code: 'candidate-failure-needs-diagnosis', classification: failureClass });
   }

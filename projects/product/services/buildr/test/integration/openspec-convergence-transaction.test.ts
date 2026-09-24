@@ -2,13 +2,21 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fixture } from '../fixtures/openspec-upstream.ts';
+import { fixture, requirement } from '../fixtures/openspec-upstream.ts';
 import { runOpenSpecConvergence, convergenceReceiptPath } from '../../src/modules/openspec/application/openspec-converge.ts';
 
 test('converge delegates actual spec writing and archive to OpenSpec 1.13',t=>{
  const f=fixture(t); const r=f.run(); assert.equal(r.status,'passed',JSON.stringify(r));
  assert.match(fs.readFileSync(f.target,'utf8'),/Requirement: New/);assert.ok(!fs.existsSync(f.changeRoot));
  assert.ok(!fs.existsSync(convergenceReceiptPath(f.input.resolveArchivedChangeRoot())));
+ assert.deepEqual(r.execution.map(x=>x.id),['upstream-preview','upstream-archive']);
+});
+test('converge archives a brand-new capability whose canonical spec directory does not exist yet',t=>{
+ const f=fixture(t,`## ADDED Requirements\n\n${requirement('Fresh')}`,{capability:'brand-new',prewriteTarget:false});
+ assert.ok(!fs.existsSync(path.dirname(f.target)),'canonical capability directory must start absent');
+ const r=f.run(); assert.equal(r.status,'passed',JSON.stringify(r));
+ assert.match(fs.readFileSync(f.target,'utf8'),/Requirement: Fresh/);
+ assert.ok(!fs.existsSync(f.changeRoot));
  assert.deepEqual(r.execution.map(x=>x.id),['upstream-preview','upstream-archive']);
 });
 test('incomplete checklist prevents upstream archive',t=>{

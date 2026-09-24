@@ -3,6 +3,22 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+// A brand-new capability has no canonical spec directory yet, so realpath the
+// nearest existing ancestor and re-append the missing segments instead of
+// failing on the absent capability directory.
+function resolveSpecTarget(target: string): string {
+  if (fs.existsSync(target)) return fs.realpathSync.native(target);
+  let directory = path.dirname(target);
+  const tail = [path.basename(target)];
+  while (!fs.existsSync(directory)) {
+    const parent = path.dirname(directory);
+    if (parent === directory) break;
+    tail.unshift(path.basename(directory));
+    directory = parent;
+  }
+  return path.join(fs.realpathSync.native(directory), ...tail);
+}
+
 async function main() {
 const input = JSON.parse(fs.readFileSync(0, 'utf8'));
 input.projectRoot = fs.realpathSync.native(input.projectRoot);
@@ -61,9 +77,7 @@ for (const update of updates) {
       const validation = await new Validator().validateSpecContent(update.id, built.rebuilt);
       if (!validation.valid) throw new Error(JSON.stringify(validation.issues));
     }
-    const target = fs.existsSync(update.target)
-      ? fs.realpathSync.native(update.target)
-      : path.join(fs.realpathSync.native(path.dirname(update.target)), path.basename(update.target));
+    const target = resolveSpecTarget(update.target);
     const relative = path.relative(input.projectRoot, target);
     if (relative.startsWith('..') || path.isAbsolute(relative)) throw new Error('Spec target escapes selected project.');
     const beforeContent = update.exists ? fs.readFileSync(update.target, 'utf8') : '';

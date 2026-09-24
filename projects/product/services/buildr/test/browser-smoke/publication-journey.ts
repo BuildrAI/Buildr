@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { TestContext } from 'node:test';
 import type { Locator, Page, Request } from 'playwright-core';
+import { openKnowledgeTopicDirectory, selectKnowledgeChildTopic, verifyKnowledgeQuestionHandoff } from './knowledge-local-reading-journey.ts';
 
 export const publicationTestPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aN1sAAAAASUVORK5CYII=', 'base64');
 
@@ -50,7 +51,13 @@ export async function runPublicationJourney({ t, page, workspaceRoot, workspaceU
       assert.equal(data.observations.filter((item: { id: string }) => item.id === sourceId).length, 1);
       return data;
     } catch (error) {
-      throw new Error(`读取来源 ${sourceId} 失败；点击后的 GET 请求：${requested.join('；') || '无'}`, { cause: error });
+      await capture(page, `knowledge-source-${sourceId}-failure.png`).catch(() => {});
+      const readingState = await page.locator('.workspace-page:not([hidden])').evaluateAll(elements => elements.map(element => ({
+        title: element.querySelector('h1')?.textContent,
+        views: Array.from(element.querySelectorAll('[data-knowledge-view]')).filter(view => (view as HTMLElement).offsetWidth > 0).map(view => view.getAttribute('data-knowledge-view')),
+        sources: Array.from(element.querySelectorAll('[data-knowledge-source]')).filter(source => (source as HTMLElement).offsetWidth > 0).map(source => source.getAttribute('data-knowledge-source')),
+      }))).catch(() => []);
+      throw new Error(`读取来源 ${sourceId} 失败；点击后的 GET 请求：${requested.join('；') || '无'}；当前阅读：${JSON.stringify(readingState)}`, { cause: error });
     } finally {
       page.off('request', observe);
     }
@@ -88,13 +95,112 @@ export async function runPublicationJourney({ t, page, workspaceRoot, workspaceU
     const guideData = await openKnowledgeSource(rendered.getByRole('link', { name: '建设指引', exact: true }), 'architecture-guide');
     const guideSource = guideData.observations.find((item: { id: string }) => item.id === 'architecture-guide');
     assert.equal(guideSource?.path, 'references/architecture-knowledge.md');
-    assert.match(guideSource?.content || '', /^# 用户引导的架构知识建设/m);
-    await pane.locator('[data-knowledge-source="architecture-guide"]:visible').getByRole('heading', { name: '用户引导的架构知识建设', exact: true }).waitFor({ state: 'visible' });
+    const expectedGuide = fs.readFileSync(path.join(workspaceRoot, 'skills/buildr/current-knowledge-maintenance/references/architecture-knowledge.md'), 'utf8');
+    assert.equal(guideSource?.content, expectedGuide, '建设指引读取当前隔离工作空间已安装的真实参考文件');
+    const guideHeading = expectedGuide.match(/^# (.+)$/m)?.[1];
+    assert.ok(guideHeading, '当前建设指引有可阅读标题');
+    await pane.locator('[data-knowledge-source="architecture-guide"]:visible').getByRole('heading', { name: guideHeading, exact: true }).waitFor({ state: 'visible' });
     assert.equal(page.url(), readingUrl);
     await pane.getByRole('button', { name: '← 返回Markdown 正文源', exact: true }).click();
     await rendered.locator('iframe').waitFor({ state: 'visible' });
     await rendered.locator('[data-knowledge-artifact="browser-map"]').waitFor({ state: 'visible' });
   };
+
+  await t.test('项目知识默认进入主题，目录与分类可达，全部资料保留搜索和返回', async () => {
+    await page.setViewportSize({ width: 1680, height: 1000 });
+    const knowledgeUrl = `${workspaceUrl}/knowledge/project/product`;
+    const indexFile = path.join(workspaceRoot, 'projects/product/knowledge/index.yml');
+    const indexBefore = fs.readFileSync(indexFile, 'utf8');
+    const main = () => visible().locator('.knowledge-page:visible');
+    const topic = (id: string) => main().locator(`[data-knowledge-topic-content="${id}"]:visible`);
+    const writes: string[] = [];
+    const collectWrites = (request: Request) => { if (request.url().includes('/knowledge/') && !['GET', 'HEAD'].includes(request.method())) writes.push(`${request.method()} ${request.url()}`); };
+    page.on('request', collectWrites);
+    try {
+      await page.goto(knowledgeUrl);
+      await topic('browser-reading').locator('[data-knowledge-artifact="browser-explanation"]').waitFor({ state: 'visible' });
+      assert.equal(new URL(page.url()).searchParams.get('object'), 'browser-reading', '默认入口由显式 entryObject 决定');
+      await main().locator('[data-knowledge-topic="browser-reading"]:visible').waitFor({ state: 'visible' });
+      await main().getByRole('tab', { name: '技术图', exact: true }).click();
+      await topic('browser-reading').locator('[data-knowledge-artifact="browser-diagram"] iframe').waitFor({ state: 'visible' });
+      await main().getByRole('tab', { name: '代码地图', exact: true }).click();
+      await topic('browser-reading').locator('[data-knowledge-artifact="browser-map"]').waitFor({ state: 'visible' });
+      await main().getByRole('tab', { name: '说明', exact: true }).click();
+      await topic('browser-reading').locator('[data-knowledge-artifact="browser-explanation"]').waitFor({ state: 'visible' });
+      await selectKnowledgeChildTopic(main(), 'browser-reading', 'browser-details');
+      await topic('browser-details').locator('[data-knowledge-artifact="browser-details-article"]').waitFor({ state: 'visible' });
+      assert.equal(new URL(page.url()).searchParams.get('object'), 'browser-details');
+      await page.goBack();
+      await topic('browser-reading').locator('[data-knowledge-artifact="browser-explanation"]').waitFor({ state: 'visible' });
+
+      await page.setViewportSize({ width: 390, height: 844 });
+      await main().locator('[data-knowledge-topic-disclosure]:visible').waitFor({ state: 'visible' });
+      await selectKnowledgeChildTopic(main(), 'browser-reading', 'browser-details');
+      await topic('browser-details').locator('[data-knowledge-artifact="browser-details-article"]').waitFor({ state: 'visible' });
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+      await capture(page, 'knowledge-topic-navigation-mobile.png');
+      await page.setViewportSize({ width: 1680, height: 1000 });
+      await openKnowledgeTopicDirectory(main());
+      await main().locator('[data-knowledge-all]:visible').click();
+      await main().getByRole('textbox', { name: '检索知识', exact: true }).waitFor({ state: 'visible' });
+      assert.equal(new URL(page.url()).searchParams.get('browse'), 'all');
+      await main().getByRole('textbox', { name: '检索知识', exact: true }).fill('深入阅读');
+      await main().locator('[data-knowledge-entry="browser-details-article"]').waitFor({ state: 'visible' });
+      assert.equal(await main().locator('[data-knowledge-entry]').count(), 1);
+      await main().locator('[data-knowledge-entry="browser-details-article"]').click();
+      await main().locator('[data-knowledge-artifact="browser-details-article"]').waitFor({ state: 'visible' });
+      await page.goBack();
+      await main().locator('[data-knowledge-entry="browser-details-article"]').waitFor({ state: 'visible' });
+      assert.equal(await main().getByRole('textbox', { name: '检索知识', exact: true }).inputValue(), '深入阅读');
+      assert.deepEqual(writes, [], '主题、目录与分类阅读不得写回知识');
+      assert.equal(fs.readFileSync(indexFile, 'utf8'), indexBefore);
+    } finally { page.off('request', collectWrites); await page.setViewportSize({ width: 1680, height: 1000 }); }
+  });
+
+  await t.test('未声明入口的旧知识索引仍可从主题目录与全部资料阅读', async () => {
+    const indexFile = path.join(workspaceRoot, 'projects/product/knowledge/index.yml');
+    const original = fs.readFileSync(indexFile, 'utf8');
+    const legacy = JSON.parse(original); delete legacy.entryObject;
+    fs.writeFileSync(indexFile, JSON.stringify(legacy));
+    try {
+      await page.goto(`${workspaceUrl}/knowledge/project/product`);
+      const main = visible().locator('.knowledge-page:visible');
+      await openKnowledgeTopicDirectory(main);
+      await main.locator('[data-knowledge-topic="browser-reading"]:visible').waitFor({ state: 'visible' });
+      assert.equal(await main.locator('[data-knowledge-topic-content]:visible').count(), 0, '旧索引不猜测首个主题为默认入口');
+      await main.locator('[data-knowledge-all]:visible').click();
+      await main.locator('[data-knowledge-entry="browser-explanation"]').waitFor({ state: 'visible' });
+      assert.equal(new URL(page.url()).searchParams.get('browse'), 'all');
+    } finally { fs.writeFileSync(indexFile, original); }
+  });
+
+  await t.test('已有图或地图的空说明分类与零搜索不误报首次建设', async () => {
+    const indexFile = path.join(workspaceRoot, 'projects/product/knowledge/index.yml');
+    const original = fs.readFileSync(indexFile, 'utf8');
+    const onlyViews = JSON.parse(original);
+    onlyViews.artifacts = onlyViews.artifacts.filter((item: { kind: string }) => item.kind !== 'document');
+    fs.writeFileSync(indexFile, JSON.stringify(onlyViews));
+    const main = () => visible().locator('.knowledge-page:visible');
+    try {
+      const response = await page.request.get(`${apiBase}/knowledge/project/product/navigation`);
+      assert.equal(response.status(), 200);
+      assert.equal((await response.json()).artifactCount, 2, '全范围成果计数包含技术图与代码地图');
+      await page.goto(`${workspaceUrl}/knowledge/project/product?browse=all`);
+      await main().getByText('当前分类尚未建设内容。', { exact: true }).waitFor({ state: 'visible' });
+      assert.equal(await main().locator('[data-knowledge-initialize-action]:visible').count(), 0, '没有说明文档不等于全范围空知识');
+      await main().getByRole('tab', { name: /技术图$/ }).click();
+      await main().locator('[data-knowledge-entry="browser-diagram"]').waitFor({ state: 'visible' });
+      await main().getByRole('tab', { name: /代码地图$/ }).click();
+      await main().locator('[data-knowledge-entry="browser-map"]').waitFor({ state: 'visible' });
+    } finally { fs.writeFileSync(indexFile, original); }
+
+    await page.goto(`${workspaceUrl}/knowledge/project/product?browse=all`);
+    await main().locator('[data-knowledge-entry="browser-explanation"]').waitFor({ state: 'visible' });
+    await main().getByRole('textbox', { name: '检索知识', exact: true }).fill('不会匹配的知识标题xyz');
+    await main().getByText('没有匹配内容，试试其他关键词。', { exact: true }).waitFor({ state: 'visible' });
+    assert.equal(await main().locator('[data-knowledge-initialize-action]:visible').count(), 0, '搜索零结果不能覆盖已有成果的事实');
+    assert.equal(fs.readFileSync(indexFile, 'utf8'), original, '分类与检索不改写知识索引');
+  });
 
   await t.test('旧文章链接保留真实图片，文章列表搜索与阅读往返保持条件', async () => {
     await page.setViewportSize({ width: 1680, height: 1000 });
@@ -137,6 +243,8 @@ export async function runPublicationJourney({ t, page, workspaceRoot, workspaceU
     await knowledge.locator('iframe').waitFor({ state: 'visible' });
     await knowledge.locator('[data-knowledge-artifact="browser-map"]').waitFor({ state: 'visible' });
     assert.doesNotMatch(await knowledge.innerText(), /!\[|\]\(\.\.\//);
+    await verifyKnowledgeQuestionHandoff(page, visible().locator('.pane-right').getByRole('button', { name: '追问当前内容', exact: true }), ['browser-explanation', 'browser-source', '"kind": "project"']);
+    await knowledge.waitFor({ state: 'visible' });
     await knowledge.getByRole('link', { name: '引用来源', exact: true }).click();
     await visible().getByText('这是真实来源说明。', { exact: false }).last().waitFor({ state: 'visible' });
     await visible().getByRole('button', { name: '← 返回浏览器知识说明', exact: true }).click();
@@ -165,6 +273,8 @@ export async function runPublicationJourney({ t, page, workspaceRoot, workspaceU
     await page.goto(readingUrl);
     const mainMap = visible().locator('.pane-left [data-knowledge-artifact="browser-map"]');
     await mainMap.waitFor({ state: 'visible' });
+    await verifyKnowledgeQuestionHandoff(page, visible().locator('.pane-left').getByRole('button', { name: '追问当前内容', exact: true }), ['browser-map', '"kind": "project"']);
+    assert.equal(page.url(), readingUrl, '追问返回后保持主屏阅读位置');
     await verifyMarkdownSource(mainMap.getByRole('button', { name: /Markdown 正文源$/ }));
     assert.equal(page.url(), readingUrl);
     assert.equal(await mainMap.isVisible(), true);
@@ -296,14 +406,16 @@ function writeReadingFixture(workspaceRoot: string) {
   const put = (file: string, content: string) => { const target = path.join(projectRoot, file); fs.mkdirSync(path.dirname(target), { recursive: true }); fs.writeFileSync(target, content); };
   fs.appendFileSync(path.join(projectRoot, 'docs/publications/article.md'), '\n' + Array.from({ length: 80 }, (_, i) => `段落 ${i + 1}：阅读位置需要在展开、编辑和返回后保持。${'这是一段用于验证长文阅读布局的内容。'.repeat(8)}\n`).join('\n'));
   put('README.md', '# 来源说明\n\n这是真实来源说明。\n');
+  put('knowledge/docs/details.md', '# 深入阅读说明\n\n这是子主题的独立说明。\n');
   put('knowledge/docs/explanation.md', `# 浏览器知识说明\n\n[引用来源](../../README.md)\n\n[建设指引](../../${guideLink})\n\n![测试技术图](../archify/diagram.html)\n\n![测试地图](../code-map/implementation.md)\n`);
   put('knowledge/code-map/implementation.md', '# 测试代码地图\n\n说明实现职责与对应来源。\n\n- [Markdown 正文源](../docs/explanation.md) — 查看当前正文与图示\n');
   put('knowledge/archify/diagram.html', '<!doctype html><html lang="zh-CN"><body><svg viewBox="0 0 600 200" xmlns="http://www.w3.org/2000/svg"><rect x="10" y="10" width="580" height="180" fill="#edf5f1"/><text x="30" y="80">知识阅读测试图</text></svg></body></html>');
   put('knowledge/index.yml', JSON.stringify({
-    schemaVersion: 'buildr.knowledge-index/v1', scope: { kind: 'project', id: 'product' },
-    objects: [{ id: 'browser-reading', title: '浏览器阅读', summary: '关联阅读测试' }],
+    schemaVersion: 'buildr.knowledge-index/v1', scope: { kind: 'project', id: 'product' }, entryObject: 'browser-reading',
+    objects: [{ id: 'browser-reading', title: '浏览器阅读', summary: '关联阅读测试' }, { id: 'browser-details', title: '深入阅读', parent: 'browser-reading', summary: '子主题与目录往返。' }],
     sources: [{ id: 'browser-source', title: '引用来源', kind: 'spec', path: 'README.md' }, { id: 'file-explanation', title: 'Markdown 正文源', kind: 'code', path: 'knowledge/docs/explanation.md' }, { id: 'architecture-guide', title: '建设指引', kind: 'skill', skillId: 'current-knowledge-maintenance', path: 'references/architecture-knowledge.md', link: guideLink }],
     artifacts: [
+      { id: 'browser-details-article', title: '深入阅读说明', kind: 'document', path: 'knowledge/docs/details.md', objects: ['browser-details'], sources: [] },
       { id: 'browser-explanation', title: '浏览器知识说明', kind: 'document', path: 'knowledge/docs/explanation.md', objects: ['browser-reading'], sources: ['browser-source', 'architecture-guide'] },
       { id: 'browser-diagram', title: '测试技术图', kind: 'diagram', path: 'knowledge/archify/diagram.html', objects: ['browser-reading'], sources: [] },
       { id: 'browser-map', title: '测试代码地图', kind: 'code-map', path: 'knowledge/code-map/implementation.md', objects: ['browser-reading'], sources: ['file-explanation'] },

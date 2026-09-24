@@ -584,3 +584,91 @@ test('invalid or ambiguous inline repository service updates leave every manifes
   files.forEach((file, i) => assert.deepEqual(fs.readFileSync(path.join(root, file)), bytes[i]));
   assert.equal(runtime.assetCatalog(root).repositories.length, 1);
 });
+
+test('service directories register existing code, remove without writes and register again', (t: any) => {
+  const { root, runtime } = setup(t); let c = ready(runtime, root);
+  c = runtime.createCatalogProject(root, { revision: c.revision, code: 'directory-project', name: '目录项目' });
+  const directoryPath = 'projects/directory-project/services/existing';
+  const directory = path.join(root, directoryPath); fs.mkdirSync(directory, { recursive: true });
+  fs.writeFileSync(path.join(directory, 'README.md'), 'original bytes\n');
+  const candidate = runtime.listCatalogDirectoryCandidates(root, 'service').candidates.find((c: any) => c.path === directoryPath);
+  assert.ok(candidate);
+  const service = { code: 'existing', name: '已有服务', directoryMode: 'existing', directoryPath, directoryObservation: candidate.observation };
+  c = runtime.createCatalogService(root, { revision: c.revision, service });
+  assert.equal(c.projects.find((p: any) => p.code === 'directory-project').serviceIds.length, 1);
+  const created = c.services.find((s: any) => s.code === 'existing');
+  assert.ok(created.repositoryId); assert.equal(fs.existsSync(path.join(directory, 'AGENTS.md')), false);
+  assert.equal(fs.existsSync(path.join(root, 'services/existing')), false);
+  assert.ok(!runtime.listCatalogDirectoryCandidates(root, 'service').candidates.some((d: any) => d.path === directoryPath));
+  c = runtime.deleteCatalogAsset(root, 'service', created.id, { revision: c.revision });
+  assert.equal(fs.readFileSync(path.join(directory, 'README.md'), 'utf8'), 'original bytes\n');
+  c = runtime.createCatalogService(root, { revision: c.revision, service });
+  assert.notEqual(c.services.find((s: any) => s.code === 'existing').id, created.id);
+  assert.equal(fs.readdirSync(directory).join(), 'README.md');
+});
+
+test('new nested services create in project and transaction failure leaves no directory', (t: any) => {
+  const { root, runtime } = setup(t); let c = ready(runtime, root);
+  c = runtime.createCatalogProject(root, { revision: c.revision, code: 'new-directory-project', name: '新项目', newServices: [{ code: 'api', name: 'API', directoryMode: 'create' }] });
+  assert.ok(fs.existsSync(path.join(root, 'projects/new-directory-project/services/api/AGENTS.md')));
+  const project = c.projects.find((p: any) => p.code === 'new-directory-project');
+  assert.equal(project.serviceIds.length, 1);
+  assert.throws(() => runtime.createCatalogService(root, { revision: c.revision, service: { code: 'api', name: '重复', directoryMode: 'create', projectCode: project.code } }), /已存在|重复/);
+  const original = runtime.atomicWriteFile;
+  runtime.atomicWriteFile = (file: string, content: string) => { if (file.endsWith('services/manifest.yml')) throw new Error('injected-directory-failure'); return original(file, content); };
+  try { assert.throws(() => runtime.createCatalogService(root, { revision: c.revision, service: { code: 'rollback', name: '回滚', directoryMode: 'create', projectCode: project.code } }), /injected-directory-failure/); }
+  finally { runtime.atomicWriteFile = original; }
+  assert.equal(fs.existsSync(path.join(root, 'projects/new-directory-project/services/rollback')), false);
+  assert.equal(runtime.assetCatalog(root).revision, c.revision);
+});
+
+test('service registration rejects replaced directories and unsafe links with zero writes', (t: any) => {
+  const { root, runtime } = setup(t); let c = ready(runtime, root);
+  c = runtime.createCatalogProject(root, { revision: c.revision, code: 'observe', name: '观察' });
+  const relative = 'projects/observe/services/api', directory = path.join(root, relative); fs.mkdirSync(directory, { recursive: true });
+  const old = runtime.listCatalogDirectoryCandidates(root, 'service').candidates.find((d: any) => d.path === relative);
+  fs.renameSync(directory, directory + '-old'); fs.mkdirSync(directory);
+  assert.throws(() => runtime.createCatalogService(root, { revision: c.revision, service: { code: 'api', name: 'API', directoryMode: 'existing', directoryPath: relative, directoryObservation: old.observation } }), (e: any) => e.code === 'asset_directory_changed');
+  assert.equal(runtime.assetCatalog(root).revision, c.revision);
+  fs.symlinkSync(directory + '-old', path.join(root, 'projects/observe/services/link'));
+  assert.ok(!runtime.listCatalogDirectoryCandidates(root, 'service').candidates.some((d: any) => d.path.endsWith('/link')));
+});
+
+test('repository candidates are real roots; removal protects references and preserves Git files', (t: any) => {
+  const { root, runtime } = setup(t); let c = ready(runtime, root);
+  const directory = path.join(root, 'repositories/retained'); fs.mkdirSync(directory, { recursive: true });
+  assert.equal(spawnSync('git', ['init', '-b', 'main'], { cwd: directory }).status, 0);
+  fs.writeFileSync(path.join(directory, 'keep.txt'), 'keep');
+  const candidate = runtime.listCatalogDirectoryCandidates(root, 'repository').candidates.find((d: any) => d.path === 'repositories/retained'); assert.ok(candidate);
+  c = runtime.createCatalogRepository(root, { revision: c.revision, code: 'retained', path: candidate.path, observation: candidate.observation });
+  const repositoryId = c.repositories.find((r: any) => r.code === 'retained').id;
+  c = runtime.createCatalogService(root, { revision: c.revision, service: { code: 'ref', name: '引用服务', repositoryId } });
+  assert.throws(() => runtime.deleteCatalogAsset(root, 'repository', repositoryId, { revision: c.revision }), (e: any) => e.code === 'repository_in_use');
+  c = runtime.deleteCatalogAsset(root, 'service', c.services.find((s: any) => s.code === 'ref').id, { revision: c.revision });
+  c = runtime.deleteCatalogAsset(root, 'repository', repositoryId, { revision: c.revision });
+  assert.equal(fs.readFileSync(path.join(directory, 'keep.txt'), 'utf8'), 'keep'); assert.ok(fs.existsSync(path.join(directory, '.git')));
+  c = runtime.createCatalogRepository(root, { revision: c.revision, code: 'retained', path: candidate.path, observation: candidate.observation });
+  assert.notEqual(c.repositories.find((r: any) => r.code === 'retained').id, repositoryId);
+});
+
+test('skill register, remove and re-register preserve source bytes and reject stale observations', (t: any) => {
+  const { root, runtime } = setup(t);
+  let candidates = runtime.skillRegistrationCandidates(root);
+  runtime.registerLocalSkill(root, { revision: candidates.revision, id: 'local-example', description: '示例', content: '# 示例\n\n保留正文。' });
+  const file = path.join(root, 'skills/local-example/SKILL.md'), bytes = fs.readFileSync(file);
+  fs.mkdirSync(path.join(root, 'skills/local-example/assets')); fs.writeFileSync(path.join(root, 'skills/local-example/assets/data.txt'), 'asset');
+  const removal = runtime.skillRemoval(root, 'local-example');
+  assert.equal(removal.removable, true);
+  runtime.removeRegisteredSkill(root, 'local-example', { revision: removal.revision });
+  assert.deepEqual(fs.readFileSync(file), bytes);
+  candidates = runtime.skillRegistrationCandidates(root);
+  const candidate = candidates.candidates.find((c: any) => c.id === 'local-example'); assert.ok(candidate);
+  fs.appendFileSync(file, '\n变化');
+  assert.throws(() => runtime.registerLocalSkill(root, { revision: candidates.revision, path: candidate.path, observation: candidate.observation }), (e: any) => e.code === 'skill_directory_changed');
+  candidates = runtime.skillRegistrationCandidates(root);
+  runtime.registerLocalSkill(root, { revision: candidates.revision, ...candidates.candidates.find((c: any) => c.id === 'local-example') });
+  assert.equal(fs.readFileSync(path.join(root, 'skills/local-example/assets/data.txt'), 'utf8'), 'asset');
+  assert.throws(() => runtime.removeRegisteredSkill(root, 'local-example', { revision: candidates.revision }), (e: any) => e.code === 'skill_revision_conflict');
+  runtime.skillsRemove({ targetRoot: root, id: 'local-example' });
+  assert.ok(fs.existsSync(file));
+});

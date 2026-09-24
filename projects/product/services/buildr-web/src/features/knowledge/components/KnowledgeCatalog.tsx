@@ -9,6 +9,7 @@ import {
   SearchOutlined,
 } from "@ant-design/icons";
 import type { KnowledgeCatalogItem } from "../api/knowledge-api";
+import type { KnowledgeActionMode } from "../knowledge-request";
 import { knowledgeCatalogPrefetchId, type KnowledgeCategory } from "../knowledge-catalog";
 type Props = {
   entries: KnowledgeCatalogItem[];
@@ -24,13 +25,13 @@ type Props = {
   query: string;
   onFilter: (category: KnowledgeCategory, query: string) => void;
   onOpen: (id: string) => void;
-  onConstruct: (kind: "construct" | "diagram") => void;
+  onConstruct: (kind: KnowledgeActionMode) => void;
   onLoadMore: () => void;
   onRetry: () => void;
   onRefresh: () => void;
 };
 const groups = [
-  { key: "documents", label: "架构知识", icon: <FileTextOutlined /> },
+  { key: "documents", label: "说明文档", icon: <FileTextOutlined /> },
   { key: "diagrams", label: "技术图", icon: <ApartmentOutlined /> },
   { key: "maps", label: "代码地图", icon: <FolderOpenOutlined /> },
 ];
@@ -82,6 +83,9 @@ export function KnowledgeCatalog({
           placeholder="检索标题、主题说明或文件路径"
           onChange={(e) => onFilter(category, e.target.value)}
         />
+        <Button disabled={!canConstruct} onClick={() => onConstruct("explore")}>
+          了解与探索
+        </Button>
         {category !== "maps" && (
           <Button
             type="primary"

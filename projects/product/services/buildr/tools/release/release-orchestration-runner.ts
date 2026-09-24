@@ -349,9 +349,10 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
   if (saved && (saved.version !== options.version || saved.workspace !== workspace)) throw new Error('Release operation document identity conflicts with the requested Workspace/version.');
   let state: any = saved ?? { schemaVersion: 'buildr.release-operation-input/v1', version: options.version, workspace, sources: [], candidate: null, publication: null };
   const currentEffects: any[] = [];
-  const execute = dependencies.execute ?? ((command: string, args: string[], spawnOptions: any) => spawnSync(command, args, { ...spawnOptions, encoding: 'utf8', timeout: 30_000 }));
+  const execute = dependencies.execute ?? ((command: string, args: string[], spawnOptions: any) => spawnSync(command, args, { timeout: 30_000, ...spawnOptions, encoding: 'utf8' }));
   const command = (executable: string, args: string[], cwd = workspace) => {
-    const value = execute(executable, args, { cwd });
+    const timeout = executable === (options.ghCommand || 'gh') && args.includes('--log-failed') ? 90_000 : 30_000;
+    const value = execute(executable, args, { cwd, timeout });
     if (value.status !== 0) throw new Error(`${executable} ${args[0]} failed: ${String(value.stderr || value.stdout || value.error?.message || '').trim()}`);
     return String(value.stdout || '').trim();
   };
@@ -532,6 +533,7 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
     assertReleaseConsumptionCoverage(candidateEvidence.aggregate, { sourceCommit, sourceTree: selection.releaseTree }, candidateEvidence.manifest);
     if (String(candidateEvidence.aggregate.workflow?.runId) !== String(state.candidate.runId) || Number(candidateEvidence.aggregate.workflow?.aggregateAttempt) !== Number(candidate.run_attempt)) throw new Error('Candidate evidence belongs to a different run/attempt.');
     const pr = take(ensureReleaseToMainPullRequest({ version: options.version, generation: selection.generation, repo, candidateCommit: sourceCommit, candidateTree: selection.releaseTree,
+      body: `Release ${options.version} from frozen ${sourceCommit}.\n\nCandidate run ID: ${state.candidate.runId}`,
       authorizeReleasePush: true, authorizePullRequest: true }, { execute }));
     if (pr.pullRequest.state !== 'MERGED') {
       const effect = { type: 'release-main-merge', url: pr.pullRequest.url, sourceCommit, state: 'unknown' };

@@ -10,9 +10,13 @@
 
 代码地图（Code Map）、技术图（Technical Diagram）和解释文档（Explanatory Documentation）可以相互引用，也可以直接依据规范、代码和配置，没有固定生成顺序。同一事实可以有不同视角的表达；相关事实没变时，不因文件版本变化机械重建。
 
-## 从一个完整例子开始
+## 从理解目标开始
 
-**从对话到任务收尾**：阅读[任务系统架构](docs/architecture/task-system.md)，贯通工作摘要（Work Context）、人的答复、实施与验证、代码交付、自举激活及安全善后；文中连接职责总图、分段时序与[实现地图](code-map/task-system.md)。
+网页默认从整体认识进入，主题目录沿系统组成、任务协作、数据、测试与验证、知识维护继续展开。层次与默认主题由同一份[局部索引](index.yml)表达；主题内可阅读说明和视图，全部资料保留检索入口。
+
+**看全貌**：阅读[Buildr 整体认识](docs/overview.md)，先掌握业务目的、人和智能体（Agent）的职责，以及业务目标、工作方法和可接续成果三组关系，再按问题深入专业资料。
+
+**跟一次工作**：阅读[从需求讨论到任务收尾](docs/architecture/task-system.md)，理解关键过程、人的决定、实际完成与记录的区别，以及当前组合结束边界；文中复用职责总图并连接[实现地图](code-map/task-system.md)。
 
 **知识建设与维护**：先读[架构说明](docs/architecture/knowledge-maintenance.md)，文中引用[职责图](archify/flows/knowledge-maintenance.html)和[实现地图](code-map/knowledge-maintenance.md)。[局部阅读关联](index.yml)让网页使用同一份成果正文。
 

@@ -78,7 +78,7 @@ skills:
     sourceIdentity: package:skills/buildr/task-finish
     source: buildr
     path: buildr/task-finish
-    description: 用户要求收尾、交付或完成本轮工作后的结束动作时使用；由智能体完成实际成果交付、已有任务结果登记及安全善后，支持有无 Buildr 任务、有无 Git 管理。
+    description: 用户明确要求“收尾”、交付或完成本轮工作后的结束动作时使用；承接当前任务常规 Git 交付授权，完成实际成果、已有任务结果登记及安全善后，支持有无 Buildr 任务、有无 Git 管理。
     enabled: true
     required: false
     state: installed
@@ -322,7 +322,7 @@ skills:
     sourceIdentity: package:skills/buildr/current-knowledge-maintenance
     source: buildr
     path: buildr/current-knowledge-maintenance
-    description: 围绕用户主题构建项目或服务的架构知识，检查或维护相关文章、技术图和代码地图，或处理开发中的知识影响时使用。
+    description: 理解或探索项目与服务、建设结构化项目知识，检查维护已有说明、视图和代码地图，或处理开发中的知识影响时使用。
     enabled: true
     required: false
     state: installed

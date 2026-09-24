@@ -31,3 +31,42 @@ test('Task Triage 的正式 owner 依赖保持 optional，直接工作不被结�
   }
   assert.equal(triage.requires.some((item: any) => item.capability === 'buildr.task-environment'), false);
 });
+
+test('明确收尾指令触发 task-finish 并授权任务范围内常规 Git 交付', () => {
+  const read = (relative: string) => fs.readFileSync(path.join(SERVICE_ROOT, relative), 'utf8');
+  const coreRule = read('resources/workspace/AGENTS.md');
+  const finishSkill = read('resources/workspace/skills/buildr/task-finish/SKILL.md');
+  const gitSkill = read('resources/workspace/skills/buildr/git-operations/SKILL.md');
+  const finishContract = read('resources/workspace/skills/contracts/buildr/task-finish/v1.md');
+  const gitContract = read('resources/workspace/skills/contracts/buildr/git-operations/v1.md');
+  const finish = manifest.builtins.skills.find((item: { id: string }) => item.id === 'task-finish');
+
+  assert.equal(finishSkill.match(/^description:\s*(.+)$/m)?.[1], finish.description);
+  assert.match(finish.description, /明确要求“收尾”/);
+  for (const source of [coreRule, finishSkill, finishContract, gitSkill, gitContract]) {
+    assert.match(source, /“收尾”/);
+    assert.match(source, /常规.*提交、集成和普通推送/);
+    assert.match(source, /不.*重复询问|不.*逐项重述|不重复索取|不要求用户再逐项重复|不让提供者重新索取/);
+  }
+  assert.match(finishSkill, /当前任务.*授权.*所选 `git-operations`/);
+});
+
+test('收尾授权保留范围核验和额外副作用边界', () => {
+  const read = (relative: string) => fs.readFileSync(path.join(SERVICE_ROOT, relative), 'utf8');
+  const sources = [
+    read('resources/workspace/AGENTS.md'),
+    read('resources/workspace/skills/buildr/task-finish/SKILL.md'),
+    read('resources/workspace/skills/buildr/git-operations/SKILL.md'),
+    read('resources/workspace/skills/contracts/buildr/task-finish/v1.md'),
+    read('resources/workspace/skills/contracts/buildr/git-operations/v1.md'),
+  ];
+  for (const source of sources) {
+    assert.match(source, /范围/);
+    assert.match(source, /强推|force push/);
+    assert.match(source, /共享历史/);
+    assert.match(source, /语义冲突/);
+  }
+  assert.match(sources[1], /完整推送范围/);
+  assert.match(sources[2], /完整 commit range/);
+  assert.match(sources[2], /scope 外 unpublished commit/);
+});

@@ -10,6 +10,30 @@ import { releasePublishAuthority, releasePackageName } from './release-authority
 import { publisherNpmCli } from '../verification/candidate-environment.ts';
 import { readReleaseArtifact } from './release-artifact.ts';
 import { assertRegistryArtifact, registryVersionState } from './registry-version-state.ts';
+import { isTransientReleaseError } from './release-observation.ts';
+
+const READBACK_ATTEMPTS = 24;
+const READBACK_DELAY_MS = 20_000;
+
+async function awaitRegistryPublication(read: () => Promise<any>, manifest: any, dependencies: any): Promise<any> {
+  const wait = dependencies.registryWait ?? {};
+  const attempts = Number.isSafeInteger(wait.attempts) && wait.attempts > 0 ? wait.attempts : READBACK_ATTEMPTS;
+  const delayMs = Number.isSafeInteger(wait.delayMs) && wait.delayMs >= 0 ? wait.delayMs : READBACK_DELAY_MS;
+  const sleep = dependencies.sleep ?? ((milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
+  let last: any = { package: manifest.packageName, version: manifest.version, published: false };
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const state = await read();
+      assertRegistryArtifact(state, manifest);
+      if (state.published) return state;
+      last = state;
+    } catch (error) {
+      if (!isTransientReleaseError(error)) throw error;
+    }
+    if (attempt < attempts) await sleep(delayMs);
+  }
+  return last;
+}
 
 export function authorityFailureDiagnostic(output: any, authority: any = releasePublishAuthority): any  {
   if (!/(?:E401|ENEEDAUTH|E404|OIDC|Trusted Publisher)/i.test(String(output ?? ''))) return null;
@@ -60,8 +84,7 @@ export async function publishFrozenArtifact(options: any, dependencies: any = {}
     })))([artifact.tarball, '--access', 'public', '--tag', npmTag, '--registry=https://registry.npmjs.org/']);
     if (command.stdout) process.stdout.write(command.stdout);
     if (command.stderr) process.stderr.write(command.stderr);
-    const after = await read();
-    assertRegistryArtifact(after, manifest);
+    const after = await awaitRegistryPublication(read, manifest, dependencies);
     if (!after.published) {
       publishEffect.state = command.status === 0 ? 'unknown' : 'not-confirmed';
       return { status: 'blocked', action: 'readback-required', effects, diagnostic: command.diagnostic ?? { code: 'npm-publication-unconfirmed', message: 'Official Registry has not confirmed the publish result.' }, nextActions: ['回读同一版本与integrity后恢复；未知状态下不重复publish。'] };

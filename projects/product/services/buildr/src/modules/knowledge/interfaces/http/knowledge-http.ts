@@ -1,6 +1,7 @@
 import {
   KNOWLEDGE_HTTP_SCHEMAS,
   validateKnowledgeCatalogResponse,
+  validateKnowledgeNavigationResponse,
   validateKnowledgeResponse,
 } from "./knowledge-http-contracts.ts";
 import type { createKnowledgeQuery } from "../../application/knowledge-query.ts";
@@ -24,6 +25,19 @@ export function createKnowledgeHttpContribution(
       searchParams?: URLSearchParams;
       respond: { diagramHtml(content: string): unknown };
     }) {
+      const navigation = suffix.match(/^\/knowledge\/(project|service)\/([^/]+)\/navigation$/);
+      if (request.method === "GET" && navigation) {
+        const id = decodeURIComponent(navigation[2]);
+        if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(id))
+          return { status: 400, body: { error: "knowledge_identity_invalid" } };
+        return {
+          status: 200,
+          body: validateKnowledgeNavigationResponse(app.navigation(
+            root,
+            { kind: navigation[1] as ScopeRef["kind"], id },
+          )),
+        };
+      }
       const catalog = suffix.match(/^\/knowledge\/(project|service)\/([^/]+)\/catalog$/);
       if (request.method === "GET" && catalog) {
         const id = decodeURIComponent(catalog[2]);

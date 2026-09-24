@@ -35,12 +35,14 @@
 | 移除项目登记 | 保留项目目录、服务、代码库与历史任务，仅移除项目及其服务引用 |
 | 登记已有项目 | 从工作空间 projects/ 下的未登记目录中选择，核对名称及服务关联，只保存登记，不补写原文件；不自动恢复原身份 |
 | 解除一方关联 | 只移除当前引用；其他使用方、服务身份与代码保留 |
+| 登记服务目录 | 选择 projects/*/services/ 下未登记目录；不选则在明确项目下新建。系统解析代码库及内部相对路径，已有目录不补写文件 |
+| 移除代码库登记 | 只允许移除无服务引用的实例，保留代码和 Git 文件；可重新选择真实根目录登记 |
 | 移除服务登记 | 解除所有项目对该身份的引用；保留文件、代码库和历史任务 |
 | 调整服务职责或代码位置 | 核对所有引用方及模块路径，保证仍指向存在且允许访问的代码范围 |
 | 修改代码库目录或分支声明 | 改变后续解析依据；保存声明本身不搬文件、不克隆、不切换分支 |
 | 多人或多入口同时修改 | 保存时必须核对当前版本；陈旧修改被拒绝，需要重读现场 |
 
-这些是[规范承诺](../../../openspec/specs/workspace-asset-relationships/spec.md)和[当前应用实现](../../../services/buildr/src/modules/workspace/application/asset-relationships-application.ts)中可核对的行为。删除登记与删除源码是不同动作，不应把其中一个推导成另一个。
+这些是[规范承诺](../../../openspec/specs/workspace-asset-relationships/spec.md)和[当前应用实现](../../../services/buildr/src/modules/workspace/application/asset-relationships-application.ts)中可核对的行为。界面“移除”只取消登记。永久删除源码与文件将由独立功能承担，当前没有此入口。
 
 ## 哪些边界不能混淆？
 

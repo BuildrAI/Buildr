@@ -2,9 +2,35 @@ schemaVersion: buildr.knowledge-index/v1
 scope:
   kind: project
   id: product
+entryObject: product-overview
 objects:
+  - id: product-overview
+    title: Buildr 整体认识
+    summary: 从业务目的、主要职责及目标、方法、成果三组关系理解 Buildr，按具体问题继续探索。
+  - id: system-structure
+    title: 系统组成
+    summary: 从业务目标与实现的关系、可复用工作方法两条线理解 Buildr 的主要组成。
+  - id: project-service-repositories
+    parent: system-structure
+    title: 项目、服务与代码库如何协作
+    summary: 理解三类对象的职责、共享引用、代码定位，以及关联和分支修改的影响。
+  - id: skill-system-topic
+    parent: system-structure
+    title: Buildr 技能体系
+    summary: 理解工作方法从源文件、组合到可发现入口的关系，以及能力选择和诊断边界。
+  - id: task-system
+    title: 从需求讨论到任务收尾
+    summary: 关键过程、人的决定、实际成果与完成记录的区别，以及普通完成和显式组合结束的边界。
+  - id: task-closeout
+    parent: task-system
+    title: 收尾与交付
+    summary: 实际成果交付、已有任务结果登记、自举适用性与资源安全善后。
+  - id: task-parent-coordination
+    parent: task-system
+    title: 父任务协调
+    summary: 整体目标、直接子任务、总体验收与明确完成授权，各自依据当前版本。
   - id: data-design
-    title: Buildr 数据全景与领域设计
+    title: 数据全景与领域设计
     summary: 从业务含义、身份、关联、存储和修改约束理解全部数据领域，不把本机事实误当缓存。
   - id: data-sqlite
     parent: data-design
@@ -14,25 +40,8 @@ objects:
     parent: data-design
     title: 本机数据与恢复边界
     summary: 安装、应用、投射、工作位置与恢复记录的范围、写入者和丢失影响。
-  - id: knowledge-maintenance
-    title: 知识建设与维护
-    summary: 谁指导事实建设，谁维护表达，职责落在哪些文件，以及变化后怎样跟上。
-  - id: project-service-repositories
-    title: 项目、服务与代码库如何协作
-    summary: 理解三类对象的职责、共享引用、代码定位，以及关联和分支修改的影响。
-  - id: task-system
-    title: 从需求讨论到任务收尾
-    summary: 人、智能体（Agent）与 Buildr 在需求、方案、实现、审查、交付和自举中的职责、交互及授权。
-  - id: task-closeout
-    parent: task-system
-    title: 收尾与交付
-    summary: 实际成果交付、已有任务结果登记、自举适用性与资源安全善后。
-  - id: task-parent-coordination
-    parent: task-system
-    title: 父任务协调
-    summary: 整体目标、直接子任务、总体验收与明确完成授权，各自依据当前版本。
   - id: verification-framework
-    title: 项目与服务测试验证框架
+    title: 测试与验证
     summary: Buildr 如何引导智能体按用户目标，为不同项目和服务建设测试、声明能力、选择执行并交付可信结果。
   - id: verification-product-tools
     parent: verification-framework
@@ -42,7 +51,51 @@ objects:
     parent: verification-product-tools
     title: Node.js 测试上下文
     summary: 面向 Node.js 的可选能力：复用昂贵准备，保持案例隔离，管理创建、恢复和清理。
+  - id: knowledge-maintenance
+    title: 知识建设与维护
+    summary: 谁指导事实建设，谁维护表达，职责落在哪些文件，以及变化后怎样跟上。
 artifacts:
+  - id: skill-system-map
+    title: 技能源文件到可发现入口的实现地图
+    kind: code-map
+    path: knowledge/code-map/skill-projection.md
+    objects: [skill-system-topic]
+    sources: ["skill-source-1", "skill-source-2", "skill-source-3", "overview-skill-system", "file-skill-projection", "file-skill-projection-evidence", "skill-source-4", "skill-source-5", "skill-source-6", "skill-source-7", "skill-source-8", "skill-source-9", "skill-source-10", "skill-source-11", "skill-source-12", "skill-source-13"]
+  - id: skill-system-explanation
+    title: Buildr 技能体系
+    kind: document
+    path: knowledge/docs/architecture/buildr-skill-system.md
+    objects: [skill-system-topic]
+    sources: [overview-skill-system, file-skill-projection-evidence]
+    files: [overview-skill-system]
+  - id: product-overview-article
+    title: Buildr 整体认识
+    kind: document
+    path: knowledge/docs/overview.md
+    objects:
+      - product-overview
+    sources:
+      - scope-rules
+      - overview-positioning-spec
+      - file-project-relations-article
+      - overview-skill-system
+      - project-terms
+      - task-file-task-system-md-123fb5
+      - overview-architecture-navigation
+      - overview-directions
+      - asset-model
+      - task-source-work-context-application-11bb91
+      - task-source-task-command-application-aba2e8
+      - data-sqlite-source
+    observedDigest: ea583a16298ad3e1fe29c8758c9885941c0217264a91340c87f3625e8e7bd1ea
+    files:
+      - overview-file
+  - id: product-capabilities-article
+    title: Buildr 当前能力与边界
+    kind: document
+    path: knowledge/docs/capabilities.md
+    objects: [product-overview]
+    sources: [overview-positioning-spec, file-project-relations-article, overview-skill-system, task-file-task-system-md-123fb5, data-sqlite-source]
   - id: data-design-explanation
     title: Buildr 数据全景与领域设计
     kind: document
@@ -84,6 +137,12 @@ artifacts:
     objects:
       - knowledge-maintenance
     sources:
+      - topic-children
+      - topic-navigation
+      - topic-tabs
+      - topic-start
+      - topic-navigation-state
+      - topic-model
       - query
       - index-model
       - files
@@ -176,6 +235,12 @@ artifacts:
     objects:
       - knowledge-maintenance
     sources:
+      - topic-children
+      - topic-navigation
+      - topic-tabs
+      - topic-start
+      - topic-navigation-state
+      - topic-model
       - query
       - index-model
       - files
@@ -266,7 +331,7 @@ artifacts:
     title: Buildr 系统全景
     kind: diagram
     path: knowledge/archify/system/buildr-system-overview.html
-    objects: []
+    objects: [product-overview, system-structure]
     sources: []
     graphSource: knowledge/archify/system/buildr-system-overview.json
     graphDigest: 814f8a03e3d73e55a5482ad4d9f62cb17cb05d4e17bdae4fae4fad8f983d8a5c
@@ -278,7 +343,7 @@ artifacts:
     title: 能力、数据与副作用
     kind: diagram
     path: knowledge/archify/flows/capability-data-responsibility.html
-    objects: []
+    objects: [system-structure]
     sources: []
     graphSource: knowledge/archify/flows/capability-data-responsibility.json
     graphDigest: c4ad9e3db468f7d13e7aadfb4a2cf69cea363995a2cc9071844226ca6f6f383d
@@ -290,7 +355,7 @@ artifacts:
     title: 技能源文件到可发现入口
     kind: diagram
     path: knowledge/archify/flows/skill-projection.html
-    objects: []
+    objects: [skill-system-topic]
     sources: []
     graphSource: knowledge/archify/flows/skill-projection.json
     graphDigest: ceff1cad58d94bea09d22ea63888459547979ffd3ecd7146977701c3f58c7fa9
@@ -392,9 +457,16 @@ artifacts:
     objects:
       - task-system
     sources:
+      - task-file-task-system-html-80857d
       - task-source-skill-f75bad
-      - task-source-skill-d5bb46
-    observedDigest: f44cbe4e41b875d55bd2ad899571cf9f5cdf0d2fe8e4cff82251642b30498898
+      - verification-file-263d3698
+      - task-source-work-context-application-11bb91
+      - task-file-task-closeout-md-fb6d91
+      - task-source-spec-f12a41
+      - task-source-task-command-application-aba2e8
+      - task-file-task-system-md-d14898
+      - task-file-task-parent-coordination-md-117a3e
+    observedDigest: e7c6e9796a99a7f8efe844971af1870dd0a4c002692e4be6dd28467c5c96b901
     files:
       - task-file-task-system-md-123fb5
   - id: task-system-map
@@ -899,6 +971,183 @@ artifacts:
       - parent-completion-evidence
     observedDigest: 86f4a1cbff48189a905282eae68b4a3dc54596e6adab2e5208991a7f0b066076
 sources:
+  - id: topic-children
+    title: 子主题入口
+    kind: code
+    path: services/buildr-web/src/features/knowledge/components/KnowledgeTopicChildren.tsx
+    summary: 从当前父主题进入直接子主题，组织节点无需另写正文。
+  - id: topic-navigation
+    title: 知识主题目录
+    kind: code
+    path: services/buildr-web/src/features/knowledge/components/KnowledgeTopicNavigation.tsx
+    summary: 项目与服务共享的主题父子导航，窄区折叠并保留全部资料。
+  - id: topic-tabs
+    title: 主题表达形式
+    kind: code
+    path: services/buildr-web/src/features/knowledge/components/KnowledgeTopicTabs.tsx
+    summary: 在当前主题内切换说明、技术图与代码地图。
+  - id: topic-start
+    title: 主题阅读入口
+    kind: code
+    path: services/buildr-web/src/features/knowledge/components/KnowledgeTopicStart.tsx
+    summary: 没有默认主题时提供已有主题入口与探索接续。
+  - id: topic-navigation-state
+    title: 主题读取状态
+    kind: code
+    path: services/buildr-web/src/features/knowledge/useKnowledgeNavigation.ts
+    summary: 完整轻量主题请求与范围切换、过时响应保护。
+  - id: topic-model
+    title: 主题导航规则
+    kind: code
+    path: services/buildr-web/src/features/knowledge/knowledge-topics.ts
+    summary: 默认主题选择、祖先路径、成果归属和分类规则。
+  - id: skill-source-1
+    title: 资源清单
+    kind: evidence
+    path: services/buildr/resources/manifest.yml
+    summary: "Buildr 随包工作资产的资源登记与交付范围。"
+  - id: skill-source-2
+    title: 投射规范
+    kind: spec
+    path: openspec/specs/workspace-first-runtime-projection/spec.md
+    summary: "工作空间源资产投射为不同智能体入口时的职责和边界。"
+  - id: skill-source-3
+    title: 组件增强规范
+    kind: spec
+    path: openspec/specs/buildr-package-assets/spec.md
+    summary: "随包资产、组件成员及内容增强的行为承诺。"
+  - id: skill-source-4
+    title: runtime-projection.ts
+    kind: code
+    path: services/buildr/src/modules/agent-assets/application/runtime-projection.ts
+    summary: "解析目标与投射位置，校验候选不能写共享位置，组装计划并检查已有发现位置，最后应用计划。"
+  - id: skill-source-5
+    title: projection.ts
+    kind: code
+    path: services/buildr/src/modules/agent-assets/infrastructure/runtime/projection.ts
+    summary: "根据选择组装规则、产品入口和工作空间技能的计划；本地图只展开技能支路。"
+  - id: skill-source-6
+    title: render-plan.ts
+    kind: code
+    path: services/buildr/src/modules/agent-assets/infrastructure/runtime/skills/render-plan.ts
+    summary: "为普通技能关联当前工作空间依赖图中的局部绑定；拒绝已退役的项目技能安装范围。组合片段与局部能力说明，添加生成标记，生成正文、附属文件与归属记录的写入计划。"
+  - id: skill-source-7
+    title: sources.ts
+    kind: code
+    path: services/buildr/src/modules/agent-assets/infrastructure/runtime/skills/sources.ts
+    summary: "前者读取 `skills/manifest.yml` 并附加组件贡献；后者解析随包产品入口，两条来源分别进入计划。"
+  - id: skill-source-8
+    title: contributions.ts
+    kind: code
+    path: services/buildr/src/modules/agent-assets/infrastructure/runtime/skills/contributions.ts
+    summary: "读取已安装组件，核对路径、成员完整性和唯一归属后返回正文片段与依赖增强。"
+  - id: skill-source-9
+    title: capability-graph-repository.ts
+    kind: code
+    path: services/buildr/src/modules/agent-assets/persistence/capability-graph-repository.ts
+    summary: "解析已有协作约定、依赖和绑定，给每个调用方提供局部视图。"
+  - id: skill-source-10
+    title: projection-files.ts
+    kind: code
+    path: services/buildr/src/modules/agent-assets/infrastructure/runtime/skills/projection-files.ts
+    summary: "表达文件摘要、可执行位和投射身份，解析记录位置。"
+  - id: skill-source-11
+    title: adapter-contract.ts
+    kind: code
+    path: services/buildr/src/modules/agent-assets/infrastructure/runtime/adapter-contract.ts
+    summary: "前者取得已声明适配器的目标布局，不证明当前执行者身份；后者给出某一投射范围内的目标根，当前每个适配器各只有一个。"
+  - id: skill-source-12
+    title: inventory.ts
+    kind: code
+    path: services/buildr/src/modules/agent-assets/infrastructure/runtime/skills/inventory.ts
+    summary: "检查可见位置，区分可写候选、已由用户位置满足和冲突。"
+  - id: skill-source-13
+    title: runtime-reconciler.ts
+    kind: code
+    path: services/buildr/src/modules/agent-assets/infrastructure/runtime/runtime-reconciler.ts
+    summary: "核对目标安全、当前内容与归属，发现计划冲突时保持零写入；正常时更新实际变化文件并处理已证明可清理目标。"
+  - id: product-reference-cli
+    title: Buildr 命令参考
+    kind: evidence
+    path: services/buildr/docs/cli-reference.md
+  - id: product-reference-adapters
+    title: 运行时适配说明
+    kind: evidence
+    path: services/buildr/docs/agent-runtime-adapters.md
+  - id: product-reference-knowledge
+    title: 当前知识入口
+    kind: evidence
+    path: knowledge/README.md
+  - id: product-reference-usage
+    title: 日常使用手册
+    kind: evidence
+    path: knowledge/docs/guides/usage.md
+  - id: product-reference-daily-progress
+    title: 项目每日演进
+    kind: evidence
+    path: knowledge/docs/flows/project-daily-progress.md
+  - id: product-reference-limitations
+    title: 已知限制
+    kind: evidence
+    path: services/buildr/docs/known-limitations.md
+  - id: product-reference-product-architecture
+    title: 产品架构
+    kind: evidence
+    path: knowledge/docs/architecture/product.md
+  - id: product-reference-technical-architecture
+    title: 技术架构
+    kind: evidence
+    path: knowledge/docs/architecture/technical.md
+  - id: product-reference-code-map
+    title: 全项目代码地图
+    kind: evidence
+    path: knowledge/code-map/README.md
+  - id: product-reference-diagrams
+    title: 技术图目录
+    kind: evidence
+    path: knowledge/archify/index.md
+  - id: product-reference-buildr-service
+    title: Buildr Service
+    kind: evidence
+    path: knowledge/docs/services/buildr.md
+  - id: product-reference-web-service
+    title: Buildr Web Frontend Service
+    kind: evidence
+    path: knowledge/docs/services/buildr-web.md
+  - id: product-reference-openspec-lifecycle
+    title: OpenSpec 变更生命周期
+    kind: evidence
+    path: knowledge/docs/flows/openspec-change-lifecycle.md
+  - id: overview-directions
+    title: 后续产品方向
+    kind: evidence
+    path: docs/roadmap/product-directions.md
+    summary: 明确标注未来方向与历史设想，不能用作已实现能力的证明。
+    observedDigest: 1eb8bba3453d5c91bcf10c2bd54ad957928bb299ca710fc7a9bc3b88095359c5
+  - id: overview-architecture-navigation
+    title: 架构与专业参考
+    kind: evidence
+    path: knowledge/docs/architecture/index.md
+    summary: 按理解问题继续查看产品、技术、数据、测试及运行专题。
+    observedDigest: eeeeecdf0c1bf4b6f30ef342d98c579898278ae877b168b2ade5a9f86a7cc850
+  - id: overview-skill-system
+    title: Buildr 技能体系
+    kind: evidence
+    path: knowledge/docs/architecture/buildr-skill-system.md
+    summary: 解释方法来源、组件组合、能力选择、运行时投射及诊断分工。
+    observedDigest: a7879af9bec63cb5295cdfb2ea50b100bf1e9ea2eebfd052bf54a523bbb67aa7
+  - id: overview-positioning-spec
+    title: 智能体优先的产品定位
+    kind: spec
+    path: openspec/specs/agent-first-product-positioning/spec.md
+    summary: 规定工作资产、人的参与、智能体职责和上下文责任边界。
+    observedDigest: 87f0fe2a1fe25eeb8ded182ae094b19113573cc6638b7674a9934d15d08b82b5
+  - id: overview-file
+    title: Buildr 整体认识 · 正文
+    kind: evidence
+    path: knowledge/docs/overview.md
+    summary: 从业务目的、参与者职责与三组关系理解 Buildr，提供按问题深入的阅读入口。
+    observedDigest: ea583a16298ad3e1fe29c8758c9885941c0217264a91340c87f3625e8e7bd1ea
   - id: data-domain-html
     title: 数据领域总图展示
     kind: evidence
@@ -1478,8 +1727,8 @@ sources:
     title: 任务事实写入
     kind: code
     path: services/buildr/src/modules/task/application/task-command-application.ts
-    summary: 按版本维护任务事实，在同一事务内重验父子观察、子任务终态与验收覆盖，保存完成依据或保留原记录。
-    observedDigest: 058a230e7c28e07c021260ab8eb6cf3e4b4e4472cb9f8c0255eba7f019b14cfa
+    summary: 按版本维护任务事实，核对普通父任务验收；显式组合结束按逐项选择原子处理直接子任务，冲突时保留原记录。
+    observedDigest: 7fd58639f8fafc589bf6f88f54096e82c0868162e00e9f0a1cb9414cfeca05a7
   - id: task-source-task-04c6c5
     title: 任务领域对象
     kind: code
@@ -1748,7 +1997,7 @@ sources:
     kind: evidence
     path: knowledge/docs/architecture/task-system.md
     summary: 保存本主题当前解释或依据，网页与本地使用同一正文；不替代规范和代码。
-    observedDigest: f44cbe4e41b875d55bd2ad899571cf9f5cdf0d2fe8e4cff82251642b30498898
+    observedDigest: e7c6e9796a99a7f8efe844971af1870dd0a4c002692e4be6dd28467c5c96b901
   - id: task-file-task-system-md-d14898
     title: 任务系统的实现组织 · 正文
     kind: evidence
@@ -2376,6 +2625,18 @@ sources:
     summary: 补齐关联阅读，取消过时请求，刷新时读取当前文件。
     observedDigest: 579176eadcca4cfd5cd7020c8186b88767fdd04b18ea8e01ed8d05a78fd1f10c
 relations:
+  - from: product-overview-article
+    to: product-overview
+    kind: explains
+  - from: overview-positioning-spec
+    to: product-overview
+    kind: based-on
+  - from: scope-rules
+    to: product-overview
+    kind: based-on
+  - from: asset-model
+    to: product-overview
+    kind: implements
   - from: data-design-explanation
     to: data-design
     kind: explains

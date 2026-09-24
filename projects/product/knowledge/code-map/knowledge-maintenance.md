@@ -12,10 +12,10 @@
 | --- | --- |
 | 规范依据 | [当前知识维护规范](../../openspec/specs/current-knowledge-maintenance/spec.md)规定事实与成果边界；[项目知识阅读规范](../../openspec/specs/project-knowledge-browsing/spec.md)规定范围、来源观察、阅读和建设入口。 |
 | 接口入口（Interface） | 知识读取由超文本传输协议（HTTP）入口提供。没有独立知识读取命令行（CLI）命令；通过接续指令执行专业工作，不把按钮当成后台维护程序。 |
-| 应用服务（Application） | 解析项目、服务和代码库，组织成果与来源读取，返回当前内容和实际读取限制。它决定读哪些内容，不决定架构文章的语义是否正确。 |
+| 应用服务（Application） | 解析项目、服务和代码库，分别读取轻量主题导航、分页资料与具体成果来源。它决定读哪些内容，不决定架构文章的语义是否正确。 |
 | 领域模型（Domain） | 校验对象身份、成果类型、来源关联和层级；目录模型按分类与关键词筛选，校验绑定范围、条件及索引版本的游标（Cursor）。 |
 | 数据访问与技术支撑 | 内容保存在文件中，由有界文件读取检查真实路径、类型、大小并计算摘要。当前没有知识数据库或对象关系映射（ORM）持久层。 |
-| 前端阅读 | 页面组织当前范围与固定导航；目录按 20 项分页并提前续载；目录状态保留条目、版本及阅读位置；成果组件负责正文和内嵌；读取钩子（Hook）取消过时请求；副屏独立滚动。 |
+| 前端阅读 | 页面组织当前范围、默认主题与持续可达的父子目录；全部资料按 20 项分页并提前续载；主题内按说明、图与地图查看成果；读取钩子（Hook）取消过时请求；引用副屏独立滚动。 |
 | 个人资料偏好 | 知识页和技能详情复用资料入口，另行记录最近访问、维护收藏；工作台应用校验当前工作空间（Workspace）内的对象与站内地址并保存偏好，不改写知识成果。 |
 
 ## 规范与实现在哪里？
@@ -32,10 +32,10 @@
       - [spec.md](../../openspec/specs/code-map-building/spec.md) — 代码地图的内容、来源及制作要求
   - **`services/buildr/src/modules/knowledge/`** — 后端知识读取能力
     - `interfaces/http/` — 协议入口
-      - [knowledge-http.ts](../../services/buildr/src/modules/knowledge/interfaces/http/knowledge-http.ts) — 身份解析、有界目录分页、只读详情与隔离图示
+      - [knowledge-http.ts](../../services/buildr/src/modules/knowledge/interfaces/http/knowledge-http.ts) — 身份解析、完整轻量主题导航、有界资料分页、只读详情与隔离图示
       - [knowledge-http-contracts.ts](../../services/buildr/src/modules/knowledge/interfaces/http/knowledge-http-contracts.ts) — 对外响应结构与校验
     - `application/` — 组织阅读用例
-      - [knowledge-query.ts](../../services/buildr/src/modules/knowledge/application/knowledge-query.ts) — 定位登记范围、分别组织目录和详情读取、读取当前来源
+      - [knowledge-query.ts](../../services/buildr/src/modules/knowledge/application/knowledge-query.ts) — 定位登记范围，导航仅读索引，具体成果再读取正文与当前来源
     - `domain/` — 知识对象与关联规则
       - [knowledge-index.ts](../../services/buildr/src/modules/knowledge/domain/knowledge-index.ts) — 索引解析、身份与关系有效性
       - [knowledge-catalog.ts](../../services/buildr/src/modules/knowledge/domain/knowledge-catalog.ts) — 全范围检索、分页摘要和绑定版本的游标（Cursor）
@@ -50,6 +50,10 @@
       - `pages/`
         - [KnowledgePage.tsx](../../services/buildr-web/src/features/knowledge/pages/KnowledgePage.tsx) — 当前主题、固定面包屑、回顶部、目录位置恢复与副屏编排
       - `components/`
+        - [KnowledgeTopicNavigation.tsx](../../services/buildr-web/src/features/knowledge/components/KnowledgeTopicNavigation.tsx) — 项目与服务共享的主题目录，宽区并列、窄区折叠，保留全部资料入口
+        - [KnowledgeTopicTabs.tsx](../../services/buildr-web/src/features/knowledge/components/KnowledgeTopicTabs.tsx) — 在当前主题内选择说明、技术图与代码地图
+        - [KnowledgeTopicChildren.tsx](../../services/buildr-web/src/features/knowledge/components/KnowledgeTopicChildren.tsx) — 在父主题下提供直接子主题入口，组织节点无需另写正文
+        - [KnowledgeTopicStart.tsx](../../services/buildr-web/src/features/knowledge/components/KnowledgeTopicStart.tsx) — 未指定默认主题时的主题入口与探索接续
         - [KnowledgePreviewNotice.tsx](../../services/buildr-web/src/features/knowledge/components/KnowledgePreviewNotice.tsx) — 原生预览的开发中提示、当前来源目录与启动时身份
         - [KnowledgeCatalog.tsx](../../services/buildr-web/src/features/knowledge/components/KnowledgeCatalog.tsx) — 三类成果的分页目录、提前续载、失败恢复与建设入口
         - [KnowledgeArtifactReader.tsx](../../services/buildr-web/src/features/knowledge/components/KnowledgeArtifactReader.tsx) — 同一正文的内嵌和独立阅读
@@ -57,7 +61,9 @@
         - [KnowledgeTree.tsx](../../services/buildr-web/src/features/knowledge/components/KnowledgeTree.tsx) — 紧凑目录、业务边界与折叠操作
         - [KnowledgeReadingPane.tsx](../../services/buildr-web/src/features/knowledge/components/KnowledgeReadingPane.tsx) — 保留关联阅读，先解释文件再显示原文
         - [KnowledgeSource.tsx](../../services/buildr-web/src/features/knowledge/components/KnowledgeSource.tsx) — 只读源码、行号和文档模式
-        - [KnowledgeAgentAction.tsx](../../services/buildr-web/src/features/knowledge/components/KnowledgeAgentAction.tsx) — 建设主题和完善意见的接续表单
+        - [KnowledgeAgentAction.tsx](../../services/buildr-web/src/features/knowledge/components/KnowledgeAgentAction.tsx) — 只读探索、追问、建设主题和完善意见的接续表单
+      - [useKnowledgeNavigation.ts](../../services/buildr-web/src/features/knowledge/useKnowledgeNavigation.ts) — 完整轻量主题请求，取消旧请求与范围切换保护
+      - [knowledge-topics.ts](../../services/buildr-web/src/features/knowledge/knowledge-topics.ts) — 默认入口、主题祖先、成果归属和主题内分类
       - [useKnowledgeCatalog.ts](../../services/buildr-web/src/features/knowledge/useKnowledgeCatalog.ts) — 分页状态、取消旧请求、追加去重、版本变化与返回后保留
       - [useKnowledgeReading.ts](../../services/buildr-web/src/features/knowledge/useKnowledgeReading.ts) — 请求状态、取消与范围切换保护
       - [knowledge-diagram-layout.ts](../../services/buildr-web/src/features/knowledge/knowledge-diagram-layout.ts) — 原生图示比例、宿主宽度与嵌入高度计算

@@ -1,222 +1,90 @@
-# Buildr Product
+# Buildr 整体认识
 
-Buildr 是为组织和 Agent 构建的工作资产治理系统。
+Buildr 是人、企业与智能体（Agent）共同工作的基础设施：为人组织和呈现工作，为智能体（Agent）组织可用的上下文（Context），支持各方共同维护个人或企业的工作事实与工作方法，并将它们持续用于创造实际成果。
 
-它把散落在员工个人经验、文档、仓库和不同工具中的工作事实与工作方法，统一组织成共享、可审计、可适配不同 Agent 的组织工作资产。
+本页展开三方协作、使用场景与工作组织方式；已交付范围见[当前能力与边界](capabilities.md)，未来方向见[产品方向汇总](../../docs/roadmap/product-directions.md)。具体行为以[产品定位规范](../../openspec/specs/agent-first-product-positioning/spec.md)、相关规范与当前实现为依据，产品目标不等于所有能力已经交付。
 
-产品简介使用：
+## 为什么需要它
 
-```text
-Buildr turns how your organization works into shared work assets for AI agents, portable across Agent runtimes.
-Buildr 将组织的工作方式沉淀为 Agent 可用的共享工作资产，并让这些资产适配不同 Agent runtime。
-```
+企业拥有文档、代码、数据和软件，但真正把它们用于工作的，往往仍是具体的人：知道信息在哪里、理解业务与系统的关系、选择合适的方法、串联操作，并判断工作是否完成。许多方法没有留下；即使留下了文档，后来的人仍需要付出阅读、理解和试错的成本。拥有生产资料，不等于拥有持续运用这些资料的能力。
 
-任何人进入组织都可以从一句自然语言指令开始，由 Agent 准备工作环境并进入任务。
+智能体（Agent）处理大量复杂信息、辅助思考与执行工作的能力，让已有积累能够更充分地参与实际工作。Buildr 组织可靠的事实来源、相关方法和使用入口，使智能体（Agent）有条件从上下文（Context）中发现关联、辅助形成方案并推进工作，而不是替代其理解和专业执行。
 
-Agent 是这些工作资产的主要使用者。人通过 Agent 表达目标、提供业务判断并确认重要决策；Agent 从组织化资产中发现当前任务需要的信息和能力，建立任务上下文并引导工作。Agent 能在现有工具、权限和安全边界内完成的 Buildr 动作，默认由 Agent 在取得必要授权后直接执行；手动命令是用户主动选择或 Agent 无法执行时的兜底，而不是默认交付方式。
+这不仅服务于知识保存：对人，要扩展能力、提高效率；对企业，要激活生产资料、形成组织能力；对智能体（Agent），要提供开展真实工作的基础。内容是否被正确使用、是否帮助目标达成，比保存了多少文件更重要。
 
-## 定位
+## 谁负责什么
 
-Buildr 的核心心智是：
-
-```text
-Organize work in Buildr. Work through Agents.
-在 Buildr 中组织工作，通过 Agent 开展工作。
-```
-
-Buildr 保存组织长期复用的工作资产，并通过可诊断、可按 Agent 运行时适配器（Agent runtime adapter）渲染的确定性工具层，把这些资产变成 Agent 可使用的共享工作环境。这个“工作环境”是产品体验，不是新的资产类型；事实源仍是 Buildr workspace 中的标准工作资产。
-
-Buildr 不是另一个 Agent，也不与 Agent 抢活。Buildr 负责治理和投射工作资产、提供确定性工具与诊断；Agent 负责理解目标、发现相关资产、形成任务上下文并推进任务；人负责目标、业务判断与必要授权。
-
-Buildr 的核心产品哲学是：**Buildr 应该约束 Agent 不要做错事，而不是要求 Agent 必须通过 Buildr 才能做事。** 产品能力和 Workspace 工作资产可以提供事实、指导、安全默认值与恢复建议，但只有放行会造成越权、错误对象写入、未经授权或不可逆副作用、覆盖他人工作、证据失真或完成误报时才设置硬门禁。Buildr 自身的内部登记、推荐流程或自动化信心不足，不应成为 Agent 推进真实专业工作的通用阻塞点；完整原则以随包 [内联核心规则](../../services/buildr/resources/workspace/AGENTS.md) 为准。
-
-## 要解决的问题
-
-真实组织长期使用 Agent 后，问题很快从“Agent 能不能完成一次任务”变成“组织如何让 Agent 持续按照共同的工作方式完成任务”：
-
-- 员工个人探索出的工作方法停留在本机、聊天记录或个人经验里，只能靠文档、会议、IM 和口口相传复制给其他人，难以持续沉淀为组织资产。
-- 团队切换 Agent 工具，或成员分别使用不同 Agent 时，需要在每个客户端重复维护工作环境，组织资产容易漂移。
-- 一个业务项目往往包含多个代码仓、公共服务和服务级规则，Agent 在单个仓库中工作时难以获得端到端项目视野。
-- 产品、设计、开发、测试和发布内容分散在不同岗位与工具中，Agent 往往只能感知当前工作范围内的信息，难以主动发现其他岗位或服务中与任务相关的依赖。
-- 手写 runtime 文件容易冲突、过期，或把临时提示误当成组织长期资产。
-
-Buildr 把个体员工积累的工作事实和工作方法转化为组织可以共同维护的工作资产，再按 supported Agent runtime 的能力投射必要入口。不同成员和 Agent 可以从同一组织基础开始工作，让个人探索成为可共享、可传承、可持续演进的组织价值。
-
-## 工作信息、工作资产、上下文与上下文窗口（Context Window）
-
-Buildr 管理的是工作信息空间中适合长期复用的组织工作资产，并通过范围、关系、来源和发现入口组织上下文（Context）；它不管理全部工作信息，也不直接填充上下文窗口：
-
-| 概念 | 含义 | 责任主体 |
+| 参与者 | 在协作中的职责 | 如何得到支持或参与 |
 |---|---|---|
-| 工作信息空间 | 所有潜在可用于工作的来源，包括工作空间（Workspace）文件、数据库、应用接口（API）、网页、聊天、机器状态、用户输入和工具结果 | 多种来源；不等于 Buildr 管理范围 |
-| 工作空间（Workspace） | 工作范围、治理根和发现入口，可同时包含受管资产、普通代码、临时文件、依赖和本机配置 | Buildr 维护范围身份标识（Identity）和受管入口；位于其中不等于被治理 |
-| 工作资产与共享工作环境 | 被明确组织、登记或纳入治理的长期工作事实与工作方法，以及它们经智能体运行时（Agent Runtime）投射后形成的整体环境 | Buildr 组织、治理、投射和诊断 |
-| 上下文 | 与某个对象、范围或目标相关的信息的泛称；工作空间上下文（Workspace Context）、项目上下文（Project Context）和服务上下文（Service Context）表示对应领域内全部已知、可访问或可能相关的信息 | Buildr 组织受管资产、范围、关系和发现入口；其他来源继续由其原系统负责 |
-| 任务上下文 | 智能体（Agent）为具体任务（Task）发现、检索、判断、选择、组织和压缩后形成的语义工作集 | 智能体根据任务语义形成；可使用 Buildr 资产和外部授权信息 |
-| 请求上下文 | 智能体针对某一次模型请求，从任务上下文中选择并实际提交给模型的内容 | 智能体按当前步骤组织；可以很小，也可以跨多个项目（Project）和服务（Service） |
-| 上下文窗口 | 模型单次请求能够承载的有限输入容量和技术容器 | 智能体及其运行时把本次请求上下文装入该窗口 |
+| 人 | 提出目标、作出判断和决策、产生创造性想法；与智能体（Agent）共同思考和完成工作 | 通过结构化、可视化的内容理解工作，在对话或页面中查看材料、修改内容、给出意见和验收成果 |
+| 企业 | 以人为运作基础，作为工作的组织者与责任主体，维护属于企业、能够持续使用的资产 | 将工作事实与工作方法组织为成员和智能体（Agent）能够发现、使用和共同维护的工作基础 |
+| 智能体（Agent） | 理解复杂信息、辅助思考，围绕当前目标运用资料和方法、执行工作并交付成果 | 发现并核对上下文（Context），在工具、环境、方法和授权边界内开展工作 |
+| Buildr | 组织长期资产、来源与关系，呈现工作和可接续成果，保护具体写入 | 为人提供 Buildr Web，为智能体（Agent）提供技能（Skill）与命令行接口（CLI）等可组合入口 |
 
-上下文是一个广义概念。工作空间上下文（Workspace Context）、项目上下文（Project Context）和服务上下文（Service Context）描述对应领域的信息空间，不表示这些信息已经全部进入模型请求，也不表示其中全部内容都由 Buildr 治理。项目/服务清单（Project/Service Manifest）等结构化资产可以说明定位、关系和来源，帮助智能体从正确范围检索信息，提高请求上下文的质量。
+同一份工作事实和方法，对企业是资产，对人是需要理解和参与的工作内容，对智能体（Agent）则是形成上下文（Context）的重要来源。这不是三套割裂的内容，而是同一套工作基础的不同使用方式。
 
-Buildr 负责组织上下文来源和发现入口，不替智能体判断全部相关性，也不替智能体填充上下文窗口。智能体可以通过文件检索、数据库、应用接口（API）、网页、语义检索、模型上下文协议（Model Context Protocol，MCP）或其他授权来源补充信息，形成任务上下文；再针对当前步骤选择本次请求上下文。具体检索工具不是 Buildr 上下文模型的一部分，智能体运行时适配器（Agent Runtime Adapter）只负责发现和投射标准资产。
+人和智能体（Agent）共同完成工作，其中适合长期使用、经过确认的内容，再通过 Buildr 维护为工作资产（Work Asset）。企业能力应当在帮助成员把工作做好的过程中形成，而不是依靠额外填表和重复归档；个人也可以从自己的项目和方法开始，不必先拥有团队。不是所有个人经验、临时资料或工作结果都自动成为企业资产。
 
-简单语法修复可能只需要目标文件和错误信息；涉及三个服务的功能开发，则可能需要同时检索三个服务的定位、关系、规范、代码和验证信息，并把当前步骤最相关的部分放入请求上下文。上下文越完整不必然越好，关键是范围正确、来源可信、关系清楚，并与当前请求相关。
+能由智能体（Agent）在现有工具和权限内完成的动作，默认由它直接执行。人的手动操作是主动选择或无法代办时的补充。Buildr 的约束保护对象、授权、内容保全和真实结果；内部登记或辅助信息不足，不应扩大成无关工作的阻塞，完整边界见[核心规则](../../services/buildr/resources/workspace/AGENTS.md)。
 
-“工作事实”与“工作方法”是对工作资产的公开解释，不是新的存储分类，也不封闭 Buildr 可以治理的资产类型。
+## 具体工作场景
 
-组织工作资产是开放概念，不由当前资产类型穷举。未来可以探索模型上下文协议（Model Context Protocol，MCP）、钩子（Hook）或其他形态，但它们只有在独立变更（Change）明确模型、生命周期、安全边界和运行时行为后，才是 Buildr 已支持的受管资产；路线图（Roadmap）设想不能替代当前事实。
+### 从想法持续推进到交付
 
-## 核心模型
+任何人进入组织都可以从一句自然语言指令开始，由智能体（Agent）准备工作环境并进入任务。例如：“基于现有项目，把这个想法梳理成方案，完成实现和验证，并准备交付。”随着阶段变化，智能体（Agent）发现和使用相应事实与方法，人继续提供业务判断及必要授权，无需先掌握完整的内部模型和命令。
 
-```text
-Organization/Root
-  └── Project
-        └── Service
-```
+Buildr 自身已经建立了从讨论、OpenSpec 提案与设计、实现测试，到 Git 集成、GitHub Actions 和 npm 发布的工作链。同一个智能体（Agent）窗口可以承载这项连续工作，但不意味着一次模型调用装入全部资料，也不意味着无需授权就能自动发布。它证明的是 Buildr 自举场景中的工作连续性，不是通用流程引擎、自动调度多个智能体（Agent）或全部外部工具已内置接入的承诺。
 
-- **组织（Organization/Root）**：Buildr 工作区根，也是个人或组织的资产根。
-- **Project**：业务、产品线、系统或长期工作单元，不等同于单个代码仓。
-- **Service**：Project 管理的代码仓、应用、模块或可执行资产。
-- **Agent runtime**：Agent 实际运行资产的位置，是面向当前 Agent 的可重建入口。
+### 围绕共同事实跨岗位、跨代码仓协作
 
-工作空间、Project 与 Service 可以各自拥有独立 Git repo，也可以沿层级共用同一个 Git repo。Buildr 按真实 Git 边界维护 Project registry 与 Service registry，不把目录层级误判为 Git 边界。
+产品人员在项目（Project）中维护需求、规范（Specification）和业务事实，设计、开发和测试人员通过智能体（Agent）发现同一来源及各自需要的资料。一个需求涉及多个服务（Service）时，可以沿着已登记的业务与实现关系寻找相关代码，而不是只从当前代码仓理解问题。
 
-## 工作资产
+需求或实现发生变化后，各方在取得更新后的来源并重新核对后继续工作；发现问题也回到对应来源修正。共享的是工作依据，不是要求所有人使用同一工具、读取相同内容或拥有相同权限，也不是自动同步所有副本或自动理解全部依赖。
 
-下表只描述当前实现的主要资产形式，不定义 Buildr 未来能力的封闭边界：
+### 让经过验证的方法持续发挥作用
 
-| 资产 | 作用 |
-|------|------|
-| Rules | 通过 `AGENTS.md` 和 `rules/` 维护 Agent 行为边界 |
-| OpenSpec | 管理能力规范、业务知识、变更过程和归档记录 |
-| Skills | 管理可渲染到 Agent 原生技能系统的任务能力 |
-| Components | 在 workspace 统一安装、更新和卸载 Rules、Skills 与 Command collections |
-| Commands | workspace catalog 定义外部 CLI，Project requirements 表达业务需要，本机只提供可观察状态 |
-| Project registry | 以 UUID、workspaceId、code、name、description 和 ProjectSource 记录 Project Domain；文件 manifest 是当前持久化实现 |
-| Service registry | 以 UUID、workspaceId、projectId、code、name、description、type 和 ServiceSource 记录 Project 下的 Service Domain；规则入口由 Service 目录 `AGENTS.md` 表达 |
+请智能体（Agent）把做成事情的方法，例如发布步骤、测试经验或业务处理方式，整理成可复用的技能（Skill），并维护相关项目事实。下一次遇到类似工作时，自己或其他成员可以通过智能体（Agent）发现和使用这些方法，而不只是从头阅读一份归档文档。
 
-Buildr 源资产不保存 binary、token、cookie、登录态或个人私有配置。
+长期源资产由个人或组织掌握，可以通过文件与 Git 管理；适配后的方法能在不同智能体（Agent）工具中被发现。更换工具或参与者时，可以继续使用这些积累，而不是重新建立全部工作基础；目标工具是否实际加载、相关方法是否适合当前工作，仍需核对。
 
-Skill 的来源、Component 组合、能力依赖、runtime 投射和 Doctor/receipt 分层详见 [Buildr 技能体系](architecture/buildr-skill-system.md)。
+## 三组关键关系
 
-Practices 不再是独立受管资产。已有 workspace 或 Project 中的 `practices/` 属于用户保留数据，Buildr 不会自动读取、迁移、覆盖或删除，也不会让该目录阻塞正常命令。整理遗留内容时，由用户或 Agent 人工审阅语义：约束和值守边界转为 Rule，可复用专业动作和操作流程转为 Skill，产品事实、需求和变更转为 OpenSpec，其他说明保留为普通 docs。
+### 从业务目标找到真实代码
 
-Component 是 workspace 源资产的生命周期边界，不是可执行插件。Agent 负责根据用户意图和权威来源识别资源组成，CLI 必须校验 Component definition、全部成员 integrity、唯一 ownership 和 Skill Contribution 完整性后，才能把验证通过的源输入交给 runtime 管线。Component 不能注册、替换或注入 Agent runtime adapter，也不能提供 runtime hook、可执行 member 或 registry patch。当前只支持 workspace Component；它只能拥有 workspace Command catalog collection，不能拥有 Project requirements 或本机状态，删除仍被 Project 引用的 definition 必须在事务前阻止。
-
-Commands 不采用 Skill 的 render destination 模型。workspace `commands/**/manifest.yml` 是定义 authority，`projects/<project>/commands.yml` 只引用 Command ID 并声明版本与 required/optional，实际 binary、版本、登录态和凭证属于 user/machine environment。Buildr 只做分层诊断，不 render/install binary，也不保存个人配置。
-
-## 人和 Agent 如何协作
-
-Buildr 采用 Agent-first 的协作方式：Agent 是产品能力和组织工作资产的主要使用者，人是一等参与者，但通常不需要直接操作 Buildr 的全部内部模型。
-
-典型方式是：
-
-```text
-用户：使用 Buildr 管理这个项目。
-Agent：读取 Buildr Skill 或 bootstrap guide。
-Agent：先识别当前 runtime adapter，再调用 Buildr CLI 初始化、诊断、创建 Project、接入 Service 或同步 runtime。
-Buildr：写入源资产并通过 doctor 输出事实状态。
-Agent：发现任务相关资产、根据诊断推进工作，并在需要业务判断时引导用户。
-```
-
-CLI 是 Agent 的确定性执行层。Agent 负责理解目标、发现相关信息、编排动作和解释结果；人负责目标、边界与关键判断。涉及 workspace 资产变更时，Agent 应调用 Buildr CLI 或做可验证文件变更，并在状态变更后运行诊断。只要 Agent 能安全完成且已取得必要授权，就应直接推进动作，不把命令复制给用户代为执行；需要手动处理时，必须说明 Agent 无法执行的原因并给出准确兜底方式。
-
-doctor 是轻量、通用的 workspace 事实入口，不是所有专项验收的合集。它每次检查 canonical workspace identity、mutation 与 root registries，并在相关资产或 runtime adapter 适用时执行条件通用检查；Git 操作 readiness、OpenSpec change 契约、构建和测试仍由对应专业工作流负责。显式 `--agent <agent>` 选择当前 runtime 并让其 actionable findings 参与 readiness；未选择 Agent 时只检查有 Buildr managed marker/receipt 的 runtime inventory，未选中 runtime drift 不降低通用 workspace readiness。doctor 的 `ok` 只保持“没有 error”的兼容含义，是否可直接继续工作以独立的 `health.ready`、`health.actionRequired` 和根因化 `repairPlan` 为准。
-
-这种结构让不同岗位不必先把各自工作内容手工整理成一份给当前执行者的临时说明。只要相关内容已经作为 Project 或 workspace 工作资产被组织，Agent 就能在任务需要时发现它，为跨服务、跨岗位的端到端工作提供共同基础。Buildr 不使用固定岗位路由，也不承诺自动推断所有依赖；语义相关性仍由 Agent 根据任务判断。
-
-### Buildr Web：人的认知与治理入口
-
-Buildr Web 不是第二个 Agent，也不是聊天客户端或任务执行器。它帮助人理解当前 Workspace、Project 与可选 Service 的真实范围，查看可解释状态、维护名称和说明等低风险 metadata，并生成带 canonical scope 的 prompt 交给 Agent。
-
-第一次使用时，Buildr Web 先解释 Workspace 是人和 Agent 共同工作的顶层目录，再渐进引导 Project（业务、产品、系统或长期工作）与可选 Service（代码仓、应用、模块或可执行资产）。Service 不是开始工作的门槛：没有 Service 的 Project 可以直接交给 Agent 推进。
-
-真正的创建、迁移、修复和专业任务仍由 Agent 在核对目录、Git、授权和适用工作资产后执行与验证。Buildr Web 与 Agent-only 入口都从同一 Workspace 源资产读取事实，不维护独立数据库、聊天记录或完成 checklist。任何试图让 Buildr Web 承担对话、自动规划、Agent session 管理或专业执行的新能力，都必须单独证明它具有长期治理、跨 Agent 复用、确定性约束或可验证诊断价值；否则保留给 Agent。
-
-## CLI 产品表面
-
-Buildr 按用途和承诺区分三层 CLI 产品表面：
-
-| 分类 | 含义 | 可见性 |
+| 对象 | 负责回答 | 与其他对象的联系 |
 |---|---|---|
-| primary | 普通用户或 Agent 的 workspace onboarding、资产 lifecycle、诊断、修复和 runtime 主路径 | 根帮助主区、主题帮助、主产品文档和 bootstrap canonical 示例 |
-| agent-machine | Agent、Skill和产品Application依赖的低频确定性接口，例如审查结果、任务验证报告与Worktree | 根帮助独立分区、完整主题帮助和稳定命令契约 |
-| maintenance | 产品构建、开发预览和 OpenSpec workflow 编排 | 根帮助维护分区、维护文档、workflow Skills 和产品验证 |
+| 工作空间（Workspace） | 我们共同工作和发现资料的范围在哪里？ | 容纳组织的资产与登记入口；其中的所有文件不都属于受管资产 |
+| 项目（Project） | 我们要实现什么业务目标或长期工作？ | 引用目标所需的实现职责，可以先于具体代码建立 |
+| 服务（Service） | 哪一部分实现承担这项职责？ | 可被多个项目（Project）引用，指向一个代码库实例（Repository Instance） |
+| 代码库实例（Repository Instance） | 实际使用哪份代码，来源和位置是什么？ | 可以承载多个服务（Service），声明与当前检出状态分别观察 |
 
-该分类只控制可发现性与兼容承诺，不是权限或安全边界。`agent-machine` 与 `maintenance` 命令仍然可执行并具有 canonical help；具体授权、安全和 effects 继续由对应 Application/Skill contract 决定。
+因此，一个业务目标可以跨多个实现，一份实现也可以被多个目标共用。目录嵌套不决定业务归属，也不决定 Git 边界；没有服务（Service）的项目（Project）仍然可以开始工作。具体关系和修改影响见[项目、服务与代码库如何协作](architecture/project-service-repositories.md)。
 
-当前`package check/build`、`web preview *`、`openspec converge`与`openspec convergence inspect`属于maintenance。`openspec audit`、`openspec baseline create`、阶段型`openspec check`、`openspec sync-plan`、`openspec sync-apply`与`skills migrate-project-assets`已删除；旧调用返回标准unknown-command。标准规范解析与写入由锁定 OpenSpec 1.13.0 承担，Converge只组合相关冲突检查和中断恢复；Inspect只读仍存在的未决事务Receipt，正常archive或环境清理后不运行。legacy Project Skill source不受支持且当前Buildr不执行自动迁移。`package:<source-id>`是package manifest与随包Skill resolver的内部source identity，不是用户资产id或公开source scheme。`service create --rules`仅保留deprecated warning compatibility no-op；canonical Service规则入口是Service目录中的`AGENTS.md`。
+### 从工作方法到可发现入口
 
-## Runtime 投射
+Buildr 将适合长期维护的内容组织为工作资产（Work Asset），用两类内容解释其价值：
 
-Buildr 的原则是：
+- **工作事实：干的是什么。** 业务目标、项目文档、规范（Specification）、服务（Service）职责、代码来源及它们之间的关系。
+- **工作方法：怎样把事情做好。** 规则（Rule）、技能（Skill）、工具使用方法与协作流程，承载个人或组织认可的专业经验和工作边界。
 
-```text
-Install to Buildr, render to Agent runtime.
-```
+规则（Rule）保存边界，技能（Skill）提供可复用方法，规范（Specification）描述业务与产品承诺。命令（Command）声明可使用的外部工具，组件（Component）把相关源资产组织起来统一维护。这些是当前形式，不是封闭的长期资产枚举；位于工作空间（Workspace）或被一次任务使用，不等于已经纳入治理。
 
-Buildr 资产是源头；Agent runtime 是面向当前 Agent 的可重建入口。Workspace 就是 Buildr 治理的工作目录，也是 Skill 唯一 source authority；Project 是业务、依赖、适用性和 capability context，不是 Skill 安装隔离层。Skill 只在 workspace `skills/` 维护，再显式 render 到当前工作目录的 `workspace` destination 或个人的 `user` destination。Buildr 在写入前检查同名 identity、ownership、receipt 与完整目录 digest；冲突会阻止整次写入。
+Buildr 保留受管源文件，并把适用内容投射到不同智能体运行时（Agent Runtime）的发现入口。项目事实、普通文档与代码等仍从各自来源发现，不会全部复制进工具内部；发生内容或归属冲突时，需要先核对，不能静默覆盖。实际工具、登录态和个人凭证属于使用者的环境，不放入组织源资产。
 
-当前本地产品通过 `buildr web` 启动或复用只监听 loopback 的全局本机 Web 应用，并在默认浏览器中提供工作空间（Workspace）、项目（Project）、服务（Service）、任务（Task）与变更（Change）管理视图。Buildr Web 是任务记录（Task Record）的观察与有限维护客户端：正式 Task 由 Agent/Task Manager 创建，页面只允许编辑、完成和放弃已有 active Task。任务概览组合Task Record、Review与Verification，并提供本机复盘文档轻量卡片；查看Markdown零写入，只有用户明确决定后才登记`decided`。全局Change保持只读，Agent依据当前Change artifacts和真实现场继续工作。
+技能（Skill）在工作空间（Workspace）的 `skills/` 中维护，可投射到用户层或当前工作空间（Workspace）层。项目（Project）的适用性与能力绑定（Capability Binding）说明哪些方法适用于当前业务，不另存一套技能（Skill）副本。来源、组合与适配边界见[Buildr 技能体系](architecture/buildr-skill-system.md)。
 
-Buildr当前只通过npm Registry正式分发完整CLI与`buildr web`，主进程使用满足`engines.node`的Host Node。用户可显式运行`buildr web launcher install`生成macOS `.app`或Windows Start Menu shortcut；该图形入口只绑定同一npm安装并执行`web`，不复制Node、Buildr或payload，也不引入Desktop WebView或第二更新渠道。普通CLI不启动HTTP，关闭浏览器不等于退出服务。独立桌面内嵌界面与自包含平台安装器属于未来方向，当前未实现。
+Buildr 组织上下文（Context）的来源与关系，不直接替智能体（Agent）形成完整输入。全部潜在来源组成工作信息空间（Work Information Space）；其中被治理的长期资产及发现入口，形成共享工作环境（Shared Work Environment）。智能体（Agent）结合代码、数据库、网页、用户输入和工具结果，选择形成任务上下文（Task Context），再将本次需要的请求上下文（Request Context）放入有限的上下文窗口（Context Window）。相关性仍由智能体（Agent）判断，概念区别见[术语表](glossary.md)。
 
-新建 Workspace、Project、Service 或 Change，以及继续 Change、Task Review，均只在前端形成交给 Agent 的短指令，不依赖后端专业prompt生成器，不绕过 Agent 对范围、目录、Git、授权、OpenSpec 契约和 runtime 的判断。Task-scoped Change 可发起独立Planning Review；全局 Change 的通用审查 prompt 保持原边界。已归档 Change 默认只读，页面不会直接创建、编辑、apply、sync 或 archive Change。portable工作资产继续由文件系统/Git承载；适合索引、关系、聚合和事务的本地structured data由每个Workspace独立SQLite承载。
+### 从当前目标到可接续成果
 
-Project Domain 使用 UUID `id`、所属 `workspaceId`、可读 `code`、`name`、`description` 和 `source`。文件系统场景必须保留 `source.path` 以定位真实 Project；独立 Git source 另外声明 URL、remote 和稳定的 `integrationBranch`。当前分支、HEAD、dirty、upstream 与 ahead/behind 会随任务变化，只由 Git adapter 实时观察，不持久化到 Domain，也不会触发 Buildr 自动 checkout、stash 或 merge。
+正式任务（Task）保存目标、范围、关系和结果；工作摘要（Work Context）保存当前进展、下一步及需要人处理的事项。审查（Review）和验证（Verification）保留各自的结论与未覆盖部分，代码、规范、文件和业务系统继续承载实际成果。
 
-Service Domain 使用 UUID `id`、所属 `workspaceId`、直接父实体 `projectId`、Project 内唯一 `code`、`name`、`description`、开放词表 `type` 和 `source`。`source.path` 使用 Workspace 相对完整路径定位真实 Service；独立 Git source 同样只保存 URL、remote 与稳定的 `integrationBranch`。当前 Git 状态属于观察视图，Buildr 只诊断偏移，不自动切分支或修改用户仓库。
+Buildr Web 让人查看这些材料并参与判断，智能体（Agent）通过相应能力维护同一组事实。人的答复保存后，智能体（Agent）在继续时重读当前事实；答复本身不启动执行，任务状态也不能代替实际交付证据。完整过程见[从需求讨论到任务收尾](architecture/task-system.md)。
 
-不同 Agent 的处理方式不同：
+## 当前边界与进一步探索
 
-- Supported adapter 由 Buildr 随产品发布的静态 registry 唯一声明；每个 adapter 明确声明 user/workspace destination roots、可观测 discovery roots、inventory evidence 与 activation，并完整实现 Rules entry、产品 Buildr Skill、workspace Skills、install plans 和 runtime check。
-- Adapter 只描述 runtime-specific 投射并生成声明式 RuntimePlan；通用 core 统一完成 source assembly、计划校验、零写入冲突预检、compare/apply、受管 orphan 清理和 findings/repairs 聚合。
-- 不同 adapter 可以复用 native `AGENTS.md`、reference bridge 或 Skills layout 等内置投射原语，但必须保留独立 identity、capability evidence 和测试，不能 alias 或 fallback 到另一个 runtime。
-- `runtime list --json` 输出 trait catalog 和每个 adapter 的组合事实；新增 adapter 前只需向目标 Agent 收集 identity/surface、Rules、Skills、activation、checker 与最小 compatibility evidence，Buildr 的 RuntimePlan 和安全 reconcile 不重复调查。
-- Rules scope 使用真实 workspace 相对路径。adapter 合并 scope 祖先链与 scope 子树中的 `AGENTS.md`，按目录层级由宽到窄投射；它不要求维护 role/path 路由表，也不替 Agent 判断规则语义相关性。
-- Codex 原生读取各层 `AGENTS.md`，不生成规则桥接文件。
-- Claude Code 通过 adapter 在每个已发现 `AGENTS.md` 的同目录维护 `CLAUDE.md` reference bridge；Skills 从 workspace source render 到 user 或 workspace 的 `.claude/skills/`。
-- Cursor、Qoder 与 TRAE 将 `AGENTS.md` 投射为各自可检查的 scoped vendor rule files；TRAE Work 与 WorkBuddy 使用受管 root reference bridge。完整路径、activation、限制和证据状态见 Buildr Service 的 [Agent Runtime Adapters](../../services/buildr/docs/agent-runtime-adapters.md)。
-- 默认 `sync` 从 root `.` 递归 reconcile 整个受管理 workspace；扫描跳过符号链接、依赖/build/runtime 目录和未登记的嵌套 Git repo。
-- 正式持久交付以最小Task Record记录意图与scope，但Task Record不是普通编辑、构建或有界测试的通用工作许可。首次持久文件修改前，任务分流技能（task-triage）默认创建或复用当前任务工作树（Worktree），只有用户明确要求在主开发分支修改时例外；只读检查和任务记录无需隔离。需要依赖、代码生成或运行入口时直接使用Project/Service声明的真实入口，创建预览等资源时由对应能力保存owner并负责安全关闭。
-- `declaration-intake`统一承接Project/Service注册、首次Task、准备入口变化、Verification coverage gap及显式初始化/刷新：Agent只读发现`preparation.yml`与`verification.yml`候选或差异。已有明确授权或可由当前事实确定的日常维护直接处理；只有改变长期边界的决定才交给用户，Agent维护Project拥有的准备入口；验证声明继续由`task-verification` owner维护。Intake不新增store/writer，不管理`capabilities.yml`或`commands.yml`。
-- Buildr Local 在 `.buildr/local/workspace.sqlite` 保存单机local-only structured data。Task Record、Verification与Planning/Completion Review以该数据库为持久化authority。复盘正文只保存在被Git忽略的`.buildr/local/task-retrospectives/<task-id>.md`；Task Record只登记当前文档摘要与`pending-decision|decided`。旧Retrospective、研发、旧收尾和Environment表由连续migration直接删除，不建history或双读。
-- `.worktrees/` 是多个Task隔离checkout的容器，不是主Workspace、保留工作区或Agent runtime。`task-worktree`只提供`buildr.git-worktree-provider/v1`的checkout/branch/HEAD/clean/registration evidence和具体删除安全；`buildr worktree create|inspect|cleanup`不代表Task或业务成果完成。
-- 正式Task的当前协调入口是Task Record、父任务协调（Task Parent Coordination）与Buildr Web页面投影。Task顶层记录、Review和Verification分别由各自Application/read model提供；consumer不直接访问SQLite，也不维护第二份进度或证据。
-- 选择Buildr-managed OpenSpec路径时，规划材料与实现遵循同一默认隔离策略，复用当前任务已核对的工作树（Worktree），或用户明确要求的主开发分支位置。OpenSpec artifacts、实现与测试只写已确认owner的真实根，不从cwd、branch名、路径相似或旧回执猜测归属。
-- `task-verification` 是 `buildr.task-verification/v4` 的默认 provider。`buildr.project-verification/v4`把`verification.yml`作为Project测试地图，只登记少量稳定前后端测试体系、相关源码、测试根、完整入口、选择指导和环境要求，不列举每个测试文件。Task Verification Skill指导Agent从真实测试代码、构建脚本、CI和说明形成候选，并通过`project verification inspect|validate|update`维护；Application不生成地图内容。
-- 开发过程中Agent直接调用Maven、npm、Playwright、Browser、HTTP和Project自有runner取得反馈，不写正式Task报告。开发完成后，Agent根据Task目标、实际改动与测试地图选择受影响功能测试、受影响Service完整低成本回归及适用环境冒烟；Buildr不生成Verification Plan、不统一执行测试，也不创建Task Verification专属Execution Record。
-- 每个正式Task在Workspace SQLite维护一份closed`buildr.task-verification-report/v1` current报告。唯一Task Verification Application只提供`record|inspect`：写入时补充Task有效Project测试地图identity并事务整值替换；读取时按调用方内容版本和current测试地图派生`current|stale|unknown`。报告保存实际checks、选择范围、目标、来源、结果、gaps和`passed|not-passed|incomplete`结论；它不决定Task完成、风险接受、提交、推送、部署或发布。
-- Buildr Web Preview保存Task、Workspace、Worktree evidence、Git checkout与进程身份；启动、健康探测、复用和认证停止均由Preview自身负责。它不登记任务级动态资源，也不把清理失败写成Task结果。
-- `task-review` 通过唯一 `buildr.task-review/v2` capability 对真实方案或完成结果执行可选审查。Workspace SQLite维护Planning/Completion两个独立current slots；Result只保存subject identity、真实执行方式、reviewed/uncovered、findings、`accepted|changes-requested`结论与完成时间。`inspect`不推导适用性；`record`使用已观察digest做事务内CAS，同类型原子替换、跨类型隔离、冲突或中断不覆盖旧值。它不生成门禁、许可或第二事实源。
-- Buildr Product 的验证选择与证明范围见[产品验证框架](architecture/verification-framework.md)和项目 `verification.yml`；只有相关内容或运行条件变化才影响既有检查的适用性。
-- `task-finish`是完整“收尾/交付”意图的Skill入口和`buildr.task-finish/v1`默认provider。Agent按当前repository set、Task scope、真实交付现场和用户目标组合Git、业务工具、Task Record及相关资源；没有匹配Task时直接收尾，不补建Task。Application不保存统一交付运行或机器历史。
-- `git-operations` 是唯一 Skill-only `buildr.git-operations/v1` provider。直接用户或上游 consumer 必须先明确 repository、operation、相关 ref、scope、授权和顺序；provider 只提供精确 staging、commit/push 分离、完整 push range、共享 commit 冻结、前后 identity、最小 Result 和部分失败 fail-closed 语义。它不新增 Application、CLI、Receipt、状态机或 transaction，也不并入独立的 `buildr.git-worktree-provider/v1`。
-- `task-retrospective`是可选纯Skill，不再提供独立capability。用户明确要求时，Agent对`completed|abandoned` Task的当前可见事实形成自由Markdown；耗时或词元（Token）不可得时明确说明。查看不写状态，建议不自动创建Task或修改资产；用户决定继续时使用普通Task。
-- “收尾”只授权可安全确定的常规动作，不授权 force push、merge commit、远端任务分支删除、丢弃改动、共享分支历史改写或语义冲突决策。
-- 实际自举 workspace 的 sync 是独立状态变更，不作为相同tree的第二轮产品验证；唯一self-bootstrap runner按当前交付与retained checkout事实执行sync、入口检查和Doctor。`buildr update`只更新CLI来源。
-- 其他 Agent 在存在 adapter 前，不使用 supported fallback adapter；Agent 应读取标准资产或 bootstrap guide 理解边界，并联系 Buildr 作者反馈 adapter 需求。
+当前以本机使用为主，长期源资产可通过文件与 Git 协作，本机记录不会自动跨机器同步。已交付的资产管理、工具适配、任务协作与阅读能力，以及具体限制，统一见[当前能力与边界](capabilities.md)；不在本页重复完整功能清单。
 
-任务研发聚合、任务规划身份、旧Task Finish Application与统一Task Environment均已删除；`task_development_current`、`task_finish_current`与`task_environment_current`不再存在。`task complete`只保存顶层Task结果，交付事实由Git、文件、部署或外部系统重新观察；Worktree和预览等资源由各自owner安全清理。
+下一阶段将继续抽象工作环境（Work Environment）与工作流（Workflow），连接更完整的产研体系，并优化体验与技术架构。具体方向和接入示例见[产品方向汇总](../../docs/roadmap/product-directions.md)，不能据此推断相关系统已经全部接入。
 
-## MVP 边界
-
-Buildr 当前 MVP 已验证文件系统、Git、CLI、Buildr Skill、bootstrap guide 和 Agent runtime 渲染可以支撑人和 Agent 共同维护工作资产。
-
-当前能力导航见 [当前能力入口](capabilities.md)；规范性行为以 [OpenSpec specs](../../openspec/specs/) 为准。
-
-MVP 不解决完整企业云服务、权限系统、托管 Web/SaaS、多用户协作、代码托管平台集成、跨机器自动恢复、系统级 hook 或所有 Agent adapter。
-
-OpenSpec Component还包含Buildr自有的契约门禁sidebar：它在Requirement粒度检测active change冲突和陈旧delta，标准规范重建、写入与归档由锁定 OpenSpec 1.13.0 完成，Buildr 组合相关冲突检查与必要中断恢复；相关记录在正常归档后释放。Convergence Inspect只处理仍存在的未决恢复现场，不是归档后的长期审计；OpenSpec CLI与上游workflow Skills仍可独立升级。
-
-Sidebar 是 Buildr 对外部能力的独立、可卸载增强模式；Skill Contribution 是其通用组合机制。fragment 作为 Component member 参与 integrity 和统一生命周期：Buildr 自有 Skill 可使用稳定 slot，外部 Skill 使用 prepend/append boundary composition。runtime source assembly 先验证 Component 全部成员，通过后才由纯上游正文与 sidebar fragments 生成 Agent runtime 派生 Skill，不回写 workspace Skill 源。它不是 Adapter 扩展、可执行 Hook、事件总线或任意脚本机制。
-
-Buildr 的数据完整性保护是不可卸载的 CLI core：资产 identity、scope path、ownership、符号链接、保护根和集合根在写入前统一校验；跨文件 source mutation 使用 workspace 单写者 transaction、atomic writer、staging、backup 和失败回滚。进程异常留下的 transaction 会阻塞后续 source mutation，并由 doctor 提供恢复入口。该能力不是权限系统，也不阻止用户或外部工具直接编辑文件。
-
-产品维护命令 `package build --out` 将输出视为带版本化 receipt 和 integrity 的生成树；只替换仍匹配上次 receipt 的输出，不删除非空无 receipt 或已被修改的目录。
-
-当前 Components 不包含 Project/Service scope、远程 registry、依赖求解、权限系统或可执行 Hook。
-
-## 后续方向
-
-未来规划与历史设想见[产品方向汇总](../../docs/roadmap/product-directions.md)和[规划索引](../../docs/roadmap/README.md)；采用前核对当前规范与代码。
+继续使用时阅读[日常使用手册](guides/usage.md)；需要了解安装、适配、诊断和实现时，查阅[架构与专业参考](architecture/index.md)。本文解释目标、职责、场景与主要关系，不穷举操作和异常恢复，也不代替针对实际环境的验证。

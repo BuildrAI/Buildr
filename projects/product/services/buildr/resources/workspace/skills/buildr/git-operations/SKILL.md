@@ -19,7 +19,7 @@ description: 执行已明确仓库、操作和目标的 Git 操作，核对授�
 - 精确 owned paths/hunks 或已授权 commit scope；
 - 获准改变 working tree、local history 和 remote 的具体 effects。
 
-直接用户指令、任务收尾Skill或其他上游Agent/consumer可以提供这些输入。Agent拥有交付策略、动作、目标和顺序。同一任务已明确的写入授权，在repository、operation、ref、scope与effects未变且未被撤回时继续适用；每次写入仍重验当前事实。其他任务或范围变化不能沿用旧授权，也不得自行补选repository、ref、remote或策略。任何输入与当前事实不一致时，在零Git写入状态返回`blocked`。
+直接用户指令、`task-finish` 或其他上游智能体（Agent）/consumer可以提供这些输入。用户明确要求“收尾”时，`task-finish` 提供的当前任务范围内常规提交、集成和普通推送授权就是明确授权；本提供者（Provider）不得仅因用户未逐项重述 Git 操作而重复询问。智能体拥有交付策略、动作、目标和顺序。同一任务已明确的写入授权，在repository、operation、ref、scope与effects未变且未被撤回时继续适用；每次写入仍重验当前事实。其他任务或范围变化不能沿用旧授权，也不得自行补选repository、ref、remote或策略。任何输入与当前事实不一致时，在零Git写入状态返回`blocked`。
 
 ## 2. 保持 operation 单一
 
@@ -34,7 +34,7 @@ description: 执行已明确仓库、操作和目标的 Git 操作，核对授�
 
 本版不预扩 checkout、reset、cherry-pick、stash、branch deletion 等完整命令路由。rebase、merge、revert 或其他动作只有被 consumer 明确选为当前 operation 时才可能进入；不得作为发现分叉或失败后的自动替代策略。
 
-默认硬边界是不自动 stash、reset、rebase、merge、force push、改写共享历史或切换策略。
+默认硬边界是不自动 stash、reset、rebase、merge、force push、改写共享历史或切换策略。“收尾”也不授权 merge commit、远端删除、丢弃内容或语义冲突取舍。
 
 ### Fetch 与显式 rebase
 

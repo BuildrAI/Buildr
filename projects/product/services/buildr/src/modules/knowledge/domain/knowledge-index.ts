@@ -33,6 +33,7 @@ export type KnowledgeArtifact = {
 export type KnowledgeIndex = {
   schemaVersion: "buildr.knowledge-index/v1";
   scope: ScopeRef;
+  entryObject?: string;
   objects: KnowledgeObject[];
   artifacts: KnowledgeArtifact[];
   sources: KnowledgeSource[];
@@ -79,6 +80,7 @@ export function parseKnowledgeIndex(content: string): KnowledgeIndex {
   fields(raw, [
     "schemaVersion",
     "scope",
+    "entryObject",
     "objects",
     "artifacts",
     "sources",
@@ -131,6 +133,8 @@ export function parseKnowledgeIndex(content: string): KnowledgeIndex {
   for (const r of index.relations) fields(r, ["from", "to", "kind"]);
   const objectIds = new Set(index.objects.map((o) => o.id)),
     sourceIds = new Set(index.sources.map((s) => s.id));
+  if (index.entryObject !== undefined && (!id(index.entryObject) || !objectIds.has(index.entryObject)))
+    return invalid("知识入口必须指向已有对象。");
   for (const o of index.objects)
     if (
       !text(o.summary) ||

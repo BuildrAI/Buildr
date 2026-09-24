@@ -45,8 +45,8 @@ const response = (id: any, title: any, properties: any, required: any) => Object
 
 const plainText = { type: 'string' };
 const stringIds = { type: 'array', items: text, uniqueItems: true };
-const repositoryDraft = closed({ code: text, name: text, description: plainText, url: { type: 'string' }, remote: text, integrationBranch: { type: 'string' }, path: text }, ['code']);
-const serviceDraft = closed({ code: text, name: text, description: plainText, type: text, repositoryId: text, modulePath: plainText, repository: repositoryDraft }, ['code', 'name']);
+const repositoryDraft = closed({ code: text, name: text, description: plainText, url: { type: 'string' }, remote: text, integrationBranch: { type: 'string' }, path: text, observation: text }, ['code']);
+const serviceDraft = closed({ code: text, name: text, description: plainText, type: text, repositoryId: text, modulePath: plainText, repository: repositoryDraft, directoryMode: { enum: ['create', 'existing'] }, directoryPath: text, directoryObservation: text, projectCode: text }, ['code', 'name']);
 const businessService = closed({ id: text, workspaceId: text, code: text, name: text, description: plainText, type: text, repositoryId: text, modulePath: plainText, legacyRefs: stringIds }, ['id', 'workspaceId', 'code', 'name', 'description', 'type', 'repositoryId', 'modulePath']);
 const repositoryInstance = closed({ id: text, workspaceId: text, code: text, name: text, description: plainText, source: sourceEntity, location: text, available: { type: 'boolean' }, present: { type: 'boolean' }, observed: { type: ['object', 'null'], additionalProperties: true } }, ['id', 'workspaceId', 'code', 'name', 'description', 'source']);
 
@@ -62,6 +62,7 @@ export const WORKSPACE_HTTP_SCHEMAS: Readonly<Record<string, any>> = Object.free
   assetServiceRequest: response('asset-catalog/service-create', 'ServiceCreate', { revision: text, service: serviceDraft, projectId: text }, ['revision', 'service']),
   assetProjectRequest: response('asset-catalog/project-create', 'ProjectCreate', { revision: text, code: text, name: text, description: plainText, serviceIds: stringIds, newServices: { type: 'array', items: serviceDraft } }, ['revision', 'code', 'name']),
   projectCandidatesResponse: response('asset-catalog/project-candidates', 'ProjectCandidates', { revision: text, candidates: { type: 'array', items: closed({ code: text, path: text, observation: text, source: sourceEntity }, ['code', 'path', 'observation', 'source']) }, diagnostics: { type: 'array', items: closed({ code: text, path: text, message: text }, ['code', 'path', 'message']) } }, ['revision', 'candidates', 'diagnostics']),
+  directoryCandidatesResponse: response('asset-catalog/directory-candidates', 'DirectoryCandidates', { revision: text, candidates: { type: 'array', items: closed({ path: text, code: text, observation: text, projectCode: text, url: plainText }, ['path', 'code', 'observation']) }, diagnostics: { type: 'array', items: closed({ code: text, path: text, message: text }, ['code', 'path', 'message']) } }, ['revision', 'candidates', 'diagnostics']),
   projectRegisterRequest: response('asset-catalog/project-register', 'ProjectRegister', { revision: text, code: text, name: text, description: plainText, serviceIds: stringIds, observation: text }, ['revision', 'code', 'name', 'observation']),
   assetAssociateRequest: response('asset-catalog/associate', 'ProjectServices', { revision: text, serviceIds: stringIds, newServices: { type: 'array', items: serviceDraft } }, ['revision', 'serviceIds']),
   assetUpdateRequest: response('asset-catalog/update', 'AssetUpdate', { revision: text, name: text, description: plainText, type: text, repositoryId: text, modulePath: plainText, repository: repositoryDraft, url: plainText, remote: plainText, integrationBranch: plainText, path: text }, ['revision']),
@@ -145,6 +146,8 @@ export const WORKSPACE_HTTP_OPERATIONS = Object.freeze([
   ['assets.repositories.create', 'POST', '/asset-catalog/repositories', 'assetRepositoryRequest', 'assetCatalogResponse'],
   ['assets.services.create', 'POST', '/asset-catalog/services', 'assetServiceRequest', 'assetCatalogResponse'],
   ['assets.projects.create', 'POST', '/asset-catalog/projects', 'assetProjectRequest', 'assetCatalogResponse'],
+  ['assets.services.candidates', 'GET', '/asset-catalog/service-candidates', 'workspaceReadRequest', 'directoryCandidatesResponse'],
+  ['assets.repositories.candidates', 'GET', '/asset-catalog/repository-candidates', 'workspaceReadRequest', 'directoryCandidatesResponse'],
   ['assets.projects.candidates', 'GET', '/asset-catalog/project-candidates', 'workspaceReadRequest', 'projectCandidatesResponse'],
   ['assets.projects.register', 'POST', '/asset-catalog/projects/register', 'projectRegisterRequest', 'assetCatalogResponse'],
   ['assets.associate', 'PUT', '/asset-catalog/projects/:projectId/services', 'assetAssociateRequest', 'assetCatalogResponse'],

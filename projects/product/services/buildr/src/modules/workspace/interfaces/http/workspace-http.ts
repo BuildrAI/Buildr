@@ -87,12 +87,14 @@ export function createWorkspaceHttpContribution(application: any) {
         authorizeWrite();
         return respond('assets.normalize', application.normalizeCatalogRepositories(root, validateRequest('assets.normalize', await readJsonBody())));
       }
-      const assetDelete = suffix.match(/^\/asset-catalog\/(project|service)\/([A-Za-z0-9._-]+)$/);
+      const assetDelete = suffix.match(/^\/asset-catalog\/(project|service|repository)\/([A-Za-z0-9._-]+)$/);
       if (request.method === 'DELETE' && assetDelete) {
         authorizeWrite();
         return respond('assets.delete', application.deleteCatalogAsset(root, assetDelete[1], assetDelete[2], validateRequest('assets.delete', await readJsonBody())));
       }
       if (request.method === 'GET' && suffix === '/asset-catalog') return respond('assets.read', application.assetCatalog(root));
+      if (request.method === 'GET' && suffix === '/asset-catalog/service-candidates') return respond('assets.services.candidates', application.listCatalogDirectoryCandidates(root, 'service'));
+      if (request.method === 'GET' && suffix === '/asset-catalog/repository-candidates') return respond('assets.repositories.candidates', application.listCatalogDirectoryCandidates(root, 'repository'));
       if (request.method === 'GET' && suffix === '/asset-catalog/project-candidates') return respond('assets.projects.candidates', application.listProjectRegistrationCandidates(root));
       if (request.method === 'POST' && suffix === '/asset-catalog/projects/register') {
         authorizeWrite();
