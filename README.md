@@ -26,6 +26,8 @@ Buildr 把项目资料、代码位置和经过验证的工作方法组织在一�
 
 智能体（Agent）按[安装与初始化说明](projects/product/services/buildr/docs/cli-reference.md#首次使用)完成安装和验证。在 macOS 或 Windows 上，也可以让它安装 Buildr Web 启动器（Launcher）。
 
+官方 npm 包名为 `@buildr-ai/buildr`。
+
 ### 2. 初始化工作空间（Workspace）
 
 工作空间（Workspace）是你和智能体（Agent）共同使用的工作目录。安装后，告诉智能体（Agent）你希望使用哪个目录；也可以先在使用智能体（Agent）的应用中打开目标目录，再说：
@@ -91,6 +93,8 @@ Buildr 把项目资料、代码位置和经过验证的工作方法组织在一�
 这是已有的工作空间（Workspace），不要当作空目录重新初始化。产品治理事实位于 `projects/product/`，可执行实现位于 `projects/product/services/buildr/`，Buildr Web 前端位于 `projects/product/services/buildr-web/`。
 
 开发使用仓库内的 `projects/product/buildr`，不依赖或替换本机全局安装的 `buildr`；依赖、构建和测试命令从相应服务（Service）目录执行。具体位置见[产品开发入口](projects/product/README.md)，开始修改前阅读[贡献指南](CONTRIBUTING.md)。
+
+从仓库根目录运行 `projects/product/buildr runtime list --json`，可以查看当前支持的智能体运行时（Agent Runtime）。
 
 ## 深入阅读
 
