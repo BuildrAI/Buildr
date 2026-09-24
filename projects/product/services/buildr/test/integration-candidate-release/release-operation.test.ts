@@ -6,11 +6,26 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { reconcilePublicationAfterPreparedContext, runReleaseOperation } from '../../tools/release/release-orchestration-runner.ts';
+import { readCandidateEvidence } from '../../tools/release/release-transaction-runner.ts';
 import { createReleaseArtifactFixture } from '../helpers/release-artifact-fixture.ts';
 import { aggregateCandidateCiEvidence, candidateCiRegistryIdentity, createCandidateCiEvidence } from '../verification/candidate-ci-evidence.ts';
 import { CANDIDATE_CI_SHARDS, CANDIDATE_CI_HOST_NODE_TUPLES } from '../verification/registry.ts';
 
 const sourceRoot = path.resolve(import.meta.dirname, '../..');
+
+test('Candidate artifact readback uses a bounded package download budget and reports timeout', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-candidate-readback-budget-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const observed: number[] = [];
+  const execute = (_command: string, _args: string[], options: any) => {
+    observed.push(options.timeout);
+    return observed.length === 1 ? { status: 0, stdout: '' } : { status: null, stderr: '', error: new Error('ETIMEDOUT') };
+  };
+  assert.throws(() => readCandidateEvidence({ candidateRunId: 42, ghCommand: 'gh', repo: root, execute,
+    dependencies: { makeTempDirectory: () => root, removeDirectory: () => {} } }), /ETIMEDOUT/u);
+  assert.deepEqual(observed, [60_000, 120_000]);
+});
+
 function git(repo: string, args: string[]) {
   const result = spawnSync('git', args, { cwd: repo, encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);

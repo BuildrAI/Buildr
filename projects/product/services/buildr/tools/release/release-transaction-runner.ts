@@ -29,13 +29,14 @@ const workspaceRoot: any = path.resolve(serviceRoot, '../../../..');
 const packagePath: any = 'projects/product/services/buildr/package.json';
 
 function defaultExecute(command: any, args: any, options: any = {}): any  {
-  if (options.stream) return spawnSync(command, args, { cwd: options.cwd, env: options.env ?? process.env, stdio: 'inherit' });
-  return spawnSync(command, args, { cwd: options.cwd, encoding: 'utf8', env: options.env ?? process.env });
+  const timeout = Number.isFinite(options.timeout) ? options.timeout : undefined;
+  if (options.stream) return spawnSync(command, args, { cwd: options.cwd, env: options.env ?? process.env, stdio: 'inherit', timeout });
+  return spawnSync(command, args, { cwd: options.cwd, encoding: 'utf8', env: options.env ?? process.env, timeout });
 }
 
 function invoke(execute: any, executable: any, args: any, cwd: any, options: any = {}): any  {
   const result: any = execute(executable, args, { cwd, ...options });
-  if (result?.status !== 0) throw new Error(`${executable} ${args.join(' ')} failed: ${String(result?.stderr ?? result?.stdout ?? '').trim()}`);
+  if (result?.status !== 0) throw new Error(`${executable} ${args.join(' ')} failed: ${String(result?.stderr || result?.stdout || result?.error?.message || 'unknown command error').trim()}`);
   return String(result?.stdout ?? '');
 }
 
@@ -155,7 +156,7 @@ export function readCandidateEvidence({ candidateRunId, ghCommand, repo, execute
   const root: any = (dependencies.makeTempDirectory ?? ((prefix: any) => fs.mkdtempSync(prefix)))(path.join(os.tmpdir(), 'buildr-release-candidate-'));
   try {
     for (const name of ['candidate-aggregate', 'candidate-package']) {
-      invoke(execute, ghCommand, ['run', 'download', String(candidateRunId), '--repo', releasePublishAuthority.repository, '--name', name, '--dir', path.join(root, name)], repo);
+      invoke(execute, ghCommand, ['run', 'download', String(candidateRunId), '--repo', releasePublishAuthority.repository, '--name', name, '--dir', path.join(root, name)], repo, { timeout: name === 'candidate-package' ? 120_000 : 60_000 });
     }
     const aggregate: any = JSON.parse(fs.readFileSync(findSingleFile(path.join(root, 'candidate-aggregate'), 'candidate-ci-aggregate.json'), 'utf8'));
     const artifact: any = readReleaseArtifact(findSingleFile(path.join(root, 'candidate-package'), 'release-artifact.json'));
