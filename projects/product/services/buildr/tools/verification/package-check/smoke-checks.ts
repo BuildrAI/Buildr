@@ -340,8 +340,11 @@ export function createPackageSmokeChecks(deps: any): any  {
         problems.push('skills add must not write Agent runtime output.');
       }
       buildrSelf.exec(['skills', 'remove', 'package-check-skill', '--scope', '.', '--target', tempRoot], { cwd: root, stdio: 'ignore' });
-      if (existsDirectory(path.join(tempRoot, 'skills', 'package-check-skill'))) {
-        problems.push('skills remove must delete the loaded Skill source directory.');
+      if (!existsFile(path.join(tempRoot, 'skills', 'package-check-skill', 'scripts', 'run.sh'))) {
+        problems.push('skills remove must preserve the loaded Skill source directory.');
+      }
+      if (readSkillManifest(path.join(tempRoot, 'skills', 'manifest.yml')).some((skill: any) => skill.id === 'package-check-skill')) {
+        problems.push('skills remove must remove the Skill manifest entry.');
       }
       buildrSelf.exec(['skills', 'add', 'package-check-remote', '--remote-source', 'https://example.com/package-check-remote', '--description', 'remote info source', '--scope', '.', '--target', tempRoot], { cwd: root, stdio: 'ignore' });
       let remoteSkills = readSkillManifest(path.join(tempRoot, 'skills', 'manifest.yml'));

@@ -800,7 +800,7 @@ export function createPackageStaticValidator(deps: any): any  {
         }
         for (const [relativePath, requiredTexts] of [
           ['docs/bootstrap-guide.md', ['解析 `buildr.git-operations/v1` binding', '提供明确 workspace、upstream 和 update operation', '不自动 stash、reset、rebase、merge、覆盖，也不继续 sync', '不重复询问 sync', '非 Git workspace 跳过 Git provider', '不是 `buildr sync` 的隐式 Git 行为']],
-          ['docs/cli-reference.md', ['解析 `buildr.git-operations/v1` binding', '提供明确 workspace、upstream 和 update operation', 'Agent 不自动 stash、reset、rebase、merge 或覆盖', '不重复询问 sync', '非 Git workspace 直接 sync', '不隐式执行 Git 更新']],
+          ['docs/cli-reference.md', ['按 `buildr.git-operations/v1` 能力绑定', '明确目标目录、上游和更新动作', '不自动执行 `stash`、`reset`、`rebase`、`merge` 或覆盖文件', 'Git 更新成功后不重复询问同步', '不受 Git 管理时直接同步', '它不隐式更新 Git']],
         ]) {
           const contractPath = path.join(root, relativePath);
           if (!existsFile(contractPath)) {
