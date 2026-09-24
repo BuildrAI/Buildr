@@ -98,6 +98,7 @@ Buildr 把项目资料、代码位置和经过验证的工作方法组织在一�
 |--------------|----------|
 | 了解产品 | [产品说明](projects/product/knowledge/docs/overview.md)：协作关系、详细场景与工作组织；[当前能力与边界](projects/product/knowledge/docs/capabilities.md)：已经能做什么；[产品方向](projects/product/docs/roadmap/product-directions.md)：下一步往哪里走 |
 | 开始使用 | [日常使用手册](projects/product/knowledge/docs/guides/usage.md)：表达目标、参与判断和接续工作；[命令与适配参考](projects/product/services/buildr/docs/cli-reference.md)：手动操作及深入使用入口 |
+| 接入智能体 | [运行时适配参考](projects/product/services/buildr/docs/agent-runtime-adapters.md)：各智能体（Agent）的接入位置、刷新方式与支持边界 |
 | 参与开发 | [产品开发入口](projects/product/README.md)：源码与开发位置；[当前知识](projects/product/knowledge/README.md)：架构、代码地图与技术图；[贡献指南](CONTRIBUTING.md)：参与约定 |
 
 [安全报告](SECURITY.md) · [MIT License](LICENSE) · [GitHub Issues](https://github.com/BuildrAI/Buildr/issues)
