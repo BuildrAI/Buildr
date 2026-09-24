@@ -362,10 +362,13 @@ jobs:
 
   candidate-gate:
     name: Candidate gate
-    if: always() && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'dev'))
+    if: always() && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main' && (github.head_ref == 'dev' || startsWith(github.head_ref, 'codex/release-main-'))))
     needs: [candidate-plan, candidate-bootstrap, candidate-source, candidate-artifact-consumers, candidate-host-node]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
     defaults:
       run:
         working-directory: projects/product/services/buildr
@@ -378,22 +381,30 @@ jobs:
         with:
           node-version-file: projects/product/.node-version
           package-manager-cache: false
+      - name: Verify existing Candidate for release pull request
+        if: github.event_name == 'pull_request' && github.head_ref != 'dev'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node tools/release/verify-pr-candidate.ts
       - name: Prepare aggregate evidence directory
+        if: github.event_name == 'workflow_dispatch' || github.head_ref == 'dev'
         run: mkdir -p "${{ runner.temp }}/candidate-evidence"
       - name: Download all Candidate evidence
+        if: github.event_name == 'workflow_dispatch' || github.head_ref == 'dev'
         continue-on-error: true
         uses: actions/download-artifact@v7
         with:
           pattern: candidate-evidence-*
           path: ${{ runner.temp }}/candidate-evidence
       - name: Aggregate the closed Candidate evidence set
+        if: github.event_name == 'workflow_dispatch' || github.head_ref == 'dev'
         env:
           BUILDR_CANDIDATE_SOURCE_SHA: ${{ env.CANDIDATE_SOURCE_SHA }}
           BUILDR_CANDIDATE_CI_EVIDENCE_DIR: ${{ runner.temp }}/candidate-evidence
           BUILDR_CANDIDATE_CI_AGGREGATE_OUTPUT: ${{ runner.temp }}/candidate-aggregate/candidate-ci-aggregate.json
         run: node test/verification/candidate-ci.ts aggregate
       - name: Upload aggregate result
-        if: always()
+        if: always() && (github.event_name == 'workflow_dispatch' || github.head_ref == 'dev')
         uses: actions/upload-artifact@v7
         with:
           name: candidate-aggregate
