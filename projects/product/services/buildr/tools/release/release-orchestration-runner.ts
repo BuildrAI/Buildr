@@ -349,7 +349,7 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
   if (saved && (saved.version !== options.version || saved.workspace !== workspace)) throw new Error('Release operation document identity conflicts with the requested Workspace/version.');
   let state: any = saved ?? { schemaVersion: 'buildr.release-operation-input/v1', version: options.version, workspace, sources: [], candidate: null, publication: null };
   const currentEffects: any[] = [];
-  const execute = dependencies.execute ?? ((command: string, args: string[], spawnOptions: any) => spawnSync(command, args, { ...spawnOptions, encoding: 'utf8', timeout: 30_000 }));
+  const execute = dependencies.execute ?? ((command: string, args: string[], spawnOptions: any) => spawnSync(command, args, { timeout: 30_000, ...spawnOptions, encoding: 'utf8' }));
   const command = (executable: string, args: string[], cwd = workspace) => {
     const value = execute(executable, args, { cwd });
     if (value.status !== 0) throw new Error(`${executable} ${args[0]} failed: ${String(value.stderr || value.stdout || value.error?.message || '').trim()}`);
