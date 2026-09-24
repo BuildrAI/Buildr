@@ -80,3 +80,21 @@ Task Finish MUST允许Agent把已核验交付的逐仓完整source与delivered�
 - **WHEN** expected-source与delivered-ref没有成对覆盖全部受管repository selectors
 - **THEN** cleanup MUST在删除前blocked并指出缺失或未知selector
 - **AND** MUST NOT扩大范围、猜测目标ref或删除已通过检查的其他Task资源
+
+### Requirement: 明确收尾指令授权当前任务的常规 Git 交付
+用户明确要求“收尾”或等价的本轮交付时，Buildr MUST 触发 `task-finish` 技能（Skill），并将该指令视为当前任务范围内常规提交、集成和普通推送的明确授权。智能体（Agent）MUST 在每次写入前核验真实仓库、内容归属、分支与远端目标、完整推送范围及实际副作用；当对象或目标无法唯一确定时 MUST 停止相关写入。规则或能力提供者（Provider）MUST NOT 仅因用户未逐项重述 Git 操作而再次索取同一授权。
+
+#### Scenario: 当前任务可安全交付
+- **WHEN** 用户要求收尾，且当前任务成果、仓库、目标引用、完整新增提交范围和常规副作用均可核验
+- **THEN** 智能体 MUST 使用 `task-finish` 完成适用的提交、集成和普通推送，并核验实际结果
+- **AND** MUST NOT 因规则中要求“明确授权”而重复询问这些常规动作
+
+#### Scenario: 范围或目标不明
+- **WHEN** 当前内容归属、仓库、目标引用或完整推送范围不能唯一确定，或范围内混有其他任务成果
+- **THEN** 智能体 MUST 停止受影响的 Git 写入并指出最小缺口
+- **AND** MUST 继续不依赖该决定的安全工作
+
+#### Scenario: 需要额外副作用或冲突取舍
+- **WHEN** 交付需要强推、改写共享历史、丢弃内容、删除远端分支、覆盖他人工作、发布或替用户解决语义冲突
+- **THEN** “收尾”指令 MUST NOT 被解释为这些动作的授权
+- **AND** 智能体 MUST 只就额外副作用或业务取舍取得明确决定
