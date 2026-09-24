@@ -19,6 +19,7 @@ const jobs: any[] = [
 
 function fixture(overrides: any = {}): any  {
   const calls: any[] = [];
+  const optionsSeen: any[] = [];
   const current: any = {
     repository: { full_name: 'BuildrAI/Buildr' },
     event: 'workflow_dispatch',
@@ -29,16 +30,17 @@ function fixture(overrides: any = {}): any  {
     run_attempt: 1,
     ...overrides.current,
   };
-  const execute: any = (command: any, args: any) => {
+  const execute: any = (command: any, args: any, options: any) => {
     const key: any = [command, ...args].join(' ');
     calls.push(key);
+    optionsSeen.push({ key, options });
     if (key.startsWith(`gh api repos/BuildrAI/Buildr/actions/runs/${runId}`)) return { status: 0, stdout: JSON.stringify(current) };
     if (args.includes('--log-failed')) return { status: 0, stdout: overrides.log ?? 'ECONNRESET during artifact download' };
     if (key.startsWith(`gh run view ${runId} `)) return { status: 0, stdout: JSON.stringify({ jobs: overrides.jobs || jobs }) };
     if (key.startsWith(`gh run rerun ${runId} --failed `)) return { status: 0, stdout: '' };
     return { status: 1, stderr: `unexpected command: ${key}` };
   };
-  return { execute, calls };
+  return { execute, calls, optionsSeen };
 }
 
 test('Candidate retry inspection selects only failed shards from one matching run', () => {
@@ -48,6 +50,7 @@ test('Candidate retry inspection selects only failed shards from one matching ru
   assert.deepEqual(result.failedShards, ['Candidate core (core-package-runtime-release-macos)']);
   assert.deepEqual(result.effects, []);
   assert.equal(dependencies.calls.some((call: any) => call.includes('run rerun')), false);
+  assert.equal(dependencies.optionsSeen.find((call: any) => call.key.includes('--log-failed')).options.timeout, 90_000);
 });
 
 test('Candidate retry automatically reruns only failed jobs after matching inspection', () => {

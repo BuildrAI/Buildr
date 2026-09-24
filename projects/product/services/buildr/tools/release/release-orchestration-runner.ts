@@ -351,7 +351,8 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
   const currentEffects: any[] = [];
   const execute = dependencies.execute ?? ((command: string, args: string[], spawnOptions: any) => spawnSync(command, args, { timeout: 30_000, ...spawnOptions, encoding: 'utf8' }));
   const command = (executable: string, args: string[], cwd = workspace) => {
-    const value = execute(executable, args, { cwd });
+    const timeout = executable === (options.ghCommand || 'gh') && args.includes('--log-failed') ? 90_000 : 30_000;
+    const value = execute(executable, args, { cwd, timeout });
     if (value.status !== 0) throw new Error(`${executable} ${args[0]} failed: ${String(value.stderr || value.stdout || value.error?.message || '').trim()}`);
     return String(value.stdout || '').trim();
   };
