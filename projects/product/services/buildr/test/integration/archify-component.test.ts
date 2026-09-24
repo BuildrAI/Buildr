@@ -23,11 +23,18 @@ function scenario() {
   // Only these child processes use the fixture home; the host installation is untouched.
   const env = { ...process.env, HOME: userHome, USERPROFILE: userHome };
   const entry = path.join(serviceRoot, 'bin/buildr.mjs');
+  let step = 0;
+  function progress(label: string) {
+    process.stderr.write(`[archify-scenario] ${++step}: ${label}\n`);
+  }
   function run(args: string[], expected = 0) {
+    const label = args.slice(0, 3).join(' ');
+    progress(`start ${label}`);
     const result = spawnSync(process.execPath, [entry, ...args], {
       cwd: serviceRoot, env, encoding: 'utf8', timeout: 60_000, maxBuffer: 8 * 1024 * 1024,
     });
-    assert.equal(result.status, expected, `${args.join(' ')}\n${result.stdout}\n${result.stderr}`);
+    assert.equal(result.status, expected, `${args.join(' ')}\n${result.error?.message ?? ''}\n${result.stdout}\n${result.stderr}`);
+    progress(`passed ${label}`);
     return result;
   }
   const target = ['--target', workspace];
@@ -79,11 +86,13 @@ function scenario() {
   const graph = path.join(graphRoot, 'example.json');
   const output = path.join(graphRoot, 'example.html');
   fs.copyFileSync(path.join(projected, 'assets/archify/examples/brand-aware-delivery.architecture.json'), graph);
+  progress('start installed renderer');
   const delivered = spawnSync(process.execPath, [path.join(projected, 'assets/archify/bin/archify.mjs'),
     'deliver', 'architecture', graph, output, '--quality', 'showcase', '--json'], {
     cwd: projected, env, encoding: 'utf8', timeout: 60_000, maxBuffer: 4 * 1024 * 1024,
   });
-  assert.equal(delivered.status, 0, `${delivered.stdout}\n${delivered.stderr}`);
+  assert.equal(delivered.status, 0, `${delivered.error?.message ?? ''}\n${delivered.stdout}\n${delivered.stderr}`);
+  progress('passed installed renderer');
   assert.match(fs.readFileSync(output, 'utf8'), /<svg[\s>]/);
   const graphBytes = fs.readFileSync(graph);
   const outputBytes = fs.readFileSync(output);
@@ -123,7 +132,7 @@ if (process.argv.includes('--archify-scenario')) {
       '--script', file, '--', '--archify-scenario'], {
       cwd: serviceRoot, encoding: 'utf8', timeout: 175_000, maxBuffer: 8 * 1024 * 1024,
     });
-    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.equal(result.status, 0, `${result.error?.message ?? ''}\n${result.stdout}\n${result.stderr}`);
     assert.match(result.stdout, /"cleanup":"cleaned"/);
   });
 }
