@@ -30,6 +30,8 @@ import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
 import { ensureRegisteredTarget } from '../../src/modules/workspace/module.ts';
 import {
   clearBuildrWebInstance,
+  acquireBuildrWebStartLock,
+  releaseBuildrWebStartLock,
   writeBuildrWebInstance,
 } from '../../src/web/infrastructure/instance-runtime.ts';
 import { resolveWebProfile } from '../../src/modules/installation/contracts/web-profile.ts';
@@ -318,6 +320,35 @@ test('released npm Launcher falls back once from an occupied preferred port whil
     () => runtime.startBuildrWeb(['--no-open', '--port', String(preferred)]),
     /EADDRINUSE|address already in use/i,
   );
+});
+
+test('concurrent npm Launchers retry ownership after an old CLI releases its startup lock', async (t: any) => {
+  const value: any = await fixture();
+  const installed: any = installNpmLauncher({ registration: value.registration, platform: 'darwin', target: path.join(value.root, 'Applications', 'Buildr Web.app'), port: 0 });
+  const productIdentity = productIdentityFor(installed.binding);
+  const runtime: any = createRuntime();
+  registerWebInstanceLifecycle(runtime, { readProductIdentity: () => productIdentity, assertNpmLauncherBinding: assertCurrentNpmLauncherBinding, createLocalWorkspaceServer, ensureRegisteredTarget });
+  const originalWait = process.env.BUILDR_LAUNCHER_HANDOFF_WAIT_MS;
+  process.env.BUILDR_LAUNCHER_HANDOFF_WAIT_MS = '500';
+  t.after(() => {
+    if (originalWait === undefined) delete process.env.BUILDR_LAUNCHER_HANDOFF_WAIT_MS;
+    else process.env.BUILDR_LAUNCHER_HANDOFF_WAIT_MS = originalWait;
+  });
+  const cli: any = await runtime.startBuildrWeb(['--no-open', '--port', '0']);
+  const lock: any = acquireBuildrWebStartLock(resolveWebProfile(productIdentity));
+  t.after(() => { releaseBuildrWebStartLock(lock); if (cli.server.listening) cli.server.close(); });
+  const starts = [runtime.startBuildrWeb(['--no-open', '--launcher-binding', installed.bindingPath]), runtime.startBuildrWeb(['--no-open', '--launcher-binding', installed.bindingPath])];
+  const releaseTimer = setTimeout(() => releaseBuildrWebStartLock(lock), 100);
+  t.after(() => clearTimeout(releaseTimer));
+  const results: any[] = await Promise.all(starts);
+  const managed: any = results.find(result => !result.reused);
+  t.after(() => { if (managed?.server.listening) managed.server.close(); });
+  assert.equal(results.filter(result => !result.reused).length, 1);
+  assert.equal(results.filter(result => result.reused).length, 1);
+  assert.equal(results[0].url, results[1].url);
+  const receipt = JSON.parse(fs.readFileSync(path.join(process.env.BUILDR_APP_DATA_DIR, 'instance.json'), 'utf8'));
+  assert.equal(receipt.launcherIdentity.bindingIdentity, installed.binding.bindingIdentity);
+  assert.equal(cli.server.listening, false);
 });
 
 test('npm Launcher takes over CLI ownership, serializes concurrent opens, reuses exact binding and replaces an old same-slot binding', async (t: any) => {
