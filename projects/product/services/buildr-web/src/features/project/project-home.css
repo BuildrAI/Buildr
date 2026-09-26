@@ -1,4 +1,4 @@
-.project-home { container-type: inline-size; max-width: 1160px; margin: 0 auto; }
+.project-home { container-type: inline-size; max-width: none; margin: 0 auto; }
 .project-home-header { padding: 4px 0 24px; border-bottom: 1px solid var(--soft-line); }
 .project-home-topline { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
 .project-home-back { color: var(--soft-muted); font-size: 12px; }

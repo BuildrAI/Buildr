@@ -229,3 +229,11 @@
 .task-detail-page>.task-work-path{position:sticky;top:0;z-index:2;background:var(--soft-surface,#fff)}
 .task-list-table tr.task-row-current>td{background:var(--soft-primary-soft,#e7efec)!important}
 .task-list-table tr.task-row-current>td:first-child{box-shadow:inset 3px 0 var(--soft-primary,#397d74)}
+
+/* Keep prose readable without constraining reports, diagrams or prototype canvases. */
+.task-detail-page .task-intent-markdown,
+.task-reader .markdown-body > :is(p, ul, ol, blockquote),
+.task-reader-conclusion,
+.task-reader-section > p,
+.task-verification-checks p,
+.task-result-row p { max-width:var(--reading-content-width,880px); }

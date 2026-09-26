@@ -62,10 +62,16 @@ export function WorkspaceComposition({data:input,projectId,onOpen,error,onRetry}
         {col.items.map(item=>{
           const key=`${col.kind}:${item.id}`;
           const count=col.kind==='service'?data.projects.filter(p=>p.serviceIds?.includes(item.id)).length:col.kind==='repository'?data.services.filter(s=>s.repositoryId===item.id).length:0;
+          const references = col.kind === 'project'
+            ? [{ label:'引用服务', names:services.filter(s=>data.projects.find(p=>p.id===item.id)?.serviceIds?.includes(s.id)).map(s=>s.name) }]
+            : col.kind === 'service'
+              ? [{ label:'被项目引用', names:projects.filter(p=>p.serviceIds?.includes(item.id)).map(p=>p.name) }, { label:'代码库', names:repositories.filter(r=>r.id===data.services.find(s=>s.id===item.id)?.repositoryId).map(r=>r.name) }]
+              : [{ label:'被服务引用', names:services.filter(s=>s.repositoryId===item.id).map(s=>s.name) }];
           return <button type="button" className={`composition-node${emphasis&&!emphasis.has(key)?' dim':''}${hovered===key?' selected':''}`} data-composition-id={key} key={item.id}
             onPointerEnter={()=>setHovered(key)} onPointerLeave={()=>setHovered(null)} onFocus={()=>setHovered(key)} onBlur={()=>setHovered(null)}
             disabled={item.unavailable} onClick={()=>onOpen(col.kind,item.id)} aria-label={`${item.name}，${col.kind==='project'?'查看项目组成':'查看详情'}`}>
             <span>{col.icon}<strong>{item.name}</strong><span className="composition-open">→</span></span><p>{item.description || item.code}</p>
+            <span className="composition-references">{references.filter(r=>r.names.length).map(r=><span key={r.label}><b>{r.label}</b>{r.names.join('、')}</span>)}</span>
             {col.kind==='project'&&<small>查看项目组成</small>}
             {count>1&&<small>{data.sources?.[col.kind==='service'?'projects':'services']&&data.sources[col.kind==='service'?'projects':'services']!=='complete'?'至少 ':''}{count} 个{col.kind==='service'?'项目':'服务'}共用</small>}
             {col.kind==='service'&&!item.unavailable&&count===0&&(!data.sources||data.sources.projects==='complete')&&<small>尚未被项目引用</small>}
@@ -74,6 +80,6 @@ export function WorkspaceComposition({data:input,projectId,onOpen,error,onRetry}
         {!col.items.length&&<p className="composition-empty">{data.sources?.[col.source]&&data.sources[col.source]!=='complete'?'此部分信息尚未完整读取':'暂无登记'}</p>}
       </section>)}
     </div></div>}
-    <div className="composition-caption"><span><i />项目引用服务</span><span><i className="repository-link" />服务引用代码库</span><small>悬停查看关联 · 点击进入对象</small></div>
+    <div className="composition-caption"><span><i />项目引用服务</span><span><i className="repository-link" />服务引用代码库</span><small><span className="composition-desktop-hint">悬停查看关联 · </span>点击进入对象</small></div>
   </section>;
 }

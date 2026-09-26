@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { Alert, Button, Dropdown, Empty, Input, Select, Space, Table, Tabs, Tag, message } from 'antd';
 import { EditOutlined, MoreOutlined, PlusOutlined, SearchOutlined, StarFilled, StarOutlined } from '@ant-design/icons';
@@ -31,6 +31,14 @@ export function ArticlesPage() {
   const editArticle = (article: Publication) => openEditor({ projectCode: article.projectCode, publicationId: article.id });
   const [refresh, setRefresh] = useState(0), [creating, setCreating] = useState(false), [writing, setWriting] = useState(false), [deleting, setDeleting] = useState<Publication | null>(null), [saving, setSaving] = useState('');
   const [messages, holder] = message.useMessage();
+  const tableRef = useRef<HTMLDivElement>(null);
+  const [compact, setCompact] = useState(false);
+  useEffect(() => {
+    const node = tableRef.current; if (!node) return;
+    const update = () => setCompact(node.getBoundingClientRect().width < 720);
+    const observer = new ResizeObserver(update); observer.observe(node); update();
+    return () => observer.disconnect();
+  }, []);
   const href = (path: string) => workspaceHref(workspaceId, path);
   const returnState = { articleListSearch: location.search };
   const openArticle = (article: Publication, view?: 'source') => {
@@ -90,12 +98,12 @@ export function ArticlesPage() {
     {error && <Alert type="error" showIcon message={data ? '文章暂时无法更新，仍显示上次读取的内容。' : '文章读取失败'} description={error} action={<Button size="small" onClick={() => setRefresh(value => value + 1)}>重试</Button>} />}
     {projectError && <Alert type="warning" message="暂时无法读取可写项目，新建与写作入口稍后重试。" description={projectError} />}
     {Boolean(data?.diagnostics?.length) && <Alert type="warning" message="部分项目的文章暂时不可用" description={data?.diagnostics?.map(item => `${item.projectCode || '项目'}：${item.message}`).join('；')} />}
-    <div id="publications-list" className="publication-table"><Table<Publication> loading={loading && !data} dataSource={visible} rowKey={articleResourceKey} pagination={false} size="middle" scroll={{ x: 700 }} onRow={article => ({ onClick: event => { if (!(event.target as HTMLElement).closest('button,a')) openArticle(article); } })} locale={{ emptyText: <div id="publications-empty"><Empty description={publications.length ? '没有找到匹配的文章' : '暂无文章'} />{publications.length ? <Button onClick={() => setParams({}, { replace: true })}>清除筛选</Button> : <Button type="primary" disabled={!projects.length} onClick={() => setCreating(true)}>新建文章</Button>}</div> }} columns={[
-      { title: '文章 / 摘要', key: 'article', render: (_, article) => <div className="publication-title-cell"><Link to={href(articlePath(article))} state={returnState}>{article.title}</Link><p>{article.summary || '暂无摘要'}</p></div> },
-      { title: '所属项目', width: 150, key: 'project', render: (_, article) => <Link className="publication-project-label" to={href(`/projects/${encodeURIComponent(article.projectCode)}`)}>{article.projectName}</Link> },
-      { title: '稿件状态', width: 95, key: 'status', render: (_, article) => <Tag className={`publication-state ${article.status}`}>{publicationStatus[article.status] || article.status}</Tag> },
-      { title: '最近更新', width: 120, key: 'updated', render: (_, article) => <span className="publication-muted">{displayArticleDate(article.updatedAt || article.publishedAt)}</span> },
-      { title: '操作', width: 94, align: 'right', key: 'actions', render: (_, article) => <Space size={0}><Button type="text" icon={isSaved(articleResourceKey(article)) ? <StarFilled /> : <StarOutlined />} loading={saving === articleResourceKey(article)} disabled={preferences.loading} aria-label={`${isSaved(articleResourceKey(article)) ? '取消收藏' : '收藏'}：${article.title}`} onClick={() => void toggleSaved(article)} /><Dropdown trigger={['click']} menu={{ items: [{ key: 'edit', label: '编辑文章', icon: <EditOutlined /> }, { key: 'source', label: '查看原文' }, { key: 'copy', label: '复制链接' }, { key: 'export', label: '导出 Markdown' }, { type: 'divider' }, { key: 'delete', label: '删除文章', danger: true }], onClick: ({ key }) => {
+    <div ref={tableRef} id="publications-list" className={`publication-table${compact ? ' is-compact' : ''}`}><Table<Publication> loading={loading && !data} dataSource={visible} rowKey={articleResourceKey} pagination={false} size="middle" tableLayout="fixed" onRow={article => ({ onClick: event => { if (!(event.target as HTMLElement).closest('button,a')) openArticle(article); } })} locale={{ emptyText: <div id="publications-empty"><Empty description={publications.length ? '没有找到匹配的文章' : '暂无文章'} />{publications.length ? <Button onClick={() => setParams({}, { replace: true })}>清除筛选</Button> : <Button type="primary" disabled={!projects.length} onClick={() => setCreating(true)}>新建文章</Button>}</div> }} columns={[
+      { title: '文章 / 摘要', key: 'article', render: (_, article) => <div className="publication-title-cell"><Link to={href(articlePath(article))} state={returnState}>{article.title}</Link><p>{article.summary || '暂无摘要'}</p>{compact && <div className="publication-compact-meta"><Link className="publication-project-label" to={href(`/projects/${encodeURIComponent(article.projectCode)}`)}>{article.projectName}</Link><Tag className={`publication-state ${article.status}`}>{publicationStatus[article.status] || article.status}</Tag><span>{displayArticleDate(article.updatedAt || article.publishedAt)}</span></div>}</div> },
+      { title: '所属项目', hidden: compact, width: 150, key: 'project', render: (_, article) => <Link className="publication-project-label" to={href(`/projects/${encodeURIComponent(article.projectCode)}`)}>{article.projectName}</Link> },
+      { title: '稿件状态', hidden: compact, width: 95, key: 'status', render: (_, article) => <Tag className={`publication-state ${article.status}`}>{publicationStatus[article.status] || article.status}</Tag> },
+      { title: '最近更新', hidden: compact, width: 120, key: 'updated', render: (_, article) => <span className="publication-muted">{displayArticleDate(article.updatedAt || article.publishedAt)}</span> },
+      { title: '操作', width: compact ? 76 : 94, align: 'right', key: 'actions', render: (_, article) => <Space size={0}><Button type="text" icon={isSaved(articleResourceKey(article)) ? <StarFilled /> : <StarOutlined />} loading={saving === articleResourceKey(article)} disabled={preferences.loading} aria-label={`${isSaved(articleResourceKey(article)) ? '取消收藏' : '收藏'}：${article.title}`} onClick={() => void toggleSaved(article)} /><Dropdown trigger={['click']} menu={{ items: [{ key: 'edit', label: '编辑文章', icon: <EditOutlined /> }, { key: 'source', label: '查看原文' }, { key: 'copy', label: '复制链接' }, { key: 'export', label: '导出 Markdown' }, { type: 'divider' }, { key: 'delete', label: '删除文章', danger: true }], onClick: ({ key }) => {
         if (key === 'edit') editArticle(article);
         if (key === 'source') openArticle(article, 'source');
         if (key === 'delete') setDeleting(article);

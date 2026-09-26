@@ -28,3 +28,20 @@
 .composition-caption i { width:20px; border-top:1px solid #9fb9ae; }
 .composition-caption i.repository-link { border-top-style:dashed; }
 .composition-caption small { margin-left:auto; font-size:11px; }
+
+.workspace-composition { min-width:0; container:composition / inline-size; }
+.composition-node p { max-width:70ch; overflow-wrap:anywhere; }
+.composition-node strong { overflow-wrap:anywhere; }
+.composition-node > .composition-references { display:none; }
+@container composition (max-width:720px) {
+  .composition-scroll { overflow:visible; }
+  .composition-grid { min-width:0; grid-template-columns:minmax(0,1fr); gap:24px; padding:0; }
+  .composition-links { display:none; }
+  .composition-column h2 { margin-bottom:12px; }
+  .composition-node { margin-bottom:12px; min-height:0; }
+  .composition-node > .composition-references { display:flex; flex-direction:column; gap:5px; font-size:12px; color:var(--soft-muted); line-height:1.6; overflow-wrap:anywhere; }
+  .composition-references b { margin-right:8px; color:var(--soft-ink); font-weight:500; }
+  .composition-node.dim { opacity:.4; }
+  .composition-caption > span, .composition-desktop-hint { display:none; }
+  .composition-caption small { margin-left:0; }
+}
