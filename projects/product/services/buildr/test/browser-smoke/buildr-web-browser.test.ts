@@ -7,7 +7,7 @@ import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
-import { chromium } from 'playwright-core';
+import { launchTestBrowser } from './browser-launch.ts';
 
 import { createRuntime } from '../helpers/runtime-harness.ts';
 import { createRuntime as createProductionRuntime, runtimeProvide } from '../../src/bootstrap/runtime.ts';
@@ -43,31 +43,6 @@ function runBuildr(args: any, buildr: any = BUILDR): any  {
 function runGit(root: any, args: any): any  {
   const result: any = spawnSync('git', args, { cwd: root, encoding: 'utf8' });
   assert.equal(result.status, 0, `${result.stderr}\n${result.stdout}`);
-}
-
-function browserCandidates(): any  {
-  return [
-    process.env.BUILDR_BROWSER_EXECUTABLE,
-    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-    '/Applications/Chromium.app/Contents/MacOS/Chromium',
-    '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
-    '/usr/bin/google-chrome',
-    '/usr/bin/google-chrome-stable',
-    '/usr/bin/chromium',
-    '/usr/bin/chromium-browser',
-    process.env.PROGRAMFILES && path.join(process.env.PROGRAMFILES, 'Google', 'Chrome', 'Application', 'chrome.exe'),
-    process.env['PROGRAMFILES(X86)'] && path.join(process.env['PROGRAMFILES(X86)'], 'Google', 'Chrome', 'Application', 'chrome.exe'),
-  ].filter(Boolean);
-}
-
-function resolveBrowserExecutable(): any  {
-  const executable: any = browserCandidates().find((candidate: any) => {
-    try { fs.accessSync(candidate, fs.constants.X_OK); return true; } catch { return false; }
-  });
-  if (!executable) {
-    throw new Error('Browser smoke 需要本机 Chrome/Chromium；可通过 BUILDR_BROWSER_EXECUTABLE 指定可执行文件，测试不会自动下载浏览器。');
-  }
-  return executable;
 }
 
 function writeChange(projectRoot: any, relative: any, title: any): any  {
@@ -395,7 +370,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
   previewServer = previewInstance.server;
   const { url: previewUrl }: any = await previewInstance.ready;
   const workspaceUrl: any = `${url}/workspaces/${initialWorkspaceId}`;
-  browser = await chromium.launch({ executablePath: resolveBrowserExecutable(), headless: true });
+  browser = await launchTestBrowser();
   const page: any = await browser.newPage({ locale: 'zh-CN' });
   process.stderr.write(`[buildr-browser] selector=${selectorLabel} fixture=${fixtureProfile} phase=browser-ready\n`);
   const browserErrors: any[] = [];

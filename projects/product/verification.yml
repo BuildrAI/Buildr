@@ -140,12 +140,16 @@ testing:
       cwd: services/buildr
     selection:
       - 根据受影响页面选择 test:browser:changed 或对应页面入口；需要完整浏览器检查时使用 full
+      - 通过 preparation.yml 中的 buildr.browser-chromium 准备配套
+        Chromium；安装、缓存复用与显式路径说明见 services/buildr/test/browser-smoke/README.md
+      - 自动化测试采用无头模式（Headless），不依赖智能体（Agent）的临时浏览器工具
       - 前端逻辑测试由 buildr-web-unit 单独执行；浏览器检查通过不能替代逻辑测试
-      - 原型候选构建使用前端现有依赖；单独执行 node tools/build-prototype.mjs <output.html> 并在隔离生产托管中验证，不由完整浏览器入口自动生成或证明原型效果
+      - 原型候选构建使用前端现有依赖；单独执行 node tools/build-prototype.mjs <output.html>
+        并在隔离生产托管中验证，不由完整浏览器入口自动生成或证明原型效果
     requirements:
       - node
       - npm
-      - browser
+      - playwright-chromium
   - id: buildr-environment-smoke
     title: Buildr 已安装环境冒烟
     scope:
