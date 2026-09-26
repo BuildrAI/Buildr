@@ -555,6 +555,24 @@ skills:
       - trae-work
       - workbuddy
     runtimePath: archify
+  - id: frontend-development
+    assetIdentity: buildr:skill:frontend-development
+    sourceIdentity: package:skills/buildr/frontend-development
+    source: buildr
+    path: buildr/frontend-development
+    description: 开发或修改前端页面、交互和样式时使用；复用已有组件与主题，隔离数据和业务操作，保持正式页面与已获授权原型一致。不自动制作原型。
+    enabled: true
+    required: false
+    state: installed
+    runtimes:
+      - claude-code
+      - codex
+      - cursor
+      - qoder
+      - trae
+      - trae-work
+      - workbuddy
+    runtimePath: frontend-development
 contracts:
   - id: buildr.terminology-governance
     version: 1

@@ -111,6 +111,18 @@
     },
     {
       "type": "skill",
+      "id": "frontend-development",
+      "target": "skills/buildr/frontend-development",
+      "integrity": "sha256-fd40a6d70906d9d0191f18a8f31ca7aa392ef73a4e734fd16bcf8619b7e48bad",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "integrity": "sha256-66b68d015a567e38be47a8d8ba6d926a77f15443af44d6eff0a52227e0096895"
+        }
+      ]
+    },
+    {
+      "type": "skill",
       "id": "git-operations",
       "target": "skills/buildr/git-operations",
       "integrity": "sha256-5a08dba5328055f39e23f54124e9eabdb6c3f321bff8112bd19e47aae2896b07",
@@ -325,11 +337,27 @@
       "type": "skill",
       "id": "ui-prototype",
       "target": "skills/buildr/ui-prototype",
-      "integrity": "sha256-6a35b5b8db20281991614d35e37f0099ac6f4e3d0b80d75c863d9ca18b91a985",
+      "integrity": "sha256-adfffcd5c3b11cf6e4b472a427d12cdfc8271dfbbaa4a96c8f810f4b854d6677",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-1cc6e7099aedd0e7288099c47a1ac0fcb57bc815c15426b04640674bb8566bca"
+          "integrity": "sha256-bf29e23c5a39bc961acff261f775be592e3f8dd781dacf1a6eddfd3532c5a4ce"
+        },
+        {
+          "path": "assets/feature-notes.css",
+          "integrity": "sha256-0772c8c4e6305be4deb0c0922577b1eb337d1702652910ad9d665b0ed38c37fe"
+        },
+        {
+          "path": "assets/feature-notes.js",
+          "integrity": "sha256-6ef65fac29f30a6f5aad92c93598770e7e3addc2038d633698bf594833140e44"
+        },
+        {
+          "path": "references/content-format.md",
+          "integrity": "sha256-b90a4087039860cf7cbcfa783462206b77e7c18b6fd01c815b8a5719c4be142b"
+        },
+        {
+          "path": "references/feature-notes.md",
+          "integrity": "sha256-8cd7246201673923c166a69c5db3b9a8c5d828b146792ef0d8a6351e5bde595a"
         }
       ]
     },
