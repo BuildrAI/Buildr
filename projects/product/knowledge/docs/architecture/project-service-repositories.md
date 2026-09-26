@@ -52,6 +52,14 @@
 
 这些是[规范承诺](../../../openspec/specs/workspace-asset-relationships/spec.md)和[当前应用实现](../../../services/buildr/src/modules/workspace/application/asset-relationships-application.ts)中可核对的行为。界面“移除”只取消登记。永久删除源码与文件将由独立功能承担，当前没有此入口。
 
+## 怎样持续维护项目组成？
+
+使用 `project-composition-maintenance` 技能（Skill）按业务目标、已确认决定、代码与配置梳理参与的服务（Service）。日常开发只核对新增、替换或停用所影响的组成，在同次工作中完成必要维护。基础项目（Project）可以集中组织公共能力，各业务按实际需要关联同一身份。
+
+独立运行版（Standalone）沿现有 `buildr assets inspect|associate` 等本地动作维护清单（Manifest）。`associate` 保存完整 `serviceIds` 集合，因此应保留原有关联，只应用本次确认的增减；陈旧写入被拒绝后重新核对。解除当前引用不删除全局对象或代码。已有组成图继续读取同一登记，不另存图数据，也不表达服务（Service）之间的依赖。
+
+代码中暂未发现使用，不足以移除已确认的组成；尚未决定的方案也不应登记为事实。该方法在梳理及开发时执行，不承诺后台监听；无组成变化时无需写入。
+
 ## 哪些边界不能混淆？
 
 **当前约束：** 一个服务身份只引用一个代码库实例，模块路径必须留在该实例内；项目引用可共享，反向关系由引用派生；写入必须保留其他对象与并发修改。这些约束由[领域校验](../../../services/buildr/src/modules/workspace/domain/asset-relationships.ts)及应用事务共同落实。
