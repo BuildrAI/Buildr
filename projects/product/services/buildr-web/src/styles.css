@@ -2000,7 +2000,8 @@ details summary { cursor: pointer; color: var(--soft-ink); font-size: 12px; font
 .resource-name > span { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; color:var(--soft-muted); font-size:12px; line-height:1.6; }
 .resource-code { color:#68766e; font-size:12px; background:#f3f6f4; padding:2px 6px; border-radius:4px; overflow-wrap:anywhere; }
 .resource-home-head { padding:22px 24px; margin-bottom:16px; border:1px solid var(--soft-line); border-radius:12px; background:linear-gradient(135deg,#f0f6f3,#fff 80%); }
-.resource-home-head > .ant-btn { margin-top:0; flex:none; }
+.resource-home-head > :first-child { min-width:0; }
+.resource-home-actions { flex:none; max-width:100%; }
 .resource-home-meta { display:flex; align-items:center; gap:14px; margin-top:12px; color:var(--soft-muted); font-size:12px; }
 .resource-home > .ant-alert { margin-top:16px; }
 .resource-section { padding:20px; margin-bottom:16px; border:1px solid var(--soft-line); border-radius:12px; background:#fff; }
