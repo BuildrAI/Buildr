@@ -1,6 +1,6 @@
 {
   "name": "@buildr-ai/buildr",
-  "version": "0.1.0-rc.36",
+  "version": "0.1.0-rc.37",
   "private": false,
   "description": "Buildr CLI for managing Agent workspace assets.",
   "license": "MIT",
