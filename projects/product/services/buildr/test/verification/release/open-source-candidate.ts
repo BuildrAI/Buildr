@@ -33,7 +33,9 @@ function finding(rule: any, relativePath: any, message: any): any  {
 
 export function inspectCandidateFile(relativePath: any, content: any, size: any = Buffer.byteLength(content)): any  {
   const findings: any[] = [];
-  if (size > maximumTrackedFileBytes) findings.push(finding('candidate.large-file', relativePath, `tracked file exceeds ${maximumTrackedFileBytes} bytes`));
+  const prototype = relativePath.endsWith('.html') && content.includes('<!-- buildr:ui-prototype -->');
+  const maximumBytes = prototype ? 2 * maximumTrackedFileBytes : maximumTrackedFileBytes;
+  if (size > maximumBytes) findings.push(finding('candidate.large-file', relativePath, `tracked file exceeds ${maximumBytes} bytes`));
   if (content.includes('\0')) return findings;
   for (const rule of contentRules) {
     if (rule.pattern.test(content)) findings.push(finding(rule.id, relativePath, 'blocked content pattern detected; inspect and remove or explicitly redesign the fixture'));

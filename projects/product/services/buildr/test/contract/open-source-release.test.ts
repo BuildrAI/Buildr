@@ -47,6 +47,17 @@ test('open-source candidate content rules block secrets without echoing values',
   assert.equal(inspectCandidateFile('fixture.md', ['person', 'private.test'].join('@'))[0].rule, 'private.email-address');
 });
 
+test('self-contained prototypes retain their 2 MiB bound and content scanning', () => {
+  const prototype = '<!doctype html><!-- buildr:ui-prototype --><title>Preview</title>';
+  const mib = 1024 * 1024;
+  assert.deepEqual(inspectCandidateFile('docs/prototypes/preview.html', prototype, 2 * mib), []);
+  assert.equal(inspectCandidateFile('docs/prototypes/preview.html', prototype, 2 * mib + 1)[0].rule, 'candidate.large-file');
+  assert.equal(inspectCandidateFile('docs/large.html', '<!doctype html>', mib + 1)[0].rule, 'candidate.large-file');
+  assert.equal(inspectCandidateFile('docs/large.txt', prototype, mib + 1)[0].rule, 'candidate.large-file');
+  const secret = ['-----BEGIN ', 'PRIVATE KEY-----'].join('');
+  assert.equal(inspectCandidateFile('docs/prototypes/preview.html', prototype + secret, mib + 1)[0].rule, 'secret.private-key');
+});
+
 test('open-source metadata and tarball contracts enforce public identity and inventory', () => {
   const valid: any = {
     name: '@buildr-ai/buildr',
