@@ -131,6 +131,7 @@ testing:
       - services/buildr/test/verification/browser-selector-dispatcher.ts
     testRoots:
       - services/buildr/test/browser-smoke/**
+      - services/buildr-web/test/browser/**
     full:
       kind: command
       argv:
@@ -143,13 +144,20 @@ testing:
       - 通过 preparation.yml 中的 buildr.browser-chromium 准备配套
         Chromium；安装、缓存复用与显式路径说明见 services/buildr/test/browser-smoke/README.md
       - 自动化测试采用无头模式（Headless），不依赖智能体（Agent）的临时浏览器工具
+      - 布局与共享样式变化执行 services/buildr-web 的
+        test:browser:layout；宽屏、窄屏、分屏及阅读状态由前端服务（Service）维护，生产托管与清理由 buildr
+        服务（Service）提供
       - 前端逻辑测试由 buildr-web-unit 单独执行；浏览器检查通过不能替代逻辑测试
+      - 临时交互与视觉审查按当前绑定和现场工具执行，分别记录 source=agent 与实际覆盖；它们不替代 Playwright
+        自动化入口或其运行依赖
       - 原型候选构建使用前端现有依赖；单独执行 node tools/build-prototype.mjs <output.html>
         并在隔离生产托管中验证，不由完整浏览器入口自动生成或证明原型效果
     requirements:
       - node
       - npm
-      - playwright-chromium
+      - playwright-core（由 buildr 的锁定依赖提供）
+      - playwright-chromium（通过 buildr.browser-chromium 显式准备）；或
+        BUILDR_BROWSER_EXECUTABLE 指定的兼容浏览器，测试运行不下载
   - id: buildr-environment-smoke
     title: Buildr 已安装环境冒烟
     scope:

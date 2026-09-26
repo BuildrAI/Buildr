@@ -16,6 +16,7 @@ import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
 import { materializeCleanProductSource } from '../helpers/clean-product-source.ts';
 import { recordVerificationResultFromEvidence } from '../helpers/task-verification-result-fixture.ts';
 import { runWorkspaceCompositionJourney } from './workspace-composition-journey.ts';
+import { runLayoutJourney } from '../../../buildr-web/test/browser/layout-journey.ts';
 import { runWorkbenchJourney } from './workbench-journey.ts';
 import { runPublicationJourney, publicationTestPng } from './publication-journey.ts';
 import { runServiceKnowledgeJourney } from './service-knowledge-journey.ts';
@@ -27,7 +28,7 @@ const SELECTOR_INPUT: any = process.argv[2] ?? 'all';
 const SCREENSHOT_DIR: any = process.env.BUILDR_SCREENSHOT_DIR;
 const BROWSER_WEB_DIST_ROOT: any = process.env.BUILDR_BROWSER_WEB_DIST_ROOT;
 if (!BROWSER_WEB_DIST_ROOT) throw new Error('Browser smoke requires BUILDR_BROWSER_WEB_DIST_ROOT from the Browser dispatcher staging build.');
-const KNOWN_SELECTORS: any = new Set(['all', 'core', 'shell', 'workbench', 'task', 'project', 'service', 'change', 'articles']);
+const KNOWN_SELECTORS: any = new Set(['all', 'core', 'shell', 'workbench', 'task', 'project', 'service', 'change', 'articles', 'layout']);
 const SELECTORS: any = new Set(SELECTOR_INPUT.split(',').map((item: any) => item.trim()).filter(Boolean));
 
 for (const selector of SELECTORS) if (!KNOWN_SELECTORS.has(selector)) throw new Error(`Unknown browser integration selector: ${selector}`);
@@ -205,6 +206,12 @@ function createSelectedFixture(root: any, controllerCli: any): any  {
   if (selector === 'core') createCoreFixture(root);
   else if (selector === 'shell') createShellFixture(root);
   else if (selector === 'workbench') createShellFixture(root);
+  else if (selector === 'layout') {
+    createShellFixture(root);
+    const source = path.join(root, 'projects/demo/services/api');
+    fs.mkdirSync(source, { recursive: true });
+    fs.writeFileSync(path.join(source, 'README.md'), '# 布局阅读资料\n\n' + Array.from({ length: 35 }, (_, index) => `## 阅读段落 ${index + 1}\n\n${'这是具有稳定价值的前端阅读说明，用于验证宽屏、分屏和窄屏下正文可读，必要操作可达。'.repeat(8)}\n`).join('\n'));
+  }
   else if (selector === 'project') createProjectFixture(root);
   else if (selector === 'service') createServiceFixture(root);
   else if (selector === 'change') createChangeFixture(root);
@@ -307,7 +314,7 @@ async function capture(page: any, name: any): Promise<any>  {
   await page.screenshot({ path: path.join(SCREENSHOT_DIR, name), fullPage: true, animations: 'disabled' });
 }
 
-test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('all') || SELECTORS.has('task') ? 300_000 : SELECTORS.has('workbench') || SELECTORS.has('articles') || SELECTORS.has('shell') || SELECTORS.has('service') || SELECTORS.has('project') ? 120_000 : 45_000 }, async (t: any) => {
+test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('all') || SELECTORS.has('task') ? 300_000 : SELECTORS.has('layout') || SELECTORS.has('workbench') || SELECTORS.has('articles') || SELECTORS.has('shell') || SELECTORS.has('service') || SELECTORS.has('project') ? 120_000 : 45_000 }, async (t: any) => {
   const requestedSmokeRoot: any = process.env.BUILDR_SMOKE_ROOT;
   const managedSmokeRoot: any = requestedSmokeRoot && fs.existsSync(path.join(requestedSmokeRoot, '.buildr-smoke-owner')) ? requestedSmokeRoot : null;
   const base: any = managedSmokeRoot || fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-browser-smoke-'));
@@ -340,6 +347,10 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
   const otherRoot: any = path.join(base, 'other-workspace');
   runBuildr(['init', '--target', otherRoot, '--name', 'other-workspace', '--description', '第二个浏览器工作空间']);
   const runtime: any = createRuntime();
+  if (SELECTORS.has('layout')) {
+    const catalog = runtime.assetCatalog(workspaceRoot);
+    if (catalog.migrationRequired) runtime.migrateAssetCatalog(workspaceRoot, { revision: catalog.revision });
+  }
   let registry: any = runtime.listRegisteredWorkspaces();
   registry = runtime.registerLocalWorkspace({ rootPath: otherRoot, revision: registry.revision });
   const otherWorkspaceId: any = registry.workspaces.find((item: any) => item.rootPath === otherRoot).workspace.id;
@@ -377,6 +388,24 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
   const expectedBrowserErrors: any = new Set();
   page.on('pageerror', (error: any) => browserErrors.push(`pageerror ${page.url()}: ${error.message}`));
   page.on('console', (message: any) => { if (message.type() === 'error') browserErrors.push(`console.error ${page.url()} [${message.location().url}]: ${message.text()}`); });
+
+  page.setDefaultTimeout(10_000);
+  t.beforeEach(() => { browserErrors.length = 0; expectedBrowserErrors.clear(); });
+  t.afterEach(async () => {
+    try {
+      const unexpected = browserErrors.filter(error => ![...expectedBrowserErrors].some((expected: any) => error.includes(expected)));
+      assert.deepEqual(unexpected, [], unexpected.join('\n'));
+    } finally {
+      // Always discard failed dialogs, injected routes, listeners, viewport and saved UI state.
+      await page.unrouteAll({ behavior: 'ignoreErrors' });
+      page.removeAllListeners('request');
+      await page.evaluate(() => { localStorage.clear(); sessionStorage.clear(); }).catch(() => {});
+      await page.goto('about:blank');
+      await page.setViewportSize({ width: 1280, height: 720 });
+    }
+  });
+
+  if (selected('layout')) await runLayoutJourney({ t, page, workspaceUrl, capture });
 
   if (SELECTORS.has('core')) await t.test('核心流程进入 Workspace、Task 路由并读取代表性 Tab', async () => {
     await page.goto(`${workspaceUrl}/tasks`);
@@ -1128,7 +1157,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
       await page.getByRole('textbox', { name: '服务名称', exact: true }).fill('目录登记服务');
       await page.getByRole('textbox', { name: '服务标识', exact: true }).fill('retained-browser');
       await page.getByRole('combobox', { name: '已有服务目录', exact: true }).click();
-      await page.getByTitle(directoryPath, { exact: true }).click();
+      await page.locator('.ant-select-dropdown:visible .ant-select-item-option').filter({ hasText: directoryPath }).click();
       await page.getByRole('button', { name: '添加服务', exact: true }).click();
       await page.locator('#catalog-service-create').waitFor({ state: 'detached' });
       const row = page.locator('#service-table-body tr').filter({ hasText: '目录登记服务' });
@@ -1143,7 +1172,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.getByRole('textbox', { name: '服务名称', exact: true }).fill('新目录服务');
     await page.getByRole('textbox', { name: '服务标识', exact: true }).fill('new-directory-browser');
     await page.getByRole('combobox', { name: '所在项目', exact: true }).click();
-    await page.getByTitle('演示项目', { exact: true }).click();
+    await page.locator('.ant-select-dropdown:visible .ant-select-item-option').filter({ hasText: runtime.assetCatalog(workspaceRoot).projects.find((item: any) => item.code === 'demo').name }).click();
     await page.getByRole('button', { name: '添加服务', exact: true }).click();
     await page.locator('#catalog-service-create').waitFor({ state: 'detached' });
     assert.ok(fs.existsSync(path.join(workspaceRoot, 'projects/demo/services/new-directory-browser/AGENTS.md')));
@@ -1161,7 +1190,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await skillRow.waitFor({ state: 'hidden' }); assert.deepEqual(fs.readFileSync(skillFile), bytes);
     await page.locator('#skills-add').click();
     await page.getByRole('combobox', { name: '已有技能目录', exact: true }).click();
-    await page.getByTitle('skills/retained-browser-skill', { exact: true }).click();
+    await page.locator('.ant-select-dropdown:visible .ant-select-item-option').filter({ hasText: 'skills/retained-browser-skill' }).click();
     await page.getByRole('button', { name: '保存技能', exact: true }).click();
     await page.locator('#skill-registration').waitFor({ state: 'detached' }); await skillRow.waitFor();
     assert.deepEqual(fs.readFileSync(skillFile), bytes);
@@ -1174,7 +1203,8 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     if (c.migrationRequired) c = runtime.migrateAssetCatalog(workspaceRoot, { revision: c.revision });
     c = runtime.createCatalogProject(workspaceRoot, { revision: c.revision, code: 'delete-browser', name: '删除验收项目', newServices: [{ code: 'delete-browser-api', name: '删除验收服务', repository: { code: 'delete-browser-code', url: 'https://example.com/delete.git', integrationBranch: 'dev' } }] });
     const service = c.services.find((s: any) => s.code === 'delete-browser-api');
-    // Reload restores previews from history; explicitly close the prior service before measuring a directory-only request.
+    await page.goto(`${workspaceUrl}/services`);
+    // Measure a directory-only request without depending on the preceding case.
     const closeService = page.getByRole('button', { name: '关闭 服务详情', exact: true });
     if (await closeService.count()) await closeService.click();
     await page.locator('.workspace-page:not([hidden]) .pane-right').waitFor({ state: 'hidden' });

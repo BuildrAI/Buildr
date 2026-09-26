@@ -93,11 +93,13 @@ export async function runWorkbenchJourney({ t, page, runtime, workspaceRoot, oth
   });
 
   await t.test('人的回应保存到同一工作摘要并移出事项，任务记录保持不变', async () => {
+    const pending = await read(`/tasks/${crossId}/work-context`);
+    await put(`/tasks/${crossId}/work-context`, { expectedContextDigest: pending.contextDigest, progress: '已经梳理两项关联项目的当前资料。', nextStep: '根据本次回应继续实施。', attention: { kind: 'decision', reason: '请确认两项项目采用同一工作方向。' } });
     await page.goto(`${workspaceUrl}/overview`);
     await page.locator(`[data-attention-task="${crossId}"]`).getByRole('link', { name: crossTitle, exact: true }).click();
     await page.locator('#task-detail-id').filter({ hasText: crossId }).waitFor({ state: 'visible' });
     await page.locator('#task-work-context').waitFor({ state: 'visible' });
-    assert.match(await page.locator('#task-work-context').innerText(), /已经梳理两项关联项目的当前资料/);
+    assert.match(await page.locator('#task-work-context').innerText(), /请确认两项项目采用同一工作方向/);
     await page.locator('#task-attention-respond').click();
     await page.locator('#task-attention-response-input').fill('确认按共同方向推进，保留各自资料来源。');
     const beforeResponse = await read(`/tasks/${crossId}/work-context`);
@@ -305,18 +307,17 @@ export async function runWorkbenchJourney({ t, page, runtime, workspaceRoot, oth
     assert.equal(await page.locator('[data-task-node=requirements]').getAttribute('aria-pressed'), 'true');
     assert.match(await page.locator('#task-node-content').innerText(), /暂无补充需求或说明/);
     await page.locator('#task-detail-intent').getByRole('link', { name: '工作台关联资料', exact: true }).click();
-    await page.locator('.task-document-preview-content').getByText('这是当前项目的真实文件内容，用于接续目标并阅读成果。', { exact: true }).waitFor({ state: 'visible' });
+    await page.locator('.pane-right:visible .markdown-body').getByText('这是当前项目的真实文件内容，用于接续目标并阅读成果。', { exact: true }).waitFor({ state: 'visible' });
     const mainBox = await page.locator('.pane-left').boundingBox();
     const readerBox = await page.locator('.pane-right').boundingBox();
     assert.ok(mainBox && readerBox && readerBox.x >= mainBox.x + mainBox.width - 1, '桌面保留任务列表，资料在同一副屏内阅读');
     assert.equal(await page.locator('.pane-stage:visible').count(), 1, '打开相关文档不得增加嵌套分屏');
     await page.setViewportSize({ width: 390, height: 844 });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
-    await page.locator('#task-document-close').click();
-    await page.locator('#task-document-preview').waitFor({ state: 'hidden' });
+    await page.getByRole('button', { name: '关闭 文档', exact: true }).click();
     await page.locator('#task-node-content').waitFor({ state: 'visible' });
     await page.setViewportSize({ width: 1280, height: 720 });
-    await page.getByRole('button', {name:'关闭 任务详情', exact:true}).click();
+    await page.getByRole('button', {name:'关闭 普通任务', exact:true}).click();
     await page.waitForURL(listUrl);
     await crossRow.waitFor({ state: 'visible' });
     assert.equal(await page.locator('#task-filter-q').inputValue(), '工作台');
@@ -327,16 +328,16 @@ export async function runWorkbenchJourney({ t, page, runtime, workspaceRoot, oth
     assert.equal(new URL(page.url()).searchParams.get('project'), 'demo');
   });
 
-  await t.test('任务列表刷新保留筛选和内容，同时读取其他入口更新的任务与进展', async () => {
+  await t.test('任务列表刷新保留筛选和内容，同时读取其他入口更新的任务与待处理状态', async () => {
     const id = 'workbench-refresh';
     runtime.createTask(workspaceRoot, { taskId: id, title: '刷新回归原有目标', intent: '验证列表刷新。', status: 'todo', projects: ['demo'], services: [], changes: [] });
-    runtime.recordTaskWorkContext(workspaceRoot, id, { expectedContextDigest: 'absent', progress: '刷新前的进展。', nextStep: '继续检查。' });
+    runtime.recordTaskWorkContext(workspaceRoot, id, { expectedContextDigest: 'absent', progress: '刷新前的进展。', nextStep: '继续检查。', attention: { kind: 'decision', reason: '请决定刷新验证。' } });
     await page.goto(`${workspaceUrl}/tasks?status=todo&project=demo&q=刷新回归`);
     const row = page.locator(`#task-table-body [data-task-id="${id}"]`);
-    await row.getByText('刷新前的进展。', { exact: true }).waitFor({ state: 'visible' });
+    await row.getByText('等待决定', { exact: true }).waitFor({ state: 'visible' });
     const listUrl = page.url();
     runtime.updateTask(workspaceRoot, id, { expectedRecordDigest: runtime.inspectTask(workspaceRoot, id).recordDigest, title: '刷新回归已更新目标' });
-    runtime.recordTaskWorkContext(workspaceRoot, id, { expectedContextDigest: runtime.inspectTaskWorkContext(workspaceRoot, id).contextDigest, progress: '其他入口已更新最近进展。', nextStep: '查看更新。' });
+    runtime.recordTaskWorkContext(workspaceRoot, id, { expectedContextDigest: runtime.inspectTaskWorkContext(workspaceRoot, id).contextDigest, progress: '其他入口已更新最近进展。', nextStep: '查看更新。', attention: { kind: 'question', reason: '请补充刷新验证资料。' } });
     const endpoint = new URL(`${apiBase}/tasks`).pathname;
     const matches = (url: URL) => url.pathname === endpoint;
     let release!: () => void;
@@ -348,18 +349,18 @@ export async function runWorkbenchJourney({ t, page, runtime, workspaceRoot, oth
       await page.getByRole('button', { name: '刷新任务列表', exact: true }).click();
       await requested;
       await page.evaluate(() => { window.dispatchEvent(new Event('focus')); window.dispatchEvent(new Event('focus')); });
-      await row.getByText('刷新前的进展。', { exact: true }).waitFor({ state: 'visible' });
+      await row.getByText('等待决定', { exact: true }).waitFor({ state: 'visible' });
       assert.equal(page.url(), listUrl, '刷新不能重置筛选');
       await page.waitForTimeout(100);
-      assert.equal(reads, 1, '手动与焦点刷新共享同一次在途读取');
+      assert.equal(reads, 1, '焦点事件不能重复发起当前手动读取');
       release();
       await row.getByText('刷新回归已更新目标', { exact: true }).waitFor({ state: 'visible' });
-      await row.getByText('其他入口已更新最近进展。', { exact: true }).waitFor({ state: 'visible' });
-    } finally { release(); await page.unroute(matches); }
+      await row.getByText('需要答复', { exact: true }).waitFor({ state: 'visible' });
+    } finally { release(); await page.unrouteAll({ behavior: 'wait' }); }
 
-    runtime.recordTaskWorkContext(workspaceRoot, id, { expectedContextDigest: runtime.inspectTaskWorkContext(workspaceRoot, id).contextDigest, progress: '重新回到页面时读取的进展。', nextStep: '继续。' });
-    await page.evaluate(() => window.dispatchEvent(new Event('focus')));
-    await row.getByText('重新回到页面时读取的进展。', { exact: true }).waitFor({ state: 'visible' });
+    runtime.recordTaskWorkContext(workspaceRoot, id, { expectedContextDigest: runtime.inspectTaskWorkContext(workspaceRoot, id).contextDigest, progress: '重新回到页面时读取的进展。', nextStep: '继续。', attention: { kind: 'acceptance', reason: '请验收刷新结果。' } });
+    await page.getByRole('button', { name: '刷新任务列表', exact: true }).click();
+    await row.getByText('等待验收', { exact: true }).waitFor({ state: 'visible' });
     assert.equal(page.url(), listUrl);
     await page.route(matches, async route => {
       expectedBrowserErrors.add(route.request().url());
@@ -371,14 +372,13 @@ export async function runWorkbenchJourney({ t, page, runtime, workspaceRoot, oth
       assert.equal(await row.isVisible(), true, '刷新失败不能隐藏已有内容');
       assert.equal(await page.getByRole('button', { name: /^重\s*试$/ }).isVisible(), true);
       assert.equal(page.url(), listUrl);
-    } finally { await page.unroute(matches); }
-    // Focus refresh may already recover the error after the failure route is removed.
+    } finally { await page.unrouteAll({ behavior: 'wait' }); }
     await page.getByRole('button', { name: '刷新任务列表', exact: true }).click();
     await page.getByText('刷新回归中的临时读取失败。', { exact: true }).waitFor({ state: 'hidden' });
-    await row.getByText('重新回到页面时读取的进展。', { exact: true }).waitFor({ state: 'visible' });
+    await row.getByText('等待验收', { exact: true }).waitFor({ state: 'visible' });
   });
 
-  await t.test('概览和个人关注在重复焦点与手动刷新时不取消同范围请求', async () => {
+  await t.test('概览重复焦点与手动刷新合并在途请求，个人偏好缓存不重复读取', async () => {
     const overviewPath = new URL(`${apiBase}/workbench`).pathname;
     const initialReads = Promise.all([
       page.waitForResponse(response => new URL(response.url()).pathname === overviewPath),
@@ -401,15 +401,18 @@ export async function runWorkbenchJourney({ t, page, runtime, workspaceRoot, oth
       assert.equal(await page.getByRole('button', { name: '刷新工作概览', exact: true }).isDisabled(), true, '读取期间页面刷新禁用，不能重复提交');
       await page.waitForTimeout(100);
       assert.equal(reads.filter(url => url === overviewPath).length, 1);
-      assert.equal(reads.filter(url => url === `${overviewPath}/preferences`).length, 1);
+      assert.equal(reads.filter(url => url === `${overviewPath}/preferences`).length, 0, '个人偏好由独立缓存维护，概览刷新不重复读取');
       assert.deepEqual(failures, [], '相同范围的并发刷新不能制造取消错误');
       const completed = page.waitForResponse(response => new URL(response.url()).pathname === overviewPath);
       release();
       assert.equal((await completed).status(), 200);
-    } finally { release(); await page.unroute(matches); page.off('requestfailed', failed); }
+    } finally { release(); await page.unrouteAll({ behavior: 'wait' }); page.off('requestfailed', failed); }
   });
 
   await t.test('接续指令读取最新答复，终态只准备新目标而不重开任务', async () => {
+    const current = runtime.inspectTaskWorkContext(workspaceRoot, crossId);
+    const pending = runtime.recordTaskWorkContext(workspaceRoot, crossId, { expectedContextDigest: current.contextDigest, progress: '其他入口刚补充了最新进展。', nextStep: '核对更新后继续回应。', attention: { kind: 'decision', reason: '请确认接续方向。' } });
+    runtime.respondTaskWorkContext(workspaceRoot, crossId, { expectedContextDigest: pending.contextDigest, attentionId: pending.context.attention.id, response: '确认按共同方向推进，保留各自资料来源。' });
     await page.goto(`${workspaceUrl}/tasks/${crossId}`);
     await page.locator('#task-more-actions').click(); await page.locator('#task-continue').click();
     await page.locator('#task-continue-prepare').click();
@@ -464,6 +467,8 @@ export async function runWorkbenchJourney({ t, page, runtime, workspaceRoot, oth
   });
 
   await t.test('单项目概览超过首批时，更多入口保持所选项目范围', async () => {
+    const completed = runtime.createTask(workspaceRoot, { taskId: 'workbench-more-completed', title: '更多入口的独立完成样本', intent: '验证项目范围。', projects: ['demo'], services: [], changes: [] });
+    runtime.completeTask(workspaceRoot, 'workbench-more-completed', { expectedRecordDigest: completed.recordDigest, summary: '此用例独立准备的完成结果。' });
     for (let index = 0; index < 13; index += 1) {
       const taskId = `workbench-more-${index}`;
       runtime.createTask(workspaceRoot, { taskId, title: `项目范围内的更多事项 ${index}`, intent: '验证超过概览首批后的范围保持。', status: 'todo', projects: ['demo'], services: [], changes: [] });

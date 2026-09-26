@@ -10,7 +10,7 @@ import { executeVerificationCommand } from './support/process-executor.ts';
 
 import { collectChangedProductPaths } from './changed-paths.ts';
 
-export const BROWSER_SELECTORS: any = Object.freeze(['core', 'shell', 'workbench', 'project', 'service', 'change', 'task', 'articles']);
+export const BROWSER_SELECTORS: any = Object.freeze(['core', 'shell', 'workbench', 'project', 'service', 'change', 'task', 'articles', 'layout']);
 
 const productRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const projectRoot: any = path.resolve(productRoot, '../..');
@@ -96,6 +96,9 @@ export function selectBrowserSelectors(changedPaths: any): any  {
       continue;
     }
     if (originalValue.startsWith('services/buildr-web/src/')) {
+      if (originalValue.endsWith('.css') || originalValue.includes('/components/') || originalValue.includes('/app/') || originalValue.endsWith('/theme.ts')) {
+        add(plan, 'layout', originalValue, 'Shared layout, reading or presentation changed; verify representative widths and retained state.');
+      }
       if (originalValue.includes('/features/workbench/')) add(plan, 'workbench', originalValue, 'Daily workbench overview, preferences or activity interaction changed.');
       else if (originalValue.includes('/features/knowledge/')) {
         for (const selector of ['project', 'service', 'articles']) add(plan, selector, originalValue, 'Knowledge reading is shared by project, service and article journeys.');
@@ -186,6 +189,11 @@ async function main(): Promise<any>  {
   const stagingParent: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-browser-web-dist-'));
   const stagingRoot: any = path.join(stagingParent, 'web-dist');
   try {
+    const prepareResult = await runPhase('artifacts', [process.execPath, path.join(productRoot, 'tools/development/run-development-npm.ts'), '--prefix', productRoot, 'run', 'artifacts:prepare'], productRoot, 120_000);
+    if (prepareResult.status !== 'passed') {
+      process.exitCode = prepareResult.exitCode ?? 1;
+      return;
+    }
     const webDistResult: any = await runPhase('web-dist', [process.execPath, webDistVerifier, '--output', stagingRoot], path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..'), 300_000);
     if (webDistResult.status !== 'passed') {
       process.exitCode = webDistResult.exitCode ?? 1;
@@ -193,8 +201,13 @@ async function main(): Promise<any>  {
     }
     const browserTest: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../browser-smoke/buildr-web-browser.test.ts');
     const isolationRunner: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../tools/development/run-isolated-workspace-smoke.ts');
-    const result: any = await runPhase('browser', [process.execPath, isolationRunner, '--script', browserTest, '--', plan.selectors.join(',')], path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..'), 360_000, { ...process.env, BUILDR_BROWSER_SELECTOR_PLAN_JSON: JSON.stringify(plan), BUILDR_BROWSER_WEB_DIST_ROOT: stagingRoot });
-    if (result.status !== 'passed') process.exitCode = result.exitCode ?? 1;
+    // Each selector owns its workspace, profiles and browser. A failed journey cannot
+    // contaminate another selector; the production build is immutable and shared.
+    const selectors = plan.selectors.includes('all') ? BROWSER_SELECTORS : plan.selectors;
+    for (const selector of selectors) {
+      const result = await runPhase(`browser:${selector}`, [process.execPath, isolationRunner, '--script', browserTest, '--', selector], productRoot, 360_000, { ...process.env, BUILDR_BROWSER_SELECTOR_PLAN_JSON: JSON.stringify(plan), BUILDR_BROWSER_WEB_DIST_ROOT: stagingRoot });
+      if (result.status !== 'passed') process.exitCode = 1;
+    }
   } finally {
     fs.rmSync(stagingParent, { recursive: true, force: true });
   }

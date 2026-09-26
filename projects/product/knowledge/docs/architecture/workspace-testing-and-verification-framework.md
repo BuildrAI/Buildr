@@ -54,6 +54,10 @@ Buildr 帮助用户建设和使用适合自身项目（Project）与服务（Ser
 
 服务可以采用不同语言、工具和执行环境，也可以暂时缺少某类测试。智能体（Agent）分别核实每个服务的事实，不从目录名猜能力，不把后端检查通过复制成前端或数据处理的结论。各服务局部检查通过，也不能代替组合业务流程的证据。
 
+## 前端工具环境不同如何继续
+
+先按[前端协作与证据](../../../services/buildr/resources/workspace/skills/buildr/task-verification/references/frontend-verification.md)核对测试依赖、能力绑定（Capability Binding）与现场工具。自动化检查、智能体（Agent）交互检查和视觉审查（Visual Review）分别报告；缺少某项工具能力只限制相关要求。Buildr 自身的可重复入口、清理与实际采用见[前端验证说明](../../../services/buildr-web/test/browser/README.md)。
+
 ## 从零建设到可持续使用
 
 从零建设时，先由测试建设（project-testing）指导形成真实可重复的入口；入口稳定后，声明接入（declaration-intake）核对差异，任务验证（task-verification）维护地图。后续改动可直接使用已声明的能力；选测或执行发现覆盖缺口时，再按目标补建。

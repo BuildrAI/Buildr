@@ -95,7 +95,14 @@ test('changed planner gives Buildr Web Runtime HTTP its narrow System owner', ()
 
 
 test('Browser dispatcher covers shared reading and publication components', () => {
-  assert.deepEqual(selectBrowserSelectors(['services/buildr-web/src/features/publication/components/ArticleEditorDrawer.tsx']).selectors, ['articles']);
-  assert.deepEqual(selectBrowserSelectors(['services/buildr-web/src/features/knowledge/components/KnowledgeBrowser.tsx']).selectors, ['project', 'service', 'articles']);
-  assert.deepEqual(selectBrowserSelectors(['services/buildr-web/src/app/WorkspacePages.tsx']).selectors, ['shell', 'project', 'service', 'articles']);
+  assert.deepEqual(selectBrowserSelectors(['services/buildr-web/src/features/publication/components/ArticleEditorDrawer.tsx']).selectors, ['layout', 'articles']);
+  assert.deepEqual(selectBrowserSelectors(['services/buildr-web/src/features/knowledge/components/KnowledgeBrowser.tsx']).selectors, ['layout', 'project', 'service', 'articles']);
+  assert.deepEqual(selectBrowserSelectors(['services/buildr-web/src/app/WorkspacePages.tsx']).selectors, ['layout', 'shell', 'project', 'service', 'articles']);
+});
+
+test('shared styles and frontend browser scenarios select executable layout coverage', () => {
+  for (const file of ['styles.css', 'theme.ts', 'components/workspace-stage.css']) {
+    assert.ok(selectBrowserSelectors([`services/buildr-web/src/${file}`]).selectors.includes('layout'));
+  }
+  assert.deepEqual(selectBrowserSelectors(['services/buildr-web/test/browser/layout-journey.ts']).selectors, ['all']);
 });

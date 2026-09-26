@@ -2028,7 +2028,7 @@ details summary { cursor: pointer; color: var(--soft-ink); font-size: 12px; font
 .resource-path { font-size:12px; color:var(--soft-muted); overflow-wrap:anywhere; }
 .resource-reader > header { margin:4px 0 24px; padding-bottom:16px; border-bottom:1px solid var(--soft-line); }
 .resource-reader h2 { margin:0; font-size:17px; overflow-wrap:anywhere; }
-.resource-reader .markdown-body { font-size:14px; line-height:1.85; }
+.resource-reader .markdown-body { max-width:var(--reading-content-width); margin-inline:auto; font-size:14px; line-height:1.85; }
 .resource-source { white-space:pre-wrap; overflow-wrap:anywhere; font-size:12px; }
 .resource-directory a:focus-visible, .resource-document-row:focus-visible, .resource-relation-row:focus-visible { outline:2px solid var(--soft-primary); outline-offset:3px; border-radius:4px; }
 .workspace-reading-drawer .ant-drawer-body { padding:0 22px 24px; }
