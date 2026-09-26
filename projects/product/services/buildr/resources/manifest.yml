@@ -519,6 +519,7 @@ workspaceFiles:
   - resources/workspace/skills/buildr/task-retrospective/agents/openai.yaml => skills/buildr/task-retrospective/agents/openai.yaml copy
   - resources/workspace/skills/buildr/task-worktree/SKILL.md => skills/buildr/task-worktree/SKILL.md copy
   - resources/workspace/skills/buildr/task-verification/SKILL.md => skills/buildr/task-verification/SKILL.md copy
+  - resources/workspace/skills/buildr/task-verification/references/frontend-verification.md => skills/buildr/task-verification/references/frontend-verification.md copy
   - resources/workspace/skills/buildr/task-verification/references/record-report.md => skills/buildr/task-verification/references/record-report.md copy
   - resources/workspace/skills/buildr/task-verification/references/maintain-map.md => skills/buildr/task-verification/references/maintain-map.md copy
   - resources/workspace/skills/buildr/task-verification/references/project-verification-v4.md => skills/buildr/task-verification/references/project-verification-v4.md copy
