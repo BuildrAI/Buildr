@@ -147,6 +147,18 @@
     },
     {
       "type": "skill",
+      "id": "project-composition-maintenance",
+      "target": "skills/buildr/project-composition-maintenance",
+      "integrity": "sha256-356f26b7c1522ff260725deb1c2a7d3267350d7e8f3841a473120a704a510adc",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "integrity": "sha256-a0a082dcc63121802b33a0dee744d6f6cd592207e9500ce2eb40a346222ae8b9"
+        }
+      ]
+    },
+    {
+      "type": "skill",
       "id": "project-daily-progress",
       "target": "skills/buildr/project-daily-progress",
       "integrity": "sha256-4e906ba427032e6d0c317712ca0c0ff301a026d98e8bc160f58642a7bf9ee5e1",
@@ -265,11 +277,11 @@
       "type": "skill",
       "id": "task-triage",
       "target": "skills/buildr/task-triage",
-      "integrity": "sha256-6f732edde2c9d8494758482c0a38a767de840ae85b4eaa30ce58b042afe996ac",
+      "integrity": "sha256-e21e178e1cd37acdb79e432d7ce0c48aab50179b7fede69e06483d9232d4714f",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-fb4d848ed62f164c51560aebd555d752f7a61700e7c2ca9c00d9a0a9930be7b0"
+          "integrity": "sha256-41a352b5197b15b79391dc8033a49bd4468d051d97aea4fb1d42c77b16f006c8"
         },
         {
           "path": "references/structured-handoff.md",
