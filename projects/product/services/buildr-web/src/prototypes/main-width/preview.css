@@ -1,0 +1,7 @@
+/* Only the comparison mode restores the prior cap; the proposed mode uses product styles. */
+.width-preview:not(.width-preview-fluid) .workspace-page .pane-stage .pane-left > .pane-body > .pane-body-inner { width:var(--workspace-content-width,100%); max-width:min(100%,var(--main-content-width)); padding-inline:var(--main-content-gutter); }
+.width-preview:not(.width-preview-fluid) .workspace-page .pane-stage:not(.split) .pane-left > .pane-body > .pane-body-inner { width:min(var(--main-content-width),100%); }
+.width-preview-controls { position:fixed; bottom:22px; left:50%; transform:translateX(-50%); z-index:100; display:flex; align-items:center; gap:14px; padding:10px 12px 10px 18px; border:1px solid var(--soft-line); border-radius:12px; background:#fff; box-shadow:0 8px 30px #16372e18; white-space:nowrap; }
+.width-preview-controls > span { font-size:12px; color:var(--soft-muted); }
+.width-preview-notes { position:absolute; width:360px; bottom:70px; right:0; max-height:60vh; overflow:auto; padding:20px; border:1px solid var(--soft-line); border-radius:12px; background:#fff; box-shadow:0 8px 30px #16372e18; white-space:normal; }
+.width-preview-notes h2 { margin:0 0 14px; font-size:16px; }

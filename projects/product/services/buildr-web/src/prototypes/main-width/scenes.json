@@ -1,0 +1,137 @@
+{
+  "version": 1,
+  "pages": [
+    {
+      "id": "projects",
+      "title": "项目列表",
+      "notes": [
+        {
+          "id": "space",
+          "title": "内容随主区域展开",
+          "text": "标题、搜索和表格一起展开，两侧保留 32 像素留白；折叠侧栏后自动利用新增空间。",
+          "position": "directory"
+        },
+        {
+          "id": "compare",
+          "title": "即时比较两种宽度",
+          "text": "底部切换“当前宽度”和“铺满主区域”，保留当前搜索内容。宽屏下差异更明显。"
+        }
+      ],
+      "states": [
+        {
+          "id": "current",
+          "title": "当前宽度",
+          "notes": [
+            {
+              "id": "original",
+              "title": "当前限宽布局",
+              "text": "主内容最多 1200 像素并居中，用于与铺满效果比较。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "services",
+      "title": "服务列表",
+      "notes": [
+        {
+          "id": "space",
+          "title": "内容随主区域展开",
+          "text": "标题、搜索和表格一起展开，两侧保留 32 像素留白；折叠侧栏后自动利用新增空间。",
+          "position": "directory"
+        },
+        {
+          "id": "compare",
+          "title": "即时比较两种宽度",
+          "text": "底部切换“当前宽度”和“铺满主区域”，保留当前搜索内容。宽屏下差异更明显。"
+        },
+        {
+          "id": "open",
+          "title": "查看并排效果",
+          "text": "点击服务行或服务名称打开右侧详情，列表仍可继续搜索。",
+          "position": "directory"
+        }
+      ],
+      "states": [
+        {
+          "id": "current",
+          "title": "当前宽度",
+          "notes": [
+            {
+              "id": "original",
+              "title": "当前限宽布局",
+              "text": "主内容最多 1200 像素并居中，用于与铺满效果比较。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "repositories",
+      "title": "代码库列表",
+      "notes": [
+        {
+          "id": "space",
+          "title": "内容随主区域展开",
+          "text": "标题、搜索和表格一起展开，两侧保留 32 像素留白；折叠侧栏后自动利用新增空间。",
+          "position": "directory"
+        },
+        {
+          "id": "compare",
+          "title": "即时比较两种宽度",
+          "text": "底部切换“当前宽度”和“铺满主区域”，保留当前搜索内容。宽屏下差异更明显。"
+        }
+      ],
+      "states": [
+        {
+          "id": "current",
+          "title": "当前宽度",
+          "notes": [
+            {
+              "id": "original",
+              "title": "当前限宽布局",
+              "text": "主内容最多 1200 像素并居中，用于与铺满效果比较。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "split",
+      "title": "列表与详情并排",
+      "notes": [
+        {
+          "id": "space",
+          "title": "内容随主区域展开",
+          "text": "打开详情后，列表填满剩余区域，两侧留白收为 24 像素。拖动分隔线可调节两栏宽度。",
+          "position": "directory"
+        },
+        {
+          "id": "compare",
+          "title": "即时比较两种宽度",
+          "text": "底部切换“当前宽度”和“铺满主区域”，保留当前搜索内容。宽屏下差异更明显。"
+        },
+        {
+          "id": "detail",
+          "title": "并排查看详情",
+          "text": "详情沿用现有阅读区域，可展开阅读、恢复并排或关闭。关闭后列表恢复全宽。",
+          "position": "reading"
+        }
+      ],
+      "states": [
+        {
+          "id": "current",
+          "title": "当前宽度",
+          "notes": [
+            {
+              "id": "original",
+              "title": "当前限宽布局",
+              "text": "主内容最多 1200 像素并居中，用于与铺满效果比较。"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1919,6 +1919,12 @@ details summary { cursor: pointer; color: var(--soft-ink); font-size: 12px; font
 .workspace-page .pane-left { container-type:inline-size; overflow:hidden; }
 .workspace-page .pane-left > .pane-body > .pane-body-inner { width:var(--workspace-content-width,100%); max-width:min(100%,var(--main-content-width)); padding:24px var(--main-content-gutter) 56px; margin:0 auto; transition:none; }
 .workspace-page .pane-stage:not(.split) .pane-left > .pane-body > .pane-body-inner { width:min(var(--main-content-width),100%); }
+/* Resource directories use the available pane; reading pages retain their width cap. */
+.workspace-page .pane-stage .pane-left:has(.resource-directory) > .pane-body > .pane-body-inner { width:100%; max-width:100%; padding-inline:32px; }
+.workspace-page .pane-stage.split .pane-left:has(.resource-directory) > .pane-body > .pane-body-inner { padding-inline:var(--main-content-gutter); }
+@media (max-width:900px) {
+ .workspace-page .pane-stage .pane-left:has(.resource-directory) > .pane-body > .pane-body-inner { padding-inline:var(--main-content-gutter); }
+}
 .workspace-page .ws-dir-shell { max-width:none; padding:0; }
 .workspace-page .pane-right { position:relative; top:auto; right:auto; bottom:auto; z-index:auto; box-shadow:none; width:auto; border:0; animation:workspace-pane-enter 160ms ease-out; }
 .workspace-page .pane-divider {
