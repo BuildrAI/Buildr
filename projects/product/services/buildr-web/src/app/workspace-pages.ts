@@ -86,6 +86,7 @@ export function tabForPath(
       return null;
     const [area, project, service] = decoded;
     const names: Record<string, string> = {
+      "workspace-overview": "工作空间总览",
       projects: "项目目录",
       services: "服务目录",
       repositories: "代码库目录",

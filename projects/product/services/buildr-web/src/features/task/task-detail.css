@@ -63,10 +63,6 @@
 .task-verification-checks section > div { display:flex; align-items:baseline; flex-wrap:wrap; gap:10px; }
 .task-verification-checks p { margin:6px 0; font-size:13px; }
 .task-reader pre { white-space:pre-wrap; }
-.task-reader .ui-prototype-layout { display:block; }
-.task-reader .ui-prototype-browser { position:static; }
-.task-reader .ui-prototype-frame { min-height:560px; }
-.task-reader .ui-prototype-summary { border:0; padding:0; }
 .task-closeout-confirmation { padding-bottom:22px; border-bottom:1px solid var(--soft-line); margin-bottom:22px; }
 .task-closeout h2 { font-size:18px; margin:0 0 16px; }
 .task-summary { order:-1; padding:14px 16px; background:var(--soft-surface, #f7f9f8); border-radius:8px; }
@@ -143,19 +139,11 @@
 .task-review-outcome { font-size:10px; color:#a67d34; font-weight:400; }
 .task-review-outcome.accepted { color:var(--soft-primary); }
 /* A local non-modal reading panel; it never portals to the browser edge. */
-.task-checklist { position:absolute; z-index:4; inset:0 0 0 auto; width:min(520px,100%); min-width:0; display:flex; flex-direction:column; overflow:hidden; background:var(--soft-surface,#fff); border:1px solid var(--soft-line); border-radius:10px 0 0 10px; box-shadow:-10px 0 28px rgb(20 35 30 / 12%); animation:task-checklist-enter 180ms ease-out; }
-.task-checklist[hidden] { display:none; }
-.task-checklist-heading { display:flex; align-items:center; justify-content:space-between; flex:none; padding:14px 16px; border-bottom:1px solid var(--soft-line); }
-.task-checklist-heading h2 { font-size:14px; font-weight:600; margin:0; }
-.task-checklist-body { flex:1; min-height:0; overflow:auto; overscroll-behavior:contain; padding:16px 20px; }
-.task-checklist-body > section > h3 { font-size:12px; font-weight:500; color:var(--soft-muted); }
 .task-checklist .task-reader, .task-checklist .task-reader .task-document-reader .task-document-preview-content { font-size:13px; line-height:1.85; }
 .task-checklist .markdown-body h2,.task-checklist .markdown-body h3 { font-size:14px; margin:18px 0 10px; }
 .task-checklist .markdown-reader-toolbar { margin-bottom:12px; }
 .task-checklist .markdown-body ul { padding-left:20px; }
 .task-checklist .markdown-body li { margin:7px 0; }
-@keyframes task-checklist-enter { from { transform:translateX(100%); opacity:0; } to { transform:translateX(0); opacity:1; } }
-@media (prefers-reduced-motion:reduce) { .task-checklist { animation:none; } }
 @container task-detail (max-width:480px) {
   .task-node-with-directory { grid-template-columns:112px minmax(0,1fr); gap:12px; }
   .task-node-directory { padding-right:6px; }

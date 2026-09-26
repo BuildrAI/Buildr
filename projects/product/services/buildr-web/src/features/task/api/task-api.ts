@@ -44,8 +44,9 @@ export function createTaskClient(client: ApiClient) {
     projectDocument(taskId: string, project: string, encodedPath: string, options: ReadOptions = {}): Promise<WorkspaceDocument & { provenance: string }> {
       return typed(client(`/api/v1/tasks/${encodeURIComponent(taskId)}/documents/${encodeURIComponent(project)}/${encodedPath}`, options));
     },
-    prototypes(taskId: string, options: ReadOptions = {}): Promise<unknown> {
-      return client(`/api/v1/tasks/${encodeURIComponent(taskId)}/ui-prototypes`, options);
+    prototypes(taskId: string, options: ReadOptions = {}, workspaceId?: string): Promise<unknown> {
+      const prefix = workspaceId ? `/api/v1/workspaces/${encodeURIComponent(workspaceId)}` : '/api/v1';
+      return client(`${prefix}/tasks/${encodeURIComponent(taskId)}/ui-prototypes`, options);
     },
     retrospectiveDocument(taskId: string, options: ReadOptions = {}): Promise<TaskRetrospectiveDocumentResponse> {
       return typed(client(`/api/v1/tasks/${encodeURIComponent(taskId)}/retrospective-document`, options));

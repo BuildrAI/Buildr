@@ -258,6 +258,12 @@ builtins:
       description: 修改技能行为、采用组织工作方式或调整能力声明与绑定时使用；先判断跨技能协作影响。
       required: false
       runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
+    - id: frontend-development
+      path: resources/workspace/skills/buildr/frontend-development
+      target: skills/buildr/frontend-development
+      description: 开发或修改前端页面、交互和样式时使用；复用已有组件与主题，隔离数据和业务操作，保持正式页面与已获授权原型一致。不自动制作原型。
+      required: false
+      runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: ui-prototype
       path: resources/workspace/skills/buildr/ui-prototype
       target: skills/buildr/ui-prototype
@@ -488,7 +494,12 @@ workspaceFiles:
   - resources/workspace/skills/buildr/capability-adaptation/SKILL.md => skills/buildr/capability-adaptation/SKILL.md copy
   - resources/workspace/skills/buildr/capability-adaptation/references/adaptation-lifecycle.md => skills/buildr/capability-adaptation/references/adaptation-lifecycle.md copy
   - resources/workspace/skills/buildr/capability-adaptation/agents/openai.yaml => skills/buildr/capability-adaptation/agents/openai.yaml copy
+  - resources/workspace/skills/buildr/frontend-development/SKILL.md => skills/buildr/frontend-development/SKILL.md copy
   - resources/workspace/skills/buildr/ui-prototype/SKILL.md => skills/buildr/ui-prototype/SKILL.md copy
+  - resources/workspace/skills/buildr/ui-prototype/references/content-format.md => skills/buildr/ui-prototype/references/content-format.md copy
+  - resources/workspace/skills/buildr/ui-prototype/assets/feature-notes.js => skills/buildr/ui-prototype/assets/feature-notes.js copy
+  - resources/workspace/skills/buildr/ui-prototype/assets/feature-notes.css => skills/buildr/ui-prototype/assets/feature-notes.css copy
+  - resources/workspace/skills/buildr/ui-prototype/references/feature-notes.md => skills/buildr/ui-prototype/references/feature-notes.md copy
   - resources/workspace/skills/buildr/ux-design-laws/SKILL.md => skills/buildr/ux-design-laws/SKILL.md copy
   - resources/workspace/skills/buildr/ux-design-laws/agents/openai.yaml => skills/buildr/ux-design-laws/agents/openai.yaml copy
   - resources/workspace/skills/buildr/ux-design-laws/references/law-index.md => skills/buildr/ux-design-laws/references/law-index.md copy

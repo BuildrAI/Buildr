@@ -21,6 +21,7 @@ src/modules/workspace/
 │   ├── registry-maintenance.ts          convergeRegistryManifests：登记发现、服务迁移与修复
 │   └── diagnostics/                     本模块负责的登记和来源诊断
 ├── persistence/                         数据访问（Persistence）
+│   ├── asset-composition-repository.ts  总览只读投影与来源诊断
 │   ├── workspace-manifest-repository.ts 工作空间声明读写
 │   ├── workspace-registry-repository.ts 本机已登记工作空间读写
 │   ├── project-manifest-repository.ts   项目登记读写
@@ -185,6 +186,7 @@ src/modules/openspec/
     │   ├── changeDetail / findLogicalChange 详情与活动、归档定位
     │   ├── discoverUiPrototypes          原型文件发现及安全限制
     │   └── generateChangeCreatePrompt / generateChangeActionPrompt
+    ├── prototype-metadata.ts             HTML 内页面、状态、纯文本说明的有界解析
     ├── change-checklist.ts               只读清单进度
     └── openspec-application.ts           收敛用例及其下层协作者
 ```
@@ -226,6 +228,8 @@ OpenSpec 的资产依赖只通过 `AGENT_ASSETS_OPENSPEC_SUPPORT` 获取：`asse
 - `pages/`：路由级组合。
 
 共享 transport 位于 `src/api/client.ts`，生成 DTO 位于 `build/generated/`；`App.tsx` 只注册路由，`AppLayout.tsx` 只组合应用壳和跨页提示。
+
+产品顶部栏和侧栏框架由 `app/AppShellView.tsx` 提供，导航项由 `app/AppNavigationItem.tsx` 提供；`AppLayout.tsx` 与 `AppNavigation.tsx` 继续负责真实数据和操作接入。正式界面与已授权原型可以导入共同展示源码，由各入口注入数据和操作；模拟入口不能调用真实写入。侧边说明和实施清单共享 `components/SideReadingPanel.tsx` 与 `useSideReading.ts`。任务内阅读由 `features/task/components/PrototypeTab.tsx` 组合，独立阅读由 `features/task/pages/PrototypeReaderPage.tsx` 在任务范围内装配；可选说明的解析仍归 OpenSpec 内容查询，未新增数据库状态。
 
 ## 诊断与安装的结果边界
 

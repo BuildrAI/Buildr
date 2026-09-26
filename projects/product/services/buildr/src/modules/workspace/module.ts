@@ -63,7 +63,7 @@ export const WORKSPACE_DIAGNOSTICS = 'workspace.diagnostics';
 
 const WORKSPACE_METHODS = Object.freeze([
   'listCatalogDirectoryCandidates', 'catalogRepositoryLocalConfig', 'listCatalogServices', 'listCatalogRepositories', 'catalogRepositoryStatus', 'normalizeCatalogRepositories', 'deleteCatalogAsset',
-  'catalogServiceDocument', 'assetCatalog', 'migrateAssetCatalog', 'createCatalogRepository', 'createCatalogService', 'createCatalogProject', 'listProjectRegistrationCandidates', 'registerCatalogProject', 'updateProjectServices', 'updateCatalogAsset', 'repositoryPreparePrompt',
+  'workspaceComposition', 'catalogServiceDocument', 'assetCatalog', 'migrateAssetCatalog', 'createCatalogRepository', 'createCatalogService', 'createCatalogProject', 'listProjectRegistrationCandidates', 'registerCatalogProject', 'updateProjectServices', 'updateCatalogAsset', 'repositoryPreparePrompt',
   'getWorkspace', 'listRegisteredWorkspaces', 'registerLocalWorkspace', 'removeRegisteredWorkspace',
   'resolveRegisteredWorkspace', 'workspaceMigrationPlan', 'migrateWorkspaceMetadata', 'updateWorkspaceMetadata',
   'generateWorkspaceCreatePrompt', 'inspectLocalWorkspaceCandidate', 'getWorkspaceGettingStarted',

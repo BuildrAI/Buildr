@@ -1,3 +1,4 @@
+import { readAssetComposition } from '../persistence/asset-composition-repository.ts';
 import { catalogDirectoryPaths, observeCatalogDirectory } from '../infrastructure/catalog-directory-candidates.ts';
 import { readRepositoryLocalConfig } from '../infrastructure/repository-local-config.ts';
 import crypto from 'node:crypto';
@@ -32,6 +33,9 @@ export function registerAssetRelationshipsApplication(runtime: Record<string, an
     const record = runtime.readProjectRegistryRecord(root);
     const workspaceId = record.workspace.workspace.id;
     return { ...readAssetCatalog(root, workspaceId), workspaceId };
+  }
+  function workspaceComposition(root:string) {
+    return readAssetComposition(root,runtime.readWorkspaceRecord(root).workspace.id);
   }
   function assetCatalog(root: string) {
     const r = read(root);
@@ -465,6 +469,6 @@ export function registerAssetRelationshipsApplication(runtime: Record<string, an
     if (!r) throw assetError('repository_not_found', '代码库不存在。', 404);
     return { prompt: [`对齐代码库声明：${r.name}（${r.code}）`, `声明：${JSON.stringify(r.source)}`, '读取当前 repositories/manifest.yml，核对稳定身份、最新版本、来源、集成分支和实际目录。', '先只读检查 Git 根目录、实际远端与服务模块；列明声明和实际的差异。声明保存不代表已执行远端改写、切换分支、克隆或搬迁。', '集成分支是后续工作的目标，不要求当前分支与之相同；仅因当前分支不同不得自动切换。', '远端或目录需要对齐时先提出具体动作与影响，在相应授权内执行；保留原目录、未提交改动和全部服务引用。', '已登记但代码缺失时，验证远端分支后准备至声明的实际目录；附接目录不由此动作搬迁或重建。', '代码库必须对应真实 Git 根目录；工作空间根使用 .，服务子目录用 modulePath；先读取独立 /services、/repositories 列表，状态按单个代码库读取。', '移除项目、服务或未被引用的代码库只取消登记和关系，保留代码、文件与历史任务；提交前读取最新 revision 并说明影响。', '目录已存在时核对仓库来源和工作状态，不覆盖、不丢弃修改、不隐式切换分支。', '来源信息缺失时先查明，不猜测 Git 地址或分支。准备失败仅报告相关代码库问题，不撤销项目与服务关系。', '为具体任务建立隔离工作位置，读取明确项目、服务和实际代码目录的适用规则。'].join('\n'), copiedMeansPrepared: false };
   }
-  Object.assign(runtime, { listCatalogDirectoryCandidates, catalogRepositoryLocalConfig, listCatalogServices, listCatalogRepositories, catalogRepositoryStatus, normalizeCatalogRepositories, deleteCatalogAsset, readGlobalServiceRegistry, catalogServiceDocument, assetCatalog, migrateAssetCatalog, createCatalogRepository, createCatalogService, createCatalogProject, listProjectRegistrationCandidates, registerCatalogProject, updateProjectServices, updateCatalogAsset, repositoryPreparePrompt });
+  Object.assign(runtime, { workspaceComposition, listCatalogDirectoryCandidates, catalogRepositoryLocalConfig, listCatalogServices, listCatalogRepositories, catalogRepositoryStatus, normalizeCatalogRepositories, deleteCatalogAsset, readGlobalServiceRegistry, catalogServiceDocument, assetCatalog, migrateAssetCatalog, createCatalogRepository, createCatalogService, createCatalogProject, listProjectRegistrationCandidates, registerCatalogProject, updateProjectServices, updateCatalogAsset, repositoryPreparePrompt });
   return runtime;
 }

@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { readPrototypeMetadata, type PrototypeMetadata } from './prototype-metadata.ts';
 import path from 'node:path';
 import { inspectChangeChecklist } from './change-checklist.ts';
 
@@ -16,7 +17,7 @@ export type ChangeModel = {
   brief: Artifact & { kind: string };
   artifacts: { root: string; proposal: Artifact; design: Artifact; tasks: Artifact; specs: Array<Artifact & { capability: string }> };
 };
-export type PrototypePage = { path: string; title: string; html: string; sizeBytes: number; updatedAt: string };
+export type PrototypePage = { path: string; title: string; html: string; sizeBytes: number; updatedAt: string; metadata?: PrototypeMetadata };
 export type PrototypeDiagnostic = { code: string; message: string; path?: string; project?: string; change?: string };
 export type ProjectQuery = {
   projectDetail(root: string, code: string): { project: Project };
@@ -189,7 +190,10 @@ function discoverUiPrototypes(changeRoot: string): { prototypes: PrototypePage[]
         stopped = true;
         return;
       }
+      const parsed = readPrototypeMetadata(content);
+      if (parsed.error) diagnostic('ui_prototype_metadata_invalid', parsed.error, relative);
       prototypes.push({
+        ...(parsed.metadata ? { metadata: parsed.metadata } : {}),
         path: relative,
         title: uiPrototypeTitle(content, relative),
         html: content,

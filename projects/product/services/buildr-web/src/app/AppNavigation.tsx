@@ -1,3 +1,4 @@
+import { AppNavigationItem } from './AppNavigationItem';
 import type { ReactNode } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { UnorderedListOutlined, FileTextOutlined, FolderOutlined, BranchesOutlined, AppstoreOutlined, ThunderboltOutlined, HistoryOutlined, HomeOutlined, RightOutlined } from '@ant-design/icons';
@@ -20,6 +21,7 @@ export function AppNavigation({ onNavigate }: { onNavigate?: () => void }) {
   const icons: Record<string, ReactNode> = {
     tasks: <UnorderedListOutlined />,
     overview: <HomeOutlined />,
+    'workspace-overview': <HomeOutlined />,
     activity: <HistoryOutlined />,
     articles: <FileTextOutlined />,
     projects: <FolderOutlined />,
@@ -29,9 +31,7 @@ export function AppNavigation({ onNavigate }: { onNavigate?: () => void }) {
   };
   const item = (path: string, label: string, name: string, onClick?: () => void) => {
     const destination = state.area === 'workspace' && !['projects', 'articles'].includes(name) ? workspaceMenuTarget(name) : { to: href(path), state: undefined };
-    return <NavLink to={destination.to} state={destination.state} data-nav={name} data-workspace-route={path} title={label} aria-label={label}
-      className={`shell-nav-item${location.pathname === href(path) || location.pathname.startsWith(href(path) + '/') ? ' active' : ''}`}
-      onClick={event => { if (state.area === 'workspace' && destination.to === location.pathname + location.search + location.hash) event.preventDefault(); onClick?.(); onNavigate?.(); }}>{icons[name]}<span>{label}</span></NavLink>;
+    return <AppNavigationItem to={destination.to} state={destination.state} path={path} name={name} label={label} icon={icons[name]} active={location.pathname === href(path) || location.pathname.startsWith(href(path) + '/')} onClick={event => { if (state.area === 'workspace' && destination.to === location.pathname + location.search + location.hash) event.preventDefault(); onClick?.(); onNavigate?.(); }} />;
   };
 
   return (
@@ -55,6 +55,7 @@ export function AppNavigation({ onNavigate }: { onNavigate?: () => void }) {
       ) : (
         <>
           <p className="shell-nav-caption">工作空间</p>
+          {item('/workspace-overview', '总览', 'workspace-overview')}
           {item('/projects', '项目', 'projects')}
           {item('/services', '服务', 'services')}
           {item('/repositories', '代码库', 'repositories')}

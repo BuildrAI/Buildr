@@ -1,3 +1,5 @@
+import { WorkspaceOverviewPage } from './features/workspace/pages/WorkspaceOverviewPage';
+import { PrototypeReaderPage } from './features/task/pages/PrototypeReaderPage';
 import { WorkbenchPage } from './features/workbench/pages/WorkbenchPage';
 import { WorkbenchActivityPage } from './features/workbench/pages/WorkbenchActivityPage';
 import { KnowledgePage } from './features/knowledge/pages/KnowledgePage';
@@ -35,11 +37,13 @@ function renderResource(item: ResourcePreview) {
 export function App() {
   return (
     <Routes>
+      <Route path="/workspaces/:workspaceId/tasks/:taskId/prototypes" element={<PrototypeReaderPage />} />
       <Route path="/" element={<AppLayout renderResource={renderResource} />}>
         <Route index element={<WorkspacesPage />} />
       </Route>
       <Route path="/workspaces/:workspaceId" element={<AppLayout renderResource={renderResource} />}>
         <Route index element={<Navigate to="overview" replace />} />
+        <Route path="workspace-overview" element={<WorkspaceOverviewPage />} />
         <Route path="overview" element={<WorkbenchPage />} />
         <Route path="activity" element={<WorkbenchActivityPage />} />
         <Route path="settings" element={<SettingsPage />} />

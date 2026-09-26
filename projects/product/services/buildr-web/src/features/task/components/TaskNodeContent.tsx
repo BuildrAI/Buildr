@@ -1,3 +1,4 @@
+import { prototypeEntries, type UiPrototypeData } from './prototype-content';
 import type { ReactNode } from 'react';
 import { Alert, Menu, Spin, type MenuProps } from 'antd';
 import type { TaskRecord } from '../../../../build/generated/task-dto';
@@ -6,10 +7,10 @@ import type { TaskBriefState } from '../hooks/useTaskArtifacts';
 import { reviewRecords, taskDocumentLabel, type TaskDocumentItem, type TaskNodeStage, type TaskReadTarget } from './taskWorkContent';
 
 type ContentOption = { key: string; label: ReactNode; target: TaskReadTarget; group?: string; path?: string };
-export function TaskNodeContent({ selected, record, documents, briefs, reviews, verification, reviewError, verificationError, reviewLoading, verificationLoading, prototypeCount, prototypeError, choices, onChoose, renderContent, hasRetrospective, hasCoordination }: {
+export function TaskNodeContent({ selected, record, documents, briefs, reviews, verification, reviewError, verificationError, reviewLoading, verificationLoading, prototypeData, prototypeError, choices, onChoose, renderContent, hasRetrospective, hasCoordination }: {
   selected: TaskNodeStage; record: TaskRecord; documents: TaskDocumentItem[]; briefs: TaskBriefState[];
   reviews: ReviewsResponse | null; verification: VerificationResponse | null; reviewError: string | null; verificationError: string | null; reviewLoading: boolean; verificationLoading: boolean;
-  prototypeCount: number; prototypeError: string | null; choices: Record<string, string>; onChoose(key: string, value: string): void;
+  prototypeData: UiPrototypeData | null; prototypeError: string | null; choices: Record<string, string>; onChoose(key: string, value: string): void;
   hasRetrospective: boolean; hasCoordination: boolean; renderContent(target: TaskReadTarget): ReactNode;
 }) {
   const entries = documents.filter(item => item.stage === selected && selected !== 'implementation');
@@ -19,7 +20,7 @@ export function TaskNodeContent({ selected, record, documents, briefs, reviews, 
     const duplicate = entries.filter(peer=>peer.title===item.title).length > 1;
     return {key:item.key, group:spec ? '规范' : undefined, label:<span className="task-directory-label" title={taskDocumentLabel(item,entries)}>{name}{spec && duplicate && <small>{item.changeKey}</small>}</span>, path:item.artifact.path, target:{kind:'artifact',title:item.title,changeKey:item.changeKey,path:item.artifact.path}};
   });
-  if (selected === 'design' && prototypeCount) options.push({key:'prototype',label:'界面原型',target:{kind:'prototype',title:'界面原型'}});
+  if (selected === 'design') prototypeEntries(prototypeData).forEach(entry => options.push({key:`prototype:${entry.key}`,group:'界面原型',label:<span className="task-directory-label">{entry.scene.title}{(prototypeData?.prototypes.length || 0) > 1 && <small>{entry.file.project}/{entry.file.change}</small>}</span>,target:{kind:'prototype',title:entry.scene.title,prototypeKey:entry.key}}));
   if (selected === 'design' || selected === 'implementation') {
     const reviewType = selected === 'design' ? 'planning' : 'completion';
     const title = selected === 'design' ? '方案审查' : '实现审查';
@@ -37,10 +38,11 @@ export function TaskNodeContent({ selected, record, documents, briefs, reviews, 
     if (hasCoordination) options.push({key:'coordination',label:'子任务交付',target:{kind:'coordination',title:'子任务交付'}});
     if (hasRetrospective) options.push({key:'retrospective',label:'任务复盘',target:{kind:'retrospective',title:'任务复盘'}});
   }
-  const active = options.find(item => item.key === choices[selected]) || (selected === 'closeout' && record.status === 'completed' ? options.find(item => item.key === 'result') : undefined) || options[0];
+  const missingPrototype = selected === 'design' && choices[selected]?.startsWith('prototype:') && !options.some(item => item.key === choices[selected]);
+  const active = options.find(item => item.key === choices[selected]) || (missingPrototype ? options.find(item => item.target.kind === 'prototype') : undefined) || (selected === 'closeout' && record.status === 'completed' ? options.find(item => item.key === 'result') : undefined) || options[0];
   const items: MenuProps['items'] = [];
   for (const option of options) {
-    const item = {key:option.key,label:<span data-task-artifact={option.path} data-task-content={option.key === 'review' || option.key === 'verification' ? option.key : undefined} data-task-tab={option.key === 'prototype' ? 'prototype' : undefined} data-task-closeout={selected === 'closeout' ? option.key : undefined}>{option.label}</span>};
+    const item = {key:option.key,label:<span data-task-artifact={option.path} data-task-content={option.key === 'review' || option.key === 'verification' ? option.key : undefined} data-task-tab={option.target.kind === 'prototype' ? 'prototype' : undefined} data-task-closeout={selected === 'closeout' ? option.key : undefined}>{option.label}</span>};
     if (option.group) {
       let group = items.find(item => item && 'type' in item && item.type === 'group' && item.key === option.group) as {type:'group';key:string;label:string;children:typeof item[]} | undefined;
       if (!group) { group = {type:'group',key:option.group,label:option.group,children:[]}; items.push(group); }
@@ -53,6 +55,7 @@ export function TaskNodeContent({ selected, record, documents, briefs, reviews, 
   return <section id="task-node-content" className={`task-node-content${directory ? ' task-node-with-directory' : ''}`} aria-label="所选节点内容">
     {directory && <nav className="task-node-directory" aria-label="节点内容目录"><Menu mode="inline" selectedKeys={active ? [active.key] : []} items={items} onClick={({key}) => onChoose(selected,key)} /></nav>}
     <div className="task-node-reading">
+      {missingPrototype && <Alert type="info" message="上次选择的原型页面已变化，已显示当前可用内容。" />}
       {error && <Alert type="warning" message={error} />}
       {selected !== 'closeout' && selected !== 'implementation' && briefs.map(item => item.kind === 'missing' ? <Alert key={item.key} type="warning" message={item.message} /> : null)}
       {loading ? <div className="task-content-loading"><Spin size="small" /> 正在读取内容…</div> : active ? renderContent(active.target) : <p className="task-node-empty">{selected === 'requirements' ? '暂无补充需求或说明。' : '暂无内容。'}</p>}

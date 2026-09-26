@@ -483,7 +483,7 @@ Buildr package MUST 提供 id 为 `ui-prototype` 的 optional workspace Skill，
 #### Scenario: 审查能力边界
 - **WHEN** 维护者检查 `ui-prototype` 的 package manifest 与 Skill 正文
 - **THEN** Skill MUST 不声明 `provides` 或 `requires` capability
-- **AND** MUST 明确区别于正式设计、canonical specs 和真实前端工程中的编码式原型
+- **AND** MUST 明确区别于正式设计、正式行为规范（Specification）和上线交付；MUST 允许隔离位置的源码复用与候选预览构建，且保持模拟操作与真实副作用隔离
 
 ### Requirement: 产品必须提供按需的智能体优先设计技能
 Buildr MUST 提供可选 `agent-first-design` 技能（Skill），在用户设计或改造智能体参与产品交付的软件，或审视智能体工作系统的职责、工作流及门禁时提供已确认范式、关系图和判断方法。技能 MUST 不成为普通开发或收尾的统一前置，也不引入新规则、评分或审批门禁。发现描述与正文 MUST 区分使用智能体开发软件和引入智能体交付产品结果；渐进演进时只指导相关部分，并保留既有业务、安全及授权边界。
@@ -682,3 +682,10 @@ Buildr MUST 提供可选内置 `ux-design-laws` Skill，在用户设计或审查
 #### Scenario: 诊断与组合验证复用
 - **WHEN** 同步已返回最终诊断或已有组合验证仍覆盖当前成果
 - **THEN** 指引 MUST消费已有结果，只在缺失、相关变化或明确未解决风险时补查；资源修改只核对实际影响的初始化、更新、安装或发布边界
+
+### Requirement: 产品提供可选前端开发技能
+Buildr MUST 随包提供 id 为 `frontend-development` 的可选前端开发技能（Skill），通过既有同步、卸载、同名重载及运行时（Runtime）投射方式发现和使用；MUST 不创建强制能力依赖、专用状态或审批门禁。新技能（Skill）MUST 与已有代码架构、体验设计及原型职责互补，不要求用户逐次手动指定才保持适用范围内的一致开发方式。
+
+#### Scenario: 安装和重载
+- **WHEN** 当前工作空间（Workspace）启用该可选技能（Skill），或提供同名实现
+- **THEN** Buildr MUST 按既有选择与投射语义使用它；卸载 MUST 不阻止无关任务推进

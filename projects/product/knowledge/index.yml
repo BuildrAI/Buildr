@@ -59,15 +59,33 @@ artifacts:
     title: 技能源文件到可发现入口的实现地图
     kind: code-map
     path: knowledge/code-map/skill-projection.md
-    objects: [skill-system-topic]
-    sources: ["skill-source-1", "skill-source-2", "skill-source-3", "overview-skill-system", "file-skill-projection", "file-skill-projection-evidence", "skill-source-4", "skill-source-5", "skill-source-6", "skill-source-7", "skill-source-8", "skill-source-9", "skill-source-10", "skill-source-11", "skill-source-12", "skill-source-13"]
+    objects: [ skill-system-topic ]
+    sources:
+      [
+        "skill-source-1",
+        "skill-source-2",
+        "skill-source-3",
+        "overview-skill-system",
+        "file-skill-projection",
+        "file-skill-projection-evidence",
+        "skill-source-4",
+        "skill-source-5",
+        "skill-source-6",
+        "skill-source-7",
+        "skill-source-8",
+        "skill-source-9",
+        "skill-source-10",
+        "skill-source-11",
+        "skill-source-12",
+        "skill-source-13"
+      ]
   - id: skill-system-explanation
     title: Buildr 技能体系
     kind: document
     path: knowledge/docs/architecture/buildr-skill-system.md
-    objects: [skill-system-topic]
-    sources: [overview-skill-system, file-skill-projection-evidence]
-    files: [overview-skill-system]
+    objects: [ skill-system-topic ]
+    sources: [ overview-skill-system, file-skill-projection-evidence ]
+    files: [ overview-skill-system ]
   - id: product-overview-article
     title: Buildr 整体认识
     kind: document
@@ -94,42 +112,81 @@ artifacts:
     title: Buildr 当前能力与边界
     kind: document
     path: knowledge/docs/capabilities.md
-    objects: [product-overview]
-    sources: [overview-positioning-spec, file-project-relations-article, overview-skill-system, task-file-task-system-md-123fb5, data-sqlite-source]
+    objects: [ product-overview ]
+    sources:
+      [
+        overview-positioning-spec,
+        file-project-relations-article,
+        overview-skill-system,
+        task-file-task-system-md-123fb5,
+        data-sqlite-source
+      ]
   - id: data-design-explanation
     title: Buildr 数据全景与领域设计
     kind: document
     path: knowledge/docs/architecture/buildr-data-design.md
-    objects: [data-design]
-    sources: [data-identity-source, data-catalog-source, data-skills-source, data-sqlite-source, index-model]
+    objects: [ data-design ]
+    sources:
+      [
+        data-identity-source,
+        data-catalog-source,
+        data-skills-source,
+        data-sqlite-source,
+        index-model
+      ]
   - id: data-domain-diagram
     title: 数据领域与事实归属
     kind: diagram
     path: knowledge/archify/data/buildr-data-domains.html
     graphSource: knowledge/archify/data/buildr-data-domains.json
-    objects: [data-design]
-    sources: [data-identity-source, data-catalog-source, data-skills-source, data-sqlite-source, data-domain-evidence]
-    files: [data-domain-html, data-domain-json, data-domain-evidence]
+    objects: [ data-design ]
+    sources:
+      [
+        data-identity-source,
+        data-catalog-source,
+        data-skills-source,
+        data-sqlite-source,
+        data-domain-evidence
+      ]
+    files: [ data-domain-html, data-domain-json, data-domain-evidence ]
   - id: data-sqlite-explanation
     title: Buildr 数据库表设计
     kind: document
     path: knowledge/docs/architecture/buildr-database-tables.md
-    objects: [data-sqlite]
-    sources: [data-sqlite-source, data-task-table-source, data-review-history-source, data-review-storage-source]
+    objects: [ data-sqlite ]
+    sources:
+      [
+        data-sqlite-source,
+        data-task-table-source,
+        data-review-history-source,
+        data-review-storage-source
+      ]
   - id: data-sqlite-diagram
     title: 数据库实体关系图（ERD）
     kind: diagram
     path: knowledge/archify/data/workspace-sqlite-erd.html
     graphSource: knowledge/archify/data/workspace-sqlite-erd.dot.txt
-    objects: [data-sqlite]
-    sources: [data-sqlite-source, data-task-table-source, data-review-history-source, data-sqlite-evidence]
-    files: [data-sqlite-html, data-sqlite-dot, data-sqlite-svg, data-sqlite-evidence]
+    objects: [ data-sqlite ]
+    sources:
+      [
+        data-sqlite-source,
+        data-task-table-source,
+        data-review-history-source,
+        data-sqlite-evidence
+      ]
+    files: [ data-sqlite-html, data-sqlite-dot, data-sqlite-svg, data-sqlite-evidence ]
   - id: data-local-explanation
     title: 本机数据与恢复边界
     kind: document
     path: knowledge/docs/architecture/buildr-local-data.md
-    objects: [data-local]
-    sources: [data-installation-source, data-mutation-source, data-convergence-source, data-daily-source]
+    objects: [ data-local ]
+    sources:
+      [
+        data-installation-source,
+        data-mutation-source,
+        data-convergence-source,
+        data-daily-source
+      ]
   - id: explanation
     title: 知识建设与维护
     kind: document
@@ -331,7 +388,7 @@ artifacts:
     title: Buildr 系统全景
     kind: diagram
     path: knowledge/archify/system/buildr-system-overview.html
-    objects: [product-overview, system-structure]
+    objects: [ product-overview, system-structure ]
     sources: []
     graphSource: knowledge/archify/system/buildr-system-overview.json
     graphDigest: 814f8a03e3d73e55a5482ad4d9f62cb17cb05d4e17bdae4fae4fad8f983d8a5c
@@ -343,7 +400,7 @@ artifacts:
     title: 能力、数据与副作用
     kind: diagram
     path: knowledge/archify/flows/capability-data-responsibility.html
-    objects: [system-structure]
+    objects: [ system-structure ]
     sources: []
     graphSource: knowledge/archify/flows/capability-data-responsibility.json
     graphDigest: c4ad9e3db468f7d13e7aadfb4a2cf69cea363995a2cc9071844226ca6f6f383d
@@ -355,7 +412,7 @@ artifacts:
     title: 技能源文件到可发现入口
     kind: diagram
     path: knowledge/archify/flows/skill-projection.html
-    objects: [skill-system-topic]
+    objects: [ skill-system-topic ]
     sources: []
     graphSource: knowledge/archify/flows/skill-projection.json
     graphDigest: ceff1cad58d94bea09d22ea63888459547979ffd3ecd7146977701c3f58c7fa9
@@ -389,7 +446,10 @@ artifacts:
       - code-architecture
       - project-candidate-directory
       - project-registration-ui
-    observedDigest: 0fe1e8903a3d012b7918e2ce47d1b8c9ca5eb30f9edfc72ee1e27f916950a481
+      - composition-reader
+      - composition-view
+      - composition-query
+    observedDigest: e8b040e754cf0508b21a51d4ee07dee8a36e7d5e69d2024eb8df1f4e1b3b9049
     files:
       - file-project-relations-article
   - id: project-relations-map
@@ -415,7 +475,10 @@ artifacts:
       - code-map
       - asset-cli
       - code-architecture
-    observedDigest: 757978783d8eaa5f332b269a5c5bbb37ba41afcf6359413f9767f5d6db94ed13
+      - composition-reader
+      - composition-view
+      - composition-query
+    observedDigest: ca42eb6339879d0bf89f33ef2369faff505da1aaa44a2fd4916bf87fa2fa31c6
     files:
       - file-project-relations-map
       - file-project-relations-article
@@ -466,6 +529,7 @@ artifacts:
       - task-source-task-command-application-aba2e8
       - task-file-task-system-md-d14898
       - task-file-task-parent-coordination-md-117a3e
+      - prototype-tab
     observedDigest: e7c6e9796a99a7f8efe844971af1870dd0a4c002692e4be6dd28467c5c96b901
     files:
       - task-file-task-system-md-123fb5
@@ -538,6 +602,13 @@ artifacts:
       - parent-task-actions
       - parent-coordination-tests
       - parent-completion-ui-tests
+      - prototype-metadata
+      - side-reading-panel
+      - side-reading-hook
+      - project-services-view
+      - prototype-reader-page
+      - task-node-content
+      - prototype-tab
     observedDigest: 26a08db913bf68a5a2979c8ebc531ebd12091d3e4e70347b91c28003d9c5edbd
     files:
       - task-file-task-system-md-123fb5
@@ -1030,7 +1101,8 @@ sources:
     title: render-plan.ts
     kind: code
     path: services/buildr/src/modules/agent-assets/infrastructure/runtime/skills/render-plan.ts
-    summary: "为普通技能关联当前工作空间依赖图中的局部绑定；拒绝已退役的项目技能安装范围。组合片段与局部能力说明，添加生成标记，生成正文、附属文件与归属记录的写入计划。"
+    summary: "为普通技能关联当前工作空间依赖图中的局部绑定；拒绝已退役的项目技能安装范围。组合片段与局部能力说明，添加生成标记，生成正文、附属文件与归属\
+      记录的写入计划。"
   - id: skill-source-7
     title: sources.ts
     kind: code
@@ -1421,7 +1493,7 @@ sources:
     title: 关联、修改与代码定位
     kind: code
     path: services/buildr/src/modules/workspace/application/asset-relationships-application.ts
-    observedDigest: fdf8ab05966e3cc7a979c897f225ef50710d6000f1b2fc96e3421827518e2da3
+    observedDigest: 494096d26ae2de2993c8f042f1afcadfb8689a71f7ab8a108fc2fe4a5542ca65
     summary: 组织创建、关联、修改、删除和代码定位用例，检查已观察版本以及其他引用方。它决定事务和副作用边界，不把修改声明自动解释为 Git 操作。
   - id: asset-persistence
     title: 唯一登记来源与兼容读取
@@ -1433,19 +1505,19 @@ sources:
     title: 资产接口入口
     kind: code
     path: services/buildr/src/modules/workspace/interfaces/http/workspace-http.ts
-    observedDigest: 674934cf627812df01c5c96cfcf86d525a7eb32398260559ba80fc652b4641d5
+    observedDigest: fdba31bd562918ec900f9d222cdedf706ff0d171ca1ef5dd5232e063226e49c9
     summary: 将网页的对象登记与关系请求转换为应用调用，处理输入协议和响应。业务引用规则和版本检查留在应用与领域对象中。
   - id: project-services-ui
     title: 项目服务关联界面
     kind: code
     path: services/buildr-web/src/features/project/components/ProjectServicesPanel.tsx
-    observedDigest: c1f7502d3f892d18abc2457ea2ee5fb05cf80d2db15a2254fc471806a8ad0f3a
+    observedDigest: c41467ce1afa15c108400dd8ef7c249cc27145b81fdf0ac2e97491661026e460
     summary: 在当前项目上下文中展示和维护服务引用，保存时携带当前版本。它不创建另一份共享服务，也不直接改写底层清单。
   - id: asset-detail-ui
     title: 服务与代码库详情
     kind: code
     path: services/buildr-web/src/features/workspace/components/AssetHome.tsx
-    observedDigest: 2076ad0bebf33a394dc5e5373c907a7171a43475648c8501d8f089a96e4d2941
+    observedDigest: 7166d6b2a67fa56e57491dfb3d9eca35f1944b183377f4e44dc7eb6bbec06852
     summary: 展示服务与代码库的登记职责、来源和可用操作。页面消费现有接口与身份，不按目录名称推断归属。
   - id: asset-tests
     title: 关系与分支回归依据
@@ -2624,6 +2696,66 @@ sources:
     path: services/buildr-web/src/features/knowledge/useCompleteKnowledgeReading.ts
     summary: 补齐关联阅读，取消过时请求，刷新时读取当前文件。
     observedDigest: 579176eadcca4cfd5cd7020c8186b88767fdd04b18ea8e01ed8d05a78fd1f10c
+  - id: prototype-metadata
+    title: 原型说明解析
+    kind: code
+    path: services/buildr/src/modules/openspec/application/prototype-metadata.ts
+    summary: 有界解析 HTML 内已声明页面、状态与纯文本说明，非法内容仅产生局部诊断。
+
+  - id: side-reading-panel
+    title: 侧边阅读容器
+    kind: code
+    path: services/buildr-web/src/components/SideReadingPanel.tsx
+    summary: 实施清单与原型说明共用容器、固定入口与键盘退出。
+
+  - id: side-reading-hook
+    title: 侧边阅读交互
+    kind: code
+    path: services/buildr-web/src/components/useSideReading.ts
+    summary: 管理悬停、离开延迟、固定和窄空间行为。
+
+  - id: project-services-view
+    title: 项目关联服务视图
+    kind: code
+    path: services/buildr-web/src/features/project/components/ProjectServicesView.tsx
+    summary: 正式与模拟入口共用单选即关联交互，保存操作由入口提供。
+
+  - id: prototype-reader-page
+    title: 原型独立阅读
+    kind: code
+    path: services/buildr-web/src/features/task/pages/PrototypeReaderPage.tsx
+    summary: 按明确工作空间和任务读取同一成果，装配独立三栏阅读。
+
+  - id: task-node-content
+    title: 任务内容目录
+    kind: code
+    path: services/buildr-web/src/features/task/components/TaskNodeContent.tsx
+    summary: 根据任务节点直接列出方案材料和关键原型页面。
+
+  - id: prototype-tab
+    title: 原型画面与说明
+    kind: code
+    path: services/buildr-web/src/features/task/components/PrototypeTab.tsx
+    summary: 隔离运行画面、装配共享说明交互并校验阅读消息。
+  - id: composition-reader
+    title: 总览按来源读取与局部失败
+    kind: code
+    path: services/buildr/src/modules/workspace/persistence/asset-composition-repository.ts
+    summary: 读取唯一登记清单，按来源返回可用对象和诊断，不进行代码状态扫描或写入。
+    observedDigest: c9c58f9d8eefe6d2970ffcbf86851d825b50da35388c401ef1e5ad266884b79a
+  - id: composition-view
+    title: 正式与原型共用组成展示
+    kind: code
+    path: services/buildr-web/src/features/workspace/components/WorkspaceComposition.tsx
+    summary: 按稳定身份展示项目、服务和代码库，支持搜索、聚焦、关联强调和对象打开。
+    observedDigest: bf981ed343e79b0272371139871bb34f39b1ebfdb5f75a574463fea1a6fe4959
+  - id: composition-query
+    title: 总览更新与已读内容保留
+    kind: code
+    path: services/buildr-web/src/features/workspace/components/useWorkspaceComposition.ts
+    summary: 按工作空间身份读取组成，关联通知和重新激活时刷新；局部读取失败保留已有对象。
+    observedDigest: 89d71b12e3b9475ab7be735a7b0d7c12a97b7c0fade99ebf4301c50166042a03
+
 relations:
   - from: product-overview-article
     to: product-overview
@@ -3299,4 +3431,13 @@ relations:
     kind: implements
   - from: verification-ref-73fbe375
     to: verification-product-tools
+    kind: implements
+  - from: composition-reader
+    to: project-service-repositories
+    kind: implements
+  - from: composition-view
+    to: project-service-repositories
+    kind: implements
+  - from: composition-query
+    to: project-service-repositories
     kind: implements

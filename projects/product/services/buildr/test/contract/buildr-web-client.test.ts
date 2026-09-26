@@ -35,6 +35,7 @@ test('Buildr Web 生产托管指向 web-dist 且不再依赖 STATIC_ASSETS 白�
 test('Buildr Web 应用壳只为 Runtime 注入的 development profile 显示开发版标识和标题', () => {
   const index: any = read('../buildr-web/index.html');
   const layout: any = read('../buildr-web/src/app/AppLayout.tsx');
+  const shell: any = read('../buildr-web/src/app/AppShellView.tsx');
   const styles: any = read('../buildr-web/src/styles.css');
   const staticFiles: any = read('src/web/http/static-files.ts');
   assert.match(index, /meta name="buildr-web-profile" content="__BUILDR_WEB_PROFILE__"/);
@@ -42,7 +43,8 @@ test('Buildr Web 应用壳只为 Runtime 注入的 development profile 显示开
   assert.match(staticFiles, /replace\('__BUILDR_WEB_PROFILE__', profile\)/);
   assert.match(layout, /meta\[name="buildr-web-profile"\]/);
   assert.match(layout, /profile === 'released' \|\| profile === 'development'/);
-  assert.match(layout, /webProfile === 'development'[\s\S]*id="development-environment-badge"[\s\S]*开发版/);
+  assert.match(layout, /<AppShellHeader[\s\S]*development=\{webProfile === 'development'\}/);
+  assert.match(shell, /\{development \?[\s\S]*id="development-environment-badge"[\s\S]*开发版/);
   assert.match(layout, /webProfile === 'development' \? 'Buildr Web Dev' : 'Buildr Web'/);
   assert.match(layout, /document\.title = productTitle\(webProfile\)/);
   assert.match(layout, /document\.title = `\$\{data\.workspace\.name\} · \$\{productTitle\(webProfile\)\}`/);

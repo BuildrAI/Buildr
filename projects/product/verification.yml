@@ -122,6 +122,7 @@ testing:
       - services/buildr-web/package-lock.json
       - services/buildr-web/tsconfig*.json
       - services/buildr-web/vite.config.ts
+      - services/buildr-web/tools/**
       - services/buildr/src/web/**
       - services/buildr/tools/build/**
       - services/buildr/tools/codegen/contracts/**
@@ -140,6 +141,7 @@ testing:
     selection:
       - 根据受影响页面选择 test:browser:changed 或对应页面入口；需要完整浏览器检查时使用 full
       - 前端逻辑测试由 buildr-web-unit 单独执行；浏览器检查通过不能替代逻辑测试
+      - 原型候选构建使用前端现有依赖；单独执行 node tools/build-prototype.mjs <output.html> 并在隔离生产托管中验证，不由完整浏览器入口自动生成或证明原型效果
     requirements:
       - node
       - npm

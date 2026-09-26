@@ -42,7 +42,7 @@ export function createLocalWorkspaceRequestRouter({
   staticRoot,
 }: any) {
   const validateRequest = (id: any, value: any) => validateBuildrWebHttp(buildrWebOperation(id).requestSchemaId, value, id);
-  const workspaceAppRoute = new RegExp(`^/workspaces/${WORKSPACE_ID}(?:/overview|/activity|/settings|/knowledge/(?:project|service)/[A-Za-z0-9][A-Za-z0-9._-]*|/skills(?:/[A-Za-z0-9%][A-Za-z0-9%._-]*)?|/repositories(?:/[A-Za-z0-9][A-Za-z0-9._-]*)?|/articles(?:/[A-Za-z0-9][A-Za-z0-9._-]*(?:/${taskIdPattern})?(?:/edit)?)?|/tasks(?:/${taskIdPattern}(?:/changes/[A-Za-z0-9][A-Za-z0-9._-]*/${taskIdPattern})?)?|/projects(?:/[A-Za-z0-9][A-Za-z0-9._-]*(?:/edit)?)?|/services(?:/[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*(?:/edit)?)?)?)?/?$`);
+  const workspaceAppRoute = new RegExp(`^/workspaces/${WORKSPACE_ID}(?:/overview|/workspace-overview|/activity|/settings|/knowledge/(?:project|service)/[A-Za-z0-9][A-Za-z0-9._-]*|/skills(?:/[A-Za-z0-9%][A-Za-z0-9%._-]*)?|/repositories(?:/[A-Za-z0-9][A-Za-z0-9._-]*)?|/articles(?:/[A-Za-z0-9][A-Za-z0-9._-]*(?:/${taskIdPattern})?(?:/edit)?)?|/tasks(?:/${taskIdPattern}(?:/prototypes|/changes/[A-Za-z0-9][A-Za-z0-9._-]*/${taskIdPattern})?)?|/projects(?:/[A-Za-z0-9][A-Za-z0-9._-]*(?:/edit)?)?|/services(?:/[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*(?:/edit)?)?)?)?/?$`);
 
   return async function routeLocalWorkspaceRequest(request: any, response: any) {
     const requestUrl = new URL(request.url || '/', origin() || 'http://127.0.0.1');

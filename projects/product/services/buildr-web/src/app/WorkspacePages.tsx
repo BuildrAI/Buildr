@@ -110,7 +110,7 @@ export function WorkspacePages({ workspaceId, renderResource }: { workspaceId: s
 
   useLayoutEffect(() => {
     const directory = '/workspaces/' + workspaceId + '/projects';
-    const fromDirectory = previousPagePath.current === directory && navigationType !== 'POP'
+    const fromDirectory = [directory,`/workspaces/${workspaceId}/workspace-overview`].includes(previousPagePath.current) && navigationType !== 'POP'
       && location.pathname.startsWith(directory + '/') && !location.pathname.slice(directory.length + 1).includes('/');
     previousPagePath.current = location.pathname;
     if (!current || resourcePreview(workspaceId, location.pathname)) return;

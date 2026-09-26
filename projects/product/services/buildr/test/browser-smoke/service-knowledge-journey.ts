@@ -161,9 +161,16 @@ export async function runServiceKnowledgeJourney({ page, workspaceRoot, workspac
 
     const laterEntry = browser().locator('[data-knowledge-entry="service-page-30"]');
     await laterEntry.scrollIntoViewIfNeeded();
-    const position = await visible().locator('.pane-right > .pane-body').evaluate(node => node.scrollTop);
     const catalogRequestsBeforeReading = knowledgeRequests.filter(value => new URL(value).pathname === catalogPath).length;
+    // Native click may focus/scroll the entry after scrollIntoViewIfNeeded.
+    // Compare with the actual opening position, not the earlier automation position.
+    await laterEntry.evaluate(node => {
+      const host = node.closest('.pane-body')!;
+      node.addEventListener('click', () => node.setAttribute('data-test-opening-scroll', String(host.scrollTop)), { once: true });
+    });
     await laterEntry.click();
+    const position = Number(await laterEntry.getAttribute('data-test-opening-scroll'));
+    assert.ok(position > 0);
     await browser().locator('[data-knowledge-view="artifact"]:visible .knowledge-browser-heading').getByRole('heading', { name: '服务阅读条目 30', exact: true }).waitFor({ state: 'visible' });
     await browser().getByRole('button', { name: `← 返回${service.name} · 服务知识`, exact: true }).click();
     await catalogEntries().nth(44).waitFor({ state: 'visible' });
@@ -172,7 +179,10 @@ export async function runServiceKnowledgeJourney({ page, workspaceRoot, workspac
     await page.waitForFunction(expected => {
       const host = document.querySelector('.workspace-page:not([hidden]) .pane-right > .pane-body');
       return Boolean(host) && Math.abs((host?.scrollTop || 0) - expected) < 2;
-    }, position);
+    }, position, { timeout: 3000 }).catch(async () => {
+      const actual = await visible().locator('.pane-right > .pane-body').evaluate(node => ({ top: node.scrollTop, height: node.scrollHeight, viewport: node.clientHeight }));
+      assert.fail(`服务知识阅读位置未恢复：期望 ${position}，实际 ${JSON.stringify(actual)}`);
+    });
     assert.equal(knowledgeRequests.filter(value => new URL(value).pathname === catalogPath).length, catalogRequestsBeforeReading, '返回已加载目录不从第一页重读');
     await assertSingleReadingPane();
     assert.deepEqual(knowledgeWrites, [], '主题导航、探索和全部资料阅读不得写回知识');
