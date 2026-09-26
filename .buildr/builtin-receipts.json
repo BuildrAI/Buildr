@@ -113,11 +113,11 @@
       "type": "skill",
       "id": "frontend-development",
       "target": "skills/buildr/frontend-development",
-      "integrity": "sha256-fd40a6d70906d9d0191f18a8f31ca7aa392ef73a4e734fd16bcf8619b7e48bad",
+      "integrity": "sha256-0c486def047b583517306f779056800a7836a2e048f972c5d666dc05c9d7de47",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-66b68d015a567e38be47a8d8ba6d926a77f15443af44d6eff0a52227e0096895"
+          "integrity": "sha256-31ec16a90ed73852f485dd4e3ae5044300de22ae0cd9dd434b65b0b8c92682dc"
         }
       ]
     },
@@ -277,11 +277,11 @@
       "type": "skill",
       "id": "task-triage",
       "target": "skills/buildr/task-triage",
-      "integrity": "sha256-e21e178e1cd37acdb79e432d7ce0c48aab50179b7fede69e06483d9232d4714f",
+      "integrity": "sha256-75c5c42cd76338ea77acf72c320784513fdc611089d3a7899e89651c1db96872",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-41a352b5197b15b79391dc8033a49bd4468d051d97aea4fb1d42c77b16f006c8"
+          "integrity": "sha256-2910f7dd1549db0babe51913b01fd63178665b9595ef07f792357f6d7ea303c7"
         },
         {
           "path": "references/structured-handoff.md",
@@ -349,11 +349,11 @@
       "type": "skill",
       "id": "ui-prototype",
       "target": "skills/buildr/ui-prototype",
-      "integrity": "sha256-adfffcd5c3b11cf6e4b472a427d12cdfc8271dfbbaa4a96c8f810f4b854d6677",
+      "integrity": "sha256-15f187713eea6f39c85071ea7af74d149c2002f5f453588c35013570c27ad8c0",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-bf29e23c5a39bc961acff261f775be592e3f8dd781dacf1a6eddfd3532c5a4ce"
+          "integrity": "sha256-4227f7b6c7cd294c2bb88cc0617ccabe2c5b361defdde371df14c7c5e6cd392c"
         },
         {
           "path": "assets/feature-notes.css",
@@ -365,7 +365,7 @@
         },
         {
           "path": "references/content-format.md",
-          "integrity": "sha256-b90a4087039860cf7cbcfa783462206b77e7c18b6fd01c815b8a5719c4be142b"
+          "integrity": "sha256-203a1d4dc9f2f89d4f4cafaca1355f6cbea503abf6695ceb1136aa05e40d042c"
         },
         {
           "path": "references/feature-notes.md",
