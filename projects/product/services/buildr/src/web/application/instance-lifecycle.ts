@@ -203,12 +203,30 @@ export function registerWebInstanceLifecycle(runtime: WebRuntime, options: WebLi
       throw codedError('当前Data Root中的Buildr Web receipt属于另一产品身份，已保留现场；请先确认并退出旧实例。', 'web_instance_profile_conflict', 409, { expected: webProfile, actual: recorded.webProfile });
     }
 
-    const startLock = acquireLock(webProfile);
+    let startLock = acquireLock(webProfile);
     if (!startLock.owner) {
-      const started = await waitForInstance({ profile: webProfile, match: npmLauncherBinding ? (value) => matchesBinding(value, npmLauncherBinding) : null, ...handoffWait });
-      if (!started) throw codedError(npmLauncherBinding ? '并发 Launcher 没有在预期时间内启动当前 binding 的健康 Buildr Web；未把旧实例视为托管成功。' : '另一个 Buildr 启动进程没有在预期时间内就绪，请稍后重试。', npmLauncherBinding ? 'launcher_handoff_concurrent_wait_timeout' : 'web_start_wait_timeout');
-      assertCompatibleInstance(started);
-      return reuseInstance(started);
+      let started: WebInstance | null = null;
+      if (npmLauncherBinding) {
+        // The lock may still belong to a CLI that has published its receipt.
+        // After it releases, one waiting Launcher must become the handoff owner.
+        for (let attempt = 0; attempt < handoffWait.attempts; attempt += 1) {
+          const observed = await healthyInstance(readInstance(webProfile));
+          if (observed && matchesBinding(observed, npmLauncherBinding)) {
+            started = observed;
+            break;
+          }
+          startLock = acquireLock(webProfile);
+          if (startLock.owner) break;
+          await new Promise<void>((resolve) => setTimeout(resolve, handoffWait.intervalMs));
+        }
+      } else {
+        started = await waitForInstance({ profile: webProfile, match: null, ...handoffWait });
+      }
+      if (started) {
+        assertCompatibleInstance(started);
+        return reuseInstance(started);
+      }
+      if (!startLock.owner) throw codedError(npmLauncherBinding ? '并发 Launcher 没有在预期时间内启动当前 binding 的健康 Buildr Web；未把旧实例视为托管成功。' : '另一个 Buildr 启动进程没有在预期时间内就绪，请稍后重试。', npmLauncherBinding ? 'launcher_handoff_concurrent_wait_timeout' : 'web_start_wait_timeout');
     }
 
     const secret = crypto.randomBytes(32).toString('hex');

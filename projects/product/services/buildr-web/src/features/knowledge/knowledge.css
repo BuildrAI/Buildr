@@ -1,7 +1,7 @@
 .knowledge-page {
-  padding: 28px 32px;
-  max-width: 1180px;
-  margin: auto;
+  padding: 0;
+  max-width: none;
+  margin: 0;
 }
 .knowledge-sticky-navigation {
   position: sticky;
@@ -198,9 +198,6 @@
   overflow-wrap: anywhere;
 }
 @media (max-width: 900px) {
-  .knowledge-page {
-    padding: 20px;
-  }
   .knowledge-title {
     align-items: flex-start;
     flex-direction: column;
@@ -537,3 +534,9 @@
 .knowledge-diagram-expanded { height: calc(100vh - 130px); }
 
 .knowledge-tree-node.business-boundary > .knowledge-tree-row .knowledge-tree-folder { font-weight: 600; }
+
+/* Text has a reading measure; tables, diagrams and code maps use their content pane. */
+.knowledge-page .markdown-body > :is(p, ul, ol, blockquote),
+.knowledge-browser .markdown-body > :is(p, ul, ol, blockquote),
+.knowledge-summary { max-width:var(--reading-content-width,880px); }
+.knowledge-page .markdown-body table { width:100%; }

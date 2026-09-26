@@ -133,3 +133,13 @@
 @media(prefers-reduced-motion:reduce){.workbench-attention-card{transition:none}}
 
 .workbench-project-work-link{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 15px;border:1px solid #e0eae3;border-radius:8px;color:var(--soft-primary);font-size:13px}
+
+/* The workbench shares the browsing frame, while prose remains bounded. */
+.app-frame > #app-view > .workbench-page { max-width:none; padding-inline:32px; container:workbench / inline-size; }
+.workbench-task-copy > p,
+.workbench-day-summary,
+.workbench-activity-item > p { max-width:var(--reading-content-width,880px); }
+@container workbench (min-width:1600px) {
+  .workbench-main-stack { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); align-items:start; gap:32px; }
+}
+@media(max-width:900px) { .app-frame > #app-view > .workbench-page { padding-inline:var(--main-content-gutter); } }

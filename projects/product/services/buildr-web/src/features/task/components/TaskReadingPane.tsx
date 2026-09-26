@@ -16,7 +16,8 @@ import { RetrospectiveDocumentCard } from './RetrospectiveDocumentCard';
 function TextList({ title, items }: { title: string; items: string[] }) {
   return items.length ? <section className="task-reader-section"><h3>{title}</h3><ul>{items.map((item, index) => <li key={index}>{item}</li>)}</ul></section> : null;
 }
-export function TaskReadingPane({ target, task, context, artifacts, evidence, workspaceId, href, onRead, onClose, onRespond, onRelativeLink, refreshTask, embedded = false, inDrawer = false, refreshToken = 0 }: {
+export function TaskReadingPane({ target, task, context, artifacts, evidence, workspaceId, href, onRead, onClose, onRespond, onRelativeLink, refreshTask, embedded = false, inDrawer = false, refreshToken = 0, onPrototypeSelect, onPrototypeNotesOpen, prototypeNotesCloseToken }: {
+  onPrototypeSelect?(key:string):void; onPrototypeNotesOpen?():void; prototypeNotesCloseToken?:number;
   inDrawer?: boolean; embedded?: boolean; refreshToken?: number; target: TaskReadTarget | null; task: TaskDetailResponse; context?: TaskWorkContext | null;
   artifacts: ReturnType<typeof useTaskArtifacts>; evidence: ReturnType<typeof useTaskEvidence>; workspaceId: string | null;
   href(path: string): string; onRead(target: TaskReadTarget): void; onClose(): void; onRespond(): void; onRelativeLink(href: string): void; refreshTask(): Promise<void>;
@@ -29,7 +30,7 @@ export function TaskReadingPane({ target, task, context, artifacts, evidence, wo
     return <div className="task-reader"><TaskArtifactReader embedded={embedded} sourceDescription={sourceLabel(source.provenance)} change={source.change} artifactPath={target.path} onClose={onClose} onProjectDocument={path => void artifacts.openChangeDocument(target.changeKey, path)} onSelect={path => onRead({ ...target, path, title: path.split('/').at(-1) || '文档' })} /></div>;
   }
   if (target.kind === 'document') return <div className="task-reader"><TaskDocumentPreviewModal embedded={inDrawer} reference={target.reference} refreshToken={refreshToken} onClose={onClose} loadDocument={artifacts.loadProjectDocument} /></div>;
-  if (target.kind === 'prototype') return <div className="task-reader"><PrototypeTab active workspaceId={workspaceId} data={artifacts.prototypeData} error={artifacts.prototypeError} loading={artifacts.prototypeLoading} onRefresh={() => void artifacts.refreshPrototype()} /></div>;
+  if (target.kind === 'prototype') return <div className="task-reader"><PrototypeTab selectedKey={target.prototypeKey} onSelect={onPrototypeSelect} onAuxiliaryOpen={onPrototypeNotesOpen} closeAuxiliaryToken={prototypeNotesCloseToken} active workspaceId={workspaceId} data={artifacts.prototypeData} error={artifacts.prototypeError} loading={artifacts.prototypeLoading} onRefresh={() => void artifacts.refreshPrototype()} /></div>;
   if (target.kind === 'retrospective') return <RetrospectiveDocumentCard taskId={record.taskId} recordDigest={task.recordDigest} reference={task.retrospectiveDocument} refreshToken={refreshToken} onRecordUpdated={refreshTask} inline />;
   if (target.kind === 'review') {
     const records = reviewRecords(evidence.reviewData?.slots[target.reviewType]);

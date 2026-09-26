@@ -117,7 +117,7 @@ Buildr Web App Shell MUST 在顶部提供品牌、共同工作空间范围、“
 - 左组 MUST 仅为项目主页及同项目知识提供可复用的主标签；目录由菜单定位，不重复显示主标签。服务、代码库、技能、文章及服务知识 MUST 使用副屏；主标签支持关闭并保留同工作空间现场，全部关闭回项目目录。
 - 右组 MUST 提供对象级页签条：在项目全景或服务全景内点开文档、变更等对象时，MUST 在右组以页签就地展开，MUST NOT 跳离当前领域页面；右组页签全部关闭时右组 MUST 退场，左组恢复独占。
 - 两组之间 MUST 为贯连的分隔线，MUST 支持拖拽调整右组宽度；两组的页签条在分隔线处 MUST 视觉连通；两组内容区 MUST 各自独立滚动。
-- 左组内容 MUST 限宽居中；宽度 MUST 随可用窗口自适应并设上限；右组打开且没有已保存手动比例时，左右两组 MUST 均分信息区可用宽度（不含左侧导航及中间分隔线）；已保存手动比例时 MUST 优先恢复该比例。
+- 左组的项目、服务、代码库、技能、文章与任务目录以及工作空间总览、项目主页及组成、知识页面 MUST 铺满可用主区域并保留两侧留白；标题、搜索和表格 MUST 共享对齐边界，打开右组后目录 MUST 填满剩余左组空间，关闭右组或折叠侧栏后 MUST 自动利用新增空间；工作台概览与动态外框 MUST 同样利用可用主区域；长篇正文及表单内容 MUST 独立保持适合阅读的宽度上限，技术图、代码地图和宽表格 MUST 利用内容区可用空间；右组打开且没有已保存手动比例时，左右两组 MUST 均分信息区可用宽度（不含左侧导航及中间分隔线）；已保存手动比例时 MUST 优先恢复该比例。
 - 修改项目、修改服务与交给 Agent 等动作 MUST 统一在抽屉层完成，抽屉 MUST 采用一致的壳结构（标识行、标题、副标题、关闭与底部状态区）。
 - 壳层与内容区 MUST 使用统一的白底，不得以不同区域底色分割主要分区。
 
@@ -248,6 +248,26 @@ Buildr Web App Shell MUST 在顶部提供品牌、共同工作空间范围、“
 - **THEN** 左右并排时两组 MUST 等宽，缩放窗口后仍 MUST 等宽
 - **AND** 用户 MUST 可以拖动调整并保存工作空间（Workspace）比例；关闭全部副分屏标签后主屏 MUST 恢复全部信息区宽度
 
+#### Scenario: 宽屏资源目录铺满主区域
+- **WHEN** 用户在宽屏浏览项目、服务、代码库或技能目录
+- **THEN** 标题、搜索与表格 MUST 填满侧栏右侧的可用内容区域并保持两侧留白，不受固定内容上限阻止继续展开
+- **AND** 窗口缩窄时 MUST 减少留白并保持搜索与操作可访问，不扩大页面级横向溢出
+
+#### Scenario: 目录与详情并排
+- **WHEN** 用户从目录打开详情、拖动分隔线或关闭详情
+- **THEN** 目录 MUST 填满当前可用左组区域，搜索和已观察内容 MUST 保持
+- **AND** 详情与表单 MUST 保持既有操作行为，长文 MUST 保持适合阅读的宽度约束
+
+#### Scenario: 图表与正文采用不同阅读宽度
+- **WHEN** 用户切换知识说明、技术图、代码地图，或展开任务详情
+- **THEN** 长文 MUST 保持受限行宽，技术图和宽表格 MUST 能利用可用内容宽度
+- **AND** 页面标题和主要操作 MUST 保持对齐，目录及正文 MUST 不叠加重复外层留白
+
+#### Scenario: 窄屏文章目录
+- **WHEN** 文章列表所在容器变窄
+- **THEN** 项目、稿件状态及更新时间 MUST 在摘要中保持可读，文章及操作 MUST 不依赖横向滚动
+- **AND** 原有搜索、筛选、收藏、编辑、查看原文和删除入口 MUST 保持
+
 ### Requirement: Task Intent 必须支持可点击的 Project 文档引用
 Buildr Web MUST 以受限 Markdown 展示 Task Intent，并 MUST 允许用户点击指向当前 Task scope 内已登记 Project 的 Workspace 相对 `.md` 路径，在 Task 上下文中打开只读文档预览。客户端 MUST 根据 Project registry 的真实 source path 解析引用并复用任务范围文档接口选择当前工作树或保留项目根；MUST NOT 从目录命名猜测 Project、读取绝对路径或获得任意 Workspace 文件访问能力。
 
@@ -290,23 +310,26 @@ Buildr Web 项目详情 MUST 提供“项目动态”入口并打开已筛选该
 - **THEN** 页面 MUST 转到动态页中的同一项目与日期，且不再打开项目资料副屏
 
 ### Requirement: Buildr Web Task 详情必须提供 UI Prototype 视图
-Buildr Web Task 详情 MUST 在方案设计节点提供实际已有“原型”的文档切换项，按需读取当前 Task 关联 Change 中可发现的一个或多个 UI Prototype 页面，并 MUST 允许用户在页面列表中选择和操作当前页面。页面 MUST 同时说明 UI Prototype 是实现参考而非正式设计、canonical spec 或像素级验收标准。当当前页面可在舞台中展示时，原型舞台 MUST 提供「新窗口打开」控件，并用新窗口打开该页面同一 Task-scoped 内容 URL。
+Buildr Web MUST 在任务（Task）方案设计的现有左侧菜单直接列出可发现的关键原型页面，按需读取同一任务关联变更（Change）的成果，MUST 不在主阅读区再重复放置页面列表。原型画面 MUST 可操作并自动适应可用宽度；“功能说明” MUST 使用与实施清单一致的临时查看、关闭、键盘退出和空间充足时固定并排机制，任务内默认收起。系统 MUST 提供“单独查看”并在新的浏览器页签中展示同一任务限定的页面列表、原型画面和说明，宽度足够时说明默认固定；MUST 不提供重复的扩大阅读和手动缩放控件。
 
 #### Scenario: Task 存在多个原型页面
-- **WHEN** 只读 API 返回两个或以上 UI Prototype 页面
-- **THEN** 原型视图 MUST 展示全部页面的标题、关联 Change 与 portable 相对路径
-- **AND** 用户选择任一页面后 MUST 在同一 Task 详情中看到对应完整可交互页面
+- **WHEN** 任务包含多个关键原型页面
+- **THEN** 左侧菜单 MUST 直接允许选择，当前画面与说明 MUST 一致，来源及相对路径 MUST 可查看
+- **AND** 页面切换 MUST 保留说明的固定选择，刷新后已选页面消失 MUST 给出提示并选择仍可用内容
 
 #### Scenario: Task 没有可发现原型
-- **WHEN** Task 没有关联 Change、Change 暂不可用或关联 Change 中没有带新标记的 HTML
-- **THEN** 对应节点 MUST 展示必要的空态或诊断
-- **AND** MUST NOT 改变 Task 状态或隐藏其他详情视图
+- **WHEN** 任务没有关联变更、没有带标记的 HTML 或部分内容不可读取
+- **THEN** 系统 MUST 表达必要空态或局部诊断，MUST NOT 改变任务状态或隐藏其他任务材料
 
 #### Scenario: 用新窗口打开当前原型页面
-- **WHEN** 原型舞台正在展示当前选中页面
-- **THEN** 舞台 MUST 提供「新窗口打开」控件
-- **AND** 激活后 MUST 用新窗口打开 iframe 正在使用的同一 Task-scoped 内容 URL
-- **AND** MUST NOT 把原型 HTML 注入 Buildr Web 父页面 DOM
+- **WHEN** 用户激活“单独查看”
+- **THEN** 系统 MUST 打开受信任的独立阅读页，保留当前任务限定与有效页面及状态选择，MUST 展示页面列表、画面和说明并支持切换
+- **AND** 页面内模拟更改 MUST 不被当成跨页签共享事实
+
+#### Scenario: 临时查看和固定说明
+- **WHEN** 用户悬停或点击说明入口，或固定、关闭说明
+- **THEN** 系统 MUST 沿用实施清单的阅读行为，固定说明 MUST 在页面切换时保持；窄空间 MUST 使用可关闭的浮层
+- **AND** 同一阅读区域 MUST 不叠加实施清单与功能说明面板
 
 ### Requirement: UI Prototype API 必须保持 Task-scoped 只读边界
 本机 HTTP interface MUST 提供只读 Task-scoped UI Prototype API，从 Task Record 的 Change 引用和 saved Environment current 解析 working Change。`/ui-prototypes` 列表响应 MUST 返回全部带 `buildr:ui-prototype` 标记页面的不透明 ID、标题、lifecycle 与 portable 相对路径；具体 HTML MUST 只通过同一 Task 与已发现页面 ID 的专用响应读取。API MUST 忽略旧 `buildr:ui-preview` 标记、符号链接、未标记或超出安全读取边界的文件，MUST NOT 接受 filesystem path、写入 Task/Change 或提供任意文件 HTML 路由。
@@ -340,9 +363,9 @@ Buildr Web MUST 在不含 `allow-same-origin` 的 sandbox iframe 中运行每个
 - **AND** Buildr Web 主页面与其他原型页面 MUST 保持可用
 
 #### Scenario: 新窗口直接打开当前原型页面
-- **WHEN** 用户从原型舞台用新窗口打开当前页面的内容 URL
-- **THEN** 新窗口 MUST 加载同一 Task-scoped 内容响应
-- **AND** 该文档 MUST 继续处于 opaque origin，不能读取 Buildr session 或父页面 DOM
+- **WHEN** 用户从原型舞台打开独立阅读页或直接访问裸内容 URL
+- **THEN** 独立阅读页 MUST 在隔离框架中加载同一 Task-scoped 内容响应；直接访问裸内容 MUST 继续施加内容响应隔离
+- **AND** 原型内容文档 MUST 继续处于 opaque origin，不能读取 Buildr session 或父页面 DOM
 
 ### Requirement: Buildr Web 必须统一具名 Workspace 相对 Markdown 引用
 Task、Project与Service页面 MUST使用共享解析规则处理带用户可读名称的Workspace相对`.md`引用，根据已登记Project `source.path`与页面scope解析到具名项目；Task使用任务范围文档接口，Project和Service使用各自文档接口，并分别表达“引用可解析”与“正文当前可读取”。页面 MUST NOT按目录约定猜测Project、读取绝对路径、扫描Workspace或因正文当前不可读而改写引用。
@@ -654,3 +677,39 @@ Buildr Web MUST将组合详情分为概览、子任务和验收。标题后只�
 #### Scenario: 外部清除组合筛选
 - **WHEN** 用户组合搜索、服务和复盘条件后点击外部重置
 - **THEN** 页面 MUST立即按默认未结束条件读取第一批，输入与地址条件 MUST一致，分组 MUST保持，无需二次确认
+
+### Requirement: 原型页面说明使用有界的兼容内容协议
+系统 MUST 从已发现 HTML 内的可选版本化非执行数据读取关键页面、状态和纯文本说明，不新增任务记录字段、独立登记库或任意路径读取。系统 MUST 限制数据大小及结构并安全渲染；旧文件缺少元信息时 MUST 仍以标题作为单页阅读，格式错误 MUST 只产生局部诊断，不执行元信息或将 HTML 注入宿主。
+
+#### Scenario: 旧成果兼容
+- **WHEN** 已发现 HTML 只有现有标记与标题
+- **THEN** 系统 MUST 继续提供隔离展示和独立阅读，说明缺失 MUST 不阻断其他页面
+
+#### Scenario: 不可信说明和旧页面消息
+- **WHEN** 元信息包含非法标识、执行内容或超限结构，或非当前框架、旧加载代次发送状态消息
+- **THEN** 系统 MUST 拒绝无效内容或消息，并保持有效页面可用，MUST NOT 执行真实写入或扩大读取范围
+
+### Requirement: 原型交互消息只控制当前阅读
+原型与宿主之间的消息 MUST 只支持当前已发现页面、状态和位置提示，MUST 校验当前框架来源、加载代次及允许标识集合，MUST NOT 将不透明来源的 `null` 当作唯一信任凭据。消息 MUST NOT 发起真实接口（API）调用、任意导航或文件读取。
+
+#### Scenario: 合法状态切换
+- **WHEN** 当前隔离页面发出已声明的有效状态变化
+- **THEN** 宿主 MUST 更新对应阅读说明并保持原有任务限定，不改变正式业务状态
+
+### Requirement: 功能说明表达当前任务在原型中的预期结果
+功能说明 MUST 综合提案与设计，只解释当前原型中与本次任务有关的功能、交互及结果，MUST NOT 要求所有提案需求或实现设计对应原型，也 MUST NOT 将原型制作过程作为功能说明。
+
+#### Scenario: 阅读功能并定位对应区域
+- **WHEN** 用户悬停或键盘聚焦带有位置的功能卡片
+- **THEN** 系统 MUST 高亮当前画面的对应区域，移开或失焦后清除；点击可定位到该区域
+- **AND** 高亮 MUST 不改变页面、状态或正在体验的模拟数据，不绘制说明连线
+- **AND** 没有位置的旧说明 MUST 仍可阅读
+
+#### Scenario: 原型内部改变当前画面
+- **WHEN** 原型内的操作切换画面或关闭最后一个对象详情
+- **THEN** 页面目录和功能说明 MUST 对齐实际呈现的画面，并清除上一画面的高亮
+
+#### Scenario: 后续原型复用功能说明能力
+- **WHEN** 智能体使用已获授权的原型技能生成后续原型
+- **THEN** 技能 MUST 提供可复用的功能卡片、配套样式和区域联动组件及接入示例
+- **AND** 本次阅读器与原型 MUST 使用同一组件来源，生成产物时内联资源，不依赖远程服务

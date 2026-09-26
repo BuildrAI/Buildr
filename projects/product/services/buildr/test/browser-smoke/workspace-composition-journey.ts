@@ -1,0 +1,75 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+
+export async function runWorkspaceCompositionJourney({ t, page, runtime, workspaceRoot, workspaceUrl, expectedBrowserErrors }: any) {
+  await t.test('总览真实引用、项目组成、对象分屏、版本冲突与局部读取恢复', async () => {
+    let catalog = runtime.assetCatalog(workspaceRoot);
+    if (catalog.migrationRequired) catalog = runtime.migrateAssetCatalog(workspaceRoot, { revision: catalog.revision });
+    catalog = runtime.createCatalogRepository(workspaceRoot, { revision: catalog.revision, code: 'overview-code', name: '总览代码', url: 'https://example.com/overview.git', integrationBranch: 'main' });
+    const repositoryId = catalog.repositories.find((r: any) => r.code === 'overview-code').id;
+    for (const [code, name] of [['overview-shared', '总览共享服务'], ['overview-free', '总览独立服务']]) catalog = runtime.createCatalogService(workspaceRoot, { revision: catalog.revision, service: { code, name, repositoryId } });
+    const serviceId = catalog.services.find((s: any) => s.code === 'overview-shared').id;
+    const freeId = catalog.services.find((s: any) => s.code === 'overview-free').id;
+    for (const [code, name] of [['overview-a', '总览项目甲'], ['overview-b', '总览项目乙']]) catalog = runtime.createCatalogProject(workspaceRoot, { revision: catalog.revision, code, name, serviceIds: [serviceId] });
+    const project = catalog.projects.find((p: any) => p.code === 'overview-a');
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    const requests: string[] = [], observe = (request: any) => requests.push(request.url());
+    page.on('request', observe);
+    await page.goto(`${workspaceUrl}/workspace-overview`);
+    const graph = page.locator('.workspace-page:visible #workspace-composition');
+    await graph.getByRole('button', { name: '总览共享服务，查看详情', exact: true }).waitFor();
+    assert.equal(await graph.locator(`[data-composition-id="service:${serviceId}"]`).count(), 1);
+    assert.match(await graph.locator(`[data-composition-id="service:${serviceId}"]`).innerText(), /2 个项目共用/);
+    assert.match(await graph.locator(`[data-composition-id="service:${freeId}"]`).innerText(), /尚未被项目引用/);
+    assert.ok(!requests.some(url => /\/repositories\/[^/]+\/status/.test(url)), '总览不读取全部代码库状态');
+    page.off('request', observe);
+    await graph.getByRole('textbox', { name: '搜索名称或用途', exact: true }).fill('没有此内容');
+    await graph.getByText('没有匹配的内容', { exact: true }).waitFor();
+    await graph.getByRole('button', { name: '清除搜索', exact: true }).click();
+    await graph.getByRole('button', { name: '总览项目甲，查看项目组成', exact: true }).hover();
+    assert.ok(await graph.locator('path.emphasized').count() > 0);
+    await graph.getByRole('button', { name: '总览项目甲，查看项目组成', exact: true }).click();
+    await page.getByRole('tab', { name: '项目组成', exact: true }).waitFor();
+    assert.match(page.url(), /projects\/overview-a\?view=composition$/);
+    await graph.getByRole('button', { name: '总览共享服务，查看详情', exact: true }).click();
+    await page.locator('.pane-right:visible').getByRole('heading', { name: '总览共享服务', exact: true }).waitFor();
+    await graph.getByRole('button', { name: '总览代码，查看详情', exact: true }).click();
+    await page.locator('.pane-right:visible').getByRole('heading', { name: '总览代码', exact: true }).waitFor();
+    assert.equal(await page.locator('.pane-right:visible [role=tab]').count(), 2);
+    const file = path.join(workspaceRoot, 'projects/manifest.yml');
+    fs.appendFileSync(file, '\n');
+    expectedBrowserErrors.add(`/asset-catalog/projects/${project.id}/services`);
+    await page.getByRole('combobox', { name: '关联服务', exact: true }).click();
+    await page.locator('.ant-select-dropdown:visible .ant-select-item-option').filter({ hasText: '总览独立服务' }).click();
+    await page.getByRole('alert').filter({ hasText: '关联未保存' }).waitFor();
+    assert.deepEqual(runtime.assetCatalog(workspaceRoot).projects.find((p: any) => p.id === project.id).serviceIds, [serviceId]);
+    const reread = page.waitForResponse((r: any) => r.url().endsWith('/asset-catalog') && r.ok());
+    await page.getByRole('button', { name: '重新读取', exact: true }).click(); await reread;
+    await page.getByRole('combobox', { name: '关联服务', exact: true }).click();
+    await page.locator('.ant-select-dropdown:visible .ant-select-item-option').filter({ hasText: '总览独立服务' }).click();
+    await graph.getByRole('button', { name: '总览独立服务，查看详情', exact: true }).waitFor();
+    await page.reload();
+    await graph.getByRole('button', { name: '总览独立服务，查看详情', exact: true }).waitFor();
+    await page.getByRole('link', { name: '总览', exact: true }).click();
+    await graph.getByRole('button', { name: '总览项目甲，查看项目组成', exact: true }).waitFor();
+    const repositoryFile = path.join(workspaceRoot, 'repositories/manifest.yml'), bytes = fs.readFileSync(repositoryFile);
+    try {
+      fs.writeFileSync(repositoryFile, 'repositories: [\n');
+      await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+      await graph.getByRole('alert').waitFor();
+      assert.equal(await graph.locator(`[data-composition-id="repository:${repositoryId}"]`).count(), 1, '失败保留已读代码库与引用');
+    } finally { fs.writeFileSync(repositoryFile, bytes); }
+    await graph.getByRole('button', { name: /^重\s*试$/ }).click();
+    await graph.getByRole('alert').waitFor({ state: 'hidden' });
+    await page.getByRole('link', { name: '项目', exact: true }).click();
+    await page.locator('#project-table-body tr').filter({ hasText: '总览项目甲' }).click();
+    assert.equal(await page.getByRole('tab', { name: '概览', exact: true }).getAttribute('aria-selected'), 'true');
+    assert.equal(await page.locator('.pane-right:visible').count(), 0, '列表重入清空旧对象副屏');
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(`${workspaceUrl}/workspace-overview`);
+    await graph.getByRole('button', { name: '总览项目甲，查看项目组成', exact: true }).waitFor();
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    await page.setViewportSize({ width: 1280, height: 720 });
+  });
+}

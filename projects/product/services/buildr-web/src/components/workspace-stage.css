@@ -32,3 +32,7 @@
 .workspace-page .pane-stage.reading-overlay > .pane-right > .pane-reading-toggle { display: none; }
 .workspace-page .pane-stage.reading-overlay > .pane-right > .pane-body { height: auto; }
 .reading-overlay .pane-overlay-heading { display: flex; flex: none; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--soft-line); }
+/* Expanded knowledge and task readers contain their own prose width rules. */
+.workspace-page .pane-stage.reading-expanded > .pane-right > .pane-body > .pane-body-inner:has(.knowledge-browser, .knowledge-page, .task-detail-page) {
+  max-width: none;
+}

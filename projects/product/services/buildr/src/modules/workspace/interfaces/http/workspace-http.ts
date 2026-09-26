@@ -92,6 +92,7 @@ export function createWorkspaceHttpContribution(application: any) {
         authorizeWrite();
         return respond('assets.delete', application.deleteCatalogAsset(root, assetDelete[1], assetDelete[2], validateRequest('assets.delete', await readJsonBody())));
       }
+      if (request.method === 'GET' && suffix === '/workspace-composition') return respond('workspace.composition', application.workspaceComposition(root));
       if (request.method === 'GET' && suffix === '/asset-catalog') return respond('assets.read', application.assetCatalog(root));
       if (request.method === 'GET' && suffix === '/asset-catalog/service-candidates') return respond('assets.services.candidates', application.listCatalogDirectoryCandidates(root, 'service'));
       if (request.method === 'GET' && suffix === '/asset-catalog/repository-candidates') return respond('assets.repositories.candidates', application.listCatalogDirectoryCandidates(root, 'repository'));

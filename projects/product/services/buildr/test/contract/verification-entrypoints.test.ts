@@ -162,7 +162,7 @@ test('前端逻辑与浏览器测试分别声明真实完整入口，声明测�
   assert.equal(wrapper, path.join(productRoot, 'tools/development/run-development-npm'));
   fs.accessSync(wrapper, fs.constants.X_OK);
 
-  assert.deepEqual(browser.testRoots, ['services/buildr/test/browser-smoke/**']);
+  assert.deepEqual(browser.testRoots, ['services/buildr/test/browser-smoke/**', 'services/buildr-web/test/browser/**']);
   assert.deepEqual(browser.full, {
     kind: 'command',
     argv: ['tools/development/run-development-npm', 'run', 'test:browser:smoke'],

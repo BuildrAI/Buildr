@@ -20,7 +20,6 @@ export async function runPublicationJourney({ t, page, workspaceRoot, workspaceU
   const visible = () => page.locator('.workspace-page:not([hidden])');
   const editor = () => page.locator('.publication-editor-drawer');
   const primaryTabs = () => page.getByRole('tablist', { name: '打开的页面', exact: true }).getByRole('tab');
-  let createdId = '', createdFile = '', imageRef = '', attachmentRef = '';
   writeReadingFixture(workspaceRoot);
   const openKnowledgeSource = async (entry: Locator, sourceId: string) => {
     const base = new URL(apiBase), prefix = `${base.pathname}/knowledge/project/`;
@@ -224,6 +223,8 @@ export async function runPublicationJourney({ t, page, workspaceRoot, workspaceU
   });
 
   await t.test('文章与知识复用副屏、展开保留阅读位置、旧编辑地址保持兼容', async () => {
+    await page.setViewportSize({ width: 1680, height: 1000 });
+    await page.goto(`${workspaceUrl}/articles`);
     await visible().locator('#articles-search').fill('浏览器');
     const tabCount = await primaryTabs().count();
     await visible().getByRole('link', { name: '浏览器测试文章', exact: true }).click();
@@ -322,15 +323,15 @@ export async function runPublicationJourney({ t, page, workspaceRoot, workspaceU
     await page.getByRole('button', { name: '创建草稿', exact: true }).click();
     await editor().locator('#article-edit-content').waitFor({ state: 'visible' });
     assert.equal(page.url(), `${workspaceUrl}/articles`);
-    createdId = (await page.locator('#article-editor').getAttribute('data-publication-id'))!;
-    createdFile = path.join(root, `${createdId}.md`);
+    const createdId = (await page.locator('#article-editor').getAttribute('data-publication-id'))!;
+    const createdFile = path.join(root, `${createdId}.md`);
     assert.equal(fs.existsSync(createdFile), true);
     await editor().locator('#article-edit-summary').fill('上传、引用与真实文件保存。');
     await editor().locator('#article-edit-content').fill('## 图片与附件\n\n本轮资源验证正文。\n');
     await editor().locator('#article-asset-file').setInputFiles({ name: 'upload-image.png', mimeType: 'image/png', buffer: publicationTestPng });
     const insertImage = editor().locator('[data-insert-asset*="upload-image-"]');
     await insertImage.waitFor({ state: 'visible' });
-    imageRef = (await insertImage.getAttribute('data-insert-asset'))!;
+    const imageRef = (await insertImage.getAttribute('data-insert-asset'))!;
     assert.equal(fs.existsSync(path.join(root, imageRef)), true);
     assert.doesNotMatch(fs.readFileSync(createdFile, 'utf8'), /upload-image-/);
     await insertImage.click();
@@ -339,7 +340,7 @@ export async function runPublicationJourney({ t, page, workspaceRoot, workspaceU
     await editor().locator('#article-asset-file').setInputFiles({ name: 'reference.txt', mimeType: 'text/plain', buffer: Buffer.from('article attachment example', 'utf8') });
     const insertAttachment = editor().locator('[data-insert-asset*="reference-"]');
     await insertAttachment.waitFor({ state: 'visible' });
-    attachmentRef = (await insertAttachment.getAttribute('data-insert-asset'))!;
+    const attachmentRef = (await insertAttachment.getAttribute('data-insert-asset'))!;
     await insertAttachment.click();
     await editor().locator('#article-save').click();
     await editor().waitFor({ state: 'hidden' });
@@ -363,6 +364,15 @@ export async function runPublicationJourney({ t, page, workspaceRoot, workspaceU
   });
 
   await t.test('外部修改冲突保留编辑，删除正文不删除共享资源，窄屏资源可用', async () => {
+    // Conflict/deletion owns its data; upload success in another case is not a prerequisite.
+    const createdId = 'conflict-deletion-fixture';
+    const createdFile = path.join(root, `${createdId}.md`);
+    const imageRef = 'assets/conflict-image.png', attachmentRef = 'assets/conflict-reference.txt';
+    fs.mkdirSync(path.join(root, 'assets'), { recursive: true });
+    fs.writeFileSync(path.join(root, imageRef), publicationTestPng);
+    fs.writeFileSync(path.join(root, attachmentRef), 'shared attachment');
+    fs.writeFileSync(createdFile, `---\nid: ${createdId}\ntitle: 独立冲突与删除样本\nkind: product-article\nstatus: draft\n---\n\n![图片](${imageRef})\n\n[附件](${attachmentRef})\n`);
+    await page.goto(`${workspaceUrl}/articles/product/${createdId}`);
     await visible().getByRole('button', { name: /编辑文章/ }).click();
     await editor().locator('#article-edit-title').waitFor({ state: 'visible' });
     await editor().locator('#article-edit-title').fill('保留我的编辑标题');

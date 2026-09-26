@@ -58,7 +58,8 @@ test('React App 路由覆盖 workspace 深链并回退未知路径', () => {
   assert.match(app, /<Route index element=\{<Navigate to="overview" replace \/>\} \/>/);
   assert.match(app, /path="overview" element=\{<WorkbenchPage \/>\}/);
   assert.match(app, /path="activity" element=\{<WorkbenchActivityPage \/>\}/);
-  assert.doesNotMatch(app, /OverviewPage/);
+  assert.doesNotMatch(app, /\bOverviewPage\b/);
+  assert.match(app, /path="workspace-overview" element=\{<WorkspaceOverviewPage \/>\}/);
   assert.match(app, /path=":taskId"/);
   assert.match(app, /path=":taskId\/changes\/:projectCode\/:changeCode"/);
   assert.match(app, /path="projects" element=\{<ProjectsSection \/>\}/);
@@ -133,7 +134,8 @@ test('Buildr Web 在工作空间提供独立文章入口、只读内容视图和
   const publicationApi: any = read('../buildr-web/src/features/publication/api/publication-api.ts');
   const articleBody: any = read('../buildr-web/src/features/publication/components/ArticleBody.tsx');
   const publicationModel: any = read('../buildr-web/src/features/publication/publication-model.ts');
-  assert.match(navigation, /data-nav=\{name\}/);
+  assert.match(read('../buildr-web/src/app/AppNavigationItem.tsx'), /data-nav=\{name\}/);
+  assert.match(navigation, /<AppNavigationItem/);
   assert.match(navigation, /item\('\/articles', '文章', 'articles'\)/);
   assert.match(navigation, /item\('\/overview', '概览', 'overview'\)/);
   assert.match(navigation, /item\('\/activity', '动态', 'activity'\)/);
@@ -194,12 +196,12 @@ test('任务 UI Prototype 只读按需加载并在离线 opaque-origin iframe �
   assert.match(source, /selected === 'design' && changeKeys && !artifacts\.prototypeData/);
   assert.match(artifactsHook, /'ui-prototypes'/);
   assert.match(prototype, /界面原型/);
-  assert.match(prototype, /用于约束后续页面和交互开发/);
-  assert.match(prototype, /原型页面列表/);
-  assert.match(prototype, /prototypes\.map/);
+  assert.match(prototype, /模拟操作仅影响本次演示/);
+  assert.match(read('../buildr-web/src/features/task/pages/PrototypeReaderPage.tsx'), /原型页面列表/);
+  assert.match(read('../buildr-web/src/features/task/components/TaskNodeContent.tsx'), /prototypeEntries\(prototypeData\)/);
   assert.match(prototype, /sandbox="allow-scripts"/);
   assert.doesNotMatch(prototype, /allow-same-origin/);
-  assert.match(prototype, /src=\{prototypeSource\}/);
+  assert.match(prototype, /src=\{src\}/);
   assert.doesNotMatch(prototype, /srcDoc=/);
   assert.doesNotMatch(prototype, /dangerouslySetInnerHTML/);
   assert.match(changeHttp, /\/ui-prototypes\$`\)/);
@@ -212,8 +214,8 @@ test('任务 UI Prototype 只读按需加载并在离线 opaque-origin iframe �
   assert.match(responses, /connect-src 'none'/);
   assert.match(responses, /form-action 'none'/);
   assert.match(responses, /frame-ancestors 'self'/);
-  assert.match(styles, /\.ui-prototype-layout/);
-  assert.match(styles, /@media \(max-width: 700px\)[\s\S]*\.ui-prototype-frame/);
+  assert.doesNotMatch(styles, /\.ui-prototype-layout/);
+  assert.match(read('../buildr-web/src/features/task/components/prototype-reader.css'), /\.prototype-reading-layout/);
 });
 
 test('任务研发页签、客户端调用与专属样式已退出', () => {

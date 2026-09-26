@@ -16,6 +16,14 @@ entries:
     cwd: services/buildr-web
     executable: ../buildr/tools/development/run-development-npm
     args: [ci]
+  - id: buildr.browser-chromium
+    title: 准备 Playwright 配套 Chromium（无桌面窗口）
+    scope:
+      kind: service
+      service: buildr
+    cwd: services/buildr
+    executable: tools/development/run-development-npm
+    args: [run, test:browser:install]
   - id: buildr.source-runtime
     title: Prepare Buildr source runtime
     scope:

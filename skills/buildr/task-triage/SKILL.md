@@ -26,6 +26,8 @@ authority 冲突、授权不明、实际 Git 操作所需的 repository set 不�
 
 只有用户在当前任务中明确确认需要，才在方案已有足够上下文、正式前端实现开始前加载 selected `ui-prototype` Skill。用户拒绝、未确认或直接要求继续时不调用 Skill，正常推进后续流程；不得创建占位文件、waiver、Result、Receipt 或 blocker。UI Prototype 不替代 OpenSpec Change、Planning Review 或正式实现。一旦当前 Task 已生成原型，除非用户明确要求忽略，后续 Agent 必须在正式前端编辑前读取全部相关原型并按其信息架构、布局和交互开发。
 
+用户决定实施且此前讨论已有未被明确忽略的原型时，在正式前端编辑前接续 `ui-prototype` 的“成果保存与接续”：核对确认版、归入适用位置并验证任务展示。此动作承接已有成果，不重新询问是否生成，也不复制迁移或清理流程；是否创建变更仍按下方语义判断，不为展示强造变更。
+
 ## 2. 两轴决策
 
 ### 语义治理
@@ -42,6 +44,8 @@ authority 冲突、授权不明、实际 Git 操作所需的 repository set 不�
 若任务改变依赖、构建或测试入口，先把已确认Task scope与变更事实交给`declaration-intake`做只读差异检查；长期`preparation.yml`/`verification.yml`写入按`declaration-intake`的`routine-maintenance|user-decision-required`分类，由对应owner完成；只有后者需要新的用户决定。Triage不直接维护声明。
 
 开发开始时判断预计知识影响，最终新增、修改或删除后复核。已有知识成果受影响时，主动说明受影响成果与建议校准范围；知识维护尚未授权时等待该组授权，已有授权不重复询问。在当前授权内采用 `current-knowledge-maintenance` 维护相关图示、地图、术语和解释；按需调用专业制作方法。普通开发没有规范变化不因此建立 OpenSpec 变更，无影响内容保留，范围外缺口单独提出建议。
+
+开发开始时若目标可能新增、替换或停用参与项目（Project）的服务（Service），采用当前可用的 `project-composition-maintenance` 技能（Skill）核对组成，并在修改结束后按最终事实维护本次受影响的关联。已授权开发中的必要组成校准纳入同次工作；只读请求不写登记。无组成影响时不全量梳理，不新增强制检查或结果门禁。
 
 ### 执行形态
 

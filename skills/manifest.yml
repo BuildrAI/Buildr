@@ -452,7 +452,7 @@ skills:
     sourceIdentity: package:skills/buildr/ui-prototype
     source: buildr
     path: buildr/ui-prototype
-    description: 用户明确需要界面原型时使用；调查现有真实界面，生成并逐页验证一个或多个使用模拟数据与交互的自包含 HTML。已有原型且用户未明确忽略时，后续 Agent 默认按原型开发页面与交互。
+    description: 用户明确要求制作或修改界面原型、决定按已有原型实施，或明确放弃并清理临时原型时使用；负责临时保存、归入任务及展示验证。生成新原型未明确确认时不得使用。
     enabled: true
     required: false
     state: installed
@@ -555,6 +555,42 @@ skills:
       - trae-work
       - workbuddy
     runtimePath: archify
+  - id: frontend-development
+    assetIdentity: buildr:skill:frontend-development
+    sourceIdentity: package:skills/buildr/frontend-development
+    source: buildr
+    path: buildr/frontend-development
+    description: 开发或修改前端页面、交互和样式时使用；复用已有组件与主题，隔离数据和业务操作，保持正式页面与已获授权原型一致。不自动制作原型。
+    enabled: true
+    required: false
+    state: installed
+    runtimes:
+      - claude-code
+      - codex
+      - cursor
+      - qoder
+      - trae
+      - trae-work
+      - workbuddy
+    runtimePath: frontend-development
+  - id: project-composition-maintenance
+    assetIdentity: buildr:skill:project-composition-maintenance
+    sourceIdentity: package:skills/buildr/project-composition-maintenance
+    source: buildr
+    path: buildr/project-composition-maintenance
+    description: 梳理或维护项目由哪些服务和代码库组成，或日常开发新增、替换、停用参与项目的服务时使用；更新现有组成登记，不表达服务之间的依赖。
+    enabled: true
+    required: false
+    state: installed
+    runtimes:
+      - claude-code
+      - codex
+      - cursor
+      - qoder
+      - trae
+      - trae-work
+      - workbuddy
+    runtimePath: project-composition-maintenance
 contracts:
   - id: buildr.terminology-governance
     version: 1

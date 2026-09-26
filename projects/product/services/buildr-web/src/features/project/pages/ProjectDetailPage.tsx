@@ -1,3 +1,5 @@
+import { ProjectHomeEntries } from '../components/ProjectHomeEntries';
+import { ProjectHomeHeader } from '../components/ProjectHomeHeader';
 import { ResourceActions } from '../../workbench/components/ResourceActions';
 import { AssetDeleteDialog } from '../../workspace/components/AssetDeleteDialog';
 import { useLocation } from 'react-router-dom';
@@ -6,14 +8,17 @@ import { useAssetCatalog } from '../../workspace/components/useAssetCatalog';
 import { projectApi } from '../api/project-api';
 import { useCallback, useContext, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { Button, Dropdown } from 'antd';
-import { FileTextOutlined, RightOutlined, HistoryOutlined, ReadOutlined, MoreOutlined, ArrowRightOutlined } from '@ant-design/icons';
+import { Alert, Button, Dropdown, Tabs } from 'antd';
+import { WorkspaceComposition } from '../../workspace/components/WorkspaceComposition';
+import { useWorkspaceComposition } from '../../workspace/components/useWorkspaceComposition';
+import { useResourcePreview } from '../../../app/resource-preview';
+import { FileTextOutlined, RightOutlined, MoreOutlined } from '@ant-design/icons';
 
 import { useAppShell } from '../../../app/AppShellContext';
 import { MarkdownHost } from '../../../components/MarkdownHost';
 import { encodeProjectDocumentPath, resolveProjectMarkdownHref } from '../../../lib/projectDocuments';
 import { workspaceHref } from '../../../lib/labels';
-import { dailyProgressActivityPath, legacyDailyProgressPath } from '../../project-daily-progress/dailyProgressNavigation';
+import { legacyDailyProgressPath } from '../../project-daily-progress/dailyProgressNavigation';
 import { useMarkdownDocumentViewer, type MarkdownDocument } from '../../../lib/useMarkdownDocumentViewer';
 import { ProjectEditDrawer } from '../components/ProjectEditDrawer';
 import { useWorkspacePageTabs, WorkspaceViewActiveContext } from '../../../app/pageTabs';
@@ -82,13 +87,21 @@ export function ProjectDetailPage() {
   const [deleting, setDeleting] = useState<string | null>(null);
   const pageTabs = useWorkspacePageTabs(workspaceId);
   const catalog = useAssetCatalog(), data = catalog.data;
-  const project = data?.projects.find(item => item.workspaceId === workspaceId && item.code === projectCode);
   const active = useContext(WorkspaceViewActiveContext);
+  const composition = useWorkspaceComposition(active);
+  const project = (!catalog.error && data?.projects.find(item => item.workspaceId === workspaceId && item.code === projectCode)) || composition.data?.projects.find(item => item.code === projectCode);
+  const previews = useResourcePreview();
   const knowledge = useKnowledgeNavigation(workspaceId, { kind: 'project', id: project?.id || projectCode }, 0, Boolean(project) && active);
   const needsKnowledge = canInitializeKnowledge(knowledge);
-  const services = data?.services.filter(service => service.workspaceId === workspaceId && project?.serviceIds?.includes(service.id)) || [];
-  const error = catalog.error || (data && !catalog.loading && !project ? '项目不存在' : null);
+  const error = composition.error || catalog.error || (!composition.loading && composition.data && !project ? '项目不存在' : null);
   const editLocation = useLocation();
+  const view = new URLSearchParams(editLocation.search).get('view') === 'composition' ? 'composition' : 'overview';
+  const reload = () => { catalog.reload(); composition.reload(); };
+  const selectView = (key: string) => {
+    const search = new URLSearchParams(editLocation.search);
+    if (key === 'composition') search.set('view', key); else search.delete('view');
+    navigate({ pathname: editLocation.pathname, search: search.toString() }, { state: editLocation.state });
+  };
   const [editOpen, setEditOpen] = useState(Boolean(editLocation.state?.editResource));
   useEffect(() => { if (editLocation.state?.editResource) setEditOpen(true); }, [editLocation.key]);
   const workspaceName = workspace?.name || '工作空间';
@@ -128,20 +141,20 @@ export function ProjectDetailPage() {
     return DOC_ROWS.find((d) => d.ref === tab.ref)?.name ?? tab.ref;
   };
 
-  if (error) {
+  if (!project && error) {
     return (
       <>
         <section className="page-header">
           <p className="eyebrow">项目</p>
-          <h1>项目不存在</h1>
-          <p className="page-copy">{error}</p>
+          <h1>{error === '项目不存在' ? error : '项目暂时无法读取'}</h1>
+          <p className="page-copy">{error}</p><Button onClick={reload}>重试</Button>
         </section>
         <Link className="ant-btn-link-wrap" to={href('/projects')}>返回项目目录</Link>
       </>
     );
   }
 
-  if (!data || !project) {
+  if (!project) {
     return (
       <div className="page-loading">
         <span className="loader" />
@@ -174,50 +187,26 @@ export function ProjectDetailPage() {
       >
         <div className="project-home">
         {deleting && <AssetDeleteDialog kind="project" id={deleting} onClose={() => setDeleting(null)} />}
-        <header className="project-home-header">
-          <div className="project-home-topline">
-            <Link className="project-home-back" to={href('/projects')} aria-label="返回项目列表">← 项目列表</Link>
-            <div className="project-home-actions">
+        <ProjectHomeHeader project={project} workspaceName={workspaceName} serviceCount={composition.data?.sources.projects !== 'complete' && !data ? null : project.serviceIds?.length || 0} href={href} onWork={() => navigate(href('/tasks?project=' + encodeURIComponent(projectCode)))} actions={<>
               <ResourceActions size="middle" projectCode={projectCode} resource={{ kind: "project", key: "project:" + projectCode, label: project.name, href: href("/projects/" + encodeURIComponent(projectCode)) }} />
               <Button id="project-edit-button" onClick={() => setEditOpen(true)}>编辑项目</Button>
               <Dropdown trigger={['click']} menu={{ items: [{ key: 'delete', label: '移除' }], onClick: () => setDeleting(projectCode) }}>
                 <Button aria-label="更多项目操作" icon={<MoreOutlined />} />
               </Dropdown>
-            </div>
-          </div>
-          <h1 id="project-detail-name">{project.name}</h1>
-          <p className="project-home-description" id="project-detail-description">{project.description || '尚未填写项目说明。'}</p>
-          <div className="project-home-context">
-            <span>{workspaceName || '工作空间'}<span className="project-home-dot">·</span><b id="project-service-count">{services.length}</b> 个关联服务</span>
-            <Button type="primary" className="project-home-work" onClick={() => navigate(href('/tasks?project=' + encodeURIComponent(projectCode)))}>查看项目工作 <ArrowRightOutlined /></Button>
-          </div>
-        </header>
-
-        <nav className="project-home-entries" aria-label="项目内容">
-          <Link className="project-home-entry" to={href(`/knowledge/project/${encodeURIComponent(projectCode)}`)}
-            data-knowledge-initialize={needsKnowledge || undefined} data-knowledge-initialize-action={needsKnowledge || undefined}
-            onClick={event => {
-              if (!needsKnowledge || !knowledge.data || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-              event.preventDefault();
-              openAgentAction('knowledge', knowledgeInitializationContext(knowledge.data, href(`/knowledge/project/${encodeURIComponent(projectCode)}`)));
-            }}>
-            <span className="project-home-entry-icon knowledge"><ReadOutlined /></span>
-            <span><strong>{needsKnowledge ? '建立项目知识' : '项目知识'}</strong><small>{needsKnowledge ? '先建立对项目的整体认识' : '理解目标、主要部分与关键过程'}</small></span>
-            <RightOutlined />
-          </Link>
-          <Link className="project-home-entry" to={href('/articles?project=' + encodeURIComponent(projectCode))}>
-            <span className="project-home-entry-icon"><FileTextOutlined /></span>
-            <span><strong>项目文章</strong><small>继续写作，整理与分享项目成果</small></span>
-            <RightOutlined />
-          </Link>
-          <Link id="project-activity-link" className="project-home-entry" to={href(dailyProgressActivityPath(projectCode))}>
-            <span className="project-home-entry-icon"><HistoryOutlined /></span>
-            <span><strong>项目动态</strong><small>查看每日演进、提交与变化影响</small></span>
-            <RightOutlined />
-          </Link>
-        </nav>
+            </>} />
+        <Tabs activeKey={view} onChange={selectView} items={[{ key: 'overview', label: '概览' }, { key: 'composition', label: '项目组成' }]} />
+        {view === 'composition' ? <>
+          {data ? <ProjectServicesPanel projectCode={projectCode} data={data} setData={catalog.setData} onReload={reload} compact /> : <Alert type="warning" message="关联暂时不能编辑" description={catalog.error} action={<Button onClick={reload}>重新读取</Button>} />}
+          {composition.data ? <WorkspaceComposition data={composition.data} projectId={project.id}
+            error={composition.error || composition.data.diagnostics.map(item => item.message).join('；') || undefined} onRetry={reload}
+            onOpen={(kind, id) => { if (kind !== 'project') previews?.open(editLocation.pathname, href(`/${kind === 'service' ? 'services' : 'repositories'}/${encodeURIComponent(id)}`)); }} /> : <Alert type="info" message={composition.error || '正在读取项目组成…'} action={composition.error && <Button onClick={reload}>重试</Button>} />}
+        </> : <>
+        <ProjectHomeEntries projectCode={projectCode} href={href} needsKnowledge={needsKnowledge} onKnowledge={event => {
+          if (!needsKnowledge || !knowledge.data || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+          event.preventDefault(); openAgentAction('knowledge', knowledgeInitializationContext(knowledge.data, href(`/knowledge/project/${encodeURIComponent(projectCode)}`)));
+        }} />
         <div className="project-home-details">
-          <ProjectServicesPanel projectCode={projectCode} data={data} setData={catalog.setData} />
+          {data ? <ProjectServicesPanel projectCode={projectCode} data={data} setData={catalog.setData} onReload={reload} /> : <Alert type="warning" message={catalog.error || '正在读取关联服务…'} action={<Button onClick={reload}>重新读取</Button>} />}
 
           <section className="resource-section" aria-label="文档">
             <div className="ws-section-head"><h2>项目资料 <span className="ws-count">{DOC_ROWS.length} 个入口</span></h2></div>
@@ -239,6 +228,7 @@ export function ProjectDetailPage() {
             </div>
           </section>
         </div>
+        </>}
         </div>
       </WorkspaceStage>
 
@@ -247,7 +237,7 @@ export function ProjectDetailPage() {
         projectCode={editOpen ? projectCode : null}
         onClose={() => setEditOpen(false)}
         onSaved={(saved) => {
-          catalog.reload();
+          reload();
           setBreadcrumbParts([workspaceName || '工作空间', '项目', saved.name]);
           pageTabs.register({
             key: `proj:${projectCode}`,

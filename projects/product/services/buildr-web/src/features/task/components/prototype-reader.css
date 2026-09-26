@@ -1,0 +1,17 @@
+.prototype-reader { min-width:0; position:relative; }
+.prototype-reader[hidden] { display:none; }
+.prototype-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; flex-wrap:wrap; }
+.prototype-toolbar h2 { font-size:16px; margin:0; }
+.prototype-toolbar > div { display:flex; gap:8px; }
+.prototype-source { border:0; background:transparent; padding:0; color:var(--soft-muted); font-size:12px; margin-bottom:12px; overflow-wrap:anywhere; }
+.prototype-reading-layout { position:relative; display:flex; gap:16px; min-height:480px; margin-top:12px; }
+.prototype-canvas { min-width:0; flex:1; }
+.prototype-viewport { height:max(740px,calc(100vh - 150px)); overflow:hidden; border:1px solid var(--soft-line); border-radius:8px; }
+.prototype-canvas iframe { width:100%; height:100%; border:1px solid var(--soft-line); border-radius:8px; background:white; display:block; }
+.prototype-standalone { padding:16px; min-height:100vh; background:var(--soft-surface); display:grid; grid-template-columns:156px minmax(0,1fr); gap:16px; }
+.prototype-standalone nav { border-right:1px solid var(--soft-line); padding-right:16px; }
+.prototype-standalone nav button { display:block; width:100%; height:auto; white-space:normal; text-align:left; margin:5px 0; padding:10px; }
+.prototype-standalone nav small { display:block; color:var(--soft-muted); font-size:10px; }
+@media(max-width:700px) { .prototype-standalone { grid-template-columns:130px minmax(0,1fr); gap:12px; padding:12px; } }
+
+.prototype-reading-layout > .side-reading.is-pinned { flex-basis:280px; width:280px; }

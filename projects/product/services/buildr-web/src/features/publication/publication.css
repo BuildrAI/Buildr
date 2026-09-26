@@ -133,3 +133,9 @@
   .publication-editor-footer { flex-wrap:wrap; gap:8px; }
   .publication-editor-footer > .ant-space { margin-left:auto; }
 }
+
+.publication-compact-meta { display:flex; flex-wrap:wrap; align-items:center; gap:6px 10px; margin-top:8px; font-size:11px; color:var(--soft-muted); }
+.publication-compact-meta > a { max-width:100%; overflow-wrap:anywhere; }
+.publication-table.is-compact .ant-table-tbody > tr > td { padding:14px 10px; vertical-align:top; }
+.publication-table.is-compact .publication-title-cell > a { overflow-wrap:anywhere; }
+.publication-table.is-compact .publication-title-cell > p { -webkit-line-clamp:2; overflow-wrap:anywhere; }

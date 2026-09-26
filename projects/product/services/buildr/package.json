@@ -1,6 +1,6 @@
 {
   "name": "@buildr-ai/buildr",
-  "version": "0.1.0-rc.36",
+  "version": "0.1.0-rc.37",
   "private": false,
   "description": "Buildr CLI for managing Agent workspace assets.",
   "license": "MIT",
@@ -81,6 +81,7 @@
     "build:web": "npm run contracts:prepare && npm run contracts:check && npm run contracts:check:workspace && node tools/development/run-development-npm.ts --prefix ../buildr-web run build",
     "dev:web": "npm --prefix ../buildr-web run dev",
     "test:web-dist": "node test/verification/web-dist.ts",
+    "test:browser:install": "playwright-core install chromium --only-shell",
     "test:browser:smoke": "node test/verification/browser-selector-dispatcher.ts --full --run",
     "test:browser:changed": "node test/verification/browser-selector-dispatcher.ts --run",
     "test:browser:core": "node test/verification/browser-selector-dispatcher.ts --selector core --run",

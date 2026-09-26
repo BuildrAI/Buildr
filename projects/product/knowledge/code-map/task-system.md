@@ -18,6 +18,12 @@
 | 数据访问与技术支撑 | 本机 SQLite 保存独立当前事实；事务内比较各自摘要。工作树（Worktree）与预览（Preview）分别核验自身资源，Git 和文件继续持有实际成果。 |
 | 前端协作 | 工作台（Workbench）汇集明确关注事项；任务详情呈现目标、进展和成果；表单保留真实用户输入，冲突后重读；方案材料与代码按需并排查看。 |
 
+## 原型阅读怎样落到实现？
+
+任务关联变更负责确定允许读取的成果范围；OpenSpec 查询发现带标记的 HTML，`prototype-metadata.ts` 有界解析可选页面、状态和纯文本说明，非法说明仅产生局部提示。`TaskNodeContent.tsx` 把关键页面直接列入方案菜单，`PrototypeTab.tsx` 组合隔离画面与说明；`PrototypeReaderPage.tsx` 提供任务限定的独立三栏阅读。原型不能获得真实写入能力，消息仅同步已声明阅读位置，并校验当前画面来源和装载标识。
+
+实施清单与功能说明共同使用 `SideReadingPanel.tsx` 和 `useSideReading.ts`，复用悬停、固定及键盘退出。`PrototypeFeatureNotes.tsx` 仅适配 React 生命周期，卡片、区域高亮与消息联动的共同来源为 `services/buildr/resources/workspace/skills/buildr/ui-prototype/assets/feature-notes.js` 和配套样式，随原型技能分发；原型侧 `src/prototypes/prototype-bridge.ts` 复用同一来源。关联服务的正式和模拟入口共同使用 `ProjectServicesView.tsx`，操作由各入口接入。候选总览目前仅在本次模拟入口中运行，真实登记读取与工作空间入口仍待接入。
+
 ## 父任务协调怎样落到实现？
 
 [父任务协调文章](../docs/flows/task-parent-coordination.md)解释整体目标与独立成果的关系，[完成时序图](../archify/flows/task-parent-coordination.html)展示核对、授权、写入与拒绝分支。实现复用本地图的任务查询、写入和存储，不维护另一份父子状态。
@@ -83,11 +89,21 @@
     - [transaction.ts](../../services/buildr/src/infrastructure/sqlite/transaction.ts) — 原子提交与失败回滚
   - **`services/buildr/src/web/application/`** — 临时预览资源
     - [preview-lifecycle.ts](../../services/buildr/src/web/application/preview-lifecycle.ts) — 核对实例与进程所有者，独立创建和停止预览（Preview）
+  - **`services/buildr/src/modules/openspec/application/`** — 变更文件发现与说明读取
+    - [prototype-metadata.ts](../../services/buildr/src/modules/openspec/application/prototype-metadata.ts) — 有界解析 HTML 内可选说明，不新增独立状态
   - `services/buildr-web/src/` — 前端协作
+    - **`components/`** — 共用侧边阅读
+      - [SideReadingPanel.tsx](../../services/buildr-web/src/components/SideReadingPanel.tsx) — 说明与实施清单共用的容器
+      - [useSideReading.ts](../../services/buildr-web/src/components/useSideReading.ts) — 悬停、固定、关闭与宽度限制
+    - **`features/project/components/`** — 项目界面的共同来源
+      - [ProjectServicesView.tsx](../../services/buildr-web/src/features/project/components/ProjectServicesView.tsx) — 过滤、单选即关联及失败反馈，由入口注入操作
     - **`features/task/`** — 当前任务与接续
       - `pages/`
+        - [PrototypeReaderPage.tsx](../../services/buildr-web/src/features/task/pages/PrototypeReaderPage.tsx) — 任务限定的独立三栏阅读
         - [TaskDetailPage.tsx](../../services/buildr-web/src/features/task/pages/TaskDetailPage.tsx) — 目标、摘要、成果、关系与专业结果
       - `components/`
+        - [TaskNodeContent.tsx](../../services/buildr-web/src/features/task/components/TaskNodeContent.tsx) — 任务材料与原型页面的左侧目录
+        - [PrototypeTab.tsx](../../services/buildr-web/src/features/task/components/PrototypeTab.tsx) — 隔离预览、说明、状态选择与阅读消息校验
         - [TaskAgentAction.tsx](../../services/buildr-web/src/features/task/components/TaskAgentAction.tsx) — 开始与继续工作的指令，按当前范围重新读取
         - [TaskWorkContextCard.tsx](../../services/buildr-web/src/features/task/components/TaskWorkContextCard.tsx) — 人查看与回应事项，冲突保留输入
         - [TaskArtifactReader.tsx](../../services/buildr-web/src/features/task/components/TaskArtifactReader.tsx) — 并排阅读真实方案和成果材料

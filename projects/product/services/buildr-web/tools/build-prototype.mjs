@@ -1,0 +1,18 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import crypto from 'node:crypto';
+import { execFileSync } from 'node:child_process';
+import { build } from 'vite';
+const root=path.resolve(import.meta.dirname,'..');
+const output=process.argv[2];
+if(!output)throw Error('Usage: node tools/build-prototype.mjs <output.html>');
+const sources=new Set();
+const result=await build({root,configFile:false,plugins:[{name:'prototype-source-observation',transform(_code,id){if(id.startsWith(root+'/src/')||id.startsWith(path.resolve(root,'../buildr/resources/workspace/skills/buildr/ui-prototype/assets')+'/'))sources.add(id.split('?')[0]);}}],build:{write:false,minify:true,assetsInlineLimit:Infinity,lib:{entry:path.join(root,'src/prototypes/workspace-overview/main.tsx'),name:'BuildrPrototype',formats:['iife']},rollupOptions:{onwarn(warning,warn){if(warning.code!=='MODULE_LEVEL_DIRECTIVE')warn(warning);},output:{inlineDynamicImports:true}}},define:{'process.env.NODE_ENV':'"production"'}});
+const chunks=(Array.isArray(result)?result:[result]).flatMap(r=>r.output);
+const script=chunks.filter(c=>c.type==='chunk').map(c=>c.code).join('\n');
+const css=chunks.filter(c=>c.type==='asset'&&c.fileName.endsWith('.css')).map(c=>c.source).join('\n');
+const metadata=JSON.parse(await fs.readFile(path.join(root,'src/prototypes/workspace-overview/scenes.json'),'utf8'));
+const sourceObservation={uncommittedSummary:'页面布局优化：总览与项目主页使用可用区域，组成窄屏纵向展示真实引用；复用正式组件和主题。',commit:execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim(),sources:await Promise.all([...sources].sort().map(async file=>({path:path.relative(root,file),sha256:crypto.createHash('sha256').update(await fs.readFile(file)).digest('hex')})))};
+const html='<!doctype html>\n<!-- buildr:ui-prototype -->\n<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>工作空间总览 · 关键页面</title><script id="buildr-prototype" type="application/json">'+JSON.stringify(metadata).replaceAll('<','\\u003c')+'</script><script id="buildr-prototype-source" type="application/json">'+JSON.stringify(sourceObservation).replaceAll('<','\\u003c')+'</script><style>'+css.replaceAll('</style','<\\/style')+'</style></head><body><div id="root"></div><script>'+script.replaceAll('</script','<\\/script')+'</script></body></html>\n';
+if(Buffer.byteLength(html)>2*1024*1024)throw Error('Prototype exceeds existing 2 MiB limit');
+await fs.mkdir(path.dirname(path.resolve(output)),{recursive:true});await fs.writeFile(output,html);console.log(JSON.stringify({output,bytes:Buffer.byteLength(html),sources:sources.size,pages:metadata.pages.length}));

@@ -1,11 +1,13 @@
 import type { ApiClient } from '../../../api';
-import type { WorkspaceMetadataUpdateRequestMetadataUpdateRequest, WorkspacePickResponsePickResponse, WorkspaceRegistryResponseRegistryResponse, WorkspaceReadResponseWorkspaceReadResponse } from '../../../../build/generated/workspace-http-dto';
+import type { WorkspaceMetadataUpdateRequestMetadataUpdateRequest, WorkspacePickResponsePickResponse, WorkspaceRegistryResponseRegistryResponse, WorkspaceReadResponseWorkspaceReadResponse, WorkspaceCompositionWorkspaceCompositionResponse } from '../../../../build/generated/workspace-http-dto';
 export type WorkspaceRegistry = WorkspaceRegistryResponseRegistryResponse;
+export type WorkspaceCompositionResponse = WorkspaceCompositionWorkspaceCompositionResponse;
 export type WorkspaceResponse = WorkspaceReadResponseWorkspaceReadResponse;
 type ReadOptions = Pick<RequestInit, 'signal'>;
 
 export function createWorkspaceClient(api: ApiClient) {
   return {
+    composition(options: ReadOptions = {}): Promise<WorkspaceCompositionResponse> { return api('/api/v1/workspace-composition', options) as Promise<WorkspaceCompositionResponse>; },
     workspaceCreatePrompt(input: { name: string; description: string; targetPath: string }): Promise<{ prompt: string }> {
       return api('/api/v1/prompts/workspace-create', { method: 'POST', body: JSON.stringify(input) }) as Promise<{ prompt: string }>;
     },

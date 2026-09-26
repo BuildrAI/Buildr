@@ -1,3 +1,4 @@
+import { AppShellHeader, AppShellFrame } from './AppShellView';
 import { WorkbenchPreferencesProvider } from '../features/workbench/hooks/useWorkbenchPreferences';
 import { WorkbenchSearch } from '../features/workbench/components/WorkbenchSearch';
 import type { ResourcePreview } from './resource-preview';
@@ -5,9 +6,9 @@ import { WorkspacePages } from './WorkspacePages';
 import { workspacePageSearch } from './workspace-pages';
 import { runtimeSystemApi } from './api/runtime-system-api';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Link, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { Button, Drawer, Dropdown, Typography } from 'antd';
-import { AppstoreOutlined, CaretDownFilled, CheckOutlined, MenuFoldOutlined, MenuUnfoldOutlined, MenuOutlined, PlusOutlined, SettingOutlined } from '@ant-design/icons';
+import { Outlet, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { Button, Drawer, Typography } from 'antd';
+import { AppstoreOutlined, CheckOutlined, MenuOutlined, PlusOutlined, SettingOutlined } from '@ant-design/icons';
 import { api, setWorkspaceId } from '../api';
 import { AppShellContext, type WorkspaceShellInfo } from './AppShellContext';
 import { AppNavigation } from './AppNavigation';
@@ -74,16 +75,16 @@ export function AppLayout({ renderResource }: { renderResource: (item: ResourceP
     media.addEventListener('change', update);
     return () => media.removeEventListener('change', update);
   }, []);
-  const workspaceDestination = useRef({ workspaceId, path: `/workspaces/${workspaceId}/projects`, state: location.state });
+  const workspaceDestination = useRef({ workspaceId, path: `/workspaces/${workspaceId}/workspace-overview`, state: location.state });
   if (workspaceDestination.current.workspaceId !== workspaceId) {
-    workspaceDestination.current = { workspaceId, path: `/workspaces/${workspaceId}/projects`, state: null };
+    workspaceDestination.current = { workspaceId, path: `/workspaces/${workspaceId}/workspace-overview`, state: null };
   }
   if (area === 'workspace' && workspaceId) workspaceDestination.current = { workspaceId, path: location.pathname + retainedSearch, state: location.state };
   const [, refreshSectionLinks] = useState(0);
   const sectionHistory = useRef<{ workspaceId: string | null; pages: Record<string, { to: string; state?: unknown }> }>({ workspaceId, pages: {} });
   if (sectionHistory.current.workspaceId !== workspaceId) sectionHistory.current = { workspaceId, pages: {} };
   const section = workspaceId ? location.pathname.slice(`/workspaces/${workspaceId}/`.length).split('/')[0] : '';
-  if (workspaceId && ['projects', 'services', 'repositories', 'skills', 'articles'].includes(section) && !/\/(new|edit)$/.test(location.pathname)) {
+  if (workspaceId && ['workspace-overview', 'projects', 'services', 'repositories', 'skills', 'articles'].includes(section) && !/\/(new|edit)$/.test(location.pathname)) {
     sectionHistory.current.pages[section] = { to: location.pathname + retainedSearch + location.hash, state: location.state };
   }
   const workspaceMenuTarget = (name: string) => sectionHistory.current.pages[name] || { to: `/workspaces/${workspaceId}/${name}` };
@@ -278,40 +279,7 @@ export function AppLayout({ renderResource }: { renderResource: (item: ResourceP
     <AppShellContext.Provider value={shellValue}>
       <WorkbenchPreferencesProvider key={workspaceId || "global"} workspaceId={workspaceId}>
       <div className={"app-shell area-" + area}>
-        <header className="topbar">
-          <Link
-            className="brand-link"
-            to={isGlobal ? '/' : workspaceHref('/overview')}
-            aria-label="当前工作空间概览"
-          >
-            <span className="brand-mark">B</span>
-            <strong>Buildr Web</strong>
-          </Link>
-          {webProfile === 'development' ? (
-            <span
-              id="development-environment-badge"
-              className="development-environment-badge"
-              title="当前运行的是 Buildr Web 开发版"
-            >
-              开发版
-            </span>
-          ) : null}
-
-            <Dropdown menu={{ items: workspaceMenuItems }} trigger={['click']}>
-              <button type="button" className="workspace-switcher" aria-label="切换工作空间">
-                <span className="context-label">工作空间</span>
-                <strong id="shell-workspace-name">
-                  {isGlobal ? '全部工作空间' : (workspace?.name || '正在读取…')}
-                </strong>
-                <CaretDownFilled aria-hidden />
-              </button>
-            </Dropdown>
-          {!isGlobal ? <nav className="top-nav" aria-label="主导航">
-            <Link to={workspaceHref('/overview')} data-area="workbench" aria-current={area === 'workbench' ? 'page' : undefined} className={area === 'workbench' ? 'active' : ''}
-              >工作台</Link>
-            <Link to={workspaceDestination.current.path} state={workspaceDestination.current.state} data-area="workspace" aria-current={area === 'workspace' ? 'page' : undefined} className={area === 'workspace' ? 'active' : ''}>工作空间</Link>
-          </nav> : null}
-          <div className="topbar-actions">
+        <AppShellHeader isGlobal={isGlobal} brandHref={isGlobal ? '/' : workspaceHref('/overview')} development={webProfile === 'development'} workspaceName={isGlobal ? '全部工作空间' : (workspace?.name || '正在读取…')} workspaceMenuItems={workspaceMenuItems} area={area} workbenchHref={workspaceHref('/overview')} workspaceDestination={{to:workspaceDestination.current.path,state:workspaceDestination.current.state}} actions={<>
             {!isGlobal ? <WorkbenchSearch key={workspaceId} /> : null}
             {!isGlobal ? <Button className="shell-menu-toggle" aria-label="打开导航菜单" icon={<MenuOutlined />} onClick={() => setNavigationOpen(true)} /> : null}
             <Button id="quit-buildr" className="nav-quit" type="text" onClick={() => { void quit(); }}>
@@ -336,13 +304,9 @@ export function AppLayout({ renderResource }: { renderResource: (item: ResourceP
                 {area === "workbench" ? "提出新目标" : "交给 Agent"}
               </Button>
             ) : null}
-          </div>
-        </header>
+</>} />
         <ReleaseAwarenessBanner openAgentAction={openAgentAction} />
-        <div className={`app-frame${isGlobal ? ' is-global' : ''}${sidebarCollapsed && !compactNavigation ? ' sidebar-collapsed' : ''}`}>
-          {!isGlobal && !compactNavigation ? <aside className="app-sidebar"><Button type="text" className="sidebar-toggle" aria-label={sidebarCollapsed ? '展开菜单' : '折叠菜单'} title={sidebarCollapsed ? '展开菜单' : '折叠菜单'} icon={sidebarCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />} onClick={() => { setSidebarCollapsed(value => !value); localStorage.setItem('buildr.sidebar-collapsed', String(!sidebarCollapsed)); }} /><AppNavigation key={workspaceId} /></aside> : null}
-          <main id="app-view" tabIndex={-1} aria-live="polite"><>{workspaceId ? <ArticleEditorProvider key={workspaceId} workspaceId={workspaceId}><WorkspacePages workspaceId={workspaceId} renderResource={renderResource} /></ArticleEditorProvider> : <Outlet />}</></main>
-        </div>
+        <AppShellFrame isGlobal={isGlobal} compactNavigation={compactNavigation} sidebarCollapsed={sidebarCollapsed} onToggleSidebar={() => { setSidebarCollapsed(value => !value); localStorage.setItem('buildr.sidebar-collapsed', String(!sidebarCollapsed)); }} navigation={<AppNavigation key={workspaceId} />}>{/* Business content stays in the live adapter. */}<>{workspaceId ? <ArticleEditorProvider key={workspaceId} workspaceId={workspaceId}><WorkspacePages workspaceId={workspaceId} renderResource={renderResource} /></ArticleEditorProvider> : <Outlet />}</></AppShellFrame>
       </div>
 
       {!isGlobal ? <Drawer title="导航" placement="left" width={280} open={navigationOpen}

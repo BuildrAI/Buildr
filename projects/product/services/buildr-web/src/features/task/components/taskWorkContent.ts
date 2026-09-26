@@ -70,7 +70,8 @@ export function sourceLabel(provenance: string): string {
 }
 
 export type TaskReadTarget =
+  | { kind: 'prototype'; title: string; prototypeKey?: string }
   | { kind: 'artifact'; changeKey: string; path: string; title: string }
   | { kind: 'review'; reviewType: 'planning' | 'completion'; digest: string; title: string }
   | { kind: 'document'; reference: TaskDocumentReference; title: string }
-  | { kind: 'result' | 'coordination' | 'verification' | 'context' | 'record' | 'acceptance' | 'closeout' | 'prototype' | 'retrospective' | 'intent'; title: string };
+  | { kind: 'result' | 'coordination' | 'verification' | 'context' | 'record' | 'acceptance' | 'closeout' | 'retrospective' | 'intent'; title: string };

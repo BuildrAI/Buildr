@@ -35,13 +35,17 @@
     - `domain/`
       - [asset-relationships.ts](../../services/buildr/src/modules/workspace/domain/asset-relationships.ts) — 三类对象、身份及引用规则
     - `persistence/`
+      - [asset-composition-repository.ts](../../services/buildr/src/modules/workspace/persistence/asset-composition-repository.ts) — 总览轻量只读投影、按来源隔离失败及有效条目保留
       - [asset-catalog-repository.ts](../../services/buildr/src/modules/workspace/persistence/asset-catalog-repository.ts) — 唯一清单、摘要、保存和兼容读取
   - `services/buildr-web/src/features/` — 在对象上下文中操作
     - **`project/`** — 项目业务
       - `components/` — 项目交互组件
         - [ProjectServicesPanel.tsx](../../services/buildr-web/src/features/project/components/ProjectServicesPanel.tsx) — 展示服务关联、携带当前版本保存
     - **`workspace/`** — 资产业务
+      - [pages/WorkspaceOverviewPage.tsx](../../services/buildr-web/src/features/workspace/pages/WorkspaceOverviewPage.tsx) — 总览真实数据与对象导航
       - `components/` — 资产交互组件
+        - [WorkspaceComposition.tsx](../../services/buildr-web/src/features/workspace/components/WorkspaceComposition.tsx) — 真实和模拟入口共用组成展示、搜索、聚焦和关联强调
+        - [useWorkspaceComposition.ts](../../services/buildr-web/src/features/workspace/components/useWorkspaceComposition.ts) — 当前工作空间读取、更新通知及局部失败保留
         - [AssetHome.tsx](../../services/buildr-web/src/features/workspace/components/AssetHome.tsx) — 服务与代码库的同一详情
 
 实际登记保存在用户工作空间根的 `projects/manifest.yml`、`services/manifest.yml` 和 `repositories/manifest.yml`；它们不属于这里展示的产品源码目录。上面的数据访问文件解释如何读写这些清单，不复制某台机器的内容。

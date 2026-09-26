@@ -1,0 +1,4 @@
+.app-shell .page-header { display:block; margin-bottom:24px; }
+.app-shell .page-header h1 { margin:6px 0 10px; }
+.app-shell .project-home-entry { text-align:left; }
+.shell-navigation button.shell-nav-item { width:100%; border:0; background:transparent; text-align:left; opacity:.5; cursor:not-allowed; }

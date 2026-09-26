@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "test": "node --test test/*.test.mjs",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:browser:layout": "node ../buildr/test/verification/browser-selector-dispatcher.ts --selector layout --run"
   },
   "dependencies": {
     "@ant-design/icons": "^5.6.1",

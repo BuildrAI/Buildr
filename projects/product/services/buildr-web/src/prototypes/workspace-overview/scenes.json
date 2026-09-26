@@ -1,0 +1,150 @@
+{
+  "version": 1,
+  "pages": [
+    {
+      "id": "workspace-overview",
+      "title": "工作空间总览",
+      "notes": [
+        {
+          "id": "composition",
+          "title": "看清工作空间组成",
+          "text": "从项目了解其关联服务及代码位置。共用的对象只显示一次，尚未被项目引用的服务也保留。连线表示已登记的引用关系。",
+          "position": "composition"
+        },
+        {
+          "id": "filter",
+          "title": "搜索并聚焦项目",
+          "text": "输入名称筛选对象，或选择一个项目查看相关组成；清除筛选即可恢复整体视图。",
+          "position": "composition-filter"
+        },
+        {
+          "id": "project",
+          "title": "直接进入项目组成",
+          "text": "点击项目，直接查看这个项目关联的服务和代码库，继续了解它由哪些部分实现。",
+          "position": "project-column"
+        },
+        {
+          "id": "detail",
+          "title": "就地查看服务详情",
+          "text": "点击服务，在右侧查看用途与资料，并可继续打开它的代码库。关闭详情后继续浏览总览。",
+          "position": "service-column"
+        }
+      ],
+      "states": [
+        {
+          "id": "empty",
+          "title": "尚无登记",
+          "notes": [
+            {
+              "id": "empty",
+              "title": "尚未登记时明确提示",
+              "text": "没有登记内容时显示空白提示，不将演示对象当作已登记内容。",
+              "position": "composition"
+            }
+          ]
+        },
+        {
+          "id": "partial",
+          "title": "部分信息不可读取",
+          "notes": [
+            {
+              "id": "partial",
+              "title": "局部读取失败仍可浏览",
+              "text": "保留已经读取的组成信息并提示失败；点击重试重新读取。",
+              "position": "composition"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "project-overview",
+      "title": "项目概览",
+      "notes": [
+        {
+          "id": "project-view",
+          "title": "切换到项目组成",
+          "text": "在项目原有概览旁新增“项目组成”，查看当前项目的服务和代码位置。从总览点击项目时直接进入这一视图。",
+          "position": "project-view"
+        }
+      ],
+      "states": []
+    },
+    {
+      "id": "project-composition",
+      "title": "项目组成",
+      "notes": [
+        {
+          "id": "scope",
+          "title": "查看当前项目的实现组成",
+          "text": "只展示当前项目关联的服务及代码库。共用提示说明哪些服务或代码被复用，不会因此将其他项目的服务一起关联进来。",
+          "position": "composition"
+        },
+        {
+          "id": "associate",
+          "title": "补充项目关联的服务",
+          "text": "展开“关联服务”并选择已有服务，关联列表与项目组成随即更新；其他项目保持原有关系。",
+          "position": "association"
+        }
+      ],
+      "states": []
+    },
+    {
+      "id": "project-associate",
+      "title": "关联已有服务",
+      "notes": [
+        {
+          "id": "associate",
+          "title": "关联一个已有服务",
+          "text": "展开“关联服务”，搜索并选择已有服务，即可加入当前项目。成功后，该服务出现在关联列表与项目组成中。",
+          "position": "association"
+        }
+      ],
+      "states": [
+        {
+          "id": "failure",
+          "title": "关联失败",
+          "notes": [
+            {
+              "id": "failure",
+              "title": "关联失败时保留现有内容",
+              "text": "保存失败会显示错误，原有服务关联不变；恢复后可以再次选择服务进行关联。",
+              "position": "association"
+            }
+          ]
+        },
+        {
+          "id": "saved",
+          "title": "关联成功",
+          "notes": [
+            {
+              "id": "saved",
+              "title": "关联成功后立即更新",
+              "text": "新服务进入关联列表，不再出现在待关联候选中；切换到“项目组成”可看到更新后的关系。",
+              "position": "association"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "object-detail",
+      "title": "对象详情与分屏",
+      "notes": [
+        {
+          "id": "detail",
+          "title": "保留主页面查看对象",
+          "text": "从总览或项目组成打开服务，在右侧阅读用途与资料。关闭详情即可继续浏览原来的组成。",
+          "position": "object"
+        },
+        {
+          "id": "repository",
+          "title": "继续找到代码位置",
+          "text": "从服务详情打开代码库，服务页签仍保留，可在两个对象间切换，查看代码目录与来源。",
+          "position": "repository-entry"
+        }
+      ],
+      "states": []
+    }
+  ]
+}
