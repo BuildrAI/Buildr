@@ -136,7 +136,7 @@ export function KnowledgePage() {
     scope.kind === "project" ? `/projects/${scopeId}` : `/services/${scopeId}`,
   );
   const title =
-    (showDocuments ? documentId ? documentTitle : "文档目录" : null) || primaryArtifact?.title ||
+    (browseDocuments && (documentId || artifactId) ? documentTitle : null) || primaryArtifact?.title ||
     selected?.title ||
     (scope.kind === "project" ? "项目知识" : "服务知识");
   useEffect(() => {
@@ -509,6 +509,7 @@ export function KnowledgePage() {
           loading={navigation.loading} error={navigation.error} onRetry={refreshPage}
           onSelect={id => move({ object: id, view: "documents" })}
           onAll={() => move({ browse: "all", view: category, q: query })}
+          onTopics={() => move({})}
           onDocuments={() => move({ browse: "documents" })}>
         {needsInitialize && !showDocuments && <KnowledgeInitialize kind={scope.kind} onInitialize={() => construct("initialize")} onExplore={() => construct("explore")} />}
         <Modal
@@ -539,7 +540,7 @@ export function KnowledgePage() {
           />
         )}
         {main.relatedErrors.map(error => <Alert key={error} type="warning" message={error} />)}
-        {browseDocuments && <div hidden={!showDocuments}><KnowledgeDocuments scope={scope} workspaceId={workspaceId || ""} documentId={documentId} query={query} refresh={refresh} active={showDocuments}
+        {browseDocuments && <div hidden={!showDocuments}><KnowledgeDocuments scope={scope} workspaceId={workspaceId || ""} documentId={documentId} artifactId={artifactId} query={query} refresh={refresh} active={browseDocuments}
           onQuery={q => move({ browse: "documents", q }, true)}
           onOpen={document => move({ browse: "documents", document: document || undefined, q: query })}
           onArtifact={artifact => move({ browse: "documents", artifact, q: query })}

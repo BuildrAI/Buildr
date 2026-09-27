@@ -90,7 +90,8 @@ const index = obj({
     }),
   },
 }, ["schemaVersion", "scope", "objects", "sources", "artifacts", "relations"]);
-const document = obj({ id: text, path: text, title: text, location: text, group: text, artifactId: nullable, workspacePath: nullable });
+const document = obj({ id: text, path: text, title: text, location: text, group: text, artifactId: nullable, workspacePath: nullable,
+  sectionId: text, summary: text, supplementary: { type: "boolean" } });
 export const KNOWLEDGE_HTTP_SCHEMAS = {
   DocumentsResponse: {
     $schema: "https://json-schema.org/draft/2020-12/schema",
@@ -98,6 +99,8 @@ export const KNOWLEDGE_HTTP_SCHEMAS = {
     title: "Knowledge",
     ...obj({ scope, revision: text, totalCount: { type: "integer", minimum: 0, maximum: 1000 },
       documents: { type: "array", maxItems: 1000, items: document },
+      sections: { type: "array", maxItems: 65, items: obj({ id: text, title: text, summary: text,
+        count: { type: "integer", minimum: 0, maximum: 1000 } }) },
       truncated: { type: "boolean" }, diagnostics: strings }),
   },
   DocumentResponse: {

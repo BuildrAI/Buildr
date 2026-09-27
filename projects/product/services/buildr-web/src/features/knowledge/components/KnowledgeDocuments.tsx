@@ -1,33 +1,36 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Button, Empty, Input, Spin } from "antd";
-import { DownOutlined, FileTextOutlined, FolderOutlined, RightOutlined, SearchOutlined } from "@ant-design/icons";
+import { DownOutlined, RightOutlined, SearchOutlined } from "@ant-design/icons";
 import { MarkdownHost } from "../../../components/MarkdownHost";
 import { knowledgeApi, type KnowledgeDocument, type KnowledgeDocumentResponse, type KnowledgeDocumentsResponse, type KnowledgeScope } from "../api/knowledge-api";
-import { knowledgeDocumentTree, linkedKnowledgeDocument, type KnowledgeDocumentNode } from "../knowledge-documents";
+import { knowledgeDocumentSections, linkedKnowledgeDocument } from "../knowledge-documents";
 import "./knowledge-documents.css";
 
 type Props = {
   scope: KnowledgeScope;
   workspaceId: string;
   documentId?: string | null;
+  artifactId?: string | null;
   query: string;
   refresh: number;
   active?: boolean;
   onQuery: (value: string) => void;
   onOpen: (id: string | null, title?: string) => void;
-  onArtifact: (id: string) => void;
+  onArtifact: (id: string, title: string) => void;
   onLoadingChange?: (value: boolean) => void;
   onTitleChange?: (value: string) => void;
 };
 
 /** File discovery and ordinary Markdown reading shared by the full page and side reader. */
-export function KnowledgeDocuments({ scope, workspaceId, documentId, query, refresh, active = true, onQuery, onOpen, onArtifact, onLoadingChange, onTitleChange }: Props) {
+export function KnowledgeDocuments({ scope, workspaceId, documentId, artifactId, query, refresh, active = true, onQuery, onOpen, onArtifact, onLoadingChange, onTitleChange }: Props) {
   const identity = `${workspaceId}:${scope.kind}:${scope.id}`;
   const [catalog, setCatalog] = useState<{ identity: string; data: KnowledgeDocumentsResponse | null; loading: boolean; error: string }>({ identity, data: null, loading: true, error: "" });
   const [reading, setReading] = useState<{ key: string; data: KnowledgeDocumentResponse | null; loading: boolean; error: string }>({ key: "", data: null, loading: false, error: "" });
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [selectedSection, setSelectedSection] = useState("");
   const [notice, setNotice] = useState("");
   useEffect(() => { setExpanded({}); }, [identity, query]);
+  useEffect(() => { setSelectedSection(""); }, [identity]);
   const callbacks = useRef({ onLoadingChange, onTitleChange });
   callbacks.current = { onLoadingChange, onTitleChange };
   useEffect(() => {
@@ -59,22 +62,19 @@ export function KnowledgeDocuments({ scope, workspaceId, documentId, query, refr
   const current = reading.key === readingKey ? reading.data : null;
   const loading = documentId ? reading.key !== readingKey || reading.loading : catalog.identity !== identity || catalog.loading;
   useEffect(() => { if (active) callbacks.current.onLoadingChange?.(loading); }, [active, loading]);
-  useEffect(() => { if (active) callbacks.current.onTitleChange?.(current?.document.title || "文档目录"); }, [active, current?.document.title, documentId]);
-  const tree = useMemo(() => knowledgeDocumentTree(documents, query), [data, query]);
-  const matchingCount = tree.reduce((count, node) => count + node.count, 0);
-  const open = (document: KnowledgeDocument) => document.artifactId ? onArtifact(document.artifactId) : onOpen(document.id, document.title);
-  const branch = (nodes: KnowledgeDocumentNode[], depth = 0): ReactNode => <ul>
-    {nodes.map(node => node.document ? <li key={node.key}>
-      <button type="button" className="knowledge-document-entry" data-knowledge-document={node.document.id} onClick={() => open(node.document!)}>
-        <FileTextOutlined /><span><strong>{node.title}</strong><small>{node.document.path.split("/").at(-1)}</small></span>
+  const readingTitle = artifactId ? documents.find(document => document.artifactId === artifactId)?.title || "" : current?.document.title || "文档目录";
+  useEffect(() => { if (active) callbacks.current.onTitleChange?.(readingTitle); }, [active, readingTitle, documentId, artifactId]);
+  const sections = useMemo(() => knowledgeDocumentSections(documents, data?.sections || [], query), [data, query]);
+  const matchingCount = sections.reduce((count, section) => count + section.count, 0);
+  const selected = sections.find(section => section.id === selectedSection) || sections[0];
+  const visibleSections = query.trim() ? sections : selected ? [selected] : [];
+  const open = (document: KnowledgeDocument) => document.artifactId ? onArtifact(document.artifactId, document.title) : onOpen(document.id, document.title);
+  const entries = (items: KnowledgeDocument[]) => <ul className="knowledge-document-entries">
+    {items.map(document => <li key={document.id}>
+      <button type="button" className="knowledge-document-entry" data-knowledge-document={document.id} onClick={() => open(document)}>
+        <strong>{document.title}</strong>
+        {document.summary && <span>{document.summary}</span>}
       </button>
-    </li> : <li key={node.key}>
-      <button type="button" className="knowledge-document-folder" data-knowledge-document-folder={node.key}
-        aria-expanded={expanded[node.key] ?? (Boolean(query.trim()) || depth < 2)}
-        onClick={() => setExpanded(previous => ({ ...previous, [node.key]: !(previous[node.key] ?? (Boolean(query.trim()) || depth < 2)) }))}>
-        {(expanded[node.key] ?? (Boolean(query.trim()) || depth < 2)) ? <DownOutlined /> : <RightOutlined />}<FolderOutlined /><span>{node.title}</span><small>{node.count}</small>
-      </button>
-      {(expanded[node.key] ?? (Boolean(query.trim()) || depth < 2)) && branch(node.children, depth + 1)}
     </li>)}
   </ul>;
   return <section className="knowledge-documents" data-knowledge-documents>
@@ -92,13 +92,37 @@ export function KnowledgeDocuments({ scope, workspaceId, documentId, query, refr
         }} />
       </>}
     </> : <>
-      <Input prefix={<SearchOutlined />} value={query} allowClear aria-label="检索文档目录" placeholder="检索文档标题或文件路径" onChange={event => onQuery(event.target.value)} />
-      <p className="knowledge-documents-description">按实际文件查看说明、指南与参考。规范、技能、规则和生成文件不计入此目录。</p>
+      <div className="knowledge-document-tools">
+      <Input prefix={<SearchOutlined />} value={query} allowClear aria-label="检索文档目录" placeholder="搜索章节、文档或关键词" onChange={event => onQuery(event.target.value)} />
       <p className="knowledge-results-count" aria-live="polite">{loading ? "正在读取文档目录…" : !data ? "文档数量暂不可用" : `${catalog.error ? "上次读取" : data.truncated ? "已发现" : "共"} ${data.totalCount} 份文档${query.trim() ? ` · 匹配 ${matchingCount} 份` : ""}`}</p>
+      </div>
+      <p className="knowledge-documents-description">按阅读目的整理，选择章节开始阅读；补充材料也可搜索。</p>
       {catalog.error && <Alert type="error" message={catalog.error} />}
       {data?.truncated && <Alert type="warning" message="目录未完整读取，当前数量仅为已发现文档。" />}
       {data?.diagnostics.map(message => <Alert key={message} type="warning" message={message} />)}
-      {loading && !data ? <Spin /> : tree.length ? <nav className="knowledge-document-tree" aria-label="文档目录树">{branch(tree)}</nav>
+      {loading && !data ? <Spin /> : sections.length ? <div className="knowledge-document-library">
+        {!query.trim() && sections.length > 1 && <nav className="knowledge-document-chapters" aria-label="文档章节">
+          {sections.map(section => <button type="button" key={section.id} data-knowledge-chapter={section.id}
+            aria-current={selected?.id === section.id ? "true" : undefined} onClick={() => setSelectedSection(section.id)}>
+            <span>{section.title}</span><small>{section.count}</small>
+          </button>)}
+        </nav>}
+        {visibleSections.map(section => {
+          const supplementsOpen = expanded[section.id] ?? Boolean(query.trim());
+          return <section key={section.id} className="knowledge-document-section" data-knowledge-document-section={section.id}>
+            <header><h2>{section.title}</h2><span className="knowledge-document-section-count">{section.count}</span></header>
+            {section.summary && <p className="knowledge-document-section-summary">{section.summary}</p>}
+            {entries(section.documents)}
+            {section.supplementary.length > 0 && <div className="knowledge-document-supplementary">
+              <button type="button" className="knowledge-document-supplementary-toggle" data-knowledge-supplementary={section.id}
+                aria-expanded={supplementsOpen} onClick={() => setExpanded(previous => ({ ...previous, [section.id]: !supplementsOpen }))}>
+                {supplementsOpen ? <DownOutlined /> : <RightOutlined />}<span>补充阅读</span><small>{section.supplementary.length}</small>
+              </button>
+              {supplementsOpen && entries(section.supplementary)}
+            </div>}
+          </section>;
+        })}
+      </div>
         : !catalog.error && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={query.trim() ? "没有匹配文档，试试其他关键词。" : "当前范围没有可阅读的普通文档。"} />}
     </>}
   </section>;

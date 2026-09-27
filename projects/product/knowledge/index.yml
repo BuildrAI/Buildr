@@ -3,6 +3,302 @@ scope:
   kind: project
   id: product
 entryObject: product-overview
+documentSections:
+  - id: getting-started
+    title: "了解与上手"
+    summary: "先判断 Buildr 是否适合，再开始使用并了解必要边界。"
+    entries:
+      - location: workspace
+        path: README.md
+        title: "Buildr 是什么、如何开始"
+        summary: "了解产品用途、首次使用方式，以及 Buildr 如何用自身开展开发。"
+      - location: scope
+        path: knowledge/docs/overview.md
+        title: "产品定位、能力与方向"
+        summary: "理解各方怎样协作，区分当前能力、使用边界与未来方向。"
+      - location: scope
+        path: knowledge/docs/guides/getting-started.md
+        title: "开始使用与日常操作"
+        summary: "完成安装配置，并在智能体（Agent）中工作、接续、交付和更新。"
+      - location: scope
+        path: knowledge/docs/glossary.md
+        title: "核心概念与术语"
+        summary: "查清工作对象、资料和协作记录的含义与区别。"
+      - location: scope
+        path: services/buildr/docs/agent-runtime-adapters.md
+        title: "智能体（Agent）工具支持与加载方式"
+        summary: "确认所用工具的支持范围、发现入口和刷新要求。"
+      - location: scope
+        path: services/buildr/docs/known-limitations.md
+        title: "当前能力与使用边界"
+        summary: "核对安装平台、本机数据、工具接入及尚未提供的能力。"
+      - location: scope
+        path: services/buildr/docs/bootstrap-guide.md
+        title: "安装与入口恢复"
+        summary: "在入口技能（Skill）缺失或损坏时，查阅安装、恢复和维护方式。"
+      - location: workspace
+        path: README.en.md
+        title: "项目首页（English）"
+        summary: "以英文阅读产品介绍、上手方式和自举说明。"
+        supplementary: true
+      - location: scope
+        path: services/buildr/README.md
+        title: "npm 安装包说明"
+        summary: "查阅面向安装包使用者的产品介绍与安装环境要求。"
+        supplementary: true
+      - location: workspace
+        path: docs/README.md
+        title: "仓库文档导航"
+        summary: "从仓库公共入口按使用、理解或开发目的继续阅读。"
+        supplementary: true
+      - location: scope
+        path: README.md
+        title: "产品项目入口"
+        summary: "了解产品工程组成，并跳转到知识、规范和阅读材料。"
+        supplementary: true
+      - location: scope
+        path: knowledge/README.md
+        title: "知识主题导航"
+        summary: "从六条理解主线查找说明、图示与实现定位。"
+        supplementary: true
+      - location: scope
+        path: knowledge/docs/README.md
+        title: "使用与开发阅读索引"
+        summary: "按安装、开发、命令和专项问题寻找已有参考。"
+        supplementary: true
+  - id: work-collaboration
+    title: "组织工作与协作"
+    summary: "理解目标、代码、方法与成果怎样连接，工作怎样继续推进。"
+    entries:
+      - location: scope
+        path: knowledge/docs/architecture/project-service-repositories.md
+        title: "项目、服务与代码库如何协作"
+        summary: "理解业务目标与实现位置的关系，以及共享引用和修改影响。"
+      - location: scope
+        path: knowledge/docs/architecture/buildr-skill-system.md
+        title: "技能如何成为可用的工作方法"
+        summary: "了解方法的来源、组合、选择和交给工具发现的过程。"
+      - location: scope
+        path: knowledge/docs/architecture/task-system.md
+        title: "从讨论到交付"
+        summary: "区分目标、进展、设计和实际成果，理解人的参与与任务收尾。"
+      - location: scope
+        path: knowledge/docs/architecture/knowledge-maintenance.md
+        title: "怎样建设和维护项目知识"
+        summary: "把调查组织成可理解的说明、图示与目录，并随真实变化维护。"
+      - location: scope
+        path: knowledge/docs/flows/project-daily-progress.md
+        title: "项目每日演进"
+        summary: "按明确提交范围查看、生成或重跑每日摘要，了解其数据边界。"
+      - location: scope
+        path: knowledge/code-map/project-service-repositories.md
+        title: "工作范围与代码关联的实现位置"
+        summary: "从对象登记、关系写入和代码定位找到对应实现。"
+      - location: scope
+        path: knowledge/code-map/skill-projection.md
+        title: "技能发现与投射的实现位置"
+        summary: "定位方法解析、组合、文件计划、受管写入及冲突保护。"
+      - location: scope
+        path: knowledge/code-map/task-system.md
+        title: "任务协作的实现位置"
+        summary: "定位工作台、答复、任务记录、专业结果与交付相关实现。"
+      - location: scope
+        path: knowledge/code-map/knowledge-maintenance.md
+        title: "知识阅读与维护的实现位置"
+        summary: "定位知识索引、文件发现、阅读编排、正文读取和页面呈现。"
+      - location: scope
+        path: knowledge/archify/flows/project-service-repositories.md
+        title: "图示依据 · 项目与代码关系"
+        summary: "核对关系图中对象、引用方向及不表达的关系。"
+        supplementary: true
+      - location: scope
+        path: knowledge/archify/flows/skill-projection.md
+        title: "图示依据 · 技能发现与投射"
+        summary: "核对投射图的数据关系、事实来源和维护范围。"
+        supplementary: true
+      - location: scope
+        path: knowledge/archify/flows/task-system.md
+        title: "图示依据 · 任务协作总览"
+        summary: "核对任务总图中的职责、连线及与实际工作方式的边界。"
+        supplementary: true
+      - location: scope
+        path: knowledge/archify/flows/task-system-planning.md
+        title: "图示依据 · 需求与方案"
+        summary: "核对需求讨论、方案形成和实施授权的参与者与顺序。"
+        supplementary: true
+      - location: scope
+        path: knowledge/archify/flows/task-system-delivery.md
+        title: "图示依据 · 实现与交付"
+        summary: "核对实现、审查、验证与代码交付的实际职责。"
+        supplementary: true
+      - location: scope
+        path: knowledge/archify/flows/task-parent-coordination.md
+        title: "图示依据 · 父任务完成"
+        summary: "核对整体目标验收、完成授权和保存结果的时序边界。"
+        supplementary: true
+      - location: scope
+        path: knowledge/archify/flows/knowledge-maintenance.md
+        title: "图示依据 · 知识维护"
+        summary: "核对事实、专业方法、成果和阅读页面之间的职责关系。"
+        supplementary: true
+  - id: system-and-data
+    title: "系统与数据"
+    summary: "从整体组成进入代码与数据，理解谁实现、谁保存、谁修改。"
+    entries:
+      - location: scope
+        path: knowledge/docs/architecture/technical.md
+        title: "Buildr 怎样实现"
+        summary: "理解两个服务（Service）、模块协作、运行和写入保护。"
+      - location: scope
+        path: knowledge/code-map/README.md
+        title: "代码全景与定位指南"
+        summary: "从产品总树找到服务、模块和修改应归属的位置。"
+      - location: scope
+        path: knowledge/docs/architecture/buildr-data-design.md
+        title: "数据全景与领域设计"
+        summary: "理解工作资产、协作记录及本机现场分别由谁保存和维护。"
+      - location: scope
+        path: knowledge/docs/architecture/buildr-database-tables.md
+        title: "数据库表与实体关系"
+        summary: "查阅表职责、字段、关联、约束及应用层完整性边界。"
+      - location: scope
+        path: services/buildr/docs/cli-architecture.md
+        title: "命令行（CLI）与模块设计"
+        summary: "定位入口装配、模块边界、命令分发与公开兼容承诺。"
+      - location: scope
+        path: services/buildr/docs/resources.md
+        title: "随包资源的内容、位置与维护"
+        summary: "区分发布源文件、生成结果和用户状态，核对资源维护入口。"
+      - location: scope
+        path: knowledge/code-map/system-services-assets.md
+        title: "服务与工程目录定位"
+        summary: "按产品能力找到前后端代码、工程工具与构建职责。"
+      - location: scope
+        path: knowledge/code-map/technical-layers.md
+        title: "模块与分层代码地图"
+        summary: "逐步定位领域、应用、数据访问、接口及基础技术实现。"
+      - location: scope
+        path: knowledge/archify/index.md
+        title: "技术图总览"
+        summary: "按关系问题查找图示、图源和对应事实依据。"
+        supplementary: true
+      - location: scope
+        path: knowledge/archify/data/buildr-data-domains.md
+        title: "图示依据 · 数据领域"
+        summary: "核对数据总图的业务关系、节点来源和表达边界。"
+        supplementary: true
+      - location: scope
+        path: knowledge/archify/data/workspace-sqlite-erd.md
+        title: "数据库关系图的读图说明与依据"
+        summary: "了解表关系图的图例、字段范围、来源与更新方式。"
+        supplementary: true
+  - id: development-and-verification
+    title: "开发与验证"
+    summary: "准备开发环境，选择合适检查，并按需深入测试实现。"
+    entries:
+      - location: workspace
+        path: CONTRIBUTING.md
+        title: "参与开发：环境与约定"
+        summary: "准备开发环境，了解变更方式、必要验证和贡献要求。"
+      - location: scope
+        path: knowledge/docs/architecture/workspace-testing-and-verification-framework.md
+        title: "为项目选择与建设测试"
+        summary: "围绕目标选择已有检查，补齐缺口并记录可信结果。"
+      - location: scope
+        path: knowledge/docs/architecture/verification-framework.md
+        title: "Buildr 自身如何测试"
+        summary: "理解 Buildr 自测的选择、执行、隔离与候选验证范围。"
+      - location: scope
+        path: services/buildr/test/browser-smoke/README.md
+        title: "浏览器测试：准备与运行"
+        summary: "准备测试浏览器并运行已有入口，了解缓存和隔离边界。"
+      - location: scope
+        path: services/buildr-web/test/browser/README.md
+        title: "前端验证：布局、交互与工具替换"
+        summary: "运行页面检查，判断现场工具能够证明哪些交互和视觉结果。"
+      - location: scope
+        path: knowledge/docs/guides/node-test-context-runtime.md
+        title: "Node.js 测试准备的复用与隔离"
+        summary: "按需复用昂贵准备，同时保持案例隔离和可靠清理。"
+      - location: scope
+        path: knowledge/code-map/verification-framework.md
+        title: "项目测试地图与验证报告的实现位置"
+        summary: "定位用户项目测试声明、范围解析和任务验证报告的实现。"
+      - location: scope
+        path: knowledge/code-map/product-verification-tools.md
+        title: "Buildr 自测工具的实现位置"
+        summary: "定位产品自测的发现、选择、执行、资源协调和证据聚合。"
+      - location: scope
+        path: knowledge/archify/flows/verification-framework.md
+        title: "图示依据 · 测试建设与使用"
+        summary: "核对已有检查使用主线、按需补建分支及各方职责。"
+        supplementary: true
+  - id: extensions-and-reference
+    title: "扩展与接口"
+    summary: "按具体问题查命令与数据格式，扩展工具接入和工作方法。"
+    entries:
+      - location: scope
+        path: services/buildr/docs/cli-reference.md
+        title: "命令行（CLI）参考"
+        summary: "查找安装、工作范围、资产、任务和诊断命令。"
+      - location: scope
+        path: knowledge/docs/reference/json-contracts.md
+        title: "公开数据格式与兼容约定"
+        summary: "核对输出身份、字段含义及脚本应遵循的兼容边界。"
+      - location: scope
+        path: services/buildr/docs/skill-capability-contracts.md
+        title: "技能（Skill）协作与能力约定"
+        summary: "理解方法之间何时需要稳定约定，以及怎样声明、绑定和替换。"
+      - location: scope
+        path: knowledge/docs/reference/agent-runtime-adapter-contribution.md
+        title: "接入新的智能体（Agent）工具"
+        summary: "收集真实发现和加载证据，实施适配并确认支持范围。"
+      - location: scope
+        path: services/buildr/docs/archify-component.md
+        title: "使用与维护 Archify 绘图能力"
+        summary: "了解可选绘图能力的来源、使用、更新与完整升级边界。"
+  - id: release-and-maintenance
+    title: "发布与维护"
+    summary: "查阅版本变化，理解正式发布、安全报告和首版准备状态。"
+    entries:
+      - location: workspace
+        path: CHANGELOG.md
+        title: "版本变化"
+        summary: "按版本了解已经记录的变化，并区分尚未发布的内容。"
+      - location: scope
+        path: knowledge/docs/flows/open-source-release.md
+        title: "发布与恢复流程"
+        summary: "核对版本内容、候选产物、发布授权及失败后的恢复方式。"
+      - location: scope
+        path: knowledge/reviews/v0.1.0-readiness.md
+        title: "0.1.0 发布准备审查"
+        summary: "查看首版已处理问题、验证边界及尚待完成的发布事项。"
+      - location: workspace
+        path: SECURITY.md
+        title: "安全问题与报告方式"
+        summary: "了解安全维护范围，以及如何私密报告敏感问题。"
+      - location: scope
+        path: knowledge/archify/flows/task-self-bootstrap.md
+        title: "图示依据 · Buildr 自举更新与善后"
+        summary: "核对已交付改动怎样进入自身工作空间（Workspace）并完成适用清理。"
+        supplementary: true
+  - id: product-articles
+    title: "理念文章"
+    summary: "通过已发表文章理解 Buildr 的长期价值与建设思路。"
+    entries:
+      - location: scope
+        path: docs/publications/buildr-agent-work-infrastructure.md
+        title: "Buildr：Agent 的工作基础设施"
+        summary: "从工作基础设施的角度理解资料、方法与智能体（Agent）的关系。"
+      - location: scope
+        path: docs/publications/buildr-agent-more-and-better.md
+        title: "Buildr：让 Agent 越做越多，越做越好"
+        summary: "理解已有积累怎样帮助智能体（Agent）扩展工作范围并改善结果。"
+      - location: scope
+        path: docs/publications/README.md
+        title: "文章目录与发布状态"
+        summary: "查看文章发布目标、已有链接及正文和配图的维护方式。"
+        supplementary: true
 objects:
   - id: product-overview
     title: Buildr 整体认识

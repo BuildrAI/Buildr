@@ -27,7 +27,7 @@ import { canInitializeKnowledge, knowledgeInitializationContext } from '../knowl
 import '../knowledge.css';
 import './knowledge-browser.css';
 
-type Target = { kind: 'catalog' | 'documents' | 'artifact' | 'object' | 'source'; id?: string; title?: string; description?: string; scope?: KnowledgeScope; browseAll?: boolean; query?: string };
+type Target = { kind: 'catalog' | 'documents' | 'artifact' | 'object' | 'source'; id?: string; title?: string; description?: string; scope?: KnowledgeScope; browseAll?: boolean; documentsMode?: boolean; query?: string };
 type Entry = Target & { key: number; scrollTop: number; refresh: number; loading: boolean };
 type Props = {
   workspaceId: string;
@@ -67,6 +67,15 @@ function KnowledgeBrowserContent({ workspaceId, scope, initialArtifactId, initia
     if (history.length > 1) setHistory(items => items.slice(0, -1));
     else onBack?.();
   };
+  const returnDocuments = (targetScope: KnowledgeScope, query: string) => {
+    let position = -1;
+    for (let index = history.length - 1; index >= 0; index--) {
+      const item = history[index], itemScope = item.scope || scope;
+      if (item.kind === 'documents' && !item.id && itemScope.kind === targetScope.kind && itemScope.id === targetScope.id) { position = index; break; }
+    }
+    if (position >= 0) setHistory(items => items.slice(0, position + 1));
+    else open({ kind: 'documents', scope: targetScope, query });
+  };
   const setTitle = (key: number, title: string) => setHistory(items => items.some(item => item.key === key && item.title !== title) ? items.map(item => item.key === key ? { ...item, title } : item) : items);
   const setLoading = (key: number, loading: boolean) => setHistory(items => items.some(item => item.key === key && item.loading !== loading) ? items.map(item => item.key === key ? { ...item, loading } : item) : items);
   const setDefaultTopic = (key: number, id: string, title: string) => setHistory(items => items.map(item => item.key === key && item.kind === 'catalog' && !item.browseAll ? { ...item, kind: 'object', id, title, loading: true } : item));
@@ -77,16 +86,18 @@ function KnowledgeBrowserContent({ workspaceId, scope, initialArtifactId, initia
       <RefreshButton size="small" label="刷新当前知识" loading={current.loading} onClick={() => refreshEntry(current.key)} />
     </div>
     {history.map(entry => <div key={entry.key} hidden={entry.key !== current.key}>
-      <KnowledgeBrowserView entry={entry} refresh={entry.refresh + refresh} active={entry.key === current.key} workspaceId={workspaceId} scope={entry.scope || scope} onOpen={open} onTitle={setTitle} onDefault={setDefaultTopic} onLoadingChange={setLoading} onRefresh={() => refreshEntry(entry.key)} onObserved={entry.key === 0 ? onObserved : undefined} />
+      <KnowledgeBrowserView entry={entry} refresh={entry.refresh + refresh} active={entry.key === current.key} workspaceId={workspaceId} scope={entry.scope || scope} onOpen={open} onDirectory={returnDocuments} onTitle={setTitle} onDefault={setDefaultTopic} onLoadingChange={setLoading} onRefresh={() => refreshEntry(entry.key)} onObserved={entry.key === 0 ? onObserved : undefined} />
     </div>)}
   </div>;
 }
 
-type ViewProps = { entry: Entry; refresh: number; active: boolean; workspaceId: string; scope: KnowledgeScope; onOpen: (target: Target) => void; onTitle: (key: number, title: string) => void; onDefault: (key: number, id: string, title: string) => void; onLoadingChange: (key: number, loading: boolean) => void; onRefresh: () => void; onObserved?: (data: KnowledgeResponse) => void };
-function KnowledgeBrowserView({ entry, refresh, active, workspaceId, scope, onOpen, onTitle, onDefault, onLoadingChange, onRefresh, onObserved }: ViewProps) {
+type ViewProps = { entry: Entry; refresh: number; active: boolean; workspaceId: string; scope: KnowledgeScope; onOpen: (target: Target) => void; onDirectory: (scope: KnowledgeScope, query: string) => void; onTitle: (key: number, title: string) => void; onDefault: (key: number, id: string, title: string) => void; onLoadingChange: (key: number, loading: boolean) => void; onRefresh: () => void; onObserved?: (data: KnowledgeResponse) => void };
+function KnowledgeBrowserView({ entry, refresh, active, workspaceId, scope, onOpen, onDirectory, onTitle, onDefault, onLoadingChange, onRefresh, onObserved }: ViewProps) {
   const isCatalog = entry.kind === 'catalog';
   const isDocuments = entry.kind === 'documents';
+  const documentsMode = isDocuments || Boolean(entry.documentsMode);
   const [documentLoading, setDocumentLoading] = useState(true);
+  const [documentTitle, setDocumentTitle] = useState(entry.title || '');
   const [category, setCategory] = useState<KnowledgeCategory>('documents'), [query, setQuery] = useState(entry.query || '');
   const part = isCatalog ? undefined : entry.kind === 'artifact' ? 'artifacts' : entry.kind === 'source' ? 'sources' : 'objects';
   const result = useCompleteKnowledgeReading(workspaceId, scope, part, entry.id, refresh, !isCatalog && !isDocuments);
@@ -117,7 +128,7 @@ function KnowledgeBrowserView({ entry, refresh, active, workspaceId, scope, onOp
   const sourceMeta = data?.index?.sources.find(item => item.id === entry.id);
   const object = index?.objects.find(item => item.id === entry.id);
   const selectedTopic = knowledgeSelectedTopic(topics, entry.kind === 'object' ? entry.id : null, artifact?.objects || sourceReading?.artifact.objects);
-  const title = isDocuments ? entry.title || '文档目录' : isCatalog ? `${pageScope?.title ? `${pageScope.title} · ` : ''}${scope.kind === 'service' ? '服务知识' : '项目知识'}` : artifact?.title || sourceMeta?.title || object?.title || entry.title || '相关知识';
+  const title = isCatalog || (isDocuments && !entry.id) ? `${pageScope?.title ? `${pageScope.title} · ` : ''}${scope.kind === 'service' ? '服务知识' : '项目知识'}` : ((isDocuments || (documentsMode && entry.kind === 'artifact')) && documentTitle ? documentTitle : null) || artifact?.title || sourceMeta?.title || object?.title || entry.title || '相关知识';
   useEffect(() => { if (pageScope) callbacks.current.onTitle(entry.key, title); }, [pageScope, title, entry.key]);
   useEffect(() => { if (data) callbacks.current.onObserved?.(data); }, [data]);
   const catalogViewKey = JSON.stringify([category, query, refresh]);
@@ -135,13 +146,13 @@ function KnowledgeBrowserView({ entry, refresh, active, workspaceId, scope, onOp
   }, [active, loading, entry.key, catalogViewKey]);
   const openArtifact = (id: string) => {
     const target = isCatalog ? catalog.data?.items.find(item => item.id === id) : index?.artifacts.find(item => item.id === id);
-    if (target) callbacks.current.onOpen({ kind: 'artifact', id, title: target.title, scope: readingScope });
+    if (target) callbacks.current.onOpen({ kind: 'artifact', id, title: target.title, scope: readingScope, documentsMode });
   };
   const openSource = (id: string, description?: string) => {
     const target = index?.sources.find(item => item.id === id);
     if (!target) return;
     if (target.kind === 'skill' && target.skillId && target.path === 'SKILL.md' && previews?.open(location.pathname, workspaceHref(workspaceId, `/skills/${encodeURIComponent(target.skillId)}`))) return;
-    callbacks.current.onOpen({ kind: 'source', id, title: target.title, description, scope: readingScope });
+    callbacks.current.onOpen({ kind: 'source', id, title: target.title, description, scope: readingScope, documentsMode });
   };
   const follow = (base: string, href: string, file = false, description?: string) => {
     const path = resolveKnowledgePath(base, href);
@@ -190,9 +201,10 @@ function KnowledgeBrowserView({ entry, refresh, active, workspaceId, scope, onOp
   const unavailableSources = data?.observations.filter(item => ['missing', 'unreadable'].includes(item.status)) || [];
   const openTopic = (id: string) => callbacks.current.onOpen({ kind: 'object', id, title: topics.find(topic => topic.id === id)?.title, scope: readingScope });
   return <div ref={root} className="knowledge-side-reader knowledge-browser-view" data-knowledge-view={entry.kind}>
-    <KnowledgeTopicNavigation topics={topics} selected={selectedTopic} allSelected={showCatalog} documentsSelected={isDocuments}
+    <KnowledgeTopicNavigation topics={topics} selected={selectedTopic} allSelected={showCatalog} documentsSelected={documentsMode}
       loading={navigation.loading} error={navigation.error} onRetry={onRefresh} onSelect={openTopic}
       onAll={() => callbacks.current.onOpen({ kind: 'catalog', browseAll: true, scope: readingScope })}
+      onTopics={() => callbacks.current.onOpen({ kind: 'catalog', scope: readingScope })}
       onDocuments={() => callbacks.current.onOpen({ kind: 'documents', title: '文档目录', scope: readingScope })}>
     {!isCatalog && !isDocuments && result.loading ? <Spin /> : !isCatalog && !isDocuments && result.error ? <Alert type="error" message={result.error} /> : (isCatalog || isDocuments || data) && <>
       <header className="knowledge-browser-heading"><div><p className="eyebrow">{scope.kind === 'service' ? '服务知识' : '项目知识'}</p><h2>{title}</h2></div>{entry.kind !== 'catalog' && !isDocuments && <Space wrap>
@@ -203,10 +215,11 @@ function KnowledgeBrowserView({ entry, refresh, active, workspaceId, scope, onOp
       {needsInitialize && !isDocuments && <KnowledgeInitialize kind={readingScope.kind} onInitialize={() => construct('initialize')} onExplore={() => construct('explore')} />}
       {notice && <Alert type="info" closable message={notice} onClose={() => setNotice('')} />}
       {result.relatedErrors.map(error => <Alert key={error} type="warning" message={error} />)}
-      {isDocuments ? <KnowledgeDocuments scope={readingScope} workspaceId={workspaceId} documentId={entry.id} query={query} refresh={refresh} active={active}
-        onQuery={setQuery} onOpen={(id, documentTitle) => callbacks.current.onOpen({ kind: 'documents', id: id || undefined, title: documentTitle || '文档目录', scope: readingScope, query })}
-        onArtifact={id => callbacks.current.onOpen({ kind: 'artifact', id, scope: readingScope })}
-        onLoadingChange={setDocumentLoading} onTitleChange={value => callbacks.current.onTitle(entry.key, value)} /> : showCatalog && !needsInitialize ? <KnowledgeCatalog
+      {(isDocuments || (documentsMode && entry.kind === 'artifact')) && <div hidden={!isDocuments}><KnowledgeDocuments scope={readingScope} workspaceId={workspaceId} documentId={isDocuments ? entry.id : undefined} artifactId={entry.kind === 'artifact' ? entry.id : undefined} query={query} refresh={refresh} active={active}
+        onQuery={setQuery} onOpen={(id, documentTitle) => id ? callbacks.current.onOpen({ kind: 'documents', id, title: documentTitle, scope: readingScope, query }) : onDirectory(readingScope, query)}
+        onArtifact={(id, title) => callbacks.current.onOpen({ kind: 'artifact', id, title, scope: readingScope, documentsMode: true })}
+        onLoadingChange={setDocumentLoading} onTitleChange={setDocumentTitle} /></div>}
+      {isDocuments ? null : showCatalog && !needsInitialize ? <KnowledgeCatalog
         entries={catalog.data?.items || []} matchingCount={catalog.data?.matchingCount || 0}
         loading={catalog.loading} loadingMore={catalog.loadingMore} hasMore={catalog.data?.hasMore || false}
         error={catalog.error} loadMoreError={catalog.loadMoreError} changed={catalog.changed} canConstruct={Boolean(pageScope)}

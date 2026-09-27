@@ -881,6 +881,11 @@ test("文档目录无需主题索引，刷新发现增删与正文标题变化�
   assert.equal(first.totalCount, 1);
   assert.equal(first.truncated, false);
   assert.deepEqual(first.diagnostics, []);
+  assert.deepEqual(first.sections.map(({ id, count }) => ({ id, count })), [{ id: "unorganized", count: 1 }]);
+  assert.match(first.sections[0].summary, /尚未编排/);
+  assert.equal(first.documents[0].sectionId, "unorganized");
+  assert.equal(first.documents[0].summary, "");
+  assert.equal(first.documents[0].supplementary, false);
   assert.equal(first.documents[0].title, "订单");
   assert.equal(first.documents[0].artifactId, null);
   assert.equal(Object.hasOwn(first, "files"), false, "目录响应不暴露内部文件寻址表");
@@ -907,8 +912,189 @@ test("文档目录无需主题索引，刷新发现增删与正文标题变化�
   put("projects/demo/knowledge/index.yml", "invalid: [\n");
   const malformed = app.documents(root, scope);
   assert.equal(malformed.totalCount, 1);
+  assert.equal(malformed.documents[0].sectionId, "unorganized");
+  assert.equal(app.document(root, scope, malformed.documents[0].id).content, "# 当前订单说明\n最新正文\n");
   assert.match(malformed.diagnostics.join("\n"), /主题索引暂不可读取/);
   assert.equal(fs.readFileSync(indexPath, "utf8"), "invalid: [\n");
+});
+
+test("阅读编排按章节与条目顺序显示，补充资料和新增文件均保留唯一身份", (t) => {
+  const { root, put, app } = setup(t);
+  const scope = { kind: "project" as const, id: "demo" };
+  put("projects/demo/README.md", "# 项目说明\n");
+  put("README.md", "# 工作空间说明\n");
+  const original = app.documents(root, scope);
+  const index = {
+    ...structuredClone(prototype),
+    documentSections: [
+      { id: "use", title: "使用产品", summary: "先了解用途，再阅读示例。", entries: [
+        { path: "knowledge/docs/order.md", title: "理解订单", summary: "认识订单职责。" },
+        { location: "workspace", path: "README.md", title: "补充背景", summary: "", supplementary: true },
+      ] },
+      { id: "start", title: "开始使用", summary: "完成最小配置。", entries: [
+        { path: "README.md", title: "配置项目", summary: "配置前需要了解什么。" },
+      ] },
+    ],
+  };
+  const encoded = stringify(index);
+  put("projects/demo/knowledge/index.yml", encoded);
+  const listing = app.documents(root, scope);
+  validateKnowledgeDocumentsResponse(listing);
+  assert.deepEqual(listing.sections, [
+    { id: "use", title: "使用产品", summary: "先了解用途，再阅读示例。", count: 2 },
+    { id: "start", title: "开始使用", summary: "完成最小配置。", count: 1 },
+  ]);
+  assert.equal(listing.totalCount, 3);
+  assert.deepEqual(listing.documents.map(({ title, sectionId, supplementary }) => ({ title, sectionId, supplementary })), [
+    { title: "理解订单", sectionId: "use", supplementary: false },
+    { title: "补充背景", sectionId: "use", supplementary: true },
+    { title: "配置项目", sectionId: "start", supplementary: false },
+  ]);
+  for (const document of listing.documents) {
+    const found = original.documents.find((item) => item.id === document.id)!;
+    assert.ok(found, "编排不另建文档身份");
+    for (const key of ["path", "location", "group", "artifactId", "workspacePath"] as const)
+      assert.equal(document[key], found[key]);
+    const body = app.document(root, scope, document.id);
+    validateKnowledgeDocumentResponse(body);
+    assert.deepEqual(body.document, document);
+  }
+  assert.deepEqual(listing.diagnostics, []);
+  assert.equal(fs.readFileSync(path.join(root, "projects/demo/knowledge/index.yml"), "utf8"), encoded);
+
+  put("projects/demo/new-guide.md", "# 新增指南\n");
+  const updated = app.documents(root, scope);
+  assert.equal(updated.totalCount, 4);
+  assert.equal(new Set(updated.documents.map((item) => item.id)).size, 4);
+  assert.equal(updated.documents.at(-1)!.sectionId, "unorganized");
+  assert.equal(updated.sections.at(-1)!.count, 1);
+  assert.notEqual(updated.revision, listing.revision);
+});
+
+test("仅修改阅读元数据也会刷新目录版本，正文摘要和文件身份保持不变", (t) => {
+  const { root, put, app } = setup(t);
+  const scope = { kind: "project" as const, id: "demo" };
+  const index = {
+    ...structuredClone(prototype),
+    documentSections: [{ id: "start", title: "开始", summary: "章节用途", entries: [
+      { path: "knowledge/docs/order.md", title: "订单说明", summary: "文档用途", supplementary: false },
+    ] }],
+  };
+  put("projects/demo/knowledge/index.yml", stringify(index));
+  const before = app.documents(root, scope);
+  const body = app.document(root, scope, before.documents[0].id);
+  index.documentSections[0].title = "理解工作";
+  index.documentSections[0].entries[0].title = "背景知识";
+  index.documentSections[0].entries[0].summary = "提供解释与依据。";
+  index.documentSections[0].entries[0].supplementary = true;
+  put("projects/demo/knowledge/index.yml", stringify(index));
+  const after = app.documents(root, scope);
+  assert.notEqual(after.revision, before.revision);
+  assert.equal(after.documents[0].id, before.documents[0].id);
+  assert.equal(after.documents[0].title, "背景知识");
+  assert.equal(after.documents[0].summary, "提供解释与依据。");
+  assert.equal(after.documents[0].supplementary, true);
+  const reread = app.document(root, scope, body.document.id);
+  assert.equal(reread.digest, body.digest);
+  assert.equal(reread.content, body.content);
+  assert.deepEqual(reread.document, after.documents[0]);
+});
+
+test("无效、重复和越界编排只产生局部诊断，不扩大读取范围或影响主题投影", (t) => {
+  const { root, put, app } = setup(t);
+  const scope = { kind: "project" as const, id: "demo" };
+  put("projects/demo/README.md", "# 项目说明\n");
+  put("projects/demo/docs/passwords.md", "# 敏感内容\n");
+  put("outside/README.md", "# 外部内容\n");
+  const original = app.documents(root, scope);
+  const index = {
+    ...structuredClone(prototype),
+    documentSections: [
+      { id: "valid", title: "有效章节", summary: "", entries: [
+        { path: "knowledge/docs/order.md", title: "有效标题", summary: "" },
+        { path: "knowledge/docs/order.md", title: "重复标题", summary: "" },
+        { path: "docs/missing.md", title: "不存在", summary: "" },
+        { path: "docs/passwords.md", title: "敏感文件", summary: "" },
+        { path: "../../outside/README.md", title: "越界文件", summary: "" },
+        { location: "other", path: "README.md", title: "错误来源", summary: "" },
+        { path: "README.md", title: "无效属性", summary: "", supplementary: "yes" },
+      ] },
+      { id: "valid", title: "重复章节", summary: "", entries: [] },
+      { id: "unorganized", title: "保留标识", summary: "", entries: [] },
+      { id: "invalid", title: "无效章节", entries: [] },
+      { id: "empty", title: "空章节", summary: "", entries: [] },
+      { id: "missing", title: "缺失章节", summary: "", entries: [
+        { path: "missing.md", title: "不存在", summary: "" },
+      ] },
+    ],
+  };
+  put("projects/demo/knowledge/index.yml", stringify(index));
+  const listing = app.documents(root, scope);
+  validateKnowledgeDocumentsResponse(listing);
+  assert.deepEqual(listing.documents.map((item) => item.id).sort(), original.documents.map((item) => item.id).sort());
+  assert.equal(listing.totalCount, 2);
+  assert.equal(listing.documents[0].title, "有效标题");
+  assert.equal(listing.documents[1].sectionId, "unorganized");
+  assert.equal(listing.documents[1].supplementary, false);
+  assert.deepEqual(listing.sections.map(({ id, count }) => ({ id, count })), [
+    { id: "valid", count: 1 }, { id: "unorganized", count: 1 },
+  ]);
+  assert.equal(listing.diagnostics.length, 10);
+  assert.equal(listing.truncated, false, "无效编排不代表文件扫描不完整");
+  const read = app.read(root, scope, "objects", "object");
+  validateKnowledgeResponse(read);
+  assert.equal(read.artifacts[0].content, "# 订单\n读取实现");
+  assert.equal(Object.hasOwn(read.index!, "documentSections"), false, "主题响应保持闭合，不泄露未校验的阅读编排");
+  validateKnowledgeNavigationResponse(app.navigation(root, scope));
+  validateKnowledgeCatalogResponse(app.catalog(root, scope));
+
+  put("projects/demo/knowledge/index.yml", stringify({ ...prototype, documentSections: "invalid" }));
+  const malformed = app.documents(root, scope);
+  assert.equal(malformed.totalCount, 2);
+  assert.ok(malformed.documents.every((item) => item.sectionId === "unorganized"));
+  assert.match(malformed.diagnostics.join("\n"), /编排必须为列表/);
+  validateKnowledgeResponse(app.read(root, scope));
+  validateKnowledgeNavigationResponse(app.navigation(root, scope));
+  validateKnowledgeCatalogResponse(app.catalog(root, scope));
+
+  put("projects/demo/knowledge/index.yml", stringify({ ...prototype, documentSections: [] }));
+  const empty = app.documents(root, scope);
+  assert.deepEqual(empty.diagnostics, []);
+  assert.ok(empty.documents.every((item) => item.sectionId === "unorganized"));
+});
+
+test("阅读编排限制章节和条目数量，超过上限的实际文件仍保留在其他文档", (t) => {
+  const { root, put, app } = setup(t);
+  const scope = { kind: "project" as const, id: "demo" };
+  const sections = Array.from({ length: 65 }, (_, index) => {
+    const file = `guides/${index}.md`;
+    put(`projects/demo/${file}`, `# 指南 ${index}\n`);
+    return { id: `section-${index}`, title: `章节 ${index}`, summary: "", entries: [
+      { path: file, title: `指南 ${index}`, summary: "" },
+    ] };
+  });
+  put("projects/demo/knowledge/index.yml", stringify({ ...prototype, documentSections: sections }));
+  const sectionLimit = app.documents(root, scope);
+  validateKnowledgeDocumentsResponse(sectionLimit);
+  assert.equal(sectionLimit.sections.length, 65, "64 个作者章节及其他文档");
+  assert.equal(sectionLimit.totalCount, 66);
+  assert.equal(sectionLimit.sections.at(-1)!.count, 2);
+  assert.match(sectionLimit.diagnostics.join("\n"), /超过 64 组/);
+  assert.equal(sectionLimit.documents.find((item) => item.path === "guides/64.md")!.sectionId, "unorganized");
+
+  const entries = Array.from({ length: 1001 }, (_, index) => ({
+    path: index === 1000 ? "knowledge/docs/order.md" : "guides/0.md", title: `条目 ${index}`, summary: "",
+  }));
+  put("projects/demo/knowledge/index.yml", stringify({ ...prototype,
+    documentSections: [{ id: "limited", title: "条目上限", summary: "", entries }],
+  }));
+  const entryLimit = app.documents(root, scope);
+  validateKnowledgeDocumentsResponse(entryLimit);
+  assert.equal(entryLimit.totalCount, 66);
+  assert.equal(entryLimit.sections[0].count, 1, "重复引用不重复计数");
+  assert.equal(entryLimit.sections.at(-1)!.count, 65);
+  assert.equal(entryLimit.documents.find((item) => item.path === "knowledge/docs/order.md")!.sectionId, "unorganized");
+  assert.match(entryLimit.diagnostics.join("\n"), /超过 1000 条/);
 });
 
 test("文档目录连接项目、关联服务与公共说明，重叠真实范围去重且保留已有成果绑定", (t) => {

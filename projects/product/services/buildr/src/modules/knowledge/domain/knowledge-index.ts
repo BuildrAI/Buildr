@@ -37,6 +37,9 @@ export type KnowledgeIndex = {
   objects: KnowledgeObject[];
   artifacts: KnowledgeArtifact[];
   sources: KnowledgeSource[];
+  // Validated independently by the document catalog so malformed reading
+  // metadata cannot disable the existing topic/artifact readers.
+  documentSections?: unknown;
   relations: {
     from: string;
     to: string;
@@ -85,6 +88,7 @@ export function parseKnowledgeIndex(content: string): KnowledgeIndex {
     "artifacts",
     "sources",
     "relations",
+    "documentSections",
   ]);
   fields(raw.scope, ["kind", "id"]);
   const index = raw as unknown as KnowledgeIndex,

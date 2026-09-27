@@ -17,6 +17,7 @@ import {
   type KnowledgeCatalogRequest,
 } from "../domain/knowledge-catalog.ts";
 import { discoverKnowledgeDocuments, type DocumentLocation } from "../infrastructure/knowledge-documents.ts";
+import { organizeKnowledgeDocuments } from "../domain/knowledge-document-sections.ts";
 export type KnowledgeDependencies = {
   assetCatalog(root: string): AssetCatalog;
   skillFile(root: string, id: string, path: string): { content: string };
@@ -219,6 +220,7 @@ export function createKnowledgeQuery(deps: KnowledgeDependencies) {
         observations: [],
       };
     const { index, scope } = base;
+    const { documentSections: _documentSections, ...topicIndex } = index;
     const item = part ? index[part].find((i) => i.id === id) : null;
     if (part && !item)
       throw knowledgeError("knowledge_item_missing", "知识条目不存在。", 404);
@@ -262,6 +264,7 @@ export function createKnowledgeQuery(deps: KnowledgeDependencies) {
     });
     return {
       ...base,
+      index: topicIndex,
       item,
       artifacts: rendered,
       observations,
@@ -296,9 +299,14 @@ export function createKnowledgeQuery(deps: KnowledgeDependencies) {
     const locations: DocumentLocation[] = [{ id: "scope", title: scope.title, root: scope.directory }];
     const registered = new Map<string, string>();
     const indexDiagnostics: string[] = [];
+    let documentSections: unknown;
+    let indexRevision: string | null = null;
     let missingLocation = false;
     try {
-      for (const artifact of load(root, ref).index?.artifacts ?? []) {
+      const loaded = load(root, ref);
+      documentSections = loaded.index?.documentSections;
+      indexRevision = loaded.revision;
+      for (const artifact of loaded.index?.artifacts ?? []) {
         if (artifact.kind !== "diagram") registered.set(path.join(fs.realpathSync(scope.directory), artifact.path), artifact.id);
       }
     } catch { indexDiagnostics.push("主题索引暂不可读取，文档目录仍按实际文件展示。"); }
@@ -322,7 +330,11 @@ export function createKnowledgeQuery(deps: KnowledgeDependencies) {
       if (relative && relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative))
         document.workspacePath = relative.split(path.sep).join("/");
     }
-    return { scope, ...result, truncated: result.truncated || missingLocation, diagnostics: [...indexDiagnostics, ...result.diagnostics] };
+    const organized = organizeKnowledgeDocuments(result.documents, documentSections);
+    return { scope, ...result, ...organized,
+      revision: digest(JSON.stringify([result.revision, indexRevision])),
+      truncated: result.truncated || missingLocation,
+      diagnostics: [...indexDiagnostics, ...result.diagnostics, ...organized.diagnostics] };
   }
   function documents(root: string, ref: ScopeRef) {
     const { files: _files, ...result } = documentCatalog(root, ref);

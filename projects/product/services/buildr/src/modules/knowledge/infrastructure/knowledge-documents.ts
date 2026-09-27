@@ -1,21 +1,14 @@
 import fs from "node:fs";
 import path from "node:path";
 import { digest, resolveKnowledgeFile } from "./knowledge-files.ts";
+import type { KnowledgeDocument } from "../domain/knowledge-document-sections.ts";
+export type { KnowledgeDocument } from "../domain/knowledge-document-sections.ts";
 
 export type DocumentLocation = {
   id: string;
   title: string;
   root: string;
   publicOnly?: boolean;
-};
-export type KnowledgeDocument = {
-  id: string;
-  path: string;
-  title: string;
-  location: string;
-  group: string;
-  artifactId: string | null;
-  workspacePath: string | null;
 };
 const EXCLUDED = new Set([
   "node_modules", "build", "dist", "web-dist", "coverage", "target", "out",
@@ -114,6 +107,7 @@ export function discoverKnowledgeDocuments(
             documents.push({ id, path: child, title: observed.title,
               location: location.id, group: location.title,
               workspacePath: null,
+              sectionId: "unorganized", summary: "", supplementary: false,
               artifactId: registered.get(actual) ?? null });
           } catch {
             incomplete = true;

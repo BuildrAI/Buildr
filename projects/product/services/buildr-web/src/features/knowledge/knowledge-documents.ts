@@ -1,46 +1,33 @@
-import type { KnowledgeDocument } from "./api/knowledge-api";
+import type { KnowledgeDocument, KnowledgeDocumentsResponse } from "./api/knowledge-api";
 import { resolveKnowledgePath } from "./knowledge-navigation.ts";
 
-export type KnowledgeDocumentNode = {
-  key: string;
+export type KnowledgeDocumentSection = {
+  id: string;
   title: string;
+  summary: string;
   count: number;
-  document?: KnowledgeDocument;
-  children: KnowledgeDocumentNode[];
+  documents: KnowledgeDocument[];
+  supplementary: KnowledgeDocument[];
 };
 
-/** The directory is derived from files; grouping never creates a second knowledge index. */
-export function knowledgeDocumentTree(documents: KnowledgeDocument[], query = ""): KnowledgeDocumentNode[] {
-  const roots: KnowledgeDocumentNode[] = [];
+/** Preserve the authored reading order while searching every discovered document. */
+export function knowledgeDocumentSections(documents: KnowledgeDocument[], sections: KnowledgeDocumentsResponse["sections"], query = ""): KnowledgeDocumentSection[] {
+  const groups: KnowledgeDocumentSection[] = sections.map(section => ({ ...section, count: 0, documents: [], supplementary: [] }));
   const search = query.trim().toLocaleLowerCase();
   for (const document of documents) {
-    if (search && !`${document.title}\n${document.path}\n${document.group}`.toLocaleLowerCase().includes(search)) continue;
-    let root = roots.find(node => node.key === document.location);
-    if (!root) {
-      root = { key: document.location, title: document.group, count: 0, children: [] };
-      roots.push(root);
-    }
-    root.count++;
-    let children = root.children;
-    const parts = document.path.split("/");
-    for (let position = 0; position < parts.length - 1; position++) {
-      const key = `${document.location}:${parts.slice(0, position + 1).join("/")}`;
-      let folder = children.find(node => node.key === key);
-      if (!folder) {
-        folder = { key, title: parts[position], count: 0, children: [] };
-        children.push(folder);
+    let group = groups.find(section => section.id === document.sectionId);
+    if (!group) {
+      group = groups.find(section => section.id === "unorganized");
+      if (!group) {
+        group = { id: "unorganized", title: "其他文档", summary: "尚未编入阅读章节的文档。", count: 0, documents: [], supplementary: [] };
+        groups.push(group);
       }
-      folder.count++;
-      children = folder.children;
     }
-    children.push({ key: `document:${document.id}`, title: document.title, count: 1, document, children: [] });
+    if (search && !`${group.title}\n${group.summary}\n${document.title}\n${document.summary}\n${document.path}`.toLocaleLowerCase().includes(search)) continue;
+    group.count++;
+    (document.supplementary ? group.supplementary : group.documents).push(document);
   }
-  const sort = (nodes: KnowledgeDocumentNode[]) => {
-    nodes.sort((a, b) => Number(Boolean(a.document)) - Number(Boolean(b.document)) || a.title.localeCompare(b.title, "zh-CN"));
-    nodes.forEach(node => sort(node.children));
-  };
-  roots.forEach(root => sort(root.children));
-  return roots;
+  return groups.filter(section => section.count > 0);
 }
 
 /** Relative links only select discovered files, including shared workspace reading entries. */
