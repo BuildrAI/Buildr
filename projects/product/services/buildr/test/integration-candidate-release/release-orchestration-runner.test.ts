@@ -157,6 +157,16 @@ test('cleanup authorization blocker stops before canonical Task mutation', async
   assert.equal(fixture.getTask().status, 'active');
 });
 
+test('closeout rejects a different publication context before Git cleanup', async () => {
+  const fixture = closeoutDependencies();
+  const value = await runReleaseOrchestration({ action: 'closeout', version: '1.0.0-rc.1', releaseTask: 'release-1.0.0-rc.1',
+    publishRunId: 84, expectedContextDigest: digest('f'), authorizeRemoteDelete: true }, fixture.dependencies);
+  assert.equal(value.status, 'blocked');
+  assert.equal(value.outcomes.publication, 'passed');
+  assert.equal(fixture.getGitCloseoutInput(), null);
+  assert.deepEqual(fixture.calls, []);
+});
+
 test('merge-to-dispatch and post-Publication closeout recover as one end-to-end orchestration path', async () => {
   const current: any = context();
   let protectedDispatches: any = 0;

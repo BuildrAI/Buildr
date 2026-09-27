@@ -72,7 +72,7 @@ test('closed lifecycle requires zero intermediate resources and a verified retai
     publication: { status: 'passed', runId: 42, evidenceIdentity: digest('5') },
     convergence: { status: 'passed', recoveryIdentity: digest('6') },
     closeout: { status: 'passed', identity: digest('7'), formalReleaseRef: null },
-  })), /verified retained formal release ref/u);
+  })), /verified retained or cleaned formal release ref/u);
 });
 
 test('lifecycle projection binds the current orchestration action and timeline identity', () => {
@@ -88,4 +88,16 @@ test('lifecycle projection binds the current orchestration action and timeline i
     convergence: { status: 'passed', recoveryIdentity: digest('6') },
     closeout: { status: 'passed', identity: digest('7'), formalReleaseRef: { disposition: 'retained-and-verified', ref: 'refs/heads/release-1.0.0-rc.1' } },
   })), digest('b')).orchestration.action, 'closeout');
+});
+
+
+test('closed lifecycle accepts a verified cleaned formal branch without changing historical retained results', () => {
+  const closed = createReleaseLifecycle(input({
+    releaseTask: { taskId: 'release-1.0.0-rc.1', status: 'completed', recordDigest: digest('1') },
+    publication: { status: 'passed', runId: 42, evidenceIdentity: digest('5') },
+    convergence: { status: 'passed', recoveryIdentity: digest('6') },
+    closeout: { status: 'passed', identity: digest('7'), formalReleaseRef: { disposition: 'cleaned-and-verified', ref: 'refs/heads/release-1.0.0-rc.1' } },
+  }));
+  assert.equal(closed.status, 'passed');
+  assert.equal(closed.phase, 'closed');
 });

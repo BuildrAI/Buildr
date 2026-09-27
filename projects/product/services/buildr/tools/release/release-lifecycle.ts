@@ -74,10 +74,10 @@ export function createReleaseLifecycle(input: any): any  {
     publishRun: publication.runId,
   };
   const findings: any[] = [];
-  if (phase === 'closed' && closeout.formalReleaseRef?.disposition !== 'retained-and-verified') {
+  if (phase === 'closed' && !['retained-and-verified', 'cleaned-and-verified'].includes(closeout.formalReleaseRef?.disposition)) {
     findings.push({ code: 'formal-release-ref-not-verified', owner: 'release-closeout' });
   }
-  if (releaseTask.status === 'completed' && findings.length) throw new Error('Completed releaseTask requires a verified retained formal release ref.');
+  if (releaseTask.status === 'completed' && findings.length) throw new Error('Completed releaseTask requires a verified retained or cleaned formal release ref.');
   const statusValue: any = findings.length ? 'blocked' : phase === 'closed' ? 'passed' : 'active';
   return {
     schemaVersion: releaseLifecycleSchema,

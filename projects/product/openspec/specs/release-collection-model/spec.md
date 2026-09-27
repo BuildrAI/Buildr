@@ -106,7 +106,7 @@ Update MUST按调用方给出的单个 source commit 执行 `git cherry-pick -x`
 - **AND** MUST不自动解决、继续选择、reset、rebase、force push 或报告部分成功
 
 ### Requirement: Lifecycle state 必须独立、可重建且 fail closed
-Freeze、reopen、abandon和closeout MUST使用独立Git lifecycle refs与current owner facts，并保持幂等、compare-and-swap与授权边界。current freeze或abandon状态 MUST阻止update；只有显式reopen成功后才能继续逐commit update。Closeout MUST区分正式远端`release-<version>`、正式远端Tag、remote-tracking projection与owner-owned本地/中间资源：正式远端release ref和正式远端Tag默认保留并核验；本地release branch、全部selection lifecycle refs、owned worktree、generation carrier与本地同名Tag属于必需清理资源；remote-tracking ref存在 MUST NOT阻止本地清理。
+Freeze、reopen、abandon和closeout MUST使用独立Git lifecycle refs与current owner facts，并保持幂等、compare-and-swap与授权边界。current freeze或abandon状态 MUST阻止update；只有显式reopen成功后才能继续逐commit update。Closeout MUST区分正式远端`release-<version>`、正式远端Tag、remote-tracking projection与owner-owned本地/中间资源：正式远端Tag MUST保留并核验；正式远端release ref按本轮显式绑定的清理政策处理，无新政策的历史授权保持保留行为；本地release branch、全部selection lifecycle refs、owned worktree、generation carrier与本地同名Tag属于必需清理资源；remote-tracking ref存在 MUST NOT阻止本地清理。
 
 #### Scenario: freeze and inspect
 - **WHEN** open集合被要求 freeze
@@ -125,7 +125,8 @@ Freeze、reopen、abandon和closeout MUST使用独立Git lifecycle refs与curren
 
 #### Scenario: 正式远端release ref存在时清理本地资源
 - **WHEN** owner明确closeout一个已发布release，正式远端`release-<version>`精确等于冻结release commit，正式远端Tag与Publication evidence匹配，且本地branch、lifecycle refs、owned worktree或本地同名Tag仍存在
-- **THEN** closeout MUST保留正式远端release ref和正式远端Tag，并在显式本地cleanup确认后删除owner可证明的本地branch、全部current/history lifecycle refs、owned worktree与本地同名Tag
+- **THEN** closeout MUST保留正式远端Tag，并在显式本地cleanup确认后删除owner可证明的本地branch、全部current/history lifecycle refs、owned worktree与本地同名Tag
+- **AND** 本轮授权包含正式远端release ref清理时 MUST先证明源码由官方Tag及main历史保全，再按已观察提交条件删除；已不存在时 MUST幂等成功，存在但漂移或保全失败时 MUST保留
 - **AND** remote-tracking projection存在 MUST NOT阻止本地资源清理
 
 #### Scenario: 本地Tag已缺失
@@ -210,9 +211,9 @@ Buildr MUST从current release owner facts派生version-scoped lifecycle read mod
 - **AND** support修复 MAY独立交付，但 MUST NOT成为新的release协调Task
 
 #### Scenario: 必需closeout全部完成
-- **WHEN** Publication、matching dev provenance reconciliation与全部必需本地/中间资源closeout均通过，且正式远端release ref已按默认保留策略精确核验
+- **WHEN** Publication、matching dev provenance reconciliation与全部必需本地/中间资源closeout均通过，且正式远端release ref已按本轮授权完成保留或安全清理并核验
 - **THEN** lifecycle MUST返回`closed`并允许Release Skill完成唯一协调Task
-- **AND** 可选的正式远端release ref删除未获授权 MUST NOT阻止Task完成
+- **AND** 历史授权未包含正式远端release ref删除时 MUST保留其原政策，不自动扩大授权，也不因此阻止Task完成
 
 ### Requirement: Release Git owner 必须管理generation carrier与幂等closeout
 Release Git owner MUST为每个selection generation使用确定性`codex/release-main-<version>-g<generation>` carrier，记录expected commit、remote ref、PR head/base与ownership，并在main tree等价后枚举和删除owner可证明的本地/远端carrier。未知owner、ref漂移或多个不匹配PR MUST在删除或新PR mutation前失败关闭。

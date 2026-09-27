@@ -200,6 +200,8 @@ async function closeout(options: any, dependencies: any): Promise<any>  {
   if (inspect?.status !== 'passed' || !evidence) return blocked(options, 'closeout', { evidence }, steps, inspect, '恢复matching hosted Publication evidence后重试。');
   const context: any = evidence.context;
   if (context?.release?.version !== options.version) return blocked(options, 'closeout', { evidence, context }, steps, { nextActions: ['Publication evidence version与请求version不一致，重新选择matching run。'] }, '选择matching Publication run。');
+  if (options.expectedContextDigest != null && options.expectedContextDigest !== context?.identity) return blocked(options, 'closeout', { evidence, context }, steps,
+    { nextActions: ['Publication evidence context与本轮授权不一致，保留引用并选择matching run。'] }, '选择matching Publication context。');
 
   const reconciliation: any = (dependencies.reconcilePublishedReleaseWithDev ?? reconcilePublishedReleaseWithDev)({ repo: options.repo, publicationEvidence: evidence, remote: options.remote, main: options.main, dev: options.dev }, dependencies.gitDependencies);
   steps.push(step('release-git-convergence', 'reconcile-dev', reconciliation));
@@ -212,12 +214,14 @@ async function closeout(options: any, dependencies: any): Promise<any>  {
   const gitCloseout: any = (dependencies.closeoutReleaseGitResources ?? closeoutReleaseGitResources)({
     repo: options.repo,
     remote: options.remote,
+    main: options.main,
     version: options.version,
     generation,
     expectedCommit,
     publicationEvidence: evidence,
     authorizeCarrierCleanup: options.authorizeCarrierCleanup === true,
     authorizeLocalSelectionCleanup: options.authorizeLocalSelectionCleanup === true,
+    authorizeRemoteDelete: options.authorizeRemoteDelete === true,
   }, dependencies.gitDependencies);
   steps.push(step('release-git-convergence', 'closeout', gitCloseout));
   if (gitCloseout.status !== 'passed') return blocked(options, 'closeout', { evidence, context, reconciliation, gitCloseout }, steps, gitCloseout, '取得明确cleanup授权或恢复Git closeout后重试。');
@@ -371,6 +375,9 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
     schemaVersion: 'buildr.release-operation-result/v1', action, status, version: options.version,
     baseline: state.baseline ?? null, selectedSources: state.sources, sourceCommit: state.sourceCommit ?? null,
     candidate: state.candidate, publication: state.publication, contextIdentity: state.context?.identity ?? null,
+    cleanupPlan: state.context ? { policy: state.publication?.requested ? state.publication.cleanupAuthorization?.policy ?? 'retain-formal-release-branch' : 'delete-owned-release-branches/v1',
+      remoteBranches: [`release-${options.version}`, releaseCarrierBranchFor(options.version, state.context.selection.generation)],
+      retainedTag: `v${options.version}` } : null,
     effects: currentEffects, nextActions, ...extra,
     };
   };
@@ -405,7 +412,8 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
       currentEffects.push({ type: 'remote-refs-refreshed', refs: ['origin/dev', 'origin/main'] });
       const previous = dependencies.orchestrationDependencies ?? {};
       const transactionDependencies = { ...previous.transactionDependencies,
-        onDispatchIntent: (intent: any) => { state.publication = { requested: true, releaseId: intent.releaseId, contextIdentity: intent.contextIdentity, runId: null }; writeOperation(file, state); },
+        onDispatchIntent: (intent: any) => { state.publication = { requested: true, releaseId: intent.releaseId, contextIdentity: intent.contextIdentity, runId: null,
+          cleanupAuthorization: { policy: 'delete-owned-release-branches/v1', contextIdentity: intent.contextIdentity } }; writeOperation(file, state); },
         onDispatchObserved: (run: any) => { state.publication = { ...state.publication, requested: true, runId: run.runId, contextIdentity: state.context.identity }; writeOperation(file, state); },
       };
       const dispatched = await runReleaseOrchestration({ action: 'dispatch', version: options.version, releaseTask: `release-${options.version}`, publicationAuthorized: true,
@@ -441,7 +449,11 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
         return answer('publication-running', ['等待同一运行的新attempt终态。']);
       }
       const closed = await runReleaseOrchestration({ action: 'closeout', version: options.version, releaseTask: `release-${options.version}`, publishRunId: state.publication.runId,
-        repo: workspace, canonicalWorkspace: workspace, remote: 'origin', agent: options.agent || 'codex', authorizeCarrierCleanup: true, authorizeLocalSelectionCleanup: true }, dependencies.orchestrationDependencies);
+        expectedContextDigest: state.publication.contextIdentity,
+        repo: workspace, canonicalWorkspace: workspace, remote: 'origin', agent: options.agent || 'codex', authorizeCarrierCleanup: true, authorizeLocalSelectionCleanup: true,
+        authorizeRemoteDelete: state.publication.cleanupAuthorization?.policy === 'delete-owned-release-branches/v1'
+          && state.publication.cleanupAuthorization?.contextIdentity === state.publication.contextIdentity
+          && state.publication.contextIdentity === state.context?.identity }, dependencies.orchestrationDependencies);
       currentEffects.push(...closed.effects);
       state.closeout = { status: closed.status, outcomes: closed.outcomes };
       writeOperation(file, state);

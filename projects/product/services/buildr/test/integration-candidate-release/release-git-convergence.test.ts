@@ -69,7 +69,7 @@ function releaseWorktree(root: any, remote: any, baseline: any, version: any = '
   } };
 }
 
-function convergenceFixture(): any  {
+function convergenceFixture(preserveSource = true): any  {
   const root: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-release-git-convergence-'));
   const remote: any = path.join(root, 'remote.git');
   const seed: any = path.join(root, 'seed');
@@ -93,7 +93,7 @@ function convergenceFixture(): any  {
   const devTree: any = git(seed, 'rev-parse', `${devCommit}^{tree}`);
   git(seed, 'checkout', 'main');
   git(seed, 'checkout', selected, '--', '.');
-  const mainCommit: any = commit(seed, 'squash release', {});
+  let mainCommit: any = commit(seed, 'squash release', {});
   git(seed, 'tag', '-a', 'v0.1.0-rc.5', mainCommit, '-m', 'release 0.1.0-rc.5');
   git(seed, 'remote', 'add', 'origin', remote);
   git(seed, 'push', 'origin', 'dev', 'main', 'refs/tags/v0.1.0-rc.5');
@@ -108,6 +108,14 @@ function convergenceFixture(): any  {
   const releaseTree: any = frozen.releaseTree;
   assert.equal(releaseTree, selectedTree);
   git(release.work, 'push', 'origin', `${releaseCommit}:refs/heads/release-0.1.0-rc.5`);
+  if (preserveSource) {
+    git(seed, 'fetch', 'origin', 'release-0.1.0-rc.5');
+    git(seed, 'merge', '--no-ff', releaseCommit, '-m', 'preserve release source');
+    mainCommit = git(seed, 'rev-parse', 'HEAD');
+    git(seed, 'tag', '-f', '-a', 'v0.1.0-rc.5', mainCommit, '-m', 'release 0.1.0-rc.5');
+    git(seed, 'push', 'origin', 'main', '+refs/tags/v0.1.0-rc.5');
+    git(release.work, 'fetch', 'origin', 'main', '+refs/tags/v0.1.0-rc.5:refs/tags/v0.1.0-rc.5');
+  }
   const context: any = createReleaseContext({
     selection: {
       identity: frozen.selectionIdentity,
@@ -507,4 +515,62 @@ test('remote release branch cleanup展示精确公开事实并要求独立授权
   assert.equal(deleted.status, 'passed');
   assert.equal(deleted.action, 'deleted');
   assert.equal(git(data.work, 'ls-remote', 'origin', 'refs/heads/release-0.1.0-rc.5'), '');
+});
+
+
+test('authorized closeout deletes the formal branch and resumes after Task completion failure', async t => {
+  const data = convergenceFixture();
+  t.after(() => fs.rmSync(data.root, { recursive: true, force: true }));
+  const version = '0.1.0-rc.5';
+  const remoteTagBefore = git(data.controller, 'ls-remote', 'origin', `refs/tags/v${version}`);
+  let task: any = { taskId: `release-${version}`, status: 'active', result: null };
+  let attempts = 0;
+  const context = createReleaseContext({ selection: data.publicationEvidence.context.selection,
+    release: data.publicationEvidence.context.release, convergence: data.publicationEvidence.context.convergence,
+    candidate: { status: 'passed', runId: 42, runAttempt: 1, aggregateIdentity: digest('4') } });
+  const evidence = createReleaseTransactionEvidence({ context, publish: data.publicationEvidence.publish, outcome: 'passed',
+    publicFacts: { version, tagCommit: data.mainCommit, npmDistTag: 'next', registryPublished: true,
+      registryIntegrity: data.publicationEvidence.release.registryIntegrity, githubRelease: data.publicationEvidence.release.githubRelease, registrySmoke: 'passed' } });
+  const dependencies = {
+    inspectHostedReleaseTransaction: async () => ({ status: 'passed', evidence }),
+    inspectTask: () => ({ record: task, recordDigest: digest('8') }),
+    resolveRetainedController: () => ({ workspaceRoot: data.controller }),
+    invokeRetainedController: (_controller: any, args: string[]) => {
+      if (args[0] === 'task') {
+        if (++attempts === 1) return { status: 'blocked', effects: [], nextActions: ['retry record'] };
+        task = { ...task, status: 'completed', result: { summary: 'closed' } };
+        return { status: 'completed', effects: [] };
+      }
+      return { status: args[0] === 'worktree' ? 'cleaned' : 'ready', effects: [] };
+    },
+  };
+  const options = { action: 'closeout', version, releaseTask: task.taskId, publishRunId: 42,
+    repo: data.controller, canonicalWorkspace: data.controller,
+    authorizeCarrierCleanup: true, authorizeLocalSelectionCleanup: true, authorizeRemoteDelete: true };
+  const first = await runReleaseOrchestration(options, dependencies);
+  assert.equal(first.status, 'blocked', JSON.stringify(first));
+  assert.equal(first.outcomes.publication, 'passed');
+  assert.equal(git(data.controller, 'ls-remote', 'origin', `refs/heads/release-${version}`), '');
+  const resumed = await runReleaseOrchestration(options, dependencies);
+  assert.equal(resumed.status, 'passed', JSON.stringify(resumed));
+  assert.equal(resumed.lifecycle.facts.closeout.formalReleaseRef.disposition, 'cleaned-and-verified');
+  assert.equal(git(data.controller, 'ls-remote', 'origin', `refs/tags/v${version}`), remoteTagBefore);
+  const repeated = await runReleaseOrchestration(options, dependencies);
+  assert.equal(repeated.status, 'passed', JSON.stringify(repeated));
+  assert.equal(attempts, 2);
+  assert.deepEqual(repeated.steps.find((item: any) => item.operation === 'closeout').effects, []);
+});
+
+test('formal branch deletion requires live Tag and retained source history, not just matching trees', t => {
+  for (const failure of ['missing-tag', 'source-not-retained', 'branch-drift']) {
+    const data = convergenceFixture(failure !== 'source-not-retained');
+    t.after(() => fs.rmSync(data.root, { recursive: true, force: true }));
+    if (failure === 'missing-tag') git(data.seed, 'push', 'origin', ':refs/tags/v0.1.0-rc.5');
+    if (failure === 'branch-drift') git(data.work, 'push', '--force', 'origin', `${data.devCommit}:refs/heads/release-0.1.0-rc.5`);
+    const before = git(data.work, 'ls-remote', 'origin', 'refs/heads/release-0.1.0-rc.5');
+    const result = cleanupRemoteReleaseBranch({ repo: data.work, publicationEvidence: data.publicationEvidence, authorizeRemoteDelete: true });
+    assert.equal(result.status, 'blocked', `${failure}: ${JSON.stringify(result)}`);
+    assert.deepEqual(result.effects, []);
+    assert.equal(git(data.work, 'ls-remote', 'origin', 'refs/heads/release-0.1.0-rc.5'), before);
+  }
 });

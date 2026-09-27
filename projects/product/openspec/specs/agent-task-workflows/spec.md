@@ -709,9 +709,9 @@ Buildr Release workflow MUST让唯一`release-<version>` Task表达维护者要�
 - **AND** Task状态、Candidate通过或历史授权 MUST NOT替代维护者本次明确授权
 
 #### Scenario: publication和必需closeout完成
-- **WHEN** protected transaction、正式readback、matching dev provenance reconciliation与全部必需local/intermediate closeout成立，且正式远端release ref已按默认保留策略核验
+- **WHEN** protected transaction、正式readback、matching dev provenance reconciliation与全部必需local/intermediate closeout成立，且正式远端release ref已按本轮授权完成保留或安全清理并核验
 - **THEN** Agent MAY以no-change完成唯一`release-<version>`协调Task并报告完整发布与closeout事实
-- **AND** 可选正式远端release ref删除未授权 MUST NOT要求第二协调Task
+- **AND** 新发布授权 MUST明确包含本轮正式发布分支及临时分支清理；旧授权缺少该政策时 MUST保留原行为，不要求第二协调Task
 
 #### Scenario: 历史release Task被提前完成
 - **WHEN** 旧版本在本Requirement生效前已有错误terminal协调Task
@@ -723,7 +723,7 @@ Buildr Release workflow MUST让唯一`release-<version>` Task表达维护者要�
 
 #### Scenario: 等待授权后继续发布
 - **WHEN** lifecycle为`awaiting-publication-authorization`且维护者明确授权matching context
-- **THEN** Skill MUST以同一Task、generation与context dispatch protected transaction并继续跟踪后续阶段
+- **THEN** Skill MUST展示本轮分支清理范围，并以同一Task、generation与context dispatch protected transaction，绑定已获授权的清理政策并继续跟踪后续阶段
 - **AND** MUST NOT创建finalize Task、重新pack或沿用其他context授权
 
 #### Scenario: main→dev或closeout受阻

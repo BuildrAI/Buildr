@@ -178,3 +178,54 @@ test('prepare creates one isolated release, validates before main, and reuses th
   assert.equal(record.candidate.runId, 700);
   assert.equal(record.sources.length, 0);
 });
+
+
+test('publish binds cleanup to its context and resume never expands historical authorization', async t => {
+  const workspace = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-release-cleanup-authorization-')));
+  t.after(() => fs.rmSync(workspace, { recursive: true, force: true }));
+  git(workspace, ['init', '-b', 'dev']);
+  const version = '1.0.0';
+  const digest = (value: string) => `sha256-${value.repeat(64)}`;
+  const context = { schemaVersion: 'buildr.release-context/v2', identity: digest('1'),
+    release: { version, sourceCommit: 'a'.repeat(40) }, selection: { status: 'frozen', generation: 2, identity: digest('2') },
+    candidate: { status: 'passed', runId: 42, runAttempt: 1, aggregateIdentity: digest('3') }, convergence: { mainCommit: 'b'.repeat(40) } };
+  const file = path.join(workspace, '.git/buildr/release-operations', `${version}.json`);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify({ schemaVersion: 'buildr.release-operation-input/v1', version, workspace, sources: [], context, transaction: {}, publication: null }));
+  const observed: boolean[] = [];
+  const evidence = { status: 'passed', identity: digest('4'), context, publish: { runId: 84, runAttempt: 1 }, observedAt: '2026-09-27T00:00:00.000Z' };
+  const orchestrationDependencies = {
+    runHostedReleaseTransaction: async (input: any, dependencies: any) => {
+      if (input.action === 'readiness') return { status: 'ready', context, effects: [] };
+      dependencies.onDispatchIntent({ releaseId: 'owned', contextIdentity: context.identity });
+      dependencies.onDispatchObserved({ runId: 84 });
+      return { status: 'running', context, github: { runId: 84 }, effects: [], nextActions: [] };
+    },
+    inspectHostedReleaseTransaction: async () => ({ status: 'passed', evidence }),
+    reconcilePublishedReleaseWithDev: () => ({ status: 'passed', identity: digest('5'), recoveryIdentity: digest('6'), effects: [] }),
+    closeoutReleaseGitResources: (input: any) => {
+      observed.push(input.authorizeRemoteDelete);
+      return { status: 'passed', identity: digest('7'), formalReleaseRef: { disposition: input.authorizeRemoteDelete ? 'cleaned-and-verified' : 'retained-and-verified' }, effects: [] };
+    },
+    inspectTask: () => ({ record: { status: 'completed' }, recordDigest: digest('8') }),
+    resolveRetainedController: () => ({ workspaceRoot: workspace }),
+    invokeRetainedController: (_controller: any, args: string[]) => ({ status: args[0] === 'worktree' ? 'cleaned' : 'ready', effects: [] }),
+  };
+  const dependencies = { orchestrationDependencies, execute: (command: string, args: string[]) => {
+    if (command === 'git' && args[0] === 'fetch') return { status: 0, stdout: '' };
+    assert.equal(command, 'gh'); assert.equal(args[0], 'api');
+    return { status: 0, stdout: JSON.stringify({ id: 84, status: 'completed', conclusion: 'success' }) };
+  } };
+  const published = await runReleaseOperation({ action: 'publish', version, workspace, authorized: true }, dependencies);
+  assert.equal(published.status, 'running', JSON.stringify(published));
+  let state = JSON.parse(fs.readFileSync(file, 'utf8'));
+  assert.deepEqual(state.publication.cleanupAuthorization, { policy: 'delete-owned-release-branches/v1', contextIdentity: context.identity });
+  for (const mode of ['current', 'historical', 'mismatched']) {
+    if (mode === 'historical') delete state.publication.cleanupAuthorization;
+    if (mode === 'mismatched') state.publication.cleanupAuthorization = { policy: 'delete-owned-release-branches/v1', contextIdentity: digest('9') };
+    fs.writeFileSync(file, JSON.stringify(state));
+    const resumed = await runReleaseOperation({ action: 'resume', version, workspace }, dependencies);
+    assert.equal(resumed.status, 'passed', `${mode}: ${JSON.stringify(resumed)}`);
+  }
+  assert.deepEqual(observed, [true, false, false]);
+});
