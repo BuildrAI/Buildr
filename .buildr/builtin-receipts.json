@@ -217,11 +217,11 @@
       "type": "skill",
       "id": "task-finish",
       "target": "skills/buildr/task-finish",
-      "integrity": "sha256-8d70178ec9eaeca33afe4f9badca798dbc20d369bba66fee1cd93e2d5081df71",
+      "integrity": "sha256-87e76352c93b913b681e7a20a3faedbb2e2061ec15a40b0f8e1b6635fc92d927",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-78597133685342c268c3b73ab360bb85394858cdb41b0f9530ee471a1b00e60b"
+          "integrity": "sha256-4149b839c8305a24040872a2b0eeaaf8be2fe3af1238ae7343100b60766db866"
         }
       ]
     },
@@ -229,11 +229,11 @@
       "type": "skill",
       "id": "task-manager",
       "target": "skills/buildr/task-manager",
-      "integrity": "sha256-2d9b6943a36ad3ae44bb1e2977ea1de7589331f0596833b140a2b15f23ae6693",
+      "integrity": "sha256-16c7b26cff985b794b4c9bcc3ddee8c7d4f67cc9152bba9b284e513f3a917ac2",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-260b3a4341f413edd31c9b18a44c5155494cd97cf9dded4e023b7c1839e334e3"
+          "integrity": "sha256-8886aaa39fd240448b256bfd3889af2164273f0f3dcde698896c7ba9a62637d6"
         },
         {
           "path": "agents/openai.yaml",
@@ -277,11 +277,11 @@
       "type": "skill",
       "id": "task-triage",
       "target": "skills/buildr/task-triage",
-      "integrity": "sha256-f527a14b3da8019375e62bfdf6a032fad2a3e79ccb1f2de29fff4b0dc9197dfc",
+      "integrity": "sha256-a7a9a437267d463b232435022550e242d2dcd58133afe0fc53a2a5ba51ed74f7",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-cc096993a8c85dd3f2fba141f1aba4612597929383d0f13dd68e9ec52021c6fe"
+          "integrity": "sha256-38d2fee04f875bcd5ddf6e22608ff6e72cea7f1894d4d0c075c43b7962f1a768"
         },
         {
           "path": "references/structured-handoff.md",
@@ -329,11 +329,11 @@
       "type": "skill",
       "id": "task-worktree",
       "target": "skills/buildr/task-worktree",
-      "integrity": "sha256-7f4172c3510a82e83c84eea60f36bf0f7108c32f6486b75333615e3daff0453d",
+      "integrity": "sha256-8e138154bb5d24e49e75c46b1ab2311e9e06b61ca441f75c11f868702dda6249",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-8a7eddf2d038146fbccca69e276bd3af5824cfb99ae1a029f56a5f1a48d967bc"
+          "integrity": "sha256-e831a7a33867465a85ce87c2dbe04a62a622f077da05b96d5d7c6dc7c4d94b90"
         }
       ]
     },

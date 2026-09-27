@@ -17,9 +17,13 @@ buildr worktree cleanup <task-id> --target <canonical-workspace> --expected-sour
 
 root 固定为 `<workspace-root>/.worktrees/<task-id>`；独立 Project/Service repository 放在其 canonical nested source path。不得静默回退到 `/tmp`。
 
+新选择的任务标识（Task ID）默认使用简短、稳定的语义名称，不主动添加日期；已有任务标识（Task ID）及用户指定的合法名称继续沿用，不截去日期或自动重命名。同名但不同的任务先核对归属，再用简短语义后缀区分，不复用他人位置。OpenSpec 归档日期只属于归档目录，不改变工作树（Worktree）或分支名称，也不替代交付核验和清理条件。
+
 ## 结果与边界
 
 结果只包含 repository selector、source/checkout path、branch、start point、HEAD、clean/registered/remote、精确Git effects与diagnostic；长期只保留 Git provider evidence。evidence位于Git common-dir的`buildr/task-worktrees/<task-id>.json`，不是Task状态或交付证明。
+
+创建、检查与清理按当前有效能力绑定（Capability Binding）交给已选提供者（Provider），并核对既有创建归属、真实登记及证据。绑定变化不自动转移历史资源归属；新提供者（Provider）不能识别既有证据或满足本契约（Contract）时，保留现场并报告差异，不另建同任务副本、迁移、补造登记或混用清理入口。
 
 创建前完整预检全部repository，部分创建失败保留已完成效果并允许相同plan重试。清理前Agent先核验完整交付，再成对提供全部受管repository的source与delivered完整提交；provider复核source版本、dirty、registration和delivered提交仍由非任务retained ref持有。
 
