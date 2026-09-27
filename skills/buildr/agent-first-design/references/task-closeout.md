@@ -10,7 +10,7 @@
 
 没有新增接口、应用、交付数据库或通用执行引擎。当时旧专用执行器仍可显式使用；后续 `decouple-task-closeout` 已退役写入口并调整外围连接。本案例仅保留首次实践口径，当前行为以统一实现说明为准。
 
-完整的参与者、命令、源码和限制统一见 Buildr 产品库的 `projects/product/knowledge/docs/flows/task-closeout.md`，不要把这里当成第二份系统说明。
+当前职责、交付与清理边界统一见 Buildr 产品库的[任务与协作说明](https://github.com/BuildrAI/Buildr/blob/main/projects/product/knowledge/docs/architecture/task-system.md)，不要把这里当成第二份系统说明。
 
 ## 实际发生的动作与结果
 
