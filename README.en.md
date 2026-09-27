@@ -53,7 +53,7 @@ Results are delivered to people and become part of the workspace's and project's
 
 **Vision:** Help individuals expand their capabilities with agents and help organizations turn accumulated experience into lasting, growing organizational capability.
 
-The near-term focus is on starting work, finding useful materials, delivering results, and continuing after interruptions. Later directions include connecting more work systems and improving reuse across projects, guided by real needs. See [future directions](projects/product/knowledge/docs/directions.md); these are possibilities, not claims of available features.
+The near-term focus is on starting work, finding useful materials, delivering results, and continuing after interruptions. Later directions include connecting more work systems and improving reuse across projects, guided by real needs. See [future directions](projects/product/knowledge/docs/overview.md#后续方向); these are possibilities, not claims of available features.
 
 Buildr currently focuses on local work. File-based materials can be shared through Git; local work records do not automatically synchronize across machines. See [About Buildr](projects/product/knowledge/docs/overview.md) for current capabilities and boundaries.
 
@@ -105,7 +105,7 @@ This workspace already exists; do not initialize it again. Development uses the 
 | Your goal | Start here |
 | --- | --- |
 | Get started and work day to day | [Documentation directory](docs/README.md) · [User guide](projects/product/knowledge/docs/guides/getting-started.md) |
-| Understand the product | [About Buildr](projects/product/knowledge/docs/overview.md) · [Future directions](projects/product/knowledge/docs/directions.md) |
+| Understand the product | [About Buildr](projects/product/knowledge/docs/overview.md) · [Future directions](projects/product/knowledge/docs/overview.md#后续方向) |
 | Install and maintain with an agent | [Buildr Skill](projects/product/services/buildr/resources/runtime/skills/buildr/SKILL.md) · [Installation and commands](projects/product/services/buildr/docs/cli-reference.md) · [Adapters](projects/product/services/buildr/docs/agent-runtime-adapters.md) |
 | Contribute | [Product development](projects/product/README.md) · [Current knowledge](projects/product/knowledge/README.md) · [Contributing](CONTRIBUTING.md) |
 

@@ -66,7 +66,9 @@
 .knowledge-topic-link:focus-visible,
 .knowledge-topic-toggle:focus-visible,
 .knowledge-topic-all:focus-visible { outline: 2px solid #397d6e; outline-offset: 1px; }
-.knowledge-topic-all { display: block; width: 100%; margin-bottom: 12px; border-bottom: 1px solid var(--soft-line); border-radius: 0; padding: 10px; }
+.knowledge-topic-all { display: block; width: 100%; padding: 9px 10px; }
+.knowledge-reading-modes { margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--soft-line); }
+.knowledge-topic-mobile .knowledge-reading-modes { display: flex; margin: 0; padding: 3px; }
 .knowledge-topic-empty { color: #76867d; font-size: 13px; }
 .knowledge-topic-mobile { display: none; margin-bottom: 18px; border: 1px solid var(--soft-line); border-radius: 9px; background: var(--soft-surface); }
 .knowledge-topic-mobile > details > summary { cursor: pointer; padding: 12px 14px; font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }

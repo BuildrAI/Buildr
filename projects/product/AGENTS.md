@@ -29,7 +29,7 @@ Agent 在 `product` Project 中的最小运行规则。
 
 ## 产品边界
 
-- 随包 [内联核心规则](services/buildr/resources/workspace/AGENTS.md) 是 Buildr 产品设计与用户 Workspace 工作方式共同遵守的核心产品哲学和通用硬边界；产品能力、Rule、Skill、workflow 和 gate 不得与其冲突。`knowledge/docs/overview.md` 在该边界内解释产品用途；未来方向位于 `knowledge/docs/directions.md`，OpenSpec 继续作为具体可观察行为的规范 authority。
+- 随包 [内联核心规则](services/buildr/resources/workspace/AGENTS.md) 是 Buildr 产品设计与用户 Workspace 工作方式共同遵守的核心产品哲学和通用硬边界；产品能力、Rule、Skill、workflow 和 gate 不得与其冲突。`knowledge/docs/overview.md` 在该边界内解释产品用途；未来方向位于同页的“后续方向”章节，OpenSpec 继续作为具体可观察行为的规范 authority。
 - 新增产品能力必须说明长期治理、跨智能体（Agent）复用、确定性约束或可验证诊断价值；理解目标、推理和专业执行继续由智能体（Agent）负责。人应能低门槛参与，无需掌握内部模型或命令。
 - 新增或收紧硬门禁时，必须说明它保护的 authority 或结果不变量，以及放行会产生的具体伤害。缺失的若只是辅助 provenance、推荐流程、工具偏好或自动化信心，而当前事实仍可被检查、验证并诚实报告，则应提供诊断和 Agent 指引，不得阻断无关工作；Buildr 约束结果和副作用边界，不规定 Agent 或协作者必须采用唯一工作方式。
 - 新增或调整产品能力时，必须同时考虑 Buildr Skill 如何让 Agent 发现、理解、选择并正确使用该能力；缺少相应的 Agent 使用指引、决策边界或完成标准时，功能设计不完整。

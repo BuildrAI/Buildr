@@ -16,6 +16,7 @@ import {
   knowledgeCatalogPage,
   type KnowledgeCatalogRequest,
 } from "../domain/knowledge-catalog.ts";
+import { discoverKnowledgeDocuments, type DocumentLocation } from "../infrastructure/knowledge-documents.ts";
 export type KnowledgeDependencies = {
   assetCatalog(root: string): AssetCatalog;
   skillFile(root: string, id: string, path: string): { content: string };
@@ -290,5 +291,53 @@ export function createKnowledgeQuery(deps: KnowledgeDependencies) {
       diagnostics: [],
     };
   }
-  return { read, catalog, navigation };
+  function documentCatalog(root: string, ref: ScopeRef) {
+    const scope = resolve(root, ref);
+    const locations: DocumentLocation[] = [{ id: "scope", title: scope.title, root: scope.directory }];
+    const registered = new Map<string, string>();
+    const indexDiagnostics: string[] = [];
+    let missingLocation = false;
+    try {
+      for (const artifact of load(root, ref).index?.artifacts ?? []) {
+        if (artifact.kind !== "diagram") registered.set(path.join(fs.realpathSync(scope.directory), artifact.path), artifact.id);
+      }
+    } catch { indexDiagnostics.push("主题索引暂不可读取，文档目录仍按实际文件展示。"); }
+    if (scope.kind === "service") {
+      locations.push({ id: "code", title: `${scope.title} · 代码库文档`, root: scope.codeRoot });
+    } else {
+      for (const id of scope.serviceIds) {
+        try {
+          const service = resolve(root, { kind: "service", id });
+          locations.push({ id: `service:${id}:assets`, title: `${service.title} · 服务资料`, root: service.directory },
+            { id: `service:${id}:code`, title: `${service.title} · 代码库文档`, root: service.codeRoot });
+        } catch { missingLocation = true; indexDiagnostics.push("一项关联服务的文档位置暂不可读取。"); }
+      }
+    }
+    locations.push({ id: "workspace", title: "工作空间公共说明", root, publicOnly: true });
+    const result = discoverKnowledgeDocuments(locations, registered);
+    const workspaceRoot = fs.realpathSync(root);
+    for (const document of result.documents) {
+      const file = result.files.get(document.id)!;
+      const relative = path.relative(workspaceRoot, path.join(file.root, file.path));
+      if (relative && relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative))
+        document.workspacePath = relative.split(path.sep).join("/");
+    }
+    return { scope, ...result, truncated: result.truncated || missingLocation, diagnostics: [...indexDiagnostics, ...result.diagnostics] };
+  }
+  function documents(root: string, ref: ScopeRef) {
+    const { files: _files, ...result } = documentCatalog(root, ref);
+    return result;
+  }
+  function document(root: string, ref: ScopeRef, id: string) {
+    const catalog = documentCatalog(root, ref);
+    const selected = catalog.documents.find((item) => item.id === id);
+    const file = catalog.files.get(id);
+    if (!selected || !file) throw knowledgeError("knowledge_document_missing", "文档不存在或不在可阅读目录中，请刷新目录。", 404);
+    // Re-check the real path after discovery so a replaced symlink cannot be read.
+    if (fs.realpathSync(path.join(file.root, file.path)) !== path.join(file.root, file.path))
+      throw knowledgeError("knowledge_path_forbidden", "不能通过符号链接读取文档。");
+    const { content, digest: contentDigest } = readKnowledgeFile(file.root, file.path);
+    return { document: selected, content, digest: contentDigest };
+  }
+  return { read, catalog, navigation, documents, document };
 }

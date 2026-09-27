@@ -3,6 +3,7 @@
 ## Purpose
 
 定义 Buildr 自身开发如何使用 OpenSpec 管理计划型产品工作、长期文档和可实施变更的分工，以及 OpenSpec 自举对现有 runtime 行为的边界。
+
 ## Requirements
 
 ### Requirement: Buildr 计划型产品工作使用 OpenSpec
@@ -59,7 +60,7 @@ Buildr MUST 将产品入口、产品理解、当前事实、行为契约和历�
 - **WHEN** Buildr 同时记录产品模型和技术系统事实
 - **THEN** 产品架构 MUST 维护用户、角色、业务能力、领域模块、产品边界和信息架构
 - **AND** 技术架构 MUST 维护系统、Service、模块、数据所有权、接口依赖、runtime、部署和安全边界
-- **AND** `knowledge/docs/architecture/index.md` MUST 在两类真实文档存在时提供统一摘要与导航
+- **AND** `knowledge/README.md` 或职责等价的统一知识入口 MUST 在两类真实内容存在时提供摘要与导航，不要求为此独立维护只含跳转的架构目录文件
 
 #### Scenario: Change 只影响部分当前认知
 - **WHEN** current-knowledge assessment 只识别到一个或部分真实影响目标

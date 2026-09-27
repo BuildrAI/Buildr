@@ -23,6 +23,19 @@
 
 页面只能展示已经保存并关联的材料，不会自动把对话或 Git 提交整理成需求和方案。希望人在 Buildr 中接续工作时，智能体（Agent）需要及时保存目标和重要进展，并链接真实成果。小任务的方案可以写在目标说明里；采用 OpenSpec 时，任务（Task）关联对应变更，直接读取其中的提案、设计和实施清单，不另复制正文。
 
+## OpenSpec 变更怎样推进
+
+改变产品承诺时，智能体（Agent）结合用户目标、当前规范、实现和活跃变更判断范围。任务记录（Task Record）只关联变更；提案、设计、规范增量和实施清单由 OpenSpec 保存，不再复制一份规划快照。
+
+1. 首次持久文件修改前，按任务分流创建或复用当前任务的工作树（Worktree）；只有用户明确要求时才在主开发分支修改，纯规划材料同样适用。
+2. `openspec-propose` 创建变更并维护简要说明（Brief）、真实知识影响任务及已采用的 `.buildr/knowledge-impact.yml`。直接读取这些成果判断完整性及是否需要方案审查（Planning Review），不要求统一任务环境。
+3. 实施前运行 `openspec validate <change> --strict` 和 `buildr openspec convergence preflight`。后者使用锁定的 OpenSpec 1.13.0 检查当前变更与相关规范冲突，不复制全项目做隔离验证，也不生成全局工作许可。
+4. `openspec-apply-change` 在已确认的实际工作根完成变更所属清单，直接调用项目工具取得开发反馈；当前知识维护按授权执行 `assess/reconcile`，校准受影响的代码地图（Code Map）、技术图和解释文档。
+5. 需要归档且全部清单闭合后，调用 `buildr openspec converge`，由锁定上游完成标准规范写入及归档。只同步规范时使用上游同步技能（Skill），保留变更，不调用归档命令。中断或恢复不确定时，用只读 `convergence inspect` 核对现场。
+6. 归档成功后，重新观察代码、归档变更、当前规范、Git、审查（Review）、验证（Verification）及实际资源，按目标继续交付。归档本身不附带新的知识写入授权。
+
+当前知识协作使用 `buildr.current-knowledge-maintenance/v3`。辅助记录缺失或陈旧时直接核对事实；非关键缺口和未授权建设仅影响相关动作，不引入额外研发聚合、候选代次或统一推进决定。只有内容或运行条件变化时才更新受影响验证，解释文档修改不要求重跑无关代码测试。实际方法见[OpenSpec 提案技能（Skill）](../../../services/buildr/resources/workspace/skills/openspec/openspec-propose/SKILL.md)和[开发变更规范](../../../openspec/specs/buildr-development-openspec/spec.md)。
+
 ## 人怎样看成果、作决定
 
 Buildr Web 的“等我回应”显示已经明确登记的决定、验收或补充信息请求。人可以在网页或对话中答复；智能体（Agent）继续前重读该事项和成果，核对答复是否仍适用。保存答复不会自动执行下一步、完成任务（Task）或发布产品。

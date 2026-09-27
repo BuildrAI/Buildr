@@ -15,6 +15,8 @@ import {
 } from "../../src/modules/knowledge/infrastructure/knowledge-files.ts";
 import {
   validateKnowledgeCatalogResponse,
+  validateKnowledgeDocumentResponse,
+  validateKnowledgeDocumentsResponse,
   validateKnowledgeNavigationResponse,
   validateKnowledgeResponse,
 } from "../../src/modules/knowledge/interfaces/http/knowledge-http-contracts.ts";
@@ -805,6 +807,22 @@ test("生产 HTTP 宿主允许知识地址刷新，隔离图示不放宽页面�
   const currentBody = await latest.json();
   assert.equal(currentBody.artifacts[0].content, "# 最新本地正文\n");
   assert.equal(currentBody.artifacts[0].status, "readable");
+  const documentsUrl = `${url}/api/v1/workspaces/${id}/knowledge/project/demo/documents`;
+  const documentsResponse = await fetch(documentsUrl);
+  assert.equal(documentsResponse.status, 200, await documentsResponse.clone().text());
+  const documentsBody = await documentsResponse.json();
+  validateKnowledgeDocumentsResponse(documentsBody);
+  const discovered = documentsBody.documents.find((item: { path: string }) => item.path === "knowledge/docs/order.md");
+  assert.ok(discovered);
+  const documentResponse = await fetch(`${documentsUrl}/${discovered.id}`);
+  assert.equal(documentResponse.status, 200, await documentResponse.clone().text());
+  const discoveredBody = await documentResponse.json();
+  validateKnowledgeDocumentResponse(discoveredBody);
+  assert.equal(discoveredBody.content, "# 最新本地正文\n");
+  assert.equal(discoveredBody.digest, currentBody.artifacts[0].digest);
+  assert.equal((await fetch(`${documentsUrl}?path=/etc/passwd`)).status, 400);
+  assert.equal((await fetch(`${documentsUrl}/${discovered.id}?path=/etc/passwd`)).status, 400);
+  assert.equal((await fetch(`${documentsUrl}/${"0".repeat(64)}`)).status, 404);
   const writeHeaders = { origin: url, "x-buildr-session": sessionToken, "content-type": "application/json" };
   for (const [method, action] of [["GET", "changes"], ["POST", "confirm"], ["PUT", "content"]]) {
     const unsupported = await fetch(`${documentUrl}/${action}`, {
@@ -851,4 +869,168 @@ test("不同类别恰好同名身份仍需关联授权",(t)=>{
  put('projects/demo/knowledge/index.yml',stringify(index));
  const result=app.read(root,{kind:'project',id:'demo'},'sources','code');
  assert.equal(result.observations[0].status,'unreadable');assert.equal(result.observations[0].content,null);assert.match(result.observations[0].diagnostic||'',/不属于当前项目关联/);
+});
+
+test("文档目录无需主题索引，刷新发现增删与正文标题变化且不写回索引", (t) => {
+  const { root, put, app } = setup(t);
+  const scope = { kind: "project" as const, id: "demo" };
+  const indexPath = path.join(root, "projects/demo/knowledge/index.yml");
+  fs.unlinkSync(indexPath);
+  const first = app.documents(root, scope);
+  validateKnowledgeDocumentsResponse(first);
+  assert.equal(first.totalCount, 1);
+  assert.equal(first.truncated, false);
+  assert.deepEqual(first.diagnostics, []);
+  assert.equal(first.documents[0].title, "订单");
+  assert.equal(first.documents[0].artifactId, null);
+  assert.equal(Object.hasOwn(first, "files"), false, "目录响应不暴露内部文件寻址表");
+  assert.equal(fs.existsSync(indexPath), false);
+
+  put("projects/demo/README.md", "# 项目说明\n");
+  const added = app.documents(root, scope);
+  assert.equal(added.totalCount, 2);
+  assert.notEqual(added.revision, first.revision);
+  put("projects/demo/knowledge/docs/order.md", "# 当前订单说明\n最新正文\n");
+  const updated = app.documents(root, scope);
+  const order = updated.documents.find((item) => item.path === "knowledge/docs/order.md")!;
+  assert.equal(order.id, first.documents[0].id, "同一文件保持目录身份");
+  assert.equal(order.title, "当前订单说明");
+  assert.notEqual(updated.revision, added.revision);
+  const read = app.document(root, scope, order.id);
+  validateKnowledgeDocumentResponse(read);
+  assert.equal(read.content, "# 当前订单说明\n最新正文\n");
+  assert.equal(read.digest, digest(read.content));
+  fs.unlinkSync(path.join(root, "projects/demo/README.md"));
+  assert.equal(app.documents(root, scope).totalCount, 1);
+  assert.equal(fs.existsSync(indexPath), false);
+
+  put("projects/demo/knowledge/index.yml", "invalid: [\n");
+  const malformed = app.documents(root, scope);
+  assert.equal(malformed.totalCount, 1);
+  assert.match(malformed.diagnostics.join("\n"), /主题索引暂不可读取/);
+  assert.equal(fs.readFileSync(indexPath, "utf8"), "invalid: [\n");
+});
+
+test("文档目录连接项目、关联服务与公共说明，重叠真实范围去重且保留已有成果绑定", (t) => {
+  const { root, put, app, catalog } = setup(t);
+  const scope = { kind: "project" as const, id: "demo" };
+  catalog.repositories[0].source.path = "projects/demo";
+  put("projects/demo/src/README.md", "# 服务源码说明\n");
+  put("services/api/README.md", "# 服务资产说明\n");
+  put("README.md", "# 工作空间\n");
+  put("README.en.md", "# Workspace\n");
+  put("CONTRIBUTING.md", "# 贡献约定\n");
+  put("docs/guide.md", "# 公共指南\n");
+  put("private-notes.md", "# 工作空间非公共笔记\n");
+  put("projects/unrelated/README.md", "# 未关联项目\n");
+  put("services/unrelated/README.md", "# 未关联服务\n");
+  const indexBefore = fs.readFileSync(path.join(root, "projects/demo/knowledge/index.yml"), "utf8");
+  const result = app.documents(root, scope);
+  validateKnowledgeDocumentsResponse(result);
+  assert.equal(result.totalCount, 7);
+  assert.equal(new Set(result.documents.map((item) => item.id)).size, 7);
+  assert.deepEqual(result.documents.map((item) => item.title).sort(), [
+    "订单", "服务源码说明", "服务资产说明", "工作空间", "Workspace", "贡献约定", "公共指南",
+  ].sort());
+  assert.equal(result.documents.filter((item) => item.title === "服务源码说明").length, 1);
+  const existing = result.documents.find((item) => item.title === "订单")!;
+  assert.equal(existing.artifactId, "doc");
+  assert.equal(existing.location, "scope");
+  assert.equal(existing.workspacePath, "projects/demo/knowledge/docs/order.md");
+  assert.equal(result.documents.find((item) => item.title === "服务资产说明")!.location, "service:s:assets");
+  assert.equal(result.documents.find((item) => item.title === "公共指南")!.location, "workspace");
+  assert.equal(result.documents.find((item) => item.title === "公共指南")!.workspacePath, "docs/guide.md");
+  assert.equal(fs.readFileSync(path.join(root, "projects/demo/knowledge/index.yml"), "utf8"), indexBefore);
+
+  const service = app.documents(root, { kind: "service", id: "s" });
+  validateKnowledgeDocumentsResponse(service);
+  assert.equal(service.scope.id, "s");
+  assert.equal(service.documents.some((item) => item.title === "订单"), false, "服务目录不扩散到整个关联项目");
+  assert.equal(service.documents.filter((item) => item.title === "服务源码说明").length, 1);
+  assert.equal(app.document(root, { kind: "service", id: "s" }, service.documents.find((item) => item.title === "服务源码说明")!.id).content, "# 服务源码说明\n");
+});
+
+test("文档目录排除非阅读资产、敏感文件与符号链接，旧文件被替换后不能沿旧身份读取", (t) => {
+  const { root, put, app } = setup(t);
+  const scope = { kind: "project" as const, id: "demo" };
+  const excluded = [
+    ".local/note.md", "knowledge/.hidden.md", "openspec/specs/rule.md", "skills/method/SKILL.md",
+    "rules/rule.md", "resources/help.md", "components/component.md", "node_modules/pkg/README.md",
+    "build/result.md", "dist/result.md", "test/fixtures/sample.md", "test/__fixtures__/sample.md",
+    "test/test-fixtures/sample.md", "knowledge/archive/old.md", "credentials/ordinary.md",
+    "docs/passwords.md", "docs/secret-guide.md", "tokens/ordinary.md", "AGENTS.md", "SKILL.md",
+  ];
+  for (const file of excluded) put(`projects/demo/${file}`, "# 不应发现\n");
+  put("projects/demo/docs/binary.md", "# 不是普通正文\0binary");
+  put("outside/README.md", "# 外部私密正文\n");
+  const project = path.join(root, "projects/demo");
+  fs.symlinkSync(path.join(root, "outside/README.md"), path.join(project, "linked.md"));
+  fs.symlinkSync(path.join(project, "knowledge/docs/order.md"), path.join(project, "same-scope-link.md"));
+  fs.symlinkSync(path.join(root, "outside"), path.join(project, "linked-directory"), "dir");
+  const result = app.documents(root, scope);
+  assert.deepEqual(result.documents.map((item) => item.path), ["knowledge/docs/order.md"]);
+  const originalId = result.documents[0].id;
+  fs.unlinkSync(path.join(project, "knowledge/docs/order.md"));
+  fs.symlinkSync(path.join(root, "outside/README.md"), path.join(project, "knowledge/docs/order.md"));
+  assert.equal(app.documents(root, scope).totalCount, 0);
+  assert.throws(() => app.document(root, scope, originalId), { code: "knowledge_document_missing" });
+  assert.throws(() => app.document(root, scope, "../../outside/README.md"), { code: "knowledge_document_missing" });
+});
+
+test("文档正文读取继续限制大小和文本类型，目录契约拒绝夹带内容或内部路径", (t) => {
+  const { root, put, app } = setup(t);
+  const scope = { kind: "project" as const, id: "demo" };
+  put("projects/demo/docs/large.md", `# 超限正文\n${"a".repeat(1024 * 1024)}`);
+  put("projects/demo/docs/late-binary.md", `# 后段二进制\n${"a".repeat(9000)}\0`);
+  const listing = app.documents(root, scope);
+  const large = listing.documents.find((item) => item.path === "docs/large.md")!;
+  const binary = listing.documents.find((item) => item.path === "docs/late-binary.md")!;
+  assert.ok(large);
+  assert.ok(binary);
+  assert.throws(() => app.document(root, scope, large.id), { code: "knowledge_content_limit" });
+  assert.throws(() => app.document(root, scope, binary.id), { code: "knowledge_binary_forbidden" });
+  validateKnowledgeDocumentsResponse(listing);
+  assert.throws(() => validateKnowledgeDocumentsResponse({ ...listing, files: { private: "/private" } }));
+  assert.throws(() => validateKnowledgeDocumentsResponse({ ...listing,
+    documents: [{ ...listing.documents[0], content: "正文不能夹在目录中" }],
+  }));
+  for (const totalCount of [-1, 1001, 1.5, "1"])
+    assert.throws(() => validateKnowledgeDocumentsResponse({ ...listing, totalCount }));
+  const valid = listing.documents.find((item) => item.path === "knowledge/docs/order.md")!;
+  const read = app.document(root, scope, valid.id);
+  assert.throws(() => validateKnowledgeDocumentResponse({ ...read, root }));
+});
+
+test("文档数量达到发现上限时返回局部计数与明确截断，深层目录也不能假报完整", (t) => {
+  const { root, put, app } = setup(t);
+  const scope = { kind: "project" as const, id: "demo" };
+  const deepPath = Array.from({ length: 34 }, (_, i) => `level-${i}`).join("/");
+  put(`projects/demo/${deepPath}/deep.md`, "# 深层文件\n");
+  const deep = app.documents(root, scope);
+  assert.equal(deep.documents.some((item) => item.title === "深层文件"), false);
+  assert.equal(deep.truncated, true, "未扫描的深层范围必须明确标记为截断");
+  assert.match(deep.diagnostics.join("\n"), /层级/);
+  fs.rmSync(path.join(root, "projects/demo/level-0"), { recursive: true });
+  for (let index = 0; index < 1001; index++) put(`projects/demo/manuals/entry-${index}.md`, `# 条目 ${index}\n`);
+  const limited = app.documents(root, scope);
+  validateKnowledgeDocumentsResponse(limited);
+  assert.equal(limited.totalCount, 1000);
+  assert.equal(limited.documents.length, 1000);
+  assert.equal(limited.truncated, true);
+  assert.match(limited.diagnostics.join("\n"), /扫描上限/);
+});
+
+test("大量非文档条目也受扫描预算约束，不能以零篇文档假报已发现全部", (t) => {
+  const { root, app } = setup(t);
+  const scope = { kind: "project" as const, id: "demo" };
+  const project = path.join(root, "projects/demo");
+  const entries = path.join(project, "generated-input");
+  fs.mkdirSync(entries);
+  for (let index = 0; index < 20001; index++) fs.writeFileSync(path.join(entries, `${index}.txt`), "");
+  const listing = app.documents(root, scope);
+  validateKnowledgeDocumentsResponse(listing);
+  assert.equal(listing.truncated, true);
+  assert.match(listing.diagnostics.join("\n"), /扫描上限/);
+  assert.equal(listing.totalCount, listing.documents.length);
+  assert.ok(listing.totalCount < 1000, "条目预算与文档数量上限是两条独立边界");
 });

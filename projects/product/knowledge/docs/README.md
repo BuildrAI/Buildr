@@ -1,6 +1,6 @@
 # Buildr 使用与开发手册
 
-在 Buildr 项目首页打开“项目文档”，即可从项目说明进入本目录并连续阅读。理解系统请用“项目知识”；操作指南和专业参考在这里按需查阅，正文只维护一份。
+这是[项目知识](../README.md)中的使用与开发分区。按当前目标查阅指南或参考，与主题阅读使用同一份正文。
 
 ## 使用 Buildr
 
@@ -10,10 +10,14 @@
 
 | 需要 | 阅读 |
 | --- | --- |
-| 准备环境、运行和检查 | [开发指南](guides/development-and-operations.md) · [贡献指南（GitHub）](https://github.com/BuildrAI/Buildr/blob/main/CONTRIBUTING.md) |
-| 理解实现与设计取舍 | [知识目录](../README.md) · [产品架构](architecture/product.md) · [技术架构](architecture/technical.md) |
-| 维护变更或发布 | [OpenSpec 协作](flows/openspec-change-lifecycle.md) · [发布流程](flows/open-source-release.md) |
+| 准备环境与参与开发 | [贡献指南（GitHub）](https://github.com/BuildrAI/Buildr/blob/main/CONTRIBUTING.md) · [准备声明](../../preparation.yml) |
+| 定位代码与设计取舍 | [整体认识](overview.md) · [技术架构](architecture/technical.md) · [代码地图（Code Map）](../code-map/README.md) |
+| 运行与构建 | [后端工程声明](../../services/buildr/package.json) · [前端工程声明](../../services/buildr-web/package.json) · [开发工具](../../services/buildr/tools/development/) |
+| 选择必要检查 | [项目测试地图](../../verification.yml) · [产品验证框架](architecture/verification-framework.md) |
+| 维护变更或发布 | [OpenSpec 协作](architecture/task-system.md#openspec-变更怎样推进) · [发布流程](flows/open-source-release.md) |
 | 查看专项结果 | [首版准备审查](../reviews/v0.1.0-readiness.md) · [每日演进](flows/project-daily-progress.md) |
+
+开发从工作空间（Workspace）根使用 `projects/product/buildr`，按实际修改范围进入相应服务（Service）准备和运行。正式自举由专用执行器完成，边界见项目与根 `AGENTS.md`。本页不保存某台机器的运行状态、凭证或部署完成结论；仅修改说明时，不机械运行无关代码测试。
 
 ## 按需查阅
 
@@ -23,6 +27,6 @@
 | 接入智能体（Agent）工具 | [适配说明](../../services/buildr/docs/agent-runtime-adapters.md) · [新增适配](reference/agent-runtime-adapter-contribution.md) |
 | 查接口与交付资源 | [命令架构](../../services/buildr/docs/cli-architecture.md) · [公开数据格式](reference/json-contracts.md) · [资源交付](../../services/buildr/docs/resources.md) |
 | 查方法组合与绘图组件（Component） | [能力契约（Capability Contract）](../../services/buildr/docs/skill-capability-contracts.md) · [Archify 组件（Component）](../../services/buildr/docs/archify-component.md) |
-| 查术语、知识维护与方向 | [术语表](glossary.md) · [知识维护](architecture/knowledge-maintenance.md) · [后续方向](directions.md) |
+| 查术语、知识维护与方向 | [术语表](glossary.md) · [知识维护](architecture/knowledge-maintenance.md) · [后续方向](overview.md#后续方向) |
 
 正文解释当前行为，行为约定仍以 OpenSpec 为准。普通文档直接更新、合并或删除，历史通过 Git 查找；技术参考在原有服务目录维护，不为目录外观复制正文。技术图（Technical Diagram）和代码地图（Code Map）在项目知识中按主题阅读。

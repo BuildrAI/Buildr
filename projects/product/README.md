@@ -5,7 +5,7 @@
 | 你想做什么 | 从这里开始 |
 | --- | --- |
 | 安装、配置、日常工作或处理问题 | [使用指南](knowledge/docs/guides/getting-started.md) |
-| 参与开发 | [开发指南](knowledge/docs/guides/development-and-operations.md) |
+| 参与开发 | [开发指南](knowledge/docs/README.md#开发-buildr) |
 | 查命令、工具适配或其他细节 | [手册与参考目录](knowledge/docs/README.md) |
 | 查看首版准备结果 | [0.1.0 准备审查](knowledge/reviews/v0.1.0-readiness.md) |
 

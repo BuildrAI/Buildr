@@ -3,6 +3,8 @@ import {
   validateKnowledgeCatalogResponse,
   validateKnowledgeNavigationResponse,
   validateKnowledgeResponse,
+  validateKnowledgeDocumentsResponse,
+  validateKnowledgeDocumentResponse,
 } from "./knowledge-http-contracts.ts";
 import type { createKnowledgeQuery } from "../../application/knowledge-query.ts";
 import type { ScopeRef } from "../../domain/knowledge-index.ts";
@@ -25,6 +27,16 @@ export function createKnowledgeHttpContribution(
       searchParams?: URLSearchParams;
       respond: { diagramHtml(content: string): unknown };
     }) {
+      const documents = suffix.match(/^\/knowledge\/(project|service)\/([^/]+)\/documents(?:\/([a-f0-9]{64}))?$/);
+      if (request.method === "GET" && documents) {
+        const id = decodeURIComponent(documents[2]);
+        if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(id))
+          return { status: 400, body: { error: "knowledge_identity_invalid" } };
+        const ref = { kind: documents[1] as ScopeRef["kind"], id };
+        return { status: 200, body: documents[3]
+          ? validateKnowledgeDocumentResponse(app.document(root, ref, documents[3]))
+          : validateKnowledgeDocumentsResponse(app.documents(root, ref)) };
+      }
       const navigation = suffix.match(/^\/knowledge\/(project|service)\/([^/]+)\/navigation$/);
       if (request.method === "GET" && navigation) {
         const id = decodeURIComponent(navigation[2]);

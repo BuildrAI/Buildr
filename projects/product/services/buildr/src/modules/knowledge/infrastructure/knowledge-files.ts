@@ -32,7 +32,7 @@ const allowed = new Set([
   ".svelte",
   ".sh",
 ]);
-export function readKnowledgeFile(root: string, relative: string) {
+export function resolveKnowledgeFile(root: string, relative: string) {
   if (
     !relative ||
     relative.includes("\\") ||
@@ -79,6 +79,10 @@ export function readKnowledgeFile(root: string, relative: string) {
       "knowledge_path_forbidden",
       "来源真实位置属于禁止读取内容。",
     );
+  return actual;
+}
+export function readKnowledgeFile(root: string, relative: string) {
+  const actual = resolveKnowledgeFile(root, relative);
   const fd = fs.openSync(
     actual,
     fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK,

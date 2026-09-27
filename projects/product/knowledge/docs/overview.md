@@ -23,6 +23,34 @@ Buildr 组织项目资料、代码位置和可复用的工作方法。人表达�
 
 交付之后，代码和业务数据继续保存在所属位置，成果位置与必要工作记录支持下一次接续。适合长期复用、经过确认的事实和方法再纳入维护，临时资料不自动成为组织资产。组织能力由这种日常使用、校准与复用逐步形成，价值取决于积累是否帮助工作做好。
 
+## 工作范围与资料怎样组织
+
+| 对象 | 回答的问题 | 关系与边界 |
+| --- | --- | --- |
+| 工作空间（Workspace） | 我们共同工作的目录和发现入口在哪里？ | 承载登记与长期资产，不是内部所有文件都受管 |
+| 项目（Project） | 要实现什么业务目标或长期工作？ | 维护业务资料、适用方法和实现关联，可以先于代码建立 |
+| 服务（Service） | 哪一部分实现承担这项职责？ | 可被多个项目（Project）引用，并引用一个代码库实例（Repository Instance） |
+| 代码库实例（Repository Instance） | 实际使用哪份代码，来源和位置是什么？ | 可承载多个服务（Service）；登记事实与当前检出状态分别核对 |
+
+这些关系帮助从目标找到实现，不要求固定目录树，也不自动合并所有引用方的规则。任务涉及哪些范围，就核对相应资料和实际代码位置。共享关系和修改影响见[项目、服务与代码库](architecture/project-service-repositories.md)。
+
+![Buildr 的系统组成与资料关系](../archify/system/buildr-system-overview.html)
+
+图示连接工程组成、长期资料和使用入口；具体服务（Service）与运行边界见[技术架构](architecture/technical.md)。
+
+### 资料怎样成为上下文（Context）
+
+工作资产（Work Asset）是适合长期维护的事实与方法：规则（Rule）表达边界，技能（Skill）表达可复用方法，规范（Specification）表达应满足的行为，命令（Command）声明外部工具，组件（Component）组织相关资产。代码与外部系统仍保存各自的事实。
+
+| 范围 | 含义 |
+| --- | --- |
+| 工作信息空间（Work Information Space） | 可能用于工作的全部来源，包括文件、数据库、网页、用户输入与工具结果 |
+| 共享工作环境（Shared Work Environment） | 经过治理的长期资产与发现入口，为不同参与者提供共同依据 |
+| 任务上下文（Task Context） | 智能体（Agent）为当前目标从实际来源发现、核对并组织的信息 |
+| 请求上下文（Request Context） | 本次调用选入的输入，受上下文窗口（Context Window）容量限制 |
+
+Buildr 组织来源与关系，智能体（Agent）判断相关性。资料被登记不表示会全部装入一次调用，也不表示目标工具已加载。技能（Skill）源在工作空间（Workspace）的 `skills/` 中维护，按支持范围投射到用户层或工作空间（Workspace）层；项目（Project）通过适用性和能力绑定（Capability Binding）选择方法。详见[技能体系](architecture/buildr-skill-system.md)与[术语表](glossary.md)。
+
 ## 当前可以做什么
 
 - 登记工作空间（Workspace）、项目（Project）、服务（Service）和代码库实例（Repository Instance），连接业务目标与实现位置。
@@ -36,6 +64,12 @@ Buildr 组织项目资料、代码位置和可复用的工作方法。人表达�
 
 Buildr 当前以本机工作为主，没有完整企业权限、云端协作或跨机器自动同步。网页不托管智能体（Agent）对话，也不自动调度执行；完成记录不等于代码已推送或应用已更新。
 
+各入口读取同一对象及其当前来源。任务记录（Task Record）说明目标、状态与结果摘要，工作摘要（Work Context）说明进展和下一步，OpenSpec 保存变更设计，实际产物（Artifact）才是代码、文件、数据等成果。审查（Review）和验证（Verification）支持判断，不能代替真实交付；局部读取失败也不应隐藏其他可用成果。具体关系、父子任务（Task）、收尾与按需复盘见[从讨论到交付](architecture/task-system.md)。
+
+长期源资产可由 Git 管理，本机任务（Task）记录、每日演进和复盘分别保存，不将数据库文件当作跨机器同步协议。正式 npm 包同时交付命令行接口（CLI）、本机网页能力、前端构建与资源，启动器（Launcher）绑定同一安装。数据保全见[数据设计](architecture/buildr-data-design.md)，工程分发见[技术架构](architecture/technical.md)。
+
+约束只保护具体动作所需的授权、对象身份、内容保全、外部副作用与真实结果。写错对象、覆盖他人内容或造成完成误报时停止相关动作；辅助记录、推荐流程或工具偏好不构成全局工作许可。`ready|required|blocked`、待处理（Attention）与建议（Advice）都应按具体对象解释，详见[门禁分类规范](../../openspec/specs/governance-gate-taxonomy/spec.md)。
+
 文章和每日演进已有部分能力，扩展暂缓。前者整理稿件，后者按明确 Git 提交范围保存本机摘要；它们不构成核心使用的前置条件。具体操作与限制见[已知限制](../../services/buildr/docs/known-limitations.md)和[每日演进](flows/project-daily-progress.md)。
 
 工作资料与本机记录的保存范围不同。需要更新或换机器时，请智能体（Agent）按[使用与数据保护说明](guides/getting-started.md#更新与数据保护)核对并备份。
@@ -44,4 +78,27 @@ Buildr 当前以本机工作为主，没有完整企业权限、云端协作或�
 
 安装、日常工作与排查见[使用指南](guides/getting-started.md)。想理解资料与代码的关系，读[项目、服务与代码库](architecture/project-service-repositories.md)；准备开发 Buildr，读[技术架构](architecture/technical.md)。
 
-本页依据[产品定位规范](../../openspec/specs/agent-first-product-positioning/spec.md)与[核心规则](../../services/buildr/resources/workspace/AGENTS.md)。尚未实施的想法集中在[后续方向](directions.md)。
+本页依据[产品定位规范](../../openspec/specs/agent-first-product-positioning/spec.md)与[核心规则](../../services/buildr/resources/workspace/AGENTS.md)。
+
+## 后续方向
+
+以下是尚未实施的探索方向，不是版本排期或已经提供的能力。近期先观察用户能否顺利开始工作、找到成果、判断完成情况，并在中断后继续；文章、每日演进等扩展按实际需求取舍，不以功能数量作为完整性的标准。
+
+| 方向 | 希望解决的问题 | 何时值得推进 |
+| --- | --- | --- |
+| 跨项目与跨工作空间（Workspace）接续 | 按目标找到相关来源，让下一位参与者依据成果继续工作 | 单个工作空间（Workspace）无法承载真实协作，需要跨边界检索或企业访问控制时；本机多空间管理不等于企业共享与授权 |
+| 连接外部工作系统 | 关联业务、环境、设计、配置、定时任务与交付结果，减少人工搬运 | 已有具体场景与可靠接口，能区分对象身份、来源、当前版本、授权和实际结果时 |
+| 更多智能体（Agent）与交流入口 | 在用户已有入口中表达目标、查看成果，按任务选择能力 | 有实际使用需求，能够核实版本、规则（Rule）与技能（Skill）的发现、生效、更新和接续边界时 |
+| 工作资产（Work Asset）独立分发 | 让方法和规则按自己的节奏发布、更新与回退 | 其变化频率、兼容范围确实与命令行接口（CLI）不同，并需要独立版本、完整性校验、离线使用和恢复时 |
+
+外部连接可以从数据库、持续集成与交付（CI/CD）、Nacos、XXL-JOB、Figma 或墨刀等实际需求开始。专业系统继续拥有内容和结果，Buildr 组织来源、关系与使用入口；接通接口不等于工作已经连通。新入口也不预设固定岗位，不把对话会话（Session）作为唯一状态来源。
+
+### 怎样决定是否建设
+
+先确认目标能够真实完成，再比较所需时间、工具调用、词元（Token）和人工介入。优化应减少重复解释、搬运、核对和记录；局部测试加速或少写记录不能单独证明整体效率提高，新增状态、门禁与流程也需要说明收益。
+
+每次从一个能够说明用户价值的场景出发，明确成果、实际依赖、失败影响和完成标准，再按现有变更机制收敛。人负责目标、约束、授权与验收，智能体（Agent）负责理解、组合能力和专业执行。重复、稳定且边界明确的组合再沉淀为工作流（Workflow）；已有工具能够可靠承担的执行和调度，不在 Buildr 中重复建设。
+
+可替换执行者、通信入口、协议和资产分发平台都需要先证明具体用途。界面原型（UI Prototype）只有在现有独立方式不足以验证真实工程约束时，才考虑进一步建设相关能力。方向一旦实现就更新相应当前正文，不在本节保留第二套待办，具体建设以正式规范与当次确认范围为准。
+
+软件引入智能体（Agent）参与理解、判断或执行并交付产品结果时，开始向智能体软件（Agentic Software）演进，可按需采用[智能体优先设计方法](../../services/buildr/resources/workspace/skills/buildr/agent-first-design/SKILL.md)。仅用智能体（Agent）开发普通软件不自动要求这种架构，也不要求统一产物（Artifact）数据库或任意外部成果的实时同步。

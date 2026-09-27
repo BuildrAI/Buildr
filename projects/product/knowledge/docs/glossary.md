@@ -112,7 +112,7 @@
 - 定义：工作资产（Work Asset）、发现入口和运行时投射（Runtime Projection）共同形成的整体工作体验。
 - 适用范围：人和智能体（Agent）在同一工作空间（Workspace）中发现事实、约束和方法。
 - 避免混用：不是另一个智能体（Agent），也不替智能体（Agent）形成完整任务上下文（Task Context）。
-- 来源：[产品架构](architecture/product.md)。
+- 来源：[产品架构](overview.md#工作范围与资料怎样组织)。
 
 ## 智能体软件（Agentic Software）
 
@@ -273,14 +273,14 @@
 - 定义：OpenSpec 中表达一次行为变化的提案、设计、规范增量及实施清单。
 - 适用范围：实际项目（Project）或所选规范根中的进行中与已归档变更（Change）。
 - 避免混用：不是 Buildr 顶层任务（Task）；归档材料解释历史，当前承诺仍在正式规范中。
-- 来源：[OpenSpec 变更生命周期](flows/openspec-change-lifecycle.md)。
+- 来源：[OpenSpec 变更生命周期](architecture/task-system.md#openspec-变更怎样推进)。
 
 ## OpenSpec 收敛（OpenSpec Convergence）
 
 - 定义：完成变更（Change）的规范同步与归档，并核对当前输入、实际结果和必要恢复现场。
 - 适用范围：Buildr 归档入口调用锁定的上游 OpenSpec 执行规范写入与归档。
 - 避免混用：Buildr 不另做一套正常规范写入；只同步可保留变更（Change），收敛不等于任务（Task）完成或 Git 交付。
-- 来源：[OpenSpec 变更生命周期](flows/openspec-change-lifecycle.md)。
+- 来源：[OpenSpec 变更生命周期](architecture/task-system.md#openspec-变更怎样推进)。
 
 ## 界面原型（UI Prototype）
 

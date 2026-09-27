@@ -57,7 +57,7 @@ artifacts:
       - project-terms
       - task-source-2026-08-30-parent-child-task-audit-b28c38
       - overview-architecture-navigation
-      - overview-directions
+      - overview-file
       - data-identity-source
       - task-source-work-context-application-11bb91
       - task-source-task-command-application-aba2e8
@@ -862,6 +862,9 @@ artifacts:
       - architecture-guide
       - artifact-reader
       - knowledge-catalog
+      - document-discovery
+      - document-reader
+      - document-tree
       - catalog-filter
       - reading-state
       - knowledge-contracts
@@ -960,6 +963,9 @@ artifacts:
       - architecture-guide
       - artifact-reader
       - knowledge-catalog
+      - document-discovery
+      - document-reader
+      - document-tree
       - catalog-filter
       - reading-state
       - knowledge-contracts
@@ -1134,10 +1140,6 @@ sources:
     title: 已知限制
     kind: evidence
     path: services/buildr/docs/known-limitations.md
-  - id: product-reference-product-architecture
-    title: Buildr 产品架构
-    kind: evidence
-    path: knowledge/docs/architecture/product.md
   - id: product-reference-technical-architecture
     title: Buildr 怎样实现
     kind: evidence
@@ -1150,14 +1152,6 @@ sources:
     title: 技术图目录
     kind: evidence
     path: knowledge/archify/index.md
-  - id: product-reference-openspec-lifecycle
-    title: OpenSpec 变更生命周期
-    kind: evidence
-    path: knowledge/docs/flows/openspec-change-lifecycle.md
-  - id: overview-directions
-    title: 后续方向
-    kind: evidence
-    path: knowledge/docs/directions.md
   - id: overview-architecture-navigation
     title: Buildr 使用与开发手册
     kind: evidence
@@ -1293,7 +1287,7 @@ sources:
     kind: code
     path: services/buildr/src/modules/knowledge/application/knowledge-query.ts
     observedDigest: 8f266d102b95d111a35336fe7002853601b6e4249e72bc98d385fa3e54dc7a9c
-    summary: 组织目录与详情读取、解析真实登记范围，并核对正文与来源；目录仅读取有界索引，详情继续按关联读取正文和当前观察。
+    summary: 解析项目、关联服务与公共文档范围；主题目录读取索引，文档目录发现实际文件并去重；详情按已登记关联或已发现身份读取正文。
   - id: index-model
     title: 知识对象与关联校验
     kind: code
@@ -1500,6 +1494,21 @@ sources:
     path: services/buildr-web/src/features/knowledge/components/KnowledgeCatalog.tsx
     observedDigest: 938d9d4e62e0926f4e7e18a8a8f725f4950fff4053d978adeef27d87545eaba2
     summary: 三类成果的分页目录；在第 15、35、55 项附近自动续载，并提供检索、失败重试和建设入口。
+  - id: document-discovery
+    title: 实际文档发现
+    kind: code
+    path: services/buildr/src/modules/knowledge/infrastructure/knowledge-documents.ts
+    summary: 有界扫描普通文档，按真实文件去重，读取有限标题并返回数量、版本与不完整诊断；排除非阅读资产、敏感路径和符号链接。
+  - id: document-reader
+    title: 文档目录与正文阅读
+    kind: code
+    path: services/buildr-web/src/features/knowledge/components/KnowledgeDocuments.tsx
+    summary: 主页面与副屏共用目录树、搜索和普通正文，按身份延迟读取；保留范围切换、取消请求、局部失败及返回目录行为。
+  - id: document-tree
+    title: 文档分组与链接定位
+    kind: code
+    path: services/buildr-web/src/features/knowledge/knowledge-documents.ts
+    summary: 从实际文件路径建立目录树、计算搜索数量，并仅在已发现文件之间解析相对链接，支持工作空间公共说明进入项目正文。
   - id: catalog-filter
     title: 目录分类与分页合并
     kind: code
@@ -2681,14 +2690,6 @@ sources:
     title: 0.1.0 准备审查
     kind: evidence
     path: knowledge/reviews/v0.1.0-readiness.md
-  - id: architecture-directory
-    title: 架构阅读目录
-    kind: evidence
-    path: knowledge/docs/architecture/index.md
-  - id: reference-development-and-operations-document
-    title: 开发与运行入口
-    kind: evidence
-    path: knowledge/docs/guides/development-and-operations.md
 relations:
   - from: product-overview-article
     to: product-overview

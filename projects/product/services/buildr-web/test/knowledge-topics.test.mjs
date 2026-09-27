@@ -36,7 +36,7 @@ test('首次进入按显式entryObject阅读，默认documents入口一致，未
 });
 
 test('全部资料和既有定位优先，返回或搜索时不会跳回默认主题', () => {
-  for (const query of ['browse=all', 'browse=all&view=documents', 'object=task', 'artifact=diagram', 'reading=map', 'q=', 'q=协作', 'view=diagrams', 'view=maps', 'view=unknown']) {
+  for (const query of ['browse=all', 'browse=all&view=documents', 'browse=documents', 'browse=documents&document=file-id', 'document=file-id', 'object=task', 'artifact=diagram', 'reading=map', 'q=', 'q=协作', 'view=diagrams', 'view=maps', 'view=unknown']) {
     assert.equal(knowledgeEntryObject(new URLSearchParams(query), navigation), null, query);
   }
   const fromHome = new URLSearchParams();

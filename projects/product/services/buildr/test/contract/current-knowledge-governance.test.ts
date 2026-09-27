@@ -134,13 +134,13 @@ test('正式 Change 可从 active 或唯一 archived identity 解析', () => {
 
 test('Context 四层模型、知识导航和 Service 局部术语边界保持一致', () => {
   const glossary: any = read(path.join(PRODUCT_ROOT, 'knowledge/docs/glossary.md'));
-  const productArchitecture: any = read(path.join(PRODUCT_ROOT, 'knowledge/docs/architecture/product.md'));
+  const productArchitecture: any = read(path.join(PRODUCT_ROOT, 'knowledge/docs/overview.md'));
   const technical: any = read(path.join(PRODUCT_ROOT, 'knowledge/docs/architecture/technical.md'));
   for (const term of ['工作信息空间', 'Workspace', '工作资产', '共享工作环境', '上下文（Context）', '任务上下文', '上下文窗口']) {
     assert.match(glossary, new RegExp(term.replace(/[()]/g, '\\$&')));
   }
   assert.match(productArchitecture, /Task Context[\s\S]*Context Window/);
   assert.match(technical, /\]\(\.\.\/glossary\.md\)/);
-  assert.equal(fs.existsSync(path.join(PRODUCT_ROOT, 'knowledge/docs/architecture/product.md')), true);
+  assert.equal(fs.existsSync(path.join(PRODUCT_ROOT, 'knowledge/docs/overview.md')), true);
   assert.equal(fs.existsSync(path.join(PRODUCT_ROOT, 'knowledge/docs/architecture/technical.md')), true);
 });

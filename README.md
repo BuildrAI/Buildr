@@ -53,7 +53,7 @@ flowchart TB
 
 **愿景：** 让个人借助智能体（Agent）拓展能力，让企业把积累转化为能够传承、持续成长的组织能力。
 
-近期先把开始工作、查找资料、交付成果和中断后接续做顺。后续根据真实需求连接更多工作系统、完善跨项目协作与方法复用。具体想法见[后续方向](projects/product/knowledge/docs/directions.md)，其中的方向不代表已经提供的功能。
+近期先把开始工作、查找资料、交付成果和中断后接续做顺。后续根据真实需求连接更多工作系统、完善跨项目协作与方法复用。具体想法见[后续方向](projects/product/knowledge/docs/overview.md#后续方向)，其中的方向不代表已经提供的功能。
 
 Buildr 当前以本机使用为主。文件资料可以通过 Git 协作，本机工作记录不会自动跨机器同步；当前能力与边界见[了解 Buildr](projects/product/knowledge/docs/overview.md)。
 
@@ -105,7 +105,7 @@ Buildr 当前以本机使用为主。文件资料可以通过 Git 协作，本�
 | 你想了解什么 | 阅读入口 |
 | --- | --- |
 | 开始与日常使用 | [文档目录](docs/README.md) · [使用指南](projects/product/knowledge/docs/guides/getting-started.md) |
-| 深入了解产品 | [产品说明](projects/product/knowledge/docs/overview.md) · [后续方向](projects/product/knowledge/docs/directions.md) |
+| 深入了解产品 | [产品说明](projects/product/knowledge/docs/overview.md) · [后续方向](projects/product/knowledge/docs/overview.md#后续方向) |
 | 智能体（Agent）安装与维护 | [Buildr 入口技能（Skill）](projects/product/services/buildr/resources/runtime/skills/buildr/SKILL.md) · [安装与命令参考](projects/product/services/buildr/docs/cli-reference.md) · [工具适配](projects/product/services/buildr/docs/agent-runtime-adapters.md) |
 | 参与开发 | [产品开发入口](projects/product/README.md) · [当前知识](projects/product/knowledge/README.md) · [贡献指南](CONTRIBUTING.md) |
 

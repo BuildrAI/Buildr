@@ -8,15 +8,17 @@ type Props = {
   topics: KnowledgeTopic[];
   selected: string | null;
   allSelected: boolean;
+  documentsSelected?: boolean;
   loading: boolean;
   error: string;
   onSelect: (id: string) => void;
   onAll: () => void;
+  onDocuments: () => void;
   onRetry: () => void;
   children: ReactNode;
 };
 
-export function KnowledgeTopicNavigation({ topics, selected, allSelected, loading, error, onSelect, onAll, onRetry, children }: Props) {
+export function KnowledgeTopicNavigation({ topics, selected, allSelected, documentsSelected, loading, error, onSelect, onAll, onDocuments, onRetry, children }: Props) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const mobile = useRef<HTMLDetailsElement>(null);
   const ancestorKey = knowledgeTopicTrail(topics, selected).slice(0, -1).map(topic => topic.id).join("\0");
@@ -45,7 +47,10 @@ export function KnowledgeTopicNavigation({ topics, selected, allSelected, loadin
       </li>;
     })}
   </ul>;
-  const allMaterials = () => <button type="button" className="knowledge-topic-all" data-knowledge-all aria-current={allSelected ? "page" : undefined} onClick={() => choose(null)}>全部资料</button>;
+  const readingModes = () => <div className="knowledge-reading-modes">
+    <button type="button" className="knowledge-topic-all" data-knowledge-documents-entry aria-current={documentsSelected ? "page" : undefined} onClick={() => { if (mobile.current) mobile.current.open = false; onDocuments(); }}>文档目录</button>
+    <button type="button" className="knowledge-topic-all" data-knowledge-all aria-current={allSelected ? "page" : undefined} onClick={() => choose(null)}>主题资料</button>
+  </div>;
   const contents = () => <nav aria-label="知识主题目录" data-knowledge-navigation>
     {loading && !topics.length ? <Spin size="small" /> : branch(null)}
     {error && <Alert type="warning" message="主题目录暂不可读" action={<Button size="small" onClick={onRetry}>重试</Button>} />}
@@ -53,8 +58,8 @@ export function KnowledgeTopicNavigation({ topics, selected, allSelected, loadin
   </nav>;
   return <div className="knowledge-navigation-container">
     <div className="knowledge-navigation-layout">
-      <aside className="knowledge-topic-desktop">{allMaterials()}<p className="knowledge-topic-label">主题目录</p>{contents()}</aside>
-      <div className="knowledge-topic-mobile">{allMaterials()}<details ref={mobile} data-knowledge-topic-disclosure>
+      <aside className="knowledge-topic-desktop">{readingModes()}<p className="knowledge-topic-label">主题阅读</p>{contents()}</aside>
+      <div className="knowledge-topic-mobile">{readingModes()}<details ref={mobile} data-knowledge-topic-disclosure>
         <summary>主题目录{selected ? ` · ${topics.find(topic => topic.id === selected)?.title || ""}` : ""}</summary>
         {contents()}
       </details></div>

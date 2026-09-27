@@ -851,7 +851,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.ok(draggedPanes.right > initialPanes.right + 60);
     const storedRatio = await page.evaluate((id: string) => localStorage.getItem(`buildr.web.pane-ratio.${id}`), initialWorkspaceId);
     assert.ok(storedRatio);
-    await page.getByRole('button', { name: '关闭 README.md', exact: true }).click();
+    await page.getByRole('button', { name: '关闭 项目文档', exact: true }).click();
     const closedPanes = await paneSize();
     assert.equal(closedPanes.right, 0);
     assert.ok(Math.abs(closedPanes.left - closedPanes.total) <= 1);

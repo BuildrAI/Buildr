@@ -15,6 +15,7 @@ import { WorkspaceStage } from "../../../components/WorkspaceStage";
 import { RefreshButton } from "../../../components/RefreshButton";
 import { workspaceHref } from "../../../lib/labels";
 import { KnowledgeCatalog } from "../components/KnowledgeCatalog";
+import { KnowledgeDocuments } from "../components/KnowledgeDocuments";
 import { KnowledgeArtifactReader } from "../components/KnowledgeArtifactReader";
 import { KnowledgePreviewNotice } from "../components/KnowledgePreviewNotice";
 import { KnowledgeTopicNavigation } from "../components/KnowledgeTopicNavigation";
@@ -54,11 +55,14 @@ export function KnowledgePage() {
   const [params, setParams] = useSearchParams();
   const objectId = params.get("object"),
     artifactId = params.get("artifact"),
+    documentId = params.get("document"),
     legacyReading = params.get("reading"),
     parentProject = params.get("fromProject"),
     category = knowledgeCategory(params.get("view")),
     query = params.get("q") || "";
   const browseAll = params.get("browse") === "all";
+  const browseDocuments = params.get("browse") === "documents" || Boolean(documentId);
+  const [documentLoading, setDocumentLoading] = useState(false), [documentTitle, setDocumentTitle] = useState("文档目录");
   const explicitCatalog = browseAll || params.has("q") || params.has("reading") || (params.has("view") && params.get("view") !== "documents");
   const [refresh, setRefresh] = useState(0),
     [readingState, setReadingState] = useState<{
@@ -74,7 +78,8 @@ export function KnowledgePage() {
   const isReading = Boolean(objectId || artifactId);
   const navigation = useKnowledgeNavigation(workspaceId, scope, refresh);
   const navigationTopics = navigation.data?.topics || [];
-  const showCatalog = !isReading && (explicitCatalog || (!navigation.loading && !navigationTopics.length));
+  const showDocuments = browseDocuments && !isReading;
+  const showCatalog = !isReading && !showDocuments && (explicitCatalog || (!navigation.loading && !navigationTopics.length));
   const catalog = useKnowledgeCatalog({ workspaceId, scope, category, query, refresh, enabled: showCatalog });
   useEffect(() => {
     if (!navigation.data || navigation.loading) return;
@@ -106,7 +111,7 @@ export function KnowledgePage() {
   const index = data ? data.index : legacy.data ? legacy.data.index : (referenceIndex.scope === scopeKey ? referenceIndex.index : null);
   const topics = knowledgeReadingTopics(data?.index, navigationTopics);
   const pageScope = data?.scope || catalog.data?.scope || legacy.data?.scope || navigation.data?.scope;
-  const pageLoading = isReading ? main.loading : showCatalog ? catalog.loading : navigation.loading;
+  const pageLoading = showDocuments ? documentLoading : isReading ? main.loading : showCatalog ? catalog.loading : navigation.loading;
   const selected = index?.objects.find((o) => o.id === objectId) || topics.find(topic => topic.id === objectId),
     primaryArtifact = data?.artifacts?.find((a) => a.id === artifactId);
   const selectedTopic = knowledgeSelectedTopic(topics, objectId, primaryArtifact?.objects);
@@ -115,7 +120,7 @@ export function KnowledgePage() {
     : knowledgeTopicArtifacts(data?.artifacts || [], category);
   const root = useRef<HTMLDivElement>(null),
     positions = useRef<Record<string, number>>({}),
-    viewKey = JSON.stringify([scopeKey, objectId, artifactId, category, query, browseAll]);
+    viewKey = JSON.stringify([scopeKey, objectId, artifactId, documentId, category, query, browseAll, browseDocuments]);
   const [showBackToTop, setShowBackToTop] = useState(false);
   const scrollContext = useRef({ viewKey, loading: pageLoading });
   scrollContext.current = { viewKey, loading: pageLoading };
@@ -131,7 +136,7 @@ export function KnowledgePage() {
     scope.kind === "project" ? `/projects/${scopeId}` : `/services/${scopeId}`,
   );
   const title =
-    primaryArtifact?.title ||
+    (showDocuments ? documentId ? documentTitle : "文档目录" : null) || primaryArtifact?.title ||
     selected?.title ||
     (scope.kind === "project" ? "项目知识" : "服务知识");
   useEffect(() => {
@@ -139,7 +144,7 @@ export function KnowledgePage() {
     setBreadcrumbParts([
       pageScope.title,
       "知识",
-      ...(objectId || artifactId ? [title] : []),
+      ...(objectId || artifactId || showDocuments ? [title] : []),
     ]);
     tabs.register({
       key:
@@ -214,7 +219,7 @@ export function KnowledgePage() {
         ...knowledgeArtifactTarget(a, objectId),
         view: category,
         q: query,
-        browse: browseAll ? "all" : undefined,
+        browse: browseDocuments ? "documents" : browseAll ? "all" : undefined,
       });
   };
   const readingAnchor = useRef<HTMLElement | null>(null);
@@ -443,12 +448,12 @@ export function KnowledgePage() {
             },
             {
               title:
-                objectId || artifactId ? (
+                objectId || artifactId || documentId ? (
                   <Button
                     type="link"
-                    onClick={() => move({ browse: "all", view: category, q: query })}
+                    onClick={() => move({ browse: browseDocuments ? "documents" : "all", view: browseDocuments ? undefined : category, q: query })}
                   >
-                    全部资料
+                    {browseDocuments ? "文档目录" : "主题资料"}
                   </Button>
                 ) : (
                   "知识"
@@ -457,7 +462,7 @@ export function KnowledgePage() {
             ...(artifactId ? topicTrail : topicTrail.slice(0, -1)).map(topic => ({
               title: <Button type="link" onClick={() => move({ object: topic.id, view: "documents" })}>{topic.title}</Button>,
             })),
-            ...(objectId || artifactId ? [{ title }] : []),
+            ...(objectId || artifactId || documentId ? [{ title }] : []),
           ]}
         />
         {showBackToTop && <Button
@@ -471,7 +476,7 @@ export function KnowledgePage() {
         <div className="knowledge-title">
           <div>
             <h1>{title}</h1>
-            {!(objectId || artifactId) && (
+            {!(objectId || artifactId || showDocuments) && (
               <p className="knowledge-summary">
                 以事实为依据，理解这个
                 {scope.kind === "project" ? "项目" : "服务"}。
@@ -500,11 +505,12 @@ export function KnowledgePage() {
           </Space>
         </div>
         <KnowledgePreviewNotice sourceDirectory={pageScope?.directory} />
-        <KnowledgeTopicNavigation topics={topics} selected={selectedTopic} allSelected={showCatalog}
+        <KnowledgeTopicNavigation topics={topics} selected={selectedTopic} allSelected={showCatalog} documentsSelected={browseDocuments}
           loading={navigation.loading} error={navigation.error} onRetry={refreshPage}
           onSelect={id => move({ object: id, view: "documents" })}
-          onAll={() => move({ browse: "all", view: category, q: query })}>
-        {needsInitialize && <KnowledgeInitialize kind={scope.kind} onInitialize={() => construct("initialize")} onExplore={() => construct("explore")} />}
+          onAll={() => move({ browse: "all", view: category, q: query })}
+          onDocuments={() => move({ browse: "documents" })}>
+        {needsInitialize && !showDocuments && <KnowledgeInitialize kind={scope.kind} onInitialize={() => construct("initialize")} onExplore={() => construct("explore")} />}
         <Modal
           title="选择对应文件"
           open={referenceChoices.length > 0}
@@ -533,7 +539,12 @@ export function KnowledgePage() {
           />
         )}
         {main.relatedErrors.map(error => <Alert key={error} type="warning" message={error} />)}
-        {isReading && main.error ? (
+        {browseDocuments && <div hidden={!showDocuments}><KnowledgeDocuments scope={scope} workspaceId={workspaceId || ""} documentId={documentId} query={query} refresh={refresh} active={showDocuments}
+          onQuery={q => move({ browse: "documents", q }, true)}
+          onOpen={document => move({ browse: "documents", document: document || undefined, q: query })}
+          onArtifact={artifact => move({ browse: "documents", artifact, q: query })}
+          onLoadingChange={setDocumentLoading} onTitleChange={setDocumentTitle} /></div>}
+        {showDocuments ? null : isReading && main.error ? (
           <Alert type="error" message={main.error} />
         ) : isReading && main.loading ? (
           <Spin />
