@@ -17,7 +17,7 @@ import {
   type KnowledgeCatalogRequest,
 } from "../domain/knowledge-catalog.ts";
 import { discoverKnowledgeDocuments, type DocumentLocation } from "../infrastructure/knowledge-documents.ts";
-import { organizeKnowledgeDocuments } from "../domain/knowledge-document-sections.ts";
+import { organizeKnowledgeDocuments, resolveKnowledgeEntryDocument } from "../domain/knowledge-document-sections.ts";
 export type KnowledgeDependencies = {
   assetCatalog(root: string): AssetCatalog;
   skillFile(root: string, id: string, path: string): { content: string };
@@ -220,7 +220,7 @@ export function createKnowledgeQuery(deps: KnowledgeDependencies) {
         observations: [],
       };
     const { index, scope } = base;
-    const { documentSections: _documentSections, ...topicIndex } = index;
+    const { documentSections: _documentSections, entryDocument: _entryDocument, ...topicIndex } = index;
     const item = part ? index[part].find((i) => i.id === id) : null;
     if (part && !item)
       throw knowledgeError("knowledge_item_missing", "知识条目不存在。", 404);
@@ -291,6 +291,9 @@ export function createKnowledgeQuery(deps: KnowledgeDependencies) {
       topics: (index?.objects || []).map(({ id, title, summary, parent }) => ({
         id, title, summary, parent: parent ?? null,
       })),
+      artifacts: (index?.artifacts || []).map(({ id, title, kind, path, objects }) => ({
+        id, title, kind, path, objects: [...objects],
+      })),
       diagnostics: [],
     };
   }
@@ -300,11 +303,13 @@ export function createKnowledgeQuery(deps: KnowledgeDependencies) {
     const registered = new Map<string, string>();
     const indexDiagnostics: string[] = [];
     let documentSections: unknown;
+    let entryDocument: unknown;
     let indexRevision: string | null = null;
     let missingLocation = false;
     try {
       const loaded = load(root, ref);
       documentSections = loaded.index?.documentSections;
+      entryDocument = loaded.index?.entryDocument;
       indexRevision = loaded.revision;
       for (const artifact of loaded.index?.artifacts ?? []) {
         if (artifact.kind !== "diagram") registered.set(path.join(fs.realpathSync(scope.directory), artifact.path), artifact.id);
@@ -331,10 +336,12 @@ export function createKnowledgeQuery(deps: KnowledgeDependencies) {
         document.workspacePath = relative.split(path.sep).join("/");
     }
     const organized = organizeKnowledgeDocuments(result.documents, documentSections);
+    const entry = resolveKnowledgeEntryDocument(organized.documents, entryDocument);
     return { scope, ...result, ...organized,
+      entryDocumentId: entry.entryDocumentId,
       revision: digest(JSON.stringify([result.revision, indexRevision])),
       truncated: result.truncated || missingLocation,
-      diagnostics: [...indexDiagnostics, ...result.diagnostics, ...organized.diagnostics] };
+      diagnostics: [...indexDiagnostics, ...result.diagnostics, ...organized.diagnostics, ...entry.diagnostics] };
   }
   function documents(root: string, ref: ScopeRef) {
     const { files: _files, ...result } = documentCatalog(root, ref);

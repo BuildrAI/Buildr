@@ -42,7 +42,7 @@ export async function runServiceKnowledgeJourney({ page, workspaceRoot, workspac
     return { id, title, kind: 'document', path: `knowledge/docs/${id}.md`, objects: index === 29 ? ['service-detail-topic'] : [], sources: [] };
   });
   fs.writeFileSync(path.join(knowledgeRoot, 'index.yml'), JSON.stringify({
-    schemaVersion: 'buildr.knowledge-index/v1', scope: { kind: 'service', id: service.id }, entryObject: 'service-topic',
+    schemaVersion: 'buildr.knowledge-index/v1', scope: { kind: 'service', id: service.id }, entryObject: 'service-topic', entryDocument: { path: 'knowledge/docs/service-intro.md' },
     objects: [{ id: 'service-topic', title: '服务阅读主题', summary: '当前服务的职责与实现来源。' }, { id: 'service-detail-topic', title: '服务深入主题', parent: 'service-topic', summary: '按职责深入服务。' }],
     artifacts: [{ id: 'service-intro', kind: 'document', title: '服务阅读验证', path: 'knowledge/docs/service-intro.md', objects: ['service-topic'], sources: ['service-readme'] }, { id: 'service-diagram', title: '服务职责图', kind: 'diagram', path: 'knowledge/archify/service.html', objects: ['service-topic'], sources: [] }, { id: 'service-map', title: '服务实现地图', kind: 'code-map', path: 'knowledge/code-map/service.md', objects: ['service-topic'], sources: [] }, ...additionalArtifacts],
     sources: [{ id: 'service-readme', title: '真实服务来源', kind: 'code', path: 'README.md', summary: '当前登记代码库中的服务说明。' }], relations: [],
@@ -68,11 +68,7 @@ export async function runServiceKnowledgeJourney({ page, workspaceRoot, workspac
     if (request.method() === 'GET') knowledgeRequests.push(request.url());
     else if (request.method() !== 'HEAD') knowledgeWrites.push(`${request.method()} ${request.url()}`);
   };
-  const catalogEntries = () => browser().locator('[data-knowledge-view="catalog"]:visible [data-knowledge-entry]');
-  const nextCatalogResponse = (query: string, cursor: boolean) => page.waitForResponse(response => {
-    const url = new URL(response.url());
-    return url.pathname === catalogPath && url.searchParams.get('q') === query && url.searchParams.has('cursor') === cursor;
-  });
+  const directoryEntries = () => browser().locator('[data-knowledge-navigation]:visible [data-knowledge-entry]');
   page.on('request', collectKnowledge);
   try {
     const topic = (id: string) => browser().locator(`[data-knowledge-topic-content="${id}"]:visible`);
@@ -81,27 +77,25 @@ export async function runServiceKnowledgeJourney({ page, workspaceRoot, workspac
     assert.ok(knowledgeRequests.some(value => new URL(value).pathname === new URL(`${scopeUrl}/navigation`).pathname), '服务入口读取完整轻主题目录');
     assert.equal(knowledgeRequests.some(value => new URL(value).pathname === catalogPath), false, '默认主题不提前请求全部资料目录');
     await assertSingleReadingPane();
-    await browser().getByRole('tab', { name: '技术图', exact: true }).click();
-    await topic('service-topic').locator('[data-knowledge-artifact="service-diagram"] iframe').waitFor({ state: 'visible' });
-    await browser().getByRole('tab', { name: '代码地图', exact: true }).click();
-    await topic('service-topic').locator('[data-knowledge-artifact="service-map"]').waitFor({ state: 'visible' });
-    await browser().getByRole('tab', { name: '说明', exact: true }).click();
-    await topic('service-topic').locator('[data-knowledge-artifact="service-intro"]').waitFor({ state: 'visible' });
+    await openKnowledgeTopicDirectory(browser());
+    await browser().getByRole('textbox', { name: '检索知识', exact: true }).fill('服务职责图');
+    await browser().locator('[data-knowledge-entry="service-diagram"]:visible').click();
+    await browser().locator('[data-knowledge-view="artifact"]:visible [data-knowledge-artifact="service-diagram"] iframe').waitFor({ state: 'visible' });
+    await openKnowledgeTopicDirectory(browser());
+    await browser().getByRole('textbox', { name: '检索知识', exact: true }).fill('服务实现地图');
+    await browser().locator('[data-knowledge-entry="service-map"]:visible').click();
+    await browser().locator('[data-knowledge-view="artifact"]:visible [data-knowledge-artifact="service-map"]').waitFor({ state: 'visible' });
+    await browser().getByRole('textbox', { name: '检索知识', exact: true }).fill('');
     await selectKnowledgeChildTopic(browser(), 'service-topic', 'service-detail-topic');
     await topic('service-detail-topic').locator('[data-knowledge-artifact="service-page-30"]').waitFor({ state: 'visible' });
-    await browser().getByRole('button', { name: '← 返回服务阅读主题', exact: true }).click();
-    await topic('service-topic').locator('[data-knowledge-artifact="service-intro"]').waitFor({ state: 'visible' });
     await capture(page, 'service-knowledge-topic.png');
     await openKnowledgeTopicDirectory(browser());
-    const firstPageResponse = nextCatalogResponse('', false);
-    await browser().locator('[data-knowledge-all]:visible').click();
-    const firstPage = await (await firstPageResponse).json();
-    assert.equal(firstPage.items.length, 20);
-    assert.equal(firstPage.matchingCount, 45);
-    assert.equal('index' in firstPage, false, '目录响应不能携带完整知识索引');
-    await catalogEntries().nth(19).waitFor({ state: 'visible' });
-    assert.equal(await catalogEntries().count(), 20, '首屏只渲染第一批20项');
-    assert.equal(knowledgeRequests.some(value => new URL(value).pathname === new URL(scopeUrl).pathname), false, '主题和全部资料不调用旧完整索引入口');
+    await browser().getByRole('group', { name: '内容类型', exact: true }).getByRole('button', { name: '说明', exact: true }).click();
+    await browser().getByRole('textbox', { name: '检索知识', exact: true }).fill('服务阅读');
+    await directoryEntries().nth(44).waitFor({ state: 'visible' });
+    assert.equal(await directoryEntries().count(), 45, '完整轻量导航无需逐页加载即可查到全部45份说明');
+    assert.equal(knowledgeRequests.some(value => new URL(value).pathname === catalogPath), false, '新目录不依赖分页接口');
+    assert.equal(knowledgeRequests.some(value => new URL(value).pathname === new URL(scopeUrl).pathname), false, '导航不请求旧完整索引入口');
     assert.equal(page.url(), `${workspaceUrl}/services`);
     await assertSingleReadingPane();
 
@@ -138,67 +132,43 @@ export async function runServiceKnowledgeJourney({ page, workspaceRoot, workspac
     await assertSingleReadingPane();
     assert.equal(fs.readFileSync(path.join(knowledgeRoot, 'index.yml'), 'utf8'), indexBeforeExploration, '探索指令不能写入长期知识');
 
-    const filteredResponse = nextCatalogResponse('服务阅读', false);
-    await browser().getByRole('textbox', { name: '检索知识', exact: true }).fill('服务阅读');
-    assert.equal((await (await filteredResponse).json()).items.length, 20);
-    await catalogEntries().nth(19).waitFor({ state: 'visible' });
-    const secondPageResponse = nextCatalogResponse('服务阅读', true);
-    await browser().locator('[data-knowledge-prefetch="true"]:visible').scrollIntoViewIfNeeded();
-    assert.equal((await (await secondPageResponse).json()).items.length, 20);
-    await catalogEntries().nth(39).waitFor({ state: 'visible' });
-    assert.equal(await catalogEntries().count(), 40);
-    const finalPageResponse = nextCatalogResponse('服务阅读', true);
-    await browser().locator('[data-knowledge-prefetch="true"]:visible').scrollIntoViewIfNeeded();
-    const finalPage = await (await finalPageResponse).json();
-    assert.equal(finalPage.items.length, 5);
-    assert.equal(finalPage.hasMore, false);
-    await catalogEntries().nth(44).waitFor({ state: 'visible' });
-    assert.equal(await catalogEntries().count(), 45);
-    const filteredRequests = knowledgeRequests.map(value => new URL(value)).filter(url => url.searchParams.get('q') === '服务阅读');
-    assert.equal(filteredRequests.length, 3, '当前筛选只请求三批，不重复续载同一游标');
-    assert.equal(new Set(filteredRequests.map(url => url.searchParams.get('cursor') || 'first')).size, 3);
-    assert.ok(filteredRequests.every(url => url.searchParams.get('pageSize') === '20'));
-
-    const laterEntry = browser().locator('[data-knowledge-entry="service-page-30"]');
-    await laterEntry.scrollIntoViewIfNeeded();
-    const catalogRequestsBeforeReading = knowledgeRequests.filter(value => new URL(value).pathname === catalogPath).length;
-    // Native click may focus/scroll the entry after scrollIntoViewIfNeeded.
-    // Compare with the actual opening position, not the earlier automation position.
-    await laterEntry.evaluate(node => {
-      const host = node.closest('.pane-body')!;
-      node.addEventListener('click', () => node.setAttribute('data-test-opening-scroll', String(host.scrollTop)), { once: true });
-    });
+    const search = () => browser().getByRole('textbox', { name: '检索知识', exact: true });
+    await openKnowledgeTopicDirectory(browser());
+    const laterEntry = browser().locator('[data-knowledge-entry="service-page-30"]:visible');
     await laterEntry.click();
-    const position = Number(await laterEntry.getAttribute('data-test-opening-scroll'));
-    assert.ok(position > 0);
     await browser().locator('[data-knowledge-view="artifact"]:visible .knowledge-browser-heading').getByRole('heading', { name: '服务阅读条目 30', exact: true }).waitFor({ state: 'visible' });
-    await browser().getByRole('button', { name: `← 返回${service.name} · 服务知识`, exact: true }).click();
-    await catalogEntries().nth(44).waitFor({ state: 'visible' });
-    assert.equal(await catalogEntries().count(), 45, '返回目录保留已加载三批条目');
-    assert.equal(await browser().getByRole('textbox', { name: '检索知识', exact: true }).inputValue(), '服务阅读');
-    await page.waitForFunction(expected => {
-      const host = document.querySelector('.workspace-page:not([hidden]) .pane-right > .pane-body');
-      return Boolean(host) && Math.abs((host?.scrollTop || 0) - expected) < 2;
-    }, position, { timeout: 3000 }).catch(async () => {
-      const actual = await visible().locator('.pane-right > .pane-body').evaluate(node => ({ top: node.scrollTop, height: node.scrollHeight, viewport: node.clientHeight }));
-      assert.fail(`服务知识阅读位置未恢复：期望 ${position}，实际 ${JSON.stringify(actual)}`);
-    });
-    assert.equal(knowledgeRequests.filter(value => new URL(value).pathname === catalogPath).length, catalogRequestsBeforeReading, '返回已加载目录不从第一页重读');
+    assert.equal(await search().inputValue(), '服务阅读');
+    await search().fill('服务阅读 条目 31');
+    await browser().locator('[data-knowledge-view="artifact"]:visible [data-knowledge-artifact="service-page-30"]').waitFor({ state: 'visible' });
+    await openKnowledgeTopicDirectory(browser());
+    assert.equal(await directoryEntries().count(), 1, '标题与主题检索仅收缩左侧目录');
+    await browser().locator('[data-knowledge-entry="service-page-31"]:visible').click();
+    await browser().locator('[data-knowledge-view="artifact"]:visible [data-knowledge-artifact="service-page-31"]').waitFor({ state: 'visible' });
+    await search().fill('不存在的资料');
+    await browser().getByRole('button', { name: '← 返回服务阅读条目 30', exact: true }).click();
+    await browser().locator('[data-knowledge-view="artifact"]:visible [data-knowledge-artifact="service-page-30"]').waitFor({ state: 'visible' });
+    assert.equal(await search().inputValue(), '服务阅读 条目 31', '历史返回恢复该次离开前的检索');
+    await browser().getByRole('tab', { name: '文档目录', exact: true }).click();
+    await browser().locator('[data-knowledge-view="artifact"]:visible [data-knowledge-artifact="service-intro"]').waitFor({ state: 'visible' });
+    await browser().getByRole('textbox', { name: '检索文档目录', exact: true }).fill('README');
+    await browser().getByRole('tab', { name: '主题阅读', exact: true }).click();
+    await browser().locator('[data-knowledge-view="artifact"]:visible [data-knowledge-artifact="service-page-30"]').waitFor({ state: 'visible' });
+    assert.equal(await search().inputValue(), '服务阅读 条目 31', '切换模式恢复原正文和搜索');
+    await search().fill('服务阅读验证');
+    await openKnowledgeTopicDirectory(browser());
+    await browser().locator('[data-knowledge-entry="service-intro"]:visible').click();
+    await browser().getByRole('link', { name: '真实实现来源', exact: true }).click();
+    await browser().getByRole('heading', { name: '文件说明', exact: true }).waitFor({ state: 'visible' });
+    assert.match(await browser().locator('[data-knowledge-view="source"]:visible').innerText(), /当前登记代码库中的服务说明[\s\S]*Demo API/);
     await assertSingleReadingPane();
-    assert.deepEqual(knowledgeWrites, [], '主题导航、探索和全部资料阅读不得写回知识');
+    await browser().getByRole('button', { name: '← 返回服务阅读验证', exact: true }).click();
+    await browser().getByRole('link', { name: '真实实现来源', exact: true }).waitFor({ state: 'visible' });
+    assert.equal(await search().inputValue(), '服务阅读验证');
+    assert.deepEqual(knowledgeWrites, [], '目录检索、探索和阅读不得写回知识');
   } finally { page.off('request', collectKnowledge); }
-  await browser().getByRole('button', { name: /服务阅读验证/ }).click();
-  await browser().getByRole('link', { name: '真实实现来源', exact: true }).click();
-  await browser().getByRole('heading', { name: '文件说明', exact: true }).waitFor({ state: 'visible' });
-  assert.match(await browser().locator('[data-knowledge-view="source"]:visible').innerText(), /当前登记代码库中的服务说明[\s\S]*Demo API/);
-  await assertSingleReadingPane();
-  await browser().getByRole('button', { name: '← 返回服务阅读验证', exact: true }).click();
-  await browser().getByRole('link', { name: '真实实现来源', exact: true }).waitFor({ state: 'visible' });
-  await browser().getByRole('button', { name: `← 返回${service.name} · 服务知识`, exact: true }).click();
-  assert.equal(await browser().getByRole('textbox', { name: '检索知识', exact: true }).inputValue(), '服务阅读');
-  assert.equal(await catalogEntries().count(), 45);
-  await browser().getByRole('button', { name: '← 返回服务阅读主题', exact: true }).click();
-  await browser().locator('[data-knowledge-topic-content="service-topic"]:visible [data-knowledge-artifact="service-intro"]').waitFor({ state: 'visible' });
+  for (let count = 0; count < 12 && !await browser().getByRole('button', { name: '← 返回服务', exact: true }).isVisible(); count++) {
+    await browser().locator('.knowledge-browser-toolbar > button').first().click();
+  }
   await browser().getByRole('button', { name: '← 返回服务', exact: true }).click();
   await visible().locator('#service-detail-name:visible').waitFor({ state: 'visible' });
   assert.equal(await visible().locator('#services-search').inputValue(), '演示');

@@ -7,8 +7,7 @@ export function knowledgeReadingTopics(index: Pick<KnowledgeIndex, "objects"> | 
 }
 
 export function knowledgeEntryObject(params: URLSearchParams, navigation: Pick<KnowledgeNavigationResponse, "entryObject" | "topics">): string | null {
-  if (["all", "documents"].includes(params.get("browse") || "") || ["object", "artifact", "reading", "document", "q"].some(key => params.has(key))
-    || (params.has("view") && params.get("view") !== "documents")) return null;
+  if (params.get("browse") === "documents" || ["object", "artifact", "reading", "document"].some(key => params.has(key))) return null;
   return navigation.entryObject && navigation.topics.some(topic => topic.id === navigation.entryObject) ? navigation.entryObject : null;
 }
 

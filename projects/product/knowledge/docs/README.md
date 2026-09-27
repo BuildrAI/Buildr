@@ -1,32 +1,37 @@
 # Buildr 使用与开发手册
 
-这是[项目知识](../README.md)中的使用与开发分区。按当前目标查阅指南或参考，与主题阅读使用同一份正文。
+这份手册帮助你按目标找到使用指南、协作方式、实现说明与接口参考。它与[主题阅读](../README.md)共用已有正文；想先理解产品的用途、价值和方向，可以从[Buildr 整体认识](overview.md)开始。
 
-## 使用 Buildr
+## 从哪里开始
 
-先读[使用指南](guides/getting-started.md)：由智能体（Agent）安装和解释，配置后在智能体（Agent）工具中开始工作。日常接续、交付、更新保全和排障都在同一篇，不需要在多份入门文档之间往返。
+- **开始使用**：读[使用指南](guides/getting-started.md)，让智能体（Agent）安装并介绍基本概念，在 Buildr 配置好工作空间（Workspace），再到智能体（Agent）工具中开始工作。日常接续、交付、更新和排障也在同一篇。
+- **理解协作**：读[项目、服务与代码库如何协作](architecture/project-service-repositories.md)，再看[从讨论到交付](architecture/task-system.md)，了解工作如何组织、成果如何留下。
+- **参与开发**：先看[贡献指南](https://github.com/BuildrAI/Buildr/blob/main/CONTRIBUTING.md)，再用[代码全景与定位指南](../code-map/README.md)找到实现位置，按[产品验证框架](architecture/verification-framework.md)选择检查。
 
-## 开发 Buildr
+## 按目的继续阅读
 
-| 需要 | 阅读 |
-| --- | --- |
-| 准备环境与参与开发 | [贡献指南（GitHub）](https://github.com/BuildrAI/Buildr/blob/main/CONTRIBUTING.md) · [准备声明](../../preparation.yml) |
-| 定位代码与设计取舍 | [整体认识](overview.md) · [技术架构](architecture/technical.md) · [代码地图（Code Map）](../code-map/README.md) |
-| 运行与构建 | [后端工程声明](../../services/buildr/package.json) · [前端工程声明](../../services/buildr-web/package.json) · [开发工具](../../services/buildr/tools/development/) |
-| 选择必要检查 | [项目测试地图](../../verification.yml) · [产品验证框架](architecture/verification-framework.md) |
-| 维护变更或发布 | [OpenSpec 协作](architecture/task-system.md#openspec-变更怎样推进) · [发布流程](flows/open-source-release.md) |
-| 查看专项结果 | [首版准备审查](../reviews/v0.1.0-readiness.md) · [每日演进](flows/project-daily-progress.md) |
+目录分为七章。每章先读说明，再按需进入参考；图示依据、其他语言版本等放在补充阅读中。
 
-开发从工作空间（Workspace）根使用 `projects/product/buildr`，按实际修改范围进入相应服务（Service）准备和运行。正式自举由专用执行器完成，边界见项目与根 `AGENTS.md`。本页不保存某台机器的运行状态、凭证或部署完成结论；仅修改说明时，不机械运行无关代码测试。
+| 阅读章节 | 解决什么问题 | 主要入口 |
+| --- | --- | --- |
+| 了解与上手 | Buildr 适合什么工作，怎样开始，当前有哪些边界？ | [使用指南](guides/getting-started.md) · [核心术语](glossary.md) · [当前限制](../../services/buildr/docs/known-limitations.md) |
+| 组织工作与协作 | 怎样组织项目、方法、任务和知识，让工作持续推进？ | [工作范围与代码](architecture/project-service-repositories.md) · [技能体系](architecture/buildr-skill-system.md) · [任务协作](architecture/task-system.md) · [知识维护](architecture/knowledge-maintenance.md) |
+| 系统与数据 | 系统由什么组成，代码在哪里，数据由谁保存与修改？ | [技术架构](architecture/technical.md) · [代码全景](../code-map/README.md) · [数据设计](architecture/buildr-data-design.md) · [数据库表](architecture/buildr-database-tables.md) |
+| 开发与验证 | 怎样准备开发，并为实际改动选择合适的检查？ | [贡献指南](https://github.com/BuildrAI/Buildr/blob/main/CONTRIBUTING.md) · [项目测试与验证](architecture/workspace-testing-and-verification-framework.md) · [产品验证框架](architecture/verification-framework.md) |
+| 扩展与接口 | 怎样查命令与数据格式，接入工具或组合工作方法？ | [命令参考](../../services/buildr/docs/cli-reference.md) · [公开数据格式](reference/json-contracts.md) · [工具适配](reference/agent-runtime-adapter-contribution.md) · [能力契约（Capability Contract）](../../services/buildr/docs/skill-capability-contracts.md) |
+| 发布与维护 | 怎样发布、查看版本变化，并处理维护问题？ | [发布流程](flows/open-source-release.md) · [首版准备审查](../reviews/v0.1.0-readiness.md) · [安装与入口恢复](../../services/buildr/docs/bootstrap-guide.md) |
+| 理念文章 | Buildr 如何看待智能体（Agent）与长期工作资产？ | [工作基础设施](../../docs/publications/buildr-agent-work-infrastructure.md) · [更多、更好的工作](../../docs/publications/buildr-agent-more-and-better.md) |
 
-## 按需查阅
+## 查找与接着读
 
-| 问题 | 唯一参考 |
-| --- | --- |
-| 安装、命令与当前限制 | [命令参考](../../services/buildr/docs/cli-reference.md) · [已知限制](../../services/buildr/docs/known-limitations.md) · [安装恢复](../../services/buildr/docs/bootstrap-guide.md) |
-| 接入智能体（Agent）工具 | [适配说明](../../services/buildr/docs/agent-runtime-adapters.md) · [新增适配](reference/agent-runtime-adapter-contribution.md) |
-| 查接口与交付资源 | [命令架构](../../services/buildr/docs/cli-architecture.md) · [公开数据格式](reference/json-contracts.md) · [资源交付](../../services/buildr/docs/resources.md) |
-| 查方法组合与绘图组件（Component） | [能力契约（Capability Contract）](../../services/buildr/docs/skill-capability-contracts.md) · [Archify 组件（Component）](../../services/buildr/docs/archify-component.md) |
-| 查术语、知识维护与方向 | [术语表](glossary.md) · [知识维护](architecture/knowledge-maintenance.md) · [后续方向](overview.md#后续方向) |
+在 Buildr 中，搜索位于左侧目录上方。输入关键词可筛选当前阅读方式的内容，命中项会保留所属章节或主题；补充阅读同样可以找到。打开正文后，目录和搜索仍在原处；清空关键词即可回到之前展开的目录。窄屏可展开目录选文，再继续阅读。
 
-正文解释当前行为，行为约定仍以 OpenSpec 为准。普通文档直接更新、合并或删除，历史通过 Git 查找；技术参考在原有服务目录维护，不为目录外观复制正文。技术图（Technical Diagram）和代码地图（Code Map）在项目知识中按主题阅读。
+主题阅读按理解问题连接文章、图示和代码地图（Code Map），从《Buildr 整体认识》进入；文档目录按使用、开发和参考需要编排，从本手册进入。同一正文只维护一份，文件位置可以在阅读时查看。GitHub 上可直接沿本页和[知识导航](../README.md)的链接阅读。
+
+## 开发参考
+
+开发从工作空间（Workspace）根使用 `projects/product/buildr`，按实际修改范围进入相应服务（Service）。产品目录中的 `preparation.yml` 与 `verification.yml` 声明准备和验证入口；运行与构建命令在 `services/buildr/package.json` 和 `services/buildr-web/package.json`，开发工具在 `services/buildr/tools/development/`。正式自举由专用执行器完成，边界见项目与根 `AGENTS.md`。
+
+专项问题按需查阅：[智能体（Agent）工具支持](../../services/buildr/docs/agent-runtime-adapters.md)、[命令架构](../../services/buildr/docs/cli-architecture.md)、[资源交付](../../services/buildr/docs/resources.md)、[Archify 组件（Component）](../../services/buildr/docs/archify-component.md)、[OpenSpec 协作](architecture/task-system.md#openspec-变更怎样推进)和[每日演进](flows/project-daily-progress.md)。
+
+正文解释当前行为，行为约定以 OpenSpec 为准。普通文档直接维护，历史通过 Git 查找；服务内参考仍在原位置保存，不为阅读目录复制正文。本页不保存本机运行状态、凭证或部署完成结论。

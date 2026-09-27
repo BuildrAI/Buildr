@@ -3,6 +3,9 @@ scope:
   kind: project
   id: product
 entryObject: product-overview
+entryDocument:
+  location: scope
+  path: knowledge/docs/README.md
 documentSections:
   - id: getting-started
     title: "了解与上手"
@@ -63,9 +66,8 @@ documentSections:
         supplementary: true
       - location: scope
         path: knowledge/docs/README.md
-        title: "使用与开发阅读索引"
-        summary: "按安装、开发、命令和专项问题寻找已有参考。"
-        supplementary: true
+        title: "Buildr 使用与开发手册"
+        summary: "从使用、理解或开发目标开始，沿阅读章节找到已有指南与参考。"
   - id: work-collaboration
     title: "组织工作与协作"
     summary: "理解目标、代码、方法与成果怎样连接，工作怎样继续推进。"
@@ -1147,8 +1149,10 @@ artifacts:
     sources:
       - topic-children
       - topic-navigation
-      - topic-tabs
-      - topic-start
+      - reader-navigation-model
+      - document-navigation-state
+      - document-sections
+      - knowledge-side-browser
       - topic-navigation-state
       - topic-model
       - query
@@ -1176,7 +1180,6 @@ artifacts:
       - construction-prompt
       - architecture-guide
       - artifact-reader
-      - knowledge-catalog
       - document-discovery
       - document-reader
       - document-tree
@@ -1196,7 +1199,6 @@ artifacts:
       - diagram-layout
       - knowledge-preview-notice
       - catalog-query
-      - catalog-state
       - knowledge-complete-reading
     observedDigest: 46d41b18384dc9b817246b4a8c2edadfc124e1b38e00b322867ef5ff5e074370
     files:
@@ -1248,8 +1250,11 @@ artifacts:
     sources:
       - topic-children
       - topic-navigation
-      - topic-tabs
-      - topic-start
+      - reader-navigation-model
+      - document-navigation-state
+      - document-sections
+      - knowledge-side-browser
+      - knowledge-actions
       - topic-navigation-state
       - topic-model
       - query
@@ -1277,7 +1282,6 @@ artifacts:
       - construction-prompt
       - architecture-guide
       - artifact-reader
-      - knowledge-catalog
       - document-discovery
       - document-reader
       - document-tree
@@ -1297,7 +1301,6 @@ artifacts:
       - diagram-layout
       - knowledge-preview-notice
       - catalog-query
-      - catalog-state
       - knowledge-complete-reading
     observedDigest: 954a71b70241f6f61159bb96a76c5aba5fdc107ee79a2b34a0417669cda06bff
     files:
@@ -1345,22 +1348,32 @@ sources:
     title: 知识主题目录
     kind: code
     path: services/buildr-web/src/features/knowledge/components/KnowledgeTopicNavigation.tsx
-    summary: 项目与服务共享的主题父子导航，窄区折叠并保留全部资料。
-  - id: topic-tabs
-    title: 主题表达形式
+    summary: 两种模式共用目录上方检索、类型过滤和语义目录树；筛选保留祖先，清空恢复展开，宽区并列、窄区折叠。
+  - id: reader-navigation-model
+    title: 共同阅读目录模型
     kind: code
-    path: services/buildr-web/src/features/knowledge/components/KnowledgeTopicTabs.tsx
-    summary: 在当前主题内切换说明、技术图与代码地图。
-  - id: topic-start
-    title: 主题阅读入口
+    path: services/buildr-web/src/features/knowledge/knowledge-reader-navigation.ts
+    summary: 将主题关联和文档章节组织为同一树模型，计算关键词与类型过滤、命中祖先、入口去重及唯一内容数量，不修改正文。
+  - id: document-navigation-state
+    title: 文档目录请求状态
     kind: code
-    path: services/buildr-web/src/features/knowledge/components/KnowledgeTopicStart.tsx
-    summary: 没有默认主题时提供已有主题入口与探索接续。
+    path: services/buildr-web/src/features/knowledge/useKnowledgeDocuments.ts
+    summary: 独立读取有界文档目录及入口，刷新保留同范围数据，取消旧请求并防止过时结果进入新范围。
+  - id: document-sections
+    title: 文档编排与入口
+    kind: code
+    path: services/buildr/src/modules/knowledge/domain/knowledge-document-sections.ts
+    summary: 将有界章节和可选入口匹配到已发现文件，保留阅读顺序、补充属性和未编排文件；异常局部诊断，不解析任意路径或扩大读取边界。
+  - id: knowledge-side-browser
+    title: 侧边知识阅读
+    kind: code
+    path: services/buildr-web/src/features/knowledge/components/KnowledgeBrowser.tsx
+    summary: 侧读装配共同目录与正文阅读器，按范围和模式保留检索、展开与历史选择，明确打开的内容优先于默认入口。
   - id: topic-navigation-state
     title: 主题读取状态
     kind: code
     path: services/buildr-web/src/features/knowledge/useKnowledgeNavigation.ts
-    summary: 完整轻量主题请求与范围切换、过时响应保护。
+    summary: 读取有界主题及成果导航摘要，隔离范围切换、取消旧请求并防止迟到响应覆盖当前导航。
   - id: topic-model
     title: 主题导航规则
     kind: code
@@ -1591,18 +1604,12 @@ sources:
     path: services/buildr/src/modules/knowledge/domain/knowledge-catalog.ts
     observedDigest: 143d015a26e8adc8d0e7f468df4d694226c501a2c482a79f50cfbfe5ff78e814
     summary: 按分类和完整关键词条件筛选索引，仅返回当前页摘要；游标（Cursor）绑定范围、条件、页大小和索引版本，拒绝混用或版本漂移。
-  - id: catalog-state
-    title: 连续目录请求状态
-    kind: code
-    path: services/buildr-web/src/features/knowledge/useKnowledgeCatalog.ts
-    observedDigest: e5dc93cd842e56549f97ecc7469a6d391a7b68d7deec0cf8aeaaba600d8ab492
-    summary: 每页读取 20 项，取消旧范围请求，合并时去重并校验版本；进入详情后保留已读目录，续页失败支持重试或刷新。
   - id: query
     title: 读取与来源观察
     kind: code
     path: services/buildr/src/modules/knowledge/application/knowledge-query.ts
     observedDigest: 8f266d102b95d111a35336fe7002853601b6e4249e72bc98d385fa3e54dc7a9c
-    summary: 解析项目、关联服务与公共文档范围；主题目录读取索引，文档目录发现实际文件并去重；详情按已登记关联或已发现身份读取正文。
+    summary: 解析项目、关联服务与公共文档范围；读取有界主题及成果导航，组合文档发现、章节与入口；详情按已登记关联或已发现身份读取正文，保留原分页查询。
   - id: index-model
     title: 知识对象与关联校验
     kind: code
@@ -1632,7 +1639,7 @@ sources:
     kind: code
     path: services/buildr-web/src/features/knowledge/pages/KnowledgePage.tsx
     observedDigest: 2f112d9711872b6560343f92861b8beee02512d8baca17dab00c299ec8bdde9f
-    summary: 编排目录与正文阅读，保留目录批次和位置；主区固定面包屑并提供回顶部，关联副屏独立滚动。
+    summary: 装配共同目录与正文，按范围和模式保留检索及展开；明确主题、成果、来源或文档链接优先，未明确选择时使用各自入口，关联副屏独立滚动。
   - id: diagram-reader
     title: 隔离图示阅读
     kind: code
@@ -1645,6 +1652,11 @@ sources:
     path: services/buildr-web/src/features/knowledge/components/KnowledgeAgentAction.tsx
     observedDigest: 7b18b0d610bdc3ac8763a734d85f27a71266c888e919a71542c051ff4b89d14c
     summary: 建设主题和完善意见的接续表单。
+  - id: knowledge-actions
+    title: 知识探索与建设入口
+    kind: code
+    path: services/buildr-web/src/features/knowledge/components/KnowledgeActions.tsx
+    summary: 主页面与侧读共用页级探索、建设菜单，以及当前正文的追问和完善入口；仅交接所选意图，不直接执行知识维护。
   - id: client
     title: 知识接口客户端
     kind: code
@@ -1803,12 +1815,6 @@ sources:
     path: services/buildr-web/src/features/knowledge/components/KnowledgeArtifactReader.tsx
     observedDigest: d44f23c4ed27609da4876538611200716fbf940fef9111956bd34340250b5aec
     summary: 统一读取文章、地图或技术图；文内预览与独立详情复用成果文件，并向图示宿主传递只读尺寸，原生控件仍由 Archify 提供。
-  - id: knowledge-catalog
-    title: 成果目录与检索
-    kind: code
-    path: services/buildr-web/src/features/knowledge/components/KnowledgeCatalog.tsx
-    observedDigest: 938d9d4e62e0926f4e7e18a8a8f725f4950fff4053d978adeef27d87545eaba2
-    summary: 三类成果的分页目录；在第 15、35、55 项附近自动续载，并提供检索、失败重试和建设入口。
   - id: document-discovery
     title: 实际文档发现
     kind: code
@@ -1818,12 +1824,12 @@ sources:
     title: 文档目录与正文阅读
     kind: code
     path: services/buildr-web/src/features/knowledge/components/KnowledgeDocuments.tsx
-    summary: 主页面与副屏共用目录树、搜索和普通正文，按身份延迟读取；保留范围切换、取消请求、局部失败及返回目录行为。
+    summary: 主页面与侧读共用选中文件正文，按身份延迟读取并取消旧请求；文内链接只在已发现文档间跳转，检索和目录状态交给共同导航。
   - id: document-tree
     title: 文档分组与链接定位
     kind: code
     path: services/buildr-web/src/features/knowledge/knowledge-documents.ts
-    summary: 从实际文件路径建立目录树、计算搜索数量，并仅在已发现文件之间解析相对链接，支持工作空间公共说明进入项目正文。
+    summary: 沿作者章节与顺序分组正文和补充阅读，并在已发现文件间解析相对链接；真实路径用于定位，不再作为读者目录的组织结构。
   - id: catalog-filter
     title: 目录分类与分页合并
     kind: code
@@ -3212,9 +3218,6 @@ relations:
     to: artifact-reader
     kind: implements
   - from: knowledge-maintenance
-    to: knowledge-catalog
-    kind: implements
-  - from: knowledge-maintenance
     to: catalog-filter
     kind: implements
   - from: knowledge-maintenance
@@ -3626,9 +3629,6 @@ relations:
     to: verification-product-tools
     kind: explains
   - from: catalog-query
-    to: knowledge-maintenance
-    kind: implements
-  - from: catalog-state
     to: knowledge-maintenance
     kind: implements
   - from: verification-locations

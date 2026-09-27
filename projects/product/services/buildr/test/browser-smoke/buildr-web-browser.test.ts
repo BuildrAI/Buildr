@@ -1311,8 +1311,10 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.getByRole('dialog').waitFor({ state: 'hidden' });
     await page.locator('[data-repository-alignment="pending"]:visible').waitFor();
     await page.getByRole('button', { name: '查看对齐指引', exact: true }).click();
-    await page.getByRole('textbox', { name: '代码准备指令', exact: true }).waitFor();
-    assert.match(await page.getByRole('textbox', { name: '代码准备指令', exact: true }).inputValue(), /声明保存不代表/);
+    const preparationPrompt = page.getByRole('textbox', { name: '代码准备指令', exact: true });
+    await preparationPrompt.waitFor();
+    await page.waitForFunction((element: HTMLTextAreaElement) => element.value.trim().length > 0, await preparationPrompt.elementHandle());
+    assert.match(await preparationPrompt.inputValue(), /声明保存不代表/);
     await page.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).click();
     await page.getByRole('dialog').waitFor({ state: 'hidden' });
     assert.deepEqual(fs.readFileSync(path.join(codeRoot, '.git/config')), config); assert.deepEqual(fs.readFileSync(path.join(codeRoot, '.git/HEAD')), head);

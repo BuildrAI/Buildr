@@ -26,6 +26,19 @@ const title = (value: unknown): value is string => text(value) && value.trim().l
 const fields = (value: Record<string, unknown>, allowed: string[]) =>
   Object.keys(value).every((key) => allowed.includes(key));
 
+export function resolveKnowledgeEntryDocument(documents: KnowledgeDocument[], raw: unknown) {
+  if (raw === undefined) return { entryDocumentId: null, diagnostics: [] as string[] };
+  if (!record(raw) || !fields(raw, ["location", "path"]) || !title(raw.path) ||
+      (raw.location !== undefined && !title(raw.location))) {
+    return { entryDocumentId: null, diagnostics: ["文档入口格式无效，请从目录选择内容。"] };
+  }
+  // Entry metadata selects an existing identity; it must never resolve or read a path.
+  const entry = documents.find((document) => document.location === (raw.location ?? "scope") && document.path === raw.path);
+  return entry
+    ? { entryDocumentId: entry.id, diagnostics: [] as string[] }
+    : { entryDocumentId: null, diagnostics: ["文档入口不在当前可阅读目录中，请从目录选择内容。"] };
+}
+
 // Authored metadata can only decorate already discovered files. It never
 // resolves a path or adds a file to the reading boundary.
 export function organizeKnowledgeDocuments(discovered: KnowledgeDocument[], raw: unknown) {

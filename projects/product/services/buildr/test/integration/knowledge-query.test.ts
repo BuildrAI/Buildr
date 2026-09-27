@@ -170,6 +170,10 @@ test("主题导航完整保留超过首批的主题顺序和父关系，只读�
   assert.equal(result.artifactCount, 48);
   assert.deepEqual(result.topics, index.objects.map((topic) => ({ ...topic, parent: topic.parent ?? null })));
   assert.equal(result.topics.length, 45);
+  assert.deepEqual(result.artifacts, index.artifacts.map(({ id, title, kind, path, objects }) => ({ id, title, kind, path, objects })));
+  assert.equal(result.artifacts.length, 48, "导航包含所有类别，不受分页大小影响");
+  assert.deepEqual(new Set(result.artifacts.map(({ kind }) => kind)), new Set(["document", "diagram", "code-map", "terms"]));
+  assert.equal(Object.hasOwn(result.artifacts[0], "summary"), false, "主题长说明只在主题摘要中保存一份");
   assert.deepEqual(result.diagnostics, []);
   assert.deepEqual(opens, [fs.realpathSync(indexPath)]);
   assert.equal(fs.readFileSync(indexPath, "utf8"), before);
@@ -177,6 +181,11 @@ test("主题导航完整保留超过首批的主题顺序和父关系，只读�
   assert.throws(() => validateKnowledgeNavigationResponse({
     ...result, topics: [{ ...result.topics[0], content: "正文不属于导航" }],
   }));
+  for (const extra of [{ content: "正文不属于导航" }, { sources: ["code"] }, { summary: "不重复主题摘要" }])
+    assert.throws(() => validateKnowledgeNavigationResponse({ ...result, artifacts: [{ ...result.artifacts[0], ...extra }] }));
+  assert.throws(() => validateKnowledgeNavigationResponse({ ...result, artifacts: Array.from({ length: 501 }, () => result.artifacts[0]) }));
+  const { artifacts: _artifacts, ...withoutArtifacts } = result;
+  assert.throws(() => validateKnowledgeNavigationResponse(withoutArtifacts));
   const { parent: _parent, ...incomplete } = result.topics[0];
   assert.throws(() => validateKnowledgeNavigationResponse({ ...result, topics: [incomplete] }));
   const { artifactCount: _artifactCount, ...withoutCount } = result;
@@ -195,6 +204,7 @@ test("导航成果总数包含仅有技术图、地图或术语的范围，空�
     const result = app.navigation(root, scope);
     validateKnowledgeNavigationResponse(result);
     assert.equal(result.artifactCount, artifacts.length);
+    assert.deepEqual(result.artifacts.map(({ id }) => id), artifacts.map(({ id }) => id));
     assert.equal(app.catalog(root, scope).matchingCount, artifacts.filter(artifact => artifact.kind === "terms").length, "术语纳入说明分类，图与地图保持独立");
   }
   put("projects/demo/knowledge/index.yml", stringify({ ...prototype, objects: [], artifacts: [], sources: [] }));
@@ -203,6 +213,7 @@ test("导航成果总数包含仅有技术图、地图或术语的范围，空�
   assert.equal(empty.artifactCount, 0);
   assert.equal(empty.entryObject, null);
   assert.deepEqual(empty.topics, []);
+  assert.deepEqual(empty.artifacts, []);
   assert.equal(typeof empty.revision, "string");
 });
 
@@ -234,6 +245,7 @@ test("主题导航 HTTP 使用当前项目或服务范围，旧索引与无索�
   assert.equal(missing.body.entryObject, null);
   assert.equal(missing.body.artifactCount, 0);
   assert.deepEqual(missing.body.topics, []);
+  assert.deepEqual(missing.body.artifacts, []);
   assert.deepEqual(missing.body.diagnostics, []);
   assert.equal(fs.existsSync(path.join(root, "projects/demo/knowledge/index.yml")), false);
 });
@@ -700,6 +712,7 @@ test("生产 HTTP 宿主允许知识地址刷新，隔离图示不放宽页面�
   fs.mkdirSync(path.join(project, "knowledge"), { recursive: true });
   const index = structuredClone(prototype);
   index.entryObject = "object";
+  index.entryDocument = { path: "knowledge/docs/order.md" };
   index.artifacts[0] = {
     ...index.artifacts[0],
     kind: "diagram",
@@ -775,6 +788,8 @@ test("生产 HTTP 宿主允许知识地址刷新，隔离图示不放宽页面�
   assert.equal(navigationBody.scope.id, body.scope.id);
   assert.equal(navigationBody.entryObject, "object");
   assert.equal(navigationBody.artifactCount, 46);
+  assert.equal(navigationBody.artifacts.length, 46);
+  assert.deepEqual(navigationBody.artifacts[0], { id: "doc", title: "说明", kind: "diagram", path: "knowledge/diagram.html", objects: ["object"] });
   assert.deepEqual(navigationBody.topics, [{ id: "object", title: "订单", summary: "订单职责", parent: null }]);
   assert.equal((await fetch(`${navigationUrl}?path=/etc/passwd`)).status, 400);
   const catalog = await fetch(`${catalogUrl}?view=documents&pageSize=20`);
@@ -814,6 +829,7 @@ test("生产 HTTP 宿主允许知识地址刷新，隔离图示不放宽页面�
   validateKnowledgeDocumentsResponse(documentsBody);
   const discovered = documentsBody.documents.find((item: { path: string }) => item.path === "knowledge/docs/order.md");
   assert.ok(discovered);
+  assert.equal(documentsBody.entryDocumentId, discovered.id);
   const documentResponse = await fetch(`${documentsUrl}/${discovered.id}`);
   assert.equal(documentResponse.status, 200, await documentResponse.clone().text());
   const discoveredBody = await documentResponse.json();
@@ -879,6 +895,7 @@ test("文档目录无需主题索引，刷新发现增删与正文标题变化�
   const first = app.documents(root, scope);
   validateKnowledgeDocumentsResponse(first);
   assert.equal(first.totalCount, 1);
+  assert.equal(first.entryDocumentId, null);
   assert.equal(first.truncated, false);
   assert.deepEqual(first.diagnostics, []);
   assert.deepEqual(first.sections.map(({ id, count }) => ({ id, count })), [{ id: "unorganized", count: 1 }]);
@@ -916,6 +933,82 @@ test("文档目录无需主题索引，刷新发现增删与正文标题变化�
   assert.equal(app.document(root, scope, malformed.documents[0].id).content, "# 当前订单说明\n最新正文\n");
   assert.match(malformed.diagnostics.join("\n"), /主题索引暂不可读取/);
   assert.equal(fs.readFileSync(indexPath, "utf8"), "invalid: [\n");
+});
+
+test("文档入口选择已发现文件的唯一身份，修改入口刷新版本且正文不变", (t) => {
+  const { root, put, app } = setup(t);
+  const scope = { kind: "project" as const, id: "demo" };
+  put("README.md", "# 公共阅读入口\n");
+  const before = app.documents(root, scope);
+  assert.equal(before.entryDocumentId, null, "旧索引不猜测第一篇作为入口");
+  const index: KnowledgeIndex = {
+    ...structuredClone(prototype),
+    entryDocument: { path: "knowledge/docs/order.md" },
+    documentSections: [{ id: "start", title: "开始", summary: "", entries: [
+      { path: "knowledge/docs/order.md", title: "阅读入口", summary: "当前正文", supplementary: true },
+    ] }],
+  };
+  put("projects/demo/knowledge/index.yml", stringify(index));
+  const selected = app.documents(root, scope);
+  validateKnowledgeDocumentsResponse(selected);
+  assert.equal(selected.entryDocumentId, selected.documents.find(({ path }) => path === "knowledge/docs/order.md")!.id);
+  assert.equal(selected.documents.filter(({ id }) => id === selected.entryDocumentId).length, 1);
+  assert.equal(selected.totalCount, before.totalCount, "入口不新增目录条目或计数");
+  assert.deepEqual(selected.diagnostics, []);
+  const body = app.document(root, scope, selected.entryDocumentId!);
+  assert.equal(body.content, "# 订单\n读取实现");
+  assert.equal(body.document.title, "阅读入口", "入口继续使用同一份编排元数据");
+  const detail = app.read(root, scope, "objects", "object");
+  validateKnowledgeResponse(detail);
+  assert.equal(Object.hasOwn(detail.index!, "entryDocument"), false, "旧主题投影不暴露未校验入口配置");
+
+  index.entryDocument = { location: "workspace", path: "README.md" };
+  put("projects/demo/knowledge/index.yml", stringify(index));
+  const changed = app.documents(root, scope);
+  assert.equal(changed.entryDocumentId, changed.documents.find(({ location }) => location === "workspace")!.id);
+  assert.notEqual(changed.entryDocumentId, selected.entryDocumentId);
+  assert.notEqual(changed.revision, selected.revision);
+  assert.equal(changed.totalCount, selected.totalCount);
+  assert.equal(app.document(root, scope, body.document.id).digest, body.digest);
+  fs.unlinkSync(path.join(root, "README.md"));
+  const removed = app.documents(root, scope);
+  assert.equal(removed.entryDocumentId, null);
+  assert.equal(removed.totalCount, 1);
+  assert.match(removed.diagnostics.join("\n"), /入口不在当前可阅读目录/);
+});
+
+test("无效、缺失与越界文档入口仅局部诊断，不扩大目录或阻止主题阅读", (t) => {
+  const { root, put, app } = setup(t);
+  const scope = { kind: "project" as const, id: "demo" };
+  put("projects/demo/docs/passwords.md", "# 敏感内容\n");
+  put("outside/README.md", "# 不可读取\n");
+  fs.symlinkSync(path.join(root, "outside/README.md"), path.join(root, "projects/demo/linked.md"));
+  const original = app.documents(root, scope);
+  const invalid = [null, false, [], "README.md", {}, { path: "" }, { path: "x".repeat(4001) },
+    { path: "knowledge/docs/order.md", location: "" }, { path: "knowledge/docs/order.md", extra: true }];
+  const unavailable = [{ path: "missing.md" }, { path: "docs/passwords.md" }, { path: "../../outside/README.md" },
+    { path: "linked.md" }, { path: path.join(root, "outside/README.md") },
+    { location: "other", path: "knowledge/docs/order.md" }];
+  for (const entryDocument of [...invalid, ...unavailable]) {
+    put("projects/demo/knowledge/index.yml", stringify({ ...prototype, entryDocument }));
+    const listing = app.documents(root, scope);
+    validateKnowledgeDocumentsResponse(listing);
+    assert.equal(listing.entryDocumentId, null);
+    assert.deepEqual(listing.documents.map(({ id }) => id), original.documents.map(({ id }) => id));
+    assert.equal(listing.totalCount, 1);
+    assert.equal(listing.truncated, false);
+    assert.equal(listing.diagnostics.length, 1);
+    assert.match(listing.diagnostics[0], /文档入口/);
+    const detail = app.read(root, scope, "objects", "object");
+    validateKnowledgeResponse(detail);
+    assert.equal(detail.artifacts[0].content, "# 订单\n读取实现");
+    assert.equal(Object.hasOwn(detail.index!, "entryDocument"), false);
+    validateKnowledgeNavigationResponse(app.navigation(root, scope));
+    validateKnowledgeCatalogResponse(app.catalog(root, scope));
+  }
+  const { entryDocumentId: _entry, ...missingEntry } = original;
+  assert.throws(() => validateKnowledgeDocumentsResponse(missingEntry));
+  assert.throws(() => validateKnowledgeDocumentsResponse({ ...original, entryDocumentId: { path: "README.md" } }));
 });
 
 test("阅读编排按章节与条目顺序显示，补充资料和新增文件均保留唯一身份", (t) => {
