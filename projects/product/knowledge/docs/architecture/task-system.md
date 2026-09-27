@@ -27,6 +27,10 @@
 
 改变产品承诺时，智能体（Agent）结合用户目标、当前规范、实现和活跃变更判断范围。任务记录（Task Record）只关联变更；提案、设计、规范增量和实施清单由 OpenSpec 保存，不再复制一份规划快照。
 
+工作位置遵循跨宿主的独立能力契约（Capability Contract），由已绑定提供者（Provider）创建、检查和清理。默认实现固定使用 `<workspace>/.worktrees/<task-id>`；新任务标识（Task ID）默认使用 `worktree-contract-consistency` 这类简短语义名称，不主动添加日期，已有标识及用户指定名称继续沿用。OpenSpec 归档日期只影响变更归档目录，不触发工作树（Worktree）或分支改名，也不代替交付核验和清理条件。
+
+宿主原生工具不会因可用就成为已选实现，能力绑定（Capability Binding）变化也不自动转移旧资源归属。检查或清理前仍须核对创建归属、真实登记与证据兼容性；无法兼容时保留现场并说明具体冲突，不自动迁移、另建同任务副本或混用清理入口。依据见[工作树能力契约（Capability Contract）](../../../services/buildr/resources/workspace/skills/contracts/buildr/git-worktree-provider/v1.md)与[工作树技能（Skill）](../../../services/buildr/resources/workspace/skills/buildr/task-worktree/SKILL.md)。
+
 1. 首次持久文件修改前，按任务分流创建或复用当前任务的工作树（Worktree）；只有用户明确要求时才在主开发分支修改，纯规划材料同样适用。
 2. `openspec-propose` 创建变更并维护简要说明（Brief）、真实知识影响任务及已采用的 `.buildr/knowledge-impact.yml`。直接读取这些成果判断完整性及是否需要方案审查（Planning Review），不要求统一任务环境。
 3. 实施前运行 `openspec validate <change> --strict` 和 `buildr openspec convergence preflight`。后者使用锁定的 OpenSpec 1.13.0 检查当前变更与相关规范冲突，不复制全项目做隔离验证，也不生成全局工作许可。
