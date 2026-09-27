@@ -2,6 +2,8 @@
 
 第一次使用，顺着第一章阅读即可。后面的章节按问题查阅，每个主题只有一份正文。
 
+在 Buildr 中，打开“Buildr 产品 → 项目知识”，从“使用手册”按目录阅读，或在“全部资料”中检索。这里收录手册、参考、代码地图（Code Map）和当前首版审查，网页与仓库读取同一份文档。
+
 ## 一、开始工作
 
 1. [了解 Buildr](overview.md)：用途、人与智能体（Agent）的分工、当前边界。
@@ -26,11 +28,12 @@
 
 | 主题 | 阅读 |
 | --- | --- |
-| 设计与实现 | [产品架构](architecture/product.md) · [技术架构](architecture/technical.md) |
+| 设计与实现 | [架构目录](architecture/index.md) · [产品架构](architecture/product.md) · [技术架构](architecture/technical.md) |
 | 数据 | [数据设计与本机存储](architecture/buildr-data-design.md) · [数据库表参考](architecture/buildr-database-tables.md) |
 | 开发与检查 | [开发环境](guides/development-and-operations.md) · [产品验证框架](architecture/verification-framework.md) · [测试上下文（Test Context）](guides/node-test-context-runtime.md) |
 | 定位与看图 | [代码地图（Code Map）](../code-map/README.md) · [交互技术图](../archify/index.md) |
 | 专项维护 | [发布](flows/open-source-release.md) · [每日演进](flows/project-daily-progress.md) · [文档维护](guides/documentation-maintenance.md) |
+| 当前首版准备 | [0.1.0 准备审查](../reviews/v0.1.0-readiness.md)：已修复问题、验证范围及正式发布前的剩余工作 |
 
 ## 四、按需查阅
 

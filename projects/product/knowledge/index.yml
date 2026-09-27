@@ -68,6 +68,10 @@ objects:
   - id: developer-reading
     title: 开发与参考
     summary: 实现、运行与专业参考；首次使用无需先读。
+  - id: release-readiness
+    parent: developer-reading
+    title: 0.1.0 准备审查
+    summary: 首版整理、已修复问题、验证范围和正式发布前的剩余工作。
   - id: reference-glossary
     parent: developer-reading
     title: Buildr Product 术语表
@@ -225,6 +229,47 @@ artifacts:
     objects:
       - using-buildr
     sources: []
+  - id: release-readiness-document
+    title: 0.1.0 准备审查
+    kind: document
+    path: knowledge/reviews/v0.1.0-readiness.md
+    objects:
+      - release-readiness
+    sources:
+      - data-mutation-source
+      - technical-http-host-source
+      - technical-prompt-request-source
+  - id: architecture-directory
+    title: 架构阅读目录
+    kind: document
+    path: knowledge/docs/architecture/index.md
+    objects:
+      - developer-reading
+    sources:
+      - product-reference-product-architecture
+      - product-reference-technical-architecture
+  - id: system-services-assets-map
+    title: 服务与工程目录树
+    kind: code-map
+    path: knowledge/code-map/system-services-assets.md
+    objects:
+      - reference-technical
+    sources:
+      - product-reference-code-map
+      - product-reference-technical-architecture
+      - verification-source-23f06815b2
+      - verification-source-535557f7c3
+  - id: technical-layers-map
+    title: 技术层、对象与代表方法
+    kind: code-map
+    path: knowledge/code-map/technical-layers.md
+    objects:
+      - reference-technical
+    sources:
+      - product-reference-code-map
+      - product-reference-technical-architecture
+      - code-architecture
+      - task-source-module-19a342
   - id: reference-glossary-document
     title: Buildr 项目术语表
     kind: document
