@@ -104,7 +104,7 @@ This workspace already exists; do not initialize it again. Development uses the 
 
 | Your goal | Start here |
 | --- | --- |
-| Get started and work day to day | [Documentation directory](docs/README.md) · [Getting started](projects/product/knowledge/docs/guides/getting-started.md) · [Daily use](projects/product/knowledge/docs/guides/usage.md) |
+| Get started and work day to day | [Documentation directory](docs/README.md) · [User guide](projects/product/knowledge/docs/guides/getting-started.md) |
 | Understand the product | [About Buildr](projects/product/knowledge/docs/overview.md) · [Future directions](projects/product/knowledge/docs/directions.md) |
 | Install and maintain with an agent | [Buildr Skill](projects/product/services/buildr/resources/runtime/skills/buildr/SKILL.md) · [Installation and commands](projects/product/services/buildr/docs/cli-reference.md) · [Adapters](projects/product/services/buildr/docs/agent-runtime-adapters.md) |
 | Contribute | [Product development](projects/product/README.md) · [Current knowledge](projects/product/knowledge/README.md) · [Contributing](CONTRIBUTING.md) |

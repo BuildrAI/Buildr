@@ -25,6 +25,7 @@
 .project-home-details .ws-section-head h2 { font-size: 15px; }
 .project-home-details .project-associate-picker { width: 148px; }
 .project-home-details .ws-obj-row { padding: 12px 0; gap: 10px; }
+.project-home-details .ws-obj-name { flex-shrink: 0; }
 .project-home-details .ws-obj-row small { white-space: normal; }
 @container (max-width: 880px) {
   .project-home-details { grid-template-columns: minmax(0, 1fr); }

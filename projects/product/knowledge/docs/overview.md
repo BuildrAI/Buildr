@@ -15,6 +15,14 @@ Buildr 组织项目资料、代码位置和可复用的工作方法。人表达�
 
 长期资料由个人或团队掌握。团队可以通过 Git 共享文件，但本机工作记录不会自动跨机器同步。智能体（Agent）接续时仍须读取当前内容，不能把旧对话当作最新事实。
 
+## 共同依据怎样变成持续协作
+
+同一份业务事实和工作方法，对企业是能够传承的资产，对人是理解问题与作出判断的依据，对智能体（Agent）是开展工作的上下文（Context）来源。个人也可以从自己的项目开始。Buildr 维护来源、关系和发现入口；智能体（Agent）围绕当前目标选择需要的内容，结合真实代码、环境和工具结果继续判断。
+
+例如，一项需求同时涉及页面、后端和数据处理。产品人员维护目标与业务约束，智能体（Agent）沿项目（Project）、服务（Service）与代码库实例（Repository Instance）的登记关系寻找实现，再与设计、开发、测试人员核对各自负责的结果。参与者使用相关的共同来源，并按各自权限开展工作；更新后的事实需要重新读取，不要求所有人使用同一种工具，也不承诺自动同步所有副本。
+
+交付之后，代码和业务数据继续保存在所属位置，成果位置与必要工作记录支持下一次接续。适合长期复用、经过确认的事实和方法再纳入维护，临时资料不自动成为组织资产。组织能力由这种日常使用、校准与复用逐步形成，价值取决于积累是否帮助工作做好。
+
 ## 当前可以做什么
 
 - 登记工作空间（Workspace）、项目（Project）、服务（Service）和代码库实例（Repository Instance），连接业务目标与实现位置。
@@ -30,10 +38,10 @@ Buildr 当前以本机工作为主，没有完整企业权限、云端协作或�
 
 文章和每日演进已有部分能力，扩展暂缓。前者整理稿件，后者按明确 Git 提交范围保存本机摘要；它们不构成核心使用的前置条件。具体操作与限制见[已知限制](../../services/buildr/docs/known-limitations.md)和[每日演进](flows/project-daily-progress.md)。
 
-工作资料与本机记录的保存范围不同。需要更新或换机器时，请智能体（Agent）按[数据保全](guides/data-and-upgrades.md)核对并备份。
+工作资料与本机记录的保存范围不同。需要更新或换机器时，请智能体（Agent）按[使用与数据保护说明](guides/getting-started.md#更新与数据保护)核对并备份。
 
 ## 接下来读什么
 
-[开始使用](guides/getting-started.md) → [日常使用](guides/usage.md)。想理解资料与代码的关系，读[项目、服务与代码库](architecture/project-service-repositories.md)；准备开发 Buildr，读[技术架构](architecture/technical.md)。
+安装、日常工作与排查见[使用指南](guides/getting-started.md)。想理解资料与代码的关系，读[项目、服务与代码库](architecture/project-service-repositories.md)；准备开发 Buildr，读[技术架构](architecture/technical.md)。
 
 本页依据[产品定位规范](../../openspec/specs/agent-first-product-positioning/spec.md)与[核心规则](../../services/buildr/resources/workspace/AGENTS.md)。尚未实施的想法集中在[后续方向](directions.md)。

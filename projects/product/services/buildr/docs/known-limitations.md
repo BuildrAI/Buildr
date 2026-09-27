@@ -15,7 +15,7 @@
 - 每日演进和复盘正文同样属于本机资料。复制源资产或克隆代码库不等于迁移完整工作现场；完整企业权限、远程多用户协作和跨机器自动恢复尚未完整交付。
 - 父子任务（Parent/Child Task）仅支持同一工作空间（Workspace）中的单父关系和多个直接子项，不是通用依赖图。待办不含排期、责任人或优先级，也不会自动创建 OpenSpec 变更或执行工作。
 - 旧 `.buildr/tasks/<task-id>/` 文件不读取、迁移或双写。复盘正文位于当前机器的 `.buildr/local/task-retrospectives/`，任务（Task）只保存正文摘要和决定状态；它不自动采集耗时或词元（Token），不保存结构化行动项或跨工作空间（Workspace）汇总。
-- 可写打开数据库会执行待迁移内容，并清理旧 `.buildr/asset-review/` 与 `.buildr/local/task-execution-records/`。较早候选版的旧研发、环境、收尾和复盘记录也有退役迁移；每项迁移分别提交，不保证整批失败后全部回滚。需要保留旧内容时，必须在新版首次写入前保存副本。详见[数据保全与升级](../../../knowledge/docs/guides/data-and-upgrades.md)。
+- 可写打开数据库会执行待迁移内容，并清理旧 `.buildr/asset-review/` 与 `.buildr/local/task-execution-records/`。较早候选版的旧研发、环境、收尾和复盘记录也有退役迁移；每项迁移分别提交，不保证整批失败后全部回滚。需要保留旧内容时，必须在新版首次写入前保存副本。详见[数据保全与升级](../../../knowledge/docs/guides/getting-started.md#更新与数据保护)。
 - 人在页面中保存答复后，智能体（Agent）在继续工作时读取；答复不会自动唤醒执行。任务（Task）完成记录不替代实际交付，清理或可选自举激活（Self-bootstrap Activation）失败也不撤销已成立的交付事实。
 
 ## 智能体（Agent）接入

@@ -5,30 +5,11 @@ scope:
 entryObject: product-overview
 objects:
   - id: product-overview
-    title: 了解 Buildr
-    summary: 用途、日常协作方式与当前使用边界。
-  - id: using-buildr
-    title: 使用手册
-    summary: 从安装和配置开始，按需查阅日常使用、数据保全与排障。
-  - id: getting-started
-    parent: using-buildr
-    title: 开始使用
-    summary: 核对安装、选择工作目录、接入资料并完成第一项工作。
-  - id: daily-usage
-    parent: using-buildr
-    title: 日常使用
-    summary: 表达目标、查看成果、中断后继续以及验证和交付。
-  - id: data-and-upgrades
-    parent: using-buildr
-    title: 数据保全
-    summary: 更新或换机器前，让智能体核对文件资料与本机记录。
-  - id: troubleshooting
-    parent: using-buildr
-    title: 排查问题
-    summary: 按安装、工具发现、页面和数据问题选择具体处理入口。
+    title: Buildr 整体认识
+    summary: 从业务目的、主要职责及目标、方法、成果三组关系理解 Buildr，按具体问题继续探索。
   - id: system-structure
-    title: 理解资料与工作
-    summary: 项目关系、可复用方法、知识维护与任务协作。
+    title: 系统组成
+    summary: 从业务目标与实现的关系、可复用工作方法两条线理解 Buildr 的主要组成。
   - id: project-service-repositories
     parent: system-structure
     title: 项目、服务与代码库如何协作
@@ -38,13 +19,11 @@ objects:
     title: Buildr 技能体系
     summary: 理解工作方法从源文件、组合到可发现入口的关系，以及能力选择和诊断边界。
   - id: task-system
-    title: 任务协作与交付
-    summary: 在一章中理解接续、父子协调、验收与实际交付。
-    parent: system-structure
+    title: 从需求讨论到任务收尾
+    summary: 关键过程、人的决定、实际成果与完成记录的区别，以及普通完成和显式组合结束的边界。
   - id: data-design
-    title: 数据设计与本机存储
-    summary: 身份、关系、声明文件和本机数据的保存与修改边界。
-    parent: developer-reading
+    title: 数据全景与领域设计
+    summary: 从业务含义、身份、关联、存储和修改约束理解全部数据领域，不把本机事实误当缓存。
   - id: data-sqlite
     parent: data-design
     title: 数据库表与实体关系
@@ -52,9 +31,8 @@ objects:
   - id: verification-framework
     title: 测试与验证
     summary: Buildr 如何引导智能体按用户目标，为不同项目和服务建设测试、声明能力、选择执行并交付可信结果。
-    parent: system-structure
   - id: verification-product-tools
-    parent: developer-reading
+    parent: verification-framework
     title: Buildr 产品测试工具
     summary: Buildr 自身的路径选择、执行注册表、资源协调、隔离与候选证据。
   - id: verification-test-context
@@ -64,196 +42,72 @@ objects:
   - id: knowledge-maintenance
     title: 知识建设与维护
     summary: 谁指导事实建设，谁维护表达，职责落在哪些文件，以及变化后怎样跟上。
-    parent: system-structure
-  - id: developer-reading
-    title: 开发与参考
-    summary: 实现、运行与专业参考；首次使用无需先读。
-  - id: release-readiness
-    parent: developer-reading
-    title: 0.1.0 准备审查
-    summary: 首版整理、已修复问题、验证范围和正式发布前的剩余工作。
-  - id: reference-glossary
-    parent: developer-reading
-    title: Buildr Product 术语表
-    summary: 按需阅读Buildr Product 术语表，具体范围和依据见正文。
-  - id: reference-product
-    parent: developer-reading
-    title: Buildr 产品架构
-    summary: 按需阅读Buildr 产品架构，具体范围和依据见正文。
-  - id: reference-technical
-    parent: developer-reading
-    title: 技术架构
-    summary: 两个实现服务、调用方向、模块边界、网页与构建交付。
-  - id: reference-open-source-release
-    parent: developer-reading
-    title: Buildr npm 发布流程
-    summary: 按需阅读Buildr npm 发布流程，具体范围和依据见正文。
-  - id: reference-openspec-change-lifecycle
-    parent: developer-reading
-    title: OpenSpec Change 生命周期
-    summary: 按需阅读OpenSpec Change 生命周期，具体范围和依据见正文。
-  - id: reference-project-daily-progress
-    parent: developer-reading
-    title: 项目每日演进
-    summary: 按需阅读项目每日演进，具体范围和依据见正文。
-  - id: reference-development-and-operations
-    parent: developer-reading
-    title: 开发与运行入口
-    summary: 按需阅读开发与运行入口，具体范围和依据见正文。
-  - id: reference-documentation-maintenance
-    parent: developer-reading
-    title: 文档维护约定
-    summary: 按需阅读文档维护约定，具体范围和依据见正文。
-  - id: manual-cli-reference
-    parent: developer-reading
-    title: 安装与命令参考
-    summary: 按需要查询安装与命令参考，操作前核对实际对象和版本。
-  - id: manual-agent-runtime-adapters
-    parent: developer-reading
-    title: 工具适配参考
-    summary: 按需要查询工具适配参考，操作前核对实际对象和版本。
-  - id: manual-known-limitations
-    parent: developer-reading
-    title: Buildr 当前使用边界
-    summary: 按需要查询Buildr 当前使用边界，操作前核对实际对象和版本。
-  - id: manual-cli-architecture
-    parent: developer-reading
-    title: Buildr CLI 与模块架构
-    summary: 按需要查询Buildr CLI 与模块架构，操作前核对实际对象和版本。
-  - id: manual-json-contracts
-    parent: developer-reading
-    title: Buildr 公开 JSON 契约
-    summary: 按需要查询Buildr 公开 JSON 契约，操作前核对实际对象和版本。
-  - id: manual-resources
-    parent: developer-reading
-    title: Buildr 文件型交付资源
-    summary: 按需要查询Buildr 文件型交付资源，操作前核对实际对象和版本。
-  - id: manual-skill-capability-contracts
-    parent: developer-reading
-    title: 能力契约参考
-    summary: 按需要查询能力契约参考，操作前核对实际对象和版本。
-  - id: manual-agent-runtime-adapter-contribution
-    parent: developer-reading
-    title: 工具适配贡献指南
-    summary: 按需要查询工具适配贡献指南，操作前核对实际对象和版本。
-  - id: manual-archify-component
-    parent: developer-reading
-    title: Archify 可选组件（Component）
-    summary: 按需要查询Archify 可选组件（Component），操作前核对实际对象和版本。
-  - id: manual-bootstrap-guide
-    parent: developer-reading
-    title: Buildr 安装与恢复指南
-    summary: 按需要查询Buildr 安装与恢复指南，操作前核对实际对象和版本。
-  - id: product-directions
-    title: 后续方向
-    summary: 只保留仍值得讨论的方向和推进条件。
-    parent: developer-reading
 artifacts:
-  - id: manual-cli-reference-document
-    title: Buildr CLI Reference
+  - id: product-overview-article
+    title: Buildr 整体认识
     kind: document
-    path: services/buildr/docs/cli-reference.md
+    path: knowledge/docs/overview.md
     objects:
-      - manual-cli-reference
+      - product-overview
     sources:
-      - product-reference-cli
-  - id: manual-agent-runtime-adapters-document
-    title: Agent Runtime Adapters
-    kind: document
-    path: services/buildr/docs/agent-runtime-adapters.md
+      - scope-rules
+      - overview-positioning-spec
+      - file-project-relations-article
+      - overview-skill-system
+      - project-terms
+      - task-source-2026-08-30-parent-child-task-audit-b28c38
+      - overview-architecture-navigation
+      - overview-directions
+      - data-identity-source
+      - task-source-work-context-application-11bb91
+      - task-source-task-command-application-aba2e8
+      - data-sqlite-source
+    observedDigest: ea583a16298ad3e1fe29c8758c9885941c0217264a91340c87f3625e8e7bd1ea
+    files:
+      - overview-file
+  - id: system
+    title: Buildr 系统全景
+    kind: diagram
+    path: knowledge/archify/system/buildr-system-overview.html
     objects:
-      - manual-agent-runtime-adapters
+      - product-overview
+      - system-structure
+    sources: []
+    graphSource: knowledge/archify/system/buildr-system-overview.json
+    graphDigest: 814f8a03e3d73e55a5482ad4d9f62cb17cb05d4e17bdae4fae4fad8f983d8a5c
+    observedDigest: c7b140b0f162372f310bbd6f00d325d882f8518c10572c3f36dd44b3eb586f3d
+    files:
+      - file-system
+      - file-system-graph
+  - id: reference-technical-document
+    title: Buildr 怎样实现
+    kind: document
+    path: knowledge/docs/architecture/technical.md
+    objects:
+      - system-structure
     sources:
-      - product-reference-adapters
-  - id: manual-known-limitations-document
-    title: Buildr 当前使用边界
-    kind: document
-    path: services/buildr/docs/known-limitations.md
-    objects:
-      - manual-known-limitations
-    sources:
-      - product-reference-limitations
-  - id: manual-cli-architecture-document
-    title: Buildr CLI 与模块架构
-    kind: document
-    path: services/buildr/docs/cli-architecture.md
-    objects:
-      - manual-cli-architecture
-    sources: []
-  - id: manual-json-contracts-document
-    title: Buildr 公开 JSON 契约
-    kind: document
-    path: knowledge/docs/reference/json-contracts.md
-    objects:
-      - manual-json-contracts
-    sources: []
-  - id: manual-resources-document
-    title: Buildr 文件型交付资源
-    kind: document
-    path: services/buildr/docs/resources.md
-    objects:
-      - manual-resources
-    sources: []
-  - id: manual-skill-capability-contracts-document
-    title: Skill Capability Contracts
-    kind: document
-    path: services/buildr/docs/skill-capability-contracts.md
-    objects:
-      - manual-skill-capability-contracts
-    sources: []
-  - id: manual-agent-runtime-adapter-contribution-document
-    title: 接入新的智能体运行时
-    kind: document
-    path: knowledge/docs/reference/agent-runtime-adapter-contribution.md
-    objects:
-      - manual-agent-runtime-adapter-contribution
-    sources: []
-  - id: manual-archify-component-document
-    title: Archify 可选组件（Component）
-    kind: document
-    path: services/buildr/docs/archify-component.md
-    objects:
-      - manual-archify-component
-    sources: []
-  - id: manual-bootstrap-guide-document
-    title: Buildr 安装与恢复指南
-    kind: document
-    path: services/buildr/docs/bootstrap-guide.md
-    objects:
-      - manual-bootstrap-guide
-    sources: []
-  - id: reader-directory
-    title: Buildr 使用与开发手册
-    kind: document
-    path: knowledge/docs/README.md
-    objects:
-      - using-buildr
-    sources: []
-  - id: release-readiness-document
-    title: 0.1.0 准备审查
-    kind: document
-    path: knowledge/reviews/v0.1.0-readiness.md
-    objects:
-      - release-readiness
-    sources:
-      - data-mutation-source
       - technical-http-host-source
       - technical-prompt-request-source
-  - id: architecture-directory
-    title: 架构阅读目录
-    kind: document
-    path: knowledge/docs/architecture/index.md
+      - task-source-taskagentaction-7a3c7f
+  - id: responsibilities
+    title: 能力、数据与副作用
+    kind: diagram
+    path: knowledge/archify/flows/capability-data-responsibility.html
     objects:
-      - developer-reading
-    sources:
-      - product-reference-product-architecture
-      - product-reference-technical-architecture
+      - system-structure
+    sources: []
+    graphSource: knowledge/archify/flows/capability-data-responsibility.json
+    graphDigest: c4ad9e3db468f7d13e7aadfb4a2cf69cea363995a2cc9071844226ca6f6f383d
+    observedDigest: 8f90c4406990cd6aa9d9d879be4e57b7500c3efb6566e4eca8b8e103c9e1a618
+    files:
+      - file-responsibilities
+      - file-responsibilities-graph
   - id: system-services-assets-map
     title: 服务与工程目录树
     kind: code-map
     path: knowledge/code-map/system-services-assets.md
     objects:
-      - reference-technical
+      - system-structure
     sources:
       - product-reference-code-map
       - product-reference-technical-architecture
@@ -264,138 +118,129 @@ artifacts:
     kind: code-map
     path: knowledge/code-map/technical-layers.md
     objects:
-      - reference-technical
+      - system-structure
     sources:
       - product-reference-code-map
       - product-reference-technical-architecture
       - code-architecture
       - task-source-module-19a342
-  - id: reference-glossary-document
-    title: Buildr 项目术语表
+  - id: project-relations-article
+    title: 项目、服务与代码库如何协作
     kind: document
-    path: knowledge/docs/glossary.md
+    path: knowledge/docs/architecture/project-service-repositories.md
     objects:
-      - reference-glossary
+      - project-service-repositories
     sources:
-      - query
-      - index-model
-      - files
-      - http
-      - module
-      - page
-      - diagram-reader
-      - feedback
-      - client
-      - skill-page
-      - code-architecture
-      - current-knowledge-maintenance
-      - code-map
-      - terminology-governance
-      - archify
-      - openspec
-      - spec
-      - reading-spec
-      - tests
-      - project-terms
-      - source-reader
-      - navigation
-      - construction-prompt
-      - architecture-guide
-    files:
-      - project-terms
-  - id: reference-product-document
-    title: Buildr 产品架构
-    kind: document
-    path: knowledge/docs/architecture/product.md
-    objects:
-      - reference-product
-    sources: []
-  - id: reference-technical-document
-    title: Buildr 怎样实现
-    kind: document
-    path: knowledge/docs/architecture/technical.md
-    objects:
-      - reference-technical
-    sources:
-      - technical-http-host-source
-      - technical-prompt-request-source
-      - task-source-taskagentaction-7a3c7f
-  - id: reference-open-source-release-document
-    title: Buildr npm 发布流程
-    kind: document
-    path: knowledge/docs/flows/open-source-release.md
-    objects:
-      - reference-open-source-release
-    sources: []
-  - id: reference-openspec-change-lifecycle-document
-    title: OpenSpec Change 生命周期
-    kind: document
-    path: knowledge/docs/flows/openspec-change-lifecycle.md
-    objects:
-      - reference-openspec-change-lifecycle
-    sources: []
-  - id: reference-project-daily-progress-document
-    title: 项目每日演进
-    kind: document
-    path: knowledge/docs/flows/project-daily-progress.md
-    objects:
-      - reference-project-daily-progress
-    sources: []
-  - id: reference-development-and-operations-document
-    title: 开发与运行入口
-    kind: document
-    path: knowledge/docs/guides/development-and-operations.md
-    objects:
-      - reference-development-and-operations
-    sources: []
-  - id: reference-documentation-maintenance-document
-    title: 文档维护
-    kind: document
-    path: knowledge/docs/guides/documentation-maintenance.md
-    objects:
-      - reference-documentation-maintenance
-    sources: []
-  - id: guide-getting-started
-    title: 开始使用 Buildr
-    kind: document
-    path: knowledge/docs/guides/getting-started.md
-    objects:
-      - getting-started
-    sources:
-      - product-reference-cli
-      - user-guide-onboarding
-      - product-reference-adapters
-  - id: guide-daily-usage
-    title: 日常使用 Buildr
-    kind: document
-    path: knowledge/docs/guides/usage.md
-    objects:
-      - daily-usage
-    sources:
+      - asset-relations-spec
+      - repository-registry-spec
+      - data-identity-source
+      - asset-app
+      - data-catalog-source
+      - asset-http
+      - project-services-ui
+      - asset-detail-ui
+      - asset-tests
       - scope-rules
-      - task-source-skill-f75bad
-      - task-source-2026-08-30-parent-child-task-audit-b28c38
-  - id: guide-data-and-upgrades
-    title: 数据保全
-    kind: document
-    path: knowledge/docs/guides/data-and-upgrades.md
+      - project-terms
+      - current-knowledge-maintenance
+      - archify
+      - code-map
+      - asset-cli
+      - code-architecture
+      - project-candidate-directory
+      - project-registration-ui
+      - composition-reader
+      - composition-view
+      - composition-query
+    observedDigest: e8b040e754cf0508b21a51d4ee07dee8a36e7d5e69d2024eb8df1f4e1b3b9049
+    files:
+      - file-project-relations-article
+  - id: project-relations-diagram
+    title: 项目、服务与代码库的引用关系
+    kind: diagram
+    path: knowledge/archify/flows/project-service-repositories.html
     objects:
-      - data-and-upgrades
+      - project-service-repositories
     sources:
-      - data-sqlite-source
-      - user-guide-local-data
-      - product-reference-cli
-  - id: guide-troubleshooting
-    title: 排查问题
-    kind: document
-    path: knowledge/docs/guides/troubleshooting.md
+      - asset-relations-spec
+      - repository-registry-spec
+      - data-identity-source
+      - asset-app
+      - data-catalog-source
+      - asset-http
+      - project-services-ui
+      - asset-detail-ui
+      - asset-tests
+      - scope-rules
+      - project-terms
+      - current-knowledge-maintenance
+      - archify
+      - code-map
+    observedDigest: cd8f79124910b3a23df844619d9fa201a480bcec056a979b9b8a6bb26a8cbaa0
+    graphSource: knowledge/archify/flows/project-service-repositories.json
+    graphDigest: 1947643adac585f601248ea6de976cd091f86e104fb64ddae7163bc09c8fd3b7
+    files:
+      - file-project-relations-diagram
+      - file-project-relations-diagram-graph
+      - file-project-relations-diagram-evidence
+  - id: project-relations-map
+    title: 关系维护与代码定位的实现地图
+    kind: code-map
+    path: knowledge/code-map/project-service-repositories.md
     objects:
-      - troubleshooting
+      - project-service-repositories
     sources:
-      - product-reference-cli
-      - product-reference-limitations
-      - product-reference-adapters
-      - user-guide-local-data
+      - asset-relations-spec
+      - repository-registry-spec
+      - data-identity-source
+      - asset-app
+      - data-catalog-source
+      - asset-http
+      - project-services-ui
+      - asset-detail-ui
+      - asset-tests
+      - scope-rules
+      - project-terms
+      - current-knowledge-maintenance
+      - archify
+      - code-map
+      - asset-cli
+      - code-architecture
+      - composition-reader
+      - composition-view
+      - composition-query
+    observedDigest: ca42eb6339879d0bf89f33ef2369faff505da1aaa44a2fd4916bf87fa2fa31c6
+    files:
+      - file-project-relations-map
+      - file-project-relations-article
+      - file-project-relations-diagram
+      - file-project-relations-diagram-graph
+      - file-project-relations-diagram-evidence
+  - id: skill-system-explanation
+    title: 技能如何成为可用的工作方法
+    kind: document
+    path: knowledge/docs/architecture/buildr-skill-system.md
+    objects:
+      - skill-system-topic
+    sources:
+      - overview-skill-system
+      - file-skill-projection-evidence
+    files:
+      - overview-skill-system
+  - id: skill-projection
+    title: 技能源文件到可发现入口
+    kind: diagram
+    path: knowledge/archify/flows/skill-projection.html
+    objects:
+      - skill-system-topic
+    sources: []
+    graphSource: knowledge/archify/flows/skill-projection.json
+    graphDigest: ceff1cad58d94bea09d22ea63888459547979ffd3ecd7146977701c3f58c7fa9
+    observedDigest: 7688a4e8a42ee87a196249173d125df64d8cc8d6ef9d2f9c4530cae11396ebbb
+    files:
+      - file-skill-projection
+      - file-skill-projection-graph
+      - file-skill-projection-evidence
   - id: skill-system-map
     title: 技能源文件到可发现入口
     kind: code-map
@@ -419,41 +264,281 @@ artifacts:
       - skill-source-11
       - skill-source-12
       - skill-source-13
-  - id: skill-system-explanation
-    title: 技能如何成为可用的工作方法
+  - id: task-system-article
+    title: 从讨论到交付
     kind: document
-    path: knowledge/docs/architecture/buildr-skill-system.md
+    path: knowledge/docs/architecture/task-system.md
     objects:
-      - skill-system-topic
+      - task-system
     sources:
-      - overview-skill-system
-      - file-skill-projection-evidence
+      - task-file-task-system-html-80857d
+      - task-source-skill-f75bad
+      - verification-file-263d3698
+      - task-source-work-context-application-11bb91
+      - task-source-2026-08-30-parent-child-task-audit-b28c38
+      - task-source-spec-f12a41
+      - task-source-task-command-application-aba2e8
+      - task-file-task-system-md-d14898
+      - prototype-tab
+      - task-source-skill-ee942e
+      - task-source-git-worktree-provider-d1b252
+      - task-source-parent-coordination-application-49a9bd
+      - task-source-release-task-evidence-correlation-60b024
+      - task-source-spec-5aed6b
+      - parent-coordination-spec
+      - task-source-task-query-application-9f6269
+      - parent-input-validation
+      - task-source-task-04c6c5
+      - task-source-task-repository-be5696
+      - task-source-task-4ce8a0
+      - task-source-task-http-e1bbb1
+      - task-source-skill-7b8bb2
+      - task-source-taskcompletemodal-0d6276
+      - parent-coordination-panel
+      - parent-completion-fields
+      - parent-completion-input
+      - parent-task-actions
+      - parent-coordination-tests
+      - parent-completion-ui-tests
+    observedDigest: e7c6e9796a99a7f8efe844971af1870dd0a4c002692e4be6dd28467c5c96b901
     files:
-      - overview-skill-system
-  - id: product-overview-article
-    title: 了解 Buildr
-    kind: document
-    path: knowledge/docs/overview.md
+      - task-source-2026-08-30-parent-child-task-audit-b28c38
+      - parent-completion-html
+      - parent-completion-json
+      - parent-completion-evidence
+  - id: task-system-flow
+    title: 完整过程与角色职责
+    kind: diagram
+    path: knowledge/archify/flows/task-system.html
     objects:
-      - product-overview
+      - task-system
     sources:
       - scope-rules
-      - overview-positioning-spec
-      - file-project-relations-article
-      - overview-skill-system
-      - project-terms
-      - task-source-2026-08-30-parent-child-task-audit-b28c38
-      - overview-architecture-navigation
-      - overview-directions
-      - data-identity-source
-      - task-source-work-context-application-11bb91
+      - task-source-skill-f75bad
+      - task-source-agent-assets-module
+      - task-source-workspace-query
       - task-source-task-command-application-aba2e8
-      - data-sqlite-source
-    observedDigest: ea583a16298ad3e1fe29c8758c9885941c0217264a91340c87f3625e8e7bd1ea
+      - task-source-git-worktree-provider-d1b252
+      - openspec
+      - task-source-skill-d5bb46
+      - task-source-task-review-application-089e42
+      - task-source-skill-0ea6ac
+      - current-knowledge-maintenance
+      - task-source-task-verification-application-68479e
+      - task-source-skill-ee942e
+      - task-source-workbench-application-d9c5aa
+      - task-source-work-context-application-11bb91
+      - task-source-taskworkcontextcard-01a1b9
+      - task-source-spec-05a13b
+      - task-source-spec-a77bcf
+      - task-source-spec-ea9d2d
+      - task-source-spec-a0e711
+      - task-bootstrap-method
+      - task-bootstrap-runner
+      - task-bootstrap-continuity
+    observedDigest: 299aea012d9e299e18ebb7c5f645ed551c11cea71bb80424a84570aaedc78d4b
+    graphSource: knowledge/archify/flows/task-system.json
+    graphDigest: 3921d694181b1bbb247e12eab8ffe2fd2d509d63bb25b4ba7ef45a0df749eadc
     files:
-      - overview-file
+      - task-file-task-system-html-80857d
+      - task-file-task-system-json-7dffd4
+      - task-file-task-system-md-f8e83e
+  - id: task-system-planning
+    title: 需求、方案与实施授权
+    kind: diagram
+    path: knowledge/archify/flows/task-system-planning.html
+    objects:
+      - task-system
+    sources:
+      - scope-rules
+      - task-source-skill-f75bad
+      - task-source-task-command-application-aba2e8
+      - task-source-git-worktree-provider-d1b252
+      - openspec
+      - task-source-skill-d5bb46
+      - task-source-task-review-application-089e42
+      - task-source-work-context-application-11bb91
+      - task-source-workbenchpage-16ae2b
+      - task-source-taskworkcontextcard-01a1b9
+      - task-source-skill-7b8bb2
+    observedDigest: d9cb69fcc5c75ff597283d56cd4217d92c33fbbaca3c77f10b6b9f2646866865
+    graphSource: knowledge/archify/flows/task-system-planning.json
+    graphDigest: e6bf58ab2b0370305bd52fe105df0fe948bf5b5eeb80168c058473f5b49d9677
+    files:
+      - task-file-task-system-planning-html
+      - task-file-task-system-planning-json
+      - task-file-task-system-planning-md
+  - id: task-system-delivery
+    title: 实现审查与代码交付
+    kind: diagram
+    path: knowledge/archify/flows/task-system-delivery.html
+    objects:
+      - task-system
+    sources:
+      - task-source-skill-0ea6ac
+      - current-knowledge-maintenance
+      - task-openspec-apply
+      - task-source-task-review-application-089e42
+      - task-source-task-verification-application-68479e
+      - task-source-skill-ee942e
+      - task-source-task-command-application-aba2e8
+    observedDigest: 93ab8db603951eb6156881d8cca250bbfe20b6d4b9a54c386131f5e10222dc50
+    graphSource: knowledge/archify/flows/task-system-delivery.json
+    graphDigest: ef9e6430333e58a8d07d1f7438a71b87593199db9a0b33f23df0c757080879e0
+    files:
+      - task-file-task-system-delivery-html
+      - task-file-task-system-delivery-json
+      - task-file-task-system-delivery-md
+  - id: task-system-bootstrap
+    title: 自举激活与安全善后
+    kind: diagram
+    path: knowledge/archify/flows/task-self-bootstrap.html
+    objects:
+      - task-system
+    sources:
+      - task-source-git-worktree-provider-d1b252
+      - task-source-preview-lifecycle-97736a
+      - task-source-self-bootstrap-closeout-test-2c0ed6
+      - task-bootstrap-method
+      - task-bootstrap-runner
+      - task-bootstrap-continuity
+    observedDigest: c003f9a712afe6212f9253944fd4702964c33e6417d6006bae57c7df55c31047
+    graphSource: knowledge/archify/flows/task-self-bootstrap.json
+    graphDigest: 6cbee98a95f09ee3243335f74cd170ca450d6f15629d7b28c2c982a24aba8796
+    files:
+      - task-file-task-self-bootstrap-html-c98d7e
+      - task-file-task-self-bootstrap-json-4d99c5
+      - task-file-task-self-bootstrap-md-af104b
+  - id: task-parent-completion-flow
+    title: 父任务如何确认完成
+    kind: diagram
+    path: knowledge/archify/flows/task-parent-coordination.html
+    graphSource: knowledge/archify/flows/task-parent-coordination.json
+    graphDigest: 195c3882a7eae8b48baf4c7e766b026372b96e6cc9b188a2f3b8013623e6bb1d
+    objects:
+      - task-system
+    sources:
+      - task-source-spec-f12a41
+      - task-source-spec-5aed6b
+      - parent-coordination-spec
+      - task-source-task-query-application-9f6269
+      - task-source-parent-coordination-application-49a9bd
+      - task-source-task-command-application-aba2e8
+      - parent-input-validation
+      - task-source-task-04c6c5
+      - task-source-task-repository-be5696
+      - task-source-work-context-application-11bb91
+      - task-source-task-4ce8a0
+      - task-source-task-http-e1bbb1
+      - task-source-skill-7b8bb2
+      - task-source-taskcompletemodal-0d6276
+      - parent-coordination-panel
+      - parent-completion-fields
+      - parent-completion-input
+      - parent-task-actions
+      - parent-coordination-tests
+      - parent-completion-ui-tests
+    files:
+      - parent-completion-html
+      - parent-completion-json
+      - parent-completion-evidence
+    observedDigest: 86f4a1cbff48189a905282eae68b4a3dc54596e6adab2e5208991a7f0b066076
+  - id: task-system-map
+    title: 任务系统的实现组织
+    kind: code-map
+    path: knowledge/code-map/task-system.md
+    objects:
+      - task-system
+    sources:
+      - task-source-spec-ea9d2d
+      - task-source-spec-f12a41
+      - task-source-spec-5aed6b
+      - task-source-spec-9dbb55
+      - task-source-spec-a99380
+      - task-source-agent-assets-module
+      - task-source-workspace-query
+      - task-source-task-4ce8a0
+      - task-source-task-http-e1bbb1
+      - task-source-task-query-application-9f6269
+      - task-source-task-command-application-aba2e8
+      - task-source-parent-coordination-application-49a9bd
+      - task-source-task-review-application-089e42
+      - task-source-task-verification-application-68479e
+      - task-source-task-04c6c5
+      - task-source-task-review-691fbf
+      - task-source-task-verification-4ea021
+      - task-source-task-repository-be5696
+      - data-review-storage-source
+      - task-source-task-verification-repository-470799
+      - task-source-work-context-application-11bb91
+      - task-source-work-context-ca9c7e
+      - task-source-work-context-repository-7418e3
+      - task-source-work-context-http-9257a1
+      - task-source-work-context-cli-9a134a
+      - task-source-git-worktree-provider-d1b252
+      - task-source-module-19a342
+      - task-source-workbench-application-d9c5aa
+      - task-source-preferences-application-8b4fe8
+      - data-sqlite-source
+      - task-source-transaction-619471
+      - task-source-preview-lifecycle-97736a
+      - task-source-taskdetailpage-335bc9
+      - task-source-taskagentaction-7a3c7f
+      - task-source-taskworkcontextcard-01a1b9
+      - task-source-taskartifactreader-bb7503
+      - task-source-taskcompletemodal-0d6276
+      - task-source-usetaskworkcontext-ac9540
+      - task-source-workbenchpage-16ae2b
+      - task-source-skill-f75bad
+      - openspec
+      - task-source-skill-7b8bb2
+      - task-source-skill-2263b0
+      - task-source-skill-d5bb46
+      - task-source-skill-0ea6ac
+      - task-source-skill-ee942e
+      - current-knowledge-maintenance
+      - navigation-index
+      - task-source-task-record-product-test-2e0e74
+      - task-source-workbench-application-test-e5f6d2
+      - task-bootstrap-method
+      - task-bootstrap-runner
+      - task-bootstrap-continuity
+      - parent-coordination-spec
+      - parent-input-validation
+      - parent-coordination-panel
+      - parent-completion-fields
+      - parent-completion-input
+      - parent-task-actions
+      - parent-coordination-tests
+      - parent-completion-ui-tests
+      - prototype-metadata
+      - side-reading-panel
+      - side-reading-hook
+      - project-services-view
+      - prototype-reader-page
+      - task-node-content
+      - prototype-tab
+    observedDigest: 26a08db913bf68a5a2979c8ebc531ebd12091d3e4e70347b91c28003d9c5edbd
+    files:
+      - task-source-2026-08-30-parent-child-task-audit-b28c38
+      - task-file-task-system-md-d14898
+      - task-file-task-system-html-80857d
+      - task-file-task-system-json-7dffd4
+      - task-file-task-system-md-f8e83e
+      - task-file-task-system-planning-html
+      - task-file-task-system-planning-json
+      - task-file-task-system-planning-md
+      - task-file-task-system-delivery-html
+      - task-file-task-system-delivery-json
+      - task-file-task-system-delivery-md
+      - task-file-task-self-bootstrap-html-c98d7e
+      - task-file-task-self-bootstrap-json-4d99c5
+      - task-file-task-self-bootstrap-md-af104b
+      - parent-completion-html
+      - parent-completion-json
+      - parent-completion-evidence
   - id: data-design-explanation
-    title: Buildr 的数据保存在哪里
+    title: Buildr 数据全景与领域设计
     kind: document
     path: knowledge/docs/architecture/buildr-data-design.md
     objects:
@@ -513,6 +598,231 @@ artifacts:
       - data-sqlite-dot
       - data-sqlite-svg
       - data-sqlite-evidence
+  - id: verification-overview
+    title: 怎样为项目选择和建设测试
+    kind: document
+    path: knowledge/docs/architecture/workspace-testing-and-verification-framework.md
+    objects:
+      - verification-framework
+    sources:
+      - verification-locations
+      - verification-file-b8970af0
+      - verification-file-bc346270
+      - verification-source-27da98a320
+      - verification-source-739faaad07
+      - verification-source-18593c6ff1
+      - task-source-skill-0ea6ac
+      - verification-source-37543ceb30
+      - verification-source-d43baaebce
+      - verification-source-15fb890b91
+      - verification-source-4e7364c5d1
+      - verification-source-31c0f13893
+      - task-source-task-verification-4ea021
+      - task-source-spec-a99380
+      - verification-intake-spec
+      - verification-source-fe945192ca
+      - verification-file-9894349f
+      - verification-source-a9829f3f69
+      - verification-file-8c3c96dd
+    observedDigest: 21affd27b3e912c6ae6c8d7b1803a3c23930d321efbd4c7923f0816c2e270028
+    files:
+      - verification-file-263d3698
+      - verification-file-9894349f
+      - verification-file-8c3c96dd
+      - verification-file-b8970af0
+      - verification-file-bc346270
+      - verification-file-e9222fb3
+      - verification-file-31b03bf7
+  - id: verification-lifecycle
+    title: Buildr 如何引导测试建设与使用
+    kind: diagram
+    path: knowledge/archify/flows/verification-framework.html
+    graphSource: knowledge/archify/flows/verification-framework.json
+    objects:
+      - verification-framework
+    sources:
+      - verification-source-15fb890b91
+      - verification-source-31c0f13893
+      - verification-source-739faaad07
+      - verification-source-18593c6ff1
+      - task-source-skill-0ea6ac
+      - verification-source-37543ceb30
+      - verification-source-d43baaebce
+      - verification-source-27da98a320
+      - verification-source-fe945192ca
+      - verification-intake-spec
+      - task-source-spec-a99380
+      - verification-source-4362f9f689
+      - verification-locations
+      - verification-source-4e7364c5d1
+      - task-source-task-verification-application-68479e
+      - task-source-task-verification-4ea021
+      - task-source-task-verification-repository-470799
+    observedDigest: 5362e373dcbc874dca21794990f0f61b7e433b39af4383684b4346a66d48b181
+    graphDigest: 0ac9549dcff1fe26866e1f012c908bbaa9e9040c86734d66665c217d0c166575
+    files:
+      - verification-file-263d3698
+      - verification-file-9894349f
+      - verification-file-8c3c96dd
+      - verification-file-b8970af0
+      - verification-file-bc346270
+      - verification-file-e9222fb3
+      - verification-file-31b03bf7
+  - id: verification-implementation-map
+    title: 项目与服务测试验证框架的实现地图
+    kind: code-map
+    path: knowledge/code-map/verification-framework.md
+    objects:
+      - verification-framework
+      - verification-product-tools
+    sources:
+      - verification-locations
+      - verification-installed-package
+      - verification-file-263d3698
+      - verification-file-bc346270
+      - verification-source-739faaad07
+      - verification-source-18593c6ff1
+      - task-source-skill-0ea6ac
+      - task-source-skill-ee942e
+      - verification-source-27da98a320
+      - verification-intake-spec
+      - verification-source-fe945192ca
+      - task-source-spec-a99380
+      - verification-source-604151a9a5
+      - verification-source-6bc914610e
+      - verification-source-c8ee7d9bf2
+      - verification-source-d1a2938b4f
+      - verification-source-4362f9f689
+      - verification-source-4e7364c5d1
+      - verification-source-948ce80583
+      - verification-source-0fafd69549
+      - task-source-task-verification-application-68479e
+      - task-source-task-verification-4ea021
+      - task-source-task-verification-repository-470799
+      - task-source-taskagentaction-7a3c7f
+      - verification-source-c7378e723e
+      - verification-source-d68d572712
+      - verification-source-03659a2597
+      - verification-source-ab9c61c2bd
+      - verification-product-map-file
+    observedDigest: 44dce539751b25ecd0cff2610281b39a917cbdd5f1b1191bb9a852de66a7f4f3
+    files:
+      - verification-file-263d3698
+      - verification-file-9894349f
+      - verification-file-8c3c96dd
+      - verification-file-b8970af0
+      - verification-file-bc346270
+      - verification-file-e9222fb3
+      - verification-file-31b03bf7
+  - id: verification-product-architecture
+    title: 采用实例：Buildr 产品的测试与验证
+    kind: document
+    path: knowledge/docs/architecture/verification-framework.md
+    objects:
+      - verification-product-tools
+    sources:
+      - verification-file-263d3698
+      - verification-product-map-file
+      - verification-source-a9829f3f69
+      - verification-source-b5e167a6ea
+      - verification-source-23f06815b2
+      - verification-file-8c3c96dd
+      - verification-release-reference
+      - verification-file-9894349f
+      - verification-source-535557f7c3
+      - verification-ref-2e25071a
+      - verification-ref-afecd484
+      - verification-changed-paths
+      - verification-source-03659a2597
+      - verification-ref-fad56c76
+      - parent-completion-ui-tests
+      - verification-ref-73fbe375
+      - verification-installed-package
+      - verification-ref-e568f1e4
+    observedDigest: cc6ca5cdd68105f52d6b0b13565a2773fa49366ad62fa1fea3b956e76f0faa20
+    files:
+      - verification-file-263d3698
+      - verification-file-9894349f
+      - verification-file-8c3c96dd
+      - verification-file-b8970af0
+      - verification-file-bc346270
+      - verification-file-e9222fb3
+      - verification-file-31b03bf7
+  - id: verification-product-map
+    title: 采用实例：Buildr 产品测试工具地图
+    kind: code-map
+    path: knowledge/code-map/product-verification-tools.md
+    objects:
+      - verification-product-tools
+    sources:
+      - verification-changed-paths
+      - verification-entrypoints
+      - verification-file-263d3698
+      - verification-file-b8970af0
+      - verification-source-a9829f3f69
+      - verification-source-456f6be9e6
+      - verification-file-9894349f
+      - verification-source-07201f6210
+      - verification-source-4759f3fa18
+      - verification-source-a567a4e171
+      - verification-source-b5e167a6ea
+      - verification-source-4aba70c072
+      - verification-source-a8e6c6c2a4
+      - verification-source-11958882cd
+      - verification-source-8b321bc253
+      - verification-source-bb279cd090
+      - verification-source-54cae75589
+      - verification-source-bb45a79c77
+      - verification-source-427279b9f5
+      - verification-source-1a428d5163
+      - verification-source-c37838fbfa
+      - verification-source-23f06815b2
+      - verification-source-535557f7c3
+      - verification-source-2067de1414
+      - verification-source-57ca327cab
+      - verification-file-8c3c96dd
+      - verification-source-ba6db2aa02
+      - verification-source-340bdb46a3
+      - verification-source-31c7256483
+      - verification-source-1967483059
+      - verification-source-95e7d22b19
+      - verification-source-212eb0e812
+      - verification-source-9970cc9595
+      - verification-source-fccb281b60
+      - verification-source-117481e3e7
+      - verification-source-4e2cb05a2b
+      - verification-ref-2e25071a
+      - verification-ref-afecd484
+      - verification-ref-e568f1e4
+      - parent-completion-ui-tests
+      - verification-source-03659a2597
+      - verification-installed-package
+      - verification-ref-fad56c76
+      - verification-ref-028fd920
+      - verification-ref-73fbe375
+    files:
+      - verification-product-map-file
+    observedDigest: 8e660338e558981af019a0f3793dcc46ca8cd11fb1f3d53d8c1d2f2bc0cabffb
+  - id: verification-context-guide
+    title: Node.js 测试上下文：复用、隔离与生命周期
+    kind: document
+    path: knowledge/docs/guides/node-test-context-runtime.md
+    objects:
+      - verification-test-context
+    sources:
+      - verification-file-9894349f
+      - verification-source-6bc914610e
+      - verification-source-ba6db2aa02
+      - verification-context-types
+    observedDigest: f3e16c09439ebfaccd02077822e7ef789cb7d560f15622b4b08e204227b5b38a
+    files:
+      - verification-file-263d3698
+      - verification-file-9894349f
+      - verification-file-8c3c96dd
+      - verification-file-b8970af0
+      - verification-file-bc346270
+      - verification-file-e9222fb3
+      - verification-file-31b03bf7
   - id: explanation
     title: 怎样建设和维护项目知识
     kind: document
@@ -676,646 +986,11 @@ artifacts:
       - file-responsibility-graph
       - file-responsibility-evidence
       - project-terms
-  - id: system
-    title: Buildr 系统全景
-    kind: diagram
-    path: knowledge/archify/system/buildr-system-overview.html
-    objects:
-      - product-overview
-      - system-structure
-    sources: []
-    graphSource: knowledge/archify/system/buildr-system-overview.json
-    graphDigest: 814f8a03e3d73e55a5482ad4d9f62cb17cb05d4e17bdae4fae4fad8f983d8a5c
-    observedDigest: c7b140b0f162372f310bbd6f00d325d882f8518c10572c3f36dd44b3eb586f3d
-    files:
-      - file-system
-      - file-system-graph
-  - id: responsibilities
-    title: 能力、数据与副作用
-    kind: diagram
-    path: knowledge/archify/flows/capability-data-responsibility.html
-    objects:
-      - system-structure
-    sources: []
-    graphSource: knowledge/archify/flows/capability-data-responsibility.json
-    graphDigest: c4ad9e3db468f7d13e7aadfb4a2cf69cea363995a2cc9071844226ca6f6f383d
-    observedDigest: 8f90c4406990cd6aa9d9d879be4e57b7500c3efb6566e4eca8b8e103c9e1a618
-    files:
-      - file-responsibilities
-      - file-responsibilities-graph
-  - id: skill-projection
-    title: 技能源文件到可发现入口
-    kind: diagram
-    path: knowledge/archify/flows/skill-projection.html
-    objects:
-      - skill-system-topic
-    sources: []
-    graphSource: knowledge/archify/flows/skill-projection.json
-    graphDigest: ceff1cad58d94bea09d22ea63888459547979ffd3ecd7146977701c3f58c7fa9
-    observedDigest: 7688a4e8a42ee87a196249173d125df64d8cc8d6ef9d2f9c4530cae11396ebbb
-    files:
-      - file-skill-projection
-      - file-skill-projection-graph
-      - file-skill-projection-evidence
-  - id: project-relations-article
-    title: 项目、服务与代码库如何协作
-    kind: document
-    path: knowledge/docs/architecture/project-service-repositories.md
-    objects:
-      - project-service-repositories
-    sources:
-      - asset-relations-spec
-      - repository-registry-spec
-      - data-identity-source
-      - asset-app
-      - data-catalog-source
-      - asset-http
-      - project-services-ui
-      - asset-detail-ui
-      - asset-tests
-      - scope-rules
-      - project-terms
-      - current-knowledge-maintenance
-      - archify
-      - code-map
-      - asset-cli
-      - code-architecture
-      - project-candidate-directory
-      - project-registration-ui
-      - composition-reader
-      - composition-view
-      - composition-query
-    observedDigest: e8b040e754cf0508b21a51d4ee07dee8a36e7d5e69d2024eb8df1f4e1b3b9049
-    files:
-      - file-project-relations-article
-  - id: project-relations-map
-    title: 关系维护与代码定位的实现地图
-    kind: code-map
-    path: knowledge/code-map/project-service-repositories.md
-    objects:
-      - project-service-repositories
-    sources:
-      - asset-relations-spec
-      - repository-registry-spec
-      - data-identity-source
-      - asset-app
-      - data-catalog-source
-      - asset-http
-      - project-services-ui
-      - asset-detail-ui
-      - asset-tests
-      - scope-rules
-      - project-terms
-      - current-knowledge-maintenance
-      - archify
-      - code-map
-      - asset-cli
-      - code-architecture
-      - composition-reader
-      - composition-view
-      - composition-query
-    observedDigest: ca42eb6339879d0bf89f33ef2369faff505da1aaa44a2fd4916bf87fa2fa31c6
-    files:
-      - file-project-relations-map
-      - file-project-relations-article
-      - file-project-relations-diagram
-      - file-project-relations-diagram-graph
-      - file-project-relations-diagram-evidence
-  - id: project-relations-diagram
-    title: 项目、服务与代码库的引用关系
-    kind: diagram
-    path: knowledge/archify/flows/project-service-repositories.html
-    objects:
-      - project-service-repositories
-    sources:
-      - asset-relations-spec
-      - repository-registry-spec
-      - data-identity-source
-      - asset-app
-      - data-catalog-source
-      - asset-http
-      - project-services-ui
-      - asset-detail-ui
-      - asset-tests
-      - scope-rules
-      - project-terms
-      - current-knowledge-maintenance
-      - archify
-      - code-map
-    observedDigest: cd8f79124910b3a23df844619d9fa201a480bcec056a979b9b8a6bb26a8cbaa0
-    graphSource: knowledge/archify/flows/project-service-repositories.json
-    graphDigest: 1947643adac585f601248ea6de976cd091f86e104fb64ddae7163bc09c8fd3b7
-    files:
-      - file-project-relations-diagram
-      - file-project-relations-diagram-graph
-      - file-project-relations-diagram-evidence
-  - id: task-system-article
-    title: 从讨论到交付
-    kind: document
-    path: knowledge/docs/architecture/task-system.md
-    objects:
-      - task-system
-    sources:
-      - task-file-task-system-html-80857d
-      - task-source-skill-f75bad
-      - verification-file-263d3698
-      - task-source-work-context-application-11bb91
-      - task-source-2026-08-30-parent-child-task-audit-b28c38
-      - task-source-spec-f12a41
-      - task-source-task-command-application-aba2e8
-      - task-file-task-system-md-d14898
-      - prototype-tab
-      - task-source-skill-ee942e
-      - task-source-git-worktree-provider-d1b252
-      - task-source-parent-coordination-application-49a9bd
-      - task-source-release-task-evidence-correlation-60b024
-      - task-source-spec-5aed6b
-      - parent-coordination-spec
-      - task-source-task-query-application-9f6269
-      - parent-input-validation
-      - task-source-task-04c6c5
-      - task-source-task-repository-be5696
-      - task-source-task-4ce8a0
-      - task-source-task-http-e1bbb1
-      - task-source-skill-7b8bb2
-      - task-source-taskcompletemodal-0d6276
-      - parent-coordination-panel
-      - parent-completion-fields
-      - parent-completion-input
-      - parent-task-actions
-      - parent-coordination-tests
-      - parent-completion-ui-tests
-    observedDigest: e7c6e9796a99a7f8efe844971af1870dd0a4c002692e4be6dd28467c5c96b901
-    files:
-      - task-source-2026-08-30-parent-child-task-audit-b28c38
-      - parent-completion-html
-      - parent-completion-json
-      - parent-completion-evidence
-  - id: task-system-map
-    title: 任务系统的实现组织
-    kind: code-map
-    path: knowledge/code-map/task-system.md
-    objects:
-      - task-system
-    sources:
-      - task-source-spec-ea9d2d
-      - task-source-spec-f12a41
-      - task-source-spec-5aed6b
-      - task-source-spec-9dbb55
-      - task-source-spec-a99380
-      - task-source-agent-assets-module
-      - task-source-workspace-query
-      - task-source-task-4ce8a0
-      - task-source-task-http-e1bbb1
-      - task-source-task-query-application-9f6269
-      - task-source-task-command-application-aba2e8
-      - task-source-parent-coordination-application-49a9bd
-      - task-source-task-review-application-089e42
-      - task-source-task-verification-application-68479e
-      - task-source-task-04c6c5
-      - task-source-task-review-691fbf
-      - task-source-task-verification-4ea021
-      - task-source-task-repository-be5696
-      - data-review-storage-source
-      - task-source-task-verification-repository-470799
-      - task-source-work-context-application-11bb91
-      - task-source-work-context-ca9c7e
-      - task-source-work-context-repository-7418e3
-      - task-source-work-context-http-9257a1
-      - task-source-work-context-cli-9a134a
-      - task-source-git-worktree-provider-d1b252
-      - task-source-module-19a342
-      - task-source-workbench-application-d9c5aa
-      - task-source-preferences-application-8b4fe8
-      - data-sqlite-source
-      - task-source-transaction-619471
-      - task-source-preview-lifecycle-97736a
-      - task-source-taskdetailpage-335bc9
-      - task-source-taskagentaction-7a3c7f
-      - task-source-taskworkcontextcard-01a1b9
-      - task-source-taskartifactreader-bb7503
-      - task-source-taskcompletemodal-0d6276
-      - task-source-usetaskworkcontext-ac9540
-      - task-source-workbenchpage-16ae2b
-      - task-source-skill-f75bad
-      - openspec
-      - task-source-skill-7b8bb2
-      - task-source-skill-2263b0
-      - task-source-skill-d5bb46
-      - task-source-skill-0ea6ac
-      - task-source-skill-ee942e
-      - current-knowledge-maintenance
-      - navigation-index
-      - task-source-task-record-product-test-2e0e74
-      - task-source-workbench-application-test-e5f6d2
-      - task-bootstrap-method
-      - task-bootstrap-runner
-      - task-bootstrap-continuity
-      - parent-coordination-spec
-      - parent-input-validation
-      - parent-coordination-panel
-      - parent-completion-fields
-      - parent-completion-input
-      - parent-task-actions
-      - parent-coordination-tests
-      - parent-completion-ui-tests
-      - prototype-metadata
-      - side-reading-panel
-      - side-reading-hook
-      - project-services-view
-      - prototype-reader-page
-      - task-node-content
-      - prototype-tab
-    observedDigest: 26a08db913bf68a5a2979c8ebc531ebd12091d3e4e70347b91c28003d9c5edbd
-    files:
-      - task-source-2026-08-30-parent-child-task-audit-b28c38
-      - task-file-task-system-md-d14898
-      - task-file-task-system-html-80857d
-      - task-file-task-system-json-7dffd4
-      - task-file-task-system-md-f8e83e
-      - task-file-task-system-planning-html
-      - task-file-task-system-planning-json
-      - task-file-task-system-planning-md
-      - task-file-task-system-delivery-html
-      - task-file-task-system-delivery-json
-      - task-file-task-system-delivery-md
-      - task-file-task-self-bootstrap-html-c98d7e
-      - task-file-task-self-bootstrap-json-4d99c5
-      - task-file-task-self-bootstrap-md-af104b
-      - parent-completion-html
-      - parent-completion-json
-      - parent-completion-evidence
-  - id: task-system-flow
-    title: 完整过程与角色职责
-    kind: diagram
-    path: knowledge/archify/flows/task-system.html
-    objects:
-      - task-system
-    sources:
-      - scope-rules
-      - task-source-skill-f75bad
-      - task-source-agent-assets-module
-      - task-source-workspace-query
-      - task-source-task-command-application-aba2e8
-      - task-source-git-worktree-provider-d1b252
-      - openspec
-      - task-source-skill-d5bb46
-      - task-source-task-review-application-089e42
-      - task-source-skill-0ea6ac
-      - current-knowledge-maintenance
-      - task-source-task-verification-application-68479e
-      - task-source-skill-ee942e
-      - task-source-workbench-application-d9c5aa
-      - task-source-work-context-application-11bb91
-      - task-source-taskworkcontextcard-01a1b9
-      - task-source-spec-05a13b
-      - task-source-spec-a77bcf
-      - task-source-spec-ea9d2d
-      - task-source-spec-a0e711
-      - task-bootstrap-method
-      - task-bootstrap-runner
-      - task-bootstrap-continuity
-    observedDigest: 299aea012d9e299e18ebb7c5f645ed551c11cea71bb80424a84570aaedc78d4b
-    graphSource: knowledge/archify/flows/task-system.json
-    graphDigest: 3921d694181b1bbb247e12eab8ffe2fd2d509d63bb25b4ba7ef45a0df749eadc
-    files:
-      - task-file-task-system-html-80857d
-      - task-file-task-system-json-7dffd4
-      - task-file-task-system-md-f8e83e
-  - id: task-system-planning
-    title: 需求、方案与实施授权
-    kind: diagram
-    path: knowledge/archify/flows/task-system-planning.html
-    objects:
-      - task-system
-    sources:
-      - scope-rules
-      - task-source-skill-f75bad
-      - task-source-task-command-application-aba2e8
-      - task-source-git-worktree-provider-d1b252
-      - openspec
-      - task-source-skill-d5bb46
-      - task-source-task-review-application-089e42
-      - task-source-work-context-application-11bb91
-      - task-source-workbenchpage-16ae2b
-      - task-source-taskworkcontextcard-01a1b9
-      - task-source-skill-7b8bb2
-    observedDigest: d9cb69fcc5c75ff597283d56cd4217d92c33fbbaca3c77f10b6b9f2646866865
-    graphSource: knowledge/archify/flows/task-system-planning.json
-    graphDigest: e6bf58ab2b0370305bd52fe105df0fe948bf5b5eeb80168c058473f5b49d9677
-    files:
-      - task-file-task-system-planning-html
-      - task-file-task-system-planning-json
-      - task-file-task-system-planning-md
-  - id: task-system-delivery
-    title: 实现审查与代码交付
-    kind: diagram
-    path: knowledge/archify/flows/task-system-delivery.html
-    objects:
-      - task-system
-    sources:
-      - task-source-skill-0ea6ac
-      - current-knowledge-maintenance
-      - task-openspec-apply
-      - task-source-task-review-application-089e42
-      - task-source-task-verification-application-68479e
-      - task-source-skill-ee942e
-      - task-source-task-command-application-aba2e8
-    observedDigest: 93ab8db603951eb6156881d8cca250bbfe20b6d4b9a54c386131f5e10222dc50
-    graphSource: knowledge/archify/flows/task-system-delivery.json
-    graphDigest: ef9e6430333e58a8d07d1f7438a71b87593199db9a0b33f23df0c757080879e0
-    files:
-      - task-file-task-system-delivery-html
-      - task-file-task-system-delivery-json
-      - task-file-task-system-delivery-md
-  - id: task-system-bootstrap
-    title: 自举激活与安全善后
-    kind: diagram
-    path: knowledge/archify/flows/task-self-bootstrap.html
-    objects:
-      - task-system
-    sources:
-      - task-source-git-worktree-provider-d1b252
-      - task-source-preview-lifecycle-97736a
-      - task-source-self-bootstrap-closeout-test-2c0ed6
-      - task-bootstrap-method
-      - task-bootstrap-runner
-      - task-bootstrap-continuity
-    observedDigest: c003f9a712afe6212f9253944fd4702964c33e6417d6006bae57c7df55c31047
-    graphSource: knowledge/archify/flows/task-self-bootstrap.json
-    graphDigest: 6cbee98a95f09ee3243335f74cd170ca450d6f15629d7b28c2c982a24aba8796
-    files:
-      - task-file-task-self-bootstrap-html-c98d7e
-      - task-file-task-self-bootstrap-json-4d99c5
-      - task-file-task-self-bootstrap-md-af104b
-  - id: verification-overview
-    title: 怎样为项目选择和建设测试
-    kind: document
-    path: knowledge/docs/architecture/workspace-testing-and-verification-framework.md
-    objects:
-      - verification-framework
-    sources:
-      - verification-locations
-      - verification-file-b8970af0
-      - verification-file-bc346270
-      - verification-source-27da98a320
-      - verification-source-739faaad07
-      - verification-source-18593c6ff1
-      - task-source-skill-0ea6ac
-      - verification-source-37543ceb30
-      - verification-source-d43baaebce
-      - verification-source-15fb890b91
-      - verification-source-4e7364c5d1
-      - verification-source-31c0f13893
-      - task-source-task-verification-4ea021
-      - task-source-spec-a99380
-      - verification-intake-spec
-      - verification-source-fe945192ca
-      - verification-file-9894349f
-      - verification-source-a9829f3f69
-      - verification-file-8c3c96dd
-    observedDigest: 21affd27b3e912c6ae6c8d7b1803a3c23930d321efbd4c7923f0816c2e270028
-    files:
-      - verification-file-263d3698
-      - verification-file-9894349f
-      - verification-file-8c3c96dd
-      - verification-file-b8970af0
-      - verification-file-bc346270
-      - verification-file-e9222fb3
-      - verification-file-31b03bf7
-  - id: verification-product-architecture
-    title: 采用实例：Buildr 产品的测试与验证
-    kind: document
-    path: knowledge/docs/architecture/verification-framework.md
-    objects:
-      - verification-product-tools
-    sources:
-      - verification-file-263d3698
-      - verification-product-map-file
-      - verification-source-a9829f3f69
-      - verification-source-b5e167a6ea
-      - verification-source-23f06815b2
-      - verification-file-8c3c96dd
-      - verification-release-reference
-      - verification-file-9894349f
-      - verification-source-535557f7c3
-      - verification-ref-2e25071a
-      - verification-ref-afecd484
-      - verification-changed-paths
-      - verification-source-03659a2597
-      - verification-ref-fad56c76
-      - parent-completion-ui-tests
-      - verification-ref-73fbe375
-      - verification-installed-package
-      - verification-ref-e568f1e4
-    observedDigest: cc6ca5cdd68105f52d6b0b13565a2773fa49366ad62fa1fea3b956e76f0faa20
-    files:
-      - verification-file-263d3698
-      - verification-file-9894349f
-      - verification-file-8c3c96dd
-      - verification-file-b8970af0
-      - verification-file-bc346270
-      - verification-file-e9222fb3
-      - verification-file-31b03bf7
-  - id: verification-context-guide
-    title: Node.js 测试上下文：复用、隔离与生命周期
-    kind: document
-    path: knowledge/docs/guides/node-test-context-runtime.md
-    objects:
-      - verification-test-context
-    sources:
-      - verification-file-9894349f
-      - verification-source-6bc914610e
-      - verification-source-ba6db2aa02
-      - verification-context-types
-    observedDigest: f3e16c09439ebfaccd02077822e7ef789cb7d560f15622b4b08e204227b5b38a
-    files:
-      - verification-file-263d3698
-      - verification-file-9894349f
-      - verification-file-8c3c96dd
-      - verification-file-b8970af0
-      - verification-file-bc346270
-      - verification-file-e9222fb3
-      - verification-file-31b03bf7
-  - id: verification-implementation-map
-    title: 项目与服务测试验证框架的实现地图
-    kind: code-map
-    path: knowledge/code-map/verification-framework.md
-    objects:
-      - verification-framework
-      - verification-product-tools
-    sources:
-      - verification-locations
-      - verification-installed-package
-      - verification-file-263d3698
-      - verification-file-bc346270
-      - verification-source-739faaad07
-      - verification-source-18593c6ff1
-      - task-source-skill-0ea6ac
-      - task-source-skill-ee942e
-      - verification-source-27da98a320
-      - verification-intake-spec
-      - verification-source-fe945192ca
-      - task-source-spec-a99380
-      - verification-source-604151a9a5
-      - verification-source-6bc914610e
-      - verification-source-c8ee7d9bf2
-      - verification-source-d1a2938b4f
-      - verification-source-4362f9f689
-      - verification-source-4e7364c5d1
-      - verification-source-948ce80583
-      - verification-source-0fafd69549
-      - task-source-task-verification-application-68479e
-      - task-source-task-verification-4ea021
-      - task-source-task-verification-repository-470799
-      - task-source-taskagentaction-7a3c7f
-      - verification-source-c7378e723e
-      - verification-source-d68d572712
-      - verification-source-03659a2597
-      - verification-source-ab9c61c2bd
-      - verification-product-map-file
-    observedDigest: 44dce539751b25ecd0cff2610281b39a917cbdd5f1b1191bb9a852de66a7f4f3
-    files:
-      - verification-file-263d3698
-      - verification-file-9894349f
-      - verification-file-8c3c96dd
-      - verification-file-b8970af0
-      - verification-file-bc346270
-      - verification-file-e9222fb3
-      - verification-file-31b03bf7
-  - id: verification-lifecycle
-    title: Buildr 如何引导测试建设与使用
-    kind: diagram
-    path: knowledge/archify/flows/verification-framework.html
-    graphSource: knowledge/archify/flows/verification-framework.json
-    objects:
-      - verification-framework
-    sources:
-      - verification-source-15fb890b91
-      - verification-source-31c0f13893
-      - verification-source-739faaad07
-      - verification-source-18593c6ff1
-      - task-source-skill-0ea6ac
-      - verification-source-37543ceb30
-      - verification-source-d43baaebce
-      - verification-source-27da98a320
-      - verification-source-fe945192ca
-      - verification-intake-spec
-      - task-source-spec-a99380
-      - verification-source-4362f9f689
-      - verification-locations
-      - verification-source-4e7364c5d1
-      - task-source-task-verification-application-68479e
-      - task-source-task-verification-4ea021
-      - task-source-task-verification-repository-470799
-    observedDigest: 5362e373dcbc874dca21794990f0f61b7e433b39af4383684b4346a66d48b181
-    graphDigest: 0ac9549dcff1fe26866e1f012c908bbaa9e9040c86734d66665c217d0c166575
-    files:
-      - verification-file-263d3698
-      - verification-file-9894349f
-      - verification-file-8c3c96dd
-      - verification-file-b8970af0
-      - verification-file-bc346270
-      - verification-file-e9222fb3
-      - verification-file-31b03bf7
-  - id: verification-product-map
-    title: 采用实例：Buildr 产品测试工具地图
-    kind: code-map
-    path: knowledge/code-map/product-verification-tools.md
-    objects:
-      - verification-product-tools
-    sources:
-      - verification-changed-paths
-      - verification-entrypoints
-      - verification-file-263d3698
-      - verification-file-b8970af0
-      - verification-source-a9829f3f69
-      - verification-source-456f6be9e6
-      - verification-file-9894349f
-      - verification-source-07201f6210
-      - verification-source-4759f3fa18
-      - verification-source-a567a4e171
-      - verification-source-b5e167a6ea
-      - verification-source-4aba70c072
-      - verification-source-a8e6c6c2a4
-      - verification-source-11958882cd
-      - verification-source-8b321bc253
-      - verification-source-bb279cd090
-      - verification-source-54cae75589
-      - verification-source-bb45a79c77
-      - verification-source-427279b9f5
-      - verification-source-1a428d5163
-      - verification-source-c37838fbfa
-      - verification-source-23f06815b2
-      - verification-source-535557f7c3
-      - verification-source-2067de1414
-      - verification-source-57ca327cab
-      - verification-file-8c3c96dd
-      - verification-source-ba6db2aa02
-      - verification-source-340bdb46a3
-      - verification-source-31c7256483
-      - verification-source-1967483059
-      - verification-source-95e7d22b19
-      - verification-source-212eb0e812
-      - verification-source-9970cc9595
-      - verification-source-fccb281b60
-      - verification-source-117481e3e7
-      - verification-source-4e2cb05a2b
-      - verification-ref-2e25071a
-      - verification-ref-afecd484
-      - verification-ref-e568f1e4
-      - parent-completion-ui-tests
-      - verification-source-03659a2597
-      - verification-installed-package
-      - verification-ref-fad56c76
-      - verification-ref-028fd920
-      - verification-ref-73fbe375
-    files:
-      - verification-product-map-file
-    observedDigest: 8e660338e558981af019a0f3793dcc46ca8cd11fb1f3d53d8c1d2f2bc0cabffb
-  - id: task-parent-completion-flow
-    title: 父任务如何确认完成
-    kind: diagram
-    path: knowledge/archify/flows/task-parent-coordination.html
-    graphSource: knowledge/archify/flows/task-parent-coordination.json
-    graphDigest: 195c3882a7eae8b48baf4c7e766b026372b96e6cc9b188a2f3b8013623e6bb1d
-    objects:
-      - task-system
-    sources:
-      - task-source-spec-f12a41
-      - task-source-spec-5aed6b
-      - parent-coordination-spec
-      - task-source-task-query-application-9f6269
-      - task-source-parent-coordination-application-49a9bd
-      - task-source-task-command-application-aba2e8
-      - parent-input-validation
-      - task-source-task-04c6c5
-      - task-source-task-repository-be5696
-      - task-source-work-context-application-11bb91
-      - task-source-task-4ce8a0
-      - task-source-task-http-e1bbb1
-      - task-source-skill-7b8bb2
-      - task-source-taskcompletemodal-0d6276
-      - parent-coordination-panel
-      - parent-completion-fields
-      - parent-completion-input
-      - parent-task-actions
-      - parent-coordination-tests
-      - parent-completion-ui-tests
-    files:
-      - parent-completion-html
-      - parent-completion-json
-      - parent-completion-evidence
-    observedDigest: 86f4a1cbff48189a905282eae68b4a3dc54596e6adab2e5208991a7f0b066076
-  - id: product-directions-document
-    title: 后续方向
-    kind: document
-    path: knowledge/docs/directions.md
-    objects:
-      - product-directions
-    sources:
-      - overview-directions
 sources:
+  - id: project-documents-entry
+    title: 项目文档
+    kind: evidence
+    path: README.md
   - id: technical-http-host-source
     title: 本机请求主机校验
     kind: code
@@ -1450,7 +1125,7 @@ sources:
   - id: product-reference-usage
     title: 日常使用手册
     kind: evidence
-    path: knowledge/docs/guides/usage.md
+    path: knowledge/docs/guides/getting-started.md
   - id: product-reference-daily-progress
     title: 项目每日演进
     kind: evidence
@@ -2974,6 +2649,46 @@ sources:
     path: services/buildr-web/src/features/workspace/components/useWorkspaceComposition.ts
     summary: 按工作空间身份读取组成，关联通知和重新激活时刷新；局部读取失败保留已有对象。
     observedDigest: 89d71b12e3b9475ab7be735a7b0d7c12a97b7c0fade99ebf4301c50166042a03
+  - id: manual-cli-architecture-document
+    title: Buildr CLI 与模块架构
+    kind: evidence
+    path: services/buildr/docs/cli-architecture.md
+  - id: manual-json-contracts-document
+    title: Buildr 公开 JSON 契约
+    kind: evidence
+    path: knowledge/docs/reference/json-contracts.md
+  - id: manual-resources-document
+    title: Buildr 文件型交付资源
+    kind: evidence
+    path: services/buildr/docs/resources.md
+  - id: manual-skill-capability-contracts-document
+    title: Skill Capability Contracts
+    kind: evidence
+    path: services/buildr/docs/skill-capability-contracts.md
+  - id: manual-agent-runtime-adapter-contribution-document
+    title: 接入新的智能体运行时
+    kind: evidence
+    path: knowledge/docs/reference/agent-runtime-adapter-contribution.md
+  - id: manual-archify-component-document
+    title: Archify 可选组件（Component）
+    kind: evidence
+    path: services/buildr/docs/archify-component.md
+  - id: manual-bootstrap-guide-document
+    title: Buildr 安装与恢复指南
+    kind: evidence
+    path: services/buildr/docs/bootstrap-guide.md
+  - id: release-readiness-document
+    title: 0.1.0 准备审查
+    kind: evidence
+    path: knowledge/reviews/v0.1.0-readiness.md
+  - id: architecture-directory
+    title: 架构阅读目录
+    kind: evidence
+    path: knowledge/docs/architecture/index.md
+  - id: reference-development-and-operations-document
+    title: 开发与运行入口
+    kind: evidence
+    path: knowledge/docs/guides/development-and-operations.md
 relations:
   - from: product-overview-article
     to: product-overview

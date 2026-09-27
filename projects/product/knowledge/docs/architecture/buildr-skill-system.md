@@ -31,6 +31,8 @@ Buildr 把可复用的工作方法保存在技能（Skill）中，再为不同�
 
 声明格式、解析顺序和替换入口见[能力契约参考](../../../services/buildr/docs/skill-capability-contracts.md)。
 
+以知识维护为例，`current-knowledge-maintenance` 的正文和 `references/` 一起维护、交付。OpenSpec 组件（Component）为相关调用方（Consumer）提供协作说明并声明知识维护依赖；生成入口时，只向调用方（Consumer）加入它需要的局部绑定，具体方法仍从已选提供者（Provider）的完整文件读取。这样可以分别更新知识维护方法与 OpenSpec 协作说明，也能在保留契约保证的前提下替换方法，不必在每个调用方（Consumer）中复制正文。来源见[组件声明](../../../services/buildr/resources/workspace/components/buildr/openspec/component.yml)与[知识维护技能（Skill）](../../../services/buildr/resources/workspace/skills/buildr/current-knowledge-maintenance/SKILL.md)。
+
 ## 执行说明与诊断证据分开放
 
 派生的 `SKILL.md` 需要让智能体（Agent）和人都能直接阅读，因此只包含源正文、适用增强、当前依赖的状态、契约路径、已选提供者（Provider）的入口，以及必要的停止说明。完整关系图、摘要、文件清单和来源证据放在诊断及投射回执（Projection Receipt）中，不塞进每一份方法正文。

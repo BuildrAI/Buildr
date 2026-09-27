@@ -10,6 +10,12 @@
 
 当前知识维护方法（`current-knowledge-maintenance`）组织这项工作，按需要使用图示、代码地图（Code Map）或术语维护。已经授权的主题应连同必要来源、引用和阅读关联完成；无关新主题、业务取舍或事实源修改另行判断。具体方法见[建设指引](../../../services/buildr/resources/workspace/skills/buildr/current-knowledge-maintenance/references/architecture-knowledge.md)。
 
+调查可以深入实现，表达则围绕读者的问题，讲清目标、职责、关键关系、行为与重要取舍。事实、设计依据、推断和建议就近区分；解释文章、图示和代码地图（Code Map）按需要组合，不要求每个主题配齐所有形式。[项目、服务与代码库如何协作](project-service-repositories.md)就是把对象关系、设计理由和实现位置组织成同一理解主题的例子。
+
+![知识建设与维护的职责关系](../../archify/flows/knowledge-maintenance.html)
+
+图中规范与代码提供事实，专业方法帮助解释，智能体（Agent）维护实际成果，网页提供阅读。知识维护发现承诺与实现不符时，应指出差异并交给相应来源的维护动作，不能让说明文字代替事实修复。
+
 ## 正文、图和来源怎样放在一起
 
 | 成果 | 适合回答什么 |
@@ -38,4 +44,17 @@ Buildr Web 按主题组织阅读，也提供全部资料检索。正文按打开
 
 开发预览（Development Preview）可从已登记工作树（Worktree）读取那份代码及资料，并显示来源说明。预览启动时的分支与提交不是文件的实时版本；修改后仍需刷新。当前没有主应用内的“当前版本／开发中”切换，开发渠道标志也不代表所读文章正在开发。
 
-依据见[维护规范](../../../openspec/specs/current-knowledge-maintenance/spec.md)、[读取行为测试](../../../services/buildr/test/integration/knowledge-query.test.ts)及[职责图](../../archify/flows/knowledge-maintenance.html)。这些是实现与检查入口，不代表当前会话已验证全部页面。
+## 知识主线与项目文档各有入口
+
+知识首页按“怎样理解这个项目”组织少量主线和必要子主题。安装、日常操作、开发说明与参数参考通过项目 `README.md` 的“项目文档”入口独立查阅；普通文档可以作为知识成果的事实来源，不因存在一个文件就升级为主题或知识成果。目录介绍和导航，专题解释问题，每个持续有效的问题保留一份正文。
+
+文件按真实职责放置：解释与普通说明在 `knowledge/docs/`，实现定位与图源分别在 `knowledge/code-map/`、`knowledge/archify/`，阶段审查在 `knowledge/reviews/`。源规则（Rule）和技能（Skill）属于产品资源，附件通过链接连接手册；已发表文章在 `docs/publications/`，行为规范和变更在 `openspec/`，两者保留各自身份与管理方式。服务目录中尚未迁移的参考只维护现有唯一正文；当前正式包仅复制 `bootstrap-guide.md`，程序消费文本迁移时必须同步读取与打包路径。
+
+维护时遵循以下判断：
+
+- 先回答读者问题，保留理解所需的设计理由和例子。删除重复背景、过时过程、空模板和无用口号；专题可以深入，内部字段与参数放在参考中，不把复杂机制压成术语串。
+- 关系、分支与状态适合图示，操作外观使用注明环境与用途的真实截图，比较使用表格。原型不冒充现有界面，也不要求每篇有图。GitHub 支持 Mermaid；当前 Buildr Web 普通正文不直接渲染 Mermaid 或加载普通截图路径，技术图通过登记成果展示，需在实际阅读入口核对效果。
+- 优先更新现有章节；重复内容合并后删除旧正文。普通过时说明不再另建归档目录，历史由 Git 保存；有效设计理由留在相关章节，仍值得讨论的未来方向集中维护。阶段审查中有长期价值的结论进入对应章节，失去行动价值的报告可删除。
+- 删除或迁移前核对消费者，保留仍在使用的文章、规范和运行时（Runtime）恢复文本。完成后检查相关目录、链接、关键陈述及适用的 `knowledge/index.yml`，从读者入口走一遍受影响路径，不因局部调整重写全库。
+
+依据见[维护规范](../../../openspec/specs/current-knowledge-maintenance/spec.md)和[读取行为测试](../../../services/buildr/test/integration/knowledge-query.test.ts)。这些是实现与检查入口，不代表当前会话已验证全部页面。

@@ -1,52 +1,90 @@
-# 开始使用 Buildr
+# 使用指南
 
-[阅读目录](../README.md) · [日常使用](usage.md)
+[阅读目录](../README.md)
 
-**智能体（Agent）安装并引导，用户在网页中配置，再打开工作空间（Workspace）开始工作。** 不需要先学习命令或完整操作手册。
+智能体（Agent）安装并引导，你在网页中配置资料，再在智能体（Agent）工具中打开工作空间（Workspace）开始工作。日常提出目标、参与判断和查看成果即可，不必先学习命令。
 
-## 安装与引导
+## 安装与配置
 
 把项目链接交给正在使用的智能体（Agent）：
 
-> 请参考 https://github.com/BuildrAI/Buildr 帮我安装 Buildr 和 Buildr Web 启动器。安装后，向我解释工作空间、项目、服务和代码库，然后打开 Buildr Web，引导我完成配置。需要准备目录或代码时，请协助处理。
+> 请参考 https://github.com/BuildrAI/Buildr 帮我安装 Buildr 和 Buildr Web 启动器。安装后，结合我的工作解释工作空间、项目、服务和代码库，打开网页引导我配置。需要准备目录或代码时，请协助处理，保留已有内容。
 
-智能体（Agent）核对环境与当前发布版本，安装官方包 `@buildr-ai/buildr`，并检查 Buildr Web 能否打开。macOS 和 Windows 可安装 Buildr Web 启动器（Launcher），其他平台通过本机网页使用。具体命令供智能体（Agent）查阅[安装参考](../../../services/buildr/docs/cli-reference.md#首次使用)，接入范围见[适配参考](../../../services/buildr/docs/agent-runtime-adapters.md)。
+智能体（Agent）核对环境与当前发布版本，安装官方包 `@buildr-ai/buildr`，检查网页能否打开。macOS 和 Windows 可安装 Buildr Web 启动器（Launcher），其他平台通过本机网页使用。具体命令见[安装参考](../../../services/buildr/docs/cli-reference.md#首次使用)，工具支持与刷新要求见[适配参考](../../../services/buildr/docs/agent-runtime-adapters.md)。
 
-## 理解关系，在网页中配置
+| 配置对象 | 要说明什么 |
+| --- | --- |
+| 工作空间（Workspace） | 这组工作共用的资料和方法在哪里？ |
+| 项目（Project） | 要实现什么业务目标？ |
+| 服务（Service） | 哪部分实现承担这个目标？ |
+| 代码库实例（Repository Instance） | 实际使用哪份代码？ |
 
-智能体（Agent）结合你的工作解释四个概念：
+已有资料和代码尽量复用；不涉及代码时，只准备项目（Project）及资料即可。一个服务（Service）可以被多个项目（Project）引用。登记关联不会自动移动或克隆代码，需要时由智能体（Agent）处理；关系不清时请它结合实际目录解释，详情见[工作如何组织](../architecture/project-service-repositories.md)。
 
-| 名称 | 回答什么 | 例子 |
-| --- | --- | --- |
-| 工作空间（Workspace） | 这组工作共用哪些资料和方法？ | 团队的工作目录 |
-| 项目（Project） | 我们要实现什么业务目标？ | 订单管理系统 |
-| 服务（Service） | 哪一部分负责实现？ | 订单后端、管理前端 |
-| 代码库（Repository） | 这部分代码实际在哪里？ | 已有的前后端代码目录 |
+## 在智能体（Agent）中工作，在网页中查看
 
-智能体（Agent）打开 Buildr Web，引导你配置工作空间（Workspace）信息、建立项目（Project），按需关联服务（Service）和代码库（Repository）；不涉及代码时，可以只准备项目（Project）及资料。已有内容尽量复用，需要准备目录或代码时由智能体（Agent）协助，关系不清时由它解释。
-
-一个服务（Service）可以被多个项目（Project）引用；代码库实例（Repository Instance）记录本机的实际代码位置。登记关联不会自动移动或克隆代码，代码准备由智能体（Agent）处理。更详细的关系见[工作如何组织](../architecture/project-service-repositories.md)。
-
-也可以在理解概念后继续通过对话配置，例如：
-
-> 我在开发订单管理系统，需求资料在……，后端代码在……，前端代码在……。请帮我建立项目并关联已有代码，保留原目录和已有内容。
-
-## 打开工作空间（Workspace），开始工作
-
-配置完成后，在智能体（Agent）工具中打开对应的工作空间（Workspace）目录，直接提出目标：
+配置完成后，在智能体（Agent）工具中打开对应的工作空间（Workspace）目录，给出目标、已有材料、期望结果与修改范围。例如：
 
 > 为订单列表增加按状态筛选，沿用现有界面和测试方式。完成后说明改动与验证结果，并更新相关资料。
 
-智能体（Agent）读取当前资料和方法，按目标实施并验证。你参与业务取舍，通过 Buildr Web 查看资料、进展和成果；完成后说“收尾”，继续已授权的交付与整理。网页与对话共享工作依据，不需要用户在两处重复登记。
+只想调查时说明“先调查，不修改”；需要讨论时说明“先给出范围明确的方案和验收方式”。智能体（Agent）负责查找依据、选择方法、准备工作位置，以及必要的工具刷新；这些表达不是固定口令。
 
-具体执行仍在智能体（Agent）工具中。若需要准备目录、代码或刷新工具以发现新安装的技能（Skill），由智能体（Agent）处理并说明最少必要动作。
+Buildr Web 可以查看资料、任务（Task）和成果，也可以准备交给智能体（Agent）的指令。复制前确认目标与范围仍然正确；保存意见不会自动唤醒执行。需要持续跟进的工作，让智能体（Agent）登记目标、关键进展、验证及交付结果；聊天和 Git 提交不会自动填入任务（Task）页面。具体材料来源与协作方式见[任务协作](../architecture/task-system.md)。
 
-## 更新与接续
+## 接续与交付
+
+中断或换人后，给出任务（Task）标识或成果位置：
+
+> 继续这项工作。先读取最新目标、我的答复和实际改动，说明已完成与剩余部分，再在已有授权内推进。
+
+接续依据当前成果，不只复述旧对话。多个独立目标可以分开推进，最终仍按整体目标验收。你需要看到实际改动、适用检查与未解决的问题；任务（Task）显示完成，不等于代码已推送或应用已更新。
+
+明确说“收尾”，会授权当前工作范围内可核验的常规 Git 提交、集成和普通推送。发布、部署、改写共享历史或覆盖他人内容等更大影响仍按目标和明确授权处理，边界见[核心规则](../../../services/buildr/resources/workspace/AGENTS.md)。
+
+经过验证、以后还会使用的方法，可以请智能体（Agent）整理为技能（Skill）；资料变化时更新原文，不为同一主题反复新建说明。复盘和每日演进按实际需要使用。
+
+## 更新与数据保护
 
 在对应工作空间（Workspace）中告诉智能体（Agent）：
 
-> 更新 Buildr 和工作空间，检查 Buildr Web 能正常打开。更新完成后，再收尾。
+> 先核对当前版本、目录和已有数据，保留可恢复的副本，再更新 Buildr 和工作空间。告诉我备份在哪里、检查过什么，确认网页正常后再收尾；不要覆盖原资料或直接降级恢复。
 
-更新 Buildr 包括包内的 Buildr Web；已有启动器（Launcher）的绑定随同核对。更新工作空间（Workspace）同步其中的工作资产和当前智能体（Agent）入口。用户不需要再单独请求更新网页；智能体（Agent）分别核对产品更新和工作空间（Workspace）同步的实际结果。
+Buildr 更新包含包内网页；已有启动器（Launcher）的绑定也应核对。工作空间（Workspace）同步则更新工作资产和工具入口。两项结果分别检查，无需另提一次网页更新。
 
-日常工作见[日常使用](usage.md)；更新前的资料保护见[数据保全](data-and-upgrades.md)；安装或显示异常见[排查问题](troubleshooting.md)。
+只提交 Git，不能备份全部本机记录。你重点确认原版本与目录、备份位置、重要资料与记录是否可读。以下保全步骤由智能体（Agent）或维护者处理，路径相对实际工作空间（Workspace）：
+
+| 保留什么 | 位置与要点 |
+| --- | --- |
+| 资料、规则（Rule）、技能（Skill）与代码 | 保留实际来源、各 Git 仓库、未提交成果和独立工作树（Worktree） |
+| 任务（Task）、审查（Review）与验证（Verification）记录 | `.buildr/local/workspace.sqlite`；停止全部写入后复制，保留当时仍存在的 `-wal`、`-shm` |
+| 复盘正文与每日演进 | `.buildr/local/task-retrospectives/`、`.buildr/daily-progress/`；SQLite 没有这些正文副本，重新生成不等于恢复 |
+| 未完成操作 | `.buildr/mutations/` 及相关恢复记录；同时保留记录、备份与当前文件 |
+| 安装及目录归属 | 核对实际应用数据目录与管理记录；不能当作跨机器通用配置 |
+
+维护者先记录当前版本、程序入口、目标版本及未完成操作，停止相关命令与应用写入，再复制到新的受保护目录。核对文件清单和重要记录，在副本上检查 SQLite 完整性，然后更新并检查一项代表工作。关闭浏览器不等于退出 Buildr；运行中的 SQLite 不能靠普通文件复制保证一致。副本可能含业务内容或凭证，应保留到新版本已实际使用。
+
+较早版本的升级还会退役旧执行、研发、环境、收尾聚合和部分复盘数据。新版首次可写打开 SQLite 时会执行待迁移项，并清理旧 `.buildr/asset-review/`、`.buildr/local/task-execution-records/`；有价值的旧内容应提前另存。迁移逐项提交，后续失败不撤回此前结果，安装旧程序也不会降级 SQLite 数据。
+
+更新失败时保留现场和副本，再判断修复或恢复，不覆盖唯一现场。换机器时先迁移可移植资料，再准备工具，并单独核对本机记录与实际路径。当前没有统一备份或跨机器自动恢复工具；更多位置与边界见[数据设计](../architecture/buildr-data-design.md)，迁移依据见[数据库维护](../../../services/buildr/src/infrastructure/sqlite/workspace-sqlite.ts)。
+
+## 按现象排查
+
+把错误原文交给智能体（Agent），先确认实际版本、工作目录和工具，保留现场再处理。不要删除整个 `.buildr/` 或重新初始化来“清空错误”，也不要手工改写受管输出掩盖源文件问题。
+
+| 现象 | 请智能体（Agent）先核对 |
+| --- | --- |
+| 安装失败或不能启动 | Node.js 是否满足 `>=24.15.0 <25`，入口是否属于预期安装；见[安装参考](../../../services/buildr/docs/cli-reference.md#首次使用) |
+| 版本不清或更新后页面仍旧 | `buildr --version`、`buildr update check --json`，稳定或候选轨道，以及旧进程或另一个安装的启动器（Launcher）；核实后正常退出旧实例 |
+| 工具看不到技能（Skill） | 目标工具、生成位置及刷新要求；见[适配说明](../../../services/buildr/docs/agent-runtime-adapters.md)。维护方法也不可用时，可运行 `buildr bootstrap guide` 获取随包说明 |
+| 页面没有资料或任务（Task） | 当前工作空间（Workspace）、筛选、登记及本机记录；换机器不会自动带来历史 |
+| 知识链接打不开 | 文件是否存在并已登记阅读关联，链接指向正文、图源还是 HTML 展示；GitHub 不直接运行交互图 |
+| 保存提示冲突 | 先刷新并重读其他入口的修改，再决定合并，不重放旧内容覆盖 |
+| 更新提示数据或迁移问题 | 先停止写入，按上节保留现场和副本，核对程序与数据版本 |
+| 关闭浏览器后仍在运行 | 通过页面“退出 Buildr”停止；进程异常时先核对归属 |
+| 发布或交付部分成功 | 保留已由 Git 或目标平台确认的结果，仅恢复剩余步骤，不重复发布 |
+
+已初始化的工作空间（Workspace）可让智能体（Agent）运行 `buildr doctor --agent <实际工具参数> --target <工作空间绝对路径> --json`；工具参数从 `buildr runtime list --json` 核对。结果只证明实际检查的范围，不证明工具已加载技能（Skill）或业务目标已完成。安装归属、来源或修改授权不清时保留文件，不猜测修复对象。
+
+需要反馈时，向 [GitHub Issues](https://github.com/BuildrAI/Buildr/issues)提供系统、Buildr 与 Node.js 版本、所用工具、目标与步骤、期望和实际结果、错误原文，以及首次安装或升级来源和能否在无敏感数据的目录复现。去掉令牌（Token）、实例密钥、个人路径及业务内容；疑似漏洞按[安全报告](https://github.com/BuildrAI/Buildr/blob/main/SECURITY.md)私密提交。
+
+命令细节与产品边界分别查阅[命令参考](../../../services/buildr/docs/cli-reference.md)和[已知限制](../../../services/buildr/docs/known-limitations.md)。

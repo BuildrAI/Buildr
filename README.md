@@ -104,7 +104,7 @@ Buildr 当前以本机使用为主。文件资料可以通过 Git 协作，本�
 
 | 你想了解什么 | 阅读入口 |
 | --- | --- |
-| 开始与日常使用 | [文档目录](docs/README.md) · [开始使用](projects/product/knowledge/docs/guides/getting-started.md) · [日常使用](projects/product/knowledge/docs/guides/usage.md) |
+| 开始与日常使用 | [文档目录](docs/README.md) · [使用指南](projects/product/knowledge/docs/guides/getting-started.md) |
 | 深入了解产品 | [产品说明](projects/product/knowledge/docs/overview.md) · [后续方向](projects/product/knowledge/docs/directions.md) |
 | 智能体（Agent）安装与维护 | [Buildr 入口技能（Skill）](projects/product/services/buildr/resources/runtime/skills/buildr/SKILL.md) · [安装与命令参考](projects/product/services/buildr/docs/cli-reference.md) · [工具适配](projects/product/services/buildr/docs/agent-runtime-adapters.md) |
 | 参与开发 | [产品开发入口](projects/product/README.md) · [当前知识](projects/product/knowledge/README.md) · [贡献指南](CONTRIBUTING.md) |

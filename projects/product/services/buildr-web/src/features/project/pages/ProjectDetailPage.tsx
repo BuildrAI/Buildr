@@ -32,7 +32,7 @@ type ObjTab = { key: string; kind: 'doc'; ref: string };
 const projectDocumentMissingMessage = (path: string) => `项目内未找到 ${path}`;
 
 const DOC_ROWS: { ref: string; name: string; hint: string }[] = [
-  { ref: 'readme', name: 'README.md', hint: '项目治理根与入口' },
+  { ref: 'readme', name: '项目文档', hint: '使用、开发与参考 · README.md' },
   { ref: 'agents', name: 'AGENTS.md', hint: '规则与授权边界' },
 ];
 
@@ -180,8 +180,8 @@ export function ProjectDetailPage() {
               key={activeTab.ref}
               projectCode={projectCode}
               docPath={activeTab.ref === 'agents' ? 'AGENTS.md' : 'README.md'}
-              title={activeTab.ref === 'agents' ? 'AGENTS.md' : 'README.md'}
-              hint={activeTab.ref === 'agents' ? '规则与授权边界' : '项目治理根与入口'}
+              title={activeTab.ref === 'agents' ? 'AGENTS.md' : '项目文档'}
+              hint={activeTab.ref === 'agents' ? '规则与授权边界' : '使用、开发与参考 · README.md'}
             />
         ) : null}
       >
@@ -206,8 +206,6 @@ export function ProjectDetailPage() {
           event.preventDefault(); openAgentAction('knowledge', knowledgeInitializationContext(knowledge.data, href(`/knowledge/project/${encodeURIComponent(projectCode)}`)));
         }} />
         <div className="project-home-details">
-          {data ? <ProjectServicesPanel projectCode={projectCode} data={data} setData={catalog.setData} onReload={reload} /> : <Alert type="warning" message={catalog.error || '正在读取关联服务…'} action={<Button onClick={reload}>重新读取</Button>} />}
-
           <section className="resource-section" aria-label="文档">
             <div className="ws-section-head"><h2>项目资料 <span className="ws-count">{DOC_ROWS.length} 个入口</span></h2></div>
             <div className="ws-obj-list">
@@ -227,6 +225,7 @@ export function ProjectDetailPage() {
               ))}
             </div>
           </section>
+          {data ? <ProjectServicesPanel projectCode={projectCode} data={data} setData={catalog.setData} onReload={reload} /> : <Alert type="warning" message={catalog.error || '正在读取关联服务…'} action={<Button onClick={reload}>重新读取</Button>} />}
         </div>
         </>}
         </div>

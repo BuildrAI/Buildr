@@ -1,6 +1,8 @@
-# Buildr 的数据保存在哪里
+# Buildr 数据全景与领域设计
 
 理解 Buildr 的数据，先问三件事：这项信息表达什么，谁负责修改，原文保存在哪里。文件与数据库只是保存方式；本机记录未必可丢弃，派生文件也未必允许直接覆盖。
+
+例如，两项业务目标可以引用同一个服务（Service），同一代码库实例（Repository Instance）又可以承载多个服务（Service）。复制目录树无法准确表达这些关系；Buildr 将业务身份、实现位置和当前运行观察分别保存，再通过引用连接。稳定身份用于确认对象，路径用于定位内容，当前分支和进程状态则在继续工作时重新观察。
 
 本章覆盖当前本机产品。字段与约束见[数据库表参考](buildr-database-tables.md)，复杂业务关系见[项目、服务与代码库](project-service-repositories.md)。它不描述未来云端或跨机器同步方案。
 
@@ -119,4 +121,4 @@ SQLite 的一次事务（Transaction）只保护其内的表更新。文件变�
 
 中断现场应保留操作记录、备份及当前文件。自动回滚（Rollback）与手动恢复都先校验整组目标、备份和控制文件路径，再在具体删除或复制前复核；路径出现不安全链接或操作中的根目录身份发生变化时，保留可用现场并停止相关写入，不因旧回执仍在就机械重放。运行中的 SQLite 使用预写日志（WAL），只复制主 `.sqlite` 文件不是一致备份。当前没有统一备份或云端恢复工具。
 
-已有候选版用户还需注意：可写打开会按项提交待执行迁移，并清理已退役的执行记录与旧复盘目录；后续失败不会撤回前面已提交的迁移。通用升级准备不属于首次安装步骤，已有数据时再阅读[数据保全与升级](../guides/data-and-upgrades.md)。实现边界见[数据库迁移](../../../services/buildr/src/infrastructure/sqlite/workspace-sqlite.ts)、[文件事务](../../../services/buildr/src/infrastructure/filesystem/workspace-mutation.ts)与[OpenSpec 恢复](../../../services/buildr/src/modules/openspec/application/openspec-converge.ts)。
+已有候选版用户还需注意：可写打开会按项提交待执行迁移，并清理已退役的执行记录与旧复盘目录；后续失败不会撤回前面已提交的迁移。通用升级准备不属于首次安装步骤，已有数据时再阅读[数据保全与升级](../guides/getting-started.md#更新与数据保护)。实现边界见[数据库迁移](../../../services/buildr/src/infrastructure/sqlite/workspace-sqlite.ts)、[文件事务](../../../services/buildr/src/infrastructure/filesystem/workspace-mutation.ts)与[OpenSpec 恢复](../../../services/buildr/src/modules/openspec/application/openspec-converge.ts)。
