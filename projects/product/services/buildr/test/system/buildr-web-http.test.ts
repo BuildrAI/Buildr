@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import test from 'node:test';
@@ -31,6 +32,19 @@ test('Buildr Web Runtime HTTP owner 只读读取不依赖 Git，并传播明确�
   const prototypes: any = await fetch(`${url}/api/v1/workspaces/${initialWorkspaceId}/tasks/http-read/ui-prototypes`);
   assert.equal(prototypes.status, 200);
   assert.deepEqual(await prototypes.json(), { taskId: 'http-read', prototypes: [], diagnostics: [] });
+  const prototypeDirectory = path.join(root, '.buildr/local/task-prototypes/http-read');
+  fs.mkdirSync(prototypeDirectory, { recursive: true });
+  const html = '<html><head><title>任务本机原型</title></head><body><!-- buildr:ui-prototype --><p>只有当前任务可读</p></body></html>';
+  fs.writeFileSync(path.join(prototypeDirectory, 'screen.html'), html);
+  const discovered = await fetch(`${url}/api/v1/workspaces/${initialWorkspaceId}/tasks/http-read/ui-prototypes`).then(response => response.json());
+  assert.equal(discovered.prototypes.length, 1);
+  assert.equal(discovered.prototypes[0].source, 'task');
+  assert.equal(discovered.prototypes[0].change, null);
+  const document = await fetch(`${url}/api/v1/workspaces/${initialWorkspaceId}/tasks/http-read/ui-prototypes/${discovered.prototypes[0].id}`);
+  assert.equal(document.status, 200);
+  assert.equal(await document.text(), html);
+  assert.match(document.headers.get('content-security-policy') || '', /sandbox allow-scripts/);
+  assert.equal((await fetch(`${url}/api/v1/workspaces/${initialWorkspaceId}/tasks/unknown-task/ui-prototypes`)).status, 404);
   const legacyPreviews: any = await fetch(`${url}/api/v1/workspaces/${initialWorkspaceId}/tasks/http-read/ui-previews`);
   assert.equal(legacyPreviews.status, 404);
 });

@@ -87,6 +87,7 @@ test('全部 workspace JSON command family 输出登记的 schemaVersion', async
     [['component', 'check', 'openspec', '--target', root, '--json'], PUBLIC_JSON_SCHEMAS.componentCheck],
     [['builtin', 'list', '--target', root, '--json'], PUBLIC_JSON_SCHEMAS.builtinList],
     [['task', 'create', 'json-task', '--title', 'JSON Task', '--intent', '验证公开 JSON family', '--target', root, '--json'], PUBLIC_JSON_SCHEMAS.taskRecordResult],
+    [['task', 'commits', 'json-task', '--target', root, '--json'], PUBLIC_JSON_SCHEMAS.taskCommits],
     [['task', 'review', 'inspect', 'json-task', '--target', root, '--json'], PUBLIC_JSON_SCHEMAS.taskReviewOperationResult],
     [['task', 'verification', 'inspect', 'json-task', '--target', root, '--json'], PUBLIC_JSON_SCHEMAS.taskVerificationOperationResult],
   ];
@@ -123,6 +124,7 @@ test('schema registry 覆盖全部当前公开 JSON family', () => {
     'parentPlan',
     'releaseAwareness',
     'runtimeList',
+    'taskCommits',
     'taskRecordList',
     'taskRecordResult',
     'taskRecordView',

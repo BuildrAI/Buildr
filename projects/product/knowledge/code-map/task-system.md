@@ -20,9 +20,15 @@
 
 ## 原型阅读怎样落到实现？
 
-任务关联变更负责确定允许读取的成果范围；OpenSpec 查询发现带标记的 HTML，`prototype-metadata.ts` 有界解析可选页面、状态和纯文本说明，非法说明仅产生局部提示。`TaskNodeContent.tsx` 把关键页面直接列入方案菜单，`PrototypeTab.tsx` 组合隔离画面与说明；`PrototypeReaderPage.tsx` 提供任务限定的独立三栏阅读。原型不能获得真实写入能力，消息仅同步已声明阅读位置，并校验当前画面来源和装载标识。
+任务原型读取先确认任务存在，再独立读取关联变更及主工作空间（Canonical Workspace）的 `.buildr/local/task-prototypes/<task-id>/`；没有关联变更也能读取已保全的原型。来源以 `task` 与 `change` 区分，任务本机来源没有项目、变更或生命周期，使用独立身份命名域；本机目录逐级拒绝符号链接（Symbolic Link），失效变更不阻断安全来源。读取不创建目录、文件或任务记录，也不跟随工作树（Worktree）到同名本机目录。OpenSpec 查询复用带标记 HTML 的体积、深度和数量限制，`prototype-metadata.ts` 有界解析可选页面、状态和纯文本说明，非法说明仅产生局部提示。`TaskNodeContent.tsx` 把关键页面直接列入方案菜单，`PrototypeTab.tsx` 组合隔离画面与说明；`PrototypeReaderPage.tsx` 通过 `PrototypeReaderLayout.tsx` 提供任务限定的独立三栏阅读。原型不能获得真实写入能力，消息仅同步已声明阅读位置，并校验当前画面来源和装载标识。
 
 实施清单与功能说明共同使用 `SideReadingPanel.tsx` 和 `useSideReading.ts`，复用悬停、固定及键盘退出。`PrototypeFeatureNotes.tsx` 仅适配 React 生命周期，卡片、区域高亮与消息联动的共同来源为 `services/buildr/resources/workspace/skills/buildr/ui-prototype/assets/feature-notes.js` 和配套样式，随原型技能分发；原型侧 `src/prototypes/prototype-bridge.ts` 复用同一来源。关联服务的正式和模拟入口共同使用 `ProjectServicesView.tsx`，操作由各入口接入。正式工作空间总览由 `WorkspaceOverviewPage.tsx` 通过 `useWorkspaceComposition` 读取当前组成登记。
+
+## 提交记录怎样落到实现？
+
+`commits/` 提供独立只读用例：命令行（CLI）与超文本传输协议（HTTP）调用同一 `task-commits-application.ts`，先核对任务，再解析其项目、服务、关联变更对应项目和已知任务工作树（Worktree）范围。`isWorkspaceOnlyTaskRecord` 为工作空间级任务（Workspace-only Task）选择其权威根目录本身的 Git 代码库，不回退到调用时目录或父级代码库。`git-commit-reader.ts` 读取真实 Git 引用与对象，以代码库（Repository）身份和完整哈希值（Hash）去重；本机未推送提交也在当前可达范围内，读取有界、不自动抓取远端。`task-commit.ts` 只把末尾规范 `Buildr-Task` 尾注（Trailer）视为归属，同值重复合并，非法值和不同值冲突返回诊断。结果说明已读来源、范围和局部失败，不新增持久关联表，也不调用任务状态、审查或验证写入。
+
+`TaskDetailPage.tsx` 在“任务收尾”后挂载独立阅读标签，未增加工作阶段。`TaskCommitsPane.tsx` 组合读取和页面状态，`useTaskCommits.ts` 在进入及刷新时请求真实数据，切换任务时取消旧请求。`TaskCommitRecords.tsx` 展示完整提交说明、哈希值（Hash）与来源，支持展开、复制和重试；部分结果与读取失败分别提示。提交说明中的任务尾注原样显示，不再另加重复的任务关联行。
 
 ## 父任务协调怎样落到实现？
 
@@ -66,7 +72,7 @@
       - [task-review-application.ts](../../services/buildr/src/modules/task/application/task-review-application.ts) — 保存方案或实现结果的审查结论
       - [task-verification-application.ts](../../services/buildr/src/modules/task/application/task-verification-application.ts) — 保存实际检查与未覆盖项，核对报告适用性
     - `domain/` — 业务事实及约束
-      - [task.ts](../../services/buildr/src/modules/task/domain/task.ts) — 任务、结果、父任务完成依据与更正历史的数据类；不执行完成校验
+      - [task.ts](../../services/buildr/src/modules/task/domain/task.ts) — 任务编码规则及任务、结果、父任务完成依据与更正历史的数据类；编码规则由输入校验和提交尾注解析共同复用，不执行完成校验
       - [task-review.ts](../../services/buildr/src/modules/task/domain/task-review.ts) — 被审对象、审阅范围与结论
       - [task-verification.ts](../../services/buildr/src/modules/task/domain/task-verification.ts) — 验证报告及结论约束
     - `persistence/` — 独立事实的保存
@@ -81,6 +87,14 @@
       - [interfaces/cli/work-context-cli.ts](../../services/buildr/src/modules/task/work-context/interfaces/cli/work-context-cli.ts) — 智能体（Agent）读取和记录同一摘要
     - `infrastructure/` — Git 位置与删除安全
       - [git-worktree-provider.ts](../../services/buildr/src/modules/task/infrastructure/git-worktree-provider.ts) — 创建和检查真实位置，清理前复核归属与成果保留
+    - `change/application/` — 任务限定材料阅读
+      - [change-application.ts](../../services/buildr/src/modules/task/change/application/change-application.ts) — 关联变更与本机任务原型的独立发现、身份、安全读取和局部诊断
+    - **`commits/`** — 当前可达提交的只读关联
+      - [application/task-commits-application.ts](../../services/buildr/src/modules/task/commits/application/task-commits-application.ts) — 核对任务与明确来源，聚合去重后的提交、覆盖范围和局部诊断
+      - [domain/task-commit.ts](../../services/buildr/src/modules/task/commits/domain/task-commit.ts) — 解析实际提交对象与规范任务尾注，区分合法、冲突和非法值
+      - [infrastructure/git-commit-reader.ts](../../services/buildr/src/modules/task/commits/infrastructure/git-commit-reader.ts) — 核对真实代码库与工作树，限定读取引用和原始对象，不抓取远端或写入 Git
+      - [interfaces/cli/task-commits.ts](../../services/buildr/src/modules/task/commits/interfaces/cli/task-commits.ts) — 接收任务编码与工作空间，输出同一任务提交结果
+      - [interfaces/http/task-commits-http.ts](../../services/buildr/src/modules/task/commits/interfaces/http/task-commits-http.ts) — 网页任务限定读取入口，不接受调用者指定代码库或引用
     - [module.ts](../../services/buildr/src/modules/task/module.ts) — 装配各独立能力及公开接口
   - **`services/buildr/src/modules/workbench/`** — 日常关注的组合阅读
     - [application/workbench-application.ts](../../services/buildr/src/modules/workbench/application/workbench-application.ts) — 读取明确事项、任务和已有每日演进，不推断任务正在执行
@@ -105,9 +119,12 @@
       - `components/`
         - [TaskNodeContent.tsx](../../services/buildr-web/src/features/task/components/TaskNodeContent.tsx) — 任务材料与原型页面的左侧目录
         - [PrototypeTab.tsx](../../services/buildr-web/src/features/task/components/PrototypeTab.tsx) — 隔离预览、说明、状态选择与阅读消息校验
+        - [PrototypeReaderLayout.tsx](../../services/buildr-web/src/features/task/components/PrototypeReaderLayout.tsx) — 独立任务阅读与离线预览共同使用的页面目录和阅读布局
         - [TaskAgentAction.tsx](../../services/buildr-web/src/features/task/components/TaskAgentAction.tsx) — 开始与继续工作的指令，按当前范围重新读取
         - [TaskWorkContextCard.tsx](../../services/buildr-web/src/features/task/components/TaskWorkContextCard.tsx) — 人查看与回应事项，冲突保留输入
         - [TaskArtifactReader.tsx](../../services/buildr-web/src/features/task/components/TaskArtifactReader.tsx) — 并排阅读真实方案和成果材料
+        - [TaskCommitsPane.tsx](../../services/buildr-web/src/features/task/components/TaskCommitsPane.tsx) — 组合提交查询、展开状态及说明示例
+        - [TaskCommitRecords.tsx](../../services/buildr-web/src/features/task/components/TaskCommitRecords.tsx) — 展示实际提交、读取范围、局部失败与复制操作
         - [TaskCompleteModal.tsx](../../services/buildr-web/src/features/task/components/TaskCompleteModal.tsx) — 完成摘要与父任务明确授权
         - [CompositeTaskEndDrawer.tsx](../../services/buildr-web/src/features/task/components/CompositeTaskEndDrawer.tsx) — 明确处置未结束子任务并组合结束
         - [ParentCoordinationPanel.tsx](../../services/buildr-web/src/features/task/components/ParentCoordinationPanel.tsx) — 展示直接子任务结果、父任务完成依据和局部历史诊断
@@ -115,6 +132,7 @@
         - [parentCoordination.ts](../../services/buildr-web/src/features/task/components/parentCoordination.ts) — 检查表单必填项、未结束子任务和明确确认，携带已观察身份生成完成输入
       - [hooks/useTaskActions.ts](../../services/buildr-web/src/features/task/hooks/useTaskActions.ts) — 完成前重读、提交版本与授权；冲突后清除旧确认、刷新成果，等待重新判断
       - [hooks/useTaskWorkContext.ts](../../services/buildr-web/src/features/task/hooks/useTaskWorkContext.ts) — 刷新与取消旧请求，防止不同任务内容混入
+      - [hooks/useTaskCommits.ts](../../services/buildr-web/src/features/task/hooks/useTaskCommits.ts) — 按任务进入或刷新读取，取消旧请求并区分加载、失败和已有结果
     - **`features/workbench/`** — 日常关注入口
       - [pages/WorkbenchPage.tsx](../../services/buildr-web/src/features/workbench/pages/WorkbenchPage.tsx) — 等我回应（明确的决定、验收或补充信息请求）、继续推进、项目变化与常用资料；没有回应请求时紧凑展示
 
@@ -130,6 +148,7 @@
 | [工作树管理（task-worktree）](../../services/buildr/resources/workspace/skills/buildr/task-worktree/SKILL.md) | 创建、检查和安全清理明确归属的独立位置 |
 | [任务审查（task-review）](../../services/buildr/resources/workspace/skills/buildr/task-review/SKILL.md) | 按目标与风险审查方案或实现结果，保存真实结论 |
 | [任务验证（task-verification）](../../services/buildr/resources/workspace/skills/buildr/task-verification/SKILL.md) | 直接运行项目检查，区分检查通过、未覆盖与完成报告 |
+| [Git 操作（git-operations）](../../services/buildr/resources/workspace/skills/buildr/git-operations/SKILL.md) | 精确执行已授权操作；明确正式任务时写入任务尾注并分别核对真实提交与任务读取 |
 | [收尾与交付（task-finish）](../../services/buildr/resources/workspace/skills/buildr/task-finish/SKILL.md) | 核验成果、完成实际交付，保存已有任务结果并处理安全善后 |
 | [当前知识维护（current-knowledge-maintenance）](../../services/buildr/resources/workspace/skills/buildr/current-knowledge-maintenance/SKILL.md) | 维护受影响的文章、技术图（Technical Diagram）与代码地图（Code Map） |
 

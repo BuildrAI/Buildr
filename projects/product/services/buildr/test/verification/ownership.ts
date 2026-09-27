@@ -423,6 +423,8 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "src/modules/task/persistence/task-change-repository.ts",
       "test/system/task-record-change-resolver.test.ts",
       "test/system/task-record-buildr-web.test.ts",
+      "test/system/task-commits.test.ts",
+      "src/modules/task/commits/**",
       "test/system/task-record-product.test.ts",
       "test/system/task-review-product.test.ts",
       "test/system/task-verification-product.test.ts",

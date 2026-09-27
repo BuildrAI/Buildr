@@ -20,7 +20,7 @@ type ScopedResolution = {
   workingCopy: { provenance: string; change: ChangeSummary } | null;
   retainedBaseline: { provenance: string; change: ChangeSummary } | null;
 };
-type Prototype = { id: string; title: string; path: string; lifecycle: string; provenance: string };
+type Prototype = { id: string; title: string; path: string; source: 'task' | 'change'; project: string | null; change: string | null; lifecycle: string | null; provenance: string };
 type ChangeRuntime = {
   listProjects(): { projects: Project[] };
   projectDetail(root: string, code: string): { project: Project };
@@ -44,13 +44,13 @@ function unavailable(): never {
   throw new Error('Change Application method not registered.');
 }
 
-function fixture(): { root: string; runtime: ChangeRuntime; projectRoot: string; project: Project } {
+function fixture(projectCode = 'product'): { root: string; runtime: ChangeRuntime; projectRoot: string; project: Project } {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-change-'));
   const project: Project = {
     id: 'd15bde2c-9aab-4ed8-bf43-28a5372ca407',
-    code: 'product',
+    code: projectCode,
     name: 'Buildr Product',
-    source: { type: 'workspace', path: 'projects/product' },
+    source: { type: 'workspace', path: `projects/${projectCode}` },
   };
   const runtime: ChangeRuntime = {
     listProjects: () => ({ projects: [project] }),
@@ -197,9 +197,103 @@ test('OpenSpec 查询独立于任务，保持全局保留副本、归档提示�
   assert.equal(query.findLogicalChange(root, project, projectRoot, 'done')?.ref, 'archived~2026-09-03-01-done');
   assert.throws(() => query.findLogicalChange(root, project, projectRoot, '../outside'), (error) => coded(error, 'change_reference_invalid'));
   assert.deepEqual(query.discoverUiPrototypes(retained).prototypes, []);
-  assert.deepEqual(query.discoverUiPrototypes(retained).diagnostics.map((item) => item.code), ['ui_prototype_symlink_ignored']);
+  assert.deepEqual(query.discoverUiPrototypes(retained).diagnostics.map((item) => item.code), ['ui_prototype_symlink_ignored', 'ui_prototype_symlink_ignored']);
   assert.equal(query.generateChangeCreatePrompt(root, { projectCode: 'product', goal: '整理' }).copiedMeansCreated, false);
   assert.match(query.generateChangeActionPrompt(root, { projectCode: 'product', ref: 'archived~2026-09-03-01-done', action: 'continue' }).prompt, /不要修改历史归档/);
+});
+
+test('无变更任务从精确本机目录读取原型，未知任务及其他任务不获得访问', (t) => {
+  const { root, runtime } = fixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const html = '<!doctype html><html><head><title>本机任务原型</title></head><body><!-- buildr:ui-prototype --><p>本任务内容</p></body></html>';
+  const taskRoot = path.join(root, '.buildr/local/task-prototypes/local-task');
+  assert.deepEqual(runtime.taskUiPrototypes(root, 'local-task'), { taskId: 'local-task', prototypes: [], diagnostics: [] });
+  assert.equal(fs.existsSync(path.join(root, '.buildr')), false, '读取不创建原型目录');
+  fs.mkdirSync(taskRoot, { recursive: true });
+  fs.writeFileSync(path.join(taskRoot, 'screen.html'), html);
+  const result = runtime.taskUiPrototypes(root, 'local-task');
+  assert.equal(result.prototypes.length, 1);
+  const page = result.prototypes[0];
+  assert.deepEqual([page.source, page.project, page.change, page.lifecycle, page.provenance], ['task', null, null, null, 'task-local']);
+  assert.equal(runtime.taskUiPrototype(root, 'local-task', page.id).html, html);
+  const worktreeRoot = path.join(root, '.worktrees/local-task');
+  const worktreePrototypeRoot = path.join(worktreeRoot, '.buildr/local/task-prototypes/local-task');
+  fs.mkdirSync(worktreePrototypeRoot, { recursive: true });
+  fs.writeFileSync(path.join(worktreePrototypeRoot, 'screen.html'), html.replace('本任务内容', '错误工作树副本'));
+  runtime.inspectGitWorktrees = () => ({ status: 'ready', repositories: [{ selector: 'workspace', entityType: 'workspace', sourcePath: '.', checkoutPath: worktreeRoot, state: 'ready' }] });
+  assert.equal(runtime.taskUiPrototype(root, 'local-task', page.id).html, html, '本机任务来源只读取显式主根，不读取工作树的同名目录');
+  assert.deepEqual(runtime.taskUiPrototypes(root, 'other-task').prototypes, []);
+  assert.throws(() => runtime.taskUiPrototype(root, 'other-task', page.id), error => coded(error, 'ui_prototype_not_found'));
+  assert.throws(() => runtime.taskUiPrototypes(root, '../local-task'), error => coded(error, 'task_record_identity_invalid'));
+  runtime.inspectTask = () => { throw Object.assign(new Error('不存在'), { code: 'task_record_not_found', status: 404 }); };
+  assert.throws(() => runtime.taskUiPrototypes(root, 'local-task'), error => coded(error, 'task_record_not_found'));
+  assert.throws(() => runtime.taskUiPrototype(root, 'local-task', page.id), error => coded(error, 'task_record_not_found'));
+  assert.equal(fs.readFileSync(path.join(taskRoot, 'screen.html'), 'utf8'), html);
+});
+
+test('本机与变更原型并存，非法本机文件不影响安全来源', (t) => {
+  const { root, runtime, projectRoot } = fixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const html = '<html><head><title>原型</title></head><body><!-- buildr:ui-prototype --></body></html>';
+  writeChange(projectRoot, 'linked', { 'screen.html': html });
+  runtime.inspectTask = (_root, taskId) => ({ record: { taskId, changes: [{ project: 'product', change: 'linked' }] } });
+  const previous = runtime.taskUiPrototypes(root, 'local-task').prototypes[0];
+  const localRoot = path.join(root, '.buildr/local/task-prototypes/local-task');
+  fs.mkdirSync(localRoot, { recursive: true });
+  fs.writeFileSync(path.join(localRoot, 'screen.html'), html);
+  fs.writeFileSync(path.join(localRoot, 'unmarked.html'), '<html><head></head><body>private</body></html>');
+  fs.writeFileSync(path.join(localRoot, 'incomplete.html'), '<!-- buildr:ui-prototype -->');
+  fs.writeFileSync(path.join(localRoot, 'large.html'), html + ' '.repeat(2 * 1024 * 1024));
+  const outside = path.join(root, 'outside');
+  fs.mkdirSync(outside);
+  fs.writeFileSync(path.join(outside, 'private.html'), html);
+  fs.symlinkSync(path.join(outside, 'private.html'), path.join(localRoot, 'file.html'));
+  fs.symlinkSync(outside, path.join(localRoot, 'directory'));
+  const result = runtime.taskUiPrototypes(root, 'local-task');
+  assert.equal(result.prototypes.length, 2);
+  assert.equal(result.prototypes.find(page => page.source === 'change')?.id, previous.id, '新增来源不改变既有原型身份');
+  assert.notEqual(result.prototypes.find(page => page.source === 'task')?.id, previous.id);
+  assert.deepEqual(result.diagnostics.map(item => item.code).sort(), ['ui_prototype_document_incomplete', 'ui_prototype_file_too_large', 'ui_prototype_symlink_ignored', 'ui_prototype_symlink_ignored'].sort());
+  runtime.inspectTask = (_root, taskId) => ({ record: { taskId, changes: [{ project: 'deleted-project', change: 'unavailable' }, { project: 'product', change: 'linked' }] } });
+  const partial = runtime.taskUiPrototypes(root, 'local-task');
+  assert.equal(partial.prototypes.length, 2, '失效项目引用不阻断本机或其他安全变更');
+  assert.ok(partial.diagnostics.some(item => item.code === 'project_not_found'));
+  assert.equal(runtime.taskUiPrototype(root, 'local-task', partial.prototypes.find(page => page.source === 'task')!.id).html, html);
+});
+
+test('任务本机原型逐级拒绝符号链接，仍返回可读变更原型', (t) => {
+  const html = '<html><head></head><body><!-- buildr:ui-prototype --></body></html>';
+  for (const level of ['.buildr', '.buildr/local', '.buildr/local/task-prototypes', '.buildr/local/task-prototypes/local-task']) {
+    const { root, runtime, projectRoot } = fixture();
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    writeChange(projectRoot, 'linked', { 'screen.html': html });
+    runtime.inspectTask = (_root, taskId) => ({ record: { taskId, changes: [{ project: 'product', change: 'linked' }] } });
+    const outside = path.join(root, 'outside');
+    const remainder = path.relative(level, '.buildr/local/task-prototypes/local-task');
+    fs.mkdirSync(path.join(outside, remainder), { recursive: true });
+    fs.writeFileSync(path.join(outside, remainder, 'private.html'), html);
+    fs.mkdirSync(path.dirname(path.join(root, level)), { recursive: true });
+    fs.symlinkSync(outside, path.join(root, level));
+    const result = runtime.taskUiPrototypes(root, 'local-task');
+    assert.deepEqual(result.prototypes.map(page => page.source), ['change'], level);
+    assert.deepEqual(result.diagnostics.map(item => item.code), ['ui_prototype_task_path_forbidden'], level);
+  }
+});
+
+test('本机任务标识与名为task的项目变更使用不同身份命名域', (t) => {
+  const { root, runtime, projectRoot } = fixture('task');
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const taskId = 'same-task';
+  const html = (title: string) => `<html><head><title>${title}</title></head><body><!-- buildr:ui-prototype -->${title}</body></html>`;
+  writeChange(projectRoot, taskId, { 'screen.html': html('变更正文') });
+  runtime.inspectTask = (_root, id) => ({ record: { taskId: id, changes: [{ project: 'task', change: taskId }] } });
+  const directory = path.join(root, '.buildr/local/task-prototypes', taskId);
+  fs.mkdirSync(directory, { recursive: true });
+  fs.writeFileSync(path.join(directory, 'screen.html'), html('本机正文'));
+  const pages = runtime.taskUiPrototypes(root, taskId).prototypes;
+  assert.equal(pages.length, 2);
+  assert.equal(new Set(pages.map(page => page.id)).size, 2);
+  for (const page of pages) assert.equal(runtime.taskUiPrototype(root, taskId, page.id).html, html(page.source === 'task' ? '本机正文' : '变更正文'));
 });
 
 

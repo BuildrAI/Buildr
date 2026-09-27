@@ -1,0 +1,57 @@
+.task-commits { min-width:0; color:var(--soft-ink); }
+.task-commits-heading { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; margin-bottom:24px; }
+.task-commits-heading h2 { display:flex; align-items:center; gap:9px; margin:0 0 6px; font-size:17px; font-weight:600; }
+.task-commits-heading h2 > span { display:inline-flex; align-items:center; justify-content:center; min-width:21px; height:21px; font-size:11px; font-weight:500; background:var(--soft-sidebar); color:var(--soft-muted); border-radius:5px; }
+.task-commits-heading p { margin:0; font-size:12px; color:var(--soft-muted); }
+.task-commits-heading > .ant-btn { flex:none; }
+.task-commits-source { display:flex; justify-content:space-between; gap:12px; padding-bottom:12px; border-bottom:1px solid var(--soft-line); color:var(--soft-muted); font-size:11px; }
+.task-commits-source > span:first-child { color:var(--soft-ink); font-size:12px; }
+.task-commits-source .anticon { margin-right:6px; color:var(--soft-muted); }
+.task-commits-source small { margin-left:10px; font-size:11px; color:var(--soft-muted); }
+.task-commits-list { margin:0; padding:0; list-style:none; }
+.task-commits-list > li { border-bottom:1px solid var(--soft-line); }
+.task-commits-row { display:flex; width:100%; align-items:flex-start; gap:13px; padding:22px 10px 22px 0; border:0; background:transparent; text-align:left; cursor:pointer; color:inherit; font:inherit; }
+.task-commits-row:hover strong { color:var(--soft-primary); }
+.task-commits-row:focus-visible { outline:2px solid var(--soft-primary); outline-offset:-2px; border-radius:6px; }
+.task-commits-point { display:flex; align-items:center; justify-content:center; width:30px; height:30px; flex:none; background:var(--soft-sidebar); border:1px solid var(--soft-line); border-radius:50%; color:var(--soft-muted); }
+.task-commits-row-content { min-width:0; flex:1; }
+.task-commits-row-content strong { font-size:13px; line-height:1.65; font-weight:550; overflow-wrap:anywhere; }
+.task-commits-meta { display:flex; align-items:baseline; gap:7px 14px; flex-wrap:wrap; margin-top:9px; font-size:11px; color:var(--soft-muted); }
+.task-commits-meta code { color:var(--soft-primary); background:var(--soft-primary-soft,#e7efec); padding:2px 6px; border-radius:4px; font-size:11px; }
+.task-commits-expand { margin-top:9px; color:var(--soft-muted); font-size:10px; }
+.task-commits-detail { margin:0 0 20px 43px; border:1px solid var(--soft-line); border-radius:8px; padding:16px; background:#fafbfb; }
+.task-commits-detail-title { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; }
+.task-commits-detail h3,.task-commits-example h3 { margin:0; font-size:12px; font-weight:550; }
+.task-commits pre { white-space:pre-wrap; overflow-wrap:anywhere; font:12px/1.9 ui-monospace,SFMono-Regular,Menlo,monospace; margin:14px 0; padding:14px; background:#fff; border:1px solid var(--soft-line); border-radius:6px; color:var(--soft-ink); }
+.task-commits-hash { display:flex; align-items:center; flex-wrap:wrap; gap:8px 12px; font-size:11px; color:var(--soft-muted); }
+.task-commits-hash code { color:var(--soft-ink); font-size:11px; overflow-wrap:anywhere; }
+.task-commits-hash .ant-btn { margin-left:auto; }
+.task-commits-example { margin:16px 0 6px; padding:16px; background:var(--soft-primary-soft,#edf3f1); border:1px solid #dbe8e2; border-radius:8px; }
+.task-commits-example p { font-size:12px; color:var(--soft-muted); line-height:1.8; margin:10px 0 0; }
+.task-commits-example-actions { display:flex; justify-content:flex-end; gap:10px; flex-wrap:wrap; }
+.task-commits-state { padding:42px 20px; display:flex; align-items:center; text-align:center; flex-direction:column; gap:14px; }
+.task-commits-state h3 { margin:0; font-size:15px; font-weight:550; }
+.task-commits-state p { margin:0; font-size:12px; color:var(--soft-muted); line-height:1.8; }
+.task-commits-state > code { padding:10px 12px; border:1px solid var(--soft-line); background:var(--soft-sidebar); border-radius:6px; font-size:11px; overflow-wrap:anywhere; }
+.task-commits-state .ant-alert { text-align:left; width:100%; max-width:620px; }
+.task-commits-empty-icon { font-size:26px; color:var(--soft-muted); }
+.task-commits-demo-note { margin:18px 0 0; color:var(--soft-muted); font-size:11px; line-height:1.8; }
+@container task-detail (max-width:540px) {
+  .task-commits-source { flex-wrap:wrap; }
+  .task-commits-source small { display:block; margin:6px 0 0; }
+  .task-commits-heading { gap:10px; flex-wrap:wrap; margin-bottom:20px; }
+  .task-commits-detail { margin-left:0; padding:12px; }
+  .task-commits-row { gap:10px; padding:20px 0; }
+  .task-commits-point { width:25px; height:25px; }
+  .task-commits-state { padding:32px 0; }
+  .task-commits pre { padding:10px; font-size:11px; }
+}
+
+.task-commits-warning { margin:16px 0; }
+.task-commits-warning p { margin:0; }
+.task-commits-warning ul { margin:8px 0 0; padding-left:18px; }
+.task-commits-coverage { margin:18px 0; font-size:11px; line-height:1.8; color:var(--soft-muted); overflow-wrap:anywhere; }
+.task-commits-coverage summary { cursor:pointer; }
+.task-commits-coverage p { margin:8px 0; }
+.task-commits-coverage code { font-size:10px; }
+.task-commits-source > span { min-width:0; overflow-wrap:anywhere; }

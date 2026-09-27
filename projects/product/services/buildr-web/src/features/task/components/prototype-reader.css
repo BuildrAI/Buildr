@@ -12,6 +12,11 @@
 .prototype-standalone nav { border-right:1px solid var(--soft-line); padding-right:16px; }
 .prototype-standalone nav button { display:block; width:100%; height:auto; white-space:normal; text-align:left; margin:5px 0; padding:10px; }
 .prototype-standalone nav small { display:block; color:var(--soft-muted); font-size:10px; }
-@media(max-width:700px) { .prototype-standalone { grid-template-columns:130px minmax(0,1fr); gap:12px; padding:12px; } }
+@media(max-width:700px) {
+  .prototype-standalone { grid-template-columns:minmax(0,1fr); gap:16px; padding:12px; }
+  .prototype-standalone > nav { display:flex; align-items:center; flex-wrap:wrap; gap:6px; border-right:0; border-bottom:1px solid var(--soft-line); padding:0 0 12px; }
+  .prototype-standalone > nav h1 { flex-basis:100%; margin:0 0 4px; font-size:16px; line-height:1.5; }
+  .prototype-standalone > nav button { flex:0 1 auto; width:auto; max-width:100%; margin:0; padding:7px 10px; font-size:12px; }
+}
 
 .prototype-reading-layout > .side-reading.is-pinned { flex-basis:280px; width:280px; }

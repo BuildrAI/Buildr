@@ -71,4 +71,53 @@ export async function runLayoutJourney({ t, page, workspaceUrl, capture }: any) 
     await page.locator('#service-table-body').waitFor({ state: 'visible' });
     await noPageOverflow();
   });
+
+  await t.test('独立原型阅读：窄屏目录移至顶部，画面与说明保留可用宽度', async () => {
+    const catalogRoute = '**/tasks/layout-prototype/ui-prototypes';
+    const contentRoute = '**/tasks/layout-prototype/ui-prototypes/layout';
+    const metadata = { version: 1, pages: [
+      { id: 'overview', title: '原型总览', notes: [{ id: 'action', title: '操作说明', text: '阅读说明后仍可操作当前原型。' }], states: [] },
+      { id: 'details', title: '原型详情', notes: [{ id: 'detail', title: '详情说明', text: '页面目录和说明在窄屏中都保持可达。' }], states: [] },
+    ] };
+    // Only the task data source is isolated; navigation, layout and notes use the production reader.
+    await page.route(catalogRoute, (route: any) => route.fulfill({ json: { taskId: 'layout-prototype', diagnostics: [], prototypes: [{ id: 'layout', source: 'change', project: 'demo', change: 'layout', lifecycle: 'active', provenance: 'task-worktree-candidate', path: 'prototype.html', title: '布局原型', sizeBytes: 300, updatedAt: '2026-09-27T00:00:00Z', metadata }] } }));
+    await page.route(contentRoute, (route: any) => route.fulfill({ contentType: 'text/html; charset=utf-8', body: '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>布局原型</title></head><body><h1>可操作的原型</h1><button id="layout-prototype-action" onclick="this.textContent=\'已操作\'">执行操作</button></body></html>' }));
+    try {
+      for (const width of [1280, 390]) {
+        await page.setViewportSize({ width, height: 844 });
+        await page.goto(`${workspaceUrl}/tasks/layout-prototype/prototypes`);
+        const directory = page.getByRole('navigation', { name: '原型页面列表', exact: true });
+        await directory.getByRole('button', { name: '原型总览', exact: true }).waitFor({ state: 'visible' });
+        await page.frameLocator('#task-prototype-frame').locator('#layout-prototype-action').waitFor({ state: 'visible' });
+        const bounds = await page.locator('.prototype-standalone').evaluate((root: HTMLElement) => {
+          const nav = root.querySelector('nav')!.getBoundingClientRect();
+          const reader = root.querySelector('.prototype-reader')!.getBoundingClientRect();
+          const frame = root.querySelector('iframe')!.getBoundingClientRect();
+          return { navBottom: nav.bottom, navRight: nav.right, readerTop: reader.top, readerLeft: reader.left, frameWidth: frame.width };
+        });
+        if (width < 700) {
+          assert.ok(bounds.navBottom <= bounds.readerTop, '窄屏页面目录位于正文上方，不能挤占左侧阅读空间');
+          assert.ok(bounds.frameWidth >= width - 48, `窄屏原型画面应使用可用宽度：${JSON.stringify(bounds)}`);
+        } else assert.ok(bounds.navRight <= bounds.readerLeft, '宽屏保留并排页面目录');
+        const notes = page.locator('#prototype-notes-panel');
+        if (!await notes.isVisible()) await page.getByRole('button', { name: '功能说明', exact: true }).click();
+        await notes.waitFor({ state: 'visible' });
+        await notes.evaluate(async (node: HTMLElement) => { await Promise.all(node.getAnimations().map(animation => animation.finished.catch(() => {}))); });
+        const notesBounds = await notes.evaluate((node: HTMLElement) => { const rect = node.getBoundingClientRect(); return { left: rect.left, right: rect.right, width: rect.width }; });
+        assert.ok(notesBounds.left >= 0 && notesBounds.right <= width + 1, `说明稳定展开后位于屏内：${JSON.stringify(notesBounds)}`);
+        if (width < 700) assert.ok(notesBounds.width >= width - 48, '窄屏功能说明不应被左侧目录压缩');
+        await noPageOverflow();
+        await capture(page, `layout-prototype-notes-${width}.png`);
+        await notes.getByRole('button', { name: '关闭功能说明', exact: true }).click();
+        await page.frameLocator('#task-prototype-frame').locator('#layout-prototype-action').click();
+        assert.equal(await page.frameLocator('#task-prototype-frame').locator('#layout-prototype-action').innerText(), '已操作');
+        await directory.getByRole('button', { name: '原型详情', exact: true }).click();
+        await page.getByRole('heading', { name: '原型详情', exact: true }).waitFor({ state: 'visible' });
+        assert.equal(await page.locator('#task-prototype-title').innerText(), '原型详情');
+      }
+    } finally {
+      await page.unroute(catalogRoute);
+      await page.unroute(contentRoute);
+    }
+  });
 }

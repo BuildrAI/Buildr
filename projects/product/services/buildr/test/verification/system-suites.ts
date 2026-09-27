@@ -82,6 +82,7 @@ export const SYSTEM_SUITES: any = Object.freeze([
     contexts: Object.freeze([TASK_LIFECYCLE_CONTEXT_KEY]),
     files: Object.freeze([
       'test/system/task-record-buildr-web.test.ts',
+      'test/system/task-commits.test.ts',
       'test/system/task-record-product.test.ts',
       'test/system/task-review-product.test.ts',
       'test/system/task-verification-product.test.ts',

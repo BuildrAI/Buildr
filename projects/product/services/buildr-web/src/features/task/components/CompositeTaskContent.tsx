@@ -1,3 +1,4 @@
+import { TaskCommitsPane } from './TaskCommitsPane';
 import { TaskGoalSummary } from './TaskGoalSummary';
 import { useState } from 'react';
 import { Alert, Button, Input, Select, Spin, Table } from 'antd';
@@ -13,8 +14,8 @@ import { CompositeTaskPlan } from './CompositeTaskPlan';
 import { formatDateTime, taskStatusLabel } from '../../../lib/taskLabels';
 import './composite-task.css';
 
-type Props = { task: TaskDetailResponse; coordination: ParentCoordinationResult | null; loading: boolean; briefs: TaskBriefState[]; refresh(): Promise<void>; onEnd(): void; href(path: string): string; onDocument(changeKey: string, path: string): void };
-export function CompositeTaskContent({ task, coordination, loading, briefs, refresh, onEnd, href, onDocument }: Props) {
+type Props = { refreshToken: number; task: TaskDetailResponse; coordination: ParentCoordinationResult | null; loading: boolean; briefs: TaskBriefState[]; refresh(): Promise<void>; onEnd(): void; href(path: string): string; onDocument(changeKey: string, path: string): void };
+export function CompositeTaskContent({ task, refreshToken, coordination, loading, briefs, refresh, onEnd, href, onDocument }: Props) {
   const previews = useResourcePreview();
   const location = useLocation();
   const navigate = useNavigate();
@@ -51,10 +52,11 @@ export function CompositeTaskContent({ task, coordination, loading, briefs, refr
   const visible = children.filter(child => (filter === 'all' || child.status === filter) && `${child.title} ${child.intent}`.includes(query));
 
   return <>
-    <div className="task-work-path"><div className="task-path-track">{[['overview', '概览'], ['children', '子任务'], ['acceptance', '验收']].map(([key, label]) => <Button key={key} type="text" className={`task-work-tab ${tab === key ? 'selected' : ''}`} onClick={() => setTab(key)}>{label}</Button>)}</div></div>
+    <div className="task-work-path"><div className="task-path-track" role="tablist" aria-label="组合任务内容">{[['overview', '概览'], ['children', '子任务'], ['acceptance', '验收'], ['commits', '提交记录']].map(([key, label]) => <Button key={key} role="tab" aria-selected={tab === key} type="text" className={`task-work-tab ${tab === key ? 'selected' : ''}`} onClick={() => setTab(key)}>{label}</Button>)}</div></div>
     <div className="composite-task-reader">
+      {tab === 'commits' && <TaskCommitsPane key={task.record.taskId} taskId={task.record.taskId} refreshToken={refreshToken} />}
       {error && <Alert message={error} type="warning" closable onClose={() => setError('')} />}
-      {tab !== 'acceptance' && coordination?.diagnostic && <Alert type="warning" message={coordination.diagnostic.message} action={<Button onClick={() => void refresh()}>重试</Button>} />}
+      {tab !== 'acceptance' && tab !== 'commits' && coordination?.diagnostic && <Alert type="warning" message={coordination.diagnostic.message} action={<Button onClick={() => void refresh()}>重试</Button>} />}
       {tab === 'overview' && <>
         {loading ? <Spin size="small" /> : coordination?.children && <div className="composite-task-counts"><button onClick={() => selectCount('all')}><b>{children.length}</b>项子任务</button>{(['completed', 'active', 'todo', 'abandoned'] as const).filter(status => status !== 'abandoned' || children.some(child => child.status === status)).map(status => <button key={status} onClick={() => selectCount(status)}><b>{children.filter(child => child.status === status).length}</b>{taskStatusLabel(status)}</button>)}</div>}
         <CompositeTaskPlan record={task.record} briefs={briefs} onDocument={onDocument} />

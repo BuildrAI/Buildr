@@ -8,9 +8,11 @@ import {
 } from '../../modules/task/module.ts';
 
 import { CHANGE_APPLICATION } from '../../modules/task/change/module.ts';
+import { TASK_COMMITS_APPLICATION } from '../../modules/task/commits/module.ts';
 
 const runtime = createRuntime();
 const operations: Readonly<Record<string, Readonly<{ capability: string; method: string; fields?: readonly string[] }>>> = Object.freeze({
+  commits: Object.freeze({ capability: TASK_COMMITS_APPLICATION, method: 'inspectTaskCommits' }),
   reviews: Object.freeze({ capability: TASK_REVIEW_APPLICATION, method: 'inspectTaskReview' }),
   verification: Object.freeze({ capability: TASK_VERIFICATION_APPLICATION, method: 'inspectTaskVerificationView' }),
   coordination: Object.freeze({ capability: PARENT_COORDINATION_APPLICATION, method: 'inspectParentCoordination' }),

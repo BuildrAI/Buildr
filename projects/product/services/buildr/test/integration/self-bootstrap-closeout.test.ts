@@ -6,6 +6,7 @@ import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { runDirectSelfBootstrapCloseout, runSelfBootstrapCloseoutCommand } from '../../../../../../skills/buildr-self-bootstrap-sync/scripts/closeout.mjs';
 import { DEFAULT_DEVELOPMENT_WEB_PORT } from '../../../../../../skills/buildr-self-bootstrap-sync/scripts/development-web-continuity.mjs';
+import { parseTaskCommitTrailer } from '../../src/modules/task/commits/domain/task-commit.ts';
 
 function run(executable: any, args: any, cwd: any): any  {
   const result: any = spawnSync(executable, args, { cwd, encoding: 'utf8' });
@@ -275,6 +276,12 @@ test('direct activation uses real Git without Finish and does not repeat a succe
   assert.equal(first.status, 'passed', JSON.stringify(first));
   assert.equal(first.runId, null);
   assert.equal(first.delivery.observed, true);
+  const message = git(current.root, 'show', '-s', '--format=%B', first.successor);
+  assert.equal(message.split(/\r?\n/).filter((line: string) => line === `Buildr-Task: ${current.input.taskId}`).length, 1);
+  assert.equal(parseTaskCommitTrailer(message).taskId, current.input.taskId);
+  assert.match(message, /^Buildr-Activation-Identity: sha256-[a-f0-9]{64}$/m);
+  assert.ok(message.includes(`Buildr-Activation-Task: ${current.input.taskId}`));
+  assert.ok(message.includes(`Buildr-Activation-Delivery: ${current.input.deliveredRef}`));
   assert.equal(calls.some((args: any) => args.includes('finish') || args.some((arg: any) => typeof arg === 'string' && arg.endsWith('task-finish-target-lease-driver.mjs'))), false);
   assert.equal(calls.filter((args: any) => args[0] === 'git' && args[1] === 'push').length, 1);
   calls.length = 0;
@@ -323,6 +330,9 @@ test('CLI activates without a Task and never reads or writes Task records', (t: 
   assert.equal(result.taskId, null);
   assert.equal(calls.some(args => args.includes('task')), false);
   assert.equal(fs.readFileSync(path.join(current.root, 'skills/generated/SKILL.md'), 'utf8'), 'v2\n');
+  const message = git(current.root, 'show', '-s', '--format=%B', result.successor);
+  assert.doesNotMatch(message, /^Buildr-(?:Activation-)?Task:/m);
+  assert.equal(parseTaskCommitTrailer(message).taskId, null);
 });
 
 test('an optional unfinished or unavailable Task does not gate activation', (t: any) => {
@@ -351,6 +361,7 @@ test('taskless recovery binds the delivery inputs and ignores optional Task anno
   assert.equal(recovered.status, 'passed', JSON.stringify(recovered));
   assert.equal(git(current.root, 'rev-parse', 'HEAD'), successor);
   assert.equal(recovered.phases.some((stage: any) => ['sync', 'commit'].includes(stage.id)), false);
+  assert.equal(parseTaskCommitTrailer(git(current.root, 'show', '-s', '--format=%B', successor)).taskId, null);
 });
 
 for (const changedPath of ['AGENTS.md', 'projects/product/AGENTS.md', 'rules/manifest.yml', 'components/workspace/buildr-self-bootstrap/contributions/task-finish.md']) {

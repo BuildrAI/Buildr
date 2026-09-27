@@ -145,6 +145,7 @@ buildr assets create project --target "<workspace>" --input "<json-file>" --json
 | `buildr project verification inspect\|validate\|update` | 读取、校验或按expected identity更新Project测试地图。候选由Agent从真实测试、构建脚本、CI和说明形成，Application不生成内容。 |
 | `buildr task verification record\|inspect` | 保存或读取开发完成后的Task验证报告。Agent直接调用项目测试工具；Buildr不生成计划或代跑测试。 |
 | `buildr task create\|inspect\|update\|activate\|complete\|abandon` | 在canonical Workspace的SQLite中维护Task Record v3。除`create`外的写动作都必须提交刚观察到的`--expected-record <digest>`。完成只保存真实结果摘要，不保存`noChange`、Git、验证、环境或发布事实。终态Task可通过`update`登记固定本机复盘文档或显式更正业务事实。 |
+| `buildr task commits <task-id> [--target <canonical-workspace>] [--json]` | 只读查询任务范围内带有有效 `Buildr-Task` 尾注（Trailer）的当前可达 Git 提交（Commit），包含本机未推送提交。返回真实完整说明、哈希值（Hash）、来源、读取范围和局部诊断；不抓取远端，不写任务或 Git。 |
 | `buildr task work-context inspect\|record\|respond <task-id>` | 独立工作摘要与显式待处理事项。`record` 使用 `--expected-current <absent\|digest>`、`--progress`、`--next-step`；可明确登记或清除事项。`respond` 以当前版本、事项身份和真实用户意见保存答复，不改变任务状态或完成结果。 |
 | `buildr task parent inspect` | 只读查看整体目标、真实子任务及结果、完成观察身份和历史父计划。旧 record、reconcile、bind-child、refresh-planning、reconcile-child-delivery、accept 写入口已退役。父任务通过已有 task complete 提交当前版本、验收和明确用户授权。 |
 | `buildr task verification inspect\|record <task-id>` | 读取或整值保存Workspace SQLite中的current任务验证报告。`record --report <json-file>`接收Agent在开发完成后形成的实际检查、选择范围、目标、结果、未覆盖项和结论；`inspect`可带当前内容identity判断报告是否仍适用。命令不生成计划、不执行测试、不绑定Candidate。 |
@@ -162,11 +163,13 @@ buildr assets create project --target "<workspace>" --input "<json-file>" --json
 
 Task Record 使用closed `buildr.task-record/v3` schema。顶层状态为`todo|active|completed|abandoned`，查询态`open`派生为todo + active。可选`retrospective`只保存本机Markdown的SHA-256与`pending-decision|decided`；不保存正文、处置说明或后续Task关系。只保存Child的`parentTaskId`，反向Children由查询派生；`isParent`保存明确父任务身份。所有非创建写动作都比较当前`recordDigest`。
 
+`task commits` 先确认任务存在，再读取其项目、服务、关联变更对应项目与已知任务工作树（Worktree）中的真实代码库（Repository）；不会扫描任意目录。没有项目、服务或关联变更的工作空间级任务（Workspace-only Task），只检查任务所属主工作空间（Canonical Workspace）根目录本身的 Git 代码库，不向父目录寻找替代来源。关联依据是实际提交说明（Commit Message）末尾的 `Buildr-Task: <taskId>`，正文普通提及不算关联。查询按真实代码库和完整哈希值（Hash）去重，读取本机当前可达引用；JSON 使用 `buildr.task-commits/v1`，必须结合 `status`、`coverage` 与 `diagnostics` 判断结果完整性。部分结果不能表述为确定的零提交，读取成功也不代表任务完成。旧提交不自动补尾注或改写历史。
+
 工作台（Workbench）默认展示工作概览，并提供任务（Task）与动态入口；文章位于工作空间（Workspace）区域。最近进展、下一步和显式待处理事项由独立工作摘要维护，人的答复按事项身份和已观察版本保护。置顶、接下来、关注、收藏和最近访问是本机偏好，与任务四态独立；查看概览不扫描 Git 或自动生成每日演进。旧任务深链继续可用。
 
 Task Record、Task Verification与Planning/Completion Review以`.buildr/local/workspace.sqlite`作为单机持久化authority。复盘正文保存在被Git忽略的`.buildr/local/task-retrospectives/`，SQLite只保留Task上的文档摘要和决定状态。旧复盘current/source表、研发、旧收尾和统一Task Environment current表已删除，不建立history或双读。
 
-默认 App 的用户级登记文件只保存规范化 Workspace root 和最近使用项；Workspace 名称、说明、Project、Service 与全局 Change 列表始终从 retained Workspace 实时读取。任务（Task）详情按“任务需求、方案设计、开发实现、任务收尾”组织内容，读取工作摘要（Work Context）、关联 OpenSpec 材料、原型、审查（Review）与验证（Verification），并展示完成摘要和本机复盘入口。页面不启动专业执行，也不重新建立旧研发或机器交付状态库。
+默认 App 的用户级登记文件只保存规范化 Workspace root 和最近使用项；Workspace 名称、说明、Project、Service 与全局 Change 列表始终从 retained Workspace 实时读取。任务（Task）详情按“任务需求、方案设计、开发实现、任务收尾”组织内容，读取工作摘要（Work Context）、关联 OpenSpec 材料、原型、审查（Review）与验证（Verification），并展示完成摘要和本机复盘入口。“任务收尾”后的“提交记录”是独立阅读标签，不增加工作阶段，与命令使用同一只读应用。页面不启动专业执行，也不重新建立旧研发或机器交付状态库。
 
 Project registry 使用 `buildr.projects/v2`：每个 Project 保存 UUID `id`、所属 `workspaceId`、可读 `code`、`name`、`description` 和 `source`。`source.path` 是文件系统物化位置；Git source 另外保存 URL、remote 和稳定的 `integrationBranch`。`currentBranch`、HEAD、dirty、upstream 与 ahead/behind 是实时观察状态，不写入 Domain。v1 registry 可只读查询，`buildr sync <agent>` 显式迁移；页面不会静默迁移、切分支、stash 或改写 remote。
 

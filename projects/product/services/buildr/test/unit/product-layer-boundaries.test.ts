@@ -2,6 +2,19 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { isAllowedProductLayerImport, productLayerOf } from '../verification/cli/product-layer-boundaries.ts';
 
+test('任务提交子模块按真实职责分层，只接通声明的Task和Workspace端口', () => {
+  const root = 'modules/task/commits/';
+  for (const [directory, layer] of [['domain', 'domain'], ['application', 'application'], ['infrastructure', 'infrastructure'], ['interfaces/http', 'interfaces'], ['interfaces/cli', 'interfaces']]) assert.equal(productLayerOf(`${root}${directory}/value.ts`), layer);
+  assert.equal(productLayerOf(`${root}module.ts`), 'module');
+  assert.equal(isAllowedProductLayerImport(`${root}domain/task-commit.ts`, 'modules/task/domain/task.ts'), true);
+  assert.equal(isAllowedProductLayerImport(`${root}domain/task-commit.ts`, 'modules/task/application/task-validation.ts'), false);
+  assert.equal(isAllowedProductLayerImport(`${root}infrastructure/value.ts`, `${root}application/value.ts`), false);
+  assert.equal(isAllowedProductLayerImport(`${root}module.ts`, 'modules/task/module.ts'), true);
+  assert.equal(isAllowedProductLayerImport(`${root}module.ts`, 'modules/workspace/module.ts'), true);
+  assert.equal(isAllowedProductLayerImport(`${root}module.ts`, 'modules/installation/module.ts'), false);
+  assert.equal(productLayerOf('modules/task/unregistered/application/value.ts'), 'modules');
+});
+
 test('任务子领域按明确登记识别各层，未登记目录保持关闭', () => {
   const root = 'modules/task/work-context/';
   for (const [directory, layer] of [['domain', 'domain'], ['application', 'application'], ['persistence', 'infrastructure'], ['interfaces/http', 'interfaces'], ['interfaces/cli', 'interfaces']]) assert.equal(productLayerOf(`${root}${directory}/value.ts`), layer);

@@ -3,11 +3,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Button, Select } from 'antd';
 import { SideReadingPanel } from '../../../components/SideReadingPanel';
 import { useSideReading } from '../../../components/useSideReading';
-import { prototypeEntries, validPrototypeMessage, type UiPrototypeData } from './prototype-content';
+import { prototypeEntries, prototypeSourceLabel, validPrototypeMessage, type UiPrototypeData } from './prototype-content';
 import './prototype-reader.css';
 export type { UiPrototypePage, UiPrototypeData } from './prototype-content';
-type Props = { active:boolean; workspaceId:string|null; data:UiPrototypeData|null; loading:boolean; error:string|null; onRefresh():void; selectedKey?:string; onSelect?(key:string):void; standalone?:boolean; initialState?:string; onAuxiliaryOpen?():void; closeAuxiliaryToken?:number };
-export function PrototypeTab({ active, workspaceId, data, loading, error, onRefresh, selectedKey, onSelect, standalone=false, initialState='', onAuxiliaryOpen, closeAuxiliaryToken }: Props) {
+type Props = { active:boolean; workspaceId:string|null; data:UiPrototypeData|null; loading:boolean; error:string|null; onRefresh():void; selectedKey?:string; onSelect?(key:string):void; standalone?:boolean; initialState?:string; onAuxiliaryOpen?():void; closeAuxiliaryToken?:number; documentHtml?:string };
+export function PrototypeTab({ active, workspaceId, data, loading, error, onRefresh, selectedKey, onSelect, standalone=false, initialState='', onAuxiliaryOpen, closeAuxiliaryToken, documentHtml }: Props) {
   const entries = useMemo(() => prototypeEntries(data),[data]);
   const [localKey,setLocalKey] = useState(selectedKey || '');
   const selected = entries.find(entry => entry.key === (selectedKey ?? localKey)) || entries[0];
@@ -54,7 +54,7 @@ export function PrototypeTab({ active, workspaceId, data, loading, error, onRefr
     };
     window.addEventListener('message',receive); return () => window.removeEventListener('message',receive);
   },[entries,selected?.key,effectiveState,onSelect]);
-  const src = selected && workspaceId ? `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/tasks/${encodeURIComponent(data?.taskId || '')}/ui-prototypes/${selected.file.id}` : undefined;
+  const src = selected && workspaceId && documentHtml === undefined ? `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/tasks/${encodeURIComponent(data?.taskId || '')}/ui-prototypes/${selected.file.id}` : undefined;
   const currentNotes = [...(selected?.scene.notes || []),...(selected?.scene.states.find(item => item.id === effectiveState)?.notes || [])];
   const closeNotes = () => { highlight(); notes.close(); rootRef.current?.querySelector<HTMLButtonElement>('#prototype-notes-toggle')?.focus(); };
   return <section ref={rootRef} id="task-prototype-panel" hidden={!active} className="prototype-reader" data-task-panel="prototype">
@@ -65,10 +65,10 @@ export function PrototypeTab({ active, workspaceId, data, loading, error, onRefr
       {!standalone && selected && <Button id="task-prototype-open-window" size="small" onClick={() => window.open(`/workspaces/${encodeURIComponent(workspaceId || '')}/tasks/${encodeURIComponent(data?.taskId || '')}/prototypes?page=${encodeURIComponent(selected.key)}&state=${encodeURIComponent(effectiveState)}`,'_blank','noopener,noreferrer')}>单独查看</Button>}
       <Button id="prototype-notes-toggle" size="small" aria-expanded={notes.open} aria-controls="prototype-notes-panel" onPointerEnter={event => notes.enter('trigger',event.pointerType)} onPointerLeave={event => notes.exit('trigger',event.pointerType)} onFocus={notes.cancel} onBlur={notes.leave} onClick={notes.toggle} onKeyDown={event => { if(event.key === 'Escape') closeNotes(); }}>功能说明</Button>
     </div></div>
-    {selected && <details id="task-prototype-source" className="prototype-source"><summary>来源与范围</summary>{selected.file.project}/{selected.file.change} · {selected.file.path}<p>关键页面的预期效果；模拟操作仅影响本次演示。</p></details>}
+    {selected && <details id="task-prototype-source" className="prototype-source"><summary>来源与范围</summary>{prototypeSourceLabel(selected.file)} · {selected.file.path}<p>关键页面的预期效果；模拟操作仅影响本次演示。</p></details>}
     {!!selected?.scene.states.length && <Select aria-label="关键状态" value={effectiveState} onChange={value => { setState(value); setPosition(undefined); }} options={[{value:'',label:'默认状态'},...selected.scene.states.map(item => ({value:item.id,label:item.title}))]} />}
     <div className={`prototype-reading-layout${notes.open && notes.pinned ? ' has-notes' : ''}`}>
-      <div className="prototype-canvas">{selected && src ? <div className="prototype-viewport"><iframe key={fileKey} ref={frameRef} id="task-prototype-frame" title={selected.scene.title} sandbox="allow-scripts" referrerPolicy="no-referrer" src={src} onLoad={() => { if(loaded.current)return; nonce.current ||= crypto.randomUUID(); loaded.current = true; send(); }} /></div> : <p id="task-prototype-empty">{loading ? '正在读取原型…' : '暂无可查看的界面原型。'}</p>}</div>
+      <div className="prototype-canvas">{selected && (src || documentHtml !== undefined) ? <div className="prototype-viewport"><iframe key={fileKey} ref={frameRef} id="task-prototype-frame" title={selected.scene.title} sandbox="allow-scripts" referrerPolicy="no-referrer" src={src} srcDoc={documentHtml} onLoad={() => { if(loaded.current)return; nonce.current ||= crypto.randomUUID(); loaded.current = true; send(); }} /></div> : <p id="task-prototype-empty">{loading ? '正在读取原型…' : '暂无可查看的界面原型。'}</p>}</div>
       <SideReadingPanel id="prototype-notes" title="功能说明" open={notes.open} pinned={notes.pinned} canPin={notes.canPin} onTogglePin={notes.togglePin} onClose={closeNotes} onPointerEnter={event => notes.enter('panel',event.pointerType)} onPointerLeave={event => notes.exit('panel',event.pointerType)} onFocusCapture={notes.cancel} onBlurCapture={notes.leave}>
         <PrototypeFeatureNotes notes={currentNotes} activePosition={position} onHighlight={highlight} />
       </SideReadingPanel>

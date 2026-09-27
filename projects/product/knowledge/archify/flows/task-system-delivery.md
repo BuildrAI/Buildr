@@ -9,7 +9,9 @@
 | `completion-review` | 实现结果审查与任务验证报告是两个独立动作，只有实际检查完成后才保存结论；[审查应用](../../../services/buildr/src/modules/task/application/task-review-application.ts)、[验证应用](../../../services/buildr/src/modules/task/application/task-verification-application.ts) |
 | `present-result` | 智能体（Agent）向人展示实际成果、检查结论与未解决事项，不从记录存在推断业务完成 |
 | `authorize-finish` | 收尾范围尚未获得授权时，由人明确；已有授权在同一范围内继续有效 |
-| `deliver-git` | 按约定完成精确提交、集成、普通推送并回读真实目标；[收尾方法](../../../services/buildr/resources/workspace/skills/buildr/task-finish/SKILL.md) |
+| `deliver-git` | 按约定完成精确提交、集成、普通推送并回读真实目标；有明确正式任务（Task）时，由[Git 操作指引](../../../services/buildr/resources/workspace/skills/buildr/git-operations/SKILL.md)写入唯一 `Buildr-Task` 尾注（Trailer），分别核对实际提交与任务侧关联；[收尾方法](../../../services/buildr/resources/workspace/skills/buildr/task-finish/SKILL.md)承接独立结果 |
 | `complete-record` | 保存已有任务完成摘要并校验当前版本；[任务写入应用](../../../services/buildr/src/modules/task/application/task-command-application.ts)不执行 Git、部署或清理 |
 
 正式审查与验证报告当前只允许在任务为 `active` 时写入，图按这个局部依赖排列。父任务完成仍需总体验收、直接子任务处置与明确指向该父任务的授权；普通收尾不扩大为发布、强推或丢弃内容。后续适用动作见[自举与善后时序](task-self-bootstrap.md)。
+
+本次按当前源技能（Skill）复核 `deliver-git`：提交归属仍由智能体（Agent）明确，Git 保存真实提交，任务查询只读展示关联；没有任务时继续普通提交，不补建记录。关联查询失败不否定已成功的提交，也不触发改写历史或任务状态。此变化细化提交与回读内容，未改变图中参与者、职责或先后依赖，因此保留现有图源与展示。

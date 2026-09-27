@@ -20,6 +20,7 @@ export const PUBLIC_JSON_SCHEMAS = Object.freeze({
   taskRecordResult: 'buildr.task-record-result/v5',
   taskRecordView: 'buildr.task-record-view/v3',
   taskRecordList: 'buildr.task-record-list/v7',
+  taskCommits: 'buildr.task-commits/v1',
   parentCoordinationResult: 'buildr.parent-coordination-result/v4',
   parentPlan: 'buildr.parent-plan/v2',
   dailyProgressInputSchema: 'buildr.project-daily-progress-input-schema/v1',

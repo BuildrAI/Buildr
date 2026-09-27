@@ -17,6 +17,7 @@ import { materializeCleanProductSource } from '../helpers/clean-product-source.t
 import { recordVerificationResultFromEvidence } from '../helpers/task-verification-result-fixture.ts';
 import { runWorkspaceCompositionJourney } from './workspace-composition-journey.ts';
 import { runLayoutJourney } from '../../../buildr-web/test/browser/layout-journey.ts';
+import { runTaskCommitsJourney } from '../../../buildr-web/test/browser/task-commits-journey.ts';
 import { runWorkbenchJourney } from './workbench-journey.ts';
 import { runPublicationJourney, publicationTestPng } from './publication-journey.ts';
 import { runServiceKnowledgeJourney } from './service-knowledge-journey.ts';
@@ -1517,6 +1518,35 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.equal(await page.getByRole('button', { name: /审查|继续推进/ }).count(), 0, 'Change 详情只读展示');
   });
 
+  if (selected('task')) await t.test('无关联变更的任务可从方案设计与单独查看阅读本机原型', async () => {
+    const taskId = 'browser-local-prototype';
+    runtime.createTask(workspaceRoot, { taskId, title: '本机原型示例', intent: '验证未决定实施时也可阅读已归入原型', projects: [], services: [], changes: [] });
+    const localRoot = path.join(workspaceRoot, '.buildr/local/task-prototypes', taskId);
+    fs.mkdirSync(localRoot, { recursive: true });
+    fs.writeFileSync(path.join(localRoot, 'screen.html'), `<!doctype html><html><head><title>任务本机页面</title></head><body>
+<!-- buildr:ui-prototype --><h1 id="local-prototype-heading">当前任务的本机原型</h1><button id="local-prototype-action" onclick="this.textContent='已切换'">切换状态</button>
+<script id="buildr-prototype" type="application/json">{"version":1,"pages":[{"id":"local","title":"任务本机页面","notes":[{"id":"scope","title":"本机来源","text":"此页面属于当前任务，不要求关联规范变更。"}],"states":[]}]}</script></body></html>`);
+    assert.deepEqual(runtime.inspectTask(workspaceRoot, taskId).record.changes, []);
+    await page.goto(`${workspaceUrl}/tasks/${taskId}`);
+    await page.locator('[data-task-node=design]').click();
+    await page.locator('[data-task-tab=prototype]').filter({ hasText: '任务本机页面' }).click();
+    await page.frameLocator('#task-prototype-frame').locator('#local-prototype-heading').waitFor({ state: 'visible' });
+    await page.frameLocator('#task-prototype-frame').locator('#local-prototype-action').click();
+    assert.equal(await page.frameLocator('#task-prototype-frame').locator('#local-prototype-action').innerText(), '已切换');
+    await page.locator('#task-prototype-source summary').click();
+    assert.match(await page.locator('#task-prototype-source').innerText(), /任务原型[\s\S]*screen.html/);
+    assert.doesNotMatch(await page.locator('#task-prototype-source').innerText(), /null\/null/);
+    await page.locator('#prototype-notes-toggle').click();
+    await page.getByText('此页面属于当前任务，不要求关联规范变更。').waitFor({ state: 'visible' });
+    const [reader] = await Promise.all([page.waitForEvent('popup'), page.locator('#task-prototype-open-window').click()]);
+    await reader.waitForURL((opened: any) => new URL(opened).pathname.endsWith(`/tasks/${taskId}/prototypes`));
+    await reader.frameLocator('#task-prototype-frame').locator('#local-prototype-heading').waitFor({ state: 'visible' });
+    await reader.getByText('此页面属于当前任务，不要求关联规范变更。').waitFor({ state: 'visible' });
+    assert.equal(await reader.locator('#task-prototype-frame').getAttribute('sandbox'), 'allow-scripts');
+    await reader.close();
+    process.stderr.write('[buildr-browser] selector=task phase=task-local-prototype-verified\n');
+  });
+
   if (selected('task')) await t.test('任务列表筛选、编辑、冲突、终态确认与窄屏交互共享同一 Task Record', async () => {
     page.setDefaultTimeout(15000);
     page.setDefaultNavigationTimeout(15000);
@@ -2018,6 +2048,8 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     }
     await page.setViewportSize({width:1280,height:720});
   });
+
+  if (selected('task')) await runTaskCommitsJourney({ t, page, runtime, workspaceRoot, workspaceUrl, expectedBrowserErrors, capture });
 
   if (selected('workbench')) await runWorkbenchJourney({ t, page, runtime, workspaceRoot, otherWorkspaceRoot: otherRoot, workspaceUrl, otherWorkspaceUrl: `${url}/workspaces/${otherWorkspaceId}`, expectedBrowserErrors, selectAntdOption, capture });
 

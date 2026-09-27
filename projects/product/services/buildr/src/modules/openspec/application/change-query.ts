@@ -148,7 +148,7 @@ function discoverUiPrototypes(changeRoot: string): { prototypes: PrototypePage[]
       const file = path.join(directory, entry.name);
       const relative = relativePath(changeRoot, file);
       if (entry.isSymbolicLink()) {
-        if (entry.name.toLowerCase().endsWith('.html')) diagnostic('ui_prototype_symlink_ignored', 'UI Prototype 只读取 Change 内的普通 HTML 文件，符号链接已忽略。', relative);
+        diagnostic('ui_prototype_symlink_ignored', 'UI Prototype 只读取当前原型范围内的普通 HTML 文件，符号链接已忽略。', relative);
         continue;
       }
       if (entry.isDirectory()) {

@@ -210,6 +210,23 @@ export const TASK_HTTP_SCHEMAS = Object.freeze({
   }, ['expectedRecordDigest', 'reason']), defs),
   abandonResponse: schema('abandon/response', 'TaskAbandonResponse', { $ref: '#/$defs/TaskRecordMutationResponse' }, defs),
   retrospectiveDocumentRequest: schema('retrospective-document/request', 'TaskRetrospectiveDocumentRequest', closed({}), defs),
+  commitsRequest: schema('commits/request', 'TaskCommitsRequest', closed({}), defs),
+  commitsResponse: schema('commits/response', 'TaskCommitsResult', closed({
+    schemaVersion: { const: 'buildr.task-commits/v1' }, taskId: { $ref: '#/$defs/TaskId' }, readAt: nonEmptyText,
+    status: { enum: ['complete', 'partial'] },
+    commits: arrayOf(closed({
+      repositoryId: nonEmptyText, hash: { type: 'string', pattern: '^(?:[a-f0-9]{40}|[a-f0-9]{64})$' },
+      shortHash: { type: 'string', pattern: '^[a-f0-9]{12}$' }, subject: { type: 'string' }, message: { type: 'string' },
+      authorName: { type: 'string' }, authorEmail: { type: 'string' }, authoredAt: nonEmptyText, committedAt: nonEmptyText,
+    }, ['repositoryId', 'hash', 'shortHash', 'subject', 'message', 'authorName', 'authorEmail', 'authoredAt', 'committedAt'])),
+    repositories: arrayOf(closed({
+      id: nonEmptyText, label: nonEmptyText, root: nonEmptyText, sources: arrayOf(nonEmptyText),
+      status: { enum: ['complete', 'unavailable', 'truncated'] }, scannedCommitCount: { type: 'integer', minimum: 0 },
+    }, ['id', 'label', 'root', 'sources', 'status', 'scannedCommitCount'])),
+    coverage: closed({ refs: arrayOf(nonEmptyText), repositoryLimit: { type: 'integer', minimum: 1 }, historyLimitPerRepository: { type: 'integer', minimum: 1 }, commitLimit: { type: 'integer', minimum: 1 }, truncated: { type: 'boolean' } }, ['refs', 'repositoryLimit', 'historyLimitPerRepository', 'commitLimit', 'truncated']),
+    diagnostics: arrayOf(closed({ code: nonEmptyText, message: nonEmptyText, repositoryId: nullable(nonEmptyText), reference: nullable(nonEmptyText), hash: nullable(nonEmptyText) }, ['code', 'message', 'repositoryId', 'reference', 'hash'])),
+    effects: { type: 'array', maxItems: 0, items: false },
+  }, ['schemaVersion', 'taskId', 'readAt', 'status', 'commits', 'repositories', 'coverage', 'diagnostics', 'effects']), defs),
   retrospectiveDocumentResponse: schema('retrospective-document/response', 'TaskRetrospectiveDocumentResponse', closed({
     schemaVersion: { const: 'buildr.task-retrospective-document/v1' },
     operation: { const: 'inspect' }, status: { const: 'inspected' }, taskId: { $ref: '#/$defs/TaskId' },
@@ -244,6 +261,7 @@ export const TASK_HTTP_OPERATIONS = Object.freeze([
   operation('task-record.end', 'POST', '/tasks/:taskId/end', 'endRequest', 'endResponse'),
   operation('task-record.abandon', 'POST', '/tasks/:taskId/abandon', 'abandonRequest', 'abandonResponse'),
   operation('task-record.retrospective-document', 'GET', '/tasks/:taskId/retrospective-document', 'retrospectiveDocumentRequest', 'retrospectiveDocumentResponse'),
+  operation('task-record.commits', 'GET', '/tasks/:taskId/commits', 'commitsRequest', 'commitsResponse'),
 ]);
 
 const allSchemas = Object.freeze(Object.values(TASK_HTTP_SCHEMAS));

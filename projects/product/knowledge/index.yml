@@ -596,6 +596,11 @@ artifacts:
       - parent-task-actions
       - parent-coordination-tests
       - parent-completion-ui-tests
+      - task-prototype-query
+      - task-commits-query
+      - task-commits-reader
+      - task-commit-records
+      - task-git-method
     observedDigest: e7c6e9796a99a7f8efe844971af1870dd0a4c002692e4be6dd28467c5c96b901
     files:
       - task-source-2026-08-30-parent-child-task-audit-b28c38
@@ -678,6 +683,7 @@ artifacts:
       - task-source-task-verification-application-68479e
       - task-source-skill-ee942e
       - task-source-task-command-application-aba2e8
+      - task-git-method
     observedDigest: 93ab8db603951eb6156881d8cca250bbfe20b6d4b9a54c386131f5e10222dc50
     graphSource: knowledge/archify/flows/task-system-delivery.json
     graphDigest: ef9e6430333e58a8d07d1f7438a71b87593199db9a0b33f23df0c757080879e0
@@ -814,6 +820,19 @@ artifacts:
       - prototype-reader-page
       - task-node-content
       - prototype-tab
+      - task-prototype-query
+      - prototype-reader-layout
+      - task-commits-query
+      - task-commits-domain
+      - task-commits-reader
+      - task-commits-cli
+      - task-commits-http
+      - task-commits-pane
+      - task-commit-records
+      - task-commits-hook
+      - task-git-method
+      - task-commits-contract
+      - public-json-contracts
     observedDigest: 26a08db913bf68a5a2979c8ebc531ebd12091d3e4e70347b91c28003d9c5edbd
     files:
       - task-source-2026-08-30-parent-child-task-audit-b28c38
@@ -2986,6 +3005,73 @@ sources:
     title: 0.1.0 准备审查
     kind: evidence
     path: knowledge/reviews/v0.1.0-readiness.md
+  - id: task-prototype-query
+    title: 任务原型来源与读取
+    kind: code
+    path: services/buildr/src/modules/task/change/application/change-application.ts
+    summary: 先核对任务，再分别读取关联变更与精确本机目录；区分来源、隔离局部失败，只读发现原型，不保存任务状态。
+  - id: task-commits-query
+    title: 任务提交关联查询
+    kind: code
+    path: services/buildr/src/modules/task/commits/application/task-commits-application.ts
+    summary: 核对任务与明确来源，聚合当前可达提交、代码库身份、读取范围和局部诊断；不保存关联表或改变任务状态。
+  - id: task-commits-domain
+    title: 提交对象与任务尾注解析
+    kind: code
+    path: services/buildr/src/modules/task/commits/domain/task-commit.ts
+    summary: 从真实提交对象解析完整说明与身份，限定末尾任务尾注，区分同值重复、不同值冲突和非法编码。
+  - id: task-commits-reader
+    title: Git 提交只读观察
+    kind: code
+    path: services/buildr/src/modules/task/commits/infrastructure/git-commit-reader.ts
+    summary: 核对真实代码库与已登记工作树，有界读取本机当前可达引用和提交对象，不自动抓取远端或写入 Git。
+  - id: task-commits-cli
+    title: 任务提交命令入口
+    kind: code
+    path: services/buildr/src/modules/task/commits/interfaces/cli/task-commits.ts
+    summary: 接收 task commits 的任务编码与工作空间，呈现共享只读应用结果。
+  - id: task-commits-http
+    title: 任务提交网页接口
+    kind: code
+    path: services/buildr/src/modules/task/commits/interfaces/http/task-commits-http.ts
+    summary: 提供任务限定的提交读取，不接受外部指定代码库、引用或读取预算。
+  - id: task-commits-contract
+    title: 任务接口输出契约
+    kind: code
+    path: services/buildr/src/modules/task/interfaces/http/task-http-schema.ts
+    summary: 定义任务公开输出的闭合结构，包括任务提交、代码库观察、范围与局部诊断；供共享类型生成与校验。
+  - id: public-json-contracts
+    title: 公开 JSON 身份登记
+    kind: code
+    path: services/buildr/src/infrastructure/contracts/public-json.ts
+    summary: 登记命令及接口结果的稳定格式身份，不等同于产品包版本。
+  - id: task-commits-pane
+    title: 任务提交阅读组织
+    kind: code
+    path: services/buildr-web/src/features/task/components/TaskCommitsPane.tsx
+    summary: 组合任务提交查询、详情展开和说明示例，不新增任务工作阶段。
+  - id: task-commit-records
+    title: 任务提交记录展示
+    kind: code
+    path: services/buildr-web/src/features/task/components/TaskCommitRecords.tsx
+    summary: 展示完整提交说明、哈希值与来源，提供复制、重试和读取范围，区分空、失败与部分结果。
+  - id: task-commits-hook
+    title: 任务提交读取接续
+    kind: code
+    path: services/buildr-web/src/features/task/hooks/useTaskCommits.ts
+    summary: 进入及刷新时按任务读取，切换任务取消旧请求；保留已有结果并单独提示刷新失败。
+  - id: task-git-method
+    title: Git 操作（git-operations）
+    kind: skill
+    path: SKILL.md
+    skillId: git-operations
+    link: services/buildr/resources/workspace/skills/buildr/git-operations/SKILL.md
+    summary: 精确执行已授权 Git 操作，明确正式任务时写入唯一任务尾注，分别确认真实提交与任务侧关联；读取失败不否认提交成功。
+  - id: prototype-reader-layout
+    title: 原型统一阅读布局
+    kind: code
+    path: services/buildr-web/src/features/task/components/PrototypeReaderLayout.tsx
+    summary: 独立任务阅读与离线预览共用页面目录和阅读布局，页面选择由入口接入。
 relations:
   - from: product-overview-article
     to: product-overview

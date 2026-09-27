@@ -59,6 +59,20 @@ consumer 可以在选择 rebase 时同时明确授权冲突后的有界 `rebase 
 
 正文只在需要说明动机、行为差异或破坏性影响时添加；破坏性变更使用 `BREAKING CHANGE:`。语言遵循当前 workspace `AGENTS.md` 以及 Project、Service、repository 的更具体规则，本 Skill 不复制默认语言约束，也不把 Core 作为提交语言的独立来源。
 
+已明确关联正式任务（Task）时，核对其在当前工作空间（Workspace）中的实际任务编码，在提交说明（Commit Message）末尾的尾注（Trailer）区只写一行 `Buildr-Task: <taskId>`；保留实际改动的主题、必要正文和其他尾注。同一任务分多次提交时，每次使用同一任务编码。没有明确任务时省略该尾注，继续既有提交方式，不补建任务，不用分支名、目录名或最近任务猜测归属；归属尚未明确时只说明未建立关联。
+
+```text
+feat(task): 展示任务提交记录
+
+在任务中读取提交说明和完整哈希值。
+
+Buildr-Task: 2026-09-27-task-git-commits
+```
+
+提交成功后，从真实 Git 对象回读完整哈希值（Hash）及完整说明，例如 `git show -s --format='%H%n%B' <created-commit>`，核对实际尾注，而不是只看准备的消息或命令成功。对已有正式任务，再用当前可用入口执行 `buildr task commits <task-id> --target <canonical-workspace> --json`，目标指向任务所属主工作空间（Canonical Workspace），核对任务返回的代码库（Repository）身份、完整哈希值和说明是否与实际提交相同；两侧一致才报告双向关联已确认。结果的读取范围、截断和局部诊断决定尚未确认的部分，不能把未覆盖或不可读表述为没有提交。
+
+实际提交成功与任务侧关联确认分别报告。查询不可用、失败或未覆盖本次提交时，保留 Git 成功事实并说明任务侧尚未确认，不改任务状态，不阻止无关的已授权交付。不得为了补任务编码安装强制钩子（Hook）、自动修改提交（Amend）、变基（Rebase）或改写既有历史；真实说明不符时报告差异，由原调用者依据实际目标与授权处理，不把关联检查变为通用提交门禁。
+
 ## 5. Push 必须检查完整 range
 
 push 前重新观察实际 remote、source ref、destination ref 和 destination identity，并计算本次会新增到 destination 的完整 commit range，而不是只检查 tip commit。

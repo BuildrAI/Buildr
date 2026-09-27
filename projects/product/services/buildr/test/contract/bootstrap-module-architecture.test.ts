@@ -222,6 +222,12 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     contributions: { cli: ['worktree create', 'worktree cleanup', 'worktree inspect'], http: [], diagnostics: [] },
     lifecycle: 'none',
   }, {
+    id: 'task-commits',
+    requires: [TASK_QUERY_APPLICATION, WORKSPACE_QUERY, TASK_WORKTREE_PROVIDER],
+    provides: ['task.commits-application'],
+    contributions: { cli: ['task commits'], http: ['task.commits.http'], diagnostics: [] },
+    lifecycle: 'none',
+  }, {
     id: 'change',
     requires: ['openspec.query', WORKSPACE_QUERY, TASK_WORKTREE_PROVIDER, TASK_QUERY_APPLICATION],
     provides: ['change.application'],
@@ -305,6 +311,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     'project daily-progress record', 'project daily-progress inspect', 'project daily-progress list',
     'workbench',
     'worktree create', 'worktree cleanup', 'worktree inspect',
+    'task commits',
     'project verification inspect', 'project verification validate', 'project verification update',
     'task review inspect', 'task review record',
     'task verification inspect', 'task verification record',
@@ -315,7 +322,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     'doctor',
   ]);
   assert.deepEqual(runtimeContributions(runtime, 'http').map((item: any) => item.id), [
-    'workspace-core.http', 'agent-assets.http', 'knowledge.http', 'publication.http', 'task-work-context.http', 'task.http', 'task.daily-progress.http', 'workbench.http', 'change.http',
+    'workspace-core.http', 'agent-assets.http', 'knowledge.http', 'publication.http', 'task-work-context.http', 'task.http', 'task.daily-progress.http', 'workbench.http', 'task.commits.http', 'change.http',
     'task-review.http', 'task-verification.http',
     'task-parent-coordination.http', 'system-installation.release-awareness.http',
   ]);

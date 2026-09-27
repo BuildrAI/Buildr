@@ -42,7 +42,19 @@ Buildr Web 的“等我回应”显示已经明确登记的决定、验收或补
 
 较大的界面变化可以先制作经用户授权的界面原型（UI Prototype），普通小改动直接实施。已有选择持续有效，不重复确认。原型可在任务（Task）相关材料中按页面和状态查看功能说明，或单独打开；它表达预计结果，不能代替真实数据接入与正式页面验收。实现见[原型阅读](../../../services/buildr-web/src/features/task/components/PrototypeTab.tsx)。
 
+已有任务（Task）的原型默认归入可阅读位置，无需等到决定实施。有适用规范变更（OpenSpec Change）时保存在其真实工作副本，归档后仍从归档目录读取；没有关联变更时保存在主工作空间（Canonical Workspace）的 `.buildr/local/task-prototypes/<task-id>/`。任务“方案设计”和“单独查看”读取同一内容并显示来源；本机任务来源不伪造变更。[原型读取](../../../services/buildr/src/modules/task/change/application/change-application.ts)先确认任务存在，限制文件标记、体积、目录深度和数量，拒绝符号链接（Symbolic Link），一个来源不可读不阻断其他安全来源。读取不创建目录、文件或任务记录；本机目录独立于隔离工作树（Worktree），不会随 Git 提交交付，移交或长期保留时需要同时保全实际 HTML 与构建来源。归入仅表示成果可评审，不表示批准实施。
+
 审查（Review）检查方案或成果的正确性，验证（Verification）记录实际执行的检查。二者都应指向明确内容，写清结论及未覆盖项；构建通过、测试通过、人的验收和实际交付是不同事实。
+
+## 提交怎样关联到任务
+
+有明确正式任务（Task）时，[Git 操作指引](../../../services/buildr/resources/workspace/skills/buildr/git-operations/SKILL.md)要求在实际提交说明（Commit Message）末尾写入一行 `Buildr-Task: <taskId>`，主题继续表达本次改动。同一任务可以产生多次提交；没有明确任务时省略尾注（Trailer），不为提交补建任务。普通正文提及任务编码、分支名或目录名都不作为归属证明。同值重复尾注按一个值读取，不同值或非法编码产生局部诊断。
+
+[提交读取应用](../../../services/buildr/src/modules/task/commits/application/task-commits-application.ts)先核对任务存在，再从任务范围内的项目、服务、关联变更对应项目和已知任务工作树（Worktree）定位真实代码库（Repository）。没有项目、服务或关联变更的工作空间级任务（Workspace-only Task），只检查任务所属主工作空间（Canonical Workspace）根目录本身的 Git 代码库，不从当前工作目录或父目录猜测来源。查询检查本机分支、已有远端跟踪引用、标签与相关工作树 `HEAD` 当前可达的提交，因此包含尚未推送的本机提交；不自动抓取远端，不扫描任意目录。相同真实代码库中的同一完整哈希值（Hash）只计一次，结果带有读取时间、实际范围、上限与局部诊断。有界读取未完成时显示部分结果，不能据此断言没有提交或覆盖全部历史。
+
+任务详情在“任务收尾”之后提供“提交记录”阅读标签，四个工作阶段保持原义。[提交记录组件](../../../services/buildr-web/src/features/task/components/TaskCommitRecords.tsx)显示主题、作者、时间与来源，展开可阅读、复制完整说明和完整哈希值（Hash）；任务编码保留在原始说明尾注中。命令 `buildr task commits <task-id> --target <canonical-workspace> --json` 与网页使用同一只读应用。读取不建立提交关联表，不写任务状态、审查或验证结论。
+
+提交成功后先回读真实 Git 对象，再核对任务查询返回的代码库身份、完整哈希值（Hash）和说明；两侧一致才确认双向关联。查询失败不否定已经成功的提交，关联存在也不证明任务完成。旧提交缺少尾注时保持原历史；修改提交或变基（Rebase）后按当前可达对象重新读取，不承诺恢复已不可达或清理的对象。
 
 ## 收尾：把成果交到约定位置
 
