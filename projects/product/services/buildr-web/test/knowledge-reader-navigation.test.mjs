@@ -67,3 +67,34 @@ test('损坏父子关系仍有界且不隐藏主题，未知选择不伪造祖�
   assert.equal(readingNodeCount(tree), 4);
   assert.deepEqual(readingAncestors(tree, { kind: 'artifact', id: 'absent' }), []);
 });
+
+test('类型和关键词结果默认展开但仍能手动收起，不污染完整目录的展开状态', async () => {
+  const { readingBranchOpen, toggleReadingBranch } = await import('../src/features/knowledge/knowledge-reader-navigation.ts');
+  const base = { query: '', filter: 'all', expanded: { 'topic:system': false, 'topic:overview': true } };
+  assert.equal(readingBranchOpen(base, 'topic:system'), false);
+  const filtered = { ...base, filter: 'maps' };
+  assert.equal(readingBranchOpen(filtered, 'topic:system'), true);
+  const closed = toggleReadingBranch(filtered, 'topic:system');
+  assert.equal(readingBranchOpen(closed, 'topic:system'), false);
+  assert.deepEqual(closed.expanded, base.expanded);
+  assert.equal(readingBranchOpen(toggleReadingBranch(closed, 'topic:system'), 'topic:system'), true);
+  const searched = { ...closed, query: '关系', filter: 'all' };
+  assert.equal(readingBranchOpen(searched, 'topic:system'), true, '新的检索结果独立自动展开');
+  const searchClosed = toggleReadingBranch(searched, 'topic:system');
+  assert.equal(readingBranchOpen(searchClosed, 'topic:system'), false);
+  assert.equal(readingBranchOpen({ ...searchClosed, query: '', filter: 'maps' }, 'topic:system'), false, '返回之前的类型过滤保留手动状态');
+  const clear = { ...searchClosed, query: '', filter: 'all' };
+  assert.equal(readingBranchOpen(clear, 'topic:system'), false);
+  assert.equal(readingBranchOpen(clear, 'topic:overview'), true, '清除过滤恢复完整目录原展开');
+  assert.deepEqual(base, { query: '', filter: 'all', expanded: { 'topic:system': false, 'topic:overview': true } });
+});
+
+test('只对手动调整的过滤保留有界状态，查询规范化不制造重复历史', async () => {
+  const { readingBranchOpen, toggleReadingBranch } = await import('../src/features/knowledge/knowledge-reader-navigation.ts');
+  let preferences = { query: ' NODE   Runtime ', filter: 'all', expanded: {} };
+  preferences = toggleReadingBranch(preferences, 'section:tests');
+  assert.equal(readingBranchOpen({ ...preferences, query: 'node runtime' }, 'section:tests'), false);
+  for (let index = 0; index < 25; index++) preferences = toggleReadingBranch({ ...preferences, query: String(index) }, 'section:tests');
+  assert.equal(Object.keys(preferences.filteredExpanded).length, 16);
+  assert.equal(readingBranchOpen(preferences, 'section:tests'), false);
+});

@@ -14,11 +14,37 @@ export type ReadingNode = {
   children: ReadingNode[];
   supplementary?: boolean;
 };
-export type ReadingPreferences = { query: string; filter: ReadingFilter; expanded: Record<string, boolean> };
+export type ReadingPreferences = {
+  query: string;
+  filter: ReadingFilter;
+  expanded: Record<string, boolean>;
+  filteredExpanded?: Record<string, Record<string, boolean>>;
+};
 export const emptyReadingPreferences = (): ReadingPreferences => ({ query: '', filter: 'all', expanded: {} });
 type Artifact = KnowledgeNavigationResponse['artifacts'][number];
 export const readingType = (kind: string): Exclude<ReadingFilter, 'all'> => kind === 'diagram' ? 'diagrams' : kind === 'code-map' ? 'maps' : 'documents';
 export const readingFilter = (value: string | null): ReadingFilter => value === 'documents' || value === 'diagrams' || value === 'maps' ? value : 'all';
+
+/** Filtered trees start expanded, with user overrides separate from the complete tree. */
+function readingExpansionKey(preferences: ReadingPreferences): string | null {
+  const query = preferences.query.trim().toLocaleLowerCase().replace(/\s+/g, ' ');
+  return query || preferences.filter !== 'all' ? JSON.stringify([query, preferences.filter]) : null;
+}
+
+export function readingBranchOpen(preferences: ReadingPreferences, key: string): boolean {
+  const view = readingExpansionKey(preferences);
+  return view ? preferences.filteredExpanded?.[view]?.[key] ?? true : preferences.expanded[key] === true;
+}
+
+export function toggleReadingBranch(preferences: ReadingPreferences, key: string): ReadingPreferences {
+  const open = !readingBranchOpen(preferences, key);
+  const view = readingExpansionKey(preferences);
+  if (!view) return { ...preferences, expanded: { ...preferences.expanded, [key]: open } };
+  const saved = preferences.filteredExpanded || {};
+  // Only manually changed views are remembered; keep this transient history bounded.
+  const recent = Object.fromEntries(Object.entries(saved).filter(([id]) => id !== view).slice(-15));
+  return { ...preferences, filteredExpanded: { ...recent, [view]: { ...saved[view], [key]: open } } };
+}
 
 export function topicReadingTree(topics: KnowledgeTopic[], artifacts: Artifact[]): ReadingNode[] {
   const ids = new Set(topics.map(topic => topic.id));

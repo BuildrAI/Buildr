@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { TestContext } from 'node:test';
 import type { Locator, Page, Request } from 'playwright-core';
+import { composeKnowledgeSearch, continueKnowledgeSearch, toggleFilteredKnowledgeBranch, waitKnowledgeBranchExpanded } from './knowledge-navigation-input.ts';
 import { openKnowledgeTopicDirectory, selectKnowledgeChildTopic, verifyKnowledgeQuestionHandoff } from './knowledge-local-reading-journey.ts';
 
 export const publicationTestPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aN1sAAAAASUVORK5CYII=', 'base64');
@@ -164,6 +165,71 @@ export async function runPublicationJourney({ t, page, workspaceRoot, workspaceU
       assert.deepEqual(writes, [], '主题、目录与分类阅读不得写回知识');
       assert.equal(fs.readFileSync(indexFile, 'utf8'), indexBefore);
     } finally { page.off('request', collectWrites); await page.setViewportSize({ width: 1680, height: 1000 }); }
+  });
+
+  await t.test('主目录中文组合输入保持焦点，筛选目录可以收展且清空恢复原状态', async () => {
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    const main = () => visible().locator('.knowledge-page:visible');
+    const body = () => main().locator('.knowledge-navigation-content [data-knowledge-artifact="browser-explanation"]');
+    const search = () => main().getByRole('textbox', { name: '检索知识', exact: true });
+    const filter = (name: string) => main().getByRole('group', { name: '内容类型', exact: true }).getByRole('button', { name, exact: true });
+    await page.goto(`${workspaceUrl}/knowledge/project/product`);
+    await body().waitFor({ state: 'visible' });
+    const branch = () => main().locator('[data-knowledge-branch="topic:browser-reading"]:visible');
+    if (await branch().getAttribute('aria-expanded') !== 'true') await branch().click();
+    await composeKnowledgeSearch(page, search(), 'shen ru', '深入阅读', async () => {
+      assert.equal(new URL(page.url()).searchParams.has('q'), false, '组合中间值不写入地址或提交过滤');
+      assert.equal(await main().locator('[data-knowledge-entry="browser-diagram"]:visible').isVisible(), true, '组合期间保持原目录');
+      assert.equal(await body().isVisible(), true);
+    });
+    await main().locator('[data-knowledge-entry="browser-details-article"]:visible').waitFor({ state: 'visible' });
+    await toggleFilteredKnowledgeBranch(main(), 'topic:browser-reading', main().locator('[data-knowledge-entry="browser-details-article"]:visible'), body());
+    await continueKnowledgeSearch(page, search());
+    await search().fill('');
+    await waitKnowledgeBranchExpanded(main(), 'topic:browser-reading', true);
+    assert.equal(await branch().getAttribute('aria-expanded'), 'true', '清空中文检索恢复原展开');
+    for (const [label, artifact] of [['说明', 'browser-explanation'], ['图示', 'browser-diagram'], ['代码地图', 'browser-map']]) {
+      await filter(label).click();
+      await toggleFilteredKnowledgeBranch(main(), 'topic:browser-reading', main().locator(`[data-knowledge-entry="${artifact}"]:visible`), body());
+      await filter('全部').click();
+      await waitKnowledgeBranchExpanded(main(), 'topic:browser-reading', true);
+      assert.equal(await branch().getAttribute('aria-expanded'), 'true', '清空类型条件恢复原展开');
+    }
+    await main().evaluate(node => node.closest('.pane-body')?.scrollTo({ top: 0 }));
+    await capture(page, 'knowledge-ime-topic-main.png');
+    await page.setViewportSize({ width: 390, height: 844 });
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    await capture(page, 'knowledge-ime-topic-mobile.png');
+    await page.setViewportSize({ width: 1440, height: 1000 });
+
+    await page.goto(`${workspaceUrl}/knowledge/project/product?browse=documents&artifact=browser-explanation`);
+    await body().waitFor({ state: 'visible' });
+    const documentSearch = () => main().getByRole('textbox', { name: '检索文档目录', exact: true });
+    const section = () => main().locator('[data-knowledge-branch="section:unorganized"]:visible');
+    await section().waitFor({ state: 'visible' });
+    if (await section().getAttribute('aria-expanded') !== 'true') await section().click();
+    await composeKnowledgeSearch(page, documentSearch(), 'shen ru', '深入阅读', async () => {
+      assert.equal(new URL(page.url()).searchParams.has('q'), false);
+      assert.equal(await body().isVisible(), true);
+    });
+    await toggleFilteredKnowledgeBranch(main(), 'section:unorganized', main().locator('[data-knowledge-entry="browser-details-article"]:visible'), body());
+    await continueKnowledgeSearch(page, documentSearch());
+    await documentSearch().fill('');
+    await waitKnowledgeBranchExpanded(main(), 'section:unorganized', true);
+    assert.equal(await section().getAttribute('aria-expanded'), 'true', '文档模式清空检索恢复原章节展开');
+    for (const [label, artifact] of [['说明', 'browser-details-article'], ['代码地图', 'browser-map']]) {
+      await filter(label).click();
+      await toggleFilteredKnowledgeBranch(main(), 'section:unorganized', main().locator(`[data-knowledge-entry="${artifact}"]:visible`), body());
+      await filter('全部').click();
+      await waitKnowledgeBranchExpanded(main(), 'section:unorganized', true);
+      assert.equal(await section().getAttribute('aria-expanded'), 'true');
+    }
+    await main().evaluate(node => node.closest('.pane-body')?.scrollTo({ top: 0 }));
+    await capture(page, 'knowledge-ime-documents-main.png');
+    await page.setViewportSize({ width: 390, height: 844 });
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    await capture(page, 'knowledge-ime-documents-mobile.png');
+    await page.setViewportSize({ width: 1680, height: 1000 });
   });
 
   await t.test('未声明入口的旧知识索引仍可从目录检索而不猜测第一篇正文', async () => {

@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, type ReactNode } from 'react';
-import { Alert, Button, Input, Spin, Tabs } from 'antd';
-import { ApartmentOutlined, DownOutlined, FileTextOutlined, FolderOpenOutlined, RightOutlined, SearchOutlined } from '@ant-design/icons';
-import { filterReadingTree, readingAncestors, readingNodeCount, type ReadingNode, type ReadingPreferences, type ReadingTarget } from '../knowledge-reader-navigation';
+import { Alert, Button, Spin, Tabs } from 'antd';
+import { ApartmentOutlined, DownOutlined, FileTextOutlined, FolderOpenOutlined, RightOutlined } from '@ant-design/icons';
+import { filterReadingTree, readingAncestors, readingBranchOpen, readingNodeCount, toggleReadingBranch, type ReadingNode, type ReadingPreferences, type ReadingTarget } from '../knowledge-reader-navigation';
+
+import { KnowledgeSearch } from './KnowledgeSearch';
 
 type Props = {
   nodes: ReadingNode[];
@@ -22,7 +24,7 @@ type Props = {
 /** Both reading modes share one search, hierarchy and responsive navigation surface. */
 export function KnowledgeTopicNavigation({ nodes, selected, documentsSelected, preferences, onPreferences, loading, error, notices = [], onSelect, onTopics, onDocuments, onRetry, children }: Props) {
   const mobile = useRef<HTMLDetailsElement>(null);
-  const { query, filter, expanded } = preferences;
+  const { query, filter } = preferences;
   const visible = useMemo(() => filterReadingTree(nodes, query, filter), [nodes, query, filter]);
   const searching = Boolean(query.trim()) || filter !== 'all';
   const ancestors = readingAncestors(nodes, selected);
@@ -40,14 +42,14 @@ export function KnowledgeTopicNavigation({ nodes, selected, documentsSelected, p
     onSelect(node.target, node.title);
   };
   const branch = (items: ReadingNode[]): ReactNode => <ul>{items.map(node => {
-    const open = searching || expanded[node.key] === true;
+    const open = readingBranchOpen(preferences, node.key);
     const isCurrent = Boolean(node.target && selected && node.target.kind === selected.kind && node.target.id === selected.id);
-    const toggle = () => { if (!searching) onPreferences({ ...preferences, expanded: { ...expanded, [node.key]: !open } }); };
+    const toggle = () => onPreferences(toggleReadingBranch(preferences, node.key));
     const icon = node.type === 'diagrams' ? <ApartmentOutlined /> : node.type === 'maps' ? <FolderOpenOutlined /> : <FileTextOutlined />;
     return <li key={node.key}>
       <div className={`knowledge-topic-row${node.supplementary ? ' knowledge-reader-supplementary' : ''}`}>
         {node.children.length ? <button type="button" className="knowledge-topic-toggle" data-knowledge-topic-toggle={node.target?.kind === 'object' ? node.target.id : undefined}
-          data-knowledge-branch={node.key} aria-label={`${open ? '收起' : '展开'}${node.title}`} aria-expanded={open} disabled={searching} onClick={toggle}>
+          data-knowledge-branch={node.key} aria-label={`${open ? '收起' : '展开'}${node.title}`} aria-expanded={open} onClick={toggle}>
           {open ? <DownOutlined /> : <RightOutlined />}
         </button> : <span className="knowledge-topic-toggle-spacer">{node.type ? icon : null}</span>}
         <button type="button" className="knowledge-topic-link" title={node.summary || node.title} aria-current={isCurrent ? 'page' : undefined}
@@ -62,7 +64,7 @@ export function KnowledgeTopicNavigation({ nodes, selected, documentsSelected, p
     </li>;
   })}</ul>;
   const tools = () => <div className="knowledge-reader-search">
-    <Input prefix={<SearchOutlined />} value={query} allowClear aria-label={documentsSelected ? '检索文档目录' : '检索知识'} placeholder="搜索标题或说明" onChange={event => onPreferences({ ...preferences, query: event.target.value })} />
+    <KnowledgeSearch key={documentsSelected ? 'documents' : 'topics'} value={query} label={documentsSelected ? '检索文档目录' : '检索知识'} onChange={value => onPreferences({ ...preferences, query: value })} />
     <div className="knowledge-reader-filters" role="group" aria-label="内容类型">
       {([['all', '全部'], ['documents', '说明'], ['diagrams', '图示'], ['maps', '代码地图']] as const).map(([key, label]) => <button type="button" key={key} aria-pressed={filter === key}
         disabled={key !== 'all' && !filterReadingTree(nodes, '', key).length} onClick={() => onPreferences({ ...preferences, filter: key })}>{label}</button>)}
@@ -79,6 +81,7 @@ export function KnowledgeTopicNavigation({ nodes, selected, documentsSelected, p
     <Tabs className="knowledge-reading-tabs" activeKey={documentsSelected ? 'documents' : 'topics'}
       items={[{ key: 'topics', label: <span data-knowledge-topics-entry>主题阅读</span> }, { key: 'documents', label: <span data-knowledge-documents-entry>文档目录</span> }]}
       onChange={key => { if (mobile.current) mobile.current.open = false; if (key === 'documents') onDocuments(); else onTopics(); }} />
+    <p className="knowledge-reading-description">{documentsSelected ? '按阅读目的查阅指南、说明与参考，包含主题中的文档正文。' : '围绕理解问题，连接说明、图示和代码地图。'}两种方式共用正文。</p>
     <div className="knowledge-navigation-layout" data-knowledge-reading-mode={documentsSelected ? 'documents' : 'topics'}>
       <aside className="knowledge-topic-desktop">{tools()}{contents()}</aside>
       <div className="knowledge-topic-mobile">{tools()}<details ref={mobile} data-knowledge-topic-disclosure>

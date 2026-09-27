@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Page, Request } from 'playwright-core';
+import { composeKnowledgeSearch, continueKnowledgeSearch, toggleFilteredKnowledgeBranch, waitKnowledgeBranchExpanded } from './knowledge-navigation-input.ts';
 import { openKnowledgeTopicDirectory, runKnowledgeLocalReadingJourney, selectKnowledgeChildTopic } from './knowledge-local-reading-journey.ts';
 
 type Context = { page: Page; workspaceRoot: string; workspaceUrl: string; service: { id: string; name: string }; capture: (page: Page, name: string) => Promise<unknown> };
@@ -78,7 +79,58 @@ export async function runServiceKnowledgeJourney({ page, workspaceRoot, workspac
     assert.equal(knowledgeRequests.some(value => new URL(value).pathname === catalogPath), false, '默认主题不提前请求全部资料目录');
     await assertSingleReadingPane();
     await openKnowledgeTopicDirectory(browser());
+    const currentBody = () => browser().locator('.knowledge-navigation-content [data-knowledge-artifact="service-intro"]:visible');
+    const topicSearch = () => browser().getByRole('textbox', { name: '检索知识', exact: true });
+    const filter = (name: string) => browser().getByRole('group', { name: '内容类型', exact: true }).getByRole('button', { name, exact: true });
+    const topicBranch = () => browser().locator('[data-knowledge-branch="topic:service-topic"]:visible');
+    if (await topicBranch().getAttribute('aria-expanded') !== 'true') await topicBranch().click();
+    await composeKnowledgeSearch(page, topicSearch(), 'fu wu', '服务职责图', async () => {
+      assert.equal(await browser().locator('[data-knowledge-entry="service-intro"]:visible').isVisible(), true, '副屏组合输入期间不提交过滤');
+      assert.equal(await currentBody().isVisible(), true);
+    });
+    await toggleFilteredKnowledgeBranch(browser(), 'topic:service-topic', browser().locator('[data-knowledge-entry="service-diagram"]:visible'), currentBody());
+    await continueKnowledgeSearch(page, topicSearch());
+    await topicSearch().fill('');
+    await waitKnowledgeBranchExpanded(browser(), 'topic:service-topic', true);
+    assert.equal(await topicBranch().getAttribute('aria-expanded'), 'true', '侧读清空检索恢复原主题展开');
+    for (const [label, artifact] of [['说明', 'service-intro'], ['图示', 'service-diagram'], ['代码地图', 'service-map']]) {
+      await filter(label).click();
+      await toggleFilteredKnowledgeBranch(browser(), 'topic:service-topic', browser().locator(`[data-knowledge-entry="${artifact}"]:visible`), currentBody());
+      await filter('全部').click();
+      await waitKnowledgeBranchExpanded(browser(), 'topic:service-topic', true);
+      assert.equal(await topicBranch().getAttribute('aria-expanded'), 'true');
+    }
+    await capture(page, 'knowledge-ime-topic-side.png');
+    await browser().getByRole('tab', { name: '文档目录', exact: true }).click();
+    await currentBody().waitFor({ state: 'visible' });
+    await openKnowledgeTopicDirectory(browser());
+    const documentSearch = () => browser().getByRole('textbox', { name: '检索文档目录', exact: true });
+    const section = () => browser().locator('[data-knowledge-branch="section:unorganized"]:visible');
+    await section().waitFor({ state: 'visible' });
+    if (await section().getAttribute('aria-expanded') !== 'true') await section().click();
+    await composeKnowledgeSearch(page, documentSearch(), 'fu wu', '服务阅读条目 01', async () => {
+      assert.equal(await browser().locator('[data-knowledge-entry="service-map"]:visible').isVisible(), true, '文档模式的组合中间值不改变目录');
+      assert.equal(await currentBody().isVisible(), true);
+    });
+    await toggleFilteredKnowledgeBranch(browser(), 'section:unorganized', browser().locator('[data-knowledge-entry="service-page-01"]:visible'), currentBody());
+    await continueKnowledgeSearch(page, documentSearch());
+    await documentSearch().fill('');
+    await waitKnowledgeBranchExpanded(browser(), 'section:unorganized', true);
+    assert.equal(await section().getAttribute('aria-expanded'), 'true', '侧读文档目录恢复原章节展开');
+    for (const [label, artifact] of [['说明', 'service-page-01'], ['代码地图', 'service-map']]) {
+      await filter(label).click();
+      await toggleFilteredKnowledgeBranch(browser(), 'section:unorganized', browser().locator(`[data-knowledge-entry="${artifact}"]:visible`), currentBody());
+      await filter('全部').click();
+      await waitKnowledgeBranchExpanded(browser(), 'section:unorganized', true);
+      assert.equal(await section().getAttribute('aria-expanded'), 'true');
+    }
+    await capture(page, 'knowledge-ime-documents-side.png');
+    await browser().getByRole('tab', { name: '主题阅读', exact: true }).click();
+    await topic('service-topic').locator('[data-knowledge-artifact="service-intro"]').waitFor({ state: 'visible' });
+    await openKnowledgeTopicDirectory(browser());
     await browser().getByRole('textbox', { name: '检索知识', exact: true }).fill('服务职责图');
+    const rememberedDiagramBranch = browser().locator('[data-knowledge-branch="topic:service-topic"]:visible');
+    if (await rememberedDiagramBranch.getAttribute('aria-expanded') !== 'true') await rememberedDiagramBranch.click();
     await browser().locator('[data-knowledge-entry="service-diagram"]:visible').click();
     await browser().locator('[data-knowledge-view="artifact"]:visible [data-knowledge-artifact="service-diagram"] iframe').waitFor({ state: 'visible' });
     await openKnowledgeTopicDirectory(browser());

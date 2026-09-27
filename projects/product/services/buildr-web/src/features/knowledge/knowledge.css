@@ -31,8 +31,9 @@
 }
 .knowledge-navigation-layout { display: grid; grid-template-columns: 258px minmax(0, 1fr); gap: 30px; align-items: start; }
 .knowledge-navigation-content { min-width: 0; }
-.knowledge-reading-tabs > .ant-tabs-nav { margin-bottom: 18px; }
+.knowledge-reading-tabs > .ant-tabs-nav { margin-bottom: 10px; }
 .knowledge-reading-tabs > .ant-tabs-nav .ant-tabs-tab { padding: 10px 0; }
+.knowledge-reading-description { margin: 0 0 18px; color: var(--soft-muted); font-size: 13px; line-height: 1.7; }
 .knowledge-topic-desktop { position: sticky; top: 58px; max-height: calc(100vh - 190px); overflow: auto; padding-right: 18px; border-right: 1px solid var(--soft-line); }
 .knowledge-reader-search { margin-bottom: 14px; }
 .knowledge-reader-search .ant-input-affix-wrapper { width: 100%; }

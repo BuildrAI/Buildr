@@ -55,6 +55,7 @@
         - [KnowledgePage.tsx](../../services/buildr-web/src/features/knowledge/pages/KnowledgePage.tsx) — 装配主阅读页、明确链接与默认入口，按范围和模式保留检索及展开，组织关联副屏
       - `components/`
         - [KnowledgeTopicNavigation.tsx](../../services/buildr-web/src/features/knowledge/components/KnowledgeTopicNavigation.tsx) — 两种模式共用的检索、类型过滤、语义目录树与阅读布局；宽区并列，窄区折叠
+        - [KnowledgeSearch.tsx](../../services/buildr-web/src/features/knowledge/components/KnowledgeSearch.tsx) — 保留输入法组合中的本地文字，确认后再提交检索，避免地址更新打断中文输入
         - [KnowledgeBrowser.tsx](../../services/buildr-web/src/features/knowledge/components/KnowledgeBrowser.tsx) — 侧读复用同一目录和阅读器，保留范围、模式及历史选择
         - [KnowledgeTopicChildren.tsx](../../services/buildr-web/src/features/knowledge/components/KnowledgeTopicChildren.tsx) — 在父主题下提供直接子主题入口，组织节点无需另写正文
         - [KnowledgePreviewNotice.tsx](../../services/buildr-web/src/features/knowledge/components/KnowledgePreviewNotice.tsx) — 原生预览的开发中提示、当前来源目录与启动时身份

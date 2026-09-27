@@ -1149,6 +1149,7 @@ artifacts:
     sources:
       - topic-children
       - topic-navigation
+      - knowledge-search
       - reader-navigation-model
       - document-navigation-state
       - document-sections
@@ -1250,6 +1251,7 @@ artifacts:
     sources:
       - topic-children
       - topic-navigation
+      - knowledge-search
       - reader-navigation-model
       - document-navigation-state
       - document-sections
@@ -1353,7 +1355,12 @@ sources:
     title: 共同阅读目录模型
     kind: code
     path: services/buildr-web/src/features/knowledge/knowledge-reader-navigation.ts
-    summary: 将主题关联和文档章节组织为同一树模型，计算关键词与类型过滤、命中祖先、入口去重及唯一内容数量，不修改正文。
+    summary: 将主题关联和文档章节组织为同一树模型，计算关键词与类型过滤、命中祖先、入口去重及唯一内容数量；筛选中的手动收展独立保留，不覆盖完整目录的展开状态。
+  - id: knowledge-search
+    title: 知识检索输入
+    kind: code
+    path: services/buildr-web/src/features/knowledge/components/KnowledgeSearch.tsx
+    summary: 以本地草稿保护输入法组合过程，确认后提交检索；外部阅读位置变化时同步已提交查询，保持主页面与侧读一致。
   - id: document-navigation-state
     title: 文档目录请求状态
     kind: code
