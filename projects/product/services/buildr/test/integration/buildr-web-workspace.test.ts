@@ -120,6 +120,12 @@ test('Change 仅作为 Task-scoped 只读内容', () => {
   assert.doesNotMatch(change, /associate-change|addChanges|openAgentAction/);
   assert.doesNotMatch(app, /path=["']\/changes["']/);
   assert.doesNotMatch(server, /suffix === '\/changes'|change-create|change-action|addChanges/);
+  const actionDrawer = read('../buildr-web/src/app/AgentActionDrawer.tsx');
+  const taskAction = read('../buildr-web/src/features/task/components/TaskAgentAction.tsx');
+  const professionalClient = read('../buildr-web/src/features/task/api/task-professional-api.ts');
+  assert.doesNotMatch(actionDrawer, /setAction\(['"]change['"]\)|创建变更/);
+  assert.doesNotMatch(taskAction, /action === ['"]change['"]|submitChange|changeCreatePrompt|changeActionPrompt/);
+  assert.doesNotMatch(professionalClient, /change-create|change-action|changeCreatePrompt|changeActionPrompt/);
 });
 
 test('Buildr Web 在工作空间提供独立文章入口、只读内容视图和受控本地图片资源', () => {

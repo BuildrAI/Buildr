@@ -23,7 +23,3 @@
 ## 维护与核验
 
 先检查关系语义，只有来源变化真正影响节点或连线才修改图源。更新图源后使用已安装 Archify 的 `validate dataflow`、`deliver dataflow` 和 `visual-check`，展示保持同名同目录；不手改 HTML。完整方法见[当前知识维护](../../../services/buildr/resources/workspace/skills/buildr/current-knowledge-maintenance/SKILL.md)。
-
-本次图源通过 9 项展示级检查，0 错误、0 警告；1440×900、1600×1000、1920×1080、2048×1320 四个桌面尺寸均未溢出。已实际查看 1440×900 浅色和 2048×1320 深色截图，节点、连线和说明无遮挡；自动视觉报告的 `visualReview: pending` 保持原值，人工查看不冒充自动结论。交互验证与最终检查记录见同次变更的验证说明。
-
-同名 `.visual-check.json`、联系页和截图是生成检查证据，不能替代节点关系的来源核对。图源与展示的摘要由交付命令返回，后续检查应对应实际文件。

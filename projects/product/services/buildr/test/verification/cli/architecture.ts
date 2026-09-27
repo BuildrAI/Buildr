@@ -19,7 +19,7 @@ const projectRoot: any = path.resolve(productRoot, '../..');
 const repositoryRoot: any = path.resolve(projectRoot, '../..');
 const sourceRoot: any = path.join(productRoot, 'src');
 const entry: any = path.join(productRoot, 'bin', 'buildr.mjs');
-const serviceArchitecture: any = path.join(projectRoot, 'knowledge', 'docs', 'architecture', 'service-architecture.md');
+const serviceArchitecture: any = path.join(projectRoot, 'knowledge', 'docs', 'architecture', 'technical.md');
 const problems: any[] = [];
 const trackedFiles: any = execFileSync('git', ['ls-files'], { cwd: repositoryRoot, encoding: 'utf8' }).trim().split('\n').filter(Boolean);
 const ignoredProjectRootEntries: any = new Set([
@@ -53,20 +53,14 @@ function listFiles(root: any, predicate: any = () => true): any  {
   return files;
 }
 
-const globalApplicationResiduals: any = Object.freeze([]);
 const architectureSource: any = fs.existsSync(serviceArchitecture) ? fs.readFileSync(serviceArchitecture, 'utf8') : '';
-if (!architectureSource) problems.push('missing Service architecture migration ledger');
-for (const residual of globalApplicationResiduals) {
-  const row: any = architectureSource.split(/\r?\n/u).find((line: any) => line.includes(`\`${residual}\``));
-  if (!row || !row.includes('| `deferred` |')) problems.push(`global Application residual lacks explicit deferred ledger entry: src/${residual}`);
-}
+if (!architectureSource.trim()) problems.push('missing current technical architecture document');
 for (const retired of ['application/domains/package-assets.mjs', 'application/workspace-operations.mjs']) {
   if (fs.existsSync(path.join(sourceRoot, retired))) problems.push(`retired global Application path still exists: src/${retired}`);
 }
 for (const file of listFiles(path.join(sourceRoot, 'application'), (item: any) => /\.(?:mjs|ts)$/u.test(item))) {
   const relative: any = path.relative(sourceRoot, file).split(path.sep).join('/');
-  const covered: any = globalApplicationResiduals.some((residual: any) => residual.endsWith('/') ? relative.startsWith(residual) : relative === residual);
-  if (!covered) problems.push(`global Application production file lacks migration ledger ownership: src/${relative}`);
+  problems.push(`global Application production file lacks module ownership: src/${relative}`);
 }
 for (const retiredRoot of ['domain', 'interfaces']) {
   for (const file of listFiles(path.join(sourceRoot, retiredRoot), (item: any) => /\.(?:mjs|ts)$/u.test(item))) {

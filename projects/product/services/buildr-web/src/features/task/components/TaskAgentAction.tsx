@@ -10,19 +10,18 @@ import { ACTION_LABELS, useAgentActionFeedback } from '../../../components/Agent
 
 type Props = { action: string; context: Record<string, unknown>; onBack: () => void };
 
-/** Task范围内的开始、Change交接、审查和验证表单。 */
+/** Task范围内的开始、接续、审查和验证表单。 */
 export function TaskAgentAction({ action, context, onBack }: Props) {
-  const { setError, showResult, formHeader, promptResult } = useAgentActionFeedback(onBack);
+  const { setError, showResult, generatePrompt, updateInput, invalidatePrompt, preparing, formHeader, promptResult } = useAgentActionFeedback(onBack);
   const [projects, setProjects] = useState<Array<{ code: string; name: string }>>([]);
   const [projectsLoaded, setProjectsLoaded] = useState(false);
   const [services, setServices] = useState<Array<{ code: string; name: string }>>([]);
   const [projectCode, setProjectCode] = useState(String(context.projectCode || ''));
   const [serviceCode, setServiceCode] = useState('');
   const [continuationGoal, setContinuationGoal] = useState('');
-  const [preparingContinuation, setPreparingContinuation] = useState(false);
   const [goal, setGoal] = useState(String(context.goal || ''));
   useEffect(() => {
-    if (action !== 'start' && action !== 'change') return;
+    if (action !== 'start') return;
     let cancelled = false;
     setProjectsLoaded(false);
     void (async () => {
@@ -31,6 +30,7 @@ export function TaskAgentAction({ action, context, onBack }: Props) {
         if (cancelled) return;
         const availableProjects = data.projects || [];
         setProjects(availableProjects);
+        invalidatePrompt();
         setProjectsLoaded(true);
         setProjectCode((current) => (
           current && availableProjects.some((item) => item.code === current)
@@ -46,13 +46,11 @@ export function TaskAgentAction({ action, context, onBack }: Props) {
       }
     })();
     return () => { cancelled = true; };
-  }, [action]);
+  }, [action, invalidatePrompt]);
 
   useEffect(() => {
-    if (action !== 'start' || !projectCode) {
-      setServices([]);
-      return;
-    }
+    setServices([]);
+    if (action !== 'start' || !projectCode) return;
     let cancelled = false;
     void (async () => {
       try {
@@ -68,29 +66,8 @@ export function TaskAgentAction({ action, context, onBack }: Props) {
 
   const submitStart = async (event: FormEvent) => {
     event.preventDefault();
-    setError(null);
-    try {
-      const result = await taskProfessionalApi.startWorkPrompt({ projectCode, serviceCode, goal });
-      showResult(result.prompt, ACTION_LABELS.start, '任务尚未在 Buildr Web 中开始或完成。');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '生成指令失败。');
-    }
-  };
-
-  const submitChange = async (event: FormEvent) => {
-    event.preventDefault();
-    setError(null);
-    try {
-      if (context.ref && context.action) {
-        const result = await taskProfessionalApi.changeActionPrompt({ projectCode: context.projectCode, ref: context.ref, action: context.action });
-        showResult(result.prompt, ACTION_LABELS.change, '变更文件未被修改。');
-        return;
-      }
-      const result = await taskProfessionalApi.changeCreatePrompt({ projectCode, goal });
-      showResult(result.prompt, ACTION_LABELS.change);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '生成指令失败。');
-    }
+    await generatePrompt(async () => (await taskProfessionalApi.startWorkPrompt({ projectCode, serviceCode, goal })).prompt,
+      ACTION_LABELS.start, '任务尚未在 Buildr Web 中开始或完成。');
   };
 
   const submitTaskReview = (event: FormEvent) => {
@@ -127,14 +104,14 @@ export function TaskAgentAction({ action, context, onBack }: Props) {
   if (action === 'task-continue') {
     const terminal = context.status === 'completed' || context.status === 'abandoned';
     const submitContinue = async (event: FormEvent) => {
-      event.preventDefault(); setError(null); setPreparingContinuation(true);
-      try {
+      event.preventDefault();
+      await generatePrompt(async () => {
         const taskId = String(context.taskId || '');
         const [current, work] = await Promise.all([taskApi.detail(taskId), workbenchApi.context(taskId)]);
         const record = current.record;
         const ended = record.status === 'completed' || record.status === 'abandoned';
-        if (ended && !continuationGoal.trim()) { setError('请描述基于已有成果，希望继续完成的新目标。'); return; }
-        showResult([
+        if (ended && !continuationGoal.trim()) throw new Error('请描述基于已有成果，希望继续完成的新目标。');
+        return [
           ended ? `请基于已结束任务「${record.title}」的成果开展新工作。` : `请继续任务「${record.title}」。`,
           `任务身份：${taskId}`,
           `当前状态：${record.status}`,
@@ -149,16 +126,15 @@ export function TaskAgentAction({ action, context, onBack }: Props) {
           '', '请重新核对当前任务记录、工作摘要、成果和适用规则，再在已有授权范围内继续。',
           ended ? '原任务保持结束状态；先按新目标确定工作范围与必要记录，不重开或改写原结果。' : '工作状态不表示智能体正在运行；按当前真实进展继续。',
           '只有需要用户作出具体判断时才登记明确待处理事项。记录真实进展前先读取当前摘要版本，并保留已有用户答复。',
-        ].join('\n'), '工作指令', '尚未启动执行或创建新的任务记录。');
-      } catch (cause) { setError(cause instanceof Error ? cause.message : '读取当前工作失败'); }
-      finally { setPreparingContinuation(false); }
+        ].join('\n');
+      }, '工作指令', '尚未启动执行或创建新的任务记录。', '读取当前工作失败');
     };
     return <>
       {formHeader(terminal ? '新工作' : '当前工作', '准备')}
       <form id="agent-action-form" onSubmit={(event) => void submitContinue(event)}>
         <div className="context-help"><strong>{String(context.title || context.taskId || '')}</strong><p>{terminal ? '已有成果作为新工作的背景，原任务保持结束状态。' : '准备指令时重新读取目标、范围、进展和已有意见。'}</p></div>
-        <label>{terminal ? '基于成果，希望完成什么？' : '补充要求（可选）'}<Input.TextArea id="task-continue-goal" rows={4} required={terminal} value={continuationGoal} onChange={(event) => setContinuationGoal(event.target.value)} /></label>
-        <div className="actions"><Button id="task-continue-prepare" type="primary" htmlType="submit" loading={preparingContinuation}>准备工作指令</Button></div>
+        <label>{terminal ? '基于成果，希望完成什么？' : '补充要求（可选）'}<Input.TextArea id="task-continue-goal" rows={4} required={terminal} value={continuationGoal} onChange={(event) => updateInput(() => setContinuationGoal(event.target.value))} /></label>
+        <div className="actions"><Button id="task-continue-prepare" type="primary" htmlType="submit" loading={preparing}>准备工作指令</Button></div>
       </form>
       {promptResult('工作指令', '尚未启动执行或创建新的任务记录。')}
     </>;
@@ -178,7 +154,7 @@ export function TaskAgentAction({ action, context, onBack }: Props) {
               loading={!projectsLoaded}
               placeholder={projectsLoaded && projects.length === 0 ? '请先创建项目' : '正在读取范围…'}
               value={projectCode || undefined}
-              onChange={(value) => setProjectCode(value || '')}
+              onChange={(value) => updateInput(() => { setProjectCode(value || ''); setServiceCode(''); setServices([]); })}
               options={projects.map((project) => ({
                 value: project.code,
                 label: `${project.name}（${project.code}）`,
@@ -193,7 +169,7 @@ export function TaskAgentAction({ action, context, onBack }: Props) {
               allowClear
               placeholder="本次不限定服务"
               value={serviceCode || undefined}
-              onChange={(value) => setServiceCode(value || '')}
+              onChange={(value) => updateInput(() => setServiceCode(value || ''))}
               options={services.map((service) => ({
                 value: service.code,
                 label: `${service.name}（${service.code}）`,
@@ -208,7 +184,7 @@ export function TaskAgentAction({ action, context, onBack }: Props) {
               required
               placeholder="例如：梳理支付项目当前状态，并提出下一步实现方案"
               value={goal}
-              onChange={(event) => setGoal(event.target.value)}
+              onChange={(event) => updateInput(() => setGoal(event.target.value))}
             />
           </label>
           <div className="actions full">
@@ -216,62 +192,6 @@ export function TaskAgentAction({ action, context, onBack }: Props) {
           </div>
         </form>
         {promptResult(ACTION_LABELS.start, '任务尚未在 Buildr Web 中开始或完成。')}
-      </>
-    );
-  }
-
-  if (action === 'change') {
-    if (context.ref && context.action) {
-      const actionLabel = context.action === 'review' ? '审查' : '继续推进';
-      return (
-        <>
-          {formHeader('变更', actionLabel)}
-          <form id="agent-action-form" onSubmit={(event) => void submitChange(event)}>
-            <div className="context-help">
-              {actionLabel}
-              项目
-              {' '}
-              <strong>{String(context.projectCode || '')}</strong>
-              {' '}
-              中的变更。Buildr 只生成指令，不直接修改变更文件。
-            </div>
-            <div className="actions">
-              <Button type="primary" htmlType="submit">{`生成${actionLabel}指令`}</Button>
-            </div>
-          </form>
-          {promptResult(ACTION_LABELS.change, '变更文件未被修改。')}
-        </>
-      );
-    }
-    return (
-      <>
-        {formHeader('变更')}
-        <form id="agent-action-form" onSubmit={(event) => void submitChange(event)}>
-          <label>
-            所属项目
-            <Select
-              id="action-project"
-              style={{ width: '100%' }}
-              disabled={!projectsLoaded}
-              loading={!projectsLoaded}
-              placeholder={projectsLoaded && projects.length === 0 ? '请先创建项目' : '正在读取已登记项目…'}
-              value={projectCode || undefined}
-              onChange={(value) => setProjectCode(value || '')}
-              options={projects.map((project) => ({
-                value: project.code,
-                label: `${project.name}（${project.code}）`,
-              }))}
-            />
-          </label>
-          <label>
-            变更目标
-            <Input.TextArea id="action-goal" rows={6} required placeholder="描述要解决的问题、期望结果与重要边界" value={goal} onChange={(event) => setGoal(event.target.value)} />
-          </label>
-          <div className="actions">
-            <Button type="primary" htmlType="submit">生成变更指令</Button>
-          </div>
-        </form>
-        {promptResult(ACTION_LABELS.change)}
       </>
     );
   }

@@ -1,19 +1,46 @@
 # 项目每日演进
 
-当前实现归属后端 `src/modules/task/daily-progress/`，由任务模块装配项目查询、任务查询和每日演进数据访问。单机版任务记录只在本地，Git 提交是跨开发者同步输入，因此仍按提交汇总，再关联本地任务。未来企业版任务主导汇总不在当前流程中。
+每日演进帮助人按日期了解项目（Project）代码发生了什么变化。它基于明确范围的 Git 提交，由智能体（Agent）生成并保存本机摘要，Buildr Web 提供阅读入口。
 
-## 当前流程
+这项能力已有实现，目前暂停进一步扩展，不作为首发主要使用路径。已有摘要仍可阅读和按现有方式重跑；暂停建设不意味着删除已有内容。整体范围见[当前能力与边界](../overview.md)。
 
-1. 用户要求查看、生成或重跑某已登记 Project 的每日演进时，Agent 发现 `project-daily-progress` Skill。只查看时直接读取已有日报，缺失则报告，不自动生成。
-2. 生成前明确日期、时区、相关仓库及本地引用，固定完整提交标识与观察时间。日报不要求工作目录干净、代码更新、资产同步或全局诊断通过；需要远端最新信息时按授权独立获取引用。用户只接受远端最新且获取失败时保留旧日报；使用本地范围时明确未确认远端最新。
-3. 范围明确后，Agent 收集目标日期、时区与所选引用范围内的全部 Git 提交与更改文件，用本机 `git config user.email` 做去空白、大小写不敏感对比。自己的提交 `authorship: self`，可挂 0..N 个已存在 Task ID；他人提交 `authorship: other`，必须写入且不得挂 Task。再撰写四问：`added`、`updated`、`deleted`、`drawbacks`，在 `daySummary.drawbacks` 中保存引用、完整提交标识、截至时间、远端状态和未覆盖范围。不要手写 YAML，不要写入 Task SQLite。重跑同一天前核对已有范围，不静默缩小。
-4. 调用 `buildr project daily-progress record --project <code> --input <payload.json> --json`。Application 校验 Project、日期、closed v2 payload 与存在的 Task ID 后，原子覆盖 `.buildr/daily-progress/<project-code>/<YYYY-MM-DD>.yml`。他人提交带 Task 或任一存在引用的 Task 不存在时整次 fail closed，不写文件。产品 Application 不执行 `git log`。
-5. CLI `inspect`/`list`、本机 HTTP 与 Buildr Web 只读展示。项目主页的“项目动态”进入 `/activity?project=<code>`；工作概览和动态中的摘要链接携带项目与摘要日期，在同一动态页打开完整每日演进，不再作为项目资料在副屏阅读。详情展示四问与提交（不展示变更文件列表；路径清单仍保存在 YAML/`files`），可切日期并按日/人/任务分组；项目、日期和分组保存在网址（URL）中，刷新和返回保留阅读范围。按任务只聚合已关联的自己的提交。旧 `?document=daily` 地址兼容进入同一动态页，未指定日期时沿用本机今天。生成或重跑指令携带当前项目和所选日期，空态不根据 Git 自动填充。任务（Task）概览不展示每日演进反向关联；v1 文件标为 `incompatible`，由智能体（Agent）重跑覆盖。
+## 读者会看到什么
 
-页面入口与日期传递见[每日演进导航](../../../services/buildr-web/src/features/project-daily-progress/dailyProgressNavigation.ts)，完整阅读由[动态页面](../../../services/buildr-web/src/features/workbench/pages/WorkbenchActivityPage.tsx)与[每日演进面板](../../../services/buildr-web/src/features/project-daily-progress/components/DailyProgressPanel.tsx)协作承载。
+一份摘要回答四个问题：新增了什么、更新了什么、删除了什么，以及存在哪些弊端或未覆盖范围。摘要保留提交来源、观察时间和范围说明；没有提交的工作、未提交的改动以及业务系统中的变化，不会因为查看页面而自动纳入。
 
-## 失败与停止
+工作台（Workbench）的“动态”、项目（Project）主页的“项目动态”和工作概览中的摘要进入同一阅读页面。选择项目（Project）与日期后，可以查看完整摘要和提交，按日、人或任务（Task）分组。页面不展示变更文件列表，文件路径仍保存在摘要数据中，可通过命令行接口（CLI）读取。
 
-- 未登记 Project、非法日期、未知 Task ID 或他人提交挂 Task：零写入。
-- 无法取得真实提交、引用不明确或无法满足用户必需范围：当天文件保持调用前状态；本地未提交内容和无关诊断不阻止合法日报写入。
-- 产品读取路径不根据 Git 或 Task 列表合成日报，也不提供 cron；定时再次调用属于 Agent 宿主。
+项目（Project）、日期和分组保存在网址（URL）中。没有指定日期时，动态页展示各项目（Project）最近一份摘要；旧 `?document=daily` 入口兼容跳转，缺省日期沿用本机今天。页面只读取已有内容，不扫描 Git，也不会因摘要缺失而自动生成。
+
+## 查看、生成与重跑
+
+只想查看时，可以告诉智能体（Agent）：“查看这个项目最近的每日演进。”它按 `project-daily-progress` 技能（Skill）读取已有摘要；缺失时说明情况，不擅自生成。
+
+需要生成或重跑时，可以说：“根据当前本地提交，整理这个项目昨天的变化，注明未确认远端最新。”智能体（Agent）负责核对以下范围并执行：
+
+1. 明确日期、时区、相关代码仓和引用，固定完整提交标识及观察时间。生成不要求工作目录干净、先更新代码、同步资产或通过全局诊断；用户要求远端最新时，才按授权获取相应引用。
+2. 收集所选范围中的提交与变更文件，按本机 `git config user.email` 区分自己的提交和他人提交。自己的提交可关联已存在的本机任务（Task），他人提交必须保留展示且不能关联本机任务（Task）。
+3. 撰写四问摘要，记录实际范围、观察时间、远端状态与未覆盖部分。重跑同一天前核对已有范围，不能静默缩小。
+4. 通过产品能力校验并保存。查看生成结果时继续区分代码事实、智能体（Agent）的解释和仍未核实的判断。
+
+具体命令供智能体（Agent）和选择手动方式的人参考：
+
+```bash
+buildr project daily-progress record --project <code> --input <payload.json> --json
+buildr project daily-progress inspect --project <code> --date <YYYY-MM-DD> --json
+buildr project daily-progress list --project <code> --json
+```
+
+输入字段以[每日演进规范](../../../openspec/specs/project-daily-progress/spec.md)和当前命令帮助为准。应用层（Application Layer）接收已经整理的内容，不替智能体（Agent）执行 `git log`。
+
+## 本机保存与失败边界
+
+摘要保存在 `.buildr/daily-progress/<project-code>/<YYYY-MM-DD>.yml`，由产品写入能力校验后原子替换，不应手工构造保存文件。它不进入任务（Task）的 SQLite，也不随 Git 同步。关联只针对当前机器已有任务（Task），不代表跨成员共享的任务（Task）历史。
+
+未登记项目（Project）、非法日期、未知任务（Task）身份或错误的提交关联会使本次保存失败，保留原文件。无法获取用户必需的提交范围时，保留旧摘要并说明缺口；无关的本地改动和诊断问题不应阻止有依据的摘要写入。
+
+旧 v1 摘要会标记为 `incompatible`，需由智能体（Agent）重新生成。定时调用需要使用者自己的智能体（Agent）宿主安排，Buildr 不内置定时调度。数据位置与恢复限制见[本机数据说明](../architecture/buildr-data-design.md)。
+
+## 依据与实现入口
+
+流程依据[每日演进规范](../../../openspec/specs/project-daily-progress/spec.md)与[随包技能（Skill）](../../../services/buildr/resources/workspace/skills/buildr/project-daily-progress/SKILL.md)。后端实现位于 [`src/modules/task/daily-progress/`](../../../services/buildr/src/modules/task/daily-progress/)；网页由[动态页面](../../../services/buildr-web/src/features/workbench/pages/WorkbenchActivityPage.tsx)、[每日演进面板](../../../services/buildr-web/src/features/project-daily-progress/components/DailyProgressPanel.tsx)和[导航处理](../../../services/buildr-web/src/features/project-daily-progress/dailyProgressNavigation.ts)承载。

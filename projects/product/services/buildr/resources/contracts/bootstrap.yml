@@ -1,14 +1,10 @@
 bootstrapGuidePath: docs/bootstrap-guide.md
-bootstrapGuideMaxLines: 80
 bootstrapGuideRequiredText:
-  - Buildr Skill
-  - 兜底入口
+  - Buildr 技能（Skill）
   - buildr bootstrap guide
   - buildr runtime list --json
-  - 识别当前 Agent
-  - 支持列表中对应的参数
-  - buildr init --agent <agent>
-  - buildr skill install <agent>
+  - buildr init --agent
+  - buildr skill install
   - claude-code
   - codex
   - cursor
@@ -16,27 +12,19 @@ bootstrapGuideRequiredText:
   - trae
   - trae-work
   - workbuddy
-  - buildr sync <agent>
-  - 产品能力同步
-  - 当前 Agent runtime render
-  - buildr doctor --agent <agent>
+  - buildr sync
+  - buildr doctor --agent
   - 不要省略 `--agent`
-  - buildr init
-  - buildr project create
-  - --repo
-  - buildr service create
+  - buildr assets inspect
+  - buildr assets migrate
+  - buildr assets create project
+  - revision
   - buildr rules add
-  - buildr rules remove
-  - 优先使用 Buildr CLI
-  - 根据用户目标和 doctor 结果
-  - workspace 必须完成
-  - Agent runtime 是面向当前 Agent 的可重建入口
-  - 组织资产先改变源资产
-  - enabled、required 且 installed
-  - disabled 或 uninstalled Rule
-  - 请联系 Buildr 作者反馈该 Agent
-  - buildr component list/check
-  - CLI 不根据对象名称猜测 Component 边界
+  - rules remove
+  - 不借用其他适配器
+  - buildr component list
+  - buildr component check
+  - 不得自动切轨或降级
 bootstrapGuideForbiddenText:
   - onboarding.contract.yml
   - bootstrap.contract.yml

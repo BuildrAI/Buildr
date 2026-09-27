@@ -1,23 +1,35 @@
-# Buildr 0.1 已知限制
+# Buildr 当前使用边界
 
-- 当前支持 `claude-code`、`codex`、`cursor`、`qoder`、`trae`、`trae-work` 和 `workbuddy` runtime adapter；目标路径与兼容证据来源见 [Agent Runtime Adapters](agent-runtime-adapters.md)。自动 contract/parity 覆盖 Buildr 的投射和维护边界，但不证明目标 Agent 已在当前版本、workspace 或会话加载文件。
-- TRAE Work 依赖桌面 Rules import toggle，WorkBuddy 依赖 `CODEBUDDY.md` 中的 imperative reference bridge；checker 报告 projection、environment probe 和 activation guidance，不把缺少真实 Agent marker smoke 作为当前 workspace 故障。Buildr 暂不维护品牌 smoke 状态或历史通过快照。
-- runtime trait catalog 只降低新增 adapter 的重复实现；它不会把尚未独立验证五项 capabilities 的 Agent 自动视为 supported。
-- npm Host Node支持24.15.0至25之前的版本（`>=24.15.0 <25`）；Workspace继续声明并使用精确、独立的受管Node。两者版本相同也不合并identity或生命周期，未来主版本升级需分别验证。
-- Buildr Web当前是浏览器中的本机Web界面，不提供Desktop WebView、菜单栏、登录启动、静默自动更新或系统通知。macOS/Windows图形入口只是用户本机显式生成的thin wrapper/shortcut，依赖同一npm安装和Host Node；当前不发布SEA、PKG、MSI、DMG或Setup EXE，也不承诺无Node安装。
-- Buildr Web 不扫描磁盘或跨 Workspace 聚合资源；用户显式登记 root，关闭浏览器不等于退出，必须使用页面“退出 Buildr”或终止进程。Buildr Web 为未来桌面产品保留，当前未实现。
-- Component 只支持 workspace scope；没有 Project/Service Component、远程 registry、依赖求解或可执行 Hook。
-- Buildr Local 使用文件系统/Git保存portable工作资产，并在每个Workspace的本地SQLite中保存适合索引、关系、聚合和事务的structured data。SQLite文件不提交、不同步，也不提供多人并发协作；未来组织协作需要独立的Buildr Server/Cloud authority。
-- Task Record 与各专业 current records 使用 Workspace SQLite；旧 `.buildr/tasks/<task-id>/` 文件不迁移、不读取、不双写。todo 只是本地意向，不同步、不含排期/责任人/优先级，也不自动创建 Change 或执行资产。复盘不维护来源关系或结构化行动项；正文只在当前机器的`.buildr/local/task-retrospectives/`中可用。Parent/Child 仍只支持同 Workspace 的单 Parent/多直接 Child，不是通用依赖图。
-- Commands 只声明和诊断外部 CLI，不执行本机安装、升级或登录。
-- 远端 Skill 当前只支持 raw `SKILL.md` 的 `resolved.kind: skill-url`；未声明 integrity 时允许 render，但 doctor 会警告。
-- Agent 没有统一 API 枚举已加载的 admin/system/plugin Skills。adapter 会在 runtime scope 保留 `partial` inventory evidence，但不把不可观测性本身报告为健康 warning；Buildr 只检查自身管理候选的可观测同名项并阻止真实冲突，不盘点无关 runtime Skills，也不宣称已证明 Agent 全局唯一。首版不提供自动 adopt/transfer，外部资产必须重命名、显式移除/禁用或保持现场。
-- `task-retrospective/v2` 处理 current Markdown 时可关联后续 Task，但不保存历史、评分、结构化行动项或进度；也不自动采集耗时/token、创建 Change 或跨 Workspace 聚合。旧 `.buildr/asset-review/` 数据保持 inert。
-- 任务收尾（Task Finish）由智能体依据真实成果独立执行。任务完成记录不替代远端交付证明；自举激活（Self-bootstrap Activation）与环境清理（Environment Cleanup）失败时保留已成立的交付事实，并分别恢复。
-- Service branch intent 不负责 pull、merge、rebase 或长期分支同步；它只控制首次 clone、metadata 和 drift 诊断。
-- 截至 2026-09-07 准备时，`@buildr-ai/buildr@0.1.0-rc.30` 是已发布候选版（RC），`next` 指向该版本；本次准备 `0.1.0-rc.31`，尚未创建对应发布标签（Tag）、npm 版本或 GitHub Release。当前公开版本以 npm 官方仓库实时查询为准。`v0.1.0-rc.9`、`v0.1.0-rc.10`、`v0.1.0-rc.11` 和 `v0.1.0-rc.13` 的 tag workflow 都在任何 npm 写入与 GitHub Release 创建前失败。`0.1.0-rc.16` 只形成了通过 Candidate gate 的源码候选，但因发布任务与后续修复任务的 self-bootstrap closeout evidence 无法匹配而未创建 tag、npm version 或 GitHub Release；`0.1.0-rc.17` 完成正式验证与自举激活后，因 rc.16 squash merge 的 `main → dev` 历史衔接缺失导致新 PR 冲突，因此同样没有创建 tag、npm version 或 GitHub Release；该历史已在保持 `dev` 内容不变的前提下修复。`latest` 仍指向历史 prerelease，它不代表稳定版。稳定版 `0.1.0` 尚未发布，公开试用应显式安装 `@next`。`0.1.0-rc.4` 因发布范围错误已弃用。
-- `package check/build`是维护表面。归档使用`openspec converge`；独立规范同步使用上游技能并保留变更；只有未决收敛现场仍存在且恢复状态不确定时使用只读`openspec convergence inspect`。Inspect不提供归档后的长期漂移、合规或forensic audit；正常archive后Receipt会释放，历史读取使用Archived Change、Canonical Specs与Git。旧`openspec audit`和阶段命令已删除并返回unknown-command。
+本页说明当前产品的适用条件、数据范围和尚未提供的能力。安装及首次使用见[命令参考](cli-reference.md#首次使用)，工具接入见[运行时适配参考](agent-runtime-adapters.md)。发布是否完成以 npm 官方仓库和对应发布结果为准，本文不保存候选版准备进度或历史发布失败记录。
 
-遇到 unsupported runtime 或不能确定的资产边界时，Agent 应停止自动变更、保留源资产，并报告可执行下一步。
+## 安装、平台与版本
 
-- OpenSpec 接入固定支持 1.13.0，使用该安装包的解析与归档能力。独立同步仍由智能体执行，不自动获得归档命令的全部程序保护。旧格式恢复记录保留并报告诊断，不能被新版自动当成写入授权。
+- npm 是产品分发渠道。运行产品的 Node.js 必须满足 `>=24.15.0 <25`；工作空间（Workspace）声明的精确受管 Node.js 有独立用途，不能替代此安装要求。
+- Buildr Web 是浏览器中的本机界面。macOS 与 Windows 可显式安装依赖同一 npm 安装的启动器（Launcher）；当前不发布无需 Node.js 的独立桌面安装包，也不提供菜单栏、开机启动、静默自动更新或系统通知。
+- 页面不扫描磁盘或跨工作空间（Workspace）聚合全部资源，使用者需要明确登记工作目录。关闭浏览器不等于退出服务；使用页面“退出 Buildr”或终止对应进程。
+- 正式版轨道（Stable Track）对应 `latest`，候选版轨道（Candidate Track）对应 `next`。已安装时用 `buildr update check --json` 核对两条轨道；首次安装先查询 npm 官方仓库。标签指向预发布版本不代表正式版已发布，已有安装不会自动切轨或降级。
+
+## 本机数据与协作
+
+- 长期源资产由文件与 Git 管理。本机 SQLite 保存任务（Task）、工作摘要（Work Context）、审查（Review）及验证（Verification）等结构化记录；这些数据不进入 Git，也不自动跨机器同步。
+- 每日演进和复盘正文同样属于本机资料。复制源资产或克隆代码库不等于迁移完整工作现场；完整企业权限、远程多用户协作和跨机器自动恢复尚未完整交付。
+- 父子任务（Parent/Child Task）仅支持同一工作空间（Workspace）中的单父关系和多个直接子项，不是通用依赖图。待办不含排期、责任人或优先级，也不会自动创建 OpenSpec 变更或执行工作。
+- 旧 `.buildr/tasks/<task-id>/` 文件不读取、迁移或双写。复盘正文位于当前机器的 `.buildr/local/task-retrospectives/`，任务（Task）只保存正文摘要和决定状态；它不自动采集耗时或词元（Token），不保存结构化行动项或跨工作空间（Workspace）汇总。
+- 可写打开数据库会执行待迁移内容，并清理旧 `.buildr/asset-review/` 与 `.buildr/local/task-execution-records/`。较早候选版的旧研发、环境、收尾和复盘记录也有退役迁移；每项迁移分别提交，不保证整批失败后全部回滚。需要保留旧内容时，必须在新版首次写入前保存副本。详见[数据保全与升级](../../../knowledge/docs/guides/data-and-upgrades.md)。
+- 人在页面中保存答复后，智能体（Agent）在继续工作时读取；答复不会自动唤醒执行。任务（Task）完成记录不替代实际交付，清理或可选自举激活（Self-bootstrap Activation）失败也不撤销已成立的交付事实。
+
+## 智能体（Agent）接入
+
+- 当前支持 `claude-code`、`codex`、`cursor`、`qoder`、`trae`、`trae-work` 和 `workbuddy`。自动检查证明 Buildr 的投射和维护行为，不能证明目标工具已在当前版本、目录或对话中加载文件。
+- TRAE Work 需要在桌面设置中启用对应规则（Rule）导入；WorkBuddy 通过 `CODEBUDDY.md` 中明确的读取指令发现规则（Rule）。刷新方法和已观察版本见[运行时适配参考](agent-runtime-adapters.md)，不要把缺少现场加载证据当作所有工作都不可继续。
+- 工具内部的管理员、系统和插件技能（Skill）不能被统一枚举。Buildr 只检查自身管理候选的可观察同名项；`partial` 表示可见范围有限，不证明全局唯一，也不单独成为健康警告。
+- 当前不自动接管外部技能（Skill）所有权；即使内容相同，`--replace` 也不能覆盖不属于 Buildr 的资源。冲突时保留现场，按已确认范围重命名、移除或停用相关资源。
+- 不支持的运行时（Runtime）只阻止依赖该适配器（Adapter）的动作。对象或内容归属不明时停止相关写入，其他安全工作可继续。
+
+## 工作资产与专业执行
+
+- 组件（Component）只支持工作空间（Workspace）范围，没有项目（Project）或服务（Service）级组件（Component）、远程目录、依赖求解或可执行钩子（Hook）。
+- 命令（Command）只声明和诊断外部工具，不负责安装、升级或登录。智能体（Agent）仍需在实际环境和授权内完成专业执行。
+- 远端技能（Skill）当前只支持 `resolved.kind: skill-url` 指向单个原始 `SKILL.md`，不推测相邻目录；未声明完整性摘要（Integrity）时允许投射，但诊断会警告。
+- 当前全局资产模型中，服务（Service）引用代码库实例（Repository Instance），项目（Project）引用服务（Service）。Git 来源、远端与集成分支（Integration Branch）是声明，登记或修改它们不执行克隆、拉取、合并或变基；真实代码仍需单独准备和核对。
+- OpenSpec 接入固定支持 1.13.0。归档使用 `openspec converge`；独立规范同步使用对应上游技能（Skill）并保留变更。`openspec convergence inspect` 只用于尚未结束的收敛现场，不提供归档后的长期审计；旧格式恢复记录不自动成为新版本的写入授权。旧 `openspec audit` 和阶段命令已删除，历史成果从归档材料、正式规范与 Git 读取。

@@ -145,36 +145,6 @@ src/modules/diagnostics/
 
 生产 `createRuntime()` 不暴露 `createTask`、`doctor`、`startBuildrWeb` 等扁平业务方法。测试若需全产品便利入口，只能使用 `test/helpers/runtime-harness.ts`。
 
-## Workspace
-
-| 技术层 | 主要文件与对象 | 代表方法或行为 |
-|---|---|---|
-| Domain | `src/modules/workspace/domain/{workspace,project,service,source-root}.ts` | 身份、编码、Source Root 与声明规则 |
-| Application | `workspace-command-application.ts`、`workspace-query-application.ts`、`project-application.ts`、`service-application.ts` | 创建、更新、查询与跨 Registry 一致性编排 |
-| Persistence | `workspace-manifest-repository.ts`、`project-manifest-repository.ts`、`service-manifest-repository.ts` | YAML parse/render/read/write |
-| Infrastructure | `workspace-management-fence.ts`、`workspace-source-filesystem.ts`、`workspace-source-git.ts` | 管理锁、staging/publish、Git source |
-| Interface | `interfaces/cli/`、`interfaces/http/` | 结构化参数/结果与 HTTP Schema |
-
-## Task
-
-| 技术层 | 主要文件与对象 | 代表方法或行为 |
-|---|---|---|
-| Domain | `src/modules/task/domain/task.ts`、`task-review.ts`、`task-verification.ts`、`parent-coordination.ts` | Task 状态、关系、Review/Verification 与父任务完成约束 |
-| Application | `task-command-application.ts`、`task-query-application.ts`、`task-review-application.ts`、`task-verification-application.ts` | 命令事务、列表/详情投影、专业记录条件写入 |
-| Persistence | `task-repository.ts`、`task-list-repository.ts` 与关系 Repository | 同一 SQLite transaction context 下写入/查询 |
-| Infrastructure | `git-worktree-provider.ts` | 精确创建、检查和安全清理 Task Worktree |
-| Interface | `interfaces/cli/`、`interfaces/http/` | Task CLI、HTTP Schema、mapping 和生命周期端点 |
-
-## Agent Assets
-
-| 技术层 | 主要文件与对象 | 代表方法或行为 |
-|---|---|---|
-| Domain | `capability-identity.ts`、`component-definition.ts`、`command-version.ts` | 能力身份、Component 定义和版本语义；不做文件 I/O |
-| Application | `commands.ts`、`rules.ts`、`skills.ts`、`components.ts` | 接收结构化输入，协调业务校验与 Repository，不解析 argv、不打印输出 |
-| Persistence | `*-repository.ts`、`capability-graph-repository.ts` | Manifest、定义与 Capability Graph 的唯一文件读写 |
-| Infrastructure | `command-version-probe.ts`、`component-source.ts`、`infrastructure/runtime/` | 外部命令探测、source 读取、Adapter 与 runtime projection |
-| Interface | `interfaces/cli/agent-assets.ts`、`interfaces/http/` | CLI 参数/输出和 HTTP 协议映射 |
-
 ## OpenSpec
 
 ```text
@@ -199,10 +169,10 @@ OpenSpec 的资产依赖只通过 `AGENT_ASSETS_OPENSPEC_SUPPORT` 获取：`asse
 |---|---|---|
 | 内容查询 | `src/modules/openspec/application/change-query.ts` | 列表、详情、归档、产物与原型读取；局部类型和文件辅助函数同文件维护 |
 | 用例入口 | `src/modules/openspec/application/openspec-application.ts` | 解析 Project/Change context，协调 validate/converge/archive |
-| 计划 | `convergence-observer.ts`、`convergence-planner.ts`、`delta-parser.ts` | 从真实 baseline 与 delta 构造确定性计划 |
-| 条件应用 | `canonical-applier.ts`、`deterministic-sync.ts` | 临时文件、版本比较、原子 rename 与失败回滚 |
-| 恢复 | `convergence-recovery.ts`、`openspec-converge.ts` | receipt 与 recovery state；不掩盖 canonical drift |
-| 隔离验证 | `projected-validator.ts` | 在临时 Project tree 上执行严格 OpenSpec 验证 |
+| 上游解析与预期内容 | `upstream-openspec.ts`、`upstream-openspec-worker.ts` | 调用锁定上游实现解析增量、形成预期规范并校验，不自行写入主规范 |
+| 归档执行 | `openspec-application.ts`、`openspec-converge.ts` | 核对输入和恢复状态后调用上游 `openspec archive`，回读实际结果；不承诺整个上游归档原子写入 |
+| 观察与恢复 | `convergence-model.ts`、`convergence-observer.ts`、`openspec-converge.ts` | 保存修改前与预期内容的回执（Receipt），比较当前文件；未知状态保留现场 |
+| 预检 | `openspec-convergence-preflight.ts` | 只读检查活动变更冲突和当前归档输入，不代替正式归档 |
 
 ## 通用基础设施
 

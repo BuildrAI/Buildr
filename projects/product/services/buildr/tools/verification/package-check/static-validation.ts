@@ -798,18 +798,25 @@ export function createPackageStaticValidator(deps: any): any  {
         ]) {
           if (!skillContent.includes(requiredText)) problems.push(`Buildr Agent Skill must include ${JSON.stringify(requiredText)}.`);
         }
-        for (const [relativePath, requiredTexts] of [
-          ['docs/bootstrap-guide.md', ['解析 `buildr.git-operations/v1` binding', '提供明确 workspace、upstream 和 update operation', '不自动 stash、reset、rebase、merge、覆盖，也不继续 sync', '不重复询问 sync', '非 Git workspace 跳过 Git provider', '不是 `buildr sync` 的隐式 Git 行为']],
-          ['docs/cli-reference.md', ['按 `buildr.git-operations/v1` 能力绑定', '明确目标目录、上游和更新动作', '不自动执行 `stash`、`reset`、`rebase`、`merge` 或覆盖文件', 'Git 更新成功后不重复询问同步', '不受 Git 管理时直接同步', '它不隐式更新 Git']],
-        ]) {
+        for (const relativePath of ['docs/bootstrap-guide.md', 'docs/cli-reference.md']) {
           const contractPath = path.join(root, relativePath);
           if (!existsFile(contractPath)) {
             problems.push(`Workspace update intent contract file is missing: ${relativePath}`);
             continue;
           }
           const contractContent = fs.readFileSync(contractPath, 'utf8');
-          for (const requiredText of requiredTexts) {
-            if (!contractContent.includes(requiredText)) problems.push(`${relativePath} must include ${JSON.stringify(requiredText)}.`);
+          for (const [boundary, patterns] of [
+            ['selected Git capability binding', [/`buildr\.git-operations\/v1`[^。\n]*能力绑定/u]],
+            ['explicit directory, upstream and update operation', [/根目录|目标目录/u, /上游/u, /更新动作/u]],
+            ['stop unsafe Git updates and synchronization', [
+              /停止[^。\n]*更新[^。\n]*同步/u,
+              /(?:不擅自|不自动)[^。\n]*(?:暂存|stash)[^。\n]*(?:重置|reset)[^。\n]*(?:变基|rebase)[^。\n]*(?:合并|merge)[^。\n]*覆盖/u,
+            ]],
+            ['continue authorized synchronization after Git update', [/Git[^。\n]*成功后[^。\n]*不重复询问同步/u]],
+            ['synchronize non-Git workspaces directly', [/不受\s*Git\s*管理[^。\n]*直接同步/u]],
+            ['no implicit Git update in sync', [/不隐式更新\s*Git/u]],
+          ] as const) {
+            if (!patterns.every(pattern => pattern.test(contractContent))) problems.push(`${relativePath} must describe the ${boundary} boundary.`);
           }
         }
       }

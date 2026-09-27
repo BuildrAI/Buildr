@@ -2,7 +2,7 @@
 
 本文是 Buildr 已接入 Agent runtime adapter 的权威说明。机器可读事实始终以 `buildr runtime list --json` 为准；本文解释每个 adapter 如何把标准 `AGENTS.md` 与 Skills 源资产接入目标 Agent。
 
-新增 adapter 的调查与实现流程见 [Agent Runtime Adapter 接入指南](agent-runtime-adapter-contribution.md)，可交给目标 Agent 的采集问题见 [调研 Prompt](agent-runtime-adapter-research-prompt.md)。
+新增 adapter 的调查与实现流程见 [Agent Runtime Adapter 接入指南](../../../knowledge/docs/reference/agent-runtime-adapter-contribution.md)，可交给目标 Agent 的采集问题见 [调研 Prompt](../../../knowledge/docs/reference/agent-runtime-adapter-contribution.md)。
 
 ## 使用方式
 

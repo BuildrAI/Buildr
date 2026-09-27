@@ -1,6 +1,6 @@
 # 父任务完成时序图的来源与边界
 
-[打开图示](task-parent-coordination.html) · [图源](task-parent-coordination.json) · [父任务协调](../../docs/flows/task-parent-coordination.md) · [任务系统代码地图](../../code-map/task-system.md)
+[打开图示](task-parent-coordination.html) · [图源](task-parent-coordination.json) · [父任务协调](../../docs/architecture/task-system.md) · [任务系统代码地图](../../code-map/task-system.md)
 
 这张时序图（Sequence Diagram）回答：父任务（Parent Task）怎样从当前成果，经过总体验收与明确授权，安全地保存完成结果。**子任务（Child Task）全部结束只是提交条件之一；整体目标的验收与父任务（Parent Task）的完成授权仍须独立成立。**
 

@@ -37,7 +37,7 @@ export function registerWorkspaceInfrastructure(runtime: any): any  {
   }
   const {
     mutationStateRoot, mutationLockPath, mutationRecoveryReceiptPath, snapshotMutationPath,
-    removeMutationRestoreTarget, mutationPathFingerprint, restoreMutationSnapshot, withWorkspaceMutation,
+    removeMutationRestoreTarget, mutationPathFingerprint, prepareMutationRestore, restoreMutationSnapshot, withWorkspaceMutation,
   } = createWorkspaceMutation({ ensureDirectory, existsFile: (file) => existsFile(file), toPosixRelative: (root, file) => toPosixRelative(root, file), workspaceSymlinkSegment });
   const { normalizedGitIdentity, sameGitIdentity } = createGitIdentity();
   const assertSafeAssetTarget = (targetRoot: string, target: string, containerRoot: string, label = 'Managed asset target') => assertSafeAssetTargetValue(targetRoot, target, containerRoot, label, { productRoot, workspaceSymlinkSegment });
@@ -143,6 +143,6 @@ export function registerWorkspaceInfrastructure(runtime: any): any  {
 
 
 
-  Object.assign(runtime, { ensureDirectory, copyDirectory, removePath, collectFiles, atomicWriteFile, atomicWriteJson, parseYamlDocument, quoteYaml, parseYamlValue, mutationStateRoot, mutationLockPath, mutationRecoveryReceiptPath, pathIsEqualOrInside, assertSafeAssetTarget, workspaceSymlinkSegment, normalizedGitIdentity, sameGitIdentity, snapshotMutationPath, removeMutationRestoreTarget, mutationPathFingerprint, restoreMutationSnapshot, withWorkspaceMutation, productRoot, resourcesRoot, resourceWorkspaceRoot, bootstrapContractPath, developmentWorkspaceRoot, renderTemplate, writeIfMissing, trackWrite, writeMappedFileIfMissing, appendGitignoreEntries, toPosixRelative, existsDirectory, existsFile, ensureRootRequiredBlock, rootRequiredBlockStatus, writeFileIfChanged, copyFileIfChanged, copyDirectoryIfChanged, buildrWorkspaceIdentity, isInitializedBuildrWorkspace, assertInitializedBuildrWorkspace, addDoctorFinding });
+  Object.assign(runtime, { ensureDirectory, copyDirectory, removePath, collectFiles, atomicWriteFile, atomicWriteJson, parseYamlDocument, quoteYaml, parseYamlValue, mutationStateRoot, mutationLockPath, mutationRecoveryReceiptPath, pathIsEqualOrInside, assertSafeAssetTarget, workspaceSymlinkSegment, normalizedGitIdentity, sameGitIdentity, snapshotMutationPath, removeMutationRestoreTarget, mutationPathFingerprint, prepareMutationRestore, restoreMutationSnapshot, withWorkspaceMutation, productRoot, resourcesRoot, resourceWorkspaceRoot, bootstrapContractPath, developmentWorkspaceRoot, renderTemplate, writeIfMissing, trackWrite, writeMappedFileIfMissing, appendGitignoreEntries, toPosixRelative, existsDirectory, existsFile, ensureRootRequiredBlock, rootRequiredBlockStatus, writeFileIfChanged, copyFileIfChanged, copyDirectoryIfChanged, buildrWorkspaceIdentity, isInitializedBuildrWorkspace, assertInitializedBuildrWorkspace, addDoctorFinding });
   return runtime;
 }

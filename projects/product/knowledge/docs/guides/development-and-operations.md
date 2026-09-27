@@ -4,7 +4,7 @@
 
 | 目标 | 从哪里开始 |
 |---|---|
-| 理解代码组织、选择修改位置 | [服务分层](../architecture/service-architecture.md)、[代码地图](../../code-map/README.md) |
+| 理解代码组织、选择修改位置 | [服务分层](../architecture/technical.md)、[代码地图](../../code-map/README.md) |
 | 找到开发与构建入口 | [Buildr 工程声明](../../../services/buildr/package.json)、[前端工程声明](../../../services/buildr-web/package.json)、[开发工具](../../../services/buildr/tools/development/) |
 | 选择必要检查 | [项目测试地图](../../../verification.yml)、[产品验证框架](../architecture/verification-framework.md) |
 | 使用命令、配置与启动本机界面 | [命令参考](../../../services/buildr/docs/cli-reference.md)、[引导说明](../../../services/buildr/docs/bootstrap-guide.md) |

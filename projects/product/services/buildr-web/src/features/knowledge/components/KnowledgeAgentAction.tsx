@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { createPromptRequest } from "../../../lib/promptRequest";
 import { Alert, Button, Input, Radio, Space } from "antd";
 import {
   buildKnowledgeRequest,
@@ -13,6 +14,8 @@ export function KnowledgeAgentAction({
   context: Record<string, unknown>;
   onBack: () => void;
 }) {
+  const [request] = useState(createPromptRequest);
+  useEffect(() => () => request.invalidate(), [request]);
   const diagram = context.mode === "diagram";
   const initialize = context.mode === "initialize";
   const construct = context.mode === "construct" || diagram;
@@ -32,12 +35,16 @@ export function KnowledgeAgentAction({
   const problem = knowledgeRequestProblem(context, input);
   const shownPrompt = initialize && !problem ? buildKnowledgeRequest(context, input) : prompt;
   const update = (field: keyof KnowledgeRequest, value: string) => {
+    request.invalidate();
     setInput((current) => ({ ...current, [field]: value }));
     setPrompt("");
     setError("");
     setCopyState("");
   };
   const generate = () => {
+    request.invalidate();
+    setPrompt("");
+    setCopyState("");
     try {
       setPrompt(buildKnowledgeRequest(context, input));
       setError("");
@@ -47,13 +54,14 @@ export function KnowledgeAgentAction({
     }
   };
   const copy = async () => {
+    const current = request.observe();
     try {
       await navigator.clipboard.writeText(shownPrompt);
-      setCopyState(readOnly
+      if (current()) setCopyState(readOnly
         ? "已复制；此处尚未执行调查。交给智能体后继续了解，不会自动修改知识内容。"
         : "已复制；此处未执行建设。交给智能体后，刷新查看实际成果。");
     } catch {
-      setCopyState("自动复制失败，请在下方选择指令手动复制；尚未执行。");
+      if (current()) setCopyState("自动复制失败，请在下方选择指令手动复制；尚未执行。");
     }
   };
   return (

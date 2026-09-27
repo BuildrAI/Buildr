@@ -14,7 +14,7 @@ Buildr Service 使用根目录 `resources/` 保存会被产品读取、复制、
 
 ## `package/` 边界
 
-`package/` 不再承载长期源码或交付资源。唯一保留的 `build/test-context/` 是 ignored 派生输出，由 `tools/testing/test-context-build.ts` 生成。
+`package/` 已无职责。派生测试库位于服务根目录下的 `build/test-context/`，由 `tools/testing/test-context-build.ts` 生成并被 Git 忽略；它不属于 `package/`。
 
 Development Launcher 工程程序位于 `tools/build/launcher/`；正式 npm Launcher 行为属于 `src/modules/installation/`。两者都不是文件型资源，不能迁回 `package/`。
 
@@ -22,4 +22,4 @@ Development Launcher 工程程序位于 `tools/build/launcher/`；正式 npm Lau
 
 Archify 是默认不启用的随包可选组件（Component），包含完整上游发行目录。来源、使用和升级方式见 [Archify 组件说明](archify-component.md)。
 
-资源修改需要同步检查 `resources/manifest.yml`、初始化/同步 resolver、`buildr package check`、npm tarball、Application Payload 与受影响的 Runtime/Browser 测试。开发和发布工具属于 `tools/`，验证实现属于 `test/verification/`，产品 `bin/` 与 `src/` 不依赖这两个 checkout-only 根。
+资源修改需要同步检查 `resources/manifest.yml`、初始化/同步 resolver、`buildr package check`、npm tarball、Application Payload 与受影响的 Runtime/Browser 测试。开发和发布工具属于 `tools/`，验证实现属于 `test/verification/`，正式运行闭包不加载这些开发目录。`buildr package check` 是显式的开发维护入口，需要检出目录中的工具，不能作为安装包用户的检查命令。

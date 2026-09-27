@@ -1,0 +1,79 @@
+# Buildr 公开 JSON 契约
+
+Buildr 支持 `--json` 的命令在顶层提供 `schemaVersion`。它是输出格式的稳定身份，不是 Buildr package 版本；例如 doctor 使用 `buildr.doctor/v1`，runtime list 使用 `buildr.runtime-list/v1`。
+
+## 兼容规则
+
+- 同一个 `/v1` 内可以新增可选字段；消费者必须忽略不认识的字段。
+- 已有字段的含义、类型、必填性或退出状态语义不能在同一个 schema version 内破坏性改变。
+- 删除/重命名字段、改变字段类型或根结构时必须发布新的 major identity（例如 `/v2`），并在变更说明中给出迁移方式。
+- 每个 command family 使用独立 identity，因此一个命令演进不会迫使所有 JSON 输出同时升级。
+- `schemaVersion` 始终位于 JSON 根对象。脚本应先检查它，再解析所需字段。
+
+以下列出主要当前输出；命令参数见[命令参考](../../../services/buildr/docs/cli-reference.md)，共享身份登记见[公开 JSON 定义](../../../services/buildr/src/infrastructure/contracts/public-json.ts)。历史身份仍存在于源登记中，不代表对应命令继续可用。
+
+| 命令 family | schemaVersion |
+|---|---|
+| `version` | `buildr.version/v1` |
+| 未知 CLI 路由错误 | `buildr.cli-error/v1` |
+| `runtime list` | `buildr.runtime-list/v1` |
+| `doctor` | `buildr.doctor/v1` |
+| `commands check` | `buildr.commands-check/v1` |
+| `component list` | `buildr.component-list/v1` |
+| `component check` | `buildr.component-check/v1` |
+| `builtin list` | `buildr.builtin-list/v1` |
+| `update check` | `buildr.update-check/v2` |
+| `update` | `buildr.update/v2` |
+| `openspec converge` | `buildr.openspec-convergence/v1` |
+| `openspec convergence inspect` | `buildr.openspec-convergence-inspect/v1` |
+| `openspec convergence preflight` | `buildr.openspec-convergence-preflight/v1` |
+| `worktree create/inspect/cleanup` | `buildr.git-worktree-result/v1` |
+| 长流程缺省compact（release transaction、self-bootstrap） | `buildr.long-running-operation-summary/v1` |
+| `task create/inspect/update/activate/complete/abandon` | `buildr.task-record-result/v5` |
+| `task parent inspect` | `buildr.parent-coordination-result/v4` |
+| 只读兼容的旧父计划（Parent Plan），无现行写入命令 | `buildr.parent-plan/v2`（兼容读取 v1） |
+| Buildr Web Task stored detail/list query | `buildr.task-record-view/v3` / `buildr.task-record-list/v7` |
+| Buildr Web Task本机复盘文档读取 | `buildr.task-retrospective-document/v1` |
+| `task review inspect/record` | `buildr.task-review-operation-result/v2` |
+| `task verification inspect/record` | `buildr.task-verification-operation-result/v1` |
+| `project verification inspect/validate/update` | `buildr.project-verification-result/v1` |
+| `web preview start/list/stop` | `buildr.local-app-preview/v1` |
+
+旧 `task finish run/inspect` 与父任务写入子命令 `record/bind-child/reconcile/accept` 已退役，不作为当前接口。收尾由技能（Skill）指导智能体（Agent）组合已有能力；任务（Task）状态与关系使用当前记录命令维护。
+
+`buildr.git-worktree-result/v1` 只表达 `operation`、`status`、Task ID、Git evidence path、逐仓 source/checkout/branch/HEAD/clean/registration/state、精确 Git effects、diagnostic 与 next actions。它不包含 Environment ready、Runtime、CLI、依赖、projection、资源、恢复或总 cleanup 结论。
+
+`buildr.long-running-operation-summary/v1`是closed、最多16384 UTF-8字节的只读投影，固定表达operation、compact detail、terminal/status、Task/run/result identity、至多12个关键阶段、primary failure、cleanup、output boundary与至多一个结构化recovery pointer。它不包含完整checks/context/evidence/operations/effects/diagnostics、stdout/stderr、本机路径、raw argv、secret、lease、resume token或正文，也不成为新的Result authority。展示截断与execution failure正交；收到`running`、stdout丢失或等待超时时，consumer先按pointer回读同一owner，不默认重跑。
+
+`buildr.project-verification-result/v1`返回Project测试地图的operation、status、path、identity、规范化declaration、errors和effects。`buildr.task-verification-operation-result/v1`返回Task current报告、digest、内容/测试地图适用性、diagnostic和effects。
+
+`buildr.task-retrospective-document/v1`是Task Record下的只读响应，只读取`.buildr/local/task-retrospectives/<task-id>.md`，返回正文、实际摘要、已登记摘要、已登记状态、派生当前状态和局部诊断。固定上限为256 KiB；请求不接受路径、查询或字节预算，也不产生写入。
+
+`buildr.task-verification-operation-result/v1`统一覆盖current报告的`inspect|record`。成功时返回`operation`、`status`、`taskId`、`slot`、`effects`与`nextActions`；`slot`包含path、present、完整current报告、响应级digest和派生applicability。没有报告时返回空slot；调用方内容identity或Project测试地图变化时派生`stale`。业务拒绝返回同一envelope、`status: blocked`、稳定diagnostic和非零退出，且不得覆盖旧slot。
+
+当保存Result含Project或Service coverage gap时，`nextActions`按Project返回只读`declaration-intake`提示；它不改变Result schema、gap事实或writer authority，也不在inspect/record中写`verification.yml`。
+
+`buildr.task-record-result/v5`覆盖六个Task Record动作，返回closed v3 `record`、`recordDigest`、Parent/Child `taskRelations`与`retrospectiveDocument`路径/登记摘要。Task不再返回复盘来源/后续关系。
+
+`buildr.parent-coordination-result/v4`只读返回Task目标、当前Record摘要、`parent|child|ordinary` mode、直接Children结果、完成观察身份、已保存父任务完成依据和可选旧Parent Plan历史。它不读取Review、Verification、Development、Finish、Contribution或交付状态，不推断依赖和完成比例，也不传播任何Task状态。
+
+Buildr Web stored-state projection使用详情v3和列表v7，并以`missing|pending-decision|decided|all`过滤Task上的复盘文档登记状态。列表v7默认按`active → todo → completed → abandoned`返回全部状态，支持可选`pageSize`/`cursor`与`matchingTaskCount`/`hasMore`/`nextCursor`；首批返回筛选选项，cursor后续批次复用首批统计并返回`filterOptions: null`。未提供分页参数的Application调用仍返回全部匹配Task。`open`只是显式查询语义，不持久；普通搜索的每个有效分词至少3个Unicode字符，`#task-id`执行精确编号查询。列表不读取Markdown正文或解析Project、Service、Git、Worktree与OpenSpec Change当前性；`recordDigest`与关系摘要都不进入Task Record schema，反向Children只存在于`taskRelations`查询投影。
+
+
+## Doctor v1 结果语义
+
+`buildr.doctor/v1` 保留以下兼容关系：
+
+- `ok`：没有 error；它不是 readiness，也不保证没有 warning。
+- `workspace.identity.state`：`valid`、`incomplete` 或 `absent`；`workspace.initialized` 仅在 `valid` 时为 true。
+- `health.workspaceValid`：canonical workspace identity 是否有效。
+- `health.ready`：workspace 有效且没有 actionable warning/error。
+- `health.actionRequired` / `actionableCount`：是否存在及共有多少条需要用户行动的 warning/error；`userActionRequired: false` 不计入。
+- `summary.warning` 可以大于 0 且 `health.ready: true`：这表示 warning 仅披露可观测性或其他非行动型限制。消费者不得仅按 warning 数量推断需要修复，应读取 finding 的 `userActionRequired` 和顶层 `health`。
+- `diagnosticProfile`：声明 `core`、`conditional`、`specialty` 三层检查边界，不表示专项检查已执行。
+- `repairPlan`：按 blocking/required 排序、按共同动作或建议去重的修复步骤；`codes` 保留关联 findings。
+- `nextSteps`：从 `repairPlan` 投影的兼容字段，新消费者应优先读取 `repairPlan`。
+
+同一根因的下游检查可以延后。例如未登记 Project 只先报告 `projects.unregistered`；登记后再次运行 doctor，才继续进行适用的项目（Project）与服务（Service）检查。
+
+人类可读的默认输出不受本契约约束。新增 JSON 命令时必须先登记 identity，并补充 checkout 与打包安装后的输出测试。

@@ -82,15 +82,15 @@ bindings:
 
 Buildr不再提供统一任务环境能力。需要隔离Git位置时，Agent调用`buildr.git-worktree-provider/v1`；Project `preparation.yml`只说明真实准备入口，由Agent按需直接调用；Preview、Runtime和其他动态资源由创建它们的能力维护owner与清理。它们之间不共享Plan、Receipt、`ready`状态或总cleanup Application。
 
-`declaration-intake`不是capability provider，而是Preparation与Verification长期声明的Agent路由入口。它在注册、首次Task、入口变化或专业gap时只读发现候选，用户确认精确diff后再交给两个既有owner Skill；不新增统一contract、binding、store或writer。`capabilities.yml`和`commands.yml`只作为外部readiness诊断，Intake不安装或修改Skill/provider/CLI。
+`declaration-intake`不是capability provider，而是Preparation与Verification长期声明的Agent路由入口。它在注册、首次Task、入口变化或专业gap时只读发现候选和精确差异；已有授权覆盖的常规维护直接交给既有owner Skill，只有超出授权或涉及业务选择时才请用户决定；不新增统一contract、binding、store或writer。`capabilities.yml`和`commands.yml`只作为外部readiness诊断，Intake不安装或修改Skill/provider/CLI。
 
 ### 3. Resolver 与 readiness
 
-Buildr 从当前 scope 向 workspace root 查找最近的显式 binding，校验 contract version、provider `provides`、runtime 可用性和 provider 自身的 required dependencies。当前 binding 选择 `git-operations`，供明确选择的 Git 动作使用；ready 只表示可路由，不证明交付成功。provider 不可用只影响需要它的 Git 动作，收尾继续处理其他安全工作。
+Buildr 按明确项目（Project）上下文、工作空间（Workspace）默认绑定和唯一兼容提供者（Provider）的顺序解析，校验契约（Contract）版本、provider `provides`、运行时（Runtime）可用性和 provider 自身的必要依赖。不同项目选择冲突时显式报告歧义，不按当前目录猜测。本例 binding 选择 `git-operations`，供明确选择的 Git 动作使用；ready 只表示可路由，不证明交付成功。provider 不可用只影响需要它的 Git 动作，收尾继续处理其他安全工作。
 
 ### 4. Runtime evidence
 
-render/sync会在有capability依赖的runtime派生Skill中注入受管binding block，记录contract path/digest、dependency mode、selected provider、provider runtime path、scope、readiness、reason和provenance。源Skill不会被写入这段接线信息。
+渲染与同步会在依赖能力的派生技能（Skill）中注入受管绑定区块（Managed Binding Block），展示契约（Contract）路径、依赖模式、选定提供者（Provider）、运行路径、作用域与就绪原因。契约摘要及来源依据（Provenance）保存在投射回执（Projection Receipt）中供诊断核对，不重复注入技能正文。源技能（Skill）不写入这段接线信息。
 
 ### 5. Agent 实际执行
 
@@ -102,7 +102,7 @@ render/sync会在有capability依赖的runtime派生Skill中注入受管binding 
 
 ### 6. 用户替换实现
 
-若组织创建 `internal-git` 并声明提供同一 contract，安装它不会改变用户的“收尾”入口。产品执行器只能使用已具备稳定确定性 application service 的实现；需要 Agent completion 或改变 fast-forward/push 授权语义的 provider 不能被直接接入固定正常路径。
+若组织创建 `internal-git` 并声明提供同一契约（Contract），安装本身不改变当前绑定。明确绑定后，智能体（Agent）读取所选提供者（Provider）的方法及契约（Contract），在已有授权和真实 Git 边界内执行。替换提供者（Provider）不授予额外推送、共享历史改写或删除权限，也不要求接入已经退役的统一收尾执行器。
 
 旧收尾执行应用和历史读取均已删除。沿用`buildr.task-finish/v1`的Skill方法契约，由Agent组合现有能力，不创建新总入口或交付状态库。
 

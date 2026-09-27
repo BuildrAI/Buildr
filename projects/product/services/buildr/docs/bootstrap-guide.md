@@ -1,79 +1,97 @@
-# Buildr Bootstrap Guide
+# Buildr 安装与恢复指南
 
-本指南面向 Agent，是 Buildr Skill 不可用、未安装、损坏或需要维护 Buildr 时的兜底入口，可通过 `buildr bootstrap guide` 读取。它负责区分 CLI 自更新与 workspace 同步、恢复 Buildr Skill，或在安装失败时给出最小 CLI 兜底流程。
-## 首次初始化或恢复 Skill
+本指南供智能体（Agent）在 Buildr 技能（Skill）尚未发现、损坏或需要维护产品时使用，已安装后可通过 `buildr bootstrap guide` 读取。它承接用户目标，区分产品安装、工作空间（Workspace）同步与专业执行；准备完成后继续实际工作。
 
-先发现 Buildr 支持的 Agent runtime：
+## 先确认入口和目标
+
+首次安装从 npm 官方仓库查询 `@buildr-ai/buildr` 的实际版本及 `engines`。运行产品的 Node.js 必须满足 `>=24.15.0 <25`，安装包不会自动下载替代运行环境。正式版（GA）对应 `latest`，候选版（RC）对应 `next`；查询标签还需检查版本是否为预发布版本，不因本文面向 0.1.0 就宣称正式版已经发布。
+
+```bash
+npm view @buildr-ai/buildr dist-tags --json --registry https://registry.npmjs.org/
+```
+
+按用户选择安装已查实的版本，先替换下面的 `<version>`：
+
+```bash
+npm view "@buildr-ai/buildr@<version>" version engines --json --registry https://registry.npmjs.org/
+npm install --global "@buildr-ai/buildr@<version>" --registry https://registry.npmjs.org/
+buildr --version
+buildr installation status --json
+```
+
+安装后核对实际版本与安装来源。Buildr Web 已包含在产品包内；用户按首页要求安装图形入口，或明确需要 macOS / Windows 的启动器（Launcher）时，执行 `buildr web launcher install` 并核对其绑定的同一 npm 安装。其他平台直接打开本机网页。全局安装不向未知目录初始化工作空间（Workspace）。
+
+确认目标工作目录和当前智能体（Agent）。通过下面的只读命令核对支持列表，将 `<agent>` 替换为当前宿主的明确标识；不从技能（Skill）所在路径或诊断结果猜测宿主身份。
 
 ```bash
 buildr runtime list --json
 ```
 
-识别当前 Agent，并将 `<agent>` 固定为支持列表中对应的参数；当前支持 `claude-code`、`codex`、`cursor`、`qoder`、`trae`、`trae-work` 和 `workbuddy`。如果无法和支持列表对齐，只停止依赖该 runtime 的操作，并请联系 Buildr 作者反馈该 Agent。
+当前支持 `claude-code`、`codex`、`cursor`、`qoder`、`trae`、`trae-work` 和 `workbuddy`。无法对齐时只停止依赖该运行时（Runtime）的动作，不借用其他适配器（Adapter）。后文 `<dir>` 始终指工作空间（Workspace）根目录，不能替换成其中的服务（Service）代码目录；执行前替换全部占位内容。
 
-workspace 尚未初始化时，用一个高层命令完成源资产、Buildr Skill、当前 Agent runtime render 和最终 doctor：
+## 首次初始化与第一项工作
+
+尚未初始化且目标目录已确认时，保留已有内容，用一个命令完成源资产、产品入口技能（Skill）、当前智能体运行时（Agent Runtime）投射和最终诊断（Doctor）：
 
 ```bash
-buildr init --agent <agent> --target <dir> --name <name> --profile <personal|team|company>
+buildr init --agent "<agent>" --target "<dir>" --name "<name>" --description "<description>" --profile "<profile>"
 ```
-技术初始化完成后，不把 `project create` 命令直接交给用户。Agent 应读取最终 doctor 和真实 Workspace 状态，用普通语言完成一次首次使用交接：Workspace 是人和 Agent 共同工作的顶层目录；Project 是业务、产品、系统或长期工作；Service 只在需要代码仓、应用、模块或可执行资产时接入。没有 Project 时询问用户要长期管理什么；唯一 Project 没有 Service 时询问是接入已有资产还是直接开始 Project 范围工作；范围唯一时直接邀请用户描述第一项真实目标；有多个候选时只询问消除范围歧义所必需的问题。不要生成 `WELCOME.md`、持久 checklist 或固定教学 Rule。
-已有 workspace 中，用户要求完整检查 Buildr、检查安装状态或“更新 Buildr”时，先运行 `buildr update check --json` 同时读取 GA 正式版与 RC 候选版。
-Agent 分别说明 `stable` 与 `candidate` 的可用更新，并让用户选择 GA、RC 或暂不更新。已有明确选择且范围未变时直接执行；缺少选择时才询问，不得自动切轨或降级：
+
+`<profile>` 为 `personal`、`team` 或 `company`。已有工作空间（Workspace）不重复初始化；只需要在未初始化目录单独安装或恢复产品入口技能（Skill）时，使用 `buildr skill install "<agent>" --target "<dir>"`。
+
+初始化返回的最终诊断（Doctor）可直接复用。结合用户的工作解释：工作空间（Workspace）是共同目录，项目（Project）承载业务目标，服务（Service）承担实现职责，代码库实例（Repository Instance）指向真实代码。然后打开 `buildr web --target "<dir>"`，引导用户在网页中配置项目（Project）、服务（Service）及代码位置；没有代码也可以开始。用户愿意通过对话配置时，按下方入口处理。完成后让用户在智能体（Agent）工具中打开该工作目录，开始正常任务（Task）；不另造欢迎文件或固定教学规则（Rule）。
+
+接入已有内容前读取现状与当前输入说明：
+
+```bash
+buildr assets inspect --target "<dir>" --json
+buildr help assets
+```
+
+`inspect` 返回 `migrationRequired: true` 时，先核对现有对象和重名问题；即使刚完成初始化，也可能需要这一步。准备包含当前 `revision` 的输入文件，运行 `buildr assets migrate --target "<dir>" --input "<json-file>" --json`，再使用返回的新版本。旧服务（Service）重名时按已确认取舍补充 `codeMappings`；迁移不搬动代码。
+
+新建或登记项目（Project）、服务（Service）和代码库实例（Repository Instance）使用 `assets` 入口，输入包含刚读取的 `revision` 和用户明确的内容。当前帮助只列出动作和通用参数；最小新项目（Project）输入为 `{"revision":"<当前版本>","code":"<项目标识>","name":"<项目名称>","description":"<项目目标>"}`，写入临时文件后运行 `buildr assets create project --target "<dir>" --input "<json-file>" --json`。已有目录先用 `assets project-candidates`、`service-candidates` 或 `repository-candidates` 取得目录观察，再登记选定结果；项目（Project）通过 `serviceIds` 引用服务（Service），服务（Service）引用一个 `repositoryId`。
+
+当前全局清单下不使用旧 `service create <project>/<service> <repo-ref>`，该入口仅保留给未迁移的旧工作空间（Workspace）。登记代码来源不执行克隆；代码缺失时由智能体（Agent）按已确认来源和授权准备，已有代码先核对身份与未提交内容。写入后检查实际结果，专业声明缺口交给 `declaration-intake` 按需处理。
+
+## 更新产品与同步工作空间（Workspace）
+
+已有安装中，用户要求完整检查或更新 Buildr 时，先运行：
+
+```bash
+buildr update check --json
+```
+
+分别说明 GA 正式版与 RC 候选版的实际状态，让用户选择 `stable`、`candidate` 或暂不更新。已有明确选择且范围未变时直接执行；缺少选择时才询问，不得自动切轨或降级。对于 npm 安装：
 
 ```bash
 buildr update --track <stable|candidate>
-command -v buildr
-buildr skill install <agent> --target <workspace-root>
 ```
-用户要求“更新 workspace”或“同步 workspace”时，先确认 workspace root 是否由 Git 管理。Git 管理的 workspace 解析 `buildr.git-operations/v1` binding，读取 selected provider，并由 Buildr Skill 提供明确 workspace、upstream 和 update operation；required provider blocked 或遇到本地改动、分叉、冲突、缺少 upstream 等决策点时停止说明，不自动 stash、reset、rebase、merge、覆盖，也不继续 sync。Git 更新成功后不重复询问 sync；非 Git workspace 跳过 Git provider。然后使用当前 CLI 执行 sync，不先更新 CLI；这不是 `buildr sync` 的隐式 Git 行为：
+
+上面是参数选择说明，执行时用单个 `stable` 或 `candidate` 替换占位内容。成功后重新解析当前命令入口，并在已经确认的工作空间（Workspace）运行 `buildr skill install "<agent>" --target "<dir>"`。用户明确只更新命令行工具（CLI）时不追加技能（Skill）安装或工作空间（Workspace）同步。源码开发检出（Development Checkout）更新不接受 `--track`，应按其明确源码目标和当前帮助处理。
+
+用户要求“更新工作空间”或“同步工作空间”时，先确认根目录是否受 Git 管理。受 Git 管理时，按 `buildr.git-operations/v1` 能力绑定（Capability Binding）读取已选提供者（Provider），明确上游和更新动作；遇到本地改动、分叉、冲突、缺少上游或提供者（Provider）不可用时，停止相关更新与同步，不擅自暂存、重置、变基、合并或覆盖。Git 更新成功后不重复询问同步；不受 Git 管理时直接同步：
 
 ```bash
-buildr sync <agent> --target <dir>
+buildr sync "<agent>" --target "<dir>"
 ```
 
-用户明确只更新 CLI 时，在选定轨道后只运行对应 `buildr update --track ...`，不追加 Skill install 或 workspace sync。Git 更新属于 Agent 对 workspace 更新意图的编排，不是 `buildr sync` 的隐式行为；`sync` 包含产品能力同步、产品入口 Buildr Skill 安装、从 `.` 递归投射各层 `AGENTS.md` 的当前 Agent runtime render 和 doctor 复查。
-只需要在未初始化目录单独恢复产品入口 Skill 时使用专项入口：
+`sync` 同步当前本地产品源能力、产品入口技能（Skill）和当前运行时（Runtime），并返回最终诊断（Doctor）；它不隐式更新 Git 或产品安装。用户同时要求更新产品与工作空间（Workspace）时，按选定产品版本更新成功后继续同步，分别确认结果。产品更新包含包内的 Buildr Web；已有启动器（Launcher）绑定由安装更新流程刷新，核对更新后网页能否打开。无需让用户另提“更新 Buildr Web”。用户要求更新完成后收尾时，确认两项实际结果后再承接收尾。
+
+## 诊断与资源维护
+
+已有工作空间（Workspace）且需要当前诊断时运行一次，当前同一现场的结果可复用：
 
 ```bash
-buildr skill install <agent> --target <dir>
+buildr doctor --agent "<agent>" --target "<dir>" --json
 ```
 
-如果安装后Buildr Skill可用，后续按Buildr Skill工作。本指南只保留Skill不可用时的最小兜底流程。Task Record、Verification与Review current records由对应Application保存到Workspace SQLite，不进入Git或跨机器同步；复盘正文只在本机Markdown中。不要读取、迁移或生成旧Task YAML。Git Operations只处理用户或上游consumer明确选择的Git内容；Worktree、Preview、发布和其他副作用继续遵守各自owner边界。
-## 最小兜底
+不要省略 `--agent`；省略会检查所有支持的运行时（Runtime）。`init --agent`、`sync`、组件（Component）安装及卸载已包含最终诊断（Doctor），无需立即重复。出现某类问题时只展开该类检查，不能把一次同步称为对所有问题的完整修复。
 
-优先使用 Buildr CLI 完成用户指令。workspace 必须完成初始化；未初始化时使用上面的 `buildr init --agent <agent>`，其成功输出已包含最终 doctor，不再重复执行。已有 workspace 中，`buildr doctor --agent <agent> --json` 是最小兜底流程的默认事实入口。不要省略 `--agent`；未指定 Agent 时 doctor 会检查所有支持的 runtime。
+- 根 `AGENTS.md` 中的受管区块（Managed Block）由 Buildr 维护。专业规则（Rule）从 `rules/manifest.yml` 按启用、安装、必需和语义相关性发现；项目（Project）与服务（Service）的规则入口是各自 `AGENTS.md`。
+- 技能（Skill）源只在工作空间（Workspace）的 `skills/` 管理。项目（Project）的 `capabilities.yml` 保存适用性与能力绑定（Capability Binding），不是另一份技能（Skill）源。`init` 和 `sync` 只投射到工作空间（Workspace）层；用户明确要求个人全局使用时才选择 `user`。
+- 新增根规则（Rule）先维护 `rules/<rule-id>.md`，再运行 `buildr rules add <rule-id> --target "<dir>" --description "<text>"`。删除使用 `rules remove`，只取消登记并保留文件时加 `--keep-file`。
+- 维护组件（Component）前用 `buildr component list` 和 `buildr component check` 核对整体成员和所有权；安装或卸载传入 `--agent`。卸载须在已明确的完整范围授权内进行，保留外部工具和项目（Project）内容；同范围已有确认不重复索取。
+- 投射成功不证明当前对话已加载资产。按当前工具的刷新提示继续；不可枚举的系统或插件技能（Skill）不因此被视为不存在。
 
-```bash
-buildr doctor --agent <agent> --target <dir> --json
-```
-
-根据用户目标和 doctor 结果继续。创建或修复 Project/Service 必须来自用户意图、已有源资产、明确 repo/ref，或 doctor 指出的可修复 drift。Component 当前只支持 workspace：先用 `buildr component list/check --target <dir> --json` 核对定义和成员，再用带 `--agent <agent>` 的 install/uninstall 完成 runtime 与 doctor 闭环；CLI 不根据对象名称猜测 Component 边界。
-
-```bash
-buildr project create <project> --target <dir> [--repo <git-url>] --name <text> [--description <text>]
-buildr service create <project>/<service> <repo-ref> --target <dir> --name <name> --description <description> --type <type> [--remote <name>] [--integration-branch <branch>]
-```
-
-用户要管理业务、产品线、系统或长期工作单元时才创建 Project；Project 资产 repo 用 `project create --repo` clone 到 `projects/<project>/`，不登记外部本地链接。用户提供 service repo 路径、Git URL 或明确要接入服务资产时才创建 Service。Service Domain 使用 UUID、workspaceId、projectId、code、name、description、type 与 source；Git 来源用 `--integration-branch` 保存稳定集成目标，当前 checkout 只观察。Service 规则入口是 Service 目录中的 `AGENTS.md`，不通过 registry 参数指定规则路径。
-
-## 边界
-
-Buildr workspace 是组织（Organization/Root）资产根；Agent runtime 是面向当前 Agent 的可重建入口。组织资产先改变源资产（使用 Buildr CLI），再同步 Agent runtime（使用 render/sync）。
-
-Rules 控制 Agent 的价值观、边界和约束；Skills 封装可复用的专业动作和操作流程。Rule 和 Skill 不以“是否必须加载”作为本质区分；任务触发型流程应沉淀为 Skills，并通过当前 Agent runtime 渲染后使用。
-
-Agent runtime adapter 按“scope 祖先链 + scope 子树”发现和投射 `AGENTS.md`，再按目标 Agent 使用原生入口、scoped vendor rules 或 reference bridge；具体路径、reload 和 UI 前置条件见随包 `docs/agent-runtime-adapters.md`。adapter 不替 Agent 做语义决策。Agent 必须读取 enabled、required 且 installed 的 Rule；对 enabled、optional 且 installed 的 Rule，先检查 description，并在当前任务语义相关时于行动前读取正文。disabled 或 uninstalled Rule 不参与任务。
-Skill source 只在 workspace `skills/` 治理。Project `capabilities.yml` 仅表达 requirements、bindings 与 applicability；当前目录使用 Skill 时 render 到 `workspace` destination，明确要求个人全局共享时才 render 到 `user` destination。`init`/`sync` 不写用户层。adapter inventory 为 `partial` 时只证明可观测 filesystem roots 中未发现冲突，不能据此宣称 Agent 内部 plugin/system Skills 全局唯一。
-root/Organization 规则维护使用 `rules/manifest.yml` 和 `rules/`。新增规则时，先创建并编辑 `rules/<rule-id>.md`，再运行：
-
-```bash
-buildr rules add <rule-id> --target <dir> --description <text>
-```
-
-删除 root 规则时运行：
-
-```bash
-buildr rules remove <rule-id> --target <dir>
-```
-
-如只取消注册并保留规则文件，使用 `--keep-file`；Project 规则当前通过 `projects/<project>/AGENTS.md` 维护。对象级卸载若命中 Component，必须先展示完整成员、runtime 影响以及不会删除的外部 CLI 和 Project 内容，取得针对完整范围的明确确认后才执行；已有确认覆盖相同范围时无需重复询问。
+产品入口技能（Skill）已可用时，后续采用其按需说明。任务（Task）、审查（Review）、验证（Verification）和工作摘要（Work Context）保存在本机 SQLite，复盘正文在本机文件中，不通过 Git 自动同步；不要读取、迁移或生成旧任务（Task）YAML。专业执行与交付仍使用对应技能（Skill）和真实工具，不把诊断或记录成功当作目标完成。

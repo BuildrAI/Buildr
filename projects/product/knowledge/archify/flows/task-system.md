@@ -16,7 +16,7 @@
 | `authorize` | 人决定方案与实施范围；仅缺少相关决定时需要新增确认，已有授权延续 |
 | `implement` | 智能体（Agent）修改实现、直接运行测试并维护相关知识；[验证技能](../../../services/buildr/resources/workspace/skills/buildr/task-verification/SKILL.md)、[知识维护技能](../../../services/buildr/resources/workspace/skills/buildr/current-knowledge-maintenance/SKILL.md) |
 | `completion-review` | 审查真实实现结果；验证报告独立记录实际检查和缺口；[审查应用](../../../services/buildr/src/modules/task/application/task-review-application.ts)、[验证应用](../../../services/buildr/src/modules/task/application/task-verification-application.ts) |
-| `accept` | 人验收成果并明确收尾范围；[收尾技能](../../../services/buildr/resources/workspace/skills/buildr/task-finish/SKILL.md)，父任务授权另遵从[父任务协调](../../docs/flows/task-parent-coordination.md) |
+| `accept` | 人验收成果并明确收尾范围；[收尾技能](../../../services/buildr/resources/workspace/skills/buildr/task-finish/SKILL.md)，父任务授权另遵从[父任务协调](../../docs/architecture/task-system.md) |
 | `deliver` | 智能体（Agent）完成精确提交、按约定集成、普通推送和真实回读；[收尾技能](../../../services/buildr/resources/workspace/skills/buildr/task-finish/SKILL.md) |
 | `collaboration` | Buildr 通过工作台（Workbench）和任务详情连接人机协作，组织目标、方案、进展、审查、验证、交付结果及人的答复；[工作台应用](../../../services/buildr/src/modules/workbench/application/workbench-application.ts)、[摘要应用](../../../services/buildr/src/modules/task/work-context/application/work-context-application.ts)、[网页回应](../../../services/buildr-web/src/features/task/components/TaskWorkContextCard.tsx) |
 | `delivery-support` | Buildr 提供交付支撑：已有任务结果登记、适用自举激活和资源清理分别由具体能力处理；[自举依据](task-self-bootstrap.md)，不形成一个新的聚合结果 |

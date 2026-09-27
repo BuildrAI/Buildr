@@ -1,37 +1,44 @@
-# 面向人的解释文档
+# Buildr 使用与开发手册
 
-这些文档回答“是什么、概念如何理解、整体如何组成、业务如何运转、各部分负责什么，以及怎样使用和运行”。按阅读价值建设，不要求每类、每个模块都有独立文件。
+第一次使用，顺着第一章阅读即可。后面的章节按问题查阅，每个主题只有一份正文。
 
-| 种类 | 当前具体文档 | 覆盖范围与表达边界 |
-|---|---|---|
-| 产品概览 | [产品概览](overview.md)、[当前能力入口](capabilities.md) | 前者综合解释定位、协作与核心模型；后者快速导航当前能力，不作为第二套规范 |
-| 核心概念与术语 | [术语表](glossary.md)；概念关系见概览与产品架构 | 稳定名称、定义、作用域和区别；不为一次任务建立私有术语表 |
-| 产品架构 | [产品架构](architecture/product.md) | 角色、能力、领域和产品边界；规划明确标注 |
-| 技术架构 | [技术架构](architecture/technical.md)、[服务分层](architecture/service-architecture.md) | 系统组成、模块、依赖和数据归属；实现细节链接地图 |
-| 数据设计 | [数据全景与领域设计](architecture/buildr-data-design.md)、[数据库表设计](architecture/buildr-database-tables.md)、[本机数据与恢复](architecture/buildr-local-data.md) | 业务对象、身份、关联、真实存储与修改约束；连接领域总图和实体关系图（Entity Relationship Diagram，ERD） |
-| 知识建设与维护 | [架构说明](architecture/knowledge-maintenance.md)、[阅读用词说明](knowledge-maintenance-terms.md) | 文中直接引用图和地图，来源变化后按影响维护 |
-| 对象关系与代码定位 | [项目、服务与代码库如何协作](architecture/project-service-repositories.md) | 解释共享引用、真实代码位置与修改影响 |
-| 完整任务系统 | [从用户对话到任务收尾](architecture/task-system.md) | 工作台（Workbench）、工作摘要（Work Context）答复闭环、独立记录、实施验证、交付与自举激活；列明当前规范残留 |
-| 专题架构 | [技能体系](architecture/buildr-skill-system.md)、[项目声明](architecture/buildr-project-declaration-system.md)、[通用测试与验证](architecture/workspace-testing-and-verification-framework.md)、[Product 验证框架](architecture/verification-framework.md)、[门禁分类](architecture/governance-gate-taxonomy.md) | 分别解释对应机制；通用测试模型与 Buildr 产品自身测试框架保持不同范围 |
-| 关键流程 | [变更处理](flows/openspec-change-lifecycle.md)、[任务交付](flows/task-closeout.md)、[父任务协调](flows/task-parent-coordination.md)、[每日演进](flows/project-daily-progress.md)、[发布与恢复](flows/open-source-release.md) | 从目标到结果的参与者、关键顺序、异常和边界；不重复完整调用实现 |
-| 服务说明 | [Buildr](services/buildr.md)、[Buildr Web](services/buildr-web.md) | 服务职责、对外能力、数据和依赖；模块专题按价值放入对应架构说明 |
-| 使用指南 | [日常使用](guides/usage.md) | 人如何表达目标、参与判断并查看与接续成果 |
-| 开发与运行指南 | [开发与运行入口](guides/development-and-operations.md) | 连接实际开发、验证、配置、启动、发布和排障材料；不复制命令参考 |
-| 已确认设计方法 | [渐进式业务建模](architecture/progressive-business-modeling.md) | 解释已确认的建模方法与适用条件，不描述软件新增功能或替代执行规则 |
+## 一、开始工作
 
-## 事实来源与关联
+1. [了解 Buildr](overview.md)：用途、人与智能体（Agent）的分工、当前边界。
+2. [开始使用](guides/getting-started.md)：让智能体（Agent）安装并引导配置项目和代码。
+3. [日常使用](guides/usage.md)：表达目标、查看成果、中断后继续与交付。
+4. [排查问题](guides/troubleshooting.md) · [数据保全](guides/data-and-upgrades.md)：遇到问题或准备更新时再读。
 
-这是上述文件共同的来源与范围导航。每份文件的具体链接补充细节，代表模块另有逐对象来源；目录迁移不等于重新验证产品全部行为。
+## 二、组织资料和方法
 
-- 概览、能力入口、术语和产品架构：依据[核心规则](../../services/buildr/resources/workspace/AGENTS.md)、[正式规范](../../openspec/specs/)、[服务登记](../../services/manifest.yml)和相应模块实现；技术细节从[代码地图](../code-map/README.md)进入。
-- 技术架构、服务分层和服务说明：依据 [Buildr 实现](../../services/buildr/src/)、[前端实现](../../services/buildr-web/src/)、各自 `package.json`、服务登记与正式规范；排除外部宿主和生产环境的未观察状态。
-- 技能体系：依据[技能投射代码地图](../code-map/skill-projection.md)列出的函数、源文件和配置，关联[技术图](../archify/flows/skill-projection.html)。
-- 项目声明及两份测试说明：依据[项目测试地图](../../verification.yml)、[声明接收技能](../../services/buildr/resources/workspace/skills/buildr/declaration-intake/SKILL.md)、[验证技能](../../services/buildr/resources/workspace/skills/buildr/task-verification/SKILL.md)、[验证实现](../../services/buildr/src/modules/project-testing/)和[任务验证实现](../../services/buildr/src/modules/task/application/task-verification-application.ts)；框架说明不证明某次测试通过。
-- 门禁分类与业务建模方法：依据文内规范和已确认设计决定；用于解释局部约束或设计取舍，不代替当前任务授权。
-- 变更处理：依据[OpenSpec 模块](../../services/buildr/src/modules/openspec/)与[组件贡献](../../services/buildr/resources/workspace/components/buildr/openspec/)。
-- 任务交付与父任务协调：依据[任务实现](../../services/buildr/src/modules/task/)和文内对应技能；排除当前未观察的任务状态。
-- 每日演进：依据[每日演进模块](../../services/buildr/src/modules/task/daily-progress/)；运行数据是本机事实，不进入这些文档。
-- 发布与恢复：依据文内指向的发布规范、工程入口和专用技能；说明流程不构成发布授权或完成证明。
-- 日常使用和开发运行指南：依据以上当前文档与具体命令参考；操作前核对本次环境和权限。
+| 主题 | 解决的问题 |
+| --- | --- |
+| [项目、服务与代码库](architecture/project-service-repositories.md) | 业务目标如何关联真实实现？ |
+| [规则（Rule）与技能（Skill）](architecture/buildr-skill-system.md) | 方法存在哪里，怎样交给智能体（Agent）使用？ |
+| [项目知识](architecture/knowledge-maintenance.md) | 怎样维护说明、图示与代码定位，避免越写越乱？ |
+| [任务协作](architecture/task-system.md) | 怎样接续、协调多项工作，并验收和交付？ |
+| [项目测试与验证](architecture/workspace-testing-and-verification-framework.md) | 怎样利用项目已有检查判断结果？ |
+| [OpenSpec 协作](flows/openspec-change-lifecycle.md) | 采用 OpenSpec 时怎样维护行为约定与变更？ |
 
-只修改事实确实影响的内容；摘录应回指来源，复杂关系可直接引用地图或图表。[统一知识入口](../README.md)连接三类成果，[历史和规划](../../docs/document-index.md)保留不同语境。
+## 三、开发 Buildr
+
+先读[贡献指南（GitHub）](https://github.com/BuildrAI/Buildr/blob/main/CONTRIBUTING.md)，再按需要选择：
+
+| 主题 | 阅读 |
+| --- | --- |
+| 设计与实现 | [产品架构](architecture/product.md) · [技术架构](architecture/technical.md) |
+| 数据 | [数据设计与本机存储](architecture/buildr-data-design.md) · [数据库表参考](architecture/buildr-database-tables.md) |
+| 开发与检查 | [开发环境](guides/development-and-operations.md) · [产品验证框架](architecture/verification-framework.md) · [测试上下文（Test Context）](guides/node-test-context-runtime.md) |
+| 定位与看图 | [代码地图（Code Map）](../code-map/README.md) · [交互技术图](../archify/index.md) |
+| 专项维护 | [发布](flows/open-source-release.md) · [每日演进](flows/project-daily-progress.md) · [文档维护](guides/documentation-maintenance.md) |
+
+## 四、按需查阅
+
+- [安装与命令参考](../../services/buildr/docs/cli-reference.md) · [工具适配](../../services/buildr/docs/agent-runtime-adapters.md) · [已知限制](../../services/buildr/docs/known-limitations.md) · [安装恢复](../../services/buildr/docs/bootstrap-guide.md)。
+- [命令架构](../../services/buildr/docs/cli-architecture.md) · [公开数据格式](reference/json-contracts.md) · [资源交付](../../services/buildr/docs/resources.md) · [能力契约（Capability Contract）](../../services/buildr/docs/skill-capability-contracts.md)。
+- [新增工具适配](reference/agent-runtime-adapter-contribution.md) · [Archify 组件（Component）](../../services/buildr/docs/archify-component.md)。
+- [术语表](glossary.md) · [后续方向](directions.md)。
+
+正文解释当前行为；[正式规范](../../openspec/specs/)保存行为约定，单次变更保留在 OpenSpec 中。过时的普通文档直接更新、合并或删除，历史可通过 Git 查找。
+
+部分技术参考暂存于服务目录，本目录直接引用唯一正文；当前正式安装包只带其中的安装恢复指南。图示按用途使用：GitHub 首页可直接阅读 Mermaid；现有交互图在 Buildr Web 查看，GitHub 只显示其 HTML 文件。

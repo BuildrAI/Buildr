@@ -2,7 +2,7 @@ import process from 'node:process';
 
 import { pickWorkspaceDirectory } from '../infrastructure/directory-picker.ts';
 import { binaryResponse, jsonResponse, textResponse, uiPrototypeHtmlResponse, diagramHtmlResponse } from './responses.ts';
-import { assertWriteRequest, readAllowedJsonBody, readJsonBody } from './session.ts';
+import { assertRequestHost, assertWriteRequest, readAllowedJsonBody, readJsonBody } from './session.ts';
 import { injectedIndexHtml, serveDistAsset } from './static-files.ts';
 import {
   BUILDR_WEB_HTTP_OPERATIONS,
@@ -45,7 +45,9 @@ export function createLocalWorkspaceRequestRouter({
   const workspaceAppRoute = new RegExp(`^/workspaces/${WORKSPACE_ID}(?:/overview|/workspace-overview|/activity|/settings|/knowledge/(?:project|service)/[A-Za-z0-9][A-Za-z0-9._-]*|/skills(?:/[A-Za-z0-9%][A-Za-z0-9%._-]*)?|/repositories(?:/[A-Za-z0-9][A-Za-z0-9._-]*)?|/articles(?:/[A-Za-z0-9][A-Za-z0-9._-]*(?:/${taskIdPattern})?(?:/edit)?)?|/tasks(?:/${taskIdPattern}(?:/prototypes|/changes/[A-Za-z0-9][A-Za-z0-9._-]*/${taskIdPattern})?)?|/projects(?:/[A-Za-z0-9][A-Za-z0-9._-]*(?:/edit)?)?|/services(?:/[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*(?:/edit)?)?)?)?/?$`);
 
   return async function routeLocalWorkspaceRequest(request: any, response: any) {
-    const requestUrl = new URL(request.url || '/', origin() || 'http://127.0.0.1');
+    const trustedOrigin = origin();
+    assertRequestHost(request, trustedOrigin);
+    const requestUrl = new URL(request.url || '/', trustedOrigin);
     const pathname = requestUrl.pathname;
     if (isClosing() && pathname !== '/api/v1/health') {
       jsonResponse(response, 503, { error: { code: 'app_shutting_down', message: 'Buildr 正在退出。' } });
@@ -79,7 +81,7 @@ export function createLocalWorkspaceRequestRouter({
         request,
         pathname,
         searchParams: requestUrl.searchParams,
-        authorizeWrite: () => assertWriteRequest(request, origin(), sessionToken),
+        authorizeWrite: () => assertWriteRequest(request, trustedOrigin, sessionToken),
         readJsonBody: () => readJsonBody(request),
         pickWorkspaceDirectory,
         respond: contributionRespond(response),
@@ -88,7 +90,7 @@ export function createLocalWorkspaceRequestRouter({
       if (contributedResponse) return jsonResponse(response, contributedResponse.status, contributedResponse.body);
     }
     if (request.method === 'POST' && pathname === '/api/v1/app/quit') {
-      assertWriteRequest(request, origin(), sessionToken);
+      assertWriteRequest(request, trustedOrigin, sessionToken);
       validateRequest('local-app.quit', await readJsonBody(request));
       jsonResponse(response, 202, { status: 'stopping' });
       shutdown();
@@ -122,7 +124,7 @@ export function createLocalWorkspaceRequestRouter({
           suffix,
           searchParams: requestUrl.searchParams,
           root,
-          authorizeWrite: () => assertWriteRequest(request, origin(), sessionToken),
+          authorizeWrite: () => assertWriteRequest(request, trustedOrigin, sessionToken),
           readBody: (allowed: any, label: any) => readAllowedJsonBody(request, allowed, label),
           readJsonBody: (maxBytes?: number) => readJsonBody(request, maxBytes),
           submitTaskRead: (operation: any, taskId: any, input: any = {}) => submitTaskRead(request, response, operation, root, taskId, input),

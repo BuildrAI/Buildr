@@ -1,5 +1,22 @@
 export const MAX_JSON_BODY_BYTES = 32 * 1024;
 
+export function assertRequestHost(request: any, origin: string) {
+  const trustedOrigin = new URL(origin);
+  const host = request.headers.host;
+  const hostCount = request.rawHeaders?.filter((name: string, index: number) => index % 2 === 0 && name.toLowerCase() === 'host').length;
+  const explicitPortHost = `${trustedOrigin.hostname}:${trustedOrigin.port || '80'}`;
+  // Compare authorities directly: URL parsing would also accept credentials,
+  // paths and alternate spellings of IPv4 addresses supplied by the request.
+  if (typeof host !== 'string'
+    || (hostCount !== undefined && hostCount !== 1)
+    || (host.toLowerCase() !== trustedOrigin.host && host.toLowerCase() !== explicitPortHost)) {
+    const error: Error & Record<string, any> = new Error('请求 Host 必须匹配当前 Buildr Web 地址。');
+    error.code = 'host_forbidden';
+    error.status = 403;
+    throw error;
+  }
+}
+
 export function readJsonBody(request: any, maxBytes = MAX_JSON_BODY_BYTES) {
   return new Promise((resolve: any, reject: any) => {
     let size = 0;

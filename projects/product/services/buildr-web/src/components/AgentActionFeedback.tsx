@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { createPromptRequest } from '../lib/promptRequest';
 import { Alert, Button, Input } from 'antd';
 
 export const ACTION_LABELS: Record<string, string> = {
@@ -6,7 +7,6 @@ export const ACTION_LABELS: Record<string, string> = {
   project: '项目',
   service: '服务',
   start: '任务',
-  change: '变更',
   'task-review': '任务审查',
   'task-verification': '任务验证',
   'release-update': 'Buildr 版本更新',
@@ -18,13 +18,28 @@ export function useAgentActionFeedback(backToChooser: () => void) {
   const [error, setError] = useState<string | null>(null);
   const [prompt, setPrompt] = useState<string | null>(null);
   const [copyState, setCopyState] = useState('');
+  const [preparing, setPreparing] = useState(false);
+  const [request] = useState(createPromptRequest);
+  useEffect(() => () => request.invalidate(), [request]);
+  const invalidatePrompt = useCallback(() => {
+    request.invalidate();
+    setPrompt(null);
+    setError(null);
+    setCopyState('');
+    setPreparing(false);
+  }, [request]);
+  const updateInput = (update: () => void) => {
+    invalidatePrompt();
+    update();
+  };
   const copyPrompt = async (noun: string, unchangedState: string) => {
     if (!prompt) return;
+    const current = request.observe();
     try {
       await navigator.clipboard.writeText(prompt);
-      setCopyState(`指令已复制。${unchangedState || `${noun}尚未创建。`}`);
+      if (current()) setCopyState(`指令已复制。${unchangedState || `${noun}尚未创建。`}`);
     } catch {
-      setCopyState(`已选中指令，请手动复制。${unchangedState || `${noun}尚未创建。`}`);
+      if (current()) setCopyState(`自动复制失败，请选择指令手动复制。${unchangedState || `${noun}尚未创建。`}`);
     }
   };
 
@@ -33,12 +48,20 @@ export function useAgentActionFeedback(backToChooser: () => void) {
     setCopyState(unchangedState || `${noun}尚未创建。`);
   };
 
+  const generatePrompt = (prepare: () => string | Promise<string>, noun: string, unchangedState = '', fallback = '生成指令失败。') => request.run(prepare, {
+    start: () => { setPrompt(null); setError(null); setCopyState(''); setPreparing(true); },
+    ready: (value) => showResult(value, noun, unchangedState),
+    failed: (error) => setError(error instanceof Error ? error.message : fallback),
+    settled: () => setPreparing(false),
+  });
+
   const copyProvidedPrompt = async (value: string, unchangedState: string) => {
+    const current = request.observe();
     try {
       await navigator.clipboard.writeText(value);
-      setCopyState(`指令已复制。${unchangedState}`);
+      if (current()) setCopyState(`指令已复制。${unchangedState}`);
     } catch {
-      setCopyState(`已选中指令，请手动复制。${unchangedState}`);
+      if (current()) setCopyState(`自动复制失败，请选择指令手动复制。${unchangedState}`);
     }
   };
 
@@ -81,5 +104,5 @@ export function useAgentActionFeedback(backToChooser: () => void) {
   );
 
 
-  return { error, setError, prompt, setPrompt, copyState, setCopyState, showResult, copyProvidedPrompt, formHeader, promptResult };
+  return { error, setError, prompt, copyState, setCopyState, preparing, invalidatePrompt, updateInput, generatePrompt, showResult, copyProvidedPrompt, formHeader, promptResult };
 }

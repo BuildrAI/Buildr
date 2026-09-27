@@ -17,7 +17,7 @@ projects/product/                         项目（Project）：跨服务产品�
 ├── openspec/
 │   ├── specs/                            当前规范承诺
 │   └── changes/                          变更方案、清单与历史归档
-├── docs/                                 历史审计、规划、文章与导航
+├── docs/publications/                    已发表文章与配图，属于产品内容数据
 ├── knowledge/                            三类当前成果，不是第二规范
 │   ├── README.md                         统一阅读入口
 │   ├── code-map/                         本地图：树、对象、方法、调用
@@ -26,7 +26,7 @@ projects/product/                         项目（Project）：跨服务产品�
 │       ├── overview.md                    产品概览
 │       ├── glossary.md                    术语与语义边界
 │       ├── architecture/                  产品、技术和专题架构
-│       ├── services/                      服务职责
+│       ├── reference/                     数据格式与工具接入参考
 │       ├── flows/                         跨对象流程
 │       └── guides/                        使用、开发与运行入口
 └── services/
@@ -41,10 +41,9 @@ projects/product/                         项目（Project）：跨服务产品�
 
 [知识建设与维护](knowledge-maintenance.md)从工作方法、读取与页面、成果位置三个职责区解释实际文件。
 
-1. [服务与工程目录树](system-services-assets.md)：两个服务每一级目录放什么、生成什么、谁负责打包。
-2. [功能与模块索引](modules.md)：从用户能力定位后端模块与前端功能。
-3. [模块内部目录树与对象](technical-layers.md)：领域、应用、数据访问、技术实现和接口如何协作。
-4. [调用、数据与副作用](calls-data-effects.md)：谁发起调用、谁拥有数据和写入。
+1. [服务、工程目录与功能定位](system-services-assets.md)：两个服务的目录、生成与打包职责，以及从用户能力定位实现。
+2. [模块内部目录树与对象](technical-layers.md)：领域、应用、数据访问、技术实现和接口如何协作。
+3. [调用、数据与副作用](../docs/architecture/technical.md)：谁发起调用、谁拥有数据和写入。
 
 对应技术图：[系统总览](../archify/system/buildr-system-overview.html)、[调用与数据责任](../archify/flows/capability-data-responsibility.html)。
 

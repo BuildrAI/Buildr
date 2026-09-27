@@ -1,24 +1,12 @@
-# Buildr Product Project
+# Buildr 产品工程
 
-本目录是 Buildr 的 Product Project 治理根，维护产品定位、规则、OpenSpec、能力要求、Command requirements、验证政策和 Service registry。
+这里维护 Buildr 的产品知识、规则、规范和两个实现部分：
 
-可执行产品由真实 Service `product/buildr` 承载，唯一 package 与源码根是 [`services/buildr/`](services/buildr/)。兼容入口 [`buildr`](buildr) 只桥接该 Service CLI，不在 Project 根保留第二份实现。
+- [`services/buildr/`](services/buildr/)：命令行接口（CLI）、本机业务能力、网页托管与 npm 分发。
+- [`services/buildr-web/`](services/buildr-web/)：React 页面、交互与正式前端构建。
 
-## 入口
+使用产品请从[手册](knowledge/docs/README.md)开始；参与开发请读[贡献指南](../../CONTRIBUTING.md)和[开发入口](knowledge/docs/guides/development-and-operations.md)。
 
-- [Buildr 产品说明](knowledge/docs/overview.md)
-- [OpenSpec specs](openspec/specs/)
-- [当前知识统一入口](knowledge/README.md)
-- [解释文档目录](knowledge/docs/README.md)
-- [当前能力入口](knowledge/docs/capabilities.md)
-- [Archify 技术图](knowledge/archify/index.md)
-- [Buildr Service](services/buildr/README.md)
-- [发布流程与恢复](knowledge/docs/flows/open-source-release.md)
+[正式规范](openspec/specs/) · [技术架构](knowledge/docs/architecture/technical.md) · [代码地图（Code Map）](knowledge/code-map/README.md) · [技术图](knowledge/archify/index.md)
 
-开发阶段仍可从 workspace 根运行：
-
-```bash
-projects/product/buildr --help
-```
-
-package、测试与发布命令从 `projects/product/services/buildr/` 执行。
+开发时从工作空间（Workspace）根使用 `projects/product/buildr`。它只委托后端服务（Service）的入口；依赖安装和检查从对应服务（Service）目录执行，不覆盖本机正式安装。

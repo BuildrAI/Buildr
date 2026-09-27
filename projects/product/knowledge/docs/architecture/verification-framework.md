@@ -87,4 +87,4 @@ Buildr 的验证由以下几部分共同组成。**某个入口的“完整”�
 
 跨平台候选（Candidate）由[证据聚合实现](../../../services/buildr/test/verification/candidate-ci-evidence.ts)核对所需分片与宿主组合是否齐全、是否来自相同源码及登记身份、是否消费同一压缩包；缺失或身份不符会使聚合失败。本机 `test:candidate` 的结果不能替代这份聚合。正式任务报告仍须分别说明所需的前端逻辑、浏览器（Browser）旅程及目标环境检查是否实际完成。发布（Release）还涉及当前外部权限、真实发布与回读，流程和恢复由[开源发布说明](../flows/open-source-release.md)单独维护。`integration-candidate-release` 是发布专用证据，不默认纳入日常 `core`。
 
-后续优化先依据当前耗时找出选择放大、重复准备、执行体或清理瓶颈。不能为追求速度删除正在证明的安装、初始化、迁移、恢复、平台或发布物边界。历史数字保留在[验证证据审计](../../../docs/verification-evidence-audit.md)，不代表当前运行结果。
+后续优化先依据当前耗时找出选择放大、重复准备、执行体或清理瓶颈。不能为追求速度删除正在证明的安装、初始化、迁移、恢复、平台或发布物边界。历史数字保留在[验证证据审计](verification-framework.md)，不代表当前运行结果。

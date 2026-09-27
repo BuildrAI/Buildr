@@ -8,7 +8,7 @@ import { ACTION_LABELS, useAgentActionFeedback } from '../../../components/Agent
 type Props = { onBack: () => void; context?: Record<string, unknown> };
 
 export function ServiceAgentAction({ onBack, context = {} }: Props) {
-  const { setError, showResult, formHeader, promptResult } = useAgentActionFeedback(onBack);
+  const { setError, generatePrompt, updateInput, invalidatePrompt, formHeader, promptResult } = useAgentActionFeedback(onBack);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [code, setCode] = useState('');
@@ -27,16 +27,15 @@ export function ServiceAgentAction({ onBack, context = {} }: Props) {
       if (cancelled) return;
       const projects = data.projects || [];
       setProjects(projects);
+      invalidatePrompt();
       setProjectCode((current) => projects.some((item) => item.code === current) ? current : (projects[0]?.code || ''));
       setProjectsLoaded(true);
     }).catch((error: Error) => { if (!cancelled) { setProjectsLoaded(true); setError(error.message); } });
     return () => { cancelled = true; };
-  }, [setError]);
+  }, [setError, invalidatePrompt]);
   const submitService = async (event: FormEvent) => {
     event.preventDefault();
-    setError(null);
-    try {
-      const result = await serviceApi.serviceCreatePrompt({
+    await generatePrompt(async () => (await serviceApi.serviceCreatePrompt({
           projectCode,
           name,
           description,
@@ -47,11 +46,7 @@ export function ServiceAgentAction({ onBack, context = {} }: Props) {
           gitUrl,
           remote,
           integrationBranch,
-        }) as { prompt: string };
-      showResult(result.prompt, ACTION_LABELS.service);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '生成指令失败。');
-    }
+        })).prompt, ACTION_LABELS.service);
   };
 
 
@@ -68,7 +63,7 @@ export function ServiceAgentAction({ onBack, context = {} }: Props) {
               loading={!projectsLoaded}
               placeholder={projectsLoaded && projects.length === 0 ? '请先创建项目' : '正在读取已登记项目…'}
               value={projectCode || undefined}
-              onChange={(value) => setProjectCode(value || '')}
+              onChange={(value) => updateInput(() => setProjectCode(value || ''))}
               options={projects.map((project) => ({
                 value: project.code,
                 label: `${project.name}（${project.code}）`,
@@ -77,7 +72,7 @@ export function ServiceAgentAction({ onBack, context = {} }: Props) {
           </label>
           <label>
             名称
-            <Input id="action-name" autoComplete="off" required value={name} onChange={(event) => setName(event.target.value)} />
+            <Input id="action-name" autoComplete="off" required value={name} onChange={(event) => updateInput(() => setName(event.target.value))} />
           </label>
           <label className="full">
             用途
@@ -87,7 +82,7 @@ export function ServiceAgentAction({ onBack, context = {} }: Props) {
               required
               placeholder="例如：支付 API、管理后台或可执行任务"
               value={description}
-              onChange={(event) => setDescription(event.target.value)}
+              onChange={(event) => updateInput(() => setDescription(event.target.value))}
             />
           </label>
           <details className="full">
@@ -95,11 +90,11 @@ export function ServiceAgentAction({ onBack, context = {} }: Props) {
             <div className="prompt-grid advanced-fields">
               <label>
                 代码（可选）
-                <Input id="action-code" autoComplete="off" value={code} onChange={(event) => setCode(event.target.value)} />
+                <Input id="action-code" autoComplete="off" value={code} onChange={(event) => updateInput(() => setCode(event.target.value))} />
               </label>
               <label>
                 类型（可选）
-                <Input id="action-type" autoComplete="off" value={serviceType} onChange={(event) => setServiceType(event.target.value)} />
+                <Input id="action-type" autoComplete="off" value={serviceType} onChange={(event) => updateInput(() => setServiceType(event.target.value))} />
               </label>
               <label>
                 来源
@@ -107,7 +102,7 @@ export function ServiceAgentAction({ onBack, context = {} }: Props) {
                   id="action-source"
                   style={{ width: '100%' }}
                   value={sourceType}
-                  onChange={setSourceType}
+                  onChange={(value) => updateInput(() => setSourceType(value))}
                   options={[
                     { value: 'local', label: '本地目录' },
                     { value: 'git', label: 'Git 仓库' },
@@ -116,19 +111,19 @@ export function ServiceAgentAction({ onBack, context = {} }: Props) {
               </label>
               <label>
                 本地目录（可选）
-                <Input id="action-local-path" autoComplete="off" value={localPath} onChange={(event) => setLocalPath(event.target.value)} />
+                <Input id="action-local-path" autoComplete="off" value={localPath} onChange={(event) => updateInput(() => setLocalPath(event.target.value))} />
               </label>
               <label>
                 Git 地址（可选）
-                <Input id="action-git-url" autoComplete="off" value={gitUrl} onChange={(event) => setGitUrl(event.target.value)} />
+                <Input id="action-git-url" autoComplete="off" value={gitUrl} onChange={(event) => updateInput(() => setGitUrl(event.target.value))} />
               </label>
               <label>
                 远端名称（可选）
-                <Input id="action-remote" autoComplete="off" placeholder="origin" value={remote} onChange={(event) => setRemote(event.target.value)} />
+                <Input id="action-remote" autoComplete="off" placeholder="origin" value={remote} onChange={(event) => updateInput(() => setRemote(event.target.value))} />
               </label>
               <label>
                 集成分支（可选）
-                <Input id="action-branch" autoComplete="off" value={integrationBranch} onChange={(event) => setIntegrationBranch(event.target.value)} />
+                <Input id="action-branch" autoComplete="off" value={integrationBranch} onChange={(event) => updateInput(() => setIntegrationBranch(event.target.value))} />
               </label>
             </div>
           </details>
