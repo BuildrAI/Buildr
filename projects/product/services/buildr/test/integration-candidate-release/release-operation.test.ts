@@ -131,6 +131,7 @@ test('prepare creates one isolated release, validates before main, and reuses th
       git(merger, ['merge', '--no-ff', sourceCommit, '-m', 'release merge']);
       const merged = git(merger, ['rev-parse', 'HEAD']);
       git(merger, ['push', 'origin', 'HEAD:main']); git(workspace, ['worktree', 'remove', merger]);
+      git(workspace, ['push', 'origin', `:refs/heads/${pr.headRefName}`]);
       pr = { ...pr, state: 'MERGED', mergedAt: new Date().toISOString(), mergeCommit: { oid: merged } };
       return { status: 0, stdout: '' };
     }
@@ -174,6 +175,7 @@ test('prepare creates one isolated release, validates before main, and reuses th
   assert.equal(repeated.contextIdentity, ready.contextIdentity);
   assert.equal(repeated.sourceCommit, sourceCommit);
   assert.equal(dispatched, 1); assert.equal(merges, 1);
+  assert.equal(git(workspace, ['ls-remote', 'origin', `refs/heads/${pr.headRefName}`]), '', 'prepare must not recreate a merged carrier deleted by GitHub');
   const record = JSON.parse(fs.readFileSync(path.join(workspace, '.git/buildr/release-operations', `${version}.json`), 'utf8'));
   assert.equal(record.candidate.runId, 700);
   assert.equal(record.sources.length, 0);
@@ -192,7 +194,7 @@ test('publish binds cleanup to its context and resume never expands historical a
   const file = path.join(workspace, '.git/buildr/release-operations', `${version}.json`);
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, JSON.stringify({ schemaVersion: 'buildr.release-operation-input/v1', version, workspace, sources: [], context, transaction: {}, publication: null }));
-  const observed: boolean[] = [];
+  const observed: any[] = [];
   const evidence = { status: 'passed', identity: digest('4'), context, publish: { runId: 84, runAttempt: 1 }, observedAt: '2026-09-27T00:00:00.000Z' };
   const orchestrationDependencies = {
     runHostedReleaseTransaction: async (input: any, dependencies: any) => {
@@ -204,7 +206,7 @@ test('publish binds cleanup to its context and resume never expands historical a
     inspectHostedReleaseTransaction: async () => ({ status: 'passed', evidence }),
     reconcilePublishedReleaseWithDev: () => ({ status: 'passed', identity: digest('5'), recoveryIdentity: digest('6'), effects: [] }),
     closeoutReleaseGitResources: (input: any) => {
-      observed.push(input.authorizeRemoteDelete);
+      observed.push([input.authorizeRemoteDelete, input.cleanupPolicy]);
       return { status: 'passed', identity: digest('7'), formalReleaseRef: { disposition: input.authorizeRemoteDelete ? 'cleaned-and-verified' : 'retained-and-verified' }, effects: [] };
     },
     inspectTask: () => ({ record: { status: 'completed' }, recordDigest: digest('8') }),
@@ -219,13 +221,18 @@ test('publish binds cleanup to its context and resume never expands historical a
   const published = await runReleaseOperation({ action: 'publish', version, workspace, authorized: true }, dependencies);
   assert.equal(published.status, 'running', JSON.stringify(published));
   let state = JSON.parse(fs.readFileSync(file, 'utf8'));
-  assert.deepEqual(state.publication.cleanupAuthorization, { policy: 'delete-owned-release-branches/v1', contextIdentity: context.identity });
-  for (const mode of ['current', 'historical', 'mismatched']) {
+  assert.deepEqual(state.publication.cleanupAuthorization, { policy: 'delete-owned-release-branches/v2', contextIdentity: context.identity });
+  for (const mode of ['current', 'v1', 'historical', 'mismatched']) {
+    if (mode === 'v1') state.publication.cleanupAuthorization = { policy: 'delete-owned-release-branches/v1', contextIdentity: context.identity };
     if (mode === 'historical') delete state.publication.cleanupAuthorization;
     if (mode === 'mismatched') state.publication.cleanupAuthorization = { policy: 'delete-owned-release-branches/v1', contextIdentity: digest('9') };
     fs.writeFileSync(file, JSON.stringify(state));
     const resumed = await runReleaseOperation({ action: 'resume', version, workspace }, dependencies);
     assert.equal(resumed.status, 'passed', `${mode}: ${JSON.stringify(resumed)}`);
   }
-  assert.deepEqual(observed, [true, false, false]);
+  assert.deepEqual(observed, [[true, 'delete-owned-release-branches/v2'], [true, 'delete-owned-release-branches/v1'], [false, undefined], [false, undefined]]);
+  const recovered = await runReleaseOperation({ action: 'prepare', version, workspace }, dependencies);
+  assert.equal(recovered.status, 'passed', JSON.stringify(recovered));
+  assert.equal(recovered.action, 'resume');
+  assert.equal(recovered.effects.some((item: any) => item.type === 'remote-refs-refreshed'), false, 'a completed publication must not re-enter preparation or recreate release branches');
 });

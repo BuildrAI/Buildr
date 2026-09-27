@@ -53,9 +53,13 @@ function finding(code: any, expected: any, actual: any, source: any): any  {
   return { code, source, expected, actual };
 }
 
-function repositoryFromUrl(value: any): any  {
-  const match: any = /github\.com(?::|\/)([^/\s]+\/[^/\s]+?)(?:\.git)?$/.exec(String(value ?? '').trim());
-  return match?.[1] ?? null;
+export function repositoryFromUrl(value: any): any {
+  const text = String(value ?? '').trim().replace(/^git\+/u, '').replace(/^git@github\.com:/u, 'ssh://git@github.com/');
+  try {
+    const url = new URL(text);
+    if (url.hostname !== 'github.com' || !['https:', 'http:', 'ssh:', 'git:'].includes(url.protocol) || url.search || url.hash) return null;
+    return /^\/([\w.-]+\/[\w.-]+?)(?:\.git)?\/?$/u.exec(url.pathname)?.[1] ?? null;
+  } catch { return null; }
 }
 
 function environmentName(value: any): any  {

@@ -38,7 +38,9 @@ Agent 在 `product` Project 中的最小运行规则。
 - `services/buildr/resources/` 是文件型交付资源 authority；工程实现属于 `tools/`，普通生成结果属于被 Git 忽略的 `build/`，前端构建兼托管产物属于被 Git 忽略的 `web-dist/`。修改时按资源映射、安装方式或发布内容的实际影响核对相关边界；仅说明文字变化不要求遍历初始化、更新、安装与发布流程。
 - 未集成的产品候选只在已核对归属的隔离工作目录中执行；不得从候选工作目录更新保留的自举工作空间（Workspace）或共享用户运行时（Runtime）。
 - `verification.yml` 是 Product 验证能力、适用性和证明范围的声明 authority；Task Verification Application 是正式验证 current Result 的唯一 authority。普通收尾依据与当前内容相符的真实验证及交付事实报告，不得把普通命令、commit 或 push 冒充正式验证结果。
-- 收尾不得伪造验证或交付事实；任务结果登记、Git 交付、环境激活和资源清理保持独立。用户明确要求“收尾”已授权当前任务范围内的常规提交、集成和普通推送，不因本规则要求明确授权而重复询问；仍须核验范围与目标。该指令不授权 force push、merge commit、远端任务分支删除、丢弃改动或语义冲突决策。
+- 收尾不得伪造验证或交付事实；任务结果登记、Git 交付、环境激活和资源清理保持独立。用户明确要求“收尾”已授权当前任务范围内的常规提交、集成和普通推送，不因本规则要求明确授权而重复询问；仍须核验范围与目标。该指令本身不授权 force push、merge commit、远端任务分支删除、丢弃改动或语义冲突决策；以下仓库专属持续授权独立适用。
+- 仅在实际远端身份为 `BuildrAI/Buildr` 的产品仓库，长期保留的分支（Branch）为 `main`、`dev`；其他分支（Branch）只因尚未结束的工作保留，不以任务完成记录代替交付或清理事实。官方发布标签（Tag）、GitHub Release、npm 版本和发布证据长期保留。
+- 本仓库持续授权删除已证明属于当前任务的临时远端开发分支（Branch）：成果已经交付并由保留引用保全，无未交付内容、开放合并请求（Pull Request）或未结束运行占用，删除以实时观察的精确提交为条件。授权不包含 `main`、`dev`、其他任务、共享用途或归属未知的引用；查询未知、引用漂移或保全不足时必须保留受影响对象。发布引用只消费 `buildr-release` 与对应发布上下文（Context）绑定的清理授权，历史批量清理另需明确范围；本规则不扩大其他仓库的授权。
 - self-bootstrap activation 只由 root Rule 指定的唯一 owner 执行；Product Rule 不复制其路径分类、安装、CLI identity 或 Doctor 流程。
 - release tag、npm publication、GitHub Release 和其他发布副作用必须单独获得明确授权；`buildr-release` 是发布动作 owner，当前流程知识入口是 `knowledge/docs/flows/open-source-release.md`，本 Rule 不授权或编排发布动作。
 - 私有业务 workspace、私有业务规则和私有服务内容不得进入 `resources/` 或正式发布物。

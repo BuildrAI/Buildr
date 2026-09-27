@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.ts';
 import { cleanupReleaseSelection, inspectReleaseSelection, inspectReleaseSelectionCleanup, reconcileReleaseSelectionWithMain, inspectReleaseSourceProvenance } from './release-selection.ts';
 import { validateReleaseTransactionEvidence } from './release-transaction-evidence.ts';
+import { repositoryFromUrl } from './release-authority-preflight.ts';
 
 export const releaseGitConvergenceSchema: any = 'buildr.release-git-convergence/v1';
 
@@ -284,29 +285,6 @@ export function ensureReleaseToMainPullRequest(options: any = {}, dependencies: 
     const formalBranch: any = inspected.branch;
     const branch: any = inspected.carrierBranch;
     const repository: any = options.repository ?? 'BuildrAI/Buildr';
-    if (inspected.refs[formalBranch] !== inspected.candidate.commit) {
-      if (options.authorizeReleasePush !== true) {
-        return blocked(operation, 'release-branch-push-authorization-required', `Remote ${formalBranch} is absent and requires explicit push authorization.`, {
-          ...inspected,
-          nextActions: [`确认将${inspected.candidate.commit}推送到${remote}/${formalBranch}并建立matching generation carrier后重试。`],
-        });
-      }
-      pushReleaseBranch({ repo, remote, branch: formalBranch, commit: inspected.candidate.commit, before: inspected.refs[formalBranch] }, dependencies, effects);
-      inspected.refs[formalBranch] = inspected.candidate.commit;
-      effects.at(-1).type = 'formal-release-branch-pushed';
-    }
-    if (inspected.refs[branch] === null) {
-      if (options.authorizeReleasePush !== true) {
-        return blocked(operation, 'release-branch-push-authorization-required', `Remote ${branch} is absent and requires explicit push authorization.`, {
-          ...inspected,
-          nextActions: [`确认将${inspected.candidate.commit}推送到owned carrier ${remote}/${branch}后重试。`],
-        });
-      }
-      pushReleaseBranch({ repo, remote, branch, commit: inspected.candidate.commit, before: inspected.refs[branch] }, dependencies, effects);
-      inspected.refs[branch] = inspected.candidate.commit;
-      effects.at(-1).type = 'release-carrier-pushed';
-      effects.at(-1).generation = inspected.generation;
-    }
     const prReadback: any = run(options.ghCommand ?? 'gh', [
       'pr', 'list', '--repo', repository, '--state', 'all', '--base', main, '--head', branch,
       '--json', 'number,state,headRefOid,headRefName,baseRefName,url,mergedAt,mergeCommit,mergeStateStatus',
@@ -340,8 +318,40 @@ export function ensureReleaseToMainPullRequest(options: any = {}, dependencies: 
         inspected.main.mergeMethod = 'merge';
         inspected.main.mergeParents = mergeParents;
       }
-      return result(operation, 'ready', { ...inspected, pullRequest, effects, nextActions: [] });
+      if (pullRequest.state === 'MERGED') {
+        const mergeCommit = typeof pullRequest.mergeCommit === 'string' ? pullRequest.mergeCommit : pullRequest.mergeCommit?.oid;
+        if (!mergeCommit || !inspected.refs[main]
+            || git(repo, ['merge-base', '--is-ancestor', inspected.candidate.commit, mergeCommit], dependencies, { allowFailure: true }).status !== 0
+            || git(repo, ['merge-base', '--is-ancestor', mergeCommit, inspected.refs[main]], dependencies, { allowFailure: true }).status !== 0) {
+          return blocked(operation, 'release-main-history-not-preserved', 'The merged pull request does not preserve the frozen release source in current main.', { ...inspected, pullRequests, effects });
+        }
+        return result(operation, 'ready', { ...inspected, pullRequest, effects, nextActions: [] });
+      }
     }
+    if (inspected.refs[formalBranch] !== inspected.candidate.commit) {
+      if (options.authorizeReleasePush !== true) {
+        return blocked(operation, 'release-branch-push-authorization-required', `Remote ${formalBranch} is absent and requires explicit push authorization.`, {
+          ...inspected,
+          nextActions: [`确认将${inspected.candidate.commit}推送到${remote}/${formalBranch}并建立matching generation carrier后重试。`],
+        });
+      }
+      pushReleaseBranch({ repo, remote, branch: formalBranch, commit: inspected.candidate.commit, before: inspected.refs[formalBranch] }, dependencies, effects);
+      inspected.refs[formalBranch] = inspected.candidate.commit;
+      effects.at(-1).type = 'formal-release-branch-pushed';
+    }
+    if (inspected.refs[branch] === null) {
+      if (options.authorizeReleasePush !== true) {
+        return blocked(operation, 'release-branch-push-authorization-required', `Remote ${branch} is absent and requires explicit push authorization.`, {
+          ...inspected,
+          nextActions: [`确认将${inspected.candidate.commit}推送到owned carrier ${remote}/${branch}后重试。`],
+        });
+      }
+      pushReleaseBranch({ repo, remote, branch, commit: inspected.candidate.commit, before: inspected.refs[branch] }, dependencies, effects);
+      inspected.refs[branch] = inspected.candidate.commit;
+      effects.at(-1).type = 'release-carrier-pushed';
+      effects.at(-1).generation = inspected.generation;
+    }
+    if (pullRequests.length === 1) return result(operation, 'ready', { ...inspected, pullRequest: pullRequests[0], effects, nextActions: [] });
     if (options.authorizePullRequest !== true) {
       return blocked(operation, 'release-main-pr-authorization-required', `Creating the protected ${branch}→${main} pull request requires explicit authorization.`, {
         ...inspected,
@@ -426,12 +436,12 @@ export function reconcilePublishedReleaseWithDev(options: any = {}, dependencies
         status: 'published-but-dev-reconciliation-blocked', version, recoveryIdentity, publication: publicFacts, refs, expectedTree, actualMainTree,
       });
     }
-    if (refs[branch] !== null && refs[branch] !== expectedRelease) {
+    if (refs[branch] !== null && refs[branch] !== expectedRelease && options.inspectDriftedReleaseForCleanup !== true) {
       return blocked(operation, 'published-release-ref-drift', 'Publication succeeded, but the formal remote release ref does not match the frozen release source.', {
         status: 'published-but-dev-reconciliation-blocked', version, recoveryIdentity, publication: publicFacts, refs, expectedRelease,
       });
     }
-    if (refs[branch] === null) verifyPublishedSourcePreservation(repo, remote, evidence, main, dependencies);
+    if (refs[branch] !== expectedRelease) verifyPublishedSourcePreservation(repo, remote, evidence, main, dependencies);
     if (!refs[dev]) {
       return blocked(operation, 'published-dev-ref-missing', `Remote ${dev} is missing.`, {
         status: 'published-but-dev-reconciliation-blocked', version, recoveryIdentity, publication: publicFacts, refs,
@@ -502,118 +512,167 @@ function releaseOwnedWorktrees(repo: any, branches: any, dependencies: any): any
   }))).filter((entry: any) => branchRefs.has(entry.branch));
 }
 
-export function closeoutReleaseGitResources(options: any = {}, dependencies: any = {}): any  {
-  const operation: any = 'closeout';
+function remoteReleaseFamily(repo: string, remote: string, version: string, dependencies: any): Map<string, string> {
+  const prefix = `codex/release-main-${version}-g`;
+  const output = git(repo, ['ls-remote', '--heads', remote, `refs/heads/release-${version}`, `refs/heads/${prefix}*`], dependencies).stdout;
+  return new Map(output.trim().split(/\r?\n/u).filter(Boolean).map((line: string) => {
+    const [commit, ref] = line.trim().split(/\s+/u);
+    if (!ref?.startsWith('refs/heads/') || (ref !== `refs/heads/release-${version}` && !ref.startsWith(`refs/heads/${prefix}`))) throw new Error('Unexpected release branch readback.');
+    return [ref.slice('refs/heads/'.length), requiredSha(commit, ref)];
+  }));
+}
+
+function readGithubPages(repository: string, endpoint: string, options: any, repo: string, dependencies: any): any[] {
+  const response = run(options.ghCommand ?? 'gh', ['api', '--paginate', '--slurp', `repos/${repository}/${endpoint}`], repo, dependencies);
+  const pages = JSON.parse(response.stdout);
+  if (!Array.isArray(pages) || pages.length === 0) throw new Error('GitHub returned invalid paginated activity evidence.');
+  return pages;
+}
+
+function releaseActivityRepository(options: any, evidence: any, repo: string, remote: string, dependencies: any): string {
+  const repository = evidence.publish.repository;
+  if (!/^[\w.-]+\/[\w.-]+$/u.test(repository ?? '') || (options.repository && options.repository !== repository)) throw new Error('Cleanup repository does not match Publication evidence.');
+  for (const args of [['remote', 'get-url', '--all', remote], ['remote', 'get-url', '--push', '--all', remote]]) {
+    const urls = git(repo, args, dependencies).stdout.trim().split(/\r?\n/u);
+    if (!urls.length || urls.some((url: string) => repositoryFromUrl(url)?.toLowerCase() !== repository.toLowerCase())) throw new Error('The actual Git fetch/push target does not match Publication evidence.');
+  }
+  return repository;
+}
+
+function inspectReleaseBranchActivity(repo: string, branch: string, repository: string, options: any, dependencies: any): any {
+  const pullPages = readGithubPages(repository, 'pulls?state=open&per_page=100', options, repo, dependencies);
+  if (pullPages.some(page => !Array.isArray(page))) throw new Error('GitHub returned invalid pull request pages.');
+  const pullRequests = pullPages.flat();
+  if (pullRequests.some(pr => pr?.state !== 'open' || !Number.isSafeInteger(pr.number) || pr.number < 1
+      || typeof pr.head?.ref !== 'string' || !pr.head.ref || typeof pr.base?.ref !== 'string' || !pr.base.ref
+      || (pr.head.repo && !/^[\w.-]+\/[\w.-]+$/u.test(pr.head.repo.full_name ?? '')))) throw new Error('GitHub returned incomplete pull request identities.');
+  const activePullRequests = pullRequests.filter(pr => pr.base.ref === branch || (pr.head.ref === branch && (!pr.head.repo || pr.head.repo.full_name === repository)));
+  const runPages = readGithubPages(repository, `actions/runs?branch=${encodeURIComponent(branch)}&per_page=100`, options, repo, dependencies);
+  if (runPages.some(page => !Array.isArray(page?.workflow_runs) || !Number.isSafeInteger(page.total_count) || page.total_count < 0)) throw new Error('GitHub returned invalid workflow run pages.');
+  const runs = runPages.flatMap(page => page.workflow_runs);
+  if (runPages.some(page => page.total_count !== runs.length) || new Set(runs.map(item => item.id)).size !== runs.length
+      || runs.some(item => !Number.isSafeInteger(item.id) || item.id < 1 || typeof item?.status !== 'string' || item.head_branch !== branch)) throw new Error('GitHub workflow run evidence is incomplete.');
+  const activeRuns = runs.filter(item => item.status !== 'completed');
+  return { pullRequests: activePullRequests.map(pr => pr.number), runs: activeRuns.map(item => item.id) };
+}
+
+function closeoutPublishedReleaseBranches(options: any, dependencies: any, evidence: any): any {
+  const operation = 'closeout';
   const effects: any[] = [];
+  const findings: any[] = [];
+  const branches: any[] = [];
   try {
-    const repo: any = path.resolve(options.repo ?? process.cwd());
-    const remote: any = options.remote ?? 'origin';
-    const version: any = requiredVersion(options.version);
-    const generation: any = requiredGeneration(options.generation);
-    const expectedCommit: any = requiredSha(options.expectedCommit, 'expectedCommit');
-    const publicationEvidence: any = passedPublication(options.publicationEvidence);
-    const publishedSource: any = releaseSource(publicationEvidence.context);
-    if (publishedSource.version !== version || publishedSource.releaseCommit !== expectedCommit) {
-      return blocked(operation, 'release-closeout-publication-mismatch', 'Publication evidence does not match the requested release source.', { version, generation, expectedCommit });
+    const repo = path.resolve(options.repo ?? process.cwd());
+    const remote = options.remote ?? 'origin';
+    const version = requiredVersion(options.version);
+    const generation = requiredGeneration(options.generation);
+    const expectedCommit = requiredSha(options.expectedCommit, 'expectedCommit');
+    if (evidence.context.selection?.generation !== generation) throw new Error('Cleanup generation differs from the published context.');
+    const formalBranch = branchFor(version);
+    if (options.authorizeCarrierCleanup !== true || options.authorizeLocalSelectionCleanup !== true) {
+      return blocked(operation, 'release-cleanup-authorization-required', 'Release closeout requires the bound carrier and local cleanup authorization.');
     }
-    const formalBranch: any = branchFor(version);
-    const tag: any = publicationEvidence.release.tag;
-    if (tag !== `v${version}`) return blocked(operation, 'release-closeout-tag-name-mismatch', 'Publication evidence Tag does not match the release version.', { version, generation, expectedCommit, expectedTag: `v${version}`, actualTag: tag });
-    const remoteReleaseTag: any = remoteTag(repo, remote, tag, dependencies);
-    const localReleaseTag: any = localTag(repo, tag, dependencies);
-    if (!remoteReleaseTag || remoteReleaseTag.target !== publicationEvidence.release.tagCommit) {
-      return blocked(operation, 'release-closeout-remote-tag-drift', 'Remote Tag does not match Publication evidence.', { version, generation, expectedCommit, tag, expectedTarget: publicationEvidence.release.tagCommit, actual: remoteReleaseTag });
+    const preservation = verifyPublishedSourcePreservation(repo, remote, evidence, releaseBranchName(options.main ?? 'main', remote), dependencies);
+    const dev = releaseBranchName(options.dev ?? 'dev', remote);
+    const devHead = remoteHeads(repo, remote, [dev], dependencies)[dev];
+    if (!devHead) throw new Error('Current dev is missing; release generation ownership cannot be verified.');
+    const provenance = inspectReleaseSourceProvenance({ repo, sourceCommit: expectedCommit, generation, devRef: devHead }, dependencies);
+    const currentCarrier = releaseCarrierBranchFor(version, generation);
+    const allGenerations = options.cleanupPolicy === 'delete-owned-release-branches/v2';
+    if (allGenerations && options.authorizeRemoteDelete !== true) throw new Error('All-generation cleanup requires bound remote deletion authorization.');
+    const remoteRefs = allGenerations ? remoteReleaseFamily(repo, remote, version, dependencies)
+      : new Map<string, string>(Object.entries(remoteHeads(repo, remote, [formalBranch, currentCarrier], dependencies)).filter((entry: any) => entry[1] !== null) as [string, string][]);
+    const prefix = `codex/release-main-${version}-g`;
+    const localOutput = git(repo, ['for-each-ref', '--format=%(refname) %(objectname)', 'refs/heads/'], dependencies).stdout;
+    const localRefs = new Map<string, string>(localOutput.trim().split(/\r?\n/u).filter(Boolean).map((line: string) => {
+      const [ref, commit] = line.split(' ');
+      return [ref.slice('refs/heads/'.length), requiredSha(commit, ref)] as [string, string];
+    }).filter(([branch]: [string, string]) => branch === formalBranch || (allGenerations ? branch.startsWith(prefix) : branch === currentCarrier)));
+    const names = [...new Set([formalBranch, releaseCarrierBranchFor(version, generation), ...remoteRefs.keys(), ...localRefs.keys()])].sort();
+    const ownedWorktrees = releaseOwnedWorktrees(repo, names, dependencies);
+    const repository = releaseActivityRepository(options, evidence, repo, remote, dependencies);
+    const localReleaseTag = localTag(repo, evidence.release.tag, dependencies);
+    if (localReleaseTag && (localReleaseTag.object !== preservation.tag.object || localReleaseTag.target !== preservation.tag.target)) {
+      return blocked(operation, 'release-closeout-local-tag-drift', 'Local Tag differs from the official remote Tag and was retained.');
     }
-    if (localReleaseTag && (localReleaseTag.object !== remoteReleaseTag.object || localReleaseTag.target !== remoteReleaseTag.target)) {
-      return blocked(operation, 'release-closeout-local-tag-drift', 'Local Tag does not match the official remote Tag.', { version, generation, expectedCommit, tag, expected: remoteReleaseTag, actual: localReleaseTag });
-    }
-    const carrierBranch: any = releaseCarrierBranchFor(version, generation);
-    const remoteRefs: any = remoteHeads(repo, remote, [formalBranch, carrierBranch], dependencies);
-    const localFormal: any = localBranchCommit(repo, formalBranch, dependencies);
-    const localCarrier: any = localBranchCommit(repo, carrierBranch, dependencies);
-    const ownedWorktrees: any = releaseOwnedWorktrees(repo, [formalBranch, carrierBranch], dependencies);
-    const findings: any[] = [];
-    if (remoteRefs[formalBranch] !== null && remoteRefs[formalBranch] !== expectedCommit) findings.push({ code: 'formal-release-ref-drift', ref: `refs/heads/${formalBranch}`, expected: expectedCommit, actual: remoteRefs[formalBranch] });
-    if (localFormal !== null && localFormal !== expectedCommit) findings.push({ code: 'local-formal-release-ref-drift', ref: `refs/heads/${formalBranch}`, expected: expectedCommit, actual: localFormal });
-    if (remoteRefs[carrierBranch] !== null && remoteRefs[carrierBranch] !== expectedCommit) findings.push({ code: 'release-carrier-ref-drift', ref: `refs/heads/${carrierBranch}`, expected: expectedCommit, actual: remoteRefs[carrierBranch] });
-    if (localCarrier !== null && localCarrier !== expectedCommit) findings.push({ code: 'local-release-carrier-ref-drift', ref: `refs/heads/${carrierBranch}`, expected: expectedCommit, actual: localCarrier });
-    for (const worktree of ownedWorktrees) {
-      if (git(worktree.worktree, ['status', '--porcelain=v1', '--untracked-files=all'], dependencies).stdout.trim()) findings.push({ code: 'release-worktree-dirty', path: worktree.worktree });
-      if (worktree.HEAD !== expectedCommit) findings.push({ code: 'release-worktree-head-drift', path: worktree.worktree, ref: worktree.branch, expected: expectedCommit, actual: worktree.HEAD ?? null });
-    }
-    if (findings.length) return blocked(operation, 'release-closeout-identity-unknown', 'Release closeout found resources whose ownership or identity cannot be proved.', { version, generation, expectedCommit, findings });
-    if (options.authorizeRemoteDelete === true || remoteRefs[formalBranch] === null) {
-      verifyPublishedSourcePreservation(repo, remote, publicationEvidence, releaseBranchName(options.main ?? 'main', remote), dependencies);
-    }
-
-    const selectionCleanupInspection: any = inspectReleaseSelectionCleanup({ repo, version, publicationEvidence }, dependencies);
-    if (selectionCleanupInspection.status !== 'ready') {
-      return blocked(operation, 'release-selection-cleanup-blocked', selectionCleanupInspection.diagnostic?.message ?? 'Local selection cleanup is not ready.', { version, generation, expectedCommit, selectionCleanupInspection });
-    }
-
-    if (ownedWorktrees.length && options.authorizeLocalSelectionCleanup !== true) {
-      return blocked(operation, 'release-worktree-cleanup-authorization-required', 'Removing owned release worktrees requires explicit local closeout authorization.', { version, generation, expectedCommit, ownedWorktrees });
-    }
-    for (const worktree of ownedWorktrees) {
-      if (sameFilesystemPath(worktree.worktree, repo)) return blocked(operation, 'release-worktree-is-execution-root', `Release-owned branch ${worktree.branch} is checked out in the execution root.`, { version, generation, expectedCommit, ownedWorktrees });
-      const removal = { type: 'release-worktree-removed', path: worktree.worktree, ref: worktree.branch, commit: expectedCommit, state: 'unknown' };
-      effects.push(removal);
-      git(repo, ['worktree', 'remove', worktree.worktree], dependencies);
-      removal.state = 'confirmed';
-    }
-    if (remoteRefs[carrierBranch] !== null) {
-      if (options.authorizeCarrierCleanup !== true) {
-        return blocked(operation, 'release-carrier-cleanup-authorization-required', `Deleting owned carrier ${remote}/${carrierBranch} requires explicit closeout authorization.`, {
-          version, generation, expectedCommit, formalReleaseRef: { ref: `refs/heads/${formalBranch}`, commit: expectedCommit, disposition: 'retained-and-verified' },
-        });
+    for (const branch of names) {
+      const suffix = branch.slice(prefix.length);
+      const branchGeneration = branch === formalBranch ? generation : /^(?:0|[1-9]\d*)$/u.test(suffix) ? Number(suffix) : -1;
+      const expected = provenance.generationCommits[branchGeneration] ?? null;
+      const actual = remoteRefs.get(branch) ?? null;
+      const local = localRefs.get(branch) ?? null;
+      const item: any = { ref: `refs/heads/${branch}`, generation: branchGeneration, expectedCommit: expected, observedCommit: actual,
+        observedLocalCommit: local, remote: actual ? 'retained' : 'absent', disposition: 'retained' };
+      branches.push(item);
+      if (!actual && !local) { item.disposition = 'already-cleaned'; continue; }
+      try {
+        if (!expected || (actual && actual !== expected) || (local && local !== expected)) {
+          throw new Error('Release branch identity does not match its published generation.');
+        }
+        const worktrees = ownedWorktrees.filter((entry: any) => entry.branch === item.ref);
+        for (const worktree of worktrees) {
+          if (sameFilesystemPath(worktree.worktree, repo) || worktree.HEAD !== expected
+              || git(worktree.worktree, ['status', '--porcelain=v1', '--untracked-files=all'], dependencies).stdout.trim()) {
+            throw new Error('Release worktree is active, dirty, or has changed identity.');
+          }
+        }
+        const activity = inspectReleaseBranchActivity(repo, branch, repository, options, dependencies);
+        if (activity.pullRequests.length || activity.runs.length) {
+          item.activity = activity;
+          throw new Error('Release branch is still used by an open pull request or unfinished workflow run.');
+        }
+        if (actual && (branch !== formalBranch || options.authorizeRemoteDelete === true)) {
+          pushReleaseBranch({ repo, remote, branch, commit: expected, before: actual, remove: true }, dependencies, effects);
+          effects.at(-1).type = branch === formalBranch ? 'remote-release-branch-deleted' : 'remote-release-carrier-deleted';
+          item.remote = 'absent';
+        }
+        for (const worktree of worktrees) {
+          const effect = { type: 'release-worktree-removed', path: worktree.worktree, ref: item.ref, commit: expected, state: 'unknown' };
+          effects.push(effect);
+          git(repo, ['worktree', 'remove', worktree.worktree], dependencies);
+          effect.state = 'confirmed';
+        }
+        if (local && branch !== formalBranch) {
+          git(repo, ['update-ref', '-d', item.ref, expected], dependencies);
+          effects.push({ type: 'local-release-carrier-deleted', ref: item.ref, commit: expected, state: 'confirmed' });
+        }
+        item.disposition = branch === formalBranch && actual && options.authorizeRemoteDelete !== true ? 'retained-by-policy' : 'cleaned';
+      } catch (error: any) {
+        item.reason = error.message;
+        findings.push({ code: 'release-branch-retained', ref: item.ref, expectedCommit: expected, observedCommit: actual, message: error.message });
       }
-      pushReleaseBranch({ repo, remote, branch: carrierBranch, commit: expectedCommit, before: remoteRefs[carrierBranch], remove: true }, dependencies, effects);
-      effects.at(-1).type = 'remote-release-carrier-deleted';
     }
-    if (localCarrier !== null) {
-      if (options.authorizeCarrierCleanup !== true) {
-        return blocked(operation, 'release-carrier-cleanup-authorization-required', `Deleting owned local carrier ${carrierBranch} requires explicit closeout authorization.`, { version, generation, expectedCommit, effects });
-      }
-      const currentBranch: any = git(repo, ['branch', '--show-current'], dependencies).stdout.trim();
-      if (currentBranch === carrierBranch) return blocked(operation, 'release-carrier-checked-out', `Owned carrier ${carrierBranch} is currently checked out.`, { version, generation, expectedCommit, effects });
-      git(repo, ['branch', '-D', carrierBranch], dependencies);
-      effects.push({ type: 'local-release-carrier-deleted', ref: `refs/heads/${carrierBranch}`, commit: expectedCommit });
-    }
-    if (options.authorizeLocalSelectionCleanup !== true) {
-      return blocked(operation, 'release-selection-cleanup-authorization-required', 'Deleting the local release branch and lifecycle refs requires explicit closeout authorization.', { version, generation, expectedCommit, effects });
-    }
-    const selectionCleanup: any = cleanupReleaseSelection({ repo, version, confirm: true, publicationEvidence }, dependencies);
+    const formal = branches.find(item => item.ref === `refs/heads/${formalBranch}`);
+    const formalReleaseRef = { ref: formal.ref, commit: expectedCommit, observedCommit: formal.observedCommit, disposition: formal.remote === 'absent' ? 'cleaned-and-verified' : formal.disposition === 'retained-by-policy' ? 'retained-and-verified' : 'retained' };
+    if (findings.length) return blocked(operation, 'release-cleanup-partial', 'Some release resources were retained; independently safe resources were cleaned.', { version, generation, expectedCommit, formalReleaseRef, branches, findings, effects });
+    const selectionCleanup = cleanupReleaseSelection({ repo, version, confirm: true, publicationEvidence: evidence }, dependencies);
     effects.push(...selectionCleanup.effects);
-    if (selectionCleanup.status !== 'passed') return blocked(operation, 'release-selection-cleanup-blocked', selectionCleanup.diagnostic?.message ?? 'Local selection cleanup failed.', { version, generation, expectedCommit, effects, selectionCleanup });
+    if (selectionCleanup.status !== 'passed') return blocked(operation, 'release-selection-cleanup-blocked', selectionCleanup.diagnostic?.message ?? 'Local selection cleanup failed.', { version, branches, effects, selectionCleanup });
     if (localReleaseTag) {
-      const deleted: any = git(repo, ['update-ref', '-d', localReleaseTag.ref, localReleaseTag.object], dependencies, { allowFailure: true });
-      if (deleted.status !== 0) return blocked(operation, 'release-local-tag-cleanup-blocked', 'Local Tag changed before cleanup.', { version, generation, expectedCommit, tag, expected: localReleaseTag, effects });
+      git(repo, ['update-ref', '-d', localReleaseTag.ref, localReleaseTag.object], dependencies);
       effects.push({ type: 'local-release-tag-deleted', ref: localReleaseTag.ref, object: localReleaseTag.object, target: localReleaseTag.target });
     }
-    let disposition = remoteRefs[formalBranch] === null ? 'cleaned-and-verified' : 'retained-and-verified';
-    if (options.authorizeRemoteDelete === true) {
-      const cleanup = cleanupRemoteReleaseBranch({ repo, remote, main: options.main, publicationEvidence, authorizeRemoteDelete: true }, dependencies);
-      effects.push(...cleanup.effects);
-      if (cleanup.status !== 'passed') return blocked(operation, 'release-remote-cleanup-blocked', cleanup.diagnostic?.message ?? 'Remote release cleanup failed.', { version, generation, expectedCommit, effects, cleanup });
-      disposition = 'cleaned-and-verified';
-    }
-    const closeoutIdentity: any = identity({ version, generation, expectedCommit, formalReleaseRef: disposition, remoteTag: remoteReleaseTag.object, localTag: 'absent', carrier: 'absent', selection: 'absent' });
-    return result(operation, 'passed', {
-      action: effects.length ? 'cleaned' : 'already-cleaned',
-      version,
-      generation,
-      expectedCommit,
-      identity: closeoutIdentity,
-      formalReleaseRef: { ref: `refs/heads/${formalBranch}`, commit: expectedCommit, disposition },
-      tag: { ref: remoteReleaseTag.ref, target: remoteReleaseTag.target, object: remoteReleaseTag.object, remote: 'retained-and-verified', local: 'absent' },
-      resources: {
-        carrier: { ref: `refs/heads/${carrierBranch}`, local: 'absent', remote: 'absent' },
-        selection: { localBranch: 'absent', lifecycleRefs: 'absent' },
-      },
-      effects,
-    });
+    return result(operation, 'passed', { action: effects.length ? 'cleaned' : 'already-cleaned', version, generation, expectedCommit,
+      identity: identity({ version, generation, expectedCommit, policy: options.cleanupPolicy ?? 'retain-formal-release-branch', remoteTag: preservation.tag.object, resources: 'absent' }),
+      formalReleaseRef, branches, tag: { ...preservation.tag, remote: 'retained-and-verified', local: 'absent' },
+      resources: { carrier: { ref: `refs/heads/${currentCarrier}`, local: 'absent', remote: 'absent' },
+        ...(allGenerations ? { carriers: { scope: 'same-version', disposition: 'absent' } } : {}), selection: { localBranch: 'absent', lifecycleRefs: 'absent' } }, effects });
   } catch (error: any) {
-    return blocked(operation, 'release-closeout-blocked', error.message, { effects });
+    return blocked(operation, 'release-closeout-blocked', error.message, { branches, findings, effects });
+  }
+}
+
+export function closeoutReleaseGitResources(options: any = {}, dependencies: any = {}): any {
+  try {
+    const evidence = passedPublication(options.publicationEvidence);
+    const source = releaseSource(evidence.context);
+    const generation = requiredGeneration(options.generation);
+    if (source.version !== options.version || source.releaseCommit !== options.expectedCommit || evidence.context.selection?.generation !== generation) {
+      return blocked('closeout', 'release-closeout-publication-mismatch', 'Publication evidence does not match the requested release source and generation.');
+    }
+    return closeoutPublishedReleaseBranches({ ...options, generation }, dependencies, evidence);
+  } catch (error: any) {
+    return blocked('closeout', 'release-closeout-blocked', error.message);
   }
 }
 
@@ -639,6 +698,8 @@ export function cleanupRemoteReleaseBranch(options: any = {}, dependencies: any 
         nextActions: [`确认删除${remote}/${branch}（${actual}）后重试。`],
       });
     }
+    const activity = inspectReleaseBranchActivity(repo, branch, releaseActivityRepository(options, evidence, repo, remote, dependencies), options, dependencies);
+    if (activity.pullRequests.length || activity.runs.length) return blocked(operation, 'release-branch-active', 'Release branch is still used by an open pull request or unfinished workflow run.', { version, activity });
     pushReleaseBranch({ repo, remote, branch, commit: expected, before: actual, remove: true }, dependencies, effects);
     effects.at(-1).type = 'remote-release-branch-deleted';
     const after: any = remoteHeads(repo, remote, [branch], dependencies)[branch];

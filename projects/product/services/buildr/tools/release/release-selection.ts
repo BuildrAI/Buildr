@@ -342,7 +342,8 @@ export function inspectReleaseSourceProvenance(options: any, dependencies: any =
   const history = selectionCommits(devBaseline, sourceCommit, repo, dependencies);
   if (history.history.length !== generation || history.history.some((entry: any) => entry.kind === 'invalid')) throw new Error('Published release contains unproven selection history.');
   if (![devBaseline, ...history.selectionChain.map((entry: any) => entry.sourceDevCommit)].every(commit => ancestor(commit, devHead, repo, dependencies))) throw new Error('Published baseline or selected source is no longer contained by current dev.');
-  return { status: 'passed', disposition: 'published-git-history', devBaseline, devHead, generation, releaseHead: sourceCommit, releaseTree: treeOf(sourceCommit, repo, dependencies), selectionChain: history.selectionChain, effects: [] };
+  const generationCommits = [devBaseline, ...history.history.map((entry: any) => entry.resultReleaseCommit)];
+  return { status: 'passed', disposition: 'published-git-history', devBaseline, devHead, generation, releaseHead: sourceCommit, releaseTree: treeOf(sourceCommit, repo, dependencies), selectionChain: history.selectionChain, generationCommits, effects: [] };
 }
 
 export function createReleaseSelection(options: any = {}, dependencies: any = {}): any  {
