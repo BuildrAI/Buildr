@@ -1,5 +1,5 @@
-import { detectManagedRuntimeAdapters, selectWorkspaceRuntime } from './application/runtime-selection.ts';
 import { createSkillContentQuery } from './application/skill-content-query.ts';
+import { registerDshPluginDelivery } from './application/dsh-plugin-delivery.ts';
 import type { DoctorInput } from '../diagnostics/application/doctor-application.ts';
 import { WORKSPACE_ASSET_SUPPORT, type WorkspaceAssetSupport, WORKSPACE_ROOT_GITIGNORE_ENTRIES } from '../workspace/module.ts';
 import { registerDomainsCommands, type CommandsDependencies } from './application/commands.ts';
@@ -22,7 +22,6 @@ import {
   SUPPORTED_AGENT_IDS,
   UNSUPPORTED_AGENT_GUIDANCE,
   getRuntimeAdapter,
-  resolveRuntimeSelection,
   isSupportedAgent,
   runtimeDiscoveryPayload,
   selectAdapterImplementation,
@@ -92,9 +91,6 @@ function runtimeCompositionPort() {
     SUPPORTED_AGENT_IDS,
     UNSUPPORTED_AGENT_GUIDANCE,
     getRuntimeAdapter,
-    resolveRuntimeSelection,
-    selectWorkspaceRuntime,
-    detectManagedRuntimeAdapters,
     isSupportedAgent,
     reconcileRuntimePlan,
     runtimeDiscoveryPayload,
@@ -114,9 +110,6 @@ function runtimeDiagnosticsReadModel(): any  {
     adapters: RUNTIME_ADAPTERS,
     supportedAgentIds: SUPPORTED_AGENT_IDS,
     getRuntimeAdapter,
-    resolveRuntimeSelection,
-    selectWorkspaceRuntime,
-    detectManagedRuntimeAdapters,
     isSupportedAgent,
     assembleRuntimeProjection,
     reconcileRuntimePlan,
@@ -464,9 +457,9 @@ export function createAgentAssetsModule(infrastructure: AgentAssetsInfrastructur
       });
       const cliApplication = Object.freeze({
         ...application,
+        ...registerDshPluginDelivery(infrastructure),
         doctor,
         getRuntimeAdapter: adapters.getRuntimeAdapter,
-        selectWorkspaceRuntime,
         usage: (...args: any[]) => infrastructure.usage(...args),
         withResolvedTarget: infrastructure.withResolvedTarget,
         optionValue: infrastructure.optionValue,

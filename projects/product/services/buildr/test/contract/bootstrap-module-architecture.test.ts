@@ -159,7 +159,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     provides: [AGENT_ASSETS_APPLICATION, AGENT_ASSETS_INTERNAL, AGENT_ASSETS_OPENSPEC_SUPPORT, AGENT_ASSETS_DIAGNOSTICS_READ, AGENT_ASSETS_PACKAGE_CHECK_SUPPORT, AGENT_ASSETS_DIAGNOSTICS_BINDER],
     contributions: {
       cli: [
-        'package check', 'package build', 'runtime list',
+        'package check', 'package build', 'runtime list', 'runtime dsh-plugin',
         'commands check', 'commands add', 'commands remove',
         'component list', 'component check', 'component install', 'component uninstall',
         'rules add', 'rules remove',
@@ -297,7 +297,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
   }]);
   assert.deepEqual(runtimeContributions(runtime, 'cli').map((item: any) => item.key), [
     'assets', 'init', 'mutation recover', 'project create', 'service create',
-    'package check', 'package build', 'runtime list',
+    'package check', 'package build', 'runtime list', 'runtime dsh-plugin',
     'commands check', 'commands add', 'commands remove',
     'component list', 'component check', 'component install', 'component uninstall',
     'rules add', 'rules remove',

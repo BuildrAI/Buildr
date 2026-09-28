@@ -12,9 +12,13 @@ test('Candidate environment profiles are closed and select the minimum preparati
     'buildr-dependencies',
     'generated-contracts-and-test-context',
   ]);
+  // The artifact profile also produces the DSH plugin, so a release candidate cannot be built
+  // without it: the SDK baseline is fetched and the artifact built before the candidate consumes it.
   assert.deepEqual(candidateEnvironmentPlan('artifact', roots).map((item) => item.id), [
     'buildr-dependencies',
     'buildr-web-dependencies',
+    'dsh-sdk-baseline',
+    'dsh-plugin-artifact',
   ]);
   assert.deepEqual(candidateEnvironmentPlan('source-runtime', roots).map((item) => item.id), [
     'buildr-dependencies',
