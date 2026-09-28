@@ -87,6 +87,7 @@
       - [interfaces/cli/work-context-cli.ts](../../services/buildr/src/modules/task/work-context/interfaces/cli/work-context-cli.ts) — 智能体（Agent）读取和记录同一摘要
     - `infrastructure/` — Git 位置与删除安全
       - [git-worktree-provider.ts](../../services/buildr/src/modules/task/infrastructure/git-worktree-provider.ts) — 创建和检查真实位置，清理前复核归属与成果保留
+      - [git-worktree-observation.ts](../../services/buildr/src/modules/task/infrastructure/git-worktree-observation.ts) — 从明确的当前对象核对来源、Git 身份与嵌套集合，保护既有位置及删除操作；不补造创建历史
     - `change/application/` — 任务限定材料阅读
       - [change-application.ts](../../services/buildr/src/modules/task/change/application/change-application.ts) — 关联变更与本机任务原型的独立发现、身份、安全读取和局部诊断
     - **`commits/`** — 当前可达提交的只读关联

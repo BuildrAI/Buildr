@@ -675,6 +675,7 @@ artifacts:
       - task-source-work-context-http-9257a1
       - task-source-work-context-cli-9a134a
       - task-source-git-worktree-provider-d1b252
+      - task-source-git-worktree-observation
       - task-source-module-19a342
       - task-source-workbench-application-d9c5aa
       - task-source-preferences-application-8b4fe8
@@ -1895,11 +1896,16 @@ sources:
     link: services/buildr/resources/workspace/skills/buildr/task-triage/SKILL.md
     summary: 分别判断语义、执行形态和独立工作位置；只在实际命中时交接专业方法。
     observedDigest: 4d09d813ff4d178c88c730efb3a647671bb62d109158ff043b8f0a786ab50cbf
+  - id: task-source-git-worktree-observation
+    title: 当前 Git 对象核验
+    kind: code
+    path: services/buildr/src/modules/task/infrastructure/git-worktree-observation.ts
+    summary: 核对明确对象的来源、实际 Git 身份、占用和完整嵌套集合；缺少历史登记时支持重新观察，不保存创建历史。
   - id: task-source-git-worktree-provider-d1b252
     title: Git 工作树安全
     kind: code
     path: services/buildr/src/modules/task/infrastructure/git-worktree-provider.ts
-    summary: 解析真实代码库集合，预检身份和归属，创建或检查独立位置，删除前复核源版本与成果保留。
+    summary: 解析真实代码库集合，创建独立位置；检查和清理可使用已有登记或明确当前对象，删除前复核源版本与成果保留。
     observedDigest: 0d0db4a11616b217663527e867d7f32663b93f8daabca4ad7b4e6b6a18d3cd7a
   - id: task-source-spec-5aed6b
     title: 工作摘要规范
@@ -3130,6 +3136,9 @@ relations:
     to: task-system
     kind: implements
   - from: task-source-work-context-cli-9a134a
+    to: task-system
+    kind: implements
+  - from: task-source-git-worktree-observation
     to: task-system
     kind: implements
   - from: task-source-git-worktree-provider-d1b252

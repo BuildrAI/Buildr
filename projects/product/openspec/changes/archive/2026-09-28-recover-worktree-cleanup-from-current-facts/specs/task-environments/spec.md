@@ -1,9 +1,4 @@
-# task-environments Specification
-
-## Purpose
-定义统一Task Environment退役后的产品边界：普通工作不需要环境记录，位置、准备、资源与清理由独立owner负责。
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Git worktree provider 必须只返回窄 Git evidence
 Buildr MUST以`buildr.git-worktree-provider/v1`表达Git Worktree provider，并 MUST让默认`task-worktree` provider只拥有repository plan、checkout、branch、HEAD、remote、clean、worktree registration、caller-reviewed delivery input与Git cleanup effects。Provider MAY由Agent、Task Finish或OpenSpec/Change reader直接调用，且 MUST不读取或兼容Task Environment、Task Contribution、Contribution Handoff、统一ready、业务交付、Preview资源或总cleanup结论。
@@ -73,20 +68,6 @@ Buildr MUST以`buildr.git-worktree-provider/v1`表达Git Worktree provider，并
 - **THEN** 提供者（Provider）MUST 重新验证版本、占用及交付保留位置，安全继续剩余动作或逐项确认不存在
 - **AND** 只有实际删除或逐项确认全部目标不存在后 MUST 返回 `cleaned`，并区分删除与不存在确认效果
 
-### Requirement: Buildr不得提供统一Task Environment模块
-
-Buildr MUST不提供统一Task Environment Application、Plan、Receipt、ready状态、恢复、资源注册、总cleanup、CLI、HTTP、Web页签或SQLite current。普通编辑、构建、测试、Review、Verification、Finish和交付 MUST不因缺少环境记录而失败。
-
-#### Scenario: 普通任务直接工作
-- **WHEN** 智能体（Agent）已按任务分流确认实际工作位置，默认隔离或用户已明确要求原地修改，且不需要额外准备
-- **THEN** Buildr MUST不创建任何Environment记录
-- **AND** Agent MAY直接编辑、构建、测试、Review、Verification与交付
-
-#### Scenario: 局部资源失败
-- **WHEN** Preparation、Preview或Worktree cleanup中的具体动作失败
-- **THEN** 失败 MUST只影响依赖该动作的工作
-- **AND** 已成立的Task结果、Verification、交付或Publication事实 MUST保持成立
-
 ### Requirement: 工作树调用指引必须在不同宿主中保持契约与资源归属一致
 
 Buildr 的工作树（Worktree）调用指引 MUST 要求智能体（Agent）在创建、检查和清理时遵循当前有效能力绑定（Capability Binding）及 `buildr.git-worktree-provider/v1`，保留默认创建目录 `.worktrees/<task-id>`、逐仓身份与删除安全保证；已有位置 MUST 允许通过显式当前对象核验接续，不能仅因缺少历史登记或更换智能体（Agent）而永久拒绝。指引 MUST 区分工具可用、契约兼容和既有资源归属，MUST NOT 把某一宿主的原生工具或目录当成通用例外。
@@ -105,21 +86,3 @@ Buildr 的工作树（Worktree）调用指引 MUST 要求智能体（Agent）在
 - **WHEN** 当前能力绑定（Capability Binding）与既有工作树（Worktree）的创建实现不同
 - **THEN** 指引 MUST 要求先核对真实资源归属及已有证据；证据缺失时通过明确当前对象核验接续
 - **AND** 无法核验时 MUST 保留目录，不混用清理入口，也不撤销已成立的交付事实
-
-### Requirement: 新工作树标识默认使用稳定语义名称
-
-Buildr 的任务与工作树（Worktree）指引 MUST 在为新工作选择任务标识（Task ID）时默认使用简短、稳定的语义名称，不主动添加日期。已有任务标识（Task ID）和用户明确命名 MUST 继续沿用；该默认值 MUST NOT 改变命令接受的合法格式或创建另一套名称字段。
-
-#### Scenario: 没有既有标识或用户指定名称
-- **WHEN** 智能体（Agent）需要为新工作选择标识且用户没有规定命名
-- **THEN** 指引 MUST 使用 `worktree-contract-consistency` 这类语义名称，不因当天日期主动添加前缀
-- **AND** 必须区分同名但不同的任务时 MUST 核对真实归属并使用简短语义后缀，而不是复用他人目录
-
-#### Scenario: 既有标识或用户命名包含日期
-- **WHEN** 继续已有任务或用户明确指定了合法的带日期名称
-- **THEN** 指引 MUST 保留其标识和已有位置，不拒绝、截去日期、另建记录或自动重命名
-
-#### Scenario: OpenSpec 变更进入归档
-- **WHEN** 关联的 OpenSpec 变更归档并获得归档日期
-- **THEN** 指引 MUST 保持工作树（Worktree）与分支名称不变
-- **AND** 归档本身 MUST NOT 替代原有交付核验和清理条件

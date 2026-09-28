@@ -122,6 +122,131 @@ function cleanupArgs(root: string, taskId: string, source: string, delivered: st
   ];
 }
 
+function observedFile(root: string, checkoutPath: string, branch: string): string {
+  const file = path.join(root, '.git', 'observed-checkouts.json');
+  fs.writeFileSync(file, JSON.stringify([{ selector: 'workspace', sourceRepository: root, checkoutPath, branch }]));
+  return file;
+}
+
+test('缺少历史登记时不误报cleaned，显式当前对象可检查和清理且不补造历史', () => {
+  const root = createGitWorkspace();
+  const taskId = 'external-worktree';
+  const checkout = path.join(root, '.worktrees', 'other-host-location');
+  const branch = `codex/${taskId}`;
+  git(root, ['worktree', 'add', '-b', branch, checkout, 'main']);
+  const head = git(checkout, ['rev-parse', 'HEAD']);
+  const evidence = path.join(root, '.git', 'buildr', 'task-worktrees', `${taskId}.json`);
+  const absentInput = buildr(cleanupArgs(root, taskId, head, head), 1);
+  assert.equal(absentInput.status, 'blocked');
+  assert.equal(absentInput.diagnostic?.code, 'git_worktree_evidence_missing');
+  assert.deepEqual(absentInput.effects, []);
+  assert.equal(fs.existsSync(checkout), true);
+
+  const observation = observedFile(root, checkout, branch);
+  const inspected = buildr(['worktree', 'inspect', taskId, '--target', root, '--observed-checkouts', observation, '--json']);
+  assert.equal(inspected.status, 'ready');
+  assert.equal(inspected.evidenceSource, 'observed');
+  assert.equal(inspected.repositories[0].startPoint, null);
+  assert.equal(fs.existsSync(evidence), false);
+  const args = [...cleanupArgs(root, taskId, head, head), '--observed-checkouts', observation];
+  const cleaned = buildr(args);
+  assert.equal(cleaned.status, 'cleaned');
+  assert.equal(cleaned.evidenceSource, 'observed');
+  assert.equal(cleaned.effects.some((item) => item.type === 'provider-evidence-removed'), false);
+  assert.equal(fs.existsSync(checkout), false);
+  assert.equal(fs.existsSync(evidence), false);
+  git(root, ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`], 1);
+
+  const repeated = buildr(args);
+  assert.equal(repeated.status, 'cleaned');
+  assert.deepEqual(repeated.effects.map((item) => item.type), ['worktree-absence-confirmed', 'local-branch-absence-confirmed']);
+});
+
+test('缺少历史登记时仍保护脏文件、版本、保留引用、锁定和遗漏嵌套仓库', () => {
+  const root = createGitWorkspace();
+  const taskId = 'observed-safety';
+  const checkout = path.join(root, '.worktrees', taskId);
+  const branch = `codex/${taskId}`;
+  git(root, ['worktree', 'add', '-b', branch, checkout, 'main']);
+  const head = git(checkout, ['rev-parse', 'HEAD']);
+  const observation = observedFile(root, checkout, branch);
+  const args = [...cleanupArgs(root, taskId, head, head), '--observed-checkouts', observation];
+  fs.writeFileSync(path.join(checkout, 'unsaved.txt'), 'preserve');
+  assert.equal(buildr(args, 1).diagnostic?.code, 'git_worktree_source_changed');
+  assert.equal(fs.readFileSync(path.join(checkout, 'unsaved.txt'), 'utf8'), 'preserve');
+  fs.unlinkSync(path.join(checkout, 'unsaved.txt'));
+  assert.equal(buildr([...cleanupArgs(root, taskId, '0'.repeat(40), head), '--observed-checkouts', observation], 1).diagnostic?.code, 'git_worktree_source_changed');
+  assert.equal(buildr([...cleanupArgs(root, taskId, head, '0'.repeat(40)), '--observed-checkouts', observation], 1).diagnostic?.code, 'git_worktree_delivery_target_mismatch');
+  git(root, ['worktree', 'lock', checkout, '--reason', 'another agent is using this']);
+  assert.equal(buildr(['worktree', 'inspect', taskId, '--target', root, '--observed-checkouts', observation, '--json']).status, 'ready');
+  assert.equal(buildr(args, 1).diagnostic?.code, 'git_worktree_identity_mismatch');
+  git(root, ['worktree', 'unlock', checkout]);
+  const nested = path.join(checkout, 'projects', 'unknown');
+  fs.mkdirSync(nested, { recursive: true });
+  git(nested, ['init', '-b', 'main']);
+  const omitted = buildr(args, 1);
+  assert.equal(omitted.diagnostic?.code, 'git_worktree_identity_mismatch');
+  assert.deepEqual(omitted.effects, []);
+  assert.equal(fs.existsSync(path.join(nested, '.git')), true);
+  assert.equal(git(root, ['rev-parse', branch]), head);
+  fs.rmSync(nested, { recursive: true });
+  git(checkout, ['init', '--bare', nested]);
+  assert.equal(buildr(args, 1).diagnostic?.code, 'git_worktree_identity_mismatch');
+  assert.equal(fs.existsSync(path.join(nested, 'HEAD')), true);
+});
+
+test('当前对象不能掩盖已有登记冲突或误指主目录及不同Git仓库', () => {
+  const root = createGitWorkspace();
+  const taskId = 'observed-identity';
+  const created = buildr(createArgs(root, taskId));
+  const checkout = created.repositories[0].checkoutPath;
+  const head = git(root, ['rev-parse', 'HEAD']);
+  const observation = observedFile(root, checkout, 'codex/wrong-owner');
+  const args = [...cleanupArgs(root, taskId, head, head), '--observed-checkouts', observation];
+  const valid = fs.readFileSync(observation, 'utf8');
+  fs.writeFileSync(observation, JSON.stringify([...JSON.parse(valid), ...JSON.parse(valid)]));
+  assert.equal(buildr(args, 1).diagnostic?.code, 'git_worktree_observation_invalid');
+  fs.writeFileSync(observation, valid);
+  assert.equal(buildr(args, 1).diagnostic?.code, 'git_worktree_identity_mismatch');
+  const original = fs.readFileSync(created.evidencePath, 'utf8');
+  fs.writeFileSync(created.evidencePath, '{invalid');
+  assert.equal(buildr(args, 1).status, 'blocked');
+  assert.equal(fs.readFileSync(created.evidencePath, 'utf8'), '{invalid');
+  fs.writeFileSync(created.evidencePath, original);
+  fs.unlinkSync(created.evidencePath);
+  observedFile(root, root, 'main');
+  assert.equal(buildr(args, 1).diagnostic?.code, 'git_worktree_identity_mismatch');
+  const foreign = path.join(root, '.worktrees', 'foreign');
+  fs.mkdirSync(foreign, { recursive: true });
+  git(foreign, ['init', '-b', 'main']);
+  observedFile(root, foreign, `codex/${taskId}`);
+  assert.equal(buildr(args, 1).diagnostic?.code, 'git_worktree_identity_mismatch');
+  assert.equal(fs.existsSync(checkout), true);
+  assert.equal(fs.existsSync(path.join(foreign, '.git')), true);
+});
+
+test('无登记清理的部分效果可接续，分支被其他位置占用时保留', () => {
+  const root = createGitWorkspace();
+  const taskId = 'observed-resume';
+  const checkout = path.join(root, '.worktrees', taskId);
+  const branch = `codex/${taskId}`;
+  git(root, ['worktree', 'add', '-b', branch, checkout, 'main']);
+  const head = git(root, ['rev-parse', 'HEAD']);
+  const observation = observedFile(root, checkout, branch);
+  const args = [...cleanupArgs(root, taskId, head, head), '--observed-checkouts', observation];
+  const partial = buildr(args, 1, { ...process.env, BUILDR_FAULT_WORKTREE_BRANCH_REMOVE_SELECTOR: 'workspace' });
+  assert.equal(partial.diagnostic?.code, 'git_worktree_branch_remove_failed');
+  assert.equal(fs.existsSync(checkout), false);
+  const other = path.join(root, '.worktrees', 'new-owner');
+  git(root, ['worktree', 'add', other, branch]);
+  const occupied = buildr(args, 1);
+  assert.equal(occupied.diagnostic?.code, 'git_worktree_identity_mismatch');
+  assert.deepEqual(occupied.effects, []);
+  assert.equal(git(other, ['symbolic-ref', '--short', 'HEAD']), branch);
+  git(root, ['worktree', 'remove', other]);
+  assert.equal(buildr(args).status, 'cleaned');
+});
+
 test('worktree CLI创建、检查并按逐仓完整提交安全清理', () => {
   const root = createGitWorkspace();
   const taskId = 'direct-worktree';
@@ -271,4 +396,19 @@ test('多独立仓库要求成对覆盖全部selector并按nested-first清理', 
   });
   assert.equal(cleaned.status, 'cleaned');
   for (const repository of prepared.repositories) assert.equal(fs.existsSync(String(repository.checkoutPath)), false);
+
+  const recreated = provider.prepareGitWorktrees({ workspaceRoot: root, taskId, branch: `codex/${taskId}`, includes: ['service:demo/api'] });
+  assert.equal(recreated.status, 'ready');
+  const observed = recreated.repositories.map((item) => ({ selector: String(item.selector), sourceRepository: String(item.sourceRepository), checkoutPath: String(item.checkoutPath), branch: String(item.branch) }));
+  fs.unlinkSync(provider.gitWorktreeEvidencePath(root, taskId));
+  const omitted = provider.cleanupGitWorktrees({ workspaceRoot: root, taskId, allowCompleted: true, observedCheckouts: observed.filter((item) => item.selector === 'workspace'), cleanupDelivery: { expectedSources: { workspace: sourceHeads.workspace }, deliveredRefs: { workspace: targetHeads.workspace } } });
+  assert.equal(omitted.diagnostic?.code, 'git_worktree_identity_mismatch');
+  assert.deepEqual(omitted.effects, []);
+  const observedPartial = provider.cleanupGitWorktrees({ workspaceRoot: root, taskId, allowCompleted: true, observedCheckouts: observed, cleanupDelivery: { expectedSources: { workspace: sourceHeads.workspace }, deliveredRefs: { workspace: targetHeads.workspace } } });
+  assert.equal(observedPartial.diagnostic?.code, 'git_worktree_cleanup_delivery_invalid');
+  const recovered = provider.cleanupGitWorktrees({ workspaceRoot: root, taskId, allowCompleted: true, observedCheckouts: observed, cleanupDelivery: { expectedSources: sourceHeads, deliveredRefs: targetHeads } });
+  assert.equal(recovered.status, 'cleaned');
+  assert.equal(recovered.evidenceSource, 'observed');
+  assert.deepEqual(recovered.effects.filter((item) => item.type === 'worktree-removed').map((item) => item.selector), ['service:demo/api', 'workspace']);
+  assert.equal(fs.existsSync(provider.gitWorktreeEvidencePath(root, taskId)), false);
 });

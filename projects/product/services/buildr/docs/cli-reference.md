@@ -172,6 +172,11 @@ Project根可选`preparation.yml`，长期说明Project-wide或Service-scoped真
 
 Git provider evidence使用`buildr.git-worktree-evidence/v1`，保存在Git common-dir的`buildr/task-worktrees/<task-id>.json`。它只包含repository selector、source/checkout、branch/start point、HEAD、clean、registration、remote和Git effects。成果交付后，Agent把已核对的逐仓source与delivered完整提交直接交给provider；provider复核source版本、dirty、registration和retained ref后才删除。provider不删除远端分支，也不执行交付或验证判断。
 
+历史登记缺失时，`worktree inspect` 和 `worktree cleanup` 可使用 `--observed-checkouts <json-file>`。JSON 为数组，每项包含 `selector`、`sourceRepository`、`checkoutPath`、`branch`；路径使用规范绝对路径，完整列出根及独立嵌套代码库（Repository）。当前来源、Git 公共目录（Common Directory）、真实登记与占用必须核验一致；不能用观察输入覆盖已有证据冲突。调用方先确认任务归属、完整交付、正在进行的工作和需要保留的忽略内容。清理仍需全部源与交付提交（Commit），观察只在本次使用，不补造创建记录；返回 `evidenceSource: observed`，未知 `startPoint` 为 `null`。示例和输入格式见[工作树管理方法](../resources/workspace/skills/buildr/task-worktree/SKILL.md#缺少历史登记时接续)。
+
+没有登记也没有明确对象时返回 `blocked` 和接续指引；实际删除或逐项确认对象不存在后才返回 `cleaned`。部分删除后可重传相同对象集合，重新核验版本与占用，结果区分删除和不存在确认。
+
+
 ## Runtime 与诊断
 
 | 命令 | 用途 |
