@@ -9,14 +9,6 @@ skills:
     enabled: true
     required: false
     state: installed
-    runtimes:
-      - claude-code
-      - codex
-      - cursor
-      - qoder
-      - trae
-      - trae-work
-      - workbuddy
     runtimePath: task-triage
     requires:
       - capability: buildr.task-record
@@ -40,14 +32,6 @@ skills:
     enabled: true
     required: false
     state: installed
-    runtimes:
-      - claude-code
-      - codex
-      - cursor
-      - qoder
-      - trae
-      - trae-work
-      - workbuddy
     runtimePath: task-worktree
     provides:
       - capability: buildr.git-worktree-provider
@@ -61,14 +45,6 @@ skills:
     enabled: true
     required: false
     state: installed
-    runtimes:
-      - claude-code
-      - codex
-      - cursor
-      - qoder
-      - trae
-      - trae-work
-      - workbuddy
     runtimePath: git-operations
     provides:
       - capability: buildr.git-operations
@@ -82,14 +58,6 @@ skills:
     enabled: true
     required: false
     state: installed
-    runtimes:
-      - claude-code
-      - codex
-      - cursor
-      - qoder
-      - trae
-      - trae-work
-      - workbuddy
     runtimePath: task-finish
     provides:
       - capability: buildr.task-finish
@@ -113,14 +81,6 @@ skills:
     enabled: true
     required: false
     state: installed
-    runtimes:
-      - claude-code
-      - codex
-      - cursor
-      - qoder
-      - trae
-      - trae-work
-      - workbuddy
     runtimePath: openspec-contract-guard
   - id: openspec-explore
     assetIdentity: buildr:skill:openspec-explore
@@ -131,14 +91,6 @@ skills:
     enabled: true
     required: false
     state: installed
-    runtimes:
-      - claude-code
-      - codex
-      - cursor
-      - qoder
-      - trae
-      - trae-work
-      - workbuddy
     runtimePath: openspec-explore
   - id: openspec-propose
     assetIdentity: buildr:skill:openspec-propose
@@ -149,14 +101,6 @@ skills:
     enabled: true
     required: false
     state: installed
-    runtimes:
-      - claude-code
-      - codex
-      - cursor
-      - qoder
-      - trae
-      - trae-work
-      - workbuddy
     runtimePath: openspec-propose
   - id: openspec-update-change
     assetIdentity: buildr:skill:openspec-update-change
@@ -167,14 +111,6 @@ skills:
     enabled: true
     required: false
     state: installed
-    runtimes:
-      - claude-code
-      - codex
-      - cursor
-      - qoder
-      - trae
-      - trae-work
-      - workbuddy
     runtimePath: openspec-update-change
   - id: openspec-apply-change
     assetIdentity: buildr:skill:openspec-apply-change
@@ -185,14 +121,6 @@ skills:
     enabled: true
     required: false
     state: installed
-    runtimes:
-      - claude-code
-      - codex
-      - cursor
-      - qoder
-      - trae
-      - trae-work
-      - workbuddy
     runtimePath: openspec-apply-change
   - id: openspec-sync-specs
     assetIdentity: buildr:skill:openspec-sync-specs
@@ -203,14 +131,6 @@ skills:
     enabled: true
     required: false
     state: installed
-    runtimes:
-      - claude-code
-      - codex
-      - cursor
-      - qoder
-      - trae
-      - trae-work
-      - workbuddy
     runtimePath: openspec-sync-specs
   - id: openspec-archive-change
     assetIdentity: buildr:skill:openspec-archive-change
@@ -221,14 +141,6 @@ skills:
     enabled: true
     required: false
     state: installed
-    runtimes:
-      - claude-code
-      - codex
-      - cursor
-      - qoder
-      - trae
-      - trae-work
-      - workbuddy
     runtimePath: openspec-archive-change
   - id: task-retrospective
     assetIdentity: buildr:skill:task-retrospective
@@ -239,14 +151,6 @@ skills:
     enabled: true
     required: false
     state: installed
-    runtimes:
-      - claude-code
-      - codex
-      - cursor
-      - qoder
-      - trae
-      - trae-work
-      - workbuddy
     runtimePath: task-retrospective
     requires:
       - capability: buildr.task-record
@@ -261,14 +165,6 @@ skills:
     enabled: true
     required: false
     state: installed
-    runtimes:
-      - claude-code
-      - codex
-      - cursor
-      - qoder
-      - trae
-      - trae-work
-      - workbuddy
     runtimePath: capability-adaptation
   - id: buildr-release
     path: buildr-release
@@ -284,14 +180,6 @@ skills:
     enabled: true
     required: false
     state: installed
-    runtimes:
-      - claude-code
-      - codex
-      - cursor
-      - qoder
-      - trae
-      - trae-work
-      - workbuddy
     runtimePath: task-verification
     provides:
       - capability: buildr.task-verification
@@ -305,14 +193,6 @@ skills:
     enabled: true
     required: false
     state: installed
-    runtimes:
-      - claude-code
-      - codex
-      - cursor
-      - qoder
-      - trae
-      - trae-work
-      - workbuddy
     runtimePath: terminology-governance
     provides:
       - capability: buildr.terminology-governance
@@ -326,14 +206,6 @@ skills:
     enabled: true
     required: false
     state: installed
-    runtimes:
-      - claude-code
-      - codex
-      - cursor
-      - qoder
-      - trae
-      - trae-work
-      - workbuddy
     runtimePath: current-knowledge-maintenance
     provides:
       - capability: buildr.current-knowledge-maintenance
@@ -351,14 +223,6 @@ skills:
     enabled: true
     required: false
     state: installed
-    runtimes:
-      - claude-code
-      - codex
-      - cursor
-      - qoder
-      - trae
-      - trae-work
-      - workbuddy
     runtimePath: task-manager
     provides:
       - capability: buildr.task-record
@@ -372,14 +236,6 @@ skills:
     enabled: true
     required: false
     state: installed
-    runtimes:
-      - claude-code
-      - codex
-      - cursor
-      - qoder
-      - trae
-      - trae-work
-      - workbuddy
     runtimePath: task-review
     provides:
       - capability: buildr.task-review
@@ -393,14 +249,6 @@ skills:
     enabled: true
     required: false
     state: installed
-    runtimes:
-      - claude-code
-      - codex
-      - cursor
-      - qoder
-      - trae
-      - trae-work
-      - workbuddy
     runtimePath: project-testing
   - id: buildr-self-bootstrap-sync
     path: buildr-self-bootstrap-sync
@@ -416,14 +264,6 @@ skills:
     enabled: true
     required: false
     state: installed
-    runtimes:
-      - claude-code
-      - codex
-      - cursor
-      - qoder
-      - trae
-      - trae-work
-      - workbuddy
     runtimePath: declaration-intake
   - id: project-daily-progress
     assetIdentity: buildr:skill:project-daily-progress
@@ -434,14 +274,6 @@ skills:
     enabled: true
     required: false
     state: installed
-    runtimes:
-      - claude-code
-      - codex
-      - cursor
-      - qoder
-      - trae
-      - trae-work
-      - workbuddy
     runtimePath: project-daily-progress
     requires:
       - capability: buildr.git-operations
@@ -456,14 +288,6 @@ skills:
     enabled: true
     required: false
     state: installed
-    runtimes:
-      - claude-code
-      - codex
-      - cursor
-      - qoder
-      - trae
-      - trae-work
-      - workbuddy
     runtimePath: ui-prototype
   - id: agent-first-design
     assetIdentity: buildr:skill:agent-first-design
@@ -474,14 +298,6 @@ skills:
     enabled: true
     required: false
     state: installed
-    runtimes:
-      - claude-code
-      - codex
-      - cursor
-      - qoder
-      - trae
-      - trae-work
-      - workbuddy
     runtimePath: agent-first-design
   - id: ux-design-laws
     assetIdentity: buildr:skill:ux-design-laws
@@ -492,14 +308,6 @@ skills:
     enabled: true
     required: false
     state: installed
-    runtimes:
-      - claude-code
-      - codex
-      - cursor
-      - qoder
-      - trae
-      - trae-work
-      - workbuddy
     runtimePath: ux-design-laws
   - id: code-architecture
     assetIdentity: buildr:skill:code-architecture
@@ -510,14 +318,6 @@ skills:
     enabled: true
     required: false
     state: installed
-    runtimes:
-      - claude-code
-      - codex
-      - cursor
-      - qoder
-      - trae
-      - trae-work
-      - workbuddy
     runtimePath: code-architecture
   - id: code-map
     assetIdentity: buildr:skill:code-map
@@ -528,14 +328,6 @@ skills:
     enabled: true
     required: false
     state: installed
-    runtimes:
-      - claude-code
-      - codex
-      - cursor
-      - qoder
-      - trae
-      - trae-work
-      - workbuddy
     runtimePath: code-map
   - id: archify
     assetIdentity: buildr:skill:archify
@@ -546,14 +338,6 @@ skills:
     enabled: true
     required: false
     state: installed
-    runtimes:
-      - claude-code
-      - codex
-      - cursor
-      - qoder
-      - trae
-      - trae-work
-      - workbuddy
     runtimePath: archify
   - id: frontend-development
     assetIdentity: buildr:skill:frontend-development
@@ -564,14 +348,6 @@ skills:
     enabled: true
     required: false
     state: installed
-    runtimes:
-      - claude-code
-      - codex
-      - cursor
-      - qoder
-      - trae
-      - trae-work
-      - workbuddy
     runtimePath: frontend-development
   - id: project-composition-maintenance
     assetIdentity: buildr:skill:project-composition-maintenance
@@ -582,14 +358,6 @@ skills:
     enabled: true
     required: false
     state: installed
-    runtimes:
-      - claude-code
-      - codex
-      - cursor
-      - qoder
-      - trae
-      - trae-work
-      - workbuddy
     runtimePath: project-composition-maintenance
 contracts:
   - id: buildr.terminology-governance
