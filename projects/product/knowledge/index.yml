@@ -210,6 +210,10 @@ documentSections:
         title: "发布与恢复流程"
         summary: "核对版本内容、候选产物、发布授权及失败后的恢复方式。"
       - location: scope
+        path: knowledge/docs/flows/dsh-plugin-release.md
+        title: "DSH 插件发布流程"
+        summary: "了解 DSH 入口的产物如何构建、随正式包发布、与开发版入口如何区分，以及验证分层。"
+      - location: scope
         path: knowledge/reviews/v0.1.0-readiness.md
         title: "0.1.0 发布准备审查"
         summary: "查看首版阶段审查的历史结论与当时验证边界；不代表当前发布状态。"
@@ -229,6 +233,10 @@ documentSections:
         path: docs/publications/buildr-agent-more-and-better.md
         title: "Buildr：让 Agent 越做越多，越做越好"
         summary: "理解已有积累怎样帮助智能体（Agent）扩展工作范围并改善结果。"
+      - location: scope
+        path: docs/publications/buildr-dsh-plugin.md
+        title: "在 DSH 里打开 Buildr"
+        summary: "了解在 DSH 中直接打开 Buildr 的使用方式、边界与安装途径。"
       - location: scope
         path: docs/publications/README.md
         title: "文章目录与发布状态"

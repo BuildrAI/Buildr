@@ -14,6 +14,9 @@ include:
 agentSkills:
   - id: buildr
     path: resources/runtime/skills/buildr
+  # DSH-only: the sidebar entry and this registration both exist only where DSH runs the plugin.
+  - id: install-dsh-plugin
+    path: resources/runtime/skills/install-dsh-plugin
 
 capabilityContracts:
   - id: buildr.git-operations
