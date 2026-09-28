@@ -16,18 +16,20 @@ async function machine(t: any) {
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   const home = path.join(root, 'home');
   const entryPath = path.join(root, 'node_modules', '@buildr-ai', 'buildr', 'bin', 'buildr.mjs');
+  const status = {
+    schemaVersion: 'buildr.installation-status/v1',
+    channels: { npm: { status: 'current', channel: 'npm', runtime: { executable: process.execPath } } },
+  };
+  // The entry answers the one command preparation falls back to, so a test that omits the status
+  // exercises the same path production takes instead of needing an injected value.
   await fs.mkdir(path.dirname(entryPath), { recursive: true });
-  await fs.writeFile(entryPath, 'export {};\n');
+  await fs.writeFile(entryPath, `process.stdout.write(${JSON.stringify(`${JSON.stringify(status)}\n`)});\n`);
   const registry = registryFile({ HOME: home } as NodeJS.ProcessEnv, 'darwin');
   await fs.mkdir(path.dirname(registry), { recursive: true });
   await fs.writeFile(registry, JSON.stringify({
     schemaVersion: 'buildr.product-installation-registry/v1',
     installations: [{ origin: { channel: 'npm', package: '@buildr-ai/buildr' }, entryPath, runtime: { executable: '/registered/node' } }],
   }));
-  const status = {
-    schemaVersion: 'buildr.installation-status/v1',
-    channels: { npm: { status: 'current', channel: 'npm', runtime: { executable: process.execPath } } },
-  };
   const dependencies = { platform: 'darwin', environment: { HOME: home } as NodeJS.ProcessEnv, digest: async () => digest, query: async () => status, status, signal: AbortSignal.timeout(5_000) } as any;
   return { root, home, entryPath, registry, status, dependencies };
 }
@@ -114,5 +116,31 @@ test('the CLI route registers without any channel choice', async () => {
   await route.run({ prepareDshPlugin: async (input: any) => { received = input; return { output: '/tmp/x', status: 'prepared' }; } },
     { argv: ['node', 'buildr', 'runtime', 'dsh-plugin', 'prepare', '--output', '/tmp/x'] });
   assert.deepEqual(received, { output: '/tmp/x' });
-  await assert.rejects(route.run({ prepareDshPlugin: async () => ({}) }, { argv: ['node', 'buildr', 'runtime', 'dsh-plugin', 'prepare'] }), /requires --output/);
+  // Omitting the output is not an error: the application chooses a location that survives, because a
+  // directory this command does not own can be cleaned up after DSH recorded it as the plugin's source.
+  received = undefined;
+  await route.run({ prepareDshPlugin: async (input: any) => { received = input; return { output: '/stable', status: 'prepared' }; } },
+    { argv: ['node', 'buildr', 'runtime', 'dsh-plugin', 'prepare'] });
+  assert.deepEqual(received, {});
+});
+
+test('preparation without an output writes where it survives and can be repeated', async t => {
+  const { entryPath } = await machine(t);
+  const { root, source } = await bundleFixture(t);
+  const { registerDshPluginDelivery } = await import('../../src/modules/agent-assets/application/dsh-plugin-delivery.ts');
+  const dataRoot = path.join(root, 'data');
+  const application = registerDshPluginDelivery({
+    productRoot: () => root,
+    // The invocation carries the entry that answers `installation status --json`, as production does.
+    currentProductInvocation: () => ({ command: process.execPath, argsPrefix: [entryPath] }),
+    productDataRoot: () => dataRoot,
+  });
+  const first = await application.prepareDshPlugin({ bundleRoot: source });
+  // Under Buildr's own data root, keyed by package, so DSH's recorded source cannot be cleaned away.
+  assert.equal(first.output, path.join(dataRoot, 'dsh-plugin', '@buildr-ai/dsh-plugin'));
+  await assert.doesNotReject(fs.access(first.archive));
+  // Repeating replaces the previous result: preparation owns this directory and no user file is in it.
+  const second = await application.prepareDshPlugin({ bundleRoot: source });
+  assert.equal(second.archive, first.archive);
+  await assert.doesNotReject(fs.access(second.archive));
 });
