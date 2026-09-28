@@ -118,7 +118,7 @@ export function registerApplicationRuntime(dependencies: RuntimeProjectionDepend
 
   function renderRuntime(agent: any, args: any, options: any = {}): any  {
     const parsed = consumeRuntimeAdapterOption(args);
-    validateRuntimeOperationArgs(parsed.args, ['--target', '--scope', '--product-skill'], ['--product-skill']);
+    validateRuntimeOperationArgs(parsed.args, ['--target', '--scope', '--product-skill', '--json'], ['--product-skill', '--json']);
     const renderArgs: any[] = parsed.args;
     if (!renderArgs.includes('--scope')) {
       renderArgs.push('--scope', '.');
