@@ -1,0 +1,6 @@
+# Development entry. It is inserted by hand in a developer's own DSH profile and is never delivered
+# with a Buildr release: the released package carries `cordis.patch.yml` and serves the npm install.
+- insert:
+    - id: buildr-dev
+      name: '@buildr-ai/dsh-plugin-dev'
+      disabled: true

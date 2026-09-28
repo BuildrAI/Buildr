@@ -1,0 +1,568 @@
+diff --git a/docs/subsystems/slots.md b/docs/subsystems/slots.md
+index 13b47b746077c4dc7a63cc98237711d9b9d7ec81..6263d1da1d6c7162875907ecfde522e7be7ff00d 100644
+--- a/docs/subsystems/slots.md
++++ b/docs/subsystems/slots.md
+@@ -115,6 +115,7 @@ root
+ ├─ sidebar
+ │  ├─ sidebar.brand.mark
+ │  ├─ sidebar.brand.name
++│  ├─ sidebar.action
+ │  ├─ sidebar.panellist
+ │  ├─ sidebar.footer.action
+ │  ├─ sidebar.workspaces
+diff --git a/docs/subsystems/slots.zh.md b/docs/subsystems/slots.zh.md
+index 42bf724545902905a5967c45c7e80c6e38e4d1ab..830f7cc7121d385c681a57c5fa7b315ab41fe6c4 100644
+--- a/docs/subsystems/slots.zh.md
++++ b/docs/subsystems/slots.zh.md
+@@ -115,6 +115,7 @@ root
+ ├─ sidebar
+ │  ├─ sidebar.brand.mark
+ │  ├─ sidebar.brand.name
++│  ├─ sidebar.action
+ │  ├─ sidebar.panellist
+ │  ├─ sidebar.footer.action
+ │  ├─ sidebar.workspaces
+diff --git a/packages/client/ui-sidebar/README.i18n.yaml b/packages/client/ui-sidebar/README.i18n.yaml
+index d05d84036a61534936cdc3511fbb254250e542b4..aacf7c1e67f53a2e629f5a960d72b1d81fe0761b 100644
+--- a/packages/client/ui-sidebar/README.i18n.yaml
++++ b/packages/client/ui-sidebar/README.i18n.yaml
+@@ -20,6 +20,9 @@
+ /deepseek-ai-dsh-client-ui-sidebar/use-this-package/brand-and-new-session:
+   en: d084cd6732966c41
+   zh: 466e028ca49b4230
++/deepseek-ai-dsh-client-ui-sidebar/use-this-package/independent-actions:
++  en: 76e79d8ea4a3c169
++  zh: 79bc8aee10530573
+ /deepseek-ai-dsh-client-ui-sidebar/use-this-package/global-panel-entries:
+   en: 5d3300d3506254c5
+   zh: 541ae1ee1e10b921
+diff --git a/packages/client/ui-sidebar/README.md b/packages/client/ui-sidebar/README.md
+index db76ce49d83dfff9ddaa873e9bad73e9a14af77c..0c05d94b0e3c5bf304d3ca732376af94fa1ce6a8 100644
+--- a/packages/client/ui-sidebar/README.md
++++ b/packages/client/ui-sidebar/README.md
+@@ -31,6 +31,10 @@ The sidebar is the navigation shell: users see the brand, start new sessions, co
+ 
+ The expanded brand row renders `sidebar.brand.mark` and `sidebar.brand.name` as independent single slots; the collapsed rail renders the same mark slot. Without occupants, the shell uses the fish mark and a localized local-build label. A complete build stacks a code badge below the label as `version[-commit][-dirty]`, using `DSH_CLIENT_VERSION`, the optional 7-character `DSH_CLIENT_COMMIT_HASH`, and `DSH_CLIENT_GIT_DIRTY=true`; missing version metadata omits the badge. New Session targets the explicit Workspace used by a scoped action, otherwise the current Session's Workspace, otherwise the most recently active Workspace; when none exists it clears into the blank New Session page. The expanded New Session button displays the effective binding as trailing grey text on hover or keyboard focus. While the shortcut is visible, the centered icon and label fade before it when space is narrow; CSS reserves the shortcut’s width without measuring the button. Icon-only controls retain tooltips with platform-formatted keycaps, including the resident macOS header control when the sidebar is hidden. All controls expose `aria-keyshortcuts`.
+ 
++### Independent actions
++
++The root-scoped `sidebar.action` list renders after New Session and before global panel navigation. Plugins wait with `slots.inject('sidebar.action', ...)` and register a unique `id` with optional ascending `order`; they do not need a `main` panel. The shell supplies `{ wide }` and owns list spacing, collapse animation, and platform visibility. Each occupant owns its complete accessible button and injected action, using shared primitives and theme tokens rather than sidebar implementation components. An empty list adds no vertical space. Activating an action does not select a panel unless the occupant explicitly requests navigation.
++
+ ### Global panel entries
+ 
+ Plugins add an icon component to the root-scoped `sidebar.panellist` list with an `id`, optional `order`, and a string or locale-aware `label`. The same id addresses the component registered in the layout's root-scoped `main` keyed slot; selecting a missing main entry throws without changing the current selection. The label supplies plain visible text, the accessible name, and the collapsed tooltip. Each row reads its own selected state through `usePanelInfo`; moving DOM focus to search or a directory picker does not change the displayed panel or its selected row. With no registrations, neither the list nor spacing for it is rendered. The shipped composition registers no example panel.
+diff --git a/packages/client/ui-sidebar/README.zh.md b/packages/client/ui-sidebar/README.zh.md
+index 31267b804cb1508234c114a7b4b4beeae8a6059f..1eb68fd8ea30f1fbcbb853e721038085a3c756ab 100644
+--- a/packages/client/ui-sidebar/README.zh.md
++++ b/packages/client/ui-sidebar/README.zh.md
+@@ -31,6 +31,10 @@ dsh Web 客户端的侧边栏让用户识别当前构建、启动新会话、将
+ 
+ 展开的品牌行把 `sidebar.brand.mark` 与 `sidebar.brand.name` 渲染为两个独立的 single slot；收起轨道则渲染同一个 mark slot。没有占位者时，外壳使用鱼形标记和本地化的本地构建标签。完整构建会在标签下方显示代码徽标；该徽标使用 `DSH_CLIENT_VERSION`、可选的 7 位 `DSH_CLIENT_COMMIT_HASH` 与 `DSH_CLIENT_GIT_DIRTY=true` 组装成 `version[-commit][-dirty]`；缺少版本元数据时不显示徽标。New Session 优先使用作用域操作明确指定的 Workspace，否则使用当前 Session 所属 Workspace，再否则使用最近活跃 Workspace；一个 Workspace 都没有时则清空选择，进入空白 New Session 页面。 展开态的新建会话按钮在悬停或键盘聚焦时于右侧以灰色文字显示当前有效绑定。快捷键可见且空间较窄时，居中的图标与文字在快捷键之前渐隐；CSS 为快捷键保留宽度，无需测量按钮。纯图标控件保留使用平台键位样式的 tooltip，侧栏隐藏时常驻的 macOS 头部控件也保持一致。所有控件均提供 `aria-keyshortcuts`。
+ 
++### 独立动作
++
++根作用域（Root Scope）的 `sidebar.action` 列表在 New Session 之后、全局面板导航之前渲染。插件通过 `slots.inject('sidebar.action', ...)` 等待声明，再用唯一 `id` 和可选的升序 `order` 注册，无需提供 `main` 面板。侧栏提供 `{ wide }`，负责列表间距、折叠动画与平台可见性。每个占位者负责完整的无障碍按钮及注入动作，复用共享基础组件（Primitive）与主题标记（Theme Token），而非侧栏内部组件。空列表不增加垂直空间。除非占位者明确请求导航，触发动作不会选择面板。
++
+ ### 全局面板入口
+ 
+ 插件在 root 作用域的 `sidebar.panellist` list 中注册图标组件，提供 `id`、可选 `order`，以及字符串或 locale-aware 的 `label`。同一个 id 寻址布局中 root 作用域 `main` keyed slot 的组件；选择不存在的主面板条目会抛错，并保留当前选中态。标签提供普通可见文字、无障碍名称和折叠提示。每一行通过 `usePanelInfo` 读取自己的选中态；DOM 焦点移到搜索框或目录选择器时，显示的面板及其列表项选中态不变。没有注册项时，列表及其间距均不渲染。产品随附的组合不注册示例面板。
+diff --git a/packages/client/ui-sidebar/src/client/SidebarRoot.module.css b/packages/client/ui-sidebar/src/client/SidebarRoot.module.css
+index ac1116f04ca0863ac687f9c7fb472d902a821fff..4ab87d3b4fdf4c7b03f743c9f4d664145c8ab678 100644
+--- a/packages/client/ui-sidebar/src/client/SidebarRoot.module.css
++++ b/packages/client/ui-sidebar/src/client/SidebarRoot.module.css
+@@ -79,6 +79,7 @@
+   margin-left: 0;
+ }
+ 
++:global([data-windows-titlebar]) .collapsed .actionList,
+ :global([data-windows-titlebar]) .collapsed .panelList,
+ :global([data-windows-titlebar]) .collapsed .regionArea,
+ :global([data-windows-titlebar]) .collapsed .footArea {
+@@ -154,6 +155,7 @@
+    render stays static. */
+ .railIn .iconButton,
+ .railIn .newSession,
++.railIn .actionList,
+ .railIn .panelList,
+ .railIn .regionArea {
+   animation: rail-in 150ms var(--ds-ease-in-out) backwards;
+@@ -480,11 +482,20 @@
+ 
+ .newSession:is(:hover, :focus-visible) .newSessionShortcut { opacity: 1; }
+ 
++.actionList,
+ .panelList {
+   flex: none;
+   display: flex;
+   flex-direction: column;
+   gap: 4px;
++}
++
++/* Empty action seats take no space; occupants own their buttons. */
++.actionList {
++  margin: 0 2px;
++}
++
++.panelList {
+   margin-bottom: 8px;
+ }
+ 
+@@ -536,8 +547,17 @@
+   white-space: nowrap;
+ }
+ 
++.collapsed .actionList,
+ .collapsed .panelList {
+   gap: 12px;
++}
++
++.collapsed .actionList {
++  align-items: center;
++  margin: 0;
++}
++
++.collapsed .panelList {
+   margin-bottom: 12px;
+ }
+ 
+@@ -605,6 +625,7 @@
+   .fading > *,
+   .railIn .iconButton,
+   .railIn .newSession,
++  .railIn .actionList,
+   .railIn .panelList,
+   .railIn .footArea,
+   .railIn .regionArea {
+diff --git a/packages/client/ui-sidebar/src/client/SidebarRoot.tsx b/packages/client/ui-sidebar/src/client/SidebarRoot.tsx
+index fed580320cfa1781a057dc8e70173d0f77675aa3..8316a303621d3b97ee5f39a836d03fa563e2f3cd 100644
+--- a/packages/client/ui-sidebar/src/client/SidebarRoot.tsx
++++ b/packages/client/ui-sidebar/src/client/SidebarRoot.tsx
+@@ -278,6 +278,10 @@ export function SidebarRoot({
+         </button>
+       </Tooltip>
+ 
++      <div className={css.actionList}>
++        {renderSlot('sidebar.action', { wide })}
++      </div>
++
+       {panels.length > 0 && (
+         <nav className={css.panelList} aria-label={t('panels.label')}>
+           {panels.map(({ id, label }) => (
+diff --git a/packages/client/ui-sidebar/src/client/contract/slots.ts b/packages/client/ui-sidebar/src/client/contract/slots.ts
+index c6ba475fece018791bec41f5f9f26711fe7df9c7..7b1ab5ab76eee29861ac65eb9b7a507506057ad2 100644
+--- a/packages/client/ui-sidebar/src/client/contract/slots.ts
++++ b/packages/client/ui-sidebar/src/client/contract/slots.ts
+@@ -28,6 +28,11 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
+      * package's `sidebar` entry; the shell supplies a generic text fallback.
+      */
+     'sidebar.brand.name': { kind: 'single'; scope: 'root'; owner: SidebarBrandNameOwnerProps }
++    /**
++     * Independent actions after New Session and before global panel navigation.
++     * Each occupant owns its complete button and action; no main panel is required.
++     */
++    'sidebar.action': { kind: 'list'; scope: 'root'; owner: SidebarActionOwnerProps }
+     /**
+      * Global panel icons. Each list id addresses the matching main panel;
+      * the sidebar owns the button and resolves its label from list metadata.
+@@ -66,6 +71,12 @@ export interface SidebarBrandNameOwnerProps {
+   children?: never
+ }
+ 
++/** Column presentation supplied to an independent sidebar action. */
++export interface SidebarActionOwnerProps {
++  /** Whether the sidebar renders wide content (false = 56px rail). */
++  wide: boolean
++}
++
+ /** Icon presentation supplied by the global panel row. */
+ export interface SidebarPanelIconOwnerProps {
+   /** Requested square edge in pixels. */
+@@ -140,6 +151,7 @@ export type SidebarRootComponentProps =
+     | 'sidebar.brand.mark'
+     | 'sidebar.brand.name'
+     | 'sidebar.toggle.badge'
++    | 'sidebar.action'
+     | 'sidebar.panellist'
+     | 'sidebar.workspaces'
+     | 'sidebar.settings'
+diff --git a/packages/client/ui-sidebar/src/client/index.ts b/packages/client/ui-sidebar/src/client/index.ts
+index 603c143fa7782473fed45d32a344ec80af49a47c..9a05a0bd29e4a4c83556f5d4d5c2c1442bb7d9ed 100644
+--- a/packages/client/ui-sidebar/src/client/index.ts
++++ b/packages/client/ui-sidebar/src/client/index.ts
+@@ -15,7 +15,7 @@ import { SidebarRoot } from './SidebarRoot.tsx'
+ import { en, zh, type SidebarKey } from './locales.ts'
+ 
+ export type {
+-  SidebarBrandMarkOwnerProps, SidebarBrandNameOwnerProps, SidebarFooterActionOwnerProps,
++  SidebarActionOwnerProps, SidebarBrandMarkOwnerProps, SidebarBrandNameOwnerProps, SidebarFooterActionOwnerProps,
+   SidebarPanelIconOwnerProps, SidebarPanelMetadata,
+   SidebarRootComponentProps, SidebarRootInjected, SidebarSectionOwnerProps, SidebarSettingsOwnerProps,
+ } from './contract/slots.ts'
+@@ -76,6 +76,7 @@ export function apply(ctx: ClientContext): void {
+       'sidebar.brand.mark': { kind: 'single', scope: 'root' },
+       'sidebar.brand.name': { kind: 'single', scope: 'root' },
+       'sidebar.toggle.badge': { kind: 'single', scope: 'root' },
++      'sidebar.action': { kind: 'list', scope: 'root' },
+       'sidebar.panellist': { kind: 'list', scope: 'root' },
+       'sidebar.workspaces': { kind: 'single', scope: 'root' },
+       'sidebar.settings': { kind: 'single', scope: 'root' },
+diff --git a/packages/client/ui-sidebar/tests/__snapshots__/sidebar-snapshot.client.spec.tsx.snap b/packages/client/ui-sidebar/tests/__snapshots__/sidebar-snapshot.client.spec.tsx.snap
+index 652e9f6b393b2657926dd05f6cb2714d553eb6ec..25ba1a6334e43c4c1b342fc3cdfd252ea9474767 100644
+--- a/packages/client/ui-sidebar/tests/__snapshots__/sidebar-snapshot.client.spec.tsx.snap
++++ b/packages/client/ui-sidebar/tests/__snapshots__/sidebar-snapshot.client.spec.tsx.snap
+@@ -59,6 +59,14 @@ exports[`sidebar shell snapshots > renders Windows caption controls in expanded
+         </span>
+       </span>
+     </button>
++    <div
++      class="actionList"
++    >
++      <div
++        data-slot="sidebar.action"
++        style="display: contents;"
++      />
++    </div>
+     <div
+       class="regionArea"
+     >
+@@ -202,6 +210,14 @@ exports[`sidebar shell snapshots > renders Windows caption controls in expanded
+         </span>
+       </span>
+     </button>
++    <div
++      class="actionList"
++    >
++      <div
++        data-slot="sidebar.action"
++        style="display: contents;"
++      />
++    </div>
+     <div
+       class="regionArea"
+     >
+@@ -311,6 +327,14 @@ exports[`sidebar shell snapshots > renders the collapsed rail after the crossfad
+         </span>
+       </span>
+     </button>
++    <div
++      class="actionList"
++    >
++      <div
++        data-slot="sidebar.action"
++        style="display: contents;"
++      />
++    </div>
+     <div
+       class="regionArea"
+     >
+@@ -454,6 +478,14 @@ exports[`sidebar shell snapshots > renders the expanded column (wordmark, capsul
+         </span>
+       </span>
+     </button>
++    <div
++      class="actionList"
++    >
++      <div
++        data-slot="sidebar.action"
++        style="display: contents;"
++      />
++    </div>
+     <div
+       class="regionArea"
+     >
+@@ -597,6 +629,14 @@ exports[`sidebar shell snapshots > renders the expanded column in the default lo
+         </span>
+       </span>
+     </button>
++    <div
++      class="actionList"
++    >
++      <div
++        data-slot="sidebar.action"
++        style="display: contents;"
++      />
++    </div>
+     <div
+       class="regionArea"
+     >
+diff --git a/packages/client/ui-sidebar/tests/apply.client.spec.tsx b/packages/client/ui-sidebar/tests/apply.client.spec.tsx
+index 19be12019fac1882e52d9aedc1f136549801579c..54cc40a805bba291b7cc2a3b68a44516dc8c334e 100644
+--- a/packages/client/ui-sidebar/tests/apply.client.spec.tsx
++++ b/packages/client/ui-sidebar/tests/apply.client.spec.tsx
+@@ -70,6 +70,7 @@ describe('ui-sidebar apply', () => {
+     expect(b.slots.spec('sidebar.workspaces')).toEqual({ kind: 'single', scope: 'root' })
+     expect(b.slots.spec('sidebar.settings')).toEqual({ kind: 'single', scope: 'root' })
+     expect(b.slots.spec('sidebar.footer.action')).toEqual({ kind: 'list', scope: 'root' })
++    expect(b.slots.spec('sidebar.action')).toEqual({ kind: 'list', scope: 'root' })
+     expect(b.slots.spec('sidebar.panellist')).toEqual({ kind: 'list', scope: 'root' })
+     // Copy rides the standard locale seat, not the inject face.
+     expect(b.slots.entries('sidebar')[0]!.locale).toBe('sidebar')
+@@ -141,6 +142,32 @@ describe('ui-sidebar apply', () => {
+     }
+   })
+ 
++  it('reinstalls early action contributions when the sidebar declaration returns', async () => {
++    const b = await bench()
++    const action = b.ctx.plugin({
++      inject: ['slots'],
++      apply(ctx: Context) {
++        ctx.slots.inject('sidebar.action', () => ctx.slots.register({
++          name: 'sidebar.action', id: 'independent-action',
++        }, () => null))
++      },
++    })
++    await action.await()
++    expect(b.slots.entries('sidebar.action')).toEqual([])
++    const sidebar = b.ctx.plugin({ inject: [...inject], apply })
++    await sidebar.await()
++    expect(b.slots.entries('sidebar.action')).toHaveLength(1)
++    await sidebar.dispose()
++    expect(b.slots.spec('sidebar.action')).toBeUndefined()
++    expect(b.slots.entries('sidebar.action')).toEqual([])
++    const replacement = b.ctx.plugin({ inject: [...inject], apply })
++    await replacement.await()
++    expect(b.slots.entries('sidebar.action')).toHaveLength(1)
++    await action.dispose()
++    expect(b.slots.entries('sidebar.action')).toEqual([])
++    expect(b.slots.entries('sidebar')).toHaveLength(1)
++  })
++
+   it('removes the entry and child declaration on teardown', async () => {
+     const b = await bench()
+     const fiber = b.ctx.plugin({ inject: [...inject], apply })
+@@ -152,6 +179,7 @@ describe('ui-sidebar apply', () => {
+     expect(b.slots.spec('sidebar.brand.name')).toBeUndefined()
+     expect(b.slots.spec('sidebar.workspaces')).toBeUndefined()
+     expect(b.slots.spec('sidebar.footer.action')).toBeUndefined()
++    expect(b.slots.spec('sidebar.action')).toBeUndefined()
+     expect(b.slots.spec('sidebar.panellist')).toBeUndefined()
+     expect(b.slots.entries('main')).toHaveLength(0)
+   })
+diff --git a/packages/client/ui-sidebar/tests/panel-list.client.spec.tsx b/packages/client/ui-sidebar/tests/panel-list.client.spec.tsx
+index 5673aa95ad7cbddac8453c27979fd3f85ea53d4e..6d2f6d2f0cdf157e0ac5b938f6bec5a0899bb0ae 100644
+--- a/packages/client/ui-sidebar/tests/panel-list.client.spec.tsx
++++ b/packages/client/ui-sidebar/tests/panel-list.client.spec.tsx
+@@ -8,7 +8,7 @@ import { SlotTestRuntime } from '@deepseek-ai/dsh-client-test-runtime'
+ import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
+ import { en as commonEn } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts'
+ import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
+-import { IconGlobeOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
++import { Button, IconGlobeOutlineRegular, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
+ import type { ILayout, MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
+ import type { PropsRenderSlots, PropsRuntime, SlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
+ import { apply, inject } from '../src/client/index.ts'
+@@ -120,6 +120,106 @@ async function mountPanels(runtime: SlotTestRuntime, locale: LocaleRuntime, beta
+   return { alpha, beta }
+ }
+ 
++async function mountAction(runtime: SlotTestRuntime, id: string, order: number, invoke = vi.fn()) {
++  function Action({ wide }: PropsRuntime<'sidebar.action'>) {
++    return (
++      <Tooltip label={id} disabled={wide}>
++        <Button variant="ghost" aria-label={id} onClick={invoke}>
++          <IconGlobeOutlineRegular size={wide ? 16 : 18} />
++          {wide && id}
++        </Button>
++      </Tooltip>
++    )
++  }
++  const fiber = await runtime.mount({
++    inject: ['slots'],
++    apply(ctx: Context) {
++      ctx.slots.inject('sidebar.action', () => ctx.slots.register({
++        name: 'sidebar.action', id, order,
++      }, Action))
++    },
++  })
++  return { fiber, invoke }
++}
++
++describe('sidebar independent actions', () => {
++  it('places ordered complete buttons after New Session and before panels without navigating', async () => {
++    const { runtime, layout, view } = await bench()
++    const first = await mountAction(runtime, 'First action', 10)
++    await mountAction(runtime, 'Earlier action', 5)
++    await mountPanel(runtime, { id: ALPHA, heading: 'Alpha content', label: 'Alpha panel' })
++    const sidebar = within(view.container.querySelector('aside')!)
++    const names = sidebar.getAllByRole('button').map(button => button.getAttribute('aria-label'))
++    const actionIndex = names.indexOf('First action')
++    expect(names.lastIndexOf('New session')).toBeLessThan(names.indexOf('Earlier action'))
++    expect(names.indexOf('Earlier action')).toBeLessThan(actionIndex)
++    expect(actionIndex).toBeLessThan(names.indexOf('Alpha panel'))
++    const button = sidebar.getByRole('button', { name: 'First action' })
++    expect(button.tagName).toBe('BUTTON')
++    expect(button.closest('nav')).toBeNull()
++    expect(button.parentElement?.closest('button')).toBeNull()
++    act(() => { button.focus() })
++    expect(document.activeElement).toBe(button)
++    fireEvent.click(button)
++    expect(first.invoke).toHaveBeenCalledOnce()
++    expect(layout.selectPanel).not.toHaveBeenCalled()
++    expect(runtime.panelInfo.getSnapshot().activePanelId).toBeNull()
++    expect(view.getByText('Conversation content')).toBeTruthy()
++    expect(runtime.slots.entries('main').map(entry => entry.options.key)).toEqual(['conversation', ALPHA])
++    fireEvent.click(sidebar.getByRole('button', { name: 'Alpha panel' }))
++    expect(layout.selectPanel).toHaveBeenCalledExactlyOnceWith(ALPHA)
++    fireEvent.click(button)
++    expect(first.invoke).toHaveBeenCalledTimes(2)
++    expect(layout.selectPanel).toHaveBeenCalledTimes(1)
++    expect(view.getByRole('heading', { name: 'Alpha content' })).toBeTruthy()
++  })
++
++  it.each([false, true])('passes wide presentation to complete action buttons with collapsed=%s', async (collapsed) => {
++    const { runtime, view } = await bench(collapsed)
++    await mountAction(runtime, 'Independent action', 0)
++    const button = await view.findByRole('button', { name: 'Independent action' })
++    expect(button.textContent).toBe(collapsed ? '' : 'Independent action')
++    expect(button.querySelector('svg')?.getAttribute('width')).toBe(collapsed ? '18' : '16')
++    act(() => { button.focus() })
++    expect(document.activeElement).toBe(button)
++    if (collapsed) expect(view.getByRole('tooltip').textContent).toBe('Independent action')
++    else expect(view.queryByRole('tooltip')).toBeNull()
++  })
++
++  it('removes only disposed actions and preserves workspace, settings, footer, and main content', async () => {
++    const { runtime, sidebar, view } = await bench()
++    await runtime.mount({
++      inject: ['slots'],
++      apply(ctx: Context) {
++        ctx.slots.register({ name: 'sidebar.workspaces' }, () => <button type="button">Workspace browser</button>)
++        ctx.slots.register({ name: 'sidebar.settings' }, () => <button type="button">Settings</button>)
++        ctx.slots.register({ name: 'sidebar.footer.action', id: 'footer-action' }, () => <button type="button">Footer action</button>)
++      },
++    })
++    const first = await mountAction(runtime, 'First action', 0)
++    const second = await mountAction(runtime, 'Second action', 0)
++    const actions = within(view.container.querySelector('aside')!).getAllByRole('button')
++      .filter(button => button.textContent === 'First action' || button.textContent === 'Second action')
++    expect(actions.map(button => button.textContent)).toEqual(['First action', 'Second action'])
++    await first.fiber.dispose()
++    await waitFor(() => { expect(view.queryByRole('button', { name: 'First action' })).toBeNull() })
++    expect(view.getByRole('button', { name: 'Second action' })).toBeTruthy()
++    await second.fiber.dispose()
++    await waitFor(() => { expect(view.queryByRole('button', { name: 'Second action' })).toBeNull() })
++    for (const name of ['Workspace browser', 'Settings', 'Footer action']) {
++      expect(view.getByRole('button', { name })).toBeTruthy()
++    }
++    expect(view.getByText('Conversation content')).toBeTruthy()
++    expect(runtime.slots.entries('sidebar.action')).toEqual([])
++    await mountAction(runtime, 'Replacement action', 0)
++    expect(await view.findByRole('button', { name: 'Replacement action' })).toBeTruthy()
++    await sidebar.dispose()
++    expect(view.queryByRole('button', { name: 'Replacement action' })).toBeNull()
++    expect(runtime.slots.spec('sidebar.action')).toBeUndefined()
++    expect(view.getByText('Conversation content')).toBeTruthy()
++  })
++})
++
+ describe('sidebar global panels', () => {
+   it('adds late registrations, removes each plugin contribution, and leaves no empty panel-list DOM', async () => {
+     const { runtime, locale, view } = await bench()
+diff --git a/packages/client/ui-sidebar/tests/sidebar-root.client.spec.tsx b/packages/client/ui-sidebar/tests/sidebar-root.client.spec.tsx
+index f2407246f8ac7c115df1557473fd2d40ec095308..4281c577f785ec60ce6aa5629f1acb12f7728852 100644
+--- a/packages/client/ui-sidebar/tests/sidebar-root.client.spec.tsx
++++ b/packages/client/ui-sidebar/tests/sidebar-root.client.spec.tsx
+@@ -61,7 +61,7 @@ function mountShell({ collapsed = false, width = 300, shortcuts = [] }: {
+       ) => {
+         if (key === 'sidebar.brand.mark') return brandMark
+         if (key === 'sidebar.brand.name') return brandName
+-        if (key === 'sidebar.toggle.badge') return null
++        if (key === 'sidebar.toggle.badge' || key === 'sidebar.action') return null
+         if (key === 'sidebar.settings') {
+           settingsOwner = owner
+           return <div data-testid="settings-seat" data-wide={owner.wide} />
+diff --git a/packages/extensions/cordis-client-runner/src/client/slot-catalog.ts b/packages/extensions/cordis-client-runner/src/client/slot-catalog.ts
+index 1f0ffab9037a16c9bba92c16193b132096cfecd9..a3501099acd274ffb30beb5d0b31de941b890476 100644
+--- a/packages/extensions/cordis-client-runner/src/client/slot-catalog.ts
++++ b/packages/extensions/cordis-client-runner/src/client/slot-catalog.ts
+@@ -2884,6 +2884,54 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar\', () => ctx.slots.register(\n      { name: \'sidebar\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
+     source: 'packages/client/ui-layout/src/client/index.ts:68',
+   },
++  {
++    key: 'sidebar.action',
++    kind: 'list',
++    scope: 'root',
++    summary: 'Independent actions after New Session and before global panel navigation.',
++    doc: 'Independent actions after New Session and before global panel navigation.\nEach occupant owns its complete button and action; no main panel is required.',
++    registerOptions: [
++      {
++        name: 'id',
++        requirement: 'required',
++        type: 'string',
++        doc: 'Your cell key. Use an id of your own: a fresh id is added beside the shipped entries, while reusing a shipped id puts you in THAT cell and replaces it. Owners that filter by id address you by it.',
++      },
++      {
++        name: 'order',
++        requirement: 'optional',
++        type: 'number',
++        doc: 'Position among the entries, ascending (default 0).',
++      },
++      {
++        name: 'label',
++        requirement: 'optional',
++        type: 'string | (() => string)',
++        doc: 'Display text where the owner projects one (nav rows, tabs). A thunk is re-read on every projection, so localized text follows the active locale without re-registering.',
++      },
++    ],
++    ownerProps: [
++      '/** Column presentation supplied to an independent sidebar action. */\nexport interface SidebarActionOwnerProps {\n  /** Whether the sidebar renders wide content (false = 56px rail). */\n  wide: boolean\n}',
++    ],
++    ownerPropsReferences: [],
++    standardProps: [
++      'useResource: UseResource',
++      'useWorkspaces: SnapshotSelectorHook<WorkspaceSnapshot>',
++      'usePanelInfo: UsePanelInfo',
++      'useSessions: UseSessions',
++      'useSessionStatus: UseSessionStatus',
++      'useSessionRetainInfo: UseSessionRetainInfo',
++      'useWorkspaces: SnapshotSelectorHook<WorkspaceSnapshot>',
++    ],
++    keyDomain: '',
++    hookContext: '',
++    slotInject: '',
++    declaredBy: 'an entry in \'sidebar\' (client-ui-sidebar), so it exists while that entry is mounted',
++    occupants: [],
++    replaceRisk: 'none',
++    example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.action\', () => ctx.slots.register(\n      { name: \'sidebar.action\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
++    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:35',
++  },
+   {
+     key: 'sidebar.brand.mark',
+     kind: 'single',
+@@ -3031,7 +3079,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+     ],
+     replaceRisk: 'none',
+     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.footer.action\', () => ctx.slots.register(\n      { name: \'sidebar.footer.action\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
+-    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:53',
++    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:58',
+   },
+   {
+     key: 'sidebar.panellist',
+@@ -3082,7 +3130,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+     ],
+     replaceRisk: 'none',
+     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.panellist\', () => ctx.slots.register(\n      { name: \'sidebar.panellist\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
+-    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:35',
++    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:40',
+   },
+   {
+     key: 'sidebar.right.pane.tab',
+@@ -3728,7 +3776,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+     ],
+     replaceRisk: 'shadows-shipped-ui',
+     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.settings\', () => ctx.slots.register(\n      { name: \'sidebar.settings\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
+-    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:48',
++    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:53',
+   },
+   {
+     key: 'sidebar.toggle.badge',
+@@ -3788,7 +3836,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
+     ],
+     replaceRisk: 'shadows-shipped-ui',
+     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'sidebar.workspaces\', () => ctx.slots.register(\n      { name: \'sidebar.workspaces\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
+-    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:42',
++    source: 'packages/client/ui-sidebar/src/client/contract/slots.ts:47',
+   },
+   {
+     key: 'sidebar.workspaces.directoryFlow',

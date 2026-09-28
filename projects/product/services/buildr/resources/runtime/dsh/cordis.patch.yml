@@ -1,0 +1,5 @@
+# Insert a disabled, unbound entry. Delivery preparation inserts the verified bound entry instead.
+- insert:
+    - id: buildr
+      name: '@buildr-ai/dsh-plugin'
+      disabled: true
