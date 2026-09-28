@@ -129,7 +129,7 @@ export function createPackageSmokeChecks(deps: any): any  {
       const codexRules = checkCodexRuntime(['--scope', 'projects/demo/services/api', '--target', recursiveRoot], {
         repoRoot: recursiveRoot,
         command: 'buildr package check',
-      }).findings.filter((finding: any) => finding.code === 'runtime.codex_rules_ok').map((finding: any) => finding.path);
+      }).findings.filter((finding: any) => finding.code === 'runtime.standard_rules_ok').map((finding: any) => finding.path);
       const codexAfter = collectFiles(recursiveRoot).map((file: any) => toPosixRelative(recursiveRoot, file)).sort();
       if (JSON.stringify(codexRules) !== JSON.stringify(expectedSources) || JSON.stringify(codexBefore) !== JSON.stringify(codexAfter)) {
         problems.push('Codex Rules diagnostics must report recursive native sources without writing a bridge.');

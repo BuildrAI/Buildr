@@ -2,16 +2,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { runFinalDoctor } from '../../../infrastructure/final-doctor-process.ts';
 import { hasManagedSkillMarker } from '../infrastructure/runtime/render-claude-code.ts';
-import { SUPPORTED_AGENT_IDS, getRuntimeAdapter, isSupportedAgent } from '../infrastructure/runtime/adapter-contract.ts';
+import { resolveRuntimeSelection } from '../infrastructure/runtime/adapter-contract.ts';
+import { runtimeCommandSelector, selectWorkspaceRuntime } from './runtime-selection.ts';
 import {
-  legacySkillProjectionOwnershipReceiptRoot,
-  legacySkillProjectionOwnershipReceiptTarget,
-  readSkillProjectionReceipt,
+  listSkillProjectionOwnershipReceipts,
   runtimeFileMatches,
   sha256Integrity,
-  skillProjectionOwnershipReceiptRoot,
   skillProjectionOwnershipReceiptsEquivalent,
-  skillProjectionOwnershipReceiptTarget,
 } from '../infrastructure/runtime/skills/projection-files.ts';
 import { createComponentDefinitionDomain } from '../domain/component-definition.ts';
 import { createComponentRepository } from '../persistence/component-repository.ts';
@@ -416,8 +413,8 @@ export function registerDomainsComponents(dependencies: ComponentsDependencies) 
     } else if (kind === 'skill') {
       if (existsDirectory(target)) fs.rmSync(target, { recursive: true, force: true });
       fs.cpSync(source, target, { recursive: true });
-      const desired = builtinSkillEntry(builtin);
-      const index = skillsManifest.findIndex((entry: any) => entry.id === desired.id);
+      const index = skillsManifest.findIndex((entry: any) => entry.id === builtin.id);
+      const desired = builtinSkillEntry(builtin, index >= 0 ? skillsManifest[index] : undefined);
       if (index === -1) skillsManifest.push(desired);
       else skillsManifest[index] = desired;
     } else if (kind === 'commandCollection') {
@@ -630,7 +627,7 @@ export function registerDomainsComponents(dependencies: ComponentsDependencies) 
     return { id, status: 'installed', changed: [toPosixRelative(targetRoot, writeComponentsManifest(targetRoot, registry))] };
   }
 
-  function declaredRuntimeSkillPaths(targetRoot: any, agent: any): any  {
+  function declaredRuntimeSkillPaths(targetRoot: any, agent: any, adapter: any): any  {
     const declared: any = new Set(['buildr']);
     const scopeRoots: any[] = [targetRoot, ...listManagedDirectories(path.join(targetRoot, 'projects')).map((project: any) => path.join(targetRoot, 'projects', project))];
     for (const scopeRoot of scopeRoots) {
@@ -642,14 +639,18 @@ export function registerDomainsComponents(dependencies: ComponentsDependencies) 
       }
       for (const skill of skills) {
         if (skill.enabled === false || skill.state === 'uninstalled' || skill.install?.mode === 'agent') continue;
-        if (Array.isArray(skill.runtimes) && !skill.runtimes.includes(agent)) continue;
+        if (adapter.traits.skills.root !== '.agents' && Array.isArray(skill.runtimes) && !skill.runtimes.includes(agent)) continue;
         declared.add(skill.runtimePath || skill.id);
+        if (adapter.traits.skills.root === '.agents') {
+          declared.add(skill.id);
+          for (const legacyPath of skill.legacyRuntimePaths || []) declared.add(legacyPath);
+        }
       }
     }
     return declared;
   }
 
-  function declaredRuntimeInstallPlanIds(targetRoot: any, agent: any): any  {
+  function declaredRuntimeInstallPlanIds(targetRoot: any, agent: any, adapter: any): any  {
     const declared: any = new Set();
     const scopeRoots: any[] = [targetRoot, ...listManagedDirectories(path.join(targetRoot, 'projects')).map((project: any) => path.join(targetRoot, 'projects', project))];
     for (const scopeRoot of scopeRoots) {
@@ -661,7 +662,7 @@ export function registerDomainsComponents(dependencies: ComponentsDependencies) 
       }
       for (const skill of skills) {
         if (skill.enabled === false || skill.state === 'uninstalled' || skill.install?.mode !== 'agent') continue;
-        if (Array.isArray(skill.runtimes) && !skill.runtimes.includes(agent)) continue;
+        if (adapter.traits.skills.root !== '.agents' && Array.isArray(skill.runtimes) && !skill.runtimes.includes(agent)) continue;
         declared.add(skill.id);
       }
     }
@@ -669,57 +670,32 @@ export function registerDomainsComponents(dependencies: ComponentsDependencies) 
   }
 
   function managedRuntimeSkillOrphans(targetRoot: any, agent: any, options: any = {}): any  {
-    const adapter = getRuntimeAdapter(agent);
-    const primaryRoot = adapter.traits.skills.root;
-    const roots: any[] = adapter.traits.skills.destinations?.workspace?.roots || [primaryRoot];
-    const declared = declaredRuntimeSkillPaths(targetRoot, agent);
+    const selection = resolveRuntimeSelection({ runtimeId: options.runtimeId === undefined ? agent : options.runtimeId, adapterId: options.adapterId || (options.runtimeId === undefined ? undefined : agent) });
+    const adapter = selection.adapter;
+    const roots: any[] = adapter.traits.skills.destinations?.workspace?.roots || [adapter.traits.skills.root];
+    const declared = declaredRuntimeSkillPaths(targetRoot, selection.runtimeId, adapter);
     const orphans: any[] = [];
     const receiptsByKey: any = new Map();
-    const locations: any[] = [];
     for (const root of roots) {
-      locations.push({ root, legacy: false, dir: skillProjectionOwnershipReceiptRoot(targetRoot, 'workspace', agent), target: (runtimePath: any) => skillProjectionOwnershipReceiptTarget(targetRoot, 'workspace', agent, runtimePath) });
-      locations.push({ root, legacy: true, dir: legacySkillProjectionOwnershipReceiptRoot(targetRoot, root, agent), target: (runtimePath: any) => legacySkillProjectionOwnershipReceiptTarget(targetRoot, root, agent, runtimePath) });
-    }
-    for (const location of locations) {
-      for (const receiptFile of existsDirectory(location.dir) ? collectFiles(location.dir) : []) {
-        if (!receiptFile.endsWith('.json')) continue;
-        const receipt = readSkillProjectionReceipt(receiptFile, { adapterId: agent, destination: 'workspace' });
-        const receiptRoot = location.legacy ? location.root : primaryRoot;
-        if (receiptRoot !== location.root) continue;
-        const expectedReceipt = location.target(receipt.runtimePath);
-        if (path.resolve(expectedReceipt) !== path.resolve(receiptFile)) throw new Error(`Runtime Skill projection ownership receipt target mismatch: ${receiptFile}`);
-        const key = `${receiptRoot}\u0000${receipt.runtimePath}`;
+      for (const entry of listSkillProjectionOwnershipReceipts({ targetRoot, runtimeRoot: root, destination: 'workspace', adapterId: adapter.id })) {
+        const { receipt, file } = entry;
+        const key = `${root}\u0000${receipt.runtimePath}`;
         const existing = receiptsByKey.get(key);
-        if (existing && !skillProjectionOwnershipReceiptsEquivalent(existing.receipt, receipt)) {
-          throw new Error(`Skill projection ownership receipt conflict; canonical and legacy receipts differ, so no files were changed: ${receipt.runtimePath}`);
-        }
-        receiptsByKey.set(key, { receipt, receiptFiles: [...(existing?.receiptFiles || []), receiptFile] });
+        if (existing && !skillProjectionOwnershipReceiptsEquivalent(existing.receipt, receipt)) throw new Error(`Skill projection ownership receipt conflict; canonical and legacy receipts differ, so no files were changed: ${receipt.runtimePath}`);
+        receiptsByKey.set(key, { receipt, receiptFiles: [...(existing?.receiptFiles || []), file] });
       }
     }
     for (const [key, receiptEntry] of receiptsByKey) {
       const [root, runtimePath] = key.split('\u0000');
-      if (declared.has(runtimePath) && options.runtimePath !== runtimePath) continue;
+      const selected = options.runtimePath === runtimePath || (options.skillId && options.skillId === receiptEntry.receipt.skillId);
+      if (!selected && (declared.has(runtimePath) || (root === '.agents' && declared.has(receiptEntry.receipt.skillId)))) continue;
       const targetDir = path.join(targetRoot, root, 'skills', ...runtimePath.split('/'));
       orphans.push({ runtimePath, root, path: toPosixRelative(targetRoot, targetDir), targetDir, ...receiptEntry });
     }
-    // A Skills root shared with other adapters (`.agents` for codex/cursor/trae) can
-    // hold directories another adapter owns; that adapter's receipt proves ownership,
-    // so this adapter must neither claim nor block on them.
-    const claimedBySiblingReceipt = (root: any, runtimePath: any) => SUPPORTED_AGENT_IDS.some((other: any) => {
-      if (other === adapter.id) return false;
-      const otherPrimary = getRuntimeAdapter(other).traits.skills.root;
-      const otherRoots = getRuntimeAdapter(other).traits.skills.destinations?.workspace?.roots || [otherPrimary];
-      if (!otherRoots.includes(root)) return false;
-      return [
-        skillProjectionOwnershipReceiptTarget(targetRoot, 'workspace', other, runtimePath),
-        legacySkillProjectionOwnershipReceiptTarget(targetRoot, root, other, runtimePath),
-      ].some((file: any) => existsFile(file));
-    });
     for (const root of roots) {
       const skillsRoot = path.join(targetRoot, root, 'skills');
       for (const runtimePath of listManagedDirectories(skillsRoot)) {
         if (receiptsByKey.has(`${root}\u0000${runtimePath}`)) continue;
-        if (claimedBySiblingReceipt(root, runtimePath)) continue;
         if (declared.has(runtimePath) && options.runtimePath !== runtimePath) continue;
         const targetDir = path.join(skillsRoot, runtimePath);
         if (fs.lstatSync(targetDir).isSymbolicLink()) continue;
@@ -735,10 +711,11 @@ export function registerDomainsComponents(dependencies: ComponentsDependencies) 
     if (scope !== '.') return [];
     const removals: any[] = [];
     const conflicts: any[] = [];
-    const orphanAdapter = getRuntimeAdapter(agent);
+    const selection = resolveRuntimeSelection({ runtimeId: options.runtimeId === undefined ? agent : options.runtimeId, adapterId: options.adapterId || (options.runtimeId === undefined ? undefined : agent) });
+    const orphanAdapter = selection.adapter;
     const roots: any[] = orphanAdapter.traits.skills.destinations?.workspace?.roots || [orphanAdapter.traits.skills.root];
     for (const orphan of managedRuntimeSkillOrphans(targetRoot, agent, options)) {
-      if (options.runtimePath && orphan.runtimePath !== options.runtimePath) continue;
+      if (options.skillId ? orphan.receipt?.skillId !== options.skillId && orphan.runtimePath !== options.runtimePath : options.runtimePath && orphan.runtimePath !== options.runtimePath) continue;
       if (orphan.receipt) {
         const actualFiles = existsDirectory(orphan.targetDir) ? collectFiles(orphan.targetDir) : [];
         const expectedByPath: any = new Map(orphan.receipt.files.map((file: any) => [file.path, file]));
@@ -760,6 +737,7 @@ export function registerDomainsComponents(dependencies: ComponentsDependencies) 
             expectedIntegrity: expected.integrity,
             expectedExecutable: expected.executable,
             pruneEmptyRoot: orphan.targetDir,
+            kind: 'skill-stale-file',
             source: `runtime Skill ${orphan.runtimePath}`,
           });
         }
@@ -769,19 +747,16 @@ export function registerDomainsComponents(dependencies: ComponentsDependencies) 
             path: receiptFile,
             expectedIntegrity: sha256Integrity(fs.readFileSync(receiptFile)),
             pruneEmptyRoot: path.dirname(receiptFile),
+            kind: 'skill-projection-receipt-removal',
+            removeLast: true,
             source: `Skill projection ownership receipt ${orphan.runtimePath}`,
           });
         }
         continue;
       }
-      const files = collectFiles(orphan.targetDir);
-      if (files.length !== 1 || files[0] !== path.join(orphan.targetDir, 'SKILL.md')) {
-        conflicts.push(`${orphan.path}: 包含非 Buildr 管理的额外文件`);
-      } else {
-        removals.push({ type: 'directory', path: orphan.targetDir });
-      }
+      conflicts.push(`${orphan.path}: 缺少完整所有权回执，不能仅凭生成标记删除用户可能修改的文件`);
     }
-    const declaredPlans = declaredRuntimeInstallPlanIds(targetRoot, agent);
+    const declaredPlans = declaredRuntimeInstallPlanIds(targetRoot, selection.runtimeId, orphanAdapter);
     if (!options.runtimePath) {
       for (const root of roots) {
         const plansRoot = path.join(targetRoot, root, 'buildr', 'skill-install-plans');
@@ -800,22 +775,25 @@ export function registerDomainsComponents(dependencies: ComponentsDependencies) 
     return removals.sort((left: any, right: any) => left.path.localeCompare(right.path));
   }
 
-  function reconcileComponentRuntime(targetRoot: any, agent: any): any  {
+  function reconcileComponentRuntime(targetRoot: any, selection: any): any  {
+    const agent = selection.runtimeId;
+    const selector = runtimeCommandSelector(selection);
     let rendered;
     try {
-      rendered = renderRuntime(agent, ['--target', targetRoot, '--scope', '.']);
+      rendered = renderRuntime(agent, ['--target', targetRoot, '--scope', '.'], { adapterId: selection.adapterId });
     } catch (error: any) {
-      throw new Error(`Component 源资产已提交，但 ${agent} runtime reconcile 失败：${error.message}\n修复后运行：buildr sync ${agent} --target ${targetRoot}`);
+      throw new Error(`Component 源资产已提交，但 ${selection.runtimeId ?? selection.adapterId} runtime reconcile 失败：${error.message}\n修复后运行：buildr sync${selector} --target ${targetRoot}`);
     }
     const finalDoctor = (runFinalDoctor as any)({
       invocation: dependencies.currentProductInvocation(),
-      agent,
+      runtimeId: selection.runtimeId,
+      adapterId: selection.adapterId,
       targetRoot,
       cwd: productRoot(),
     });
     if (finalDoctor.classification.status !== 'passed') {
       const detail = finalDoctor.classification.diagnostic ? `\n${finalDoctor.classification.diagnostic}` : '';
-      throw new Error(`Component 源资产和 runtime 已 reconcile，但 ${finalDoctor.classification.message}${detail}\n修复后运行：buildr doctor --agent ${agent} --target ${targetRoot} --json`);
+      throw new Error(`Component 源资产和 runtime 已 reconcile，但 ${finalDoctor.classification.message}${detail}\n修复后运行：buildr doctor${agent === null ? '' : ` --agent ${agent}`} --adapter ${selection.adapterId} --target ${targetRoot} --json`);
     }
     return rendered;
   }
@@ -823,8 +801,7 @@ export function registerDomainsComponents(dependencies: ComponentsDependencies) 
   function componentInstall(input: any): any  {
     const { id, agent, targetRoot } = input;
     assertWorkspaceComponentScope(input.scope);
-    assertAgentId(agent);
-    if (!isSupportedAgent(agent)) throw new Error(`Unsupported Agent runtime: ${agent}`);
+    const selection = selectWorkspaceRuntime(targetRoot, { runtimeId: input.runtimeId === undefined ? agent : input.runtimeId, adapterId: input.adapterId });
     assertInitializedBuildrWorkspace(targetRoot);
     const packageManifest = readPackageManifest();
     const entry = packageComponentEntry(packageManifest, id);
@@ -836,15 +813,14 @@ export function registerDomainsComponents(dependencies: ComponentsDependencies) 
       synced = installWorkspaceComponent(targetRoot, id);
       if (!synced) throw new Error(`Component not found in package or workspace registry: ${id}`);
     }
-    const rendered = reconcileComponentRuntime(targetRoot, agent);
+    const rendered = reconcileComponentRuntime(targetRoot, selection);
     return { operation: 'install', id, targetRoot, changed: synced.changed, renderedFiles: rendered.files };
   }
 
   function componentUninstall(input: any): any  {
     const { id, agent, targetRoot, reason = null } = input;
     assertWorkspaceComponentScope(input.scope);
-    assertAgentId(agent);
-    if (!isSupportedAgent(agent)) throw new Error(`Unsupported Agent runtime: ${agent}`);
+    const selection = selectWorkspaceRuntime(targetRoot, { runtimeId: input.runtimeId === undefined ? agent : input.runtimeId, adapterId: input.adapterId });
     assertInitializedBuildrWorkspace(targetRoot);
     const registry = readComponentsManifestForWrite(targetRoot);
     const index = registry.components.findIndex((entry: any) => entry.id === id);
@@ -877,7 +853,7 @@ export function registerDomainsComponents(dependencies: ComponentsDependencies) 
       changed.push(toPosixRelative(targetRoot, writeComponentsManifest(targetRoot, registry)));
       return { changed };
     });
-    const rendered = reconcileComponentRuntime(targetRoot, agent);
+    const rendered = reconcileComponentRuntime(targetRoot, selection);
     return { operation: 'uninstall', id, targetRoot, changed: [...new Set(changed)], renderedFiles: rendered.files };
   }
 

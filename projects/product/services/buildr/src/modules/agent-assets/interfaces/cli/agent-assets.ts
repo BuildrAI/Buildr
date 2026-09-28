@@ -1,3 +1,4 @@
+import { consumeRuntimeAdapterOption, parseRuntimeCommandArgs, selectWorkspaceRuntime } from '../../application/runtime-selection.ts';
 import { writeDoctorResult } from '../../../diagnostics/interfaces/cli/doctor.ts';
 import process from 'node:process';
 import path from 'node:path';
@@ -153,15 +154,15 @@ function runComponentListOrCheck(application: any, args: string[], checkOnlyOne:
 }
 
 function parseComponentMutation(args: string[], operation: 'install' | 'uninstall') {
-  const allowed = new Set(['--target', '--agent', '--scope', ...(operation === 'uninstall' ? ['--reason'] : [])]);
+  const allowed = new Set(['--target', '--agent', '--adapter', '--scope', ...(operation === 'uninstall' ? ['--reason'] : [])]);
   assertNoUnknownOptions(args, allowed);
   const [id] = positionalArgs(args);
   if (!id) throw new Error('Missing Component id.');
   const agent = optionValue(args, '--agent', null);
-  if (!agent) throw new Error('Missing required option: --agent');
   return {
     id,
     agent,
+    adapterId: optionValue(args, '--adapter', null),
     targetRoot: path.resolve(optionValue(args, '--target', process.cwd())),
     scope: optionValue(args, '--scope', '.'),
     reason: optionValue(args, '--reason', null),
@@ -290,15 +291,11 @@ function route({ key, surface = 'primary', summary, usage, details = [], match, 
 }
 
 function runScopedRender(runtime: any, context: any): any  {
-  const adapter = runtime.getRuntimeAdapter(context.runtimeId);
-  const renderer = context.domain === 'skills'
-    ? (args: any) => runtime.renderSkillsRuntime(context.runtimeId, args)
-    : context.domain === 'rules' && adapter.renderCapabilities['rules-entry'].writesFiles
-      ? (args: any) => runtime.renderRulesRuntime(context.runtimeId, args)
-      : null;
-  if (!renderer) { runtime.usage(); process.exit(2); }
-  const command = runtime.withResolvedTarget(context.args);
-  const result = renderer(command.args);
+  const parsed = parseRuntimeCommandArgs(context.argv.slice(4));
+  const command = runtime.withResolvedTarget(parsed.args);
+  const result = context.domain === 'skills'
+    ? runtime.renderSkillsRuntime(parsed.runtimeId, command.args)
+    : runtime.renderRulesRuntime(parsed.runtimeId, command.args);
   const { targetRoot, files } = result;
   for (const warning of result.warnings || []) console.error(`Warning: ${warning}`);
   if (result.jsonReported) return;
@@ -372,8 +369,8 @@ export function createAgentAssetsCliContributions(): any  {
     ...[
       ['component list', '列出 workspace Components。当前不支持 Project 或 Service scope。', 'Usage: buildr component list [--target <dir>] [--json]', (runtime: any, context: any) => runComponentListOrCheck(runtime, context.argv.slice(4), false)],
       ['component check', '检查 Component definition、成员 integrity 和唯一所有权。', 'Usage: buildr component check [<id>] [--target <dir>] [--json]', (runtime: any, context: any) => runComponentListOrCheck(runtime, context.argv.slice(4), true)],
-      ['component install', '安装 workspace Component，reconcile 指定 Agent runtime，并运行 doctor。', 'Usage: buildr component install <id> --agent <claude-code|codex|cursor|qoder|trae|trae-work|workbuddy> [--target <dir>]', (runtime: any, context: any) => runComponentMutation(runtime, context.argv.slice(4), 'install')],
-      ['component uninstall', '卸载 workspace Component 及其受管源资产；不会卸载外部 CLI，也不会删除 Project 内容。', 'Usage: buildr component uninstall <id> --agent <claude-code|codex|cursor|qoder|trae|trae-work|workbuddy> [--target <dir>] [--reason <text>]', (runtime: any, context: any) => runComponentMutation(runtime, context.argv.slice(4), 'uninstall')],
+      ['component install', '安装 workspace Component，reconcile 指定 Agent runtime，并运行 doctor。', 'Usage: buildr component install <id> --agent [<runtime>] [--adapter <adapter>] [--target <dir>]', (runtime: any, context: any) => runComponentMutation(runtime, context.argv.slice(4), 'install')],
+      ['component uninstall', '卸载 workspace Component 及其受管源资产；不会卸载外部 CLI，也不会删除 Project 内容。', 'Usage: buildr component uninstall <id> --agent [<runtime>] [--adapter <adapter>] [--target <dir>] [--reason <text>]', (runtime: any, context: any) => runComponentMutation(runtime, context.argv.slice(4), 'uninstall')],
     ].map(([key, summary, usage, run]: any) => route({ key, summary, usage, match: ({ domain, action }: any) => domain === 'component' && action === key.split(' ')[1], run })),
     ...[
       ['rules add', '注册已存在的 root Rule 文件到 rules/manifest.yml。未传 --path 时默认使用 rules/<id>.md。', 'Usage: buildr rules add <id> [--path <rules/file.md>] --description <text> [--target <dir>] [--replace]', (runtime: any, context: any) => runRulesAdd(runtime, context.argv.slice(4))],
@@ -387,11 +384,12 @@ export function createAgentAssetsCliContributions(): any  {
     route({
       key: 'render', surface: 'agent-machine',
       summary: '组合渲染 rules entry 和 workspace Skills 到 workspace destination；仅显式传入 --product-skill 时同时投射产品入口 Buildr Skill。不会同步 workspace 源资产或迁移 Structured Store。',
-      usage: 'Usage: buildr render <claude-code|codex|cursor|qoder|trae|trae-work|workbuddy> --target <dir> [--scope <scope>] [--product-skill]',
+      usage: 'Usage: buildr render [<runtime>] [--adapter <adapter>] --target <dir> [--scope <scope>] [--product-skill]',
       match: ({ domain }: any) => domain === 'render',
       run: (runtime: any, context: any) => {
-        const args = context.argv.slice(4);
-        const { targetRoot, files, rulesActions, warnings } = runtime.renderRuntime(context.action, args, { productSkill: args.includes('--product-skill') });
+        const parsed = parseRuntimeCommandArgs(context.argv.slice(3));
+        const args = parsed.args;
+        const { targetRoot, files, rulesActions, warnings } = runtime.renderRuntime(parsed.runtimeId, args, { productSkill: args.includes('--product-skill') });
         for (const warning of warnings) console.error(`Warning: ${warning}`);
         const ruleTargets: any = new Set(rulesActions.map((item: any) => item.targetFile));
         for (const item of rulesActions) console.log(`[${item.action}] ${runtime.toPosixRelative(targetRoot, item.targetFile)}`);
@@ -401,9 +399,12 @@ export function createAgentAssetsCliContributions(): any  {
     route({
       key: 'sync',
       summary: '同步 Buildr 产品能力，安装产品入口 Buildr Skill，并准备当前 Agent 的 workspace 入口 runtime。不是 Project scope 同步工具。',
-      usage: 'Usage: buildr sync <claude-code|codex|cursor|qoder|trae|trae-work|workbuddy> --target <dir> [--scope <scope>]',
+      usage: 'Usage: buildr sync [<runtime>] [--adapter <adapter>] --target <dir> [--scope <scope>]',
       match: ({ domain }: any) => domain === 'sync',
-      run: (runtime: any, context: any) => runtime.syncRuntime(context.action, context.argv.slice(4)),
+      run: (runtime: any, context: any) => {
+        const parsed = parseRuntimeCommandArgs(context.argv.slice(3));
+        return runtime.syncRuntime(parsed.runtimeId, parsed.args);
+      },
     }),
     route({
       key: 'skills add',
@@ -424,26 +425,30 @@ export function createAgentAssetsCliContributions(): any  {
     route({
       key: 'skill install', surface: 'agent-machine', requiresAgent: true,
       summary: '只安装或修复产品入口 Buildr Skill。',
-      usage: 'Usage: buildr skill install <claude-code|codex|cursor|qoder|trae|trae-work|workbuddy> --target <dir>',
+      usage: 'Usage: buildr skill install [<runtime>] [--adapter <adapter>] --target <dir>',
       match: ({ domain, action }: any) => domain === 'skill' && action === 'install',
       run: (runtime: any, context: any) => {
-        const command = runtime.withResolvedTarget(context.args);
-        const adapter = runtime.getRuntimeAdapter(context.runtimeId);
-        const { targetRoot, files } = runtime.installProductRuntimeSkill(adapter.id, command.args, { repoRoot: command.targetRoot, command: `buildr skill install ${context.runtimeId}` });
+        const parsed = parseRuntimeCommandArgs(context.argv.slice(4));
+        const command = runtime.withResolvedTarget(parsed.args);
+        const { targetRoot, files } = runtime.installProductRuntimeSkill(parsed.runtimeId, command.args, { repoRoot: command.targetRoot, command: 'buildr skill install' });
         for (const file of files) console.log(path.relative(targetRoot, file).split(path.sep).join('/'));
       },
     }),
     route({
       key: 'runtime check', surface: 'agent-machine', requiresAgent: true,
       summary: '专项检查某个 Agent runtime render 状态。',
-      usage: 'Usage: buildr runtime check <claude-code|codex|cursor|qoder|trae|trae-work|workbuddy> --scope <.|projects/project[/services/service[/path...]]> --target <dir>',
+      usage: 'Usage: buildr runtime check [<runtime>] [--adapter <adapter>] --scope <.|projects/project[/services/service[/path...]]> --target <dir>',
       match: ({ domain, action }: any) => domain === 'runtime' && action === 'check',
       run: (runtime: any, context: any) => {
-        const command = runtime.withResolvedTarget(context.args);
-        const adapter = runtime.getRuntimeAdapter(context.runtimeId);
+        const parsed = parseRuntimeCommandArgs(context.argv.slice(4));
+        const selectionArgs = consumeRuntimeAdapterOption(parsed.args);
+        const command = runtime.withResolvedTarget(selectionArgs.args);
+        if (!command.args.includes('--scope')) command.args.push('--scope', '.');
+        const selected = selectWorkspaceRuntime(command.targetRoot, { runtimeId: parsed.runtimeId, adapterId: selectionArgs.adapterId });
+        const { adapter } = selected;
         const checker = runtime.runtimeImplementation(adapter, 'checker', runtime.RUNTIME_CHECKERS);
         const printer = runtime.runtimeImplementation(adapter, 'checker', runtime.RUNTIME_CHECK_PRINTERS);
-        const result = checker(command.args, { repoRoot: command.targetRoot, adapterId: adapter.id, command: `buildr runtime check ${context.runtimeId}` });
+        const result = checker(command.args, { repoRoot: command.targetRoot, runtimeId: selected.runtimeId, adapterId: adapter.id, command: 'buildr runtime check' });
         printer(result);
         process.exit(result.exitCode);
       },
@@ -451,14 +456,14 @@ export function createAgentAssetsCliContributions(): any  {
     route({
       key: 'skills render', surface: 'agent-machine', requiresAgent: true,
       summary: '--target 始终是 Skill source workspace；workspace destination 写当前工作目录 runtime，user destination 写当前 Agent 用户层。默认 workspace。',
-      usage: 'Usage: buildr skills render <claude-code|codex|cursor|qoder|trae|trae-work|workbuddy> [--destination workspace|user] --target <workspace> [--json]',
+      usage: 'Usage: buildr skills render [<runtime>] [--adapter <adapter>] [--destination workspace|user] --target <workspace> [--json]',
       match: ({ domain, action }: any) => domain === 'skills' && action === 'render',
       run: runScopedRender,
     }),
     route({
       key: 'rules render', surface: 'agent-machine', requiresAgent: true,
-      summary: '递归发现 canonical workspace scope 的祖先链和子树，并按 adapter reconcile rules bridge 或 vendor rule files。原生消费 AGENTS.md 的 adapter 不执行 rules render。',
-      usage: 'Usage: buildr rules render <claude-code|cursor|qoder|trae|trae-work|workbuddy> --scope <.|projects/project[/services/service[/path...]]> --target <dir>',
+      summary: '递归发现 canonical workspace scope 的祖先链和子树，并按 adapter reconcile rules bridge 或 vendor rule files。原生消费 AGENTS.md 的 adapter 不写规则桥文件。',
+      usage: 'Usage: buildr rules render [<runtime>] [--adapter <adapter>] --scope <.|projects/project[/services/service[/path...]]> --target <dir>',
       match: ({ domain, action }: any) => domain === 'rules' && action === 'render',
       run: runScopedRender,
     }),

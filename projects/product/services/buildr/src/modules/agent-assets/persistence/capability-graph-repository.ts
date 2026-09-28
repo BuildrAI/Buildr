@@ -7,6 +7,7 @@ import {
   parseSkillsManifestDocument,
 } from './skill-manifest.ts';
 import { resolveSkills } from '../infrastructure/runtime/skills/sources.ts';
+import { skillAppliesToRuntime } from '../infrastructure/runtime/adapter-contract.ts';
 
 function layerFor(root: any, scope: any): any  {
   const manifestPath = path.join(root, 'skills', 'manifest.yml');
@@ -19,7 +20,7 @@ function relative(root: any, file: any): any  {
 }
 
 export function resolveSkillCapabilityGraph(organizationRoot: any, projectRoot: any = null, options: any = {}): any  {
-  const runtime = options.runtime || 'claude-code';
+  const runtime = options.runtime ?? null;
   const scope = projectRoot ? options.scope || `projects/${path.basename(projectRoot)}` : '.';
   const layers: any[] = [layerFor(organizationRoot, '.')];
   const visibleLayers = layers.filter(Boolean);
@@ -47,6 +48,7 @@ export function resolveSkillCapabilityGraph(organizationRoot: any, projectRoot: 
 
   const skills = resolveSkills(organizationRoot, projectRoot, {
     runtime,
+    adapterId: options.adapterId,
     projectScope: scope,
     resolveRemote: false,
   });
@@ -79,7 +81,7 @@ export function resolveSkillCapabilityGraph(organizationRoot: any, projectRoot: 
       selected = compatible.find((skill: any) => skill.id === binding.provider) || null;
       if (!selected) {
         const declaredProvider = declaredCompatible.find((skill: any) => skill.id === binding.provider);
-        reason = declaredProvider && Array.isArray(declaredProvider.runtimes) && !declaredProvider.runtimes.includes(runtime)
+        reason = declaredProvider && !skillAppliesToRuntime(declaredProvider, runtime)
           ? 'runtime_unavailable'
           : 'invalid_binding';
       }
@@ -87,7 +89,7 @@ export function resolveSkillCapabilityGraph(organizationRoot: any, projectRoot: 
       [selected] = compatible;
     } else if (compatible.length > 1) {
       reason = 'ambiguous_provider';
-    } else if (declaredCompatible.some((skill: any) => Array.isArray(skill.runtimes) && !skill.runtimes.includes(runtime))) {
+    } else if (declaredCompatible.some((skill: any) => !skillAppliesToRuntime(skill, runtime))) {
       reason = 'runtime_unavailable';
     } else if (versionCandidates.length > 0 || declaredVersionCandidates.length > 0) {
       reason = 'version_mismatch';

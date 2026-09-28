@@ -46,7 +46,7 @@ test('Doctor CLI保持compact/full JSON与失败退出码，非法detail在应�
   const args = ['--target', '.', '--agent', 'codex', '--json'];
   const compactResult = runDoctorCommand(application, args);
   const compact = JSON.parse(output);
-  assert.equal(compact.schemaVersion, 'buildr.doctor/v1');
+  assert.equal(compact.schemaVersion, 'buildr.doctor/v2');
   assert.equal(compact.ok, false);
   assert.equal(process.exitCode, 1);
   assert.equal('workspace' in compact, false);
@@ -87,4 +87,25 @@ test('安装CLI将参数变为结构化输入并拥有JSON与退出状态', asyn
   assert.throws(() => run('update', ['update', '--track', 'wrong']), /--track must be stable or candidate/);
   assert.throws(() => run('update', ['update', '--target', '.']), /不接收 workspace/);
   await assert.rejects(() => run('installation status', ['installation', 'status', '--unknown']), /Unknown argument/);
+});
+
+test('Doctor保留未知品牌、标准适配器和宿主未确认事实', () => {
+  for (const identity of ['dsh', 'new-host', 'Codex']) {
+    const result = doctorFixture().doctor({ targetRoot: path.resolve('.'), agent: identity });
+    assert.equal(result.agentRuntime.requested, identity);
+    assert.equal(result.agentRuntime.runtimeId, identity);
+    assert.equal(result.agentRuntime.adapterId, 'agents-standard');
+    assert.equal(result.agentRuntime.supported, true);
+    assert.equal(result.agentRuntime.host.sessionConsumption, 'unknown-until-adopted');
+    assert.equal(result.findings.some((finding: any) => finding.code === 'runtime.agent_unsupported'), false);
+  }
+  const overridden = doctorFixture().doctor({ targetRoot: path.resolve('.'), agent: 'dsh', adapterId: 'claude-code' });
+  assert.equal(overridden.agentRuntime.runtimeId, 'dsh');
+  assert.equal(overridden.agentRuntime.adapterId, 'claude-code');
+  assert.equal(overridden.agentRuntime.reason, 'explicit-adapter');
+  const unspecified = doctorFixture().doctor({ targetRoot: path.resolve('.') });
+  assert.equal(unspecified.agentRuntime.runtimeId, null);
+  assert.equal(unspecified.agentRuntime.adapterId, 'agents-standard');
+  assert.deepEqual(unspecified.agentRuntime.checkedAdapters, ['agents-standard']);
+  assert.throws(() => doctorFixture().doctor({ targetRoot: '.', adapterId: 'typo' }), /Unsupported runtime adapter/);
 });

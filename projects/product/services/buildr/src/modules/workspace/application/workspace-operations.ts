@@ -1,3 +1,4 @@
+import { runtimeCommandSelector, selectWorkspaceRuntime, type RuntimeSelection } from '../../agent-assets/application/runtime-selection.ts';
 import type { WorkspaceRepository } from '../persistence/workspace-manifest-repository.ts';
 import type { ProjectRepository } from '../persistence/project-manifest-repository.ts';
 import fs from 'node:fs';
@@ -44,20 +45,18 @@ export type WorkspaceOperationsRuntime = Record<WorkspaceOperationMethod, (...ar
   SUPPORTED_AGENT_IDS: string[];
   UNSUPPORTED_AGENT_GUIDANCE: { message: string; nextStep: string };
   isSupportedAgent(agent: string): boolean;
-  syncRuntime(agent: string, args: string[]): void;
+  syncRuntime(agent: string | null, args: string[]): void;
 };
 
-export type WorkspaceInitializationInput = { targetRoot: string; name: string; description: string; profile: string; agent: string | null };
-export type WorkspaceInitializationResult = WorkspaceInitializationInput & { created: string[]; changed: string[] };
+export type WorkspaceInitializationInput = { targetRoot: string; name: string; description: string; profile: string; agent: string | null; adapterId?: string | null; sourceOnly?: boolean };
+export type WorkspaceInitializationResult = WorkspaceInitializationInput & { created: string[]; changed: string[]; runtimeSelection: RuntimeSelection | null };
 
 export function registerWorkspaceOperations(runtime: WorkspaceOperationsRuntime) {
-  const { SUPPORTED_AGENT_IDS, UNSUPPORTED_AGENT_GUIDANCE, isSupportedAgent } = runtime;
   const syncPackageComponents = (...args: any[]) => runtime.syncPackageComponents(...args);
   const syncPackageBuiltins = (...args: any[]) => runtime.syncPackageBuiltins(...args);
   const readPackageManifest = (...args: any[]) => runtime.readPackageManifest(...args);
   const parseManifestFileEntry = (...args: any[]) => runtime.parseManifestFileEntry(...args);
   const assertName = (...args: any[]) => runtime.assertName(...args);
-  const assertAgentId = (...args: any[]) => runtime.assertAgentId(...args);
   const renderSkillsManifestYaml = (...args: any[]) => runtime.renderSkillsManifestYaml(...args);
   const renderProjectsYaml = runtime.projectRepository.renderProjectsYaml;
   const renderRulesManifestYaml = (...args: any[]) => runtime.renderRulesManifestYaml(...args);
@@ -189,12 +188,9 @@ export function registerWorkspaceOperations(runtime: WorkspaceOperationsRuntime)
     assertName(name, 'Workspace name');
     if (!description.trim()) throw new Error('Workspace description must be a non-empty string.');
     assertName(profile, 'Workspace profile');
-    if (agent !== null) {
-      assertAgentId(agent);
-      if (!isSupportedAgent(agent)) {
-        throw new Error(`Unsupported Agent runtime: ${agent}. Supported Agent runtime adapters: ${SUPPORTED_AGENT_IDS.join(', ')}. ${UNSUPPORTED_AGENT_GUIDANCE.message}${UNSUPPORTED_AGENT_GUIDANCE.nextStep}`);
-      }
-    }
+    const sourceOnly = input.sourceOnly === true;
+    if (sourceOnly && (agent != null || input.adapterId != null)) throw new Error('--source-only cannot be combined with --agent or --adapter.');
+    const runtimeSelection = sourceOnly ? null : selectWorkspaceRuntime(targetRoot, { runtimeId: agent ?? null, adapterId: input.adapterId });
     const manifest = readPackageManifest();
     const created: any[] = [];
     const changed: any[] = [];
@@ -229,13 +225,13 @@ export function registerWorkspaceOperations(runtime: WorkspaceOperationsRuntime)
     const gitignoreChanged = appendGitignoreEntries(path.join(targetRoot, '.gitignore'), [...WORKSPACE_ROOT_GITIGNORE_ENTRIES]);
     if (gitignoreChanged) changed.push('.gitignore');
 
-    const result = { targetRoot, name, description, profile, agent, created, changed };
+    const result = { targetRoot, name, description, profile, agent, sourceOnly, runtimeSelection, created, changed };
     onAssetsReady(result);
-    if (agent !== null) {
+    if (runtimeSelection !== null) {
       try {
-        runtime.syncRuntime(agent, ['--target', targetRoot]);
+        runtime.syncRuntime(runtimeSelection.runtimeId, ['--target', targetRoot, '--adapter', runtimeSelection.adapterId]);
       } catch (error: any) {
-        throw new Error(`Workspace 源资产已初始化，但 ${agent} onboarding 未完成。\n修复问题后运行：buildr sync ${agent} --target ${targetRoot}\n原因：${error.message}`);
+        throw new Error(`Workspace 源资产已初始化，但 ${runtimeSelection.runtimeId ?? runtimeSelection.adapterId} onboarding 未完成。\n修复问题后运行：buildr sync${runtimeCommandSelector(runtimeSelection)} --target ${targetRoot}\n原因：${error.message}`);
       }
     }
     return result;

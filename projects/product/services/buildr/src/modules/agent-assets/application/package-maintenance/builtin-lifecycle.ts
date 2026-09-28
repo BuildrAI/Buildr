@@ -3,10 +3,9 @@ import {
   REQUIRED_RENDER_CAPABILITIES,
   createRuntimePlan,
 } from '../../infrastructure/runtime/adapter-contract.ts';
-import { reconcileRuntimePlan } from '../../infrastructure/runtime/runtime-reconciler.ts';
+import { reconcileRuntimePlan, withRuntimeProjectionLock } from '../../infrastructure/runtime/runtime-reconciler.ts';
 import {
-  legacySkillProjectionOwnershipReceiptTarget,
-  skillProjectionOwnershipReceiptTarget,
+  skillProjectionOwnerId,
 } from '../../infrastructure/runtime/skills/projection-files.ts';
 
 export function createBuiltinLifecycle(deps: any): any  {
@@ -77,7 +76,7 @@ export function createBuiltinLifecycle(deps: any): any  {
     }
   }
 
-  function builtinUninstallUnsafe(args: any): any  {
+  function builtinUninstallUnsafe(args: any, options: any = {}): any  {
     const allowedFlags: any = new Set(['--target', '--reason']);
     assertNoUnknownOptions(args, allowedFlags);
     const [id] = positionalArgs(args);
@@ -124,16 +123,9 @@ export function createBuiltinLifecycle(deps: any): any  {
         }
       }
       for (const [runtimeRoot, agents] of agentsByRuntimeRoot) {
-        const receiptAgents = agents.filter((agent: any) => [
-          skillProjectionOwnershipReceiptTarget(targetRoot, 'workspace', agent, runtimePath),
-          legacySkillProjectionOwnershipReceiptTarget(targetRoot, runtimeRoot, agent, runtimePath),
-        ].some((file: any) => existsFile(file)));
-        // A shared filesystem Skills root can retain receipts for more than one
-        // adapter. Consume those receipts before considering the legacy
-        // SKILL.md-only fallback, so valid vendor files are never mislabeled as
-        // unknown user content by a sibling adapter.
-        for (const agent of receiptAgents.length > 0 ? receiptAgents : [agents[0]]) {
-          const removals = buildRuntimeOrphanRemovalPlan(targetRoot, agent, '.', { runtimePath }).map((item: any) => ({ ...item, targetFile: item.path }));
+        // One owner consumes every compatible historical receipt for this root.
+        for (const agent of [skillProjectionOwnerId(agents[0], runtimeRoot)]) {
+          const removals = buildRuntimeOrphanRemovalPlan(targetRoot, agent, '.', { runtimePath, skillId: id }).map((item: any) => ({ ...item, targetFile: item.path }));
           if (removals.length === 0) continue;
           const result = reconcileRuntimePlan(createRuntimePlan({
             adapterId: agent,
@@ -142,7 +134,7 @@ export function createBuiltinLifecycle(deps: any): any  {
             writes: [],
             removals,
             capabilityEvidence: REQUIRED_RENDER_CAPABILITIES.map((capability: any) => ({ capability, supported: true, adapterId: agent })),
-          }));
+          }), { projectionLockHeld: options.projectionLockHeld === true });
           changed.push(...result.removed.map((file: any) => toPosixRelative(targetRoot, file)));
         }
       }
@@ -157,13 +149,16 @@ export function createBuiltinLifecycle(deps: any): any  {
   function builtinUninstall(args: any): any  {
     const targetRoot = path.resolve(optionValue(args, '--target', process.cwd()));
     const runtimeRoots: any[] = [...new Set(SUPPORTED_AGENT_IDS.flatMap((agent: any) => workspaceSkillsRoots(agent)))];
-    const result = withWorkspaceMutation(targetRoot, 'builtin.uninstall', [
+    // Source mutation locks fail immediately when occupied, so holding the projection
+    // lock while acquiring it cannot create a circular wait with source-first callers.
+    const result = withRuntimeProjectionLock(targetRoot, () => withWorkspaceMutation(targetRoot, 'builtin.uninstall', [
       path.join(targetRoot, 'rules'),
       path.join(targetRoot, 'skills'),
       path.join(targetRoot, 'commands'),
       ...runtimeRoots.map((root: any) => path.join(targetRoot, root)),
       path.join(targetRoot, '.buildr', 'builtin-receipts.json'),
-    ], () => builtinUninstallUnsafe(args));
+      path.join(targetRoot, '.buildr', 'agent-runtime'),
+    ], () => builtinUninstallUnsafe(args, { projectionLockHeld: true })));
     return result;
   }
 

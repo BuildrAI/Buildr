@@ -24,15 +24,32 @@ function output(result: any): any  {
 }
 
 try {
-  const unsupported: any = path.join(root, 'unsupported');
-  let result: any = run(['init', '--agent', 'unsupported', '--target', unsupported, '--name', 'unsupported']);
-  assert.notEqual(result.status, 0, 'unsupported Agent must fail');
-  assert.equal(fs.existsSync(unsupported), false, 'unsupported Agent must fail before workspace writes');
-  assert.match(output(result), /Supported Agent runtime adapters: claude-code, codex, cursor, qoder, trae, trae-work, workbuddy/);
-  assert.match(output(result), /请联系 Buildr 作者反馈该 Agent/);
+  const unsupported: any = path.join(root, 'unsupported-adapter');
+  let result: any = run(['init', '--adapter', 'unsupported', '--target', unsupported, '--name', 'unsupported']);
+  assert.notEqual(result.status, 0, 'explicit unknown adapter must fail');
+  assert.equal(fs.existsSync(unsupported), false, 'unknown adapter must fail before workspace writes');
+  assert.match(output(result), /Unsupported runtime adapter: unsupported/);
+  result = run(['init', '--source-only', '--agent', 'dsh', '--target', unsupported]);
+  assert.notEqual(result.status, 0);
+  assert.equal(fs.existsSync(unsupported), false, 'mutually exclusive inputs must fail before writes');
+  assert.match(output(result), /--source-only cannot be combined/);
+
+  for (const identity of [null, 'dsh', 'new-host']) {
+    const standardRoot = path.join(root, identity ?? 'default');
+    result = run(['init', ...(identity === null ? [] : ['--agent', identity]), '--target', standardRoot, '--name', 'standard', '--description', 'Standard onboarding fixture']);
+    assert.equal(result.status, 0, output(result));
+    assert.ok(fs.existsSync(path.join(standardRoot, '.agents', 'skills', 'buildr', 'SKILL.md')));
+    assert.ok(fs.existsSync(path.join(standardRoot, '.agents', 'skills', 'task-triage', 'SKILL.md')));
+    const checked = run(['doctor', ...(identity === null ? [] : ['--agent', identity]), '--target', standardRoot, '--json']);
+    assert.equal(checked.status, 0, output(checked));
+    const report = JSON.parse(checked.stdout);
+    assert.equal(report.agentRuntime.runtimeId, identity);
+    assert.equal(report.agentRuntime.adapterId, 'agents-standard');
+    assert.equal(report.health.ready, true, JSON.stringify(report.findings));
+  }
 
   const sourceOnly: any = path.join(root, 'source-only');
-  result = run(['init', '--target', sourceOnly, '--name', 'source-only', '--profile', 'personal']);
+  result = run(['init', '--source-only', '--target', sourceOnly, '--name', 'source-only', '--profile', 'personal']);
   assert.equal(result.status, 0, output(result));
   assert.equal(fs.existsSync(path.join(sourceOnly, 'projects', 'manifest.yml')), true);
   const workspace: any = YAML.parse(fs.readFileSync(path.join(sourceOnly, '.buildr', 'workspace.yml'), 'utf8'));
@@ -98,7 +115,7 @@ try {
   const doctor: any = JSON.parse(doctorResult.stdout);
   assert.equal(doctor.ok, true);
   assert.equal(doctor.summary.error, 0);
-  assert.equal(doctor.runtime.codex.some((scope: any) => scope.counts.missing || scope.counts.stale || scope.counts.conflict), false);
+  assert.equal(doctor.runtime.agentsStandard.some((scope: any) => scope.counts.missing || scope.counts.stale || scope.counts.conflict), false);
 
   const conflicted: any = path.join(root, 'conflicted');
   const conflictSkill: any = path.join(conflicted, '.agents', 'skills', 'buildr', 'SKILL.md');
@@ -109,7 +126,7 @@ try {
   assert.equal(fs.existsSync(path.join(conflicted, 'projects', 'manifest.yml')), true, 'source initialization must remain available');
   assert.equal(fs.readFileSync(conflictSkill, 'utf8'), '# User-owned Buildr\n', 'runtime conflict must preserve user-owned file');
   assert.match(output(result), /Workspace 源资产已初始化，但 codex onboarding 未完成/);
-  assert.match(output(result), new RegExp(`buildr sync codex --target ${conflicted.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+  assert.match(output(result), new RegExp(`buildr sync codex --adapter agents-standard --target ${conflicted.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
 
   console.log('Init onboarding verification passed: preflight, source-only compatibility, full runtime, idempotency, and recovery guidance.');
 } finally {

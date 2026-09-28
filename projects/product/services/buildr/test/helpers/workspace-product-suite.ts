@@ -55,7 +55,7 @@ function runBuildr(args: any, options: any = {}): any  {
 
 function initWorkspaceViaCli(t: any, options: any = {}): any  {
   const root: any = path.join(temporaryRoot(t), 'workspace');
-  const result: any = runBuildr(['init', '--target', root, '--name', options.name || 'Demo', '--description', options.description || 'Demo workspace', '--profile', 'team'], options.env ? { env: options.env } : {});
+  const result: any = runBuildr(['init', '--source-only', '--target', root, '--name', options.name || 'Demo', '--description', options.description || 'Demo workspace', '--profile', 'team'], options.env ? { env: options.env } : {});
   assert.equal(result.status, 0, result.stderr);
   return root;
 }
@@ -77,7 +77,7 @@ function initWorkspace(t: any, options: any = {}): any  {
   const previousLog: any = console.log;
   console.log = () => {};
   try {
-    createRuntime().initBuildr(['--target', root, '--name', options.name || 'Demo', '--description', options.description || 'Demo workspace', '--profile', 'team']);
+    createRuntime().initBuildr(['--source-only', '--target', root, '--name', options.name || 'Demo', '--description', options.description || 'Demo workspace', '--profile', 'team']);
   } finally {
     console.log = previousLog;
   }
@@ -187,7 +187,7 @@ suiteTest('runtime-recovery', 'legacy runtime.node 不影响健康，sync 移除
   const appData: any = path.join(temporaryRoot(t), 'node-app-data');
   const root: any = path.join(temporaryRoot(t), 'workspace');
   const env: any = { ...process.env, BUILDR_APP_DATA_DIR: appData };
-  let result: any = runBuildr(['init', '--target', root, '--name', 'node-recovery', '--description', 'Node recovery workspace'], { env });
+  let result: any = runBuildr(['init', '--source-only', '--target', root, '--name', 'node-recovery', '--description', 'Node recovery workspace'], { env });
   assert.equal(result.status, 0, result.stderr);
   const manifest: any = path.join(root, '.buildr', 'workspace.yml');
   fs.appendFileSync(manifest, `runtime:\n  node:\n    version: ${process.versions.node}\n`);
@@ -213,7 +213,7 @@ suiteTest('runtime-recovery', 'legacy runtime.node 不影响健康，sync 移除
 
 suiteTest('manifest-registry', '未提供 description 时 init 写入 TODO，doctor 返回可见诊断', (t: any) => {
   const root: any = path.join(temporaryRoot(t), 'workspace');
-  let result: any = runBuildr(['init', '--target', root, '--name', 'needs-description']);
+  let result: any = runBuildr(['init', '--source-only', '--target', root, '--name', 'needs-description']);
   assert.equal(result.status, 0, result.stderr);
   result = runBuildr(['doctor', '--target', root, '--json']);
   const report: any = JSON.parse(result.stdout);

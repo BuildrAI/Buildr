@@ -144,7 +144,7 @@ for (const [args, expected] of [
   [['-v'], /Unknown option: -v/],
   [['project', 'create'], /Missing project ref/],
   [['service', 'create'], /Missing service ref/],
-  [['render', 'unsupported'], /Unsupported Agent runtime: unsupported/],
+  [['render', '--adapter', 'unsupported'], /Unsupported runtime adapter: unsupported/],
   [['commands', 'add', 'demo', '--unknown'], /Unknown argument: --unknown/],
 ]) {
   const result: any = run(args);
@@ -209,10 +209,13 @@ assert.match(`${invalidInspect.stdout}${invalidInspect.stderr}`, /Unknown argume
 const runtime: any = run(['runtime', 'list', '--json']);
 assert.equal(runtime.status, 0);
 const runtimeJson: any = JSON.parse(runtime.stdout);
-assert.deepEqual(runtimeJson.supportedAgents, ['claude-code', 'codex', 'cursor', 'qoder', 'trae', 'trae-work', 'workbuddy']);
+assert.equal(runtimeJson.schemaVersion, 'buildr.runtime-list/v2');
+assert.equal(runtimeJson.defaultAdapter, 'agents-standard');
+assert.equal(runtimeJson.runtimeMappings.dsh, 'agents-standard');
+assert.deepEqual(runtimeJson.supportedAgents, ['claude-code', 'agents-standard', 'cursor', 'qoder', 'trae', 'trae-work', 'workbuddy']);
 assert.deepEqual(runtimeJson.adapterTraitCatalog.rules, ['native-recursive', 'native-root', 'reference-bridge', 'vendor-rule-files']);
-assert.equal(runtimeJson.agents.codex.traits.rules.kind, 'native-recursive');
-assert.equal(runtimeJson.agents.codex.traits.skills.root, '.agents');
+assert.equal(runtimeJson.agents['agents-standard'].traits.rules.kind, 'native-recursive');
+assert.equal(runtimeJson.agents['agents-standard'].traits.skills.root, '.agents');
 assert.equal(runtimeJson.agents['claude-code'].traits.rules.kind, 'reference-bridge');
 assert.equal(runtimeJson.agents['claude-code'].traits.skills.root, '.claude');
 assert.equal(runtimeJson.agents.cursor.traits.rules.format, 'cursor-mdc');
@@ -243,8 +246,8 @@ try {
   const doctor: any = JSON.parse(result.stdout);
   assert.equal(doctor.ok, true);
   assert.equal(doctor.projectRegistry.projects[0].name, 'demo');
-  assert.equal(doctor.runtime.codex[0].environmentChecks.installation.status, 'not-checked');
-  assert.equal(doctor.runtime.codex[0].activation.rules, 'path-read');
+  assert.equal(doctor.runtime.agentsStandard[0].environmentChecks.installation.status, 'not-checked');
+  assert.equal(doctor.runtime.agentsStandard[0].activation.rules, 'path-read');
 } finally {
   fs.rmSync(workspace, { recursive: true, force: true });
 }

@@ -1,5 +1,5 @@
 import process from 'node:process';
-import { createRuntime, runtimeContributions, runtimeProvide } from '../runtime.ts';
+import { createRuntime, runtimeContributions } from '../runtime.ts';
 import { registerCommandHelp } from './help.ts';
 import { isVersionRequest, printVersion } from './identity.ts';
 import { printCliError } from './diagnostics.ts';
@@ -9,7 +9,6 @@ import { createWorkspaceCliContributions } from '../../modules/workspace/module.
 import { createDailyProgressCliContributions } from '../../modules/task/module.ts';
 import { createInstallationCliContributions, createLauncherCliContributions } from '../../modules/installation/module.ts';
 import { createAgentAssetsCliContributions } from '../../modules/agent-assets/interfaces/cli/agent-assets.ts';
-import { AGENT_ASSETS_RUNTIME } from '../../modules/agent-assets/module.ts';
 import { WEB_CLI_GROUPS } from '../../web/interfaces/cli/web.ts';
 import { createProjectVerificationCliContributions } from '../../modules/project-testing/module.ts';
 
@@ -205,6 +204,6 @@ export function dispatch(argv: any = process.argv): any  {
   const direct = commandRegistry.find((item: any) => !item.requiresAgent && item.match(context));
   if (direct) return direct.run(runtime, context);
   const agent = commandRegistry.find((item: any) => item.requiresAgent && item.match(context));
-  if (agent && runtimeProvide(runtime, AGENT_ASSETS_RUNTIME).isSupportedAgent(runtimeId)) return agent.run(runtime, context);
+  if (agent) return agent.run(runtime, context);
   process.exit(printCliError(rawArgs, { candidates: commandCandidates(commandRegistry) }));
 }

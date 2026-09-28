@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import YAML from 'yaml';
+import { RUNTIME_HOST_PROFILES } from '../adapter-contract.ts';
 
 function validateOpenAiSkillMetadata(file: any, label: any): any  {
   let metadata;
@@ -22,9 +23,11 @@ const FORMAT_VALIDATORS: Readonly<Record<string, any>> = Object.freeze({
   'openai-skill-metadata': validateOpenAiSkillMetadata,
 });
 
-export function validateSkillPublication(adapter: any, { skillId, skillDir }: any): any  {
+export function validateSkillPublication(adapter: any, { skillId, skillDir, runtimeId = null }: any): any  {
   const errors: any[] = [];
-  for (const extension of adapter.traits.skills.publicationExtensions || []) {
+  const profile = runtimeId !== null && Object.hasOwn(RUNTIME_HOST_PROFILES, runtimeId) ? RUNTIME_HOST_PROFILES[runtimeId] : null;
+  const extensions = [...(adapter.traits.skills.publicationExtensions || []), ...(profile?.publicationExtensions || [])];
+  for (const extension of extensions) {
     const file = path.join(skillDir, ...extension.path.split('/'));
     if (!fs.existsSync(file)) continue;
     const label = `adapter ${adapter.id} Skill ${skillId} publication extension ${extension.path}`;

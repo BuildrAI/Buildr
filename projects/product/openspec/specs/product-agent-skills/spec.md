@@ -394,7 +394,7 @@ Buildr package MUST提供`declaration-intake` workspace Skill，description MUST
 - **AND** 最终Doctor MUST证明selected Agent graph与projection ready
 
 ### Requirement: 产品入口 Buildr Skill 分离宿主身份与投射目标
-产品入口 Buildr Skill MUST 将当前宿主 Agent、用户明确指定的维护目标和 Buildr 投射 adapter 视为不同事实。普通面向当前环境的操作 MUST 使用宿主明确提供且受支持的 adapter；只有用户明确指定其他 runtime 时才能改用该目标。
+产品入口 Buildr Skill MUST 将当前宿主 Agent、用户明确指定的维护目标和 Buildr 投射 adapter 视为不同事实。普通面向当前环境的操作 MUST 保留宿主明确提供的真实 runtimeId，由统一选择规则采用标准或专用 adapter；用户明确指定其他 runtime 时使用该维护目标但不改写宿主身份。
 
 #### Scenario: Qoder 读取 Codex 投射后更新 workspace
 - **WHEN** Qoder 会话发现了由 Codex adapter 投射到 `.agents/skills/` 的 Buildr Skill，且用户只要求“更新 workspace”
@@ -407,9 +407,9 @@ Buildr package MUST提供`declaration-intake` workspace Skill，description MUST
 - **AND** MUST NOT 把该目标改写为当前宿主身份
 
 #### Scenario: 当前宿主身份无法确认
-- **WHEN** Agent 宿主没有提供可与 supported adapter 对齐的明确身份，且用户也未明确指定目标
-- **THEN** Buildr Skill MUST 在执行需要 `<agent>` 的命令前停止并请求确认
-- **AND** MUST NOT 使用投射文件、受支持列表或其他 adapter 作为 fallback
+- **WHEN** Agent 宿主没有提供明确身份，且用户也未明确指定目标
+- **THEN** Buildr Skill MUST 允许省略运行时身份，由统一选择规则保留唯一既有接入或使用标准默认值；多个不等价既有选择时只暂停受影响写入并请求选择
+- **AND** MUST NOT 从投射文件或列表推断宿主身份，也 MUST NOT 在已选实现执行失败后切换另一适配器（Adapter）
 
 ### Requirement: 产品入口 Buildr Skill 禁止从投射诊断推断宿主身份
 产品入口 Buildr Skill MUST 明确禁止从 Skill 路径、generated marker、投射回执以及 Doctor 的 `requested`、`selected` 或 `detectedAgents` 推断当前宿主 Agent。

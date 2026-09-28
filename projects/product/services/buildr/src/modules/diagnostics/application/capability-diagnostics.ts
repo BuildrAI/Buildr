@@ -1,3 +1,5 @@
+import { resolveRuntimeSelection } from '../../agent-assets/infrastructure/runtime/adapter-contract.ts';
+
 export function createCapabilityDiagnostics({ addDoctorFinding, isSupportedAgent, path, resolveSkillCapabilityGraph }: any) {
   function publicContract(contract: any) {
     if (!contract) return null;
@@ -17,7 +19,8 @@ export function createCapabilityDiagnostics({ addDoctorFinding, isSupportedAgent
   }
 
   function diagnoseSkillCapabilities(result: any, targetRoot: any, scopes: any, requestedAgent: any) {
-    const runtimeId = requestedAgent && isSupportedAgent(requestedAgent) ? requestedAgent : 'codex';
+    const selected = requestedAgent && typeof requestedAgent === 'object' ? requestedAgent : resolveRuntimeSelection({ runtimeId: requestedAgent ?? null });
+    const { runtimeId, adapterId } = selected;
     const targets = [{ scope: '.', projectRoot: null }];
     for (const scope of scopes) {
       if (!scope.project) continue;
@@ -27,7 +30,7 @@ export function createCapabilityDiagnostics({ addDoctorFinding, isSupportedAgent
     result.capabilities = { structurallyRoutableOnly: true, graphs: [], items: [] };
     for (const target of targets) {
       try {
-        const graph = resolveSkillCapabilityGraph(targetRoot, target.projectRoot, { runtime: runtimeId, scope: target.scope });
+        const graph = resolveSkillCapabilityGraph(targetRoot, target.projectRoot, { runtime: runtimeId, runtimeId, adapterId, scope: target.scope });
         const consumers = graph.consumers.map(publicConsumer);
         result.capabilities.graphs.push({
           schemaVersion: graph.schemaVersion,

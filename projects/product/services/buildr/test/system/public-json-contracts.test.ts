@@ -50,7 +50,7 @@ function fixtureWorkspace(t: any, context: any): any  {
 }
 
 before(async () => {
-  await run(['init', '--target', fixtureContexts.plain, '--name', 'json-contracts', '--description', 'JSON contracts fixture', '--profile', 'team'], { json: false, env: fixtureEnv });
+  await run(['init', '--source-only', '--target', fixtureContexts.plain, '--name', 'json-contracts', '--description', 'JSON contracts fixture', '--profile', 'team'], { json: false, env: fixtureEnv });
   fs.cpSync(fixtureContexts.plain, fixtureContexts.codex, { recursive: true });
   fixtureRuntime.renderRuntime('codex', ['--target', fixtureContexts.codex], { productSkill: true });
   fs.cpSync(fixtureContexts.codex, fixtureContexts.managed, { recursive: true });
@@ -63,7 +63,7 @@ describe('public JSON contracts', { concurrency: 2 }, () => {
 
 test('JSON helper 只接受登记 schema 和对象 payload', () => {
   assert.deepEqual(withJsonSchema(PUBLIC_JSON_SCHEMAS.doctor, { ok: true }), {
-    schemaVersion: 'buildr.doctor/v1',
+    schemaVersion: 'buildr.doctor/v2',
     ok: true,
   });
   assert.throws(() => withJsonSchema('buildr.unknown/v1', {}), /Unknown public JSON schema/);
@@ -148,7 +148,7 @@ test('doctor JSON默认compact且full必须显式请求', async (t: any) => {
   assert.equal(compact.releaseAwareness.schemaVersion, PUBLIC_JSON_SCHEMAS.releaseAwareness);
   assert.equal(compact.releaseAwareness.freshness.status, 'unavailable');
   assert.deepEqual(compact.notices, []);
-  assert.equal(compact.health.ready, true, 'Release Awareness unavailable must not block Doctor readiness');
+  assert.equal(compact.health.ready, true, `Release Awareness unavailable must not block Doctor readiness: ${JSON.stringify(compact.findings)}`);
   assert.ok(Array.isArray(compact.domainHealth));
   for (const field of ['workspace', 'capabilities', 'components', 'builtins', 'commandLineTools', 'runtime']) assert.equal(field in compact, false, field);
 
@@ -228,10 +228,12 @@ test('doctor 严格报告 workspace identity 与独立 readiness', async (t: any
   assert.equal(typeof initialized.health.ready, 'boolean');
   assert.deepEqual(Object.keys(initialized.diagnosticProfile).sort(), ['conditional', 'core', 'id', 'specialty']);
   assert.deepEqual(initialized.agentRuntime.detectedAgents, []);
-  assert.deepEqual(initialized.agentRuntime.checkedAgents, []);
+  assert.deepEqual(initialized.agentRuntime.checkedAgents, ['agents-standard']);
+  assert.equal(initialized.agentRuntime.runtimeId, null);
+  assert.equal(initialized.agentRuntime.adapterId, 'agents-standard');
   assert.equal(initialized.agentRuntime.diagnosticMode, 'managed-runtime-inventory');
-  assert.equal(Object.values(initialized.runtime).every((items: any) => items.length === 0), true);
-  assert.equal(initialized.findings.some((finding: any) => finding.code.startsWith('runtime.')), false);
+  assert.ok(initialized.runtime.agentsStandard.length > 0);
+  assert.ok(initialized.findings.some((finding: any) => finding.code === 'runtime.agents_standard_stale' && finding.userActionRequired === false));
 
   fs.rmSync(path.join(root, '.buildr', 'workspace.yml'));
   const incomplete: any = await run(['doctor', '--target', root, '--json', '--detail', 'full'], { expectedStatus: 1 });
@@ -257,8 +259,8 @@ test('Codex partial inventory 作为 assurance metadata 保留且不产生 docto
 
   const report: any = await run(['doctor', '--agent', 'codex', '--target', root, '--json', '--detail', 'full']);
   assert.equal(report.findings.some((finding: any) => finding.code === 'runtime.codex_warning'), false);
-  assert.equal(report.summary.warning, 0);
-  assert.deepEqual(report.runtime.codex[0].skillInventoryEvidence, {
+  assert.equal(report.summary.warning, 0, JSON.stringify(report.findings));
+  assert.deepEqual(report.runtime.agentsStandard[0].skillInventoryEvidence, {
     evidence: 'partial',
     roots: [
       { source: 'workspace', destination: 'workspace' },
@@ -276,14 +278,14 @@ test('Codex partial inventory 作为 assurance metadata 保留且不产生 docto
 
 test('doctor 从 canonical 所有权回执发现 runtime，并明确报告旧路径迁移与 dual conflict', async (t: any) => {
   const root: any = fixtureWorkspace(t, 'codex');
-  const canonicalRoot: any = path.join(root, '.buildr', 'agent-runtime', 'workspace', 'codex', 'skill-projection-ownership-receipts');
-  const legacyRoot: any = path.join(root, '.agents', 'buildr', 'skill-projection-receipts', 'codex');
+  const canonicalRoot: any = path.join(root, '.buildr', 'agent-runtime', 'workspace', 'agents-standard', 'skill-projection-ownership-receipts');
+  const legacyRoot: any = path.join(root, '.agents', 'buildr', 'skill-projection-receipts', 'agents-standard');
   fs.mkdirSync(path.dirname(legacyRoot), { recursive: true });
   fs.renameSync(canonicalRoot, legacyRoot);
 
   const legacyOnly: any = await run(['doctor', '--agent', 'codex', '--target', root, '--json', '--detail', 'full']);
-  assert.deepEqual(legacyOnly.agentRuntime.detectedAgents, ['codex']);
-  const runtimeFindings: any = legacyOnly.runtime.codex.flatMap((scope: any) => scope.findings);
+  assert.deepEqual(legacyOnly.agentRuntime.detectedAgents, ['agents-standard']);
+  const runtimeFindings: any = legacyOnly.runtime.agentsStandard.flatMap((scope: any) => scope.findings);
   assert.ok(runtimeFindings.some((finding: any) => finding.code === 'runtime.skill_projection_ownership_receipt_missing'));
   assert.ok(runtimeFindings.some((finding: any) => finding.code === 'runtime.skill_projection_ownership_receipt_legacy'));
 
@@ -305,8 +307,8 @@ test('doctor 默认只盘点受管 runtime，显式 agent 才把对应 drift 变
   const root: any = fixtureWorkspace(t, 'managed');
 
   const healthy: any = await run(['doctor', '--target', root, '--json']);
-  assert.deepEqual(healthy.agentRuntime.detectedAgents, ['claude-code', 'codex']);
-  assert.deepEqual(healthy.agentRuntime.checkedAgents, ['claude-code', 'codex']);
+  assert.deepEqual(healthy.agentRuntime.detectedAgents, ['claude-code', 'agents-standard']);
+  assert.deepEqual(healthy.agentRuntime.checkedAgents, ['claude-code', 'agents-standard']);
   assert.equal(healthy.agentRuntime.diagnosticMode, 'managed-runtime-inventory');
 
   const claudeBridge: any = path.join(root, 'CLAUDE.md');
@@ -316,7 +318,7 @@ test('doctor 默认只盘点受管 runtime，显式 agent 才把对应 drift 变
   const inventoryDrift: any = inventory.findings.find((finding: any) => finding.code === 'runtime.claude_code_stale');
   assert.ok(inventoryDrift);
   assert.equal(inventoryDrift.userActionRequired, false);
-  assert.equal(inventory.health.ready, true);
+  assert.equal(inventory.health.ready, true, JSON.stringify(inventory.findings));
   assert.equal(inventory.health.actionRequired, false);
   assert.equal(inventory.health.actionableCount, 0);
   assert.deepEqual(inventory.repairPlan, []);
@@ -324,7 +326,7 @@ test('doctor 默认只盘点受管 runtime，显式 agent 才把对应 drift 变
 
   const selected: any = await run(['doctor', '--agent', 'claude-code', '--target', root, '--json']);
   const selectedDrift: any = selected.findings.find((finding: any) => finding.code === 'runtime.claude_code_stale');
-  assert.deepEqual(selected.agentRuntime.detectedAgents, ['claude-code', 'codex']);
+  assert.deepEqual(selected.agentRuntime.detectedAgents, ['claude-code', 'agents-standard']);
   assert.deepEqual(selected.agentRuntime.checkedAgents, ['claude-code']);
   assert.equal(selected.agentRuntime.diagnosticMode, 'selected-runtime');
   assert.ok(selectedDrift);

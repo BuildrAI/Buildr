@@ -4,9 +4,11 @@
 
 ## 先确定要接入的对象
 
-先核对 Buildr 已有能力约定，再向目标智能体（Agent）收集不能从现有描述中推导的事实，最后形成独立变更并实现。只调查有关规则（Rule）、技能（Skill）、生效方式和安装探测的信息，不需要收集目标产品的全部功能。
+先区分运行时身份 `runtimeId` 与文件适配器（Adapter）身份 `adapterId`。`agents-standard` 提供原生 `AGENTS.md` 和一级 `.agents/skills/<skill-id>/SKILL.md`；`codex`、`dsh` 及未登记但语法有效的品牌默认复用它，无需先新增描述符（Descriptor）或扩展通用技能（Skill）的品牌白名单。品牌未知时可省略身份，不冒用另一个品牌。
 
-同一品牌的命令行（CLI）、集成开发环境（IDE）、桌面或云端入口，可能使用不同文件及刷新机制，应分别记录实际入口、版本和操作系统。适配器（Adapter）不使用别名或回退借用另一产品的实现。
+只有实际文件格式、规则（Rule）作用域或技能（Skill）根目录存在专用差异，才调查并增加适配器（Adapter）；刷新说明、可选附加资源校验和安装探测优先作为宿主资料（Host Profile）表达，不复制同一标准实现。只调查相关事实，不收集目标产品的全部功能。
+
+同一品牌的命令行（CLI）、集成开发环境（IDE）、桌面或云端入口可能使用不同机制，应分别记录入口、版本和操作系统。未知品牌选择标准是预先确定的选择规则，不是执行失败后的回退；显式未知 `--adapter` 必须报错，已选实现失败不得换目录重试。
 
 ## 收集必要事实
 
@@ -14,7 +16,7 @@
 
 | 信息 | 需要回答的问题 |
 | --- | --- |
-| 身份与入口 | 正式产品名、实际入口、版本、构建号、操作系统和建议 `adapterId`；其他入口是否共用配置；如何只读查询版本 |
+| 身份与入口 | 正式产品名、真实 `runtimeId`、实际入口、版本、构建号、操作系统；是否复用 `agents-standard`，或什么文件差异需要专用 `adapterId`；其他入口是否共用配置；如何只读查询版本 |
 | 规则（Rule）发现 | 准确文件路径、嵌套作用域、合并顺序、兄弟目录与多根目录隔离、引用语法或专用格式 |
 | 技能（Skill）发现 | 项目路径与用户路径、同名优先级、新增和删除后的生效方式；每条路径究竟承担发现、内置资源、界面展示还是写入白名单职责 |
 | 生效与刷新 | 规则（Rule）和技能（Skill）分别是在写入后、读取路径时、新会话开始时还是显式刷新后生效；需要刷新时的准确命令或操作 |
@@ -24,7 +26,7 @@
 
 - 规则（Rule）：`native-recursive`、`native-root`、`reference-bridge`、`vendor-rule-files`。
 - 技能（Skill）：`agents-compatible`、`vendor-root`。
-- 生效方式：`immediate`、`path-read`、`session-start`、`explicit-reload`。
+- 生效方式：`immediate`、`path-read`、`session-start`、`explicit-reload`、`host-dependent`；最后一项保持宿主行为未确认，不虚构刷新保证。
 - 探测方式：`command`、`manual`、`none`。
 
 路径存在、安装包出现字符串或文件生成成功，都不能证明智能体（Agent）会发现它。每条路径记录用途：`project_discovery`、`user_discovery`、`builtin`、`editor_ui`、`sandbox_writable` 或 `unknown`。项目发现目录须有明确资料、发现机制源码或可重复的本机观察支持；推测不能独立作为注册依据，证据冲突时保留冲突并暂停受影响能力的登记。
@@ -37,7 +39,9 @@
 {
   "identity": {
     "name": null,
-    "adapterId": null,
+    "runtimeId": null,
+    "adapterId": "agents-standard",
+    "dedicatedFormatReason": null,
     "surface": null,
     "version": null,
     "build": null,
@@ -79,16 +83,19 @@
 
 ## 实现与完成标准
 
-开发智能体（Agent）核对当前特征目录，通过任务分流形成新增适配器（Adapter）的独立 OpenSpec 变更，并在隔离工作位置实现。每个适配器（Adapter）须分别覆盖以下五项能力：`rules-entry`、`product-buildr-skill`、`workspace-project-skills`、`skill-install-plans`、`runtime-check`。
+标准文件准备无需逐品牌登记。若只补充宿主资料（Host Profile），核对其当前事实及证据，不能将未经验证的发现/加载写成保证。新增专用文件行为时，再通过任务分流形成独立 OpenSpec 变更并在隔离位置实现；每个文件适配器（Adapter）须覆盖 `rules-entry`、`product-buildr-skill`、`workspace-project-skills`、`skill-install-plans`、`runtime-check` 五项能力。
 
-只读取根规则（Rule）的产品还需覆盖嵌套作用域，`native-root` 不能单独证明完整的 `rules-entry`。只能通过界面上传、Buildr 无法检查更新和删除的技能（Skill），应提供连接或手工使用说明，不伪装成完整的运行时适配器（Agent Runtime Adapter）。
+只读取根规则（Rule）的专用产品还需覆盖嵌套作用域，`native-root` 不能单独证明完整的 `rules-entry`。只能通过界面上传、Buildr 无法检查更新和删除的技能（Skill），应提供连接或手工说明，不伪装成完整文件适配器（Adapter）。这些限制不否定标准文件可以独立准备的事实。
 
-实现通常包括独立描述符（Descriptor）、规则（Rule）投射格式、技能（Skill）目录、生效说明、探测方式和相应测试。已有静态基础能力可以复用；运行计划、路径保护、冲突预检、归属证明和清理机制不在每个适配器（Adapter）重写。
+实现使用严格的 `getRuntimeAdapter(adapterId)` 查找文件描述，品牌选择通过 `resolveRuntimeSelection({ runtimeId, adapterId })`；不要让严格查找接受任意未知值。保留请求身份、实际适配器（Adapter）、选择原因与宿主证据。标准没有厂商元数据（Vendor Metadata）；例如 Codex 的可选 `agents/openai.yaml` 只由对应宿主资料（Host Profile）校验。
+
+标准技能（Skill）采用一级标识目录，随附资源保持相对路径；共享 `.agents/skills/` 的所有文件归属为 `agents-standard`，Cursor/TRAE 专用规则（Rule）仍独立。运行计划、路径保护、冲突预检、归属证明和清理机制统一复用，不为新品牌重写。旧回执（Receipt）或嵌套受管目录只在完整身份、内容、权限一致时迁移，不能凭名称或生成标记接管。
 
 完成时核对：
 
 - 特征（Trait）组合通过校验，五项能力分别有可复核依据。
-- 测试覆盖具体适配器（Adapter）的投射格式、作用域顺序、兄弟隔离、技能（Skill）目录、冲突保护、清理和探测；共享实现测试不能替代这些覆盖。
+- 按真实差异验证：标准复用覆盖选择、真实身份与证据边界，专用实现另覆盖格式、作用域顺序、兄弟隔离、目录、清理和探测；不为每个标准品牌复制同一文件投射测试。
+- 通用技能（Skill）不列品牌白名单，明确限制按真实 `runtimeId` 生效；共享根中的有效他方文件不被删除，内容或能力绑定（Capability Binding）不一致时不能后写覆盖。迁移测试覆盖等价、漂移、未知额外文件、多份回执（Receipt）不一致和失败回滚；预检失败整组零写入。
 - 描述符（Descriptor）只保存官方资料、随包资料、明确发现源码或可重复本机观察，不维护 `documented/verified` 等等级，也不保存品牌历史冒烟状态。
 - `runtime list`、诊断输出、Buildr 技能（Skill）和产品文档一致，相关正式规范与适用验证满足当次范围。
 

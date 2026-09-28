@@ -3,6 +3,7 @@
 ## Purpose
 
 定义 Buildr 产品随包资产、package manifest、默认 workspace baseline 和 package check 的边界。
+
 ## Requirements
 
 ### Requirement: package manifest 声明产品内置 Agent Skills
@@ -120,7 +121,7 @@ Buildr package manifest MUST 声明可同步到用户 workspace 的产品内置 
 
 #### Scenario: 声明内置 Skills
 - **WHEN** Buildr package 包含产品内置 Skills
-- **THEN** `package/manifest.yml` MUST 声明每个内置 Skill 的 id、源路径、目标路径、适用 runtimes 和 required 状态
+- **THEN** `package/manifest.yml` MUST 声明每个内置 Skill 的 id、源路径、目标路径和 required 状态；省略 runtimes MUST 表示通用适用，显式列表 MUST 表示对真实运行时身份的限制
 - **AND** composed Skill MUST additionally declare its `provides` and `requires` capability identities、versions and dependency modes
 - **AND** version 或 hash 元数据 MAY 声明，但不是必填
 
@@ -1194,7 +1195,7 @@ Buildr package manifest MUST 将 `ux-design-laws` 声明为无 capability contra
 
 #### Scenario: package 声明用户体验设计法则技能
 - **WHEN** Buildr package 加载 builtin Skill manifest
-- **THEN** `ux-design-laws` MUST 声明 source path、target、与 Skill frontmatter 完全一致的 description、`required: false` 和全部受支持 runtimes
+- **THEN** `ux-design-laws` MUST 声明 source path、target、与 Skill frontmatter 完全一致的 description、`required: false`，并通过省略 runtimes 表达运行时无关的通用适用性
 - **AND** 它 MUST 不声明 `provides`、`requires`、capability contract 或 initial binding
 
 #### Scenario: Workspace baseline 包含完整技能目录

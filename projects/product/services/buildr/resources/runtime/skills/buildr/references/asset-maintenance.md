@@ -3,7 +3,7 @@
 ## Workspace / Organization Root
 
 - Workspace 是 Buildr 组织（Organization/Root）源资产根；`--target` 始终指向 Buildr workspace root，不指向 Service 代码仓。
-- workspace 必须完成 `buildr init`；首次使用且当前 Agent 已确认时，运行 `buildr init --agent <agent> --target <dir> --name <name> --profile <personal|team|company>` 一次完成源资产、runtime 和最终 doctor。不带 `--agent` 的 init 只初始化源资产。`init --agent` 最终 doctor 通过后继续首次使用交接，而不是默认让用户执行 `project create`：用普通语言说明工作空间（Workspace）承载共同事实、项目（Project）承载业务目标、服务（Service）承担实现职责、代码库实例（Repository Instance）定位实际代码；没有 Project 时询问要管理的业务、产品、系统、长期工作或已有 repo；唯一 Project 没有 Service 时说明 Service 只在代码仓、应用、模块或可执行资产存在时需要，并询问接入还是直接开始；唯一范围时直接邀请第一项工作目标；多个候选时只问消除范围歧义的最少问题。不要创建 `WELCOME.md`、持久 checklist 或固定教学 Rule。用户已经给出明确目标时连续推进，不为展示教学中断工作。
+- 工作空间（Workspace）必须完成 `buildr init`；身份已知时运行 `buildr init --agent <agent> --target <dir> --name <name> --profile <personal|team|company>` 一次完成源资产、运行时（Runtime）文件和最终诊断（Doctor）。身份未知可省略 `--agent`，保留唯一既有受管方式，无既有方式时默认 `agents-standard`；多个不等价方式要求明确选择。仅源资产使用 `init --source-only`，不能与 `--agent` 或 `--adapter` 混用，执行失败也不退回纯源流程。完整初始化的最终诊断（Doctor）通过后继续首次使用交接，而不是默认让用户执行 `project create`：用普通语言说明工作空间（Workspace）承载共同事实，项目（Project）承载业务目标，服务（Service）承担实现职责，代码库实例（Repository Instance）定位实际代码；多个服务可共用一份代码。没有 Project 时询问要管理的业务、产品、系统、长期工作或已有 repo；唯一 Project 没有 Service 时说明 Service 只在代码仓、应用、模块或可执行资产存在时需要，并询问接入还是直接开始；唯一范围时直接邀请第一项工作目标；多个候选时只问消除范围歧义的最少问题。不要创建 `WELCOME.md`、持久 checklist 或固定教学 Rule。用户已经给出明确目标时连续推进，不为展示教学中断工作。
 - 根 `AGENTS.md` 是规则入口，其受管区块（Managed Block）内联核心规则；专业规则通过 `rules/manifest.yml` 按需发现，`projects/manifest.yml` 是项目清单（Project Registry）。
 
 ## Project
@@ -92,7 +92,7 @@
 - root/Organization 规则新增：先创建并编辑 `rules/<rule-id>.md`，再运行 `buildr rules add <rule-id> --target <dir> --description <text>`；未传 `--path` 时默认注册 `rules/<rule-id>.md`。
 - root/Organization 规则删除：运行 `buildr rules remove <rule-id> --target <dir>`，同时删除 manifest entry 和规则文件；如只取消注册并保留文件，使用 `--keep-file`。
 - Project/Service 规则分别通过对应目录的 `AGENTS.md` 维护，不使用 Project 或 Service 级 `rules/manifest.yml`。
-- 需要渲染到 Agent runtime 时，运行 `buildr rules render <agent> --scope <workspace-relative-path> --target <dir>`；Codex 原生读取，Claude Code 使用逐 source bridge，Cursor/Qoder/TRAE 使用 scoped vendor rules，TRAE Work/WorkBuddy 使用 root reference bridge。本机查询与诊断见[运行时维护](runtime.md)；具体路径、reload/UI 前置条件以及 `documented` / `verified` 证据等级见[在线适配参考](https://github.com/BuildrAI/Buildr/blob/main/projects/product/services/buildr/docs/agent-runtime-adapters.md)。GUI smoke 保持一次性人工 Prompt，不自动点击或抓取应用私有状态。
+- 需要投射到智能体运行时（Agent Runtime）时，运行 `buildr rules render <agent> --scope <workspace-relative-path> --target <dir>`；身份未知可省略。标准适配器（Adapter）原生使用 `AGENTS.md`，Claude Code 使用逐源桥接，Cursor/Qoder/TRAE 使用作用域内厂商规则（Rule），TRAE Work/WorkBuddy 使用根引用桥接。本机查询与诊断见[运行时维护](runtime.md)；具体路径、刷新前置条件和兼容依据见[在线适配参考](https://github.com/BuildrAI/Buildr/blob/main/projects/product/services/buildr/docs/agent-runtime-adapters.md)。文件准备不证明当前会话加载，不维护品牌通过等级或历史冒烟状态。
 ## Commands
 
 - Commands 分为三层：workspace `commands/manifest.yml` 与 `commands/**/manifest.yml` 是唯一 catalog definition source，Project `commands.yml` 只保存 requirement references，实际 binary/version/login 属于 user/machine environment。
@@ -109,7 +109,8 @@
 - Buildr 随包场景化流程通过 workspace Skills 承载；Rule 保留 Agent 价值观、边界和约束。
 - 本地作者型：`buildr skills add [<id>] --source <skill-dir> --target <workspace>`；移除登记用 `buildr skills remove <id> --target <workspace>`，保留本地源目录和全部文件；组件受管技能继续走组件维护入口，不能借此删除成员。旧 `--scope .` 只作 deprecated 兼容；Project scope 已不受支持。
 - 本地作者型和 package Skill 的完整源目录可包含 `SKILL.md` 以及 `agents/`、`assets/`、`examples/`、`references/`、`scripts/`、`templates/`；render 保留随附文件的原始字节与 owner executable 状态，只有 `SKILL.md` 会注入 managed marker、contributions、capability bindings 和 adapter context。
-- 通用 Skill 合法性和 Codex 发布都只要求有效 `SKILL.md`，`name` 与 `description` 承担发现和路由。adapter-specific optional extensions 由目标 runtime descriptor 独立校验：Codex/OpenAI 只校验已经存在的 `agents/openai.yaml`，缺失不阻塞、不生成也不反写；其他 adapter 可保留但不消费已有 vendor metadata。Skill 正文使用模板或脚本时，从当前 runtime `SKILL.md` 所在目录解析相对路径，核心行为不得依赖 vendor metadata。
+- 通用技能（Skill）省略 `runtimes`，不展开有限品牌列表；用户明确范围按真实 `runtimeId` 判断，未知身份不获得品牌专属许可。维护时仅把可识别的历史产品完整七品牌列表升级为通用，保留用户缩小的列表、绑定与卸载状态。
+- 通用技能（Skill）及 Codex 发布只要求有效 `SKILL.md`，`name` 与 `description` 承担发现和路由。Codex 宿主资料（Host Profile）只校验已有的可选 `agents/openai.yaml`；缺失不阻塞、不生成也不反写，其他宿主保留但不解释。标准适配器（Adapter）没有厂商元数据（Vendor Metadata）要求。模板或脚本始终从当前运行时（Runtime）技能入口所在目录解析相对路径。
 - Provider/consumer 声明使用可重复的 `--provides <capability>@<version>` 和 `--requires <capability>@<version>:<required|optional>`；显式选择用 `buildr skills bind <capability>@<version> --provider <skill-id> --scope <scope> --target <dir>`，取消选择用 `skills unbind`。
 - 远端发布型：先用 `buildr skills add <id> --remote-source <url> --target <workspace>` 登记；解析出确定安装源后用 `--resolved-source <url> --replace` 更新。
 - `--resolved-kind` 默认 `skill-url`，表示 URL 内容是 raw `SKILL.md`；`--version`、`--integrity` 和 `--ignore-unsupported` 等细节按 CLI 帮助和 manifest 补齐。
@@ -117,7 +118,8 @@
 - render 在任何写入前检查 workspace/user roots、receipts 与完整目录 inventory；`equivalent_external`、`foreign_owner`、`name_conflict` 阻止整次 mutation。首版不自动 adopt/transfer，`--replace` 也不能取得外部 ownership。
 - legacy `projects/<project>/skills/` 已不受支持，当前 Buildr 不提供自动迁移。升级前使用旧版本完成迁移，或人工审阅后把 source 整理到 workspace `skills/`；当前命令不得复制、合并、改写或删除这些 bytes。
 - render 结果分三类：本地源由 Buildr 安装，已解析远端源由 Buildr 安装，未解析远端信息源由 Buildr 生成 Agent 可读安装说明并要求 Agent 处理。
-- 完整目录投射由 adapter-specific receipt 记录受管文件 identity；源删除、卸载和重复 render 只清理仍匹配回执的文件。runtime 文件被修改或目录含未知用户文件时必须停写并保留现场。`resolved.kind: skill-url` 仍只表示单个 raw `SKILL.md`，不得推测 URL 邻近目录。
+- 标准共享根采用 `.agents/skills/<skill-id>/` 一级目录，即使源目录嵌套也不改变随附文件的相对路径；其他厂商根保留原布局。所有标准共享文件（包括 Cursor/TRAE 技能）共用 `agents-standard` 所有权回执（Ownership Receipt）。旧品牌回执（Receipt）和嵌套目录仅在完整归属、内容、权限一致时迁移；漂移、未知用户文件、多份证据或新目标冲突时整组零写入，保留现场。迁移后不要用旧版 Buildr 管理，回退需要完整的操作前文件与回执（Receipt）备份。
+- 源删除、卸载和重复投射只清理仍匹配回执（Receipt）的文件；共享根中其他品牌仍有启用来源的技能（Skill）不被误删，品牌限制导致共享正文或能力绑定（Capability Binding）不同时必须报告冲突。`resolved.kind: skill-url` 仍只表示单个原始 `SKILL.md`，不得推测 URL 邻近目录。
 
 ## 安装与更新
 

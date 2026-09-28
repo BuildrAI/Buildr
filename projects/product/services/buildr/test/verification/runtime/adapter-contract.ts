@@ -10,6 +10,7 @@ import {
   ADAPTER_TRAIT_CATALOG,
   REQUIRED_RENDER_CAPABILITIES,
   RUNTIME_ADAPTERS,
+  RUNTIME_HOST_PROFILES,
   SUPPORTED_AGENT_IDS,
   createRuntimeAdapterDescriptor,
   createRuntimeAdapterRegistry,
@@ -33,7 +34,7 @@ const repositoryRoot: any = path.resolve(productRoot, '../../../..');
 const temporaryRoot: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-runtime-adapter-contract-'));
 process.once('exit', () => fs.rmSync(temporaryRoot, { recursive: true, force: true }));
 
-assert.deepEqual(SUPPORTED_AGENT_IDS, ['claude-code', 'codex', 'cursor', 'qoder', 'trae', 'trae-work', 'workbuddy']);
+assert.deepEqual(SUPPORTED_AGENT_IDS, ['claude-code', 'agents-standard', 'cursor', 'qoder', 'trae', 'trae-work', 'workbuddy']);
 const implementationMatrix: any = runtimeAdapterImplementationMatrix();
 assert.deepEqual(implementationMatrix.entries.map((entry: any) => entry.adapterId), SUPPORTED_AGENT_IDS);
 assert.deepEqual(implementationMatrix.representatives.map((entry: any) => entry.family), [
@@ -41,12 +42,12 @@ assert.deepEqual(implementationMatrix.representatives.map((entry: any) => entry.
 ]);
 assert.deepEqual(ADAPTER_TRAIT_CATALOG.rules, ['native-recursive', 'native-root', 'reference-bridge', 'vendor-rule-files']);
 assert.equal(runtimeDiscoveryPayload().adapterTraitCatalog, ADAPTER_TRAIT_CATALOG);
-assert.deepEqual(runtimeDiscoveryPayload().agents.codex.taskAdoption.modes, ['new-session', 'reentered']);
-assert.equal(runtimeDiscoveryPayload().agents.codex.taskAdoption.sessionConsumption, 'unknown-until-adopted');
-assert.deepEqual(RUNTIME_ADAPTERS.codex.traits.skills.publicationExtensions, [
+assert.deepEqual(runtimeDiscoveryPayload().agents['agents-standard'].taskAdoption.modes, ['new-session', 'reentered']);
+assert.equal(runtimeDiscoveryPayload().agents['agents-standard'].taskAdoption.sessionConsumption, 'unknown-until-adopted');
+assert.deepEqual(RUNTIME_HOST_PROFILES.codex.publicationExtensions, [
   { path: 'agents/openai.yaml', format: 'openai-skill-metadata' },
 ]);
-for (const adapterId of SUPPORTED_AGENT_IDS.filter((id: any) => id !== 'codex')) {
+for (const adapterId of SUPPORTED_AGENT_IDS) {
   assert.deepEqual(RUNTIME_ADAPTERS[adapterId].traits.skills.publicationExtensions || [], [], `${adapterId} must not consume OpenAI Skill metadata`);
 }
 for (const adapter of Object.values(RUNTIME_ADAPTERS)) {
@@ -84,13 +85,13 @@ for (const adapterId of SUPPORTED_AGENT_IDS) {
   });
   const targets: any = assembled.plan.writes.map((item: any) => path.relative(projectionRoot, item.targetFile).split(path.sep).join('/'));
   assert.ok(targets.some((target: any) => target.startsWith(`${adapter.traits.skills.root}/skills/buildr/`)), `${adapterId} must plan its declared product Skill root`);
-  if (adapterId === 'codex') {
+  if (adapterId === 'agents-standard') {
     assert.ok(assembled.plan.nativeAssets.some((item: any) => item.targetFile === path.join(projectionRoot, 'AGENTS.md')));
   } else {
     assert.ok(targets.some((target: any) => target.includes(expectedRuleTargets[adapterId])), `${adapterId} must plan its declared Rules target`);
   }
 }
-const codexCheck: any = checkRuntimeAdapter(['--target', projectionRoot, '--scope', '.'], { repoRoot: projectionRoot, adapterId: 'codex' });
+const codexCheck: any = checkRuntimeAdapter(['--target', projectionRoot, '--scope', '.'], { repoRoot: projectionRoot, runtimeId: 'codex', adapterId: 'agents-standard' });
 assert.equal(codexCheck.runtimeSourceEvidence.assurance, 'buildr-verified');
 assert.equal(codexCheck.runtimeSourceEvidence.activation.rules, 'path-read');
 assert.equal(codexCheck.runtimeSourceEvidence.activation.skills, 'session-start');
@@ -183,7 +184,7 @@ assert.equal(anyProbeMiss.status, 'missing');
 assert.equal(anyProbeMiss.surfaces.length, 3);
 assert.match(anyProbeMiss.evidence, /desktop: missing \| ide: missing \| cli: missing/);
 
-assert.throws(() => getRuntimeAdapter('fake-runtime'), /Unsupported Agent runtime/);
+assert.throws(() => getRuntimeAdapter('fake-runtime'), /Unsupported runtime adapter/);
 assert.throws(() => createRuntimeAdapterRegistry([{ id: 'fake-runtime', runtimeTargets: [], renderCapabilities: {}, recommendedCommands: {} }], { testOnly: true }), /Invalid runtime adapter registry/);
 
 const fakeImplementations: any = { rules: ['fake-rules'], skills: ['fake-skills'], checker: ['fake-checker'] };
@@ -255,17 +256,17 @@ assert.throws(() => createRuntimeAdapterRegistry([fakeDescriptor, fakeDescriptor
 
 const publicationRoot: any = fs.mkdtempSync(path.join(temporaryRoot, 'skill-publication-'));
 assert.deepEqual(validateSkillPublication(RUNTIME_ADAPTERS['claude-code'], { skillId: 'demo', skillDir: publicationRoot }), []);
-assert.deepEqual(validateSkillPublication(RUNTIME_ADAPTERS.codex, { skillId: 'demo', skillDir: publicationRoot }), [], 'missing optional OpenAI metadata must not block Codex publication');
+assert.deepEqual(validateSkillPublication(RUNTIME_ADAPTERS['agents-standard'], { runtimeId: 'codex', skillId: 'demo', skillDir: publicationRoot }), [], 'missing optional OpenAI metadata must not block Codex publication');
 fs.mkdirSync(path.join(publicationRoot, 'agents'));
 fs.writeFileSync(path.join(publicationRoot, 'agents', 'openai.yaml'), 'interface:\n  display_name: Demo\n');
-assert.match(validateSkillPublication(RUNTIME_ADAPTERS.codex, { skillId: 'demo', skillDir: publicationRoot }).join('\n'), /short_description must be a non-empty string/);
+assert.match(validateSkillPublication(RUNTIME_ADAPTERS['agents-standard'], { runtimeId: 'codex', skillId: 'demo', skillDir: publicationRoot }).join('\n'), /short_description must be a non-empty string/);
 fs.writeFileSync(path.join(publicationRoot, 'agents', 'openai.yaml'), 'interface:\n  display_name: Demo\n  short_description: Demo skill\n  default_prompt: Use $demo.\n');
-assert.deepEqual(validateSkillPublication(RUNTIME_ADAPTERS.codex, { skillId: 'demo', skillDir: publicationRoot }), []);
+assert.deepEqual(validateSkillPublication(RUNTIME_ADAPTERS['agents-standard'], { runtimeId: 'codex', skillId: 'demo', skillDir: publicationRoot }), []);
 fs.rmSync(publicationRoot, { recursive: true, force: true });
 
-const codex: any = RUNTIME_ADAPTERS.codex;
+const codex: any = RUNTIME_ADAPTERS['agents-standard'];
 const root: any = path.join(temporaryRoot, 'invalid-plan');
-const context: any = createRuntimeContext({ adapterId: 'codex', targetRoot: root, scope: '.', rules: { writes: [], nativeAssets: [], removals: [], actions: [] }, skills: { writes: [], removals: [] } });
+const context: any = createRuntimeContext({ adapterId: 'agents-standard', targetRoot: root, scope: '.', rules: { writes: [], nativeAssets: [], removals: [], actions: [] }, skills: { writes: [], removals: [] } });
 const valid: any = codex.planRuntime(context);
 assert.throws(() => validateRuntimePlan({ ...valid, writes: [{ targetFile: path.join(root, '..', 'escape'), content: 'bad' }] }, codex), /outside target root/);
 assert.throws(() => validateRuntimePlan({ ...valid, capabilityEvidence: [] }, codex), /missing capability evidence/);
@@ -287,12 +288,12 @@ const orphanFile: any = path.join(reconcileRoot, '.agents', 'buildr', 'skill-ins
 fs.mkdirSync(path.dirname(orphanFile), { recursive: true });
 fs.writeFileSync(orphanFile, '<!-- Generated by Buildr. Agent action required. -->\n');
 const evidence: any = REQUIRED_RENDER_CAPABILITIES.map((capability: any) => ({ capability, supported: true }));
-const reconcilePlan: any = createRuntimePlan({ adapterId: 'codex', targetRoot: reconcileRoot, scope: '.', writes: [{ targetFile, content: 'managed\n', source: 'test', isManaged: (content: any) => content === 'managed\n' }], nativeAssets: [], removals: [{ targetFile: orphanFile, isManaged: (content: any) => content.includes('Generated by Buildr') }], capabilityEvidence: evidence });
+const reconcilePlan: any = createRuntimePlan({ adapterId: 'agents-standard', targetRoot: reconcileRoot, scope: '.', writes: [{ targetFile, content: 'managed\n', source: 'test', isManaged: (content: any) => content === 'managed\n' }], nativeAssets: [], removals: [{ targetFile: orphanFile, isManaged: (content: any) => content.includes('Generated by Buildr') }], capabilityEvidence: evidence });
 assert.equal(reconcileRuntimePlan(reconcilePlan).changed.length, 1);
 assert.equal(fs.existsSync(orphanFile), false);
 assert.equal(reconcileRuntimePlan(reconcilePlan).changed.length, 0);
 fs.writeFileSync(targetFile, 'raw source\n');
-const adoptionPlan: any = createRuntimePlan({ adapterId: 'codex', targetRoot: reconcileRoot, scope: '.', writes: [{ targetFile, content: 'managed adoption\n', sourceContent: 'raw source\n', source: 'test', isManaged: () => false }], nativeAssets: [], removals: [], capabilityEvidence: evidence });
+const adoptionPlan: any = createRuntimePlan({ adapterId: 'agents-standard', targetRoot: reconcileRoot, scope: '.', writes: [{ targetFile, content: 'managed adoption\n', sourceContent: 'raw source\n', source: 'test', isManaged: () => false }], nativeAssets: [], removals: [], capabilityEvidence: evidence });
 assert.equal(reconcileRuntimePlan(adoptionPlan).changed.length, 1);
 fs.writeFileSync(targetFile, 'user content\n');
 assert.throws(() => reconcileRuntimePlan(reconcilePlan), /no files were changed/);
@@ -301,12 +302,12 @@ assert.equal(fs.readFileSync(targetFile, 'utf8'), 'user content\n');
 const binaryRoot: any = fs.mkdtempSync(path.join(temporaryRoot, 'runtime-binary-'));
 const binaryFile: any = path.join(binaryRoot, '.agents', 'skills', 'demo', 'assets', 'sample.bin');
 const staleFile: any = path.join(binaryRoot, '.agents', 'skills', 'demo', 'assets', 'stale.bin');
-const receiptFile: any = path.join(binaryRoot, '.buildr', 'agent-runtime', 'workspace', 'codex', 'skill-projection-ownership-receipts', 'demo.json');
+const receiptFile: any = path.join(binaryRoot, '.buildr', 'agent-runtime', 'workspace', 'agents-standard', 'skill-projection-ownership-receipts', 'demo.json');
 fs.mkdirSync(path.dirname(staleFile), { recursive: true });
 fs.writeFileSync(staleFile, Buffer.from([9, 8, 7]));
 const staleIntegrity: any = `sha256-${crypto.createHash('sha256').update(fs.readFileSync(staleFile)).digest('hex')}`;
 const binaryPlan: any = createRuntimePlan({
-  adapterId: 'codex',
+  adapterId: 'agents-standard',
   targetRoot: binaryRoot,
   scope: '.',
   writes: [
@@ -328,7 +329,7 @@ const guardedRemoval: any = path.join(binaryRoot, '.agents', 'skills', 'demo', '
 const untouchedWrite: any = path.join(binaryRoot, '.agents', 'skills', 'demo', 'assets', 'untouched.bin');
 fs.writeFileSync(guardedRemoval, Buffer.from([1, 2, 3]));
 const guardedPlan: any = createRuntimePlan({
-  adapterId: 'codex',
+  adapterId: 'agents-standard',
   targetRoot: binaryRoot,
   scope: '.',
   writes: [{ targetFile: untouchedWrite, content: 'new\n', source: 'guarded fixture' }],

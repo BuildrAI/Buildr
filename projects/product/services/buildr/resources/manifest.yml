@@ -14,14 +14,6 @@ include:
 agentSkills:
   - id: buildr
     path: resources/runtime/skills/buildr
-    runtimes:
-      - claude-code
-      - codex
-      - cursor
-      - qoder
-      - trae
-      - trae-work
-      - workbuddy
 
 capabilityContracts:
   - id: buildr.git-operations
@@ -207,31 +199,26 @@ builtins:
         - capability: buildr.git-worktree-provider
           version: 1
           mode: optional
-      runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: declaration-intake
       path: resources/workspace/skills/buildr/declaration-intake
       target: skills/buildr/declaration-intake
       description: 初始化、维护准备与验证声明，或项目注册、构建和测试入口变化产生声明缺口时使用；先核对差异，再交给对应维护者。
       required: false
-      runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: code-map
       path: resources/workspace/skills/buildr/code-map
       target: skills/buildr/code-map
       description: 建设、更新或检查代码地图时使用；依据真实职责、目录与文件解释实现组织，并核对受影响的来源与关联。
       required: false
-      runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: code-architecture
       path: resources/workspace/skills/buildr/code-architecture
       target: skills/buildr/code-architecture
       description: 设计代码结构、调整模块职责或审查文件拆分与合并时使用；局部实现沿用既有结构。
       required: false
-      runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: project-testing
       path: resources/workspace/skills/buildr/project-testing
       target: skills/buildr/project-testing
       description: 设计或调整测试体系、为实现开发必要测试时使用；已有检查的选择和报告交给 task-verification。
       required: false
-      runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: task-manager
       path: resources/workspace/skills/buildr/task-manager
       target: skills/buildr/task-manager
@@ -240,7 +227,6 @@ builtins:
       provides:
         - capability: buildr.task-record
           version: 3
-      runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: task-review
       path: resources/workspace/skills/buildr/task-review
       target: skills/buildr/task-review
@@ -249,31 +235,26 @@ builtins:
       provides:
         - capability: buildr.task-review
           version: 2
-      runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: capability-adaptation
       path: resources/workspace/skills/buildr/capability-adaptation
       target: skills/buildr/capability-adaptation
       description: 修改技能行为、采用组织工作方式或调整能力声明与绑定时使用；先判断跨技能协作影响。
       required: false
-      runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: frontend-development
       path: resources/workspace/skills/buildr/frontend-development
       target: skills/buildr/frontend-development
       description: 开发或修改前端页面、交互和样式时使用；复用已有组件与主题，隔离数据和业务操作，保持正式页面与已获授权原型一致。不自动制作原型。
       required: false
-      runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: ui-prototype
       path: resources/workspace/skills/buildr/ui-prototype
       target: skills/buildr/ui-prototype
       description: 用户明确要求制作或修改界面原型、决定按已有原型实施，或明确放弃并清理临时原型时使用；负责临时保存、归入任务及展示验证。生成新原型未明确确认时不得使用。
       required: false
-      runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: ux-design-laws
       path: resources/workspace/skills/buildr/ux-design-laws
       target: skills/buildr/ux-design-laws
       description: 设计或审查界面、交互与信息层级时使用，按真实问题选择体验法则；不用于单纯实现既定设计。
       required: false
-      runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: project-daily-progress
       path: resources/workspace/skills/buildr/project-daily-progress
       target: skills/buildr/project-daily-progress
@@ -283,7 +264,6 @@ builtins:
         - capability: buildr.git-operations
           version: 1
           mode: optional
-      runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: task-retrospective
       path: resources/workspace/skills/buildr/task-retrospective
       target: skills/buildr/task-retrospective
@@ -299,7 +279,6 @@ builtins:
         runtimePath: task-asset-review
       legacyIntegrities:
         - sha256-e7224325aa5b2d183d9a152f336e4f24699e3fd10ea5505e08d90bd77f09f642
-      runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: task-worktree
       path: resources/workspace/skills/buildr/task-worktree
       target: skills/buildr/task-worktree
@@ -311,7 +290,6 @@ builtins:
       legacyIntegrities:
         - sha256-23e68c3174887ebbf6990526f93e7f1c047199e1bef1f2e8e293b0cba2a3cfad
         - sha256-7c792606db5d07e9364feb4be20755e184fb83291e4ae83a9cbb4884cf731b6d
-      runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: task-verification
       path: resources/workspace/skills/buildr/task-verification
       target: skills/buildr/task-verification
@@ -320,13 +298,11 @@ builtins:
       provides:
         - capability: buildr.task-verification
           version: 4
-      runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: agent-first-design
       path: resources/workspace/skills/buildr/agent-first-design
       target: skills/buildr/agent-first-design
       description: 设计或改造引入智能体交付产品结果的软件，或审视智能体工作系统的职责、工作流与门禁时使用；围绕产物和真实现场划分职责。仅使用智能体开发普通软件时不自动适用。
       required: false
-      runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: task-finish
       path: resources/workspace/skills/buildr/task-finish
       target: skills/buildr/task-finish
@@ -350,7 +326,6 @@ builtins:
         - sha256-86cd3f177367700f31c232fd090e00c8ee194d2baa66ef69970511987e3ec6dd
         - sha256-1e0e321129f98abb33c4b82d6eddecd960ca0888e58a8ab47bc0776847f05fcf
         - sha256-47d716eff00cc7b20a0ff42d81b6140c7c1bb30ea9591204303bc192c48d3e4d
-      runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: terminology-governance
       path: resources/workspace/skills/buildr/terminology-governance
       target: skills/buildr/terminology-governance
@@ -359,13 +334,11 @@ builtins:
       provides:
         - capability: buildr.terminology-governance
           version: 1
-      runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: project-composition-maintenance
       path: resources/workspace/skills/buildr/project-composition-maintenance
       target: skills/buildr/project-composition-maintenance
       description: 梳理或维护项目由哪些服务和代码库组成，或日常开发新增、替换、停用参与项目的服务时使用；更新现有组成登记，不表达服务之间的依赖。
       required: false
-      runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: current-knowledge-maintenance
       path: resources/workspace/skills/buildr/current-knowledge-maintenance
       target: skills/buildr/current-knowledge-maintenance
@@ -378,7 +351,6 @@ builtins:
         - capability: buildr.terminology-governance
           version: 1
           mode: optional
-      runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: git-operations
       path: resources/workspace/skills/buildr/git-operations
       target: skills/buildr/git-operations
@@ -394,63 +366,54 @@ builtins:
       legacyIntegrities:
         - sha256-50b5fb04eb75acb1218fc5c34caf4e0e7b66500f0df28e6f296f8b9f89e559b8
         - sha256-badf69cfc2f7983fdbd2c681f7418a542d5538bfab283dfe8da927bfdfdd96c8
-      runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: openspec-explore
       path: resources/workspace/skills/openspec/openspec-explore
       target: skills/openspec/openspec-explore
       description: 探索想法、调查问题或澄清需求时使用；只思考和梳理，不实现代码。
       required: false
       component: openspec
-      runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: openspec-propose
       path: resources/workspace/skills/openspec/openspec-propose
       target: skills/openspec/openspec-propose
       description: 用户要快速创建完整 OpenSpec change 提案、设计、规格和任务时使用。
       required: false
       component: openspec
-      runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: openspec-update-change
       path: resources/workspace/skills/openspec/openspec-update-change
       target: skills/openspec/openspec-update-change
       description: 用户要修订既有 OpenSpec change 的 proposal、design、specs 或 tasks，且不进入代码实现时使用。
       required: false
       component: openspec
-      runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: openspec-apply-change
       path: resources/workspace/skills/openspec/openspec-apply-change
       target: skills/openspec/openspec-apply-change
       description: 用户要开始或继续实现某个 OpenSpec change 的任务时使用。
       required: false
       component: openspec
-      runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: openspec-sync-specs
       path: resources/workspace/skills/openspec/openspec-sync-specs
       target: skills/openspec/openspec-sync-specs
       description: 用户要把 change 中的 delta specs 同步到主 specs，但不归档 change 时使用。
       required: false
       component: openspec
-      runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: openspec-archive-change
       path: resources/workspace/skills/openspec/openspec-archive-change
       target: skills/openspec/openspec-archive-change
       description: 用户明确要归档已完成 OpenSpec change 时使用。
       required: false
       component: openspec
-      runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: openspec-contract-guard
       path: resources/workspace/skills/buildr/openspec-contract-guard
       target: skills/buildr/openspec-contract-guard
       description: 使用 OpenSpec 时核对相关变更冲突、明确归档范围或检查中断恢复现场；只补充上游未覆盖的 Buildr 边界。
       required: false
       component: openspec
-      runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
     - id: archify
       path: resources/workspace/skills/buildr/archify
       target: skills/buildr/archify
       description: 使用 Archify 生成和验证架构、流程、时序、数据流与状态图，并交付可独立查看的 HTML。
       required: false
       component: archify
-      runtimes: ["claude-code","codex","cursor","qoder","trae","trae-work","workbuddy"]
   commands: []
 
 components:

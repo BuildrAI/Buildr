@@ -44,7 +44,7 @@ macOS 与 Windows 可按需安装 Buildr Web 启动器（Launcher）；它依赖
 
 ## 当前能力与边界
 
-Buildr 管理长期事实、方法、来源和关系，为人提供阅读与受控维护入口，为智能体（Agent）提供可组合的技能（Skill）和命令行工具（CLI）。当前支持 `claude-code`、`codex`、`cursor`、`qoder`、`trae`、`trae-work` 和 `workbuddy`；投射成功仍需结合各工具的刷新与加载条件使用。
+Buildr 管理长期事实、方法、来源和关系，为人提供阅读与受控维护入口，为智能体（Agent）提供可组合的技能（Skill）和命令行工具（CLI）。默认使用 `agents-standard` 文件约定，`codex`、`dsh` 及未登记的有效品牌无需等待独立接入，既有专用例外继续保留。用 `buildr runtime list --json` 查询当前事实，具体边界见[运行时适配参考](docs/agent-runtime-adapters.md)；文件准备成功不证明宿主已安装或当前会话已加载。
 
 任务（Task）保存目标、状态和当前工作摘要（Work Context）；审查（Review）与验证（Verification）分别保存实际结论和依据。Buildr Web 按“任务需求、方案设计、开发实现、任务收尾”组织相关内容，帮助人查看成果并参与判断。记录完成不替代代码交付、测试执行或外部系统中的真实结果。
 

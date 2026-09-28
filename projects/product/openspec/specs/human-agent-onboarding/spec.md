@@ -77,9 +77,9 @@ Buildr MVP MUST 通过 Buildr 技能（Skill）、当前命令帮助、带智能
 - **THEN** Agent MUST 使用 Claude Code adapter 的 runtime check/render 来维护 `CLAUDE.md` 和 `.claude/skills/`
 
 #### Scenario: 纯源资产初始化保持兼容
-- **WHEN** Agent 执行不带 `--agent` 的 `buildr init`
+- **WHEN** Agent 显式执行 `buildr init --source-only`
 - **THEN** Buildr MUST 只创建 Buildr workspace 源资产
-- **AND** Buildr MUST NOT 自动渲染 Buildr Skill、`CLAUDE.md` 或其他 Agent runtime 文件
+- **AND** Buildr MUST NOT 自动渲染运行时文件
 
 #### Scenario: 高层初始化准备当前 Agent runtime
 - **WHEN** Agent 执行 `buildr init --agent <agent> --target <dir>`
@@ -88,9 +88,9 @@ Buildr MVP MUST 通过 Buildr 技能（Skill）、当前命令帮助、带智能
 - **AND** Agent MUST NOT 需要再执行独立的 `skill install`、`render`、`sync` 或 `doctor` 才完成首次 onboarding
 
 #### Scenario: 高层初始化参数预检
-- **WHEN** `buildr init --agent <agent>` 收到不支持或无效的 Agent id
+- **WHEN** `buildr init` 收到非法 Agent id、未知显式适配器（Adapter）或互斥的选择参数
 - **THEN** Buildr MUST 在写入 workspace 源资产或 Agent runtime 前失败
-- **AND** Buildr MUST 输出 supported runtime guidance
+- **AND** Buildr MUST 输出准确的参数错误；未知但语法有效的品牌 MUST 使用标准接入而非报 unsupported
 
 #### Scenario: 高层初始化 sync 失败
 - **WHEN** workspace 源资产已经初始化，但 `init --agent` 的后续 sync 或 doctor 未通过
@@ -107,6 +107,11 @@ Buildr MVP MUST 通过 Buildr 技能（Skill）、当前命令帮助、带智能
 #### Scenario: 讨论其他更高层入口
 - **WHEN** 需要评估 `buildr use` 等其他更高层入口
 - **THEN** 该能力 MUST 在 `init --agent` onboarding 效果被验证后再单独设计
+
+#### Scenario: 默认初始化标准入口
+- **WHEN** 用户确认初始化且未提供 `--source-only`、运行时或适配器（Adapter）选择
+- **THEN** Buildr MUST 按统一选择规则保留既有接入方式或准备 `agents-standard`
+- **AND** MUST 完成产品技能（Skill）、工作空间（Workspace）技能（Skill）和最终诊断，不另要求品牌登记
 
 ### Requirement: onboarding 引导 Agent 使用工具型资产规则
 Buildr onboarding MUST 引导 Agent 通过 Buildr 技能和默认规则维护规则、技能和命令行工具清单。
@@ -153,40 +158,35 @@ Buildr onboarding MUST 引导 Agent 和用户完成 Project registry maintenance
 - **THEN** Agent MUST run or rely on `buildr doctor --agent <agent> --json` after runtime identity is known to inspect Project registry, Project baseline and Project repo state
 
 ### Requirement: Agent selects runtime adapter before render
-Buildr onboarding MUST 引导 Agent 在运行 runtime render、sync、skill install 或 runtime check 命令前，先识别自身 runtime，并与 Buildr supported runtime adapter list 对比。
-
-#### Scenario: Agent discovers supported runtimes
-- **WHEN** Agent 开始 Buildr onboarding 或 runtime maintenance
-- **THEN** Agent MUST 在 runtime-specific Buildr commands 前运行或依赖 `buildr runtime list --json`
-- **AND** Agent MUST 在运行 runtime-specific commands 前选择与自身 runtime 匹配的 adapter id
+Buildr onboarding MUST 区分真实运行时身份与文件适配器（Adapter），并使用标准默认选择而非品牌登记门槛。
 
 #### Scenario: Supported Agent uses matching adapter
-- **WHEN** Agent 确认自己是 supported runtime
-- **THEN** Agent MUST 将匹配的 `<agent>` 值传给 Buildr runtime-specific commands
-- **AND** Agent MUST 在 runtime identity 已知后使用 `doctor --agent <agent>` 进行 onboarding diagnostics
+- **WHEN** 智能体（Agent）可靠知道自身品牌
+- **THEN** MUST 将真实身份交给 Buildr，并允许统一选择器选择标准或专用实现
+- **AND** MUST NOT 冒用另一品牌
 
 #### Scenario: Agent cannot identify itself
-- **WHEN** Agent 无法可靠识别自身 runtime
-- **THEN** Agent MUST NOT 构造 `unknown`、`generic` 或其他 placeholder Agent id
-- **AND** Agent MUST NOT 运行 runtime render、sync、skill install 或 runtime check commands
-- **AND** 智能体（Agent）MUST 仅暂停依赖未确认运行时（Runtime）的动作，MAY 继续已授权且不依赖该运行时（Runtime）的读取和源资产维护
-- **AND** Agent MUST 告诉用户当前 Agent runtime identity 尚未确认，并请联系 Buildr 作者反馈该 Agent
+- **WHEN** 智能体（Agent）无法可靠识别自身品牌
+- **THEN** MUST 允许省略身份并使用已有选择或标准默认值
+- **AND** MUST NOT 为此构造虚假品牌或阻止无关工作
+
+#### Scenario: Agent discovers supported runtimes
+- **WHEN** 调用方需要了解文件约定和品牌特例
+- **THEN** `runtime list --json` MUST 给出标准默认值、专用例外和证据边界
+- **AND** 未列出的有效品牌 MUST NOT 因品牌登记缺失被禁止准备标准文件
 
 #### Scenario: Unsupported Agent warns instead of rendering
-- **WHEN** Agent 确认自己是 unsupported runtime
-- **THEN** Agent MUST 警示用户 Buildr 暂不支持当前 Agent 的自动渲染
-- **AND** Agent MUST NOT 使用猜测的 adapter id 执行 render、sync、skill install 或 runtime check
-- **AND** Agent MUST NOT 使用 supported fallback adapter 代替
-- **AND** Agent MUST 告诉用户联系 Buildr 作者反馈该 Agent
+- **WHEN** 智能体（Agent）的有效品牌不在已知映射中
+- **THEN** MUST 采用标准文件约定并说明品牌发现行为未确认，而不是冒用其他品牌或停止标准维护
 
 ### Requirement: Buildr Skill uses runtime discovery in its main loop
-Buildr product Skill MUST 将 runtime adapter discovery 作为主执行循环的一部分。
+Buildr 产品技能（Skill）MUST 说明默认标准接入、真实身份和显式适配器（Adapter）的区别，不要求每个品牌先通过登记。
 
 #### Scenario: Buildr Skill runtime selection
-- **WHEN** Agent 使用 Buildr product Skill 维护 Buildr workspace
-- **THEN** Skill MUST 要求 Agent 在 runtime-specific commands 前检查 `buildr runtime list --json`
-- **AND** Skill MUST 要求 Agent 在 Agent identity 已知后使用 `buildr doctor --agent <agent> --target <dir> --json`
-- **AND** Skill MUST 要求 Agent 不为 unsupported Agent runtime 使用 fallback adapters
+- **WHEN** 智能体（Agent）按 Buildr 产品技能（Skill）维护工作空间（Workspace）
+- **THEN** MUST 按需查询 `runtime list` 并使用统一选择规则
+- **AND** MUST 报告文件准备事实，不能据此声明宿主已加载
+- **AND** 已选实现失败时 MUST NOT 自动切换另一实现
 
 ### Requirement: CLI help is useful and safe for Agent exploration
 Buildr CLI help MUST 对 Agent exploration 有用且安全，并且 MUST NOT 执行 state-changing actions。
@@ -279,7 +279,7 @@ Buildr MUST 维护一份可由人和 Agent 从根 README 发现的已接入 Agen
 - **WHEN** Agent 从权威文档识别到自身 runtime 已受支持
 - **THEN** 文档 MUST 引导 Agent 使用匹配的 adapter id 运行 `buildr init --agent <agent>`、`buildr sync <agent>`、`buildr runtime check <agent>` 或相应 render 命令
 - **AND** 文档 MUST 提醒 Agent 按 adapter-specific guidance 完成 reload、新会话或 UI toggle
-- **AND** 文档 MUST 禁止为未列出的 runtime 或 surface 使用 supported fallback adapter
+- **AND** 文档 MUST 说明未列出的有效 runtime 默认使用标准文件约定，但品牌发现、安装与激活尚未确认；显式未知 adapter MUST 报错
 
 ### Requirement: Buildr onboarding guidance 覆盖新增 adapters
 Buildr 技能（Skill）、命令参考（CLI Reference）和当前知识 MUST 将新增 supported adapters 与其 runtime-specific 前置条件纳入 Agent onboarding，同时继续以 `runtime list` 作为事实源。

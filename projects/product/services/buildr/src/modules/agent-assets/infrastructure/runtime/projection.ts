@@ -5,17 +5,20 @@ import {
   createRuntimeContext,
   createRuntimePlan,
   getRuntimeAdapter,
+  resolveRuntimeSelection,
   selectAdapterImplementation,
 } from './adapter-contract.ts';
 import { assertRuntimeTargetPath, reconcileRuntimePlan } from './runtime-reconciler.ts';
 import {
   buildSkillRenderPlan,
+  buildSkillContent,
   hasManagedSkillMarker,
   resolvePackageAgentSkill,
   resolveRenderSkills,
 } from './render-claude-code.ts';
 import { buildEffectiveSkillInventory, classifySkillCandidate } from './skills/inventory.ts';
-import { parseSkillProjectionReceipt } from './skills/projection-files.ts';
+import { parseSkillProjectionReceipt, skillProjectionOwnerId } from './skills/projection-files.ts';
+import { parseSkillsManifestDocument } from '../../persistence/skill-manifest.ts';
 import {
   buildRuleDiscoveryPlan,
   hasManagedRulesMarker,
@@ -342,21 +345,58 @@ function assembleRules(repoRoot: any, targetRoot: any, scopeInfo: any, adapter: 
   return implementation({ repoRoot, targetRoot, scopeInfo, discovery, findings, adapter });
 }
 
+/** Compatibility is limited to the former codex adapter id, never arbitrary fallback. */
+export function resolveRuntimeProjectionSelection(options: any): any {
+  if (!Object.hasOwn(options, 'runtimeId') && options.adapterId === 'codex') return resolveRuntimeSelection({ runtimeId: 'codex' });
+  return resolveRuntimeSelection({
+    runtimeId: Object.hasOwn(options, 'runtimeId') ? options.runtimeId : (options.adapterId ?? null),
+    adapterId: options.adapterId ?? null,
+  });
+}
+
+function sharedSkillContentConflicts(repoRoot: string, current: any[], runtimeId: string | null, adapterId: string): string[] {
+  const manifest = path.join(repoRoot, 'skills', 'manifest.yml');
+  if (!fs.existsSync(manifest) || current.length === 0) return [];
+  const declared = parseSkillsManifestDocument(manifest).skills;
+  const restricted = declared.filter((skill: any) => skill.enabled !== false && !['uninstalled', 'missing'].includes(skill.state) && Array.isArray(skill.runtimes));
+  if (!restricted.length) return [];
+  // Compare the same current source, not historical render digests: bindings may legitimately change.
+  const runtimes = new Set<string | null>([runtimeId, null]);
+  // Every declared identity may explicitly select this shared layout, regardless of its default vendor root.
+  for (const skill of restricted) for (const id of skill.runtimes) runtimes.add(id);
+  const requested = new Map(current.map((skill: any) => [skill.id, skill]));
+  const expected = new Map(current.filter((skill: any) => skill.installMode !== 'agent').map((skill: any) => [skill.id, buildSkillContent(repoRoot, skill)]));
+  const conflicts = new Set<string>();
+  for (const candidateRuntime of runtimes) {
+    if (candidateRuntime === runtimeId) continue;
+    const candidates = resolveRenderSkills(repoRoot, '.', candidateRuntime, { adapterId, resolveRemote: false });
+    for (const candidate of candidates) {
+      const source = requested.get(candidate.id);
+      if (!source || source.installMode === 'agent') continue;
+      const content = buildSkillContent(repoRoot, { ...candidate, ...(source.sourceContent !== undefined ? { sourceContent: source.sourceContent } : {}) });
+      if (content !== expected.get(candidate.id)) conflicts.add(`Shared standard Skill ${candidate.id} has different content or capability bindings for ${runtimeId ?? 'unspecified host'} and ${candidateRuntime ?? 'unspecified host'}; no runtime may overwrite the other.`);
+    }
+  }
+  return [...conflicts];
+}
+
 export function assembleRuntimeProjection(options: any): any  {
   const repoRoot = path.resolve(options.repoRoot);
   const targetRoot = path.resolve(options.targetRoot ?? repoRoot);
   if (!fs.existsSync(targetRoot) || !fs.statSync(targetRoot).isDirectory()) throw new Error(`Target directory does not exist: ${targetRoot}`);
-  const adapter = getRuntimeAdapter(options.adapterId);
+  const runtimeSelection = resolveRuntimeProjectionSelection(options);
+  const { adapter, runtimeId } = runtimeSelection;
   const selection: any = { productSkill: false, rules: false, workspaceSkills: false, ...(options.selection || {}) };
   const scopeInfo = resolveRuleScope(repoRoot, options.scope ?? '.');
   const skillScope = '.';
   const skillConflicts: any[] = [];
-  const workspaceSkills = selection.workspaceSkills ? resolveRenderSkills(repoRoot, skillScope, adapter.id) : [];
-  const productSkill = selection.productSkill ? resolvePackageAgentSkill(adapter.id, 'buildr') : null;
+  const workspaceSkills = selection.workspaceSkills ? resolveRenderSkills(repoRoot, skillScope, runtimeId, { adapterId: adapter.id }) : [];
+  const productSkill = selection.productSkill ? resolvePackageAgentSkill(runtimeId, 'buildr', { adapterId: adapter.id }) : null;
   const productProjection = productSkill
-    ? buildSkillRenderPlan(repoRoot, targetRoot, [productSkill], adapter.id, { deferConflicts: true, conflicts: skillConflicts, destination: options.destination || 'workspace' })
+    ? buildSkillRenderPlan(repoRoot, targetRoot, [productSkill], runtimeId, { adapterId: adapter.id, deferConflicts: true, conflicts: skillConflicts, destination: options.destination || 'workspace' })
     : { writes: [], removals: [] };
-  const workspaceProjection = buildSkillRenderPlan(repoRoot, targetRoot, workspaceSkills, adapter.id, { deferConflicts: true, conflicts: skillConflicts, destination: options.destination || 'workspace' });
+  const workspaceProjection = buildSkillRenderPlan(repoRoot, targetRoot, workspaceSkills, runtimeId, { adapterId: adapter.id, deferConflicts: true, conflicts: skillConflicts, destination: options.destination || 'workspace' });
+  if (selection.workspaceSkills && adapter.traits.skills.root === '.agents') skillConflicts.push(...sharedSkillContentConflicts(repoRoot, workspaceSkills, runtimeId, adapter.id));
   const productWrites = decorateSkillWrites(productProjection.writes, true);
   const workspaceWrites = decorateSkillWrites(workspaceProjection.writes);
   const skillRemovals: any[] = [
@@ -368,11 +408,11 @@ export function assembleRuntimeProjection(options: any): any  {
   const warnings = workspaceSkills.filter((skill: any) => skill.resolved && !skill.resolved.integrity)
     .map((skill: any) => `workspace Skill ${skill.id} uses a remote resolved source without integrity.`);
   const context = createRuntimeContext({
-    adapterId: adapter.id, targetRoot, scope: scopeInfo.scope,
+    adapterId: adapter.id, runtimeId, targetRoot, scope: scopeInfo.scope,
     rules, skills: { writes: [...productWrites, ...workspaceWrites], removals: skillRemovals },
     findings: [...rules.findings, ...skillConflicts.map((message: any) => ({ status: 'conflict', path: skillScope, message, code: 'runtime.skill_conflict', userActionRequired: true }))], warnings,
   });
-  return { plan: adapter.planRuntime(context), scopeInfo, discovery: rules.discovery, selection };
+  return { plan: adapter.planRuntime(context), scopeInfo, discovery: rules.discovery, selection, runtimeSelection };
 }
 
 function summarize(findings: any): any  {
@@ -413,6 +453,8 @@ export function repairCommands(result: any, adapterId: any): any  {
 }
 
 export function checkRuntimeProjection(options: any): any  {
+  const runtimeSelection = resolveRuntimeProjectionSelection(options);
+  options = { ...options, runtimeId: runtimeSelection.runtimeId, adapterId: runtimeSelection.adapterId };
   const assembled = assembleRuntimeProjection({ ...options, selection: { productSkill: true, rules: true, workspaceSkills: true } });
   const fallback = assembleRuntimeProjection({ ...options, selection: { productSkill: true } });
   const fallbackProductWrites: any = new Map(fallback.plan.writes
@@ -430,10 +472,11 @@ export function checkRuntimeProjection(options: any): any  {
   const satisfaction = candidateReceipts.map(({ receipt }: any) => ({ receipt, ...classifySkillCandidate({ skillId: receipt.skillId, assetIdentity: receipt.assetIdentity, renderDigest: receipt.renderDigest }, inventory, 'workspace') }));
   const satisfiedIds: any = new Set(satisfaction.filter((item: any) => item.status === 'satisfied_by_user').map((item: any) => item.receipt.skillId));
   const adapterForEvidence = getRuntimeAdapter(options.adapterId);
-  const evidenceFile = (skillId: any) => path.join(options.repoRoot, adapterForEvidence.traits.skills.root, 'buildr', 'skill-satisfaction', options.adapterId, `${skillId}.json`);
+  const evidenceOwner = skillProjectionOwnerId(options.adapterId);
+  const evidenceFile = (skillId: any) => path.join(options.repoRoot, adapterForEvidence.traits.skills.root, 'buildr', 'skill-satisfaction', evidenceOwner, `${skillId}.json`);
   const evidenceWrites = satisfaction.filter((item: any) => item.status === 'satisfied_by_user').map((item: any) => {
     const observed = item.observed[0];
-    const content: any = { schemaVersion: 'buildr.skill-satisfaction/v1', agent: options.adapterId, destination: 'workspace', skillId: item.receipt.skillId, satisfiedBy: 'user', assetIdentity: item.receipt.assetIdentity, renderDigest: item.receipt.renderDigest, userReceiptPath: observed.receiptPath };
+    const content: any = { schemaVersion: 'buildr.skill-satisfaction/v1', agent: evidenceOwner, adapterId: evidenceOwner, destination: 'workspace', skillId: item.receipt.skillId, satisfiedBy: 'user', assetIdentity: item.receipt.assetIdentity, renderDigest: item.receipt.renderDigest, userReceiptPath: observed.receiptPath };
     return { targetFile: evidenceFile(item.receipt.skillId), content: `${JSON.stringify(content, null, 2)}\n`, source: `user:${item.receipt.skillId}`, skillId: item.receipt.skillId, capability: 'workspace-project-skills', kind: 'skill-satisfaction-evidence', isManaged: (value: any) => { try { return JSON.parse(value).schemaVersion === 'buildr.skill-satisfaction/v1'; } catch { return false; } }, diagnostic: { label: `workspace Skill ${item.receipt.skillId} user satisfaction evidence`, codes: { ok: 'runtime.skill_satisfied_by_user', missing: 'runtime.skill_satisfaction_missing', stale: 'runtime.skill_satisfaction_stale', conflict: 'runtime.skill_satisfaction_conflict' }, repair: 'skills-render' } };
   });
   writes = [...writes.filter((item: any) => !satisfiedIds.has(item.skillId)), ...evidenceWrites];
@@ -444,6 +487,10 @@ export function checkRuntimeProjection(options: any): any  {
   const counts = summarize(findings);
   const result: any = {
     ...reconciled,
+    runtimeId: runtimeSelection.runtimeId,
+    adapterId: runtimeSelection.adapterId,
+    selectionReason: runtimeSelection.reason,
+    host: runtimeSelection.host,
     findings,
     counts,
     exitCode: counts.conflict ? 2 : counts.missing || counts.stale || counts.orphan ? 1 : 0,
@@ -453,10 +500,11 @@ export function checkRuntimeProjection(options: any): any  {
     runtimeSourceEvidence: {
       assurance: 'buildr-verified',
       adapter: adapter.id,
+      runtimeId: runtimeSelection.runtimeId,
       sourceRoot: path.resolve(options.repoRoot),
       targetRoot: assembled.plan.targetRoot,
       projectionIdentity: projectionIdentity(assembled.plan),
-      activation: adapter.traits.activation,
+      activation: runtimeSelection.host.activation ?? adapter.traits.activation,
       adoptionModes: adoptionModes(adapter),
       guidance: adapter.traits.activation.reloadGuidance || `Start a new ${adapter.displayName} session with the current work root as its local project.`,
       projectionReady: false,
@@ -464,7 +512,7 @@ export function checkRuntimeProjection(options: any): any  {
     },
   };
   result.runtimeSourceEvidence.projectionReady = result.exitCode === 0;
-  result.repairCommands = repairCommands(result, options.adapterId);
+  result.repairCommands = repairCommands(result, `${runtimeSelection.runtimeId ?? ''} --adapter ${adapter.id}`.trim());
   return result;
 }
 

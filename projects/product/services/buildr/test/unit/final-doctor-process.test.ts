@@ -46,3 +46,16 @@ test('final Doctor runner区分业务失败、输出超限与进程执行失败'
   assert.equal(execution.code, 'doctor.process_failed');
   assert.match(execution.message, /ENOENT/);
 });
+
+test('最终Doctor保持显式适配器覆盖，不编造未知宿主身份', () => {
+  for (const runtimeId of ['dsh', 'new-host', null]) {
+    let calls = 0;
+    const result = runFinalDoctor({ executable: '/node', cliPath: '/buildr.mjs', runtimeId, adapterId: 'claude-code', targetRoot: '/workspace', spawn: (_command: string, args: string[]) => {
+      calls += 1;
+      assert.deepEqual(args, ['/buildr.mjs', 'doctor', ...(runtimeId === null ? [] : ['--agent', runtimeId]), '--adapter', 'claude-code', '--target', '/workspace', '--json', '--detail', 'compact']);
+      return { status: 1, stdout: '{"ok":false}', stderr: '' };
+    } });
+    assert.equal(result.classification.status, 'doctor-failed');
+    assert.equal(calls, 1);
+  }
+});

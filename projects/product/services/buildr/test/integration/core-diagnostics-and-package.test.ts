@@ -40,10 +40,7 @@ test('runtime doctor 过滤 info 并汇总全部 finding status', () => {
   assert.deepEqual(diagnostics.summarizeRuntimeFindings(findings), {
     ok: 1, info: 1, warning: 1, missing: 0, stale: 0, orphan: 0, conflict: 1,
   });
-  diagnostics.addUnsupportedAgentFinding({}, 'unknown');
-  assert.equal(recorded[0][1], 'warning');
-  assert.equal(recorded[0][2], 'runtime.agent_unsupported');
-  assert.equal(recorded[0][4].mustNotUseFallbackAdapter, true);
+  assert.equal(recorded.length, 0);
 });
 
 function diagnoseRuntimeWarnings(runtimeFindings: any): any  {
@@ -83,9 +80,11 @@ test('runtime doctor 聚合 warning 时保留 actionability 与来源摘要', ()
   assert.deepEqual(nonActionable.findings[0], {
     status: 'warning',
     code: 'runtime.codex_warning',
-    message: 'Codex runtime 存在警告：.',
+    message: 'Agents standard runtime 存在警告：.',
     path: '.',
     agent: 'codex',
+    runtimeId: 'codex',
+    adapterId: 'agents-standard',
     userActionRequired: false,
     runtimeFindingCodes: ['runtime.advisory'],
     suggestion: '该 warning 未要求用户操作；需要细节时运行 runtime check。',

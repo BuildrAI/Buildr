@@ -246,7 +246,8 @@ export function registerApplicationPackageMaintenance(dependencies: PackageMaint
       const isRestore = restoreId === builtin.id;
       const isNew = !existing;
       const isUninstalled = existing?.state === 'uninstalled' || existing?.enabled === false;
-      const desired = builtinSkillEntry(builtin);
+      const predecessor = builtin.replaces ? skillsById.get(builtin.replaces.id)?.skill : null;
+      const desired = builtinSkillEntry(builtin, existing || predecessor);
       const newSnapshot = builtinSnapshot(sourceDir, 'skill');
       const liveSnapshot = builtinSnapshot(targetDir, 'skill');
       if (handleSkillReplacement({ builtin, changed, checkOnly, desired, existing, findings, isRestore, liveSnapshot, newSnapshot, receiptByKey, removeDirectory: (directory: any) => fs.rmSync(directory, { recursive: true, force: true }), removeReceipt, restoreOutcomes, skillsById, skillsManifest, sourceDir, targetDir, updateReceipt, targetRoot })) continue;

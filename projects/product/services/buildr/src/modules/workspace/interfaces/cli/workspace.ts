@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { runtimeCommandSelector } from '../../../agent-assets/application/runtime-selection.ts';
 import process from 'node:process';
 import type { WorkspaceInitializationInput, WorkspaceInitializationResult } from '../../application/workspace-operations.ts';
 import { parseCliArguments } from './cli-arguments.ts';
@@ -22,7 +23,7 @@ function printResult(created: string[], changed: string[]) {
 }
 
 export function workspaceCommand(application: WorkspaceCliApplication, operation: WorkspaceCliOperation, args: string[] = []) {
-  const parsed = parseCliArguments(args, new Set(['--target', '--name', '--description', '--profile', '--agent']));
+  const parsed = parseCliArguments(args, new Set(['--target', '--name', '--description', '--profile', '--agent', '--adapter', '--source-only']), new Set(['--source-only']));
   const targetRoot = path.resolve(parsed.one('--target') || process.cwd());
   if (operation === 'mutation-recover') {
     const id = parsed.positions[0];
@@ -35,6 +36,7 @@ export function workspaceCommand(application: WorkspaceCliApplication, operation
     targetRoot, name: parsed.one('--name') ?? path.basename(targetRoot),
     description: parsed.one('--description') ?? 'TODO: 请补充 Workspace 的管理范围和用途。',
     profile: parsed.one('--profile') ?? 'team', agent: parsed.one('--agent'),
+    adapterId: parsed.one('--adapter'), sourceOnly: parsed.has('--source-only'),
   };
   const result = application.initializeWorkspace(input, (ready) => {
     console.log(`Initialized Buildr root organization context at ${targetRoot}`);
@@ -42,14 +44,14 @@ export function workspaceCommand(application: WorkspaceCliApplication, operation
     console.log(`Description: ${ready.description}`);
     console.log(`Profile: ${ready.profile}`);
     printResult(ready.created, ready.changed);
-    if (ready.agent !== null) {
+    if (ready.runtimeSelection !== null) {
       console.log('');
-      console.log(`正在准备 ${ready.agent} runtime；该步骤复用 buildr sync ${ready.agent} 并执行最终 doctor。`);
+      console.log(`正在准备 ${ready.runtimeSelection.runtimeId ?? ready.runtimeSelection.adapterId} runtime；该步骤复用 buildr sync${runtimeCommandSelector(ready.runtimeSelection)} 并执行最终 doctor。`);
     }
   });
-  const { agent } = result;
-  if (agent !== null) {
-    console.log(`Buildr onboarding 已完成：${agent}（包含 sync 与最终 doctor）。`);
+  const { runtimeSelection } = result;
+  if (runtimeSelection !== null) {
+    console.log(`Buildr onboarding 已完成：${runtimeSelection.runtimeId ?? runtimeSelection.adapterId}（包含 sync 与最终 doctor）。`);
     console.log('下一步：请由当前 Agent 完成一次首次使用交接。');
     console.log('用普通语言说明工作空间（Workspace）承载共同事实，项目（Project）承载业务目标，服务（Service）承担实现职责，代码库实例（Repository Instance）定位实际代码；多个服务可共用一份代码。');
     console.log('先根据真实 Project/Service 状态确认唯一范围或只询问必要歧义，然后邀请用户直接描述第一项真实工作；不要把 project create 命令作为面向用户的默认下一步。');
@@ -62,8 +64,8 @@ export function workspaceCommand(application: WorkspaceCliApplication, operation
   console.log('  buildr help assets');
   console.log('');
   console.log('Agent runtime:');
-  console.log('  先用 runtime list 核对当前智能体（Agent）；无法确认或不受支持时，只暂停依赖该运行时（Runtime）的动作，不借用其他适配器（Adapter）。');
-  console.log(`  当前命令未写入 Agent runtime；受支持时，用 buildr sync <agent> --target ${targetRoot} 完成 runtime 与最终 doctor。`);
+  console.log('  未指定身份时保留唯一受管接入方式，否则默认准备标准文件；文件存在不证明当前会话已加载。');
+  console.log(`  当前命令未写入 Agent runtime；用 buildr sync [<runtime>] --target ${targetRoot} 完成 runtime 与最终 doctor。`);
   console.log('  产品入口技能（Skill）不可用时，查看 buildr help skill install；初始化帮助使用 buildr help init。');
   return result;
 }

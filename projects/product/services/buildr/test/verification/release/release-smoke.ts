@@ -538,13 +538,13 @@ export async function runReleaseSmoke(env: any = process.env): Promise<any>  {
     await phase.run('workspace-lifecycle', async () => {
       runBuildr(buildrScript, ['init', '--agent', 'codex', '--target', workspace, '--name', 'release-smoke', '--profile', 'team']);
       runBuildr(buildrScript, ['sync', 'codex', '--target', workspace]);
-      const doctorBefore: any = parseJson('doctor before uninstall', runBuildr(buildrScript, ['doctor', '--agent', 'codex', '--target', workspace, '--json']), 'buildr.doctor/v1');
+      const doctorBefore: any = parseJson('doctor before uninstall', runBuildr(buildrScript, ['doctor', '--agent', 'codex', '--target', workspace, '--json']), 'buildr.doctor/v2');
       assert.equal(doctorBefore.summary.error, 0);
     });
 
     await phase.run('uninstall-final-doctor', async () => {
       runBuildr(buildrScript, ['component', 'uninstall', 'openspec', '--agent', 'codex', '--target', workspace, '--reason', 'release-smoke']);
-      const doctorAfter: any = parseJson('doctor after uninstall', runBuildr(buildrScript, ['doctor', '--agent', 'codex', '--target', workspace, '--json']), 'buildr.doctor/v1');
+      const doctorAfter: any = parseJson('doctor after uninstall', runBuildr(buildrScript, ['doctor', '--agent', 'codex', '--target', workspace, '--json']), 'buildr.doctor/v2');
       assert.equal(doctorAfter.summary.error, 0);
       assert.equal(fs.existsSync(path.join(workspace, '.agents', 'skills', 'openspec-explore')), false);
     });

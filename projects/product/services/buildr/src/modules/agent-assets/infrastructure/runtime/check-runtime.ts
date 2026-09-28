@@ -2,7 +2,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 import { getRuntimeAdapter } from './adapter-contract.ts';
-import { checkRuntimeProjection, printRuntimeProjectionReport } from './projection.ts';
+import { checkRuntimeProjection, printRuntimeProjectionReport, resolveRuntimeProjectionSelection } from './projection.ts';
 import { parseRenderClaudeCodeArgs } from './render-claude-code.ts';
 
 function runCommandEnvironmentProbe(probe: any, options: any, spawn: any): any  {
@@ -92,11 +92,11 @@ export function environmentFindings(adapter: any, checks: any): any  {
 }
 
 export function checkRuntimeAdapter(argv: any, options: any = {}): any  {
-  const adapterId = options.adapterId;
-  const adapter = getRuntimeAdapter(adapterId);
+  const selection = resolveRuntimeProjectionSelection(options);
+  const { adapter, runtimeId } = selection;
   const repoRoot = options.repoRoot ?? process.cwd();
   const args = parseRenderClaudeCodeArgs(argv, options.command ?? `buildr runtime check ${adapter.id}`);
-  const result = checkRuntimeProjection({ repoRoot, targetRoot: path.resolve(repoRoot, args.target), scope: args.scope, adapterId: adapter.id });
+  const result = checkRuntimeProjection({ repoRoot, targetRoot: path.resolve(repoRoot, args.target), scope: args.scope, adapterId: adapter.id, runtimeId });
   const environmentChecks: any = {
     installation: runEnvironmentProbe(adapter.traits.checker.installationProbe),
     version: runEnvironmentProbe(adapter.traits.checker.versionProbe),
@@ -108,7 +108,7 @@ export function checkRuntimeAdapter(argv: any, options: any = {}): any  {
   return {
     ...result,
     environmentChecks,
-    activation: adapter.traits.activation,
+    activation: selection.host.activation ?? adapter.traits.activation,
   };
 }
 

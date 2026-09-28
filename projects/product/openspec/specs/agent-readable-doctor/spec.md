@@ -215,7 +215,7 @@ Buildr doctor MUST 支持 Agent-readable 诊断按当前 Agent runtime 过滤 ru
 #### Scenario: Doctor reports selected Agent
 - **WHEN** Agent 运行 `buildr doctor --target <root> --agent <agent> --json`
 - **THEN** doctor JSON MUST 包含 requested Agent runtime id
-- **AND** doctor JSON MUST 包含 requested Agent runtime 是否 supported
+- **AND** doctor JSON MUST 包含 实际选择的 adapterId、选择原因与请求身份；supported MUST 仅表示可准备所选文件约定，不证明品牌安装或加载
 - **AND** runtime findings MUST 能归因到 selected Agent runtime
 
 #### Scenario: Agent filter does not change scope discovery
@@ -229,23 +229,21 @@ Buildr doctor MUST 支持 Agent-readable 诊断按当前 Agent runtime 过滤 ru
 - **AND** Project scope finding MUST NOT 通过只 render workspace root scope 的命令修复
 
 ### Requirement: doctor handles unsupported Agent runtimes
-Buildr doctor MUST 将 unsupported Agent runtime 视为 unsupported adapter，而不是缺失 runtime 文件。
+Buildr doctor MUST 对未知但有效的运行时品牌检查标准文件，并区分文件状态与品牌行为证据。
 
 #### Scenario: Unsupported Agent-specific doctor
-- **WHEN** Agent 运行 `buildr doctor --target <root> --agent unsupported-agent --json`
-- **THEN** doctor MUST NOT 运行任何 concrete runtime adapter checker
-- **AND** doctor MUST 输出 finding 说明 Buildr 不支持 `unsupported-agent`
-- **AND** 该 finding MUST 具有 warning severity，并递增 warning summary
-- **AND** 该 finding MUST 设置 `userActionRequired` 为 true
-- **AND** 该 finding MUST 包含 `mustNotUseFallbackAdapter: true`
-- **AND** 该 finding MUST 告诉用户联系 Buildr 作者反馈该 Agent
-- **AND** doctor MUST 继续检查不依赖 runtime adapter 的 workspace source assets
-- **AND** 除非发现非 runtime-check 的 source asset error，doctor MUST 成功退出
+- **WHEN** 调用方使用 `doctor --agent <unregistered-runtime>`
+- **THEN** MUST 保留请求身份并使用 `agents-standard` 检查文件
+- **AND** MUST NOT 仅因品牌未登记生成 unsupported warning 或要求联系作者
+- **AND** MUST 明确安装与会话加载未确认，并继续检查源资产
 
 #### Scenario: Unsupported Agent does not create adapter missing noise
-- **WHEN** doctor 收到 unsupported Agent runtime id
-- **THEN** doctor MUST NOT 仅因为该 Agent 没有 adapter 而报告 `.claude/`、`.agents/`、`CLAUDE.md` 或其他 adapter-specific 文件缺失
-- **AND** doctor MUST NOT 为该 unsupported Agent render 或 export bootstrap files
+- **WHEN** 未登记品牌使用标准诊断
+- **THEN** MUST 只报告标准文件的实际状态，不为无关专用适配器（Adapter）制造缺失噪声
+
+#### Scenario: 非法显式适配器
+- **WHEN** doctor 收到不存在的 `--adapter`
+- **THEN** MUST 报告参数错误而不回退标准
 
 ### Requirement: doctor validates Agent id format
 Buildr doctor MUST 在 runtime adapter selection 前拒绝非法 Agent id。
@@ -257,7 +255,7 @@ Buildr doctor MUST 在 runtime adapter selection 前拒绝非法 Agent id。
 
 #### Scenario: Case-sensitive unsupported Agent id
 - **WHEN** Agent 运行 `buildr doctor --agent Codex --target <root> --json`
-- **THEN** doctor MUST 将 `Codex` 视为 unsupported
+- **THEN** doctor MUST 保留 `Codex` 身份并按未知有效品牌使用标准
 - **AND** doctor MUST NOT 将它归一化为 `codex`
 
 ### Requirement: doctor remains backward compatible without Agent filter
@@ -266,12 +264,12 @@ Buildr doctor MUST 保持未传 Agent runtime filter 的公开调用兼容性，
 #### Scenario: Doctor without Agent filter
 - **WHEN** 调用方运行 `buildr doctor --target <root> --json` 且不传 `--agent`
 - **THEN** doctor MUST 从 Buildr managed marker、projection receipt 或等价受管证据发现当前 workspace 的 present runtime inventory
-- **AND** doctor MUST 只运行 present adapters 的 runtime diagnostics
+- **AND** doctor MUST 对已有 present adapters 保持诊断；没有已有受管接入时 MUST 使用标准默认诊断，且不推断宿主品牌
 - **AND** doctor JSON MUST 报告实际 `detectedAgents` 和 `checkedAgents`
 - **AND** Buildr onboarding guidance MUST 在 Agent identity 已知后优先传入 `--agent <agent>`
 
 #### Scenario: Supported adapter 在 workspace 中不存在
-- **WHEN** 一个 adapter 位于 supported registry，但 workspace 没有该 adapter 的受管投射证据
+- **WHEN** 一个非默认 adapter 位于 supported registry，但 workspace 没有该 adapter 的受管投射证据且未被显式选择
 - **THEN** 默认 doctor MUST NOT 对该 adapter 运行 checker
 - **AND** MUST NOT 为该 adapter 生成 missing、stale、warning、repair plan 或 nextSteps
 

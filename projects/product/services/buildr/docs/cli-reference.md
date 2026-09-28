@@ -6,6 +6,8 @@
 
 支持 `--json` 的命令在顶层输出 `schemaVersion`。该字段及兼容规则见 [公开 JSON 契约](../../../knowledge/docs/reference/json-contracts.md)；消费者应按 schema identity 判断格式，而不是依赖未声明的内部实现。
 
+标准默认接入使用 `buildr.runtime-list/v2` 与 `buildr.doctor/v2`：前者区分文件适配器（Adapter）清单、品牌映射和宿主资料（Host Profile）；后者分别报告请求身份与实际文件约定，标准检查结果位于 `runtime.agentsStandard`，不再位于旧 `runtime.codex`。这是非加法的格式变更，旧消费者必须先识别版本并调整解析；不能把共享标准结果解释为 Codex 或任意宿主已安装、已加载。
+
 根帮助从同一命令目录（Command Catalog）按三层显示：`primary` 是普通工作主路径，`agent-machine` 是 Agent/Skill 依赖的稳定机器接口，`maintenance` 是产品构建、开发预览和 workflow；已删除的命令不另设兼容分区。Surface 不是授权边界；每个 retained executable route 都可通过 canonical topic 查询帮助。
 
 ## CLI identity、帮助与错误
@@ -62,7 +64,9 @@ buildr runtime list --json
 buildr init --agent "<agent>" --target "<dir>" --name "<name>" --description "<description>" --profile "<profile>"
 ```
 
-`init --agent` 会先初始化源资产，再复用完整 `sync`，为当前智能体（Agent）安装或更新 Buildr 技能（Skill）、投射当前工作空间（Workspace）的内容，并给出最终诊断。根据实际结果确认准备状态，再引导用户维护项目（Project）、按需关联服务（Service），开始第一项工作。`init` 与 `sync` 不隐式安装用户级技能（Skill）。
+`init` 默认先初始化源资产，再复用完整 `sync`，安装或更新 Buildr 技能（Skill）、投射当前工作空间（Workspace）的内容并给出最终诊断。已知身份使用 `--agent`；未知身份可省略，保留唯一既有接入方式，没有既有方式时采用 `agents-standard`。多个不等价方式要求明确选择。仅需源资产时使用 `buildr init --source-only --target "<dir>"`；`--source-only` 与 `--agent`、`--adapter` 互斥。
+
+`--adapter <adapter-id>` 显式选择文件约定，不替换真实品牌身份；未知适配器（Adapter）、非法品牌或互斥参数都在写入前失败。已选实现失败时保留错误，不切换其他实现，也不以纯源资产结果冒充完整初始化。根据最终结果继续项目（Project）、服务（Service）和第一项工作。`init` 与 `sync` 不隐式安装用户级技能（Skill），文件准备成功也不证明当前会话已加载。
 
 ### 打开 Buildr Web
 
@@ -80,7 +84,7 @@ buildr web --target "<dir>"
 
 已有安装与工作空间（Workspace）的更新，按当前 Buildr 技能（Skill）处理。更新产品与更新工作空间（Workspace）是不同动作，不能以其中一项代替另一项；不要自行切换已选版本轨道或降级。
 
-Skill 文件仍写入目标 Agent 的原生 Skills root。Buildr 为这些文件保存的所有权回执属于 `.buildr/agent-runtime/<workspace|user>/<adapter>/skill-projection-ownership-receipts/` 本机控制状态，并由 `init`、`sync`、`skills render` 和 Doctor 统一维护；`/.buildr/agent-runtime/` 默认忽略 Git。旧 runtime-root 回执只作为一次性迁移输入，有效且能证明当前文件时自动迁移，冲突或漂移时零写入停止。
+标准技能（Skill）目标采用一级 `.agents/skills/<skill-id>/SKILL.md`，保留源目录及随附文件的相对路径。所有权回执（Ownership Receipt）属于 `.buildr/agent-runtime/<workspace|user>/<ownership-id>/skill-projection-ownership-receipts/` 本机控制状态；标准共享根（包括 Cursor/TRAE 技能）统一归属 `agents-standard`，专用规则（Rule）保持独立。旧品牌或旧运行时根内回执（Receipt）及嵌套受管目录仅在身份、完整内容、权限和目标安全均可证明时迁移；冲突、漂移、额外未知文件时整组零写入。迁移后不要用旧版 Buildr 继续管理；回退需要完整的操作前文件与回执（Receipt）备份。
 
 `buildr update` 只更新安装回执（Installation Receipt）证明的当前 npm 安装或开发检出（Development Checkout）：前者更新同一安装位置中的软件包，后者按 Git 状态更新源码；来源不明时停止。它不接收 `--target`，不负责同步工作空间（Workspace）。
 
@@ -119,7 +123,7 @@ buildr help assets
 
 | 命令 | 用途 |
 |---|---|
-| `buildr init [--agent <agent>]` | 初始化工作空间（Workspace）源资产；传入 `--agent` 时继续完整同步，安装产品入口技能（Skill）、投射智能体运行时（Agent Runtime）并执行最终诊断（Doctor）。 |
+| `buildr init [--agent <agent>] [--adapter <adapter-id>]` | 默认初始化源资产并完整同步标准或已选文件约定，安装产品入口技能（Skill）、投射并执行最终诊断（Doctor）。仅源资产使用互斥的 `--source-only`。 |
 | `buildr web [--target <workspace>] [--no-open]` | 启动或复用只监听 `127.0.0.1` 的默认本机 Web 应用；默认打开浏览器，登记和切换多个 Workspace，`--target` 登记并打开指定 Workspace。 |
 | `buildr web preview start\|list\|stop` | 启动、查看或停止隔离的开发预览。带 `--task <task-id> --target <canonical-workspace>` 时，Preview使用matching Task Worktree并保存精确owner；停止时复核Worktree evidence与进程secret。不带Task时保持独立checkout preview。 |
 | `buildr installation status [--json]` | 分别报告receipt证明的npm CLI、Buildr Web Launcher、Buildr Web Dev、当前安装与当前Web实例的版本、路径、runtime role、protocol、payload和ownership identity；不扫描PATH。 |
@@ -139,7 +143,7 @@ buildr help assets
 | `buildr rules add/remove` | 维护 root Rules manifest 和文件生命周期。 |
 | `buildr skills add/remove` | 只维护 workspace `skills/` 中的 Skill source；旧 `--scope .` 仅兼容并警告，Project scope 被拒绝。 |
 | `buildr skills bind/unbind` | 维护 workspace 默认 binding，或在 `projects/<project>/capabilities.yml` 维护 Project context binding。 |
-| `buildr skills render <agent> --destination workspace\|user` | 从 `--target <workspace>` 读取 source，显式投射到当前工作目录或个人用户层；默认 workspace。 |
+| `buildr skills render [<agent>] [--adapter <adapter-id>] --destination workspace\|user` | 从 `--target <workspace>` 读取源资产，投射到工作空间（Workspace）或个人用户层；默认 workspace，不按品牌登记限制通用技能（Skill）。 |
 | `buildr commands add/remove` | 维护 workspace Command catalog definitions；最后一个 definition 仍被 requirement 引用时零写入。 |
 | `buildr commands check [--project <project> ...]` | 按显式 Project task context 合并 requirements 并观察本机环境；无 Project 时只检查 workspace defaults。 |
 | `buildr component list/check/install/uninstall` | 管理 workspace 级 Rules、Skills、Command collections 与声明式 Skill Contribution。 |
@@ -172,19 +176,23 @@ Git provider evidence使用`buildr.git-worktree-evidence/v1`，保存在Git comm
 
 | 命令 | 用途 |
 |---|---|
-| `buildr runtime list` | 查看 supported adapters、capabilities 和推荐命令。 |
-| `buildr doctor` | 只读检查工作空间（Workspace）资产、当前产品安装、智能体运行时（Agent Runtime）投射及已声明的外部命令（Command），报告问题与修复建议。 |
-| `buildr render <agent>` | 组合投射 Rules entry 与 workspace Skills 到 workspace destination，不安装产品入口 Skill。 |
-| `buildr sync <agent>` | 同步本地工作空间（Workspace）的产品源能力，安装产品入口技能（Skill）、投射智能体运行时（Agent Runtime）并执行最终诊断（Doctor）。 |
-| `buildr runtime check <agent>` | 专项比较某个 scope 的 runtime 期望状态。 |
-| `buildr skill install <agent>` | 只安装产品入口 Buildr Skill。 |
+| `buildr runtime list` | 查看标准默认值、静态适配器（Adapter）、已知品牌映射、文件能力及证据边界。 |
+| `buildr doctor [--agent <agent>] [--adapter <adapter-id>]` | 只读检查资产、当前产品安装、所选或已有受管运行时（Runtime）文件及已声明外部命令（Command），报告问题与修复建议。 |
+| `buildr render [<agent>] [--adapter <adapter-id>]` | 组合投射规则（Rule）与工作空间（Workspace）技能（Skill），不安装产品入口技能（Skill）。 |
+| `buildr sync [<agent>] [--adapter <adapter-id>]` | 同步本地产品源能力，安装产品入口技能（Skill）、投射并执行最终诊断（Doctor）。 |
+| `buildr runtime check [<agent>] [--adapter <adapter-id>]` | 专项比较所选文件约定在目标作用域的期望状态。 |
+| `buildr skill install [<agent>] [--adapter <adapter-id>]` | 只安装产品入口 Buildr 技能（Skill）。 |
 | `buildr mutation recover <id>` | 从完整 transaction journal/backup 恢复未完成 source mutation。 |
 
 `doctor` 的 `ok` 为兼容字段，只表示没有 error，不表示 workspace 已无需处理。Agent 应同时读取 `health.workspaceValid`、`health.ready`、`health.actionRequired` 和 `repairPlan`：例如只有 actionable warning 时，结果可以是 `ok: true` 但 `ready: false`。canonical workspace identity 要求根 `AGENTS.md`、`.buildr/workspace.yml` 和 `projects/` 同时存在；只存在其中一部分时报告 `incomplete`，不会误判为已初始化。
 
 默认 doctor 分三层声明诊断边界：`core` 每次检查 workspace identity、mutation recovery 和 root registries；`conditional` 只在相关 scope、资产或 selected Agent 适用时检查 Project/Service、Rules/Skills、package assets、Commands 与 runtime；`specialty` 是显式场景。对已声明的独立 Git Project，doctor 会比较 remote、`integrationBranch` 和本地实时状态，但不会执行 Git 修改；它不深检 OpenSpec active change，也不运行 build/test。需要更多细节时进入对应 Git、OpenSpec、验证工作流。
 
-当前支持 `claude-code`、`codex`、`cursor`、`qoder`、`trae`、`trae-work` 和 `workbuddy`。其他 runtime 不使用 fallback adapter；各 adapter 的文件路径、刷新方式和证据状态见 [Agent Runtime Adapters](agent-runtime-adapters.md)。
+`codex`、`dsh` 及未登记的有效品牌选择 `agents-standard`，`claude-code`、`cursor`、`qoder`、`trae`、`trae-work`、`workbuddy` 保留专用文件约定。`--adapter` 是严格选择，错误不回退；品牌标识区分大小写，只允许字母、数字、点、下划线和连字符。省略选择时优先保留唯一既有受管方式；多个不等价方式只读可列出，写入前需明确选择。无既有方式则默认标准，不伪造品牌。
+
+诊断分别表达请求 `runtimeId`、实际 `adapterId`、选择原因、文件状态和安装/加载证据；`supported` 只表示可准备所选文件，不能解释为品牌已经安装或会话已经加载。未传身份的诊断只检查已有受管方式（无既有方式时检查标准），不会为所有未安装专用适配器（Adapter）制造缺失噪声。具体路径、刷新方式和证据边界见[运行时适配参考](agent-runtime-adapters.md)。
+
+通用技能（Skill）省略 `runtimes`；明确列表继续按请求品牌限制适用性，不因共享标准而扩权。历史产品拥有的完整品牌列表可升级为通用，用户缩小的列表、绑定和卸载状态保留。共享根中仍有启用来源的技能（Skill）不会因本次品牌未选择而被清理；品牌差异导致相同技能（Skill）的正文或绑定不一致时报告冲突，不后写覆盖。
 
 ## Commands 三层模型
 

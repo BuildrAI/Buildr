@@ -122,9 +122,9 @@ export function createWorkspaceCliContributions(applications: { workspace?: any;
       key: 'init', surface: 'primary',
       summary: '首次 onboarding 推荐传入 --agent：初始化源资产后复用完整 sync，并以最终 doctor 通过作为技术完成条件；随后由 Agent 根据真实 Project/Service 状态完成简短首次使用交接并邀请第一项工作。',
       help: [
-        'Usage: buildr init [--agent <claude-code|codex|cursor|qoder|trae|trae-work|workbuddy>] [--target <dir>] [--name <name>] [--description <text>] [--profile <personal|team|company>]', '',
+        'Usage: buildr init [--agent <runtime>] [--adapter <adapter>] [--source-only] [--target <dir>] [--name <name>] [--description <text>] [--profile <personal|team|company>]', '',
         '首次 onboarding 推荐传入 --agent：初始化源资产后复用完整 sync，并以最终 doctor 通过作为技术完成条件；随后由 Agent 根据真实 Project/Service 状态完成简短首次使用交接并邀请第一项工作。',
-        '不传 --agent 时只初始化源资产；已有 workspace 的日常更新继续使用 buildr sync <agent>。',
+        '默认保留唯一既有接入方式，否则准备标准 runtime；--source-only 只初始化源资产，且不能与 --agent/--adapter 同用。',
         '未提供 --description 时写入明确 TODO，并由 doctor 提示补全。',
         '--help 只输出帮助，不会写入文件。',
       ],

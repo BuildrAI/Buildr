@@ -16,7 +16,7 @@ export const ADAPTER_TRAIT_CATALOG = Object.freeze({
   rules: Object.freeze(['native-recursive', 'native-root', 'reference-bridge', 'vendor-rule-files']),
   skills: Object.freeze(['agents-compatible', 'vendor-root']),
   surfaces: Object.freeze(['ide', 'cli', 'desktop', 'cloud']),
-  activation: Object.freeze(['immediate', 'path-read', 'session-start', 'explicit-reload']),
+  activation: Object.freeze(['immediate', 'path-read', 'session-start', 'explicit-reload', 'host-dependent']),
   checker: Object.freeze(['projection']),
   environmentProbe: Object.freeze(['none', 'command', 'manual', 'any']),
 });
@@ -27,9 +27,12 @@ export const BUILTIN_ADAPTER_IMPLEMENTATIONS = Object.freeze({
   checker: Object.freeze(['projection']),
 });
 
+export const DEFAULT_RUNTIME_ADAPTER_ID = 'agents-standard';
+
 export const UNSUPPORTED_AGENT_GUIDANCE = Object.freeze({
-  message: 'Buildr 暂不支持当前 Agent runtime 的自动渲染。',
-  nextStep: '请联系 Buildr 作者反馈该 Agent。',
+  message: '未登记的有效运行时标识使用 agents-standard 文件约定；品牌安装与会话加载尚未确认。',
+  nextStep: '需要专用格式时显式选择 --adapter；选择失败或执行错误不会回退。',
+  defaultAdapter: DEFAULT_RUNTIME_ADAPTER_ID,
   mustNotUseFallbackAdapter: true,
 });
 
@@ -57,6 +60,7 @@ function planFromTraits(context: any, traits: any): any  {
     : context.rules;
   return createRuntimePlan({
     adapterId: context.adapterId,
+    runtimeId: context.runtimeId,
     targetRoot: context.targetRoot,
     scope: context.scope,
     writes: [...rules.writes, ...context.skills.writes],
@@ -249,6 +253,7 @@ function runtimeTargets(traits: any): any  {
 export function createRuntimeAdapterDescriptor(value: any, options: any = {}): any  {
   value = structuredClone(value);
   value.traits.skills.destinations = normalizeSkillDestinations(value.traits.skills);
+  value.traits.skills.layout = value.traits.skills.root === '.agents' ? 'skill-id' : 'source-path';
   const traitErrors = validateAdapterTraits(value, options);
   if (traitErrors.length > 0) throw new Error(`Invalid runtime adapter descriptor ${value.id || '<missing>'}:\n- ${traitErrors.join('\n- ')}`);
   const traits = freeze(structuredClone(value.traits));
@@ -277,7 +282,7 @@ export function skillDestinationRoot(adapterOrId: any, destination: any, workspa
 }
 
 export function skillDestinationRoots(adapterOrId: any, destination: any, workspaceRoot: any, options: any = {}): any  {
-  const adapter = typeof adapterOrId === 'string' ? getRuntimeAdapter(adapterOrId) : adapterOrId;
+  const adapter = typeof adapterOrId === 'string' ? getRuntimeAdapterFor(adapterOrId) : adapterOrId;
   if (!['workspace', 'user'].includes(destination)) throw new Error(`Unsupported Skill destination: ${destination}. Use workspace or user.`);
   const descriptor = adapter.traits.skills.destinations[destination];
   if (!descriptor || descriptor.supported === false) throw new Error(`Skill destination ${destination} is unsupported for ${adapter.id}.`);
@@ -348,32 +353,20 @@ const DESCRIPTORS: any[] = [
     },
   }),
   createRuntimeAdapterDescriptor({
-    id: 'codex',
-    displayName: 'Codex',
+    id: DEFAULT_RUNTIME_ADAPTER_ID,
+    displayName: 'Agents standard',
     traits: {
       rules: {
         kind: 'native-recursive',
         implementation: 'native-recursive',
-        diagnostics: { missingStatus: 'missing', missingPath: 'AGENTS.md', missingCode: 'runtime.codex_rules_missing', label: 'Codex native AGENTS.md rule asset', okCode: 'runtime.codex_rules_ok' },
+        diagnostics: { missingStatus: 'missing', missingPath: 'AGENTS.md', missingCode: 'runtime.standard_rules_missing', label: 'Standard native AGENTS.md rule asset', okCode: 'runtime.standard_rules_ok' },
       },
-      skills: {
-        kind: 'agents-compatible',
-        implementation: 'filesystem-skills',
-        root: '.agents',
-        publicationExtensions: [{ path: 'agents/openai.yaml', format: 'openai-skill-metadata' }],
-      },
-      surfaces: [{ kind: 'cli' }, { kind: 'desktop' }],
-      activation: { rules: 'path-read', skills: 'session-start', reloadGuidance: 'Codex discovers workspace Skills at session start. Only when a task changes runtime discovery, loading, or activation behavior and specialty acceptance explicitly requires host activation proof, use a host-supported reload or session evidence and report any unsupported gap.' },
-      checker: { kind: 'projection', implementation: 'projection', resultKey: 'codex', installationProbe: { kind: 'none' }, versionProbe: { kind: 'none' } },
+      skills: { kind: 'agents-compatible', implementation: 'filesystem-skills', root: '.agents', layout: 'skill-id' },
+      surfaces: [{ kind: 'cli' }, { kind: 'desktop' }, { kind: 'ide' }, { kind: 'cloud' }],
+      activation: { rules: 'host-dependent', skills: 'host-dependent', reloadGuidance: 'Standard files are prepared. Discovery and activation depend on the host; filesystem checks do not prove installation or session consumption.' },
+      checker: { kind: 'projection', implementation: 'projection', resultKey: 'agentsStandard', installationProbe: { kind: 'none' }, versionProbe: { kind: 'none' } },
     },
-    recommendedCommands: {
-      doctor: 'buildr doctor --agent codex --target <dir> --json',
-      syncWorkspaceEntry: 'buildr sync codex --target <dir>',
-      renderScope: 'buildr render codex --scope <workspace-relative-path> --target <dir>',
-      renderSkillsScope: 'buildr skills render codex --destination workspace --target <workspace>',
-      runtimeCheckScope: 'buildr runtime check codex --scope <workspace-relative-path> --target <dir>',
-      installProductSkill: 'buildr skill install codex --target <dir>',
-    },
+    recommendedCommands: recommendedCommands(DEFAULT_RUNTIME_ADAPTER_ID),
   }),
   createRuntimeAdapterDescriptor({
     id: 'cursor',
@@ -563,7 +556,7 @@ export function createRuntimeAdapterRegistry(descriptors: any, options: any = {}
   const errors: any[] = [];
   for (const descriptor of descriptors) {
     errors.push(...validateAdapterDescriptor(descriptor, options));
-    if (registry[descriptor?.id]) errors.push(`duplicate adapter id: ${descriptor.id}`);
+    if (Object.hasOwn(registry, descriptor?.id)) errors.push(`duplicate adapter id: ${descriptor.id}`);
     if (descriptor?.id) registry[descriptor.id] = descriptor;
   }
   if (errors.length > 0) throw new Error(`Invalid runtime adapter registry:\n- ${errors.join('\n- ')}`);
@@ -573,7 +566,22 @@ export function createRuntimeAdapterRegistry(descriptors: any, options: any = {}
 }
 
 export const RUNTIME_ADAPTERS = createRuntimeAdapterRegistry(DESCRIPTORS);
-export const SUPPORTED_AGENT_IDS = Object.freeze(Object.keys(RUNTIME_ADAPTERS));
+export const SUPPORTED_ADAPTER_IDS = Object.freeze(Object.keys(RUNTIME_ADAPTERS));
+// Legacy internal name: this finite list describes file implementations, not a brand allowlist.
+export const SUPPORTED_AGENT_IDS = SUPPORTED_ADAPTER_IDS;
+export const RUNTIME_ADAPTER_MAPPINGS: Readonly<Record<string, string>> = Object.freeze({
+  'claude-code': 'claude-code', codex: DEFAULT_RUNTIME_ADAPTER_ID, dsh: DEFAULT_RUNTIME_ADAPTER_ID,
+  cursor: 'cursor', qoder: 'qoder', trae: 'trae', 'trae-work': 'trae-work', workbuddy: 'workbuddy',
+});
+export const RUNTIME_HOST_PROFILES: Readonly<Record<string, any>> = freeze({
+  codex: {
+    activation: { rules: 'path-read', skills: 'session-start', reloadGuidance: 'Codex discovers Skills at session start; file preparation is not proof of session loading.' },
+    publicationExtensions: [{ path: 'agents/openai.yaml', format: 'openai-skill-metadata' }],
+  },
+  dsh: {
+    activation: { rules: 'path-read', skills: 'immediate', reloadGuidance: 'DSH discovers root instructions and adds nested instructions after successful read/write/edit. Skills at the nearest Git root use one directory level; watched catalog updates apply on the next agent step, not as replacement of already loaded skill bodies.' },
+  },
+});
 
 function adapterImplementationFamily(adapter: any): any  {
   const rules = adapter.traits.rules;
@@ -593,7 +601,7 @@ export function runtimeAdapterImplementationMatrix(adapters: any = RUNTIME_ADAPT
     return Object.freeze({ adapterId: adapter.id, family });
   });
   const required: any[] = ['native-recursive', 'per-source-reference', 'same-directory-vendor', 'central-vendor', 'root-index-bridge'];
-  const preferred: any = { 'native-recursive': 'codex', 'per-source-reference': 'claude-code', 'same-directory-vendor': 'qoder', 'central-vendor': 'cursor', 'root-index-bridge': 'workbuddy' };
+  const preferred: any = { 'native-recursive': DEFAULT_RUNTIME_ADAPTER_ID, 'per-source-reference': 'claude-code', 'same-directory-vendor': 'qoder', 'central-vendor': 'cursor', 'root-index-bridge': 'workbuddy' };
   for (const [family, adapterId] of Object.entries(preferred) as Array<[string, string]>) {
     if (adapters[adapterId] && adapterImplementationFamily(adapters[adapterId]) === family) representatives.set(family, adapterId);
   }
@@ -604,14 +612,42 @@ export function runtimeAdapterImplementationMatrix(adapters: any = RUNTIME_ADAPT
   });
 }
 
-export function isSupportedAgent(agent: any): any  {
-  return Object.hasOwn(RUNTIME_ADAPTERS, agent);
+export function isSupportedAgent(agent: any): boolean {
+  return typeof agent === 'string' && AGENT_ID_PATTERN.test(agent);
 }
 
-export function getRuntimeAdapter(agent: any): any  {
-  const adapter = RUNTIME_ADAPTERS[agent];
-  if (!adapter) throw new Error(`Unsupported Agent runtime: ${agent}`);
-  return adapter;
+export function getRuntimeAdapter(adapterId: any): any {
+  if (typeof adapterId !== 'string' || !Object.hasOwn(RUNTIME_ADAPTERS, adapterId)) throw new Error(`Unsupported runtime adapter: ${adapterId}`);
+  return RUNTIME_ADAPTERS[adapterId];
+}
+
+export function resolveRuntimeSelection({ runtimeId = null, adapterId = null }: { runtimeId?: string | null; adapterId?: string | null } = {}): any {
+  if (runtimeId !== null && !isSupportedAgent(runtimeId)) throw new Error(`Agent id must contain only letters, digits, dots, underscores, or dashes: ${runtimeId}`);
+  // The standard implementation name is accepted by legacy positional commands without inventing a host identity.
+  const identity = runtimeId === DEFAULT_RUNTIME_ADAPTER_ID ? null : runtimeId;
+  const mapped = identity !== null && Object.hasOwn(RUNTIME_ADAPTER_MAPPINGS, identity) ? RUNTIME_ADAPTER_MAPPINGS[identity] : DEFAULT_RUNTIME_ADAPTER_ID;
+  const selected = adapterId ?? mapped;
+  const adapter = getRuntimeAdapter(selected);
+  const profile = adapter.id === mapped && identity !== null && Object.hasOwn(RUNTIME_HOST_PROFILES, identity) ? RUNTIME_HOST_PROFILES[identity] : null;
+  return freeze({
+    runtimeId: identity,
+    adapterId: adapter.id,
+    adapter,
+    reason: adapterId !== null ? 'explicit-adapter' : identity !== null && Object.hasOwn(RUNTIME_ADAPTER_MAPPINGS, identity) ? 'runtime-mapping' : 'standard-default',
+    host: { known: identity !== null && Object.hasOwn(RUNTIME_ADAPTER_MAPPINGS, identity), installation: 'not-checked', sessionConsumption: 'unknown-until-adopted', ...(profile || {}) },
+  });
+}
+
+export function getRuntimeAdapterFor(runtimeId: string | null = null, adapterId: string | null = null): any {
+  return resolveRuntimeSelection({ runtimeId, adapterId }).adapter;
+}
+
+export function skillAppliesToRuntime(skill: any, runtimeId: string | null): boolean {
+  return !Array.isArray(skill.runtimes) || (runtimeId !== null && skill.runtimes.includes(runtimeId));
+}
+
+export function runtimeSkillPath(skill: any, runtimeId: string | null = null, adapterId: string | null = null): string {
+  return getRuntimeAdapterFor(runtimeId, adapterId).traits.skills.root === '.agents' ? skill.id : (skill.runtimePath ?? skill.id);
 }
 
 export function selectAdapterImplementation(adapter: any, kind: any, implementations: any): any  {
@@ -623,7 +659,14 @@ export function selectAdapterImplementation(adapter: any, kind: any, implementat
 
 export function runtimeDiscoveryPayload(): any  {
   return {
-    supportedAgents: [...SUPPORTED_AGENT_IDS],
+    defaultAdapter: DEFAULT_RUNTIME_ADAPTER_ID,
+    runtimeMappings: RUNTIME_ADAPTER_MAPPINGS,
+    hostProfiles: RUNTIME_HOST_PROFILES,
+    unknownRuntimePolicy: 'standard-default',
+    supportedAdapters: [...SUPPORTED_ADAPTER_IDS],
+    adapters: RUNTIME_ADAPTERS,
+    // Compatibility fields name file adapters; runtimeMappings names known brands.
+    supportedAgents: [...SUPPORTED_ADAPTER_IDS],
     requiredRenderCapabilities: [...REQUIRED_RENDER_CAPABILITIES],
     adapterTraitCatalog: ADAPTER_TRAIT_CATALOG,
     agents: Object.fromEntries(Object.entries(RUNTIME_ADAPTERS).map(([id, adapter]: any) => [id, {
@@ -641,7 +684,8 @@ export function runtimeDiscoveryPayload(): any  {
 
 export function createRuntimeContext(value: any): any  {
   const context: any = {
-    adapterId: value.adapterId,
+    adapterId: value.adapterId === 'codex' ? DEFAULT_RUNTIME_ADAPTER_ID : value.adapterId,
+    runtimeId: Object.hasOwn(value, 'runtimeId') ? value.runtimeId : value.adapterId === 'codex' ? 'codex' : null,
     targetRoot: path.resolve(value.targetRoot),
     scope: value.scope,
     rules: value.rules || { writes: [], nativeAssets: [], removals: [], actions: [] },
@@ -656,7 +700,8 @@ export function createRuntimeContext(value: any): any  {
 export function createRuntimePlan(value: any): any  {
   return freeze({
     schemaVersion: 'buildr.runtime-plan/v1',
-    adapterId: value.adapterId,
+    adapterId: value.adapterId === 'codex' ? DEFAULT_RUNTIME_ADAPTER_ID : value.adapterId,
+    runtimeId: Object.hasOwn(value, 'runtimeId') ? value.runtimeId : value.adapterId === 'codex' ? 'codex' : null,
     targetRoot: path.resolve(value.targetRoot),
     scope: value.scope,
     writes: value.writes || [],
