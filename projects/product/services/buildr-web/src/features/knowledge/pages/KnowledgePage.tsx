@@ -527,6 +527,7 @@ export function KnowledgePage() {
         </div>
         <KnowledgePreviewNotice sourceDirectory={pageScope?.directory} />
         <KnowledgeTopicNavigation nodes={nodes} selected={readingTarget} documentsSelected={browseDocuments}
+          prose={showDocuments || (isReading && shownArtifacts.length > 0 && shownArtifacts.every(artifact => artifact.kind === 'document'))}
           preferences={preferences} onPreferences={updatePreferences}
           loading={browseDocuments ? documentCatalog.loading : navigation.loading}
           error={browseDocuments ? documentCatalog.error : navigation.error}

@@ -20,10 +20,11 @@ type Props = {
   onRetry: () => void;
   children: ReactNode;
   compact?: boolean;
+  prose?: boolean;
 };
 
 /** Both reading modes share one search, hierarchy and responsive navigation surface. */
-export function KnowledgeTopicNavigation({ nodes, selected, documentsSelected, preferences, onPreferences, loading, error, notices = [], onSelect, onTopics, onDocuments, onRetry, children, compact = false }: Props) {
+export function KnowledgeTopicNavigation({ nodes, selected, documentsSelected, preferences, onPreferences, loading, error, notices = [], onSelect, onTopics, onDocuments, onRetry, children, compact = false, prose = false }: Props) {
   const mobile = useRef<HTMLDetailsElement>(null);
   const { query, filter } = preferences;
   const visible = useMemo(() => filterReadingTree(nodes, query, filter), [nodes, query, filter]);
@@ -85,7 +86,7 @@ export function KnowledgeTopicNavigation({ nodes, selected, documentsSelected, p
     onChange={key => { if (key === 'documents') onDocuments(); else onTopics(); }} />;
   if (compact) return <div className="knowledge-navigation-container knowledge-navigation-compact" data-knowledge-reading-mode={documentsSelected ? 'documents' : 'topics'}>
     <details ref={mobile} data-knowledge-topic-disclosure><summary>目录与检索<span>展开选择内容</span></summary>{modes}{tools()}{contents()}</details>
-    <div className="knowledge-navigation-content">{children}</div>
+    <div className={`knowledge-navigation-content${prose ? ' knowledge-prose-content' : ''}`}>{children}</div>
   </div>;
   return <div className="knowledge-navigation-container">
     <Tabs className="knowledge-reading-tabs" activeKey={documentsSelected ? 'documents' : 'topics'}
@@ -97,7 +98,7 @@ export function KnowledgeTopicNavigation({ nodes, selected, documentsSelected, p
       <div className="knowledge-topic-mobile">{tools()}<details ref={mobile} data-knowledge-topic-disclosure>
         <summary>{documentsSelected ? '文档目录' : '主题目录'}<span>展开选择内容</span></summary>{contents()}
       </details></div>
-      <div className="knowledge-navigation-content">{children}</div>
+      <div className={`knowledge-navigation-content${prose ? ' knowledge-prose-content' : ''}`}>{children}</div>
     </div>
   </div>;
 }

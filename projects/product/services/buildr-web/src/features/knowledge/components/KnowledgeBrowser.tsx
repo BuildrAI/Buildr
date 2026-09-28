@@ -220,6 +220,7 @@ function KnowledgeBrowserView({ entry, refresh, active, workspaceId, scope, onOp
   return <div ref={root} className="knowledge-side-reader knowledge-browser-view" data-knowledge-view={entry.kind}>
     <div className="knowledge-browser-actions"><KnowledgeActions disabled={!pageScope} onAction={construct} /></div>
     <KnowledgeTopicNavigation compact nodes={nodes} selected={readingTarget} documentsSelected={documentsMode}
+      prose={isDocuments || (shownArtifacts.length > 0 && shownArtifacts.every(item => item.kind === 'document'))}
       preferences={preferences} onPreferences={onPreferences}
       loading={documentsMode ? documentCatalog.loading : navigation.loading} error={documentsMode ? documentCatalog.error : navigation.error}
       notices={documentsMode ? [...(documentCatalog.data?.diagnostics || []), ...(documentCatalog.data?.truncated ? ['目录未完整读取，当前数量仅为已发现文档。'] : [])] : []}

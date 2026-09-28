@@ -13,13 +13,24 @@
 .composition-links path { stroke:#bdcfca; stroke-width:1.5; fill:none; }
 .composition-caption,.composition-empty { font-size:12px; color:var(--soft-muted); }
 .composition-toolbar { display:flex; flex-wrap:wrap; gap:10px; margin:20px 0; align-items:center; }
-.composition-toolbar > .ant-input-affix-wrapper { width:230px; }
+.composition-toolbar > .ant-input-affix-wrapper { width:min(100%,280px); }
 .composition-toolbar > .ant-select { min-width:180px; }
+.composition-toolbar-action { width:180px; margin-left:auto; }
+.composition-toolbar-action .resource-section-head { margin:0; }
+.composition-toolbar-action .project-associate-picker { width:100%; max-width:none; }
+.composition-toolbar-action:has(.ant-alert) { width:100%; }
+.composition-toolbar-action:has(.ant-alert) .project-associate-picker { width:180px; }
+.composition-search-status { margin:-10px 0 16px; color:var(--soft-muted); font-size:12px; line-height:1.6; }
 .composition-grid { gap:32px; min-width:600px; }
 .composition-column h2 > span { font-weight:400; font-size:12px; color:var(--soft-muted); margin-left:8px; }
 .composition-node { transition:opacity .12s,border-color .12s; }
 .composition-node.dim,.composition-links path.dim { opacity:.2; }
 .composition-node.selected { border-color:var(--soft-primary); background:#f5faf8; }
+.composition-node.search-match { border-color:var(--soft-primary); background:#f5faf8; }
+.composition-node.search-related { opacity:.68; }
+.composition-node.search-related:hover,.composition-node.search-related:focus-visible { opacity:1; }
+.composition-node .composition-search-marker { color:var(--soft-primary); font-size:11px; white-space:nowrap; }
+.composition-node.search-related .composition-search-marker { color:var(--soft-muted); }
 .composition-links path.emphasized { stroke:var(--soft-primary); stroke-width:2; }
 .composition-links path.repository-link { stroke-dasharray:5 4; }
 .composition-open { margin-left:auto; color:var(--soft-muted); }
@@ -34,6 +45,7 @@
 .composition-node strong { overflow-wrap:anywhere; }
 .composition-node > .composition-references { display:none; }
 @container composition (max-width:720px) {
+  .composition-toolbar-action { margin-left:0; }
   .composition-scroll { overflow:visible; }
   .composition-grid { min-width:0; grid-template-columns:minmax(0,1fr); gap:24px; padding:0; }
   .composition-links { display:none; }

@@ -175,6 +175,12 @@ export async function runPublicationJourney({ t, page, workspaceRoot, workspaceU
     const filter = (name: string) => main().getByRole('group', { name: '内容类型', exact: true }).getByRole('button', { name, exact: true });
     await page.goto(`${workspaceUrl}/knowledge/project/product`);
     await body().waitFor({ state: 'visible' });
+    const readingLayout = await body().evaluate((element: HTMLElement) => {
+      const pane = element.closest('.knowledge-navigation-content')!.getBoundingClientRect();
+      const article = element.getBoundingClientRect();
+      return { width: article.width, leftGap: article.left - pane.left, rightGap: pane.right - article.right };
+    });
+    assert.ok(readingLayout.width <= 961 && Math.abs(readingLayout.leftGap - readingLayout.rightGap) < 2, `知识正文居中且限宽：${JSON.stringify(readingLayout)}`);
     const branch = () => main().locator('[data-knowledge-branch="topic:browser-reading"]:visible');
     if (await branch().getAttribute('aria-expanded') !== 'true') await branch().click();
     await composeKnowledgeSearch(page, search(), 'shen ru', '深入阅读', async () => {

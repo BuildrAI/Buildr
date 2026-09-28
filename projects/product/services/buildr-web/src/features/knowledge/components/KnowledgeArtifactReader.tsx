@@ -89,7 +89,7 @@ export function KnowledgeArtifactReader(props: ArtifactReaderProps) {
     .map(s => facts.find(candidate => candidate.kind === "skill" && candidate.skillId === s.skillId && candidate.path === "SKILL.md") || s);
   return (
     <article
-      className={`${embedded ? "knowledge-embedded" : "knowledge-artifact"}${a.kind === "code-map" ? " knowledge-code-map" : ""}`}
+      className={`${embedded ? "knowledge-embedded" : "knowledge-artifact"}${a.kind === "code-map" ? " knowledge-code-map" : ""}${a.kind === "diagram" ? " knowledge-diagram-artifact" : ""}`}
       data-knowledge-artifact={a.id}
     >
       {body.anchor && <span id={body.anchor} className="knowledge-document-anchor" aria-hidden />}

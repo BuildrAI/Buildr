@@ -196,10 +196,11 @@ export function ProjectDetailPage() {
             </>} />
         <Tabs activeKey={view} onChange={selectView} items={[{ key: 'overview', label: '概览' }, { key: 'composition', label: '项目组成' }]} />
         {view === 'composition' ? <>
-          {data ? <ProjectServicesPanel projectCode={projectCode} data={data} setData={catalog.setData} onReload={reload} compact /> : <Alert type="warning" message="关联暂时不能编辑" description={catalog.error} action={<Button onClick={reload}>重新读取</Button>} />}
           {composition.data ? <WorkspaceComposition data={composition.data} projectId={project.id}
+            toolbarAction={data ? <ProjectServicesPanel projectCode={projectCode} data={data} setData={catalog.setData} onReload={reload} compact /> : undefined}
             error={composition.error || composition.data.diagnostics.map(item => item.message).join('；') || undefined} onRetry={reload}
             onOpen={(kind, id) => { if (kind !== 'project') previews?.open(editLocation.pathname, href(`/${kind === 'service' ? 'services' : 'repositories'}/${encodeURIComponent(id)}`)); }} /> : <Alert type="info" message={composition.error || '正在读取项目组成…'} action={composition.error && <Button onClick={reload}>重试</Button>} />}
+          {!data && catalog.error && <Alert type="warning" message="关联暂时不能编辑" description={catalog.error} action={<Button onClick={reload}>重新读取</Button>} />}
         </> : <>
         <ProjectHomeEntries projectCode={projectCode} href={href} needsKnowledge={needsKnowledge} onKnowledge={event => {
           if (!needsKnowledge || !knowledge.data || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;

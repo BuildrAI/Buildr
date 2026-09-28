@@ -20,9 +20,10 @@ export function ProjectServicesPanel({ projectCode, data, setData, compact, onRe
     try { setData(await assetCatalogApi.associate(project.id, { revision: data.revision, serviceIds, newServices })); }
     finally { setSaving(false); }
   };
-  return <section className="resource-section"><CatalogMigration catalog={data} onSaved={setData} />
+  const content = <><CatalogMigration catalog={data} onSaved={setData} />
     <ProjectServicesView compact={compact} onReload={onReload} services={services} linkedIds={linkedIds} disabled={data.migrationRequired || saving} onSave={ids => save(ids)} onCreate={() => setCreating(true)} serviceHref={id => workspaceHref(workspaceId, `/services/${id}`)} />
     {saveError && <Alert type="error" message={saveError} action={onReload && <Button onClick={onReload}>重新读取</Button>} />}
     {creating && <ServiceCreateDrawer projectCode={projectCode} catalog={data} initial={draft} onClose={value => { setDraft(value); setCreating(false); }} onSave={async service => { try { await save(linkedIds, [service]); setDraft(undefined); setCreating(false); } catch (error) { setSaveError((error as Error).message); throw error; } }} />}
-  </section>;
+  </>;
+  return compact ? content : <section className="resource-section">{content}</section>;
 }
