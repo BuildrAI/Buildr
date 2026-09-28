@@ -21,7 +21,7 @@ export function KnowledgeSearch({ value, label, onChange }: {
     published.current = next;
     onChange(next);
   };
-  return <Input prefix={<SearchOutlined />} value={draft} allowClear aria-label={label} placeholder="搜索标题或说明"
+  return <Input prefix={<SearchOutlined />} value={draft} allowClear aria-label={label} placeholder="搜索标题、摘要或路径"
     onCompositionStart={() => { composing.current = true; }}
     onCompositionEnd={event => {
       composing.current = false;

@@ -2109,3 +2109,9 @@ details summary { cursor: pointer; color: var(--soft-ink); font-size: 12px; font
 
 .resource-directory-picker { display:flex; gap:8px; align-items:center; }
 .resource-directory-picker > .ant-select { flex:1; min-width:0; }
+.markdown-code-block { position: relative; min-width: 0; }
+.markdown-code-block > button { display: block; margin: 0 0 5px auto; border: 0; background: transparent; color: var(--soft-muted); font: inherit; font-size: 12px; cursor: pointer; }
+.markdown-body .markdown-render-note { margin: 0 0 8px; color: var(--soft-muted); font-size: 12px; }
+.markdown-table-scroll { max-width: 100%; overflow-x: auto; }
+.markdown-table-scroll th, .markdown-table-scroll td { min-width: 110px; }
+.markdown-body [id] { scroll-margin-top: 72px; }

@@ -52,7 +52,7 @@ Buildr MVP MUST 将 Buildr 使用方式定义为跨 Agent 的项目协作契约�
 
 #### Scenario: Agent 未原生支持 Buildr
 - **WHEN** 用户使用的 Agent 产品未原生支持 Buildr
-- **THEN** 用户 MUST 能通过自然语言触发 Buildr bootstrap guide，让 Agent 学会使用 Buildr CLI 和 workspace 资产
+- **THEN** 用户 MUST 能通过自然语言让智能体（Agent）依据 Buildr 产品说明和当前命令帮助安装、初始化或恢复 Buildr 技能（Skill），并继续使用工作空间（Workspace）资产
 
 ### Requirement: Runtime 投射按 Agent 能力选择
 Buildr MUST 将支持的 Agent runtime 视为从 Buildr 源资产、canonical scope discovery plan 和已启用内置能力生成的 adapter 投射。

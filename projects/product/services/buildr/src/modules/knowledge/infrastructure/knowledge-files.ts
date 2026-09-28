@@ -32,7 +32,7 @@ const allowed = new Set([
   ".svelte",
   ".sh",
 ]);
-export function resolveKnowledgeFile(root: string, relative: string) {
+export function resolveKnowledgeFile(root: string, relative: string, extensions?: string[]) {
   if (
     !relative ||
     relative.includes("\\") ||
@@ -49,7 +49,7 @@ export function resolveKnowledgeFile(root: string, relative: string) {
           /^(node_modules|credentials?|secrets?|id_rsa|id_ed25519)$/i.test(x),
       ) ||
     /(?:credential|secret|\.pem$|\.key$)/i.test(path.basename(relative)) ||
-    !allowed.has(path.extname(relative).toLowerCase())
+    !(extensions ? extensions.includes(path.extname(relative).toLowerCase()) : allowed.has(path.extname(relative).toLowerCase()))
   )
     throw knowledgeError(
       "knowledge_path_forbidden",

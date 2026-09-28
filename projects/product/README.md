@@ -1,25 +1,28 @@
-# Buildr 项目文档
+# Buildr 产品开发入口
 
-这里是使用和开发 Buildr 的文档入口。按当前需要选择，不必从头读完。
+这里帮助贡献者找到开发依据、实现位置和适用检查。开始使用产品，请读[使用指南](knowledge/docs/guides/getting-started.md)；其他资料见[阅读目录](knowledge/docs/README.md)。
 
-| 你想做什么 | 从这里开始 |
-| --- | --- |
-| 安装、配置、日常工作或处理问题 | [使用指南](knowledge/docs/guides/getting-started.md) |
-| 参与开发 | [开发指南](knowledge/docs/README.md#开发-buildr) |
-| 查命令、工具适配或其他细节 | [手册与参考目录](knowledge/docs/README.md) |
-| 查看首版准备结果 | [0.1.0 准备审查](knowledge/reviews/v0.1.0-readiness.md) |
+## 开始开发
 
-理解 Buildr 的目标、系统、任务、数据和测试，请从项目首页的“项目知识”进入；仓库内也可以阅读[知识目录](knowledge/README.md)。知识按理解问题组织，操作和参考资料从本页查阅，正文只维护一份。
+在智能体（Agent）工具中打开本仓库根目录，先读取适用的 `AGENTS.md` 与[贡献指南](../../CONTRIBUTING.md)，再按改动范围准备环境。
+
+- [开发准备](preparation.yml)声明环境和依赖入口，Node.js 版本以 [`.node-version`](.node-version) 为准。
+- [测试地图](verification.yml)声明检查的适用范围；从[产品验证框架](knowledge/docs/architecture/verification-framework.md)理解如何选择检查。
+- [代码地图（Code Map）](knowledge/code-map/README.md)帮助从职责定位实现；专项说明见[开发参考](knowledge/docs/README.md#开发参考)。
+
+从工作空间（Workspace）根使用 `projects/product/buildr`。它委托安装包所在服务（Service）的入口；依赖安装和检查从对应服务（Service）目录执行。不要重新初始化本仓库，也不要用开发目录覆盖本机正式安装。
 
 ## 产品工程
 
-本项目维护产品知识、规则、规范和两个实现部分：
+本项目维护产品知识、规则（Rule）、规范（Specification）和两个实现部分：
 
-- [`services/buildr/`](services/buildr/)：命令行接口（CLI）、本机业务能力、网页托管与 npm 分发。
-- [`services/buildr-web/`](services/buildr-web/)：React 页面、交互与正式前端构建。
+| 实现位置 | 职责 |
+| --- | --- |
+| [`services/buildr/`](services/buildr/) | 安装包、命令行接口（CLI）、本机业务能力、网页托管与 npm 分发 |
+| [`services/buildr-web/`](services/buildr-web/) | React 页面、交互与正式前端构建 |
 
-贡献约定见[贡献指南](https://github.com/BuildrAI/Buildr/blob/main/CONTRIBUTING.md)。
+两个服务（Service）当前位于同一代码库（Repository），不因目录分开就成为两个独立代码库（Repository）。[技术架构](knowledge/docs/architecture/technical.md)解释组成与边界；[正式规范](openspec/specs/)保存行为约定，实际实现仍需按改动核对。
 
-[正式规范](openspec/specs/) · [技术架构](knowledge/docs/architecture/technical.md) · [代码地图（Code Map）](knowledge/code-map/README.md) · [技术图](knowledge/archify/index.md)
+[阅读目录](knowledge/docs/README.md)帮助理解系统、任务（Task）、数据和测试之间的关系；[技术图（Technical Diagram）](knowledge/code-map/README.md#按问题找图)用于按需深入。网页与仓库链接指向同一份正文。
 
-开发时从工作空间（Workspace）根使用 `projects/product/buildr`。它只委托后端服务（Service）的入口；依赖安装和检查从对应服务（Service）目录执行，不覆盖本机正式安装。
+发布维护见[发布流程](knowledge/docs/flows/open-source-release.md)。[0.1.0 准备审查](knowledge/reviews/v0.1.0-readiness.md)保留当时的观察，不代表当前版本已经发布或全部问题已解决。

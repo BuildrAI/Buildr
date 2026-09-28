@@ -36,7 +36,7 @@ import { knowledgeEntryObject, knowledgeReadingTopics, knowledgeSelectedTopic, k
 import {
   resolveKnowledgePath,
 } from "../knowledge-navigation";
-import type { KnowledgeIndex, KnowledgeScope } from "../api/knowledge-api";
+import type { KnowledgeIndex, KnowledgeScope, KnowledgeReference } from "../api/knowledge-api";
 import "../knowledge.css";
 export function KnowledgePage() {
   const { scopeKind, scopeId = "" } = useParams();
@@ -326,6 +326,15 @@ export function KnowledgePage() {
     }
     openPane("source", id, description);
   };
+  const openReference = (reference: KnowledgeReference, referenceTitle: string, fragment?: string) => {
+    rememberAnchor();
+    const key = `reference:${JSON.stringify(reference)}:${fragment || ''}`;
+    setReadingState(previous => {
+      const items = previous.scope === scopeKey ? previous.items : [];
+      return { scope: scopeKey, active: key, items: items.some(pane => pane.key === key) ? items : [...items, { key, kind: 'reference', id: key, title: referenceTitle, origin: title, reference, fragment }] };
+    });
+    previews?.activate(location.pathname, '');
+  };
   const follow = (
     base: string,
     href: string,
@@ -348,7 +357,11 @@ export function KnowledgePage() {
     }
     if (sources.length === 1) openSource(sources[0].id, description);
     else if (sources.length > 1) setReferenceChoices(sources.map((s) => s.id));
-    else setLinkNotice("该文件尚未登记阅读关联，请在完善内容时补齐。");
+    else {
+      const origin = index?.artifacts.find(item => item.path === base);
+      if (origin) openReference({ kind: 'artifact', id: origin.id, links: [href] }, description || path.split('/').at(-1) || '引用文件');
+      else setLinkNotice('无法确定该引用的来源，请刷新原文后重试。');
+    }
   };
   const reader = {
     index,
@@ -358,6 +371,7 @@ export function KnowledgePage() {
     onFile: (base: string, href: string, description?: string) =>
       follow(base, href, true, description),
     onSource: openSource,
+    onReference: openReference,
     onOpen: (id: string) => openPane("artifact", id),
     onObject: (id: string) => selectReading({ kind: "object", id }),
   };
@@ -550,6 +564,7 @@ export function KnowledgePage() {
         )}
         {main.relatedErrors.map(error => <Alert key={error} type="warning" message={error} />)}
         {showDocuments && <KnowledgeDocuments scope={scope} workspaceId={workspaceId || ""} documentId={documentId} documents={documentCatalog.data?.documents || []} refresh={refresh}
+          onReference={openReference}
           onOpen={document => selectReading({ kind: "document", id: document })}
           onArtifact={artifact => selectReading({ kind: "artifact", id: artifact })}
           onLoadingChange={setDocumentLoading} onTitleChange={setDocumentTitle} />}

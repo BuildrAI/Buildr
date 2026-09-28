@@ -350,11 +350,13 @@
   white-space: normal;
   overflow-wrap: anywhere;
 }
-.knowledge-page .markdown-body code,
-.knowledge-side-reader .markdown-body code {
+.knowledge-page .markdown-body :not(pre) > code,
+.knowledge-side-reader .markdown-body :not(pre) > code {
   white-space: normal;
   overflow-wrap: anywhere;
 }
+.knowledge-page .markdown-body pre code,
+.knowledge-side-reader .markdown-body pre code { white-space: pre; overflow-wrap: normal; }
 .knowledge-code-map .markdown-body th:first-child {
   min-width: 160px;
 }
@@ -539,3 +541,8 @@
 .knowledge-browser .markdown-body > :is(p, ul, ol, blockquote),
 .knowledge-summary { max-width:var(--reading-content-width,880px); }
 .knowledge-page .markdown-body table { width:100%; }
+.knowledge-navigation-compact > details { margin-bottom: 20px; padding-bottom: 12px; border-bottom: 1px solid var(--soft-line); }
+.knowledge-navigation-compact > details > summary { display: flex; justify-content: space-between; cursor: pointer; color: var(--soft-muted); font-size: 12px; }
+.knowledge-navigation-compact > details > nav { max-height: 42vh; overflow-y: auto; }
+.knowledge-reference-reader { min-width: 0; }
+.knowledge-document-anchor { display: block; scroll-margin-top: 72px; }

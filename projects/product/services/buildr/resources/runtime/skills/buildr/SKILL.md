@@ -52,4 +52,4 @@ Agent runtime 先根据 Skill description 和用户目标发现入口 Skill。�
 
 报告实际修改、验证、投射范围与遗留。复用当前动作已返回的诊断，不重复执行；存在相关错误时不能宣称该动作完成。仅将本次目标要求的长期信息写回对应源资产。
 
-入口不可用或运行时（Runtime）损坏时使用 `buildr bootstrap guide`。
+产品入口未被发现或投射损坏时，按[运行时维护](references/runtime.md#入口恢复)定位问题；当前离线参数以命令帮助为准。

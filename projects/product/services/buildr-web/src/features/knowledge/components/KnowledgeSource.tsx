@@ -55,7 +55,7 @@ export function KnowledgeSource({
         </Button>
       )}
       {markdown && !raw ? (
-        <div data-rendered-source><KnowledgeArtifactReader {...reading} showTitle={false} preserveHeading /></div>
+        <div data-rendered-source><KnowledgeArtifactReader {...reading} reference={reading.artifact.id.startsWith('source:') ? { kind: 'source', id: sourceId, links: [] } : undefined} showTitle={false} preserveHeading /></div>
       ) : (
         <pre className="knowledge-source" aria-label="只读来源">
           {content.split("\n").map((text, i) => (

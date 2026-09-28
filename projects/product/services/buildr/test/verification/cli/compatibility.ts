@@ -37,7 +37,7 @@ try {
 }
 
 const publicHelpTopics: any[] = [
-  [], ['init'], ['web'], ['web', 'preview', 'start'], ['task', 'environment', 'prepare'],
+  [], ['init'], ['assets'], ['web'], ['web', 'preview', 'start'], ['task', 'environment', 'prepare'],
   ['task', 'verification', 'record'], ['task', 'delivery'], ['task', 'delivery', 'inspect'], ['task', 'finish'], ['task', 'finish', 'run'], ['rules', 'render'],
   ['openspec', 'convergence', 'inspect'],
 ];
@@ -101,6 +101,7 @@ for (const [surface, heading] of Object.entries(surfaceHeadings)) {
 const removedHelpCwd: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-removed-help-'));
 try {
   const removedCommands: any[] = [
+    { key: 'bootstrap guide', args: ['bootstrap', 'guide', '--target', removedHelpCwd, '--json'] },
     { key: 'openspec audit', args: ['openspec', 'audit', 'demo', '--target', removedHelpCwd, '--json'] },
     { key: 'openspec baseline create', args: ['openspec', 'baseline', 'create', 'demo', '--target', removedHelpCwd, '--json'] },
     { key: 'openspec check', args: ['openspec', 'check', 'demo', '--target', removedHelpCwd, '--json'] },
@@ -119,6 +120,12 @@ try {
   }
 } finally {
   fs.rmSync(removedHelpCwd, { recursive: true, force: true });
+}
+
+for (const args of [['bootstrap', 'guide', '--help'], ['help', 'bootstrap', 'guide']]) {
+  const result: any = run(args);
+  assert.equal(result.status, 2);
+  assert.match(`${result.stdout}${result.stderr}`, /Unknown (?:command|help topic): bootstrap guide/);
 }
 
 for (const args of [['app', '--help'], ['help', 'app']]) {

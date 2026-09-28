@@ -1,6 +1,6 @@
 export type { AssetCatalog } from './domain/asset-relationships.ts';
 import { registerAssetRelationshipsApplication } from './application/asset-relationships-application.ts';
-import { assetCatalogCommand } from './interfaces/cli/asset-catalog.ts';
+import { ASSET_CATALOG_HELP, assetCatalogCommand } from './interfaces/cli/asset-catalog.ts';
 import { createRegistryMaintenance } from './application/registry-maintenance.ts';
 import { registerWorkspaceQueryApplication, type WorkspaceQueryApplicationRuntime } from './application/workspace-query-application.ts';
 import { ensureRegisteredTarget, registerWorkspaceCommandApplication, type WorkspaceCommandApplicationRuntime } from './application/workspace-command-application.ts';
@@ -67,7 +67,7 @@ const WORKSPACE_METHODS = Object.freeze([
   'getWorkspace', 'listRegisteredWorkspaces', 'registerLocalWorkspace', 'removeRegisteredWorkspace',
   'resolveRegisteredWorkspace', 'workspaceMigrationPlan', 'migrateWorkspaceMetadata', 'updateWorkspaceMetadata',
   'generateWorkspaceCreatePrompt', 'inspectLocalWorkspaceCandidate', 'getWorkspaceGettingStarted',
-  'generateStartWorkPrompt', 'diagnoseWorkspaceMetadata', 'initializeWorkspace', 'readBootstrapGuide', 'recoverWorkspaceMutation',
+  'generateStartWorkPrompt', 'diagnoseWorkspaceMetadata', 'initializeWorkspace', 'recoverWorkspaceMutation',
 ]);
 const PROJECT_METHODS = Object.freeze([
   'readProjectRegistryRecord', 'listProjects', 'projectDetail', 'projectDocument', 'projectMigrationPlan',
@@ -94,7 +94,7 @@ const LEGACY_RUNTIME_METHODS = Object.freeze([
   'diagnoseMutations', 'gitOutput', 'isGitUrl', 'gitCurrentBranch',
   'gitDefaultBranch', 'inferRepoKind', 'gitBoundaryFor', 'ensureGitBoundaries',
   'gitBoundaryIgnored', 'ensureRegisteredTarget', 'createProject', 'createService',
-  'initBuildr', 'bootstrapGuide', 'mutationRecover',
+  'initBuildr', 'mutationRecover',
 ]);
 const TEST_SUPPORT_METHODS = Object.freeze([
   'readWorkspaceRegistryPersistence', 'withWorkspaceRegistryMutation',
@@ -114,7 +114,7 @@ export function createWorkspaceCliContributions(applications: { workspace?: any;
   return Object.freeze([
     Object.freeze({
       key: 'assets', surface: 'agent-machine', summary: '查看或维护项目、服务、代码库及关联；写入要求当前版本。',
-      help: ['Usage: buildr assets <inspect|project-candidates|service-candidates|repository-candidates|migrate|normalize|remove|create|register|update|associate> [project|service|repository] [id] --target <workspace> [--input <json-file>] --json'],
+      help: ASSET_CATALOG_HELP,
       match: ({ domain }: any) => domain === 'assets',
       run: (runtime: any, context: any) => assetCatalogCommand(applications.workspace || runtime, context.argv.slice(3)),
     }),
@@ -130,12 +130,6 @@ export function createWorkspaceCliContributions(applications: { workspace?: any;
       ],
       match: ({ domain }: any) => domain === 'init',
       run: (runtime: any, context: any) => workspaceCommand(applications.workspace || runtime, 'init', context.argv.slice(3)),
-    }),
-    Object.freeze({
-      key: 'bootstrap guide', surface: 'primary', summary: '输出最小 bootstrap 指南。',
-      help: ['Usage: buildr bootstrap guide', '', '输出最小 bootstrap 指南。'],
-      match: ({ domain, action }: any) => domain === 'bootstrap' && action === 'guide',
-      run: (runtime: any) => workspaceCommand(applications.workspace || runtime, 'bootstrap-guide'),
     }),
     Object.freeze({
       key: 'mutation recover', surface: 'agent-machine',
@@ -160,12 +154,12 @@ export function createWorkspaceCliContributions(applications: { workspace?: any;
       run: (runtime: any, context: any) => projectCreateCommand(applications.project || runtime, context.argv.slice(4)),
     }),
     Object.freeze({
-      key: 'service create', surface: 'primary',
-      summary: '创建或登记 Service，并把 UUID、workspaceId、projectId、code、name、description、type 与 source 写入所属 Project 的 services/manifest.yml。',
+      key: 'service create', surface: 'agent-machine',
+      summary: '仅供未迁移工作空间使用的项目内服务登记；全局服务登记使用 assets。',
       help: [
         'Usage: buildr service create <project>/<service> [<repo-ref> | --attach <absolute-git-root>] [--target <dir>] [--name <text>] [--description <text>] [--type <type>] [--remote <name>] [--integration-branch <branch>] [--json]',
         '',
-        '创建或登记 Service，并把 UUID、workspaceId、projectId、code、name、description、type 与 source 写入所属 Project 的 services/manifest.yml。',
+        '仅供未迁移工作空间（Workspace）使用；存在全局 services/manifest.yml 时使用 buildr assets create service，输入见 buildr help assets。',
         'Git remote 与 integration branch 是稳定声明；current branch、HEAD、dirty 和 upstream 状态只实时观察。',
         '--attach 只登记已存在的独立 Git root，不复制或修改外部 repository 内容。',
         '--title 和 --branch 继续作为 --name、--integration-branch 的 legacy compatibility 输入。',
@@ -253,7 +247,6 @@ export function createWorkspaceModule(runtime: DynamicRuntime, { readProductIden
         'memoizeWorkspaceOperation',
       ]);
       privateComposition.initBuildr = (args: string[]) => workspaceCommand(workspace as any, 'init', args);
-      privateComposition.bootstrapGuide = () => workspaceCommand(workspace as any, 'bootstrap-guide');
       privateComposition.mutationRecover = (args: string[]) => workspaceCommand(workspace as any, 'mutation-recover', args);
       privateComposition.createProject = (args: string[]) => projectCreateCommand(project as any, args);
       privateComposition.createService = (args: string[]) => serviceCreateCommand(service as any, args);

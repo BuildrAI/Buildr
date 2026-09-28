@@ -65,7 +65,7 @@ Buildr Skill MUST 通过统一执行循环表达 Buildr 状态变更后的 docto
 
 #### Scenario: 状态变更后的统一验证
 - **WHEN** Agent 通过 Buildr Skill 完成 workspace 状态变更
-- **THEN** Buildr Skill MUST 要求运行 `buildr doctor --agent <agent> --target <dir> --json`
+- **THEN** Buildr 技能（Skill）MUST 使用当前智能体（Agent）的诊断（Doctor）确认相关结果；当前动作已返回同一现场的最终诊断（Doctor）时直接复用，否则运行 `buildr doctor --agent <agent> --target <dir> --json`
 - **AND** 完成标准 MUST 要求不存在需要立即处理的 error
 
 #### Scenario: 资产章节避免重复
@@ -74,8 +74,8 @@ Buildr Skill MUST 通过统一执行循环表达 Buildr 状态变更后的 docto
 - **AND** 只有该资产存在额外诊断语义时才能补充专项检查说明
 
 #### Scenario: Bootstrap 兜底一致
-- **WHEN** Buildr Skill 不可用且 Agent 使用 bootstrap guide
-- **THEN** bootstrap MUST 保留状态变更后运行当前 Agent doctor 的最小兜底流程
+- **WHEN** Buildr 技能（Skill）不可用且智能体（Agent）使用命令帮助和命令参考
+- **THEN** 命令参考 MUST 保留当前智能体（Agent）的诊断与修复依据；`init --agent` 或 `sync` 已返回有效的最终诊断（Doctor）时 MUST 复用，不重复运行
 
 ### Requirement: task-triage 明确 OpenSpec 中文文档约束
 Buildr 的 task-triage Skill MUST 在选择或继续 OpenSpec 工作流时，要求 Agent 使用中文编写 Buildr 自有 OpenSpec 文档和用户可见说明，并说明允许保留英文的格式与技术内容。
@@ -86,7 +86,7 @@ Buildr 的 task-triage Skill MUST 在选择或继续 OpenSpec 工作流时，要
 - **AND** 它 MUST 允许 English commands、paths、code identifiers、protocol fields、YAML/frontmatter 和 OpenSpec format keywords
 
 ### Requirement: Git 工作区转换后诊断 Buildr Agent 环境
-Buildr required Core MUST 固化“成功改变已检出 Git tree 后检查 Buildr Agent 环境”的 workspace transition invariant；执行一般 Git 工作流的 Agent MUST 通过产品入口 Buildr Skill 完成具体诊断与修复边界，创建 canonical task worktree 时 MUST 使用 Buildr 的确定性 worktree bootstrap 入口，而不依赖某个 optional Git Skill 的身份。
+Git 提供者（Provider）MUST 只报告真实检出变化；Buildr 技能（Skill）或当前任务的能力消费者（Consumer）MUST 根据变化范围执行相应诊断与恢复。工作树（Worktree）提供者（Provider）只管理 Git 位置、证据与安全清理，MUST NOT 自动创建运行环境、执行诊断（Doctor）、同步资产或安装依赖。
 
 #### Scenario: Git 操作成功改变已检出内容
 - **WHEN** Agent 通过任一 Git capability provider 成功完成 `pull`、`merge`、`rebase`、切换 tree 的 `checkout` 或 `switch`、改变工作区的 `reset`、`cherry-pick`、`revert`、`stash apply` 或 `stash pop`
@@ -110,21 +110,21 @@ Buildr required Core MUST 固化“成功改变已检出 Git tree 后检查 Buil
 
 #### Scenario: 当前 provider 已报告 treeChanged
 - **WHEN** 已绑定 Git provider 的结果证据包含 `treeChanged: true`
-- **THEN** consumer 或 orchestrator MUST 触发 required workspace transition invariant
+- **THEN** 能力消费者（Consumer）MUST 按 Buildr 技能（Skill）核对当前工作空间（Workspace）与运行时（Runtime），执行适用诊断
 - **AND** Agent MUST NOT 因 selected provider 的具体 Skill id 不同而跳过检查
 
 #### Scenario: 一般环境漂移可由 workspace sync 修复
 - **WHEN** 非 worktree-create 工作区转换后的 doctor 指出当前 Agent 的 workspace sync 是合适修复动作
-- **THEN** Agent MUST 询问用户是否由 Agent 立即同步当前 workspace 和 Agent runtime
+- **THEN** 智能体（Agent）MUST 在已有同范围授权内执行同步；只有缺少该授权或需要新的业务取舍时才询问
 - **AND** Agent MUST 同时提供 `buildr sync <agent> --target <workspace-root>` 作为手动同步备选
 - **AND** 面向用户的手动命令 MUST 使用已解析的实际 Agent 和 workspace root，不得保留占位符
-- **AND** Agent MUST NOT 在用户确认前执行 sync
+- **AND** 智能体（Agent）MUST NOT 在缺少相应授权时执行同步，MUST NOT 对已成立的同范围授权重复确认
 - **AND** Agent MUST NOT 把要求用户自行运行命令作为默认处理方式
 
 #### Scenario: 用户确认由 Agent 同步
 - **WHEN** 用户确认由 Agent 处理 workspace sync
 - **THEN** Agent MUST 调用 Buildr Skill 执行 `buildr sync <agent> --target <workspace-root>`
-- **AND** Agent MUST 使用 sync 的最终 doctor 或追加 doctor 确认当前环境结果
+- **AND** 智能体（Agent）MUST 使用同步返回的最终诊断（Doctor）确认结果；同一现场已有有效结果时不重复执行
 - **AND** Agent MUST 报告实际同步与诊断结果，而不是仅重复手动命令
 
 #### Scenario: 用户选择手动同步或 Agent 无法执行
@@ -136,7 +136,7 @@ Buildr required Core MUST 固化“成功改变已检出 Git tree 后检查 Buil
 
 #### Scenario: 诊断问题不应由 sync 修复
 - **WHEN** doctor 报告 Commands、Components、CLI 或其他不能由 workspace sync 正确修复的问题
-- **THEN** Agent MUST 按对应 Buildr 生命周期询问并在取得授权后执行可完成的动作
+- **THEN** 智能体（Agent）MUST 按对应能力在已有授权内执行可完成的动作，只有范围或副作用变化时取得必要决定
 - **AND** Agent MUST 仅在自身无法完成或用户选择手动方式时要求用户操作
 
 #### Scenario: 无法确认当前 Agent 环境
@@ -145,17 +145,16 @@ Buildr required Core MUST 固化“成功改变已检出 Git tree 后检查 Buil
 - **AND** Agent MUST NOT 猜测本地 Agent runtime 已经同步
 
 #### Scenario: 产品创建新 task worktree 并自动准备环境
-- **WHEN** Agent 已明确 task id、task branch、start point、当前 Agent 和 Buildr workspace root，并调用 Buildr worktree create 入口
-- **THEN** Buildr MUST 在 canonical `<workspace-root>/.worktrees/<task-id>` 创建 checkout 并确定性运行目标 checkout doctor
-- **AND** 只有目标为本次刚创建、已初始化、Git clean、identity 未变化且全部 actionable findings 仅为当前 Agent runtime projection stale 时，Buildr MUST 自动执行该目标 workspace sync
-- **AND** sync 后 Buildr MUST 再次确认 Git identity/clean 状态并以最终 doctor 判定 bootstrap 结果
-- **AND** 上述自动 sync 授权 MUST 由 worktree create 命令本身承载，不再逐次请求用户确认
+- **WHEN** 智能体（Agent）已明确任务标识、分支、起点与工作空间（Workspace），并调用已选工作树（Worktree）提供者（Provider）
+- **THEN** 提供者（Provider）MUST 返回真实创建或复用位置及 Git 证据，MUST NOT 自动执行诊断（Doctor）、同步或安装依赖
+- **AND** 智能体（Agent）MUST 从返回位置继续工作，仅在当前实现或验证需要时读取项目（Project）和服务（Service）的真实准备入口
+- **AND** 准备与投射 MUST 遵守独立授权、目录所有权和保留工作空间（Workspace）保护边界
 
 #### Scenario: 新 task worktree 不满足安全自动 sync 条件
-- **WHEN** 新 checkout doctor、Git 状态或 sync preflight 包含 mutation、dirty、identity 变化、Commands、Components、CLI、builtin ownership、capability graph、workspace source decision 或任意未知 actionable finding
-- **THEN** Buildr MUST NOT 自动执行 sync 或 doctor 返回的任意修复命令
-- **AND** Buildr MUST 保留已创建 worktree、返回 blocked 原因和可执行 nextActions
-- **AND** Buildr MUST NOT 自动删除 checkout、丢弃内容或扩大 Git 授权
+- **WHEN** 工作树（Worktree）创建后发现运行时（Runtime）、依赖、组件（Component）或源资产问题
+- **THEN** 智能体（Agent）MUST 保留已创建目录和 Git 事实，将具体问题交给相应能力所有者（Owner）
+- **AND** 提供者（Provider）MUST NOT 执行任意修复命令、删除检出目录、丢弃内容或扩大 Git 授权
+- **AND** 局部准备问题 MUST NOT 否定已经成功创建或复用的位置
 
 #### Scenario: 幂等复用既有 task worktree
 - **WHEN** canonical task path 已注册为同一 repository 与 branch 的既有 worktree
@@ -165,13 +164,13 @@ Buildr required Core MUST 固化“成功改变已检出 Git tree 后检查 Buil
 
 #### Scenario: 任务 Skill 内部发生其他工作区转换
 - **WHEN** `task-finish` 通过绑定 provider 改变目标 workspace tree，或 task workflow 执行 worktree create 之外的 tree transition
-- **THEN** 对应任务 Skill MUST 复用 required Core invariant 与产品入口 Buildr Skill 的环境检查、同步询问、Agent 执行和手动兜底边界
+- **THEN** 对应任务技能（Skill）MUST 依据真实变化调用产品入口 Buildr 技能（Skill）的适用诊断与恢复；已有有效诊断和同范围授权继续复用
 - **AND** 检查 MUST NOT 改变既有验证证据、Git 授权或 worktree 清理契约
 
 #### Scenario: Git 操作由 Agent 之外执行
 - **WHEN** 用户或其他程序绕过 Agent Skill 和 Buildr worktree create 入口直接改变 Git 工作区
 - **THEN** Buildr MUST NOT 声称能够即时感知该操作
-- **AND** 后续 Buildr 工作流 MUST 继续通过执行循环中的基线 doctor 检查当前环境
+- **AND** 智能体（Agent）后续继续工作时 MUST 核对当前事实；需要运行时（Runtime）诊断时使用当前产品入口，而非宣称已自动观察到变化
 
 ### Requirement: task-triage 必须输出正交且有证据的任务决策
 Buildr 的 `task-triage` Skill MUST先核对任务相关事实，再分别判断语义治理和执行形态；输出 MUST包含选择、repository set、实际工作位置选择、最小依据、未决冲突和next provider/action，并 MUST只在适用时追加OpenSpec或正式Task状态。任务进度 MUST由对话、Task Record、Parent/Child与各专业公开read model表达，不得创建第二份Board或Environment authority。

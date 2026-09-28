@@ -80,7 +80,11 @@ authority 冲突、授权不明、实际 Git 操作所需的 repository set 不�
 
 ### 任务登记与代码更新
 
-创建或激活任务时，按[登记核对与按需更新](references/task-create-git-baseline.md)确认记录所需事实。登记不要求 Git 更新、干净工作目录、集成分支、上游引用或全局诊断通过；不为登记执行 fetch、rebase 或工作空间同步。后续代码修改、更新与环境使用按实际目标独立核对，登记成功不等于这些动作已就绪。
+创建或激活任务前，确认目标工作空间（Workspace）、用户目标、项目（Project）或服务（Service）范围及写入授权；已有匹配任务先读取，不重复创建。激活使用刚读取的记录版本，冲突后重读并重新判断。
+
+登记不要求 Git 更新、干净工作目录、集成分支、上游引用或全局诊断通过；不为登记执行 fetch、rebase 或工作空间同步。无 Git、离线、未提交内容或 Git 操作进行中均不阻止合法登记；保持文件、分支和引用不变。只因记录目标、范围、授权、版本或记录提供者（Provider）无法确认而停止对应记录写入。登记成功不证明代码、环境、验证或交付已就绪。
+
+仅当用户目标确实要求更新代码时，才读取 optional `buildr.git-operations/v1` 的绑定（Binding）、契约（Contract）和已选提供者（Provider），明确仓库、引用、动作与授权后执行；失败不撤销已成立的登记。后续文件修改遵循上方隔离策略，工作空间同步遵循产品入口边界，不将这些条件反向加到任务登记上。
 
 选择 `change-flow` 时，先确保正式 Task Record，再完成执行位置判断并使用适用的 `openspec-*` Skill。首次采用、状态实质变化、暂停、完成或用户询问时，从 CLI 刷新并报告 change id、resolved path、action、status、progress 和 next action/blocker；未创建时只写 `planned`，不猜测路径或进度。Buildr 自有 artifacts 和用户说明正文使用中文；命令、路径、标识符、协议字段与 OpenSpec 格式关键字可保留英文。
 

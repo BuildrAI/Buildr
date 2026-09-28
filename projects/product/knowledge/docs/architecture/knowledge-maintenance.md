@@ -60,7 +60,7 @@ Buildr 在同一知识入口提供主题阅读与文档目录。前者沿理解�
 
 当前文档目录发现项目（Project）及其关联服务（Service）中的普通 Markdown，并纳入工作空间（Workspace）根的 README、贡献、安全、变更说明和 `docs/` 公共文档。相同真实文件只计一次，可搜索章节、显示标题、用途或路径；未编排文件沿用正文首个标题。隐藏目录、依赖、构建结果、测试样本、规范（Specification）、规则（Rule）、技能（Skill）及交付资源不混入这项计数；它们仍按自身职责维护，需要时从正文链接查看。未完整读取的范围会提示，不能把局部结果当作全部文档。
 
-文件按真实职责放置：解释与普通说明在 `knowledge/docs/`，实现定位与图源分别在 `knowledge/code-map/`、`knowledge/archify/`，阶段审查在 `knowledge/reviews/`。源规则（Rule）和技能（Skill）属于产品资源，附件通过链接连接手册；已发表文章在 `docs/publications/`，行为规范和变更在 `openspec/`，两者保留各自身份与管理方式。服务目录中尚未迁移的参考只维护现有唯一正文；当前正式包仅复制 `bootstrap-guide.md`，程序消费文本迁移时必须同步读取与打包路径。
+文件按真实职责放置：解释与普通说明在 `knowledge/docs/`，实现定位与图源分别在 `knowledge/code-map/`、`knowledge/archify/`，阶段审查在 `knowledge/reviews/`。源规则（Rule）和技能（Skill）属于产品资源，附件通过链接连接手册；已发表文章在 `docs/publications/`，行为规范和变更在 `openspec/`，两者保留各自身份与管理方式。服务目录中的技术参考只维护现有唯一正文；程序消费的规则（Rule）、技能（Skill）及其他资源发生移动时，必须同步读取与打包路径。
 
 维护时遵循以下判断：
 

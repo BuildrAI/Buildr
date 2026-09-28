@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Agent 在 `{{project}}` Project 中的最小运行规则。
+智能体（Agent）在 `{{project}}` 项目（Project）中遵守的业务约束与工作边界。
 
 ## 项目定位
 
@@ -15,11 +15,12 @@ Agent 在 `{{project}}` Project 中的最小运行规则。
 | Project rules | `AGENTS.md` | 当前 Project 的 Agent 工作规则 |
 | OpenSpec | `openspec/` | Project 事实、能力规范、变更和归档 |
 | Capability context | `capabilities.yml` | 引用 workspace Skill，并声明 Project requirements、bindings 与 applicability；不存储 Skill 源 |
-| Service registry | `services/manifest.yml` | 当前项目 service repo registry |
-| Service repos | `services/<service>/` | 独立 Git repo，业务代码由自身 Git 管理 |
+| 项目组成（Project Composition） | 工作空间 `projects/manifest.yml` | 项目通过 `serviceIds` 引用服务，可共享引用同一服务 |
+| 服务登记（Service Registry） | 工作空间 `services/manifest.yml` | 服务说明实现职责并引用唯一代码库实例，不由项目目录层级决定归属 |
+| 代码库登记（Repository Registry） | 工作空间 `repositories/manifest.yml` | 代码库实例及本机路径是定位代码的依据；实际 Git 边界须现场核对 |
 
 Project 经验不使用独立 Practices 资产类型：约束和值守边界写入 Rule，可复用专业动作和操作流程写入 Skill，产品事实、需求和变更写入 OpenSpec，其他说明保留为普通 docs。
 
 ## 服务入口
 
-Project 服务通过 `services/manifest.yml` 维护 Service registry，默认 repo 目录为 `services/<service>/`。进入具体 Service repo 后，继续读取该服务仓 `AGENTS.md`。
+项目（Project）通过已登记组成定位服务（Service），再由服务的代码库实例（Repository Instance）定位实际代码。共享服务不形成唯一父项目，也不自动合并所有引用项目的规则；本次涉及项目、服务及实际代码目录的规则共同适用。目录名和 `services/<service>/` 外观不能证明独立 Git 仓库。

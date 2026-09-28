@@ -69,7 +69,11 @@ export async function runKnowledgeLocalReadingJourney({ page, workspaceRoot, ser
   assert.equal(source.path, 'README.md');
   assert.ok(path.isAbsolute(source.location.root));
   const sourceFile = fixtureFile('README.md', source.location.root);
-  const currentBody = fs.readFileSync(bodyFile, 'utf8') + '\n本地正文已更新，刷新后直接阅读。\n';
+  const command = 'buildr help\n  buildr doctor\n\nbuildr update check\nbuildr status';
+  const presentation = '\n## 服务阅读验证\n\n[回到文档标题](#服务阅读验证)\n\n[同名次级标题](#服务阅读验证-1)\n\n## 命令样例\n\n```sh\n' + command + '\n```\n\n```mermaid\ngraph LR\n  A --> B\n```\n\n| 参数名称 | 第一列说明 | 第二列说明 | 第三列说明 |\n| --- | --- | --- | --- |\n| example | 一个实际的宽表内容 | 保留完整边界与说明 | 局部横向滚动即可阅读 |\n\n## 说明\n\n![本地阅读图片](reader-image.png)\n\n## 说明\n\n[第二处说明](#说明-1)\n\n[回到命令样例](#命令样例)\n\n[未登记的引用](./reader%20linked.md#引用章节)\n';
+  fs.writeFileSync(path.join(path.dirname(bodyFile), 'reader-image.png'), Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==', 'base64'));
+  fs.writeFileSync(path.join(path.dirname(bodyFile), 'reader linked.md'), '# 实际引用文件\n\n' + '这是一份未登记的实际引用。\n\n'.repeat(30) + '## 引用章节\n\n真实章节内容。\n');
+  const currentBody = fs.readFileSync(bodyFile, 'utf8') + '\n本地正文已更新，刷新后直接阅读。\n' + presentation;
   const currentSource = fs.readFileSync(sourceFile, 'utf8') + '\n本地来源已更新。\n';
   const artifactUrl = `${scopeUrl}/artifacts/service-intro`;
   const reader = () => browser().locator('[data-knowledge-view="artifact"]:visible');
@@ -133,6 +137,52 @@ export async function runKnowledgeLocalReadingJourney({ page, workspaceRoot, ser
     await maintenance.waitFor({ state: 'detached' });
     await waitForReader();
     await capture(page, 'knowledge-local-reading.png');
+    const code = reader().locator('pre code').filter({ hasText: 'buildr help' }).first();
+    assert.equal(await code.innerText(), command, '实际呈现保留换行、空行与缩进');
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+    await code.locator('xpath=../..').getByRole('button', { name: '复制代码', exact: true }).click();
+    assert.equal(await page.evaluate(() => navigator.clipboard.readText()), command, '复制只包含原代码正文');
+    assert.equal((await page.evaluate(() => navigator.clipboard.readText())).split('\n').length, 5, '五行命令复制保留四处换行');
+    await code.scrollIntoViewIfNeeded();
+    await capture(page, 'knowledge-code-copy.png');
+    await reader().getByRole('button', { name: '查看原文', exact: true }).click();
+    assert.match(await reader().locator('.markdown-reader-source').innerText(), /```mermaid/);
+    await reader().getByRole('button', { name: '阅读模式', exact: true }).click();
+    await reader().getByText(/当前阅读器显示 Mermaid 源码，尚未渲染图示/).waitFor();
+    const image = reader().getByRole('img', { name: '本地阅读图片', exact: true });
+    await image.waitFor();
+    await image.evaluate((element: HTMLImageElement) => element.decode());
+    assert.ok(await image.evaluate((element: HTMLImageElement) => element.naturalWidth > 0));
+    await reader().getByRole('link', { name: '回到文档标题', exact: true }).click();
+    assert.equal(await reader().locator('[id=服务阅读验证]').count(), 1, '外层标题保留原H1片段');
+    await reader().getByRole('link', { name: '同名次级标题', exact: true }).click();
+    assert.equal(await reader().locator('h2[id=服务阅读验证-1]').count(), 1);
+    await reader().getByRole('link', { name: '回到命令样例', exact: true }).click();
+    assert.ok(await reader().locator('#命令样例').evaluate((element: HTMLElement) => element.getBoundingClientRect().top >= 0));
+    await reader().getByRole('link', { name: '第二处说明', exact: true }).click();
+    assert.equal(await reader().locator('[id=说明]').count(), 1);
+    assert.equal(await reader().locator('[id=说明-1]').count(), 1, '跨图片分段的重名标题保持唯一片段');
+    await reader().getByRole('link', { name: '未登记的引用', exact: true }).click();
+    const linked = browser().locator('[data-knowledge-reference]:visible');
+    await linked.getByRole('heading', { name: '引用章节', exact: true }).waitFor();
+    assert.match(await linked.innerText(), /真实章节内容/);
+    assert.ok(await linked.locator('#引用章节').evaluate((element: HTMLElement) => element.getBoundingClientRect().top >= 0 && element.getBoundingClientRect().top < innerHeight));
+    await linked.getByRole('button', { name: '查看原文', exact: true }).click();
+    assert.match(await linked.locator('pre').innerText(), /## 引用章节/);
+    await browser().getByRole('button', { name: '← 返回服务阅读验证', exact: true }).click();
+    await waitForReader();
+    const originalViewport = page.viewportSize();
+    for (const width of [1280, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      await reader().locator('.markdown-table-scroll').scrollIntoViewIfNeeded();
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, '表格不得撑宽页面');
+      const table = await reader().locator('.markdown-table-scroll').evaluate((element: HTMLElement) => ({ width: element.clientWidth, scroll: element.scrollWidth }));
+      if (width === 390) assert.ok(table.scroll > table.width, '窄屏宽表局部滚动');
+      assert.equal(await browser().locator('[data-knowledge-view="artifact"]:visible [data-knowledge-topic-disclosure]').getAttribute('open'), null, '副屏目录默认收起，正文保留宽度');
+      await capture(page, `knowledge-reader-presentation-${width}.png`);
+    }
+    if (originalViewport) await page.setViewportSize(originalViewport);
+
 
     const [sourceRead] = await Promise.all([nextRead(sourceUrl), reader().getByRole('link', { name: '真实实现来源', exact: true }).click()]);
     const sourceData = await sourceRead.json();

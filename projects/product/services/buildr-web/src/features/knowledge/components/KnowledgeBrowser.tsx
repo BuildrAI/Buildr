@@ -5,7 +5,8 @@ import { useAppShell } from '../../../app/AppShellContext';
 import { RefreshButton } from '../../../components/RefreshButton';
 import { useResourcePreview } from '../../../app/resource-preview';
 import { workspaceHref } from '../../../lib/labels';
-import type { KnowledgeResponse, KnowledgeScope } from '../api/knowledge-api';
+import type { KnowledgeResponse, KnowledgeScope, KnowledgeReference } from '../api/knowledge-api';
+import { KnowledgeReferenceReader } from './KnowledgeReferenceReader';
 import type { KnowledgeActionMode } from '../knowledge-request';
 import { resolveKnowledgePath } from '../knowledge-navigation';
 import { useCompleteKnowledgeReading } from '../useCompleteKnowledgeReading';
@@ -25,7 +26,7 @@ import { canInitializeKnowledge, knowledgeInitializationContext } from '../knowl
 import '../knowledge.css';
 import './knowledge-browser.css';
 
-type Target = { kind: 'catalog' | 'documents' | 'artifact' | 'object' | 'source'; id?: string; title?: string; description?: string; scope?: KnowledgeScope; browseAll?: boolean; documentsMode?: boolean; query?: string };
+type Target = { kind: 'catalog' | 'documents' | 'artifact' | 'object' | 'source' | 'reference'; id?: string; title?: string; description?: string; scope?: KnowledgeScope; browseAll?: boolean; documentsMode?: boolean; query?: string; reference?: KnowledgeReference; fragment?: string };
 type Entry = Target & { key: number; scrollTop: number; refresh: number; loading: boolean; preferences?: ReadingPreferences };
 type Props = {
   workspaceId: string;
@@ -33,6 +34,8 @@ type Props = {
   initialArtifactId?: string;
   initialObjectId?: string;
   initialSourceId?: string;
+  initialReference?: KnowledgeReference;
+  initialFragment?: string;
   sourceDescription?: string;
   refresh?: number;
   onBack?: () => void;
@@ -43,11 +46,11 @@ type Props = {
 
 /** A knowledge reading surface shared by service details and related article material. */
 export function KnowledgeBrowser(props: Props) {
-  return <KnowledgeBrowserContent key={JSON.stringify([props.workspaceId, props.scope, props.initialArtifactId, props.initialObjectId, props.initialSourceId])} {...props} />;
+  return <KnowledgeBrowserContent key={JSON.stringify([props.workspaceId, props.scope, props.initialArtifactId, props.initialObjectId, props.initialSourceId, props.initialReference, props.initialFragment])} {...props} />;
 }
 
-function KnowledgeBrowserContent({ workspaceId, scope, initialArtifactId, initialObjectId, initialSourceId, sourceDescription, refresh = 0, onBack, backLabel = '返回详情', onTitleChange, onObserved }: Props) {
-  const initial: Target = initialSourceId ? { kind: 'source', id: initialSourceId, description: sourceDescription } : initialArtifactId ? { kind: 'artifact', id: initialArtifactId } : initialObjectId ? { kind: 'object', id: initialObjectId } : { kind: 'catalog' };
+function KnowledgeBrowserContent({ workspaceId, scope, initialArtifactId, initialObjectId, initialSourceId, initialReference, initialFragment, sourceDescription, refresh = 0, onBack, backLabel = '返回详情', onTitleChange, onObserved }: Props) {
+  const initial: Target = initialReference ? { kind: 'reference', id: JSON.stringify(initialReference), reference: initialReference, fragment: initialFragment, title: initialReference.links.at(-1)?.split(/[?#]/)[0].split('/').at(-1) } : initialSourceId ? { kind: 'source', id: initialSourceId, description: sourceDescription } : initialArtifactId ? { kind: 'artifact', id: initialArtifactId } : initialObjectId ? { kind: 'object', id: initialObjectId } : { kind: 'catalog' };
   const [history, setHistory] = useState<Entry[]>([{ ...initial, key: 0, scrollTop: 0, refresh: 0, loading: true }]);
   const serial = useRef(0), root = useRef<HTMLDivElement>(null);
   const current = history[history.length - 1];
@@ -102,12 +105,13 @@ type ViewProps = { entry: Entry; refresh: number; active: boolean; workspaceId: 
 function KnowledgeBrowserView({ entry, refresh, active, workspaceId, scope, onOpen, onMode, preferences, onPreferences, onTitle, onDefault, onLoadingChange, onRefresh, onObserved }: ViewProps) {
   const isCatalog = entry.kind === 'catalog';
   const isDocuments = entry.kind === 'documents';
+  const isReference = entry.kind === 'reference';
   const documentsMode = isDocuments || Boolean(entry.documentsMode);
   const [documentLoading, setDocumentLoading] = useState(true);
   const [documentTitle, setDocumentTitle] = useState(entry.title || '');
   const category = 'documents' as const;
   const part = isCatalog ? undefined : entry.kind === 'artifact' ? 'artifacts' : entry.kind === 'source' ? 'sources' : 'objects';
-  const result = useCompleteKnowledgeReading(workspaceId, scope, part, entry.id, refresh, !isCatalog && !isDocuments);
+  const result = useCompleteKnowledgeReading(workspaceId, scope, part, entry.id, refresh, !isCatalog && !isDocuments && !isReference);
   const { data, sourceReading } = result;
   const readingData = entry.kind === 'source' ? sourceReading?.data : data;
   const index = readingData?.index || null, readingScope = sourceReading?.scope || scope;
@@ -154,6 +158,7 @@ function KnowledgeBrowserView({ entry, refresh, active, workspaceId, scope, onOp
     const target = index?.artifacts.find(item => item.id === id) || navigation.data?.artifacts.find(item => item.id === id);
     if (target) callbacks.current.onOpen({ kind: 'artifact', id, title: target.title, scope: readingScope, documentsMode });
   };
+  const openReference = (reference: KnowledgeReference, title: string, fragment?: string) => callbacks.current.onOpen({ kind: 'reference', id: JSON.stringify(reference), reference, fragment, title, scope: readingScope, documentsMode });
   const openSource = (id: string, description?: string) => {
     const target = index?.sources.find(item => item.id === id);
     if (!target) return;
@@ -168,7 +173,12 @@ function KnowledgeBrowserView({ entry, refresh, active, workspaceId, scope, onOp
     else if (target) openArtifact(target.id);
     else if (sources.length === 1) openSource(sources[0].id, description);
     else if (sources.length > 1) setChoices(sources.map(item => item.id));
-    else setNotice('该文件尚未登记阅读关联，请在完善内容时补齐。');
+    else {
+      const origin = index?.artifacts.find(item => item.path === base);
+      if (origin) openReference({ kind: 'artifact', id: origin.id, links: [href] }, description || path?.split('/').at(-1) || '引用文件');
+      else if (entry.kind === 'source' && entry.id) openReference({ kind: 'source', id: entry.id, links: [href] }, description || '引用文件');
+      else setNotice('无法确定该引用的来源，请刷新原文后重试。');
+    }
   };
   const construct = (mode: KnowledgeActionMode) => {
     if (!pageScope) return;
@@ -201,6 +211,7 @@ function KnowledgeBrowserView({ entry, refresh, active, workspaceId, scope, onOp
     onLink: (base: string, href: string) => follow(base, href),
     onFile: (base: string, href: string, description?: string) => follow(base, href, true, description),
     onSource: openSource, onOpen: openArtifact,
+    onReference: openReference,
     onObject: (id: string) => { const target = index?.objects.find(item => item.id === id); if (target) callbacks.current.onOpen({ kind: 'object', id, title: target.title, scope: readingScope }); },
   };
   const shownArtifacts = entry.kind === 'artifact' ? artifact ? [artifact] : [] : knowledgeTopicArtifacts(data?.artifacts || [], category);
@@ -208,23 +219,24 @@ function KnowledgeBrowserView({ entry, refresh, active, workspaceId, scope, onOp
   const openTopic = (id: string) => selectReading({ kind: 'object', id }, topics.find(topic => topic.id === id)?.title);
   return <div ref={root} className="knowledge-side-reader knowledge-browser-view" data-knowledge-view={entry.kind}>
     <div className="knowledge-browser-actions"><KnowledgeActions disabled={!pageScope} onAction={construct} /></div>
-    <KnowledgeTopicNavigation nodes={nodes} selected={readingTarget} documentsSelected={documentsMode}
+    <KnowledgeTopicNavigation compact nodes={nodes} selected={readingTarget} documentsSelected={documentsMode}
       preferences={preferences} onPreferences={onPreferences}
       loading={documentsMode ? documentCatalog.loading : navigation.loading} error={documentsMode ? documentCatalog.error : navigation.error}
       notices={documentsMode ? [...(documentCatalog.data?.diagnostics || []), ...(documentCatalog.data?.truncated ? ['目录未完整读取，当前数量仅为已发现文档。'] : [])] : []}
       onRetry={onRefresh} onSelect={selectReading} onTopics={() => onMode(false, readingScope)} onDocuments={() => onMode(true, readingScope)}>
-    {!isCatalog && !isDocuments && result.loading ? <Spin /> : !isCatalog && !isDocuments && result.error ? <Alert type="error" message={result.error} /> : (isCatalog || isDocuments || data) && <>
+    {!isCatalog && !isDocuments && !isReference && result.loading ? <Spin /> : !isCatalog && !isDocuments && !isReference && result.error ? <Alert type="error" message={result.error} /> : (isCatalog || isDocuments || isReference || data) && <>
       <header className="knowledge-browser-heading"><div><p className="eyebrow">{scope.kind === 'service' ? '服务知识' : '项目知识'}</p><h2>{title}</h2></div>
-        {!isCatalog && !isDocuments && <KnowledgeActions reading disabled={!pageScope} onAction={construct} />}
+        {!isCatalog && !isDocuments && !isReference && <KnowledgeActions reading disabled={!pageScope} onAction={construct} />}
       </header>
       <KnowledgePreviewNotice sourceDirectory={sourceReading?.data.scope.directory || pageScope?.directory} />
       {needsInitialize && !isDocuments && <KnowledgeInitialize kind={readingScope.kind} onInitialize={() => construct('initialize')} onExplore={() => construct('explore')} />}
       {notice && <Alert type="info" closable message={notice} onClose={() => setNotice('')} />}
       {result.relatedErrors.map(error => <Alert key={error} type="warning" message={error} />)}
       {isDocuments && <KnowledgeDocuments scope={readingScope} workspaceId={workspaceId} documentId={entry.id} documents={documentCatalog.data?.documents || []} refresh={refresh} active={active}
+        onReference={openReference}
         onOpen={(id, title) => selectReading({ kind: 'document', id }, title)}
         onArtifact={(id, title) => selectReading({ kind: 'artifact', id }, title)} onLoadingChange={setDocumentLoading} onTitleChange={setDocumentTitle} />}
-      {isDocuments ? null : isCatalog ? navigation.loading ? <Spin /> : !needsInitialize && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="从目录选择一个主题或内容开始阅读。" /> : entry.kind === 'source' ? <>
+      {isReference && entry.reference ? <KnowledgeReferenceReader workspaceId={workspaceId} scope={readingScope} reference={entry.reference} fragment={entry.fragment} refresh={refresh} onReference={openReference} /> : isDocuments ? null : isCatalog ? navigation.loading ? <Spin /> : !needsInitialize && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="从目录选择一个主题或内容开始阅读。" /> : entry.kind === 'source' ? <>
         <section className="knowledge-file-summary"><h3>文件说明</h3><p>{sourceMeta?.summary || entry.description || '这份来源尚未提供总体说明，可根据源文件补充。'}</p></section>
         <p className="knowledge-source-location">{source?.location?.title || source?.skill?.id || data?.scope.title} · {source?.path || sourceMeta?.path}</p>
         {source?.content != null ? <KnowledgeSource sourceId={entry.id || ''} content={source.content} path={source.path || ''} line={sourceMeta?.line} reading={{ ...reader, artifacts: sourceReading?.data.artifacts || [], artifact: sourceReading?.artifact || { id: `source:${entry.id}`, title, kind: 'document', path: source.path || '', objects: [], sources: [], content: source.content, digest: source.digest, status: source.status, diagnostic: source.diagnostic, diagramSize: null, graph: null } }} /> : <Alert type="warning" message={source?.diagnostic || '文件不可读'} />}

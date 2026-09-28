@@ -11,34 +11,28 @@ documentSections:
     title: "了解与上手"
     summary: "先判断 Buildr 是否适合，再开始使用并了解必要边界。"
     entries:
-      - location: workspace
-        path: README.md
-        title: "Buildr 是什么、如何开始"
-        summary: "了解产品用途、首次使用方式，以及 Buildr 如何用自身开展开发。"
       - location: scope
         path: knowledge/docs/overview.md
-        title: "产品定位、能力与方向"
+        title: "了解 Buildr"
         summary: "理解各方怎样协作，区分当前能力、使用边界与未来方向。"
       - location: scope
         path: knowledge/docs/guides/getting-started.md
-        title: "开始使用与日常操作"
+        title: "开始使用 Buildr"
         summary: "完成安装配置，并在智能体（Agent）中工作、接续、交付和更新。"
       - location: scope
-        path: knowledge/docs/glossary.md
-        title: "核心概念与术语"
-        summary: "查清工作对象、资料和协作记录的含义与区别。"
+        path: knowledge/docs/architecture/project-service-repositories.md
+        title: "工作对象与协作"
+        summary: "理解业务目标与实现位置的关系，以及共享引用和修改影响。"
+      - location: workspace
+        path: README.md
+        title: "Buildr 是什么、如何开始"
+        summary: "产品介绍与直接开始入口；与三篇核心说明共用同一事实。"
+        supplementary: true
       - location: scope
-        path: services/buildr/docs/agent-runtime-adapters.md
-        title: "智能体（Agent）工具支持与加载方式"
-        summary: "确认所用工具的支持范围、发现入口和刷新要求。"
-      - location: scope
-        path: services/buildr/docs/known-limitations.md
-        title: "当前能力与使用边界"
-        summary: "核对安装平台、本机数据、工具接入及尚未提供的能力。"
-      - location: scope
-        path: services/buildr/docs/bootstrap-guide.md
-        title: "安装与入口恢复"
-        summary: "在入口技能（Skill）缺失或损坏时，查阅安装、恢复和维护方式。"
+        path: README.md
+        title: "产品项目入口"
+        summary: "了解产品工程组成，并跳转到知识、规范和阅读材料。"
+        supplementary: true
       - location: workspace
         path: README.en.md
         title: "项目首页（English）"
@@ -55,27 +49,22 @@ documentSections:
         summary: "从仓库公共入口按使用、理解或开发目的继续阅读。"
         supplementary: true
       - location: scope
-        path: README.md
-        title: "产品项目入口"
-        summary: "了解产品工程组成，并跳转到知识、规范和阅读材料。"
-        supplementary: true
-      - location: scope
         path: knowledge/README.md
-        title: "知识主题导航"
-        summary: "从六条理解主线查找说明、图示与实现定位。"
+        title: "旧知识入口"
+        summary: "保留首页原链接，转入同一阅读目录。"
         supplementary: true
       - location: scope
         path: knowledge/docs/README.md
-        title: "Buildr 使用与开发手册"
-        summary: "从使用、理解或开发目标开始，沿阅读章节找到已有指南与参考。"
+        title: "Buildr 阅读目录"
+        summary: "从了解、开始和对象关系进入，按需查找开发、维护与技术参考。"
   - id: work-collaboration
     title: "组织工作与协作"
     summary: "理解目标、代码、方法与成果怎样连接，工作怎样继续推进。"
     entries:
       - location: scope
-        path: knowledge/docs/architecture/project-service-repositories.md
-        title: "项目、服务与代码库如何协作"
-        summary: "理解业务目标与实现位置的关系，以及共享引用和修改影响。"
+        path: knowledge/docs/glossary.md
+        title: "核心概念与术语"
+        summary: "查清工作对象、资料和协作记录的含义与区别。"
       - location: scope
         path: knowledge/docs/architecture/buildr-skill-system.md
         title: "技能如何成为可用的工作方法"
@@ -108,41 +97,6 @@ documentSections:
         path: knowledge/code-map/knowledge-maintenance.md
         title: "知识阅读与维护的实现位置"
         summary: "定位知识索引、文件发现、阅读编排、正文读取和页面呈现。"
-      - location: scope
-        path: knowledge/archify/flows/project-service-repositories.md
-        title: "图示依据 · 项目与代码关系"
-        summary: "核对关系图中对象、引用方向及不表达的关系。"
-        supplementary: true
-      - location: scope
-        path: knowledge/archify/flows/skill-projection.md
-        title: "图示依据 · 技能发现与投射"
-        summary: "核对投射图的数据关系、事实来源和维护范围。"
-        supplementary: true
-      - location: scope
-        path: knowledge/archify/flows/task-system.md
-        title: "图示依据 · 任务协作总览"
-        summary: "核对任务总图中的职责、连线及与实际工作方式的边界。"
-        supplementary: true
-      - location: scope
-        path: knowledge/archify/flows/task-system-planning.md
-        title: "图示依据 · 需求与方案"
-        summary: "核对需求讨论、方案形成和实施授权的参与者与顺序。"
-        supplementary: true
-      - location: scope
-        path: knowledge/archify/flows/task-system-delivery.md
-        title: "图示依据 · 实现与交付"
-        summary: "核对实现、审查、验证与代码交付的实际职责。"
-        supplementary: true
-      - location: scope
-        path: knowledge/archify/flows/task-parent-coordination.md
-        title: "图示依据 · 父任务完成"
-        summary: "核对整体目标验收、完成授权和保存结果的时序边界。"
-        supplementary: true
-      - location: scope
-        path: knowledge/archify/flows/knowledge-maintenance.md
-        title: "图示依据 · 知识维护"
-        summary: "核对事实、专业方法、成果和阅读页面之间的职责关系。"
-        supplementary: true
   - id: system-and-data
     title: "系统与数据"
     summary: "从整体组成进入代码与数据，理解谁实现、谁保存、谁修改。"
@@ -168,10 +122,6 @@ documentSections:
         title: "命令行（CLI）与模块设计"
         summary: "定位入口装配、模块边界、命令分发与公开兼容承诺。"
       - location: scope
-        path: services/buildr/docs/resources.md
-        title: "随包资源的内容、位置与维护"
-        summary: "区分发布源文件、生成结果和用户状态，核对资源维护入口。"
-      - location: scope
         path: knowledge/code-map/system-services-assets.md
         title: "服务与工程目录定位"
         summary: "按产品能力找到前后端代码、工程工具与构建职责。"
@@ -179,21 +129,6 @@ documentSections:
         path: knowledge/code-map/technical-layers.md
         title: "模块与分层代码地图"
         summary: "逐步定位领域、应用、数据访问、接口及基础技术实现。"
-      - location: scope
-        path: knowledge/archify/index.md
-        title: "技术图总览"
-        summary: "按关系问题查找图示、图源和对应事实依据。"
-        supplementary: true
-      - location: scope
-        path: knowledge/archify/data/buildr-data-domains.md
-        title: "图示依据 · 数据领域"
-        summary: "核对数据总图的业务关系、节点来源和表达边界。"
-        supplementary: true
-      - location: scope
-        path: knowledge/archify/data/workspace-sqlite-erd.md
-        title: "数据库关系图的读图说明与依据"
-        summary: "了解表关系图的图例、字段范围、来源与更新方式。"
-        supplementary: true
   - id: development-and-verification
     title: "开发与验证"
     summary: "准备开发环境，选择合适检查，并按需深入测试实现。"
@@ -230,15 +165,14 @@ documentSections:
         path: knowledge/code-map/product-verification-tools.md
         title: "Buildr 自测工具的实现位置"
         summary: "定位产品自测的发现、选择、执行、资源协调和证据聚合。"
-      - location: scope
-        path: knowledge/archify/flows/verification-framework.md
-        title: "图示依据 · 测试建设与使用"
-        summary: "核对已有检查使用主线、按需补建分支及各方职责。"
-        supplementary: true
   - id: extensions-and-reference
     title: "扩展与接口"
     summary: "按具体问题查命令与数据格式，扩展工具接入和工作方法。"
     entries:
+      - location: scope
+        path: services/buildr/docs/agent-runtime-adapters.md
+        title: "智能体（Agent）工具支持与加载方式"
+        summary: "确认所用工具的支持范围、发现入口和刷新要求。"
       - location: scope
         path: services/buildr/docs/cli-reference.md
         title: "命令行（CLI）参考"
@@ -263,6 +197,10 @@ documentSections:
     title: "发布与维护"
     summary: "查阅版本变化，理解正式发布、安全报告和首版准备状态。"
     entries:
+      - location: scope
+        path: services/buildr/docs/known-limitations.md
+        title: "当前能力与使用边界"
+        summary: "核对安装平台、本机数据、工具接入及尚未提供的能力。"
       - location: workspace
         path: CHANGELOG.md
         title: "版本变化"
@@ -274,16 +212,11 @@ documentSections:
       - location: scope
         path: knowledge/reviews/v0.1.0-readiness.md
         title: "0.1.0 发布准备审查"
-        summary: "查看首版已处理问题、验证边界及尚待完成的发布事项。"
+        summary: "查看首版阶段审查的历史结论与当时验证边界；不代表当前发布状态。"
       - location: workspace
         path: SECURITY.md
         title: "安全问题与报告方式"
         summary: "了解安全维护范围，以及如何私密报告敏感问题。"
-      - location: scope
-        path: knowledge/archify/flows/task-self-bootstrap.md
-        title: "图示依据 · Buildr 自举更新与善后"
-        summary: "核对已交付改动怎样进入自身工作空间（Workspace）并完成适用清理。"
-        supplementary: true
   - id: product-articles
     title: "理念文章"
     summary: "通过已发表文章理解 Buildr 的长期价值与建设思路。"
@@ -360,7 +293,7 @@ artifacts:
       - task-source-work-context-application-11bb91
       - task-source-task-command-application-aba2e8
       - data-sqlite-source
-    observedDigest: ea583a16298ad3e1fe29c8758c9885941c0217264a91340c87f3625e8e7bd1ea
+    observedDigest: 498d4cda478ed281b1747d41b5ebc22486936ddab337838f0fb40dd4506f1d09
     files:
       - overview-file
   - id: system
@@ -385,8 +318,6 @@ artifacts:
       - system-structure
     sources:
       - technical-http-host-source
-      - technical-prompt-request-source
-      - task-source-taskagentaction-7a3c7f
   - id: responsibilities
     title: 能力、数据与副作用
     kind: diagram
@@ -401,7 +332,7 @@ artifacts:
       - file-responsibilities
       - file-responsibilities-graph
   - id: system-services-assets-map
-    title: 服务与工程目录树
+    title: 服务与工程目录地图
     kind: code-map
     path: knowledge/code-map/system-services-assets.md
     objects:
@@ -422,6 +353,8 @@ artifacts:
       - product-reference-technical-architecture
       - code-architecture
       - task-source-module-19a342
+      - technical-prompt-request-source
+      - task-source-taskagentaction-7a3c7f
   - id: project-relations-article
     title: 项目、服务与代码库如何协作
     kind: document
@@ -450,7 +383,7 @@ artifacts:
       - composition-reader
       - composition-view
       - composition-query
-    observedDigest: e8b040e754cf0508b21a51d4ee07dee8a36e7d5e69d2024eb8df1f4e1b3b9049
+    observedDigest: 9c123cfc581f0b6bc0cef639543872b11804dc61b1a9d101c0b2742b7793c13e
     files:
       - file-project-relations-article
   - id: project-relations-diagram
@@ -480,7 +413,7 @@ artifacts:
     files:
       - file-project-relations-diagram
       - file-project-relations-diagram-graph
-      - file-project-relations-diagram-evidence
+      - file-project-relations-article
   - id: project-relations-map
     title: 关系维护与代码定位的实现地图
     kind: code-map
@@ -507,13 +440,12 @@ artifacts:
       - composition-reader
       - composition-view
       - composition-query
-    observedDigest: ca42eb6339879d0bf89f33ef2369faff505da1aaa44a2fd4916bf87fa2fa31c6
+    observedDigest: 3242eadf297eaf5d8bcc2145df1bfb805152566a3a74eeb229c2d7b0eca7cf95
     files:
       - file-project-relations-map
       - file-project-relations-article
       - file-project-relations-diagram
       - file-project-relations-diagram-graph
-      - file-project-relations-diagram-evidence
   - id: skill-system-explanation
     title: 技能如何成为可用的工作方法
     kind: document
@@ -603,12 +535,22 @@ artifacts:
       - task-commits-reader
       - task-commit-records
       - task-git-method
-    observedDigest: e7c6e9796a99a7f8efe844971af1870dd0a4c002692e4be6dd28467c5c96b901
+      - scope-rules
+      - openspec
+      - task-source-skill-d5bb46
+      - task-source-task-review-application-089e42
+      - task-source-workbenchpage-16ae2b
+      - task-source-taskworkcontextcard-01a1b9
+      - task-source-skill-0ea6ac
+      - current-knowledge-maintenance
+      - task-openspec-apply
+      - task-source-task-verification-application-68479e
+    observedDigest: f5a5b0c9b0cc55abab1de2547bd49fb38966b4f551caafe36c267980975ae513
     files:
       - task-source-2026-08-30-parent-child-task-audit-b28c38
       - parent-completion-html
       - parent-completion-json
-      - parent-completion-evidence
+      - task-file-task-system-md-d14898
   - id: task-system-flow
     title: 完整过程与角色职责
     kind: diagram
@@ -645,54 +587,7 @@ artifacts:
     files:
       - task-file-task-system-html-80857d
       - task-file-task-system-json-7dffd4
-      - task-file-task-system-md-f8e83e
-  - id: task-system-planning
-    title: 需求、方案与实施授权
-    kind: diagram
-    path: knowledge/archify/flows/task-system-planning.html
-    objects:
-      - task-system
-    sources:
-      - scope-rules
-      - task-source-skill-f75bad
-      - task-source-task-command-application-aba2e8
-      - task-source-git-worktree-provider-d1b252
-      - openspec
-      - task-source-skill-d5bb46
-      - task-source-task-review-application-089e42
-      - task-source-work-context-application-11bb91
-      - task-source-workbenchpage-16ae2b
-      - task-source-taskworkcontextcard-01a1b9
-      - task-source-skill-7b8bb2
-    observedDigest: d9cb69fcc5c75ff597283d56cd4217d92c33fbbaca3c77f10b6b9f2646866865
-    graphSource: knowledge/archify/flows/task-system-planning.json
-    graphDigest: e6bf58ab2b0370305bd52fe105df0fe948bf5b5eeb80168c058473f5b49d9677
-    files:
-      - task-file-task-system-planning-html
-      - task-file-task-system-planning-json
-      - task-file-task-system-planning-md
-  - id: task-system-delivery
-    title: 实现审查与代码交付
-    kind: diagram
-    path: knowledge/archify/flows/task-system-delivery.html
-    objects:
-      - task-system
-    sources:
-      - task-source-skill-0ea6ac
-      - current-knowledge-maintenance
-      - task-openspec-apply
-      - task-source-task-review-application-089e42
-      - task-source-task-verification-application-68479e
-      - task-source-skill-ee942e
-      - task-source-task-command-application-aba2e8
-      - task-git-method
-    observedDigest: 93ab8db603951eb6156881d8cca250bbfe20b6d4b9a54c386131f5e10222dc50
-    graphSource: knowledge/archify/flows/task-system-delivery.json
-    graphDigest: ef9e6430333e58a8d07d1f7438a71b87593199db9a0b33f23df0c757080879e0
-    files:
-      - task-file-task-system-delivery-html
-      - task-file-task-system-delivery-json
-      - task-file-task-system-delivery-md
+      - task-file-task-system-md-d14898
   - id: task-system-bootstrap
     title: 自举激活与安全善后
     kind: diagram
@@ -712,7 +607,7 @@ artifacts:
     files:
       - task-file-task-self-bootstrap-html-c98d7e
       - task-file-task-self-bootstrap-json-4d99c5
-      - task-file-task-self-bootstrap-md-af104b
+      - task-file-task-system-md-d14898
   - id: task-parent-completion-flow
     title: 父任务如何确认完成
     kind: diagram
@@ -745,7 +640,7 @@ artifacts:
     files:
       - parent-completion-html
       - parent-completion-json
-      - parent-completion-evidence
+      - task-file-task-system-md-d14898
     observedDigest: 86f4a1cbff48189a905282eae68b4a3dc54596e6adab2e5208991a7f0b066076
   - id: task-system-map
     title: 任务系统的实现组织
@@ -835,25 +730,16 @@ artifacts:
       - task-git-method
       - task-commits-contract
       - public-json-contracts
-    observedDigest: 26a08db913bf68a5a2979c8ebc531ebd12091d3e4e70347b91c28003d9c5edbd
+    observedDigest: afff7347d3d78f1b961774ab008cd7319ed8372d9d217474f37e3da915e9ee80
     files:
       - task-source-2026-08-30-parent-child-task-audit-b28c38
       - task-file-task-system-md-d14898
       - task-file-task-system-html-80857d
       - task-file-task-system-json-7dffd4
-      - task-file-task-system-md-f8e83e
-      - task-file-task-system-planning-html
-      - task-file-task-system-planning-json
-      - task-file-task-system-planning-md
-      - task-file-task-system-delivery-html
-      - task-file-task-system-delivery-json
-      - task-file-task-system-delivery-md
       - task-file-task-self-bootstrap-html-c98d7e
       - task-file-task-self-bootstrap-json-4d99c5
-      - task-file-task-self-bootstrap-md-af104b
       - parent-completion-html
       - parent-completion-json
-      - parent-completion-evidence
   - id: data-design-explanation
     title: Buildr 数据全景与领域设计
     kind: document
@@ -882,11 +768,11 @@ artifacts:
       - data-catalog-source
       - data-skills-source
       - data-sqlite-source
-      - data-domain-evidence
+      - user-guide-local-data
     files:
       - data-domain-html
       - data-domain-json
-      - data-domain-evidence
+      - user-guide-local-data
   - id: data-sqlite-explanation
     title: Buildr 数据库表与实体关系
     kind: document
@@ -949,7 +835,6 @@ artifacts:
       - verification-file-b8970af0
       - verification-file-bc346270
       - verification-file-e9222fb3
-      - verification-file-31b03bf7
   - id: verification-lifecycle
     title: Buildr 如何引导测试建设与使用
     kind: diagram
@@ -984,7 +869,6 @@ artifacts:
       - verification-file-b8970af0
       - verification-file-bc346270
       - verification-file-e9222fb3
-      - verification-file-31b03bf7
   - id: verification-implementation-map
     title: 项目与服务测试验证框架的实现地图
     kind: code-map
@@ -1022,7 +906,7 @@ artifacts:
       - verification-source-03659a2597
       - verification-source-ab9c61c2bd
       - verification-product-map-file
-    observedDigest: 44dce539751b25ecd0cff2610281b39a917cbdd5f1b1191bb9a852de66a7f4f3
+    observedDigest: 7981b849f9c081bd4fec8a6a29fd0d2a15e9433d8278c384dd36b64ad5db6659
     files:
       - verification-file-263d3698
       - verification-file-9894349f
@@ -1030,7 +914,6 @@ artifacts:
       - verification-file-b8970af0
       - verification-file-bc346270
       - verification-file-e9222fb3
-      - verification-file-31b03bf7
   - id: verification-product-architecture
     title: 采用实例：Buildr 产品的测试与验证
     kind: document
@@ -1056,7 +939,7 @@ artifacts:
       - verification-ref-73fbe375
       - verification-installed-package
       - verification-ref-e568f1e4
-    observedDigest: cc6ca5cdd68105f52d6b0b13565a2773fa49366ad62fa1fea3b956e76f0faa20
+    observedDigest: 9ef2ffe87b94268297fa35b25d7b620cec3f3f6ce6d6819b7bd5e410064442fe
     files:
       - verification-file-263d3698
       - verification-file-9894349f
@@ -1064,7 +947,6 @@ artifacts:
       - verification-file-b8970af0
       - verification-file-bc346270
       - verification-file-e9222fb3
-      - verification-file-31b03bf7
   - id: verification-product-map
     title: 采用实例：Buildr 产品测试工具地图
     kind: code-map
@@ -1139,7 +1021,6 @@ artifacts:
       - verification-file-b8970af0
       - verification-file-bc346270
       - verification-file-e9222fb3
-      - verification-file-31b03bf7
   - id: explanation
     title: 怎样建设和维护项目知识
     kind: document
@@ -1201,7 +1082,7 @@ artifacts:
       - knowledge-preview-notice
       - catalog-query
       - knowledge-complete-reading
-    observedDigest: 46d41b18384dc9b817246b4a8c2edadfc124e1b38e00b322867ef5ff5e074370
+    observedDigest: d1e426d311c981b380d953b74ff61d45b95146d3afaa97a29f5f0f4008ae6f43
     files:
       - file-explanation
   - id: responsibility
@@ -1241,7 +1122,7 @@ artifacts:
     files:
       - file-responsibility
       - file-responsibility-graph
-      - file-responsibility-evidence
+      - file-implementation-map
   - id: implementation-map
     title: 知识建设与维护的实现组织
     kind: code-map
@@ -1304,13 +1185,12 @@ artifacts:
       - knowledge-preview-notice
       - catalog-query
       - knowledge-complete-reading
-    observedDigest: 954a71b70241f6f61159bb96a76c5aba5fdc107ee79a2b34a0417669cda06bff
+    observedDigest: 252927fd1c694351e91659dd7fd5ce9d4fa663db2d3310fa45b81fae31fa71a5
     files:
       - file-implementation-map
       - file-explanation
       - file-responsibility
       - file-responsibility-graph
-      - file-responsibility-evidence
       - project-terms
 sources:
   - id: project-documents-entry
@@ -1460,11 +1340,11 @@ sources:
     kind: evidence
     path: services/buildr/docs/agent-runtime-adapters.md
   - id: product-reference-knowledge
-    title: 当前知识入口
+    title: Buildr 阅读目录
     kind: evidence
-    path: knowledge/README.md
+    path: knowledge/docs/README.md
   - id: product-reference-usage
-    title: 日常使用手册
+    title: 开始使用 Buildr
     kind: evidence
     path: knowledge/docs/guides/getting-started.md
   - id: product-reference-daily-progress
@@ -1483,12 +1363,8 @@ sources:
     title: 全项目代码地图
     kind: evidence
     path: knowledge/code-map/README.md
-  - id: product-reference-diagrams
-    title: 技术图目录
-    kind: evidence
-    path: knowledge/archify/index.md
   - id: overview-architecture-navigation
-    title: Buildr 使用与开发手册
+    title: Buildr 阅读目录
     kind: evidence
     path: knowledge/docs/README.md
   - id: overview-skill-system
@@ -1502,7 +1378,7 @@ sources:
     kind: spec
     path: openspec/specs/agent-first-product-positioning/spec.md
     summary: 规定工作资产、人的参与、智能体职责和上下文责任边界。
-    observedDigest: 87f0fe2a1fe25eeb8ded182ae094b19113573cc6638b7674a9934d15d08b82b5
+    observedDigest: 32fb60019c2af39723e17e4064d9c2a0535073ec47ac520f27130e66397a2380
   - id: overview-file
     title: 了解 Buildr
     kind: evidence
@@ -1573,14 +1449,10 @@ sources:
     title: 每日演进文件持久化
     kind: code
     path: services/buildr/src/modules/task/daily-progress/persistence/project-daily-progress-repository.ts
-  - id: data-domain-evidence
-    title: 数据领域图的来源与边界
-    kind: evidence
-    path: knowledge/archify/data/buildr-data-domains.md
   - id: data-sqlite-evidence
-    title: 数据库表图的来源与边界
+    title: Buildr 数据库表与实体关系
     kind: evidence
-    path: knowledge/archify/data/workspace-sqlite-erd.md
+    path: knowledge/docs/architecture/buildr-database-tables.md
   - id: verification-locations
     title: 测试路径根与当前位置
     kind: code
@@ -1604,7 +1476,7 @@ sources:
     kind: code
     path: services/buildr/test/integration/application-payload-release.test.ts
     summary: 真实构建、离线安装后验证外部服务登记、地图位置解析与报告读写，证明能力不依赖开发源码目录。
-    observedDigest: eaee7027b02c7440da4ed3f53c189d0100ef8cf8d240a441187aca49fffd863d
+    observedDigest: 9b95527f9c0937893de2caf47c4d4ab06f0c1b1e1d250472e8bac45173ea9f02
   - id: catalog-query
     title: 知识目录查询与版本分页
     kind: code
@@ -1615,7 +1487,7 @@ sources:
     title: 读取与来源观察
     kind: code
     path: services/buildr/src/modules/knowledge/application/knowledge-query.ts
-    observedDigest: 8f266d102b95d111a35336fe7002853601b6e4249e72bc98d385fa3e54dc7a9c
+    observedDigest: 2779b110435a81e7aa8ed7d9d3cc3c6f64815581884b3bc4811a8c18dedce9ce
     summary: 解析项目、关联服务与公共文档范围；读取有界主题及成果导航，组合文档发现、章节与入口；详情按已登记关联或已发现身份读取正文，保留原分页查询。
   - id: index-model
     title: 知识对象与关联校验
@@ -1627,13 +1499,13 @@ sources:
     title: 有界文件读取
     kind: code
     path: services/buildr/src/modules/knowledge/infrastructure/knowledge-files.ts
-    observedDigest: 3fc668cbd861c01cf8aef0ea6410deea853375329da092297ecda8a7181a24b9
+    observedDigest: 5ac0147d757c9bcbfef1f32c802c81fb892250d9843579da4b933bbf97a23a49
     summary: 集中处理只读文件操作，核对相对路径、真实路径、文件类型与大小，并计算内容摘要。它保护读取范围，不决定文件的业务职责。
   - id: http
     title: 只读协议入口
     kind: code
     path: services/buildr/src/modules/knowledge/interfaces/http/knowledge-http.ts
-    observedDigest: d1e3d5bfd0b96e00be74e5fa1acac8d0c21f6a19c602e88dc561b7161df2f04d
+    observedDigest: 13cd2780f5a34c02fe7c64b845346e4a0211c3672cee4914cbbe1b003b97de5a
     summary: 知识读取的 HTTP 入口：分别提供有界目录分页、详情、来源和隔离图示；响应经契约校验，读取不修改知识事实。
   - id: module
     title: 能力装配
@@ -1645,7 +1517,7 @@ sources:
     title: 知识阅读页面
     kind: code
     path: services/buildr-web/src/features/knowledge/pages/KnowledgePage.tsx
-    observedDigest: 2f112d9711872b6560343f92861b8beee02512d8baca17dab00c299ec8bdde9f
+    observedDigest: ee0b5ac04ef253fe7e1fbc0b03d9aa000b5ea8a89e93d3ce987a4510b5488596
     summary: 装配共同目录与正文，按范围和模式保留检索及展开；明确主题、成果、来源或文档链接优先，未明确选择时使用各自入口，关联副屏独立滚动。
   - id: diagram-reader
     title: 隔离图示阅读
@@ -1668,7 +1540,7 @@ sources:
     title: 知识接口客户端
     kind: code
     path: services/buildr-web/src/features/knowledge/api/knowledge-api.ts
-    observedDigest: 56a2417c4c879b41f1300111d4fb036c251a8899ca6122a5180ff3378b10c2db
+    observedDigest: 37703c8fec27b435482bd4afed3a1fafe9cadc453e3d7ff2d5ee277908a49cca
     summary: 沿用已有会话分别访问目录分页和详情接口，取消过时请求。
   - id: skill-page
     title: 复用的技能详情
@@ -1734,13 +1606,13 @@ sources:
     title: 项目知识阅读规范
     kind: spec
     path: openspec/specs/project-knowledge-browsing/spec.md
-    observedDigest: 53aa691980ee2eb6a3c5285cf14f13976b0477ed2d68bf165e344477d6fa215f
+    observedDigest: 8eec10f1942fe2c98f9330bf007d5581d96f5edfca3e7ec2dd74e6db6e9e75f0
     summary: 约束知识分类、原生图示和关联阅读；当前展示尺寸来自安全读取的 HTML 主 SVG，文内预览按实际比例适配，独立详情保留原生功能与隔离边界。
   - id: tests
     title: 来源变化与读取验证
     kind: evidence
     path: services/buildr/test/integration/knowledge-query.test.ts
-    observedDigest: 7ff9bc0d52e304a7dd38085ef4607a074e10ace400be812746a5f11950b7da75
+    observedDigest: 15314f2c063ddd5257a4fa0c2ebab94921804d90798715aa57e2c41dbc97928d
   - id: project-terms
     title: Buildr 项目术语表
     kind: evidence
@@ -1749,13 +1621,13 @@ sources:
     title: 源码与文档阅读组件
     kind: code
     path: services/buildr-web/src/features/knowledge/components/KnowledgeSource.tsx
-    observedDigest: 8e6109ffc60a64d0dfd9900f2c639b64bdafd26523a558e7a3c752e9504db212
+    observedDigest: 7f71702ac2c6b7a43074e05798b264466d492c2885780b8406e054835e036910
     summary: 只读呈现源文件，提供行号、必要定位和基础语法显示；Markdown 可在阅读模式和原文之间切换。它不编辑或执行文件。
   - id: navigation
     title: 文中定位与图示消息校验
     kind: code
     path: services/buildr-web/src/features/knowledge/knowledge-navigation.ts
-    observedDigest: 97774716cad4b9b40d5d883bcb7b4f6a351e9cafecde6dadd9bf1ccc68eaeffe
+    observedDigest: 0b6af13879d8bc505350dc17e7df1114d4eb131aae67a076a9f60cdd4d4c6601
     summary: 文内路径、主题归属与图示消息校验。
   - id: asset-relations-spec
     title: 对象引用与修改规则
@@ -1797,7 +1669,7 @@ sources:
     title: 关系与分支回归依据
     kind: evidence
     path: services/buildr/test/integration/asset-relationships.test.ts
-    observedDigest: 57f17d20db557be912d75a578490ccc4910b37b68f45c78e1109db0bae39f875
+    observedDigest: 7894f7978ea51af7c67b4695beeffb704c02adee81fef9f5fedb1d1f8dce0568
   - id: scope-rules
     title: 工作空间作用域规则
     kind: evidence
@@ -1820,7 +1692,7 @@ sources:
     title: 同一成果的阅读组件
     kind: code
     path: services/buildr-web/src/features/knowledge/components/KnowledgeArtifactReader.tsx
-    observedDigest: d44f23c4ed27609da4876538611200716fbf940fef9111956bd34340250b5aec
+    observedDigest: 4bca2912e44ed05e04d00865b81778ecac62c33e6ab070bbe707d3ebd8b12314
     summary: 统一读取文章、地图或技术图；文内预览与独立详情复用成果文件，并向图示宿主传递只读尺寸，原生控件仍由 Archify 提供。
   - id: document-discovery
     title: 实际文档发现
@@ -1853,7 +1725,7 @@ sources:
     title: 知识响应契约
     kind: code
     path: services/buildr/src/modules/knowledge/interfaces/http/knowledge-http-contracts.ts
-    observedDigest: e67698c4565fc7fa3b74447cb7d0603815cd31bace428693564c6a845b5e5223
+    observedDigest: 4c85851b49a1db887bf83c8061bade5708c676e312d968debca0dd097aa453c4
     summary: 校验目录分页摘要、详情与来源观察的响应结构；目录不返回完整索引和正文，图示继续通过隔离端点读取。
   - id: navigation-index
     title: 当前阅读关联
@@ -1864,19 +1736,19 @@ sources:
     title: 资产命令行入口
     kind: code
     path: services/buildr/src/modules/workspace/interfaces/cli/asset-catalog.ts
-    observedDigest: 864dc906a1431f74737ad6b6846996a472754060fd4fad8a5a12f43c9985b91a
+    observedDigest: e10f622bce599afc7e3f055799965c85c319db4e9e83cde0ef1e9f20da2f8fb4
     summary: 实现 buildr assets 的命令参数处理，读取明确输入并调用登记应用。它支持检查和已授权写入，与网页复用相同应用规则。
   - id: markdown-renderer
     title: 共用文档与嵌套列表渲染
     kind: code
     path: services/buildr-web/src/markdown.ts
-    observedDigest: 2489d61256ba85b97cfb8d8b229ab31e34b68c6ae12091ba33b6bc7d9d19f068
+    observedDigest: cd62d322279e9bdd10754fbdb2c049a3b17452ee0835ea3a700118533b198e83
     summary: 共用文档渲染，保留安全链接、列表与目录层级。
   - id: markdown-host
     title: 文档与相对链接事件
     kind: code
     path: services/buildr-web/src/components/MarkdownHost.tsx
-    observedDigest: 451d7d7e4e4fd0bc29e12eb7af3948c014027e37026267d318463a4115daa1a2
+    observedDigest: d8ee96242c6579c55b44ef3c710e9d61140a5d2a79f1f6e87a1b5c85ff61e9a4
     summary: 将文档渲染接入页面及相对链接事件。
   - id: tree-ui
     title: 可折叠事实文件树
@@ -1895,7 +1767,7 @@ sources:
     kind: code
     path: services/buildr-web/src/features/knowledge/components/KnowledgeReadingPane.tsx
     summary: 读取当前打开的成果或来源文件，显示打开时的上下文。源文件先显示已核实的总体说明，再显示实际内容；把实际打开详情返回的索引交给页面继续解析关联；请求失败只影响这一项阅读。
-    observedDigest: 6db42828e46db5d1f817cbe8ea3130d22c51159e4bf7084a3dc4dbd941b8f610
+    observedDigest: e136426d080463cb0d54d8870ad9c6ff39d028bf7f00cdc9344969fe9bc3bc27
   - id: code-map-spec
     title: 代码地图制作规范
     kind: spec
@@ -1907,7 +1779,7 @@ sources:
     kind: evidence
     path: knowledge/docs/architecture/knowledge-maintenance.md
     summary: 这份文件保存《知识建设与维护》的架构解释，与网页阅读使用同一正文。它是理解事实的成果，不替代规范或源码。
-    observedDigest: 0e858a00522065d712a95908f0b81658e2cfdcce64c346244de5b61aaadb08b3
+    observedDigest: d1e426d311c981b380d953b74ff61d45b95146d3afaa97a29f5f0f4008ae6f43
   - id: file-responsibility
     title: 知识建设与维护的职责关系 · 展示文件
     kind: evidence
@@ -1920,18 +1792,12 @@ sources:
     path: knowledge/archify/flows/knowledge-maintenance.json
     summary: 这是《知识建设与维护的职责关系》的可维护图源，定义节点、关系及布局。修改后由 Archify 重新生成配套展示，并核对图中的事实含义。
     observedDigest: 4a9aae9f43cc4789f54b32d9c69f955204b2bc7a43d54ac25634f9a33a027a2f
-  - id: file-responsibility-evidence
-    title: 知识建设与维护的职责关系 · 图示依据
-    kind: evidence
-    path: knowledge/archify/flows/knowledge-maintenance.md
-    summary: 这份说明记录《知识建设与维护的职责关系》的事实依据、覆盖范围和表达限制，维护图源或展示时用它核对语义。
-    observedDigest: cb7d88f97dc3eb5109d96ccdb4fa2407fcdc4bb8dd2aa50468655c32ef89efe0
   - id: file-implementation-map
     title: 知识建设与维护的实现组织 · 地图文件
     kind: evidence
     path: knowledge/code-map/knowledge-maintenance.md
     summary: 这份文件保存《知识建设与维护的实现组织》的职责、规范和实现位置地图，与网页阅读使用同一正文。它是理解事实的成果，不替代规范或源码。
-    observedDigest: dce31af6bde1882c1c249e1aeaeaaf9a685a3cdfd534f30db2aa22b9366c003d
+    observedDigest: 252927fd1c694351e91659dd7fd5ce9d4fa663db2d3310fa45b81fae31fa71a5
   - id: file-system
     title: Buildr 系统全景 · 展示文件
     kind: evidence
@@ -1969,23 +1835,22 @@ sources:
     summary: 这是《技能源文件到可发现入口》的可维护图源，定义节点、关系及布局。修改后由 Archify 重新生成配套展示，并核对图中的事实含义。
     observedDigest: ceff1cad58d94bea09d22ea63888459547979ffd3ecd7146977701c3f58c7fa9
   - id: file-skill-projection-evidence
-    title: 技能源文件到可发现入口 · 图示依据
+    title: 技能源文件到可发现入口
     kind: evidence
-    path: knowledge/archify/flows/skill-projection.md
+    path: knowledge/code-map/skill-projection.md
     summary: 这份说明记录《技能源文件到可发现入口》的事实依据、覆盖范围和表达限制，维护图源或展示时用它核对语义。
-    observedDigest: ba87a02874b4ef7ef7cea22c8c603b52fccba9da0088f37c801729e8e730ad90
   - id: file-project-relations-article
     title: 项目、服务与代码库如何协作 · 架构文章
     kind: evidence
     path: knowledge/docs/architecture/project-service-repositories.md
     summary: 这份文件保存《项目、服务与代码库如何协作》的架构解释，与网页阅读使用同一正文。它是理解事实的成果，不替代规范或源码。
-    observedDigest: 77fbcdb5f4d6e0e4cd2b0ee5aa81381fb421829f3a488b9b35d3820d2f376081
+    observedDigest: 9c123cfc581f0b6bc0cef639543872b11804dc61b1a9d101c0b2742b7793c13e
   - id: file-project-relations-map
     title: 关系维护与代码定位的实现地图 · 地图文件
     kind: evidence
     path: knowledge/code-map/project-service-repositories.md
     summary: 这份文件保存《关系维护与代码定位的实现地图》的职责、规范和实现位置地图，与网页阅读使用同一正文。它是理解事实的成果，不替代规范或源码。
-    observedDigest: 757978783d8eaa5f332b269a5c5bbb37ba41afcf6359413f9767f5d6db94ed13
+    observedDigest: 3242eadf297eaf5d8bcc2145df1bfb805152566a3a74eeb229c2d7b0eca7cf95
   - id: file-project-relations-diagram
     title: 项目、服务与代码库的引用关系 · 展示文件
     kind: evidence
@@ -1998,18 +1863,12 @@ sources:
     path: knowledge/archify/flows/project-service-repositories.json
     summary: 这是《项目、服务与代码库的引用关系》的可维护图源，定义节点、关系及布局。修改后由 Archify 重新生成配套展示，并核对图中的事实含义。
     observedDigest: 1947643adac585f601248ea6de976cd091f86e104fb64ddae7163bc09c8fd3b7
-  - id: file-project-relations-diagram-evidence
-    title: 项目、服务与代码库的引用关系 · 图示依据
-    kind: evidence
-    path: knowledge/archify/flows/project-service-repositories.md
-    summary: 这份说明记录《项目、服务与代码库的引用关系》的事实依据、覆盖范围和表达限制，维护图源或展示时用它核对语义。
-    observedDigest: 2849590e97931927ed69f3298610ec0d9a0910f2245a344cc273dfe5e6901932
   - id: task-source-spec-ea9d2d
     title: 任务工作方式规范
     kind: spec
     path: openspec/specs/agent-task-workflows/spec.md
-    summary: 约束技能（Skill）协作、任务分流和默认隔离；仍保留旧工作树自动准备表述，文章单列差异。
-    observedDigest: c259e8cb84f3fc7b46e29f252f6d1a0de29b176d6df4a4ccd47a7244086480c1
+    summary: 约束技能（Skill）协作、任务分流和默认隔离；工作树（Worktree）只管理位置与删除安全，相关检查与同步由适用能力负责。
+    observedDigest: 9989e8c28b4cc5a188e8ccb009a539950f5b0fd0f09c5d97c5abce55cfac678c
   - id: task-source-module-19a342
     title: 任务能力装配
     kind: code
@@ -2035,7 +1894,7 @@ sources:
     skillId: task-triage
     link: services/buildr/resources/workspace/skills/buildr/task-triage/SKILL.md
     summary: 分别判断语义、执行形态和独立工作位置；只在实际命中时交接专业方法。
-    observedDigest: fb4d848ed62f164c51560aebd555d752f7a61700e7c2ca9c00d9a0a9930be7b0
+    observedDigest: 4d09d813ff4d178c88c730efb3a647671bb62d109158ff043b8f0a786ab50cbf
   - id: task-source-git-worktree-provider-d1b252
     title: Git 工作树安全
     kind: code
@@ -2123,11 +1982,11 @@ sources:
     summary: 组合 Git、业务工具、已有任务登记和具体资源所有者善后，分别报告成果。
     observedDigest: fd90fa74dc7a493979bdc5841145428ea834b5b2b608b178a16207119ad1e04a
   - id: task-source-spec-05a13b
-    title: 自举编排规范残留
+    title: 自举交付编排规范
     kind: spec
     path: openspec/specs/task-closeout-orchestration/spec.md
-    summary: 该文件仍含任务完成前置要求，与现行唯一脚本及已确认移除决定不一致，作为差异依据保留。
-    observedDigest: 86c543f9aa1ced42eaeb92295032aeb3c3b6abed9aa26d48509d85fd1d6936c0
+    summary: 约束已交付改动的自举适用性与唯一执行器；任务编号可选，任务登记或完成状态不构成自举前置条件。
+    observedDigest: 067da077521bc0b9f373053c6d6c62b1a5e873d4ab33a7d77e0e0c6e62cc6699
   - id: task-source-spec-a77bcf
     title: 已确认的自举前置移除
     kind: spec
@@ -2138,8 +1997,8 @@ sources:
     title: 任务环境退役规范
     kind: spec
     path: openspec/specs/task-environments/spec.md
-    summary: 约束工作树（Worktree）窄职责和具体资源所有者；普通编辑的旧位置表述与新版默认隔离存在差异。
-    observedDigest: ddb0ec796f051b207d9db33dcb7b1836b983a03961bcb1eb54103c0b1239cbf5
+    summary: 约束持久修改默认隔离、用户明确指定原地工作的例外，以及工作树（Worktree）的窄职责和具体资源退役责任。
+    observedDigest: d8c88bd6fe57df5d65bee83777553ea59fd0b6b3c0b30825987ef51b09f44986
   - id: task-source-preferences-application-8b4fe8
     title: 偏好维护应用
     kind: code
@@ -2332,7 +2191,7 @@ sources:
     kind: evidence
     path: knowledge/code-map/task-system.md
     summary: 保存本主题当前解释或依据，网页与本地使用同一正文；不替代规范和代码。
-    observedDigest: 26a08db913bf68a5a2979c8ebc531ebd12091d3e4e70347b91c28003d9c5edbd
+    observedDigest: afff7347d3d78f1b961774ab008cd7319ed8372d9d217474f37e3da915e9ee80
   - id: task-file-task-system-html-80857d
     title: 完整过程与角色职责 · 独立展示
     kind: evidence
@@ -2351,60 +2210,12 @@ sources:
     path: knowledge/archify/flows/task-system.json
     summary: 定义本图参与者、阶段和交互；需与实际来源及展示一起维护。
     observedDigest: 3921d694181b1bbb247e12eab8ffe2fd2d509d63bb25b4ba7ef45a0df749eadc
-  - id: task-file-task-system-md-f8e83e
-    title: 完整过程与角色职责 · 事实依据
-    kind: evidence
-    path: knowledge/archify/flows/task-system.md
-    summary: 保存本主题当前解释或依据，网页与本地使用同一正文；不替代规范和代码。
-    observedDigest: 6e7f172242e9ac792a0d82f4380866ce1ff69d36e31a3a9da4e446600c87fcf6
   - id: task-file-task-self-bootstrap-json-4d99c5
     title: 自举激活与安全善后 · 可维护图源
     kind: evidence
     path: knowledge/archify/flows/task-self-bootstrap.json
     summary: 定义本图参与者、阶段和交互；需与实际来源及展示一起维护。
     observedDigest: 6cbee98a95f09ee3243335f74cd170ca450d6f15629d7b28c2c982a24aba8796
-  - id: task-file-task-self-bootstrap-md-af104b
-    title: 自举激活与安全善后 · 事实依据
-    kind: evidence
-    path: knowledge/archify/flows/task-self-bootstrap.md
-    summary: 保存本主题当前解释或依据，网页与本地使用同一正文；不替代规范和代码。
-    observedDigest: 05a2083ed7ff947b8775f66159e0700b535387b706fe0e59b259a86a60b54938
-  - id: task-file-task-system-planning-html
-    title: 需求、方案与实施授权 · 独立展示
-    kind: evidence
-    path: knowledge/archify/flows/task-system-planning.html
-    summary: 由同目录图源经 Archify 生成并检查的独立交互展示。
-    observedDigest: d9cb69fcc5c75ff597283d56cd4217d92c33fbbaca3c77f10b6b9f2646866865
-  - id: task-file-task-system-planning-json
-    title: 需求、方案与实施授权 · 可维护图源
-    kind: evidence
-    path: knowledge/archify/flows/task-system-planning.json
-    summary: 定义本图参与者、阶段和交互；需与实际来源及展示一起维护。
-    observedDigest: e6bf58ab2b0370305bd52fe105df0fe948bf5b5eeb80168c058473f5b49d9677
-  - id: task-file-task-system-planning-md
-    title: 需求、方案与实施授权 · 事实依据
-    kind: evidence
-    path: knowledge/archify/flows/task-system-planning.md
-    summary: 保存本主题当前解释或依据，网页与本地使用同一正文；不替代规范和代码。
-    observedDigest: 0d2c9c04f679231ae22f9e0f56d9a73356d0a0957b8db50222514b8ad3de8c97
-  - id: task-file-task-system-delivery-html
-    title: 实现审查与代码交付 · 独立展示
-    kind: evidence
-    path: knowledge/archify/flows/task-system-delivery.html
-    summary: 由同目录图源经 Archify 生成并检查的独立交互展示。
-    observedDigest: 93ab8db603951eb6156881d8cca250bbfe20b6d4b9a54c386131f5e10222dc50
-  - id: task-file-task-system-delivery-json
-    title: 实现审查与代码交付 · 可维护图源
-    kind: evidence
-    path: knowledge/archify/flows/task-system-delivery.json
-    summary: 定义本图参与者、阶段和交互；需与实际来源及展示一起维护。
-    observedDigest: ef9e6430333e58a8d07d1f7438a71b87593199db9a0b33f23df0c757080879e0
-  - id: task-file-task-system-delivery-md
-    title: 实现审查与代码交付 · 事实依据
-    kind: evidence
-    path: knowledge/archify/flows/task-system-delivery.md
-    summary: 保存本主题当前解释或依据，网页与本地使用同一正文；不替代规范和代码。
-    observedDigest: bd171fa00ec123ab7ce13f2ed964cef9a18f828a6aa63db22e3b7e5d77c7ddd9
   - id: task-openspec-apply
     title: 规范实施（openspec-apply-change）
     kind: skill
@@ -2616,7 +2427,7 @@ sources:
     summary: 稳定命令、生成物准备、测试及公开包导出
     kind: code
     path: services/buildr/package.json
-    observedDigest: f4638def3f04afda20fe957da17eeded4740dbf7ba6c28f92b0194d0c783c778
+    observedDigest: 37b4981bbc0326f4d779b475e5f56fb1c708c1803b54c4fb70318b478e345a40
   - id: verification-source-535557f7c3
     title: 前端构建与测试命令
     summary: 前端构建及独立逻辑测试入口
@@ -2764,7 +2575,7 @@ sources:
     kind: evidence
     path: knowledge/code-map/verification-framework.md
     summary: 本主题的可独立阅读或维护成果；事实来源见关联文章和实现地图。
-    observedDigest: 44dce539751b25ecd0cff2610281b39a917cbdd5f1b1191bb9a852de66a7f4f3
+    observedDigest: 7981b849f9c081bd4fec8a6a29fd0d2a15e9433d8278c384dd36b64ad5db6659
   - id: verification-file-bc346270
     title: Buildr 如何引导测试建设与使用
     kind: evidence
@@ -2777,12 +2588,6 @@ sources:
     path: knowledge/archify/flows/verification-framework.json
     summary: 六个环节表达查阅、执行、结果与按需补建；三项技能卡片解释Buildr提供的方法。
     observedDigest: 0ac9549dcff1fe26866e1f012c908bbaa9e9040c86734d66665c217d0c166575
-  - id: verification-file-31b03bf7
-    title: 测试建设与使用图的来源与边界
-    kind: evidence
-    path: knowledge/archify/flows/verification-framework.md
-    summary: 说明主线、补建反馈与三项技能的依据，区分指导、声明写入和真实执行。
-    observedDigest: 65af6e135557d9e6e665240a725367e5b1d00b831083465d77a0df381a3bcd05
   - id: verification-release-reference
     title: 发布流程参考
     summary: 说明冻结候选、同包消费、明确发布授权与公开事实回读；发布流程保持独立维护。
@@ -2873,12 +2678,6 @@ sources:
     path: knowledge/archify/flows/task-parent-coordination.json
     summary: 可维护的四角色时序图源，与生成展示配对；关系以当前规范和实现为依据。
     observedDigest: 195c3882a7eae8b48baf4c7e766b026372b96e6cc9b188a2f3b8013623e6bb1d
-  - id: parent-completion-evidence
-    title: 父任务完成 · 依据与边界
-    kind: evidence
-    path: knowledge/archify/flows/task-parent-coordination.md
-    summary: 说明各箭头的真实来源、替代入口、既有授权复用，以及软件不自动验收或完成任务的边界。
-    observedDigest: 1b39252e3e938e86b8ce52e07ff5e8a666fcf986e6fec50debd441a440ecb473
   - id: verification-ref-2e25071a
     title: 本机候选检查入口
     summary: 选择当前机器的候选步骤并执行，不能产生其他平台证据。
@@ -2994,10 +2793,6 @@ sources:
     title: Buildr 公开 JSON 契约
     kind: evidence
     path: knowledge/docs/reference/json-contracts.md
-  - id: manual-resources-document
-    title: Buildr 文件型交付资源
-    kind: evidence
-    path: services/buildr/docs/resources.md
   - id: manual-skill-capability-contracts-document
     title: Skill Capability Contracts
     kind: evidence
@@ -3010,10 +2805,6 @@ sources:
     title: Archify 可选组件（Component）
     kind: evidence
     path: services/buildr/docs/archify-component.md
-  - id: manual-bootstrap-guide-document
-    title: Buildr 安装与恢复指南
-    kind: evidence
-    path: services/buildr/docs/bootstrap-guide.md
   - id: release-readiness-document
     title: 0.1.0 准备审查
     kind: evidence

@@ -38,7 +38,7 @@ Buildr 把项目资料、代码位置和经过验证的工作方法组织在一�
 - [安装与初始化](docs/cli-reference.md#首次使用)：查询渠道、安装、确认目录、初始化与打开页面。
 - [命令参考](docs/cli-reference.md)：维护工作范围、长期资产、任务（Task）与诊断。
 - [运行时适配参考](docs/agent-runtime-adapters.md)：当前支持的工具、发现入口及刷新要求。
-- [恢复指南](docs/bootstrap-guide.md)：技能（Skill）不可用时也可运行 `buildr bootstrap guide`。
+- [入口不可用与恢复](docs/cli-reference.md#入口不可用与恢复)：按当前命令帮助处理安装、技能（Skill）、同步与启动器（Launcher）问题。
 
 macOS 与 Windows 可按需安装 Buildr Web 启动器（Launcher）；它依赖同一 npm 安装和兼容的 Node.js。其他平台通过 `buildr web --target "<dir>"` 打开本机页面。
 

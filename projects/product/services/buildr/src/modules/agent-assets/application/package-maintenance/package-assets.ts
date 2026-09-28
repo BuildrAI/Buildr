@@ -99,8 +99,6 @@ export function registerAgentAssetsPackageAssets(dependencies: PackageAssetsDepe
     const contract = readSimpleYaml(
       contractPath,
       [
-        'bootstrapGuideRequiredText',
-        'bootstrapGuideForbiddenText',
         'buildrSkillRequiredSections',
         'buildrSkillRequiredText',
         'buildrSkillForbiddenText',
@@ -108,7 +106,7 @@ export function registerAgentAssetsPackageAssets(dependencies: PackageAssetsDepe
         'generatedSkillRequiredText',
         'generatedSkillForbiddenText',
       ],
-      ['bootstrapGuidePath', 'bootstrapGuideMaxLines', 'buildrSkillPath', 'buildrSkillMaxLines'],
+      ['buildrSkillPath', 'buildrSkillMaxLines'],
     );
 
     function readArtifact(artifact: any, label: any): any  {
@@ -165,15 +163,7 @@ export function registerAgentAssetsPackageAssets(dependencies: PackageAssetsDepe
       }
     }
 
-    const guideContent = readArtifact(contract.bootstrapGuidePath, 'bootstrapGuidePath');
     const skillContent = readArtifact(contract.buildrSkillPath, 'buildrSkillPath');
-
-    validateMaxLines(guideContent, contract.bootstrapGuidePath, contract.bootstrapGuideMaxLines);
-    validateRequiredText(guideContent, contract.bootstrapGuidePath, contract.bootstrapGuideRequiredText);
-    validateForbiddenText(guideContent, contract.bootstrapGuidePath, [
-      ...contract.globalForbiddenText,
-      ...contract.bootstrapGuideForbiddenText,
-    ]);
 
     validateMaxLines(skillContent, contract.buildrSkillPath, contract.buildrSkillMaxLines);
     validateSections(skillContent, contract.buildrSkillPath, contract.buildrSkillRequiredSections);

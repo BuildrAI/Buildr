@@ -5,10 +5,9 @@ import { parseCliArguments } from './cli-arguments.ts';
 
 export type WorkspaceCliApplication = {
   initializeWorkspace(input: WorkspaceInitializationInput, onAssetsReady?: (result: WorkspaceInitializationResult) => void): WorkspaceInitializationResult;
-  readBootstrapGuide(): string;
   recoverWorkspaceMutation(input: { id: string; targetRoot: string }): { id: string; alreadyRecovered: boolean };
 };
-export type WorkspaceCliOperation = 'init' | 'bootstrap-guide' | 'mutation-recover';
+export type WorkspaceCliOperation = 'init' | 'mutation-recover';
 
 function printResult(created: string[], changed: string[]) {
   console.log('Workspace assets initialized');
@@ -23,7 +22,6 @@ function printResult(created: string[], changed: string[]) {
 }
 
 export function workspaceCommand(application: WorkspaceCliApplication, operation: WorkspaceCliOperation, args: string[] = []) {
-  if (operation === 'bootstrap-guide') return process.stdout.write(application.readBootstrapGuide());
   const parsed = parseCliArguments(args, new Set(['--target', '--name', '--description', '--profile', '--agent']));
   const targetRoot = path.resolve(parsed.one('--target') || process.cwd());
   if (operation === 'mutation-recover') {
@@ -53,7 +51,7 @@ export function workspaceCommand(application: WorkspaceCliApplication, operation
   if (agent !== null) {
     console.log(`Buildr onboarding 已完成：${agent}（包含 sync 与最终 doctor）。`);
     console.log('下一步：请由当前 Agent 完成一次首次使用交接。');
-    console.log('用普通语言说明 Workspace → Project → Service：Project 是业务、产品、系统或长期工作；Service 只在需要代码仓、应用、模块或可执行资产时接入。');
+    console.log('用普通语言说明工作空间（Workspace）承载共同事实，项目（Project）承载业务目标，服务（Service）承担实现职责，代码库实例（Repository Instance）定位实际代码；多个服务可共用一份代码。');
     console.log('先根据真实 Project/Service 状态确认唯一范围或只询问必要歧义，然后邀请用户直接描述第一项真实工作；不要把 project create 命令作为面向用户的默认下一步。');
     return result;
   }
@@ -61,11 +59,11 @@ export function workspaceCommand(application: WorkspaceCliApplication, operation
   console.log('仅初始化源资产的后续步骤：');
   console.log('  buildr runtime list --json');
   console.log(`  buildr sync <agent> --target ${targetRoot}`);
-  console.log(`  buildr project create <project> --target ${targetRoot}`);
+  console.log('  buildr help assets');
   console.log('');
   console.log('Agent runtime:');
-  console.log('  先用 runtime list 确认当前 Agent 是否受支持；不支持时停止当前 Buildr 操作，请联系 Buildr 作者反馈该 Agent。');
+  console.log('  先用 runtime list 核对当前智能体（Agent）；无法确认或不受支持时，只暂停依赖该运行时（Runtime）的动作，不借用其他适配器（Adapter）。');
   console.log(`  当前命令未写入 Agent runtime；受支持时，用 buildr sync <agent> --target ${targetRoot} 完成 runtime 与最终 doctor。`);
-  console.log('  完整 Agent onboarding guidance：buildr bootstrap guide');
+  console.log('  产品入口技能（Skill）不可用时，查看 buildr help skill install；初始化帮助使用 buildr help init。');
   return result;
 }

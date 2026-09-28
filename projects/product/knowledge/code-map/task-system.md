@@ -165,12 +165,35 @@
   - `archify/flows/`
     - [task-system.json](../archify/flows/task-system.json) — 完整过程与角色职责图源
     - [task-system.html](../archify/flows/task-system.html) — 总图展示
-    - [task-system-planning.html](../archify/flows/task-system-planning.html) — 需求、方案与授权时序
-    - [task-system-delivery.html](../archify/flows/task-system-delivery.html) — 实现审查与交付时序
     - [task-self-bootstrap.html](../archify/flows/task-self-bootstrap.html) — 自举与安全善后时序
-    - [task-system.md](../archify/flows/task-system.md) — 逐项依据、分段图源和当前表述差异
     - [task-parent-coordination.json](../archify/flows/task-parent-coordination.json) — 父任务完成时序图源
     - [task-parent-coordination.html](../archify/flows/task-parent-coordination.html) — 核对成果、明确授权、保存完成与拒绝分支
-    - [task-parent-coordination.md](../archify/flows/task-parent-coordination.md) — 父任务完成时序的规范与实现依据
 
 地图按职责定位文件，源码内容由当前文件提供；没有改变的实现不因改写地图重新验证。实际存储与交互的代表检查见[任务记录回归](../../services/buildr/test/system/task-record-product.test.ts)、[父任务完成输入回归](../../services/buildr-web/test/parentCoordination.test.mjs)和[工作摘要与工作台回归](../../services/buildr/test/integration/workbench-application.test.ts)。
+
+## 任务图的来源与表达边界
+
+[总图](../archify/flows/task-system.html)以涉及正式任务（Task）和 OpenSpec 的完整实现为例：讨论与分流对应核心规则和任务分流，方案、两类审查、验证和交付对应前文专业方法及各自应用，工作基础、过程协作与交付支撑对应前文工作资产、工作空间（Workspace）、工作台（Workbench）与任务应用。箭头是常见协作和前后依赖，不是所有工作必须经过的状态机（State Machine）；纯调查、小改动、无正式任务和无自举组件的工作按实际范围进行。图不保存完整对话或逐次工具日志。
+
+[父任务完成图](../archify/flows/task-parent-coordination.html)只展开普通完成请求；网页组合结束另见本图的实现说明。人明确目标和完成授权，调用入口可以是智能体（Agent）的命令或人的网页表单，二者不是固定串联。通过与拒绝是互斥分支。读取的 `recordDigest` 对应 `expectedRecordDigest`，`completion.snapshotIdentity` 对应 `parentCompletion.expectedSnapshot`；授权记录保留 `source` 与 `statement`。同一事务（Transaction）核对父子观察、直接子任务状态和逐项验收，不递归修改其他任务，也不执行 Git、发布或清理。
+
+| 拒绝原因 | 接续方式 |
+| --- | --- |
+| `task_record_conflict` 或 `parent_completion_conflict` | 重读记录及父子观察，重新核对成果和原授权是否仍适用 |
+| `parent_completion_children_open` | 先完成或明确处置未结束子项，不自动完成或放弃 |
+| `parent_completion_children_mismatch` | 对照当前直接子任务补齐或修正逐项处置 |
+| 缺少验收或授权依据 | 核对已有效的授权，只有确实缺少决定时才询问 |
+
+网页答复保存和父任务完成是独立动作；同范围已有授权持续有效，但软件仅校验输入结构，不认证自然语言授权或实际业务成果。
+
+### 自举图的适用条件
+
+[自举图](../archify/flows/task-self-bootstrap.html)只适用于已安装 `buildr-self-bootstrap`、已交付改动命中输入的工作空间（Workspace），不包含首次交付或 npm 发布。唯一执行器为已安装 `buildr-self-bootstrap-sync` 中的 `scripts/closeout.mjs`：`runDirectSelfBootstrapCloseout` 按范围编排，`classifications` 判断适用输入。任务编号可选；它不是任务完成或清理总控制器。
+
+执行器从基线、交付提交、分支、远端、宿主和保留 Node 核对真实现场；检查目标身份、干净目录、锁、祖先及远端包含关系。适用时从保留目录同步，精确提交实际变化并普通推送，安装开发应用，以 `verifyDevelopmentEntryIdentity` 核对入口、版本、通道和源码身份，再由同一入口完成 Doctor。原来健康运行的开发实例才按连续性脚本证据恢复；不能把应用安装或文件渲染成功当作完整激活。
+
+结果为 `passed`、`blocked` 或 `not-applicable`；成功要求最终 `health.ready === true`。推送等局部失败不撤销已交付事实，可按同一输入恢复；未提交内容、未知锁和身份漂移先保留。后续清理由原工作树（Worktree）或预览（Preview）所有者独立核对，不借自举结果推断资源可删。具体来源由知识索引连接唯一技能（Skill）及执行器、连续性脚本；[执行器测试](../../services/buildr/test/integration/self-bootstrap-closeout.test.ts)只证明测试覆盖的分支，不证明某次真实激活。
+
+### 规范与实现的核对点
+
+[自举编排规范](../../openspec/specs/task-closeout-orchestration/spec.md)、[任务工作方式](../../openspec/specs/agent-task-workflows/spec.md)和[任务环境规范](../../openspec/specs/task-environments/spec.md)分别约束自举适用性、工作位置与退役。当前执行器的任务编号可选，工作树（Worktree）提供者只管理 Git 位置和删除安全，不自动执行 Doctor 或同步；持久修改默认隔离，用户明确指定原地修改时例外。移除自举任务前置的决定可追溯至[归档变更](../../openspec/changes/archive/2026-09-08-remove-self-bootstrap-task-prerequisite/specs/agent-task-workflows/spec.md)。这些边界不能从旧执行记录或图的线性顺序反推。

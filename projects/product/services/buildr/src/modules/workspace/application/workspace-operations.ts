@@ -33,7 +33,7 @@ type WorkspaceOperationMethod =
   | 'renderSkillsManifestYaml' | 'renderRulesManifestYaml' | 'renderCommandsManifestYaml'
   | 'renderComponentsManifestYaml' | 'trackWrite' | 'ensureDirectory'
   | 'atomicWriteJson' | 'mutationStateRoot' | 'mutationLockPath' | 'mutationRecoveryReceiptPath'
-  | 'prepareMutationRestore' | 'restoreMutationSnapshot' | 'removeMutationRestoreTarget' | 'productRoot'
+  | 'prepareMutationRestore' | 'restoreMutationSnapshot' | 'removeMutationRestoreTarget'
   | 'writeMappedFileIfMissing' | 'appendGitignoreEntries' | 'toPosixRelative'
   | 'existsDirectory' | 'existsFile' | 'ensureRootRequiredBlock'
   | 'addDoctorFinding' | 'createWorkspaceId';
@@ -72,7 +72,6 @@ export function registerWorkspaceOperations(runtime: WorkspaceOperationsRuntime)
   const restoreMutationSnapshot = (...args: any[]) => runtime.restoreMutationSnapshot(...args);
   const prepareMutationRestore = (...args: any[]) => runtime.prepareMutationRestore(...args);
   const removeMutationRestoreTarget = (...args: any[]) => runtime.removeMutationRestoreTarget(...args);
-  const productRoot = (...args: any[]) => runtime.productRoot(...args);
   const writeMappedFileIfMissing = (...args: any[]) => runtime.writeMappedFileIfMissing(...args);
   const appendGitignoreEntries = (...args: any[]) => runtime.appendGitignoreEntries(...args);
   const toPosixRelative = (...args: any[]) => runtime.toPosixRelative(...args);
@@ -82,14 +81,6 @@ export function registerWorkspaceOperations(runtime: WorkspaceOperationsRuntime)
   const addDoctorFinding = (...args: any[]) => runtime.addDoctorFinding(...args);
   const createWorkspaceId = (...args: any[]) => runtime.createWorkspaceId(...args);
   const renderWorkspaceManifest = runtime.workspaceRepository.renderWorkspaceManifest;
-
-  function readBootstrapGuide() {
-    const guidePath = path.join(productRoot(), 'docs', 'bootstrap-guide.md');
-    if (!existsFile(guidePath)) {
-      throw new Error(`Bootstrap guide not found: ${guidePath}`);
-    }
-    return fs.readFileSync(guidePath, 'utf8');
-  }
 
   function mutationTransactions(targetRoot: any) {
     const stateRoot = mutationStateRoot(targetRoot);
@@ -250,6 +241,6 @@ export function registerWorkspaceOperations(runtime: WorkspaceOperationsRuntime)
     return result;
   }
 
-  Object.assign(runtime, { readBootstrapGuide, mutationTransactions, diagnoseMutations, recoverWorkspaceMutation, initializeWorkspace });
+  Object.assign(runtime, { mutationTransactions, diagnoseMutations, recoverWorkspaceMutation, initializeWorkspace });
   return runtime;
 }

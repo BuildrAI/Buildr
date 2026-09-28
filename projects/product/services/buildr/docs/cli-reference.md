@@ -2,9 +2,11 @@
 
 本文说明 Buildr 0.1.x 的安装入口、公开命令与适用边界；文档版本不证明正式版已经发布。以 `buildr <topic> --help` / `buildr help <topic>`、`buildr runtime list --json` 和 `buildr doctor --agent <agent> --json` 的当前输出为最终参数事实。
 
+安装包保留本文供离线查阅，入口失效时先看[安装与恢复](#入口不可用与恢复)。其他文档及源码链接需要仓库或网络，不承诺全部随包交付。
+
 支持 `--json` 的命令在顶层输出 `schemaVersion`。该字段及兼容规则见 [公开 JSON 契约](../../../knowledge/docs/reference/json-contracts.md)；消费者应按 schema identity 判断格式，而不是依赖未声明的内部实现。
 
-根帮助从同一 command catalog 按四层显示：`primary` 是普通工作主路径，`agent-machine` 是 Agent/Skill 依赖的稳定机器接口，`maintenance` 是产品构建、开发预览和 workflow，`legacy` 是兼容窗口内仍保留且带 replacement 的入口。Surface 不是授权边界；每个 retained executable route 都可通过 canonical topic 查询帮助。
+根帮助从同一命令目录（Command Catalog）按三层显示：`primary` 是普通工作主路径，`agent-machine` 是 Agent/Skill 依赖的稳定机器接口，`maintenance` 是产品构建、开发预览和 workflow；已删除的命令不另设兼容分区。Surface 不是授权边界；每个 retained executable route 都可通过 canonical topic 查询帮助。
 
 ## CLI identity、帮助与错误
 
@@ -34,7 +36,6 @@ npm view "@buildr-ai/buildr@<version>" version engines --json --registry https:/
 npm install --global "@buildr-ai/buildr@<version>" --registry https://registry.npmjs.org/
 buildr --version
 buildr installation status --json
-buildr bootstrap guide
 ```
 
 安装包包含命令行工具（CLI）与 Buildr Web。用户明确需要 macOS 或 Windows 的本机图形入口时，再安装 Buildr Web 启动器（Launcher），将其绑定到同一 npm 安装：
@@ -49,7 +50,7 @@ buildr web launcher install
 
 ### 确认目录并初始化
 
-安装后读取 `buildr bootstrap guide` 的当前说明，向用户确认目标目录；用户也可以在智能体（Agent）工具中打开目录后要求初始化。核对当前智能体（Agent）的身份与支持情况：
+安装后核对用户已经明确的目标目录；目标有歧义时才询问。用户也可以在智能体（Agent）工具中打开目录后要求初始化。核对当前智能体（Agent）的身份与支持情况：
 
 ```bash
 buildr runtime list --json
@@ -87,6 +88,20 @@ Skill 文件仍写入目标 Agent 的原生 Skills root。Buildr 为这些文件
 
 `buildr sync` 同步当前本地工作空间（Workspace）的产品源能力，安装产品入口技能（Skill），投射当前智能体运行时（Agent Runtime）并执行最终诊断（Doctor）；它不隐式更新 Git 或 Buildr 产品安装。
 
+### 入口不可用与恢复
+
+命令帮助可离线使用，不依赖工作空间（Workspace）已经初始化。`buildr help init`、`buildr help skill install`、`buildr help sync` 和 `buildr help mutation recover` 分别说明当前参数；首次安装仍以前文 npm 入口为准，联网失败时不要猜测版本。
+
+| 当前问题 | 恢复依据与完成条件 |
+|---|---|
+| 命令无法启动 | 核对实际 Node.js 与安装包 `engines.node`；按前文安装入口修复。能输出 `buildr --version` 和 `installation status --json` 后再处理工作目录。 |
+| 产品入口技能（Skill）缺失或未发现 | 先确认宿主身份和 `runtime list --json` 支持情况，再运行 `buildr skill install <agent> --target <dir>`；按该工具要求刷新或开始新会话。投射成功不等于当前对话已加载。 |
+| 初始化中断，或工作空间（Workspace）投射过期 | 保留已经初始化的源资产；按诊断修复具体问题后运行 `buildr sync <agent> --target <dir>`，消费其最终诊断（Doctor），不重复初始化。 |
+| 源资产写入事务中断 | 读取诊断给出的事务标识和当前 `mutation recover` 帮助，只对有完整日志及备份的确切事务恢复；不手工删除锁或猜测半完成状态。 |
+| 启动器（Launcher）无法打开网页 | 用 `buildr installation status --json` 和 `buildr web launcher status` 核对绑定；按诊断选择 `repair`，不把网页未刷新误判为安装包未更新。 |
+
+需要独立诊断时明确传入 `buildr doctor --agent <agent> --target <dir> --json`；`init --agent` 或 `sync` 已返回同一现场的最终诊断（Doctor）时直接复用。未确认宿主时只暂停依赖该运行时（Runtime）的动作，不借用其他适配器（Adapter），也不扩大为所有工作都不能继续。
+
 ## 工作空间（Workspace）与资产
 
 当前全局模型分别登记项目（Project）、服务（Service）和代码库实例（Repository Instance）。项目（Project）通过 `serviceIds` 引用服务（Service），服务（Service）通过 `repositoryId` 引用一个实例；实例保存实际代码位置和 Git 来源，可承载多个服务（Service）。目录嵌套不决定业务归属，写入登记也不代表代码已准备。
@@ -98,37 +113,9 @@ buildr help assets
 
 `inspect` 返回当前对象、引用、`revision` 和 `migrationRequired`。当前初始化仍可能返回需要迁移的清单；`migrationRequired: true` 时，核对返回的对象与重名问题，准备 `{"revision":"<刚读取的 revision>"}`，通过 `buildr assets migrate --target "<workspace>" --input "<json-file>" --json` 显式迁移，再使用返回的新版本。旧服务（Service）重名时还需提供明确的 `codeMappings`；迁移不搬动代码，不按相同地址合并不同代码库实例（Repository Instance）。
 
-`assets create <project|service|repository>`、`assets update`、`assets associate` 等写入使用 `--input <json-file>`，提交刚读取的版本及明确选择。当前 `help assets` 列出动作与通用参数，不返回完整输入结构。以下是常用新增输入，所有身份和路径须来自真实目标与当前清单：
+`buildr help assets` 与 `buildr assets --help` 提供当前动作的输入字段、目录观察要求和最小示例，可离线读取。写入使用 `--input <json-file>`，提交刚读取的版本和明确选择；版本冲突后重新读取并核对，不盲目重复写入。
 
-| 动作 | 输入字段 |
-|---|---|
-| `assets create project` | `revision`、`code`、`name`，可选 `description`、`serviceIds`、`newServices` |
-| `assets create repository` | `revision`、`code` 与真实根目录 `path`；可选名称、说明、已确认的 `url`、`remote`、`integrationBranch`，目录候选还包含 `observation` |
-| `assets create service` | `revision`、`service` 对象，可选 `projectId`；`service` 包含 `code`、`name` 及明确的代码库选择，目录形式见下文 |
-| `assets associate <project-id>` | `revision`、完整的 `serviceIds` 列表，可选 `newServices`；保留仍需要的已有引用 |
-
-例如，创建不含代码的新项目（Project）时，将真实目标和最新版本写入临时输入文件：
-
-```json
-{
-  "revision": "<刚读取的 revision>",
-  "code": "<项目标识>",
-  "name": "<项目名称>",
-  "description": "<项目目标>"
-}
-```
-
-```bash
-buildr assets create project --target "<workspace>" --input "<json-file>" --json
-```
-
-写入后检查返回的对象与新版本。登记代码库实例（Repository Instance）不执行克隆、拉取、切换分支或搬迁文件。
-
-`buildr assets project-candidates --target <workspace> --json` 只读列出 `projects/` 内尚未登记的直接子目录及目录观察版本。使用 `buildr assets register project --target <workspace> --input <json-file> --json` 登记选择结果；输入包含 `revision`、`code`、`name`、`observation`，可选 `description` 和 `serviceIds`。写入重验清单与目录身份，只保存登记和明确选择的服务，不补写目录文件，也不自动恢复已移除项目的身份和历史关系。
-
-`buildr assets service-candidates` 与 `repository-candidates` 分别列出服务目录和真实代码库根的未登记候选。服务创建输入可用 `directoryMode: existing`、`directoryPath`、`directoryObservation` 登记原目录，或 `directoryMode: create`、`projectCode` 在项目 services/ 下新建；旧 repositoryId/modulePath 输入保持兼容。代码库候选用 path/observation 提交。
-
-`buildr assets remove <project|service|repository> <id> --target <workspace> --input <json-file> --json` 只取消登记，保留文件；代码库仍被服务引用时拒绝移除。旧 `assets delete` 是相同的兼容入口，不删除文件。`skills remove` 同样保留源目录；组件成员沿既有组件维护边界处理。
+项目（Project）关联必须提交完整的 `serviceIds`，解除关联保留服务（Service）和代码。已有目录先读取相应的 `*-candidates`，再提交候选的观察值；目录变化时重新核对。登记只保存身份与来源，不执行克隆、拉取、切换分支或搬迁。`assets remove` 和兼容的 `assets delete` 都只取消登记；代码库仍被服务（Service）引用时拒绝移除。
 
 | 命令 | 用途 |
 |---|---|
@@ -231,13 +218,12 @@ Contract 格式、scope 规则、替换示例以及 `ready` 的边界见 [Skill 
 - `openspec audit`、`openspec baseline create`、阶段型`openspec check`、`openspec sync-plan`与`openspec sync-apply`均已删除；旧调用返回标准unknown-command。
 - `openspec baseline create`、阶段型 `openspec check`、`openspec sync-plan` 与 `openspec sync-apply` 均已删除；旧调用返回标准 unknown-command 且不会读取或写入旧 sidecar。标准规范解析、重建和正常写入由锁定上游负责，Buildr 不另行实现同一算法。
 - `skills migrate-project-assets` 已删除。legacy Project Skill source 继续 fail closed，当前 Buildr 不复制、合并、改写或删除其 bytes；升级前需使用旧版本完成迁移，或人工审阅后整理到 workspace `skills/`。
-- `buildr bootstrap guide`：产品 Skill 不可用时的纯文本兜底说明。
 
 这些命令可执行，但不构成普通用户需要记忆的 public asset API。
 
 ## 内部实现边界
 
-`bin/buildr.mjs` 是稳定 npm bin 路径，实际命令通过内部 `src/` runtime 和唯一 command registry 执行。该模块树随 tarball 发布以保证命令可运行，但不是公开 JavaScript API，不承诺文件级 import 兼容；维护约定见 [CLI 内部架构](cli-architecture.md)。
+`bin/buildr.mjs` 是稳定的 npm 命令入口。正式安装包包含打包后的 `runtime/buildr.cjs` 与 `payload/`，不依赖开发目录中的完整 `src/` 模块树；具体内容由[发布打包实现](../tools/release/release-artifact.ts)确定。内部文件不是公开 JavaScript 接口（API），不承诺文件级导入兼容；维护约定见[命令架构](cli-architecture.md)。
 
 ## 远端 Skill 请求
 

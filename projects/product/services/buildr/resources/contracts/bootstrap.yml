@@ -1,36 +1,3 @@
-bootstrapGuidePath: docs/bootstrap-guide.md
-bootstrapGuideRequiredText:
-  - Buildr 技能（Skill）
-  - buildr bootstrap guide
-  - buildr runtime list --json
-  - buildr init --agent
-  - buildr skill install
-  - claude-code
-  - codex
-  - cursor
-  - qoder
-  - trae
-  - trae-work
-  - workbuddy
-  - buildr sync
-  - buildr doctor --agent
-  - 不要省略 `--agent`
-  - buildr assets inspect
-  - buildr assets migrate
-  - buildr assets create project
-  - revision
-  - buildr rules add
-  - rules remove
-  - 不借用其他适配器
-  - buildr component list
-  - buildr component check
-  - 不得自动切轨或降级
-bootstrapGuideForbiddenText:
-  - onboarding.contract.yml
-  - bootstrap.contract.yml
-  - buildr skills add
-  - buildr runtime check claude-code
-
 buildrSkillPath: resources/runtime/skills/buildr/SKILL.md
 buildrSkillMaxLines: 175
 buildrSkillRequiredSections:

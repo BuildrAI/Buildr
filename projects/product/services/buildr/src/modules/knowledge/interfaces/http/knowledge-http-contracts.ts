@@ -93,6 +93,12 @@ const index = obj({
 const document = obj({ id: text, path: text, title: text, location: text, group: text, artifactId: nullable, workspacePath: nullable,
   sectionId: text, summary: text, supplementary: { type: "boolean" } });
 export const KNOWLEDGE_HTTP_SCHEMAS = {
+  ReferenceResponse: {
+    $schema: 'https://json-schema.org/draft/2020-12/schema',
+    $id: 'https://schemas.buildr.ai/http/knowledge/reference-response',
+    title: 'Knowledge',
+    ...obj({ path: text, content: text, digest: text, reference: obj({ kind: { enum: ['artifact', 'source', 'document'] }, id: text, links: { type: 'array', minItems: 1, maxItems: 12, items: text } }) }),
+  },
   DocumentsResponse: {
     $schema: "https://json-schema.org/draft/2020-12/schema",
     $id: "https://schemas.buildr.ai/http/knowledge/documents-response",
@@ -261,5 +267,10 @@ export function validateKnowledgeDocumentsResponse(value: unknown) {
 export function validateKnowledgeDocumentResponse(value: unknown) {
   const result = validator.validate(KNOWLEDGE_HTTP_SCHEMAS.DocumentResponse.$id, value);
   if (!result.valid) throw new Error("Knowledge document response contract failed: " + JSON.stringify(result.errors));
+  return value;
+}
+export function validateKnowledgeReferenceResponse(value: unknown) {
+  const result = validator.validate(KNOWLEDGE_HTTP_SCHEMAS.ReferenceResponse.$id, value);
+  if (!result.valid) throw new Error('Knowledge reference response contract failed: ' + JSON.stringify(result.errors));
   return value;
 }

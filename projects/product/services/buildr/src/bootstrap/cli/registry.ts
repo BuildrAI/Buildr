@@ -15,7 +15,6 @@ import { createProjectVerificationCliContributions } from '../../modules/project
 
 const TASK_MODULE_COMMAND_SLOT = Symbol('task-module-command-contributions');
 const WORKSPACE_INIT_COMMAND_SLOT = Symbol('workspace-init-command-contribution');
-const WORKSPACE_BOOTSTRAP_COMMAND_SLOT = Symbol('workspace-bootstrap-command-contribution');
 const WORKSPACE_MUTATION_COMMAND_SLOT = Symbol('workspace-mutation-command-contribution');
 const WORKSPACE_DAILY_PROGRESS_COMMAND_SLOT = Symbol('workspace-daily-progress-command-contributions');
 const AGENT_ASSETS_PACKAGE_COMMAND_SLOT = Symbol('agent-assets-package-command-contributions');
@@ -51,11 +50,10 @@ const OPENSPEC_MODULE_COMMANDS: any = new Set([
   'openspec convergence preflight',
   'openspec convergence inspect',
 ]);
-const WORKSPACE_PRIMARY_COMMANDS = new Set(['init', 'bootstrap guide', 'mutation recover']);
+const WORKSPACE_PRIMARY_COMMANDS = new Set(['init', 'mutation recover']);
 
 const COMMAND_ROUTES: any[] = [
   WORKSPACE_INIT_COMMAND_SLOT,
-  WORKSPACE_BOOTSTRAP_COMMAND_SLOT,
   AGENT_ASSETS_PACKAGE_COMMAND_SLOT,
   WORKSPACE_DAILY_PROGRESS_COMMAND_SLOT,
   TASK_MODULE_COMMAND_SLOT,
@@ -162,7 +160,6 @@ function createCommandRegistry(moduleContributions: any): any  {
   ));
   const routes = COMMAND_ROUTES.flatMap((route: any) => {
     if (route === WORKSPACE_INIT_COMMAND_SLOT) return moduleContributions.filter((item: any) => item.key === 'init');
-    if (route === WORKSPACE_BOOTSTRAP_COMMAND_SLOT) return moduleContributions.filter((item: any) => item.key === 'bootstrap guide');
     if (route === WORKSPACE_MUTATION_COMMAND_SLOT) return moduleContributions.filter((item: any) => item.key === 'mutation recover');
     if (route === AGENT_ASSETS_PACKAGE_COMMAND_SLOT) return agentAssetsPackageContributions;
     if (route === AGENT_ASSETS_RUNTIME_COMMAND_SLOT) return agentAssetsRuntimeContributions;

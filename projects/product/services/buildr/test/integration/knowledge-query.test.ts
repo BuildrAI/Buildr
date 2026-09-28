@@ -1313,3 +1313,68 @@ test("大量非文档条目也受扫描预算约束，不能以零篇文档假�
   assert.equal(listing.totalCount, listing.documents.length);
   assert.ok(listing.totalCount < 1000, "条目预算与文档数量上限是两条独立边界");
 });
+
+test('实际正文引用无需登记，逐步核对当前链接并拒绝伪造、越界及符号链接', t => {
+  const { root, put, app } = setup(t);
+  put('projects/demo/knowledge/docs/order.md', '# 订单\n[规则](../../AGENTS.md#边界)\n[链接](alias.md)\n[凭证](../../secret.md)\n[越界](../../../../outside.md)\n```md\n[伪造](../../other.md)\n```\n');
+  put('projects/demo/AGENTS.md', '# 规则\n## 边界\n[另一条](knowledge/docs/next.md)\n');
+  put('projects/demo/knowledge/docs/next.md', '# 接续\n当前内容');
+  put('projects/demo/other.md', '不允许');
+  put('projects/demo/secret.md', '不允许');
+  fs.symlinkSync(path.join(root, 'projects/demo/AGENTS.md'), path.join(root, 'projects/demo/knowledge/docs/alias.md'));
+  const reference = { kind: 'artifact' as const, id: 'doc', links: ['../../AGENTS.md#边界'] };
+  const read = app.reference(root, { kind: 'project', id: 'demo' }, reference);
+  assert.equal(read.path, 'AGENTS.md');
+  assert.match(read.content!, /## 边界/);
+  assert.equal(app.reference(root, { kind: 'project', id: 'demo' }, { ...reference, links: [...reference.links, 'knowledge/docs/next.md'] }).path, 'knowledge/docs/next.md');
+  for (const href of ['../../other.md', 'alias.md', '../../secret.md', '../../../../outside.md'])
+    assert.throws(() => app.reference(root, { kind: 'project', id: 'demo' }, { ...reference, links: [href] }), /引用|路径|读取/);
+  put('projects/demo/knowledge/docs/order.md', '# 订单\n链接已移除');
+  assert.throws(() => app.reference(root, { kind: 'project', id: 'demo' }, reference), /当前正文/);
+});
+
+test('本地图片引用只交付类型匹配的有界图片，普通文档入口仍不支持任意文件', t => {
+  const { root, put, app } = setup(t);
+  put('projects/demo/knowledge/docs/order.md', '# 图片\n![有效](photo.png)\n![伪装](fake.png)\n![远程](https://example.com/image.png)\n![矢量](image.svg)\n');
+  const bytes = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==', 'base64');
+  fs.writeFileSync(path.join(root, 'projects/demo/knowledge/docs/photo.png'), bytes);
+  put('projects/demo/knowledge/docs/fake.png', '<script>bad()</script>');
+  put('projects/demo/knowledge/docs/image.svg', '<svg><script>bad()</script></svg>');
+  const reference = { kind: 'artifact' as const, id: 'doc', links: ['photo.png'] };
+  const value = app.reference(root, { kind: 'project', id: 'demo' }, reference, true);
+  assert.equal(value.contentType, 'image/png');
+  assert.deepEqual(value.bytes, bytes);
+  for (const href of ['fake.png', 'https://example.com/image.png', 'image.svg'])
+    assert.throws(() => app.reference(root, { kind: 'project', id: 'demo' }, { ...reference, links: [href] }, true));
+  const documents = app.documents(root, { kind: 'project', id: 'demo' });
+  const document = documents.documents.find(item => item.path === 'knowledge/docs/order.md')!;
+  assert.deepEqual(app.reference(root, { kind: 'project', id: 'demo' }, { ...reference, kind: 'document', id: document.id }, true).bytes, bytes);
+  const http = createKnowledgeHttpContribution(app);
+  let delivered: Buffer | undefined;
+  const result = http.handle({ request: { method: 'GET' }, root, suffix: '/knowledge/project/demo/reference/image', searchParams: new URLSearchParams({ reference: JSON.stringify(reference) }), respond: { diagramHtml() {}, binary(content, type) { delivered = content; assert.equal(type, 'image/png'); } } });
+  assert.equal(result, true);
+  assert.deepEqual(delivered, bytes);
+  assert.throws(() => http.handle({ request: { method: 'GET' }, root, suffix: '/knowledge/project/demo/reference', searchParams: new URLSearchParams({ reference: JSON.stringify({ ...reference, links: Array(13).fill('photo.png') }) }), respond: { diagramHtml() {} } }), /无效/);
+});
+
+test('引用保留点路径和编码空格，行内代码与未闭合围栏不能授权读取', t => {
+  const { root, put, app } = setup(t);
+  put('projects/demo/knowledge/docs/order.md', '# 来源\n[实际](./name%20space.md)\n`[示例](inline.md)`\n```md\n[示例](unclosed.md)\n');
+  for (const file of ['name space.md', 'inline.md', 'unclosed.md']) put(`projects/demo/knowledge/docs/${file}`, '# 实际文件');
+  const read = (href: string) => app.reference(root, { kind: 'project', id: 'demo' }, { kind: 'artifact', id: 'doc', links: [href] });
+  assert.equal(read('./name%20space.md').path, 'knowledge/docs/name space.md');
+  for (const href of ['inline.md', 'unclosed.md', 'name%20space.md']) assert.throws(() => read(href), /当前正文/);
+  put('projects/demo/src/order.ts', '// [示例](../knowledge/docs/inline.md)');
+  assert.throws(() => app.reference(root, { kind: 'project', id: 'demo' }, { kind: 'source', id: 'code', links: ['../knowledge/docs/inline.md'] }), /仅 Markdown/);
+});
+
+test('工作空间公共文档中的引用不能读取未关联项目', t => {
+  const { root, put, app } = setup(t);
+  put('README.md', '# 公共入口\n[当前](projects/demo/AGENTS.md)\n[其他](projects/private/guide.md)');
+  put('projects/demo/AGENTS.md', '# 当前规则');
+  put('projects/private/guide.md', '# 其他项目');
+  const id = app.documents(root, { kind: 'project', id: 'demo' }).documents.find(item => item.location === 'workspace' && item.path === 'README.md')!.id;
+  const reference = { kind: 'document' as const, id, links: ['projects/demo/AGENTS.md'] };
+  assert.match(app.reference(root, { kind: 'project', id: 'demo' }, reference).content!, /当前规则/);
+  assert.throws(() => app.reference(root, { kind: 'project', id: 'demo' }, { ...reference, links: ['projects/private/guide.md'] }), /不属于当前范围/);
+});

@@ -229,8 +229,6 @@ export function createPackageStaticValidator(deps: any): any  {
           'docs/cli-reference.md',
           'docs/cli-architecture.md',
           'docs/known-limitations.md',
-          'docs/bootstrap-guide.md',
-          'docs/resources.md',
           'resources/',
           'web-dist/',
           'resources/runtime/',
@@ -798,7 +796,7 @@ export function createPackageStaticValidator(deps: any): any  {
         ]) {
           if (!skillContent.includes(requiredText)) problems.push(`Buildr Agent Skill must include ${JSON.stringify(requiredText)}.`);
         }
-        for (const relativePath of ['docs/bootstrap-guide.md', 'docs/cli-reference.md']) {
+        for (const relativePath of ['docs/cli-reference.md']) {
           const contractPath = path.join(root, relativePath);
           if (!existsFile(contractPath)) {
             problems.push(`Workspace update intent contract file is missing: ${relativePath}`);

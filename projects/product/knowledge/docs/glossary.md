@@ -140,21 +140,20 @@
 - 定义：某一次模型请求实际携带的相关资料、指令和对话输入。
 - 适用范围：同一任务（Task）中按当前步骤发起的每次模型调用。
 - 避免混用：不是任务上下文（Task Context）的完整副本，也不是模型可承载的容量。
-- 来源：[产品概览](overview.md)。
+- 来源：[产品定位规范](../../openspec/specs/agent-first-product-positioning/spec.md)。
 
 ## 上下文窗口（Context Window）
 
 - 定义：模型单次请求可承载的有限容量；实际内容由该次请求决定。
 - 适用范围：理解一次调用的信息限制及长期工作跨请求接续。
 - 避免混用：不是持久知识、全部任务上下文（Task Context）或工作空间（Workspace）。
-- 来源：[产品概览](overview.md)。
+- 来源：[产品定位规范](../../openspec/specs/agent-first-product-positioning/spec.md)。
 
 ## 词元（Token）
 
 - 定义：模型处理文本的基本单位，可以是字、词的一部分、标点或其他片段。
 - 适用范围：模型输入输出、上下文窗口（Context Window）容量、用量与成本。
 - 避免混用：不是身份认证（Authentication）等安全领域的令牌（Token）。
-- 来源：[产品概览](overview.md)。
 
 ## 工作空间本机数据存储（Workspace Local Data Store）
 

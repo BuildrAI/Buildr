@@ -41,28 +41,27 @@ npm 发布模式 update MUST 查询当前 package 配置的 npm registry，并�
 - **AND** MUST 返回可供 Agent 解释的阻塞原因和下一步
 
 ### Requirement: 自举 CLI 刷新必须使用已验证 runtime identity
-Buildr 自举任务在集成后刷新默认开发 CLI 时 MUST 使用 retained convergence 提供且满足产品最低版本的 Node executable，并 MUST 把 executable、版本、CLI source、安装目标和 post-install doctor 记录为 runtime-install evidence。安装结果 MUST 是本机薄 wrapper，持久绑定该 Node executable 与 retained checkout canonical entry；后续启动 MUST NOT 从 PATH 重新选择 Node。Shell 初始化文件和 PATH 顺序 MUST NOT 成为已有 receipt-bound runtime 的 authority。阻塞原始 Finish 的自举恢复 MUST 在修复 Task 交付前完整演练默认 CLI、Development Launcher、sync、Doctor 与原 Finish resume preflight，不得用逐症状递归修复 Task 代替闭环证明。
+Buildr 自举激活 MUST 通过唯一 `buildr-self-bootstrap-sync` 执行器，用明确且受支持的 retained Node 验证本次已交付保留检出目录（Retained Checkout）的 `projects/product/buildr` 开发入口、适用的开发启动器（Launcher）及最终工作空间（Workspace）诊断。PATH 中默认 `buildr` MUST 保持 npm 安装的归属；开发检出目录 MUST NOT 创建、覆盖或要求默认入口绑定源码。激活 MUST 依据真实基线、交付提交、分支和远端，不依赖已退役的 Finish run 或环境回执。
 
 #### Scenario: Retained runtime 可用
-- **WHEN** retained checkout 的 runtime identity 指向受支持 Node 和当前 CLI source
-- **THEN** 安装 provider MUST 使用该 Node 执行安装预检、原子写入 Buildr-owned wrapper、help probe 和 doctor
-- **AND** 默认 CLI wrapper MUST 精确绑定 retained Product checkout 的 canonical entry 与同一 Node executable
-- **AND** 真实启动 identity MUST 与安装 evidence 的 launcher、CLI entry 和 Node executable 完全一致
+- **WHEN** 已交付检出目录与受支持 Node 的身份可验证
+- **THEN** 唯一执行器 MUST 显式调用该检出目录的开发入口并核验同一 Node 和源身份
+- **AND** MUST 保持默认 npm CLI 不变，并以最终 Doctor ready 证明本次激活成功
 
 #### Scenario: 既有 managed 入口迁移
-- **WHEN** 安装目标是可证明属于 Buildr 的旧 symlink 或当前 owned wrapper
-- **THEN** 安装 provider MUST 在同一目录原子替换为新 wrapper
-- **AND** foreign file、foreign symlink 或 ownership 无法证明的入口 MUST 原样保留并 fail closed
+- **WHEN** 本机存在属于旧开发安装的入口或其他归属的默认入口
+- **THEN** 自举激活 MUST NOT 将它迁移或覆盖为当前源码入口
+- **AND** 需要安装修复时 MUST 由相应安装能力核对真实归属和授权后处理
 
 #### Scenario: Retained runtime 不满足最低版本
-- **WHEN** retained Node 版本低于 Buildr 最低要求或 executable 不可执行
-- **THEN** 安装 provider MUST 在写入口前阻塞并返回稳定 runtime diagnostic
-- **AND** MUST NOT 从 login shell PATH 随机选择另一个 Node 后继续
+- **WHEN** 明确的 Node 版本不受支持或不可执行
+- **THEN** 执行器 MUST 在相关激活动作前停止并报告可复核原因
+- **AND** MUST NOT 从 PATH 随机换用另一个 Node 继续
 
 #### Scenario: 自举收尾恢复闭环
-- **WHEN** 修复 Task 用于解除另一个已交付 Task 的 retained Doctor 阻塞
-- **THEN** 修复 Task Finish 前 MUST 在真实本机投射上依次证明 CLI 安装、精确 Node identity、Development Launcher、workspace sync、Doctor ready 与原 Finish resume preflight
-- **AND** 任一无关新问题 MUST 保持原 Finish blocked、停止并报告，不得自动创建下一个递归修复 Task
+- **WHEN** 已交付成果的自举激活需要恢复
+- **THEN** MUST 以同一真实交付输入交给唯一执行器重新核对并恢复相关动作
+- **AND** MUST 保留已成立的交付，不要求旧 Finish resume 或补造任务状态
 
 ### Requirement: Buildr CLI 必须从 receipt 识别 npm 或 development 更新来源
 Buildr MUST 从当前进程校验后的 installation-origin identity 与 ownership receipt 识别更新来源，并将其分类为 development checkout、npm registry package 或 unknown。PATH、executable 文件名、cwd 与目录外观 MUST NOT 单独决定来源；当前产品 MUST NOT 生成 platform installation 更新模式。

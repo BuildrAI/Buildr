@@ -33,8 +33,14 @@ Buildr MUST在 Buildr Service root 提供 npm package metadata，使维护者能
 - **AND** the command MUST behave consistently with the checkout-based CLI for the same inputs
 
 #### Scenario: Run onboarding commands from installed command
-- **WHEN** the installed `buildr` command runs `project create`, `service create`, `doctor`, `sync`, `runtime check`, `rules render`, `skills render`, `package check`, and `bootstrap guide`
+- **WHEN** the installed `buildr` command runs `assets`, `project create`, `service create`, `doctor`, `sync`, `runtime check`, `rules render`, or `skills render`
 - **THEN** each command MUST behave consistently with the checkout-based CLI for the same inputs
+- **AND** 开发维护命令 `package check` MUST 明确要求开发检出目录，不将其描述为安装包健康检查
+
+#### Scenario: Read recovery guidance without a working CLI
+- **WHEN** 已安装命令无法启动，或本机无法联网
+- **THEN** 安装包 MUST 保留源自现有 `docs/cli-reference.md` 的离线参考，包含首次安装、入口缺失、同步中断及恢复边界
+- **AND** MUST 不重新创建 bootstrap 指南或命令；开发源码及未随包参考的链接不承诺离线可达
 
 ### Requirement: npm package excludes private workspace assets
 Buildr npm package MUST 仅包含已安装命令所需的 `bin/`、产品 `src/` runtime、`resources/`、`web-dist/`、明确可发布的文档和 deferred runtime assets，并 MUST 排除仓库测试、checkout-only 工具、active changes 和私有 Workspace 内容。

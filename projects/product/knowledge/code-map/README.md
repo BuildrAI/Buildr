@@ -19,7 +19,7 @@ projects/product/                         项目（Project）：跨服务产品�
 │   └── changes/                          变更方案、清单与历史归档
 ├── docs/publications/                    已发表文章与配图，属于产品内容数据
 ├── knowledge/                            三类当前成果，不是第二规范
-│   ├── README.md                         统一阅读入口
+│   ├── README.md                         保留首页旧链接的短导航
 │   ├── code-map/                         本地图：树、对象、方法、调用
 │   ├── archify/                          技术图源与可查看成果
 │   └── docs/                             面向人的当前产品与技术解释
@@ -64,4 +64,24 @@ projects/product/                         项目（Project）：跨服务产品�
 
 - [任务系统](task-system.md)：工作台（Workbench）、人机答复、任务及专业事实、工作位置、交付与自举执行器。
 - [技能源文件到可发现入口](skill-projection.md)：解析、组合、计划、受管写入与数据归属；关联技术图和解释文档。
-- [统一知识入口](../README.md)：从目标选择地图、技术图或面向人的说明。
+- [阅读目录](../docs/README.md)：从当前问题选择说明、地图或图示。
+
+## 按问题找图
+
+图示解释关系，正文解释结论，代码与规范提供依据。Buildr 可以打开已登记图示；GitHub 上的 HTML 需下载后在浏览器打开，数据库图也提供可直接查看的矢量版本。
+
+| 想理解什么 | 图示 | 依据与图源 |
+| --- | --- | --- |
+| 系统由哪些部分组成 | [系统全景](../archify/system/buildr-system-overview.html) | [图源](../archify/system/buildr-system-overview.json) · [技术正文](../docs/architecture/technical.md) |
+| 谁调用、谁写入数据 | [调用与副作用](../archify/flows/capability-data-responsibility.html) | [图源](../archify/flows/capability-data-responsibility.json) · [技术正文](../docs/architecture/technical.md) |
+| 业务目标怎样连接代码 | [项目、服务与代码库](../archify/flows/project-service-repositories.html) | [图源](../archify/flows/project-service-repositories.json) · [依据](../docs/architecture/project-service-repositories.md) |
+| 方法怎样交给工具 | [技能投射](../archify/flows/skill-projection.html) | [图源](../archify/flows/skill-projection.json) · [依据](skill-projection.md#节点与关系的依据) |
+| 工作怎样推进与交付 | [任务总图](../archify/flows/task-system.html) | [图源](../archify/flows/task-system.json) · [依据](task-system.md#任务图的来源与表达边界) |
+| 父任务怎样确认完成 | [父任务完成](../archify/flows/task-parent-coordination.html) | [图源](../archify/flows/task-parent-coordination.json) · [依据](task-system.md#任务图的来源与表达边界) |
+| Buildr 怎样采用自身更新 | [自举与善后](../archify/flows/task-self-bootstrap.html) | [图源](../archify/flows/task-self-bootstrap.json) · [依据](task-system.md#自举图的适用条件) |
+| 数据分别保存在哪里 | [数据领域](../archify/data/buildr-data-domains.html) | [图源](../archify/data/buildr-data-domains.json) · [依据](../docs/architecture/buildr-data-design.md) |
+| 数据库表怎样关联 | [表与字段](../archify/data/workspace-sqlite-erd.html) · [矢量图](../archify/data/workspace-sqlite-erd.svg) | [Graphviz 图源](../archify/data/workspace-sqlite-erd.dot.txt) · [依据](../docs/architecture/buildr-database-tables.md#14-维护与验收边界) |
+| 知识怎样随工作维护 | [知识职责](../archify/flows/knowledge-maintenance.html) | [图源](../archify/flows/knowledge-maintenance.json) · [依据](knowledge-maintenance.md#职责图怎样对应这张地图) |
+| 怎样建设与选择检查 | [测试与验证](../archify/flows/verification-framework.html) | [图源](../archify/flows/verification-framework.json) · [依据](verification-framework.md#测试图的主线与分支) |
+
+图源和展示成对维护；只有关系变化时才重新生成。图的来源与表达边界直接维护在本表链接的正文或地图，不另写一份依据。

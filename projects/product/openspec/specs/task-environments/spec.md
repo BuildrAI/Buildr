@@ -58,7 +58,7 @@ Buildr MUST以`buildr.git-worktree-provider/v1`表达Git Worktree provider，并
 Buildr MUST不提供统一Task Environment Application、Plan、Receipt、ready状态、恢复、资源注册、总cleanup、CLI、HTTP、Web页签或SQLite current。普通编辑、构建、测试、Review、Verification、Finish和交付 MUST不因缺少环境记录而失败。
 
 #### Scenario: 普通任务直接工作
-- **WHEN** Agent在已确认Workspace进行普通代码修改且不需要独立Worktree或额外准备
+- **WHEN** 智能体（Agent）已按任务分流确认实际工作位置，默认隔离或用户已明确要求原地修改，且不需要额外准备
 - **THEN** Buildr MUST不创建任何Environment记录
 - **AND** Agent MAY直接编辑、构建、测试、Review、Verification与交付
 

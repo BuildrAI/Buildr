@@ -26,7 +26,7 @@ Buildr 的 `resources/manifest.yml` MUST显式声明产品随包内置 Agent Ski
 
 #### Scenario: package check 校验 bootstrap 入口契约
 - **WHEN** Agent 执行 `buildr package check`
-- **THEN** Buildr MUST从产品源码和正式 docs 校验 bootstrap guide 与 Buildr Skill 恢复契约
+- **THEN** Buildr MUST 从产品源资产校验 Buildr 技能（Skill）的恢复入口契约；MUST NOT 要求 `docs/bootstrap-guide.md` 或其正文副本存在
 - **AND** MUST NOT要求已删除的 `package/bootstrap/` 文字资产存在
 
 ### Requirement: package baseline 支持命令行工具清单入口
@@ -503,7 +503,7 @@ Buildr package verification MUST 防止 selected Git Operation 或任务 Skill �
 Buildr product verification MUST 防止产品入口 Buildr Skill 和随包引导退回到只执行本地 `buildr sync` 的 workspace 更新语义，同时 MUST 保证更新 operation 由产品入口选择而不是 Git Operations 自行推断。
 
 #### Scenario: 校验 Git 管理 workspace 的更新顺序
-- **WHEN** Buildr 验证产品入口 Buildr Skill、bootstrap guide、CLI reference 和 runtime 提示
+- **WHEN** Buildr 验证产品入口 Buildr 技能（Skill）、命令参考（CLI Reference） 和 runtime 提示
 - **THEN** 验证 MUST 确认“更新 workspace”与“同步 workspace”由 Buildr Skill 先向 selected `buildr.git-operations/v1` provider 提供 workspace、upstream 和明确 update operation，再执行 `buildr sync <agent> --target <workspace-root>`
 - **AND** 验证 MUST 确认该意图不会先运行 `buildr update`
 - **AND** 验证 MUST 确认 Git 更新成功后无需再次询问 sync 授权

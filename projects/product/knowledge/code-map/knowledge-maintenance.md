@@ -6,7 +6,7 @@
 
 **建设过程**：用户提出主题 → 智能体（Agent）核对规范与代码 → 按需制作文章、图和地图 → 维护阅读关联 → 用户刷新阅读。专业方法约束建设质量；页面提供接续指令，当前不直接调度执行。
 
-**读取过程**：页面发起请求 → 超文本传输协议（HTTP）入口校验身份 → 应用解析已登记范围 → 领域规则校验知识关联 → 基础设施读取文件 → 页面呈现。查看图示时由单独的隔离响应加载 HTML，主文档与副屏共用同一成果。
+**读取过程**：页面发起请求 → 超文本传输协议（HTTP）入口校验身份 → 应用解析已登记范围 → 领域规则校验知识关联 → 基础设施读取文件 → 页面呈现。查看图示时由单独的隔离响应加载 HTML，主文档与副屏共用同一成果。从已可读入口继续打开正文引用时，[引用读取实现](../../services/buildr/src/modules/knowledge/infrastructure/knowledge-references.ts)逐跳核对当前正文中的实际链接，并限制读取范围、敏感路径、符号链接及图片类型和大小；不会自动登记资料或修改源文件。
 
 **两种阅读方式**：主题阅读从索引中的对象及成果关联组织理解路径；文档目录先发现允许范围内的实际文件，再按同一索引中的 `documentSections` 编排章节、标题、用途和次序。`entryObject` 和 `entryDocument` 分别指定已有主题与真实文档为默认入口。文件发现负责覆盖与安全，作者负责阅读组织；入口只显示、计数一次，未编排文件仍可阅读，辅助依据可折叠但不退出搜索和总数。
 
@@ -59,7 +59,7 @@
         - [KnowledgeBrowser.tsx](../../services/buildr-web/src/features/knowledge/components/KnowledgeBrowser.tsx) — 侧读复用同一目录和阅读器，保留范围、模式及历史选择
         - [KnowledgeTopicChildren.tsx](../../services/buildr-web/src/features/knowledge/components/KnowledgeTopicChildren.tsx) — 在父主题下提供直接子主题入口，组织节点无需另写正文
         - [KnowledgePreviewNotice.tsx](../../services/buildr-web/src/features/knowledge/components/KnowledgePreviewNotice.tsx) — 原生预览的开发中提示、当前来源目录与启动时身份
-        - [KnowledgeDocuments.tsx](../../services/buildr-web/src/features/knowledge/components/KnowledgeDocuments.tsx) — 主页面与侧读共用的选中文档正文，按需读取并仅跳转到已发现文档
+        - [KnowledgeDocuments.tsx](../../services/buildr-web/src/features/knowledge/components/KnowledgeDocuments.tsx) — 主页面与侧读共用的选中文档正文，按需读取已发现文档，并在上述边界内接续正文引用
         - [KnowledgeArtifactReader.tsx](../../services/buildr-web/src/features/knowledge/components/KnowledgeArtifactReader.tsx) — 同一正文的内嵌和独立阅读
         - [KnowledgeDiagram.tsx](../../services/buildr-web/src/features/knowledge/components/KnowledgeDiagram.tsx) — 隔离图示、按当前宽度适配嵌入预览与合法对象定位
         - [KnowledgeTree.tsx](../../services/buildr-web/src/features/knowledge/components/KnowledgeTree.tsx) — 紧凑目录、业务边界与折叠操作
@@ -116,7 +116,10 @@
   - `archify/flows/`
     - [knowledge-maintenance.json](../archify/flows/knowledge-maintenance.json) — 可维护的职责图源
     - [knowledge-maintenance.html](../archify/flows/knowledge-maintenance.html) — Archify 生成的图示展示
-    - [knowledge-maintenance.md](../archify/flows/knowledge-maintenance.md) — 图示依据与表达边界
 
 
 来源缺失或职责变化时，只影响相关表达；网页直接读取当前文件，读取成功不代表语义已经核验。读取与保护行为的证据见[实际文件回归](../../services/buildr/test/integration/knowledge-query.test.ts)。本地图不说明正式发布状态，也不覆盖其他业务模块。
+
+## 职责图怎样对应这张地图
+
+[职责图](../archify/flows/knowledge-maintenance.html)的六个节点不是调用顺序：`guidance` 是 OpenSpec 与代码架构方法，`facts` 是规范与实现，`methods` 是按需采用的图示、地图和术语方法，`maintenance` 是知识维护，`artifacts` 是原文和索引，`web` 是只读呈现。箭头分别表示建设指导、事实依据、专业方法、成果维护和文件阅读；不表示后台自动执行。个人收藏与最近访问由工作台（Workbench）单独保存，不改写知识成果，也未在图中展开。

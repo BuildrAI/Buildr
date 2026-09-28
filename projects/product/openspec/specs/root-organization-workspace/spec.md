@@ -132,35 +132,32 @@ Buildr MUST NOT 将 `organizations/<org>/` 作为产品主线、兼容路径或�
 - **THEN** Buildr MUST 报告该 scope 不受支持，并提示使用 `projects/shop`
 
 ### Requirement: 默认 workspace 规则路由工具型资产维护
-Buildr MUST 在默认 workspace 规则中要求 Agent 识别规则、技能、命令行工具相关任务，并通过 Buildr 技能维护源资产。
+默认工作空间（Workspace）规则（Rule）MUST 保护源资产权威、所有权和授权边界；Buildr 技能（Skill）MUST 负责工具型资产维护的发现、方法、命令与恢复指引，规则（Rule）MUST NOT 复制这些执行流程。
 
 #### Scenario: Agent 读取默认规则
-- **WHEN** Agent 读取 `buildr init` 生成的 workspace `AGENTS.md`
-- **THEN** Agent MUST 能看到“Buildr 管理组织资产，不接管个人机器”的规则
-- **AND** Agent MUST 能看到 Agent 运行环境、本机状态和临时提示都不是资产源
+- **WHEN** 智能体（Agent）读取 `buildr init` 生成的 `AGENTS.md`
+- **THEN** 规则（Rule）MUST 说明 Buildr 管理长期源资产和可重建投射
+- **AND** MUST 说明运行时（Runtime）、本机状态、凭证和临时提示词不是源资产
 
 #### Scenario: 用户要求维护 manifest-backed 工具型资产
-- **WHEN** 用户要求新增、修改或删除需要沉淀或复用的技能或命令行工具
-- **THEN** 默认 workspace 规则 MUST 要求 Agent 先使用 Buildr 技能
-- **AND** 默认 workspace 规则 MUST 要求 Agent 通过对应 manifest-backed CLI 维护 Buildr workspace 源资产
-- **AND** 默认 workspace 规则 MUST 要求 runtime 投射或本机环境补齐按需在源资产维护后执行
+- **WHEN** 用户要求新增、修改或删除可复用技能（Skill）或命令（Command）
+- **THEN** Buildr 技能（Skill）MUST 按相应清单和命令维护源资产
+- **AND** MUST 按需在源资产维护后执行投射或补齐本机环境，并遵守既有授权
 
 #### Scenario: 用户要求维护规则资产
-- **WHEN** 用户要求新增、修改或删除需要沉淀或复用的 root/Organization 规则
-- **THEN** 默认 workspace 规则 MUST 要求 Agent 先使用 Buildr 技能
-- **AND** 默认 workspace 规则 MUST 要求 Agent 使用 `rules add/remove` 维护 `rules/manifest.yml`
-- **AND** 默认 workspace 规则 MUST 允许 Agent 直接编辑 `AGENTS.md` 或 `rules/*.md` 正文来维护规则内容
-- **AND** 默认 workspace 规则 MUST 要求 Agent 将 runtime 投射或 doctor 复查放在源资产维护之后按需执行
+- **WHEN** 用户要求维护根规则（Rule）或项目（Project）、服务（Service）规则（Rule）
+- **THEN** Buildr 技能（Skill）MUST 区分 `rules/manifest.yml` 登记与 `AGENTS.md` 正文维护
+- **AND** MUST 保留受管区块（Managed Block）所有权和用户正文，仅由正式维护入口更新受管区块（Managed Block）
 
 #### Scenario: Agent 不确定如何维护资产
-- **WHEN** Agent 不确定如何维护 Buildr 工具型资产
-- **THEN** 默认 workspace 规则 MUST 引导 Agent 使用 Buildr 技能
-- **AND** 当 Buildr 技能不可用时 MUST 引导 Agent 使用 `buildr bootstrap guide`
+- **WHEN** 智能体（Agent）不确定如何维护工具型资产
+- **THEN** 智能体（Agent）MUST 按用户意图发现 Buildr 技能（Skill）并按需读取当前命令帮助
+- **AND** 技能（Skill）不可用时 MUST 根据 `buildr help skill install` 与命令参考修复相应入口
 
 #### Scenario: runtime 或本机缺少能力
-- **WHEN** 当前 Agent runtime 找不到所需技能，或本机找不到所需命令行工具
-- **THEN** 默认 workspace 规则 MUST 引导 Agent 先使用 Buildr 技能
-- **AND** 当 Buildr 技能不可用时 MUST 引导 Agent 使用 `buildr bootstrap guide`
+- **WHEN** 当前运行时（Runtime）缺少技能（Skill）或本机缺少命令（Command）
+- **THEN** 智能体（Agent）MUST 依据当前诊断定位缺失边界，并在已有授权内执行对应恢复
+- **AND** MUST NOT 因局部能力缺失阻止其他不依赖该能力的已授权工作
 
 ### Requirement: Root Rules manifest CLI maintenance
 Buildr CLI MUST 提供 root/Organization-level commands，用于维护 user-managed Rules manifest entries，且不得接管 Agent context decisions。

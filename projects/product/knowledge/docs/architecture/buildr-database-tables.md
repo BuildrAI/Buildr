@@ -2,7 +2,7 @@
 
 本文是 [Buildr 数据全景与领域设计](buildr-data-design.md) 的物理存储附录。本附录只解释 `workspace.sqlite` 的当前表、字段、关系与数据库之外的校验，不代替全领域事实主线，也不把文件对象画成不存在的数据库表。
 
-阅读入口：[独立交互阅读页](../../archify/data/workspace-sqlite-erd.html) · [原尺寸矢量图](../../archify/data/workspace-sqlite-erd.svg) · [Graphviz 图源](../../archify/data/workspace-sqlite-erd.dot.txt) · [图示范围与维护说明](../../archify/data/workspace-sqlite-erd.md)。阅读页内联图形与本附录，不需要网络；图形保留正文大小，可缩放与滚动，而非强制压成一屏缩略图。
+阅读入口：[独立交互阅读页](../../archify/data/workspace-sqlite-erd.html) · [原尺寸矢量图](../../archify/data/workspace-sqlite-erd.svg) · [Graphviz 图源](../../archify/data/workspace-sqlite-erd.dot.txt)。阅读页内联图形与本附录，不需要网络；图形保留正文大小，可缩放与滚动，而非强制压成一屏缩略图。
 
 ## 1. 范围与事实依据
 
@@ -16,7 +16,7 @@
 - 字段表中的可空性（Nullability）表示实际存储能否为 `NULL`，不代表某个业务状态是否允许缺省。两个整数主键虽在 `table_xinfo` 中显示 `notnull=0`，实际不会存储空值：省略或传入 `NULL` 会分配整数键。
 - 结构化文本（JSON）仍以 `TEXT` 存储。对象、数组及其中的引用不自动成为独立实体表，也不自动受外键（FK）保护。
 
-本图由本机 Graphviz 生成，使用鸟脚表示法（Crow's Foot Notation）。它不是 Archify 产物；目录位置沿用项目已有技术图目录，不表示扩展了 Archify 能力。
+本图由本机 Graphviz 生成，使用鸟脚表示法（Crow's Foot Notation）。Archify 未提供这里需要的实体关系图（ERD）和鸟脚端点，因此使用 Graphviz；目录沿用现有技术图位置，不改变产品能力或绑定。图源使用 `.dot.txt` 后缀便于知识阅读器显示，内容仍是原生 DOT。
 
 ## 2. 关系、基数与删除行为
 
@@ -262,3 +262,11 @@ SQL 只检查有效的结构化文本（JSON）、可空的状态取值和可解
 ## 14. 维护与验收边界
 
 迁移结构变化时，应先在 `:memory:` 重放到新的末版本，核对当前表而非累加历史表；同步更新此附录、图源、矢量图与内联阅读页。领域文件变化但物理表不变时，只调整相关解释，不虚构数据库迁移。
+
+图源修改后使用本机 `dot` 生成矢量图，再将 `<svg>` 主体同步到独立阅读页的 `<!-- diagram:start -->` 与 `<!-- diagram:end -->` 之间，不包含 XML 外部文档类型声明。例如在产品根目录执行：
+
+```sh
+dot -Tsvg knowledge/archify/data/workspace-sqlite-erd.dot.txt -o knowledge/archify/data/workspace-sqlite-erd.svg
+```
+
+阅读页的 `<!-- fields:start -->` 与 `<!-- fields:end -->` 之间是本附录的静态 HTML 转换结果；正文变化时同步文字及相对链接。这些注释是内容边界，不是产品受管区块（Managed Block），不需要新增生成框架。页面无网络依赖，保持原尺寸滚动与 `25%..200%` 缩放；表名或字段搜索定位图中匹配项，浏览器搜索可查下方全文。

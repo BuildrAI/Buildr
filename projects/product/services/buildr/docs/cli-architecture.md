@@ -37,7 +37,7 @@ src/
 
 `src/bootstrap/runtime.ts:createRuntime()` 只创建平台技术对象、注册 Infrastructure、安装模块并保存私有 Registry context。业务调用通过 `runtimeProvide(runtime, capability)`；Host 聚合通过 `runtimeContributions(runtime, type)`。生产 Runtime 不接受 `Object.assign` 式业务方法注入。
 
-真实循环依赖只使用一次性 Binder：`TASK_CHANGE_BINDER`、`AGENT_ASSETS_DIAGNOSTICS_BINDER`。
+跨模块需要延后连接的能力通过一次性绑定器（Binder）装配；当前连接点以[运行时装配](../src/bootstrap/runtime.ts)为准，不在此重复维护成员清单。
 
 ## CLI Adapter 责任
 
@@ -110,6 +110,7 @@ module.ts → private composition
 - `tools/build/launcher/` 只构建/维护 Development Launcher。
 - `package/` 已无职责；派生测试库位于 Git 忽略的 `build/test-context/`。
 - 安装后的用户命令只依赖安装包内运行闭包；开发维护命令 `package check` 不属于该范围。
+- 现有 `docs/cli-reference.md` 随应用负载（Application Payload）交付，供命令无法启动或离线时读取安装与恢复依据；其他开发文档和源码链接仍以仓库为准，不为安装包复制整套手册。
 
 ## 维护验证
 
@@ -123,3 +124,18 @@ module.ts → private composition
 架构检查另外核对模块根、单向技术层、公开入口、命令贡献、应用负载（Application Payload）和 `package/` 不再承载产品文件的约定。完整入口及证明范围以 Product `verification.yml` 为准。
 
 更完整的位置、对象和调用见 [Buildr 全项目代码地图](../../../knowledge/code-map/README.md)。
+
+## 文件型交付资源
+
+服务（Service）的 `resources/` 保存产品读取、复制、安装或投射的文件型来源；用户工作空间（Workspace）的登记和运行状态由各自写入者生成，不进入资源树。
+
+| 来源 | 职责 |
+| --- | --- |
+| [`resources/manifest.yml`](../resources/manifest.yml) | 声明发布范围、工作空间（Workspace）及项目（Project）映射、内置资产、组件（Component）和运行时技能（Runtime Skill）来源 |
+| `resources/workspace/` | 规则（Rule）、技能（Skill）、命令（Command）、组件（Component）、`AGENTS.md` 与 Git 模板的交付源 |
+| `resources/runtime/` | 直接安装到智能体运行时（Agent Runtime）的源，包括 Buildr 产品入口技能（Skill） |
+| `resources/installation/launcher/` | 启动器（Launcher）使用的无行为静态图标 |
+
+开发启动器（Launcher）工程属于 `tools/build/launcher/`，正式 npm 启动器（Launcher）行为属于 `src/modules/installation/`；生成的测试库在被 Git 忽略的 `build/test-context/`，均不属于文件资源目录。Archify 是默认不启用的随包可选组件（Component），保留完整上游发行；来源、使用与升级见[组件说明](archify-component.md)。
+
+资源映射或交付内容变化时，按实际影响核对清单、初始化与同步解析、安装包及应用负载（Application Payload），选择相关运行时或浏览器检查。只改解释文字不要求重跑全部发布验证。正式运行闭包不加载开发工具；`buildr package check` 仍只适用于开发检出目录。

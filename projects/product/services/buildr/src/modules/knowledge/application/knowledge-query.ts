@@ -18,6 +18,7 @@ import {
 } from "../domain/knowledge-catalog.ts";
 import { discoverKnowledgeDocuments, type DocumentLocation } from "../infrastructure/knowledge-documents.ts";
 import { organizeKnowledgeDocuments, resolveKnowledgeEntryDocument } from "../domain/knowledge-document-sections.ts";
+import { readKnowledgeReference, type KnowledgeReference, type ReferenceFile } from '../infrastructure/knowledge-references.ts';
 export type KnowledgeDependencies = {
   assetCatalog(root: string): AssetCatalog;
   skillFile(root: string, id: string, path: string): { content: string };
@@ -358,5 +359,39 @@ export function createKnowledgeQuery(deps: KnowledgeDependencies) {
     const { content, digest: contentDigest } = readKnowledgeFile(file.root, file.path);
     return { document: selected, content, digest: contentDigest };
   }
-  return { read, catalog, navigation, documents, document };
+  function reference(root: string, ref: ScopeRef, target: KnowledgeReference, image = false) {
+    let start: ReferenceFile;
+    if (target.kind === 'document') {
+      const catalog = documentCatalog(root, ref);
+      const file = catalog.files.get(target.id);
+      if (!file) throw knowledgeError('knowledge_document_missing', '文档不存在或已不可读。', 404);
+      if (fs.realpathSync(path.join(file.root, file.path)) !== path.join(file.root, file.path))
+        throw knowledgeError('knowledge_path_forbidden', '不能通过符号链接读取文档。');
+      start = { root: file.root, ...readKnowledgeFile(file.root, file.path) };
+    } else {
+      const { scope, index } = load(root, ref);
+      if (target.kind === 'artifact') {
+        const artifact = index?.artifacts.find(item => item.id === target.id && item.kind !== 'diagram');
+        if (!artifact) throw knowledgeError('knowledge_item_missing', '引用入口不存在。', 404);
+        start = { root: scope.directory, ...readKnowledgeFile(scope.directory, artifact.path) };
+      } else {
+        const source = index?.sources.find(item => item.id === target.id);
+        if (!source || source.kind === 'skill') throw knowledgeError('knowledge_source_scope_forbidden', '该来源不支持本地文件引用。');
+        const value = sourceRead(root, scope, source);
+        if (!('location' in value)) throw knowledgeError('knowledge_source_scope_forbidden', '来源位置不可读取。');
+        start = { root: value.location.root, path: value.path, content: value.content };
+      }
+    }
+    const scope = resolve(root, ref);
+    const roots = [scope.directory, scope.codeRoot, path.join(root, 'docs')];
+    if (scope.kind === 'project') for (const id of scope.serviceIds) {
+      try { const service = resolve(root, { kind: 'service', id }); roots.push(service.directory, service.codeRoot); } catch { /* Unavailable services do not expand reading authority. */ }
+    }
+    const allowedRoots = roots.flatMap(directory => { try { return [fs.realpathSync(directory)]; } catch { return []; } });
+    const workspaceRoot = fs.realpathSync(root);
+    const result = readKnowledgeReference(start, target.links, image, file => allowedRoots.some(directory => file.startsWith(directory + path.sep)) ||
+      (path.dirname(file) === workspaceRoot && /^(?:readme(?:[._-][\w-]+)?|contributing|security|changelog)\.md$/i.test(path.basename(file))));
+    return { ...result, reference: target };
+  }
+  return { read, catalog, navigation, documents, document, reference };
 }

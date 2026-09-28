@@ -2,7 +2,7 @@
 
 覆盖 Buildr 服务（Service）中普通技能源文件的解析、内容组合、文件计划与运行时投射（Runtime Projection），以 Codex 工作空间（Workspace）目录为具体输出示例，并说明多个适配器共享同一目标根（Runtime Root）时的归属边界。事实来源是下列真实代码、[资源清单](../../services/buildr/resources/manifest.yml)、[投射规范](../../openspec/specs/workspace-first-runtime-projection/spec.md)和[组件增强规范](../../openspec/specs/buildr-package-assets/spec.md)。
 
-本图不展开全部规则投射、远程来源读取、组件安装与删除、宿主会话加载及全部适配器。产品入口 `buildr` 的随包来源单独说明；它不通过普通工作空间技能冒名接入。关联[面向人的解释](../docs/architecture/buildr-skill-system.md)、[技术图](../archify/flows/skill-projection.html)及[图的来源映射](../archify/flows/skill-projection.md)。
+本图是数据流图（Data Flow Diagram），不表示逐函数执行顺序。本图不展开全部规则投射、远程来源读取、组件安装与删除、宿主会话加载及全部适配器。产品入口 `buildr` 的随包来源单独说明；它不通过普通工作空间技能冒名接入。关联[面向人的解释](../docs/architecture/buildr-skill-system.md)、[技术图](../archify/flows/skill-projection.html)。
 
 ## 真实目录与对象
 
@@ -61,3 +61,17 @@ agent-assets/
 ## 如何判断需要维护
 
 来源位置、代表符号、内容组合规则、目标目录、写入归属或冲突保护发生变化时核对本地图及对应图表；内部实现版本变化但上述关系仍成立时只记录检查结论，不机械重建。
+
+## 节点与关系的依据
+
+下表对应[图源](../archify/flows/skill-projection.json)中的节点与关系；具体路径和职责见前文。
+
+| 节点或连线标识 | 依据 |
+|---|---|
+| `skill-source`、`read-source` | `sources.ts` 的 `resolveSkills` 读取工作空间技能源清单与目录 |
+| `component-source`、`compose-source` | `contributions.ts` 的 `resolveComponentContributions` 核对成员后组合片段与依赖；`resolveSkillCapabilityGraph` 解析实际绑定 |
+| `resolved-skills` | `render-plan.ts` 的 `resolveRenderSkills` 返回附带局部能力视图的普通技能 |
+| `render-plan`、`prepare-files` | `buildSkillRenderPlan` 与 `buildSkillContent` 构造正文、附属文件及归属记录计划 |
+| `reconciler`、`check-writes` | `application/runtime-projection.ts` 的 `renderSkillsRuntime` 在目标与发现冲突检查后将计划交给 `reconcileRuntimePlan` |
+| `runtime-files`、`write-runtime` | `adapter-contract.ts` 的 `skillDestinationRoots` 给出该 destination 的目标根，`buildRuntimeSkillDirectory` 按根使用 `getRuntimeAdapter` 的布局；协调器写入实际改变的受管目标 |
+| `ownership`、`write-ownership` | `buildSkillProjectionReceipt` 构造本机记录，由计划的记录写入分支保存；目录内容通常先于标记为 `commitLast` 的记录。共享同一根的其他 adapter 由各自回执界定归属 |

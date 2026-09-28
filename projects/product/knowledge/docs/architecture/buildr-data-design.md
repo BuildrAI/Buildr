@@ -8,7 +8,7 @@
 
 ![数据领域与事实归属](../../archify/data/buildr-data-domains.html)
 
-图中同时包含文件与数据库对象，箭头表达标明的业务关系；表内关系另见[数据库实体关系图（ERD）](../../archify/data/workspace-sqlite-erd.html)。
+图中同时包含文件与数据库对象，是领域关系图，不是实体关系图（ERD）。箭头表达标明的登记、引用或生成关系，不表示调用顺序、关系基数或数据库外键（Foreign Key）；数据库形状也不意味着每个节点都是表。表内关系另见[数据库实体关系图（ERD）](../../archify/data/workspace-sqlite-erd.html)。任务（Task）到知识的虚线表示通过变更引用或正文链接定位成果，没有通用的“任务—知识”关联表。图源与本章依据共同维护，安装与恢复现场由本章后文说明。
 
 ## 共享源、本机记录与当前观察
 
@@ -119,6 +119,24 @@ OpenSpec 的 `specs/` 保存当前承诺，`changes/` 保存一次变更的提�
 
 SQLite 的一次事务（Transaction）只保护其内的表更新。文件变更有独立的备份与恢复，不能把它们与 Git、进程、发布平台说成一次全局提交。已经核实的代码交付、记录完成、应用生效和资源清理分别成立。
 
-中断现场应保留操作记录、备份及当前文件。自动回滚（Rollback）与手动恢复都先校验整组目标、备份和控制文件路径，再在具体删除或复制前复核；路径出现不安全链接或操作中的根目录身份发生变化时，保留可用现场并停止相关写入，不因旧回执仍在就机械重放。运行中的 SQLite 使用预写日志（WAL），只复制主 `.sqlite` 文件不是一致备份。当前没有统一备份或云端恢复工具。
+中断现场应保留操作记录、备份及当前文件。自动回滚（Rollback）与手动恢复都先校验整组目标、备份和控制文件路径，再在具体删除或复制前复核；路径出现不安全链接或操作中的根目录身份发生变化时，保留可用现场并停止相关写入，不因旧回执仍在就机械重放。
 
-已有候选版用户还需注意：可写打开会按项提交待执行迁移，并清理已退役的执行记录与旧复盘目录；后续失败不会撤回前面已提交的迁移。通用升级准备不属于首次安装步骤，已有数据时再阅读[数据保全与升级](../guides/getting-started.md#更新与数据保护)。实现边界见[数据库迁移](../../../services/buildr/src/infrastructure/sqlite/workspace-sqlite.ts)、[文件事务](../../../services/buildr/src/infrastructure/filesystem/workspace-mutation.ts)与[OpenSpec 恢复](../../../services/buildr/src/modules/openspec/application/openspec-converge.ts)。
+实现边界见[数据库迁移](../../../services/buildr/src/infrastructure/sqlite/workspace-sqlite.ts)、[文件事务](../../../services/buildr/src/infrastructure/filesystem/workspace-mutation.ts)与[OpenSpec 恢复](../../../services/buildr/src/modules/openspec/application/openspec-converge.ts)。
+
+## 数据保全与恢复
+
+本节供更新、换机器或恢复失败现场时查阅，不是首次使用的准备清单。路径相对实际工作空间（Workspace）。
+
+| 保留什么 | 位置与要点 |
+| --- | --- |
+| 资料、规则（Rule）、技能（Skill）与代码 | 保留实际来源、各 Git 仓库、未提交成果和独立工作树（Worktree） |
+| 任务（Task）、审查（Review）与验证（Verification）记录 | `.buildr/local/workspace.sqlite`；停止全部写入后复制，保留当时仍存在的 `-wal`、`-shm` |
+| 复盘正文与每日演进 | `.buildr/local/task-retrospectives/`、`.buildr/daily-progress/`；SQLite 没有这些正文副本，重新生成不等于恢复 |
+| 未完成操作 | `.buildr/mutations/` 及相关恢复记录；同时保留记录、备份与当前文件 |
+| 安装及目录归属 | 核对实际应用数据目录与管理记录；不能当作跨机器通用配置 |
+
+先记录当前版本、程序入口、目标版本与未完成操作，停止相关命令和应用写入，再复制到新的受保护目录。关闭浏览器不等于退出 Buildr；SQLite 使用预写日志（WAL），只复制运行中的主文件不能保证一致。当前没有统一备份或云端恢复工具。核对文件清单和重要记录，在副本上检查 SQLite 完整性，再更新并检查一项代表工作。副本可能含业务内容或凭证，应保留到新版本已实际使用。
+
+较早版本的升级会退役旧执行、研发、环境、收尾聚合及部分复盘数据。新版首次可写打开 SQLite 时执行待迁移项，并清理旧 `.buildr/asset-review/`、`.buildr/local/task-execution-records/`；有价值的旧内容应提前另存。迁移逐项提交，后续失败不撤回此前结果，安装旧程序也不会降级 SQLite 数据。
+
+更新失败时保留现场和副本，再判断修复或恢复，不覆盖唯一现场。换机器时先迁移可移植资料，再准备工具，单独核对本机记录与实际路径。完整位置见前文；迁移依据见[数据库维护](../../../services/buildr/src/infrastructure/sqlite/workspace-sqlite.ts)。当前产品边界见[已知限制](../../../services/buildr/docs/known-limitations.md)。

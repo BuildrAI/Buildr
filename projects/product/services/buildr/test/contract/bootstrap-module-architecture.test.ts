@@ -148,7 +148,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     requires: [AGENT_ASSETS_RUNTIME],
     provides: [WORKSPACE_APPLICATION, PROJECT_APPLICATION, SERVICE_APPLICATION, WORKSPACE_QUERY, WORKSPACE_RUNTIME_PORT, WORKSPACE_ASSET_SUPPORT, WORKSPACE_DOMAIN, WORKSPACE_TASK_SUPPORT, WORKSPACE_AGENT_ASSETS_BINDER, WORKSPACE_DIAGNOSTICS],
     contributions: {
-      cli: ['assets', 'init', 'bootstrap guide', 'mutation recover', 'project create', 'service create'],
+      cli: ['assets', 'init', 'mutation recover', 'project create', 'service create'],
       http: ['workspace-core.http'],
       diagnostics: ['workspace.diagnostics'],
     },
@@ -296,7 +296,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     lifecycle: 'none',
   }]);
   assert.deepEqual(runtimeContributions(runtime, 'cli').map((item: any) => item.key), [
-    'assets', 'init', 'bootstrap guide', 'mutation recover', 'project create', 'service create',
+    'assets', 'init', 'mutation recover', 'project create', 'service create',
     'package check', 'package build', 'runtime list',
     'commands check', 'commands add', 'commands remove',
     'component list', 'component check', 'component install', 'component uninstall',
@@ -399,8 +399,8 @@ test('Workspace 模块使用私有组合并只拆分超界 Application', () => {
 
 test('Agent Assets CLI contributions 保留公开根帮助的历史位置', () => {
   const keys: any = COMMAND_CATALOG.filter((item: any) => item.executable).map((item: any) => item.key);
-  assert.deepEqual(keys.slice(keys.indexOf('bootstrap guide'), keys.indexOf('project daily-progress record') + 1), [
-    'bootstrap guide', 'package check', 'package build', 'project daily-progress record',
+  assert.deepEqual(keys.slice(keys.indexOf('init'), keys.indexOf('project daily-progress record') + 1), [
+    'init', 'package check', 'package build', 'project daily-progress record',
   ]);
   assert.deepEqual(keys.slice(keys.indexOf('mutation recover'), keys.indexOf('openspec converge') + 1), [
     'mutation recover', 'runtime list', 'commands check', 'commands add', 'commands remove', 'openspec converge',

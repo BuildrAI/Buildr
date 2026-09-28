@@ -6,9 +6,7 @@ include:
   - docs/skill-capability-contracts.md
   - docs/cli-architecture.md
   - docs/known-limitations.md
-  - docs/bootstrap-guide.md
   - docs/archify-component.md
-  - docs/resources.md
   - resources/contracts/bootstrap.yml
   - resources/installation/launcher/
   - resources/runtime/
@@ -485,7 +483,6 @@ workspaceFiles:
   - resources/workspace/skills/contracts/buildr/terminology-governance/v1.md => skills/contracts/buildr/terminology-governance/v1.md copy
   - resources/workspace/skills/buildr/task-triage/SKILL.md => skills/buildr/task-triage/SKILL.md copy
   - resources/workspace/skills/buildr/task-triage/references/structured-handoff.md => skills/buildr/task-triage/references/structured-handoff.md copy
-  - resources/workspace/skills/buildr/task-triage/references/task-create-git-baseline.md => skills/buildr/task-triage/references/task-create-git-baseline.md copy
   - resources/workspace/skills/buildr/declaration-intake/SKILL.md => skills/buildr/declaration-intake/SKILL.md copy
   - resources/workspace/skills/buildr/code-map/references/knowledge-index.md => skills/buildr/code-map/references/knowledge-index.md copy
   - resources/workspace/skills/buildr/code-map/SKILL.md => skills/buildr/code-map/SKILL.md copy
@@ -525,7 +522,6 @@ workspaceFiles:
   - resources/workspace/skills/buildr/task-verification/references/project-verification-v4.md => skills/buildr/task-verification/references/project-verification-v4.md copy
   - resources/workspace/skills/buildr/task-verification/templates/project-verification.yml => skills/buildr/task-verification/templates/project-verification.yml copy
   - resources/workspace/skills/buildr/agent-first-design/SKILL.md => skills/buildr/agent-first-design/SKILL.md copy
-  - resources/workspace/skills/buildr/agent-first-design/references/task-closeout.md => skills/buildr/agent-first-design/references/task-closeout.md copy
   - resources/workspace/skills/buildr/task-finish/SKILL.md => skills/buildr/task-finish/SKILL.md copy
   - resources/workspace/skills/buildr/terminology-governance/SKILL.md => skills/buildr/terminology-governance/SKILL.md copy
   - resources/workspace/skills/contracts/buildr/current-knowledge-maintenance/v3.md => skills/contracts/buildr/current-knowledge-maintenance/v3.md copy

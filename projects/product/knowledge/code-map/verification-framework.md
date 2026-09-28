@@ -68,3 +68,9 @@
     - [task-verification-report.test.ts](../../services/buildr/test/integration/task-verification-report.test.ts) — 任务、地图、当前报告与存储的协作
 
 正文和图的解释修改只验证受影响成果；产品行为或测试工具改变才运行对应行为检查。通用能力边界见[主文](../docs/architecture/workspace-testing-and-verification-framework.md)。Buildr 自身的执行编排另见[采用实例的工具地图](product-verification-tools.md)，其中的 npm 命令、依赖图（DAG）与测试上下文（Test Context）不成为通用框架要求。
+
+## 测试图的主线与分支
+
+[测试建设与使用图](../archify/flows/verification-framework.html)表达已有能力使用主线与按需补建分支：能力具备时选择、执行并核对结果；缺少必要测试时建设测试、核对入口和声明后继续。执行失败先判断实现或环境原因，不把所有失败当成新建测试的理由。虚线表示按需补齐覆盖，不是自动调度。
+
+图中的三项技能（Skill）分别对应前文的测试建设、声明接入和任务验证。项目（Project）与各服务（Service）拥有自己的测试、工具与环境，局部通过不能自动组合为业务通过；缺少测试、未执行、环境失配和失败须分别说明。真实输出是执行证据，正式验证报告只记录本轮结论，不重跑测试，也不等于验收或任务完成。可选测试上下文（Test Context）见[运行时说明](../docs/guides/node-test-context-runtime.md)，不作为用户项目的前置要求。
