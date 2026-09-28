@@ -33,6 +33,14 @@ export function candidateEnvironmentPlan(profileValue: string, roots = { service
   if (profile === 'artifact' || profile === 'source-runtime') {
     plan.push({ id: 'buildr-web-dependencies', executable: 'npm', args: ['ci'], cwd: roots.webRoot });
   }
+  if (profile === 'artifact') {
+    // The release candidate must carry the DSH plugin, and the plugin compiles against a DSH source
+    // baseline. Fetching that baseline and building the artifact here is what makes the release
+    // input exist; without it the candidate build refuses rather than shipping a Buildr without a
+    // plugin. A machine that only consumes an already-built artifact never reaches this step.
+    plan.push({ id: 'dsh-sdk-baseline', executable: 'node', args: ['tools/dsh/fetch-sdk.ts'], cwd: roots.serviceRoot });
+    plan.push({ id: 'dsh-plugin-artifact', executable: 'node', args: ['tools/dsh/build-plugin.ts'], cwd: roots.serviceRoot });
+  }
   // The artifact builder generates its isolated inputs itself. Source tests need
   // the development projection; an installed-package consumer needs neither.
   if (profile !== 'artifact') plan.push({ id: 'generated-contracts-and-test-context', executable: 'npm', args: ['run', 'artifacts:prepare'], cwd: roots.serviceRoot });

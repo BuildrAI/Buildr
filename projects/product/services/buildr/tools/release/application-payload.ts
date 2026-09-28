@@ -24,8 +24,8 @@ const UPSTREAM_OPENSPEC_WORKER_ENTRY: any = path.join(serviceRoot, 'src/modules/
 const RESOURCE_SOURCES: any = Object.freeze([
   ['resources', 'product/resources', { exclude: new Set(['installation', 'runtime']) }],
   ['resources/installation/launcher', 'product/resources/installation/launcher', { include: new Set(['Buildr.icns', 'Buildr.ico']) }],
-  ['resources/runtime', 'product/resources/runtime'],
-  ['docs', 'product/docs', { include: new Set(['cli-reference.md']) }],
+  ['resources/runtime', 'product/resources/runtime', { exclude: new Set(['dsh']) }],
+  ['docs', 'product/docs', { include: new Set(['bootstrap-guide.md', 'dsh-desktop-plugin.md']) }],
   ['src/infrastructure/sqlite/migrations', 'product/src/infrastructure/sqlite/migrations'],
 ]);
 
@@ -142,6 +142,13 @@ async function buildApplicationPayload(output: any, sourceCommit: any, options: 
   const generatedArtifactManifest: any = options.generatedArtifactManifest;
   if (!options.webDistRoot || !generatedArtifactManifest) throw new Error('application payload requires explicit generated artifact manifest and web-dist root.');
   assertGeneratedArtifactEntry(generatedArtifactManifest, 'web-dist', webDistRoot);
+  const hasDshPlugin = generatedArtifactManifest.artifacts.some((artifact: any) => artifact.id === 'dsh-plugin');
+  if (hasDshPlugin !== Boolean(options.dshPluginRoot)) throw new Error('application payload DSH artifact requires matching manifest and explicit root.');
+  if (options.dshPluginRoot) {
+    assertGeneratedArtifactEntry(generatedArtifactManifest, 'dsh-plugin', options.dshPluginRoot);
+    const { assertUnboundDshPlugin } = await import('../dsh/plugin-artifact.ts');
+    assertUnboundDshPlugin(options.dshPluginRoot);
+  }
   const { buildSync, formatMessagesSync }: any = await import('esbuild');
   const destination: any = assertDestination(output);
   if (fs.existsSync(destination)) throw new Error(`application payload output already exists: ${destination}`);
@@ -177,6 +184,7 @@ async function buildApplicationPayload(output: any, sourceCommit: any, options: 
     const resourceRoot: any = path.join(destination, 'resources');
     for (const [source, target, options] of RESOURCE_SOURCES) copyTree(path.join(serviceRoot, source), path.join(resourceRoot, target), options);
     copyTree(webDistRoot, path.join(resourceRoot, 'product/web-dist'));
+    if (options.dshPluginRoot) copyTree(options.dshPluginRoot, path.join(resourceRoot, 'product/build/dsh-plugin'));
     fs.mkdirSync(path.join(resourceRoot, 'build'), { recursive: true });
     fs.writeFileSync(path.join(resourceRoot, 'build/generated-artifacts.json'), `${JSON.stringify(generatedArtifactManifest, null, 2)}\n`, { encoding: 'utf8', mode: 0o644 });
     copyFile(path.join(serviceRoot, 'LICENSE'), path.join(resourceRoot, 'product/LICENSE'), 0o644);
@@ -225,7 +233,7 @@ async function main(): Promise<any>  {
   if (command === 'build') {
     if (!options['generated-artifacts'] || !options['web-dist']) throw new Error('application payload build requires --generated-artifacts and --web-dist.');
     const generatedArtifactManifest: any = JSON.parse(fs.readFileSync(path.resolve(options['generated-artifacts']), 'utf8'));
-    const result: any = await buildApplicationPayload(options.output, options['source-commit'], { generatedArtifactManifest, webDistRoot: options['web-dist'] });
+    const result: any = await buildApplicationPayload(options.output, options['source-commit'], { generatedArtifactManifest, webDistRoot: options['web-dist'], dshPluginRoot: options['dsh-plugin'] });
     appendGitHubOutput(result);
     process.stdout.write(`${JSON.stringify(result.manifest, null, 2)}\n`);
     return;
@@ -236,7 +244,7 @@ async function main(): Promise<any>  {
     process.stdout.write(`${JSON.stringify(result.manifest, null, 2)}\n`);
     return;
   }
-  throw new Error('Usage: application-payload.ts build --output <dir> --source-commit <sha> --generated-artifacts <manifest> --web-dist <dir> | verify --payload <dir> [--layout frozen|installed]');
+  throw new Error('Usage: application-payload.ts build --output <dir> --source-commit <sha> --generated-artifacts <manifest> --web-dist <dir> [--dsh-plugin <unbound-bundle-dir>] | verify --payload <dir> [--layout frozen|installed]');
 }
 
 if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.meta.url))) {

@@ -28,6 +28,42 @@
 
 产品开发和构建遵循 `.node-version` 的精确 Node；宿主 Node 验证覆盖声明支持的平台与版本，记录实际执行版本。缓存只加速下载；干净检出不依赖未声明缓存或本机残留。
 
+## DSH 插件产物是候选的必需输入
+
+正式包内的 DSH 插件不是可选装饰：它是用户装上 Buildr 后看到 DSH 入口的唯一来源。过去的候选
+构建不传该输入，于是插件**静默地从未进入任何正式包**。现在缺失即失败，不再静默。
+
+候选准备的 `artifact` 档位已经包含这两步，不需要手工执行；单独构建时按同样顺序：
+
+```sh
+node tools/dsh/fetch-sdk.ts                          # 获取并准备已验证的 DSH 基线
+node tools/dsh/build-plugin.ts                       # 正式版产物 build/dsh-plugin
+node tools/dsh/build-plugin.ts --dev                 # 开发版入口，不随发布提供
+```
+
+`fetch-sdk` 从固定标签的**发布归档**取源码并校验版本，然后安装依赖并构建 SDK 自身的客户端
+产物——这些产物是构建输出、不在归档里，而插件正是对着它们的类型声明编译。授权基线表在
+`tools/dsh/sdk-baselines.ts`；新增 DSH 版本时在那里加一条，其他位置不猜版本。
+
+候选构建按约定取 `build/dsh-plugin`，也可以显式指定：
+
+```sh
+BUILDR_DSH_PLUGIN_ROOT=<absolute-path-to>/build/dsh-plugin <候选构建入口>
+```
+
+| 情况 | 结果 |
+|---|---|
+| 约定目录或显式变量可用 | 产物进入候选 |
+| 两者都不可用 | 候选构建失败，提示获取基线与构建产物 |
+| 显式变量指向的不是产物目录 | 失败，不复制来路不明的目录 |
+| 明确声明 `BUILDR_DSH_PLUGIN_EXCLUDE=1` | 允许缺失，用于确认不需要插件的构建 |
+
+三道防线保证它不会再次静默丢失：候选构建要求该输入；载荷构建要求清单声明与显式根目录一致；
+载荷校验要求「声明了插件产物」的包**确实带着该产物的文件**。
+
+DSH 每次升级后，插件都必须按新版本基线重建（见 [DSH 插件发布流程](dsh-plugin-release.md)）；
+基线不匹配时 DSH 会拒绝安装，而不是带着旧接口运行。
+
 ## 候选、演练和复用
 
 [共享消费配方](../../../services/buildr/tools/release/release-consumption.ts)是检查与覆盖关系的唯一声明。候选包括唯一包的完整性、版本与发布说明、分发文档链接、安装和运行、真实 macOS/Windows 启动器（Launcher）、宿主 Node，以及发布基础设施故障恢复。原来仅在发布阶段执行的 Linux 宿主 Node 和固定 npm 准备也在候选中验证。
