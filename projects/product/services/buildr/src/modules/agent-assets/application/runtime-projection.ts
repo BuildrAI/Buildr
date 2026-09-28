@@ -289,7 +289,7 @@ export function registerApplicationRuntime(dependencies: RuntimeProjectionDepend
 
   function syncRuntime(agent: any, args: any): any  {
     const parsed = consumeRuntimeAdapterOption(args);
-    validateRuntimeOperationArgs(parsed.args, ['--target', '--scope']);
+    validateRuntimeOperationArgs(parsed.args, ['--target', '--scope', '--json'], ['--json']);
     const syncArgs: any[] = parsed.args;
     if (!syncArgs.includes('--scope')) syncArgs.push('--scope', '.');
     const targetRoot = path.resolve(optionValue(syncArgs, '--target', process.cwd()));
