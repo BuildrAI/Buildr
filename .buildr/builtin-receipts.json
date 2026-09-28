@@ -5,15 +5,11 @@
       "type": "skill",
       "id": "agent-first-design",
       "target": "skills/buildr/agent-first-design",
-      "integrity": "sha256-f7125d4aac495deeffdcfa89416cd44aa3196a5c4a3ffd3b86d89c3dc42a47b1",
+      "integrity": "sha256-b310c077d72f8b7e292615dea9c8496972419645aa5a8cc2aba00ef348ef466a",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-e139eddd5891574886bce455f9e24ec93f983d5516d7d44bb1d996e694305077"
-        },
-        {
-          "path": "references/task-closeout.md",
-          "integrity": "sha256-f5cfa3ad303f93dec46c013e354438d0e5b2ef03b8887f9da248a1f32665ad56"
+          "integrity": "sha256-26e9d587da54081a12543a8f131455265cb9fbf037758ea1f41fcd011d77e8c6"
         }
       ]
     },
@@ -277,19 +273,15 @@
       "type": "skill",
       "id": "task-triage",
       "target": "skills/buildr/task-triage",
-      "integrity": "sha256-a7a9a437267d463b232435022550e242d2dcd58133afe0fc53a2a5ba51ed74f7",
+      "integrity": "sha256-b7a1ffce90592d67b2ac3a5a1f1afd1bf3261386cb89deffacc63e3c84cc733f",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-38d2fee04f875bcd5ddf6e22608ff6e72cea7f1894d4d0c075c43b7962f1a768"
+          "integrity": "sha256-4d09d813ff4d178c88c730efb3a647671bb62d109158ff043b8f0a786ab50cbf"
         },
         {
           "path": "references/structured-handoff.md",
           "integrity": "sha256-70e10bbcb9111c2a1f8b15284a4d598f2ef8a09fff87c1e75af1e576c17f7858"
-        },
-        {
-          "path": "references/task-create-git-baseline.md",
-          "integrity": "sha256-c765d5eb38298668ad4715797853e79d36aeea82c464308af2611b484c748562"
         }
       ]
     },
