@@ -7,6 +7,7 @@ import { isWorkspaceOnlyTaskRecord, taskActionId } from '../../application/task-
 import { PUBLIC_JSON_SCHEMAS } from '../../../../infrastructure/contracts/public-json.ts';
 import { parseTaskCommitTrailer } from '../domain/task-commit.ts';
 import { createGitCommitReader, TASK_COMMIT_LIMITS, type CommitLimits, type GitRepository } from '../infrastructure/git-commit-reader.ts';
+import { insideFilesystemPath, sameFilesystemPath } from '../../../../infrastructure/filesystem/filesystem-path-identity.ts';
 
 type Source = { path: string; root?: string; type?: string };
 type Entity = { source: Source; repositorySource?: Source };
@@ -20,7 +21,6 @@ export type TaskCommitsDependencies = {
 };
 type RepositoryView = TaskCommitsResult['repositories'][number];
 type RepositoryRead = { repository: GitRepository; view: RepositoryView; heads: Set<string> };
-const inside = (parent: string, child: string) => { const relative = path.relative(parent, child); return relative === '' || (!path.isAbsolute(relative) && relative !== '..' && !relative.startsWith(`..${path.sep}`)); };
 
 export function createTaskCommitsApplication(dependencies: TaskCommitsDependencies, limits: CommitLimits = TASK_COMMIT_LIMITS) {
   function inspectTaskCommits(targetRoot: string, taskIdValue: string): TaskCommitsResult {
@@ -43,9 +43,9 @@ export function createTaskCommitsApplication(dependencies: TaskCommitsDependenci
     function add(location: string, reference: string, attached = false): RepositoryRead | null {
       try {
         const real = fs.realpathSync(location);
-        if (!attached && !inside(root, real)) throw Object.assign(new Error('来源越出已登记工作空间。'), { code: 'task_commits_scope_forbidden' });
+        if (!attached && !insideFilesystemPath(root, real)) throw Object.assign(new Error('来源越出已登记工作空间。'), { code: 'task_commits_scope_forbidden' });
         const repository = reader.repository(real);
-        if (!inside(repository.root, real) || (!attached && !inside(root, repository.root))) throw Object.assign(new Error('Git 根目录越出任务来源范围。'), { code: 'task_commits_scope_forbidden' });
+        if (!insideFilesystemPath(repository.root, real) || (!attached && !insideFilesystemPath(root, repository.root))) throw Object.assign(new Error('Git 根目录越出任务来源范围。'), { code: 'task_commits_scope_forbidden' });
         const existing = reads.get(repository.id);
         if (existing) {
           if (!existing.view.sources.includes(reference)) existing.view.sources.push(reference);
@@ -104,7 +104,7 @@ export function createTaskCommitsApplication(dependencies: TaskCommitsDependenci
     }
     // The provider owns task worktree evidence. Do not search directory names or other tasks.
     let workspaceRepository: GitRepository | null = null;
-    try { const value = reader.repository(root); if (value.root === root) workspaceRepository = value; }
+    try { const value = reader.repository(root); if (sameFilesystemPath(value.root, root)) workspaceRepository = value; }
     catch (error) {
       // No Git metadata is a valid local workspace. Existing metadata with an unreadable Git probe is not a confirmed empty result.
       if (fs.lstatSync(path.join(root, '.git'), { throwIfNoEntry: false })) report(failureCode(error), '工作空间 Git 来源当前不可读，尚未确认该范围的提交。', 'workspace');
@@ -120,7 +120,7 @@ export function createTaskCommitsApplication(dependencies: TaskCommitsDependenci
             const source = reader.repository(location);
             const recordedSource = reader.repository(worktree.sourceRepository);
             if (source.id !== recordedSource.id) throw new Error('Worktree source identity differs.');
-            const current = reads.get(source.id) || add(location, worktree.selector, !inside(root, location));
+            const current = reads.get(source.id) || add(location, worktree.selector, !insideFilesystemPath(root, location));
             if (!current) continue;
             const checkout = reader.repository(worktree.checkoutPath);
             if (checkout.id !== source.id || !reader.registeredWorktree(source.root, worktree.checkoutPath)) throw new Error('Worktree identity or registration differs.');

@@ -36,3 +36,17 @@ export function sameFilesystemPath(left: any, right: any): any  {
     return false;
   }
 }
+
+// Path spelling alone cannot express containment: 8.3 aliases, junctions, and
+// differing realpath forms name the same directories differently. Walk the
+// ancestry and compare filesystem identity at each level.
+export function insideFilesystemPath(parent: any, child: any): any  {
+  const container = path.resolve(String(parent));
+  let current = path.resolve(String(child));
+  while (true) {
+    if (sameFilesystemPath(current, container)) return true;
+    const next = path.dirname(current);
+    if (next === current) return false;
+    current = next;
+  }
+}
