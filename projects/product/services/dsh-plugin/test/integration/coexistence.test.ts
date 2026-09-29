@@ -5,10 +5,11 @@ import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import test from 'node:test';
 import type * as Esbuild from 'esbuild';
+import { createSdkRequire } from '../../tools/sdk-require.ts';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const sdk = resolve(process.env.BUILDR_DSH_SDK_ROOT ?? join(root, 'build/dsh-0.2.0-rc.1'));
-const req = createRequire(join(sdk, 'package.json'));
+const req = createSdkRequire(sdk);
 
 /**
  * The released and development entries are separate packages that must be installable in one DSH at

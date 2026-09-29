@@ -7,10 +7,11 @@ import { pathToFileURL, fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 import { MessageChannel } from 'node:worker_threads';
 import type * as Esbuild from 'esbuild';
+import { createSdkRequire } from './sdk-require.ts';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const sdk = resolve(process.argv.slice(2).find(argument => !argument.startsWith('--')) ?? process.env.BUILDR_DSH_SDK_ROOT ?? join(root, 'build/dsh-0.2.0-rc.1'));
-const req = createRequire(join(sdk, 'package.json'));
+const req = createSdkRequire(sdk);
 const uiReq = createRequire(join(sdk, 'packages/client/ui-renderer/package.json'));
 const { build } = req('esbuild') as typeof Esbuild;
 const dir = join(root, 'build/dsh-plugin-verification');

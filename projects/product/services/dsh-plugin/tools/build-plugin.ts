@@ -1,6 +1,7 @@
 /** Build a closed DSH package using the pinned SDK's real Typert compiler. No install hooks or servers. */
 import { cp, mkdir, readFile, writeFile, symlink, rm } from 'node:fs/promises';
 import { createRequire } from 'node:module';
+import { createSdkRequire } from './sdk-require.ts';
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve, join } from 'node:path';
@@ -41,7 +42,7 @@ const VARIANT = dev
   : { name: '@buildr-ai/dsh-plugin', entryId: 'buildr', service: 'buildr', titleKey: 'title', locale: 'buildr', remote: 'buildr', out: 'build/dsh-plugin' };
 const sdkArg = process.argv.slice(2).find(argument => !argument.startsWith('--'));
 const sdk = resolve(sdkArg ?? process.env.BUILDR_DSH_SDK_ROOT ?? join(root, 'build/dsh-0.2.0-rc.1'));
-const req = createRequire(join(sdk, 'package.json'));
+const req = createSdkRequire(sdk);
 /**
  * Which baseline this input is. A fetched baseline records its commit beside the source; a git
  * checkout records it in history. Either way the build refuses an input it cannot identify.
