@@ -2,6 +2,7 @@
 
 ## Purpose
 定义 Buildr MVP 的用户与 Agent 协作 onboarding 行为：用户用自然语言触发，Agent 在 Buildr Skill 可用时使用它，并通过基础 CLI 命令完成最小闭环；当技能（Skill）不可用时，以随包命令参考和命令帮助恢复入口。
+
 ## Requirements
 
 ### Requirement: 自然语言触发 Buildr onboarding
@@ -280,19 +281,6 @@ Buildr MUST 维护一份可由人和 Agent 从根 README 发现的已接入 Agen
 - **THEN** 文档 MUST 引导 Agent 使用匹配的 adapter id 运行 `buildr init --agent <agent>`、`buildr sync <agent>`、`buildr runtime check <agent>` 或相应 render 命令
 - **AND** 文档 MUST 提醒 Agent 按 adapter-specific guidance 完成 reload、新会话或 UI toggle
 - **AND** 文档 MUST 说明未列出的有效 runtime 默认使用标准文件约定，但品牌发现、安装与激活尚未确认；显式未知 adapter MUST 报错
-
-### Requirement: Buildr onboarding guidance 覆盖新增 adapters
-Buildr 技能（Skill）、命令参考（CLI Reference）和当前知识 MUST 将新增 supported adapters 与其 runtime-specific 前置条件纳入 Agent onboarding，同时继续以 `runtime list` 作为事实源。
-
-#### Scenario: Agent 选择新增 adapter
-- **WHEN** Agent 识别自身为 Cursor、Qoder、TRAE、TRAE Work 或 WorkBuddy 的已认证 surface
-- **THEN** onboarding guidance MUST 要求 Agent 从 `runtime list --json` 选择 `cursor`、`qoder`、`trae`、`trae-work` 或 `workbuddy`
-- **AND** Agent MUST 使用匹配 adapter 的命令，不得借用同品牌其他 surface 或其他 supported adapter
-
-#### Scenario: 接入后仍需人工动作
-- **WHEN** sync 或 render 已完成但 runtime check 报告 reload、新会话、UI toggle 或真实引用读取待确认
-- **THEN** Agent MUST 向用户说明剩余动作及其原因
-- **AND** Agent MUST NOT 把仅完成文件投射描述为当前 Agent 会话已经可用
 
 ### Requirement: Onboarding 区分 Skill source authority 与 render destination
 Buildr onboarding guidance MUST 说明 workspace 是唯一 Skill source authority，并 MUST 将 user/workspace destination 解释为 Agent runtime 投射位置而不是 source scope。
