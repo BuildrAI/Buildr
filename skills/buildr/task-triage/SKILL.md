@@ -86,7 +86,7 @@ authority 冲突、授权不明、实际 Git 操作所需的 repository set 不�
 
 仅当用户目标确实要求更新代码时，才读取 optional `buildr.git-operations/v1` 的绑定（Binding）、契约（Contract）和已选提供者（Provider），明确仓库、引用、动作与授权后执行；失败不撤销已成立的登记。后续文件修改遵循上方隔离策略，工作空间同步遵循产品入口边界，不将这些条件反向加到任务登记上。
 
-选择 `change-flow` 时，先确保正式 Task Record，再完成执行位置判断并使用适用的 `openspec-*` Skill。首次采用、状态实质变化、暂停、完成或用户询问时，从 CLI 刷新并报告 change id、resolved path、action、status、progress 和 next action/blocker；未创建时只写 `planned`，不猜测路径或进度。Buildr 自有 artifacts 和用户说明正文使用中文；命令、路径、标识符、协议字段与 OpenSpec 格式关键字可保留英文。
+选择 `change-flow` 时，先确保正式 Task Record，再完成执行位置判断并使用适用的 `openspec-*` Skill。首次采用、状态实质变化、暂停、完成或用户询问时，从 CLI 刷新并报告 change id、resolved path、action、status、progress 和 next action/blocker；未创建时只写 `planned`，不猜测路径或进度。Buildr 自有 artifacts 和用户说明正文使用中文；命令、路径、标识符、协议字段与 OpenSpec 格式关键字可保留英文。`change-flow` 任务默认在规划材料齐备后做一次方案审查、实现完成且审查对象稳定后做一次实现审查（见 `task-review`）；其他路径不列默认动作，用户明确要求或按真实风险需要时仍执行。
 
 实现型任务按共享实现区域、验证入口或失败影响面分组。工作位置沿用已核对的默认隔离结果，实际Git与owned scope变化时重新判断。Agent直接依据目标、OpenSpec、Git、代码、文件和专业结果推进，不创建研发聚合事实或planning snapshot。需要设计测试框架、划分测试边界、编排场景或为实现开发测试时使用`project-testing`。开发中的测试由Agent直接调用项目工具；开发完成后独立使用selected `buildr.task-verification/v4` provider，只保存有意义的Task验证报告。triage不把验证报告变成Task完成门禁。
 

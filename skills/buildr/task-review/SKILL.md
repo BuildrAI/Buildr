@@ -23,6 +23,8 @@ buildr task review inspect <task-id> --target <canonical-workspace> --json
 
 Review 是可选证据。Task Verification、任务收尾和 Parent 管理都不因 Result 缺失、`changes-requested` 或旧对象而自动阻塞。
 
+触发时机跟随已作出的治理路径：`change-flow` 任务在规划材料齐备后默认执行一次 Planning Review，在实现完成、审查对象稳定后默认执行一次 Completion Review；Planning Review 核对任务需求与提案、设计、规范增量及实施清单的一致性和方案完整合理性，Completion Review 以任务需求与已审方案为基线核对真实实现。`code-only`、`spec-maintenance` 或无正式方案材料的路径不列默认动作；用户明确要求或按真实风险需要时仍执行并在结论中说明理由。默认未执行不形成门禁，但要如实说明覆盖与未覆盖原因。
+
 ## 2. 动态审查
 
 根据 Task Intent、当前对象、工程风险和用户要求决定阅读范围，使用现有文件、Git、测试、浏览器、外部系统或其他专业工具重新观察。正常软件开发中，例如：方案审查检查接口边界、兼容性和测试安排；完成审查检查真实代码差异、关键测试结果及用户要求是否兑现。
