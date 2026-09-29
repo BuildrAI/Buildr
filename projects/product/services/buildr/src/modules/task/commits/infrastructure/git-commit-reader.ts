@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import process from 'node:process';
 import { spawnSync } from '../../../../infrastructure/process.ts';
+import { sameFilesystemPath } from '../../../../infrastructure/filesystem/filesystem-path-identity.ts';
 import { parseGitCommitObject, type GitCommit } from '../domain/task-commit.ts';
 
 export const TASK_COMMIT_LIMITS = Object.freeze({ repositoryLimit: 32, historyLimitPerRepository: 10000, commitLimit: 500, maxBytes: 32 * 1024 * 1024, timeoutMs: 5000, totalTimeoutMs: 20000 });
@@ -55,7 +56,7 @@ export function createGitCommitReader(limits: CommitLimits = TASK_COMMIT_LIMITS)
     const requested = fs.realpathSync(checkoutPath);
     return value.split('\0').some(field => {
       if (!field.startsWith('worktree ')) return false;
-      try { return fs.realpathSync(field.slice(9)) === requested; } catch { return false; }
+      try { return sameFilesystemPath(field.slice(9), requested); } catch { return false; }
     });
   }
   function read(repository: GitRepository, heads: string[]) {

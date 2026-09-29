@@ -70,6 +70,7 @@ const entries: any[] = [
   ...disposition('full-lifecycle', 'release-artifact-is-primary-evidence', 'The unique Candidate, installed package, launcher, onboarding, or release journey is the primary evidence.', [
     'integration-candidate-release',
     'integration-candidate-release-effects',
+    'integration-candidate-git-convergence',
     'candidate-tarball',
     'application-payload-release',
     'npm-launcher-candidate',
@@ -124,7 +125,7 @@ export const VERIFICATION_GOLDEN_CONTEXT_AUDIT: any = Object.freeze({
     'Cleanup must prove removal, retention, ownership, rollback, and repeatability against state created by the same case.',
   ),
   candidate: goldenJourney(
-    ['integration-candidate-release', 'integration-candidate-release-effects', 'candidate-tarball'],
+    ['integration-candidate-release', 'integration-candidate-release-effects', 'integration-candidate-git-convergence', 'candidate-tarball'],
     'full-lifecycle',
     'artifact-only',
     'Candidate generation and the unique artifact are the observed outputs; an in-source Application Context cannot replace artifact construction.',

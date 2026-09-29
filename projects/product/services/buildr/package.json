@@ -90,7 +90,7 @@
     "test:browser:task": "node --import ./test/register-development-entry.ts test/verification/browser-selector-dispatcher.ts --selector task --run",
     "test:browser:articles": "node --import ./test/register-development-entry.ts test/verification/browser-selector-dispatcher.ts --selector articles --run",
     "smoke:workspace": "node tools/development/run-isolated-workspace-smoke.ts",
-    "test:integration:candidate:release": "node --import ./test/register-development-entry.ts test/verification/run-node-tests.ts test/integration-candidate-release/*.test.ts",
+    "test:integration:candidate:release": "node --import ./test/register-development-entry.ts test/verification/run-node-tests.ts test/integration-candidate-release/**/*.test.ts",
     "coverage:unit": "node --import ./test/register-development-entry.ts test/verification/unit-coverage.ts",
     "test:changed": "node --import ./test/register-development-entry.ts test/verification/changed.ts",
     "test:audit:verification": "node --import ./test/register-development-entry.ts test/verification/audit.ts",

@@ -36,7 +36,7 @@ test('product verification exposes four gates, direct layers, and one focus entr
     assert.equal(scripts[`test:browser:${selector}`], `node --import ./test/register-development-entry.ts test/verification/browser-selector-dispatcher.ts --selector ${selector} --run`);
   }
   assert.equal(scripts['test:integration:candidate:recovery'], undefined);
-  assert.equal(scripts['test:integration:candidate:release'], 'node --import ./test/register-development-entry.ts test/verification/run-node-tests.ts test/integration-candidate-release/*.test.ts');
+  assert.equal(scripts['test:integration:candidate:release'], 'node --import ./test/register-development-entry.ts test/verification/run-node-tests.ts test/integration-candidate-release/**/*.test.ts');
   assert.equal(scripts['coverage:unit'], 'node --import ./test/register-development-entry.ts test/verification/unit-coverage.ts');
   assert.equal(scripts['test:changed'], 'node --import ./test/register-development-entry.ts test/verification/changed.ts');
   assert.equal(scripts['test:focus'], 'node --import ./test/register-development-entry.ts test/verification/focus.ts');
