@@ -12,7 +12,7 @@
 
 写入前执行 `task-triage` 的默认隔离策略，复用已确认的当前任务工作树（Worktree）；只有用户明确要求在主开发分支修改时使用该位置。核对实际Git checkout、Project/Service registry、owned scope与适用Worktree evidence；不得从cwd、branch、路径相似、旧Receipt或同一HEAD猜ownership。实现期间只编辑Change artifacts与实现内容，不预写canonical specs。
 
-完成实现、当前认知和直接验证反馈后，完成全部Change-owned checkbox；仅在用户目标包含归档时调用`buildr openspec converge`，只同步时使用独立同步入口。不得以任务验证、任务收尾、资源清理或Task终态替代Change checklist。Converge成功后，Agent直接读取归档结果和真实代码现场继续审查、验证与交付；没有额外研发回执。
+完成实现、当前认知和直接验证反馈后，完成全部Change-owned checkbox；apply 阶段自身不归档。冻结候选前先把任务工作树变基到开发主线最新提交，按验证适用性重跑受影响验证，再执行预归档检查：`buildr openspec convergence preflight` 加主规格漂移审查（对本 change 触及 capability 的主规格做任务基点以来的 diff 复核）。冲突按预归档分类处理：基线陈旧重新变基，delta 与最新主规格失配回到 change artifacts 修订，同一 requirement 语义冲突请求用户决定。归档授权按任务收尾交付语义判定：用户要求收尾或明确要求归档时，在任务工作树调用`buildr openspec converge`；只同步时使用独立同步入口。不得以任务验证、任务收尾、资源清理或Task终态替代Change checklist。Converge成功后，Agent直接读取归档结果和真实代码现场继续审查、验证与交付；没有额外研发回执。
 
 实现期间执行 tasks 中的 Brief、当前认知与术语影响；发现新的长期事实影响时同步更新 tasks 及已采用的 `.buildr/knowledge-impact.yml`。按真实影响执行 `reconcile`；仅解释文档变化时检查文档与引用，复用仍适用的代码测试。
 
