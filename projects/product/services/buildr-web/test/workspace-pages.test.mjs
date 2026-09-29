@@ -46,12 +46,15 @@ test('任务详情复用资源副屏，任务列表保持主屏，旧详情深�
 test('副屏拒绝跨工作空间、错误层级与不安全身份',()=>{
  for(const path of ['/workspaces/other/articles/product/a','/workspaces/w/articles/%2e%2e/a','/workspaces/w/articles/product/a%2fb','/workspaces/w/articles/product/%00','/workspaces/w/articles/product/a/edit/extra','/workspaces/w/knowledge/repository/a','/workspaces/w/services/%2e%2e','/workspaces/w/skills/a/extra','https://example.com/workspaces/w/services/a'])assert.equal(resourcePreview('w',path),null,path);
 });
-test('默认分屏均分信息区并保留主内容限宽', () => {
+test('默认分屏副屏占优并为左组保留可读宽度', () => {
  for (const width of [621, 700, 1000, 1216, 1832, 2336]) {
   const d = paneDimensions(width, null);
-  assert.equal(d.right, width - 9 - d.right);
   assert.ok(d.right >= d.min && d.right <= d.max);
+  assert.ok(d.right >= width - 9 - d.right, `副屏不小于主区: width=${width}`);
+  assert.ok(width - 9 - d.right >= 300, `左组保留可浏览宽度: width=${width}`);
  }
+ assert.equal(paneDimensions(1500, null).right, 975);
+ assert.equal(paneDimensions(1000, null).right, 631);
  assert.equal(paneDimensions(2336, null).content, 1440);
 });
 test('比例按工作空间隔离且窗口裁剪不改变保存值', () => {

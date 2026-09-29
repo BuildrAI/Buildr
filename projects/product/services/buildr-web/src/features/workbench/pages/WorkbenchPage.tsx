@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useLocation, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { Alert, Button, Empty, Select, Skeleton, Tooltip } from 'antd';
 import { ArrowRightOutlined, ClockCircleOutlined, PushpinFilled, PushpinOutlined } from '@ant-design/icons';
 import { RefreshButton } from '../../../components/RefreshButton';
@@ -15,7 +15,7 @@ import '../workbench.css';
 
 export function WorkbenchPage() {
   const { workspaceId, setBreadcrumbParts, workspace, openAgentAction } = useAppShell();
-  const [params, setParams] = useSearchParams(), location = useLocation();
+  const [params, setParams] = useSearchParams(), location = useLocation(), navigate = useNavigate();
   const project = params.get('project') || '';
   const { data, loading, error, refresh } = useWorkbench(workspaceId, project);
   const prefs = useWorkbenchPreferences(workspaceId);
@@ -57,7 +57,11 @@ export function WorkbenchPage() {
             const attention = workContext.context?.attention;
             if (!attention || attention.state !== 'pending') return null;
             const taskPath = href('/tasks/' + encodeURIComponent(task.record.taskId));
-            return <article className="workbench-attention-card" key={task.record.taskId} data-attention-task={task.record.taskId}>
+            return <article className="workbench-attention-card" key={task.record.taskId} data-attention-task={task.record.taskId} onClick={event => {
+              if ((event.target as HTMLElement).closest('a,button,input,select')) return;
+              if (window.getSelection()?.toString()) return;
+              navigate(taskPath, { state: { from } });
+            }}>
               <div className="workbench-attention-top"><span className={'workbench-attention-label ' + attention.kind}><i />{attentionLabels[attention.kind]}</span><Tooltip title={'请求于 ' + formatDateTime(attention.createdAt)}><ClockCircleOutlined /></Tooltip></div>
               <h3><Link to={taskPath} state={{ from }}>{task.record.title}</Link></h3>
               <p>{attention.reason}</p>
