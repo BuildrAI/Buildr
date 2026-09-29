@@ -305,7 +305,7 @@ export async function runWorkbenchJourney({ t, page, runtime, workspaceRoot, oth
     assert.equal(await page.locator('.pane-stage:visible').count(), 1);
     assert.equal(await page.locator('.pane-right:visible').count(), 1);
     assert.equal(await page.locator('[data-task-node=requirements]').getAttribute('aria-pressed'), 'true');
-    assert.match(await page.locator('#task-node-content').innerText(), /暂无补充需求或说明/);
+    assert.match(await page.locator('#task-node-content').innerText(), /目标与说明[\s\S]*请查看 工作台关联资料/);
     await page.locator('#task-detail-intent').getByRole('link', { name: '工作台关联资料', exact: true }).click();
     await page.locator('.pane-right:visible .markdown-body').getByText('这是当前项目的真实文件内容，用于接续目标并阅读成果。', { exact: true }).waitFor({ state: 'visible' });
     const mainBox = await page.locator('.pane-left').boundingBox();

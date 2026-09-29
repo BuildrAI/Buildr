@@ -840,7 +840,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
       total: stage.getBoundingClientRect().width,
     }));
     const initialPanes = await paneSize();
-    assert.ok(Math.abs(initialPanes.left - initialPanes.right) <= 1, JSON.stringify(initialPanes));
+    assert.ok(Math.abs(initialPanes.right - initialPanes.total * 0.65) <= 1, JSON.stringify(initialPanes));
     const separator = page.getByRole('separator', { name: '拖拽调整两侧宽度' });
     const dividerBox = await separator.boundingBox();
     assert.ok(dividerBox);
@@ -895,9 +895,13 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.locator('#project-detail-name').waitFor({ state: 'visible' });
     assert.equal(await page.locator('#service-detail-name:visible').count(), 0);
     await page.locator('#project-activity-link').click();
+    assert.equal(page.url(), `${workspaceUrl}/projects/demo`, '项目动态在项目主页副屏打开，不离开当前页');
+    await page.getByRole('tab', { name: '项目动态 关闭 项目动态', exact: true }).waitFor({ state: 'visible' });
+    await page.locator('.pane-right:visible .project-activity-controls').waitFor({ state: 'visible' });
+    await page.locator('.pane-right:visible').getByRole('link', { name: '打开动态页', exact: true }).click();
     await page.waitForURL(current => current.pathname === new URL(`${workspaceUrl}/activity`).pathname && current.searchParams.get('project') === 'demo' && !current.searchParams.has('date'));
     await page.locator('#workbench-activity').waitFor({ state: 'visible' });
-    await page.locator('#workbench-daily-progress').waitFor({ state: 'visible' });
+    await page.locator('#workbench-activity #workbench-daily-progress').waitFor({ state: 'visible' });
     assert.equal(await page.locator('[data-nav="activity"]').evaluate((element: HTMLElement) => element.classList.contains('active')), true);
     assert.equal(await page.locator('.pane-right #progress-body').count(), 0, '项目主页进入统一动态页，不挂载旧侧栏详情');
     await page.goBack();
