@@ -6,7 +6,7 @@
 
 支持 `--json` 的命令在顶层输出 `schemaVersion`。该字段及兼容规则见 [公开 JSON 契约](../../../knowledge/docs/reference/json-contracts.md)；消费者应按 schema identity 判断格式，而不是依赖未声明的内部实现。
 
-标准默认接入使用 `buildr.runtime-list/v2` 与 `buildr.doctor/v2`：前者区分文件适配器（Adapter）清单、品牌映射和宿主资料（Host Profile）；后者分别报告请求身份与实际文件约定，标准检查结果位于 `runtime.agentsStandard`，不再位于旧 `runtime.codex`。这是非加法的格式变更，旧消费者必须先识别版本并调整解析；不能把共享标准结果解释为 Codex 或任意宿主已安装、已加载。
+标准默认接入使用 `buildr.runtime-list/v3` 与 `buildr.doctor/v2`：前者区分文件适配器（Adapter）清单、运行时身份映射和宿主资料（Host Profile），只登记 `agents-standard` 与已注册例外 `claude-code`；后者分别报告请求身份与实际文件约定，标准检查结果位于 `runtime.agentsStandard`，不再位于旧 `runtime.codex`。这是非加法的格式变更，旧消费者必须先识别版本并调整解析；不能把共享标准结果解释为 Codex 或任意宿主已安装、已加载。
 
 根帮助从同一命令目录（Command Catalog）按三层显示：`primary` 是普通工作主路径，`agent-machine` 是 Agent/Skill 依赖的稳定机器接口，`maintenance` 是产品构建、开发预览和 workflow；已删除的命令不另设兼容分区。Surface 不是授权边界；每个 retained executable route 都可通过 canonical topic 查询帮助。
 
@@ -193,9 +193,9 @@ Git provider evidence使用`buildr.git-worktree-evidence/v1`，保存在Git comm
 
 默认 doctor 分三层声明诊断边界：`core` 每次检查 workspace identity、mutation recovery 和 root registries；`conditional` 只在相关 scope、资产或 selected Agent 适用时检查 Project/Service、Rules/Skills、package assets、Commands 与 runtime；`specialty` 是显式场景。对已声明的独立 Git Project，doctor 会比较 remote、`integrationBranch` 和本地实时状态，但不会执行 Git 修改；它不深检 OpenSpec active change，也不运行 build/test。需要更多细节时进入对应 Git、OpenSpec、验证工作流。
 
-`codex`、`dsh` 及未登记的有效品牌选择 `agents-standard`，`claude-code`、`cursor`、`qoder`、`trae`、`trae-work`、`workbuddy` 保留专用文件约定。`--adapter` 是严格选择，错误不回退；品牌标识区分大小写，只允许字母、数字、点、下划线和连字符。省略选择时优先保留唯一既有受管方式；多个不等价方式只读可列出，写入前需明确选择。无既有方式则默认标准，不伪造品牌。
+`codex`、`dsh`、已退役品牌（`cursor`、`qoder`、`trae`、`trae-work`、`workbuddy`）及未登记的有效品牌都选择 `agents-standard`，只有 `claude-code` 是已注册的专有例外并保留专用文件约定。`--adapter` 是严格选择，只接受当前登记的适配器（Adapter）取值，错误不回退并列出支持取值；品牌标识区分大小写，只允许字母、数字、点、下划线和连字符。省略选择时优先保留唯一既有受管方式；多个不等价方式只读可列出，写入前需明确选择。无既有方式则默认标准，不伪造品牌。
 
-诊断分别表达请求 `runtimeId`、实际 `adapterId`、选择原因、文件状态和安装/加载证据；`supported` 只表示可准备所选文件，不能解释为品牌已经安装或会话已经加载。未传身份的诊断只检查已有受管方式（无既有方式时检查标准），不会为所有未安装专用适配器（Adapter）制造缺失噪声。具体路径、刷新方式和证据边界见[运行时适配参考](agent-runtime-adapters.md)。
+诊断分别表达请求 `runtimeId`、实际 `adapterId`、选择原因和文件状态；产品不再探测品牌安装与版本，`supported` 只表示可准备所选文件，不能解释为品牌已经安装或会话已经加载。未传身份的诊断只检查已有受管方式（无既有方式时检查标准），不会为所有未安装适配器（Adapter）制造缺失噪声。具体路径、刷新方式和证据边界见[运行时适配参考](agent-runtime-adapters.md)。
 
 通用技能（Skill）省略 `runtimes`；明确列表继续按请求品牌限制适用性，不因共享标准而扩权。历史产品拥有的完整品牌列表可升级为通用，用户缩小的列表、绑定和卸载状态保留。共享根中仍有启用来源的技能（Skill）不会因本次品牌未选择而被清理；品牌差异导致相同技能（Skill）的正文或绑定不一致时报告冲突，不后写覆盖。
 

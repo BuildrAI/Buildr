@@ -17,6 +17,7 @@ export function createBuiltinLifecycle(deps: any): any  {
     existsFile,
     fs,
     getRuntimeAdapter,
+    resolveRuntimeAdapter,
     optionValue,
     path,
     positionalArgs,
@@ -37,7 +38,7 @@ export function createBuiltinLifecycle(deps: any): any  {
   } = deps;
 
   function workspaceSkillsRoots(agent: any): any  {
-    const traits: any = getRuntimeAdapter(agent).traits.skills;
+    const traits: any = resolveRuntimeAdapter(agent).traits.skills;
     return traits.destinations?.workspace?.roots || [traits.root];
   }
 

@@ -1,30 +1,34 @@
 schemaVersion: buildr.knowledge-impact/v1
-change: decouple-release-task-environment
+change: retire-vendor-runtime-adapters
 operation: reconcile
-treeIdentity: 97c9081e232c1305cda2b3c589b335cc06b2671e
+treeIdentity: 4e9a255029e1b02cd17cc8f1dfdae8d1d1f1ea53
 impacts:
-  - type: brief
-    target: openspec/changes/decouple-release-task-environment/brief.md
-    reason: Release退出Task Environment连接并直接消费真实owner。
-    status: aligned
-    sourceIdentities:
-      - openspec/changes/decouple-release-task-environment/proposal.md
-      - openspec/changes/decouple-release-task-environment/design.md
-      - openspec/changes/decouple-release-task-environment/tasks.md
   - type: service
-    target: services/buildr/docs/release-checklist.md
-    reason: Release readiness、dependency preparation、execution binding与closeout输入已变化。
+    target: services/buildr/docs/agent-runtime-adapters.md
+    reason: 支持矩阵只保留 agents-standard 与 claude-code；新增退役品牌章节与所有权/退役处理说明；checker 段不再报告品牌安装与版本探测。
     status: updated
     sourceIdentities:
-      - services/buildr/tools/release/release-execution-binding.ts
-      - services/buildr/tools/release/release-preparation-binding.ts
-      - services/buildr/tools/release/release-transaction-runner.ts
-      - services/buildr/tools/release/release-orchestration-runner.ts
-  - type: workflow
-    target: skills/buildr-release/SKILL.md
-    reason: 发布Skill直接组合Worktree、Release Preparation、Node与retained controller。
+      - services/buildr/src/modules/agent-assets/infrastructure/runtime/adapter-contract.ts
+      - services/buildr/src/modules/agent-assets/infrastructure/runtime/projection.ts
+      - services/buildr/src/modules/agent-assets/infrastructure/runtime/check-runtime.ts
+  - type: reference
+    target: knowledge/docs/reference/agent-runtime-adapter-contribution.md
+    reason: 注册专有例外必须先给出可审计的宿主原生能力缺口证据；trait 候选值移除 vendor-rule-files 与探测方式；完成标准不再要求探测覆盖。
     status: updated
     sourceIdentities:
-      - services/buildr/tools/release/release-readiness.ts
-      - services/buildr/tools/release/release-task-evidence-correlation.ts
-unresolvedItems: []
+      - services/buildr/src/modules/agent-assets/infrastructure/runtime/adapter-contract.ts
+  - type: architecture
+    target: knowledge/docs/architecture/buildr-skill-system.md
+    reason: 共享 .agents/skills 所有权统一记为 agents-standard；退役品牌不再有专用技能根，遗留投射由退役处理按所有权证明清理。
+    status: updated
+    sourceIdentities:
+      - services/buildr/src/modules/agent-assets/infrastructure/runtime/skills/projection-files.ts
+  - type: reference
+    target: knowledge/docs/reference/json-contracts.md
+    reason: runtime list 的公开身份升为 buildr.runtime-list/v3。
+    status: updated
+    sourceIdentities:
+      - services/buildr/src/infrastructure/contracts/public-json.ts
+unresolvedItems:
+  - openspec/changes/add-dsh-desktop-plugin 仍在进行中；它新增 DSH 要求的方向与本变更一致，归档时需核对两份 delta 不冲突。
+  - services/buildr/docs 与 knowledge/ 之外的品牌说明（例如已发表文章）未在本次范围核对。

@@ -6,6 +6,7 @@ import {
   RUNTIME_HOST_PROFILES,
   getRuntimeAdapter,
   getRuntimeAdapterFor,
+  resolveRuntimeAdapter,
   resolveRuntimeSelection,
   runtimeDiscoveryPayload,
   runtimeSkillPath,
@@ -30,8 +31,14 @@ test('standard selection keeps the real runtime identity and shares one implemen
 });
 
 test('vendor exceptions and explicit file choices never mask selection errors', () => {
-  for (const runtimeId of ['claude-code', 'cursor', 'qoder', 'trae', 'trae-work', 'workbuddy']) {
-    assert.equal(resolveRuntimeSelection({ runtimeId }).adapterId, runtimeId);
+  assert.equal(resolveRuntimeSelection({ runtimeId: 'claude-code' }).adapterId, 'claude-code');
+  for (const runtimeId of ['cursor', 'qoder', 'trae', 'trae-work', 'workbuddy']) {
+    const retired = resolveRuntimeSelection({ runtimeId });
+    assert.equal(retired.runtimeId, runtimeId, `${runtimeId} must stay a valid runtime identity`);
+    assert.equal(retired.adapterId, 'agents-standard');
+    assert.equal(retired.reason, 'standard-default');
+    assert.equal(retired.host.known, false);
+    assert.throws(() => resolveRuntimeSelection({ runtimeId, adapterId: runtimeId }), /Unsupported runtime adapter/);
   }
   const overridden = resolveRuntimeSelection({ runtimeId: 'dsh', adapterId: 'claude-code' });
   assert.equal(overridden.runtimeId, 'dsh');
@@ -52,8 +59,8 @@ test('standard layout and runtime applicability are independent', () => {
   assert.equal(runtimeSkillPath(skill, 'codex'), 'example');
   assert.equal(runtimeSkillPath(skill, 'cursor'), 'example');
   assert.equal(runtimeSkillPath(skill, 'dsh'), 'example');
-  assert.equal(runtimeSkillPath(skill, 'qoder'), 'nested/example');
-  assert.equal(runtimeSkillPath(skill, 'dsh', 'qoder'), 'nested/example');
+  assert.equal(runtimeSkillPath(skill, 'qoder'), 'example', 'a retired brand resolves to the flat standard path');
+  assert.throws(() => runtimeSkillPath(skill, 'dsh', 'qoder'), /Unsupported runtime adapter/);
   assert.equal(skillAppliesToRuntime(skill, 'codex'), true);
   for (const runtime of [null, 'dsh', 'agents-standard', 'unknown-brand']) assert.equal(skillAppliesToRuntime(skill, runtime), false);
   assert.equal(skillAppliesToRuntime({ id: 'generic' }, null), true);
@@ -61,8 +68,7 @@ test('standard layout and runtime applicability are independent', () => {
   assert.equal(skillAppliesToRuntime({ runtimes: [] }, 'codex'), false);
 });
 
-test('brand-specific metadata does not become a standard promise', () => {
-  assert.equal(getRuntimeAdapterFor('dsh').traits.skills.publicationExtensions, undefined);
+test('brand-specific metadata does not become a standard promise', () => {  assert.equal(getRuntimeAdapterFor('dsh').traits.skills.publicationExtensions, undefined);
   assert.equal(getRuntimeAdapterFor('codex').traits.activation.skills, 'host-dependent');
   assert.equal(RUNTIME_HOST_PROFILES.codex.activation.skills, 'session-start');
   assert.equal(RUNTIME_HOST_PROFILES.dsh.activation.skills, 'immediate');
@@ -71,4 +77,14 @@ test('brand-specific metadata does not become a standard promise', () => {
   assert.equal(payload.runtimeMappings.codex, payload.runtimeMappings.dsh);
   assert.equal(payload.unknownRuntimePolicy, 'standard-default');
   assert.ok(payload.supportedAdapters.includes('agents-standard'));
+});
+
+test('runtime identity resolves to its adapter while strict adapter lookup stays strict', () => {
+  for (const runtimeId of [null, 'codex', 'dsh', 'cursor', 'qoder', 'trae', 'trae-work', 'workbuddy', 'new-vendor', 'agents-standard']) {
+    assert.equal(resolveRuntimeAdapter(runtimeId).id, 'agents-standard', `${runtimeId} must resolve to the standard adapter`);
+  }
+  assert.equal(resolveRuntimeAdapter('claude-code').id, 'claude-code');
+  for (const adapterId of ['cursor', 'qoder', 'trae', 'trae-work', 'workbuddy', 'codex', 'dsh']) {
+    assert.throws(() => getRuntimeAdapter(adapterId), /Unsupported runtime adapter/, `${adapterId} must never be looked up as an adapter id`);
+  }
 });

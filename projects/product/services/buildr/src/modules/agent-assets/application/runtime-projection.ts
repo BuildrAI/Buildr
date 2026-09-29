@@ -8,12 +8,14 @@ import { runFinalDoctor } from '../../../infrastructure/final-doctor-process.ts'
 export function blockingSyncSourceIssues(plan: any): any  {
   return (plan?.components?.errors || []).filter((item: any) => item.required === true);
 }
-import { resolveRuleScope } from '../infrastructure/runtime/render-claude-code-rules.ts';
+import { resolveRuleScope } from '../infrastructure/runtime/rule-projection.ts';
 import { assembleRuntimeProjection } from '../infrastructure/runtime/projection.ts';
 import {
   getRuntimeAdapter,
+  resolveRuntimeAdapter,
 } from '../infrastructure/runtime/adapter-contract.ts';
 import { reconcileRuntimePlan } from '../infrastructure/runtime/runtime-reconciler.ts';
+import { buildRetiredRuntimeProjectionPlan } from '../infrastructure/runtime/retired-adapters.ts';
 import { buildEffectiveSkillInventory, classifySkillCandidate } from '../infrastructure/runtime/skills/inventory.ts';
 import {
   legacySkillProjectionOwnershipReceiptTarget,
@@ -131,8 +133,13 @@ export function registerApplicationRuntime(dependencies: RuntimeProjectionDepend
     const requestedScope = optionValue(renderCommand.args, '--scope', '.');
     const scopeInfo = resolveRuleScope(targetRoot, requestedScope);
     const skillScope = skillScopeForRuleScope(scopeInfo.scope);
-    const removals = buildRuntimeOrphanRemovalPlan(targetRoot, adapterId, skillScope, { runtimeId }).map((item: any) => ({ ...item, targetFile: item.path }));
-    const { plan } = assembleRuntimeProjection({ repoRoot: targetRoot, targetRoot, scope: scopeInfo.scope, runtimeId, adapterId, selection: { productSkill: options.productSkill === true, rules: true, workspaceSkills: true }, removals });
+    const retirement = buildRetiredRuntimeProjectionPlan({ targetRoot, adapterId, scope: scopeInfo.scope });
+    const removals = [
+      ...buildRuntimeOrphanRemovalPlan(targetRoot, adapterId, skillScope, { runtimeId }).map((item: any) => ({ ...item, targetFile: item.path })),
+      ...retirement.removals,
+    ].filter((item: any, index: any, items: any) => items.findIndex((candidate: any) => candidate.targetFile === item.targetFile) === index);
+    const assembled = assembleRuntimeProjection({ repoRoot: targetRoot, targetRoot, scope: scopeInfo.scope, runtimeId, adapterId, selection: { productSkill: options.productSkill === true, rules: true, workspaceSkills: true }, removals });
+    const plan = retirement.findings.length ? createRuntimePlan({ ...assembled.plan, findings: [...assembled.plan.findings, ...retirement.findings] }) : assembled.plan;
     reconcileRuntimePlan(plan);
     return { targetRoot, files: [...plan.writes.map((item: any) => item.targetFile), ...plan.removals.map((item: any) => item.targetFile)], rulesActions: plan.ruleActions, warnings: plan.warnings, scope: scopeInfo.scope, runtimeSelection: selected };
   }

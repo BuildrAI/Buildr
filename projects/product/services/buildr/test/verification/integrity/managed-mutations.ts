@@ -72,7 +72,7 @@ const allowed: any = new Map([
   ['src/modules/workspace/application/workspace-operations.ts', new Set(['recoverWorkspaceMutation'])],
   ['src/modules/agent-assets/infrastructure/runtime/runtime-reconciler.ts', new Set(['reconcileRuntimePlan'])],
   ['src/modules/agent-assets/infrastructure/runtime/skills/render-plan.ts', new Set(['applySkillRenderPlan'])],
-  ['src/modules/agent-assets/infrastructure/runtime/render-claude-code-rules.ts', new Set(['applyRulesRenderPlan'])],
+  ['src/modules/agent-assets/infrastructure/runtime/rule-projection.ts', new Set(['applyRulesRenderPlan'])],
 ]);
 
 const violations: any[] = [];

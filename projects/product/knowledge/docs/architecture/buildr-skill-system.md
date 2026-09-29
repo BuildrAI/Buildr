@@ -65,7 +65,7 @@ buildr doctor --agent <agent> --target <workspace> --json --detail full
 
 回执保存来源、渲染摘要、受管文件清单、完整性与可执行状态；有依赖时，还保存契约摘要、来源依据（Provenance）和绑定快照。它属于本机控制数据，不是源方法，也不放进派生技能（Skill）目录。
 
-这份所有权记录用于避免误删别人的文件。Codex、Cursor、Trae 可以共享 `.agents/skills`，但目录相同不等于当前适配器（Adapter）拥有它。Qoder 的受管写入目标是 `.qoder/skills`；`.agents/skills` 对它只是可能被宿主发现的共享位置。
+这份所有权记录用于避免误删别人的文件。标准共享根 `.agents/skills` 的所有权统一记为 `agents-standard`，目录相同不等于当前适配器（Adapter）拥有它。已退役品牌（`cursor`、`qoder`、`trae`、`trae-work`、`workbuddy`）不再有专用技能根；它们遗留的厂商规则桥、厂商技能镜像与回执由退役处理按所有权证明清理，可证明属于 Buildr 的删除，无法证明的保留并报告。
 
 派生正文可以依据当前源重新生成，旧所有权却不能仅凭内容相似重建。遇到冲突应保留现场，核对实际归属；投射成功后仍应分别确认工具能发现入口、当前会话已采用方法，以及实际目标是否完成。
 

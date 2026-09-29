@@ -1,4 +1,4 @@
-import { SUPPORTED_AGENT_IDS, getRuntimeAdapter } from '../infrastructure/runtime/adapter-contract.ts';
+import { SUPPORTED_AGENT_IDS, getRuntimeAdapter, resolveRuntimeAdapter } from '../infrastructure/runtime/adapter-contract.ts';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import path from 'node:path';
@@ -356,6 +356,7 @@ export function registerApplicationPackageMaintenance(dependencies: PackageMaint
     existsFile,
     fs,
     getRuntimeAdapter,
+    resolveRuntimeAdapter,
     optionValue,
     path,
     positionalArgs,

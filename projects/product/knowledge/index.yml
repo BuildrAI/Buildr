@@ -1329,7 +1329,7 @@ sources:
     title: adapter-contract.ts
     kind: code
     path: services/buildr/src/modules/agent-assets/infrastructure/runtime/adapter-contract.ts
-    summary: 前者取得已声明适配器的目标布局，不证明当前执行者身份；后者给出某一投射范围内的目标根，当前每个适配器各只有一个。
+    summary: 前者取得已声明适配器的目标布局，不证明当前执行者身份；`resolveRuntimeAdapter` 按选择规则把运行时身份解析为实际适配器，退役品牌与 `codex`、`dsh` 都落到标准；后者给出某一投射范围内的目标根，当前每个适配器各只有一个。
   - id: skill-source-12
     title: inventory.ts
     kind: code
@@ -1340,6 +1340,11 @@ sources:
     kind: code
     path: services/buildr/src/modules/agent-assets/infrastructure/runtime/runtime-reconciler.ts
     summary: 核对目标安全、当前内容与归属，发现计划冲突时保持零写入；正常时更新实际变化文件并处理已证明可清理目标。
+  - id: skill-source-14
+    title: retired-adapters.ts
+    kind: code
+    path: services/buildr/src/modules/agent-assets/infrastructure/runtime/retired-adapters.ts
+    summary: 声明已退役厂商适配器的规则桥、技能镜像根与状态命名空间，按受管标记或所有权回执证明归属，生成退役清理计划；无法证明时只报告，无法安全分离时整组零写入。共享标准根不由退役处理删除。
   - id: product-reference-cli
     title: Buildr 命令参考
     kind: evidence

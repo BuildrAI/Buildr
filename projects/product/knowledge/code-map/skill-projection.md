@@ -17,6 +17,7 @@ agent-assets/
 └── infrastructure/runtime/
     ├── projection.ts                      # 组合声明式目标计划
     ├── adapter-contract.ts                # 选择适配器与目标布局
+    ├── retired-adapters.ts                # 已退役品牌遗留投射的清理计划与报告
     ├── runtime-reconciler.ts               # 比较目标、冲突检查和写入
     └── skills/
         ├── sources.ts                     # 普通技能与产品入口来源
@@ -36,7 +37,8 @@ agent-assets/
 | `resolveSkillCapabilityGraph`、`capabilityBindingsForSkill` | 解析已有协作约定、依赖和绑定，给每个调用方提供局部视图 | [capability-graph-repository.ts](../../services/buildr/src/modules/agent-assets/persistence/capability-graph-repository.ts) |
 | `buildSkillContent`、`buildSkillRenderPlan` | 组合片段与局部能力说明，添加生成标记，生成正文、附属文件与归属记录的写入计划 | [render-plan.ts](../../services/buildr/src/modules/agent-assets/infrastructure/runtime/skills/render-plan.ts) |
 | `buildSkillProjectionReceipt`、`skillProjectionOwnershipReceiptTarget` | 表达文件摘要、可执行位和投射身份，解析记录位置 | [projection-files.ts](../../services/buildr/src/modules/agent-assets/infrastructure/runtime/skills/projection-files.ts) |
-| `getRuntimeAdapter`、`skillDestinationRoots` | 前者取得已声明适配器的目标布局，不证明当前执行者身份；后者给出某一投射范围内的目标根，当前每个适配器各只有一个 | [adapter-contract.ts](../../services/buildr/src/modules/agent-assets/infrastructure/runtime/adapter-contract.ts) |
+| `getRuntimeAdapter`、`resolveRuntimeAdapter`、`skillDestinationRoots` | `getRuntimeAdapter` 取得已声明适配器的目标布局，不证明当前执行者身份，也不接受任意身份；`resolveRuntimeAdapter` 按选择规则把运行时身份（`runtimeId`）解析为实际适配器，未指定或未登记时落到标准；`skillDestinationRoots` 给出某一投射范围内的目标根，当前每个适配器各只有一个 | [adapter-contract.ts](../../services/buildr/src/modules/agent-assets/infrastructure/runtime/adapter-contract.ts) |
+| `buildRetiredRuntimeProjectionPlan`、`retiredRuntimeProjectionFindings` | 前者只在标准适配器的全工作区受管操作中给出退役清理计划，能由受管标记或所有权回执证明归属的删除，无法证明的保留；后者供诊断只读报告未清理路径与原因，不阻断 | [retired-adapters.ts](../../services/buildr/src/modules/agent-assets/infrastructure/runtime/retired-adapters.ts) |
 | `buildEffectiveSkillInventory`、`classifySkillCandidate` | 检查可见位置，区分可写候选、已由用户位置满足和冲突 | [inventory.ts](../../services/buildr/src/modules/agent-assets/infrastructure/runtime/skills/inventory.ts) |
 | `validateRuntimePlan`、`reconcileRuntimePlan` | 核对目标安全、当前内容与归属，发现计划冲突时保持零写入；正常时更新实际变化文件并处理已证明可清理目标 | [runtime-reconciler.ts](../../services/buildr/src/modules/agent-assets/infrastructure/runtime/runtime-reconciler.ts) |
 

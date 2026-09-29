@@ -17,7 +17,7 @@ import {
   runtimeFileMatches,
   skillProjectionOwnershipReceiptTarget,
 } from '../../src/modules/agent-assets/infrastructure/runtime/skills/projection-files.ts';
-import { createRuntimePlan, getRuntimeAdapter, REQUIRED_RENDER_CAPABILITIES } from '../../src/modules/agent-assets/infrastructure/runtime/adapter-contract.ts';
+import { createRuntimePlan, getRuntimeAdapter, resolveRuntimeAdapter, REQUIRED_RENDER_CAPABILITIES } from '../../src/modules/agent-assets/infrastructure/runtime/adapter-contract.ts';
 import { reconcileRuntimePlan } from '../../src/modules/agent-assets/infrastructure/runtime/runtime-reconciler.ts';
 import { registerDomainsComponents } from '../../src/modules/agent-assets/application/components.ts';
 import { createBuiltinLifecycle } from '../../src/modules/agent-assets/application/package-maintenance/builtin-lifecycle.ts';
@@ -312,7 +312,7 @@ test('builtin uninstall restores the canonical receipt after a later root fails'
   const cleanup = cleanupApplication([declaration]);
   let firstRootRemoved = false;
   const lifecycle = createBuiltinLifecycle({
-    fs, path, process, getRuntimeAdapter, SUPPORTED_AGENT_IDS: ['agents-standard', 'qoder'],
+    fs, path, process, getRuntimeAdapter, resolveRuntimeAdapter, SUPPORTED_AGENT_IDS: ['agents-standard', 'claude-code'],
     existsFile, existsDirectory, toPosixRelative, withWorkspaceMutation: mutation.withWorkspaceMutation,
     assertInitializedBuildrWorkspace: () => {}, assertNoUnknownOptions: () => {},
     positionalArgs: (args: string[]) => [args[0]],
@@ -323,7 +323,7 @@ test('builtin uninstall restores the canonical receipt after a later root fails'
     readBuiltinReceipts: () => ({ builtins: [] }),
     writeSkillsManifest: (_root: string, skills: any[]) => { put(manifest, YAML.stringify({ schemaVersion: 'buildr.skills/v1', skills })); return manifest; },
     buildRuntimeOrphanRemovalPlan: (...args: any[]) => {
-      if (args[1] === 'qoder') {
+      if (args[1] === 'claude-code') {
         assert.equal(fs.existsSync(path.join(root, '.buildr', 'agent-runtime', 'projection.lock')), true, 'the lock must span every root and rollback');
         firstRootRemoved = !fs.existsSync(canonical);
         throw new Error('injected second root failure');

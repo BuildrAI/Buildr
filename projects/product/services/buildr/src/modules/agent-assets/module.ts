@@ -14,7 +14,6 @@ import { createAgentAssetsCliContributions } from './interfaces/cli/agent-assets
 import { createAgentAssetsHttpContribution } from './interfaces/http/agent-assets-http.ts';
 import { registerAgentAssetsHttpQuery } from './application/http-query.ts';
 import { checkClaudeCodeRuntime, printRuntimeCheckReport } from './infrastructure/runtime/check-claude-code.ts';
-import { checkCodexRuntime, printCodexRuntimeCheckReport } from './infrastructure/runtime/check-codex.ts';
 import { checkRuntimeAdapter, RUNTIME_CHECKERS, RUNTIME_CHECK_PRINTERS } from './infrastructure/runtime/check-runtime.ts';
 import { assembleRuntimeProjection } from './infrastructure/runtime/projection.ts';
 import {
@@ -22,6 +21,7 @@ import {
   SUPPORTED_AGENT_IDS,
   UNSUPPORTED_AGENT_GUIDANCE,
   getRuntimeAdapter,
+  resolveRuntimeAdapter,
   isSupportedAgent,
   runtimeDiscoveryPayload,
   selectAdapterImplementation,
@@ -33,7 +33,7 @@ import {
   hasManagedRulesMarker,
   renderClaudeCodeRules,
   resolveRuleScope,
-} from './infrastructure/runtime/render-claude-code-rules.ts';
+} from './infrastructure/runtime/rule-projection.ts';
 import { resolveCapabilityRoute, resolveSkillCapabilityGraph } from './persistence/capability-graph-repository.ts';
 
 export const AGENT_ASSETS_MODULE_ID = 'agent-assets';
@@ -75,8 +75,6 @@ function runtimeCompositionPort() {
   return Object.freeze({
     checkClaudeCodeRuntime,
     printRuntimeCheckReport,
-    checkCodexRuntime,
-    printCodexRuntimeCheckReport,
     RUNTIME_CHECKERS,
     RUNTIME_CHECK_PRINTERS,
     checkRuntimeAdapter,
@@ -91,6 +89,7 @@ function runtimeCompositionPort() {
     SUPPORTED_AGENT_IDS,
     UNSUPPORTED_AGENT_GUIDANCE,
     getRuntimeAdapter,
+    resolveRuntimeAdapter,
     isSupportedAgent,
     reconcileRuntimePlan,
     runtimeDiscoveryPayload,
@@ -460,6 +459,7 @@ export function createAgentAssetsModule(infrastructure: AgentAssetsInfrastructur
         ...registerDshPluginDelivery(infrastructure),
         doctor,
         getRuntimeAdapter: adapters.getRuntimeAdapter,
+        resolveRuntimeAdapter: adapters.resolveRuntimeAdapter,
         usage: (...args: any[]) => infrastructure.usage(...args),
         withResolvedTarget: infrastructure.withResolvedTarget,
         optionValue: infrastructure.optionValue,

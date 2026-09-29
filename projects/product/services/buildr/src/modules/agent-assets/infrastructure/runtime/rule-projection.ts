@@ -1,5 +1,11 @@
 #!/usr/bin/env node
 
+// 共享的 Rules 投射基础设施：递归发现 `AGENTS.md`、解析 scope、计划写入、
+// 冲突与受管标记判断，以及 Claude Code 例外的引用桥渲染。
+// 它不是某个品牌的专用实现；标准适配器与其他 Rules planner 都从这里取
+// `buildRuleDiscoveryPlan`、`resolveRuleScope`、`planRulesRender`、`hasManagedRulesMarker`。
+// 品牌命名的导出符号（如 `buildClaudeBridge`）历史遗留，删除或改名需单独评估调用方。
+
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { hasManagedSkillMarker } from '../infrastructure/runtime/render-claude-code.ts';
 import { RUNTIME_ADAPTERS, resolveRuntimeSelection } from '../infrastructure/runtime/adapter-contract.ts';
-import { buildRuleDiscoveryPlan, hasManagedRulesMarker, resolveRuleScope } from '../infrastructure/runtime/render-claude-code-rules.ts';
+import { buildRuleDiscoveryPlan, hasManagedRulesMarker, resolveRuleScope } from '../infrastructure/runtime/rule-projection.ts';
 
 export type RuntimeSelectionInput = { runtimeId?: string | null; adapterId?: string | null };
 export type RuntimeSelection = ReturnType<typeof resolveRuntimeSelection>;
@@ -103,13 +103,6 @@ export function detectManagedRuntimeAdapters(targetRoot: string): string[] {
         if (rulesEvidence(path.join(directory, relative), adapter.id)) present.add(adapter.id);
       } else if (directory === root && rules.placement === 'root-index') {
         if (rulesEvidence(path.join(root, rules.targetPattern.replace('<workspace-root>/', '')), adapter.id)) present.add(adapter.id);
-      } else if (directory === root && adapter.id === 'qoder') {
-        const qoderRoot = path.join(root, '.qoder', 'rules', 'buildr');
-        const stat = statIfPresent(qoderRoot);
-        if (stat?.isSymbolicLink()) throw new Error(`Runtime rules evidence must not be a symbolic link: ${qoderRoot}`);
-        if (stat?.isDirectory()) for (const entry of fs.readdirSync(qoderRoot, { withFileTypes: true })) {
-          if (entry.name.endsWith('.md') && rulesEvidence(path.join(qoderRoot, entry.name), adapter.id)) present.add(adapter.id);
-        }
       }
     }
     for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {

@@ -144,7 +144,9 @@ for (const [args, expected] of [
   [['-v'], /Unknown option: -v/],
   [['project', 'create'], /Missing project ref/],
   [['service', 'create'], /Missing service ref/],
-  [['render', '--adapter', 'unsupported'], /Unsupported runtime adapter: unsupported/],
+  [['render', 'codex', '--adapter', 'unsupported'], /Unsupported runtime adapter: unsupported\. Supported adapters: claude-code, agents-standard\./],
+  [['render', 'codex', '--adapter', 'cursor'], /Unsupported runtime adapter: cursor\. Supported adapters: claude-code, agents-standard\./],
+  [['render', '--adapter', 'unsupported'], /Unknown argument: unsupported/],
   [['commands', 'add', 'demo', '--unknown'], /Unknown argument: --unknown/],
 ]) {
   const result: any = run(args);
@@ -209,20 +211,18 @@ assert.match(`${invalidInspect.stdout}${invalidInspect.stderr}`, /Unknown argume
 const runtime: any = run(['runtime', 'list', '--json']);
 assert.equal(runtime.status, 0);
 const runtimeJson: any = JSON.parse(runtime.stdout);
-assert.equal(runtimeJson.schemaVersion, 'buildr.runtime-list/v2');
+assert.equal(runtimeJson.schemaVersion, 'buildr.runtime-list/v3');
 assert.equal(runtimeJson.defaultAdapter, 'agents-standard');
 assert.equal(runtimeJson.runtimeMappings.dsh, 'agents-standard');
-assert.deepEqual(runtimeJson.supportedAgents, ['claude-code', 'agents-standard', 'cursor', 'qoder', 'trae', 'trae-work', 'workbuddy']);
-assert.deepEqual(runtimeJson.adapterTraitCatalog.rules, ['native-recursive', 'native-root', 'reference-bridge', 'vendor-rule-files']);
+assert.deepEqual(runtimeJson.supportedAgents, ['claude-code', 'agents-standard']);
+assert.deepEqual(runtimeJson.adapterTraitCatalog.rules, ['native-recursive', 'native-root', 'reference-bridge']);
 assert.equal(runtimeJson.agents['agents-standard'].traits.rules.kind, 'native-recursive');
 assert.equal(runtimeJson.agents['agents-standard'].traits.skills.root, '.agents');
 assert.equal(runtimeJson.agents['claude-code'].traits.rules.kind, 'reference-bridge');
 assert.equal(runtimeJson.agents['claude-code'].traits.skills.root, '.claude');
-assert.equal(runtimeJson.agents.cursor.traits.rules.format, 'cursor-mdc');
-assert.equal(runtimeJson.agents.qoder.traits.rules.format, 'qoder-markdown');
-assert.equal(runtimeJson.agents.trae.traits.rules.format, 'trae-markdown');
-assert.equal(runtimeJson.agents['trae-work'].traits.rules.placement, 'root-index');
-assert.equal(runtimeJson.agents.workbuddy.traits.rules.placement, 'root-index');
+for (const retired of ['cursor', 'qoder', 'trae', 'trae-work', 'workbuddy']) {
+  assert.equal(Object.hasOwn(runtimeJson.agents, retired), false, `${retired} must not remain in the runtime list`);
+}
 
 const ordinaryCliRoot: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-web-demand-start-'));
 try {
@@ -246,7 +246,7 @@ try {
   const doctor: any = JSON.parse(result.stdout);
   assert.equal(doctor.ok, true);
   assert.equal(doctor.projectRegistry.projects[0].name, 'demo');
-  assert.equal(doctor.runtime.agentsStandard[0].environmentChecks.installation.status, 'not-checked');
+  assert.equal('environmentChecks' in doctor.runtime.agentsStandard[0], false, 'retired install and version probes must not reappear in doctor output');
   assert.equal(doctor.runtime.agentsStandard[0].activation.rules, 'path-read');
 } finally {
   fs.rmSync(workspace, { recursive: true, force: true });

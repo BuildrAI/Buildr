@@ -8,6 +8,10 @@
 - 加固文件更新中断后的恢复与自动回滚（Rollback）：重新核对目录和备份，拒绝危险路径并保留失败现场，支持安全重试。
 - 为本机页面和接口统一校验请求主机（Host），拒绝不匹配实际监听地址和端口的请求。
 - 修复修改目标或范围后仍可复制旧指令的问题，忽略过期请求与复制反馈；清理已退役的“创建变更”入口，保留任务内变更阅读。
+- 退役 `cursor`、`qoder`、`trae`、`trae-work`、`workbuddy` 五个厂商专用运行时适配器（Adapter），只保留标准 `AGENTS.md` 与 `.agents/skills/` 协议和 Claude Code 例外（Exception）。这些品牌仍是有效运行时身份（`runtimeId`），`buildr sync cursor`、`--agent <brand>` 等命令继续可用，但文件投射使用 `agents-standard`；`--adapter` 不再接受被退役的取值，传入时明确失败并列出当前支持的适配器，运行时清单升为 `buildr.runtime-list/v3`。
+- 停止生成被退役品牌的规则桥（`.cursor/rules/buildr.mdc`、`.qoder/rules/buildr/*.md`、`.trae/rules/buildr.md`、根 `CLAUDE.local.md`、根 `CODEBUDDY.md`）与厂商技能镜像（`.qoder/skills`、`.trae/skills`、`.codebuddy/skills`）；既有投射按所有权回执（Ownership Receipt）清理，可证明属于 Buildr 的删除，无法证明的保留并在诊断中说明路径与原因。宿主规则生效需要宿主原生读取工作目录的 `AGENTS.md`（TRAE 还需在设置中启用 `AGENTS.md` 上下文；TRAE Work 与 WorkBuddy 的公开文档未证明完整的 project guidance 与工作目录技能发现机制），产品不再探测品牌安装与版本。
+- 修复运行时身份被当成适配器（Adapter）标识查找的问题：`buildr runtime check`、`skills render`、`skill install` 现在按选择规则把 `runtimeId` 解析为实际适配器，退役品牌与 `codex`、`dsh` 等身份不再报 `Unsupported runtime adapter`，显式 `--adapter` 仍然严格校验。此前 `buildr runtime check codex` 已因此失败。
+- 修复 `buildr render` 省略运行时身份时把 `--target` 当成身份并吞掉该选项的问题；省略身份时统一记为「未指定」，不再让命令位置决定身份。
 
 ## 0.1.0-rc.37 - 2026-09-26
 

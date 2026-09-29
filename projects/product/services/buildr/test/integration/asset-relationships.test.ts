@@ -6,7 +6,7 @@ import path from 'node:path';
 import test from 'node:test';
 import YAML from 'yaml';
 import { spawnSync } from 'node:child_process';
-import { resolveRuleScope } from '../../src/modules/agent-assets/infrastructure/runtime/render-claude-code-rules.ts';
+import { resolveRuleScope } from '../../src/modules/agent-assets/infrastructure/runtime/rule-projection.ts';
 import { createRuntime } from '../helpers/runtime-harness.ts';
 import { copyPreparedProjectWorkspace } from '../helpers/prepared-fixtures.ts';
 import { createWorkspaceHttpContribution } from '../../src/modules/workspace/interfaces/http/workspace-http.ts';

@@ -4,9 +4,9 @@
 
 ## 先确定要接入的对象
 
-先区分运行时身份 `runtimeId` 与文件适配器（Adapter）身份 `adapterId`。`agents-standard` 提供原生 `AGENTS.md` 和一级 `.agents/skills/<skill-id>/SKILL.md`；`codex`、`dsh` 及未登记但语法有效的品牌默认复用它，无需先新增描述符（Descriptor）或扩展通用技能（Skill）的品牌白名单。品牌未知时可省略身份，不冒用另一个品牌。
+先区分运行时身份 `runtimeId` 与文件适配器（Adapter）身份 `adapterId`。`agents-standard` 提供原生 `AGENTS.md` 和一级 `.agents/skills/<skill-id>/SKILL.md`；`codex`、`dsh`、已退役品牌（`cursor`、`qoder`、`trae`、`trae-work`、`workbuddy`）及未登记但语法有效的品牌默认复用它，无需先新增描述符（Descriptor）或扩展通用技能（Skill）的品牌白名单。品牌未知时可省略身份，不冒用另一个品牌。
 
-只有实际文件格式、规则（Rule）作用域或技能（Skill）根目录存在专用差异，才调查并增加适配器（Adapter）；刷新说明、可选附加资源校验和安装探测优先作为宿主资料（Host Profile）表达，不复制同一标准实现。只调查相关事实，不收集目标产品的全部功能。
+只把品牌注册为独立的专有例外（Exception）时，必须先给出可审计的宿主原生能力缺口证据：说明宿主为什么不读标准 `AGENTS.md`（含版本门槛与遮蔽条件）或不读 `.agents/skills/`（含官方文档明确排除的路径）。缺少这类证据时不得注册适配器（Adapter），因为逐品牌投射会把镜像同步成本变成长期默认维护面。仅刷新说明或可选附加资源校验优先作为宿主资料（Host Profile）表达，不复制同一标准实现。只调查相关事实，不收集目标产品的全部功能。
 
 同一品牌的命令行（CLI）、集成开发环境（IDE）、桌面或云端入口可能使用不同机制，应分别记录入口、版本和操作系统。未知品牌选择标准是预先确定的选择规则，不是执行失败后的回退；显式未知 `--adapter` 必须报错，已选实现失败不得换目录重试。
 
@@ -20,14 +20,13 @@
 | 规则（Rule）发现 | 准确文件路径、嵌套作用域、合并顺序、兄弟目录与多根目录隔离、引用语法或专用格式 |
 | 技能（Skill）发现 | 项目路径与用户路径、同名优先级、新增和删除后的生效方式；每条路径究竟承担发现、内置资源、界面展示还是写入白名单职责 |
 | 生效与刷新 | 规则（Rule）和技能（Skill）分别是在写入后、读取路径时、新会话开始时还是显式刷新后生效；需要刷新时的准确命令或操作 |
-| 安装与版本探测 | 可执行文件、参数和示例输出；没有可靠命令时写明需人工确认什么，不能假造探测方式 |
+| 安装与版本事实 | 宿主如何只读查询版本或安装形态；产品不再执行安装与版本探测，这里只记录给人看的事实与前提，不能假造探测方式 |
 
 对应特征（Trait）的候选值为：
 
-- 规则（Rule）：`native-recursive`、`native-root`、`reference-bridge`、`vendor-rule-files`。
+- 规则（Rule）：`native-recursive`、`native-root`、`reference-bridge`。
 - 技能（Skill）：`agents-compatible`、`vendor-root`。
 - 生效方式：`immediate`、`path-read`、`session-start`、`explicit-reload`、`host-dependent`；最后一项保持宿主行为未确认，不虚构刷新保证。
-- 探测方式：`command`、`manual`、`none`。
 
 路径存在、安装包出现字符串或文件生成成功，都不能证明智能体（Agent）会发现它。每条路径记录用途：`project_discovery`、`user_discovery`、`builtin`、`editor_ui`、`sandbox_writable` 或 `unknown`。项目发现目录须有明确资料、发现机制源码或可重复的本机观察支持；推测不能独立作为注册依据，证据冲突时保留冲突并暂停受影响能力的登记。
 
@@ -89,12 +88,12 @@
 
 实现使用严格的 `getRuntimeAdapter(adapterId)` 查找文件描述，品牌选择通过 `resolveRuntimeSelection({ runtimeId, adapterId })`；不要让严格查找接受任意未知值。保留请求身份、实际适配器（Adapter）、选择原因与宿主证据。标准没有厂商元数据（Vendor Metadata）；例如 Codex 的可选 `agents/openai.yaml` 只由对应宿主资料（Host Profile）校验。
 
-标准技能（Skill）采用一级标识目录，随附资源保持相对路径；共享 `.agents/skills/` 的所有文件归属为 `agents-standard`，Cursor/TRAE 专用规则（Rule）仍独立。运行计划、路径保护、冲突预检、归属证明和清理机制统一复用，不为新品牌重写。旧回执（Receipt）或嵌套受管目录只在完整身份、内容、权限一致时迁移，不能凭名称或生成标记接管。
+标准技能（Skill）采用一级标识目录，随附资源保持相对路径；共享 `.agents/skills/` 的所有文件归属为 `agents-standard`，不再有按品牌的技能根。运行计划、路径保护、冲突预检、归属证明和清理机制统一复用，不为新品牌重写。退役适配器的既有投射由退役处理按所有权证明清理：可证明属于 Buildr 的删除，无法证明的保留并报告，无法安全分离时整组零写入，不能凭名称或生成标记接管。
 
 完成时核对：
 
 - 特征（Trait）组合通过校验，五项能力分别有可复核依据。
-- 按真实差异验证：标准复用覆盖选择、真实身份与证据边界，专用实现另覆盖格式、作用域顺序、兄弟隔离、目录、清理和探测；不为每个标准品牌复制同一文件投射测试。
+- 按真实差异验证：标准复用覆盖选择、真实身份与证据边界，专用实现另覆盖格式、作用域顺序、兄弟隔离、目录与清理；不为每个标准品牌复制同一文件投射测试，也不为已删除的安装/版本探测保留机制。
 - 通用技能（Skill）不列品牌白名单，明确限制按真实 `runtimeId` 生效；共享根中的有效他方文件不被删除，内容或能力绑定（Capability Binding）不一致时不能后写覆盖。迁移测试覆盖等价、漂移、未知额外文件、多份回执（Receipt）不一致和失败回滚；预检失败整组零写入。
 - 描述符（Descriptor）只保存官方资料、随包资料、明确发现源码或可重复本机观察，不维护 `documented/verified` 等等级，也不保存品牌历史冒烟状态。
 - `runtime list`、诊断输出、Buildr 技能（Skill）和产品文档一致，相关正式规范与适用验证满足当次范围。

@@ -17,9 +17,10 @@ import {
   createRuntimeContext,
   createRuntimePlan,
   getRuntimeAdapter,
+  isSupportedAgent,
+  resolveRuntimeSelection,
   runtimeAdapterImplementationMatrix,
   runtimeDiscoveryPayload,
-  selectPlatformEnvironmentProbe,
   selectAdapterImplementation,
   skillDestinationRoots,
 } from '../../../src/modules/agent-assets/infrastructure/runtime/adapter-contract.ts';
@@ -27,20 +28,21 @@ import { reconcileRuntimePlan, validateRuntimePlan } from '../../../src/modules/
 import { validateSkillPublication } from '../../../src/modules/agent-assets/infrastructure/runtime/skills/publication.ts';
 import { resolveSkillContributions } from '../../../src/modules/agent-assets/infrastructure/runtime/render-claude-code.ts';
 import { assembleRuntimeProjection } from '../../../src/modules/agent-assets/infrastructure/runtime/projection.ts';
-import { checkRuntimeAdapter, runEnvironmentProbe } from '../../../src/modules/agent-assets/infrastructure/runtime/check-runtime.ts';
+import { checkRuntimeAdapter } from '../../../src/modules/agent-assets/infrastructure/runtime/check-runtime.ts';
 
 const productRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const repositoryRoot: any = path.resolve(productRoot, '../../../..');
 const temporaryRoot: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-runtime-adapter-contract-'));
 process.once('exit', () => fs.rmSync(temporaryRoot, { recursive: true, force: true }));
 
-assert.deepEqual(SUPPORTED_AGENT_IDS, ['claude-code', 'agents-standard', 'cursor', 'qoder', 'trae', 'trae-work', 'workbuddy']);
+assert.deepEqual(SUPPORTED_AGENT_IDS, ['claude-code', 'agents-standard']);
 const implementationMatrix: any = runtimeAdapterImplementationMatrix();
 assert.deepEqual(implementationMatrix.entries.map((entry: any) => entry.adapterId), SUPPORTED_AGENT_IDS);
 assert.deepEqual(implementationMatrix.representatives.map((entry: any) => entry.family), [
-  'native-recursive', 'per-source-reference', 'same-directory-vendor', 'central-vendor', 'root-index-bridge',
+  'native-recursive', 'per-source-reference',
 ]);
-assert.deepEqual(ADAPTER_TRAIT_CATALOG.rules, ['native-recursive', 'native-root', 'reference-bridge', 'vendor-rule-files']);
+assert.deepEqual(ADAPTER_TRAIT_CATALOG.rules, ['native-recursive', 'native-root', 'reference-bridge']);
+assert.equal(ADAPTER_TRAIT_CATALOG.rules.includes('vendor-rule-files'), false, 'vendor rule files are retired, not merely unused');
 assert.equal(runtimeDiscoveryPayload().adapterTraitCatalog, ADAPTER_TRAIT_CATALOG);
 assert.deepEqual(runtimeDiscoveryPayload().agents['agents-standard'].taskAdoption.modes, ['new-session', 'reentered']);
 assert.equal(runtimeDiscoveryPayload().agents['agents-standard'].taskAdoption.sessionConsumption, 'unknown-until-adopted');
@@ -68,11 +70,6 @@ const projectionRoot: any = fs.mkdtempSync(path.join(temporaryRoot, 'adapter-pro
 fs.writeFileSync(path.join(projectionRoot, 'AGENTS.md'), '# Adapter projection contract\n');
 const expectedRuleTargets: any = {
   'claude-code': 'CLAUDE.md',
-  cursor: '.cursor/rules/buildr.mdc',
-  qoder: '.qoder/rules/buildr/',
-  trae: '.trae/rules/buildr.md',
-  'trae-work': 'CLAUDE.local.md',
-  workbuddy: 'CODEBUDDY.md',
 };
 for (const adapterId of SUPPORTED_AGENT_IDS) {
   const adapter: any = RUNTIME_ADAPTERS[adapterId];
@@ -99,24 +96,6 @@ assert.match(codexCheck.runtimeSourceEvidence.projectionIdentity, /^sha256-[a-f0
 assert.equal(codexCheck.runtimeSourceEvidence.sessionConsumption, 'unknown');
 fs.rmSync(projectionRoot, { recursive: true, force: true });
 
-for (const adapterId of ['cursor', 'qoder', 'trae', 'trae-work', 'workbuddy']) {
-  const adapter: any = RUNTIME_ADAPTERS[adapterId];
-  assert.ok(adapter.evidence.rules, `${adapterId} must retain runtime-specific Rules evidence`);
-  assert.ok(adapter.evidence.skills, `${adapterId} must retain runtime-specific Skills evidence`);
-  assert.equal(typeof adapter.evidence.rules, 'string');
-  assert.equal(typeof adapter.evidence.skills, 'string');
-  assert.equal('verificationLevel' in adapter.evidence, false);
-  assert.equal('smokeStatus' in adapter.evidence, false);
-  assert.equal('smoke' in adapter.evidence, false);
-  assert.deepEqual(adapter.planRuntime(createRuntimeContext({
-    adapterId,
-    targetRoot: path.join(temporaryRoot, `${adapterId}-evidence`),
-    scope: '.',
-    rules: { writes: [], nativeAssets: [], removals: [], actions: [] },
-    skills: { writes: [], removals: [] },
-  })).capabilityEvidence.map((item: any) => item.adapterId), REQUIRED_RENDER_CAPABILITIES.map(() => adapterId));
-}
-
 const adapterDocPath: any = path.join(productRoot, 'docs', 'agent-runtime-adapters.md');
 const adapterDoc: any = fs.readFileSync(adapterDocPath, 'utf8');
 for (const adapterId of SUPPORTED_AGENT_IDS) {
@@ -127,64 +106,23 @@ for (const readmeName of ['README.md', 'README.en.md']) {
   const readme: any = fs.readFileSync(path.join(repositoryRoot, readmeName), 'utf8');
   assert.ok(readme.includes('projects/product/services/buildr/docs/agent-runtime-adapters.md'), `${readmeName} must link the authoritative adapter documentation`);
 }
-assert.equal(RUNTIME_ADAPTERS.cursor.traits.rules.kind, 'vendor-rule-files');
-assert.equal(RUNTIME_ADAPTERS.qoder.traits.rules.format, 'qoder-markdown');
-assert.equal(RUNTIME_ADAPTERS.trae.traits.rules.format, 'trae-markdown');
-assert.equal(RUNTIME_ADAPTERS.trae.traits.checker.versionProbe.kind, 'manual');
-assert.equal(RUNTIME_ADAPTERS.trae.traits.skills.root, '.agents');
-assert.equal(RUNTIME_ADAPTERS.cursor.traits.rules.format, 'cursor-mdc');
-assert.equal(RUNTIME_ADAPTERS['trae-work'].traits.rules.placement, 'root-index');
-assert.deepEqual(RUNTIME_ADAPTERS['trae-work'].traits.checker.prerequisites || [], []);
-assert.equal(RUNTIME_ADAPTERS.workbuddy.traits.rules.maxChars, 8000);
-assert.equal(RUNTIME_ADAPTERS.workbuddy.traits.skills.root, '.codebuddy');
-assert.deepEqual(RUNTIME_ADAPTERS.workbuddy.traits.surfaces, [{ kind: 'desktop' }, { kind: 'cli', variant: 'desktop-bundled' }]);
-assert.deepEqual(Object.keys(RUNTIME_ADAPTERS.workbuddy.evidence).sort(), ['rules', 'skills']);
-assert.ok(adapterDoc.includes('`.codebuddy/skills`'));
-
-const traeWorkDarwinProbe: any = selectPlatformEnvironmentProbe({
-  platform: 'darwin',
-  command: { kind: 'command', executable: 'defaults', args: ['read', 'Info', 'CFBundleIdentifier'], timeoutMs: 3000 },
-  guidance: 'Confirm TRAE Work manually.',
-});
-assert.deepEqual(traeWorkDarwinProbe, { kind: 'command', executable: 'defaults', args: ['read', 'Info', 'CFBundleIdentifier'], timeoutMs: 3000 });
-const workbuddyWindowsProbe: any = selectPlatformEnvironmentProbe({
-  platform: 'win32',
-  command: { kind: 'command', executable: 'defaults', args: ['read', 'Info', 'CFBundleIdentifier'], timeoutMs: 3000 },
-  guidance: 'Confirm WorkBuddy manually.',
-});
-assert.deepEqual(workbuddyWindowsProbe, { kind: 'manual', guidance: 'Confirm WorkBuddy manually.' });
-assert.deepEqual(runEnvironmentProbe(workbuddyWindowsProbe), { status: 'manual', probe: 'manual', guidance: 'Confirm WorkBuddy manually.' });
-const spawnCalls: any[] = [];
-const commandProbe: any = runEnvironmentProbe(
-  { kind: 'command', executable: 'tool', args: ['--version'], timeoutMs: 3000 },
-  { spawn: (...args: any[]) => { spawnCalls.push(args); return { status: 0, stdout: 'tool 1.2.3', stderr: '' }; } },
-);
-assert.equal(commandProbe.status, 'ok');
-assert.deepEqual(spawnCalls[0], ['tool', ['--version'], { encoding: 'utf8', timeout: 3000, shell: false, stdio: ['ignore', 'pipe', 'pipe'] }]);
-
-const qoderInstallProbe: any = RUNTIME_ADAPTERS.qoder.traits.checker.installationProbe;
-assert.equal(qoderInstallProbe.kind, 'any');
-assert.deepEqual(qoderInstallProbe.probes.map((item: any) => item.surface), ['desktop', 'ide', 'cli']);
-const anyProbeSpawns: any[] = [];
-const anyProbeHit: any = runEnvironmentProbe(qoderInstallProbe, {
-  spawn: (executable: any, args: any) => {
-    anyProbeSpawns.push([executable, args]);
-    if (executable === 'defaults' && String(args[1]).includes('Qoder.app')) return { status: 1, stdout: '', stderr: 'does not exist', error: Object.assign(new Error('failed'), { code: 'ENOENT' }) };
-    return { status: 0, stdout: 'com.qoder.ide', stderr: '' };
-  },
-});
-assert.equal(anyProbeHit.status, 'ok');
-assert.equal(anyProbeHit.surface, 'ide');
-assert.equal(anyProbeHit.surfaces.length, 2, 'a later install form must not be probed once one matched');
-assert.equal(anyProbeSpawns.every(([, args]: any) => typeof args[0] === 'string'), true);
-const anyProbeMiss: any = runEnvironmentProbe(qoderInstallProbe, {
-  spawn: () => ({ status: 1, stdout: '', stderr: 'absent', error: Object.assign(new Error('ENOENT'), { code: 'ENOENT' }) }),
-});
-assert.equal(anyProbeMiss.status, 'missing');
-assert.equal(anyProbeMiss.surfaces.length, 3);
-assert.match(anyProbeMiss.evidence, /desktop: missing \| ide: missing \| cli: missing/);
+// Retired vendor brands stay valid runtime identities, but they no longer own an adapter or a projection.
+for (const runtimeId of ['cursor', 'qoder', 'trae', 'trae-work', 'workbuddy']) {
+  assert.equal(Object.hasOwn(RUNTIME_ADAPTERS, runtimeId), false, `${runtimeId} must not remain a registered adapter`);
+  assert.equal(isSupportedAgent(runtimeId), true, `${runtimeId} must remain a valid runtime identity`);
+  const selection: any = resolveRuntimeSelection({ runtimeId });
+  assert.equal(selection.runtimeId, runtimeId, `${runtimeId} must preserve its observed identity`);
+  assert.equal(selection.adapterId, 'agents-standard');
+  assert.equal(selection.reason, 'standard-default');
+  assert.equal(selection.host.known, false);
+  assert.throws(() => getRuntimeAdapter(runtimeId), /Unsupported runtime adapter/);
+}
+assert.equal(RUNTIME_ADAPTERS['claude-code'].traits.rules.kind, 'reference-bridge');
+assert.ok(adapterDoc.includes('`@AGENTS.md`'), 'the Claude Code exception must document its reference bridge');
 
 assert.throws(() => getRuntimeAdapter('fake-runtime'), /Unsupported runtime adapter/);
+assert.throws(() => getRuntimeAdapter('fake-runtime'), /Supported adapters: claude-code, agents-standard\./);
+assert.throws(() => getRuntimeAdapter('cursor'), /Unsupported runtime adapter: cursor\. Supported adapters: claude-code, agents-standard\./);
 assert.throws(() => createRuntimeAdapterRegistry([{ id: 'fake-runtime', runtimeTargets: [], renderCapabilities: {}, recommendedCommands: {} }], { testOnly: true }), /Invalid runtime adapter registry/);
 
 const fakeImplementations: any = { rules: ['fake-rules'], skills: ['fake-skills'], checker: ['fake-checker'] };
@@ -192,15 +130,13 @@ const fakeDescriptor: any = createRuntimeAdapterDescriptor({
   id: 'fake-runtime',
   displayName: 'Fake Runtime',
   traits: {
-    rules: { kind: 'vendor-rule-files', implementation: 'fake-rules', format: 'qoder-markdown', targetPattern: '.fake/rules/<source>.md' },
+    rules: { kind: 'reference-bridge', implementation: 'fake-rules', targetPattern: '.fake/rules/<source>.md' },
     skills: { kind: 'vendor-root', implementation: 'fake-skills', root: '.fake' },
     surfaces: [{ kind: 'ide', variant: 'test' }],
     activation: { rules: 'explicit-reload', skills: 'explicit-reload', reloadGuidance: 'Reload Fake Runtime.' },
     checker: {
       kind: 'projection',
       implementation: 'fake-checker',
-      installationProbe: { kind: 'manual', guidance: 'Confirm Fake Runtime is installed.' },
-      versionProbe: { kind: 'command', executable: 'fake-runtime', args: ['--version'], timeoutMs: 1000 },
     },
   },
   recommendedCommands: {},
@@ -219,14 +155,16 @@ const fakeValue: any = {
   displayName: 'Invalid Runtime',
   recommendedCommands: {},
   traits: {
-    rules: { kind: 'vendor-rule-files', implementation: 'fake-rules', format: 'qoder-markdown', targetPattern: '.fake/rules/<source>.md' },
+    rules: { kind: 'reference-bridge', implementation: 'fake-rules', targetPattern: '.fake/rules/<source>.md' },
     skills: { kind: 'vendor-root', implementation: 'fake-skills', root: '.fake' },
     surfaces: [{ kind: 'ide' }],
     activation: { rules: 'session-start', skills: 'session-start' },
-    checker: { kind: 'projection', implementation: 'fake-checker', installationProbe: { kind: 'none' }, versionProbe: { kind: 'none' } },
+    checker: { kind: 'projection', implementation: 'fake-checker' },
   },
 };
 assert.throws(() => createRuntimeAdapterDescriptor({ ...fakeValue, traits: { ...fakeValue.traits, rules: { ...fakeValue.traits.rules, kind: 'unknown' } } }, { implementations: fakeImplementations }), /rules trait is invalid/);
+assert.throws(() => createRuntimeAdapterDescriptor({ ...fakeValue, traits: { ...fakeValue.traits, rules: { kind: 'vendor-rule-files', implementation: 'fake-rules', targetPattern: '.fake/rules/<source>.md' } } }, { implementations: fakeImplementations }), /rules trait is invalid/);
+assert.throws(() => createRuntimeAdapterDescriptor({ ...fakeValue, traits: { ...fakeValue.traits, rules: { kind: 'reference-bridge', implementation: 'fake-rules' } } }, { implementations: fakeImplementations }), /targetPattern is required/);
 assert.throws(() => createRuntimeAdapterDescriptor({ ...fakeValue, traits: { ...fakeValue.traits, skills: { ...fakeValue.traits.skills, root: '../escape' } } }, { implementations: fakeImplementations }), /skills root is unsafe/);
 const singleRootDescriptor: any = createRuntimeAdapterDescriptor(fakeValue, { implementations: fakeImplementations });
 assert.deepEqual(singleRootDescriptor.traits.skills.destinations.workspace.roots, ['.fake']);
@@ -235,18 +173,6 @@ assert.deepEqual(singleRootDescriptor.renderCapabilities['workspace-project-skil
 assert.deepEqual(singleRootDescriptor.renderCapabilities['skill-install-plans'].targets, ['.fake/buildr/skill-install-plans/<skill>.md']);
 assert.deepEqual(skillDestinationRoots(singleRootDescriptor, 'workspace', '/workspace'), ['/workspace/.fake']);
 assert.deepEqual(skillDestinationRoots(singleRootDescriptor, 'user', '/workspace', { userHome: '/home/user' }), ['/home/user/.fake']);
-assert.throws(
-  () => createRuntimeAdapterDescriptor({ ...fakeValue, traits: { ...fakeValue.traits, checker: { ...fakeValue.traits.checker, installationProbe: { kind: 'any', probes: [] } } } }, { implementations: fakeImplementations }),
-  /any probe requires a non-empty probes array/,
-);
-assert.throws(
-  () => createRuntimeAdapterDescriptor({ ...fakeValue, traits: { ...fakeValue.traits, checker: { ...fakeValue.traits.checker, installationProbe: { kind: 'any', probes: [{ kind: 'command', executable: 'bad name!', args: [], timeoutMs: 3000 }] } } } }, { implementations: fakeImplementations }),
-  /probes\[0\] command executable must be a static command name/,
-);
-assert.throws(
-  () => createRuntimeAdapterDescriptor({ ...fakeValue, traits: { ...fakeValue.traits, checker: { ...fakeValue.traits.checker, installationProbe: { kind: 'any', probes: [{ kind: 'any', probes: [{ kind: 'none' }] }] } } } }, { implementations: fakeImplementations }),
-  /any probes must not nest/,
-);
 assert.throws(() => createRuntimeAdapterDescriptor({ ...fakeValue, traits: { ...fakeValue.traits, skills: { ...fakeValue.traits.skills, publicationExtensions: [{ path: '../escape', format: 'openai-skill-metadata' }] } } }, { implementations: fakeImplementations }), /publicationExtensions\[0\] path is unsafe/);
 assert.throws(() => createRuntimeAdapterDescriptor({ ...fakeValue, traits: { ...fakeValue.traits, skills: { ...fakeValue.traits.skills, publicationExtensions: [{ path: 'agents\/openai.yaml', format: 'unknown' }] } } }, { implementations: fakeImplementations }), /publicationExtensions\[0\] format is invalid/);
 assert.throws(() => createRuntimeAdapterDescriptor({ ...fakeValue, traits: { ...fakeValue.traits, skills: { ...fakeValue.traits.skills, publicationExtensions: [{ path: 'agents\/openai.yaml', format: 'openai-skill-metadata' }, { path: 'agents\/openai.yaml', format: 'openai-skill-metadata' }] } } }, { implementations: fakeImplementations }), /duplicate path/);

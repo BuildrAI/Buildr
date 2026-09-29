@@ -42,8 +42,8 @@ test('source applicability retains runtime identity while standard paths are fla
     assert.equal(skills[0].runtime, runtime);
     assert.equal(skills[0].adapterId, 'agents-standard');
   }
-  assert.equal(resolveSkills(root, null, { runtime: 'qoder' })[0].runtimePath, 'nested/common');
-  assert.equal(resolveSkills(root, null, { runtime: 'dsh', adapterId: 'qoder' })[0].runtimePath, 'nested/common');
+  assert.equal(resolveSkills(root, null, { runtime: 'qoder' })[0].runtimePath, 'common', 'a retired brand projects through the flat standard path');
+  assert.equal(resolveSkills(root, null, { runtime: 'dsh', adapterId: 'claude-code' })[0].runtimePath, 'nested/common');
 });
 
 test('generic product entry and full workspace assets share stable standard output', (t) => {
@@ -91,7 +91,7 @@ test('runtime-specific providers cannot silently change shared consumer bindings
     assert.throws(() => reconcileRuntimePlan(plan), /conflict/i);
     assert.equal(fs.existsSync(path.join(root, '.agents')), false);
   }
-  // Explicit standard overrides must also participate, even when the brand normally uses another root.
+  // Explicit standard overrides must also participate for any runtime identity, including retired brands.
   skills[0].runtimes = ['qoder'];
   (skills[1] as any).runtimes = ['codex', 'qoder'];
   manifest(root, skills, extra);

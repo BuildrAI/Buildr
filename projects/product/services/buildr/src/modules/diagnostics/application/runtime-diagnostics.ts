@@ -1,5 +1,6 @@
 import { detectManagedRuntimeAdapters, runtimeCommandSelector } from '../../agent-assets/application/runtime-selection.ts';
 import { resolveRuntimeSelection } from '../../agent-assets/infrastructure/runtime/adapter-contract.ts';
+import { retiredRuntimeProjectionFindings } from '../../agent-assets/infrastructure/runtime/retired-adapters.ts';
 
 export function createRuntimeDiagnostics(deps: any) {
   const {
@@ -67,7 +68,7 @@ export function createRuntimeDiagnostics(deps: any) {
             command: 'buildr doctor',
           });
           const findings = dedupeFindings(adapterId, runtimeFindingsForDoctor(check.findings, includeInfo));
-          result.runtime[resultKey].push({ agent, runtimeId, adapterId, host: selection.host, scope, counts: summarizeRuntimeFindings(findings), findings, skillInventoryEvidence: check.skillInventoryEvidence, environmentChecks: check.environmentChecks, activation: check.activation });
+          result.runtime[resultKey].push({ agent, runtimeId, adapterId, host: selection.host, scope, counts: summarizeRuntimeFindings(findings), findings, skillInventoryEvidence: check.skillInventoryEvidence, activation: check.activation });
           if (findings.some((finding: any) => ['missing', 'stale', 'orphan'].includes(finding.status))) {
             addDoctorFinding(result, 'warning', `runtime.${codeId}_stale`, `${adapter.displayName} runtime 缺失或过期：${scope}`, {
               path: toPosixRelative(targetRoot, check.targetRoot),
@@ -142,6 +143,30 @@ export function createRuntimeDiagnostics(deps: any) {
           });
         }
       }
+    }
+    diagnoseRetiredProjections(result, targetRoot);
+  }
+
+  /**
+   * 退役适配器（Adapter）遗留投射的报告面：只报告，不阻断。
+   * 这些路径不再由任何支持的适配器写入；能证明所有权的已在受管操作中清理，
+   * 剩下的是无法证明所有权或无法安全分离的部分，需要人确认后才能删除。
+   */
+  function diagnoseRetiredProjections(result: any, targetRoot: any) {
+    let findings;
+    try {
+      findings = retiredRuntimeProjectionFindings(targetRoot);
+    } catch {
+      return;
+    }
+    for (const finding of findings) {
+      addDoctorFinding(result, 'warning', finding.code, finding.message, {
+        path: finding.path,
+        adapterId: finding.adapterId,
+        reason: finding.reason,
+        userActionRequired: false,
+        suggestion: finding.suggestion,
+      });
     }
   }
 

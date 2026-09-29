@@ -1,6 +1,6 @@
 # Buildr 公开 JSON 契约
 
-Buildr 支持 `--json` 的命令在顶层提供 `schemaVersion`。它是输出格式的稳定身份，不是 Buildr package 版本；例如 doctor 使用 `buildr.doctor/v1`，runtime list 使用 `buildr.runtime-list/v1`。
+Buildr 支持 `--json` 的命令在顶层提供 `schemaVersion`。它是输出格式的稳定身份，不是 Buildr package 版本；例如 doctor 使用 `buildr.doctor/v2`，runtime list 使用 `buildr.runtime-list/v3`。
 
 ## 兼容规则
 
@@ -16,8 +16,8 @@ Buildr 支持 `--json` 的命令在顶层提供 `schemaVersion`。它是输出�
 |---|---|
 | `version` | `buildr.version/v1` |
 | 未知 CLI 路由错误 | `buildr.cli-error/v1` |
-| `runtime list` | `buildr.runtime-list/v1` |
-| `doctor` | `buildr.doctor/v1` |
+| `runtime list` | `buildr.runtime-list/v3` |
+| `doctor` | `buildr.doctor/v2` |
 | `commands check` | `buildr.commands-check/v1` |
 | `component list` | `buildr.component-list/v1` |
 | `component check` | `buildr.component-check/v1` |
