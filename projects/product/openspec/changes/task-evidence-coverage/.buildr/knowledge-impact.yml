@@ -1,0 +1,27 @@
+schemaVersion: buildr.knowledge-impact/v1
+change: task-evidence-coverage
+operation: reconcile
+impacts:
+  - type: brief
+    target: brief.md
+    reason: 本次范围、目标与验收
+    status: updated
+  - type: explanation
+    target: knowledge/docs/architecture/task-system.md
+    reason: 需求节点正文、审查默认触发与用户确认节点定位的表述
+    status: updated
+  - type: code-map
+    target: knowledge/code-map/task-system.md
+    reason: TaskNodeContent 需求节点内容来源的映射说明
+    status: updated
+  - type: technical-diagram
+    target: knowledge/archify/flows/task-system.json
+    reason: 流程节点语义不变（审查本就以节点呈现），仅周边说明文字变化
+    status: aligned
+unresolvedItems: []
+sourceIdentities:
+  - projects/product/services/buildr/resources/workspace/skills/buildr/
+  - projects/product/services/buildr/resources/workspace/components/buildr/openspec/contributions/
+  - projects/product/services/buildr-web/src/features/task/components/TaskNodeContent.tsx
+  - projects/product/openspec/specs/agent-task-workflows/spec.md
+  - projects/product/openspec/specs/buildr-web-client/spec.md

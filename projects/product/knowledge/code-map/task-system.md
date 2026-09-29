@@ -118,7 +118,7 @@
         - [PrototypeReaderPage.tsx](../../services/buildr-web/src/features/task/pages/PrototypeReaderPage.tsx) — 任务限定的独立三栏阅读
         - [TaskDetailPage.tsx](../../services/buildr-web/src/features/task/pages/TaskDetailPage.tsx) — 目标、摘要、成果、关系与专业结果
       - `components/`
-        - [TaskNodeContent.tsx](../../services/buildr-web/src/features/task/components/TaskNodeContent.tsx) — 任务材料与原型页面的左侧目录
+        - [TaskNodeContent.tsx](../../services/buildr-web/src/features/task/components/TaskNodeContent.tsx) — 任务材料与原型页面的左侧目录；需求节点以任务目标为默认正文，变更 Brief 为同层补充
         - [PrototypeTab.tsx](../../services/buildr-web/src/features/task/components/PrototypeTab.tsx) — 隔离预览、说明、状态选择与阅读消息校验
         - [PrototypeReaderLayout.tsx](../../services/buildr-web/src/features/task/components/PrototypeReaderLayout.tsx) — 独立任务阅读与离线预览共同使用的页面目录和阅读布局
         - [TaskAgentAction.tsx](../../services/buildr-web/src/features/task/components/TaskAgentAction.tsx) — 开始与继续工作的指令，按当前范围重新读取

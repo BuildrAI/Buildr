@@ -1582,6 +1582,8 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     page.off('request',trackFocusReads);
     assert.deepEqual(focusReads, [], '返回浏览器不自动重读任务详情');
     assert.deepEqual(await page.locator('[data-task-node]').evaluateAll(nodes => nodes.map(node => node.getAttribute('data-task-node'))), ['requirements','design','implementation','closeout']);
+    assert.match(await page.locator('#task-node-content .markdown-body').innerText(), /验证 Task Record 页面/, '需求节点默认显示任务目标');
+    await page.locator('[data-task-artifact$="brief.md"]').click();
     await page.locator('#task-node-content .markdown-body').filter({ hasText: '普通用户先从这里了解变更' }).waitFor({ state: 'visible' });
     await page.locator('#task-node-content').getByRole('button',{name:'查看原文',exact:true}).click();
     assert.match(await page.locator('#task-node-content .markdown-reader-source').innerText(), /普通用户先从这里了解变更/);
@@ -1855,6 +1857,8 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.equal(await page.locator('#task-filter-q').inputValue(), '轻量查询');
     assert.equal(await page.locator('.pane-right #task-detail-main').isVisible(), true);
     assert.equal(await page.locator('.pane-stage:visible').count(), 1, '任务详情中没有嵌套副屏');
+    assert.match(await page.locator('#task-node-content .markdown-body').innerText(), /验证 Buildr Web 轻量查询客户端/, '需求节点默认显示任务目标');
+    await page.locator('[data-task-artifact$="brief.md"]').click();
     await page.locator('#task-node-content .markdown-body').filter({ hasText: '普通用户先从这里了解变更' }).waitFor({ state: 'visible' });
     assert.equal(await page.getByRole('link', {name:'查看关联变更',exact:true}).count(), 0, '节点正文不重复提供技术目录入口');
     assert.match(await page.locator('#task-detail-parent').innerText(), /浏览器协调任务[\s\S]*进行中/);
@@ -1918,6 +1922,8 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     fs.writeFileSync(path.join(worktreeProject, 'openspec/changes/browser-flow/brief.md'), '# 工作树的需求或说明\n\n独立文件系统中的最新需求。\n');
     await page.goto(`${workspaceUrl}/tasks/browser-task`);
     assert.equal(await page.locator('[data-task-node=requirements]').getAttribute('aria-pressed'), 'true');
+    assert.match(await page.locator('#task-node-content .markdown-body').innerText(), /验证 Task Record 页面/, '需求节点默认显示任务目标');
+    await page.locator('[data-task-artifact$="brief.md"]').click();
     await page.locator('#task-node-content .markdown-body').filter({ hasText: '独立文件系统中的最新需求' }).waitFor({ state: 'visible' });
     const prototypeFailureRoute = /\/tasks\/browser-task\/ui-prototypes(?:\?|$)/;
     await page.route(prototypeFailureRoute, async (route: any) => {
@@ -1930,6 +1936,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
       assert.equal((await prototypeFailure).status(), 500);
       await closeTaskReading(page); await page.locator('[data-task-node=requirements]').click();
       await page.locator('#task-detail-refresh:not(.ant-btn-loading)').waitFor({ state: 'visible' });
+      await page.locator('[data-task-artifact$="brief.md"]').click();
       assert.match(await page.locator('#task-node-content .markdown-body').innerText(), /独立文件系统中的最新需求/, '原型局部读取失败不能清空已读取的任务需求');
     } finally { await page.unroute(prototypeFailureRoute); }
     await page.locator('#task-detail-intent').getByRole('link', { name: '任务参考资料', exact: true }).click();

@@ -24,6 +24,8 @@ buildr task complete <id> --summary <text> --expected-record <recordDigest> [--p
 buildr task abandon <id> --reason <text> --expected-record <recordDigest> --target <workspace> --json
 ```
 
+`intent`（目标与说明）是任务级需求说明：用简洁清晰的语言写清本次要解决的问题、目标和范围边界，需要验收要点时一并写出；不写成标题复述、内部步骤清单或只有作者能懂的缩写。关联变更（Change）的 `brief.md` 只补充该变更的需求叙事，不替代任务目标，两者不相互复制正文或相互矛盾。
+
 任务说明引用已登记项目文档时使用具名的工作空间相对 Markdown 链接，例如 `[方案](projects/product/docs/plan.md)`。区分链接可解析与正文可读取；文档只在隔离目录时如实说明，不复制正文冒充已交付。
 
 写入使用已观察的当前 `recordDigest`，应用（Application）继续校验版本。成功响应已包含完整记录与新版本时，直接核对并作为下一动作的输入；仅在响应缺失、发生冲突、工作中断后继续或已知相关事实变化时重读。冲突后重新判断，不静默重放旧输入。完成只保存已成立的结果，不执行Git、部署、验证或清理。复盘正文由Agent按用户要求写入`.buildr/local/task-retrospectives/<task-id>.md`，Task Record只登记摘要与`pending-decision|decided`。
