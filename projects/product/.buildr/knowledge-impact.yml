@@ -1,26 +1,26 @@
 schemaVersion: buildr.knowledge-impact/v1
-change: fix-dispatch-omitted-runtime-identity
+task: fix-dev-baseline-verification-failures
 operation: reconcile
-treeIdentity: dc29cb3311caa1f92249c19a8a6d1c4bbd36388f
+treeIdentity: 6584abd4345319854c38967a11e1b2e5341406ee
 impacts:
   - type: reference
-    target: services/buildr/docs/cli-reference.md
-    reason: 文档已声明各 runtime 命令的 [<agent>] 可选；本变更让实现追上既有文档，无语义改动。
+    target: knowledge/docs/architecture/verification-framework.md
+    reason: 测试族名称与完整入口（test:fast / test:integration / test:system / test:daily-full）不变；npm 脚本内部增加 --import prelude 与 executor baseEnv 默认注入 BUILDR_NPM_ENTRY_PATH，不影响文档描述。
     status: aligned
     sourceIdentities:
-      - services/buildr/src/bootstrap/cli/registry.ts
-      - services/buildr/src/modules/agent-assets/interfaces/cli/agent-assets.ts
+      - services/buildr/package.json
+      - services/buildr/test/register-development-entry.ts
+      - services/buildr/test/verification/executor.ts
   - type: reference
-    target: knowledge/code-map/technical-layers.md
-    reason: 对 bootstrap/cli/registry.ts 的职责描述（组合命令目录、帮助与分发入口）仍然准确。
+    target: services/buildr/docs/cli-architecture.md
+    reason: 文档钉住的开发入口 run-development-npm run test:fast 不变。
     status: aligned
     sourceIdentities:
-      - services/buildr/src/bootstrap/cli/registry.ts
+      - services/buildr/package.json
   - type: reference
-    target: services/buildr/docs/agent-runtime-adapters.md
-    reason: 已声明"品牌未知时可省略身份"与现场检测选择规则；修复后实现与文档一致。
+    target: openspec/specs/npm-cli-package/spec.md
+    reason: 规范已要求安装包保留 docs/cli-reference.md 离线参考；本变更让 payload docs 映射追上规范，无语义改动。
     status: aligned
     sourceIdentities:
-      - services/buildr/src/modules/agent-assets/interfaces/cli/agent-assets.ts
-unresolvedItems:
-  - openspec/changes/add-dsh-desktop-plugin 仍在进行中；与本变更改动区域不重叠，归档时按既有冲突检查复核。
+      - services/buildr/tools/release/application-payload.ts
+unresolvedItems: []

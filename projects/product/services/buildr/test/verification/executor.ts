@@ -70,6 +70,7 @@ export function createVerificationExecutor(options: any): any  {
     PATH: [nodeBin, nodeModulesBin, ...(inheritedEnv.PATH || '').split(path.delimiter).filter(Boolean).filter((entry: any) => path.resolve(entry) !== path.resolve(nodeBin))].join(path.delimiter),
     BUILDR_NODE_EXECUTABLE: exactNode.nodeExecutable,
     BUILDR_NODE_IDENTITY: exactNode.audit.identity,
+    BUILDR_NPM_ENTRY_PATH: inheritedEnv.BUILDR_NPM_ENTRY_PATH || path.join(productRoot, 'bin', 'buildr.mjs'),
   };
   const sharedCandidate: any = readSharedCandidatePackage(baseEnv);
   const artifacts: any = sharedCandidate ? { candidate: sharedCandidate } : {};

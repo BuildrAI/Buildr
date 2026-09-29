@@ -245,9 +245,9 @@ if (!candidatePackageSource.includes('buildApplicationPayload(') || !candidatePa
 if (/npm(?:Executable)?[^\n]*\[\s*['"]pack['"][^\n]*productRoot/u.test(candidatePackageSource)) {
   problems.push('formal candidate must not npm pack the development product root');
 }
-if (packageJson.scripts?.['test:focus'] !== 'node test/verification/focus.ts') problems.push('package.json must expose the unified focus selector');
-if (packageJson.scripts?.['test:release'] !== 'node test/verification/release/release-smoke.ts') problems.push('package.json must retain the cross-platform release smoke entry');
-if (packageJson.scripts?.['test:launcher-platform'] !== 'node test/verification/release/release-smoke.ts --platform-launcher') problems.push('package.json must expose the explicit platform Launcher integration entry');
+if (packageJson.scripts?.['test:focus'] !== 'node --import ./test/register-development-entry.ts test/verification/focus.ts') problems.push('package.json must expose the unified focus selector');
+if (packageJson.scripts?.['test:release'] !== 'node --import ./test/register-development-entry.ts test/verification/release/release-smoke.ts') problems.push('package.json must retain the cross-platform release smoke entry');
+if (packageJson.scripts?.['test:launcher-platform'] !== 'node --import ./test/register-development-entry.ts test/verification/release/release-smoke.ts --platform-launcher') problems.push('package.json must expose the explicit platform Launcher integration entry');
 if (!fs.existsSync(path.join(productRoot, 'test', 'verification', 'release', 'platform-launcher-invocation.ts'))) problems.push('platform Launcher integration module is missing');
 const expectedPackageExports: any = {
   './test-context': {
