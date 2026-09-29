@@ -1807,7 +1807,7 @@ details summary { cursor: pointer; color: var(--soft-ink); font-size: 12px; font
 .pane-right { flex: none; width: clamp(480px, 44vw, 960px); }
 .pane-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
 .pane-left > .pane-body > .pane-body-inner { max-width: 980px; margin: 0 auto; padding: 24px 28px 56px; transition: max-width 180ms ease; }
-.pane-right > .pane-body > .pane-body-inner { padding: 16px 20px 32px; }
+.pane-right > .pane-body > .pane-body-inner { padding: 16px 20px 32px; max-width: 1240px; margin-inline: auto; }
 
 /* 页签条：左右组同款；色点区分对象类型。 */
 .pane-tabstrip { display: flex; align-items: flex-end; gap: 2px; flex: none; padding: 6px 10px 0; border-bottom: 1px solid var(--soft-line); background: #f4f6f7; overflow-x: auto; scrollbar-width: none; }
@@ -1885,7 +1885,7 @@ details summary { cursor: pointer; color: var(--soft-ink); font-size: 12px; font
 .ws-obj-ico { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; flex: none; border-radius: 7px; background: #f0f2f4; color: var(--soft-muted); }
 .ws-obj-row:hover .ws-obj-ico { background: #edf3f1; color: #2f6b62; }
 .ws-obj-name { font-weight: 550; }
-.ws-obj-row:hover .ws-obj-name, .ws-obj-row.reading .ws-obj-name { color: #2f6b62; }
+.ws-obj-row:hover .ws-obj-name { color: #2f6b62; }
 .ws-obj-row small { color: var(--soft-muted); font-size: 12px; }
 .ws-obj-row .ws-go { margin-left: auto; color: #b4bcc3; }
 .ws-obj-row:hover .ws-go { color: #2f6b62; }
@@ -1971,6 +1971,9 @@ details summary { cursor: pointer; color: var(--soft-ink); font-size: 12px; font
 
 /* Resource workspace: objects for orientation, side panes for reading, drawers for actions. */
 .resource-directory { width:100%; }
+.resource-home { max-width:calc(var(--reading-content-width) + 40px); margin-inline:auto; }
+/* 副屏内各类对象共用同一内容栏；正文级限宽（markdown）不变。 */
+.workspace-page .pane-right .resource-home { max-width:none; }
 .resource-directory-head, .resource-home-head { display:flex; justify-content:space-between; align-items:flex-start; gap:24px; margin-bottom:28px; }
 .resource-directory-head h1, .resource-home-head h1 { margin:0; font-size:25px; line-height:1.35; letter-spacing:-.025em; font-weight:650; }
 .resource-directory-head p:not(.resource-eyebrow), .resource-home-head p:not(.resource-eyebrow) { margin:8px 0 0; color:var(--soft-muted); font-size:13px; line-height:1.7; max-width:680px; }
@@ -2029,7 +2032,7 @@ details summary { cursor: pointer; color: var(--soft-ink); font-size: 12px; font
 .resource-path { font-size:12px; color:var(--soft-muted); overflow-wrap:anywhere; }
 .resource-reader > header { margin:4px 0 24px; padding-bottom:16px; border-bottom:1px solid var(--soft-line); }
 .resource-reader h2 { margin:0; font-size:17px; overflow-wrap:anywhere; }
-.resource-reader .markdown-body { max-width:var(--reading-content-width); font-size:14px; line-height:1.85; }
+.resource-reader .markdown-body { max-width:var(--reading-content-width); margin-inline:auto; font-size:14px; line-height:1.85; }
 .resource-source { white-space:pre-wrap; overflow-wrap:anywhere; font-size:12px; }
 .resource-directory a:focus-visible, .resource-document-row:focus-visible, .resource-relation-row:focus-visible { outline:2px solid var(--soft-primary); outline-offset:3px; border-radius:4px; }
 .workspace-reading-drawer .ant-drawer-body { padding:0 22px 24px; }

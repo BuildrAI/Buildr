@@ -1,4 +1,4 @@
-import { ProjectHomeEntries } from '../components/ProjectHomeEntries';
+import { ProjectHomeEntries, type ProjectHomeEntryRef } from '../components/ProjectHomeEntries';
 import { ProjectHomeHeader } from '../components/ProjectHomeHeader';
 import { ResourceActions } from '../../workbench/components/ResourceActions';
 import { AssetDeleteDialog } from '../../workspace/components/AssetDeleteDialog';
@@ -6,9 +6,10 @@ import { useLocation } from 'react-router-dom';
 import { ProjectServicesPanel } from '../components/ProjectServicesPanel';
 import { useAssetCatalog } from '../../workspace/components/useAssetCatalog';
 import { projectApi } from '../api/project-api';
-import { useCallback, useContext, useEffect, useState } from 'react';
+import { useCallback, useContext, useEffect, useState, type MouseEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { Alert, Button, Dropdown, Tabs } from 'antd';
+import { Alert, Button, DatePicker, Dropdown, Skeleton, Tabs } from 'antd';
+import dayjs from 'dayjs';
 import { WorkspaceComposition } from '../../workspace/components/WorkspaceComposition';
 import { useWorkspaceComposition } from '../../workspace/components/useWorkspaceComposition';
 import { useResourcePreview } from '../../../app/resource-preview';
@@ -18,7 +19,11 @@ import { useAppShell } from '../../../app/AppShellContext';
 import { MarkdownHost } from '../../../components/MarkdownHost';
 import { encodeProjectDocumentPath, resolveProjectMarkdownHref } from '../../../lib/projectDocuments';
 import { workspaceHref } from '../../../lib/labels';
-import { legacyDailyProgressPath } from '../../project-daily-progress/dailyProgressNavigation';
+import { dailyProgressActionContext, dailyProgressActivityPath, legacyDailyProgressPath, type DailyProgressGroup } from '../../project-daily-progress/dailyProgressNavigation';
+import { DailyProgressPanel } from '../../project-daily-progress/components/DailyProgressPanel';
+import { useWorkbench } from '../../workbench/hooks/useWorkbench';
+import { WorkbenchDailyProgress } from '../../workbench/components/WorkbenchDailyProgress';
+import { KnowledgeBrowser } from '../../knowledge/components/KnowledgeBrowser';
 import { useMarkdownDocumentViewer, type MarkdownDocument } from '../../../lib/useMarkdownDocumentViewer';
 import { ProjectEditDrawer } from '../components/ProjectEditDrawer';
 import { useWorkspacePageTabs, WorkspaceViewActiveContext } from '../../../app/pageTabs';
@@ -35,6 +40,8 @@ const DOC_ROWS: { ref: string; name: string; hint: string }[] = [
   { ref: 'readme', name: '项目文档', hint: '使用、开发与参考 · README.md' },
   { ref: 'agents', name: 'AGENTS.md', hint: '规则与授权边界' },
 ];
+
+const ENTRY_TITLES: Record<ProjectHomeEntryRef, string> = { knowledge: '项目知识', articles: '项目文章', activity: '项目动态' };
 
 /** 右组项目文档对象。 */
 function ProjectDocObjectView({ projectCode, docPath, title, hint }: { projectCode: string; docPath: string; title: string; hint: string }) {
@@ -77,6 +84,42 @@ function ProjectDocObjectView({ projectCode, docPath, title, hint }: { projectCo
       )}
     </>
   );
+}
+
+/** 右组项目动态：默认展示该项目最近演进，点选日期后在同一副屏查看当天详情。 */
+function ProjectActivityPane({ projectCode, workspaceId }: { projectCode: string; workspaceId: string | null }) {
+  const { openAgentAction } = useAppShell();
+  const href = (path: string) => workspaceHref(workspaceId, path);
+  const [date, setDate] = useState('');
+  const [group, setGroup] = useState<DailyProgressGroup>('day');
+  const { data, error, loading, refresh } = useWorkbench(workspaceId, projectCode);
+  const openDay = (event: MouseEvent<HTMLElement>) => {
+    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    const raw = (event.target as HTMLElement).closest('a[href]')?.getAttribute('href') || '';
+    const [path, query = ''] = raw.split('?');
+    if (!path.endsWith('/activity')) return;
+    const params = new URLSearchParams(query);
+    if (params.get('project') && params.get('project') !== projectCode) return;
+    event.preventDefault();
+    setDate(params.get('date') || '');
+  };
+  return <>
+    <div className="ws-obj-head"><h2>项目动态 {date ? <code>{date}</code> : null}</h2></div>
+    <p className="ws-obj-sub">查看每日演进、提交与变化影响。<Link to={href(dailyProgressActivityPath(projectCode))}>打开动态页</Link></p>
+    <div className="daily-progress-date-controls project-activity-controls">
+      {date ? <Button onClick={() => setDate(dayjs(date).subtract(1, 'day').format('YYYY-MM-DD'))}>前一天</Button> : null}
+      <DatePicker aria-label="演进日期" inputReadOnly value={date && dayjs(date).isValid() ? dayjs(date) : null} onChange={value => setDate(value ? value.format('YYYY-MM-DD') : '')} placeholder="选择日期" />
+      {date ? <Button onClick={() => setDate(dayjs(date).add(1, 'day').format('YYYY-MM-DD'))}>后一天</Button> : null}
+      {date ? <Button type="link" onClick={() => setDate('')}>最近演进</Button> : null}
+    </div>
+    {date ? <DailyProgressPanel projectCode={projectCode} workspaceId={workspaceId} date={date} group={group} refreshKey={0}
+      onGroupChange={setGroup} onAskAgent={() => openAgentAction('daily-progress', dailyProgressActionContext(projectCode, date))} /> :
+      <div onClickCapture={openDay}>
+        {error ? <Alert type="error" message={error} action={<Button onClick={() => void refresh()}>重试</Button>} /> : null}
+        {loading && !data ? <Skeleton active /> : null}
+        {data ? <WorkbenchDailyProgress data={data.dailyProgress} full project={projectCode} onRefresh={() => void refresh()} /> : null}
+      </div>}
+  </>;
 }
 
 export function ProjectDetailPage() {
@@ -138,7 +181,21 @@ export function ProjectDetailPage() {
   };
 
   const objectTitle = (tab: ObjTab): string => {
-    return DOC_ROWS.find((d) => d.ref === tab.ref)?.name ?? tab.ref;
+    return ENTRY_TITLES[tab.ref as ProjectHomeEntryRef] ?? DOC_ROWS.find((d) => d.ref === tab.ref)?.name ?? tab.ref;
+  };
+
+  const openEntry = (ref: ProjectHomeEntryRef, event: MouseEvent<HTMLAnchorElement>) => {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    // 项目文章直接跳转「文章」菜单页，链接已带 ?project= 筛选条件
+    if (ref === 'articles') return;
+    if (ref === 'knowledge' && needsKnowledge) {
+      if (!knowledge.data) return;
+      event.preventDefault();
+      openAgentAction('knowledge', knowledgeInitializationContext(knowledge.data, href(`/knowledge/project/${encodeURIComponent(projectCode)}`)));
+      return;
+    }
+    event.preventDefault();
+    openObject({ key: `entry:${ref}`, kind: 'doc', ref });
   };
 
   if (!project && error) {
@@ -175,7 +232,18 @@ export function ProjectDetailPage() {
         activeObject={activeObj}
         onActivateObject={setActiveObj}
         onCloseObject={closeObject}
-        objectContent={activeTab ? (
+        objectContent={activeTab ? activeTab.ref === 'knowledge' ? (
+            <KnowledgeBrowser
+              key={activeTab.key}
+              workspaceId={workspaceId || ''}
+              scope={{ kind: 'project', id: project?.id || projectCode }}
+              navLayout="full"
+              onBack={() => closeObject(activeTab.key)}
+              backLabel="返回项目"
+            />
+        ) : activeTab.ref === 'activity' ? (
+            <ProjectActivityPane key={activeTab.key} projectCode={projectCode} workspaceId={workspaceId} />
+        ) : (
             <ProjectDocObjectView
               key={activeTab.ref}
               projectCode={projectCode}
@@ -202,10 +270,7 @@ export function ProjectDetailPage() {
             onOpen={(kind, id) => { if (kind !== 'project') previews?.open(editLocation.pathname, href(`/${kind === 'service' ? 'services' : 'repositories'}/${encodeURIComponent(id)}`)); }} /> : <Alert type="info" message={composition.error || '正在读取项目组成…'} action={composition.error && <Button onClick={reload}>重试</Button>} />}
           {!data && catalog.error && <Alert type="warning" message="关联暂时不能编辑" description={catalog.error} action={<Button onClick={reload}>重新读取</Button>} />}
         </> : <>
-        <ProjectHomeEntries projectCode={projectCode} href={href} needsKnowledge={needsKnowledge} onKnowledge={event => {
-          if (!needsKnowledge || !knowledge.data || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-          event.preventDefault(); openAgentAction('knowledge', knowledgeInitializationContext(knowledge.data, href(`/knowledge/project/${encodeURIComponent(projectCode)}`)));
-        }} />
+        <ProjectHomeEntries projectCode={projectCode} href={href} needsKnowledge={needsKnowledge} onEntry={openEntry} />
         <div className="project-home-details">
           <section className="resource-section" aria-label="文档">
             <div className="ws-section-head"><h2>项目资料 <span className="ws-count">{DOC_ROWS.length} 个入口</span></h2></div>
@@ -214,7 +279,7 @@ export function ProjectDetailPage() {
                 <button
                   key={doc.ref}
                   type="button"
-                  className={`ws-obj-row${objects.some((o) => o.key === `doc:${doc.ref}`) ? ' reading' : ''}`}
+                  className="ws-obj-row"
                   data-doc-row={doc.ref}
                   onClick={() => openObject({ key: `doc:${doc.ref}`, kind: 'doc', ref: doc.ref })}
                 >

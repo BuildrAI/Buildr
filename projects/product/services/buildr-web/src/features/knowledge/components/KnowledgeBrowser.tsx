@@ -42,6 +42,8 @@ type Props = {
   backLabel?: string;
   onTitleChange?: (title: string) => void;
   onObserved?: (data: KnowledgeResponse) => void;
+  /** 目录布局：compact 为折叠目录（嵌入阅读面），full 为与知识页一致的目录栏栅格。 */
+  navLayout?: 'compact' | 'full';
 };
 
 /** A knowledge reading surface shared by service details and related article material. */
@@ -49,7 +51,7 @@ export function KnowledgeBrowser(props: Props) {
   return <KnowledgeBrowserContent key={JSON.stringify([props.workspaceId, props.scope, props.initialArtifactId, props.initialObjectId, props.initialSourceId, props.initialReference, props.initialFragment])} {...props} />;
 }
 
-function KnowledgeBrowserContent({ workspaceId, scope, initialArtifactId, initialObjectId, initialSourceId, initialReference, initialFragment, sourceDescription, refresh = 0, onBack, backLabel = '返回详情', onTitleChange, onObserved }: Props) {
+function KnowledgeBrowserContent({ workspaceId, scope, initialArtifactId, initialObjectId, initialSourceId, initialReference, initialFragment, sourceDescription, refresh = 0, onBack, backLabel = '返回详情', onTitleChange, onObserved, navLayout = 'compact' }: Props) {
   const initial: Target = initialReference ? { kind: 'reference', id: JSON.stringify(initialReference), reference: initialReference, fragment: initialFragment, title: initialReference.links.at(-1)?.split(/[?#]/)[0].split('/').at(-1) } : initialSourceId ? { kind: 'source', id: initialSourceId, description: sourceDescription } : initialArtifactId ? { kind: 'artifact', id: initialArtifactId } : initialObjectId ? { kind: 'object', id: initialObjectId } : { kind: 'catalog' };
   const [history, setHistory] = useState<Entry[]>([{ ...initial, key: 0, scrollTop: 0, refresh: 0, loading: true }]);
   const serial = useRef(0), root = useRef<HTMLDivElement>(null);
@@ -96,13 +98,13 @@ function KnowledgeBrowserContent({ workspaceId, scope, initialArtifactId, initia
       <RefreshButton size="small" label="刷新当前知识" loading={current.loading} onClick={() => refreshEntry(current.key)} />
     </div>
     {history.map(entry => <div key={entry.key} hidden={entry.key !== current.key}>
-      <KnowledgeBrowserView entry={entry} refresh={entry.refresh + refresh} active={entry.key === current.key} workspaceId={workspaceId} scope={entry.scope || scope} onOpen={open} onMode={switchMode} preferences={preferences[preferenceKey(entry)] || emptyReadingPreferences()} onPreferences={value => { if (entry.key === current.key) setPreferences(previous => ({ ...previous, [preferenceKey(entry)]: value })); }} onTitle={setTitle} onDefault={setDefault} onLoadingChange={setLoading} onRefresh={() => refreshEntry(entry.key)} onObserved={entry.key === 0 ? onObserved : undefined} />
+      <KnowledgeBrowserView entry={entry} refresh={entry.refresh + refresh} active={entry.key === current.key} workspaceId={workspaceId} scope={entry.scope || scope} onOpen={open} onMode={switchMode} navLayout={navLayout} preferences={preferences[preferenceKey(entry)] || emptyReadingPreferences()} onPreferences={value => { if (entry.key === current.key) setPreferences(previous => ({ ...previous, [preferenceKey(entry)]: value })); }} onTitle={setTitle} onDefault={setDefault} onLoadingChange={setLoading} onRefresh={() => refreshEntry(entry.key)} onObserved={entry.key === 0 ? onObserved : undefined} />
     </div>)}
   </div>;
 }
 
-type ViewProps = { entry: Entry; refresh: number; active: boolean; workspaceId: string; scope: KnowledgeScope; onOpen: (target: Target) => void; onMode: (documents: boolean, scope: KnowledgeScope) => void; preferences: ReadingPreferences; onPreferences: (value: ReadingPreferences) => void; onTitle: (key: number, title: string) => void; onDefault: (key: number, target: Target) => void; onLoadingChange: (key: number, loading: boolean) => void; onRefresh: () => void; onObserved?: (data: KnowledgeResponse) => void };
-function KnowledgeBrowserView({ entry, refresh, active, workspaceId, scope, onOpen, onMode, preferences, onPreferences, onTitle, onDefault, onLoadingChange, onRefresh, onObserved }: ViewProps) {
+type ViewProps = { entry: Entry; refresh: number; active: boolean; workspaceId: string; scope: KnowledgeScope; onOpen: (target: Target) => void; onMode: (documents: boolean, scope: KnowledgeScope) => void; navLayout: 'compact' | 'full'; preferences: ReadingPreferences; onPreferences: (value: ReadingPreferences) => void; onTitle: (key: number, title: string) => void; onDefault: (key: number, target: Target) => void; onLoadingChange: (key: number, loading: boolean) => void; onRefresh: () => void; onObserved?: (data: KnowledgeResponse) => void };
+function KnowledgeBrowserView({ entry, refresh, active, workspaceId, scope, onOpen, onMode, navLayout, preferences, onPreferences, onTitle, onDefault, onLoadingChange, onRefresh, onObserved }: ViewProps) {
   const isCatalog = entry.kind === 'catalog';
   const isDocuments = entry.kind === 'documents';
   const isReference = entry.kind === 'reference';
@@ -219,7 +221,7 @@ function KnowledgeBrowserView({ entry, refresh, active, workspaceId, scope, onOp
   const openTopic = (id: string) => selectReading({ kind: 'object', id }, topics.find(topic => topic.id === id)?.title);
   return <div ref={root} className="knowledge-side-reader knowledge-browser-view" data-knowledge-view={entry.kind}>
     <div className="knowledge-browser-actions"><KnowledgeActions disabled={!pageScope} onAction={construct} /></div>
-    <KnowledgeTopicNavigation compact nodes={nodes} selected={readingTarget} documentsSelected={documentsMode}
+    <KnowledgeTopicNavigation compact={navLayout === 'compact'} nodes={nodes} selected={readingTarget} documentsSelected={documentsMode}
       prose={isDocuments || (shownArtifacts.length > 0 && shownArtifacts.every(item => item.kind === 'document'))}
       preferences={preferences} onPreferences={onPreferences}
       loading={documentsMode ? documentCatalog.loading : navigation.loading} error={documentsMode ? documentCatalog.error : navigation.error}

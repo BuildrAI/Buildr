@@ -6,6 +6,7 @@ import { useAppShell } from '../../../app/AppShellContext';
 import { workspaceHref } from '../../../lib/labels';
 import { formatDateTime } from '../../../lib/taskLabels';
 import { dailyProgressActionContext, dailyProgressActivityPath } from '../../project-daily-progress/dailyProgressNavigation';
+import '../workbench.css';
 
 export function WorkbenchDailyProgress({ data, full = false, compact = false, project = '', date = '', onRefresh }: {
   data: WorkbenchResponse['dailyProgress']; full?: boolean; compact?: boolean; project?: string; date?: string; onRefresh(): void;
