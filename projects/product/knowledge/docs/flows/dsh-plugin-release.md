@@ -21,4 +21,6 @@ node tools/release.ts prepare <verified-dsh-sdk-dir>
 
 公开后，智能体（Agent）在目标 DSH 配置档（Profile）中使用 DSH 插件管理入口安装 `@buildr-ai/dsh-plugin`。桌面版 `desktop` 配置档由 Electron 应用独占管理，须经应用的插件界面或其受支持的插件管理能力安装；`dsh plugin --profile desktop add` 会被拒绝，不能作为桌面安装命令。其他非受管配置档可使用 DSH 命令行插件管理入口。预编译包不需要 `prepare` 安装钩子，也不需要先运行 Buildr 命令。更新已加载的同版本包后应完整重启 DSH，再验收按钮、右侧页面和重复点击；“立即启用”不证明宿主进程已换用新模块。若需要临时验证，可将候选 `.tgz` 装入隔离配置档；不得把隔离结果写成真实用户桌面验收。
 
+验收跨重启标签复用时，分别检查标签数量与网页内容：当前 DSH 会保留浏览器标签，但页面需用户点击「恢复页面」或刷新后加载。Buildr 插件只聚焦已复认标签；不能把未自动加载说成标签复用失败，也不能为消除恢复提示而无条件刷新可能含未保存内容的页面。
+
 Buildr 主包发版准备时先运行插件 `status`。若 `changes-pending` 或 `not-public`，先准备插件候选，分别记录插件与主包的发布授权及结果；无变化时无需重建或重发插件。卸载由 DSH 管理，不触碰 Buildr 数据。
