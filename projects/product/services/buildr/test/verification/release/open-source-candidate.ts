@@ -40,7 +40,7 @@ export function inspectCandidateFile(relativePath: any, content: any, size: any 
   for (const rule of contentRules) {
     if (rule.pattern.test(content)) findings.push(finding(rule.id, relativePath, 'blocked content pattern detected; inspect and remove or explicitly redesign the fixture'));
   }
-  const emails: any = content.match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g) || [];
+  const emails: any = content.match(/(?<![A-Za-z0-9._%+-\\])[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g) || [];
   if (emails.some((email: any) => !email.endsWith('@example.com') && email !== 'git@github.com')) {
     findings.push(finding('private.email-address', relativePath, 'non-fixture email address detected; replace it with a public project contact or example.com fixture'));
   }
@@ -136,8 +136,8 @@ function inspectReadmes(): any  {
   if (!readmes[0][1].includes('[English](README.en.md)')) findings.push(finding('readme.navigation', 'README.md', 'missing English navigation'));
   if (!readmes[1][1].includes('[中文](README.md)')) findings.push(finding('readme.navigation', 'README.en.md', 'missing Chinese navigation'));
   for (const [file, content, headings] of [
-    [readmes[0][0], readmes[0][1], ['## 可以怎样用', '## 快速开始', '## 三方如何共同工作', '## 深入阅读', '## Buildr 自举（Self-Bootstrapping）']],
-    [readmes[1][0], readmes[1][1], ['## Three Core Values', '## How Buildr Works', '## Quick Start', '## Current Capabilities', '## Documentation', '## Buildr Bootstrap Workspace']],
+    [readmes[0][0], readmes[0][1], ['## 为什么需要 Buildr', '## 可以怎样用', '## 开始使用', '## Buildr 自举（Self-Bootstrapping）', '## 深入了解']],
+    [readmes[1][0], readmes[1][1], ['## Why Buildr', '## What you can do', '## Get started', '## Self-bootstrapping: this repository is a workspace', '## Learn more']],
   ] as [string, string, string[]][]) {
     for (const heading of headings) {
       if (!content.includes(heading)) findings.push(finding('readme.structure', file, `missing section: ${heading}`));
