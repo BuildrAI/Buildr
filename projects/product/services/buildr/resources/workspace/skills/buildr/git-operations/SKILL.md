@@ -28,13 +28,14 @@ description: 执行已明确仓库、操作和目标的 Git 操作，核对授�
 - `commit`：只创建或安全 amend local commit，不 push。
 - `push`：只发布已有 commit，不把 dirty 自动 commit。
 - `commit+push`：caller 依次执行一次 commit 和一次 push，保留两个独立 Result；不是原子 transaction。
+- `delete-remote-ref`：只删除 consumer 明确提供的 remote/ref，并以 consumer 已观察的精确远端提交为删除条件，不动其他引用。
 - workspace update：只有 Buildr Skill 等 consumer 已明确 workspace、upstream、update operation 与授权时才执行；dirty、divergence、冲突、缺失 upstream 或策略不唯一时 `blocked`，不自动 rebase、merge 或继续 sync。
 
 直接 Git 收尾由智能体（Agent）选择已授权的动作，可在同一次工具调用内顺序执行。每项操作（Operation）分别核验并保留结果（Result），后一步消费已成功动作返回的真实身份；推送前新观察远端并核对完整范围。独立结果不要求独立的模型往返，批量编排不扩大授权。失败时停止相关后续动作，返回已成功部分与诊断；provider不自动stash，rebase冲突、目标歧义、已共享历史或需要force push时停止。Git Operations自身不写Task lifecycle evidence，任务登记交回原应用。
 
-本版不预扩 checkout、reset、cherry-pick、stash、branch deletion 等完整命令路由。rebase、merge、revert 或其他动作只有被 consumer 明确选为当前 operation 时才可能进入；不得作为发现分叉或失败后的自动替代策略。
+本版不预扩 checkout、reset、cherry-pick、stash、本地 branch deletion 等完整命令路由。rebase、merge、revert 或其他动作只有被 consumer 明确选为当前 operation 时才可能进入；不得作为发现分叉或失败后的自动替代策略。
 
-默认硬边界是不自动 stash、reset、rebase、merge、force push、改写共享历史或切换策略。“收尾”也不授权 merge commit、远端删除、丢弃内容或语义冲突取舍。
+默认硬边界是不自动 stash、reset、rebase、merge、force push、改写共享历史或切换策略。“收尾”也不授权 merge commit、远端任务引用创建或删除、丢弃内容或语义冲突取舍。
 
 ### Fetch 与显式 rebase
 
@@ -43,6 +44,10 @@ description: 执行已明确仓库、操作和目标的 Git 操作，核对授�
 `rebase` 只有在 consumer 已明确选择 local branch、target ref、允许 local tree/history effect，并且 provider证明当前分支匹配、index/working tree clean、没有进行中的 Git operation、local-only commits 未 push 且未共享时才能执行。已对齐、仅落后与 clean 未共享分叉都返回真实 before/after 与 tree/history 变化；共享风险或 target drift 无法证明时在 rebase 前 `blocked`。
 
 consumer 可以在选择 rebase 时同时明确授权冲突后的有界 `rebase --abort`。provider 只在 pre-state 已证明 clean 时执行；必须把 conflict、abort 命令效果和恢复核验写入同一 blocked Result。只有 branch、HEAD、index 与 working tree 都恢复到 pre-rebase facts 才能标记 recovered；abort 失败或恢复不可证明时保留现场。该动作不是静默 reset/回滚，也不授权换成 merge、stash、force push 或其他策略。
+
+### 远端引用删除
+
+`delete-remote-ref` 只有在 consumer 已明确选择该 operation 并提供实际 repository、remote、精确 ref、已观察远端提交（Commit）与允许的远端 effect 时才能执行。provider 在写远端前重新读取实际远端 tip，仍等于已观察提交才删除该引用，删除后回读远端确认不存在；tip 漂移、远端无法可靠观察或授权不完整时在远端零写入状态返回 `blocked`，不得改用无条件删除。返回错误或响应丢失时先核对实际远端状态再报告 effects。本 operation 不隐含对其他引用的任何动作，也不判断归属或业务保留理由——归属、保全与活动用途由 consumer 核验后作为授权输入提供。
 
 ## 3. 精确暂存与 commit
 
