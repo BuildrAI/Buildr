@@ -142,6 +142,12 @@ Buildr 产品开发 MUST 区分 Product Project、用户交付资产源、task w
 - **THEN** 维护者 MUST 将原验证结果视为失效
 - **AND** 维护者 MUST 在集成前对新 tree 重新运行受影响的验证
 
+#### Scenario: 归档后的验证适用性
+- **WHEN** OpenSpec 归档只移动 change 目录并写入主规格，未改变实现与测试内容
+- **THEN** 维护者 MUST 复用候选验证结果并说明归档导致的 tree 变化
+- **WHEN** 归档暴露与验证相关的事实变化
+- **THEN** 维护者 MUST 按验证适用性规则补最小充分检查
+
 #### Scenario: 实际自举 workspace 更新
 - **WHEN** 维护者在集成后选择使用当前产品 checkout 更新实际自举 workspace
 - **THEN** update/sync MUST 被视为独立的 workspace 状态变更，而不是第二轮产品 E2E
@@ -164,6 +170,11 @@ Buildr 产品 OpenSpec change 的 apply 阶段 MUST 以任务组为单位安排�
 - **WHEN** change 的实现、文档、自然语言代码、所需 runtime 同步和 review 修订全部完成
 - **THEN** Agent MUST 在最终候选 tree 上运行产品要求的完整验证入口
 - **AND** Agent MUST NOT 在候选仍预期发生内容修改时提前反复运行完整验证
+
+#### Scenario: 候选冻结包含预归档检查
+- **WHEN** 任务组验证完成进入候选冻结
+- **THEN** Agent MUST 先将 task worktree 变基到开发主线最新提交、按验证适用性重跑受影响验证、执行预归档检查，再完成候选冻结
+- **AND** Agent MUST NOT 在未同步主线的候选上执行归档
 
 #### Scenario: 验证失败后恢复 Apply
 - **WHEN** 完整验证发现失败并导致候选内容需要修改
