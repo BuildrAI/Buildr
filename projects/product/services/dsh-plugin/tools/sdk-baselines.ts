@@ -2,9 +2,10 @@
  * DSH software development kit (SDK) baselines this plugin may be built against.
  *
  * A plugin compiles against DSH internals, so a build is only valid for the exact baseline it used.
- * The manifest declares those peer versions, and a DSH runtime refuses a mismatch instead of loading
- * an interface the plugin was never compiled for. Adding a baseline here is what makes a new DSH
- * version buildable; nothing else guesses a version.
+ * The manifest declares that baseline's whole minor line as the peer range, so a DSH runtime on the
+ * same line accepts the plugin while versions older than the baseline or on the next minor line stay
+ * refusable. Adding a baseline here is what makes a new DSH version buildable; nothing else guesses
+ * a version.
  */
 export interface DshSdkBaseline {
   /** DSH release tag in the upstream repository. */

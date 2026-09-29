@@ -86,17 +86,24 @@ if (dev) {
   const clientFile = join(pkg, 'src/client.tsx');
   await writeFile(clientFile, (await readFile(clientFile, 'utf8')).replaceAll("'remote.buildr'", "'remote.buildr-dev'"));
 }
+/** Peer range covering the whole minor line of the compiled baseline, never older versions. */
+function baselinePeerRange(version: string): string {
+  const match = /^(\d+)\.(\d+)\./.exec(version);
+  if (!match) throw new Error(`Baseline version ${version} is not a semantic version.`);
+  return `>=${version} <${match[1]}.${Number(match[2]) + 1}.0-0`;
+}
 const template = JSON.parse(await readFile(join(source, 'package.template.json'), 'utf8')) as Manifest;
 const manifest = {
   ...template,
   version: JSON.parse(await readFile(join(root, 'package.json'), 'utf8')).version,
   name: VARIANT.name,
-  // Declare the baseline this build actually used. A mismatch must be refusable by the runtime, so
-  // these versions may never stay pinned to a baseline the plugin was not compiled against.
+  // Declare the minor line this build was compiled against: runtime versions at or above the
+  // baseline within the same minor pass, while older builds and the next minor line's
+  // prereleases stay refusable. The `<X.Y.0-0` bound excludes the next line's prereleases.
   peerDependencies: {
     ...template.peerDependencies,
-    '@deepseek-ai/dsh': baseline.version,
-    '@deepseek-ai/dsh-typert-protocol': baseline.version,
+    '@deepseek-ai/dsh': baselinePeerRange(baseline.version),
+    '@deepseek-ai/dsh-typert-protocol': baselinePeerRange(baseline.version),
   },
   description: dev
     ? 'Buildr 开发版入口，面向 Buildr 源码开发者；不随正式发布提供'
