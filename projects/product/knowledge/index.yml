@@ -2454,8 +2454,8 @@ sources:
     path: services/buildr-web/package.json
     observedDigest: 84983c2a6c9db1482f2a82809b6ee5fd379a9034d34d34da2f5b21d109d3d81b
   - id: verification-source-2067de1414
-    title: 精确 Node.js 下的 npm 调用
-    summary: 检查当前 Node.js 是否符合项目版本，再使用相邻 npm 和相同进程环境调用真实命令。
+    title: 项目声明范围内的 npm 调用
+    summary: 检查当前 Node.js 是否在项目声明版本范围内（声明版本优先），再使用相邻 npm 和相同进程环境调用真实命令。
     kind: code
     path: services/buildr/tools/development/run-development-npm.ts
     observedDigest: 41471738b34ac6ea08a4bde41b3516119be550f42ee77ce0a047323dac18a554

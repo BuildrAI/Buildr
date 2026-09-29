@@ -8,7 +8,7 @@
 projects/product/                         项目（Project）：跨服务产品责任
 ├── README.md                             产品与开发入口
 ├── AGENTS.md                             项目规则
-├── .node-version                         固定开发 Node 版本
+├── .node-version                         声明开发 Node 版本（接受下限与供给锚点）
 ├── buildr                                薄开发入口，委托 services/buildr
 ├── capabilities.yml                      项目能力声明
 ├── commands.yml                          项目命令需求

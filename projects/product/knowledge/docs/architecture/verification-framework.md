@@ -22,7 +22,7 @@ Buildr 产品自身是在通用框架下建设测试能力的一个项目实例�
 
 Buildr 的验证由以下几部分共同组成。**某个入口的“完整”只相对于它声明的集合**，不能把后端、前端逻辑、页面交互和跨平台候选相互替代。
 
-下表的工作目录均相对于 `projects/product/`。后端命令用 `tools/development/run-development-npm run <脚本名>`；前端使用表内给出的相邻服务包装入口（Wrapper），两者都采用项目声明的精确 Node.js 版本。
+下表的工作目录均相对于 `projects/product/`。后端命令用 `tools/development/run-development-npm run <脚本名>`；前端使用表内给出的相邻服务包装入口（Wrapper），两者都在项目声明的开发 Node 范围内选择 Node.js，声明版本优先；正式 Candidate 环境准备仍锚定声明版本。
 
 | 测试对象 | 真实入口与工作目录 | 证明范围及独立检查 |
 | --- | --- | --- |

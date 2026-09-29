@@ -41,7 +41,7 @@ function run(entry: any, args: any, env: any): any  {
   });
 }
 
-test('Project bridge 只使用 PATH 中与 Product .node-version 完全一致的 Node', { skip: process.platform === 'win32' }, () => {
+test('Project bridge 在 PATH 中选择声明版本且跳过范围外候选', { skip: process.platform === 'win32' }, () => {
   const fixture: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-node-path-'));
   const oldBin: any = path.join(fixture, 'old');
   const currentBin: any = path.join(fixture, 'current');
@@ -53,7 +53,24 @@ test('Project bridge 只使用 PATH 中与 Product .node-version 完全一致的
   assert.match(result.stdout, /^current\|.*bin\/buildr\.mjs doctor --json\n$/u);
 });
 
-test('hostile PATH 下优先使用显式 NVM_DIR 中的 Product 精确 Node', { skip: process.platform === 'win32' }, () => {
+test('PATH 上的声明版本之后更新 minor 被接受', { skip: process.platform === 'win32' }, () => {
+  const fixture: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-node-range-'));
+  const olderBin: any = path.join(fixture, 'older');
+  const newerBin: any = path.join(fixture, 'newer');
+  fakeNode(path.join(olderBin, 'node'), '24.14.9', 'below-floor');
+  fakeNode(path.join(newerBin, 'node'), '24.21.0', 'in-range-newer');
+
+  const selected: any = run(runner, ['--help'], { PATH: `${olderBin}:${newerBin}:/usr/bin:/bin` });
+  assert.equal(selected.status, 0, selected.stderr);
+  assert.match(selected.stdout, /^in-range-newer\|.*bin\/buildr\.mjs --help\n$/u);
+
+  const belowFloorOnly: any = run(runner, ['--help'], { PATH: `${olderBin}:/usr/bin:/bin` });
+  assert.equal(belowFloorOnly.status, 1);
+  assert.equal(belowFloorOnly.stdout, '');
+  assert.match(belowFloorOnly.stderr, /requires Node\.js >=24\.15\.0 <25/u);
+});
+
+test('hostile PATH 下优先使用显式 NVM_DIR 中的声明版本', { skip: process.platform === 'win32' }, () => {
   const fixture: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-node-nvm-'));
   const hostileBin: any = path.join(fixture, 'hostile');
   const nvmRoot: any = path.join(fixture, 'nvm');
@@ -66,7 +83,7 @@ test('hostile PATH 下优先使用显式 NVM_DIR 中的 Product 精确 Node', { 
   assert.doesNotMatch(result.stdout, /hostile/u);
 });
 
-test('不匹配的显式 NVM_DIR 候选不会覆盖 PATH 中的精确 Node', { skip: process.platform === 'win32' }, () => {
+test('不匹配的显式 NVM_DIR 候选不会覆盖 PATH 中的声明版本', { skip: process.platform === 'win32' }, () => {
   const fixture: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-node-nvm-mismatch-'));
   const exactBin: any = path.join(fixture, 'exact');
   const nvmRoot: any = path.join(fixture, 'nvm');
@@ -117,7 +134,7 @@ test('Workspace 未声明 runtime.node 不会阻断 development main process', {
   assert.match(main.stdout, /^bootstrap\|.*bin\/buildr\.mjs project create demo\n$/u);
 });
 
-test('BUILDR_NODE 优先于 PATH 且非精确版本 override 会 fail fast', { skip: process.platform === 'win32' }, () => {
+test('BUILDR_NODE 优先于 PATH 且范围外 override 会 fail fast', { skip: process.platform === 'win32' }, () => {
   const fixture: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-node-override-'));
   const pathNode: any = path.join(fixture, 'path', 'node');
   const explicitNode: any = path.join(fixture, 'explicit', 'node');
@@ -128,18 +145,24 @@ test('BUILDR_NODE 优先于 PATH 且非精确版本 override 会 fail fast', { s
   assert.equal(selected.status, 0, selected.stderr);
   assert.match(selected.stdout, /^explicit\|.*bin\/buildr\.mjs --help\n$/u);
 
+  const newerExplicitNode: any = path.join(fixture, 'newer-explicit', 'node');
+  fakeNode(newerExplicitNode, '24.21.0', 'newer-explicit');
+  const newerSelected: any = run(runner, ['--help'], { PATH: path.dirname(pathNode), BUILDR_NODE: newerExplicitNode });
+  assert.equal(newerSelected.status, 0, newerSelected.stderr);
+  assert.match(newerSelected.stdout, /^newer-explicit\|.*bin\/buildr\.mjs --help\n$/u);
+
   const incompatibleNode: any = path.join(fixture, 'incompatible', 'node');
   fakeNode(incompatibleNode, '18', 'incompatible');
   const rejected: any = run(runner, ['--help'], { PATH: path.dirname(pathNode), BUILDR_NODE: incompatibleNode });
   assert.equal(rejected.status, 1);
-  assert.match(rejected.stderr, /requires exact Node\.js 24\.15\.0; BUILDR_NODE/u);
+  assert.match(rejected.stderr, /requires Node\.js >=24\.15\.0 <25; BUILDR_NODE/u);
   assert.equal(rejected.stdout, '');
 
   const futureNode: any = path.join(fixture, 'future', 'node');
   fakeNode(futureNode, '25.0.0', 'future');
   const futureRejected: any = run(runner, ['--help'], { PATH: path.dirname(pathNode), BUILDR_NODE: futureNode });
   assert.equal(futureRejected.status, 1);
-  assert.match(futureRejected.stderr, /requires exact Node\.js 24\.15\.0; BUILDR_NODE/u);
+  assert.match(futureRejected.stderr, /requires Node\.js >=24\.15\.0 <25; BUILDR_NODE/u);
   assert.equal(futureRejected.stdout, '');
 });
 
@@ -154,7 +177,7 @@ test('开发入口可发现 Agent runtime PATH 相邻的 bundled Node', { skip: 
   assert.match(result.stdout, /^bundled\|.*bin\/buildr\.mjs status\n$/u);
 });
 
-test('没有精确 Product Node 时返回锁定版本和恢复动作', { skip: process.platform === 'win32' }, () => {
+test('没有范围内 Product Node 时返回所需范围和恢复动作', { skip: process.platform === 'win32' }, () => {
   const fixture: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-node-missing-'));
   const oldBin: any = path.join(fixture, 'old');
   fakeNode(path.join(oldBin, 'node'), '18', 'old');
@@ -162,16 +185,17 @@ test('没有精确 Product Node 时返回锁定版本和恢复动作', { skip: p
   const result: any = run(runner, ['doctor'], { PATH: oldBin });
   assert.equal(result.status, 1);
   assert.equal(result.stdout, '');
-  assert.match(result.stderr, /requires exact Node\.js 24\.15\.0/u);
+  assert.match(result.stderr, /requires Node\.js >=24\.15\.0 <25/u);
   assert.match(result.stderr, /Set BUILDR_NODE.*activate the Product \.node-version/u);
   assert.doesNotMatch(result.stderr, /SyntaxError/u);
 });
 
-test('开发启动器读取 Product 精确版本且 package engines 保留发布兼容范围', () => {
+test('开发启动器读取声明版本且 package engines 保留发布兼容范围', () => {
   const packageJson: any = JSON.parse(fs.readFileSync(path.join(serviceRoot, 'package.json'), 'utf8'));
   const source: any = fs.readFileSync(runner, 'utf8');
-  assert.equal(fs.readFileSync(path.resolve(serviceRoot, '../..', '.node-version'), 'utf8').trim(), '24.15.0');
-  assert.equal(packageJson.engines.node, '>=24.15.0 <25');
+  const declared: any = fs.readFileSync(path.resolve(serviceRoot, '../..', '.node-version'), 'utf8').trim();
+  assert.equal(declared, '24.15.0');
+  assert.equal(packageJson.engines.node, `>=${declared} <${Number(declared.split('.')[0]) + 1}`);
   assert.match(source, /resolve-development-node/u);
   assert.doesNotMatch(source, /workspace\.yml|Workspace Node runtime|BUILDR_NODE_RUNTIME_DATA_DIR/u);
 });
