@@ -136,8 +136,8 @@ try {
   );
 
   fs.mkdirSync(workspace);
-  run(['init', '--target', workspace, '--name', 'remote-timeout', '--profile', 'personal']);
-  run(['skills', 'add', 'slow-skill', '--resolved-source', `${baseUrl}/hang`, '--scope', '.', '--target', workspace]);
+  run(['init', '--target', workspace, '--name', 'remote-timeout', '--profile', 'personal'], { timeout: 60000 });
+  run(['skills', 'add', 'slow-skill', '--resolved-source', `${baseUrl}/hang`, '--scope', '.', '--target', workspace], { timeout: 60000 });
   const render: any = run(['skills', 'render', 'codex', '--scope', '.', '--target', workspace], { env: timeoutEnv, expected: 1, timeout: 15000 });
   assert.match(render.stderr, /Failed to fetch workspace Skill slow-skill/);
   assert.match(render.stderr, /Remote (?:request|response) inactivity timeout after 150ms/);

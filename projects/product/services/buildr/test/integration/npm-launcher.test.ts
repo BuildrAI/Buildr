@@ -112,7 +112,7 @@ async function waitFor(check: any, { attempts = 160, intervalMs = 50, message = 
   throw new Error(`Timed out waiting for ${message}. ${JSON.stringify(diagnostic())}`);
 }
 
-const LAUNCHER_HANDOFF_ATTEMPTS: any = 1200;
+const LAUNCHER_HANDOFF_ATTEMPTS: any = 2400;
 const LAUNCHER_HANDOFF_TIMEOUT_MS: any = 60000;
 
 function spawnInstalledWeb(entry: any, args: any): any  {

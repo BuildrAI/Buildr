@@ -98,7 +98,7 @@ To contribute, open the repository root in your agent tool and say:
 
 > I want to contribute to Buildr. Read the repository rules and product development documentation, then prepare the development environment.
 
-This workspace already exists; do not initialize it again. Development uses the repository's `projects/product/buildr` entry. See [product development](projects/product/README.md) and [contributing](CONTRIBUTING.md).
+This workspace already exists; do not initialize it again. Development uses the repository's `projects/product/buildr` entry; run `projects/product/buildr runtime list --json` from the repository root to list the supported agent runtimes. See [product development](projects/product/README.md) and [contributing](CONTRIBUTING.md).
 
 ## Learn more
 

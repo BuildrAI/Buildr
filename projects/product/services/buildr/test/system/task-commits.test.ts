@@ -25,7 +25,8 @@ test('真实CLI与HTTP共享只读提交结果、闭合输入与错误边界', a
   const hash = git(['rev-parse', 'HEAD']);
   const before = runtime.readTask(root, 'task-git');
   const cli = runBuildrJson(['task', 'commits', 'task-git', '--target', root]);
-  assert.equal(cli.schemaVersion, 'buildr.task-commits/v1'); assert.equal(cli.status, 'complete');
+  assert.equal(cli.schemaVersion, 'buildr.task-commits/v1');
+  assert.equal(cli.status, 'complete', `task commits returned ${cli.status}: ${JSON.stringify({ diagnostics: cli.diagnostics, repositories: cli.repositories, coverage: cli.coverage })}`);
   assert.deepEqual(cli.commits.map((item: { hash: string }) => item.hash), [hash]);
   const help = runBuildr(['task', 'commits', '--help']).stdout;
   assert.match(help, /buildr task commits <task-id>/);

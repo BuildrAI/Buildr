@@ -110,7 +110,7 @@ Buildr 当前以本机使用为主。文件资料可以通过 Git 协作，本�
 
 > 我想参与 Buildr 开发，请阅读仓库规则和产品开发说明，准备开发环境。
 
-这是已有的工作空间（Workspace），无需重新初始化。开发使用仓库内的 `projects/product/buildr`；具体说明见[产品开发入口](projects/product/README.md)和[贡献指南](CONTRIBUTING.md)。
+这是已有的工作空间（Workspace），无需重新初始化。开发使用仓库内的 `projects/product/buildr`，运行 `projects/product/buildr runtime list --json` 可查看当前支持的智能体运行时（Agent Runtime）；具体说明见[产品开发入口](projects/product/README.md)和[贡献指南](CONTRIBUTING.md)。
 
 ## 深入了解
 

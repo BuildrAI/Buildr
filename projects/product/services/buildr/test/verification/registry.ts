@@ -77,6 +77,7 @@ export const VERIFICATION_STEP_TESTING: any = Object.freeze({
   'runtime-adapter-contract': testing(SERVICE_OWNER, 'Static Conformance', 'Integration', 5000, 'Runtime adapter declarations and isolated filesystem projections satisfy their contract.', TEST_ENVIRONMENTS.repeatedFilesystem),
   'runtime-skill-projection': testing(SERVICE_OWNER, 'Development', 'Integration', 8000, 'Changed packaged Skills bind their source identity and complete projected inventory through every supported runtime adapter.', TEST_ENVIRONMENTS.repeatedFilesystem),
   'integration-candidate-release': testing(PROJECT_OWNER, 'Delivery / Release', 'System', 15000, 'Release contract cold-start and branch convergence behave correctly.', TEST_ENVIRONMENTS.repeatedGitCli),
+  'integration-candidate-release-effects': testing(PROJECT_OWNER, 'Delivery / Release', 'System', 150000, 'Release publication effects recover external partial results without repeating publication.', TEST_ENVIRONMENTS.repeatedGitCli),
   'concurrent-task-acceptance': testing(PROJECT_OWNER, 'Acceptance', 'System', 40000, 'Concurrent Task workflows satisfy the declared acceptance contract.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'candidate-tarball': testing(SERVICE_OWNER, 'Delivery / Release', 'System', 15000, 'One frozen application payload produces the single npm candidate tarball consumed by later verification.', TEST_ENVIRONMENTS.isolatedGitCli),
   'application-payload-release': testing(SERVICE_OWNER, 'Delivery / Release', 'System', 30000, 'The frozen application payload is deterministic, complete, host-Node compatible, and serves Buildr Web only on demand.', TEST_ENVIRONMENTS.workspaceLifecycle),
@@ -114,6 +115,10 @@ export const VERIFICATION_STEP_TESTING: any = Object.freeze({
 
 export const VERIFICATION_STEP_EVIDENCE: any = Object.freeze({
   'integration-candidate-release': primaryEvidence(
+    'A release contract, selection, rehearsal, recovery, or Git convergence boundary that drifts from the frozen Candidate source must fail.',
+    'real temporary Git repositories, release runner entrypoints, and branch convergence',
+  ),
+  'integration-candidate-release-effects': primaryEvidence(
     'A partial Git or Registry write whose retry repeats publication or erases known effects must fail recovery.',
     'real temporary Git repositories, HTTP services, immutable artifacts and release recovery',
   ),
@@ -201,6 +206,7 @@ export const VERIFICATION_STEP_EVIDENCE: any = Object.freeze({
 
 export const VERIFICATION_DAILY_CORE_EXCLUSIONS: any = Object.freeze({
   'integration-candidate-release': 'Exercises release infrastructure lifecycle and recovery; selected only for release-related changes or full Candidate.',
+  'integration-candidate-release-effects': 'Exercises release publication effects and recovery; selected only for release-related changes or full Candidate.',
   'candidate-tarball': 'Produces the unique release Candidate tarball.',
   'application-payload-release': 'Validates the packaged application payload and npm runtime.',
   'npm-launcher-candidate': 'Validates the Launcher against a verified npm Candidate installation.',
@@ -311,7 +317,7 @@ export const VERIFICATION_RESOURCE_CONTRACTS: any = Object.freeze({
 export const VERIFICATION_EXECUTION_PROFILES: any = Object.freeze({
   local: concurrency(4, 3, 2, { integration: 4, ...Object.fromEntries(SYSTEM_SUITES.map((suite: any) => [suite.id, suite.innerConcurrency])), 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 3 }, { workers: 8, processes: 8, git: 3, workspaceIo: 3 }),
   ci: concurrency(4, 3, 2, { integration: 4, ...Object.fromEntries(SYSTEM_SUITES.map((suite: any) => [suite.id, suite.innerConcurrency])), 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 3 }, { workers: 8, processes: 8, git: 3, workspaceIo: 3 }),
-  'ci-workspace-limited': concurrency(4, 2, 1, { integration: 3, ...Object.fromEntries(SYSTEM_SUITES.map((suite: any) => [suite.id, Math.min(suite.innerConcurrency, 2)])), 'integration-candidate-release': 2, 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 2 }, { workers: 6, processes: 6, git: 2, workspaceIo: 2 }),
+  'ci-workspace-limited': concurrency(4, 2, 1, { integration: 3, ...Object.fromEntries(SYSTEM_SUITES.map((suite: any) => [suite.id, Math.min(suite.innerConcurrency, 2)])), 'integration-candidate-release': 2, 'integration-candidate-release-effects': 1, 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 2 }, { workers: 6, processes: 6, git: 2, workspaceIo: 2 }),
 });
 
 export const VERIFICATION_CONCURRENCY: any = VERIFICATION_EXECUTION_PROFILES.local;
@@ -471,7 +477,8 @@ export const verificationSteps: any = Object.freeze([
   step({ id: 'openspec-strict', name: 'openspec strict validation', executor: { type: 'openspec', args: ['validate', '--all', '--strict'] }, profiles: ['fast', 'candidate'], }),
   step({ id: 'runtime-adapter-contract', name: 'runtime adapter contract', executor: { type: 'node', file: 'test/verification/runtime/adapter-contract.ts' }, profiles: ['candidate'], groups: ['runtime'], }),
 
-  step({ id: 'integration-candidate-release', name: 'Candidate integration: release contract and Git convergence', executor: { type: 'node', file: 'test/verification/run-node-tests.ts', args: ['test/integration-candidate-release/*.test.ts'] }, profiles: ['candidate'], groups: ['release'], schedulingCostMs: 60000, timeoutMs: 300_000, concurrencyClass: 'workspace-heavy' }),
+  step({ id: 'integration-candidate-release', name: 'Candidate integration: release contract and Git convergence', executor: { type: 'node', file: 'test/verification/run-node-tests.ts', args: ['test/integration-candidate-release/release-*.test.ts'] }, profiles: ['candidate'], groups: ['release'], schedulingCostMs: 60000, timeoutMs: 300_000, concurrencyClass: 'workspace-heavy' }),
+  step({ id: 'integration-candidate-release-effects', name: 'Candidate integration: release publication effects and recovery', executor: { type: 'node', file: 'test/verification/run-node-tests.ts', args: ['test/integration-candidate-release/publication-effects.test.ts'] }, profiles: ['candidate'], groups: ['release'], schedulingCostMs: 60000, timeoutMs: 300_000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'concurrent-task-acceptance', name: 'Concurrent task workflow acceptance', executor: { type: 'node', file: 'test/verification/concurrency/task-acceptance.ts' }, profiles: ['candidate'], groups: ['windows-npm-preflight'],  schedulingCostMs: 40000, concurrencyClass: 'workspace-heavy', resources: ['workspace-saturating', 'task-lifecycle-heavy', 'app-runtime'] }),
 
   step({ id: 'host-node-contract', name: 'Host Node engine contract', executor: { type: 'node', file: 'test/verification/host-node/contract.ts' }, profiles: ['host-node'], }),
@@ -634,8 +641,8 @@ export const CANDIDATE_CI_SHARDS: any = Object.freeze([
     'candidate-tarball',
   ], { producesArtifact: true }),
   ...CORE_MACOS_SHARDS,
-  candidateShard('release-infrastructure-macos', 'macos', 'verification', ['integration-candidate-release']),
-  candidateShard('release-infrastructure-windows', 'windows', 'verification', ['integration-candidate-release']),
+  candidateShard('release-infrastructure-macos', 'macos', 'verification', ['integration-candidate-release', 'integration-candidate-release-effects']),
+  candidateShard('release-infrastructure-windows', 'windows', 'verification', ['integration-candidate-release', 'integration-candidate-release-effects']),
   candidateShard('runtime-windows', 'windows', 'verification', [
     'system-runtime-recovery',
     'system-app-process',
@@ -659,6 +666,7 @@ export const CANDIDATE_CI_SHARDS: any = Object.freeze([
 
 export const CANDIDATE_CI_PLATFORM_REPEATS: any = Object.freeze({
   'integration-candidate-release': Object.freeze(['release-infrastructure-macos', 'release-infrastructure-windows']),
+  'integration-candidate-release-effects': Object.freeze(['release-infrastructure-macos', 'release-infrastructure-windows']),
   'npm-launcher-candidate': Object.freeze(['core-package-runtime-release-macos', 'runtime-windows']),
   'release-tarball-smoke': Object.freeze(['core-package-runtime-release-macos', 'runtime-windows']),
 });
