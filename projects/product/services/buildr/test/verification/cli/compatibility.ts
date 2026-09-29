@@ -146,7 +146,7 @@ for (const [args, expected] of [
   [['service', 'create'], /Missing service ref/],
   [['render', 'codex', '--adapter', 'unsupported'], /Unsupported runtime adapter: unsupported\. Supported adapters: claude-code, agents-standard\./],
   [['render', 'codex', '--adapter', 'cursor'], /Unsupported runtime adapter: cursor\. Supported adapters: claude-code, agents-standard\./],
-  [['render', '--adapter', 'unsupported'], /Unknown argument: unsupported/],
+  [['render', '--adapter', 'unsupported'], /Unsupported runtime adapter: unsupported\. Supported adapters: claude-code, agents-standard\./],
   [['commands', 'add', 'demo', '--unknown'], /Unknown argument: --unknown/],
 ]) {
   const result: any = run(args);
