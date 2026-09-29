@@ -199,7 +199,12 @@ export function dispatch(argv: any = process.argv): any  {
   const commandCatalog = createCommandCatalog(commandRegistry);
   registerCommandHelp(runtime, commandCatalog);
   const rawArgs = argv.slice(2);
-  const [domain, action, runtimeId, ...args] = rawArgs;
+  const [domain, action] = rawArgs;
+  // 与 parseRuntimeCommandArgs 同一规则：第三槽位只消费非选项 token；省略身份时保留完整参数尾。
+  const identityToken = rawArgs[2];
+  const hasIdentity = identityToken !== undefined && !identityToken.startsWith('--');
+  const runtimeId = hasIdentity ? identityToken : null;
+  const args = hasIdentity ? rawArgs.slice(3) : rawArgs.slice(2);
   const context: any = { argv, rawArgs, domain, action, runtimeId, args, runtime, commandRegistry, commandCatalog };
   const direct = commandRegistry.find((item: any) => !item.requiresAgent && item.match(context));
   if (direct) return direct.run(runtime, context);

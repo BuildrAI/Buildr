@@ -5,7 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { consumeRuntimeAdapterOption, detectManagedRuntimeAdapters, parseRuntimeCommandArgs, selectWorkspaceRuntime } from '../../src/modules/agent-assets/application/runtime-selection.ts';
 import { createAgentAssetsCliContributions } from '../../src/modules/agent-assets/interfaces/cli/agent-assets.ts';
-import { withResolvedTarget } from '../../src/infrastructure/cli-arguments.ts';
+import { optionValue, withResolvedTarget } from '../../src/infrastructure/cli-arguments.ts';
 
 function workspace(t: any) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-runtime-selection-'));
@@ -94,6 +94,8 @@ test('命令路由不吞省略运行时后的target，运行失败不尝试其�
   const adapterStub: any = { id: 'agents-standard', renderCapabilities: { 'rules-entry': { writesFiles: true } } };
   const runtime = {
     withResolvedTarget,
+    optionValue,
+    selectWorkspaceRuntime: (_targetRoot: any, input: any) => { calls.push(['select', input]); return { adapter: adapterStub, adapterId: adapterStub.id, runtimeId: input?.runtimeId ?? null }; },
     resolveRuntimeAdapter: (identity: any) => { calls.push(['resolve', identity]); return adapterStub; },
     renderRuntime: (identity: any, args: any) => { calls.push(['render', identity, args]); return { targetRoot: '/workspace', files: [], rulesActions: [], warnings: [] }; },
     syncRuntime: (identity: any, args: any) => { calls.push(['sync', identity, args]); throw new Error('selected runtime failed'); },
@@ -114,17 +116,24 @@ test('命令路由不吞省略运行时后的target，运行失败不尝试其�
     assert.deepEqual(calls.at(-1)[2], ['--target', '/workspace', '--adapter', 'agents-standard'], `${key} must not swallow --target`);
   }
 
-  // Existing shared-dispatcher defect: `src/bootstrap/cli/registry.ts` destructures rawArgs positionally, so an
-  // omitted identity shifts the tail and `buildr skills render --target <dir>` reaches the route with
-  // runtimeId === '--target'. This pins the observable contract at the route boundary; the root cause lives in
-  // shared dispatch and needs its own change.
+  // Shared-dispatcher contract (src/bootstrap/cli/registry.ts): the identity slot only consumes a non-option
+  // token, so `buildr skills render --target <dir>` reaches the route with runtimeId === null and the full
+  // argument tail. The route boundary pins that contract.
   calls.length = 0;
   routes.find((item: any) => item.key === 'skills render').run(runtime, {
     argv: ['node', 'buildr', 'skills', 'render', '--target', '/workspace'],
     rawArgs: ['skills', 'render', '--target', '/workspace'],
-    domain: 'skills', action: 'render', runtimeId: '--target', args: ['/workspace'],
+    domain: 'skills', action: 'render', runtimeId: null, args: ['--target', '/workspace'],
   });
-  assert.equal(calls.at(-1)[1], '--target', 'an omitted identity is still read as the next option by the shared dispatcher');
+  assert.deepEqual(calls.at(-1), ['skills', null, ['--target', '/workspace']], 'an omitted identity must be null and keep the full option tail');
+  calls.length = 0;
+  routes.find((item: any) => item.key === 'rules render').run(runtime, {
+    argv: ['node', 'buildr', 'rules', 'render', '--adapter', 'claude-code', '--target', '/workspace'],
+    rawArgs: ['rules', 'render', '--adapter', 'claude-code', '--target', '/workspace'],
+    domain: 'rules', action: 'render', runtimeId: null, args: ['--adapter', 'claude-code', '--target', '/workspace'],
+  });
+  assert.deepEqual(calls.find((entry) => entry[0] === 'select')[1], { runtimeId: null, adapterId: 'claude-code' }, 'rules render must select the adapter without a positional identity');
+  assert.deepEqual(calls.at(-1), ['rules', null, ['--adapter', 'claude-code', '--target', '/workspace']]);
   const before = calls.length;
   assert.throws(() => routes.find((item: any) => item.key === 'sync').run(runtime, { argv: ['node', 'buildr', 'sync', '--target', '/workspace'] }), /selected runtime failed/);
   assert.equal(calls.length, before + 1);

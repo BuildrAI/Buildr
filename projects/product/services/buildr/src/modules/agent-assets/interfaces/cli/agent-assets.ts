@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../../../infrastructure/contracts/public-json.ts';
 import { assertNoUnknownOptions, hasFlag, optionValue, optionValueRaw, positionalArgs } from '../../../../infrastructure/cli-arguments.ts';
+import { consumeRuntimeAdapterOption, parseRuntimeCommandArgs } from '../../application/runtime-selection.ts';
 
 function repeatedOptionValues(args: string[], flag: string): string[] {
   const values: string[] = [];
@@ -290,14 +291,16 @@ function route({ key, surface = 'primary', summary, usage, details = [], match, 
 }
 
 function runScopedRender(runtime: any, context: any): any  {
-  const adapter = runtime.resolveRuntimeAdapter(context.runtimeId);
+  const command = runtime.withResolvedTarget(context.args);
+  const adapter = context.domain === 'rules'
+    ? runtime.selectWorkspaceRuntime(command.targetRoot, { runtimeId: context.runtimeId ?? null, adapterId: runtime.optionValue(command.args, '--adapter', null) }).adapter
+    : runtime.resolveRuntimeAdapter(context.runtimeId);
   const renderer = context.domain === 'skills'
     ? (args: any) => runtime.renderSkillsRuntime(context.runtimeId ?? null, args)
     : context.domain === 'rules' && adapter.renderCapabilities['rules-entry'].writesFiles
       ? (args: any) => runtime.renderRulesRuntime(context.runtimeId ?? null, args)
       : null;
   if (!renderer) { runtime.usage(); process.exit(2); }
-  const command = runtime.withResolvedTarget(context.args);
   const result = renderer(command.args);
   const { targetRoot, files } = result;
   for (const warning of result.warnings || []) console.error(`Warning: ${warning}`);
@@ -387,7 +390,7 @@ export function createAgentAssetsCliContributions(): any  {
     route({
       key: 'render', surface: 'agent-machine',
       summary: '组合渲染 rules entry 和 workspace Skills 到 workspace destination；仅显式传入 --product-skill 时同时投射产品入口 Buildr Skill。不会同步 workspace 源资产或迁移 Structured Store。',
-      usage: 'Usage: buildr render <agent> --target <dir> [--scope <scope>] [--product-skill]',
+      usage: 'Usage: buildr render [<agent>] --target <dir> [--scope <scope>] [--product-skill]',
       match: ({ domain }: any) => domain === 'render',
       run: (runtime: any, context: any) => {
         // 与 parseRuntimeCommandArgs 同一规则：省略运行时身份时，紧随其后的选项不得被当成身份吞掉。
@@ -404,9 +407,13 @@ export function createAgentAssetsCliContributions(): any  {
     route({
       key: 'sync',
       summary: '同步 Buildr 产品能力，安装产品入口 Buildr Skill，并准备当前 Agent 的 workspace 入口 runtime。不是 Project scope 同步工具。',
-      usage: 'Usage: buildr sync <agent> --target <dir> [--scope <scope>]',
+      usage: 'Usage: buildr sync [<agent>] --target <dir> [--scope <scope>]',
       match: ({ domain }: any) => domain === 'sync',
-      run: (runtime: any, context: any) => runtime.syncRuntime(context.action, context.argv.slice(4)),
+      run: (runtime: any, context: any) => {
+        // 与 parseRuntimeCommandArgs 同一规则：省略运行时身份时，紧随其后的选项不得被当成身份吞掉。
+        const parsed = parseRuntimeCommandArgs(context.argv.slice(3));
+        return runtime.syncRuntime(parsed.runtimeId, parsed.args);
+      },
     }),
     route({
       key: 'skills add',
@@ -427,7 +434,7 @@ export function createAgentAssetsCliContributions(): any  {
     route({
       key: 'skill install', surface: 'agent-machine', requiresAgent: true,
       summary: '只安装或修复产品入口 Buildr Skill。',
-      usage: 'Usage: buildr skill install <agent> --target <dir>',
+      usage: 'Usage: buildr skill install [<agent>] --target <dir>',
       match: ({ domain, action }: any) => domain === 'skill' && action === 'install',
       run: (runtime: any, context: any) => {
         const command = runtime.withResolvedTarget(context.args);
@@ -438,11 +445,12 @@ export function createAgentAssetsCliContributions(): any  {
     route({
       key: 'runtime check', surface: 'agent-machine', requiresAgent: true,
       summary: '专项检查某个 Agent runtime render 状态。',
-      usage: 'Usage: buildr runtime check <agent> --scope <.|projects/project[/services/service[/path...]]> --target <dir>',
+      usage: 'Usage: buildr runtime check [<agent>] --scope <.|projects/project[/services/service[/path...]]> --target <dir>',
       match: ({ domain, action }: any) => domain === 'runtime' && action === 'check',
       run: (runtime: any, context: any) => {
-        const command = runtime.withResolvedTarget(context.args);
-        const adapter = runtime.resolveRuntimeAdapter(context.runtimeId);
+        const selectionArgs = consumeRuntimeAdapterOption(context.args);
+        const command = runtime.withResolvedTarget(selectionArgs.args);
+        const adapter = runtime.selectWorkspaceRuntime(command.targetRoot, { runtimeId: context.runtimeId ?? null, adapterId: selectionArgs.adapterId }).adapter;
         const checker = runtime.runtimeImplementation(adapter, 'checker', runtime.RUNTIME_CHECKERS);
         const printer = runtime.runtimeImplementation(adapter, 'checker', runtime.RUNTIME_CHECK_PRINTERS);
         const result = checker(command.args, { repoRoot: command.targetRoot, adapterId: adapter.id, command: `buildr runtime check ${context.runtimeId ?? ''}`.trim() });
@@ -453,14 +461,14 @@ export function createAgentAssetsCliContributions(): any  {
     route({
       key: 'skills render', surface: 'agent-machine', requiresAgent: true,
       summary: '--target 始终是 Skill source workspace；workspace destination 写当前工作目录 runtime，user destination 写当前 Agent 用户层。默认 workspace。',
-      usage: 'Usage: buildr skills render <agent> [--destination workspace|user] --target <workspace> [--json]',
+      usage: 'Usage: buildr skills render [<agent>] [--destination workspace|user] --target <workspace> [--json]',
       match: ({ domain, action }: any) => domain === 'skills' && action === 'render',
       run: runScopedRender,
     }),
     route({
       key: 'rules render', surface: 'agent-machine', requiresAgent: true,
       summary: '递归发现 canonical workspace scope 的祖先链和子树，并按 adapter reconcile rules bridge 或 vendor rule files。原生消费 AGENTS.md 的 adapter 不执行 rules render。',
-      usage: 'Usage: buildr rules render <agent> --scope <.|projects/project[/services/service[/path...]]> --target <dir>',
+      usage: 'Usage: buildr rules render [<agent>] --scope <.|projects/project[/services/service[/path...]]> --target <dir>',
       match: ({ domain, action }: any) => domain === 'rules' && action === 'render',
       run: runScopedRender,
     }),

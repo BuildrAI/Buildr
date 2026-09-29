@@ -7,6 +7,7 @@ import { registerApplicationPackageMaintenance, type PackageMaintenanceDependenc
 import { registerAgentAssetsPackageAssets } from './application/package-maintenance/package-assets.ts';
 import { registerDomainsRules, type RulesDependencies } from './application/rules.ts';
 import { registerApplicationRuntime } from './application/runtime-projection.ts';
+import { selectWorkspaceRuntime } from './application/runtime-selection.ts';
 import { registerDomainsRuntime, type RuntimeApplicationDependencies } from './application/runtime.ts';
 import { registerDomainsSkills, type SkillsDependencies } from './application/skills.ts';
 import { createAgentAssetsCliContributions } from './interfaces/cli/agent-assets.ts';
@@ -458,6 +459,7 @@ export function createAgentAssetsModule(infrastructure: AgentAssetsInfrastructur
         doctor,
         getRuntimeAdapter: adapters.getRuntimeAdapter,
         resolveRuntimeAdapter: adapters.resolveRuntimeAdapter,
+        selectWorkspaceRuntime,
         usage: (...args: any[]) => infrastructure.usage(...args),
         withResolvedTarget: infrastructure.withResolvedTarget,
         optionValue: infrastructure.optionValue,
