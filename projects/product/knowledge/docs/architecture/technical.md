@@ -1,6 +1,6 @@
 # Buildr 怎样实现
 
-本文帮助开发者判断改动属于哪里、会影响哪些事实，以及需要分别验证什么。Buildr 由两个服务（Service）共同交付：`services/buildr` 负责命令、业务能力、文件与 SQLite、本机网页托管和 npm 分发；`services/buildr-web` 负责 React 页面与交互。两者共用一个 Git 代码库（Repository），分别维护依赖与构建配置，沿用同一[产品术语表](../glossary.md)。
+本文帮助开发者判断改动属于哪里、会影响哪些事实，以及需要分别验证什么。Buildr 由三个服务（Service）协作：`services/buildr` 负责命令、业务能力、文件与 SQLite、本机网页托管和 Buildr npm 分发；`services/buildr-web` 负责 React 页面与交互；`services/dsh-plugin` 独立构建、验证和发布 DSH 桌面插件。三者共用一个 Git 代码库（Repository），各自维护版本与构建边界，沿用同一[产品术语表](../glossary.md)。
 
 ## 一次操作怎样到达真实数据
 

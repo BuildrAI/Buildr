@@ -1,0 +1,5 @@
+# Development entry for a developer profile; it is never publicly published.
+- insert:
+    - id: buildr-dev
+      name: '@buildr-ai/dsh-plugin-dev'
+      disabled: false

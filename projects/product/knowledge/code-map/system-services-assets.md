@@ -47,6 +47,14 @@
 
 当前可见入口以路由和导航为准，不从目录名推断页面已经开放。前端沿用 Ant Design 5 和随构建交付的资源，不依赖远程界面脚本。状态、安全和正式页面与原型的共享边界见[前端技术层](technical-layers.md#前端技术层)。
 
+## DSH 插件服务的工程边界
+
+- **[`services/dsh-plugin/plugin/`](../../services/dsh-plugin/plugin/)**：正式版与开发版共用源码；`src/client.tsx` 注册侧栏按钮，`src/orchestration.ts` 管理右侧标签复用，`bridge.ts` 与 `process.ts` 负责对应 Buildr 安装发现、健康查询与启动。
+- **[`tools/`](../../services/dsh-plugin/tools/)**：核对 DSH 软件开发工具包（SDK）基线、构建两种预编译包、用真实装载器（Loader）验证，并以 `release.ts` 检查独立版本及准备候选。
+- **[`test/`](../../services/dsh-plugin/test/)**：入口、发现、进程、跨重启标签复用和双变体共存的单元与集成检查。被忽略的 `build/` 保存构建结果及候选压缩包（Tarball）。
+
+该服务与 Buildr 主包共用代码库（Repository），却拥有自己的包版本与发布事实；Buildr 主包候选不包含插件产物。发布与安装边界见[独立插件流程](../docs/flows/dsh-plugin-release.md)。
+
 ## 构建与消费
 
 | 来源 | 生成者与结果 | 消费者 |
@@ -55,5 +63,6 @@
 | [测试上下文公共入口](../../services/buildr/src/infrastructure/testing/context-runtime/public.ts) | [`test-context-build.ts`](../../services/buildr/tools/testing/test-context-build.ts) → `build/test-context/public.js` 与声明 | 包清单的公开子路径 |
 | 前端源码 | Vite → `buildr/web-dist/` | 后端托管与正式安装包 |
 | 后端源码、资源、网页与公开测试库 | [`application-payload.ts`](../../services/buildr/tools/release/application-payload.ts) → 应用负载（Application Payload）与 npm 交付物 | 正式安装及发布检查 |
+| DSH 插件源码与已核验 SDK | [`build-plugin.ts`](../../services/dsh-plugin/tools/build-plugin.ts) → 独立预编译组合包；[`release.ts`](../../services/dsh-plugin/tools/release.ts) → 候选压缩包 | DSH 插件管理器；不进入 Buildr 主包 |
 
 浏览器与候选构建各用隔离暂存目录，逻辑产物名称不变。测试适配器可准备夹具，真实网页仍由生产装配托管。构建产物存在不证明安装、发布或用户工作空间（Workspace）已经采用。

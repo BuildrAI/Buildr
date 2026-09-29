@@ -1,0 +1,17 @@
+{
+  "name": "@buildr-ai/dsh-plugin-source",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": "24.15.0" },
+  "scripts": {
+    "build": "node tools/build-plugin.ts",
+    "build:dev": "node tools/build-plugin.ts --dev",
+    "verify": "node tools/verify-plugin.ts",
+    "verify:dev": "node tools/verify-plugin.ts --dev",
+    "release:status": "node tools/release.ts status",
+    "release:prepare": "node tools/release.ts prepare",
+    "test": "node --test test/unit/*.test.ts test/integration/*.test.ts",
+    "test:full": "node tools/verify-all.ts"
+  }
+}

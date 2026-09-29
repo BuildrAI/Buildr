@@ -190,17 +190,6 @@ export function verifyApplicationPayload(root: any = resolveApplicationPayloadRo
     if (readableOnly && entry.path === 'runtime/buildr.cjs' && !fs.existsSync(physicalPath(resolvedRoot, entry.path, layout))) continue;
     verifyFile(resolvedRoot, manifest, entry, layout);
   }
-  // A payload that declares the DSH plugin artifact must actually carry its files. Declaring the
-  // artifact and shipping none of it is exactly how a release loses its plugin without failing.
-  const artifactEntry = manifest.files.find((entry: any) => entry.path === 'build/generated-artifacts.json');
-  if (artifactEntry) {
-    const artifactManifest = JSON.parse(fs.readFileSync(physicalPath(resolvedRoot, artifactEntry.path, layout), 'utf8'));
-    const declared = Array.isArray(artifactManifest?.artifacts) && artifactManifest.artifacts.some((artifact: any) => artifact?.id === 'dsh-plugin');
-    if (declared) {
-      const shipped = manifest.files.filter((entry: any) => entry.path.startsWith('resources/product/build/dsh-plugin/'));
-      if (!shipped.length) throw new Error('application payload declares the DSH plugin artifact but ships none of its files.');
-    }
-  }
   return { root: resolvedRoot, layout, manifest };
 }
 

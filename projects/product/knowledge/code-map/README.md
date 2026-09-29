@@ -31,8 +31,9 @@ projects/product/                         项目（Project）：跨服务产品�
 │       └── guides/                        使用、开发与运行入口
 └── services/
     ├── manifest.yml                      服务登记
-    ├── buildr/                           命令行、后端、本机网页宿主
-    └── buildr-web/                       React 页面和前端交互
+    ├── buildr/                           命令行、后端、本机网页宿主与主包
+    ├── buildr-web/                       React 页面和前端交互
+    └── dsh-plugin/                       独立 DSH 桌面插件源码与候选
 ```
 
 [关系维护与代码定位](project-service-repositories.md)连接对象约束、登记读取、应用写入与前端操作。
@@ -41,7 +42,7 @@ projects/product/                         项目（Project）：跨服务产品�
 
 [知识建设与维护](knowledge-maintenance.md)从工作方法、读取与页面、成果位置三个职责区解释实际文件。
 
-1. [服务、工程目录与功能定位](system-services-assets.md)：两个服务的目录、生成与打包职责，以及从用户能力定位实现。
+1. [服务、工程目录与功能定位](system-services-assets.md)：三个服务的目录、生成与打包职责，以及从用户能力定位实现。
 2. [模块内部目录树与对象](technical-layers.md)：领域、应用、数据访问、技术实现和接口如何协作。
 3. [调用、数据与副作用](../docs/architecture/technical.md)：谁发起调用、谁拥有数据和写入。
 

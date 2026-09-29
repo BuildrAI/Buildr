@@ -345,29 +345,6 @@ export function createAgentAssetsCliContributions(): any  {
       run: (runtime: any, context: any) => runtime.runtimeList(context.argv.slice(4)),
     }),
     route({
-      key: 'runtime dsh-plugin', surface: 'agent-machine',
-      summary: '准备绑定安装身份的 DSH 本地组合包；不修改 DSH 配置、不安装或启用插件。',
-      usage: 'Usage: buildr runtime dsh-plugin prepare [--output <dir>] [--bundle <built-bundle-dir>] [--json]',
-      details: ['安装、启停和卸载由 DSH 的 plugin_manager 管理；当前桌面必须具备官方已发布的 sidebar.footer.action 席位。'],
-      match: ({ domain, action }: any) => domain === 'runtime' && action === 'dsh-plugin',
-      run: async (application: any, context: any) => {
-        const args = context.argv.slice(4);
-        assertNoUnknownOptions(args, new Set(['--output', '--bundle', '--json']), new Set(['--json']));
-        const positional = positionalArgs(args);
-        if (positional.length !== 1 || positional[0] !== 'prepare') throw new Error('Expected runtime dsh-plugin prepare.');
-        // No channel: each plugin package serves one installation by design, so there is nothing here
-        // for a user to choose and nothing for this command to pass through. No required output either:
-        // omitting it writes somewhere that survives, because a temporary directory DSH recorded as the
-        // plugin's source disappears later and takes reinstalling the plugin with it.
-        const output = optionValue(args, '--output', null);
-        const bundle = optionValue(args, '--bundle', null);
-        const result = await application.prepareDshPlugin({ ...(output === null ? {} : { output: path.resolve(output) }), ...(bundle ? { bundleRoot: path.resolve(bundle) } : {}) });
-        if (hasFlag(args, '--json')) process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-        else console.log(`已准备 DSH 本地组合包：${result.output}\n尚未安装；请通过 DSH plugin_manager 安装，并单独核对桌面激活结果。`);
-        return result;
-      },
-    }),
-    route({
       key: 'commands check',
       summary: '不传 --project 时只检查 workspace defaults；重复 --project 可表达跨 Project task context。',
       usage: 'Usage: buildr commands check [--project <project> ...] [--target <dir>] [--json]',

@@ -142,12 +142,8 @@ async function buildApplicationPayload(output: any, sourceCommit: any, options: 
   const generatedArtifactManifest: any = options.generatedArtifactManifest;
   if (!options.webDistRoot || !generatedArtifactManifest) throw new Error('application payload requires explicit generated artifact manifest and web-dist root.');
   assertGeneratedArtifactEntry(generatedArtifactManifest, 'web-dist', webDistRoot);
-  const hasDshPlugin = generatedArtifactManifest.artifacts.some((artifact: any) => artifact.id === 'dsh-plugin');
-  if (hasDshPlugin !== Boolean(options.dshPluginRoot)) throw new Error('application payload DSH artifact requires matching manifest and explicit root.');
-  if (options.dshPluginRoot) {
-    assertGeneratedArtifactEntry(generatedArtifactManifest, 'dsh-plugin', options.dshPluginRoot);
-    const { assertUnboundDshPlugin } = await import('../dsh/plugin-artifact.ts');
-    assertUnboundDshPlugin(options.dshPluginRoot);
+  if (generatedArtifactManifest.artifacts.some((artifact: any) => artifact.id === 'dsh-plugin') || options.dshPluginRoot) {
+    throw new Error('application payload does not bundle the independently released DSH plugin');
   }
   const { buildSync, formatMessagesSync }: any = await import('esbuild');
   const destination: any = assertDestination(output);
@@ -184,7 +180,6 @@ async function buildApplicationPayload(output: any, sourceCommit: any, options: 
     const resourceRoot: any = path.join(destination, 'resources');
     for (const [source, target, options] of RESOURCE_SOURCES) copyTree(path.join(serviceRoot, source), path.join(resourceRoot, target), options);
     copyTree(webDistRoot, path.join(resourceRoot, 'product/web-dist'));
-    if (options.dshPluginRoot) copyTree(options.dshPluginRoot, path.join(resourceRoot, 'product/build/dsh-plugin'));
     fs.mkdirSync(path.join(resourceRoot, 'build'), { recursive: true });
     fs.writeFileSync(path.join(resourceRoot, 'build/generated-artifacts.json'), `${JSON.stringify(generatedArtifactManifest, null, 2)}\n`, { encoding: 'utf8', mode: 0o644 });
     copyFile(path.join(serviceRoot, 'LICENSE'), path.join(resourceRoot, 'product/LICENSE'), 0o644);
@@ -244,7 +239,7 @@ async function main(): Promise<any>  {
     process.stdout.write(`${JSON.stringify(result.manifest, null, 2)}\n`);
     return;
   }
-  throw new Error('Usage: application-payload.ts build --output <dir> --source-commit <sha> --generated-artifacts <manifest> --web-dist <dir> [--dsh-plugin <unbound-bundle-dir>] | verify --payload <dir> [--layout frozen|installed]');
+  throw new Error('Usage: application-payload.ts build --output <dir> --source-commit <sha> --generated-artifacts <manifest> --web-dist <dir> | verify --payload <dir> [--layout frozen|installed]');
 }
 
 if (process.argv[1] && sameFilesystemPath(process.argv[1], fileURLToPath(import.meta.url))) {

@@ -1,5 +1,4 @@
 import { createSkillContentQuery } from './application/skill-content-query.ts';
-import { registerDshPluginDelivery } from './application/dsh-plugin-delivery.ts';
 import type { DoctorInput } from '../diagnostics/application/doctor-application.ts';
 import { WORKSPACE_ASSET_SUPPORT, type WorkspaceAssetSupport, WORKSPACE_ROOT_GITIGNORE_ENTRIES } from '../workspace/module.ts';
 import { registerDomainsCommands, type CommandsDependencies } from './application/commands.ts';
@@ -456,7 +455,6 @@ export function createAgentAssetsModule(infrastructure: AgentAssetsInfrastructur
       });
       const cliApplication = Object.freeze({
         ...application,
-        ...registerDshPluginDelivery(infrastructure),
         doctor,
         getRuntimeAdapter: adapters.getRuntimeAdapter,
         resolveRuntimeAdapter: adapters.resolveRuntimeAdapter,

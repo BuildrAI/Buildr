@@ -45,7 +45,7 @@ export function readSharedCandidatePackage(env: any = process.env): any  {
 }
 
 export async function createCandidatePackage(productRoot: any, destination: any, options: any = {}): Promise<any>  {
-  const { buildGeneratedArtifactSet, resolveReleaseDshPluginRoot }: any = await import('../../../tools/build/artifact-set.ts');
+  const { buildGeneratedArtifactSet }: any = await import('../../../tools/build/artifact-set.ts');
   const npmExecutable: any = options.npmExecutable ?? (process.platform === 'win32' ? 'npm.cmd' : 'npm');
   fs.mkdirSync(destination, { recursive: true });
   const source: any = spawnCommandSync('git', ['rev-parse', 'HEAD'], {
@@ -55,15 +55,10 @@ export async function createCandidatePackage(productRoot: any, destination: any,
   if (source.status !== 0 || !/^[a-f0-9]{40,64}$/.test(source.stdout.trim())) {
     throw new Error(`candidate source commit is unavailable: ${(source.stderr || source.stdout || '').trim()}`);
   }
-  // A candidate without the DSH plugin artifact would ship a Buildr whose plugin silently never
-  // existed. The root therefore resolves from the release environment unless a caller names one, and
-  // its absence is an error rather than an omission.
-  const dshPluginRoot: any = options.dshPluginRoot ?? resolveReleaseDshPluginRoot(options.environment ?? process.env);
-  const generated: any = await buildGeneratedArtifactSet(path.join(destination, 'generated-artifacts'), { sourceIdentity: source.stdout.trim(), dshPluginRoot });
+  const generated: any = await buildGeneratedArtifactSet(path.join(destination, 'generated-artifacts'), { sourceIdentity: source.stdout.trim() });
   const payload: any = await buildApplicationPayload(path.join(destination, 'application-payload'), source.stdout.trim(), {
     generatedArtifactManifest: generated.manifest,
     webDistRoot: generated.webDistRoot,
-    dshPluginRoot: generated.dshPluginRoot,
   });
   const artifact: any = createReleaseArtifact(payload.root, destination, { npmExecutable, testContextRoot: generated.testContextRoot });
   const metadata: any = parsePackMetadata(artifact.packMetadataPath);

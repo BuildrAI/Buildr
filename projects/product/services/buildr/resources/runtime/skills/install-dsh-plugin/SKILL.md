@@ -14,11 +14,11 @@ description: 在 DSH（DeepSeek Harness）里加入 Buildr 入口，让用户能
 
 - 这台机器上已经安装了 Buildr。正式版插件只打开正式版 Buildr，不涉及开发版。
 - DSH 的桌面版提供侧栏底部席位；非桌面版没有这个位置，不要承诺按钮会出现。
-- 插件自己会发现本机 Buildr 的位置，所以**没有单独的登记步骤**。
+- 插件自己会发现本机 Buildr 的位置，所以**没有单独的登记步骤**。先核对 `@buildr-ai/dsh-plugin` 已在 npm 公开发布且与目标 DSH 版本兼容；本机构建或待发布候选不能当作公共安装来源。
 
 ## 流程
 
-1. 把插件装进 DSH，使用 DSH 自己的插件管理能力（`plugin_manager` 的 `install_bundle`）。插件来源可以是 npm 包名、代码仓库地址或本地归档。不要手工改 DSH 配置文件。
+1. 把公开的预编译包 `@buildr-ai/dsh-plugin` 装进用户实际使用的 DSH 配置档（Profile），使用 DSH 自己的插件管理能力（`plugin_manager` 的 `install_bundle`），或其命令 `dsh plugin --profile <实际配置档> add @buildr-ai/dsh-plugin`。不要猜配置档名称，不要手工改 DSH 配置文件，也不运行 `buildr runtime dsh-plugin prepare`。
 
 2. 告诉用户需要**重启 DSH** 才能看到入口。
 
@@ -39,7 +39,7 @@ description: 在 DSH（DeepSeek Harness）里加入 Buildr 入口，让用户能
 
 ## 边界
 
-- 不修改 DSH 的配置文件，不使用 `link:` 方式安装未打包目录（那会缺依赖）。
+- 不修改 DSH 的配置文件，不使用 `link:` 方式安装未打包目录（那会缺依赖）。仓库地址只有在其安装所需的构建脚本与 DSH 权限边界都经过验证后才可作为来源；当前正式安装使用 npm 预编译包。
 - 不替用户决定绑定哪个渠道；正式版插件只服务正式版 Buildr。
 - 不声称已经验收：真实入口位置、点击行为与对话保留需要在桌面版实际确认一次。
 - 安装失败或用户不再需要时，如实告知可以卸载，并给出卸载动作。

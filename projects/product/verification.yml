@@ -179,3 +179,34 @@ testing:
         - 使用对应环境的 CLI、Browser 或 HTTP 工具检查关键入口并保存实际观察
     requirements:
       - explicit-target-environment
+  - id: dsh-plugin
+    title: DSH 桌面插件构建与装载
+    scope:
+      project: product
+      services:
+        - dsh-plugin
+    location:
+      kind: service
+      service: dsh-plugin
+    purpose: 验证正式版和开发版的构建、逻辑、同场装载与 DSH 真实加载器边界
+    sourcePaths:
+      - plugin/**
+      - tools/**
+      - package.json
+    testRoots:
+      - test/unit/**
+      - test/integration/**
+    full:
+      kind: command
+      argv:
+        - node
+        - tools/verify-all.ts
+      cwd: .
+    selection:
+      - 开发中按改动选择对应单元、进程或装载测试；完成时运行完整入口
+      - 完整入口使用已核验 DSH SDK；若设置 BUILDR_DSH_SDK_ROOT，须指向同一基线，否则按固定标签获取
+      - 桌面应用的真实按钮与跨重启交互另行验收，不能由装载测试替代
+    requirements:
+      - node 24.15.0
+      - pnpm
+      - 已核验的 DSH SDK 或获取其发布归档的网络

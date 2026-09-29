@@ -4,7 +4,7 @@ Buildr 产品自身是在通用框架下建设测试能力的一个项目实例�
 
 ## 从项目地图到执行工具
 
-[项目测试地图](../../../verification.yml)目前有六个测试族（Testing Family）：`buildr-fast`、`buildr-functional`、`buildr-system`、`buildr-web-unit`、`buildr-web` 和 `buildr-environment-smoke`。前三项负责后端与工程检查；`buildr-web-unit` 负责前端逻辑；`buildr-web` 负责构建及真实页面交互；最后一项用于明确目标环境中的安装与运行检查。地图供智能体（Agent）发现稳定入口，具体文件发现、路径归属、步骤和资源另由项目工具维护。
+[项目测试地图](../../../verification.yml)目前有七个测试族（Testing Family）：`buildr-fast`、`buildr-functional`、`buildr-system`、`buildr-web-unit`、`buildr-web`、`buildr-environment-smoke` 和 `dsh-plugin`。前三项负责后端与工程检查；`buildr-web-unit` 负责前端逻辑；`buildr-web` 负责构建及真实页面交互；`buildr-environment-smoke` 用于明确目标环境中的安装与运行检查；`dsh-plugin` 独立验证桌面插件包。地图供智能体（Agent）发现稳定入口，具体文件发现、路径归属、步骤和资源另由项目工具维护。
 
 | 责任 | 唯一主要位置 | 产生什么 |
 | --- | --- | --- |
@@ -29,6 +29,7 @@ Buildr 的验证由以下几部分共同组成。**某个入口的“完整”�
 | 后端行为与工程约束 | 在 `services/buildr` 执行 `test:fast`、`test:integration`、`test:system`；日常较大范围用 `test:daily-full` | 分别检查类型与静态边界、细粒度行为、真实技术集成、完整公共入口及恢复。`test:daily-full` 执行注册表的 `core` 集合；不自动运行前端逻辑或浏览器（Browser）旅程，也不等于完整候选 |
 | 前端逻辑 | 在 `services/buildr-web` 执行 `../buildr/tools/development/run-development-npm test`，对应 `buildr-web-unit` | 运行 `test/*.test.mjs`，检查输入转换、筛选、分页等逻辑；不启动浏览器（Browser），不证明页面已正确呈现或可交互 |
 | 前端构建与真实页面旅程 | 在 `services/buildr` 执行 `test:browser:smoke`；按改动选择用 `test:browser:changed`，对应 `buildr-web` | 准备隔离构建产物并验证页面与后端协作；不执行前端 `test/*.test.mjs`。单独构建可在 `services/buildr-web` 执行 `../buildr/tools/development/run-development-npm run build`，但构建成功没有交互证明 |
+| DSH 插件包 | 在 `services/dsh-plugin` 执行 `node tools/verify-all.ts`，对应 `dsh-plugin` | 核对 SDK 基线、构建正式版与开发版、运行逻辑及同场装载测试，并用真实 DSH 装载器验证两种产物；不证明用户当前桌面已更新或跨重启行为已经人工验收 |
 | 本机候选（Candidate） | 在 `services/buildr` 执行 `test:candidate`，由 `candidate.ts` 选择 `candidate` 集合 | 在当前机器检查源码、生成唯一压缩包并运行适用发布物检查；不产生其他平台结果，也不包含独立的前端逻辑和浏览器（Browser）旅程 |
 | 跨平台候选（Candidate）聚合 | 仓库根 `.github/workflows/verify.yml` 调用 `candidate-ci.ts` 的 `plan`、`run`、`host`、`aggregate` | 组织源码分片、单一发布物、macOS/Windows 平台检查和 macOS/Windows/Linux 宿主 Node.js（Host Node）组合；聚合校验来源、登记和发布物身份。当前集合同样未纳入前端逻辑和浏览器（Browser）旅程；其通过不等于整个产品或发布已成功 |
 | 明确目标环境中的实际运行 | `buildr-environment-smoke` 给出按目标执行的指导，无固定全局命令 | 检查指定安装或发布环境中的命令行（CLI）、HTTP 或页面入口；只证明实际观察到的环境和行为，不用开发目录测试替代它 |

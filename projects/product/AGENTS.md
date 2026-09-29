@@ -23,6 +23,7 @@ Agent 在 `product` Project 中的最小运行规则。
 | Package assets | `services/buildr/resources/` | 随包 manifest、workspace/runtime 文件源资产 |
 | Buildr 可执行实现 | `services/buildr/` | npm package、CLI、Buildr Web Runtime、`web-dist` 托管与打包、验证及维护脚本的实现根 |
 | Buildr Web 前端源码 | `services/buildr-web/` | Buildr Web Frontend Service 的 React/Vite 权威前端源码与正式构建 |
+| DSH 桌面插件 | `services/dsh-plugin/` | 独立插件包的源码、构建、验证与发布准备；不进入 Buildr 主包 |
 | Compatibility bridge | `buildr` | 只加载 `services/buildr/bin/buildr.mjs` 的稳定开发入口 |
 | Service registry | `services/manifest.yml` | 当前 Product Project 的 Service registry |
 | Service assets | `services/<service>/` | Service 实现目录；是否独立 Git repo 以 registry source 和实际 Git 边界为准 |
