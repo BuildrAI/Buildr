@@ -1,7 +1,13 @@
 export type PrototypeNote = { id: string; title: string; text: string; position?: string };
 export type PrototypeScene = { id: string; title: string; notes: PrototypeNote[]; states: Array<{ id: string; title: string; notes: PrototypeNote[] }> };
-export type UiPrototypePage = { id: string; project: string; change: string; lifecycle: 'active' | 'archived'; provenance: string; path: string; title: string; sizeBytes: number; updatedAt: string; metadata?: { version:1; pages:PrototypeScene[] } };
+export type UiPrototypePage = { id: string; provenance: string; path: string; title: string; sizeBytes: number; updatedAt: string; metadata?: { version:1; pages:PrototypeScene[] } } & (
+  | { source: 'task'; project: null; change: null; lifecycle: null }
+  | { source?: 'change'; project: string; change: string; lifecycle: 'active' | 'archived' }
+);
 export type UiPrototypeData = { taskId:string; prototypes:UiPrototypePage[]; diagnostics:Array<{ code:string; message:string; project?:string; change?:string; path?:string }> };
+export function prototypeSourceLabel(file: UiPrototypePage): string {
+  return file.source === 'task' ? '任务原型' : `${file.project}/${file.change}`;
+}
 export function prototypeEntries(data: UiPrototypeData | null) {
   return (data?.prototypes || []).flatMap(file => (file.metadata?.pages || [{id:'default',title:file.title,notes:[],states:[]}]).map(scene => ({key:`${file.id}:${scene.id}`,file,scene})));
 }

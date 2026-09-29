@@ -19,12 +19,12 @@ Buildr MUST 将 Agent 视为组织工作资产的主要使用者，并 MUST 将�
 - **AND** 具体初始化、同步、权限与环境前置条件 MUST 留在相应使用说明和行为契约中，不得堆叠进该产品承诺
 
 ### Requirement: Buildr 区分工作资产、共享工作环境和任务上下文
-Buildr MUST 将所有潜在工作信息来源描述为 Work Information Space（工作信息空间），将 Workspace 描述为工作范围和发现入口，并 MUST 明确文件或信息位于 Workspace 不等于被 Buildr 治理。Buildr MUST 将其中被明确组织、登记或纳入治理、可长期复用的工作事实和工作方法描述为 Work Assets（工作资产），将这些资产与入口经组织和 runtime 投射形成的整体使用体验描述为 Agent 的 Shared Work Environment（共享工作环境）。Context MUST 表示特定工作范围中可供 Agent 发现、选择和使用的候选信息；Work Context、Workspace Context、Project Context 和 Service Context MAY 作为范围限定。Task Context MUST 限定为 Agent 为当前 Task 从工作信息空间中发现、检索、判断、选择、组织和压缩后实际使用的语义工作集；Context Window MUST 限定为某一次模型调用实际装入的有限、临时输入，是 Task Context 在某一时刻的有限投影，不得与 Context、Task Context、Task 或持久工作资产混同。工作事实描述“干的是什么”，工作方法描述“怎么干”；专业能力 MUST 作为工作方法可承载的内容，不得与工作事实、工作方法并列为第三个公开顶层分类。Rules、Skills、Commands、Specs、产品事实、Projects、Services 和协作流程等 MUST 只作为当前示例，不得被描述为封闭的长期资产枚举。
+Buildr MUST 将所有潜在工作信息来源描述为 Work Information Space（工作信息空间），将 Workspace 描述为工作范围和发现入口，并 MUST 明确文件或信息位于 Workspace 不等于被 Buildr 治理。Buildr MUST 将其中被明确组织、登记或纳入治理、可长期复用的工作事实和工作方法描述为 Work Assets（工作资产），将这些资产与入口经组织和 runtime 投射形成的整体使用体验描述为 Agent 的 Shared Work Environment（共享工作环境）。Context MUST 表示特定工作范围中可供 Agent 发现、选择和使用的候选信息；Work Context、Workspace Context、Project Context 和 Service Context MAY 作为范围限定。Task Context MUST 限定为 Agent 为当前 Task 从工作信息空间中发现、检索、判断、选择、组织和压缩后实际使用的语义工作集；请求上下文（Request Context）MUST 表示某一次模型请求实际携带的资料、指令和对话输入；上下文窗口（Context Window）MUST 表示模型单次请求可承载的有限容量，不得把容量与实际内容混同，也不得与 Context、Task Context、Task 或持久工作资产混同。工作事实描述“干的是什么”，工作方法描述“怎么干”；专业能力 MUST 作为工作方法可承载的内容，不得与工作事实、工作方法并列为第三个公开顶层分类。Rules、Skills、Commands、Specs、产品事实、Projects、Services 和协作流程等 MUST 只作为当前示例，不得被描述为封闭的长期资产枚举。
 
 #### Scenario: 产品文档解释上下文责任
 - **WHEN** 公开文档解释 Buildr 如何帮助 Agent 获得任务信息
 - **THEN** 文档 MUST 说明 Buildr 治理 Work Information Space 中适合长期复用的 Work Assets，并将资产和入口组织、投射为 Shared Work Environment
-- **AND** 文档 MUST 说明 Agent 可同时使用 Buildr Work Assets 与数据库、API、网页、用户输入、机器状态或工具结果等外部信息形成 Task Context，并只把当前推理所需部分放入有限 Context Window
+- **AND** 文档 MUST 说明 Agent 可同时使用 Buildr Work Assets 与数据库、API、网页、用户输入、机器状态或工具结果等外部信息形成 Task Context，并按当前推理需要形成 Request Context，受 Context Window 容量限制
 - **AND** 文档 MUST NOT 宣称 Buildr 治理全部工作信息、直接提供完整 Context Window、把 Project Context 等同于已加载输入或保证所有任务信息完整无缺
 - **AND** 文档提及尚未实现的 MCP、hooks 或其他未来资产形态时 MUST 明确其不是当前能力事实
 
@@ -37,7 +37,7 @@ Buildr MUST 将所有潜在工作信息来源描述为 Work Information Space（
 #### Scenario: 区分 Project Context 与 Context Window
 - **WHEN** 文档、Skill 或用户界面同时讨论项目可用信息与模型输入限制
 - **THEN** Project Context MUST 表示 Project 范围内可发现和选择的候选信息
-- **AND** Context Window MUST 只表示某次模型推理的有限临时输入
+- **AND** Context Window MUST 表示单次请求的容量；实际临时输入 MUST 使用 Request Context 表述
 - **AND** 两者 MUST NOT 使用同一术语或被表述为相同持久范围
 
 #### Scenario: Workspace 中存在未受治理内容
@@ -56,7 +56,7 @@ Buildr MUST 将所有潜在工作信息来源描述为 Work Information Space（
 - **WHEN** Agent 为当前 Task 发现并组织相关资料
 - **THEN** Task MUST 表示持续推进的工作目标和状态
 - **AND** Task Context MUST 表示该 Task 当前实际使用的相关信息
-- **AND** Task 继续存在或跨会话推进 MUST NOT 被解释为同一个 Context Window 永久保留
+- **AND** Task 继续存在或跨会话推进 MUST NOT 被解释为同一份 Request Context 永久保留
 
 ### Requirement: Buildr 不复制 Agent 的通用工作能力
 Buildr MUST NOT 将自身定位或设计为另一个 Agent，也 MUST NOT 接管 Agent 的通用理解、推理、规划、对话和专业任务执行职责。Buildr 产品核心 MUST 聚焦组织工作资产治理、Agent 可发现入口、runtime 投射、确定性状态变更、完整性保护和诊断；可复用专业动作 MUST 由 Buildr 作为工作方法治理并交给 Agent 使用，而不是实现为 Buildr 自身的推理或执行主体。

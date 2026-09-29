@@ -2,58 +2,52 @@
 
 中文 | [English](https://github.com/BuildrAI/Buildr/blob/main/README.en.md)
 
-## 让 Agent 接着已有积累，把工作持续推进下去
+## 让已有积累参与下一次工作
 
-当项目背景散在聊天、人的经验和多个代码仓里，Agent 每换一次任务或工具就得重新理解；团队做过的判断、流程和项目关系也很难继续复用。Buildr 把这些工作事实和工作方法组织成 Agent 可持续使用的工作资产。
+Buildr 把项目资料、代码位置和经过验证的工作方法组织在一起。人可以查看、维护这些内容并参与判断，智能体（Agent）据此理解目标、选择方法并推进工作。
 
-你可以用 Buildr：组织现有业务与代码仓、让 Agent 基于项目事实继续一项长期工作、把验证过的工作方法沉淀下来，或在更换 Agent 后继续使用同一套资产。Buildr 不取代 Agent 的理解、规划和专业执行；它让这些工作有可发现、可诊断、可交接的基础。
+你可以用它减少重复解释项目背景，沿业务与代码的关系查找依据，在另一段对话或另一种智能体（Agent）工具中接续工作，也可以把做成事情的方法保存为可复用的技能（Skill）。个人或企业掌握长期源资产，代码、文件和外部系统继续承载真实成果。
 
-## 快速开始：先完成第一项真实工作
+## 开始第一项工作
 
-把下面这句话交给你正在使用的 Agent：
+把这份说明交给正在使用的智能体（Agent），告诉它：
 
-```text
-帮我开始使用 Buildr：检查并安装需要的 Buildr，确认或创建当前 Workspace；用普通语言引导我建立 Project，并只在有代码仓、应用、模块或可执行资产时接入 Service；完成必要的初始化和验证后，问我第一项想推进的真实工作。
-```
+> 帮我开始使用 Buildr：检查本机安装和 npm 官方仓库中的可用版本，说明正式版与候选版的区别并按我的选择安装；确认或创建目标工作空间，用普通语言引导我组织项目和已有代码，完成必要检查后继续我想推进的工作。
 
-Agent 会负责 runtime discovery、初始化、doctor 和必要的确定性操作。你的第一次成功不是“已经输入过 init 命令”，而是：你已确认 Workspace、Project、可选 Service，并能直接向 Agent 描述要推进的目标。
+智能体（Agent）负责检查 Node.js、安装命令行工具（CLI）、确认目录、初始化和读取最终诊断。已经给出目标和目录时可直接继续；准备成功后，你应能说明要做什么，并在 Buildr Web 中看到相应工作范围。
 
-也可以打开 Buildr Web（本机 Web 界面）：添加已有工作空间（Workspace），查看当前项目（Project）与服务（Service）范围，然后点击“用 Agent 开始”。Buildr Web 只帮助理解范围、维护低风险 metadata、只读查看任务专业事实和生成交接指令；它不创建 repo、不迁移资产，也不在页面内执行专业任务。
+也可以通过 Buildr Web 登记已有工作空间（Workspace），查看资料、进展、相关代码和需要判断的事项，再把具体目标交给智能体（Agent）。页面保存的答复不会自动启动智能体（Agent）；继续工作时仍需让它读取当前事实。
 
-### 只需理解三个对象
+### 工作范围怎样组织
 
-```text
-Workspace → Project → Service（可选）
-```
+| 对象 | 说明 |
+|---|---|
+| 工作空间（Workspace） | 人与智能体（Agent）共同工作和发现资料的范围 |
+| 项目（Project） | 一项业务、产品、系统或长期工作，保存目标与业务事实 |
+| 服务（Service） | 承担实现职责，可以被多个项目（Project）引用 |
+| 代码库实例（Repository Instance） | 实际使用哪份代码及其来源，一个实例可以承载多个服务（Service） |
 
-- **Workspace**：你和 Agent 共同工作的顶层目录。
-- **Project**：一个业务、产品、系统或长期工作单元。
-- **Service**：该 Project 按需管理的代码仓、应用、模块或可执行资产；没有 Service 也可以开始 Project 范围工作。
+没有代码也可以开展项目（Project）范围的工作。目录嵌套不决定业务归属，登记代码来源也不代表代码已经克隆或环境已经可用。
 
-## 智能体（Agent）与 Buildr Web 各做什么
+## 安装与维护入口
 
-智能体负责理解目标、读取相关资产、规划、执行和验证。Buildr Web 负责让人看懂真实的工作空间 / 项目 / 服务范围，受控维护名称与说明，并把规范范围和目标交给智能体。任务详情组合任务记录、任务研发、审查、验证与当前机器环境的 Application read model；除任务记录和复盘处置的受控管理外，专业事实保持只读。两条入口读取同一份工作空间源资产，不维护第二套 onboarding 或生命周期状态。
+产品通过 npm 分发，包名是 `@buildr-ai/buildr`。运行它的 Node.js 必须满足 `>=24.15.0 <25`；安装包不会自动下载另一套 Node.js。工作空间（Workspace）中按需声明的受管 Node.js 只供该范围拥有的子进程使用，不能替代产品安装所需的 Node.js。
 
-## 手动或技术兜底
+正式版轨道（Stable Track）使用 npm 的 `latest` 标签，候选版轨道（Candidate Track）使用 `next` 标签。先查询实际版本及其 `engines`，再安装选定版本；文档标题和源码中的版本号不证明该版本已经发布。如果 `latest` 仍指向预发布版本，它不能作为正式版已发布的证据。
 
-当 Agent 无法执行时，再使用下面的确定性入口。npm是唯一正式渠道并支持Host Node.js `>=24.15.0 <25`；Workspace受管Node仍使用`.buildr/workspace.yml`声明的精确版本，只供Workspace-owned子进程使用。两者identity和生命周期互不替代：
+- [安装与初始化](docs/cli-reference.md#首次使用)：查询渠道、安装、确认目录、初始化与打开页面。
+- [命令参考](docs/cli-reference.md)：维护工作范围、长期资产、任务（Task）与诊断。
+- [运行时适配参考](docs/agent-runtime-adapters.md)：当前支持的工具、发现入口及刷新要求。
+- [入口不可用与恢复](docs/cli-reference.md#入口不可用与恢复)：按当前命令帮助处理安装、技能（Skill）、同步与启动器（Launcher）问题。
 
-```bash
-npm install --global @buildr-ai/buildr@next
-buildr runtime list --json
-buildr init --agent <agent> --target . --name <name> --profile <personal|team|company>
-buildr web --target .
-```
-
-当前 package 候选版本为 `0.1.0-rc.18`；可安装版本与 `next` 指向始终以 npm 官方 Registry 为准。
-
-`init --agent` 以最终 doctor 为技术 onboarding 证据；成功后仍应由 Agent 根据真实 Project/Service 状态完成简短交接。深入命令和 runtime 细节见 [CLI Reference](docs/cli-reference.md) 与 [Runtime Adapters](docs/agent-runtime-adapters.md)。
+macOS 与 Windows 可按需安装 Buildr Web 启动器（Launcher）；它依赖同一 npm 安装和兼容的 Node.js。其他平台通过 `buildr web --target "<dir>"` 打开本机页面。
 
 ## 当前能力与边界
 
-- 一个 Workspace 可管理多个 Project；每个 Project 可按需管理多个 Service。
-- Rules、Skills、Components、Commands、OpenSpec 和 Project/Service 资产可作为长期工作资产治理。
-- 支持 claude-code、codex、cursor、qoder、trae、trae-work、workbuddy 等 runtime adapter。
-- 当前不提供远程 SaaS、Agent session connector、聊天客户端或自动专业任务执行。
+Buildr 管理长期事实、方法、来源和关系，为人提供阅读与受控维护入口，为智能体（Agent）提供可组合的技能（Skill）和命令行工具（CLI）。默认使用 `agents-standard` 文件约定，`codex`、`dsh` 及未登记的有效品牌无需等待独立接入，既有专用例外继续保留。用 `buildr runtime list --json` 查询当前事实，具体边界见[运行时适配参考](docs/agent-runtime-adapters.md)；文件准备成功不证明宿主已安装或当前会话已加载。
 
-完整产品定位和边界见 [Buildr Product](https://github.com/BuildrAI/Buildr/blob/dev/projects/product/knowledge/docs/overview.md)，已知限制见 [Known Limitations](docs/known-limitations.md)。
+任务（Task）保存目标、状态和当前工作摘要（Work Context）；审查（Review）与验证（Verification）分别保存实际结论和依据。Buildr Web 按“任务需求、方案设计、开发实现、任务收尾”组织相关内容，帮助人查看成果并参与判断。记录完成不替代代码交付、测试执行或外部系统中的真实结果。
+
+当前以本机使用为主：长期源资产可以通过文件与 Git 协作，任务（Task）等结构化记录、每日演进和复盘正文不自动跨机器同步。完整企业权限、远程多人协作、云服务和独立对话执行入口尚不属于当前承诺。
+
+深入了解见[产品说明](../../knowledge/docs/overview.md)、[当前能力与边界](../../knowledge/docs/overview.md)和[已知限制](docs/known-limitations.md)。这些文档以唯一源码维护；正式安装包中的说明链接由构建过程固定到对应发布源码。

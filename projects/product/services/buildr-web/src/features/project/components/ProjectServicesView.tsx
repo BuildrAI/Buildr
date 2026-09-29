@@ -15,8 +15,8 @@ export function ProjectServicesView({ services, linkedIds, disabled, compact, on
     finally { setSaving(false); }
   };
   return <>
-    <div className="resource-section-head"><h2>关联服务 <span>{linked.length}</span></h2>
-      <div id="project-manage-services" className="project-associate-picker"><CreatableResourceSelect label="服务" placeholder="关联服务" value={null} disabled={disabled || saving} loading={saving}
+    <div className="resource-section-head">{!compact && <h2>关联服务 <span>{linked.length}</span></h2>}
+      <div id="project-manage-services" className="project-associate-picker"><CreatableResourceSelect label="服务" placeholder={compact ? '添加关联服务' : '关联服务'} value={null} disabled={disabled || saving} loading={saving}
         options={services.filter(service => !linkedIds.includes(service.id)).map(service => ({ value: service.id, label: service.name }))}
         onChange={value => { void save([...linkedIds, value as string]); }} onCreate={() => onCreate()} /></div>
     </div>

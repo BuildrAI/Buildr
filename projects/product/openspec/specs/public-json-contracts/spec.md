@@ -255,12 +255,12 @@ Installation origin、installation registry、Launcher binding、installation st
 - **AND** Buildr MUST NOT在 v1 identity 下改变 `available.version` 的既有语义
 
 ### Requirement: Doctor Release Awareness JSON 必须保持非诊断投影
-`buildr.doctor/v1` MAY additive增加 `releaseAwareness` 与 `notices`，但这些字段 MUST不改变既有 `findings`、`repairPlan`、`nextSteps`、`ok` 与 `health` 的语义。
+`buildr.doctor/v2` MUST 保留 `releaseAwareness` 与 `notices` 的非诊断语义；这些字段 MUST 不改变 `findings`、`repairPlan`、`nextSteps`、`ok` 与 `health` 的含义。原 v1 的该保证在 v2 中继续成立。
 
 #### Scenario: Doctor 返回版本通知
-- **WHEN** Doctor JSON包含 releaseAwareness
-- **THEN** schema coverage MUST证明 compact/full 都返回合法结构
-- **AND** Registry失败 fixture MUST证明既有 health 字段保持不变
+- **WHEN** Doctor JSON 包含 releaseAwareness
+- **THEN** schema coverage MUST 证明 compact/full 都返回合法结构
+- **AND** Registry 失败 fixture MUST 证明既有 health 字段保持不变
 
 ### Requirement: 每日演进 JSON 必须声明稳定 schema identity
 Buildr 每日演进 CLI 与本机 HTTP 的 `--json` / JSON 响应 MUST 在顶层声明非空 `schemaVersion`，并为 record、inspect、list 与 Web 读取使用稳定 `buildr.<payload>/v<major>` identity。同一 major 内 MUST 只做兼容扩展。payload MUST 包含 Project、日期、日摘要四问、提交（作者、`authorship`、可选 Task 关联）、变更文件与未解析 Task 引用；MUST NOT 暴露本机绝对路径、SQLite 路径或 Git working tree path。Task 关联计数 MAY 为 0。
@@ -355,3 +355,26 @@ Task Record inspect、detail 和 list JSON MUST始终返回结构有效的 Task 
 - **WHEN** Task Record 内一个 Project、Service 或 Change 当前不存在、已迁移或暂时不可解析
 - **THEN** CLI 与 Buildr Web JSON MUST返回完整顶层 Task Record 和对应局部诊断
 - **AND** 其他引用、Parent/Child、状态与结果 MUST保持可读
+
+### Requirement: 标准接入使用第二版运行时发现与诊断输出
+Buildr MUST 对品牌身份和文件适配方式分离后的公开输出使用 `buildr.runtime-list/v2` 与 `buildr.doctor/v2`，不得在 v1 下静默重解释品牌列表或重命名诊断键。
+
+#### Scenario: 发现文件约定与品牌特例
+- **WHEN** 调用方运行 `runtime list --json`
+- **THEN** MUST 返回 `buildr.runtime-list/v2`，包含默认适配器（Adapter）、有限文件实现列表、已知品牌映射和未知有效品牌使用标准的说明
+- **AND** MUST NOT 将文件实现列表描述为全部可接受品牌的封闭白名单
+
+#### Scenario: 诊断标准文件
+- **WHEN** 调用方运行 `doctor --agent codex`、`doctor --agent dsh` 或默认标准诊断并请求 JSON
+- **THEN** MUST 返回 `buildr.doctor/v2`，分别表达请求品牌和实际 `adapterId`
+- **AND** 标准文件诊断 MUST 使用 `runtime.agentsStandard`，不伪造当前品牌为 Codex
+- **AND** `supported` MUST 只表达能检查已选文件约定，不证明宿主安装或加载
+
+#### Scenario: 旧消费者迁移
+- **WHEN** 消费者升级到本次标准默认接入版本
+- **THEN** MUST 按新 schemaVersion 调整运行时列表与 Doctor 解析，将对 `runtime.codex` 的标准文件读取迁到 `runtime.agentsStandard`
+- **AND** 生产者 MUST 不再输出 v1 身份的改义对象；依赖 v1 的消费者在完成迁移前须使用旧版 CLI，不得交替用旧版管理已迁移的共享回执
+
+#### Scenario: 源码与安装包保持一致
+- **WHEN** 产品验证通过开发入口与隔离安装包运行相同标准默认或真实品牌命令
+- **THEN** MUST 使用相同公开版本，并产生等价标准文件和身份区分

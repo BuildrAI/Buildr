@@ -310,7 +310,7 @@ Buildr Web 项目详情 MUST 提供“项目动态”入口并打开已筛选该
 - **THEN** 页面 MUST 转到动态页中的同一项目与日期，且不再打开项目资料副屏
 
 ### Requirement: Buildr Web Task 详情必须提供 UI Prototype 视图
-Buildr Web MUST 在任务（Task）方案设计的现有左侧菜单直接列出可发现的关键原型页面，按需读取同一任务关联变更（Change）的成果，MUST 不在主阅读区再重复放置页面列表。原型画面 MUST 可操作并自动适应可用宽度；“功能说明” MUST 使用与实施清单一致的临时查看、关闭、键盘退出和空间充足时固定并排机制，任务内默认收起。系统 MUST 提供“单独查看”并在新的浏览器页签中展示同一任务限定的页面列表、原型画面和说明，宽度足够时说明默认固定；MUST 不提供重复的扩大阅读和手动缩放控件。
+Buildr Web MUST 在任务（Task）方案设计的现有左侧菜单直接列出可发现的关键原型页面，按需读取同一任务关联变更（OpenSpec Change）和任务限定本机目录的成果；MUST NOT 因任务没有关联变更而跳过读取，MUST 不在主阅读区再重复放置页面列表。原型画面 MUST 可操作并自动适应可用宽度；“功能说明” MUST 使用与实施清单一致的临时查看、关闭、键盘退出和空间充足时固定并排机制，任务内默认收起。系统 MUST 提供“单独查看”并在新的浏览器页签中展示同一任务限定的页面列表、原型画面和说明，宽度足够时说明默认固定；MUST 不提供重复的扩大阅读和手动缩放控件。
 
 #### Scenario: Task 存在多个原型页面
 - **WHEN** 任务包含多个关键原型页面
@@ -318,7 +318,7 @@ Buildr Web MUST 在任务（Task）方案设计的现有左侧菜单直接列出
 - **AND** 页面切换 MUST 保留说明的固定选择，刷新后已选页面消失 MUST 给出提示并选择仍可用内容
 
 #### Scenario: Task 没有可发现原型
-- **WHEN** 任务没有关联变更、没有带标记的 HTML 或部分内容不可读取
+- **WHEN** 任务关联变更及任务限定本机目录均没有带标记的可读 HTML，或部分内容不可读取
 - **THEN** 系统 MUST 表达必要空态或局部诊断，MUST NOT 改变任务状态或隐藏其他任务材料
 
 #### Scenario: 用新窗口打开当前原型页面
@@ -331,23 +331,35 @@ Buildr Web MUST 在任务（Task）方案设计的现有左侧菜单直接列出
 - **THEN** 系统 MUST 沿用实施清单的阅读行为，固定说明 MUST 在页面切换时保持；窄空间 MUST 使用可关闭的浮层
 - **AND** 同一阅读区域 MUST 不叠加实施清单与功能说明面板
 
+#### Scenario: 无变更任务查看本机原型
+- **WHEN** 正式任务没有关联变更但主工作空间（Canonical Workspace）的任务限定目录有可读原型
+- **THEN** 方案设计与单独查看 MUST 展示该原型，并将来源标识为任务原型，不伪造变更信息
+
 ### Requirement: UI Prototype API 必须保持 Task-scoped 只读边界
-本机 HTTP interface MUST 提供只读 Task-scoped UI Prototype API，从 Task Record 的 Change 引用和 saved Environment current 解析 working Change。`/ui-prototypes` 列表响应 MUST 返回全部带 `buildr:ui-prototype` 标记页面的不透明 ID、标题、lifecycle 与 portable 相对路径；具体 HTML MUST 只通过同一 Task 与已发现页面 ID 的专用响应读取。API MUST 忽略旧 `buildr:ui-preview` 标记、符号链接、未标记或超出安全读取边界的文件，MUST NOT 接受 filesystem path、写入 Task/Change 或提供任意文件 HTML 路由。
+本机超文本传输协议（HTTP）入口 MUST 提供只读任务限定原型接口（Task-scoped UI Prototype API），先验证任务存在，再从任务记录（Task Record）的变更引用和受管工作树（Worktree）证据解析实际工作副本，并独立读取主工作空间（Canonical Workspace）的 `.buildr/local/task-prototypes/<task-id>/`。`/ui-prototypes` 列表响应 MUST 返回全部符合安全限制且带 `buildr:ui-prototype` 标记页面的不透明标识、标题、来源与相对路径；变更来源 MUST 保持原标识并提供项目、变更及生命周期（Lifecycle），任务本机来源 MUST 明确 `source: task` 且对应项目、变更及生命周期值为 `null`。具体 HTML MUST 只通过同一任务与已发现页面标识的专用响应读取。接口（API）MUST 忽略旧 `buildr:ui-preview` 标记、符号链接（Symbolic Link）、未标记或超出安全读取边界的文件，MUST NOT 接受文件系统路径、写入任务或变更，或提供任意文件 HTML 路由。一个来源不可读 MUST 仅形成局部诊断，保留其他安全来源。
 
 #### Scenario: 读取候选工作副本的多个页面
-- **WHEN** active Task 的 saved Environment current 指向含多个原型页面的可用候选 Change
-- **THEN** API MUST 优先返回候选 working copy 中的全部带新标记页面
-- **AND** MUST NOT 用 retained baseline 覆盖候选内容
+- **WHEN** 任务的受管工作树（Worktree）证据指向含多个原型页面的可用候选变更
+- **THEN** 接口（API）MUST 优先返回候选工作副本中的全部符合安全限制且带新标记页面
+- **AND** MUST NOT 用保留副本覆盖候选内容
 
 #### Scenario: Change 含有旧标记或其他 HTML
-- **WHEN** Task 关联 Change 同时含有旧标记、未标记 HTML、符号链接或超限文件
-- **THEN** API MUST 不返回这些文件内容
+- **WHEN** 任务关联变更同时含有旧标记、未标记 HTML、符号链接（Symbolic Link）或超限文件
+- **THEN** 接口（API）MUST 不返回这些文件内容
 - **AND** 适用的跳过原因 MUST 以不泄露绝对路径的诊断表达
 
 #### Scenario: 调用旧 Preview API
-- **WHEN** 客户端请求旧 `/ui-previews` 列表或内容 route
-- **THEN** 本机 HTTP interface MUST NOT 将其作为 UI Prototype API 处理
+- **WHEN** 客户端请求旧 `/ui-previews` 列表或内容路由
+- **THEN** 本机超文本传输协议（HTTP）入口 MUST NOT 将其作为原型接口（UI Prototype API）处理
 - **AND** MUST NOT 提供兼容重定向或别名
+
+#### Scenario: 本机原型与失效变更并存
+- **WHEN** 当前任务的本机原型可读，但某条关联变更的项目已失效或来源不可读
+- **THEN** 列表与单页接口（API）MUST 仍能读取本机原型，并返回该变更的局部诊断
+
+#### Scenario: 请求其他任务或伪造页面标识
+- **WHEN** 任务不存在，或页面标识不在该任务当前可发现范围内
+- **THEN** 接口（API）MUST 拒绝读取，不因其他任务拥有相同文件名而放行
 
 ### Requirement: Buildr Web 必须隔离 UI Prototype 可执行内容
 Buildr Web MUST 在不含 `allow-same-origin` 的 sandbox iframe 中运行每个 UI Prototype，仅允许页面自身 JavaScript 交互。页面内容响应 MUST 以 HTTP CSP 同时施加 `sandbox allow-scripts` 与离线资源策略，禁止网络连接、外部脚本/样式/字体、父页面访问与 Buildr session/API 权限；直接打开内容响应时 MUST 继续处于 opaque origin。客户端 MUST NOT 使用 `dangerouslySetInnerHTML` 或继承主页面脚本限制的 `srcdoc` 把原型内容注入 Buildr Web DOM。
@@ -472,19 +484,23 @@ Buildr Web MUST 在工作空间左侧提供“技能”入口，只读取现有�
 - **AND** MUST 不影响任务、项目或服务页面导航
 
 ### Requirement: 任务详情必须按工作路径直接组织已有内容
-默认页面 MUST在列表旁的现有副屏紧凑展示标题、编码、目标和状态，再以紧凑标签连接任务需求、方案设计、开发实现和任务收尾；方案审查 MUST在方案设计内，实现审查和开发验证 MUST在开发实现内，用户确认 MUST在任务收尾内。默认 MUST选中任务需求并直接显示正文，切换节点 MUST直接显示对应文档或完整结果，多份材料 MUST在同层切换，不经过文件入口或资料目录中转。
+
+默认页面 MUST在列表旁的现有副屏紧凑展示标题、编码、目标和状态，再以紧凑标签连接任务需求、方案设计、开发实现和任务收尾；方案审查 MUST在方案设计内，实现审查和开发验证 MUST在开发实现内，用户确认 MUST在任务收尾内。默认 MUST选中任务需求并直接显示任务目标（intent）正文，关联变更的 `brief.md` MUST作为补充需求文档在同层目录列出并可切换；切换节点 MUST直接显示对应文档或完整结果，多份材料 MUST在同层切换，不经过文件入口或资料目录中转。
 
 #### Scenario: 读取完整任务
+
 - **WHEN** Task拥有 brief.md、proposal.md、design.md、tasks.md、规范文件及专业结果
-- **THEN** 需求节点 MUST直接预览 brief，设计节点 MUST默认显示 proposal 正文并可切换 design/specs，实施清单 MUST在非模态浮窗中按需显示，实施节点 MUST显示实现审查与开发验证摘要，设计与实现内部的审查 MUST默认显示最新结论并可切换历次记录，开发实现内的验证 MUST直接展示当前结果及检查依据，收尾 MUST集中使用用户确认及交付记录
+- **THEN** 需求节点 MUST默认显示任务目标正文，补充需求文档 MUST在同层目录列出并可切换到对应 brief；设计节点 MUST默认显示 proposal 正文并可切换 design/specs，实施清单 MUST在非模态浮窗中按需显示，实施节点 MUST显示实现审查与开发验证摘要，设计与实现内部的审查 MUST默认显示最新结论并可切换历次记录，开发实现内的验证 MUST直接展示当前结果及检查依据，收尾 MUST集中使用用户确认及交付记录
 - **AND** 多个关联变更 MUST标识材料来源，原始正文保持其自身权威
 
 #### Scenario: 简单任务与空内容
+
 - **WHEN** Task没有方案材料或部分节点没有记录
 - **THEN** 页面 MUST保持四个主节点并如实显示空内容；MUST NOT强制创建文档、报告、子任务或错误状态
-- **AND** brief缺失 MUST显示暂无补充需求或说明，任务目标仍可读
+- **AND** 没有补充需求文档时需求节点 MUST仍直接显示任务目标正文，不得显示虚构补充材料；任务目标缺失或为空时如实表达
 
 #### Scenario: 当前工作与阅读选择不同
+
 - **WHEN** 智能体记录 implementation 表示验证失败后的修复，而用户在方案设计内选择方案审查
 - **THEN** 页面 MUST同时保留实现处的当前标记与方案设计及其内部方案审查的阅读选中态，显示保存的失败结果与当前实现标记
 - **AND** 没有明确 stage 时 MUST不标记当前节点；MUST NOT从文件存在、清单数量或 active 状态推断当前节点、自动执行或通过

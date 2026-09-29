@@ -457,8 +457,18 @@ test('npm package uses only its compatible host Node for CLI and on-demand Build
     assert.equal(sameFilesystemPath(installationRegistry.installations[0].entryPath, cli), true);
     assert.equal(installationRegistry.installations[0].runtime.executable, process.execPath);
     assert.equal(installationRegistry.installations[0].updateAuthority, null);
-    const guide: any = run(['bootstrap', 'guide']);
-    assert.equal(guide.status, 0, guide.stderr);
+    const assetHelp: any = run(['help', 'assets']);
+    assert.equal(assetHelp.status, 0, assetHelp.stderr);
+    assert.match(assetHelp.stdout, /serviceIds/);
+    assert.equal(fs.existsSync(path.join(packageRoot, 'payload/product/docs/bootstrap-guide.md')), false);
+    const offlineReference = fs.readFileSync(path.join(packageRoot, 'payload/product/docs/cli-reference.md'), 'utf8');
+    assert.equal(offlineReference, fs.readFileSync(path.join(serviceRoot, 'docs/cli-reference.md'), 'utf8'));
+    assert.match(offlineReference, /## 入口不可用与恢复/);
+    for (const args of [['bootstrap', 'guide'], ['bootstrap', 'guide', '--help'], ['help', 'bootstrap', 'guide']]) {
+      const retired: any = run([...args, '--json']);
+      assert.equal(retired.status, 2);
+      assert.match(JSON.parse(retired.stdout).error.code, /^cli\.unknown_(?:command|help_topic)$/);
+    }
     assert.equal(fs.readFileSync(installationRegistryFile, 'utf8'), firstRegistryBytes, 'formal startup enrollment must be byte-idempotent');
     const installationStatus: any = run(['installation', 'status', '--json']);
     assert.equal(installationStatus.status, 0, installationStatus.stderr);

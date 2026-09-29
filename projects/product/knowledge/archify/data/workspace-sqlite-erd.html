@@ -23,7 +23,7 @@ article{max-width:1220px;margin:32px auto;padding:32px 40px 48px;background:whit
 <a href="#fields">完整字段与约束说明 ↓</a>
 <a href="workspace-sqlite-erd.svg">独立矢量图（SVG）</a>
 <a href="workspace-sqlite-erd.dot.txt">Graphviz 图源</a>
-<a href="workspace-sqlite-erd.md">图示范围与维护说明</a>
+<a href="../../docs/architecture/buildr-database-tables.md#14-维护与验收边界">图示范围与维护说明</a>
 <a href="../../docs/architecture/buildr-database-tables.md">Markdown 附录</a>
 </nav>
 <div class="facts"><span>10 张普通表 · 50 字段</span><span>1 张检索虚拟表 · 4 张内部影子表</span><span>8 个外键（FK）· 13 个显式索引（Index）</span><span>内联内容 · 无网络依赖</span></div>
@@ -706,60 +706,23 @@ article{max-width:1220px;margin:32px auto;padding:32px 40px 48px;background:whit
 </section>
 <article id="fields" aria-label="完整字段与数据库约束说明">
 <!-- fields:start -->
-<nav class="jump" aria-label="字段说明目录"><a href="#section-1">1. 范围与事实依据</a><a href="#section-2">2. 关系、基数与删除行为</a><a href="#section-3">3. 任务主记录：`tasks`</a><a href="#section-4">4. 范围关联：`task_projects`、`task_services`、`task_changes`</a><a href="#section-5">5. 当前验证：`task_verification_current`</a><a href="#section-6">6. 当前审查：`task_review_current`</a><a href="#section-7">7. 审查替换历史：`task_review_history`</a><a href="#section-8">8. 当前工作摘要：`task_work_context_current`</a><a href="#section-9">9. 工作台偏好：`workbench_preferences`</a><a href="#section-10">10. 迁移账本：`schema_migrations`</a><a href="#section-11">11. 全文检索与内部影子表</a><a href="#section-12">12. 当前显式索引清单</a><a href="#section-13">13. 外键之外的完整性边界</a><a href="#section-14">14. 维护与验收边界</a></nav>
 <h1>Buildr 数据库表与实体关系</h1>
 <p>本文是 <a href="../../docs/architecture/buildr-data-design.md">Buildr 数据全景与领域设计</a> 的物理存储附录。本附录只解释 <code>workspace.sqlite</code> 的当前表、字段、关系与数据库之外的校验，不代替全领域事实主线，也不把文件对象画成不存在的数据库表。</p>
-<p>阅读入口：<a href="workspace-sqlite-erd.html">独立交互阅读页</a> · <a href="workspace-sqlite-erd.svg">原尺寸矢量图</a> · <a href="workspace-sqlite-erd.dot.txt">Graphviz 图源</a> · <a href="workspace-sqlite-erd.md">图示范围与维护说明</a>。阅读页内联图形与本附录，不需要网络；图形保留正文大小，可缩放与滚动，而非强制压成一屏缩略图。</p>
+<p>阅读入口：<a href="workspace-sqlite-erd.html">独立交互阅读页</a> · <a href="workspace-sqlite-erd.svg">原尺寸矢量图</a> · <a href="workspace-sqlite-erd.dot.txt">Graphviz 图源</a>。阅读页内联图形与本附录，不需要网络；图形保留正文大小，可缩放与滚动，而非强制压成一屏缩略图。</p>
 <h2 id="section-1">1. 范围与事实依据</h2>
 <p>基线是 <a href="../../../services/buildr/src/infrastructure/sqlite/migrations">迁移目录</a> 的 <code>0000</code> 至 <code>0034</code>，不是把历史建表语句全部相加。核对方法是在空内存数据库 <code>:memory:</code> 按顺序执行全部 35 个脚本，遵循 <code>-- buildr:foreign-keys-off</code> 标记，再读取 <code>sqlite_schema</code>、<code>PRAGMA table_xinfo</code>、<code>PRAGMA foreign_key_list</code> 和 <code>PRAGMA index_list</code>。未打开或读取真实 <code>workspace.sqlite</code> 中的业务数据。</p>
 <p>重放后的持久结构为 <strong>10 张普通表、1 张全文检索虚拟表（FTS5 Virtual Table）、4 张内部影子表（Shadow Table）</strong>，以及 13 个显式索引（Index）、3 个检索同步触发器（Trigger）。普通表共 50 个声明字段。迁移中的临时断言表和已删除旧表不属于当前结构；约束自动建立的索引不计入这 13 个显式索引。</p>
-<ul>
-<li>所有普通表均为严格类型表（STRICT）。<code>task_projects</code>、<code>task_services</code>、<code>task_changes</code>、<code>task_verification_current</code>、<code>task_review_current</code> 还采用无行号表（WITHOUT ROWID）；其余普通表保留隐式 <code>rowid</code>。</li>
-<li><code>tasks.task_id</code> 是文本主键（Primary Key，PK），不是 <code>rowid</code> 别名。<code>task_review_history.id</code>、<code>schema_migrations.version</code> 是整数主键（INTEGER PRIMARY KEY），也是 <code>rowid</code> 别名；没有 <code>AUTOINCREMENT</code>。</li>
-<li>主键（PK）数字后缀表示复合主键中的顺序；外键（Foreign Key，FK）不等于逻辑引用（Logical Reference）；唯一约束（Unique Constraint，UQ）不是主键。</li>
-<li>字段表中的可空性（Nullability）表示实际存储能否为 <code>NULL</code>，不代表某个业务状态是否允许缺省。两个整数主键虽在 <code>table_xinfo</code> 中显示 <code>notnull=0</code>，实际不会存储空值：省略或传入 <code>NULL</code> 会分配整数键。</li>
-<li>结构化文本（JSON）仍以 <code>TEXT</code> 存储。对象、数组及其中的引用不自动成为独立实体表，也不自动受外键（FK）保护。</li>
-</ul>
-<p>本图由本机 Graphviz 生成，使用鸟脚表示法（Crow&#x27;s Foot Notation）。它不是 Archify 产物；目录位置沿用项目已有技术图目录，不表示扩展了 Archify 能力。</p>
+<ul><li>所有普通表均为严格类型表（STRICT）。<code>task_projects</code>、<code>task_services</code>、<code>task_changes</code>、<code>task_verification_current</code>、<code>task_review_current</code> 还采用无行号表（WITHOUT ROWID）；其余普通表保留隐式 <code>rowid</code>。</li><li><code>tasks.task_id</code> 是文本主键（Primary Key，PK），不是 <code>rowid</code> 别名。<code>task_review_history.id</code>、<code>schema_migrations.version</code> 是整数主键（INTEGER PRIMARY KEY），也是 <code>rowid</code> 别名；没有 <code>AUTOINCREMENT</code>。</li><li>主键（PK）数字后缀表示复合主键中的顺序；外键（Foreign Key，FK）不等于逻辑引用（Logical Reference）；唯一约束（Unique Constraint，UQ）不是主键。</li><li>字段表中的可空性（Nullability）表示实际存储能否为 <code>NULL</code>，不代表某个业务状态是否允许缺省。两个整数主键虽在 <code>table_xinfo</code> 中显示 <code>notnull=0</code>，实际不会存储空值：省略或传入 <code>NULL</code> 会分配整数键。</li><li>结构化文本（JSON）仍以 <code>TEXT</code> 存储。对象、数组及其中的引用不自动成为独立实体表，也不自动受外键（FK）保护。</li></ul>
+<p>本图由本机 Graphviz 生成，使用鸟脚表示法（Crow&#x27;s Foot Notation）。Archify 未提供这里需要的实体关系图（ERD）和鸟脚端点，因此使用 Graphviz；目录沿用现有技术图位置，不改变产品能力或绑定。图源使用 <code>.dot.txt</code> 后缀便于知识阅读器显示，内容仍是原生 DOT。</p>
 <h2 id="section-2">2. 关系、基数与删除行为</h2>
 <p>实线是 SQL 外键（FK）；端点双竖线代表恰好一项，圈加竖线代表零或一项，圈加鸟脚代表零至多项。数字给出基数（Cardinality）上限，尤其是鸟脚本身无法表达的 <code>0..2</code>。点线只表示逻辑引用（Logical Reference），蓝色虚线表示触发器同步（Trigger Sync）或检索引擎内部维护。</p>
-<div class="table-wrap"><table><thead><tr><th scope="col">被引用对象</th><th scope="col">引用字段</th><th scope="col">每个被引用对象可有多少引用记录</th><th scope="col">每个引用记录对应多少被引用对象</th><th scope="col">删除动作</th></tr></thead><tbody>
-<tr><td><code>tasks.task_id</code></td><td><code>tasks.parent_task_id</code></td><td><code>0..N</code> 个子任务</td><td><code>0..1</code> 个父任务</td><td><code>SET NULL</code>，删除父任务后子任务保留</td></tr>
-<tr><td><code>tasks.task_id</code></td><td><code>task_projects.task_id</code></td><td><code>0..N</code></td><td><code>1</code></td><td><code>CASCADE</code></td></tr>
-<tr><td><code>tasks.task_id</code></td><td><code>task_services.task_id</code></td><td><code>0..N</code></td><td><code>1</code></td><td><code>CASCADE</code></td></tr>
-<tr><td><code>tasks.task_id</code></td><td><code>task_changes.task_id</code></td><td><code>0..N</code></td><td><code>1</code></td><td><code>CASCADE</code></td></tr>
-<tr><td><code>tasks.task_id</code></td><td><code>task_verification_current.task_id</code></td><td><code>0..1</code></td><td><code>1</code></td><td><code>CASCADE</code></td></tr>
-<tr><td><code>tasks.task_id</code></td><td><code>task_review_current.task_id</code></td><td><code>0..2</code>，每种 <code>review_type</code> 为 <code>0..1</code></td><td><code>1</code></td><td><code>CASCADE</code></td></tr>
-<tr><td><code>tasks.task_id</code></td><td><code>task_review_history.task_id</code></td><td><code>0..N</code></td><td><code>1</code></td><td><code>CASCADE</code></td></tr>
-<tr><td><code>tasks.task_id</code></td><td><code>task_work_context_current.task_id</code></td><td><code>0..1</code></td><td><code>1</code></td><td><code>CASCADE</code></td></tr>
-</tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>被引用对象</th><th>引用字段</th><th>每个被引用对象可有多少引用记录</th><th>每个引用记录对应多少被引用对象</th><th>删除动作</th></tr></thead><tbody><tr><td><code>tasks.task_id</code></td><td><code>tasks.parent_task_id</code></td><td><code>0..N</code> 个子任务</td><td><code>0..1</code> 个父任务</td><td><code>SET NULL</code>，删除父任务后子任务保留</td></tr><tr><td><code>tasks.task_id</code></td><td><code>task_projects.task_id</code></td><td><code>0..N</code></td><td><code>1</code></td><td><code>CASCADE</code></td></tr><tr><td><code>tasks.task_id</code></td><td><code>task_services.task_id</code></td><td><code>0..N</code></td><td><code>1</code></td><td><code>CASCADE</code></td></tr><tr><td><code>tasks.task_id</code></td><td><code>task_changes.task_id</code></td><td><code>0..N</code></td><td><code>1</code></td><td><code>CASCADE</code></td></tr><tr><td><code>tasks.task_id</code></td><td><code>task_verification_current.task_id</code></td><td><code>0..1</code></td><td><code>1</code></td><td><code>CASCADE</code></td></tr><tr><td><code>tasks.task_id</code></td><td><code>task_review_current.task_id</code></td><td><code>0..2</code>，每种 <code>review_type</code> 为 <code>0..1</code></td><td><code>1</code></td><td><code>CASCADE</code></td></tr><tr><td><code>tasks.task_id</code></td><td><code>task_review_history.task_id</code></td><td><code>0..N</code></td><td><code>1</code></td><td><code>CASCADE</code></td></tr><tr><td><code>tasks.task_id</code></td><td><code>task_work_context_current.task_id</code></td><td><code>0..1</code></td><td><code>1</code></td><td><code>CASCADE</code></td></tr></tbody></table></div>
 <p>上述 8 个外键（FK）的更新动作均为默认 <code>NO ACTION</code>。删除级联（CASCADE）针对真实删除行，不等于任务进入 <code>completed</code> 或 <code>abandoned</code> 后清空附属记录。<a href="../../../services/buildr/src/infrastructure/sqlite/workspace-sqlite.ts">数据库连接与迁移实现</a> 在正常连接上启用 <code>PRAGMA foreign_keys = ON</code>，仅重建被引用表的特定迁移临时关闭它并核对一致性。</p>
 <p>以下关系不能画成 SQL 外键（FK）：</p>
-<ul>
-<li><code>project</code>、<code>service</code>、<code>change_name</code> 引用文件承载的项目（Project）、服务（Service）、变更（Change）。没有 <code>projects</code>、<code>services</code> 或 <code>changes</code> 实体表；三个 <code>task_*</code> 关联表只保存任务范围引用。</li>
-<li><code>task_services</code> 没有 <code>(task_id, project)</code> 到 <code>task_projects</code> 的复合外键（FK）；<code>task_changes</code> 同样没有这样的约束。</li>
-<li><code>task_review_history</code> 只引用 <code>tasks</code>，没有到 <code>task_review_current</code> 的外键（FK）。保存旧值的动作是应用写入，不是数据库触发器。</li>
-<li><code>workbench_preferences.object_key</code> 按 <code>kind</code> 解释，可能定位任务、项目或其他资源。目标不存在时，数据库不会自动拒绝该偏好或级联删除它。</li>
-<li><code>task_search.rowid</code> 对应 <code>tasks.rowid</code> 是检索同步，不是声明的外键（FK），也不能把 <code>task_search.task_id</code> 标成主键（PK）。</li>
-</ul>
+<ul><li><code>project</code>、<code>service</code>、<code>change_name</code> 引用文件承载的项目（Project）、服务（Service）、变更（Change）。没有 <code>projects</code>、<code>services</code> 或 <code>changes</code> 实体表；三个 <code>task_*</code> 关联表只保存任务范围引用。</li><li><code>task_services</code> 没有 <code>(task_id, project)</code> 到 <code>task_projects</code> 的复合外键（FK）；<code>task_changes</code> 同样没有这样的约束。</li><li><code>task_review_history</code> 只引用 <code>tasks</code>，没有到 <code>task_review_current</code> 的外键（FK）。保存旧值的动作是应用写入，不是数据库触发器。</li><li><code>workbench_preferences.object_key</code> 按 <code>kind</code> 解释，可能定位任务、项目或其他资源。目标不存在时，数据库不会自动拒绝该偏好或级联删除它。</li><li><code>task_search.rowid</code> 对应 <code>tasks.rowid</code> 是检索同步，不是声明的外键（FK），也不能把 <code>task_search.task_id</code> 标成主键（PK）。</li></ul>
 <h2 id="section-3">3. 任务主记录：<code>tasks</code></h2>
 <p>职责：保存任务身份、目标、当前状态、结果，以及父子关系、终态更正记录与复盘文档引用。当前完整定义来自 <a href="../../../services/buildr/src/infrastructure/sqlite/migrations/0031_finalize_task_record.sql">0031</a>；检索排序补充来自 <a href="../../../services/buildr/src/infrastructure/sqlite/migrations/0032_add_task_query_indexes.sql">0032</a>。</p>
-<div class="table-wrap"><table><thead><tr><th scope="col">字段</th><th scope="col">类型</th><th scope="col">键</th><th scope="col">可空</th><th scope="col">释义与默认值</th></tr></thead><tbody>
-<tr><td><code>task_id</code></td><td><code>TEXT</code></td><td>主键（PK）</td><td>否</td><td>稳定任务标识</td></tr>
-<tr><td><code>title</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td>简短标题</td></tr>
-<tr><td><code>intent</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td>目标与意图</td></tr>
-<tr><td><code>status</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td><code>todo</code>、<code>active</code>、<code>completed</code>、<code>abandoned</code></td></tr>
-<tr><td><code>result_summary</code></td><td><code>TEXT</code></td><td>—</td><td>是</td><td>终态结果摘要；未终结时为空</td></tr>
-<tr><td><code>created_at</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td>创建时间</td></tr>
-<tr><td><code>updated_at</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td>最近修改时间</td></tr>
-<tr><td><code>parent_task_id</code></td><td><code>TEXT</code></td><td>外键（FK）</td><td>是</td><td>父任务标识；删除父任务时置空</td></tr>
-<tr><td><code>is_parent</code></td><td><code>INTEGER</code></td><td>—</td><td>否</td><td>是否已标识为父任务；默认 <code>0</code>，值为 <code>0</code> 或 <code>1</code></td></tr>
-<tr><td><code>parent_completion_json</code></td><td><code>TEXT</code></td><td>—</td><td>是</td><td>父任务完成证据对象的结构化文本（JSON）</td></tr>
-<tr><td><code>result_history_json</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td>终态结果更正历史数组的结构化文本（JSON）；默认 <code>&#x27;[]&#x27;</code></td></tr>
-<tr><td><code>legacy_parent_plan_json</code></td><td><code>TEXT</code></td><td>—</td><td>是</td><td>迁移保留的旧父任务计划结构化文本（JSON），不是当前计划表</td></tr>
-<tr><td><code>retrospective_state</code></td><td><code>TEXT</code></td><td>—</td><td>是</td><td><code>pending-decision</code> 或 <code>decided</code></td></tr>
-<tr><td><code>retrospective_document_digest</code></td><td><code>TEXT</code></td><td>—</td><td>是</td><td>复盘文档内容摘要，格式为 <code>sha256-</code> 加 64 位小写十六进制</td></tr>
-</tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>字段</th><th>类型</th><th>键</th><th>可空</th><th>释义与默认值</th></tr></thead><tbody><tr><td><code>task_id</code></td><td><code>TEXT</code></td><td>主键（PK）</td><td>否</td><td>稳定任务标识</td></tr><tr><td><code>title</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td>简短标题</td></tr><tr><td><code>intent</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td>目标与意图</td></tr><tr><td><code>status</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td><code>todo</code>、<code>active</code>、<code>completed</code>、<code>abandoned</code></td></tr><tr><td><code>result_summary</code></td><td><code>TEXT</code></td><td>—</td><td>是</td><td>终态结果摘要；未终结时为空</td></tr><tr><td><code>created_at</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td>创建时间</td></tr><tr><td><code>updated_at</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td>最近修改时间</td></tr><tr><td><code>parent_task_id</code></td><td><code>TEXT</code></td><td>外键（FK）</td><td>是</td><td>父任务标识；删除父任务时置空</td></tr><tr><td><code>is_parent</code></td><td><code>INTEGER</code></td><td>—</td><td>否</td><td>是否已标识为父任务；默认 <code>0</code>，值为 <code>0</code> 或 <code>1</code></td></tr><tr><td><code>parent_completion_json</code></td><td><code>TEXT</code></td><td>—</td><td>是</td><td>父任务完成证据对象的结构化文本（JSON）</td></tr><tr><td><code>result_history_json</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td>终态结果更正历史数组的结构化文本（JSON）；默认 <code>&#x27;[]&#x27;</code></td></tr><tr><td><code>legacy_parent_plan_json</code></td><td><code>TEXT</code></td><td>—</td><td>是</td><td>迁移保留的旧父任务计划结构化文本（JSON），不是当前计划表</td></tr><tr><td><code>retrospective_state</code></td><td><code>TEXT</code></td><td>—</td><td>是</td><td><code>pending-decision</code> 或 <code>decided</code></td></tr><tr><td><code>retrospective_document_digest</code></td><td><code>TEXT</code></td><td>—</td><td>是</td><td>复盘文档内容摘要，格式为 <code>sha256-</code> 加 64 位小写十六进制</td></tr></tbody></table></div>
 <p>关键约束：<code>task_id</code> 非空，仅含小写字母、数字及 <code>._-</code>，首尾必须为小写字母或数字；<code>title</code>、<code>intent</code> 去首尾空白后非空。两时间字段须可由 SQLite <code>datetime()</code> 解释，<code>updated_at &gt;= created_at</code> 是文本比较。<code>parent_task_id</code> 不能等于自身；该检查不证明整条祖先链无环。</p>
 <p><code>parent_completion_json</code> 与 <code>legacy_parent_plan_json</code> 的 SQL 检查仅要求非空时 <code>json_valid()</code>；<code>result_history_json</code> 额外要求根为数组。数据库未对前两者要求根为对象。复盘状态与摘要须同时为空，或同时存在且任务已终结。</p>
 <p>终态摘要的检查表达式意图是 <code>todo/active</code> 没有摘要、<code>completed/abandoned</code> 摘要非空，但 SQLite 的 <code>CHECK</code> 在表达式为 <code>NULL</code> 时也允许写入，故不能据此声称数据库本身拒绝所有缺失终态摘要。应用的完整记录校验在 <a href="../../../services/buildr/src/modules/task/application/task-validation.ts">task-validation.ts</a>，与 SQL 约束必须分层理解。</p>
@@ -768,140 +731,61 @@ article{max-width:1220px;margin:32px auto;padding:32px 40px 48px;background:whit
 <h2 id="section-4">4. 范围关联：<code>task_projects</code>、<code>task_services</code>、<code>task_changes</code></h2>
 <p>三个表均来自 <a href="../../../services/buildr/src/infrastructure/sqlite/migrations/0001_create_task_store.sql">0001</a>，保存任务与文件实体的关联，而非项目或服务本身的属性。</p>
 <h3><code>task_projects</code>：任务涉及的项目</h3>
-<div class="table-wrap"><table><thead><tr><th scope="col">字段</th><th scope="col">类型</th><th scope="col">键</th><th scope="col">可空</th><th scope="col">释义</th></tr></thead><tbody>
-<tr><td><code>task_id</code></td><td><code>TEXT</code></td><td>主键（PK）第 1 列、外键（FK）</td><td>否</td><td>所属任务</td></tr>
-<tr><td><code>project</code></td><td><code>TEXT</code></td><td>主键（PK）第 2 列</td><td>否</td><td>项目代码，文件实体逻辑引用（Logical Reference）</td></tr>
-</tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>字段</th><th>类型</th><th>键</th><th>可空</th><th>释义</th></tr></thead><tbody><tr><td><code>task_id</code></td><td><code>TEXT</code></td><td>主键（PK）第 1 列、外键（FK）</td><td>否</td><td>所属任务</td></tr><tr><td><code>project</code></td><td><code>TEXT</code></td><td>主键（PK）第 2 列</td><td>否</td><td>项目代码，文件实体逻辑引用（Logical Reference）</td></tr></tbody></table></div>
 <h3><code>task_services</code>：任务涉及的服务</h3>
-<div class="table-wrap"><table><thead><tr><th scope="col">字段</th><th scope="col">类型</th><th scope="col">键</th><th scope="col">可空</th><th scope="col">释义</th></tr></thead><tbody>
-<tr><td><code>task_id</code></td><td><code>TEXT</code></td><td>主键（PK）第 1 列、外键（FK）</td><td>否</td><td>所属任务</td></tr>
-<tr><td><code>project</code></td><td><code>TEXT</code></td><td>主键（PK）第 2 列</td><td>否</td><td>项目代码</td></tr>
-<tr><td><code>service</code></td><td><code>TEXT</code></td><td>主键（PK）第 3 列</td><td>否</td><td>与项目代码一起定位服务的逻辑引用（Logical Reference）</td></tr>
-</tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>字段</th><th>类型</th><th>键</th><th>可空</th><th>释义</th></tr></thead><tbody><tr><td><code>task_id</code></td><td><code>TEXT</code></td><td>主键（PK）第 1 列、外键（FK）</td><td>否</td><td>所属任务</td></tr><tr><td><code>project</code></td><td><code>TEXT</code></td><td>主键（PK）第 2 列</td><td>否</td><td>项目代码</td></tr><tr><td><code>service</code></td><td><code>TEXT</code></td><td>主键（PK）第 3 列</td><td>否</td><td>与项目代码一起定位服务的逻辑引用（Logical Reference）</td></tr></tbody></table></div>
 <h3><code>task_changes</code>：任务涉及的变更</h3>
-<div class="table-wrap"><table><thead><tr><th scope="col">字段</th><th scope="col">类型</th><th scope="col">键</th><th scope="col">可空</th><th scope="col">释义</th></tr></thead><tbody>
-<tr><td><code>task_id</code></td><td><code>TEXT</code></td><td>主键（PK）第 1 列、外键（FK）</td><td>否</td><td>所属任务</td></tr>
-<tr><td><code>project</code></td><td><code>TEXT</code></td><td>主键（PK）第 2 列</td><td>否</td><td>项目代码</td></tr>
-<tr><td><code>change_name</code></td><td><code>TEXT</code></td><td>主键（PK）第 3 列</td><td>否</td><td>OpenSpec 变更名称；领域字段名为 <code>change</code></td></tr>
-</tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>字段</th><th>类型</th><th>键</th><th>可空</th><th>释义</th></tr></thead><tbody><tr><td><code>task_id</code></td><td><code>TEXT</code></td><td>主键（PK）第 1 列、外键（FK）</td><td>否</td><td>所属任务</td></tr><tr><td><code>project</code></td><td><code>TEXT</code></td><td>主键（PK）第 2 列</td><td>否</td><td>项目代码</td></tr><tr><td><code>change_name</code></td><td><code>TEXT</code></td><td>主键（PK）第 3 列</td><td>否</td><td>OpenSpec 变更名称；领域字段名为 <code>change</code></td></tr></tbody></table></div>
 <p>各复合主键（PK）避免同一任务内重复关联。<code>project</code>、<code>service</code>、<code>change_name</code> 均非空，只含大小写字母、数字及 <code>._-</code>，且首字符必须为字母或数字；它们与小写任务标识的规则不同。</p>
 <p><a href="../../../services/buildr/src/modules/task/application/task-command-application.ts">task-command-application.ts</a> 的 <code>assertScopeReferencesAvailable</code> 读取项目及服务登记，<code>assertChangeReferencesAvailable</code> 核对实际可解析的变更；不是通过不存在的目标表校验。<a href="../../../services/buildr/src/modules/task/change/application/change-application.ts">变更解析实现</a> 定位当前工作副本及保留副本中的 OpenSpec 文件。类型映射分别见 <a href="../../../services/buildr/src/modules/task/domain/task-project.ts">TaskProject</a>、<a href="../../../services/buildr/src/modules/task/domain/task-service.ts">TaskService</a>、<a href="../../../services/buildr/src/modules/task/domain/task-change.ts">TaskChange</a>。</p>
 <h2 id="section-5">5. 当前验证：<code>task_verification_current</code></h2>
 <p>职责：每个任务最多保存一份当前验证报告。当前定义来自 <a href="../../../services/buildr/src/infrastructure/sqlite/migrations/0023_refactor_task_verification_report.sql">0023</a>。</p>
-<div class="table-wrap"><table><thead><tr><th scope="col">字段</th><th scope="col">类型</th><th scope="col">键</th><th scope="col">可空</th><th scope="col">释义</th></tr></thead><tbody>
-<tr><td><code>task_id</code></td><td><code>TEXT</code></td><td>主键（PK）、外键（FK）</td><td>否</td><td>所属任务</td></tr>
-<tr><td><code>result_json</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td>验证报告的结构化文本（JSON）</td></tr>
-<tr><td><code>target_identity</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td>报告 <code>content.identity</code> 的查询列</td></tr>
-<tr><td><code>outcome</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td><code>passed</code>、<code>not-passed</code>、<code>incomplete</code></td></tr>
-<tr><td><code>updated_at</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td>报告 <code>completedAt</code> 的查询列</td></tr>
-</tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>字段</th><th>类型</th><th>键</th><th>可空</th><th>释义</th></tr></thead><tbody><tr><td><code>task_id</code></td><td><code>TEXT</code></td><td>主键（PK）、外键（FK）</td><td>否</td><td>所属任务</td></tr><tr><td><code>result_json</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td>验证报告的结构化文本（JSON）</td></tr><tr><td><code>target_identity</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td>报告 <code>content.identity</code> 的查询列</td></tr><tr><td><code>outcome</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td><code>passed</code>、<code>not-passed</code>、<code>incomplete</code></td></tr><tr><td><code>updated_at</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td>报告 <code>completedAt</code> 的查询列</td></tr></tbody></table></div>
 <p>SQL 检查 <code>json_valid(result_json)</code>，并比较 <code>schemaVersion = &#x27;buildr.task-verification-report/v1&#x27;</code> 及 <code>taskId = task_id</code>；查询身份去首尾空白后非空，时间可解析。缺失的结构化文本（JSON）键可能让比较得到 <code>NULL</code> 而通过 <code>CHECK</code>，因此这不是完整对象校验。</p>
 <p><a href="../../../services/buildr/src/modules/task/domain/task-verification.ts">task-verification.ts</a> 定义和校验报告对象，包括范围、被验证内容、声明引用、检查、缺口与结论。<a href="../../../services/buildr/src/modules/task/persistence/task-verification-repository.ts">task-verification-repository.ts</a> 在读写时核对对象与查询列一致性，写前比较 <code>expectedReportDigest</code>。其第 59–66 行只更新当前表，<strong>没有验证历史表，也不会自动保存被替换的旧报告</strong>。</p>
 <h2 id="section-6">6. 当前审查：<code>task_review_current</code></h2>
 <p>职责：每个任务为 <code>planning</code>、<code>completion</code> 各保留至多一份当前审查。来自 <a href="../../../services/buildr/src/infrastructure/sqlite/migrations/0027_migrate_task_review_result_v2.sql">0027</a>。</p>
-<div class="table-wrap"><table><thead><tr><th scope="col">字段</th><th scope="col">类型</th><th scope="col">键</th><th scope="col">可空</th><th scope="col">释义</th></tr></thead><tbody>
-<tr><td><code>task_id</code></td><td><code>TEXT</code></td><td>主键（PK）第 1 列、外键（FK）</td><td>否</td><td>所属任务</td></tr>
-<tr><td><code>review_type</code></td><td><code>TEXT</code></td><td>主键（PK）第 2 列</td><td>否</td><td><code>planning</code> 或 <code>completion</code></td></tr>
-<tr><td><code>result_json</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td>审查结果的结构化文本（JSON）</td></tr>
-<tr><td><code>subject_identity</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td>被审查对象身份的查询列</td></tr>
-<tr><td><code>outcome</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td><code>accepted</code> 或 <code>changes-requested</code></td></tr>
-<tr><td><code>updated_at</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td>结果 <code>completedAt</code> 的查询列</td></tr>
-</tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>字段</th><th>类型</th><th>键</th><th>可空</th><th>释义</th></tr></thead><tbody><tr><td><code>task_id</code></td><td><code>TEXT</code></td><td>主键（PK）第 1 列、外键（FK）</td><td>否</td><td>所属任务</td></tr><tr><td><code>review_type</code></td><td><code>TEXT</code></td><td>主键（PK）第 2 列</td><td>否</td><td><code>planning</code> 或 <code>completion</code></td></tr><tr><td><code>result_json</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td>审查结果的结构化文本（JSON）</td></tr><tr><td><code>subject_identity</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td>被审查对象身份的查询列</td></tr><tr><td><code>outcome</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td><code>accepted</code> 或 <code>changes-requested</code></td></tr><tr><td><code>updated_at</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td>结果 <code>completedAt</code> 的查询列</td></tr></tbody></table></div>
 <p>复合主键（PK）与两值类型检查共同形成每任务 <code>0..2</code> 的上限，不是笼统的无限多。SQL 要求有效的结构化文本（JSON）对象，比较 <code>schemaVersion = &#x27;buildr.task-review-result/v2&#x27;</code>、<code>taskId</code> 和 <code>reviewType</code>；查询身份非空，时间可解析。缺失键的比较同样存在 <code>CHECK(NULL)</code> 边界；完整字段和查询列一致性由 <a href="../../../services/buildr/src/modules/task/domain/task-review.ts">task-review.ts</a> 与 <a href="../../../services/buildr/src/modules/task/persistence/task-review-repository.ts">task-review-repository.ts</a> 校验。</p>
 <p>审查对象含审查方法、已审内容、未覆盖项、发现及结论；这些是单个 <code>result_json</code> 内的结构化文本（JSON），不是额外子表。</p>
 <h2 id="section-7">7. 审查替换历史：<code>task_review_history</code></h2>
 <p>职责：保留同任务、同类型的被替换审查结果。来自 <a href="../../../services/buildr/src/infrastructure/sqlite/migrations/0034_add_task_review_history.sql">0034</a>。</p>
-<div class="table-wrap"><table><thead><tr><th scope="col">字段</th><th scope="col">类型</th><th scope="col">键</th><th scope="col">可空</th><th scope="col">释义</th></tr></thead><tbody>
-<tr><td><code>id</code></td><td><code>INTEGER</code></td><td>主键（PK）、<code>rowid</code> 别名</td><td>否*</td><td>插入时分配的整数键；不是时间戳</td></tr>
-<tr><td><code>task_id</code></td><td><code>TEXT</code></td><td>外键（FK）</td><td>否</td><td>所属任务</td></tr>
-<tr><td><code>review_type</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td><code>planning</code> 或 <code>completion</code></td></tr>
-<tr><td><code>result_json</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td>旧审查结果的完整结构化文本（JSON）</td></tr>
-</tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>字段</th><th>类型</th><th>键</th><th>可空</th><th>释义</th></tr></thead><tbody><tr><td><code>id</code></td><td><code>INTEGER</code></td><td>主键（PK）、<code>rowid</code> 别名</td><td>否*</td><td>插入时分配的整数键；不是时间戳</td></tr><tr><td><code>task_id</code></td><td><code>TEXT</code></td><td>外键（FK）</td><td>否</td><td>所属任务</td></tr><tr><td><code>review_type</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td><code>planning</code> 或 <code>completion</code></td></tr><tr><td><code>result_json</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td>旧审查结果的完整结构化文本（JSON）</td></tr></tbody></table></div>
 <p><code>否*</code> 表示省略或传入 <code>NULL</code> 会分配整数键，不会存储空值。SQL 只检查类型取值与 <code>json_valid()</code>，未强制该对象的完整结构、内部任务身份或类型一致性；读取时沿用当前审查的领域校验。</p>
 <p><strong>先保存旧值，再替换当前值</strong>：在 <a href="../../../services/buildr/src/modules/task/persistence/task-review-repository.ts#L100-L109">task-review-repository.ts 第 100–109 行</a>，同一事务先读取并校验当前记录及 <code>expectedCurrentDigest</code>；已有当前值时将原始 <code>result_json</code> 插入历史表，然后更新当前表。首次创建没有旧值，不产生历史行。历史行没有指向当前表的外键（FK），也没有独立 <code>updated_at</code>；读出的 <code>observedAt</code> 来自旧结果的 <code>completedAt</code>，按 <code>id</code> 排序。该表不是任务所有变动的通用事件流水。</p>
 <h2 id="section-8">8. 当前工作摘要：<code>task_work_context_current</code></h2>
 <p>职责：每任务一份可接续的工作摘要及待处理意见。来自 <a href="../../../services/buildr/src/infrastructure/sqlite/migrations/0033_add_daily_workbench.sql">0033</a>。</p>
-<div class="table-wrap"><table><thead><tr><th scope="col">字段</th><th scope="col">类型</th><th scope="col">键</th><th scope="col">可空</th><th scope="col">释义</th></tr></thead><tbody>
-<tr><td><code>task_id</code></td><td><code>TEXT</code></td><td>主键（PK）、外键（FK）</td><td>否</td><td>所属任务</td></tr>
-<tr><td><code>context_json</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td>工作摘要对象的结构化文本（JSON）</td></tr>
-<tr><td><code>attention_state</code></td><td><code>TEXT</code></td><td>—</td><td>是</td><td><code>pending</code> 或 <code>resolved</code>；没有意见对象时为 <code>NULL</code></td></tr>
-<tr><td><code>updated_at</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td>摘要的更新时间查询列</td></tr>
-</tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>字段</th><th>类型</th><th>键</th><th>可空</th><th>释义</th></tr></thead><tbody><tr><td><code>task_id</code></td><td><code>TEXT</code></td><td>主键（PK）、外键（FK）</td><td>否</td><td>所属任务</td></tr><tr><td><code>context_json</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td>工作摘要对象的结构化文本（JSON）</td></tr><tr><td><code>attention_state</code></td><td><code>TEXT</code></td><td>—</td><td>是</td><td><code>pending</code> 或 <code>resolved</code>；没有意见对象时为 <code>NULL</code></td></tr><tr><td><code>updated_at</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td>摘要的更新时间查询列</td></tr></tbody></table></div>
 <p>SQL 只检查有效的结构化文本（JSON）、可空的状态取值和可解析时间，不检查查询列等于对象字段。<a href="../../../services/buildr/src/modules/task/work-context/domain/work-context.ts">work-context.ts</a> 定义进展、下一步、可选阶段、意见与答复；<code>context_json</code> 保存的是其中的摘要对象，不是整个响应封套。</p>
 <p><a href="../../../services/buildr/src/modules/task/work-context/persistence/work-context-repository.ts">work-context-repository.ts</a> 写入前比较摘要，校验已解决意见必须具有答复，并从对象派生 <code>attention_state</code> 与 <code>updated_at</code>。读取当前对象只查询 <code>context_json</code>，待处理列表使用 <code>attention_state</code>；SQL 不独立保证这两份表示一直相符。</p>
 <h2 id="section-9">9. 工作台偏好：<code>workbench_preferences</code></h2>
 <p>职责：保存置顶、计划、关注、收藏及最近访问。来自 <a href="../../../services/buildr/src/infrastructure/sqlite/migrations/0033_add_daily_workbench.sql">0033</a>，无外键（FK）。</p>
-<div class="table-wrap"><table><thead><tr><th scope="col">字段</th><th scope="col">类型</th><th scope="col">键</th><th scope="col">可空</th><th scope="col">释义</th></tr></thead><tbody>
-<tr><td><code>kind</code></td><td><code>TEXT</code></td><td>主键（PK）第 1 列</td><td>否</td><td>偏好类型</td></tr>
-<tr><td><code>object_key</code></td><td><code>TEXT</code></td><td>主键（PK）第 2 列</td><td>否</td><td>类型范围内的目标键，长度 <code>1..300</code></td></tr>
-<tr><td><code>label</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td>显示名称，去首尾空白后非空</td></tr>
-<tr><td><code>href</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td>可打开的页面地址，去首尾空白后非空</td></tr>
-<tr><td><code>updated_at</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td>可解析的更新时间</td></tr>
-</tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>字段</th><th>类型</th><th>键</th><th>可空</th><th>释义</th></tr></thead><tbody><tr><td><code>kind</code></td><td><code>TEXT</code></td><td>主键（PK）第 1 列</td><td>否</td><td>偏好类型</td></tr><tr><td><code>object_key</code></td><td><code>TEXT</code></td><td>主键（PK）第 2 列</td><td>否</td><td>类型范围内的目标键，长度 <code>1..300</code></td></tr><tr><td><code>label</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td>显示名称，去首尾空白后非空</td></tr><tr><td><code>href</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td>可打开的页面地址，去首尾空白后非空</td></tr><tr><td><code>updated_at</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td>可解析的更新时间</td></tr></tbody></table></div>
 <p><code>kind</code> 仅允许 <code>pinned-task</code>、<code>planned-task</code>、<code>followed-project</code>、<code>saved-resource</code>、<code>recent-resource</code>。复合主键（PK）只在同类型内去重，<code>object_key</code> 本身不全局唯一。该表不是无行号表（WITHOUT ROWID）；最近访问的排序实际使用 <code>updated_at DESC, rowid DESC</code>。</p>
 <p><a href="../../../services/buildr/src/modules/workbench/application/preferences-application.ts">preferences-application.ts</a> 按类型解析任务或项目，添加计划项时要求任务为 <code>todo</code>，目标不可读时展示诊断名称而非伪造存在。<a href="../../../services/buildr/src/modules/workbench/domain/workbench.ts">workbench.ts</a> 校验目标键与当前工作空间内的允许页面地址；<a href="../../../services/buildr/src/modules/workbench/persistence/preferences-repository.ts">preferences-repository.ts</a> 限制每类非最近偏好最多 500 项，最近访问保留 30 项。这些是应用约束，不是 SQL 外键（FK）、检查约束或删除触发器。</p>
 <h2 id="section-10">10. 迁移账本：<code>schema_migrations</code></h2>
 <p>职责：记录实际应用的迁移版本、脚本名称、脚本摘要与时间。来自 <a href="../../../services/buildr/src/infrastructure/sqlite/migrations/0000_create_migration_ledger.sql">0000</a>，无业务关联。</p>
-<div class="table-wrap"><table><thead><tr><th scope="col">字段</th><th scope="col">类型</th><th scope="col">键</th><th scope="col">可空</th><th scope="col">释义</th></tr></thead><tbody>
-<tr><td><code>version</code></td><td><code>INTEGER</code></td><td>主键（PK）、<code>rowid</code> 别名</td><td>否*</td><td>非负版本号；应用明确写入迁移版本</td></tr>
-<tr><td><code>name</code></td><td><code>TEXT</code></td><td>唯一约束（UQ）</td><td>否</td><td><code>0000_name.sql</code> 形式的迁移文件名</td></tr>
-<tr><td><code>checksum</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td><code>sha256-</code> 加 64 位小写十六进制</td></tr>
-<tr><td><code>applied_at</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td>可由 SQLite 解析的应用时间</td></tr>
-</tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>字段</th><th>类型</th><th>键</th><th>可空</th><th>释义</th></tr></thead><tbody><tr><td><code>version</code></td><td><code>INTEGER</code></td><td>主键（PK）、<code>rowid</code> 别名</td><td>否*</td><td>非负版本号；应用明确写入迁移版本</td></tr><tr><td><code>name</code></td><td><code>TEXT</code></td><td>唯一约束（UQ）</td><td>否</td><td><code>0000_name.sql</code> 形式的迁移文件名</td></tr><tr><td><code>checksum</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td><code>sha256-</code> 加 64 位小写十六进制</td></tr><tr><td><code>applied_at</code></td><td><code>TEXT</code></td><td>—</td><td>否</td><td>可由 SQLite 解析的应用时间</td></tr></tbody></table></div>
 <p><code>否*</code> 的含义与历史表整数主键相同；不是建议让数据库自行选择迁移版本。名称的 SQL 检查包含四位数字前缀、下划线、受限名称字符与 <code>.sql</code> 后缀。<a href="../../../services/buildr/src/infrastructure/sqlite/workspace-sqlite.ts">workspace-sqlite.ts</a> 负责脚本版本连续性、账本与当前脚本名称及摘要一致性、迁移执行和账本写入。单独重放 SQL 得到的是结构，不应把空内存账本当成真实安装的迁移记录。</p>
 <h2 id="section-11">11. 全文检索与内部影子表</h2>
 <p><code>task_search</code> 来自 <a href="../../../services/buildr/src/infrastructure/sqlite/migrations/0032_add_task_query_indexes.sql">0032</a>，使用外部内容全文检索（External-content FTS5）：<code>content=&#x27;tasks&#x27;</code>、<code>content_rowid=&#x27;rowid&#x27;</code>、<code>tokenize=&#x27;trigram&#x27;</code>。正文仍由 <code>tasks</code> 提供；初次创建执行 <code>rebuild</code>。</p>
-<div class="table-wrap"><table><thead><tr><th scope="col">字段</th><th scope="col">声明类型</th><th scope="col">键</th><th scope="col">可空性声明</th><th scope="col">释义</th></tr></thead><tbody>
-<tr><td><code>task_id</code></td><td>未声明</td><td>无主键（PK）/外键（FK）</td><td>未约束</td><td>被检索的任务标识</td></tr>
-<tr><td><code>title</code></td><td>未声明</td><td>—</td><td>未约束</td><td>被检索的任务标题</td></tr>
-<tr><td><code>intent</code></td><td>未声明</td><td>—</td><td>未约束</td><td>被检索的任务意图</td></tr>
-<tr><td><code>task_search</code></td><td>未声明，隐藏列</td><td>—</td><td>未约束</td><td>全文检索（FTS5）的同名命令接口列</td></tr>
-<tr><td><code>rank</code></td><td>未声明，隐藏列</td><td>—</td><td>未约束</td><td>全文检索（FTS5）的排序接口列</td></tr>
-</tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>字段</th><th>声明类型</th><th>键</th><th>可空性声明</th><th>释义</th></tr></thead><tbody><tr><td><code>task_id</code></td><td>未声明</td><td>无主键（PK）/外键（FK）</td><td>未约束</td><td>被检索的任务标识</td></tr><tr><td><code>title</code></td><td>未声明</td><td>—</td><td>未约束</td><td>被检索的任务标题</td></tr><tr><td><code>intent</code></td><td>未声明</td><td>—</td><td>未约束</td><td>被检索的任务意图</td></tr><tr><td><code>task_search</code></td><td>未声明，隐藏列</td><td>—</td><td>未约束</td><td>全文检索（FTS5）的同名命令接口列</td></tr><tr><td><code>rank</code></td><td>未声明，隐藏列</td><td>—</td><td>未约束</td><td>全文检索（FTS5）的排序接口列</td></tr></tbody></table></div>
 <p>三个可见列没有 SQL 类型、主键（PK）或非空声明，不能因为源表使用 <code>TEXT NOT NULL</code> 就给虚拟表虚构相同约束。两个隐藏列来自 <code>table_xinfo</code>，不是迁移显式声明的业务字段；<code>rowid</code> 是引擎文档标识，不属于上述五个声明/隐藏列清单。</p>
-<div class="table-wrap"><table><thead><tr><th scope="col">触发器（Trigger）</th><th scope="col">同步动作</th></tr></thead><tbody>
-<tr><td><code>tasks_search_after_insert</code></td><td>用 <code>new.rowid</code> 及三列新值写入检索表</td></tr>
-<tr><td><code>tasks_search_after_delete</code></td><td>用 <code>old.rowid</code> 及三列旧值发出检索删除命令</td></tr>
-<tr><td><code>tasks_search_after_update</code></td><td>仅监听 <code>task_id/title/intent</code> 更新；先删旧检索内容，再写新内容</td></tr>
-</tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>触发器（Trigger）</th><th>同步动作</th></tr></thead><tbody><tr><td><code>tasks_search_after_insert</code></td><td>用 <code>new.rowid</code> 及三列新值写入检索表</td></tr><tr><td><code>tasks_search_after_delete</code></td><td>用 <code>old.rowid</code> 及三列旧值发出检索删除命令</td></tr><tr><td><code>tasks_search_after_update</code></td><td>仅监听 <code>task_id/title/intent</code> 更新；先删旧检索内容，再写新内容</td></tr></tbody></table></div>
 <p>以下四个内部影子表（Shadow Table）由全文检索（FTS5）引擎维护，仅归为基础设施，不展开为业务实体，也不建议直接写入：</p>
-<div class="table-wrap"><table><thead><tr><th scope="col">表名</th><th scope="col">职责</th></tr></thead><tbody>
-<tr><td><code>task_search_config</code></td><td>引擎配置</td></tr>
-<tr><td><code>task_search_data</code></td><td>索引数据块</td></tr>
-<tr><td><code>task_search_docsize</code></td><td>每文档的词数统计</td></tr>
-<tr><td><code>task_search_idx</code></td><td>索引段定位信息</td></tr>
-</tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>表名</th><th>职责</th></tr></thead><tbody><tr><td><code>task_search_config</code></td><td>引擎配置</td></tr><tr><td><code>task_search_data</code></td><td>索引数据块</td></tr><tr><td><code>task_search_docsize</code></td><td>每文档的词数统计</td></tr><tr><td><code>task_search_idx</code></td><td>索引段定位信息</td></tr></tbody></table></div>
 <p>外部内容模式没有额外 <code>task_search_content</code> 表。隐式 <code>rowid</code> 相等与触发器同步是实现关系，不是声明的一对一外键（FK）约束。</p>
 <h2 id="section-12">12. 当前显式索引清单</h2>
 <p>下表列出所有 13 个显式索引（Index）。主键（PK）及唯一约束（UQ）的自动支持结构另算；检索引擎内部结构也不并入此表。</p>
-<div class="table-wrap"><table><thead><tr><th scope="col">表</th><th scope="col">索引名称</th><th scope="col">键及顺序</th><th scope="col">用途</th></tr></thead><tbody>
-<tr><td><code>tasks</code></td><td><code>tasks_status_updated_at_idx</code></td><td><code>status, updated_at DESC, task_id</code></td><td>按状态筛选和时间排序</td></tr>
-<tr><td><code>tasks</code></td><td><code>tasks_updated_at_idx</code></td><td><code>updated_at DESC, task_id</code></td><td>全部任务时间顺序</td></tr>
-<tr><td><code>tasks</code></td><td><code>tasks_parent_task_idx</code></td><td><code>parent_task_id, task_id</code></td><td>查找子任务</td></tr>
-<tr><td><code>tasks</code></td><td><code>tasks_retrospective_state_idx</code></td><td><code>retrospective_state, updated_at DESC, task_id</code></td><td>按复盘状态查询</td></tr>
-<tr><td><code>tasks</code></td><td><code>tasks_feed_order_idx</code></td><td>状态映射表达式、<code>updated_at DESC, task_id</code></td><td><code>active=0, todo=1, completed=2, abandoned=3</code> 的列表顺序</td></tr>
-<tr><td><code>task_projects</code></td><td><code>task_projects_project_idx</code></td><td><code>project, task_id</code></td><td>项目范围反查任务</td></tr>
-<tr><td><code>task_services</code></td><td><code>task_services_identity_idx</code></td><td><code>project, service, task_id</code></td><td>服务范围反查任务</td></tr>
-<tr><td><code>task_changes</code></td><td><code>task_changes_identity_idx</code></td><td><code>project, change_name, task_id</code></td><td>变更反查任务</td></tr>
-<tr><td><code>task_verification_current</code></td><td><code>task_verification_current_target_idx</code></td><td><code>target_identity, updated_at DESC, task_id</code></td><td>按报告目标身份查询</td></tr>
-<tr><td><code>task_review_current</code></td><td><code>task_review_current_subject_idx</code></td><td><code>review_type, subject_identity, updated_at DESC, task_id</code></td><td>按审查类型及对象身份查询</td></tr>
-<tr><td><code>task_review_history</code></td><td><code>task_review_history_task_idx</code></td><td><code>task_id, review_type, id</code></td><td>同任务同类型审查历史顺序</td></tr>
-<tr><td><code>task_work_context_current</code></td><td><code>task_work_context_attention_idx</code></td><td><code>attention_state, updated_at DESC, task_id</code></td><td>待处理意见队列</td></tr>
-<tr><td><code>workbench_preferences</code></td><td><code>workbench_preferences_recent_idx</code></td><td><code>kind, updated_at DESC, object_key</code></td><td>类型与时间维度访问</td></tr>
-</tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>表</th><th>索引名称</th><th>键及顺序</th><th>用途</th></tr></thead><tbody><tr><td><code>tasks</code></td><td><code>tasks_status_updated_at_idx</code></td><td><code>status, updated_at DESC, task_id</code></td><td>按状态筛选和时间排序</td></tr><tr><td><code>tasks</code></td><td><code>tasks_updated_at_idx</code></td><td><code>updated_at DESC, task_id</code></td><td>全部任务时间顺序</td></tr><tr><td><code>tasks</code></td><td><code>tasks_parent_task_idx</code></td><td><code>parent_task_id, task_id</code></td><td>查找子任务</td></tr><tr><td><code>tasks</code></td><td><code>tasks_retrospective_state_idx</code></td><td><code>retrospective_state, updated_at DESC, task_id</code></td><td>按复盘状态查询</td></tr><tr><td><code>tasks</code></td><td><code>tasks_feed_order_idx</code></td><td>状态映射表达式、<code>updated_at DESC, task_id</code></td><td><code>active=0, todo=1, completed=2, abandoned=3</code> 的列表顺序</td></tr><tr><td><code>task_projects</code></td><td><code>task_projects_project_idx</code></td><td><code>project, task_id</code></td><td>项目范围反查任务</td></tr><tr><td><code>task_services</code></td><td><code>task_services_identity_idx</code></td><td><code>project, service, task_id</code></td><td>服务范围反查任务</td></tr><tr><td><code>task_changes</code></td><td><code>task_changes_identity_idx</code></td><td><code>project, change_name, task_id</code></td><td>变更反查任务</td></tr><tr><td><code>task_verification_current</code></td><td><code>task_verification_current_target_idx</code></td><td><code>target_identity, updated_at DESC, task_id</code></td><td>按报告目标身份查询</td></tr><tr><td><code>task_review_current</code></td><td><code>task_review_current_subject_idx</code></td><td><code>review_type, subject_identity, updated_at DESC, task_id</code></td><td>按审查类型及对象身份查询</td></tr><tr><td><code>task_review_history</code></td><td><code>task_review_history_task_idx</code></td><td><code>task_id, review_type, id</code></td><td>同任务同类型审查历史顺序</td></tr><tr><td><code>task_work_context_current</code></td><td><code>task_work_context_attention_idx</code></td><td><code>attention_state, updated_at DESC, task_id</code></td><td>待处理意见队列</td></tr><tr><td><code>workbench_preferences</code></td><td><code>workbench_preferences_recent_idx</code></td><td><code>kind, updated_at DESC, object_key</code></td><td>类型与时间维度访问</td></tr></tbody></table></div>
 <h2 id="section-13">13. 外键之外的完整性边界</h2>
 <p>关系图不代表所有业务合法性都由数据库保证。以下边界必须回到实际应用与领域文件理解：</p>
-<ol>
-<li>父子关系：SQL 禁止直接自引用；<a href="../../../services/buildr/src/modules/task/application/task-command-application.ts#L139-L151">task-command-application.ts 第 139–151 行</a> 还要求新关联的父任务为 <code>active</code>，沿祖先链检查循环。普通外键（FK）不表达这些条件。</li>
-<li>文件实体：范围引用、变更可用性与当前工作副本位置由登记读取和实际文件解析决定，不由 SQL 表自动保证。</li>
-<li>并发写入：当前审查、验证、工作摘要以及适用任务修改使用已观察内容摘要检查冲突。摘要是运行时计算，不是本图遗漏的 <code>digest</code> 数据库列。</li>
-<li>对象校验：<code>json_valid()</code> 不等于业务对象合法；<code>CHECK</code> 的未知值 <code>NULL</code> 也不会自动失败。审查、验证及工作摘要分别有领域校验和不同的查询列一致性行为，不能混为统一数据库保证。</li>
-<li>结果与历史：审查替换保留旧值，验证只保留当前值；任务终态更正历史在 <code>tasks.result_history_json</code>，不是 <code>task_review_history</code>。父完成证据、复盘状态和复盘文档摘要同样属于任务主记录。</li>
-<li>偏好：目标键解析、页面地址限制、数量限制由应用执行；删除任务不会自动级联删除偏好行。</li>
-</ol>
+<ol><li>父子关系：SQL 禁止直接自引用；<a href="../../../services/buildr/src/modules/task/application/task-command-application.ts#L139-L151">task-command-application.ts 第 139–151 行</a> 还要求新关联的父任务为 <code>active</code>，沿祖先链检查循环。普通外键（FK）不表达这些条件。</li><li>文件实体：范围引用、变更可用性与当前工作副本位置由登记读取和实际文件解析决定，不由 SQL 表自动保证。</li><li>并发写入：当前审查、验证、工作摘要以及适用任务修改使用已观察内容摘要检查冲突。摘要是运行时计算，不是本图遗漏的 <code>digest</code> 数据库列。</li><li>对象校验：<code>json_valid()</code> 不等于业务对象合法；<code>CHECK</code> 的未知值 <code>NULL</code> 也不会自动失败。审查、验证及工作摘要分别有领域校验和不同的查询列一致性行为，不能混为统一数据库保证。</li><li>结果与历史：审查替换保留旧值，验证只保留当前值；任务终态更正历史在 <code>tasks.result_history_json</code>，不是 <code>task_review_history</code>。父完成证据、复盘状态和复盘文档摘要同样属于任务主记录。</li><li>偏好：目标键解析、页面地址限制、数量限制由应用执行；删除任务不会自动级联删除偏好行。</li></ol>
 <h2 id="section-14">14. 维护与验收边界</h2>
 <p>迁移结构变化时，应先在 <code>:memory:</code> 重放到新的末版本，核对当前表而非累加历史表；同步更新此附录、图源、矢量图与内联阅读页。领域文件变化但物理表不变时，只调整相关解释，不虚构数据库迁移。</p>
-<p>已核对结构重放、图源生成、脚本语法与相对链接，并在浏览器检查字体、关系连线、缩放上下限、搜索命中与空结果、下一项及重置。实体关系图（ERD）在 1440×900、1920×1080、2048×1320 下无页面横向溢出；图内按原尺寸滚动，不以缩小到不可读代替完整字段展示。产品知识读取器已验证正文和图源可读；已在 Buildr Web Dev 从“项目知识”检索并打开主文，验证文内关系图的对照阅读、字段搜索、缩放和重置。应用内图源与依据从外层“图示文件”打开；独立 HTML 中的相对文件链接用于本机文件或静态托管阅读。</p>
+<p>图源修改后使用本机 <code>dot</code> 生成矢量图，再将 <code>&lt;svg&gt;</code> 主体同步到独立阅读页的 <code>&lt;!-- diagram:start --&gt;</code> 与 <code>&lt;!-- diagram:end --&gt;</code> 之间，不包含 XML 外部文档类型声明。例如在产品根目录执行：</p>
+<pre><code>dot -Tsvg knowledge/archify/data/workspace-sqlite-erd.dot.txt -o knowledge/archify/data/workspace-sqlite-erd.svg</code></pre>
+<p>阅读页的 <code>&lt;!-- fields:start --&gt;</code> 与 <code>&lt;!-- fields:end --&gt;</code> 之间是本附录的静态 HTML 转换结果；正文变化时同步文字及相对链接。这些注释是内容边界，不是产品受管区块（Managed Block），不需要新增生成框架。页面无网络依赖，保持原尺寸滚动与 <code>25%..200%</code> 缩放；表名或字段搜索定位图中匹配项，浏览器搜索可查下方全文。</p>
 <!-- fields:end -->
 </article>
 </main>

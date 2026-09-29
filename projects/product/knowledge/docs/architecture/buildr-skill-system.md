@@ -1,202 +1,72 @@
-# Buildr 技能体系
+# 技能如何成为可用的工作方法
 
-本文说明 Buildr 如何管理、组合并投射 Skill，以及每类信息应该出现在哪里。它面向需要理解或维护 Buildr 技能体系的人和 Agent；规范性行为仍以 OpenSpec specs 为准。
+Buildr 把可复用的工作方法保存在技能（Skill）中，再为不同智能体（Agent）生成可发现的入口。维护者修改源文件；使用者从自己的工具中调用。源文件、派生入口和本次执行结果分别核对，不能用“文件生成成功”代替“工具已加载”或“工作已完成”。
 
-## 覆盖范围与事实来源
+## 从源文件到智能体（Agent）入口
 
-本文解释技能（Skill）从源资产、组件（Component）增强、局部能力依赖到运行时投射（Runtime Projection）的过程，帮助人确定修改位置、理解依赖问题并找到实现。具体代码路径、函数、数据归属和副作用见[技能投射代码地图](../../code-map/skill-projection.md)，技术关系见[可打开技术图](../../archify/flows/skill-projection.html)和[图源依据](../../archify/flows/skill-projection.md)。
-
-事实依据是地图列出的当前实现、资源与组件清单、[投射规范](../../../openspec/specs/workspace-first-runtime-projection/spec.md)及[资源规范](../../../openspec/specs/buildr-package-assets/spec.md)。不展开所有适配器内部实现、远程解析和安装分支，也不把目录生成解释成宿主已加载。规范承诺、实际写入和会话观察分别核对。
-
-## 一句话模型
-
-> Buildr 从 Workspace 读取源技能；Component 可以添加内容增强和能力依赖；统一 renderer 再根据 Agent adapter 生成 runtime Skill，并用 Doctor 和 receipt 管理诊断与投射所有权。产品入口 `buildr` 是唯一特殊来源，但不是全局 dispatcher。
-
-## 五个对外概念
-
-| 概念 | 回答的问题 | 主要位置 |
-|---|---|---|
-| 源技能 | 原始 playbook 从哪里来 | `skills/manifest.yml`、`skills/<skill-id>/` 或 package 产品入口 |
-| 组件 | 哪些资产作为一组安装、更新、卸载 | `components/manifest.yml`、`component.yml` |
-| 内容增强 | 哪段正文要插入哪个 Skill | Component `skillFragments` |
-| 能力依赖 | 当前 Skill 安全继续前需要什么稳定保证 | contracts、`provides`、`requires`、bindings |
-| 运行时投射 | 当前 Agent 最终能发现和读取什么 | adapter runtime Skills root、`.buildr` receipts、Doctor |
-
-`contract`、`provider`、`consumer`、`binding` 是“能力依赖”的内部展开。普通使用者不需要先理解这些词；只有在替换工作方式、依赖受阻或做诊断时才需要展开。
-
-## 三层管线
-
-技能源文件先组合为当前技能（Skill）的有效内容，再按目标环境投射为可发现入口。下图展开这条主线中的来源、组合、计划和写入关系；它以 Codex 为例，不表示宿主已经加载了技能（Skill）。
+普通技能（Skill）的源位于工作空间（Workspace）的 `skills/`，由 `skills/manifest.yml` 登记。内置方法、本地方法和随组件（Component）安装的外部方法都走同一条路径；只有产品入口 `buildr` 直接来自安装包。
 
 ![技能源文件如何成为可发现入口](../../archify/flows/skill-projection.html)
 
-### 1. 源资产
+主线是：源文件与附件 → 组合内容增强和局部依赖 → 生成工具入口并保存归属回执 → 智能体（Agent）按需发现。[单独打开投射图](../../archify/flows/skill-projection.html)可查看各节点依据。
 
-runtime 中看到的 Skill 只有两条来源路径：
+生成过程保持源文件独立：`SKILL.md` 可以组合增强内容，`references/`、`scripts/`、`assets/` 等附件按原始字节和可执行状态投射。各适配器（Adapter）共享组合逻辑，只改变目标根、诊断身份和启用信息。项目（Project）的 `capabilities.yml` 保存适用性、需求和选择，不另外保存技能（Skill）副本。
 
-1. package 直接提供的产品入口 `buildr`；
-2. Workspace Skills，包括 Buildr builtin、本地 Skill，以及安装后成为 Component 成员的外部 Skill。
+因此，调整工作方法应修改源目录，再通过同步生成目标入口。直接修改 `.agents/skills` 等派生目录，不能成为可持续维护的办法。完整实现见[技能投射代码地图](../../code-map/skill-projection.md)；需要逐节点查看时，可打开[投射关系图](../../archify/flows/skill-projection.html)。
 
-外部 OpenSpec Skill 不是第三套投射机制。它先成为 Workspace Component 成员，再和其他 Workspace Skill 走同一套组合与 renderer。
+## 两种组合方式，解决不同问题
 
-Workspace 是普通 Skill 的唯一 source authority。Project `capabilities.yml` 只表达 requirement、binding 和 applicability，不保存 Project Skill 副本。runtime 目录始终是可重建派生物，不是编辑入口。
+**内容增强**用于补充一段说明。例如给外部 OpenSpec 方法补充 Buildr 的协作边界。组件（Component）通过 `skillFragments` 选择前置、后置或指定插槽（`prepend`、`append`、`slot`）；增强只进入派生正文，不改写外部源文件。
 
-一个完整源 Skill 目录可以包含：
+**能力依赖**用于表达另一项方法必须提供的稳定保证。例如一次 Git 操作需要确定对象、授权范围和结果证据。调用方（Consumer）声明 `requires`，能力契约（Capability Contract）说明最低保证，绑定（Binding）选择提供者（Provider）。它允许组织替换工作方式，同时保留协作边界。
 
-- `SKILL.md`
-- `agents/`
-- `assets/`
-- `examples/`
-- `references/`
-- `scripts/`
-- `templates/`
+提供者（Provider）的全文不会复制进调用方（Consumer）；智能体（Agent）在执行相关动作前读取契约和已选方法。仅在正文提到另一种方法、或一次工作读了多份说明，不构成依赖。
 
-除 `SKILL.md` 会参与受管组合外，随附文件按原始字节和可执行位投射。
+| 要改变什么 | 维护位置 |
+| --- | --- |
+| 一份方法自己的步骤或例子 | 对应源目录，不必新建契约（Contract） |
+| 为另一份方法补充局部说明 | 组件（Component）的内容增强 |
+| 替换协作方法，同时保持输入、副作用和结果保证 | 能力契约（Capability Contract）、提供者声明及绑定（Binding） |
+| 确定一个项目（Project）采用哪些方法 | `capabilities.yml` |
 
-### 2. 组合
+声明格式、解析顺序和替换入口见[能力契约参考](../../../services/buildr/docs/skill-capability-contracts.md)。
 
-组合有两种不同机制，不应混为一谈。
+以知识维护为例，`current-knowledge-maintenance` 的正文和 `references/` 一起维护、交付。OpenSpec 组件（Component）为相关调用方（Consumer）提供协作说明并声明知识维护依赖；生成入口时，只向调用方（Consumer）加入它需要的局部绑定，具体方法仍从已选提供者（Provider）的完整文件读取。这样可以分别更新知识维护方法与 OpenSpec 协作说明，也能在保留契约保证的前提下替换方法，不必在每个调用方（Consumer）中复制正文。来源见[组件声明](../../../services/buildr/resources/workspace/components/buildr/openspec/component.yml)与[知识维护技能（Skill）](../../../services/buildr/resources/workspace/skills/buildr/current-knowledge-maintenance/SKILL.md)。
 
-#### 内容增强
+## 执行说明与诊断证据分开放
 
-内容增强把 Component 管理的一段正文插入目标 Skill：
+派生的 `SKILL.md` 需要让智能体（Agent）和人都能直接阅读，因此只包含源正文、适用增强、当前依赖的状态、契约路径、已选提供者（Provider）的入口，以及必要的停止说明。完整关系图、摘要、文件清单和来源证据放在诊断及投射回执（Projection Receipt）中，不塞进每一份方法正文。
 
-```text
-目标源 SKILL.md
-+ prepend / append / slot fragment
-= runtime playbook
-```
+| 当前依赖状态 | 本次怎样继续 |
+| --- | --- |
+| 没有声明依赖 | 按当前方法执行 |
+| `ready` | 结构可路由；读取已选方法，核对实际对象和授权后执行 |
+| `degraded` | 可选增强缺失；按正文规定的基础路径继续，说明缺口 |
+| `blocked` | 暂停依赖该能力的动作，诊断原因；其他安全工作继续 |
 
-它适合 Sidebar、额外约束和外部 Skill 的 Buildr 衔接说明。增强只改变 runtime 派生正文，不改写上游源 Skill。
+这些状态只说明能否使用一项能力，不证明工作结果。产品入口 `buildr` 也遵守这一边界：只有 Buildr 管理意图命中时才加载，不在所有用户输入之前运行，也不替其他专业方法统一分发。
 
-#### 能力依赖
-
-能力依赖表达稳定协作边界：
-
-```text
-Consumer declares requires
-        ↓
-Contract defines minimum guarantees
-        ↓
-Binding selects a compatible Provider
-        ↓
-Consumer runtime receives its local entry
-```
-
-Provider 正文不会复制进 Consumer。Agent 在执行 provider-dependent action 前读取 contract 和 selected provider。`ready` 只说明结构可路由，不证明 provider 行为或本次执行成功。
-
-只有真正声明 `requires` 的 Skill 才进入 consumer dependency graph。正文提到另一个 Skill、Agent 在一次任务中读取多个 Skills、产品入口内部路由，都不自动形成 dependency edge。
-
-### 3. 运行时投射
-
-统一 renderer 的处理顺序是：
-
-```text
-源 SKILL.md
-→ 内容增强
-→ 当前 consumer 的 capability bindings
-→ generated marker
-→ runtime Skill 目录
-```
-
-所有支持 filesystem Skills primitive 的 adapter 使用相同 Skill inventory 和组合结果，只改变 runtime root、诊断 identity 与 activation metadata。
-投射 adapter 只说明 Buildr 写入目标，不证明读取 Skill 的宿主身份。产品入口 Buildr Skill 保持 adapter-neutral；当前 `<agent>` 只能来自宿主明确身份或用户明确指定的维护目标，Skill 路径、marker、receipt 和 Doctor 投射字段都不能提供默认值。
-
-## runtime Skill 应该包含什么
-
-runtime `SKILL.md` 是 Agent 命中 Skill 后读取的 playbook，也应该让人可以直接审阅。因此它只保留执行当前 Skill 所需的信息：
-
-- 源 Skill 正文；
-- 对当前 Skill 生效的内容增强；
-- 当前 consumer 自己的 capability identity、mode、readiness/reason；
-- contract 路径、selected provider 及其 runtime 路径/scope；
-- required dependency blocked 时的 safety stop；
-- generated marker。
-
-它不承载：
-
-- 完整 workspace capability graph；
-- 其他 consumers 或其他 scopes 的 routes；
-- contract SHA-256；
-- 完整 binding provenance、候选 providers 或文件 inventory；
-- receipt、Doctor dump 或安装回执。
-
-这是信息分层，不是删掉证据。
-
-## 产品入口 `buildr` 的边界
-
-Agent runtime 首先根据 Skill description 和用户目标发现入口 Skill。`buildr` 只在 Buildr 管理意图命中后加载；它不会在所有用户 prompt 之前运行，也不负责预先分发其他专业 Skill。
-
-`buildr`源正文维护自己实际支持的少量产品入口，例如workspace Git更新和能力适配。Task Retrospective不再使用内部Driver或独立capability；用户明确要求时由纯Skill组合Task Record与现有工具，并写入本机Markdown。
-
-因此：
-
-- `buildr` 不接收全 workspace routing dump；
-- `buildr` 不作为依赖全部 capabilities 的 manifest consumer；
-- 某一项产品内部 route blocked，只阻止该项动作，不阻止 init、doctor 或其他无关管理动作；
-- 普通 consumer 直接从自己的 runtime binding block 进入 provider，不需要先经过 `buildr`。
-
-## Doctor 与 receipt
-
-### Doctor：当前全局诊断图
-
-默认 Doctor JSON 保持紧凑，只提供健康、findings 和后续动作。需要检查完整能力关系时使用 full detail：
+需要排查完整能力关系时，诊断命令返回契约、绑定、调用方（Consumer）、候选与已选提供者（Provider）、原因和后续动作：
 
 ```bash
 buildr doctor --agent <agent> --target <workspace> --json --detail full
 ```
 
-full 结果包含 contracts、contract digests、bindings、consumers、selected/candidate providers、readiness、reason 和 nextActions。它是当前 workspace 的只读诊断 read model，不写回 Skill。
+`<agent>` 应来自实际宿主身份或用户指定的维护目标。路径、生成标记和回执不能证明当前使用了哪个宿主。
 
-### Receipt：投射所有权和局部机器证据
+## 回执保留“哪些文件由谁管理”
 
-Workspace destination 的 Skill projection receipt 位于：
+工作空间（Workspace）和用户层的投射回执（Projection Receipt）分别位于：
 
 ```text
 <workspace>/.buildr/agent-runtime/workspace/<adapter>/skill-projection-ownership-receipts/
+<home>/.buildr/agent-runtime/user/<adapter>/skill-projection-ownership-receipts/
 ```
 
-User destination 则位于 user home 的 `.buildr/agent-runtime/user/<adapter>/...`。receipt 记录 source/render identity、受管文件 inventory、文件 integrity 和 executable 状态；consumer receipt 还记录本次局部 capability binding 的 contract digest、provenance、readiness 与 selected provider 快照。
+回执保存来源、渲染摘要、受管文件清单、完整性与可执行状态；有依赖时，还保存契约摘要、来源依据（Provenance）和绑定快照。它属于本机控制数据，不是源方法，也不放进派生技能（Skill）目录。
 
-一个 Skill 在其适配器声明的目标根上各有一份 receipt。多个适配器可以共享同一个根（`.agents/skills` 同时是 `codex`、`cursor`、`trae` 的 runtime root），此时"谁拥有这个目录"由该根下是否存在对应 receipt 决定：其他适配器已持有 receipt 的目录，本适配器既不安删也不报冲突。`qoder` 只写入 `.qoder/skills`；`.agents/skills` 对它只是宿主开关控制的共享**发现**根，不作为写入目标。
+这份所有权记录用于避免误删别人的文件。标准共享根 `.agents/skills` 的所有权统一记为 `agents-standard`，目录相同不等于当前适配器（Adapter）拥有它。已退役品牌（`cursor`、`qoder`、`trae`、`trae-work`、`workbuddy`）不再有专用技能根；它们遗留的厂商规则桥、厂商技能镜像与回执由退役处理按所有权证明清理，可证明属于 Buildr 的删除，无法证明的保留并报告。
 
-receipt 是 Buildr 本机控制状态：
+派生正文可以依据当前源重新生成，旧所有权却不能仅凭内容相似重建。遇到冲突应保留现场，核对实际归属；投射成功后仍应分别确认工具能发现入口、当前会话已采用方法，以及实际目标是否完成。
 
-- 不放进 runtime Skill 目录；
-- 不作为源技能；
-- 不要求人日常阅读；
-- workspace 的 `.buildr/agent-runtime/` 由根 `.gitignore` 排除，不进入 Git 交付。
-
-## Agent 如何使用
-
-智能体（Agent）从用户意图出发，根据描述找到技能（Skill），再判断当前动作是否依赖其他能力：
-
-| 当前情况 | 怎样继续 |
-| --- | --- |
-| 没有声明能力依赖 | 按当前技能（Skill）的工作方法执行 |
-| 已声明依赖，状态为 `ready` 或 `degraded` | 读取当前调用方的局部绑定、能力契约（Capability Contract）与已选提供者（Provider），核对具体动作所需条件后执行 |
-| 相关依赖为 `blocked` | 只暂停依赖它的动作，通过 Doctor 查看原因及修复建议；其他可安全执行的工作继续 |
-
-依赖可路由不代表本次工作已经完成，实际结果仍按目标核验。
-
-产品入口是一个特殊入口，但遵循相同原则：先由 description 命中，再只解析当前意图需要的 route。
-
-## 维护判断
-
-维护 Skill 体系时优先问：
-
-1. 变化是否只属于单个 Skill 内部？是则直接维护 Skill，不创建空 contract。
-2. 是否需要把一段行为说明插入另一个 Skill？使用内容增强。
-3. 另一个 Skill 是否依赖稳定保证或结果证据才能安全继续，或是否需要替换 provider？使用能力依赖。
-4. 信息是 Agent 当前执行所需，还是诊断/完整性证据？前者进入 runtime playbook，后者进入 Doctor/receipt。
-5. 是否正在编辑 source authority？不要直接维护 runtime 派生副本。
-
-这套边界的目标不是让 runtime 文件“越短越好”，而是让每一段内容都出现在真正消费它的地方。
-
-## 本次维护能力怎样沿这条路径生效
-
-`current-knowledge-maintenance` 的主文与 `references/` 都是源技能目录的一部分。资源清单交付这些文件；OpenSpec 组件为对应调用方声明 v3 依赖和增强说明；投射时只在调用方正文中加入其所需的局部能力入口，提供者全文仍从自己的文件读取。参考文件随完整技能目录投射，不需要修改渲染算法。
-
-本次统一到 `buildr.current-knowledge-maintenance/v3`，不继续声明旧 v1/v2 默认提供者；内置调用方同步迁移。术语依赖保持可选，有真实术语影响才调用，未授权的新建或非关键漂移只形成局部提醒。其他用户自有旧版本依赖由诊断明确报告，不静默改绑。
-
-这说明源资产、协作说明和展示入口之间的真实关系；投射成功不证明智能体已执行某次知识任务，维护成果仍需按目标验收。
+本文依据[投射规范](../../../openspec/specs/workspace-first-runtime-projection/spec.md)、[资源规范](../../../openspec/specs/buildr-package-assets/spec.md)和代码地图列出的实现；适配器（Adapter）的全部平台分支不在本章展开。

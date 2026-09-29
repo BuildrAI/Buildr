@@ -14,8 +14,8 @@
 .task-detail-layout { display:grid; grid-template-columns:minmax(0,1fr); gap:20px; }
 .task-detail-reading { min-width:0; }
 .task-work-path { position:sticky; top:0; z-index:2; background:var(--soft-surface, #fff); margin:0 0 20px; padding-top:8px; }
-.task-path-track { display:flex; gap:24px; border-bottom:1px solid var(--soft-line); }
-.task-work-tab.ant-btn { display:inline-flex; align-items:center; gap:5px; border-radius:0; padding:0 0 12px; height:36px; font-size:13px; color:var(--soft-muted); }
+.task-path-track { display:flex; overflow-x:auto; gap:24px; border-bottom:1px solid var(--soft-line); }
+.task-work-tab.ant-btn { flex:none; display:inline-flex; align-items:center; gap:5px; border-radius:0; padding:0 0 12px; height:36px; font-size:13px; color:var(--soft-muted); }
 .task-work-tab.ant-btn.selected { color:var(--soft-primary); font-weight:600; box-shadow:inset 0 -2px var(--soft-primary); }
 .task-current-dot { width:5px; height:5px; border-radius:50%; background:var(--soft-primary); flex:none; }
 .task-node-content { min-width:0; }

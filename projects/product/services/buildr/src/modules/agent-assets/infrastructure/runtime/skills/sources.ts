@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fetchRemoteText } from '../../../../../infrastructure/network/fetch-remote-text.ts';
+import { getRuntimeAdapterFor, runtimeSkillPath, skillAppliesToRuntime } from '../adapter-contract.ts';
 import { resolveComponentContributions } from './contributions.ts';
 import { capabilityKey, isSourceLabel, parseSkillsManifestDocument } from '../../../persistence/skill-manifest.ts';
 import { ensureFile, normalizeRelativePath, parseSkillFrontmatterName, parseSkillFrontmatterNameFromContent, productRoot, resourcesRoot, unquoteYamlScalar } from './primitives.ts';
@@ -33,7 +34,7 @@ function readPackageSkillEntries(section: any, runtime: any): any  {
     const idMatch = trimmed.match(/^-\s+id:\s*(.+)$/);
     if (idMatch) {
       if (current) skills.push(current);
-      current = { id: unquoteYamlScalar(idMatch[1]), runtimes: [] };
+      current = { id: unquoteYamlScalar(idMatch[1]) };
       inRuntimes = false;
       continue;
     }
@@ -54,9 +55,11 @@ function readPackageSkillEntries(section: any, runtime: any): any  {
       continue;
     }
     if (trimmed === 'runtimes:') {
+      current.runtimes = [];
       inRuntimes = true;
       continue;
     }
+    if (trimmed === 'runtimes: []') { current.runtimes = []; inRuntimes = false; continue; }
     const runtimeMatch = trimmed.match(/^-\s+(.+)$/);
     if (runtimeMatch && inRuntimes) {
       current.runtimes.push(unquoteYamlScalar(runtimeMatch[1]));
@@ -67,7 +70,7 @@ function readPackageSkillEntries(section: any, runtime: any): any  {
   if (current) skills.push(current);
 
   return skills
-    .filter((skill: any) => skill.runtimes.includes(runtime))
+    .filter((skill: any) => skillAppliesToRuntime(skill, runtime))
     .map((skill: any) => {
       if (!skill.id || !skill.path) {
         throw new Error(`${section} entries must include id and path in ${manifestPath}`);
@@ -82,6 +85,7 @@ function readPackageSkillEntries(section: any, runtime: any): any  {
         sourceFile,
         origin: section === 'agentSkills' ? 'product' : 'package',
         runtime,
+        ...(skill.runtimes !== undefined ? { runtimes: skill.runtimes } : {}),
         displaySource: `${skillPath}/SKILL.md`,
       };
       if (section === 'agentSkills') result.workspaceId = 'buildr-product';
@@ -101,12 +105,12 @@ function readPackageSkillSources(runtime: any): any  {
   return readPackageSkillEntries('skillSources', runtime);
 }
 
-export function resolvePackageAgentSkill(runtime: any, skillId: any = 'buildr'): any  {
+export function resolvePackageAgentSkill(runtime: any, skillId: any = 'buildr', options: any = {}): any  {
   const skill = readPackageAgentSkills(runtime).find((entry: any) => entry.id === skillId);
   if (!skill) {
     throw new Error(`Product Agent Skill not found for ${runtime}: ${skillId}`);
   }
-  return skill;
+  return withRuntimeSkillLayout(skill, runtime, options.adapterId);
 }
 
 function parseSkillSourceRef(sourceRef: any): any  {
@@ -197,7 +201,7 @@ function resolveReferencedSkill(skill: any, packageSourcesById: any, runtime: an
 
 function loadLayer(manifestPath: any, options: any = {}): any  {
   const manifestDir = path.dirname(manifestPath);
-  const runtime = options.runtime ?? 'claude-code';
+  const runtime = options.runtime ?? null;
   const layerOrigin = options.origin ?? 'workspace';
   const packageSourcesById = options.packageSourcesById ?? new Map();
   const seen: any = new Set();
@@ -210,7 +214,7 @@ function loadLayer(manifestPath: any, options: any = {}): any  {
     if (skill.enabled === false || ['uninstalled', 'missing'].includes(skill.state)) {
       return null;
     }
-    if (Array.isArray(skill.runtimes) && !skill.runtimes.includes(runtime)) {
+    if (!skillAppliesToRuntime(skill, runtime)) {
       return null;
     }
     if (typeof skill.source === 'string') {
@@ -253,6 +257,7 @@ function loadLayer(manifestPath: any, options: any = {}): any  {
 function decorateResolvedSkill(resolved: any, manifestEntry: any, manifestPath: any, declaredScope: any, workspaceId: any): any  {
   return {
     ...resolved,
+    ...(manifestEntry.runtimes !== undefined ? { runtimes: manifestEntry.runtimes } : {}),
     assetIdentity: manifestEntry.assetIdentity,
     sourceIdentity: manifestEntry.sourceIdentity,
     workspaceId,
@@ -264,7 +269,7 @@ function decorateResolvedSkill(resolved: any, manifestEntry: any, manifestPath: 
 }
 
 export function resolveSkills(organizationRoot: any, projectRoot: any, options: any = {}): any  {
-  const runtime = options.runtime ?? 'claude-code';
+  const runtime = options.runtime ?? null;
   const layers: any[] = [];
   const organizationManifest = path.join(organizationRoot, 'skills', 'manifest.yml');
   if (options.includeWorkspace !== false && fs.existsSync(organizationManifest)) {
@@ -321,5 +326,17 @@ export function resolveSkills(organizationRoot: any, projectRoot: any, options: 
     if (!target.skillDependencyContributions) target.skillDependencyContributions = [];
     target.skillDependencyContributions.push(contribution);
   }
-  return [...resolved.values()];
+  return [...resolved.values()].map((skill: any) => withRuntimeSkillLayout(skill, runtime, options.adapterId));
+}
+
+function withRuntimeSkillLayout(skill: any, runtime: string | null, adapterId: string | null = null): any {
+  const adapter = getRuntimeAdapterFor(runtime, adapterId);
+  const previousPath = skill.runtimePath ?? skill.id;
+  return {
+    ...skill,
+    runtime,
+    adapterId: adapter.id,
+    runtimePath: runtimeSkillPath(skill, runtime, adapter.id),
+    legacyRuntimePaths: [...new Set([...(skill.legacyRuntimePaths || []), previousPath])],
+  };
 }

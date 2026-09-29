@@ -4,6 +4,12 @@ export type CompositionObject = {id:string;name:string;description?:string;code:
 export type CompositionData = {projects:Array<CompositionObject & {serviceIds?:string[]}>;services:Array<CompositionObject & {repositoryId?:string}>;repositories:CompositionObject[];sources?:Record<CompositionSource,CompositionStatus>};
 export const emptyComposition:CompositionData={projects:[],services:[],repositories:[]};
 
+/** Match partial words across an object's name, code and description. */
+export function matchesCompositionQuery(item:CompositionObject, query:string):boolean {
+  const text=`${item.name} ${item.code} ${item.description || ''}`.toLocaleLowerCase();
+  return query.trim().toLocaleLowerCase().split(/\s+/).every(term=>text.includes(term));
+}
+
 /** Failed sources retain observed objects until a complete read can replace them. */
 export function retainComposition<T extends CompositionData>(previous:T|null,next:T):T {
   if(!previous)return next;

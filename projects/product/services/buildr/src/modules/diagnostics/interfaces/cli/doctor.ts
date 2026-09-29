@@ -1,6 +1,7 @@
 import path from 'node:path';
 import process from 'node:process';
-import { optionValue, hasFlag } from '../../../../infrastructure/cli-arguments.ts';
+import { resolveRuntimeSelection } from '../../../agent-assets/infrastructure/runtime/adapter-contract.ts';
+import { assertNoUnknownOptions, optionValue, hasFlag } from '../../../../infrastructure/cli-arguments.ts';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../../../infrastructure/contracts/public-json.ts';
 import { printProductInstallationReport } from './product-installation-report.ts';
 import type { DoctorInput } from '../../application/doctor-application.ts';
@@ -25,6 +26,7 @@ export function writeDoctorResult(result: any, { json = false, detail = 'compact
 
 function printDoctorReport(result: any) {
   console.log(`Buildr doctor for ${result.targetRoot}`);
+  if (result.agentRuntime) console.log(`Runtime: ${result.agentRuntime.runtimeId ?? 'unknown'}; adapter=${result.agentRuntime.adapterId ?? 'inventory'}; selection=${result.agentRuntime.reason}; session consumption=unknown`);
   console.log(`Status: ok=${result.summary.ok} info=${result.summary.info} warning=${result.summary.warning} error=${result.summary.error}`);
   console.log(`Health: workspaceValid=${result.health.workspaceValid} ready=${result.health.ready} actionRequired=${result.health.actionRequired} actionable=${result.health.actionableCount}`);
   console.log('');
@@ -79,10 +81,13 @@ export function runDoctorCommand(application: DoctorApplication, args: string[])
   const agent = optionValue(args, '--agent', null);
   // Preserve validation order before interpreting output detail.
   if (agent !== null && (typeof agent !== 'string' || agent === '.' || agent === '..' || !/^[A-Za-z0-9._-]+$/.test(agent))) throw new Error(`Agent id must contain only letters, digits, dots, underscores, or dashes: ${agent || ''}`);
+  const adapterId = optionValue(args, '--adapter', null);
+  resolveRuntimeSelection({ runtimeId: agent, adapterId });
+  assertNoUnknownOptions(args, new Set(['--target', '--scope', '--agent', '--adapter', '--detail', '--json', '--include-info', '--verbose']), new Set(['--json', '--include-info', '--verbose']));
   const detail = optionValue(args, '--detail', 'compact');
   if (!['compact', 'full'].includes(detail)) throw new Error('--detail must be compact or full.');
   const result = application.doctor({
-    targetRoot, scope, agent,
+    targetRoot, scope, agent, adapterId,
     includeInfo: hasFlag(args, '--include-info') || hasFlag(args, '--verbose'),
   });
   writeDoctorResult(result, { json: hasFlag(args, '--json'), detail });
@@ -96,7 +101,7 @@ export function createDoctorCliContributions(application: any) {
     surface: 'primary',
     summary: '诊断 workspace 源资产和 Agent runtime render 状态。传入 --agent 时只检查该 Agent adapter。',
     help: [
-      'Usage: buildr doctor [--agent <agent>] [--target <dir>] [--scope <.|projects/project[/services/service[/path...]]>] [--json] [--detail <compact|full>] [--include-info] [--verbose]',
+      'Usage: buildr doctor [--agent <runtime>] [--adapter <adapter>] [--target <dir>] [--scope <.|projects/project[/services/service[/path...]]>] [--json] [--detail <compact|full>] [--include-info] [--verbose]',
       '',
       '诊断 workspace 源资产和 Agent runtime render 状态。传入 --agent 时只检查该 Agent adapter。JSON 默认输出 compact；完整 inventory 使用 --detail full。',
     ],

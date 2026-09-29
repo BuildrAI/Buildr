@@ -3,6 +3,7 @@
 ## Purpose
 
 定义 Buildr 产品随包资产、package manifest、默认 workspace baseline 和 package check 的边界。
+
 ## Requirements
 
 ### Requirement: package manifest 声明产品内置 Agent Skills
@@ -26,7 +27,7 @@ Buildr 的 `resources/manifest.yml` MUST显式声明产品随包内置 Agent Ski
 
 #### Scenario: package check 校验 bootstrap 入口契约
 - **WHEN** Agent 执行 `buildr package check`
-- **THEN** Buildr MUST从产品源码和正式 docs 校验 bootstrap guide 与 Buildr Skill 恢复契约
+- **THEN** Buildr MUST 从产品源资产校验 Buildr 技能（Skill）的恢复入口契约；MUST NOT 要求 `docs/bootstrap-guide.md` 或其正文副本存在
 - **AND** MUST NOT要求已删除的 `package/bootstrap/` 文字资产存在
 
 ### Requirement: package baseline 支持命令行工具清单入口
@@ -120,7 +121,7 @@ Buildr package manifest MUST 声明可同步到用户 workspace 的产品内置 
 
 #### Scenario: 声明内置 Skills
 - **WHEN** Buildr package 包含产品内置 Skills
-- **THEN** `package/manifest.yml` MUST 声明每个内置 Skill 的 id、源路径、目标路径、适用 runtimes 和 required 状态
+- **THEN** `package/manifest.yml` MUST 声明每个内置 Skill 的 id、源路径、目标路径和 required 状态；省略 runtimes MUST 表示通用适用，显式列表 MUST 表示对真实运行时身份的限制
 - **AND** composed Skill MUST additionally declare its `provides` and `requires` capability identities、versions and dependency modes
 - **AND** version 或 hash 元数据 MAY 声明，但不是必填
 
@@ -503,7 +504,7 @@ Buildr package verification MUST 防止 selected Git Operation 或任务 Skill �
 Buildr product verification MUST 防止产品入口 Buildr Skill 和随包引导退回到只执行本地 `buildr sync` 的 workspace 更新语义，同时 MUST 保证更新 operation 由产品入口选择而不是 Git Operations 自行推断。
 
 #### Scenario: 校验 Git 管理 workspace 的更新顺序
-- **WHEN** Buildr 验证产品入口 Buildr Skill、bootstrap guide、CLI reference 和 runtime 提示
+- **WHEN** Buildr 验证产品入口 Buildr 技能（Skill）、命令参考（CLI Reference） 和 runtime 提示
 - **THEN** 验证 MUST 确认“更新 workspace”与“同步 workspace”由 Buildr Skill 先向 selected `buildr.git-operations/v1` provider 提供 workspace、upstream 和明确 update operation，再执行 `buildr sync <agent> --target <workspace-root>`
 - **AND** 验证 MUST 确认该意图不会先运行 `buildr update`
 - **AND** 验证 MUST 确认 Git 更新成功后无需再次询问 sync 授权
@@ -1194,7 +1195,7 @@ Buildr package manifest MUST 将 `ux-design-laws` 声明为无 capability contra
 
 #### Scenario: package 声明用户体验设计法则技能
 - **WHEN** Buildr package 加载 builtin Skill manifest
-- **THEN** `ux-design-laws` MUST 声明 source path、target、与 Skill frontmatter 完全一致的 description、`required: false` 和全部受支持 runtimes
+- **THEN** `ux-design-laws` MUST 声明 source path、target、与 Skill frontmatter 完全一致的 description、`required: false`，并通过省略 runtimes 表达运行时无关的通用适用性
 - **AND** 它 MUST 不声明 `provides`、`requires`、capability contract 或 initial binding
 
 #### Scenario: Workspace baseline 包含完整技能目录

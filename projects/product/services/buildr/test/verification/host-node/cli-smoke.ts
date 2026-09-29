@@ -74,7 +74,7 @@ try {
   assert.equal(fs.existsSync(instanceFile), false, 'ordinary CLI must not start HTTP');
   run(process.execPath, [buildrScript, 'init', '--agent', 'codex', '--target', workspace, '--name', 'host-node-smoke', '--description', 'Host Node compatibility smoke', '--profile', 'team'], { cwd: workspace, env: runtimeEnv });
   const doctor: any = JSON.parse(run(process.execPath, [buildrScript, 'doctor', '--agent', 'codex', '--target', workspace, '--json'], { cwd: workspace, env: runtimeEnv }));
-  assert.equal(doctor.schemaVersion, 'buildr.doctor/v1');
+  assert.equal(doctor.schemaVersion, 'buildr.doctor/v2');
   assert.equal(doctor.summary.error, 0);
   assert.equal(fs.existsSync(instanceFile), false, 'representative CLI must not start HTTP');
 

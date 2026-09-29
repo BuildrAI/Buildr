@@ -6,7 +6,7 @@ import path from 'node:path';
 import test from 'node:test';
 import YAML from 'yaml';
 import { spawnSync } from 'node:child_process';
-import { resolveRuleScope } from '../../src/modules/agent-assets/infrastructure/runtime/render-claude-code-rules.ts';
+import { resolveRuleScope } from '../../src/modules/agent-assets/infrastructure/runtime/rule-projection.ts';
 import { createRuntime } from '../helpers/runtime-harness.ts';
 import { copyPreparedProjectWorkspace } from '../helpers/prepared-fixtures.ts';
 import { createWorkspaceHttpContribution } from '../../src/modules/workspace/interfaces/http/workspace-http.ts';
@@ -186,6 +186,49 @@ test('public asset CLI reads and writes the same catalog with version protection
   const registered = invoke('register', 'project', '--input', input); assert.equal(registered.status, 0, registered.stderr);
   assert.equal(runtime.assetCatalog(root).projects.some((project: any) => project.code === candidate.code), true);
   assert.deepEqual(fs.readdirSync(directory), []);
+});
+
+test('assets help examples execute through the public CLI and retired guide stays unavailable', (t: any) => {
+  const { root, runtime } = setup(t);
+  let catalog = ready(runtime, root);
+  const cli = path.resolve(import.meta.dirname, '../../bin/buildr.mjs');
+  const invoke = (...args: string[]) => spawnSync(process.execPath, [cli, ...args], {
+    cwd: root, encoding: 'utf8',
+    env: { ...process.env, BUILDR_APP_DATA_DIR: path.join(root, '.isolated-app'), BUILDR_PRODUCT_DATA_DIR: path.join(root, '.isolated-product') },
+  });
+  const help = invoke('help', 'assets');
+  assert.equal(help.status, 0, help.stderr);
+  assert.equal(invoke('assets', '--help').stdout, help.stdout);
+  const examples = help.stdout.split('\n').filter(line => line.trim().startsWith('{')).map(line => JSON.parse(line));
+  assert.equal(examples.length, 3);
+  const inputFile = path.join(root, 'help-input.json');
+  const write = (args: string[], input: any) => {
+    fs.writeFileSync(inputFile, JSON.stringify(input));
+    const result = invoke('assets', ...args, '--target', root, '--input', inputFile, '--json');
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    return JSON.parse(result.stdout);
+  };
+  // The prepared workspace already owns demo; replace only the example identity.
+  catalog = write(['create', 'project'], { ...examples[0], code: 'help-project', revision: catalog.revision });
+  assert.equal(catalog.projects.find((p: any) => p.code === 'help-project').description, '项目目标');
+  catalog = addRepo(runtime, root, catalog.revision, 'help-code', 'main');
+  const repositoryId = catalog.repositories.find((r: any) => r.code === 'help-code').id;
+  catalog = write(['create', 'service'], { ...examples[1], revision: catalog.revision, service: { ...examples[1].service, repositoryId } });
+  const serviceId = catalog.services.find((service: any) => service.code === 'api').id;
+  catalog = write(['associate', 'help-project'], { ...examples[2], revision: catalog.revision, serviceIds: [serviceId] });
+  assert.deepEqual(catalog.projects.find((p: any) => p.code === 'help-project').serviceIds, [serviceId]);
+  assert.equal(fs.existsSync(path.join(root, 'repositories/help-code')), false, 'registration must not clone code');
+  const before = ['projects/manifest.yml', 'services/manifest.yml', 'repositories/manifest.yml'].map(file => fs.readFileSync(path.join(root, file)));
+  const directoryBefore = fs.readdirSync(root);
+  for (const args of [['bootstrap', 'guide'], ['bootstrap', 'guide', '--help'], ['help', 'bootstrap', 'guide']]) {
+    const result = invoke(...args, '--json');
+    assert.equal(result.status, 2);
+    const diagnostic = JSON.parse(result.stdout);
+    assert.match(diagnostic.error.code, /^cli\.unknown_(?:command|help_topic)$/);
+    assert.ok(!diagnostic.suggestions.some((suggestion: string) => suggestion.includes('bootstrap')));
+  }
+  assert.deepEqual(fs.readdirSync(root), directoryBefore);
+  ['projects/manifest.yml', 'services/manifest.yml', 'repositories/manifest.yml'].forEach((file, index) => assert.deepEqual(fs.readFileSync(path.join(root, file)), before[index]));
 });
 
 test('partial nested catalog write rolls back all manifests and newly created roots', (t: any) => {

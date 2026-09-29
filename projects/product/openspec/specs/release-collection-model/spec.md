@@ -106,7 +106,7 @@ Update MUST按调用方给出的单个 source commit 执行 `git cherry-pick -x`
 - **AND** MUST不自动解决、继续选择、reset、rebase、force push 或报告部分成功
 
 ### Requirement: Lifecycle state 必须独立、可重建且 fail closed
-Freeze、reopen、abandon和closeout MUST使用独立Git lifecycle refs与current owner facts，并保持幂等、compare-and-swap与授权边界。current freeze或abandon状态 MUST阻止update；只有显式reopen成功后才能继续逐commit update。Closeout MUST区分正式远端`release-<version>`、正式远端Tag、remote-tracking projection与owner-owned本地/中间资源：正式远端release ref和正式远端Tag默认保留并核验；本地release branch、全部selection lifecycle refs、owned worktree、generation carrier与本地同名Tag属于必需清理资源；remote-tracking ref存在 MUST NOT阻止本地清理。
+Freeze、reopen、abandon和closeout MUST使用独立Git lifecycle refs与current owner facts，并保持幂等、compare-and-swap与授权边界。current freeze或abandon状态 MUST阻止update；只有显式reopen成功后才能继续逐commit update。Closeout MUST区分正式远端`release-<version>`、正式远端Tag、remote-tracking projection与owner-owned本地/中间资源：正式远端Tag MUST保留并核验；正式远端release ref按本轮显式绑定的清理政策处理，无新政策的历史授权保持保留行为；本地release branch、全部selection lifecycle refs、owned worktree、generation carrier与本地同名Tag属于必需清理资源；remote-tracking ref存在 MUST NOT阻止本地清理。
 
 #### Scenario: freeze and inspect
 - **WHEN** open集合被要求 freeze
@@ -125,7 +125,8 @@ Freeze、reopen、abandon和closeout MUST使用独立Git lifecycle refs与curren
 
 #### Scenario: 正式远端release ref存在时清理本地资源
 - **WHEN** owner明确closeout一个已发布release，正式远端`release-<version>`精确等于冻结release commit，正式远端Tag与Publication evidence匹配，且本地branch、lifecycle refs、owned worktree或本地同名Tag仍存在
-- **THEN** closeout MUST保留正式远端release ref和正式远端Tag，并在显式本地cleanup确认后删除owner可证明的本地branch、全部current/history lifecycle refs、owned worktree与本地同名Tag
+- **THEN** closeout MUST保留正式远端Tag，并在显式本地cleanup确认后删除owner可证明的本地branch、全部current/history lifecycle refs、owned worktree与本地同名Tag
+- **AND** 本轮授权包含正式远端release ref清理时 MUST先证明源码由官方Tag及main历史保全，再按已观察提交条件删除；已不存在时 MUST幂等成功，存在但漂移或保全失败时 MUST保留
 - **AND** remote-tracking projection存在 MUST NOT阻止本地资源清理
 
 #### Scenario: 本地Tag已缺失
@@ -210,22 +211,37 @@ Buildr MUST从current release owner facts派生version-scoped lifecycle read mod
 - **AND** support修复 MAY独立交付，但 MUST NOT成为新的release协调Task
 
 #### Scenario: 必需closeout全部完成
-- **WHEN** Publication、matching dev provenance reconciliation与全部必需本地/中间资源closeout均通过，且正式远端release ref已按默认保留策略精确核验
+- **WHEN** Publication、matching dev provenance reconciliation与全部必需本地/中间资源closeout均通过，且正式远端release ref已按本轮授权完成保留或安全清理并核验
 - **THEN** lifecycle MUST返回`closed`并允许Release Skill完成唯一协调Task
-- **AND** 可选的正式远端release ref删除未获授权 MUST NOT阻止Task完成
+- **AND** 历史授权未包含正式远端release ref删除时 MUST保留其原政策，不自动扩大授权，也不因此阻止Task完成
 
 ### Requirement: Release Git owner 必须管理generation carrier与幂等closeout
-Release Git owner MUST为每个selection generation使用确定性`codex/release-main-<version>-g<generation>` carrier，记录expected commit、remote ref、PR head/base与ownership，并在main tree等价后枚举和删除owner可证明的本地/远端carrier。未知owner、ref漂移或多个不匹配PR MUST在删除或新PR mutation前失败关闭。
+Release Git owner MUST为每个selection generation使用确定性`codex/release-main-<version>-g<generation>` carrier，记录expected commit、remote ref、PR head/base与ownership。已合并且源码历史已保全的carrier缺失时，恢复 MUST复用已合并事实且不重建完成用途的引用。发布成功后，owner MUST按与当前context绑定的清理授权处理本版本carrier；同版本全轮次政策 MUST枚举全部可证明归属的generation。未知owner、ref漂移或活动用途 MUST只阻止对应资源删除，不扩大到其他已证明安全的资源。
 
 #### Scenario: 同version新generation创建PR
 - **WHEN** 前一generation的release→main PR已经终结，而current frozen generation具有新的release HEAD/tree
 - **THEN** owner MUST创建或复用current generation carrier并只以该carrier创建唯一受保护PR
-- **AND** MUST保留正式远端`release-<version>`并拒绝复用旧generation carrier
+- **AND** MUST保留正式远端`release-<version>`直到发布完成并拒绝复用旧generation carrier
 
 #### Scenario: carrier closeout重复调用
-- **WHEN** main tree已等于冻结release tree且matching carrier已经删除或仍精确指向expected release commit
-- **THEN** closeout MUST分别返回`already-cleaned`或删除matching carrier并完成remote readback
-- **AND** MUST NOT删除正式release ref、其他generation或ownership不明branch
+- **WHEN** 已发布源码与官方标签（Tag）及当前main历史保全，matching carrier已经删除或仍精确指向expected release commit
+- **THEN** closeout MUST分别返回`already-cleaned`或条件删除matching carrier并完成远端回读
+- **AND** MUST NOT删除其他version或ownership不明branch；其他generation只有匹配同版本全轮次授权且证明归属、保全和无活动用途时才可删除
+
+#### Scenario: 同版本多个历史候选
+- **WHEN** 当前发布授权包含同版本全部轮次，早期generation由已发布源码历史重建并匹配实时远端提交
+- **THEN** owner MUST清理这些已结束用途的carrier，并逐项报告预期提交、实际效果或保留原因
+- **AND** MUST NOT单凭名称前缀或文件树相同推断归属与历史保全
+
+#### Scenario: 已合并carrier被平台删除后继续准备
+- **WHEN** 精确源码的完整候选已成功且对应PR已合并，carrier被平台自动删除
+- **THEN** prepare MUST核验已有候选和合并历史后继续，不重建carrier、不重新派发候选
+- **AND** 尚需新候选执行或尚未合并时 MUST继续创建必要的精确carrier
+
+#### Scenario: 发布成功后再次调用准备入口
+- **WHEN** 当前发布意图已有成功或仍在进行的公开发布运行，再次调用prepare
+- **THEN** 执行器 MUST进入该发布的恢复路径，不重建已清理的正式或临时引用
+- **AND** 失败发布只有在核实不存在公开发布事实后才可重新准备
 
 ### Requirement: Release lifecycle必须派生编排与阶段时间线
 Release lifecycle projection MUST在不增加Task Record字段或旁路workflow store的前提下，组合current selection、Candidate attempts/aggregate、main PR、readiness context、Publication evidence、dev provenance reconciliation、release closeout、Task、Worktree、Preparation与Doctor facts，返回current orchestration action、稳定recovery identity和Release Phase Timeline identity。

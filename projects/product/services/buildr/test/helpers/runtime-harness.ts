@@ -11,6 +11,7 @@ import {
   AGENT_ASSETS_RUNTIME,
 } from '../../src/modules/agent-assets/module.ts';
 import { CHANGE_APPLICATION } from '../../src/modules/task/change/module.ts';
+import { TASK_COMMITS_APPLICATION } from '../../src/modules/task/commits/module.ts';
 import { OPENSPEC_APPLICATION, OPENSPEC_QUERY } from '../../src/modules/openspec/module.ts';
 import { VERIFICATION_APPLICATION } from '../../src/modules/project-testing/module.ts';
 import { PUBLICATION_APPLICATION } from '../../src/modules/publication/module.ts';
@@ -42,6 +43,7 @@ const DIRECT_CAPABILITIES = Object.freeze([
   OPENSPEC_QUERY,
   TASK_WORKTREE_PROVIDER,
   CHANGE_APPLICATION,
+  TASK_COMMITS_APPLICATION,
   VERIFICATION_APPLICATION,
   SYSTEM_INSTALLATION_APPLICATION,
   WEB_INSTANCE_LIFECYCLE,

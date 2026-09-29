@@ -2,7 +2,7 @@ import { ResourceActions } from '../../workbench/components/ResourceActions';
 import { useAppShell } from '../../../app/AppShellContext';
 import { workspaceHref } from '../../../lib/labels';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { Alert, Button, Input, Tag } from 'antd';
+import { Alert, Button, Input, Space, Tag } from 'antd';
 import { FileTextOutlined, RightOutlined } from '@ant-design/icons';
 import { WorkspaceStage } from '../../../components/WorkspaceStage';
 import { ResourceDocumentPane } from '../../../components/ResourceDocumentPane';
@@ -33,7 +33,7 @@ function SkillHomeContent({ skill, onAction, onRemove, children }: SkillHomeProp
   return <WorkspaceStage pageTabs={tabs.tabs} onClosePageTab={tabs.close} objectTabs={files.map(file => ({ key: file, kind: 'doc', title: file }))} activeObject={activeFile} onActivateObject={setActiveFile} onCloseObject={close}
     objectContent={files.map(file => <div key={file} hidden={file !== activeFile}><ResourceDocumentPane file={file} load={load} onOpen={open} /></div>)}>
     <div className="resource-home">
-      <header className="resource-home-head"><div><p className="resource-eyebrow">技能 <span> / {skill.id}</span></p><h1>{skill.title}</h1><p>{skill.description || '尚未填写说明。'}</p><div className="resource-home-meta"><span>{skill.sourceLabel}</span><Tag color={skill.enabled ? 'success' : 'default'}>{skill.enabled ? '已启用' : '已停用'}</Tag></div></div><ResourceActions resource={{ kind: "skill", key: "skill:" + skill.id, label: skill.title, href: workspaceHref(workspaceId, "/skills/" + encodeURIComponent(skill.id)) }} /><Button onClick={onRemove}>移除</Button><Button onClick={() => onAction('adjust', skill)}>编辑技能</Button></header>
+      <header className="resource-home-head"><div><p className="resource-eyebrow">技能 <span> / {skill.id}</span></p><h1>{skill.title}</h1><p>{skill.description || '尚未填写说明。'}</p><div className="resource-home-meta"><span>{skill.sourceLabel}</span><Tag color={skill.enabled ? 'success' : 'default'}>{skill.enabled ? '已启用' : '已停用'}</Tag></div></div><Space wrap className="resource-home-actions"><ResourceActions size="middle" resource={{ kind: "skill", key: "skill:" + skill.id, label: skill.title, href: workspaceHref(workspaceId, "/skills/" + encodeURIComponent(skill.id)) }} /><Button onClick={onRemove}>移除</Button><Button onClick={() => onAction('adjust', skill)}>编辑技能</Button></Space></header>
       {error && <Alert type="error" message={error} />}
       {skill.contentIssue && <Alert type="warning" message={skill.contentIssue} />}
       <details className="resource-section skill-reference-files">

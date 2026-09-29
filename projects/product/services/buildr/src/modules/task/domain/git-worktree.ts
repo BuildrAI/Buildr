@@ -3,6 +3,29 @@ export type GitWorktreeCleanupDeliveryInput = {
   deliveredRefs?: Record<string, string>;
 };
 
+export type GitWorktreeObservedCheckout = {
+  selector: string;
+  sourceRepository: string;
+  checkoutPath: string;
+  branch: string;
+};
+
+export function normalizeGitWorktreeObservedCheckouts(input: unknown): GitWorktreeObservedCheckout[] {
+  const invalid = (): never => {
+    throw Object.assign(new Error('observedCheckouts 必须是包含 selector、sourceRepository、checkoutPath、branch 的非空数组，且 selector 不得重复。'), { code: 'git_worktree_observation_invalid' });
+  };
+  if (!Array.isArray(input) || input.length === 0) return invalid();
+  const selectors = new Set<string>();
+  return input.map((item: unknown) => {
+    const fields = ['selector', 'sourceRepository', 'checkoutPath', 'branch'] as const;
+    if (!isObject(item) || Object.keys(item).length !== fields.length || fields.some((key) => typeof item[key] !== 'string' || !item[key])) return invalid();
+    const record = item as GitWorktreeObservedCheckout;
+    if (selectors.has(record.selector)) return invalid();
+    selectors.add(record.selector);
+    return { selector: record.selector, sourceRepository: record.sourceRepository, checkoutPath: record.checkoutPath, branch: record.branch };
+  });
+}
+
 export type GitWorktreeReviewedDelivery = {
   sourceHead: string;
   targetHead: string;

@@ -7,13 +7,13 @@ import { registerApplicationPackageMaintenance, type PackageMaintenanceDependenc
 import { registerAgentAssetsPackageAssets } from './application/package-maintenance/package-assets.ts';
 import { registerDomainsRules, type RulesDependencies } from './application/rules.ts';
 import { registerApplicationRuntime } from './application/runtime-projection.ts';
+import { selectWorkspaceRuntime } from './application/runtime-selection.ts';
 import { registerDomainsRuntime, type RuntimeApplicationDependencies } from './application/runtime.ts';
 import { registerDomainsSkills, type SkillsDependencies } from './application/skills.ts';
 import { createAgentAssetsCliContributions } from './interfaces/cli/agent-assets.ts';
 import { createAgentAssetsHttpContribution } from './interfaces/http/agent-assets-http.ts';
 import { registerAgentAssetsHttpQuery } from './application/http-query.ts';
 import { checkClaudeCodeRuntime, printRuntimeCheckReport } from './infrastructure/runtime/check-claude-code.ts';
-import { checkCodexRuntime, printCodexRuntimeCheckReport } from './infrastructure/runtime/check-codex.ts';
 import { checkRuntimeAdapter, RUNTIME_CHECKERS, RUNTIME_CHECK_PRINTERS } from './infrastructure/runtime/check-runtime.ts';
 import { assembleRuntimeProjection } from './infrastructure/runtime/projection.ts';
 import {
@@ -21,6 +21,7 @@ import {
   SUPPORTED_AGENT_IDS,
   UNSUPPORTED_AGENT_GUIDANCE,
   getRuntimeAdapter,
+  resolveRuntimeAdapter,
   isSupportedAgent,
   runtimeDiscoveryPayload,
   selectAdapterImplementation,
@@ -32,7 +33,7 @@ import {
   hasManagedRulesMarker,
   renderClaudeCodeRules,
   resolveRuleScope,
-} from './infrastructure/runtime/render-claude-code-rules.ts';
+} from './infrastructure/runtime/rule-projection.ts';
 import { resolveCapabilityRoute, resolveSkillCapabilityGraph } from './persistence/capability-graph-repository.ts';
 
 export const AGENT_ASSETS_MODULE_ID = 'agent-assets';
@@ -74,8 +75,6 @@ function runtimeCompositionPort() {
   return Object.freeze({
     checkClaudeCodeRuntime,
     printRuntimeCheckReport,
-    checkCodexRuntime,
-    printCodexRuntimeCheckReport,
     RUNTIME_CHECKERS,
     RUNTIME_CHECK_PRINTERS,
     checkRuntimeAdapter,
@@ -90,6 +89,7 @@ function runtimeCompositionPort() {
     SUPPORTED_AGENT_IDS,
     UNSUPPORTED_AGENT_GUIDANCE,
     getRuntimeAdapter,
+    resolveRuntimeAdapter,
     isSupportedAgent,
     reconcileRuntimePlan,
     runtimeDiscoveryPayload,
@@ -458,6 +458,8 @@ export function createAgentAssetsModule(infrastructure: AgentAssetsInfrastructur
         ...application,
         doctor,
         getRuntimeAdapter: adapters.getRuntimeAdapter,
+        resolveRuntimeAdapter: adapters.resolveRuntimeAdapter,
+        selectWorkspaceRuntime,
         usage: (...args: any[]) => infrastructure.usage(...args),
         withResolvedTarget: infrastructure.withResolvedTarget,
         optionValue: infrastructure.optionValue,

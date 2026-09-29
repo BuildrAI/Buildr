@@ -3,6 +3,7 @@
 ## Purpose
 
 定义 Buildr Product 可执行入口、运行源码、测试验证、仓库脚本和交付资产的生命周期边界，以及源码分层和依赖方向。
+
 ## Requirements
 
 ### Requirement: Product 顶层目录必须按生命周期分离
@@ -98,7 +99,7 @@ Service 产品能力 MUST 将纯 Domain、Application、filesystem/Git Infrastru
 - **AND** MUST NOT 新增直接解析 `services/manifest.yml` 的实现
 
 ### Requirement: Product Project 治理根与可执行 Service 根必须分离
-Buildr自举Product MUST将治理资产保留在Product Project root，并 MUST将npm package、CLI、运行源码、测试、维护脚本和交付源资产放入已登记Buildr Service root。Product Project root MAY包含Agent可读的`preparation.yml`，但 MUST不包含`task-environment.yml`、`package.json`、`package-lock.json`、`node_modules`或编译器入口。
+Buildr自举Product MUST将治理资产保留在Product Project root，并 MUST将 Buildr 主体 npm package、CLI、运行源码、测试、维护脚本和交付源资产放入已登记 Buildr Service root；独立版本的 DSH 插件源码、构建、测试及包元数据 MUST 由另一个已登记 Service root 拥有。Product Project root MAY包含Agent可读的`preparation.yml`，但 MUST不包含`task-environment.yml`、`package.json`、`package-lock.json`、`node_modules`或编译器入口。
 
 #### Scenario: 检查 Product Project root
 - **WHEN** Agent、CI或release检查`projects/product/`
@@ -119,6 +120,11 @@ Buildr自举Product MUST将治理资产保留在Product Project root，并 MUST�
 - **WHEN** verifier扫描`projects/product/services/buildr/`
 - **THEN** 该目录 MUST是`@buildr-ai/buildr` package、运行源码、验证、维护脚本和交付源资产的唯一源码根
 - **AND** Service root MUST提供Service-level `AGENTS.md`
+
+#### Scenario: 检查 DSH 插件 Service root
+- **WHEN** verifier扫描已登记的 DSH 插件 Service
+- **THEN** 该目录 MUST 独立拥有插件源码、构建入口、包版本与验证，不依赖 Buildr 主包的发布版本或构建目录
+- **AND** Service root MUST 提供 Service-level `AGENTS.md`
 
 #### Scenario: 从旧开发入口运行 Buildr
 - **WHEN** 用户或Agent执行`projects/product/buildr`

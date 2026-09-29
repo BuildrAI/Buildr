@@ -2,8 +2,12 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { ChangeQuery, ChangeModel, ChangeLifecycle, Project, PrototypePage, PrototypeDiagnostic } from '../../../openspec/module.ts';
+import { taskActionId } from '../../application/task-validation.ts';
 
-type TaskPrototype = PrototypePage & { id: string; project: string; change: string; lifecycle: ChangeLifecycle; provenance: string };
+type TaskPrototype = PrototypePage & { id: string; provenance: string } & (
+  | { source: 'change'; project: string; change: string; lifecycle: ChangeLifecycle }
+  | { source: 'task'; project: null; change: null; lifecycle: null }
+);
 type WorktreeRepository = { selector: string; entityType: string; sourcePath: string; checkoutPath: string; state: string };
 export type OpenSpecQuery = Pick<ChangeQuery, 'findLogicalChange' | 'discoverUiPrototypes'>;
 export type ProjectQuery = {
@@ -64,6 +68,17 @@ function isDirectory(file: string): boolean {
 
 function uiPrototypeId(project: string, change: string, relative: string): string {
   return crypto.createHash('sha256').update(`${project}\0${change}\0${relative}`).digest('hex').slice(0, 32);
+}
+
+function taskPrototypeRoot(targetRoot: string, taskId: string): string | null {
+  let current = path.resolve(targetRoot);
+  for (const segment of ['', '.buildr', 'local', 'task-prototypes', taskId]) {
+    current = path.join(current, segment);
+    const stat = fs.lstatSync(current, { throwIfNoEntry: false });
+    if (!stat) return null;
+    if (stat.isSymbolicLink() || !stat.isDirectory()) throw changeError('ui_prototype_task_path_forbidden', '任务原型目录及其祖先必须是普通目录，不能通过符号链接读取。');
+  }
+  return current;
 }
 
 function projectContext(projectQuery: ProjectQuery, targetRoot: string, projectCode: string): { project: Project; projectRoot: string } {
@@ -175,11 +190,33 @@ export function registerChangeApplication(runtime: ChangeRuntime, options: Chang
   }
 
   function taskUiPrototypeEntries(targetRoot: string, taskId: string): { taskId: string; prototypes: TaskPrototype[]; diagnostics: PrototypeDiagnostic[] } {
+    taskActionId(taskId, 'taskId');
     const task = runtime.inspectTask(targetRoot, taskId);
     const prototypes: TaskPrototype[] = [];
     const diagnostics: PrototypeDiagnostic[] = [];
+    try {
+      const localRoot = taskPrototypeRoot(targetRoot, taskId);
+      if (localRoot) {
+        const discovered = requiredOpenSpecQuery.discoverUiPrototypes(localRoot);
+        prototypes.push(...discovered.prototypes.map((prototype): TaskPrototype => ({
+          ...prototype,
+          id: crypto.createHash('sha256').update(JSON.stringify(['task-local', taskId, prototype.path])).digest('hex').slice(0, 32),
+          source: 'task', project: null, change: null, lifecycle: null, provenance: 'task-local',
+        })));
+        diagnostics.push(...discovered.diagnostics);
+      }
+    } catch (cause) {
+      const failure = cause as ChangeError;
+      diagnostics.push({ code: failure.code || 'ui_prototype_task_directory_unreadable', message: failure.code === 'ui_prototype_task_path_forbidden' ? failure.message : '任务原型目录当前不可读取。' });
+    }
     for (const reference of task.record.changes) {
-      const resolution = resolveTaskScopedChange(targetRoot, taskId, reference);
+      let resolution: ChangeResolution;
+      try { resolution = resolveTaskScopedChange(targetRoot, taskId, reference, { taskRecordObserved: true }); }
+      catch (cause) {
+        const failure = cause as ChangeError;
+        diagnostics.push({ code: failure.code || 'task_change_unavailable', message: `关联变更当前不可读取，请核对项目与变更来源：${reference.project}/${reference.change}。`, project: reference.project, change: reference.change });
+        continue;
+      }
       if (resolution.availability !== 'available') {
         diagnostics.push({
           code: resolution.diagnostic?.code || 'task_change_unavailable',
@@ -206,6 +243,7 @@ export function registerChangeApplication(runtime: ChangeRuntime, options: Chang
       const discovered = requiredOpenSpecQuery.discoverUiPrototypes(changeRoot);
       prototypes.push(...discovered.prototypes.map((prototype) => ({
         id: uiPrototypeId(reference.project, reference.change, prototype.path),
+        source: 'change' as const,
         project: reference.project,
         change: reference.change,
         lifecycle: change.lifecycle,

@@ -246,7 +246,7 @@ Buildr MUST在完整Product Candidate前，对current `release-<version>` frozen
 
 #### Scenario: 发布成功后dev已经前进
 - **WHEN** tag、npm、dist-tag、GitHub Release和Registry smoke已成立，且`dev`包含release冻结后交付的新内容
-- **THEN** reconciliation MUST核验Publication context、current frozen selection、正式release ref、published main commit/tree有效且current main包含该发布提交
+- **THEN** reconciliation MUST核验Publication context、current frozen selection、published main commit/tree有效且current main包含该发布提交；正式release ref存在时必须匹配，缺失时必须证明官方远端Tag匹配published main且冻结源码位于该提交历史中
 - **AND** MUST证明selection baseline与每个ordered `sourceDevCommit`均由current `dev`包含，同时保留`dev`当前HEAD与后续内容
 - **AND** MUST NOT要求main成为dev祖先、比较dev与release tree相等或产生任何Git写入effect
 
@@ -318,15 +318,21 @@ Release transaction readiness/dispatch 与 hosted evidence inspect MUST缺省返
 
 Publication和dev provenance已成立后，Release closeout MUST从canonical Workspace即时解析retained controller，完成release Task后直接调用Worktree provider cleanup，再运行Doctor。Worktree或Doctor cleanup失败 MUST保留已成立的Publication、Task结果和Git convergence事实。
 
-#### Scenario: 默认保留正式远端release branch
+#### Scenario: 按本轮授权清理正式远端release branch
 - **WHEN** Publication、matching dev provenance reconciliation已成立且正式远端release branch精确等于冻结release commit
-- **THEN** closeout MUST记录该正式ref为`retained-and-verified`并完成Task、直接调用Worktree cleanup与Doctor
-- **AND** 未请求正式ref删除 MUST NOT产生blocked或要求新的协调Task
+- **THEN** closeout MUST按本轮匹配的清理授权处理：新政策先核验官方远端Tag、冻结源码在发布提交历史内且当前main保有该发布提交，再条件删除正式ref并记录`cleaned-and-verified`；旧授权缺少该政策时记录`retained-and-verified`
+- **AND** closeout MUST完成Task、直接调用Worktree cleanup与Doctor，并保留官方远端Tag、GitHub Release和npm产物
+- **AND** 工具升级或历史resume MUST NOT自动扩大旧publication授权；分支已不存在且保全证据通过时 MUST可继续恢复
+
+#### Scenario: 默认保留正式远端release branch
+- **WHEN** 历史发布授权未包含本轮分支清理政策且正式远端release branch精确匹配冻结源码
+- **THEN** closeout MUST按历史政策记录`retained-and-verified`并继续其余收尾
+- **AND** MUST NOT仅因工具升级或resume自动取得删除授权
 
 #### Scenario: 中间资源漂移
 - **WHEN** 任一generation carrier、worktree或local lifecycle ref的ownership、dirty状态或expected identity无法证明
 - **THEN** closeout MUST返回blocked资源清单并保留已成立Publication、Task completion、reconciliation与其他已清理事实
-- **AND** MUST NOT删除未知branch、worktree、正式release ref或其他version资源
+- **AND** MUST NOT删除未知branch、worktree、未授权正式release ref或其他version资源
 
 ### Requirement: 发布编排必须保留独立owner与授权边界
 Buildr MUST提供`prepare-dispatch`、`dispatch`与`closeout`三个可恢复release orchestration动作。编排器 MUST只消费既有owner Result并按稳定顺序调用其公开入口，不得建立第二持久化状态权威、接受caller成功布尔值、自动取得publication或cleanup授权，或把跨owner调用宣称为原子事务。
@@ -460,3 +466,19 @@ Buildr release workflow 在 `npm publish` 返回后从官方 Registry 回读精�
 - **WHEN** 发布前或回读期间官方 Registry 已存在相同 version 且 integrity 与冻结 manifest 一致
 - **THEN** workflow MUST 复用该已发布事实并继续，不得发布第二份 bytes
 - **AND** integrity 不一致时 MUST 停止且不得覆盖已发布 version
+
+### Requirement: 发布清理必须按政策版本限制范围并局部处理失败
+新发布 MUST将同版本全部轮次清理政策与精确发布context绑定；旧的仅当前轮次政策和未绑定政策记录 MUST保留原授权范围。所有删除 MUST校验实时远端提交、官方标签（Tag）与当前main对源码历史的保全。待删引用被开放合并请求（Pull Request）的源或目标使用、存在未结束运行、查询失败或响应无效时 MUST保留对应引用。官方标签（Tag）、GitHub Release、npm版本和发布证据 MUST长期保留。
+
+#### Scenario: 旧记录恢复
+- **WHEN** 发布记录无清理政策、只有v1或context不匹配
+- **THEN** 工具 MUST保持已获授权的原范围，不因升级扩大到其他轮次
+
+#### Scenario: 单个旧轮次仍活动或漂移
+- **WHEN** 同版本某条引用仍在使用、实际提交已改变或活动查询未知，其他引用已证明安全
+- **THEN** 工具 MUST保留问题引用并报告原因，继续其他独立安全清理，保留真实部分效果
+- **AND** MUST不撤销已成立的发布成功，不把仍有残留说成全部完成
+
+#### Scenario: 发布保全根事实缺失
+- **WHEN** 官方标签（Tag）缺失或当前main未保有已发布源码历史
+- **THEN** 工具 MUST停止依赖该保全事实的删除且保留现有资源，等待补齐真实保全证据

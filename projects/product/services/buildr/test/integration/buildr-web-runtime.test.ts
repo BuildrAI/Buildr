@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { Readable } from 'node:stream';
 import test from 'node:test';
 
 import { createRuntime } from '../helpers/runtime-harness.ts';
@@ -11,6 +12,8 @@ import { WORKSPACE_APPLICATION, PROJECT_APPLICATION } from '../../src/modules/wo
 import { WEB_INSTANCE_LIFECYCLE } from '../../src/web/module.ts';
 import { taskRecordFixture } from '../helpers/task-record-system-fixture.ts';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
+import { createLocalWorkspaceRequestRouter } from '../../src/web/http/router.ts';
+import { apiError } from '../../src/web/http/responses.ts';
 import { ensureRegisteredTarget } from '../../src/modules/workspace/module.ts';
 import { registerWebInstanceLifecycle, handoffWaitBudget } from '../../src/web/application/instance-lifecycle.ts';
 import { assertCurrentNpmLauncherBinding, readCurrentProductIdentity } from '../../src/modules/installation/module.ts';
@@ -188,4 +191,142 @@ test('launcher handoff wait budget keeps the local default and widens only under
 
   const invalidOverride = handoffWaitBudget({ BUILDR_LAUNCHER_HANDOFF_WAIT_MS: 'not-a-number' });
   assert.deepEqual(invalidOverride, { attempts: 40, intervalMs: 50 }, 'invalid override falls back to the local default');
+});
+
+function hostRouterFixture(t: any, { origin = 'http://127.0.0.1:4457', closing = false } = {}) {
+  const staticRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-http-host-'));
+  t.after(() => fs.rmSync(staticRoot, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(staticRoot, 'index.html'), '<html>__BUILDR_SESSION_TOKEN__</html>');
+  fs.writeFileSync(path.join(staticRoot, 'app.js'), 'private-static-content');
+  const calls = { topLevel: 0, workspace: 0, resolve: 0, mutations: 0, shutdown: 0 };
+  const workspaceId = '00000000-0000-4000-8000-000000000000';
+  const sessionToken = 'private-session-token';
+  const healthSecret = 'private-instance-secret';
+  const router = createLocalWorkspaceRequestRouter({
+    origin: () => origin, isClosing: () => closing, staticRoot, sessionToken, healthSecret,
+    taskIdPattern: '[a-z-]+', launcherIdentity: { channel: 'fixture' },
+    productIdentity: { version: 'fixture' }, webProfile: { profile: 'development' }, previewIdentity: null,
+    shutdown: () => { calls.shutdown++; },
+    resolveRegisteredWorkspace: () => { calls.resolve++; return { rootPath: '/private-workspace' }; },
+    httpContributions: [{
+      handleTopLevel: ({ pathname, request, authorizeWrite }: any) => {
+        calls.topLevel++;
+        if (pathname !== '/api/v1/top-level') return null;
+        if (request.method === 'POST') { authorizeWrite(); calls.mutations++; }
+        return { status: 200, body: { private: 'top-level' } };
+      },
+      handle: ({ request, authorizeWrite }: any) => {
+        calls.workspace++;
+        if (request.method === 'POST') { authorizeWrite(); calls.mutations++; }
+        return { status: 200, body: { private: 'workspace' } };
+      },
+    }],
+  });
+  const validHeaders = {
+    host: new URL(origin).host, origin, 'x-buildr-session': sessionToken,
+    'x-buildr-instance': healthSecret, 'content-type': 'application/json',
+  };
+  return {
+    calls, workspacePath: `/api/v1/workspaces/${workspaceId}/items`,
+    async request({ method = 'GET', url = '/', headers = {}, rawHeaders }: any = {}) {
+      const input = Object.assign(Readable.from([Buffer.from('{}')]), {
+        method, url, headers: { ...validHeaders, ...headers }, ...(rawHeaders ? { rawHeaders } : {}),
+      });
+      const result = { status: 0, headers: {} as any, body: '' };
+      const response = {
+        writeHead(status: number, responseHeaders: any) { result.status = status; result.headers = responseHeaders; },
+        end(body: any) { result.body = String(body); },
+      };
+      try { await router(input, response); } catch (error) { apiError(response, error); }
+      return result;
+    },
+  };
+}
+
+test('HTTP Host rejects a foreign authority before shell, static, health, contributions or shutdown', async t => {
+  const fixture = hostRouterFixture(t);
+  for (const [method, url] of [
+    ['GET', '/'], ['GET', '/app.js'], ['GET', '/api/v1/health'],
+    ['GET', '/api/v1/top-level'], ['POST', '/api/v1/top-level'],
+    ['GET', fixture.workspacePath], ['POST', fixture.workspacePath],
+    ['POST', '/api/v1/app/quit'], ['POST', '/api/v1/app/quit-instance'], ['GET', '/missing'],
+  ]) {
+    const response = await fixture.request({ method, url, headers: { host: 'foreign.example:4457' } });
+    assert.equal(response.status, 403, `${method} ${url}: ${response.body}`);
+    assert.equal(JSON.parse(response.body).error.code, 'host_forbidden');
+    assert.doesNotMatch(response.body, /private-|fixture/);
+  }
+  assert.deepEqual(fixture.calls, { topLevel: 0, workspace: 0, resolve: 0, mutations: 0, shutdown: 0 });
+});
+
+test('HTTP Host rejects missing, ambiguous, malformed and unbound local authorities', async t => {
+  const fixture = hostRouterFixture(t);
+  const rejected = [
+    undefined, '', ['127.0.0.1:4457'], '127.0.0.1', '127.0.0.1:4458', 'localhost:4457',
+    '[::1]:4457', '127.1:4457', '2130706433:4457', '0x7f000001:4457', '127.0.0.1.:4457',
+    '127.0.0.1:04457', '127.0.0.1:4457, foreign.example', 'foreign.example@127.0.0.1:4457',
+    '127.0.0.1:4457/path', '127.0.0.1:4457#fragment', '127.0.0.1:4457?query',
+    '127.0.0.1:4457\\foreign.example', ' 127.0.0.1:4457', '127.0.0.1:4457\r\nX-Test: value',
+  ];
+  for (const host of rejected) {
+    const response = await fixture.request({ headers: { host } });
+    assert.equal(response.status, 403, JSON.stringify(host));
+    assert.equal(JSON.parse(response.body).error.code, 'host_forbidden');
+  }
+  for (const secondHost of ['127.0.0.1:4457', 'foreign.example:4457']) {
+    const response = await fixture.request({ rawHeaders: ['Host', '127.0.0.1:4457', 'hOsT', secondHost] });
+    assert.equal(response.status, 403);
+    assert.equal(JSON.parse(response.body).error.code, 'host_forbidden');
+  }
+});
+
+test('HTTP Host preserves trusted reads, static content, instance secrets and write protection', async t => {
+  const fixture = hostRouterFixture(t);
+  for (const url of ['/', '/app.js', '/api/v1/top-level', fixture.workspacePath]) {
+    assert.equal((await fixture.request({ url, rawHeaders: ['Host', '127.0.0.1:4457'] })).status, 200, url);
+  }
+  assert.match((await fixture.request()).body, /private-session-token/);
+  const health = await fixture.request({ url: '/api/v1/health' });
+  assert.equal(health.status, 200);
+  assert.equal(JSON.parse(health.body).launcherIdentity.channel, 'fixture');
+  for (const [method, url] of [['GET', '/api/v1/health'], ['POST', '/api/v1/app/quit-instance']]) {
+    const rejected = await fixture.request({ method, url, headers: { 'x-buildr-instance': undefined } });
+    assert.equal(rejected.status, 403);
+    assert.equal(JSON.parse(rejected.body).error.code, 'instance_forbidden');
+  }
+  for (const url of ['/api/v1/top-level', fixture.workspacePath, '/api/v1/app/quit']) {
+    for (const [headers, status, code] of [
+      [{ origin: 'http://foreign.example:4457' }, 403, 'origin_forbidden'],
+      [{ 'x-buildr-session': 'wrong' }, 403, 'session_forbidden'],
+      [{ 'content-type': 'text/plain' }, 415, 'content_type_unsupported'],
+    ] as const) {
+      const response = await fixture.request({ method: 'POST', url, headers });
+      assert.equal(response.status, status, url);
+      assert.equal(JSON.parse(response.body).error.code, code);
+    }
+  }
+  assert.equal(fixture.calls.mutations, 0);
+  assert.equal(fixture.calls.shutdown, 0);
+  assert.equal((await fixture.request({ method: 'POST', url: '/api/v1/top-level' })).status, 200);
+  assert.equal((await fixture.request({ method: 'POST', url: fixture.workspacePath })).status, 200);
+  for (const url of ['/api/v1/app/quit', '/api/v1/app/quit-instance']) {
+    assert.equal((await fixture.request({ method: 'POST', url })).status, 202);
+  }
+  assert.equal(fixture.calls.mutations, 2);
+  assert.equal(fixture.calls.shutdown, 2);
+});
+
+test('HTTP Host uses the trusted runtime port and still gates a closing application', async t => {
+  const standardPort = hostRouterFixture(t, { origin: 'http://127.0.0.1:80' });
+  for (const host of ['127.0.0.1', '127.0.0.1:80']) {
+    assert.equal((await standardPort.request({ headers: { host } })).status, 200);
+  }
+  const closing = hostRouterFixture(t, { origin: 'http://127.0.0.1:61234', closing: true });
+  const foreign = await closing.request({ headers: { host: '127.0.0.1:4457' } });
+  assert.equal(foreign.status, 403);
+  assert.equal(JSON.parse(foreign.body).error.code, 'host_forbidden');
+  assert.equal((await closing.request()).status, 503);
+  const health = await closing.request({ url: '/api/v1/health' });
+  assert.equal(health.status, 200);
+  assert.equal(JSON.parse(health.body).status, 'stopping');
 });

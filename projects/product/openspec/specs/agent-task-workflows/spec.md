@@ -65,7 +65,7 @@ Buildr Skill MUST 通过统一执行循环表达 Buildr 状态变更后的 docto
 
 #### Scenario: 状态变更后的统一验证
 - **WHEN** Agent 通过 Buildr Skill 完成 workspace 状态变更
-- **THEN** Buildr Skill MUST 要求运行 `buildr doctor --agent <agent> --target <dir> --json`
+- **THEN** Buildr 技能（Skill）MUST 使用当前智能体（Agent）的诊断（Doctor）确认相关结果；当前动作已返回同一现场的最终诊断（Doctor）时直接复用，否则运行 `buildr doctor --agent <agent> --target <dir> --json`
 - **AND** 完成标准 MUST 要求不存在需要立即处理的 error
 
 #### Scenario: 资产章节避免重复
@@ -74,8 +74,8 @@ Buildr Skill MUST 通过统一执行循环表达 Buildr 状态变更后的 docto
 - **AND** 只有该资产存在额外诊断语义时才能补充专项检查说明
 
 #### Scenario: Bootstrap 兜底一致
-- **WHEN** Buildr Skill 不可用且 Agent 使用 bootstrap guide
-- **THEN** bootstrap MUST 保留状态变更后运行当前 Agent doctor 的最小兜底流程
+- **WHEN** Buildr 技能（Skill）不可用且智能体（Agent）使用命令帮助和命令参考
+- **THEN** 命令参考 MUST 保留当前智能体（Agent）的诊断与修复依据；`init --agent` 或 `sync` 已返回有效的最终诊断（Doctor）时 MUST 复用，不重复运行
 
 ### Requirement: task-triage 明确 OpenSpec 中文文档约束
 Buildr 的 task-triage Skill MUST 在选择或继续 OpenSpec 工作流时，要求 Agent 使用中文编写 Buildr 自有 OpenSpec 文档和用户可见说明，并说明允许保留英文的格式与技术内容。
@@ -86,7 +86,7 @@ Buildr 的 task-triage Skill MUST 在选择或继续 OpenSpec 工作流时，要
 - **AND** 它 MUST 允许 English commands、paths、code identifiers、protocol fields、YAML/frontmatter 和 OpenSpec format keywords
 
 ### Requirement: Git 工作区转换后诊断 Buildr Agent 环境
-Buildr required Core MUST 固化“成功改变已检出 Git tree 后检查 Buildr Agent 环境”的 workspace transition invariant；执行一般 Git 工作流的 Agent MUST 通过产品入口 Buildr Skill 完成具体诊断与修复边界，创建 canonical task worktree 时 MUST 使用 Buildr 的确定性 worktree bootstrap 入口，而不依赖某个 optional Git Skill 的身份。
+Git 提供者（Provider）MUST 只报告真实检出变化；Buildr 技能（Skill）或当前任务的能力消费者（Consumer）MUST 根据变化范围执行相应诊断与恢复。工作树（Worktree）提供者（Provider）只管理 Git 位置、证据与安全清理，MUST NOT 自动创建运行环境、执行诊断（Doctor）、同步资产或安装依赖。
 
 #### Scenario: Git 操作成功改变已检出内容
 - **WHEN** Agent 通过任一 Git capability provider 成功完成 `pull`、`merge`、`rebase`、切换 tree 的 `checkout` 或 `switch`、改变工作区的 `reset`、`cherry-pick`、`revert`、`stash apply` 或 `stash pop`
@@ -110,21 +110,21 @@ Buildr required Core MUST 固化“成功改变已检出 Git tree 后检查 Buil
 
 #### Scenario: 当前 provider 已报告 treeChanged
 - **WHEN** 已绑定 Git provider 的结果证据包含 `treeChanged: true`
-- **THEN** consumer 或 orchestrator MUST 触发 required workspace transition invariant
+- **THEN** 能力消费者（Consumer）MUST 按 Buildr 技能（Skill）核对当前工作空间（Workspace）与运行时（Runtime），执行适用诊断
 - **AND** Agent MUST NOT 因 selected provider 的具体 Skill id 不同而跳过检查
 
 #### Scenario: 一般环境漂移可由 workspace sync 修复
 - **WHEN** 非 worktree-create 工作区转换后的 doctor 指出当前 Agent 的 workspace sync 是合适修复动作
-- **THEN** Agent MUST 询问用户是否由 Agent 立即同步当前 workspace 和 Agent runtime
+- **THEN** 智能体（Agent）MUST 在已有同范围授权内执行同步；只有缺少该授权或需要新的业务取舍时才询问
 - **AND** Agent MUST 同时提供 `buildr sync <agent> --target <workspace-root>` 作为手动同步备选
 - **AND** 面向用户的手动命令 MUST 使用已解析的实际 Agent 和 workspace root，不得保留占位符
-- **AND** Agent MUST NOT 在用户确认前执行 sync
+- **AND** 智能体（Agent）MUST NOT 在缺少相应授权时执行同步，MUST NOT 对已成立的同范围授权重复确认
 - **AND** Agent MUST NOT 把要求用户自行运行命令作为默认处理方式
 
 #### Scenario: 用户确认由 Agent 同步
 - **WHEN** 用户确认由 Agent 处理 workspace sync
 - **THEN** Agent MUST 调用 Buildr Skill 执行 `buildr sync <agent> --target <workspace-root>`
-- **AND** Agent MUST 使用 sync 的最终 doctor 或追加 doctor 确认当前环境结果
+- **AND** 智能体（Agent）MUST 使用同步返回的最终诊断（Doctor）确认结果；同一现场已有有效结果时不重复执行
 - **AND** Agent MUST 报告实际同步与诊断结果，而不是仅重复手动命令
 
 #### Scenario: 用户选择手动同步或 Agent 无法执行
@@ -136,7 +136,7 @@ Buildr required Core MUST 固化“成功改变已检出 Git tree 后检查 Buil
 
 #### Scenario: 诊断问题不应由 sync 修复
 - **WHEN** doctor 报告 Commands、Components、CLI 或其他不能由 workspace sync 正确修复的问题
-- **THEN** Agent MUST 按对应 Buildr 生命周期询问并在取得授权后执行可完成的动作
+- **THEN** 智能体（Agent）MUST 按对应能力在已有授权内执行可完成的动作，只有范围或副作用变化时取得必要决定
 - **AND** Agent MUST 仅在自身无法完成或用户选择手动方式时要求用户操作
 
 #### Scenario: 无法确认当前 Agent 环境
@@ -145,17 +145,16 @@ Buildr required Core MUST 固化“成功改变已检出 Git tree 后检查 Buil
 - **AND** Agent MUST NOT 猜测本地 Agent runtime 已经同步
 
 #### Scenario: 产品创建新 task worktree 并自动准备环境
-- **WHEN** Agent 已明确 task id、task branch、start point、当前 Agent 和 Buildr workspace root，并调用 Buildr worktree create 入口
-- **THEN** Buildr MUST 在 canonical `<workspace-root>/.worktrees/<task-id>` 创建 checkout 并确定性运行目标 checkout doctor
-- **AND** 只有目标为本次刚创建、已初始化、Git clean、identity 未变化且全部 actionable findings 仅为当前 Agent runtime projection stale 时，Buildr MUST 自动执行该目标 workspace sync
-- **AND** sync 后 Buildr MUST 再次确认 Git identity/clean 状态并以最终 doctor 判定 bootstrap 结果
-- **AND** 上述自动 sync 授权 MUST 由 worktree create 命令本身承载，不再逐次请求用户确认
+- **WHEN** 智能体（Agent）已明确任务标识、分支、起点与工作空间（Workspace），并调用已选工作树（Worktree）提供者（Provider）
+- **THEN** 提供者（Provider）MUST 返回真实创建或复用位置及 Git 证据，MUST NOT 自动执行诊断（Doctor）、同步或安装依赖
+- **AND** 智能体（Agent）MUST 从返回位置继续工作，仅在当前实现或验证需要时读取项目（Project）和服务（Service）的真实准备入口
+- **AND** 准备与投射 MUST 遵守独立授权、目录所有权和保留工作空间（Workspace）保护边界
 
 #### Scenario: 新 task worktree 不满足安全自动 sync 条件
-- **WHEN** 新 checkout doctor、Git 状态或 sync preflight 包含 mutation、dirty、identity 变化、Commands、Components、CLI、builtin ownership、capability graph、workspace source decision 或任意未知 actionable finding
-- **THEN** Buildr MUST NOT 自动执行 sync 或 doctor 返回的任意修复命令
-- **AND** Buildr MUST 保留已创建 worktree、返回 blocked 原因和可执行 nextActions
-- **AND** Buildr MUST NOT 自动删除 checkout、丢弃内容或扩大 Git 授权
+- **WHEN** 工作树（Worktree）创建后发现运行时（Runtime）、依赖、组件（Component）或源资产问题
+- **THEN** 智能体（Agent）MUST 保留已创建目录和 Git 事实，将具体问题交给相应能力所有者（Owner）
+- **AND** 提供者（Provider）MUST NOT 执行任意修复命令、删除检出目录、丢弃内容或扩大 Git 授权
+- **AND** 局部准备问题 MUST NOT 否定已经成功创建或复用的位置
 
 #### Scenario: 幂等复用既有 task worktree
 - **WHEN** canonical task path 已注册为同一 repository 与 branch 的既有 worktree
@@ -165,13 +164,13 @@ Buildr required Core MUST 固化“成功改变已检出 Git tree 后检查 Buil
 
 #### Scenario: 任务 Skill 内部发生其他工作区转换
 - **WHEN** `task-finish` 通过绑定 provider 改变目标 workspace tree，或 task workflow 执行 worktree create 之外的 tree transition
-- **THEN** 对应任务 Skill MUST 复用 required Core invariant 与产品入口 Buildr Skill 的环境检查、同步询问、Agent 执行和手动兜底边界
+- **THEN** 对应任务技能（Skill）MUST 依据真实变化调用产品入口 Buildr 技能（Skill）的适用诊断与恢复；已有有效诊断和同范围授权继续复用
 - **AND** 检查 MUST NOT 改变既有验证证据、Git 授权或 worktree 清理契约
 
 #### Scenario: Git 操作由 Agent 之外执行
 - **WHEN** 用户或其他程序绕过 Agent Skill 和 Buildr worktree create 入口直接改变 Git 工作区
 - **THEN** Buildr MUST NOT 声称能够即时感知该操作
-- **AND** 后续 Buildr 工作流 MUST 继续通过执行循环中的基线 doctor 检查当前环境
+- **AND** 智能体（Agent）后续继续工作时 MUST 核对当前事实；需要运行时（Runtime）诊断时使用当前产品入口，而非宣称已自动观察到变化
 
 ### Requirement: task-triage 必须输出正交且有证据的任务决策
 Buildr 的 `task-triage` Skill MUST先核对任务相关事实，再分别判断语义治理和执行形态；输出 MUST包含选择、repository set、实际工作位置选择、最小依据、未决冲突和next provider/action，并 MUST只在适用时追加OpenSpec或正式Task状态。任务进度 MUST由对话、Task Record、Parent/Child与各专业公开read model表达，不得创建第二份Board或Environment authority。
@@ -709,9 +708,9 @@ Buildr Release workflow MUST让唯一`release-<version>` Task表达维护者要�
 - **AND** Task状态、Candidate通过或历史授权 MUST NOT替代维护者本次明确授权
 
 #### Scenario: publication和必需closeout完成
-- **WHEN** protected transaction、正式readback、matching dev provenance reconciliation与全部必需local/intermediate closeout成立，且正式远端release ref已按默认保留策略核验
+- **WHEN** protected transaction、正式readback、matching dev provenance reconciliation与全部必需local/intermediate closeout成立，且正式远端release ref已按本轮授权完成保留或安全清理并核验
 - **THEN** Agent MAY以no-change完成唯一`release-<version>`协调Task并报告完整发布与closeout事实
-- **AND** 可选正式远端release ref删除未授权 MUST NOT要求第二协调Task
+- **AND** 新发布授权 MUST明确包含本轮正式发布分支及临时分支清理；旧授权缺少该政策时 MUST保留原行为，不要求第二协调Task
 
 #### Scenario: 历史release Task被提前完成
 - **WHEN** 旧版本在本Requirement生效前已有错误terminal协调Task
@@ -723,7 +722,7 @@ Buildr Release workflow MUST让唯一`release-<version>` Task表达维护者要�
 
 #### Scenario: 等待授权后继续发布
 - **WHEN** lifecycle为`awaiting-publication-authorization`且维护者明确授权matching context
-- **THEN** Skill MUST以同一Task、generation与context dispatch protected transaction并继续跟踪后续阶段
+- **THEN** Skill MUST展示本轮分支清理范围，并以同一Task、generation与context dispatch protected transaction，绑定已获授权的清理政策并继续跟踪后续阶段
 - **AND** MUST NOT创建finalize Task、重新pack或沿用其他context授权
 
 #### Scenario: main→dev或closeout受阻
@@ -953,3 +952,112 @@ Buildr OpenSpec contributions MUST通过自有增强片段补充当前工作根�
 - **WHEN** 工作树（Worktree）提供者不可用、仓库缺失或位置身份冲突使隔离无法完成
 - **THEN** 智能体（Agent）MUST 停止依赖该位置的持久文件写入，保留现场并报告具体原因，不自动回退主开发分支或初始化仓库
 - **AND** 只读检查与合法任务记录动作 MUST 可以独立继续
+
+### Requirement: 开发收尾必须消费明确的远端清理政策
+任务级临时引用（如任务分支（Branch））的远端生命周期全程受明确授权约束：智能体（Agent）MUST NOT在没有用户指令、任务声明交付方式或适用于该仓库的持续授权时把任务分支推送到远端，通用“收尾”指令本身 MUST NOT被解释为远端任务引用的创建或删除授权。授权推送任务引用时 MUST 同时确定其生命周期处置，默认随用途结束删除。交付后收尾技能（Skill）MUST核对任务范围内每个仓库是否存在本任务远端引用，只在删除授权覆盖且归属、交付保全与无活动用途均证明时按实时观察提交条件删除；删除不可得时 MUST逐项报告保留原因，不得静默残留。仓库自行声明的常驻引用 MUST保留；发布引用由发布能力按绑定政策处理。
+
+#### Scenario: 无授权的远端创建
+- **WHEN** 任务分支没有用户指令、任务声明交付方式或仓库持续授权覆盖远端创建
+- **THEN** 智能体（Agent）MUST NOT推送该任务分支到远端或为完成收尾上传它
+- **AND** 获得推送授权时 MUST 同时记录该引用的生命周期处置
+
+#### Scenario: 交付后枚举本任务远端引用
+- **WHEN** 交付核验完成且任务范围包含仓库集合
+- **THEN** 收尾 MUST对每个仓库以任务分支名查询实际远端，不依赖当次会话记忆
+- **AND** 仓库声明的常驻引用 MUST保留，不作为处置对象
+
+#### Scenario: 直接交付开发主线
+- **WHEN** 任务未经过合并请求（Pull Request），已完成直接交付且仓库政策授权清理本任务临时引用
+- **THEN** 智能体（Agent）MUST核对精确归属、交付保全、无活动用途和实时提交后条件删除并回读
+- **AND** MUST不把GitHub合并后自动删除设置当作已经完成清理的证据
+
+#### Scenario: 合并后自动删除
+- **WHEN** GitHub已删除合并请求（Pull Request）的临时引用
+- **THEN** 收尾 MUST核对实际合并与远端不存在并复用该事实，不重建或重复删除
+
+#### Scenario: 保留必要工作和报告残留
+- **WHEN** 引用有未交付内容、开放合并请求（Pull Request）、未结束运行、漂移、归属未知或删除授权未覆盖
+- **THEN** 收尾 MUST保留相关对象并逐项说明原因，授权缺失时向用户提出最小授权问题或如实说明未决残留，继续其他安全工作
+- **AND** MUST分别说明已删除、已不存在和仍保留项，不以任务完成或笼统cleaned替代远端观察
+
+### Requirement: Git Operations 条件删除远端引用
+selected `buildr.git-operations/v1` provider MUST 支持 consumer 明确选定的 `delete-remote-ref` 操作（Operation）：consumer 提供实际 repository、remote、精确 ref、已观察远端提交与允许的远端 effect；provider MUST 在写远端前核对实际远端 tip 仍等于已观察提交，只删除该引用并回读确认。
+
+#### Scenario: 按观察提交删除
+- **WHEN** consumer 提供明确授权、精确 remote/ref 与已观察远端提交，且实际远端 tip 仍匹配
+- **THEN** provider MUST 只删除该引用并回读远端确认不存在
+- **AND** MUST NOT 删除其他引用、改用无条件删除或扩大授权范围
+
+#### Scenario: 远端漂移或不可观察
+- **WHEN** 删除前实际远端 tip 与已观察提交不一致、远端无法可靠观察或归属不明
+- **THEN** provider MUST 在远端零写入状态返回 `blocked`
+- **AND** MUST 保留已发生的其他独立 Result
+
+### Requirement: 任务目标必须写成简洁清晰的任务需求
+
+Buildr 任务指引 MUST 把 Task `intent`（目标与说明）定位为每个正式任务（Task）必写的任务级需求说明：创建或修订时以简洁清晰的自然语言说明本次要解决的问题、目标与范围边界，需要验收要点时一并写出；MUST NOT 退化为标题复述、内部步骤清单或只有作者能懂的缩写。关联变更（Change）的 `brief.md` 继续作为该变更的补充需求说明，不替代任务级目标。
+
+#### Scenario: 创建任务时书写需求
+
+- **WHEN** Agent 调用 `task create` 或修订 Task 目标
+- **THEN** `intent` MUST 说明本次任务内容、目标与范围边界
+- **AND** MUST NOT 只写入与标题重复的短语或不对外可读的内部记号
+
+#### Scenario: 变更 Brief 与任务目标的分工
+
+- **WHEN** Task 关联一个或多个 OpenSpec Change
+- **THEN** Task `intent` MUST 保持任务级需求说明
+- **AND** Change `brief.md` MUST 只补充该变更的需求或说明，两者 MUST NOT 相互复制正文或相互矛盾
+
+### Requirement: 变更路径任务默认携带方案与实现审查
+
+Buildr 任务指引 MUST 把 Task Review 的默认触发绑定到已作出的语义治理路径，而不是依赖 Agent 逐任务自发判断：选择 `change-flow` 的 Task 在规划材料齐备后 MUST 默认执行一次 Planning Review，在实现完成、验证对象稳定后 MUST 默认执行一次 Completion Review；`code-only`、`spec-maintenance` 或无正式 Task 的工作保持按需触发。Planning Review MUST 核对任务需求与方案材料（提案、设计、规范增量、实施清单）的一致性以及方案的完整性与合理性；Completion Review MUST 以任务需求与已审方案为基线核对真实实现。审查结果继续保持可选证据性质，MUST NOT 成为完成、归档或交付门禁。
+
+#### Scenario: change-flow 任务默认两次审查
+
+- **WHEN** Task 选择 `change-flow` 且规划材料齐备
+- **THEN** 指引 MUST 引导 Agent 默认执行 Planning Review 并按现有语义记录 Result
+- **AND** 实现完成形成稳定审查对象后 MUST 默认执行 Completion Review 并记录 Result
+
+#### Scenario: 非变更路径不默认审查
+
+- **WHEN** Task 为 `code-only`、`spec-maintenance` 或其他无正式方案材料的路径
+- **THEN** 指引 MUST NOT 把 Task Review 列为默认动作
+- **AND** 用户明确要求或 Agent 按真实风险判断需要时仍 MUST 可执行并记录
+
+#### Scenario: 默认审查缺失不形成门禁
+
+- **WHEN** 默认审查未执行、结论为 `changes-requested` 或审查对象已变化
+- **THEN** Task 完成、Change 收敛归档与交付 MUST 不被该事实自动阻塞
+- **AND** Agent MUST 如实说明审查覆盖情况与未覆盖原因，不得把缺失表述为已通过
+
+### Requirement: 收尾登记完成前必须补登已发生的审查与验证证据
+
+收尾指引 MUST 在登记任务完成前加入就近核对：Task 仍为 `active` 时，若本次实际执行过验证或审查但对应 Task Verification Report 或 Task Review Result 尚未登记，Agent MUST 先完成登记再执行完成动作；不得补造未发生的检查或审查，也不得把缺失登记升级为完成门禁。该要求只保证已发生事实不越过终端写入窗口，不要求新增检查。
+
+#### Scenario: 已发生证据尚未登记
+
+- **WHEN** Agent 即将调用 `task complete`，且本次实际执行的检查或审查尚未保存为对应 Report/Result
+- **THEN** 指引 MUST 要求先登记该证据，再登记任务完成
+- **AND** MUST NOT 因登记动作补跑无关检查或虚构未发生的验证
+
+#### Scenario: 无待登记证据
+
+- **WHEN** 本次没有实际执行过需要登记的检查或审查
+- **THEN** 完成登记 MUST 直接继续，MUST NOT 因没有报告而推断验证缺失或阻塞完成
+
+### Requirement: 规划材料齐备声明前必须核对变更 Brief 存在
+
+OpenSpec `propose` 增强指引 MUST 要求 Agent 在声明规划材料齐备或移交审查/实现前，确认 Change root 内 `brief.md` 实际存在且为本次生成的有效文件；缺失时 MUST 先补齐或如实说明不适用原因，不得把缺失文件表述为已就绪。该核对是文件存在性自查，不新增审批门禁或第二份规范来源。
+
+#### Scenario: 规划完成前的 Brief 自查
+
+- **WHEN** Agent 完成 proposal、design、specs、tasks 并准备报告规划结果
+- **THEN** Agent MUST 核对 `brief.md` 存在于当前 Change root
+- **AND** 缺失时 MUST 先创建或向用户说明缺口，MUST NOT 直接把缺失状态报告为完整
+
+#### Scenario: 既有变更缺少 Brief
+
+- **WHEN** 接续的既有 Change 缺少 `brief.md`
+- **THEN** Agent MUST 如实说明 Brief 缺失并继续提供现有材料
+- **AND** MUST NOT 伪造一份虚构 Brief 冒充历史产物

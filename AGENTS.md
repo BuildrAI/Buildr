@@ -34,6 +34,7 @@ Buildr 产品及其生成的工作空间（Workspace）共同遵守本规则。
 - 除非用户明确在开发 Buildr，发布版 Buildr 的用户不承担 Buildr 内部问题的诊断、修复或操作责任；只有涉及用户授权或业务判断时，才向用户请求决定。
 - 用户明确指令优先于技能（Skill）的一般做法；业务约束、授权边界与实际权限继续有效。同一任务中已取得的授权，在对象、范围和副作用未改变且未被撤回时继续适用，不因换轮次重复确认。
 - 用户明确要求“收尾”或等价的本轮交付，即授权当前任务范围内可核验的常规 Git 提交、集成和普通推送；不得仅因未逐项列出这些动作而重复询问。每次写入仍须核验真实仓库、内容归属、目标引用、完整推送范围和实际副作用；范围或目标不明时只停止受影响的写入。强推、merge commit、改写共享历史、丢弃内容、覆盖他人工作、删除远端分支、发布和语义冲突取舍不属于该授权。
+- 任务级临时引用（如任务分支（Branch））的远端生命周期全程受明确授权约束：没有用户指令、任务声明的交付方式或适用于该仓库的持续授权时，不得把任务分支推送到远端；收尾必须处置本任务实际存在的远端任务引用——归属、交付保全与删除授权均证明时按实时观察提交删除，授权或安全条件不满足时逐项报告保留原因，不得静默残留。仓库声明的常驻引用与发布引用不适用本条，后者由发布能力按绑定政策处理。
 - 只有继续推进会造成越权、错误对象写入、未经授权的外部或不可逆副作用、证据失真、完成误报或覆盖他人工作时，才关闭式失败。需要决定时，先完成不依赖该决定的已授权工作，再展示具体影响；若技能（Skill）要求暂停，链接对应 `SKILL.md` 并引用适用条款，区分明文要求与自身判断。
 
 ## 用户沟通
@@ -67,6 +68,6 @@ Buildr 产品及其生成的工作空间（Workspace）共同遵守本规则。
 
 本 workspace 是 Buildr 用来开发 Buildr 自身的自举 workspace。PATH 中的默认 `buildr` 属于 npm installation，不得由 development checkout 创建、覆盖或要求绑定当前源码。正式自举激活成功时，必须以 Environment retained Node 显式验证本次 delivered retained checkout 的 `projects/product/buildr`，且最终 workspace Doctor 必须 ready。正式 sync、Buildr Web Dev 安装、development entry identity 检查与最终 Doctor 或 Finish resume 只由 `buildr-self-bootstrap-sync` Skill 的唯一 runner 编排；Agent 不得自行拆分、补跑或替代其中步骤。
 
-- Buildr 产品治理事实只在 `projects/product/` 维护；可执行产品实现分属两个 Service：`projects/product/services/buildr/` 负责 npm package、CLI、本机应用 HTTP/运行时（runtime）、`web-dist` 托管与打包，`projects/product/services/buildr-web/` 负责 Buildr Web React/Vite 权威前端源码与正式构建。当前 workspace 中由 Buildr 交付的资产只能通过当前 Product checkout 的 `update` / `sync` 更新，不直接编辑。
+- Buildr 产品治理事实只在 `projects/product/` 维护；可执行产品实现分属三个 Service：`projects/product/services/buildr/` 负责 npm package、CLI、本机应用 HTTP/运行时（runtime）、`web-dist` 托管与打包，`projects/product/services/buildr-web/` 负责 Buildr Web React/Vite 权威前端源码与正式构建，`projects/product/services/dsh-plugin/` 负责独立构建和发布 DSH 桌面插件。当前 workspace 中由 Buildr 交付的资产只能通过当前 Product checkout 的 `update` / `sync` 更新，不直接编辑。
 
 开发阶段执行 Buildr 命令时，使用本 workspace 内的产品 CLI 入口 `projects/product/buildr`，不要依赖本机 PATH 上安装的 `buildr`。

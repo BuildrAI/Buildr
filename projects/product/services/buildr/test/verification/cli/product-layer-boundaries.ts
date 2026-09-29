@@ -2,7 +2,7 @@ export const productLayerOf = (relative: string): string => {
   if (relative === 'infrastructure/contracts/public-json.ts') return 'infrastructure';
   const parts: any = relative.split('/');
   if (parts[0] === 'infrastructure') return 'infrastructure';
-  const moduleOffset: any = parts[0] === 'modules' && parts[1] === 'task' && ['change', 'daily-progress', 'work-context'].includes(parts[2]) ? 3 : parts[0] === 'modules' ? 2 : 1;
+  const moduleOffset: any = parts[0] === 'modules' && parts[1] === 'task' && ['change', 'commits', 'daily-progress', 'work-context'].includes(parts[2]) ? 3 : parts[0] === 'modules' ? 2 : 1;
   if (!['modules', 'web'].includes(parts[0])) return parts[0];
   if (parts.length === moduleOffset + 1 && /^module\.(?:mjs|ts)$/.test(parts[moduleOffset])) return 'module';
   return ({
@@ -45,6 +45,8 @@ const allowedCrossModulePorts: any = new Set([
   'modules/project-testing/module.ts -> modules/workspace/module.ts',
   'modules/task/module.ts -> modules/workspace/module.ts',
   'modules/task/change/module.ts -> modules/task/module.ts',
+  'modules/task/commits/module.ts -> modules/task/module.ts',
+  'modules/task/commits/module.ts -> modules/workspace/module.ts',
 ]);
 
 export function isAllowedProductLayerImport(source: string, target: string): boolean {

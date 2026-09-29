@@ -2,7 +2,7 @@
 
 覆盖 Buildr 服务（Service）中普通技能源文件的解析、内容组合、文件计划与运行时投射（Runtime Projection），以 Codex 工作空间（Workspace）目录为具体输出示例，并说明多个适配器共享同一目标根（Runtime Root）时的归属边界。事实来源是下列真实代码、[资源清单](../../services/buildr/resources/manifest.yml)、[投射规范](../../openspec/specs/workspace-first-runtime-projection/spec.md)和[组件增强规范](../../openspec/specs/buildr-package-assets/spec.md)。
 
-本图不展开全部规则投射、远程来源读取、组件安装与删除、宿主会话加载及全部适配器。产品入口 `buildr` 的随包来源单独说明；它不通过普通工作空间技能冒名接入。关联[面向人的解释](../docs/architecture/buildr-skill-system.md)、[技术图](../archify/flows/skill-projection.html)及[图的来源映射](../archify/flows/skill-projection.md)。
+本图是数据流图（Data Flow Diagram），不表示逐函数执行顺序。本图不展开全部规则投射、远程来源读取、组件安装与删除、宿主会话加载及全部适配器。产品入口 `buildr` 的随包来源单独说明；它不通过普通工作空间技能冒名接入。关联[面向人的解释](../docs/architecture/buildr-skill-system.md)、[技术图](../archify/flows/skill-projection.html)。
 
 ## 真实目录与对象
 
@@ -17,6 +17,7 @@ agent-assets/
 └── infrastructure/runtime/
     ├── projection.ts                      # 组合声明式目标计划
     ├── adapter-contract.ts                # 选择适配器与目标布局
+    ├── retired-adapters.ts                # 已退役品牌遗留投射的清理计划与报告
     ├── runtime-reconciler.ts               # 比较目标、冲突检查和写入
     └── skills/
         ├── sources.ts                     # 普通技能与产品入口来源
@@ -36,7 +37,8 @@ agent-assets/
 | `resolveSkillCapabilityGraph`、`capabilityBindingsForSkill` | 解析已有协作约定、依赖和绑定，给每个调用方提供局部视图 | [capability-graph-repository.ts](../../services/buildr/src/modules/agent-assets/persistence/capability-graph-repository.ts) |
 | `buildSkillContent`、`buildSkillRenderPlan` | 组合片段与局部能力说明，添加生成标记，生成正文、附属文件与归属记录的写入计划 | [render-plan.ts](../../services/buildr/src/modules/agent-assets/infrastructure/runtime/skills/render-plan.ts) |
 | `buildSkillProjectionReceipt`、`skillProjectionOwnershipReceiptTarget` | 表达文件摘要、可执行位和投射身份，解析记录位置 | [projection-files.ts](../../services/buildr/src/modules/agent-assets/infrastructure/runtime/skills/projection-files.ts) |
-| `getRuntimeAdapter`、`skillDestinationRoots` | 前者取得已声明适配器的目标布局，不证明当前执行者身份；后者给出某一投射范围内的目标根，当前每个适配器各只有一个 | [adapter-contract.ts](../../services/buildr/src/modules/agent-assets/infrastructure/runtime/adapter-contract.ts) |
+| `getRuntimeAdapter`、`resolveRuntimeAdapter`、`skillDestinationRoots` | `getRuntimeAdapter` 取得已声明适配器的目标布局，不证明当前执行者身份，也不接受任意身份；`resolveRuntimeAdapter` 按选择规则把运行时身份（`runtimeId`）解析为实际适配器，未指定或未登记时落到标准；`skillDestinationRoots` 给出某一投射范围内的目标根，当前每个适配器各只有一个 | [adapter-contract.ts](../../services/buildr/src/modules/agent-assets/infrastructure/runtime/adapter-contract.ts) |
+| `buildRetiredRuntimeProjectionPlan`、`retiredRuntimeProjectionFindings` | 前者只在标准适配器的全工作区受管操作中给出退役清理计划，能由受管标记或所有权回执证明归属的删除，无法证明的保留；后者供诊断只读报告未清理路径与原因，不阻断 | [retired-adapters.ts](../../services/buildr/src/modules/agent-assets/infrastructure/runtime/retired-adapters.ts) |
 | `buildEffectiveSkillInventory`、`classifySkillCandidate` | 检查可见位置，区分可写候选、已由用户位置满足和冲突 | [inventory.ts](../../services/buildr/src/modules/agent-assets/infrastructure/runtime/skills/inventory.ts) |
 | `validateRuntimePlan`、`reconcileRuntimePlan` | 核对目标安全、当前内容与归属，发现计划冲突时保持零写入；正常时更新实际变化文件并处理已证明可清理目标 | [runtime-reconciler.ts](../../services/buildr/src/modules/agent-assets/infrastructure/runtime/runtime-reconciler.ts) |
 
@@ -53,11 +55,25 @@ agent-assets/
 | 工作空间 `skills/manifest.yml`、技能源目录、组件定义与片段 | 本路径只读；受管内置内容从产品源修改并通过适用同步交付 |
 | 组合后的正文、能力局部视图和目标计划 | 内存派生对象，不建立新的工作状态数据库 |
 | Codex 工作空间 `.agents/skills/<id>/` | 可重建输出；`reconcileRuntimePlan` 更新已验证安全的文件，不回写源技能 |
-| `.buildr/agent-runtime/workspace/<adapter>/skill-projection-ownership-receipts/` | 本机投射归属记录，供比较、完整性和后续清理使用；不证明任务目标完成。一个 Skill 在其适配器声明的目标根上各有一份 `<skillId>.json`，因此 `.agents` 这类被多个适配器共享的根里，某目录属于谁由该根下是否存在对应回执决定：其他适配器的回执即归属证明，本适配器既不安删也不报冲突 |
+| `.buildr/agent-runtime/workspace/<adapter>/skill-projection-ownership-receipts/` | 本机投射归属记录，供比较、完整性和后续清理使用；不证明任务目标完成。每个目标根各有 `<skillId>.json`；共享目录中，其他适配器（Adapter）的回执说明既有归属，当前适配器不删除对应目录，也不据此报冲突。 |
 | 用户级投射目录 | 只有对应已授权目标才可写；候选产品检出目录不能修改共享用户位置 |
 
 冲突预检的零写入保证不等于任意文件系统异常下的全局事务保证：当前协调器仅在旧归属记录迁移分支建立专用恢复快照。图只承诺已核对的冲突预检与受管更新，不宣称所有写入都具备通用原子回滚。
 
 ## 如何判断需要维护
 
-来源位置、代表符号、内容组合规则、目标目录、写入归属或冲突保护发生变化时核对本地图及对应图表；内部实现版本变化但上述关系仍成立时只记录检查结论，不机械重建。当前知识维护技能本次新增参考文件而投射算法未变，是“输入变化、这份机制映射仍适用”的具体例子。
+来源位置、代表符号、内容组合规则、目标目录、写入归属或冲突保护发生变化时核对本地图及对应图表；内部实现版本变化但上述关系仍成立时只记录检查结论，不机械重建。
+
+## 节点与关系的依据
+
+下表对应[图源](../archify/flows/skill-projection.json)中的节点与关系；具体路径和职责见前文。
+
+| 节点或连线标识 | 依据 |
+|---|---|
+| `skill-source`、`read-source` | `sources.ts` 的 `resolveSkills` 读取工作空间技能源清单与目录 |
+| `component-source`、`compose-source` | `contributions.ts` 的 `resolveComponentContributions` 核对成员后组合片段与依赖；`resolveSkillCapabilityGraph` 解析实际绑定 |
+| `resolved-skills` | `render-plan.ts` 的 `resolveRenderSkills` 返回附带局部能力视图的普通技能 |
+| `render-plan`、`prepare-files` | `buildSkillRenderPlan` 与 `buildSkillContent` 构造正文、附属文件及归属记录计划 |
+| `reconciler`、`check-writes` | `application/runtime-projection.ts` 的 `renderSkillsRuntime` 在目标与发现冲突检查后将计划交给 `reconcileRuntimePlan` |
+| `runtime-files`、`write-runtime` | `adapter-contract.ts` 的 `skillDestinationRoots` 给出该 destination 的目标根，`buildRuntimeSkillDirectory` 按根使用 `getRuntimeAdapter` 的布局；协调器写入实际改变的受管目标 |
+| `ownership`、`write-ownership` | `buildSkillProjectionReceipt` 构造本机记录，由计划的记录写入分支保存；目录内容通常先于标记为 `commitLast` 的记录。共享同一根的其他 adapter 由各自回执界定归属 |

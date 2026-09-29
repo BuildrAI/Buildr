@@ -17,6 +17,7 @@ import { materializeCleanProductSource } from '../helpers/clean-product-source.t
 import { recordVerificationResultFromEvidence } from '../helpers/task-verification-result-fixture.ts';
 import { runWorkspaceCompositionJourney } from './workspace-composition-journey.ts';
 import { runLayoutJourney } from '../../../buildr-web/test/browser/layout-journey.ts';
+import { runTaskCommitsJourney } from '../../../buildr-web/test/browser/task-commits-journey.ts';
 import { runWorkbenchJourney } from './workbench-journey.ts';
 import { runPublicationJourney, publicationTestPng } from './publication-journey.ts';
 import { runServiceKnowledgeJourney } from './service-knowledge-journey.ts';
@@ -839,7 +840,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
       total: stage.getBoundingClientRect().width,
     }));
     const initialPanes = await paneSize();
-    assert.ok(Math.abs(initialPanes.left - initialPanes.right) <= 1, JSON.stringify(initialPanes));
+    assert.ok(Math.abs(initialPanes.right - initialPanes.total * 0.65) <= 1, JSON.stringify(initialPanes));
     const separator = page.getByRole('separator', { name: '拖拽调整两侧宽度' });
     const dividerBox = await separator.boundingBox();
     assert.ok(dividerBox);
@@ -851,7 +852,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.ok(draggedPanes.right > initialPanes.right + 60);
     const storedRatio = await page.evaluate((id: string) => localStorage.getItem(`buildr.web.pane-ratio.${id}`), initialWorkspaceId);
     assert.ok(storedRatio);
-    await page.getByRole('button', { name: '关闭 README.md', exact: true }).click();
+    await page.getByRole('button', { name: '关闭 项目文档', exact: true }).click();
     const closedPanes = await paneSize();
     assert.equal(closedPanes.right, 0);
     assert.ok(Math.abs(closedPanes.left - closedPanes.total) <= 1);
@@ -894,9 +895,13 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.locator('#project-detail-name').waitFor({ state: 'visible' });
     assert.equal(await page.locator('#service-detail-name:visible').count(), 0);
     await page.locator('#project-activity-link').click();
+    assert.equal(page.url(), `${workspaceUrl}/projects/demo`, '项目动态在项目主页副屏打开，不离开当前页');
+    await page.getByRole('tab', { name: '项目动态 关闭 项目动态', exact: true }).waitFor({ state: 'visible' });
+    await page.locator('.pane-right:visible .project-activity-controls').waitFor({ state: 'visible' });
+    await page.locator('.pane-right:visible').getByRole('link', { name: '打开动态页', exact: true }).click();
     await page.waitForURL(current => current.pathname === new URL(`${workspaceUrl}/activity`).pathname && current.searchParams.get('project') === 'demo' && !current.searchParams.has('date'));
     await page.locator('#workbench-activity').waitFor({ state: 'visible' });
-    await page.locator('#workbench-daily-progress').waitFor({ state: 'visible' });
+    await page.locator('#workbench-activity #workbench-daily-progress').waitFor({ state: 'visible' });
     assert.equal(await page.locator('[data-nav="activity"]').evaluate((element: HTMLElement) => element.classList.contains('active')), true);
     assert.equal(await page.locator('.pane-right #progress-body').count(), 0, '项目主页进入统一动态页，不挂载旧侧栏详情');
     await page.goBack();
@@ -1310,8 +1315,10 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.getByRole('dialog').waitFor({ state: 'hidden' });
     await page.locator('[data-repository-alignment="pending"]:visible').waitFor();
     await page.getByRole('button', { name: '查看对齐指引', exact: true }).click();
-    await page.getByRole('textbox', { name: '代码准备指令', exact: true }).waitFor();
-    assert.match(await page.getByRole('textbox', { name: '代码准备指令', exact: true }).inputValue(), /声明保存不代表/);
+    const preparationPrompt = page.getByRole('textbox', { name: '代码准备指令', exact: true });
+    await preparationPrompt.waitFor();
+    await page.waitForFunction((element: HTMLTextAreaElement) => element.value.trim().length > 0, await preparationPrompt.elementHandle());
+    assert.match(await preparationPrompt.inputValue(), /声明保存不代表/);
     await page.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).click();
     await page.getByRole('dialog').waitFor({ state: 'hidden' });
     assert.deepEqual(fs.readFileSync(path.join(codeRoot, '.git/config')), config); assert.deepEqual(fs.readFileSync(path.join(codeRoot, '.git/HEAD')), head);
@@ -1517,6 +1524,35 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.equal(await page.getByRole('button', { name: /审查|继续推进/ }).count(), 0, 'Change 详情只读展示');
   });
 
+  if (selected('task')) await t.test('无关联变更的任务可从方案设计与单独查看阅读本机原型', async () => {
+    const taskId = 'browser-local-prototype';
+    runtime.createTask(workspaceRoot, { taskId, title: '本机原型示例', intent: '验证未决定实施时也可阅读已归入原型', projects: [], services: [], changes: [] });
+    const localRoot = path.join(workspaceRoot, '.buildr/local/task-prototypes', taskId);
+    fs.mkdirSync(localRoot, { recursive: true });
+    fs.writeFileSync(path.join(localRoot, 'screen.html'), `<!doctype html><html><head><title>任务本机页面</title></head><body>
+<!-- buildr:ui-prototype --><h1 id="local-prototype-heading">当前任务的本机原型</h1><button id="local-prototype-action" onclick="this.textContent='已切换'">切换状态</button>
+<script id="buildr-prototype" type="application/json">{"version":1,"pages":[{"id":"local","title":"任务本机页面","notes":[{"id":"scope","title":"本机来源","text":"此页面属于当前任务，不要求关联规范变更。"}],"states":[]}]}</script></body></html>`);
+    assert.deepEqual(runtime.inspectTask(workspaceRoot, taskId).record.changes, []);
+    await page.goto(`${workspaceUrl}/tasks/${taskId}`);
+    await page.locator('[data-task-node=design]').click();
+    await page.locator('[data-task-tab=prototype]').filter({ hasText: '任务本机页面' }).click();
+    await page.frameLocator('#task-prototype-frame').locator('#local-prototype-heading').waitFor({ state: 'visible' });
+    await page.frameLocator('#task-prototype-frame').locator('#local-prototype-action').click();
+    assert.equal(await page.frameLocator('#task-prototype-frame').locator('#local-prototype-action').innerText(), '已切换');
+    await page.locator('#task-prototype-source summary').click();
+    assert.match(await page.locator('#task-prototype-source').innerText(), /任务原型[\s\S]*screen.html/);
+    assert.doesNotMatch(await page.locator('#task-prototype-source').innerText(), /null\/null/);
+    await page.locator('#prototype-notes-toggle').click();
+    await page.getByText('此页面属于当前任务，不要求关联规范变更。').waitFor({ state: 'visible' });
+    const [reader] = await Promise.all([page.waitForEvent('popup'), page.locator('#task-prototype-open-window').click()]);
+    await reader.waitForURL((opened: any) => new URL(opened).pathname.endsWith(`/tasks/${taskId}/prototypes`));
+    await reader.frameLocator('#task-prototype-frame').locator('#local-prototype-heading').waitFor({ state: 'visible' });
+    await reader.getByText('此页面属于当前任务，不要求关联规范变更。').waitFor({ state: 'visible' });
+    assert.equal(await reader.locator('#task-prototype-frame').getAttribute('sandbox'), 'allow-scripts');
+    await reader.close();
+    process.stderr.write('[buildr-browser] selector=task phase=task-local-prototype-verified\n');
+  });
+
   if (selected('task')) await t.test('任务列表筛选、编辑、冲突、终态确认与窄屏交互共享同一 Task Record', async () => {
     page.setDefaultTimeout(15000);
     page.setDefaultNavigationTimeout(15000);
@@ -1550,6 +1586,8 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     page.off('request',trackFocusReads);
     assert.deepEqual(focusReads, [], '返回浏览器不自动重读任务详情');
     assert.deepEqual(await page.locator('[data-task-node]').evaluateAll(nodes => nodes.map(node => node.getAttribute('data-task-node'))), ['requirements','design','implementation','closeout']);
+    assert.match(await page.locator('#task-node-content .markdown-body').innerText(), /验证 Task Record 页面/, '需求节点默认显示任务目标');
+    await page.locator('[data-task-artifact$="brief.md"]').click();
     await page.locator('#task-node-content .markdown-body').filter({ hasText: '普通用户先从这里了解变更' }).waitFor({ state: 'visible' });
     await page.locator('#task-node-content').getByRole('button',{name:'查看原文',exact:true}).click();
     assert.match(await page.locator('#task-node-content .markdown-reader-source').innerText(), /普通用户先从这里了解变更/);
@@ -1823,6 +1861,8 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.equal(await page.locator('#task-filter-q').inputValue(), '轻量查询');
     assert.equal(await page.locator('.pane-right #task-detail-main').isVisible(), true);
     assert.equal(await page.locator('.pane-stage:visible').count(), 1, '任务详情中没有嵌套副屏');
+    assert.match(await page.locator('#task-node-content .markdown-body').innerText(), /验证 Buildr Web 轻量查询客户端/, '需求节点默认显示任务目标');
+    await page.locator('[data-task-artifact$="brief.md"]').click();
     await page.locator('#task-node-content .markdown-body').filter({ hasText: '普通用户先从这里了解变更' }).waitFor({ state: 'visible' });
     assert.equal(await page.getByRole('link', {name:'查看关联变更',exact:true}).count(), 0, '节点正文不重复提供技术目录入口');
     assert.match(await page.locator('#task-detail-parent').innerText(), /浏览器协调任务[\s\S]*进行中/);
@@ -1886,6 +1926,8 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     fs.writeFileSync(path.join(worktreeProject, 'openspec/changes/browser-flow/brief.md'), '# 工作树的需求或说明\n\n独立文件系统中的最新需求。\n');
     await page.goto(`${workspaceUrl}/tasks/browser-task`);
     assert.equal(await page.locator('[data-task-node=requirements]').getAttribute('aria-pressed'), 'true');
+    assert.match(await page.locator('#task-node-content .markdown-body').innerText(), /验证 Task Record 页面/, '需求节点默认显示任务目标');
+    await page.locator('[data-task-artifact$="brief.md"]').click();
     await page.locator('#task-node-content .markdown-body').filter({ hasText: '独立文件系统中的最新需求' }).waitFor({ state: 'visible' });
     const prototypeFailureRoute = /\/tasks\/browser-task\/ui-prototypes(?:\?|$)/;
     await page.route(prototypeFailureRoute, async (route: any) => {
@@ -1898,6 +1940,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
       assert.equal((await prototypeFailure).status(), 500);
       await closeTaskReading(page); await page.locator('[data-task-node=requirements]').click();
       await page.locator('#task-detail-refresh:not(.ant-btn-loading)').waitFor({ state: 'visible' });
+      await page.locator('[data-task-artifact$="brief.md"]').click();
       assert.match(await page.locator('#task-node-content .markdown-body').innerText(), /独立文件系统中的最新需求/, '原型局部读取失败不能清空已读取的任务需求');
     } finally { await page.unroute(prototypeFailureRoute); }
     await page.locator('#task-detail-intent').getByRole('link', { name: '任务参考资料', exact: true }).click();
@@ -2018,6 +2061,8 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     }
     await page.setViewportSize({width:1280,height:720});
   });
+
+  if (selected('task')) await runTaskCommitsJourney({ t, page, runtime, workspaceRoot, workspaceUrl, expectedBrowserErrors, capture });
 
   if (selected('workbench')) await runWorkbenchJourney({ t, page, runtime, workspaceRoot, otherWorkspaceRoot: otherRoot, workspaceUrl, otherWorkspaceUrl: `${url}/workspaces/${otherWorkspaceId}`, expectedBrowserErrors, selectAntdOption, capture });
 

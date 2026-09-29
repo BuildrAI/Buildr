@@ -1,14 +1,17 @@
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Alert, Button } from "antd";
-import { MarkdownHost } from "../../../components/MarkdownHost";
+import { KnowledgeMarkdown } from './KnowledgeMarkdown';
 import { KnowledgeDiagram } from "./KnowledgeDiagram";
 import { KnowledgeTree } from "./KnowledgeTree";
 import { knowledgeBlocks, relatedFileTree } from "../knowledge-tree";
 import { resolveKnowledgePath } from "../knowledge-navigation";
+import { markdownHeadingCounts, markdownDocumentBody } from '../../../markdown';
+import '../../../components/markdown-reader.css';
 import type {
   KnowledgeResponse,
   KnowledgeScope,
   KnowledgeIndex,
+  KnowledgeReference,
 } from "../api/knowledge-api";
 type Artifact = NonNullable<KnowledgeResponse["artifacts"]>[number];
 export type ArtifactReaderProps = {
@@ -22,6 +25,8 @@ export type ArtifactReaderProps = {
   onSource: (id: string) => void;
   onOpen: (id: string) => void;
   onObject: (id: string) => void;
+  onReference: (reference: KnowledgeReference, title: string, fragment?: string) => void;
+  reference?: KnowledgeReference;
   embedded?: boolean;
   showTitle?: boolean;
   preserveHeading?: boolean;
@@ -39,21 +44,31 @@ export function KnowledgeArtifactReader(props: ArtifactReaderProps) {
     stack = [a.id],
   } = props;
   const current = useRef(props);
+  const [raw, setRaw] = useState(false);
+  useEffect(() => setRaw(false), [a.path]);
   current.current = props;
-  const markdown = (text: string, key: string) => (
-    <MarkdownHost
+  const body = markdownDocumentBody(a.content || '', !props.preserveHeading && a.kind !== 'diagram');
+  let headingCounts: Record<string, number> = body.headingCounts;
+  const markdown = (text: string, key: string) => {
+    const initialHeadings = headingCounts;
+    headingCounts = markdownHeadingCounts(text, headingCounts);
+    return (
+    <KnowledgeMarkdown
       key={key}
-      markdown={text}
-      className="markdown-body"
-      options={{
-        allowRelativeLinks: true,
-        allowParentRelativeLinks: true,
-        onRelativeLinkClick: (href) =>
-          current.current.onLink(a.path || "", href),
+      content={text} path={a.path || ''} workspaceId={workspaceId} scope={scope}
+      headingCounts={initialHeadings}
+      reference={props.reference || { kind: 'artifact', id: a.id, links: [] }}
+      onReference={props.onReference}
+      onLink={href => {
+        const path = resolveKnowledgePath(a.path || '', href);
+        if (!index?.artifacts.some(item => item.path === path) && !index?.sources.some(item => (item.link || item.path) === path)) return false;
+        current.current.onLink(a.path || '', href);
+        return true;
       }}
     />
-  );
-  const content = props.preserveHeading ? a.content || "" : (a.content || "").replace(/^# [^\n]*\n/, "");
+    );
+  };
+  const content = body.content;
   const title =
     a.kind === "diagram"
       ? "技术图（Technical Diagram）"
@@ -74,9 +89,10 @@ export function KnowledgeArtifactReader(props: ArtifactReaderProps) {
     .map(s => facts.find(candidate => candidate.kind === "skill" && candidate.skillId === s.skillId && candidate.path === "SKILL.md") || s);
   return (
     <article
-      className={`${embedded ? "knowledge-embedded" : "knowledge-artifact"}${a.kind === "code-map" ? " knowledge-code-map" : ""}`}
+      className={`${embedded ? "knowledge-embedded" : "knowledge-artifact"}${a.kind === "code-map" ? " knowledge-code-map" : ""}${a.kind === "diagram" ? " knowledge-diagram-artifact" : ""}`}
       data-knowledge-artifact={a.id}
     >
+      {body.anchor && <span id={body.anchor} className="knowledge-document-anchor" aria-hidden />}
       {(embedded || (showTitle && a.kind !== "diagram")) && (
         <header>
           <div>
@@ -90,8 +106,11 @@ export function KnowledgeArtifactReader(props: ArtifactReaderProps) {
           )}
         </header>
       )}
+      {!embedded && !props.preserveHeading && a.kind !== 'diagram' && <div className="markdown-reader-toolbar"><span>{a.path}</span><Button type="text" size="small" aria-pressed={raw} onClick={() => setRaw(value => !value)}>{raw ? '阅读模式' : '查看原文'}</Button></div>}
       {a.diagnostic ? (
         <Alert type="warning" message={a.diagnostic} />
+      ) : raw ? (
+        <pre className="markdown-reader-source">{a.content}</pre>
       ) : a.kind === "diagram" ? (
         <KnowledgeDiagram
           src={`/api/v1/workspaces/${encodeURIComponent(workspaceId)}/knowledge/${scope.kind}/${encodeURIComponent(scope.id)}/artifacts/${encodeURIComponent(a.id)}/view?v=${a.digest}${embedded ? "&embed=1" : ""}`}
@@ -109,11 +128,13 @@ export function KnowledgeArtifactReader(props: ArtifactReaderProps) {
               (item) =>
                 item.path === resolveKnowledgePath(a.path || "", match[2]),
             );
-            return linked && !stack.includes(linked.id) ? (
+            if (!linked) return markdown(chunk, String(i));
+            return !stack.includes(linked.id) ? (
               <KnowledgeArtifactReader
                 key={linked.id}
                 {...props}
                 artifact={linked}
+                reference={undefined}
                 embedded
                 preserveHeading={false}
                 stack={[...stack, linked.id]}

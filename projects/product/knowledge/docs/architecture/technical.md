@@ -1,122 +1,43 @@
-# Buildr 技术架构
+# Buildr 怎样实现
 
-Buildr Product 是本机优先的智能体工作系统，由 Buildr 后端 Service 与 Buildr Web 前端 Service 共同提供。当前实现采用能力模块、命名端口、贡献式 Host 和明确的数据写入权。
+本文帮助开发者判断改动属于哪里、会影响哪些事实，以及需要分别验证什么。Buildr 由三个服务（Service）协作：`services/buildr` 负责命令、业务能力、文件与 SQLite、本机网页托管和 Buildr npm 分发；`services/buildr-web` 负责 React 页面与交互；`services/dsh-plugin` 独立构建、验证和发布 DSH 桌面插件。三者共用一个 Git 代码库（Repository），各自维护版本与构建边界，沿用同一[产品术语表](../glossary.md)。
 
-## 技术图
+## 一次操作怎样到达真实数据
 
-- [Buildr 系统总览](../../archify/system/buildr-system-overview.html)
-- [能力、数据与副作用流](../../archify/flows/capability-data-responsibility.html)
-- [四层全项目代码地图](../../code-map/README.md)
+![调用、数据与副作用责任](../../archify/flows/capability-data-responsibility.html)
 
-## 服务边界
+一次写入从命令行接口（CLI）或网页进入所属应用用例。入口解析输入、展示结果；应用核对对象身份、已观察版本与业务条件；数据访问层（Persistence）读写所属文件或 SQLite。网页和命令入口使用同一应用，不各自保存一份任务状态或业务规则。诊断读取当前结果，不取得业务写入权。
 
-| Service | 当前责任 | 不负责 |
-|---|---|---|
-| `services/buildr` | CLI、本机 HTTP Host、产品模块、SQLite/YAML、安装与诊断、工程/发布入口 | React 页面状态与前端交互 |
-| `services/buildr-web` | React 页面、Feature 状态、HTTP 客户端、用户交互 | 后端业务规则、文件/SQLite writer、测试声明执行 |
+开发入口 `projects/product/buildr` 委托服务（Service）的薄入口；正式 npm 命令进入同一产品。开发检出不能覆盖 PATH 上的正式 `buildr`。网页由功能客户端发起请求，本机宿主处理会话（Session）、静态文件及分发，业务协议仍由所属模块维护。
 
-真实前后端组合的浏览器流程属于 Product 级端到端测试（End-to-End Test）；当前物理执行入口位于后端 Service 的验证宿主。
+请求分发前，主机（Host）必须与本机服务实际监听的地址和端口一致；页面、静态文件和业务读取共用该边界。写入另外校验来源与会话（Session），不能用一项校验代替其他保护。入口及模块定位见[服务与工程地图](../../code-map/system-services-assets.md)。
 
-## 后端结构
+## 职责怎样划分
 
-```text
-src/
-├── bootstrap/       模块登记与对象装配
-├── modules/         Workspace、Task、Agent Assets、Project Testing、OpenSpec、Installation、Diagnostics、Publication
-├── web/             本机 Web 进程、会话、静态托管与 HTTP contribution 分发
-└── infrastructure/  文件、路径、SQLite、Git、进程与产品资源等通用机制
-```
+后端启动装配、业务模块、本机网页宿主和通用技术机制各有边界。接口进入应用，再到领域判断或数据访问；领域层（Domain）不依赖上层或输入输出，应用层（Application）不解析终端参数，也不直接导入其他模块内部文件。模块只在存在真实职责时建立相应层次。
 
-`bootstrap/runtime.ts:createRuntime()` 创建技术 Runtime，并由 `module-registry.ts` 安装模块。业务能力通过 `runtimeProvide()` 按 capability id 获取；CLI、HTTP 和 diagnostics 通过 `runtimeContributions()` 聚合。生产 Runtime 不扁平注入业务方法。
+模块装配核对依赖顺序和提供者唯一性，以具名能力协作；确实需要延后连接时使用一次性绑定器（Binder），不恢复一个随处可写的全局业务对象。具体模块、连接点和一例完整调用见[模块内部地图](../../code-map/technical-layers.md)，本章不重复成员清单。
 
-Task↔Change、Agent Assets↔Diagnostics 的真实循环由一次性 Binder 完成晚绑定。资产模块内部以应用局部类型和具名函数显式连接真实协作，不再向应用注入共享可变对象。包资源解析属于资产 Repository，项目/服务登记修复属于 Workspace 应用；Doctor 与安装查询/更新的命令格式由所属接口负责。详见[内部代码地图](../../code-map/technical-layers.md)与[关键调用](../../code-map/calls-data-effects.md)。
+登记、资产同步、任务记录与个人偏好各有写入者。资产同步可以组合登记维护，却不取得登记的第二写入权；工作台（Workbench）聚合已有事实，也不因此拥有它们。用户项目测试声明用于发现与选择检查，不是 Buildr 的通用测试执行引擎。数据归属和本机状态见[数据设计](buildr-data-design.md)。
 
-## 模块与所有权
+前端按功能维护页面、业务请求和完整交互，应用壳只组合导航及真正跨页共享的状态。缓存页面、筛选或草稿不表示数据一直最新；编辑前仍需核对当前事实，保存时比较已观察版本。工作摘要（Work Context）中的答复不自动启动智能体（Agent），界面原型（UI Prototype）不能继承正式页面的写入能力。具体状态与隔离边界见[前端技术层](../../code-map/technical-layers.md#前端技术层)。
 
-| 模块 | 入口 | 核心所有权 |
-|---|---|---|
-| Workspace | `src/modules/workspace/module.ts` | Workspace/Project/Service、受管 mutation |
-| 任务（Task） | `src/modules/task/module.ts` | 任务记录（Task Record）、工作摘要（Work Context）、关系、审查、验证、父任务协调与工作树（Worktree） |
-| 工作台（Workbench） | `src/modules/workbench/module.ts` | 有界读取任务、摘要与已有每日演进，独立保存本机偏好；见[完整任务系统](task-system.md) |
-| Task Change | `src/modules/task/change/module.ts` | Task scope 的 Change 定位与展示组合 |
-| OpenSpec | `src/modules/openspec/module.ts` | 读取、相关冲突检查、上游规范处理接入和中断恢复 |
-| Agent Assets | `src/modules/agent-assets/module.ts` | Rule、Skill、Command、Component、Capability Binding、runtime projection |
-| Project Testing | `src/modules/project-testing/module.ts` | 用户 Project `verification.yml` 的 inspect/validate/update |
-| Installation | `src/modules/installation/module.ts` | npm installation、update、release awareness、正式 Launcher |
-| Diagnostics | `src/modules/diagnostics/module.ts` | 只读聚合与 Doctor 结果 |
-| Publication | `src/modules/publication/module.ts` | 文章与资源只读访问 |
+## 写入保护和失败边界
 
-每个模块按真实需要使用 `domain/`、`application/`、`persistence/`、`infrastructure/`、`interfaces/`。不要求空层，也不为相同字段机械制造镜像类型。
+| 对象 | 当前保护 | 不能据此推断什么 |
+| --- | --- | --- |
+| 任务记录与关系 | 同一 SQLite 事务（Transaction），写入比较记录摘要 | 数据库提交不证明 Git 或外部系统已经交付 |
+| 多个受管源文件 | 管理锁、操作记录、修改前镜像和恢复 | 不是跨进程、数据库和外部系统的全局事务（Transaction） |
+| 智能体（Agent）派生入口 | 文件清单、完整性和所有权回执（Ownership Receipt），冲突显式处理 | 内容相似不赋予覆盖或删除权限 |
+| OpenSpec 主规范 | 锁定上游生成、校验并写入，Buildr 回读并保留恢复依据 | 不承诺整个上游归档为原子写入 |
+| 本机实例与启动器（Launcher） | 产品身份、运行配置（Profile）及进程归属 | 名字或端口相同不证明属于当前安装 |
 
-## 主要调用链
+文件访问核对真实路径和作用范围，恢复前重新观察当前对象。局部失败只影响依赖它的动作；已经从 Git、文件或实际系统核实的交付，不因内部登记失败而被否定。数据位置与恢复条件集中在[数据设计](buildr-data-design.md)。
 
-### CLI
+## 一次构建怎样成为同一份产品
 
-```text
-bin/buildr.mjs → bootstrap/cli/main.ts → module CLI contribution
-               → Application → Domain / Repository / Infrastructure port
-```
+后端协议定义生成两端数据传输对象（DTO）；前端源码构建为后端托管的 `web-dist/`；文件资源按清单选入运行负载。正式安装消费打包后的运行文件、网页和资源，不要求完整源码树或 Vite 开发服务器。更新 Buildr 因而包含网页，但正在运行的旧实例和工作空间（Workspace）采用结果仍需分别确认。
 
-### Buildr Web
+工程工具属于 `tools/`，普通生成结果属于被 Git 忽略的 `build/` 和 `web-dist/`。正式用户命令不加载开发工具；`buildr package check` 需要开发检出，不能作为安装后健康检查。测试库、协议生成与打包来源见[构建与消费地图](../../code-map/system-services-assets.md#构建与消费)，资源边界见[命令架构](../../../services/buildr/docs/cli-architecture.md#文件型交付资源)。
 
-```text
-React feature → feature/shared API client → web/http/router.ts
-              → module HTTP contribution → Application → data owner
-```
-
-### Agent runtime 投射
-
-```text
-Agent Assets Application → Capability Graph / manifest Repository
-                         → runtime adapter + projection plan
-                         → Agent native files + ownership receipt
-```
-
-## 数据与写入权
-
-| 当前事实 | Owner | 存储 |
-|---|---|---|
-| Workspace identity、Project/Service registry | Workspace | `.buildr/workspace.yml`、各 Manifest |
-| Project daily progress | Task / daily-progress | `.buildr/daily-progress/` |
-| Task Record、关系、Review、Verification | Task | Workspace SQLite |
-| Agent Assets manifests 与 Capability Graph | Agent Assets | Rule/Skill/Command/Component 源资产 |
-| Agent runtime projection | Agent Assets | Agent 文件与 `.buildr/agent-runtime/` receipt |
-| Project testing declaration | Project Testing | `projects/<project>/verification.yml` |
-| OpenSpec canonical | OpenSpec | `openspec/specs/`、Change receipt/recovery |
-| npm installation 与 Launcher | Installation | Product data root 与平台入口 |
-
-Doctor、Web Host、Bootstrap 和 Buildr Web UI 都不是这些数据的第二 writer。
-
-## 工程、资源与发布
-
-- Node.js 固定为 `24.15.0` 开发基线；TypeScript 使用严格检查和 NodeNext。
-- HTTP Schema 属于后端业务模块；`tools/codegen/contracts/` 生成两端 DTO。
-- Development Launcher 位于 `tools/build/launcher/`；Agent runtime 文件型源位于 `resources/runtime/`。
-- `build/` 保存生成类型与公开测试库；`web-dist/` 保留前端构建兼托管产物，两者均被 Git 忽略。`package/` 已无职责。
-- Application Payload 根据依赖闭包和 manifest 构建；`package.json#files` 决定 npm 文件清单。
-- Buildr 自测调度位于 `test/verification/`；产品 `project-testing` 模块只管理用户 Project 测试声明。
-
-## 前端结构
-
-Buildr Web 以 `src/features/<capability>/` 组织页面、组件、Hooks 和专用 API。`src/api/` 只保留共享 transport、Local Session 与请求上下文；`src/app/` 只组合应用壳。Publication、Installation 和 Task Change 已分别归入对应 Feature，不再把业务页面堆在 `src/pages/`。
-
-## 安全与一致性不变量
-
-- Workspace 多文件写入使用管理锁、mutation journal 和恢复。
-- Task 主记录与关系使用同一 SQLite 事务；条件写入比较 `recordDigest` 或报告 digest。
-- OpenSpec 先 projected strict validation，再比较 expected bytes 并原子应用。
-- 文件写入使用安全 canonical path、staging 与原子替换。
-- Agent runtime projection 使用 ownership receipt，冲突显式失败。
-- Web instance 与 Launcher 按 identity/profile 隔离，不接管未知进程或入口。
-- 局部错误不扩大为无关能力失败，也不否定已经成立的权威事实。
-
-## 验证边界
-
-后端 Service 证明业务、数据、协议、进程和安装；前端 Service 证明渲染、交互、状态和客户端；Product browser/system suite 证明真实组合流程。Candidate 另外证明生成、Application Payload、npm pack 和正式入口。
-
-## 深入阅读
-
-- [服务分层与模块组织](service-architecture.md)
-- [CLI 与模块架构](../../../services/buildr/docs/cli-architecture.md)
-- [文件型交付资源](../../../services/buildr/docs/resources.md)
-- [全项目代码地图](../../code-map/README.md)
+开发环境由[准备声明](../../../preparation.yml)、[Node.js 版本](../../../.node-version)和对应服务（Service）的包清单确定。类型检查、逻辑测试、真实页面交互、安装包消费和目标平台证据分别证明不同边界；构建通过不能替代其他验收。日常按改动选择已有检查，正式发布另行固定源码、完整候选（Candidate）和唯一产物，见[产品验证](verification-framework.md)与[发布流程](../flows/open-source-release.md)。

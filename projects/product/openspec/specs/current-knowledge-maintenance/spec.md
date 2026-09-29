@@ -15,7 +15,7 @@ Buildr Project MUST 允许在 Product 根 `knowledge/` 按 `docs/overview.md`、
 
 #### Scenario: 产品与技术架构同时存在
 - **WHEN** Project 已有产品架构和技术架构文档
-- **THEN** `knowledge/docs/architecture/index.md` MUST 提供面向人的架构摘要和两个稳定入口
+- **THEN** `knowledge/README.md` 或职责等价的统一知识入口 MUST 提供面向人的产品与技术理解入口；内容重复或仅作跳转的文件 MAY 合并，不要求单独维护架构目录文件
 - **AND** 产品架构 MUST 负责用户、角色、业务能力、领域模块、产品边界和信息架构，技术架构 MUST 负责系统、Service、模块、数据、接口依赖和运行边界
 
 #### Scenario: 核心流程横跨产品与技术视角

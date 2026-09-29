@@ -50,7 +50,7 @@ test('CLI identity remains native TypeScript and the old path is retired', () =>
 
 test('source-tree JavaScript is limited to public facades and compatibility fixtures', () => {
   const scan: any = (directory: any, relative = ''): any[] => fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry: any) => {
-    if (entry.isDirectory() && ['node_modules', 'targets'].includes(entry.name)) return [];
+    if (entry.isDirectory() && ['build', 'node_modules', 'targets'].includes(entry.name)) return [];
     const childRelative: any = relative ? `${relative}/${entry.name}` : entry.name;
     const child: any = `${directory}/${entry.name}`;
     // Pinned upstream distribution, validated by the component integrity and lifecycle checks.

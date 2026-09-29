@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { getRuntimeAdapter, REQUIRED_RENDER_CAPABILITIES } from './adapter-contract.ts';
+import { withExclusiveFileLock } from '../../../../infrastructure/filesystem/exclusive-file-lock.ts';
 import {
   runtimeFileMatches,
   sha256Integrity,
@@ -64,6 +65,7 @@ export function validateRuntimePlan(plan: any, adapter: any = getRuntimeAdapter(
     if (item.commitLast !== undefined && typeof item.commitLast !== 'boolean') errors.push(`runtime write commitLast must be boolean: ${item.targetFile}`);
     if (item.previousIntegrity !== undefined && !/^sha256-[a-f0-9]{64}$/.test(item.previousIntegrity)) errors.push(`runtime write previous integrity is invalid: ${item.targetFile}`);
     if (item.previousExecutable !== undefined && typeof item.previousExecutable !== 'boolean') errors.push(`runtime write previous executable is invalid: ${item.targetFile}`);
+    if (item.observedState !== undefined && (typeof item.observedState?.exists !== 'boolean' || (item.observedState.exists && (!/^sha256-[a-f0-9]{64}$/.test(item.observedState.integrity) || typeof item.observedState.executable !== 'boolean')))) errors.push(`runtime write observed state is invalid: ${item.targetFile}`);
     const existing = writes.get(path.resolve(item.targetFile));
     const identity = JSON.stringify([item.contentEncoding || 'utf8', item.content, item.mode ?? null]);
     const existingIdentity = existing && JSON.stringify([existing.contentEncoding || 'utf8', existing.content, existing.mode ?? null]);
@@ -142,6 +144,12 @@ function diagnosticFinding(item: any, observedStatus: any, plan: any, detail: an
   };
 }
 
+export function withRuntimeProjectionLock(targetRoot: any, callback: () => any): any {
+  const lockFile = path.join(targetRoot, '.buildr', 'agent-runtime', 'projection.lock');
+  assertRuntimeTargetPath(targetRoot, lockFile, 'Runtime projection lock');
+  return withExclusiveFileLock(lockFile, targetRoot, callback);
+}
+
 export function reconcileRuntimePlan(plan: any, options: any = {}): any  {
   validateRuntimePlan(plan);
   const snapshotRuntimePlanTargets = () => {
@@ -183,7 +191,12 @@ export function reconcileRuntimePlan(plan: any, options: any = {}): any  {
   const changed: any[] = [];
   const removed: any[] = [];
   for (const item of plan.writes) {
-    if (!fs.existsSync(item.targetFile)) continue;
+    const exists = fs.existsSync(item.targetFile);
+    if (item.observedState && (exists !== item.observedState.exists || (exists && !runtimeFileMatches(item.targetFile, item.observedState.integrity, item.observedState.executable)))) {
+      conflicts.push(item);
+      continue;
+    }
+    if (!exists) continue;
     const current = fs.readFileSync(item.targetFile);
     const expected = runtimeWriteBuffer(item);
     const modeMatches = runtimeWriteModeMatches(item.targetFile, item);
@@ -194,7 +207,9 @@ export function reconcileRuntimePlan(plan: any, options: any = {}): any  {
     const previousMatches = item.previousIntegrity
       ? runtimeFileMatches(item.targetFile, item.previousIntegrity, item.previousExecutable)
       : false;
-    if (!matches && !sourceMatches && !previousMatches && item.isManaged) {
+    if (item.strictOwnership === true && !previousMatches) {
+      conflicts.push(item);
+    } else if (!matches && !sourceMatches && !previousMatches && item.isManaged) {
       const managedInput = currentText === null ? current : currentText;
       if (!item.isManaged(managedInput)) conflicts.push(item);
     }
@@ -210,9 +225,12 @@ export function reconcileRuntimePlan(plan: any, options: any = {}): any  {
   if (!compareOnly && plannedConflicts.length > 0) {
     throw new Error(`Runtime reconcile found conflict(s); no files were changed:\n- ${plannedConflicts.map((finding: any) => finding.message || finding.path).sort().join('\n- ')}`);
   }
-  const rollback = !compareOnly && plan.removals.some((item: any) => typeof item !== 'string' && item.kind === 'legacy-skill-projection-ownership-receipt')
-    ? snapshotRuntimePlanTargets()
-    : null;
+  const skillMutation = [...plan.writes, ...plan.removals].some((item: any) => typeof item !== 'string' && (item.strictOwnership === true || item.kind?.includes('skill-projection') || item.kind === 'skill-stale-file'));
+  if (!compareOnly && skillMutation && options.projectionLockHeld !== true) {
+    // First preflight above is zero-write; reobserve under the shared target lock.
+    return withRuntimeProjectionLock(plan.targetRoot, () => reconcileRuntimePlan(plan, { ...options, projectionLockHeld: true }));
+  }
+  const rollback = !compareOnly && skillMutation ? snapshotRuntimePlanTargets() : null;
   const reconcileWrite = (item: any) => {
     if (conflicts.includes(item)) return;
     const current = fs.existsSync(item.targetFile) ? fs.readFileSync(item.targetFile) : null;

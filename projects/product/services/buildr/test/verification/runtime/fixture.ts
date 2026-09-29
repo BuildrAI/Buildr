@@ -64,7 +64,7 @@ export class RuntimeVerificationHarness {
 
   initializeSeed(name: any, prefix: any = 'buildr-runtime-seed-'): any  {
     const workspace: any = this.createTemporaryDirectory(prefix);
-    this.run(['init', '--target', workspace, '--name', name]);
+    this.run(['init', '--source-only', '--target', workspace, '--name', name]);
     return workspace;
   }
 

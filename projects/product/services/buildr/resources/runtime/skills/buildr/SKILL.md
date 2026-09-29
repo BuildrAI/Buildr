@@ -11,15 +11,15 @@ Agent 是 Buildr 功能的默认操作入口。在用户目标和已有授权内
 ## 执行与按需读取
 
 1. 确认目标工作空间（Workspace）；未指定时从当前目录定位组织根，`--target` 不指向服务（Service）代码仓。
-2. `<agent>` 使用当前宿主的明确身份，通过 `buildr runtime list --json` 核对支持；用户指定其他运行时（Runtime）时遵从其选择。不得从技能路径、生成标记或 Doctor 检测结果推断宿主。无法对齐时只停止依赖 `<agent>` 的动作，不借用其他适配器（Adapter）。
+2. `<agent>` 使用当前宿主的明确身份；用户指定其他运行时（Runtime）时遵从其选择。不得从技能路径、生成标记或 Doctor 检测结果推断宿主。身份未知可省略；`codex`、`dsh` 及未登记的有效品牌采用 `agents-standard`，已知专用例外保留。按需用 `buildr runtime list --json` 核对文件约定，而非等待品牌登记。显式 `--adapter` 必须存在；执行失败不借用其他适配器（Adapter）。
 3. 已初始化且本次维护需要现状时，运行一次 `buildr doctor --agent <agent> --target <dir> --json`；已有同一现场的诊断直接复用。首次初始化按下表办理，不先制造缺失诊断。
 4. 选择下表对应动作；采用内部流程、调整工作方式、修改或替换 Skill 行为时，先加载 `capability-adaptation` 判断是否触达或产生跨 Skill 稳定依赖边界。
-5. 写入后消费最新 Doctor 结果：`init --agent`、`sync`、组件（Component）安装或卸载已包含最终诊断；其他资产写入后再运行 Doctor。只有诊断指向专项问题或用户要求细查时追加 `commands check` 或 `runtime check`。
+5. 写入后消费最新 Doctor 结果：完整 `init`、`sync`、组件（Component）安装或卸载已包含最终诊断；其他资产写入后再运行 Doctor。只有诊断指向专项问题或用户要求细查时追加 `commands check` 或 `runtime check`。文件准备成功不证明宿主安装、发现或当前会话激活已经验证。
 
 | 当前目标 | 读取与动作 |
 |---|---|
 | 安装、检查或更新 Buildr | [安装与更新](references/asset-maintenance.md#安装与更新)；不猜目标工作空间（Workspace） |
-| 初始化工作空间（Workspace） | `buildr init --agent <agent> --target <dir> --name <name> --profile <personal\|team\|company>`；使用内置最终 Doctor，首次使用交接见 [资产维护](references/asset-maintenance.md#workspace--organization-root) |
+| 初始化工作空间（Workspace） | `buildr init --agent <agent> --target <dir> --name <name> --profile <personal\|team\|company>`；身份未知可省略 `--agent`，默认完整准备标准或唯一既有方式，使用内置最终 Doctor。仅源资产使用 `init --source-only`；首次使用交接见 [资产维护](references/asset-maintenance.md#workspace--organization-root) |
 | 更新或同步工作空间（Workspace），或处理检出内容变化 | [工作空间更新与检出变化](references/asset-maintenance.md#工作空间更新与检出变化) |
 | 项目（Project）、服务（Service）、代码库实例（Repository Instance）、规则（Rule）、技能（Skill）、命令（Command）、组件（Component）或内置能力（Builtin）维护 | 按对象读取 [资产维护](references/asset-maintenance.md) 中对应小节；涉及组件（Component）成员时先核对整体所有权 |
 | 投射、发现或适配器（Adapter）问题 | 读取 [运行时维护](references/runtime.md)；只检查当前目标运行时（Runtime） |
@@ -52,4 +52,4 @@ Agent runtime 先根据 Skill description 和用户目标发现入口 Skill。�
 
 报告实际修改、验证、投射范围与遗留。复用当前动作已返回的诊断，不重复执行；存在相关错误时不能宣称该动作完成。仅将本次目标要求的长期信息写回对应源资产。
 
-入口不可用或运行时（Runtime）损坏时使用 `buildr bootstrap guide`。
+产品入口未被发现或投射损坏时，按[运行时维护](references/runtime.md#入口恢复)定位问题；当前离线参数以命令帮助为准。

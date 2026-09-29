@@ -1,4 +1,4 @@
-import { SUPPORTED_AGENT_IDS, getRuntimeAdapter } from '../infrastructure/runtime/adapter-contract.ts';
+import { SUPPORTED_AGENT_IDS, getRuntimeAdapter, resolveRuntimeAdapter } from '../infrastructure/runtime/adapter-contract.ts';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import path from 'node:path';
@@ -246,7 +246,8 @@ export function registerApplicationPackageMaintenance(dependencies: PackageMaint
       const isRestore = restoreId === builtin.id;
       const isNew = !existing;
       const isUninstalled = existing?.state === 'uninstalled' || existing?.enabled === false;
-      const desired = builtinSkillEntry(builtin);
+      const predecessor = builtin.replaces ? skillsById.get(builtin.replaces.id)?.skill : null;
+      const desired = builtinSkillEntry(builtin, existing || predecessor);
       const newSnapshot = builtinSnapshot(sourceDir, 'skill');
       const liveSnapshot = builtinSnapshot(targetDir, 'skill');
       if (handleSkillReplacement({ builtin, changed, checkOnly, desired, existing, findings, isRestore, liveSnapshot, newSnapshot, receiptByKey, removeDirectory: (directory: any) => fs.rmSync(directory, { recursive: true, force: true }), removeReceipt, restoreOutcomes, skillsById, skillsManifest, sourceDir, targetDir, updateReceipt, targetRoot })) continue;
@@ -355,6 +356,7 @@ export function registerApplicationPackageMaintenance(dependencies: PackageMaint
     existsFile,
     fs,
     getRuntimeAdapter,
+    resolveRuntimeAdapter,
     optionValue,
     path,
     positionalArgs,

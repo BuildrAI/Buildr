@@ -1,15 +1,17 @@
 import { Button } from 'antd';
 import type { ArtifactReaderProps } from './KnowledgeArtifactReader';
 import { KnowledgeBrowser } from './KnowledgeBrowser';
-import type { KnowledgeIndex, KnowledgeScope } from '../api/knowledge-api';
+import type { KnowledgeIndex, KnowledgeScope, KnowledgeReference } from '../api/knowledge-api';
 
 export type KnowledgePane = {
   key: string;
-  kind: 'artifact' | 'source';
+  kind: 'artifact' | 'source' | 'reference';
   id: string;
   title: string;
   origin: string;
   description?: string;
+  reference?: KnowledgeReference;
+  fragment?: string;
   observation?: {
     revision: string | null;
     sources: { id: string; digest: string | null; status: string }[];
@@ -34,6 +36,7 @@ export function KnowledgeReadingPane({ pane, scope, refresh, reader, onPrimary, 
     <KnowledgeBrowser workspaceId={reader.workspaceId} scope={scope} refresh={refresh}
       initialArtifactId={pane.kind === 'artifact' ? pane.id : undefined}
       initialSourceId={pane.kind === 'source' ? pane.id : undefined}
+      initialReference={pane.reference} initialFragment={pane.fragment}
       sourceDescription={pane.description}
       onObserved={data => {
         if (data.index) onIndex(data.index);

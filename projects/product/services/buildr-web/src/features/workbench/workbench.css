@@ -16,7 +16,7 @@
 .workbench-loading{display:grid;gap:26px}
 .workbench-attention{margin-bottom:28px}
 .workbench-attention-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:13px}
-.workbench-attention-card{border:1px solid var(--soft-line);border-radius:10px;padding:16px 17px 13px;display:flex;flex-direction:column;min-width:0;background:#fff;transition:border-color 140ms ease,box-shadow 140ms ease}
+.workbench-attention-card{border:1px solid var(--soft-line);border-radius:10px;padding:16px 17px 13px;display:flex;flex-direction:column;min-width:0;background:#fff;cursor:pointer;transition:border-color 140ms ease,box-shadow 140ms ease}
 .workbench-attention-card:hover{border-color:#c6d5cd;box-shadow:0 4px 16px #244f3910}
 .workbench-attention-top{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:13px}
 .workbench-attention-top>.anticon{font-size:13px;color:#88988e}
@@ -36,7 +36,7 @@
 .workbench-main-stack{display:flex;flex-direction:column;gap:28px;min-width:0}
 .workbench-rail{min-width:0}
 .workbench-task-list{border:1px solid var(--soft-line);border-radius:10px;overflow:hidden}
-.workbench-task-row{display:flex;align-items:flex-start;gap:12px;padding:16px 17px;border-bottom:1px solid #edf1ee;min-width:0;background:#fff}
+.workbench-task-row{display:flex;align-items:flex-start;gap:12px;padding:16px 17px;border-bottom:1px solid #edf1ee;min-width:0;background:#fff;cursor:pointer}
 .workbench-task-row:last-child{border-bottom:0}
 .workbench-task-row:hover{background:#fafcfb}
 .workbench-task-status-symbol{color:#719b87;flex:none;font-size:16px;line-height:22px}

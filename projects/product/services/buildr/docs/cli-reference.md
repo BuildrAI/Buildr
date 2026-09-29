@@ -1,10 +1,14 @@
 # Buildr CLI Reference
 
-本文列出 Buildr 0.1.x 的公开命令和稳定用途。以 `buildr <topic> --help` / `buildr help <topic>`、`buildr runtime list --json` 和 `buildr doctor --agent <agent> --json` 的当前输出为最终参数事实。
+本文说明 Buildr 0.1.x 的安装入口、公开命令与适用边界；文档版本不证明正式版已经发布。以 `buildr <topic> --help` / `buildr help <topic>`、`buildr runtime list --json` 和 `buildr doctor --agent <agent> --json` 的当前输出为最终参数事实。
 
-支持 `--json` 的命令在顶层输出 `schemaVersion`。该字段及兼容规则见 [公开 JSON 契约](json-contracts.md)；消费者应按 schema identity 判断格式，而不是依赖未声明的内部实现。
+安装包保留本文供离线查阅，入口失效时先看[安装与恢复](#入口不可用与恢复)。其他文档及源码链接需要仓库或网络，不承诺全部随包交付。
 
-根帮助从同一 command catalog 按四层显示：`primary` 是普通工作主路径，`agent-machine` 是 Agent/Skill 依赖的稳定机器接口，`maintenance` 是产品构建、开发预览和 workflow，`legacy` 是兼容窗口内仍保留且带 replacement 的入口。Surface 不是授权边界；每个 retained executable route 都可通过 canonical topic 查询帮助。
+支持 `--json` 的命令在顶层输出 `schemaVersion`。该字段及兼容规则见 [公开 JSON 契约](../../../knowledge/docs/reference/json-contracts.md)；消费者应按 schema identity 判断格式，而不是依赖未声明的内部实现。
+
+标准默认接入使用 `buildr.runtime-list/v3` 与 `buildr.doctor/v2`：前者区分文件适配器（Adapter）清单、运行时身份映射和宿主资料（Host Profile），只登记 `agents-standard` 与已注册例外 `claude-code`；后者分别报告请求身份与实际文件约定，标准检查结果位于 `runtime.agentsStandard`，不再位于旧 `runtime.codex`。这是非加法的格式变更，旧消费者必须先识别版本并调整解析；不能把共享标准结果解释为 Codex 或任意宿主已安装、已加载。
+
+根帮助从同一命令目录（Command Catalog）按三层显示：`primary` 是普通工作主路径，`agent-machine` 是 Agent/Skill 依赖的稳定机器接口，`maintenance` 是产品构建、开发预览和 workflow；已删除的命令不另设兼容分区。Surface 不是授权边界；每个 retained executable route 都可通过 canonical topic 查询帮助。
 
 ## CLI identity、帮助与错误
 
@@ -19,13 +23,21 @@
 
 ### 安装 Buildr
 
-首次安装从 npm 官方仓库获取 `@buildr-ai/buildr`，可用版本与 `next` 指向以该仓库为准：
+当前产品要求运行它的 Node.js 满足 `>=24.15.0 <25`；安装包不会自动下载替代版本。工作空间（Workspace）声明的受管 Node.js 只供该范围拥有的子进程使用，不能替代产品的安装要求。先检查 `node --version` 和 `npm --version`，再查询 npm 官方仓库：
 
 ```bash
-npm install --global @buildr-ai/buildr@next
+npm view @buildr-ai/buildr dist-tags --json --registry https://registry.npmjs.org/
+```
+
+正式版轨道（Stable Track）对应 `latest`，候选版轨道（Candidate Track）对应 `next`。检查标签指向的实际版本：若 `latest` 仍带预发布标识，就不能报告已有正式版。按用户选择使用确切版本；已有选择和授权在相同范围继续适用，不自动切轨或降级。
+
+将 `<version>` 替换为已查实的版本，再检查该版本的 Node.js 要求并安装：
+
+```bash
+npm view "@buildr-ai/buildr@<version>" version engines --json --registry https://registry.npmjs.org/
+npm install --global "@buildr-ai/buildr@<version>" --registry https://registry.npmjs.org/
 buildr --version
 buildr installation status --json
-buildr bootstrap guide
 ```
 
 安装包包含命令行工具（CLI）与 Buildr Web。用户明确需要 macOS 或 Windows 的本机图形入口时，再安装 Buildr Web 启动器（Launcher），将其绑定到同一 npm 安装：
@@ -40,7 +52,7 @@ buildr web launcher install
 
 ### 确认目录并初始化
 
-安装后读取 `buildr bootstrap guide` 的当前说明，向用户确认目标目录；用户也可以在智能体（Agent）工具中打开目录后要求初始化。核对当前智能体（Agent）的身份与支持情况：
+安装后核对用户已经明确的目标目录；目标有歧义时才询问。用户也可以在智能体（Agent）工具中打开目录后要求初始化。核对当前智能体（Agent）的身份与支持情况：
 
 ```bash
 buildr runtime list --json
@@ -52,7 +64,9 @@ buildr runtime list --json
 buildr init --agent "<agent>" --target "<dir>" --name "<name>" --description "<description>" --profile "<profile>"
 ```
 
-`init --agent` 会先初始化源资产，再复用完整 `sync`，为当前智能体（Agent）安装或更新 Buildr 技能（Skill）、投射当前工作空间（Workspace）的内容，并给出最终诊断。根据实际结果确认准备状态，再引导用户维护项目（Project）、按需关联服务（Service），开始第一项工作。`init` 与 `sync` 不隐式安装用户级技能（Skill）。
+`init` 默认先初始化源资产，再复用完整 `sync`，安装或更新 Buildr 技能（Skill）、投射当前工作空间（Workspace）的内容并给出最终诊断。已知身份使用 `--agent`；未知身份可省略，保留唯一既有接入方式，没有既有方式时采用 `agents-standard`。多个不等价方式要求明确选择。仅需源资产时使用 `buildr init --source-only --target "<dir>"`；`--source-only` 与 `--agent`、`--adapter` 互斥。
+
+`--adapter <adapter-id>` 显式选择文件约定，不替换真实品牌身份；未知适配器（Adapter）、非法品牌或互斥参数都在写入前失败。已选实现失败时保留错误，不切换其他实现，也不以纯源资产结果冒充完整初始化。根据最终结果继续项目（Project）、服务（Service）和第一项工作。`init` 与 `sync` 不隐式安装用户级技能（Skill），文件准备成功也不证明当前会话已加载。
 
 ### 打开 Buildr Web
 
@@ -70,7 +84,7 @@ buildr web --target "<dir>"
 
 已有安装与工作空间（Workspace）的更新，按当前 Buildr 技能（Skill）处理。更新产品与更新工作空间（Workspace）是不同动作，不能以其中一项代替另一项；不要自行切换已选版本轨道或降级。
 
-Skill 文件仍写入目标 Agent 的原生 Skills root。Buildr 为这些文件保存的所有权回执属于 `.buildr/agent-runtime/<workspace|user>/<adapter>/skill-projection-ownership-receipts/` 本机控制状态，并由 `init`、`sync`、`skills render` 和 Doctor 统一维护；`/.buildr/agent-runtime/` 默认忽略 Git。旧 runtime-root 回执只作为一次性迁移输入，有效且能证明当前文件时自动迁移，冲突或漂移时零写入停止。
+标准技能（Skill）目标采用一级 `.agents/skills/<skill-id>/SKILL.md`，保留源目录及随附文件的相对路径。所有权回执（Ownership Receipt）属于 `.buildr/agent-runtime/<workspace|user>/<ownership-id>/skill-projection-ownership-receipts/` 本机控制状态；标准共享根（包括 Cursor/TRAE 技能）统一归属 `agents-standard`，专用规则（Rule）保持独立。旧品牌或旧运行时根内回执（Receipt）及嵌套受管目录仅在身份、完整内容、权限和目标安全均可证明时迁移；冲突、漂移、额外未知文件时整组零写入。迁移后不要用旧版 Buildr 继续管理；回退需要完整的操作前文件与回执（Receipt）备份。
 
 `buildr update` 只更新安装回执（Installation Receipt）证明的当前 npm 安装或开发检出（Development Checkout）：前者更新同一安装位置中的软件包，后者按 Git 状态更新源码；来源不明时停止。它不接收 `--target`，不负责同步工作空间（Workspace）。
 
@@ -78,35 +92,58 @@ Skill 文件仍写入目标 Agent 的原生 Skills root。Buildr 为这些文件
 
 `buildr sync` 同步当前本地工作空间（Workspace）的产品源能力，安装产品入口技能（Skill），投射当前智能体运行时（Agent Runtime）并执行最终诊断（Doctor）；它不隐式更新 Git 或 Buildr 产品安装。
 
-## Workspace 与资产
+### 入口不可用与恢复
 
-`buildr assets project-candidates --target <workspace> --json` 只读列出 `projects/` 内尚未登记的直接子目录及目录观察版本。使用 `buildr assets register project --target <workspace> --input <json-file> --json` 登记选择结果；输入包含 `revision`、`code`、`name`、`observation`，可选 `description` 和 `serviceIds`。写入重验清单与目录身份，只保存登记和明确选择的服务，不补写目录文件，也不自动恢复已移除项目的身份和历史关系。
+命令帮助可离线使用，不依赖工作空间（Workspace）已经初始化。`buildr help init`、`buildr help skill install`、`buildr help sync` 和 `buildr help mutation recover` 分别说明当前参数；首次安装仍以前文 npm 入口为准，联网失败时不要猜测版本。
 
-`buildr assets service-candidates` 与 `repository-candidates` 分别列出服务目录和真实代码库根的未登记候选。服务创建输入可用 `directoryMode: existing`、`directoryPath`、`directoryObservation` 登记原目录，或 `directoryMode: create`、`projectCode` 在项目 services/ 下新建；旧 repositoryId/modulePath 输入保持兼容。代码库候选用 path/observation 提交。
+| 当前问题 | 恢复依据与完成条件 |
+|---|---|
+| 命令无法启动 | 核对实际 Node.js 与安装包 `engines.node`；按前文安装入口修复。能输出 `buildr --version` 和 `installation status --json` 后再处理工作目录。 |
+| 产品入口技能（Skill）缺失或未发现 | 先确认宿主身份和 `runtime list --json` 支持情况，再运行 `buildr skill install <agent> --target <dir>`；按该工具要求刷新或开始新会话。投射成功不等于当前对话已加载。 |
+| 初始化中断，或工作空间（Workspace）投射过期 | 保留已经初始化的源资产；按诊断修复具体问题后运行 `buildr sync <agent> --target <dir>`，消费其最终诊断（Doctor），不重复初始化。 |
+| 源资产写入事务中断 | 读取诊断给出的事务标识和当前 `mutation recover` 帮助，只对有完整日志及备份的确切事务恢复；不手工删除锁或猜测半完成状态。 |
+| 启动器（Launcher）无法打开网页 | 用 `buildr installation status --json` 和 `buildr web launcher status` 核对绑定；按诊断选择 `repair`，不把网页未刷新误判为安装包未更新。 |
 
-`buildr assets remove <project|service|repository> <id> --target <workspace> --input <json-file> --json` 只取消登记，保留文件；代码库仍被服务引用时拒绝移除。旧 `assets delete` 是相同的兼容入口，不删除文件。`skills remove` 同样保留源目录；组件成员沿既有组件维护边界处理。
+需要独立诊断时明确传入 `buildr doctor --agent <agent> --target <dir> --json`；`init --agent` 或 `sync` 已返回同一现场的最终诊断（Doctor）时直接复用。未确认宿主时只暂停依赖该运行时（Runtime）的动作，不借用其他适配器（Adapter），也不扩大为所有工作都不能继续。
+
+## 工作空间（Workspace）与资产
+
+当前全局模型分别登记项目（Project）、服务（Service）和代码库实例（Repository Instance）。项目（Project）通过 `serviceIds` 引用服务（Service），服务（Service）通过 `repositoryId` 引用一个实例；实例保存实际代码位置和 Git 来源，可承载多个服务（Service）。目录嵌套不决定业务归属，写入登记也不代表代码已准备。
+
+```bash
+buildr assets inspect --target "<workspace>" --json
+buildr help assets
+```
+
+`inspect` 返回当前对象、引用、`revision` 和 `migrationRequired`。当前初始化仍可能返回需要迁移的清单；`migrationRequired: true` 时，核对返回的对象与重名问题，准备 `{"revision":"<刚读取的 revision>"}`，通过 `buildr assets migrate --target "<workspace>" --input "<json-file>" --json` 显式迁移，再使用返回的新版本。旧服务（Service）重名时还需提供明确的 `codeMappings`；迁移不搬动代码，不按相同地址合并不同代码库实例（Repository Instance）。
+
+`buildr help assets` 与 `buildr assets --help` 提供当前动作的输入字段、目录观察要求和最小示例，可离线读取。写入使用 `--input <json-file>`，提交刚读取的版本和明确选择；版本冲突后重新读取并核对，不盲目重复写入。
+
+项目（Project）关联必须提交完整的 `serviceIds`，解除关联保留服务（Service）和代码。已有目录先读取相应的 `*-candidates`，再提交候选的观察值；目录变化时重新核对。登记只保存身份与来源，不执行克隆、拉取、切换分支或搬迁。`assets remove` 和兼容的 `assets delete` 都只取消登记；代码库仍被服务（Service）引用时拒绝移除。
 
 | 命令 | 用途 |
 |---|---|
-| `buildr init [--agent <agent>]` | 初始化工作空间（Workspace）源资产；传入 `--agent` 时继续完整同步，安装产品入口技能（Skill）、投射智能体运行时（Agent Runtime）并执行最终诊断（Doctor）。 |
+| `buildr init [--agent <agent>] [--adapter <adapter-id>]` | 默认初始化源资产并完整同步标准或已选文件约定，安装产品入口技能（Skill）、投射并执行最终诊断（Doctor）。仅源资产使用互斥的 `--source-only`。 |
 | `buildr web [--target <workspace>] [--no-open]` | 启动或复用只监听 `127.0.0.1` 的默认本机 Web 应用；默认打开浏览器，登记和切换多个 Workspace，`--target` 登记并打开指定 Workspace。 |
-| `buildr web preview start|list|stop` | 启动、查看或停止隔离的开发预览。带 `--task <task-id> --target <canonical-workspace>` 时，Preview使用matching Task Worktree并保存精确owner；停止时复核Worktree evidence与进程secret。不带Task时保持独立checkout preview。 |
+| `buildr web preview start\|list\|stop` | 启动、查看或停止隔离的开发预览。带 `--task <task-id> --target <canonical-workspace>` 时，Preview使用matching Task Worktree并保存精确owner；停止时复核Worktree evidence与进程secret。不带Task时保持独立checkout preview。 |
 | `buildr installation status [--json]` | 分别报告receipt证明的npm CLI、Buildr Web Launcher、Buildr Web Dev、当前安装与当前Web实例的版本、路径、runtime role、protocol、payload和ownership identity；不扫描PATH。 |
 | `buildr web launcher install/status/repair/uninstall` | 从verified formal npm安装显式创建、诊断、修复或卸载本机Buildr Web Launcher；wrapper只执行binding中的Host Node和同一package entry。Development checkout使用隔离的Buildr Web Dev入口。 |
 | `buildr project create <code>` | 创建或登记 Project；`--name`/`--description` 设置 metadata，`--repo`、`--remote`、`--integration-branch` 声明独立 Git source，并补齐空 `commands.yml` requirement context。 |
 | `buildr project daily-progress record\|inspect\|list --project <code>` | Agent-machine 本机每日演进。`record` 把已构造的四问摘要、提交与变更文件写入 `.buildr/daily-progress/<project-code>/<YYYY-MM-DD>.yml`；Task 关联可选，他人提交禁止挂 Task，存在的 Task ID 仍须本机已有。`inspect`/`list` 只读。JSON 使用 `buildr.project-daily-progress-*-result/v1`。不进入 Git 或 Task SQLite，读取路径不扫描 Git，也不提供定时调度。 |
-| `buildr service create <project>/<service> <repo-ref>` | 接入本地目录或 Git Service；用 `--name`、`--description`、`--type` 描述 Domain，Git 来源可用 `--remote`、`--integration-branch` 声明稳定来源。 |
+| `buildr assets create service --input <json-file>` | 当前全局服务（Service）登记入口，输入包含当前 `revision` 和明确的服务（Service）、目录及代码库选择；通过 `assets associate` 维护项目（Project）引用。 |
+| `buildr service create <project>/<service> <repo-ref>` | 仅保留给未迁移的旧工作空间（Workspace）。存在全局 `services/manifest.yml` 时会要求使用 `assets create service`，不能作为新用户接入入口。 |
 | `buildr worktree create\|inspect\|cleanup <task-id>` | 窄Git worktree provider。`create`接受branch/start point与显式Project/Service selectors；`inspect`复核checkout/branch/HEAD/clean/registration；`cleanup`要求每仓成对提供expected source与delivered完整提交。它不判断Task完成，也不准备Runtime、CLI、依赖、projection或动态资源。 |
-| `buildr project verification inspect|validate|update` | 读取、校验或按expected identity更新Project测试地图。候选由Agent从真实测试、构建脚本、CI和说明形成，Application不生成内容。 |
-| `buildr task verification record|inspect` | 保存或读取开发完成后的Task验证报告。Agent直接调用项目测试工具；Buildr不生成计划或代跑测试。 |
+| `buildr project verification inspect\|validate\|update` | 读取、校验或按expected identity更新Project测试地图。候选由Agent从真实测试、构建脚本、CI和说明形成，Application不生成内容。 |
+| `buildr task verification record\|inspect` | 保存或读取开发完成后的Task验证报告。Agent直接调用项目测试工具；Buildr不生成计划或代跑测试。 |
 | `buildr task create\|inspect\|update\|activate\|complete\|abandon` | 在canonical Workspace的SQLite中维护Task Record v3。除`create`外的写动作都必须提交刚观察到的`--expected-record <digest>`。完成只保存真实结果摘要，不保存`noChange`、Git、验证、环境或发布事实。终态Task可通过`update`登记固定本机复盘文档或显式更正业务事实。 |
+| `buildr task commits <task-id> [--target <canonical-workspace>] [--json]` | 只读查询任务范围内带有有效 `Buildr-Task` 尾注（Trailer）的当前可达 Git 提交（Commit），包含本机未推送提交。返回真实完整说明、哈希值（Hash）、来源、读取范围和局部诊断；不抓取远端，不写任务或 Git。 |
 | `buildr task work-context inspect\|record\|respond <task-id>` | 独立工作摘要与显式待处理事项。`record` 使用 `--expected-current <absent\|digest>`、`--progress`、`--next-step`；可明确登记或清除事项。`respond` 以当前版本、事项身份和真实用户意见保存答复，不改变任务状态或完成结果。 |
 | `buildr task parent inspect` | 只读查看整体目标、真实子任务及结果、完成观察身份和历史父计划。旧 record、reconcile、bind-child、refresh-planning、reconcile-child-delivery、accept 写入口已退役。父任务通过已有 task complete 提交当前版本、验收和明确用户授权。 |
 | `buildr task verification inspect\|record <task-id>` | 读取或整值保存Workspace SQLite中的current任务验证报告。`record --report <json-file>`接收Agent在开发完成后形成的实际检查、选择范围、目标、结果、未覆盖项和结论；`inspect`可带当前内容identity判断报告是否仍适用。命令不生成计划、不执行测试、不绑定Candidate。 |
 | `buildr rules add/remove` | 维护 root Rules manifest 和文件生命周期。 |
 | `buildr skills add/remove` | 只维护 workspace `skills/` 中的 Skill source；旧 `--scope .` 仅兼容并警告，Project scope 被拒绝。 |
 | `buildr skills bind/unbind` | 维护 workspace 默认 binding，或在 `projects/<project>/capabilities.yml` 维护 Project context binding。 |
-| `buildr skills render <agent> --destination workspace\|user` | 从 `--target <workspace>` 读取 source，显式投射到当前工作目录或个人用户层；默认 workspace。 |
+| `buildr skills render [<agent>] [--adapter <adapter-id>] --destination workspace\|user` | 从 `--target <workspace>` 读取源资产，投射到工作空间（Workspace）或个人用户层；默认 workspace，不按品牌登记限制通用技能（Skill）。 |
 | `buildr commands add/remove` | 维护 workspace Command catalog definitions；最后一个 definition 仍被 requirement 引用时零写入。 |
 | `buildr commands check [--project <project> ...]` | 按显式 Project task context 合并 requirements 并观察本机环境；无 Project 时只检查 workspace defaults。 |
 | `buildr component list/check/install/uninstall` | 管理 workspace 级 Rules、Skills、Command collections 与声明式 Skill Contribution。 |
@@ -117,39 +154,50 @@ Skill 文件仍写入目标 Agent 的原生 Skills root。Buildr 为这些文件
 
 Task Record 使用closed `buildr.task-record/v3` schema。顶层状态为`todo|active|completed|abandoned`，查询态`open`派生为todo + active。可选`retrospective`只保存本机Markdown的SHA-256与`pending-decision|decided`；不保存正文、处置说明或后续Task关系。只保存Child的`parentTaskId`，反向Children由查询派生；`isParent`保存明确父任务身份。所有非创建写动作都比较当前`recordDigest`。
 
+`task commits` 先确认任务存在，再读取其项目、服务、关联变更对应项目与已知任务工作树（Worktree）中的真实代码库（Repository）；不会扫描任意目录。没有项目、服务或关联变更的工作空间级任务（Workspace-only Task），只检查任务所属主工作空间（Canonical Workspace）根目录本身的 Git 代码库，不向父目录寻找替代来源。关联依据是实际提交说明（Commit Message）末尾的 `Buildr-Task: <taskId>`，正文普通提及不算关联。查询按真实代码库和完整哈希值（Hash）去重，读取本机当前可达引用；JSON 使用 `buildr.task-commits/v1`，必须结合 `status`、`coverage` 与 `diagnostics` 判断结果完整性。部分结果不能表述为确定的零提交，读取成功也不代表任务完成。旧提交不自动补尾注或改写历史。
+
 工作台（Workbench）默认展示工作概览，并提供任务（Task）与动态入口；文章位于工作空间（Workspace）区域。最近进展、下一步和显式待处理事项由独立工作摘要维护，人的答复按事项身份和已观察版本保护。置顶、接下来、关注、收藏和最近访问是本机偏好，与任务四态独立；查看概览不扫描 Git 或自动生成每日演进。旧任务深链继续可用。
 
 Task Record、Task Verification与Planning/Completion Review以`.buildr/local/workspace.sqlite`作为单机持久化authority。复盘正文保存在被Git忽略的`.buildr/local/task-retrospectives/`，SQLite只保留Task上的文档摘要和决定状态。旧复盘current/source表、研发、旧收尾和统一Task Environment current表已删除，不建立history或双读。
 
-默认 App 的用户级登记文件只保存规范化 Workspace root 和最近使用项；Workspace 名称、说明、Project、Service 与全局 Change 列表始终从 retained Workspace 实时读取。Task详情固定为“概览、原型、证据”三个一级视图；概览包含本机复盘文档轻量卡片，证据分别调用Review/Verification reader。页面没有独立复盘工作台、研发页签或旧机器交付历史。
+默认 App 的用户级登记文件只保存规范化 Workspace root 和最近使用项；Workspace 名称、说明、Project、Service 与全局 Change 列表始终从 retained Workspace 实时读取。任务（Task）详情按“任务需求、方案设计、开发实现、任务收尾”组织内容，读取工作摘要（Work Context）、关联 OpenSpec 材料、原型、审查（Review）与验证（Verification），并展示完成摘要和本机复盘入口。“任务收尾”后的“提交记录”是独立阅读标签，不增加工作阶段，与命令使用同一只读应用。页面不启动专业执行，也不重新建立旧研发或机器交付状态库。
 
 Project registry 使用 `buildr.projects/v2`：每个 Project 保存 UUID `id`、所属 `workspaceId`、可读 `code`、`name`、`description` 和 `source`。`source.path` 是文件系统物化位置；Git source 另外保存 URL、remote 和稳定的 `integrationBranch`。`currentBranch`、HEAD、dirty、upstream 与 ahead/behind 是实时观察状态，不写入 Domain。v1 registry 可只读查询，`buildr sync <agent>` 显式迁移；页面不会静默迁移、切分支、stash 或改写 remote。
 
-`service create --integration-branch` 只适用于 Git 来源，`--branch` 仅为兼容别名。Canonical Service Domain 保存 UUID `id`、`workspaceId`、`projectId`、`code`、`name`、`description`、`type` 和 `source`；`source.path` 定位文件系统中的实际 Service，Git source 保存 URL、remote 与稳定 integration branch。当前分支、HEAD、dirty、upstream 与 ahead/behind 只实时观察，不写回 Domain。
+当前服务（Service）保存 `id`、`workspaceId`、`code`、`name`、`description`、`type`、`repositoryId` 和 `modulePath`；代码来源由独立代码库实例（Repository Instance）保存，项目（Project）引用不建立唯一父级。旧 `service create --integration-branch` 仅作用于旧模型的 Git 来源，`--branch` 是兼容别名。当前分支、HEAD、未提交内容及上游差异由实际 Git 状态观察，不写回稳定来源声明。
 
 Project根可选`preparation.yml`，长期说明Project-wide或Service-scoped真实准备入口。Agent只在当前动作需要时，从matching Project或Service根直接调用对应wrapper；没有额外准备的Project无需声明空步骤。Buildr不生成Task Plan、不保存选择和执行结果，也不把局部准备失败扩大为统一工作许可。
 
-`project create`、`service create`及Buildr Web对应Agent prompt会返回`declaration-intake` next action；首次Task prompt、准备入口缺口与Verification coverage gap也使用同一入口。该入口只让Agent检查`preparation.yml`/`verification.yml`候选或diff，注册事务和所有GET/inspect都不写声明。用户确认精确长期变更后，Agent直接维护Project拥有的准备入口；`task-verification`继续维护验证声明。
+旧 `project create`、`service create` 的后续提示和相关 Buildr Web 交接会指向 `declaration-intake`；准备入口缺口与验证（Verification）覆盖缺口也使用该入口。它只读检查 `preparation.yml` 与 `verification.yml` 的候选或差异，登记事务及读取动作不写声明。已确认入口在既有授权内的普通维护交给声明所有者；新增范围、能力、外部效果或长期边界变化才请求相应决定。`task-verification` 继续负责测试地图维护。
 
 Git provider evidence使用`buildr.git-worktree-evidence/v1`，保存在Git common-dir的`buildr/task-worktrees/<task-id>.json`。它只包含repository selector、source/checkout、branch/start point、HEAD、clean、registration、remote和Git effects。成果交付后，Agent把已核对的逐仓source与delivered完整提交直接交给provider；provider复核source版本、dirty、registration和retained ref后才删除。provider不删除远端分支，也不执行交付或验证判断。
+
+历史登记缺失时，`worktree inspect` 和 `worktree cleanup` 可使用 `--observed-checkouts <json-file>`。JSON 为数组，每项包含 `selector`、`sourceRepository`、`checkoutPath`、`branch`；路径使用规范绝对路径，完整列出根及独立嵌套代码库（Repository）。当前来源、Git 公共目录（Common Directory）、真实登记与占用必须核验一致；不能用观察输入覆盖已有证据冲突。调用方先确认任务归属、完整交付、正在进行的工作和需要保留的忽略内容。清理仍需全部源与交付提交（Commit），观察只在本次使用，不补造创建记录；返回 `evidenceSource: observed`，未知 `startPoint` 为 `null`。示例和输入格式见[工作树管理方法](../resources/workspace/skills/buildr/task-worktree/SKILL.md#缺少历史登记时接续)。
+
+没有登记也没有明确对象时返回 `blocked` 和接续指引；实际删除或逐项确认对象不存在后才返回 `cleaned`。部分删除后可重传相同对象集合，重新核验版本与占用，结果区分删除和不存在确认。
+
 
 ## Runtime 与诊断
 
 | 命令 | 用途 |
 |---|---|
-| `buildr runtime list` | 查看 supported adapters、capabilities 和推荐命令。 |
-| `buildr doctor` | 只读检查工作空间（Workspace）资产、当前产品安装、智能体运行时（Agent Runtime）投射及已声明的外部命令（Command），报告问题与修复建议。 |
-| `buildr render <agent>` | 组合投射 Rules entry 与 workspace Skills 到 workspace destination，不安装产品入口 Skill。 |
-| `buildr sync <agent>` | 同步本地工作空间（Workspace）的产品源能力，安装产品入口技能（Skill）、投射智能体运行时（Agent Runtime）并执行最终诊断（Doctor）。 |
-| `buildr runtime check <agent>` | 专项比较某个 scope 的 runtime 期望状态。 |
-| `buildr skill install <agent>` | 只安装产品入口 Buildr Skill。 |
+| `buildr runtime list` | 查看标准默认值、静态适配器（Adapter）、已知品牌映射、文件能力及证据边界。 |
+| `buildr doctor [--agent <agent>] [--adapter <adapter-id>]` | 只读检查资产、当前产品安装、所选或已有受管运行时（Runtime）文件及已声明外部命令（Command），报告问题与修复建议。 |
+| `buildr render [<agent>] [--adapter <adapter-id>]` | 组合投射规则（Rule）与工作空间（Workspace）技能（Skill），不安装产品入口技能（Skill）。 |
+| `buildr sync [<agent>] [--adapter <adapter-id>]` | 同步本地产品源能力，安装产品入口技能（Skill）、投射并执行最终诊断（Doctor）。 |
+| `buildr runtime check [<agent>] [--adapter <adapter-id>]` | 专项比较所选文件约定在目标作用域的期望状态。 |
+| `buildr skill install [<agent>] [--adapter <adapter-id>]` | 只安装产品入口 Buildr 技能（Skill）。 |
 | `buildr mutation recover <id>` | 从完整 transaction journal/backup 恢复未完成 source mutation。 |
 
 `doctor` 的 `ok` 为兼容字段，只表示没有 error，不表示 workspace 已无需处理。Agent 应同时读取 `health.workspaceValid`、`health.ready`、`health.actionRequired` 和 `repairPlan`：例如只有 actionable warning 时，结果可以是 `ok: true` 但 `ready: false`。canonical workspace identity 要求根 `AGENTS.md`、`.buildr/workspace.yml` 和 `projects/` 同时存在；只存在其中一部分时报告 `incomplete`，不会误判为已初始化。
 
 默认 doctor 分三层声明诊断边界：`core` 每次检查 workspace identity、mutation recovery 和 root registries；`conditional` 只在相关 scope、资产或 selected Agent 适用时检查 Project/Service、Rules/Skills、package assets、Commands 与 runtime；`specialty` 是显式场景。对已声明的独立 Git Project，doctor 会比较 remote、`integrationBranch` 和本地实时状态，但不会执行 Git 修改；它不深检 OpenSpec active change，也不运行 build/test。需要更多细节时进入对应 Git、OpenSpec、验证工作流。
 
-当前支持 `claude-code`、`codex`、`cursor`、`qoder`、`trae`、`trae-work` 和 `workbuddy`。其他 runtime 不使用 fallback adapter；各 adapter 的文件路径、刷新方式和证据状态见 [Agent Runtime Adapters](agent-runtime-adapters.md)。
+`codex`、`dsh`、已退役品牌（`cursor`、`qoder`、`trae`、`trae-work`、`workbuddy`）及未登记的有效品牌都选择 `agents-standard`，只有 `claude-code` 是已注册的专有例外并保留专用文件约定。`--adapter` 是严格选择，只接受当前登记的适配器（Adapter）取值，错误不回退并列出支持取值；品牌标识区分大小写，只允许字母、数字、点、下划线和连字符。省略选择时优先保留唯一既有受管方式；多个不等价方式只读可列出，写入前需明确选择。无既有方式则默认标准，不伪造品牌。
+
+诊断分别表达请求 `runtimeId`、实际 `adapterId`、选择原因和文件状态；产品不再探测品牌安装与版本，`supported` 只表示可准备所选文件，不能解释为品牌已经安装或会话已经加载。未传身份的诊断只检查已有受管方式（无既有方式时检查标准），不会为所有未安装适配器（Adapter）制造缺失噪声。具体路径、刷新方式和证据边界见[运行时适配参考](agent-runtime-adapters.md)。
+
+通用技能（Skill）省略 `runtimes`；明确列表继续按请求品牌限制适用性，不因共享标准而扩权。历史产品拥有的完整品牌列表可升级为通用，用户缩小的列表、绑定和卸载状态保留。共享根中仍有启用来源的技能（Skill）不会因本次品牌未选择而被清理；品牌差异导致相同技能（Skill）的正文或绑定不一致时报告冲突，不后写覆盖。
 
 ## Commands 三层模型
 
@@ -183,13 +231,12 @@ Contract 格式、scope 规则、替换示例以及 `ready` 的边界见 [Skill 
 - `openspec audit`、`openspec baseline create`、阶段型`openspec check`、`openspec sync-plan`与`openspec sync-apply`均已删除；旧调用返回标准unknown-command。
 - `openspec baseline create`、阶段型 `openspec check`、`openspec sync-plan` 与 `openspec sync-apply` 均已删除；旧调用返回标准 unknown-command 且不会读取或写入旧 sidecar。标准规范解析、重建和正常写入由锁定上游负责，Buildr 不另行实现同一算法。
 - `skills migrate-project-assets` 已删除。legacy Project Skill source 继续 fail closed，当前 Buildr 不复制、合并、改写或删除其 bytes；升级前需使用旧版本完成迁移，或人工审阅后整理到 workspace `skills/`。
-- `buildr bootstrap guide`：产品 Skill 不可用时的纯文本兜底说明。
 
 这些命令可执行，但不构成普通用户需要记忆的 public asset API。
 
 ## 内部实现边界
 
-`bin/buildr.mjs` 是稳定 npm bin 路径，实际命令通过内部 `src/` runtime 和唯一 command registry 执行。该模块树随 tarball 发布以保证命令可运行，但不是公开 JavaScript API，不承诺文件级 import 兼容；维护约定见 [CLI 内部架构](cli-architecture.md)。
+`bin/buildr.mjs` 是稳定的 npm 命令入口。正式安装包包含打包后的 `runtime/buildr.cjs` 与 `payload/`，不依赖开发目录中的完整 `src/` 模块树；具体内容由[发布打包实现](../tools/release/release-artifact.ts)确定。内部文件不是公开 JavaScript 接口（API），不承诺文件级导入兼容；维护约定见[命令架构](cli-architecture.md)。
 
 ## 远端 Skill 请求
 

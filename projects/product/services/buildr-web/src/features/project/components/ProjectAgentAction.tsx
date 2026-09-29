@@ -7,7 +7,7 @@ import { ACTION_LABELS, useAgentActionFeedback } from '../../../components/Agent
 type Props = { onBack: () => void; context?: Record<string, unknown> };
 
 export function ProjectAgentAction({ onBack }: Props) {
-  const { setError, showResult, formHeader, promptResult } = useAgentActionFeedback(onBack);
+  const { generatePrompt, updateInput, formHeader, promptResult } = useAgentActionFeedback(onBack);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [code, setCode] = useState('');
@@ -17,9 +17,7 @@ export function ProjectAgentAction({ onBack }: Props) {
   const [integrationBranch, setIntegrationBranch] = useState('');
   const submitProject = async (event: FormEvent) => {
     event.preventDefault();
-    setError(null);
-    try {
-      const result = await projectApi.projectCreatePrompt({
+    await generatePrompt(async () => (await projectApi.projectCreatePrompt({
           name,
           description,
           code,
@@ -27,11 +25,7 @@ export function ProjectAgentAction({ onBack }: Props) {
           gitUrl,
           remote,
           integrationBranch,
-        }) as { prompt: string };
-      showResult(result.prompt, ACTION_LABELS.project);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : '生成指令失败。');
-    }
+        })).prompt, ACTION_LABELS.project);
   };
 
 
@@ -41,7 +35,7 @@ export function ProjectAgentAction({ onBack }: Props) {
         <form id="agent-action-form" className="prompt-grid" onSubmit={(event) => void submitProject(event)}>
           <label>
             名称
-            <Input id="action-name" autoComplete="off" required value={name} onChange={(event) => setName(event.target.value)} />
+            <Input id="action-name" autoComplete="off" required value={name} onChange={(event) => updateInput(() => setName(event.target.value))} />
           </label>
           <label className="full">
             用途或长期目标
@@ -51,7 +45,7 @@ export function ProjectAgentAction({ onBack }: Props) {
               required
               placeholder="例如：管理支付产品的需求、设计和服务关系"
               value={description}
-              onChange={(event) => setDescription(event.target.value)}
+              onChange={(event) => updateInput(() => setDescription(event.target.value))}
             />
           </label>
           <details className="full">
@@ -59,7 +53,7 @@ export function ProjectAgentAction({ onBack }: Props) {
             <div className="prompt-grid advanced-fields">
               <label>
                 代码（可选）
-                <Input id="action-code" autoComplete="off" placeholder="不确定时由 Agent 提议" value={code} onChange={(event) => setCode(event.target.value)} />
+                <Input id="action-code" autoComplete="off" placeholder="不确定时由 Agent 提议" value={code} onChange={(event) => updateInput(() => setCode(event.target.value))} />
               </label>
               <label>
                 来源
@@ -67,7 +61,7 @@ export function ProjectAgentAction({ onBack }: Props) {
                   id="action-source"
                   style={{ width: '100%' }}
                   value={sourceType}
-                  onChange={setSourceType}
+                  onChange={(value) => updateInput(() => setSourceType(value))}
                   options={[
                     { value: 'workspace', label: '当前工作空间' },
                     { value: 'git', label: '独立 Git 仓库' },
@@ -76,15 +70,15 @@ export function ProjectAgentAction({ onBack }: Props) {
               </label>
               <label>
                 Git 地址（可选）
-                <Input id="action-git-url" autoComplete="off" value={gitUrl} onChange={(event) => setGitUrl(event.target.value)} />
+                <Input id="action-git-url" autoComplete="off" value={gitUrl} onChange={(event) => updateInput(() => setGitUrl(event.target.value))} />
               </label>
               <label>
                 远端名称（可选）
-                <Input id="action-remote" autoComplete="off" placeholder="origin" value={remote} onChange={(event) => setRemote(event.target.value)} />
+                <Input id="action-remote" autoComplete="off" placeholder="origin" value={remote} onChange={(event) => updateInput(() => setRemote(event.target.value))} />
               </label>
               <label>
                 集成分支（可选）
-                <Input id="action-branch" autoComplete="off" value={integrationBranch} onChange={(event) => setIntegrationBranch(event.target.value)} />
+                <Input id="action-branch" autoComplete="off" value={integrationBranch} onChange={(event) => updateInput(() => setIntegrationBranch(event.target.value))} />
               </label>
             </div>
           </details>

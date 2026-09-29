@@ -10,6 +10,8 @@
 
 ## Verification
 
-- [ ] `projects/product/services/buildr/test/verification/verify-buildr-product`
+- [ ] Selected and completed the required checks for the actual impact using [the project verification map](../projects/product/verification.yml).
+- Checks and evidence (what ran, result, and content/environment covered):
+- Unverified areas or remaining limitations:
 - [ ] `git diff --check`
 - [ ] No private workspace data, credentials, generated runtime, or unrelated changes included

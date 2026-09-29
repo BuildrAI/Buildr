@@ -36,7 +36,7 @@ export function createTaskLifecycleContextProvider({ runtime = createRuntime() }
     parallelSafety: 'worker-safe',
     footprints: Object.freeze(['filesystem', 'cli', 'workspace-lifecycle']),
     prepare({ contextRoot, seedRoot }: any): any  {
-      setupOperation('workspace.init', () => runtime.initBuildr(['--target', seedRoot, '--name', 'system-task-context', '--description', 'Task lifecycle System context', '--profile', 'team']));
+      setupOperation('workspace.init', () => runtime.initBuildr(['--source-only', '--target', seedRoot, '--name', 'system-task-context', '--description', 'Task lifecycle System context', '--profile', 'team']));
       setupOperation('project.create:demo', () => runtime.createProject(['demo', '--target', seedRoot, '--name', 'Demo', '--description', 'System context Project']));
       setupOperation('project.create:other', () => runtime.createProject(['other', '--target', seedRoot, '--name', 'Other', '--description', 'Secondary System context Project']));
       const serviceSource: any = path.join(contextRoot, 'service-source');

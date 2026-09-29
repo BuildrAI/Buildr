@@ -12,7 +12,7 @@ export function useKnowledgeNavigation(workspaceId: string | null, scope: Knowle
     void knowledgeApi.navigation(scope, controller.signal).then(data => {
       if (!controller.signal.aborted) setState({ key, data, loading: false, error: "" });
     }).catch((error: unknown) => {
-      if (!controller.signal.aborted) setState({ key, data: null, loading: false, error: error instanceof Error ? error.message : "读取主题目录失败。" });
+      if (!controller.signal.aborted) setState(previous => ({ key, data: previous.key === key ? previous.data : null, loading: false, error: error instanceof Error ? error.message : "读取主题目录失败。" }));
     });
     return () => controller.abort();
   }, [key, refresh, enabled]);

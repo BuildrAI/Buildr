@@ -148,7 +148,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     requires: [AGENT_ASSETS_RUNTIME],
     provides: [WORKSPACE_APPLICATION, PROJECT_APPLICATION, SERVICE_APPLICATION, WORKSPACE_QUERY, WORKSPACE_RUNTIME_PORT, WORKSPACE_ASSET_SUPPORT, WORKSPACE_DOMAIN, WORKSPACE_TASK_SUPPORT, WORKSPACE_AGENT_ASSETS_BINDER, WORKSPACE_DIAGNOSTICS],
     contributions: {
-      cli: ['assets', 'init', 'bootstrap guide', 'mutation recover', 'project create', 'service create'],
+      cli: ['assets', 'init', 'mutation recover', 'project create', 'service create'],
       http: ['workspace-core.http'],
       diagnostics: ['workspace.diagnostics'],
     },
@@ -222,6 +222,12 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     contributions: { cli: ['worktree create', 'worktree cleanup', 'worktree inspect'], http: [], diagnostics: [] },
     lifecycle: 'none',
   }, {
+    id: 'task-commits',
+    requires: [TASK_QUERY_APPLICATION, WORKSPACE_QUERY, TASK_WORKTREE_PROVIDER],
+    provides: ['task.commits-application'],
+    contributions: { cli: ['task commits'], http: ['task.commits.http'], diagnostics: [] },
+    lifecycle: 'none',
+  }, {
     id: 'change',
     requires: ['openspec.query', WORKSPACE_QUERY, TASK_WORKTREE_PROVIDER, TASK_QUERY_APPLICATION],
     provides: ['change.application'],
@@ -290,7 +296,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     lifecycle: 'none',
   }]);
   assert.deepEqual(runtimeContributions(runtime, 'cli').map((item: any) => item.key), [
-    'assets', 'init', 'bootstrap guide', 'mutation recover', 'project create', 'service create',
+    'assets', 'init', 'mutation recover', 'project create', 'service create',
     'package check', 'package build', 'runtime list',
     'commands check', 'commands add', 'commands remove',
     'component list', 'component check', 'component install', 'component uninstall',
@@ -305,6 +311,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     'project daily-progress record', 'project daily-progress inspect', 'project daily-progress list',
     'workbench',
     'worktree create', 'worktree cleanup', 'worktree inspect',
+    'task commits',
     'project verification inspect', 'project verification validate', 'project verification update',
     'task review inspect', 'task review record',
     'task verification inspect', 'task verification record',
@@ -315,7 +322,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     'doctor',
   ]);
   assert.deepEqual(runtimeContributions(runtime, 'http').map((item: any) => item.id), [
-    'workspace-core.http', 'agent-assets.http', 'knowledge.http', 'publication.http', 'task-work-context.http', 'task.http', 'task.daily-progress.http', 'workbench.http', 'change.http',
+    'workspace-core.http', 'agent-assets.http', 'knowledge.http', 'publication.http', 'task-work-context.http', 'task.http', 'task.daily-progress.http', 'workbench.http', 'task.commits.http', 'change.http',
     'task-review.http', 'task-verification.http',
     'task-parent-coordination.http', 'system-installation.release-awareness.http',
   ]);
@@ -392,8 +399,8 @@ test('Workspace 模块使用私有组合并只拆分超界 Application', () => {
 
 test('Agent Assets CLI contributions 保留公开根帮助的历史位置', () => {
   const keys: any = COMMAND_CATALOG.filter((item: any) => item.executable).map((item: any) => item.key);
-  assert.deepEqual(keys.slice(keys.indexOf('bootstrap guide'), keys.indexOf('project daily-progress record') + 1), [
-    'bootstrap guide', 'package check', 'package build', 'project daily-progress record',
+  assert.deepEqual(keys.slice(keys.indexOf('init'), keys.indexOf('project daily-progress record') + 1), [
+    'init', 'package check', 'package build', 'project daily-progress record',
   ]);
   assert.deepEqual(keys.slice(keys.indexOf('mutation recover'), keys.indexOf('openspec converge') + 1), [
     'mutation recover', 'runtime list', 'commands check', 'commands add', 'commands remove', 'openspec converge',

@@ -423,6 +423,8 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "src/modules/task/persistence/task-change-repository.ts",
       "test/system/task-record-change-resolver.test.ts",
       "test/system/task-record-buildr-web.test.ts",
+      "test/system/task-commits.test.ts",
+      "src/modules/task/commits/**",
       "test/system/task-record-product.test.ts",
       "test/system/task-review-product.test.ts",
       "test/system/task-verification-product.test.ts",
@@ -597,6 +599,44 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
     "inputExclusions": []
   },
   "integration-candidate-release": {
+    "inputs": [
+      "test/integration-candidate-release/**",
+      "tools/release/release-git-convergence.ts",
+      "tools/release/release-authority.ts",
+      "tools/release/release-contract.ts",
+      "tools/release/release-task-evidence-correlation.ts",
+      "tools/release/release-transaction-evidence.ts",
+      "tools/release/release-transaction-runner.ts",
+      "tools/release/release-lifecycle.ts",
+      "tools/release/release-phase-timeline.ts",
+      "tools/release/release-orchestration-runner.ts",
+      "tools/release/release-convergence.ts",
+      "tools/release/release-files.ts",
+      "tools/release/release-notes.ts",
+      "src/modules/installation/domain/release-version.ts"
+    ],
+    "inputExclusions": []
+  },
+  "integration-candidate-release-effects": {
+    "inputs": [
+      "test/integration-candidate-release/**",
+      "tools/release/release-git-convergence.ts",
+      "tools/release/release-authority.ts",
+      "tools/release/release-contract.ts",
+      "tools/release/release-task-evidence-correlation.ts",
+      "tools/release/release-transaction-evidence.ts",
+      "tools/release/release-transaction-runner.ts",
+      "tools/release/release-lifecycle.ts",
+      "tools/release/release-phase-timeline.ts",
+      "tools/release/release-orchestration-runner.ts",
+      "tools/release/release-convergence.ts",
+      "tools/release/release-files.ts",
+      "tools/release/release-notes.ts",
+      "src/modules/installation/domain/release-version.ts"
+    ],
+    "inputExclusions": []
+  },
+  "integration-candidate-git-convergence": {
     "inputs": [
       "test/integration-candidate-release/**",
       "tools/release/release-git-convergence.ts",

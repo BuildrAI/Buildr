@@ -22,3 +22,14 @@ services:
     modulePath: projects/product/services/buildr-web
     legacyRefs:
       - product/buildr-web
+  dsh-plugin:
+    id: a6c21d81-932f-4b49-9302-b7e7c96b209e
+    workspaceId: f2f40b71-2382-5906-82bd-76a7927b59f3
+    code: dsh-plugin
+    name: Buildr DSH 插件
+    description: 独立构建、验证和发布 Buildr 的 DSH 桌面插件。
+    type: application
+    repositoryId: 40394b3d-d44d-5bb2-a59b-932a0dd6a597
+    modulePath: projects/product/services/dsh-plugin
+    legacyRefs:
+      - product/dsh-plugin

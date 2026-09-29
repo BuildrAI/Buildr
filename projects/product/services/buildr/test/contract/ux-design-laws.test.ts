@@ -32,7 +32,7 @@ test('ux-design-laws 作为无 capability contract 的 optional builtin Skill �
   assert.equal(packaged.target, 'skills/buildr/ux-design-laws');
   assert.equal(packaged.description, frontmatterDescription);
   assert.equal(packaged.required, false);
-  assert.deepEqual(packaged.runtimes, ['claude-code', 'codex', 'cursor', 'qoder', 'trae', 'trae-work', 'workbuddy']);
+  assert.equal(Object.hasOwn(packaged, 'runtimes'), false, '通用技能不维护品牌白名单');
   assert.equal(packaged.provides, undefined);
   assert.equal(packaged.requires, undefined);
   assert.equal(manifest.capabilityContracts.some((entry: any) => entry.id.includes('ux-design-laws')), false);

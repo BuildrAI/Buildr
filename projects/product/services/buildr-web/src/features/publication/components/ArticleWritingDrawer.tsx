@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Alert, Button, Drawer, Form, Input, Select, message } from 'antd';
+import { createPromptRequest } from '../../../lib/promptRequest';
 import { CopyOutlined } from '@ant-design/icons';
 import type { ArticleProject, Publication } from '../api/publication-api';
 import { buildWritingRequest, writingMethods } from '../publication-model';
@@ -10,8 +11,14 @@ export function ArticleWritingDrawer({ onClose, projects, defaultProject, articl
   const [method, setMethod] = useState(initialMethod || (article ? '润色表达' : '起草文章'));
   const [goal, setGoal] = useState(''), [materials, setMaterials] = useState(''), [prompt, setPrompt] = useState(''), [error, setError] = useState('');
   const [messages, holder] = message.useMessage();
-  const change = (update: () => void) => { update(); setPrompt(''); setError(''); };
+  const [request] = useState(createPromptRequest);
+  useEffect(() => {
+    request.invalidate(); setPrompt(''); setError(''); messages.destroy();
+    return () => request.invalidate();
+  }, [article, revision, hasUnsavedChanges, request, messages]);
+  const change = (update: () => void) => { request.invalidate(); update(); setPrompt(''); setError(''); messages.destroy(); };
   const prepare = () => {
+    request.invalidate(); setPrompt(''); messages.destroy();
     try { setPrompt(buildWritingRequest({ projectCode, projectName: article?.projectName || projects.find(project => project.code === projectCode)?.name || projectCode, method, goal, materials, article, revision, hasUnsavedChanges })); setError(''); }
     catch (err) { setError(err instanceof Error ? err.message : '请求未准备好'); }
   };
@@ -26,6 +33,6 @@ export function ArticleWritingDrawer({ onClose, projects, defaultProject, articl
     </Form>
     <p className="publication-hint">智能体（Agent）根据目标选择已安装且适用的技能（Skill）。这里提供写作方法，不表示已有专项技能或已执行。</p>
     {error && <Alert type="error" message={error} />}
-    {prompt && <section className="publication-prepared"><Alert type="success" message="写作请求已准备好，尚未执行。" /><pre id="article-writing-prompt">{prompt}</pre><Button icon={<CopyOutlined />} onClick={() => { void navigator.clipboard.writeText(prompt).then(() => messages.success('已复制写作请求，尚未执行')).catch(() => messages.error('自动复制失败，请选择请求文本复制')); }}>复制写作请求</Button></section>}
+    {prompt && <section className="publication-prepared"><Alert type="success" message="写作请求已准备好，尚未执行。" /><pre id="article-writing-prompt">{prompt}</pre><Button icon={<CopyOutlined />} onClick={() => { const current = request.observe(); void navigator.clipboard.writeText(prompt).then(() => { if (current()) messages.success('已复制写作请求，尚未执行'); }).catch(() => { if (current()) messages.error('自动复制失败，请选择请求文本复制'); }); }}>复制写作请求</Button></section>}
   </Drawer>;
 }

@@ -118,13 +118,23 @@ try {
   assert.equal(packagedIdentity.runtime.role, 'host');
   assert.match(packagedIdentity.applicationPayloadDigest, /^sha256-[a-f0-9]{64}$/);
 
-  const checkoutWorkspace: any = path.join(root, 'checkout-workspace');
-  const packagedWorkspace: any = path.join(root, 'packaged-workspace');
-  for (const [runner, workspace] of [[runCheckout, checkoutWorkspace], [runPackaged, packagedWorkspace]]) {
-    const result: any = runner(['init', '--agent', 'codex', '--target', workspace, '--name', 'parity', '--description', 'Package parity workspace', '--profile', 'team']);
-    assert.equal(result.status, 0, result.stderr);
+  for (const runtimeId of ['codex', 'dsh', null]) {
+    const suffix = runtimeId ?? 'default';
+    const checkoutWorkspace = path.join(root, `checkout-workspace-${suffix}`);
+    const packagedWorkspace = path.join(root, `packaged-workspace-${suffix}`);
+    for (const [runner, workspace] of [[runCheckout, checkoutWorkspace], [runPackaged, packagedWorkspace]] as const) {
+      const result: any = runner(['init', ...(runtimeId ? ['--agent', runtimeId] : []), '--target', workspace, '--name', 'parity', '--description', 'Package parity workspace', '--profile', 'team']);
+      assert.equal(result.status, 0, result.stderr);
+      assert.ok(fs.existsSync(path.join(workspace, '.agents', 'skills', 'buildr', 'SKILL.md')), `${suffix} must prepare the standard entry`);
+      const doctor = runner(['doctor', ...(runtimeId ? ['--agent', runtimeId] : []), '--target', workspace, '--json']);
+      assert.equal(doctor.status, 0, doctor.stderr || doctor.stdout);
+      const report = JSON.parse(doctor.stdout);
+      assert.equal(report.schemaVersion, 'buildr.doctor/v2');
+      assert.equal(report.agentRuntime.runtimeId, runtimeId);
+      assert.equal(report.agentRuntime.adapterId, 'agents-standard');
+    }
+    assert.deepEqual(normalizeWorkspaceSnapshot(snapshot(packagedWorkspace)), normalizeWorkspaceSnapshot(snapshot(checkoutWorkspace)));
   }
-  assert.deepEqual(normalizeWorkspaceSnapshot(snapshot(packagedWorkspace)), normalizeWorkspaceSnapshot(snapshot(checkoutWorkspace)));
 
   console.log('CLI package parity verification passed: representative output and init mutation match checkout and npm tarball entrypoints.');
 } finally {

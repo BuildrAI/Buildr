@@ -3,7 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { collectFiles } from '../../../../infrastructure/filesystem/tree-files.ts';
 import { BOOTSTRAP_CONTRACT_RESOURCE } from '../../../../infrastructure/product-layout.ts';
-import { SUPPORTED_AGENT_IDS } from '../../infrastructure/runtime/adapter-contract.ts';
+// Historical product defaults, not a list of currently supported runtime identities.
+const LEGACY_BUILTIN_RUNTIMES = new Set(['claude-code', 'codex', 'cursor', 'qoder', 'trae', 'trae-work', 'workbuddy']);
 
 export interface PackageAssetsDependencies {
   readSkillManifest: ReturnType<typeof import('../skills.ts').registerDomainsSkills>['readSkillManifest'];
@@ -99,8 +100,6 @@ export function registerAgentAssetsPackageAssets(dependencies: PackageAssetsDepe
     const contract = readSimpleYaml(
       contractPath,
       [
-        'bootstrapGuideRequiredText',
-        'bootstrapGuideForbiddenText',
         'buildrSkillRequiredSections',
         'buildrSkillRequiredText',
         'buildrSkillForbiddenText',
@@ -108,7 +107,7 @@ export function registerAgentAssetsPackageAssets(dependencies: PackageAssetsDepe
         'generatedSkillRequiredText',
         'generatedSkillForbiddenText',
       ],
-      ['bootstrapGuidePath', 'bootstrapGuideMaxLines', 'buildrSkillPath', 'buildrSkillMaxLines'],
+      ['buildrSkillPath', 'buildrSkillMaxLines'],
     );
 
     function readArtifact(artifact: any, label: any): any  {
@@ -165,15 +164,7 @@ export function registerAgentAssetsPackageAssets(dependencies: PackageAssetsDepe
       }
     }
 
-    const guideContent = readArtifact(contract.bootstrapGuidePath, 'bootstrapGuidePath');
     const skillContent = readArtifact(contract.buildrSkillPath, 'buildrSkillPath');
-
-    validateMaxLines(guideContent, contract.bootstrapGuidePath, contract.bootstrapGuideMaxLines);
-    validateRequiredText(guideContent, contract.bootstrapGuidePath, contract.bootstrapGuideRequiredText);
-    validateForbiddenText(guideContent, contract.bootstrapGuidePath, [
-      ...contract.globalForbiddenText,
-      ...contract.bootstrapGuideForbiddenText,
-    ]);
 
     validateMaxLines(skillContent, contract.buildrSkillPath, contract.buildrSkillMaxLines);
     validateSections(skillContent, contract.buildrSkillPath, contract.buildrSkillRequiredSections);
@@ -198,7 +189,22 @@ export function registerAgentAssetsPackageAssets(dependencies: PackageAssetsDepe
     };
   }
 
-  function builtinSkillEntry(builtin: any): any  {
+  function builtinSkillEntry(builtin: any, existing: any = null): any  {
+    const previousId = builtin.replaces && existing?.id === builtin.replaces.id ? builtin.replaces.id : builtin.id;
+    const previousTarget = previousId === builtin.id ? builtin.target : builtin.replaces.target;
+    const source = previousTarget.startsWith('skills/openspec/') ? 'openspec' : 'buildr';
+    const isProductEntry = existing?.id === previousId
+      && existing.source === source
+      && existing.path === previousTarget.replace(/^skills\//, '')
+      && (existing.assetIdentity === undefined || existing.assetIdentity === `buildr:skill:${previousId}`)
+      && (existing.sourceIdentity === undefined || existing.sourceIdentity === `package:${previousTarget}`);
+    const isLegacyDefault = isProductEntry && Array.isArray(existing.runtimes)
+      && existing.runtimes.length === LEGACY_BUILTIN_RUNTIMES.size
+      && new Set(existing.runtimes).size === LEGACY_BUILTIN_RUNTIMES.size
+      && existing.runtimes.every((runtime: string) => LEGACY_BUILTIN_RUNTIMES.has(runtime));
+    // Only an exact historical product default becomes generic. User restrictions,
+    // including narrowed lists on otherwise managed builtins, remain explicit.
+    const runtimes = existing?.runtimes !== undefined && !isLegacyDefault ? existing.runtimes : builtin.runtimes;
     return {
       id: builtin.id,
       assetIdentity: `buildr:skill:${builtin.id}`,
@@ -209,7 +215,7 @@ export function registerAgentAssetsPackageAssets(dependencies: PackageAssetsDepe
       enabled: true,
       required: builtin.required === true,
       state: 'installed',
-      runtimes: builtin.runtimes || [...SUPPORTED_AGENT_IDS],
+      ...(runtimes !== undefined ? { runtimes: [...runtimes] } : {}),
       runtimePath: builtin.id,
       ...(builtin.provides ? { provides: builtin.provides } : {}),
       ...(builtin.requires ? { requires: builtin.requires } : {}),

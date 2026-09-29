@@ -1,0 +1,126 @@
+{
+  "version": 1,
+  "pages": [
+    {
+      "id": "commits",
+      "title": "任务 · 提交记录",
+      "notes": [
+        {
+          "id": "entry",
+          "title": "在任务收尾后查看提交记录",
+          "text": "“提交记录”位于“任务收尾”之后，与四个工作阶段并列。它用于阅读整个任务的提交，不是新的工作阶段；设计、文档和代码提交都可查看。",
+          "position": "commit-entry"
+        },
+        {
+          "id": "list",
+          "title": "一个任务，多次提交",
+          "text": "有提交记录时，按时间从新到旧查看。每项显示主题、短哈希、作者和时间，点击任意一项展开详情。",
+          "position": "commit-records"
+        }
+      ],
+      "states": [
+        {
+          "id": "detail",
+          "title": "展开提交详情",
+          "notes": [
+            {
+              "id": "detail",
+              "title": "完整说明与任务编码",
+              "text": "展开后保留完整提交说明（Commit Message）和完整哈希（Hash）。说明末尾的 Buildr-Task 记录任务编码；可以复制说明或完整哈希。",
+              "position": "commit-detail"
+            }
+          ]
+        },
+        {
+          "id": "example",
+          "title": "提交说明示例",
+          "notes": [
+            {
+              "id": "example",
+              "title": "保持现有提交主题",
+              "text": "在原有提交主题和正文之后，另起一段写入 Buildr-Task: 任务编码。通常每次提交只关联一个任务；此处仅展示和复制示例，不执行真实提交。",
+              "position": "commit-example"
+            }
+          ]
+        },
+        {
+          "id": "empty",
+          "title": "尚无关联提交",
+          "notes": [
+            {
+              "id": "empty",
+              "title": "没有提交时给出关联方法",
+              "text": "空白状态展示当前任务编码，并提供提交说明示例。已有任务可以先开始工作，之后再产生提交。",
+              "position": "commit-state"
+            }
+          ]
+        },
+        {
+          "id": "loading",
+          "title": "正在读取",
+          "notes": [
+            {
+              "id": "loading",
+              "title": "明确正在读取",
+              "text": "读取期间显示等待状态，不把还未取得结果显示为没有提交。这里由独立预览工具保持该状态。",
+              "position": "commit-state"
+            }
+          ]
+        },
+        {
+          "id": "failure",
+          "title": "读取失败",
+          "notes": [
+            {
+              "id": "failure",
+              "title": "失败可以重试",
+              "text": "明确区分无法读取和没有提交。点击“重新读取”后先显示等待，再恢复三次模拟提交；任务的其他内容仍可查看。",
+              "position": "commit-state"
+            }
+          ]
+        },
+        {
+          "id": "partial",
+          "title": "部分记录可用",
+          "notes": [
+            {
+              "id": "partial",
+              "title": "保留已读取的提交",
+              "text": "部分仓库读取失败或范围达到上限时，保留已经读取的提交，并明确标注范围不完整，提供重新读取入口。此处仍为模拟数据。",
+              "position": "commit-state"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "task-context",
+      "title": "任务 · 工作阶段",
+      "notes": [
+        {
+          "id": "entry",
+          "title": "保留任务原有路径",
+          "text": "工作阶段沿用任务现有入口。点击“任务收尾”之后的“提交记录”标签，查看本任务的全部关联提交。",
+          "position": "commit-entry"
+        }
+      ],
+      "states": [
+        {
+          "id": "design",
+          "title": "方案设计",
+          "notes": []
+        },
+        {
+          "id": "implementation",
+          "title": "开发实现",
+          "notes": []
+        },
+        {
+          "id": "closeout",
+          "title": "任务收尾",
+          "notes": []
+        }
+      ]
+    }
+  ]
+}

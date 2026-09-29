@@ -1,4 +1,6 @@
 import { stripTypeScriptTypes } from 'node:module';
+import { RUNTIME_ADAPTER_MAPPINGS, SUPPORTED_ADAPTER_IDS, resolveRuntimeSelection } from '../../../src/modules/agent-assets/infrastructure/runtime/adapter-contract.ts';
+import { validateSkillPublication } from '../../../src/modules/agent-assets/infrastructure/runtime/skills/publication.ts';
 import { capabilityKey, parseCapabilityContract, validateCapabilityIdentity } from '../../../src/modules/agent-assets/persistence/skill-manifest.ts';
 
 // Type erasure preserves executable text, so English prose and string literals
@@ -42,13 +44,45 @@ export function validateTaskRecordSkillCommands(content: any): any  {
   return problems;
 }
 
+export function validatePackageSkillRuntimes(runtimes: unknown, label: string): string[] {
+  if (runtimes === undefined) return [];
+  if (!Array.isArray(runtimes) || runtimes.length === 0) return [`${label}.runtimes must be a non-empty array when declared.`];
+  const problems: string[] = [];
+  const seen = new Set<string>();
+  for (const runtimeId of runtimes) {
+    if (typeof runtimeId !== 'string') {
+      problems.push(`${label}.runtimes must contain runtime identifiers as strings.`);
+      continue;
+    }
+    try { resolveRuntimeSelection({ runtimeId }); } catch (error: unknown) {
+      problems.push(`${label}.runtimes: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    if (seen.has(runtimeId)) problems.push(`${label}.runtimes contains duplicate runtime: ${runtimeId}`);
+    seen.add(runtimeId);
+  }
+  return problems;
+}
+
+export function validatePackageSkillPublications(skill: { id: string; runtimes?: unknown }, skillDir: string): string[] {
+  if (validatePackageSkillRuntimes(skill.runtimes, skill.id).length) return [];
+  // Missing restrictions mean all file contracts and known host extensions,
+  // not an empty validation set. Explicit restrictions use the real host id.
+  const runtimes = skill.runtimes as string[] | undefined
+    ?? [...new Set([...SUPPORTED_ADAPTER_IDS, ...Object.keys(RUNTIME_ADAPTER_MAPPINGS)])];
+  const problems: string[] = [];
+  for (const runtimeId of runtimes) {
+    const selection = resolveRuntimeSelection({ runtimeId });
+    problems.push(...validateSkillPublication(selection.adapter, { skillId: skill.id, skillDir, runtimeId: selection.runtimeId }));
+  }
+  return [...new Set(problems)];
+}
+
 export function createPackageStaticValidator(deps: any): any  {
   const {
     GENERATED_USER_REGISTRY_RESOURCE_SOURCES,
     LEGACY_PACKAGE_PATHS,
     PACKAGE_RUNTIME_TARGET,
     RESOURCE_WORKSPACE_ROOT,
-    SUPPORTED_AGENT_IDS,
     collectFiles,
     builtinRuleEntry,
     builtinSkillEntry,
@@ -78,19 +112,10 @@ export function createPackageStaticValidator(deps: any): any  {
     validatePackageComponentMembers,
     validateProjectsRegistry,
     validateSkillManifestEntries,
-    getRuntimeAdapter,
-    validateSkillPublication,
   } = deps;
 
   function validateAdapterPublications(skill: any, skillDir: any, problems: any): any  {
-    for (const runtime of skill.runtimes || []) {
-      try {
-        const adapter = getRuntimeAdapter(runtime);
-        problems.push(...validateSkillPublication(adapter, { skillId: skill.id, skillDir }));
-      } catch (error: any) {
-        problems.push(error.message);
-      }
-    }
+    problems.push(...validatePackageSkillPublications(skill, skillDir));
   }
 
   function validateWorkspaceSkillsBaseline(root: any, problems: any): any  {
@@ -229,8 +254,6 @@ export function createPackageStaticValidator(deps: any): any  {
           'docs/cli-reference.md',
           'docs/cli-architecture.md',
           'docs/known-limitations.md',
-          'docs/bootstrap-guide.md',
-          'docs/resources.md',
           'resources/',
           'web-dist/',
           'resources/runtime/',
@@ -752,9 +775,7 @@ export function createPackageStaticValidator(deps: any): any  {
         problems.push(`Duplicate package agentSkill id: ${skill.id}`);
       }
       agentSkillIds.add(skill.id);
-      if (!Array.isArray(skill.runtimes) || skill.runtimes.length === 0) {
-        problems.push(`Package agentSkill must declare at least one runtime: ${skill.id}`);
-      }
+      problems.push(...validatePackageSkillRuntimes(skill.runtimes, `Package agentSkill ${skill.id}`));
       if (path.isAbsolute(skill.path) || skill.path.startsWith('..')) {
         problems.push(`Package agentSkill path must stay inside product root: ${skill.path}`);
         continue;
@@ -798,18 +819,25 @@ export function createPackageStaticValidator(deps: any): any  {
         ]) {
           if (!skillContent.includes(requiredText)) problems.push(`Buildr Agent Skill must include ${JSON.stringify(requiredText)}.`);
         }
-        for (const [relativePath, requiredTexts] of [
-          ['docs/bootstrap-guide.md', ['解析 `buildr.git-operations/v1` binding', '提供明确 workspace、upstream 和 update operation', '不自动 stash、reset、rebase、merge、覆盖，也不继续 sync', '不重复询问 sync', '非 Git workspace 跳过 Git provider', '不是 `buildr sync` 的隐式 Git 行为']],
-          ['docs/cli-reference.md', ['按 `buildr.git-operations/v1` 能力绑定', '明确目标目录、上游和更新动作', '不自动执行 `stash`、`reset`、`rebase`、`merge` 或覆盖文件', 'Git 更新成功后不重复询问同步', '不受 Git 管理时直接同步', '它不隐式更新 Git']],
-        ]) {
+        for (const relativePath of ['docs/cli-reference.md']) {
           const contractPath = path.join(root, relativePath);
           if (!existsFile(contractPath)) {
             problems.push(`Workspace update intent contract file is missing: ${relativePath}`);
             continue;
           }
           const contractContent = fs.readFileSync(contractPath, 'utf8');
-          for (const requiredText of requiredTexts) {
-            if (!contractContent.includes(requiredText)) problems.push(`${relativePath} must include ${JSON.stringify(requiredText)}.`);
+          for (const [boundary, patterns] of [
+            ['selected Git capability binding', [/`buildr\.git-operations\/v1`[^。\n]*能力绑定/u]],
+            ['explicit directory, upstream and update operation', [/根目录|目标目录/u, /上游/u, /更新动作/u]],
+            ['stop unsafe Git updates and synchronization', [
+              /停止[^。\n]*更新[^。\n]*同步/u,
+              /(?:不擅自|不自动)[^。\n]*(?:暂存|stash)[^。\n]*(?:重置|reset)[^。\n]*(?:变基|rebase)[^。\n]*(?:合并|merge)[^。\n]*覆盖/u,
+            ]],
+            ['continue authorized synchronization after Git update', [/Git[^。\n]*成功后[^。\n]*不重复询问同步/u]],
+            ['synchronize non-Git workspaces directly', [/不受\s*Git\s*管理[^。\n]*直接同步/u]],
+            ['no implicit Git update in sync', [/不隐式更新\s*Git/u]],
+          ] as const) {
+            if (!patterns.every(pattern => pattern.test(contractContent))) problems.push(`${relativePath} must describe the ${boundary} boundary.`);
           }
         }
       }
@@ -827,9 +855,7 @@ export function createPackageStaticValidator(deps: any): any  {
         problems.push(`Duplicate package skillSource id: ${skill.id}`);
       }
       skillSourceIds.add(skill.id);
-      if (!Array.isArray(skill.runtimes) || skill.runtimes.length === 0) {
-        problems.push(`Package skillSource must declare at least one runtime: ${skill.id}`);
-      }
+      problems.push(...validatePackageSkillRuntimes(skill.runtimes, `Package skillSource ${skill.id}`));
       if (path.isAbsolute(skill.path) || skill.path.startsWith('..')) {
         problems.push(`Package skillSource path must stay inside product root: ${skill.path}`);
         continue;
@@ -855,6 +881,7 @@ export function createPackageStaticValidator(deps: any): any  {
       } catch (error: any) {
         problems.push(error.message);
       }
+      validateAdapterPublications(skill, skillDir, problems);
       files.push(...collectFiles(skillDir));
     }
     return skillSourceIds;
@@ -1012,10 +1039,7 @@ export function createPackageStaticValidator(deps: any): any  {
       if (!skill.path.startsWith(`${RESOURCE_WORKSPACE_ROOT}/skills/`)) {
         problems.push(`${label}.path must be under ${RESOURCE_WORKSPACE_ROOT}/skills/.`);
       }
-      const missingRuntimes = SUPPORTED_AGENT_IDS.filter((runtime: any) => !skill.runtimes?.includes(runtime));
-      if (!Array.isArray(skill.runtimes) || missingRuntimes.length > 0) {
-        problems.push(`${label}.runtimes must include all supported adapters: ${SUPPORTED_AGENT_IDS.join(', ')}.`);
-      }
+      problems.push(...validatePackageSkillRuntimes(skill.runtimes, label));
       if (path.isAbsolute(skill.path) || skill.path.startsWith('..') || path.isAbsolute(skill.target) || skill.target.startsWith('..')) {
         problems.push(`${label} paths must stay relative.`);
         continue;

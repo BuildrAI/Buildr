@@ -7,8 +7,9 @@ import type { ChangeArtifact } from '../../../components/ChangeBriefPanel';
 
 export type TaskStage = NonNullable<TaskWorkContext['stage']>;
 export type TaskNodeStage = 'requirements' | 'design' | 'implementation' | 'closeout';
+export type TaskReadingTab = TaskNodeStage | 'commits';
 export const taskStageLabels: Record<TaskStage, { title: string; english: string; description: string }> = {
-  requirements: { title: '任务需求', english: 'Task Requirements', description: '本次需要解决的问题、目标与范围。brief.md 为补充需求或说明，可以为空。' },
+  requirements: { title: '任务需求', english: 'Task Requirements', description: '任务目标说明本次需要解决的问题、目标与范围；关联变更的 brief.md 为补充需求或说明，可以为空。' },
   design: { title: '方案设计', english: 'Solution Design', description: '提案说明改什么，设计说明怎么做，规范说明应满足的行为。' },
   'planning-review': { title: '方案审查', english: 'Planning Review', description: '每次方案审查的结论与问题，按次保留。' },
   implementation: { title: '开发实现', english: 'Implementation', description: '实施清单，以及当前实现或修复进展。' },

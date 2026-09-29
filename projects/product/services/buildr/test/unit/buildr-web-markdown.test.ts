@@ -313,3 +313,45 @@ test('嵌套有序与任务列表保持各自类型且不会丢失相邻列表',
   assert.equal(root.childNodes[0].querySelector('input').checked, true);
   assert.equal(root.childNodes[1].tagName, 'UL');
 });
+
+test('代码正文保留空行和缩进，Mermaid明确源码回退，表格独立滚动', async () => {
+  const { renderMarkdown } = await loadRenderer();
+  const code = 'first\n  second\n\nlast';
+  const root = renderMarkdown('```sh\n' + code + '\n```\n\n```mermaid\ngraph LR\n  A --> B\n```\n\n| a | b |\n| --- | --- |\n| c | d |', { sourcePath: 'docs/readme.md' });
+  assert.equal(root.querySelector('pre code').textContent, code);
+  assert.equal(root.querySelectorAll('button').length, 2);
+  assert.match(root.textContent, /当前阅读器显示 Mermaid 源码，尚未渲染图示/);
+  assert.match(root.textContent, /docs\/readme.md/);
+  assert.equal(root.querySelector('table').parentNode.className, 'markdown-table-scroll');
+});
+
+test('标题章节标识与常见GitHub片段一致，重名章节不覆盖', async () => {
+  const { renderMarkdown } = await loadRenderer();
+  const root = renderMarkdown('## 开始使用（Getting Started）\n## 开始使用（Getting Started）\n## `buildr update`');
+  assert.deepEqual(root.querySelectorAll('h2').map(item => item.getAttribute('id')), ['开始使用getting-started', '开始使用getting-started-1', 'buildr-update']);
+});
+
+test('相对链接保留原始安全引用，分块标题计数不依赖共享可变状态', async () => {
+  const { renderMarkdown, markdownHeadingCounts } = await loadRenderer();
+  const first = '## 说明\n\n![图片](image.png)';
+  const original = './name%20space.md#说明';
+  const root = renderMarkdown(`## 说明\n[引用](${original})`, { allowRelativeLinks: true, headingCounts: markdownHeadingCounts(first) });
+  assert.equal(root.querySelector('h2').getAttribute('id'), '说明-1');
+  assert.equal(root.querySelector('a').getAttribute('data-markdown-href'), original);
+  assert.equal(root.querySelector('a').getAttribute('href'), 'name%20space.md#说明');
+});
+
+test('外层标题替换源H1时保留其锚点与后续同名章节序号', async () => {
+  const { renderMarkdown, markdownDocumentBody } = await loadRenderer();
+  const body = markdownDocumentBody('# 标题 `Name`\n\n## 标题 `Name`\n正文', true);
+  assert.equal(body.anchor, '标题-name');
+  assert.equal(renderMarkdown(body.content, { headingCounts: body.headingCounts }).querySelector('h2').getAttribute('id'), '标题-name-1');
+  assert.equal(markdownDocumentBody('# 原文\n', false).anchor, undefined);
+});
+
+test('标题计数与渲染使用相同的围栏结束条件', async () => {
+  const { renderMarkdown, markdownHeadingCounts } = await loadRenderer();
+  const text = '```md\n```js\n## 说明\n```\n## 说明';
+  assert.deepEqual(markdownHeadingCounts(text), { '说明': 1 });
+  assert.equal(renderMarkdown(text).querySelector('h2').getAttribute('id'), '说明');
+});

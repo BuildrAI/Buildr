@@ -74,7 +74,7 @@ test('release documentation entry points resolve within the checkout', () => {
   const documents = [
     path.join(PRODUCT_ROOT, 'knowledge/docs/flows/open-source-release.md'),
     path.join(PRODUCT_ROOT, 'knowledge/docs/architecture/verification-framework.md'),
-    path.join(PRODUCT_ROOT, 'knowledge/docs/services/buildr.md'),
+    path.join(PRODUCT_ROOT, 'knowledge/docs/architecture/technical.md'),
     path.join(WORKSPACE_ROOT, 'skills/buildr-release/SKILL.md'),
   ];
   for (const file of documents) {

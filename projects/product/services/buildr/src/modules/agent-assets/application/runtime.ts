@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { consumeRuntimeAdapterOption, selectWorkspaceRuntime } from './runtime-selection.ts';
 import process from 'node:process';
 import { parseInstallClaudeCodeBuildrSkillArgs } from '../infrastructure/runtime/render-claude-code.ts';
 import { assembleRuntimeProjection } from '../infrastructure/runtime/projection.ts';
@@ -6,7 +7,6 @@ import { RUNTIME_CHECKERS, RUNTIME_CHECK_PRINTERS } from '../infrastructure/runt
 import {
   RUNTIME_ADAPTERS,
   SUPPORTED_AGENT_IDS,
-  UNSUPPORTED_AGENT_GUIDANCE,
   runtimeDiscoveryPayload,
   selectAdapterImplementation,
 } from '../infrastructure/runtime/adapter-contract.ts';
@@ -64,7 +64,7 @@ export function registerDomainsRuntime(dependencies: RuntimeApplicationDependenc
       console.log(`  runtime check: ${adapter.recommendedCommands.runtimeCheckScope}`);
     }
     console.log('');
-    console.log(`Unsupported Agent: ${UNSUPPORTED_AGENT_GUIDANCE.message}${UNSUPPORTED_AGENT_GUIDANCE.nextStep}`);
+    console.log('Default adapter: agents-standard. Unlisted valid runtime identities use standard files; host discovery and session consumption remain unconfirmed.');
   }
 
   function runtimeImplementation(adapter: any, kind: any, implementations: any): any  {
@@ -74,10 +74,12 @@ export function registerDomainsRuntime(dependencies: RuntimeApplicationDependenc
   function installProductRuntimeSkill(agent: any, args: any, options: any = {}): any  {
     const repoRoot = options.repoRoot ?? process.cwd();
     const command = options.command ?? `buildr skill install ${agent}`;
-    const parsed = parseInstallClaudeCodeBuildrSkillArgs(args, command);
+    const selectionArgs = consumeRuntimeAdapterOption(args);
+    const parsed = parseInstallClaudeCodeBuildrSkillArgs(selectionArgs.args, command);
     const targetRoot = path.resolve(repoRoot, parsed.target);
+    const selected = options.runtimeSelection ?? selectWorkspaceRuntime(targetRoot, { runtimeId: agent ?? null, adapterId: selectionArgs.adapterId });
     if (!existsDirectory(targetRoot)) throw new Error(`Target directory does not exist: ${targetRoot}`);
-    const { plan } = assembleRuntimeProjection({ repoRoot, targetRoot, scope: '.', adapterId: agent, selection: { productSkill: true } });
+    const { plan } = assembleRuntimeProjection({ repoRoot, targetRoot, scope: '.', runtimeId: selected.runtimeId, adapterId: selected.adapterId, selection: { productSkill: true } });
     reconcileRuntimePlan(plan);
     return { targetRoot, files: plan.writes.map((item: any) => item.targetFile), plan };
   }

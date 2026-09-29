@@ -8,8 +8,6 @@ import { createScopeDiagnostics } from '../../src/modules/workspace/application/
 import { buildDoctorDomainHealth, buildDoctorHealth, buildDoctorRepairPlan } from '../../src/modules/diagnostics/application/result-model.ts';
 import { PACKAGE_VERIFIERS, selectPackageVerifiers } from '../../tools/verification/package-check/verification-registry.ts';
 import { blockingSyncSourceIssues } from '../../src/modules/agent-assets/application/runtime-projection.ts';
-import { environmentFindings } from '../../src/modules/agent-assets/infrastructure/runtime/check-runtime.ts';
-import { RUNTIME_ADAPTERS } from '../../src/modules/agent-assets/infrastructure/runtime/adapter-contract.ts';
 
 test('package verifier selector 保持稳定顺序、去重并拒绝未知 owner', () => {
   assert.deepEqual(selectPackageVerifiers().map((item: any) => item.id), PACKAGE_VERIFIERS.map((item: any) => item.id));
@@ -40,10 +38,7 @@ test('runtime doctor 过滤 info 并汇总全部 finding status', () => {
   assert.deepEqual(diagnostics.summarizeRuntimeFindings(findings), {
     ok: 1, info: 1, warning: 1, missing: 0, stale: 0, orphan: 0, conflict: 1,
   });
-  diagnostics.addUnsupportedAgentFinding({}, 'unknown');
-  assert.equal(recorded[0][1], 'warning');
-  assert.equal(recorded[0][2], 'runtime.agent_unsupported');
-  assert.equal(recorded[0][4].mustNotUseFallbackAdapter, true);
+  assert.equal(recorded.length, 0);
 });
 
 function diagnoseRuntimeWarnings(runtimeFindings: any): any  {
@@ -65,7 +60,6 @@ function diagnoseRuntimeWarnings(runtimeFindings: any): any  {
       targetRoot: '/workspace',
       findings: runtimeFindings,
       repairCommands: [],
-      environmentChecks: {},
       activation: {},
     }),
     toPosixRelative: () => '.',
@@ -83,9 +77,11 @@ test('runtime doctor 聚合 warning 时保留 actionability 与来源摘要', ()
   assert.deepEqual(nonActionable.findings[0], {
     status: 'warning',
     code: 'runtime.codex_warning',
-    message: 'Codex runtime 存在警告：.',
+    message: 'Agents standard runtime 存在警告：.',
     path: '.',
     agent: 'codex',
+    runtimeId: 'codex',
+    adapterId: 'agents-standard',
     userActionRequired: false,
     runtimeFindingCodes: ['runtime.advisory'],
     suggestion: '该 warning 未要求用户操作；需要细节时运行 runtime check。',
@@ -111,22 +107,14 @@ test('runtime doctor 聚合 warning 时保留 actionability 与来源摘要', ()
   assert.deepEqual(mixed.findings[0].runtimeFindingCodes, ['runtime.advisory', 'runtime.manual_check']);
 });
 
-test('Qoder 安装形态探测缺席不降低 readiness，投射过期仍然阻塞', () => {
-  const envFindings: any = environmentFindings(RUNTIME_ADAPTERS.qoder, {
-    installation: { status: 'missing', probe: 'any', evidence: 'desktop: missing | ide: missing | cli: missing' },
-    version: { status: 'missing', probe: 'any' },
-  });
-  assert.deepEqual(envFindings.map((item: any) => item.code), ['runtime.qoder_installation_missing']);
-  assert.equal(envFindings[0].userActionRequired, false);
-  const only: any = diagnoseRuntimeWarnings(envFindings);
-  assert.equal(only.findings[0].userActionRequired, false);
-  assert.deepEqual(only.findings[0].runtimeFindingCodes, ['runtime.qoder_installation_missing']);
-  assert.equal(buildDoctorHealth({ workspace: { identity: { state: 'valid' } }, findings: only.findings }).ready, true);
-  assert.deepEqual(buildDoctorRepairPlan(only.findings), []);
+test('投射过期阻塞 readiness，非阻断 warning 不阻塞', () => {
+  const advisory: any = diagnoseRuntimeWarnings([{ status: 'warning', code: 'runtime.advisory', userActionRequired: false }]);
+  assert.equal(buildDoctorHealth({ workspace: { identity: { state: 'valid' } }, findings: advisory.findings }).ready, true);
+  assert.deepEqual(buildDoctorRepairPlan(advisory.findings), []);
 
   const withStale: any = diagnoseRuntimeWarnings([
-    ...envFindings,
-    { status: 'stale', code: 'runtime.qoder_rules_stale', path: '.', userActionRequired: true },
+    { status: 'warning', code: 'runtime.advisory', userActionRequired: false },
+    { status: 'stale', code: 'runtime.agents_standard_rules_stale', path: '.', userActionRequired: true },
   ]);
   assert.equal(buildDoctorHealth({ workspace: { identity: { state: 'valid' } }, findings: withStale.findings }).ready, false);
 });

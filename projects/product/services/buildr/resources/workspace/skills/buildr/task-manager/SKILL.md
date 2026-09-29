@@ -11,6 +11,8 @@ description: 创建或维护任务、记录工作进展与待处理事项、读�
 
 确认当前工作空间（Workspace）、任务标识、授权范围及真实目标。已有任务缺少当前记录时先 `task inspect`，刚读取或前一步成功写入返回的完整记录可直接接续。Task Record自身结构有效时始终返回完整记录；响应中的`referenceDiagnostics`只说明当前Project、Service或Change可用性，不属于Task业务事实。`todo`只保存尚未启动的意向；`active`表示已开始。子任务只用于可独立说明目标、范围及成果的交付，临时智能体分工不创建子任务。
 
+新选择的任务标识（Task ID）默认使用简短、稳定的语义名称，不主动添加日期；已有任务标识（Task ID）及用户指定的合法名称继续沿用。同名但不同的任务先核对归属，再用简短语义后缀区分，不覆盖或借用已有任务，不为去掉日期另建记录。
+
 使用已有动作：
 
 ```text
@@ -21,6 +23,8 @@ buildr task activate <id> --expected-record <recordDigest> --target <workspace> 
 buildr task complete <id> --summary <text> --expected-record <recordDigest> [--parent-completion <json-file>] --target <workspace> --json
 buildr task abandon <id> --reason <text> --expected-record <recordDigest> --target <workspace> --json
 ```
+
+`intent`（目标与说明）是任务级需求说明：用简洁清晰的语言写清本次要解决的问题、目标和范围边界，需要验收要点时一并写出；不写成标题复述、内部步骤清单或只有作者能懂的缩写。关联变更（Change）的 `brief.md` 只补充该变更的需求叙事，不替代任务目标，两者不相互复制正文或相互矛盾。
 
 任务说明引用已登记项目文档时使用具名的工作空间相对 Markdown 链接，例如 `[方案](projects/product/docs/plan.md)`。区分链接可解析与正文可读取；文档只在隔离目录时如实说明，不复制正文冒充已交付。
 

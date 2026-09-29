@@ -1,30 +1,26 @@
 schemaVersion: buildr.knowledge-impact/v1
-change: decouple-release-task-environment
+task: fix-dev-baseline-verification-failures
 operation: reconcile
-treeIdentity: 97c9081e232c1305cda2b3c589b335cc06b2671e
+treeIdentity: 6584abd4345319854c38967a11e1b2e5341406ee
 impacts:
-  - type: brief
-    target: openspec/changes/decouple-release-task-environment/brief.md
-    reason: Release退出Task Environment连接并直接消费真实owner。
+  - type: reference
+    target: knowledge/docs/architecture/verification-framework.md
+    reason: 测试族名称与完整入口（test:fast / test:integration / test:system / test:daily-full）不变；npm 脚本内部增加 --import prelude 与 executor baseEnv 默认注入 BUILDR_NPM_ENTRY_PATH，不影响文档描述。
     status: aligned
     sourceIdentities:
-      - openspec/changes/decouple-release-task-environment/proposal.md
-      - openspec/changes/decouple-release-task-environment/design.md
-      - openspec/changes/decouple-release-task-environment/tasks.md
-  - type: service
-    target: services/buildr/docs/release-checklist.md
-    reason: Release readiness、dependency preparation、execution binding与closeout输入已变化。
-    status: updated
+      - services/buildr/package.json
+      - services/buildr/test/register-development-entry.ts
+      - services/buildr/test/verification/executor.ts
+  - type: reference
+    target: services/buildr/docs/cli-architecture.md
+    reason: 文档钉住的开发入口 run-development-npm run test:fast 不变。
+    status: aligned
     sourceIdentities:
-      - services/buildr/tools/release/release-execution-binding.ts
-      - services/buildr/tools/release/release-preparation-binding.ts
-      - services/buildr/tools/release/release-transaction-runner.ts
-      - services/buildr/tools/release/release-orchestration-runner.ts
-  - type: workflow
-    target: skills/buildr-release/SKILL.md
-    reason: 发布Skill直接组合Worktree、Release Preparation、Node与retained controller。
-    status: updated
+      - services/buildr/package.json
+  - type: reference
+    target: openspec/specs/npm-cli-package/spec.md
+    reason: 规范已要求安装包保留 docs/cli-reference.md 离线参考；本变更让 payload docs 映射追上规范，无语义改动。
+    status: aligned
     sourceIdentities:
-      - services/buildr/tools/release/release-readiness.ts
-      - services/buildr/tools/release/release-task-evidence-correlation.ts
+      - services/buildr/tools/release/application-payload.ts
 unresolvedItems: []

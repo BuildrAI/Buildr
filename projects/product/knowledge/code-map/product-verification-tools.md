@@ -31,7 +31,7 @@ Buildr 产品是[通用项目与服务测试验证框架](../docs/architecture/w
 - [services/buildr/package.json](../../services/buildr/package.json) — 稳定命令、生成物准备、测试及公开包导出
 - [services/buildr-web/package.json](../../services/buildr-web/package.json) — 前端构建及独立逻辑测试入口
 - **`services/buildr/tools/development/`** — 真实开发环境边界
-  - [run-development-npm.ts](../../services/buildr/tools/development/run-development-npm.ts) — 检查当前 Node.js 版本并调用相邻 npm；无扩展名的同名入口负责选择精确 Node.js
+  - [run-development-npm.ts](../../services/buildr/tools/development/run-development-npm.ts) — 检查当前 Node.js 在项目声明范围内并调用相邻 npm；无扩展名的同名入口负责在声明范围内选择 Node.js（声明版本优先）
   - [run-isolated-workspace-smoke.ts](../../services/buildr/tools/development/run-isolated-workspace-smoke.ts) — 隔离工作目录和两类应用数据目录，统一成功与失败清理
 
 ## 上下文复用：公共能力与项目适配

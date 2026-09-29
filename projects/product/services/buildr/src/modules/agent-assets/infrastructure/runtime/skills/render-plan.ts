@@ -4,7 +4,8 @@ import path from 'node:path';
 import {
   REQUIRED_RENDER_CAPABILITIES,
   createRuntimePlan,
-  getRuntimeAdapter,
+  getRuntimeAdapterFor,
+  runtimeSkillPath,
 } from '../adapter-contract.ts';
 import { assertRuntimeTargetPath, reconcileRuntimePlan } from '../runtime-reconciler.ts';
 import { FRONTMATTER_BOUNDARY, MANAGED_PREFIX, SKILL_CONTRIBUTION_MARKER, resolveSkillScope } from './primitives.ts';
@@ -14,7 +15,8 @@ import {
   buildCompanionWrite,
   buildSkillProjectionReceipt,
   enumerateSkillSourceFiles,
-  legacySkillProjectionOwnershipReceiptRoot,
+  listSkillProjectionOwnershipReceipts,
+  skillProjectionOwnerId,
   observeSkillProjectionOwnershipReceipt,
   parseSkillProjectionReceipt,
   renderSkillProjectionReceipt,
@@ -75,7 +77,7 @@ function capabilityBindingBlock(skill: any): any  {
   lines.push(`Consumer readiness: \`${consumer.readiness}\`${consumer.reason ? ` (reason: \`${consumer.reason}\`)` : ''}. \`ready\` 只表示结构可路由。`, '');
   for (const dependency of consumer.dependencies) {
     const selected = dependency.selectedProvider;
-    const providerPath = selected ? `${getRuntimeAdapter(skill.runtime).traits.skills.root}/skills/${selected.runtimePath}/SKILL.md` : 'unresolved';
+    const providerPath = selected ? `${getRuntimeAdapterFor(skill.runtime, skill.adapterId).traits.skills.root}/skills/${selected.runtimePath}/SKILL.md` : 'unresolved';
     lines.push(`- \`${dependency.capability}@${dependency.version}\` — mode \`${dependency.mode}\`, readiness \`${dependency.readiness}\`, reason \`${dependency.reason || 'none'}\``);
     lines.push(`  - contract: \`${dependency.contract?.contractPath || 'unresolved'}\``);
     lines.push(`  - provider: \`${selected?.id || 'none'}\` → \`${providerPath}\` (scope \`${selected?.scope || 'unresolved'}\`)`);
@@ -128,8 +130,8 @@ export function buildRuntimeSkillTarget(targetRoot: any, skill: any, runtime: an
 }
 
 export function buildRuntimeSkillDirectory(targetRoot: any, skill: any, runtime: any, root: any = null): any  {
-  const runtimePath = skill.runtimePath ?? skill.id;
-  const skillRoot = root || getRuntimeAdapter(runtime).traits.skills.root;
+  const skillRoot = root || getRuntimeAdapterFor(runtime, skill.adapterId).traits.skills.root;
+  const runtimePath = runtimeSkillPath(skill, runtime, skill.adapterId);
   return path.join(targetRoot, skillRoot, 'skills', ...runtimePath.split('/'));
 }
 
@@ -167,7 +169,7 @@ export function buildSkillContent(repoRoot: any, skill: any): any  {
 }
 
 export function buildAgentInstallPlanTarget(targetRoot: any, skill: any, runtime: any = 'claude-code', root: any = null): any  {
-  const skillRoot = root || getRuntimeAdapter(runtime).traits.skills.root;
+  const skillRoot = root || getRuntimeAdapterFor(runtime, skill.adapterId).traits.skills.root;
   return path.join(targetRoot, skillRoot, 'buildr', 'skill-install-plans', `${skill.id}.md`);
 }
 
@@ -210,7 +212,7 @@ export function buildAgentInstallPlanContent(skill: any): any  {
   ].join('\n');
 }
 
-export function resolveRenderSkills(repoRoot: any, scope: any, runtime: any): any  {
+export function resolveRenderSkills(repoRoot: any, scope: any, runtime: any, options: any = {}): any  {
   const { organizationRoot, projectRoot } = resolveSkillScope(repoRoot, scope);
   if (projectRoot) {
     const error: Error & Record<string, any> = new Error(`Legacy Project Skill render scope is no longer supported: ${scope}. Use --destination workspace or --destination user from the workspace source authority.`);
@@ -219,8 +221,9 @@ export function resolveRenderSkills(repoRoot: any, scope: any, runtime: any): an
     error.nextActions = ['Review the legacy Project Skill source without modifying it; this Buildr version does not migrate it.', `buildr skills render ${runtime} --destination workspace --target ${organizationRoot}`];
     throw error;
   }
-  const workspaceGraph = resolveSkillCapabilityGraph(organizationRoot, null, { runtime });
-  return resolveSkills(organizationRoot, null, { runtime }).map((skill: any) => ({ ...skill, declaredScope: '.', capabilityBindings: capabilityBindingsForSkill(workspaceGraph, skill.id) }));
+  const adapter = getRuntimeAdapterFor(runtime, options.adapterId);
+  const workspaceGraph = resolveSkillCapabilityGraph(organizationRoot, null, { runtime, adapterId: adapter.id });
+  return resolveSkills(organizationRoot, null, { runtime, adapterId: adapter.id, resolveRemote: options.resolveRemote }).map((skill: any) => ({ ...skill, runtime, adapterId: adapter.id, declaredScope: '.', capabilityBindings: capabilityBindingsForSkill(workspaceGraph, skill.id) }));
 }
 
 function skillWriteIdentity(item: any): any  {
@@ -241,8 +244,8 @@ function digestInventory(writes: any, source: any = false): any  {
 }
 
 function buildSkillFileWrites(repoRoot: any, targetRoot: any, skill: any, runtime: any): any  {
-  const runtimeSkill = skill.runtime ? skill : { ...skill, runtime };
-  const runtimePath = skill.runtimePath ?? skill.id;
+  const runtimeSkill = { ...skill, runtime };
+  const runtimePath = runtimeSkillPath(skill, runtime, skill.adapterId);
   const source = projectionSource(skill);
   const targetDir = buildRuntimeSkillDirectory(targetRoot, skill, runtime);
   const sourceFiles = skill.sourceDir ? enumerateSkillSourceFiles(skill.sourceDir) : [];
@@ -276,6 +279,14 @@ function buildSkillFileWrites(repoRoot: any, targetRoot: any, skill: any, runtim
   return { runtimePath, targetDir, source, writes };
 }
 
+function observeWriteTarget(targetRoot: any, targetFile: any): any {
+  assertRuntimeTargetPath(targetRoot, targetFile, 'Runtime Skill observation');
+  const stat = fs.lstatSync(targetFile, { throwIfNoEntry: false });
+  if (!stat) return { exists: false };
+  if (!stat.isFile()) throw new Error(`Runtime Skill target must be a regular file: ${targetFile}`);
+  return { exists: true, integrity: sha256Integrity(fs.readFileSync(targetFile)), executable: (stat.mode & 0o100) === 0o100 };
+}
+
 function addWrite(byTarget: any, item: any, conflicts: any): any  {
   const existing = byTarget.get(item.targetFile);
   if (existing && skillWriteIdentity(existing) !== skillWriteIdentity(item)) {
@@ -295,7 +306,7 @@ function receiptManaged(content: any): any  {
 }
 
 export function buildSkillRenderPlan(repoRoot: any, targetRoot: any, skills: any, runtime: any, options: any = {}): any  {
-  const adapter = getRuntimeAdapter(runtime);
+  const adapter = getRuntimeAdapterFor(runtime, options.adapterId);
   const byTarget: any = new Map();
   const byRuntimePath: any = new Map();
   const removals: any[] = [];
@@ -305,8 +316,10 @@ export function buildSkillRenderPlan(repoRoot: any, targetRoot: any, skills: any
   const roots = destination === 'workspace'
     ? (adapter.traits.skills.destinations?.workspace?.roots || [primaryRoot])
     : [adapter.traits.skills.destinations?.user?.root || primaryRoot];
-  for (const skill of skills) {
-    const runtimeSkill = skill.runtime ? skill : { ...skill, runtime };
+  const receiptsByRoot = new Map(roots.map((root: any) => [root, listSkillProjectionOwnershipReceipts({ targetRoot, runtimeRoot: root, destination, adapterId: adapter.id })]));
+  for (const sourceSkill of skills) {
+    const skill = { ...sourceSkill, runtime, adapterId: adapter.id };
+    const runtimeSkill = skill;
     if (skill.installMode === 'agent') {
       for (const root of roots) {
         addWrite(byTarget, {
@@ -354,15 +367,23 @@ export function buildSkillRenderPlan(repoRoot: any, targetRoot: any, skills: any
         targetRoot,
         runtimeRoot: root,
         destination,
-        adapterId: runtime,
+        adapterId: adapter.id,
         runtimePath: projection.runtimePath,
         runtimeSkillDir: scope.targetDir,
+        legacyRuntimePaths: [...(projection.skill.legacyRuntimePaths || []), ...(projection.skill.runtimePath ? [projection.skill.runtimePath] : [])],
+        skillId: projection.skill.id,
+        assetIdentity: projection.skill.assetIdentity || `product:${projection.skill.id}`,
+        sourceIdentity: projection.skill.sourceIdentity || `product:${projection.skill.displaySource || projection.skill.id}`,
+        sourceWorkspaceId: projection.skill.workspaceId || options.sourceWorkspaceId || sha256Integrity(Buffer.from(path.resolve(repoRoot), 'utf8')),
+        receiptEntries: receiptsByRoot.get(root),
       });
       const receiptFile = receiptObservation.canonicalFile;
-      const previousReceipt = receiptObservation.receipt;
+      const previousReceipt = receiptObservation.targetReceipt;
       const previousByPath: any = new Map((previousReceipt?.files || []).map((file: any) => [file.path, file]));
       const currentPaths: any = new Set();
       for (const item of scope.writes) {
+        item.strictOwnership = true;
+        item.observedState = observeWriteTarget(targetRoot, item.targetFile);
         currentPaths.add(item.skillRelativePath);
         const previous = previousByPath.get(item.skillRelativePath);
         if (previous) {
@@ -391,7 +412,7 @@ export function buildSkillRenderPlan(repoRoot: any, targetRoot: any, skills: any
         executable: item.mode === 0o100,
       }));
       const receipt = buildSkillProjectionReceipt({
-        adapterId: runtime,
+        adapterId: skillProjectionOwnerId(adapter.id, root),
         destination,
         skillId: projection.skill.id,
         runtimePath: projection.runtimePath,
@@ -417,6 +438,8 @@ export function buildSkillRenderPlan(repoRoot: any, targetRoot: any, skills: any
         runtimePath: projection.runtimePath,
         kind: 'skill-projection-receipt',
         isManaged: receiptManaged,
+        strictOwnership: true,
+        observedState: observeWriteTarget(targetRoot, receiptFile),
         commitLast: true,
         diagnostic: {
           label: `Skill projection ownership receipt ${projection.runtimePath}`,
@@ -429,11 +452,26 @@ export function buildSkillRenderPlan(repoRoot: any, targetRoot: any, skills: any
           repair: 'skills-render',
         },
       }, conflicts);
-      if (receiptObservation.legacyReceipt) {
+      for (const relocation of receiptObservation.relocations) {
+        for (const file of relocation.receipt.files) {
+          removals.push({
+            targetFile: path.join(relocation.targetDir, ...file.path.split('/')),
+            expectedIntegrity: file.integrity,
+            expectedExecutable: file.executable,
+            pruneEmptyRoot: relocation.targetDir,
+            kind: 'legacy-skill-projection-file',
+            source: projection.sources.join(', '),
+            skillId: projection.skill.id,
+            runtimePath: relocation.runtimePath,
+            removeLast: true,
+          });
+        }
+      }
+      for (const legacy of receiptObservation.migrations) {
         removals.push({
-          targetFile: receiptObservation.legacyFile,
-          expectedIntegrity: sha256Integrity(fs.readFileSync(receiptObservation.legacyFile)),
-          pruneEmptyRoot: legacySkillProjectionOwnershipReceiptRoot(targetRoot, root),
+          targetFile: legacy.file,
+          expectedIntegrity: sha256Integrity(fs.readFileSync(legacy.file)),
+          pruneEmptyRoot: legacy.directory,
           source: projection.sources.join(', '),
           skillId: scope.writes[0].skillId,
           runtimePath: projection.runtimePath,
@@ -453,6 +491,7 @@ export function buildSkillRenderPlan(repoRoot: any, targetRoot: any, skills: any
   if (conflicts.length && options.deferConflicts !== true) throw new Error(`运行时写入冲突：\n- ${conflicts.sort().join('\n- ')}`);
   return {
     runtime,
+    adapterId: adapter.id,
     writes: [...byTarget.values()].sort((left: any, right: any) => left.targetFile.localeCompare(right.targetFile)),
     removals: removals.sort((left: any, right: any) => left.targetFile.localeCompare(right.targetFile)),
   };
@@ -461,12 +500,13 @@ export function buildSkillRenderPlan(repoRoot: any, targetRoot: any, skills: any
 export function applySkillRenderPlan(plan: any, targetRoot: any): any  {
   for (const item of [...plan.writes, ...plan.removals]) assertRuntimeTargetPath(targetRoot, item.targetFile, 'Runtime Skill target');
   const runtimePlan = createRuntimePlan({
-    adapterId: plan.runtime,
+    adapterId: plan.adapterId || getRuntimeAdapterFor(plan.runtime).id,
+    runtimeId: plan.runtime,
     targetRoot,
     scope: '.',
     writes: plan.writes,
     removals: plan.removals,
-    capabilityEvidence: REQUIRED_RENDER_CAPABILITIES.map((capability: any) => ({ capability, supported: true, adapterId: plan.runtime })),
+    capabilityEvidence: REQUIRED_RENDER_CAPABILITIES.map((capability: any) => ({ capability, supported: true, adapterId: plan.adapterId || getRuntimeAdapterFor(plan.runtime).id })),
   });
   reconcileRuntimePlan(runtimePlan);
   return [...plan.writes.map((item: any) => item.targetFile), ...plan.removals.map((item: any) => item.targetFile)];

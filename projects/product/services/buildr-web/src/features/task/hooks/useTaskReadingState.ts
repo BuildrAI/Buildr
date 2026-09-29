@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import type { TaskNodeStage, TaskReadTarget } from '../components/taskWorkContent';
+import type { TaskReadingTab, TaskReadTarget } from '../components/taskWorkContent';
 
 /** Reading choices belong to this task view, independently of the recorded execution stage. */
 export function useTaskReadingState(taskId: string) {
-  const [selected, setSelected] = useState<TaskNodeStage>('requirements');
+  const [selected, setSelected] = useState<TaskReadingTab>('requirements');
   const [choices, setChoices] = useState<Record<string, string>>({});
   const [trail, setTrail] = useState<TaskReadTarget[]>([]);
   const rootRef = useRef<HTMLElement>(null);
@@ -31,7 +31,7 @@ export function useTaskReadingState(taskId: string) {
     return () => observer.disconnect();
   });
   useEffect(() => { setSelected('requirements'); setChoices({}); setTrail([]); positions.current = {}; appliedKey.current = null; }, [taskId]);
-  const selectNode = (stage: TaskNodeStage) => { remember(); setSelected(stage); setTrail([]); };
+  const selectNode = (tab: TaskReadingTab) => { remember(); setSelected(tab); setTrail([]); };
   const choose = (key: string, value: string) => { remember(); setChoices(current => ({ ...current, [key]: value })); };
   const openExtra = (target: TaskReadTarget) => { setTrail(current => [...current, target]); };
   const closeExtra = () => { setTrail(current => current.slice(0, -1)); };

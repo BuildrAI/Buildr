@@ -4,10 +4,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { getRuntimeAdapter, RUNTIME_ADAPTERS, runtimeAdapterImplementationMatrix } from '../../../src/modules/agent-assets/infrastructure/runtime/adapter-contract.ts';
+import { getRuntimeAdapter, RUNTIME_ADAPTERS, runtimeAdapterImplementationMatrix, runtimeSkillPath } from '../../../src/modules/agent-assets/infrastructure/runtime/adapter-contract.ts';
 import { parseSkillsManifest } from '../../../src/modules/agent-assets/persistence/skill-manifest.ts';
 import { skillProjectionOwnershipReceiptTarget } from '../../../src/modules/agent-assets/infrastructure/runtime/skills/projection-files.ts';
-import { findExecutableOnPath } from '../../../src/infrastructure/process.ts';
 import { digestRuntime, mapLimit, RuntimeVerificationHarness } from './fixture.ts';
 
 const harness: any = new RuntimeVerificationHarness();
@@ -61,7 +60,7 @@ function assertCompleteSkillInventory(workspace: any, adapterId: any): any  {
     && typeof skill.path === 'string'
     && fs.existsSync(path.join(workspace, 'skills', skill.path)));
   for (const skill of projectedSkills) {
-    const runtimePath: any = skill.runtimePath || skill.id;
+    const runtimePath: any = runtimeSkillPath(skill, null, adapterId);
     assert.ok(fs.existsSync(path.join(runtimeRoot, 'skills', ...runtimePath.split('/'), 'SKILL.md')), `${adapterId} must render ${skill.id}`);
     assert.ok(fs.existsSync(skillProjectionOwnershipReceiptTarget(workspace, 'workspace', adapterId, runtimePath)), `${adapterId} must record a projection ownership receipt for ${skill.id}`);
   }
@@ -79,27 +78,13 @@ function assertCompleteSkillInventory(workspace: any, adapterId: any): any  {
 }
 
 function assertAdapterSpecificProjection(workspace: any, adapterId: any): any  {
-  if (adapterId === 'codex') {
+  if (adapterId === 'agents-standard') {
     assert.ok(fs.existsSync(path.join(workspace, '.agents', 'skills', 'buildr', 'SKILL.md')));
     assert.ok(!fs.existsSync(path.join(workspace, '.agents', 'CLAUDE.md')));
   }
   if (adapterId === 'claude-code') {
     assert.ok(fs.existsSync(path.join(workspace, '.claude', 'skills', 'buildr', 'SKILL.md')));
     assert.ok(fs.readFileSync(path.join(workspace, 'CLAUDE.md'), 'utf8').includes('@AGENTS.md'));
-  }
-  if (adapterId === 'cursor') {
-    assert.ok(fs.readFileSync(path.join(workspace, '.cursor', 'rules', 'buildr.mdc'), 'utf8').includes('ROOT_MARKER'));
-    assert.ok(fs.readFileSync(path.join(workspace, 'projects', 'scope-alpha', 'services', 'api', '.cursor', 'rules', 'buildr.mdc'), 'utf8').includes('API_MARKER'));
-    assert.ok(fs.readFileSync(path.join(workspace, 'projects', 'scope-alpha', 'services', 'web', '.cursor', 'rules', 'buildr.mdc'), 'utf8').includes('WEB_MARKER'));
-  }
-  if (adapterId === 'qoder') {
-    assert.ok(fs.readdirSync(path.join(workspace, '.qoder', 'rules', 'buildr')).some((file: any) => file.endsWith('.md')));
-    assert.ok(fs.existsSync(path.join(workspace, '.qoder', 'skills', 'buildr', 'SKILL.md')));
-    assert.equal(fs.existsSync(path.join(workspace, '.agents', 'skills', 'buildr')), false, 'Qoder must not project into the shared .agents root');
-  }
-  if (adapterId === 'workbuddy') {
-    assert.ok(fs.readFileSync(path.join(workspace, 'CODEBUDDY.md'), 'utf8').includes('不得读取不相关兄弟目录'));
-    assert.ok(fs.existsSync(path.join(workspace, '.codebuddy', 'skills', 'buildr', 'SKILL.md')));
   }
 }
 
@@ -112,11 +97,8 @@ async function prepareAdapterContext(seed: any, adapterId: any, lifecycleAdapter
 
   if (lifecycleAdapters.has(adapterId)) {
     const check: any = await harness.runAsync(['runtime', 'check', adapterId, '--scope', '.', '--target', workspace]);
-    assert.match(check.stdout, /Environment:/, `${adapterId} runtime check must report environment probes`);
     assert.match(check.stdout, /Activation: rules=/, `${adapterId} runtime check must report activation`);
-    if (adapterId === 'cursor') assert.match(check.stdout, /installation: manual \(manual\)/);
-    if (adapterId === 'qoder') assert.match(check.stdout, /Reload: Run \/skills reload/);
-    if (adapterId === 'workbuddy') assert.doesNotMatch(check.stdout, /runtime\.workbuddy_reference_smoke_pending|reference traversal cannot be proven/);
+    assert.doesNotMatch(check.stdout, /Environment:/, `${adapterId} runtime check must not report retired install or version probes`);
   }
 
   const doctor: any = JSON.parse((await harness.runAsync(['doctor', '--agent', adapterId, '--target', workspace, '--json', '--detail', 'full'])).stdout);
@@ -126,20 +108,9 @@ async function prepareAdapterContext(seed: any, adapterId: any, lifecycleAdapter
 }
 
 function scopedProjectionSnapshot(workspace: any, adapterId: any): any  {
-  if (adapterId === 'cursor') {
-    const file: any = path.join(workspace, 'projects', 'scope-beta', '.cursor', 'rules', 'buildr.mdc');
-    return new Map([[file, fs.readFileSync(file, 'utf8')]]);
-  }
-  if (adapterId === 'qoder') {
-    const directory: any = path.join(workspace, '.qoder', 'rules', 'buildr');
-    const file: any = fs.readdirSync(directory)
-      .map((entry: any) => path.join(directory, entry))
-      .find((entry: any) => fs.readFileSync(entry, 'utf8').includes('source: projects/scope-beta/AGENTS.md'));
-    assert.ok(file, 'Qoder must render a managed rule for scope-beta');
-    return new Map([[file, fs.readFileSync(file, 'utf8')]]);
-  }
-  if (adapterId === 'workbuddy') {
-    const file: any = path.join(workspace, 'CODEBUDDY.md');
+  if (adapterId === 'claude-code') {
+    const file: any = path.join(workspace, 'projects', 'scope-beta', 'CLAUDE.md');
+    assert.ok(fs.existsSync(file), 'a nested Project AGENTS.md must own a nested reference bridge');
     return new Map([[file, fs.readFileSync(file, 'utf8')]]);
   }
   return null;
@@ -163,7 +134,7 @@ async function verifyLifecycle(context: any): Promise<any>  {
   await harness.runAsync(['render', adapterId, '--scope', '.', '--target', workspace]);
   assert.ok(fs.existsSync(path.join(runtimeRoot, 'skills', 'task-retrospective', 'SKILL.md')), `${adapterId} must restore task-retrospective`);
 
-  if (adapterId === 'codex' || adapterId === 'claude-code') {
+  if (adapterId === 'agents-standard' || adapterId === 'claude-code') {
     const renderedFinish: any = fs.readFileSync(path.join(runtimeRoot, 'skills', 'task-finish', 'SKILL.md'), 'utf8');
     assert.ok(renderedFinish.includes('已有任务结果登记'));
     assert.ok(renderedFinish.includes('task complete --expected-record <recordDigest>'));
@@ -188,8 +159,10 @@ async function verifyLifecycle(context: any): Promise<any>  {
   const orphan: any = path.join(runtimeRoot, 'skills', 'runtime-orphan', 'SKILL.md');
   fs.mkdirSync(path.dirname(orphan), { recursive: true });
   fs.writeFileSync(orphan, '---\nname: runtime-orphan\n---\n<!-- Generated by Buildr. Hash: deadbeef. Do not edit. -->\n');
-  await harness.runAsync(['render', adapterId, '--scope', '.', '--target', workspace]);
-  assert.equal(fs.existsSync(path.dirname(orphan)), false, `${adapterId} must remove a managed runtime orphan`);
+  const unprovenOrphan = await harness.runAsync(['render', adapterId, '--scope', '.', '--target', workspace], { allowFailure: true });
+  assert.notEqual(unprovenOrphan.status, 0, `${adapterId} must not claim orphan ownership from a marker alone`);
+  assert.equal(fs.existsSync(orphan), true, `${adapterId} must preserve unproven orphan bytes`);
+  fs.rmSync(path.dirname(orphan), { recursive: true }); // Remove only this test-created unowned fixture.
 
   const before: any = digestRuntime(workspace);
   await harness.runAsync(['render', adapterId, '--scope', '.', '--target', workspace]);
@@ -209,10 +182,16 @@ async function verifySkillSymlinkGuard(seed: any): Promise<any>  {
 async function verifyRulesSymlinkGuard(seed: any): Promise<any>  {
   const workspace: any = harness.cloneWorkspace(seed, 'buildr-runtime-rules-symlink-');
   const outside: any = harness.createTemporaryDirectory('buildr-runtime-rules-outside-');
-  fs.symlinkSync(outside, path.join(workspace, '.cursor'), 'dir');
-  const result: any = await harness.runAsync(['rules', 'render', 'cursor', '--scope', '.', '--target', workspace], { allowFailure: true });
+  // Managed-looking bytes matter: an unmanaged symlink target is rejected as a merge conflict before the
+  // path guard runs, which would prove the wrong invariant.
+  const outsideContent: any = '# CLAUDE.md\n\n<!-- BEGIN Buildr managed Claude Code rules bridge; type: reference; source: AGENTS.md -->\n@AGENTS.md\n<!-- END Buildr managed Claude Code rules bridge -->\n';
+  fs.writeFileSync(path.join(outside, 'CLAUDE.md'), outsideContent);
+  fs.symlinkSync(path.join(outside, 'CLAUDE.md'), path.join(workspace, 'CLAUDE.md'));
+  const result: any = await harness.runAsync(['rules', 'render', 'claude-code', '--scope', '.', '--target', workspace], { allowFailure: true });
   assert.notEqual(result.status, 0, 'runtime rules render must reject a target path that crosses a symbolic link');
-  assert.equal(fs.existsSync(path.join(outside, 'rules', 'buildr.mdc')), false, 'rules render must not write outside the workspace through a symbolic link');
+  assert.match(`${result.stdout}\n${result.stderr}`, /crosses a symbolic link/, 'the failure must name the symbolic link');
+  assert.equal(fs.readFileSync(path.join(outside, 'CLAUDE.md'), 'utf8'), outsideContent, 'rules render must not write outside the workspace through a symbolic link');
+  assert.equal(fs.lstatSync(path.join(workspace, 'CLAUDE.md')).isSymbolicLink(), true, 'rules render must not replace a symbolic link with a real file');
 }
 
 async function verifyGuardedOrphan(seed: any): Promise<any>  {
@@ -231,20 +210,16 @@ async function verifyGuardedOrphan(seed: any): Promise<any>  {
 
 async function verifyRulesOrphanCleanup(seed: any): Promise<any>  {
   const workspace: any = harness.cloneWorkspace(seed, 'buildr-runtime-rules-orphan-');
-  for (const adapterId of ['cursor', 'qoder', 'workbuddy']) await harness.runAsync(['rules', 'render', adapterId, '--scope', '.', '--target', workspace]);
-  const qoderDirectory: any = path.join(workspace, '.qoder', 'rules', 'buildr');
-  const rootQoderRule: any = fs.readdirSync(qoderDirectory)
-    .map((entry: any) => path.join(qoderDirectory, entry))
-    .find((entry: any) => fs.readFileSync(entry, 'utf8').includes('source: AGENTS.md'));
-  assert.ok(rootQoderRule, 'Qoder must render the root AGENTS.md before orphan cleanup');
+  await harness.runAsync(['rules', 'render', 'claude-code', '--scope', '.', '--target', workspace]);
+  const rootBridge: any = path.join(workspace, 'CLAUDE.md');
+  const projectBridge: any = path.join(workspace, 'projects', 'scope-alpha', 'CLAUDE.md');
+  assert.ok(fs.existsSync(rootBridge), 'the root AGENTS.md must own a reference bridge before orphan cleanup');
+  assert.ok(fs.existsSync(projectBridge), 'a narrower Project AGENTS.md must own its own reference bridge');
   fs.rmSync(path.join(workspace, 'AGENTS.md'));
-  for (const adapterId of ['cursor', 'qoder', 'workbuddy']) await harness.runAsync(['rules', 'render', adapterId, '--scope', '.', '--target', workspace]);
-  assert.equal(fs.existsSync(path.join(workspace, '.cursor', 'rules', 'buildr.mdc')), false);
-  assert.equal(fs.existsSync(rootQoderRule), false);
-  assert.ok(fs.readdirSync(qoderDirectory).length > 0, 'Qoder cleanup must preserve narrower Project and Service rules');
-  const workbuddyIndex: any = fs.readFileSync(path.join(workspace, 'CODEBUDDY.md'), 'utf8');
-  assert.doesNotMatch(workbuddyIndex, /^- \[AGENTS\.md\]\(AGENTS\.md\)$/m);
-  assert.match(workbuddyIndex, /projects\/scope-alpha\/AGENTS\.md/);
+  await harness.runAsync(['rules', 'render', 'claude-code', '--scope', '.', '--target', workspace]);
+  assert.equal(fs.existsSync(rootBridge), false, 'a deleted source must orphan-clean its own reference bridge');
+  assert.ok(fs.existsSync(projectBridge), 'cleanup must preserve narrower Project and Service bridges');
+  assert.match(fs.readFileSync(projectBridge, 'utf8'), /@AGENTS\.md/);
 }
 
 async function verifyGitBoundaryCleanup(seed: any): Promise<any>  {
@@ -253,16 +228,30 @@ async function verifyGitBoundaryCleanup(seed: any): Promise<any>  {
   fs.mkdirSync(path.join(externalRepo, '.git'), { recursive: true });
   fs.writeFileSync(path.join(externalRepo, '.git', 'HEAD'), 'ref: refs/heads/main\n');
   fs.writeFileSync(path.join(externalRepo, 'AGENTS.md'), 'EXTERNAL_REPO_RULE_MUST_NOT_BE_DISCOVERED\n');
-  const externalCursorRule: any = path.join(externalRepo, '.cursor', 'rules', 'buildr.mdc');
-  const externalTraeRule: any = path.join(externalRepo, '.trae', 'rules', 'buildr.md');
-  fs.mkdirSync(path.dirname(externalCursorRule), { recursive: true });
-  fs.mkdirSync(path.dirname(externalTraeRule), { recursive: true });
-  fs.writeFileSync(externalCursorRule, '<!-- Generated by Buildr. Agent adapter: cursor; boundary fixture. -->\n');
-  fs.writeFileSync(externalTraeRule, '<!-- Generated by Buildr. Agent adapter: trae; boundary fixture. -->\n');
-  await harness.runAsync(['rules', 'render', 'cursor', '--scope', '.', '--target', workspace]);
-  await harness.runAsync(['rules', 'render', 'trae', '--scope', '.', '--target', workspace]);
-  assert.ok(fs.existsSync(externalCursorRule), 'orphan cleanup must not cross an unregistered nested Git boundary');
-  assert.ok(fs.existsSync(externalTraeRule), 'orphan cleanup must not cross an unregistered nested Git boundary');
+  const externalBridge: any = path.join(externalRepo, 'CLAUDE.md');
+  const externalBridgeContent: any = '# CLAUDE.md\n\n<!-- BEGIN Buildr managed Claude Code rules bridge; type: reference; source: AGENTS.md -->\n@AGENTS.md\n<!-- END Buildr managed Claude Code rules bridge -->\n';
+  fs.writeFileSync(externalBridge, externalBridgeContent);
+  await harness.runAsync(['rules', 'render', 'claude-code', '--scope', '.', '--target', workspace]);
+  assert.ok(fs.existsSync(externalBridge), 'orphan cleanup must not cross an unregistered nested Git boundary');
+  assert.equal(fs.readFileSync(externalBridge, 'utf8'), externalBridgeContent, 'an unregistered nested Git boundary must keep its bytes');
+}
+
+async function verifyRetiredIdentityUsesStandardAdapter(seed: any): Promise<any>  {
+  const workspace: any = harness.cloneWorkspace(seed, 'buildr-runtime-retired-identity-');
+  await harness.runAsync(['skill', 'install', 'agents-standard', '--target', workspace]);
+  await harness.runAsync(['render', 'agents-standard', '--scope', '.', '--target', workspace]);
+  for (const runtimeId of ['cursor', 'qoder', 'trae', 'trae-work', 'workbuddy', 'codex', 'dsh', 'agents-standard']) {
+    const check: any = await harness.runAsync(['runtime', 'check', runtimeId, '--scope', '.', '--target', workspace]);
+    assert.match(check.stdout, /Activation: rules=/, `${runtimeId} must be checked through the standard adapter instead of being rejected as an adapter id`);
+    const rendered: any = await harness.runAsync(['skills', 'render', runtimeId, '--destination', 'workspace', '--target', workspace]);
+    assert.equal(rendered.status, 0, `${runtimeId} skills render must succeed through the standard adapter`);
+  }
+  await harness.runAsync(['skill', 'install', 'cursor', '--target', workspace]);
+  assert.ok(fs.existsSync(path.join(workspace, '.agents', 'skills', 'buildr', 'SKILL.md')), 'a retired identity must install the product Skill into the standard root');
+  // Only an explicit --adapter may still fail, because that argument names a file convention rather than a host.
+  const explicit: any = await harness.runAsync(['render', 'codex', '--adapter', 'cursor', '--target', workspace], { allowFailure: true });
+  assert.notEqual(explicit.status, 0, 'an explicit retired --adapter must still fail');
+  assert.match(`${explicit.stdout}\n${explicit.stderr}`, /Unsupported runtime adapter: cursor\. Supported adapters: claude-code, agents-standard\./);
 }
 
 async function verifyLegacySkillScope(seed: any): Promise<any>  {
@@ -290,27 +279,14 @@ try {
     verifyGuardedOrphan,
     verifyRulesOrphanCleanup,
     verifyGitBoundaryCleanup,
+    verifyRetiredIdentityUsesStandardAdapter,
     verifyLegacySkillScope,
   ], MAX_PARALLEL_WORKSPACES, (scenario: any) => scenario(seed));
 
   const contexts: any = await mapLimit(supportedAdapters, MAX_PARALLEL_WORKSPACES, (adapterId: any) => prepareAdapterContext(seed, adapterId, lifecycleAdapters));
-  // The Qoder installation probe only spawns `defaults`/`qoder` commands on darwin; elsewhere it is a
-  // manual probe, so isolating PATH to prove a missing install is both meaningless and would drop git.
-  if (process.platform === 'darwin') {
-    const qoder: any = contexts.find((context: any) => context.adapterId === 'qoder');
-    const gitExecutable: any = findExecutableOnPath('git');
-    assert.ok(gitExecutable, 'runtime parity requires Git while isolating the Qoder installation probe');
-    const isolatedBin: any = harness.createTemporaryDirectory('buildr-runtime-probe-path-');
-    fs.symlinkSync(gitExecutable, path.join(isolatedBin, 'git'));
-    const missingQoderEnvironment: any = await harness.runAsync(['runtime', 'check', 'qoder', '--scope', '.', '--target', qoder.workspace], { env: { PATH: isolatedBin } });
-    assert.match(missingQoderEnvironment.stdout, /\[warning\] \. - Qoder installation probe failed\./);
-    assert.match(missingQoderEnvironment.stdout, /installation: missing \(any\)/);
-    assert.match(missingQoderEnvironment.stdout, /desktop: missing/);
-  }
-
-  const codexDoctor: any = contexts.find((context: any) => context.adapterId === 'codex').doctor;
-  assert.equal(codexDoctor.runtime.claudeCode.length, 0);
-  assert.ok(codexDoctor.runtime.codex.length > 0);
+  const codexDoctor: any = contexts.find((context: any) => context.adapterId === 'agents-standard').doctor;
+  assert.equal(codexDoctor.runtime.claudeCode?.length ?? 0, 0);
+  assert.ok(codexDoctor.runtime.agentsStandard.length > 0);
 
   await mapLimit(contexts.filter((context: any) => lifecycleAdapters.has(context.adapterId)), MAX_PARALLEL_WORKSPACES, verifyLifecycle);
 

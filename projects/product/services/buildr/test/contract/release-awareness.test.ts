@@ -11,12 +11,11 @@ function read(relative: any): any  {
   return fs.readFileSync(path.join(serviceRoot, relative), 'utf8');
 }
 
-test('产品入口 Buildr Skill 与 bootstrap guide 让 Agent 解释 GA/RC 并等待用户选择', () => {
+test('产品入口 Buildr Skill 让 Agent 解释 GA/RC 并等待用户选择', () => {
   const entry: any = read('resources/runtime/skills/buildr/SKILL.md');
   assert.match(entry, /references\/asset-maintenance\.md#安装与更新/);
   const skill: any = entry + read('resources/runtime/skills/buildr/references/asset-maintenance.md');
-  const guide: any = read('docs/bootstrap-guide.md');
-  for (const content of [skill, guide]) {
+  for (const content of [skill]) {
     assert.match(content, /buildr update check --json/);
     assert.match(content, /GA 正式版/);
     assert.match(content, /RC 候选版/);

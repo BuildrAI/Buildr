@@ -2,6 +2,8 @@
 export type MarkdownRenderOptions = {
   document?: Document;
   headingOffset?: number;
+  sourcePath?: string;
+  headingCounts?: Record<string, number>;
   allowRelativeLinks?: boolean;
   /** When true with allowRelativeLinks, relative href may include `..` segments (still sanitized by consumer / API). */
   allowParentRelativeLinks?: boolean;
@@ -94,6 +96,7 @@ function appendInline(parent, text, doc, linkOptions) {
           link.setAttribute('target', '_blank');
         } else {
           link.className = 'markdown-relative-link';
+          link.setAttribute('data-markdown-href', match[8]);
           link.setAttribute('title', `相对路径：${resolved.href}`);
         }
         link.textContent = label;
@@ -113,9 +116,42 @@ function createParagraph(text, doc, linkOptions) {
   return paragraph;
 }
 
+export function markdownHeadingSlug(text: string) {
+  return text.toLowerCase().replace(/[^\p{L}\p{N}_ -]/gu, '').replace(/ /g, '-');
+}
+
+/** Precompute each split block's starting counters, without sharing mutable render state. */
+export function markdownHeadingCounts(markdown: string, initial: Record<string, number> = {}) {
+  const counts = { ...initial };
+  let fenced = false;
+  for (const line of markdown.split('\n')) {
+    if (!fenced && /^```[\w-]*\s*$/.test(line)) { fenced = true; continue; }
+    if (fenced && /^```\s*$/.test(line)) { fenced = false; continue; }
+    if (fenced) continue;
+    const heading = line.match(/^#{1,6}\s+(.+)$/)?.[1]?.trim();
+    if (!heading) continue;
+    const text = heading.replace(/(\`+)([^\`]+?)\1|\*\*([^*]+)\*\*|\*([^*]+)\*|\[([^\]]+)\]\(([^)]+)\)/g,
+      (_all, _ticks, code, strong, em, label) => code ?? strong ?? em ?? label);
+    const slug = markdownHeadingSlug(text);
+    counts[slug] = (counts[slug] || 0) + 1;
+  }
+  return counts;
+}
+
+/** An outer reader title replaces presentation only, never its source anchor. */
+export function markdownDocumentBody(markdown: string, omitTitle = false) {
+  const title = omitTitle ? markdown.match(/^# [^\n]*\n/)?.[0] : undefined;
+  const headingCounts = markdownHeadingCounts(title || '');
+  return { content: title ? markdown.slice(title.length) : markdown, headingCounts, anchor: Object.keys(headingCounts)[0] };
+}
+
 function createHeading(level, text, doc, headingOffset, linkOptions) {
   const heading = doc.createElement(`h${Math.min(Math.max(level + headingOffset, 1), 6)}`);
   appendInline(heading, text, doc, linkOptions);
+  const slug = markdownHeadingSlug(String(heading.textContent));
+  const count = linkOptions.headings.get(slug) || 0;
+  linkOptions.headings.set(slug, count + 1);
+  heading.setAttribute('id', count ? `${slug}-${count}` : slug);
   return heading;
 }
 
@@ -174,13 +210,31 @@ function createHorizontalRule(doc) {
   return doc.createElement('hr');
 }
 
-function createCodeBlock(language, code, doc) {
+function createCodeBlock(language, code, doc, sourcePath) {
+  const block = doc.createElement('div');
+  block.className = 'markdown-code-block';
+  const copy = doc.createElement('button');
+  copy.setAttribute('type', 'button');
+  copy.setAttribute('data-copy-code', '');
+  copy.textContent = '复制代码';
+  copy.addEventListener?.('click', async () => {
+    try { await navigator.clipboard.writeText(code); copy.textContent = '已复制'; }
+    catch { copy.textContent = '复制失败，请选择代码复制'; }
+  });
+  block.append(copy);
+  if (language.toLowerCase() === 'mermaid') {
+    const note = doc.createElement('p');
+    note.className = 'markdown-render-note';
+    note.textContent = `当前阅读器显示 Mermaid 源码，尚未渲染图示。可复制源码${sourcePath ? `；原文件：${sourcePath}` : '，或查看原文'}。`;
+    block.append(note);
+  }
   const pre = doc.createElement('pre');
   const codeNode = doc.createElement('code');
   if (language) codeNode.setAttribute('data-language', language);
   codeNode.textContent = code;
   pre.append(codeNode);
-  return pre;
+  block.append(pre);
+  return block;
 }
 
 function createTable(header, rows, doc, linkOptions) {
@@ -205,7 +259,13 @@ function createTable(header, rows, doc, linkOptions) {
     tbody.append(tr);
   }
   table.append(tbody);
-  return table;
+  const scroll = doc.createElement('div');
+  scroll.className = 'markdown-table-scroll';
+  scroll.setAttribute('role', 'region');
+  scroll.setAttribute('aria-label', '表格，可横向滚动');
+  scroll.setAttribute('tabindex', '0');
+  scroll.append(table);
+  return scroll;
 }
 
 function normalizeRenderArgs(docOrOptions, maybeOptions) {
@@ -234,6 +294,7 @@ export function renderMarkdown(markdown: string, docOrOptions: Document | Markdo
     allowRelativeLinks: Boolean(options.allowRelativeLinks),
     allowParentRelativeLinks: Boolean(options.allowParentRelativeLinks),
     imageResolver: options.imageResolver,
+    headings: new Map(Object.entries(options.headingCounts || {})),
   };
   const root = doc.createElement('div');
   root.className = 'markdown-body';
@@ -257,7 +318,7 @@ export function renderMarkdown(markdown: string, docOrOptions: Document | Markdo
         index += 1;
       }
       if (index < lines.length) index += 1;
-      root.append(createCodeBlock(language, codeLines.join('\n'), doc));
+      root.append(createCodeBlock(language, codeLines.join('\n'), doc, options.sourcePath));
       continue;
     }
 

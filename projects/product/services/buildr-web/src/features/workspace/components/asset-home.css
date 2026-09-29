@@ -3,7 +3,6 @@
 .asset-home-summary { flex: 1 1 320px; min-width: 0; }
 .asset-home .resource-home-head h1 { font-size: 24px; }
 .asset-home .resource-home-head p { overflow-wrap: anywhere; }
-.asset-home-actions { flex: none; }
 .asset-home > .resource-section { margin: 0; padding: 22px 0; border: 0; border-top: 1px solid var(--soft-line); border-radius: 0; }
 .asset-home .resource-section-head { margin-bottom: 10px; }
 .asset-home .resource-document-row, .asset-home .resource-relation-row { padding-inline: 6px; }
@@ -27,7 +26,6 @@
 .asset-repository-facts > .repository-status { margin-top: 16px; }
 .asset-knowledge-notice { display: flex; align-items: center; gap: 6px; padding: 4px 6px; color: var(--soft-muted); font-size: 12px; }
 @container asset-home (max-width: 440px) {
-  .asset-home-actions { gap: 6px !important; }
   .asset-facts > div { grid-template-columns: 88px minmax(0, 1fr); column-gap: 10px; }
   .repository-status-line { grid-template-columns: 88px minmax(0, 1fr); column-gap: 10px; }
   .repository-status-actions { grid-column: 2; justify-content: flex-start; }

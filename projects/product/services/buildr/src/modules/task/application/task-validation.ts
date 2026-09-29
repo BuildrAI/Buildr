@@ -1,13 +1,11 @@
-import { TASK_RECORD_SCHEMA, type ParentCompletion } from '../domain/task.ts';
+import { TASK_RECORD_SCHEMA, TASK_ID_SOURCE, isTaskRecordId, type ParentCompletion } from '../domain/task.ts';
 import type {
   TaskChangeReference, TaskRecord, TaskRecordBusinessError, TaskRecordHistory, TaskRecordResult,
   TaskRecordStatus, TaskRetrospectiveDocumentState, TaskRetrospectiveReference,
   TaskServiceReference,
 } from './task-dto.ts';
 
-export const TASK_ID_SOURCE = '[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?';
-
-const TASK_ID_PATTERN = new RegExp(`^${TASK_ID_SOURCE}$`);
+export { TASK_ID_SOURCE, isTaskRecordId };
 const SCOPE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const SHA256_PATTERN = /^sha256-[0-9a-f]{64}$/u;
 
@@ -70,10 +68,6 @@ export function taskActionQualifiedReference(value: unknown, field: string, seco
   const normalizedProject = taskActionText(project, `${field}.project`);
   const normalizedSecond = taskActionText(second, `${field}.${secondField}`);
   return secondField === 'service' ? { project: normalizedProject, service: normalizedSecond } : { project: normalizedProject, change: normalizedSecond };
-}
-
-export function isTaskRecordId(value: unknown): value is string {
-  return typeof value === 'string' && TASK_ID_PATTERN.test(value);
 }
 
 export function taskRecordEffectiveProjectCodes(record: Pick<TaskRecord, 'scope' | 'changes'> | null | undefined): string[] {

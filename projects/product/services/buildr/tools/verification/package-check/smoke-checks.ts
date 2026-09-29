@@ -16,7 +16,7 @@ export function createPackageSmokeChecks(deps: any): any  {
     BUILDR_REQUIRED_BLOCK_START,
     buildRuleDiscoveryPlan,
     checkClaudeCodeRuntime,
-    checkCodexRuntime,
+    checkRuntimeAdapter,
     collectFiles,
     ensureDirectory,
     execFileSync,
@@ -126,13 +126,15 @@ export function createPackageSmokeChecks(deps: any): any  {
       fs.rmSync(path.join(recursiveProjectRoot, 'api'), { recursive: true, force: true });
 
       const codexBefore = collectFiles(recursiveRoot).map((file: any) => toPosixRelative(recursiveRoot, file)).sort();
-      const codexRules = checkCodexRuntime(['--scope', 'projects/demo/services/api', '--target', recursiveRoot], {
+      const codexRules = checkRuntimeAdapter(['--scope', 'projects/demo/services/api', '--target', recursiveRoot], {
         repoRoot: recursiveRoot,
+        runtimeId: 'codex',
+        adapterId: 'agents-standard',
         command: 'buildr package check',
-      }).findings.filter((finding: any) => finding.code === 'runtime.codex_rules_ok').map((finding: any) => finding.path);
+      }).findings.filter((finding: any) => finding.code === 'runtime.standard_rules_ok').map((finding: any) => finding.path);
       const codexAfter = collectFiles(recursiveRoot).map((file: any) => toPosixRelative(recursiveRoot, file)).sort();
       if (JSON.stringify(codexRules) !== JSON.stringify(expectedSources) || JSON.stringify(codexBefore) !== JSON.stringify(codexAfter)) {
-        problems.push('Codex Rules diagnostics must report recursive native sources without writing a bridge.');
+        problems.push('Standard Rules diagnostics for the codex runtime identity must report recursive native sources without writing a bridge.');
       }
 
       fs.writeFileSync(path.join(recursiveRoot, 'CLAUDE.md'), '# Custom root Claude rules\n', 'utf8');

@@ -2,23 +2,27 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import process from 'node:process';
+import { consumeRuntimeAdapterOption, runtimeCommandSelector, selectWorkspaceRuntime, validateRuntimeOperationArgs } from './runtime-selection.ts';
 import { runFinalDoctor } from '../../../infrastructure/final-doctor-process.ts';
 
 export function blockingSyncSourceIssues(plan: any): any  {
   return (plan?.components?.errors || []).filter((item: any) => item.required === true);
 }
-import { resolveRuleScope } from '../infrastructure/runtime/render-claude-code-rules.ts';
+import { resolveRuleScope } from '../infrastructure/runtime/rule-projection.ts';
 import { assembleRuntimeProjection } from '../infrastructure/runtime/projection.ts';
 import {
   getRuntimeAdapter,
+  resolveRuntimeAdapter,
 } from '../infrastructure/runtime/adapter-contract.ts';
 import { reconcileRuntimePlan } from '../infrastructure/runtime/runtime-reconciler.ts';
+import { buildRetiredRuntimeProjectionPlan } from '../infrastructure/runtime/retired-adapters.ts';
 import { buildEffectiveSkillInventory, classifySkillCandidate } from '../infrastructure/runtime/skills/inventory.ts';
 import {
   legacySkillProjectionOwnershipReceiptTarget,
   parseSkillProjectionReceipt,
   sha256Integrity,
   skillProjectionOwnershipReceiptTarget,
+  skillProjectionOwnerId,
 } from '../infrastructure/runtime/skills/projection-files.ts';
 import { createRuntimePlan } from '../infrastructure/runtime/adapter-contract.ts';
 import { observeGitCheckoutIdentity, sameFilesystemPath } from '../../../infrastructure/git/checkout-identity.ts';
@@ -94,12 +98,12 @@ export function registerApplicationRuntime(dependencies: RuntimeProjectionDepend
     return { source, target };
   }
 
-  function assertRuntimeSyncTarget(targetRoot: any, agent: any): any  {
+  function assertRuntimeSyncTarget(targetRoot: any, agent: any, adapterId: string | null = null): any  {
     const authority = assertRuntimeProjectionTarget(targetRoot);
     if (!authority.source?.linkedWorktree || !authority.target || !sameFilesystemPath(authority.source.checkoutRoot, authority.target.checkoutRoot)) {
       return { ...authority, disposition: 'full-sync' };
     }
-    const command = `buildr render ${agent} --product-skill --target ${authority.target.checkoutRoot}`;
+    const command = `buildr render${agent == null ? '' : ` ${agent}`}${adapterId === null ? '' : ` --adapter ${adapterId}`} --product-skill --target ${authority.target.checkoutRoot}`;
     return {
       ...authority,
       disposition: 'projection-only',
@@ -115,24 +119,37 @@ export function registerApplicationRuntime(dependencies: RuntimeProjectionDepend
   }
 
   function renderRuntime(agent: any, args: any, options: any = {}): any  {
-    const renderArgs: any[] = [...args];
+    const parsed = consumeRuntimeAdapterOption(args);
+    validateRuntimeOperationArgs(parsed.args, ['--target', '--scope', '--product-skill', '--json'], ['--product-skill', '--json']);
+    const renderArgs: any[] = parsed.args;
     if (!renderArgs.includes('--scope')) {
       renderArgs.push('--scope', '.');
     }
     const renderCommand = withResolvedTarget(renderArgs);
     const { targetRoot } = renderCommand;
+    const selected = options.runtimeSelection ?? selectWorkspaceRuntime(targetRoot, { runtimeId: agent ?? null, adapterId: parsed.adapterId });
+    const { runtimeId, adapterId } = selected;
     assertRuntimeProjectionTarget(targetRoot);
     const requestedScope = optionValue(renderCommand.args, '--scope', '.');
     const scopeInfo = resolveRuleScope(targetRoot, requestedScope);
     const skillScope = skillScopeForRuleScope(scopeInfo.scope);
-    const removals = buildRuntimeOrphanRemovalPlan(targetRoot, agent, skillScope).map((item: any) => ({ ...item, targetFile: item.path }));
-    const { plan } = assembleRuntimeProjection({ repoRoot: targetRoot, targetRoot, scope: scopeInfo.scope, adapterId: agent, selection: { productSkill: options.productSkill === true, rules: true, workspaceSkills: true }, removals });
+    const retirement = buildRetiredRuntimeProjectionPlan({ targetRoot, adapterId, scope: scopeInfo.scope });
+    const removals = [
+      ...buildRuntimeOrphanRemovalPlan(targetRoot, adapterId, skillScope, { runtimeId }).map((item: any) => ({ ...item, targetFile: item.path })),
+      ...retirement.removals,
+    ].filter((item: any, index: any, items: any) => items.findIndex((candidate: any) => candidate.targetFile === item.targetFile) === index);
+    const assembled = assembleRuntimeProjection({ repoRoot: targetRoot, targetRoot, scope: scopeInfo.scope, runtimeId, adapterId, selection: { productSkill: options.productSkill === true, rules: true, workspaceSkills: true }, removals });
+    const plan = retirement.findings.length ? createRuntimePlan({ ...assembled.plan, findings: [...assembled.plan.findings, ...retirement.findings] }) : assembled.plan;
     reconcileRuntimePlan(plan);
-    return { targetRoot, files: [...plan.writes.map((item: any) => item.targetFile), ...plan.removals.map((item: any) => item.targetFile)], rulesActions: plan.ruleActions, warnings: plan.warnings, scope: scopeInfo.scope };
+    return { targetRoot, files: [...plan.writes.map((item: any) => item.targetFile), ...plan.removals.map((item: any) => item.targetFile)], rulesActions: plan.ruleActions, warnings: plan.warnings, scope: scopeInfo.scope, runtimeSelection: selected };
   }
 
   function renderSkillsRuntime(agent: any, args: any): any  {
-    const renderCommand = withResolvedTarget(args);
+    const parsed = consumeRuntimeAdapterOption(args);
+    validateRuntimeOperationArgs(parsed.args, ['--target', '--scope', '--destination', '--json'], ['--json']);
+    const renderCommand = withResolvedTarget(parsed.args);
+    const selected = selectWorkspaceRuntime(renderCommand.targetRoot, { runtimeId: agent ?? null, adapterId: parsed.adapterId });
+    const { runtimeId, adapterId, adapter } = selected;
     const skillScope = optionValue(renderCommand.args, '--scope', '.');
     const destination = optionValue(renderCommand.args, '--destination', 'workspace');
     if (!['workspace', 'user'].includes(destination)) throw new Error(`Unsupported Skill destination: ${destination}. Use workspace or user.`);
@@ -142,18 +159,18 @@ export function registerApplicationRuntime(dependencies: RuntimeProjectionDepend
     if (skillScope !== '.') {
       const error: Error & Record<string, any> = new Error(`Legacy Project Skill render scope is no longer supported: ${skillScope}. This Buildr version does not migrate Project Skill sources; review and move the source to workspace skills/ before using --destination ${destination}.`);
       error.code = 'skills.project_scope_unsupported';
-      error.nextActions = ['Review the legacy Project Skill source without modifying it.', `buildr skills render ${agent} --destination ${destination} --target ${renderCommand.targetRoot}`];
+      error.nextActions = ['Review the legacy Project Skill source without modifying it.', `buildr skills render${runtimeCommandSelector(selected)} --destination ${destination} --target ${renderCommand.targetRoot}`];
       throw error;
     }
     if (args.includes('--scope')) console.error('Warning: --scope . is deprecated for skills render; use --destination workspace or --destination user.');
-    const orphanPlan = destination === 'workspace' ? buildRuntimeOrphanRemovalPlan(renderCommand.targetRoot, agent, '.').map((item: any) => ({ ...item, targetFile: item.path })) : [];
-    const assembled = assembleRuntimeProjection({ repoRoot: renderCommand.targetRoot, targetRoot: runtimeTargetRoot, scope: '.', adapterId: agent, destination, selection: { workspaceSkills: true }, removals: orphanPlan });
+    const orphanPlan = destination === 'workspace' ? buildRuntimeOrphanRemovalPlan(renderCommand.targetRoot, adapterId, '.', { runtimeId }).map((item: any) => ({ ...item, targetFile: item.path })) : [];
+    const assembled = assembleRuntimeProjection({ repoRoot: renderCommand.targetRoot, targetRoot: runtimeTargetRoot, scope: '.', runtimeId, adapterId, destination, selection: { workspaceSkills: true }, removals: orphanPlan });
     let plan = assembled.plan;
     const candidates = plan.writes.filter((item: any) => item.kind === 'skill-projection-receipt').map((item: any) => {
       const receipt = parseSkillProjectionReceipt(item.content, `candidate receipt ${item.skillId}`);
       return { skillId: receipt.skillId, assetIdentity: receipt.assetIdentity, sourceIdentity: receipt.sourceIdentity, sourceWorkspaceId: receipt.sourceWorkspaceId, sourceDigest: receipt.sourceDigest, renderDigest: receipt.renderDigest };
     });
-    const inventory = buildEffectiveSkillInventory({ adapterId: agent, workspaceRoot: renderCommand.targetRoot, candidateIds: candidates.map((item: any) => item.skillId) });
+    const inventory = buildEffectiveSkillInventory({ adapterId, workspaceRoot: renderCommand.targetRoot, candidateIds: candidates.map((item: any) => item.skillId) });
     const classifications = candidates.map((candidate: any) => ({ candidate, ...classifySkillCandidate(candidate, inventory, destination) }));
     const blocking = classifications.filter((item: any) => item.blocking);
     if (blocking.length) {
@@ -177,11 +194,11 @@ export function registerApplicationRuntime(dependencies: RuntimeProjectionDepend
       throw new Error(`Skill render preflight blocked with zero writes:\n${blocking.map((item: any) => `- ${item.candidate.skillId}: ${item.status}`).join('\n')}`);
     }
     const satisfiedIds: any = new Set(classifications.filter((item: any) => item.status === 'satisfied_by_user').map((item: any) => item.candidate.skillId));
-    const adapter = getRuntimeAdapter(agent);
-    const satisfactionFile = (skillId: any) => path.join(renderCommand.targetRoot, adapter.traits.skills.root, 'buildr', 'skill-satisfaction', agent, `${skillId}.json`);
+    const satisfactionOwner = skillProjectionOwnerId(adapterId);
+    const satisfactionFile = (skillId: any) => path.join(renderCommand.targetRoot, adapter.traits.skills.root, 'buildr', 'skill-satisfaction', satisfactionOwner, `${skillId}.json`);
     const satisfactionWrites = classifications.filter((item: any) => item.status === 'satisfied_by_user').map((item: any) => {
       const observed = item.observed[0];
-      const evidence: any = { schemaVersion: 'buildr.skill-satisfaction/v1', agent, destination: 'workspace', skillId: item.candidate.skillId, satisfiedBy: 'user', assetIdentity: item.candidate.assetIdentity, renderDigest: item.candidate.renderDigest, userReceiptPath: observed.receiptPath };
+      const evidence: any = { schemaVersion: 'buildr.skill-satisfaction/v1', agent: satisfactionOwner, adapterId: satisfactionOwner, destination: 'workspace', skillId: item.candidate.skillId, satisfiedBy: 'user', assetIdentity: item.candidate.assetIdentity, renderDigest: item.candidate.renderDigest, userReceiptPath: observed.receiptPath };
       return { targetFile: satisfactionFile(item.candidate.skillId), content: `${JSON.stringify(evidence, null, 2)}\n`, source: `user:${item.candidate.skillId}`, skillId: item.candidate.skillId, kind: 'skill-satisfaction-evidence', isManaged: (content: any) => { try { return JSON.parse(content).schemaVersion === 'buildr.skill-satisfaction/v1'; } catch { return false; } } };
     });
     const satisfactionRemovals = classifications.filter((item: any) => item.status !== 'satisfied_by_user' && fs.existsSync(satisfactionFile(item.candidate.skillId))).map((item: any) => ({ targetFile: satisfactionFile(item.candidate.skillId), expectedIntegrity: sha256Integrity(fs.readFileSync(satisfactionFile(item.candidate.skillId))), source: `workspace:${item.candidate.skillId}`, skillId: item.candidate.skillId, kind: 'skill-satisfaction-stale' }));
@@ -192,16 +209,20 @@ export function registerApplicationRuntime(dependencies: RuntimeProjectionDepend
     });
     reconcileRuntimePlan(plan);
     const files: any[] = [...plan.writes.map((item: any) => item.targetFile), ...plan.removals.map((item: any) => item.targetFile)];
-    const remaining = destination === 'workspace' ? buildRuntimeOrphanRemovalPlan(renderCommand.targetRoot, agent, '.') : [];
-    if (remaining.length) throw new Error(`运行时同步未完成，请重新运行 buildr skills render ${agent}。`);
+    const remaining = destination === 'workspace' ? buildRuntimeOrphanRemovalPlan(renderCommand.targetRoot, adapterId, '.', { runtimeId }) : [];
+    if (remaining.length) throw new Error(`运行时同步未完成，请重新运行 buildr skills render${runtimeCommandSelector(selected)}。`);
     return { targetRoot: runtimeTargetRoot, files, plan: plan.writes, warnings: plan.warnings, classifications, skillInventoryEvidence: { evidence: inventory.evidence, opaqueSources: inventory.opaqueSources } };
   }
 
   function renderRulesRuntime(agent: any, args: any): any  {
-    const renderCommand = withResolvedTarget(args);
+    const parsed = consumeRuntimeAdapterOption(args);
+    validateRuntimeOperationArgs(parsed.args, ['--target', '--scope']);
+    const renderCommand = withResolvedTarget(parsed.args);
+    const selected = selectWorkspaceRuntime(renderCommand.targetRoot, { runtimeId: agent ?? null, adapterId: parsed.adapterId });
+    const { runtimeId, adapterId } = selected;
     assertRuntimeProjectionTarget(renderCommand.targetRoot);
     const scope = optionValue(renderCommand.args, '--scope', '.');
-    const { plan } = assembleRuntimeProjection({ repoRoot: renderCommand.targetRoot, targetRoot: renderCommand.targetRoot, scope, adapterId: agent, selection: { rules: true } });
+    const { plan } = assembleRuntimeProjection({ repoRoot: renderCommand.targetRoot, targetRoot: renderCommand.targetRoot, scope, runtimeId, adapterId, selection: { rules: true } });
     reconcileRuntimePlan(plan);
     return { targetRoot: renderCommand.targetRoot, files: plan.writes.map((item: any) => item.targetFile), actions: plan.ruleActions, warnings: plan.warnings };
   }
@@ -274,13 +295,16 @@ export function registerApplicationRuntime(dependencies: RuntimeProjectionDepend
   }
 
   function syncRuntime(agent: any, args: any): any  {
-    const adapter = getRuntimeAdapter(agent);
-    const syncArgs: any[] = [...args];
+    const parsed = consumeRuntimeAdapterOption(args);
+    validateRuntimeOperationArgs(parsed.args, ['--target', '--scope', '--json'], ['--json']);
+    const syncArgs: any[] = parsed.args;
     if (!syncArgs.includes('--scope')) syncArgs.push('--scope', '.');
     const targetRoot = path.resolve(optionValue(syncArgs, '--target', process.cwd()));
-    const authority = assertRuntimeSyncTarget(targetRoot, agent);
+    const selected = selectWorkspaceRuntime(targetRoot, { runtimeId: agent ?? null, adapterId: parsed.adapterId });
+    const { runtimeId, adapterId } = selected;
+    const authority = assertRuntimeSyncTarget(targetRoot, runtimeId, adapterId);
     if (authority.disposition === 'projection-only') {
-      const rendered = renderRuntime(agent, syncArgs, { productSkill: true });
+      const rendered = renderRuntime(runtimeId, syncArgs, { productSkill: true, runtimeSelection: selected });
       console.warn(authority.diagnostic);
       if (rendered.files.length > 0) {
         const ruleTargets: any = new Set(rendered.rulesActions.map((item: any) => item.targetFile));
@@ -291,7 +315,7 @@ export function registerApplicationRuntime(dependencies: RuntimeProjectionDepend
       return;
     }
     assertInitializedBuildrWorkspace(targetRoot);
-    const preflight = buildSyncSourcePlan(targetRoot, agent);
+    const preflight = buildSyncSourcePlan(targetRoot, adapterId);
     assertSyncSourcePlanReady(preflight);
     const structuredStoreMigration = migrateWorkspaceStructuredStore(targetRoot);
     let lockedPlan: any = null;
@@ -309,20 +333,21 @@ export function registerApplicationRuntime(dependencies: RuntimeProjectionDepend
       return sourceUpdate;
     }, {
       preSnapshot(): any  {
-        lockedPlan = buildSyncSourcePlan(targetRoot, agent);
+        lockedPlan = buildSyncSourcePlan(targetRoot, adapterId);
         assertSyncSourcePlanReady(lockedPlan);
         if (lockedPlan.signature !== preflight.signature) throw new Error('sync source plan changed after preflight; rerun sync against the current workspace state.');
       },
     });
-    const rendered = renderRuntime(agent, syncArgs, { productSkill: true });
+    const rendered = renderRuntime(runtimeId, syncArgs, { productSkill: true, runtimeSelection: selected });
     const productInvocation = dependencies.currentProductInvocation();
     const finalDoctor = (runFinalDoctor as any)({
       invocation: productInvocation,
-      agent,
+      runtimeId,
+      adapterId,
       targetRoot,
       cwd: productRoot(),
     });
-    console.log(`已同步 Buildr 到 ${agent}：${targetRoot}`);
+    console.log(`已同步 Buildr 到 ${runtimeId ?? adapterId}：${targetRoot}`);
     if (structuredStoreMigration.migrations.length > 0) console.log(`Workspace structured store：已确认 migration 0000-${String(structuredStoreMigration.migrations.at(-1).version).padStart(4, '0')}。`);
     if (updated.changed.length > 0) {
       console.log('产品能力变更：');
@@ -342,7 +367,7 @@ export function registerApplicationRuntime(dependencies: RuntimeProjectionDepend
     for (const warning of rendered.warnings) console.error(`Warning: ${warning}`);
     if (finalDoctor.classification.status !== 'passed') {
       const detail = finalDoctor.classification.diagnostic ? `\n${finalDoctor.classification.diagnostic}` : '';
-      throw new Error(`${agent} sync 未完成：${finalDoctor.classification.message}${detail}`);
+      throw new Error(`${runtimeId ?? adapterId} sync 未完成：${finalDoctor.classification.message}${detail}`);
     }
     console.log('doctor 通过。');
   }

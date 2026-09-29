@@ -12,7 +12,7 @@ export function resolveKnowledgePath(
     return null;
   let decoded: string;
   try {
-    decoded = decodeURIComponent(href.split("#")[0]);
+    decoded = decodeURIComponent(href.split(/[?#]/)[0]);
   } catch {
     return null;
   }
@@ -22,6 +22,7 @@ export function resolveKnowledgePath(
     decoded.includes("\\")
   )
     return null;
+  if (!decoded) return base;
   const parts = base.split("/").slice(0, -1);
   for (const segment of decoded.split("/")) {
     if (segment === "..") {

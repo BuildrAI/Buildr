@@ -28,13 +28,14 @@ description: 执行已明确仓库、操作和目标的 Git 操作，核对授�
 - `commit`：只创建或安全 amend local commit，不 push。
 - `push`：只发布已有 commit，不把 dirty 自动 commit。
 - `commit+push`：caller 依次执行一次 commit 和一次 push，保留两个独立 Result；不是原子 transaction。
+- `delete-remote-ref`：只删除 consumer 明确提供的 remote/ref，并以 consumer 已观察的精确远端提交为删除条件，不动其他引用。
 - workspace update：只有 Buildr Skill 等 consumer 已明确 workspace、upstream、update operation 与授权时才执行；dirty、divergence、冲突、缺失 upstream 或策略不唯一时 `blocked`，不自动 rebase、merge 或继续 sync。
 
 直接 Git 收尾由智能体（Agent）选择已授权的动作，可在同一次工具调用内顺序执行。每项操作（Operation）分别核验并保留结果（Result），后一步消费已成功动作返回的真实身份；推送前新观察远端并核对完整范围。独立结果不要求独立的模型往返，批量编排不扩大授权。失败时停止相关后续动作，返回已成功部分与诊断；provider不自动stash，rebase冲突、目标歧义、已共享历史或需要force push时停止。Git Operations自身不写Task lifecycle evidence，任务登记交回原应用。
 
-本版不预扩 checkout、reset、cherry-pick、stash、branch deletion 等完整命令路由。rebase、merge、revert 或其他动作只有被 consumer 明确选为当前 operation 时才可能进入；不得作为发现分叉或失败后的自动替代策略。
+本版不预扩 checkout、reset、cherry-pick、stash、本地 branch deletion 等完整命令路由。rebase、merge、revert 或其他动作只有被 consumer 明确选为当前 operation 时才可能进入；不得作为发现分叉或失败后的自动替代策略。
 
-默认硬边界是不自动 stash、reset、rebase、merge、force push、改写共享历史或切换策略。“收尾”也不授权 merge commit、远端删除、丢弃内容或语义冲突取舍。
+默认硬边界是不自动 stash、reset、rebase、merge、force push、改写共享历史或切换策略。“收尾”也不授权 merge commit、远端任务引用创建或删除、丢弃内容或语义冲突取舍。
 
 ### Fetch 与显式 rebase
 
@@ -43,6 +44,10 @@ description: 执行已明确仓库、操作和目标的 Git 操作，核对授�
 `rebase` 只有在 consumer 已明确选择 local branch、target ref、允许 local tree/history effect，并且 provider证明当前分支匹配、index/working tree clean、没有进行中的 Git operation、local-only commits 未 push 且未共享时才能执行。已对齐、仅落后与 clean 未共享分叉都返回真实 before/after 与 tree/history 变化；共享风险或 target drift 无法证明时在 rebase 前 `blocked`。
 
 consumer 可以在选择 rebase 时同时明确授权冲突后的有界 `rebase --abort`。provider 只在 pre-state 已证明 clean 时执行；必须把 conflict、abort 命令效果和恢复核验写入同一 blocked Result。只有 branch、HEAD、index 与 working tree 都恢复到 pre-rebase facts 才能标记 recovered；abort 失败或恢复不可证明时保留现场。该动作不是静默 reset/回滚，也不授权换成 merge、stash、force push 或其他策略。
+
+### 远端引用删除
+
+`delete-remote-ref` 只有在 consumer 已明确选择该 operation 并提供实际 repository、remote、精确 ref、已观察远端提交（Commit）与允许的远端 effect 时才能执行。provider 在写远端前重新读取实际远端 tip，仍等于已观察提交才删除该引用，删除后回读远端确认不存在；tip 漂移、远端无法可靠观察或授权不完整时在远端零写入状态返回 `blocked`，不得改用无条件删除。返回错误或响应丢失时先核对实际远端状态再报告 effects。本 operation 不隐含对其他引用的任何动作，也不判断归属或业务保留理由——归属、保全与活动用途由 consumer 核验后作为授权输入提供。
 
 ## 3. 精确暂存与 commit
 
@@ -58,6 +63,20 @@ consumer 可以在选择 rebase 时同时明确授权冲突后的有界 `rebase 
 默认 subject 使用 `<type>(<scope>): <subject>`，scope 可选。type 从 `feat`、`fix`、`docs`、`style`、`refactor`、`perf`、`test`、`build`、`ci`、`chore`、`revert` 中按实际内容选择；不猜测 scope。
 
 正文只在需要说明动机、行为差异或破坏性影响时添加；破坏性变更使用 `BREAKING CHANGE:`。语言遵循当前 workspace `AGENTS.md` 以及 Project、Service、repository 的更具体规则，本 Skill 不复制默认语言约束，也不把 Core 作为提交语言的独立来源。
+
+已明确关联正式任务（Task）时，核对其在当前工作空间（Workspace）中的实际任务编码，在提交说明（Commit Message）末尾的尾注（Trailer）区只写一行 `Buildr-Task: <taskId>`；保留实际改动的主题、必要正文和其他尾注。同一任务分多次提交时，每次使用同一任务编码。没有明确任务时省略该尾注，继续既有提交方式，不补建任务，不用分支名、目录名或最近任务猜测归属；归属尚未明确时只说明未建立关联。
+
+```text
+feat(task): 展示任务提交记录
+
+在任务中读取提交说明和完整哈希值。
+
+Buildr-Task: 2026-09-27-task-git-commits
+```
+
+提交成功后，从真实 Git 对象回读完整哈希值（Hash）及完整说明，例如 `git show -s --format='%H%n%B' <created-commit>`，核对实际尾注，而不是只看准备的消息或命令成功。对已有正式任务，再用当前可用入口执行 `buildr task commits <task-id> --target <canonical-workspace> --json`，目标指向任务所属主工作空间（Canonical Workspace），核对任务返回的代码库（Repository）身份、完整哈希值和说明是否与实际提交相同；两侧一致才报告双向关联已确认。结果的读取范围、截断和局部诊断决定尚未确认的部分，不能把未覆盖或不可读表述为没有提交。
+
+实际提交成功与任务侧关联确认分别报告。查询不可用、失败或未覆盖本次提交时，保留 Git 成功事实并说明任务侧尚未确认，不改任务状态，不阻止无关的已授权交付。不得为了补任务编码安装强制钩子（Hook）、自动修改提交（Amend）、变基（Rebase）或改写既有历史；真实说明不符时报告差异，由原调用者依据实际目标与授权处理，不把关联检查变为通用提交门禁。
 
 ## 5. Push 必须检查完整 range
 

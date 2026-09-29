@@ -67,6 +67,7 @@ export function createWorkspaceFoundationContextProvider({ runtime = createRunti
     footprints: Object.freeze(['filesystem', 'workspace-lifecycle']),
     prepare({ seedRoot }: any): any  {
       setupOperation(WORKSPACE_FOUNDATION_CONTEXT_KEY, 'workspace.init', () => runtime.initBuildr([
+        '--source-only',
         '--target', seedRoot,
         '--name', 'prepared-workspace',
         '--description', 'Immutable Workspace foundation for tests',
@@ -91,6 +92,7 @@ export function createProjectFoundationContextProvider({ runtime = createRuntime
     footprints: Object.freeze(['filesystem', 'workspace-lifecycle']),
     prepare({ seedRoot }: any): any  {
       setupOperation(PROJECT_FOUNDATION_CONTEXT_KEY, 'workspace.init', () => runtime.initBuildr([
+        '--source-only',
         '--target', seedRoot,
         '--name', 'prepared-project-workspace',
         '--description', 'Immutable Project foundation for tests',

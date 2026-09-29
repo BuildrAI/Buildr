@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 
 const serviceRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const projectRoot: any = path.resolve(serviceRoot, '../..');
+const repositoryRoot: any = path.resolve(projectRoot, '../..');
 const explicit: any = process.env.BUILDR_CHANGED_PATHS_JSON ? JSON.parse(process.env.BUILDR_CHANGED_PATHS_JSON) : [];
 const files: any[] = [];
 
@@ -26,6 +27,7 @@ if (explicit.length > 0) {
     visit(path.join(projectRoot, relative));
   }
 } else {
+  for (const entry of ['README.md', 'README.en.md', 'CONTRIBUTING.md', 'SECURITY.md', 'docs']) visit(path.join(repositoryRoot, entry));
   for (const entry of ['README.md', 'docs']) visit(path.join(serviceRoot, entry));
   for (const entry of ['README.md', 'docs', 'knowledge', 'openspec']) visit(path.join(projectRoot, entry));
 }
@@ -42,7 +44,7 @@ for (const file of [...new Set(files)].sort()) {
       target = target.split('#')[0].split('?')[0];
       if (!target) continue;
       const resolved: any = path.resolve(path.dirname(file), decodeURIComponent(target));
-      if (!resolved.startsWith(`${projectRoot}${path.sep}`) && resolved !== projectRoot) problems.push(`${relative}: link escapes Product Project root: ${match[1]}`);
+      if (!resolved.startsWith(`${repositoryRoot}${path.sep}`) && resolved !== repositoryRoot) problems.push(`${relative}: link escapes repository root: ${match[1]}`);
       else if (!fs.existsSync(resolved)) problems.push(`${relative}: missing relative link: ${match[1]}`);
     }
   }

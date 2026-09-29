@@ -7,8 +7,7 @@ import YAML from 'yaml';
 const serviceRoot: any = path.resolve(import.meta.dirname, '../..');
 const read: any = (relative: any) => fs.readFileSync(path.join(serviceRoot, relative), 'utf8');
 const triage: any = read('resources/workspace/skills/buildr/task-triage/SKILL.md')
-  + read('resources/workspace/skills/buildr/task-triage/references/structured-handoff.md')
-  + read('resources/workspace/skills/buildr/task-triage/references/task-create-git-baseline.md');
+  + read('resources/workspace/skills/buildr/task-triage/references/structured-handoff.md');
 const gitOperations: any = read('resources/workspace/skills/buildr/git-operations/SKILL.md');
 const gitContract: any = read('resources/workspace/skills/contracts/buildr/git-operations/v1.md');
 const taskManager: any = read('resources/workspace/skills/buildr/task-manager/SKILL.md');
@@ -34,7 +33,7 @@ test('Git Operations 明确提供独立 fetch、selected rebase 与可见 abort 
   ]) assert.ok(gitOperations.includes(required), required);
 
   for (const required of [
-    '`fetch`、`rebase`、`commit`与`push`保持独立Result',
+    '`fetch`、`rebase`、`commit`、`push`与`delete-remote-ref`保持独立Result',
     'fetch 不隐含 rebase',
     'rebase 不隐含 push',
     '`rebase --abort`',

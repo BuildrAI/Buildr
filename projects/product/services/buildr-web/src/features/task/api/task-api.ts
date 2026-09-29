@@ -8,6 +8,7 @@ import type {
   TaskCompleteRequest,
   TaskCompleteResponse,
   TaskDetailResponse,
+  TaskCommitsResult,
   TaskListRequest,
   TaskListResponse,
   TaskRetrospectiveDocumentResponse,
@@ -37,6 +38,9 @@ export function createTaskClient(client: ApiClient) {
     },
     detail(taskId: string, options: ReadOptions = {}): Promise<TaskDetailResponse> {
       return typed(client(`/api/v1/tasks/${encodeURIComponent(taskId)}`, options));
+    },
+    commits(taskId: string, options: ReadOptions = {}): Promise<TaskCommitsResult> {
+      return typed(client(`/api/v1/tasks/${encodeURIComponent(taskId)}/commits`, options));
     },
     change(taskId: string, project: string, change: string, options: ReadOptions = {}): Promise<unknown> {
       return client(`/api/v1/tasks/${encodeURIComponent(taskId)}/changes/${encodeURIComponent(project)}/${encodeURIComponent(change)}`, options);

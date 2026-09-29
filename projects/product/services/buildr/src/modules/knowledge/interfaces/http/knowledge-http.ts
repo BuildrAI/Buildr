@@ -3,9 +3,13 @@ import {
   validateKnowledgeCatalogResponse,
   validateKnowledgeNavigationResponse,
   validateKnowledgeResponse,
+  validateKnowledgeDocumentsResponse,
+  validateKnowledgeDocumentResponse,
+  validateKnowledgeReferenceResponse,
 } from "./knowledge-http-contracts.ts";
 import type { createKnowledgeQuery } from "../../application/knowledge-query.ts";
 import type { ScopeRef } from "../../domain/knowledge-index.ts";
+import { parseKnowledgeReference } from '../../infrastructure/knowledge-references.ts';
 export function createKnowledgeHttpContribution(
   app: ReturnType<typeof createKnowledgeQuery>,
 ) {
@@ -23,8 +27,29 @@ export function createKnowledgeHttpContribution(
       suffix: string;
       root: string;
       searchParams?: URLSearchParams;
-      respond: { diagramHtml(content: string): unknown };
+      respond: { diagramHtml(content: string): unknown; binary?(content: Buffer, contentType: string, options: { disposition: 'inline'; filename: string }): unknown };
     }) {
+      const reference = suffix.match(/^\/knowledge\/(project|service)\/([^/]+)\/reference(?:\/(image))?$/);
+      if (request.method === 'GET' && reference) {
+        const id = decodeURIComponent(reference[2]);
+        if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(id)) return { status: 400, body: { error: 'knowledge_identity_invalid' } };
+        const value = app.reference(root, { kind: reference[1] as ScopeRef['kind'], id }, parseKnowledgeReference(searchParams?.get('reference') || null), Boolean(reference[3]));
+        if (reference[3] && value.bytes && value.contentType) {
+          respond.binary!(value.bytes, value.contentType, { disposition: 'inline', filename: value.path.split('/').at(-1)! });
+          return true;
+        }
+        return { status: 200, body: validateKnowledgeReferenceResponse({ path: value.path, content: value.content, digest: value.digest, reference: value.reference }) };
+      }
+      const documents = suffix.match(/^\/knowledge\/(project|service)\/([^/]+)\/documents(?:\/([a-f0-9]{64}))?$/);
+      if (request.method === "GET" && documents) {
+        const id = decodeURIComponent(documents[2]);
+        if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(id))
+          return { status: 400, body: { error: "knowledge_identity_invalid" } };
+        const ref = { kind: documents[1] as ScopeRef["kind"], id };
+        return { status: 200, body: documents[3]
+          ? validateKnowledgeDocumentResponse(app.document(root, ref, documents[3]))
+          : validateKnowledgeDocumentsResponse(app.documents(root, ref)) };
+      }
       const navigation = suffix.match(/^\/knowledge\/(project|service)\/([^/]+)\/navigation$/);
       if (request.method === "GET" && navigation) {
         const id = decodeURIComponent(navigation[2]);

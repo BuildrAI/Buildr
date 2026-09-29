@@ -4,13 +4,13 @@ import path from 'node:path';
 import process from 'node:process';
 import { execFileSync, spawnSync } from '../../src/infrastructure/process.ts';
 import { checkClaudeCodeRuntime } from '../../src/modules/agent-assets/infrastructure/runtime/check-claude-code.ts';
-import { checkCodexRuntime } from '../../src/modules/agent-assets/infrastructure/runtime/check-codex.ts';
+import { checkRuntimeAdapter } from '../../src/modules/agent-assets/infrastructure/runtime/check-runtime.ts';
 import {
   buildRuleDiscoveryPlan,
   hasManagedRulesMarker,
   renderClaudeCodeRules,
   resolveRuleScope,
-} from '../../src/modules/agent-assets/infrastructure/runtime/render-claude-code-rules.ts';
+} from '../../src/modules/agent-assets/infrastructure/runtime/rule-projection.ts';
 import { BUILDR_REQUIRED_BLOCK_START, GENERATED_USER_REGISTRY_RESOURCE_SOURCES, LEGACY_PACKAGE_PATHS, PACKAGE_RUNTIME_TARGET, RESOURCE_WORKSPACE_ROOT } from '../../src/infrastructure/product-layout.ts';
 import { SUPPORTED_AGENT_IDS, getRuntimeAdapter } from '../../src/modules/agent-assets/infrastructure/runtime/adapter-contract.ts';
 import { createPackageSmokeChecks } from './package-check/smoke-checks.ts';
@@ -106,7 +106,7 @@ export function runPackageCheck(runtime: any) {
     BUILDR_REQUIRED_BLOCK_START,
     buildRuleDiscoveryPlan,
     checkClaudeCodeRuntime,
-    checkCodexRuntime,
+    checkRuntimeAdapter,
     collectFiles,
     ensureDirectory,
     execFileSync,

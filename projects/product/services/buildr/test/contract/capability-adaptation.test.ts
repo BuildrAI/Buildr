@@ -57,7 +57,7 @@ test('capability-adaptation 作为 optional 管理 Skill 发布且不声明空�
   assert.equal(packaged.required, false);
   assert.deepEqual(packaged.provides, undefined);
   assert.deepEqual(packaged.requires, undefined);
-  assert.equal(packaged.runtimes.length, 7);
+  assert.equal(Object.hasOwn(packaged, 'runtimes'), false, '通用技能不维护品牌白名单');
 });
 
 test('能力适配先验证候选并保留可恢复的当前实现', () => {

@@ -16,21 +16,21 @@ export function AgentActionDrawer({ initialAction, initialContext = EMPTY_CONTEX
   const [action, setAction] = useState(initialAction);
   const [context, setContext] = useState(initialContext);
   const [generation, setGeneration] = useState(0);
-  const { copyState, setCopyState, copyProvidedPrompt } = useAgentActionFeedback(() => setAction(undefined));
+  const { copyState, invalidatePrompt, copyProvidedPrompt } = useAgentActionFeedback(() => setAction(undefined));
   useEffect(() => {
     setAction(initialAction);
     setContext(initialContext);
-    setCopyState('');
+    invalidatePrompt();
     setGeneration((current) => current + 1);
-  }, [initialAction, initialContext, setCopyState]);
-  const backToChooser = () => { setAction(undefined); setContext({}); setCopyState(''); };
+  }, [initialAction, initialContext, invalidatePrompt]);
+  const backToChooser = () => { setAction(undefined); setContext({}); invalidatePrompt(); };
   const props = { context, onBack: backToChooser };
   if (action === 'knowledge') return <KnowledgeAgentAction key={generation} {...props} />;
   if (action === 'workspace') return <WorkspaceAgentAction key={generation} {...props} />;
   if (action === 'project') return <ProjectAgentAction key={generation} {...props} />;
   if (action === 'service') return <ServiceAgentAction key={generation} {...props} />;
   if (action === 'daily-progress') return <DailyProgressAgentAction key={generation} {...props} />;
-  if (action && ['start', 'change', 'task-review', 'task-verification', 'task-continue'].includes(action)) return <TaskAgentAction key={`${generation}:${action}`} action={action} {...props} />;
+  if (action && ['start', 'task-review', 'task-verification', 'task-continue'].includes(action)) return <TaskAgentAction key={`${generation}:${action}`} action={action} {...props} />;
   if (action === 'workspace-recovery' && typeof context.prompt === 'string') {
     return (
       <>
@@ -114,11 +114,6 @@ export function AgentActionDrawer({ initialAction, initialContext = EMPTY_CONTEX
           <Button className="action-choice" type="default" block onClick={() => { setAction('service'); }}>
             <span className="action-symbol">◫</span>
             <span><strong>接入服务</strong><small>按需接入代码仓、应用、模块或可执行资产</small></span>
-            <span>→</span>
-          </Button>
-          <Button className="action-choice secondary-choice" type="default" block onClick={() => setAction('change')}>
-            <span className="action-symbol">△</span>
-            <span><strong>创建变更</strong><small>建立 OpenSpec 变更契约</small></span>
             <span>→</span>
           </Button>
           <Button className="action-choice secondary-choice" type="default" block onClick={() => setAction('daily-progress')}>

@@ -13,7 +13,7 @@ test('Git provider 不可用且工作目录未提交、无上游时仍可创建�
   const root: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-pre-create-git-'));
   try {
     const runtime = createRuntime();
-    runtime.initBuildr(['--target', root, '--name', 'pre-create-git', '--description', 'Capability graph fixture', '--profile', 'personal']);
+    runtime.initBuildr(['--target', root, '--name', 'pre-create-git', '--description', 'Capability graph fixture', '--profile', 'personal', '--source-only']);
     const file: any = path.join(root, 'skills/manifest.yml');
     const manifest: any = YAML.parse(fs.readFileSync(file, 'utf8'));
     manifest.skills.find((item: any) => item.id === 'git-operations').state = 'uninstalled';

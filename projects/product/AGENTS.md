@@ -19,17 +19,18 @@ Agent 在 `product` Project 中的最小运行规则。
 | Project rules | `AGENTS.md` | 当前 Product Project 的 Agent 工作规则 |
 | OpenSpec | `openspec/` | Buildr 产品事实、能力规范、变更和归档 |
 | 当前知识 | `knowledge/` | 代码地图、技术图及 `knowledge/docs/` 当前解释 |
-| 历史与规划 | `docs/` | 历史审计、记录、未来规划、对外文章与导航 |
+| 已发表文章 | `docs/publications/` | 产品读取的文章正文、发表记录与配图；普通说明维护在 `knowledge/` |
 | Package assets | `services/buildr/resources/` | 随包 manifest、workspace/runtime 文件源资产 |
 | Buildr 可执行实现 | `services/buildr/` | npm package、CLI、Buildr Web Runtime、`web-dist` 托管与打包、验证及维护脚本的实现根 |
 | Buildr Web 前端源码 | `services/buildr-web/` | Buildr Web Frontend Service 的 React/Vite 权威前端源码与正式构建 |
+| DSH 桌面插件 | `services/dsh-plugin/` | 独立插件包的源码、构建、验证与发布准备；不进入 Buildr 主包 |
 | Compatibility bridge | `buildr` | 只加载 `services/buildr/bin/buildr.mjs` 的稳定开发入口 |
 | Service registry | `services/manifest.yml` | 当前 Product Project 的 Service registry |
 | Service assets | `services/<service>/` | Service 实现目录；是否独立 Git repo 以 registry source 和实际 Git 边界为准 |
 
 ## 产品边界
 
-- 随包 [内联核心规则](services/buildr/resources/workspace/AGENTS.md) 是 Buildr 产品设计与用户 Workspace 工作方式共同遵守的核心产品哲学和通用硬边界；产品能力、Rule、Skill、workflow 和 gate 不得与其冲突。`knowledge/docs/overview.md` 在该边界内展开产品定位、核心模型和 Roadmap，OpenSpec 继续作为具体可观察行为的规范 authority。
+- 随包 [内联核心规则](services/buildr/resources/workspace/AGENTS.md) 是 Buildr 产品设计与用户 Workspace 工作方式共同遵守的核心产品哲学和通用硬边界；产品能力、Rule、Skill、workflow 和 gate 不得与其冲突。`knowledge/docs/overview.md` 在该边界内解释产品用途；未来方向位于同页的“后续方向”章节，OpenSpec 继续作为具体可观察行为的规范 authority。
 - 新增产品能力必须说明长期治理、跨智能体（Agent）复用、确定性约束或可验证诊断价值；理解目标、推理和专业执行继续由智能体（Agent）负责。人应能低门槛参与，无需掌握内部模型或命令。
 - 新增或收紧硬门禁时，必须说明它保护的 authority 或结果不变量，以及放行会产生的具体伤害。缺失的若只是辅助 provenance、推荐流程、工具偏好或自动化信心，而当前事实仍可被检查、验证并诚实报告，则应提供诊断和 Agent 指引，不得阻断无关工作；Buildr 约束结果和副作用边界，不规定 Agent 或协作者必须采用唯一工作方式。
 - 新增或调整产品能力时，必须同时考虑 Buildr Skill 如何让 Agent 发现、理解、选择并正确使用该能力；缺少相应的 Agent 使用指引、决策边界或完成标准时，功能设计不完整。
@@ -38,7 +39,9 @@ Agent 在 `product` Project 中的最小运行规则。
 - `services/buildr/resources/` 是文件型交付资源 authority；工程实现属于 `tools/`，普通生成结果属于被 Git 忽略的 `build/`，前端构建兼托管产物属于被 Git 忽略的 `web-dist/`。修改时按资源映射、安装方式或发布内容的实际影响核对相关边界；仅说明文字变化不要求遍历初始化、更新、安装与发布流程。
 - 未集成的产品候选只在已核对归属的隔离工作目录中执行；不得从候选工作目录更新保留的自举工作空间（Workspace）或共享用户运行时（Runtime）。
 - `verification.yml` 是 Product 验证能力、适用性和证明范围的声明 authority；Task Verification Application 是正式验证 current Result 的唯一 authority。普通收尾依据与当前内容相符的真实验证及交付事实报告，不得把普通命令、commit 或 push 冒充正式验证结果。
-- 收尾不得伪造验证或交付事实；任务结果登记、Git 交付、环境激活和资源清理保持独立。用户明确要求“收尾”已授权当前任务范围内的常规提交、集成和普通推送，不因本规则要求明确授权而重复询问；仍须核验范围与目标。该指令不授权 force push、merge commit、远端任务分支删除、丢弃改动或语义冲突决策。
+- 收尾不得伪造验证或交付事实；任务结果登记、Git 交付、环境激活和资源清理保持独立。用户明确要求“收尾”已授权当前任务范围内的常规提交、集成和普通推送，不因本规则要求明确授权而重复询问；仍须核验范围与目标。该指令本身不授权 force push、merge commit、远端任务分支删除、丢弃改动或语义冲突决策；以下仓库专属持续授权独立适用。
+- 仅在实际远端身份为 `BuildrAI/Buildr` 的产品仓库，长期保留的分支（Branch）为 `main`、`dev`；其他分支（Branch）只因尚未结束的工作保留，不以任务完成记录代替交付或清理事实。官方发布标签（Tag）、GitHub Release、npm 版本和发布证据长期保留。
+- 本仓库持续授权删除已证明属于当前任务的临时远端开发分支（Branch）：成果已经交付并由保留引用保全，无未交付内容、开放合并请求（Pull Request）或未结束运行占用，删除以实时观察的精确提交为条件。授权不包含 `main`、`dev`、其他任务、共享用途或归属未知的引用；查询未知、引用漂移或保全不足时必须保留受影响对象。发布引用只消费 `buildr-release` 与对应发布上下文（Context）绑定的清理授权，历史批量清理另需明确范围；本规则不扩大其他仓库的授权。
 - self-bootstrap activation 只由 root Rule 指定的唯一 owner 执行；Product Rule 不复制其路径分类、安装、CLI identity 或 Doctor 流程。
 - release tag、npm publication、GitHub Release 和其他发布副作用必须单独获得明确授权；`buildr-release` 是发布动作 owner，当前流程知识入口是 `knowledge/docs/flows/open-source-release.md`，本 Rule 不授权或编排发布动作。
 - 私有业务 workspace、私有业务规则和私有服务内容不得进入 `resources/` 或正式发布物。

@@ -56,7 +56,7 @@ describe('capability CLI integration', { concurrency: 2 }, () => {
 test('CLI 集成验证 provider 替换、绑定与 builtin 恢复', { concurrency: true }, async (t: any) => {
   const root: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-capability-cli-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  await run(['init', '--target', root, '--name', 'capability-cli', '--profile', 'personal']);
+  await run(['init', '--source-only', '--target', root, '--name', 'capability-cli', '--profile', 'personal']);
 
   await run([
     'skills', 'add', 'invalid-provider', '--remote-source', 'https://example.com/invalid-provider', '--scope', '.', '--target', root,
@@ -101,7 +101,7 @@ test('CLI 集成验证 provider 替换、绑定与 builtin 恢复', { concurrenc
 test('CLI 集成验证独立Task Retrospective卸载不影响生命周期consumer', { concurrency: true }, async (t: any) => {
   const root: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-capability-optional-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  await run(['init', '--target', root, '--name', 'capability-optional', '--profile', 'personal']);
+  await run(['init', '--source-only', '--target', root, '--name', 'capability-optional', '--profile', 'personal']);
   await run(['builtin', 'uninstall', 'task-retrospective', '--target', root, '--reason', 'optional fixture']);
   const report: any = await doctor(root);
   assert.equal(report.capabilities.graphs.some((graph: any) => graph.consumer === 'task-development'), false);
@@ -111,7 +111,7 @@ test('CLI 集成验证独立Task Retrospective卸载不影响生命周期consume
 test('CLI 集成验证 Git Operations required/optional consumers、legacy Project 拒绝与 Project override', { concurrency: true }, async (t: any) => {
   const root: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-capability-project-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  await run(['init', '--target', root, '--name', 'capability-project', '--profile', 'personal']);
+  await run(['init', '--source-only', '--target', root, '--name', 'capability-project', '--profile', 'personal']);
   const internalSource: any = writeSkill(root, 'internal-git');
   await run(['skills', 'add', '--source', internalSource, '--target', root, '--provides', 'buildr.git-operations@1']);
   const unbind: any = await run(['skills', 'unbind', 'buildr.git-operations@1', '--scope', '.', '--target', root]);
@@ -154,18 +154,25 @@ test('skills render 将 source workspace 与 user/workspace destination 分离�
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   fs.mkdirSync(userHome, { recursive: true });
   const env: any = { ...process.env, HOME: userHome, USERPROFILE: userHome };
-  await run(['init', '--target', root, '--name', 'destinations', '--profile', 'personal'], 0, { env });
+  await run(['init', '--source-only', '--target', root, '--name', 'destinations', '--profile', 'personal'], 0, { env });
   await run(['skills', 'render', 'codex', '--destination', 'user', '--target', root], 0, { env });
   const userSkill: any = path.join(userHome, '.agents', 'skills', 'task-triage', 'SKILL.md');
   assert.equal(fs.existsSync(userSkill), true);
   assert.equal(fs.existsSync(path.join(root, '.agents', 'skills', 'task-triage', 'SKILL.md')), false);
-  const receipt: any = JSON.parse(fs.readFileSync(path.join(userHome, '.buildr', 'agent-runtime', 'user', 'codex', 'skill-projection-ownership-receipts', 'task-triage.json'), 'utf8'));
+  const receipt: any = JSON.parse(fs.readFileSync(path.join(userHome, '.buildr', 'agent-runtime', 'user', 'agents-standard', 'skill-projection-ownership-receipts', 'task-triage.json'), 'utf8'));
   assert.equal(receipt.schemaVersion, 'buildr.skill-projection/v2');
   assert.equal(receipt.destination, 'user');
   assert.ok(receipt.assetIdentity && receipt.sourceIdentity && receipt.sourceDigest && receipt.renderDigest);
   const local: any = await run(['skills', 'render', 'codex', '--destination', 'workspace', '--target', root], 0, { env });
   assert.equal(fs.existsSync(path.join(root, '.agents', 'skills', 'task-triage', 'SKILL.md')), false, 'same user asset must satisfy workspace without duplicate projection');
-  assert.equal(fs.existsSync(path.join(root, '.agents', 'buildr', 'skill-satisfaction', 'codex', 'task-triage.json')), true);
+  const satisfactionPath = path.join(root, '.agents', 'buildr', 'skill-satisfaction', 'agents-standard', 'task-triage.json');
+  assert.equal(fs.existsSync(satisfactionPath), true);
+  const satisfaction = JSON.parse(fs.readFileSync(satisfactionPath, 'utf8'));
+  assert.equal(satisfaction.agent, 'agents-standard');
+  assert.equal(satisfaction.adapterId, 'agents-standard');
+  assert.equal('runtimeId' in satisfaction, false);
+  const doctor = JSON.parse((await run(['doctor', '--agent', 'codex', '--target', root, '--json', '--detail', 'full'], 0, { env })).stdout);
+  assert.equal(doctor.runtime.agentsStandard.flatMap((scope: any) => scope.findings).some((finding: any) => finding.code === 'runtime.skill_satisfaction_stale'), false);
   assert.doesNotMatch(local.stderr, /runtime\.skill_visibility_incomplete/);
 });
 
@@ -177,7 +184,7 @@ test('skills render 对用户层同名外部资产输出稳定 JSON 并整次零
   fs.mkdirSync(external, { recursive: true });
   fs.writeFileSync(path.join(external, 'SKILL.md'), '---\nname: task-triage\ndescription: foreign\n---\nforeign\n');
   const env: any = { ...process.env, HOME: userHome, USERPROFILE: userHome };
-  await run(['init', '--target', root, '--name', 'conflict', '--profile', 'personal'], 0, { env });
+  await run(['init', '--source-only', '--target', root, '--name', 'conflict', '--profile', 'personal'], 0, { env });
   const result: any = await run(['skills', 'render', 'codex', '--destination', 'workspace', '--target', root, '--json'], 1, { env });
   const report: any = JSON.parse(result.stdout);
   assert.equal(report.schemaVersion, 'buildr.skill-conflict-report/v1');
@@ -191,7 +198,7 @@ test('skills render 对用户层同名外部资产输出稳定 JSON 并整次零
 test('已删除 Project Skill 自动迁移 route 返回 unknown-command 且不改写旧 source', { concurrency: true }, async (t: any) => {
   const root: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-project-skill-retired-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  await run(['init', '--target', root, '--name', 'retired', '--profile', 'personal']);
+  await run(['init', '--source-only', '--target', root, '--name', 'retired', '--profile', 'personal']);
   await run(['project', 'create', 'demo', '--target', root]);
   const legacyRoot: any = path.join(root, 'projects', 'demo', 'skills');
   fs.mkdirSync(path.join(legacyRoot, 'legacy-demo'), { recursive: true });

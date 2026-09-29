@@ -1,0 +1,3 @@
+.knowledge-documents { min-width: 0; }
+.knowledge-document-location { color: var(--soft-muted); font-size: 12px; line-height: 1.8; overflow-wrap: anywhere; margin: -9px 0 20px; }
+.knowledge-documents > .ant-alert { margin-bottom: 12px; }

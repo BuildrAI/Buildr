@@ -69,4 +69,3 @@
   - `archify/flows/`
     - [project-service-repositories.json](../archify/flows/project-service-repositories.json) — 可维护的关系图源
     - [project-service-repositories.html](../archify/flows/project-service-repositories.html) — 原生图示展示
-    - [project-service-repositories.md](../archify/flows/project-service-repositories.md) — 图示依据与表达限制

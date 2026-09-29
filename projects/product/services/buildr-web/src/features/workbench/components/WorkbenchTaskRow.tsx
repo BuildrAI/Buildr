@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { useState, type MouseEvent } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Button, Tooltip } from 'antd';
 import { ArrowRightOutlined, CheckCircleOutlined, ClockCircleOutlined, PushpinFilled, PushpinOutlined } from '@ant-design/icons';
 import type { WorkbenchTaskItem } from '../../../../build/generated/workbench-dto';
@@ -13,12 +13,18 @@ export const attentionLabels = { decision: '等你决定', acceptance: '等你�
 export function WorkbenchTaskRow({ item, projectNames, compact = false, onError }: {
   item: WorkbenchTaskItem; projectNames: Record<string, string>; compact?: boolean; onError(message: string): void;
 }) {
-  const { workspaceId } = useAppShell(), location = useLocation();
+  const { workspaceId } = useAppShell(), location = useLocation(), navigate = useNavigate();
   const { has, set, remove } = useWorkbenchPreferences(workspaceId);
   const [saving, setSaving] = useState(false);
   const record = item.task.record, context = item.workContext.context;
   const pinned = has('pinned-task', record.taskId);
   const href = workspaceHref(workspaceId, '/tasks/' + encodeURIComponent(record.taskId));
+  const from = location.pathname + location.search;
+  const open = (event: MouseEvent<HTMLElement>) => {
+    if ((event.target as HTMLElement).closest('a,button,input,select')) return;
+    if (window.getSelection()?.toString()) return;
+    navigate(href, { state: { from } });
+  };
   const summary = context?.progress || record.result?.summary || record.intent;
   const attention = context?.attention?.state === 'pending' ? context.attention : null;
   const pin = async () => {
@@ -27,10 +33,10 @@ export function WorkbenchTaskRow({ item, projectNames, compact = false, onError 
     catch (err) { onError(err instanceof Error ? err.message : '置顶未能保存'); }
     finally { setSaving(false); }
   };
-  return <article className="workbench-task-row" data-workbench-task={record.taskId}>
+  return <article className="workbench-task-row" data-workbench-task={record.taskId} onClick={open}>
     <span className={'workbench-task-status-symbol ' + record.status} title={taskStatusLabel(record.status)}>{record.status === 'completed' ? <CheckCircleOutlined /> : <ClockCircleOutlined />}</span>
     <div className="workbench-task-copy">
-      <Link className="workbench-task-title" to={href} state={{ from: location.pathname + location.search }}>{record.title}</Link>
+      <Link className="workbench-task-title" to={href} state={{ from }}>{record.title}</Link>
       <p className="workbench-task-summary">{summary}</p>
       <div className="workbench-task-meta">
         {record.scope.projects.length ? <span>{record.scope.projects.map(code => projectNames[code] || code).join('、')}</span> : <span>工作空间范围</span>}
@@ -44,7 +50,7 @@ export function WorkbenchTaskRow({ item, projectNames, compact = false, onError 
       <Tooltip title={pinned ? '取消置顶' : '置顶'}>
         <Button size="small" type="text" loading={saving} icon={pinned ? <PushpinFilled /> : <PushpinOutlined />} onClick={() => void pin()} aria-label={(pinned ? '取消置顶：' : '置顶：') + record.title} />
       </Tooltip>
-      <Link to={href} state={{ from: location.pathname + location.search }} aria-label={'打开任务：' + record.title}><ArrowRightOutlined /></Link>
+      <Link to={href} state={{ from }} aria-label={'打开任务：' + record.title}><ArrowRightOutlined /></Link>
     </div>
   </article>;
 }

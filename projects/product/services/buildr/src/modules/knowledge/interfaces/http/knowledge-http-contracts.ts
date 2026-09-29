@@ -90,7 +90,31 @@ const index = obj({
     }),
   },
 }, ["schemaVersion", "scope", "objects", "sources", "artifacts", "relations"]);
+const document = obj({ id: text, path: text, title: text, location: text, group: text, artifactId: nullable, workspacePath: nullable,
+  sectionId: text, summary: text, supplementary: { type: "boolean" } });
 export const KNOWLEDGE_HTTP_SCHEMAS = {
+  ReferenceResponse: {
+    $schema: 'https://json-schema.org/draft/2020-12/schema',
+    $id: 'https://schemas.buildr.ai/http/knowledge/reference-response',
+    title: 'Knowledge',
+    ...obj({ path: text, content: text, digest: text, reference: obj({ kind: { enum: ['artifact', 'source', 'document'] }, id: text, links: { type: 'array', minItems: 1, maxItems: 12, items: text } }) }),
+  },
+  DocumentsResponse: {
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    $id: "https://schemas.buildr.ai/http/knowledge/documents-response",
+    title: "Knowledge",
+    ...obj({ scope, revision: text, entryDocumentId: nullable, totalCount: { type: "integer", minimum: 0, maximum: 1000 },
+      documents: { type: "array", maxItems: 1000, items: document },
+      sections: { type: "array", maxItems: 65, items: obj({ id: text, title: text, summary: text,
+        count: { type: "integer", minimum: 0, maximum: 1000 } }) },
+      truncated: { type: "boolean" }, diagnostics: strings }),
+  },
+  DocumentResponse: {
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    $id: "https://schemas.buildr.ai/http/knowledge/document-response",
+    title: "Knowledge",
+    ...obj({ document, content: text, digest: text }),
+  },
   NavigationResponse: {
     $schema: "https://json-schema.org/draft/2020-12/schema",
     $id: "https://schemas.buildr.ai/http/knowledge/navigation-response",
@@ -104,6 +128,11 @@ export const KNOWLEDGE_HTTP_SCHEMAS = {
         type: "array",
         maxItems: 500,
         items: obj({ id: text, title: text, summary: text, parent: nullable }),
+      },
+      artifacts: {
+        type: "array",
+        maxItems: 500,
+        items: obj({ id: text, title: text, kind: artifactFields.kind, path: text, objects: strings }),
       },
       diagnostics: strings,
     }),
@@ -228,5 +257,20 @@ export function validateKnowledgeNavigationResponse(value: unknown) {
     throw new Error(
       "Knowledge navigation response contract failed: " + JSON.stringify(result.errors),
     );
+  return value;
+}
+export function validateKnowledgeDocumentsResponse(value: unknown) {
+  const result = validator.validate(KNOWLEDGE_HTTP_SCHEMAS.DocumentsResponse.$id, value);
+  if (!result.valid) throw new Error("Knowledge documents response contract failed: " + JSON.stringify(result.errors));
+  return value;
+}
+export function validateKnowledgeDocumentResponse(value: unknown) {
+  const result = validator.validate(KNOWLEDGE_HTTP_SCHEMAS.DocumentResponse.$id, value);
+  if (!result.valid) throw new Error("Knowledge document response contract failed: " + JSON.stringify(result.errors));
+  return value;
+}
+export function validateKnowledgeReferenceResponse(value: unknown) {
+  const result = validator.validate(KNOWLEDGE_HTTP_SCHEMAS.ReferenceResponse.$id, value);
+  if (!result.valid) throw new Error('Knowledge reference response contract failed: ' + JSON.stringify(result.errors));
   return value;
 }

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { retainComposition, compositionWithReferences } from '../src/features/workspace/components/composition-data.ts';
+import { retainComposition, compositionWithReferences, matchesCompositionQuery } from '../src/features/workspace/components/composition-data.ts';
 const complete = { projects: 'complete', services: 'complete', repositories: 'complete' };
 const before = { projects: [{ id: 'p', code: 'p', name: '项目', serviceIds: ['s'] }], services: [{ id: 's', code: 's', name: '服务', repositoryId: 'r' }], repositories: [{ id: 'r', code: 'r', name: '代码库' }], sources: complete };
 test('局部读取失败保留已知对象，成功重读后接受删除和更新', () => {
@@ -29,4 +29,13 @@ test('引用对象不可读时保留禁用占位，不把未知关系当作空�
   const repositories = compositionWithReferences({ ...before, repositories: [] }).repositories;
   assert.equal(repositories[0].id, 'r');
   assert.equal(repositories[0].unavailable, true);
+});
+test('组成搜索可按部分文字和多个不连续词匹配任一对象字段', () => {
+  const project = { id: 'p', code: 'buildr-product', name: 'Buildr 产品', description: '工作空间治理' };
+  const service = { id: 's', code: 'buildr-backend', name: 'Buildr 后端', description: '命令行与运行时' };
+  const repository = { id: 'r', code: 'source-main', name: 'Buildr 源码库', description: 'Git 位置' };
+  assert.equal(matchesCompositionQuery(project, '产品 治理'), true);
+  assert.equal(matchesCompositionQuery(service, '  BACK 运行  '), true);
+  assert.equal(matchesCompositionQuery(repository, '源码 Git'), true);
+  assert.equal(matchesCompositionQuery(project, '后端'), false);
 });

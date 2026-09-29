@@ -30,7 +30,6 @@ export function registerApplicationDoctor(runtime: any) {
   const {
     runtimeFindingsForDoctor,
     summarizeRuntimeFindings,
-    addUnsupportedAgentFinding,
     detectManagedRuntimeAgents,
     diagnoseRuntime,
     diagnoseCommands,
@@ -104,7 +103,6 @@ export function registerApplicationDoctor(runtime: any) {
     diagnoseServices,
     runtimeFindingsForDoctor,
     summarizeRuntimeFindings,
-    addUnsupportedAgentFinding,
     detectManagedRuntimeAgents,
     diagnoseRuntime,
     diagnoseCommands,

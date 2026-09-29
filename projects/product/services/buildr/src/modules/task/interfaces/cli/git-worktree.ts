@@ -1,5 +1,6 @@
 import path from 'node:path';
 import process from 'node:process';
+import fs from 'node:fs';
 
 import type { GitWorktreeCleanupDeliveryInput } from '../../domain/git-worktree.ts';
 
@@ -24,12 +25,13 @@ export type GitWorktreeCliRuntime = {
     startPoint: string;
     includes: string[];
   }): GitWorktreeResult;
-  inspectGitWorktrees(input: { workspaceRoot: string; taskId: string }): GitWorktreeResult;
+  inspectGitWorktrees(input: { workspaceRoot: string; taskId: string; observedCheckouts?: unknown }): GitWorktreeResult;
   cleanupGitWorktrees(input: {
     workspaceRoot: string;
     taskId: string;
     cleanupDelivery: GitWorktreeCleanupDeliveryInput;
     allowCompleted: true;
+    observedCheckouts?: unknown;
   }): GitWorktreeResult;
 };
 
@@ -41,14 +43,15 @@ type ParsedArguments = {
   startPoint: string;
   includes: string[];
   cleanupDelivery: GitWorktreeCleanupDeliveryInput;
+  observedCheckouts?: unknown;
 };
 
 function syntax(operation: GitWorktreeOperation, message: string): Error {
   const options = operation === 'create'
     ? '[--branch <branch>] [--start-point <ref>] [--include <selector> ...]'
     : operation === 'cleanup'
-      ? '--expected-source <selector>=<full-commit> --delivered-ref <selector>=<full-commit> [...]'
-      : '';
+      ? '--expected-source <selector>=<full-commit> --delivered-ref <selector>=<full-commit> [...] [--observed-checkouts <json-file>]'
+      : '[--observed-checkouts <json-file>]';
   return Object.assign(new Error(message), {
     code: 'git_worktree_cli.syntax',
     status: 400,
@@ -89,8 +92,8 @@ function parse(operation: GitWorktreeOperation, args: readonly string[]): Parsed
   const allowed = operation === 'create'
     ? new Set(['--branch', '--start-point', '--include', '--target', '--json'])
     : operation === 'cleanup'
-      ? new Set(['--expected-source', '--delivered-ref', '--target', '--json'])
-      : new Set(['--target', '--json']);
+      ? new Set(['--expected-source', '--delivered-ref', '--observed-checkouts', '--target', '--json'])
+      : new Set(['--observed-checkouts', '--target', '--json']);
   const repeatable = new Set(['--include', '--expected-source', '--delivered-ref']);
   const values = new Map<string, Array<string | true>>();
   const positions: string[] = [];
@@ -114,6 +117,17 @@ function parse(operation: GitWorktreeOperation, args: readonly string[]): Parsed
   }
   if (positions.length !== 1) throw syntax(operation, `worktree ${operation} requires exactly one <task-id>.`);
   const one = (name: string): string | true | undefined => values.get(name)?.[0];
+  const observationFile = stringValue(one('--observed-checkouts'));
+  let observedCheckouts: unknown;
+  if (observationFile) {
+    try {
+      const stat = fs.statSync(observationFile);
+      if (!stat.isFile() || stat.size > 1024 * 1024) throw new Error('输入必须是小于 1 MiB 的 JSON 文件。');
+      observedCheckouts = JSON.parse(fs.readFileSync(observationFile, 'utf8'));
+    } catch (error) {
+      throw syntax(operation, `无法读取 --observed-checkouts：${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
   return {
     taskId: positions[0],
     targetRoot: path.resolve(stringValue(one('--target')) ?? process.cwd()),
@@ -124,6 +138,7 @@ function parse(operation: GitWorktreeOperation, args: readonly string[]): Parsed
     cleanupDelivery: operation === 'cleanup'
       ? parseRepositoryPairs(operation, values.get('--expected-source') ?? [], values.get('--delivered-ref') ?? [])
       : {},
+    observedCheckouts,
   };
 }
 
@@ -151,12 +166,13 @@ export function gitWorktreeCommand(runtime: GitWorktreeCliRuntime, operation: Gi
     }), parsed.json);
   }
   if (operation === 'inspect') {
-    return print(runtime.inspectGitWorktrees({ workspaceRoot: parsed.targetRoot, taskId: parsed.taskId }), parsed.json);
+    return print(runtime.inspectGitWorktrees({ workspaceRoot: parsed.targetRoot, taskId: parsed.taskId, observedCheckouts: parsed.observedCheckouts }), parsed.json);
   }
   return print(runtime.cleanupGitWorktrees({
     workspaceRoot: parsed.targetRoot,
     taskId: parsed.taskId,
     cleanupDelivery: parsed.cleanupDelivery,
     allowCompleted: true,
+    observedCheckouts: parsed.observedCheckouts,
   }), parsed.json);
 }

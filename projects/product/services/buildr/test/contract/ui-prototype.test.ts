@@ -18,7 +18,7 @@ test('ui-prototype 作为无 capability contract 的 optional builtin Skill 投�
   assert.equal(packaged.target, 'skills/buildr/ui-prototype');
   assert.deepEqual(packaged.provides, undefined);
   assert.deepEqual(packaged.requires, undefined);
-  assert.equal(packaged.runtimes.length, 7);
+  assert.equal(Object.hasOwn(packaged, 'runtimes'), false, '通用技能不维护品牌白名单');
   assert.equal(manifest.capabilityContracts.some((item: any) => item.id.includes('ui-prototype')), false);
   assert.equal(manifest.initialSkillBindings.some((item: any) => item.capability.includes('ui-prototype')), false);
   assert.ok(manifest.workspaceFiles.includes('resources/workspace/skills/buildr/ui-prototype/SKILL.md => skills/buildr/ui-prototype/SKILL.md copy'));

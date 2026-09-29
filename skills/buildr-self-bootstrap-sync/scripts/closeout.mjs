@@ -542,7 +542,7 @@ export function runDirectSelfBootstrapCloseout({ workspaceRoot, taskId = null, b
         requirePassed(git(execute, root, ['add', '--', ...ownedPaths], 'stage-sync', active), 'self-bootstrap-closeout.stage-failed', '精确暂存同步结果失败。');
         const staged = zeroList(read(['diff', '--cached', '--name-only', '-z'], 'staged-paths')).sort();
         if (JSON.stringify(staged) !== JSON.stringify(ownedPaths)) throw closeoutError('self-bootstrap-closeout.scope-drift', '暂存集合发生变化，未创建提交。');
-        const message = `收敛 Buildr 自举工作空间\n\nBuildr-Activation-Identity: ${activationIdentity}\nBuildr-Activation-Delivery: ${deliveredRef}${taskId === null ? '' : `\nBuildr-Activation-Task: ${taskId}`}`;
+        const message = `收敛 Buildr 自举工作空间\n\nBuildr-Activation-Identity: ${activationIdentity}\nBuildr-Activation-Delivery: ${deliveredRef}${taskId === null ? '' : `\nBuildr-Activation-Task: ${taskId}\nBuildr-Task: ${taskId}`}`;
         requirePassed(git(execute, root, ['commit', '-m', message], 'sync-commit', active), 'self-bootstrap-closeout.commit-failed', '同步结果提交失败。');
         const next = read(['rev-parse', 'HEAD'], 'successor');
         if (read(['rev-parse', 'HEAD^'], 'parent') !== successor) throw closeoutError('self-bootstrap-closeout.target-drift', '同步提交的父提交不匹配。');

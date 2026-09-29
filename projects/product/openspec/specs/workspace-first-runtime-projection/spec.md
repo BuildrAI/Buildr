@@ -52,7 +52,7 @@ Buildr MVP MUST 将 Buildr 使用方式定义为跨 Agent 的项目协作契约�
 
 #### Scenario: Agent 未原生支持 Buildr
 - **WHEN** 用户使用的 Agent 产品未原生支持 Buildr
-- **THEN** 用户 MUST 能通过自然语言触发 Buildr bootstrap guide，让 Agent 学会使用 Buildr CLI 和 workspace 资产
+- **THEN** 用户 MUST 能通过自然语言让智能体（Agent）依据 Buildr 产品说明和当前命令帮助安装、初始化或恢复 Buildr 技能（Skill），并继续使用工作空间（Workspace）资产
 
 ### Requirement: Runtime 投射按 Agent 能力选择
 Buildr MUST 将支持的 Agent runtime 视为从 Buildr 源资产、canonical scope discovery plan 和已启用内置能力生成的 adapter 投射。
@@ -72,8 +72,8 @@ Buildr MUST 将支持的 Agent runtime 视为从 Buildr 源资产、canonical sc
 
 #### Scenario: 支持的 adapters
 - **WHEN** Buildr syncs or renders Agent runtime
-- **THEN** Buildr MUST 支持 `codex` 和 `claude-code`
-- **AND** Buildr MUST 清楚报告不支持的 adapter，且不得修改 runtime 文件
+- **THEN** Buildr MUST 支持标准适配器（Adapter）`agents-standard`，并将 `codex`、`dsh` 及没有专用例外的有效运行时标识解析到标准；`claude-code` 等已知专用接入继续使用专用实现
+- **AND** Buildr MUST 清楚报告非法运行时标识或显式不存在的适配器（Adapter），且不得修改 runtime 文件
 
 #### Scenario: Runtime 准备顺序
 - **WHEN** Buildr 渲染 Agent runtime
@@ -197,8 +197,8 @@ Buildr MUST 提供 Agent-readable 的方式，用于发现已支持的 Agent run
 
 #### Scenario: Agent lists supported runtime adapters
 - **WHEN** Agent 运行 `buildr runtime list --json`
-- **THEN** Buildr MUST 输出包含已支持 Agent runtime id 的 JSON
-- **AND** 当 `claude-code` 和 `codex` adapter 已实现时，输出 MUST 包含 `claude-code` 和 `codex`
+- **THEN** Buildr MUST 输出静态适配器（Adapter）、默认 `agents-standard`、已知运行时映射和未知有效运行时采用标准的选择规则
+- **AND** 输出 MUST 区分品牌 `runtimeId` 与文件 `adapterId`，并说明标准文件准备不代表品牌安装或会话加载已验证
 - **AND** 输出 MUST 包含 `requiredRenderCapabilities`
 - **AND** 输出 MUST 包含受支持的 Rules、Skills、surface、activation 和 checker trait catalog
 - **AND** 输出 MUST 描述每个已支持 adapter 的组合 traits、render 能力、实现模式和 runtime-specific 推荐命令
@@ -244,7 +244,7 @@ Buildr MUST 使用受约束的 Rules、Skills、surface、activation 和 checker
 
 #### Scenario: 复用 trait 不等于 runtime alias
 - **WHEN** 两个 adapter 使用相同 Rules primitive 或 Skills layout trait
-- **THEN** Buildr MUST 保留两个独立 adapter identity、metadata、capability evidence 和 contract tests
+- **THEN** Buildr MUST 保留真实 runtime identity，并允许多个运行时共享同一标准 adapter identity、文件契约和测试；品牌特有发现与激活事实单独表达
 - **AND** Buildr MUST NOT 将一个 runtime id 解析或 fallback 到另一个 runtime id
 
 #### Scenario: Environment probe 安全边界
@@ -272,20 +272,25 @@ Buildr MUST 定义一个 supported Agent adapter 需要实现的 render 能力�
 - **AND** Buildr MUST 表明 rules render 不会写入 Codex bridge 文件
 
 ### Requirement: Unsupported Agent runtime guidance
-Buildr MUST 清楚地区分 unsupported Agent runtime 和 supported runtime 中缺失 render 结果的情况。
+Buildr MUST 区分未知运行时品牌、非法运行时标识和显式不存在的适配器（Adapter）；未知有效品牌不等于无法生成标准文件。
 
 #### Scenario: Unsupported Agent runtime is discovered
-- **WHEN** Agent 判断自己的 runtime id 不在 `buildr runtime list --json` 输出中
-- **THEN** Agent MUST NOT 使用该 unsupported runtime id 运行 `render`、`sync`、`skill install` 或 `runtime check`
-- **AND** Agent MUST NOT 使用 supported fallback adapter 代替
-- **AND** Agent MUST 警示用户 Buildr 暂不支持当前 Agent runtime 的自动渲染
-- **AND** Agent MUST 告诉用户联系 Buildr 作者反馈该 Agent
+- **WHEN** 调用方传入未登记但语法有效的运行时标识且没有显式适配器（Adapter）选择
+- **THEN** Buildr MUST 保留该运行时身份并使用 `agents-standard`
+- **AND** MUST 允许 render、sync、skill install、runtime check 和 doctor 的标准文件操作
+- **AND** MUST 将品牌安装、发现与会话加载标记为未确认，而不是已验证支持
 
 #### Scenario: Unsupported Agent guidance in runtime list
-- **WHEN** Buildr 输出 `buildr runtime list --json`
-- **THEN** 输出 MUST 包含 unsupported-Agent guidance
-- **AND** 该 guidance MUST 包含 `mustNotUseFallbackAdapter: true`
-- **AND** 该 guidance MUST 告诉用户联系 Buildr 作者反馈该 Agent
+- **WHEN** 调用方查看 `runtime list --json`
+- **THEN** MUST 说明未知有效品牌采用标准默认，以及显式未知适配器（Adapter）和执行失败不会回退
+
+#### Scenario: 显式无效适配器
+- **WHEN** 调用方显式选择不存在的适配器（Adapter），或运行时标识语法非法
+- **THEN** Buildr MUST 在写入前报错而不选择默认值
+
+#### Scenario: 选择结果发生执行错误
+- **WHEN** 已选标准或专用实现出现冲突、缺失或执行失败
+- **THEN** Buildr MUST 保留原选择和错误事实，不以另一实现重试或改写另一套目录
 
 ### Requirement: Runtime render asset scope
 Buildr runtime render MUST 限定为由 Buildr 源资产派生出的 Agent runtime 入口资产。
@@ -513,7 +518,7 @@ Buildr MUST 使用随产品发布的静态 registry 作为 supported Agent runti
 
 #### Scenario: 注册完整 adapter
 - **WHEN** package verification 校验一个 supported adapter
-- **THEN** adapter descriptor MUST 包含稳定且唯一的 runtime id、完整 traits、全部 required render capabilities、runtime targets、实现入口和 Agent-readable metadata
+- **THEN** adapter descriptor MUST 包含稳定且唯一的 adapter id、完整 traits、全部 required render capabilities、runtime targets、实现入口和 Agent-readable metadata
 - **AND** `runtime list`、CLI 参数校验、render、sync、Skill install、runtime check 和 doctor MUST 从同一组合后 registry descriptor 解析该 adapter
 
 #### Scenario: Adapter contract 不完整
@@ -523,8 +528,8 @@ Buildr MUST 使用随产品发布的静态 registry 作为 supported Agent runti
 
 #### Scenario: 未注册 runtime
 - **WHEN** Agent 请求一个不在静态 registry 中的 runtime id
-- **THEN** Buildr MUST 将其作为 unsupported adapter 处理
-- **AND** Buildr MUST NOT alias、猜测或 fallback 到其他 supported adapter
+- **THEN** Buildr MUST 保留该 runtime id 并由统一选择规则采用 `agents-standard`
+- **AND** Buildr MUST NOT 将其冒充为另一品牌；显式选择未知 adapter id MUST 继续报错
 
 ### Requirement: Adapter 只生成声明式运行时计划
 每个 supported adapter MUST 从不可变 runtime context 生成无副作用的声明式计划，并由通用 Buildr core 执行全部文件系统副作用。
@@ -564,7 +569,7 @@ Buildr MUST 让 runtime render、sync、runtime check、doctor、产品 Buildr S
 - **AND** Component lifecycle MUST NOT 调用 Component 提供的 adapter 或 runtime hook
 
 ### Requirement: Adapter 可以组合受约束的内置投射原语
-Buildr MUST 允许不同静态 adapter 组合受约束的 Rules、Skills、surface、activation 和 checker traits，同时保持每个 runtime 的独立 identity、contract 和诊断归因。
+Buildr MUST 允许不同静态 adapter 组合受约束的 Rules、Skills、surface、activation 和 checker traits，同时保持每个 runtime 的真实 identity 与诊断归因，并允许共享文件契约。
 
 #### Scenario: Rules trait 分类
 - **WHEN** adapter 声明 Rules trait
@@ -575,13 +580,13 @@ Buildr MUST 允许不同静态 adapter 组合受约束的 Rules、Skills、surfa
 - **WHEN** adapter 声明非 Rules traits
 - **THEN** Skills kind MUST 是 `agents-compatible` 或 `vendor-root`
 - **AND** surface kind MUST 是 `ide`、`cli`、`desktop` 或 `cloud`
-- **AND** Rules 和 Skills activation MUST 分别声明为 `immediate`、`path-read`、`session-start` 或 `explicit-reload`
+- **AND** Rules 和 Skills activation MUST 分别声明为 `immediate`、`path-read`、`session-start`、`explicit-reload` 或表示宿主行为未确认的 `host-dependent`
 - **AND** `explicit-reload` MUST 提供 Agent-readable reload guidance
 
 #### Scenario: 两个 runtime 复用相同布局
 - **WHEN** 两个 registered adapters 使用相同 Rules implementation 或 Skills layout
 - **THEN** 它们 MAY 复用同一个内置投射 primitive
-- **AND** 每个 adapter MUST 继续拥有独立 descriptor、capability evidence 和 contract tests
+- **AND** 不同文件约定的 adapter MUST 继续拥有独立 descriptor 和 contract tests；相同标准的多个 runtime MUST 共享标准 adapter，品牌行为差异作为附加事实
 - **AND** Buildr MUST NOT 将其中一个 runtime id 解析为另一个 runtime id
 
 #### Scenario: 验证 adapter 扩展点
@@ -591,18 +596,19 @@ Buildr MUST 允许不同静态 adapter 组合受约束的 Rules、Skills、surfa
 - **AND** 发布的 `runtime list`、CLI help 和 package registry MUST NOT 将 fake adapter 报告为 supported
 
 ### Requirement: 现有 supported runtime 迁移保持兼容
-Buildr MUST 在采用统一 adapter contract 后保持 `codex` 和 `claude-code` 的公开命令、runtime targets、managed ownership、冲突和清理语义兼容。
+Buildr MUST 在采用统一 adapter contract 后保持 `codex`、`dsh` 和 `claude-code` 的公开命令、runtime targets、managed ownership、冲突和清理语义兼容。
 
 #### Scenario: Codex parity
-- **WHEN** Buildr 使用迁移后的 `codex` adapter render 或 check 相同 workspace 状态
+- **WHEN** Buildr 使用 `agents-standard` adapter render 或 check 相同 workspace 状态，且调用方身份为 `codex`、`dsh` 或其他有效运行时身份
 - **THEN** Buildr MUST 保持 native `AGENTS.md`、`.agents/skills/`、Skill install plans、managed marker 和 doctor 结果的既有语义
+- **AND** Buildr MUST 保留调用方提供的运行时身份，不把结果改写为 `agents-standard`
 
 #### Scenario: Claude Code parity
-- **WHEN** Buildr 使用迁移后的 `claude-code` adapter render 或 check 相同 workspace 状态
+- **WHEN** Buildr 使用 `claude-code` adapter render 或 check 相同 workspace 状态
 - **THEN** Buildr MUST 保持同目录 `CLAUDE.md` reference bridges、`.claude/skills/`、Skill install plans、managed marker 和 doctor 结果的既有语义
 
 #### Scenario: 重复同步保持幂等
-- **WHEN** 任一迁移后的 supported adapter 在源资产与目标状态不变时连续同步两次
+- **WHEN** 任一 supported adapter 在源资产与目标状态不变时连续同步两次
 - **THEN** 第二次同步 MUST 不新增、更新或删除 runtime 文件
 
 ### Requirement: 远端 Skill 解析必须有界完成
@@ -619,203 +625,36 @@ Buildr MUST 对远端 resolved Skill 的网络读取设置有限的连接、响�
 - **THEN** Buildr MUST 校验该值是有限正整数并限制到产品允许的最大范围
 - **AND** 无效配置 MUST 明确失败而不是退回无限等待
 
-### Requirement: Buildr 支持五个新增 Agent runtime adapters
-Buildr MUST 将 `cursor`、`qoder`、`trae`、`trae-work` 和 `workbuddy` 注册为五个独立 supported runtime adapter，并为每个 adapter 完整实现 `rules-entry`、`product-buildr-skill`、`workspace-project-skills`、`skill-install-plans` 和 `runtime-check`。
-
-#### Scenario: Runtime list 返回新增 adapters
-- **WHEN** Agent 运行 `buildr runtime list --json`
-- **THEN** `supportedAgents` MUST 包含 `cursor`、`qoder`、`trae`、`trae-work` 和 `workbuddy`
-- **AND** 每个 id MUST 对应独立 descriptor、traits、capability metadata、recommended commands 和 capability evidence
-- **AND** Buildr MUST NOT 将任一新增 id alias 或 fallback 到其他 runtime
-
-#### Scenario: 新增 adapter 契约不完整
-- **WHEN** 任一新增 adapter 缺少 required capability、使用未注册 implementation、缺少 runtime-specific evidence 或不能覆盖 Buildr recursive Rules scope
-- **THEN** adapter validation MUST fail
-- **AND** Buildr MUST NOT 将该 adapter 报告为 supported
-
-### Requirement: 新增 adapters 按目标 runtime 机制投射 Rules
-Buildr MUST 为每个新增 adapter 使用已经认证的目标 runtime Rules 入口，同时保持 Buildr ancestor-before-descendant、scope ancestor chain、scope subtree 和 sibling isolation 语义。
-
-#### Scenario: Cursor scoped project rule files
-- **WHEN** Buildr render 或 check `cursor`
-- **THEN** Buildr MUST 将每个 discovered `AGENTS.md` 确定性转换为同 source scope `.cursor/rules/buildr.mdc`
-- **AND** nested rules MUST 依靠 Cursor nested project rules 目录作用域限定到对应 subtree，不依赖 native nested `AGENTS.md` 或中央 glob
-- **AND** metadata MUST 将 Rules activation 描述为 `path-read`
-
-#### Scenario: Qoder vendor rule files
-- **WHEN** Buildr render `qoder`
-- **THEN** Buildr MUST 将 discovered `AGENTS.md` 确定性转换为 `.qoder/rules` 下的 Buildr-managed rule files
-- **AND** 转换结果 MUST 保留 source identity、scope 和 ancestor-before-descendant 顺序
-- **AND** Buildr MUST NOT 依赖未认证的 Qoder native nested `AGENTS.md` 行为来补足 Rules scope
-
-#### Scenario: TRAE vendor rule files
-- **WHEN** Buildr render `trae`
-- **THEN** Buildr MUST 将每个 discovered `AGENTS.md` 投射到该 source scope 可生效的 `.trae/rules` Buildr-managed target
-- **AND** nested target MUST 只在对应目录或子树工作时应用
-- **AND** sibling scope 的规则 MUST NOT 被投射为当前 sibling 的适用规则
-
-#### Scenario: TRAE Work root reference bridge
-- **WHEN** Buildr render `trae-work`
-- **THEN** Buildr MUST 生成 TRAE Work 桌面版可导入的 Buildr-managed root reference bridge
-- **AND** bridge MUST 明确要求 Agent 读取 root `AGENTS.md` 与当前工作路径 ancestor chain 中适用的 nested `AGENTS.md`
-- **AND** runtime check MUST 报告 Rules import toggle 与新会话 activation guidance
-
-#### Scenario: WorkBuddy root CODEBUDDY bridge
-- **WHEN** Buildr render `workbuddy`
-- **THEN** Buildr MUST 在 workspace root 生成短小的 Buildr-managed `CODEBUDDY.md` reference bridge
-- **AND** bridge MUST 明确要求 Agent 读取 root `AGENTS.md` 与当前工作路径 ancestor chain 中适用的 nested `AGENTS.md`
-- **AND** bridge MUST 不超过 WorkBuddy 5.2.5 已观察到的 8000 字符 project guidance 上限
-- **AND** metadata MUST 将 Rules activation 描述为 `session-start`
-
-### Requirement: Vendor rule files 与 root bridge 遵守通用 runtime 安全边界
-Buildr MUST 让新增 Rules planners 只生成声明式 `RuntimePlan`，并复用通用 target validation、冲突预检、managed ownership、orphan cleanup 和 reconcile。
-
-#### Scenario: 用户文件占用新增 adapter target
-- **WHEN** Cursor、Qoder、TRAE、TRAE Work 或 WorkBuddy 的任一计划 target 已存在非 Buildr 管理内容
-- **THEN** Buildr MUST 在写入任何计划 target 前失败
-- **AND** Buildr MUST 保留全部用户内容并报告所有冲突
-
-#### Scenario: 新增 adapter 重复同步
-- **WHEN** 用户在 source assets、adapter、scope 和 target 不变时连续运行两次相同的新增 adapter render 或 sync
-- **THEN** 第二次执行 MUST 不新增、更新或删除 runtime 文件
-
-#### Scenario: 新增 adapter source 被删除
-- **WHEN** Buildr-managed vendor rule file 或 bridge 已失去对应 source
-- **THEN** 下一次相同范围 reconcile MUST 删除 orphan managed target 或从 root index 移除对应 source entry
-- **AND** Buildr MUST NOT 删除非 Buildr 管理文件
-
-### Requirement: 新增 adapters 使用各自认证的 Skills root 与 activation
-Buildr MUST 将产品 Buildr Skill、workspace Skills 和 Skill install plans 投射到每个新增 runtime 为当前工作目录认证的 workspace destination Skills root，并公开其 activation 与 reload guidance。
-
-#### Scenario: 共享 `.agents` Skills 投射
-- **WHEN** Buildr 为 `cursor` 或 `trae` 安装或渲染 Skills
-- **THEN** Buildr MUST 使用 `.agents/skills/<skill>/SKILL.md`
-- **AND** Skill install plans MUST 位于 `.agents/buildr/skill-install-plans/`
-- **AND** 同一共享 root 内已由其他 adapter 所有权回执声明的同路径目标 MUST NOT 被本 adapter 声明为 orphan 或报告为冲突，清理由持有回执的 adapter 执行
-
-#### Scenario: Vendor Skills 投射
-- **WHEN** Buildr 为 `trae-work` 或 `workbuddy` 安装或渲染 Skills
-- **THEN** Buildr MUST 分别使用 `.trae` 或 `.codebuddy` 作为当前工作目录的 runtime root
-- **AND** 每个 adapter MUST 继续保留独立 descriptor、activation、evidence 和 contract tests
-
-#### Scenario: Qoder 双 Skills root 投射
-- **WHEN** 考虑把 `.agents/skills` 作为 `qoder` 的第二个 workspace destination Skills root 写入
-- **THEN** Buildr MUST NOT 为该 runtime 写入 `.agents/skills`：该根由声明它为自身 runtime root 的 adapter（`codex`、`cursor`、`trae`）或用户维护，同一 `.agents` 路径上两个 adapter 的渲染内容不一致，镜像写入只会与他方受管文件冲突
-- **AND** Buildr MUST NOT 为 `qoder` 产生按根分段的 Skills 所有权回执或按根迭代的清理目标
-
-#### Scenario: Qoder 单一 Skills root 投射
-- **WHEN** Buildr 为 `qoder` 安装或渲染产品 Skill、workspace Skills 或 Skill install plans
-- **THEN** Buildr MUST 只使用 `.qoder` 作为该 adapter 的 workspace destination Skills root，并沿用单根所有权回执
-- **AND** `.qoder/skills` MUST 足以覆盖 `qoder` 已声明的全部安装形态，Buildr MUST NOT 以"补另一个根"为由写入他方持有的共享根
-
-#### Scenario: Qoder 按安装形态声明 Skills 发现语义
-- **WHEN** Buildr 公开 `qoder` 的 Skills discovery metadata
-- **THEN** descriptor MUST 声明 `.qoder/skills` 为文档承诺的项目级发现根，并把 `.agents/skills` 表达为受宿主配置开关控制、由其他 adapter 或用户维护的共享发现根
-- **AND** descriptor MUST NOT 把该共享发现根声明为 Buildr 为 `qoder` 写入的 root
-- **AND** descriptor MUST 把无法从文件系统枚举的来源表达为 `partial` inventory assurance，而不是 runtime 健康 finding
-- **AND** runtime list、runtime check 与 adapter 文档 MUST 说明用户级同名 Skill 覆盖项目级 Skill，Buildr MUST NOT 宣称已证明当前 Agent 全局无同名 Skill
-
-#### Scenario: Skills 需要 reload 或新会话
-- **WHEN** adapter 的 Skills activation 是 `explicit-reload` 或 `session-start`
-- **THEN** runtime list、runtime check 和公开 adapter 文档 MUST 提供对应 reload 或新会话 guidance
-- **AND** Buildr MUST NOT 将文件已写入描述为当前会话已经加载
-
-### Requirement: 新增 adapters 的 checker 报告环境与前置条件事实
-Buildr MUST 让每个新增 adapter 的 `runtime-check` 区分投射状态、安装/版本 probe 状态和 activation guidance，并且只执行随产品静态声明的有限时 probe；probe MUST 与目标平台以及该 runtime 已声明的每种安装形态适配，声明多个 surface 时每个 surface MUST 各自可自动探测或明确标注 `manual`。没有稳定、安全、跨安装形态的自动 probe 时，descriptor MUST 使用 `manual` probe 并给出确认 guidance。
-
-#### Scenario: Environment probe 可自动执行
-- **WHEN** descriptor 声明静态 command installation 或 version probe
-- **THEN** runtime check MUST 使用静态 executable 和 arguments 在有限超时内执行
-- **AND** 输出 MUST 包含 probe 状态与可审计 evidence
-
-#### Scenario: Environment 只能人工确认
-- **WHEN** 目标 surface 没有稳定、安全、跨安装形态的 command probe
-- **THEN** descriptor MUST 使用 `manual` probe 并给出确认 guidance
-- **AND** runtime check MUST NOT 把该项报告为自动检查成功
-
-#### Scenario: 文件系统无法证明 Agent 已加载投射
-- **WHEN** Buildr 只能证明 Rules 或 Skills 投射存在，无法从文件系统证明目标 Agent 已在会话中加载
-- **THEN** runtime list、runtime check 或权威文档 MUST 提供对应 activation guidance
-- **AND** runtime check MUST NOT 仅因没有真实 Agent marker smoke 而生成当前用户必须处理的 prerequisite warning
-
-#### Scenario: macOS desktop probe 仅在 macOS 执行
-- **WHEN** TRAE Work 或 WorkBuddy descriptor 在 `darwin` 平台执行 runtime check
-- **THEN** installation/version probe MAY 使用静态声明的 macOS `defaults` executable 和参数
-- **AND** 输出 MUST 包含 probe 状态与可审计 evidence
-
-#### Scenario: 非 macOS desktop probe 使用人工确认
-- **WHEN** TRAE Work 或 WorkBuddy descriptor 在 Windows 或 Linux 平台执行 runtime check
-- **THEN** descriptor MUST 使用 `manual` installation/version probe 和确认应用版本或安装位置的 guidance
-- **AND** runtime check MUST 返回 `manual` 状态
-- **AND** MUST NOT 将 macOS `defaults` 的 ENOENT 或其他平台不适用错误报告为 installation missing、version unavailable 或 `userActionRequired` prerequisite warning
-
-#### Scenario: Qoder 按安装形态组合探测
-- **WHEN** runtime check 在 macOS 探测 `qoder` 的安装形态
-- **THEN** descriptor MUST 使用静态声明的 bundle identifier 判定桌面 App 与 IDE 是否存在，并 MAY 同时执行静态 command probe 判定 Qoder CLI
-- **AND** 命中任一安装形态时 MUST 报告 installation present 并列出命中的形态与证据
-- **AND** Buildr MUST NOT 仅因 PATH 上不存在 `qoder` 命令而把已存在的桌面 App 或 IDE 报告为 installation missing 或 version unavailable
-
-#### Scenario: Qoder CLI surface 独立可判定
-- **WHEN** `qoder` descriptor 声明 `cli` surface 且目标平台不是 macOS，或 bundle 与 command probe 都无可审计证据
-- **THEN** 对应 surface MUST 表达为 `manual` 探测结果并给出安装或版本确认 guidance
-- **AND** runtime check MUST NOT 把无法自动确认表述为已验证
-
-#### Scenario: 其他自动 probe 仍保持安全边界
-- **WHEN** descriptor 声明 command installation 或 version probe
-- **THEN** runtime check MUST 使用静态 executable 和 arguments，在有限超时内执行
-- **AND** 除 Windows `.cmd`/`.bat` shim 所需的平台启动适配外 MUST 不经过任意 shell command 字符串
-- **AND** 输出 MUST 包含 probe 状态与可审计 evidence
-
-### Requirement: 每个新增 adapter 保留独立兼容证据与分层验证状态
-Buildr MUST 为每个新增 adapter 记录 runtime-specific 官方文档、本机观察或安装包源码 provenance，并 MUST 以可重复的 descriptor、plan、projection、checker 和 lifecycle tests 验证 Buildr 可负责的兼容边界；descriptor MUST NOT 编码真实 Agent marker smoke 状态或品牌特有的历史通过快照。
-
-#### Scenario: 自动 contract evidence
-- **WHEN** 产品验证检查新增 adapter
-- **THEN** 每个 adapter MUST 有独立 capability evidence 和 contract fixture
-- **AND** 共享 primitive 的测试结果 MUST NOT 代替具体 adapter 的五项 capability evidence
-- **AND** 自动 tests MUST 覆盖投射格式、scope 顺序、兄弟隔离、Skills root、冲突保护、清理和 checker
-
-#### Scenario: 兼容证据不声明真实会话已加载
-- **WHEN** descriptor 记录 Rules、Skills 或 activation 的文档、源码或本机 intake provenance
-- **THEN** Buildr MUST 将其描述为 adapter contract evidence
-- **AND** MUST NOT 将该 evidence 表述为当前 workspace、当前版本或当前 Agent 会话已经真实加载投射
-- **AND** descriptor MUST NOT 使用 `verified`、`pending` 或等价 smoke 状态区分 supported adapters
-
-#### Scenario: WorkBuddy 不保留 smoke 特例
-- **WHEN** 产品验证或 runtime list 读取 WorkBuddy descriptor
-- **THEN** WorkBuddy MUST 使用与其他 supported adapters 相同的 contract evidence 模型
-- **AND** descriptor MUST NOT 包含历史 product/runtime version、marker result 或 headless transcript 摘要
-
 ### Requirement: Adapter descriptor 声明可选 Skill publication extensions
-Buildr MUST 允许 supported runtime adapter 的 Skills trait 声明受约束、静态且可验证的可选 publication extensions，并 MUST 由 package verification 从同一 descriptor 派生 adapter-specific extension 校验。
+Buildr MUST 允许静态文件适配器（Adapter）或品牌附加描述声明受约束、静态且可验证的可选发布扩展；标准文件约定 MUST 不机械消费任何品牌元数据。包验证 MUST 从相同声明派生校验，通用资产仍覆盖所有已知适用品牌扩展。
 
 #### Scenario: Codex 发布 OpenAI Skill metadata
 - **WHEN** 面向 `codex` runtime 发布的 package Skill 包含 `agents/openai.yaml`
-- **THEN** Codex adapter extension profile MUST 校验该文件的 OpenAI metadata
-- **AND** validation failure MUST 标识 `codex` adapter、Skill id 和无效的 metadata
+- **THEN** Codex 品牌附加描述 MUST 校验该文件的 OpenAI metadata，而非要求存在独立 Codex 文件适配器（Adapter）
+- **AND** 校验失败 MUST 标识 Skill id、无效字段和对应扩展
 
 #### Scenario: Codex Skill 没有 OpenAI UI 扩展
 - **WHEN** 面向 `codex` runtime 发布的 package Skill 没有 `agents/openai.yaml`
-- **THEN** Codex adapter MUST 继续使用 `SKILL.md` 的 `name` 和 `description` 发现并路由该 Skill
+- **THEN** 标准入口 MUST 继续以 `SKILL.md` 的 `name` 和 `description` 表达该技能（Skill）
 - **AND** package verification 和 render MUST NOT 因扩展缺失失败或生成该文件
 
 #### Scenario: 非 OpenAI adapter 不消费 OpenAI metadata
-- **WHEN** package Skill 面向未声明 OpenAI publication extension 的 adapter 发布
-- **THEN** 该 adapter MUST NOT 因 `agents/openai.yaml` 缺失而判定发布失败
-- **AND** 该 adapter MUST NOT 将该文件解释为自身 activation、routing 或 UI metadata
+- **WHEN** 文件约定和真实品牌均未声明 OpenAI publication extension
+- **THEN** MUST 保留但不解释 `agents/openai.yaml`
+- **AND** MUST NOT 因该文件缺失而判定发布失败，或把文件解释为自身激活、路由或界面元数据
 
 #### Scenario: Adapter publication extension 不安全或未知
-- **WHEN** descriptor 声明绝对路径、逃逸路径、重复 extension 或不受支持的 vendor metadata format
+- **WHEN** 文件适配器（Adapter）声明绝对路径、逃逸路径、重复 extension 或不受支持的元数据格式
 - **THEN** adapter descriptor validation MUST fail
-- **AND** Buildr MUST NOT 将该 adapter 报告为 supported
+- **AND** Buildr MUST NOT 将该文件实现报告为 supported
 
 ### Requirement: 完整 Skill 投射区分保留与消费
-Buildr MUST 让所有 filesystem Skills adapters 保真投射相同 Skill 相对文件 inventory，同时 MUST 只让拥有对应 publication profile 的 adapter 消费 vendor extension。
+Buildr MUST 让所有 filesystem Skills adapters 保真投射相同 Skill 相对文件 inventory，同时 MUST 只让拥有对应文件或品牌附加 profile 的上下文消费 vendor extension。
 
 #### Scenario: 所有 adapter 保留 vendor extension
 - **WHEN** Skill 源目录包含 `agents/openai.yaml` 或其他普通随附文件
 - **THEN** 每个 filesystem Skills adapter MUST 按相同相对路径和内容 identity 投射该文件
-- **AND** 非 OpenAI adapter 对文件的保留 MUST NOT 被解释为支持或消费 OpenAI metadata
+- **AND** 非 OpenAI 上下文对文件的保留 MUST NOT 被解释为支持或消费 OpenAI metadata
 
 ### Requirement: Adapter 声明 user 与 workspace Skills discovery inventory
 Supported runtime adapter MUST 声明 user/workspace destination roots、可观测发现 roots、inventory evidence 和 activation 行为，使 Buildr 能在写入前检查 Buildr 管理候选 Skill 的有效发现集合，并将不可枚举来源表达为 assurance metadata 而不是 runtime 健康 finding。
@@ -935,12 +774,12 @@ Codex adapter MUST继续将Rules activation声明为`path-read`、Skills activat
 Buildr MUST 将 Skill 投射所有权回执与 Agent 实际消费的 runtime root 分离，并 MUST 使用 destination-aware 的 Buildr 控制状态路径作为唯一 canonical authority。
 
 #### Scenario: Workspace Skill 投射回执路径
-- **WHEN** Buildr 为 adapter `<adapter>` 的 workspace destination 投射 runtime path `<runtime-path>`
+- **WHEN** Buildr 为 文件归属 `<adapter>` 的 workspace destination 投射 runtime path `<runtime-path>`
 - **THEN** 回执 MUST 写入 `<workspace>/.buildr/agent-runtime/workspace/<adapter>/skill-projection-ownership-receipts/<runtime-path>.json`
 - **AND** 实际 Skill MUST 继续写入 adapter 声明的 workspace Skills root
 
 #### Scenario: User Skill 投射回执路径
-- **WHEN** Buildr 为 adapter `<adapter>` 的 user destination 投射 runtime path `<runtime-path>`
+- **WHEN** Buildr 为 文件归属 `<adapter>` 的 user destination 投射 runtime path `<runtime-path>`
 - **THEN** 回执 MUST 写入 `<user-home>/.buildr/agent-runtime/user/<adapter>/skill-projection-ownership-receipts/<runtime-path>.json`
 - **AND** 实际 Skill MUST 继续写入 adapter 声明的 user Skills root
 
@@ -948,6 +787,12 @@ Buildr MUST 将 Skill 投射所有权回执与 Agent 实际消费的 runtime roo
 - **WHEN** workspace root 与 user home 指向同一目录
 - **THEN** workspace 与 user 回执 MUST 仍由路径中的 `workspace` 和 `user` 分段保持隔离
 - **AND** 任一 destination 的 render MUST NOT 覆盖另一 destination 的回执
+
+#### Scenario: 相同标准 Skills root 共用归属
+- **WHEN** 多个运行时或专用规则（Rule）适配器（Adapter）使用相同 `.agents/skills/` 目录
+- **THEN** 其技能（Skill）回执 MUST 统一使用 `agents-standard` 归属，而非品牌身份
+- **AND** 专用规则（Rule）的选择与维护 MUST 保持独立
+- **AND** 切换品牌但来源与有效内容相同时 MUST 幂等，不产生第二份归属
 
 ### Requirement: 旧 runtime-root 回执受控迁移到 canonical 路径
 Buildr MUST 只把旧 adapter runtime root 中的有效投射回执作为一次性迁移输入，并 MUST 在迁移后维持单一 canonical authority。
@@ -983,16 +828,146 @@ Buildr MUST 只把旧 adapter runtime root 中的有效投射回执作为一次�
 - **WHEN** 规则作用域穿越工作空间或符号链接
 - **THEN** 系统 MUST 拒绝相关访问，不降低原有路径保护
 
-### Requirement: Qoder adapter 声明多 surface 安装事实
-Buildr MUST 让 `qoder` adapter descriptor 声明其真实存在的产品安装形态，并 MUST 使 `runtime list --json`、`runtime check qoder` 与 doctor 的 runtime metadata 用同一份声明描述这些形态，避免把单一 IDE 形态当作该 runtime 的唯一事实。
+### Requirement: 标准默认选择保留已有接入事实
+Buildr MUST 使用同一选择规则处理初始化、同步、投射、检查和组件维护，并分别表达请求运行时身份与实际适配器（Adapter）。
 
-#### Scenario: Runtime list 暴露 Qoder surfaces
-- **WHEN** Agent 运行 `buildr runtime list --json`
-- **THEN** `qoder` descriptor MUST 同时声明 `ide` 与 `cli` surface
-- **AND** 每个 surface MUST 关联其探测方式（自动或 `manual`）与 activation guidance
-- **AND** Buildr MUST NOT 为 `qoder` 猜测未声明的安装形态或目录
+#### Scenario: 标准品牌与默认值
+- **WHEN** 调用方传 `codex`、`dsh`，或没有既有接入事实且未指定运行时
+- **THEN** Buildr MUST 选择 `agents-standard`
+- **AND** 未指定身份时 MUST 保持身份未知，不伪造 `codex` 或 `dsh`
 
-#### Scenario: 投射一致时安装形态缺席只报告事实
-- **WHEN** `qoder` 的 Rules 与 Skills 投射 identity 与 source 一致，但 `qoder` 的任何安装形态都无法自动确认
-- **THEN** runtime check MUST 报告投射为一致、安装形态为未确认，并保留确认 guidance
-- **AND** 该结果 MUST NOT 表现为需要用户修复投射的行动项
+#### Scenario: 退役品牌的运行时身份
+- **WHEN** 调用方传 `cursor`、`qoder`、`trae`、`trae-work`、`workbuddy` 或其他有效运行时身份
+- **THEN** Buildr MUST 保留该身份，并选择 `agents-standard` 作为文件投射适配器
+- **AND** MUST NOT 因该身份报错，也 MUST NOT 将其报告为独立 supported adapter
+
+#### Scenario: 保留已有专用接入
+- **WHEN** 调用方没有指定运行时或适配器（Adapter），且现场存在唯一既有受管接入方式
+- **THEN** Buildr MUST 保留该方式
+- **AND** 多个不等价选择存在时写入 MUST 请求明确选择，不静默切换为标准
+
+#### Scenario: 显式覆盖
+- **WHEN** 调用方传入有效 `--adapter`
+- **THEN** Buildr MUST 采用该明确文件约定，保留请求运行时身份
+- **AND** 显式选择不授权接管任何外部文件
+
+#### Scenario: 无效 adapter id
+- **WHEN** 调用方传入不支持的 `--adapter` 值
+- **THEN** Buildr MUST 明确失败并报告当前支持的 adapter id
+- **AND** MUST NOT 静默回退到标准适配器或其他品牌
+
+#### Scenario: 运行时身份不按适配器标识解析
+- **WHEN** 调用方以运行时身份调用受管命令（`render`、`sync`、`runtime check`、`skills render`、`skill install`）
+- **THEN** Buildr MUST 按选择规则把该身份解析为实际适配器，MUST NOT 把运行时身份当作适配器标识直接查找
+- **AND** 身份缺失时 MUST 记为未指定，MUST NOT 把紧随其后的选项当成身份
+
+### Requirement: 共享标准投射迁移保持归属与内容安全
+Buildr MUST 只从有效旧受管证据迁移品牌回执或多层技能（Skill）目录，在写入前检查完整文件、路径和所有权；不能仅凭生成标记覆盖内容。
+
+#### Scenario: 有效旧回执与嵌套目录
+- **WHEN** 旧品牌回执能证明来源身份、目标完整字节与权限且新目标安全
+- **THEN** Buildr MUST 在同一受管操作中生成共享回执与标准一级目录，并移除已证明的旧受管文件和回执
+- **AND** 失败 MUST 恢复本次操作前状态
+
+#### Scenario: 漂移或多份证据不一致
+- **WHEN** 旧内容已被用户修改、含未知额外文件、新旧回执不一致、来源身份不同或目标冲突
+- **THEN** Buildr MUST 保留文件及证据，并在写入任何候选目标前报告冲突
+
+#### Scenario: 运行时限制与共享内容不同
+- **WHEN** 不同运行时的明确适用范围导致同一共享技能（Skill）具有不同能力绑定或正文
+- **THEN** Buildr MUST 显式报告共享内容冲突，不采用最后一次写入获胜
+- **AND** 当前运行时未选择的、仍有启用来源的共享技能（Skill）MUST NOT 被当作孤儿删除
+
+### Requirement: 标准 Agent runtime 协议是唯一默认支持面
+Buildr MUST 只把标准 `AGENTS.md` 规则协议与 `.agents/skills/` 技能协议作为默认支持的运行时接入面；MUST NOT 把任何品牌的目录约定、规则文件格式或技能根作为产品默认支持面。专有实现 MUST 属于例外，只有存在可审计的宿主原生能力缺口证据、且已独立立项时才 SHALL 注册为 supported adapter。
+
+#### Scenario: 标准适配器是默认解析结果
+- **WHEN** 调用方提供 `cursor`、`qoder`、`trae`、`trae-work`、`workbuddy`、`codex`、`dsh` 或其他有效运行时身份，且未显式选择例外适配器
+- **THEN** Buildr MUST 使用 `agents-standard` 作为文件投射适配器，并保留调用方提供的运行时身份
+- **AND** MUST NOT 为该身份注册、借用或报告品牌专用适配器
+
+#### Scenario: 注册专有例外必须有宿主原生能力缺口证据
+- **WHEN** 维护者提议把某个品牌注册为独立的 supported adapter
+- **THEN** 提议 MUST 附带可审计的宿主原生能力缺口证据，说明标准 `AGENTS.md` 协议或 `.agents/skills/` 协议为何不能服务该宿主
+- **AND** 缺少该证据时 Buildr MUST NOT 注册该适配器
+
+#### Scenario: 已注册例外只填补缺口
+- **WHEN** Buildr 报告当前 supported adapters
+- **THEN** 结果 MUST 只包含 `agents-standard` 与已附缺口证据的例外适配器
+- **AND** 每个例外 MUST 只为该缺口实现投射，MUST NOT 为标准协议已覆盖的语义重复实现完整内容副本
+
+### Requirement: 退役适配器的既有投射按所有权证明清理
+Buildr MUST 在适配器退役后处理其既有投射，而不是让其留在磁盘上失去归属。处理 MUST 幂等；MUST 只删除能证明属于 Buildr 的文件；MUST 在无法证明所有权时保留文件并报告；MUST 在无法安全分离时整组零写入并保持可回滚。
+
+#### Scenario: 可证明所有权的退役投射
+- **WHEN** 退休适配器的规则桥、技能镜像或状态命名空间可由 Buildr 受管标记或所有权回执证明属于 Buildr
+- **THEN** Buildr MUST 在受管操作中删除这些文件与对应回执
+- **AND** 重复执行同一范围的退役处理 MUST 不新增、更新或误删文件
+
+#### Scenario: 所有权无法证明
+- **WHEN** 内容已漂移、含未知额外文件、缺少回执或来源身份不一致
+- **THEN** Buildr MUST 保留文件，并在退役报告或 doctor 中说明具体路径与原因
+- **AND** MUST NOT 猜测所有权或静默删除
+
+#### Scenario: 退役目标与用户内容共存
+- **WHEN** 退休目标路径同时包含 Buildr 受管内容与用户内容
+- **THEN** Buildr MUST 只移除可证明属于 Buildr 的部分并保留用户内容
+- **AND** 无法安全分离时 MUST 整组零写入并报告冲突
+
+### Requirement: DSH 运行时身份与投射保持分层证据
+Buildr 的 DSH 接入 SHALL 保留真实运行时标识（Runtime ID）`dsh`，并把规则（Rule）与技能（Skill）投射交由共享的标准适配器（Standard Adapter）`agents-standard` 承担；MUST NOT 新增独立 `dsh` 适配器（Adapter），也 MUST NOT 借用其他产品的供应商适配器身份。DSH 特有的插件（Plugin）交付维护 SHALL 独立于适配器层。只有规则入口、产品技能（Skill）、工作空间与项目技能（Skill）、安装计划和运行时检查五项现有能力均有明确实现与证据时，才 SHALL 将 DSH 报告为受支持运行时（Runtime）。
+
+#### Scenario: 仅完成桌面入口
+- **WHEN** DSH 中 Buildr 按钮可见或插件（Plugin）安装成功，但尚未验证规则（Rule）与技能（Skill）发现
+- **THEN** Buildr MUST 将结果限定为桌面入口或插件（Plugin）交付
+- **AND** MUST NOT 将其报告为完整运行时（Runtime）接入
+
+#### Scenario: 发现路径受限
+- **WHEN** DSH 实际发现目录、作用域或刷新语义不能表达现有 Buildr 源资产
+- **THEN** 系统 MUST 明确相关支持缺口，不得静默忽略技能（Skill）或退回供应商专用格式
+- **AND** 缺口 MUST 只影响相关接入，不否定其他已验证能力
+
+### Requirement: DSH 插件交付维护独立于适配器
+DSH 插件（Plugin）交付与维护协调 SHALL 作为 DSH 特有的产品能力维护；插件（Plugin）SHALL 只负责界面动作与右侧导航，Buildr SHALL 继续拥有启动、安装身份、健康查询和业务数据。适配器（Adapter）层采用共享标准适配器时，本能力 MUST NOT 依赖新增独立适配器身份。
+
+#### Scenario: 安装与升级
+- **WHEN** 已授权安装或更新 Buildr 的 DSH 插件（Plugin）
+- **THEN** 交付 MUST 使用 DSH 受支持管理入口并遵守精确版本兼容与依赖构建授权
+- **AND** MUST NOT 直接运行包管理器改写桌面版受管配置
+- **AND** MUST 保持插件（Plugin）源资产由 Buildr 产品工程维护，不以修改本机安装副本替代正式交付
+
+#### Scenario: 受支持自动路径缺失
+- **WHEN** DSH 没有可调用的安装或维护路径
+- **THEN** Buildr MUST 报告具体缺失能力和已验证的人工管理入口
+- **AND** MUST NOT 伪造自动安装或将本机单次安装报告为正式接入完成
+
+#### Scenario: 退出不影响业务数据
+- **WHEN** 禁用或卸载 DSH 插件（Plugin）
+- **THEN** Buildr MUST 保持安装与业务数据不被删除
+- **AND** MUST NOT 擅自停止已经运行的 Buildr Web
+
+### Requirement: runtime 命令省略位置身份时分派保持参数完整
+Buildr runtime 命令（`render`、`sync`、`runtime check`、`skill install`、`skills render`、`rules render`）的位置运行时身份 MUST 可选。CLI 分派 MUST NOT 把以 `--` 开头的参数或其值读作位置身份或命令词；省略身份时该槽位 MUST 为 `null`，全部选项与值 MUST 原样到达对应操作。省略身份或仅传 `--adapter` 时，适配器（Adapter）MUST 由同一选择规则依据 Workspace 现场证据与显式 `--adapter` 决定，MUST NOT 静默落到忽略现场证据的默认适配器。
+
+#### Scenario: 省略身份的 skills render
+- **WHEN** 执行 `buildr skills render --target <dir>`
+- **THEN** `--target` 值 MUST 作为 Skill source workspace 生效
+- **AND** 运行时身份 MUST 为 `null`，MUST NOT 报 `Unknown argument` 或把 `--target` 记为运行时身份
+
+#### Scenario: 显式身份不变
+- **WHEN** 执行 `buildr skills render codex --target <dir>`
+- **THEN** 运行时身份 MUST 保留为 `codex`，投射适配器与参数语义与既有行为一致
+
+#### Scenario: 省略身份的 rules render 按现场选择
+- **WHEN** 在存在 `claude-code` 受管证据的 workspace 执行 `buildr rules render --target <dir>`
+- **THEN** MUST 按同一选择规则选择 `claude-code` 适配器并执行 rules render
+- **AND** 当现场只解析出原生消费 `AGENTS.md` 的适配器且无显式选择时，MUST 以非零退出说明该适配器不执行 rules render
+
+#### Scenario: 显式 `--adapter` 不要求位置身份
+- **WHEN** 执行 `buildr rules render --adapter claude-code --target <dir>` 或 `buildr runtime check --adapter claude-code --target <dir>`
+- **THEN** MUST 使用 `claude-code` 适配器执行对应操作，MUST NOT 因省略位置身份而改选默认适配器
+
+#### Scenario: 省略身份的 sync 与 skill install
+- **WHEN** 执行 `buildr sync --target <dir>` 或 `buildr skill install --target <dir>`
+- **THEN** 运行时身份 MUST 为 `null`，`--target` 值 MUST 生效
+- **AND** 适配器 MUST 由同一选择规则决定

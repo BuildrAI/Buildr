@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { resolveRuntimeSelection } from '../../agent-assets/infrastructure/runtime/adapter-contract.ts';
 
 import { observeGitCheckoutIdentity } from '../../../infrastructure/git/checkout-identity.ts';
 import { DOCTOR_DIAGNOSTIC_PROFILE } from './result-model.ts';
@@ -7,6 +8,7 @@ export type DoctorInput = {
   targetRoot: string;
   scope?: string | null;
   agent?: string | null;
+  adapterId?: string | null;
   includeInfo?: boolean;
   skipRuntime?: boolean;
   releaseAwarenessOptions?: Record<string, unknown>;
@@ -116,25 +118,23 @@ export function registerSystemDoctorApplication(dependencies: DoctorDependencies
     const requestedScope = input.scope ?? null;
     const requestedAgent = input.agent ?? null;
     if (requestedAgent !== null) assertAgentId(requestedAgent);
+    const requestedSelection = resolveRuntimeSelection({ runtimeId: requestedAgent, adapterId: input.adapterId ?? null });
+    const explicitSelection = requestedAgent !== null || input.adapterId != null;
     const includeInfo = input.includeInfo === true;
     const result: any = {
       targetRoot,
       scope: requestedScope || null,
-      agentRuntime: requestedAgent
-        ? {
-          requested: requestedAgent,
-          supported: isSupportedAgent(requestedAgent),
-          selected: isSupportedAgent(requestedAgent) ? requestedAgent : null,
-          supportedAgents: SUPPORTED_AGENT_IDS,
-          mustNotUseFallbackAdapter: !isSupportedAgent(requestedAgent) || undefined,
-        }
-        : {
-          requested: null,
-          supported: null,
-          selected: null,
-          supportedAgents: SUPPORTED_AGENT_IDS,
-          compatibilityMode: true,
-        },
+      agentRuntime: {
+        requested: requestedAgent,
+        runtimeId: requestedSelection.runtimeId,
+        selected: requestedSelection.runtimeId,
+        adapterId: requestedSelection.adapterId,
+        reason: requestedSelection.reason,
+        supported: true,
+        supportedAgents: SUPPORTED_AGENT_IDS,
+        supportedAdapters: SUPPORTED_AGENT_IDS,
+        host: requestedSelection.host,
+      },
       ok: true,
       summary: { ok: 0, info: 0, warning: 0, error: 0 },
       workspace: null,
@@ -171,6 +171,29 @@ export function registerSystemDoctorApplication(dependencies: DoctorDependencies
     if (result.workspace?.initialized) diagnoseRules(result, targetRoot);
     const registry = diagnoseProjectRegistry(result, targetRoot);
     const scopes = discoverDoctorScopes(targetRoot, requestedScope, registry);
+    let detectedAgents: string[] = [];
+    let detectionFailed = false;
+    if (result.workspace?.initialized) {
+      try { detectedAgents = detectManagedRuntimeAgents(targetRoot); }
+      catch (error: any) {
+        detectionFailed = true;
+        addDoctorFinding(result, explicitSelection ? 'warning' : 'error', 'runtime.inventory_unchecked', `无法读取运行时受管证据：${error.message}`, { path: '.buildr/agent-runtime', userActionRequired: !explicitSelection });
+      }
+    }
+    const selections = explicitSelection ? [requestedSelection]
+      : detectionFailed ? []
+        : detectedAgents.length ? detectedAgents.map(adapterId => ({ ...resolveRuntimeSelection({ adapterId }), reason: 'workspace-detected' }))
+          : [requestedSelection];
+    const onlySelection = selections.length === 1 ? selections[0] : null;
+    Object.assign(result.agentRuntime, {
+      adapterId: onlySelection?.adapterId ?? null,
+      reason: onlySelection?.reason ?? (detectionFailed ? 'inventory-unavailable' : 'managed-runtime-inventory'),
+      detectedAgents,
+      checkedAgents: selections.map(selection => selection.runtimeId ?? selection.adapterId),
+      detectedAdapters: detectedAgents,
+      checkedAdapters: selections.map(selection => selection.adapterId),
+      diagnosticMode: explicitSelection ? 'selected-runtime' : 'managed-runtime-inventory',
+    });
     if (result.workspace?.initialized && scopes.length === 0) {
       addDoctorFinding(result, 'warning', 'workspace.empty', 'Buildr root 尚未创建项目。', {
         path: targetRoot,
@@ -182,7 +205,7 @@ export function registerSystemDoctorApplication(dependencies: DoctorDependencies
     diagnoseProjectVerification(result, targetRoot, registry);
     diagnoseServices(result, targetRoot, scopes, registry);
     diagnoseSkillsManifestSchemas(result, targetRoot, scopes);
-    if (result.workspace?.initialized) diagnoseSkillCapabilities(result, targetRoot, scopes, requestedAgent);
+    if (result.workspace?.initialized) diagnoseSkillCapabilities(result, targetRoot, scopes, onlySelection ?? requestedSelection);
     if (result.workspace?.initialized) {
       try {
         const builtinStatus = inspectPackageBuiltins(targetRoot);
@@ -215,13 +238,9 @@ export function registerSystemDoctorApplication(dependencies: DoctorDependencies
         });
       }
     }
-    const detectedAgents = result.workspace?.initialized ? detectManagedRuntimeAgents(targetRoot) : [];
-    result.agentRuntime.detectedAgents = detectedAgents;
-    result.agentRuntime.checkedAgents = requestedAgent && isSupportedAgent(requestedAgent) ? [requestedAgent] : requestedAgent ? [] : detectedAgents;
-    result.agentRuntime.diagnosticMode = requestedAgent ? 'selected-runtime' : 'managed-runtime-inventory';
-    diagnoseComponents(result, targetRoot, includeInfo, requestedAgent, detectedAgents);
+    diagnoseComponents(result, targetRoot, includeInfo, explicitSelection ? requestedSelection : null, detectedAgents);
     diagnoseCommands(result, targetRoot, requestedScope && requestedScope.startsWith('projects/') ? [requestedScope.split('/')[1]] : []);
-    if (input.skipRuntime !== true) diagnoseRuntime(result, targetRoot, scopes, { includeInfo, agent: requestedAgent, detectedAgents });
+    if (input.skipRuntime !== true) diagnoseRuntime(result, targetRoot, scopes, { includeInfo, selections, explicitSelection, detectedAgents });
     finalizeDoctorResult(result);
 
     return result;

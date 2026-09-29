@@ -2,7 +2,24 @@
 
 本项目遵循语义化版本。正式发布前的变更可以在 `0.1.x` 内调整，但会在 release notes 中说明用户可观察差异。
 
-## Unreleased
+## 0.1.0-rc.38 - 2026-09-29
+
+- 新增 DSH（DeepSeek Harness）桌面插件独立交付：Buildr CLI 登记本机并产出可安装组合包，DSH 侧栏可打开本机 Buildr；插件包 `@buildr-ai/dsh-plugin` 独立构建与发布，不随主包捆绑。
+- 统一知识与文档阅读界面：按阅读目的组织目录与导航，支持中文检索与筛选目录收展，精简阅读路径并修复阅读呈现。
+- 补齐任务（Task）需求、审查与验证证据的衔接，支持关联 Git 提交并修复任务原型接续。
+- 统一界面细节：项目主页入口统一副屏打开、副屏默认占 65%、阅读正文靠左对齐、详情页操作按钮排列与尺寸统一，调整知识阅读与项目组成检索。
+- 固化 OpenSpec 归档时点与预归档检查流程，统一任务分支远端生命周期授权说明。
+- 开发入口 Node 版本守卫放宽为声明版本同主版本范围，声明版本优先。
+- 修复 agent-assets `render`/`sync` 同型恢复不接受 `--json` 旗标的问题；工作树（Worktree）清理允许依据当前事实接续未登记位置。
+- 升级 `js-yaml` 至 4.3.2、`nanoid` 至 3.3.19 安全补丁。
+- 重整中文与英文首页、使用手册和当前知识目录，合并重复说明、删除过时资料，明确由智能体（Agent）引导安装、配置及日常工作的上手方式。
+- 加固文件更新中断后的恢复与自动回滚（Rollback）：重新核对目录和备份，拒绝危险路径并保留失败现场，支持安全重试。
+- 为本机页面和接口统一校验请求主机（Host），拒绝不匹配实际监听地址和端口的请求。
+- 修复修改目标或范围后仍可复制旧指令的问题，忽略过期请求与复制反馈；清理已退役的“创建变更”入口，保留任务内变更阅读。
+- 退役 `cursor`、`qoder`、`trae`、`trae-work`、`workbuddy` 五个厂商专用运行时适配器（Adapter），只保留标准 `AGENTS.md` 与 `.agents/skills/` 协议和 Claude Code 例外（Exception）。这些品牌仍是有效运行时身份（`runtimeId`），`buildr sync cursor`、`--agent <brand>` 等命令继续可用，但文件投射使用 `agents-standard`；`--adapter` 不再接受被退役的取值，传入时明确失败并列出当前支持的适配器，运行时清单升为 `buildr.runtime-list/v3`。
+- 停止生成被退役品牌的规则桥（`.cursor/rules/buildr.mdc`、`.qoder/rules/buildr/*.md`、`.trae/rules/buildr.md`、根 `CLAUDE.local.md`、根 `CODEBUDDY.md`）与厂商技能镜像（`.qoder/skills`、`.trae/skills`、`.codebuddy/skills`）；既有投射按所有权回执（Ownership Receipt）清理，可证明属于 Buildr 的删除，无法证明的保留并在诊断中说明路径与原因。宿主规则生效需要宿主原生读取工作目录的 `AGENTS.md`（TRAE 还需在设置中启用 `AGENTS.md` 上下文；TRAE Work 与 WorkBuddy 的公开文档未证明完整的 project guidance 与工作目录技能发现机制），产品不再探测品牌安装与版本。
+- 修复运行时身份被当成适配器（Adapter）标识查找的问题：`buildr runtime check`、`skills render`、`skill install` 现在按选择规则把 `runtimeId` 解析为实际适配器，退役品牌与 `codex`、`dsh` 等身份不再报 `Unsupported runtime adapter`，显式 `--adapter` 仍然严格校验。此前 `buildr runtime check codex` 已因此失败。
+- 修复 `buildr render` 省略运行时身份时把 `--target` 当成身份并吞掉该选项的问题；省略身份时统一记为「未指定」，不再让命令位置决定身份。
 
 ## 0.1.0-rc.37 - 2026-09-26
 

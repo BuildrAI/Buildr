@@ -120,6 +120,12 @@ test('Change 仅作为 Task-scoped 只读内容', () => {
   assert.doesNotMatch(change, /associate-change|addChanges|openAgentAction/);
   assert.doesNotMatch(app, /path=["']\/changes["']/);
   assert.doesNotMatch(server, /suffix === '\/changes'|change-create|change-action|addChanges/);
+  const actionDrawer = read('../buildr-web/src/app/AgentActionDrawer.tsx');
+  const taskAction = read('../buildr-web/src/features/task/components/TaskAgentAction.tsx');
+  const professionalClient = read('../buildr-web/src/features/task/api/task-professional-api.ts');
+  assert.doesNotMatch(actionDrawer, /setAction\(['"]change['"]\)|创建变更/);
+  assert.doesNotMatch(taskAction, /action === ['"]change['"]|submitChange|changeCreatePrompt|changeActionPrompt/);
+  assert.doesNotMatch(professionalClient, /change-create|change-action|changeCreatePrompt|changeActionPrompt/);
 });
 
 test('Buildr Web 在工作空间提供独立文章入口、只读内容视图和受控本地图片资源', () => {
@@ -171,7 +177,11 @@ test('任务详情复用系统副屏与抽屉，独立专业事实按工作节�
   assert.doesNotMatch(detail, /WorkspaceStage|pane-stage|pane-right/);
   assert.match(detail, /TaskWorkPath/);
   assert.match(detail, /TaskContextDrawer/);
-  assert.match(read('../buildr-web/src/features/task/hooks/useTaskReadingState.ts'), /useState<TaskNodeStage>\('requirements'\)/);
+  assert.match(read('../buildr-web/src/features/task/hooks/useTaskReadingState.ts'), /useState<TaskReadingTab>\('requirements'\)/);
+  const workContent = read('../buildr-web/src/features/task/components/taskWorkContent.ts');
+  assert.match(workContent, /TaskReadingTab = TaskNodeStage \| 'commits'/);
+  assert.match(workContent, /\['requirements', 'design', 'implementation', 'closeout'\] as TaskNodeStage\[\]/);
+  assert.match(detail, /contentTabs=\{\[\{ key: 'commits'/);
   assert.match(node, /data-task-artifact/);
   assert.match(node, /方案审查/);
   assert.match(node, /task-review-nav-label/);
@@ -193,16 +203,19 @@ test('任务 UI Prototype 只读按需加载并在离线 opaque-origin iframe �
   const responses: any = read('src/web/http/responses.ts');
   const changeHttp: any = read('src/modules/task/change/interfaces/http/change-http.ts');
   const styles: any = read('../buildr-web/src/styles.css');
-  assert.match(source, /selected === 'design' && changeKeys && !artifacts\.prototypeData/);
+  assert.match(source, /selected === 'design' && detail\.data\?\.record\.taskId === taskId && !artifacts\.prototypeData/);
+  assert.doesNotMatch(source, /selected === 'design' && changeKeys &&/);
   assert.match(artifactsHook, /'ui-prototypes'/);
   assert.match(prototype, /界面原型/);
   assert.match(prototype, /模拟操作仅影响本次演示/);
-  assert.match(read('../buildr-web/src/features/task/pages/PrototypeReaderPage.tsx'), /原型页面列表/);
+  assert.match(read('../buildr-web/src/features/task/pages/PrototypeReaderPage.tsx'), /PrototypeReaderLayout/);
+  assert.match(read('../buildr-web/src/features/task/components/PrototypeReaderLayout.tsx'), /原型页面列表/);
   assert.match(read('../buildr-web/src/features/task/components/TaskNodeContent.tsx'), /prototypeEntries\(prototypeData\)/);
   assert.match(prototype, /sandbox="allow-scripts"/);
   assert.doesNotMatch(prototype, /allow-same-origin/);
   assert.match(prototype, /src=\{src\}/);
-  assert.doesNotMatch(prototype, /srcDoc=/);
+  assert.match(prototype, /documentHtml === undefined/);
+  assert.doesNotMatch(read('../buildr-web/src/features/task/components/TaskReadingPane.tsx') + read('../buildr-web/src/features/task/pages/PrototypeReaderPage.tsx'), /documentHtml=/, '正式任务读取不注入离线预览 HTML');
   assert.doesNotMatch(prototype, /dangerouslySetInnerHTML/);
   assert.match(changeHttp, /\/ui-prototypes\$`\)/);
   assert.match(changeHttp, /request\.method === 'GET'.*submitTaskRead\('prototypes'/s);

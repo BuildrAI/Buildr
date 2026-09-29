@@ -1,5 +1,5 @@
 import process from 'node:process';
-import { createRuntime, runtimeContributions, runtimeProvide } from '../runtime.ts';
+import { createRuntime, runtimeContributions } from '../runtime.ts';
 import { registerCommandHelp } from './help.ts';
 import { isVersionRequest, printVersion } from './identity.ts';
 import { printCliError } from './diagnostics.ts';
@@ -9,13 +9,11 @@ import { createWorkspaceCliContributions } from '../../modules/workspace/module.
 import { createDailyProgressCliContributions } from '../../modules/task/module.ts';
 import { createInstallationCliContributions, createLauncherCliContributions } from '../../modules/installation/module.ts';
 import { createAgentAssetsCliContributions } from '../../modules/agent-assets/interfaces/cli/agent-assets.ts';
-import { AGENT_ASSETS_RUNTIME } from '../../modules/agent-assets/module.ts';
 import { WEB_CLI_GROUPS } from '../../web/interfaces/cli/web.ts';
 import { createProjectVerificationCliContributions } from '../../modules/project-testing/module.ts';
 
 const TASK_MODULE_COMMAND_SLOT = Symbol('task-module-command-contributions');
 const WORKSPACE_INIT_COMMAND_SLOT = Symbol('workspace-init-command-contribution');
-const WORKSPACE_BOOTSTRAP_COMMAND_SLOT = Symbol('workspace-bootstrap-command-contribution');
 const WORKSPACE_MUTATION_COMMAND_SLOT = Symbol('workspace-mutation-command-contribution');
 const WORKSPACE_DAILY_PROGRESS_COMMAND_SLOT = Symbol('workspace-daily-progress-command-contributions');
 const AGENT_ASSETS_PACKAGE_COMMAND_SLOT = Symbol('agent-assets-package-command-contributions');
@@ -51,11 +49,10 @@ const OPENSPEC_MODULE_COMMANDS: any = new Set([
   'openspec convergence preflight',
   'openspec convergence inspect',
 ]);
-const WORKSPACE_PRIMARY_COMMANDS = new Set(['init', 'bootstrap guide', 'mutation recover']);
+const WORKSPACE_PRIMARY_COMMANDS = new Set(['init', 'mutation recover']);
 
 const COMMAND_ROUTES: any[] = [
   WORKSPACE_INIT_COMMAND_SLOT,
-  WORKSPACE_BOOTSTRAP_COMMAND_SLOT,
   AGENT_ASSETS_PACKAGE_COMMAND_SLOT,
   WORKSPACE_DAILY_PROGRESS_COMMAND_SLOT,
   TASK_MODULE_COMMAND_SLOT,
@@ -162,7 +159,6 @@ function createCommandRegistry(moduleContributions: any): any  {
   ));
   const routes = COMMAND_ROUTES.flatMap((route: any) => {
     if (route === WORKSPACE_INIT_COMMAND_SLOT) return moduleContributions.filter((item: any) => item.key === 'init');
-    if (route === WORKSPACE_BOOTSTRAP_COMMAND_SLOT) return moduleContributions.filter((item: any) => item.key === 'bootstrap guide');
     if (route === WORKSPACE_MUTATION_COMMAND_SLOT) return moduleContributions.filter((item: any) => item.key === 'mutation recover');
     if (route === AGENT_ASSETS_PACKAGE_COMMAND_SLOT) return agentAssetsPackageContributions;
     if (route === AGENT_ASSETS_RUNTIME_COMMAND_SLOT) return agentAssetsRuntimeContributions;
@@ -203,11 +199,16 @@ export function dispatch(argv: any = process.argv): any  {
   const commandCatalog = createCommandCatalog(commandRegistry);
   registerCommandHelp(runtime, commandCatalog);
   const rawArgs = argv.slice(2);
-  const [domain, action, runtimeId, ...args] = rawArgs;
+  const [domain, action] = rawArgs;
+  // 与 parseRuntimeCommandArgs 同一规则：第三槽位只消费非选项 token；省略身份时保留完整参数尾。
+  const identityToken = rawArgs[2];
+  const hasIdentity = identityToken !== undefined && !identityToken.startsWith('--');
+  const runtimeId = hasIdentity ? identityToken : null;
+  const args = hasIdentity ? rawArgs.slice(3) : rawArgs.slice(2);
   const context: any = { argv, rawArgs, domain, action, runtimeId, args, runtime, commandRegistry, commandCatalog };
   const direct = commandRegistry.find((item: any) => !item.requiresAgent && item.match(context));
   if (direct) return direct.run(runtime, context);
   const agent = commandRegistry.find((item: any) => item.requiresAgent && item.match(context));
-  if (agent && runtimeProvide(runtime, AGENT_ASSETS_RUNTIME).isSupportedAgent(runtimeId)) return agent.run(runtime, context);
+  if (agent) return agent.run(runtime, context);
   process.exit(printCliError(rawArgs, { candidates: commandCandidates(commandRegistry) }));
 }

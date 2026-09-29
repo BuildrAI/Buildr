@@ -3,8 +3,8 @@ import { spawnSync } from './process.ts';
 export const FINAL_DOCTOR_MAX_BUFFER = 4 * 1024 * 1024;
 const DIAGNOSTIC_PREVIEW_LIMIT = 16 * 1024;
 
-export function finalDoctorArgs(agent: any, targetRoot: any): any  {
-  return ['doctor', '--agent', agent, '--target', targetRoot, '--json', '--detail', 'compact'];
+export function finalDoctorArgs(agent: string | null, targetRoot: string, adapterId: string | null = null): string[] {
+  return ['doctor', ...(agent == null ? [] : ['--agent', agent]), ...(adapterId == null ? [] : ['--adapter', adapterId]), '--target', targetRoot, '--json', '--detail', 'compact'];
 }
 
 function output(result: any): any  {
@@ -46,9 +46,9 @@ export function classifyFinalDoctorResult(result: any): any  {
   return { status: 'passed', code: 'doctor.passed', message: '最终 Doctor 通过。', diagnostic: '' };
 }
 
-export function runFinalDoctor({ invocation = null, executable, cliPath, agent, targetRoot, cwd, spawn = spawnSync }: any): any  {
+export function runFinalDoctor({ invocation = null, executable, cliPath, agent = null, runtimeId = agent, adapterId = null, targetRoot, cwd, spawn = spawnSync }: any): any  {
   const selected = invocation || { command: executable, argsPrefix: cliPath ? [cliPath] : [] };
-  const result = spawn(selected.command, [...selected.argsPrefix, ...finalDoctorArgs(agent, targetRoot)], {
+  const result = spawn(selected.command, [...selected.argsPrefix, ...finalDoctorArgs(runtimeId, targetRoot, adapterId)], {
     cwd,
     encoding: 'utf8',
     maxBuffer: FINAL_DOCTOR_MAX_BUFFER,

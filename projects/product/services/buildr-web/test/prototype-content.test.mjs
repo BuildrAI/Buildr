@@ -3,8 +3,13 @@ import test from 'node:test';
 import ts from 'typescript';
 import fs from 'node:fs';
 const source=fs.readFileSync(new URL('../src/features/task/components/prototype-content.ts',import.meta.url),'utf8');
-const {prototypeEntries,validPrototypeMessage}=await import('data:text/javascript;base64,'+Buffer.from(ts.transpile(source,{module:ts.ModuleKind.ESNext})).toString('base64'));
+const {prototypeEntries,prototypeSourceLabel,validPrototypeMessage}=await import('data:text/javascript;base64,'+Buffer.from(ts.transpile(source,{module:ts.ModuleKind.ESNext})).toString('base64'));
 const file={id:'a',title:'旧页面',metadata:{version:1,pages:[{id:'home',title:'首页',notes:[{id:'n',title:'位置',text:'说明',position:'main'}],states:[{id:'empty',title:'空白',notes:[]}]}]}};
+test('任务本机来源不伪造变更，旧变更来源标签保持兼容',()=>{
+  assert.equal(prototypeSourceLabel({source:'task',project:null,change:null}),'任务原型');
+  assert.equal(prototypeSourceLabel({source:'change',project:'product',change:'new-page'}),'product/new-page');
+  assert.equal(prototypeSourceLabel({project:'product',change:'old-page'}),'product/old-page');
+});
 test('目录用文件与局部标识联合定位；旧文件兼容',()=>{const entries=prototypeEntries({prototypes:[file,{...file,id:'b'}]});assert.deepEqual(entries.map(e=>e.key),['a:home','b:home']);assert.equal(prototypeEntries({prototypes:[{id:'old',title:'旧页面'}]})[0].scene.title,'旧页面');});
 test('消息只接受已声明页面状态位置和当前装载标识',()=>{const entries=prototypeEntries({prototypes:[file]});const message={type:'buildr:prototype:state',nonce:'current',page:'home',state:'empty'};assert.ok(validPrototypeMessage(message,'current',entries));for(const patch of [{nonce:'old'},{page:'elsewhere'},{state:'missing'},{position:'unlisted'},{type:'navigate',url:'https://example.com'},{state:undefined}])assert.equal(validPrototypeMessage({...message,...patch},'current',entries),null);});
 

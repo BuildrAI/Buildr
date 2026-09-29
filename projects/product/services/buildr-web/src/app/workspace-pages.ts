@@ -179,6 +179,6 @@ export function paneDimensions(width: number, ratio: number | null) {
   );
   const min = Math.min(280, Math.max(0, (width - 9) / 2));
   const max = Math.max(min, (width - 9) / 2, width - 369);
-  const desired = ratio === null ? Math.max(0, (width - 9) / 2) : width * ratio;
+  const desired = width * (ratio ?? 0.65);
   return { content, min, max, right: Math.min(max, Math.max(min, desired)) };
 }

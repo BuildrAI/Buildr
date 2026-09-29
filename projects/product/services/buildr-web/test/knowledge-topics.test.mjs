@@ -28,15 +28,15 @@ test('正文读到新的主题关系后目录使用同一次读取，不继续�
 });
 
 test('首次进入按显式entryObject阅读，默认documents入口一致，未声明时不猜第一篇', () => {
-  for (const query of ['', 'view=documents', 'fromProject=parent&view=documents']) {
+  for (const query of ['', 'view=documents', 'fromProject=parent&view=documents', 'browse=all', 'browse=all&view=documents', 'q=协作', 'type=maps', 'view=diagrams']) {
     assert.equal(knowledgeEntryObject(new URLSearchParams(query), navigation), 'overview');
   }
   assert.equal(knowledgeEntryObject(new URLSearchParams(), { ...navigation, entryObject: null }), null);
   assert.equal(knowledgeEntryObject(new URLSearchParams(), { ...navigation, entryObject: 'missing' }), null);
 });
 
-test('全部资料和既有定位优先，返回或搜索时不会跳回默认主题', () => {
-  for (const query of ['browse=all', 'browse=all&view=documents', 'object=task', 'artifact=diagram', 'reading=map', 'q=', 'q=协作', 'view=diagrams', 'view=maps', 'view=unknown']) {
+test('已有明确定位优先，文档模式和关联阅读不跳回默认主题', () => {
+  for (const query of ['browse=documents', 'browse=documents&document=file-id', 'document=file-id', 'object=task', 'artifact=diagram', 'reading=map', 'object=task&q=协作&type=maps']) {
     assert.equal(knowledgeEntryObject(new URLSearchParams(query), navigation), null, query);
   }
   const fromHome = new URLSearchParams();

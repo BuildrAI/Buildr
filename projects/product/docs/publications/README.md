@@ -10,6 +10,7 @@
 |---|---|---|---|---|
 | [Buildr：让 Agent 越做越多，越做越好](buildr-agent-more-and-better.md) | 产品文章 | [已发布](https://note.mowen.cn/detail/j6vflXphhowJiL7aTsknP) | 待发布 | 已提供 |
 | [Buildr：Agent 的工作基础设施](buildr-agent-work-infrastructure.md) | 产品文章 | [已发布](https://note.mowen.cn/detail/BuWFSl_5H3CqrC4xnXe2f) | 待发布 | 已提供 |
+| [在 DSH 里打开 Buildr：一个不用学的新入口](buildr-dsh-plugin.md) | 产品文章 | 待发布 | 待发布 | 待提供 |
 
 ## 维护约定
 

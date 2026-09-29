@@ -1,4 +1,9 @@
 export const TASK_RECORD_SCHEMA = 'buildr.task-record/v3';
+export const TASK_ID_SOURCE = '[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?';
+const TASK_ID_PATTERN = new RegExp(`^${TASK_ID_SOURCE}$`);
+export function isTaskRecordId(value: unknown): value is string {
+  return typeof value === 'string' && TASK_ID_PATTERN.test(value);
+}
 export const TASK_RECORD_STATUSES = Object.freeze(['todo', 'active', 'completed', 'abandoned'] as const);
 export const TASK_RETROSPECTIVE_DOCUMENT_STATES = Object.freeze(['pending-decision', 'decided'] as const);
 
