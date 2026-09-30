@@ -1,6 +1,6 @@
 ---
 name: task-triage
-description: 开始修改代码、文档、配置或技能等持久文件前使用；确定隔离位置，判断直接实施、事实维护或 OpenSpec 变更，并交接专业动作。
+description: 用户授权修复、优化或继续修改代码、文档、配置、规则或技能时使用；首次持久写入前登记或接续任务、确定隔离位置，判断直接实施、事实维护或 OpenSpec 变更。
 ---
 
 # Task Triage Skill
@@ -79,6 +79,10 @@ authority 冲突、授权不明、实际 Git 操作所需的 repository set 不�
 需要登记待办、创建任务、选择独立位置、维护当前知识或协调父子任务时，读取[具体交接](references/structured-handoff.md)。
 
 ### 任务登记与代码更新
+
+已初始化的工作空间（Workspace）中，用户授权开始或继续持久交付时，默认在首次交付文件写入前读取已绑定 `buildr.task-record/v3` 的契约（Contract）与提供者（Provider），交给 `task-manager` 核对匹配记录并接续或创建 `active` 任务。`code-only`、`spec-maintenance` 和 `metadata-only` 不因没有规范变更（Change）或改动小而跳过登记。纯只读咨询、尚未授权的方案讨论和已有任务自身的记录维护不另建任务；用户明确不登记时遵从其范围，不在收尾时补造历史。
+
+后续阶段沿用同一任务标识，出现可接续的进展、决定、暂停或结果时，交给 `task-manager` 更新工作摘要（Work Context）或真实结果；不重复创建，不将记录动作扩展为全局就绪门禁。登记失败如实说明缺口，继续独立只读检查或有界测试，依赖该记录的写入仍按对应能力边界处理。
 
 创建或激活任务前，确认目标工作空间（Workspace）、用户目标、项目（Project）或服务（Service）范围及写入授权；已有匹配任务先读取，不重复创建。激活使用刚读取的记录版本，冲突后重读并重新判断。
 

@@ -225,11 +225,11 @@
       "type": "skill",
       "id": "task-manager",
       "target": "skills/buildr/task-manager",
-      "integrity": "sha256-25eb78a0d4a9e2a73ec1a2d24535bc9aef16768de1f637b38e6cb09531ceddaa",
+      "integrity": "sha256-39257ff472abe7601ad0fe622e6093875b69c3273e916a77025bf7ec83af7f7e",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-2c1b56b55fb7900b5cd9f16249daad151e9728bdfe0fc730bcc82313d68c122e"
+          "integrity": "sha256-b3b4cfba83b5cd4d90cd43a45062e4ff9414e60b60944753c024d724ce7173bb"
         },
         {
           "path": "agents/openai.yaml",
@@ -273,15 +273,15 @@
       "type": "skill",
       "id": "task-triage",
       "target": "skills/buildr/task-triage",
-      "integrity": "sha256-219235aeb129e0ab3daa8e04917c393ff2d0c59eec088a2b8c05be27e2917476",
+      "integrity": "sha256-3bc50440e1639fd3bf5649d5c219eb4f35a8913423d03e5cd033c1a54fa55291",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-029f18dec6f8498640c7016d78731a376a081c744a6a5eff83d95752929fa4ae"
+          "integrity": "sha256-35b7c9bc20318a76fb753629a3b98ba1133a99acac1379b180e7f6df5d5cea4a"
         },
         {
           "path": "references/structured-handoff.md",
-          "integrity": "sha256-70e10bbcb9111c2a1f8b15284a4d598f2ef8a09fff87c1e75af1e576c17f7858"
+          "integrity": "sha256-bec5d5d99220ed2e1372434ca31030ebd8c3f02d0b6f6116ecee5dadb07a8b36"
         }
       ]
     },
