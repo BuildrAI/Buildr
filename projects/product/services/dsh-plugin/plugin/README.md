@@ -1,6 +1,6 @@
 # Buildr DSH 桌面插件
 
-本插件（Plugin）在 DSH（DeepSeek Harness）桌面版侧栏底部提供 Buildr 按钮。点击后，主机端（Host）发现本机 Buildr、查询健康状态，客户端（Client）在右侧浏览器打开页面。正式版包 `@buildr-ai/dsh-plugin` 只服务 npm 安装的 Buildr；开发版包 `@buildr-ai/dsh-plugin-dev` 只服务本机源码，两者可共存。
+本插件（Plugin）在 DSH（DeepSeek Harness）桌面版侧栏底部提供 Buildr 按钮。点击后，主机端（Host）发现本机 Buildr、查询健康状态，客户端（Client）在右侧浏览器打开页面。正式版包 `@buildr-ai/buildr-dsh-plugin` 只服务 npm 安装的 Buildr；开发版包 `@buildr-ai/buildr-dsh-plugin-dev` 只服务本机源码，两者可共存。
 
 ## 兼容边界
 
@@ -22,7 +22,7 @@ node tools/verify-plugin.ts <verified-dsh-sdk-dir>
 npm pack ./build/dsh-plugin --pack-destination ./build
 ```
 
-输出压缩包（Tarball）只有预编译主机端、客户端、类型、组合补丁、说明和许可证。`cordis.patch.yml` 以 `insert` 注册默认启用的 `buildr` 条目；没有本机绑定、凭证、安装脚本或 TypeScript 源码。公开 npm 发布后，在 DSH 桌面版的插件界面输入 `@buildr-ai/dsh-plugin` 安装，或由智能体（Agent）调用 DSH 受支持的桌面插件管理能力。桌面 `desktop` 配置档（Profile）由应用独占管理，`dsh plugin --profile desktop add` 会被拒绝；命令行插件管理只适用于其他非受管配置档。
+输出压缩包（Tarball）只有预编译主机端、客户端、类型、组合补丁、说明和许可证。`cordis.patch.yml` 以 `insert` 注册默认启用的 `buildr` 条目；没有本机绑定、凭证、安装脚本或 TypeScript 源码。公开 npm 发布后，在 DSH 桌面版的插件界面输入 `@buildr-ai/buildr-dsh-plugin` 安装，或由智能体（Agent）调用 DSH 受支持的桌面插件管理能力。桌面 `desktop` 配置档（Profile）由应用独占管理，`dsh plugin --profile desktop add` 会被拒绝；命令行插件管理只适用于其他非受管配置档。
 
 发布前可把生成的 `.tgz` 安装到隔离的 DSH 配置档（Profile）验证。安装、禁用和卸载由 DSH 插件管理器完成；正常用户安装不需要 `buildr runtime dsh-plugin prepare`。开发版在同一根目录使用 `node tools/build-plugin.ts --dev <sdk-dir>` 单独生成，不向公众发布。
 

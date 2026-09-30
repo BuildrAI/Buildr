@@ -18,8 +18,8 @@ const dir = join(root, 'build/dsh-plugin-verification');
 // Two packages exist and they must behave identically apart from identity. Verifying only the
 // released one would leave the development entry untested, which is exactly where it broke.
 const variant = process.argv.includes('--dev')
-  ? { bundleName: 'dsh-plugin-dev', packageName: '@buildr-ai/dsh-plugin-dev', entryId: 'buildr-dev', titleKey: 'titleDev', namespace: 'buildr-dev' }
-  : { bundleName: 'dsh-plugin', packageName: '@buildr-ai/dsh-plugin', entryId: 'buildr', titleKey: 'title', namespace: 'buildr' };
+  ? { bundleName: 'dsh-plugin-dev', packageName: '@buildr-ai/buildr-dsh-plugin-dev', entryId: 'buildr-dev', titleKey: 'titleDev', namespace: 'buildr-dev' }
+  : { bundleName: 'dsh-plugin', packageName: '@buildr-ai/buildr-dsh-plugin', entryId: 'buildr', titleKey: 'title', namespace: 'buildr' };
 const bundle = join(root, 'build', variant.bundleName);
 await mkdir(dir, { recursive: true });
 // Test assembly shares exact framework identities; only the external RPC transport is in-process.

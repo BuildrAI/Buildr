@@ -13,7 +13,7 @@ test('a build-time identity difference is all that separates the released and de
   assert.match(source, /__BUILDR_ENTRY_ID__/, 'the client must take its entry id from the build');
   assert.match(source, /__BUILDR_TITLE_KEY__/, 'the client must take its label from the build');
   const template = JSON.parse(await read('plugin/package.template.json')) as any;
-  assert.equal(template.name, '@buildr-ai/dsh-plugin');
+  assert.equal(template.name, '@buildr-ai/buildr-dsh-plugin');
   assert.equal(template.dsh.bundle.patch, 'cordis.patch.yml');
   // The development entry is declared for a developer's own profile and is not the shipped one.
   const devPatch = await read('plugin/cordis.dev.patch.yml');
@@ -22,8 +22,8 @@ test('a build-time identity difference is all that separates the released and de
 });
 
 test('the package name alone decides which Buildr installation an entry serves', () => {
-  assert.equal(channelForPackage('@buildr-ai/dsh-plugin'), 'npm');
-  assert.equal(channelForPackage('@buildr-ai/dsh-plugin-dev'), 'development');
+  assert.equal(channelForPackage('@buildr-ai/buildr-dsh-plugin'), 'npm');
+  assert.equal(channelForPackage('@buildr-ai/buildr-dsh-plugin-dev'), 'development');
 });
 
 /** A built variant, when present, must carry exactly the identity its package declares. */
@@ -42,7 +42,7 @@ test('built variants carry their own identity and never each other', async t => 
   const released = await builtVariant('dsh-plugin');
   const development = await builtVariant('dsh-plugin-dev');
   if (released === null || development === null) return t.skip('variants are not built in this workspace');
-  assert.equal(released.manifest.name, '@buildr-ai/dsh-plugin');
+  assert.equal(released.manifest.name, '@buildr-ai/buildr-dsh-plugin');
   assert.equal(released.manifest.dsh.bundle.patch, 'cordis.patch.yml');
   assert.match(released.client, /ENTRY_ID = true \? "buildr" : "buildr"/);
   assert.match(released.client, /TITLE_KEY = false \? "titleDev" : "title"/);
@@ -51,7 +51,7 @@ test('built variants carry their own identity and never each other', async t => 
   // the released build resolves every identity to the released one.
   assert.equal(/"buildr-dev"/.test(released.client.replace(/false \? "buildr-dev" : "buildr"/g, '')), false,
     'the released entry must not resolve to the development identity');
-  assert.equal(development.manifest.name, '@buildr-ai/dsh-plugin-dev');
+  assert.equal(development.manifest.name, '@buildr-ai/buildr-dsh-plugin-dev');
   assert.equal(development.manifest.dsh.bundle.patch, 'cordis.dev.patch.yml');
   assert.ok(development.manifest.files.includes('cordis.dev.patch.yml'));
   assert.ok(!development.manifest.files.includes('cordis.patch.yml'));

@@ -24,7 +24,7 @@ function npm(args: string[]): { status: number | null; stdout: string; stderr: s
   return { status: result.status, stdout: result.stdout, stderr: result.stderr };
 }
 function registryVersion(): string | null {
-  const result = npm(['view', '@buildr-ai/dsh-plugin', 'version', '--json']);
+  const result = npm(['view', '@buildr-ai/buildr-dsh-plugin', 'version', '--json']);
   if (result.status === 0) return String(JSON.parse(result.stdout));
   if (/E404|404 Not Found/.test(result.stderr)) return null;
   throw new Error(`npm registry lookup failed: ${result.stderr.trim()}`);
@@ -35,7 +35,7 @@ const uncommitted = git('status', '--porcelain', '--', servicePath) !== '';
 const changedSinceTag = latestTag === null || git('diff', '--name-only', latestTag, 'HEAD', '--', servicePath) !== '';
 const publishedVersion = registryVersion();
 const status = {
-  package: '@buildr-ai/dsh-plugin', version, latestTag, publishedVersion,
+  package: '@buildr-ai/buildr-dsh-plugin', version, latestTag, publishedVersion,
   uncommitted, changedSinceTag,
   releaseState: publishedVersion === null ? 'not-public' : publishedVersion === version && !changedSinceTag && !uncommitted ? 'up-to-date' : 'changes-pending',
 };
@@ -57,7 +57,7 @@ if (process.argv[2] === 'status') {
     const packed = npm(['pack', join(root, 'build/dsh-plugin'), '--json', '--pack-destination', stage]);
     if (packed.status !== 0) throw new Error(`npm pack failed: ${packed.stderr.trim()}`);
     const [pack] = JSON.parse(packed.stdout) as Array<{ filename: string; name: string; version: string; files: Array<{ path: string }> }>;
-    if (pack.name !== '@buildr-ai/dsh-plugin' || pack.version !== version || pack.files.some(file => /\.(?:ts|tsx|mts)$/.test(file.path) && !file.path.endsWith('.d.ts'))) {
+    if (pack.name !== '@buildr-ai/buildr-dsh-plugin' || pack.version !== version || pack.files.some(file => /\.(?:ts|tsx|mts)$/.test(file.path) && !file.path.endsWith('.d.ts'))) {
       throw new Error('Packed plugin identity or file inventory is invalid.');
     }
     const tarball = join(output, pack.filename);

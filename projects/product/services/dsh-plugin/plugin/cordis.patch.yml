@@ -1,5 +1,5 @@
 # Install through DSH's plugin manager; discovery happens on first click.
 - insert:
     - id: buildr
-      name: '@buildr-ai/dsh-plugin'
+      name: '@buildr-ai/buildr-dsh-plugin'
       disabled: false

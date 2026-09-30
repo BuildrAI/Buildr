@@ -63,7 +63,7 @@ ${sources.join('\n')}
     version: 'v2',
     async import(name: string) {
       loaded.push(name);
-      const index = ['@buildr-ai/dsh-plugin', '@buildr-ai/dsh-plugin-dev'].indexOf(name);
+      const index = ['@buildr-ai/buildr-dsh-plugin', '@buildr-ai/buildr-dsh-plugin-dev'].indexOf(name);
       if (index < 0) throw new Error(`unexpected package ${name}`);
       return { default: (h as any)[`plugin${index}`].default };
     },
@@ -72,7 +72,7 @@ ${sources.join('\n')}
   await host.loader.await();
   // Both packages must reach activation. This loader does not surface entry services on the host
   // context, so activation is observed through the loader itself rather than through `host.get`.
-  assert.deepEqual(loaded.sort(), ['@buildr-ai/dsh-plugin', '@buildr-ai/dsh-plugin-dev']);
+  assert.deepEqual(loaded.sort(), ['@buildr-ai/buildr-dsh-plugin', '@buildr-ai/buildr-dsh-plugin-dev']);
   for (const [index, name] of ['buildr', 'buildr-dev'].entries()) {
     const entry: any = host.loader.resolve(name);
     assert.equal(entry?.disabled, false, `${name} must stay enabled`);

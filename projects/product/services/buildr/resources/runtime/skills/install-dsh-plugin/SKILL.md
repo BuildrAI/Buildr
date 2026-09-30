@@ -14,11 +14,11 @@ description: 在 DSH（DeepSeek Harness）里加入 Buildr 入口，让用户能
 
 - 这台机器上已经安装了 Buildr。正式版插件只打开正式版 Buildr，不涉及开发版。
 - DSH 的桌面版提供侧栏底部席位；非桌面版没有这个位置，不要承诺按钮会出现。
-- 插件自己会发现本机 Buildr 的位置，所以**没有单独的登记步骤**。先核对 `@buildr-ai/dsh-plugin` 已在 npm 公开发布且与目标 DSH 版本兼容；本机构建或待发布候选不能当作公共安装来源。
+- 插件自己会发现本机 Buildr 的位置，所以**没有单独的登记步骤**。先核对 `@buildr-ai/buildr-dsh-plugin` 已在 npm 公开发布且与目标 DSH 版本兼容；本机构建或待发布候选不能当作公共安装来源。
 
 ## 流程
 
-1. 把公开的预编译包 `@buildr-ai/dsh-plugin` 装进用户实际使用的 DSH 配置档（Profile），使用 DSH 自己的插件管理能力（`plugin_manager` 的 `install_bundle`），或其命令 `dsh plugin --profile <实际配置档> add @buildr-ai/dsh-plugin`。不要猜配置档名称，不要手工改 DSH 配置文件，也不运行 `buildr runtime dsh-plugin prepare`。
+1. 把公开的预编译包 `@buildr-ai/buildr-dsh-plugin` 装进用户实际使用的 DSH 配置档（Profile），使用 DSH 自己的插件管理能力（`plugin_manager` 的 `install_bundle`），或其命令 `dsh plugin --profile <实际配置档> add @buildr-ai/buildr-dsh-plugin`。不要猜配置档名称，不要手工改 DSH 配置文件，也不运行 `buildr runtime dsh-plugin prepare`。
 
 2. 告诉用户需要**重启 DSH** 才能看到入口。
 

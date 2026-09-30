@@ -1,6 +1,6 @@
 {
-  "name": "@buildr-ai/dsh-plugin-source",
-  "version": "0.1.0",
+  "name": "@buildr-ai/buildr-dsh-plugin-source",
+  "version": "0.1.0-rc.1",
   "private": true,
   "type": "module",
   "engines": { "node": "24.15.0" },

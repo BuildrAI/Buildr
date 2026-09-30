@@ -38,8 +38,8 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
  */
 const dev = process.argv.includes('--dev');
 const VARIANT = dev
-  ? { name: '@buildr-ai/dsh-plugin-dev', entryId: 'buildr-dev', service: 'buildr-dev', titleKey: 'titleDev', locale: 'buildr-dev', remote: 'buildr-dev', out: 'build/dsh-plugin-dev' }
-  : { name: '@buildr-ai/dsh-plugin', entryId: 'buildr', service: 'buildr', titleKey: 'title', locale: 'buildr', remote: 'buildr', out: 'build/dsh-plugin' };
+  ? { name: '@buildr-ai/buildr-dsh-plugin-dev', entryId: 'buildr-dev', service: 'buildr-dev', titleKey: 'titleDev', locale: 'buildr-dev', remote: 'buildr-dev', out: 'build/dsh-plugin-dev' }
+  : { name: '@buildr-ai/buildr-dsh-plugin', entryId: 'buildr', service: 'buildr', titleKey: 'title', locale: 'buildr', remote: 'buildr', out: 'build/dsh-plugin' };
 const sdkArg = process.argv.slice(2).find(argument => !argument.startsWith('--'));
 const sdk = resolve(sdkArg ?? process.env.BUILDR_DSH_SDK_ROOT ?? join(root, 'build/dsh-0.2.0-rc.1'));
 const req = createSdkRequire(sdk);
@@ -128,8 +128,8 @@ const protocol = join(stage, 'packages/protocol');
 await mkdir(protocol, { recursive: true });
 for (const name of ['package.json', 'src', 'lib/types']) await cp(join(sdk, 'packages/typert/protocol', name), join(protocol, name), { recursive: true });
 paths['@deepseek-ai/dsh-typert-protocol'] = [join(protocol, 'lib/types/index.d.ts')];
-paths['@buildr-ai/dsh-plugin'] = [join(pkg, 'src/index.ts')];
-paths['@buildr-ai/dsh-plugin/types'] = [join(pkg, 'src/types.ts')];
+paths['@buildr-ai/buildr-dsh-plugin'] = [join(pkg, 'src/index.ts')];
+paths['@buildr-ai/buildr-dsh-plugin/types'] = [join(pkg, 'src/types.ts')];
 const uiRequire = createRequire(join(sdk, 'packages/client/ui-sidebar/package.json'));
 const remotesRequire = createRequire(join(sdk, 'packages/api/remotes/package.json'));
 const zodEntry = remotesRequire.resolve('zod');
