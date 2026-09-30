@@ -8,6 +8,8 @@
 - 普通Workspace：使用该Workspace当前合法的installed或retained Buildr；不得假设存在`projects/product/buildr`。
 - candidate writer被拒绝时保留零写入事实，切换到retained入口登记同一份report；不得绕过provenance、手写SQLite或仅为登记报告重新运行已经完成的测试。
 
+每次 `record` 写入的是该时点任务相关的完整检查集合，不是相对上次报告的新增部分：Agent 第一次报告和后续完善后重写的报告，都必须提交该时点适用检查的整体覆盖；报告本身只保留唯一 current，历史演进靠替换而不是累积记录。登记必须在任务仍为 `active` 的实现完成阶段完成，`completed` 后槽位锁死，不得补救到已完成任务。
+
 ## 构造写入输入
 
 `--report` 文件只提交 `contentIdentity`、`contentSummary`、`checks`、`gaps`、`conclusion` 五个顶层字段。下面是最小完整结构示例：将 `demo`、`demo-unit` 替换为任务范围内的真实项目代码与该项目地图声明的测试族标识，其余字段也按真实已执行检查填写。`contentIdentity` 必须对应已核验内容版本，示例不能充当成功测试事实。

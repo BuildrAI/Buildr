@@ -9,7 +9,7 @@ export type TaskStage = NonNullable<TaskWorkContext['stage']>;
 export type TaskNodeStage = 'requirements' | 'design' | 'implementation' | 'closeout';
 export type TaskReadingTab = TaskNodeStage | 'commits';
 export const taskStageLabels: Record<TaskStage, { title: string; english: string; description: string }> = {
-  requirements: { title: '任务需求', english: 'Task Requirements', description: '任务目标说明本次需要解决的问题、目标与范围；关联变更的 brief.md 为补充需求或说明，可以为空。' },
+  requirements: { title: '任务说明', english: 'Task Description', description: '任务说明承载本次任务的问题、需求或缺陷说明；目标由 intent 提供短定位，说明正文优先使用任务关联材料。' },
   design: { title: '方案设计', english: 'Solution Design', description: '提案说明改什么，设计说明怎么做，规范说明应满足的行为。' },
   'planning-review': { title: '方案审查', english: 'Planning Review', description: '每次方案审查的结论与问题，按次保留。' },
   implementation: { title: '开发实现', english: 'Implementation', description: '实施清单，以及当前实现或修复进展。' },
@@ -61,8 +61,8 @@ export function taskPathNodes(record: TaskRecord, context: TaskWorkContext | nul
   return (['requirements', 'design', 'implementation', 'closeout'] as TaskNodeStage[]).map(stage => ({ stage, current: current === stage }));
 }
 export function taskDocumentLabel(item: TaskDocumentItem, peers: TaskDocumentItem[]): string {
-  const label = item.file === 'brief.md' ? '需求说明' : item.title;
-  const duplicate = peers.filter(peer => (peer.file === 'brief.md' ? '需求说明' : peer.title) === label).length > 1;
+  const label = item.file === 'brief.md' ? '说明' : item.title;
+  const duplicate = peers.filter(peer => (peer.file === 'brief.md' ? '说明' : peer.title) === label).length > 1;
   return duplicate ? `${label} · ${item.changeKey}` : label;
 }
 
@@ -75,4 +75,4 @@ export type TaskReadTarget =
   | { kind: 'artifact'; changeKey: string; path: string; title: string }
   | { kind: 'review'; reviewType: 'planning' | 'completion'; digest: string; title: string }
   | { kind: 'document'; reference: TaskDocumentReference; title: string }
-  | { kind: 'result' | 'coordination' | 'verification' | 'context' | 'record' | 'acceptance' | 'closeout' | 'retrospective' | 'intent'; title: string };
+  | { kind: 'result' | 'coordination' | 'verification' | 'context' | 'record' | 'closeout' | 'retrospective' | 'intent'; title: string };

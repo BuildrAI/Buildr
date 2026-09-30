@@ -20,7 +20,7 @@ export function TaskSummary({ task, context: response, error, onOpen, onRespond,
       {!record.isParent && task.taskRelations.children.length>0 && <Button type="link" size="small" onClick={()=>onOpen('closeout','coordination')}>{task.taskRelations.children.length} 项子任务</Button>}
     </div>
     {error && <Alert type="warning" message={error} />}
-    {attention?.state==='pending' && <div id="task-attention" className="task-summary-attention"><div><strong>{attention.kind==='acceptance'?'等待你确认成果':attention.kind==='question'?'需要你的答复':'等待你的决定'}</strong><p id="task-attention-reason">{attention.reason}</p></div><Button id="task-attention-respond" type="primary" size="small" onClick={attention.kind==='acceptance'?()=>onOpen('closeout','acceptance'):onRespond}>{attention.kind==='acceptance'?'查看并确认':'记录答复'}</Button></div>}
-    {attention?.response && attention.kind!=='acceptance' && <div className="task-summary-response"><strong>你的意见</strong><p id="task-attention-response">{attention.response.text}</p></div>}
+    {attention?.state==='pending' && <div id="task-attention" className="task-summary-attention"><div><strong>{attention.kind==='acceptance'?'等待你确认成果':attention.kind==='question'?'需要你的答复':'等待你的决定'}</strong><p id="task-attention-reason">{attention.reason}</p></div><Button id="task-attention-respond" type="primary" size="small" onClick={onRespond}>{attention.kind==='acceptance'?'记录验收意见':'记录答复'}</Button></div>}
+    {attention?.response && <div className="task-summary-response"><strong>你的意见</strong><p id="task-attention-response">{attention.response.text}</p></div>}
   </section>;
 }

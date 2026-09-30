@@ -20,7 +20,9 @@ export function TaskNodeContent({ selected, record, documents, briefs, reviews, 
     const duplicate = entries.filter(peer=>peer.title===item.title).length > 1;
     return {key:item.key, group:spec ? '规范' : undefined, label:<span className="task-directory-label" title={taskDocumentLabel(item,entries)}>{name}{spec && duplicate && <small>{item.changeKey}</small>}</span>, path:item.artifact.path, target:{kind:'artifact',title:item.title,changeKey:item.changeKey,path:item.artifact.path}};
   });
-  if (selected === 'requirements') options.unshift({key:'intent',label:'任务目标',target:{kind:'intent',title:'目标与说明'}});
+  // 「任务说明」节点以说明正文（brief.md 等任务说明材料）为内容；intent 只是短目标，
+  // 不再兜底进说明节点，也不把 intent 伪装成说明。
+
   if (selected === 'design') prototypeEntries(prototypeData).forEach(entry => options.push({key:`prototype:${entry.key}`,group:'界面原型',label:<span className="task-directory-label">{entry.scene.title}{(prototypeData?.prototypes.length || 0) > 1 && <small>{prototypeSourceLabel(entry.file)}</small>}</span>,target:{kind:'prototype',title:entry.scene.title,prototypeKey:entry.key}}));
   if (selected === 'design' || selected === 'implementation') {
     const reviewType = selected === 'design' ? 'planning' : 'completion';
@@ -35,7 +37,8 @@ export function TaskNodeContent({ selected, record, documents, briefs, reviews, 
     if (selected === 'implementation') options.push({key:'verification',label:'开发验证',target:{kind:'verification',title:'开发验证'}});
   }
   if (selected === 'closeout') {
-    options.push({key:'acceptance',label:'用户确认',target:{kind:'acceptance',title:'用户确认'}},{key:'result',label:'交付结果',target:{kind:'result',title:'交付结果'}});
+    // 常驻「用户确认」目录项已移除：验收入口由后续真实设计决定，当前收尾只展示交付结果与适用内容。
+    options.push({key:'result',label:'交付结果',target:{kind:'result',title:'交付结果'}});
     if (hasCoordination) options.push({key:'coordination',label:'子任务交付',target:{kind:'coordination',title:'子任务交付'}});
     if (hasRetrospective) options.push({key:'retrospective',label:'任务复盘',target:{kind:'retrospective',title:'任务复盘'}});
   }

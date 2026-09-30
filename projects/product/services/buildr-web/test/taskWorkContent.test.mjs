@@ -28,8 +28,8 @@ test('四个节点不改变专业阶段，两类审查和验证及确认归到�
 test('同名需求用关联变更区分，单份材料不增加重复名称', () => {
  const docs = taskDocuments([source, {...source, key:'demo/other'}]);
  const briefs = docs.filter(item => item.stage === 'requirements');
- assert.deepEqual(briefs.map(item => taskDocumentLabel(item, briefs)), ['需求说明 · demo/change','需求说明 · demo/other']);
- assert.equal(taskDocumentLabel(briefs[0], [briefs[0]]), '需求说明');
+ assert.deepEqual(briefs.map(item => taskDocumentLabel(item, briefs)), ['说明 · demo/change','说明 · demo/other']);
+ assert.equal(taskDocumentLabel(briefs[0], [briefs[0]]), '说明');
 });
 test('审查历史保持追加顺序，验证只读取当前报告，不把意见当作通过', () => {
  const first={ result:{ subjectIdentity:'v1' }, resultDigest:'one', observedAt:'1' };

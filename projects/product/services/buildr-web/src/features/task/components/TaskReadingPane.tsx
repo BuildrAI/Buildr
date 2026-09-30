@@ -1,4 +1,4 @@
-import { Alert, Button, Tag } from 'antd';
+import { Alert, Tag } from 'antd';
 import type { TaskDetailResponse } from '../../../../build/generated/task-dto';
 import type { TaskWorkContext } from '../../../../build/generated/workbench-dto';
 import type { useTaskArtifacts } from '../hooks/useTaskArtifacts';
@@ -16,11 +16,11 @@ import { RetrospectiveDocumentCard } from './RetrospectiveDocumentCard';
 function TextList({ title, items }: { title: string; items: string[] }) {
   return items.length ? <section className="task-reader-section"><h3>{title}</h3><ul>{items.map((item, index) => <li key={index}>{item}</li>)}</ul></section> : null;
 }
-export function TaskReadingPane({ target, task, context, artifacts, evidence, workspaceId, href, onRead, onClose, onRespond, onRelativeLink, refreshTask, embedded = false, inDrawer = false, refreshToken = 0, onPrototypeSelect, onPrototypeNotesOpen, prototypeNotesCloseToken }: {
+export function TaskReadingPane({ target, task, context, artifacts, evidence, workspaceId, href, onRead, onClose, onRelativeLink, refreshTask, embedded = false, inDrawer = false, refreshToken = 0, onPrototypeSelect, onPrototypeNotesOpen, prototypeNotesCloseToken }: {
   onPrototypeSelect?(key:string):void; onPrototypeNotesOpen?():void; prototypeNotesCloseToken?:number;
   inDrawer?: boolean; embedded?: boolean; refreshToken?: number; target: TaskReadTarget | null; task: TaskDetailResponse; context?: TaskWorkContext | null;
   artifacts: ReturnType<typeof useTaskArtifacts>; evidence: ReturnType<typeof useTaskEvidence>; workspaceId: string | null;
-  href(path: string): string; onRead(target: TaskReadTarget): void; onClose(): void; onRespond(): void; onRelativeLink(href: string): void; refreshTask(): Promise<void>;
+  href(path: string): string; onRead(target: TaskReadTarget): void; onClose(): void; onRelativeLink(href: string): void; refreshTask(): Promise<void>;
 }) {
   if (!target) return null;
   const record = task.record;
@@ -66,9 +66,8 @@ export function TaskReadingPane({ target, task, context, artifacts, evidence, wo
   }
 
   if (target.kind === 'intent') return <article className="task-reader"><h2>目标与说明</h2><MarkdownHost markdown={record.intent} className="markdown-body" options={{ allowRelativeLinks: true, onRelativeLinkClick: onRelativeLink }} /></article>;
-  if (target.kind === 'context' || target.kind === 'acceptance') {
-    const attention = target.kind === 'acceptance' && context?.attention?.kind !== 'acceptance' ? null : context?.attention;
-    return <article className="task-reader"><h2>{target.title}</h2>{target.kind === 'acceptance' && attention && <p className="task-reader-origin">{attention.response ? '答复于' : '提出于'} {formatDateTime(attention.response?.recordedAt || attention.createdAt)}</p>}{target.kind === 'context' && <><p className="task-reader-origin">{context ? `更新于 ${formatDateTime(context.updatedAt)}` : '尚未记录'}</p><h3>当前节点</h3><p>{context?.stage ? taskStageLabels[context.stage].title : '未记录'}</p><h3>最近进展</h3><p>{context?.progress || '暂无进展'}</p><h3>下一步</h3><p>{context?.nextStep || '暂无下一步'}</p></>}{attention ? <section className="task-reader-section"><p>{attention.reason}</p>{attention.response ? <>{target.kind !== 'acceptance' && <p className="task-reader-origin">答复于 {formatDateTime(attention.response.recordedAt)}</p>}<p id="task-attention-response">{attention.response.text}</p></> : <Button id="task-closeout-respond" type="primary" onClick={onRespond}>记录验收意见</Button>}</section> : target.kind === 'acceptance' ? <p>暂无用户确认记录。</p> : null}</article>;
+  if (target.kind === 'context') {
+    return <article className="task-reader"><h2>{target.title}</h2><p className="task-reader-origin">{context ? `更新于 ${formatDateTime(context.updatedAt)}` : '尚未记录'}</p><h3>当前节点</h3><p>{context?.stage ? taskStageLabels[context.stage].title : '未记录'}</p><h3>最近进展</h3><p>{context?.progress || '暂无进展'}</p><h3>下一步</h3><p>{context?.nextStep || '暂无下一步'}</p></article>;
   }
   if (target.kind === 'coordination') return <div className="task-reader"><ParentCoordinationPanel data={evidence.coordinationData} loading={evidence.coordinationLoading} onRefresh={() => void evidence.refreshCoordination()} taskHref={id => href(`/tasks/${encodeURIComponent(id)}`)} /></div>;
   if (target.kind === 'result' || target.kind === 'closeout') return <article className="task-reader task-closeout"><h2>交付结果</h2>{record.result ? <><p className="task-reader-origin">{formatDateTime(record.updatedAt)}</p><MarkdownHost markdown={record.result.summary} className="markdown-body" options={{allowRelativeLinks:true,onRelativeLinkClick:onRelativeLink}} /></> : <p className="task-node-empty">尚未登记交付结果。</p>}{record.resultHistory?.length ? <section><h3>结果更正</h3>{record.resultHistory.map((item,i)=><p key={i}>{formatDateTime(item.correctedAt)} · {item.reason}</p>)}</section> : null}</article>;
