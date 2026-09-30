@@ -2,9 +2,11 @@
 
 ## Purpose
 定义正式 OpenSpec Change 的人类可读 Brief、权威边界、生命周期兼容性和只读展示要求。
+
 ## Requirements
+
 ### Requirement: 正式 Change 必须提供人类可读 Brief
-Buildr MUST 为新建或主动修订的正式 OpenSpec Change 维护同级 `brief.md` companion artifact，使普通用户无需先拼接全部技术 artifacts 即可理解变更；Brief MUST 至少表达一句话摘要、背景与问题、目标与非目标、受影响用户或角色、核心流程、关键变化、影响/风险/兼容性、验收摘要和技术 artifacts 入口。
+Buildr MUST 为新建或主动修订的正式 OpenSpec Change 维护同级 `brief.md` companion artifact，使普通用户无需先拼接全部技术 artifacts 即可理解变更；`brief.md` 的产品语义为需求（Requirements），承载该变更正式的需求叙事，而非概要或简报；Brief MUST 至少表达一句话摘要、背景与问题、目标与非目标、受影响用户或角色、核心流程、关键变化、影响/风险/兼容性、验收摘要和技术 artifacts 入口。
 
 #### Scenario: 创建正式 Change
 - **WHEN** Agent 使用 Buildr 管理的 OpenSpec propose workflow 创建完整 Change
@@ -22,7 +24,7 @@ Buildr MUST 为新建或主动修订的正式 OpenSpec Change 维护同级 `brie
 - **AND** Brief MUST NOT 保留与更新后标准 artifacts 冲突的旧叙述
 
 ### Requirement: Brief 不得成为第二套规范来源
-Brief MUST 只组织和解释 Change 标准 artifacts 已支持的事实；proposal MUST 继续决定 why 与 scope，design MUST 继续决定技术取舍，specs MUST 继续决定规范行为，tasks、实现和 evidence MUST 继续决定执行状态。
+Brief MUST 只组织和解释 Change 标准 artifacts 已支持的事实；proposal MUST 继续决定 why 与 scope，design MUST 继续决定技术取舍，specs MUST 继续决定规范行为，tasks、实现和 evidence MUST 继续决定执行状态。`brief.md` 命名为需求语义时，仍只表达需求叙事与入口，不改变本条款的权威边界。
 
 #### Scenario: Brief 出现未被规范支持的行为
 - **WHEN** Agent 发现 Brief 陈述的行为无法从 proposal、design 或 delta specs 得到支持
@@ -35,7 +37,7 @@ Brief MUST 只组织和解释 Change 标准 artifacts 已支持的事实；propo
 - **AND** Agent MUST 更新权威状态后再刷新 Brief
 
 ### Requirement: Brief 必须随 Change 生命周期保持稳定可读
-Buildr MUST 将 `brief.md` 保存在 Change root 内并随 active Change 原子归档；旧 Change 缺少 Brief 时 MUST 保持可读兼容，且 MUST NOT 在只读索引或页面访问期间自动生成或回写 Brief。
+Buildr MUST 将 `brief.md` 保存在 Change root 内并随 active Change 原子归档；旧 Change 缺少 Brief 时 MUST 保持可读兼容，且 MUST NOT 在只读索引或页面访问期间自动生成或回写 Brief。`brief.md` 命名为需求语义时，文件名与既有读取入口保持不变。
 
 #### Scenario: 归档包含 Brief 的 Change
 - **WHEN** OpenSpec archive 将 active Change 移入 archive
