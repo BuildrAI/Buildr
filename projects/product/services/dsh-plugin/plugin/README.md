@@ -22,8 +22,19 @@ node tools/verify-plugin.ts <verified-dsh-sdk-dir>
 npm pack ./build/dsh-plugin --pack-destination ./build
 ```
 
-输出压缩包（Tarball）只有预编译主机端、客户端、类型、组合补丁、说明和许可证。`cordis.patch.yml` 以 `insert` 注册默认启用的 `buildr` 条目；没有本机绑定、凭证、安装脚本或 TypeScript 源码。公开 npm 发布后，在 DSH 桌面版的插件界面输入 `@buildr-ai/buildr-dsh-plugin` 安装，或由智能体（Agent）调用 DSH 受支持的桌面插件管理能力。桌面 `desktop` 配置档（Profile）由应用独占管理，`dsh plugin --profile desktop add` 会被拒绝；命令行插件管理只适用于其他非受管配置档。
+输出压缩包（Tarball）只有预编译主机端、客户端、类型、组合补丁、说明和许可证。`cordis.patch.yml` 以 `insert` 注册默认启用的 `buildr` 条目；没有本机绑定、凭证、安装脚本或 TypeScript 源码。
+
+公开 npm 安装前，先核对用户实际使用的 DSH 版本及相关依赖。用户已指定插件版本时核对该版本；未指定时，先查询公开标签（Dist-tag），再核对目标版本的精确版本及对等依赖（peerDependencies）：
+
+```sh
+npm view @buildr-ai/buildr-dsh-plugin dist-tags --json
+npm view @buildr-ai/buildr-dsh-plugin@<目标版本> version peerDependencies --json
+```
+
+以该公开版本的对等依赖（peerDependencies）范围对照实际 DSH 版本及相关依赖，包含预发布版本的范围语义；不能只凭包存在、标签名称、版本号相近或本文编译基线判断兼容。本机构建和待发布候选不能作为已公开版本的证据。没有兼容的公开版本时停止安装，说明具体差异，不自动改用开发包或降级 DSH。查询返回 `404` 或 `E404` 表示目标包或版本不可用；网络、代理、认证错误或超时表示查询未知，不能当作未发布，版本事实确认前不安装。
+
+确认兼容后，在 DSH 桌面版的插件界面安装 `@buildr-ai/buildr-dsh-plugin`，或由智能体（Agent）调用 DSH 受支持的桌面插件管理能力。通过实际入口支持的包名和版本参数指定已核验的精确版本；若入口不支持固定版本，先确认它将解析的版本仍是已核验版本，否则停止安装。安装后回读实际包名和版本，确认与已核验版本及入口解析版本一致后才继续。桌面 `desktop` 配置档（Profile）由应用独占管理，`dsh plugin --profile desktop add` 会被拒绝；命令行插件管理只适用于其他非受管配置档。
 
 发布前可把生成的 `.tgz` 安装到隔离的 DSH 配置档（Profile）验证。安装、禁用和卸载由 DSH 插件管理器完成；正常用户安装不需要 `buildr runtime dsh-plugin prepare`。开发版在同一根目录使用 `node tools/build-plugin.ts --dev <sdk-dir>` 单独生成，不向公众发布。
 
-构建、装载器（Loader）验证、安装、真实桌面验收是不同证据；更新同版本包后应完整重启 DSH，再确认真实按钮与页面行为。
+构建、装载器（Loader）验证、安装、真实桌面验收是不同证据；安装或更新后（包括更新同版本包）必须完整重启 DSH，“立即启用”不能代替重启。重启后在真实桌面版确认侧栏按钮出现、点击能打开 Buildr，并核对页面行为；不能用“安装成功”代替真实按钮验收。
