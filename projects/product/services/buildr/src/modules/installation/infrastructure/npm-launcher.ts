@@ -25,14 +25,39 @@ function quotePowerShell(value: any) {
   return `'${String(value).replaceAll("'", "''")}'`;
 }
 
-export function defaultNpmLauncherTarget(platform: any = process.platform, options: any = {}) {
-  if (options.target) return path.resolve(options.target);
-  if (platform === 'darwin') return path.join(os.homedir(), 'Applications', 'Buildr Web.app');
+/**
+ * macOS install 的默认目标固定为 /Applications；status/repair/uninstall/refresh 等既有
+ * 管理动作按候选顺序探测真实目标，使早期装在 ~/Applications 的 Launcher 仍可管理。
+ */
+export function npmLauncherTargetCandidates(platform: any = process.platform, options: any = {}) {
+  if (platform === 'darwin') {
+    const home = options.homedir || os.homedir();
+    const system = options.systemApplications || '/Applications';
+    return [path.join(system, 'Buildr Web.app'), path.join(home, 'Applications', 'Buildr Web.app')];
+  }
   if (platform === 'win32') {
-    const appData = process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming');
-    return path.join(appData, 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Buildr Web.lnk');
+    const appData = options.appData || process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming');
+    return [path.join(appData, 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Buildr Web.lnk')];
   }
   throw new Error(`Buildr Web Launcher is not supported on ${platform}.`);
+}
+
+export function defaultNpmLauncherTarget(platform: any = process.platform, options: any = {}) {
+  if (options.target) return path.resolve(options.target);
+  return npmLauncherTargetCandidates(platform, options)[0];
+}
+
+/**
+ * 已安装 Launcher 的真实目标：未显式给出 --target 时按候选顺序返回第一个存在的
+ * .app/shortcut；都不存在时返回默认目标（用于 absent 呈现与 install 写入）。
+ */
+export function resolveNpmLauncherTarget(platform: any = process.platform, options: any = {}) {
+  if (options.target) return path.resolve(options.target);
+  const candidates = npmLauncherTargetCandidates(platform, options);
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate) || fs.existsSync(npmLauncherBindingPath(platform, candidate))) return candidate;
+  }
+  return candidates[0];
 }
 
 export function npmLauncherBindingPath(platform: any = process.platform, target: any = defaultNpmLauncherTarget(platform)) {
@@ -274,8 +299,8 @@ function ownershipMatches(observed: any, expected: any) {
     && sameFilesystemPath(binding.target, expected.target);
 }
 
-export function npmLauncherStatus({ platform = process.platform, target, readShortcut }: any = {}) {
-  const resolvedTarget = defaultNpmLauncherTarget(platform, { target });
+export function npmLauncherStatus({ platform = process.platform, target, readShortcut, homedir, systemApplications }: any = {}) {
+  const resolvedTarget = target ? path.resolve(target) : resolveNpmLauncherTarget(platform, { homedir, systemApplications });
   const bindingPath = npmLauncherBindingPath(platform, resolvedTarget);
   const targetPresent = fs.existsSync(resolvedTarget);
   const bindingObservation = readAndInspectNpmLauncherBinding(bindingPath, { target: resolvedTarget });
@@ -299,8 +324,11 @@ export function npmLauncherStatus({ platform = process.platform, target, readSho
   };
 }
 
-export function installNpmLauncher({ registration, platform = process.platform, target, port, repair = false, writeShortcut, readShortcut }: any = {}) {
-  const resolvedTarget = defaultNpmLauncherTarget(platform, { target });
+export function installNpmLauncher({ registration, platform = process.platform, target, port, repair = false, writeShortcut, readShortcut, homedir, systemApplications }: any = {}) {
+  // install 写入默认目标（/Applications 或显式 --target）；repair 作用于已安装的真实目标。
+  const resolvedTarget = target
+    ? path.resolve(target)
+    : repair ? resolveNpmLauncherTarget(platform, { homedir, systemApplications }) : defaultNpmLauncherTarget(platform, { homedir, systemApplications });
   const bindingPath = npmLauncherBindingPath(platform, resolvedTarget);
   const existing = readBindingForTarget(platform, resolvedTarget);
   const preservedPort = repair && existing.binding?.schemaVersion === 'buildr.npm-launcher-binding/v2'
@@ -318,36 +346,70 @@ export function installNpmLauncher({ registration, platform = process.platform, 
     throw new Error(`Refusing to replace foreign Launcher target: ${resolvedTarget}.`);
   }
   if (repair && existing.status === 'absent') throw new Error('Launcher repair requires an existing owned Launcher; run launcher install instead.');
-  if (platform === 'darwin') {
-    fs.mkdirSync(path.dirname(resolvedTarget), { recursive: true });
-    const stage = `${resolvedTarget}.buildr-stage-${process.pid}-${crypto.randomUUID()}`;
-    const backup = `${resolvedTarget}.buildr-backup-${process.pid}-${crypto.randomUUID()}`;
-    try {
-      writeMacLauncherCandidate(stage, expected);
-      const verifiedStage = readAndInspectNpmLauncherBinding(npmLauncherBindingPath(platform, stage), { target: resolvedTarget });
-      if (verifiedStage.status !== 'ready') throw new Error(`Staged Launcher validation failed: ${verifiedStage.message}`);
-      if (fs.existsSync(resolvedTarget)) fs.renameSync(resolvedTarget, backup);
-      fs.renameSync(stage, resolvedTarget);
-      if (fs.existsSync(backup)) fs.rmSync(backup, { recursive: true, force: true });
-    } catch (error: any) {
-      fs.rmSync(stage, { recursive: true, force: true });
-      if (!fs.existsSync(resolvedTarget) && fs.existsSync(backup)) fs.renameSync(backup, resolvedTarget);
-      throw error;
+  try {
+    if (platform === 'darwin') {
+      fs.mkdirSync(path.dirname(resolvedTarget), { recursive: true });
+      const stage = `${resolvedTarget}.buildr-stage-${process.pid}-${crypto.randomUUID()}`;
+      const backup = `${resolvedTarget}.buildr-backup-${process.pid}-${crypto.randomUUID()}`;
+      try {
+        writeMacLauncherCandidate(stage, expected);
+        const verifiedStage = readAndInspectNpmLauncherBinding(npmLauncherBindingPath(platform, stage), { target: resolvedTarget });
+        if (verifiedStage.status !== 'ready') throw new Error(`Staged Launcher validation failed: ${verifiedStage.message}`);
+        if (fs.existsSync(resolvedTarget)) fs.renameSync(resolvedTarget, backup);
+        fs.renameSync(stage, resolvedTarget);
+        if (fs.existsSync(backup)) fs.rmSync(backup, { recursive: true, force: true });
+      } catch (error: any) {
+        fs.rmSync(stage, { recursive: true, force: true });
+        if (!fs.existsSync(resolvedTarget) && fs.existsSync(backup)) fs.renameSync(backup, resolvedTarget);
+        throw error;
+      }
+    } else if (platform === 'win32') {
+      writeWindowsLauncherCandidate(resolvedTarget, expected, { writeShortcut, readShortcut });
+    } else throw new Error(`Buildr Web Launcher is not supported on ${platform}.`);
+  } catch (error: any) {
+    if (platform === 'darwin' && !target && !repair && resolvedTarget === npmLauncherTargetCandidates(platform, { homedir, systemApplications })[0]
+        && ['EACCES', 'EPERM', 'EROFS'].includes(error?.code)) {
+      throw new Error(`无法写入默认 Launcher 目标 ${resolvedTarget}（${error.code}）。请以管理员身份安装，或执行 buildr web launcher install --target <可写路径>。`);
     }
-  } else if (platform === 'win32') {
-    writeWindowsLauncherCandidate(resolvedTarget, expected, { writeShortcut, readShortcut });
-  } else throw new Error(`Buildr Web Launcher is not supported on ${platform}.`);
+    throw error;
+  }
   const result = npmLauncherStatus({ platform, target: resolvedTarget, readShortcut });
   if (result.status !== 'ready') throw new Error(`Installed Launcher did not validate: ${result.diagnostic?.message || result.status}.`);
-  return { ...result, action: repair ? 'repaired' : existing.status === 'absent' ? 'installed' : 'refreshed' };
+  // install 默认目标成功后移除同一安装槽位在 ~/Applications 的遗留入口，本机只保留一份正式版入口。
+  // 槽位身份版本无关，足以证明归属；证明不了同槽位的旧位置入口保留并在结果中如实呈现。
+  let migratedLegacyTarget: any = null;
+  let keptLegacyTarget: any = null;
+  if (platform === 'darwin' && !repair) {
+    const candidates = npmLauncherTargetCandidates(platform, { homedir, systemApplications });
+    const legacyTarget = candidates.slice(1).find((candidate) => !sameFilesystemPath(candidate, resolvedTarget)
+      && (fs.existsSync(candidate) || fs.existsSync(npmLauncherBindingPath(platform, candidate))));
+    if (legacyTarget) {
+      const legacyObserved = readAndInspectNpmLauncherBinding(npmLauncherBindingPath(platform, legacyTarget), { target: legacyTarget });
+      if (legacyObserved.binding?.installationSlotIdentity === expected.installationSlotIdentity) {
+        try {
+          fs.rmSync(legacyTarget, { recursive: true, force: true });
+          migratedLegacyTarget = legacyTarget;
+        } catch (error: any) {
+          keptLegacyTarget = { path: legacyTarget, removed: false, reason: `无法移除旧位置 Launcher：${error.message}` };
+        }
+      } else {
+        keptLegacyTarget = { path: legacyTarget, removed: false, reason: '旧位置 Launcher 无法证明属于本安装槽位，已保留。' };
+      }
+    }
+  }
+  return {
+    ...result,
+    action: repair ? 'repaired' : existing.status === 'absent' ? 'installed' : 'refreshed',
+    ...(migratedLegacyTarget || keptLegacyTarget ? { legacyTarget: migratedLegacyTarget ? { path: migratedLegacyTarget, removed: true } : keptLegacyTarget } : {}),
+  };
 }
 
 export function repairNpmLauncher(options: any = {}) {
   return installNpmLauncher({ ...options, repair: true });
 }
 
-export function uninstallNpmLauncher({ registration, platform = process.platform, target, readShortcut }: any = {}) {
-  const resolvedTarget = defaultNpmLauncherTarget(platform, { target });
+export function uninstallNpmLauncher({ registration, platform = process.platform, target, readShortcut, homedir, systemApplications }: any = {}) {
+  const resolvedTarget = target ? path.resolve(target) : resolveNpmLauncherTarget(platform, { homedir, systemApplications });
   const bindingPath = npmLauncherBindingPath(platform, resolvedTarget);
   const expected = createNpmLauncherBinding({ registration, platform, target: resolvedTarget, bindingPath });
   const observed = readAndInspectNpmLauncherBinding(bindingPath, { target: resolvedTarget });
@@ -363,9 +425,9 @@ export function uninstallNpmLauncher({ registration, platform = process.platform
   return { ...npmLauncherStatus({ platform, target: resolvedTarget }), action: observed.status === 'absent' ? 'absent' : 'uninstalled' };
 }
 
-export function refreshInstalledNpmLauncher({ registration, platform = process.platform, target, writeShortcut, readShortcut }: any = {}) {
+export function refreshInstalledNpmLauncher({ registration, platform = process.platform, target, writeShortcut, readShortcut, homedir, systemApplications }: any = {}) {
   if (!['darwin', 'win32'].includes(platform)) return { action: 'skipped', reason: `unsupported platform ${platform}` };
-  const resolvedTarget = defaultNpmLauncherTarget(platform, { target });
+  const resolvedTarget = target ? path.resolve(target) : resolveNpmLauncherTarget(platform, { homedir, systemApplications });
   const bindingPath = npmLauncherBindingPath(platform, resolvedTarget);
   if (!fs.existsSync(resolvedTarget) && !fs.existsSync(bindingPath)) return { action: 'skipped', reason: 'Launcher is not installed' };
   const expected = createNpmLauncherBinding({ registration, platform, target: resolvedTarget, bindingPath });
@@ -379,6 +441,8 @@ export function refreshInstalledNpmLauncher({ registration, platform = process.p
     repair: false,
     writeShortcut,
     readShortcut,
+    homedir,
+    systemApplications,
   });
 }
 

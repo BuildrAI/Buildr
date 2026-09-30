@@ -275,7 +275,25 @@ export function registerApplicationCliUpdate(dependencies: { productRoot(): stri
     return plan;
   }
 
-  function updateBuildr(input: { track?: 'stable' | 'candidate' | null } = {}) {
+  /**
+   * npm 更新成功后，同一安装槽位仍运行的旧版本实例会被 installation status 报告为
+   * stale；更新结果如实给出经 Launcher 重启完成实例切换的指引，而不在本命令内终止
+   * 运行中的实例（执行方可能就是该实例内的 Agent）。
+   */
+  async function staleInstanceGuidance(): Promise<string[]> {
+    try {
+      const { buildInstallationStatusInventory } = await import('./product-installation-status.ts');
+      const inventory: any = await buildInstallationStatusInventory(productRoot());
+      const instance = inventory?.instances?.released;
+      if (instance?.status === 'stale' && instance?.identity?.pid) {
+        const running = instance.identity.version || '旧版本';
+        return [`旧版本 Buildr Web 实例仍在运行（版本 ${running}，pid ${instance.identity.pid}）：启动已安装的 Buildr Web Launcher 即可自动完成旧实例退出与新版本交接；本次 update 不会自动终止运行中的实例。`];
+      }
+    } catch { /* 实例状态只是提示性信息，status 读取失败不改变更新结果。 */ }
+    return [];
+  }
+
+  async function updateBuildr(input: { track?: 'stable' | 'candidate' | null } = {}) {
     const track = input.track ?? null;
     const source = identifyCliSource(productRoot());
     if (track && source.mode === 'development') throw new Error('release track 只适用于 npm installation；development checkout 更新不接受 --track。');
@@ -291,7 +309,8 @@ export function registerApplicationCliUpdate(dependencies: { productRoot(): stri
       const failed = { ...plan, status: 'blocked', blockingReasons: [`CLI 更新失败：${result.stderr || result.error || 'unknown error'}`], nextActions: plan.mode === 'development' && plan.strategy === 'rebase' ? ['检查 Git rebase 状态并决定继续或中止；Buildr 不会自动解决冲突。'] : ['处理安装错误后重新运行 buildr update。'] };
       return failed;
     }
-    const completed = { ...plan, status: 'updated', blockingReasons: [], nextActions: ['CLI 已更新；已存在的同 ownership Buildr Web Launcher 会由 npm lifecycle 刷新。'] };
+    const instanceGuidance = plan.mode === 'npm' ? await staleInstanceGuidance() : [];
+    const completed = { ...plan, status: 'updated', blockingReasons: [], nextActions: ['CLI 已更新；已存在的同 ownership Buildr Web Launcher 会由 npm lifecycle 刷新。', ...instanceGuidance] };
     return completed;
   }
 

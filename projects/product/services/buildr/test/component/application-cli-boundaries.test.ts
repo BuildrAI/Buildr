@@ -77,15 +77,15 @@ test('安装CLI将参数变为结构化输入并拥有JSON与退出状态', asyn
   assert.equal(await run('installation status', ['installation', 'status', '--json']), inventory);
   assert.deepEqual(JSON.parse(output), { schemaVersion: 'buildr.installation-status/v1', ...inventory });
   output = '';
-  run('update check', ['update', 'check', '--json']);
+  await run('update check', ['update', 'check', '--json']);
   assert.equal(JSON.parse(output).status, 'blocked');
   assert.equal(process.exitCode, 1);
   output = '';
-  run('update', ['update', '--track', 'candidate', '--json']);
+  await run('update', ['update', '--track', 'candidate', '--json']);
   assert.deepEqual(selected, { track: 'candidate' });
   assert.equal(JSON.parse(output).schemaVersion, 'buildr.update/v2');
-  assert.throws(() => run('update', ['update', '--track', 'wrong']), /--track must be stable or candidate/);
-  assert.throws(() => run('update', ['update', '--target', '.']), /不接收 workspace/);
+  await assert.rejects(run('update', ['update', '--track', 'wrong']), /--track must be stable or candidate/);
+  await assert.rejects(run('update', ['update', '--target', '.']), /不接收 workspace/);
   await assert.rejects(() => run('installation status', ['installation', 'status', '--unknown']), /Unknown argument/);
 });
 

@@ -113,12 +113,12 @@ function printPlan(plan: any, label: any) {
 }
 
 
-function runUpdate(application: any, action: 'check' | 'update', args: string[]) {
+async function runUpdate(application: any, action: 'check' | 'update', args: string[]) {
   if (args.includes('--target')) throw new Error('buildr update 不接收 workspace --target；请使用 buildr sync <agent> --target <dir> 同步 workspace。');
   assertNoUnknownOptions(args, new Set(action === 'check' ? ['--json'] : ['--json', '--track']), new Set(['--json']));
   const track = action === 'update' ? optionValue(args, '--track', null) : null;
   if (track !== null && !['stable', 'candidate'].includes(track)) throw new Error('--track must be stable or candidate.');
-  const result = action === 'check' ? application.updateCheck() : application.updateBuildr({ track });
+  const result = await (action === 'check' ? application.updateCheck() : application.updateBuildr({ track }));
   if (hasFlag(args, '--json')) process.stdout.write(`${JSON.stringify(withJsonSchema(action === 'check' ? PUBLIC_JSON_SCHEMAS.updateCheck : PUBLIC_JSON_SCHEMAS.update, result), null, 2)}\n`);
   else printPlan(result, action === 'check' ? 'Buildr CLI update check' : 'Buildr CLI update');
   if (result.status === 'blocked') process.exitCode = 1;

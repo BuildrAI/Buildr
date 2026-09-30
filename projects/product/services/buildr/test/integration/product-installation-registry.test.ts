@@ -592,3 +592,143 @@ test('installation status application读取结构化选项且不打印或修改�
   assert.equal(result.currentInstallation.channel, 'unknown');
   assert.equal(process.exitCode, previousExitCode);
 });
+
+/**
+ * 模拟同一 npm prefix 内的版本升级：registry 保留同 entryPath/productRoot 的多条
+ * origin，receipt 里运行中的旧版本 origin ownership 可证明属于当前安装槽位。
+ */
+function upgradedSlotFixture(root: any, oldVersion = '1.2.2', newVersion = '1.2.3') {
+  const prefix: any = path.join(root, 'prefix');
+  const npmCliPath: any = path.join(prefix, 'npm-cli.js');
+  fs.mkdirSync(prefix, { recursive: true });
+  fs.writeFileSync(npmCliPath, 'npm fixture\n');
+  const file: any = path.join(root, 'app-data', 'product-installations.json');
+  const older: any = installationFixture(path.join(prefix, 'lib', 'node_modules', '@buildr-ai', 'buildr'), 'npm', oldVersion);
+  older.updateAuthority = createProductUpdateAuthority({ nodeExecutable: process.execPath, npmCliPath, prefix });
+  const olderEntry: any = enrollProductInstallation(older, { file }).entry;
+  const newer: any = installationFixture(path.join(prefix, 'lib', 'node_modules', '@buildr-ai', 'buildr'), 'npm', newVersion);
+  newer.updateAuthority = createProductUpdateAuthority({ nodeExecutable: process.execPath, npmCliPath, prefix });
+  const newerEntry: any = enrollProductInstallation(newer, { file }).entry;
+  return { file, prefix, olderEntry, newerEntry };
+}
+
+function instanceReceipt({ root, productIdentity, launcherIdentity = null, pid = 4242, url = 'http://127.0.0.1:4317' }: any) {
+  const releasedRoot: any = path.join(root, 'released');
+  fs.mkdirSync(releasedRoot, { recursive: true });
+  const receipt: any = {
+    schemaVersion: 'buildr.local-app-instance/v2',
+    url, secret: 'fixture-secret', pid, launcherIdentity, productIdentity,
+  };
+  fs.writeFileSync(path.join(releasedRoot, 'instance.json'), `${JSON.stringify(receipt, null, 2)}\n`);
+  return { releasedRoot, receipt };
+}
+
+function cliProductIdentity(entry: any) {
+  return {
+    package: '@buildr-ai/buildr', version: entry.origin.version, channel: 'npm',
+    protocolIdentity: entry.origin.protocolIdentity, applicationPayloadDigest: entry.origin.applicationPayloadDigest,
+    installationIdentity: entry.origin.ownershipIdentity,
+    runtime: { role: 'host', version: process.versions.node, executable: process.execPath, identity: `sha256-${'c'.repeat(64)}` },
+    sourceCommit: entry.origin.sourceCommit,
+  };
+}
+
+async function statusInventory(productRoot: any, options: any) {
+  fs.mkdirSync(productRoot, { recursive: true });
+  if (!fs.existsSync(path.join(productRoot, 'package.json'))) {
+    fs.writeFileSync(path.join(productRoot, 'package.json'), '{"name":"@buildr-ai/buildr","version":"0.0.0-test"}\n');
+  }
+  const application: any = registerProductInstallationStatus({ productRoot: () => productRoot });
+  return application.installationStatus({
+    developmentLauncherRoot: path.join(path.dirname(options.releasedRoot), 'absent-development-launcher'),
+    launcherOptions: { homedir: path.join(path.dirname(options.releasedRoot), 'no-home'), systemApplications: path.join(path.dirname(options.releasedRoot), 'no-apps') },
+    instanceDataRoots: { released: options.releasedRoot, development: path.join(path.dirname(options.releasedRoot), 'development') },
+    webProfileOptions: { home: path.dirname(options.releasedRoot), env: {} },
+    pidProbe: () => {},
+    fetchImpl: async () => ({
+      ok: true,
+      json: async () => ({
+        schemaVersion: 'buildr.local-app-health/v1', status: 'ready',
+        pid: options.receipt.pid, productIdentity: options.receipt.productIdentity,
+      }),
+    }),
+    ...options.overrides,
+  });
+}
+
+test('installation status 将同槽位旧版本 released 实例报告为可重启 stale', async (t: any) => {
+  const root: any = temporary(t);
+  const slot: any = upgradedSlotFixture(root);
+  const releasedRoot: any = path.join(root, 'released');
+  const { receipt } = instanceReceipt({
+    root,
+    productIdentity: cliProductIdentity(slot.olderEntry),
+  });
+  const result: any = await statusInventory(path.join(root, 'absent-current-product'), {
+    releasedRoot, receipt,
+    overrides: { installationRegistryFile: slot.file, productRoot: slot.newerEntry.productRoot },
+  });
+  assert.equal(result.channels.npm.identity.ownershipIdentity, slot.newerEntry.origin.ownershipIdentity);
+  assert.equal(result.instances.released.status, 'stale');
+  assert.match(result.instances.released.reason, /same installation slot|restart/i);
+  assert.equal(result.instances.released.identity.ownershipIdentity, slot.olderEntry.origin.ownershipIdentity);
+  assert.equal(result.instances.released.identity.url, 'http://127.0.0.1:4317');
+});
+
+test('installation status 对 Launcher 启动的同槽位旧版本实例按 installationSlotIdentity 判 stale', async (t: any) => {
+  const root: any = temporary(t);
+  const slot: any = upgradedSlotFixture(root);
+  const { npmLauncherInstallationSlotIdentity } = await import('../../src/modules/installation/infrastructure/launcher-binding.ts');
+  const slotIdentity: any = npmLauncherInstallationSlotIdentity({
+    packageRoot: slot.newerEntry.productRoot,
+    prefix: slot.prefix,
+    originEnvelope: slot.newerEntry.envelopePath,
+  });
+  const releasedRoot: any = path.join(root, 'released');
+  const { receipt } = instanceReceipt({
+    root,
+    productIdentity: cliProductIdentity(slot.olderEntry),
+    launcherIdentity: {
+      channel: 'npm', version: slot.olderEntry.origin.version,
+      protocolIdentity: slot.olderEntry.origin.protocolIdentity,
+      applicationPayloadDigest: slot.olderEntry.origin.applicationPayloadDigest,
+      installationOwnershipIdentity: slot.olderEntry.origin.ownershipIdentity,
+      installationSlotIdentity: slotIdentity,
+    },
+  });
+  const result: any = await statusInventory(path.join(root, 'absent-current-product'), {
+    releasedRoot, receipt,
+    overrides: { installationRegistryFile: slot.file, productRoot: slot.newerEntry.productRoot },
+  });
+  assert.equal(result.instances.released.status, 'stale');
+  assert.match(result.instances.released.reason, /same installation slot/i);
+});
+
+test('installation status 对外来实例与匹配实例分别保持 ready 判定', async (t: any) => {
+  const root: any = temporary(t);
+  const slot: any = upgradedSlotFixture(root);
+  const foreign: any = `sha256-${'9'.repeat(64)}`;
+  const releasedRoot: any = path.join(root, 'released');
+  const { receipt } = instanceReceipt({
+    root,
+    productIdentity: { ...cliProductIdentity(slot.olderEntry), installationIdentity: foreign },
+  });
+  const foreignResult: any = await statusInventory(path.join(root, 'absent-current-product'), {
+    releasedRoot, receipt,
+    overrides: { installationRegistryFile: slot.file, productRoot: slot.newerEntry.productRoot },
+  });
+  assert.equal(foreignResult.instances.released.status, 'ready');
+  assert.equal(foreignResult.instances.released.identity.ownershipIdentity, foreign);
+
+  const matchedRoot: any = path.join(root, 'matched', 'released');
+  const { receipt: matched } = instanceReceipt({
+    root: path.join(root, 'matched'),
+    productIdentity: cliProductIdentity(slot.newerEntry),
+  });
+  const matchedResult: any = await statusInventory(path.join(root, 'absent-current-product'), {
+    releasedRoot: matchedRoot, receipt: matched,
+    overrides: { installationRegistryFile: slot.file, productRoot: slot.newerEntry.productRoot },
+  });
+  assert.equal(matchedResult.instances.released.status, 'ready');
+  assert.equal(matchedResult.instances.released.identity.version, slot.newerEntry.origin.version);
+});

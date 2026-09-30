@@ -497,3 +497,54 @@ test('Windows Launcher PowerShell bridge preserves shortcut and root paths conta
   }
   assert.match(developmentLauncherSource, /\$env:BUILDR_LAUNCHER_ROOT/);
 });
+
+test('macOS Launcher 默认装入 /Applications 并可迁移 ~/Applications 的遗留入口', async () => {
+  const value: any = await fixture();
+  const systemApplications: any = path.join(value.root, 'system-Applications');
+  const homedir: any = path.join(value.root, 'home');
+  fs.mkdirSync(systemApplications, { recursive: true });
+  fs.mkdirSync(path.join(homedir, 'Applications'), { recursive: true });
+  const legacyTarget: any = path.join(homedir, 'Applications', 'Buildr Web.app');
+
+  // 旧版本曾装在 ~/Applications；显式 --target 路径行为不变。
+  const legacy: any = installNpmLauncher({ registration: value.registration, platform: 'darwin', target: legacyTarget });
+  assert.equal(legacy.status, 'ready');
+
+  // status 未给 --target 时按真实旧目标呈现。
+  const resolved: any = npmLauncherStatus({ platform: 'darwin', homedir, systemApplications });
+  assert.equal(resolved.target, legacyTarget);
+  assert.equal(resolved.status, 'ready');
+
+  // install 默认写入 /Applications，并移除同一安装槽位的旧位置入口。
+  const installed: any = installNpmLauncher({ registration: value.registration, platform: 'darwin', homedir, systemApplications });
+  const expectedTarget: any = path.join(systemApplications, 'Buildr Web.app');
+  assert.equal(installed.target, expectedTarget);
+  assert.equal(installed.status, 'ready');
+  assert.equal(fs.existsSync(expectedTarget), true);
+  assert.equal(installed.legacyTarget?.path, legacyTarget);
+  assert.equal(installed.legacyTarget?.removed, true);
+  assert.equal(fs.existsSync(legacyTarget), false, '同槽位遗留 ~/Applications 入口应被移除');
+
+  // 迁移后 status 以新目标为准。
+  const after: any = npmLauncherStatus({ platform: 'darwin', homedir, systemApplications });
+  assert.equal(after.target, expectedTarget);
+  assert.equal(after.status, 'ready');
+});
+
+test('macOS Launcher 默认目标不可写时 fail closed 并指引 --target', async (t: any) => {
+  if (process.platform !== 'darwin') return;
+  const value: any = await fixture();
+  const systemApplications: any = path.join(value.root, 'system-Applications');
+  const homedir: any = path.join(value.root, 'home');
+  fs.mkdirSync(systemApplications, { recursive: true });
+  fs.chmodSync(systemApplications, 0o555);
+  t.after(() => fs.chmodSync(systemApplications, 0o755));
+  const legacyTarget: any = path.join(homedir, 'Applications', 'Buildr Web.app');
+  try {
+    installNpmLauncher({ registration: value.registration, platform: 'darwin', homedir, systemApplications });
+    assert.fail('default-target install on a read-only /Applications must fail');
+  } catch (error: any) {
+    assert.match(error.message, /--target/);
+    assert.equal(fs.existsSync(legacyTarget), false, '权限不足时不得静默写入 ~/Applications');
+  }
+});

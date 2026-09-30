@@ -333,7 +333,7 @@
 ## Buildr Web 启动器（Buildr Web Launcher）
 
 - 定义：启动已绑定 Buildr 安装并打开浏览器的平台图形入口。
-- 适用范围：正式名称 Buildr Web，以及源码开发入口 Buildr Web Dev。
+- 适用范围：正式名称 Buildr Web，以及源码开发入口 Buildr Web Dev；macOS 默认安装到 `/Applications`（早期版本为 `~/Applications`，管理命令会继续按真实位置操作）。
 - 避免混用：不是独立安装更新渠道，不复制 Node.js 或取得工作空间（Workspace）数据所有权。
 - 来源：[技术架构](architecture/technical.md)。
 

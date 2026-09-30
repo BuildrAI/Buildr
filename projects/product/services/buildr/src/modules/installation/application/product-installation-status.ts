@@ -9,9 +9,11 @@ import {
   runtimeIdentityForOrigin,
 } from '../infrastructure/installation-origin.ts';
 import { registeredProductInstallations } from '../infrastructure/installation-registry.ts';
+import { sameFilesystemPath } from '../../../infrastructure/filesystem/filesystem-path-identity.ts';
 import { buildrWebDataRoot, parseWorkspaceManifest, readWorkspaceRegistryFile } from '../../workspace/module.ts';
 import { resolveApplicationPayloadRoot } from '../../../infrastructure/product-resources/index.ts';
 import { npmLauncherStatus } from '../infrastructure/npm-launcher.ts';
+import { npmLauncherInstallationSlotIdentity } from '../infrastructure/launcher-binding.ts';
 import { defaultWebDataRoot, oppositeWebProfile, resolveWebProfile } from '../contracts/web-profile.ts';
 
 function readJson(file: any) {
@@ -176,6 +178,52 @@ function annotateInstanceProfile(instance: any, profile: any) {
   return instance;
 }
 
+/**
+ * 同槽位旧版本判定：健康 released 实例的安装身份与当前登记安装不一致时，只在能够证明
+ * 两者属于同一安装槽位（installation slot）时降级为 `stale`——对比当前登记的槽位坐标
+ * `slotIdentity`（由 packageRoot+prefix+originEnvelope 计算，版本无关），同时登记在
+ * `slotOriginOwnerships` 中给出该槽位全部历史 origin，供无 launcherIdentity 的 CLI
+ * 实例对照。外来实例保持 ready 身份事实，由消费方继续 fail closed。
+ */
+function registeredNpmSlot(registered: any, currentOwnership: any) {
+  const entries = (registered?.installations || [])
+    .map((item: any) => item?.entry)
+    .filter((entry: any) => entry?.origin?.channel === 'npm');
+  const current = entries.find((entry: any) => entry.origin.ownershipIdentity === currentOwnership) || null;
+  if (!current?.updateAuthority?.prefix || !current?.productRoot || !current?.envelopePath) {
+    return { slotIdentity: null, slotOriginOwnerships: new Set() };
+  }
+  const { entryPath, productRoot } = current;
+  const siblings = entries.filter((entry: any) => sameFilesystemPath(entry.entryPath, entryPath) && sameFilesystemPath(entry.productRoot, productRoot));
+  return {
+    slotIdentity: npmLauncherInstallationSlotIdentity({
+      packageRoot: productRoot,
+      prefix: current.updateAuthority.prefix,
+      originEnvelope: current.envelopePath,
+    }),
+    slotOriginOwnerships: new Set(siblings.map((entry: any) => entry.origin.ownershipIdentity)),
+  };
+}
+
+function annotateInstanceVersion(instance: any, npm: any, registered: any) {
+  if (!instance || instance.status !== 'ready') return instance;
+  const identity = instance.identity || {};
+  if ((identity.channel || 'npm') !== 'npm') return instance;
+  const currentOwnership = npm?.identity?.ownershipIdentity;
+  if (!currentOwnership || identity.ownershipIdentity === currentOwnership) return instance;
+  const slot = registeredNpmSlot(registered, currentOwnership);
+  const sameSlot = (identity.installationSlotIdentity && slot.slotIdentity === identity.installationSlotIdentity)
+    || (!identity.installationSlotIdentity && slot.slotOriginOwnerships.has(identity.ownershipIdentity));
+  if (!sameSlot) return instance;
+  const running = identity.version || 'unknown';
+  const installed = npm?.identity?.version || 'unknown';
+  return {
+    ...instance,
+    status: 'stale',
+    reason: `running instance ${running} belongs to the same installation slot but is older than installed ${installed}; restart via the Buildr Web Launcher to hand off`,
+  };
+}
+
 function observeCurrentInstance(options: any = {}) {
   const file = path.resolve(options.instanceFile || path.join(options.dataRoot || buildrWebDataRoot(), 'instance.json'));
   if (!fs.existsSync(file)) return { receipt: null, result: { status: 'absent', identity: null, observation: { file, pidAlive: false, endpoint: 'absent', health: 'not-probed' } } };
@@ -201,6 +249,8 @@ function observeCurrentInstance(options: any = {}) {
       applicationPayloadDigest: launcher?.applicationPayloadDigest || product?.applicationPayloadDigest || null,
       runtimeRole: launcher?.runtimeRole || product?.runtime?.role || 'unknown',
       ownershipIdentity: launcher?.ownershipIdentity || product?.installationIdentity || null,
+      installationSlotIdentity: launcher?.installationSlotIdentity || null,
+      installationIdentity: product?.installationIdentity || null,
       runtime: product?.runtime || null,
       webProfile: value.webProfile || null,
     },
@@ -265,7 +315,8 @@ export async function inspectCurrentInstanceReadiness(options: any = {}) {
 
 export function buildInstallationInventory(productRoot: any, options: any = {}) {
   const current = readCurrentInstallationOrigin(productRoot, { payloadRoot: resolveApplicationPayloadRoot(), ...options });
-  const registered = registeredProductInstallations({ file: options.installationRegistryFile, dataRoot: options.installationRegistryDataRoot });
+  const registered = options.registeredInstallations
+    || registeredProductInstallations({ file: options.installationRegistryFile, dataRoot: options.installationRegistryDataRoot });
   const knownNpm = registeredChannel(registered, 'npm');
   const npm = current.channel === 'npm'
     ? { channel: 'npm', status: 'current', location: current.receipt?.file || productRoot, identity: current, runtime: runtimeIdentityForOrigin(current), reason: null }
@@ -327,7 +378,7 @@ export function buildInstallationInventory(productRoot: any, options: any = {}) 
   return {
     channels: { npm, development },
     launcher: ['darwin', 'win32'].includes(process.platform)
-      ? npmLauncherStatus({ platform: process.platform, target: options.launcherTarget })
+      ? npmLauncherStatus({ platform: process.platform, ...(options.launcherOptions || {}), ...(options.launcherTarget ? { target: options.launcherTarget } : {}) })
       : { schemaVersion: 'buildr.launcher-status/v1', channel: 'npm', platform: process.platform, status: 'not-applicable', installed: false, target: null, bindingPath: null, binding: null, diagnostic: null, nextActions: [] },
     currentInstallation,
     instances,
@@ -343,13 +394,20 @@ export function buildInstallationInventory(productRoot: any, options: any = {}) 
 }
 
 export async function buildInstallationStatusInventory(productRoot: any, options: any = {}) {
-  const inventory: any = buildInstallationInventory(productRoot, options);
+  const registered = options.registeredInstallations
+    || registeredProductInstallations({ file: options.installationRegistryFile, dataRoot: options.installationRegistryDataRoot });
+  const inventory: any = buildInstallationInventory(productRoot, { ...options, registeredInstallations: registered });
+  const npmChannel = inventory.channels.npm;
+  const annotate = (instance: any, profile: any) => {
+    const annotated = annotateInstanceProfile(instance, profile);
+    return profile === 'released' ? annotateInstanceVersion(annotated, npmChannel, registered) : annotated;
+  };
   const instances: Record<string, any> = {
-    released: annotateInstanceProfile(await inspectCurrentInstanceReadiness({
+    released: annotate(await inspectCurrentInstanceReadiness({
       dataRoot: inventory.instances.released.dataRoot,
       pidProbe: options.pidProbe, fetchImpl: options.fetchImpl, timeoutMs: options.timeoutMs,
     }), 'released'),
-    development: annotateInstanceProfile(await inspectCurrentInstanceReadiness({
+    development: annotate(await inspectCurrentInstanceReadiness({
       dataRoot: inventory.instances.development.dataRoot,
       pidProbe: options.pidProbe, fetchImpl: options.fetchImpl, timeoutMs: options.timeoutMs,
     }), 'development'),
@@ -360,13 +418,16 @@ export async function buildInstallationStatusInventory(productRoot: any, options
   }
   let currentInstance;
   if (options.instanceFile || options.instanceDataRoot || process.env.BUILDR_APP_DATA_DIR) {
-    currentInstance = await inspectCurrentInstanceReadiness({
+    const observed = await inspectCurrentInstanceReadiness({
       dataRoot: options.instanceDataRoot,
       instanceFile: options.instanceFile,
       pidProbe: options.pidProbe,
       fetchImpl: options.fetchImpl,
       timeoutMs: options.timeoutMs,
     });
+    currentInstance = observed?.identity?.channel === 'npm'
+      ? annotateInstanceVersion(observed, npmChannel, registered)
+      : observed;
   } else {
     const profile = inventory.currentInstallation.channel === 'npm' ? 'released' : inventory.currentInstallation.channel === 'development' ? 'development' : null;
     currentInstance = profile ? instances[profile] : inventory.currentInstance;
