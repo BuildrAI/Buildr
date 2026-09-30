@@ -16,10 +16,10 @@
 
 - [x] 3.1 补充 provider 测试：linked worktree 目标执行 `inspect`/证据读取与 canonical 目标返回一致；非登记 Git 目录保持缺证据诊断。（`worktree-create.test.ts`：linked 目标 inspect ready 且仓库集合一致）
 - [x] 3.2 补充 preview 集成测试：`--task` 播种写入工作树副本且不覆盖既有副本；canonical 库缺失时 fail closed。（`preview-ownership.test.ts`）
-- [ ] 3.3 真实链路冒烟：本任务工作树启动 `web preview start --task` + `--target` 分别指向 canonical 与 worktree，任务详情材料可读且 provenance 为 `task-worktree-candidate`。（canonical 目标已验证：启动/停止/材料读取通过；worktree target inspect 已 ready）
+- [x] 3.3 真实链路冒烟：本任务工作树启动 `web preview start --task` + `--target` 分别指向 canonical 与 worktree，任务详情材料可读且 provenance 为 `task-worktree-candidate`。（两形态均通过：启动/材料读取/停止）
 
 ## 4. 核对
 
-- [ ] 4.1 `openspec validate task-worktree-material-readability --strict` 与 `buildr openspec convergence preflight` 通过。
-- [ ] 4.2 按 `verification.yml` 执行受影响 `buildr` 服务检查（web/task 相关集成与系统测试）。
-- [ ] 4.3 知识影响核对：provider 归一与预览数据播种是否需更新 `knowledge/` 说明，按 `buildr.current-knowledge-maintenance/v3` 评估。
+- [x] 4.1 `openspec validate task-worktree-material-readability --strict` 与 `buildr openspec convergence preflight` 通过。
+- [x] 4.2 按 `verification.yml` 执行受影响 `buildr` 服务检查：test:fast 全绿、test:integration 558 项通过、system-buildr-web-http 与 system-app-process 套件通过。
+- [x] 4.3 知识影响核对：已更新 `knowledge/code-map/task-system.md`（provider 归一、预览播种）与 `knowledge/docs/architecture/buildr-data-design.md`（工作树副本行）。

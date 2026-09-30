@@ -13,5 +13,5 @@
 
 ## 3. 核对
 
-- [ ] 3.1 `openspec validate internal-dev-preview-skill --strict` 与 `buildr openspec convergence preflight` 通过。
-- [ ] 3.2 知识影响核对：`knowledge/` 中是否需要登记内部预览入口，按 `buildr.current-knowledge-maintenance/v3` 评估并如实记录。
+- [x] 3.1 `openspec validate internal-dev-preview-skill --strict` 与 `buildr openspec convergence preflight` 通过。
+- [x] 3.2 知识影响核对：技能为自举 workspace 内部资产，`agent-task-workflows` delta 已覆盖边界；`knowledge/` 无需新增入口（内部预览流程与数据位置由 SKILL.md 与 buildr-data-design 既有说明覆盖）。
