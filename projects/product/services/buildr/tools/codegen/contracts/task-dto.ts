@@ -47,6 +47,8 @@ export async function renderTaskRecordHttpDto(): Promise<string> {
     TaskRetrospectiveDocumentResponse: body(TASK_HTTP_SCHEMAS.retrospectiveDocumentResponse),
     TaskCommitsRequest: body(TASK_HTTP_SCHEMAS.commitsRequest),
     TaskCommitsResult: body(TASK_HTTP_SCHEMAS.commitsResponse),
+    TaskChangedFilesRequest: body(TASK_HTTP_SCHEMAS.changedFilesRequest),
+    TaskChangedFilesResult: body(TASK_HTTP_SCHEMAS.changedFilesResponse),
     TaskErrorResponse: body(TASK_HTTP_SCHEMAS.errorResponse),
   };
   const projection: Parameters<typeof compile>[0] = {
@@ -55,10 +57,10 @@ export async function renderTaskRecordHttpDto(): Promise<string> {
     type: 'object',
     additionalProperties: false,
     properties: Object.fromEntries(Object.keys(definitions)
-      .filter((name) => name.startsWith('Task') && (name.endsWith('Request') || name.endsWith('Response') || name === 'TaskCommitsResult'))
+      .filter((name) => name.startsWith('Task') && (name.endsWith('Request') || name.endsWith('Response') || name === 'TaskCommitsResult' || name === 'TaskChangedFilesResult'))
       .map((name) => [name[0].toLowerCase() + name.slice(1), { $ref: `#/$defs/${name}` }])),
     required: Object.keys(definitions)
-      .filter((name) => name.startsWith('Task') && (name.endsWith('Request') || name.endsWith('Response') || name === 'TaskCommitsResult'))
+      .filter((name) => name.startsWith('Task') && (name.endsWith('Request') || name.endsWith('Response') || name === 'TaskCommitsResult' || name === 'TaskChangedFilesResult'))
       .map((name) => name[0].toLowerCase() + name.slice(1)),
     $defs: definitions,
   };

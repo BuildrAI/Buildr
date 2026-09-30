@@ -1,9 +1,10 @@
 import { App, Button, Spin, Alert } from 'antd';
-import { BranchesOutlined, CheckOutlined, CopyOutlined, DownOutlined, RightOutlined, ReloadOutlined } from '@ant-design/icons';
+import { BranchesOutlined, CheckOutlined, CopyOutlined, DownOutlined, FolderOpenOutlined, RightOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useState, type ReactNode } from 'react';
 import type { TaskCommitsResult } from '../../../../build/generated/task-dto';
 import { formatShortDateTime } from '../../../lib/taskLabels';
 import { taskCommitKey, taskCommitsState } from './task-commit-model';
+import { ChangedFileList, type ChangedFileEntry } from './TaskChangedFiles';
 import './task-commit-records.css';
 
 type Props = {
@@ -17,12 +18,19 @@ type Props = {
   onExpand(key: string | null): void;
   onExample(open: boolean): void;
   onRetry(): void;
+  /** Files touched by each commit, keyed by taskCommitKey; simulated in prototypes. */
+  commitFiles?: Record<string, ChangedFileEntry[]>;
+  /** Optional branch/ahead context per repository id; shown in group headers when present. */
+  repositoryMeta?: Record<string, { branch?: string | null; ahead?: number | null }>;
+  /** Open the full-file diff reader for a file belonging to the given commit. */
+  onOpenCommitFileDiff?(commit: TaskCommitsResult['commits'][number], file: ChangedFileEntry): void;
 };
 
 /** Present repository observations without inferring completeness from an empty list. */
-export function TaskCommitRecords({ taskId, data, loading = false, error = '', notice, expanded, exampleOpen, onExpand, onExample, onRetry }: Props) {
+export function TaskCommitRecords({ taskId, data, loading = false, error = '', notice, expanded, exampleOpen, onExpand, onExample, onRetry, commitFiles, repositoryMeta, onOpenCommitFileDiff }: Props) {
   const { message } = App.useApp();
   const [copied, setCopied] = useState('');
+  const [expandedFile, setExpandedFile] = useState<string | null>(null);
   const state = taskCommitsState(data, loading, error);
   const commits = data?.commits || [];
   const repositories = new Map(data?.repositories.map(repository => [repository.id, repository]) || []);
@@ -65,24 +73,43 @@ export function TaskCommitRecords({ taskId, data, loading = false, error = '', n
     {state === 'loading' && <div className="task-commits-state" data-prototype-position="commit-state"><Spin size="small" /><h3>正在读取提交记录…</h3><p>正在查找与本任务关联的提交。</p></div>}
     {state === 'failure' && <div className="task-commits-state" data-prototype-position="commit-state"><Alert type="warning" showIcon message="提交记录暂时不可用" description={<>{error || '未能读取提交记录，请重试。'}<br />读取失败不代表没有提交。</>} /><Button aria-label="重新读取" icon={<ReloadOutlined />} onClick={onRetry}>重新读取</Button></div>}
     {state === 'empty' && <div className="task-commits-state" data-prototype-position="commit-state"><BranchesOutlined className="task-commits-empty-icon" /><h3>当前检查范围内暂无关联提交</h3><p>提交时在说明末尾写入本任务编码，记录便可归到这里。</p><code>Buildr-Task: {taskId}</code><Button onClick={() => onExample(true)}>查看提交说明示例</Button></div>}
-    {commits.length > 0 && <ol className="task-commits-list">
-      {commits.map(commit => {
-        const key = taskCommitKey(commit);
-        const open = expanded === key;
-        return <li key={key} className={open ? 'is-open' : ''}>
-          <button className="task-commits-row" aria-expanded={open} aria-controls={`commit-${key}`} onClick={() => onExpand(open ? null : key)}>
-            <span className="task-commits-point" aria-hidden><BranchesOutlined /></span>
-            <span className="task-commits-row-content"><strong>{commit.subject}</strong><span className="task-commits-meta"><code>{commit.shortHash}</code><span title={repositories.get(commit.repositoryId)?.root}>{repositories.get(commit.repositoryId)?.label || commit.repositoryId}</span><span title={commit.authorEmail}>{commit.authorName}</span><time dateTime={commit.committedAt}>{formatShortDateTime(commit.committedAt)}</time></span></span>
-            <span className="task-commits-expand">{open ? <DownOutlined /> : <RightOutlined />}</span>
-          </button>
-          {open && <div className="task-commits-detail" id={`commit-${key}`} data-prototype-position="commit-detail">
-            <div className="task-commits-detail-title"><h3>完整提交说明（Commit Message）</h3>{copyButton(commit.message, `${key}-message`, '复制完整说明')}</div>
-            <pre>{commit.message}</pre>
-            <div className="task-commits-hash"><span>完整哈希（Hash）</span><code>{commit.hash}</code>{copyButton(commit.hash, `${key}-hash`, '复制完整哈希')}</div>
-          </div>}
-        </li>;
-      })}
-    </ol>}
+    {commits.length > 0 && data!.repositories.map(repository => {
+      const repositoryCommits = commits.filter(commit => commit.repositoryId === repository.id);
+      if (!repositoryCommits.length && repository.status === 'complete') return null;
+      const meta = repositoryMeta?.[repository.id];
+      return <section key={repository.id} className="task-changed-repo task-commits-repo" data-prototype-position="commit-repo">
+        <header className="task-changed-repo-head">
+          <span className="task-changed-repo-label"><FolderOpenOutlined /> <strong>{repository.label}</strong></span>
+          {meta?.branch && <code className="task-changed-repo-branch" title="当前分支"><BranchesOutlined /> {meta.branch}</code>}
+          {(meta?.ahead ?? 0) > 0 && <span className="task-changed-ahead" title={`本地领先远端 ${meta!.ahead} 个提交`}>↑{meta!.ahead}</span>}
+          <span className="task-changed-repo-count">{repository.status === 'unavailable' ? '不可读取' : `${repositoryCommits.length} 条`}</span>
+        </header>
+        {repository.status === 'unavailable'
+          ? <p className="task-changed-repo-error">该仓库暂不可读取，无法确认其中的关联提交。</p>
+          : <ol className="task-commits-list task-commits-list-grouped">
+            {repositoryCommits.map(commit => {
+              const key = taskCommitKey(commit);
+              const open = expanded === key;
+              return <li key={key} className={open ? 'is-open' : ''}>
+                <button className="task-commits-row" aria-expanded={open} aria-controls={`commit-${key}`} onClick={() => onExpand(open ? null : key)}>
+                  <span className="task-commits-point" aria-hidden><BranchesOutlined /></span>
+                  <span className="task-commits-row-content"><strong>{commit.subject}</strong><span className="task-commits-meta"><code>{commit.shortHash}</code><span title={commit.authorEmail}>{commit.authorName}</span><time dateTime={commit.committedAt}>{formatShortDateTime(commit.committedAt)}</time></span></span>
+                  <span className="task-commits-expand">{open ? <DownOutlined /> : <RightOutlined />}</span>
+                </button>
+                {open && <div className="task-commits-detail" id={`commit-${key}`} data-prototype-position="commit-detail">
+                  <div className="task-commits-detail-title"><h3>完整提交说明（Commit Message）</h3>{copyButton(commit.message, `${key}-message`, '复制完整说明')}</div>
+                  <pre>{commit.message}</pre>
+                  <div className="task-commits-hash"><span>完整哈希（Hash）</span><code>{commit.hash}</code>{copyButton(commit.hash, `${key}-hash`, '复制完整哈希')}</div>
+                  {commitFiles?.[key]?.length ? <div className="task-commit-files" data-prototype-position="commit-files">
+                    <h3>本次提交的文件改动 {commitFiles[key].length}</h3>
+                    <ChangedFileList compact files={commitFiles[key]} expanded={expandedFile} onExpand={setExpandedFile} onOpenDiff={onOpenCommitFileDiff ? file => onOpenCommitFileDiff(commit, file) : undefined} />
+                  </div> : null}
+                </div>}
+              </li>;
+            })}
+          </ol>}
+      </section>;
+    })}
     {data && <details className="task-commits-coverage"><summary>读取范围 · {formatShortDateTime(data.readAt)}</summary><p>本机可达提交：{data.coverage.refs.join('、')}。最多读取 {data.coverage.repositoryLimit} 个仓库，每个仓库最多检查 {data.coverage.historyLimitPerRepository} 条含任务标记的候选提交，展示 {data.coverage.commitLimit} 条关联记录。</p>{data.repositories.map(repository => <p key={repository.id}><strong>{repository.label}</strong> · {repository.status === 'complete' ? '已读取' : repository.status === 'unavailable' ? '不可用' : '已达读取上限'} · 已检查 {repository.scannedCommitCount} 次提交<br /><code>{repository.root}</code></p>)}</details>}
     {notice && <p className="task-commits-demo-note">{notice}</p>}
   </section>;

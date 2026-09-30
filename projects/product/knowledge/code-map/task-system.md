@@ -28,7 +28,7 @@
 
 `commits/` 提供独立只读用例：命令行（CLI）与超文本传输协议（HTTP）调用同一 `task-commits-application.ts`，先核对任务，再解析其项目、服务、关联变更对应项目和已知任务工作树（Worktree）范围。`isWorkspaceOnlyTaskRecord` 为工作空间级任务（Workspace-only Task）选择其权威根目录本身的 Git 代码库，不回退到调用时目录或父级代码库。`git-commit-reader.ts` 读取真实 Git 引用与对象，以代码库（Repository）身份和完整哈希值（Hash）去重；本机未推送提交也在当前可达范围内，读取有界、不自动抓取远端。`task-commit.ts` 只把末尾规范 `Buildr-Task` 尾注（Trailer）视为归属，同值重复合并，非法值和不同值冲突返回诊断。结果说明已读来源、范围和局部失败，不新增持久关联表，也不调用任务状态、审查或验证写入。
 
-`TaskDetailPage.tsx` 在“任务收尾”后挂载独立阅读标签，未增加工作阶段。`TaskCommitsPane.tsx` 组合读取和页面状态，`useTaskCommits.ts` 在进入及刷新时请求真实数据，切换任务时取消旧请求。`TaskCommitRecords.tsx` 展示完整提交说明、哈希值（Hash）与来源，支持展开、复制和重试；部分结果与读取失败分别提示。提交说明中的任务尾注原样显示，不再另加重复的任务关联行。
+`TaskDetailPage.tsx` 在“任务收尾”后挂载「改动与提交」内容标签（替换原「提交记录」标签），未增加工作阶段。`TaskChangesPane.tsx` 组合读取和页面状态，`useTaskChangedFiles.ts` 在进入及刷新时请求真实数据并把未提交文件数冒泡到标签徽标；`TaskDiffReader.tsx` 是主从式工作台——左栏按仓库分组的更改与提交（提交可展开该次文件列表）、右栏差异面（统一/并排/全文），差异面宽度不足约 1000px 时默认统一，够宽（如收起文件栏或「展开全屏」）后自动给并排；全屏时左栏折叠为边侧条、悬停弹出浮窗，文件栏可拖宽或收起。列表视图下 `TaskCommitRecords.tsx` 按仓库分组展示提交，展开保留完整说明、完整哈希与该次文件改动，部分结果与读取失败分别提示。提交说明中的任务尾注原样显示，不再另加重复的任务关联行。
 
 ## 父任务协调怎样落到实现？
 
@@ -92,10 +92,17 @@
       - [change-application.ts](../../services/buildr/src/modules/task/change/application/change-application.ts) — 关联变更与本机任务原型的独立发现、身份、安全读取和局部诊断
     - **`commits/`** — 当前可达提交的只读关联
       - [application/task-commits-application.ts](../../services/buildr/src/modules/task/commits/application/task-commits-application.ts) — 核对任务与明确来源，聚合去重后的提交、覆盖范围和局部诊断
+      - [application/task-repository-scope.ts](../../services/buildr/src/modules/task/commits/application/task-repository-scope.ts) — 与 changed-files 共用的任务范围仓库与检出解析
       - [domain/task-commit.ts](../../services/buildr/src/modules/task/commits/domain/task-commit.ts) — 解析实际提交对象与规范任务尾注，区分合法、冲突和非法值
       - [infrastructure/git-commit-reader.ts](../../services/buildr/src/modules/task/commits/infrastructure/git-commit-reader.ts) — 核对真实代码库与工作树，限定读取引用和原始对象，不抓取远端或写入 Git
       - [interfaces/cli/task-commits.ts](../../services/buildr/src/modules/task/commits/interfaces/cli/task-commits.ts) — 接收任务编码与工作空间，输出同一任务提交结果
       - [interfaces/http/task-commits-http.ts](../../services/buildr/src/modules/task/commits/interfaces/http/task-commits-http.ts) — 网页任务限定读取入口，不接受调用者指定代码库或引用
+    - **`changed-files/`** — 工作区改动与按提交列文件的只读观察
+      - [application/task-changed-files-application.ts](../../services/buildr/src/modules/task/changed-files/application/task-changed-files-application.ts) — 聚合范围解析、工作区状态与提交文件结果
+      - [domain/task-changed-file.ts](../../services/buildr/src/modules/task/changed-files/domain/task-changed-file.ts) — 变更文件状态与用户语义映射
+      - [infrastructure/git-changes-reader.ts](../../services/buildr/src/modules/task/changed-files/infrastructure/git-changes-reader.ts) — 工作区状态、分支、按文件差异片段与按提交文件清单
+      - [interfaces/cli/task-changed-files.ts](../../services/buildr/src/modules/task/changed-files/interfaces/cli/task-changed-files.ts) — 命令行同一任务变更文件结果
+      - [interfaces/http/task-changed-files-http.ts](../../services/buildr/src/modules/task/changed-files/interfaces/http/task-changed-files-http.ts) — 网页任务限定读取入口
     - [module.ts](../../services/buildr/src/modules/task/module.ts) — 装配各独立能力及公开接口
   - **`services/buildr/src/modules/workbench/`** — 日常关注的组合阅读
     - [application/workbench-application.ts](../../services/buildr/src/modules/workbench/application/workbench-application.ts) — 读取明确事项、任务和已有每日演进，不推断任务正在执行
@@ -124,8 +131,12 @@
         - [TaskAgentAction.tsx](../../services/buildr-web/src/features/task/components/TaskAgentAction.tsx) — 开始与继续工作的指令，按当前范围重新读取
         - [TaskWorkContextCard.tsx](../../services/buildr-web/src/features/task/components/TaskWorkContextCard.tsx) — 人查看与回应事项，冲突保留输入
         - [TaskArtifactReader.tsx](../../services/buildr-web/src/features/task/components/TaskArtifactReader.tsx) — 并排阅读真实方案和成果材料
-        - [TaskCommitsPane.tsx](../../services/buildr-web/src/features/task/components/TaskCommitsPane.tsx) — 组合提交查询、展开状态及说明示例
-        - [TaskCommitRecords.tsx](../../services/buildr-web/src/features/task/components/TaskCommitRecords.tsx) — 展示实际提交、读取范围、局部失败与复制操作
+        - [TaskCommitsPane.tsx](../../services/buildr-web/src/features/task/components/TaskCommitsPane.tsx) — 组合任务提交查询、展开状态及说明示例（组合任务页）
+        - [TaskCommitRecords.tsx](../../services/buildr-web/src/features/task/components/TaskCommitRecords.tsx) — 按仓库分组展示实际提交、读取范围、局部失败与复制操作
+        - [TaskChangesPane.tsx](../../services/buildr-web/src/features/task/components/TaskChangesPane.tsx) — 「改动与提交」工作台与列表视图的组合入口
+        - [TaskChangedFiles.tsx](../../services/buildr-web/src/features/task/components/TaskChangedFiles.tsx) — 变更文件行、分组与状态标记
+        - [TaskDiffReader.tsx](../../services/buildr-web/src/features/task/components/TaskDiffReader.tsx) — 主从式差异阅读面（统一/并排/全文、全屏与浮窗）
+        - [useTaskChangedFiles.ts](../../services/buildr-web/src/features/task/hooks/useTaskChangedFiles.ts) — 按任务进入或刷新读取变更文件，取消旧请求并区分加载、失败和已有结果
         - [TaskCompleteModal.tsx](../../services/buildr-web/src/features/task/components/TaskCompleteModal.tsx) — 完成摘要与父任务明确授权
         - [CompositeTaskEndDrawer.tsx](../../services/buildr-web/src/features/task/components/CompositeTaskEndDrawer.tsx) — 明确处置未结束子任务并组合结束
         - [ParentCoordinationPanel.tsx](../../services/buildr-web/src/features/task/components/ParentCoordinationPanel.tsx) — 展示直接子任务结果、父任务完成依据和局部历史诊断

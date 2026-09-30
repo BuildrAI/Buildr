@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { Button, Dropdown, type MenuProps } from 'antd';
 import { CaretDownFilled, MenuFoldOutlined, MenuUnfoldOutlined } from '@ant-design/icons';
@@ -43,9 +43,26 @@ export function AppShellHeader({isGlobal,brandHref,development,workspaceName,wor
         </header>
   );
 }
-export function AppShellFrame({isGlobal,compactNavigation,sidebarCollapsed,onToggleSidebar,navigation,children}:{isGlobal?:boolean;compactNavigation?:boolean;sidebarCollapsed:boolean;onToggleSidebar():void;navigation:ReactNode;children:ReactNode}) {
+export function AppShellFrame({isGlobal,compactNavigation,sidebarCollapsed,sidebarWidth,onSidebarResize,onToggleSidebar,navigation,children}:{isGlobal?:boolean;compactNavigation?:boolean;sidebarCollapsed:boolean;sidebarWidth?:number;onSidebarResize?(width:number):void;onToggleSidebar():void;navigation:ReactNode;children:ReactNode}) {
+  const dragOrigin = useRef<{x:number;width:number} | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const move = useCallback((event: PointerEvent) => {
+    if (!dragOrigin.current || !onSidebarResize) return;
+    onSidebarResize(Math.min(256, Math.max(150, dragOrigin.current.width + event.clientX - dragOrigin.current.x)));
+  }, [onSidebarResize]);
+  const release = useCallback(() => { dragOrigin.current = null; setDragging(false); }, []);
+  useEffect(() => {
+    if (!dragging) return;
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', release, { once: true });
+    return () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', release); };
+  }, [dragging, move, release]);
   return <div className={`app-frame${isGlobal ? ' is-global' : ''}${sidebarCollapsed && !compactNavigation ? ' sidebar-collapsed' : ''}`}>
-    {!isGlobal && !compactNavigation ? <aside className="app-sidebar"><Button type="text" className="sidebar-toggle" aria-label={sidebarCollapsed ? '展开菜单' : '折叠菜单'} title={sidebarCollapsed ? '展开菜单' : '折叠菜单'} icon={sidebarCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />} onClick={onToggleSidebar} />{navigation}</aside> : null}
+    {!isGlobal && !compactNavigation ? <aside className={`app-sidebar${dragging ? ' is-resizing' : ''}`} style={sidebarCollapsed || sidebarWidth === undefined ? undefined : { flexBasis: sidebarWidth, width: sidebarWidth }}>
+      <Button type="text" className="sidebar-toggle" aria-label={sidebarCollapsed ? '展开菜单' : '折叠菜单'} title={sidebarCollapsed ? '展开菜单' : '折叠菜单'} icon={sidebarCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />} onClick={onToggleSidebar} />
+      {navigation}
+      {!sidebarCollapsed && onSidebarResize ? <span className="sidebar-resize" role="separator" aria-orientation="vertical" aria-label="拖拽调整菜单宽度" title="拖拽调整菜单宽度（200–256px，256px 为最大）" onPointerDown={event => { dragOrigin.current = { x: event.clientX, width: sidebarWidth ?? 256 }; setDragging(true); event.preventDefault(); }} onDoubleClick={() => onSidebarResize(256)} /> : null}
+    </aside> : null}
     <main id="app-view" tabIndex={-1} aria-live="polite">{children}</main>
   </div>;
 }

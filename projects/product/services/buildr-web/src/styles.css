@@ -1741,9 +1741,13 @@ details summary { cursor: pointer; color: var(--soft-ink); font-size: 12px; font
 .app-frame { display: flex; flex: 1; min-height: 0; min-width: 0; }
 .app-frame:not(.is-global) > #app-view { background: #fff; }
 .app-sidebar { flex: 0 0 var(--sidebar-width); width: var(--sidebar-width); min-width: 0; align-self: flex-start; position: sticky; top: 56px; height: calc(100dvh - 56px); overflow-y: auto; border-right: 1px solid #e8ebee; background: var(--soft-sidebar); }
+.app-sidebar.is-resizing { user-select: none; }
+.sidebar-resize { position: absolute; top: 0; right: 0; width: 8px; height: 100%; cursor: col-resize; z-index: 3; }
+.sidebar-resize::after { content:''; position:absolute; top:50%; left:50%; width:3px; height:44px; transform:translate(-50%,-50%); border-radius:2px; background:#cdd3d8; transition: background .15s, height .15s; }
+.sidebar-resize:hover::after, .sidebar-resize:active::after { background:var(--soft-primary); height:64px; }
 .app-shell:has(.resource-cockpit) .app-sidebar { position: static; height: 100%; }
 .shell-navigation { padding: 18px 10px; }
-.shell-nav-caption { margin: 0 10px 10px; color: var(--soft-muted); font-size: 11px; font-weight: 550; }
+.shell-nav-caption { margin: 0 10px 10px; color: var(--soft-muted); font-size: 11px; font-weight: 550; text-align: center; }
 .shell-nav-item { display: flex; align-items: center; gap: 9px; min-height: 34px; padding: 7px 10px; margin: 2px 0; border-radius: 6px; color: #58616c; font-size: 13px; line-height: 20px; text-decoration: none; transition: background 120ms ease, color 120ms ease; }
 .shell-nav-item > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .shell-nav-item > .anticon { color: #7b858e; font-size: 14px; }

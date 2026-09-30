@@ -67,6 +67,10 @@ export function AppLayout({ renderResource }: { renderResource: (item: ResourceP
   const area = navigationState(location.pathname, location.search, workspaceId).area;
   const retainedSearch = workspaceId ? workspacePageSearch(workspaceId, location.pathname, location.search) : location.search;
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('buildr.sidebar-collapsed') === 'true');
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    const saved = Number(localStorage.getItem('buildr.sidebar-width'));
+    return Number.isFinite(saved) && saved >= 150 && saved <= 256 ? saved : 256;
+  });
   const [navigationOpen, setNavigationOpen] = useState(false);
   const [compactNavigation, setCompactNavigation] = useState(() => window.matchMedia('(max-width: 899px)').matches);
   useEffect(() => {
@@ -306,7 +310,7 @@ export function AppLayout({ renderResource }: { renderResource: (item: ResourceP
             ) : null}
 </>} />
         <ReleaseAwarenessBanner openAgentAction={openAgentAction} />
-        <AppShellFrame isGlobal={isGlobal} compactNavigation={compactNavigation} sidebarCollapsed={sidebarCollapsed} onToggleSidebar={() => { setSidebarCollapsed(value => !value); localStorage.setItem('buildr.sidebar-collapsed', String(!sidebarCollapsed)); }} navigation={<AppNavigation key={workspaceId} />}>{/* Business content stays in the live adapter. */}<>{workspaceId ? <ArticleEditorProvider key={workspaceId} workspaceId={workspaceId}><WorkspacePages workspaceId={workspaceId} renderResource={renderResource} /></ArticleEditorProvider> : <Outlet />}</></AppShellFrame>
+        <AppShellFrame isGlobal={isGlobal} compactNavigation={compactNavigation} sidebarCollapsed={sidebarCollapsed} sidebarWidth={sidebarWidth} onSidebarResize={width => { setSidebarWidth(width); localStorage.setItem('buildr.sidebar-width', String(Math.round(width))); }} onToggleSidebar={() => { setSidebarCollapsed(value => !value); localStorage.setItem('buildr.sidebar-collapsed', String(!sidebarCollapsed)); }} navigation={<AppNavigation key={workspaceId} />}>{/* Business content stays in the live adapter. */}<>{workspaceId ? <ArticleEditorProvider key={workspaceId} workspaceId={workspaceId}><WorkspacePages workspaceId={workspaceId} renderResource={renderResource} /></ArticleEditorProvider> : <Outlet />}</></AppShellFrame>
       </div>
 
       {!isGlobal ? <Drawer title="导航" placement="left" width={280} open={navigationOpen}

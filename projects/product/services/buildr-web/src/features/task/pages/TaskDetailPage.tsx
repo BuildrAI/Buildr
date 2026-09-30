@@ -17,7 +17,8 @@ import { useTaskVisit } from '../hooks/useTaskVisit';
 import { useWorkbenchPreferences } from '../../workbench/hooks/useWorkbenchPreferences';
 import { TaskContextDrawer } from '../components/TaskWorkContextCard';
 import { TaskWorkPath } from '../components/TaskWorkPath';
-import { TaskCommitsPane } from '../components/TaskCommitsPane';
+import { TaskChangesPane } from '../components/TaskChangesPane';
+import { useTaskChangedFiles } from '../hooks/useTaskChangedFiles';
 import { TaskNodeContent } from '../components/TaskNodeContent';
 import { TaskReadingPane } from '../components/TaskReadingPane';
 import { taskDocuments, type TaskReadTarget } from '../components/taskWorkContent';
@@ -54,7 +55,10 @@ export function TaskDetailPage({ taskId: providedTaskId }: { taskId?: string } =
   const [alert, setAlert] = useState<TaskAlert>(null);
   const checklist = useTaskChecklist(taskId, reading.rootRef);
   const [refreshing, setRefreshing] = useState(false);
+  // no shell-level fullscreen: the workbench rail collapse is the only focus gesture
   const [readerRefreshToken, setReaderRefreshToken] = useState(0);
+  const changedFiles = useTaskChangedFiles(taskId, readerRefreshToken);
+  const changedFileCount = changedFiles.data?.taskId === taskId ? changedFiles.data.files.length : null;
   const lifecycle = useTaskRequestLifecycle();
   const href = (path: string) => workspaceHref(workspaceId, path);
   const onWorkspace = useCallback((workspace: WorkspaceResponse) => setWorkspace(workspace), [setWorkspace]);
@@ -119,17 +123,17 @@ export function TaskDetailPage({ taskId: providedTaskId }: { taskId?: string } =
       else actions.setActionModal(key as 'edit' | 'abandon');
     } }} trigger={['click']}><Button id="task-more-actions" size="small" type="text" icon={<MoreOutlined />} aria-label="更多任务操作" /></Dropdown>
   </>;
-  return <article ref={reading.rootRef} className="task-detail-page" id="task-detail-main" data-task-id={taskId}>
+  return <article ref={reading.rootRef} className={`task-detail-page${selected === 'changes' ? ' is-wide' : ''}`} id="task-detail-main" data-task-id={taskId}>
     <TaskOverview actions={headerActions} record={record} onRelativeLink={link => void artifacts.openIntentDocument(link)} />
     {visitError && <Alert type="warning" message={visitError} />}
     {alert && <Alert id="task-detail-alert" type={alert.error ? 'error' : 'success'} message={alert.message} closable onClose={() => setAlert(null)} />}
     {data.referenceDiagnostics.length > 0 && <Alert id="task-reference-diagnostics" type="warning" message={`部分引用不可用：${data.referenceDiagnostics.map(item => item.message).join('；')}`} />}
     <TaskSummary task={data} context={workContext.data} error={workContext.error} href={href} onRespond={() => editor.open('respond')} onOpen={(node, content) => { selectNode(node); if (content) reading.choose(node, content); if (content === 'review') reading.choose(`${node}:review`, ''); }} />
     {record.isParent ? <CompositeTaskContent key={taskId} refreshToken={readerRefreshToken} task={data} coordination={evidence.coordinationData} loading={evidence.coordinationLoading} briefs={artifacts.briefs} refresh={async () => { await refresh(); }} onEnd={() => setEndOpen(true)} href={href} onDocument={(key, path) => void artifacts.openChangeDocument(key, path)} /> : <>
-    <TaskWorkPath actions={checklistTrigger} record={record} context={workContext.data?.context} selected={selected === 'commits' ? null : selected} onSelect={selectNode} contentTabs={[{ key: 'commits', label: '提交记录', selected: selected === 'commits', onSelect: () => selectNode('commits') }]} />
+    <TaskWorkPath actions={checklistTrigger} record={record} context={workContext.data?.context} selected={selected === 'changes' ? null : selected} onSelect={selectNode} contentTabs={[{ key: 'changes', label: <span data-prototype-position="changes-entry">改动与提交{changedFileCount !== null && changedFileCount > 0 && <span className="task-badge">{changedFileCount}</span>}</span>, selected: selected === 'changes', onSelect: () => selectNode('changes') }]} />
     <div className={`task-detail-layout${checklist.open && checklist.pinned ? ' checklist-pinned' : ''}`}>
       <div className="task-detail-reading">
-    {selected === 'commits' ? <div id="task-node-content" className="task-node-content"><div className="task-node-reading"><TaskCommitsPane key={taskId} taskId={taskId} refreshToken={readerRefreshToken} /></div></div> : <TaskNodeContent choices={reading.choices} onChoose={reading.choose} selected={selected} record={record} documents={documents} briefs={artifacts.briefs} reviews={evidence.reviewData} verification={evidence.verificationData} reviewError={evidence.reviewError} verificationError={evidence.verificationError} reviewLoading={evidence.reviewLoading} verificationLoading={evidence.verificationLoading} prototypeData={artifacts.prototypeData} prototypeError={artifacts.prototypeError} hasRetrospective={Boolean(data.retrospectiveDocument.registered)} hasCoordination={data.taskRelations.children.length > 0} renderContent={readContent} />}
+    {selected === 'changes' ? <div id="task-node-content" className="task-node-content"><div className="task-node-reading"><TaskChangesPane key={taskId} changed={changedFiles} /></div></div> : <TaskNodeContent choices={reading.choices} onChoose={reading.choose} selected={selected} record={record} documents={documents} briefs={artifacts.briefs} reviews={evidence.reviewData} verification={evidence.verificationData} reviewError={evidence.reviewError} verificationError={evidence.verificationError} reviewLoading={evidence.reviewLoading} verificationLoading={evidence.verificationLoading} prototypeData={artifacts.prototypeData} prototypeError={artifacts.prototypeError} hasRetrospective={Boolean(data.retrospectiveDocument.registered)} hasCoordination={data.taskRelations.children.length > 0} renderContent={readContent} />}
 
       </div>
     <TaskChecklist open={checklist.open} pinned={checklist.pinned} canPin={checklist.canPin} onTogglePin={checklist.togglePin} onPointerEnter={event => checklist.enter('panel', event.pointerType)} onPointerLeave={event => checklist.exit('panel', event.pointerType)} onFocusCapture={checklist.cancel} onBlurCapture={checklist.leave} onClose={() => { checklist.close(); reading.rootRef.current?.querySelector<HTMLButtonElement>('#task-checklist-toggle')?.focus(); }} briefs={artifacts.briefs} documents={documents} renderContent={readContent} />

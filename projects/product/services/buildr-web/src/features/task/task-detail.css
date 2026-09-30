@@ -17,6 +17,8 @@
 .task-path-track { display:flex; overflow-x:auto; gap:24px; border-bottom:1px solid var(--soft-line); }
 .task-work-tab.ant-btn { flex:none; display:inline-flex; align-items:center; gap:5px; border-radius:0; padding:0 0 12px; height:36px; font-size:13px; color:var(--soft-muted); }
 .task-work-tab.ant-btn.selected { color:var(--soft-primary); font-weight:600; box-shadow:inset 0 -2px var(--soft-primary); }
+.task-badge { display:inline-flex; align-items:center; justify-content:center; min-width:18px; height:18px; padding:0 5px; margin-left:2px; border-radius:9px; background:var(--soft-line); color:var(--soft-muted); font-size:10.5px; font-weight:500; line-height:1; }
+.task-work-tab.ant-btn.selected .task-badge { background:var(--soft-primary-soft,#e7efec); color:var(--soft-primary); }
 .task-current-dot { width:5px; height:5px; border-radius:50%; background:var(--soft-primary); flex:none; }
 .task-node-content { min-width:0; }
 .task-content-toolbar { display:flex; align-items:center; flex-wrap:wrap; justify-content:space-between; gap:8px; margin:0 0 22px; min-height:28px; }
@@ -214,6 +216,20 @@
 @container task-detail (min-width:1000px) {
   .task-detail-layout.checklist-pinned { gap:20px; }
   .task-checklist.is-pinned { position:relative; inset:auto; flex:0 0 35%; width:35%; border:0; border-left:1px solid var(--soft-line); border-radius:0; box-shadow:none; animation:none; }
+  .task-detail-page.is-wide .task-checklist.is-pinned { border-left:0; }
+  .task-checklist.is-pinned .side-reading-heading { padding:10px 14px; }
+  .task-checklist.is-pinned .side-reading-body { padding:0 0 16px; background:#fff; }
+  .task-checklist.is-pinned .task-reader, .task-checklist.is-pinned .task-reader .task-document-reader .task-document-preview-content { font-size:12.5px; line-height:1.75; }
+  .task-checklist.is-pinned .markdown-body { font-size:12.5px; }
+  .task-checklist.is-pinned .markdown-body > :first-child { margin-top:0; }
+  .task-checklist.is-pinned .markdown-body h2, .task-checklist.is-pinned .markdown-body h3 { margin:16px 14px 6px; font-size:11px; font-weight:600; color:var(--soft-muted); letter-spacing:.02em; }
+  .task-checklist.is-pinned .markdown-body ol, .task-checklist.is-pinned .markdown-body ul { margin:0; padding:0 0 0 18px; }
+  .task-checklist.is-pinned .markdown-body ol > li, .task-checklist.is-pinned .markdown-body ul > li { margin:0; padding:9px 14px 9px 0; border-top:1px solid var(--soft-line); }
+  .task-checklist.is-pinned .markdown-body ol > li:first-child, .task-checklist.is-pinned .markdown-body ul > li:first-child { border-top:0; }
+  .task-checklist.is-pinned .markdown-body ol ol, .task-checklist.is-pinned .markdown-body ul ul { margin:4px 0 0 18px; padding:0; border-left:1px solid var(--soft-line); }
+  .task-checklist.is-pinned .markdown-body ol ol > li, .task-checklist.is-pinned .markdown-body ul ul > li { border-top:0; padding:5px 0 5px 10px; }
+  .task-checklist.is-pinned .markdown-body code { font-size:11px; padding:1px 5px; border-radius:4px; background:var(--soft-sidebar); }
+  .task-checklist.is-pinned .markdown-body li > p { margin:0; }
 }
 @container task-detail (max-width:540px) {
   .task-detail-page > .task-work-path { flex-wrap:wrap; gap:4px; }
@@ -222,6 +238,20 @@
 }
 
 .task-detail-layout > .task-detail-reading { padding-top:20px; }
+
+/* Full-bleed tool surfaces (改动与提交 workbench) break the centered measure. */
+.task-detail-page.is-wide { max-width:none; }
+.task-detail-page.is-wide .task-detail-layout { grid-template-columns:minmax(0,1fr) !important; gap:0 !important; }
+.task-detail-page.is-wide .task-node-reading { overflow:visible; padding-right:0; }
+/* With the checklist pinned, the workbench butts flush against it like a tool split. */
+@container task-detail (min-width:1000px) {
+  .task-detail-page.is-wide .task-detail-layout.checklist-pinned { gap:0 !important; }
+  .task-detail-page.is-wide .task-checklist.is-pinned { border-left:0; }
+  .task-detail-page.is-wide .task-diff-reader { border-right:0; border-radius:10px 0 0 10px; }
+  .task-detail-page.is-wide .task-checklist.is-pinned .side-reading-heading { padding:10px 14px; }
+  .task-detail-page.is-wide .task-checklist.is-pinned .side-reading-body { padding:0 0 16px; background:#fff; }
+  .task-detail-page.is-wide .task-checklist.is-pinned .task-reader, .task-detail-page.is-wide .task-checklist.is-pinned .task-reader .task-document-reader .task-document-preview-content { font-size:12.5px; line-height:1.75; }
+}
 
 /* Long historical goals keep their full text; the detail itself must remain scrollable. */
 .task-detail-page{overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-gutter:stable}

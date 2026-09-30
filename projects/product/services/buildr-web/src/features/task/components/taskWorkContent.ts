@@ -7,7 +7,7 @@ import type { ChangeArtifact } from '../../../components/ChangeBriefPanel';
 
 export type TaskStage = NonNullable<TaskWorkContext['stage']>;
 export type TaskNodeStage = 'requirements' | 'design' | 'implementation' | 'closeout';
-export type TaskReadingTab = TaskNodeStage | 'commits';
+export type TaskReadingTab = TaskNodeStage | 'changes';
 export const taskStageLabels: Record<TaskStage, { title: string; english: string; description: string }> = {
   requirements: { title: '任务说明', english: 'Task Description', description: '任务说明承载本次任务的问题、需求或缺陷说明；目标由 intent 提供短定位，说明正文优先使用任务关联材料。' },
   design: { title: '方案设计', english: 'Solution Design', description: '提案说明改什么，设计说明怎么做，规范说明应满足的行为。' },

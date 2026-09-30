@@ -209,6 +209,37 @@ export const TASK_HTTP_SCHEMAS = Object.freeze({
     reason: nonEmptyText,
   }, ['expectedRecordDigest', 'reason']), defs),
   abandonResponse: schema('abandon/response', 'TaskAbandonResponse', { $ref: '#/$defs/TaskRecordMutationResponse' }, defs),
+  changedFilesRequest: schema('changed-files/request', 'TaskChangedFilesRequest', closed({}), defs),
+  changedFilesResponse: schema('changed-files/response', 'TaskChangedFilesResult', closed({
+    schemaVersion: { const: 'buildr.task-changed-files/v1' }, taskId: { $ref: '#/$defs/TaskId' }, readAt: nonEmptyText,
+    status: { enum: ['complete', 'partial'] },
+    files: arrayOf(closed({
+      repositoryId: nonEmptyText, path: nonEmptyText, previousPath: nullable(nonEmptyText),
+      kind: { enum: ['tracked', 'untracked'] }, status: { enum: ['modified', 'untracked', 'added', 'deleted', 'renamed', 'conflicted'] },
+      additions: nullable({ type: 'integer', minimum: 0 }), deletions: nullable({ type: 'integer', minimum: 0 }),
+      preview: nullable({ type: 'string' }), previewTruncated: { type: 'boolean' },
+    }, ['repositoryId', 'path', 'previousPath', 'kind', 'status', 'additions', 'deletions', 'preview', 'previewTruncated'])),
+    repositories: arrayOf(closed({
+      id: nonEmptyText, label: nonEmptyText, root: nonEmptyText, sources: arrayOf(nonEmptyText),
+      status: { enum: ['complete', 'unavailable', 'truncated'] }, branch: nullable(nonEmptyText), ahead: nullable({ type: 'integer', minimum: 0 }),
+      fileCount: { type: 'integer', minimum: 0 }, scannedCommitCount: { type: 'integer', minimum: 0 },
+    }, ['id', 'label', 'root', 'sources', 'status', 'branch', 'ahead', 'fileCount', 'scannedCommitCount'])),
+    commits: arrayOf(closed({
+      repositoryId: nonEmptyText, hash: { type: 'string', pattern: '^(?:[a-f0-9]{40}|[a-f0-9]{64})$' },
+      shortHash: { type: 'string', pattern: '^[a-f0-9]{12}$' }, subject: { type: 'string' }, message: { type: 'string' },
+      authorName: { type: 'string' }, authorEmail: { type: 'string' }, authoredAt: nonEmptyText, committedAt: nonEmptyText,
+    }, ['repositoryId', 'hash', 'shortHash', 'subject', 'message', 'authorName', 'authorEmail', 'authoredAt', 'committedAt'])),
+    commitFiles: { type: 'object', additionalProperties: arrayOf(closed({
+      repositoryId: nonEmptyText, path: nonEmptyText, previousPath: nullable(nonEmptyText),
+      kind: { enum: ['tracked', 'untracked'] }, status: { enum: ['modified', 'untracked', 'added', 'deleted', 'renamed', 'conflicted'] },
+      additions: nullable({ type: 'integer', minimum: 0 }), deletions: nullable({ type: 'integer', minimum: 0 }),
+      preview: nullable({ type: 'string' }), previewTruncated: { type: 'boolean' },
+    }, ['repositoryId', 'path', 'previousPath', 'kind', 'status', 'additions', 'deletions', 'preview', 'previewTruncated'])) },
+    repositoryMeta: { type: 'object', additionalProperties: closed({ branch: nullable(nonEmptyText), ahead: nullable({ type: 'integer', minimum: 0 }) }, ['branch', 'ahead']) },
+    coverage: closed({ repositoryLimit: { type: 'integer', minimum: 1 }, fileLimit: { type: 'integer', minimum: 1 }, commitFileLimit: { type: 'integer', minimum: 1 }, previewLineLimit: { type: 'integer', minimum: 1 }, truncated: { type: 'boolean' } }, ['repositoryLimit', 'fileLimit', 'commitFileLimit', 'previewLineLimit', 'truncated']),
+    diagnostics: arrayOf(closed({ code: nonEmptyText, message: nonEmptyText, repositoryId: nullable(nonEmptyText), reference: nullable(nonEmptyText), hash: nullable(nonEmptyText) }, ['code', 'message', 'repositoryId', 'reference', 'hash'])),
+    effects: { type: 'array', maxItems: 0, items: false },
+  }, ['schemaVersion', 'taskId', 'readAt', 'status', 'files', 'repositories', 'commits', 'commitFiles', 'repositoryMeta', 'coverage', 'diagnostics', 'effects']), defs),
   retrospectiveDocumentRequest: schema('retrospective-document/request', 'TaskRetrospectiveDocumentRequest', closed({}), defs),
   commitsRequest: schema('commits/request', 'TaskCommitsRequest', closed({}), defs),
   commitsResponse: schema('commits/response', 'TaskCommitsResult', closed({
@@ -262,6 +293,7 @@ export const TASK_HTTP_OPERATIONS = Object.freeze([
   operation('task-record.abandon', 'POST', '/tasks/:taskId/abandon', 'abandonRequest', 'abandonResponse'),
   operation('task-record.retrospective-document', 'GET', '/tasks/:taskId/retrospective-document', 'retrospectiveDocumentRequest', 'retrospectiveDocumentResponse'),
   operation('task-record.commits', 'GET', '/tasks/:taskId/commits', 'commitsRequest', 'commitsResponse'),
+  operation('task-record.changed-files', 'GET', '/tasks/:taskId/changed-files', 'changedFilesRequest', 'changedFilesResponse'),
 ]);
 
 const allSchemas = Object.freeze(Object.values(TASK_HTTP_SCHEMAS));

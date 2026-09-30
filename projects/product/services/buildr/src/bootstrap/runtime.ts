@@ -36,6 +36,7 @@ import { createPublicationModule } from '../modules/publication/module.ts';
 import { createOpenSpecModule } from '../modules/openspec/module.ts';
 import { CHANGE_APPLICATION, createChangeModule } from '../modules/task/change/module.ts';
 import { TASK_COMMITS_MODULE } from '../modules/task/commits/module.ts';
+import { TASK_CHANGED_FILES_MODULE } from '../modules/task/changed-files/module.ts';
 import { VERIFICATION_DECLARATION, createVerificationModule } from '../modules/project-testing/module.ts';
 import * as webProfileContract from '../modules/installation/contracts/web-profile.ts';
 
@@ -63,6 +64,7 @@ export function createRuntime(): any  {
   registry.install(WORKBENCH_MODULE);
   registry.install(createWorktreeProviderModule(runtime));
   registry.install(TASK_COMMITS_MODULE);
+  registry.install(TASK_CHANGED_FILES_MODULE);
   registry.install(createChangeModule(runtime));
   registry.provide(TASK_CHANGE_BINDER).bindChangeResolver(registry.provide(CHANGE_APPLICATION));
   registry.install(createVerificationModule(runtime));
