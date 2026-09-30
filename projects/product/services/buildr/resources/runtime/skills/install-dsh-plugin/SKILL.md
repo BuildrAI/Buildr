@@ -14,13 +14,15 @@ description: 在 DSH（DeepSeek Harness）里加入 Buildr 入口，让用户能
 
 - 这台机器上已经安装了 Buildr。正式版插件只打开正式版 Buildr，不涉及开发版。
 - DSH 的桌面版提供侧栏底部席位；非桌面版没有这个位置，不要承诺按钮会出现。
-- 插件自己会发现本机 Buildr 的位置，所以**没有单独的登记步骤**。先核对 `@buildr-ai/buildr-dsh-plugin` 已在 npm 公开发布且与目标 DSH 版本兼容；本机构建或待发布候选不能当作公共安装来源。
+- 插件自己会发现本机 Buildr 的位置，所以**没有单独的登记步骤**。安装前核对实际 DSH 版本及公开插件的精确版本；本机构建或待发布候选不能当作公共安装来源。
+- 用户已指定版本时核对该版本；未指定时，用 `npm view @buildr-ai/buildr-dsh-plugin dist-tags --json` 读取公开标签（Dist-tag），再用 `npm view @buildr-ai/buildr-dsh-plugin@<目标版本> version peerDependencies --json` 核对精确版本和兼容范围。以该公开版本的对等依赖（peerDependencies）对照实际 DSH 版本及相关依赖，包含预发布版本的范围语义；不能只凭包存在、标签名称或版本号相近判断兼容。没有兼容的公开版本时停止安装，说明具体差异，不自动换用开发包或降级 DSH。
+- npm 明确返回 404 或 `E404` 时停止安装，说明目标包或版本不可用；网络、代理、认证错误或超时属于查询未知，不能当作未发布。查询未知时不安装，报告失败原因和待确认的版本事实，不猜包名、版本或改用未经验证的来源。
 
 ## 流程
 
-1. 把公开的预编译包 `@buildr-ai/buildr-dsh-plugin` 装进用户实际使用的 DSH 配置档（Profile），使用 DSH 自己的插件管理能力（`plugin_manager` 的 `install_bundle`），或其命令 `dsh plugin --profile <实际配置档> add @buildr-ai/buildr-dsh-plugin`。不要猜配置档名称，不要手工改 DSH 配置文件，也不运行 `buildr runtime dsh-plugin prepare`。
+1. 把已核验的公开预编译包 `@buildr-ai/buildr-dsh-plugin@<已核验版本>` 装进用户实际使用的 DSH 配置档（Profile）。桌面 `desktop` 配置档由应用独占管理，必须使用应用的插件界面或受支持的插件管理能力（`plugin_manager` 的 `install_bundle`），不能使用命令行插件管理入口。其他非受管配置档才可使用 `dsh plugin --profile <实际配置档> add @buildr-ai/buildr-dsh-plugin@<已核验版本>`。通过实际入口支持的包名和版本参数指定已核验版本；若界面不支持固定版本，先确认它将解析的版本仍是已核验版本，否则停止安装。安装后回读实际包名和版本，匹配后才继续。不要猜配置档名称，不要手工改 DSH 配置文件，也不运行 `buildr runtime dsh-plugin prepare`。
 
-2. 告诉用户需要**重启 DSH** 才能看到入口。
+2. 告诉用户需要**完整重启 DSH** 才能看到入口；“立即启用”不能代替重启。
 
 3. 重启后确认入口出现、点击能打开 Buildr。这一步必须在真实桌面版确认，不能用“安装成功”代替。
 

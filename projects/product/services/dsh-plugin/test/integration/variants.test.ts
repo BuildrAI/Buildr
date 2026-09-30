@@ -18,7 +18,7 @@ test('a build-time identity difference is all that separates the released and de
   // The development entry is declared for a developer's own profile and is not the shipped one.
   const devPatch = await read('plugin/cordis.dev.patch.yml');
   assert.match(devPatch, /id: buildr-dev/);
-  assert.match(devPatch, /@buildr-ai\/dsh-plugin-dev/);
+  assert.match(devPatch, /@buildr-ai\/buildr-dsh-plugin-dev/);
 });
 
 test('the package name alone decides which Buildr installation an entry serves', () => {

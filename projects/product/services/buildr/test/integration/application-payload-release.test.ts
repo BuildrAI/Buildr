@@ -158,6 +158,13 @@ test('npm release artifact freezes one tarball with complete payload and no plat
       applicationPayloadDigest: payloadDigest,
     });
     assert.equal(readback.tarball, artifact.tarball);
+    // Inspect the actual packed resource: a source-only fix must reach the distributed skill.
+    const skillPath = 'payload/product/resources/runtime/skills/install-dsh-plugin/SKILL.md';
+    const packedSkill = spawnSync('tar', ['-xOf', artifact.tarball, `package/${skillPath}`], { encoding: 'utf8' });
+    assert.equal(packedSkill.status, 0, packedSkill.stderr);
+    assert.equal(packedSkill.stdout, fs.readFileSync(path.join(serviceRoot, 'resources/runtime/skills/install-dsh-plugin/SKILL.md'), 'utf8'));
+    assert.match(packedSkill.stdout, /npm view @buildr-ai\/buildr-dsh-plugin@<目标版本> version peerDependencies --json/);
+    assert.match(packedSkill.stdout, /`desktop`.*应用.*插件/);
     assert.match(artifact.manifest.generatedArtifactIdentity, /^sha256-[a-f0-9]{64}$/);
     const paths: any = artifact.manifest.inventory.map((entry: any) => entry.path);
     for (const required of [
