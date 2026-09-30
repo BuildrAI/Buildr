@@ -1,9 +1,9 @@
-.task-diff-reader { display:flex; gap:0; min-height:0; height:100%; border:1px solid var(--soft-line); border-radius:10px; overflow:hidden; background:#fff; }
-.task-rail-body { flex:1; overflow-y:auto; padding-bottom:12px; }
-.task-rail-repo { margin:14px 10px 0; }
+.task-diff-reader { display:flex; gap:0; min-height:0; height:100%; background:#fff; }
+.task-rail-body { flex:1; min-height:0; overflow-y:auto; padding-bottom:12px; }
+.task-rail-repo { margin:10px 0 0; }
 .task-rail-repo-top { display:flex; align-items:center; gap:8px; min-width:0; flex-basis:100%; }
 .task-rail-repo-top .task-changed-repo-count { margin-left:auto; flex:none; }
-.task-rail-repo-meta { display:flex; align-items:center; gap:8px; margin-top:5px; padding-left:15px; flex-wrap:wrap; flex-basis:100%; }
+.task-rail-repo-meta { display:flex; align-items:center; gap:8px; margin-top:3px; padding-left:25px; flex-wrap:wrap; flex-basis:100%; }
 .task-rail-repo-toggle { display:flex; align-items:center; gap:6px; border:0; background:transparent; padding:0; margin:0; cursor:pointer; color:inherit; font:inherit; min-width:0; flex:1; text-align:left; }
 .task-rail-repo-toggle .task-commits-expand { display:inline-flex; align-items:center; }
 .task-rail-repo-toggle .task-commits-expand { font-size:9px; flex:none; }
@@ -11,36 +11,35 @@
 .task-rail-repo-toggle .task-changed-repo-label strong { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .task-rail-repo-toggle:focus-visible { outline:2px solid var(--soft-primary); outline-offset:-2px; border-radius:4px; }
 .task-rail-repo-toggle:hover strong { color:var(--soft-primary); }
-.task-rail-group { margin:14px 12px 6px; font-size:11px; font-weight:600; color:var(--soft-muted); letter-spacing:.02em; }
-.task-rail-empty { margin:4px 12px 10px; font-size:11px; color:var(--soft-muted); }
+.task-rail-group { margin:12px 10px 2px; padding:0 2px; font-size:11px; font-weight:600; color:var(--soft-muted); letter-spacing:.02em; }
+.task-rail-empty { margin:4px 10px 10px; padding:0 2px; font-size:11px; color:var(--soft-muted); }
 .task-rail-commits { margin:0; padding:0; list-style:none; }
-.task-rail-commit { display:flex; width:100%; align-items:flex-start; gap:6px; padding:7px 12px 7px 8px; border:0; background:transparent; text-align:left; cursor:pointer; color:inherit; font:inherit; }
+.task-rail-commit { display:flex; width:100%; align-items:flex-start; gap:6px; padding:7px 10px 7px 10px; border:0; background:transparent; text-align:left; cursor:pointer; color:inherit; font:inherit; }
 .task-rail-commit:hover strong { color:var(--soft-primary); }
 .task-rail-commit:focus-visible { outline:2px solid var(--soft-primary); outline-offset:-2px; border-radius:6px; }
 .task-rail-commit .task-commits-expand { margin-top:3px; font-size:9px; flex:none; }
 .task-rail-commit-content { min-width:0; flex:1; }
 .task-rail-commit-content strong { display:block; font-size:12px; font-weight:550; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .task-rail-commit-content .task-commits-meta { margin-top:2px; font-size:10.5px; }
-.task-rail-commit-files { margin:0 6px 8px 24px; border-left:1px solid var(--soft-line); padding-left:8px; }
+.task-rail-commit-files { margin:0 4px 8px 15px; border-left:1px solid var(--soft-line); padding-left:7px; }
 .task-rail-commit-files .task-changed-list { border-radius:6px; }
 .task-diff-scope { color:var(--soft-primary); }
-.task-diff-rail { flex:0 0 320px; position:relative; border-right:1px solid var(--soft-line); background:var(--soft-sidebar); display:flex; flex-direction:column; min-width:0; }
-.task-diff-rail-resize { position:absolute; top:0; right:-1px; width:8px; height:100%; cursor:col-resize; z-index:2; }
-.task-diff-rail-resize::after { content:''; position:absolute; top:50%; left:50%; width:3px; height:44px; transform:translate(-50%,-50%); border-radius:2px; background:#cdd3d8; transition: background .15s, height .15s; }
-.task-diff-rail-resize:hover::after, .task-diff-rail-resize:active::after { background:var(--soft-primary); height:64px; }
+.task-diff-rail { flex:0 0 320px; position:relative; border-right:1px solid #dce5e0; background:var(--soft-sidebar); display:flex; flex-direction:column; min-width:0; }
+.task-diff-rail .task-diff-rail-resize { position:absolute; top:0; right:-4px; width:9px; height:100%; align-self:auto; }
 .task-diff-reader.is-resizing { user-select:none; cursor:col-resize; }
-.task-diff-rail.is-collapsed { flex-basis:44px; align-items:center; }
-.task-diff-rail-head { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:10px 12px; border-bottom:1px solid var(--soft-line); }
-.task-diff-rail-title { min-width:0; display:flex; flex-direction:column; gap:2px; }
-.task-diff-rail-title strong { font-size:12.5px; font-weight:550; }
-.task-diff-rail-title small { font-size:11px; color:var(--soft-muted); }
+.task-diff-rail.is-collapsed { flex-basis:44px; align-items:center; border-right:1px solid #dce5e0; }
+.task-diff-rail-head { display:flex; align-items:center; justify-content:space-between; gap:10px; min-height:47px; padding:8px 12px 8px 10px; border-bottom:1px solid var(--soft-line); }
+.task-diff-rail-title { min-width:0; display:flex; align-items:baseline; gap:8px; }
+.task-diff-rail-title strong { font-size:13px; font-weight:600; flex:none; }
+.task-diff-rail-title small { font-size:11px; color:var(--soft-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .task-diff-rail .task-changed-list { border:0; border-radius:0; overflow-y:auto; }
+.task-diff-rail .task-changed-list > li + li { border-top:0; }
 .task-diff-rail .task-changed-path { display:none; }
+.task-diff-rail .task-changed-row { padding:8px 10px; }
 .task-diff-rail .task-changed-row-content strong { word-break:break-all; overflow-wrap:anywhere; }
-.task-diff-rail .task-changed-list > li + li { border-top:1px solid var(--soft-line); }
 .task-diff-rail .task-changed-detail { margin-left:0; }
 .task-diff-pane { flex:1; min-width:0; display:flex; flex-direction:column; }
-.task-diff-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; padding:10px 14px; border-bottom:1px solid var(--soft-line); }
+.task-diff-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; min-height:47px; padding:8px 14px; border-bottom:1px solid var(--soft-line); }
 .task-diff-file { min-width:0; display:flex; flex-direction:column; gap:2px; }
 .task-diff-file strong { font-size:13px; font-weight:550; overflow-wrap:anywhere; }
 .task-diff-file small { font-size:11px; color:var(--soft-muted); overflow-wrap:anywhere; }

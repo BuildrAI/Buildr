@@ -59,10 +59,10 @@ export function AppShellFrame({isGlobal,compactNavigation,sidebarCollapsed,sideb
   }, [dragging, move, release]);
   return <div className={`app-frame${isGlobal ? ' is-global' : ''}${sidebarCollapsed && !compactNavigation ? ' sidebar-collapsed' : ''}`}>
     {!isGlobal && !compactNavigation ? <aside className={`app-sidebar${dragging ? ' is-resizing' : ''}`} style={sidebarCollapsed || sidebarWidth === undefined ? undefined : { flexBasis: sidebarWidth, width: sidebarWidth }}>
-      <Button type="text" className="sidebar-toggle" aria-label={sidebarCollapsed ? '展开菜单' : '折叠菜单'} title={sidebarCollapsed ? '展开菜单' : '折叠菜单'} icon={sidebarCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />} onClick={onToggleSidebar} />
+      <div className="app-sidebar-head"><Button type="text" className="sidebar-toggle" aria-label={sidebarCollapsed ? '展开菜单' : '折叠菜单'} title={sidebarCollapsed ? '展开菜单' : '折叠菜单'} icon={sidebarCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />} onClick={onToggleSidebar} /></div>
       {navigation}
-      {!sidebarCollapsed && onSidebarResize ? <span className="sidebar-resize" role="separator" aria-orientation="vertical" aria-label="拖拽调整菜单宽度" title="拖拽调整菜单宽度（200–256px，256px 为最大）" onPointerDown={event => { dragOrigin.current = { x: event.clientX, width: sidebarWidth ?? 256 }; setDragging(true); event.preventDefault(); }} onDoubleClick={() => onSidebarResize(256)} /> : null}
     </aside> : null}
+    {!isGlobal && !compactNavigation && !sidebarCollapsed && onSidebarResize ? <span className="sidebar-resize" role="separator" aria-orientation="vertical" aria-label="拖拽调整菜单宽度" title="拖拽调整菜单宽度（200–256px，256px 为最大）" onPointerDown={event => { dragOrigin.current = { x: event.clientX, width: sidebarWidth ?? 256 }; setDragging(true); event.preventDefault(); }} onDoubleClick={() => onSidebarResize(256)} /> : null}
     <main id="app-view" tabIndex={-1} aria-live="polite">{children}</main>
   </div>;
 }

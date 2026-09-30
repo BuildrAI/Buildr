@@ -54,6 +54,22 @@ export function TaskDetailPage({ taskId: providedTaskId }: { taskId?: string } =
   currentTask.current = taskId;
   const [alert, setAlert] = useState<TaskAlert>(null);
   const checklist = useTaskChecklist(taskId, reading.rootRef);
+  const [checklistWidth, setChecklistWidth] = useState<number | null>(null);
+  const [checklistResizing, setChecklistResizing] = useState(false);
+  const checklistDrag = useRef<{ x: number; width: number } | null>(null);
+  useEffect(() => {
+    if (!checklistResizing) return;
+    const move = (event: PointerEvent) => {
+      const drag = checklistDrag.current;
+      if (!drag) return;
+      const max = Math.max(320, (reading.rootRef.current?.clientWidth ?? 1200) - 480);
+      setChecklistWidth(Math.min(max, Math.max(280, drag.width + drag.x - event.clientX)));
+    };
+    const stop = () => { checklistDrag.current = null; setChecklistResizing(false); };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', stop, { once: true });
+    return () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', stop); };
+  }, [checklistResizing, reading.rootRef]);
   const [refreshing, setRefreshing] = useState(false);
   // no shell-level fullscreen: the workbench rail collapse is the only focus gesture
   const [readerRefreshToken, setReaderRefreshToken] = useState(0);
@@ -131,12 +147,13 @@ export function TaskDetailPage({ taskId: providedTaskId }: { taskId?: string } =
     <TaskSummary task={data} context={workContext.data} error={workContext.error} href={href} onRespond={() => editor.open('respond')} onOpen={(node, content) => { selectNode(node); if (content) reading.choose(node, content); if (content === 'review') reading.choose(`${node}:review`, ''); }} />
     {record.isParent ? <CompositeTaskContent key={taskId} refreshToken={readerRefreshToken} task={data} coordination={evidence.coordinationData} loading={evidence.coordinationLoading} briefs={artifacts.briefs} refresh={async () => { await refresh(); }} onEnd={() => setEndOpen(true)} href={href} onDocument={(key, path) => void artifacts.openChangeDocument(key, path)} /> : <>
     <TaskWorkPath actions={checklistTrigger} record={record} context={workContext.data?.context} selected={selected === 'changes' ? null : selected} onSelect={selectNode} contentTabs={[{ key: 'changes', label: <span data-prototype-position="changes-entry">改动与提交{changedFileCount !== null && changedFileCount > 0 && <span className="task-badge">{changedFileCount}</span>}</span>, selected: selected === 'changes', onSelect: () => selectNode('changes') }]} />
-    <div className={`task-detail-layout${checklist.open && checklist.pinned ? ' checklist-pinned' : ''}`}>
+    <div className={`task-detail-layout${checklist.open && checklist.pinned ? ' checklist-pinned' : ''}${checklistResizing ? ' checklist-resizing' : ''}`}>
       <div className="task-detail-reading">
     {selected === 'changes' ? <div id="task-node-content" className="task-node-content"><div className="task-node-reading"><TaskChangesPane key={taskId} changed={changedFiles} /></div></div> : <TaskNodeContent choices={reading.choices} onChoose={reading.choose} selected={selected} record={record} documents={documents} briefs={artifacts.briefs} reviews={evidence.reviewData} verification={evidence.verificationData} reviewError={evidence.reviewError} verificationError={evidence.verificationError} reviewLoading={evidence.reviewLoading} verificationLoading={evidence.verificationLoading} prototypeData={artifacts.prototypeData} prototypeError={artifacts.prototypeError} hasRetrospective={Boolean(data.retrospectiveDocument.registered)} hasCoordination={data.taskRelations.children.length > 0} renderContent={readContent} />}
 
       </div>
-    <TaskChecklist open={checklist.open} pinned={checklist.pinned} canPin={checklist.canPin} onTogglePin={checklist.togglePin} onPointerEnter={event => checklist.enter('panel', event.pointerType)} onPointerLeave={event => checklist.exit('panel', event.pointerType)} onFocusCapture={checklist.cancel} onBlurCapture={checklist.leave} onClose={() => { checklist.close(); reading.rootRef.current?.querySelector<HTMLButtonElement>('#task-checklist-toggle')?.focus(); }} briefs={artifacts.briefs} documents={documents} renderContent={readContent} />
+    {checklist.open && checklist.pinned ? <span className="task-checklist-resize" role="separator" aria-orientation="vertical" aria-label="拖拽调整实施清单宽度" title="拖拽调整宽度（280–640px）" onPointerDown={event => { checklistDrag.current = { x: event.clientX, width: checklistWidth ?? Math.round(reading.rootRef.current!.clientWidth * 0.35) }; setChecklistResizing(true); event.preventDefault(); }} /> : null}
+    <TaskChecklist open={checklist.open} pinned={checklist.pinned} canPin={checklist.canPin} onTogglePin={checklist.togglePin} onPointerEnter={event => checklist.enter('panel', event.pointerType)} onPointerLeave={event => checklist.exit('panel', event.pointerType)} onFocusCapture={checklist.cancel} onBlurCapture={checklist.leave} onClose={() => { checklist.close(); reading.rootRef.current?.querySelector<HTMLButtonElement>('#task-checklist-toggle')?.focus(); }} briefs={artifacts.briefs} documents={documents} renderContent={readContent} style={checklist.pinned && checklistWidth ? { width: checklistWidth, flexBasis: checklistWidth } : undefined} />
     </div>
     </>}
     <CompositeTaskEndDrawer taskId={taskId} open={endOpen} onClose={() => setEndOpen(false)} onSaved={async () => { await refresh(); resetTaskList(); }} />

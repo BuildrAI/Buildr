@@ -177,7 +177,7 @@ export function TaskDiffReader({ repositories, selected, onSelect, notice }: {
       onPointerEnter={() => { if (railCollapsed) setRailPeek(true); }}
       onPointerLeave={() => { if (railCollapsed) setRailPeek(false); }}>
       <header className="task-diff-rail-head">
-        {!railCollapsed && <div className="task-diff-rail-title"><strong>改动与提交</strong><small>仓库分组 · 点击文件看差异</small></div>}
+        {!railCollapsed && <div className="task-diff-rail-title"><strong>改动与提交</strong><small>仓库分组</small></div>}
         <Button type="text" size="small" aria-label={railCollapsed ? '展开文件栏' : '收起文件栏'} icon={railCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />} onClick={() => { setRailCollapsed(value => !value); setRailPeek(false); }} />
       </header>
       {!railCollapsed && railContent}
