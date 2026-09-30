@@ -213,11 +213,11 @@
       "type": "skill",
       "id": "task-finish",
       "target": "skills/buildr/task-finish",
-      "integrity": "sha256-72ed6942fd83ffd2842ee36fa211697b9fb3f96d52e073b9f6d0ef795a6519da",
+      "integrity": "sha256-691aaba0c48cadeebb15f57a9af427a832e90608c744a296fce9f155a7033e63",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-c658e7e2a3bf7cf99b23727bdc5c8c34bd4a01b9b2e09fcebdeb935397ccaf77"
+          "integrity": "sha256-1bb8846098069572760660be44d952370a6bc016e1bf68126d42719420d764e2"
         }
       ]
     },
@@ -225,11 +225,11 @@
       "type": "skill",
       "id": "task-manager",
       "target": "skills/buildr/task-manager",
-      "integrity": "sha256-39257ff472abe7601ad0fe622e6093875b69c3273e916a77025bf7ec83af7f7e",
+      "integrity": "sha256-830feb97da159c82b14bb3bf9c27029c339f8a8d3c983ba6aa4388a3c5553c22",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-b3b4cfba83b5cd4d90cd43a45062e4ff9414e60b60944753c024d724ce7173bb"
+          "integrity": "sha256-7f4aa9b71628b11c642950de1039096e987bd1e31daa0d35baf325e6f941ee01"
         },
         {
           "path": "agents/openai.yaml",
@@ -289,11 +289,11 @@
       "type": "skill",
       "id": "task-verification",
       "target": "skills/buildr/task-verification",
-      "integrity": "sha256-cb577eebb78b7dd6956dafda12e4815114faba7889a8df33579b0e26b2c0c179",
+      "integrity": "sha256-fa95a791827501fad4ebb16b0663950bfcb1a268e063780bcf767e3641caa49f",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-7559190459e9c5ace6967fefaebefd0b5e6c1b764001004f5d4a6260fefb3427"
+          "integrity": "sha256-8ce8bb1c70d863aeaf9a9ec204c958ae37c1e8c52975f930330aa0c97e9e0c2f"
         },
         {
           "path": "references/frontend-verification.md",
@@ -309,7 +309,7 @@
         },
         {
           "path": "references/record-report.md",
-          "integrity": "sha256-17b5e5bd7c5fafeb431cd4a6968fa10032768f1929277f4d36ddbfce4acb4ea3"
+          "integrity": "sha256-92bdbc20597b5346a486088859895949f3002a130e40bf3292cffd3cebe1b1df"
         },
         {
           "path": "templates/project-verification.yml",

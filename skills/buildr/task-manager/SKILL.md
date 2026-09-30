@@ -34,7 +34,7 @@ buildr task complete <id> --summary <text> --expected-record <recordDigest> [--p
 buildr task abandon <id> --reason <text> --expected-record <recordDigest> --target <workspace> --json
 ```
 
-`intent`（目标与说明）是任务级需求说明：用简洁清晰的语言写清本次要解决的问题、目标和范围边界，需要验收要点时一并写出；不写成标题复述、内部步骤清单或只有作者能懂的缩写。关联变更（Change）的 `brief.md` 只补充该变更的需求叙事，不替代任务目标，两者不相互复制正文或相互矛盾。
+`intent`（目标）表达一句话级的任务目标与入口定位，不复述完整需求。多目标、复合背景、边界或验收条件交给关联变更（Change）的 `brief.md`（需求）承载；不得把实现步骤、逐条验收或长篇正文写入 intent，也不写成标题复述、内部步骤清单或只有作者能懂的缩写。无关联变更时 intent 如实概括任务目标。关联变更的 `brief.md` 补充该变更的需求叙事，不替代任务目标，两者不相互复制正文或相互矛盾。
 
 任务说明引用已登记项目文档时使用具名的工作空间相对 Markdown 链接，例如 `[方案](projects/product/docs/plan.md)`。区分链接可解析与正文可读取；文档只在隔离目录时如实说明，不复制正文冒充已交付。
 
