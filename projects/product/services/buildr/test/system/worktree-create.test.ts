@@ -335,6 +335,29 @@ test('worktree cleanup从工作树已删但本地分支未删的部分效果恢�
   git(root, ['show-ref', '--verify', '--quiet', `refs/heads/codex/${taskId}`], 1);
 });
 
+test('worktree inspect 对 linked worktree 目标归一到同一证据身份', () => {
+  const root = createGitWorkspace();
+  const taskId = 'linked-target';
+  const created = buildr(createArgs(root, taskId));
+  assert.equal(created.status, 'ready');
+  const checkout = String(created.repositories[0].checkoutPath);
+
+  // 真实 canonical workspace 的身份文件由 Git 跟踪，工作树内同样可见。
+  fs.mkdirSync(path.join(checkout, '.buildr'), { recursive: true });
+  fs.copyFileSync(path.join(root, '.buildr', 'workspace.yml'), path.join(checkout, '.buildr', 'workspace.yml'));
+  fs.copyFileSync(path.join(root, 'AGENTS.md'), path.join(checkout, 'AGENTS.md'));
+  fs.mkdirSync(path.join(checkout, 'projects'), { recursive: true });
+
+  const fromCanonical = buildr(['worktree', 'inspect', taskId, '--target', root, '--json']);
+  assert.equal(fromCanonical.status, 'ready');
+  const fromWorktree = buildr(['worktree', 'inspect', taskId, '--target', checkout, '--json']);
+  assert.equal(fromWorktree.status, 'ready');
+  assert.deepEqual(
+    fromWorktree.repositories.map((item) => [item.selector, item.checkoutPath]),
+    fromCanonical.repositories.map((item) => [item.selector, item.checkoutPath]),
+  );
+});
+
 test('多独立仓库要求成对覆盖全部selector并按nested-first清理', () => {
   const root = createGitWorkspace();
   const service = path.join(root, 'projects/demo/services/api');

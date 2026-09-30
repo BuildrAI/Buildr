@@ -255,6 +255,11 @@ skills:
     description: Buildr 自举工作空间中的已交付改动涉及规则、技能、组件、命令或产品运行输入时使用；由唯一执行器完成适用同步、开发应用更新、入口验证与诊断。正式任务记录可选；无关改动和未安装自举组件的工作空间不适用。
     assetIdentity: workspace:f2f40b71-2382-5906-82bd-76a7927b59f3:skill:buildr-self-bootstrap-sync
     sourceIdentity: workspace:f2f40b71-2382-5906-82bd-76a7927b59f3:buildr-self-bootstrap-sync
+  - id: buildr-dev-preview
+    path: buildr-dev-preview
+    description: 在 Buildr 自举工作空间中开发或验收时，需要用"开发工作树的代码 + 指定数据源"起一个 Buildr Web 页面时使用；仅服务 Buildr 自身，不作为用户 workspace 的默认能力。
+    assetIdentity: workspace:f2f40b71-2382-5906-82bd-76a7927b59f3:skill:buildr-dev-preview
+    sourceIdentity: workspace:f2f40b71-2382-5906-82bd-76a7927b59f3:buildr-dev-preview
   - id: declaration-intake
     assetIdentity: buildr:skill:declaration-intake
     sourceIdentity: package:skills/buildr/declaration-intake

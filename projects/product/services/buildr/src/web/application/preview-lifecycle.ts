@@ -1,9 +1,11 @@
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import process from 'node:process';
 import { performance } from 'node:perf_hooks';
+import { DatabaseSync } from 'node:sqlite';
 
 import { buildrWebDataRoot } from '../../modules/workspace/module.ts';
 import { sameFilesystemPath } from '../../infrastructure/filesystem/filesystem-path-identity.ts';
@@ -21,6 +23,7 @@ export type TaskPreviewWorktree = {
   evidencePath: string;
   planDigest: string;
   repositorySet: PreviewRepository[];
+  taskStore?: { source: 'canonical' | 'existing'; seeded: boolean } | null;
 };
 
 export type PreviewOwner = {
@@ -38,6 +41,7 @@ export type PreviewOwner = {
   productCheckout: string | null;
   repositorySet: PreviewRepository[];
   identityMode: 'task-worktree-v1' | 'standalone-checkout';
+  taskStore?: { source: 'canonical' | 'existing'; seeded: boolean } | null;
   managedProcess?: { pid: number; url?: string; state: 'healthy' | 'cleanup-failed' };
 };
 
@@ -55,7 +59,7 @@ type WorktreeInspection = {
   repositories: Array<{ selector: string; checkoutPath?: string; branch: string | null; head: string | null; state: string }>;
   diagnostic: { code: string; message: string } | null;
 };
-type WorktreeEvidence = { file: string; evidence: { planDigest: string } };
+type WorktreeEvidence = { file: string; evidence: { planDigest: string; workspaceRoot?: string } };
 type ProductInvocation = { command: string; argsPrefix: string[]; sourceRoot: string };
 
 export type PreviewRuntime = {
@@ -151,8 +155,15 @@ function parsePreviewOwner(value: unknown, expectedName?: string): PreviewOwner 
     productCheckout: optionalString(item.productCheckout),
     repositorySet,
     identityMode: item.identityMode,
+    taskStore: parseTaskStore(item.taskStore),
     managedProcess: parseManagedProcess(item.managedProcess),
   };
+}
+
+function parseTaskStore(value: unknown): PreviewOwner['taskStore'] {
+  const item = record(value);
+  if (!item || (item.source !== 'canonical' && item.source !== 'existing') || typeof item.seeded !== 'boolean') return null;
+  return { source: item.source, seeded: item.seeded };
 }
 
 function parsePreviewInstance(value: unknown): PreviewInstance | null {
@@ -222,6 +233,7 @@ export function previewOwnerForWorktree(name: string, targetRoot: string, produc
     productCheckout: productCheckout ? path.resolve(productCheckout) : null,
     repositorySet: taskWorktree?.repositorySet || [{ selector: 'workspace', checkoutPath: worktree, branch, head }],
     identityMode: taskWorktree ? 'task-worktree-v1' : 'standalone-checkout',
+    taskStore: taskWorktree?.taskStore || null,
   };
 }
 
@@ -324,12 +336,44 @@ export function resolveTaskPreviewWorktree(runtime: PreviewRuntime, workspaceRoo
   const stored = runtime.readGitWorktreeEvidence(workspaceRoot, taskId);
   return {
     taskId,
-    workspaceRoot,
+    // evidence.workspaceRoot 是 canonical checkout 身份，兼容 target 为工作树根的调用。
+    workspaceRoot: stored.evidence.workspaceRoot || workspaceRoot,
     worktree: workspace.checkoutPath,
     evidencePath: stored.file,
     planDigest: stored.evidence.planDigest,
     repositorySet: inspected.repositories.map((repository) => ({ selector: repository.selector, checkoutPath: repository.checkoutPath || '', branch: repository.branch, head: repository.head })),
   };
+}
+
+function workspaceTaskStorePath(root: string): string {
+  return path.join(root, '.buildr', 'local', 'workspace.sqlite');
+}
+
+// 预览以服务目标工作树为 workspace；其本地 structured store 是隔离本机现场。
+// 缺失时以 canonical 库播种一致副本，已存在时复用——canonical 保持唯一数据权威。
+function prepareTaskPreviewStore(taskWorktree: TaskPreviewWorktree): PreviewOwner['taskStore'] {
+  const target = workspaceTaskStorePath(taskWorktree.worktree);
+  const source = workspaceTaskStorePath(taskWorktree.workspaceRoot);
+  if (sameFilesystemPath(target, source)) return { source: 'existing', seeded: false };
+  const existing = fs.statSync(target, { throwIfNoEntry: false });
+  if (existing?.isFile()) return { source: 'existing', seeded: false };
+  if (!fs.statSync(source, { throwIfNoEntry: false })?.isFile()) {
+    throw codedError('Task preview 需要 canonical Workspace 的本地结构化存储作为数据源，但当前不可读取。', 'preview_task_store_unavailable', { source });
+  }
+  const staging = `${target}.seed-${process.pid}-${crypto.randomBytes(4).toString('hex')}`;
+  fs.mkdirSync(path.dirname(target), { recursive: true, mode: 0o700 });
+  let database: DatabaseSync | null = null;
+  try {
+    database = new DatabaseSync(source, { readOnly: true });
+    database.exec(`VACUUM INTO '${staging.replaceAll("'", "''")}'`);
+  } catch (error) {
+    fs.rmSync(staging, { force: true });
+    throw codedError(`Task preview 数据源快照失败：${errorMessage(error)}`, 'preview_task_store_unavailable', { source });
+  } finally {
+    try { database?.close(); } catch {}
+  }
+  fs.renameSync(staging, target);
+  return { source: 'canonical', seeded: true };
 }
 
 export async function startPreview(runtime: PreviewRuntime, name: string, args: string[], options: PreviewStartOptions = {}): Promise<PreviewResult> {
@@ -347,7 +391,14 @@ export async function startPreview(runtime: PreviewRuntime, name: string, args: 
     const workspaceRoot = fs.realpathSync(runtime.assertCanonicalTaskWorkspace(requestedRoot));
     taskWorktree = resolveTaskPreviewWorktree(runtime, workspaceRoot, taskId);
     targetRoot = taskWorktree.worktree;
-    const candidateProductRoot = path.resolve(targetRoot, path.relative(workspaceRoot, runtime.productRoot()));
+    const taskStore = prepareTaskPreviewStore(taskWorktree);
+    taskWorktree = { ...taskWorktree, taskStore };
+    // Product checkout 在目标工作树内的位置等于调用方 product 相对其自身 checkout 根的路径；
+    // 调用方可以来自 canonical 或任一 linked worktree，不能直接以 canonical 根取相对值。
+    const productRoot = runtime.productRoot();
+    let productCheckoutRoot = taskWorktree.workspaceRoot;
+    try { productCheckoutRoot = path.resolve(readGit(productRoot, ['rev-parse', '--show-toplevel'])); } catch { /* 非 Git 入口沿用 canonical 相对路径，缺失时如实报 preview_worktree_cli_missing */ }
+    const candidateProductRoot = path.resolve(targetRoot, path.relative(productCheckoutRoot, productRoot));
     const candidateCli = path.join(candidateProductRoot, 'bin', 'buildr.mjs');
     if (!fs.statSync(candidateCli, { throwIfNoEntry: false })?.isFile()) throw codedError(`Task Worktree 中没有Buildr Product CLI：${candidateCli}。`, 'preview_worktree_cli_missing');
     appInvocation = { ...runtime.currentProductInvocation({ cliPath: candidateCli }), sourceRoot: candidateProductRoot };

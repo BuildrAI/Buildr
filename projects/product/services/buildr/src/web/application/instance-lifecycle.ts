@@ -326,7 +326,7 @@ export function registerWebInstanceLifecycle(runtime: WebRuntime, options: WebLi
       if (!name) throw new Error('Usage: buildr web preview start <instance> [--task <task-id> --target <canonical-workspace>] [--port <port>] [--no-open] [--json]');
       const result = await startPreview(runtime, name, commandOptions);
       if (commandOptions.includes('--json')) console.log(JSON.stringify(withJsonSchema(PUBLIC_JSON_SCHEMAS.localAppPreview, result), null, 2));
-      else console.log(`Buildr Web 开发预览已${result.status === 'reused' ? '复用' : '启动'}：${result.url}\n实例：${result.owner.instance}\nworktree：${result.owner.worktree}\n分支：${result.owner.branch}\nHEAD：${result.owner.head}${result.owner.dirty ? '（有未提交修改）' : ''}`);
+      else console.log(`Buildr Web 开发预览已${result.status === 'reused' ? '复用' : '启动'}：${result.url}\n实例：${result.owner.instance}\nworktree：${result.owner.worktree}\n分支：${result.owner.branch}\nHEAD：${result.owner.head}${result.owner.dirty ? '（有未提交修改）' : ''}${result.owner.taskStore ? `\n任务库：${result.owner.taskStore.seeded ? '已按启动时点从 canonical 播种快照' : '复用工作树本地副本'}` : ''}`);
       return result;
     }
     if (action === 'list') {

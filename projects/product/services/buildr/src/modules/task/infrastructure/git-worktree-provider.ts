@@ -6,7 +6,7 @@ import process from 'node:process';
 import { normalizeGitWorktreeCleanupDelivery, normalizeGitWorktreeObservedCheckouts, type GitWorktreeCleanupDeliveryInput, type GitWorktreeReviewedDelivery } from '../domain/git-worktree.ts';
 import { assertCurrentCheckoutIdentity, assertNoUnlistedNestedRepositories, assertObservedCheckoutSet } from './git-worktree-observation.ts';
 import { spawnSync } from '../../../infrastructure/process.ts';
-import { sameFilesystemPath } from '../../../infrastructure/git/checkout-identity.ts';
+import { observeGitCheckoutIdentity, sameFilesystemPath } from '../../../infrastructure/git/checkout-identity.ts';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../../infrastructure/contracts/public-json.ts';
 import { controlMetadataPath } from '../../../infrastructure/git/control-metadata-path.ts';
 
@@ -248,6 +248,18 @@ export function registerGitWorktreeProvider(runtime: GitWorktreeRuntime): GitWor
     return path.resolve(repository, value);
   }
 
+  // Evidence 登记的 workspaceRoot 是 canonical checkout；linked task worktree 作为 target 时
+  // 归一到同一身份，否则 realpath 直接指向 worktree 目录会报身份不匹配。
+  function canonicalEvidenceWorkspaceRoot(root: string): string {
+    const resolved = fs.realpathSync(root);
+    const checkout = observeGitCheckoutIdentity(resolved);
+    if (!checkout?.linkedWorktree) return resolved;
+    const listed = git(resolved, ['worktree', 'list', '--porcelain']);
+    const main = listed.status === 0 ? parseGitWorktreeList(listed.stdout)[0]?.path : null;
+    const candidate = main || path.dirname(checkout.gitCommonDirectory);
+    try { return fs.realpathSync(candidate); } catch { return resolved; }
+  }
+
   function gitWorktreeEvidencePath(workspaceRoot: string, taskId: string): string {
     if (!TASK_ID_PATTERN.test(taskId)) throw new Error(`Invalid task id: ${taskId}`);
     return path.join(sharedGitDir(fs.realpathSync(workspaceRoot)), 'buildr', 'task-worktrees', `${taskId}.json`);
@@ -335,19 +347,21 @@ export function registerGitWorktreeProvider(runtime: GitWorktreeRuntime): GitWor
   }
 
   function readGitWorktreeEvidence(workspaceRoot: string, taskId: string, { optional = false }: { optional?: boolean } = {}): { file: string; evidence: GitWorktreeEvidence } | null {
-    const file = gitWorktreeEvidencePath(workspaceRoot, taskId);
+    const canonicalRoot = canonicalEvidenceWorkspaceRoot(workspaceRoot);
+    const file = gitWorktreeEvidencePath(canonicalRoot, taskId);
     if (!fs.existsSync(file)) {
       if (optional) return null;
       throw new Error(`Git worktree evidence was not found: ${taskId}`);
     }
     const stat = fs.lstatSync(file);
     if (!stat.isFile() || stat.isSymbolicLink()) throw new Error(`Git worktree evidence is not a regular file: ${file}`);
-    return { file, evidence: validateEvidence(JSON.parse(fs.readFileSync(file, 'utf8')), workspaceRoot, taskId) };
+    return { file, evidence: validateEvidence(JSON.parse(fs.readFileSync(file, 'utf8')), canonicalRoot, taskId) };
   }
 
   function writeGitWorktreeEvidence(workspaceRoot: string, evidence: GitWorktreeEvidence): { file: string; evidence: GitWorktreeEvidence } {
-    const normalized = validateEvidence(evidence, workspaceRoot, evidence.taskId);
-    const file = gitWorktreeEvidencePath(workspaceRoot, evidence.taskId);
+    const canonicalRoot = canonicalEvidenceWorkspaceRoot(workspaceRoot);
+    const normalized = validateEvidence(evidence, canonicalRoot, evidence.taskId);
+    const file = gitWorktreeEvidencePath(canonicalRoot, evidence.taskId);
     runtime.atomicWriteJson(file, normalized);
     return { file, evidence: normalized };
   }
@@ -389,7 +403,7 @@ export function registerGitWorktreeProvider(runtime: GitWorktreeRuntime): GitWor
   }
 
   function planGitWorktrees({ workspaceRoot, taskId, branch, startPoint, includes = [] }: PrepareInput): GitWorktreePlan {
-    const root = fs.realpathSync(runtime.assertCanonicalTaskWorkspace(workspaceRoot));
+    const root = canonicalEvidenceWorkspaceRoot(runtime.assertCanonicalTaskWorkspace(workspaceRoot));
     if (!TASK_ID_PATTERN.test(taskId)) throw new Error(`Invalid task id: ${taskId}`);
     if (!branch) throw new Error('Git worktree plan requires branch.');
     if (git(root, ['check-ref-format', `refs/heads/${branch}`]).status !== 0) throw new Error(`Invalid task branch: ${branch}`);
@@ -548,7 +562,7 @@ export function registerGitWorktreeProvider(runtime: GitWorktreeRuntime): GitWor
 
   function inspectGitWorktrees({ workspaceRoot, taskId, observedCheckouts }: InspectInput): WorktreeResult {
     try {
-      const root = fs.realpathSync(runtime.assertCanonicalTaskWorkspace(workspaceRoot));
+      const root = canonicalEvidenceWorkspaceRoot(runtime.assertCanonicalTaskWorkspace(workspaceRoot));
       const repository = git(root, ['rev-parse', '--show-toplevel'], { env: { ...process.env, LC_ALL: 'C' } });
       if (repository.status === 128 && /not a git repository/i.test(repository.stderr) && !fs.existsSync(path.join(root, '.git'))) {
         return result('inspect', 'blocked', taskId, null, [], [], { code: 'git_worktree_evidence_missing', message: 'This Workspace has no Git worktree association.' });
@@ -571,7 +585,7 @@ export function registerGitWorktreeProvider(runtime: GitWorktreeRuntime): GitWor
   function cleanupGitWorktrees({ workspaceRoot, taskId, integratedRefs = {}, allowDirty = false, allowNoChange = false, allowCompleted = false, cleanupDelivery = {}, observedCheckouts }: CleanupInput): WorktreeResult {
     const effects: WorktreeEffect[] = [];
     try {
-      const root = fs.realpathSync(runtime.assertCanonicalTaskWorkspace(workspaceRoot));
+      const root = canonicalEvidenceWorkspaceRoot(runtime.assertCanonicalTaskWorkspace(workspaceRoot));
       const stored = currentRepositories(root, taskId, observedCheckouts);
       const reviewedDeliveries = normalizeGitWorktreeCleanupDelivery(cleanupDelivery, stored.repositories.map((record) => record.selector));
       if (stored.evidenceSource === 'observed' && (!Object.keys(reviewedDeliveries).length || allowDirty || allowNoChange)) throw Object.assign(new Error('依据当前对象清理必须提供完整源与交付提交，不能绕过未保存内容保护。'), { code: 'git_worktree_cleanup_delivery_invalid' });

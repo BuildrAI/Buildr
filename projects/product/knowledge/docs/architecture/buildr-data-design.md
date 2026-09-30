@@ -102,6 +102,7 @@ OpenSpec 的 `specs/` 保存当前承诺，`changes/` 保存一次变更的提�
 | 启动器（Launcher）的 `launcher-binding.json` | Node、入口及启动策略，重建前需核对真实安装 |
 | `G/buildr/task-worktrees/<task-id>.json` | 工作树（Worktree）的目录、分支和创建归属；不是任务完成或环境就绪证明 |
 | 预览根的 `previews/<name>/` | `preview.json`、`instance.json`、`preview.log`；名称或端口相同不能代替进程归属 |
+| `W/.worktrees/<task-id>/.buildr/local/workspace.sqlite` | `--task` 预览为服务目标工作树播种的 canonical 任务库一致副本；时点快照，不回灌 canonical，已存在时复用 |
 | `W/.buildr/agent-runtime/`、`H/.buildr/agent-runtime/` | 派生文件的所有权与完整性回执，不能仅凭内容相似重建 |
 | `W/.buildr/builtin-receipts.json` | 随包资产的受管事实，不是资产正文 |
 | `W/.buildr/mutations/` | 多文件写入的锁、操作记录与 `backup/` 前镜像；中断时是恢复依据 |

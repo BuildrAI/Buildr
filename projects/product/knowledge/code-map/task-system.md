@@ -86,7 +86,7 @@
       - [interfaces/http/work-context-http.ts](../../services/buildr/src/modules/task/work-context/interfaces/http/work-context-http.ts) — 网页读取、记录与回应
       - [interfaces/cli/work-context-cli.ts](../../services/buildr/src/modules/task/work-context/interfaces/cli/work-context-cli.ts) — 智能体（Agent）读取和记录同一摘要
     - `infrastructure/` — Git 位置与删除安全
-      - [git-worktree-provider.ts](../../services/buildr/src/modules/task/infrastructure/git-worktree-provider.ts) — 创建和检查真实位置，清理前复核归属与成果保留
+      - [git-worktree-provider.ts](../../services/buildr/src/modules/task/infrastructure/git-worktree-provider.ts) — 创建和检查真实位置，清理前复核归属与成果保留；linked worktree 目标在证据解析前归一到 canonical checkout 身份
       - [git-worktree-observation.ts](../../services/buildr/src/modules/task/infrastructure/git-worktree-observation.ts) — 从明确的当前对象核对来源、Git 身份与嵌套集合，保护既有位置及删除操作；不补造创建历史
     - `change/application/` — 任务限定材料阅读
       - [change-application.ts](../../services/buildr/src/modules/task/change/application/change-application.ts) — 关联变更与本机任务原型的独立发现、身份、安全读取和局部诊断
@@ -104,7 +104,7 @@
     - [workspace-sqlite.ts](../../services/buildr/src/infrastructure/sqlite/workspace-sqlite.ts) — 真实工作空间（Workspace）和合法写入来源
     - [transaction.ts](../../services/buildr/src/infrastructure/sqlite/transaction.ts) — 原子提交与失败回滚
   - **`services/buildr/src/web/application/`** — 临时预览资源
-    - [preview-lifecycle.ts](../../services/buildr/src/web/application/preview-lifecycle.ts) — 核对实例与进程所有者，独立创建和停止预览（Preview）
+    - [preview-lifecycle.ts](../../services/buildr/src/web/application/preview-lifecycle.ts) — 核对实例与进程所有者，独立创建和停止预览（Preview）；`--task` 预览为服务目标工作树按需播种 canonical 任务库一致副本并在 owner 中如实标注来源
   - **`services/buildr/src/modules/openspec/application/`** — 变更文件发现与说明读取
     - [prototype-metadata.ts](../../services/buildr/src/modules/openspec/application/prototype-metadata.ts) — 有界解析 HTML 内可选说明，不新增独立状态
   - `services/buildr-web/src/` — 前端协作

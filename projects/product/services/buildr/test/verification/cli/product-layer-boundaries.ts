@@ -33,6 +33,7 @@ const allowedCrossModulePorts: any = new Set([
   'modules/openspec/module.ts -> modules/agent-assets/module.ts',
   'web/infrastructure/instance-runtime.ts -> modules/installation/module.ts',
   'web/module.ts -> modules/installation/module.ts',
+  'web/module.ts -> modules/task/module.ts',
   'web/module.ts -> modules/workspace/module.ts',
   'bootstrap/cli/registry.ts -> modules/openspec/module.ts',
   'bootstrap/runtime.ts -> modules/publication/module.ts',
