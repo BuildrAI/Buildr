@@ -212,6 +212,78 @@ export async function runTaskMaterialsJourney({ t, page, runtime, workspaceRoot,
     await page.locator('#task-checklist-panel:visible .markdown-body').filter({ hasText: '尚未读到的版本三' }).waitFor({ state: 'visible' });
   });
 
+  await scenario('任务材料：清单初次读取、失败及旧空清单重核不误报暂无', async () => {
+    const delayed = 'materials-checklist-unread', failed = 'materials-checklist-failed';
+    for (const id of [delayed, failed]) {
+      cli(['task', 'create', id, '--title', '清单读取状态夹具', '--intent', '核对未读材料的真实状态。', '--project', 'demo']);
+      write(id, 'implementation.md', '# 独立实施材料\n\n清单读取成功后的真实正文。\n');
+      associate(id, [local('impl', 'implementation', '实施材料', 'implementation.md')]);
+    }
+    const pattern = (id: string) => new RegExp(`/tasks/${id}/materials(?:\\?|$)`);
+    let release!: () => void, observed!: () => void, forwarded!: () => void;
+    const pending = new Promise<void>(resolve => { release = resolve; });
+    const started = new Promise<void>(resolve => { observed = resolve; });
+    const handled = new Promise<void>(resolve => { forwarded = resolve; });
+    await page.route(pattern(delayed), async (route: any) => {
+      const response = await route.fetch(); observed();
+      try { await pending; await route.fulfill({ response }); } finally { forwarded(); }
+    });
+    const checklist = page.locator('#task-checklist-panel:visible');
+    try {
+      await open(delayed); await started;
+      await page.locator('#task-checklist-toggle').hover();
+      await checklist.getByText('正在读取实施清单…', { exact: true }).waitFor({ state: 'visible' });
+      assert.doesNotMatch(await checklist.innerText(), /暂无实施清单/);
+    } finally { release(); await handled; await page.unroute(pattern(delayed)); }
+    await checklist.locator('[data-task-material=impl]').filter({ hasText: '读取成功后的真实正文' }).waitFor({ state: 'visible' });
+    await capture(page, 'task-materials-checklist-loaded.png');
+    const fail = (route: any) => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: { code: 'task_materials_probe_failed', message: '清单读取失败夹具。' } }) });
+    expectedBrowserErrors.add(`/tasks/${failed}/materials`);
+    await page.route(pattern(failed), fail);
+    try {
+      await open(failed); await page.locator('#task-checklist-toggle').hover();
+      await checklist.getByText(/任务材料读取失败/).waitFor({ state: 'visible' });
+      assert.doesNotMatch(await checklist.innerText(), /暂无实施清单/);
+      await capture(page, 'task-materials-checklist-first-failure.png');
+    } finally { await page.unroute(pattern(failed)); }
+    await open(empty); await page.locator('#task-checklist-toggle').hover();
+    await checklist.getByText('暂无实施清单。', { exact: true }).waitFor({ state: 'visible' });
+    write(empty, 'implementation.md', '# 新增实施材料\n\n空清单之后新增的真实正文。\n');
+    associate(empty, [local('impl', 'implementation', '新增实施材料', 'implementation.md')]);
+    expectedBrowserErrors.add(`/tasks/${empty}/materials`);
+    await page.route(pattern(empty), fail);
+    try {
+      await refresh(); await page.locator('#task-checklist-toggle').hover();
+      await checklist.getByText(/任务材料读取失败/).waitFor({ state: 'visible' });
+      assert.doesNotMatch(await checklist.innerText(), /暂无实施清单/);
+    } finally { await page.unroute(pattern(empty)); }
+    await refresh(); await page.locator('#task-checklist-toggle').hover();
+    await checklist.locator('[data-task-material=impl]').filter({ hasText: '空清单之后新增的真实正文' }).waitFor({ state: 'visible' });
+  });
+
+  await scenario('任务材料：项目路径别名互相引用仍进入带正文版本的材料阅读器', async () => {
+    const projectRoot = path.join(workspaceRoot, 'projects/demo');
+    const directory = path.join(projectRoot, 'tasks/materials-alias');
+    fs.mkdirSync(directory, { recursive: true });
+    fs.writeFileSync(path.join(directory, 'brief.md'), '# 别名说明\n\n[阅读关联实施材料](implementation.md)\n');
+    fs.writeFileSync(path.join(directory, 'implementation.md'), '# 关联实施正文\n\n相同文件的不同路径写法保持材料身份。\n');
+    for (const [id, aliasBrief] of [['materials-alias-brief', true], ['materials-alias-impl', false]] as const) {
+      cli(['task', 'create', id, '--title', '别名材料阅读夹具', '--intent', '核对相同文件的材料身份。', '--project', 'demo']);
+      associate(id, [
+        { id: 'brief', role: 'brief', title: '别名说明', source: { kind: 'project', project: 'demo', path: `${aliasBrief ? '@project/' : ''}tasks/materials-alias/brief.md` } },
+        { id: 'impl', role: 'implementation', title: '关联实施材料', source: { kind: 'project', project: 'demo', path: `${aliasBrief ? '' : '@project/'}tasks/materials-alias/implementation.md` } },
+      ]);
+      await open(id);
+      await body().getByRole('link', { name: '阅读关联实施材料', exact: true }).click();
+      const reader = page.locator('.task-reading-drawer.ant-drawer-open [data-task-material=impl]');
+      await reader.filter({ hasText: '不同路径写法保持材料身份' }).waitFor({ state: 'visible' });
+      await reader.getByText('正文版本', { exact: true }).click();
+      const digest = inspect(id).documents.find((item: any) => item.id === 'impl').actualDigest;
+      await reader.locator('code').filter({ hasText: digest }).waitFor({ state: 'visible' });
+    }
+    await capture(page, 'task-materials-alias-identity.png');
+  });
+
   await scenario('任务材料：关联读取断开时旧链接可读不等于节点齐备，恢复后直接显示', async () => {
     const routePattern = new RegExp(`/tasks/${simple}/materials(?:\\?|$)`);
     await page.route(routePattern, async (route: any) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ schemaVersion: 'buildr.task-materials-result/v1', taskId: simple, materialsDigest: 'absent', materials: { schemaVersion: 'buildr.task-materials/v1', documents: [] }, documents: [], diagnostics: [] }) }));

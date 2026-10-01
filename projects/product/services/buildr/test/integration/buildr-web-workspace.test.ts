@@ -179,9 +179,9 @@ test('任务详情复用系统副屏与抽屉，独立专业事实按工作节�
   assert.match(detail, /TaskContextDrawer/);
   assert.match(read('../buildr-web/src/features/task/hooks/useTaskReadingState.ts'), /useState<TaskReadingTab>\('requirements'\)/);
   const workContent = read('../buildr-web/src/features/task/components/taskWorkContent.ts');
-  assert.match(workContent, /TaskReadingTab = TaskNodeStage \| 'commits'/);
+  assert.match(workContent, /TaskReadingTab = TaskNodeStage \| 'changes'/);
   assert.match(workContent, /\['requirements', 'design', 'implementation', 'closeout'\] as TaskNodeStage\[\]/);
-  assert.match(detail, /contentTabs=\{\[\{ key: 'commits'/);
+  assert.match(detail, /contentTabs=\{\[\{ key: 'changes'/);
   assert.match(node, /data-task-artifact/);
   assert.match(node, /方案审查/);
   assert.match(node, /task-review-nav-label/);
@@ -198,14 +198,14 @@ test('任务详情复用系统副屏与抽屉，独立专业事实按工作节�
 test('任务 UI Prototype 只读按需加载并在离线 opaque-origin iframe 中展示', () => {
   const source: any = read('../buildr-web/src/features/task/pages/TaskDetailPage.tsx');
   const prototype: any = read('../buildr-web/src/features/task/components/PrototypeTab.tsx');
-  const artifactsHook: any = read('../buildr-web/src/features/task/hooks/useTaskArtifacts.ts');
   const server: any = read('src/web/http/server.ts');
   const responses: any = read('src/web/http/responses.ts');
   const changeHttp: any = read('src/modules/task/change/interfaces/http/change-http.ts');
   const styles: any = read('../buildr-web/src/styles.css');
   assert.match(source, /selected === 'design' && detail\.data\?\.record\.taskId === taskId && !artifacts\.prototypeData/);
   assert.doesNotMatch(source, /selected === 'design' && changeKeys &&/);
-  assert.match(artifactsHook, /'ui-prototypes'/);
+  // Request identity and cross-workspace isolation execute the real hook in
+  // buildr-web/test/task-materials.test.mjs, rather than pinning its spelling.
   assert.match(prototype, /界面原型/);
   assert.match(prototype, /模拟操作仅影响本次演示/);
   assert.match(read('../buildr-web/src/features/task/pages/PrototypeReaderPage.tsx'), /PrototypeReaderLayout/);
@@ -354,7 +354,9 @@ test('任务列表使用可取消的服务端筛选，详情首屏只读轻量�
   assert.doesNotMatch(tasks, /task-diagnostics|历史引用诊断/);
   assert.doesNotMatch(listHook, /setDiagnostics/);
   assert.match(detail, /task-reference-diagnostics/);
-  assert.match(read('../buildr-web/src/features/task/components/TaskOverview.tsx'), /id="task-detail-id"/);
+  const header = read('../buildr-web/src/features/task/components/TaskHeaderMetadata.tsx');
+  assert.match(detail, /metadata=\{<TaskHeaderMetadata/);
+  assert.match(header, /id="task-detail-id"/);
   assert.doesNotMatch(tasks, /method:\s*'POST'/);
   assert.match(actionsHook, /taskApi\.list\(\{ status: 'active' \}\)/);
   assert.match(detail, /loadParentOptions/);
@@ -363,7 +365,7 @@ test('任务列表使用可取消的服务端筛选，详情首屏只读轻量�
   assert.doesNotMatch(detail, /setSelected\([^\n]*workContext\.data\?\.context\?\.stage/);
   assert.match(taskReadLifecycle, /pending\.get\(key\)/);
   assert.match(taskReadLifecycle, /entry\.controller\.abort\(\)/);
-  assert.match(read('../buildr-web/src/features/task/components/TaskSummary.tsx'), /id="task-work-context"/);
+  assert.match(header, /id="task-work-context"/);
   assert.doesNotMatch(detail, /Promise\.all\(\[api\('\/api\/v1\/workspace'\), api\(`\/api\/v1\/tasks\/\$\{encodeURIComponent\(taskId\)\}`\), api\('\/api\/v1\/tasks'\)\]\)/);
   assert.doesNotMatch(server, /request\.method === 'POST' && suffix === '\/tasks'/);
 });

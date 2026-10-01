@@ -145,6 +145,20 @@ test('材料刷新读取新版本并取消旧请求，即使旧响应晚到也�
   assert.equal(states.at(-1).data.documents[0].actualDigest, 'sha256-v2');
 });
 
+test('项目根别名与普通路径互相引用保持关联材料身份，别名不增加可越界层级', () => {
+  for (const briefPath of ['tasks/one/brief.md', '@project/tasks/one/brief.md']) {
+    for (const implPath of ['tasks/one/implementation.md', '@project/tasks/one/implementation.md']) {
+      const brief = material('brief', 'brief', { kind: 'project', project: 'demo', path: briefPath });
+      const impl = material('impl', 'implementation', { kind: 'project', project: 'demo', path: implPath });
+      for (const href of ['implementation.md', '@project/tasks/one/implementation.md']) {
+        assert.deepEqual(resolveTaskMaterialLink(brief, href, [brief, impl]), { kind: 'material', id: 'impl' });
+      }
+      assert.deepEqual(resolveTaskMaterialLink(brief, '../shared.md', [brief, impl]), { kind: 'project', project: 'demo', path: 'tasks/shared.md' });
+      assert.equal(resolveTaskMaterialLink(brief, '../../../outside.md', [brief, impl]), null);
+    }
+  }
+});
+
 test('任务切换/卸载取消材料响应；局部错误、身份不符和真实missing各自表达，可重试', async () => {
   const pending = deferred(), states = [];
   const loader = createTaskMaterialsLoader('one', () => pending.promise, state => states.push(state));
@@ -189,12 +203,48 @@ test('实施清单复用同一ReadingPane和TaskMaterialReader，缓存正文的
   const documents = taskDocuments([], data);
   const props = { open: true, pinned: false, canPin: true, onTogglePin() {}, onClose() {}, briefs: [], documents };
   for (const state of [{ data, loading: true, error: null }, { data, loading: false, error: '清单材料读取异常' }]) {
-    const html = markup(TaskChecklist, { ...props, renderContent: readingContent(state) });
+    const html = markup(TaskChecklist, { ...props, materials: state, renderContent: readingContent(state) });
     assert.match(html, /id="task-checklist-panel"/); assert.match(html, /data-task-material="impl"/); assert.match(html, /data-task-material-role="implementation"/);
     const feedback = state.loading ? '已读正文正在核对' : '任务材料读取失败：清单材料读取异常';
     assert.equal(html.split(feedback).length - 1, 1);
     if (state.error) assert.match(html, /上次读取的正文，尚未确认新版本/);
   }
+});
+
+test('没有已读实施材料时，首次等待、读取失败及空清单重核不能误报暂无', () => {
+  const props = { open: true, pinned: false, canPin: true, onTogglePin() {}, onClose() {}, briefs: [{ kind: 'empty' }], documents: [], renderContent() { throw new Error('没有条目不应调用阅读器'); } };
+  for (const data of [null, result()]) {
+    const waiting = markup(TaskChecklist, { ...props, materials: { data, loading: true, error: null } });
+    assert.match(waiting, /正在读取实施清单/); assert.doesNotMatch(waiting, /暂无实施清单/);
+    const failed = markup(TaskChecklist, { ...props, materials: { data, loading: false, error: '材料读取异常' } });
+    assert.match(failed, /任务材料读取失败：材料读取异常/); assert.doesNotMatch(failed, /暂无实施清单/);
+  }
+  const ready = { data: result(), loading: false, error: null };
+  assert.match(markup(TaskChecklist, { ...props, materials: ready }), /暂无实施清单/);
+  assert.doesNotMatch(markup(TaskChecklist, { ...props, briefsLoading: true, materials: ready }), /暂无实施清单/);
+  const diagnostic = { ...ready, data: { ...result(), diagnostics: [{ code: 'unreadable', message: '关联状态无法确认' }] } };
+  const unknown = markup(TaskChecklist, { ...props, materials: diagnostic });
+  assert.match(unknown, /关联状态无法确认/); assert.doesNotMatch(unknown, /暂无实施清单/);
+});
+
+test('同名任务跨工作空间的原型读取相互隔离，旧请求晚到不覆盖新工作空间', async () => {
+  const harness = artifactHookHarness();
+  const { useTaskArtifacts } = await import('../src/features/task/hooks/useTaskArtifacts.ts');
+  const reads = [];
+  const lifecycle = { run(taskId, operation) {
+    if (operation.startsWith('materials:')) return Promise.resolve(result([], taskId));
+    const pending = deferred(); reads.push({ ...pending, operation }); return pending.promise;
+  } };
+  const render = workspace => harness.render(useTaskArtifacts, 'shared-prototype-task', 'same-record', lifecycle, workspace);
+  try {
+    const first = render('prototype-A').refreshPrototype();
+    const second = render('prototype-B').refreshPrototype();
+    assert.notEqual(reads[0].operation, reads[1].operation, '同名任务请求去重不能跨工作空间');
+    const current = { prototypes: [{ id: 'B' }] };
+    reads[1].resolve(current); await second;
+    reads[0].resolve({ prototypes: [{ id: 'A' }] }); await first;
+    assert.deepEqual(render('prototype-B').prototypeData, current);
+  } finally { harness.dispose(); }
 });
 
 test('真实artifacts hook在Task recordDigest变化后重读材料，普通render复用，显式refresh仍读取正文', async () => {

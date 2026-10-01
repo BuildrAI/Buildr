@@ -31,6 +31,10 @@ export function createTaskMaterialsLoader(taskId: string, read: (signal: AbortSi
 }
 
 /** Project links stay in the source project; local links only select associated same-task material. */
+function materialPath(source: TaskMaterialDocument['source']): string {
+  return source.kind === 'project' && source.path.startsWith('@project/') ? source.path.slice('@project/'.length) : source.path;
+}
+
 export function resolveTaskMaterialLink(document: TaskMaterialDocument, href: string, documents: TaskMaterialDocument[]): { kind: 'material'; id: string } | { kind: 'project'; project: string; path: string } | null {
   const raw = String(href || '').trim();
   if (!raw || raw.includes('\\') || raw.includes('\0') || raw.startsWith('/') || /^[a-z][a-z0-9+.-]*:/i.test(raw)) return null;
@@ -38,17 +42,18 @@ export function resolveTaskMaterialLink(document: TaskMaterialDocument, href: st
   try { decoded = decodeURIComponent(raw.split(/[?#]/)[0]); } catch { return null; }
   if (!decoded || decoded.startsWith('/') || decoded.includes('\\') || decoded.includes('\0') || /^[a-z][a-z0-9+.-]*:/i.test(decoded)) return null;
   if (document.source.kind === 'task' && raw.startsWith('@')) return null;
+  const currentPath = materialPath(document.source);
   if (!raw.startsWith('@project/')) {
-    const segments = document.source.path.split('/').slice(0, -1);
+    const segments = currentPath.split('/').slice(0, -1);
     for (const segment of decoded.split('/')) {
       if (segment === '..') { if (!segments.length) return null; segments.pop(); }
       else if (segment && segment !== '.') segments.push(segment);
     }
   }
-  const path = resolveProjectMarkdownHref(document.source.path, raw);
+  const path = resolveProjectMarkdownHref(currentPath, raw);
   if (!path || !normalizedWorkspaceRelativePath(path)) return null;
   const source = document.source;
-  const associated = documents.find(item => item.source.kind === source.kind && item.source.path === path && (item.source.kind !== 'project' || (source.kind === 'project' && item.source.project === source.project)));
+  const associated = documents.find(item => item.source.kind === source.kind && materialPath(item.source) === path && (item.source.kind !== 'project' || (source.kind === 'project' && item.source.project === source.project)));
   if (associated) return { kind: 'material', id: associated.id };
   return source.kind === 'project' ? { kind: 'project', project: source.project, path } : null;
 }
