@@ -13,7 +13,7 @@
   --soft-development-line: #e2bc67;
   --page-gutter: 32px;
   --main-content-width: 1200px;
-  --reading-content-width: 880px;
+  --reading-content-width: 1200px;
   --main-content-gutter: 24px;
   --sidebar-width: 256px;
   --sidebar-collapsed-width: 64px;
@@ -899,7 +899,8 @@ a {
 }
 
 .project-document-body { min-height: 0; }
-.project-document-content { max-width: 880px; font-size: 14px; line-height: 1.8; }
+.project-document-pane { width: 100%; max-width: var(--reading-content-width); margin-inline: auto; }
+.project-document-content { max-width: var(--reading-content-width); font-size: 14px; line-height: 1.8; }
 .project-document-content.markdown-body h1,
 .project-document-content.markdown-body h2 { font-size: 21px; letter-spacing: -.025em; }
 .project-document-content.markdown-body h3 { font-size: 17px; }
@@ -1811,7 +1812,7 @@ details summary { cursor: pointer; color: var(--soft-ink); font-size: 12px; font
 .pane-right { flex: none; width: clamp(480px, 44vw, 960px); }
 .pane-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
 .pane-left > .pane-body > .pane-body-inner { max-width: 980px; margin: 0 auto; padding: 24px 28px 56px; transition: max-width 180ms ease; }
-.pane-right > .pane-body > .pane-body-inner { padding: 16px 20px 32px; max-width: 1240px; margin-inline: auto; }
+.pane-right > .pane-body > .pane-body-inner { width: 100%; padding: 16px 20px 32px; max-width: none; }
 
 /* 页签条：左右组同款；色点区分对象类型。 */
 .pane-tabstrip { display: flex; align-items: flex-end; gap: 2px; flex: none; padding: 6px 10px 0; border-bottom: 1px solid var(--soft-line); background: #f4f6f7; overflow-x: auto; scrollbar-width: none; }
@@ -2031,6 +2032,7 @@ details summary { cursor: pointer; color: var(--soft-ink); font-size: 12px; font
 .resource-path { font-size:12px; color:var(--soft-muted); overflow-wrap:anywhere; }
 .resource-reader > header { margin:4px 0 24px; padding-bottom:16px; border-bottom:1px solid var(--soft-line); }
 .resource-reader h2 { margin:0; font-size:17px; overflow-wrap:anywhere; }
+.resource-reader { width:100%; max-width:var(--reading-content-width); margin-inline:auto; }
 .resource-reader .markdown-body { max-width:var(--reading-content-width); margin-inline:auto; font-size:14px; line-height:1.85; }
 .resource-source { white-space:pre-wrap; overflow-wrap:anywhere; font-size:12px; }
 .resource-directory a:focus-visible, .resource-document-row:focus-visible, .resource-relation-row:focus-visible { outline:2px solid var(--soft-primary); outline-offset:3px; border-radius:4px; }

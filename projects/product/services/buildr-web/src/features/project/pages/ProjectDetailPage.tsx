@@ -63,6 +63,7 @@ function ProjectDocObjectView({ projectCode, docPath, title, hint }: { projectCo
 
   return (
     <>
+      <section className="project-document-pane">
       <div className="ws-obj-head"><h2>{title}</h2></div>
       <p className="ws-obj-sub">{hint}</p>
       {documents.history.length > 1 ? (
@@ -82,6 +83,7 @@ function ProjectDocObjectView({ projectCode, docPath, title, hint }: { projectCo
       ) : (
         <p className="artifact-missing">{documents.message || `项目根目录未找到 ${documents.path}`}</p>
       )}
+      </section>
     </>
   );
 }

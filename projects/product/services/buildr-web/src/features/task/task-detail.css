@@ -1,15 +1,16 @@
 /* Reading surface within the existing resource preview; no nested split pane. */
 .task-detail-page { min-width:0; container:task-detail / inline-size; font-size:13px; }
-.task-detail-page .detail-page-header { margin:0 0 24px; padding:0; }
-.task-detail-page .detail-title-row { display:flex; gap:16px; align-items:flex-start; flex-wrap:nowrap; }
+.task-detail-page .detail-page-header { margin:0 0 16px; padding:0; }
+.task-detail-page .detail-title-row { display:flex; gap:16px; align-items:flex-start; flex-wrap:nowrap; margin-bottom:0; }
 .task-detail-page .detail-title-copy { flex:1; min-width:0; }
-.task-detail-page .task-detail-id { margin:5px 0 0; color:var(--soft-muted); font-size:11px; line-height:1.5; overflow-wrap:anywhere; }
+.task-detail-page .task-detail-id { margin:0; color:var(--soft-muted); font:11px/1.7 ui-monospace,SFMono-Regular,Consolas,monospace; overflow-wrap:anywhere; }
+.task-header-metadata { margin-top:5px; }
 .task-title-heading { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
 .task-detail-page .detail-title-row h1 { margin:0; font-size:22px; line-height:1.5; font-weight:650; letter-spacing:-.4px; }
 .task-detail-page .lifecycle-badge { flex:none; font-size:11px; padding:3px 7px; white-space:nowrap; }
 .task-header-actions { display:flex; gap:2px; align-items:center; flex:none; }
 .task-header-actions .ant-btn { color:var(--soft-muted); }
-.task-detail-page .task-intent-markdown { margin:10px 0 0; font-size:13px; line-height:1.75; color:var(--soft-muted); }
+.task-detail-page .task-intent-markdown { margin:8px 0 0; font-size:13px; line-height:1.75; color:var(--soft-muted); }
 .task-detail-page .task-intent-markdown p { margin:0; }
 .task-detail-layout { display:grid; grid-template-columns:minmax(0,1fr); gap:20px; }
 .task-detail-reading { min-width:0; }
@@ -37,6 +38,7 @@
 .task-content-back { margin-bottom:18px; }
 .task-content-back .ant-btn { padding-left:0; font-size:12px; }
 .task-reader { min-width:0; font-size:14px; line-height:1.85; overflow-wrap:anywhere; }
+.task-reader:has(.task-document-reader) { width:100%; max-width:var(--reading-content-width); margin-inline:auto; }
 .task-reader h2 { font-size:18px; line-height:1.5; margin:0 0 16px; }
 .task-reader h3 { font-size:14px; margin:24px 0 8px; }
 .task-reader-origin { color:var(--soft-muted); font-size:11px; }

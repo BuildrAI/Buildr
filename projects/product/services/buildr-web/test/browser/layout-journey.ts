@@ -72,6 +72,14 @@ export async function runLayoutJourney({ t, page, workspaceUrl, capture }: any) 
     const related = page.locator('.pane-right:visible [data-related-resources="projects"]');
     assert.match(await related.innerText(), /演示项目/);
     assert.match(await related.getByRole('link').first().getAttribute('href'), /\/projects\/demo/);
+    await page.getByRole('button', { name: '展开阅读', exact: true }).click();
+    await page.getByRole('button', { name: '恢复分屏', exact: true }).waitFor({ state: 'visible' });
+    const functionalWidth = await page.locator('.pane-right:visible').evaluate((pane: HTMLElement) => {
+      const inner = pane.querySelector<HTMLElement>('.pane-body-inner')!;
+      return { pane: pane.clientWidth, content: inner.getBoundingClientRect().width };
+    });
+    assert.ok(Math.abs(functionalWidth.pane - functionalWidth.content) < 2, `功能详情使用右分屏全部宽度：${JSON.stringify(functionalWidth)}`);
+    await page.getByRole('button', { name: '恢复分屏', exact: true }).click();
     await page.locator('[data-doc-row="readme"]').click();
     const body = page.locator('.pane-right:visible .markdown-body');
     await body.getByRole('heading', { name: '布局阅读资料', exact: true }).waitFor();
@@ -82,7 +90,14 @@ export async function runLayoutJourney({ t, page, workspaceUrl, capture }: any) 
     await page.getByRole('button', { name: '展开阅读', exact: true }).click();
     await page.getByRole('button', { name: '恢复分屏', exact: true }).waitFor({ state: 'visible' });
     const geometry = await body.locator('p').first().evaluate((el: HTMLElement) => ({ width: el.getBoundingClientRect().width, fontSize: parseFloat(getComputedStyle(el).fontSize) }));
-    assert.ok(geometry.width > 300 && geometry.width / geometry.fontSize < 85, `宽屏展开后正文不能拉长成整屏行宽：${JSON.stringify(geometry)}`);
+    assert.ok(geometry.width > 300 && geometry.width / geometry.fontSize < 100, `宽屏展开后正文不能拉长成整屏行宽：${JSON.stringify(geometry)}`);
+    assert.ok(geometry.width > 1040, '文档阅读宽度比上一版 1040 像素适度增加');
+    const readingMargins = await page.locator('.pane-right:visible').evaluate((pane: HTMLElement) => {
+      const frame = pane.getBoundingClientRect();
+      const reader = pane.querySelector<HTMLElement>('.resource-reader')!.getBoundingClientRect();
+      return { left: reader.left - frame.left, right: frame.right - reader.right };
+    });
+    assert.ok(Math.abs(readingMargins.left - readingMargins.right) < 2, `文档在右分屏居中：${JSON.stringify(readingMargins)}`);
     await noPageOverflow();
     await capture(page, 'layout-reading-expanded-1920.png');
     await page.getByRole('button', { name: '恢复分屏', exact: true }).click();
@@ -334,6 +349,7 @@ export async function runLayoutJourney({ t, page, workspaceUrl, capture }: any) 
     const listPattern = /\/api\/v1\/workspaces\/[^/]+\/tasks(?:\?[^/]*)?$/;
     const otherPattern = `**/tasks/${second}`;
     const contextPattern = `**/tasks/${second}/work-context`;
+    const materialsPattern = `**/tasks/${second}/materials`;
     const contextsPattern = /\/tasks\/work-contexts\?/;
     const changePattern = /\/tasks\/(browser-task|layout-reading-other)\/changes\/demo\/browser-flow$/;
     const counts = { first: 0, second: 0, scans: 0 };
@@ -360,6 +376,12 @@ export async function runLayoutJourney({ t, page, workspaceUrl, capture }: any) 
       await route.fulfill({ response, json: { ...payload, record: { ...payload.record, taskId: second, title: '切换说明任务' } } });
     });
     await page.route(contextPattern, (route: any) => route.fulfill({ json: { schemaVersion: 'buildr.task-work-context/v1', taskId: second, context: null, contextDigest: null } }));
+    await page.route(materialsPattern, async (route: any) => {
+      const response = await route.fetch({ url: route.request().url().replace(second, first) });
+      const payload = await response.json();
+      payload.taskId = second;
+      await route.fulfill({ response, json: payload });
+    });
     await page.route(contextsPattern, async (route: any) => {
       const url = new URL(route.request().url()); url.searchParams.set('ids', first);
       const response = await route.fetch({ url: url.href });
@@ -404,6 +426,17 @@ export async function runLayoutJourney({ t, page, workspaceUrl, capture }: any) 
       await page.unroute(listPattern, slowList);
       await row(first).click();
       await initial;
+      const header = await page.locator('#task-detail-main').evaluate((root: HTMLElement) => {
+        const title = root.querySelector<HTMLElement>('#task-detail-title')!.getBoundingClientRect();
+        const metadata = root.querySelector<HTMLElement>('#task-work-context')!;
+        const bounds = metadata.getBoundingClientRect();
+        const intent = root.querySelector<HTMLElement>('#task-detail-intent')!.getBoundingClientRect();
+        return { titleBottom: title.bottom, metadataTop: bounds.top, metadataBottom: bounds.bottom, intentTop: intent.top, idInMetadata: Boolean(metadata.querySelector('#task-detail-id')), updated: metadata.querySelector('time')?.textContent };
+      });
+      assert.ok(header.idInMetadata && header.updated?.includes('最后更新'), '标题下的同一模块保留任务编码与更新时间');
+      assert.ok(header.metadataTop >= header.titleBottom && header.intentTop >= header.metadataBottom, `任务信息在名称下、意图前：${JSON.stringify(header)}`);
+      assert.ok(header.metadataTop - header.titleBottom <= 12, '任务信息紧接名称下方');
+      assert.ok(header.intentTop - header.metadataBottom <= 12, '意图与任务信息保持紧凑间距');
       const content = page.locator('#task-node-content:visible');
       assert.match(await content.innerText(), /正在读取内容/);
       assert.doesNotMatch(await content.innerText(), /暂无补充/);
@@ -438,7 +471,7 @@ export async function runLayoutJourney({ t, page, workspaceUrl, capture }: any) 
       assert.equal(counts.scans, 0);
     } finally {
       release?.(); releaseList?.(); page.off('request', scans);
-      await page.unroute(listPattern); await page.unroute(otherPattern); await page.unroute(changePattern); await page.unroute(contextPattern); await page.unroute(contextsPattern);
+      await page.unroute(listPattern); await page.unroute(otherPattern); await page.unroute(changePattern); await page.unroute(contextPattern); await page.unroute(materialsPattern); await page.unroute(contextsPattern);
     }
   });
 

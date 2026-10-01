@@ -14,6 +14,7 @@ import { workspaceHref } from '../../../lib/labels';
 import { TaskOverview } from '../components/TaskOverview';
 import { TaskChecklist } from '../components/TaskChecklist';
 import { TaskSummary } from '../components/TaskSummary';
+import { TaskHeaderMetadata } from '../components/TaskHeaderMetadata';
 import { useTaskVisit } from '../hooks/useTaskVisit';
 import { useWorkbenchPreferences } from '../../workbench/hooks/useWorkbenchPreferences';
 import { TaskContextDrawer } from '../components/TaskWorkContextCard';
@@ -142,11 +143,11 @@ export function TaskDetailPage({ taskId: providedTaskId }: { taskId?: string } =
     } }} trigger={['click']}><Button id="task-more-actions" size="small" type="text" icon={<MoreOutlined />} aria-label="更多任务操作" /></Dropdown>
   </>;
   return <article ref={reading.rootRef} className={`task-detail-page${selected === 'changes' ? ' is-wide' : ''}`} id="task-detail-main" data-task-id={taskId}>
-    <TaskOverview actions={headerActions} record={record} onRelativeLink={link => void artifacts.openIntentDocument(link)} />
+    <TaskOverview actions={headerActions} record={record} onRelativeLink={link => void artifacts.openIntentDocument(link)} metadata={<TaskHeaderMetadata task={data} context={workContext.data} href={href} onOpen={(node, content) => { selectNode(node); if (content) reading.choose(node, content); }} />} />
     {visitError && <Alert type="warning" message={visitError} />}
     {alert && <Alert id="task-detail-alert" type={alert.error ? 'error' : 'success'} message={alert.message} closable onClose={() => setAlert(null)} />}
     {data.referenceDiagnostics.length > 0 && <Alert id="task-reference-diagnostics" type="warning" message={`部分引用不可用：${data.referenceDiagnostics.map(item => item.message).join('；')}`} />}
-    <TaskSummary task={data} context={workContext.data} error={workContext.error} href={href} onRespond={() => editor.open('respond')} onOpen={(node, content) => { selectNode(node); if (content) reading.choose(node, content); if (content === 'review') reading.choose(`${node}:review`, ''); }} />
+    <TaskSummary context={workContext.data} error={workContext.error} onRespond={() => editor.open('respond')} />
     {record.isParent ? <CompositeTaskContent key={taskId} refreshToken={readerRefreshToken} task={data} coordination={evidence.coordinationData} loading={evidence.coordinationLoading} briefs={artifacts.briefs} documents={documents} materials={artifacts.materials} renderContent={readContent} refresh={async () => { await refresh(); }} onEnd={() => setEndOpen(true)} href={href} onDocument={(key, path) => void artifacts.openChangeDocument(key, path)} /> : <>
     <TaskWorkPath actions={checklistTrigger} record={record} context={workContext.data?.context} selected={selected === 'changes' ? null : selected} onSelect={selectNode} contentTabs={[{ key: 'changes', label: <span data-prototype-position="changes-entry">改动与提交{changedFileCount !== null && changedFileCount > 0 && <span className="task-badge">{changedFileCount}</span>}</span>, selected: selected === 'changes', onSelect: () => selectNode('changes') }]} />
     <div className={`task-detail-layout${checklist.open && checklist.pinned ? ' checklist-pinned' : ''}${checklistResizing ? ' checklist-resizing' : ''}`}>

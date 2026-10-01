@@ -10,10 +10,6 @@
 .workspace-page .pane-stage.reading-expanded > .pane-left,
 .workspace-page .pane-stage.reading-expanded > .pane-divider { display: none; }
 .workspace-page .pane-stage.reading-expanded > .pane-right { flex: 1 1 100%; width: 100% !important; }
-.workspace-page .pane-stage.reading-expanded > .pane-right > .pane-body > .pane-body-inner {
-  max-width: 1240px;
-  margin-inline: auto;
-}
 .resource-preview-content > [hidden] { display: none !important; }
 .pane-overlay-heading { display: none; }
 .workspace-page .pane-stage.reading-overlay { position: relative; }
@@ -32,7 +28,3 @@
 .workspace-page .pane-stage.reading-overlay > .pane-right > .pane-reading-toggle { display: none; }
 .workspace-page .pane-stage.reading-overlay > .pane-right > .pane-body { height: auto; }
 .reading-overlay .pane-overlay-heading { display: flex; flex: none; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--soft-line); }
-/* Expanded knowledge and task readers contain their own prose width rules. */
-.workspace-page .pane-stage.reading-expanded > .pane-right > .pane-body > .pane-body-inner:has(.knowledge-browser, .knowledge-page, .task-detail-page) {
-  max-width: none;
-}
