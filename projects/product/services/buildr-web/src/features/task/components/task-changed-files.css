@@ -65,7 +65,8 @@
 }
 
 /* 差异栏内的仓库组退化为普通分区：标题与文件行同属一栏，不再嵌卡片。 */
-.task-diff-rail .task-changed-repo-head { padding:8px 10px 6px; background:transparent; border:0; border-radius:0; }
+.task-diff-rail .task-changed-repo-head { padding:8px 10px 5px; background:transparent; border:0; border-radius:0; }
 .task-diff-rail .task-changed-repo-count { margin-left:auto; font-size:11px; color:var(--soft-muted); white-space:nowrap; }
 .task-diff-rail .task-changed-repo-error { margin:4px 10px 12px; padding:12px 14px; border-radius:8px; border-top:1px solid var(--soft-line); }
+.task-diff-rail .task-changed-status { width:14px; text-align:center; }
 .task-diff-pane > .task-commits-demo-note { flex:none; margin:0; padding:10px 14px; border-top:1px solid var(--soft-line); }

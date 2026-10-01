@@ -1837,7 +1837,7 @@ details summary { cursor: pointer; color: var(--soft-ink); font-size: 12px; font
 .pane-divider::after { content: ""; position: absolute; top: 0; bottom: 0; left: 4px; width: 1px; background: var(--soft-line); transition: background 150ms ease, width 150ms ease; }
 .pane-divider:hover::after, .pane-divider:focus-visible::after, .pane-stage.resizing .pane-divider::after { width: 2px; left: 3.5px; background: var(--soft-primary); }
 
-/* 全部竖向分屏共用一种分隔样式：居中细缝 + 悬停抓手，线色与 .pane-divider 一致。 */
+/* 全部竖向分屏共用一种分隔样式：分缝细线 + 短竖线抓手，与 .pane-divider 同色系。 */
 .sidebar-resize,
 .task-checklist-resize,
 .task-diff-rail-resize {
@@ -1857,7 +1857,7 @@ details summary { cursor: pointer; color: var(--soft-ink); font-size: 12px; font
 .task-diff-rail-resize::before { content: ""; position: absolute; top: 0; bottom: 0; left: 4px; width: 1px; background: #dce5e0; }
 .sidebar-resize::after,
 .task-checklist-resize::after,
-.task-diff-rail-resize::after { content: ""; position: absolute; top: calc(50% - 16px); left: 2px; right: 2px; height: 32px; border-radius: 4px; background: #b8cbc3; transition: background 150ms ease; }
+.task-diff-rail-resize::after { content: ""; position: absolute; top: 50%; left: 50%; width: 3px; height: 44px; transform: translate(-50%, -50%); border-radius: 2px; background: #cdd3d8; transition: background 150ms ease, height 150ms ease; }
 .sidebar-resize:hover::after,
 .sidebar-resize:active::after,
 .task-checklist-resize:hover::after,
@@ -1865,15 +1865,15 @@ details summary { cursor: pointer; color: var(--soft-ink); font-size: 12px; font
 .task-diff-rail-resize:hover::after,
 .task-diff-rail-resize:active::after,
 .task-detail-layout.checklist-resizing .task-checklist-resize::after,
-.task-diff-reader.is-resizing .task-diff-rail-resize::after { background: var(--soft-primary); }
+.task-diff-reader.is-resizing .task-diff-rail-resize::after { background: var(--soft-primary); height: 64px; }
 .sidebar-resize:focus-visible,
 .task-checklist-resize:focus-visible,
 .task-diff-rail-resize:focus-visible { outline: 2px solid var(--soft-primary); outline-offset: -2px; }
 .sidebar-resize { margin-left: -4.5px; }
-/* 固定清单的竖线就是清单列左边线；抓手叠在其上。 */
-.task-checklist-resize { margin-left: -9px; }
+/* 清单列与文件栏的分缝由边线承担，抓手叠在线上居中。 */
+.task-checklist-resize { margin-left: -1px; width: 1px; }
 .task-checklist-resize::before { display: none; }
-.task-checklist-resize::after { left: 7px; right: auto; width: 5px; }
+.task-checklist-resize::after { left: 0; }
 
 @media (max-width: 1440px) {
   .pane-right { position: fixed; top: 56px; right: 0; bottom: 0; z-index: 40; width: min(760px, 100vw) !important; background: #fff; box-shadow: -12px 0 32px rgba(20, 26, 30, .12); }
