@@ -56,6 +56,22 @@ export async function runTaskMaterialsJourney({ t, page, runtime, workspaceRoot,
     const listUrl = page.url();
     await page.locator(`#task-table-body [data-task-id="${simple}"]`).click();
     await body().locator('.markdown-body').filter({ hasText: '完成依据：窄栏标题' }).waitFor({ state: 'visible' });
+    const originalViewport = page.viewportSize();
+    try {
+      for (const width of [1920, 390]) {
+        await page.setViewportSize({ width, height: 1000 });
+        if (width === 1920) await page.getByRole('button', { name: '展开阅读', exact: true }).click();
+        const geometry = await body().locator('[data-task-material="brief"]').evaluate((reader: HTMLElement) => {
+          const parent = reader.parentElement!, frame = parent.getBoundingClientRect(), style = getComputedStyle(parent), rect = reader.getBoundingClientRect();
+          return { width: rect.width, left: rect.left - frame.left - parseFloat(style.paddingLeft), right: frame.left + parent.clientWidth - parseFloat(style.paddingRight) - rect.right, viewportRight: rect.right };
+        });
+        assert.ok(geometry.width <= 1201, `任务说明遵守文档阅读上限：${JSON.stringify(geometry)}`);
+        assert.ok(Math.abs(geometry.left - geometry.right) < 2, `任务说明居中阅读：${JSON.stringify(geometry)}`);
+        if (width === 1920) assert.ok(geometry.width > 1040, '宽屏任务说明使用加宽后的阅读区');
+        else assert.ok(geometry.viewportRight <= width + 1, '窄屏任务说明保持可读且不越界');
+        if (width === 1920) await page.getByRole('button', { name: '恢复分屏', exact: true }).click();
+      }
+    } finally { if (originalViewport) await page.setViewportSize(originalViewport); }
     assert.equal(page.url(), listUrl, '沿用任务列表副屏，而不是打开顶部普通链接');
     assert.equal(await page.locator('[data-task-node=requirements]').getAttribute('aria-pressed'), 'true');
     assert.doesNotMatch(await body().innerText(), /暂无补充需求或说明|历史变更说明/);

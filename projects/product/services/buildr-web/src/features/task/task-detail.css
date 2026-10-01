@@ -38,7 +38,7 @@
 .task-content-back { margin-bottom:18px; }
 .task-content-back .ant-btn { padding-left:0; font-size:12px; }
 .task-reader { min-width:0; font-size:14px; line-height:1.85; overflow-wrap:anywhere; }
-.task-reader:has(.task-document-reader) { width:100%; max-width:var(--reading-content-width); margin-inline:auto; }
+.task-reader:has(.task-document-reader), .task-reader[data-task-material] { width:100%; max-width:var(--reading-content-width); margin-inline:auto; }
 .task-reader h2 { font-size:18px; line-height:1.5; margin:0 0 16px; }
 .task-reader h3 { font-size:14px; margin:24px 0 8px; }
 .task-reader-origin { color:var(--soft-muted); font-size:11px; }
