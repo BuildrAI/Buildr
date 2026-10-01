@@ -5,7 +5,7 @@ skills:
     sourceIdentity: package:skills/buildr/task-triage
     source: buildr
     path: buildr/task-triage
-    description: 开始修改代码、文档、配置或技能等持久文件前使用；确定隔离位置，判断直接实施、事实维护或 OpenSpec 变更，并交接专业动作。
+    description: 用户授权修复、优化或继续修改代码、文档、配置、规则或技能时使用；首次持久写入前登记或接续任务、确定隔离位置，判断直接实施、事实维护或 OpenSpec 变更。
     enabled: true
     required: false
     state: installed
@@ -219,7 +219,7 @@ skills:
     sourceIdentity: package:skills/buildr/task-manager
     source: buildr
     path: buildr/task-manager
-    description: 创建或维护任务、记录工作进展与待处理事项、读取人的答复、纠正状态或调整父子关系时使用；维护当前工作事实，不执行研发、测试或交付。
+    description: 在已初始化的 Buildr 工作空间中，用户授权修复、优化、开始或继续代码、文档、配置、规则或技能修改，或要求维护任务与进展时使用；先登记或接续任务，纯只读咨询不创建任务。
     enabled: true
     required: false
     state: installed

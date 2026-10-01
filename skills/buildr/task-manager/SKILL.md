@@ -34,11 +34,29 @@ buildr task complete <id> --summary <text> --expected-record <recordDigest> [--p
 buildr task abandon <id> --reason <text> --expected-record <recordDigest> --target <workspace> --json
 ```
 
-`intent`（目标）表达一句话级的任务目标与入口定位，不复述完整需求。多目标、复合背景、边界或验收条件交给关联变更（Change）的 `brief.md`（需求）承载；不得把实现步骤、逐条验收或长篇正文写入 intent，也不写成标题复述、内部步骤清单或只有作者能懂的缩写。无关联变更时 intent 如实概括任务目标。关联变更的 `brief.md` 补充该变更的需求叙事，不替代任务目标，两者不相互复制正文或相互矛盾。
+`intent`（目标）表达一句话级的任务目标与入口定位，不复述完整需求；不得写成标题复述、内部步骤清单或长篇正文。整体问题、需求、范围和完成依据由唯一任务说明（Task Brief）承载，不委托关联变更说明（Change Brief）。任务可以关联零到多个变更（Change）；各 Change `brief.md` 只解释具体规范变化并引用同一任务正文，不复制同义需求，也不宣称变更只能被一个任务引用。
 
-任务说明引用已登记项目文档时使用具名的工作空间相对 Markdown 链接，例如 `[方案](projects/product/docs/plan.md)`。区分链接可解析与正文可读取；文档只在隔离目录时如实说明，不复制正文冒充已交付。
+## 形成、保存与关联任务材料
 
-写入使用已观察的当前 `recordDigest`，应用（Application）继续校验版本。成功响应已包含完整记录与新版本时，直接核对并作为下一动作的输入；仅在响应缺失、发生冲突、工作中断后继续或已知相关事实变化时重读。冲突后重新判断，不静默重放旧输入。完成只保存已成立的结果，不执行Git、部署、验证或清理。复盘正文由Agent按用户要求写入`.buildr/local/task-retrospectives/<task-id>.md`，Task Record只登记摘要与`pending-decision|decided`。
+每个新正式 `active` 任务（包括 `todo` 激活）先完成登记，再按 `task-triage` 核对实际隔离位置，由本技能（Skill）形成并关联真实任务说明（Task Brief）。正文至少说明问题或需求、目标、必要范围与非目标、完成依据；简单任务可用一个短段落，复杂任务按理解逐步补充，不强制长模板，不编造未知事实或空占位。纯待办意向不提前制造执行材料。
+
+优先使用项目根下 `tasks/<task-id>/brief.md`，也可引用经核对适用的已有项目文档；没有项目或正文只需本机接续时，保存在主工作空间（Canonical Workspace）`.buildr/local/task-materials/<task-id>/` 内的 Markdown。项目正文由真实工作树（Worktree）文件工具维护并按目标交付；本机正文和引用不随 Git 推送。已有 `knowledge/` 文档可显式引用原文，不为材料整理移动或复制；普通任务说明、方案、实施和交付不默认交给知识维护。
+
+通过独立任务材料应用（Task Materials Application）保存正式引用，而非写入任务记录（Task Record）。关联清单只含 `schemaVersion: buildr.task-materials/v1` 与 `documents`，每项为 `{id, role, title, source}`：`role` 为 `brief|solution|implementation|delivery`；来源为 `{kind: task, path: <task-relative-md>}` 或 `{kind: project, project: <code>, path: <project-relative-md>}`。至多一项 `brief`，其他角色按实际需要零到多项；不保存正文、工作树物理路径、任务状态或专业检查适用性。多任务可引用同一适用正文，不建立排他所有权。
+
+先 `inspect` 取得 `materialsDigest` 和每项当前正文摘要，再维护正文与完整引用。关联版本和正文版本分别使用已观察值；不借 `recordDigest` 保存材料版本。项目正文修改前重新读取真实文件，保留他人修改，不能声称本机锁保护外部文件工具。受控本机正文写入与关联动作分别校验版本；冲突后重读并判断，不静默覆盖或自动重放。
+
+```text
+buildr task materials inspect <id> --target <canonical-workspace> --json
+buildr task materials record <id> --materials <json-file> --expected-current <absent|materialsDigest> --target <canonical-workspace> --json
+buildr task materials write <id> --path <task-relative-md> --content <content-file> --expected-document <absent|documentDigest> --target <canonical-workspace> --json
+```
+
+正文先保存，再建立正式材料引用，随后核对应用返回的实际正文、来源和摘要，及用户任务说明（Task Brief）节点直接可读、刷新后仍为当前正文。普通具名链接仍可作导航，但顶部链接可打开不等于正式引用或节点可读；候选正文缺失不能拿主目录同名旧文件替代。
+
+目标理解或已确认范围变化时重读唯一正文及材料引用，按各自版本更新；任务业务事实变化才更新任务记录（Task Record），材料变化不重写状态或历史。主动接续没有独立说明的旧任务时，显式关联适用旧文档或形成当前说明，说明这是本次关联或补写；不批量补造历史，不改写旧 Change Brief、归档、时间或专业报告。材料局部缺失如实报告，继续其他安全动作；材料保存不改变合法任务记录动作的前置条件。
+
+任务记录（Task Record）写入使用已观察的当前 `recordDigest`，应用（Application）继续校验版本。成功响应已包含完整记录与新版本时，直接核对并作为下一动作的输入；仅在响应缺失、发生冲突、工作中断后继续或已知相关事实变化时重读。冲突后重新判断，不静默重放旧输入。完成只保存已成立的结果，不执行Git、部署、验证或清理。复盘正文由Agent按用户要求写入`.buildr/local/task-retrospectives/<task-id>.md`，Task Record只登记摘要与`pending-decision|decided`。
 
 ## 记录进展与接续人的答复
 
@@ -73,7 +91,7 @@ buildr task work-context respond <id> --expected-current <digest> --attention <�
 
 人负责整体目标、边界、关键决定与完成授权；智能体（Agent）在这些边界内规划、创建独立子任务、核对成果和持续推进。`--parent-task` 明确创建父任务；`--parent` 指定子任务归属。关联过子任务的父身份保留，不通过移除最后一个子任务取消完成保护。
 
-用户要求创建并准备父任务时，保存目标后继续整理计划与验收标准。简单计划写入目标说明，复杂计划使用现有可读文档并从目标链接。计划说明分工、依赖、边界、剩余工作与重要决定；不要求专用父计划、贡献绑定、环境或研发回执。读取当前计划和实际成果后，按已有授权决定是否启动子任务；未知的关键目标或授权才询问用户。
+用户要求创建并准备父任务时，保存短目标后继续在任务说明（Task Brief）与适用方案材料中整理计划与验收标准，不拉长 `intent`。简单计划写入真实短正文，复杂计划可引用现有可读文档并保存正式材料关联。计划说明分工、依赖、边界、剩余工作与重要决定；不要求专用父计划、贡献绑定、环境或研发回执。读取当前计划和实际成果后，按已有授权决定是否启动子任务；未知的关键目标或授权才询问用户。
 
 每个子任务拥有独立目标、范围、结果及按需要选择的研发方式。不得继承父任务的环境、分支、规范变化或验证结论；同一具体规范变化只能有一个活跃变化负责。各仓库按真实边界交付。子任务有依赖时先核对前置成果；软件不替智能体（Agent）证明业务依赖已经满足。
 
