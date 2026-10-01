@@ -209,6 +209,7 @@ export const TASK_HTTP_SCHEMAS = Object.freeze({
     reason: nonEmptyText,
   }, ['expectedRecordDigest', 'reason']), defs),
   abandonResponse: schema('abandon/response', 'TaskAbandonResponse', { $ref: '#/$defs/TaskRecordMutationResponse' }, defs),
+  fileDiffRequest: schema('file-diff/request', 'TaskFileDiffRequest', closed({ repositoryId: nonEmptyText, filePath: { type: 'string', minLength: 1, maxLength: 4096 }, commitHash: { type: 'string', pattern: '^(worktree|[a-f0-9]{40}|[a-f0-9]{64})$' } }, ['repositoryId', 'filePath', 'commitHash']), defs),
   changedFilesRequest: schema('changed-files/request', 'TaskChangedFilesRequest', closed({}), defs),
   changedFilesResponse: schema('changed-files/response', 'TaskChangedFilesResult', closed({
     schemaVersion: { const: 'buildr.task-changed-files/v1' }, taskId: { $ref: '#/$defs/TaskId' }, readAt: nonEmptyText,
@@ -293,6 +294,7 @@ export const TASK_HTTP_OPERATIONS = Object.freeze([
   operation('task-record.abandon', 'POST', '/tasks/:taskId/abandon', 'abandonRequest', 'abandonResponse'),
   operation('task-record.retrospective-document', 'GET', '/tasks/:taskId/retrospective-document', 'retrospectiveDocumentRequest', 'retrospectiveDocumentResponse'),
   operation('task-record.commits', 'GET', '/tasks/:taskId/commits', 'commitsRequest', 'commitsResponse'),
+  operation('task-record.file-diff', 'GET', '/tasks/:taskId/file-diff', 'fileDiffRequest', 'changedFilesResponse'),
   operation('task-record.changed-files', 'GET', '/tasks/:taskId/changed-files', 'changedFilesRequest', 'changedFilesResponse'),
 ]);
 

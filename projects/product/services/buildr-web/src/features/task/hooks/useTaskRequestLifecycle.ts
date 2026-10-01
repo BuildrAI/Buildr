@@ -7,7 +7,7 @@ type PendingTaskRead = {
 };
 
 export type TaskReadLifecycle = {
-  run<T>(taskId: string, operation: string, request: (signal: AbortSignal) => Promise<T>): Promise<T>;
+  run<T>(taskId: string, operation: string, request: (signal: AbortSignal) => Promise<T>, options?: { replacePending?: boolean }): Promise<T>;
   abortTask(taskId: string): void;
   abortAll(): void;
 };
@@ -21,10 +21,11 @@ export function isTaskReadCancelled(error: unknown): boolean {
 export function createTaskReadLifecycle(): TaskReadLifecycle {
   const pending = new Map<string, PendingTaskRead>();
 
-  function run<T>(taskId: string, operation: string, request: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  function run<T>(taskId: string, operation: string, request: (signal: AbortSignal) => Promise<T>, options: { replacePending?: boolean } = {}): Promise<T> {
     const key = `${taskId}\u0000${operation}`;
     const existing = pending.get(key);
-    if (existing) return existing.promise as Promise<T>;
+    if (existing && !options.replacePending) return existing.promise as Promise<T>;
+    if (existing) { pending.delete(key); existing.controller.abort(); }
 
     const controller = new AbortController();
     const entry: PendingTaskRead = {

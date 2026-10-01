@@ -1,0 +1,9 @@
+.split-divider { position:relative; flex:none; width:9px; align-self:stretch; padding:0; border:0; background:transparent; cursor:col-resize; touch-action:none; z-index:4; }
+.split-divider::before { content:""; position:absolute; inset:0 auto 0 4px; width:1px; background:var(--soft-line); transition:background 150ms ease; }
+.split-divider::after { content:""; position:absolute; top:50%; left:50%; width:3px; height:32px; transform:translate(-50%,-50%); border-radius:4px; background:#b8cbc3; transition:background 150ms ease; }
+.split-divider:hover::before, .split-divider:focus-visible::before, .split-divider:active::before { background:var(--soft-primary); }
+.split-divider:hover::after, .split-divider:focus-visible::after, .split-divider:active::after { background:var(--soft-primary); }
+.split-divider:focus-visible { outline:2px solid var(--soft-primary); outline-offset:-2px; }
+@media(prefers-reduced-motion:reduce) { .split-divider::before, .split-divider::after { transition:none; } }
+
+.split-divider-header-marker { position:absolute; top:-31px; left:4px; width:1px; height:19px; background:var(--soft-line); pointer-events:none; }

@@ -105,6 +105,8 @@ test('任务材料使用同一有界只读队列，只传任务范围字段', as
  const metrics:any={calls:0,active:0,maxActive:0,started:[],messages:[]};
  const executor=createBoundedBuildrWebReadExecutor({workerCount:1,queueLimit:4,workerFactory:fakeWorkerFactory({metrics})});
  try {
+  await executor.run('file-diff',{...input('task-a'),repositoryId:'repo',filePath:'src/a.ts',commitHash:'worktree'});
+  metrics.messages.shift();
   await executor.run('change',{...input('task-a'),project:'demo',change:'one'});
   await executor.run('documents',{...input('task-a'),project:'demo',documentPath:'docs/one.md'});
   await executor.run('prototypes',input('task-a'));
@@ -134,4 +136,18 @@ test('材料HTTP入口直接交给有界读取器，主线程不再读取文件�
  assert.equal(html,'<p>preview</p>');
  await assert.rejects(http.handle({...context,suffix:'/tasks/task-a/documents/demo/%ZZ.md'}));
  assert.equal(await http.handle({...context,request:{method:'POST'},suffix:'/tasks/task-a/ui-prototypes'}),null);
+});
+
+test('Web预热仅加载固定容量，不读取任务，并继续复用已有Worker', async () => {
+  const metrics: any = { calls: 0, active: 0, maxActive: 0, started: [] };
+  const factory = fakeWorkerFactory({ metrics });
+  let created = 0;
+  const executor = createBoundedBuildrWebReadExecutor({ workerCount: 2, warm: true, workerFactory: () => { created += 1; return factory(); } });
+  try {
+    assert.equal(created, 2);
+    assert.equal(metrics.calls, 0, '预热不得扫描未打开任务');
+    await executor.run('changed-files', input('task-one'));
+    assert.equal(created, 2);
+    assert.equal(metrics.calls, 1);
+  } finally { await executor.close(); }
 });

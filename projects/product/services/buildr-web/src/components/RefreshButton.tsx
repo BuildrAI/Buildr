@@ -7,13 +7,14 @@ type Props = {
   text?: string;
   loading?: boolean;
   disabled?: boolean;
+  stableLoading?: boolean;
   size?: ButtonProps['size'];
   onClick: () => void;
 };
 
-export function RefreshButton({ id, label, text, loading = false, disabled = false, size, onClick }: Props) {
+export function RefreshButton({ id, label, text, loading = false, disabled = false, stableLoading = false, size, onClick }: Props) {
   return <Tooltip title={label}>
-    <Button id={id} icon={<ReloadOutlined />} aria-label={label} aria-busy={loading}
-      loading={loading} disabled={disabled || loading} size={size} onClick={onClick}>{text}</Button>
+    <Button id={id} icon={<ReloadOutlined spin={stableLoading && loading} />} aria-label={label} aria-busy={loading}
+      loading={!stableLoading && loading} disabled={disabled || (!stableLoading && loading)} aria-disabled={disabled || loading} size={size} onClick={() => { if (!disabled && !loading) onClick(); }}>{text}</Button>
   </Tooltip>;
 }

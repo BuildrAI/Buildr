@@ -214,8 +214,8 @@
 .task-path-actions { flex:none; display:flex; align-items:flex-start; }
 .task-checklist-actions { display:flex; gap:4px; align-items:center; }
 @container task-detail (min-width:1000px) {
-  .task-detail-layout.checklist-pinned { gap:20px; }
-  .task-checklist.is-pinned { position:relative; inset:auto; flex:0 0 35%; width:35%; margin-top:20px; border:0; border-left:1px solid var(--soft-line); border-radius:0; box-shadow:none; animation:none; }
+  .task-detail-layout.checklist-pinned { gap:0; }
+  .task-checklist.is-pinned { position:relative; inset:auto; flex:0 0 35%; width:35%; margin-top:20px; border:0; border-radius:0; box-shadow:none; animation:none; }
   .task-checklist.is-pinned .side-reading-heading { padding:9px 14px; min-height:49px; align-items:center; }
   .task-checklist.is-pinned .side-reading-body { padding:0 16px 16px 20px; background:#fff; }
   .task-checklist.is-pinned .task-reader, .task-checklist.is-pinned .task-reader .task-document-reader .task-document-preview-content { font-size:12.5px; line-height:1.75; }
@@ -240,19 +240,9 @@
 .task-detail-layout.checklist-resizing { cursor:col-resize; user-select:none; }
 .task-detail-layout.checklist-resizing * { cursor:col-resize !important; }
 
-/* Full-bleed tool surfaces (改动与提交 workbench) break the centered measure. */
+/* Tool and prose tabs share the same inset and pinned checklist boundary. */
 .task-detail-page.is-wide { max-width:none; }
-.task-detail-page.is-wide .task-detail-layout { grid-template-columns:minmax(0,1fr) !important; gap:0 !important; }
-.task-detail-page.is-wide .task-node-reading { overflow:visible; padding-right:0; }
-/* With the checklist pinned, the workbench butts flush against it like a tool split. */
-@container task-detail (min-width:1000px) {
-  .task-detail-page.is-wide .task-detail-layout.checklist-pinned { gap:0 !important; }
-  .task-detail-page.is-wide .task-checklist.is-pinned { margin-top:0; }
-}
-/* 改动与提交视图中内容顶到工作路径分隔线，各栏分缝统一从其下缘起始。 */
-@container task-detail (min-width:1000px) {
-  .task-detail-page.is-wide .task-detail-layout > .task-detail-reading { padding-top:0; }
-}
+.task-detail-page.is-wide .task-node-reading { padding-right:0; scrollbar-gutter:auto; }
 
 /* Long historical goals keep their full text; the detail itself must remain scrollable. */
 .task-detail-page{overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-gutter:stable}

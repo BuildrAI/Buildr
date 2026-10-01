@@ -29,11 +29,18 @@ export function createGitCommitReader(limits: CommitLimits = TASK_COMMIT_LIMITS)
     if (result.status !== 0 || result.error) throw Object.assign(new Error(timedOut(result.error) ? '提交读取超时。' : '无法读取当前 Git 代码库。'), { code: timedOut(result.error) ? 'task_commits_timeout' : 'task_commits_git_unavailable' });
     return result.stdout.toString('utf8').trim();
   }
+  const repositories = new Map<string, GitRepository>();
   function repository(location: string): GitRepository {
     const real = fs.realpathSync(location);
-    const root = fs.realpathSync(text(real, ['rev-parse', '--show-toplevel']));
-    const commonDir = fs.realpathSync(text(real, ['rev-parse', '--path-format=absolute', '--git-common-dir']));
-    return { root, commonDir, id: `sha256-${crypto.createHash('sha256').update(commonDir).digest('hex')}` };
+    const cached = repositories.get(real);
+    if (cached) return cached;
+    const [rootPath, commonPath] = text(real, ['rev-parse', '--path-format=absolute', '--show-toplevel', '--git-common-dir']).split('\n');
+    const root = fs.realpathSync(rootPath);
+    const commonDir = fs.realpathSync(commonPath);
+    const result = { root, commonDir, id: `sha256-${crypto.createHash('sha256').update(commonDir).digest('hex')}` };
+    repositories.set(real, result);
+    repositories.set(root, result);
+    return result;
   }
   function head(root: string): string | null {
     const result = git(root, ['rev-parse', '--verify', 'HEAD^{commit}']);

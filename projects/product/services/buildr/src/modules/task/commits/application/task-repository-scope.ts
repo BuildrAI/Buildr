@@ -50,13 +50,15 @@ export function resolveTaskRepositoryScope(targetRoot: string, taskId: string, d
       const existing = reads.get(repository.id);
       if (existing) {
         if (!existing.view.sources.includes(reference)) existing.view.sources.push(reference);
-        if (!existing.checkouts.has(real)) existing.checkouts.add(real);
-        observeHead(repository.root, existing, reference);
+        if (!existing.checkouts.has(repository.root)) {
+          existing.checkouts.add(repository.root);
+          observeHead(repository.root, existing, reference);
+        }
         return existing;
       }
       if (reads.size >= limits.repositoryLimit) { truncated = true; report('task_commits_repository_limit', `最多读取 ${limits.repositoryLimit} 个真实代码库；此来源尚未读取。`, reference); return null; }
       const view: TaskRepositoryView = { id: repository.id, root: repository.root, label: path.basename(repository.root), sources: [reference], status: 'complete', scannedCommitCount: 0 };
-      const current = { repository, view, heads: new Set<string>(), checkouts: new Set<string>([real]), taskCheckouts: new Set<string>() };
+      const current = { repository, view, heads: new Set<string>(), checkouts: new Set<string>([repository.root]), taskCheckouts: new Set<string>() };
       repositories.push(view); reads.set(repository.id, current);
       observeHead(repository.root, current, reference);
       return current;

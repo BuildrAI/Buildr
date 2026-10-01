@@ -16,8 +16,19 @@ export type TaskBriefState =
   | { kind: 'missing'; key: string; message: string }
   | { kind: 'ready'; key: string; change: ChangePayload; provenance: string };
 
-export function useTaskArtifacts(taskId: string, data: TaskDetailResponse | null, lifecycle: TaskReadLifecycle) {
-  const [briefs, setBriefs] = useState<TaskBriefState[]>([]);
+// Session-only, bounded by task count. Never share task content between workspaces.
+const materialCache = new Map<string, { references: string; briefs: TaskBriefState[] }>();
+const materialKey = (workspaceId: string | null, taskId: string) => JSON.stringify([workspaceId, taskId]);
+
+export function useTaskArtifacts(taskId: string, data: TaskDetailResponse | null, lifecycle: TaskReadLifecycle, workspaceId: string | null) {
+  const key = materialKey(workspaceId, taskId);
+  const references = data?.record.taskId === taskId ? data.record.changes : null;
+  const referenceIdentity = references === null ? null : JSON.stringify(references);
+  const cached = materialCache.get(key);
+  const [briefState, setBriefState] = useState<{ key: string; references: string; briefs: TaskBriefState[]; loading: boolean } | null>(null);
+  const visibleState = briefState?.key === key && briefState.references === referenceIdentity ? briefState : null;
+  const briefs = visibleState?.briefs ?? (cached?.references === referenceIdentity ? cached.briefs : []);
+  const briefsLoading = references === null || (references.length > 0 && (visibleState?.loading ?? true));
   const [prototypeData, setPrototypeData] = useState<UiPrototypeData | null>(null);
   const [prototypeLoading, setPrototypeLoading] = useState(false);
   const [prototypeError, setPrototypeError] = useState<string | null>(null);
@@ -28,38 +39,11 @@ export function useTaskArtifacts(taskId: string, data: TaskDetailResponse | null
   const briefsRequestRef = useRef(0);
   const projectRegistryRef = useRef<RegisteredProject[] | null>(null);
   taskIdRef.current = taskId;
+  const materialKeyRef = useRef(key);
+  materialKeyRef.current = key;
 
-  const loadBriefs = useCallback(async (references: TaskDetailResponse['record']['changes']) => {
-    const requestId = ++briefsRequestRef.current;
-    if (!references.length) {
-      setBriefs([{ kind: 'empty' }]);
-      return;
-    }
-    const currentTaskId = taskId;
-    const results = await Promise.all(references.map(async (reference) => {
-      const key = `${reference.project}/${reference.change}`;
-      try {
-        const detail = await lifecycle.run(currentTaskId, `change:${key}`, (signal) => (
-          taskApi.change(currentTaskId, reference.project, reference.change, { signal })
-        )) as { resolution: { workingCopy: { change: ChangePayload; provenance: string } } };
-        return { kind: 'ready' as const, key, change: detail.resolution.workingCopy.change, provenance: detail.resolution.workingCopy.provenance };
-      } catch (cause) {
-        return {
-          kind: 'missing' as const,
-          key,
-          message: `${key} 当前不可读取：${cause instanceof Error ? cause.message : '读取失败'}`,
-        };
-      }
-    }));
-    if (taskIdRef.current === currentTaskId && briefsRequestRef.current === requestId) setBriefs(results);
-  }, [taskId, lifecycle]);
-
+  // Reset task-local readers before starting any reads for the new task.
   useEffect(() => {
-    if (data?.record.taskId === taskId) void loadBriefs(data.record.changes);
-  }, [taskId, data?.record.taskId, data?.record.changes, loadBriefs]);
-
-  useEffect(() => {
-    setBriefs([]);
     setPrototypeData(null);
     setPrototypeError(null);
     setPrototypeLoading(false);
@@ -67,7 +51,56 @@ export function useTaskArtifacts(taskId: string, data: TaskDetailResponse | null
     setDocumentError(null);
     projectRegistryRef.current = null;
     prototypeRequestRef.current += 1;
-  }, [taskId]);
+    briefsRequestRef.current += 1;
+  }, [taskId, workspaceId]);
+
+  const loadBriefs = useCallback(async (references: TaskDetailResponse['record']['changes'], replacePending = false) => {
+    const requestId = ++briefsRequestRef.current;
+    const identity = JSON.stringify(references);
+    const previous = materialCache.get(key);
+    const retained = previous?.references === identity ? previous.briefs : [];
+    setBriefState({ key, references: identity, briefs: retained, loading: references.length > 0 });
+    const currentTaskId = taskId;
+    if (!references.length) {
+      setBriefState({ key, references: identity, briefs: [{ kind: 'empty' }], loading: false });
+      return;
+    }
+    try {
+      const results = await Promise.all(references.map(async (reference) => {
+        const changeKey = `${reference.project}/${reference.change}`;
+        try {
+          const detail = await lifecycle.run(currentTaskId, `change:${changeKey}`, signal => (
+            taskApi.change(currentTaskId, reference.project, reference.change, { signal })
+          ), { replacePending }) as { resolution: { workingCopy: { change: ChangePayload; provenance: string } } };
+          return { kind: 'ready' as const, key: changeKey, change: detail.resolution.workingCopy.change, provenance: detail.resolution.workingCopy.provenance };
+        } catch (cause) {
+          if (isTaskReadCancelled(cause)) throw cause;
+          return { kind: 'missing' as const, key: changeKey, message: `${changeKey} 当前不可读取：${cause instanceof Error ? cause.message : '读取失败'}` };
+        }
+      }));
+      if (taskIdRef.current !== currentTaskId || materialKeyRef.current !== key || briefsRequestRef.current !== requestId) return;
+      if (results.every(item => item.kind === 'ready')) {
+        materialCache.delete(key);
+        materialCache.set(key, { references: identity, briefs: results });
+        if (materialCache.size > 20) materialCache.delete(materialCache.keys().next().value!);
+      }
+      // A failed refresh retains readable content and adds the current local diagnostic.
+      const next = results.flatMap((item): TaskBriefState[] => item.kind === 'missing'
+        ? [...retained.filter(old => old.kind === 'ready' && old.key === item.key), item]
+        : [item]);
+      setBriefState({ key, references: identity, briefs: next, loading: false });
+    } catch (cause) {
+      if (!isTaskReadCancelled(cause)) throw cause;
+    }
+  }, [taskId, key, lifecycle]);
+
+  useEffect(() => {
+    if (referenceIdentity !== null) void loadBriefs(JSON.parse(referenceIdentity));
+    return () => { briefsRequestRef.current += 1; };
+  }, [referenceIdentity, loadBriefs]);
+
+  const refreshBriefs = useCallback((next = data) => next?.record.taskId === taskId
+    ? loadBriefs(next.record.changes, true) : Promise.resolve(), [data, taskId, loadBriefs]);
 
   const refreshPrototype = useCallback(async () => {
     const requestId = ++prototypeRequestRef.current;
@@ -133,7 +166,8 @@ export function useTaskArtifacts(taskId: string, data: TaskDetailResponse | null
 
   return {
     briefs,
-    refreshBriefs: () => data ? loadBriefs(data.record.changes) : Promise.resolve(),
+    briefsLoading,
+    refreshBriefs,
     prototypeData,
     prototypeLoading,
     prototypeError,

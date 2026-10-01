@@ -3,7 +3,7 @@ import { Worker } from 'node:worker_threads';
 import { resolveProductResource } from '../../infrastructure/product-resources/index.ts';
 
 const TASK_ID_PATTERN = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/u;
-const OPERATIONS = new Set(['reviews', 'verification', 'coordination', 'change', 'documents', 'prototypes', 'prototype', 'commits', 'changed-files']);
+const OPERATIONS = new Set(['reviews', 'verification', 'coordination', 'change', 'documents', 'prototypes', 'prototype', 'commits', 'changed-files', 'file-diff']);
 const DEFAULT_WORKER_COUNT = 2;
 const DEFAULT_QUEUE_LIMIT = 32;
 const WORKER_PATH = resolveProductResource('runtime/read-worker.cjs', {
@@ -35,7 +35,7 @@ function validateRequest(operation: any, input: any) {
   if (input.signal !== undefined && (typeof input.signal !== 'object' || typeof input.signal.addEventListener !== 'function')) {
     throw readExecutorError('local_app_read_signal_invalid', 'Buildr Web read executor signal 不合法。', 400);
   }
-  const extra = operation === 'change' ? ['project', 'change'] : operation === 'documents' ? ['project', 'documentPath'] : operation === 'prototype' ? ['prototypeId'] : [];
+  const extra = operation === 'file-diff' ? ['repositoryId', 'filePath', 'commitHash'] : operation === 'change' ? ['project', 'change'] : operation === 'documents' ? ['project', 'documentPath'] : operation === 'prototype' ? ['prototypeId'] : [];
   for (const field of extra) {
     if (typeof input[field] !== 'string' || !input[field]) throw readExecutorError('local_app_read_input_invalid', `Buildr Web read ${field} 无效。`, 400);
   }
@@ -52,7 +52,7 @@ function defaultWorkerFactory() {
   return new Worker(WORKER_PATH);
 }
 
-export function createBoundedBuildrWebReadExecutor({ workerCount = DEFAULT_WORKER_COUNT, queueLimit = DEFAULT_QUEUE_LIMIT, workerFactory = defaultWorkerFactory }: any = {}) {
+export function createBoundedBuildrWebReadExecutor({ workerCount = DEFAULT_WORKER_COUNT, queueLimit = DEFAULT_QUEUE_LIMIT, workerFactory = defaultWorkerFactory, warm = false }: any = {}) {
   if (!Number.isInteger(workerCount) || workerCount < 1) throw new TypeError('workerCount must be a positive integer.');
   if (!Number.isInteger(queueLimit) || queueLimit < 0) throw new TypeError('queueLimit must be a non-negative integer.');
 
@@ -169,6 +169,7 @@ export function createBoundedBuildrWebReadExecutor({ workerCount = DEFAULT_WORKE
           ...(item.project === undefined ? {} : { project: item.project }),
           ...(item.change === undefined ? {} : { change: item.change }),
           ...(item.documentPath === undefined ? {} : { documentPath: item.documentPath }),
+          ...(item.repositoryId === undefined ? {} : { repositoryId: item.repositoryId, filePath: item.filePath, commitHash: item.commitHash }),
           ...(item.prototypeId === undefined ? {} : { prototypeId: item.prototypeId }),
         });
       } catch (error: any) {
@@ -180,6 +181,11 @@ export function createBoundedBuildrWebReadExecutor({ workerCount = DEFAULT_WORKE
   }
 
   for (let index = 0; index < workerCount; index += 1) workers.push({ id: index, worker: null, item: null, failed: false });
+  // Load the fixed pool while the Web shell starts, without reading any task.
+  // A synchronous warm-up failure still permits the normal request-time retry.
+  if (warm) for (const state of workers) {
+    try { spawn(state); } catch { state.worker = null; state.failed = false; }
+  }
 
   function run(operation: any, input: any = {}) {
     validateRequest(operation, input);
@@ -198,6 +204,7 @@ export function createBoundedBuildrWebReadExecutor({ workerCount = DEFAULT_WORKE
         change: input.change,
         documentPath: input.documentPath,
         prototypeId: input.prototypeId,
+        repositoryId: input.repositoryId, filePath: input.filePath, commitHash: input.commitHash,
         state: 'queued',
         settled: false,
         workerState: null,

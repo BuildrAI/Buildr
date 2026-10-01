@@ -6,6 +6,7 @@ import type {
   TaskAbandonRequest,
   TaskAbandonResponse,
   TaskChangedFilesResult,
+  TaskFileDiffRequest,
   TaskCompleteRequest,
   TaskCompleteResponse,
   TaskDetailResponse,
@@ -45,6 +46,10 @@ export function createTaskClient(client: ApiClient) {
     },
     changedFiles(taskId: string, options: ReadOptions = {}): Promise<TaskChangedFilesResult> {
       return typed(client(`/api/v1/tasks/${encodeURIComponent(taskId)}/changed-files`, options));
+    },
+    fileDiff(taskId: string, input: TaskFileDiffRequest, options: ReadOptions = {}): Promise<TaskChangedFilesResult> {
+      const query = new URLSearchParams({ repositoryId: input.repositoryId, filePath: input.filePath, commitHash: input.commitHash }).toString();
+      return typed(client(`/api/v1/tasks/${encodeURIComponent(taskId)}/file-diff?${query}`, options));
     },
     change(taskId: string, project: string, change: string, options: ReadOptions = {}): Promise<unknown> {
       return client(`/api/v1/tasks/${encodeURIComponent(taskId)}/changes/${encodeURIComponent(project)}/${encodeURIComponent(change)}`, options);

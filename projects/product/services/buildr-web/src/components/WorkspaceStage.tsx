@@ -1,3 +1,4 @@
+import { SplitDivider } from './SplitDivider';
 import { Button } from 'antd';
 import { useContext, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode, type CSSProperties } from 'react';
 import { useLocation } from 'react-router-dom';
@@ -212,9 +213,9 @@ function SplitWorkspaceStage({
       {hasRight ? (
         <>
           {overlay && <div className="pane-reading-mask" onClick={closeReading} aria-hidden="true" />}
-          <button
-            type="button"
+          <SplitDivider
             className="pane-divider"
+            children={<span className="split-divider-header-marker" aria-hidden="true" />}
             aria-label="拖拽调整两侧宽度"
             role="separator"
             aria-valuemin={Math.round(dimensions.min)}

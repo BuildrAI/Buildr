@@ -1816,7 +1816,7 @@ details summary { cursor: pointer; color: var(--soft-ink); font-size: 12px; font
 /* 页签条：左右组同款；色点区分对象类型。 */
 .pane-tabstrip { display: flex; align-items: flex-end; gap: 2px; flex: none; padding: 6px 10px 0; border-bottom: 1px solid var(--soft-line); background: #f4f6f7; overflow-x: auto; scrollbar-width: none; }
 .pane-tabstrip::-webkit-scrollbar { display: none; }
-.pane-tab { display: flex; align-items: center; gap: 7px; max-width: 180px; flex: none; margin-bottom: -1px; padding: 8px 9px 8px 12px; border: 1px solid transparent; border-bottom: 0; border-radius: 10px 10px 0 0; background: transparent; color: var(--soft-muted); font: inherit; font-size: 12.5px; white-space: nowrap; cursor: pointer; transition: color 120ms ease, background 120ms ease; }
+.pane-tab { height:36px; display: flex; align-items: center; gap: 7px; max-width: 180px; flex: none; margin-bottom: -1px; padding: 8px 9px 8px 12px; border: 1px solid transparent; border-bottom: 0; border-radius: 10px 10px 0 0; background: transparent; color: var(--soft-muted); font: inherit; font-size: 12.5px; white-space: nowrap; cursor: pointer; transition: color 120ms ease, background 120ms ease; }
 .pane-tab:hover { color: var(--soft-ink); background: rgba(255, 255, 255, .65); }
 .pane-tab.on { background: #fff; border-color: var(--soft-line); color: var(--soft-ink); font-weight: 550; box-shadow: 0 1px 0 #fff; }
 .pane-tab-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: #c3cad0; }
@@ -1831,49 +1831,13 @@ details summary { cursor: pointer; color: var(--soft-ink); font-size: 12px; font
 .pane-tab-x:hover { background: #e8ecef; color: var(--soft-ink); }
 .pane-tab:focus-visible, .pane-tab-x:focus-visible, .pane-divider:focus-visible { outline: 2px solid var(--soft-primary); outline-offset: -2px; }
 
-/* 贯连分隔线：贯通内容区高度，页签条高度处与两条页签条视觉连通。 */
-.pane-divider { position: relative; width: 9px; flex: none; padding: 0; border: 0; background: transparent; cursor: col-resize; touch-action: none; }
-.pane-divider::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 43px; background: #f4f6f7; border-bottom: 1px solid var(--soft-line); }
-.pane-divider::after { content: ""; position: absolute; top: 0; bottom: 0; left: 4px; width: 1px; background: var(--soft-line); transition: background 150ms ease, width 150ms ease; }
-.pane-divider:hover::after, .pane-divider:focus-visible::after, .pane-stage.resizing .pane-divider::after { width: 2px; left: 3.5px; background: var(--soft-primary); }
-
-/* 全部竖向分屏共用一种分隔样式：分缝细线 + 短竖线抓手，与 .pane-divider 同色系。 */
-.sidebar-resize,
-.task-checklist-resize,
-.task-diff-rail-resize {
-  position: relative;
-  flex: none;
-  width: 9px;
-  align-self: stretch;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  cursor: col-resize;
-  touch-action: none;
-  z-index: 4;
-}
-.sidebar-resize::before,
-.task-checklist-resize::before,
-.task-diff-rail-resize::before { content: ""; position: absolute; top: 0; bottom: 0; left: 4px; width: 1px; background: #dce5e0; }
-.sidebar-resize::after,
-.task-checklist-resize::after,
-.task-diff-rail-resize::after { content: ""; position: absolute; top: 50%; left: 50%; width: 3px; height: 44px; transform: translate(-50%, -50%); border-radius: 2px; background: #cdd3d8; transition: background 150ms ease, height 150ms ease; }
-.sidebar-resize:hover::after,
-.sidebar-resize:active::after,
-.task-checklist-resize:hover::after,
-.task-checklist-resize:active::after,
-.task-diff-rail-resize:hover::after,
-.task-diff-rail-resize:active::after,
-.task-detail-layout.checklist-resizing .task-checklist-resize::after,
-.task-diff-reader.is-resizing .task-diff-rail-resize::after { background: var(--soft-primary); height: 64px; }
-.sidebar-resize:focus-visible,
-.task-checklist-resize:focus-visible,
-.task-diff-rail-resize:focus-visible { outline: 2px solid var(--soft-primary); outline-offset: -2px; }
-.sidebar-resize { margin-left: -4.5px; }
-/* 清单列与文件栏的分缝由边线承担，抓手叠在线上居中。 */
-.task-checklist-resize { margin-left: -1px; width: 1px; }
-.task-checklist-resize::before { display: none; }
-.task-checklist-resize::after { left: 0; }
+/* Content dividers share SplitDivider; the header row remains uninterrupted. */
+.sidebar-resize { margin-left:-4.5px; margin-right:-4.5px; margin-top:43px; }
+.task-checklist-resize { margin-top:20px; }
+.app-sidebar.is-resizing + .split-divider::before,
+.pane-stage.resizing > .split-divider::before,
+.task-detail-layout.checklist-resizing > .split-divider::before,
+.task-diff-reader.is-resizing .split-divider::before { background:var(--soft-primary); }
 
 @media (max-width: 1440px) {
   .pane-right { position: fixed; top: 56px; right: 0; bottom: 0; z-index: 40; width: min(760px, 100vw) !important; background: #fff; box-shadow: -12px 0 32px rgba(20, 26, 30, .12); }
@@ -1949,7 +1913,7 @@ details summary { cursor: pointer; color: var(--soft-ink); font-size: 12px; font
 .ws-hero-code { margin: 2px 0 0; color: var(--soft-muted); font-size: 12px; font-family: ui-monospace, Menlo, monospace; }
 
 /* Retain visited route instances; only the selected page participates in layout. */
-.workspace-pages { display:flex; flex-direction:column; height:100%; min-height:0; }
+.workspace-pages { display:flex; flex-direction:column; height:100%; min-height:0; background:linear-gradient(to bottom,#f4f6f7 0 42px,var(--soft-line) 42px 43px,#fff 43px); }
 .workspace-pages[hidden], .workspace-page[hidden] { display:none !important; }
 #app-view:has(> .workspace-pages:not([hidden])) { padding:0; overflow:hidden; }
 .app-shell:has(.workspace-pages:not([hidden])) { height:100vh; overflow:hidden; }
@@ -1970,15 +1934,7 @@ details summary { cursor: pointer; color: var(--soft-ink); font-size: 12px; font
 }
 .workspace-page .ws-dir-shell { max-width:none; padding:0; }
 .workspace-page .pane-right { position:relative; top:auto; right:auto; bottom:auto; z-index:auto; box-shadow:none; width:auto; border:0; animation:workspace-pane-enter 160ms ease-out; }
-.workspace-page .pane-divider {
- display:block;
- margin-top:-43px;
- height:calc(100% + 43px);
- background:linear-gradient(to bottom, #f4f6f7 0 42px, var(--soft-line) 42px 43px, #fff 43px);
-}
-.workspace-page .pane-divider::after { background:#dce5e0; }
-.workspace-page .pane-divider::before { top:calc(50% - 16px); left:2px; right:2px; height:32px; border:0; border-radius:4px; background:#b8cbc3; }
-.workspace-page .pane-divider:hover::after { background:var(--soft-primary); }
+.workspace-page .pane-divider { display:block; }
 .ws-obj-toolbar { display:flex; justify-content:flex-end; margin:0 0 12px; }
 @keyframes workspace-pane-enter { from { opacity:.65; transform:translateX(6px); } to { opacity:1; transform:none; } }
 .workspace-tabstrip { position:relative; flex:none; min-height:43px; touch-action:pan-x; }
@@ -2131,10 +2087,11 @@ details summary { cursor: pointer; color: var(--soft-ink); font-size: 12px; font
 .resource-unlink { opacity:0; transition:opacity 120ms; }
 .ant-list-item:hover .resource-unlink,.ant-list-item:focus-within .resource-unlink { opacity:1; }
 @media(hover:none) { .resource-unlink { opacity:1; } }
-.sidebar-collapsed .app-sidebar { flex-basis:var(--sidebar-collapsed-width); width:var(--sidebar-collapsed-width); padding-left:8px; padding-right:8px; border-right:1px solid #dce5e0; }
+.sidebar-collapsed .app-sidebar { flex-basis:var(--sidebar-collapsed-width); width:var(--sidebar-collapsed-width); padding:0; }
 .sidebar-collapsed .shell-nav-caption,.sidebar-collapsed .shell-nav-item > span:not(.anticon) { display:none; }
 .sidebar-collapsed .shell-nav-item { justify-content:center; padding:12px; }
 .sidebar-collapsed .sidebar-toggle { margin:0 auto; }
+.sidebar-collapsed .shell-navigation { border-right:1px solid var(--soft-line); min-height:calc(100% - 43px); }
 
 .project-service-row.ant-list-item { border:1px solid #e7eeea; border-radius:8px; margin-bottom:8px; background:#f8faf9; transition:background 140ms; }
 .project-service-row.ant-list-item:hover,.project-service-row.ant-list-item:focus-within { background:#eef5f1; }
@@ -2167,3 +2124,6 @@ details summary { cursor: pointer; color: var(--soft-ink); font-size: 12px; font
 .markdown-table-scroll { max-width: 100%; overflow-x: auto; }
 .markdown-table-scroll th, .markdown-table-scroll td { min-width: 110px; }
 .markdown-body [id] { scroll-margin-top: 72px; }
+
+/* Collapsed navigation has a fixed boundary instead of a resize handle. */
+.sidebar-collapsed .app-sidebar-head::after { content:''; position:absolute; right:0; top:12px; height:19px; width:1px; background:var(--soft-line); }

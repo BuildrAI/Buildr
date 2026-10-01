@@ -27,7 +27,7 @@ function assertSchema(operationId: any, kind: any, value: any): any  {
 }
 
 test('Task Record contract catalog、DTO drift 与未迁移诊断保持局部', async () => {
-  assert.equal(TASK_HTTP_OPERATIONS.length, 8);
+  assert.equal(TASK_HTTP_OPERATIONS.length, 10);
   assert.deepEqual(TASK_HTTP_OPERATIONS.map((operation: any) => operation.id), [
     'task-record.list',
     'task-record.detail',
@@ -37,6 +37,8 @@ test('Task Record contract catalog、DTO drift 与未迁移诊断保持局部', 
     'task-record.abandon',
     'task-record.retrospective-document',
     'task-record.commits',
+    'task-record.file-diff',
+    'task-record.changed-files',
   ]);
   assert.deepEqual(await checkTaskRecordHttpDto(), []);
   const coverage: any = inspectTaskHttpContractCoverage([

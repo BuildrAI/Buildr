@@ -4,8 +4,9 @@ import { PUBLIC_JSON_SCHEMAS } from '../../../../infrastructure/contracts/public
 import { createGitCommitReader, TASK_COMMIT_LIMITS, type CommitLimits } from '../../commits/infrastructure/git-commit-reader.ts';
 import { resolveTaskRepositoryScope, type TaskRepositoryScopeDependencies } from '../../commits/application/task-repository-scope.ts';
 import { createGitChangesReader, TASK_CHANGED_FILE_LIMITS, type ChangedFileLimits } from '../infrastructure/git-changes-reader.ts';
+import path from 'node:path';
 import type { TaskChangedFile } from '../domain/task-changed-file.ts';
-import { createTaskCommitsApplication } from '../../commits/application/task-commits-application.ts';
+import { readTaskCommits } from '../../commits/application/task-commits-application.ts';
 
 export type TaskChangedFilesDependencies = TaskRepositoryScopeDependencies;
 
@@ -13,12 +14,11 @@ type RepositoryOutput = TaskChangedFilesResult['repositories'][number];
 
 /** Read worktree changes and per-commit file lists for a task's real Git scope. */
 export function createTaskChangedFilesApplication(dependencies: TaskChangedFilesDependencies, commitLimits: CommitLimits = TASK_COMMIT_LIMITS, fileLimits: ChangedFileLimits = TASK_CHANGED_FILE_LIMITS) {
-  const commitsApplication = createTaskCommitsApplication(dependencies, commitLimits);
   function inspectTaskChangedFiles(targetRoot: string, taskIdValue: string): TaskChangedFilesResult {
     const taskId = taskActionId(taskIdValue, 'taskId');
     const scope = resolveTaskRepositoryScope(targetRoot, taskId, dependencies, commitLimits);
     const reader = createGitChangesReader(fileLimits);
-    const commitsResult = commitsApplication.inspectTaskCommits(targetRoot, taskId);
+    const commitsResult = readTaskCommits(scope, taskId, commitLimits);
     const diagnostics: TaskChangedFilesResult['diagnostics'] = [...scope.diagnostics];
     const report = (code: string, message: string, repositoryId: string | null = null, hash: string | null = null) => diagnostics.push({ code, message, reference: null, repositoryId, hash });
     const files: TaskChangedFile[] = [];
@@ -84,5 +84,39 @@ export function createTaskChangedFilesApplication(dependencies: TaskChangedFiles
       diagnostics, effects: [],
     };
   }
-  return Object.freeze({ inspectTaskChangedFiles });
+  function inspectTaskFileDiff(targetRoot: string, taskIdValue: string, repositoryId: string, filePath: string, commitHash: string): TaskChangedFilesResult {
+    const taskId = taskActionId(taskIdValue, 'taskId');
+    const fail = (message: string, status = 400): never => { throw Object.assign(new Error(message), { code: 'task_file_diff_invalid', status }); };
+    if (!filePath || filePath.includes('\\') || filePath.includes('\0') || path.posix.isAbsolute(filePath) || path.posix.normalize(filePath) !== filePath || filePath.split('/').includes('..')) fail('文件路径必须是代码库内的相对路径。');
+    if (commitHash !== 'worktree' && !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(commitHash)) fail('提交身份无效。');
+    const scope = resolveTaskRepositoryScope(targetRoot, taskId, dependencies, commitLimits);
+    const current = scope.reads.get(repositoryId);
+    if (!current) fail('代码库不在当前任务范围内。', 404);
+    const reader = createGitChangesReader({ ...fileLimits, maxBytes: Math.min(fileLimits.maxBytes, 2 * 1024 * 1024) });
+    const diagnostics = [...scope.diagnostics];
+    const reportFailures = (failures: Array<{ code: string; message: string }>) => { for (const failure of failures) diagnostics.push({ ...failure, reference: null, repositoryId, hash: commitHash === 'worktree' ? null : commitHash }); };
+    let files: TaskChangedFile[] = [], branch: string | null = null, ahead: number | null = null;
+    if (commitHash === 'worktree') {
+      const ordered = [...current!.taskCheckouts, ...[...current!.checkouts].filter(item => !current!.taskCheckouts.has(item))];
+      for (const checkout of ordered) {
+        const status = reader.worktreeStatus(checkout, current!.repository, { filePath, fullContext: true });
+        reportFailures(status.failures);
+        const file = status.files.find(item => item.path === filePath);
+        if (file) { files = [file]; branch = status.branch; ahead = status.upstreamAhead; break; }
+      }
+    } else {
+      const commits = readTaskCommits(scope, taskId, commitLimits);
+      if (!commits.commits.some(commit => commit.repositoryId === repositoryId && commit.hash === commitHash)) fail('提交不属于当前任务。', 404);
+      const result = reader.commitFiles(current!.repository, commitHash, repositoryId, { filePath, fullContext: true });
+      reportFailures(result.failures); files = result.files;
+    }
+    if (!files.length) fail('所选文件不在当前改动范围中，请刷新列表。', 404);
+    const truncated = files.some(file => file.previewTruncated);
+    return {
+      schemaVersion: PUBLIC_JSON_SCHEMAS.taskChangedFiles, taskId, readAt: new Date().toISOString(), status: truncated || diagnostics.length ? 'partial' : 'complete',
+      files, repositories: [{ ...current!.view, branch, ahead, fileCount: files.length }], commits: [], commitFiles: {}, repositoryMeta: { [repositoryId]: { branch, ahead } },
+      coverage: { repositoryLimit: commitLimits.repositoryLimit, fileLimit: 1, commitFileLimit: 1, previewLineLimit: 5000, truncated }, diagnostics, effects: [],
+    };
+  }
+  return Object.freeze({ inspectTaskChangedFiles, inspectTaskFileDiff });
 }

@@ -39,31 +39,59 @@ export function createGitChangesReader(limits: ChangedFileLimits = TASK_CHANGED_
     const result = git(root, args, input);
     return { ok: !result.error && result.status !== null, text: result.stdout?.toString('utf8') ?? '', status: result.status ?? -1 };
   }
-  function truncate(text: string): { value: string; truncated: boolean } {
+  function truncate(text: string, lineLimit = limits.previewLineLimit): { value: string; truncated: boolean } {
     const lines = text.split('\n');
-    if (lines.length <= limits.previewLineLimit) return { value: text, truncated: false };
-    return { value: `${lines.slice(0, limits.previewLineLimit).join('\n')}\n`, truncated: true };
+    if (lines.length <= lineLimit) return { value: text, truncated: false };
+    return { value: `${lines.slice(0, lineLimit).join('\n')}\n`, truncated: true };
   }
-  function untrackedPreview(gitRoot: string, relative: string): { preview: string | null; truncated: boolean; additions: number | null } {
+  function untrackedPreview(gitRoot: string, relative: string, lineLimit = limits.previewLineLimit): { preview: string | null; truncated: boolean; additions: number | null } {
     try {
-      const content = fs.readFileSync(path.join(gitRoot, relative), 'utf8');
+      const filename = path.join(gitRoot, relative);
+      const stat = fs.lstatSync(filename);
+      if (!stat.isFile() || stat.size > limits.maxBytes) return { preview: null, truncated: true, additions: null };
+      const content = fs.readFileSync(filename, 'utf8');
       const lines = content.split('\n');
       if (lines.length && lines[lines.length - 1] === '') lines.pop();
       const body = lines.map(line => `+${line}`).join('\n');
       const header = `diff --git a/${relative} b/${relative}\nnew file mode 100644\n--- /dev/null\n+++ b/${relative}\n@@ -0,0 +1,${lines.length} @@\n`;
-      const { value, truncated } = truncate(header + body);
+      const { value, truncated } = truncate(header + body, lineLimit);
       return { preview: value, truncated, additions: lines.length };
     } catch { return { preview: null, truncated: false, additions: null }; }
   }
 
-  function parseStatus(checkout: string, repositoryId: string): { files: TaskChangedFile[]; failures: ChangedFileReadFailure[]; truncated: boolean } {
+  function sameFilePreview(content: string, previousPath: string, relative: string) {
+    if (content.includes('\0')) return { value: null, truncated: false };
+    const lines = content.split('\n'); if (lines.at(-1) === '') lines.pop();
+    return truncate(`--- a/${previousPath}\n+++ b/${relative}\n@@ -1,${lines.length} +1,${lines.length} @@\n${lines.map(line => ` ${line}`).join('\n')}\n`, 5000);
+  }
+  function sameWorktreePreview(checkout: string, previousPath: string, relative: string) {
+    try {
+      const filename = path.join(checkout, relative); const stat = fs.lstatSync(filename);
+      if (!stat.isFile() || stat.size > limits.maxBytes) return { value: null, truncated: true };
+      return sameFilePreview(fs.readFileSync(filename, 'utf8'), previousPath, relative);
+    } catch { return { value: null, truncated: true }; }
+  }
+
+  function parseStatus(checkout: string, repositoryId: string, options: { filePath?: string; fullContext?: boolean } = {}): { files: TaskChangedFile[]; failures: ChangedFileReadFailure[]; truncated: boolean; branch: string | null; ahead: number | null } {
     const failures: ChangedFileReadFailure[] = [];
     const entries = new Map<string, TaskChangedFile>();
-    const status = output(checkout, ['status', '--porcelain=v2', '-z', '--untracked-files=all', '--branch']);
+    const paths = options.filePath ? ['--', options.filePath] : [];
+    const lineLimit = options.fullContext ? 5000 : limits.previewLineLimit;
+    const context = options.fullContext ? ['--unified=2147483647'] : [];
+    const status = output(checkout, ['status', '--porcelain=v2', '-z', '--untracked-files=all', '--branch', ...(options.fullContext ? [] : paths)]);
     if (!status.ok) failures.push({ code: 'task_changed_files_status_failed', message: '该检出位置的工作区状态读取失败。' });
     const fields = status.text.split('\0');
+    if (options.fullContext && options.filePath) {
+      const renameIndex = fields.findIndex(field => field.startsWith('2 ') && field.split(' ').slice(9).join(' ') === options.filePath);
+      if (renameIndex >= 0 && fields[renameIndex + 1]) paths.push(fields[renameIndex + 1]);
+    }
+    const branchHeader = fields.find(field => field.startsWith('# branch.head '))?.slice(14);
+    const branch = branchHeader && branchHeader !== '(detached)' ? branchHeader : null;
+    const aheadMatch = fields.find(field => field.startsWith('# branch.ab '))?.match(/\+(\d+)/);
+    const ahead = aheadMatch ? Number(aheadMatch[1]) : null;
+    if (!fields.some(field => field && !field.startsWith('#'))) return { files: [], failures, truncated: false, branch, ahead };
     const stats = new Map<string, { additions: number | null; deletions: number | null }>();
-    const numstat = output(checkout, ['diff', 'HEAD', '--numstat', '-z']);
+    const numstat = output(checkout, ['diff', '--no-ext-diff', '--no-textconv', 'HEAD', '--numstat', '-z', ...paths]);
     if (numstat.ok) {
       const parts = numstat.text.split('\0');
       for (let index = 0; index < parts.length; index += 1) {
@@ -78,7 +106,8 @@ export function createGitChangesReader(limits: ChangedFileLimits = TASK_CHANGED_
         if (target) stats.set(target, { additions: Number.isFinite(adds) ? adds : null, deletions: Number.isFinite(dels) ? dels : null });
       }
     }
-    const diffText = output(checkout, ['diff', 'HEAD']);
+    const diffText = output(checkout, ['diff', '--no-ext-diff', '--no-textconv', '--find-renames', 'HEAD', ...context, ...paths]);
+    if (options.fullContext && !diffText.ok) failures.push({ code: 'task_file_diff_unavailable', message: '完整差异无法读取，可能超过读取上限。' });
     const patches = new Map<string, string>();
     if (diffText.ok) {
       let current = '';
@@ -98,7 +127,8 @@ export function createGitChangesReader(limits: ChangedFileLimits = TASK_CHANGED_
       const code = line[0];
       if (code === '?') {
         const relative = line.slice(2);
-        const preview = untrackedPreview(checkout, relative);
+        if (options.filePath && relative !== options.filePath) continue;
+        const preview = untrackedPreview(checkout, relative, lineLimit);
         entries.set(relative, {
           repositoryId, path: relative, previousPath: null, kind: 'untracked', status: 'untracked',
           additions: preview.additions,
@@ -122,21 +152,24 @@ export function createGitChangesReader(limits: ChangedFileLimits = TASK_CHANGED_
         if (!status_ || !relative) continue;
         let previousPath: string | null = null;
         if (code === '2' && fields[index + 1]) { previousPath = fields[++index]; }
+        if (options.filePath && relative !== options.filePath) continue;
         const stat = stats.get(relative);
-        const patch = status_ === 'deleted' ? null : (patches.get(relative) || patches.get(previousPath || ''));
-        const preview = patch ? truncate(patch) : { value: null, truncated: false };
+        const patch = status_ === 'deleted' && !options.fullContext ? null : options.fullContext && options.filePath ? diffText.text : (patches.get(relative) || patches.get(previousPath || ''));
+        const preview = patch ? truncate(patch, lineLimit) : { value: null, truncated: false };
         const pureRename = status_ === 'renamed' && (stat?.additions ?? 0) === 0 && (stat?.deletions ?? 0) === 0;
+        const unchanged = pureRename && options.fullContext ? sameWorktreePreview(checkout, previousPath || relative, relative) : { value: null, truncated: false };
         entries.set(relative, {
           repositoryId, path: relative, previousPath, kind: 'tracked', status: status_,
           additions: stat?.additions ?? null, deletions: stat?.deletions ?? null,
-          preview: pureRename ? null : preview.value, previewTruncated: pureRename ? false : preview.truncated,
+          preview: pureRename ? unchanged.value : preview.value,
+          previewTruncated: pureRename ? unchanged.truncated : preview.truncated || Boolean(options.fullContext && !diffText.ok),
         });
       }
     }
     let truncated = false;
-    const files = [...entries.values()].sort((a, b) => a.path.localeCompare(b.path));
+    const files = [...entries.values()].filter(file => !options.filePath || file.path === options.filePath).sort((a, b) => a.path.localeCompare(b.path));
     if (files.length > limits.fileLimit) { truncated = true; failures.push({ code: 'task_changed_files_limit', message: `单个检出位置最多返回 ${limits.fileLimit} 个变更文件；剩余内容被截断。` }); }
-    return { files: files.slice(0, limits.fileLimit), failures, truncated };
+    return { files: files.slice(0, limits.fileLimit), failures, truncated, branch, ahead };
   }
 
   function branchInfo(checkout: string): { branch: string | null; ahead: number | null } {
@@ -147,25 +180,24 @@ export function createGitChangesReader(limits: ChangedFileLimits = TASK_CHANGED_
     return { branch, ahead };
   }
 
-  function worktreeStatus(checkout: string, repository: GitRepository): WorktreeStatusResult {
+  function worktreeStatus(checkout: string, repository: GitRepository, options: { filePath?: string; fullContext?: boolean } = {}): WorktreeStatusResult {
     const failures: ChangedFileReadFailure[] = [];
     let truncated = false;
-    const info = branchInfo(checkout);
     const gitRoot = (() => { const result = output(checkout, ['rev-parse', '--show-toplevel']); return result.ok && result.text.trim() ? result.text.trim() : checkout; })();
-    const parsed = parseStatus(gitRoot, repository.id);
+    const parsed = parseStatus(gitRoot, repository.id, options);
     failures.push(...parsed.failures);
     truncated = parsed.truncated;
-    return { branch: info.branch, upstreamAhead: info.ahead, files: parsed.files, failures, truncated };
+    return { branch: parsed.branch, upstreamAhead: parsed.ahead, files: parsed.files, failures, truncated };
   }
 
-  function commitFiles(repository: GitRepository, hash: string, repositoryId: string): CommitFilesResult {
+  function commitFiles(repository: GitRepository, hash: string, repositoryId: string, options: { filePath?: string; fullContext?: boolean } = {}): CommitFilesResult {
     const failures: ChangedFileReadFailure[] = [];
     let truncated = false;
     const files: TaskCommitFile[] = [];
     const meta = output(repository.root, ['rev-list', '--parents', '-n', '1', hash]);
     const parents = meta.ok ? meta.text.trim().split(/\s+/).slice(1).filter(Boolean) : [];
     const base = parents[0] || EMPTY_TREE;
-    const filesList = output(repository.root, ['diff-tree', '--root', '-r', '--numstat', '-z', '--no-commit-id', hash]);
+    const filesList = output(repository.root, ['diff-tree', '--root', '-r', '--find-renames', '--numstat', '-z', '--no-commit-id', hash]);
     const names: Array<{ path: string; previousPath: string | null; additions: number | null; deletions: number | null; status: TaskChangedFile['status'] }> = [];
     if (filesList.ok) {
       const parts = filesList.text.split('\0');
@@ -182,7 +214,7 @@ export function createGitChangesReader(limits: ChangedFileLimits = TASK_CHANGED_
         names.push({ path: target, previousPath: null, additions: Number.isFinite(adds) ? adds : null, deletions: Number.isFinite(dels) ? dels : null, status: 'modified' });
       }
     } else failures.push({ code: 'task_changed_files_commit_files_failed', message: '该提交的文件清单读取失败。' });
-    const nameStatus = output(repository.root, ['diff-tree', '--root', '-r', '--name-status', '-z', '--no-commit-id', hash]);
+    const nameStatus = output(repository.root, ['diff-tree', '--root', '-r', '--find-renames', '--name-status', '-z', '--no-commit-id', hash]);
     if (nameStatus.ok) {
       const parts = nameStatus.text.split('\0').filter(Boolean);
       for (let index = 0; index + 1 < parts.length; index += 2) {
@@ -200,7 +232,11 @@ export function createGitChangesReader(limits: ChangedFileLimits = TASK_CHANGED_
         else if (code.startsWith('M') || code.startsWith('T')) entry.status = 'modified';
       }
     }
-    const patchOutput = output(repository.root, ['diff', `${base}..${hash}`]);
+    const lineLimit = options.fullContext ? 5000 : limits.previewLineLimit;
+    const chosen = options.filePath ? names.filter(entry => entry.path === options.filePath) : names;
+    const paths = options.filePath ? ['--', ...new Set(chosen.flatMap(entry => [entry.path, ...(entry.previousPath ? [entry.previousPath] : [])]))] : [];
+    const patchOutput = output(repository.root, ['diff', '--no-ext-diff', '--no-textconv', '--find-renames', `${base}..${hash}`, ...(options.fullContext ? ['--unified=2147483647'] : []), ...paths]);
+    if (options.fullContext && !patchOutput.ok) failures.push({ code: 'task_file_diff_unavailable', message: '完整提交差异无法读取，可能超过读取上限。' });
     const patches = new Map<string, string>();
     if (patchOutput.ok) {
       let current = '';
@@ -213,15 +249,19 @@ export function createGitChangesReader(limits: ChangedFileLimits = TASK_CHANGED_
         if (current) patches.set(current, (patches.get(current) || '') + `${line}\n`);
       }
     }
-    for (const entry of names.slice(0, limits.commitFileLimit)) {
-      const patch = patches.get(entry.path) || patches.get(entry.previousPath || '');
-      const preview = patch ? truncate(patch) : { value: null, truncated: false };
+    for (const entry of chosen.slice(0, limits.commitFileLimit)) {
+      const patch = options.fullContext && options.filePath ? patchOutput.text : patches.get(entry.path) || patches.get(entry.previousPath || '');
+      let preview = patch ? truncate(patch, lineLimit) : { value: null, truncated: false };
+      if (options.fullContext && entry.status === 'renamed' && entry.additions === 0 && entry.deletions === 0) {
+        const content = output(repository.root, ['show', '--no-ext-diff', '--no-textconv', `${hash}:${entry.path}`]);
+        preview = content.ok && content.status === 0 ? sameFilePreview(content.text, entry.previousPath || entry.path, entry.path) : { value: null, truncated: true };
+      }
       files.push({
         repositoryId, path: entry.path, previousPath: entry.previousPath, kind: 'tracked', status: entry.status,
-        additions: entry.additions, deletions: entry.deletions, preview: preview.value, previewTruncated: preview.truncated,
+        additions: entry.additions, deletions: entry.deletions, preview: preview.value, previewTruncated: preview.truncated || Boolean(options.fullContext && !patchOutput.ok),
       });
     }
-    if (names.length > limits.commitFileLimit) { truncated = true; failures.push({ code: 'task_changed_files_commit_files_limit', message: `单次提交最多返回 ${limits.commitFileLimit} 个文件；剩余内容被截断。` }); }
+    if (chosen.length > limits.commitFileLimit) { truncated = true; failures.push({ code: 'task_changed_files_commit_files_limit', message: `单次提交最多返回 ${limits.commitFileLimit} 个文件；剩余内容被截断。` }); }
     return { files, failures, truncated };
   }
 

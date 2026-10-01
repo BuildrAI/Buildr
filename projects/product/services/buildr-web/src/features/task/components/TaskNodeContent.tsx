@@ -7,8 +7,8 @@ import type { TaskBriefState } from '../hooks/useTaskArtifacts';
 import { reviewRecords, taskDocumentLabel, type TaskDocumentItem, type TaskNodeStage, type TaskReadTarget } from './taskWorkContent';
 
 type ContentOption = { key: string; label: ReactNode; target: TaskReadTarget; group?: string; path?: string };
-export function TaskNodeContent({ selected, record, documents, briefs, reviews, verification, reviewError, verificationError, reviewLoading, verificationLoading, prototypeData, prototypeError, choices, onChoose, renderContent, hasRetrospective, hasCoordination }: {
-  selected: TaskNodeStage; record: TaskRecord; documents: TaskDocumentItem[]; briefs: TaskBriefState[];
+export function TaskNodeContent({ selected, record, documents, briefs, briefsLoading, reviews, verification, reviewError, verificationError, reviewLoading, verificationLoading, prototypeData, prototypeError, choices, onChoose, renderContent, hasRetrospective, hasCoordination }: {
+  selected: TaskNodeStage; record: TaskRecord; documents: TaskDocumentItem[]; briefs: TaskBriefState[]; briefsLoading: boolean;
   reviews: ReviewsResponse | null; verification: VerificationResponse | null; reviewError: string | null; verificationError: string | null; reviewLoading: boolean; verificationLoading: boolean;
   prototypeData: UiPrototypeData | null; prototypeError: string | null; choices: Record<string, string>; onChoose(key: string, value: string): void;
   hasRetrospective: boolean; hasCoordination: boolean; renderContent(target: TaskReadTarget): ReactNode;
@@ -43,7 +43,7 @@ export function TaskNodeContent({ selected, record, documents, briefs, reviews, 
     if (hasRetrospective) options.push({key:'retrospective',label:'任务复盘',target:{kind:'retrospective',title:'任务复盘'}});
   }
   const missingPrototype = selected === 'design' && choices[selected]?.startsWith('prototype:') && !options.some(item => item.key === choices[selected]);
-  const active = options.find(item => item.key === choices[selected]) || (missingPrototype ? options.find(item => item.target.kind === 'prototype') : undefined) || (selected === 'closeout' && record.status === 'completed' ? options.find(item => item.key === 'result') : undefined) || options[0];
+  const active = options.find(item => item.key === choices[selected]) || (missingPrototype ? options.find(item => item.target.kind === 'prototype') : undefined) || (selected === 'closeout' && record.status === 'completed' ? options.find(item => item.key === 'result') : undefined) || (selected === 'implementation' && !reviews?.slots.completion.result && verification?.slot.report ? options.find(item => item.key === 'verification') : undefined) || options[0];
   const items: MenuProps['items'] = [];
   for (const option of options) {
     const item = {key:option.key,label:<span data-task-artifact={option.path} data-task-content={option.key === 'review' || option.key === 'verification' || option.key === 'intent' ? option.key : undefined} data-task-tab={option.target.kind === 'prototype' ? 'prototype' : undefined} data-task-closeout={selected === 'closeout' ? option.key : undefined}>{option.label}</span>};
@@ -53,7 +53,7 @@ export function TaskNodeContent({ selected, record, documents, briefs, reviews, 
       group.children.push(item);
     } else items.push(item);
   }
-  const loading = active?.target.kind === 'review' ? reviewLoading && !reviews : active?.target.kind === 'verification' ? verificationLoading && !verification : active?.target.kind === 'artifact' && selected !== 'implementation' && record.changes.length > 0 && briefs.length === 0;
+  const loading = ((selected === 'requirements' || (selected === 'design' && !choices[selected])) && briefsLoading && !entries.length) || (active?.target.kind === 'review' ? reviewLoading && !reviews : active?.target.kind === 'verification' ? verificationLoading && !verification : active?.target.kind === 'artifact' && selected !== 'implementation' && record.changes.length > 0 && briefs.length === 0);
   const error = active?.target.kind === 'review' ? reviewError : active?.target.kind === 'verification' ? verificationError : active?.target.kind === 'prototype' ? prototypeError : null;
   const directory = options.length > 1 || selected === 'design' || selected === 'implementation' || selected === 'closeout';
   return <section id="task-node-content" className={`task-node-content${directory ? ' task-node-with-directory' : ''}`} aria-label="所选节点内容">

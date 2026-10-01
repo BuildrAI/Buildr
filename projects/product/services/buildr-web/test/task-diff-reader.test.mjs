@@ -39,3 +39,9 @@ test('未跟踪文件全文按新增行解析，行号从新文件侧起始', ()
   assert.equal(totalAdd, 3);
   assert.equal(rows.at(-1).newNo, 3);
 });
+
+test('补丁头不产生伪行号，删除和新增保留准确行号', () => {
+  const { rows } = parseUnifiedDiff('diff --git a/x b/x\nindex a..b\n--- a/x\n+++ b/x\n@@ -8,2 +8,2 @@\n-old\n+new\n ctx\n');
+  assert.ok(rows.slice(0, 4).every(row => row.kind === 'meta' && row.oldNo === null && row.newNo === null));
+  assert.deepEqual(rows.filter(row => row.kind === 'del' || row.kind === 'add').map(row => [row.oldNo, row.newNo, row.text]), [[8, null, 'old'], [null, 8, 'new']]);
+});

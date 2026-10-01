@@ -21,6 +21,8 @@ test('真实CLI与HTTP共享只读提交结果、闭合输入与错误边界', a
   runtime.createTask(root, { taskId: 'task-git', title: '实际提交读取', intent: '只读双向关联', projects: ['demo'], services: [], changes: [] });
   function git(args: string[]) { const result = spawnSync('git', ['-C', root, ...args], { encoding: 'utf8' }); assert.equal(result.status, 0, result.stderr); return result.stdout.trim(); }
   git(['init', '--initial-branch=main']); git(['config', 'user.name', 'Commit Reader']); git(['config', 'user.email', 'reader@example.com']);
+  fs.writeFileSync(path.join(root, 'full.ts'), Array.from({ length: 120 }, (_, index) => `line-${index + 1}`).join('\n') + '\n');
+  git(['add', 'full.ts']);
   git(['-c', 'commit.gpgSign=false', 'commit', '--allow-empty', '-m', 'feat: task association', '-m', 'Actual body\n\nBuildr-Task: task-git']);
   const hash = git(['rev-parse', 'HEAD']);
   const before = runtime.readTask(root, 'task-git');
@@ -38,6 +40,18 @@ test('真实CLI与HTTP共享只读提交结果、闭合输入与错误边界', a
   const body = await response.json();
   assert.equal(TASK_HTTP_VALIDATORS.validate(TASK_HTTP_SCHEMAS.commitsResponse.$id, body).valid, true);
   assert.deepEqual({ ...body, readAt: null }, { ...cli, readAt: null });
+  const lines = fs.readFileSync(path.join(root, 'full.ts'), 'utf8').split('\n'); lines[44] = 'changed-45';
+  fs.writeFileSync(path.join(root, 'full.ts'), lines.join('\n'));
+  const params = new URLSearchParams({ repositoryId: cli.repositories[0].id, filePath: 'full.ts', commitHash: 'worktree' });
+  const fullEndpoint = endpoint.replace('/commits', '/file-diff');
+  const fullResponse = await fetch(`${fullEndpoint}?${params}`); assert.equal(fullResponse.status, 200);
+  const fullBody = await fullResponse.json();
+  assert.equal(TASK_HTTP_VALIDATORS.validate(TASK_HTTP_SCHEMAS.changedFilesResponse.$id, fullBody).valid, true);
+  assert.match(fullBody.files[0].preview, / line-1\n/); assert.match(fullBody.files[0].preview, / line-120\n/);
+  assert.match(fullBody.files[0].preview, /-line-45\n\+changed-45/);
+  assert.equal((await fetch(`${fullEndpoint}?${params}&unknown=x`)).status, 400);
+  assert.equal((await fetch(`${fullEndpoint}?${params}&filePath=another`)).status, 400);
+
   for (const query of ['?limit=2', '?taskId=another', '?path=/tmp', '?repository=outside']) assert.equal((await fetch(endpoint + query)).status, 400);
   assert.equal((await fetch(`${url}/api/v1/workspaces/${initialWorkspaceId}/tasks/unknown/commits`)).status, 404);
   assert.equal((await fetch(endpoint, { method: 'POST' })).status, 404);

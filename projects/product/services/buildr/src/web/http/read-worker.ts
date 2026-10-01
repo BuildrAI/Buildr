@@ -14,6 +14,7 @@ import { TASK_CHANGED_FILES_APPLICATION } from '../../modules/task/changed-files
 const runtime = createRuntime();
 const operations: Readonly<Record<string, Readonly<{ capability: string; method: string; fields?: readonly string[] }>>> = Object.freeze({
   commits: Object.freeze({ capability: TASK_COMMITS_APPLICATION, method: 'inspectTaskCommits' }),
+  'file-diff': Object.freeze({ capability: TASK_CHANGED_FILES_APPLICATION, method: 'inspectTaskFileDiff', fields: ['repositoryId', 'filePath', 'commitHash'] }),
   'changed-files': Object.freeze({ capability: TASK_CHANGED_FILES_APPLICATION, method: 'inspectTaskChangedFiles' }),
   reviews: Object.freeze({ capability: TASK_REVIEW_APPLICATION, method: 'inspectTaskReview' }),
   verification: Object.freeze({ capability: TASK_VERIFICATION_APPLICATION, method: 'inspectTaskVerificationView' }),

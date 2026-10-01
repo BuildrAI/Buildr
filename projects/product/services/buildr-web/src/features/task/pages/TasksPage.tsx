@@ -72,7 +72,7 @@ export function TasksPage() {
     status, ...(hasChildren !== 'all' ? { taskType: hasChildren } : {}),
     ...(retrospectiveState !== 'all' ? { retrospectiveState } : {}),
   };
-  const { tasks, totalTaskCount, matchingTaskCount, filterProjects, filterServices, projectNames, serviceNames, catalogError, retryCatalogs, loading, loadingMore, errorMessage, loadMoreError, hasMore, loadMore, retryLoadMore, reload, revision } = useTaskList({ workspaceId, filters });
+  const { tasks, totalTaskCount, matchingTaskCount, filterProjects, filterServices, projectNames, serviceNames, catalogError, retryCatalogs, loading, hasLoaded, loadingMore, errorMessage, loadMoreError, hasMore, loadMore, retryLoadMore, reload, revision } = useTaskList({ workspaceId, filters });
   const observedResetToken = useRef(taskListResetToken);
   useEffect(() => {
     if (observedResetToken.current === taskListResetToken) return;
@@ -295,10 +295,10 @@ export function TasksPage() {
         </div>
         <div className="task-toolbar-meta">
           <span id="tasks-state" className="count-label">
-            {loading ? '正在读取…' : (errorMessage ? '读取失败' : (visibleTasks.length < matchingTaskCount ? `已加载 ${visibleTasks.length} / 共 ${matchingTaskCount} 个任务` : `${matchingTaskCount} 个任务`))}
+            {hasLoaded ? (visibleTasks.length < matchingTaskCount ? `已加载 ${visibleTasks.length} / 共 ${matchingTaskCount} 个任务` : `${matchingTaskCount} 个任务`) : loading ? '正在读取…' : errorMessage ? '读取失败' : '0 个任务'}
           </span>
           <div className="task-list-tools">
-            <RefreshButton id="task-list-refresh" label="刷新任务列表" loading={loading} onClick={() => void reload()} />
+            <RefreshButton id="task-list-refresh" stableLoading label="刷新任务列表" loading={loading} onClick={() => void reload()} />
             {filtersActive && <Button id="task-filter-reset" type="text" onClick={resetFilters}>重置筛选</Button>}
             <TaskFilters open={filterOpen} active={filtersActive} content={filterPopup} onOpenChange={(open) => {
                 if (open) syncFilterDraft();
