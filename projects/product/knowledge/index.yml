@@ -154,6 +154,10 @@ documentSections:
         title: "前端验证：布局、交互与工具替换"
         summary: "运行页面检查，判断现场工具能够证明哪些交互和视觉结果。"
       - location: scope
+        path: knowledge/docs/guides/repository-header-layout.md
+        title: "代码库列表顶部布局修复说明"
+        summary: "核对窄栏问题、共享目录适配、实际验证、任务关联及独立遗留。"
+      - location: scope
         path: knowledge/docs/guides/node-test-context-runtime.md
         title: "Node.js 测试准备的复用与隔离"
         summary: "按需复用昂贵准备，同时保持案例隔离和可靠清理。"
