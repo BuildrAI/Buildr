@@ -257,7 +257,7 @@ skills:
     sourceIdentity: workspace:f2f40b71-2382-5906-82bd-76a7927b59f3:buildr-self-bootstrap-sync
   - id: buildr-dev-preview
     path: buildr-dev-preview
-    description: 在 Buildr 自举工作空间中开发或验收时，需要用"开发工作树的代码 + 指定数据源"起一个 Buildr Web 页面时使用；仅服务 Buildr 自身，不作为用户 workspace 的默认能力。
+    description: 在 Buildr 自身开发或验收中，需要启动服务验证时使用；运行对应工作树的 Buildr Web，修改后重新构建并重启预览。仅服务 Buildr 自举工作空间，不作为用户 workspace 的默认能力。
     assetIdentity: workspace:f2f40b71-2382-5906-82bd-76a7927b59f3:skill:buildr-dev-preview
     sourceIdentity: workspace:f2f40b71-2382-5906-82bd-76a7927b59f3:buildr-dev-preview
   - id: declaration-intake

@@ -1,11 +1,15 @@
 ---
 name: buildr-dev-preview
-description: 在 Buildr 自举工作空间中开发或验收时，需要用"开发工作树的代码 + 指定数据源"起一个 Buildr Web 页面时使用；仅服务 Buildr 自身，不作为用户 workspace 的默认能力。
+description: 在 Buildr 自身开发或验收中，需要启动服务验证时使用；运行对应工作树的 Buildr Web，修改后重新构建并重启预览。仅服务 Buildr 自举工作空间，不作为用户 workspace 的默认能力。
 ---
 
 # Buildr 开发预览
 
-本技能（Skill）只属于 Buildr 自举工作空间，用于在开发 Buildr 自身时起一个可验收的 Buildr Web 预览：运行被验收工作树（Worktree）中的产品代码，叠加指定的任务数据源。它不是随包内置能力，不进入 `projects/product/services/buildr/resources/`，也不写用户级安装说明；用户 workspace 不需要、也不应获得本技能。
+本技能（Skill）只属于 Buildr 自举工作空间，用于在 Buildr 自身开发或验收需要启动服务验证时，运行对应工作树（Worktree）中的 Buildr Web 产品代码，叠加指定的任务数据源。它不是随包内置能力，不进入 `projects/product/services/buildr/resources/`，也不写用户级安装说明；用户 workspace 不需要、也不应获得本技能。
+
+## 使用时机
+
+智能体（Agent）根据本次改动和待验证行为判断是否需要启动服务：查看真实页面、检查交互或验证本机 HTTP 行为时，使用本技能（Skill）启动对应任务工作树（Worktree）的预览，并将同一预览链接提供给用户查看。只需静态检查或无需启动服务的测试时，不必启动预览。
 
 ## 适用边界
 
@@ -18,7 +22,7 @@ description: 在 Buildr 自举工作空间中开发或验收时，需要用"开�
 
 1. 确认被验收的工作树根：`git worktree list` 或任务 worktree evidence 给出的 checkout，不从目录名猜测任务归属。
 2. 确认产品代码自洽：预览进程必须来自该工作树的 `projects/product/buildr` 开发入口；本机 PATH 上的 `buildr` 是 npm installation，身份不同，禁止用它启动预览。
-3. 预览前端默认需要构建产物：在 `projects/product/services/buildr-web` 运行 `npm run build`，输出到 `services/buildr/web-dist`（该目录被 Git 忽略，属于可重建产物）。未改动前端时若 web-dist 已存在可复用。
+3. 预览前端默认需要构建产物：在工作树（Worktree）的 `projects/product/services/buildr-web` 运行 `../buildr/tools/development/run-development-npm run build`，输出到 `services/buildr/web-dist`（该目录被 Git 忽略，属于可重建产物）。首次启动时，未改动前端且已有产物与当前源码一致可复用。
 
 ## 数据源模式
 
@@ -42,6 +46,14 @@ description: 在 Buildr 自举工作空间中开发或验收时，需要用"开�
 - canonical 实时库模式：`web preview start <instance> --target <canonical-root>` 不提供 `--task`，服务目标为 canonical，任务材料按 worktree evidence 读工作树候选副本。
 - 托管实例持有 owner、secret 与启动锁，`preview stop` 需匹配 owner 身份；不要直接 `kill` 进程绕过 owner 检查。
 - 启动输出即为验收链接：loopback URL + 实例名 + worktree/branch/HEAD + dirty 状态 + 任务库来源；向维护者交接时原样给出。
+
+## 修改后重新验证
+
+修改被预览代码后，重新构建受影响的产物，再停止旧预览并启动新预览。前端改动使用上方构建入口；其他改动按对应服务（Service）的实际构建入口处理。`preview start` 会复用仍在运行的实例，不能仅重复 `start` 或刷新页面就认定已加载修改后的代码。
+
+托管预览沿用当前实例名、任务标识和数据源模式，执行上方 `preview stop` 后再 `preview start`；手工预览核对原进程身份后退出，再按原配方启动。只重启本任务的预览，不停止其他任务或默认实例，不覆盖已有隔离任务库。
+
+重新启动后使用本次输出的地址核对代码来源并验证修改；随机端口可能变化，向用户提供新的预览链接。修改前的检查结果不能代替修改后受影响行为的验证。
 
 ## 手工配方（仅托管路径不可用时）
 
