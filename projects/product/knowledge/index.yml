@@ -513,6 +513,10 @@ artifacts:
     objects:
       - task-system
     sources:
+      - task-materials-application
+      - task-project-document-reader
+      - task-material-reader
+      - task-materials-browser-journey
       - task-file-task-system-html-80857d
       - task-source-skill-f75bad
       - verification-file-263d3698
@@ -661,6 +665,10 @@ artifacts:
     objects:
       - task-system
     sources:
+      - task-materials-application
+      - task-project-document-reader
+      - task-material-reader
+      - task-materials-browser-journey
       - task-source-spec-ea9d2d
       - task-source-spec-f12a41
       - task-source-spec-5aed6b
@@ -2780,11 +2788,31 @@ sources:
     kind: code
     path: services/buildr-web/src/features/task/pages/PrototypeReaderPage.tsx
     summary: 按明确工作空间和任务读取同一成果，装配独立三栏阅读。
+  - id: task-materials-application
+    title: 独立任务材料应用
+    kind: code
+    path: services/buildr/src/modules/task/materials/application/task-materials-application.ts
+    summary: 保存唯一说明及多角色逻辑引用，按独立版本维护本机清单和正文，不改任务或专业状态。
+  - id: task-project-document-reader
+    title: 任务项目正文与实际文件根
+    kind: code
+    path: services/buildr/src/modules/task/materials/application/task-project-document-reader.ts
+    summary: 通过任务、项目和工作树事实有界读取真实Markdown，拒绝越界、符号链接和静默候选回退。
+  - id: task-material-reader
+    title: 正式节点材料正文阅读
+    kind: code
+    path: services/buildr-web/src/features/task/components/TaskMaterialReader.tsx
+    summary: 复用Markdown容器，呈现唯一正文、实际来源、版本摘要与局部缺失，不以短目标冒充说明。
+  - id: task-materials-browser-journey
+    title: 独立任务材料实际页面回归
+    kind: code
+    path: services/buildr-web/test/browser/task-materials-journey.ts
+    summary: 从任务列表直接阅读无变更正文，核对刷新、专业结果、缺失和归档后的稳定任务引用。
   - id: task-node-content
     title: 任务内容目录
     kind: code
     path: services/buildr-web/src/features/task/components/TaskNodeContent.tsx
-    summary: 根据任务节点直接列出方案材料和关键原型页面。
+    summary: 按任务材料角色及专业记录组织节点目录；直接读独立说明，旧变更说明仅作标注来源兼容阅读。
   - id: prototype-tab
     title: 原型画面与说明
     kind: code

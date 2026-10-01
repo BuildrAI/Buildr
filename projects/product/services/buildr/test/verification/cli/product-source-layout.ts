@@ -23,6 +23,7 @@ const allowedProjectRootEntries: any = new Set([
   'openspec',
   'preparation.yml',
   'services',
+  'tasks',
   'verification.yml',
 ]);
 

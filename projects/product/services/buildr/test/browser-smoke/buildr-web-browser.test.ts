@@ -18,6 +18,7 @@ import { recordVerificationResultFromEvidence } from '../helpers/task-verificati
 import { runWorkspaceCompositionJourney } from './workspace-composition-journey.ts';
 import { runLayoutJourney } from '../../../buildr-web/test/browser/layout-journey.ts';
 import { runTaskCommitsJourney } from '../../../buildr-web/test/browser/task-commits-journey.ts';
+import { runTaskMaterialsJourney } from '../../../buildr-web/test/browser/task-materials-journey.ts';
 import { runWorkbenchJourney } from './workbench-journey.ts';
 import { runPublicationJourney, publicationTestPng } from './publication-journey.ts';
 import { runServiceKnowledgeJourney } from './service-knowledge-journey.ts';
@@ -29,7 +30,7 @@ const SELECTOR_INPUT: any = process.argv[2] ?? 'all';
 const SCREENSHOT_DIR: any = process.env.BUILDR_SCREENSHOT_DIR;
 const BROWSER_WEB_DIST_ROOT: any = process.env.BUILDR_BROWSER_WEB_DIST_ROOT;
 if (!BROWSER_WEB_DIST_ROOT) throw new Error('Browser smoke requires BUILDR_BROWSER_WEB_DIST_ROOT from the Browser dispatcher staging build.');
-const KNOWN_SELECTORS: any = new Set(['all', 'core', 'shell', 'workbench', 'task', 'project', 'service', 'change', 'articles', 'layout']);
+const KNOWN_SELECTORS: any = new Set(['all', 'core', 'shell', 'workbench', 'task', 'task-materials', 'project', 'service', 'change', 'articles', 'layout']);
 const SELECTORS: any = new Set(SELECTOR_INPUT.split(',').map((item: any) => item.trim()).filter(Boolean));
 
 for (const selector of SELECTORS) if (!KNOWN_SELECTORS.has(selector)) throw new Error(`Unknown browser integration selector: ${selector}`);
@@ -40,6 +41,7 @@ const selectorLabel: any = [...SELECTORS].join(',');
 function runBuildr(args: any, buildr: any = BUILDR): any  {
   const result: any = spawnSync(process.execPath, [buildr, ...args], { cwd: PRODUCT_ROOT, encoding: 'utf8' });
   assert.equal(result.status, 0, `${result.stderr}\n${result.stdout}`);
+  return args.includes('--json') ? JSON.parse(result.stdout) : result.stdout;
 }
 
 function runGit(root: any, args: any): any  {
@@ -171,13 +173,14 @@ testing:
     requirements: [node]
 `);
   writeChange(projectRoot, 'browser-flow', '浏览器流程');
-  writeUiPrototypeFixtures(projectRoot, 'browser-flow');
+  if (!options.materialsOnly) writeUiPrototypeFixtures(projectRoot, 'browser-flow');
   writeChange(projectRoot, 'archive/2026-07-22-archived-flow', '已归档流程');
   runGit(root, ['init', '-q']);
   runGit(root, ['config', 'user.name', 'Buildr Browser Fixture']);
   runGit(root, ['config', 'user.email', 'fixture@example.com']);
   runGit(root, ['add', '.']);
   runGit(root, ['commit', '-qm', 'browser fixture baseline']);
+  if (options.materialsOnly) return;
   runBuildr(['task', 'create', 'browser-parent', '--title', '浏览器协调任务', '--intent', '验证 Parent Task 页面', '--project', 'demo', '--service', 'demo/api', '--target', root]);
   runBuildr(['task', 'create', 'browser-task', '--title', '浏览器任务', '--intent', '验证 Task Record 页面，参考 [任务参考资料](projects/demo/docs/task-reference.md)。', '--parent', 'browser-parent', '--project', 'demo', '--service', 'demo/api', '--change', 'demo/browser-flow', '--target', root]);
   runBuildr(['task', 'create', 'created-in-app', '--title', '页面查看任务', '--intent', '验证 Buildr Web 轻量查询客户端', '--parent', 'browser-parent', '--project', 'demo', '--service', 'demo/api', '--change', 'demo/browser-flow', '--target', root]);
@@ -217,6 +220,7 @@ function createSelectedFixture(root: any, controllerCli: any): any  {
   else if (selector === 'service') createServiceFixture(root);
   else if (selector === 'change') createChangeFixture(root);
   else if (selector === 'articles') createArticlesFixture(root);
+  else if (selector === 'task-materials') createFixture(root, controllerCli, { materialsOnly: true });
   else createFixture(root, controllerCli, { articles: selected('articles') });
   return selector;
 }
@@ -315,7 +319,7 @@ async function capture(page: any, name: any): Promise<any>  {
   await page.screenshot({ path: path.join(SCREENSHOT_DIR, name), fullPage: true, animations: 'disabled' });
 }
 
-test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('all') || SELECTORS.has('task') ? 300_000 : SELECTORS.has('layout') || SELECTORS.has('workbench') || SELECTORS.has('articles') || SELECTORS.has('shell') || SELECTORS.has('service') || SELECTORS.has('project') ? 120_000 : 45_000 }, async (t: any) => {
+test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('all') || SELECTORS.has('task') ? 300_000 : SELECTORS.has('task-materials') || SELECTORS.has('layout') || SELECTORS.has('workbench') || SELECTORS.has('articles') || SELECTORS.has('shell') || SELECTORS.has('service') || SELECTORS.has('project') ? 120_000 : 45_000 }, async (t: any) => {
   const requestedSmokeRoot: any = process.env.BUILDR_SMOKE_ROOT;
   const managedSmokeRoot: any = requestedSmokeRoot && fs.existsSync(path.join(requestedSmokeRoot, '.buildr-smoke-owner')) ? requestedSmokeRoot : null;
   const base: any = managedSmokeRoot || fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-browser-smoke-'));
@@ -2063,6 +2067,8 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
   });
 
   if (selected('task')) await runTaskCommitsJourney({ t, page, runtime, workspaceRoot, workspaceUrl, expectedBrowserErrors, capture });
+
+  if (selected('task') || selected('task-materials')) await runTaskMaterialsJourney({ t, page, runtime, workspaceRoot, workspaceUrl, runBuildr, capture, expectedBrowserErrors });
 
   if (selected('workbench')) await runWorkbenchJourney({ t, page, runtime, workspaceRoot, otherWorkspaceRoot: otherRoot, workspaceUrl, otherWorkspaceUrl: `${url}/workspaces/${otherWorkspaceId}`, expectedBrowserErrors, selectAntdOption, capture });
 

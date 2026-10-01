@@ -6,6 +6,10 @@
 任务分流：
 - 语义治理：code-only / spec-maintenance / change-flow / blocked
 - 执行形态：implementation / metadata-only / unknown
+- 材料深度：<唯一真实 Task Brief；必要方案、实施、交付材料及最小依据>
+- 方案审查：<需要/确实不适用、事实理由、真实结果或未完成缺口>
+- 实现审查：<独立需要/确实不适用、事实理由、真实结果或未完成缺口>
+- 任务验证：<目标范围风险与完成证明、实际检查或未覆盖理由>
 - Repository set：<selectors 或 unresolved>
 - 代码更新：not-requested / succeeded / blocked（仅目标要求更新时报告实际引用与效果，不作为任务登记前置）
 - Task Record：create / inspect / none / blocked

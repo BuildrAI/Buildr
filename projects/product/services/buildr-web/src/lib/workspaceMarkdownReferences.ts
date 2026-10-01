@@ -76,6 +76,13 @@ export function resolveProjectMarkdownHref(currentDocPath: string, href: string)
   if (queryIndex >= 0) pathEnd = Math.min(pathEnd, queryIndex);
   const pathPart = value.slice(0, pathEnd);
   if (!pathPart) return null;
+  // Only this literal prefix is project-root logical navigation. Decode before
+  // validating segments so encoded separators and traversal cannot escape it.
+  if (pathPart.startsWith('@project/')) {
+    const rootPath = normalizedWorkspaceRelativePath(pathPart.slice('@project/'.length));
+    return rootPath?.toLowerCase().endsWith('.md') && !/^[a-z][a-z0-9+.-]*:/i.test(rootPath) ? rootPath : null;
+  }
+  if (pathPart.startsWith('@')) return null;
   const current = String(currentDocPath || '').replace(/^\/+/, '').replace(/\\/g, '/');
   const slash = current.lastIndexOf('/');
   const baseDir = slash >= 0 ? current.slice(0, slash + 1) : '';

@@ -18,6 +18,8 @@ import type {
   TaskUpdateResponse,
 } from '../../../../build/generated/task-dto';
 
+import type { TaskMaterialsResult } from '../task-materials';
+
 type ReadOptions = Pick<RequestInit, 'signal'>;
 
 function queryString(input: TaskListRequest): string {
@@ -40,6 +42,9 @@ export function createTaskClient(client: ApiClient) {
     },
     detail(taskId: string, options: ReadOptions = {}): Promise<TaskDetailResponse> {
       return typed(client(`/api/v1/tasks/${encodeURIComponent(taskId)}`, options));
+    },
+    materials(taskId: string, options: ReadOptions = {}): Promise<TaskMaterialsResult> {
+      return typed(client(`/api/v1/tasks/${encodeURIComponent(taskId)}/materials`, options));
     },
     commits(taskId: string, options: ReadOptions = {}): Promise<TaskCommitsResult> {
       return typed(client(`/api/v1/tasks/${encodeURIComponent(taskId)}/commits`, options));

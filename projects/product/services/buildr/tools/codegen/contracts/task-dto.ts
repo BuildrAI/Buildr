@@ -11,6 +11,7 @@ import {
   TASK_HTTP_SCHEMAS,
 } from '../../../src/modules/task/interfaces/http/task-http-schema.ts';
 import { cliOutputRoot, contractOutputPaths } from './output-paths.ts';
+import { TASK_MATERIALS_DEFINITIONS, TASK_MATERIALS_SCHEMAS } from '../../../src/modules/task/materials/application/task-materials-contracts.ts';
 
 const serviceRoot = path.resolve(import.meta.dirname, '../../..');
 const workspaceProductRoot = path.resolve(serviceRoot, '../..');
@@ -31,6 +32,12 @@ function body(schema: Record<string, unknown>): Record<string, unknown> {
 export async function renderTaskRecordHttpDto(): Promise<string> {
   const definitions = {
     ...TASK_HTTP_DEFINITIONS,
+    ...TASK_MATERIALS_DEFINITIONS,
+    TaskMaterialsInspectRequest: body(TASK_MATERIALS_SCHEMAS.inspectRequest),
+    TaskMaterialsRecordRequest: body(TASK_MATERIALS_SCHEMAS.recordRequest),
+    TaskMaterialsWriteRequest: body(TASK_MATERIALS_SCHEMAS.writeRequest),
+    TaskMaterialsResponse: body(TASK_MATERIALS_SCHEMAS.response),
+    TaskMaterialsWriteResponse: body(TASK_MATERIALS_SCHEMAS.writeResponse),
     TaskListRequest: body(TASK_HTTP_SCHEMAS.listRequest),
     TaskListResponse: body(TASK_HTTP_SCHEMAS.listResponse),
     TaskDetailRequest: body(TASK_HTTP_SCHEMAS.detailRequest),

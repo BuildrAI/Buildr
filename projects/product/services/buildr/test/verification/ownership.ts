@@ -74,6 +74,8 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "test/integration/capability-contracts.test.ts",
       "test/integration/capability-runtime.test.ts",
       "test/integration/buildr-web-read-executor.test.ts",
+      "test/integration/task-materials-application.test.ts",
+      "test/integration/task-materials-http-cli.test.ts",
       "test/integration/buildr-web-runtime.test.ts",
       "test/integration/buildr-web-workspace.test.ts",
       "test/integration/preview-ownership.test.ts",
@@ -118,6 +120,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "test/integration/openspec-domain.test.ts",
       "test/integration/openspec-projected-validator.test.ts",
       "src/modules/task/change/**",
+      "src/modules/task/materials/application/task-project-document-reader.ts",
       "src/modules/openspec/**"
     ],
     "inputExclusions": []
@@ -163,6 +166,8 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   },
   "integration-runtime": {
     "inputs": [
+      "src/modules/task/materials/**",
+      "src/infrastructure/filesystem/exclusive-file-lock.ts",
       "src/modules/workbench/**",
       "src/modules/task/work-context/**",
       "test/integration/workbench-application.test.ts",
@@ -170,6 +175,8 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "test/integration/capability-contracts.test.ts",
       "test/integration/capability-runtime.test.ts",
       "test/integration/buildr-web-read-executor.test.ts",
+      "test/integration/task-materials-application.test.ts",
+      "test/integration/task-materials-http-cli.test.ts",
       "test/integration/buildr-web-runtime.test.ts",
       "test/integration/buildr-web-workspace.test.ts",
       "test/integration/preview-ownership.test.ts",

@@ -19,7 +19,7 @@ export function TaskArtifactReader({ change, artifactPath, onClose, onSelect, on
   artifactPath: string;
   onClose(): void;
   onSelect(path: string): void;
-  onProjectDocument?(path: string): void;
+  onProjectDocument?(path: string, projectRelative: boolean): void;
 }) {
   const [message, setMessage] = useState('');
   const closeRef = useRef(onClose);
@@ -41,7 +41,7 @@ export function TaskArtifactReader({ change, artifactPath, onClose, onSelect, on
     const path = resolveProjectMarkdownHref(artifactPath, href);
     const target = items.find(item => item.artifact.path === path);
     if (target) onSelect(target.artifact.path);
-    else if (path && onProjectDocument) onProjectDocument(path);
+    else if (path && onProjectDocument) onProjectDocument(path, href.trim().startsWith('@project/'));
     else setMessage('这个链接不在当前项目的可读材料范围内。');
   };
   return <aside className={`task-document-reader${embedded ? ' task-document-embedded' : ''}`} aria-label="成果阅读">

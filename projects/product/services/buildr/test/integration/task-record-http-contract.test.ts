@@ -27,8 +27,11 @@ function assertSchema(operationId: any, kind: any, value: any): any  {
 }
 
 test('Task Record contract catalog、DTO drift 与未迁移诊断保持局部', async () => {
-  assert.equal(TASK_HTTP_OPERATIONS.length, 10);
+  assert.equal(TASK_HTTP_OPERATIONS.length, 13);
   assert.deepEqual(TASK_HTTP_OPERATIONS.map((operation: any) => operation.id), [
+    'task-materials.inspect',
+    'task-materials.record',
+    'task-materials.write',
     'task-record.list',
     'task-record.detail',
     'task-record.update',

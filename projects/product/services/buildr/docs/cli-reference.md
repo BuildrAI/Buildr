@@ -137,6 +137,9 @@ buildr help assets
 | `buildr task verification record\|inspect` | 保存或读取开发完成后的Task验证报告。Agent直接调用项目测试工具；Buildr不生成计划或代跑测试。 |
 | `buildr task create\|inspect\|update\|activate\|complete\|abandon` | 在canonical Workspace的SQLite中维护Task Record v3。除`create`外的写动作都必须提交刚观察到的`--expected-record <digest>`。完成只保存真实结果摘要，不保存`noChange`、Git、验证、环境或发布事实。终态Task可通过`update`登记固定本机复盘文档或显式更正业务事实。 |
 | `buildr task commits <task-id> [--target <canonical-workspace>] [--json]` | 只读查询任务范围内带有有效 `Buildr-Task` 尾注（Trailer）的当前可达 Git 提交（Commit），包含本机未推送提交。返回真实完整说明、哈希值（Hash）、来源、读取范围和局部诊断；不抓取远端，不写任务或 Git。 |
+| `buildr task materials inspect <task-id> [--target <canonical-workspace>] [--json]` | 零写入读取独立任务材料清单、逐项正文、实际摘要、来源及局部诊断；无需 OpenSpec。 |
+| `buildr task materials record <task-id> --materials <json-file> --expected-current <absent\|sha256-digest> [--target <canonical-workspace>] [--json]` | 按已观察版本整值更新材料引用；输入文件只包含 `schemaVersion: buildr.task-materials/v1` 与完整 `documents`，不保存正文或改变任务状态。 |
+| `buildr task materials write <task-id> --path <relative-md> --content <utf8-file> --expected-document <absent\|sha256-digest> [--target <canonical-workspace>] [--json]` | 按已观察正文版本写入固定任务目录中的本机 Markdown；不写项目文件、不自动建立引用。 |
 | `buildr task work-context inspect\|record\|respond <task-id>` | 独立工作摘要与显式待处理事项。`record` 使用 `--expected-current <absent\|digest>`、`--progress`、`--next-step`；可明确登记或清除事项。`respond` 以当前版本、事项身份和真实用户意见保存答复，不改变任务状态或完成结果。 |
 | `buildr task parent inspect` | 只读查看整体目标、真实子任务及结果、完成观察身份和历史父计划。旧 record、reconcile、bind-child、refresh-planning、reconcile-child-delivery、accept 写入口已退役。父任务通过已有 task complete 提交当前版本、验收和明确用户授权。 |
 | `buildr task verification inspect\|record <task-id>` | 读取或整值保存Workspace SQLite中的current任务验证报告。`record --report <json-file>`接收Agent在开发完成后形成的实际检查、选择范围、目标、结果、未覆盖项和结论；`inspect`可带当前内容identity判断报告是否仍适用。命令不生成计划、不执行测试、不绑定Candidate。 |
@@ -153,6 +156,10 @@ buildr help assets
 新 Workspace 使用 `.buildr/workspace.yml` 的 `buildr.workspace/v1` schema，并与 `skills/manifest.yml.workspaceId` 共享同一 UUID。旧 metadata 可以在 `buildr web` 中只读查看；`buildr sync <agent>` 通过同一 source transaction 显式迁移两份 Manifest，identity 冲突时零写入失败。页面修改使用 revision compare-and-swap，不自动覆盖 Agent、Git 或编辑器已经产生的外部变化。
 
 Task Record 使用closed `buildr.task-record/v3` schema。顶层状态为`todo|active|completed|abandoned`，查询态`open`派生为todo + active。可选`retrospective`只保存本机Markdown的SHA-256与`pending-decision|decided`；不保存正文、处置说明或后续Task关系。只保存Child的`parentTaskId`，反向Children由查询派生；`isParent`保存明确父任务身份。所有非创建写动作都比较当前`recordDigest`。
+
+独立任务材料（Task Materials）的清单固定在主工作空间（Canonical Workspace）的 `.buildr/local/task-materials/<task-id>/materials.json`，正文不进入清单、任务记录（Task Record）或数据库（Database）。每个引用包含 `id`、`role: brief|solution|implementation|delivery`、`title` 和 `source`；来源为 `{kind:'task',path:<relative-md>}` 或 `{kind:'project',project:<code>,path:<project-relative-md>}`。至多一份 `brief`，其他角色允许多份。任务本机文件在同一任务目录；项目文件按真实任务作用域及工作树（Worktree）证据读取，候选缺失不回退主目录。项目正文仍由真实文件工具维护。
+
+`inspect` 返回 `buildr.task-materials-result/v1`，包含 `materialsDigest: absent|sha256-<64hex>`、完整清单、逐项 `content`、`actualDigest`、`provenance` 与 `diagnostic`。`record` 和 `write` 使用同一逐任务独占锁（Exclusive Lock），锁内重读并比较各自已观察版本，原子发布（Atomic Publication）；冲突需重读判断，不自动覆盖。旧失效引用可保留、修改安全元数据或解除，不阻止无关新引用。空白、缺失与不可读正文如实诊断。读取不创建目录、清单或说明，也不将短目标 `intent` 冒充正文。任务限定超文本传输协议（HTTP）入口为 `GET /tasks/:taskId/materials`、`POST /tasks/:taskId/materials`（`{expectedCurrent,documents}`）及 `POST /tasks/:taskId/materials/documents`（`{path,content,expectedDocumentDigest}`），均位于已登记工作空间（Workspace）的接口前缀下；写请求必须同源、具有有效会话（Session）且满足封闭请求字段与有界正文约束。
 
 `task commits` 先确认任务存在，再读取其项目、服务、关联变更对应项目与已知任务工作树（Worktree）中的真实代码库（Repository）；不会扫描任意目录。没有项目、服务或关联变更的工作空间级任务（Workspace-only Task），只检查任务所属主工作空间（Canonical Workspace）根目录本身的 Git 代码库，不向父目录寻找替代来源。关联依据是实际提交说明（Commit Message）末尾的 `Buildr-Task: <taskId>`，正文普通提及不算关联。查询按真实代码库和完整哈希值（Hash）去重，读取本机当前可达引用；JSON 使用 `buildr.task-commits/v1`，必须结合 `status`、`coverage` 与 `diagnostics` 判断结果完整性。部分结果不能表述为确定的零提交，读取成功也不代表任务完成。旧提交不自动补尾注或改写历史。
 

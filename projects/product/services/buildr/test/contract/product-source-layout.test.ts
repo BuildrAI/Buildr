@@ -17,6 +17,7 @@ const canonicalProjectEntries: any[] = [
   'knowledge',
   'openspec',
   'services',
+  'tasks',
 ];
 const canonicalServiceEntries: any[] = [
   'AGENTS.md',

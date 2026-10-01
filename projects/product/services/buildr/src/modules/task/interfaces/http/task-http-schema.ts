@@ -1,4 +1,5 @@
 import { compileJsonSchemaCatalog } from '../../../../infrastructure/contracts/json-schema-validator.ts';
+import { TASK_MATERIALS_SCHEMAS } from '../../materials/application/task-materials-contracts.ts';
 
 const DRAFT_2020_12 = 'https://json-schema.org/draft/2020-12/schema';
 const CONTRACT_ROOT = 'https://schemas.buildr.ai/http/task-record';
@@ -128,6 +129,11 @@ export const TASK_HTTP_DEFINITIONS = Object.freeze({
 const defs = TASK_HTTP_DEFINITIONS;
 
 export const TASK_HTTP_SCHEMAS = Object.freeze({
+  materialsInspectRequest: TASK_MATERIALS_SCHEMAS.inspectRequest,
+  materialsRecordRequest: TASK_MATERIALS_SCHEMAS.recordRequest,
+  materialsWriteRequest: TASK_MATERIALS_SCHEMAS.writeRequest,
+  materialsResponse: TASK_MATERIALS_SCHEMAS.response,
+  materialsWriteResponse: TASK_MATERIALS_SCHEMAS.writeResponse,
   listRequest: schema('list/request', 'TaskListRequest', closed({
     q: { type: 'string' },
     project: nonEmptyText,
@@ -286,6 +292,9 @@ function operation(id: string, method: string, path: string, request: TaskHttpSc
 }
 
 export const TASK_HTTP_OPERATIONS = Object.freeze([
+  operation('task-materials.inspect', 'GET', '/tasks/:taskId/materials', 'materialsInspectRequest', 'materialsResponse'),
+  operation('task-materials.record', 'POST', '/tasks/:taskId/materials', 'materialsRecordRequest', 'materialsResponse'),
+  operation('task-materials.write', 'POST', '/tasks/:taskId/materials/documents', 'materialsWriteRequest', 'materialsWriteResponse'),
   operation('task-record.list', 'GET', '/tasks', 'listRequest', 'listResponse'),
   operation('task-record.detail', 'GET', '/tasks/:taskId', 'detailRequest', 'detailResponse'),
   operation('task-record.update', 'PATCH', '/tasks/:taskId', 'updateRequest', 'updateResponse'),

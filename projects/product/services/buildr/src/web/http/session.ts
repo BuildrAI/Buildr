@@ -36,7 +36,7 @@ export function readJsonBody(request: any, maxBytes = MAX_JSON_BODY_BYTES) {
         return;
       }
       try {
-        const content = Buffer.concat(chunks).toString('utf8');
+        const content = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(Buffer.concat(chunks));
         resolve(content ? JSON.parse(content) : {});
       } catch {
         const error: Error & Record<string, any> = new Error('请求体必须是合法 JSON。');

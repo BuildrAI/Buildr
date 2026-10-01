@@ -4,21 +4,22 @@ import { Alert, Menu, Spin, type MenuProps } from 'antd';
 import type { TaskRecord } from '../../../../build/generated/task-dto';
 import type { ReviewsResponse, VerificationResponse } from '../../../../build/generated/task-professional-http-dto';
 import type { TaskBriefState } from '../hooks/useTaskArtifacts';
-import { reviewRecords, taskDocumentLabel, type TaskDocumentItem, type TaskNodeStage, type TaskReadTarget } from './taskWorkContent';
+import { reviewRecords, taskDocumentLabel, taskDocumentTarget, type TaskDocumentItem, type TaskNodeStage, type TaskReadTarget } from './taskWorkContent';
 
 type ContentOption = { key: string; label: ReactNode; target: TaskReadTarget; group?: string; path?: string };
-export function TaskNodeContent({ selected, record, documents, briefs, briefsLoading, reviews, verification, reviewError, verificationError, reviewLoading, verificationLoading, prototypeData, prototypeError, choices, onChoose, renderContent, hasRetrospective, hasCoordination }: {
-  selected: TaskNodeStage; record: TaskRecord; documents: TaskDocumentItem[]; briefs: TaskBriefState[]; briefsLoading: boolean;
+export function TaskNodeContent({ selected, record, documents, briefs, briefsLoading = false, reviews, verification, reviewError, verificationError, reviewLoading, verificationLoading, prototypeData, prototypeError, choices, onChoose, renderContent, hasRetrospective, hasCoordination, materialsLoading, materialsError, materialDiagnostics = [] }: {
+  selected: TaskNodeStage; record: TaskRecord; documents: TaskDocumentItem[]; briefs: TaskBriefState[]; briefsLoading?: boolean;
   reviews: ReviewsResponse | null; verification: VerificationResponse | null; reviewError: string | null; verificationError: string | null; reviewLoading: boolean; verificationLoading: boolean;
   prototypeData: UiPrototypeData | null; prototypeError: string | null; choices: Record<string, string>; onChoose(key: string, value: string): void;
   hasRetrospective: boolean; hasCoordination: boolean; renderContent(target: TaskReadTarget): ReactNode;
+  materialsLoading?: boolean; materialsError?: string | null; materialDiagnostics?: Array<{ code: string; message: string }>;
 }) {
-  const entries = documents.filter(item => item.stage === selected && selected !== 'implementation');
+  const entries = documents.filter(item => item.stage === selected);
   const options: ContentOption[] = entries.map(item => {
     const spec = item.title.startsWith('规范 · ');
     const name = spec ? (item.artifact.capability || item.title.slice(5)) : taskDocumentLabel(item,entries);
     const duplicate = entries.filter(peer=>peer.title===item.title).length > 1;
-    return {key:item.key, group:spec ? '规范' : undefined, label:<span className="task-directory-label" title={taskDocumentLabel(item,entries)}>{name}{spec && duplicate && <small>{item.changeKey}</small>}</span>, path:item.artifact.path, target:{kind:'artifact',title:item.title,changeKey:item.changeKey,path:item.artifact.path}};
+    return {key:item.key, group:spec ? '规范' : undefined, label:<span className="task-directory-label" title={taskDocumentLabel(item,entries)}>{name}{(item.historicalBrief || (spec && duplicate)) && <small>{item.changeKey}</small>}</span>, path:item.artifact.path, target:taskDocumentTarget(item)};
   });
   // 「任务说明」节点以说明正文（brief.md 等任务说明材料）为内容；intent 只是短目标，
   // 不再兜底进说明节点，也不把 intent 伪装成说明。
@@ -43,7 +44,7 @@ export function TaskNodeContent({ selected, record, documents, briefs, briefsLoa
     if (hasRetrospective) options.push({key:'retrospective',label:'任务复盘',target:{kind:'retrospective',title:'任务复盘'}});
   }
   const missingPrototype = selected === 'design' && choices[selected]?.startsWith('prototype:') && !options.some(item => item.key === choices[selected]);
-  const active = options.find(item => item.key === choices[selected]) || (missingPrototype ? options.find(item => item.target.kind === 'prototype') : undefined) || (selected === 'closeout' && record.status === 'completed' ? options.find(item => item.key === 'result') : undefined) || (selected === 'implementation' && !reviews?.slots.completion.result && verification?.slot.report ? options.find(item => item.key === 'verification') : undefined) || options[0];
+  const active = options.find(item => item.key === choices[selected]) || (missingPrototype ? options.find(item => item.target.kind === 'prototype') : undefined) || (selected === 'closeout' && record.status === 'completed' ? options.find(item => item.key === 'result') : undefined) || (selected === 'implementation' && !entries.length && !reviews?.slots.completion.result && verification?.slot.report ? options.find(item => item.key === 'verification') : undefined) || options[0];
   const items: MenuProps['items'] = [];
   for (const option of options) {
     const item = {key:option.key,label:<span data-task-artifact={option.path} data-task-content={option.key === 'review' || option.key === 'verification' || option.key === 'intent' ? option.key : undefined} data-task-tab={option.target.kind === 'prototype' ? 'prototype' : undefined} data-task-closeout={selected === 'closeout' ? option.key : undefined}>{option.label}</span>};
@@ -53,7 +54,11 @@ export function TaskNodeContent({ selected, record, documents, briefs, briefsLoa
       group.children.push(item);
     } else items.push(item);
   }
-  const loading = ((selected === 'requirements' || (selected === 'design' && !choices[selected])) && briefsLoading && !entries.length) || (active?.target.kind === 'review' ? reviewLoading && !reviews : active?.target.kind === 'verification' ? verificationLoading && !verification : active?.target.kind === 'artifact' && selected !== 'implementation' && record.changes.length > 0 && briefs.length === 0);
+  const readingEvidence = choices[selected]?.startsWith('review') || choices[selected] === 'verification' || choices[selected]?.startsWith('prototype:') || ['result', 'coordination', 'retrospective'].includes(choices[selected]);
+  const waitingForBriefs = (selected === 'requirements' || (selected === 'design' && !choices[selected])) && briefsLoading && !entries.length;
+  const waitingForMaterials = materialsLoading && !readingEvidence && !entries.length;
+  const loading = waitingForBriefs || waitingForMaterials || (active?.target.kind === 'review' ? reviewLoading && !reviews : active?.target.kind === 'verification' ? verificationLoading && !verification : false);
+  const readingMaterial = active?.target.kind === 'material';
   const error = active?.target.kind === 'review' ? reviewError : active?.target.kind === 'verification' ? verificationError : active?.target.kind === 'prototype' ? prototypeError : null;
   const directory = options.length > 1 || selected === 'design' || selected === 'implementation' || selected === 'closeout';
   return <section id="task-node-content" className={`task-node-content${directory ? ' task-node-with-directory' : ''}`} aria-label="所选节点内容">
@@ -61,9 +66,11 @@ export function TaskNodeContent({ selected, record, documents, briefs, briefsLoa
     <div className="task-node-reading">
       {missingPrototype && <Alert type="info" message="上次选择的原型页面已变化，已显示当前可用内容。" />}
       {error && <Alert type="warning" message={error} />}
+      {materialsError && !readingMaterial && <Alert type="warning" message={`任务材料读取失败：${materialsError}`} description="请刷新任务后重试；未使用旧说明替代当前关联。" />}
+      {materialDiagnostics.map((item, index) => <Alert key={`materials:${item.code}:${index}`} type="warning" message={item.message} />)}
       {selected === 'design' && !prototypeData?.prototypes.length && prototypeData?.diagnostics.map((item, index) => <Alert key={`prototype:${index}`} type="warning" message={item.message} />)}
-      {selected !== 'closeout' && selected !== 'implementation' && briefs.map(item => item.kind === 'missing' ? <Alert key={item.key} type="warning" message={item.message} /> : null)}
-      {loading ? <div className="task-content-loading"><Spin size="small" /> 正在读取内容…</div> : active ? renderContent(active.target) : <p className="task-node-empty">{selected === 'requirements' ? '暂无补充需求或说明。' : '暂无内容。'}</p>}
+      {(selected === 'requirements' || selected === 'design') && briefs.map(item => item.kind === 'missing' ? <Alert key={item.key} type="warning" message={item.message} /> : item.kind === 'ready' && !item.change.brief.exists ? <Alert key={item.key} type="warning" message={`${item.key} 的变更说明当前缺失。`} /> : null)}
+      {loading ? <div className="task-content-loading"><Spin size="small" /> 正在读取内容…</div> : active ? renderContent(active.target) : <p className="task-node-empty">{materialsError && selected === 'requirements' ? '关联状态尚未读到，请重试。' : selected === 'requirements' ? '尚未关联独立任务说明。' : '暂无内容。'}</p>}
     </div>
   </section>;
 }

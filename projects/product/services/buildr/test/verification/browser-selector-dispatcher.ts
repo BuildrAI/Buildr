@@ -10,7 +10,7 @@ import { executeVerificationCommand } from './support/process-executor.ts';
 
 import { collectChangedProductPaths } from './changed-paths.ts';
 
-export const BROWSER_SELECTORS: any = Object.freeze(['core', 'shell', 'workbench', 'project', 'service', 'change', 'task', 'articles', 'layout']);
+export const BROWSER_SELECTORS: any = Object.freeze(['core', 'shell', 'workbench', 'project', 'service', 'change', 'task', 'task-materials', 'articles', 'layout']);
 
 const productRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const projectRoot: any = path.resolve(productRoot, '../..');
@@ -83,6 +83,10 @@ export function selectBrowserSelectors(changedPaths: any): any  {
       plan.mode = 'full';
       plan.selectors = ['all'];
       plan.reasons.push({ path: originalValue, selector: 'all', reason: 'Browser verification selection mechanism changed; run the complete selector set.' });
+      continue;
+    }
+    if (value.startsWith('src/modules/task/materials/')) {
+      add(plan, 'task-materials', originalValue, 'Task-owned material sources and node reading changed; verify direct reading without OpenSpec.');
       continue;
     }
     if (value.startsWith('src/web/http/')) {

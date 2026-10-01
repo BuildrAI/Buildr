@@ -387,6 +387,8 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
     'test/integration/capability-contracts.test.ts',
     'test/integration/capability-runtime.test.ts',
     'test/integration/buildr-web-read-executor.test.ts',
+    'test/integration/task-materials-application.test.ts',
+    'test/integration/task-materials-http-cli.test.ts',
     'test/integration/buildr-web-runtime.test.ts',
     'test/integration/buildr-web-workspace.test.ts',
     'test/integration/preview-ownership.test.ts',

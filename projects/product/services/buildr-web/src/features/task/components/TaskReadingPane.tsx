@@ -1,4 +1,4 @@
-import { Alert, Tag } from 'antd';
+import { Alert, Spin, Tag } from 'antd';
 import type { TaskDetailResponse } from '../../../../build/generated/task-dto';
 import type { TaskWorkContext } from '../../../../build/generated/workbench-dto';
 import type { useTaskArtifacts } from '../hooks/useTaskArtifacts';
@@ -8,6 +8,7 @@ import { MarkdownHost } from '../../../components/MarkdownHost';
 import { formatDateTime, reviewMethodLabel } from '../../../lib/taskLabels';
 import { reviewRecords, sourceLabel, taskStageLabels } from './taskWorkContent';
 import { TaskArtifactReader } from './TaskArtifactReader';
+import { TaskMaterialReader } from './TaskMaterialReader';
 import { TaskDocumentPreviewModal } from './TaskDocumentPreviewModal';
 import { PrototypeTab } from './PrototypeTab';
 import { ParentCoordinationPanel } from './ParentCoordinationPanel';
@@ -24,10 +25,17 @@ export function TaskReadingPane({ target, task, context, artifacts, evidence, wo
 }) {
   if (!target) return null;
   const record = task.record;
+  if (target.kind === 'material') {
+    if (artifacts.materials.loading && !artifacts.materials.data) return <div className="task-content-loading"><Spin size="small" /> 正在读取任务材料…</div>;
+    const documents = artifacts.materials.data?.documents || [];
+    const document = documents.find(item => item.id === target.id);
+    if (!document) return <Alert type="warning" message={artifacts.materials.error || '关联材料当前不可读取，请刷新任务后重试。'} />;
+    return <TaskMaterialReader document={document} documents={documents} loading={artifacts.materials.loading} error={artifacts.materials.error} onMaterial={id => onRead({ kind: 'material', id, title: documents.find(item => item.id === id)?.title || '任务材料' })} onProjectDocument={(project, path) => void artifacts.openProjectDocument(project, path)} />;
+  }
   if (target.kind === 'artifact') {
     const source = artifacts.briefs.find(item => item.kind === 'ready' && item.key === target.changeKey);
     if (!source || source.kind !== 'ready') return <Alert type="warning" message="当前材料不可读取，请刷新任务后重试。" />;
-    return <div className="task-reader"><TaskArtifactReader embedded={embedded} sourceDescription={sourceLabel(source.provenance)} change={source.change} artifactPath={target.path} onClose={onClose} onProjectDocument={path => void artifacts.openChangeDocument(target.changeKey, path)} onSelect={path => onRead({ ...target, path, title: path.split('/').at(-1) || '文档' })} /></div>;
+    return <div className="task-reader">{target.historicalBrief && <Alert type="info" message="历史变更说明，非独立任务说明" description={source.key} />}<TaskArtifactReader embedded={embedded} sourceDescription={sourceLabel(source.provenance)} change={source.change} artifactPath={target.path} onClose={onClose} onProjectDocument={(path, projectRelative) => void (projectRelative ? artifacts.openProjectDocument(target.changeKey.split('/')[0], path) : artifacts.openChangeDocument(target.changeKey, path))} onSelect={path => onRead({ ...target, path, title: path.split('/').at(-1) || '文档' })} /></div>;
   }
   if (target.kind === 'document') return <div className="task-reader"><TaskDocumentPreviewModal embedded={inDrawer} reference={target.reference} refreshToken={refreshToken} onClose={onClose} loadDocument={artifacts.loadProjectDocument} /></div>;
   if (target.kind === 'prototype') return <div className="task-reader"><PrototypeTab selectedKey={target.prototypeKey} onSelect={onPrototypeSelect} onAuxiliaryOpen={onPrototypeNotesOpen} closeAuxiliaryToken={prototypeNotesCloseToken} active workspaceId={workspaceId} data={artifacts.prototypeData} error={artifacts.prototypeError} loading={artifacts.prototypeLoading} onRefresh={() => void artifacts.refreshPrototype()} /></div>;
@@ -39,8 +47,10 @@ export function TaskReadingPane({ target, task, context, artifacts, evidence, wo
     const result = entry.result;
     const latest = reviewRecords(evidence.reviewData?.slots[target.reviewType]).at(-1)?.resultDigest === entry.resultDigest;
     return <article className="task-reader" id="task-review-result">
-      <div className="task-report-title">{!inDrawer && <h2>{target.title} · 第 {records.indexOf(entry) + 1} 次</h2>}<Tag color={result.conclusion.outcome === 'accepted' ? 'success' : 'warning'}>{result.conclusion.outcome === 'accepted' ? '通过' : '需修改'}</Tag></div><p className="task-report-meta">{latest ? '最近一次审查' : '历史审查'} · {formatDateTime(result.completedAt)} · {reviewMethodLabel(result.method)}</p>
+      <div className="task-report-title">{!inDrawer && <h2>{target.title} · 第 {records.indexOf(entry) + 1} 次</h2>}<Tag color={result.conclusion.outcome === 'accepted' ? 'success' : 'warning'}>{result.conclusion.outcome === 'accepted' ? '保存结论：通过' : '保存结论：需修改'}</Tag></div><p className="task-report-meta">{latest ? '最近一次审查' : '历史审查'} · {formatDateTime(result.completedAt)} · {reviewMethodLabel(result.method)}</p>
       <p className="task-reader-conclusion">{result.conclusion.summary}</p>
+      <p className="task-report-meta">被审对象：<code>{result.subjectIdentity}</code></p><p className="task-report-applicability">这是保存时的结论，不代表当前材料版本已经通过审查。</p>
+      <TextList title="审查依据" items={result.reviewed} />
       <TextList title="问题与发现" items={result.findings} />
       <TextList title="未覆盖" items={result.uncovered.map(item => `${item.subject}：${item.reason}`)} />
     </article>;
@@ -51,14 +61,14 @@ export function TaskReadingPane({ target, task, context, artifacts, evidence, wo
     if (evidence.verificationError) return <Alert type="warning" message={evidence.verificationError} />;
     if (!report) return <p className="task-node-empty">尚未保存验证结果。</p>;
     return <article className="task-reader" id="task-verification-result">
-      <div className="task-report-title">{!inDrawer && <h2>开发验证</h2>}<Tag color={report.conclusion.outcome === 'passed' ? 'success' : report.conclusion.outcome === 'not-passed' ? 'error' : 'warning'}>{{ passed: '通过', 'not-passed': '未通过', incomplete: '未完成' }[report.conclusion.outcome]}</Tag></div><p className="task-report-meta">最近一次验证 · {formatDateTime(report.completedAt)}</p>
+      <div className="task-report-title">{!inDrawer && <h2>开发验证</h2>}<Tag color={report.conclusion.outcome === 'passed' ? 'success' : report.conclusion.outcome === 'not-passed' ? 'error' : 'warning'}>{{ passed: '保存结论：通过', 'not-passed': '保存结论：未通过', incomplete: '保存结论：未完成' }[report.conclusion.outcome]}</Tag></div><p className="task-report-meta">最近一次验证 · {formatDateTime(report.completedAt)}</p>
       <p className="task-reader-conclusion">{report.conclusion.summary}</p>
       {report.checks.length > 0 && <section className="task-report-section"><h3>检查明细</h3><div className="task-verification-checks">{report.checks.map((check,index) => {
-        const repeated = report.checks.length === 1 && ((check.outcome === 'passed' && report.conclusion.outcome === 'passed') || (check.outcome === 'failed' && report.conclusion.outcome === 'not-passed'));
-        return <section key={`${check.id}:${index}`}><div><strong>{check.targets.length ? check.targets.join('、') : check.testing}</strong>{!repeated && <span className={`task-check-outcome ${check.outcome}`}>{check.outcome === 'passed' ? '通过' : '未通过'}</span>}</div><p>{check.summary}</p>{record.scope.projects.length>1 && <small>{check.project}{check.service ? ` / ${check.service}` : ''}</small>}</section>;
+        return <section key={`${check.id}:${index}`}><div><strong>{check.targets.length ? check.targets.join('、') : check.testing}</strong><span className={`task-check-outcome ${check.outcome}`}>{check.outcome === 'passed' ? '通过' : '失败'}</span></div><p>{check.summary}</p><small>{check.testing} · {check.selection} · {check.source}</small>{record.scope.projects.length>1 && <small>{check.project}{check.service ? ` / ${check.service}` : ''}</small>}</section>;
       })}</div></section>}
       <section className="task-report-section task-verification-scope"><h3>范围说明</h3>
-        <p>{report.content.summary}</p>
+        <p>{report.content.summary}</p><p className="task-report-meta">验证对象：<code>{report.content.identity}</code></p>
+        <TextList title="测试地图依据" items={report.declarations.map(item => `${item.project} · ${item.path} · ${item.status} · ${item.identity}${item.summary ? `：${item.summary}` : ''}`)} />
         {slot.applicability?.status !== 'current' && <p className="task-report-applicability">{slot.applicability?.status === 'stale' ? '报告依据已变化，需要重新核对适用范围。' : '当前内容版本尚未核对，请结合验证内容判断适用范围。'}</p>}
         {report.gaps.length > 0 && <div className="task-coverage-gaps"><span>未覆盖</span><ul>{report.gaps.map((gap,index)=><li key={index}>{gap.testing === 'project-testing-map' ? gap.reason.replace(/^Project /,'项目') : `${gap.testing}：${gap.reason}`}</li>)}</ul></div>}
       </section>

@@ -10,6 +10,7 @@ import {
 import { CHANGE_APPLICATION } from '../../modules/task/change/module.ts';
 import { TASK_COMMITS_APPLICATION } from '../../modules/task/commits/module.ts';
 import { TASK_CHANGED_FILES_APPLICATION } from '../../modules/task/changed-files/module.ts';
+import { TASK_MATERIALS_APPLICATION } from '../../modules/task/materials/module.ts';
 
 const runtime = createRuntime();
 const operations: Readonly<Record<string, Readonly<{ capability: string; method: string; fields?: readonly string[] }>>> = Object.freeze({
@@ -20,7 +21,8 @@ const operations: Readonly<Record<string, Readonly<{ capability: string; method:
   verification: Object.freeze({ capability: TASK_VERIFICATION_APPLICATION, method: 'inspectTaskVerificationView' }),
   coordination: Object.freeze({ capability: PARENT_COORDINATION_APPLICATION, method: 'inspectParentCoordination' }),
   change: Object.freeze({ capability: CHANGE_APPLICATION, method: 'taskScopedChangeDetail', fields: ['project', 'change'] }),
-  documents: Object.freeze({ capability: CHANGE_APPLICATION, method: 'taskProjectDocument', fields: ['project', 'documentPath'] }),
+  materials: Object.freeze({ capability: TASK_MATERIALS_APPLICATION, method: 'inspectTaskMaterials' }),
+  documents: Object.freeze({ capability: TASK_MATERIALS_APPLICATION, method: 'taskProjectDocument', fields: ['project', 'documentPath'] }),
   prototypes: Object.freeze({ capability: CHANGE_APPLICATION, method: 'taskUiPrototypes' }),
   prototype: Object.freeze({ capability: CHANGE_APPLICATION, method: 'taskUiPrototype', fields: ['prototypeId'] }),
 });

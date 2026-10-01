@@ -308,7 +308,8 @@ test('任务文档读取工作树未提交内容，相对文件不回退且拒�
   fs.writeFileSync(path.join(projectRoot, 'docs/task.md'), 'main copy');
   fs.writeFileSync(path.join(candidateRoot, 'docs/task.md'), 'uncommitted worktree copy');
   fs.writeFileSync(path.join(projectRoot, 'docs/only-main.md'), 'main only');
-  runtime.inspectTask = (_target, taskId) => ({ record: { taskId, changes: [{ project: 'product', change: 'shared' }] } });
+  runtime.readTask = (_target, taskId) => ({ record: { taskId, changes: [{ project: 'product', change: 'shared' }] } });
+  runtime.inspectTask = () => { throw new Error('普通文档必须只调用 readTask，不能依赖 Change inspection。'); };
   runtime.inspectGitWorktrees = () => ({ status: 'ready', repositories: [{ selector: 'workspace', entityType: 'workspace', sourcePath: '.', checkoutPath: worktreeRoot, state: 'ready' }] });
   assert.equal(runtime.taskProjectDocument(root, 'reader-task', 'product', 'docs/task.md').content, 'uncommitted worktree copy');
   assert.equal(runtime.taskProjectDocument(root, 'reader-task', 'product', 'docs/only-main.md').exists, false);

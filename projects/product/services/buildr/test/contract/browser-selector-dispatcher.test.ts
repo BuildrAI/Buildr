@@ -4,6 +4,12 @@ import test from 'node:test';
 import { parseChangedPaths, selectBrowserSelectors } from '../verification/browser-selector-dispatcher.ts';
 import { createVerificationPlan } from '../verification/planner.ts';
 
+test('Task-owned materials select the existing production-host browser boundary', () => {
+  const plan = selectBrowserSelectors(['services/buildr/src/modules/task/materials/application/task-materials-application.ts']);
+  assert.equal(plan.status, 'selected');
+  assert.deepEqual(plan.selectors, ['task-materials']);
+});
+
 test('Browser dispatcher skips Chrome for HTTP-only Buildr Web changes', () => {
   const plan: any = selectBrowserSelectors(['src/web/http/server.ts']);
   assert.equal(plan.status, 'not-applicable');
