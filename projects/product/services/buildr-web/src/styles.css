@@ -2021,7 +2021,8 @@ details summary { cursor: pointer; color: var(--soft-ink); font-size: 12px; font
 .resource-directory-head p:not(.resource-eyebrow), .resource-home-head p:not(.resource-eyebrow) { margin:8px 0 0; color:var(--soft-muted); font-size:13px; line-height:1.7; max-width:680px; }
 .resource-eyebrow { margin:0 0 8px; color:#76847e; font-size:11px; line-height:1.5; }
 .resource-eyebrow span { color:#929b96; }
-.resource-directory-actions { padding-top:18px; display:flex; gap:8px; flex:none; }
+.resource-directory-head > :first-child { flex:1; min-width:0; }
+.resource-directory-actions { padding-top:18px; display:flex; flex-wrap:wrap; gap:8px; flex:none; max-width:100%; }
 .resource-directory-tools { display:flex; align-items:center; gap:12px; margin:0 0 16px; }
 .resource-directory-tools > .ant-input-affix-wrapper { width:300px; max-width:100%; }
 .resource-directory-filters .ant-select { min-width:145px; }
@@ -2112,7 +2113,15 @@ details summary { cursor: pointer; color: var(--soft-ink); font-size: 12px; font
 .resource-section .ant-list-item .resource-relation-row { flex:1; min-width:0; }
 
 .resource-directory { container-type:inline-size; }
-@container (max-width:680px) { .resource-directory-tools { flex-wrap:wrap; } .resource-directory-tools > .ant-input-affix-wrapper { flex:1; min-width:180px; } .resource-directory-filters { order:3; } }
+/* 分栏后的实际内容宽度决定目录头布局，不依赖整个窗口的宽度。 */
+@container (max-width:680px) {
+ .resource-directory-head { flex-direction:column; gap:16px; margin-bottom:20px; }
+ .resource-directory-head > :first-child { width:100%; }
+ .resource-directory-actions { padding-top:0; }
+ .resource-directory-tools { flex-wrap:wrap; }
+ .resource-directory-tools > .ant-input-affix-wrapper { flex:1; min-width:180px; }
+ .resource-directory-filters { order:3; }
+}
 .resource-preview-back { margin-bottom:16px; padding-left:0; }
 
 .resource-stage-host { height:100%; min-height:0; }

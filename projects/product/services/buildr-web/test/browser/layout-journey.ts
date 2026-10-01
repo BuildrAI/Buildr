@@ -7,6 +7,27 @@ export async function runLayoutJourney({ t, page, workspaceUrl, capture }: any) 
   const reachable = async (locator: any) => {
     await locator.click({ trial: true });
   };
+  const readableDirectoryHeader = async () => {
+    const geometry = await page.locator('.resource-directory').evaluate((directory: HTMLElement) => {
+      const header = directory.querySelector('.resource-directory-head')!;
+      const title = header.querySelector('h1')!;
+      const description = header.querySelector('p:not(.resource-eyebrow)')!;
+      const bounds = header.getBoundingClientRect();
+      return {
+        width: bounds.width,
+        titleHeight: title.getBoundingClientRect().height,
+        titleLineHeight: parseFloat(getComputedStyle(title).lineHeight),
+        descriptionWidth: description.getBoundingClientRect().width,
+        actionsContained: Array.from(header.querySelectorAll('button')).every(button => {
+          const rect = button.getBoundingClientRect();
+          return rect.left >= bounds.left - 1 && rect.right <= bounds.right + 1;
+        }),
+      };
+    });
+    assert.ok(geometry.titleHeight <= geometry.titleLineHeight * 1.5, `目录标题不能被按钮挤成竖排：${JSON.stringify(geometry)}`);
+    assert.ok(geometry.descriptionWidth >= Math.min(240, geometry.width - 1), `目录说明应保留可读宽度：${JSON.stringify(geometry)}`);
+    assert.ok(geometry.actionsContained, `目录操作不能超出栏宽：${JSON.stringify(geometry)}`);
+  };
   for (const width of [1920, 1280, 390]) {
     await t.test(`布局 ${width}：目录信息和操作可达，详情开关保留搜索`, async () => {
       await page.setViewportSize({ width, height: 900 });
@@ -15,6 +36,7 @@ export async function runLayoutJourney({ t, page, workspaceUrl, capture }: any) 
         const row = page.locator('.resource-directory-table tbody tr[data-row-key]').first();
         await row.waitFor({ state: 'visible' });
         await noPageOverflow();
+        await readableDirectoryHeader();
         await reachable(page.getByRole('button', { name: `新增${noun}`, exact: true }));
         const search = page.getByRole('textbox', { name: `搜索${noun}`, exact: true });
         const name = await row.locator('.resource-name a').first().innerText();
@@ -24,6 +46,7 @@ export async function runLayoutJourney({ t, page, workspaceUrl, capture }: any) 
         if (area !== 'projects') {
           await page.locator('.pane-right:visible').waitFor();
           await noPageOverflow();
+          if (width >= 860) await readableDirectoryHeader();
           const close = width < 860
             ? page.getByRole('button', { name: '关闭阅读', exact: true })
             : page.getByRole('button', { name: `关闭 ${noun}详情`, exact: true });
