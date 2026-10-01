@@ -20,6 +20,7 @@ import { useWorkbenchPreferences } from '../../workbench/hooks/useWorkbenchPrefe
 import { TaskContextDrawer } from '../components/TaskWorkContextCard';
 import { TaskWorkPath } from '../components/TaskWorkPath';
 import { TaskChangesPane } from '../components/TaskChangesPane';
+import { useTaskChangedFileCount } from '../hooks/useTaskChangedFileCount';
 import { useTaskChangedFiles } from '../hooks/useTaskChangedFiles';
 import { TaskNodeContent } from '../components/TaskNodeContent';
 import { TaskReadingPane } from '../components/TaskReadingPane';
@@ -75,13 +76,15 @@ export function TaskDetailPage({ taskId: providedTaskId }: { taskId?: string } =
   const [refreshing, setRefreshing] = useState(false);
   // no shell-level fullscreen: the workbench rail collapse is the only focus gesture
   const [readerRefreshToken, setReaderRefreshToken] = useState(0);
-  const changedFiles = useTaskChangedFiles(taskId, selected === 'changes', workspaceId ?? '');
-  const changedFileCount = changedFiles.data?.taskId === taskId ? changedFiles.data.files.length : null;
   const lifecycle = useTaskRequestLifecycle();
   const href = (path: string) => workspaceHref(workspaceId, path);
   const onWorkspace = useCallback((workspace: WorkspaceResponse) => setWorkspace(workspace), [setWorkspace]);
   const onBreadcrumb = useCallback((workspaceName: string, title: string) => { if (!insidePreview) setBreadcrumbParts([workspaceName, '任务', title]); }, [insidePreview, setBreadcrumbParts]);
   const detail = useTaskDetail({ taskId, lifecycle, onWorkspace, onBreadcrumb, workspaceName: workspace?.name });
+  const changedCount = useTaskChangedFileCount(taskId, detail.data?.record.taskId === taskId && !detail.data.record.isParent, workspaceId ?? '');
+  const changedFiles = useTaskChangedFiles(taskId, selected === 'changes', workspaceId ?? '');
+  const countResult = changedCount.data;
+  const changedFileCount = changedFiles.data && (!countResult || changedFiles.data.readAt >= countResult.readAt) ? changedFiles.data.files.length : countResult?.fileCount ?? null;
   useEffect(() => { if (detail.data) previewContext?.identifyTask(location.pathname, taskId, detail.data.record.isParent === true); }, [detail.data?.record.taskId, detail.data?.record.isParent, previewContext, location.pathname, taskId]);
   const refreshTaskAndList = useCallback(async () => { resetTaskList(); await detail.refresh(); }, [resetTaskList, detail.refresh]);
   const evidence = useTaskEvidence(taskId, lifecycle, {
@@ -107,7 +110,7 @@ export function TaskDetailPage({ taskId: providedTaskId }: { taskId?: string } =
   const refresh = useCallback(async (includePrototype = selected === 'design') => {
     setRefreshing(true);
     try {
-      const results = await Promise.allSettled([detail.refresh().then(next => artifacts.refreshBriefs(next)), workContext.refresh(), evidence.refreshLoaded(), artifacts.refreshMaterials(), ...(changedFiles.data || selected === 'changes' ? [changedFiles.refresh()] : []), ...(includePrototype ? [artifacts.refreshPrototype()] : [])]);
+      const results = await Promise.allSettled([detail.refresh().then(next => artifacts.refreshBriefs(next)), workContext.refresh(), evidence.refreshLoaded(), artifacts.refreshMaterials(), ...(!detail.data?.record.isParent ? [changedCount.refresh()] : []), ...(changedFiles.data || selected === 'changes' ? [changedFiles.refresh()] : []), ...(includePrototype ? [artifacts.refreshPrototype()] : [])]);
       resetTaskList();
       const taskRead = results[0];
       if (currentTask.current === taskId && taskRead.status === 'rejected' && !isTaskReadCancelled(taskRead.reason)) setAlert({ message: '任务信息刷新失败，当前仍显示上次读取的内容。请重试。', error: true });
@@ -117,7 +120,7 @@ export function TaskDetailPage({ taskId: providedTaskId }: { taskId?: string } =
         setReaderRefreshToken(value => value + 1);
       }
     }
-  }, [taskId, selected, detail.refresh, workContext.refresh, evidence.refreshLoaded, changedFiles.refresh, changedFiles.data, artifacts.refreshMaterials, artifacts.refreshPrototype, artifacts.refreshBriefs, resetTaskList]);
+  }, [taskId, selected, detail.data?.record.isParent, detail.refresh, workContext.refresh, evidence.refreshLoaded, changedCount.refresh, changedFiles.refresh, changedFiles.data, artifacts.refreshMaterials, artifacts.refreshPrototype, artifacts.refreshBriefs, resetTaskList]);
   const closeExtraContent = () => { reading.closeExtra(); artifacts.closeDocument(); };
   const closeReadingDrawer = () => { reading.clearExtra(); artifacts.closeDocument(); };
   if (detail.error) return <Alert type="warning" message="任务不可用" description={detail.error} />;
@@ -149,7 +152,7 @@ export function TaskDetailPage({ taskId: providedTaskId }: { taskId?: string } =
     {data.referenceDiagnostics.length > 0 && <Alert id="task-reference-diagnostics" type="warning" message={`部分引用不可用：${data.referenceDiagnostics.map(item => item.message).join('；')}`} />}
     <TaskSummary context={workContext.data} error={workContext.error} onRespond={() => editor.open('respond')} />
     {record.isParent ? <CompositeTaskContent key={taskId} refreshToken={readerRefreshToken} task={data} coordination={evidence.coordinationData} loading={evidence.coordinationLoading} briefs={artifacts.briefs} documents={documents} materials={artifacts.materials} renderContent={readContent} refresh={async () => { await refresh(); }} onEnd={() => setEndOpen(true)} href={href} onDocument={(key, path) => void artifacts.openChangeDocument(key, path)} /> : <>
-    <TaskWorkPath actions={checklistTrigger} record={record} context={workContext.data?.context} selected={selected === 'changes' ? null : selected} onSelect={selectNode} contentTabs={[{ key: 'changes', label: <span data-prototype-position="changes-entry">改动与提交{changedFileCount !== null && changedFileCount > 0 && <span className="task-badge">{changedFileCount}</span>}</span>, selected: selected === 'changes', onSelect: () => selectNode('changes') }]} />
+    <TaskWorkPath actions={checklistTrigger} record={record} context={workContext.data?.context} selected={selected === 'changes' ? null : selected} onSelect={selectNode} contentTabs={[{ key: 'changes', label: <span data-prototype-position="changes-entry" title={changedCount.error || (countResult?.status === 'partial' ? '数量为已读范围，详情见改动与提交。' : undefined)}>改动与提交{changedFileCount !== null && changedFileCount > 0 && <span className="task-badge">{changedFileCount}</span>}</span>, selected: selected === 'changes', onSelect: () => selectNode('changes') }]} />
     <div className={`task-detail-layout${checklist.open && checklist.pinned ? ' checklist-pinned' : ''}${checklistResizing ? ' checklist-resizing' : ''}`}>
       <div className="task-detail-reading">
     {selected === 'changes' ? <div id="task-node-content" className="task-node-content"><div className="task-node-reading"><TaskChangesPane key={taskId} changed={changedFiles} /></div></div> : <TaskNodeContent choices={reading.choices} onChoose={reading.choose} selected={selected} record={record} documents={documents} briefs={artifacts.briefs} briefsLoading={artifacts.briefsLoading} materialsLoading={artifacts.materials.loading} materialsError={artifacts.materials.error} materialDiagnostics={artifacts.materials.data?.diagnostics} reviews={evidence.reviewData} verification={evidence.verificationData} reviewError={evidence.reviewError} verificationError={evidence.verificationError} reviewLoading={evidence.reviewLoading} verificationLoading={evidence.verificationLoading} prototypeData={artifacts.prototypeData} prototypeError={artifacts.prototypeError} hasRetrospective={Boolean(data.retrospectiveDocument.registered)} hasCoordination={data.taskRelations.children.length > 0} renderContent={readContent} />}

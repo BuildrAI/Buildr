@@ -55,6 +55,7 @@ export async function renderTaskRecordHttpDto(): Promise<string> {
     TaskCommitsRequest: body(TASK_HTTP_SCHEMAS.commitsRequest),
     TaskCommitsResult: body(TASK_HTTP_SCHEMAS.commitsResponse),
     TaskFileDiffRequest: body(TASK_HTTP_SCHEMAS.fileDiffRequest),
+    TaskChangedFileCountResponse: body(TASK_HTTP_SCHEMAS.changedFileCountResponse),
     TaskChangedFilesRequest: body(TASK_HTTP_SCHEMAS.changedFilesRequest),
     TaskChangedFilesResult: body(TASK_HTTP_SCHEMAS.changedFilesResponse),
     TaskErrorResponse: body(TASK_HTTP_SCHEMAS.errorResponse),

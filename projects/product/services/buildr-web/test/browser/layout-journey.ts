@@ -170,11 +170,15 @@ export async function runLayoutJourney({ t, page, workspaceUrl, capture }: any) 
     const message = '修正布局\n\n保留完整说明并允许选择复制。\n\nBuildr-Task: browser-task';
     const file = (text: string) => ({ repositoryId: 'repo', path: 'layout.tsx', previousPath: null, kind: 'tracked', status: 'modified', additions: 1, deletions: 1, preview: `diff --git a/layout.tsx b/layout.tsx\nindex abc..def\n--- a/layout.tsx\n+++ b/layout.tsx\n@@ -1,72 +1,72 @@\n-old\n-second-old\n+${text}\n+extra-new\n${Array.from({ length: 70 }, (_, index) => ` context-${index}`).join('\n')}`, previewTruncated: false });
     const commit = (value: string, subject: string) => ({ repositoryId: 'repo', hash: value, shortHash: value.slice(0, 12), subject, message, authorName: '布局验证', authorEmail: 'layout@example.com', authoredAt: '2026-10-01T00:00:00Z', committedAt: '2026-10-01T00:00:00Z' });
+    const countPattern = `**/tasks/${taskId}/changed-file-count`;
+    let fullLists = 0;
+    await page.route(countPattern, (route: any) => route.fulfill({ json: { schemaVersion: 'buildr.task-changed-file-count/v1', taskId, readAt: '2026-10-01T00:00:00Z', fileCount: 1, status: 'complete', coverage: { repositoryLimit: 32, fileLimit: 500, truncated: false }, diagnostics: [], effects: [] } }));
     let currentText = 'worktree-current';
     let release: (() => void) | null = null;
     let requested: (() => void) | null = null;
     let gate: Promise<void> | null = null;
     await page.route(pattern, async (route: any) => {
+      fullLists += 1;
       requested?.();
       if (gate) await gate;
       await route.fulfill({ json: {
@@ -190,23 +194,60 @@ export async function runLayoutJourney({ t, page, workspaceUrl, capture }: any) 
       const text = hashValue === hash ? 'commit-original' : hashValue === otherHash ? 'commit-earlier' : currentText;
       fullRequested?.(); if (fullGate && (!fullGateHash || hashValue === fullGateHash)) await fullGate;
       const entry = file(text);
-      entry.preview = `diff --git a/layout.tsx b/layout.tsx\n--- a/layout.tsx\n+++ b/layout.tsx\n@@ -1,81 +1,81 @@\n file-start\n${Array.from({ length: 7 }, (_, index) => ` pre-context-${index}`).join('\n')}\n-old\n-second-old\n+${text}\n+extra-new\n${Array.from({ length: 70 }, (_, index) => ` context-${index}`).join('\n')}\n file-end`;
+      entry.preview = `diff --git a/layout.tsx b/layout.tsx\n--- a/layout.tsx\n+++ b/layout.tsx\n@@ -1,81 +1,81 @@\n file-start\n${Array.from({ length: 140 }, (_, index) => ` pre-context-${index}`).join('\n')}\n-old\n-second-old\n+${text}\n+extra-new\n${Array.from({ length: 70 }, (_, index) => ` context-${index}`).join('\n')}\n file-end`;
+      if (text === 'unchanged-only') {
+        entry.status = 'renamed'; entry.previousPath = 'old-layout.tsx';
+        entry.preview = `diff --git a/old-layout.tsx b/layout.tsx\n@@ -1,220 +1,220 @@\n${Array.from({ length: 220 }, (_, index) => ` unchanged-only-${index}`).join('\n')}`;
+      }
       await route.fulfill({ json: { schemaVersion: 'buildr.task-changed-files/v1', taskId, readAt: '2026-10-01T00:00:00Z', status: 'complete', files: [entry], commits: [], commitFiles: {}, repositories: [], repositoryMeta: {}, coverage: { repositoryLimit: 32, fileLimit: 1, commitFileLimit: 1, previewLineLimit: 5000, truncated: false }, diagnostics: [], effects: [] } });
     });
+    const firstChangeVisible = async () => {
+      await page.waitForFunction(() => {
+        const body = document.querySelector<HTMLElement>('.task-diff-body');
+        if (!body) return false;
+        const split = body.querySelector<HTMLElement>('.task-diff-split-side');
+        const host = split || body;
+        const row = split?.querySelector<HTMLElement>('.is-del, .is-add') || body.querySelector<HTMLElement>('.line-del, .line-add');
+        if (!row) return false;
+        const header = split?.querySelector('.task-diff-version-head')?.getBoundingClientRect().height ?? 0;
+        const top = row.getBoundingClientRect().top - host.getBoundingClientRect().top;
+        return host.scrollTop > 100 && top >= header - 1 && top <= header + 32;
+      }).catch(async (cause: Error) => {
+        const geometry = await page.locator('.task-diff-body').evaluate((body: HTMLElement) => {
+          const split = body.querySelector<HTMLElement>('.task-diff-split-side');
+          const host = split || body;
+          const row = split?.querySelector('.is-del, .is-add') || body.querySelector('.line-del, .line-add');
+          return { mode: split ? 'split' : 'unified', scroll: host.scrollTop, height: host.clientHeight, scrollHeight: host.scrollHeight, bodyScroll: body.scrollTop, rowTop: row ? row.getBoundingClientRect().top - host.getBoundingClientRect().top : null, busy: body.closest('.task-diff-reader')?.getAttribute('aria-busy') };
+        });
+        throw new Error(`${cause.message} ${JSON.stringify(geometry)}`);
+      });
+    };
+    const singleLineNumbers = async () => {
+      const gutters = await page.locator('.task-diff-text').evaluate((root: HTMLElement) => [...root.querySelectorAll('.task-diff-line')].map(row => ({ kind: row.className, values: [...row.querySelectorAll('.task-diff-gutter')].map(node => node.textContent) })));
+      assert.ok(gutters.every(row => row.values.length === 1), 'unified rows have one line-number column');
+      assert.equal(gutters.find(row => row.kind.includes('line-del')).values[0], '142');
+      assert.equal(gutters.find(row => row.kind.includes('line-add')).values[0], '142');
+    };
     try {
       await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
       for (const width of [1920, 390]) {
         await page.setViewportSize({ width, height: 1000 });
+        const listsBefore = fullLists;
         await page.goto(`${workspaceUrl}/tasks/${taskId}`);
         const detail = page.locator('#task-detail-main:visible');
+        await detail.locator('[data-task-content="changes"] .task-badge').filter({ hasText: '1' }).waitFor();
+        assert.equal(fullLists, listsBefore, 'badge does not wait for full lists or history');
+        assert.equal(await detail.locator('.task-diff-body').count(), 0, '统计在进入详情时已显示，差异仍按需读取');
         await detail.locator('[data-task-content="changes"]').click();
         const diff = detail.locator('.task-diff-body');
         await diff.getByText('worktree-current', { exact: false }).waitFor();
         await diff.getByText('file-start', { exact: false }).first().waitFor();
         await diff.getByText('file-end', { exact: false }).first().waitFor();
+        await firstChangeVisible();
         if (width === 390) {
           assert.match(await detail.locator('.task-diff-mode .ant-segmented-item-selected').innerText(), /上下对比/);
           assert.match(await detail.locator('[aria-label="上下差异"]').innerText(), /−old/);
+          await singleLineNumbers();
           const disabledMode = detail.locator('.task-diff-mode .ant-segmented-item-disabled');
           const before = await disabledMode.evaluate((node: HTMLElement) => ({ color: getComputedStyle(node).color, background: getComputedStyle(node).backgroundColor }));
           await disabledMode.hover();
@@ -227,11 +268,14 @@ export async function runLayoutJourney({ t, page, workspaceUrl, capture }: any) 
           const modes = detail.locator('.task-diff-mode');
           await modes.getByText('上下对比', { exact: true }).click();
           await detail.locator('.task-diff-text').waitFor();
+          await firstChangeVisible();
+          await singleLineNumbers();
           assert.match(await detail.locator('.task-diff-text').innerText(), /−old/);
           assert.match(await detail.locator('.task-diff-text').innerText(), /\+worktree-current/);
           assert.match(await modes.locator('.ant-segmented-item-selected').innerText(), /上下对比/);
           await modes.getByText('左右对比', { exact: true }).click();
           await detail.locator('.task-diff-split').waitFor();
+          await firstChangeVisible();
           assert.match(await modes.locator('.ant-segmented-item-selected').innerText(), /左右对比/);
           const assertAlignedRows = async () => {
             const rows = await detail.locator('.task-diff-split').evaluate((root: HTMLElement) => {
@@ -255,6 +299,13 @@ export async function runLayoutJourney({ t, page, workspaceUrl, capture }: any) 
             return left.scrollTop > 0 && Math.abs(left.scrollTop - middle.scrollTop) < 1;
           });
           await assertAlignedRows();
+          await detail.locator('#task-detail-refresh').click();
+          await page.waitForFunction(() => document.querySelector('#task-detail-refresh')?.getAttribute('aria-busy') === 'false');
+          assert.equal(await detail.locator('.task-diff-split-side').first().evaluate((node: HTMLElement) => node.scrollTop), 180, 'split refresh preserves manual reading position');
+          await assertAlignedRows();
+          await detail.locator('.task-rail-body > section > .task-changed-list .task-changed-row').click();
+          await firstChangeVisible();
+          await assertAlignedRows();
 
           await capture(page, 'layout-task-diff-mode-selected.png');
           await page.getByRole('button', { name: '恢复分屏', exact: true }).click();
@@ -269,10 +320,12 @@ export async function runLayoutJourney({ t, page, workspaceUrl, capture }: any) 
         assert.equal(await page.evaluate(() => navigator.clipboard.readText()), hash);
         await detail.locator('.task-rail-commit-files .task-changed-row').first().click();
         await diff.getByText('commit-original', { exact: false }).waitFor();
+        await firstChangeVisible();
         assert.doesNotMatch(await diff.innerText(), /worktree-current|commit-earlier/);
         await detail.locator('.task-rail-commit').nth(1).click();
         await detail.locator('.task-rail-commits > li').nth(1).locator('.task-changed-row').click();
         await diff.getByText('commit-earlier', { exact: false }).waitFor();
+        await firstChangeVisible();
         await detail.locator('.task-rail-body > section > .task-changed-list .task-changed-row').click();
         await diff.getByText('worktree-current', { exact: false }).waitFor();
         if (width === 1920) {
@@ -298,6 +351,7 @@ export async function runLayoutJourney({ t, page, workspaceUrl, capture }: any) 
         await capture(page, `layout-task-changes-${width}.png`);
       }
       const detail = page.locator('#task-detail-main:visible');
+      await detail.locator('.task-diff-body').evaluate((node: HTMLElement) => { node.scrollTop = 600; });
       const arrived = new Promise<void>(resolve => { requested = resolve; });
       gate = new Promise<void>(resolve => { release = resolve; });
       await detail.locator('#task-detail-refresh').click();
@@ -314,6 +368,7 @@ export async function runLayoutJourney({ t, page, workspaceUrl, capture }: any) 
       await detail.locator('.task-diff-body').getByText('worktree-refreshed', { exact: false }).waitFor();
       await page.waitForFunction(() => document.querySelector('#task-detail-refresh')?.getAttribute('aria-busy') === 'false');
       assert.doesNotMatch(await detail.locator('.task-diff-body').innerText(), /worktree-current/);
+      assert.equal(await detail.locator('.task-diff-body').evaluate((node: HTMLElement) => node.scrollTop), 600, 'same-file refresh preserves manual reading position');
       await page.getByRole('button', { name: '关闭 普通任务', exact: true }).click();
       const returning = new Promise<void>(resolve => { requested = resolve; });
       gate = new Promise<void>(resolve => { release = resolve; });
@@ -338,8 +393,15 @@ export async function runLayoutJourney({ t, page, workspaceUrl, capture }: any) 
       await detail.locator('.task-diff-body').getByText('latest-after-pending', { exact: false }).waitFor();
       await page.waitForFunction(() => document.querySelector('#task-detail-refresh')?.getAttribute('aria-busy') === 'false');
       assert.doesNotMatch(await detail.locator('.task-diff-body').innerText(), /return-revalidated/);
+      currentText = 'unchanged-only';
+      await detail.locator('#task-detail-refresh').click();
+      await detail.locator('.task-diff-body').getByText('unchanged-only-0', { exact: true }).waitFor();
+      await detail.locator('.task-diff-body').evaluate((node: HTMLElement) => { node.scrollTop = 600; });
+      await detail.locator('.task-rail-body > section > .task-changed-list .task-changed-row').click();
+      await page.waitForFunction(() => document.querySelector('.task-diff-body')?.scrollTop === 0);
+      assert.equal(await detail.locator('.line-add, .line-del').count(), 0, 'unchanged rename starts at the text beginning');
 
-    } finally { release?.(); fullRelease?.(); await page.unroute(pattern); await page.unroute(fullPattern); }
+    } finally { release?.(); fullRelease?.(); await page.unroute(pattern); await page.unroute(fullPattern); await page.unroute(countPattern); }
   });
 
   await t.test('任务说明：慢读取、快速切换、返回复用与主动刷新', async () => {
@@ -349,14 +411,16 @@ export async function runLayoutJourney({ t, page, workspaceUrl, capture }: any) 
     const listPattern = /\/api\/v1\/workspaces\/[^/]+\/tasks(?:\?[^/]*)?$/;
     const otherPattern = `**/tasks/${second}`;
     const contextPattern = `**/tasks/${second}/work-context`;
+    const changedPattern = `**/tasks/${second}/changed-file-count`;
+    const firstCountPattern = `**/tasks/${first}/changed-file-count`;
     const materialsPattern = `**/tasks/${second}/materials`;
     const contextsPattern = /\/tasks\/work-contexts\?/;
     const changePattern = /\/tasks\/(browser-task|layout-reading-other)\/changes\/demo\/browser-flow$/;
-    const counts = { first: 0, second: 0, scans: 0 };
+    const counts = { first: 0, second: 0, scans: 0, counts: 0, diffs: 0 };
     let text = '说明甲';
     let gate: Promise<void> | null = null, release: (() => void) | null = null;
     let arrived: (() => void) | null = null;
-    const scans = (request: any) => { if (request.url().includes('/changed-files')) counts.scans += 1; };
+    const scans = (request: any) => { if (request.url().includes('/changed-files')) counts.scans += 1; if (request.url().includes('/changed-file-count')) counts.counts += 1; if (request.url().includes('/file-diff?')) counts.diffs += 1; };
     page.on('request', scans);
     await page.route(listPattern, async (route: any) => {
       const response = await route.fetch();
@@ -374,6 +438,16 @@ export async function runLayoutJourney({ t, page, workspaceUrl, capture }: any) 
       const response = await route.fetch({ url: route.request().url().replace(second, first) });
       const payload = await response.json();
       await route.fulfill({ response, json: { ...payload, record: { ...payload.record, taskId: second, title: '切换说明任务' } } });
+    });
+    await page.route(firstCountPattern, async (route: any) => {
+      const response = await route.fetch(); const payload = await response.json();
+      if (gate) await gate;
+      await route.fulfill({ response, json: { ...payload, fileCount: 2 } });
+    });
+    await page.route(changedPattern, async (route: any) => {
+      const response = await route.fetch({ url: route.request().url().replace(second, first) });
+      const payload = await response.json();
+      await route.fulfill({ response, json: { ...payload, taskId: second, fileCount: 7 } });
     });
     await page.route(contextPattern, (route: any) => route.fulfill({ json: { schemaVersion: 'buildr.task-work-context/v1', taskId: second, context: null, contextDigest: null } }));
     await page.route(materialsPattern, async (route: any) => {
@@ -444,7 +518,10 @@ export async function runLayoutJourney({ t, page, workspaceUrl, capture }: any) 
       await content.getByRole('heading', { name: '说明乙', exact: true }).waitFor();
       release!(); gate = null;
       assert.doesNotMatch(await content.innerText(), /说明甲/);
-      assert.equal(counts.scans, 0, '任务说明不提前扫描改动与提交');
+      await page.locator('[data-task-content="changes"] .task-badge').filter({ hasText: '7' }).waitFor();
+      assert.ok(counts.counts >= 2, '从列表打开和切换任务即读取改动统计');
+      assert.equal(counts.scans, 0, 'brief never loads full lists');
+      assert.equal(counts.diffs, 0, '任务说明不提前读取具体文件差异');
       await row(first).click();
       await content.getByRole('heading', { name: '说明甲', exact: true }).waitFor();
       const beforeReturn = counts.second;
@@ -468,10 +545,10 @@ export async function runLayoutJourney({ t, page, workspaceUrl, capture }: any) 
       await content.getByRole('heading', { name: '刷新后的说明甲', exact: true }).waitFor();
       await page.waitForFunction(() => document.querySelector('#task-detail-refresh')?.getAttribute('aria-busy') === 'false');
       assert.equal(counts.first, beforeRefresh + 1, '相同引用刷新只读取正文一次');
-      assert.equal(counts.scans, 0);
+      assert.equal(counts.diffs, 0, '说明刷新仍不读取文件差异');
     } finally {
       release?.(); releaseList?.(); page.off('request', scans);
-      await page.unroute(listPattern); await page.unroute(otherPattern); await page.unroute(changePattern); await page.unroute(contextPattern); await page.unroute(materialsPattern); await page.unroute(contextsPattern);
+      await page.unroute(listPattern); await page.unroute(otherPattern); await page.unroute(changePattern); await page.unroute(contextPattern); await page.unroute(changedPattern); await page.unroute(firstCountPattern); await page.unroute(materialsPattern); await page.unroute(contextsPattern);
     }
   });
 

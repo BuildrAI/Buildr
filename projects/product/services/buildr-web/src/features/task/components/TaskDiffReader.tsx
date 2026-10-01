@@ -53,7 +53,8 @@ export function TaskDiffReader({ repositories, selected, onSelect, notice, taskI
   const dragStart = useRef<{ x: number; width: number } | null>(null);
   const [selectedCommit, setSelectedCommit] = useState<string | null>(null);
   const [fileCommit, setFileCommit] = useState<string | null>(null);
-  const selectFile = (key: string, commitKey: string | null = null) => { setSelectedCommit(null); setFileCommit(commitKey); onSelect(key); };
+  const [selectionVersion, setSelectionVersion] = useState(0);
+  const selectFile = (key: string, commitKey: string | null = null) => { setSelectedCommit(null); setFileCommit(commitKey); setSelectionVersion(value => value + 1); onSelect(key); };
   const [openCommits, setOpenCommits] = useState<Record<string, boolean>>({});
   useEffect(() => { setCopied(false); }, [selected]);
   const [openRepos, setOpenRepos] = useState<Record<string, boolean>>({});
@@ -106,6 +107,8 @@ export function TaskDiffReader({ repositories, selected, onSelect, notice, taskI
   const splitLeftRef = useRef<HTMLDivElement>(null);
   const splitGutterRef = useRef<HTMLDivElement>(null);
   const splitRightRef = useRef<HTMLDivElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const positioned = useRef('');
   useEffect(() => {
     if (mode !== 'split') return;
     const left = splitLeftRef.current, gutter = splitGutterRef.current, right = splitRightRef.current;
@@ -125,6 +128,26 @@ export function TaskDiffReader({ repositories, selected, onSelect, notice, taskI
     gutter.addEventListener('scroll', onGutter, { passive: true });
     return () => { left.removeEventListener('scroll', onLeft); right.removeEventListener('scroll', onRight); gutter.removeEventListener('scroll', onGutter); };
   }, [mode, current]);
+  useEffect(() => {
+    if (taskId && full.loading) return;
+    const key = JSON.stringify([readScope, taskId, selected, fileCommit, selectedCommit, selectionVersion, mode]);
+    if (positioned.current === key) return;
+    const body = bodyRef.current;
+    if (!body) return;
+    positioned.current = key;
+    body.scrollTop = 0; body.scrollLeft = 0;
+    const reveal = (host: HTMLElement, row: HTMLElement | null, headerHeight = 0) => {
+      host.scrollLeft = 0;
+      host.scrollTop = row ? Math.max(0, row.getBoundingClientRect().top - host.getBoundingClientRect().top + host.scrollTop - headerHeight - 12) : 0;
+    };
+    if (mode === 'unified') reveal(body, body.querySelector('.line-add, .line-del'));
+    else {
+      const first = pairs.findIndex(pair => pair.left?.kind === 'del' || pair.right?.kind === 'add');
+      for (const host of [splitLeftRef.current, splitGutterRef.current, splitRightRef.current]) {
+        if (host) reveal(host, first < 0 ? null : host.querySelector(`[data-diff-row="${first}"]`), host.querySelector('.task-diff-version-head')?.getBoundingClientRect().height ?? 0);
+      }
+    }
+  }, [taskId, readScope, selected, fileCommit, selectedCommit, selectionVersion, mode, full.loading, pairs]);
   async function copyPath() {
     if (!current) return;
     try {
@@ -214,7 +237,7 @@ export function TaskDiffReader({ repositories, selected, onSelect, notice, taskI
         </div>
       </header>
       {taskId && current && !full.loading && (full.error || current.previewTruncated || !current.preview) && <p className="task-diff-read-status" role="status">{full.error ? `完整差异读取失败：${full.error}，当前显示已有内容。` : current.previewTruncated ? '差异已达到读取上限或无法完整读取，当前内容不完整。' : '该文件未提供可读的文本差异。'}</p>}
-      <div className="task-diff-body" role="region" aria-label="差异内容">
+      <div ref={bodyRef} className="task-diff-body" role="region" aria-label="差异内容">
         {commitEntry && <article className="task-commit-details" aria-label="提交完整信息">
           <h2>{commitEntry.entry.commit.subject}</h2>
           <dl><dt>仓库</dt><dd>{commitEntry.repository.label}</dd><dt>提交</dt><dd><code>{commitEntry.entry.commit.hash}</code></dd><dt>作者</dt><dd>{commitEntry.entry.commit.authorName} &lt;{commitEntry.entry.commit.authorEmail}&gt;</dd><dt>时间</dt><dd>{formatShortDateTime(commitEntry.entry.commit.committedAt)}</dd></dl>
@@ -225,7 +248,7 @@ export function TaskDiffReader({ repositories, selected, onSelect, notice, taskI
         {!commitEntry && current && !parsed && <p className="task-diff-empty">{current.status === 'deleted' ? '文件已删除，不提供差异预览。' : current.status === 'renamed' ? '重命名文件内容未变化时不提供差异预览。' : '暂无可展示的差异预览。'}</p>}
         {!commitEntry && current && parsed && mode === 'unified' && <pre className="task-diff-text" aria-label="上下差异">
           {parsed.rows.map((row, index) => <span key={index} className={`task-diff-line line-${row.kind}`}>
-            <i className="task-diff-gutter">{row.oldNo ?? ''}</i><i className="task-diff-gutter">{row.newNo ?? ''}</i>
+            <i className="task-diff-gutter">{(row.kind === 'del' ? row.oldNo : row.newNo) ?? ''}</i>
             <em>{(mode === 'unified' && (row.kind === 'add' || row.kind === 'del')) ? (row.kind === 'add' ? '+' : '−') : ''}{row.text}</em>
           </span>)}
         </pre>}

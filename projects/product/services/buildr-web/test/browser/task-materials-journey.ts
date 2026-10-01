@@ -63,9 +63,13 @@ export async function runTaskMaterialsJourney({ t, page, runtime, workspaceRoot,
         if (width === 1920) await page.getByRole('button', { name: '展开阅读', exact: true }).click();
         const geometry = await body().locator('[data-task-material="brief"]').evaluate((reader: HTMLElement) => {
           const parent = reader.parentElement!, frame = parent.getBoundingClientRect(), style = getComputedStyle(parent), rect = reader.getBoundingClientRect();
-          return { width: rect.width, left: rect.left - frame.left - parseFloat(style.paddingLeft), right: frame.left + parent.clientWidth - parseFloat(style.paddingRight) - rect.right, viewportRight: rect.right };
+          return { width: rect.width, left: rect.left - frame.left - parseFloat(style.paddingLeft), right: frame.left + parent.clientWidth - parseFloat(style.paddingRight) - rect.right, viewportRight: rect.right, bodyBorder: getComputedStyle(reader.querySelector('.markdown-body')!).borderTopWidth, bodyPadding: getComputedStyle(reader.querySelector('.markdown-body')!).paddingTop, mainWidth: parent.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight) };
         });
-        assert.ok(geometry.width <= 1201, `任务说明遵守文档阅读上限：${JSON.stringify(geometry)}`);
+        assert.equal(await body().locator('.markdown-reader-toolbar > span').innerText(), '', 'brief has no redundant label or filename');
+        assert.equal(geometry.bodyBorder, '0px', '任务说明正文不应套额外面板边框');
+        assert.equal(geometry.bodyPadding, '0px', '正文沿用阅读排版');
+        assert.equal(await body().locator('.task-material-meta, .task-node-directory').count(), 0, 'brief uses the main area without extra metadata or a menu');
+        assert.ok(Math.abs(geometry.width - geometry.mainWidth) < 2, `任务说明遵守文档阅读上限：${JSON.stringify(geometry)}`);
         assert.ok(Math.abs(geometry.left - geometry.right) < 2, `任务说明居中阅读：${JSON.stringify(geometry)}`);
         if (width === 1920) assert.ok(geometry.width > 1040, '宽屏任务说明使用加宽后的阅读区');
         else assert.ok(geometry.viewportRight <= width + 1, '窄屏任务说明保持可读且不越界');
@@ -135,7 +139,9 @@ export async function runTaskMaterialsJourney({ t, page, runtime, workspaceRoot,
     await page.reload(); await body().locator('.markdown-body').filter({ hasText: '当前说明版本二' }).waitFor({ state: 'visible' });
     const current = inspect(simple);
     associate(simple, references.map(item => item.id === 'brief' ? { ...item, title: '新引用标题' } : item), current.materialsDigest);
-    await refresh(); await body().getByText('新引用标题', { exact: true }).waitFor({ state: 'visible' });
+    await refresh();
+    assert.equal(inspect(simple).materials.documents.find((item: any) => item.role === 'brief').title, '新引用标题');
+    assert.equal(await body().locator('.markdown-reader-toolbar > span').innerText(), '', 'brief title remains in its content, not a duplicate toolbar label');
     assert.match(await body().innerText(), /当前说明版本二/);
     await open(history);
     await body().getByText(/历史变更说明/).first().waitFor({ state: 'visible' });
@@ -261,7 +267,7 @@ export async function runTaskMaterialsJourney({ t, page, runtime, workspaceRoot,
     await checklist.locator('[data-task-material=impl]').filter({ hasText: '空清单之后新增的真实正文' }).waitFor({ state: 'visible' });
   });
 
-  await scenario('任务材料：项目路径别名互相引用仍进入带正文版本的材料阅读器', async () => {
+  await scenario('任务材料：项目路径别名互相引用仍保持正文版本和材料身份', async () => {
     const projectRoot = path.join(workspaceRoot, 'projects/demo');
     const directory = path.join(projectRoot, 'tasks/materials-alias');
     fs.mkdirSync(directory, { recursive: true });
@@ -277,9 +283,8 @@ export async function runTaskMaterialsJourney({ t, page, runtime, workspaceRoot,
       await body().getByRole('link', { name: '阅读关联实施材料', exact: true }).click();
       const reader = page.locator('.task-reading-drawer.ant-drawer-open [data-task-material=impl]');
       await reader.filter({ hasText: '不同路径写法保持材料身份' }).waitFor({ state: 'visible' });
-      await reader.getByText('正文版本', { exact: true }).click();
       const digest = inspect(id).documents.find((item: any) => item.id === 'impl').actualDigest;
-      await reader.locator('code').filter({ hasText: digest }).waitFor({ state: 'visible' });
+      assert.equal(await reader.getAttribute('data-task-material-version'), digest, '关联材料仍保留真实正文版本，简洁阅读不丢失身份');
     }
     await capture(page, 'task-materials-alias-identity.png');
   });

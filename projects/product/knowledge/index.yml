@@ -665,6 +665,7 @@ artifacts:
     objects:
       - task-system
     sources:
+      - task-changed-file-count-reader
       - task-materials-application
       - task-project-document-reader
       - task-material-reader
@@ -751,7 +752,7 @@ artifacts:
       - task-git-method
       - task-commits-contract
       - public-json-contracts
-    observedDigest: afff7347d3d78f1b961774ab008cd7319ed8372d9d217474f37e3da915e9ee80
+    observedDigest: 071de6d2bbbf7562a934ca30f0956b587e70c5202c2dccbf5c5db13a670d14ad
     files:
       - task-source-2026-08-30-parent-child-task-audit-b28c38
       - task-file-task-system-md-d14898
@@ -2798,11 +2799,16 @@ sources:
     kind: code
     path: services/buildr/src/modules/task/materials/application/task-project-document-reader.ts
     summary: 通过任务、项目和工作树事实有界读取真实Markdown，拒绝越界、符号链接和静默候选回退。
+  - id: task-changed-file-count-reader
+    title: 任务改动的轻量计数
+    kind: code
+    path: services/buildr-web/src/features/task/hooks/useTaskChangedFileCount.ts
+    summary: 打开详情时只读文件状态计数，按工作空间与任务隔离缓存，不等待完整提交与差异读取。
   - id: task-material-reader
     title: 正式节点材料正文阅读
     kind: code
     path: services/buildr-web/src/features/task/components/TaskMaterialReader.tsx
-    summary: 复用Markdown容器，呈现唯一正文、实际来源、版本摘要与局部缺失，不以短目标冒充说明。
+    summary: 复用Markdown容器直接呈现正文及局部缺失，说明不增加重复标题和来源摘要面板，材料身份和正文版本仍可核对。
   - id: task-materials-browser-journey
     title: 独立任务材料实际页面回归
     kind: code

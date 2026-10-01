@@ -1,4 +1,4 @@
-import type { TaskChangedFilesResult, TaskCommitsResult } from '../../../../../build/generated/task-dto.ts';
+import type { TaskChangedFilesResult, TaskChangedFileCountResponse, TaskCommitsResult } from '../../../../../build/generated/task-dto.ts';
 import { taskActionId } from '../../application/task-validation.ts';
 import { PUBLIC_JSON_SCHEMAS } from '../../../../infrastructure/contracts/public-json.ts';
 import { createGitCommitReader, TASK_COMMIT_LIMITS, type CommitLimits } from '../../commits/infrastructure/git-commit-reader.ts';
@@ -14,6 +14,34 @@ type RepositoryOutput = TaskChangedFilesResult['repositories'][number];
 
 /** Read worktree changes and per-commit file lists for a task's real Git scope. */
 export function createTaskChangedFilesApplication(dependencies: TaskChangedFilesDependencies, commitLimits: CommitLimits = TASK_COMMIT_LIMITS, fileLimits: ChangedFileLimits = TASK_CHANGED_FILE_LIMITS) {
+  function inspectTaskChangedFileCount(targetRoot: string, taskIdValue: string): TaskChangedFileCountResponse {
+    const taskId = taskActionId(taskIdValue, 'taskId');
+    const scope = resolveTaskRepositoryScope(targetRoot, taskId, dependencies, commitLimits, { observeHeads: false });
+    const reader = createGitChangesReader(fileLimits);
+    const diagnostics = [...scope.diagnostics];
+    let fileCount = 0, truncated = scope.truncated;
+    for (const current of scope.reads.values()) {
+      const paths = new Set<string>();
+      const ordered = [...current.taskCheckouts, ...[...current.checkouts].filter(item => !current.taskCheckouts.has(item))];
+      for (const checkout of ordered) {
+        try {
+          const status = reader.worktreeStatus(checkout, current.repository, { metadataOnly: true });
+          truncated ||= status.truncated;
+          for (const failure of status.failures) diagnostics.push({ ...failure, reference: null, repositoryId: current.repository.id, hash: null });
+          for (const file of status.files) paths.add(file.path);
+        } catch {
+          diagnostics.push({ code: 'task_changed_files_unavailable', message: '该代码库的工作区状态读取失败；保留其他结果。', reference: null, repositoryId: current.repository.id, hash: null });
+        }
+      }
+      fileCount += paths.size;
+    }
+    truncated ||= fileCount > fileLimits.fileLimit;
+    return {
+      schemaVersion: 'buildr.task-changed-file-count/v1', taskId, readAt: new Date().toISOString(),
+      fileCount: Math.min(fileCount, fileLimits.fileLimit), status: diagnostics.length || truncated ? 'partial' : 'complete',
+      coverage: { repositoryLimit: commitLimits.repositoryLimit, fileLimit: fileLimits.fileLimit, truncated }, diagnostics, effects: [],
+    };
+  }
   function inspectTaskChangedFiles(targetRoot: string, taskIdValue: string): TaskChangedFilesResult {
     const taskId = taskActionId(taskIdValue, 'taskId');
     const scope = resolveTaskRepositoryScope(targetRoot, taskId, dependencies, commitLimits);
@@ -118,5 +146,5 @@ export function createTaskChangedFilesApplication(dependencies: TaskChangedFiles
       coverage: { repositoryLimit: commitLimits.repositoryLimit, fileLimit: 1, commitFileLimit: 1, previewLineLimit: 5000, truncated }, diagnostics, effects: [],
     };
   }
-  return Object.freeze({ inspectTaskChangedFiles, inspectTaskFileDiff });
+  return Object.freeze({ inspectTaskChangedFiles, inspectTaskChangedFileCount, inspectTaskFileDiff });
 }

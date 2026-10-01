@@ -6,6 +6,7 @@ import type {
   TaskAbandonRequest,
   TaskAbandonResponse,
   TaskChangedFilesResult,
+  TaskChangedFileCountResponse,
   TaskFileDiffRequest,
   TaskCompleteRequest,
   TaskCompleteResponse,
@@ -48,6 +49,9 @@ export function createTaskClient(client: ApiClient) {
     },
     commits(taskId: string, options: ReadOptions = {}): Promise<TaskCommitsResult> {
       return typed(client(`/api/v1/tasks/${encodeURIComponent(taskId)}/commits`, options));
+    },
+    changedFileCount(taskId: string, options: ReadOptions = {}): Promise<TaskChangedFileCountResponse> {
+      return typed(client(`/api/v1/tasks/${encodeURIComponent(taskId)}/changed-file-count`, options));
     },
     changedFiles(taskId: string, options: ReadOptions = {}): Promise<TaskChangedFilesResult> {
       return typed(client(`/api/v1/tasks/${encodeURIComponent(taskId)}/changed-files`, options));

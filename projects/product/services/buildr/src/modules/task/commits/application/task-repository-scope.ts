@@ -27,7 +27,7 @@ export type TaskRepositoryScope = {
 };
 
 /** Resolve the task's real Git repositories: declared project/service sources plus the task's own worktrees. */
-export function resolveTaskRepositoryScope(targetRoot: string, taskId: string, dependencies: TaskRepositoryScopeDependencies, limits: CommitLimits = TASK_COMMIT_LIMITS): TaskRepositoryScope {
+export function resolveTaskRepositoryScope(targetRoot: string, taskId: string, dependencies: TaskRepositoryScopeDependencies, limits: CommitLimits = TASK_COMMIT_LIMITS, options: { observeHeads?: boolean } = {}): TaskRepositoryScope {
   const task = dependencies.readTask(targetRoot, taskId);
   const root = fs.realpathSync(task.root);
   const reader = createGitCommitReader(limits);
@@ -38,6 +38,7 @@ export function resolveTaskRepositoryScope(targetRoot: string, taskId: string, d
   const report = (code: string, message: string, reference: string | null = null, repositoryId: string | null = null, hash: string | null = null) => diagnostics.push({ code, message, reference, repositoryId, hash });
   const failureCode = (error: unknown) => error && typeof error === 'object' && 'code' in error && typeof error.code === 'string' ? error.code : 'task_commits_repository_unavailable';
   function observeHead(location: string, current: TaskScopeRepository, reference: string) {
+    if (options.observeHeads === false) return;
     try { const head = reader.head(location); if (head) current.heads.add(head); }
     catch (error) { report(failureCode(error), '该来源的 HEAD 不可读；继续读取其他有效引用。', reference, current.repository.id); }
   }
@@ -130,8 +131,10 @@ export function resolveTaskRepositoryScope(targetRoot: string, taskId: string, d
           if (checkout.id !== source.id || !reader.registeredWorktree(source.root, worktree.checkoutPath)) throw new Error('Worktree identity or registration differs.');
           if (!current.checkouts.has(worktree.checkoutPath)) current.checkouts.add(worktree.checkoutPath);
           current.taskCheckouts.add(worktree.checkoutPath);
-          const head = reader.head(worktree.checkoutPath);
-          if (head) current.heads.add(head);
+          if (options.observeHeads !== false) {
+            const head = reader.head(worktree.checkoutPath);
+            if (head) current.heads.add(head);
+          }
           if (!current.view.sources.includes(`task-worktree:${worktree.checkoutPath}`)) current.view.sources.push(`task-worktree:${worktree.checkoutPath}`);
         } catch { report('task_commits_worktree_unavailable', '任务工作树当前不可读或不再属于登记代码库；保留其他可读引用。', worktree.selector); }
       }

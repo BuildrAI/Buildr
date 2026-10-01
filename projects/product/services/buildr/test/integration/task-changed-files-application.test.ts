@@ -8,6 +8,8 @@ import test from 'node:test';
 import { createTaskChangedFilesApplication, type TaskChangedFilesDependencies } from '../../src/modules/task/changed-files/application/task-changed-files-application.ts';
 import { createTaskChangedFilesHttpContribution } from '../../src/modules/task/changed-files/interfaces/http/task-changed-files-http.ts';
 import { TASK_HTTP_SCHEMAS, TASK_HTTP_VALIDATORS } from '../../src/modules/task/interfaces/http/task-http-schema.ts';
+import { TASK_CHANGED_FILE_LIMITS } from '../../src/modules/task/changed-files/infrastructure/git-changes-reader.ts';
+import { TASK_COMMIT_LIMITS } from '../../src/modules/task/commits/infrastructure/git-commit-reader.ts';
 
 function git(root: string, args: string[], input?: string): string {
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')));
@@ -55,6 +57,57 @@ function fixture(t: { after(action: () => void): void }) {
   const application = createTaskChangedFilesApplication(dependencies);
   return { base, root, record, dependencies, application, setWorktrees(value: typeof worktrees) { worktrees = value; } };
 }
+
+test('轻量计数与完整读取一致：同仓库路径去重、重命名和大未跟踪文件', t => {
+  const f = fixture(t);
+  write(f.root, 'old.ts', 'old\n'); write(f.root, 'deleted.ts', 'delete\n');
+  git(f.root, ['add', '.']); commit(f.root, 'base\n\nBuildr-Task: task-one');
+  const checkout = path.join(f.base, 'task-checkout');
+  git(f.root, ['worktree', 'add', '-b', 'task', checkout]);
+  f.setWorktrees([{ selector: 'project:app', sourceRepository: f.root, checkoutPath: checkout }]);
+  git(f.root, ['mv', 'old.ts', 'renamed.ts']); fs.rmSync(path.join(f.root, 'deleted.ts'));
+  write(f.root, 'large.ts', 'x'.repeat(1024 * 1024));
+  write(checkout, 'large.ts', 'same path, different content');
+  write(checkout, 'only-task.ts', 'task only');
+  const before = snapshot(f.base);
+  const counted = f.application.inspectTaskChangedFileCount(f.root, 'task-one');
+  const full = f.application.inspectTaskChangedFiles(f.root, 'task-one');
+  assert.equal(counted.fileCount, full.files.length); assert.equal(counted.fileCount, 4);
+  assert.equal(counted.status, 'complete');
+  assert.equal(TASK_HTTP_VALIDATORS.validate(TASK_HTTP_SCHEMAS.changedFileCountResponse.$id, counted).valid, true);
+  assert.deepEqual(snapshot(f.base), before, '两种读取都不修改文件和Git');
+});
+
+test('轻量计数保留截断和局部来源失败，并拒绝HTTP额外参数', async t => {
+  const f = fixture(t); write(f.root, 'a', 'one'); write(f.root, 'b', 'two');
+  const limited = createTaskChangedFilesApplication(f.dependencies, TASK_COMMIT_LIMITS, { ...TASK_CHANGED_FILE_LIMITS, fileLimit: 1 });
+  const counted = limited.inspectTaskChangedFileCount(f.root, 'task-one');
+  assert.equal(counted.fileCount, 1); assert.equal(counted.coverage.truncated, true); assert.equal(counted.status, 'partial');
+  f.record.scope.services.push({ project: 'app', service: 'missing' });
+  assert.equal(f.application.inspectTaskChangedFileCount(f.root, 'task-one').status, 'partial');
+  const handler = createTaskChangedFilesHttpContribution();
+  const response = await handler.handle({ request: { method: 'GET' }, suffix: '/tasks/task-one/changed-file-count', searchParams: new URLSearchParams(), submitTaskRead: async (operation, taskId) => {
+    assert.equal(operation, 'changed-file-count'); return f.application.inspectTaskChangedFileCount(f.root, taskId);
+  } });
+  assert.equal(response!.status, 200);
+  await assert.rejects(handler.handle({ request: { method: 'GET' }, suffix: '/tasks/task-one/changed-file-count', searchParams: new URLSearchParams({ extra: 'x' }), submitTaskRead: async () => { throw Error('must not run'); } }), /不接受查询参数/);
+});
+
+test('轻量计数没有提交历史或差异命令', { skip: process.platform === 'win32' }, t => {
+  const f = fixture(t); write(f.root, 'a.ts', 'before'); git(f.root, ['add', '.']); commit(f.root, 'base\n\nBuildr-Task: task-one'); write(f.root, 'a.ts', 'after');
+  const gitRoot = git(f.root, ['--exec-path']), realGit = path.join(gitRoot, 'git');
+  const bin = path.join(f.base, 'bin'), calls = path.join(f.base, 'calls.jsonl'); fs.mkdirSync(bin);
+  fs.writeFileSync(path.join(bin, 'git'), `#!${process.execPath}\nconst fs = require('node:fs'); const { spawnSync } = require('node:child_process'); fs.appendFileSync(${JSON.stringify(calls)}, JSON.stringify(process.argv.slice(2))+'\\n'); const result = spawnSync(${JSON.stringify(realGit)}, process.argv.slice(2), {stdio:'inherit'}); process.exit(result.status ?? 1);\n`, { mode: 0o755 });
+  const originalPath = process.env.PATH;
+  try {
+    process.env.PATH = `${bin}${path.delimiter}${originalPath}`;
+    assert.equal(f.application.inspectTaskChangedFileCount(f.root, 'task-one').fileCount, 1);
+  } finally { process.env.PATH = originalPath; }
+  const commands: string[][] = fs.readFileSync(calls, 'utf8').trim().split('\n').map(line => JSON.parse(line));
+  assert.ok(commands.some(args => args.includes('status')));
+  assert.equal(commands.some(args => args.includes('HEAD^{commit}')), false);
+  assert.equal(commands.some(args => args.some(arg => ['diff', 'diff-tree', 'rev-list', 'cat-file', 'for-each-ref'].includes(arg))), false);
+});
 
 test('工作区改动按状态、统计与预览返回，契约闭合且零写入', t => {
   const f = fixture(t);

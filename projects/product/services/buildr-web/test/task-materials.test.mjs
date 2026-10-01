@@ -32,6 +32,7 @@ registerHooks({
     return next(url, context);
   },
 });
+const { MarkdownReader } = await import('../src/components/MarkdownReader.tsx');
 const { TaskNodeContent } = await import('../src/features/task/components/TaskNodeContent.tsx');
 const { CompositeTaskPlan } = await import('../src/features/task/components/CompositeTaskPlan.tsx');
 const { TaskReadingPane } = await import('../src/features/task/components/TaskReadingPane.tsx');
@@ -70,6 +71,15 @@ function artifactHookHarness() {
     dispose() { slots.forEach(slot => slot?.cleanup?.()); delete globalThis.__taskArtifactHookHarness; },
   };
 }
+
+test('Markdown toolbar supports an explicit empty label and preserves the filename default', () => {
+  const props = { path: 'docs/example.md', content: '# Reader' };
+  assert.match(markup(MarkdownReader, props), /<span>example.md<\/span>/);
+  const empty = markup(MarkdownReader, { ...props, toolbarStart: null });
+  assert.doesNotMatch(empty, /example.md/); assert.match(empty, /markdown-reader-toolbar.*<span><\/span>/);
+  const html = markup(TaskReadingPane, { task: { record: { taskId: 'one' } }, target: { kind: 'material', id: 'brief' }, artifacts: { materials: { data: result([material()]), loading: false, error: null } }, onRead() {}, onClose() {} });
+  assert.doesNotMatch(html, /brief正文|<span>brief.md<\/span>/);
+});
 
 test('无Change材料正文进入说明节点；intent不兜底，implementation与delivery有阅读入口', () => {
   const documents = taskDocuments([], result([material(), material('solution', 'solution'), material('impl', 'implementation'), material('delivery', 'delivery')]));

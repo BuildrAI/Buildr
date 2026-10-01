@@ -26,7 +26,7 @@
 
 [材料模块](../../services/buildr/src/modules/task/materials/module.ts)只依赖任务查询、项目查询和工作树能力，不依赖 OpenSpec 查询。[HTTP 入口](../../services/buildr/src/modules/task/materials/interfaces/http/task-materials-http.ts)与[命令行入口](../../services/buildr/src/modules/task/materials/interfaces/cli/task-materials.ts)调用同一应用；旧普通项目文档接口也转入该读取器。关联写入与本机正文写入分别校验自己的版本，不新增检查适用性状态。
 
-前端[材料钩子](../../services/buildr-web/src/features/task/hooks/useTaskArtifacts.ts)独立加载、取消旧请求并在刷新时重读关联及正文。[节点材料投影](../../services/buildr-web/src/features/task/components/taskWorkContent.ts)将角色映射到现有任务说明、方案、实施和收尾，OpenSpec 是辅助来源之一；[材料阅读器](../../services/buildr-web/src/features/task/components/TaskMaterialReader.tsx)复用 Markdown 阅读容器并展示来源、正文摘要和局部诊断。显式 `brief` 缺失不回退旧材料，`intent` 不作为正文；没有显式 `brief` 的历史任务保留逐变更兼容阅读，不能选主变更或合并正文。新变更链接用限定项目根 `@project/` 解析，不受归档目录深度影响；旧普通相对链接语义不变。
+前端[材料钩子](../../services/buildr-web/src/features/task/hooks/useTaskArtifacts.ts)独立加载、取消旧请求并在刷新时重读关联及正文。[节点材料投影](../../services/buildr-web/src/features/task/components/taskWorkContent.ts)将角色映射到现有任务说明、方案、实施和收尾，OpenSpec 是辅助来源之一；[材料阅读器](../../services/buildr-web/src/features/task/components/TaskMaterialReader.tsx)复用 Markdown 阅读容器直接展示正文、按需查看原文和局部诊断；说明正文不增加重复标题或来源摘要面板。显式 `brief` 缺失不回退旧材料，`intent` 不作为正文；没有显式 `brief` 的历史任务保留逐变更兼容阅读，不能选主变更或合并正文。新变更链接用限定项目根 `@project/` 解析，不受归档目录深度影响；旧普通相对链接语义不变。
 
 审查和验证仍从各自应用按需读取；无结果只说明未记录，必要未完成、不适用理由由实际说明或工作摘要表达。真实执行结果和未覆盖理由分别呈现，材料存在不能推导完成。稳定的[浏览器回归](../../services/buildr-web/test/browser/task-materials-journey.ts)直接从列表打开节点、更新正文后刷新、验证无变更专业结果及真实归档后点击，不能只检查顶部链接或文件存在。
 
@@ -40,7 +40,7 @@
 
 `commits/` 提供独立只读用例：命令行（CLI）与超文本传输协议（HTTP）调用同一 `task-commits-application.ts`，先核对任务，再解析其项目、服务、关联变更对应项目和已知任务工作树（Worktree）范围。`isWorkspaceOnlyTaskRecord` 为工作空间级任务（Workspace-only Task）选择其权威根目录本身的 Git 代码库，不回退到调用时目录或父级代码库。`git-commit-reader.ts` 读取真实 Git 引用与对象，以代码库（Repository）身份和完整哈希值（Hash）去重；本机未推送提交也在当前可达范围内，读取有界、不自动抓取远端。`task-commit.ts` 只把末尾规范 `Buildr-Task` 尾注（Trailer）视为归属，同值重复合并，非法值和不同值冲突返回诊断。结果说明已读来源、范围和局部失败，不新增持久关联表，也不调用任务状态、审查或验证写入。
 
-[TaskDetailPage.tsx](../../services/buildr-web/src/features/task/pages/TaskDetailPage.tsx)在“任务收尾”后保留「改动与提交」标签，未增加工作阶段；未打开时不扫描 Git，不成为任务说明读取的前置条件。[TaskChangesPane.tsx](../../services/buildr-web/src/features/task/components/TaskChangesPane.tsx)组合读取与页面状态，[useTaskChangedFiles.ts](../../services/buildr-web/src/features/task/hooks/useTaskChangedFiles.ts)按需读取列表，[useTaskFileDiff.ts](../../services/buildr-web/src/features/task/hooks/useTaskFileDiff.ts)取得所选文件的完整上下文；明确刷新等待已打开列表及所选差异的当前结果。[TaskDiffReader.tsx](../../services/buildr-web/src/features/task/components/TaskDiffReader.tsx)是主从式工作台：左栏按仓库组织更改与提交，右栏提供左右对比与上下对比，两种模式保留首尾未修改内容；宽度不足时左右对比禁用并明确原因。工作台阅读控件调整文件栏及内容空间，不再由任务页壳层提供全屏。[TaskCommitRecords.tsx](../../services/buildr-web/src/features/task/components/TaskCommitRecords.tsx)的列表阅读仍保留完整说明、完整哈希及提交文件，部分结果和读取失败分别提示；任务尾注原样显示。
+[TaskDetailPage.tsx](../../services/buildr-web/src/features/task/pages/TaskDetailPage.tsx)在“任务收尾”后保留「改动与提交」标签，未增加工作阶段；打开详情时由[useTaskChangedFileCount.ts](../../services/buildr-web/src/features/task/hooks/useTaskChangedFileCount.ts)只读文件状态计数，不扫描提交或差异，不成为任务说明读取的前置条件。[TaskChangesPane.tsx](../../services/buildr-web/src/features/task/components/TaskChangesPane.tsx)组合读取与页面状态，[useTaskChangedFiles.ts](../../services/buildr-web/src/features/task/hooks/useTaskChangedFiles.ts)按需读取列表，[useTaskFileDiff.ts](../../services/buildr-web/src/features/task/hooks/useTaskFileDiff.ts)取得所选文件的完整上下文；明确刷新等待已打开列表及所选差异的当前结果。[TaskDiffReader.tsx](../../services/buildr-web/src/features/task/components/TaskDiffReader.tsx)是主从式工作台：左栏按仓库组织更改与提交，右栏提供左右对比与上下对比，两种模式保留首尾未修改内容，选中文件完整读取后定位第一处增删，同文件刷新保留人的阅读位置；上下对比使用单列行号，删除行显示旧行号，新增和普通行显示新行号；宽度不足时左右对比禁用并明确原因。工作台阅读控件调整文件栏及内容空间，不再由任务页壳层提供全屏。[TaskCommitRecords.tsx](../../services/buildr-web/src/features/task/components/TaskCommitRecords.tsx)的列表阅读仍保留完整说明、完整哈希及提交文件，部分结果和读取失败分别提示；任务尾注原样显示。
 
 ## 父任务协调怎样落到实现？
 
@@ -119,7 +119,7 @@
       - [interfaces/cli/task-commits.ts](../../services/buildr/src/modules/task/commits/interfaces/cli/task-commits.ts) — 接收任务编码与工作空间，输出同一任务提交结果
       - [interfaces/http/task-commits-http.ts](../../services/buildr/src/modules/task/commits/interfaces/http/task-commits-http.ts) — 网页任务限定读取入口，不接受调用者指定代码库或引用
     - **`changed-files/`** — 工作区改动与按提交列文件的只读观察
-      - [application/task-changed-files-application.ts](../../services/buildr/src/modules/task/changed-files/application/task-changed-files-application.ts) — 聚合范围解析、工作区状态与提交文件结果
+      - [application/task-changed-files-application.ts](../../services/buildr/src/modules/task/changed-files/application/task-changed-files-application.ts) — 聚合范围解析、工作区状态与提交文件结果；独立计数只读工作区路径
       - [domain/task-changed-file.ts](../../services/buildr/src/modules/task/changed-files/domain/task-changed-file.ts) — 变更文件状态与用户语义映射
       - [infrastructure/git-changes-reader.ts](../../services/buildr/src/modules/task/changed-files/infrastructure/git-changes-reader.ts) — 工作区状态、分支、按文件差异片段与按提交文件清单
       - [interfaces/cli/task-changed-files.ts](../../services/buildr/src/modules/task/changed-files/interfaces/cli/task-changed-files.ts) — 命令行同一任务变更文件结果
@@ -157,6 +157,7 @@
         - [TaskChangesPane.tsx](../../services/buildr-web/src/features/task/components/TaskChangesPane.tsx) — 「改动与提交」工作台与列表视图的组合入口
         - [TaskChangedFiles.tsx](../../services/buildr-web/src/features/task/components/TaskChangedFiles.tsx) — 变更文件行、分组与状态标记
         - [TaskDiffReader.tsx](../../services/buildr-web/src/features/task/components/TaskDiffReader.tsx) — 主从式差异阅读面（左右/上下对比及完整文件上下文）
+        - [useTaskChangedFileCount.ts](../../services/buildr-web/src/features/task/hooks/useTaskChangedFileCount.ts) — 详情打开和刷新时读取轻量计数，按工作空间与任务隔离缓存
         - [useTaskChangedFiles.ts](../../services/buildr-web/src/features/task/hooks/useTaskChangedFiles.ts) — 按任务进入或刷新读取变更文件，取消旧请求并区分加载、失败和已有结果
         - [TaskCompleteModal.tsx](../../services/buildr-web/src/features/task/components/TaskCompleteModal.tsx) — 完成摘要与父任务明确授权
         - [CompositeTaskEndDrawer.tsx](../../services/buildr-web/src/features/task/components/CompositeTaskEndDrawer.tsx) — 明确处置未结束子任务并组合结束

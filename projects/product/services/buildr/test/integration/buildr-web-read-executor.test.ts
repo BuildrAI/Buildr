@@ -110,6 +110,7 @@ test('任务材料使用同一有界只读队列，只传任务范围字段', as
   await executor.run('change',{...input('task-a'),project:'demo',change:'one'});
   await executor.run('documents',{...input('task-a'),project:'demo',documentPath:'docs/one.md'});
   await executor.run('materials',input('task-a'));
+  await executor.run('changed-file-count',input('task-a'));
   await executor.run('prototypes',input('task-a'));
   await executor.run('prototype',{...input('task-a'),prototypeId:'a'.repeat(32)});
   assert.equal(metrics.maxActive,1);

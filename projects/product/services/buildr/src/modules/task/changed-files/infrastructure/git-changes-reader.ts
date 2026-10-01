@@ -72,14 +72,14 @@ export function createGitChangesReader(limits: ChangedFileLimits = TASK_CHANGED_
     } catch { return { value: null, truncated: true }; }
   }
 
-  function parseStatus(checkout: string, repositoryId: string, options: { filePath?: string; fullContext?: boolean } = {}): { files: TaskChangedFile[]; failures: ChangedFileReadFailure[]; truncated: boolean; branch: string | null; ahead: number | null } {
+  function parseStatus(checkout: string, repositoryId: string, options: { filePath?: string; fullContext?: boolean; metadataOnly?: boolean } = {}): { files: TaskChangedFile[]; failures: ChangedFileReadFailure[]; truncated: boolean; branch: string | null; ahead: number | null } {
     const failures: ChangedFileReadFailure[] = [];
     const entries = new Map<string, TaskChangedFile>();
     const paths = options.filePath ? ['--', options.filePath] : [];
     const lineLimit = options.fullContext ? 5000 : limits.previewLineLimit;
     const context = options.fullContext ? ['--unified=2147483647'] : [];
     const status = output(checkout, ['status', '--porcelain=v2', '-z', '--untracked-files=all', '--branch', ...(options.fullContext ? [] : paths)]);
-    if (!status.ok) failures.push({ code: 'task_changed_files_status_failed', message: '该检出位置的工作区状态读取失败。' });
+    if (!status.ok || status.status !== 0) failures.push({ code: 'task_changed_files_status_failed', message: '该检出位置的工作区状态读取失败。' });
     const fields = status.text.split('\0');
     if (options.fullContext && options.filePath) {
       const renameIndex = fields.findIndex(field => field.startsWith('2 ') && field.split(' ').slice(9).join(' ') === options.filePath);
@@ -91,7 +91,7 @@ export function createGitChangesReader(limits: ChangedFileLimits = TASK_CHANGED_
     const ahead = aheadMatch ? Number(aheadMatch[1]) : null;
     if (!fields.some(field => field && !field.startsWith('#'))) return { files: [], failures, truncated: false, branch, ahead };
     const stats = new Map<string, { additions: number | null; deletions: number | null }>();
-    const numstat = output(checkout, ['diff', '--no-ext-diff', '--no-textconv', 'HEAD', '--numstat', '-z', ...paths]);
+    const numstat = options.metadataOnly ? { ok: false, text: '', status: 0 } : output(checkout, ['diff', '--no-ext-diff', '--no-textconv', 'HEAD', '--numstat', '-z', ...paths]);
     if (numstat.ok) {
       const parts = numstat.text.split('\0');
       for (let index = 0; index < parts.length; index += 1) {
@@ -106,7 +106,7 @@ export function createGitChangesReader(limits: ChangedFileLimits = TASK_CHANGED_
         if (target) stats.set(target, { additions: Number.isFinite(adds) ? adds : null, deletions: Number.isFinite(dels) ? dels : null });
       }
     }
-    const diffText = output(checkout, ['diff', '--no-ext-diff', '--no-textconv', '--find-renames', 'HEAD', ...context, ...paths]);
+    const diffText = options.metadataOnly ? { ok: false, text: '', status: 0 } : output(checkout, ['diff', '--no-ext-diff', '--no-textconv', '--find-renames', 'HEAD', ...context, ...paths]);
     if (options.fullContext && !diffText.ok) failures.push({ code: 'task_file_diff_unavailable', message: '完整差异无法读取，可能超过读取上限。' });
     const patches = new Map<string, string>();
     if (diffText.ok) {
@@ -128,7 +128,7 @@ export function createGitChangesReader(limits: ChangedFileLimits = TASK_CHANGED_
       if (code === '?') {
         const relative = line.slice(2);
         if (options.filePath && relative !== options.filePath) continue;
-        const preview = untrackedPreview(checkout, relative, lineLimit);
+        const preview = options.metadataOnly ? { preview: null, truncated: false, additions: null } : untrackedPreview(checkout, relative, lineLimit);
         entries.set(relative, {
           repositoryId, path: relative, previousPath: null, kind: 'untracked', status: 'untracked',
           additions: preview.additions,
@@ -180,7 +180,7 @@ export function createGitChangesReader(limits: ChangedFileLimits = TASK_CHANGED_
     return { branch, ahead };
   }
 
-  function worktreeStatus(checkout: string, repository: GitRepository, options: { filePath?: string; fullContext?: boolean } = {}): WorktreeStatusResult {
+  function worktreeStatus(checkout: string, repository: GitRepository, options: { filePath?: string; fullContext?: boolean; metadataOnly?: boolean } = {}): WorktreeStatusResult {
     const failures: ChangedFileReadFailure[] = [];
     let truncated = false;
     const gitRoot = (() => { const result = output(checkout, ['rev-parse', '--show-toplevel']); return result.ok && result.text.trim() ? result.text.trim() : checkout; })();
