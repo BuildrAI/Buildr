@@ -182,9 +182,12 @@ testing:
   runGit(root, ['add', '.']);
   runGit(root, ['commit', '-qm', 'browser fixture baseline']);
   if (options.materialsOnly) return;
-  runBuildr(['task', 'create', 'browser-parent', '--title', '浏览器协调任务', '--intent', '验证 Parent Task 页面', '--project', 'demo', '--service', 'demo/api', '--target', root]);
-  runBuildr(['task', 'create', 'browser-task', '--title', '浏览器任务', '--intent', '验证 Task Record 页面，参考 [任务参考资料](projects/demo/docs/task-reference.md)。', '--parent', 'browser-parent', '--project', 'demo', '--service', 'demo/api', '--change', 'demo/browser-flow', '--target', root]);
-  runBuildr(['task', 'create', 'created-in-app', '--title', '页面查看任务', '--intent', '验证 Buildr Web 轻量查询客户端', '--parent', 'browser-parent', '--project', 'demo', '--service', 'demo/api', '--change', 'demo/browser-flow', '--target', root]);
+  const recordBriefFile = path.join(root, '.buildr/local/browser-record-brief.md');
+  fs.mkdirSync(path.dirname(recordBriefFile), { recursive: true });
+  fs.writeFileSync(recordBriefFile, '# 浏览器任务说明\n\n验证 Task Record 页面，说明保存在任务记录中。\n\n验证 Buildr Web 轻量查询客户端。\n');
+  runBuildr(['task', 'create', 'browser-parent', '--title', '浏览器协调任务', '--intent', '验证 Parent Task 页面', '--brief-file', recordBriefFile, '--project', 'demo', '--service', 'demo/api', '--target', root]);
+  runBuildr(['task', 'create', 'browser-task', '--title', '浏览器任务', '--intent', '验证 Task Record 页面，参考 [任务参考资料](projects/demo/docs/task-reference.md)。', '--brief-file', recordBriefFile, '--parent', 'browser-parent', '--project', 'demo', '--service', 'demo/api', '--change', 'demo/browser-flow', '--target', root]);
+  runBuildr(['task', 'create', 'created-in-app', '--title', '页面查看任务', '--intent', '验证 Buildr Web 轻量查询客户端', '--brief-file', recordBriefFile, '--parent', 'browser-parent', '--project', 'demo', '--service', 'demo/api', '--change', 'demo/browser-flow', '--target', root]);
   for (const [taskId, title, parentTaskId] of [
     ['browser-delivered', '已交付浏览器任务', null],
     ['browser-stale', '目标已变化浏览器任务', null],
@@ -1633,7 +1636,8 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     page.off('request',trackFocusReads);
     assert.deepEqual(focusReads, [], '返回浏览器不自动重读任务详情');
     assert.deepEqual(await page.locator('[data-task-node]').evaluateAll(nodes => nodes.map(node => node.getAttribute('data-task-node'))), ['requirements','design','implementation','closeout']);
-    assert.match(await page.locator('#task-node-content .markdown-body').innerText(), /验证 Task Record 页面/, '需求节点默认显示任务目标');
+    assert.match(await page.locator('#task-node-content .markdown-body').innerText(), /验证 Task Record 页面/, '说明节点默认显示记录正文');
+    await page.locator('[data-task-node=design]').click();
     await page.locator('[data-task-artifact$="brief.md"]').click();
     await page.locator('#task-node-content .markdown-body').filter({ hasText: '普通用户先从这里了解变更' }).waitFor({ state: 'visible' });
     await page.locator('#task-node-content').getByRole('button',{name:'查看原文',exact:true}).click();
@@ -1649,6 +1653,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.equal(await page.getByRole('button',{name:'收藏当前资料',exact:true}).count(),0);
     assert.equal(await page.locator('#task-context-edit').count(),0);
     await closeTaskReading(page); await page.locator('[data-task-node=design]').click();
+    await page.locator('[data-task-artifact$="proposal.md"]').click();
     await page.locator('#task-node-content .markdown-body').filter({ hasText: '验证 Buildr Web' }).waitFor({ state: 'visible' });
     await page.locator('[data-task-artifact$="design.md"]').click();
     await page.locator('#task-node-content .markdown-body').filter({ hasText: 'Browser smoke fixture' }).waitFor({ state: 'visible' });
@@ -1908,7 +1913,8 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.equal(await page.locator('#task-filter-q').inputValue(), '轻量查询');
     assert.equal(await page.locator('.pane-right #task-detail-main').isVisible(), true);
     assert.equal(await page.locator('.pane-stage:visible').count(), 1, '任务详情中没有嵌套副屏');
-    assert.match(await page.locator('#task-node-content .markdown-body').innerText(), /验证 Buildr Web 轻量查询客户端/, '需求节点默认显示任务目标');
+    assert.match(await page.locator('#task-node-content .markdown-body').innerText(), /验证 Buildr Web 轻量查询客户端/, '说明节点默认显示记录正文');
+    await page.locator('[data-task-node=design]').click();
     await page.locator('[data-task-artifact$="brief.md"]').click();
     await page.locator('#task-node-content .markdown-body').filter({ hasText: '普通用户先从这里了解变更' }).waitFor({ state: 'visible' });
     assert.equal(await page.getByRole('link', {name:'查看关联变更',exact:true}).count(), 0, '节点正文不重复提供技术目录入口');
@@ -1973,22 +1979,27 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     fs.writeFileSync(path.join(worktreeProject, 'openspec/changes/browser-flow/brief.md'), '# 工作树的需求或说明\n\n独立文件系统中的最新需求。\n');
     await page.goto(`${workspaceUrl}/tasks/browser-task`);
     assert.equal(await page.locator('[data-task-node=requirements]').getAttribute('aria-pressed'), 'true');
-    assert.match(await page.locator('#task-node-content .markdown-body').innerText(), /验证 Task Record 页面/, '需求节点默认显示任务目标');
+    assert.match(await page.locator('#task-node-content .markdown-body').innerText(), /验证 Task Record 页面/, '说明节点默认显示记录正文');
+    await page.locator('[data-task-node=design]').click();
     await page.locator('[data-task-artifact$="brief.md"]').click();
     await page.locator('#task-node-content .markdown-body').filter({ hasText: '独立文件系统中的最新需求' }).waitFor({ state: 'visible' });
+    await page.waitForLoadState('networkidle');
     const prototypeFailureRoute = /\/tasks\/browser-task\/ui-prototypes(?:\?|$)/;
     await page.route(prototypeFailureRoute, async (route: any) => {
       expectedBrowserErrors.add(route.request().url());
       return route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: { code: 'browser_prototype_fixture_failed', message: '原型读取夹具失败' } }) });
     });
     try {
-      const prototypeFailure = page.waitForResponse((response: any) => new URL(response.url()).pathname.endsWith('/tasks/browser-task/ui-prototypes'));
+      const prototypeFailure = page.waitForResponse((response: any) => new URL(response.url()).pathname.endsWith('/tasks/browser-task/ui-prototypes') && response.status() === 500);
       await closeTaskReading(page); await page.locator('[data-task-node=design]').click();
+      await page.locator('#task-detail-refresh').click();
       assert.equal((await prototypeFailure).status(), 500);
       await closeTaskReading(page); await page.locator('[data-task-node=requirements]').click();
       await page.locator('#task-detail-refresh:not(.ant-btn-loading)').waitFor({ state: 'visible' });
+      assert.match(await page.locator('#task-node-content .markdown-body').innerText(), /验证 Task Record 页面/, '原型失败不影响记录说明');
+      await page.locator('[data-task-node=design]').click();
       await page.locator('[data-task-artifact$="brief.md"]').click();
-      assert.match(await page.locator('#task-node-content .markdown-body').innerText(), /独立文件系统中的最新需求/, '原型局部读取失败不能清空已读取的任务需求');
+      assert.match(await page.locator('#task-node-content .markdown-body').innerText(), /独立文件系统中的最新需求/, '原型局部读取失败不影响已读取的变更辅助材料');
     } finally { await page.unroute(prototypeFailureRoute); }
     await page.locator('#task-detail-intent').getByRole('link', { name: '任务参考资料', exact: true }).click();
     const linkedDocument = page.locator('.resource-reader:visible');
@@ -2041,7 +2052,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await closeTaskReading(page); await page.locator('[data-task-node=implementation]').click(); await page.locator('[data-task-content=verification]').click();
     await page.locator('#task-verification-result').filter({hasText:'保存冲突未通过，正在修复。'}).waitFor({state:'visible'});
     assert.match(await page.locator('#task-verification-result').innerText(), /未通过[\s\S]*冲突后输入被清空/);
-    assert.equal(await page.locator('.task-verification-checks .task-check-outcome').count(),0,'单项与总结果一致不重复状态，但保留失败原因');
+    assert.equal(await page.locator('.task-verification-checks .task-check-outcome.failed').count(),1,'保留实际检查的失败状态及原因');
     assert.equal(await page.locator('[data-task-node=implementation]').getAttribute('aria-current'),'step');
     assert.equal(await page.locator('[data-task-node=implementation]').getAttribute('aria-pressed'),'true');
     const failedReport=runtime.inspectTaskVerification(workspaceRoot,'browser-task');
@@ -2056,7 +2067,8 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     const listBeforeEdit = page.url();
     await openTaskActionModal(page, 'task-edit-action');
     await page.locator('#task-edit-title').fill('陈旧页面不得覆盖');
-    runtime.updateTask(workspaceRoot, 'browser-task', { expectedRecordDigest: runtime.inspectTask(workspaceRoot,'browser-task').recordDigest, intent:'另一客户端已经更新' });
+    await page.locator('#task-edit-brief').fill('# 页面保留的任务说明草稿\n');
+    runtime.updateTask(workspaceRoot, 'browser-task', { expectedRecordDigest: runtime.inspectTask(workspaceRoot,'browser-task').recordDigest, intent:'另一客户端已经更新', brief:'# 外部更新的任务说明\n' });
     await page.getByRole('button', { name:'保存任务记录',exact:true }).click();
     await page.locator('#task-edit-reread').waitFor({ state:'visible' });
     assert.equal(await page.locator('#task-edit-title').inputValue(),'陈旧页面不得覆盖');
@@ -2064,6 +2076,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.locator('#task-edit-state').filter({hasText:'已重读'}).waitFor({state:'visible'});
     assert.equal(await page.locator('#task-edit-intent').inputValue(),'另一客户端已经更新','重读时采用未编辑字段的最新值，保留已编辑草稿');
     assert.equal(await page.locator('#task-edit-title').inputValue(),'陈旧页面不得覆盖');
+    assert.equal(await page.locator('#task-edit-brief').inputValue(),'# 页面保留的任务说明草稿\n');
     await page.locator('#task-edit-intent').fill('页面基于最新记录更新');
     await page.getByRole('button', {name:'保存任务记录',exact:true}).click();
     await page.locator('#task-edit-form').waitFor({state:'hidden'});
@@ -2082,11 +2095,12 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     runtime.recordTaskWorkContext(workspaceRoot, 'browser-abandon', { expectedContextDigest: 'absent', stage: 'acceptance', progress: '检查已完成，等待确认。', nextStep: '读取用户意见后决定收尾。', attention: { kind: 'acceptance', reason: '请确认当前交付内容符合本次目标。' } });
     await page.goto(`${workspaceUrl}/tasks/browser-abandon`);
     await closeTaskReading(page); await page.locator('[data-task-node=closeout]').click();
-    assert.match(await page.locator('#task-node-content').innerText(), /请确认当前交付内容符合本次目标/,'用户确认节点直接展示已有待确认内容');
-    await page.locator('#task-closeout-respond').click();
+    assert.match(await page.locator('#task-attention').innerText(), /请确认当前交付内容符合本次目标/,'当前确认事项在任务回应区域展示');
+    assert.doesNotMatch(await page.locator('#task-node-content').innerText(), /用户确认/,'收尾不提供常驻用户确认目录');
+    await page.locator('#task-attention-respond').click();
     await page.locator('#task-attention-response-input').fill('仍需调整交付范围。');
     await page.locator('#task-context-save').click();
-    await page.locator('#task-node-content #task-attention-response').filter({hasText:'仍需调整交付范围'}).waitFor({state:'visible'});
+    await page.locator('#task-attention-response').filter({hasText:'仍需调整交付范围'}).waitFor({state:'visible'});
     assert.equal(runtime.inspectTask(workspaceRoot, 'browser-abandon').record.status, 'active', '记录用户意见不自动完成任务');
     await openTaskActionModal(page,'task-abandon-action');
     await page.locator('#task-abandon-reason').fill('浏览器验收取消');
@@ -2111,7 +2125,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
 
   if (selected('task')) await runTaskCommitsJourney({ t, page, runtime, workspaceRoot, workspaceUrl, expectedBrowserErrors, capture });
 
-  if (selected('task') || selected('task-materials')) await runTaskMaterialsJourney({ t, page, runtime, workspaceRoot, workspaceUrl, runBuildr, capture, expectedBrowserErrors });
+  if (selected('task') || selected('task-materials')) await runTaskMaterialsJourney({ t, page, runtime, workspaceRoot, workspaceUrl, runBuildr, runGit, capture, expectedBrowserErrors });
 
   if (selected('workbench')) await runWorkbenchJourney({ t, page, runtime, workspaceRoot, otherWorkspaceRoot: otherRoot, workspaceUrl, otherWorkspaceUrl: `${url}/workspaces/${otherWorkspaceId}`, expectedBrowserErrors, selectAntdOption, capture });
 

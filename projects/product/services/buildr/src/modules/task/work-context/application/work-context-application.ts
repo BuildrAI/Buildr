@@ -5,14 +5,14 @@ import { validateTaskWorkContext, taskWorkContextError as error } from '../domai
 import { createWorkContextRepository, type WorkContextStoreRuntime } from '../persistence/work-context-repository.ts';
 
 export type WorkContextRuntime = WorkContextStoreRuntime & {
-  readTask(root: string, taskId: string): unknown;
+  assertTaskExists(root: string, taskId: string): void;
   assertCanonicalTaskWorkspace(root: string): string;
-  readTaskInContext(context: SqliteReadContext, root: string, taskId: string): unknown;
+  assertTaskExistsInContext(context: SqliteReadContext, root: string, taskId: string): void;
 };
 export function createTaskWorkContextApplication(runtime: WorkContextRuntime) {
   const repository = createWorkContextRepository(runtime);
   function inspectTaskWorkContext(root: string, taskId: string): TaskWorkContextResponse {
-    runtime.readTask(root, taskId);
+    runtime.assertTaskExists(root, taskId);
     return repository.read(root, taskId);
   }
   function inspectTaskWorkContexts(root: string, ids: string[]): TaskWorkContextsResponse {
@@ -22,14 +22,14 @@ export function createTaskWorkContextApplication(runtime: WorkContextRuntime) {
     return runtime.runWorkspaceSqliteRead(canonicalRoot, context => ({
       schemaVersion: 'buildr.task-work-context-list/v1',
       items: [...new Set(ids)].map(id => {
-        runtime.readTaskInContext(context, canonicalRoot, id);
+        runtime.assertTaskExistsInContext(context, canonicalRoot, id);
         return repository.readIn(context, id);
       }),
     }));
   }
   function recordTaskWorkContext(root: string, taskId: string, input: TaskWorkContextRecordRequest): TaskWorkContextResponse {
     validateTaskWorkContext('TaskWorkContextRecordRequest', input);
-    runtime.readTask(root, taskId);
+    runtime.assertTaskExists(root, taskId);
     return repository.mutate(root, taskId, input.expectedContextDigest, (current) => {
       const now = new Date().toISOString();
       return { ...(input.stage !== undefined ? { stage: input.stage } : current?.stage !== undefined ? { stage: current.stage } : {}), progress: input.progress.trim(), nextStep: input.nextStep.trim(), updatedAt: now, attention: input.attention === undefined ? current?.attention || null : input.attention === null ? null : { id: crypto.randomUUID(), kind: input.attention.kind, reason: input.attention.reason.trim(), state: 'pending', createdAt: now, response: null } };
@@ -37,7 +37,7 @@ export function createTaskWorkContextApplication(runtime: WorkContextRuntime) {
   }
   function respondTaskWorkContext(root: string, taskId: string, input: TaskWorkContextRespondRequest): TaskWorkContextResponse {
     validateTaskWorkContext('TaskWorkContextRespondRequest', input);
-    runtime.readTask(root, taskId);
+    runtime.assertTaskExists(root, taskId);
     return repository.mutate(root, taskId, input.expectedContextDigest, (current) => {
       if (!current?.attention || current.attention.id !== input.attentionId || current.attention.state !== 'pending') throw error('task_work_context_attention_conflict', '待处理事项已改变或已有答复，请重新读取。', 409, { taskId });
       const now = new Date().toISOString();

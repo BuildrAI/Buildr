@@ -57,7 +57,7 @@ authority 冲突、授权不明、实际 Git 操作所需的 repository set 不�
 
 ### 材料深度与三类检查分别判断
 
-规范变化不决定材料深度，也不决定专业检查。每个新正式 `active` 任务先登记、确认隔离位置，再由 `task-manager` 形成并正式关联唯一任务说明（Task Brief）；简单任务允许真实短正文，复杂任务按需要补充方案、实施与交付材料，不为凑齐节点生成长模板、占位报告或变更（Change）。独立正文不委托 Change `brief.md`，顶部普通链接不替代材料引用。
+规范变化不决定材料深度，也不决定专业检查。每个新正式 `active` 任务先登记、确认隔离位置，再由 `task-manager` 在任务记录（Task Record）的 `brief` 字段保存唯一任务说明（Task Brief）；简单任务允许真实短正文，复杂任务按需要补充方案、实施与交付材料，不为凑齐节点生成长模板、占位报告或变更（Change）。独立正文不委托 Change `brief.md`，不创建新的 `brief` 文件关联；顶部普通链接不替代记录正文。
 
 分别判断并给出最小依据：
 
@@ -92,7 +92,7 @@ authority 冲突、授权不明、实际 Git 操作所需的 repository set 不�
 
 ### 任务登记与代码更新
 
-已初始化的工作空间（Workspace）中，用户授权开始或继续持久交付时，默认在首次交付文件写入前读取已绑定 `buildr.task-record/v3` 的契约（Contract）与提供者（Provider），交给 `task-manager` 核对匹配记录并接续或创建 `active` 任务。`code-only`、`spec-maintenance` 和 `metadata-only` 不因没有规范变更（Change）或改动小而跳过登记。纯只读咨询、尚未授权的方案讨论和已有任务自身的记录维护不另建任务；用户明确不登记时遵从其范围，不在收尾时补造历史。
+已初始化的工作空间（Workspace）中，用户授权开始或继续持久交付时，默认在首次交付文件写入前读取已绑定 `buildr.task-record/v4` 的契约（Contract）与提供者（Provider），交给 `task-manager` 核对匹配记录并接续或创建 `active` 任务。`code-only`、`spec-maintenance` 和 `metadata-only` 不因没有规范变更（Change）或改动小而跳过登记。纯只读咨询、尚未授权的方案讨论和已有任务自身的记录维护不另建任务；用户明确不登记时遵从其范围，不在收尾时补造历史。
 
 后续阶段沿用同一任务标识，出现可接续的进展、决定、暂停或结果时，交给 `task-manager` 更新工作摘要（Work Context）或真实结果；不重复创建，不将记录动作扩展为全局就绪门禁。登记失败如实说明缺口，继续独立只读检查或有界测试，依赖该记录的写入仍按对应能力边界处理。
 

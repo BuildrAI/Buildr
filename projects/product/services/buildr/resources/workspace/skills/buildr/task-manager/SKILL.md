@@ -5,7 +5,7 @@ description: 在已初始化的 Buildr 工作空间中，用户授权修复、�
 
 # 任务管理
 
-本技能（Skill）提供`buildr.task-record/v3`：管理目标、范围、直接父子关系、独立状态、结果，以及本机复盘文档摘要和人的决定状态。任务记录通过产品动作维护，不直接编辑数据库。
+本技能（Skill）提供 `buildr.task-record/v4`：管理短目标、任务说明正文、范围、直接父子关系、独立状态、结果，以及本机复盘文档摘要和人的决定状态。任务记录通过产品动作维护，不直接编辑数据库。
 
 ## 开始或继续授权工作
 
@@ -26,9 +26,9 @@ description: 在已初始化的 Buildr 工作空间中，用户授权修复、�
 使用已有动作：
 
 ```text
-buildr task create <id> --title <text> --intent <text> [--status todo|active] [--parent-task] [--parent <id>] [--project <code> ...] [--service <project/service> ...] [--change <project/change> ...] --target <workspace> --json
+buildr task create <id> --title <text> --intent <text> [--status todo|active] [--brief-file <utf8-file>] [--parent-task] [--parent <id>] [--project <code> ...] [--service <project/service> ...] [--change <project/change> ...] --target <workspace> --json
 buildr task inspect <id> --target <workspace> --json
-buildr task update <id> [--status todo|active|completed|abandoned] [--reason <text>] [--summary <text>] [--parent-completion <json-file>] [--parent-task] [--parent <id>|--clear-parent] [set/add/remove flags] --expected-record <recordDigest> --target <workspace> --json
+buildr task update <id> [--status todo|active|completed|abandoned] [--reason <text>] [--summary <text>] [--parent-completion <json-file>] [--parent-task] [--parent <id>|--clear-parent] [--brief-file <utf8-file>|--clear-brief] [set/add/remove flags] --expected-record <recordDigest> --target <workspace> --json
 buildr task activate <id> --expected-record <recordDigest> --target <workspace> --json
 buildr task complete <id> --summary <text> --expected-record <recordDigest> [--parent-completion <json-file>] --target <workspace> --json
 buildr task abandon <id> --reason <text> --expected-record <recordDigest> --target <workspace> --json
@@ -36,15 +36,21 @@ buildr task abandon <id> --reason <text> --expected-record <recordDigest> --targ
 
 `intent`（目标）表达一句话级的任务目标与入口定位，不复述完整需求；不得写成标题复述、内部步骤清单或长篇正文。整体问题、需求、范围和完成依据由唯一任务说明（Task Brief）承载，不委托关联变更说明（Change Brief）。任务可以关联零到多个变更（Change）；各 Change `brief.md` 只解释具体规范变化并引用同一任务正文，不复制同义需求，也不宣称变更只能被一个任务引用。
 
-## 形成、保存与关联任务材料
+## 形成与保存任务说明
 
-每个新正式 `active` 任务（包括 `todo` 激活）先完成登记，再按 `task-triage` 核对实际隔离位置，由本技能（Skill）形成并关联真实任务说明（Task Brief）。正文至少说明问题或需求、目标、必要范围与非目标、完成依据；简单任务可用一个短段落，复杂任务按理解逐步补充，不强制长模板，不编造未知事实或空占位。纯待办意向不提前制造执行材料。
+每个新正式 `active` 任务（包括 `todo` 激活）先完成登记，再按 `task-triage` 核对实际隔离位置，由本技能（Skill）在任务记录（Task Record）的 `brief` 字段保存真实任务说明（Task Brief）。所有任务类型共用这一正文，不要求 OpenSpec。正文至少说明问题或需求、目标、必要范围与非目标、完成依据；简单任务可用一个短段落，复杂任务随理解逐步补充，不强制长模板，不编造未知事实或空占位。纯待办意向可暂为空。
 
-优先使用项目根下 `tasks/<task-id>/brief.md`，也可引用经核对适用的已有项目文档；没有项目或正文只需本机接续时，保存在主工作空间（Canonical Workspace）`.buildr/local/task-materials/<task-id>/` 内的 Markdown。项目正文由真实工作树（Worktree）文件工具维护并按目标交付；本机正文和引用不随 Git 推送。已有 `knowledge/` 文档可显式引用原文，不为材料整理移动或复制；普通任务说明、方案、实施和交付不默认交给知识维护。
+`brief` 保存原始 Markdown，非空正文的格式与内容不被裁剪，按 1 MiB UTF-8 字节上限校验；空正文统一为 `null`。通过 `task create --brief-file <utf8-file>` 或 `task update --brief-file <utf8-file> --expected-record <recordDigest>` 保存；输入文件只用于本次传入，不成为另一份可编辑权威。`task update --clear-brief` 显式清空，不能以清空掩盖尚未解决的目标。更新前读取当前记录，终态手工更正沿用 `--reason` 与结果历史保护。
 
-通过独立任务材料应用（Task Materials Application）保存正式引用，而非写入任务记录（Task Record）。关联清单只含 `schemaVersion: buildr.task-materials/v1` 与 `documents`，每项为 `{id, role, title, source}`：`role` 为 `brief|solution|implementation|delivery`；来源为 `{kind: task, path: <task-relative-md>}` 或 `{kind: project, project: <code>, path: <project-relative-md>}`。至多一项 `brief`，其他角色按实际需要零到多项；不保存正文、工作树物理路径、任务状态或专业检查适用性。多任务可引用同一适用正文，不建立排他所有权。
+正文随主工作空间（Canonical Workspace）的任务数据库保存与备份，不随代码分支切换或 Git 推送；任务说明不再创建 `brief.md` 文件或材料引用。方案、实施、交付和已有知识文档仍可引用原文件。稳定任务链接使用 `[任务说明](@task/<task-id>)`，限定当前工作空间的任务；记录正文中的项目文档使用明确的 `projects/<project>/<path>`，不能依赖原说明文件目录猜测来源。
 
-先 `inspect` 取得 `materialsDigest` 和每项当前正文摘要，再维护正文与完整引用。关联版本和正文版本分别使用已观察值；不借 `recordDigest` 保存材料版本。项目正文修改前重新读取真实文件，保留他人修改，不能声称本机锁保护外部文件工具。受控本机正文写入与关联动作分别校验版本；冲突后重读并判断，不静默覆盖或自动重放。
+保存后核对应用返回的当前 `brief` 与记录版本，以及从任务列表打开详情时任务说明节点直接可读、刷新后仍为同一正文。普通链接可打开不等于记录正文已保存。目标理解或已确认范围变化时，重读记录并按已观察版本更新正文；任务说明不等待材料或变更读取，空值如实说明，不能用 `intent`、聊天、旧文件或变更说明兜底。
+
+## 按需关联其他任务材料
+
+独立任务材料应用（Task Materials Application）继续管理方案、实施和交付文件，清单使用 `schemaVersion: buildr.task-materials/v2` 与 `documents`。每项为 `{id, role, title, source}`，`role` 仅为 `solution|implementation|delivery`，各角色按实际需要零到多项；来源为 `{kind: task, path: <task-relative-md>}` 或 `{kind: project, project: <code>, path: <project-relative-md>}`。清单不保存正文、物理工作树路径、任务状态或专业检查适用性。旧清单尚含唯一 `brief` 时，公开入口仍只呈现 v2 过程引用；普通材料更新内部保留该旧关联，直到显式迁移或释放，不能因修改方案而丢失说明来源。多任务可引用同一适用过程文档，但每个任务说明由自己的 `brief` 保存。
+
+先 `inspect` 取得 `materialsDigest` 与逐项正文摘要，再维护完整引用或本机正文。关联版本与受控正文版本分别使用已观察值，不借 `recordDigest` 保存材料版本。项目正文通过真实工作树（Worktree）文件工具维护，修改前重读并保留他人内容；应用锁不能保护任意外部编辑器。已有 `knowledge/` 文档保留原位置，不为材料整理移动或复制。
 
 ```text
 buildr task materials inspect <id> --target <canonical-workspace> --json
@@ -52,9 +58,22 @@ buildr task materials record <id> --materials <json-file> --expected-current <ab
 buildr task materials write <id> --path <task-relative-md> --content <content-file> --expected-document <absent|documentDigest> --target <canonical-workspace> --json
 ```
 
-正文先保存，再建立正式材料引用，随后核对应用返回的实际正文、来源和摘要，及用户任务说明（Task Brief）节点直接可读、刷新后仍为当前正文。普通具名链接仍可作导航，但顶部链接可打开不等于正式引用或节点可读；候选正文缺失不能拿主目录同名旧文件替代。
+正文先保存，再建立正式材料引用并核对实际正文、来源与摘要；候选文件缺失不能拿主目录同名旧文件替代。材料更新不重写任务状态、记录正文或专业历史；局部缺失如实报告，不扩大为无关记录动作的前置条件。
 
-目标理解或已确认范围变化时重读唯一正文及材料引用，按各自版本更新；任务业务事实变化才更新任务记录（Task Record），材料变化不重写状态或历史。主动接续没有独立说明的旧任务时，显式关联适用旧文档或形成当前说明，说明这是本次关联或补写；不批量补造历史，不改写旧 Change Brief、归档、时间或专业报告。材料局部缺失如实报告，继续其他安全动作；材料保存不改变合法任务记录动作的前置条件。
+## 显式导入旧任务说明
+
+旧 `buildr.task-materials/v1` 中的唯一 `brief` 关联只供遗留读取、诊断和显式迁移；任务说明节点不再读取它。接续旧任务时，先读取记录与材料，核对实际旧正文及用户已授权的迁移范围。没有可读取的独立说明就形成本次真实正文，不用 `intent` 或某个变更说明自动填充，不批量补造历史。
+
+```text
+buildr task brief migrate <id> --dry-run --target <canonical-workspace> --json
+buildr task brief migrate <id> --expected-record <recordDigest> --expected-materials <materialsDigest> --expected-document <documentDigest> --target <canonical-workspace> --json
+buildr task brief migrate --all --dry-run --target <canonical-workspace> --json
+buildr task brief migrate --all --target <canonical-workspace> --json
+```
+
+单任务 `--dry-run` 零写入返回记录、关联与实际正文的观察版本，执行输入使用这些已观察值；批次由产品动作逐项观察并校验，不把一次批量请求当作全库原子提交。只在明确批次授权内执行 `--all`，可先用 `--dry-run` 查看范围与诊断。记录正文为空时导入真实源正文并释放旧关联；已有正文时，明确迁移请求仅释放退休关联并保留当前正文，包括部分导入后已编辑的说明。原文件与其他材料均保留，缺失、安全失败、漂移或部分完成分别核对。文档不存在的观察在单任务参数中使用 `--expected-document absent`；只有已成立的记录正文可在该情况下释放旧关联，不能凭缺失来源填充正文。导入后已编辑的正文不得因重试被覆盖。可证明的相对文档链接转换为明确引用，未知链接如实报告，不扩大读取范围。
+
+终态导入通过既有更正动作保存本次真实原因，保留原状态、结果与历史，不改写旧说明文件、归档、专业报告或过去时间。分别核对记录写入与关联释放；局部失败不否定已成立的写入，也不能报告整项迁移完成。
 
 任务记录（Task Record）写入使用已观察的当前 `recordDigest`，应用（Application）继续校验版本。成功响应已包含完整记录与新版本时，直接核对并作为下一动作的输入；仅在响应缺失、发生冲突、工作中断后继续或已知相关事实变化时重读。冲突后重新判断，不静默重放旧输入。完成只保存已成立的结果，不执行Git、部署、验证或清理。复盘正文由Agent按用户要求写入`.buildr/local/task-retrospectives/<task-id>.md`，Task Record只登记摘要与`pending-decision|decided`。
 
@@ -79,9 +98,9 @@ buildr task work-context respond <id> --expected-current <digest> --attention <�
 
 ## 修订任务事实
 
-已有`task update` / HTTP `PATCH`可以修改标题、目标、范围、规范引用、父子关系及四种合法状态；省略字段保持不变，不提交完整记录覆盖。新增Project、Service或Change仍必须当前可用；删除失效引用或修改无关字段不因其他旧引用不可用而失败。所有非创建写入都必须提供当前`recordDigest`；更正终态事实还需`reason`，由智能体（Agent）准确说明已取得的用户决定，不为原因再创建审批步骤。
+已有`task update` / HTTP `PATCH`可以修改标题、短目标、说明正文、范围、规范引用、父子关系及四种合法状态；省略字段保持不变，不提交完整记录覆盖。新增Project、Service或Change仍必须当前可用；删除失效引用或修改无关字段不因其他旧引用不可用而失败。所有非创建写入都必须提供当前`recordDigest`；更正终态事实还需`reason`，由智能体（Agent）准确说明已取得的用户决定，不为原因再创建审批步骤。
 
-更正会把原状态、标题、目标、父关系、结果及原更新时间保存到只读 `resultHistory`，同时记录更正时间与原因。恢复进行中使当前 `result` 为空，但不撤销真实交付、不重新准备环境、不改变子任务状态。已完成子任务可按当前版本和原因关联进行中的父任务，保持自己的状态与成果；重复提交相同内容不追加历史。
+更正会把原状态、标题、短目标、说明正文、父关系、结果及原更新时间保存到只读 `resultHistory`，同时记录更正时间与原因。恢复进行中使当前 `result` 为空，但不撤销真实交付、不重新准备环境、不改变子任务状态。已完成子任务可按当前版本和原因关联进行中的父任务，保持自己的状态与成果；重复提交相同内容不追加历史。
 
 设置completed仍需`summary`及适用的父任务完成授权，内部与`task complete`复用同一检查。完成请求不同时更改目标、范围或关系；先修订这些事实，再按当前目标验收。已完成父任务变更目标或范围时显式恢复进行中，不能用旧完成依据覆盖新目标。todo仍不能携带规范变化引用。身份、系统时间、结果历史及专业验证证据不得直接修改。
 
@@ -91,7 +110,7 @@ buildr task work-context respond <id> --expected-current <digest> --attention <�
 
 人负责整体目标、边界、关键决定与完成授权；智能体（Agent）在这些边界内规划、创建独立子任务、核对成果和持续推进。`--parent-task` 明确创建父任务；`--parent` 指定子任务归属。关联过子任务的父身份保留，不通过移除最后一个子任务取消完成保护。
 
-用户要求创建并准备父任务时，保存短目标后继续在任务说明（Task Brief）与适用方案材料中整理计划与验收标准，不拉长 `intent`。简单计划写入真实短正文，复杂计划可引用现有可读文档并保存正式材料关联。计划说明分工、依赖、边界、剩余工作与重要决定；不要求专用父计划、贡献绑定、环境或研发回执。读取当前计划和实际成果后，按已有授权决定是否启动子任务；未知的关键目标或授权才询问用户。
+用户要求创建并准备父任务时，保存短目标后继续在任务说明（Task Brief）与适用方案材料中整理计划与验收标准，不拉长 `intent`。简单计划写入真实短正文，复杂计划在记录正文表达整体目标，并按需关联可读方案文档。计划说明分工、依赖、边界、剩余工作与重要决定；不要求专用父计划、贡献绑定、环境或研发回执。读取当前计划和实际成果后，按已有授权决定是否启动子任务；未知的关键目标或授权才询问用户。
 
 每个子任务拥有独立目标、范围、结果及按需要选择的研发方式。不得继承父任务的环境、分支、规范变化或验证结论；同一具体规范变化只能有一个活跃变化负责。各仓库按真实边界交付。子任务有依赖时先核对前置成果；软件不替智能体（Agent）证明业务依赖已经满足。
 

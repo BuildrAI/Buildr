@@ -10,23 +10,27 @@
 
 | 职责 | 当前实现与边界 |
 | --- | --- |
-| 规范依据 | [任务工作方式](../../openspec/specs/agent-task-workflows/spec.md)约束分流与隔离；[任务记录](../../openspec/specs/task-record/spec.md)约束短目标、关系和结果；[任务材料](../../openspec/specs/task-materials/spec.md)约束独立正文、引用、版本及兼容；[工作摘要](../../openspec/specs/task-work-context/spec.md)约束进展、事项及答复。 |
+| 规范依据 | [任务工作方式](../../openspec/specs/agent-task-workflows/spec.md)约束分流与隔离；[任务记录](../../openspec/specs/task-record/spec.md)约束短目标、说明正文、关系和结果；[任务材料](../../openspec/specs/task-materials/spec.md)约束过程文件引用、版本与旧说明导入；[工作摘要](../../openspec/specs/task-work-context/spec.md)约束进展、事项及答复。 |
 | 工作基础 | Buildr 管理工作空间（Workspace）、项目与服务；治理规则（Rule）、技能（Skill）和能力绑定并投射给智能体（Agent），把方法、执行现场与用户可见入口连接起来。 |
 | 接口入口（Interface） | 命令行（CLI）与超文本传输协议（HTTP）入口接收明确动作和已观察版本，调用同一应用；指令生成不代表执行。 |
-| 应用服务（Application） | 任务应用维护短目标与结果；独立任务材料应用（Task Materials Application）维护引用，正文仍在唯一文件中；工作摘要（Work Context）维护接续；审查与验证分别保存真实专业结论。应用不代替人作授权决定。 |
+| 应用服务（Application） | 任务应用维护短目标、记录正文与结果；独立任务材料应用（Task Materials Application）维护方案、实施和交付引用，过程正文仍在真实文件中；工作摘要（Work Context）维护接续；审查与验证分别保存真实专业结论。应用不代替人作授权决定。 |
 | 领域模型（Domain） | 表达四态、父任务完成依据、摘要与事项、审查及验证报告的数据结构；任务记录的输入、关系和完成规则由应用负责。 |
-| 数据访问与技术支撑 | 本机 SQLite 保存任务及各专业事实，事务内比较各自摘要；材料本机关联清单不改 Task Record、数据库或历史，受控更新在逐任务文件锁内重读比较并原子发布。工作树（Worktree）与预览（Preview）分别核验资源，Git 和文件继续持有实际成果。 |
+| 数据访问与技术支撑 | 本机 SQLite 保存任务及各专业事实，事务内比较各自摘要；过程材料清单不改任务记录（Task Record）、数据库或历史；显式旧说明导入单独写入记录并释放旧关联，受控更新在逐任务文件锁内重读比较并原子发布。工作树（Worktree）与预览（Preview）分别核验资源，Git 和文件继续持有实际成果。 |
 | 前端协作 | 工作台（Workbench）汇集明确关注事项；任务详情呈现目标、进展和成果；表单保留真实用户输入，冲突后重读；方案材料与代码按需并排查看。 |
 
 ## 任务说明与过程材料怎样落到实现？
 
-独立材料应用先通过任务查询的 `readTask` 确认身份与范围，不使用会解析变更可用性的 `inspectTask`。本机清单 `.buildr/local/task-materials/<task-id>/materials.json` 保存逻辑引用；正文仍在项目文件或同任务本机目录中。至多一个 `brief`，其余 `solution|implementation|delivery` 按需多份；不改任务记录（Task Record）、数据库、结果历史或专业报告。
+任务说明（Task Brief）由任务记录（Task Record）的 `brief` 保存，与一句话目标 `intent` 区分。[任务领域](../../services/buildr/src/modules/task/domain/task.ts)定义 v4 正文及内容摘要；[输入校验](../../services/buildr/src/modules/task/application/task-validation.ts)保留原始 Markdown、将空值归为空并限制 UTF-8 体积。[命令应用](../../services/buildr/src/modules/task/application/task-command-application.ts)按已观察记录版本写入，正文变化进入终态更正历史及父任务验收观察。[查询应用](../../services/buildr/src/modules/task/application/task-query-application.ts)与[记录仓库](../../services/buildr/src/modules/task/persistence/task-repository.ts)让详情返回正文、列表只读摘要字段，两者使用一致的记录身份。工作台通过摘要读取 `inspectTaskSummaryView` 装配单任务和列表，工作摘要（Work Context）仅核对任务存在，不隐性读取说明正文。说明随主工作空间数据库保存，不随代码分支切换。
 
-[材料应用](../../services/buildr/src/modules/task/materials/application/task-materials-application.ts)在逐任务独占文件锁内重读、比较关联或本机正文的已观察摘要，再原子发布；读取零写入，正文与摘要来自同一字节观察。项目文件由真实工作树（Worktree）中的文件工具维护，应用锁不保护任意外部编辑器。共享[项目文档读取器](../../services/buildr/src/modules/task/materials/application/task-project-document-reader.ts)选择真实候选根、限制任务作用域，拒绝路径越界、符号链接、非法编码及超限文件；候选缺失或身份漂移不退回主目录同名正文。仅服务工作树无法证明完整项目根时返回具体局部诊断，不宣称全部项目来源已覆盖。
+过程材料应用通过任务查询的 `readTask` 核对身份与范围，不使用解析变更可用性的 `inspectTask`。本机清单 `.buildr/local/task-materials/<task-id>/materials.json` 新写入使用 v2，只关联 `solution|implementation|delivery`，正文仍在项目文件或同任务固定目录中。旧 v1 的 `brief` 只供遗留诊断和显式导入，不作为任务说明兜底。[迁移应用](../../services/buildr/src/modules/task/materials/application/task-brief-migration.ts)比较记录、关联和真实文档版本，保留原文件及其他材料，释放旧说明关联，部分完成分别报告。已有正文时只释放退休关联；普通过程材料更新内部保留唯一旧关联，避免丢失迁移来源。[链接转换](../../services/buildr/src/modules/task/materials/application/task-brief-links.ts)按原来源将 Markdown 文档引用转为明确项目或已关联同任务材料路径，保留代码段和不可解析引用并报告诊断；[迁移命令](../../services/buildr/src/modules/task/materials/interfaces/cli/task-brief-migration.ts)提供单任务与明确批次入口，试读零写入。
 
-[材料模块](../../services/buildr/src/modules/task/materials/module.ts)只依赖任务查询、项目查询和工作树能力，不依赖 OpenSpec 查询。[HTTP 入口](../../services/buildr/src/modules/task/materials/interfaces/http/task-materials-http.ts)与[命令行入口](../../services/buildr/src/modules/task/materials/interfaces/cli/task-materials.ts)调用同一应用；旧普通项目文档接口也转入该读取器。关联写入与本机正文写入分别校验自己的版本，不新增检查适用性状态。
+[材料应用](../../services/buildr/src/modules/task/materials/application/task-materials-application.ts)在逐任务独占文件锁内重读、比较关联或本机正文摘要，再原子发布；读取零写入，正文与摘要来自同一字节观察。项目文件由真实工作树（Worktree）文件工具维护，应用锁不保护任意外部编辑器。[项目文档读取器](../../services/buildr/src/modules/task/materials/application/task-project-document-reader.ts)选择真实候选根，限制任务范围并拒绝越界、符号链接、非法编码及超限文件；候选缺失或身份漂移不回退主目录同名正文。仅服务工作树无法证明完整项目根时返回局部诊断。
 
-前端[材料钩子](../../services/buildr-web/src/features/task/hooks/useTaskArtifacts.ts)独立加载、取消旧请求并在刷新时重读关联及正文。[节点材料投影](../../services/buildr-web/src/features/task/components/taskWorkContent.ts)将角色映射到现有任务说明、方案、实施和收尾，OpenSpec 是辅助来源之一；[材料阅读器](../../services/buildr-web/src/features/task/components/TaskMaterialReader.tsx)复用 Markdown 阅读容器直接展示正文、按需查看原文和局部诊断；说明正文不增加重复标题或来源摘要面板。显式 `brief` 缺失不回退旧材料，`intent` 不作为正文；没有显式 `brief` 的历史任务保留逐变更兼容阅读，不能选主变更或合并正文。新变更链接用限定项目根 `@project/` 解析，不受归档目录深度影响；旧普通相对链接语义不变。
+[材料模块](../../services/buildr/src/modules/task/materials/module.ts)依赖任务查询、项目查询和工作树能力，不依赖 OpenSpec 查询。[HTTP 入口](../../services/buildr/src/modules/task/materials/interfaces/http/task-materials-http.ts)与[命令行入口](../../services/buildr/src/modules/task/materials/interfaces/cli/task-materials.ts)调用同一应用，旧项目文档入口也使用共享读取器。过程材料更新保持自己的版本，不重写记录正文或专业状态。
+
+前端[正文阅读面](../../services/buildr-web/src/features/task/components/TaskReadingPane.tsx)直接展示 `record.brief`，复用 Markdown 正文/原文切换，不等待材料或变更请求，也不显示重复文件名。[节点材料投影](../../services/buildr-web/src/features/task/components/taskWorkContent.ts)仅将过程角色与辅助 OpenSpec 材料投射到设计、实施和收尾；实施清单仍由独立入口阅读。[材料钩子](../../services/buildr-web/src/features/task/hooks/useTaskArtifacts.ts)独立加载过程文件并取消旧请求，[材料阅读器](../../services/buildr-web/src/features/task/components/TaskMaterialReader.tsx)展示实际文件正文、来源与局部诊断。记录说明为空时明确显示尚未填写，旧变更说明在辅助入口按来源分别阅读，不选择主变更或合并正文。
+
+共用[Markdown 主体](../../services/buildr-web/src/components/MarkdownHost.tsx)通过[任务引用解析](../../services/buildr-web/src/lib/taskBriefLinks.ts)识别严格的 `@task/<task-id>` 稳定任务引用，在当前工作空间进入对应任务，不依赖归档目录深度。记录正文使用明确的逻辑项目引用 `projects/<project>/<path>`；[共享文档解析](../../services/buildr-web/src/lib/workspaceMarkdownReferences.ts)核对当前任务范围与登记项目后按项目身份读取，支持附接项目（Attached Project），不拼接物理目录。旧普通文件链接保留原语义，不能扩大文件读取范围。[阅读状态](../../services/buildr-web/src/features/task/hooks/useTaskReadingState.ts)与[会话阅读历史](../../services/buildr-web/src/features/task/task-reading-history.ts)按工作空间、任务和浏览器历史条目保存有限快照，普通与组合任务的节点、方案选择及滚动分别接续。新打开任务默认说明；`@task` 链接明确进入记录正文，即使复用同任务阅读面也不会吞掉请求，浏览器返回恢复原条目的阅读选择。
 
 审查和验证仍从各自应用按需读取；无结果只说明未记录，必要未完成、不适用理由由实际说明或工作摘要表达。真实执行结果和未覆盖理由分别呈现，材料存在不能推导完成。稳定的[浏览器回归](../../services/buildr-web/test/browser/task-materials-journey.ts)直接从列表打开节点、更新正文后刷新、验证无变更专业结果及真实归档后点击，不能只检查顶部链接或文件存在。
 
@@ -61,7 +65,7 @@
     - **`specs/agent-task-workflows/`** — 从意图到专业执行的工作方式
       - [spec.md](../../openspec/specs/agent-task-workflows/spec.md) — 分流、默认隔离、OpenSpec 与按需协作
     - **`specs/task-record/`** — 任务核心事实
-      - [spec.md](../../openspec/specs/task-record/spec.md) — 目标、范围、关系、四态与完成依据
+      - [spec.md](../../openspec/specs/task-record/spec.md) — 短目标、说明正文、范围、关系、四态与完成依据
     - **`specs/task-work-context/`** — 人机接续
       - [spec.md](../../openspec/specs/task-work-context/spec.md) — 进展、明确事项、答复及并发保护
     - **`specs/task-review-results/`** — 两类审查
@@ -88,7 +92,7 @@
       - [task-review.ts](../../services/buildr/src/modules/task/domain/task-review.ts) — 被审对象、审阅范围与结论
       - [task-verification.ts](../../services/buildr/src/modules/task/domain/task-verification.ts) — 验证报告及结论约束
     - `persistence/` — 独立事实的保存
-      - [task-repository.ts](../../services/buildr/src/modules/task/persistence/task-repository.ts) — 任务主表、父身份和直接父关系；将完成依据随结果保存，子关系从当前记录反向读取
+      - [task-repository.ts](../../services/buildr/src/modules/task/persistence/task-repository.ts) — 任务主表、说明正文与摘要、父身份和直接父关系；列表投影不读正文，更正历史随记录保全
       - [task-review-repository.ts](../../services/buildr/src/modules/task/persistence/task-review-repository.ts) — 两类审查槽的摘要比较与保存
       - [task-verification-repository.ts](../../services/buildr/src/modules/task/persistence/task-verification-repository.ts) — 当前验证报告的原子替换
     - **`work-context/`** — 进展、待决事项与人的答复
@@ -103,10 +107,13 @@
     - **`materials/`** — 独立任务材料关联与真实正文阅读
       - [module.ts](../../services/buildr/src/modules/task/materials/module.ts) — 装配任务、项目与工作树能力，不依赖 OpenSpec
       - `application/`
+        - [task-brief-migration.ts](../../services/buildr/src/modules/task/materials/application/task-brief-migration.ts) — 显式导入旧说明，按记录、关联和真实正文版本保护，分别报告写入和关联释放
+        - [task-brief-links.ts](../../services/buildr/src/modules/task/materials/application/task-brief-links.ts) — 按旧文件来源转换可解析文档链接，保留代码与未知引用，不扩大文件范围
         - [task-materials-application.ts](../../services/buildr/src/modules/task/materials/application/task-materials-application.ts) — 读取引用与正文、关联版本保护及受控本机正文写入
         - [task-project-document-reader.ts](../../services/buildr/src/modules/task/materials/application/task-project-document-reader.ts) — 共享任务实际项目根选择及有界安全 Markdown 阅读
         - [task-materials-contracts.ts](../../services/buildr/src/modules/task/materials/application/task-materials-contracts.ts) — 应用、入口与类型生成共用的闭合关联/正文协议
       - `interfaces/`
+        - [cli/task-brief-migration.ts](../../services/buildr/src/modules/task/materials/interfaces/cli/task-brief-migration.ts) — 单任务已观察版本与批次逐项迁移，支持零写入试读
         - [cli/task-materials.ts](../../services/buildr/src/modules/task/materials/interfaces/cli/task-materials.ts) — inspect、record 与 write 的同应用入口
         - [http/task-materials-http.ts](../../services/buildr/src/modules/task/materials/interfaces/http/task-materials-http.ts) — 任务限定读取、同源写授权与闭合输入校验
     - `change/application/` — 可关联的 OpenSpec 与原型阅读
@@ -126,10 +133,12 @@
       - [interfaces/http/task-changed-files-http.ts](../../services/buildr/src/modules/task/changed-files/interfaces/http/task-changed-files-http.ts) — 网页任务限定读取入口
     - [module.ts](../../services/buildr/src/modules/task/module.ts) — 装配各独立能力及公开接口
   - **`services/buildr/src/modules/workbench/`** — 日常关注的组合阅读
+    - [module.ts](../../services/buildr/src/modules/workbench/module.ts) — 工作台及偏好统一接入任务摘要端口，单任务关注项不加载说明正文
     - [application/workbench-application.ts](../../services/buildr/src/modules/workbench/application/workbench-application.ts) — 读取明确事项、任务和已有每日演进，不推断任务正在执行
     - [application/preferences-application.ts](../../services/buildr/src/modules/workbench/application/preferences-application.ts) — 单独维护置顶、接下来和资料偏好
   - **`services/buildr/src/infrastructure/sqlite/`** — 通用存储安全
     - [workspace-sqlite.ts](../../services/buildr/src/infrastructure/sqlite/workspace-sqlite.ts) — 真实工作空间（Workspace）和合法写入来源
+    - [migrations/0035_add_task_brief.sql](../../services/buildr/src/infrastructure/sqlite/migrations/0035_add_task_brief.sql) — 连续追加任务正文及摘要列，保留原记录与历史
     - [transaction.ts](../../services/buildr/src/infrastructure/sqlite/transaction.ts) — 原子提交与失败回滚
   - **`services/buildr/src/web/application/`** — 临时预览资源
     - [preview-lifecycle.ts](../../services/buildr/src/web/application/preview-lifecycle.ts) — 核对实例与进程所有者，独立创建和停止预览（Preview）；`--task` 预览为服务目标工作树按需播种 canonical 任务库一致副本并在 owner 中如实标注来源
@@ -139,6 +148,9 @@
     - **`components/`** — 共用侧边阅读
       - [SideReadingPanel.tsx](../../services/buildr-web/src/components/SideReadingPanel.tsx) — 说明与实施清单共用的容器
       - [useSideReading.ts](../../services/buildr-web/src/components/useSideReading.ts) — 悬停、固定、关闭与宽度限制
+    - `lib/` — 阅读引用的限定语义
+      - [workspaceMarkdownReferences.ts](../../services/buildr-web/src/lib/workspaceMarkdownReferences.ts) — 按登记与允许范围解析逻辑项目或原有工作空间文件引用，支持附接项目
+      - [taskBriefLinks.ts](../../services/buildr-web/src/lib/taskBriefLinks.ts) — 校验稳定任务身份，在当前工作空间构造同任务详情路径
     - **`features/project/components/`** — 项目界面的共同来源
       - [ProjectServicesView.tsx](../../services/buildr-web/src/features/project/components/ProjectServicesView.tsx) — 过滤、单选即关联及失败反馈，由入口注入操作
     - **`features/task/`** — 当前任务与接续
@@ -146,7 +158,9 @@
         - [PrototypeReaderPage.tsx](../../services/buildr-web/src/features/task/pages/PrototypeReaderPage.tsx) — 任务限定的独立三栏阅读
         - [TaskDetailPage.tsx](../../services/buildr-web/src/features/task/pages/TaskDetailPage.tsx) — 目标、摘要、成果、关系与专业结果
       - `components/`
-        - [TaskNodeContent.tsx](../../services/buildr-web/src/features/task/components/TaskNodeContent.tsx) — 按真实材料角色与专业记录组织节点目录；任务说明直接读显式引用正文，短目标不兜底，旧变更说明仅作标注来源的兼容阅读
+        - [TaskReadingPane.tsx](../../services/buildr-web/src/features/task/components/TaskReadingPane.tsx) — 直接阅读记录说明、过程材料及专业结果；说明不依赖文件关联
+        - [TaskEditModal.tsx](../../services/buildr-web/src/features/task/components/TaskEditModal.tsx) — 区分一句话目标与 Markdown 正文，保留编辑草稿与既有更正要求
+        - [TaskNodeContent.tsx](../../services/buildr-web/src/features/task/components/TaskNodeContent.tsx) — 按过程材料与专业记录组织节点目录；说明直接读记录 brief，空值不兜底，变更说明保留辅助入口
         - [PrototypeTab.tsx](../../services/buildr-web/src/features/task/components/PrototypeTab.tsx) — 隔离预览、说明、状态选择与阅读消息校验
         - [PrototypeReaderLayout.tsx](../../services/buildr-web/src/features/task/components/PrototypeReaderLayout.tsx) — 独立任务阅读与离线预览共同使用的页面目录和阅读布局
         - [TaskAgentAction.tsx](../../services/buildr-web/src/features/task/components/TaskAgentAction.tsx) — 开始与继续工作的指令，按当前范围重新读取
@@ -164,6 +178,8 @@
         - [ParentCoordinationPanel.tsx](../../services/buildr-web/src/features/task/components/ParentCoordinationPanel.tsx) — 展示直接子任务结果、父任务完成依据和局部历史诊断
         - [ParentCompletionFields.tsx](../../services/buildr-web/src/features/task/components/ParentCompletionFields.tsx) — 收集总体验收、逐子任务处置与明确确认；编辑内容后取消旧确认
         - [parentCoordination.ts](../../services/buildr-web/src/features/task/components/parentCoordination.ts) — 检查表单必填项、未结束子任务和明确确认，携带已观察身份生成完成输入
+      - [task-reading-history.ts](../../services/buildr-web/src/features/task/task-reading-history.ts) — 保存最多 32 份阅读快照，区分工作空间、任务及历史条目，不作为任务业务状态
+      - [hooks/useTaskReadingState.ts](../../services/buildr-web/src/features/task/hooks/useTaskReadingState.ts) — 接续普通/组合节点、方案与滚动，按历史条目恢复，稳定任务链接明确进入正文
       - [hooks/useTaskActions.ts](../../services/buildr-web/src/features/task/hooks/useTaskActions.ts) — 完成前重读、提交版本与授权；冲突后清除旧确认、刷新成果，等待重新判断
       - [hooks/useTaskWorkContext.ts](../../services/buildr-web/src/features/task/hooks/useTaskWorkContext.ts) — 刷新与取消旧请求，防止不同任务内容混入
       - [hooks/useTaskCommits.ts](../../services/buildr-web/src/features/task/hooks/useTaskCommits.ts) — 按任务进入或刷新读取，取消旧请求并区分加载、失败和已有结果
@@ -178,7 +194,7 @@
 | --- | --- |
 | [任务分流（task-triage）](../../services/buildr/resources/workspace/skills/buildr/task-triage/SKILL.md) | 核对需求、范围与授权，判断语义影响并选择实际工作位置 |
 | [规范建设（OpenSpec）](../../services/buildr/resources/workspace/skills/openspec/openspec-propose/SKILL.md) | 指导智能体（Agent）写方案与行为承诺，按授权接续实施和适用归档 |
-| [任务管理（task-manager）](../../services/buildr/resources/workspace/skills/buildr/task-manager/SKILL.md) | 形成、保存、显式关联及接续唯一任务说明（Task Brief），维护任务、工作摘要（Work Context）、真实答复及父任务完成依据 |
+| [任务管理（task-manager）](../../services/buildr/resources/workspace/skills/buildr/task-manager/SKILL.md) | 形成、保存及接续记录中的唯一任务说明（Task Brief），维护任务、工作摘要（Work Context）、真实答复及父任务完成依据 |
 | [工作树管理（task-worktree）](../../services/buildr/resources/workspace/skills/buildr/task-worktree/SKILL.md) | 创建、检查和安全清理明确归属的独立位置 |
 | [任务审查（task-review）](../../services/buildr/resources/workspace/skills/buildr/task-review/SKILL.md) | 按目标与风险审查方案或实现结果，保存真实结论 |
 | [任务验证（task-verification）](../../services/buildr/resources/workspace/skills/buildr/task-verification/SKILL.md) | 直接运行项目检查，区分检查通过、未覆盖与完成报告 |

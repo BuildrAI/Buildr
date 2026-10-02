@@ -1,3 +1,5 @@
+import { TASK_BRIEF_MAX_BYTES } from '../../domain/task.ts';
+
 import { TASK_ID_SOURCE } from '../../application/task-validation.ts';
 import type {
   TaskEndRequest,
@@ -37,7 +39,7 @@ export type TaskHttpInput = {
   root: string;
   runtime: TaskHttpRuntime;
   authorizeWrite(): void;
-  readBody<T>(schema: null, label: string): Promise<T>;
+  readBody<T>(schema: null, label: string, maxBytes?: number): Promise<T>;
 };
 
 function invalidContractInput(operationId: string, label: string, errors: readonly ValidationIssue[]): HttpBusinessError {
@@ -112,7 +114,7 @@ export async function handleTaskHttpRequest({ request, suffix, searchParams, roo
   }
   if (request.method === 'PATCH' && taskMatch) {
     authorizeWrite();
-    const input = validateRequest('task-record.update', await readBody<TaskUpdateRequest>(null, 'Task update'), 'Task update');
+    const input = validateRequest('task-record.update', await readBody<TaskUpdateRequest>(null, 'Task update', TASK_BRIEF_MAX_BYTES * 6 + 32 * 1024), 'Task update');
     return { status: 200, body: runtime.updateTask(root, taskMatch[1], input) };
   }
 

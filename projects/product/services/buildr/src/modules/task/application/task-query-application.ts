@@ -9,14 +9,14 @@ import {
   taskRecordError,
   taskRecordErrorFields as errorFields,
 } from './task-validation.ts';
-import { Task } from '../domain/task.ts';
+import { Task, taskBriefDigest } from '../domain/task.ts';
 import { TaskChange } from '../domain/task-change.ts';
 import { TaskProject } from '../domain/task-project.ts';
 import { TaskService } from '../domain/task-service.ts';
 import type { SqliteContext } from '../../../infrastructure/sqlite/transaction.ts';
 import type { TaskRepository } from '../persistence/task-repository.ts';
 import type { TaskListBoundary, TaskListCursor, TaskListRepository, TaskListSearch } from '../persistence/task-list-repository.ts';
-import type { TaskChangeReference, TaskPersistence, TaskQueryFilters, TaskRecord, TaskServiceReference, TaskView } from './task-dto.ts';
+import type { TaskChangeReference, TaskPersistence, TaskQueryFilters, TaskRecord, TaskServiceReference, TaskView, TaskSummaryView } from './task-dto.ts';
 import type { TaskProjectRepository } from '../persistence/task-project-repository.ts';
 import type { TaskServiceRepository } from '../persistence/task-service-repository.ts';
 import type { TaskChangeRepository } from '../persistence/task-change-repository.ts';
@@ -64,14 +64,14 @@ function changeKey(value: TaskChangeReference): string {
   return `${value.project}/${value.change}`;
 }
 
-function retrospectiveDocument(record: TaskRecord): { path: string; registered: TaskRecord['retrospective'] } {
+function retrospectiveDocument(record: Pick<TaskRecord, 'taskId' | 'retrospective'>): { path: string; registered: TaskRecord['retrospective'] } {
   return {
     path: taskRetrospectiveDocumentRelativePath(record.taskId),
     registered: record.retrospective,
   };
 }
 
-function storedView(view: TaskView, referenceDiagnostics: TaskReferenceDiagnostic[] = []) {
+function storedView(view: TaskView | TaskSummaryView, referenceDiagnostics: TaskReferenceDiagnostic[] = []) {
   return {
     record: view.record,
     recordDigest: view.recordDigest,
@@ -83,6 +83,11 @@ function storedView(view: TaskView, referenceDiagnostics: TaskReferenceDiagnosti
 
 function digestRecord(record: unknown): string {
   return `sha256-${crypto.createHash('sha256').update(JSON.stringify(record)).digest('hex')}`;
+}
+
+function currentRecordDigest(record: TaskRecord, task: Task): string {
+  const { resultHistory: _history, ...current } = record;
+  return digestRecord({ ...current, brief: task.briefDigest, resultHistory: task.resultHistoryDigest });
 }
 
 function cursorIdentity(filters: TaskQueryFilters): string {
@@ -134,9 +139,9 @@ function taskSearch(raw: string | undefined): TaskListSearch | undefined {
   return { kind: 'fts', expression: tokens.map((token) => `"${token.replaceAll('"', '""')}"`).join(' AND ') };
 }
 
-function parentContextShape(parent: TaskRecord, children: TaskRecord[], legacyPlan: unknown, diagnostic: { code: string; message: string } | null) {
-  const relevant = (record: TaskRecord) => ({ taskId: record.taskId, title: record.title, intent: record.intent, scope: record.scope, changes: record.changes, parentTaskId: record.parentTaskId, isParent: record.isParent === true, status: record.status, result: record.result });
-  return { parent, children, isParent: parent.isParent === true || children.length > 0, legacyPlan, diagnostic, recordDigest: digestRecord(parent), snapshotIdentity: digestRecord({ parent: relevant(parent), children: children.map(relevant) }) };
+function parentContextShape(parent: TaskRecord, children: TaskRecord[], legacyPlan: unknown, diagnostic: { code: string; message: string } | null, recordDigest: string) {
+  const relevant = (record: TaskRecord) => ({ taskId: record.taskId, title: record.title, intent: record.intent, brief: taskBriefDigest(record.brief), scope: record.scope, changes: record.changes, parentTaskId: record.parentTaskId, isParent: record.isParent === true, status: record.status, result: record.result });
+  return { parent, children, isParent: parent.isParent === true || children.length > 0, legacyPlan, diagnostic, recordDigest, snapshotIdentity: digestRecord({ parent: relevant(parent), children: children.map(relevant) }) };
 }
 export function registerTaskQueryApplication(runtime: TaskQueryApplicationRuntime) {
   const tasks = runtime.taskRepository;
@@ -157,7 +162,7 @@ export function registerTaskQueryApplication(runtime: TaskQueryApplicationRuntim
 
   function recordWith(task: Task, taskProjects: readonly TaskProject[], taskServices: readonly TaskService[], taskChanges: readonly TaskChange[]): TaskRecord {
     return normalizeTaskRecord({
-      schemaVersion: 'buildr.task-record/v3', taskId: task.taskId, title: task.title, intent: task.intent,
+      schemaVersion: 'buildr.task-record/v4', taskId: task.taskId, title: task.title, intent: task.intent, brief: task.brief,
       scope: {
         projects: taskProjects.map((item) => item.project),
         services: taskServices.map((item) => ({ project: item.project, service: item.service })),
@@ -176,7 +181,7 @@ export function registerTaskQueryApplication(runtime: TaskQueryApplicationRuntim
 
   function persistence(root: string, context: SqliteContext, task: Task): TaskPersistence {
     const record = recordFrom(context, task);
-    return { root, record, recordDigest: digestRecord(record) };
+    return { root, record, recordDigest: currentRecordDigest(record, task) };
   }
 
   function readIn(context: SqliteContext, root: string, taskIdValue: string): TaskPersistence {
@@ -193,6 +198,16 @@ export function registerTaskQueryApplication(runtime: TaskQueryApplicationRuntim
     const root = assertCanonicalTaskWorkspace(targetRoot);
     taskId(taskIdValue, 'taskId');
     return runtime.runWorkspaceSqliteRead(root, (context) => readIn(context, root, taskIdValue));
+  }
+
+  function assertTaskExistsInContext(context: SqliteContext, _root: string, taskIdValue: string): void {
+    taskId(taskIdValue, 'taskId');
+    if (!tasks.exists(context, taskIdValue)) throw taskRecordError('task_record_not_found', `Task Record 不存在：${taskIdValue}。`, 404);
+  }
+
+  function assertTaskExists(targetRoot: string, taskIdValue: string): void {
+    const root = assertCanonicalTaskWorkspace(targetRoot);
+    runtime.runWorkspaceSqliteRead(root, context => assertTaskExistsInContext(context, root, taskIdValue));
   }
 
   function readTaskTitles(targetRoot: string, taskIds: string[]): Map<string, string> {
@@ -212,6 +227,18 @@ export function registerTaskQueryApplication(runtime: TaskQueryApplicationRuntim
     return runtime.runWorkspaceSqliteRead(root, (context) => {
       const current = readIn(context, root, taskIdValue);
       return { ...current, taskRelations: relationMap(context, [taskIdValue]).get(taskIdValue) || { parent: null, children: [] } };
+    });
+  }
+
+  function inspectTaskSummaryView(targetRoot: string, taskIdValue: string) {
+    const root = assertCanonicalTaskWorkspace(targetRoot);
+    taskId(taskIdValue, 'taskId');
+    return runtime.runWorkspaceSqliteRead(root, context => {
+      const task = tasks.readSummaries(context, { taskIds: [taskIdValue] })[0];
+      if (!task) throw taskRecordError('task_record_not_found', `Task Record 不存在：${taskIdValue}。`, 404);
+      const record = recordFrom(context, task);
+      const { brief: _brief, resultHistory: _history, ...summary } = record;
+      return storedView({ root, record: summary, recordDigest: currentRecordDigest(record, task), taskRelations: relationMap(context, [taskIdValue]).get(taskIdValue) || { parent: null, children: [] } });
     });
   }
 
@@ -238,7 +265,7 @@ export function registerTaskQueryApplication(runtime: TaskQueryApplicationRuntim
       const hasMore = Boolean(filters.pageSize && fetched.length > filters.pageSize);
       const boundaries = hasMore ? fetched.slice(0, filters.pageSize) : fetched;
       const ids = boundaries.map((item) => item.taskId);
-      const tasksById = new Map(tasks.readMany(context, { taskIds: ids }).map((item) => [item.taskId, item]));
+      const tasksById = new Map(tasks.readSummaries(context, { taskIds: ids }).map((item) => [item.taskId, item]));
       const found = ids.map((id) => tasksById.get(id)).filter((item): item is Task => Boolean(item));
       if (found.length !== ids.length) throw taskRecordError('task_record_database_invalid', 'Task list批量组装缺少已选择的Task。', 500, { expected: ids.length, actual: found.length });
       const projectValues = projects.readMany(context, ids);
@@ -247,7 +274,8 @@ export function registerTaskQueryApplication(runtime: TaskQueryApplicationRuntim
       const relations = relationMap(context, ids);
       const views = found.map((task) => {
         const record = recordWith(task, projectValues.get(task.taskId) || [], serviceValues.get(task.taskId) || [], changeValues.get(task.taskId) || []);
-        return { root, record, recordDigest: digestRecord(record), taskRelations: relations.get(task.taskId) || { parent: null, children: [] } };
+        const { brief: _brief, resultHistory: _history, ...summary } = record;
+        return { root, record: summary, recordDigest: currentRecordDigest(record, task), taskRelations: relations.get(task.taskId) || { parent: null, children: [] } };
       });
       const totalTaskCount = decodedCursor?.totalTaskCount ?? tasks.count(context);
       const matchingTaskCount = decodedCursor?.matchingTaskCount ?? (filters.pageSize ? taskList.count(context, tableFilters) : found.length);
@@ -275,7 +303,9 @@ export function registerTaskQueryApplication(runtime: TaskQueryApplicationRuntim
     let legacyPlan = null; let diagnostic = null;
     try { legacyPlan = tasks.legacyParentPlan(context, taskIdValue); }
     catch { diagnostic = { code: 'parent_history_unreadable', message: '旧研发记录不可读；任务关系和结果仍可读取。' }; }
-    return parentContextShape(parent, children, legacyPlan, diagnostic);
+    const parentTask = tasks.read(context, taskIdValue);
+    if (!parentTask) throw taskRecordError('task_record_not_found', `Task Record 不存在：${taskIdValue}。`, 404);
+    return parentContextShape(parent, children, legacyPlan, diagnostic, currentRecordDigest(parent, parentTask));
   }
 
   function readParentTaskContext(targetRoot: string, taskIdValue: string) {
@@ -446,8 +476,9 @@ export function registerTaskQueryApplication(runtime: TaskQueryApplicationRuntim
   return Object.assign(runtime, {
     assertCanonicalTaskWorkspace,
     readTaskInContext: readIn, readParentTaskContextIn: parentContext,
+    assertTaskExists, assertTaskExistsInContext,
     readTask, readTaskTitles, prepareTask, queryTaskViews, readTaskView, readParentTaskContext,
-    queryTasks, inspectTask, inspectTaskView, inspectTaskRetrospectiveDocument,
+    queryTasks, inspectTask, inspectTaskView, inspectTaskSummaryView, inspectTaskRetrospectiveDocument,
     renderTaskResult: result, resolveTaskChangeReferences: resolveChangeReferences,
   });
 }

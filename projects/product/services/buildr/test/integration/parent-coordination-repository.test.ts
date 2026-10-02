@@ -9,10 +9,11 @@ const test = createBuildrApplicationTest('integration-parent-coordination-reposi
 
 function record(taskId, parentTaskId = null) {
   return {
-    schemaVersion: 'buildr.task-record/v3',
+    schemaVersion: 'buildr.task-record/v4',
     taskId,
     title: taskId,
     intent: 'Verify bounded Parent Coordination reads.',
+    brief: null,
     scope: { projects: [], services: [] },
     changes: [],
     parentTaskId,

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 
 import { createBuildrApplicationTest } from '../context/buildr-node-test.ts';
 
@@ -17,7 +18,7 @@ function fixture(t) {
   fs.writeFileSync(path.join(root, '.buildr', 'workspace.yml'), `schemaVersion: buildr.workspace/v1\nid: 11111111-1111-4111-8111-111111111111\nname: Fixture\ndescription: Fixture Workspace\nruntime:\n  node:\n    version: ${process.versions.node}\n`);
   const runtime = t.buildrContexts.application;
   runtime.createTaskPersistence(root, {
-    schemaVersion: 'buildr.task-record/v3', taskId: 'demo-task', title: 'Demo', intent: 'Verify Review SQLite authority',
+    schemaVersion: 'buildr.task-record/v4', taskId: 'demo-task', title: 'Demo', intent: 'Verify Review SQLite authority', brief: null,
     scope: { projects: [], services: [] }, changes: [], parentTaskId: null, retrospective: null, status: 'active', result: null,
     createdAt: '2026-08-02T00:00:00.000Z', updatedAt: '2026-08-02T00:00:00.000Z',
   });
@@ -110,14 +111,17 @@ test('每次完整审查保留被替换结果，冲突与事务失败不追加�
   assert.deepEqual(read.slots.completion.history, []);
 });
 
-test('旧库只读保持当前审查且不迁移，合法替换后保留原结果', (t) => {
+test('旧库只读报告所需迁移且不写入，合法替换后保留原审查结果', (t) => {
   const { root, runtime } = fixture(t);
   const first = runtime.recordTaskReview(root, 'demo-task', input());
   const opened = runtime.openWorkspaceStructuredStore(root, { writable: true });
-  opened.database.exec('DROP TABLE task_review_history; DELETE FROM schema_migrations WHERE version = 34;');
+  opened.database.exec('DROP TABLE task_review_history; ALTER TABLE tasks DROP COLUMN brief; ALTER TABLE tasks DROP COLUMN brief_digest; ALTER TABLE tasks DROP COLUMN result_history_digest; DELETE FROM schema_migrations WHERE version >= 34;');
   opened.database.close();
-  assert.deepEqual(runtime.inspectTaskReview(root, 'demo-task').slots.planning.history, []);
-  const checked = runtime.openWorkspaceStructuredStore(root, { writable: false });
+  const file = path.join(root, '.buildr', 'local', 'workspace.sqlite');
+  const before = fs.readFileSync(file);
+  assert.throws(() => runtime.inspectTaskReview(root, 'demo-task'), error => error.code === 'workspace_store_migration_required');
+  assert.deepEqual(fs.readFileSync(file), before);
+  const checked = { database: new DatabaseSync(file, { readOnly: true }) };
   assert.equal(checked.database.prepare('SELECT max(version) AS version FROM schema_migrations').get().version, 33);
   checked.database.close();
   const next = runtime.recordTaskReview(root, 'demo-task', input('planning', first.slots.planning.resultDigest, { subjectIdentity: 'planning:identity-2' }));

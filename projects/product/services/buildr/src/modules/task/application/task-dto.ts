@@ -25,6 +25,7 @@ export type TaskRecord = {
   taskId: string;
   title: string;
   intent: string;
+  brief: string | null;
   scope: { projects: string[]; services: TaskServiceReference[] };
   changes: TaskChangeReference[];
   parentTaskId: string | null;
@@ -36,6 +37,9 @@ export type TaskRecord = {
   createdAt: string;
   updatedAt: string;
 };
+
+export type TaskSummaryRecord = Omit<TaskRecord, 'brief' | 'resultHistory'>;
+export type TaskSummaryView = Omit<TaskView, 'record'> & { record: TaskSummaryRecord };
 
 export type TaskRecordBusinessError = Error & {
   code: string;
@@ -54,6 +58,7 @@ export type TaskCreateInputDto = {
   taskId: string;
   title: string;
   intent: string;
+  brief?: string | null;
   status?: 'todo' | 'active';
   isParent?: true;
   parentTaskId?: string | null;
@@ -62,6 +67,7 @@ export type TaskCreateInputDto = {
   changes?: Array<string | { project: string; change: string }>;
 };
 
+export type TaskImportBriefInputDto = { expectedRecordDigest: string; brief: string };
 export type TaskActivateInputDto = { expectedRecordDigest: string };
 export type TaskListInputDto = TaskListRequest;
 export type TaskUpdateInputDto = TaskUpdateRequest;

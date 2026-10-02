@@ -30,6 +30,7 @@ export function useTaskActions({ taskId, data, refresh, refreshCoordination, sho
   const [editState, setEditState] = useState('可以修改');
   const [title, setTitle] = useState('');
   const [intent, setIntent] = useState('');
+  const [brief, setBrief] = useState('');
   const [projectsText, setProjectsText] = useState('');
   const [servicesText, setServicesText] = useState('');
   const [parentTaskId, setParentTaskId] = useState('');
@@ -62,6 +63,7 @@ export function useTaskActions({ taskId, data, refresh, refreshCoordination, sho
     const record = data.record;
     setTitle(record.title);
     setIntent(record.intent);
+    setBrief(record.brief || '');
     setProjectsText(lines(record.scope.projects));
     setServicesText(lines(record.scope.services, 'service'));
     setParentTaskId(record.parentTaskId || '');
@@ -77,7 +79,7 @@ export function useTaskActions({ taskId, data, refresh, refreshCoordination, sho
   const setActionModal = (mode: TaskActionModal) => {
     if (mode === 'edit' && dataRef.current) {
       const value = dataRef.current; editSnapshot.current = value; setEditLatest(null); setEditState('可以修改');
-      setTitle(value.record.title); setIntent(value.record.intent); setProjectsText(lines(value.record.scope.projects)); setServicesText(lines(value.record.scope.services, 'service')); setParentTaskId(value.record.parentTaskId || '');
+      setTitle(value.record.title); setIntent(value.record.intent); setBrief(value.record.brief || ''); setProjectsText(lines(value.record.scope.projects)); setServicesText(lines(value.record.scope.services, 'service')); setParentTaskId(value.record.parentTaskId || '');
     }
     setModal(mode);
   };
@@ -89,6 +91,7 @@ export function useTaskActions({ taskId, data, refresh, refreshCoordination, sho
       if (previous) {
         setTitle(draft => draft === previous.title ? latest.record.title : draft);
         setIntent(draft => draft === previous.intent ? latest.record.intent : draft);
+        setBrief(draft => draft === (previous.brief || '') ? latest.record.brief || '' : draft);
         setProjectsText(draft => draft === lines(previous.scope.projects) ? lines(latest.record.scope.projects) : draft);
         setServicesText(draft => draft === lines(previous.scope.services, 'service') ? lines(latest.record.scope.services, 'service') : draft);
         setParentTaskId(draft => draft === (previous.parentTaskId || '') ? latest.record.parentTaskId || '' : draft);
@@ -149,6 +152,7 @@ export function useTaskActions({ taskId, data, refresh, refreshCoordination, sho
         expectedRecordDigest: current.recordDigest,
         title,
         intent,
+        brief: brief.trim() ? brief : null,
         ...(nextParentTaskId === record.parentTaskId ? {} : { parentTaskId: nextParentTaskId }),
         addProjects: projectChanges.add,
         removeProjects: projectChanges.remove,
@@ -164,7 +168,7 @@ export function useTaskActions({ taskId, data, refresh, refreshCoordination, sho
     } finally {
       setSaving(false);
     }
-  }, [taskId, projectsText, servicesText, parentTaskId, title, intent, refresh, onAlert, showMutationError, saving, editState]);
+  }, [taskId, projectsText, servicesText, parentTaskId, title, intent, brief, refresh, onAlert, showMutationError, saving, editState]);
 
   const openComplete = useCallback(async () => {
     const current = dataRef.current;
@@ -238,9 +242,9 @@ export function useTaskActions({ taskId, data, refresh, refreshCoordination, sho
     actionModal,
     setActionModal,
     edit: {
-      editState, title, intent, projectsText, servicesText, parentTaskId,
+      editState, title, intent, brief, projectsText, servicesText, parentTaskId,
       parentOptions, parentOptionsLoading, saving,
-      setTitle, setIntent, setProjectsText, setServicesText, setParentTaskId,
+      setTitle, setIntent, setBrief, setProjectsText, setServicesText, setParentTaskId,
       loadParentOptions, save, reread: rereadEdit, latest: editLatest,
     },
     completion: {

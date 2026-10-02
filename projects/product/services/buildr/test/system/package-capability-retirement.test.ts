@@ -61,6 +61,23 @@ function injectLegacyTaskRecordV2(root: any): any  {
   fs.copyFileSync(path.join(PRODUCT_ROOT, 'test', 'fixtures', 'legacy-task-record-contract-v2.md'), target);
 }
 
+function injectLegacyTaskRecordV3(root: any): any {
+  const manifestFile: any = path.join(root, 'skills', 'manifest.yml');
+  const manifest: any = YAML.parse(fs.readFileSync(manifestFile, 'utf8'));
+  manifest.contracts = manifest.contracts.filter((item: any) => item.id !== 'buildr.task-record');
+  manifest.bindings = manifest.bindings.filter((item: any) => item.capability !== 'buildr.task-record');
+  manifest.contracts.push({
+    id: 'buildr.task-record', version: 3, path: 'contracts/buildr/task-record/v3.md',
+    description: '管理canonical Workspace中Task最小顶层事实及本机复盘文档摘要与决定状态。',
+  });
+  manifest.bindings.push({ capability: 'buildr.task-record', version: 3, provider: 'task-manager' });
+  fs.writeFileSync(manifestFile, YAML.stringify(manifest));
+  const target = path.join(root, 'skills', 'contracts', 'buildr', 'task-record', 'v3.md');
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.copyFileSync(path.join(PRODUCT_ROOT, 'resources', 'workspace', 'skills', 'contracts', 'buildr', 'task-record', 'v3.md'), target);
+  return target;
+}
+
 function seedMigrationV4(root: any): any  {
   const file: any = path.join(root, '.buildr', 'local', 'workspace.sqlite');
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -181,15 +198,27 @@ test('sync 接受上一版 Task Verification contract metadata 并安全升级�
   assert.equal(fs.existsSync(legacy), false);
 });
 
-test('sync 接受上一版 Task Record contract metadata 并安全升级到v3', (t: any) => {
+test('sync 接受上一版 Task Record contract metadata 并安全升级到v4', (t: any) => {
   const root: any = fixtureRoot(t);
   injectLegacyTaskRecordV2(root);
   const synced: any = run(['sync', 'codex', '--target', root]);
   assert.equal(synced.status, 0, synced.stderr || synced.stdout);
   const manifest: any = YAML.parse(fs.readFileSync(path.join(root, 'skills', 'manifest.yml'), 'utf8'));
   assert.equal(manifest.contracts.some((item: any) => item.id === 'buildr.task-record' && item.version === 2), false);
-  assert.equal(manifest.contracts.some((item: any) => item.id === 'buildr.task-record' && item.version === 3), true);
+  assert.equal(manifest.contracts.some((item: any) => item.id === 'buildr.task-record' && item.version === 4), true);
   assert.equal(manifest.bindings.some((item: any) => item.capability === 'buildr.task-record' && item.version === 2), false);
+});
+
+test('sync 将 Task Record v3 的受管契约与绑定一并升级为 v4', (t: any) => {
+  const root: any = fixtureRoot(t);
+  const predecessor = injectLegacyTaskRecordV3(root);
+  const synced: any = run(['sync', 'codex', '--target', root]);
+  assert.equal(synced.status, 0, synced.stderr || synced.stdout);
+  const manifest: any = YAML.parse(fs.readFileSync(path.join(root, 'skills', 'manifest.yml'), 'utf8'));
+  assert.deepEqual(manifest.contracts.filter((item: any) => item.id === 'buildr.task-record').map((item: any) => item.version), [4]);
+  assert.deepEqual(manifest.bindings.filter((item: any) => item.capability === 'buildr.task-record').map((item: any) => item.version), [4]);
+  assert.equal(fs.existsSync(predecessor), false);
+  assert.equal(fs.existsSync(path.join(root, 'skills/contracts/buildr/task-record/v4.md')), true);
 });
 
 test('sync 在源资产 mutation 前升级 pending SQLite migrations', (t: any) => {

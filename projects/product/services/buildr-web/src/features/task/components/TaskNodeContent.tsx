@@ -14,6 +14,7 @@ export function TaskNodeContent({ selected, record, documents, briefs, briefsLoa
   hasRetrospective: boolean; hasCoordination: boolean; renderContent(target: TaskReadTarget): ReactNode;
   materialsLoading?: boolean; materialsError?: string | null; materialDiagnostics?: Array<{ code: string; message: string }>;
 }) {
+  if (selected === 'requirements') return <section id="task-node-content" className="task-node-content" aria-label="所选节点内容"><div className="task-node-reading">{renderContent({ kind: 'brief', title: '任务说明' })}</div></section>;
   const entries = documents.filter(item => item.stage === selected && item.purpose !== 'checklist');
   const auxiliary: ContentOption[] = [];
   const options: ContentOption[] = [];
@@ -23,11 +24,8 @@ export function TaskNodeContent({ selected, record, documents, briefs, briefsLoa
     const duplicate = entries.filter(peer=>peer.title===item.title).length > 1;
     if (selected === 'design' && item.purpose === 'change-brief') {
       auxiliary.push({key:item.key, group:'关联变更说明', label:<span className="task-directory-label" title={item.title}>{item.changeKey}</span>, path:item.artifact.path, target:taskDocumentTarget(item)});
-    } else options.push({key:item.key, group:spec ? '规范' : undefined, label:<span className="task-directory-label" title={taskDocumentLabel(item,entries)}>{name}{(item.historicalBrief || (spec && duplicate)) && <small>{item.changeKey}</small>}</span>, path:item.artifact.path, target:taskDocumentTarget(item)});
+    } else options.push({key:item.key, group:spec ? '规范' : undefined, label:<span className="task-directory-label" title={taskDocumentLabel(item,entries)}>{name}{(spec && duplicate) && <small>{item.changeKey}</small>}</span>, path:item.artifact.path, target:taskDocumentTarget(item)});
   });
-  // 「任务说明」节点以说明正文（brief.md 等任务说明材料）为内容；intent 只是短目标，
-  // 不再兜底进说明节点，也不把 intent 伪装成说明。
-
   if (selected === 'design') prototypeEntries(prototypeData).forEach(entry => options.push({key:`prototype:${entry.key}`,group:'界面原型',label:<span className="task-directory-label">{entry.scene.title}{(prototypeData?.prototypes.length || 0) > 1 && <small>{prototypeSourceLabel(entry.file)}</small>}</span>,target:{kind:'prototype',title:entry.scene.title,prototypeKey:entry.key}}));
   if (selected === 'design' || selected === 'implementation') {
     const reviewType = selected === 'design' ? 'planning' : 'completion';
@@ -60,7 +58,7 @@ export function TaskNodeContent({ selected, record, documents, briefs, briefsLoa
     } else items.push(item);
   }
   const readingEvidence = choices[selected]?.startsWith('review') || choices[selected] === 'verification' || choices[selected]?.startsWith('prototype:') || ['result', 'coordination', 'retrospective'].includes(choices[selected]);
-  const waitingForBriefs = (selected === 'requirements' || (selected === 'design' && !choices[selected])) && briefsLoading && !entries.length;
+  const waitingForBriefs = selected === 'design' && !choices[selected] && briefsLoading && !entries.length;
   const waitingForMaterials = materialsLoading && !readingEvidence && !entries.length;
   const loading = waitingForBriefs || waitingForMaterials || (active?.target.kind === 'review' ? reviewLoading && !reviews : active?.target.kind === 'verification' ? verificationLoading && !verification : false);
   const readingMaterial = active?.target.kind === 'material';
@@ -74,8 +72,8 @@ export function TaskNodeContent({ selected, record, documents, briefs, briefsLoa
       {materialsError && !readingMaterial && <Alert type="warning" message={`任务材料读取失败：${materialsError}`} description="请刷新任务后重试；未使用旧说明替代当前关联。" />}
       {materialDiagnostics.map((item, index) => <Alert key={`materials:${item.code}:${index}`} type="warning" message={item.message} />)}
       {selected === 'design' && !prototypeData?.prototypes.length && prototypeData?.diagnostics.map((item, index) => <Alert key={`prototype:${index}`} type="warning" message={item.message} />)}
-      {(selected === 'requirements' || selected === 'design') && briefs.map(item => item.kind === 'missing' ? <Alert key={item.key} type="warning" message={item.message} /> : item.kind === 'ready' && !item.change.brief.exists ? <Alert key={item.key} type="warning" message={`${item.key} 的变更说明当前缺失。`} /> : null)}
-      {loading ? <div className="task-content-loading"><Spin size="small" /> 正在读取内容…</div> : active ? renderContent(active.target) : <p className="task-node-empty">{materialsError && selected === 'requirements' ? '关联状态尚未读到，请重试。' : selected === 'requirements' ? '尚未关联独立任务说明。' : '暂无内容。'}</p>}
+      {selected === 'design' && briefs.map(item => item.kind === 'missing' ? <Alert key={item.key} type="warning" message={item.message} /> : item.kind === 'ready' && !item.change.brief.exists ? <Alert key={item.key} type="warning" message={`${item.key} 的变更说明当前缺失。`} /> : null)}
+      {loading ? <div className="task-content-loading"><Spin size="small" /> 正在读取内容…</div> : active ? renderContent(active.target) : <p className="task-node-empty">暂无内容。</p>}
     </div>
   </section>;
 }

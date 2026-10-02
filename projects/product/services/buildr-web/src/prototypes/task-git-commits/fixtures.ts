@@ -4,7 +4,7 @@ import type { TaskCommit } from '../../features/task/components/task-commit-mode
 
 export const taskId = '2026-09-27-task-git-commits';
 export const record: TaskRecord = {
-  schemaVersion: 'buildr.task-record/v3', taskId, title: '任务与 Git 提交双向关联',
+  schemaVersion: 'buildr.task-record/v4', taskId, title: '任务与 Git 提交双向关联', brief: null,
   intent: '在任务中查看每次提交的说明和哈希值，在提交说明中保留任务编码，让工作目标与实际改动互相可追溯。',
   scope: { projects: ['product'], services: [{ project: 'product', service: 'buildr' }, { project: 'product', service: 'buildr-web' }] },
   changes: [], parentTaskId: null, retrospective: null, status: 'active', result: null,

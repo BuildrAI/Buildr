@@ -513,6 +513,15 @@ artifacts:
     objects:
       - task-system
     sources:
+      - task-brief-storage-migration
+      - task-workbench-summary-wiring
+      - task-reading-history
+      - task-reading-state
+      - task-logical-project-references
+      - task-stable-brief-reference
+      - task-brief-migration
+      - task-brief-link-migration
+      - task-record-brief-reader
       - task-materials-application
       - task-project-document-reader
       - task-material-reader
@@ -561,7 +570,7 @@ artifacts:
       - current-knowledge-maintenance
       - task-openspec-apply
       - task-source-task-verification-application-68479e
-    observedDigest: f5a5b0c9b0cc55abab1de2547bd49fb38966b4f551caafe36c267980975ae513
+    observedDigest: 0a632aba8dc8609429cf82bec5093fac86997ced193ad1eaa4d4e4c9433597d9
     files:
       - task-source-2026-08-30-parent-child-task-audit-b28c38
       - parent-completion-html
@@ -665,6 +674,15 @@ artifacts:
     objects:
       - task-system
     sources:
+      - task-brief-storage-migration
+      - task-workbench-summary-wiring
+      - task-reading-history
+      - task-reading-state
+      - task-logical-project-references
+      - task-stable-brief-reference
+      - task-brief-migration
+      - task-brief-link-migration
+      - task-record-brief-reader
       - task-changed-file-count-reader
       - task-materials-application
       - task-project-document-reader
@@ -752,7 +770,7 @@ artifacts:
       - task-git-method
       - task-commits-contract
       - public-json-contracts
-    observedDigest: 071de6d2bbbf7562a934ca30f0956b587e70c5202c2dccbf5c5db13a670d14ad
+    observedDigest: 9ea18678696c52f1587d51427be67453e7e22b7a514e11db366b36088ce43b2d
     files:
       - task-source-2026-08-30-parent-child-task-audit-b28c38
       - task-file-task-system-md-d14898
@@ -1224,7 +1242,7 @@ sources:
     kind: code
     path: services/buildr/src/web/http/session.ts
     summary: 在路由分发前核对实际监听主机与端口，写入继续校验来源、会话和内容类型。
-    observedDigest: 6de9ff0e14ba5b2b3177d4a9bc6052e102f86509b0bf829c77568055a51690e9
+    observedDigest: bb6e62fda12062a189ad96935de3b0820ee13d9105925d13ea1825da13b43a97
   - id: technical-prompt-request-source
     title: 生成指令的输入与请求时效
     kind: code
@@ -1293,6 +1311,7 @@ sources:
     kind: evidence
     path: services/buildr/resources/manifest.yml
     summary: Buildr 随包工作资产的资源登记与交付范围。
+    observedDigest: f8eb9fa95e8448907b2a1f2279104331d366cb5a82effb73a1c558c7c87042a5
   - id: skill-source-2
     title: 投射规范
     kind: spec
@@ -1590,7 +1609,7 @@ sources:
     skillId: current-knowledge-maintenance
     path: SKILL.md
     link: services/buildr/resources/workspace/skills/buildr/current-knowledge-maintenance/SKILL.md
-    observedDigest: 3de48a35ecd2564da358811962952887f3d3c48ebf79b7c53f8b0567a30c3767
+    observedDigest: 4d810c06a16e77b008902865147949b096561176aed00567e5ff12c9b0624fc7
   - id: code-map
     title: 代码地图制作（code-map）
     summary: 解释规范、职责与协作如何落实到真实目录和文件。
@@ -1775,7 +1794,7 @@ sources:
     title: 文档与相对链接事件
     kind: code
     path: services/buildr-web/src/components/MarkdownHost.tsx
-    observedDigest: d8ee96242c6579c55b44ef3c710e9d61140a5d2a79f1f6e87a1b5c85ff61e9a4
+    observedDigest: 876ce244e0d6dfb52e7ae08f8c4c4b3e799ef156134777e54e852f6b8085bb60
     summary: 将文档渲染接入页面及相对链接事件。
   - id: tree-ui
     title: 可折叠事实文件树
@@ -1901,7 +1920,7 @@ sources:
     kind: code
     path: services/buildr/src/modules/task/module.ts
     summary: 组合任务读写、审查、验证、父任务和工作摘要（Work Context）能力，并登记公开接口。
-    observedDigest: e8c1e6861e1bb4599a9ce8ccac243dc213b4e84b7995c5ec1b1c9774f4cb5def
+    observedDigest: 69243bc67f883d868af853f826aad3964a67fdaea26c779ed7b5f660411e083d
   - id: task-source-workbench-application-d9c5aa
     title: 工作概览读取
     kind: code
@@ -1921,7 +1940,7 @@ sources:
     skillId: task-triage
     link: services/buildr/resources/workspace/skills/buildr/task-triage/SKILL.md
     summary: 分别判断语义、执行形态和独立工作位置；只在实际命中时交接专业方法。
-    observedDigest: 4d09d813ff4d178c88c730efb3a647671bb62d109158ff043b8f0a786ab50cbf
+    observedDigest: 9428cfcccbcc95e028980fc8aed15754e16a9ec10dfad01d49721dd9361e49fc
   - id: task-source-git-worktree-observation
     title: 当前 Git 对象核验
     kind: code
@@ -1944,7 +1963,7 @@ sources:
     kind: code
     path: services/buildr/src/modules/task/work-context/application/work-context-application.ts
     summary: 按独立版本保存进展、事项及真实答复，回应不调用任务完成或自动启动执行。
-    observedDigest: fdf20d0fbd468e90186260a4463780ecf24dd34f4727960d26f9fbedc1e1e6db
+    observedDigest: 9d9d6a7272c226ef2a24c1e0ea39e621c123715e4691d03c0c0a67511f07c6c7
   - id: task-source-taskworkcontextcard-01a1b9
     title: 工作摘要与人的回应
     kind: code
@@ -1968,13 +1987,13 @@ sources:
     kind: code
     path: services/buildr/src/modules/task/application/task-command-application.ts
     summary: 按版本维护任务事实，核对普通父任务验收；显式组合结束按逐项选择原子处理直接子任务，冲突时保留原记录。
-    observedDigest: 7fd58639f8fafc589bf6f88f54096e82c0868162e00e9f0a1cb9414cfeca05a7
+    observedDigest: 6412a62e71f5a805d9b14e03f416f35e1f425663f6bfe60a0ca19eff68920bee
   - id: task-source-task-04c6c5
     title: 任务领域对象
     kind: code
     path: services/buildr/src/modules/task/domain/task.ts
     summary: 任务、结果、父任务完成依据与更正历史的数据类；输入及完成规则由应用承担。
-    observedDigest: 5b84983c04e6301c17542d96954ea1bb66403d856ae99b90f91c1f27e62ebeb8
+    observedDigest: 7d23d6b7dc8baf04604acb65805b046fb8f6b00930c65703db89bd65bdf12509
   - id: task-source-transaction-619471
     title: 写入事务
     kind: code
@@ -1986,7 +2005,7 @@ sources:
     kind: evidence
     path: services/buildr/test/integration/workbench-application.test.ts
     summary: 覆盖摘要与答复版本保护、四态独立、偏好、首批外事项及旧库只读兼容；本次只核对其证明范围。
-    observedDigest: fb8a2cc2f9dc5ded7edd90dee5e8e4f89b2d994968809c0f43b0a785f4081cf6
+    observedDigest: 9716f7570595c9287348918af08dfa704c4e6de0f0729ebb3afda33b0528c052
   - id: task-source-preview-lifecycle-97736a
     title: 预览资源生命周期
     kind: code
@@ -2012,7 +2031,7 @@ sources:
     skillId: task-finish
     link: services/buildr/resources/workspace/skills/buildr/task-finish/SKILL.md
     summary: 组合 Git、业务工具、已有任务登记和具体资源所有者善后，分别报告成果。
-    observedDigest: fd90fa74dc7a493979bdc5841145428ea834b5b2b608b178a16207119ad1e04a
+    observedDigest: 4df8668fcd02ae06499f4a764fa0b000d941fbd0d0c4a6f0f99ae85a0140fb8d
   - id: task-source-spec-05a13b
     title: 自举交付编排规范
     kind: spec
@@ -2048,7 +2067,7 @@ sources:
     kind: code
     path: services/buildr-web/src/features/task/pages/TaskDetailPage.tsx
     summary: 组织任务目标、工作摘要（Work Context）、关联成果与专业结果阅读，保留当前任务上下文。
-    observedDigest: 34f7fd2ad68b743bf59391b2cef7fc3641f9be889b2d20fed9a586a0ee416e4b
+    observedDigest: f66a2ef7574dd131586123e8c0e041aae020e5e43cf29b5ec73b65a99b36c45e
   - id: task-source-taskartifactreader-bb7503
     title: 任务成果并排阅读
     kind: code
@@ -2059,7 +2078,7 @@ sources:
     title: 任务记录规范
     kind: spec
     path: openspec/specs/task-record/spec.md
-    summary: 约束最小任务事实、四态、关系、更正历史、版本保护及独立业务结果边界。
+    summary: 约束任务说明正文、轻量列表、四态、关系、更正历史、版本保护及独立业务结果边界。
     observedDigest: e7e6b5d2589566c0b0e5087feebcee1e2d06ea256441e42f57ae25369256c3df
   - id: task-source-spec-9dbb55
     title: 审查结果规范
@@ -2078,19 +2097,19 @@ sources:
     kind: code
     path: services/buildr/src/modules/task/interfaces/cli/task.ts
     summary: 解析任务创建、读取、修订、激活、完成和放弃参数，将具体操作交给任务应用。
-    observedDigest: 09a3f44f40ab3f4766f098a240e2ae9cd6f5e3893ee93cfad9d52e9c63760cf7
+    observedDigest: f44f4a5775ac7c817ee2b55a07511cf7188819a379321cebdda5d81de7aab44d
   - id: task-source-task-http-e1bbb1
     title: 任务网页接口
     kind: code
     path: services/buildr/src/modules/task/interfaces/http/task-http.ts
     summary: 处理任务查询和具体状态写入，请求转换与写入授权和业务应用职责分离。
-    observedDigest: a694264c5bae726663dad8c306839be541d7151ac1fce4b654b98b10e856badc
+    observedDigest: 9ec0e4476c8164853b3087587306c588dbdf8b92741c6b76576a6e26b709510a
   - id: task-source-task-query-application-9f6269
     title: 任务与关系读取
     kind: code
     path: services/buildr/src/modules/task/application/task-query-application.ts
-    summary: 读取当前记录与直接子任务，计算单任务版本及与完成相关的父子观察身份；旧计划仅供历史展示。
-    observedDigest: cbb371b86d4eb82f3ab8f344fc76b4c3738308ffb3872b8fae89122f0642a06d
+    summary: 详情读取当前说明，列表与工作台只读摘要；记录身份保持一致，正文摘要进入父子验收观察。
+    observedDigest: b2ed8eef9fe78f4654381c1ee2f4318d7ad77fca00fb792b3a32af071bc23808
   - id: task-source-parent-coordination-application-49a9bd
     title: 父任务协调读取
     kind: code
@@ -2113,8 +2132,8 @@ sources:
     title: 任务记录存取
     kind: code
     path: services/buildr/src/modules/task/persistence/task-repository.ts
-    summary: 读取和写入任务主表，保存直接父关系与显式父身份，批量派生反向关系并读取保留历史。
-    observedDigest: 4b9aa766cc85e5f6eb02931a1c04b57a9440c9f5c5705b0c39ef9100bd0dca91
+    summary: 保存任务说明与摘要、直接父关系和父身份；列表投影不读正文，终态更正保全原正文与结果。
+    observedDigest: 21dd6baa7e596e775d62159ac5781d420f3f7d6a81b69ec80652e8698cf76ed8
   - id: task-source-task-verification-repository-470799
     title: 验证报告存取
     kind: code
@@ -2151,8 +2170,8 @@ sources:
     path: SKILL.md
     skillId: task-manager
     link: services/buildr/resources/workspace/skills/buildr/task-manager/SKILL.md
-    summary: 维护任务事实、独立工作摘要（Work Context）与真实答复；父任务完成需明确授权和总体验收。
-    observedDigest: 04717305ca3479ca62d95e0a6a70b816f1f9b821dc2171bf768607fe361c41b5
+    summary: 维护任务事实、记录说明 brief、旧说明显式导入与独立工作摘要；父任务完成需明确授权和总体验收。
+    observedDigest: bd1f86fd5facb23e251133c499db8945787a9128f4c6ded245887cf21a06a039
   - id: task-source-skill-2263b0
     title: 工作树管理（task-worktree）
     kind: skill
@@ -2168,19 +2187,19 @@ sources:
     skillId: task-review
     link: services/buildr/resources/workspace/skills/buildr/task-review/SKILL.md
     summary: 按真实对象与风险完成方案或结果审阅，使用当前摘要保存独立结论。
-    observedDigest: c98dfe4e90f9e510cf893b9aaa4b2b25c28583476d9eabd0d489c035c0a0c4b5
+    observedDigest: 0bcdd6f7b2e982c861cc799caafd6910ad5e4a14691aa3037c455633f4bb58fb
   - id: task-source-skill-0ea6ac
     title: 任务验证（task-verification）
     kind: code
     path: services/buildr/resources/workspace/skills/buildr/task-verification/SKILL.md
     summary: 指导智能体（Agent）选择并执行已有检查，核对适用性后保存有意义的任务报告。
-    observedDigest: 29d31ccfdfe5283219998c097a6c1efe6d8afe0d4ce974f2d91fb7e76544cf11
+    observedDigest: b764cd62c824170dfe58086e251de7f8cd2db4b3efca5b075b9e176f90b25b46
   - id: task-source-task-record-product-test-2e0e74
     title: 任务记录产品回归
     kind: evidence
     path: services/buildr/test/system/task-record-product.test.ts
     summary: 覆盖任务动作、四态、引用、父子关系、更正与并发版本保护。
-    observedDigest: 90ed7688b19a311eec913fbef5525d83cf9e15fbc529ef422bb3c9c0fbe85fbc
+    observedDigest: 6e73aac7b62d813e338307c07bcc065c00ea0d689110c89bc8c5dc65fa04c85a
   - id: task-source-self-bootstrap-closeout-test-2c0ed6
     title: 自举分支回归
     kind: evidence
@@ -2223,7 +2242,7 @@ sources:
     kind: evidence
     path: knowledge/code-map/task-system.md
     summary: 保存本主题当前解释或依据，网页与本地使用同一正文；不替代规范和代码。
-    observedDigest: afff7347d3d78f1b961774ab008cd7319ed8372d9d217474f37e3da915e9ee80
+    observedDigest: 9ea18678696c52f1587d51427be67453e7e22b7a514e11db366b36088ce43b2d
   - id: task-file-task-system-html-80857d
     title: 完整过程与角色职责 · 独立展示
     kind: evidence
@@ -2555,7 +2574,7 @@ sources:
     summary: 任务、地图、当前报告与存储的协作
     kind: code
     path: services/buildr/test/integration/task-verification-report.test.ts
-    observedDigest: 9be1bdf9e98cd41cf61cfb6d744f8297c88369047667b8918128461661409491
+    observedDigest: 12835f5bbb88a1ec2125fc29a1be19531f0b6b411ccb48eb56c65e42f0b50f48
   - id: verification-source-4e2cb05a2b
     title: 持久测试进程行为检查
     summary: 持久工作进程（Worker Host）的复用、额度与失败
@@ -2655,7 +2674,7 @@ sources:
     kind: code
     path: services/buildr/src/modules/task/application/task-validation.ts
     summary: 校验任务输入、总体验收、逐子任务处置及授权来源和原意的结构；不判断外部成果是否已经交付。
-    observedDigest: 3a08b1771fb30ff5b85ced49a316d505b923245121fbb32d4e052cf12bcb43a3
+    observedDigest: c14b5e3ffea96d7a422ad1932d7068dc8aecdd3b40462e6c09b16f39dc559cbd
   - id: parent-coordination-panel
     title: 父子成果与完成依据展示
     kind: code
@@ -2679,7 +2698,7 @@ sources:
     kind: code
     path: services/buildr-web/src/features/task/hooks/useTaskActions.ts
     summary: 完成前重读协调结果，提交记录版本与明确授权；冲突后清除旧确认并刷新当前成果。
-    observedDigest: 77d5dd43b7c44b978284cf74089d8ce1d2a52e371d6ec9c1f0ffab1d05f66b7a
+    observedDigest: 2920532c5c373f4810f713d265f27b7ca17be8f9cbcd0a0ff0661a8b3d6ab9ad
   - id: parent-completion-ui-tests
     title: 页面完成输入检查
     kind: code
@@ -2739,7 +2758,7 @@ sources:
     summary: 组装隔离服务、浏览器与测试现场，选择旅程并清理。
     kind: code
     path: services/buildr/test/browser-smoke/buildr-web-browser.test.ts
-    observedDigest: 6ea125e981ccd3b6e23e23c9a8dcef3f301da7ecb83f627a64d82cac2599810d
+    observedDigest: ba32e34e6e9bf5e16ab616869c18f8639090ca64040fc9a187ba330de30322fa
   - id: verification-ref-73fbe375
     title: 工作台真实交互旅程
     summary: 核对答复冲突后的重读保存、资料阅读和偏好恢复。
@@ -2793,7 +2812,8 @@ sources:
     title: 独立任务材料应用
     kind: code
     path: services/buildr/src/modules/task/materials/application/task-materials-application.ts
-    summary: 保存唯一说明及多角色逻辑引用，按独立版本维护本机清单和正文，不改任务或专业状态。
+    summary: 维护过程引用及正文版本，普通更新保留旧说明来源；显式导入或释放旧关联，不用文件兜底记录说明。
+    observedDigest: 0cf8c8f1faeba03c4d3431e1fce03636529d040c087e3519730e42d622660534
   - id: task-project-document-reader
     title: 任务项目正文与实际文件根
     kind: code
@@ -2804,21 +2824,78 @@ sources:
     kind: code
     path: services/buildr-web/src/features/task/hooks/useTaskChangedFileCount.ts
     summary: 打开详情时只读文件状态计数，按工作空间与任务隔离缓存，不等待完整提交与差异读取。
+  - id: task-brief-migration
+    title: 旧任务说明显式导入
+    kind: code
+    path: services/buildr/src/modules/task/materials/application/task-brief-migration.ts
+    summary: 核对版本并导入缺失说明；已有正文时只释放旧关联，保留原文件与当前内容，部分失败可继续接续。
+    observedDigest: 5030f3ce03f47926843cf8c51f97088d6c544efdb8bd73d3c236f7fe8fd91464
+  - id: task-brief-link-migration
+    title: 旧说明文档链接转换
+    kind: code
+    path: services/buildr/src/modules/task/materials/application/task-brief-links.ts
+    summary: 根据实际旧来源转换明确项目或同任务材料引用，保留代码与未知链接并报告局部诊断。
+    observedDigest: 74ee083a7720e81b08819a2c2bfe9c6894b5a8d44e7469b002aca74eac0117ac
+  - id: task-stable-brief-reference
+    title: 稳定任务说明引用
+    kind: code
+    path: services/buildr-web/src/lib/taskBriefLinks.ts
+    summary: 校验 @task 的合法任务身份并限定当前工作空间，拒绝把任务引用送入文件读取。
+    observedDigest: f797e07a4eb520bd81594afb1d4e170e82afc8ceba2974d23b0c54f4741017cd
+  - id: task-reading-history
+    title: 任务会话阅读历史
+    kind: code
+    path: services/buildr-web/src/features/task/task-reading-history.ts
+    summary: 按工作空间、任务与浏览器历史条目保留有限快照，普通和组合任务均恢复各自原阅读选择。
+    observedDigest: 2620756c91734c4a84298f7b5b4de0a5bb0b1af0b44750b3d8703b18e5db6066
+  - id: task-reading-state
+    title: 任务节点与滚动接续
+    kind: code
+    path: services/buildr-web/src/features/task/hooks/useTaskReadingState.ts
+    summary: 按历史条目保存节点、普通/组合方案选择和滚动；@task明确进入正文，阅读状态不修改任务记录。
+    observedDigest: 7d7b8313d8b3588a23d9a53a7dac7a2c39b7b256c7718a676a1dad8714f212d9
+  - id: task-logical-project-references
+    title: 逻辑项目文档引用
+    kind: code
+    path: services/buildr-web/src/lib/workspaceMarkdownReferences.ts
+    summary: 核对已登记项目与页面范围，解析逻辑项目引用或原有工作空间文件路径，附接来源按项目身份读取。
+    observedDigest: 3f3377474f0a190df2be816ab36a874c3f6229bff77b2c04737d1b4d1a829f7a
+  - id: task-brief-storage-migration
+    title: 任务正文数据库升级
+    kind: code
+    path: services/buildr/src/infrastructure/sqlite/migrations/0035_add_task_brief.sql
+    summary: 连续追加说明与摘要列，保留旧记录和历史，旧文件正文由独立产品动作显式导入。
+    observedDigest: 74de999b3fe36934b946bac84a434b3e160135886eae226c5515d094cf4ad3c8
+  - id: task-workbench-summary-wiring
+    title: 工作台任务摘要装配
+    kind: code
+    path: services/buildr/src/modules/workbench/module.ts
+    summary: 工作台和偏好通过单任务或列表摘要读取，关注项不隐性加载说明正文。
+    observedDigest: 16814460afb5f325c3693b8aeaa8ccdca56f3b648ba77cb237617430e147390d
+  - id: task-record-brief-reader
+    title: 任务记录说明与成果阅读
+    kind: code
+    path: services/buildr-web/src/features/task/components/TaskReadingPane.tsx
+    summary: 直接读取记录 brief 并复用正文和原文切换，空说明明确显示缺失，不等待材料或变更读取。
+    observedDigest: bd8a62a99b16b3b25f0632e90c621cb4a995449efdbad52c7790f5e0c5e36d15
   - id: task-material-reader
     title: 正式节点材料正文阅读
     kind: code
     path: services/buildr-web/src/features/task/components/TaskMaterialReader.tsx
-    summary: 复用Markdown容器直接呈现正文及局部缺失，说明不增加重复标题和来源摘要面板，材料身份和正文版本仍可核对。
+    summary: 复用Markdown容器呈现过程文件正文及局部缺失，材料身份和实际正文版本可核对。
+    observedDigest: cdf8f18416db1060966c6344456c2dbfa398fb5a6e064a5ccffc8cb9f1dc55f4
   - id: task-materials-browser-journey
     title: 独立任务材料实际页面回归
     kind: code
     path: services/buildr-web/test/browser/task-materials-journey.ts
     summary: 从任务列表直接阅读无变更正文，核对刷新、专业结果、缺失和归档后的稳定任务引用。
+    observedDigest: 0700bbffe2f8ef597d1473a5b1dec09defd5613a9e3ea1bda6e40854aa21bcc0
   - id: task-node-content
     title: 任务内容目录
     kind: code
     path: services/buildr-web/src/features/task/components/TaskNodeContent.tsx
-    summary: 按任务材料角色及专业记录组织节点目录；直接读独立说明，旧变更说明仅作标注来源兼容阅读。
+    summary: 按过程材料及专业记录组织节点；说明直接读记录 brief，变更说明保留明确来源的辅助入口。
+    observedDigest: 5737d823d2561ff13a82f03cd6511b3ce1d889a3b24e1d1b8a544f6a4bbcd90e
   - id: prototype-tab
     title: 原型画面与说明
     kind: code
@@ -2901,6 +2978,7 @@ sources:
     kind: code
     path: services/buildr/src/modules/task/interfaces/http/task-http-schema.ts
     summary: 定义任务公开输出的闭合结构，包括任务提交、代码库观察、范围与局部诊断；供共享类型生成与校验。
+    observedDigest: 3894865668d03266463171db507363cd8121bd5f179f16576e90d895e471bd68
   - id: public-json-contracts
     title: 公开 JSON 身份登记
     kind: code

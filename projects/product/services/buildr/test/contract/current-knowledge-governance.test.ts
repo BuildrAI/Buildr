@@ -40,7 +40,7 @@ test('默认 providers 与 bindings 可解析，当前认知与收尾只按实�
   assert.equal(packageManifest.capabilityContracts.some((item: any) => item.id === 'buildr.task-development'), false);
   assert.equal(packageManifest.initialSkillBindings.some((item: any) => item.capability === 'buildr.task-development'), false);
   assert.deepEqual(packagedFinish.requires, [
-    { capability: 'buildr.task-record', version: 3, mode: 'optional' },
+    { capability: 'buildr.task-record', version: 4, mode: 'optional' },
     { capability: 'buildr.git-worktree-provider', version: 1, mode: 'optional' },
     { capability: 'buildr.git-operations', version: 1, mode: 'optional' },
   ]);
@@ -84,7 +84,7 @@ test('OpenSpec capability dependencies 由 Component 与 fragments 原子维护'
   for (const id of ['openspec-explore', 'openspec-propose', 'openspec-update-change', 'openspec-apply-change', 'openspec-sync-specs', 'openspec-archive-change']) assert.equal(skills.get(id).requires, undefined, id);
   const component: any = YAML.parse(read(path.join(WORKSPACE_TARGET, 'components/buildr/openspec/component.yml')));
   const dependencies: any = component.contributions.skillDependencies;
-  const has: any = (skill: any, capability: any, mode: any) => dependencies.some((item: any) => item.skill === skill && item.capability === capability && item.mode === mode && (capability !== 'buildr.current-knowledge-maintenance' || item.version === 3));
+  const has: any = (skill: any, capability: any, mode: any) => dependencies.some((item: any) => item.skill === skill && item.capability === capability && item.mode === mode && (capability !== 'buildr.current-knowledge-maintenance' || item.version === 3) && (capability !== 'buildr.task-record' || item.version === 4));
   assert.equal(has('openspec-explore', 'buildr.terminology-governance', 'optional'), true);
   for (const id of ['openspec-propose', 'openspec-apply-change']) for (const capability of ['buildr.task-record', 'buildr.current-knowledge-maintenance']) assert.equal(has(id, capability, 'required'), true, `${id}:${capability}`);
   assert.equal(dependencies.some((item: any) => item.capability === 'buildr.task-environment'), false);

@@ -46,7 +46,7 @@ function jsonColumn<T>(row: SqlRow, field: string, fallback: T): T {
   catch { throw taskRecordError('task_record_database_invalid', `Task数据库JSON字段无效：${field}。`, 500, { field }); }
 }
 
-function mapTask(row: SqlRow): Task {
+function mapTask(row: SqlRow, summaryOnly = false): Task {
   const status = statusColumn(row);
   const summary = nullableStringColumn(row, 'result_summary');
   const parentCompletion = jsonColumn<ParentCompletion | undefined>(row, 'parent_completion_json', undefined);
@@ -59,15 +59,16 @@ function mapTask(row: SqlRow): Task {
     taskId: stringColumn(row, 'task_id'),
     title: stringColumn(row, 'title'),
     intent: stringColumn(row, 'intent'),
+    brief: summaryOnly ? null : nullableStringColumn(row, 'brief'),
     status,
     parentTaskId: nullableStringColumn(row, 'parent_task_id'),
     isParent: numberColumn(row, 'is_parent') === 1,
     result: status === 'todo' || status === 'active' ? null : { summary: summary ?? '', ...(parentCompletion ? { parentCompletion } : {}) },
-    resultHistory: jsonColumn<TaskResultHistory[]>(row, 'result_history_json', []),
+    resultHistory: summaryOnly ? [] : jsonColumn<TaskResultHistory[]>(row, 'result_history_json', []),
     retrospective,
     createdAt: stringColumn(row, 'created_at'),
     updatedAt: stringColumn(row, 'updated_at'),
-  });
+  }, { brief: nullableStringColumn(row, 'brief_digest'), history: stringColumn(row, 'result_history_digest') });
 }
 
 function query(input: TaskTableQuery = {}): { sql: string; parameters: SQLInputValue[] } {
@@ -78,8 +79,14 @@ function query(input: TaskTableQuery = {}): { sql: string; parameters: SQLInputV
   return { sql: 'SELECT * FROM tasks ORDER BY task_id', parameters: [] };
 }
 
+const SUMMARY_COLUMNS = 'task_id, title, intent, status, result_summary, created_at, updated_at, parent_task_id, is_parent, parent_completion_json, retrospective_state, retrospective_document_digest, brief_digest, result_history_digest';
+
 export function createTaskRepository() {
   return Object.freeze({
+    exists(context: SqliteContext, taskId: string): boolean {
+      const db = database(context);
+      return Boolean(db?.prepare('SELECT 1 FROM tasks WHERE task_id = ?').get(taskId));
+    },
     read(context: SqliteContext, taskId: string): Task | null {
       const db = database(context);
       if (!db) return null;
@@ -90,7 +97,13 @@ export function createTaskRepository() {
       const db = database(context);
       if (!db) return [];
       const statement = query(input);
-      return db.prepare(statement.sql).all(...statement.parameters).map(mapTask);
+      return db.prepare(statement.sql).all(...statement.parameters).map(row => mapTask(row));
+    },
+    readSummaries(context: SqliteContext, input: TaskTableQuery = {}): Task[] {
+      const db = database(context);
+      if (!db) return [];
+      const statement = query(input);
+      return db.prepare(statement.sql.replace('SELECT *', `SELECT ${SUMMARY_COLUMNS}`)).all(...statement.parameters).map(row => mapTask(row, true));
     },
     titles(context: SqliteContext, taskIds: string[]): Map<string, string> {
       const db = database(context), result = new Map<string, string>();
@@ -144,13 +157,13 @@ export function createTaskRepository() {
     insert(context: SqliteContext, task: Task): void {
       const db = database(context);
       if (!db) throw taskRecordError('task_record_database_invalid', 'Task写入缺少事务连接。', 500);
-      db.prepare(`INSERT INTO tasks(task_id, title, intent, status, result_summary, created_at, updated_at, parent_task_id, is_parent, parent_completion_json, result_history_json, retrospective_state, retrospective_document_digest)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(task.taskId, task.title, task.intent, task.status, task.result?.summary ?? null, task.createdAt, task.updatedAt, task.parentTaskId, Number(task.isParent), task.result?.parentCompletion ? JSON.stringify(task.result.parentCompletion) : null, JSON.stringify(task.resultHistory), task.retrospective?.state ?? null, task.retrospective?.documentDigest ?? null);
+      db.prepare(`INSERT INTO tasks(task_id, title, intent, brief, brief_digest, status, result_summary, created_at, updated_at, parent_task_id, is_parent, parent_completion_json, result_history_json, result_history_digest, retrospective_state, retrospective_document_digest)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(task.taskId, task.title, task.intent, task.brief, task.briefDigest, task.status, task.result?.summary ?? null, task.createdAt, task.updatedAt, task.parentTaskId, Number(task.isParent), task.result?.parentCompletion ? JSON.stringify(task.result.parentCompletion) : null, JSON.stringify(task.resultHistory), task.resultHistoryDigest, task.retrospective?.state ?? null, task.retrospective?.documentDigest ?? null);
     },
     update(context: SqliteContext, task: Task): void {
       const db = database(context);
       if (!db) throw taskRecordError('task_record_database_invalid', 'Task写入缺少事务连接。', 500);
-      db.prepare(`UPDATE tasks SET title = ?, intent = ?, status = ?, result_summary = ?, created_at = ?, updated_at = ?, parent_task_id = ?, is_parent = MAX(is_parent, ?), parent_completion_json = ?, result_history_json = ?, retrospective_state = ?, retrospective_document_digest = ? WHERE task_id = ?`).run(task.title, task.intent, task.status, task.result?.summary ?? null, task.createdAt, task.updatedAt, task.parentTaskId, Number(task.isParent), task.result?.parentCompletion ? JSON.stringify(task.result.parentCompletion) : null, JSON.stringify(task.resultHistory), task.retrospective?.state ?? null, task.retrospective?.documentDigest ?? null, task.taskId);
+      db.prepare(`UPDATE tasks SET title = ?, intent = ?, brief = ?, brief_digest = ?, status = ?, result_summary = ?, created_at = ?, updated_at = ?, parent_task_id = ?, is_parent = MAX(is_parent, ?), parent_completion_json = ?, result_history_json = ?, result_history_digest = ?, retrospective_state = ?, retrospective_document_digest = ? WHERE task_id = ?`).run(task.title, task.intent, task.brief, task.briefDigest, task.status, task.result?.summary ?? null, task.createdAt, task.updatedAt, task.parentTaskId, Number(task.isParent), task.result?.parentCompletion ? JSON.stringify(task.result.parentCompletion) : null, JSON.stringify(task.resultHistory), task.resultHistoryDigest, task.retrospective?.state ?? null, task.retrospective?.documentDigest ?? null, task.taskId);
     },
     markParent(context: SqliteContext, taskId: string): void {
       const db = database(context);

@@ -49,11 +49,17 @@ capabilityContracts:
     path: resources/workspace/skills/contracts/buildr/git-worktree-provider/v1.md
     target: skills/contracts/buildr/git-worktree-provider/v1.md
   - id: buildr.task-record
-    version: 3
-    description: 管理canonical Workspace中Task最小顶层事实及本机复盘文档摘要与决定状态。
-    path: resources/workspace/skills/contracts/buildr/task-record/v3.md
-    target: skills/contracts/buildr/task-record/v3.md
+    version: 4
+    description: 管理主工作空间中的任务说明、顶层事实及本机复盘文档摘要与决定状态。
+    path: resources/workspace/skills/contracts/buildr/task-record/v4.md
+    target: skills/contracts/buildr/task-record/v4.md
     replaces:
+      - id: buildr.task-record
+        version: 3
+        target: skills/contracts/buildr/task-record/v3.md
+        integrity: sha256-40754bab6ee2e2819f8bd72b4f36760491b73773ba93d94ef63bd3ab1e81ea33
+        provider: task-manager
+        description: 管理canonical Workspace中Task最小顶层事实及本机复盘文档摘要与决定状态。
       - id: buildr.task-record
         version: 2
         target: skills/contracts/buildr/task-record/v2.md
@@ -164,7 +170,7 @@ initialSkillBindings:
     version: 1
     provider: task-worktree
   - capability: buildr.task-record
-    version: 3
+    version: 4
     provider: task-manager
   - capability: buildr.task-review
     version: 2
@@ -191,7 +197,7 @@ builtins:
       required: false
       requires:
         - capability: buildr.task-record
-          version: 3
+          version: 4
           mode: optional
         - capability: buildr.git-operations
           version: 1
@@ -229,7 +235,7 @@ builtins:
       required: false
       provides:
         - capability: buildr.task-record
-          version: 3
+          version: 4
     - id: task-review
       path: resources/workspace/skills/buildr/task-review
       target: skills/buildr/task-review
@@ -274,7 +280,7 @@ builtins:
       required: false
       requires:
         - capability: buildr.task-record
-          version: 3
+          version: 4
           mode: required
       replaces:
         id: task-asset-review
@@ -316,7 +322,7 @@ builtins:
           version: 1
       requires:
         - capability: buildr.task-record
-          version: 3
+          version: 4
           mode: optional
         - capability: buildr.git-worktree-provider
           version: 1
@@ -442,7 +448,7 @@ workspaceFiles:
   - resources/workspace/gitignore => .gitignore copy
   - resources/workspace/skills/contracts/buildr/git-operations/v1.md => skills/contracts/buildr/git-operations/v1.md copy
   - resources/workspace/skills/contracts/buildr/git-worktree-provider/v1.md => skills/contracts/buildr/git-worktree-provider/v1.md copy
-  - resources/workspace/skills/contracts/buildr/task-record/v3.md => skills/contracts/buildr/task-record/v3.md copy
+  - resources/workspace/skills/contracts/buildr/task-record/v4.md => skills/contracts/buildr/task-record/v4.md copy
   - resources/workspace/skills/contracts/buildr/task-review/v2.md => skills/contracts/buildr/task-review/v2.md copy
   - resources/workspace/skills/contracts/buildr/task-verification/v4.md => skills/contracts/buildr/task-verification/v4.md copy
   - resources/workspace/skills/contracts/buildr/task-finish/v1.md => skills/contracts/buildr/task-finish/v1.md copy

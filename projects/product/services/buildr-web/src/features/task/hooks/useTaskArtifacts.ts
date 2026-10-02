@@ -171,7 +171,7 @@ export function useTaskArtifacts(taskId: string, data: TaskDetailResponse | null
         projectRegistryRef.current = registry.projects || [];
       }
       if (taskIdRef.current !== currentTaskId || materialKeyRef.current !== key) return;
-      const reference = resolveTaskDocumentReference(linkHref, data.record.scope, projectRegistryRef.current);
+      const reference = resolveTaskDocumentReference(linkHref, { ...data.record.scope, changes: data.record.changes }, projectRegistryRef.current);
       if (!reference) {
         setDocumentError(`无法打开“${linkHref}”：仅支持当前任务范围内已登记项目的 Markdown 文档。`);
         return;

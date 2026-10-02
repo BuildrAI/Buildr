@@ -94,13 +94,13 @@ type TaskModuleRequires = {
 type SharedTaskComposition = DynamicRuntime;
 
 const TASK_QUERY_METHODS = Object.freeze([
-  'queryTasks', 'inspectTask', 'inspectTaskView', 'inspectTaskRetrospectiveDocument',
+  'queryTasks', 'inspectTask', 'inspectTaskView', 'inspectTaskSummaryView', 'inspectTaskRetrospectiveDocument',
   'assertCanonicalTaskWorkspace',
   'readTask', 'readTaskTitles', 'prepareTask', 'readTaskView', 'readParentTaskContext',
 ]);
 
 const TASK_COMMAND_METHODS = Object.freeze([
-  'createTask', 'updateTask', 'activateTask', 'completeTask', 'endTask',
+  'createTask', 'updateTask', 'importTaskBrief', 'activateTask', 'completeTask', 'endTask',
   'abandonTask',
 ]);
 
@@ -256,7 +256,7 @@ export function createTaskCliContributions(application: TaskCommandRuntime | nul
     {
       key: 'task create', surface: 'primary', summary: '创建 active 正式 Task，或以 --status todo 只保存待办意向。',
       help: [
-        'Usage: buildr task create <task-id> --title <text> --intent <text> [--status <todo|active>] [--parent-task] [--parent <task-id>] [--project <code> ...] [--service <project/service> ...] [--change <project/change> ...] [--target <canonical-workspace>] [--json]',
+        'Usage: buildr task create <task-id> --title <text> --intent <text> [--brief-file <markdown-file>] [--status <todo|active>] [--parent-task] [--parent <task-id>] [--project <code> ...] [--service <project/service> ...] [--change <project/change> ...] [--target <canonical-workspace>] [--json]',
         '',
         '省略 --status 时创建active；--status todo只写SQLite，拒绝Change，不执行Git或创建专业记录。',
         '任务复盘文档由Agent按用户要求生成到固定本机路径，Task创建不自动生成或登记复盘。',
@@ -275,7 +275,7 @@ export function createTaskCliContributions(application: TaskCommandRuntime | nul
     {
       key: 'task update', surface: 'primary', summary: '按当前摘要修改任务事实；支持带原因的终态事实更正。',
       help: [
-        'Usage: buildr task update <task-id> --expected-record <recordDigest> [--status todo|active|completed|abandoned] [--reason <text>] [--summary <text>] [--title <text>] [--intent <text>] [--parent-task] [--parent <task-id> | --clear-parent] [--retrospective-state <pending-decision|decided> --retrospective-document-digest <sha256> | --clear-retrospective] [--add-project <code> ...] [--remove-project <code> ...] [--add-service <project/service> ...] [--remove-service <project/service> ...] [--add-change <project/change> ...] [--remove-change <project/change> ...] [--target <canonical-workspace>] [--json]',
+        'Usage: buildr task update <task-id> --expected-record <recordDigest> [--status todo|active|completed|abandoned] [--reason <text>] [--summary <text>] [--title <text>] [--intent <text>] [--brief-file <markdown-file> | --clear-brief] [--parent-task] [--parent <task-id> | --clear-parent] [--retrospective-state <pending-decision|decided> --retrospective-document-digest <sha256> | --clear-retrospective] [--add-project <code> ...] [--remove-project <code> ...] [--add-service <project/service> ...] [--remove-service <project/service> ...] [--add-change <project/change> ...] [--remove-change <project/change> ...] [--target <canonical-workspace>] [--json]',
         '',
         '至少提供一个明确 setter/add/remove；同一引用不能同时 add/remove。四种状态均可显式更正；终态事实更正必须提供--reason和当前--expected-record，todo拒绝Change。',
         '--parent 与 --clear-parent 互斥；拒绝不存在或 terminal Parent、自引用和任何祖先循环。Child 列表是只读派生结果。',
@@ -351,7 +351,7 @@ function createTaskModule(requires: TaskModuleRequires) {
   });
   const queryRuntime = registerTaskQueryApplication(privateComposition as unknown as TaskQueryApplicationRuntime);
   registerTaskRetrospectiveDocument(queryRuntime);
-  const commandRuntime = registerTaskCommandApplication(queryRuntime as unknown as TaskQueryApplicationRuntime & TaskCommandApplicationRuntime);
+  const commandRuntime = registerTaskCommandApplication(queryRuntime as unknown as typeof queryRuntime & TaskCommandApplicationRuntime);
   const workContext = createTaskWorkContextApplication(commandRuntime);
   const query = pick(queryRuntime, TASK_QUERY_METHODS);
   const command = pick(commandRuntime, TASK_COMMAND_METHODS);

@@ -13,10 +13,10 @@ export const WORKBENCH_MODULE = Object.freeze({
     const workspace = requires[WORKSPACE_QUERY];
     const store = requires[WORKSPACE_TASK_SUPPORT];
     const dailyProgress = requires[PROJECT_DAILY_PROGRESS_APPLICATION];
-    const tasks = Object.freeze({ inspect: taskQuery.inspectTaskView, list: taskQuery.queryTasks });
+    const tasks = Object.freeze({ inspect: taskQuery.inspectTaskSummaryView, list: taskQuery.queryTasks });
     const preferences = createPreferencesApplication({
       store: { runWorkspaceSqliteRead: store.runWorkspaceSqliteRead, runWorkspaceTransaction: store.runWorkspaceTransaction },
-      tasks: { inspect: taskQuery.readTask, titles: taskQuery.readTaskTitles },
+      tasks: { inspect: taskQuery.inspectTaskSummaryView, titles: taskQuery.readTaskTitles },
       workspace: { get: workspace.getWorkspace, projects: workspace.readProjectRegistryRecord },
     });
     const application = Object.freeze({ ...preferences, ...createWorkbenchApplication({

@@ -6,7 +6,7 @@ const item = path => ({ path, exists: true, content: '正文' });
 const source = { kind: 'ready', key: 'demo/change', provenance: 'task-worktree-candidate', change: { name: '说明', brief: item('brief.md'), artifacts: { proposal: item('proposal.md'), design: item('design.md'), tasks: item('tasks.md'), specs: [item('specs/behavior/spec.md')] } } };
 test('已有材料直接归于其节点并保留工作树来源，缺文件不伪造材料', () => {
  const docs = taskDocuments([source, { kind: 'missing', key: 'broken', message: 'unavailable' }]);
- assert.deepEqual(docs.map(doc => doc.stage), ['requirements','design','design','design','implementation']);
+ assert.deepEqual(docs.map(doc => doc.stage), ['design','design','design','design','implementation']);
  assert.ok(docs.every(doc => doc.provenance === 'task-worktree-candidate'));
  assert.equal(taskDocuments([{ ...source, change: { ...source.change, brief: { path: 'brief.md', exists: false } } }]).filter(doc => doc.stage === 'requirements').length, 0);
 });
@@ -27,9 +27,9 @@ test('四个节点不改变专业阶段，两类审查和验证及确认归到�
 });
 test('同名需求用关联变更区分，单份材料不增加重复名称', () => {
  const docs = taskDocuments([source, {...source, key:'demo/other'}]);
- const briefs = docs.filter(item => item.stage === 'requirements');
- assert.deepEqual(briefs.map(item => taskDocumentLabel(item, briefs)), ['说明 · demo/change','说明 · demo/other']);
- assert.equal(taskDocumentLabel(briefs[0], [briefs[0]]), '说明');
+ const briefs = docs.filter(item => item.purpose === 'change-brief');
+ assert.deepEqual(briefs.map(item => taskDocumentLabel(item, briefs)), ['变更说明 · demo/change','变更说明 · demo/other']);
+ assert.equal(taskDocumentLabel(briefs[0], [briefs[0]]), '变更说明 · demo/change');
 });
 test('审查历史保持追加顺序，验证只读取当前报告，不把意见当作通过', () => {
  const first={ result:{ subjectIdentity:'v1' }, resultDigest:'one', observedAt:'1' };

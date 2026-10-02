@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { renderMarkdown, type MarkdownRenderOptions } from '../markdown';
+import { resolveTaskBriefReference, taskBriefHref } from '../lib/taskBriefLinks';
 
 type Props = {
   markdown: string;
@@ -31,13 +32,28 @@ export function MarkdownHost({ markdown, className, options, fragment, renderVer
     if (className) {
       for (const token of className.split(/\s+/).filter(Boolean)) view.classList.add(token);
     }
-    const onRelativeLinkClick = currentOptions.onRelativeLinkClick;
     for (const link of view.querySelectorAll<HTMLAnchorElement>('a.markdown-relative-link')) {
+        const reference = link.getAttribute('data-markdown-href') || '';
+        if (reference.trim().startsWith('@task/')) {
+          const taskId = resolveTaskBriefReference(reference);
+          // The workspace shell handles this real resource link, preserving the
+          // original reading pane. Never send a task reference to a file reader.
+          link.classList.remove('markdown-relative-link');
+          if (taskId) {
+            link.classList.add('markdown-task-link');
+            link.setAttribute('href', taskBriefHref(taskId, window.location.pathname));
+            link.setAttribute('title', `任务说明：${taskId}`);
+          } else {
+            link.removeAttribute('href');
+            link.setAttribute('title', '任务说明引用无效');
+          }
+          continue;
+        }
         link.addEventListener('click', (event) => {
           event.preventDefault();
           const href = link.getAttribute('data-markdown-href') || link.getAttribute('href') || '';
           if (href.startsWith('#') && scrollMarkdownFragment(host.closest<HTMLElement>('.knowledge-artifact, .knowledge-documents, .markdown-reader') || view, href)) return;
-          onRelativeLinkClick?.(href, event);
+          optionsRef.current?.onRelativeLinkClick?.(href, event);
         });
     }
     host.replaceChildren(view);

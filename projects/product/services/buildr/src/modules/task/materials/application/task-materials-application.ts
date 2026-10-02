@@ -4,7 +4,7 @@ import path from 'node:path';
 import type { TaskMaterialDocument, TaskMaterialReference, TaskMaterialsManifest, TaskMaterialsResponse, TaskMaterialsWriteResponse, TaskMaterialsRecordRequest, TaskMaterialsWriteRequest } from '../../../../../build/generated/task-dto.ts';
 import { withExclusiveFileLock } from '../../../../infrastructure/filesystem/exclusive-file-lock.ts';
 import { taskActionId } from '../../application/task-validation.ts';
-import { TASK_MATERIALS_SCHEMAS, validateMaterials } from './task-materials-contracts.ts';
+import { LEGACY_TASK_MATERIALS_SCHEMA, TASK_MATERIALS_SCHEMAS, validateMaterials } from './task-materials-contracts.ts';
 import { assertPlainDirectory, assertPlainPath, createTaskProjectDocumentReader, documentDigest, documentError, markdownPath, MAX_TASK_DOCUMENT_BYTES, readBoundedText, type TaskDocumentQuery, type TaskDocumentProjectQuery, type TaskDocumentWorktreeQuery } from './task-project-document-reader.ts';
 
 type Dependencies = {
@@ -13,7 +13,13 @@ type Dependencies = {
   worktreeQuery: TaskDocumentWorktreeQuery;
 };
 const MAX_MANIFEST_BYTES = 128 * 1024;
-const emptyManifest = (): TaskMaterialsManifest => ({ schemaVersion: 'buildr.task-materials/v1', documents: [] });
+export type LegacyTaskBriefReference = Omit<TaskMaterialReference, 'role'> & { role: 'brief' };
+export type LegacyTaskBriefDocument = Omit<TaskMaterialDocument, 'role'> & { role: 'brief' };
+type StoredReference = TaskMaterialReference | LegacyTaskBriefReference;
+type StoredManifest = { schemaVersion: 'buildr.task-materials/v1' | 'buildr.task-materials/v2'; documents: StoredReference[] };
+const isCurrentReference = (reference: StoredReference): reference is TaskMaterialReference => reference.role !== 'brief';
+const currentManifest = (materials: StoredManifest): TaskMaterialsManifest => ({ schemaVersion: 'buildr.task-materials/v2', documents: materials.documents.filter(isCurrentReference) });
+const emptyManifest = (): TaskMaterialsManifest => ({ schemaVersion: 'buildr.task-materials/v2', documents: [] });
 const diagnostic = (cause: unknown) => ({ code: cause && typeof cause === 'object' && 'code' in cause ? String(cause.code) : 'task_materials_unreadable', message: cause instanceof Error ? cause.message : '任务材料当前不可读取。' });
 
 export function createTaskMaterialsApplication({ taskQuery, projectQuery, worktreeQuery }: Dependencies) {
@@ -28,7 +34,7 @@ export function createTaskMaterialsApplication({ taskQuery, projectQuery, worktr
     return { root, relative, directory: assertPlainPath(root, relative) };
   }
   function references(documents: TaskMaterialReference[]): void {
-    if (documents.filter(item => item.role === 'brief').length > 1 || new Set(documents.map(item => item.id)).size !== documents.length) throw documentError('task_materials_references_invalid', '材料编码必须唯一且至多关联一份任务说明。');
+    if (new Set(documents.map(item => item.id)).size !== documents.length) throw documentError('task_materials_references_invalid', '材料编码必须唯一。');
   }
   function manifest(root: string, relative: string) {
     const observed = readBoundedText(root, `${relative}/materials.json`, MAX_MANIFEST_BYTES);
@@ -36,14 +42,15 @@ export function createTaskMaterialsApplication({ taskQuery, projectQuery, worktr
     let parsed: unknown;
     try { parsed = JSON.parse(observed.content!); } catch { throw documentError('task_materials_manifest_invalid', '任务材料清单不是合法 JSON。', 409); }
     // Use the closed record schema to validate the manifest without accepting extra fields.
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) || Object.keys(parsed).sort().join(',') !== 'documents,schemaVersion' || !('schemaVersion' in parsed) || parsed.schemaVersion !== 'buildr.task-materials/v1' || !('documents' in parsed)) throw documentError('task_materials_manifest_invalid', '任务材料清单不符合契约。', 409);
-    const materials = parsed as TaskMaterialsManifest;
-    validateMaterials(TASK_MATERIALS_SCHEMAS.recordRequest, { expectedCurrent: observed.actualDigest, documents: materials.documents });
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed) || Object.keys(parsed).sort().join(',') !== 'documents,schemaVersion' || !('schemaVersion' in parsed) || !['buildr.task-materials/v1', 'buildr.task-materials/v2'].includes(String(parsed.schemaVersion)) || !('documents' in parsed)) throw documentError('task_materials_manifest_invalid', '任务材料清单不符合契约。', 409);
+    const materials = parsed as StoredManifest;
+    if (materials.schemaVersion === 'buildr.task-materials/v1') validateMaterials(LEGACY_TASK_MATERIALS_SCHEMA, materials);
+    else validateMaterials(TASK_MATERIALS_SCHEMAS.recordRequest, { expectedCurrent: observed.actualDigest, documents: materials.documents });
     // Invalid legacy references remain individually diagnosable and removable.
     if (materials.documents.filter(item => item.role === 'brief').length > 1 || new Set(materials.documents.map(item => item.id)).size !== materials.documents.length) throw documentError('task_materials_manifest_invalid', '材料清单身份或说明数量不合法。', 409);
     return { materials, materialsDigest: observed.actualDigest! };
   }
-  function readReference(targetRoot: string, taskId: string, root: string, relative: string, reference: TaskMaterialReference): TaskMaterialDocument {
+  function readReference<R extends StoredReference>(targetRoot: string, taskId: string, root: string, relative: string, reference: R): Omit<TaskMaterialDocument, 'role'> & { role: R['role'] } {
     try {
       const read = reference.source.kind === 'task'
         ? { ...readBoundedText(root, `${relative}/${markdownPath(reference.source.path)}`), provenance: 'task-local' as const }
@@ -54,7 +61,9 @@ export function createTaskMaterialsApplication({ taskQuery, projectQuery, worktr
   function inspectTaskMaterials(targetRoot: string, taskId: string): TaskMaterialsResponse {
     const current = context(targetRoot, taskId);
     const observed = manifest(current.root, current.relative);
-    return { schemaVersion: 'buildr.task-materials-result/v1', taskId, ...observed, documents: observed.materials.documents.map(reference => readReference(targetRoot, taskId, current.root, current.relative, reference)), diagnostics: [] };
+    const materials = currentManifest(observed.materials);
+    const legacy = observed.materials.documents.some(reference => reference.role === 'brief');
+    return { schemaVersion: 'buildr.task-materials-result/v2', taskId, materials, materialsDigest: observed.materialsDigest, documents: materials.documents.map(reference => readReference(targetRoot, taskId, current.root, current.relative, reference)), diagnostics: legacy ? [{ code: 'task_materials_legacy_brief', message: '旧任务说明文件关联尚待显式迁移或释放；任务说明仅从 Task Record.brief 读取。' }] : [] };
   }
   function ensureDirectory(root: string, relative: string): void {
     let directory = root;
@@ -100,6 +109,7 @@ export function createTaskMaterialsApplication({ taskQuery, projectQuery, worktr
     const current = context(targetRoot, taskId);
     function validateNewReferences(observed: ReturnType<typeof manifest>): void {
       if (input.expectedCurrent !== observed.materialsDigest) throw documentError('task_materials_conflict', '任务材料关联已变化，请重新读取后判断。', 409);
+      if (observed.materials.documents.some(previous => previous.role === 'brief' && input.documents.some(reference => reference.id === previous.id))) throw documentError('task_materials_legacy_id_conflict', '材料编码仍由旧任务说明关联使用，请先显式迁移或释放该关联。', 409);
       for (const reference of input.documents) {
         if (observed.materials.documents.some(previous => previous.source.kind === reference.source.kind && previous.source.path === reference.source.path && (previous.source.kind !== 'project' || (reference.source.kind === 'project' && previous.source.project === reference.source.project)))) continue;
         // Match the reader's one project-root alias expansion before guarding
@@ -111,13 +121,23 @@ export function createTaskMaterialsApplication({ taskQuery, projectQuery, worktr
         if (!document.exists || document.diagnostic) throw documentError(document.diagnostic?.code || 'task_materials_document_missing', document.diagnostic?.message || '新材料引用必须可读取。', 409);
       }
     }
-    const bytes = Buffer.from(`${JSON.stringify({ schemaVersion: 'buildr.task-materials/v1', documents: input.documents }, null, 2)}\n`);
-    if (bytes.length > MAX_MANIFEST_BYTES) throw documentError('task_materials_manifest_too_large', '材料清单超出大小限制。');
+    function bytesFor(observed: ReturnType<typeof manifest>) {
+      const legacy = observed.materials.documents.filter(reference => reference.role === 'brief');
+      const stored = { schemaVersion: legacy.length ? 'buildr.task-materials/v1' : 'buildr.task-materials/v2', documents: [...legacy, ...input.documents] };
+      // The hidden migration source still counts toward the bounded stored manifest.
+      // Validate the combined object before any lock directory or publication exists.
+      if (legacy.length) validateMaterials(LEGACY_TASK_MATERIALS_SCHEMA, stored);
+      const bytes = Buffer.from(`${JSON.stringify(stored, null, 2)}\n`);
+      if (bytes.length > MAX_MANIFEST_BYTES) throw documentError('task_materials_manifest_too_large', '材料清单超出大小限制。');
+      return bytes;
+    }
     // Preflight is zero-write; only the repeated lock-protected observation authorizes publication.
-    validateNewReferences(manifest(current.root, current.relative));
+    const preflight = manifest(current.root, current.relative);
+    validateNewReferences(preflight); bytesFor(preflight);
     locked(current, () => {
-      validateNewReferences(manifest(current.root, current.relative));
-      publish(current.root, `${current.relative}/materials.json`, bytes);
+      const observed = manifest(current.root, current.relative);
+      validateNewReferences(observed);
+      publish(current.root, `${current.relative}/materials.json`, bytesFor(observed));
     });
     return inspectTaskMaterials(targetRoot, taskId);
   }
@@ -134,9 +154,55 @@ export function createTaskMaterialsApplication({ taskQuery, projectQuery, worktr
       const parent = path.posix.dirname(target);
       ensureDirectory(current.root, parent);
       publish(current.root, target, bytes);
-      return { schemaVersion: 'buildr.task-materials-write-result/v1', taskId, path: relative, actualDigest: documentDigest(bytes) };
+      return { schemaVersion: 'buildr.task-materials-write-result/v2', taskId, path: relative, actualDigest: documentDigest(bytes) };
     });
   }
-  return Object.freeze({ inspectTaskMaterials, recordTaskMaterials, writeTaskMaterialDocument, taskProjectDocument: reader.taskProjectDocument });
+  function inspectLegacyTaskBrief(targetRoot: string, taskId: string) {
+    const current = context(targetRoot, taskId);
+    const observed = manifest(current.root, current.relative);
+    const reference = observed.materials.documents.find((item): item is LegacyTaskBriefReference => item.role === 'brief') || null;
+    return { materialsDigest: observed.materialsDigest, materials: currentManifest(observed.materials), reference, document: reference ? readReference(targetRoot, taskId, current.root, current.relative, reference) : null };
+  }
+  function migrateLegacyTaskBrief<T>(targetRoot: string, taskId: string, input: { expectedMaterialsDigest: string; expectedDocumentDigest: string }, save: (source: ReturnType<typeof inspectLegacyTaskBrief>) => T) {
+    const current = context(targetRoot, taskId);
+    const validate = () => {
+      const source = inspectLegacyTaskBrief(targetRoot, taskId);
+      if (source.materialsDigest !== input.expectedMaterialsDigest) throw documentError('task_materials_conflict', '旧说明关联已变化，请重新观察。', 409);
+      if (!source.reference || !source.document?.exists || source.document.diagnostic || !source.document.content?.trim()) throw documentError(source.document?.diagnostic?.code || 'task_brief_source_missing', source.document?.diagnostic?.message || '没有可读取的独立旧说明，不能使用变更说明替代。', 409);
+      if (source.document.actualDigest !== input.expectedDocumentDigest) throw documentError('task_materials_document_conflict', '旧说明正文已变化，请重新观察。', 409);
+      return source;
+    };
+    validate();
+    return locked(current, () => {
+      const source = validate();
+      const result = save(source);
+      try {
+        // The record write is already established; a later release failure cannot undo it.
+        validate();
+        publish(current.root, `${current.relative}/materials.json`, Buffer.from(`${JSON.stringify(source.materials, null, 2)}\n`));
+        return { status: 'migrated' as const, result, materialsDigest: documentDigest(Buffer.from(`${JSON.stringify(source.materials, null, 2)}\n`)), diagnostic: null };
+      } catch (cause) {
+        return { status: 'partial' as const, result, materialsDigest: source.materialsDigest, diagnostic: diagnostic(cause) };
+      }
+    });
+  }
+  function releaseLegacyTaskBrief<T>(targetRoot: string, taskId: string, expectedMaterialsDigest: string, keepRecord: () => T) {
+    const current = context(targetRoot, taskId);
+    const validate = () => {
+      const observed = manifest(current.root, current.relative);
+      if (observed.materialsDigest !== expectedMaterialsDigest) throw documentError('task_materials_conflict', '旧说明关联已变化，请重新观察。', 409);
+      return currentManifest(observed.materials);
+    };
+    validate();
+    return locked(current, () => {
+      const materials = validate();
+      const result = keepRecord();
+      validate();
+      const bytes = Buffer.from(`${JSON.stringify(materials, null, 2)}\n`);
+      publish(current.root, `${current.relative}/materials.json`, bytes);
+      return { result, materialsDigest: documentDigest(bytes) };
+    });
+  }
+  return Object.freeze({ inspectTaskMaterials, recordTaskMaterials, writeTaskMaterialDocument, inspectLegacyTaskBrief, migrateLegacyTaskBrief, releaseLegacyTaskBrief, taskProjectDocument: reader.taskProjectDocument });
 }
 export type TaskMaterialsApplication = ReturnType<typeof createTaskMaterialsApplication>;

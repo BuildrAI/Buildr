@@ -27,8 +27,8 @@ function fixture(t: { after(action: () => void): void }) {
   const application = createTaskMaterialsApplication({ taskQuery, projectQuery, worktreeQuery: { inspectGitWorktrees: () => worktrees } });
   return { root, record, application, reads: () => reads, local: (relative = '', id = 'one') => path.join(root, '.buildr/local/task-materials', id, relative), setWorktrees: (value: Worktrees) => { worktrees = value; } };
 }
-const taskRef = (id = 'brief', relative = 'brief.md', role: TaskMaterialReference['role'] = 'brief'): TaskMaterialReference => ({ id, role, title: '真实材料', source: { kind: 'task', path: relative } });
-const projectRef = (relative = 'tasks/one/brief.md', id = 'project-brief'): TaskMaterialReference => ({ id, role: 'brief', title: '项目说明', source: { kind: 'project', project: 'app', path: relative } });
+const taskRef = (id = 'brief', relative = 'brief.md', role: TaskMaterialReference['role'] = 'solution'): TaskMaterialReference => ({ id, role, title: '真实材料', source: { kind: 'task', path: relative } });
+const projectRef = (relative = 'tasks/one/brief.md', id = 'project-brief'): TaskMaterialReference => ({ id, role: 'solution', title: '项目说明', source: { kind: 'project', project: 'app', path: relative } });
 function write(file: string, bytes: string | Uint8Array) { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, bytes); }
 const code = (value: string) => (error: unknown) => error instanceof Error && 'code' in error && error.code === value;
 
@@ -63,7 +63,7 @@ test('无材料读取严格零写入，工作空间任务无需项目或 Change�
   const f = fixture(t); f.record.scope.projects = [];
   const before = JSON.stringify(f.record);
   const read = f.application.inspectTaskMaterials(f.root, 'one');
-  assert.deepEqual(read, { schemaVersion: 'buildr.task-materials-result/v1', taskId: 'one', materialsDigest: 'absent', materials: { schemaVersion: 'buildr.task-materials/v1', documents: [] }, documents: [], diagnostics: [] });
+  assert.deepEqual(read, { schemaVersion: 'buildr.task-materials-result/v2', taskId: 'one', materialsDigest: 'absent', materials: { schemaVersion: 'buildr.task-materials/v2', documents: [] }, documents: [], diagnostics: [] });
   assert.equal(fs.existsSync(path.join(f.root, '.buildr')), false);
   assert.equal(JSON.stringify(f.record), before); assert.equal(f.reads(), 1);
   assert.equal(TASK_MATERIALS_MODULE.requires.includes('openspec.query'), false);
@@ -140,12 +140,12 @@ test('失效引用可改安全元数据、保留并新增无关来源或解除�
   assert.throws(() => f.application.recordTaskMaterials(f.root, 'two', { expectedCurrent: 'absent', documents: [taskRef('brief', 'blank.md')] }), code('task_materials_document_empty'));
 });
 
-test('路径、未知字段、重复brief、symlink、非法UTF8和超限文件不得突破边界', t => {
+test('路径、未知字段、重复身份及退役brief、symlink、非法UTF8和超限文件不得突破边界', t => {
   const f = fixture(t);
   for (const relative of ['../two/brief.md', '/tmp/brief.md', 'C:/brief.md', 'a/../brief.md', 'a\\brief.md', 'bad.txt', 'a//b.md']) assert.throws(() => f.application.writeTaskMaterialDocument(f.root, 'one', { path: relative, content: 'unsafe', expectedDocumentDigest: 'absent' }), code('task_document_path_forbidden'));
   assert.equal(fs.existsSync(path.join(f.root, '.buildr')), false);
   assert.throws(() => f.application.recordTaskMaterials(f.root, 'one', { expectedCurrent: 'absent', documents: [], root: f.root } as never), code('task_materials_input_invalid'));
-  assert.throws(() => f.application.recordTaskMaterials(f.root, 'one', { expectedCurrent: 'absent', documents: [taskRef(), taskRef('second')] }), code('task_materials_references_invalid'));
+  assert.throws(() => f.application.recordTaskMaterials(f.root, 'one', { expectedCurrent: 'absent', documents: [taskRef(), taskRef()] }), code('task_materials_references_invalid'));
   assert.throws(() => f.application.writeTaskMaterialDocument(f.root, 'one', { path: 'brief.md', content: '\ud800', expectedDocumentDigest: 'absent' }), code('task_document_encoding_invalid'));
   assert.throws(() => f.application.writeTaskMaterialDocument(f.root, 'one', { path: 'brief.md', content: '中'.repeat(MAX_TASK_DOCUMENT_BYTES / 2), expectedDocumentDigest: 'absent' }), code('task_document_encoding_invalid'));
   write(f.local('bad.md'), new Uint8Array([0xc3, 0x28]));
@@ -184,7 +184,7 @@ test('非法新增来源零副作用，祖先symlink拒绝且本机材料不读�
 async function race(root: string, operation: 'record' | 'write', expected: string) {
   const url = new URL('../../src/modules/task/materials/application/task-materials-application.ts', import.meta.url).href;
   const children = ['A', 'B'].map(label => {
-    const source = `import {createTaskMaterialsApplication} from ${JSON.stringify(url)}; const root=${JSON.stringify(root)}; const label=${JSON.stringify(label)}; const app=createTaskMaterialsApplication({taskQuery:{assertCanonicalTaskWorkspace:r=>r,readTask:()=>({record:{scope:{projects:[],services:[]},changes:[]}})},projectQuery:{projectDetail:()=>{throw Error('no project')},resolveSourceRoot:()=>{throw Error('no project')}},worktreeQuery:{inspectGitWorktrees:()=>({status:'ready',repositories:[]})}}); process.send({ready:true}); process.on('message',()=>{try {const result=${operation === 'record' ? `app.recordTaskMaterials(root,'one',{expectedCurrent:${JSON.stringify(expected)},documents:[{id:'brief',role:'brief',title:label,source:{kind:'task',path:'brief.md'}}]})` : `app.writeTaskMaterialDocument(root,'one',{path:'brief.md',content:'# '+label+'\\n',expectedDocumentDigest:${JSON.stringify(expected)}})`}; process.send({ok:true,result});}catch(e){process.send({ok:false,code:e.code})}process.disconnect();});`;
+    const source = `import {createTaskMaterialsApplication} from ${JSON.stringify(url)}; const root=${JSON.stringify(root)}; const label=${JSON.stringify(label)}; const app=createTaskMaterialsApplication({taskQuery:{assertCanonicalTaskWorkspace:r=>r,readTask:()=>({record:{scope:{projects:[],services:[]},changes:[]}})},projectQuery:{projectDetail:()=>{throw Error('no project')},resolveSourceRoot:()=>{throw Error('no project')}},worktreeQuery:{inspectGitWorktrees:()=>({status:'ready',repositories:[]})}}); process.send({ready:true}); process.on('message',()=>{try {const result=${operation === 'record' ? `app.recordTaskMaterials(root,'one',{expectedCurrent:${JSON.stringify(expected)},documents:[{id:'brief',role:'solution',title:label,source:{kind:'task',path:'brief.md'}}]})` : `app.writeTaskMaterialDocument(root,'one',{path:'brief.md',content:'# '+label+'\\n',expectedDocumentDigest:${JSON.stringify(expected)}})`}; process.send({ok:true,result});}catch(e){process.send({ok:false,code:e.code})}process.disconnect();});`;
     const child = spawn(process.execPath, ['--input-type=module', '--eval', source], { stdio: ['ignore', 'pipe', 'pipe', 'ipc'] });
     let stderr = ''; child.stderr.on('data', chunk => { stderr += chunk; });
     const ready = new Promise<void>((resolve, reject) => { child.on('message', (message: { ready?: boolean }) => { if (message.ready) resolve(); }); child.on('error', reject); child.on('exit', status => { if (status !== 0) reject(new Error(stderr)); }); });

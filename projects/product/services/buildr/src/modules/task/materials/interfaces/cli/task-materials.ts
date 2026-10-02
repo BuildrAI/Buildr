@@ -31,7 +31,7 @@ export function taskMaterialsCommand(application: TaskMaterialsApplication, oper
   else if (operation === 'record') {
     let materials: TaskMaterialsManifest;
     try { materials = JSON.parse(inputText('--materials', 128 * 1024)); } catch { throw invalid('--materials 必须是有界合法 UTF-8 JSON 清单。'); }
-    if (!materials || materials.schemaVersion !== 'buildr.task-materials/v1' || Object.keys(materials).sort().join(',') !== 'documents,schemaVersion') throw invalid('--materials 只接受 {schemaVersion,documents} 完整清单。');
+    if (!materials || materials.schemaVersion !== 'buildr.task-materials/v2' || Object.keys(materials).sort().join(',') !== 'documents,schemaVersion') throw invalid('--materials 只接受 buildr.task-materials/v2 的 {schemaVersion,documents} 完整清单；任务说明请写入 Task Record.brief。');
     result = application.recordTaskMaterials(root, taskId, { expectedCurrent: one('--expected-current'), documents: materials.documents });
   } else result = application.writeTaskMaterialDocument(root, taskId, { path: one('--path'), content: inputText('--content', MAX_TASK_DOCUMENT_BYTES), expectedDocumentDigest: one('--expected-document') });
   process.stdout.write(values.get('--json') ? `${JSON.stringify(result, null, 2)}\n` : `Task ${taskId} materials ${operation}: ${'materialsDigest' in result ? result.materialsDigest : result.actualDigest}\n`);

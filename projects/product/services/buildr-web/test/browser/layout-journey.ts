@@ -416,6 +416,7 @@ export async function runLayoutJourney({ t, page, workspaceUrl, capture }: any) 
     const materialsPattern = `**/tasks/${second}/materials`;
     const contextsPattern = /\/tasks\/work-contexts\?/;
     const changePattern = /\/tasks\/(browser-task|layout-reading-other)\/changes\/demo\/browser-flow$/;
+    const detailPattern = /\/tasks\/(browser-task|layout-reading-other)(?:\?[^/]*)?$/;
     const counts = { first: 0, second: 0, scans: 0, counts: 0, diffs: 0 };
     let text = '说明甲';
     let gate: Promise<void> | null = null, release: (() => void) | null = null;
@@ -465,12 +466,16 @@ export async function runLayoutJourney({ t, page, workspaceUrl, capture }: any) 
       await route.fulfill({ response, json: payload });
     });
     await page.route(changePattern, async (route: any) => {
-      const isFirst = route.request().url().includes(`/tasks/${first}/`);
+      const response = await route.fetch({ url: route.request().url().replace(second, first) });
+      await route.fulfill({ response });
+    });
+    await page.route(detailPattern, async (route: any) => {
+      const isFirst = new URL(route.request().url()).pathname.endsWith(`/tasks/${first}`);
       counts[isFirst ? 'first' : 'second'] += 1;
       const content = isFirst ? text : '说明乙';
       const response = await route.fetch({ url: route.request().url().replace(second, first) });
       const payload = await response.json();
-      payload.resolution.workingCopy.change.brief = { exists: true, path: 'openspec/changes/browser-flow/brief.md', content: `# ${content}\n\n当前任务说明正文。` };
+      payload.record = { ...payload.record, taskId: isFirst ? first : second, title: isFirst ? payload.record.title : '切换说明任务', brief: `# ${content}\n\n当前任务说明正文。` };
       if (isFirst && gate) { arrived?.(); await gate; }
       await route.fulfill({ response, json: payload });
     });
@@ -500,6 +505,20 @@ export async function runLayoutJourney({ t, page, workspaceUrl, capture }: any) 
       await page.unroute(listPattern, slowList);
       await row(first).click();
       await initial;
+      const content = page.locator('#task-node-content:visible');
+      assert.doesNotMatch(await page.locator('.pane-right:visible').innerText(), /说明甲/);
+      await row(second).click();
+      await content.getByRole('heading', { name: '说明乙', exact: true }).waitFor();
+      release!(); gate = null;
+      assert.doesNotMatch(await content.innerText(), /说明甲/);
+      await page.locator('[data-task-content="changes"] .task-badge').filter({ hasText: '7' }).waitFor();
+      assert.ok(counts.counts >= 1, '从列表打开可见任务即读取改动统计');
+      assert.equal(counts.scans, 0, 'brief never loads full lists');
+      assert.equal(counts.diffs, 0, '任务说明不提前读取具体文件差异');
+      await row(first).click();
+      await content.getByRole('heading', { name: '说明甲', exact: true }).waitFor();
+      await page.locator('[data-task-content="changes"] .task-badge').filter({ hasText: '2' }).waitFor();
+      assert.ok(counts.counts >= 2, '切换回已读任务也重核改动数量');
       const header = await page.locator('#task-detail-main').evaluate((root: HTMLElement) => {
         const title = root.querySelector<HTMLElement>('#task-detail-title')!.getBoundingClientRect();
         const metadata = root.querySelector<HTMLElement>('#task-work-context')!;
@@ -511,29 +530,13 @@ export async function runLayoutJourney({ t, page, workspaceUrl, capture }: any) 
       assert.ok(header.metadataTop >= header.titleBottom && header.intentTop >= header.metadataBottom, `任务信息在名称下、意图前：${JSON.stringify(header)}`);
       assert.ok(header.metadataTop - header.titleBottom <= 12, '任务信息紧接名称下方');
       assert.ok(header.intentTop - header.metadataBottom <= 12, '意图与任务信息保持紧凑间距');
-      const content = page.locator('#task-node-content:visible');
-      assert.match(await content.innerText(), /正在读取内容/);
-      assert.doesNotMatch(await content.innerText(), /暂无补充/);
-      await row(second).click();
-      await content.getByRole('heading', { name: '说明乙', exact: true }).waitFor();
-      release!(); gate = null;
-      assert.doesNotMatch(await content.innerText(), /说明甲/);
-      await page.locator('[data-task-content="changes"] .task-badge').filter({ hasText: '7' }).waitFor();
-      assert.ok(counts.counts >= 2, '从列表打开和切换任务即读取改动统计');
-      assert.equal(counts.scans, 0, 'brief never loads full lists');
-      assert.equal(counts.diffs, 0, '任务说明不提前读取具体文件差异');
-      await row(first).click();
-      await content.getByRole('heading', { name: '说明甲', exact: true }).waitFor();
       const beforeReturn = counts.second;
       await row(second).click();
       await content.getByRole('heading', { name: '说明乙', exact: true }).waitFor();
-      assert.ok(counts.second <= beforeReturn + 1, '返回只重核一次，复用已读材料');
-      gate = new Promise<void>(resolve => { release = resolve; });
-      const rereading = new Promise<void>(resolve => { arrived = resolve; });
+      assert.ok(counts.second <= beforeReturn + 1, '返回只重核一次任务记录');
       await row(first).click();
-      await rereading;
-      // Cached content remains visible even while revalidation is deliberately delayed.
       await content.getByRole('heading', { name: '说明甲', exact: true }).waitFor();
+      gate = new Promise<void>(resolve => { release = resolve; });
       text = '刷新后的说明甲';
       const beforeRefresh = counts.first;
       const refreshing = new Promise<void>(resolve => { arrived = resolve; });
@@ -544,11 +547,12 @@ export async function runLayoutJourney({ t, page, workspaceUrl, capture }: any) 
       release!(); gate = null;
       await content.getByRole('heading', { name: '刷新后的说明甲', exact: true }).waitFor();
       await page.waitForFunction(() => document.querySelector('#task-detail-refresh')?.getAttribute('aria-busy') === 'false');
-      assert.equal(counts.first, beforeRefresh + 1, '相同引用刷新只读取正文一次');
+      assert.equal(counts.first, beforeRefresh + 1, '刷新只读取一次任务记录正文');
       assert.equal(counts.diffs, 0, '说明刷新仍不读取文件差异');
+      await page.waitForLoadState('networkidle');
     } finally {
       release?.(); releaseList?.(); page.off('request', scans);
-      await page.unroute(listPattern); await page.unroute(otherPattern); await page.unroute(changePattern); await page.unroute(contextPattern); await page.unroute(changedPattern); await page.unroute(firstCountPattern); await page.unroute(materialsPattern); await page.unroute(contextsPattern);
+      await page.unroute(listPattern); await page.unroute(otherPattern); await page.unroute(detailPattern); await page.unroute(changePattern); await page.unroute(contextPattern); await page.unroute(changedPattern); await page.unroute(firstCountPattern); await page.unroute(materialsPattern); await page.unroute(contextsPattern);
     }
   });
 

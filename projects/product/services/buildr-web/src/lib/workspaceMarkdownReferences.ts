@@ -45,6 +45,15 @@ export function resolveWorkspaceMarkdownReference(
 ): WorkspaceMarkdownReference | null {
   const workspacePath = normalizedWorkspaceRelativePath(href);
   if (!workspacePath || !workspacePath.toLowerCase().endsWith('.md')) return null;
+  // This logical project prefix also works for an attached source outside the
+  // workspace. The public reader resolves its real root from the project code.
+  const logicalProject = /^projects\/([A-Za-z0-9][A-Za-z0-9._-]*)\/(.+)$/.exec(workspacePath);
+  if (logicalProject) {
+    const [, code, documentPath] = logicalProject;
+    const project = projects.find(item => item.code === code && allowedProjectCodes.has(code));
+    if (!project) return null;
+    return { projectCode: code, projectName: project.name || code, projectSourcePath: `projects/${code}`, documentPath, workspacePath, resolution: 'resolved' };
+  }
   const candidates = projects
     .filter((project) => allowedProjectCodes.has(project.code))
     .map((project) => ({ project, sourcePath: normalizedProjectSourcePath(project.source?.path) }))

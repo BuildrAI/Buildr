@@ -235,9 +235,9 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     lifecycle: 'none',
   }, {
     id: 'task-materials',
-    requires: [TASK_QUERY_APPLICATION, WORKSPACE_QUERY, TASK_WORKTREE_PROVIDER],
-    provides: ['task.materials-application'],
-    contributions: { cli: ['task materials inspect', 'task materials record', 'task materials write'], http: ['task.materials.http'], diagnostics: [] },
+    requires: [TASK_QUERY_APPLICATION, TASK_COMMAND_APPLICATION, WORKSPACE_QUERY, TASK_WORKTREE_PROVIDER],
+    provides: ['task.materials-application', 'task.brief-migration-application'],
+    contributions: { cli: ['task materials inspect', 'task materials record', 'task materials write', 'task brief migrate'], http: ['task.materials.http'], diagnostics: [] },
     lifecycle: 'none',
   }, {
     id: 'change',
@@ -330,7 +330,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     'workbench',
     'worktree create', 'worktree cleanup', 'worktree inspect',
     'task commits', 'task changed-files',
-    'task materials inspect', 'task materials record', 'task materials write',
+    'task materials inspect', 'task materials record', 'task materials write', 'task brief migrate',
     'code repositories', 'code directory', 'code file', 'code search',
     'project verification inspect', 'project verification validate', 'project verification update',
     'task review inspect', 'task review record',

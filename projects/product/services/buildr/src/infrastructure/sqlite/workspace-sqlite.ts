@@ -95,6 +95,7 @@ function validateAppliedMigrations(database: any, scripts: any, { allowPending }
 export function applyWorkspaceSqliteMigration(database: any, script: any): any  {
   const rebuildsReferencedTable = script.sql.includes('-- buildr:foreign-keys-off');
   try {
+    if (script.sql.includes('buildr_sha256(')) database.function('buildr_sha256', { deterministic: true }, (value: string) => digest(Buffer.from(value, 'utf8')));
     if (rebuildsReferencedTable) {
       database.exec('PRAGMA foreign_keys = OFF;');
       if (database.prepare('PRAGMA foreign_keys').get()?.foreign_keys !== 0) throw new Error('migration could not disable foreign keys');

@@ -24,6 +24,32 @@ const schema = (id: string, title: string, body: JsonSchema, definitions?: Recor
   ...(definitions ? { $defs: definitions } : {}),
 });
 
+const taskRecordProperties = {
+  schemaVersion: { const: 'buildr.task-record/v4' },
+  taskId: { $ref: '#/$defs/TaskId' },
+  title: nonEmptyText,
+  intent: nonEmptyText,
+  brief: nullable({ type: 'string', maxLength: 1_048_576 }),
+  scope: closed({
+    projects: arrayOf(nonEmptyText),
+    services: arrayOf({ $ref: '#/$defs/QualifiedService' }),
+  }, ['projects', 'services']),
+  changes: arrayOf({ $ref: '#/$defs/QualifiedChange' }),
+  parentTaskId: nullable({ $ref: '#/$defs/TaskId' }),
+  isParent: { type: 'boolean' },
+  retrospective: nullable(closed({
+    state: { enum: ['pending-decision', 'decided'] },
+    documentDigest: { type: 'string', pattern: '^sha256-[0-9a-f]{64}$' },
+  }, ['state', 'documentDigest'])),
+  status: { enum: ['todo', 'active', 'completed', 'abandoned'] },
+  result: { $ref: '#/$defs/TaskResult' },
+  resultHistory: arrayOf({ $ref: '#/$defs/TaskResultHistoryEntry' }),
+  createdAt: nonEmptyText,
+  updatedAt: nonEmptyText,
+};
+const taskRecordRequired = ['schemaVersion', 'taskId', 'title', 'intent', 'brief', 'scope', 'changes', 'parentTaskId', 'retrospective', 'status', 'result', 'createdAt', 'updatedAt'];
+const { brief: _brief, resultHistory: _history, ...taskSummaryProperties } = taskRecordProperties;
+
 export const TASK_HTTP_DEFINITIONS = Object.freeze({
   TaskId: { type: 'string', pattern: TASK_ID_PATTERN },
   QualifiedService: closed({ project: nonEmptyText, service: nonEmptyText }, ['project', 'service']),
@@ -47,34 +73,14 @@ export const TASK_HTTP_DEFINITIONS = Object.freeze({
     ],
   },
   TaskResultHistoryEntry: closed({
-    status: { enum: ['completed', 'abandoned'] }, title: nonEmptyText, intent: nonEmptyText,
+    status: { enum: ['completed', 'abandoned'] }, title: nonEmptyText, intent: nonEmptyText, brief: nullable({ type: 'string', maxLength: 1_048_576 }),
     parentTaskId: nullable({ $ref: '#/$defs/TaskId' }),
     scope: closed({ projects: arrayOf(nonEmptyText), services: arrayOf({ $ref: '#/$defs/QualifiedService' }) }, ['projects', 'services']),
     changes: arrayOf({ $ref: '#/$defs/QualifiedChange' }), isParent: { const: true }, result: { $ref: '#/$defs/TaskResult' },
     recordUpdatedAt: nonEmptyText, correctedAt: nonEmptyText, reason: nonEmptyText,
   }, ['status', 'title', 'intent', 'parentTaskId', 'result', 'recordUpdatedAt', 'correctedAt', 'reason']),
-  TaskRecord: closed({
-    schemaVersion: { const: 'buildr.task-record/v3' },
-    taskId: { $ref: '#/$defs/TaskId' },
-    title: nonEmptyText,
-    intent: nonEmptyText,
-    scope: closed({
-      projects: arrayOf(nonEmptyText),
-      services: arrayOf({ $ref: '#/$defs/QualifiedService' }),
-    }, ['projects', 'services']),
-    changes: arrayOf({ $ref: '#/$defs/QualifiedChange' }),
-    parentTaskId: nullable({ $ref: '#/$defs/TaskId' }),
-    isParent: { type: 'boolean' },
-    retrospective: nullable(closed({
-      state: { enum: ['pending-decision', 'decided'] },
-      documentDigest: { type: 'string', pattern: '^sha256-[0-9a-f]{64}$' },
-    }, ['state', 'documentDigest'])),
-    status: { enum: ['todo', 'active', 'completed', 'abandoned'] },
-    result: { $ref: '#/$defs/TaskResult' },
-    resultHistory: arrayOf({ $ref: '#/$defs/TaskResultHistoryEntry' }),
-    createdAt: nonEmptyText,
-    updatedAt: nonEmptyText,
-  }, ['schemaVersion', 'taskId', 'title', 'intent', 'scope', 'changes', 'parentTaskId', 'retrospective', 'status', 'result', 'createdAt', 'updatedAt']),
+  TaskRecord: closed(taskRecordProperties, taskRecordRequired),
+  TaskSummaryRecord: closed(taskSummaryProperties, taskRecordRequired.filter(field => field !== 'brief')),
   TaskRelationSummary: closed({
     taskId: { $ref: '#/$defs/TaskId' },
     title: nonEmptyText,
@@ -100,7 +106,7 @@ export const TASK_HTTP_DEFINITIONS = Object.freeze({
     details: true,
   }, ['taskId', 'kind', 'reference', 'code', 'message']),
   StoredTaskView: closed({
-    record: { $ref: '#/$defs/TaskRecord' },
+    record: { $ref: '#/$defs/TaskSummaryRecord' },
     recordDigest: nonEmptyText,
     taskRelations: { $ref: '#/$defs/TaskRelations' },
     retrospectiveDocument: { $ref: '#/$defs/RetrospectiveDocumentReference' },
@@ -184,6 +190,7 @@ export const TASK_HTTP_SCHEMAS = Object.freeze({
     isParent: { const: true },
       title: nonEmptyText,
       intent: nonEmptyText,
+      brief: nullable({ type: 'string', maxLength: 1_048_576 }),
       parentTaskId: nullable({ $ref: '#/$defs/TaskId' }),
       addProjects: arrayOf(nonEmptyText),
       removeProjects: arrayOf(nonEmptyText),

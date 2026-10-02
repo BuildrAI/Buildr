@@ -33,8 +33,8 @@ test('独立材料HTTP/CLI和真实Worker观察相同正文，零读取写入且
   assert.equal(fs.existsSync(path.join(root, '.buildr/local/task-materials')), false);
   const inputFile = path.join(base, 'brief-input.md'); fs.writeFileSync(inputFile, '# 问题与目标\n真实范围和完成依据。\n');
   const saved = runBuildrJson(['task', 'materials', 'write', 'materials-one', '--target', root, '--path', 'brief.md', '--content', inputFile, '--expected-document', 'absent']);
-  assert.equal(saved.schemaVersion, 'buildr.task-materials-write-result/v1');
-  const reference = { id: 'brief', role: 'brief', title: '任务说明', source: { kind: 'task', path: 'brief.md' } };
+  assert.equal(saved.schemaVersion, 'buildr.task-materials-write-result/v2');
+  const reference = { id: 'brief', role: 'solution', title: '任务说明', source: { kind: 'task', path: 'brief.md' } };
   result = await request(endpoint, { method: 'POST', headers, body: JSON.stringify({ expectedCurrent: 'absent', documents: [reference] }) });
   assert.equal(result.status, 200); assert.equal(result.body.documents[0].content, fs.readFileSync(inputFile, 'utf8'));
   const recordedDigest = result.body.materialsDigest;
@@ -44,7 +44,7 @@ test('独立材料HTTP/CLI和真实Worker观察相同正文，零读取写入且
   result = await request(`${endpoint}/documents`, { method: 'POST', headers, body: JSON.stringify({ path: 'brief.md', content: '# 更新后的说明\n', expectedDocumentDigest: saved.actualDigest }) });
   assert.equal(result.status, 200); assert.equal(TASK_MATERIALS_VALIDATORS.validate(TASK_MATERIALS_SCHEMAS.writeResponse.$id, result.body).valid, true);
   result = await request(); assert.equal(result.body.documents[0].content, '# 更新后的说明\n'); assert.equal(result.body.materialsDigest, recordedDigest);
-  const manifestFile = path.join(base, 'materials-input.json'); fs.writeFileSync(manifestFile, JSON.stringify({ schemaVersion: 'buildr.task-materials/v1', documents: [] }));
+  const manifestFile = path.join(base, 'materials-input.json'); fs.writeFileSync(manifestFile, JSON.stringify({ schemaVersion: 'buildr.task-materials/v2', documents: [] }));
   const removed = runBuildrJson(['task', 'materials', 'record', 'materials-one', '--target', root, '--materials', manifestFile, '--expected-current', recordedDigest]);
   assert.deepEqual(removed.documents, []); assert.equal(fs.existsSync(path.join(root, '.buildr/local/task-materials/materials-one/brief.md')), true);
   assert.deepEqual(runtime.readTask(root, 'materials-one'), original);

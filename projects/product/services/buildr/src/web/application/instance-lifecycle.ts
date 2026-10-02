@@ -76,6 +76,7 @@ type ServerOptions = {
   onShutdown(): void;
 };
 type WebRuntime = PreviewRuntime & {
+  prepareWorkspaceStructuredStore(root: string): unknown;
   __bootstrapContributions?(kind: string): unknown[];
   startBuildrWeb(args: string[]): Promise<unknown>;
   manageBuildrWebPreview(action: string, args: string[]): Promise<unknown>;
@@ -136,6 +137,14 @@ export function handoffWaitBudget(env: Record<string, string | undefined> = proc
   return { attempts: env.CI ? HANDOFF_WAIT_CI_ATTEMPTS : HANDOFF_WAIT_LOCAL_ATTEMPTS, intervalMs: HANDOFF_WAIT_INTERVAL_MS };
 }
 
+export function prepareTaskPreviewStructuredStore(runtime: Pick<WebRuntime, 'prepareWorkspaceStructuredStore'>, targetRoot: string | null, previewIdentity: PreviewOwner | null): void {
+  if (previewIdentity?.taskStore && previewIdentity.identityMode === 'task-worktree-v1' && targetRoot
+    && fs.realpathSync(targetRoot) === fs.realpathSync(previewIdentity.worktree)
+    && previewIdentity.workspaceRoot && fs.realpathSync(previewIdentity.workspaceRoot) !== fs.realpathSync(targetRoot)) {
+    runtime.prepareWorkspaceStructuredStore(targetRoot);
+  }
+}
+
 export function registerWebInstanceLifecycle(runtime: WebRuntime, options: WebLifecycleOptions): WebRuntime {
   const httpContributions = options.httpContributions || runtime.__bootstrapContributions?.('http') || [];
 
@@ -156,6 +165,7 @@ export function registerWebInstanceLifecycle(runtime: WebRuntime, options: WebLi
     const webProfile = resolveProfile(productIdentity);
     const handoffWait = handoffWaitBudget();
     assertProfile(launcherIdentity, webProfile, { productIdentity, productRoot: runtime.productRoot() });
+    prepareTaskPreviewStructuredStore(runtime, targetRoot, previewIdentity);
     const initialWorkspaceId = targetRoot ? options.ensureRegisteredTarget(targetRoot) : null;
 
     const assertCompatibleInstance = (healthy: WebInstance): WebInstance => {

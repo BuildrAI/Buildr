@@ -13,6 +13,7 @@ function active(overrides: Record<string, unknown> = {}) {
     taskId: 'demo-task',
     title: '演示任务',
     intent: '验证最小 Task Record',
+    brief: null,
     scope: { projects: ['demo'], services: [{ project: 'demo', service: 'api' }] },
     changes: [{ project: 'demo', change: 'change-one' }],
     parentTaskId: null,
@@ -34,7 +35,7 @@ function hasDetailField(cause: unknown, field: string): boolean {
   return cause.details.field === field;
 }
 
-test('Task Record v3 规范化 todo/active/terminal 事实并保持限定 identity', () => {
+test('Task Record v4 规范化 todo/active/terminal 事实并保持限定 identity', () => {
   assert.deepEqual(normalizeTaskRecord(active()), active());
   assert.deepEqual(normalizeTaskRecord(active({ status: 'todo', changes: [] })).result, null);
   assert.deepEqual(normalizeTaskRecord(active({
@@ -47,7 +48,7 @@ test('Task Record v3 规范化 todo/active/terminal 事实并保持限定 identi
   assert.throws(() => normalizeTaskRecord(active({ status: 'todo' })), (error) => hasCode(error, 'task_record_todo_change_forbidden'));
 });
 
-test('Task Record v3 是 closed schema，不接纳 Environment 或专业字段', () => {
+test('Task Record v4 是 closed schema，不接纳 Environment 或专业字段', () => {
   for (const field of ['revision', 'recordDigest', 'workspaceId', 'executionOwner', 'boardId', 'relations', 'blocker', 'records', 'overview', 'publication', 'worktree', 'branch', 'runtime', 'process', 'port', 'verification']) {
     assert.throws(() => normalizeTaskRecord({ ...active(), [field]: 'forbidden' }), (error) => hasCode(error, 'task_record_field_forbidden') && hasDetailField(error, field), field);
   }
@@ -66,7 +67,7 @@ test('Task identity、当前记录引用去重与时间关系 fail closed', () =
   assert.throws(() => normalizeTaskRecord(active({ updatedAt: '2026-07-31T23:59:59.000Z' })), (error) => hasCode(error, 'task_record_timestamp_invalid'));
 });
 
-test('Task Record v3 只在终态保存复盘文档摘要与两种决定状态', () => {
+test('Task Record v4 只在终态保存复盘文档摘要与两种决定状态', () => {
   const documentDigest = `sha256-${'a'.repeat(64)}`;
   const pending = normalizeTaskRecord(active({
     status: 'completed',

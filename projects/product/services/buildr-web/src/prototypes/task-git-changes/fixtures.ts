@@ -6,7 +6,7 @@ import type { ChangedFileEntry, TaskChangedFilesResult } from '../../features/ta
 
 export const taskId = 'task-git-changes';
 export const record: TaskRecord = {
-  schemaVersion: 'buildr.task-record/v3', taskId, title: '任务中查看 Git 变更文件',
+  schemaVersion: 'buildr.task-record/v4', taskId, title: '任务中查看 Git 变更文件', brief: null,
   intent: '在任务详情页内查看关联代码库尚未提交的改动，不用切到 IDE 的源代码管理面板确认本任务改动了哪些文件。',
   scope: { projects: ['product'], services: [{ project: 'product', service: 'buildr' }, { project: 'product', service: 'buildr-web' }] },
   changes: [], parentTaskId: null, retrospective: null, status: 'active', result: null,

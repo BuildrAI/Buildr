@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 // Only the explicit network failure/delay scenarios intercept requests; successful
 // commit responses always come from the production query.
 export async function runTaskCommitsJourney({ t, page, runtime, workspaceRoot, workspaceUrl, expectedBrowserErrors, capture }: any) {
-  const taskId = 'browser-commits', parentId = 'browser-commits-parent', emptyId = 'browser-commits-empty';
+  const taskId = 'browser-commits', parentId = 'browser-commits-parent', emptyId = 'browser-commits-empty', workbenchId = 'browser-commits-workbench';
   const mirror = path.join(workspaceRoot, 'repositories', 'commit-mirror');
   function git(root: string, args: string[], at?: string) {
     const result = spawnSync('git', args, { cwd: root, encoding: 'utf8', env: { ...process.env, ...(at ? { GIT_AUTHOR_DATE: at, GIT_COMMITTER_DATE: at } : {}) } });
@@ -28,13 +28,18 @@ export async function runTaskCommitsJourney({ t, page, runtime, workspaceRoot, w
   const serviceId = catalog.services.find((item: any) => item.code === 'commit-mirror').id;
   runtime.createCatalogProject(workspaceRoot, { revision: catalog.revision, code: 'commits-fixture', name: '提交关联验证', serviceIds: [serviceId] });
   const scope = { projects: ['commits-fixture'], services: ['commits-fixture/commit-mirror'], changes: [] };
-  for (const [id, title] of [[parentId, '提交关联组合任务'], [taskId, '提交关联普通任务'], [emptyId, '尚无提交的任务']]) runtime.createTask(workspaceRoot, { taskId: id, title, intent: '检查真实本机提交与任务编码的双向关联。', ...scope, ...(id === taskId ? { parentTaskId: parentId } : {}) });
+  for (const [id, title] of [[parentId, '提交关联组合任务'], [taskId, '独立提交记录组合任务'], [emptyId, '尚无提交的任务']]) runtime.createTask(workspaceRoot, { taskId: id, title, intent: '检查真实本机提交与任务编码的双向关联。', isParent: true, ...scope, ...(id === taskId ? { parentTaskId: parentId } : {}) });
   const parentHash = commit(parentId, 'docs(parent): 保存组合任务自己的提交', '2026-09-27T08:00:00Z');
   const sharedHash = commit(taskId, 'feat(task): 在两个仓库保留同一提交', '2026-09-27T08:01:00Z');
   git(mirror, ['fetch', '-q', workspaceRoot, 'HEAD']);
   git(mirror, ['update-ref', 'refs/heads/fixture', 'FETCH_HEAD']);
   git(mirror, ['symbolic-ref', 'HEAD', 'refs/heads/fixture']);
   const latestHash = commit(taskId, 'fix(task): 保留尚未推送的最新提交', '2026-09-27T08:02:00Z');
+  runtime.createTask(workspaceRoot, { taskId: workbenchId, title: '普通任务提交工作台', intent: '核对当前普通任务的真实提交及文件差异。', ...scope });
+  const canaryFile = 'task-commit-canary.txt';
+  fs.writeFileSync(path.join(workspaceRoot, canaryFile), '真实提交文件的完整内容。\n');
+  git(workspaceRoot, ['add', canaryFile]);
+  const canaryHash = commit(workbenchId, 'test(workbench): 保存真实提交文件', '2026-09-27T08:03:00Z');
   const body = () => page.locator('#task-detail-main:visible');
   const open = async (id: string) => {
     await page.goto(`${workspaceUrl}/tasks/${id}`);
@@ -44,7 +49,26 @@ export async function runTaskCommitsJourney({ t, page, runtime, workspaceRoot, w
   const loaded = async (count: number) => { await rows().nth(count - 1).waitFor({ state: 'visible' }); assert.equal(await rows().count(), count); };
   const noOverflow = async () => assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, '提交详情在页面内保持可读');
 
-  await t.test('任务提交：真实本机记录、跨仓库同哈希、复制和宽窄屏可读', async () => {
+  await t.test('普通任务提交：当前改动与提交入口读取真实列表和所选提交文件', async () => {
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    const fileReads: string[] = [];
+    const track = (request: any) => { if (request.url().includes(`/tasks/${workbenchId}/file-diff?`)) fileReads.push(request.url()); };
+    page.on('request', track);
+    try {
+      await page.goto(`${workspaceUrl}/tasks/${workbenchId}`);
+      await body().locator('[data-task-content=changes]').click();
+      const record = body().locator('.task-rail-commit').filter({ hasText: canaryHash.slice(0, 8) });
+      await record.waitFor({ state: 'visible' }); await record.click();
+      await body().locator('.task-commit-details pre').filter({ hasText: `Buildr-Task: ${workbenchId}` }).waitFor({ state: 'visible' });
+      assert.match(await body().locator('.task-commit-details').innerText(), new RegExp(canaryHash));
+      await body().locator('.task-rail-commit-files .task-changed-row').filter({ hasText: canaryFile }).click();
+      await body().locator('.task-diff-body').getByText('真实提交文件的完整内容。', { exact: false }).waitFor({ state: 'visible' });
+      assert.ok(fileReads.some(url => { const parameters = new URL(url).searchParams; return parameters.get('commitHash') === canaryHash && parameters.get('filePath') === canaryFile; }), '所选提交文件通过真实任务限定接口读取');
+      await capture(page, 'task-workbench-real-commit-file.png');
+    } finally { page.off('request', track); }
+  });
+
+  await t.test('组合任务提交：真实本机记录、跨仓库同哈希、复制和宽窄屏可读', async () => {
     const requests: any[] = [];
     page.on('request', (request: any) => { if (request.url().endsWith(`/tasks/${taskId}/commits`)) requests.push(request); });
     await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
@@ -52,7 +76,7 @@ export async function runTaskCommitsJourney({ t, page, runtime, workspaceRoot, w
       await page.setViewportSize({ width, height: width === 390 ? 844 : 1000 });
       await open(taskId);
       await loaded(3);
-      assert.equal(await body().locator('[data-task-node]').count(), 4, '阅读标签不新增工作阶段');
+      assert.equal(await body().locator('[data-task-node]').count(), 0, '组合任务使用自身内容入口');
       assert.equal(await body().locator('.task-path-track [role=tab]').last().innerText(), '提交记录');
       assert.equal(await body().locator('[data-task-node][aria-selected=true]').count(), 0);
       assert.equal(await rows().filter({ hasText: sharedHash.slice(0, 8) }).count(), 2, '同哈希在不同仓库仍是两条');
@@ -84,7 +108,7 @@ export async function runTaskCommitsJourney({ t, page, runtime, workspaceRoot, w
       await body().locator('.task-commits-coverage summary').click();
       assert.match(await body().locator('.task-commits-coverage').innerText(), /commit-mirror/);
       assert.doesNotMatch(await body().locator('.task-commits').innerText(), /模拟提交/);
-      await body().getByRole('tab', { name: '任务收尾', exact: true }).click();
+      await body().getByRole('tab', { name: '验收', exact: true }).click();
       await body().getByRole('tab', { name: '提交记录', exact: true }).click();
       await loaded(3);
     }
@@ -95,8 +119,8 @@ export async function runTaskCommitsJourney({ t, page, runtime, workspaceRoot, w
   await t.test('任务提交：组合任务只读取自身，完整空范围给出提交示例', async () => {
     await open(parentId);
     await loaded(2);
-    assert.ok((await body().locator('.task-commits-list').innerText()).includes(parentHash.slice(0, 8)));
-    assert.doesNotMatch(await body().locator('.task-commits-list').innerText(), /尚未推送的最新提交|在两个仓库/);
+    assert.ok((await body().locator('.task-commits-list').allInnerTexts()).join('\n').includes(parentHash.slice(0, 8)));
+    assert.doesNotMatch((await body().locator('.task-commits-list').allInnerTexts()).join('\n'), /尚未推送的最新提交|在两个仓库/);
     assert.equal(await body().getByRole('tab', { name: '验收', exact: true }).isVisible(), true);
     await open(emptyId);
     await body().getByRole('heading', { name: '当前检查范围内暂无关联提交', exact: true }).waitFor();

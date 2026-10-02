@@ -34,10 +34,10 @@ Agent runtime 先根据 Skill description 和用户目标发现入口 Skill。�
 
 | 用户意图 | 资产类型 |
 |---|---|
-| 查看待办/正式Task、Parent/Child、复盘文档状态与各专业当前状态 | `buildr.task-record/v3`及Review、Verification公开read model；复盘正文从`.buildr/local/task-retrospectives/<task-id>.md`读取 |
+| 查看待办/正式Task、Parent/Child、复盘文档状态与各专业当前状态 | `buildr.task-record/v4`及Review、Verification公开read model；复盘正文从`.buildr/local/task-retrospectives/<task-id>.md`读取 |
 | 启动或继续已有active Formal Task | `buildr task inspect <task-id> --json`核对目标与scope；Agent再按真实Git/文件现场选择直接工作或matching Worktree |
 | 查看 Parent/Child 关系、旧 Parent Plan 与整体完成观察 | `task parent inspect`；关系和终态由 Task Record 管理，旧 Parent Plan 只读 |
-| 按需生成或查看已结束Task的执行效率复盘 | `task-retrospective`纯Skill基于当前可见事实写本机Markdown；Task Record v3只登记文档摘要和人的决定状态 |
+| 按需生成或查看已结束Task的执行效率复盘 | `task-retrospective`纯Skill基于当前可见事实写本机Markdown；Task Record v4的复盘字段只登记文档摘要和人的决定状态 |
 | 设计或优化 Project / Service 测试框架、划分测试边界、编排场景，或为实现任务开发测试 | `project-testing` Skill；无 Result、Receipt 或 provider contract |
 | 探查或维护Project测试地图、开发中选择已有前后端测试，或开发完成后记录和查看Task验证报告 | `buildr.task-verification/v4` selected provider；Agent直接调用项目测试工具 |
 | 显式创建、检查或清理 Task 的 Git worktree/provider evidence | `buildr.git-worktree-provider/v1` selected provider |

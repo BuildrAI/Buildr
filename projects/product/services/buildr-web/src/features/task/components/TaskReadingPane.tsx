@@ -13,6 +13,8 @@ import { TaskDocumentPreviewModal } from './TaskDocumentPreviewModal';
 import { PrototypeTab } from './PrototypeTab';
 import { ParentCoordinationPanel } from './ParentCoordinationPanel';
 import { RetrospectiveDocumentCard } from './RetrospectiveDocumentCard';
+import { MarkdownReader } from '../../../components/MarkdownReader';
+import { normalizedWorkspaceRelativePath } from '../../../lib/workspaceMarkdownReferences';
 
 function TextList({ title, items }: { title: string; items: string[] }) {
   return items.length ? <section className="task-reader-section"><h3>{title}</h3><ul>{items.map((item, index) => <li key={index}>{item}</li>)}</ul></section> : null;
@@ -25,6 +27,15 @@ export function TaskReadingPane({ target, task, context, artifacts, evidence, wo
 }) {
   if (!target) return null;
   const record = task.record;
+  if (target.kind === 'brief') {
+    const follow = (href: string) => {
+      const path = normalizedWorkspaceRelativePath(href);
+      const material = path ? artifacts.materials.data?.documents.find(item => item.source.kind === 'task' && item.source.path === path) : null;
+      if (material) onRead({ kind: 'material', id: material.id, title: material.title });
+      else onRelativeLink(href);
+    };
+    return <article className="task-reader task-brief-reader" data-task-brief={record.taskId} data-task-brief-version={task.recordDigest}>{record.brief?.trim() ? <MarkdownReader path={`@task/${record.taskId}`} content={record.brief} toolbarStart={null} className="markdown-body" options={{ headingOffset: 1, allowRelativeLinks: true, onRelativeLinkClick: follow }} /> : <p className="task-node-empty">尚未填写任务说明。</p>}</article>;
+  }
   if (target.kind === 'material') {
     if (artifacts.materials.loading && !artifacts.materials.data) return <div className="task-content-loading"><Spin size="small" /> 正在读取任务材料…</div>;
     const documents = artifacts.materials.data?.documents || [];
@@ -35,7 +46,7 @@ export function TaskReadingPane({ target, task, context, artifacts, evidence, wo
   if (target.kind === 'artifact') {
     const source = artifacts.briefs.find(item => item.kind === 'ready' && item.key === target.changeKey);
     if (!source || source.kind !== 'ready') return <Alert type="warning" message="当前材料不可读取，请刷新任务后重试。" />;
-    return <div className="task-reader">{target.historicalBrief && <Alert type="info" message="历史变更说明，非独立任务说明" description={source.key} />}<TaskArtifactReader embedded={embedded} sourceDescription={sourceLabel(source.provenance)} change={source.change} artifactPath={target.path} onClose={onClose} onProjectDocument={(path, projectRelative) => void (projectRelative ? artifacts.openProjectDocument(target.changeKey.split('/')[0], path) : artifacts.openChangeDocument(target.changeKey, path))} onSelect={path => onRead({ ...target, path, title: path.split('/').at(-1) || '文档' })} /></div>;
+    return <div className="task-reader"><TaskArtifactReader embedded={embedded} sourceDescription={sourceLabel(source.provenance)} change={source.change} artifactPath={target.path} onClose={onClose} onProjectDocument={(path, projectRelative) => void (projectRelative ? artifacts.openProjectDocument(target.changeKey.split('/')[0], path) : artifacts.openChangeDocument(target.changeKey, path))} onSelect={path => onRead({ ...target, path, title: path.split('/').at(-1) || '文档' })} /></div>;
   }
   if (target.kind === 'document') return <div className="task-reader"><TaskDocumentPreviewModal embedded={inDrawer} reference={target.reference} refreshToken={refreshToken} onClose={onClose} loadDocument={artifacts.loadProjectDocument} /></div>;
   if (target.kind === 'prototype') return <div className="task-reader"><PrototypeTab selectedKey={target.prototypeKey} onSelect={onPrototypeSelect} onAuxiliaryOpen={onPrototypeNotesOpen} closeAuxiliaryToken={prototypeNotesCloseToken} active workspaceId={workspaceId} data={artifacts.prototypeData} error={artifacts.prototypeError} loading={artifacts.prototypeLoading} onRefresh={() => void artifacts.refreshPrototype()} /></div>;

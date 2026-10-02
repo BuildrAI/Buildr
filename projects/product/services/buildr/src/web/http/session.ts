@@ -70,8 +70,8 @@ export function assertWriteRequest(request: any, origin: any, sessionToken: any)
   }
 }
 
-export async function readAllowedJsonBody(request: any, allowed: any, label: any) {
-  const input = await readJsonBody(request);
+export async function readAllowedJsonBody(request: any, allowed: any, label: any, maxBytes = MAX_JSON_BODY_BYTES) {
+  const input = await readJsonBody(request, maxBytes);
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
     const error: Error & Record<string, any> = new Error(`${label} 请求必须是 JSON object。`);
     error.code = 'task_api_input_invalid';

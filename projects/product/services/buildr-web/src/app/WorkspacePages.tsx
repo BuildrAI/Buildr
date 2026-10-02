@@ -32,16 +32,19 @@ export function WorkspacePages({ workspaceId, renderResource }: { workspaceId: s
       return [owner, { items, active: items.some(item => item.kind === state.active) ? state.active : items.at(-1)?.kind || null }];
     })));
   };
-  const commitPreview = useCallback((owner: string, next: PreviewState) => {
+  const commitPreview = useCallback((owner: string, next: PreviewState, taskBriefId?: string) => {
     setPreviews(prev => ({ ...prev, [owner]: next }));
-    navigate({ pathname: owner, search: owner === location.pathname ? location.search : '', hash: owner === location.pathname ? location.hash : '' }, { state: { ...(owner === location.pathname ? location.state : {}), resourceViews: next } });
+    const { taskBriefId: _previousBrief, ...retainedState } = (owner === location.pathname ? location.state : null) || {};
+    navigate({ pathname: owner, search: owner === location.pathname ? location.search : '', hash: owner === location.pathname ? location.hash : '' }, { state: { ...retainedState, resourceViews: next, ...(taskBriefId ? { taskBriefId } : {}) } });
   }, [navigate, location.pathname, location.search, location.hash, location.state]);
-  const openPreview = useCallback((owner: string, path: string) => {
-    const item = resourcePreview(workspaceId, path);
-    if (!item) return false;
+  const openPreview = useCallback((owner: string, path: string, intent?: { taskBrief: true }) => {
+    const resolved = resourcePreview(workspaceId, path);
+    if (!resolved) return false;
     const state = previews[owner] || { items: [], active: null };
-    if (state.active === item.kind && state.items.some(p => p.path === item.path)) return true;
-    commitPreview(owner, { items: state.items.some(p => p.kind === item.kind) ? state.items.map(p => p.kind === item.kind ? item : p) : [...state.items, item], active: item.kind });
+    const taskBriefId = intent?.taskBrief && ['task', 'composite-task'].includes(resolved.kind) ? resolved.id : undefined;
+    const item = taskBriefId ? state.items.find(item => ['task', 'composite-task'].includes(item.kind) && item.id === taskBriefId) || resolved : resolved;
+    if (!taskBriefId && state.active === item.kind && state.items.some(p => p.path === item.path)) return true;
+    commitPreview(owner, { items: state.items.some(p => p.kind === item.kind) ? state.items.map(p => p.kind === item.kind ? item : p) : [...state.items, item], active: item.kind }, taskBriefId);
     return true;
   }, [workspaceId, previews, commitPreview]);
   const identifyTask = useCallback((owner: string, id: string, composite: boolean) => {
@@ -82,7 +85,7 @@ export function WorkspacePages({ workspaceId, renderResource }: { workspaceId: s
     const link = (event.target as HTMLElement).closest('a');
     if (!link || link.target === '_blank' || link.hasAttribute('download')) return;
     const url = new URL(link.href, window.location.href);
-    if (url.origin === window.location.origin && openPreview(location.pathname, url.pathname + url.search + url.hash)) { event.preventDefault(); event.stopPropagation(); }
+    if (url.origin === window.location.origin && openPreview(location.pathname, url.pathname + url.search + url.hash, link.classList.contains('markdown-task-link') ? { taskBrief: true } : undefined)) { event.preventDefault(); event.stopPropagation(); }
   };
   useEffect(() => {
     if (location.pathname === `/workspaces/${workspaceId}/projects/new`) { navigate(`/workspaces/${workspaceId}/projects`, { replace: true, state: { createProject: true } }); return; }
@@ -151,7 +154,7 @@ export function WorkspacePages({ workspaceId, renderResource }: { workspaceId: s
   const entries = current && !resourcePreview(workspaceId, location.pathname) && !visited.some((p) => p.path === location.pathname)
     ? [...visited, { path: location.pathname, node: outlet, location: locationValue, instance: location.key }] : visited;
   const displayTabs = current && !resourcePreview(workspaceId, location.pathname) && !tabs.some((t) => t.key === current.key) ? [...tabs, current] : tabs;
-  return <ResourcePreviewContext.Provider value={{ render: renderResource, states: previews, open: openPreview, identifyTask, activate: activatePreview, close: closePreview, clear: clearPreview, remove: removePreviewResource }}><WorkspaceTabsContext.Provider value={{ tabs: displayTabs, register, close, reorder, ratio, setRatio, reportPaneWidth }}>
+  return <ResourcePreviewContext.Provider value={{ navigationType, navigationKey: location.key, taskBriefId: location.state?.taskBriefId, render: renderResource, states: previews, open: openPreview, identifyTask, activate: activatePreview, close: closePreview, clear: clearPreview, remove: removePreviewResource }}><WorkspaceTabsContext.Provider value={{ tabs: displayTabs, register, close, reorder, ratio, setRatio, reportPaneWidth }}>
     <div className="workspace-pages" hidden={!current}>
       <div className="workspace-page-tabs" hidden={location.pathname.startsWith(`/workspaces/${workspaceId}/code/`)} style={{ width: `calc(100% - ${paneWidths[location.pathname] || 0}px)` }}><PageTabStrip tabs={displayTabs.filter(tab => tab.kind !== 'dir')} onClose={close} onReorder={reorder} /></div>
       <div className="workspace-page-stack" onClickCapture={captureResourceLink}>

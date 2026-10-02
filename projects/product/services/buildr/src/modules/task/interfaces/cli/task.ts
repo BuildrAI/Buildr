@@ -3,6 +3,8 @@ import path from 'node:path';
 import process from 'node:process';
 
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../../../infrastructure/contracts/public-json.ts';
+import { TASK_BRIEF_MAX_BYTES } from '../../domain/task.ts';
+import { taskRecordError } from '../../application/task-validation.ts';
 import type { TaskRecord, TaskRecordBusinessError } from '../../application/task-dto.ts';
 import type { TaskAbandonInputDto, TaskActivateInputDto, TaskCompleteInputDto, TaskCreateInputDto, TaskUpdateInputDto } from '../../application/task-dto.ts';
 
@@ -30,23 +32,23 @@ function syntax(message: string, usage: string) {
 
 function parseTaskCli(action: TaskAction, args: string[]) {
   const usages = {
-    create: 'buildr task create <task-id> --title <text> --intent <text> [--status <todo|active>] [--parent-task] [--parent <task-id>] [--project <code> ...] [--service <project/service> ...] [--change <project/change> ...] [--target <canonical-workspace>] [--json]',
+    create: 'buildr task create <task-id> --title <text> --intent <text> [--brief-file <markdown-file>] [--status <todo|active>] [--parent-task] [--parent <task-id>] [--project <code> ...] [--service <project/service> ...] [--change <project/change> ...] [--target <canonical-workspace>] [--json]',
     inspect: 'buildr task inspect <task-id> [--target <canonical-workspace>] [--json]',
-    update: 'buildr task update <task-id> --expected-record <recordDigest> [--status todo|active|completed|abandoned] [--reason <text>] [--summary <text>] [--parent-completion <json-file>] [--title <text>] [--intent <text>] [--parent <task-id> | --clear-parent] [--retrospective-state <pending-decision|decided> --retrospective-document-digest <sha256>] [--clear-retrospective] [--add-project <code> ...] [--remove-project <code> ...] [--add-service <project/service> ...] [--remove-service <project/service> ...] [--add-change <project/change> ...] [--remove-change <project/change> ...] [--target <canonical-workspace>] [--json]',
+    update: 'buildr task update <task-id> --expected-record <recordDigest> [--status todo|active|completed|abandoned] [--reason <text>] [--summary <text>] [--parent-completion <json-file>] [--title <text>] [--intent <text>] [--brief-file <markdown-file> | --clear-brief] [--parent <task-id> | --clear-parent] [--retrospective-state <pending-decision|decided> --retrospective-document-digest <sha256>] [--clear-retrospective] [--add-project <code> ...] [--remove-project <code> ...] [--add-service <project/service> ...] [--remove-service <project/service> ...] [--add-change <project/change> ...] [--remove-change <project/change> ...] [--target <canonical-workspace>] [--json]',
     activate: 'buildr task activate <task-id> --expected-record <recordDigest> [--target <canonical-workspace>] [--json]',
     complete: 'buildr task complete <task-id> --summary <text> --expected-record <recordDigest> [--parent-completion <evidence.json>] [--target <canonical-workspace>] [--json]',
     abandon: 'buildr task abandon <task-id> --reason <text> --expected-record <recordDigest> [--target <canonical-workspace>] [--json]',
   };
   const allowedByAction = {
-    create: new Set(['--title', '--intent', '--status', '--parent-task', '--parent', '--project', '--service', '--change', '--target', '--json']),
+    create: new Set(['--title', '--intent', '--brief-file', '--status', '--parent-task', '--parent', '--project', '--service', '--change', '--target', '--json']),
     inspect: new Set(['--target', '--json']),
-    update: new Set(['--status', '--reason', '--summary', '--parent-completion', '--title', '--intent', '--parent', '--clear-parent', '--parent-task', '--expected-record', '--retrospective-state', '--retrospective-document-digest', '--clear-retrospective', '--add-project', '--remove-project', '--add-service', '--remove-service', '--add-change', '--remove-change', '--target', '--json']),
+    update: new Set(['--status', '--reason', '--summary', '--parent-completion', '--title', '--intent', '--brief-file', '--clear-brief', '--parent', '--clear-parent', '--parent-task', '--expected-record', '--retrospective-state', '--retrospective-document-digest', '--clear-retrospective', '--add-project', '--remove-project', '--add-service', '--remove-service', '--add-change', '--remove-change', '--target', '--json']),
     activate: new Set(['--expected-record', '--target', '--json']),
     complete: new Set(['--summary', '--parent-completion', '--expected-record', '--target', '--json']),
     abandon: new Set(['--reason', '--expected-record', '--target', '--json']),
   };
   const repeatable = new Set(['--project', '--service', '--change', '--add-project', '--remove-project', '--add-service', '--remove-service', '--add-change', '--remove-change']);
-  const boolean = new Set(['--json', '--clear-parent', '--parent-task', '--clear-retrospective']);
+  const boolean = new Set(['--json', '--clear-parent', '--parent-task', '--clear-retrospective', '--clear-brief']);
   const values = new Map<string, CliValue[]>();
   const positions: string[] = [];
   for (let index = 0; index < args.length; index += 1) {
@@ -72,6 +74,7 @@ function parseTaskCli(action: TaskAction, args: string[]) {
   if (action === 'abandon' && !one('--reason')) throw syntax('abandon requires --reason.', usages[action]);
   if (action !== 'create' && action !== 'inspect' && !one('--expected-record')) throw syntax(`${action} requires --expected-record.`, usages[action]);
   if (action === 'update' && one('--parent') && one('--clear-parent')) throw syntax('update cannot use --parent and --clear-parent together.', usages[action]);
+  if (one('--brief-file') && one('--clear-brief')) throw syntax('update cannot use --brief-file and --clear-brief together.', usages[action]);
   const target = one('--target');
   return { taskId: positions[0], targetRoot: path.resolve(typeof target === 'string' ? target : process.cwd()), json: Boolean(one('--json')), one, many };
 }
@@ -111,6 +114,31 @@ function readJsonFile(value: CliValue | undefined): unknown {
   return JSON.parse(fs.readFileSync(path.resolve(value), 'utf8'));
 }
 
+function briefFile(value: CliValue | undefined): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const file = path.resolve(value);
+  const invalid = () => taskRecordError('task_record_brief_file_invalid', 'brief 文件必须是普通 UTF-8 Markdown 文件，不能是符号链接。', 400);
+  const tooLarge = () => taskRecordError('task_record_brief_size_invalid', `brief 不能超过 ${TASK_BRIEF_MAX_BYTES} 字节。`, 400, { field: 'brief', maxBytes: TASK_BRIEF_MAX_BYTES });
+  const stat = fs.lstatSync(file);
+  if (!stat.isFile() || stat.isSymbolicLink()) throw invalid();
+  if (stat.size > TASK_BRIEF_MAX_BYTES) throw tooLarge();
+  const descriptor = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0) | fs.constants.O_NONBLOCK);
+  try {
+    const opened = fs.fstatSync(descriptor);
+    if (!opened.isFile() || opened.ino !== stat.ino || opened.dev !== stat.dev) throw invalid();
+    const bytes = Buffer.alloc(TASK_BRIEF_MAX_BYTES + 1);
+    let size = 0;
+    while (size < bytes.length) {
+      const read = fs.readSync(descriptor, bytes, size, Math.min(128 * 1024, bytes.length - size), null);
+      if (read === 0) break;
+      size += read;
+    }
+    if (size > TASK_BRIEF_MAX_BYTES) throw tooLarge();
+    try { return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes.subarray(0, size)); }
+    catch { throw invalid(); }
+  } finally { fs.closeSync(descriptor); }
+}
+
 function textValue(value: CliValue | undefined): string | undefined {
   return typeof value === 'string' ? value : undefined;
 }
@@ -131,13 +159,14 @@ export function taskCommand(runtime: TaskCommandRuntime, action: TaskAction, arg
   const parsed = parseTaskCli(action, args);
   try {
     let payload: TaskCliResult;
-    if (action === 'create') payload = runtime.createTask(parsed.targetRoot, { taskId: parsed.taskId, title: textValue(parsed.one('--title')) || '', intent: textValue(parsed.one('--intent')) || '', status: textValue(parsed.one('--status')) as TaskCreateInputDto['status'], ...(parsed.one('--parent-task') ? { isParent: true } : {}), parentTaskId: textValue(parsed.one('--parent')), projects: parsed.many('--project'), services: parsed.many('--service').map(serviceValue), changes: parsed.many('--change').map(changeValue) });
+    if (action === 'create') payload = runtime.createTask(parsed.targetRoot, { taskId: parsed.taskId, title: textValue(parsed.one('--title')) || '', intent: textValue(parsed.one('--intent')) || '', brief: briefFile(parsed.one('--brief-file')), status: textValue(parsed.one('--status')) as TaskCreateInputDto['status'], ...(parsed.one('--parent-task') ? { isParent: true } : {}), parentTaskId: textValue(parsed.one('--parent')), projects: parsed.many('--project'), services: parsed.many('--service').map(serviceValue), changes: parsed.many('--change').map(changeValue) });
     else if (action === 'inspect') payload = runtime.inspectTask(parsed.targetRoot, parsed.taskId);
     else if (action === 'update') payload = runtime.updateTask(parsed.targetRoot, parsed.taskId, {
       status: textValue(parsed.one('--status')) as TaskUpdateInputDto['status'], reason: textValue(parsed.one('--reason')), summary: textValue(parsed.one('--summary')),
       ...(parsed.one('--parent-completion') ? { parentCompletion: readJsonFile(parsed.one('--parent-completion')) as TaskUpdateInputDto['parentCompletion'] } : {}),
       expectedRecordDigest: textValue(parsed.one('--expected-record')) || '', ...(parsed.one('--parent-task') ? { isParent: true } : {}),
       title: textValue(parsed.one('--title')), intent: textValue(parsed.one('--intent')),
+      ...(parsed.one('--clear-brief') ? { brief: null } : parsed.one('--brief-file') ? { brief: briefFile(parsed.one('--brief-file')) } : {}),
       ...(parsed.one('--clear-parent') ? { parentTaskId: null } : parsed.one('--parent') ? { parentTaskId: textValue(parsed.one('--parent')) } : {}),
       retrospectiveState: textValue(parsed.one('--retrospective-state')) as TaskUpdateInputDto['retrospectiveState'], retrospectiveDocumentDigest: textValue(parsed.one('--retrospective-document-digest')),
       ...(parsed.one('--clear-retrospective') === true ? { clearRetrospective: true } : {}), addProjects: parsed.many('--add-project'), removeProjects: parsed.many('--remove-project'),

@@ -3,7 +3,7 @@ import { CompositeTaskContent } from '../components/CompositeTaskContent';
 import { CompositeTaskEndDrawer } from '../components/CompositeTaskEndDrawer';
 import { taskDocumentHref } from '../components/TaskLinkedDocument';
 import { useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { useLocation, useParams, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useNavigationType, useParams } from 'react-router-dom';
 import { Alert, Button, Dropdown, Spin } from 'antd';
 import { MoreOutlined, UnorderedListOutlined } from '@ant-design/icons';
 import { useAppShell } from '../../../app/AppShellContext';
@@ -44,6 +44,7 @@ export function TaskDetailPage({ taskId: providedTaskId }: { taskId?: string } =
   const previewContext = useResourcePreview();
   const location = useLocation();
   const navigate = useNavigate();
+  const navigationType = useNavigationType();
   const [endOpen, setEndOpen] = useState(false);
   const taskId = providedTaskId || params.taskId || '';
   const insidePreview = useContext(InsideResourcePreview);
@@ -52,7 +53,7 @@ export function TaskDetailPage({ taskId: providedTaskId }: { taskId?: string } =
   const preferences = useWorkbenchPreferences(workspaceId);
   const refreshContextAndList = useCallback(() => { resetTaskList(); return workContext.refresh(); }, [resetTaskList, workContext.refresh]);
   const editor = useTaskContextEditor(taskId, workContext.data, refreshContextAndList);
-  const reading = useTaskReadingState(taskId);
+  const reading = useTaskReadingState(taskId, workspaceId, (previewContext?.navigationType ?? navigationType) === 'POP', { key: previewContext?.navigationKey ?? location.key, taskBriefId: previewContext?.taskBriefId ?? location.state?.taskBriefId });
   const { selected, extraContent, selectNode } = reading;
   const currentTask = useRef(taskId);
   currentTask.current = taskId;
@@ -127,7 +128,11 @@ export function TaskDetailPage({ taskId: providedTaskId }: { taskId?: string } =
   if (detail.error) return <Alert type="warning" message="任务不可用" description={detail.error} />;
   if (!detail.data || detail.data.record.taskId !== taskId) return <div className="task-content-loading"><Spin size="small" /> 正在读取任务…</div>;
   const data = detail.data, record = data.record;
-  const openCode=(file?:{gitRepositoryId:string;path:string;commitHash?:string;line?:number})=>navigate(href('/code/explorer'),{state:{codeEntry:{taskId,taskTitle:record.title,file,from:{pathname:location.pathname,search:location.search,hash:location.hash,state:location.state}}}});
+  const openCode=(file?:{gitRepositoryId:string;path:string;commitHash?:string;line?:number})=>{
+    // Opening the Code page must not replay the earlier brief-opening intent on return.
+    const { taskBriefId: _briefIntent, ...returnState } = location.state || {};
+    navigate(href('/code/explorer'),{state:{codeEntry:{taskId,taskTitle:record.title,file,from:{pathname:location.pathname,search:location.search,hash:location.hash,state:returnState}}}});
+  };
   const terminal = !['todo', 'active'].includes(record.status);
   const documents = taskDocuments(artifacts.briefs, artifacts.materials.data);
   const continueWork = () => openAgentAction('task-continue', { taskId, title: record.title, intent: record.intent, status: record.status, projects: record.scope.projects, services: record.scope.services, result: record.result?.summary, progress: workContext.data?.context?.progress, nextStep: workContext.data?.context?.nextStep });
@@ -154,7 +159,7 @@ export function TaskDetailPage({ taskId: providedTaskId }: { taskId?: string } =
     {alert && <Alert id="task-detail-alert" type={alert.error ? 'error' : 'success'} message={alert.message} closable onClose={() => setAlert(null)} />}
     {data.referenceDiagnostics.length > 0 && <Alert id="task-reference-diagnostics" type="warning" message={`部分引用不可用：${data.referenceDiagnostics.map(item => item.message).join('；')}`} />}
     <TaskSummary context={workContext.data} error={workContext.error} onRespond={() => editor.open('respond')} />
-    {record.isParent ? <CompositeTaskContent key={taskId} refreshToken={readerRefreshToken} task={data} coordination={evidence.coordinationData} loading={evidence.coordinationLoading} briefs={artifacts.briefs} documents={documents} materials={artifacts.materials} renderContent={readContent} refresh={async () => { await refresh(); }} onEnd={() => setEndOpen(true)} href={href} onDocument={(key, path) => void artifacts.openChangeDocument(key, path)} /> : <>
+    {record.isParent ? <CompositeTaskContent key={taskId} choices={reading.choices} choose={reading.choose} refreshToken={readerRefreshToken} task={data} coordination={evidence.coordinationData} loading={evidence.coordinationLoading} briefs={artifacts.briefs} documents={documents} materials={artifacts.materials} renderContent={readContent} refresh={async () => { await refresh(); }} onEnd={() => setEndOpen(true)} href={href} /> : <>
     <TaskWorkPath actions={checklistTrigger} record={record} context={workContext.data?.context} selected={selected === 'changes' ? null : selected} onSelect={selectNode} contentTabs={[{ key: 'changes', label: <span data-prototype-position="changes-entry" title={changedCount.error || (countResult?.status === 'partial' ? '数量为已读范围，详情见改动与提交。' : undefined)}>改动与提交{changedFileCount !== null && changedFileCount > 0 && <span className="task-badge">{changedFileCount}</span>}</span>, selected: selected === 'changes', onSelect: () => selectNode('changes') }]} />
     <div className={`task-detail-layout${checklist.open && checklist.pinned ? ' checklist-pinned' : ''}${checklistResizing ? ' checklist-resizing' : ''}`}>
       <div className="task-detail-reading">
@@ -170,7 +175,7 @@ export function TaskDetailPage({ taskId: providedTaskId }: { taskId?: string } =
       {extraContent && readContent(extraContent, true)}
     </DrawerShell>
     <TaskContextDrawer editor={editor} title={record.title} />
-    <TaskEditModal message={alert?.error ? alert.message : undefined} onReread={() => void actions.edit.reread()} latest={actions.edit.latest} open={actions.actionModal === 'edit'} todo={record.status === 'todo'} editState={actions.edit.editState} title={actions.edit.title} intent={actions.edit.intent} projects={actions.edit.projectsText} services={actions.edit.servicesText} parentTaskId={actions.edit.parentTaskId} parentOptions={actions.edit.parentOptions} parentOptionsLoading={actions.edit.parentOptionsLoading} saving={actions.edit.saving} onClose={() => actions.setActionModal(null)} onSubmit={event => { void actions.edit.save(event); }} onOpenParents={() => { void actions.edit.loadParentOptions(); }} setTitle={actions.edit.setTitle} setIntent={actions.edit.setIntent} setProjects={actions.edit.setProjectsText} setServices={actions.edit.setServicesText} setParentTaskId={actions.edit.setParentTaskId} />
+    <TaskEditModal message={alert?.error ? alert.message : undefined} onReread={() => void actions.edit.reread()} latest={actions.edit.latest} open={actions.actionModal === 'edit'} todo={record.status === 'todo'} editState={actions.edit.editState} title={actions.edit.title} intent={actions.edit.intent} brief={actions.edit.brief} projects={actions.edit.projectsText} services={actions.edit.servicesText} parentTaskId={actions.edit.parentTaskId} parentOptions={actions.edit.parentOptions} parentOptionsLoading={actions.edit.parentOptionsLoading} saving={actions.edit.saving} onClose={() => actions.setActionModal(null)} onSubmit={event => { void actions.edit.save(event); }} onOpenParents={() => { void actions.edit.loadParentOptions(); }} setTitle={actions.edit.setTitle} setIntent={actions.edit.setIntent} setBrief={actions.edit.setBrief} setProjects={actions.edit.setProjectsText} setServices={actions.edit.setServicesText} setParentTaskId={actions.edit.setParentTaskId} />
     <TaskCompleteModal open={actions.actionModal === 'complete'} snapshot={actions.completion.snapshot} draft={actions.completion.draft} summary={actions.completion.summary} onClose={() => actions.setActionModal(null)} onSubmit={event => { void actions.completion.submit(event); }} setDraft={actions.completion.setDraft} setSummary={actions.completion.setSummary} />
     <TaskAbandonModal open={actions.actionModal === 'abandon'} reason={actions.abandonment.reason} onClose={() => actions.setActionModal(null)} onSubmit={event => { void actions.abandonment.submit(event); }} setReason={actions.abandonment.setReason} />
   </article>;

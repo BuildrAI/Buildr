@@ -6,7 +6,7 @@
 
 应用Change前先向用户说明OpenSpec `apply` action、Change ID、实际`changeRoot`、Task ID与按默认隔离策略确认的实际工作根。
 
-读取由 `task-manager` 形成并正式关联的唯一任务说明（Task Brief），以它核对整体目标与完成依据；Change `brief.md` 只解释具体变化，不替代或复制任务正文。任务可关联零到多个变更（Change），多任务可共享同一 Change 或适用正文，不宣称一对一归属。新 Change Brief 通过明确任务身份及项目根逻辑 Markdown 引用（如 `[任务说明](@project/tasks/<task-id>/brief.md)`）指向唯一正文；已有文档引用同一原文，逻辑路径限定同一项目根。归档不移动或删除任务正文，逻辑引用目标不受归档深度影响；普通相对链接和旧 Change Brief/历史保持原语义。任务范围理解变化时由 `task-manager` 更新任务正文及适用引用，当前知识维护仍保留 v3 已授权 Change Brief 创建、刷新与一致性检查保证。
+读取由 `task-manager` 保存的任务记录（Task Record）`brief`，以唯一任务说明（Task Brief）核对整体目标与完成依据；Change `brief.md` 只解释具体变化，不替代或复制任务正文。任务可关联零到多个变更（Change），多任务可共享同一 Change 或方案文档，但各自说明独立。新 Change Brief 通过稳定引用（如 `[任务说明](@task/<task-id>)`）指向对应任务；正文引用项目文件时使用明确的 `projects/<project>/<path>`。归档不改变记录正文或任务身份；旧文件链接和历史保留原语义。任务理解变化时由 `task-manager` 按已观察记录版本更新正文，当前知识维护继续承载已授权 Change Brief 创建、刷新与一致性检查。
 
 若 artifacts 表明会产生用户可见界面变化，只在用户明确要求后使用界面原型（UI Prototype）。已有原型且未被明确忽略时，正式前端编辑前应读取它；原型不是审查、实现、验证、收敛或收尾门禁。
 

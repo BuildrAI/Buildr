@@ -39,14 +39,14 @@ const { TaskReadingPane } = await import('../src/features/task/components/TaskRe
 const { TaskChecklist } = await import('../src/features/task/components/TaskChecklist.tsx');
 const { TaskArtifactReader } = await import('../src/features/task/components/TaskArtifactReader.tsx');
 const { createTaskClient } = await import('../src/features/task/api/task-api.ts');
-const material = (id = 'brief', role = 'brief', source = { kind: 'task', path: 'brief.md' }) => ({ id, role, title: `${role}正文`, source, exists: true, content: '真实独立材料正文', actualDigest: 'sha256-new', provenance: source.kind === 'task' ? 'task-local' : 'task-worktree-candidate', diagnostic: null });
-const result = (documents = [], taskId = 'one') => ({ schemaVersion: 'buildr.task-materials-result/v1', taskId, materialsDigest: documents.length ? 'sha256-manifest' : 'absent', materials: { schemaVersion: 'buildr.task-materials/v1', documents: documents.map(({ id, role, title, source }) => ({ id, role, title, source })) }, documents, diagnostics: [] });
+const material = (id = 'solution', role = 'solution', source = { kind: 'task', path: 'solution.md' }) => ({ id, role, title: `${role}正文`, source, exists: true, content: '真实独立材料正文', actualDigest: 'sha256-new', provenance: source.kind === 'task' ? 'task-local' : 'task-worktree-candidate', diagnostic: null });
+const result = (documents = [], taskId = 'one') => ({ schemaVersion: 'buildr.task-materials-result/v2', taskId, materialsDigest: documents.length ? 'sha256-manifest' : 'absent', materials: { schemaVersion: 'buildr.task-materials/v2', documents: documents.map(({ id, role, title, source }) => ({ id, role, title, source })) }, documents, diagnostics: [] });
 const change = (key = 'demo/active', archived = false) => {
   const dir = archived ? 'openspec/changes/archive/2026-01-01-active/' : 'openspec/changes/active/';
   const artifact = name => ({ path: dir + name, exists: true, content: '历史正文' });
   return { kind: 'ready', key, provenance: archived ? 'retained-archive' : 'task-worktree-candidate', change: { name: key, brief: artifact('brief.md'), artifacts: { proposal: artifact('proposal.md'), design: artifact('design.md'), tasks: artifact('tasks.md'), specs: [] } } };
 };
-const nodeProps = (documents, selected = 'requirements') => ({ selected, record: { taskId: 'one', status: 'active', intent: '短目标不得作为正文', changes: [] }, documents, briefs: [], reviews: null, verification: null, reviewError: null, verificationError: null, reviewLoading: false, verificationLoading: false, prototypeData: null, prototypeError: null, choices: {}, onChoose() {}, hasRetrospective: false, hasCoordination: false, renderContent: target => React.createElement('p', { 'data-reading-kind': target.kind, 'data-reading-id': target.id }, '已进入材料阅读器') });
+const nodeProps = (documents, selected = 'requirements') => ({ selected, record: { taskId: 'one', status: 'active', brief: '# 记录正文', intent: '短目标不得作为正文', changes: [] }, documents, briefs: [], reviews: null, verification: null, reviewError: null, verificationError: null, reviewLoading: false, verificationLoading: false, prototypeData: null, prototypeError: null, choices: {}, onChoose() {}, hasRetrospective: false, hasCoordination: false, renderContent: target => React.createElement('p', { 'data-reading-kind': target.kind, 'data-reading-id': target.id }, '已进入材料阅读器') });
 const markup = (Component, props) => renderToStaticMarkup(React.createElement(Component, props));
 const readingContent = (materials, record = { taskId: 'one' }) => target => React.createElement(TaskReadingPane, { task: { record }, target, artifacts: { materials }, onRead() {}, onClose() {} });
 const deferred = () => { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; };
@@ -73,41 +73,40 @@ function artifactHookHarness() {
   };
 }
 
-test('Markdown toolbar supports an explicit empty label and preserves the filename default', () => {
+test('Markdown toolbar supports an explicit empty label and Task Record brief has no filename', () => {
   const props = { path: 'docs/example.md', content: '# Reader' };
   assert.match(markup(MarkdownReader, props), /<span>example.md<\/span>/);
   const empty = markup(MarkdownReader, { ...props, toolbarStart: null });
   assert.doesNotMatch(empty, /example.md/); assert.match(empty, /markdown-reader-toolbar.*<span><\/span>/);
-  const html = markup(TaskReadingPane, { task: { record: { taskId: 'one' } }, target: { kind: 'material', id: 'brief' }, artifacts: { materials: { data: result([material()]), loading: false, error: null } }, onRead() {}, onClose() {} });
-  assert.doesNotMatch(html, /brief正文|<span>brief.md<\/span>/);
+  const html = markup(TaskReadingPane, { task: { record: { taskId: 'one', brief: '# 记录正文' }, recordDigest: 'record-v1' }, target: { kind: 'brief' }, artifacts: { materials: { data: null, loading: true, error: '材料失败' } }, onRead() {}, onClose() {} });
+  assert.match(html, /data-task-brief="one"/); assert.match(html, /data-task-brief-version="record-v1"/);
+  assert.match(html, /markdown-reader-toolbar.*<span><\/span>/); assert.doesNotMatch(html, /材料失败|正在读取材料|brief.md/);
 });
 
-test('无Change材料正文进入说明节点；intent不兜底，implementation与delivery有阅读入口', () => {
-  const documents = taskDocuments([], result([material(), material('solution', 'solution'), material('impl', 'implementation'), material('delivery', 'delivery')]));
-  assert.deepEqual(documents.map(item => item.stage), ['requirements', 'design', 'implementation', 'closeout']);
-  assert.deepEqual(documents.map(taskDocumentTarget).map(target => target.kind), ['material', 'material', 'material', 'material']);
-  for (const [stage, id] of [['requirements', 'brief'], ['design', 'solution'], ['implementation', 'impl'], ['closeout', 'delivery']]) {
+test('任务记录说明独立读取，solution/implementation/delivery材料有各自阅读入口', () => {
+  const documents = taskDocuments([], result([material(), material('impl', 'implementation'), material('delivery', 'delivery')]));
+  assert.deepEqual(documents.map(item => item.stage), ['design', 'implementation', 'closeout']);
+  assert.deepEqual(documents.map(taskDocumentTarget).map(target => target.kind), ['material', 'material', 'material']);
+  const briefNode = markup(TaskNodeContent, { ...nodeProps(documents), materialsLoading: true, materialsError: '材料失败', briefsLoading: true });
+  assert.match(briefNode, /data-reading-kind="brief"/); assert.doesNotMatch(briefNode, /材料失败|正在读取|节点内容目录/);
+  for (const [stage, id] of [['design', 'solution'], ['implementation', 'impl'], ['closeout', 'delivery']]) {
     const html = markup(TaskNodeContent, nodeProps(documents, stage));
     assert.match(html, new RegExp(`data-reading-id="${id}"`));
     assert.doesNotMatch(html, /短目标不得作为正文/);
-    if (stage === 'closeout') assert.match(html, /交付结果/, '交付材料与原结果并列保留');
+    if (stage === 'closeout') assert.match(html, /交付结果/);
   }
-  assert.match(markup(TaskNodeContent, nodeProps([])), /尚未关联独立任务说明/);
 });
 
-test('显式brief缺失保留诊断，不回退多个历史/归档brief；仅其他roles不排除兼容入口', () => {
+test('记录说明为空时显示真实缺失，多个历史及归档Change只保留辅助来源', () => {
   const old = [change(), change('demo/archived', true)];
-  const missing = { ...material(), exists: false, content: null, actualDigest: null, diagnostic: { code: 'task_material_missing', message: '候选说明文件缺失，不回退保留目录' } };
-  const explicit = taskDocuments(old, result([missing])).filter(item => item.stage === 'requirements');
-  assert.equal(explicit.length, 1);
-  assert.equal(explicit[0].material.diagnostic.message, missing.diagnostic.message);
-  assert.equal(taskDocumentTarget(explicit[0]).kind, 'material');
-  assert.equal(taskDocuments(old, result([missing])).filter(item => item.stage === 'design' && item.title.startsWith('变更说明 · ')).length, 2, '显式说明不隐藏旧Change辅助解释');
-  const legacy = taskDocuments(old, result([material('solution', 'solution')])).filter(item => item.stage === 'requirements');
-  assert.equal(legacy.length, 2);
-  assert.ok(legacy.every(item => taskDocumentTarget(item).historicalBrief));
-  assert.deepEqual(legacy.map(item => item.changeKey), ['demo/active', 'demo/archived']);
-  assert.equal(taskDocuments(old, null).filter(item => item.stage === 'requirements').length, 0, '未观察到关联时不能提前显示旧brief');
+  for (const data of [null, result(), result([{ ...material('legacy-brief', 'brief'), exists: true, content: '旧说明文件' }])]) {
+    const documents = taskDocuments(old, data);
+    assert.equal(documents.filter(item => item.stage === 'requirements').length, 0);
+    assert.equal(documents.filter(item => item.purpose === 'change-brief').length, 2);
+    const record = { taskId: 'one', brief: null, intent: '短目标不得作为正文' };
+    const html = markup(TaskNodeContent, { ...nodeProps(documents), record, materialsError: '材料失败', renderContent: readingContent({ data, loading: false, error: null }, record) });
+    assert.match(html, /尚未填写任务说明/); assert.doesNotMatch(html, /旧说明文件|历史正文|短目标不得作为正文|材料失败/);
+  }
 });
 
 test('变更实施清单只在独立清单入口显示，旧开发实现选择不会重复打开tasks.md', () => {
@@ -124,7 +123,7 @@ test('变更实施清单只在独立清单入口显示，旧开发实现选择�
 
 test('方案默认阅读真实方案，变更说明作为带身份的末尾辅助入口保留', () => {
   const source = change();
-  const documents = taskDocuments([source], result([material()]));
+  const documents = taskDocuments([source], result());
   const renderContent = target => React.createElement('p', { 'data-reading-path': target.path }, target.title);
   const design = markup(TaskNodeContent, { ...nodeProps(documents, 'design'), renderContent });
   assert.ok(design.includes(`data-reading-path="${source.change.artifacts.proposal.path}"`));
@@ -138,19 +137,15 @@ test('方案默认阅读真实方案，变更说明作为带身份的末尾辅�
   assert.doesNotMatch(reader, /<span[^>]*>brief\.md<\/span>/);
 });
 
-test('组合任务方案容器默认直接展示独立说明，缺失关联不由intent伪造', () => {
+test('组合任务默认直接阅读记录说明，材料读取等待或失败不阻断说明', () => {
   const data = result([material()]);
-  const props = { record: { taskId: 'one', intent: '短目标不得作为正文', scope: { projects: [], services: [] } }, briefs: [], documents: taskDocuments([], data), materials: { taskId: 'one', data, loading: false, error: null }, onDocument() {}, renderContent: nodeProps([]).renderContent };
-  assert.match(markup(CompositeTaskPlan, props), /data-reading-id="brief"/);
-  assert.doesNotMatch(markup(CompositeTaskPlan, props), /短目标不得作为正文/);
-  const loadingState = { ...props.materials, loading: true };
-  const revalidating = markup(CompositeTaskPlan, { ...props, materials: loadingState, renderContent: readingContent(loadingState, props.record) });
-  assert.match(revalidating, /已读正文正在核对/); assert.match(revalidating, /data-task-material="brief"/);
-  assert.equal(revalidating.split('已读正文正在核对').length - 1, 1, 'Composite不重复reader状态提示');
-  const failedState = { ...props.materials, error: '重核失败' };
-  const failed = markup(CompositeTaskPlan, { ...props, materials: failedState, renderContent: readingContent(failedState, props.record) });
-  assert.match(failed, /上次读取的正文，尚未确认新版本/); assert.match(failed, /data-task-material="brief"/);
-  assert.equal(failed.split('任务材料读取失败：重核失败').length - 1, 1);
+  const record = { taskId: 'one', brief: '# 组合任务正文', intent: '短目标不得作为正文', scope: { projects: [], services: [] } };
+  for (const state of [{ data: null, loading: true, error: null }, { data, loading: false, error: '材料重核失败' }]) {
+    const props = { record, briefs: [], documents: taskDocuments([], data), materials: state, onDocument() {}, renderContent: readingContent(state, record) };
+    const html = markup(CompositeTaskPlan, props);
+    assert.match(html, /data-task-brief="one"/); assert.doesNotMatch(html, /材料重核失败|正在读取任务材料|上次读取的正文/);
+    assert.match(markup(CompositeTaskPlan, { ...props, record: { ...record, brief: null }, renderContent: readingContent(state, { ...record, brief: null }) }), /尚未填写任务说明/);
+  }
 });
 
 test('active和archive的限定项目根链接指向相同正文，普通relative语义不变且拒绝解码后越界', () => {
@@ -162,9 +157,9 @@ test('active和archive的限定项目根链接指向相同正文，普通relativ
 });
 
 test('项目材料按source项目/path解析；本机链接只访问同task关联文档而非任意workspace', () => {
-  const local = material('brief', 'brief', { kind: 'task', path: 'docs/brief.md' });
+  const local = material('solution', 'solution', { kind: 'task', path: 'docs/brief.md' });
   const localSolution = material('solution', 'solution', { kind: 'task', path: 'solution.md' });
-  const project = material('project', 'brief', { kind: 'project', project: 'demo', path: 'tasks/one/brief.md' });
+  const project = material('project', 'solution', { kind: 'project', project: 'demo', path: 'tasks/one/brief.md' });
   const docs = [local, localSolution, project];
   assert.deepEqual(resolveTaskMaterialLink(local, '../solution.md', docs), { kind: 'material', id: 'solution' });
   for (const href of ['../../solution.md', '../missing.md', '@project/tasks/one/brief.md', '../other-task/brief.md', '/solution.md', '%2fsolution.md', '..%5csolution.md', 'file:///secret.md', '%00.md']) assert.equal(resolveTaskMaterialLink(local, href, docs), null, href);
@@ -187,7 +182,7 @@ test('材料刷新读取新版本并取消旧请求，即使旧响应晚到也�
 test('项目根别名与普通路径互相引用保持关联材料身份，别名不增加可越界层级', () => {
   for (const briefPath of ['tasks/one/brief.md', '@project/tasks/one/brief.md']) {
     for (const implPath of ['tasks/one/implementation.md', '@project/tasks/one/implementation.md']) {
-      const brief = material('brief', 'brief', { kind: 'project', project: 'demo', path: briefPath });
+      const brief = material('solution', 'solution', { kind: 'project', project: 'demo', path: briefPath });
       const impl = material('impl', 'implementation', { kind: 'project', project: 'demo', path: implPath });
       for (const href of ['implementation.md', '@project/tasks/one/implementation.md']) {
         assert.deepEqual(resolveTaskMaterialLink(brief, href, [brief, impl]), { kind: 'material', id: 'impl' });
@@ -211,22 +206,22 @@ test('任务切换/卸载取消材料响应；局部错误、身份不符和真�
   assert.equal(current.at(-1).error, null); assert.equal(current.at(-1).data.documents[0].exists, false);
 });
 
-test('材料loading、局部错误与显式missing有不同反馈，不用旧正文填补等待', () => {
-  const loading = markup(TaskNodeContent, { ...nodeProps([]), materialsLoading: true });
-  assert.match(loading, /正在读取内容/); assert.doesNotMatch(loading, /尚未关联/);
-  const error = markup(TaskNodeContent, { ...nodeProps([]), materialsError: '网络读取异常' });
-  assert.match(error, /任务材料读取失败：网络读取异常/); assert.doesNotMatch(error, /尚未关联独立任务说明/);
-  const data = result([{ ...material(), exists: false, content: null, diagnostic: { code: 'missing', message: '候选正文真实缺失' } }]);
-  const html = markup(TaskReadingPane, { task: { record: { taskId: 'one' } }, target: { kind: 'material', id: 'brief' }, artifacts: { materials: { data, loading: false } }, onRead() {}, onClose() {} });
-  assert.match(html, /候选正文真实缺失/); assert.doesNotMatch(html, /历史正文|真实独立材料正文/);
+test('方案材料loading、局部错误与真实missing各自表达，不影响记录说明', () => {
+  const loading = markup(TaskNodeContent, { ...nodeProps([], 'design'), materialsLoading: true });
+  assert.match(loading, /正在读取内容/);
+  const error = markup(TaskNodeContent, { ...nodeProps([], 'design'), materialsError: '网络读取异常' });
+  assert.match(error, /任务材料读取失败：网络读取异常/);
+  const data = result([{ ...material(), exists: false, content: null, diagnostic: { code: 'missing', message: '候选方案真实缺失' } }]);
+  const html = markup(TaskReadingPane, { task: { record: { taskId: 'one' } }, target: { kind: 'material', id: 'solution' }, artifacts: { materials: { data, loading: false } }, onRead() {}, onClose() {} });
+  assert.match(html, /候选方案真实缺失/); assert.doesNotMatch(html, /历史正文|真实独立材料正文/);
 });
 
 test('Drawer与普通ReadingPane保留材料时都由共享reader显示重核及失败状态，成功新版本清除旧反馈', () => {
   const data = result([{ ...material(), actualDigest: 'sha256-retained' }]);
-  const base = { task: { record: { taskId: 'one' } }, target: { kind: 'material', id: 'brief' }, onRead() {}, onClose() {} };
+  const base = { task: { record: { taskId: 'one' } }, target: { kind: 'material', id: 'solution' }, onRead() {}, onClose() {} };
   for (const inDrawer of [false, true]) {
     const loading = markup(TaskReadingPane, { ...base, inDrawer, artifacts: { materials: { data, loading: true, error: null } } });
-    assert.match(loading, /data-task-material="brief"/); assert.match(loading, /sha256-retained/); assert.match(loading, /已读正文正在核对/);
+    assert.match(loading, /data-task-material="solution"/); assert.match(loading, /sha256-retained/); assert.match(loading, /已读正文正在核对/);
     assert.doesNotMatch(loading, /正在读取任务材料/);
     const failed = markup(TaskReadingPane, { ...base, inDrawer, artifacts: { materials: { data, loading: false, error: '材料服务暂不可用' } } });
     assert.match(failed, /任务材料读取失败：材料服务暂不可用/); assert.match(failed, /上次读取的正文，尚未确认新版本/); assert.match(failed, /sha256-retained/);
@@ -322,17 +317,17 @@ test('同workspace返回已读材料不中断正文，后台重核和失败明�
     assert.equal(output.materials.data.documents[0].content, '上次读取正文');
     assert.equal(output.materials.loading, true);
     const docs = taskDocuments([], output.materials.data);
-    const cachedNode = markup(TaskNodeContent, { ...nodeProps(docs), materialsLoading: true, renderContent: readingContent(output.materials) });
-    assert.match(cachedNode, /已读正文正在核对/); assert.match(cachedNode, /data-task-material="brief"/);
+    const cachedNode = markup(TaskNodeContent, { ...nodeProps(docs, 'design'), materialsLoading: true, renderContent: readingContent(output.materials) });
+    assert.match(cachedNode, /已读正文正在核对/); assert.match(cachedNode, /data-task-material="solution"/);
     assert.equal(cachedNode.split('已读正文正在核对').length - 1, 1, 'Node不重复reader状态提示');
-    const cachedReader = markup(TaskReadingPane, { task: { record: { taskId: 'cache-return' } }, target: { kind: 'material', id: 'brief' }, artifacts: { materials: output.materials }, onRead() {} });
-    assert.match(cachedReader, /data-task-material="brief"/); assert.doesNotMatch(cachedReader, /正在读取任务材料/);
+    const cachedReader = markup(TaskReadingPane, { task: { record: { taskId: 'cache-return' } }, target: { kind: 'material', id: 'solution' }, artifacts: { materials: output.materials }, onRead() {} });
+    assert.match(cachedReader, /data-task-material="solution"/); assert.doesNotMatch(cachedReader, /正在读取任务材料/);
     reads[2].resolve(observed('后台读到新正文', 'sha256-new')); await settle();
     output = render(); assert.equal(output.materials.data.documents[0].actualDigest, 'sha256-new');
     const failed = output.refreshMaterials(); reads.at(-1).reject(new Error('重核暂时失败')); await failed;
     output = render();
     assert.equal(output.materials.data.documents[0].content, '后台读到新正文'); assert.equal(output.materials.error, '重核暂时失败');
-    const failedNode = markup(TaskNodeContent, { ...nodeProps(taskDocuments([], output.materials.data)), materialsError: output.materials.error, renderContent: readingContent(output.materials) });
+    const failedNode = markup(TaskNodeContent, { ...nodeProps(taskDocuments([], output.materials.data), 'design'), materialsError: output.materials.error, renderContent: readingContent(output.materials) });
     assert.match(failedNode, /上次读取的正文，尚未确认新版本/);
     assert.equal(failedNode.split('任务材料读取失败：重核暂时失败').length - 1, 1);
     const refresh = output.refreshMaterials();
