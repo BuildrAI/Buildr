@@ -28,8 +28,9 @@ export function CodeExplorerPage() {
     const items=new Map<string,RepositoryPreviewFile>();
     for(const directory of directories)for(const item of directory.entries)items.set(item.path,{path:item.path,content:'',kind:'text',directory:item.kind==='directory',link:item.kind==='link',ignored:item.ignored});
     const observed=directories.find(dir=>dir.path==='');
-    return {id,name:state.catalog?.repositories.find(r=>r.id===id)?.name||id,location:observed?(observed.source.kind==='task'?'任务工作树':observed.source.kind==='commit'?'历史版本':'代码库目录')+' · '+observed.source.location+' · '+observed.source.version:state.catalog?.repositories.find(r=>r.id===id)?.location,files:[...items.values()]};
-  }),[state.selectedIds.join(','),state.catalog,state.locations,state.directories,state.showIgnored,state.locationFor]);
+    const unresolvedLocation=source.taskId||source.commitHash?(state.directoryErrors[state.directoryKey(source,'')]?'查看位置暂不可读取':'正在读取查看位置…'):state.catalog?.repositories.find(r=>r.id===id)?.location;
+    return {id,name:state.catalog?.repositories.find(r=>r.id===id)?.name||id,location:observed?(observed.source.kind==='task'?'任务工作树':observed.source.kind==='commit'?'历史版本':'本机目录')+' · '+observed.source.location+' · '+observed.source.version:unresolvedLocation,files:[...items.values()]};
+  }),[state.selectedIds.join(','),state.catalog,state.locations,state.directories,state.directoryErrors,state.showIgnored,state.locationFor,state.directoryKey]);
   const loadedKeys=Object.values(state.directories).filter(dir=>state.selectedIds.includes(dir.source.repositoryId)&&state.directories[state.directoryKey(state.locationFor(dir.source.repositoryId),dir.path)]===dir).map(dir=>dir.source.repositoryId+'::'+dir.path);
   for(const id of state.selectedIds){const prefix=state.directoryKey(state.locationFor(id),'');for(const key of Object.keys(state.directoryErrors))if(key.startsWith(prefix))loadedKeys.push(id+'::'+key.slice(prefix.length));}
   const files:RepositoryPreviewFile[]=file?[{path:file.path,kind:file.kind,content:file.content,image:file.kind==='image'?file.content:undefined}]:[];
@@ -61,11 +62,38 @@ export function CodeExplorerPage() {
       label:<>{name}{sourceLabel&&<Tag color={tab.commitHash?'gold':undefined}>{sourceLabel}</Tag>}</>,
       accessibleLabel:name+(sourceLabel?' '+sourceLabel:''),closeLabel:'关闭文件 '+tab.path};
   });
+  const locationIds=active?[active.repositoryId]:state.selectedIds;
+  const locationSources=locationIds.map(id=>state.locationFor(id));
+  const historyHashes=[...new Set(locationSources.flatMap(source=>source.commitHash?[source.commitHash]:[]))];
+  const historyHash=historyHashes.length===1?historyHashes[0]:undefined;
+  const locationModes=locationSources.map(source=>source.commitHash?(historyHash?'history':'mixed'):source.taskId?'task':'default');
+  const locationMode=locationModes.every(mode=>mode===locationModes[0])?(locationModes[0]||'default'):'mixed';
+  const observedLocations=locationSources.map(source=>state.directories[state.directoryKey(source,'')]);
+  const singleLocation=locationSources.length===1?locationSources[0]:undefined;
+  const observedFileSource=singleLocation&&file?.source&&codeLocationKey({repositoryId:file.source.repositoryId,taskId:file.source.taskId||undefined,commitHash:file.source.commitHash||undefined})===codeLocationKey(singleLocation)?file.source:undefined;
+  const locationPath=singleLocation?(observedLocations[0]?.source.location||observedFileSource?.location||(!singleLocation.taskId&&!singleLocation.commitHash?state.catalog?.repositories.find(repo=>repo.id===singleLocation.repositoryId)?.location:undefined)):undefined;
+  const locationUnavailable=singleLocation&&Boolean(state.directoryErrors[state.directoryKey(singleLocation,'')]);
+  const taskFallback=locationMode==='task'&&observedLocations.length>0&&observedLocations.every(directory=>directory?.source.kind==='default');
+  const canSelectTaskLocation=Boolean(state.entry&&locationIds.some(id=>state.catalog?.selectedRepositoryIds.includes(id)));
+  const canSelectLocation=canSelectTaskLocation||historyHashes.length>0;
+  const locationExplanation=locationMode==='history'?'查看该提交保存的文件。':taskFallback?'任务没有独立工作树，当前使用代码库登记的本机目录。':locationMode==='task'?'查看任务对应的实际目录，不汇总其他工作树。':locationMode==='mixed'?'各代码库使用不同位置，实际路径见下方根节点。':'查看代码库登记路径中的实时文件，包含未提交修改。';
+  const switchLocation=(value:string)=>{
+    if(value==='history'||value==='mixed')return;
+    for(const id of locationIds){
+      const source={repositoryId:id,...(value==='task'&&state.entry&&state.catalog?.selectedRepositoryIds.includes(id)?{taskId:state.entry.taskId}:{})};
+      state.setLocation(id,source);
+      if(active?.repositoryId===id)state.open(source,active.path);
+    }
+  };
   const context=<div className="code-root-selectors">
     <Select mode="multiple" allowClear maxTagCount={1} aria-label="筛选代码库" placeholder="全部代码库" value={state.scope} onChange={state.setScope} options={state.catalog?.repositories.map(r=>({value:r.id,label:r.name}))} />
     <small>{state.origin} · 清空选择查看全部</small>
-    {active&&<Tooltip title="代码库目录：登记位置的实时磁盘文件，包含未提交修改，不汇总其他工作树。任务关联目录：来自任务时查看该任务已核对的工作树；没有独立工作树时使用代码库目录。历史提交：查看该提交保存的文件。切换只影响当前文件所属的代码库。"><Select size="small" aria-label="查看位置与版本" value={active.commitHash?'history':active.taskId?'task':'default'} options={[{value:'default',label:'代码库目录'},...(state.entry?[{value:'task',label:'任务关联目录'}]:[]),...(active.commitHash?[{value:'history',label:'历史提交 · '+active.commitHash.slice(0,10)}]:[])]} onChange={value=>{if(value==='history')return;const source={repositoryId:active.repositoryId,...(value==='task'&&state.entry?{taskId:state.entry.taskId}:{})};state.setLocation(active.repositoryId,source);state.open(source,active.path);}} /></Tooltip>}
-    {active&&<small className="code-location-path" title={file?.source.location||selectedRepo?.location}>{file?.source.location||selectedRepo?.location}</small>}
+    <section className="code-location-controls" aria-label="查看位置">
+      <small className="code-location-label">查看位置{canSelectLocation&&<span>{active?'当前文件所属代码库':'所选代码库'}</span>}</small>
+      {canSelectLocation?<Tooltip title={locationExplanation+' '+(active?'切换只影响当前文件所属的代码库。':'切换所选代码库；任务范围之外的代码库继续使用本机目录。')}><Select size="small" aria-label="查看位置与版本" value={locationMode} options={[{value:'default',label:'本机目录'},...(canSelectTaskLocation?[{value:'task',label:'任务目录'}]:[]),...(historyHash?[{value:'history',label:'历史提交 · '+historyHash.slice(0,10)}]:[]),...(locationMode==='mixed'?[{value:'mixed',label:'多个查看位置',disabled:true}]:[])]} onChange={switchLocation} /></Tooltip>:<strong className="code-location-value">本机目录</strong>}
+      <small className="code-location-explanation">{locationExplanation}</small>
+      {locationPath?<small className="code-location-path" title={locationPath}>{locationPath}</small>:locationIds.length>1?<small className="code-location-path">各代码库的实际路径见下方根节点</small>:singleLocation&&<small className="code-location-path" role="status">{locationUnavailable?'查看位置暂不可读取':'正在读取查看位置…'}</small>}
+    </section>
   </div>;
   return <div className="code-explorer-stage">
     <CodeTreePane hidden={treeHidden} onHost={setHost} storageKey={`buildr.code.tree-width.${workspaceId}`} />

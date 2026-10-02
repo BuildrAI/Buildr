@@ -13,6 +13,59 @@ export async function runCodeExplorerJourney({t,page,workspaceUrl,capture,expect
     assert.equal(Number(await page.locator('.repository-source-row').first().getAttribute('data-line')),file.page.startLine);assert.ok(await page.locator('.repository-source-row').count()<12);
     await page.getByRole('region',{name:'大文件分段阅读',exact:true}).waitFor();assert.ok((await page.locator('.repository-file-page-status').innerText()).includes('第 '+(file.page.index+1)+' / '+file.page.total+' 段'));
   };
+  await t.test('未打开文件与关闭最后文件时查看位置始终可见，刷新和代码库筛选同行对齐',async()=>{
+    let reads=0;const count=(request:any)=>{if(new URL(request.url()).pathname.endsWith('/code/file'))reads++;};page.on('request',count);
+    try{
+      await page.setViewportSize({width:1440,height:900});await page.goto(workspaceUrl+'/code/explorer');await page.locator('.repository-tree-file').first().waitFor();
+      const controls=page.getByRole('region',{name:'查看位置',exact:true});await controls.waitFor();
+      assert.equal(await controls.locator('.code-location-value').innerText(),'本机目录');assert.ok((await controls.locator('.code-location-explanation').innerText()).includes('包含未提交修改'));
+      assert.equal(await controls.getByRole('combobox').count(),0);assert.equal(await page.getByRole('tab',{name:/main\.ts/}).count(),0);assert.equal(reads,0);
+      assert.equal(await controls.locator('.code-location-path').innerText(),'各代码库的实际路径见下方根节点');
+      const api=workspaceUrl.replace('/workspaces/','/api/v1/workspaces/'),catalog=await(await page.request.get(api+'/code/repositories')).json();
+      assert.equal(await page.locator('.repository-root-name').count(),catalog.repositories.length);
+      for(const repo of catalog.repositories){const root=page.locator('.repository-root-name').filter({has:page.getByText(repo.name,{exact:true})});assert.ok((await root.getAttribute('title')).includes(repo.location));assert.ok((await root.locator('small').innerText()).includes('本机目录'));}
+      for(const width of [1440,900]){
+        await page.setViewportSize({width,height:900});
+        const geometry=await page.locator('.global-source-sidebar .repository-browser-context').evaluate((el:HTMLElement)=>{
+          const select=el.querySelector('.code-root-selectors > .ant-select')!.getBoundingClientRect(),refresh=el.querySelector(':scope > .ant-btn')!.getBoundingClientRect();
+          return {selectHeight:select.height,refreshHeight:refresh.height,centerGap:Math.abs(select.top+select.height/2-refresh.top-refresh.height/2),horizontalGap:refresh.left-select.right};
+        });
+        assert.equal(geometry.selectHeight,32);assert.equal(geometry.refreshHeight,32);assert.ok(geometry.centerGap<1,JSON.stringify(geometry));assert.ok(geometry.horizontalGap>=0,JSON.stringify(geometry));await noOverflow();
+      }
+      await page.setViewportSize({width:1440,height:900});await capture(page,'code-location-empty-alignment.png');
+      await page.locator('.ant-tree-title').filter({hasText:/^src$/}).click();await page.locator('.repository-tree-file[data-file-path="src/main.ts"]').click();await page.locator('.repository-source-code').waitFor();
+      const openedReads=reads;assert.ok(openedReads>0);await page.getByRole('button',{name:'关闭文件 src/main.ts',exact:true}).click();
+      await page.locator('.repository-reader-content').getByText('从目录选择一个文件',{exact:true}).waitFor();await controls.waitFor();assert.equal(await controls.locator('.code-location-value').innerText(),'本机目录');assert.equal(reads,openedReads);
+      await page.locator('.repository-tree-file').first().waitFor();await capture(page,'code-location-last-file-closed.png');
+    }finally{page.off('request',count);}
+  });
+  await t.test('任务仅查看目录时提示本机目录回退，位置切换读取所选代码库且不打开文件',async()=>{
+    const directory=(response:any,task:boolean)=>{const url=new URL(response.url());return url.pathname.endsWith('/code/directory')&&url.searchParams.get('filePath')===''&&(task?url.searchParams.get('taskId')==='browser-task':!url.searchParams.has('taskId'));};
+    let reads=0;const requests:URL[]=[];const count=(request:any)=>{const url=new URL(request.url());if(url.pathname.endsWith('/code/file'))reads++;if(url.pathname.endsWith('/code/directory'))requests.push(url);};page.on('request',count);
+    let releaseRoot:()=>void=()=>{};const rootGate=new Promise<void>(resolve=>{releaseRoot=resolve;});
+    const holdRoot=async(route:any)=>{
+      if(directory(route.request(),true)){const timeout=setTimeout(releaseRoot,5000);try{await rootGate;}finally{clearTimeout(timeout);}}
+      return route.continue();
+    };
+    try{
+      await page.setViewportSize({width:1440,height:900});await page.goto(workspaceUrl+'/tasks/browser-task');await page.locator('#task-source-files').waitFor();
+      await page.route('**/code/directory?**',holdRoot);
+      const taskRequest=page.waitForRequest((request:any)=>directory(request,true)),taskDirectory=page.waitForResponse((response:any)=>directory(response,true));await page.locator('#task-source-files').click();await taskRequest;
+      const controls=page.getByRole('region',{name:'查看位置',exact:true});await controls.getByRole('status').filter({hasText:'正在读取查看位置…'}).waitFor();
+      assert.equal(await controls.locator('.code-location-path').getAttribute('title'),null);assert.equal(await controls.locator('.code-location-path').innerText(),'正在读取查看位置…');assert.equal(reads,0);
+      releaseRoot();const taskRoot=await(await taskDirectory).json();assert.equal(taskRoot.source.kind,'default');await page.unroute('**/code/directory?**',holdRoot);
+      await controls.getByText('任务没有独立工作树，当前使用代码库登记的本机目录。',{exact:true}).waitFor();
+      assert.ok((await controls.locator('.code-location-label').innerText()).includes('所选代码库'));assert.equal(await controls.locator('.code-location-path').getAttribute('title'),taskRoot.source.location);assert.equal(await page.getByRole('tab',{name:/main\.ts/}).count(),0);assert.equal(reads,0);
+      const select=controls.locator('.ant-select-selector');await select.click();await page.locator('.ant-select-dropdown:visible').getByText('本机目录',{exact:true}).click();
+      await controls.getByText('查看代码库登记路径中的实时文件，包含未提交修改。',{exact:true}).waitFor();
+      const defaultRequestCount=requests.length,defaultDirectory=page.waitForResponse((response:any)=>directory(response,false));await page.getByRole('button',{name:'重新读取文件',exact:true}).click();const defaultRoot=await(await defaultDirectory).json();
+      assert.equal(defaultRoot.source.kind,'default');assert.equal(defaultRoot.source.taskId,null);assert.equal(defaultRoot.source.location,taskRoot.source.location);assert.ok(requests.slice(defaultRequestCount).every(url=>!url.searchParams.has('taskId')));assert.equal(reads,0);
+      await select.click();await page.locator('.ant-select-dropdown:visible').getByText('任务目录',{exact:true}).click();await controls.getByText('任务没有独立工作树，当前使用代码库登记的本机目录。',{exact:true}).waitFor();
+      const taskRequestCount=requests.length,taskRefresh=page.waitForResponse((response:any)=>directory(response,true));await page.getByRole('button',{name:'重新读取文件',exact:true}).click();const taskAgain=await(await taskRefresh).json();
+      assert.equal(taskAgain.source.taskId,'browser-task');assert.equal(taskAgain.source.kind,'default');assert.ok(requests.slice(taskRequestCount).every(url=>url.searchParams.get('taskId')==='browser-task'));assert.equal(reads,0);
+      await page.locator('.repository-tree-file').first().waitFor();await noOverflow();await capture(page,'code-task-location-fallback.png');
+    }finally{releaseRoot();page.off('request',count);}
+  });
   await t.test('真实代码页面：目录读取、完整文件、内容搜索、文档链接与图片',async()=>{
     await page.setViewportSize({width:1440,height:900});await page.goto(workspaceUrl+'/code/explorer');
     await page.getByRole('navigation',{name:'代码导航'}).waitFor();await page.locator('.repository-tree-file').first().waitFor();
