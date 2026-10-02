@@ -13,7 +13,6 @@ import { TaskDocumentPreviewModal } from './TaskDocumentPreviewModal';
 import { PrototypeTab } from './PrototypeTab';
 import { ParentCoordinationPanel } from './ParentCoordinationPanel';
 import { RetrospectiveDocumentCard } from './RetrospectiveDocumentCard';
-import { MarkdownReader } from '../../../components/MarkdownReader';
 import { normalizedWorkspaceRelativePath } from '../../../lib/workspaceMarkdownReferences';
 
 function TextList({ title, items }: { title: string; items: string[] }) {
@@ -34,7 +33,7 @@ export function TaskReadingPane({ target, task, context, artifacts, evidence, wo
       if (material) onRead({ kind: 'material', id: material.id, title: material.title });
       else onRelativeLink(href);
     };
-    return <article className="task-reader task-brief-reader" data-task-brief={record.taskId} data-task-brief-version={task.recordDigest}>{record.brief?.trim() ? <MarkdownReader path={`@task/${record.taskId}`} content={record.brief} toolbarStart={null} className="markdown-body" options={{ headingOffset: 1, allowRelativeLinks: true, onRelativeLinkClick: follow }} /> : <p className="task-node-empty">尚未填写任务说明。</p>}</article>;
+    return <article className="task-reader task-brief-reader" data-task-brief={record.taskId} data-task-brief-version={task.recordDigest}>{record.brief?.trim() ? <MarkdownHost key={record.taskId} markdown={record.brief} className="markdown-body" options={{ headingOffset: 1, allowRelativeLinks: true, onRelativeLinkClick: follow }} /> : <p className="task-node-empty">尚未填写任务说明。</p>}</article>;
   }
   if (target.kind === 'material') {
     if (artifacts.materials.loading && !artifacts.materials.data) return <div className="task-content-loading"><Spin size="small" /> 正在读取任务材料…</div>;

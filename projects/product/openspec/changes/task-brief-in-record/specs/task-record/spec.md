@@ -105,6 +105,57 @@ Buildr MUST 在 Workspace-scoped Task 路径提供 list、detail、update、comp
 - **THEN** MUST只返回Task Record事实且`retrospective`为`null`
 - **AND** MUST产生零专业写入和零环境副作用
 
+### Requirement: Task Record writer 必须声明 local-only structured persistence
+Task Record writer MUST声明 `buildr.task-record/v4` 的 persistence classification 为 Workspace-local structured data。声明 MUST NOT暴露数据库 path、table、row id、SQL、`recordDigest` 或扩大到其他 lifecycle owner；Development、Verification与Review虽进入同一SQLite，仍 MUST保持各自Application authority。
+
+#### Scenario: consumer读取Task Record ownership
+- **WHEN**合法consumer检查一个Task的持久化classification
+- **THEN** Task Record writer MUST标记Workspace-local且不提供Git path
+- **AND** MUST NOT包含旧`task.yml`、Environment、Development、Review、Verification或Finish路径
+
+#### Scenario: Metadata Publication 请求 local-only Task Record ownership
+- **WHEN**遗留caller尝试通过已清退的Metadata Publication取得Task Record ownership
+- **THEN** capability graph MUST不存在可路由provider或binding，Task Record writer MUST不返回任何Git path
+- **AND** MUST NOT导出数据库、旧`task.yml`或其他lifecycle owner的数据
+
+#### Scenario: 历史引用当前不可用
+- **WHEN**有效Task Record包含archived、retired或当前unavailable的Project/Service/Change引用
+- **THEN** Task Record read model MUST保留逻辑record并返回availability diagnostic
+- **AND** MUST NOT要求writer导出或改写Task Record才能继续读取其他专业current records
+
+### Requirement: Buildr Web 必须展示并适当管理 Task Record
+Buildr Web MUST在已登记Workspace下提供Task轻量列表和详情，并允许人通过Task Record Application有限维护已有Task。Task概览 MUST NOT从复盘文档、Review、Verification、Git或其他专业事实推断lifecycle。
+
+#### Scenario: 浏览 Workspace Task 列表
+- **WHEN** 用户进入Workspace Task列表
+- **THEN** 页面 MUST从SQLite轻量projection显示Task事实和可选复盘登记状态
+- **AND** MUST按`missing|pending-decision|decided`过滤但不得批量读取Markdown
+
+#### Scenario: 查看 Task 详情
+- **WHEN** 用户打开具体Task
+- **THEN** 概览 MUST显示Task事实与复盘文档固定路径/登记摘要
+- **AND** 复盘正文 MUST 仅在用户点击查看后单项读取；任务说明 brief MUST 在详情直接读取并展示
+
+#### Scenario: 从 Buildr Web 创建或编辑 Task
+- **WHEN** 用户编辑已有Task
+- **THEN** HTTP MUST调用Task Record update并使用当前record digest
+- **AND** 页面 MUST不创建Task或自动生成复盘
+
+#### Scenario: Buildr Web 尝试创建 Task
+- **WHEN** 页面或客户端尝试POST Task collection
+- **THEN** HTTP MUST视为不存在
+- **AND** Agent/Task Manager create能力 MUST保持可用
+
+#### Scenario: 从 Buildr Web 完成或放弃 Task
+- **WHEN** 用户明确完成或放弃active Task
+- **THEN** 页面 MUST提交合法Task Record mutation
+- **AND** 完成后 MUST不自动提示、生成或登记复盘
+
+#### Scenario: Buildr Web 打开 terminal Task
+- **WHEN** Task已completed或abandoned
+- **THEN** 顶层业务字段 MUST保持只读，概览 MAY按需显示本机复盘卡片
+- **AND** MUST不存在Environment或独立复盘Tab、重开入口或绕过Application的写入
+
 ## ADDED Requirements
 
 ### Requirement: 任务说明必须作为记录正文受控保存
@@ -142,7 +193,7 @@ Buildr MUST 在 Workspace-scoped Task 路径提供 list、detail、update、comp
 
 #### Scenario: 终态组合任务导入真实旧正文
 - **WHEN** 终态组合任务的 brief 为空且显式导入来源与三份观察版本一致
-- **THEN** 专用导入 MUST 补入真实正文，保持任务状态、结果、过去历史与系统时间，并记录本次真实变化
+- **THEN** 专用导入 MUST 补入真实正文，保持任务状态、结果、原 createdAt 与已保存历史时间；updatedAt 及本次更正记录 MUST 反映真实导入时间
 - **AND** 普通用户更正 MUST 继续遵守组合任务验收保护
 
 #### Scenario: 分页批次导入

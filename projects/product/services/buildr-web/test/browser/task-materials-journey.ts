@@ -65,7 +65,8 @@ export async function runTaskMaterialsJourney({ t, page, runtime, workspaceRoot,
           const parent = reader.parentElement!, frame = parent.getBoundingClientRect(), style = getComputedStyle(parent), rect = reader.getBoundingClientRect();
           return { width: rect.width, left: rect.left - frame.left - parseFloat(style.paddingLeft), right: frame.left + parent.clientWidth - parseFloat(style.paddingRight) - rect.right, viewportRight: rect.right, bodyBorder: getComputedStyle(reader.querySelector('.markdown-body')!).borderTopWidth, bodyPadding: getComputedStyle(reader.querySelector('.markdown-body')!).paddingTop, mainWidth: parent.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight) };
         });
-        assert.equal(await body().locator('.markdown-reader-toolbar > span').innerText(), '', 'brief has no redundant label or filename');
+        assert.equal(await body().locator('.markdown-reader-toolbar').count(), 0, 'brief directly displays the body without a source toolbar');
+        assert.equal(await body().getByRole('button', { name: '查看原文', exact: true }).count(), 0);
         assert.equal(geometry.bodyBorder, '0px', '任务说明正文不应套额外面板边框');
         assert.equal(geometry.bodyPadding, '0px', '正文沿用阅读排版');
         assert.equal(await body().locator('.task-material-meta, .task-node-directory').count(), 0, 'brief uses the main area without extra metadata or a menu');
@@ -95,12 +96,37 @@ export async function runTaskMaterialsJourney({ t, page, runtime, workspaceRoot,
     assert.equal(await body().locator('.markdown-body').count(), 0);
     assert.doesNotMatch(await body().innerText(), /只有短目标，没有说明正文/);
     await open(simple);
+    await body().locator('.markdown-body').filter({ hasText: '完成依据：窄栏标题' }).waitFor({ state: 'visible' });
+    assert.equal(await body().locator('.markdown-reader-toolbar').count(), 0);
+    assert.equal(await body().getByRole('button', { name: '查看原文', exact: true }).count(), 0);
+    assert.equal(await body().locator('[data-task-brief]').getAttribute('data-task-brief-version'), runtime.inspectTask(workspaceRoot, simple).recordDigest);
+    await capture(page, 'task-record-brief-no-source.png');
     for (const [node, text] of [['design', '复用目录布局'], ['implementation', '只修改布局'], ['closeout', '可读交付说明']]) {
       await page.locator(`[data-task-node=${node}]`).click();
       const menu = body().getByRole('menuitem').filter({ hasText: node === 'design' ? '修复方案' : node === 'implementation' ? '实施过程' : '交付说明' });
       if (await menu.count()) await menu.click();
       await body().locator('.markdown-body').filter({ hasText: text }).waitFor({ state: 'visible' });
+      await body().getByRole('button', { name: '查看原文', exact: true }).click();
+      await body().getByLabel('Markdown 原文', { exact: true }).filter({ hasText: text }).waitFor({ state: 'visible' });
+      await body().getByRole('button', { name: '阅读模式', exact: true }).click();
+      await body().locator('.markdown-body').filter({ hasText: text }).waitFor({ state: 'visible' });
     }
+    await open(history);
+    await page.locator('[data-task-node=design]').click();
+    await body().locator('.markdown-reader-toolbar > span').filter({ hasText: 'proposal.md' }).waitFor({ state: 'visible' });
+    await body().getByRole('button', { name: '查看原文', exact: true }).click();
+    await body().getByLabel('Markdown 原文', { exact: true }).waitFor({ state: 'visible' });
+    assert.ok((await body().getByLabel('Markdown 原文', { exact: true }).innerText()).trim());
+    await body().getByRole('button', { name: '阅读模式', exact: true }).click();
+    await body().locator('.markdown-body').waitFor({ state: 'visible' });
+    await capture(page, 'task-record-solution-source-retained.png');
+    const composite = 'materials-direct-composite';
+    cli(['task', 'create', composite, '--title', '直接显示组合任务说明', '--intent', '读取组合任务记录中的正文。', '--parent-task', '--brief-file', markdown(`${composite}-brief`, '# 组合任务正文\n\n组合任务直接显示说明，没有原文切换。\n')]);
+    await open(composite);
+    await body().locator('[data-task-brief] .markdown-body').filter({ hasText: '组合任务直接显示说明' }).waitFor({ state: 'visible' });
+    assert.equal(await body().locator('.markdown-reader-toolbar').count(), 0);
+    assert.equal(await body().getByRole('button', { name: '查看原文', exact: true }).count(), 0);
+    await capture(page, 'task-record-composite-brief-no-source.png');
   });
 
   await scenario('任务材料：无OpenSpec也可读取独立审查及失败、未覆盖、通过证据', async () => {
@@ -137,7 +163,7 @@ export async function runTaskMaterialsJourney({ t, page, runtime, workspaceRoot,
     await refresh(); await body().locator('.markdown-body').filter({ hasText: '当前说明版本二' }).waitFor({ state: 'visible' });
     assert.notEqual(runtime.inspectTask(workspaceRoot, simple).recordDigest, previous.recordDigest);
     await page.reload(); await body().locator('.markdown-body').filter({ hasText: '当前说明版本二' }).waitFor({ state: 'visible' });
-    assert.equal(await body().locator('.markdown-reader-toolbar > span').innerText(), '');
+    assert.equal(await body().locator('.markdown-reader-toolbar').count(), 0);
     await open(history);
     await body().getByText('尚未填写任务说明。', { exact: true }).waitFor({ state: 'visible' });
     assert.doesNotMatch(await body().innerText(), /普通用户先从这里了解变更/);
@@ -375,6 +401,7 @@ export async function runTaskMaterialsJourney({ t, page, runtime, workspaceRoot,
     const unchanged = runtime.inspectTask(workspaceRoot, id).recordDigest;
     await open(id);
     await body().locator('[data-task-brief]').filter({ hasText: '这是同一任务数据库中的正文' }).waitFor({ state: 'visible' });
+    assert.equal(await body().getByRole('button', { name: '查看原文', exact: true }).count(), 0);
     if (composite) {
       await body().locator('.ant-select').click();
       await page.locator('.ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option-content').filter({ hasText: `demo/${change}` }).click();

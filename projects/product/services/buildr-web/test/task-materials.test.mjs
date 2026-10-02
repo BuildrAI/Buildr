@@ -73,14 +73,14 @@ function artifactHookHarness() {
   };
 }
 
-test('Markdown toolbar supports an explicit empty label and Task Record brief has no filename', () => {
+test('文件Markdown阅读保留原文工具栏，Task Record说明直接呈现正文且没有原文开关', () => {
   const props = { path: 'docs/example.md', content: '# Reader' };
   assert.match(markup(MarkdownReader, props), /<span>example.md<\/span>/);
   const empty = markup(MarkdownReader, { ...props, toolbarStart: null });
   assert.doesNotMatch(empty, /example.md/); assert.match(empty, /markdown-reader-toolbar.*<span><\/span>/);
   const html = markup(TaskReadingPane, { task: { record: { taskId: 'one', brief: '# 记录正文' }, recordDigest: 'record-v1' }, target: { kind: 'brief' }, artifacts: { materials: { data: null, loading: true, error: '材料失败' } }, onRead() {}, onClose() {} });
   assert.match(html, /data-task-brief="one"/); assert.match(html, /data-task-brief-version="record-v1"/);
-  assert.match(html, /markdown-reader-toolbar.*<span><\/span>/); assert.doesNotMatch(html, /材料失败|正在读取材料|brief.md/);
+  assert.doesNotMatch(html, /markdown-reader-toolbar|查看原文|材料失败|正在读取材料|brief.md/);
 });
 
 test('任务记录说明独立读取，solution/implementation/delivery材料有各自阅读入口', () => {
@@ -144,6 +144,7 @@ test('组合任务默认直接阅读记录说明，材料读取等待或失败�
     const props = { record, briefs: [], documents: taskDocuments([], data), materials: state, onDocument() {}, renderContent: readingContent(state, record) };
     const html = markup(CompositeTaskPlan, props);
     assert.match(html, /data-task-brief="one"/); assert.doesNotMatch(html, /材料重核失败|正在读取任务材料|上次读取的正文/);
+    assert.doesNotMatch(html, /markdown-reader-toolbar|查看原文/);
     assert.match(markup(CompositeTaskPlan, { ...props, record: { ...record, brief: null }, renderContent: readingContent(state, { ...record, brief: null }) }), /尚未填写任务说明/);
   }
 });

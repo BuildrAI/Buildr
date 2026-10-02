@@ -570,7 +570,7 @@ artifacts:
       - current-knowledge-maintenance
       - task-openspec-apply
       - task-source-task-verification-application-68479e
-    observedDigest: 0a632aba8dc8609429cf82bec5093fac86997ced193ad1eaa4d4e4c9433597d9
+    observedDigest: 8c9d34e0d2fb69b379daf675bc27ecb44deeb359d706f2b88261a6597d8e735b
     files:
       - task-source-2026-08-30-parent-child-task-audit-b28c38
       - parent-completion-html
@@ -770,7 +770,7 @@ artifacts:
       - task-git-method
       - task-commits-contract
       - public-json-contracts
-    observedDigest: 9ea18678696c52f1587d51427be67453e7e22b7a514e11db366b36088ce43b2d
+    observedDigest: 0c87fb048dfa8b1cee76b9caa56c35ed5a93b3b4f69e4f929f5a201d0f61fa65
     files:
       - task-source-2026-08-30-parent-child-task-audit-b28c38
       - task-file-task-system-md-d14898
@@ -2242,7 +2242,7 @@ sources:
     kind: evidence
     path: knowledge/code-map/task-system.md
     summary: 保存本主题当前解释或依据，网页与本地使用同一正文；不替代规范和代码。
-    observedDigest: 9ea18678696c52f1587d51427be67453e7e22b7a514e11db366b36088ce43b2d
+    observedDigest: 0c87fb048dfa8b1cee76b9caa56c35ed5a93b3b4f69e4f929f5a201d0f61fa65
   - id: task-file-task-system-html-80857d
     title: 完整过程与角色职责 · 独立展示
     kind: evidence
@@ -2876,13 +2876,13 @@ sources:
     title: 任务记录说明与成果阅读
     kind: code
     path: services/buildr-web/src/features/task/components/TaskReadingPane.tsx
-    summary: 直接读取记录 brief 并复用正文和原文切换，空说明明确显示缺失，不等待材料或变更读取。
-    observedDigest: bd8a62a99b16b3b25f0632e90c621cb4a995449efdbad52c7790f5e0c5e36d15
+    summary: 直接排版展示记录 brief，源码在编辑区查看；空说明明确显示缺失，不等待材料或变更读取。
+    observedDigest: b1c7db570c0585f7fc19d6ca5fa4b390adebc8d30205d610a0c17491c11d56c3
   - id: task-material-reader
     title: 正式节点材料正文阅读
     kind: code
     path: services/buildr-web/src/features/task/components/TaskMaterialReader.tsx
-    summary: 复用Markdown容器呈现过程文件正文及局部缺失，材料身份和实际正文版本可核对。
+    summary: 复用Markdown容器呈现过程文件正文及局部缺失，保留原文切换，材料身份和版本可核对。
     observedDigest: cdf8f18416db1060966c6344456c2dbfa398fb5a6e064a5ccffc8cb9f1dc55f4
   - id: task-materials-browser-journey
     title: 独立任务材料实际页面回归
