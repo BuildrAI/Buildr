@@ -12,7 +12,7 @@ skills:
     runtimePath: task-triage
     requires:
       - capability: buildr.task-record
-        version: 3
+        version: 4
         mode: optional
       - capability: buildr.git-operations
         version: 1
@@ -64,7 +64,7 @@ skills:
         version: 1
     requires:
       - capability: buildr.task-record
-        version: 3
+        version: 4
         mode: optional
       - capability: buildr.git-worktree-provider
         version: 1
@@ -154,7 +154,7 @@ skills:
     runtimePath: task-retrospective
     requires:
       - capability: buildr.task-record
-        version: 3
+        version: 4
         mode: required
   - id: capability-adaptation
     assetIdentity: buildr:skill:capability-adaptation
@@ -226,7 +226,7 @@ skills:
     runtimePath: task-manager
     provides:
       - capability: buildr.task-record
-        version: 3
+        version: 4
   - id: task-review
     assetIdentity: buildr:skill:task-review
     sourceIdentity: package:skills/buildr/task-review
@@ -389,14 +389,14 @@ contracts:
     version: 2
     path: contracts/buildr/task-review/v2.md
     description: 对正式 Task 的实际方案或完成结果执行可选语义审查，维护两类当前结果及完整审查历史。
-  - id: buildr.task-record
-    version: 3
-    path: contracts/buildr/task-record/v3.md
-    description: 管理canonical Workspace中Task最小顶层事实及本机复盘文档摘要与决定状态。
   - id: buildr.current-knowledge-maintenance
     version: 3
     path: contracts/buildr/current-knowledge-maintenance/v3.md
     description: 按明确范围建设、检查与维护代码地图、技术图和解释文档。
+  - id: buildr.task-record
+    version: 4
+    path: contracts/buildr/task-record/v4.md
+    description: 管理主工作空间中的任务说明、顶层事实及本机复盘文档摘要与决定状态。
 bindings:
   - capability: buildr.terminology-governance
     version: 1
@@ -416,10 +416,10 @@ bindings:
   - capability: buildr.task-review
     version: 2
     provider: task-review
-  - capability: buildr.task-record
-    version: 3
-    provider: task-manager
   - capability: buildr.current-knowledge-maintenance
     version: 3
     provider: current-knowledge-maintenance
+  - capability: buildr.task-record
+    version: 4
+    provider: task-manager
 workspaceId: f2f40b71-2382-5906-82bd-76a7927b59f3

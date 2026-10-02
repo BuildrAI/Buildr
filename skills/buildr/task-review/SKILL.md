@@ -23,7 +23,7 @@ buildr task review inspect <task-id> --target <canonical-workspace> --json
 
 Review 是可选证据。Task Verification、任务收尾和 Parent 管理都不因 Result 缺失、`changes-requested` 或旧对象而自动阻塞。
 
-分别依据当前任务说明（Task Brief）、真实方案选择、范围、风险及用户要求判断方案审查（Planning Review）和实现审查（Implementation Review），不因 `change-flow` 自动两次审查，也不因无变更（Change）、`code-only` 或 `spec-maintenance` 排除需要的审查。
+先从 `task inspect` 的 `record.brief` 读取当前任务说明（Task Brief），再分别依据正文、真实方案选择、范围、风险及用户要求判断方案审查（Planning Review）和实现审查（Implementation Review），不因 `change-flow` 自动两次审查，也不因无变更（Change）、`code-only` 或 `spec-maintenance` 排除需要的审查。
 
 - `planning` 审方案选择：核对问题、目标、边界和完成依据是否被真实方案覆盖，检查完整性、合理性、一致性、关键取舍与风险。方案可来自任务文档、设计、清单或专业产物；OpenSpec artifacts 只是来源之一。需要时在方案对象可读、取舍尚可调整时执行。
 - `completion` 审实现兑现：实现对象稳定后，对照当前任务说明与适用方案核对真实成果；没有正式方案或未执行 `planning` 也可独立执行，不补造方案或假设方案已通过。

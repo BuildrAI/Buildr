@@ -26,7 +26,7 @@
 
 ## 变更说明与辅助记录
 
-此处 `brief.md` 是具体变更说明（Change Brief），不是独立任务说明（Task Brief）。`assess` 保持 v3 的已授权创建或刷新保证，`reconcile|inspect` 核对它与当前权威材料的一致性；不将任务正文职责转给知识维护。任务整体问题、需求、范围与完成依据由 `task-manager` 维护唯一 Task Brief，Change Brief 通过明确任务身份和项目根逻辑 Markdown 引用（如 `[任务说明](@project/tasks/<task-id>/brief.md)`）指向它，不复制同义正文。
+此处 `brief.md` 是具体变更说明（Change Brief），不是独立任务说明（Task Brief）。`assess` 保持 v3 的已授权创建或刷新保证，`reconcile|inspect` 核对它与当前权威材料的一致性；不将任务正文职责转给知识维护。任务整体问题、需求、范围与完成依据由 `task-manager` 维护唯一 Task Brief，Change Brief 通过稳定任务引用（如 `[任务说明](@task/<task-id>)`）指向任务记录（Task Record）的正文，不复制同义正文。
 
 Change Brief 简洁解释本次一句话摘要、必要背景、具体目标与非目标、关键变化、影响/风险/兼容性、验收摘要及技术材料入口；角色或流程只在有意义时表达，不强迫固定长模板，不为填章节虚构事实，也不以空占位宣称已提供说明。新增产品行为先进入提案、设计或规范，不能只写解释；它不成为第二规范或任务状态权威。
 

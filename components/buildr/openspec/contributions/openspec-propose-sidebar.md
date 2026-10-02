@@ -6,7 +6,7 @@
 
 创建 Change 前先向用户说明正在使用 OpenSpec、`propose` action 和预定 Change ID；status 解析后，在写入前报告实际 `changeRoot`。
 
-正式任务登记与实际隔离位置核对后，先由 `task-manager` 形成或接续并关联唯一任务说明（Task Brief），再引用它规划具体变更（Change）。任务可有零到多个 Change，多任务可共享同一 Change 或适用正文；不推断一对一所有权。Change root 的 `brief.md` 是具体变更说明（Change Brief），只解释该变化并通过明确任务身份和项目根逻辑 Markdown 引用（如 `[任务说明](@project/tasks/<task-id>/brief.md)`）指向唯一任务正文，不复制任务需求。适用已有文档时指向经核对的唯一原文。逻辑引用限定同一项目根，归档后目标不变；普通相对链接保持既有语义，旧说明和历史不批量改写。
+正式任务登记与实际隔离位置核对后，先由 `task-manager` 在任务记录（Task Record）的 `brief` 字段形成或接续唯一任务说明（Task Brief），再引用它规划具体变更（Change）。任务可有零到多个 Change，多任务可共享同一 Change 或方案文档，但每个任务拥有自己的说明正文。Change root 的 `brief.md` 是具体变更说明（Change Brief），只解释本次变化并通过稳定引用（如 `[任务说明](@task/<task-id>)`）指向对应任务，不复制任务需求。稳定任务引用限定当前工作空间，不受归档目录深度影响；正文引用项目文件时使用明确的 `projects/<project>/<path>`。旧文件链接保留原语义，旧说明与历史不批量改写。
 
 先取得正式Task Record并核对实际工作位置。创建规划文件前执行 `task-triage` 的默认隔离策略，使用当前任务工作树（Worktree）的实际根；只有用户明确要求在主开发分支修改时使用该位置。创建顺序为：`openspec new change`、`task update --add-change`、写proposal/design/specs/tasks。Application不额外保存规划快照；Agent直接读取当前artifacts判断是否完整、是否需要审查以及下一步做什么。
 
