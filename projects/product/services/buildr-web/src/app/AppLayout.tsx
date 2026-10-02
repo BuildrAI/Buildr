@@ -80,6 +80,9 @@ export function AppLayout({ renderResource }: { renderResource: (item: ResourceP
     return () => media.removeEventListener('change', update);
   }, []);
   const workspaceDestination = useRef({ workspaceId, path: `/workspaces/${workspaceId}/workspace-overview`, state: location.state });
+  const codeDestination = useRef({workspaceId,path:`/workspaces/${workspaceId}/code/explorer`});
+  if(codeDestination.current.workspaceId!==workspaceId)codeDestination.current={workspaceId,path:`/workspaces/${workspaceId}/code/explorer`};
+  if(area==='code')codeDestination.current={workspaceId,path:location.pathname+location.search};
   if (workspaceDestination.current.workspaceId !== workspaceId) {
     workspaceDestination.current = { workspaceId, path: `/workspaces/${workspaceId}/workspace-overview`, state: null };
   }
@@ -283,7 +286,7 @@ export function AppLayout({ renderResource }: { renderResource: (item: ResourceP
     <AppShellContext.Provider value={shellValue}>
       <WorkbenchPreferencesProvider key={workspaceId || "global"} workspaceId={workspaceId}>
       <div className={"app-shell area-" + area}>
-        <AppShellHeader isGlobal={isGlobal} brandHref={isGlobal ? '/' : workspaceHref('/overview')} development={webProfile === 'development'} workspaceName={isGlobal ? '全部工作空间' : (workspace?.name || '正在读取…')} workspaceMenuItems={workspaceMenuItems} area={area} workbenchHref={workspaceHref('/overview')} workspaceDestination={{to:workspaceDestination.current.path,state:workspaceDestination.current.state}} actions={<>
+        <AppShellHeader isGlobal={isGlobal} brandHref={isGlobal ? '/' : workspaceHref('/overview')} development={webProfile === 'development'} workspaceName={isGlobal ? '全部工作空间' : (workspace?.name || '正在读取…')} workspaceMenuItems={workspaceMenuItems} area={area} workbenchHref={workspaceHref('/overview')} codeHref={codeDestination.current.path} workspaceDestination={{to:workspaceDestination.current.path,state:workspaceDestination.current.state}} actions={<>
             {!isGlobal ? <WorkbenchSearch key={workspaceId} /> : null}
             {!isGlobal ? <Button className="shell-menu-toggle" aria-label="打开导航菜单" icon={<MenuOutlined />} onClick={() => setNavigationOpen(true)} /> : null}
             <Button id="quit-buildr" className="nav-quit" type="text" onClick={() => { void quit(); }}>

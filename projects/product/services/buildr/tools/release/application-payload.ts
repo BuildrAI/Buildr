@@ -27,6 +27,7 @@ const RESOURCE_SOURCES: any = Object.freeze([
   ['resources/runtime', 'product/resources/runtime', { exclude: new Set(['dsh']) }],
   ['docs', 'product/docs', { include: new Set(['cli-reference.md', 'dsh-desktop-plugin.md']) }],
   ['src/infrastructure/sqlite/migrations', 'product/src/infrastructure/sqlite/migrations'],
+  ['node_modules/@vscode/ripgrep-universal/bin', 'runtime/ripgrep'],
 ]);
 
 export function renderPackageReadme(source: string, sourceCommit: string, root = serviceRoot): string {

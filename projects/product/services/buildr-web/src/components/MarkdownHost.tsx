@@ -6,6 +6,7 @@ type Props = {
   className?: string;
   options?: MarkdownRenderOptions;
   fragment?: string;
+  renderVersion?: string;
 };
 
 export function scrollMarkdownFragment(root: HTMLElement, fragment: string) {
@@ -17,7 +18,7 @@ export function scrollMarkdownFragment(root: HTMLElement, fragment: string) {
   return true;
 }
 
-export function MarkdownHost({ markdown, className, options, fragment }: Props) {
+export function MarkdownHost({ markdown, className, options, fragment, renderVersion }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const optionsRef = useRef(options);
   optionsRef.current = options;
@@ -41,7 +42,7 @@ export function MarkdownHost({ markdown, className, options, fragment }: Props) 
     }
     host.replaceChildren(view);
     if (fragment) requestAnimationFrame(() => scrollMarkdownFragment(view, fragment));
-  }, [markdown, className, fragment, JSON.stringify(options?.headingCounts)]);
+  }, [markdown, className, fragment, renderVersion, JSON.stringify(options?.headingCounts)]);
 
   return <div ref={ref} />;
 }

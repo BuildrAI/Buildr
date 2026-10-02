@@ -246,6 +246,12 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     contributions: { cli: [], http: ['change.http'], diagnostics: [] },
     lifecycle: 'none',
   }, {
+    id: 'code',
+    requires: [WORKSPACE_APPLICATION, WORKSPACE_QUERY, TASK_QUERY_APPLICATION, TASK_WORKTREE_PROVIDER],
+    provides: ['code.application'],
+    contributions: {cli:['code repositories','code directory','code file','code search'],http:['code.files.http'],diagnostics:[]},
+    lifecycle: 'none',
+  }, {
     id: 'project-verification',
     requires: [WORKSPACE_QUERY],
     provides: [VERIFICATION_APPLICATION, VERIFICATION_DECLARATION],
@@ -325,6 +331,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     'worktree create', 'worktree cleanup', 'worktree inspect',
     'task commits', 'task changed-files',
     'task materials inspect', 'task materials record', 'task materials write',
+    'code repositories', 'code directory', 'code file', 'code search',
     'project verification inspect', 'project verification validate', 'project verification update',
     'task review inspect', 'task review record',
     'task verification inspect', 'task verification record',
@@ -335,7 +342,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     'doctor',
   ]);
   assert.deepEqual(runtimeContributions(runtime, 'http').map((item: any) => item.id), [
-    'workspace-core.http', 'agent-assets.http', 'knowledge.http', 'publication.http', 'task-work-context.http', 'task.http', 'task.daily-progress.http', 'workbench.http', 'task.commits.http', 'task.changed-files.http', 'task.materials.http', 'change.http',
+    'workspace-core.http', 'agent-assets.http', 'knowledge.http', 'publication.http', 'task-work-context.http', 'task.http', 'task.daily-progress.http', 'workbench.http', 'task.commits.http', 'task.changed-files.http', 'task.materials.http', 'change.http', 'code.files.http',
     'task-review.http', 'task-verification.http',
     'task-parent-coordination.http', 'system-installation.release-awareness.http',
   ]);

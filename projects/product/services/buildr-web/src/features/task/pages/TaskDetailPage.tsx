@@ -3,7 +3,7 @@ import { CompositeTaskContent } from '../components/CompositeTaskContent';
 import { CompositeTaskEndDrawer } from '../components/CompositeTaskEndDrawer';
 import { taskDocumentHref } from '../components/TaskLinkedDocument';
 import { useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { useLocation, useParams } from 'react-router-dom';
+import { useLocation, useParams, useNavigate } from 'react-router-dom';
 import { Alert, Button, Dropdown, Spin } from 'antd';
 import { MoreOutlined, UnorderedListOutlined } from '@ant-design/icons';
 import { useAppShell } from '../../../app/AppShellContext';
@@ -43,6 +43,7 @@ export function TaskDetailPage({ taskId: providedTaskId }: { taskId?: string } =
   const params = useParams();
   const previewContext = useResourcePreview();
   const location = useLocation();
+  const navigate = useNavigate();
   const [endOpen, setEndOpen] = useState(false);
   const taskId = providedTaskId || params.taskId || '';
   const insidePreview = useContext(InsideResourcePreview);
@@ -126,12 +127,14 @@ export function TaskDetailPage({ taskId: providedTaskId }: { taskId?: string } =
   if (detail.error) return <Alert type="warning" message="任务不可用" description={detail.error} />;
   if (!detail.data || detail.data.record.taskId !== taskId) return <div className="task-content-loading"><Spin size="small" /> 正在读取任务…</div>;
   const data = detail.data, record = data.record;
+  const openCode=(file?:{gitRepositoryId:string;path:string;commitHash?:string;line?:number})=>navigate(href('/code/explorer'),{state:{codeEntry:{taskId,taskTitle:record.title,file,from:{pathname:location.pathname,search:location.search,hash:location.hash,state:location.state}}}});
   const terminal = !['todo', 'active'].includes(record.status);
   const documents = taskDocuments(artifacts.briefs, artifacts.materials.data);
   const continueWork = () => openAgentAction('task-continue', { taskId, title: record.title, intent: record.intent, status: record.status, projects: record.scope.projects, services: record.scope.services, result: record.result?.summary, progress: workContext.data?.context?.progress, nextStep: workContext.data?.context?.nextStep });
   const readContent = (target: TaskReadTarget, inDrawer = false) => <TaskReadingPane onPrototypeSelect={key => reading.choose('design', `prototype:${key}`)} onPrototypeNotesOpen={checklist.close} prototypeNotesCloseToken={Number(checklist.open)} embedded inDrawer={inDrawer} refreshToken={readerRefreshToken} target={target} task={data} context={workContext.data?.context} artifacts={artifacts} evidence={evidence} workspaceId={workspaceId} href={href} onRead={reading.openExtra} onClose={closeExtraContent} onRelativeLink={link => void artifacts.openIntentDocument(link)} refreshTask={refreshTaskAndList} />;
   const checklistTrigger = <Button id="task-checklist-toggle" size="small" type="text" icon={<UnorderedListOutlined />} aria-expanded={checklist.open} aria-controls="task-checklist-panel" onPointerEnter={event => checklist.enter('trigger', event.pointerType)} onPointerLeave={event => checklist.exit('trigger', event.pointerType)} onBlur={checklist.leave} onFocus={checklist.cancel} onKeyDown={event => { if (event.key === 'Escape' && checklist.open) { event.preventDefault(); event.stopPropagation(); checklist.close(); } }} onClick={checklist.toggle}>实施清单</Button>;
   const headerActions = <>
+    <Button id="task-source-files" size="small" type="text" onClick={()=>openCode()}>查看源文件</Button>
     <RefreshButton id="task-detail-refresh" label="刷新任务" size="small" loading={refreshing} onClick={() => void refresh()} />
     <Dropdown menu={{ items: [
       { key: 'continue', label: <span id="task-continue">{terminal ? '基于成果生成新任务指令' : '生成接续指令'}</span> },
@@ -155,7 +158,7 @@ export function TaskDetailPage({ taskId: providedTaskId }: { taskId?: string } =
     <TaskWorkPath actions={checklistTrigger} record={record} context={workContext.data?.context} selected={selected === 'changes' ? null : selected} onSelect={selectNode} contentTabs={[{ key: 'changes', label: <span data-prototype-position="changes-entry" title={changedCount.error || (countResult?.status === 'partial' ? '数量为已读范围，详情见改动与提交。' : undefined)}>改动与提交{changedFileCount !== null && changedFileCount > 0 && <span className="task-badge">{changedFileCount}</span>}</span>, selected: selected === 'changes', onSelect: () => selectNode('changes') }]} />
     <div className={`task-detail-layout${checklist.open && checklist.pinned ? ' checklist-pinned' : ''}${checklistResizing ? ' checklist-resizing' : ''}`}>
       <div className="task-detail-reading">
-    {selected === 'changes' ? <div id="task-node-content" className="task-node-content"><div className="task-node-reading"><TaskChangesPane key={taskId} changed={changedFiles} /></div></div> : <TaskNodeContent choices={reading.choices} onChoose={reading.choose} selected={selected} record={record} documents={documents} briefs={artifacts.briefs} briefsLoading={artifacts.briefsLoading} materialsLoading={artifacts.materials.loading} materialsError={artifacts.materials.error} materialDiagnostics={artifacts.materials.data?.diagnostics} reviews={evidence.reviewData} verification={evidence.verificationData} reviewError={evidence.reviewError} verificationError={evidence.verificationError} reviewLoading={evidence.reviewLoading} verificationLoading={evidence.verificationLoading} prototypeData={artifacts.prototypeData} prototypeError={artifacts.prototypeError} hasRetrospective={Boolean(data.retrospectiveDocument.registered)} hasCoordination={data.taskRelations.children.length > 0} renderContent={readContent} />}
+    {selected === 'changes' ? <div id="task-node-content" className="task-node-content"><div className="task-node-reading"><TaskChangesPane key={taskId} changed={changedFiles} onOpenFile={(file,repository,commit)=>openCode({gitRepositoryId:repository.id,path:file.path,commitHash:commit?.commit.hash})} /></div></div> : <TaskNodeContent choices={reading.choices} onChoose={reading.choose} selected={selected} record={record} documents={documents} briefs={artifacts.briefs} briefsLoading={artifacts.briefsLoading} materialsLoading={artifacts.materials.loading} materialsError={artifacts.materials.error} materialDiagnostics={artifacts.materials.data?.diagnostics} reviews={evidence.reviewData} verification={evidence.verificationData} reviewError={evidence.reviewError} verificationError={evidence.verificationError} reviewLoading={evidence.reviewLoading} verificationLoading={evidence.verificationLoading} prototypeData={artifacts.prototypeData} prototypeError={artifacts.prototypeError} hasRetrospective={Boolean(data.retrospectiveDocument.registered)} hasCoordination={data.taskRelations.children.length > 0} renderContent={readContent} />}
 
       </div>
     {checklist.open && checklist.pinned ? <SplitDivider className="task-checklist-resize" aria-label="拖拽调整实施清单宽度" title="拖拽调整宽度" onPointerDown={event => { checklistDrag.current = { x: event.clientX, width: checklistWidth ?? Math.round(reading.rootRef.current!.clientWidth * 0.35) }; setChecklistResizing(true); event.preventDefault(); }} /> : null}

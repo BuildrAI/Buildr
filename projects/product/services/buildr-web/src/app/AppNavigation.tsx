@@ -28,6 +28,8 @@ export function AppNavigation({ onNavigate }: { onNavigate?: () => void }) {
     services: <AppstoreOutlined />,
     repositories: <BranchesOutlined />,
     skills: <ThunderboltOutlined />,
+    explorer: <FolderOutlined />,
+    'source-control': <BranchesOutlined />,
   };
   const item = (path: string, label: string, name: string, onClick?: () => void) => {
     const destination = state.area === 'workspace' && !['projects', 'articles'].includes(name) ? workspaceMenuTarget(name) : { to: href(path), state: undefined };
@@ -35,8 +37,8 @@ export function AppNavigation({ onNavigate }: { onNavigate?: () => void }) {
   };
 
   return (
-    <nav className="shell-navigation" aria-label={state.area === 'workbench' ? '工作台导航' : '工作空间导航'}>
-      {state.area === 'workbench' ? (
+    <nav className="shell-navigation" aria-label={state.area === 'code' ? '代码导航' : state.area === 'workbench' ? '工作台导航' : '工作空间导航'}>
+      {state.area === 'code' ? <><p className="shell-nav-caption">代码</p>{item('/code/explorer', '资源管理器', 'explorer')}{item('/code/source-control', '源代码管理', 'source-control')}</> : state.area === 'workbench' ? (
         <>
           <p className="shell-nav-caption">工作台</p>
           {item('/overview', '概览', 'overview')}

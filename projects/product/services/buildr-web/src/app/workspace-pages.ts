@@ -85,6 +85,7 @@ export function tabForPath(
     if (decoded.some((p) => !p || p === "." || p === ".." || /[/?#\\]/.test(p)))
       return null;
     const [area, project, service] = decoded;
+    if(area==='code'&&parts.length===2&&['explorer','source-control'].includes(project))return {key:`dir:code:${project}`,kind:'dir',title:project==='explorer'?'资源管理器':'源代码管理',path};
     const names: Record<string, string> = {
       "workspace-overview": "工作空间总览",
       projects: "项目目录",

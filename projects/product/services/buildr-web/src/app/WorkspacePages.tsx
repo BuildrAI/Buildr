@@ -153,7 +153,7 @@ export function WorkspacePages({ workspaceId, renderResource }: { workspaceId: s
   const displayTabs = current && !resourcePreview(workspaceId, location.pathname) && !tabs.some((t) => t.key === current.key) ? [...tabs, current] : tabs;
   return <ResourcePreviewContext.Provider value={{ render: renderResource, states: previews, open: openPreview, identifyTask, activate: activatePreview, close: closePreview, clear: clearPreview, remove: removePreviewResource }}><WorkspaceTabsContext.Provider value={{ tabs: displayTabs, register, close, reorder, ratio, setRatio, reportPaneWidth }}>
     <div className="workspace-pages" hidden={!current}>
-      <div className="workspace-page-tabs" style={{ width: `calc(100% - ${paneWidths[location.pathname] || 0}px)` }}><PageTabStrip tabs={displayTabs.filter(tab => tab.kind !== 'dir')} onClose={close} onReorder={reorder} /></div>
+      <div className="workspace-page-tabs" hidden={location.pathname.startsWith(`/workspaces/${workspaceId}/code/`)} style={{ width: `calc(100% - ${paneWidths[location.pathname] || 0}px)` }}><PageTabStrip tabs={displayTabs.filter(tab => tab.kind !== 'dir')} onClose={close} onReorder={reorder} /></div>
       <div className="workspace-page-stack" onClickCapture={captureResourceLink}>
         {entries.map((entry) => <div key={entry.path + ":" + entry.instance} className="workspace-page" hidden={entry.path !== location.pathname || !current}>
           <WorkspaceViewActiveContext.Provider value={entry.path === location.pathname && Boolean(current)}><UNSAFE_LocationContext.Provider value={entry.location}>{entry.node}</UNSAFE_LocationContext.Provider></WorkspaceViewActiveContext.Provider>

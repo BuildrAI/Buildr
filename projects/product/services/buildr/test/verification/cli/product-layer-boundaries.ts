@@ -24,6 +24,8 @@ const allowedTargets: any = {
   module: new Set(['interfaces', 'application', 'domain', 'infrastructure']),
 };
 const allowedCrossModulePorts: any = new Set([
+  'modules/code/module.ts -> modules/task/module.ts',
+  'modules/code/module.ts -> modules/workspace/module.ts',
   'modules/workbench/module.ts -> modules/task/module.ts',
   'modules/workbench/module.ts -> modules/workspace/module.ts',
   'modules/knowledge/module.ts -> modules/workspace/module.ts',

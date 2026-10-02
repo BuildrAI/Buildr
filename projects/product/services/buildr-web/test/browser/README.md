@@ -27,6 +27,8 @@ tools/development/run-development-npm --prefix ../buildr-web run test:browser:la
 
 `layout` 覆盖 1920、1280、390 宽度的目录信息与操作可达、搜索保留、页面无非预期横向溢出；长文检查真实项目引用、分屏展开后的有界行宽与阅读位置恢复。允许宽表格在自身区域滚动。使用宽松可读范围和实际行为，不固定完整截图或精确样式值。
 
+`code` 由 `code-explorer-journey.ts` 验证代码区域、真实只读目录与搜索、文档相对链接和图片、任务返回、历史与当前文件身份及 1440/900/390 的可达性。执行入口为 `node --import ./test/register-development-entry.ts test/verification/browser-selector-dispatcher.ts --selector code --run`；沿用同一隔离生产托管与清理。
+
 ## 换用户或工具环境
 
 智能体（Agent）先读取适用声明和能力绑定（Capability Binding），再发现现场工具并阅读其真实接口说明。Tabbit、egolite、Codex 内置浏览器都只是可能的工具，不能从名称推断视口、脚本、截图或控制台能力。

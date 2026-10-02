@@ -1,3 +1,4 @@
+import { CODE_MODULE } from '../modules/code/module.ts';
 import { WORKBENCH_MODULE } from '../modules/workbench/module.ts';
 import { createKnowledgeModule } from '../modules/knowledge/module.ts';
 import * as platform from '../infrastructure/platform.ts';
@@ -68,6 +69,7 @@ export function createRuntime(): any  {
   registry.install(TASK_CHANGED_FILES_MODULE);
   registry.install(TASK_MATERIALS_MODULE);
   registry.install(createChangeModule(runtime));
+  registry.install(CODE_MODULE);
   registry.provide(TASK_CHANGE_BINDER).bindChangeResolver(registry.provide(CHANGE_APPLICATION));
   registry.install(createVerificationModule(runtime));
   registry.install(TASK_REVIEW_MODULE);

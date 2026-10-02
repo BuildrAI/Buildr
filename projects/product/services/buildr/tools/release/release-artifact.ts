@@ -213,6 +213,10 @@ export function assertNpmTarballInventory(inventory: any): any  {
     'payload/product/src/infrastructure/sqlite/migrations/0000_create_migration_ledger.sql',
     'payload/product/web-dist/index.html',
     'payload/licenses/dependencies/ajv-LICENSE',
+    'payload/licenses/dependencies/@vscode__ripgrep-universal-LICENSE',
+    'payload/runtime/ripgrep/darwin-arm64/rg',
+    'payload/runtime/ripgrep/linux-x64/rg',
+    'payload/runtime/ripgrep/win32-x64/rg.exe',
     'payload/licenses/dependencies/yaml-LICENSE',
   ];
   for (const requiredPath of required) if (!paths.includes(requiredPath)) throw new Error(`npm tarball inventory is missing: ${requiredPath}`);

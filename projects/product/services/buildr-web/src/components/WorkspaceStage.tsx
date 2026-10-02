@@ -2,7 +2,9 @@ import { SplitDivider } from './SplitDivider';
 import { Button } from 'antd';
 import { useContext, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode, type CSSProperties } from 'react';
 import { useLocation } from 'react-router-dom';
-import { CloseOutlined, FullscreenExitOutlined, FullscreenOutlined } from '@ant-design/icons';
+import { CloseOutlined } from '@ant-design/icons';
+import { ReadingToggle } from './ReadingToggle';
+import { ObjectTabStrip, type WorkspaceObjectTab } from './ObjectTabStrip';
 import { useWorkspacePageTabs, WorkspaceViewActiveContext, type WorkspacePageTab } from '../app/pageTabs';
 
 import { InsideResourcePreview, ProjectPreviewContext, useResourcePreview } from '../app/resource-preview';
@@ -10,8 +12,7 @@ import { paneDimensions } from '../app/workspace-pages';
 import './workspace-stage.css';
 
 /** 对象级页签：领域内点开的服务/文档/变更，页内对照，全关时右组退场。 */
-export type ObjectTabKind = 'svc' | 'doc' | 'chg';
-export type WorkspaceObjectTab = { key: string; kind: ObjectTabKind; title: string };
+export type { ObjectTabKind, WorkspaceObjectTab } from './ObjectTabStrip';
 
 export function WorkspaceStage(props: Props) {
   const inside = useContext(InsideResourcePreview);
@@ -238,36 +239,8 @@ function SplitWorkspaceStage({
             style={overlay ? { width: Math.min(720, Math.max(280, stageWidth - 20)) } : expanded ? { width: '100%', flexBasis: '100%' } : rightWidth ? { width: rightWidth, flexBasis: rightWidth } : undefined}
           >
             <div className="pane-overlay-heading"><strong>阅读材料</strong><Button className="pane-overlay-close" type="text" aria-label="关闭阅读" icon={<CloseOutlined />} onClick={closeReading} /></div>
-            <Button className="pane-reading-toggle" size="small" type="text" icon={expanded ? <FullscreenExitOutlined /> : <FullscreenOutlined />} onClick={toggleReading} aria-label={expanded ? '恢复分屏' : '展开阅读'}>{expanded ? '恢复分屏' : '展开阅读'}</Button>
-            <div className="pane-tabstrip" role="tablist" aria-label="打开的对象">
-              {(objectTabs ?? []).map((tab) => {
-                const active = tab.key === activeObject;
-                return (
-                  <button
-                    key={tab.key}
-                    type="button"
-                    role="tab"
-                    aria-selected={active}
-                    className={`pane-tab${active ? ' on' : ''}`}
-                    title={tab.title}
-                    onClick={() => onActivateObject?.(tab.key)}
-                  >
-                    <span className={`pane-tab-dot ${tab.kind}`} aria-hidden />
-                    <span className="pane-tab-text">{tab.title}</span>
-                    <span
-                      className="pane-tab-x"
-                      role="button"
-                      tabIndex={0}
-                      onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); onCloseObject?.(tab.key); } }}
-                      aria-label={`关闭 ${tab.title}`}
-                      onClick={(event) => { event.stopPropagation(); onCloseObject?.(tab.key); }}
-                    >
-                      <CloseOutlined />
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
+            <ReadingToggle className="pane-reading-toggle" expanded={expanded} onToggle={toggleReading} />
+            <ObjectTabStrip tabs={objectTabs ?? []} active={activeObject} onActivate={onActivateObject} onClose={onCloseObject} />
             <div ref={readingBody} className="pane-body"><div className="pane-body-inner">{objectContent}</div></div>
           </section>
         </>

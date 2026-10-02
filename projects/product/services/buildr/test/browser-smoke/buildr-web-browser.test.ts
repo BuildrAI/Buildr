@@ -16,6 +16,7 @@ import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
 import { materializeCleanProductSource } from '../helpers/clean-product-source.ts';
 import { recordVerificationResultFromEvidence } from '../helpers/task-verification-result-fixture.ts';
 import { runWorkspaceCompositionJourney } from './workspace-composition-journey.ts';
+import { runCodeExplorerJourney } from '../../../buildr-web/test/browser/code-explorer-journey.ts';
 import { runLayoutJourney } from '../../../buildr-web/test/browser/layout-journey.ts';
 import { runTaskCommitsJourney } from '../../../buildr-web/test/browser/task-commits-journey.ts';
 import { runTaskMaterialsJourney } from '../../../buildr-web/test/browser/task-materials-journey.ts';
@@ -30,7 +31,7 @@ const SELECTOR_INPUT: any = process.argv[2] ?? 'all';
 const SCREENSHOT_DIR: any = process.env.BUILDR_SCREENSHOT_DIR;
 const BROWSER_WEB_DIST_ROOT: any = process.env.BUILDR_BROWSER_WEB_DIST_ROOT;
 if (!BROWSER_WEB_DIST_ROOT) throw new Error('Browser smoke requires BUILDR_BROWSER_WEB_DIST_ROOT from the Browser dispatcher staging build.');
-const KNOWN_SELECTORS: any = new Set(['all', 'core', 'shell', 'workbench', 'task', 'task-materials', 'project', 'service', 'change', 'articles', 'layout']);
+const KNOWN_SELECTORS: any = new Set(['all', 'core', 'shell', 'workbench', 'task', 'task-materials', 'project', 'service', 'change', 'articles', 'layout', 'code']);
 const SELECTORS: any = new Set(SELECTOR_INPUT.split(',').map((item: any) => item.trim()).filter(Boolean));
 
 for (const selector of SELECTORS) if (!KNOWN_SELECTORS.has(selector)) throw new Error(`Unknown browser integration selector: ${selector}`);
@@ -197,6 +198,16 @@ testing:
   runBuildr(['task', 'create', 'browser-abandon', '--title', '待放弃任务', '--intent', '验证明确放弃', '--target', root]);
 }
 
+function codeSegmentedText(version:'current'|'history') {
+  const heading='segmented '+version+' start\n';
+  let text=heading+'x'.repeat(512*1024-4-Buffer.byteLength(heading))+'前界😀BoundaryNeedle AfterBoundaryNeedle\n';
+  for(let line=3;line<=54;line++){
+    const prefix='segment '+line+' '+version+(line===40?' FarSegmentNeedle':'')+' ';
+    text+=prefix+'x'.repeat(96*1024-Buffer.byteLength(prefix)-1)+'\n';
+  }
+  return text+'segmented '+version+' end\n';
+}
+
 function createSelectedFixture(root: any, controllerCli: any): any  {
   if (SELECTORS.size === 2 && SELECTORS.has('shell') && SELECTORS.has('core')) {
     createShellFixture(root);
@@ -210,6 +221,28 @@ function createSelectedFixture(root: any, controllerCli: any): any  {
   if (selector === 'core') createCoreFixture(root);
   else if (selector === 'shell') createShellFixture(root);
   else if (selector === 'workbench') createShellFixture(root);
+  else if (selector === 'code') {
+    createShellFixture(root);
+    const source=path.join(root,'projects/demo/services/api');fs.mkdirSync(path.join(source,'src'),{recursive:true});
+    fs.writeFileSync(path.join(source,'src/main.ts'),'export const explorerAnswer = 1;\n'+'// readable source line\n'.repeat(120));
+    fs.writeFileSync(path.join(source,'README.md'),'# Explorer document\n\n[Source](src/main.ts)\n\n![Image](image.png)\n');
+    fs.writeFileSync(path.join(source,'image.png'),publicationTestPng);
+    fs.writeFileSync(path.join(source,'src/𠮷𠮷.ts'),'export const unicodeSearch = "𠮷𠮷";\n');
+    fs.writeFileSync(path.join(source,'large-text.txt'),'large text start\n'+('x'.repeat(80*1024-1)+'\n').repeat(63)+'large text end\n');
+    fs.writeFileSync(path.join(source,'zz-segmented-text.txt'),codeSegmentedText('history'));
+    fs.appendFileSync(path.join(root,'.gitignore'),'\n.agents/\n.worktrees/\n.pnpm-store/\n');
+    for(const directory of ['.agents','.worktrees','.pnpm-store']){fs.mkdirSync(path.join(root,directory),{recursive:true});fs.writeFileSync(path.join(root,directory,'browser-ignored.txt'),'ignored fixture source\n');}
+    runGit(root,['add','.']);runGit(root,['commit','-qm','code fixture\n\nBuildr-Task: browser-task']);
+    fs.writeFileSync(path.join(source,'zz-segmented-text.txt'),codeSegmentedText('current'));
+    fs.writeFileSync(path.join(source,'src/main.ts'),'export const explorerAnswer = 2;\nexport function registerApplicationDoctor() {}\n'+'// readable source line\n'.repeat(120));
+    fs.writeFileSync(path.join(source,'src/search-matches.ts'),[
+      'export const firstSearch = "Search.Hit[0] + SEARCH.HIT[0]";',
+      'export const nonLiteralSearch = "SearchXHit0";',
+      'export const nextSearch = "search.hit[0]";',
+      'export const lastSearch = "Search.Hit[0]";',
+      '',
+    ].join('\n'));
+  }
   else if (selector === 'layout') {
     createShellFixture(root);
     const source = path.join(root, 'projects/demo/services/api');
@@ -319,7 +352,7 @@ async function capture(page: any, name: any): Promise<any>  {
   await page.screenshot({ path: path.join(SCREENSHOT_DIR, name), fullPage: true, animations: 'disabled' });
 }
 
-test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('all') || SELECTORS.has('task') ? 300_000 : SELECTORS.has('task-materials') || SELECTORS.has('layout') || SELECTORS.has('workbench') || SELECTORS.has('articles') || SELECTORS.has('shell') || SELECTORS.has('service') || SELECTORS.has('project') ? 120_000 : 45_000 }, async (t: any) => {
+test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('all') || SELECTORS.has('task') ? 300_000 : SELECTORS.has('code') || SELECTORS.has('task-materials') || SELECTORS.has('layout') || SELECTORS.has('workbench') || SELECTORS.has('articles') || SELECTORS.has('shell') || SELECTORS.has('service') || SELECTORS.has('project') ? 120_000 : 45_000 }, async (t: any) => {
   const requestedSmokeRoot: any = process.env.BUILDR_SMOKE_ROOT;
   const managedSmokeRoot: any = requestedSmokeRoot && fs.existsSync(path.join(requestedSmokeRoot, '.buildr-smoke-owner')) ? requestedSmokeRoot : null;
   const base: any = managedSmokeRoot || fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-browser-smoke-'));
@@ -352,9 +385,14 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
   const otherRoot: any = path.join(base, 'other-workspace');
   runBuildr(['init', '--target', otherRoot, '--name', 'other-workspace', '--description', '第二个浏览器工作空间']);
   const runtime: any = createRuntime();
-  if (SELECTORS.has('layout')) {
+  if (SELECTORS.has('layout') || SELECTORS.has('code')) {
     const catalog = runtime.assetCatalog(workspaceRoot);
     if (catalog.migrationRequired) runtime.migrateAssetCatalog(workspaceRoot, { revision: catalog.revision });
+  }
+  if(SELECTORS.has('code')){
+    const second=path.join(base,'second-code-repository');fs.mkdirSync(path.join(second,'src'),{recursive:true});runGit(second,['init','-b','main']);runGit(second,['config','user.name','Fixture']);runGit(second,['config','user.email','fixture@example.invalid']);
+    fs.writeFileSync(path.join(second,'src/main.ts'),'export const secondRepository = true;\n');fs.writeFileSync(path.join(second,'src/search-matches.ts'),'export const secondSearch = "Search.Hit[0]";\n');fs.writeFileSync(path.join(second,'README.md'),'# Second repository\n');fs.writeFileSync(path.join(second,'zz-segmented-text.txt'),'second repository isolated text\n');for(let i=1;i<=9;i++)fs.writeFileSync(path.join(second,'src/file'+i+'.ts'),'export const cachedFile'+i+' = true;\n');runGit(second,['add','.']);runGit(second,['commit','-qm','second repository']);
+    runtime.createCatalogRepository(workspaceRoot,{revision:runtime.assetCatalog(workspaceRoot).revision,code:'second-code',name:'另一个代码库',path:second});
   }
   let registry: any = runtime.listRegisteredWorkspaces();
   registry = runtime.registerLocalWorkspace({ rootPath: otherRoot, revision: registry.revision });
@@ -410,6 +448,11 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     }
   });
 
+  if (selected('code')) {
+    const codeFile=path.join(workspaceRoot,'projects/demo/services/api/zz-segmented-text.txt');
+    const history=spawnSync('git',['rev-parse','HEAD'],{cwd:workspaceRoot,encoding:'utf8'});assert.equal(history.status,0,history.stderr);
+    await runCodeExplorerJourney({t,page,workspaceUrl,capture,expectedBrowserErrors,codeFixture:{current:codeSegmentedText('current'),history:codeSegmentedText('history'),commitHash:history.stdout.trim(),change:()=>fs.writeFileSync(codeFile,'changed segmented text\n'+codeSegmentedText('current')),restore:()=>fs.writeFileSync(codeFile,codeSegmentedText('current'))}});
+  }
   if (selected('layout')) await runLayoutJourney({ t, page, workspaceUrl, capture });
 
   if (SELECTORS.has('core')) await t.test('核心流程进入 Workspace、Task 路由并读取代表性 Tab', async () => {
@@ -585,7 +628,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
 
   if (selected('shell')) await t.test('平级导航、页面级页签与手机菜单保持真实范围', async () => {
     await page.goto(`${workspaceUrl}/tasks`);
-    assert.deepEqual(await page.locator('.top-nav a').allTextContents(), ['工作台', '工作空间']);
+    assert.deepEqual(await page.locator('.top-nav a').allTextContents(), ['工作台', '工作空间', '代码']);
     await page.locator('[data-area="workspace"]').click();
     await page.waitForURL(`${workspaceUrl}/workspace-overview`);
     await page.waitForFunction(() => [...document.querySelectorAll('.shell-navigation .shell-nav-item')].some((node: any) => node.textContent === '项目'));

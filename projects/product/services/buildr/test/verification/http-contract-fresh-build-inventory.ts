@@ -35,9 +35,12 @@ export const HTTP_CONTRACT_FRESH_BUILD_FAMILIES: any = Object.freeze([
     ['buildr-web', 'build/generated/task-professional-http-dto.ts'],
   ]),
   family('workspace-agent-assets', 'tools/codegen/contracts/workspace-agent-assets-dto.ts', [
+    'src/modules/code/interfaces/http/code-http-contracts.ts',
     'src/modules/workspace/interfaces/http/workspace-http-contracts.ts',
     'src/modules/agent-assets/interfaces/http/agent-assets-http-contracts.ts',
   ], [
+    ['buildr', 'build/generated/code-http-dto.ts'],
+    ['buildr-web', 'build/generated/code-http-dto.ts'],
     ['buildr', 'build/generated/workspace-http-dto.ts'],
     ['buildr-web', 'build/generated/workspace-http-dto.ts'],
     ['buildr', 'build/generated/agent-assets-http-dto.ts'],

@@ -25,6 +25,7 @@ import { TaskLinkedDocument } from './features/task/components/TaskLinkedDocumen
 import { TaskDetailPage } from './features/task/pages/TaskDetailPage';
 import { TasksSection } from './features/task/pages/TasksSection';
 import { WorkspacesPage } from './features/workspace/pages/WorkspacesPage';
+import { CodeExplorerPage, CodeSourceControlPage } from './features/code/pages/CodeExplorerPage';
 
 function renderResource(item: ResourcePreview) {
   if (item.kind === 'task-document') return <TaskLinkedDocument item={item} />;
@@ -47,6 +48,9 @@ export function App() {
         <Route path="overview" element={<WorkbenchPage />} />
         <Route path="activity" element={<WorkbenchActivityPage />} />
         <Route path="settings" element={<SettingsPage />} />
+        <Route path="code" element={<Navigate to="explorer" replace />} />
+        <Route path="code/explorer" element={<CodeExplorerPage />} />
+        <Route path="code/source-control" element={<CodeSourceControlPage />} />
         <Route path="knowledge/:scopeKind/:scopeId" element={<KnowledgePage />} />
         <Route path="skills" element={<SkillsPage />} />
         <Route path="skills/:skillId" element={<SkillsPage />} />

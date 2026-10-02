@@ -42,6 +42,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   "integration": {
     "inputs": [
       "src/modules/knowledge/**",
+      "src/modules/code/**",
       "test/integration/**",
       "test/verification/integration.ts",
       "test/verification/worker-budget.ts",

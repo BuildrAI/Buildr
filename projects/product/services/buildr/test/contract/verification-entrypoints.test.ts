@@ -343,7 +343,7 @@ test('Host Node compatibility runs offline without a Workspace Node distribution
   const policy: any = read('src/infrastructure/network/verification-network-policy.ts');
   const workflow: any = read('../../../../.github/workflows/verify.yml');
   const hostJob: any = workflow.slice(workflow.indexOf('  candidate-host-node:'), workflow.indexOf('  candidate-gate:'));
-  assert.deepEqual(packageManifest.bundleDependencies, ['ajv', 'yaml']);
+  assert.deepEqual(packageManifest.bundleDependencies, ['@vscode/ripgrep-universal', 'ajv', 'yaml']);
   assert.match(hostNode, /enforceOfflineVerification\(\)/);
   const executePlanCall: any = hostNode.slice(hostNode.indexOf('await executePlan('), hostNode.indexOf('results = execution.results'));
   assert.match(executePlanCall, /expectedNodeVersion: null/);

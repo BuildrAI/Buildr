@@ -1,0 +1,49 @@
+.area-code .workspace-page-tabs[hidden] { display:none; }
+.area-code .workspace-page:has(.code-explorer-stage),.area-code .workspace-page:has(.code-scm-pending) { padding:0; max-width:none; }
+.area-code .workspace-page > .code-explorer-stage,.area-code .workspace-page > .code-scm-pending { width:100%; max-width:none; margin:0; }
+.code-explorer-stage { display:flex; height:100%; flex:1; min-height:0; min-width:0; position:relative; overflow:hidden; }
+.code-file-stage { flex:1; min-width:0; min-height:0; display:flex; flex-direction:column; }
+.code-file-tabstrip { height:43px; min-height:43px; display:flex; gap:4px; align-items:center; border-bottom:1px solid var(--soft-line); background:#f4f6f7; padding:0 6px 0 0; flex:none; }
+.code-file-tabstrip > .ant-btn { flex:none; }
+.code-file-tabstrip > .code-open-files { flex:1; min-width:0; height:100%; border-bottom:0; }
+.code-open-files .ant-tag { margin:0 0 0 6px; font-size:10px; }
+.global-source-dock[hidden] { display:none!important; }
+.global-source-dock { display:flex; flex:none; min-height:0; background:#fff; }
+.global-source-sidebar { flex:1; min-width:0; min-height:0; display:flex; flex-direction:column; }
+.global-source-sidebar .repository-browser-context { min-height:95px; flex-wrap:wrap; padding:10px 12px; gap:7px; position:relative; background:#fff; }
+.global-source-sidebar .repository-context-selection { width:100%; min-width:0; align-items:flex-start; padding-right:18px; }
+.global-source-sidebar .repository-context-selection>.anticon { padding-top:8px; }
+.global-source-sidebar .repository-browser-context>.ant-btn { position:absolute; right:4px; top:15px; }
+.global-source-sidebar .repository-browser-tree { width:100%; flex:1; max-height:none; min-height:0; }
+.global-source-sidebar .repository-tree-body { padding-inline:5px; }
+.global-source-sidebar .repository-tree-body .ant-tree-indent-unit { width:11px; }
+.global-source-sidebar .repository-file-search { padding-inline:10px; }
+.global-source-divider { flex:0 0 9px; height:calc(100% - 43px); margin:43px -4.5px 0; }
+.global-source-dock.is-resizing .global-source-divider::before { background:var(--soft-primary); }
+.code-reading-toggle { flex:none; height:28px; }
+.code-tree-pane-title { height:43px; min-height:43px; display:flex; align-items:center; padding:0 15px; font-size:12px; font-weight:600; background:#f4f6f7; border-bottom:1px solid var(--soft-line); }
+.code-tree-host { flex:1; min-height:0; display:flex; flex-direction:column; }
+.code-root-selectors { flex:1; min-width:0; display:flex; flex-direction:column; gap:7px; }
+.code-root-selectors .ant-select { width:100%; min-width:0; font-size:12px; }
+/* Ant Design owns the outer focus ring; native input styles must not add an inner ring. */
+.code-root-selectors .ant-select .ant-select-selection-search-input,
+.code-root-selectors .ant-select .ant-select-selection-search-input:focus { border:0; border-radius:0; padding:0; background:transparent; box-shadow:none; outline:0; }
+.code-root-selectors small { font-size:10px; color:var(--soft-muted); }
+.code-root-selectors .code-location-path { display:block; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:10px; }
+.repository-root-name strong { display:block; font-size:12px; }
+.repository-root-name small { display:block; max-width:210px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:10px; color:var(--soft-muted); }
+.code-explorer-stage .repository-file-browser.global-reader { height:auto; min-height:0; border:0; border-radius:0; flex:1; }
+.code-explorer-stage .global-reader .repository-browser-columns { flex-direction:row; }
+.code-explorer-stage .global-reader .repository-file-pane,.code-explorer-stage .global-reader .repository-reader-content { min-height:0; max-height:none; }
+.code-explorer-stage .global-reader .repository-reader-toolbar { padding:12px 18px; }
+.code-range-outside { padding:6px 14px; font-size:12px; background:#fff9ed; border-bottom:1px solid var(--soft-line); }
+.code-tree-coverage { display:flex; align-items:flex-start; gap:6px; margin:4px 5px 8px; padding:6px 8px; color:#80652d; background:#fff9ed; border-radius:4px; font-size:11px; line-height:1.5; }
+.code-tree-coverage>.anticon { margin-top:2px; flex:none; }
+.code-scm-pending { height:100%; display:flex; flex-direction:column; justify-content:center; align-items:center; gap:12px; padding:24px; text-align:center; }
+.code-scm-pending>.anticon { font-size:32px; color:var(--soft-primary); }
+.code-scm-pending h2 { font-size:20px; margin:0; }.code-scm-pending p { color:var(--soft-muted); }
+@media(max-width:679px) {
+  .code-explorer-stage .global-source-dock { position:absolute; z-index:10; left:0; top:43px; bottom:0; max-width:calc(100% - 16px); box-shadow:12px 0 28px #294e3424; }
+  .code-file-tabstrip>.ant-btn { font-size:11px; padding-inline:4px; }
+  .code-explorer-stage .repository-reader-toolbar,.code-explorer-stage .repository-reader-footer { flex-wrap:wrap; }
+}

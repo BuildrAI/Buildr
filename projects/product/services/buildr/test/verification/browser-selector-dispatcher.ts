@@ -10,7 +10,7 @@ import { executeVerificationCommand } from './support/process-executor.ts';
 
 import { collectChangedProductPaths } from './changed-paths.ts';
 
-export const BROWSER_SELECTORS: any = Object.freeze(['core', 'shell', 'workbench', 'project', 'service', 'change', 'task', 'task-materials', 'articles', 'layout']);
+export const BROWSER_SELECTORS: any = Object.freeze(['core', 'shell', 'workbench', 'project', 'service', 'change', 'task', 'task-materials', 'articles', 'layout', 'code']);
 
 const productRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const projectRoot: any = path.resolve(productRoot, '../..');
@@ -103,7 +103,8 @@ export function selectBrowserSelectors(changedPaths: any): any  {
       if (originalValue.endsWith('.css') || originalValue.includes('/components/') || originalValue.includes('/app/') || originalValue.endsWith('/theme.ts')) {
         add(plan, 'layout', originalValue, 'Shared layout, reading or presentation changed; verify representative widths and retained state.');
       }
-      if (originalValue.includes('/features/workbench/')) add(plan, 'workbench', originalValue, 'Daily workbench overview, preferences or activity interaction changed.');
+      if (originalValue.includes('/features/code/') || originalValue.includes('RepositoryFileBrowser') || originalValue.includes('repository-file-browser')) add(plan, 'code', originalValue, 'Code scope, file reader and task file navigation changed.');
+      else if (originalValue.includes('/features/workbench/')) add(plan, 'workbench', originalValue, 'Daily workbench overview, preferences or activity interaction changed.');
       else if (originalValue.includes('/features/knowledge/')) {
         for (const selector of ['project', 'service', 'articles']) add(plan, selector, originalValue, 'Knowledge reading is shared by project, service and article journeys.');
       }

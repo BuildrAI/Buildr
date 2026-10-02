@@ -28,7 +28,7 @@ export type RailRepository = {
 };
 
 /** Persistent master-detail workbench: repository tree on the left, diff pane on the right. */
-export function TaskDiffReader({ repositories, selected, onSelect, notice, taskId, refreshVersion, readScope, onRegisterRefresh }: {
+export function TaskDiffReader({ repositories, selected, onSelect, notice, taskId, refreshVersion, readScope, onRegisterRefresh, onOpenFile }: {
   taskId?: string;
   refreshVersion?: string;
   readScope?: string;
@@ -37,6 +37,7 @@ export function TaskDiffReader({ repositories, selected, onSelect, notice, taskI
   selected: string | null;
   onSelect(key: string | null): void;
   notice?: ReactNode;
+  onOpenFile?(file: ChangedFileEntry, repository: RailRepository, commit?: RailCommit): void;
 }) {
   const { message } = App.useApp();
   const [view, setView] = useState<DiffMode>('split');
@@ -228,6 +229,7 @@ export function TaskDiffReader({ repositories, selected, onSelect, notice, taskI
           {!commitEntry && owner && <small className="task-diff-scope">{owner.repository.label}{owner.commit ? ` · ${owner.commit.commit.shortHash} ${owner.commit.commit.subject}` : ' · 未提交的改动'}</small>}
         </div>
         <div className="task-diff-actions">
+          {!commitEntry && current && owner && onOpenFile && <Button size="small" onClick={() => onOpenFile(current, owner.repository, owner.commit)} data-prototype-position="diff-full-file">查看完整文件</Button>}
           {!commitEntry && taskId && current && <span className="task-diff-loading" role="status" aria-label={full.loading ? '正在读取完整差异' : undefined}>{full.loading && <Spin size="small" />}</span>}
           {!commitEntry && current && parsed && (parsed.totalAdd > 0 || parsed.totalDel > 0) && <Segmented className="task-diff-mode" size="small" value={mode} onChange={value => setView(value as DiffMode)} options={[
             { value: 'split', disabled: !splitRoom, label: <Tooltip title={splitRoom ? '旧版本与新版本并排对照' : '当前阅读宽度不足，使用上下对比'}><span>左右对比</span></Tooltip> },

@@ -3,9 +3,9 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom';
 import { Button, Dropdown, type MenuProps } from 'antd';
 import { CaretDownFilled, MenuFoldOutlined, MenuUnfoldOutlined } from '@ant-design/icons';
-type HeaderProps = { isGlobal?:boolean; brandHref:string; development?:boolean; workspaceName:string; workspaceMenuItems:MenuProps['items']; area:'workspace'|'workbench'; workbenchHref:string; workspaceDestination:{to:string;state?:unknown}; actions:ReactNode };
+type HeaderProps = { isGlobal?:boolean; brandHref:string; development?:boolean; workspaceName:string; workspaceMenuItems:MenuProps['items']; area:'workspace'|'workbench'|'code';codeHref?:string; workbenchHref:string; workspaceDestination:{to:string;state?:unknown}; actions:ReactNode };
 /** Shared product chrome; all business effects remain in the caller. */
-export function AppShellHeader({isGlobal,brandHref,development,workspaceName,workspaceMenuItems,area,workbenchHref,workspaceDestination,actions}:HeaderProps) {
+export function AppShellHeader({isGlobal,brandHref,development,workspaceName,workspaceMenuItems,area,codeHref,workbenchHref,workspaceDestination,actions}:HeaderProps) {
   return (
         <header className="topbar">
           <Link
@@ -39,6 +39,7 @@ export function AppShellHeader({isGlobal,brandHref,development,workspaceName,wor
             <Link to={workbenchHref} data-area="workbench" aria-current={area === 'workbench' ? 'page' : undefined} className={area === 'workbench' ? 'active' : ''}
               >工作台</Link>
             <Link to={workspaceDestination.to} state={workspaceDestination.state} data-area="workspace" aria-current={area === 'workspace' ? 'page' : undefined} className={area === 'workspace' ? 'active' : ''}>工作空间</Link>
+            {codeHref ? <Link to={codeHref} data-area="code" data-prototype-position="code-top-entry" aria-current={area === 'code' ? 'page' : undefined} className={area === 'code' ? 'active' : ''}>代码</Link> : null}
           </nav> : null}
           <div className="topbar-actions">{actions}</div>
         </header>

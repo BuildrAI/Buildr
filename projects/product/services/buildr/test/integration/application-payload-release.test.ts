@@ -79,7 +79,8 @@ test('same inputs create byte-identical payload and installed resource mapping d
     const runtimeMetadata: any = JSON.parse(fs.readFileSync(path.join(first.root, 'resources/product/package.json'), 'utf8'));
     assert.equal(runtimeMetadata.devDependencies, undefined);
     assert.equal(runtimeMetadata.scripts, undefined);
-    assert.deepEqual(Object.keys(runtimeMetadata.dependencies), ['ajv', 'yaml']);
+    assert.deepEqual(Object.keys(runtimeMetadata.dependencies), ['@vscode/ripgrep-universal', 'ajv', 'yaml']);
+    for(const target of ['darwin-arm64/rg','darwin-x64/rg','linux-x64/rg','linux-arm64/rg','win32-x64/rg.exe','win32-arm64/rg.exe'])assert.ok(first.manifest.files.some((entry:any)=>entry.path==='resources/runtime/ripgrep/'+target),target);
     assert.equal(runtimeMetadata.devDependencies, undefined);
 
     const staging: any = createNpmPackStaging(first.root, path.join(root, 'npm-staging'), { testContextRoot: firstInputs.testContextRoot });
@@ -397,6 +398,20 @@ test('npm package uses only its compatible host Node for CLI and on-demand Build
     });
     const attached = runWithGit(['service', 'create', 'demo/external', '--attach', external, '--integration-branch', 'main', '--target', workflowWorkspace, '--name', 'External', '--description', 'Installed verification fixture', '--type', 'backend', '--json']);
     assert.equal(attached.status, 0, attached.stderr || attached.stdout);
+    const bundledRg=path.join(packageRoot,'payload/runtime/ripgrep',process.platform+'-'+process.arch,process.platform==='win32'?'rg.exe':'rg');
+    const rgVersion=spawnSync(bundledRg,['--version'],{encoding:'utf8',env:{...runtimeEnv,PATH:''}});assert.equal(rgVersion.status,0,rgVersion.stderr);assert.match(rgVersion.stdout,/ripgrep/);
+    const codeCatalog=runWithGit(['code','repositories','--target',workflowWorkspace,'--json']);assert.equal(codeCatalog.status,0,codeCatalog.stderr);
+    const codeRepository=JSON.parse(codeCatalog.stdout).repositories.find((repo:any)=>repo.location===fs.realpathSync(external));assert.ok(codeRepository);
+    const codeSearch=runWithGit(['code','search','--repository',codeRepository.id,'--query','External service','--mode','content','--target',workflowWorkspace,'--json']);assert.equal(codeSearch.status,0,codeSearch.stderr);
+    const codeResult=JSON.parse(codeSearch.stdout);assert.ok(codeResult.matches.some((match:any)=>match.path==='README.md'&&match.line===1));assert.equal(codeResult.truncated,false);assert.deepEqual(codeResult.diagnostics,[]);
+    const pagedText='first\n'+'p'.repeat(5*1024*1024)+'\ninstalled [Needle]\n';fs.writeFileSync(path.join(external,'paged.txt'),pagedText);
+    for(const args of [['add','paged.txt'],['-c','user.name=Buildr Test','-c','user.email=buildr@example.com','commit','-m','Installed paged source']]){const result=spawnSync('git',args,{cwd:external,encoding:'utf8'});assert.equal(result.status,0,result.stderr);}
+    const pagedCommit=spawnSync('git',['rev-parse','HEAD'],{cwd:external,encoding:'utf8'}).stdout.trim();
+    const pagedCli=runWithGit(['code','file','--repository',codeRepository.id,'--path','paged.txt','--target',workflowWorkspace,'--json']);assert.equal(pagedCli.status,0,pagedCli.stderr);
+    const pagedResult=JSON.parse(pagedCli.stdout);assert.equal(pagedResult.page.index,0);assert.equal(pagedResult.limitBytes,5*1024*1024);assert.equal(pagedResult.content,Buffer.from(pagedText).subarray(0,pagedResult.page.endOffset).toString());
+    const pagedNextCli=runWithGit(['code','file','--repository',codeRepository.id,'--path','paged.txt','--page','1','--expected-revision',pagedResult.revision,'--target',workflowWorkspace,'--json']);assert.equal(pagedNextCli.status,0,pagedNextCli.stderr);assert.equal(JSON.parse(pagedNextCli.stdout).page.index,1);
+    const pagedHistoryCli=runWithGit(['code','file','--repository',codeRepository.id,'--path','paged.txt','--commit',pagedCommit,'--line','3','--match-query','installed [NEEDLE]','--target',workflowWorkspace,'--json']);assert.equal(pagedHistoryCli.status,0,pagedHistoryCli.stderr);
+    const pagedHistory=JSON.parse(pagedHistoryCli.stdout);assert.equal(pagedHistory.source.commitHash,pagedCommit);assert.ok(pagedHistory.page.matchOffset>5*1024*1024);assert.ok(pagedHistory.content.includes('installed [Needle]'));
     const declaration = {
       schemaVersion: 'buildr.project-verification/v4',
       testing: [{
@@ -501,7 +516,7 @@ test('npm package uses only its compatible host Node for CLI and on-demand Build
     assert.equal(identity.runtime.executable, process.execPath);
     assert.equal(identity.applicationPayloadDigest, payloadDigest);
 
-    web = spawn(process.execPath, [cli, 'web', '--no-open', '--port', '0'], { cwd: root, env: runtimeEnv, stdio: ['ignore', 'pipe', 'pipe'] });
+    web = spawn(process.execPath, [cli, 'web', '--target', workflowWorkspace, '--no-open', '--port', '0'], { cwd: root, env: runtimeEnv, stdio: ['ignore', 'pipe', 'pipe'] });
     let stderr: any = '';
     web.stderr.setEncoding('utf8');
     web.stderr.on('data', (chunk: any) => { stderr += chunk; });
@@ -525,6 +540,19 @@ test('npm package uses only its compatible host Node for CLI and on-demand Build
     assert.equal(healthIdentity.productIdentity.runtime.role, 'host');
     assert.equal(healthIdentity.productIdentity.applicationPayloadDigest, payloadDigest);
     assert.equal(instance.productIdentity.installationIdentity, healthIdentity.productIdentity.installationIdentity);
+    const workspaceRegistry=await(await fetch(instance.url+'/api/v1/workspaces',{headers:{'x-buildr-instance':instance.secret}})).json();
+    const registeredWorkspace=workspaceRegistry.workspaces.find((entry:any)=>sameFilesystemPath(entry.rootPath,workflowWorkspace));assert.ok(registeredWorkspace,JSON.stringify(workspaceRegistry));
+    const codeQuery=new URLSearchParams({repositoryId:codeRepository.id,query:'External service',mode:'content'});
+    const codeResponse=await fetch(instance.url+'/api/v1/workspaces/'+registeredWorkspace.workspace.id+'/code/search?'+codeQuery,{headers:{'x-buildr-instance':instance.secret}});assert.equal(codeResponse.status,200);
+    const httpCodeResult=await codeResponse.json();assert.deepEqual(httpCodeResult.matches,codeResult.matches);assert.equal(httpCodeResult.truncated,false);assert.deepEqual(httpCodeResult.diagnostics,[]);
+    const fullText='x'.repeat(5*1024*1024);fs.writeFileSync(path.join(external,'five-mib.txt'),fullText);
+    const fileQuery=new URLSearchParams({repositoryId:codeRepository.id,filePath:'five-mib.txt'});
+    const fileResponse=await fetch(instance.url+'/api/v1/workspaces/'+registeredWorkspace.workspace.id+'/code/file?'+fileQuery,{headers:{'x-buildr-instance':instance.secret}});assert.equal(fileResponse.status,200);
+    const httpFileResult=await fileResponse.json();assert.equal(httpFileResult.content,fullText);assert.equal(httpFileResult.limitBytes,5*1024*1024);assert.equal(httpFileResult.sizeBytes,5*1024*1024);assert.equal(httpFileResult.truncated,false);assert.equal(httpFileResult.page,null);
+    const readPaged=async(query:Record<string,string>)=>fetch(instance.url+'/api/v1/workspaces/'+registeredWorkspace.workspace.id+'/code/file?'+new URLSearchParams({repositoryId:codeRepository.id,filePath:'paged.txt',...query}),{headers:{'x-buildr-instance':instance.secret}});
+    const nextResponse=await readPaged({page:'1',expectedRevision:pagedResult.revision});assert.equal(nextResponse.status,200);const nextPage=await nextResponse.json();assert.equal(nextPage.page.index,1);assert.equal(nextPage.page.offset,pagedResult.page.endOffset);
+    const historyResponse=await readPaged({commitHash:pagedCommit,line:'3',matchQuery:'installed [NEEDLE]'});assert.equal(historyResponse.status,200);assert.deepEqual((await historyResponse.json()).page,pagedHistory.page);
+    fs.writeFileSync(path.join(external,'paged.txt'),'changed\n');const changedResponse=await readPaged({page:'1',expectedRevision:pagedResult.revision});assert.equal(changedResponse.status,409);assert.equal((await changedResponse.json()).error.code,'code_file_changed');
     const shell: any = await fetch(instance.url);
     assert.equal(shell.status, 200);
     assert.match(await shell.text(), /<div id="root"><\/div>/);

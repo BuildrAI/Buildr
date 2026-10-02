@@ -11,9 +11,14 @@ import { CHANGE_APPLICATION } from '../../modules/task/change/module.ts';
 import { TASK_COMMITS_APPLICATION } from '../../modules/task/commits/module.ts';
 import { TASK_CHANGED_FILES_APPLICATION } from '../../modules/task/changed-files/module.ts';
 import { TASK_MATERIALS_APPLICATION } from '../../modules/task/materials/module.ts';
+import { CODE_APPLICATION } from '../../modules/code/module.ts';
 
 const runtime = createRuntime();
 const operations: Readonly<Record<string, Readonly<{ capability: string; method: string; fields?: readonly string[] }>>> = Object.freeze({
+  'code-repositories': Object.freeze({capability:CODE_APPLICATION,method:'repositories',fields:['input']}),
+  'code-directory': Object.freeze({capability:CODE_APPLICATION,method:'directory',fields:['input']}),
+  'code-file': Object.freeze({capability:CODE_APPLICATION,method:'file',fields:['input']}),
+  'code-search': Object.freeze({capability:CODE_APPLICATION,method:'search',fields:['input']}),
   commits: Object.freeze({ capability: TASK_COMMITS_APPLICATION, method: 'inspectTaskCommits' }),
   'file-diff': Object.freeze({ capability: TASK_CHANGED_FILES_APPLICATION, method: 'inspectTaskFileDiff', fields: ['repositoryId', 'filePath', 'commitHash'] }),
   'changed-file-count': Object.freeze({ capability: TASK_CHANGED_FILES_APPLICATION, method: 'inspectTaskChangedFileCount' }),
@@ -48,7 +53,7 @@ function serializeError(error: any) {
 if (!parentPort) throw new Error('Buildr Web read Worker requires a parent port.');
 const workerPort = parentPort;
 
-workerPort.on('message', (message: any) => {
+workerPort.on('message', async (message: any) => {
   const operation = operations[message?.operation];
   if (!validMessage(message)) {
     workerPort.postMessage({ id: message?.id ?? null, ok: false, error: { code: 'local_app_read_input_invalid', status: 400, message: 'Buildr Web read Worker input invalid.' } });
@@ -57,7 +62,10 @@ workerPort.on('message', (message: any) => {
   try {
     let value;
     const application = runtimeProvide(runtime, operation.capability);
-    value = application[operation.method](message.targetRoot, message.taskId, ...(operation.fields || []).map(field => message[field]));
+    if(message.operation.startsWith('code-')) {
+      const input=JSON.parse(message.input);
+      value=await application[operation.method](message.targetRoot,operation.method==='repositories'?input.taskId:input);
+    } else value = await application[operation.method](message.targetRoot, message.taskId, ...(operation.fields || []).map(field => message[field]));
     workerPort.postMessage({ id: message.id, ok: true, value });
   } catch (error: any) {
     workerPort.postMessage({ id: message.id, ok: false, error: serializeError(error) });
