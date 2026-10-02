@@ -13,14 +13,14 @@ export const taskStageLabels: Record<TaskStage, { title: string; english: string
   requirements: { title: '任务说明', english: 'Task Brief', description: '任务说明承载本次任务的问题、需求或缺陷说明；目标由 intent 提供短定位，说明正文优先使用任务关联材料。' },
   design: { title: '方案设计', english: 'Solution Design', description: '提案说明改什么，设计说明怎么做，规范说明应满足的行为。' },
   'planning-review': { title: '方案审查', english: 'Planning Review', description: '每次方案审查的结论与问题，按次保留。' },
-  implementation: { title: '开发实现', english: 'Implementation', description: '实施清单，以及当前实现或修复进展。' },
+  implementation: { title: '开发实现', english: 'Implementation', description: '实施材料、实现审查与开发验证；变更实施清单通过独立入口阅读。' },
   'implementation-review': { title: '实现审查', english: 'Implementation Review', description: '每次针对实际修改的审查结论与问题，按次保留。' },
   verification: { title: '开发验证', english: 'Task Verification', description: '最近一次验证结果，以及修复或再次验证的当前进展。' },
   acceptance: { title: '用户确认', english: 'User Acceptance', description: '需要你确认的成果，以及已经保存的意见。' },
   closeout: { title: '任务收尾', english: 'Task Closeout', description: '已记录的完成摘要、实际交付情况与遗留事项。' },
 };
 
-export type TaskDocumentItem = { key: string; changeKey: string; stage: TaskNodeStage; title: string; description: string; file: string; artifact: ChangeArtifact; provenance: string; material?: TaskMaterialDocument; historicalBrief?: boolean };
+export type TaskDocumentItem = { key: string; changeKey: string; stage: TaskNodeStage; title: string; description: string; file: string; artifact: ChangeArtifact; provenance: string; material?: TaskMaterialDocument; historicalBrief?: boolean; purpose?: 'change-brief' | 'checklist' };
 export function taskDocuments(briefs: TaskBriefState[], materials?: TaskMaterialsResult | null): TaskDocumentItem[] {
   const roles: Record<TaskMaterialDocument['role'], TaskNodeStage> = { brief: 'requirements', solution: 'design', implementation: 'implementation', delivery: 'closeout' };
   const explicit = (materials?.materials?.documents || []).some(item => item.role === 'brief');
@@ -31,12 +31,12 @@ export function taskDocuments(briefs: TaskBriefState[], materials?: TaskMaterial
   return [...documents, ...briefs.flatMap(item => {
     if (item.kind !== 'ready') return [];
     const { change } = item;
-    const entries: Array<{ stage: TaskDocumentItem['stage']; title: string; description: string; artifact: ChangeArtifact }> = [
-      { stage: explicit ? 'design' : 'requirements', title: explicit ? `变更说明 · ${item.key}` : '需求或说明', description: explicit ? '具体规范变化的辅助说明' : '历史变更说明，非独立任务说明', artifact: change.brief },
+    const entries: Array<{ stage: TaskDocumentItem['stage']; title: string; description: string; artifact: ChangeArtifact; purpose?: TaskDocumentItem['purpose'] }> = [
+      { stage: explicit ? 'design' : 'requirements', title: explicit ? `变更说明 · ${item.key}` : '需求或说明', description: explicit ? '具体规范变化的辅助说明' : '历史变更说明，非独立任务说明', artifact: change.brief, purpose: 'change-brief' },
       { stage: 'design', title: '提案', description: '为什么做、改变什么', artifact: change.artifacts.proposal },
       { stage: 'design', title: '设计', description: '实现做法与关键取舍', artifact: change.artifacts.design },
       ...change.artifacts.specs.map(artifact => ({ stage: 'design' as const, title: `规范 · ${artifact.capability || artifact.path.split('/').at(-2) || '行为要求'}`, description: '应满足的行为与边界', artifact })),
-      { stage: 'implementation', title: '实施清单', description: '待办事项与已完成勾选', artifact: change.artifacts.tasks },
+      { stage: 'implementation', title: '实施清单', description: '待办事项与已完成勾选', artifact: change.artifacts.tasks, purpose: 'checklist' },
     ];
     return entries.filter(entry => entry.artifact.exists && (entry.stage !== 'requirements' || materials !== null)).map(entry => ({ ...entry, historicalBrief: entry.stage === 'requirements', key: `${item.key}:${entry.artifact.path}`, changeKey: item.key, file: entry.artifact.path.split('/').slice(entry.artifact.path.includes('/specs/') ? -3 : -1).join('/'), provenance: item.provenance }));
   })];

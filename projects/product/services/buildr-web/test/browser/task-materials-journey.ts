@@ -161,6 +161,28 @@ export async function runTaskMaterialsJourney({ t, page, runtime, workspaceRoot,
     await refresh(); await body().locator('.markdown-body').filter({ hasText: '本次新建立的关联' }).waitFor({ state: 'visible' });
   });
 
+  await scenario('任务材料：变更清单独立阅读，方案优先展示提案并区分变更说明', async () => {
+    await open(history);
+    await body().locator('.markdown-body').filter({ hasText: '本次新建立的关联' }).waitFor({ state: 'visible' });
+    await page.locator('[data-task-node=design]').click();
+    await body().locator('.markdown-reader-toolbar > span').filter({ hasText: 'proposal.md' }).waitFor({ state: 'visible' });
+    const auxiliary = body().getByRole('menuitem', { name: 'demo/browser-flow', exact: true });
+    await auxiliary.click();
+    await body().locator('.markdown-reader-toolbar > span').filter({ hasText: '变更说明' }).waitFor({ state: 'visible' });
+    assert.match(await body().innerText(), /关联变更说明/);
+    assert.doesNotMatch(await body().locator('.markdown-reader-toolbar > span').innerText(), /^brief\.md$/);
+    await page.locator('[data-task-node=implementation]').click();
+    assert.equal(await body().locator('[data-task-artifact$="tasks.md"]').count(), 0);
+    assert.doesNotMatch(await body().innerText(), /实施清单/);
+    await page.locator('#task-checklist-toggle').hover();
+    const checklist = page.locator('#task-checklist-panel:visible');
+    await checklist.locator('.markdown-body').first().waitFor({ state: 'visible' });
+    assert.equal(await checklist.locator('.markdown-body').count(), 2, '两个关联变更的实施清单仍分别可读');
+    await capture(page, 'task-materials-checklist-independent.png');
+    await page.locator('[data-task-node=requirements]').click();
+    await body().locator('.markdown-body').filter({ hasText: '本次新建立的关联' }).waitFor({ state: 'visible' });
+  });
+
   await scenario('任务材料：保存Task事实后重读独立正文，不以同Task编号保留旧缓存', async () => {
     await open(simple);
     const document = inspect(simple).documents.find((item: any) => item.role === 'brief');

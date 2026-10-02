@@ -14,12 +14,16 @@ export function TaskNodeContent({ selected, record, documents, briefs, briefsLoa
   hasRetrospective: boolean; hasCoordination: boolean; renderContent(target: TaskReadTarget): ReactNode;
   materialsLoading?: boolean; materialsError?: string | null; materialDiagnostics?: Array<{ code: string; message: string }>;
 }) {
-  const entries = documents.filter(item => item.stage === selected);
-  const options: ContentOption[] = entries.map(item => {
+  const entries = documents.filter(item => item.stage === selected && item.purpose !== 'checklist');
+  const auxiliary: ContentOption[] = [];
+  const options: ContentOption[] = [];
+  entries.forEach(item => {
     const spec = item.title.startsWith('规范 · ');
     const name = spec ? (item.artifact.capability || item.title.slice(5)) : taskDocumentLabel(item,entries);
     const duplicate = entries.filter(peer=>peer.title===item.title).length > 1;
-    return {key:item.key, group:spec ? '规范' : undefined, label:<span className="task-directory-label" title={taskDocumentLabel(item,entries)}>{name}{(item.historicalBrief || (spec && duplicate)) && <small>{item.changeKey}</small>}</span>, path:item.artifact.path, target:taskDocumentTarget(item)};
+    if (selected === 'design' && item.purpose === 'change-brief') {
+      auxiliary.push({key:item.key, group:'关联变更说明', label:<span className="task-directory-label" title={item.title}>{item.changeKey}</span>, path:item.artifact.path, target:taskDocumentTarget(item)});
+    } else options.push({key:item.key, group:spec ? '规范' : undefined, label:<span className="task-directory-label" title={taskDocumentLabel(item,entries)}>{name}{(item.historicalBrief || (spec && duplicate)) && <small>{item.changeKey}</small>}</span>, path:item.artifact.path, target:taskDocumentTarget(item)});
   });
   // 「任务说明」节点以说明正文（brief.md 等任务说明材料）为内容；intent 只是短目标，
   // 不再兜底进说明节点，也不把 intent 伪装成说明。
@@ -43,6 +47,7 @@ export function TaskNodeContent({ selected, record, documents, briefs, briefsLoa
     if (hasCoordination) options.push({key:'coordination',label:'子任务交付',target:{kind:'coordination',title:'子任务交付'}});
     if (hasRetrospective) options.push({key:'retrospective',label:'任务复盘',target:{kind:'retrospective',title:'任务复盘'}});
   }
+  options.push(...auxiliary);
   const missingPrototype = selected === 'design' && choices[selected]?.startsWith('prototype:') && !options.some(item => item.key === choices[selected]);
   const active = options.find(item => item.key === choices[selected]) || (missingPrototype ? options.find(item => item.target.kind === 'prototype') : undefined) || (selected === 'closeout' && record.status === 'completed' ? options.find(item => item.key === 'result') : undefined) || (selected === 'implementation' && !entries.length && !reviews?.slots.completion.result && verification?.slot.report ? options.find(item => item.key === 'verification') : undefined) || options[0];
   const items: MenuProps['items'] = [];

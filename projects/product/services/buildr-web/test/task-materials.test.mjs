@@ -37,6 +37,7 @@ const { TaskNodeContent } = await import('../src/features/task/components/TaskNo
 const { CompositeTaskPlan } = await import('../src/features/task/components/CompositeTaskPlan.tsx');
 const { TaskReadingPane } = await import('../src/features/task/components/TaskReadingPane.tsx');
 const { TaskChecklist } = await import('../src/features/task/components/TaskChecklist.tsx');
+const { TaskArtifactReader } = await import('../src/features/task/components/TaskArtifactReader.tsx');
 const { createTaskClient } = await import('../src/features/task/api/task-api.ts');
 const material = (id = 'brief', role = 'brief', source = { kind: 'task', path: 'brief.md' }) => ({ id, role, title: `${role}正文`, source, exists: true, content: '真实独立材料正文', actualDigest: 'sha256-new', provenance: source.kind === 'task' ? 'task-local' : 'task-worktree-candidate', diagnostic: null });
 const result = (documents = [], taskId = 'one') => ({ schemaVersion: 'buildr.task-materials-result/v1', taskId, materialsDigest: documents.length ? 'sha256-manifest' : 'absent', materials: { schemaVersion: 'buildr.task-materials/v1', documents: documents.map(({ id, role, title, source }) => ({ id, role, title, source })) }, documents, diagnostics: [] });
@@ -107,6 +108,34 @@ test('显式brief缺失保留诊断，不回退多个历史/归档brief；仅其
   assert.ok(legacy.every(item => taskDocumentTarget(item).historicalBrief));
   assert.deepEqual(legacy.map(item => item.changeKey), ['demo/active', 'demo/archived']);
   assert.equal(taskDocuments(old, null).filter(item => item.stage === 'requirements').length, 0, '未观察到关联时不能提前显示旧brief');
+});
+
+test('变更实施清单只在独立清单入口显示，旧开发实现选择不会重复打开tasks.md', () => {
+  const briefs = [change(), change('demo/archived', true)];
+  const data = result([material()]);
+  const documents = taskDocuments(briefs, data);
+  const renderContent = target => React.createElement('p', { 'data-reading-path': target.path }, target.title);
+  const implementation = markup(TaskNodeContent, { ...nodeProps(documents, 'implementation'), choices: { implementation: documents.find(item => item.purpose === 'checklist').key }, renderContent });
+  assert.doesNotMatch(implementation, /tasks\.md|实施清单/);
+  assert.match(implementation, /实现审查/); assert.match(implementation, /开发验证/);
+  const checklist = markup(TaskChecklist, { open: true, pinned: false, canPin: true, onTogglePin() {}, onClose() {}, briefs, materials: { data, loading: false, error: null }, documents, renderContent });
+  for (const source of briefs) assert.ok(checklist.includes(`data-reading-path="${source.change.artifacts.tasks.path}"`));
+});
+
+test('方案默认阅读真实方案，变更说明作为带身份的末尾辅助入口保留', () => {
+  const source = change();
+  const documents = taskDocuments([source], result([material()]));
+  const renderContent = target => React.createElement('p', { 'data-reading-path': target.path }, target.title);
+  const design = markup(TaskNodeContent, { ...nodeProps(documents, 'design'), renderContent });
+  assert.ok(design.includes(`data-reading-path="${source.change.artifacts.proposal.path}"`));
+  assert.match(design, /关联变更说明/);
+  assert.ok(design.indexOf('方案审查') < design.indexOf('关联变更说明'));
+  const briefItem = documents.find(item => item.purpose === 'change-brief');
+  const chosen = markup(TaskNodeContent, { ...nodeProps(documents, 'design'), choices: { design: briefItem.key }, renderContent });
+  assert.ok(chosen.includes(`data-reading-path="${source.change.brief.path}"`));
+  const reader = markup(TaskArtifactReader, { change: source.change, artifactPath: source.change.brief.path, embedded: true, onClose() {}, onSelect() {} });
+  assert.match(reader, /变更说明 · demo\/active/);
+  assert.doesNotMatch(reader, /<span[^>]*>brief\.md<\/span>/);
 });
 
 test('组合任务方案容器默认直接展示独立说明，缺失关联不由intent伪造', () => {
