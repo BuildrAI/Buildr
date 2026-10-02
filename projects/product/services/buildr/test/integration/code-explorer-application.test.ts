@@ -227,9 +227,11 @@ test('HTTP search carries grouped occurrences and keeps old match payloads contr
 });
 test('application and HTTP preserve single-character search support for direct callers',async t=>{
   const f=fixture(t);fs.writeFileSync(path.join(f.root,'src/main.ts'),'x\nX x\n');
-  const direct=f.app.search(f.root,{...f.input,query:'x',mode:'content'});assert.deepEqual(direct.matches[0].occurrences,[{line:1,excerpt:'x'},{line:2,excerpt:'X x'}]);
+  const direct=f.app.search(f.root,{...f.input,query:'x',mode:'content'}),main=direct.matches.find((match:any)=>match.path==='src/main.ts');
+  assert.ok(main);assert.deepEqual(main.occurrences,[{line:1,excerpt:'x'},{line:2,excerpt:'X x'}]);
   const response:any=await createCodeHttpContribution(f.app).handle({request:{method:'GET'},root:f.root,suffix:'/code/search',searchParams:new URLSearchParams({repositoryId:'repo-id',query:'x',mode:'content'})});
-  assert.equal(response.status,200);assert.deepEqual(response.body.matches,direct.matches);
+  const byPath=(a:any,b:any)=>a.path.localeCompare(b.path);
+  assert.equal(response.status,200);assert.deepEqual([...response.body.matches].sort(byPath),[...direct.matches].sort(byPath));
 });
 test('HTTP validates closed query and uses bounded worker without synchronous filesystem read',async t=>{
   const f=fixture(t),http=createCodeHttpContribution(f.app);let observed:any;

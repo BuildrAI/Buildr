@@ -358,7 +358,7 @@ Agent MUST 将 Buildr 的确定性收敛结果视为产品事实：`passed`直�
 - **AND** MUST NOT把`not-applicable`解释为同步失败、归档失败或长期证据缺失
 
 ### Requirement: 正式执行必须先建立 Task Record
-Buildr 的 `task-triage` MUST optional 依赖 `buildr.task-record/v1`，并 MUST 在已确认进入正式持久交付的分支、首次交付写入前调用 selected provider 创建或恢复 Task Record。路径已明确而无需重新 Triage 的正式执行也 MUST 遵守同一前置条件。
+Buildr 的 `task-triage` MUST optional 依赖 `buildr.task-record/v4`，并 MUST 在已确认进入正式持久交付的分支、首次交付写入前调用 selected provider 创建或恢复 Task Record。路径已明确而无需重新 Triage 的正式执行也 MUST 遵守同一前置条件。
 
 #### Scenario: Triage 选择已有契约实现
 - **WHEN** task-triage 选择 implementation，且任务即将创建分支或修改交付物
@@ -502,7 +502,7 @@ Buildr MUST 交付唯一 Skill-only `git-operations`，并 MUST 通过 selected 
 - **AND** 语义或重大风险决定 MUST 由 Agent 交还用户，恢复或重试 MUST 先重新核验事实
 
 ### Requirement: task-manager Skill 必须作为 Buildr Web 与 CLI 共享的 Task Record 薄管理入口
-Buildr MUST交付现有`task-manager` workspace Skill作为`buildr.task-record/v3`默认provider，指导Agent创建、读取和维护正式Task Record。`task-manager` MUST不成为全局任务dispatcher或父任务流程总管。Buildr Web MUST作为同一Task Record Application的独立人类客户端；任一客户端 MUST不直接访问SQLite或migration scripts。
+Buildr MUST交付现有`task-manager` workspace Skill作为`buildr.task-record/v4`默认provider，指导Agent创建、读取和维护正式Task Record。`task-manager` MUST不成为全局任务dispatcher或父任务流程总管。Buildr Web MUST作为同一Task Record Application的独立人类客户端；任一客户端 MUST不直接访问SQLite或migration scripts。
 
 #### Scenario: 用户明确管理正式 Task
 - **WHEN** 用户要求创建、查看、更正、完成或放弃正式Task
@@ -533,6 +533,11 @@ Buildr MUST交付现有`task-manager` workspace Skill作为`buildr.task-record/v
 - **WHEN** 用户在Buildr Web编辑、完成或放弃已有Task
 - **THEN** 页面 MUST调用与CLI相同的Application和当前digest保护
 - **AND** MUST不通过Skill routing写记录或维护第二状态机
+
+#### Scenario: 创建或继续正式说明
+- **WHEN** 用户授权开始或继续 code-only、文档或 OpenSpec 任务
+- **THEN** task-manager MUST 通过 Task Record 的 brief 字段保存和读取真实说明，不创建新的 brief 材料引用
+- **AND** 其他专业技能 MUST 使用同一记录正文及 @task/<task-id> 稳定引用；旧说明导入 MUST 使用显式产品动作并报告当前事实
 
 ### Requirement: Buildr Web、人、Agent 与产品必须分担语义和确定性逻辑
 人 MUST负责目标、约束、授权和验收；Agent MUST负责判断是否形成正式Task、组合技能与工具并重新观察现场；Skill MUST提供方法指导；Task Record Application MUST只负责schema、引用、关系、状态、系统时间、digest冲突和具体写入安全。Buildr Web MUST只查看和直接操作同一Application事实。
@@ -814,7 +819,7 @@ Agent MUST 在创建或激活任务前确认用户目标、目标工作空间、
 - **THEN** 智能体 MUST继续其他安全工作；仅在越权、错误对象、数据丢失或完成误报风险处停止相关动作。
 
 ### Requirement: 收尾必须独立于研发交接且按动作检查安全
-收尾与交付在日常意图中 MAY表示同一结束目标；task-finish MUST根据真实目标处理成果、已有记录及安全清理，MUST不要求候选、交接或统一验证链。已有正式任务的必要说明与过程材料 MUST 按目标核对正文保存、项目成果交付、本机引用和任务节点实际可读性；正文、关联与 Task 状态 MUST 分别核对，普通链接可打开不等于说明节点可读。
+收尾与交付在日常意图中 MAY表示同一结束目标；task-finish MUST根据真实目标处理成果、已有记录及安全清理，MUST不要求候选、交接或统一验证链。已有正式任务的必要说明与过程材料 MUST 按目标核对记录 brief 保存、过程文件成果交付、材料引用和任务节点实际可读性；记录正文、文件关联与 Task 状态 MUST 分别核对，普通链接可打开不等于说明节点可读。
 
 #### Scenario: 四类组合
 - **WHEN** 任务有无 Buildr 记录与有无 Git 管理形成四种组合
@@ -833,8 +838,8 @@ Agent MUST 在创建或激活任务前确认用户目标、目标工作空间、
 - **THEN** 保留交付，继续安全必要动作，说明遗留
 
 #### Scenario: 材料与交付分别核对
-- **WHEN** 正式任务的说明正文已交付但本机关联缺失，或关联存在但正文当前不可读
-- **THEN** 收尾 MUST 如实区分已交付正文、关联与局部读取缺口，并在授权内处理必要缺口
+- **WHEN** 正式任务的记录说明尚未保存或读取失败，或其他过程文件已交付但引用缺失、引用存在但文件不可读
+- **THEN** 收尾 MUST 如实区分记录说明保存、其他文件交付、关联与局部读取缺口，并在授权内处理必要缺口
 - **AND** MUST NOT 以 Task completed、Git 推送或顶部链接可打开冒充材料齐备；本机材料清理 MUST NOT 自动完成任务或删除工作树
 
 ### Requirement: 正式研发必须由 Agent 直接组合专业能力
@@ -1009,7 +1014,7 @@ selected `buildr.git-operations/v1` provider MUST 支持 consumer 明确选定�
 - **AND** MUST 保留已发生的其他独立 Result
 
 ### Requirement: 任务目标必须写成简洁清晰的任务需求
-Buildr 任务指引 MUST 将 `intent`（目标）定位为一句话级的任务目标与入口定位，而不是完整需求正文。每个新正式执行任务（Task）MUST 在登记与实际工作位置核对后，由任务管理技能（task-manager）形成并关联独立任务说明（Task Brief），真实表达问题或需求、目标、必要范围与非目标和完成依据；简单任务 MUST 允许简短正文但不得缺失或为空占位。说明 MUST 随理解及已确认范围更新，未知事实 MUST 明示，不强制长模板。任务 MAY 关联零到多个 OpenSpec Change；变更说明（Change Brief）MUST 解释各自具体规范变化并引用唯一任务正文，不重复维护同义任务需求。
+Buildr 任务指引 MUST 将 `intent`（目标）定位为一句话级的任务目标与入口定位，而不是完整需求正文。每个新正式执行任务（Task）MUST 在登记与实际工作位置核对后，由任务管理技能（task-manager）形成并保存独立任务说明（Task Brief）到任务记录的 brief 字段，真实表达问题或需求、目标、必要范围与非目标和完成依据；简单任务 MUST 允许简短正文但不得缺失或为空占位。说明 MUST 随理解及已确认范围更新，未知事实 MUST 明示，不强制长模板。任务 MAY 关联零到多个 OpenSpec Change；变更说明（Change Brief）MUST 解释各自具体规范变化并引用唯一任务正文，不重复维护同义任务需求。
 
 #### Scenario: 创建任务时书写需求
 - **WHEN** Agent 调用 `task create` 或修订正式执行任务的目标
@@ -1023,12 +1028,12 @@ Buildr 任务指引 MUST 将 `intent`（目标）定位为一句话级的任务�
 
 #### Scenario: 无 Change 的简单正式任务
 - **WHEN** 正式新任务只需一次简单修复或文档维护且 `changes` 为空
-- **THEN** 智能体（Agent）MUST 保存真实短 Task Brief 并建立正式材料引用，使任务说明节点可直接读取
+- **THEN** 智能体（Agent）MUST 在 Task Record.brief 保存真实短说明，使任务说明节点可直接读取
 - **AND** MUST NOT 把空材料、普通顶部链接或 intent 当作已形成任务说明
 
 #### Scenario: 接续旧任务
-- **WHEN** 旧任务没有独立说明关联，而智能体（Agent）主动接续其当前目标
-- **THEN** 智能体（Agent）MUST 核对适用正文，显式关联已有文档或形成当前说明，并如实说明本次关联或补写
+- **WHEN** 旧任务的记录 brief 为空，而智能体（Agent）主动接续其当前目标
+- **THEN** 智能体（Agent）MUST 核对适用正文，通过产品动作显式导入已关联旧正文或形成当前记录说明，并如实说明本次来源和补写
 - **AND** MUST NOT 批量补造、改写过去时间、旧 Change Brief、归档或专业历史
 
 ### Requirement: 任务检查必须分别判断适用性
@@ -1115,14 +1120,14 @@ Buildr 自举工作空间 MUST 保留 workspace-local 的 `buildr-dev-preview` �
 - **AND** MUST NOT 把手工启动伪装成托管预览，也不得改写 canonical 数据补齐功能缺陷
 
 ### Requirement: 任务说明与材料管理必须遵守独立职责
-任务管理技能（task-manager）MUST 指导形成、保存、显式关联、更新和接续唯一任务说明（Task Brief），并按实际需要关联零到多个方案、实施和交付材料。正文 MUST 保留在真实项目或任务本机文件中，引用 MUST 由独立任务材料应用（Task Materials Application）维护；任务记录（Task Record）与专业结果 MUST 不复制这些正文或状态。Buildr-owned 技能（Skill）及 OpenSpec 增强片段 MUST 表达该分工，MUST NOT 通过修改第三方技能正文或受管投射落地。
+任务管理技能（task-manager）MUST 指导在 Task Record.brief 形成、保存、更新和接续唯一任务说明（Task Brief），并按实际需要关联零到多个方案、实施和交付材料。任务说明 MUST 由记录维护唯一正文；方案、实施和交付正文 MUST 保留在真实项目或任务本机文件中，其引用 MUST 由独立任务材料应用（Task Materials Application）维护，MUST 不复制进任务记录或专业结果。旧说明只通过显式产品动作导入，原文件保留。Buildr-owned 技能（Skill）及 OpenSpec 增强片段 MUST 表达该分工，MUST NOT 通过修改第三方技能正文或受管投射落地。
 
 #### Scenario: 任务说明更新
 - **WHEN** 已确认目标理解或范围变化，需要更新 Task Brief
-- **THEN** 智能体（Agent）MUST 重新读取唯一正文及相关引用，按文件与引用各自的已观察版本更新，并核对实际节点可读
-- **AND** Task Record MUST 只在其业务事实实际变化时更新，不因材料保存重写状态或历史
+- **THEN** 智能体（Agent）MUST 重新读取记录 brief，按已观察 recordDigest 更新，并核对实际节点可读；其他过程文件与引用 MUST 按各自版本维护
+- **AND** 说明变化 MUST 更新记录版本并保留适用的终态更正历史；其他过程材料保存 MUST 不重写任务状态或历史
 
 #### Scenario: 多任务共享变更或文档
 - **WHEN** 多个 Task 引用同一 Change 或适用文档
-- **THEN** 各任务 MUST 保持自身唯一说明引用，并允许共享正文与 Change 逻辑引用
-- **AND** 技能（Skill）MUST NOT 强制 Task 与 Change 一对一、覆盖另一任务的引用或复制同义正文
+- **THEN** 各任务 MUST 保持自身独立的记录 brief；共享仅适用于 Change 逻辑引用与合法方案或过程文档
+- **AND** 技能（Skill）MUST NOT 强制 Task 与 Change 一对一、覆盖另一任务的记录说明或过程引用

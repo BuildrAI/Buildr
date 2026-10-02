@@ -770,7 +770,7 @@ artifacts:
       - task-git-method
       - task-commits-contract
       - public-json-contracts
-    observedDigest: 0c87fb048dfa8b1cee76b9caa56c35ed5a93b3b4f69e4f929f5a201d0f61fa65
+    observedDigest: 36c9a82ad65c9df4f8d6e8a0596ad683ed11a4d7fba6520e7e6eea73c6bfe3bc
     files:
       - task-source-2026-08-30-parent-child-task-audit-b28c38
       - task-file-task-system-md-d14898
@@ -1794,7 +1794,7 @@ sources:
     title: 文档与相对链接事件
     kind: code
     path: services/buildr-web/src/components/MarkdownHost.tsx
-    observedDigest: 876ce244e0d6dfb52e7ae08f8c4c4b3e799ef156134777e54e852f6b8085bb60
+    observedDigest: 006c52ae5759501944c887d13af3d9c53c2359048131983110a8047497395a28
     summary: 将文档渲染接入页面及相对链接事件。
   - id: tree-ui
     title: 可折叠事实文件树
@@ -1914,7 +1914,7 @@ sources:
     kind: spec
     path: openspec/specs/agent-task-workflows/spec.md
     summary: 约束技能（Skill）协作、任务分流和默认隔离；工作树（Worktree）只管理位置与删除安全，相关检查与同步由适用能力负责。
-    observedDigest: 9989e8c28b4cc5a188e8ccb009a539950f5b0fd0f09c5d97c5abce55cfac678c
+    observedDigest: 4b88e818a2cd5a603af172b4e3ea0b2de9e96af99882c3ce79e4c8005aa14b60
   - id: task-source-module-19a342
     title: 任务能力装配
     kind: code
@@ -2066,8 +2066,8 @@ sources:
     title: 任务详情页面
     kind: code
     path: services/buildr-web/src/features/task/pages/TaskDetailPage.tsx
-    summary: 组织任务目标、工作摘要（Work Context）、关联成果与专业结果阅读，保留当前任务上下文。
-    observedDigest: f66a2ef7574dd131586123e8c0e041aae020e5e43cf29b5ec73b65a99b36c45e
+    summary: 组织记录说明、关联材料及专业结果，进入代码时携带明确文件身份和返回现场，返回接续原任务阅读。
+    observedDigest: 0585fa11968d7311290438eb5661f14d369bc5c56e0559ab19f6b80620ec9e83
   - id: task-source-taskartifactreader-bb7503
     title: 任务成果并排阅读
     kind: code
@@ -2079,7 +2079,7 @@ sources:
     kind: spec
     path: openspec/specs/task-record/spec.md
     summary: 约束任务说明正文、轻量列表、四态、关系、更正历史、版本保护及独立业务结果边界。
-    observedDigest: e7e6b5d2589566c0b0e5087feebcee1e2d06ea256441e42f57ae25369256c3df
+    observedDigest: 52c62e6a7aac389fc0d611d7032c9735bcbf0964d1fcc21bed2bb1c8457cc433
   - id: task-source-spec-9dbb55
     title: 审查结果规范
     kind: spec
@@ -2242,7 +2242,7 @@ sources:
     kind: evidence
     path: knowledge/code-map/task-system.md
     summary: 保存本主题当前解释或依据，网页与本地使用同一正文；不替代规范和代码。
-    observedDigest: 0c87fb048dfa8b1cee76b9caa56c35ed5a93b3b4f69e4f929f5a201d0f61fa65
+    observedDigest: 36c9a82ad65c9df4f8d6e8a0596ad683ed11a4d7fba6520e7e6eea73c6bfe3bc
   - id: task-file-task-system-html-80857d
     title: 完整过程与角色职责 · 独立展示
     kind: evidence

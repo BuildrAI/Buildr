@@ -368,6 +368,8 @@ export async function runTaskMaterialsJourney({ t, page, runtime, workspaceRoot,
     runGit(source, ['add', '.']); runGit(source, ['commit', '-qm', 'attached task brief fixture']);
     runBuildr(['project', 'create', 'attached', '--attach', source, '--name', '外接项目', '--target', workspaceRoot]);
     cli(['task', 'create', 'materials-attached-record', '--title', '外接项目说明引用', '--intent', '按项目身份阅读外接文件。', '--project', 'attached', '--brief-file', markdown('attached-record', '# 外接项目任务说明\n\n[查看项目资料](projects/attached/docs/目标%20资料.md)\n')]);
+    const servicesResponse = await page.request.get(`${workspaceUrl.replace('/workspaces/', '/api/v1/workspaces/')}/projects/attached/services`);
+    assert.equal(servicesResponse.status(), 200, `附接项目服务列表返回：${await servicesResponse.text()}`);
     await open('materials-attached-record');
     await body().getByRole('link', { name: '查看项目资料', exact: true }).click();
     await page.locator('.pane-right:visible .resource-reader .markdown-body').filter({ hasText: '通过项目身份读取外接代码库' }).waitFor({ state: 'visible' });

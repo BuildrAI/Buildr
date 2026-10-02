@@ -452,6 +452,10 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
   });
 
   if (selected('code')) {
+    const linkedBrief=path.join(workspaceRoot,'.buildr/local/code-task-entry-brief.md');
+    fs.writeFileSync(linkedBrief,'# 代码定位任务说明\n\n[读取本任务说明](@task/browser-task)\n');
+    const linkedTask=runBuildr(['task','inspect','browser-task','--target',workspaceRoot,'--json']);
+    runBuildr(['task','update','browser-task','--brief-file',linkedBrief,'--expected-record',linkedTask.recordDigest,'--target',workspaceRoot,'--json']);
     const codeFile=path.join(workspaceRoot,'projects/demo/services/api/zz-segmented-text.txt');
     const history=spawnSync('git',['rev-parse','HEAD'],{cwd:workspaceRoot,encoding:'utf8'});assert.equal(history.status,0,history.stderr);
     await runCodeExplorerJourney({t,page,workspaceUrl,capture,expectedBrowserErrors,codeFixture:{current:codeSegmentedText('current'),history:codeSegmentedText('history'),commitHash:history.stdout.trim(),change:()=>fs.writeFileSync(codeFile,'changed segmented text\n'+codeSegmentedText('current')),restore:()=>fs.writeFileSync(codeFile,codeSegmentedText('current'))}});

@@ -214,12 +214,17 @@ export async function runCodeExplorerJourney({t,page,workspaceUrl,capture,expect
   });
   await t.test('任务入口预选代码库，完整文件跳转后返回保留改动选择和滚动',async()=>{
     await page.goto(workspaceUrl+'/tasks/browser-task');await page.locator('#task-source-files').waitFor();
+    await page.getByRole('link',{name:'读取本任务说明',exact:true}).click();
+    await page.locator('[data-task-brief="browser-task"]').filter({hasText:'代码定位任务说明'}).waitFor();
+    assert.equal(await page.locator('[data-task-node=requirements]').getAttribute('aria-selected'),'true');
     await page.getByText('改动与提交',{exact:false}).click();await page.getByRole('button',{name:'查看完整文件',exact:true}).waitFor();
     await page.getByRole('status',{name:'正在读取完整差异'}).waitFor({state:'hidden'});const taskApi=workspaceUrl.replace('/workspaces/','/api/v1/workspaces/')+'/tasks/browser-task';const taskBefore=await(await page.request.get(taskApi)).json();const before=await page.locator('.task-diff-reader').innerText();
     const diffScroll=page.locator('.task-diff-body');await diffScroll.evaluate((el:HTMLElement)=>{el.scrollTop=240;});const scrollBefore=await diffScroll.evaluate((el:HTMLElement)=>el.scrollTop);await page.getByRole('button',{name:'查看完整文件',exact:true}).click();await page.locator('.repository-source-code').waitFor();
     assert.ok((await page.locator('.code-root-selectors').innerText()).includes('由任务服务预选'));
     const clear=page.locator('.code-root-selectors .ant-select-clear').first();await clear.click();await page.waitForFunction(()=>document.querySelectorAll('.repository-root-name').length===2);
     await search('README.md');await page.locator('.repository-search-result').filter({hasText:'另一个代码库'}).click();await page.getByRole('heading',{name:'Second repository'}).waitFor();await page.getByRole('button',{name:'返回任务',exact:true}).click();await page.getByRole('button',{name:'查看完整文件',exact:true}).waitFor();assert.ok(before.includes('main.ts'));assert.ok((await page.locator('.task-diff-reader').innerText()).includes('explorerAnswer = 2'));
+    assert.equal(await page.locator('[data-task-content=changes]').getAttribute('aria-selected'),'true','Code返回不重放已消费的@task说明导航意图');
+    assert.equal(await page.locator('#task-node-content:visible [data-task-brief]').count(),0);
     assert.equal(await diffScroll.evaluate((el:HTMLElement)=>el.scrollTop),scrollBefore);const taskAfter=await(await page.request.get(taskApi)).json();assert.deepEqual(taskAfter.record,taskBefore.record);await capture(page,'code-task-return.png');
     await page.locator('#task-source-files').click();await page.getByRole('button',{name:'返回任务',exact:true}).waitFor();await page.getByRole('button',{name:'返回任务',exact:true}).click();await page.getByRole('button',{name:'查看完整文件',exact:true}).waitFor();
   });

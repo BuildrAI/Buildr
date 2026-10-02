@@ -197,6 +197,12 @@ export function createServiceManifestRepository(runtime: ServiceManifestReposito
     runtime.assertInitializedBuildrWorkspace(root);
     if (fs.existsSync(path.join(root, 'services', 'manifest.yml'))) return runtime.readGlobalServiceRegistry!(root, project, workspaceId);
     const manifestPath = serviceDomainManifestPath(root, project);
+    if (project.source.root === 'attached' && !fs.lstatSync(manifestPath, { throwIfNoEntry: false })) {
+      const projectRoot = resolveSourceRoot(root, project.source);
+      if (!fs.statSync(projectRoot).isDirectory()) throw new Error('外接项目（Attached Project）的来源必须是当前存在的目录。');
+      const empty = renderServicesDomainManifest(project.id, {}, project.code);
+      return { root, manifestPath, content: null, revision: serviceManifestRevision('absent'), registry: parseServicesManifest(empty, { workspaceId, projectId: project.id, projectCode: project.code }) };
+    }
     const content = fs.readFileSync(manifestPath, 'utf8');
     return { root, manifestPath, content, revision: serviceManifestRevision(content), registry: parseServicesManifest(content, { workspaceId, projectId: project.id, projectCode: project.code }) };
   }

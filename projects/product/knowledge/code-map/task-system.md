@@ -30,7 +30,7 @@
 
 前端[正文阅读面](../../services/buildr-web/src/features/task/components/TaskReadingPane.tsx)直接以 Markdown 排版展示 `record.brief`，不提供原文切换；源码在任务编辑区查看和修改。不等待材料或变更请求，也不显示重复文件名。[节点材料投影](../../services/buildr-web/src/features/task/components/taskWorkContent.ts)仅将过程角色与辅助 OpenSpec 材料投射到设计、实施和收尾；实施清单仍由独立入口阅读。[材料钩子](../../services/buildr-web/src/features/task/hooks/useTaskArtifacts.ts)独立加载过程文件并取消旧请求，[材料阅读器](../../services/buildr-web/src/features/task/components/TaskMaterialReader.tsx)展示实际过程文件正文、来源与局部诊断，继续提供正文/原文切换。记录说明为空时明确显示尚未填写，旧变更说明在辅助入口按来源分别阅读，不选择主变更或合并正文。
 
-共用[Markdown 主体](../../services/buildr-web/src/components/MarkdownHost.tsx)通过[任务引用解析](../../services/buildr-web/src/lib/taskBriefLinks.ts)识别严格的 `@task/<task-id>` 稳定任务引用，在当前工作空间进入对应任务，不依赖归档目录深度。记录正文使用明确的逻辑项目引用 `projects/<project>/<path>`；[共享文档解析](../../services/buildr-web/src/lib/workspaceMarkdownReferences.ts)核对当前任务范围与登记项目后按项目身份读取，支持附接项目（Attached Project），不拼接物理目录。旧普通文件链接保留原语义，不能扩大文件读取范围。[阅读状态](../../services/buildr-web/src/features/task/hooks/useTaskReadingState.ts)与[会话阅读历史](../../services/buildr-web/src/features/task/task-reading-history.ts)按工作空间、任务和浏览器历史条目保存有限快照，普通与组合任务的节点、方案选择及滚动分别接续。新打开任务默认说明；`@task` 链接明确进入记录正文，即使复用同任务阅读面也不会吞掉请求，浏览器返回恢复原条目的阅读选择。
+共用[Markdown 主体](../../services/buildr-web/src/components/MarkdownHost.tsx)通过[任务引用解析](../../services/buildr-web/src/lib/taskBriefLinks.ts)识别严格的 `@task/<task-id>` 稳定任务引用，在当前工作空间进入对应任务，不依赖归档目录深度。记录正文使用明确的逻辑项目引用 `projects/<project>/<path>`；[共享文档解析](../../services/buildr-web/src/lib/workspaceMarkdownReferences.ts)核对当前任务范围与登记项目后按项目身份读取，支持附接项目（Attached Project），不拼接物理目录。旧普通文件链接保留原语义，不能扩大文件读取范围。[阅读状态](../../services/buildr-web/src/features/task/hooks/useTaskReadingState.ts)与[会话阅读历史](../../services/buildr-web/src/features/task/task-reading-history.ts)按工作空间、任务和浏览器历史条目保存有限快照，普通与组合任务的节点、方案选择及滚动分别接续。新打开任务默认说明；`@task` 链接明确进入记录正文，即使复用同任务阅读面也不会吞掉请求，浏览器返回恢复原条目的阅读选择。 [任务页面](../../services/buildr-web/src/features/task/pages/TaskDetailPage.tsx)通过“查看源文件”或选中文件进入代码区域（Code），传递任务、代码库、文件及可选提交身份和返回现场；进入代码前清除旧的说明打开意图，返回后接续原任务阅读，不将代码定位改成新的说明请求。
 
 审查和验证仍从各自应用按需读取；无结果只说明未记录，必要未完成、不适用理由由实际说明或工作摘要表达。真实执行结果和未覆盖理由分别呈现，材料存在不能推导完成。稳定的[浏览器回归](../../services/buildr-web/test/browser/task-materials-journey.ts)直接从列表打开节点、更新正文后刷新、验证无变更专业结果及真实归档后点击，不能只检查顶部链接或文件存在。
 
@@ -156,7 +156,7 @@
     - **`features/task/`** — 当前任务与接续
       - `pages/`
         - [PrototypeReaderPage.tsx](../../services/buildr-web/src/features/task/pages/PrototypeReaderPage.tsx) — 任务限定的独立三栏阅读
-        - [TaskDetailPage.tsx](../../services/buildr-web/src/features/task/pages/TaskDetailPage.tsx) — 目标、摘要、成果、关系与专业结果
+        - [TaskDetailPage.tsx](../../services/buildr-web/src/features/task/pages/TaskDetailPage.tsx) — 任务阅读及专业结果，传递明确代码定位与返回现场，避免返回时重放说明打开意图
       - `components/`
         - [TaskReadingPane.tsx](../../services/buildr-web/src/features/task/components/TaskReadingPane.tsx) — 记录说明仅展示排版正文，过程文件仍可查看原文；说明不依赖文件关联
         - [TaskEditModal.tsx](../../services/buildr-web/src/features/task/components/TaskEditModal.tsx) — 区分一句话目标与 Markdown 正文，保留编辑草稿与既有更正要求

@@ -53,7 +53,7 @@ export function TaskDetailPage({ taskId: providedTaskId }: { taskId?: string } =
   const preferences = useWorkbenchPreferences(workspaceId);
   const refreshContextAndList = useCallback(() => { resetTaskList(); return workContext.refresh(); }, [resetTaskList, workContext.refresh]);
   const editor = useTaskContextEditor(taskId, workContext.data, refreshContextAndList);
-  const reading = useTaskReadingState(taskId, workspaceId, (previewContext?.navigationType ?? navigationType) === 'POP', { key: previewContext?.navigationKey ?? location.key, taskBriefId: previewContext?.taskBriefId ?? location.state?.taskBriefId });
+  const reading = useTaskReadingState(taskId, workspaceId, (previewContext?.navigationType ?? navigationType) === 'POP', { key: previewContext?.navigationKey ?? location.key, taskBriefId: previewContext ? previewContext.taskBriefId : location.state?.taskBriefId });
   const { selected, extraContent, selectNode } = reading;
   const currentTask = useRef(taskId);
   currentTask.current = taskId;
