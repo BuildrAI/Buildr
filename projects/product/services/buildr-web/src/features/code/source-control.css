@@ -31,6 +31,11 @@
 .source-control-worktree-info .ant-btn { font-size:12px; }
 .source-control-worktree-info-task { font-size:13px; }
 .source-control-worktree-info-location { color:var(--soft-muted); font-size:12px; }
+/* Inset edging keeps the measured hover-card bounds and list clearance unchanged. */
+.selectable-hover-card:has(.source-control-worktree-info) .ant-popover-inner { background:var(--soft-surface); box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--soft-primary) 48%,var(--soft-line)),0 12px 30px color-mix(in srgb,var(--soft-ink) 18%,transparent),0 3px 8px color-mix(in srgb,var(--soft-primary) 12%,transparent); }
+.selectable-hover-card:has(.source-control-worktree-info) .source-control-worktree-info-task { padding:6px 8px; border-radius:5px; background:color-mix(in srgb,var(--soft-primary) 8%,var(--soft-surface)); color:var(--soft-primary); overflow-wrap:anywhere; }
+.selectable-hover-card:has(.source-control-worktree-info) .source-control-worktree-info-location { color:var(--soft-ink); font-weight:500; }
+.selectable-hover-card:has(.source-control-worktree-info) .source-control-worktree-diagnostic { padding:6px 8px; border-left:2px solid color-mix(in srgb,var(--soft-primary) 30%,var(--soft-line)); border-radius:3px; background:var(--soft-sidebar); font-size:11.5px; }
 .source-control-repository-copy:focus-visible,.source-control-fold:focus-visible { outline:2px solid var(--soft-primary); outline-offset:2px; border-radius:3px; }
 .source-control-catalog-note { margin:7px 14px 10px; color:var(--soft-muted); font-size:12px; line-height:1.7; }
 .source-control-browse-tabs { flex:none; padding:10px 12px; border-bottom:1px solid var(--soft-line); }
