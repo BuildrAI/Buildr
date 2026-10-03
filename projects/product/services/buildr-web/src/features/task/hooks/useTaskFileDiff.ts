@@ -18,7 +18,7 @@ export function useTaskFileDiff(taskId: string | undefined, input: TaskFileDiffR
     entry.promise = taskApi.fileDiff(taskId, input, { signal: controller.signal }).then(data => {
       if (!controller.signal.aborted && current.current === key) setState({ key, data, loading: false, error: '' });
     }).catch(error => {
-      if (!controller.signal.aborted && current.current === key) setState(previous => ({ key, data: previous?.key === key ? previous.data : null, loading: false, error: error instanceof Error ? error.message : '完整差异读取失败' }));
+      if (!controller.signal.aborted && current.current === key) setState({ key, data: null, loading: false, error: error instanceof Error ? error.message : '完整差异读取失败' });
     }).finally(() => { if (pending.current === entry) pending.current = null; });
     pending.current = entry;
     return entry.promise;

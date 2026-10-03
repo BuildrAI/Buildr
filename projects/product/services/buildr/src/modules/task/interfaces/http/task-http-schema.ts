@@ -222,7 +222,7 @@ export const TASK_HTTP_SCHEMAS = Object.freeze({
     reason: nonEmptyText,
   }, ['expectedRecordDigest', 'reason']), defs),
   abandonResponse: schema('abandon/response', 'TaskAbandonResponse', { $ref: '#/$defs/TaskRecordMutationResponse' }, defs),
-  fileDiffRequest: schema('file-diff/request', 'TaskFileDiffRequest', closed({ repositoryId: nonEmptyText, filePath: { type: 'string', minLength: 1, maxLength: 4096 }, commitHash: { type: 'string', pattern: '^(worktree|[a-f0-9]{40}|[a-f0-9]{64})$' } }, ['repositoryId', 'filePath', 'commitHash']), defs),
+  fileDiffRequest: schema('file-diff/request', 'TaskFileDiffRequest', closed({ repositoryId: nonEmptyText, filePath: { type: 'string', minLength: 1, maxLength: 4096 }, commitHash: { type: 'string', pattern: '^(worktree|[a-f0-9]{40}|[a-f0-9]{64})$' }, checkoutId: { type: 'string', pattern: '^checkout-[a-f0-9]{64}$' } }, ['repositoryId', 'filePath', 'commitHash']), defs),
   changedFileCountResponse: schema('changed-file-count/response', 'TaskChangedFileCountResponse', closed({
     schemaVersion: { const: 'buildr.task-changed-file-count/v1' }, taskId: { $ref: '#/$defs/TaskId' }, readAt: nonEmptyText,
     fileCount: { type: 'integer', minimum: 0 }, status: { enum: ['complete', 'partial'] },
@@ -236,6 +236,7 @@ export const TASK_HTTP_SCHEMAS = Object.freeze({
     status: { enum: ['complete', 'partial'] },
     files: arrayOf(closed({
       repositoryId: nonEmptyText, path: nonEmptyText, previousPath: nullable(nonEmptyText),
+      checkoutId: { type: 'string', pattern: '^checkout-[a-f0-9]{64}$' },
       kind: { enum: ['tracked', 'untracked'] }, status: { enum: ['modified', 'untracked', 'added', 'deleted', 'renamed', 'conflicted'] },
       additions: nullable({ type: 'integer', minimum: 0 }), deletions: nullable({ type: 'integer', minimum: 0 }),
       preview: nullable({ type: 'string' }), previewTruncated: { type: 'boolean' },

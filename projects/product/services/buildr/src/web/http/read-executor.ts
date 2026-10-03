@@ -39,10 +39,11 @@ function validateRequest(operation: any, input: any) {
   for (const field of extra) {
     if (typeof input[field] !== 'string' || !input[field]) throw readExecutorError('local_app_read_input_invalid', `Buildr Web read ${field} 无效。`, 400);
   }
+  if (operation === 'file-diff' && input.checkoutId !== undefined && (typeof input.checkoutId !== 'string' || !/^checkout-[a-f0-9]{64}$/.test(input.checkoutId))) throw readExecutorError('local_app_read_input_invalid', '检出来源身份无效。', 400);
   if (extra.includes('project') && !/^[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(input.project)) throw readExecutorError('local_app_read_input_invalid', 'Project 标识无效。', 400);
   if (operation === 'change' && !TASK_ID_PATTERN.test(input.change)) throw readExecutorError('local_app_read_input_invalid', 'Change 标识无效。', 400);
   if (operation === 'prototype' && !/^[a-f0-9]{32}$/u.test(input.prototypeId)) throw readExecutorError('local_app_read_input_invalid', 'Prototype 标识无效。', 400);
-  const allowed = new Set(['targetRoot', 'taskId', 'signal', ...extra]);
+  const allowed = new Set(['targetRoot', 'taskId', 'signal', ...extra, ...(operation === 'file-diff' ? ['checkoutId'] : [])]);
   for (const field of Object.keys(input)) {
     if (!allowed.has(field)) throw readExecutorError('local_app_read_field_forbidden', `Buildr Web read executor 不支持字段：${field}。`, 400, { field });
   }
@@ -171,6 +172,7 @@ export function createBoundedBuildrWebReadExecutor({ workerCount = DEFAULT_WORKE
           ...(item.change === undefined ? {} : { change: item.change }),
           ...(item.documentPath === undefined ? {} : { documentPath: item.documentPath }),
           ...(item.repositoryId === undefined ? {} : { repositoryId: item.repositoryId, filePath: item.filePath, commitHash: item.commitHash }),
+          ...(item.checkoutId === undefined ? {} : { checkoutId: item.checkoutId }),
           ...(item.prototypeId === undefined ? {} : { prototypeId: item.prototypeId }),
         });
       } catch (error: any) {
@@ -205,7 +207,7 @@ export function createBoundedBuildrWebReadExecutor({ workerCount = DEFAULT_WORKE
         change: input.change,
         documentPath: input.documentPath,
         prototypeId: input.prototypeId,
-        repositoryId: input.repositoryId, filePath: input.filePath, commitHash: input.commitHash, input:input.input,
+        repositoryId: input.repositoryId, filePath: input.filePath, commitHash: input.commitHash, checkoutId: input.checkoutId, input:input.input,
         state: 'queued',
         settled: false,
         workerState: null,

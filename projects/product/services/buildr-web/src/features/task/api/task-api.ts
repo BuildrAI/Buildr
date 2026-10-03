@@ -57,7 +57,7 @@ export function createTaskClient(client: ApiClient) {
       return typed(client(`/api/v1/tasks/${encodeURIComponent(taskId)}/changed-files`, options));
     },
     fileDiff(taskId: string, input: TaskFileDiffRequest, options: ReadOptions = {}): Promise<TaskChangedFilesResult> {
-      const query = new URLSearchParams({ repositoryId: input.repositoryId, filePath: input.filePath, commitHash: input.commitHash }).toString();
+      const query = new URLSearchParams({ repositoryId: input.repositoryId, filePath: input.filePath, commitHash: input.commitHash, ...(input.checkoutId ? { checkoutId: input.checkoutId } : {}) }).toString();
       return typed(client(`/api/v1/tasks/${encodeURIComponent(taskId)}/file-diff?${query}`, options));
     },
     change(taskId: string, project: string, change: string, options: ReadOptions = {}): Promise<unknown> {

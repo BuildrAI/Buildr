@@ -86,7 +86,7 @@ export function TaskDiffReader({ repositories, selected, onSelect, notice, taskI
     return () => observer.disconnect();
   }, []);
   const mode: DiffMode = view === 'split' && splitRoom ? 'split' : 'unified';
-  const selection = useMemo(() => {
+  const listedSelection = useMemo(() => {
     for (const repository of repositories) {
       const commit = fileCommit ? repository.commits.find(entry => entry.key === fileCommit) : undefined;
       const file = (fileCommit ? commit?.files : repository.changes)?.find(item => changedFileKey(item) === selected);
@@ -94,13 +94,22 @@ export function TaskDiffReader({ repositories, selected, onSelect, notice, taskI
     }
     return undefined;
   }, [repositories, selected, fileCommit]);
+  const selectionIdentity = JSON.stringify([readScope, selected, fileCommit]);
+  const observedSelection = useRef<{ identity: string; value: NonNullable<typeof listedSelection> } | null>(null);
+  useEffect(() => { if (listedSelection) observedSelection.current = { identity: selectionIdentity, value: listedSelection }; }, [listedSelection, selectionIdentity]);
+  // Refresh may remove or de-duplicate the selected row. Recheck its observed checkout;
+  // a same-path row from another checkout must never become this selection.
+  const selection = listedSelection ?? (!fileCommit && observedSelection.current?.identity === selectionIdentity && observedSelection.current.value.file.checkoutId ? observedSelection.current.value : undefined);
+  const selectionMissing = Boolean(selection && !listedSelection);
   const sourceFile = selection?.file;
-  const full = useTaskFileDiff(taskId, sourceFile ? { repositoryId: sourceFile.repositoryId, filePath: sourceFile.path, commitHash: selection?.commit?.commit.hash ?? 'worktree' } : null, `${refreshVersion ?? ''}:${sourceFile?.preview ?? ''}`, readScope);
+  const full = useTaskFileDiff(taskId, sourceFile ? { repositoryId: sourceFile.repositoryId, filePath: sourceFile.path, commitHash: selection?.commit?.commit.hash ?? 'worktree', ...(!selection?.commit && sourceFile.checkoutId ? { checkoutId: sourceFile.checkoutId } : {}) } : null, `${refreshVersion ?? ''}:${sourceFile?.preview ?? ''}`, readScope);
   useEffect(() => {
     onRegisterRefresh?.(full.refresh);
     return () => onRegisterRefresh?.(null);
   }, [onRegisterRefresh, full.refresh]);
-  const current = full.data?.files[0] ?? sourceFile;
+  const current = full.error || (selectionMissing && full.loading)
+    ? sourceFile && { ...sourceFile, preview: null, previewTruncated: false }
+    : full.data?.files[0] ?? sourceFile;
   const owner = selection;
   const commitEntry = repositories.flatMap(repository => repository.commits.map(entry => ({ repository, entry }))).find(item => item.entry.key === selectedCommit);
   const parsed = useMemo(() => current?.preview ? parseUnifiedDiff(current.preview) : null, [current?.preview]);
@@ -238,7 +247,7 @@ export function TaskDiffReader({ repositories, selected, onSelect, notice, taskI
           {!commitEntry && current && (copied ? <Button size="small" type="text" icon={<CheckOutlined />}>已复制路径</Button> : <Button size="small" type="text" icon={<CopyOutlined />} aria-label="复制路径" onClick={() => void copyPath()}>复制路径</Button>)}
         </div>
       </header>
-      {taskId && current && !full.loading && (full.error || current.previewTruncated || !current.preview) && <p className="task-diff-read-status" role="status">{full.error ? `完整差异读取失败：${full.error}，当前显示已有内容。` : current.previewTruncated ? '差异已达到读取上限或无法完整读取，当前内容不完整。' : '该文件未提供可读的文本差异。'}</p>}
+      {taskId && current && (selectionMissing || (!full.loading && (full.error || current.previewTruncated || !current.preview))) && <p className="task-diff-read-status" role="status">{full.error ? `完整差异读取失败：${full.error}` : selectionMissing ? '上次所选改动已不在当前列表，仍按原检出来源核对；可从左侧重新选择。' : current.previewTruncated ? '差异已达到读取上限或无法完整读取，当前内容不完整。' : '该文件未提供可读的文本差异。'}</p>}
       <div ref={bodyRef} className="task-diff-body" role="region" aria-label="差异内容">
         {commitEntry && <article className="task-commit-details" aria-label="提交完整信息">
           <h2>{commitEntry.entry.commit.subject}</h2>

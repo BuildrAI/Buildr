@@ -37,7 +37,8 @@ function validMessage(message: any) {
   const operation = operations[message?.operation];
   if (!operation || typeof message?.targetRoot !== 'string' || typeof message?.taskId !== 'string') return false;
   if (operation.fields?.some(field => typeof message[field] !== 'string' || !message[field])) return false;
-  const allowed = new Set(['id', 'operation', 'targetRoot', 'taskId', ...(operation.fields || [])]);
+  if (message.operation === 'file-diff' && message.checkoutId !== undefined && (typeof message.checkoutId !== 'string' || !/^checkout-[a-f0-9]{64}$/.test(message.checkoutId))) return false;
+  const allowed = new Set(['id', 'operation', 'targetRoot', 'taskId', ...(operation.fields || []), ...(message.operation === 'file-diff' ? ['checkoutId'] : [])]);
   return Object.keys(message).every((field: any) => allowed.has(field));
 }
 
@@ -65,7 +66,7 @@ workerPort.on('message', async (message: any) => {
     if(message.operation.startsWith('code-')) {
       const input=JSON.parse(message.input);
       value=await application[operation.method](message.targetRoot,operation.method==='repositories'?input.taskId:input);
-    } else value = await application[operation.method](message.targetRoot, message.taskId, ...(operation.fields || []).map(field => message[field]));
+    } else value = await application[operation.method](message.targetRoot, message.taskId, ...(operation.fields || []).map(field => message[field]), ...(message.operation === 'file-diff' ? [message.checkoutId] : []));
     workerPort.postMessage({ id: message.id, ok: true, value });
   } catch (error: any) {
     workerPort.postMessage({ id: message.id, ok: false, error: serializeError(error) });

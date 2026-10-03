@@ -7,10 +7,17 @@ import { createGitChangesReader, TASK_CHANGED_FILE_LIMITS, type ChangedFileLimit
 import path from 'node:path';
 import type { TaskChangedFile } from '../domain/task-changed-file.ts';
 import { readTaskCommits } from '../../commits/application/task-commits-application.ts';
+import { gitCheckoutReadId } from '../../../../infrastructure/git/checkout-read-identity.ts';
 
 export type TaskChangedFilesDependencies = TaskRepositoryScopeDependencies;
 
 type RepositoryOutput = TaskChangedFilesResult['repositories'][number];
+
+function assertObservedCheckout(checkout: string, checkoutId: string) {
+  let currentId: string | null = null;
+  try { currentId = gitCheckoutReadId(checkout); } catch { /* A removed source cannot supply the observed contents. */ }
+  if (currentId !== checkoutId) throw Object.assign(new Error('所选检出来源已失效或身份已变化，请刷新列表。'), { code: 'task_file_checkout_unavailable', status: 404 });
+}
 
 /** Read worktree changes and per-commit file lists for a task's real Git scope. */
 export function createTaskChangedFilesApplication(dependencies: TaskChangedFilesDependencies, commitLimits: CommitLimits = TASK_COMMIT_LIMITS, fileLimits: ChangedFileLimits = TASK_CHANGED_FILE_LIMITS) {
@@ -65,14 +72,16 @@ export function createTaskChangedFilesApplication(dependencies: TaskChangedFiles
       const ordered = [...current.taskCheckouts, ...[...current.checkouts].filter(item => !current.taskCheckouts.has(item))];
       for (const checkout of ordered) {
         try {
+          const checkoutId = gitCheckoutReadId(checkout);
           const status = reader.worktreeStatus(checkout, current.repository);
+          assertObservedCheckout(checkout, checkoutId);
           output.branch ||= status.branch;
           output.ahead ??= status.upstreamAhead;
           for (const failure of status.failures) report(failure.code, failure.message, view.id);
           if (status.truncated) { output.status = 'truncated'; truncated = true; }
           for (const file of status.files) {
             if (seen.has(file.path)) continue;
-            seen.add(file.path); files.push(file); fileCount += 1;
+            seen.add(file.path); files.push({ ...file, checkoutId }); fileCount += 1;
           }
         } catch {
           output.status = 'unavailable';
@@ -112,11 +121,12 @@ export function createTaskChangedFilesApplication(dependencies: TaskChangedFiles
       diagnostics, effects: [],
     };
   }
-  function inspectTaskFileDiff(targetRoot: string, taskIdValue: string, repositoryId: string, filePath: string, commitHash: string): TaskChangedFilesResult {
+  function inspectTaskFileDiff(targetRoot: string, taskIdValue: string, repositoryId: string, filePath: string, commitHash: string, checkoutId?: string): TaskChangedFilesResult {
     const taskId = taskActionId(taskIdValue, 'taskId');
     const fail = (message: string, status = 400): never => { throw Object.assign(new Error(message), { code: 'task_file_diff_invalid', status }); };
     if (!filePath || filePath.includes('\\') || filePath.includes('\0') || path.posix.isAbsolute(filePath) || path.posix.normalize(filePath) !== filePath || filePath.split('/').includes('..')) fail('文件路径必须是代码库内的相对路径。');
     if (commitHash !== 'worktree' && !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(commitHash)) fail('提交身份无效。');
+    if (checkoutId !== undefined && (typeof checkoutId !== 'string' || !/^checkout-[a-f0-9]{64}$/.test(checkoutId))) fail('检出来源身份无效。');
     const scope = resolveTaskRepositoryScope(targetRoot, taskId, dependencies, commitLimits);
     const current = scope.reads.get(repositoryId);
     if (!current) fail('代码库不在当前任务范围内。', 404);
@@ -126,12 +136,25 @@ export function createTaskChangedFilesApplication(dependencies: TaskChangedFiles
     let files: TaskChangedFile[] = [], branch: string | null = null, ahead: number | null = null;
     if (commitHash === 'worktree') {
       const ordered = [...current!.taskCheckouts, ...[...current!.checkouts].filter(item => !current!.taskCheckouts.has(item))];
+      let matchedCheckout = false;
       for (const checkout of ordered) {
+        let observedCheckoutId: string;
+        try { observedCheckoutId = gitCheckoutReadId(checkout); }
+        catch (error) {
+          // An explicit observation may no longer exist. Other checkouts cannot replace it.
+          if (checkoutId) continue;
+          throw error;
+        }
+        if (checkoutId && checkoutId !== observedCheckoutId) continue;
+        matchedCheckout = true;
         const status = reader.worktreeStatus(checkout, current!.repository, { filePath, fullContext: true });
+        assertObservedCheckout(checkout, observedCheckoutId);
         reportFailures(status.failures);
         const file = status.files.find(item => item.path === filePath);
-        if (file) { files = [file]; branch = status.branch; ahead = status.upstreamAhead; break; }
+        if (file) { files = [{ ...file, checkoutId: observedCheckoutId }]; branch = status.branch; ahead = status.upstreamAhead; break; }
+        if (checkoutId) break;
       }
+      if (checkoutId && !matchedCheckout) throw Object.assign(new Error('所选检出来源已失效或不在当前任务范围内，请刷新列表。'), { code: 'task_file_checkout_unavailable', status: 404 });
     } else {
       const commits = readTaskCommits(scope, taskId, commitLimits);
       if (!commits.commits.some(commit => commit.repositoryId === repositoryId && commit.hash === commitHash)) fail('提交不属于当前任务。', 404);

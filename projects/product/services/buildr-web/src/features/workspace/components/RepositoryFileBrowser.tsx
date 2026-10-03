@@ -22,9 +22,9 @@ export type RepositoryPreviewFile = {
   link?: boolean;
 };
 
-export type RepositoryTreeScope = { id: string; name: string; location?: string; files: RepositoryPreviewFile[] };
-type TreeFile = RepositoryPreviewFile & { repositoryId?: string; repositoryName?: string };
-type SearchResult = RepositoryPreviewFile & {repositoryId?:string;repositoryName?:string;line?:number;excerpt?:string;occurrences?:Array<{line:number;excerpt:string}>};
+export type RepositoryTreeScope = { id: string; repositoryId?: string; name: string; location?: string; files: RepositoryPreviewFile[] };
+type TreeFile = RepositoryPreviewFile & { repositoryId?: string; sourceRepositoryId?: string; repositoryName?: string };
+type SearchResult = RepositoryPreviewFile & {repositoryId?:string;sourceRepositoryId?:string;repositoryName?:string;line?:number;excerpt?:string;occurrences?:Array<{line:number;excerpt:string}>};
 function treeKey(path: string, repositoryId?: string) { return repositoryId ? repositoryId + '::' + path : path; }
 
 type Props = {
@@ -44,7 +44,7 @@ type Props = {
   unavailable?: boolean;
   resetKey?: number;
   searchSeed?: string;
-  onRetry(): void;
+  onRetry(): void | Promise<void>;
   onViewCurrent(): void;
   onChanges?(path: string): void;
   onScene?(state: string): void;
@@ -70,6 +70,7 @@ type Props = {
   onReadPage?(index: number): void;
   taskTitle?: string;
   repositoryId?: string;
+  checkoutId?: string;
   observedDigest?: string;
   observedRevision?: string;
   observedAt?: string;
@@ -111,7 +112,7 @@ export function RepositoryFileBrowser(props: Props) {
   useEffect(()=>{props.onSearch?.(searchQuery,searchMode,showIgnored);},[searchQuery,searchMode,showIgnored,props.onSearch]);
   const file = props.files.find(item => item.path === props.selectedPath);
   const visible: TreeFile[] = (props.treeRepositories
-    ? props.treeRepositories.flatMap(repo => repo.files.map(item => ({ ...item, repositoryId: repo.id, repositoryName: repo.name })))
+    ? props.treeRepositories.flatMap(repo => repo.files.map(item => ({ ...item, repositoryId: repo.id, sourceRepositoryId:repo.repositoryId||repo.id, repositoryName: repo.name })))
     : props.files).filter(item => showIgnored || !item.ignored);
   const needle = searchQuery.toLowerCase();
   const matches = needle ? visible.filter(item => (searchMode === 'name' ? item.path : item.content).toLowerCase().includes(needle)) : [];
@@ -216,9 +217,12 @@ export function RepositoryFileBrowser(props: Props) {
     try { await navigator.clipboard.writeText(text); message.success('已复制'); }
     catch { message.info('可在下方选中文字复制。'); }
   }
-  function refresh() {
+  async function refresh() {
     setRefreshing(true);
-    window.setTimeout(() => { setRefreshing(false); props.onRetry(); message.success('已重新读取模拟文件'); }, 450);
+    if(!props.global){window.setTimeout(() => { setRefreshing(false); void props.onRetry(); message.success('已重新读取模拟文件'); }, 450);return;}
+    try{await props.onRetry();}
+    catch(error){message.error(error instanceof Error?error.message:'文件暂不可重新读取。');}
+    finally{setRefreshing(false);}
   }
   const firstLine=props.readPage?.startLine||1;
   const readMatchActive=searchMode==='content'&&Boolean(searchQuery)&&searchQuery.toLowerCase()===props.readMatchQuery?.toLowerCase();
@@ -231,6 +235,7 @@ export function RepositoryFileBrowser(props: Props) {
     request === 'modify' ? '请修改以下文件，先核对当前内容，再根据我的目标实施并提供改动与验证依据。' : '请解释以下文件或选中内容的职责、行为和相关影响。',
     '', props.taskTitle ? '任务：'+props.taskTitle : '', '代码库：' + (props.repositoryName || 'Buildr 源码库'),
     props.repositoryId ? '代码库标识：'+props.repositoryId : '',
+    props.checkoutId ? '检出目录标识：'+props.checkoutId : '',
     '查看位置：' + props.location, '查看版本：' + props.version, '文件：' + (file?.path || ''),
     props.observedDigest ? '已读内容摘要：'+props.observedDigest : '',
     props.observedRevision ? '文件修订标识：'+props.observedRevision : '',
@@ -258,24 +263,24 @@ export function RepositoryFileBrowser(props: Props) {
           </div>
           <div className="repository-tree-body">
             {props.treeNotice}
-            {props.unavailable ? <Alert type="warning" showIcon message="当前目录暂不可读取" description="其他文件入口仍可使用。" action={<Button size="small" onClick={props.onRetry}>重试</Button>} /> : searchTooShort ? <p className="repository-search-hint" role="status">输入至少 2 个字符开始搜索</p> : needle ? <div className="repository-search-results">
+            {props.unavailable ? <Alert type="warning" showIcon message="当前目录暂不可读取" description="其他文件入口仍可使用。" action={<Button size="small" onClick={()=>void refresh()}>重试</Button>} /> : searchTooShort ? <p className="repository-search-hint" role="status">输入至少 2 个字符开始搜索</p> : needle ? <div className="repository-search-results">
               <p>{props.searchLoading ? '正在搜索…' : searchFiles.length+' 个匹配文件'+(searchMode==='content'?' · '+searchFiles.reduce((count,item)=>count+(item.occurrences?.length||0),0)+' 条匹配':'')+(props.searchIncomplete?'（搜索未完成）':'')}</p>
               {!(props.searchResults || matches).length && !props.searchLoading && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={props.searchIncomplete ? '当前没有取得匹配结果' : '没有匹配文件'} />}
               {searchFiles.map(item=>{
                 const key=treeKey(item.path,item.repositoryId),occurrences=item.occurrences||[],expanded=expandedMatches[key]??true;
                 const selected=item.path===props.selectedPath&&item.repositoryId===props.selectedRepositoryId;
                 const toggleMatches=()=>setExpandedMatches(previous=>({...previous,[key]:!expanded}));
-                return <section key={key} className="repository-search-group" data-repository-id={item.repositoryId} data-file-path={item.path}>
+                return <section key={key} className="repository-search-group" data-repository-id={item.sourceRepositoryId||item.repositoryId} data-source-id={item.repositoryId} data-file-path={item.path}>
                   <div className="repository-search-file-row">
                     {occurrences.length>0&&<button type="button" className="repository-search-expand" aria-label={(expanded?'折叠 ':'展开 ')+item.path+' 的匹配'} aria-expanded={expanded} onClick={toggleMatches}>{expanded?<DownOutlined />:<RightOutlined />}</button>}
-                    <button type="button" data-file-path={item.path} data-repository-id={item.repositoryId} title={(item.repositoryName?item.repositoryName+' / ':'')+item.path} aria-expanded={searchMode==='content'?expanded:undefined} className={'repository-search-result'+(searchMode==='name'&&selected?' selected':'')} onClick={()=>searchMode==='content'?toggleMatches():selectTreeFile(item)}>{fileIcon(item)}<span className="repository-search-file-info"><span className="repository-search-file-label"><strong>{shortName(item.path)}</strong>{item.repositoryName&&<small>{item.repositoryName}</small>}</span><small className="repository-search-file-path" title={item.path}>{item.path}</small></span>{occurrences.length>0&&<span className="repository-search-count">{occurrences.length}</span>}</button>
+                    <button type="button" data-file-path={item.path} data-repository-id={item.sourceRepositoryId||item.repositoryId} data-source-id={item.repositoryId} title={(item.repositoryName?item.repositoryName+' / ':'')+item.path} aria-expanded={searchMode==='content'?expanded:undefined} className={'repository-search-result'+(searchMode==='name'&&selected?' selected':'')} onClick={()=>searchMode==='content'?toggleMatches():selectTreeFile(item)}>{fileIcon(item)}<span className="repository-search-file-info"><span className="repository-search-file-label"><strong>{shortName(item.path)}</strong>{item.repositoryName&&<small>{item.repositoryName}</small>}</span><small className="repository-search-file-path" title={item.path}>{item.path}</small></span>{occurrences.length>0&&<span className="repository-search-count">{occurrences.length}</span>}</button>
                   </div>
                   {occurrences.length>0&&expanded&&<div className="repository-search-occurrences">{occurrences.map(match=><button type="button" key={match.line} className={'repository-search-occurrence'+(selected&&match.line===props.focusLine?' selected':'')} data-match-line={match.line} title={match.line+': '+match.excerpt} onClick={()=>selectTreeFile(item,match.line)}><span className="repository-match-line">{match.line}</span><code><RepositorySearchText text={match.excerpt} query={searchQuery} /></code></button>)}</div>}
                 </section>;
               })}
             </div> : <Tree.DirectoryTree expandAction="click" blockNode showIcon loadedKeys={props.loadedDirectoryKeys} loadData={props.onLoadDirectory ? node => {const [repositoryId,...rest]=String(node.key).split('::');return props.onLoadDirectory!(repositoryId,rest.join('::'));} : undefined} expandedKeys={expanded} onExpand={keys => setExpanded(keys.map(String))} selectedKeys={[treeKey(props.selectedPath, props.selectedRepositoryId)]} treeData={treeData} onSelect={keys => { const item = visible.find(item => treeKey(item.path, item.repositoryId) === String(keys[0] || '')); if (item && !item.directory && !item.link) selectTreeFile(item); }} />}
           </div>
-          <footer className="repository-tree-footer">{props.treeRepositories ? props.treeRepositories.length + ' 个代码库 · ' : ''}{visible.filter(item=>!item.directory).length} 个已加载文件 · 只读</footer>
+          <footer className="repository-tree-footer">{props.treeRepositories ? new Set(props.treeRepositories.map(repo=>repo.repositoryId||repo.id)).size + ' 个代码库 · '+props.treeRepositories.length+' 个目录 · ' : ''}{visible.filter(item=>!item.directory).length} 个已加载文件 · 只读</footer>
         </>}
       </aside>
 </>;
@@ -300,11 +305,11 @@ export function RepositoryFileBrowser(props: Props) {
         {props.readMessage && <Alert type="warning" message={props.readMessage} />}
         {props.readPage&&<section className="repository-file-pagination" aria-label="大文件分段阅读">
           <div className="repository-file-page-status">大文件分段阅读 · 第 {props.readPage.index+1} / {props.readPage.total} 段 · 第 {props.readPage.startLine}–{props.readPage.endLine} 行 · 字节 {props.readPage.offset+1}–{props.readPage.endOffset} / {props.sizeBytes}{props.readPage.startsMidLine?' · 首行续自上一段':''}{props.readPage.endsMidLine?' · 末行续至下一段':''}</div>
-          <Space size={6}><Button size="small" aria-label="上一段" disabled={props.readPage.index===0||!props.onReadPage||props.readLoading||Boolean(props.readError)} onClick={()=>props.onReadPage?.(props.readPage!.index-1)}>上一段</Button><Button size="small" aria-label="下一段" disabled={props.readPage.index>=props.readPage.total-1||!props.onReadPage||props.readLoading||Boolean(props.readError)} onClick={()=>props.onReadPage?.(props.readPage!.index+1)}>下一段</Button>{!props.readError&&<Button size="small" aria-label="重新读取" onClick={props.onRetry}>重新读取</Button>}</Space>
+          <Space size={6}><Button size="small" aria-label="上一段" disabled={props.readPage.index===0||!props.onReadPage||props.readLoading||Boolean(props.readError)} onClick={()=>props.onReadPage?.(props.readPage!.index-1)}>上一段</Button><Button size="small" aria-label="下一段" disabled={props.readPage.index>=props.readPage.total-1||!props.onReadPage||props.readLoading||Boolean(props.readError)} onClick={()=>props.onReadPage?.(props.readPage!.index+1)}>下一段</Button>{!props.readError&&<Button size="small" aria-label="重新读取" onClick={()=>void refresh()}>重新读取</Button>}</Space>
           {(visibleMatch?.continuesAfter||visibleMatch?.continuesBefore)&&<p className="repository-file-match-continuation">{visibleMatch.continuesAfter?'匹配文字跨段，下一段继续':'匹配文字续自上一段'}</p>}
         </section>}
         <div className="repository-reader-content" ref={codeRef} onScroll={event=>scrolls.current.set(readingKey,event.currentTarget.scrollTop)}>
-          {props.readError ? <div className="repository-reading-empty"><h3>文件暂不可读取</h3><p>{props.readError}</p><Button onClick={props.onRetry}>重新读取</Button>{props.historical && <Button onClick={props.onViewCurrent}>查看当前文件</Button>}</div> : refreshing || props.readLoading ? <div className="repository-reading-empty"><Spin /><p>正在重新读取…</p></div> : props.unavailable ? <div className="repository-reading-empty"><FolderOpenOutlined /><h3>当前工作目录暂不可读取</h3><p>保留查看位置，恢复后可继续浏览。</p><Button onClick={props.onRetry}>重新读取</Button></div> : !file ? <Empty description="从目录选择一个文件" /> : file.kind === 'unsupported' ? <Empty description="此文件类型暂不支持阅读" /> : file.kind === 'image' ? <div className="repository-image-preview"><img src={file.image} alt={shortName(file.path)} /><p>{shortName(file.path)} · 图片预览</p></div> : file.kind === 'markdown' && !raw && !props.readPage ? <MarkdownHost markdown={file.content} className="markdown-body repository-markdown" renderVersion={props.markdownRevision} options={props.markdownOptions || { allowRelativeLinks: true, onRelativeLinkClick: () => message.info('相关文件可从目录打开。') }} /> : <div className="repository-source-code" aria-label="文件内容">
+          {props.readError ? <div className="repository-reading-empty"><h3>文件暂不可读取</h3><p>{props.readError}</p><Button onClick={()=>void refresh()}>重新读取</Button>{props.historical && <Button onClick={props.onViewCurrent}>查看当前文件</Button>}</div> : refreshing || props.readLoading ? <div className="repository-reading-empty"><Spin /><p>正在重新读取…</p></div> : props.unavailable ? <div className="repository-reading-empty"><FolderOpenOutlined /><h3>当前工作目录暂不可读取</h3><p>保留查看位置，恢复后可继续浏览。</p><Button onClick={()=>void refresh()}>重新读取</Button></div> : !file ? <Empty description="从目录选择一个文件" /> : file.kind === 'unsupported' ? <Empty description="此文件类型暂不支持阅读" /> : file.kind === 'image' ? <div className="repository-image-preview"><img src={file.image} alt={shortName(file.path)} /><p>{shortName(file.path)} · 图片预览</p></div> : file.kind === 'markdown' && !raw && !props.readPage ? <MarkdownHost markdown={file.content} className="markdown-body repository-markdown" renderVersion={props.markdownRevision} options={props.markdownOptions || { allowRelativeLinks: true, onRelativeLinkClick: () => message.info('相关文件可从目录打开。') }} /> : <div className="repository-source-code" aria-label="文件内容">
             {sourceRows.map(({text,line,match},index)=><div key={line} data-line={line} data-line-continuation={index===0&&props.readPage?.startsMidLine||index===lines.length-1&&props.readPage?.endsMidLine||undefined} className={'repository-source-row' + (range && line >= range[0] && line <= range[1] ? ' selected-line' : '')}><button type="button" className="repository-line-number" aria-label={'选择第 '+line+' 行'} onClick={event => setRange(event.shiftKey && range ? [Math.min(range[0],line),Math.max(range[0],line)] : [line,line])}>{line}</button><code><RepositorySearchText text={text} query={searchMode==='content'?searchQuery:''} observed={match} source /></code></div>)}
           </div>}
         </div>

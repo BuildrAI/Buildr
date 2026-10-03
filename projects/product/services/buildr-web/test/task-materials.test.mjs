@@ -382,6 +382,19 @@ test('材料HTTP客户端携带任务身份和cancellation，读取不触发写s
   assert.equal(calls[0].options.method, undefined);
 });
 
+test('全文差异客户端传递已观察检出来源，历史和旧请求可省略', async () => {
+  const calls = [], signal = new AbortController().signal;
+  const client = createTaskClient(async (path, options) => { calls.push({ path, options }); return {}; });
+  const current = { repositoryId: 'repo:one', filePath: 'src/示例 文件.ts', commitHash: 'worktree', checkoutId: 'checkout-' + 'a'.repeat(64) };
+  await client.fileDiff('task/id', current, { signal });
+  const request = new URL(calls[0].path, 'http://localhost');
+  assert.equal(request.pathname, '/api/v1/tasks/task%2Fid/file-diff');
+  assert.deepEqual(Object.fromEntries(request.searchParams), current);
+  assert.equal(calls[0].options.signal, signal); assert.equal(calls[0].options.method, undefined);
+  await client.fileDiff('one', { repositoryId: 'repo', filePath: 'same.ts', commitHash: 'b'.repeat(40) });
+  assert.equal(new URL(calls[1].path, 'http://localhost').searchParams.has('checkoutId'), false);
+});
+
 test('审查与验证独立于changes：保存对象/依据可读，missing不标不适用，failed与gaps分离', () => {
   const base = { task: { record: { taskId: 'one', changes: [], scope: { projects: ['demo'] } } }, artifacts: { briefs: [] }, evidence: {}, onClose() {}, onRead() {}, href: path => path };
   const review = { taskId: 'one', subjectIdentity: 'reviewed-v1', completedAt: '2026-01-01T00:00:00Z', method: 'self', reviewed: ['任务目标与候选方案'], findings: [], uncovered: [{ subject: '窄屏', reason: '未执行浏览器验收' }], conclusion: { outcome: 'accepted', summary: '已保存审查' } };

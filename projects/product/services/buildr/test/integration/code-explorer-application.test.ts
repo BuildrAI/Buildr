@@ -8,6 +8,9 @@ import {createCodeApplication} from '../../src/modules/code/application/code-app
 import {createCodeHttpContribution} from '../../src/modules/code/interfaces/http/code-http.ts';
 import {CODE_HTTP_SCHEMAS,CODE_HTTP_VALIDATORS} from '../../src/modules/code/interfaces/http/code-http-contracts.ts';
 import {CODE_LIMITS} from '../../src/modules/code/infrastructure/code-file-reader.ts';
+import {gitCheckoutReadId} from '../../src/infrastructure/git/checkout-read-identity.ts';
+import {createCodeCliContributions} from '../../src/modules/code/interfaces/cli/code-cli.ts';
+import {readCodeWorktreeCatalog} from '../../src/modules/code/infrastructure/code-worktree-catalog.ts';
 function fixture(t:any){
   const temporary=fs.mkdtempSync(path.join(os.tmpdir(),'buildr-code-explorer-'));t.after(()=>fs.rmSync(temporary,{recursive:true,force:true}));
   const root=path.join(temporary,'repo');fs.mkdirSync(root);const git=(...args:string[])=>execFileSync('git',['-C',root,...args],{encoding:'utf8',stdio:['ignore','pipe','ignore']}).trim();
@@ -239,4 +242,84 @@ test('HTTP validates closed query and uses bounded worker without synchronous fi
   const response:any=await http.handle(base);assert.equal(response.status,200);assert.equal(observed.operation,'code-directory');assert.equal(observed.readId,'code-files');assert.equal(JSON.parse(observed.input.input).path,'src');
   await assert.rejects(http.handle({...base,searchParams:new URLSearchParams('repositoryId=repo-id&repositoryId=other')}),(error:any)=>error.code==='code_query_invalid');
   await assert.rejects(http.handle({...base,searchParams:new URLSearchParams('repositoryId=repo-id&unknown=value')}),(error:any)=>error.code==='code_query_invalid');
+});
+
+function worktreeFixture(t:any){
+  const temporary=fs.mkdtempSync(path.join(os.tmpdir(),'buildr-code-worktrees-'));t.after(()=>fs.rmSync(temporary,{recursive:true,force:true}));
+  const evidenceDirectory=path.join(temporary,'evidence');fs.mkdirSync(evidenceDirectory);
+  const evidence=new Map<string,any>(),repositories:any[]=[],locations:any[]=[];
+  for(const code of ['one','two']){
+    const root=path.join(temporary,code,'main');fs.mkdirSync(root,{recursive:true});
+    const git=(...args:string[])=>execFileSync('git',['-C',root,...args],{encoding:'utf8',stdio:['ignore','pipe','ignore']}).trim();
+    git('init');git('config','user.email','fixture@example.invalid');git('config','user.name','Fixture');fs.writeFileSync(path.join(root,'file.ts'),'initial '+code+'\n');git('add','.');git('commit','-m','initial');
+    const hash=git('rev-parse','HEAD'),task=path.join(temporary,code,'task'),native=path.join(temporary,code,'native');
+    git('worktree','add','-b','task-'+code,task,'HEAD');git('worktree','add','-b','native-shared',native,'HEAD');
+    fs.writeFileSync(path.join(root,'file.ts'),'main '+code+' sharedNeedle\n');fs.writeFileSync(path.join(task,'file.ts'),'task '+code+' sharedNeedle\n');fs.writeFileSync(path.join(task,'only-task.ts'),'taskOnlyNeedle');fs.writeFileSync(path.join(native,'file.ts'),'native '+code+' sharedNeedle\n');
+    repositories.push({id:code,code,name:code,source:{type:'local',path:root}});locations.push({root,task,native,git,hash});
+  }
+  const setEvidence=(id:string,value:any)=>{evidence.set(id,value);fs.writeFileSync(path.join(evidenceDirectory,id+'.json'),'provider-owned record');};
+  setEvidence('feature',{evidence:{repositories:locations.map(item=>({sourceRepository:item.root,checkoutPath:item.task}))}});
+  const app=createCodeApplication({assetCatalog:()=>({repositories,services:repositories.map(repo=>({id:'s-'+repo.id,code:repo.code,repositoryId:repo.id,legacyRefs:['p/'+repo.code]})),projects:[{id:'p',code:'p',serviceIds:repositories.map(repo=>'s-'+repo.id)}]}),resolveSourceRoot:(_root,source)=>source.path,readTaskScope:()=>({projects:['p'],services:[]}),gitWorktreeEvidencePath:(_root,id)=>path.join(evidenceDirectory,id+'.json'),readGitWorktreeEvidence:(_root,id)=>{const value=evidence.get(id);if(value instanceof Error)throw value;return value||null;}});
+  return {temporary,locations,repositories,app,setEvidence};
+}
+test('catalog groups actual multi-repository task members and keeps identically named native worktrees separate',t=>{
+  const f=worktreeFixture(t),before=f.locations.map(item=>item.git('status','--porcelain'));
+  const catalog=f.app.repositories(f.temporary);
+  assert.deepEqual(catalog.selectedWorktreeGroupIds,['main']);assert.equal(catalog.worktrees.length,6);assert.equal(catalog.worktreeGroups.length,4);
+  assert.deepEqual(catalog.worktreeGroups.find(group=>group.id==='task:feature')?.repositoryIds,['one','two']);assert.equal(catalog.worktreeGroups.find(group=>group.id==='task:feature')?.name,'feature');
+  const native=catalog.worktrees.filter(item=>item.kind==='worktree');assert.equal(native.length,2);assert.equal(native[0].branch,native[1].branch);assert.notEqual(native[0].groupId,native[1].groupId);assert.notEqual(catalog.worktreeGroups.find(group=>group.id===native[0].groupId)?.name,catalog.worktreeGroups.find(group=>group.id===native[1].groupId)?.name);
+  assert.equal(native[0].id,gitCheckoutReadId(f.locations[0].native));assert.equal(catalog.worktrees.filter(item=>item.kind==='main').length,2);
+  const task=f.app.repositories(f.temporary,'feature');assert.deepEqual(task.selectedRepositoryIds,['one','two']);assert.deepEqual(task.selectedWorktreeGroupIds,['task:feature']);
+  assert.equal(CODE_HTTP_VALIDATORS.validate(CODE_HTTP_SCHEMAS.repositories.$id,catalog).valid,true);assert.deepEqual(f.locations.map(item=>item.git('status','--porcelain')),before);
+});
+test('explicit checkout pins tree, search, full text and actual source association independently of navigation task',async t=>{
+  const f=worktreeFixture(t),catalog=f.app.repositories(f.temporary),task=catalog.worktrees.find(item=>item.repositoryId==='one'&&item.kind==='task')!,main=catalog.worktrees.find(item=>item.repositoryId==='one'&&item.kind==='main')!,native=catalog.worktrees.find(item=>item.repositoryId==='one'&&item.kind==='worktree')!;
+  const input={repositoryId:'one',checkoutId:task.id,taskId:'different-navigation-task'};
+  const directory=f.app.directory(f.temporary,input),search=f.app.search(f.temporary,{...input,query:'taskOnlyNeedle',mode:'content'}),file=await f.app.file(f.temporary,{...input,path:'file.ts'});
+  assert.ok(directory.entries.some(item=>item.path==='only-task.ts'));assert.equal(search.matches[0].path,'only-task.ts');assert.equal(file.content,'task one sharedNeedle\n');
+  for(const result of [directory,search,file]){assert.equal(result.source.checkoutId,task.id);assert.equal(result.source.worktreeGroupId,'task:feature');assert.equal(result.source.taskId,'feature');assert.equal(result.source.location,fs.realpathSync(f.locations[0].task));}
+  const mainFile=await f.app.file(f.temporary,{repositoryId:'one',checkoutId:main.id,taskId:'feature',path:'file.ts'});assert.equal(mainFile.content,'main one sharedNeedle\n');assert.equal(mainFile.source.taskId,null);assert.equal(mainFile.source.worktreeGroupId,'main');
+  const nativeFile=await f.app.file(f.temporary,{repositoryId:'one',checkoutId:native.id,path:'file.ts'});assert.equal(nativeFile.content,'native one sharedNeedle\n');assert.equal(nativeFile.source.kind,'worktree');assert.equal(nativeFile.source.taskId,null);
+  await assert.rejects(f.app.file(f.temporary,{repositoryId:'two',checkoutId:task.id,path:'file.ts'}),(error:any)=>error.code==='code_checkout_unavailable');
+});
+test('removed or rebuilt checkout identity fails explicitly while other roots and pinned historical objects remain readable',async t=>{
+  const f=worktreeFixture(t),catalog=f.app.repositories(f.temporary),task=catalog.worktrees.find(item=>item.repositoryId==='one'&&item.kind==='task')!,input={repositoryId:'one',checkoutId:task.id,taskId:'feature',path:'file.ts'};
+  f.locations[0].git('worktree','remove','--force',f.locations[0].task);
+  await assert.rejects(f.app.file(f.temporary,input),(error:any)=>error.code==='code_checkout_unavailable');
+  const retired=f.app.repositories(f.temporary,'feature');assert.deepEqual(retired.selectedWorktreeGroupIds,['task:feature']);assert.ok(retired.worktrees.some(item=>item.repositoryId==='one'&&item.kind==='task'&&!item.available&&item.path===task.path));assert.ok(retired.diagnostics.some(item=>item.code==='code_task_location_unavailable'));
+  const history=await f.app.file(f.temporary,{...input,commitHash:f.locations[0].hash});assert.equal(history.content,'initial one\n');assert.equal(history.source.kind,'commit');assert.equal(history.source.checkoutId,null);assert.equal(history.source.worktreeGroupId,null);
+  assert.equal((await f.app.file(f.temporary,{repositoryId:'two',path:'file.ts'})).content,'main two sharedNeedle\n');
+  f.locations[0].git('worktree','add',f.locations[0].task,'task-one');const replacement=gitCheckoutReadId(f.locations[0].task);assert.notEqual(replacement,task.id);
+  await assert.rejects(f.app.file(f.temporary,input),(error:any)=>error.code==='code_checkout_unavailable');assert.equal((await f.app.file(f.temporary,{...input,checkoutId:replacement})).content,'initial one\n');
+  execFileSync('git',['-C',f.locations[0].task,'checkout','--detach','HEAD'],{stdio:'ignore'});assert.equal(gitCheckoutReadId(f.locations[0].task),replacement);
+});
+test('broken provider association stays local and selected task group never silently expands to main',async t=>{
+  const f=worktreeFixture(t);f.setEvidence('broken',new Error('invalid provider record'));
+  const catalog=f.app.repositories(f.temporary,'broken');assert.deepEqual(catalog.selectedWorktreeGroupIds,['task:broken']);assert.ok(catalog.worktreeGroups.some(group=>group.id==='task:broken'));assert.ok(catalog.diagnostics.some(item=>item.code==='code_worktree_evidence_unavailable'));assert.equal(catalog.worktrees.filter(item=>item.kind==='main').length,2);
+  assert.equal((await f.app.file(f.temporary,{repositoryId:'one',checkoutId:gitCheckoutReadId(f.locations[0].native),path:'file.ts'})).content,'native one sharedNeedle\n');
+});
+test('an incomplete timed directory observation cannot report a selected checkout as removed',async t=>{
+  const f=worktreeFixture(t),id=gitCheckoutReadId(f.locations[0].native),now=Date.now;let reads=0;
+  // Repository observation uses its own deadline first; expire the subsequent checkout catalog.
+  Date.now=()=>reads++<3?0:CODE_LIMITS.readMs+1;
+  try{await assert.rejects(f.app.file(f.temporary,{repositoryId:'one',checkoutId:id,path:'file.ts'}),(error:any)=>error.code==='code_checkout_unconfirmed'&&error.status===503&&!error.message.includes('已不存在'));}finally{Date.now=now;}
+  assert.equal((await f.app.file(f.temporary,{repositoryId:'one',checkoutId:id,path:'file.ts'})).content,'native one sharedNeedle\n');
+});
+test('task association deadline also stops inside one provider record while retaining already observed members',t=>{
+  const f=worktreeFixture(t),now=Date.now;let expired=false,observedSources=0;
+  const recorded=f.locations.map(item=>({get sourceRepository(){observedSources++;expired=true;return item.root;},checkoutPath:item.task}));
+  Date.now=()=>expired?CODE_LIMITS.readMs+1:0;
+  try{
+    const catalog=readCodeWorktreeCatalog(f.temporary,f.repositories.map(repo=>({id:repo.id,name:repo.name,location:repo.source.path,available:true})),{readGitWorktreeEvidence:()=>({evidence:{repositories:recorded}})},'feature');
+    assert.equal(observedSources,1);assert.ok(catalog.diagnostics.some(item=>item.code==='code_worktree_associations_truncated'));
+    assert.deepEqual(catalog.selectedWorktreeGroupIds,['task:feature']);assert.deepEqual(catalog.worktreeGroups.find(group=>group.id==='task:feature')?.repositoryIds,['one']);assert.equal(catalog.worktrees.filter(item=>item.kind==='main').length,2);
+  }finally{Date.now=now;}
+});
+test('HTTP and CLI carry explicit checkout identity and reject path-shaped location inputs',async t=>{
+  const f=worktreeFixture(t),id=gitCheckoutReadId(f.locations[0].native),http=createCodeHttpContribution(f.app),base={request:{method:'GET'},root:f.temporary,suffix:'/code/file',searchParams:new URLSearchParams({repositoryId:'one',checkoutId:id,filePath:'file.ts'})};
+  const response:any=await http.handle(base);assert.equal(response.status,200);assert.equal(response.body.source.checkoutId,id);assert.equal(response.body.content,'native one sharedNeedle\n');
+  await assert.rejects(http.handle({...base,searchParams:new URLSearchParams({repositoryId:'one',checkoutId:f.locations[0].native,filePath:'file.ts'})}),(error:any)=>error.code==='code_query_invalid');
+  const command=createCodeCliContributions(f.app).find(item=>item.key==='code file')!,write=process.stdout.write;let output='';process.stdout.write=((value:any)=>{output+=String(value);return true;}) as typeof process.stdout.write;
+  try{await command.run(null,{argv:['node','buildr','code','file','--repository','one','--checkout',id,'--path','file.ts','--target',f.temporary,'--json']});}finally{process.stdout.write=write;}
+  const cli=JSON.parse(output);assert.equal(cli.source.checkoutId,id);assert.equal(cli.content,response.body.content);
 });

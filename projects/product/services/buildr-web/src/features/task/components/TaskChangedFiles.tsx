@@ -21,7 +21,7 @@ const STATUS_TITLE: Record<ChangedFileStatus, string> = {
 
 function fileName(path: string) { return path.split('/').at(-1) || path; }
 function fileDir(path: string) { const index = path.lastIndexOf('/'); return index < 0 ? '' : path.slice(0, index); }
-export function changedFileKey(file: ChangedFileEntry) { return `${file.repositoryId}:${file.path}`; }
+export function changedFileKey(file: ChangedFileEntry) { return `${file.repositoryId}:${file.checkoutId ? `${file.checkoutId}:` : ''}${file.path}`; }
 function domId(key: string) { return `changed-${key.replace(/[^a-zA-Z0-9_-]/g, '_')}`; }
 
 /** File rows with expandable diff preview; shared by the working-tree pane, commit details and the diff rail. */

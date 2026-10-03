@@ -122,6 +122,21 @@ test('任务材料使用同一有界只读队列，只传任务范围字段', as
  } finally {await executor.close();}
 });
 
+test('文件差异读取队列保留可选检出来源，旧请求兼容且拒绝无效身份', async () => {
+  const metrics: any = { calls: 0, active: 0, maxActive: 0, started: [], messages: [] };
+  const executor = createBoundedBuildrWebReadExecutor({ workerCount: 1, workerFactory: fakeWorkerFactory({ metrics }) });
+  const fields = { ...input('task-a'), repositoryId: 'repo', filePath: 'src/a.ts', commitHash: 'worktree' };
+  const checkoutId = 'checkout-' + 'a'.repeat(64);
+  try {
+    await executor.run('file-diff', { ...fields, checkoutId });
+    assert.equal(metrics.messages[0].checkoutId, checkoutId);
+    await executor.run('file-diff', fields);
+    assert.equal('checkoutId' in metrics.messages[1], false);
+    for (const invalid of ['', 'main', ['checkout-' + 'a'.repeat(64)], '../other']) assert.throws(() => executor.run('file-diff', { ...fields, checkoutId: invalid }), (error: { code: string }) => error.code === 'local_app_read_input_invalid');
+    assert.throws(() => executor.run('changed-files', { ...input('task-a'), checkoutId }), (error: { code: string }) => error.code === 'local_app_read_field_forbidden');
+  } finally { await executor.close(); }
+});
+
 
 test('材料HTTP入口直接交给有界读取器，主线程不再读取文件或任务详情', async () => {
  const calls:any[]=[];let html='';

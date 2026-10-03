@@ -29,12 +29,6 @@
 .code-root-selectors .ant-select .ant-select-selection-search-input,
 .code-root-selectors .ant-select .ant-select-selection-search-input:focus { border:0; border-radius:0; padding:0; background:transparent; box-shadow:none; outline:0; }
 .code-root-selectors small { font-size:10px; color:var(--soft-muted); }
-.code-location-controls { display:flex; flex-direction:column; gap:5px; min-width:0; }
-.code-location-label { display:flex; justify-content:space-between; gap:6px; }
-.code-location-label span { text-align:right; }
-.code-location-value { font-size:12px; font-weight:500; }
-.code-location-explanation { line-height:1.5; }
-.code-root-selectors .code-location-path { display:block; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:10px; }
 .repository-root-name strong { display:block; font-size:12px; }
 .repository-root-name small { display:block; max-width:210px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:10px; color:var(--soft-muted); }
 .code-explorer-stage .repository-file-browser.global-reader { height:auto; min-height:0; border:0; border-radius:0; flex:1; }

@@ -10,8 +10,9 @@ test('code is a retained independent area and existing areas keep their routes',
   assert.equal(tabForPath('other','/workspaces/w/code/explorer'),null);
 });
 test('same path in different repositories, task locations and historical commits has distinct file identity',()=>{
-  const ids=[{repositoryId:'r1'},{repositoryId:'r2'},{repositoryId:'r1',taskId:'t1'},{repositoryId:'r1',taskId:'t1',commitHash:'a'.repeat(40)}].map(source=>codeFileKey(source,'src/main.ts'));
-  assert.equal(new Set(ids).size,4);
+  const ids=[{repositoryId:'r1'},{repositoryId:'r2'},{repositoryId:'r1',taskId:'t1'},{repositoryId:'r1',taskId:'t1',commitHash:'a'.repeat(40)},{repositoryId:'r1',checkoutId:'checkout-1'},{repositoryId:'r1',checkoutId:'checkout-2'}].map(source=>codeFileKey(source,'src/main.ts'));
+  assert.equal(new Set(ids).size,6);
+  assert.equal(codeFileKey({repositoryId:'r1',checkoutId:'checkout-1',taskId:'t1'},'src/main.ts'),ids[4]);
 });
 test('document relative links resolve within repository and refuse escape, metadata and external targets',()=>{
   assert.equal(relativeCodeLink('docs/guide/readme.md','../../src/main.ts#x'),'src/main.ts');

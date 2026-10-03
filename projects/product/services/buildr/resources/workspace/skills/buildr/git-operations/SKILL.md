@@ -7,6 +7,8 @@ description: 执行已明确仓库、操作和目标的 Git 操作，核对授�
 
 本 Skill 是 `buildr.git-operations/v1` 的默认 provider。它只帮助 Agent 安全执行 consumer 已经选定的一次 Git Operation；不讲解完整 Git 命令集，不选择交付目标或顺序，不拥有任务验证、任务结果或 workspace sync 状态。
 
+任务工作树（Worktree）的跨库统一命名、创建和复用检查由[任务工作树技能（Task Worktree Skill）](../task-worktree/SKILL.md)承接，实际动作遵守当前有效能力绑定（Capability Binding）。本技能（Skill）核对已选操作（Operation）的真实代码库（Repository）、分支（Branch）及授权，不按名称推断任务关联或自动重命名已有对象。
+
 能力名称使用复数 **Git Operations**；一次具体动作称为一个 **Git Operation**。
 
 ## 1. 先取得完整调用边界

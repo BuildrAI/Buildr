@@ -1,6 +1,8 @@
 export type ChangedFileStatus = 'modified' | 'untracked' | 'added' | 'deleted' | 'renamed' | 'conflicted';
 export type TaskChangedFile = {
   repositoryId: string;
+  /** Observed current checkout; committed files are pinned by their commit instead. */
+  checkoutId?: string;
   path: string;
   previousPath: string | null;
   kind: 'tracked' | 'untracked';

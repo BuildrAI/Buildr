@@ -3,7 +3,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { insideFilesystemPath } from '../../../infrastructure/filesystem/filesystem-path-identity.ts';
 export const CODE_LIMITS = Object.freeze({ entries: 1000, textBytes: 5 * 1024 * 1024, pageBytes: 512 * 1024, readMs: 15000, imageBytes: 8 * 1024 * 1024, matches: 100, matchLines: 200, searchOutputBytes: 8 * 1024 * 1024, searchMs: 15000 });
-export type CodeSource = { repositoryId:string; taskId:string|null; commitHash:string|null; location:string; version:string; kind:'default'|'task'|'commit' };
+export type CodeSource = { repositoryId:string; taskId:string|null; commitHash:string|null; checkoutId:string|null;worktreeGroupId:string|null;location:string; version:string; kind:'default'|'task'|'worktree'|'commit' };
 export type DirectoryEntry = { name:string; path:string; kind:'directory'|'file'|'link'; ignored:boolean };
 export function codeFailure(code:string,message:string,status=400): Error & {code:string;status:number} { return Object.assign(new Error(message),{code,status}); }
 export function relativeCodePath(value:string, allowEmpty=false) {

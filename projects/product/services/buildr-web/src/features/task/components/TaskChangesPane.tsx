@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Spin } from 'antd';
 import { useTaskChangedFiles } from '../hooks/useTaskChangedFiles';
 import { TaskDiffReader, type RailRepository, type RailCommit } from './TaskDiffReader';
@@ -19,6 +19,8 @@ export function TaskChangesPane({ changed, onOpenFile }: { changed: Changed; onO
     commits: (data?.commits || []).filter(commit => commit.repositoryId === repository.id).map(commit => ({ key: taskCommitKey(commit), commit: commit as TaskCommit, files: data?.commitFiles?.[taskCommitKey(commit)] || [] })),
   })), [data]);
   const firstKey = data?.files[0] ? changedFileKey(data.files[0]) : null;
+  useEffect(() => { setSelected(undefined); }, [changed.scopeKey]);
+  useEffect(() => { if (selected === undefined && firstKey) setSelected(firstKey); }, [selected, firstKey]);
   const effective = selected === undefined ? firstKey : selected;
   const coverageNote = data ? `读取范围：${data.repositories.map(repository => repository.label).join('、') || '本机仓库'} · 最多 ${data.coverage.repositoryLimit} 个仓库 / ${data.coverage.fileLimit} 个文件${data.coverage.truncated ? '，已达上限' : ''}` : '';
   if (changed.loading && !data) return <div className="task-commits-state"><Spin size="small" /><h3>正在读取变更文件…</h3><p>正在检查任务关联仓库的工作区状态。</p></div>;

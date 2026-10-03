@@ -15,6 +15,7 @@ import { WORKSPACE_APPLICATION } from '../../src/modules/workspace/module.ts';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
 import { materializeCleanProductSource } from '../helpers/clean-product-source.ts';
 import { recordVerificationResultFromEvidence } from '../helpers/task-verification-result-fixture.ts';
+import { gitCheckoutReadId } from '../../src/infrastructure/git/checkout-read-identity.ts';
 import { runWorkspaceCompositionJourney } from './workspace-composition-journey.ts';
 import { runCodeExplorerJourney } from '../../../buildr-web/test/browser/code-explorer-journey.ts';
 import { runLayoutJourney } from '../../../buildr-web/test/browser/layout-journey.ts';
@@ -392,10 +393,39 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     const catalog = runtime.assetCatalog(workspaceRoot);
     if (catalog.migrationRequired) runtime.migrateAssetCatalog(workspaceRoot, { revision: catalog.revision });
   }
+  let codeWorktreeFixture:any={};
   if(SELECTORS.has('code')){
-    const second=path.join(base,'second-code-repository');fs.mkdirSync(path.join(second,'src'),{recursive:true});runGit(second,['init','-b','main']);runGit(second,['config','user.name','Fixture']);runGit(second,['config','user.email','fixture@example.invalid']);
+    const second=path.join(workspaceRoot,'.buildr/local/second-code-repository');fs.mkdirSync(path.join(second,'src'),{recursive:true});runGit(second,['init','-b','main']);runGit(second,['config','user.name','Fixture']);runGit(second,['config','user.email','fixture@example.invalid']);
     fs.writeFileSync(path.join(second,'src/main.ts'),'export const secondRepository = true;\n');fs.writeFileSync(path.join(second,'src/search-matches.ts'),'export const secondSearch = "Search.Hit[0]";\n');fs.writeFileSync(path.join(second,'README.md'),'# Second repository\n');fs.writeFileSync(path.join(second,'zz-segmented-text.txt'),'second repository isolated text\n');for(let i=1;i<=9;i++)fs.writeFileSync(path.join(second,'src/file'+i+'.ts'),'export const cachedFile'+i+' = true;\n');runGit(second,['add','.']);runGit(second,['commit','-qm','second repository']);
-    runtime.createCatalogRepository(workspaceRoot,{revision:runtime.assetCatalog(workspaceRoot).revision,code:'second-code',name:'另一个代码库',path:second});
+    let catalog=runtime.createCatalogRepository(workspaceRoot,{revision:runtime.assetCatalog(workspaceRoot).revision,code:'second-code',name:'另一个代码库',path:second});
+    const secondRepositoryId=catalog.repositories.find((item:any)=>item.code==='second-code').id;
+    const primaryRepositoryId=catalog.repositories.find((item:any)=>item.id!==secondRepositoryId).id;
+    catalog=runtime.createCatalogService(workspaceRoot,{revision:catalog.revision,projectId:catalog.projects.find((item:any)=>item.code==='demo').id,service:{code:'second-api',name:'第二代码服务',repositoryId:secondRepositoryId}});
+    const worktreeTaskId='code-tree-task',branch='codex/code-tree-task';
+    runBuildr(['task','create',worktreeTaskId,'--title','跨库目录任务','--intent','验证真实多库工作树筛选与准确来源','--status','active','--project','demo','--service','demo/api','--service','demo/second-api','--target',workspaceRoot]);
+    const primaryCheckout=path.join(workspaceRoot,'.worktrees',worktreeTaskId),secondCheckout=path.join(primaryCheckout,'.buildr/local/second-code-repository');
+    runGit(workspaceRoot,['worktree','add','-b',branch,primaryCheckout,'HEAD']);
+    runGit(second,['worktree','add','-b',branch,secondCheckout,'HEAD']);
+    const worktreeFiles:any={
+      [primaryRepositoryId]:{path:'projects/demo/services/api/src/worktree-filter.ts',content:'export const WorktreeFilterNeedle = "task primary";\n'},
+      [secondRepositoryId]:{path:'src/worktree-filter.ts',content:'export const WorktreeFilterNeedle = "task secondary";\n'},
+    };
+    for(const [repositoryId,checkoutPath] of [[primaryRepositoryId,primaryCheckout],[secondRepositoryId,secondCheckout]]){
+      const file=worktreeFiles[repositoryId];fs.mkdirSync(path.dirname(path.join(checkoutPath,file.path)),{recursive:true});fs.writeFileSync(path.join(checkoutPath,file.path),file.content);
+    }
+    fs.writeFileSync(path.join(workspaceRoot,worktreeFiles[primaryRepositoryId].path),'export const WorktreeFilterNeedle = "main primary";\n');
+    fs.writeFileSync(path.join(second,worktreeFiles[secondRepositoryId].path),'export const WorktreeFilterNeedle = "main secondary";\n');
+    const repositories=[
+      {selector:'workspace',entityType:'workspace',sourcePath:'.',sourceRepository:workspaceRoot,checkoutPath:primaryCheckout},
+      {selector:'service:demo/second-api',entityType:'service',sourcePath:'.buildr/local/second-code-repository',sourceRepository:second,checkoutPath:secondCheckout},
+    ].map(item=>({...item,branch,startPoint:'HEAD',head:spawnSync('git',['rev-parse','HEAD'],{cwd:item.checkoutPath,encoding:'utf8'}).stdout.trim(),clean:false,registered:true,remote:null,remoteUrl:null,state:'created',diagnostic:null}));
+    runtime.writeGitWorktreeEvidence(workspaceRoot,{schemaVersion:'buildr.git-worktree-evidence/v1',taskId:worktreeTaskId,workspaceRoot,branch,planDigest:'sha256-'+crypto.createHash('sha256').update(JSON.stringify(repositories)).digest('hex'),status:'ready',repositories,effects:[],updatedAt:new Date().toISOString()});
+    const nativeCheckout=path.join(workspaceRoot,'.worktrees','native-reader');runGit(second,['worktree','add','-b','native-reader',nativeCheckout,'HEAD']);
+    const nativeFile={repositoryId:secondRepositoryId,path:'src/worktree-filter.ts',content:'export const WorktreeFilterNeedle = "native secondary";\n'};fs.writeFileSync(path.join(nativeCheckout,nativeFile.path),nativeFile.content);
+    const checkoutPaths=new Map([[gitCheckoutReadId(primaryCheckout),[workspaceRoot,primaryCheckout]],[gitCheckoutReadId(secondCheckout),[second,secondCheckout]],[gitCheckoutReadId(nativeCheckout),[second,nativeCheckout]]]);
+    codeWorktreeFixture={worktreeTaskId,worktreeGroupId:'task:'+worktreeTaskId,primaryRepositoryId,secondRepositoryId,worktreeFiles,nativeWorktree:nativeFile,
+      createNativeWorktree:()=>{const checkoutPath=path.join(workspaceRoot,'.worktrees','native-late'),branch='native-late';runGit(second,['worktree','add','-b',branch,checkoutPath,'HEAD']);return {id:gitCheckoutReadId(checkoutPath),path:checkoutPath,branch};},
+      retireWorktree:(checkoutId:string)=>{const member=checkoutPaths.get(checkoutId);assert.ok(member,'fixture checkout identity is known');runGit(member[0],['worktree','remove','--force',member[1]]);}};
   }
   let registry: any = runtime.listRegisteredWorkspaces();
   registry = runtime.registerLocalWorkspace({ rootPath: otherRoot, revision: registry.revision });
@@ -458,7 +488,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     runBuildr(['task','update','browser-task','--brief-file',linkedBrief,'--expected-record',linkedTask.recordDigest,'--target',workspaceRoot,'--json']);
     const codeFile=path.join(workspaceRoot,'projects/demo/services/api/zz-segmented-text.txt');
     const history=spawnSync('git',['rev-parse','HEAD'],{cwd:workspaceRoot,encoding:'utf8'});assert.equal(history.status,0,history.stderr);
-    await runCodeExplorerJourney({t,page,workspaceUrl,capture,expectedBrowserErrors,codeFixture:{current:codeSegmentedText('current'),history:codeSegmentedText('history'),commitHash:history.stdout.trim(),change:()=>fs.writeFileSync(codeFile,'changed segmented text\n'+codeSegmentedText('current')),restore:()=>fs.writeFileSync(codeFile,codeSegmentedText('current'))}});
+    await runCodeExplorerJourney({t,page,workspaceUrl,capture,expectedBrowserErrors,codeFixture:{...codeWorktreeFixture,current:codeSegmentedText('current'),history:codeSegmentedText('history'),commitHash:history.stdout.trim(),change:()=>fs.writeFileSync(codeFile,'changed segmented text\n'+codeSegmentedText('current')),restore:()=>fs.writeFileSync(codeFile,codeSegmentedText('current'))}});
   }
   if (selected('layout')) await runLayoutJourney({ t, page, workspaceUrl, capture });
 

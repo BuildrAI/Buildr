@@ -4,7 +4,7 @@ export type CodeCatalog = CodeRepositoriesRepositories;
 export type CodeDirectory = CodeDirectoryDirectory;
 export type CodeFile = CodeFileFile;
 export type CodeSearch = CodeSearchSearch;
-export type CodeLocation = {repositoryId:string;taskId?:string|null;commitHash?:string|null};
+export type CodeLocation = {repositoryId:string;checkoutId?:string|null;taskId?:string|null;commitHash?:string|null};
 export type CodeReadInput = CodeLocation & {path?:string;query?:string;mode?:'name'|'content';showIgnored?:boolean;page?:number;line?:number;matchQuery?:string;expectedRevision?:string};
 const request = <T,>(workspaceId:string,operation:string,input:Record<string,unknown>,signal?:AbortSignal):Promise<T> => {
   const query=new URLSearchParams();

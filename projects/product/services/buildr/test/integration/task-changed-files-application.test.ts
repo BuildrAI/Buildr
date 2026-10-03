@@ -10,6 +10,7 @@ import { createTaskChangedFilesHttpContribution } from '../../src/modules/task/c
 import { TASK_HTTP_SCHEMAS, TASK_HTTP_VALIDATORS } from '../../src/modules/task/interfaces/http/task-http-schema.ts';
 import { TASK_CHANGED_FILE_LIMITS } from '../../src/modules/task/changed-files/infrastructure/git-changes-reader.ts';
 import { TASK_COMMIT_LIMITS } from '../../src/modules/task/commits/infrastructure/git-commit-reader.ts';
+import { gitCheckoutReadId } from '../../src/infrastructure/git/checkout-read-identity.ts';
 
 function git(root: string, args: string[], input?: string): string {
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')));
@@ -157,6 +158,107 @@ test('纯重命名与修改各有差异语义；合并到主检出与任务工�
   const modified = result.files.find(item => item.path === 'dir/mod.ts');
   assert.ok(modified); assert.equal(modified.status, 'modified'); assert.ok(modified.preview?.includes('+after'));
   assert.equal(modified.additions, 1);
+});
+
+test('当前改动保留实际检出来源，主目录同名文件不被任务目录重选', async t => {
+  const f = fixture(t);
+  write(f.root, 'src/same.ts', 'baseline\n'); git(f.root, ['add', '.']); commit(f.root, 'baseline\n\nBuildr-Task: task-one');
+  const checkout = path.join(f.base, 'task-checkout');
+  git(f.root, ['worktree', 'add', '-b', 'task', checkout]);
+  f.setWorktrees([{ selector: 'project:app', sourceRepository: f.root, checkoutPath: checkout }]);
+  write(f.root, 'src/same.ts', 'main-only-change\n');
+  const list = f.application.inspectTaskChangedFiles(f.root, 'task-one');
+  const file = list.files.find(item => item.path === 'src/same.ts')!;
+  assert.equal(file.checkoutId, gitCheckoutReadId(f.root));
+  assert.notEqual(file.checkoutId, gitCheckoutReadId(checkout));
+  assert.equal(TASK_HTTP_VALIDATORS.validate(TASK_HTTP_SCHEMAS.changedFilesResponse.$id, list).valid, true);
+  const first = f.application.inspectTaskFileDiff(f.root, 'task-one', file.repositoryId, file.path, 'worktree', file.checkoutId);
+  assert.match(first.files[0].preview || '', /\+main-only-change/);
+  assert.equal(first.files[0].checkoutId, file.checkoutId);
+  // A later same-path change is now preferred by the legacy de-duplicated list.
+  // Refreshing the observed main-directory row must still use its own source.
+  write(checkout, 'src/same.ts', 'task-change\n');
+  const refreshed = f.application.inspectTaskChangedFiles(f.root, 'task-one');
+  assert.equal(refreshed.files.find(item => item.path === file.path)!.checkoutId, gitCheckoutReadId(checkout));
+  const before = snapshot(f.base);
+  const full = f.application.inspectTaskFileDiff(f.root, 'task-one', file.repositoryId, file.path, 'worktree', file.checkoutId);
+  assert.match(full.files[0].preview || '', /\+main-only-change/); assert.doesNotMatch(full.files[0].preview || '', /task-change/);
+  assert.match(f.application.inspectTaskFileDiff(f.root, 'task-one', file.repositoryId, file.path, 'worktree').files[0].preview || '', /\+task-change/);
+  const handler = createTaskChangedFilesHttpContribution();
+  const params = new URLSearchParams({ repositoryId: file.repositoryId, filePath: file.path, commitHash: 'worktree', checkoutId: file.checkoutId! });
+  const response = await handler.handle({ request: { method: 'GET' }, suffix: '/tasks/task-one/file-diff', searchParams: params, submitTaskRead: async (operation, taskId, input) => {
+    assert.equal(operation, 'file-diff'); assert.equal(input!.checkoutId, file.checkoutId);
+    return f.application.inspectTaskFileDiff(f.root, taskId, input!.repositoryId, input!.filePath, input!.commitHash, input!.checkoutId);
+  } });
+  assert.equal(response!.status, 200);
+  params.append('checkoutId', file.checkoutId!);
+  await assert.rejects(handler.handle({ request: { method: 'GET' }, suffix: '/tasks/task-one/file-diff', searchParams: params, submitTaskRead: async () => { throw Error('must not run'); } }), /参数无效/);
+  assert.deepEqual(snapshot(f.base), before, '来源选择、全文及 HTTP 读取都不修改文件和 Git');
+  write(f.root, file.path, 'baseline\n');
+  assert.throws(() => f.application.inspectTaskFileDiff(f.root, 'task-one', file.repositoryId, file.path, 'worktree', file.checkoutId), (error: { code: string; message: string }) => error.code === 'task_file_diff_invalid' && /不在当前改动范围/.test(error.message), '原来源已无差异时不能重选任务目录的同名改动');
+});
+
+test('显式来源限定任务当前检出集合，移除及同路径重建失败而历史保持固定提交', t => {
+  const f = fixture(t);
+  write(f.root, 'same.ts', 'baseline\n'); git(f.root, ['add', '.']); const hash = commit(f.root, 'baseline\n\nBuildr-Task: task-one');
+  const checkout = path.join(f.base, 'task-checkout'), outside = path.join(f.base, 'unrelated-checkout');
+  git(f.root, ['worktree', 'add', '-b', 'task', checkout]); git(f.root, ['worktree', 'add', '-b', 'unrelated', outside]);
+  f.setWorktrees([{ selector: 'project:app', sourceRepository: f.root, checkoutPath: checkout }]);
+  write(checkout, 'same.ts', 'task-change\n'); write(f.root, 'same.ts', 'main-change\n'); write(outside, 'same.ts', 'unrelated-change\n');
+  const file = f.application.inspectTaskChangedFiles(f.root, 'task-one').files[0];
+  const before = snapshot(f.base);
+  const unavailable = (error: { code: string; status: number }) => error.code === 'task_file_checkout_unavailable' && error.status === 404;
+  assert.throws(() => f.application.inspectTaskFileDiff(f.root, 'task-one', file.repositoryId, file.path, 'worktree', gitCheckoutReadId(outside)), unavailable);
+  assert.throws(() => f.application.inspectTaskFileDiff(f.root, 'task-one', file.repositoryId, file.path, 'worktree', '../other'), /来源身份无效/);
+  assert.deepEqual(snapshot(f.base), before);
+  git(f.root, ['worktree', 'remove', '--force', checkout]);
+  assert.throws(() => f.application.inspectTaskFileDiff(f.root, 'task-one', file.repositoryId, file.path, 'worktree', file.checkoutId), unavailable);
+  const historical = f.application.inspectTaskFileDiff(f.root, 'task-one', file.repositoryId, file.path, hash, file.checkoutId);
+  assert.match(historical.files[0].preview || '', /baseline/); assert.equal(historical.files[0].checkoutId, undefined);
+  git(f.root, ['worktree', 'add', '-b', 'replacement', checkout]); write(checkout, 'same.ts', 'replacement-change\n');
+  const replacementId = gitCheckoutReadId(checkout);
+  assert.notEqual(replacementId, file.checkoutId);
+  assert.throws(() => f.application.inspectTaskFileDiff(f.root, 'task-one', file.repositoryId, file.path, 'worktree', file.checkoutId), unavailable);
+  assert.match(f.application.inspectTaskFileDiff(f.root, 'task-one', file.repositoryId, file.path, 'worktree', replacementId).files[0].preview || '', /replacement-change/);
+});
+
+test('状态读取期间同路径替换检出，列表局部失败而全文拒绝旧来源', { skip: process.platform === 'win32' }, t => {
+  for (const operation of ['list', 'full'] as const) {
+    const f = fixture(t); write(f.root, 'same.ts', 'baseline\n'); git(f.root, ['add', '.']); commit(f.root, 'baseline\n\nBuildr-Task: task-one');
+    const checkout = path.join(f.base, 'task-checkout'); git(f.root, ['worktree', 'add', '-b', 'task', checkout]);
+    f.setWorktrees([{ selector: 'project:app', sourceRepository: f.root, checkoutPath: checkout }]);
+    write(checkout, 'same.ts', 'original-task-change\n'); write(f.root, 'main-only.ts', 'main unaffected\n');
+    const file = f.application.inspectTaskChangedFiles(f.root, 'task-one').files.find(item => item.path === 'same.ts')!;
+    const realGit = path.join(git(f.root, ['--exec-path']), 'git'), bin = path.join(f.base, 'bin'), marker = path.join(f.base, 'replaced'); fs.mkdirSync(bin);
+    // Return the original porcelain output, then replace the checkout before its
+    // diff/read identity check. A missing post-read check would label new text old.
+    fs.writeFileSync(path.join(bin, 'git'), `#!${process.execPath}\nconst fs = require('node:fs'); const { spawnSync } = require('node:child_process');
+const args = process.argv.slice(2), realGit = ${JSON.stringify(realGit)}, checkout = ${JSON.stringify(checkout)}, root = ${JSON.stringify(f.root)}, marker = ${JSON.stringify(marker)};
+const result = spawnSync(realGit, args, { encoding: 'utf8', stdio: ['inherit', 'pipe', 'pipe'] });
+const gitRoot = args[args.indexOf('-C') + 1];
+if (result.status === 0 && args.includes('status') && gitRoot && fs.realpathSync(gitRoot) === fs.realpathSync(checkout) && !fs.existsSync(marker)) {
+  fs.writeFileSync(marker, 'replaced');
+  for (const command of [['worktree', 'remove', '--force', checkout], ['worktree', 'add', '-b', 'replacement', checkout, 'HEAD']]) {
+    const changed = spawnSync(realGit, ['-C', root, ...command], { encoding: 'utf8' });
+    if (changed.status !== 0) { process.stderr.write(changed.stderr); process.exit(changed.status ?? 1); }
+  }
+  fs.writeFileSync(require('node:path').join(checkout, 'same.ts'), 'replacement-task-change\\n');
+}
+process.stdout.write(result.stdout || ''); process.stderr.write(result.stderr || ''); process.exit(result.status ?? 1);\n`, { mode: 0o755 });
+    const originalPath = process.env.PATH;
+    try {
+      process.env.PATH = `${bin}${path.delimiter}${originalPath}`;
+      if (operation === 'list') {
+        const result = f.application.inspectTaskChangedFiles(f.root, 'task-one');
+        assert.equal(fs.existsSync(marker), true, '实际状态读取触发了来源替换');
+        assert.equal(result.status, 'partial'); assert.ok(result.diagnostics.some(item => item.code === 'task_changed_files_unavailable'));
+        assert.equal(result.files.some(item => item.checkoutId === file.checkoutId), false);
+        assert.deepEqual(result.files.map(item => item.path), ['main-only.ts']);
+      } else assert.throws(() => f.application.inspectTaskFileDiff(f.root, 'task-one', file.repositoryId, file.path, 'worktree', file.checkoutId), (error: { code: string; status: number }) => error.code === 'task_file_checkout_unavailable' && error.status === 404);
+    } finally { process.env.PATH = originalPath; }
+    assert.equal(fs.existsSync(marker), true, '实际状态读取触发了来源替换');
+    assert.notEqual(gitCheckoutReadId(checkout), file.checkoutId);
+  }
 });
 
 test('预览按行数上限截断；超大仓库组内去重与截断标志', t => {
