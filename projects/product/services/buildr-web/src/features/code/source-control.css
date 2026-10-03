@@ -122,6 +122,7 @@
 .source-control-checkout .code-location-summary { max-width:100%; min-width:0; width:100%; }
 .source-control-graph .selectable-hover-trigger { display:block; width:100%; }
 .area-code .workspace-page:has(.code-source-control-page) { padding:0; max-width:none; }
+.area-code .workspace-page > .code-source-control-page { width:100%; max-width:none; margin:0; }
 .code-source-control-page { display:flex; flex-direction:column; flex:1; min-width:0; min-height:0; height:100%; }
 .code-source-control-tab { min-height:43px; flex:none; }
 .source-control-read-status { display:flex; gap:8px; align-items:center; padding:8px 17px; flex:none; color:var(--soft-muted); font-size:12px; }
