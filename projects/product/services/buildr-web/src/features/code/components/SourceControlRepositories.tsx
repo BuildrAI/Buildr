@@ -82,7 +82,7 @@ export function SourceControlRepositoryTree({repositories, ready, selectedWorktr
       <div className={'source-control-repository' + (main && selectedWorktreeKey === sourceControlWorktreeKey(repository.id, main.worktreeId) ? ' is-selected' : '')} data-source-worktree={main?.worktreeId}>
         <button type="button" className="source-control-fold source-control-repository-fold" aria-label={(isOpen ? '折叠' : '展开') + '代码库 ' + repository.name} aria-expanded={isOpen} onClick={() => fold.onToggle(group)}>{isOpen ? <FolderOpenOutlined /> : <FolderOutlined />}</button>
         <WorktreeLocationCard repository={repository} worktree={main}><button type="button" className="source-control-repository-copy" disabled={!main} onClick={() => main && onPick(repository, main)} aria-label={'查看主工作树 · ' + repository.name} aria-pressed={Boolean(main && selectedWorktreeKey === sourceControlWorktreeKey(repository.id, main.worktreeId))}>
-          <strong>{repository.name}{repository.simulated && <small>模拟</small>}</strong><code className="source-control-repository-branch">{main?.branch || main?.head?.slice(0, 8) || '—'}</code>
+          <strong>{repository.name}{repository.simulated && <small>模拟</small>}</strong>
         </button></WorktreeLocationCard>
         <WorktreeStatus worktree={main} /><TaskLink worktree={main} onOpenTask={onOpenTask} />
       </div>
@@ -91,7 +91,7 @@ export function SourceControlRepositoryTree({repositories, ready, selectedWorktr
           <div className={'source-control-worktree' + (selectedWorktreeKey === sourceControlWorktreeKey(repository.id, worktree.worktreeId) ? ' is-selected' : '')}>
             <span className="source-control-worktree-icon" aria-hidden="true"><BranchesOutlined /></span>
             <WorktreeLocationCard repository={repository} worktree={worktree}><button type="button" className="source-control-repository-copy" onClick={() => onPick(repository, worktree)} aria-label={'查看工作树 ' + worktreeLabel(worktree) + ' · ' + repository.name} aria-pressed={selectedWorktreeKey === sourceControlWorktreeKey(repository.id, worktree.worktreeId)}>
-              <strong>{worktreeLabel(worktree)}</strong><code className="source-control-repository-branch">{worktree.branch || worktree.head?.slice(0, 8) || '—'}</code>
+              <strong>{worktreeLabel(worktree)}</strong>
             </button></WorktreeLocationCard><WorktreeStatus worktree={worktree} /><TaskLink worktree={worktree} onOpenTask={onOpenTask} />
           </div>
         </div>)}

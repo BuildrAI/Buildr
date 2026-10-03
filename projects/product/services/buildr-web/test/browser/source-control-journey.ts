@@ -89,7 +89,7 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     await page.waitForFunction((expected: string) => Array.from(document.querySelectorAll('.code-source-control-page:not([hidden]) .repository-source-code code')).map(element => element.textContent).join('\n') === expected, text);
     assert.equal(await fullText(), text);
   };
-  const commitRow = (hash: string) => root().locator('.source-control-graph > li').filter({hasText: hash.slice(0, 8)});
+  const commitRow = (hash: string) => root().locator('.source-control-graph > li[data-source-commit="' + hash + '"]');
   const openCommitFile = async (hash: string, filePath: string) => {
     const commit = commitRow(hash); await commit.waitFor();
     const toggle = commit.locator('.source-control-commit-toggle');
@@ -531,9 +531,9 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
       const columns = await rendered.locator('.' + statusClass).evaluateAll((elements: HTMLElement[]) => elements.map(element => element.getBoundingClientRect().x));
       assert.ok(columns.length === repository.worktrees.length && columns.every((x: number) => Math.abs(x - columns[0]) <= 2), '主工作树和各工作树的远程、文件及任务状态保持列对齐：' + statusClass);
     }
-    for (const selector of ['.source-control-repository-copy strong', '.source-control-repository-branch', '.source-control-remote-status', '.source-control-file-status', '.source-control-task-slot']) {
+    for (const selector of ['.source-control-repository-copy strong', '.source-control-remote-status', '.source-control-file-status', '.source-control-task-slot']) {
       const boundaries = await root().locator('.source-control-repository-tree-scroll').locator(selector).evaluateAll((elements: HTMLElement[]) => elements.map(element => ({left: element.getBoundingClientRect().left, right: element.getBoundingClientRect().right})));
-      assert.ok(boundaries.every((box: any) => Math.abs(box.left - boundaries[0].left) <= 2 && Math.abs(box.right - boundaries[0].right) <= 2), '各代码库主工作树与子工作树的名称、分支和状态上下对齐：' + selector);
+      assert.ok(boundaries.every((box: any) => Math.abs(box.left - boundaries[0].left) <= 2 && Math.abs(box.right - boundaries[0].right) <= 2), '各代码库主工作树与子工作树的名称和状态上下对齐：' + selector);
     }
     for (const expected of remoteStatuses) {
       const owner = observed.repositories.find((item: any) => item.worktrees.some((worktree: any) => worktree.location === expected.location));
@@ -655,8 +655,9 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     const narrowSeparator = root().getByRole('separator', {name: '调整源代码管理与阅读区宽度', exact: true});
     await narrowSeparator.press('End');
     await page.waitForFunction(() => (document.querySelector('.code-source-control-page:not([hidden]) .source-control-reader')?.getBoundingClientRect().width || Infinity) <= 301);
-    const nameBox = await sourceName.locator('strong').boundingBox(), branchBox = await sourceName.locator('.source-control-repository-branch').boundingBox();
-    assert.ok(nameBox && branchBox && Math.abs(nameBox.y + nameBox.height / 2 - branchBox.y - branchBox.height / 2) < 2, '工作树名称和分支处于同一行');
+    const nameBox = await sourceName.locator('strong').boundingBox(), sourceBox = await sourceName.boundingBox();
+    assert.ok(nameBox && sourceBox && Math.abs(nameBox.width - sourceBox.width) < 2, '工作树名称利用完整身份栏宽度');
+    assert.equal(await sourceName.locator('code').count(), 0, '真实分支只在按需信息层展示');
     assert.ok(!(await catalogWorktree.innerText()).includes(alpha.location), '完整路径平时不占用目录行');
     await sourceName.hover();
     const locationInfo = page.getByRole('article', {name: '工作树来源信息', exact: true}); await locationInfo.waitFor(); await locationInfo.hover();
@@ -769,7 +770,7 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     assert.ok(completeCommit.includes(subject) && completeCommit.includes(alpha.commitHash) && completeCommit.includes('Buildr-Task: browser-task'), '复制完整信息保留原提交消息和任务尾注');
     const checkoutBox = await root().locator('.source-control-checkout').boundingBox(), headingBox = await details.getByRole('heading', {name: subject, exact: true}).boundingBox();
     assert.ok(checkoutBox && headingBox && headingBox.y >= checkoutBox.y + checkoutBox.height && headingBox.y - checkoutBox.y - checkoutBox.height < 32, '详细提交信息紧接来源栏展示，不保留大块空白');
-    assert.equal(await commit.locator('.source-control-graph-refs,.source-control-history-task').count(), 0, '简洁历史行不常驻引用标签与任务文字块');
+    assert.equal(await commit.locator('.source-control-graph-refs,.source-control-history-task,.source-control-commit-toggle code,.source-control-commit-toggle time').count(), 0, '简洁历史行不常驻提交标识、日期、引用标签与任务文字块');
     const commitTask = commit.getByRole('button', {name: '打开提交任务 浏览器任务', exact: true});
     assert.equal(await commitTask.locator('.anticon-project').count(), 1);
     assert.ok((await commitTask.getAttribute('class')).includes('source-control-task-link'), '历史任务入口与工作树任务入口使用相同标识');

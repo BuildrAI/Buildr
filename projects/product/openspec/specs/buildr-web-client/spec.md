@@ -285,14 +285,14 @@ Buildr Web App Shell MUST 在顶部提供品牌、共同工作空间范围、“
 #### Scenario: 源代码管理分屏
 - **WHEN** 用户进入源代码管理并拖动中屏上下或中右边界
 - **THEN** 页面 MUST 使用共用分隔组件调整对应尺寸，恢复阅读后保留尺寸与所选文件
-- **AND** 提交（Commit）列表 MUST 使用紧凑摘要及可选择复制的悬停信息，点击记录 MUST 在右屏正式详情展示完整字段、引用、准确任务（Task）入口及不重复标题的正文，详情顶部 MUST 对齐且不留空白占位
+- **AND** 提交（Commit）列表 MUST 使用简洁标题及引用、任务（Task）和展开操作，不常驻短提交标识或时间列；完整标识和时间 MUST 通过可选择复制的悬停信息表达，点击记录 MUST 在右屏正式详情展示完整字段、引用、准确任务（Task）入口及不重复标题的正文，详情顶部 MUST 对齐且不留空白占位
 
 #### Scenario: 源代码管理工作树与过滤
 - **WHEN** 登记代码库（Repository）具有主目录及多个Git工作树（Worktree），或多个来源显示相同名称
-- **THEN** 源代码管理 MUST 在代码库（Repository）内显示全部真实来源及各自分支（Branch）和状态，代码库（Repository）行即主工作树（Main Worktree）；选择具体来源 MUST 同时控制未提交变更（Uncommitted Changes）和提交历史（Commit History），MUST NOT 按名称聚合或提供独立历史来源过滤
+- **THEN** 源代码管理 MUST 在代码库（Repository）内显示全部真实来源名称和状态，各自真实分支（Branch）或完整提交（Commit）标识 MUST 能通过按需信息层及阅读标题核对，代码库（Repository）行即主工作树（Main Worktree）；选择具体来源 MUST 同时控制未提交变更（Uncommitted Changes）和提交历史（Commit History），MUST NOT 按名称聚合或提供独立历史来源过滤
 - **AND** 代码库（Repository）目录区域、各来源及比较层 MUST 可折叠，保留有效阅读现场；“未提交变更”和“提交历史” MUST 有清楚选中状态
-- **AND** 来源名称与分支（Branch） MUST 同行，右侧远程、文件及任务（Task）列 MUST 对齐且远程与任务（Task）图标明显区分；完整路径 MUST 按需悬停选择与复制，下方两种模式 MUST 不重复来源栏
-- **AND** 主来源及子来源 MUST 使用相同列边界和一致名称／分支（Branch）比例，数字与无差异标识 MUST 紧凑对齐；右侧阅读标题的完整来源 MUST 仅在点击后于标题下方展开，保留实际路径及分支（Branch）或固定提交（Commit）复制，常规悬停 MUST 不自动显示来源浮窗
+- **AND** 来源列表 MUST NOT 常驻分支（Branch）摘要列，实际分支（Branch）或完整提交（Commit）标识 MUST 在可选择复制的按需信息层保留，右侧远程、文件及任务（Task）列 MUST 对齐且远程与任务（Task）图标明显区分；完整路径 MUST 按需悬停选择与复制，下方两种模式 MUST 不重复来源栏
+- **AND** 主来源及子来源 MUST 使用相同列边界，名称 MUST 利用原分支（Branch）列释放的宽度，数字与无差异标识 MUST 紧凑对齐；右侧阅读标题的完整来源 MUST 仅在点击后于标题下方展开，保留实际路径及分支（Branch）或固定提交（Commit）复制，常规悬停 MUST 不自动显示来源浮窗
 
 #### Scenario: 源代码管理和任务双向关联
 - **WHEN** 用户由任务查看全局源码或由明确关联提交查看任务

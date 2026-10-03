@@ -9,11 +9,10 @@
 .source-control-repository:hover,.source-control-worktree:hover { background:color-mix(in srgb,var(--soft-primary) 4%,var(--soft-surface)); }
 .source-control-repository.is-selected,.source-control-worktree.is-selected { background:var(--soft-primary-soft,color-mix(in srgb,var(--soft-primary) 8%,var(--soft-surface))); box-shadow:inset 2px 0 var(--soft-primary); }
 .source-control-repository>.selectable-hover-trigger,.source-control-worktree>.selectable-hover-trigger { display:block; width:100%; min-width:0; }
-.source-control-repository-copy { display:grid; grid-template-columns:minmax(0,1.2fr) minmax(0,1fr); align-items:center; column-gap:8px; width:100%; min-width:0; min-height:28px; border:0; text-align:left; padding:2px 0; background:transparent; color:inherit; font:inherit; cursor:pointer; }
+.source-control-repository-copy { display:grid; grid-template-columns:minmax(0,1fr); align-items:center; column-gap:8px; width:100%; min-width:0; min-height:28px; border:0; text-align:left; padding:2px 0; background:transparent; color:inherit; font:inherit; cursor:pointer; }
 .source-control-repository-copy:disabled { cursor:default; }
 .source-control-repository-copy strong { min-width:0; font-size:12px; line-height:20px; font-weight:550; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .source-control-repository-copy small { color:var(--soft-muted); font-size:12px; padding:0 4px; border:1px solid var(--soft-line); border-radius:3px; white-space:nowrap; margin-left:5px; }
-.source-control-repository-branch { min-width:0; color:var(--soft-muted); font-family:inherit; font-size:12px; line-height:20px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .source-control-worktree-status { display:contents; }
 .source-control-remote-status { width:100%; height:28px; display:flex; align-items:center; justify-content:flex-start; gap:4px; color:var(--soft-muted); font-size:12px; font-variant-numeric:tabular-nums; }
 .source-control-remote-direction { display:grid; grid-template-columns:13px var(--source-control-remote-count-width,1ch); align-items:center; column-gap:2px; flex:none; }
@@ -72,7 +71,6 @@
 .source-control-history-actions>span,.source-control-history-actions .ant-btn { display:flex; align-items:center; justify-content:center; width:26px; height:28px; padding:0; font-size:13px; }
 .source-control-history-actions .ant-btn { color:var(--soft-primary); }
 .source-control-history-actions .source-control-history-fold { color:var(--soft-muted); font-size:10px; }
-.source-control-commit-hash { flex:none; color:var(--soft-muted); font-size:11px; font-variant-numeric:tabular-nums; }
 .source-control-commit-children { padding:2px 10px 9px 26px; position:relative; z-index:1; }
 .source-control-commit-children[hidden] { display:none; }
 .source-control-commit-children .task-changed-list { border:0; border-radius:0; }
@@ -203,7 +201,6 @@
 .source-control-catalog-toggle { display:flex; align-items:center; gap:8px; min-width:0; padding:0; border:0; background:transparent; color:inherit; font:inherit; cursor:pointer; }
 .source-control-catalog-toggle>.anticon { font-size:11px; color:var(--soft-muted); }
 .source-control-catalog-toggle:focus-visible { outline:2px solid var(--soft-primary); outline-offset:3px; border-radius:3px; }
-.source-control-commit-list-meta { display:flex; align-items:center; gap:7px; flex:none; color:var(--soft-muted); font-size:11px; white-space:nowrap; }
 .source-control-checkout { padding-right:120px; }
 .source-control-checkout>.selectable-hover-trigger:first-child { max-width:none; }
 .source-control-selected-task.ant-btn { flex:none; width:26px; height:28px; padding:0; color:var(--soft-primary); }
