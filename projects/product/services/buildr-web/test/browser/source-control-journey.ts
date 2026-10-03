@@ -60,6 +60,8 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     await page.setViewportSize({width: 1440, height: 900}); await open();
     const observed = await catalog();
     assert.ok(observed.repositories.length >= 2, '覆盖工作空间与独立登记的第二个代码库');
+    assert.ok(!observed.diagnostics.some((item: any) => item.code === 'code_task_location_unavailable'), '普通源代码管理不继承其他任务的退役关联诊断，当前 Git 工作树事实独立读取');
+    assert.equal(await root().getByRole('alert').filter({hasText: fixture.unrelatedRetiredTaskId}).count(), 0);
     assert.equal(new Set(observed.repositories.map((item: any) => item.id)).size, observed.repositories.length);
     assert.deepEqual(observed.repositories.flatMap((repository: any) => repository.worktrees.map((worktree: any) => worktree.location)).sort(), fixture.baselineWorktrees.flatMap((repository: any) => repository.locations).sort(), '源代码管理保留主线实际 Git 工作树清单中的全部来源');
     assert.equal(await root().locator('.source-control-repository').count(), observed.repositories.length);

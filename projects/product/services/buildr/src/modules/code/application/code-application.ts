@@ -24,7 +24,7 @@ export type CodeDependencies = {
   readGitWorktreeEvidence(root:string,id:string,options:{optional:boolean}):{evidence:{repositories:Array<{sourceRepository:string;checkoutPath:string}>}}|null;
 };
 export function createCodeApplication(dependencies:CodeDependencies) {
-  function repositories(root:string,taskId?:string) {
+  function repositoryScope(root:string,taskId?:string) {
     const catalog=dependencies.assetCatalog(root);
     const diagnostics:Array<{code:string;message:string;repositoryId:string|null}>=[];
     const items=catalog.repositories.map(repo=>{
@@ -51,8 +51,12 @@ export function createCodeApplication(dependencies:CodeDependencies) {
       for(const service of services){if(catalog.repositories.some(r=>r.id===service.repositoryId))selected.add(service.repositoryId);else diagnostics.push({code:'code_task_repository_unresolved',message:service.code+' 引用的代码库当前未登记。',repositoryId:service.repositoryId});}
       scopeReason=selected.size?'由任务服务预选 '+selected.size+' 个代码库，已去重':'任务没有可确定的服务代码库范围，显示全部代码库';
     }
-    const worktreeCatalog=readCodeWorktreeCatalog(root,items,dependencies,taskId);
-    return {repositories:items,selectedRepositoryIds:[...selected],scopeReason,...worktreeCatalog,diagnostics:[...diagnostics,...worktreeCatalog.diagnostics]};
+    return {repositories:items,selectedRepositoryIds:[...selected],scopeReason,diagnostics};
+  }
+  function repositories(root:string,taskId?:string) {
+    const scope=repositoryScope(root,taskId);
+    const worktreeCatalog=readCodeWorktreeCatalog(root,scope.repositories,dependencies,taskId);
+    return {...scope,...worktreeCatalog,diagnostics:[...scope.diagnostics,...worktreeCatalog.diagnostics]};
   }
   function source(root:string,input:CodeInput):CodeSource {
     const catalog=dependencies.assetCatalog(root),repo=catalog.repositories.find(r=>r.id===input.repositoryId);
@@ -111,7 +115,7 @@ export function createCodeApplication(dependencies:CodeDependencies) {
     let observed:string;try{observed=gitCheckoutReadId(current.location);}catch{throw codeFailure('code_checkout_unavailable','读取期间所选检出目录已不存在，请重新核对。',404);}
     if(observed!==current.checkoutId)throw codeFailure('code_checkout_changed','读取期间检出目录身份已变化，请重新选择目录。',409);
   }
-  const sourceControlApplication=createSourceControlApplication({repositories,source:(root,input)=>source(root,input as CodeInput),worktrees:(root,id)=>{const registered=source(root,{repositoryId:id});return enumerateCodeWorktrees(registered.location,id).worktrees;},readTask:dependencies.readTask});
+  const sourceControlApplication=createSourceControlApplication({repositories:repositoryScope,source:(root,input)=>source(root,input as CodeInput),worktrees:(root,id)=>{const registered=source(root,{repositoryId:id});return enumerateCodeWorktrees(registered.location,id).worktrees;},readTask:dependencies.readTask});
   return Object.freeze({
     ...sourceControlApplication,
     repositories,

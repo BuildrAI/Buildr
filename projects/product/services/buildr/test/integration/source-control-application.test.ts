@@ -10,6 +10,7 @@ import { createCodeHttpContribution } from '../../src/modules/code/interfaces/ht
 import { createCodeCliContributions } from '../../src/modules/code/interfaces/cli/code-cli.ts';
 import { CODE_HTTP_SCHEMAS, CODE_HTTP_VALIDATORS } from '../../src/modules/code/interfaces/http/code-http-contracts.ts';
 import { gitCheckoutReadId } from '../../src/infrastructure/git/checkout-read-identity.ts';
+import { registerGitWorktreeProvider } from '../../src/modules/task/infrastructure/git-worktree-provider.ts';
 import { CODE_LIMITS } from '../../src/modules/code/infrastructure/code-file-reader.ts';
 
 function fixture(t: test.TestContext, format = 'sha1') {
@@ -188,4 +189,17 @@ test('retired task checkout gets an explicit registered-source fallback while mi
   const original=f.app.sourceControl(f.root,{taskId:'task-one'});assert.equal(original.selectedWorktreeIds.length,1);f.git('worktree','remove',linked);
   const retired=f.app.sourceControl(f.root,{taskId:'task-one'});assert.equal(retired.repositories[0].worktrees.length,1);assert.deepEqual(retired.selectedWorktreeIds,[retired.repositories[0].worktrees[0].worktreeId]);assert.match(retired.scopeReason,/登记目录/);assert.ok(retired.diagnostics.some(diagnostic=>diagnostic.code==='code_task_location_unavailable'));
   f.git('worktree','add',linked,'topic');fs.renameSync(linked,linked+'-moved');const missing=f.app.sourceControl(f.root);assert.equal(missing.repositories[0].worktreeCount,2);assert.equal(missing.repositories[0].worktrees.find(worktree=>!worktree.isMain)?.status,'unavailable');assert.equal(missing.repositories[0].fileCount,null);
+});
+
+
+test('SCM registry reads ignore unrelated retired-task evidence while Explorer and requested-task diagnostics remain', t => {
+  const f=fixture(t);f.write('a.ts','base\n');const head=f.commit('base');
+  const provider=registerGitWorktreeProvider({assertCanonicalTaskWorkspace:root=>root,readProjectRegistryRecord:()=>({registry:{migrationRequired:false},projects:{}}),readServiceRegistryRecord:()=>({services:{}}),sameGitIdentity:(a,b)=>a===b,atomicWriteJson:(file,value)=>{fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,JSON.stringify(value));},removePath:file=>fs.rmSync(file,{force:true})});
+  for(const taskId of ['retired-other','task-one']){const retired=path.join(f.base,taskId);f.git('worktree','add','-b',taskId,retired);provider.writeGitWorktreeEvidence(f.root,{schemaVersion:'buildr.git-worktree-evidence/v1',taskId,workspaceRoot:fs.realpathSync(f.root),branch:taskId,planDigest:'sha256-'+'0'.repeat(64),status:'ready',repositories:[{selector:'workspace',entityType:'workspace',sourcePath:'.',sourceRepository:fs.realpathSync(f.root),checkoutPath:fs.realpathSync(retired),branch:taskId,startPoint:head,head,clean:true,registered:true,state:'ready',diagnostic:null,remote:null,remoteUrl:null}],effects:[],updatedAt:new Date().toISOString()});f.git('worktree','remove',retired);}
+  f.write('a.ts','current\n');const before=f.snapshot(),reads:string[]=[];let associationDiscovery=0;
+  const app=createCodeApplication({assetCatalog:()=>f.catalog,resolveSourceRoot:(_root,source)=>source.path,readTaskScope:(_root,id)=>{if(id!=='task-one')throw Error('missing task');return {projects:['p'],services:[]};},gitWorktreeEvidencePath:(root,id)=>{associationDiscovery++;return provider.gitWorktreeEvidencePath(root,id);},readGitWorktreeEvidence:(root,id,options)=>{reads.push(id);return provider.readGitWorktreeEvidence(root,id,options);}});
+  const global=app.sourceControl(f.root);assert.equal(global.repositories[0].status,'complete');assert.equal(global.repositories[0].worktreeCount,1);assert.equal(global.repositories[0].fileCount,1);assert.deepEqual(global.diagnostics,[]);assert.deepEqual(reads,[]);assert.equal(associationDiscovery,0);
+  const explorer=app.repositories(f.root);assert.ok(explorer.diagnostics.some(item=>item.code==='code_task_location_unavailable'&&item.message.includes('retired-other')));assert.ok(explorer.worktrees.some(item=>item.taskId==='retired-other'&&!item.available));
+  reads.length=0;associationDiscovery=0;const scoped=app.sourceControl(f.root,{taskId:'task-one'});assert.equal(scoped.repositories[0].status,'complete');assert.ok(scoped.diagnostics.some(item=>item.code==='code_task_location_unavailable'));assert.ok(scoped.diagnostics.every(item=>!item.message.includes('retired-other')));assert.deepEqual(reads,['task-one']);assert.equal(associationDiscovery,0);assert.deepEqual(scoped.selectedWorktrees,[{repositoryId:'repo-one',worktreeId:scoped.repositories[0].worktrees[0].worktreeId}]);assert.match(scoped.scopeReason,/登记目录/);assert.deepEqual(f.snapshot(),before);
+  f.catalog.repositories.push({id:'unavailable',code:'unavailable',name:'Unavailable',source:{type:'workspace',path:path.join(f.base,'missing')}});const partial=app.sourceControl(f.root);assert.ok(partial.diagnostics.some(item=>item.code==='code_repository_unavailable'&&item.repositoryId==='unavailable'));assert.equal(partial.repositories[0].status,'complete');assert.equal(partial.repositories[1].status,'unavailable');
 });

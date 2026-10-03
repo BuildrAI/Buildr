@@ -537,7 +537,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
       const retained=peerRoot+'-temporarily-unavailable';fs.renameSync(peerRoot,retained);
       try{await read();}finally{fs.renameSync(retained,peerRoot);}
     };
-    await runSourceControlJourney({t,page,workspaceUrl,capture,expectedBrowserErrors,fixture:{path:sourceControlPath,location:fs.realpathSync(workspaceRoot),commitHash:history.stdout.trim(),historyText:historicalSource.stdout,indexText,workingText,prepareWorktrees,baselineWorktrees,unavailableRepositoryLocation,withUnavailableRepository}});
+    await runSourceControlJourney({t,page,workspaceUrl,capture,expectedBrowserErrors,fixture:{path:sourceControlPath,location:fs.realpathSync(workspaceRoot),commitHash:history.stdout.trim(),historyText:historicalSource.stdout,indexText,workingText,prepareWorktrees,baselineWorktrees,unrelatedRetiredTaskId:codeWorktreeFixture.worktreeTaskId,unavailableRepositoryLocation,withUnavailableRepository}});
   }
   if (selected('layout')) await runLayoutJourney({ t, page, workspaceUrl, capture });
 
