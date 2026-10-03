@@ -5,7 +5,7 @@ import { spawn } from 'node:child_process';
 import { StringDecoder } from 'node:string_decoder';
 import { CODE_LIMITS, codeFailure, codeGit, localPath, relativeCodePath, type CodeSource } from './code-file-reader.ts';
 
-export type CodeFileOptions = { page?:number; line?:number; matchQuery?:string; expectedRevision?:string };
+export type CodeFileOptions = { page?:number; line?:number; matchQuery?:string; expectedRevision?:string; indexBlob?:{hash:string;mode:string} };
 export type CodeFilePage = { index:number; total:number; offset:number; endOffset:number; startLine:number; endLine:number; startsMidLine:boolean; endsMidLine:boolean; matchOffset?:number; matchEndOffset?:number };
 const images:Record<string,string>={'.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.gif':'image/gif','.webp':'image/webp'};
 const blockBytes=64*1024;
@@ -99,11 +99,18 @@ export async function readCodeFile(source:CodeSource,relative:string,options:Cod
   const mediaType=images[path.extname(relative).toLowerCase()]||'',limitBytes=mediaType?CODE_LIMITS.imageBytes:CODE_LIMITS.textBytes;
   if(mediaType&&(options.page!==undefined||options.line!==undefined))throw codeFailure('code_file_location_invalid','图片不支持按文本段或行号读取。');
   let sizeBytes:number,revision:string,chunks:()=>AsyncIterable<Buffer>,verify:()=>Promise<void>=async()=>{},close:()=>Promise<void>=async()=>{};
-  if(source.commitHash) {
-    const listing=codeGit(source.location,['ls-tree',source.commitHash,'--',relative]).toString();
-    if(!listing||!listing.startsWith('100'))throw codeFailure('code_file_missing','该历史版本不包含可读取的普通文件。',404);
-    const object=listing.split(/\s+/)[2];sizeBytes=Number(codeGit(source.location,['cat-file','-s',object]).toString().trim());
-    revision='git:'+source.commitHash+':'+object;chunks=()=>historicalChunks(source,object,deadline);
+  if(source.commitHash||options.indexBlob) {
+    let object:string;
+    if(options.indexBlob){
+      if(!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(options.indexBlob.hash)||!['100644','100755'].includes(options.indexBlob.mode))throw codeFailure('code_index_file_invalid','暂存文件对象无效。');
+      object=options.indexBlob.hash;revision='index:'+object+':'+options.indexBlob.mode;
+    }else{
+      const listing=codeGit(source.location,['ls-tree',source.commitHash!,'--',relative]).toString();
+      if(!listing||!listing.startsWith('100'))throw codeFailure('code_file_missing','该历史版本不包含可读取的普通文件。',404);
+      object=listing.split(/\s+/)[2];revision='git:'+source.commitHash+':'+object;
+    }
+    sizeBytes=Number(codeGit(source.location,['cat-file','-s',object]).toString().trim());
+    chunks=()=>historicalChunks(source,object,deadline);
   } else {
     let file:string;
     try {file=localPath(source,relative);}catch(error){if(options.expectedRevision&&(error as {code?:string}).code==='code_file_missing')throw changed();throw error;}

@@ -18,6 +18,7 @@ import { recordVerificationResultFromEvidence } from '../helpers/task-verificati
 import { gitCheckoutReadId } from '../../src/infrastructure/git/checkout-read-identity.ts';
 import { runWorkspaceCompositionJourney } from './workspace-composition-journey.ts';
 import { runCodeExplorerJourney } from '../../../buildr-web/test/browser/code-explorer-journey.ts';
+import { runSourceControlJourney } from '../../../buildr-web/test/browser/source-control-journey.ts';
 import { runLayoutJourney } from '../../../buildr-web/test/browser/layout-journey.ts';
 import { runTaskCommitsJourney } from '../../../buildr-web/test/browser/task-commits-journey.ts';
 import { runTaskMaterialsJourney } from '../../../buildr-web/test/browser/task-materials-journey.ts';
@@ -356,7 +357,7 @@ async function capture(page: any, name: any): Promise<any>  {
   await page.screenshot({ path: path.join(SCREENSHOT_DIR, name), fullPage: true, animations: 'disabled' });
 }
 
-test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('all') || SELECTORS.has('task') ? 300_000 : SELECTORS.has('code') || SELECTORS.has('task-materials') || SELECTORS.has('layout') || SELECTORS.has('workbench') || SELECTORS.has('articles') || SELECTORS.has('shell') || SELECTORS.has('service') || SELECTORS.has('project') ? 120_000 : 45_000 }, async (t: any) => {
+test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('all') || SELECTORS.has('task') ? 300_000 : SELECTORS.has('code') ? 240_000 : SELECTORS.has('task-materials') || SELECTORS.has('layout') || SELECTORS.has('workbench') || SELECTORS.has('articles') || SELECTORS.has('shell') || SELECTORS.has('service') || SELECTORS.has('project') ? 120_000 : 45_000 }, async (t: any) => {
   const requestedSmokeRoot: any = process.env.BUILDR_SMOKE_ROOT;
   const managedSmokeRoot: any = requestedSmokeRoot && fs.existsSync(path.join(requestedSmokeRoot, '.buildr-smoke-owner')) ? requestedSmokeRoot : null;
   const base: any = managedSmokeRoot || fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-browser-smoke-'));
@@ -489,6 +490,54 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     const codeFile=path.join(workspaceRoot,'projects/demo/services/api/zz-segmented-text.txt');
     const history=spawnSync('git',['rev-parse','HEAD'],{cwd:workspaceRoot,encoding:'utf8'});assert.equal(history.status,0,history.stderr);
     await runCodeExplorerJourney({t,page,workspaceUrl,capture,expectedBrowserErrors,codeFixture:{...codeWorktreeFixture,current:codeSegmentedText('current'),history:codeSegmentedText('history'),commitHash:history.stdout.trim(),change:()=>fs.writeFileSync(codeFile,'changed segmented text\n'+codeSegmentedText('current')),restore:()=>fs.writeFileSync(codeFile,codeSegmentedText('current'))}});
+    // Prepare the SCM comparison only after the explorer canary. Both layers remain
+    // real Git data, while the original committed version is independently readable.
+    const sourceControlPath='projects/demo/services/api/src/main.ts';
+    const historicalSource=spawnSync('git',['show',history.stdout.trim()+':'+sourceControlPath],{cwd:workspaceRoot,encoding:'utf8'});assert.equal(historicalSource.status,0,historicalSource.stderr);
+    const indexText='export const sourceControlIndex = 21;\n';
+    const workingText='export const sourceControlWorking = 34;\n';
+    fs.writeFileSync(path.join(workspaceRoot,sourceControlPath),indexText);
+    runGit(workspaceRoot,['add','--',sourceControlPath]);
+    fs.writeFileSync(path.join(workspaceRoot,sourceControlPath),workingText);
+    const peerRoot=path.join(workspaceRoot,'.buildr/local/second-code-repository'),unavailableRepositoryLocation=fs.realpathSync(peerRoot);
+    const baselineWorktrees=[workspaceRoot,peerRoot].map(repository=>{
+      const listed=spawnSync('git',['worktree','list','--porcelain','-z'],{cwd:repository,encoding:'utf8'});assert.equal(listed.status,0,listed.stderr);
+      return {location:fs.realpathSync(repository),locations:listed.stdout.split('\0').filter((field:string)=>field.startsWith('worktree ')).map((field:string)=>fs.realpathSync(field.slice(9)))};
+    });
+    const prepareWorktrees=()=>{
+      const linked=['alpha','beta'].map((name,index)=>{
+      const branch='fixture/scm-'+name;
+      let checkout:string;
+      if(name==='alpha'){
+        const created=runBuildr(['worktree','create','browser-task','--branch',branch,'--start-point',history.stdout.trim(),'--include','service:demo/api','--target',workspaceRoot,'--json']);
+        assert.equal(created.repositories.length,1);checkout=created.repositories[0].checkoutPath;
+      }else{
+        checkout=path.join(base,'repo-a-worktrees','scm-other');runGit(workspaceRoot,['worktree','add','-b',branch,checkout,history.stdout.trim()]);
+      }
+      const committedText='export const sourceControl'+name+'History = '+(100+index*100)+';\n';
+      fs.writeFileSync(path.join(checkout,sourceControlPath),committedText);
+      runGit(checkout,['add','--',sourceControlPath]);
+      runGit(checkout,['commit','-qm','linked '+name+' history\n\nBuildr-Task: browser-task']);
+      const head=spawnSync('git',['rev-parse','HEAD'],{cwd:checkout,encoding:'utf8'});assert.equal(head.status,0,head.stderr);
+      const stagedText='export const sourceControl'+name+'Index = '+(101+index*100)+';\n';
+      const currentText='export const sourceControl'+name+'Working = '+(102+index*100)+';\n';
+      fs.writeFileSync(path.join(checkout,sourceControlPath),stagedText);runGit(checkout,['add','--',sourceControlPath]);
+      fs.writeFileSync(path.join(checkout,sourceControlPath),currentText);
+      return {name,filterName:path.basename(checkout),path:sourceControlPath,branch,location:fs.realpathSync(checkout),commitHash:head.stdout.trim(),historyText:committedText,indexText:stagedText,workingText:currentText};
+      });
+      const checkout=path.join(base,'repo-b-worktrees','browser-task'),peerPath='src/main.ts',branch='fixture/scm-peer';
+      runGit(peerRoot,['worktree','add','-b',branch,checkout,'HEAD']);
+      const committedText='export const sourceControlPeerHistory = 300;\n',stagedText='export const sourceControlPeerIndex = 301;\n',currentText='export const sourceControlPeerWorking = 302;\n';
+      fs.writeFileSync(path.join(checkout,peerPath),committedText);runGit(checkout,['add','--',peerPath]);runGit(checkout,['commit','-qm','linked peer history without a task trailer']);
+      const head=spawnSync('git',['rev-parse','HEAD'],{cwd:checkout,encoding:'utf8'});assert.equal(head.status,0,head.stderr);
+      fs.writeFileSync(path.join(checkout,peerPath),stagedText);runGit(checkout,['add','--',peerPath]);fs.writeFileSync(path.join(checkout,peerPath),currentText);
+      return [...linked,{name:'peer',filterName:path.basename(checkout),path:peerPath,branch,location:fs.realpathSync(checkout),commitHash:head.stdout.trim(),historyText:committedText,indexText:stagedText,workingText:currentText}];
+    };
+    const withUnavailableRepository=async (read:()=>Promise<void>)=>{
+      const retained=peerRoot+'-temporarily-unavailable';fs.renameSync(peerRoot,retained);
+      try{await read();}finally{fs.renameSync(retained,peerRoot);}
+    };
+    await runSourceControlJourney({t,page,workspaceUrl,capture,expectedBrowserErrors,fixture:{path:sourceControlPath,location:fs.realpathSync(workspaceRoot),commitHash:history.stdout.trim(),historyText:historicalSource.stdout,indexText,workingText,prepareWorktrees,baselineWorktrees,unavailableRepositoryLocation,withUnavailableRepository}});
   }
   if (selected('layout')) await runLayoutJourney({ t, page, workspaceUrl, capture });
 

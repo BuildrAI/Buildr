@@ -1,0 +1,393 @@
+import assert from 'node:assert/strict';
+
+/** The host owns isolated Git data; every successful read below comes from production HTTP. */
+export async function runSourceControlJourney({t, page, workspaceUrl, capture, fixture, expectedBrowserErrors}: any) {
+  const root = () => page.locator('.code-source-control-page:visible');
+  const api = workspaceUrl.replace('/workspaces/', '/api/v1/workspaces/');
+  let mainWorktreeId = '';
+  const catalog = async (taskId?: string) => {
+    const response = await page.request.get(api + '/code/source-control' + (taskId ? '?taskId=' + encodeURIComponent(taskId) : ''));
+    assert.equal(response.status(), 200); return response.json();
+  };
+  const noOverflow = async () => assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, '源代码管理不能产生页面横向溢出');
+  const open = async () => {
+    await page.goto(workspaceUrl + '/code/source-control');
+    await root().locator('.source-control-repository-copy').first().waitFor();
+    const observed = await catalog();
+    const repository = observed.repositories.find((item: any) => item.worktrees.some((worktree: any) => worktree.location === fixture.location));
+    assert.ok(repository); mainWorktreeId = repository.worktrees.find((item: any) => item.location === fixture.location).worktreeId;
+  };
+  const areaValue: Record<string,string> = {'未暂存': 'unstaged', '已暂存': 'staged', '未跟踪': 'untracked'};
+  const checkoutGroup = (id: string) => root().locator('[data-change-worktree="' + id + '"]');
+  const fileRow = (id: string, area: string, filePath = fixture.path) => checkoutGroup(id).locator('[data-change-area="' + area + '"]')
+    .locator('.task-changed-row').filter({has: page.locator('.task-changed-path[title="' + filePath + '"]')});
+  const row = (area: string) => fileRow(mainWorktreeId, areaValue[area]);
+  const diff = () => root().getByRole('region', {name: '差异内容', exact: true});
+  const assertTaskIdentity = async () => {
+    const task = page.locator('#task-detail-main:visible'); await task.waitFor();
+    assert.equal(await task.getAttribute('data-task-id'), 'browser-task');
+    const pathname = new URL(page.url()).pathname, owner = new URL(workspaceUrl).pathname + '/tasks';
+    assert.ok(pathname === owner || pathname === owner + '/browser-task', '同一任务仍在任务领域内查看');
+  };
+  const fullText = async () => root().locator('.repository-source-code code').evaluateAll((elements: HTMLElement[]) => elements.map(element => element.textContent).join('\n'));
+  const waitFull = async (text: string) => {
+    await root().locator('.repository-source-code').waitFor();
+    await page.waitForFunction((expected: string) => Array.from(document.querySelectorAll('.code-source-control-page:not([hidden]) .repository-source-code code')).map(element => element.textContent).join('\n') === expected, text);
+    assert.equal(await fullText(), text);
+  };
+  const openHistory = async () => {
+    await open();
+    const observed = await catalog();
+    const repository = observed.repositories.find((item: any) => item.worktrees.some((worktree: any) => worktree.worktreeId === mainWorktreeId));
+    assert.ok(repository, '两层改动必须属于实际登记实例');
+    await root().locator('.source-control-repository-copy').filter({has: page.getByText(repository.name, {exact: true})}).click();
+    await root().locator('.source-control-browse-tabs').getByText('提交历史', {exact: true}).click();
+    const commit = root().locator('.source-control-graph li').filter({hasText: fixture.commitHash.slice(0, 8)});
+    await commit.waitFor(); await commit.getByRole('button').click();
+    await root().getByRole('tab', {name: fixture.path, exact: true}).waitFor();
+    await root().getByRole('tab', {name: fixture.path, exact: true}).click();
+    await diff().getByText('export const explorerAnswer = 1;', {exact: false}).waitFor();
+    return repository;
+  };
+  const drag = async (locator: any, dx: number, dy: number) => {
+    const box = await locator.boundingBox(); assert.ok(box);
+    const x = box.x + box.width / 2, y = box.y + box.height / 2;
+    await page.mouse.move(x, y); await page.mouse.down();
+    await page.mouse.move(x + dx, y + dy, {steps: 12}); await page.mouse.up();
+  };
+
+  await t.test('源代码管理真实清单、同文件两层差异与实际暂存全文', async () => {
+    await page.setViewportSize({width: 1440, height: 900}); await open();
+    const observed = await catalog();
+    assert.ok(observed.repositories.length >= 2, '覆盖工作空间与独立登记的第二个代码库');
+    assert.equal(new Set(observed.repositories.map((item: any) => item.id)).size, observed.repositories.length);
+    assert.deepEqual(observed.repositories.flatMap((repository: any) => repository.worktrees.map((worktree: any) => worktree.location)).sort(), fixture.baselineWorktrees.flatMap((repository: any) => repository.locations).sort(), '源代码管理保留主线实际 Git 工作树清单中的全部来源');
+    assert.equal(await root().locator('.source-control-repository').count(), observed.repositories.length);
+    for (const repository of observed.repositories) {
+      const rendered = root().locator('[data-source-repository="' + repository.id + '"]');
+      assert.equal(await rendered.count(), 1);
+      if (repository.ahead === null || repository.behind === null) assert.match(await rendered.innerText(), /上游未知/);
+      if (repository.fileCount > 0) assert.equal(await rendered.locator(':scope > .source-control-repository .source-control-repository-count').innerText(), String(repository.fileCount));
+    }
+    assert.equal(await row('已暂存').count(), 1); assert.equal(await row('未暂存').count(), 1);
+    await row('已暂存').click(); await diff().getByText('export const sourceControlIndex = 21;', {exact: false}).waitFor();
+    assert.ok(!(await diff().innerText()).includes('sourceControlWorking'));
+    await root().getByRole('button', {name: '查看完整文件', exact: true}).click(); await waitFull(fixture.indexText);
+    assert.match(await root().locator('.code-location-summary').innerText(), /已暂存/);
+    await capture(page, 'source-control-fixture-staged-full.png');
+    await root().getByRole('button', {name: '返回差异', exact: true}).click();
+    await row('未暂存').click(); await diff().getByText('export const sourceControlWorking = 34;', {exact: false}).waitFor();
+    assert.ok((await diff().innerText()).includes('sourceControlIndex = 21'));
+    await root().getByRole('button', {name: '查看完整文件', exact: true}).click(); await waitFull(fixture.workingText);
+    assert.ok(!(await fullText()).includes('sourceControlIndex'));
+    await noOverflow(); await capture(page, 'source-control-fixture-working-full.png');
+    const peer = observed.repositories.find((repository: any) => repository.location === fixture.unavailableRepositoryLocation); assert.ok(peer);
+    const refreshCatalog = async () => {
+      const response = page.waitForResponse((returned: any) => new URL(returned.url()).pathname.endsWith('/code/source-control'));
+      await root().getByRole('button', {name: '刷新源代码管理', exact: true}).click();
+      const returned = await response; assert.equal(returned.status(), 200); const body = await returned.json();
+      await root().locator('.source-control-title .anticon-spin').waitFor({state: 'hidden'}); return body;
+    };
+    await fixture.withUnavailableRepository(async () => {
+      const unavailable = (await refreshCatalog()).repositories.find((repository: any) => repository.id === peer.id);
+      assert.ok(unavailable); assert.equal(unavailable.worktreeCount, null); assert.equal(unavailable.fileCount, null); assert.ok(unavailable.diagnostics.length);
+      const upper = root().locator('[data-source-repository="' + peer.id + '"]');
+      assert.equal(await upper.locator('.source-control-repository-meta').innerText(), '工作树数量未知');
+      const lower = root().locator('[data-change-repository="' + peer.id + '"]'); await lower.waitFor();
+      assert.match(await lower.innerText(), /数量未知/); assert.doesNotMatch(await lower.innerText(), /工作树干净/);
+      await waitFull(fixture.workingText); await capture(page, 'source-control-fixture-unavailable-repository.png');
+    });
+    const restored = (await refreshCatalog()).repositories.find((repository: any) => repository.id === peer.id);
+    assert.ok(restored.available); assert.equal(restored.worktreeCount, fixture.baselineWorktrees.find((repository: any) => repository.location === fixture.unavailableRepositoryLocation).locations.length); await waitFull(fixture.workingText);
+  });
+
+  await t.test('固定历史全文、悬浮信息选择复制与准确任务往返', async () => {
+    await page.setViewportSize({width: 1440, height: 900}); await openHistory();
+    await root().getByRole('button', {name: '查看完整文件', exact: true}).click(); await waitFull(fixture.historyText);
+    assert.ok((await root().locator('.code-location-summary').innerText()).includes(fixture.commitHash.slice(0, 8)));
+    const info = root().getByRole('button', {name: '查看完整提交信息', exact: true});
+    await info.hover(); const popup = page.getByRole('article', {name: '完整提交信息', exact: true}); await popup.waitFor();
+    await popup.hover(); assert.ok((await popup.innerText()).includes(fixture.commitHash));
+    const box = await popup.locator('pre').boundingBox(); assert.ok(box);
+    await page.mouse.move(box.x + 2, box.y + 10); await page.mouse.down(); await page.mouse.move(box.x + Math.min(160, box.width - 4), box.y + 10, {steps: 8}); await page.mouse.up();
+    assert.ok(await page.evaluate(() => (window.getSelection()?.toString().length || 0) > 0), '移入悬浮层后可以真实选择文字');
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+    await popup.getByRole('button', {name: '复制提交标识', exact: true}).click();
+    assert.equal(await page.evaluate(() => navigator.clipboard.readText()), fixture.commitHash);
+    await popup.getByRole('button', {name: /复制完整信息$/}).click();
+    const copied = await page.evaluate(() => navigator.clipboard.readText());
+    assert.ok(copied.includes(fixture.commitHash) && copied.includes('Buildr-Task: browser-task'));
+    await capture(page, 'source-control-fixture-history-hover.png');
+    await popup.getByRole('button', {name: '浏览器任务', exact: true}).click();
+    await assertTaskIdentity();
+    await popup.waitFor({state: 'hidden'});
+    await page.goBack(); await waitFull(fixture.historyText);
+    assert.ok((await root().locator('.code-location-summary').innerText()).includes(fixture.commitHash.slice(0, 8)));
+    await noOverflow();
+  });
+
+  await t.test('鼠标调整两轴、展开恢复、刷新与窄分屏保留手动比例', async () => {
+    await page.setViewportSize({width: 1440, height: 900}); await open();
+    await row('未暂存').click(); await diff().getByText('sourceControlWorking = 34', {exact: false}).waitFor();
+    const horizontal = root().getByRole('separator', {name: '调整源代码管理与阅读区宽度', exact: true});
+    const vertical = root().getByRole('separator', {name: '调整代码库与浏览区高度', exact: true});
+    const before = [Number(await horizontal.getAttribute('aria-valuenow')), Number(await vertical.getAttribute('aria-valuenow'))];
+    await drag(horizontal, 70, 0); await drag(vertical, 0, 50);
+    const after = [Number(await horizontal.getAttribute('aria-valuenow')), Number(await vertical.getAttribute('aria-valuenow'))];
+    assert.ok(after[0] > before[0] + 1 && after[1] > before[1] + 1, '两个实际分隔线分别改变宽度与高度');
+    await root().getByRole('button', {name: '展开阅读', exact: true}).click();
+    await root().getByRole('button', {name: '恢复分屏', exact: true}).click();
+    assert.deepEqual([Number(await horizontal.getAttribute('aria-valuenow')), Number(await vertical.getAttribute('aria-valuenow'))], after);
+    assert.ok((await diff().innerText()).includes('sourceControlWorking = 34'));
+    const workspaceId = new URL(workspaceUrl).pathname.split('/')[2];
+    const keys = ['buildr:source-control:' + workspaceId + ':columns', 'buildr:source-control:' + workspaceId + ':stack'];
+    const saved = await page.evaluate((values: string[]) => values.map(key => localStorage.getItem(key)), keys);
+    assert.ok(saved.every((value: any) => value !== null));
+    await page.reload(); await root().locator('.source-control-repository-copy').first().waitFor();
+    assert.deepEqual([Number(await horizontal.getAttribute('aria-valuenow')), Number(await vertical.getAttribute('aria-valuenow'))], after);
+    await page.setViewportSize({width: 1024, height: 768}); await row('未暂存').click();
+    await diff().getByText('sourceControlWorking = 34', {exact: false}).waitFor();
+    await root().getByRole('button', {name: '查看完整文件', exact: true}).click({trial: true}); await noOverflow();
+    await capture(page, 'source-control-fixture-split-1024.png');
+    assert.deepEqual(await page.evaluate((values: string[]) => values.map(key => localStorage.getItem(key)), keys), saved, '临时窗口缩窄不覆盖手动比例');
+    await page.setViewportSize({width: 1440, height: 900});
+    assert.deepEqual([Number(await horizontal.getAttribute('aria-valuenow')), Number(await vertical.getAttribute('aria-valuenow'))], after);
+  });
+
+  await t.test('迟到的差异不能覆盖当前层，清单刷新失败保留已读取现场', async () => {
+    await page.setViewportSize({width: 1440, height: 900}); await open();
+    await row('未暂存').click(); await diff().getByText('sourceControlWorking = 34', {exact: false}).waitFor();
+    let release = () => {}; const gate = new Promise<void>(resolve => { release = resolve; });
+    const delayed = async (route: any) => {
+      const url = new URL(route.request().url());
+      if (url.searchParams.get('area') === 'staged' && url.searchParams.get('filePath') === fixture.path) await gate;
+      try { await route.continue(); } catch { /* Switching layers can cancel the old transport. */ }
+    };
+    await page.route('**/code/diff?**', delayed);
+    try {
+      const started = page.waitForRequest((request: any) => { const url = new URL(request.url()); return url.pathname.endsWith('/code/diff') && url.searchParams.get('area') === 'staged'; });
+      await row('已暂存').click(); await started; await row('未暂存').click(); release();
+      await diff().getByText('sourceControlWorking = 34', {exact: false}).waitFor();
+      await page.waitForTimeout(450);
+      assert.match(await root().locator('.source-control-history-version').innerText(), /未暂存/);
+      assert.ok((await diff().innerText()).includes('sourceControlWorking = 34'), '迟到暂存响应不能覆盖当前未暂存差异');
+    } finally { release(); await page.unroute('**/code/diff?**', delayed); }
+    const failed = async (route: any) => route.fulfill({status: 503, contentType: 'application/json', body: JSON.stringify({error: {code: 'scm_fixture_unavailable', message: '隔离测试清单暂不可读取'}})});
+    const catalogRoute = /\/code\/source-control(?:\?|$)/;
+    expectedBrowserErrors.add('/code/source-control');
+    await page.route(catalogRoute, failed);
+    try {
+      await root().getByRole('button', {name: '刷新源代码管理', exact: true}).click();
+      await root().getByRole('alert').filter({hasText: '隔离测试清单暂不可读取'}).waitFor();
+      assert.ok(await root().locator('.source-control-repository').count() >= 2);
+      assert.equal(await row('未暂存').count(), 1);
+      await diff().getByText('sourceControlWorking = 34', {exact: false}).waitFor();
+    } finally { await page.unroute(catalogRoute, failed); }
+    await root().getByRole('button', {name: '刷新源代码管理', exact: true}).click();
+    await root().getByRole('alert').filter({hasText: '隔离测试清单暂不可读取'}).waitFor({state: 'hidden'});
+    await noOverflow();
+  });
+
+  await t.test('离开保留的源代码管理页面时悬浮信息层关闭', async () => {
+    await page.setViewportSize({width: 1440, height: 900});
+    await page.goto(workspaceUrl + '/code/explorer'); await page.locator('.code-explorer-stage').waitFor();
+    await page.getByRole('navigation', {name: '代码导航', exact: true}).getByRole('link', {name: '源代码管理', exact: true}).click();
+    await root().locator('.source-control-repository-copy').first().waitFor();
+    await root().locator('.source-control-browse-tabs').getByText('提交历史', {exact: true}).click();
+    await root().locator('.source-control-graph li').first().waitFor();
+    await root().getByRole('button', {name: '查看完整提交信息', exact: true}).hover();
+    const popup = page.getByRole('article', {name: '完整提交信息', exact: true}); await popup.waitFor(); await popup.hover();
+    await page.goBack(); await page.locator('.code-explorer-stage:visible').waitFor();
+    await popup.waitFor({state: 'hidden'});
+    assert.equal(await page.locator('.code-source-control-page').count(), 1, '源页面仍挂载，浮层由活动现场控制关闭');
+    await noOverflow();
+  });
+
+  await t.test('任务改动与提交保留原列表、提交详情、完整文件与返回现场', async () => {
+    await page.setViewportSize({width: 1440, height: 900}); await page.goto(workspaceUrl + '/tasks/browser-task');
+    const task = page.locator('#task-detail-main:visible');
+    await task.locator('[data-task-content=changes]').click();
+    const reader = task.getByRole('region', {name: '改动与提交工作台', exact: true}); await reader.waitFor();
+    await assertTaskIdentity();
+    const current = reader.locator('.task-changed-row').filter({has: page.locator('.task-changed-path[title="' + fixture.path + '"]')}).first();
+    await current.click(); await reader.getByRole('region', {name: '差异内容', exact: true}).getByText('sourceControlWorking = 34', {exact: false}).waitFor();
+    const commit = reader.locator('.task-rail-commit').filter({hasText: fixture.commitHash.slice(0, 8)}); await commit.waitFor(); await commit.click();
+    await reader.locator('.task-commit-details').getByText('Buildr-Task: browser-task', {exact: false}).waitFor();
+    await reader.locator('.task-rail-commit-files .task-changed-row').filter({has: page.locator('.task-changed-path[title="' + fixture.path + '"]')}).click();
+    await reader.getByRole('region', {name: '差异内容', exact: true}).getByText('explorerAnswer = 1', {exact: false}).waitFor();
+    await reader.getByRole('button', {name: '查看完整文件', exact: true}).click();
+    await page.locator('.repository-source-code').waitFor();
+    assert.equal(await page.locator('.repository-source-code code').evaluateAll((elements: HTMLElement[]) => elements.map(element => element.textContent).join('\n')), fixture.historyText);
+    await page.getByRole('button', {name: '返回任务', exact: true}).click(); await reader.waitFor();
+    await assertTaskIdentity();
+    assert.ok((await reader.getByRole('region', {name: '差异内容', exact: true}).innerText()).includes('explorerAnswer = 1'));
+    await noOverflow(); await capture(page, 'source-control-fixture-original-task-reader.png');
+  });
+
+  const linked = fixture.prepareWorktrees();
+  const expectedLocations = [...fixture.baselineWorktrees.flatMap((repository: any) => repository.locations), ...linked.map((worktree: any) => worktree.location)];
+  const worktrees = async () => {
+    const observed = await catalog();
+    return linked.map((item: any) => {
+      const repository = observed.repositories.find((repo: any) => repo.worktrees.some((worktree: any) => worktree.location === item.location));
+      assert.ok(repository, '真实 linked 工作树应被所属登记库发现');
+      const worktree = repository.worktrees.find((value: any) => value.location === item.location);
+      return {...item, repositoryId: repository.id, repositoryName: repository.name, worktreeId: worktree.worktreeId, observed: worktree};
+    });
+  };
+  const expanded = async (button: any) => { if (await button.getAttribute('aria-expanded') === 'false') await button.click(); };
+  const selectFile = async (worktree: any, area: string) => {
+    const group = checkoutGroup(worktree.worktreeId);
+    const repository = root().locator('.source-control-change-group').filter({has: page.locator('[data-change-worktree="' + worktree.worktreeId + '"]')});
+    await expanded(repository.locator('.source-control-change-heading').first());
+    await expanded(group.locator(':scope > button[aria-expanded]').first());
+    await expanded(group.locator('[data-change-area="' + area + '"] [data-area-toggle]'));
+    await fileRow(worktree.worktreeId, area, worktree.path).click();
+    const text = area === 'staged' ? worktree.indexText : worktree.workingText;
+    await diff().getByText(text.trim(), {exact: false}).waitFor();
+    assert.ok((await root().locator('.code-location-summary').innerText()).includes(worktree.branch));
+  };
+  const assertFullVersion = async (worktree: any, area: string, content: string, hash?: string) => {
+    const returned = page.waitForResponse((response: any) => { const url = new URL(response.url()); return url.pathname.endsWith('/code/source-file') && url.searchParams.get('worktreeId') === worktree.worktreeId && url.searchParams.get('filePath') === worktree.path && url.searchParams.get('area') === area; });
+    await root().getByRole('button', {name: '查看完整文件', exact: true}).click();
+    const response = await returned; assert.equal(response.status(), 200);
+    const body = await response.json(); assert.equal(body.source.worktreeId, worktree.worktreeId); assert.equal(body.source.location, worktree.location);
+    assert.equal(body.source.commitHash, hash || null); assert.equal(body.content, content);
+    await waitFull(content); await root().getByRole('button', {name: '返回差异', exact: true}).click();
+  };
+  const chooseOption = async (label: string, text: string) => {
+    const select = root().locator('.ant-select[aria-label="' + label + '"]');
+    await select.locator('.ant-select-selector').click();
+    const input = select.locator('input[role="combobox"]'); await select.locator('input[role="combobox"][aria-expanded="true"]').waitFor();
+    const controls = await input.getAttribute('aria-controls'); assert.ok(controls);
+    const dropdown = page.locator('.ant-select-dropdown').filter({has: page.locator('[id="' + controls + '"]')});
+    await dropdown.locator('.ant-select-item-option-content').filter({hasText: text}).first().click();
+    await page.keyboard.press('Escape');
+    await select.locator('input[role="combobox"][aria-expanded="false"]').waitFor();
+    await dropdown.waitFor({state: 'hidden'});
+  };
+
+  await t.test('同库全部真实工作树分组，同路径两层及全文保持各自版本', async () => {
+    await page.setViewportSize({width: 1440, height: 1000}); await open();
+    const values = await worktrees(), observed = await catalog();
+    const repository = observed.repositories.find((item: any) => item.id === values[0].repositoryId);
+    const primaryCount = fixture.baselineWorktrees.find((item: any) => item.location === fixture.location).locations.length + 2;
+    assert.equal(repository.worktreeCount, primaryCount); assert.equal(repository.worktrees.length, primaryCount);
+    assert.deepEqual(observed.repositories.flatMap((item: any) => item.worktrees.map((worktree: any) => worktree.location)).sort(), expectedLocations.toSorted(), '主线来源与本轮新增工作树全部保留，真实 Git 清单不因来源未登记为当前任务而遗漏');
+    assert.equal(repository.fileCount, repository.worktrees.reduce((total: number, worktree: any) => total + worktree.fileCount, 0), '同一路径在不同工作树独立计数');
+    const rendered = root().locator('[data-source-repository="' + repository.id + '"]');
+    for (const value of repository.worktrees) assert.equal(await rendered.locator('[data-source-worktree="' + value.worktreeId + '"]').count(), 1);
+    const main = {...fixture, repositoryId: repository.id, worktreeId: mainWorktreeId, branch: repository.worktrees.find((item: any) => item.worktreeId === mainWorktreeId).branch};
+    for (const value of [main, ...values]) {
+      await selectFile(value, 'staged'); await assertFullVersion(value, 'staged', value.indexText);
+      await selectFile(value, 'unstaged'); await assertFullVersion(value, 'unstaged', value.workingText);
+    }
+    await noOverflow(); await capture(page, 'source-control-fixture-all-worktrees.png');
+  });
+
+  await t.test('代码库、工作树、比较层折叠保留选择，同名跨库过滤与联合范围可恢复', async () => {
+    await page.setViewportSize({width: 1440, height: 1000}); await open();
+    const values = await worktrees(), alpha = values.find((item: any) => item.name === 'alpha'), peer = values.find((item: any) => item.name === 'peer');
+    await selectFile(alpha, 'unstaged');
+    const group = checkoutGroup(alpha.worktreeId), area = group.locator('[data-change-area="unstaged"]');
+    const repository = root().locator('.source-control-change-group').filter({has: page.locator('[data-change-worktree="' + alpha.worktreeId + '"]')});
+    for (const button of [area.locator('[data-area-toggle]'), group.locator(':scope > button[aria-expanded]').first(), repository.locator('.source-control-change-heading').first()]) {
+      await button.click(); assert.equal(await button.getAttribute('aria-expanded'), 'false');
+      assert.ok((await diff().innerText()).includes(alpha.workingText.trim()), '折叠分组不改变阅读现场');
+      await button.click(); assert.equal(await button.getAttribute('aria-expanded'), 'true');
+      assert.ok((await diff().innerText()).includes(alpha.workingText.trim()));
+    }
+    const catalogRepository = root().locator('[data-source-repository="' + alpha.repositoryId + '"]');
+    const catalogWorktree = catalogRepository.locator('[data-source-worktree="' + alpha.worktreeId + '"]');
+    for (const button of [catalogWorktree.locator('.source-control-fold'), catalogRepository.locator(':scope > .source-control-repository .source-control-fold')]) {
+      const initial = await button.getAttribute('aria-expanded');
+      await button.click(); assert.equal(await button.getAttribute('aria-expanded'), initial === 'true' ? 'false' : 'true');
+      assert.ok((await diff().innerText()).includes(alpha.workingText.trim()));
+      await button.click(); assert.equal(await button.getAttribute('aria-expanded'), initial);
+    }
+    await root().locator('.source-control-repository-tree-scroll [data-source-worktree]').last().scrollIntoViewIfNeeded();
+    const filter = root().locator('.source-control-worktree-filter'), filterBox = await filter.boundingBox(); assert.ok(filterBox);
+    assert.ok(filterBox.y >= 0 && filterBox.y + filterBox.height <= 1000, '滚到最后工作树时名称筛选仍在可见固定区域');
+    await chooseOption('筛选工作树名称', alpha.filterName);
+    assert.equal(await root().locator('[data-change-worktree]:visible').count(), 2);
+    assert.equal(await checkoutGroup(alpha.worktreeId).isVisible(), true); assert.equal(await checkoutGroup(peer.worktreeId).isVisible(), true);
+    await capture(page, 'source-control-fixture-same-name-two-repos.png');
+    const otherRepo = root().getByRole('checkbox', {name: '筛选代码库 ' + peer.repositoryName, exact: true}); await otherRepo.uncheck();
+    assert.equal(await root().locator('[data-change-worktree]:visible').count(), 1); assert.equal(await checkoutGroup(alpha.worktreeId).isVisible(), true);
+    await otherRepo.check();
+    await filter.hover(); await filter.locator('.ant-select-clear').click();
+    assert.equal(await root().locator('[data-change-worktree]:visible').count(), expectedLocations.length, '清除名字范围恢复两库全部真实工作树');
+    assert.ok((await diff().innerText()).includes(alpha.workingText.trim()));
+    const modes = root().locator('.source-control-browse-tabs');
+    assert.equal(await modes.getByRole('radio', {name: '未提交变更', exact: true}).isChecked(), true);
+    const activeStyle = await modes.locator('.ant-segmented-item-selected').evaluate((element: HTMLElement) => { const style = getComputedStyle(element); return [style.color, style.backgroundColor, style.fontWeight]; });
+    const inactiveStyle = await modes.locator('.ant-segmented-item:not(.ant-segmented-item-selected)').first().evaluate((element: HTMLElement) => { const style = getComputedStyle(element); return [style.color, style.backgroundColor, style.fontWeight]; });
+    assert.notDeepEqual(activeStyle, inactiveStyle, '模式的选中样式可区别');
+    await capture(page, 'source-control-fixture-name-filter-restored.png'); await noOverflow();
+  });
+
+  await t.test('跨工作树迟到读取隔离，固定历史与同名无尾注提交保持精确来源', async () => {
+    await page.setViewportSize({width: 1440, height: 1000}); await open();
+    const values = await worktrees(), alpha = values.find((item: any) => item.name === 'alpha'), beta = values.find((item: any) => item.name === 'beta'), peer = values.find((item: any) => item.name === 'peer');
+    await selectFile(beta, 'unstaged');
+    let release = () => {}; const gate = new Promise<void>(resolve => { release = resolve; });
+    const delayed = async (route: any) => { if (new URL(route.request().url()).searchParams.get('worktreeId') === alpha.worktreeId) await gate; try { await route.continue(); } catch { /* A new worktree may cancel the former transport. */ } };
+    await page.route('**/code/diff?**', delayed);
+    try {
+      const started = page.waitForRequest((request: any) => { const url = new URL(request.url()); return url.pathname.endsWith('/code/diff') && url.searchParams.get('worktreeId') === alpha.worktreeId; });
+      await fileRow(alpha.worktreeId, 'unstaged', alpha.path).click(); await started; await selectFile(beta, 'unstaged'); release();
+      await page.waitForTimeout(450); assert.ok((await diff().innerText()).includes(beta.workingText.trim()));
+      assert.ok(!(await diff().innerText()).includes(alpha.workingText.trim()));
+    } finally { release(); await page.unroute('**/code/diff?**', delayed); }
+    await root().locator('.source-control-browse-tabs').getByText('提交历史', {exact: true}).click();
+    const modes = root().locator('.source-control-browse-tabs'); assert.equal(await modes.getByRole('radio', {name: '提交历史', exact: true}).isChecked(), true);
+    for (const value of [alpha, peer]) {
+      await chooseOption('选择历史代码库', value.repositoryName); await chooseOption('选择历史工作树', value.filterName); await chooseOption('筛选历史分支', value.branch);
+      const commit = root().locator('.source-control-graph li').filter({hasText: value.commitHash.slice(0, 8)}); await commit.waitFor(); await commit.getByRole('button').click();
+      await root().getByRole('tab', {name: value.path, exact: true}).click(); await diff().getByText(value.historyText.trim(), {exact: false}).waitFor();
+      await assertFullVersion(value, 'commit', value.historyText, value.commitHash);
+      if (value.name === 'alpha') {
+        await root().getByRole('button', {name: '查看完整文件', exact: true}).click(); await waitFull(value.historyText);
+        const returned = page.waitForResponse((response: any) => { const url = new URL(response.url()); return url.pathname.endsWith('/code/file') && url.searchParams.get('checkoutId') === value.worktreeId && url.searchParams.get('filePath') === value.path; });
+        await root().getByRole('button', {name: '查看当前文件', exact: true}).click();
+        const response = await returned; assert.equal(response.status(), 200);
+        const current = await response.json(); assert.equal(current.source.checkoutId, value.worktreeId); assert.equal(current.source.location, value.location); assert.equal(current.source.commitHash, null); assert.equal(current.content, value.workingText);
+        const explorer = page.locator('.code-explorer-stage:visible'); await explorer.locator('.repository-source-code').getByText(value.workingText.trim(), {exact: true}).waitFor();
+        await explorer.getByRole('button', {name: '返回源代码管理', exact: true}).click(); await waitFull(value.historyText);
+        await root().getByRole('button', {name: '返回差异', exact: true}).click();
+      }
+      if (value.name === 'peer') {
+        await root().getByRole('button', {name: '查看完整提交信息', exact: true}).hover();
+        const popup = page.getByRole('article', {name: '完整提交信息', exact: true}); await popup.waitFor(); assert.match(await popup.innerText(), /未关联任务/);
+        assert.equal(await popup.getByRole('button', {name: '浏览器任务', exact: true}).count(), 0, '同名工作树不推导任务关联');
+      }
+    }
+    await capture(page, 'source-control-fixture-worktree-history-source.png'); await noOverflow();
+  });
+
+  await t.test('任务原改动阅读与源代码管理双向关联，真实工作树预选和返回保留现场', async () => {
+    const values = await worktrees(), alpha = values.find((item: any) => item.name === 'alpha');
+    await page.setViewportSize({width: 1440, height: 1000}); await page.goto(workspaceUrl + '/tasks/browser-task');
+    const task = page.locator('#task-detail-main:visible'); await task.locator('[data-task-content=changes]').click();
+    const reader = task.getByRole('region', {name: '改动与提交工作台', exact: true}); await reader.waitFor(); await assertTaskIdentity();
+    const current = reader.locator('.task-rail-body > section > .task-changed-list .task-changed-row').filter({has: page.locator('.task-changed-path[title="' + fixture.path + '"]')}).first();
+    await current.click(); await reader.getByRole('region', {name: '差异内容', exact: true}).getByText(alpha.workingText.trim(), {exact: false}).waitFor();
+    const selected = await reader.locator('.task-changed-list > .is-selected .task-changed-path').first().getAttribute('title');
+    const response = page.waitForResponse((returned: any) => { const url = new URL(returned.url()); return url.pathname.endsWith('/code/source-control') && url.searchParams.get('taskId') === 'browser-task'; });
+    await task.locator('[data-task-source-control="browser-task"]').click(); const observed = await (await response).json();
+    assert.ok(observed.selectedWorktrees.some((item: any) => item.repositoryId === alpha.repositoryId && item.worktreeId === alpha.worktreeId));
+    await checkoutGroup(alpha.worktreeId).waitFor(); assert.equal(await root().locator('[data-change-worktree]:visible').count(), 1, '精确任务范围来自已核对evidence');
+    await selectFile(alpha, 'unstaged');
+    await root().locator('.source-control-task-origin').getByRole('button', {name: '查看全部', exact: true}).click();
+    assert.equal(await root().locator('[data-change-worktree]:visible').count(), expectedLocations.length);
+    const refreshed = page.waitForResponse((returned: any) => { const url = new URL(returned.url()); return url.pathname.endsWith('/code/source-control') && url.searchParams.get('taskId') === 'browser-task'; });
+    const refreshButton = root().getByRole('button', {name: '刷新源代码管理', exact: true}); await refreshButton.click(); await refreshed;
+    await refreshButton.locator('.anticon-spin').waitFor({state: 'hidden'});
+    assert.equal(await root().locator('[data-change-worktree]:visible').count(), expectedLocations.length, '刷新不重放已消费的任务预选，保留用户清除范围');
+    await root().getByRole('button', {name: '返回任务', exact: true}).click(); await reader.waitFor(); await assertTaskIdentity();
+    assert.equal(await task.locator('[data-task-content=changes]').getAttribute('aria-selected'), 'true');
+    assert.equal(await reader.locator('.task-changed-list > .is-selected .task-changed-path').first().getAttribute('title'), selected);
+    assert.ok((await reader.getByRole('region', {name: '差异内容', exact: true}).innerText()).includes(alpha.workingText.trim()));
+    await noOverflow(); await capture(page, 'source-control-fixture-task-worktree-return.png');
+  });
+}

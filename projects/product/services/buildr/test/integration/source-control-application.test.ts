@@ -1,0 +1,191 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import crypto from 'node:crypto';
+import { execFileSync } from 'node:child_process';
+import { createCodeApplication } from '../../src/modules/code/application/code-application.ts';
+import { createCodeHttpContribution } from '../../src/modules/code/interfaces/http/code-http.ts';
+import { createCodeCliContributions } from '../../src/modules/code/interfaces/cli/code-cli.ts';
+import { CODE_HTTP_SCHEMAS, CODE_HTTP_VALIDATORS } from '../../src/modules/code/interfaces/http/code-http-contracts.ts';
+import { gitCheckoutReadId } from '../../src/infrastructure/git/checkout-read-identity.ts';
+import { CODE_LIMITS } from '../../src/modules/code/infrastructure/code-file-reader.ts';
+
+function fixture(t: test.TestContext, format = 'sha1') {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-source-control-')), root = path.join(base, 'repository');
+  fs.mkdirSync(root); t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  const git = (...args: string[]) => execFileSync('git', ['--no-optional-locks', '-C', root, ...args], { encoding: 'utf8', env: { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0' }, stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  git('init', '--initial-branch=main', '--object-format=' + format); git('config', 'user.name', 'Fixture Person'); git('config', 'user.email', 'fixture@example.com'); git('config', 'commit.gpgSign', 'false');
+  const write = (relative: string, content: string) => { fs.mkdirSync(path.dirname(path.join(root, relative)), { recursive: true }); fs.writeFileSync(path.join(root, relative), content); };
+  const commit = (message: string) => { git('add', '--', '.'); git('commit', '-m', message); return git('rev-parse', 'HEAD'); };
+  const tasks = new Map([['task-one', { taskId: 'task-one', title: '当前明确任务' }]]);
+  let evidence:{evidence:{repositories:Array<{sourceRepository:string;checkoutPath:string}>}}|null=null;
+  const catalog = { repositories: [{ id: 'repo-one', code: 'repo', name: 'Fixture Repository', source: { type: 'workspace', path: root } }], services: [{ id: 's1', code: 'one', repositoryId: 'repo-one' }, { id: 's2', code: 'two', repositoryId: 'repo-one' }], projects: [{ id: 'p-id', code: 'p', serviceIds: ['s1', 's2'] }] };
+  const app = createCodeApplication({ assetCatalog: () => catalog, resolveSourceRoot: (_root, source) => source.path,
+    readTaskScope: (_root, id) => { if (!tasks.has(id)) throw Error('missing task'); return { projects: ['p'], services: [] }; },
+    readTask: (_root, id) => { const task = tasks.get(id); if (!task) throw Error('missing task'); return task; }, readGitWorktreeEvidence: () => evidence });
+  const snapshot = () => ({ status: git('status', '--porcelain=v2', '-z'), head: (() => { try { return git('rev-parse', 'HEAD'); } catch { return ''; } })(), index: fs.existsSync(path.join(root, '.git/index')) ? crypto.createHash('sha256').update(fs.readFileSync(path.join(root, '.git/index'))).digest('hex') : '', refs: git('for-each-ref', '--format=%(refname) %(objectname)') });
+  return { base, root, git, write, commit, app, catalog, snapshot,setEvidence:(value:typeof evidence)=>{evidence=value;}, input: { repositoryId: 'repo-one' } };
+}
+const hasCode = (code: string) => (error: unknown) => (error as { code?: string }).code === code;
+function checkoutGit(checkout:string,...args:string[]){return execFileSync('git',['--no-optional-locks','-C',checkout,...args],{encoding:'utf8',stdio:['ignore','pipe','pipe']}).trim();}
+function checkoutSnapshot(checkout:string){return {status:checkoutGit(checkout,'status','--porcelain=v2','-z'),index:crypto.createHash('sha256').update(fs.readFileSync(checkoutGit(checkout,'rev-parse','--path-format=absolute','--git-path','index'))).digest('hex'),body:fs.readFileSync(path.join(checkout,'same.ts'),'utf8'),head:checkoutGit(checkout,'rev-parse','HEAD')};}
+
+test('catalog keeps shared-instance identity, both index/worktree layers, nullable upstream and no Git writes', async t => {
+  const f = fixture(t); f.write('a.ts', 'base\n'); f.commit('base'); f.write('a.ts', 'index\n'); f.git('add', '--', 'a.ts'); f.write('a.ts', 'working\n'); f.write('new.ts', 'new\n');
+  const before = f.snapshot(), catalog = f.app.sourceControl(f.root);
+  assert.equal(catalog.repositories.length, 1); const repository = catalog.repositories[0];
+  assert.equal(repository.fileCount, 2); assert.equal(repository.branch, 'main'); assert.equal(repository.ahead, null); assert.equal(repository.behind, null); assert.equal(repository.upstream, null);
+  assert.deepEqual(repository.changes.filter(file => file.path === 'a.ts').map(file => file.area).sort(), ['staged', 'unstaged']); assert.ok(repository.changes.every(file => file.preview === null));
+  const expectedRevision = repository.observedRevision!;
+  const staged = await f.app.diff(f.root, { ...f.input, area: 'staged', path: 'a.ts', expectedRevision });
+  const unstaged = await f.app.diff(f.root, { ...f.input, area: 'unstaged', path: 'a.ts', expectedRevision });
+  assert.match(staged.patch!, /-base\n\+index/); assert.match(unstaged.patch!, /-index\n\+working/);
+  const indexFile = await f.app.sourceFile(f.root, { ...f.input, area: 'staged', path: 'a.ts', expectedRevision });
+  const workFile = await f.app.sourceFile(f.root, { ...f.input, area: 'unstaged', path: 'a.ts', expectedRevision });
+  assert.equal(indexFile.content, 'index\n'); assert.equal(workFile.content, 'working\n'); assert.match(indexFile.revision, /^index:/); assert.match(indexFile.source.version, /已暂存版本/); assert.equal(indexFile.observedRevision, indexFile.revision);
+  assert.deepEqual(f.snapshot(), before);
+  f.write('a.ts', 'new working\n'); await assert.rejects(f.app.diff(f.root, { ...f.input, area: 'unstaged', path: 'a.ts', expectedRevision }), hasCode('code_source_changed'));
+  f.git('add', '--', 'a.ts'); await assert.rejects(f.app.sourceFile(f.root, { ...f.input, area: 'staged', path: 'a.ts', expectedRevision: indexFile.revision }), hasCode('code_file_changed'));
+});
+
+test('unborn repository and untracked file use actual new contents while unavailable instances remain local', async t => {
+  const f = fixture(t); f.write('first.ts', 'initial\n'); f.git('add', '--', 'first.ts'); f.write('new.ts', 'fresh\n');
+  f.catalog.repositories.push({ id: 'missing', code: 'missing', name: 'Missing', source: { type: 'workspace', path: path.join(f.base, 'missing') } });
+  const catalog = f.app.sourceControl(f.root); assert.equal(catalog.repositories.length, 2); assert.equal(catalog.repositories[0].head, null); assert.equal(catalog.repositories[0].fileCount, 2); assert.equal(catalog.repositories[1].fileCount, null); assert.equal(catalog.repositories[1].status, 'unavailable');
+  assert.match((await f.app.diff(f.root, { ...f.input, area: 'staged', path: 'first.ts' })).patch!, /\+initial/);
+  const untracked = await f.app.diff(f.root, { ...f.input, area: 'untracked', path: 'new.ts' }); assert.match(untracked.patch!, /\+fresh/); assert.equal(untracked.file.additions, 1);
+  assert.deepEqual(f.app.history(f.root, f.input).commits, []);
+});
+
+test('special filenames, renames, path/area rejection and external symlinks preserve index, refs and files', async t => {
+  const f = fixture(t), special = '中文 空格\t换行\n--name.ts'; f.write(special, 'before\n'); const hash = f.commit('special filename');
+  f.write(special, 'after\n'); const before = f.snapshot();
+  const current = await f.app.diff(f.root, { ...f.input, area: 'unstaged', path: special }); assert.match(current.patch!, /\+after/); assert.equal(current.file.path, special);
+  const history = f.app.commit(f.root, { ...f.input, commitHash: hash }); assert.equal(history.files[0].path, special);
+  const historicFile = await f.app.sourceFile(f.root, { ...f.input, area: 'commit', path: special, commitHash: hash }); assert.equal(historicFile.content, 'before\n');
+  for (const filePath of ['../secret', '/etc/passwd', '.git/config', 'dir/../a.ts']) await assert.rejects(f.app.sourceFile(f.root, { ...f.input, path: filePath }), hasCode('code_path_forbidden'));
+  for (const area of ['unstaged', 'staged', 'untracked'] as const) await assert.rejects(f.app.sourceFile(f.root, { ...f.input, path: special, area, commitHash: hash }), hasCode('code_area_commit_conflict'));
+  await assert.rejects(f.app.sourceFile(f.root, { repositoryId: 'foreign', path: special }), hasCode('code_repository_not_registered'));
+  fs.writeFileSync(path.join(f.base, 'outside'), 'private'); fs.symlinkSync(path.join(f.base, 'outside'), path.join(f.root, 'link'));
+  await assert.rejects(f.app.sourceFile(f.root, { ...f.input, path: 'link' }), hasCode('code_path_forbidden'));
+  fs.unlinkSync(path.join(f.root, 'link')); assert.deepEqual(f.snapshot(), before); assert.equal(fs.readFileSync(path.join(f.base, 'outside'), 'utf8'), 'private');
+  f.commit('before pure rename'); f.git('mv', '--', special, 'renamed.ts'); const renamed = f.app.sourceControl(f.root).repositories[0].changes.find(file => file.area === 'staged'); assert.equal(renamed?.previousPath, special);
+});
+
+test('branch history contains ancestors, parses actual task trailers, scopes search and rejects stale cursors', t => {
+  const f = fixture(t); f.write('a.ts', 'one\n'); const root = f.commit('first\n\nBuildr-Task: task-one');
+  f.write('a.ts', 'two\n'); const body = f.commit('second\n\nBody mentions Buildr-Task: task-one as example.');
+  f.write('a.ts', 'three\n'); const missing = f.commit('third\n\nBuildr-Task: missing-task');
+  f.write('a.ts', 'four\n'); const conflict = f.commit('fourth\n\nBuildr-Task: task-one\nBuildr-Task: other-task');
+  const result = f.app.history(f.root, { ...f.input, branch: 'main' }); assert.equal(result.commits.length, 4); assert.ok(result.commits.some(commit => commit.hash === root));
+  assert.equal(result.commits.find(commit => commit.hash === root)?.taskId, 'task-one'); assert.equal(result.commits.find(commit => commit.hash === root)?.taskTitle, '当前明确任务');
+  for (const hash of [body, missing, conflict]) assert.equal(result.commits.find(commit => commit.hash === hash)?.taskId, null);
+  assert.equal(f.app.history(f.root, { ...f.input, query: 'Fixture Person' }).commits.length, 4);
+  const first = f.app.history(f.root, { ...f.input, limit: 1 }); assert.ok(first.coverage.nextCursor);
+  const next = f.app.history(f.root, { ...f.input, limit: 1, cursor: first.coverage.nextCursor! }); assert.notEqual(next.commits[0].hash, first.commits[0].hash);
+  f.write('a.ts', 'five\n'); f.commit('new tip'); assert.throws(() => f.app.history(f.root, { ...f.input, cursor: first.coverage.nextCursor! }), hasCode('code_history_cursor_changed'));
+  assert.throws(() => f.app.history(f.root, { ...f.input, branch: '--all' }), hasCode('code_branch_missing'));
+});
+
+test('root and merge commits compare the actual empty tree and first parent in SHA-1 and SHA-256 repositories', async t => {
+  for (const format of ['sha1', 'sha256']) {
+    const f = fixture(t, format); f.write('base.ts', 'base\n'); const root = f.commit('root');
+    const first = f.app.commit(f.root, { ...f.input, commitHash: root }); assert.equal(first.baseHash, null); assert.equal(first.files[0].status, 'added');
+    assert.match((await f.app.diff(f.root, { ...f.input, commitHash: root, area: 'commit', path: 'base.ts' })).patch!, /\+base/);
+    f.git('branch', 'side'); f.write('main.ts', 'main\n'); const parent = f.commit('main');
+    f.git('checkout', 'side'); f.write('side.ts', 'side\n'); f.commit('side'); f.git('checkout', 'main'); f.git('merge', '--no-ff', 'side', '-m', 'merge'); const hash = f.git('rev-parse', 'HEAD');
+    const merged = f.app.commit(f.root, { ...f.input, commitHash: hash }); assert.equal(merged.baseHash, parent); assert.equal(merged.commit.parents.length, 2); assert.deepEqual(merged.files.map(file => file.path), ['side.ts']);
+    assert.match((await f.app.diff(f.root, { ...f.input, commitHash: hash, area: 'commit', path: 'side.ts' })).patch!, /\+side/);
+    f.write('side.ts', 'current\n'); assert.equal((await f.app.sourceFile(f.root, { ...f.input, commitHash: hash, area: 'commit', path: 'side.ts' })).content, 'side\n');
+  }
+});
+
+test('staged and historical paged full files preserve their actual object revisions', async t => {
+  const f = fixture(t); const body = 'a'.repeat(CODE_LIMITS.textBytes + 2048); f.write('large.txt', body); const hash = f.commit('large'); f.write('large.txt', 'b'.repeat(body.length)); f.git('add', '--', 'large.txt');
+  const before = f.snapshot(), index = await f.app.sourceFile(f.root, { ...f.input, path: 'large.txt', area: 'staged' });
+  assert.equal(index.page?.index, 0); assert.equal(index.content, 'b'.repeat(CODE_LIMITS.pageBytes));
+  const next = await f.app.sourceFile(f.root, { ...f.input, path: 'large.txt', area: 'staged', page: 1, expectedRevision: index.revision }); assert.equal(next.page?.index, 1); assert.equal(next.revision, index.revision);
+  const historical = await f.app.sourceFile(f.root, { ...f.input, path: 'large.txt', area: 'commit', commitHash: hash }); assert.equal(historical.content, 'a'.repeat(CODE_LIMITS.pageBytes));
+  const nextHistory = await f.app.sourceFile(f.root, { ...f.input, path: 'large.txt', area: 'commit', commitHash: hash, page: 1, expectedRevision: historical.revision }); assert.equal(nextHistory.revision, historical.revision);
+  assert.deepEqual(f.snapshot(), before);
+});
+
+test('conflicted files keep their identity and current full content without pretending to have a two-way index diff',async t=>{
+  const f=fixture(t);f.write('a.ts','base\n');f.commit('base');f.git('branch','side');f.write('a.ts','main\n');f.commit('main');f.git('checkout','side');f.write('a.ts','side\n');f.commit('side');f.git('checkout','main');assert.throws(()=>f.git('merge','side'));
+  const before=f.snapshot(),catalog=f.app.sourceControl(f.root),file=catalog.repositories[0].changes.find(file=>file.path==='a.ts');assert.equal(file?.status,'conflicted');assert.equal(file?.area,'unstaged');
+  const diff=await f.app.diff(f.root,{...f.input,path:'a.ts',area:'unstaged'});assert.equal(diff.patch,null);assert.equal(diff.file.status,'conflicted');assert.ok(diff.diagnostics.some(item=>item.code==='code_file_conflicted'));
+  assert.match((await f.app.sourceFile(f.root,{...f.input,path:'a.ts',area:'unstaged'})).content,/<<<<<<< HEAD/);
+  await assert.rejects(f.app.sourceFile(f.root,{...f.input,path:'a.ts',area:'staged'}),hasCode('code_index_file_missing'));assert.deepEqual(f.snapshot(),before);
+});
+
+test('HTTP contracts, bounded worker dispatch and CLI share all five source-control application operations', async t => {
+  const f = fixture(t); f.write('a.ts', 'base\n'); const hash = f.commit('base\n\nBuildr-Task: task-one'); f.write('a.ts', 'changed\n');
+  const http = createCodeHttpContribution(f.app); const cases = [
+    ['source-control', {}, 'sourceControl'], ['history', { repositoryId: 'repo-one' }, 'history'], ['commit', { repositoryId: 'repo-one', commitHash: hash }, 'commit'],
+    ['diff', { repositoryId: 'repo-one', filePath: 'a.ts', area: 'unstaged' }, 'diff'], ['source-file', { repositoryId: 'repo-one', filePath: 'a.ts', area: 'unstaged' }, 'sourceFile'],
+  ] as const;
+  for (const [operation, input, method] of cases) {
+    const response: any = await http.handle({ request: { method: 'GET' }, root: f.root, suffix: '/code/' + operation, searchParams: new URLSearchParams(input) });
+    assert.equal(response.status, 200); const checked = CODE_HTTP_VALIDATORS.validate(CODE_HTTP_SCHEMAS[method].$id, response.body); assert.equal(checked.valid, true, JSON.stringify(checked));
+    let dispatched = '';
+    await http.handle({ request: { method: 'GET' }, root: f.root, suffix: '/code/' + operation, searchParams: new URLSearchParams(input), submitTaskRead: async (name, _id, payload) => { dispatched = name; return f.app[method](f.root, JSON.parse(payload.input)); } });
+    assert.equal(dispatched, 'code-' + operation);
+    const cli = createCodeCliContributions(f.app).find(contribution => contribution.match({ domain: 'code', action: operation })); assert.ok(cli);
+    const cliFlags: Record<string,string> = {repositoryId:'--repository',filePath:'--path',commitHash:'--commit',area:'--area'};
+    let printed = ''; const originalWrite=process.stdout.write.bind(process.stdout);const capture = t.mock.method(process.stdout, 'write', (chunk: any,...rest:any[]) => { if(typeof chunk==='string'){printed += chunk; return true;}return (originalWrite as (...args:any[])=>boolean)(chunk,...rest); });
+    try { await cli.run(null, {argv:['node','buildr','code',operation,'--target',f.root,'--json',...Object.entries(input).flatMap(([key,value])=>[cliFlags[key],value])]}); }
+    finally { capture.mock.restore(); }
+    const cliBody = JSON.parse(printed); assert.equal(cliBody.observedRevision,response.body.observedRevision);
+  }
+  await assert.rejects(http.handle({ request: { method: 'GET' }, root: f.root, suffix: '/code/diff', searchParams: new URLSearchParams('repositoryId=repo-one&repositoryId=other&filePath=a.ts&area=unstaged') }), hasCode('code_query_invalid'));
+});
+
+test('all Git checkouts retain independent same-path index/worktree versions, sources, history and task preselection',async t=>{
+  const f=fixture(t);f.write('same.ts','root-base\n');const first=f.commit('root');
+  const a=path.join(f.base,'group-a','topic'),b=path.join(f.base,'group-b','topic');f.git('worktree','add','-b','topic-a',a);f.git('worktree','add','-b','topic-b',b);
+  for(const [directory,label]of [[f.root,'main'],[a,'a'],[b,'b']]){
+    if(directory!==f.root){fs.writeFileSync(path.join(directory,'same.ts'),label+'-base\n');checkoutGit(directory,'add','--','same.ts');checkoutGit(directory,'commit','-m',label+' base');}
+    fs.writeFileSync(path.join(directory,'same.ts'),label+'-index\n');checkoutGit(directory,'add','--','same.ts');fs.writeFileSync(path.join(directory,'same.ts'),label+'-working\n');fs.writeFileSync(path.join(directory,'new.txt'),label+'-new\n');
+  }
+  const before=[f.root,a,b].map(checkoutSnapshot);f.setEvidence({evidence:{repositories:[{sourceRepository:f.root,checkoutPath:a}]}});
+  const catalog=f.app.sourceControl(f.root,{taskId:'task-one'}),repository=catalog.repositories[0];assert.equal(repository.worktrees.length,3);assert.equal(repository.worktreeCount,3);assert.equal(repository.fileCount,6);assert.deepEqual(repository.worktreeCoverage,{limit:128,total:3,read:3,truncated:false});assert.equal(catalog.worktreeCoverage.total,3);
+  const find=(directory:string)=>repository.worktrees.find(worktree=>worktree.location===fs.realpathSync(directory))!;
+  assert.equal(find(f.root).isMain,true);assert.equal(find(f.root).isRegistered,true);assert.equal(find(a).name,find(b).name);assert.notEqual(find(a).worktreeId,find(b).worktreeId);assert.deepEqual(catalog.selectedWorktreeIds,[find(a).worktreeId]);assert.deepEqual(catalog.selectedWorktrees,[{repositoryId:'repo-one',worktreeId:find(a).worktreeId}]);
+  for(const [directory,label]of [[f.root,'main'],[a,'a'],[b,'b']]){
+    const checkout=find(directory),input={...f.input,worktreeId:checkout.worktreeId,path:'same.ts',expectedRevision:checkout.observedRevision!};assert.equal(checkout.fileCount,2);assert.equal(checkout.changes.filter(file=>file.path==='same.ts').length,2);assert.ok(checkout.changes.every(file=>file.worktreeId===checkout.worktreeId));
+    assert.equal(checkout.worktreeId,gitCheckoutReadId(directory));assert.equal(checkout.source!.checkoutId,checkout.worktreeId);
+    assert.equal(f.app.repositories(f.root).worktrees.find(member=>member.path===fs.realpathSync(directory))!.id,checkout.worktreeId);
+    const staged=await f.app.sourceFile(f.root,{...input,area:'staged'}),working=await f.app.sourceFile(f.root,{...input,area:'unstaged'});assert.equal(staged.content,label+'-index\n');assert.equal(working.content,label+'-working\n');assert.equal(staged.source.worktreeId,checkout.worktreeId);
+    assert.match((await f.app.diff(f.root,{...input,area:'staged'})).patch!,new RegExp('\\+'+label+'-index'));assert.match((await f.app.diff(f.root,{...input,area:'unstaged'})).patch!,new RegExp('\\+'+label+'-working'));assert.match((await f.app.diff(f.root,{...input,path:'new.txt',area:'untracked'})).patch!,new RegExp('\\+'+label+'-new'));
+    const explorerInput={...f.input,checkoutId:checkout.worktreeId,path:'same.ts'};const explorer=await f.app.file(f.root,explorerInput);assert.equal(explorer.content,label+'-working\n');assert.equal(explorer.source.checkoutId,working.source.worktreeId);assert.equal(explorer.source.location,working.source.location);assert.equal(f.app.directory(f.root,{...explorerInput,path:undefined}).source.checkoutId,checkout.worktreeId);assert.ok(f.app.search(f.root,{...explorerInput,query:label+'-working',mode:'content'}).matches.some(match=>match.path==='same.ts'));
+    assert.equal((await f.app.file(f.root,{...f.input,worktreeId:checkout.worktreeId,path:'same.ts'})).content,label+'-working\n');assert.equal(f.app.directory(f.root,{...f.input,worktreeId:checkout.worktreeId}).source.worktreeId,checkout.worktreeId);assert.ok(f.app.search(f.root,{...f.input,worktreeId:checkout.worktreeId,query:label+'-working',mode:'content'}).matches.some(match=>match.path==='same.ts'));
+  }
+  await assert.rejects(f.app.diff(f.root,{...f.input,worktreeId:find(b).worktreeId,path:'same.ts',area:'unstaged',expectedRevision:find(a).observedRevision!}),hasCode('code_source_changed'));
+  const branchHistory=f.app.history(f.root,{...f.input,worktreeId:find(a).worktreeId,branch:'topic-a'});assert.equal(branchHistory.source.worktreeId,find(a).worktreeId);assert.ok(branchHistory.commits.some(commit=>commit.hash===first));assert.ok(branchHistory.commits.every(commit=>commit.taskId===null));assert.ok(branchHistory.branches.find(branch=>branch.name==='topic-a')?.current);
+  const pinned=await f.app.sourceFile(f.root,{...f.input,worktreeId:find(b).worktreeId,path:'same.ts',area:'commit',commitHash:first});assert.equal(pinned.content,'root-base\n');assert.equal(pinned.source.worktreeId,find(b).worktreeId);
+  assert.equal((await f.app.file(f.root,{...f.input,path:'same.ts'})).content,'main-working\n');assert.equal((await f.app.file(f.root,{...f.input,path:'same.ts',taskId:'task-one'})).content,'a-working\n');
+  assert.equal(f.app.sourceControl(f.root,{taskId:'missing-task'}).repositories[0].worktrees.length,3);assert.deepEqual([f.root,a,b].map(checkoutSnapshot),before);
+});
+
+test('opaque worktree identities reject forged, removed, reused and foreign directories without inventing Git inventory',async t=>{
+  const f=fixture(t);f.write('same.ts','base\n');f.commit('base');const linked=path.join(f.base,'linked');f.git('worktree','add','-b','topic',linked);const worktree=f.app.sourceControl(f.root).repositories[0].worktrees.find(worktree=>!worktree.isMain)!;
+  fs.mkdirSync(path.join(f.root,'.worktrees','unregistered'),{recursive:true});fs.writeFileSync(path.join(f.root,'.worktrees','unregistered','same.ts'),'must not appear');assert.equal(f.app.sourceControl(f.root).repositories[0].worktrees.length,2);
+  const before=f.snapshot();await assert.rejects(f.app.sourceFile(f.root,{...f.input,worktreeId:'checkout-'+'0'.repeat(64),path:'same.ts'}),hasCode('code_worktree_not_registered'));assert.deepEqual(f.snapshot(),before);
+  await assert.rejects(f.app.sourceFile(f.root,{...f.input,worktreeId:worktree.worktreeId,taskId:'missing-task',path:'same.ts'}),/missing task/);
+  await assert.rejects(f.app.sourceFile(f.root,{...f.input,worktreeId:worktree.worktreeId,taskId:'../task',path:'same.ts'}),/Task ID/);
+  assert.equal((await f.app.sourceFile(f.root,{...f.input,worktreeId:worktree.worktreeId,taskId:'task-one',path:'same.ts'})).source.taskId,null);
+  f.git('worktree','remove',linked);await assert.rejects(f.app.sourceFile(f.root,{...f.input,worktreeId:worktree.worktreeId,path:'same.ts'}),hasCode('code_worktree_not_registered'));
+  f.git('worktree','add',linked,'topic');const replacement=f.app.sourceControl(f.root).repositories[0].worktrees.find(worktree=>!worktree.isMain)!;assert.notEqual(replacement.worktreeId,worktree.worktreeId);await assert.rejects(f.app.sourceFile(f.root,{...f.input,worktreeId:worktree.worktreeId,path:'same.ts'}),hasCode('code_worktree_not_registered'));
+  const displaced=linked+'-displaced';fs.renameSync(linked,displaced);fs.mkdirSync(linked);checkoutGit(linked,'init');fs.writeFileSync(path.join(linked,'same.ts'),'foreign');
+  const catalog=f.app.sourceControl(f.root),failed=catalog.repositories[0].worktrees.find(worktree=>!worktree.isMain)!;assert.equal(failed.status,'unavailable');assert.equal(failed.fileCount,null);assert.equal(catalog.repositories[0].status,'partial');assert.ok(failed.diagnostics.length);
+  await assert.rejects(f.app.sourceFile(f.root,{...f.input,worktreeId:replacement.worktreeId,path:'same.ts'}),hasCode('code_worktree_not_registered'));
+});
+
+test('retired task checkout gets an explicit registered-source fallback while missing Git checkout stays visible',async t=>{
+  const f=fixture(t);f.write('same.ts','base\n');f.commit('base');const linked=path.join(f.base,'topic');f.git('worktree','add','-b','topic',linked);f.setEvidence({evidence:{repositories:[{sourceRepository:f.root,checkoutPath:linked}]}});
+  const original=f.app.sourceControl(f.root,{taskId:'task-one'});assert.equal(original.selectedWorktreeIds.length,1);f.git('worktree','remove',linked);
+  const retired=f.app.sourceControl(f.root,{taskId:'task-one'});assert.equal(retired.repositories[0].worktrees.length,1);assert.deepEqual(retired.selectedWorktreeIds,[retired.repositories[0].worktrees[0].worktreeId]);assert.match(retired.scopeReason,/登记目录/);assert.ok(retired.diagnostics.some(diagnostic=>diagnostic.code==='code_task_location_unavailable'));
+  f.git('worktree','add',linked,'topic');fs.renameSync(linked,linked+'-moved');const missing=f.app.sourceControl(f.root);assert.equal(missing.repositories[0].worktreeCount,2);assert.equal(missing.repositories[0].worktrees.find(worktree=>!worktree.isMain)?.status,'unavailable');assert.equal(missing.repositories[0].fileCount,null);
+});

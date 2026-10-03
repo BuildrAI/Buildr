@@ -1,0 +1,5 @@
+.selectable-hover-card { max-width:calc(100vw - 24px); }
+.selectable-hover-trigger { display:inline-flex; align-items:center; min-width:0; max-width:100%; }
+.selectable-hover-card-content { width:min(440px,calc(100vw - 56px)); max-height:min(480px,calc(100vh - 96px)); overflow:auto; user-select:text; cursor:auto; color:var(--soft-ink); line-height:1.7; }
+.selectable-hover-card-content p { margin:0 0 8px; }
+.selectable-hover-card-content code { overflow-wrap:anywhere; }

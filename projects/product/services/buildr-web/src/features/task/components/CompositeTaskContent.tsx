@@ -11,6 +11,7 @@ import type { TaskDetailResponse } from '../../../../build/generated/task-dto';
 import type { ParentCoordinationResult } from './parentCoordination';
 import type { TaskBriefState } from '../hooks/useTaskArtifacts';
 import { CreatableResourceSelect } from '../../../components/CreatableResourceSelect';
+import { TaskTypeBadge } from '../../../components/TaskTypeBadge';
 import { taskApi } from '../api/task-api';
 import { CompositeTaskPlan } from './CompositeTaskPlan';
 import { formatDateTime, taskStatusLabel } from '../../../lib/taskLabels';
@@ -74,7 +75,7 @@ export function CompositeTaskContent({ task, choices, choose, refreshToken, coor
             if (!previews?.open(location.pathname, path)) navigate(path);
           }, onKeyDown: event => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); event.currentTarget.click(); } } })}
           columns={[
-            { title: '任务', key: 'task', render: (_value, child) => <div className="task-compact-copy"><div className="task-row-heading"><Link className="task-row-main" to={href(`/tasks/${encodeURIComponent(child.taskId)}${child.isParent ? '?taskType=composite' : ''}`)}><strong>{child.title}</strong></Link>{child.isParent && <span className="task-type-badge">组合任务</span>}</div><TaskGoalSummary goal={child.intent} /></div> },
+            { title: '任务', key: 'task', render: (_value, child) => <div className="task-compact-copy"><div className="task-row-heading"><Link className="task-row-main" to={href(`/tasks/${encodeURIComponent(child.taskId)}${child.isParent ? '?taskType=composite' : ''}`)}><strong>{child.title}</strong></Link><TaskTypeBadge isParent={child.isParent} /></div><TaskGoalSummary goal={child.intent} /></div> },
             { title: '状态', key: 'status', width: 88, render: (_value, child) => <span className={`lifecycle-badge ${child.status}`}>{taskStatusLabel(child.status)}</span> },
             ...(!terminal ? [{ title: '', key: 'unlink', width: 42, render: (_value: unknown, child: NonNullable<ParentCoordinationResult['children']>[number]) => <Button type="text" size="small" icon={<CloseOutlined />} disabled={saving} aria-label={`解除关联 ${child.title}`} onClick={event => { event.stopPropagation(); void associate(child.taskId, true); }} /> }] : []),
           ]}

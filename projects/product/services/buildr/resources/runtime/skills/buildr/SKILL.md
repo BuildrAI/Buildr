@@ -24,6 +24,7 @@ Agent 是 Buildr 功能的默认操作入口。在用户目标和已有授权内
 | 项目（Project）、服务（Service）、代码库实例（Repository Instance）、规则（Rule）、技能（Skill）、命令（Command）、组件（Component）或内置能力（Builtin）维护 | 按对象读取 [资产维护](references/asset-maintenance.md) 中对应小节；涉及组件（Component）成员时先核对整体所有权 |
 | 投射、发现或适配器（Adapter）问题 | 读取 [运行时维护](references/runtime.md)；只检查当前目标运行时（Runtime） |
 | 查看任务、测试或交付事实 | 下方专业入口；只读查看不创建记录，也不补造过去历史 |
+| 查看全部代码库改动、提交历史及对应文件 | [只读代码观察](references/code-observation.md)；按登记实例、比较层与真实版本查看，网页与命令行接口（CLI）共享应用 |
 | 授权开始或继续持久修改 | `task-triage` 分流并由 `task-manager` 在首次文件写入前登记或接续任务 |
 
 ## 专业入口

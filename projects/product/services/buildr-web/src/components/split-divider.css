@@ -4,6 +4,9 @@
 .split-divider:hover::before, .split-divider:focus-visible::before, .split-divider:active::before { background:var(--soft-primary); }
 .split-divider:hover::after, .split-divider:focus-visible::after, .split-divider:active::after { background:var(--soft-primary); }
 .split-divider:focus-visible { outline:2px solid var(--soft-primary); outline-offset:-2px; }
+.split-divider.is-horizontal { width:auto; height:9px; cursor:row-resize; }
+.split-divider.is-horizontal::before { inset:4px 0 auto; width:auto; height:1px; }
+.split-divider.is-horizontal::after { width:32px; height:3px; }
 @media(prefers-reduced-motion:reduce) { .split-divider::before, .split-divider::after { transition:none; } }
 
 .split-divider-header-marker { position:absolute; top:-31px; left:4px; width:1px; height:19px; background:var(--soft-line); pointer-events:none; }

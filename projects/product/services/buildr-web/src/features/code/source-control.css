@@ -1,0 +1,153 @@
+.source-control-workbench { display:flex; flex:1; min-width:0; min-height:0; height:100%; overflow:hidden; background:var(--soft-surface); }
+.source-control-sidebar { width:100%; height:100%; min-height:0; display:flex; flex-direction:column;  background:var(--soft-surface); }
+.source-control-title { height:43px; min-height:43px; display:flex; align-items:center; justify-content:space-between; padding:0 14px; background:var(--soft-sidebar); border-bottom:1px solid var(--soft-line); font-size:12px; }
+.source-control-section-title { display:flex; align-items:center; justify-content:space-between; padding:8px 13px 3px; font-size:12px; }
+.source-control-section-title span { color:var(--soft-muted); margin-left:5px; font-weight:400; }
+.source-control-section-title .ant-btn { font-size:12px; height:26px; }
+.source-control-repositories { display:flex; flex:1; flex-direction:column; min-height:0; overflow:hidden; }
+.source-control-repository { display:flex; align-items:center; gap:9px; padding:5px 14px; }
+.source-control-repository:hover,.source-control-repository.is-scoped { background:var(--ant-color-primary-bg,color-mix(in srgb,var(--soft-primary) 8%,var(--soft-surface))); }
+.source-control-repository .ant-checkbox-wrapper { flex:none; }
+.source-control-repository-copy { flex:1; min-width:0; border:0; text-align:left; padding:2px 0; background:transparent; color:inherit; font:inherit; cursor:pointer; }
+.source-control-repository-copy>span:first-child { display:flex; align-items:center; gap:7px; }
+.source-control-repository-copy strong { font-size:12px; font-weight:550; }
+.source-control-repository-copy small { color:var(--soft-muted); font-size:12px; padding:0 4px; border:1px solid var(--soft-line); border-radius:3px; margin-left:auto; }
+.source-control-repository-meta { display:flex; align-items:center; justify-content:space-between; gap:9px; margin-top:3px; font-size:12px; color:var(--soft-muted); }
+.source-control-repository-meta code { font:inherit; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.source-control-repository-meta>span { white-space:nowrap; }
+.source-control-repository-count { min-width:22px; height:24px; display:inline-flex; align-items:center; justify-content:center; border-radius:5px; background:var(--ant-color-primary-bg,color-mix(in srgb,var(--soft-primary) 8%,var(--soft-surface))); color:var(--soft-primary); font-size:12px; font-weight:600; }
+.source-control-repository-count.is-offline { background:var(--soft-development-bg); color:var(--soft-development-ink); }
+.source-control-catalog-note { margin:7px 14px 10px; color:var(--soft-muted); font-size:12px; line-height:1.7; }
+.source-control-browse-tabs { flex:none; padding:10px 12px; border-bottom:1px solid var(--soft-line); }
+.source-control-browse-tabs .ant-segmented { font-size:12px; }
+.source-control-list { flex:1; min-height:0; overflow:auto; }
+.source-control-change-group { border-bottom:1px solid var(--soft-line); padding-bottom:7px; }
+.source-control-change-heading { width:100%; display:flex; align-items:center; gap:8px; background:var(--soft-bg); border:0; padding:10px 13px; text-align:left; color:inherit; font:inherit; cursor:pointer; }
+.source-control-change-heading .anticon { font-size:12px; color:var(--soft-muted); }
+.source-control-change-heading strong { font-size:12px; font-weight:550; }
+.source-control-change-heading>span:last-child { margin-left:auto; color:var(--soft-muted); font-size:12px; }
+.source-control-change-area h3 { margin:8px 15px 2px; font-size:12px; color:var(--soft-muted); font-weight:500; }
+.source-control-change-area h3 span { margin-left:4px; }
+.source-control-change-area .task-changed-row { padding:7px 13px; gap:8px; }
+.source-control-change-area .task-changed-row-content strong { font-size:13px; }
+.source-control-change-area .task-changed-path { font-size:12px; }
+.source-control-change-area .task-changed-stats { font-size:12px; gap:5px; }
+.source-control-local-failure,.source-control-clean { margin:8px 15px; font-size:12px; color:var(--soft-muted); line-height:1.6; }
+.source-control-local-failure p { margin:0; }.source-control-local-failure .ant-btn { height:24px; font-size:12px; padding:0; }
+.source-control-clean .anticon { color:var(--soft-primary); margin-right:5px; }
+.source-control-list-note { margin:12px 14px; color:var(--soft-muted); font-size:12px; line-height:1.6; }
+.source-control-observed { display:flex; justify-content:space-between; flex:none; border-top:1px solid var(--soft-line); padding:9px 14px; font-size:12px; color:var(--soft-muted); background:var(--soft-sidebar); }
+.source-control-history-filter { display:flex; flex-direction:column; gap:7px; padding:10px 12px; }
+.source-control-history-filter .ant-select,.source-control-history-filter .ant-input-affix-wrapper { width:100%; font-size:12px; }
+.source-control-history-filter .ant-input { border:0; padding:0; font-size:12px; box-shadow:none; }
+.source-control-graph { list-style:none; margin:0; padding:0 0 0 8px; }
+.source-control-graph li { position:relative; }
+.source-control-graph li:not(:last-child)::after { content:''; position:absolute; width:1px; left:14px; top:23px; bottom:-14px; background:var(--soft-line); pointer-events:none; }
+.source-control-graph button { display:flex; width:100%; gap:11px; align-items:flex-start; border:0; background:transparent; color:inherit; font:inherit; text-align:left; padding:9px 13px 9px 10px; cursor:pointer; }
+.source-control-graph button:hover,.source-control-graph .is-selected button { background:var(--ant-color-primary-bg,color-mix(in srgb,var(--soft-primary) 8%,var(--soft-surface))); }
+.source-control-graph-dot { width:9px; height:9px; border:2px solid var(--soft-primary); border-radius:50%; flex:none; margin-top:5px; background:var(--soft-surface); position:relative; z-index:1; }
+.source-control-graph .is-selected .source-control-graph-dot { background:var(--soft-primary); }
+.source-control-graph-copy { min-width:0; flex:1; }
+.source-control-graph-copy>strong { display:block; font-size:14px; font-weight:500; line-height:1.6; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.source-control-graph-copy>span { display:flex; gap:7px; flex-wrap:wrap; font-size:12px; color:var(--soft-muted); margin-top:3px; }
+.source-control-graph-copy code { font-size:12px; }
+.source-control-graph-refs .ant-tag { margin:0; font-size:12px; line-height:19px; padding:0 4px; }
+.source-control-graph-refs small { color:var(--soft-primary); font-size:12px; }
+.source-control-reader { width:100%; height:100%; flex:1; min-width:0; min-height:0; display:flex; flex-direction:column; }
+.source-control-checkout { flex:none; min-height:43px; height:43px; padding:6px 14px; display:flex; align-items:center; gap:6px; border-bottom:1px solid var(--soft-line); }
+.source-control-checkout>div { display:flex; align-items:center; gap:9px; min-height:26px; }
+.source-control-checkout strong { font-size:12px; font-weight:550; }
+.source-control-checkout span { color:var(--soft-muted); font-size:12px; }
+.source-control-checkout code { font-size:12px; color:var(--soft-primary); }
+.source-control-checkout .ant-select { font-size:12px; min-width:95px; }
+.source-control-checkout>small { display:block; margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--soft-muted); font-size:12px; }
+.source-control-reader>.ant-alert { flex:none; margin:9px 14px; font-size:12px; }
+.source-control-diff { flex:1; min-height:0; }
+/* The candidate owns its repository and file navigation; reuse the existing diff pane without a second file rail. */
+.source-control-diff>.task-diff-reader>.task-diff-rail { display:none; }
+.source-control-diff>.task-diff-reader.is-narrow-layout { flex-direction:row; }
+.source-control-diff .task-diff-toolbar { min-height:60px; padding:12px 17px; }
+.source-control-diff .task-diff-toolbar strong { font-size:12px; }
+.source-control-diff .task-diff-pane { width:100%; }
+.source-control-diff .task-commits-demo-note { flex:none; font-size:12px; margin:0; padding:8px 17px; border-top:1px solid var(--soft-line); }
+.source-control-commit-files .ant-btn { font-size:12px; height:26px; }
+.source-control-task-origin { padding:9px 14px; background:var(--ant-color-primary-bg,color-mix(in srgb,var(--soft-primary) 8%,var(--soft-surface))); border-bottom:1px solid var(--soft-line); font-size:12px; }
+.source-control-task-origin span,.source-control-task-origin small { display:block; }.source-control-task-origin small { font-size:12px; color:var(--soft-muted); margin-top:3px; }
+.source-control-task-origin .ant-btn { font-size:12px; height:26px; padding:0; }
+.source-control-list-state,.source-control-reader-state { display:flex; flex-direction:column; align-items:center; justify-content:center; padding:25px 16px; gap:12px; color:var(--soft-muted); font-size:12px; }
+.source-control-reader-state { flex:1; }.source-control-reader-state .ant-alert { max-width:420px; }
+.source-control-full-file { display:flex; flex:1; min-height:0; flex-direction:column; }.source-control-full-file>header { display:flex; align-items:center; justify-content:space-between; padding:9px 16px; border-bottom:1px solid var(--soft-line); font-size:12px; }
+.source-control-full-file .repository-file-browser.global-reader { border:0; border-radius:0; flex:1; min-height:0; height:auto; }
+.source-control-full-file .repository-browser-context,.source-control-full-file .repository-browser-tree,.source-control-full-file .repository-tree-resize { display:none; }
+.source-control-full-file .repository-reader-content { max-height:none; }.source-control-full-file .repository-reader-toolbar { padding:12px 17px; }
+.source-control-diff { display:flex; flex-direction:column; }
+.source-control-diff>.task-diff-reader { flex:1; min-height:0; }
+.source-control-diff.is-history .task-diff-scope { display:none; }
+.source-control-history-version { display:flex; align-items:center; flex-wrap:wrap; gap:7px 12px; padding:8px 17px; border-bottom:1px solid var(--soft-line); background:var(--soft-bg); font-size:12px; }
+.source-control-history-version code { color:var(--soft-primary); overflow-wrap:anywhere; }
+.source-control-history-version span { color:var(--soft-muted); }
+
+.source-control-sidebar[hidden] { display:none; }
+.source-control-reader { position:relative; }
+.source-control-reading-toggle { position:absolute; top:13px; right:13px; z-index:2; background:var(--soft-surface,#fff); }
+.source-control-checkout>div { padding-right:100px; }
+.source-control-change-area .task-changed-row-content { display:flex; flex-direction:column; align-items:flex-start; gap:3px; overflow:hidden; min-width:0; }
+.source-control-change-area .task-changed-row-content strong { display:block; max-width:100%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.source-control-change-area .task-changed-path { max-width:100%; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+
+.source-control-columns { height:100%; }
+.source-control-stack { min-height:0; flex:1; }
+.source-control-browser { display:flex; flex-direction:column; height:100%; min-height:0; overflow:hidden; }
+.source-control-browser .source-control-list { min-height:0; flex:1; }
+.source-control-repositories { border:0; }
+.code-location-summary { max-width:calc(100% - 145px); height:30px; padding:0; text-align:left; }
+.code-location-summary > span { display:flex; align-items:center; gap:8px; min-width:0; }
+.code-location-summary strong { font-size:13px; overflow:hidden; text-overflow:ellipsis; }
+.code-location-summary code { color:var(--soft-primary); font-size:12px; }
+.code-location-summary span span { color:var(--soft-muted); }
+.source-control-commit-files { flex:none; min-height:36px; margin:0; border-bottom:1px solid var(--soft-line); }
+.source-control-commit-info h3 { margin:0 0 10px; font-size:14px; line-height:1.6; }
+.source-control-commit-info dl { display:grid; grid-template-columns:64px minmax(0,1fr); gap:5px 8px; margin:0 0 10px; font-size:12px; }
+.source-control-commit-info dt { color:var(--soft-muted); }
+.source-control-commit-info dd { margin:0; overflow-wrap:anywhere; }
+.source-control-commit-info pre { white-space:pre-wrap; overflow-wrap:anywhere; font:inherit; margin:12px 0; cursor:text; }
+.source-control-commit-info-refs { margin:8px 0; }
+.source-control-commit-info-task { margin:8px 0 12px; color:var(--soft-muted); font-size:12px; }
+.source-control-commit-info-task .ant-btn { padding:0; }
+
+.code-location-summary-content { display:flex; align-items:center; gap:8px; min-width:0; width:100%; }
+.code-location-summary-content strong,.code-location-summary-content>span { flex:none; }
+.code-location-summary-content code { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.source-control-checkout>.selectable-hover-trigger:first-child { flex:1; min-width:0; max-width:calc(100% - 130px); }
+.source-control-checkout .code-location-summary { max-width:100%; min-width:0; width:100%; }
+.source-control-graph .selectable-hover-trigger { display:block; width:100%; }
+.area-code .workspace-page:has(.code-source-control-page) { padding:0; max-width:none; }
+.code-source-control-page { display:flex; flex-direction:column; flex:1; min-width:0; min-height:0; height:100%; }
+.code-source-control-tab { min-height:43px; flex:none; }
+.source-control-read-status { display:flex; gap:8px; align-items:center; padding:8px 17px; flex:none; color:var(--soft-muted); font-size:12px; }
+.source-control-load-more { margin:0 14px 12px; }
+.source-control-worktree-filter { padding:4px 13px 8px; }
+.source-control-worktree-filter .ant-select { width:100%; }
+.source-control-repository { gap:7px; padding-left:9px; }
+.source-control-fold { border:0; background:transparent; color:var(--soft-muted); display:flex; align-items:center; justify-content:center; width:22px; height:28px; padding:0; flex:none; cursor:pointer; }
+.source-control-fold:hover { color:var(--soft-primary); background:var(--soft-bg); }
+.source-control-worktree { display:flex; align-items:center; gap:7px; padding:4px 14px 4px 28px; }
+.source-control-worktree.is-selected { background:var(--ant-color-primary-bg,color-mix(in srgb,var(--soft-primary) 8%,var(--soft-surface))); }
+.source-control-worktree-details { padding:0 15px 6px 57px; font-size:12px; color:var(--soft-muted); }
+.source-control-worktree-details code { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font:inherit; }
+.source-control-worktree-details small { display:block; font:inherit; }
+.source-control-change-worktree>.source-control-change-heading { padding-left:24px; background:var(--soft-surface); }
+.source-control-change-heading code { font-size:12px; color:var(--soft-muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.source-control-area-heading { width:100%; border:0; background:transparent; display:flex; align-items:center; gap:7px; text-align:left; padding:7px 13px 4px 35px; font:inherit; font-size:12px; color:var(--soft-muted); cursor:pointer; }
+.source-control-area-heading:hover { color:var(--soft-primary); }
+.source-control-change-area .task-changed-row { padding-left:35px; }
+.source-control-browse-tabs .ant-segmented { padding:2px; border:1px solid var(--soft-line); background:var(--soft-bg); color:var(--soft-muted); }
+.source-control-browse-tabs .ant-segmented-item-selected,.source-control-browse-tabs .ant-segmented-thumb { background:var(--soft-primary); color:var(--ant-color-white,#fff); font-weight:600; box-shadow:none; }
+.source-control-browse-tabs .ant-segmented-item-label { padding:3px 8px; line-height:25px; }
+.source-control-history-filter .ant-select { width:100%; }
+.source-control-outside-filter { padding:7px 14px; border-bottom:1px solid var(--soft-line); color:var(--soft-muted); font-size:12px; }
+
+.source-control-catalog-pane { display:flex; flex-direction:column; height:100%; min-height:0; overflow:hidden; }
+.source-control-tree-controls { flex:none; background:var(--soft-surface); border-bottom:1px solid var(--soft-line); }
+.source-control-repository-tree-scroll { flex:1; min-height:0; overflow:auto; overscroll-behavior:contain; }
+.source-control-catalog-pane>.source-control-task-origin { flex:0 1 auto; min-height:0; overflow:auto; }

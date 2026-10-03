@@ -351,6 +351,11 @@ export async function runLayoutJourney({ t, page, workspaceUrl, capture }: any) 
         await capture(page, `layout-task-changes-${width}.png`);
       }
       const detail = page.locator('#task-detail-main:visible');
+      // The narrow view can show its short preview before the complete diff's
+      // first-selection positioning finishes. Establish the manual baseline only
+      // after that positioning, so this case measures same-file refresh alone.
+      await page.waitForFunction(() => document.querySelector('.task-diff-reader')?.getAttribute('aria-busy') === 'false');
+      await firstChangeVisible();
       await detail.locator('.task-diff-body').evaluate((node: HTMLElement) => { node.scrollTop = 600; });
       const arrived = new Promise<void>(resolve => { requested = resolve; });
       gate = new Promise<void>(resolve => { release = resolve; });

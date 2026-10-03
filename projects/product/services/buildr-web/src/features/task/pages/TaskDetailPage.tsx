@@ -133,6 +133,10 @@ export function TaskDetailPage({ taskId: providedTaskId }: { taskId?: string } =
     const { taskBriefId: _briefIntent, ...returnState } = location.state || {};
     navigate(href('/code/explorer'),{state:{codeEntry:{taskId,taskTitle:record.title,file,from:{pathname:location.pathname,search:location.search,hash:location.hash,state:returnState}}}});
   };
+  const openSourceControl = () => {
+    const { taskBriefId: _briefIntent, ...returnState } = location.state || {};
+    navigate(href('/code/source-control'), {state: {sourceControlEntry: {nonce: crypto.randomUUID(), taskId, taskTitle: record.title, from: {pathname: location.pathname, search: location.search, hash: location.hash, state: returnState}}}});
+  };
   const terminal = !['todo', 'active'].includes(record.status);
   const documents = taskDocuments(artifacts.briefs, artifacts.materials.data);
   const continueWork = () => openAgentAction('task-continue', { taskId, title: record.title, intent: record.intent, status: record.status, projects: record.scope.projects, services: record.scope.services, result: record.result?.summary, progress: workContext.data?.context?.progress, nextStep: workContext.data?.context?.nextStep });
@@ -140,6 +144,7 @@ export function TaskDetailPage({ taskId: providedTaskId }: { taskId?: string } =
   const checklistTrigger = <Button id="task-checklist-toggle" size="small" type="text" icon={<UnorderedListOutlined />} aria-expanded={checklist.open} aria-controls="task-checklist-panel" onPointerEnter={event => checklist.enter('trigger', event.pointerType)} onPointerLeave={event => checklist.exit('trigger', event.pointerType)} onBlur={checklist.leave} onFocus={checklist.cancel} onKeyDown={event => { if (event.key === 'Escape' && checklist.open) { event.preventDefault(); event.stopPropagation(); checklist.close(); } }} onClick={checklist.toggle}>实施清单</Button>;
   const headerActions = <>
     <Button id="task-source-files" size="small" type="text" onClick={()=>openCode()}>查看源文件</Button>
+    <Button size="small" type="text" data-task-source-control={taskId} onClick={openSourceControl}>源代码管理</Button>
     <RefreshButton id="task-detail-refresh" label="刷新任务" size="small" loading={refreshing} onClick={() => void refresh()} />
     <Dropdown menu={{ items: [
       { key: 'continue', label: <span id="task-continue">{terminal ? '基于成果生成新任务指令' : '生成接续指令'}</span> },

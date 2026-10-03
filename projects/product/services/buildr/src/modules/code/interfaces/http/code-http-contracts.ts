@@ -1,20 +1,28 @@
 import { compileJsonSchemaCatalog } from '../../../../infrastructure/contracts/json-schema-validator.ts';
 const string = { type: 'string' }, text = { type: 'string', minLength: 1 };
 const closed = (properties: Record<string, unknown>, required = Object.keys(properties)) => ({ type: 'object', additionalProperties: false, properties, required });
-const checkoutId = { type:'string',pattern:'^checkout-[a-f0-9]{64}$' };
-const source = closed({ repositoryId: text, taskId: { type: ['string','null'] }, commitHash: { type: ['string','null'] }, checkoutId:{anyOf:[checkoutId,{type:'null'}]},worktreeGroupId:{type:['string','null']},location: text, version: text, kind: { enum: ['default','task','worktree','commit'] } });
-const diagnostic = closed({ code: text, message: text, repositoryId: { type: ['string','null'] } });
+const checkoutId={type:'string',pattern:'^checkout-[a-f0-9]{64}$'};
+const worktreeId=checkoutId;
+const source = closed({ repositoryId: text,checkoutId:{anyOf:[checkoutId,{type:'null'}]},worktreeGroupId:{type:['string','null']},worktreeId:{anyOf:[{type:'null'},worktreeId]}, taskId: { type: ['string','null'] }, commitHash: { type: ['string','null'] }, location: text, version: text, kind: { enum: ['default','worktree','task','commit'] } },['repositoryId','taskId','commitHash','checkoutId','worktreeGroupId','location','version','kind']);
+const diagnostic = closed({ code: text, message: text, repositoryId: { type: ['string','null'] },worktreeId:{anyOf:[{type:'null'},worktreeId]} },['code','message','repositoryId']);
 const entry = closed({ name: text, path: text, kind: { enum: ['directory','file','link'] }, ignored: { type: 'boolean' } });
 const schema = (title: string, properties: Record<string, unknown>) => ({ $schema: 'https://json-schema.org/draft/2020-12/schema', $id: 'https://schemas.buildr.ai/http/code/' + title, title, ...closed(properties) });
 const query=(title:string,properties:Record<string,unknown>,required:string[])=>({...schema(title,properties),required});
-const locationQuery={repositoryId:text,checkoutId,taskId:text,commitHash:{type:'string',pattern:'^(?:[a-f0-9]{40}|[a-f0-9]{64})$'}};
+const locationQuery={repositoryId:text,checkoutId,worktreeId,taskId:text,commitHash:{type:'string',pattern:'^(?:[a-f0-9]{40}|[a-f0-9]{64})$'}};
+const area = {enum:['unstaged','staged','untracked','commit']};
+const revision = {type:'string',minLength:1,maxLength:200};
 export const CODE_HTTP_REQUESTS=Object.freeze({
   repositories:query('CodeRepositoriesQuery',{taskId:text},[]),
   directory:query('CodeDirectoryQuery',{...locationQuery,filePath:string,showIgnored:{enum:['true','false']}},['repositoryId']),
   file:query('CodeFileQuery',{...locationQuery,filePath:text,page:{type:'string',pattern:'^(?:0|[1-9][0-9]*)$'},line:{type:'string',pattern:'^[1-9][0-9]*$'},matchQuery:{type:'string',minLength:1,maxLength:200},expectedRevision:{type:'string',minLength:1,maxLength:200}},['repositoryId','filePath']),
   search:query('CodeSearchQuery',{...locationQuery,query:{type:'string',minLength:1,maxLength:200},mode:{enum:['name','content']},showIgnored:{enum:['true','false']}},['repositoryId','query']),
+  sourceControl:query('CodeSourceControlQuery',{taskId:text},[]),
+  history:query('CodeHistoryQuery',{repositoryId:text,checkoutId,worktreeId,taskId:text,branch:{type:'string',minLength:1,maxLength:200},query:{type:'string',maxLength:200},limit:{type:'string',pattern:'^[1-9][0-9]*$'},cursor:{type:'string',maxLength:1000},expectedRevision:revision},['repositoryId']),
+  commit:query('CodeCommitQuery',{...locationQuery,expectedRevision:revision},['repositoryId','commitHash']),
+  diff:query('CodeDiffQuery',{...locationQuery,filePath:text,area,expectedRevision:revision},['repositoryId','filePath','area']),
+  sourceFile:query('CodeSourceFileQuery',{...locationQuery,filePath:text,area,page:{type:'string',pattern:'^(?:0|[1-9][0-9]*)$'},line:{type:'string',pattern:'^[1-9][0-9]*$'},matchQuery:{type:'string',minLength:1,maxLength:200},expectedRevision:revision},['repositoryId','filePath']),
 });
-export const CODE_HTTP_SCHEMAS = Object.freeze({
+const CODE_FILE_SCHEMAS = Object.freeze({
   repositories: schema('CodeRepositories', {
     repositories: { type: 'array', items: closed({ id: text, code: text, name: text, location: string, available: { type:'boolean' }, gitId:{type:['string','null']} }) },
     worktrees:{type:'array',items:closed({id:checkoutId,repositoryId:text,groupId:text,path:text,branch:{type:['string','null']},kind:{enum:['main','task','worktree']},taskId:{type:['string','null']},available:{type:'boolean'}})},
@@ -24,5 +32,19 @@ export const CODE_HTTP_SCHEMAS = Object.freeze({
   file: schema('CodeFile', { source, path: text, kind: {enum:['text','markdown','image','unsupported']}, content: string, mediaType: string, sizeBytes: {type:'integer'}, limitBytes: {type:'integer'}, truncated: {type:'boolean'}, digest: text, revision:text,page:{anyOf:[{type:'null'},closed({index:{type:'integer',minimum:0},total:{type:'integer',minimum:1},offset:{type:'integer',minimum:0},endOffset:{type:'integer',minimum:0},startLine:{type:'integer',minimum:1},endLine:{type:'integer',minimum:1},startsMidLine:{type:'boolean'},endsMidLine:{type:'boolean'},matchOffset:{type:'integer',minimum:0},matchEndOffset:{type:'integer',minimum:0}},['index','total','offset','endOffset','startLine','endLine','startsMidLine','endsMidLine'])]},observedAt:text, message:string }),
   search: schema('CodeSearch', { source, matches:{type:'array',maxItems:100,items:closed({path:text,line:{type:['integer','null']},excerpt:string,occurrences:{type:'array',maxItems:200,items:closed({line:{type:'integer',minimum:1},excerpt:string})}},['path','line','excerpt'])}, scannedFiles:{type:'integer'}, truncated:{type:'boolean'}, limit:{type:'integer'}, diagnostics:{type:'array',items:diagnostic}, observedAt:text }),
 });
-export const CODE_HTTP_OPERATIONS=Object.freeze(Object.entries(CODE_HTTP_SCHEMAS).map(([name,output])=>({id:'code.'+name,owner:'code',method:'GET',path:'/code/'+name,disposition:'migrated-json',responseKind:'json',requestSchemaId:CODE_HTTP_REQUESTS[name as keyof typeof CODE_HTTP_REQUESTS].$id,successSchemaId:output.$id,errorSchemaId:'https://schemas.buildr.ai/http/local-app/error/response/v1'})));
+const nullableText = {type:['string','null']}, nullableCount = {type:['integer','null'],minimum:0};
+const readMeta = {readAt:text,observedRevision:text,coverage:closed({limit:{type:'integer',minimum:0},truncated:{type:'boolean'},nextCursor:nullableText}),diagnostics:{type:'array',items:diagnostic}};
+const change = closed({repositoryId:text,worktreeId:{anyOf:[{type:'null'},worktreeId]},area,path:text,previousPath:nullableText,kind:{enum:['tracked','untracked']},status:{enum:['modified','untracked','added','deleted','renamed','conflicted']},additions:nullableCount,deletions:nullableCount,preview:nullableText,previewTruncated:{type:'boolean'}});
+const branch = closed({name:text,hash:text,current:{type:'boolean'},upstream:nullableText});
+const commitValue = closed({repositoryId:text,worktreeId:{anyOf:[{type:'null'},worktreeId]},hash:text,shortHash:text,subject:string,message:string,authorName:string,authorEmail:string,authoredAt:text,committedAt:text,parents:{type:'array',items:text},branches:{type:'array',items:text},tags:{type:'array',items:text},taskId:nullableText,taskTitle:nullableText,taskDiagnostic:nullableText});
+const worktree=closed({worktreeId,name:text,location:text,isMain:{type:'boolean'},isRegistered:{type:'boolean'},available:{type:'boolean'},source:{anyOf:[{type:'null'},source]},status:{enum:['complete','partial','unavailable']},branch:nullableText,head:nullableText,upstream:nullableText,ahead:nullableCount,behind:nullableCount,fileCount:nullableCount,changes:{type:'array',items:change},observedRevision:nullableText,readAt:text,coverage:closed({fileLimit:{type:'integer',minimum:0},truncated:{type:'boolean'}}),diagnostics:{type:'array',items:diagnostic}});
+export const CODE_HTTP_SCHEMAS=Object.freeze({...CODE_FILE_SCHEMAS,
+  sourceControl:schema('CodeSourceControl',{...readMeta,repositories:{type:'array',items:closed({id:text,code:text,name:text,location:string,available:{type:'boolean'},gitId:nullableText,source:{anyOf:[{type:'null'},source]},status:{enum:['complete','partial','unavailable']},branch:nullableText,head:nullableText,upstream:nullableText,ahead:nullableCount,behind:nullableCount,fileCount:nullableCount,changes:{type:'array',items:change},observedRevision:nullableText,diagnostics:{type:'array',items:diagnostic},worktrees:{type:'array',items:worktree},worktreeCount:nullableCount,worktreeCoverage:closed({limit:{type:'integer',minimum:0},total:nullableCount,read:{type:'integer',minimum:0},truncated:{type:'boolean'}})})},selectedRepositoryIds:{type:'array',items:text},selectedWorktreeIds:{type:'array',items:worktreeId},selectedWorktrees:{type:'array',items:closed({repositoryId:text,worktreeId})},worktreeCoverage:closed({limit:{type:'integer',minimum:0},total:nullableCount,read:{type:'integer',minimum:0},truncated:{type:'boolean'}}),scopeReason:string}),
+  history:schema('CodeHistory',{...readMeta,source,branches:{type:'array',items:branch},commits:{type:'array',items:commitValue}}),
+  commit:schema('CodeCommit',{...readMeta,source,commit:commitValue,baseHash:nullableText,files:{type:'array',items:change}}),
+  diff:schema('CodeDiff',{...readMeta,source,area,file:change,patch:nullableText,binary:{type:'boolean'},baseHash:nullableText}),
+  sourceFile:schema('CodeSourceFile',{...CODE_FILE_SCHEMAS.file.properties,...readMeta}),
+});
+export const CODE_HTTP_PATHS=Object.freeze({repositories:'repositories',directory:'directory',file:'file',search:'search',sourceControl:'source-control',history:'history',commit:'commit',diff:'diff',sourceFile:'source-file'});
+export const CODE_HTTP_OPERATIONS=Object.freeze(Object.entries(CODE_HTTP_SCHEMAS).map(([name,output])=>({id:'code.'+name,owner:'code',method:'GET',path:'/code/'+CODE_HTTP_PATHS[name as keyof typeof CODE_HTTP_PATHS],disposition:'migrated-json',responseKind:'json',requestSchemaId:CODE_HTTP_REQUESTS[name as keyof typeof CODE_HTTP_REQUESTS].$id,successSchemaId:output.$id,errorSchemaId:'https://schemas.buildr.ai/http/local-app/error/response/v1'})));
 export const CODE_HTTP_VALIDATORS = compileJsonSchemaCatalog([...Object.values(CODE_HTTP_SCHEMAS),...Object.values(CODE_HTTP_REQUESTS)]);

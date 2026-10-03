@@ -1,5 +1,11 @@
 import { api } from '../../../api';
-import type { CodeRepositoriesRepositories, CodeDirectoryDirectory, CodeFileFile, CodeSearchSearch } from '../../../../build/generated/code-http-dto';
+import type { CodeRepositoriesRepositories, CodeDirectoryDirectory, CodeFileFile, CodeSearchSearch, CodeSourceControlSourceControl, CodeHistoryHistory, CodeCommitCommit, CodeDiffDiff, CodeSourceFileSourceFile } from '../../../../build/generated/code-http-dto';
+export type CodeSourceControlInput = { repositoryId?: string; worktreeId?: string; taskId?: string; commitHash?: string; path?: string; area?: 'unstaged' | 'staged' | 'untracked' | 'commit'; branch?: string; query?: string; limit?: number; cursor?: string; expectedRevision?: string; page?: number; line?: number; matchQuery?: string };
+export type CodeSourceControlResponse = CodeSourceControlSourceControl;
+export type CodeHistoryResponse = CodeHistoryHistory;
+export type CodeCommitResponse = CodeCommitCommit;
+export type CodeDiffResponse = CodeDiffDiff;
+export type CodeSourceFileResponse = CodeSourceFileSourceFile;
 export type CodeCatalog = CodeRepositoriesRepositories;
 export type CodeDirectory = CodeDirectoryDirectory;
 export type CodeFile = CodeFileFile;
@@ -16,4 +22,9 @@ export const codeApi = {
   directory:(id:string,input:CodeReadInput,signal?:AbortSignal)=>request<CodeDirectory>(id,'directory',input,signal),
   file:(id:string,input:CodeReadInput,signal?:AbortSignal)=>request<CodeFile>(id,'file',input,signal),
   search:(id:string,input:CodeReadInput,signal?:AbortSignal)=>request<CodeSearch>(id,'search',input,signal),
+  sourceControl:(id:string,input:CodeSourceControlInput={},signal?:AbortSignal)=>request<CodeSourceControlResponse>(id,'source-control',input,signal),
+  history:(id:string,input:CodeSourceControlInput,signal?:AbortSignal)=>request<CodeHistoryResponse>(id,'history',input,signal),
+  commit:(id:string,input:CodeSourceControlInput,signal?:AbortSignal)=>request<CodeCommitResponse>(id,'commit',input,signal),
+  diff:(id:string,input:CodeSourceControlInput,signal?:AbortSignal)=>request<CodeDiffResponse>(id,'diff',input,signal),
+  sourceFile:(id:string,input:CodeSourceControlInput,signal?:AbortSignal)=>request<CodeSourceFileResponse>(id,'source-file',input,signal),
 };

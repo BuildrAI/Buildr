@@ -249,7 +249,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     id: 'code',
     requires: [WORKSPACE_APPLICATION, WORKSPACE_QUERY, TASK_QUERY_APPLICATION, TASK_WORKTREE_PROVIDER],
     provides: ['code.application'],
-    contributions: {cli:['code repositories','code directory','code file','code search'],http:['code.files.http'],diagnostics:[]},
+    contributions: {cli:['code repositories','code directory','code file','code search','code source-control','code history','code commit','code diff','code source-file'],http:['code.files.http'],diagnostics:[]},
     lifecycle: 'none',
   }, {
     id: 'project-verification',
@@ -331,7 +331,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     'worktree create', 'worktree cleanup', 'worktree inspect',
     'task commits', 'task changed-files',
     'task materials inspect', 'task materials record', 'task materials write', 'task brief migrate',
-    'code repositories', 'code directory', 'code file', 'code search',
+    'code repositories', 'code directory', 'code file', 'code search', 'code source-control', 'code history', 'code commit', 'code diff', 'code source-file',
     'project verification inspect', 'project verification validate', 'project verification update',
     'task review inspect', 'task review record',
     'task verification inspect', 'task verification record',

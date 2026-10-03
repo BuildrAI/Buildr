@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { codeApi, type CodeCatalog, type CodeDirectory, type CodeFile, type CodeLocation, type CodeSearch } from '../api/code-api';
-import { codeBrowserKey, codeCheckoutKey, codeFileKey, codeLocationKey, type CodeFileTab, type CodeTaskEntry } from '../code-navigation';
+import { codeBrowserKey, codeCheckoutKey, codeFileKey, codeLocationKey, canonicalCodeLocation, type CodeFileTab, type CodeTaskEntry } from '../code-navigation';
 import { codeFilterMembers, codeFilterOptions, retainCodeSelections, selectCodeWorktreeGroup } from '../code-filters';
 import { repositorySearchQuery } from '../../workspace/components/repository-search-query';
 const failure=(error:unknown)=>error instanceof Error?error.message:'当前内容不可读取。';
@@ -77,6 +77,7 @@ export function useCodeExplorer(workspaceId:string) {
     finally{if(isCurrent())setLoading(previous=>previous.filter(key=>key!==tab.key));}
   },[workspaceId,run]);
   const open=useCallback((source:CodeLocation,path:string,line?:number,force=false,matchQuery?:string)=>{
+    source=canonicalCodeLocation(source);
     const tab={...source,path,line,matchQuery,focusRequest:line?++focusSequence.current:undefined,key:codeFileKey(source,path)};
     setLocations(previous=>codeLocationKey(previous[codeCheckoutKey(source)]||{repositoryId:source.repositoryId,checkoutId:source.checkoutId})===codeLocationKey(source)?previous:{...previous,[codeCheckoutKey(source)]:source});
     setTabs(previous=>{const found=previous.find(t=>t.key===tab.key);return found?previous.map(t=>t.key===tab.key?tab:t):[...previous,tab];});
@@ -91,7 +92,7 @@ export function useCodeExplorer(workspaceId:string) {
       if(catalogRequest===catalogSequence.current){latestCatalog.current=value;setCatalog(value);}
       setScope(value.selectedRepositoryIds);setWorktreeScope(value.selectedWorktreeGroupIds[0]);setOrigin(value.scopeReason);
       if(next.file){
-        const candidates=value.repositories.filter(r=>r.gitId===next.file!.gitRepositoryId);
+        const candidates=value.repositories.filter(r=>next.file!.repositoryId?r.id===next.file!.repositoryId:r.gitId===next.file!.gitRepositoryId);
         const scoped=candidates.filter(r=>value.selectedRepositoryIds.includes(r.id));const resolved=scoped.length===1?scoped:candidates;
         if(resolved.length!==1){setCatalogError('任务文件的代码库身份无法唯一确定，请从目录选择代码库。');return;}
         const repositoryId=resolved[0].id;

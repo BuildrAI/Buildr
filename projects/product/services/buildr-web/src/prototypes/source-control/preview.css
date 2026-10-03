@@ -1,0 +1,22 @@
+.source-control-preview { height:100vh; min-height:0; }
+.source-control-preview #app-view { min-height:0; overflow:hidden; }
+.scm-page-shell { height:100%; display:flex; flex-direction:column; }
+.scm-object-tabs { height:43px; flex:none; display:flex; align-items:stretch; border-bottom:1px solid var(--soft-line); justify-content:space-between; }
+.scm-object-tabs .object-tab-strip { min-width:0; flex:1; }
+.scm-object-tabs > .ant-btn { align-self:center; margin-inline:8px; }
+.scm-context-label { align-self:center; color:var(--soft-muted); font-size:12px; padding:0 16px; border-left:1px solid var(--soft-line); }
+.scm-task-demo { overflow:auto; height:100%; }
+.scm-task-demo .task-detail-page { max-width:1200px; margin:auto; padding:24px 32px; }
+.scm-task-copy { padding:26px 0; }
+.scm-task-copy h2 { font-size:18px; }
+.scm-task-copy p { max-width:800px; color:var(--soft-muted); line-height:1.8; }
+.scm-child-row { padding:12px 0; border-bottom:1px solid var(--soft-line); }
+.scm-workbench-demo { height:100%; overflow:auto; }
+.scm-workbench-demo .workbench-task-title + .task-type-badge { margin-left:8px; }
+.scm-recent-title { font-weight:600; margin-top:20px; }
+@media(max-width:800px) { .source-control-preview .topbar-actions > .ant-tag,.source-control-preview .topbar-actions > .ant-btn:not(:last-child) { display:none; } .source-control-preview .topbar-actions > .ant-btn:last-child { display:none; } }
+.scm-page-shell[hidden] { display:none; }
+.scm-task-demo[hidden], .scm-task-changes[hidden], .scm-task-copy[hidden] { display:none; }
+.scm-task-demo .task-detail-page.is-wide { max-width:none; }
+.scm-task-full-file .scm-object-tabs { align-items:center; }
+.scm-task-full-file > .repository-file-browser { flex:1; min-height:0; }

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, App, Button, Empty, Select, Space, Spin, Tag } from 'antd';
-import { FolderOpenOutlined, InfoCircleOutlined } from '@ant-design/icons';
+import { Alert, App, Button, Empty, Select, Spin, Tag } from 'antd';
+import { InfoCircleOutlined } from '@ant-design/icons';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAppShell } from '../../../app/AppShellContext';
 import { ReadingToggle } from '../../../components/ReadingToggle';
@@ -9,8 +9,9 @@ import { RepositoryFileBrowser, type RepositoryPreviewFile, type RepositoryTreeS
 import { CodeTreePane } from '../components/CodeTreePane';
 import { useCodeExplorer } from '../hooks/useCodeExplorer';
 import { codeApi } from '../api/code-api';
-import { codeBrowserKey, codeLocationKey, relativeCodeLink, type CodeTaskEntry } from '../code-navigation';
+import { codeBrowserKey, codeLocationKey, isTaskReturnPath, relativeCodeLink, type CodeTaskEntry } from '../code-navigation';
 import { codeWorktreeGroupScope } from '../code-filters';
+import { workspaceHref } from '../../../lib/labels';
 import '../code-explorer.css';
 
 export function CodeExplorerPage() {
@@ -75,7 +76,7 @@ export function CodeExplorerPage() {
   });
   const repositoryOptions=[...state.filterOptions.repositories.map(repo=>({value:repo.id,label:repo.name})),...state.scope.filter(id=>!state.filterOptions.repositories.some(repo=>repo.id===id)).map(id=>({value:id,label:state.catalog?(state.catalog.repositories.find(repo=>repo.id===id)?.name||id)+'（不在所选工作树中）':'正在读取代码库…',disabled:true}))];
   const groupOptions=[...state.filterOptions.groups.map(group=>({value:group.id,label:group.name})),...(state.worktreeScope&&!state.filterOptions.groups.some(group=>group.id===state.worktreeScope)?[state.worktreeScope]:[]).map(id=>({value:id,label:id==='main'?'主目录':state.catalog?(state.catalog.worktreeGroups.find(group=>group.id===id)?.name||id)+'（不在所选代码库中）':'正在读取工作树…',disabled:true}))];
-  const taskFallback=Boolean(state.entry&&state.catalog&&!state.catalog.worktreeGroups.some(group=>group.kind==='task'&&group.taskId===state.entry!.taskId));
+  const taskFallback=Boolean(state.entry?.taskId&&state.catalog&&!state.catalog.worktreeGroups.some(group=>group.kind==='task'&&group.taskId===state.entry!.taskId));
   const inScope=Boolean(active&&state.sources.some(item=>codeLocationKey(item.source)===codeLocationKey(active)));
   const includeActive=()=>{
     if(!active)return;const member=state.catalog?.worktrees.find(item=>item.id===active.checkoutId);
@@ -93,7 +94,7 @@ export function CodeExplorerPage() {
     <div className="code-file-stage">
       <div className="code-file-tabstrip">
         <ObjectTabStrip className="code-open-files" label="打开的文件" tabs={fileTabs} active={active?.key} onActivate={key=>{const tab=state.tabs.find(item=>item.key===key);if(tab)state.activate(tab);}} onClose={state.close} />
-        {state.entry&&<Button size="small" type="text" onClick={returnTask}>返回任务</Button>}
+        {state.entry&&<Button size="small" type="text" onClick={returnTask}>{isTaskReturnPath(state.entry.from.pathname,workspaceHref(workspaceId,'/tasks')) ? '返回任务' : '返回源代码管理'}</Button>}
         <ReadingToggle className="code-reading-toggle" expanded={treeHidden} onToggle={()=>setTreeHidden(value=>!value)} />
       </div>
       {state.catalogError&&<Alert type="warning" message={state.catalogError} action={<Button onClick={()=>void state.refresh().catch(error=>message.error(String(error)))}>重试</Button>} />}
@@ -115,6 +116,4 @@ export function CodeExplorerPage() {
     </div>
   </div>;
 }
-export function CodeSourceControlPage() {
-  return <div className="code-scm-pending"><FolderOpenOutlined /><h2>源代码管理</h2><p>这里将提供代码库的改动、提交记录与历史详情。</p><Space><Tag>下一子任务</Tag><span>资源管理器已可使用</span></Space></div>;
-}
+export { CodeSourceControlPage } from './CodeSourceControlPage';
