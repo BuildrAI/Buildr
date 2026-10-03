@@ -24,6 +24,8 @@
 .task-changed-row-content strong { font-size:12.5px; font-weight:550; overflow-wrap:anywhere; }
 .task-changed-path { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11px; color:var(--soft-muted); }
 .task-changed-path .anticon { font-size:9px; }
+.task-changed-path-tooltip.ant-tooltip { max-width:min(720px,calc(100vw - 24px)); pointer-events:none; }
+.task-changed-path-tooltip .ant-tooltip-inner { white-space:normal; overflow-wrap:anywhere; pointer-events:none; }
 .task-changed-rename { font-style:normal; margin-left:7px; white-space:nowrap; }
 .task-changed-rename .anticon { margin-right:4px; }
 .task-changed-repo-head > * { flex:none; }

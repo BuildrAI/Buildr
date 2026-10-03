@@ -2,14 +2,14 @@ import { Button, Spin, Tooltip } from 'antd';
 import { BranchesOutlined, DownOutlined, NodeIndexOutlined, ProjectOutlined, RightOutlined } from '@ant-design/icons';
 import { ChangedFileList, changedFileKey } from '../../task/components/TaskChangedFiles';
 import { useSourceControlRead } from '../hooks/useSourceControlRead';
-import { sourceControlCommit, type SourceControlChange, type SourceControlCommit, type SourceControlReader } from '../source-control-model';
+import { sourceControlCommit, sourceControlFileTooltip, sourceControlFilePathHints, type SourceControlChange, type SourceControlCommit, type SourceControlReader } from '../source-control-model';
 import { CommitInfoPopover } from './CommitInfoPopover';
 import { layerFile } from './SourceControlRepositories';
 
 type Props = {
   expanded: Record<string, boolean>; onToggle(key: string, defaultExpanded?: boolean): void;
   commits: SourceControlCommit[]; selectedHash?: string; selectedFileKey: string | null;
-  reader: SourceControlReader; readKey: string; version: string; repositoryId: string; worktreeId: string;
+  reader: SourceControlReader; readKey: string; version: string; repositoryId: string; worktreeId: string; worktreeLocation: string;
   onOpenTask(taskId: string): void; onSelect(commit: SourceControlCommit): void; onPick(commit: SourceControlCommit, file: SourceControlChange, baseHash: string | null): void;
 };
 
@@ -18,13 +18,14 @@ export function SourceControlHistory(props: Props) {
   return <ol className="source-control-graph">{props.commits.map(commit => <CommitRow key={commit.hash} {...props} commit={commit} />)}</ol>;
 }
 
-function CommitRow({commit, expanded: expansion, onToggle, selectedHash, selectedFileKey, reader, readKey, version, repositoryId, worktreeId, onOpenTask, onSelect, onPick}: Props & {commit: SourceControlCommit}) {
+function CommitRow({commit, expanded: expansion, onToggle, selectedHash, selectedFileKey, reader, readKey, version, repositoryId, worktreeId, worktreeLocation, onOpenTask, onSelect, onPick}: Props & {commit: SourceControlCommit}) {
   const identity = 'history:' + JSON.stringify([repositoryId, worktreeId, commit.hash]);
   const expanded = expansion[identity] ?? false;
   const input = {repositoryId, worktreeId, commitHash: commit.hash};
   const read = useSourceControlRead(JSON.stringify([readKey, input]), input, reader.commit, expanded, version);
   const detail = read.data ? sourceControlCommit(read.data.commit, read.data.files) : commit;
   const files = detail.files.map(file => layerFile(file, commit.hash));
+  const pathHints = sourceControlFilePathHints(files);
   return <li className={commit.hash === selectedHash ? 'is-selected' : ''} data-source-commit={commit.hash}>
     <div className="source-control-history-row"><CommitInfoPopover sideBoundary=".source-control-sidebar" commit={detail} onOpenTask={onOpenTask}><button type="button" className="source-control-commit-toggle" aria-label={'查看提交 ' + commit.subject} aria-expanded={expanded} onClick={() => { if (!expanded || selectedHash !== commit.hash) onSelect(detail); onToggle(identity, false); }}>
       <span className="source-control-commit-icon"><NodeIndexOutlined /></span><span className="source-control-graph-copy"><strong>{commit.subject}</strong></span>
@@ -36,7 +37,7 @@ function CommitRow({commit, expanded: expansion, onToggle, selectedHash, selecte
     {expanded && <div className="source-control-commit-children" aria-label={'提交变更文件 ' + commit.shortHash}>
       {read.loading && !read.data ? <div className="source-control-read-status"><Spin size="small" />正在读取提交文件…</div> : read.error && !read.data ? <div className="source-control-local-failure"><p>{read.error}</p><Button type="link" size="small" onClick={() => void read.refresh()}>重新读取提交文件</Button></div> : <>
         {read.error && <div className="source-control-local-failure"><p>刷新失败，保留已读取文件。{read.error}</p><Button type="link" size="small" onClick={() => void read.refresh()}>重试</Button></div>}
-        {files.length ? <ChangedFileList compact selectable files={files} expanded={null} selectedKey={selectedHash === commit.hash ? selectedFileKey : null} onExpand={key => { const file = detail.files.find(item => changedFileKey(layerFile(item, commit.hash)) === key); if (file) onPick(detail, file, read.data?.baseHash ?? null); }} /> : read.data && <p className="source-control-clean">{read.data.coverage.truncated || read.data.diagnostics.length ? '文件列表未完整读取，无法确认全部变更。' : '该提交没有文件变更。'}</p>}
+        {files.length ? <ChangedFileList compact selectable filePathHint={file => pathHints.get(file.path)} fileTooltipPath={file => sourceControlFileTooltip(worktreeLocation, file)} files={files} expanded={null} selectedKey={selectedHash === commit.hash ? selectedFileKey : null} onExpand={key => { const file = detail.files.find(item => changedFileKey(layerFile(item, commit.hash)) === key); if (file) onPick(detail, file, read.data?.baseHash ?? null); }} /> : read.data && <p className="source-control-clean">{read.data.coverage.truncated || read.data.diagnostics.length ? '文件列表未完整读取，无法确认全部变更。' : '该提交没有文件变更。'}</p>}
         {read.data?.coverage.truncated && <p className="source-control-list-note">提交文件达到读取上限，当前列表不完整。</p>}
         {read.data?.diagnostics.length ? <p className="source-control-list-note">{read.data.diagnostics.map(item => item.message).join('；')}</p> : null}
       </>}

@@ -10,6 +10,16 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     assert.equal(response.status(), 200); return response.json();
   };
   const noOverflow = async () => assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, '源代码管理不能产生页面横向溢出');
+  const assertLocationCopyRows = async (details: any) => {
+    const values = details.locator('dd');
+    assert.equal(await values.count(), 2);
+    for (const value of await values.all()) {
+      assert.equal(await value.getByRole('button').count(), 1, '每个位置值行包含自己的复制按钮');
+      const text = await value.locator('code').boundingBox(), button = await value.getByRole('button').boundingBox();
+      assert.ok(text && button && button.x >= text.x + text.width - 1 && Math.abs(button.y - text.y) <= 3, '复制按钮位于对应值行后方并对齐首行');
+    }
+    assert.equal(await details.locator(':scope > .ant-space').count(), 0, '没有单独复制操作行');
+  };
   const assertHoverInViewport = async (card: any) => {
     const bounds = await card.evaluate((element: HTMLElement) => {
       const layer = element.closest('.ant-popover') || element, box = layer.getBoundingClientRect();
@@ -74,7 +84,7 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
   const areaValue: Record<string,string> = {'未暂存': 'unstaged', '已暂存': 'staged', '未跟踪': 'untracked'};
   const checkoutGroup = (id: string) => root().locator('[data-change-worktree="' + id + '"]');
   const fileRow = (id: string, area: string, filePath = fixture.path) => checkoutGroup(id).locator('[data-change-area="' + area + '"]')
-    .locator('.task-changed-row').filter({has: page.locator('.task-changed-path[title="' + filePath + '"]')});
+    .locator('.task-changed-row').filter({has: page.locator('.task-changed-path[data-file-path="' + filePath + '"]')});
   const row = (area: string) => fileRow(mainWorktreeId, areaValue[area]);
   const diff = () => root().getByRole('region', {name: '差异内容', exact: true});
   const assertTaskIdentity = async () => {
@@ -94,8 +104,10 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     const commit = commitRow(hash); await commit.waitFor();
     const toggle = commit.locator('.source-control-commit-toggle');
     if (await toggle.getAttribute('aria-expanded') !== 'true') await toggle.click();
-    const file = commit.locator('.source-control-commit-children .task-changed-row').filter({has: page.locator('.task-changed-path[title="' + filePath + '"]')});
+    const file = commit.locator('.source-control-commit-children .task-changed-row').filter({has: page.locator('.task-changed-path[data-file-path="' + filePath + '"]')});
     await file.waitFor(); await file.click();
+    await root().getByLabel('完整绝对路径', {exact:true}).waitFor();
+    assert.ok((await root().getByLabel('完整绝对路径', {exact:true}).innerText()).endsWith('/' + filePath), '历史文件仍在所选固定版本来源中显示完整路径');
     return commit;
   };
   const openHistory = async () => {
@@ -147,6 +159,7 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     assert.equal(await locationButton.getAttribute('aria-controls'), await positionInfo.getAttribute('id'));
     assert.equal(await positionInfo.locator('dd code').first().innerText(), fixture.location);
     assert.deepEqual(await positionInfo.locator('dt').allTextContents(), ['目录', '分支'], '位置信息只展示必要的目录和分支');
+    await assertLocationCopyRows(positionInfo);
     assert.ok(!(await positionInfo.innerText()).includes('观察版本'));
     await positionInfo.getByRole('button', {name: '复制路径', exact: true}).click();
     assert.equal(await page.evaluate(() => navigator.clipboard.readText()), fixture.location);
@@ -159,6 +172,31 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     await capture(page, 'source-control-fixture-staged-full.png');
     await root().getByRole('button', {name: '返回差异', exact: true}).click();
     await row('未暂存').click(); await diff().getByText('export const sourceControlWorking = 34;', {exact: false}).waitFor();
+    const absoluteMain = fixture.location + '/' + fixture.path;
+    assert.equal(await root().getByLabel('完整绝对路径', {exact: true}).innerText(), absoluteMain);
+    assert.equal(await diff().locator('.task-diff-split-side').first().locator('.task-diff-row').first().innerText(), fixture.indexText.trim(), '左右对比直接从真实代码开始，没有机器补丁头');
+    assert.equal(await diff().locator('.task-diff-split-side').last().locator('.task-diff-row').first().innerText(), fixture.workingText.trim());
+    await root().locator('.task-diff-actions').getByText('上下对比', {exact:true}).click();
+    await diff().locator('.task-diff-text').waitFor();
+    assert.equal(await diff().locator('.line-meta,.line-hunk').count(), 0, '单区块上下对比不展示机器头或首个区块标记');
+    assert.equal(await diff().locator('.task-diff-line').first().locator('em').innerText(), '−' + fixture.indexText.trim());
+    assert.equal(await diff().locator('.task-diff-line').last().locator('em').innerText(), '+' + fixture.workingText.trim());
+    await root().locator('.task-diff-actions').getByText('左右对比', {exact:true}).click();
+    await diff().getByRole('region', {name:'并排差异',exact:true}).waitFor();
+    await root().locator('.task-diff-toolbar').getByRole('button', {name: '复制路径', exact: true}).click();
+    assert.equal(await page.evaluate(() => navigator.clipboard.readText()), absoluteMain);
+    const mainFileRow = row('未暂存');
+    const pathHoverStart = Date.now(); await mainFileRow.hover();
+    const pathHint = page.getByRole('tooltip', {name: absoluteMain, exact: true}); await pathHint.waitFor({timeout: 600});
+    assert.ok(Date.now() - pathHoverStart < 600, '路径提示快速显示完整真实绝对路径');
+    assert.equal(await pathHint.evaluate((element: HTMLElement) => getComputedStyle(element).pointerEvents), 'none', '路径提示不拦截相邻行选择');
+    assert.equal(await mainFileRow.locator('.task-changed-path').innerText(), '', '普通文件不常驻相对目录');
+    assert.equal(await mainFileRow.locator('.task-changed-path').isVisible(), false, '无目录提示时不占文件名空间');
+    assert.equal(await mainFileRow.locator('.task-changed-path').getAttribute('title'), null, '不保留迟到的原生相对路径提示');
+    await row('已暂存').click(); await diff().getByText('export const sourceControlIndex = 21;', {exact:false}).waitFor();
+    await row('未暂存').click(); await diff().getByText('export const sourceControlWorking = 34;', {exact:false}).waitFor();
+    assert.equal(await root().locator('.task-diff-scope,.source-control-history-version').count(),0, '差异头没有重复来源说明或独立比较带');
+    await capture(page, 'source-control-file-name-priority.png');
     assert.ok((await diff().innerText()).includes('sourceControlIndex = 21'));
     await root().getByRole('button', {name: '查看完整文件', exact: true}).click(); await waitFull(fixture.workingText);
     assert.ok(!(await fullText()).includes('sourceControlIndex'));
@@ -342,6 +380,54 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     });
   });
 
+  await t.test('源码文件名优先，同名文件只补最短区分目录', async () => {
+    await fixture.withDuplicateFiles(async ({location,files}:any) => {
+      await page.setViewportSize({width:1440,height:900}); await open();
+      const refreshed=page.waitForResponse((response:any)=>new URL(response.url()).pathname.endsWith('/code/source-control'));
+      await root().getByRole('button',{name:'刷新源代码管理',exact:true}).click();
+      const response=await refreshed; assert.equal(response.status(),200);
+      const observed=await response.json();
+      const main=observed.repositories.flatMap((repository:any)=>repository.worktrees).find((worktree:any)=>worktree.worktreeId===mainWorktreeId);
+      assert.ok(main); assert.equal(main.location,location);
+      for(const file of files)assert.ok(main.changes.some((change:any)=>change.path===file.path&&change.area==='untracked'),file.path+' 来自真实未跟踪清单');
+      const heading=checkoutGroup(mainWorktreeId).locator('[data-change-area="untracked"] [data-area-toggle]');
+      await heading.waitFor(); if(await heading.getAttribute('aria-expanded')!=='true')await heading.click();
+      for(const file of files){
+        const rendered=fileRow(mainWorktreeId,'untracked',file.path),name=rendered.locator('.task-changed-row-content strong'),hint=rendered.locator('.task-changed-path');
+        await rendered.waitFor(); assert.equal(await name.innerText(),file.path.split('/').at(-1));
+        assert.equal(await hint.innerText(),file.hint||'');
+        if(file.hint){
+          assert.equal(await hint.isVisible(),true);
+          const nameBox=await name.boundingBox(),hintBox=await hint.boundingBox(); assert.ok(nameBox&&hintBox);
+          assert.ok(hintBox.x>=nameBox.x+nameBox.width-1&&Math.abs(nameBox.y+nameBox.height/2-hintBox.y-hintBox.height/2)<=1,'同名补充目录与文件名并列同一行');
+        }else assert.equal(await hint.isVisible(),false,'唯一文件只常驻文件名');
+      }
+      const first=files[0],second=files[1],firstRow=fileRow(mainWorktreeId,'untracked',first.path),secondRow=fileRow(mainWorktreeId,'untracked',second.path);
+      const readFile=async(file:any,select:()=>Promise<void>)=>{
+        const returned=page.waitForResponse((result:any)=>{const url=new URL(result.url());return url.pathname.endsWith('/code/diff')&&url.searchParams.get('filePath')===file.path&&url.searchParams.get('worktreeId')===mainWorktreeId&&url.searchParams.get('area')==='untracked';});
+        await select(); const response=await returned; assert.equal(response.status(),200);
+        const body=await response.json(); assert.equal(body.file.path,file.path);assert.equal(body.source.location,location);assert.ok(body.file.preview.includes(file.content.trim()));
+        await diff().getByText(file.content.trim(),{exact:false}).waitFor();
+        assert.equal(await root().getByLabel('完整绝对路径',{exact:true}).innerText(),location+'/'+file.path);
+      };
+      await readFile(first,()=>firstRow.click());
+      // A row can have a bounding box while being clipped below the scrolling file list.
+      // Bring the target into the visible list before opening the first row's tooltip.
+      await secondRow.scrollIntoViewIfNeeded();
+      const visibleFirst=await firstRow.boundingBox();assert.ok(visibleFirst);
+      await firstRow.hover({position:{x:24,y:visibleFirst.height/2}});const tooltip=page.getByRole('tooltip',{name:location+'/'+first.path,exact:true});await tooltip.waitFor({timeout:600});
+      assert.equal(await tooltip.evaluate((element:HTMLElement)=>getComputedStyle(element).pointerEvents),'none');
+      const start=await firstRow.boundingBox(),end=await secondRow.boundingBox();assert.ok(start&&end);
+      const list=await secondRow.evaluate((element:HTMLElement)=>{const host=element.closest('.source-control-list')!;const box=host.getBoundingClientRect();return {top:box.top,bottom:box.bottom,left:box.left,right:box.right,scrollTop:host.scrollTop};});
+      assert.ok([start,end].every(box=>box.y>=list.top-1&&box.y+box.height<=list.bottom+1),'两相邻行都位于实际滚动可见区：'+JSON.stringify({start,end,list}));
+      const x=start.x+24,y=end.y+end.height/2;await page.mouse.move(x,y,{steps:8});
+      const hit=await secondRow.evaluate((element:HTMLElement,point:any)=>{const actual=document.elementFromPoint(point.x,point.y);return {inside:Boolean(actual&&element.contains(actual)),hovered:element.matches(':hover'),actual:actual&&{tag:actual.tagName,id:actual.id,className:actual.className,ariaLabel:actual.getAttribute('aria-label')},point};},{x,y});
+      assert.equal(hit.inside,true,'浮窗不阻挡沿同一列向下选择同名文件：'+JSON.stringify({hit,start,end,list}));
+      await readFile(second,()=>secondRow.click({position:{x:x-end.x,y:end.height/2}}));
+      await noOverflow(); await capture(page,'source-control-file-duplicate-hints.png');
+    });
+  });
+
   await t.test('固定历史全文、悬浮信息选择复制与准确任务往返', async () => {
     await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
     await page.setViewportSize({width: 1440, height: 900}); await openHistory();
@@ -421,7 +507,7 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
       await row('已暂存').click(); await started; await row('未暂存').click(); release();
       await diff().getByText('sourceControlWorking = 34', {exact: false}).waitFor();
       await page.waitForTimeout(450);
-      assert.match(await root().locator('.source-control-history-version').innerText(), /未暂存/);
+      assert.match(await root().locator('.task-diff-comparison').innerText(), /未暂存/);
       assert.ok((await diff().innerText()).includes('sourceControlWorking = 34'), '迟到暂存响应不能覆盖当前未暂存差异');
     } finally { release(); await page.unroute('**/code/diff?**', delayed); }
     const failed = async (route: any) => route.fulfill({status: 503, contentType: 'application/json', body: JSON.stringify({error: {code: 'scm_fixture_unavailable', message: '隔离测试清单暂不可读取'}})});
@@ -461,11 +547,11 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     await task.locator('[data-task-content=changes]').click();
     const reader = task.getByRole('region', {name: '改动与提交工作台', exact: true}); await reader.waitFor();
     await assertTaskIdentity();
-    const current = reader.locator('.task-changed-row').filter({has: page.locator('.task-changed-path[title="' + fixture.path + '"]')}).first();
+    const current = reader.locator('.task-changed-row').filter({has: page.locator('.task-changed-path[data-file-path="' + fixture.path + '"]')}).first();
     await current.click(); await reader.getByRole('region', {name: '差异内容', exact: true}).getByText('sourceControlWorking = 34', {exact: false}).waitFor();
     const commit = reader.locator('.task-rail-commit').filter({hasText: fixture.commitHash.slice(0, 8)}); await commit.waitFor(); await commit.click();
     await reader.locator('.task-commit-details').getByText('Buildr-Task: browser-task', {exact: false}).waitFor();
-    await reader.locator('.task-rail-commit-files .task-changed-row').filter({has: page.locator('.task-changed-path[title="' + fixture.path + '"]')}).click();
+    await reader.locator('.task-rail-commit-files .task-changed-row').filter({has: page.locator('.task-changed-path[data-file-path="' + fixture.path + '"]')}).click();
     await reader.getByRole('region', {name: '差异内容', exact: true}).getByText('explorerAnswer = 1', {exact: false}).waitFor();
     await reader.getByRole('button', {name: '查看完整文件', exact: true}).click();
     await page.locator('.repository-source-code').waitFor();
@@ -508,6 +594,7 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     const text = area === 'staged' ? worktree.indexText : worktree.workingText;
     await diff().getByText(text.trim(), {exact: false}).waitFor();
     assert.ok((await root().locator('.code-location-summary').innerText()).includes(worktree.branch));
+    assert.equal(await root().getByLabel('完整绝对路径', {exact:true}).innerText(), worktree.location + '/' + worktree.path, '差异绝对路径使用当前具体工作树而非主目录');
   };
   const assertFullVersion = async (worktree: any, area: string, content: string, hash?: string) => {
     const returned = page.waitForResponse((response: any) => { const url = new URL(response.url()); return url.pathname.endsWith('/code/source-file') && url.searchParams.get('worktreeId') === worktree.worktreeId && url.searchParams.get('filePath') === worktree.path && url.searchParams.get('area') === area; });
@@ -754,7 +841,7 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
       assert.equal(observedDiffRequests.length, 0, '展开提交只读取变更文件，点击文件才读取差异');
     } finally { page.off('request', observeDiff); }
     const selectedCard = page.getByRole('article', {name: '提交摘要', exact: true}).filter({has: page.getByText(alpha.commitHash, {exact: true})});
-    const expandedFile = commit.locator('.source-control-commit-children .task-changed-row').filter({has: page.locator('.task-changed-path[title="' + alpha.path + '"]')});
+    const expandedFile = commit.locator('.source-control-commit-children .task-changed-row').filter({has: page.locator('.task-changed-path[data-file-path="' + alpha.path + '"]')});
     await hoverThenVerticalClick(toggle, expandedFile, selectedCard, 'source-control-history-hover-expanded-file.png');
     await diff().getByText(alpha.historyText.trim(), {exact: false}).waitFor();
     await root().locator('.source-control-reader').getByRole('button', {name: '查看完整提交信息', exact: true}).click();
@@ -809,6 +896,7 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
       const positionButton = root().locator('.code-location-summary'); await positionButton.click();
       const positionInfo = root().getByRole('region', {name: '位置信息', exact: true}); await positionInfo.waitFor();
       assert.deepEqual(await positionInfo.locator('dt').allTextContents(), ['目录', '固定提交']);
+      await assertLocationCopyRows(positionInfo);
       assert.equal(await positionInfo.locator('dd code').last().innerText(), alpha.commitHash);
       const positionLayout = await positionInfo.evaluate((element: HTMLElement) => {
         const labels = [...element.querySelectorAll('dt')].map(label => {
@@ -894,7 +982,7 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     await page.setViewportSize({width: 1440, height: 1000}); await page.goto(workspaceUrl + '/tasks/browser-task');
     const task = page.locator('#task-detail-main:visible'); await task.locator('[data-task-content=changes]').click();
     const reader = task.getByRole('region', {name: '改动与提交工作台', exact: true}); await reader.waitFor(); await assertTaskIdentity();
-    const current = reader.locator('.task-rail-body > section > .task-changed-list .task-changed-row').filter({has: page.locator('.task-changed-path[title="' + fixture.path + '"]')}).first();
+    const current = reader.locator('.task-rail-body > section > .task-changed-list .task-changed-row').filter({has: page.locator('.task-changed-path[data-file-path="' + fixture.path + '"]')}).first();
     await current.click(); await reader.getByRole('region', {name: '差异内容', exact: true}).getByText(alpha.workingText.trim(), {exact: false}).waitFor();
     const selected = await reader.locator('.task-changed-list > .is-selected .task-changed-path').first().getAttribute('title');
     const response = page.waitForResponse((returned: any) => { const url = new URL(returned.url()); return url.pathname.endsWith('/code/source-control') && url.searchParams.get('taskId') === 'browser-task'; });

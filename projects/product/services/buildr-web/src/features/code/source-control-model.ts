@@ -6,6 +6,41 @@ type CodeSourceControlWorktree = CodeSourceControlRepository['worktrees'][number
 type CodeHistoryCommit = CodeHistoryResponse['commits'][number];
 type CodeChange = CodeDiffResponse['file'];
 
+/** Display only: API inputs and file identities keep their repository-relative paths. */
+export function sourceControlAbsolutePath(location: string | undefined, path: string | undefined): string | undefined {
+  if (!location || !path) return undefined;
+  const separator = /^[A-Za-z]:\\|^\\\\/.test(location) ? '\\' : '/';
+  const root = location.replace(separator === '\\' ? /[\\/]+$/ : /\/+$/, '');
+  return root + separator + path.replaceAll('/', separator);
+}
+
+export function sourceControlFileTooltip(location: string, file: Pick<ChangedFileEntry, 'path' | 'previousPath'>): string | undefined {
+  const current = sourceControlAbsolutePath(location, file.path);
+  return current && (file.previousPath ? sourceControlAbsolutePath(location, file.previousPath) + ' → ' + current : current);
+}
+
+/** Narrow lists need a directory only to distinguish files with the same name. */
+export function sourceControlFilePathHints(files: Array<Pick<ChangedFileEntry, 'path'>>): Map<string, string> {
+  const names = new Map<string, string[]>();
+  for (const {path} of files) {
+    const name = path.split('/').at(-1)!;
+    const group = names.get(name) || [];
+    group.push(path);
+    names.set(name, group);
+  }
+  const hints = new Map<string, string>();
+  for (const group of names.values()) {
+    if (group.length < 2) continue;
+    const directories = group.map(path => path.split('/').slice(0, -1));
+    directories.forEach((parts, index) => {
+      let depth = 1;
+      while (depth < parts.length && directories.some((other, otherIndex) => otherIndex !== index && other.slice(-depth).join('/') === parts.slice(-depth).join('/'))) depth++;
+      hints.set(group[index], parts.slice(-depth).join('/') || './');
+    });
+  }
+  return hints;
+}
+
 export type SourceControlScene = 'changes' | 'history' | 'task' | 'full-file';
 export type SourceControlState = '' | 'empty' | 'partial' | 'loading' | 'failure' | 'clean';
 export type SourceControlChange = ChangedFileEntry & { worktreeId?: string | null; area: 'unstaged' | 'staged' | 'untracked'; content: string; previousContent?: string };

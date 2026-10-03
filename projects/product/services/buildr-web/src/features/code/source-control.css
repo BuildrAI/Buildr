@@ -83,7 +83,7 @@
 .source-control-commit-children .task-changed-list>li.is-selected>.task-changed-row { background:var(--soft-primary-soft,color-mix(in srgb,var(--soft-primary) 8%,var(--soft-surface))); box-shadow:inset 2px 0 var(--soft-primary); }
 .source-control-commit-children .source-control-read-status { padding:7px 5px; }
 .source-control-commit-children .source-control-local-failure,.source-control-commit-children .source-control-clean { margin:7px 5px; }
-.source-control-reader { width:100%; height:100%; flex:1; min-width:0; min-height:0; display:flex; flex-direction:column; }
+.source-control-reader { container-type:inline-size; width:100%; height:100%; flex:1; min-width:0; min-height:0; display:flex; flex-direction:column; }
 .source-control-checkout { flex:none; min-height:43px; height:43px; padding:6px 14px; display:flex; align-items:center; gap:6px; border-bottom:1px solid var(--soft-line); }
 .source-control-checkout>div { display:flex; align-items:center; gap:9px; min-height:26px; }
 .source-control-checkout strong { font-size:12px; font-weight:550; }
@@ -113,9 +113,6 @@
 .source-control-diff { display:flex; flex-direction:column; }
 .source-control-diff>.task-diff-reader { flex:1; min-height:0; }
 .source-control-diff.is-history .task-diff-scope { display:none; }
-.source-control-history-version { display:flex; align-items:center; flex-wrap:wrap; gap:7px 12px; padding:8px 17px; border-bottom:1px solid var(--soft-line); background:var(--soft-bg); font-size:12px; }
-.source-control-history-version code { color:var(--soft-primary); overflow-wrap:anywhere; }
-.source-control-history-version span { color:var(--soft-muted); }
 
 .source-control-sidebar[hidden] { display:none; }
 .source-control-reader { position:relative; }
@@ -217,9 +214,27 @@
 .source-control-source-details>header { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px; }
 .source-control-source-details>header strong { font-size:12px; font-weight:550; }
 .source-control-source-details>header .ant-btn { width:24px; height:24px; padding:0; color:var(--soft-muted); }
-.source-control-source-details dl { display:grid; grid-template-columns:64px minmax(0,1fr); gap:5px 8px; margin:0 0 10px; line-height:1.65; }
-.source-control-source-details dt { color:var(--soft-muted); white-space:nowrap; }
-.source-control-source-details dd { min-width:0; margin:0; overflow-wrap:anywhere; }
-.source-control-source-details code { font-size:12px; }
-.source-control-source-details>.ant-space { display:flex; flex-wrap:wrap; }
+.source-control-source-details dl { display:grid; grid-template-columns:56px minmax(0,1fr); gap:5px 8px; margin:0; line-height:1.65; }
+.source-control-source-details dt { padding-top:2px; color:var(--soft-muted); white-space:nowrap; }
+.source-control-source-details dd { display:grid; grid-template-columns:minmax(0,1fr) 24px; align-items:start; gap:6px; min-width:0; margin:0; }
+.source-control-source-details code { min-width:0; padding-top:2px; font-size:12px; white-space:normal; overflow-wrap:anywhere; user-select:text; }
+.source-control-source-details dd .ant-btn { width:24px; height:24px; padding:0; color:var(--soft-muted); }
 .source-control-source-details .ant-btn { font-size:12px; }
+
+/* SCM rows prioritize names; only duplicates need a directory hint. */
+.source-control-change-area .task-changed-row-content,.source-control-commit-children .task-changed-row-content { flex-direction:row; align-items:center; gap:9px; }
+.source-control-change-area .task-changed-row-content strong,.source-control-commit-children .task-changed-row-content strong { flex:0 1 auto; min-width:0; max-width:70%; }
+.source-control-change-area .task-changed-path,.source-control-commit-children .task-changed-path { flex:1; min-width:0; }
+.source-control-change-area .is-name-only strong,.source-control-commit-children .is-name-only strong { flex:1; max-width:100%; }
+.source-control-change-area .is-name-only .task-changed-path,.source-control-commit-children .is-name-only .task-changed-path { display:none; }
+.source-control-change-area .task-changed-row,.source-control-commit-children .task-changed-row { min-height:34px; padding-top:6px; padding-bottom:6px; }
+.source-control-diff .task-diff-toolbar.is-compact-file { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:6px 12px; min-height:0; padding:9px 14px; }
+.source-control-diff .is-compact-file .task-diff-file { flex-direction:row; align-items:center; gap:9px; flex-wrap:wrap; }
+.source-control-diff .is-compact-file .task-diff-file strong { min-width:0; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.source-control-diff .task-diff-comparison { color:var(--soft-muted); font-size:11px; white-space:nowrap; }
+.source-control-diff .task-diff-absolute-path { grid-column:1/-1; min-width:0; color:var(--soft-muted); font-size:11px; line-height:1.6; overflow-wrap:anywhere; user-select:text; }
+.source-control-diff .task-diff-absolute-path code { font-family:inherit; }
+@container (max-width:650px) {
+  .source-control-diff .task-diff-toolbar.is-compact-file { grid-template-columns:minmax(0,1fr); }
+  .source-control-diff .is-compact-file .task-diff-actions { grid-row:3; }
+}

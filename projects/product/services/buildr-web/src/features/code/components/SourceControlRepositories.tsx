@@ -4,7 +4,7 @@ import { ArrowDownOutlined, ArrowUpOutlined, BranchesOutlined, CloudOutlined, Cl
 import { SelectableHoverCard } from '../../../components/SelectableHoverCard';
 import { copyText } from '../../../lib/copyText';
 import { ChangedFileList, changedFileKey, type ChangedFileEntry } from '../../task/components/TaskChangedFiles';
-import { sourceControlFileKey, sourceControlVisibleWorktrees, sourceControlWorktreeKey, type SourceControlChange, type SourceControlRepository, type SourceControlWorktree } from '../source-control-model';
+import { sourceControlFileKey, sourceControlFileTooltip, sourceControlFilePathHints, sourceControlVisibleWorktrees, sourceControlWorktreeKey, type SourceControlChange, type SourceControlRepository, type SourceControlWorktree } from '../source-control-model';
 
 export const areaLabels = { unstaged: '未暂存', staged: '已暂存', untracked: '未跟踪' };
 export const layerFile = (file: SourceControlChange, version?: string): ChangedFileEntry => ({ ...file, repositoryId: JSON.stringify([file.repositoryId, file.worktreeId || '', version || file.area]) });
@@ -114,9 +114,10 @@ export function SourceControlChanges({repositories, names, exact, selectedKey, o
         {!single && <button type="button" className="source-control-change-heading" aria-label={(open(fold.expanded, group) ? '折叠' : '展开') + '变更工作树 ' + worktreeLabel(worktree)} aria-expanded={open(fold.expanded, group)} onClick={() => fold.onToggle(group)}>{open(fold.expanded, group) ? <DownOutlined /> : <RightOutlined />}<strong>{worktreeLabel(worktree)}</strong><code>{worktree.branch || '—'}</code><span>{worktree.fileCount ?? '未知'}</span></button>}
         <div hidden={!single && !open(fold.expanded, group)}>{worktree.status === 'offline' ? <div className="source-control-local-failure"><p>目录暂不可读取，变更数量尚未确认。</p><Button type="link" size="small" onClick={() => onRetry(repository.id)}>重新读取</Button></div> : !worktree.changes.length ? <p className="source-control-clean">{worktree.status === 'partial' || worktree.fileCount !== 0 ? '文件列表未完整读取，无法确认全部变更。' : <><FileOutlined /> 没有未提交文件</>}</p> : (Object.keys(areaLabels) as Array<keyof typeof areaLabels>).map(area => {
           const changes = worktree.changes.filter(file => file.area === area), areaKey = 'area:' + identity + ':' + area;
+          const pathHints = sourceControlFilePathHints(changes);
           return changes.length ? <div className="source-control-change-area" data-change-area={area} key={area}>
             <button type="button" className="source-control-area-heading" data-area-toggle={area} aria-label={(open(fold.expanded, areaKey) ? '折叠' : '展开') + areaLabels[area] + ' ' + worktreeLabel(worktree)} aria-expanded={open(fold.expanded, areaKey)} onClick={() => fold.onToggle(areaKey)}>{open(fold.expanded, areaKey) ? <DownOutlined /> : <RightOutlined />}{areaLabels[area]}<span>{changes.length}</span></button>
-            <div hidden={!open(fold.expanded, areaKey)}><ChangedFileList compact selectable files={changes.map(file => layerFile(file))} expanded={null} selectedKey={selectedKey} onExpand={key => { const file = changes.find(entry => changedFileKey(layerFile(entry)) === key); if (file) onPick(sourceControlFileKey(file)); }} /></div>
+            <div hidden={!open(fold.expanded, areaKey)}><ChangedFileList compact selectable filePathHint={file => pathHints.get(file.path)} fileTooltipPath={file => sourceControlFileTooltip(worktree.location, file)} files={changes.map(file => layerFile(file))} expanded={null} selectedKey={selectedKey} onExpand={key => { const file = changes.find(entry => changedFileKey(layerFile(entry)) === key); if (file) onPick(sourceControlFileKey(file)); }} /></div>
           </div> : null;
         })}</div>
       </section>;

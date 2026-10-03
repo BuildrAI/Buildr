@@ -1,4 +1,4 @@
-import { App, Button, Space } from 'antd';
+import { App, Button } from 'antd';
 import { CloseOutlined, CopyOutlined, DownOutlined } from '@ant-design/icons';
 import { copyText } from '../../../lib/copyText';
 
@@ -22,7 +22,9 @@ export function CodeLocationDetails({location, branch, commitHash, id, onClose}:
   };
   return <section id={id} className="source-control-source-details" aria-label="位置信息" onKeyDown={event => { if (event.key === 'Escape') onClose(); }}>
     <header><strong>查看位置</strong><Button type="text" size="small" icon={<CloseOutlined />} aria-label="收起位置信息" onClick={onClose} /></header>
-    <dl><dt>目录</dt><dd><code>{location || '当前没有可查看的目录'}</code></dd><dt>{commitHash ? '固定提交' : '分支'}</dt><dd><code>{reference || '—'}</code></dd></dl>
-    <Space wrap><Button size="small" aria-label="复制路径" icon={<CopyOutlined />} disabled={!location} onClick={() => void copy(location)}>复制路径</Button><Button size="small" aria-label={commitHash ? '复制提交标识' : '复制分支'} icon={<CopyOutlined />} disabled={!reference} onClick={() => reference && void copy(reference)}>{commitHash ? '复制提交标识' : '复制分支'}</Button></Space>
+    <dl>
+      <dt>目录</dt><dd><code>{location || '当前没有可查看的目录'}</code><Button type="text" size="small" aria-label="复制路径" title="复制路径" icon={<CopyOutlined />} disabled={!location} onClick={() => void copy(location)} /></dd>
+      <dt>{commitHash ? '固定提交' : '分支'}</dt><dd><code>{reference || '—'}</code><Button type="text" size="small" aria-label={commitHash ? '复制提交标识' : '复制分支'} title={commitHash ? '复制提交标识' : '复制分支'} icon={<CopyOutlined />} disabled={!reference} onClick={() => reference && void copy(reference)} /></dd>
+    </dl>
   </section>;
 }

@@ -25,11 +25,15 @@ export function changedFileKey(file: ChangedFileEntry) { return `${file.reposito
 function domId(key: string) { return `changed-${key.replace(/[^a-zA-Z0-9_-]/g, '_')}`; }
 
 /** File rows with expandable diff preview; shared by the working-tree pane, commit details and the diff rail. */
-export function ChangedFileList({ files, expanded, onExpand, compact = false, onOpenDiff, selectedKey, selectable = false }: {
-  files: ChangedFileEntry[]; expanded: string | null; onExpand(key: string | null): void; compact?: boolean; onOpenDiff?(file: ChangedFileEntry): void; selectedKey?: string | null; selectable?: boolean;
+export function ChangedFileList({ files, expanded, onExpand, compact = false, onOpenDiff, selectedKey, selectable = false, fileTooltipPath, filePathHint }: {
+  files: ChangedFileEntry[]; expanded: string | null; onExpand(key: string | null): void; compact?: boolean; onOpenDiff?(file: ChangedFileEntry): void; selectedKey?: string | null; selectable?: boolean; fileTooltipPath?(file: ChangedFileEntry): string | undefined; filePathHint?(file: ChangedFileEntry): string | undefined;
 }) {
   const { message } = App.useApp();
   const [copied, setCopied] = useState('');
+  const [tooltipWidth, setTooltipWidth] = useState<number>();
+  function fitPathTooltip(row: HTMLButtonElement) {
+    if (fileTooltipPath) setTooltipWidth(Math.min(720, Math.max(120, row.ownerDocument.documentElement.clientWidth - row.getBoundingClientRect().right)));
+  }
   async function copy(value: string, key: string) {
     try {
       if (!navigator.clipboard?.writeText) throw Error('clipboard unavailable');
@@ -53,13 +57,17 @@ export function ChangedFileList({ files, expanded, onExpand, compact = false, on
     {files.map(file => {
       const key = changedFileKey(file);
       const open = expanded === key;
-      return <li key={key} className={`${open ? 'is-open' : ''}${selectedKey === key ? ' is-selected' : ''}`}>
-        <button className="task-changed-row" aria-expanded={open} aria-controls={domId(key)} onClick={() => onExpand(open ? null : key)}>
+      const pathHint = filePathHint?.(file);
+      const nameOnly = Boolean(filePathHint && !pathHint && !file.previousPath);
+      const pathContent = filePathHint ? <>{pathHint}{file.previousPath && <em className="task-changed-rename"><SwapOutlined /> {fileName(file.previousPath) === fileName(file.path) ? '已移动' : `原名 ${fileName(file.previousPath)}`}</em>}</> : file.previousPath && fileDir(file.previousPath) === fileDir(file.path) ? <>{fileDir(file.path)}<em className="task-changed-rename"><SwapOutlined /> {fileName(file.previousPath)}</em></> : file.previousPath ? <>{fileDir(file.previousPath)} <SwapOutlined /> {fileDir(file.path)}</> : fileDir(file.path);
+      const row = <button className="task-changed-row" onMouseEnter={event => fitPathTooltip(event.currentTarget)} onFocus={event => fitPathTooltip(event.currentTarget)} aria-expanded={open} aria-controls={domId(key)} onClick={() => onExpand(open ? null : key)}>
           <i className={`task-changed-status status-${file.status}${file.kind === 'untracked' ? ' status-untracked' : ''}`} title={file.kind === 'untracked' ? '未跟踪' : STATUS_TITLE[file.status]}>{file.kind === 'untracked' ? 'U' : STATUS_LABEL[file.status]}</i>
-          <span className="task-changed-row-content"><strong>{fileName(file.path)}</strong><span className="task-changed-path" title={file.previousPath ? `${file.previousPath} → ${file.path}` : file.path}>{file.previousPath && fileDir(file.previousPath) === fileDir(file.path) ? <>{fileDir(file.path)}<em className="task-changed-rename"><SwapOutlined /> {fileName(file.previousPath)}</em></> : file.previousPath ? <>{fileDir(file.previousPath)} <SwapOutlined /> {fileDir(file.path)}</> : fileDir(file.path)}</span></span>
+          <span className={`task-changed-row-content${nameOnly ? ' is-name-only' : ''}`}><strong>{fileName(file.path)}</strong><span className="task-changed-path" data-file-path={file.path} title={fileTooltipPath ? undefined : file.previousPath ? `${file.previousPath} → ${file.path}` : file.path}>{pathContent}</span></span>
           {file.additions !== null && <span className="task-changed-stats"><em>+{file.additions}</em><em>−{file.deletions ?? 0}</em></span>}
           {!selectable && <span className="task-commits-expand">{open ? <DownOutlined /> : <RightOutlined />}</span>}
-        </button>
+        </button>;
+      return <li key={key} className={`${open ? 'is-open' : ''}${selectedKey === key ? ' is-selected' : ''}`}>
+        {fileTooltipPath ? <Tooltip title={fileTooltipPath(file) || '完整绝对路径暂不可读取'} rootClassName="task-changed-path-tooltip" placement="right" align={{offset: [0, 0]}} styles={{root: {maxWidth: tooltipWidth}}} trigger={['hover', 'focus']} mouseEnterDelay={0.08} mouseLeaveDelay={0}>{row}</Tooltip> : row}
         {onOpenDiff && <Tooltip title="查看全文差异"><button type="button" className="task-changed-open" aria-label={`查看 ${fileName(file.path)} 全文差异`} onClick={event => { event.stopPropagation(); onOpenDiff(file); }}><ExpandOutlined /></button></Tooltip>}
         {open && <div className="task-commits-detail task-changed-detail" id={domId(key)} data-prototype-position="changes-diff">
           <div className="task-commits-detail-title"><h3>差异预览（Diff Preview）</h3><span className="task-changed-detail-actions">{onOpenDiff && <Button size="small" type="text" icon={<ExpandOutlined />} onClick={() => onOpenDiff(file)}>查看全文差异</Button>}{copied === `${key}-path` ? <Button size="small" type="text" icon={<CheckOutlined />}>已复制路径</Button> : <Button size="small" type="text" aria-label="复制路径" icon={<CopyOutlined />} onClick={() => void copy(file.path, `${key}-path`)}>复制路径</Button>}</span></div>

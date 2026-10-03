@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { ChangedFileList, changedFileKey, type ChangedFileEntry } from './TaskChangedFiles';
 import type { TaskCommit } from './task-commit-model';
 import { formatShortDateTime } from '../../../lib/taskLabels';
-import { parseUnifiedDiff, pairForSplit } from './diff-text';
+import { diffContentRows, parseUnifiedDiff, pairForSplit } from './diff-text';
 import './task-diff-reader.css';
 
 type DiffMode = 'split' | 'unified';
@@ -28,7 +28,7 @@ export type RailRepository = {
 };
 
 /** Persistent master-detail workbench: repository tree on the left, diff pane on the right. */
-export function TaskDiffReader({ repositories, selected, onSelect, notice, taskId, refreshVersion, readScope, onRegisterRefresh, onOpenFile, previewContent }: {
+export function TaskDiffReader({ repositories, selected, onSelect, notice, taskId, refreshVersion, readScope, onRegisterRefresh, onOpenFile, previewContent, filePresentation }: {
   taskId?: string;
   refreshVersion?: string;
   readScope?: string;
@@ -39,6 +39,7 @@ export function TaskDiffReader({ repositories, selected, onSelect, notice, taskI
   notice?: ReactNode;
   onOpenFile?(file: ChangedFileEntry, repository: RailRepository, commit?: RailCommit): void;
   previewContent?: ReactNode;
+  filePresentation?: { absolutePath?: string; previousAbsolutePath?: string; comparison: string; comparisonDescription?: string };
 }) {
   const { message } = App.useApp();
   const [view, setView] = useState<DiffMode>('split');
@@ -58,7 +59,7 @@ export function TaskDiffReader({ repositories, selected, onSelect, notice, taskI
   const [selectionVersion, setSelectionVersion] = useState(0);
   const selectFile = (key: string, commitKey: string | null = null) => { setSelectedCommit(null); setFileCommit(commitKey); setSelectionVersion(value => value + 1); onSelect(key); };
   const [openCommits, setOpenCommits] = useState<Record<string, boolean>>({});
-  useEffect(() => { setCopied(false); }, [selected]);
+  useEffect(() => { setCopied(false); }, [selected, filePresentation?.absolutePath]);
   const [openRepos, setOpenRepos] = useState<Record<string, boolean>>({});
   useEffect(() => {
     if (!dragging) return;
@@ -114,7 +115,10 @@ export function TaskDiffReader({ repositories, selected, onSelect, notice, taskI
   const owner = selection;
   const commitEntry = repositories.flatMap(repository => repository.commits.map(entry => ({ repository, entry }))).find(item => item.entry.key === selectedCommit);
   const parsed = useMemo(() => current?.preview ? parseUnifiedDiff(current.preview) : null, [current?.preview]);
-  const pairs = useMemo(() => parsed ? pairForSplit(parsed.rows) : [], [parsed]);
+  const compactFile = Boolean(filePresentation);
+  const missingFinalNewline = compactFile && parsed?.rows.some(row => row.kind === 'meta' && row.text.startsWith('\\ No newline'));
+  const rows = useMemo(() => parsed ? compactFile ? diffContentRows(parsed.rows) : parsed.rows : [], [parsed, compactFile]);
+  const pairs = useMemo(() => pairForSplit(rows), [rows]);
   const splitLeftRef = useRef<HTMLDivElement>(null);
   const splitGutterRef = useRef<HTMLDivElement>(null);
   const splitRightRef = useRef<HTMLDivElement>(null);
@@ -161,9 +165,11 @@ export function TaskDiffReader({ repositories, selected, onSelect, notice, taskI
   }, [taskId, readScope, selected, fileCommit, selectedCommit, selectionVersion, mode, full.loading, pairs]);
   async function copyPath() {
     if (!current) return;
+    const path = filePresentation ? filePresentation.absolutePath : current.path;
+    if (!path) { message.info('完整绝对路径暂不可读取。'); return; }
     try {
       if (!navigator.clipboard?.writeText) throw Error('clipboard unavailable');
-      await navigator.clipboard.writeText(current.path);
+      await navigator.clipboard.writeText(path);
       setCopied(true);
       message.success('已复制');
     } catch { message.info('当前环境不允许访问剪贴板，请选中文字复制。'); }
@@ -232,11 +238,12 @@ export function TaskDiffReader({ repositories, selected, onSelect, notice, taskI
       {!railCollapsed && <SplitDivider className="task-diff-rail-resize" aria-label="拖拽调整文件栏宽度" title="拖拽调整宽度（220–480px）" onPointerDown={event => { dragStart.current = { x: event.clientX, width: railWidth }; setDragging(true); event.preventDefault(); }} onDoubleClick={() => setRailWidth(320)} />}
     </aside>
     <div className="task-diff-pane" ref={paneRef} data-prototype-position="diff-pane">
-      <header className="task-diff-toolbar" data-prototype-position="diff-modes">
+      <header className={`task-diff-toolbar${filePresentation ? ' is-compact-file' : ''}`} data-prototype-position="diff-modes">
         <div className="task-diff-file">
           <strong>{commitEntry ? '提交详情' : current ? fileName(current.path) : '差异阅读'}</strong>
-          {!commitEntry && current && <small>{current.previousPath ? `${current.previousPath} → ${current.path}` : fileDir(current.path)}</small>}
-          {!commitEntry && owner && <small className="task-diff-scope">{owner.repository.label}{owner.commit ? ` · ${owner.commit.commit.shortHash} ${owner.commit.commit.subject}` : ' · 未提交的改动'}</small>}
+          {!commitEntry && current && filePresentation && <Tooltip title={filePresentation.comparisonDescription || filePresentation.comparison} rootClassName="task-changed-path-tooltip" trigger={['hover', 'focus']} mouseEnterDelay={0.08} mouseLeaveDelay={0}><span className="task-diff-comparison" tabIndex={0}>{filePresentation.comparison}</span></Tooltip>}
+          {!commitEntry && current && !filePresentation && <small>{current.previousPath ? `${current.previousPath} → ${current.path}` : fileDir(current.path)}</small>}
+          {!commitEntry && owner && !filePresentation && <small className="task-diff-scope">{owner.repository.label}{owner.commit ? ` · ${owner.commit.commit.shortHash} ${owner.commit.commit.subject}` : ' · 未提交的改动'}</small>}
         </div>
         <div className="task-diff-actions">
           {!commitEntry && current && owner && onOpenFile && <Button size="small" onClick={() => onOpenFile(current, owner.repository, owner.commit)} data-prototype-position="diff-full-file">查看完整文件</Button>}
@@ -245,8 +252,9 @@ export function TaskDiffReader({ repositories, selected, onSelect, notice, taskI
             { value: 'split', disabled: !splitRoom, label: <Tooltip title={splitRoom ? '旧版本与新版本并排对照' : '当前阅读宽度不足，使用上下对比'}><span>左右对比</span></Tooltip> },
             { value: 'unified', label: <Tooltip title='同一视图按顺序显示删除和新增行'><span>上下对比</span></Tooltip> },
           ]} />}
-          {!commitEntry && current && (copied ? <Button size="small" type="text" icon={<CheckOutlined />}>已复制路径</Button> : <Button size="small" type="text" icon={<CopyOutlined />} aria-label="复制路径" onClick={() => void copyPath()}>复制路径</Button>)}
+          {!commitEntry && current && (copied ? <Button size="small" type="text" icon={<CheckOutlined />}>已复制路径</Button> : <Button size="small" type="text" icon={<CopyOutlined />} aria-label="复制路径" disabled={Boolean(filePresentation && !filePresentation.absolutePath)} onClick={() => void copyPath()}>复制路径</Button>)}
         </div>
+        {!commitEntry && current && filePresentation && <div className="task-diff-absolute-path"><code aria-label="完整绝对路径">{filePresentation.absolutePath ? `${filePresentation.previousAbsolutePath ? `${filePresentation.previousAbsolutePath} → ` : ''}${filePresentation.absolutePath}` : '完整绝对路径暂不可读取'}</code></div>}
       </header>
       {taskId && current && (selectionMissing || (!full.loading && (full.error || current.previewTruncated || !current.preview))) && <p className="task-diff-read-status" role="status">{full.error ? `完整差异读取失败：${full.error}` : selectionMissing ? '上次所选改动已不在当前列表，仍按原检出来源核对；可从左侧重新选择。' : current.previewTruncated ? '差异已达到读取上限或无法完整读取，当前内容不完整。' : '该文件未提供可读的文本差异。'}</p>}
       <div ref={bodyRef} className="task-diff-body" role="region" aria-label="差异内容">
@@ -260,7 +268,7 @@ export function TaskDiffReader({ repositories, selected, onSelect, notice, taskI
         {!commitEntry && current && previewContent}
         {!commitEntry && current && previewContent === undefined && !parsed && <p className="task-diff-empty">{current.status === 'deleted' ? '文件已删除，不提供差异预览。' : current.status === 'renamed' ? '重命名文件内容未变化时不提供差异预览。' : '暂无可展示的差异预览。'}</p>}
         {!commitEntry && current && previewContent === undefined && parsed && mode === 'unified' && <pre className="task-diff-text" aria-label="上下差异">
-          {parsed.rows.map((row, index) => <span key={index} className={`task-diff-line line-${row.kind}`}>
+          {rows.map((row, index) => <span key={index} className={`task-diff-line line-${row.kind}`}>
             <i className="task-diff-gutter">{(row.kind === 'del' ? row.oldNo : row.newNo) ?? ''}</i>
             <em>{(mode === 'unified' && (row.kind === 'add' || row.kind === 'del')) ? (row.kind === 'add' ? '+' : '−') : ''}{row.text}</em>
           </span>)}
@@ -279,6 +287,7 @@ export function TaskDiffReader({ repositories, selected, onSelect, notice, taskI
             {pairs.map((pair, index) => <div key={index} data-diff-row={index} className={`task-diff-row ${pair.right?.kind === 'add' ? 'is-add' : pair.right?.kind === 'ctx' || pair.right?.kind === 'hunk' || pair.right?.kind === 'meta' ? 'is-plain' : pair.right?.kind === 'del' ? 'is-del' : 'is-empty'}`}><em>{pair.right ? pair.right.text : ''}</em></div>)}
           </div>
         </div>}
+        {!commitEntry && current && previewContent === undefined && missingFinalNewline && <p className="task-diff-hint">所比较的内容包含文件末尾没有换行的版本。</p>}
         {!commitEntry && current && previewContent === undefined && parsed && isAddOnly && <p className="task-diff-hint"><FileAddOutlined /> 新增文件没有旧版本，差异中全部行均为新增。</p>}
       </div>
       {notice && <p className="task-commits-demo-note">{notice}</p>}

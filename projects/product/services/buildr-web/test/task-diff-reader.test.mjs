@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { parseUnifiedDiff, pairForSplit } from '../src/features/task/components/diff-text.ts';
+import { diffContentRows, parseUnifiedDiff, pairForSplit } from '../src/features/task/components/diff-text.ts';
 
 test('统一差异按行号解析：hunk、上下文、删除、新增各归其位', () => {
   const text = [
@@ -44,4 +44,31 @@ test('补丁头不产生伪行号，删除和新增保留准确行号', () => {
   const { rows } = parseUnifiedDiff('diff --git a/x b/x\nindex a..b\n--- a/x\n+++ b/x\n@@ -8,2 +8,2 @@\n-old\n+new\n ctx\n');
   assert.ok(rows.slice(0, 4).every(row => row.kind === 'meta' && row.oldNo === null && row.newNo === null));
   assert.deepEqual(rows.filter(row => row.kind === 'del' || row.kind === 'add').map(row => [row.oldNo, row.newNo, row.text]), [[8, null, 'old'], [null, 8, 'new']]);
+});
+
+test('可视代码去掉补丁头，保留真实代码及原行号和原始补丁', () => {
+  const parsed = parseUnifiedDiff('diff --git a/x b/x\nindex a..b\n--- a/x\n+++ b/x\n@@ -8,2 +8,2 @@\n-diff --git is source text\n+index is source text\n ctx\n\\ No newline at end of file\n');
+  const original = structuredClone(parsed);
+  const rows = diffContentRows(parsed.rows);
+  assert.deepEqual(rows.map(row => [row.kind, row.oldNo, row.newNo, row.text]), [
+    ['del', 8, null, 'diff --git is source text'], ['add', null, 8, 'index is source text'], ['ctx', 9, 9, 'ctx'],
+  ]);
+  assert.deepEqual(parsed, original);
+  assert.ok(parsed.rows.some(row => row.kind === 'meta' && row.text.startsWith('\\ No newline')), '原始末尾换行提示仍可由阅读器单独展示');
+});
+
+test('省略提示隔开不连续区块，不把不同区块的删除与新增错误配对', () => {
+  const parsed = parseUnifiedDiff('@@ -2 +2,0 @@\n-old\n@@ -12,0 +11 @@\n+new\n');
+  const rows = diffContentRows(parsed.rows);
+  assert.deepEqual(rows.map(row => row.text), ['old', '… 未显示的行 …', 'new']);
+  const pairs = pairForSplit(rows);
+  assert.deepEqual(pairs.map(pair => [pair.left?.oldNo ?? null, pair.right?.newNo ?? null]), [[2, null], [null, null], [null, 11]]);
+  assert.ok(rows.every(row => !row.text.startsWith('@@')));
+});
+
+test('单侧空区块之后连续显示的代码不产生虚假省略提示', () => {
+  const parsed = parseUnifiedDiff('@@ -2 +1,0 @@\n-old\n@@ -3 +2 @@\n context\n');
+  const rows = diffContentRows(parsed.rows);
+  assert.deepEqual(rows.map(row => row.kind), ['del', 'ctx']);
+  assert.deepEqual([rows[1].oldNo, rows[1].newNo], [3, 2]);
 });

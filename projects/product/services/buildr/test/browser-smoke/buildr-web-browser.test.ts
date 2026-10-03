@@ -581,6 +581,21 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
         runGit(workspaceRoot,['update-ref',trackingRef,trackingBefore,mixedAfter]);
       }
     };
+    const withDuplicateFiles=async(verify:(files:any)=>Promise<void>)=>{
+      const directory=path.join(workspaceRoot,'scm-name-hints');
+      assert.equal(fs.existsSync(directory),false,'同名文件验收目录必须尚不存在，不能覆盖真实文件');
+      fs.mkdirSync(directory);
+      const files=[
+        {path:'scm-name-hints/alpha/src/index.ts',hint:'alpha/src',content:'export const scmDuplicateAlpha = true;\n'},
+        {path:'scm-name-hints/beta/src/index.ts',hint:'beta/src',content:'export const scmDuplicateBeta = true;\n'},
+        {path:'scm-name-hints/gamma/index.ts',hint:'gamma',content:'export const scmDuplicateGamma = true;\n'},
+        {path:'scm-name-hints/unique.ts',hint:undefined,content:'export const scmUniqueName = true;\n'},
+      ];
+      try{
+        for(const file of files){const location=path.join(workspaceRoot,file.path);fs.mkdirSync(path.dirname(location),{recursive:true});fs.writeFileSync(location,file.content);}
+        await verify({location:fs.realpathSync(workspaceRoot),files});
+      }finally{fs.rmSync(directory,{recursive:true});}
+    };
     const withImages=async(verify:(images:any)=>Promise<void>)=>{
       const value=(cwd:string,args:string[])=>{const result=spawnSync('git',args,{cwd,encoding:'utf8'});assert.equal(result.status,0,result.stderr);return result.stdout.trim();};
       const png=(width:number,height:number,color:number[])=>{
@@ -629,7 +644,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
       const retained=peerRoot+'-temporarily-unavailable';fs.renameSync(peerRoot,retained);
       try{await read();}finally{fs.renameSync(retained,peerRoot);}
     };
-    await runSourceControlJourney({t,page,workspaceUrl,capture,expectedBrowserErrors,fixture:{path:sourceControlPath,location:fs.realpathSync(workspaceRoot),commitHash:history.stdout.trim(),historyText:historicalSource.stdout,indexText,workingText,prepareWorktrees,prepareRemoteStatuses,withStatusDigits,withImages,cleanLocation:codeWorktreeFixture.nativeCheckoutLocation,baselineWorktrees,unrelatedRetiredTaskId:codeWorktreeFixture.worktreeTaskId,unavailableRepositoryLocation,withUnavailableRepository}});
+    await runSourceControlJourney({t,page,workspaceUrl,capture,expectedBrowserErrors,fixture:{path:sourceControlPath,location:fs.realpathSync(workspaceRoot),commitHash:history.stdout.trim(),historyText:historicalSource.stdout,indexText,workingText,prepareWorktrees,prepareRemoteStatuses,withStatusDigits,withDuplicateFiles,withImages,cleanLocation:codeWorktreeFixture.nativeCheckoutLocation,baselineWorktrees,unrelatedRetiredTaskId:codeWorktreeFixture.worktreeTaskId,unavailableRepositoryLocation,withUnavailableRepository}});
   }
   if (selected('layout')) await runLayoutJourney({ t, page, workspaceUrl, capture });
 
