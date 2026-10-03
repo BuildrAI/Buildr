@@ -1,5 +1,6 @@
 import type { CodeSource } from '../infrastructure/code-file-reader.ts';
 import type { readCodeFile } from '../infrastructure/code-file-content.ts';
+import type { CodeImagePreview } from '../infrastructure/source-control-image-reader.ts';
 import type { CodeChangeArea, CodeChange, CodeBranch, CodeHistoryCommit } from '../domain/source-control.ts';
 export type { CodeChangeArea, CodeChange, CodeBranch, CodeHistoryCommit } from '../domain/source-control.ts';
 
@@ -10,6 +11,7 @@ export type CodeReadMeta = { readAt: string; observedRevision: string; coverage:
 export type CodeSourceControlWorktree = {
   worktreeId:string;name:string;location:string;isMain:boolean;isRegistered:boolean;available:boolean;source:CodeSource|null;
   status:'complete'|'partial'|'unavailable';branch:string|null;head:string|null;upstream:string|null;ahead:number|null;behind:number|null;
+  taskId:string|null;taskTitle:string|null;taskDiagnostic:string|null;
   fileCount:number|null;changes:CodeChange[];observedRevision:string|null;readAt:string;coverage:{fileLimit:number;truncated:boolean};diagnostics:CodeReadDiagnostic[];
 };
 export type CodeSourceControlRepository = {
@@ -22,5 +24,5 @@ export type CodeSourceControlRepository = {
 export type CodeSourceControlResponse = CodeReadMeta & { repositories: CodeSourceControlRepository[]; selectedRepositoryIds: string[];selectedWorktreeIds:string[];selectedWorktrees:Array<{repositoryId:string;worktreeId:string}>;worktreeCoverage:{limit:number;total:number|null;read:number;truncated:boolean}; scopeReason: string };
 export type CodeHistoryResponse = CodeReadMeta & { source: CodeSource; branches: CodeBranch[]; commits: CodeHistoryCommit[] };
 export type CodeCommitResponse = CodeReadMeta & { source: CodeSource; commit: CodeHistoryCommit; baseHash: string | null; files: CodeChange[] };
-export type CodeDiffResponse = CodeReadMeta & { source: CodeSource; area: CodeChangeArea; file: CodeChange; patch: string | null; binary: boolean; baseHash: string | null };
+export type CodeDiffResponse = CodeReadMeta & { source: CodeSource; area: CodeChangeArea; file: CodeChange; patch: string | null; binary: boolean; baseHash: string | null; imagePreview?:CodeImagePreview };
 export type CodeSourceFileResponse = Awaited<ReturnType<typeof readCodeFile>> & CodeReadMeta;

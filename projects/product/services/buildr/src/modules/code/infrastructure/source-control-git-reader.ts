@@ -78,7 +78,7 @@ export function readSourceControlRefs(source: CodeSource) {
   const branches: CodeBranch[] = rows.filter(row => row[0].startsWith('refs/heads/')).map(row => ({ name: row[0].slice(11), hash: row[1], current: row[0].slice(11) === current, upstream: row[4] || null }));
   const head = optional(source, ['rev-parse', '--verify', 'HEAD^{commit}']);
   const tips = [...new Set([...rows.filter(row => row[3] === 'commit' || row[3] === 'tag' && row[5] === 'commit').map(row => row[2] || row[1]), ...(head ? [head] : [])])];
-  return { branches, rows, tips, revision: codeRevision([source.repositoryId, source.location, raw, head]) };
+  return { branches, rows, tips, head, current, revision: codeRevision([source.repositoryId, source.location, raw, head]) };
 }
 
 export function readRawCodeCommit(source: CodeSource, hash: string): CodeHistoryCommit {

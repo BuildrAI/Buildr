@@ -7,6 +7,7 @@
 | 要修改的能力 | 实现入口 | 责任与深入入口 |
 | --- | --- | --- |
 | 工作空间（Workspace）、项目（Project）、服务（Service）与代码库（Repository） | [workspace/module.ts](../../services/buildr/src/modules/workspace/module.ts) | 身份、来源、登记、组成与受管写入；见[关系地图](project-service-repositories.md) |
+| 代码目录、文件与源代码管理 | [code/module.ts](../../services/buildr/src/modules/code/module.ts) | 已登记来源的只读查看；[比较用例](../../services/buildr/src/modules/code/application/source-control-application.ts)核对来源与观察版本，[图片读取](../../services/buildr/src/modules/code/infrastructure/source-control-image-reader.ts)按磁盘、索引及完整提交（Commit）组织新旧侧，保持缺侧与读取失败的区别 |
 | 任务（Task）、答复、审查、验证与工作树（Worktree） | [task/module.ts](../../services/buildr/src/modules/task/module.ts) | 各项独立协作事实及 Git 位置；见[任务地图](task-system.md) |
 | 项目每日演进 | [task/daily-progress/](../../services/buildr/src/modules/task/daily-progress/) | 同一任务装配入口中的独立能力；保存本机摘要并关联提交和任务，见[使用与边界](../docs/flows/project-daily-progress.md) |
 | 工作台（Workbench） | [workbench/module.ts](../../services/buildr/src/modules/workbench/module.ts) | 有界组合已有事实，独立保存个人计划、关注、收藏与最近访问 |
@@ -39,6 +40,7 @@
 ## 前端服务（Frontend Service）的工程边界
 
 - **[`services/buildr-web/src/features/`](../../services/buildr-web/src/features/)**：功能拥有自己的页面、业务请求、完整交互与状态。只按实际需要建立 `pages/`、`components/`、`hooks/`、`api/`，不要求目录对称。
+  - **[`code/`](../../services/buildr-web/src/features/code/)**：具体工作树（Worktree）的文件、差异（Diff）与固定历史阅读。[`SourceControlImagePreview.tsx`](../../services/buildr-web/src/features/code/components/SourceControlImagePreview.tsx)消费已核对比较结果的新旧图片及缺侧，在共享阅读壳内按宽度显示；图片格式、字节和版本由后端读取负责，页面不猜路径或替换来源。
 - **[`src/app/`](../../services/buildr-web/src/app/)**：应用壳和跨页组合。[`AppNavigation.tsx`](../../services/buildr-web/src/app/AppNavigation.tsx) 与 [`navigation.ts`](../../services/buildr-web/src/app/navigation.ts) 管理导航；[`WorkspacePages.tsx`](../../services/buildr-web/src/app/WorkspacePages.tsx) 保留已访问页面，[`WorkspaceStage.tsx`](../../services/buildr-web/src/components/WorkspaceStage.tsx) 组织主副阅读区。
 - **[`src/api/`](../../services/buildr-web/src/api/)**：共享传输、会话（Session）和当前请求范围，不组装各功能业务客户端。
 - [`src/components/`](../../services/buildr-web/src/components/)、[`src/lib/`](../../services/buildr-web/src/lib/)：真实跨功能复用的展示和纯逻辑；功能私有状态留在原处。

@@ -21,6 +21,7 @@ export type SourceControlRepository = {
 export type SourceControlWorktree = {
   worktreeId: string; name: string; location: string; isMain: boolean; isRegistered: boolean;
   branch: string | null; head?: string | null; ahead: number | null; behind: number | null;
+  upstream?: string | null; taskId?: string | null; taskTitle?: string | null; taskDiagnostic?: string | null;
   status: SourceControlRepository['status']; changes: SourceControlChange[]; commits: SourceControlCommit[];
   fileCount: number | null; observedRevision?: string | null; diagnostics: string[];
 };

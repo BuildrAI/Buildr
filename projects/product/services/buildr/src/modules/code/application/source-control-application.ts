@@ -2,13 +2,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { codeFailure, relativeCodePath, type CodeSource } from '../infrastructure/code-file-reader.ts';
 import { readCodeFile } from '../infrastructure/code-file-content.ts';
+import { readSourceControlImages, type CodeImageFile } from '../infrastructure/source-control-image-reader.ts';
 import { parseTaskCommitTrailer } from '../../task/commits/domain/task-commit.ts';
 import type { CodeGitWorktree } from '../infrastructure/code-worktree-reader.ts';
+import { codeWorktreeTaskKey, type readSourceControlTaskAssociations } from '../infrastructure/code-worktree-catalog.ts';
 import { SOURCE_CONTROL_LIMITS, assertCodeRevision, assertSourceControlPath, codeRevision, observeSourceControl, readIndexEntry, readSourceControlRefs, readRawCodeCommit, readRawCodeCommits, listCodeCommitIds, readCodeCommitFiles, readCodePatch } from '../infrastructure/source-control-git-reader.ts';
 import type { CodeReadMeta, CodeReadDiagnostic, CodeSourceControlInput, CodeSourceControlResponse, CodeSourceControlRepository, CodeHistoryCommit, CodeHistoryResponse, CodeCommitResponse, CodeDiffResponse, CodeSourceFileResponse } from './source-control-model.ts';
 
 type Catalog = { repositories: Array<{ id: string; code: string; name: string; location: string; available: boolean; gitId: string | null }>; selectedRepositoryIds: string[]; scopeReason: string; diagnostics: CodeReadDiagnostic[] };
-type Dependencies = { repositories(root: string, taskId?: string): Catalog; source(root: string, input: CodeSourceControlInput): CodeSource;worktrees(root:string,repositoryId:string):CodeGitWorktree[]; readTask?(root: string, taskId: string): { taskId: string; title: string } };
+type Dependencies = { repositories(root: string, taskId?: string): Catalog; source(root: string, input: CodeSourceControlInput): CodeSource;worktrees(root:string,repositoryId:string):CodeGitWorktree[]; taskAssociations?(root:string,repositories:CodeSourceControlRepository[],taskId?:string,deadline?:number):ReturnType<typeof readSourceControlTaskAssociations>; readTask?(root: string, taskId: string): { taskId: string; title: string } };
 const diagnostic = (error: unknown, repositoryId: string | null,worktreeId?:string): CodeReadDiagnostic => ({ code: (error as { code?: string })?.code || 'code_source_unavailable', message: error instanceof Error ? error.message : '代码来源暂不可读取。', repositoryId,...(worktreeId?{worktreeId}:{}) });
 function metadata(observedRevision: string, limit: number, truncated = false, diagnostics: CodeReadDiagnostic[] = [], nextCursor: string | null = null): CodeReadMeta {
   return { readAt: new Date().toISOString(), observedRevision, coverage: { limit, truncated, nextCursor }, diagnostics };
@@ -34,7 +36,7 @@ export function createSourceControlApplication(dependencies: Dependencies) {
       try {
         const worktrees=dependencies.worktrees(root,registered.id);output.worktreeCount=worktrees.length;output.worktreeCoverage.total=worktrees.length;
         for(const [position,worktree]of worktrees.entries()){
-          const checkout={...worktree,available:false,source:null as CodeSource|null,status:'unavailable' as 'complete'|'partial'|'unavailable',upstream:null as string|null,ahead:null as number|null,behind:null as number|null,fileCount:null as number|null,changes:[] as CodeSourceControlRepository['changes'],observedRevision:null as string|null,readAt:new Date().toISOString(),coverage:{fileLimit:SOURCE_CONTROL_LIMITS.files,truncated:false},diagnostics:[] as CodeReadDiagnostic[]};output.worktrees.push(checkout);
+          const checkout={...worktree,available:false,source:null as CodeSource|null,status:'unavailable' as 'complete'|'partial'|'unavailable',upstream:null as string|null,ahead:null as number|null,behind:null as number|null,taskId:null as string|null,taskTitle:null as string|null,taskDiagnostic:null as string|null,fileCount:null as number|null,changes:[] as CodeSourceControlRepository['changes'],observedRevision:null as string|null,readAt:new Date().toISOString(),coverage:{fileLimit:SOURCE_CONTROL_LIMITS.files,truncated:false},diagnostics:[] as CodeReadDiagnostic[]};output.worktrees.push(checkout);
           try{
             if(index>=SOURCE_CONTROL_LIMITS.repositories||position>=SOURCE_CONTROL_LIMITS.worktrees||statusAttempts>=SOURCE_CONTROL_LIMITS.totalWorktrees||Date.now()>=deadline){truncated=true;output.worktreeCoverage.truncated=true;throw codeFailure('code_worktree_read_limit','超出本次读取预算（128个代码库、共128个检出、12秒），保留Git清单但状态尚未确认。',413);}
             statusAttempts++;
@@ -65,9 +67,15 @@ export function createSourceControlApplication(dependencies: Dependencies) {
         scopeReason=selectedWorktreeIds.length?`按已核对任务范围预选 ${selectedWorktreeIds.length} 个检出，仍保留全部 Git 工作树`+(fallback?'；无独立工作树的代码库使用登记目录':''):'任务没有可确认的检出范围，显示全部 Git 工作树';
       }catch(error){diagnostics.push(diagnostic(error,null));scopeReason='任务范围暂不可核对，仍显示全部 Git 实际登记工作树';}
     }
+    try {
+      const associations=dependencies.taskAssociations?.(root,repositories,input.taskId,deadline);
+      if(associations)for(const repository of repositories)for(const worktree of repository.worktrees){const association=associations.get(codeWorktreeTaskKey(repository.id,worktree.worktreeId));if(association)Object.assign(worktree,association);}
+    } catch {
+      for(const repository of repositories)for(const worktree of repository.worktrees)if(!worktree.isMain)worktree.taskDiagnostic='任务目录关联当前不可读取。';
+    }
     const selectedWorktrees=repositories.flatMap(repository=>repository.worktrees.filter(worktree=>selectedWorktreeIds.includes(worktree.worktreeId)).map(worktree=>({repositoryId:repository.id,worktreeId:worktree.worktreeId})));
     const worktreeCoverage={limit:SOURCE_CONTROL_LIMITS.totalWorktrees,total:repositories.every(repository=>repository.worktreeCount!==null)?repositories.reduce((total,repository)=>total+repository.worktreeCount!,0):null,read:repositories.reduce((total,repository)=>total+repository.worktreeCoverage.read,0),truncated:repositories.some(repository=>repository.worktreeCoverage.truncated)};
-    return { ...metadata(codeRevision(repositories.map(repository => [repository.id,repository.worktrees.map(worktree=>[worktree.worktreeId,worktree.observedRevision,worktree.status]), repository.status])), SOURCE_CONTROL_LIMITS.repositories, truncated, diagnostics), repositories, selectedRepositoryIds,selectedWorktreeIds:[...new Set(selectedWorktreeIds)],selectedWorktrees,worktreeCoverage, scopeReason };
+    return { ...metadata(codeRevision(repositories.map(repository => [repository.id,repository.worktrees.map(worktree=>[worktree.worktreeId,worktree.observedRevision,worktree.status,worktree.taskId,worktree.taskTitle,worktree.taskDiagnostic]), repository.status])), SOURCE_CONTROL_LIMITS.repositories, truncated, diagnostics), repositories, selectedRepositoryIds,selectedWorktreeIds:[...new Set(selectedWorktreeIds)],selectedWorktrees,worktreeCoverage, scopeReason };
   }
 
   function decorate(root: string, commits: CodeHistoryCommit[], refs: ReturnType<typeof readSourceControlRefs>) {
@@ -88,9 +96,13 @@ export function createSourceControlApplication(dependencies: Dependencies) {
   function history(root: string, input: CodeSourceControlInput): CodeHistoryResponse {
     requireRepository(input); validateInput(input);
     const source = dependencies.source(root, input), refs = readSourceControlRefs(source);
-    let tips = refs.tips;
-    if (input.branch) { const branch = refs.branches.find(branch => branch.name === input.branch); if (!branch) throw codeFailure('code_branch_missing', '所选本机分支不存在，请刷新分支清单。', 404); tips = [branch.hash]; }
-    const revision = codeRevision([refs.revision, input.branch || null, input.query || null]);
+    let tips = refs.head ? [refs.head] : [];
+    if (input.branch && input.branch !== 'HEAD') {
+      const branch = refs.branches.find(branch => branch.name === input.branch);
+      if (!branch && (refs.head || refs.current !== input.branch)) throw codeFailure('code_branch_missing', '所选本机分支不存在，请刷新分支清单。', 404);
+      tips = branch ? [branch.hash] : [];
+    }
+    const revision = codeRevision([refs.revision, input.branch || 'HEAD', input.query || null]);
     assertCodeRevision(revision, input.expectedRevision);
     let offset = 0;
     if (input.cursor) {
@@ -130,7 +142,7 @@ export function createSourceControlApplication(dependencies: Dependencies) {
       file = status.files.find(file => file.path === input.path && file.area === input.area); baseHash = input.area === 'staged' ? status.head : null;
     }
     if (!file) throw codeFailure('code_changed_file_missing', '所选文件不在当前比较层，请刷新列表。', 404);
-    let patch: string | null, binary = false, truncated = false;
+    let patch: string | null, binary = false, truncated = false, untrackedContent:CodeImageFile|undefined;
     const diagnostics: CodeReadDiagnostic[] = [];
     if (file.status === 'conflicted') {
       patch = null;
@@ -140,6 +152,7 @@ export function createSourceControlApplication(dependencies: Dependencies) {
       const stat = fs.lstatSync(path.join(source.location, file.path));
       if (!stat.isFile()) throw codeFailure('code_file_type_unsupported', '未跟踪文件不是可读取的普通文件。', 415);
       const content = await readCodeFile(source, file.path);
+      untrackedContent = content;
       binary = content.kind === 'unsupported' || content.kind === 'image'; truncated = content.truncated;
       const lines = content.content.split('\n'); if (lines.at(-1) === '') lines.pop();
       const quote = (value:string) => /[\x00-\x20"\\]/.test(value) ? JSON.stringify(value) : value;
@@ -150,10 +163,12 @@ export function createSourceControlApplication(dependencies: Dependencies) {
       const result = readCodePatch(source, file, baseHash, input.commitHash); patch = result.patch; binary = result.binary; truncated = result.truncated;
       file = { ...file, additions: result.additions, deletions: result.deletions };
     }
+    const imagePreview = await readSourceControlImages(source,file,baseHash,input.commitHash,untrackedContent);
+    if (imagePreview) { binary = true; patch = null; truncated ||= Boolean(imagePreview.before?.truncated || imagePreview.after?.truncated); }
     if (input.area !== 'commit') assertCodeRevision(revision, observeSourceControl(source).observedRevision);
     verifySource(root,input,source);
     file = { ...file, preview: patch, previewTruncated: truncated };
-    return { ...metadata(revision, SOURCE_CONTROL_LIMITS.patchLines, truncated,diagnostics), source, area: input.area, file, patch, binary, baseHash };
+    return { ...metadata(revision, SOURCE_CONTROL_LIMITS.patchLines, truncated,diagnostics), source, area: input.area, file, patch, binary, baseHash, ...(imagePreview ? {imagePreview} : {}) };
   }
   async function sourceFile(root: string, input: CodeSourceControlInput): Promise<CodeSourceFileResponse> {
     requireRepository(input); validateInput(input); relativeCodePath(input.path || '');

@@ -2,12 +2,15 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {sourceControlRepository,sourceControlFileCount,sourceControlFileKey,sourceControlVisibleWorktrees,sourceControlWorktreeKey} from '../src/features/code/source-control-model.ts';
 const change=(worktreeId,area='unstaged')=>({repositoryId:'repo',worktreeId,path:'same.ts',area,previousPath:null,kind:'tracked',status:'modified',additions:null,deletions:null,preview:null,previewTruncated:false});
-const worktree=(worktreeId,name,isMain=false)=>({worktreeId,name,location:'/actual/'+worktreeId,isMain,isRegistered:isMain,status:'complete',branch:isMain?'main':'feature',head:'a'.repeat(40),upstream:null,ahead:null,behind:null,fileCount:1,changes:[change(worktreeId)],observedRevision:'scm:'+worktreeId,readAt:'now',coverage:{fileLimit:1000,truncated:false},diagnostics:[]});
+const worktree=(worktreeId,name,isMain=false)=>({worktreeId,name,location:'/actual/'+worktreeId,isMain,isRegistered:isMain,status:'complete',branch:isMain?'main':'feature',head:'a'.repeat(40),upstream:null,ahead:null,behind:null,taskId:null,taskTitle:null,taskDiagnostic:null,fileCount:1,changes:[change(worktreeId)],observedRevision:'scm:'+worktreeId,readAt:'now',coverage:{fileLimit:1000,truncated:false},diagnostics:[]});
 const catalog=(id='repo')=>({id,name:id,code:id,location:'/registered',source:null,status:'complete',branch:'compatibility-only',ahead:99,behind:99,fileCount:2,changes:[],head:null,observedRevision:'scm:registered',diagnostics:[],worktrees:[worktree(id+'-main','main',true),worktree(id+'-linked','same-task-name')],worktreeCount:2});
 test('catalog uses all checkout observations and keeps unknown synchronization distinct from zero',()=>{
   const repository=sourceControlRepository(catalog());
   assert.deepEqual(repository.worktrees.map(item=>item.branch),['main','feature']);
   assert.equal(repository.worktrees[1].ahead,null);assert.equal(repository.worktrees[1].behind,null);
+  assert.equal(repository.worktrees[1].upstream,null);assert.equal(repository.worktrees[1].taskId,null);
+  const associated=sourceControlRepository({...catalog(),worktrees:[{...worktree('linked','topic'),upstream:'origin/topic',ahead:2,behind:3,taskId:'task-one',taskTitle:'明确任务',taskDiagnostic:null}]});
+  assert.deepEqual([associated.worktrees[0].upstream,associated.worktrees[0].taskId,associated.worktrees[0].taskTitle],['origin/topic','task-one','明确任务']);
   assert.equal(repository.fileCount,2);assert.equal(repository.worktrees[1].location,'/actual/repo-linked');
   const unread=sourceControlRepository({...catalog(),status:'unavailable',worktrees:[],worktreeCount:null,fileCount:null});
   assert.equal(unread.worktreeCount,null);assert.equal(unread.fileCount,null);assert.equal(unread.status,'offline');
@@ -19,7 +22,7 @@ test('same-name filtering spans repositories without guessing tasks and exact ta
   const repositories=[sourceControlRepository(catalog('a')),sourceControlRepository(catalog('b'))];
   const sameName=repositories.flatMap(repository=>sourceControlVisibleWorktrees(repository,['same-task-name']));
   assert.deepEqual(sameName.map(item=>item.worktreeId),['a-linked','b-linked']);
-  assert.ok(sameName.every(item=>!('taskId' in item)));
+  assert.ok(sameName.every(item=>item.taskId===null));
   const exact=[sourceControlWorktreeKey('a','a-linked')];
   assert.equal(sourceControlVisibleWorktrees(repositories[0],[],exact).length,1);
   assert.equal(sourceControlVisibleWorktrees(repositories[1],[],exact).length,0);

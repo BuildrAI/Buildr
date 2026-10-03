@@ -8,6 +8,7 @@ import { CODE_LIMITS, codeFailure, codeGit, localPath, relativeCodePath, type Co
 export type CodeFileOptions = { page?:number; line?:number; matchQuery?:string; expectedRevision?:string; indexBlob?:{hash:string;mode:string} };
 export type CodeFilePage = { index:number; total:number; offset:number; endOffset:number; startLine:number; endLine:number; startsMidLine:boolean; endsMidLine:boolean; matchOffset?:number; matchEndOffset?:number };
 const images:Record<string,string>={'.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.gif':'image/gif','.webp':'image/webp'};
+export const isCodeImagePath = (relative:string) => Boolean(images[path.extname(relative).toLowerCase()]);
 const blockBytes=64*1024;
 
 function validateOptions(options:CodeFileOptions) {

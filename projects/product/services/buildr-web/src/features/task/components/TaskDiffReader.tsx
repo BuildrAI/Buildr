@@ -28,7 +28,7 @@ export type RailRepository = {
 };
 
 /** Persistent master-detail workbench: repository tree on the left, diff pane on the right. */
-export function TaskDiffReader({ repositories, selected, onSelect, notice, taskId, refreshVersion, readScope, onRegisterRefresh, onOpenFile }: {
+export function TaskDiffReader({ repositories, selected, onSelect, notice, taskId, refreshVersion, readScope, onRegisterRefresh, onOpenFile, previewContent }: {
   taskId?: string;
   refreshVersion?: string;
   readScope?: string;
@@ -38,6 +38,7 @@ export function TaskDiffReader({ repositories, selected, onSelect, notice, taskI
   onSelect(key: string | null): void;
   notice?: ReactNode;
   onOpenFile?(file: ChangedFileEntry, repository: RailRepository, commit?: RailCommit): void;
+  previewContent?: ReactNode;
 }) {
   const { message } = App.useApp();
   const [view, setView] = useState<DiffMode>('split');
@@ -240,7 +241,7 @@ export function TaskDiffReader({ repositories, selected, onSelect, notice, taskI
         <div className="task-diff-actions">
           {!commitEntry && current && owner && onOpenFile && <Button size="small" onClick={() => onOpenFile(current, owner.repository, owner.commit)} data-prototype-position="diff-full-file">查看完整文件</Button>}
           {!commitEntry && taskId && current && <span className="task-diff-loading" role="status" aria-label={full.loading ? '正在读取完整差异' : undefined}>{full.loading && <Spin size="small" />}</span>}
-          {!commitEntry && current && parsed && (parsed.totalAdd > 0 || parsed.totalDel > 0) && <Segmented className="task-diff-mode" size="small" value={mode} onChange={value => setView(value as DiffMode)} options={[
+          {!commitEntry && current && previewContent === undefined && parsed && (parsed.totalAdd > 0 || parsed.totalDel > 0) && <Segmented className="task-diff-mode" size="small" value={mode} onChange={value => setView(value as DiffMode)} options={[
             { value: 'split', disabled: !splitRoom, label: <Tooltip title={splitRoom ? '旧版本与新版本并排对照' : '当前阅读宽度不足，使用上下对比'}><span>左右对比</span></Tooltip> },
             { value: 'unified', label: <Tooltip title='同一视图按顺序显示删除和新增行'><span>上下对比</span></Tooltip> },
           ]} />}
@@ -256,14 +257,15 @@ export function TaskDiffReader({ repositories, selected, onSelect, notice, taskI
           <pre>{commitEntry.entry.commit.message}</pre>
         </article>}
         {!commitEntry && !current && <p className="task-diff-empty">{hasAny ? '从左侧文件栏选择一个文件查看差异。' : '该范围暂无可查看的文件。'}</p>}
-        {!commitEntry && current && !parsed && <p className="task-diff-empty">{current.status === 'deleted' ? '文件已删除，不提供差异预览。' : current.status === 'renamed' ? '重命名文件内容未变化时不提供差异预览。' : '暂无可展示的差异预览。'}</p>}
-        {!commitEntry && current && parsed && mode === 'unified' && <pre className="task-diff-text" aria-label="上下差异">
+        {!commitEntry && current && previewContent}
+        {!commitEntry && current && previewContent === undefined && !parsed && <p className="task-diff-empty">{current.status === 'deleted' ? '文件已删除，不提供差异预览。' : current.status === 'renamed' ? '重命名文件内容未变化时不提供差异预览。' : '暂无可展示的差异预览。'}</p>}
+        {!commitEntry && current && previewContent === undefined && parsed && mode === 'unified' && <pre className="task-diff-text" aria-label="上下差异">
           {parsed.rows.map((row, index) => <span key={index} className={`task-diff-line line-${row.kind}`}>
             <i className="task-diff-gutter">{(row.kind === 'del' ? row.oldNo : row.newNo) ?? ''}</i>
             <em>{(mode === 'unified' && (row.kind === 'add' || row.kind === 'del')) ? (row.kind === 'add' ? '+' : '−') : ''}{row.text}</em>
           </span>)}
         </pre>}
-        {!commitEntry && current && parsed && mode === 'split' && <div className="task-diff-split" role="region" aria-label="并排差异">
+        {!commitEntry && current && previewContent === undefined && parsed && mode === 'split' && <div className="task-diff-split" role="region" aria-label="并排差异">
           <div ref={splitLeftRef} className="task-diff-split-side" aria-label="旧版本">
             <div className="task-diff-version-head">旧版本{isAddOnly ? ' · 文件不存在' : ''}</div>
             {pairs.map((pair, index) => <div key={index} data-diff-row={index} className={`task-diff-row ${pair.left?.kind === 'del' ? 'is-del' : pair.left?.kind === 'ctx' || pair.left?.kind === 'hunk' || pair.left?.kind === 'meta' ? 'is-plain' : 'is-empty'}`}><em>{pair.left ? pair.left.text : ''}</em></div>)}
@@ -277,7 +279,7 @@ export function TaskDiffReader({ repositories, selected, onSelect, notice, taskI
             {pairs.map((pair, index) => <div key={index} data-diff-row={index} className={`task-diff-row ${pair.right?.kind === 'add' ? 'is-add' : pair.right?.kind === 'ctx' || pair.right?.kind === 'hunk' || pair.right?.kind === 'meta' ? 'is-plain' : pair.right?.kind === 'del' ? 'is-del' : 'is-empty'}`}><em>{pair.right ? pair.right.text : ''}</em></div>)}
           </div>
         </div>}
-        {!commitEntry && current && parsed && isAddOnly && <p className="task-diff-hint"><FileAddOutlined /> 新增文件没有旧版本，差异中全部行均为新增。</p>}
+        {!commitEntry && current && previewContent === undefined && parsed && isAddOnly && <p className="task-diff-hint"><FileAddOutlined /> 新增文件没有旧版本，差异中全部行均为新增。</p>}
       </div>
       {notice && <p className="task-commits-demo-note">{notice}</p>}
     </div>

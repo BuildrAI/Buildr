@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
+import { deflateSync } from 'node:zlib';
 import test from 'node:test';
 
 import { launchTestBrowser } from './browser-launch.ts';
@@ -424,7 +425,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     const nativeCheckout=path.join(workspaceRoot,'.worktrees','native-reader');runGit(second,['worktree','add','-b','native-reader',nativeCheckout,'HEAD']);
     const nativeFile={repositoryId:secondRepositoryId,path:'src/worktree-filter.ts',content:'export const WorktreeFilterNeedle = "native secondary";\n'};fs.writeFileSync(path.join(nativeCheckout,nativeFile.path),nativeFile.content);
     const checkoutPaths=new Map([[gitCheckoutReadId(primaryCheckout),[workspaceRoot,primaryCheckout]],[gitCheckoutReadId(secondCheckout),[second,secondCheckout]],[gitCheckoutReadId(nativeCheckout),[second,nativeCheckout]]]);
-    codeWorktreeFixture={worktreeTaskId,worktreeGroupId:'task:'+worktreeTaskId,primaryRepositoryId,secondRepositoryId,worktreeFiles,nativeWorktree:nativeFile,
+    codeWorktreeFixture={worktreeTaskId,worktreeGroupId:'task:'+worktreeTaskId,primaryRepositoryId,secondRepositoryId,worktreeFiles,nativeWorktree:nativeFile,nativeCheckoutLocation:fs.realpathSync(nativeCheckout),
       createNativeWorktree:()=>{const checkoutPath=path.join(workspaceRoot,'.worktrees','native-late'),branch='native-late';runGit(second,['worktree','add','-b',branch,checkoutPath,'HEAD']);return {id:gitCheckoutReadId(checkoutPath),path:checkoutPath,branch};},
       retireWorktree:(checkoutId:string)=>{const member=checkoutPaths.get(checkoutId);assert.ok(member,'fixture checkout identity is known');runGit(member[0],['worktree','remove','--force',member[1]]);}};
   }
@@ -490,6 +491,8 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     const codeFile=path.join(workspaceRoot,'projects/demo/services/api/zz-segmented-text.txt');
     const history=spawnSync('git',['rev-parse','HEAD'],{cwd:workspaceRoot,encoding:'utf8'});assert.equal(history.status,0,history.stderr);
     await runCodeExplorerJourney({t,page,workspaceUrl,capture,expectedBrowserErrors,codeFixture:{...codeWorktreeFixture,current:codeSegmentedText('current'),history:codeSegmentedText('history'),commitHash:history.stdout.trim(),change:()=>fs.writeFileSync(codeFile,'changed segmented text\n'+codeSegmentedText('current')),restore:()=>fs.writeFileSync(codeFile,codeSegmentedText('current'))}});
+    // This file belongs to the finished explorer fixture. SCM also needs a real clean checkout.
+    fs.rmSync(path.join(codeWorktreeFixture.nativeCheckoutLocation,codeWorktreeFixture.nativeWorktree.path));
     // Prepare the SCM comparison only after the explorer canary. Both layers remain
     // real Git data, while the original committed version is independently readable.
     const sourceControlPath='projects/demo/services/api/src/main.ts';
@@ -533,11 +536,100 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
       fs.writeFileSync(path.join(checkout,peerPath),stagedText);runGit(checkout,['add','--',peerPath]);fs.writeFileSync(path.join(checkout,peerPath),currentText);
       return [...linked,{name:'peer',filterName:path.basename(checkout),path:peerPath,branch,location:fs.realpathSync(checkout),commitHash:head.stdout.trim(),historyText:committedText,indexText:stagedText,workingText:currentText}];
     };
+    const prepareRemoteStatuses=(linked:any[])=>{
+      const value=(cwd:string,args:string[])=>{const result=spawnSync('git',args,{cwd,encoding:'utf8'});assert.equal(result.status,0,result.stderr);return result.stdout.trim();};
+      const createRemote=(repository:string,name:string)=>{
+        const remote=path.join(base,name+'.git');fs.mkdirSync(remote);runGit(remote,['init','--bare','-q']);
+        runGit(remote,['config','user.name','Remote Status Fixture']);runGit(remote,['config','user.email','remote-fixture@example.invalid']);
+        runGit(repository,['remote','add','status-fixture',remote]);return remote;
+      };
+      const remoteCommit=(remote:string,baseHash:string,reference:string)=>{
+        const tree=value(remote,['rev-parse',baseHash+'^{tree}']);
+        const commit=value(remote,['commit-tree',tree,'-p',baseHash,'-m','remote status fixture']);
+        runGit(remote,['update-ref','refs/heads/'+reference,commit]);
+      };
+      const alpha=linked.find(item=>item.name==='alpha'),beta=linked.find(item=>item.name==='beta'),baseHash=history.stdout.trim();
+      const primaryRemote=createRemote(workspaceRoot,'scm-primary-status');
+      runGit(workspaceRoot,['push','-q','status-fixture',baseHash+':refs/heads/sync',baseHash+':refs/heads/mixed',baseHash+':refs/heads/ahead']);
+      remoteCommit(primaryRemote,baseHash,'mixed');runGit(workspaceRoot,['fetch','-q','status-fixture']);
+      const mainBranch=value(workspaceRoot,['symbolic-ref','--short','HEAD']);
+      for(const [branch,reference] of [[mainBranch,'sync'],[alpha.branch,'mixed'],[beta.branch,'ahead']])runGit(workspaceRoot,['branch','--set-upstream-to=status-fixture/'+reference,branch]);
+      const secondaryRemote=createRemote(peerRoot,'scm-secondary-status'),peerBase=value(peerRoot,['rev-parse','HEAD']);
+      runGit(peerRoot,['push','-q','status-fixture',peerBase+':refs/heads/behind']);remoteCommit(secondaryRemote,peerBase,'behind');runGit(peerRoot,['fetch','-q','status-fixture']);
+      runGit(peerRoot,['branch','--set-upstream-to=status-fixture/behind','native-reader']);
+      return [{location:fs.realpathSync(workspaceRoot),ahead:0,behind:0},{location:alpha.location,ahead:1,behind:1},{location:beta.location,ahead:1,behind:0},{location:codeWorktreeFixture.nativeCheckoutLocation,ahead:0,behind:1}];
+    };
+    const withStatusDigits=async(linked:any[],verify:(expected:any)=>Promise<void>)=>{
+      const value=(cwd:string,args:string[])=>{const result=spawnSync('git',args,{cwd,encoding:'utf8'});assert.equal(result.status,0,result.stderr);return result.stdout.trim();};
+      const alpha=linked.find(item=>item.name==='alpha'),beta=linked.find(item=>item.name==='beta'),peer=linked.find(item=>item.name==='peer');
+      const remote=value(workspaceRoot,['remote','get-url','status-fixture']),mixedRef='refs/heads/mixed',trackingRef='refs/remotes/status-fixture/mixed',betaRef='refs/heads/'+beta.branch;
+      const mixedBefore=value(remote,['rev-parse',mixedRef]),trackingBefore=value(workspaceRoot,['rev-parse',trackingRef]),betaBefore=value(workspaceRoot,['rev-parse',betaRef]);
+      const chain=(cwd:string,parent:string)=>{const tree=value(cwd,['rev-parse',parent+'^{tree}']);for(let index=0;index<11;index++)parent=value(cwd,['commit-tree',tree,'-p',parent,'-m','status digit fixture '+index]);return parent;};
+      const mixedAfter=chain(remote,mixedBefore),betaAfter=chain(workspaceRoot,betaBefore),fileDirectories:string[]=[];
+      try{
+        runGit(remote,['update-ref',mixedRef,mixedAfter,mixedBefore]);runGit(workspaceRoot,['fetch','-q','status-fixture']);
+        runGit(workspaceRoot,['update-ref',betaRef,betaAfter,betaBefore]);
+        for(const [checkout,count] of [[beta.location,11],[peer.location,122]] as Array<[string,number]>){
+          const directory=fs.mkdtempSync(path.join(checkout,'scm-status-count-'));fileDirectories.push(directory);
+          for(let index=0;index<count;index++)fs.writeFileSync(path.join(directory,String(index).padStart(3,'0')+'.txt'),'status digit fixture\n');
+        }
+        await verify({remote:[{location:alpha.location,ahead:1,behind:12},{location:beta.location,ahead:12,behind:0}],files:[{location:alpha.location,count:1},{location:beta.location,count:12},{location:peer.location,count:123},{location:codeWorktreeFixture.nativeCheckoutLocation,count:0}]});
+      }finally{
+        for(const directory of fileDirectories)fs.rmSync(directory,{recursive:true});
+        runGit(workspaceRoot,['update-ref',betaRef,betaBefore,betaAfter]);
+        runGit(remote,['update-ref',mixedRef,mixedBefore,mixedAfter]);
+        runGit(workspaceRoot,['update-ref',trackingRef,trackingBefore,mixedAfter]);
+      }
+    };
+    const withImages=async(verify:(images:any)=>Promise<void>)=>{
+      const value=(cwd:string,args:string[])=>{const result=spawnSync('git',args,{cwd,encoding:'utf8'});assert.equal(result.status,0,result.stderr);return result.stdout.trim();};
+      const png=(width:number,height:number,color:number[])=>{
+        const chunk=(type:string,data:Buffer)=>{
+          const bytes=Buffer.concat([Buffer.from(type),data]);let crc=0xffffffff;
+          for(const byte of bytes){crc^=byte;for(let bit=0;bit<8;bit++)crc=(crc>>>1)^((crc&1)?0xedb88320:0);}
+          const size=Buffer.alloc(4),checksum=Buffer.alloc(4);size.writeUInt32BE(data.length);checksum.writeUInt32BE((crc^0xffffffff)>>>0);
+          return Buffer.concat([size,bytes,checksum]);
+        };
+        const header=Buffer.alloc(13);header.writeUInt32BE(width,0);header.writeUInt32BE(height,4);header[8]=8;header[9]=6;
+        const pixels=Buffer.alloc((1+width*4)*height);
+        for(let y=0;y<height;y++)for(let x=0;x<width;x++)pixels.set(color,y*(1+width*4)+1+x*4);
+        const bytes=Buffer.concat([Buffer.from('89504e470d0a1a0a','hex'),chunk('IHDR',header),chunk('IDAT',deflateSync(pixels)),chunk('IEND',Buffer.alloc(0))]);
+        return {bytes,width,height,content:'data:image/png;base64,'+bytes.toString('base64'),digest:'sha256-'+crypto.createHash('sha256').update(bytes).digest('hex')};
+      };
+      const versions={before:png(64,48,[172,54,54,255]),history:png(80,56,[50,139,90,255]),index:png(96,64,[51,99,181,255]),working:png(128,80,[224,153,43,255]),added:png(160,96,[130,64,164,255]),deleted:png(72,48,[38,149,169,255]),peer:png(32,96,[196,79,142,255])};
+      const imagePath='scm-image-fixture/changed.png',addedPath='scm-image-fixture/added.png',deletedPath='scm-image-fixture/deleted.png',stagedDeletedPath='scm-image-fixture/staged-deleted.png',binaryPath='scm-image-fixture/opaque.bin';
+      const primary={repository:workspaceRoot,branch:'fixture/scm-images-primary',location:path.join(base,'repo-a-worktrees','scm-images-primary')};
+      const peer={repository:peerRoot,branch:'fixture/scm-images-peer',location:path.join(base,'repo-b-worktrees','scm-images-peer')};
+      const created:any[]=[];
+      try{
+        for(const checkout of [primary,peer]){
+          runGit(checkout.repository,['worktree','add','-b',checkout.branch,checkout.location,checkout===primary?history.stdout.trim():'HEAD']);created.push(checkout);
+          checkout.location=fs.realpathSync(checkout.location);fs.mkdirSync(path.join(checkout.location,'scm-image-fixture'));
+        }
+        for(const relative of [imagePath,deletedPath,stagedDeletedPath])fs.writeFileSync(path.join(primary.location,relative),relative===imagePath?versions.before.bytes:versions.deleted.bytes);
+        runGit(primary.location,['add','--',imagePath,deletedPath,stagedDeletedPath]);runGit(primary.location,['commit','-qm','SCM image fixture baseline']);
+        const baseHash=value(primary.location,['rev-parse','HEAD']);
+        fs.writeFileSync(path.join(primary.location,imagePath),versions.history.bytes);fs.rmSync(path.join(primary.location,deletedPath));
+        runGit(primary.location,['add','--',imagePath,deletedPath]);runGit(primary.location,['commit','-qm','SCM image fixture history']);
+        const commitHash=value(primary.location,['rev-parse','HEAD']);
+        fs.writeFileSync(path.join(primary.location,imagePath),versions.index.bytes);runGit(primary.location,['add','--',imagePath]);
+        const indexBlob=value(primary.location,['rev-parse',':'+imagePath]);
+        fs.writeFileSync(path.join(primary.location,imagePath),versions.working.bytes);fs.writeFileSync(path.join(primary.location,addedPath),versions.added.bytes);
+        fs.rmSync(path.join(primary.location,stagedDeletedPath));runGit(primary.location,['add','--',stagedDeletedPath]);
+        fs.writeFileSync(path.join(primary.location,binaryPath),Buffer.from([0,255,10,0,127]));
+        fs.writeFileSync(path.join(peer.location,imagePath),versions.peer.bytes);
+        await verify({primary:{...primary,commitHash,baseHash,indexBlob},peer,imagePath,addedPath,deletedPath,stagedDeletedPath,binaryPath,versions});
+      }finally{
+        for(const checkout of created.toReversed()){
+          runGit(checkout.repository,['worktree','remove','--force',checkout.location]);runGit(checkout.repository,['branch','-D',checkout.branch]);
+        }
+      }
+    };
     const withUnavailableRepository=async (read:()=>Promise<void>)=>{
       const retained=peerRoot+'-temporarily-unavailable';fs.renameSync(peerRoot,retained);
       try{await read();}finally{fs.renameSync(retained,peerRoot);}
     };
-    await runSourceControlJourney({t,page,workspaceUrl,capture,expectedBrowserErrors,fixture:{path:sourceControlPath,location:fs.realpathSync(workspaceRoot),commitHash:history.stdout.trim(),historyText:historicalSource.stdout,indexText,workingText,prepareWorktrees,baselineWorktrees,unrelatedRetiredTaskId:codeWorktreeFixture.worktreeTaskId,unavailableRepositoryLocation,withUnavailableRepository}});
+    await runSourceControlJourney({t,page,workspaceUrl,capture,expectedBrowserErrors,fixture:{path:sourceControlPath,location:fs.realpathSync(workspaceRoot),commitHash:history.stdout.trim(),historyText:historicalSource.stdout,indexText,workingText,prepareWorktrees,prepareRemoteStatuses,withStatusDigits,withImages,cleanLocation:codeWorktreeFixture.nativeCheckoutLocation,baselineWorktrees,unrelatedRetiredTaskId:codeWorktreeFixture.worktreeTaskId,unavailableRepositoryLocation,withUnavailableRepository}});
   }
   if (selected('layout')) await runLayoutJourney({ t, page, workspaceUrl, capture });
 

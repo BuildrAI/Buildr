@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { deflateSync } from 'node:zlib';
 import { execFileSync } from 'node:child_process';
 import { createCodeApplication } from '../../src/modules/code/application/code-application.ts';
 import { createCodeHttpContribution } from '../../src/modules/code/interfaces/http/code-http.ts';
@@ -12,6 +13,7 @@ import { CODE_HTTP_SCHEMAS, CODE_HTTP_VALIDATORS } from '../../src/modules/code/
 import { gitCheckoutReadId } from '../../src/infrastructure/git/checkout-read-identity.ts';
 import { registerGitWorktreeProvider } from '../../src/modules/task/infrastructure/git-worktree-provider.ts';
 import { CODE_LIMITS } from '../../src/modules/code/infrastructure/code-file-reader.ts';
+import { readSourceControlTaskAssociations } from '../../src/modules/code/infrastructure/code-worktree-catalog.ts';
 
 function fixture(t: test.TestContext, format = 'sha1') {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-source-control-')), root = path.join(base, 'repository');
@@ -32,6 +34,61 @@ function fixture(t: test.TestContext, format = 'sha1') {
 const hasCode = (code: string) => (error: unknown) => (error as { code?: string }).code === code;
 function checkoutGit(checkout:string,...args:string[]){return execFileSync('git',['--no-optional-locks','-C',checkout,...args],{encoding:'utf8',stdio:['ignore','pipe','pipe']}).trim();}
 function checkoutSnapshot(checkout:string){return {status:checkoutGit(checkout,'status','--porcelain=v2','-z'),index:crypto.createHash('sha256').update(fs.readFileSync(checkoutGit(checkout,'rev-parse','--path-format=absolute','--git-path','index'))).digest('hex'),body:fs.readFileSync(path.join(checkout,'same.ts'),'utf8'),head:checkoutGit(checkout,'rev-parse','HEAD')};}
+
+function pngPixel(red:number,green:number,blue:number) {
+  const chunk = (type:string,data:Buffer) => {
+    const body=Buffer.concat([Buffer.from(type),data]);let crc=0xffffffff;
+    for(const byte of body){crc^=byte;for(let bit=0;bit<8;bit++)crc=(crc>>>1)^((crc&1)?0xedb88320:0);}
+    const length=Buffer.alloc(4),checksum=Buffer.alloc(4);length.writeUInt32BE(data.length);checksum.writeUInt32BE((crc^0xffffffff)>>>0);
+    return Buffer.concat([length,body,checksum]);
+  };
+  const header=Buffer.alloc(13);header.writeUInt32BE(1,0);header.writeUInt32BE(1,4);header[8]=8;header[9]=2;
+  return Buffer.concat([Buffer.from('89504e470d0a1a0a','hex'),chunk('IHDR',header),chunk('IDAT',deflateSync(Buffer.from([0,red,green,blue]))),chunk('IEND',Buffer.alloc(0))]);
+}
+
+test('image diffs preserve actual PNG bytes in index/worktree/untracked layers and pinned history',async t=>{
+  const f=fixture(t),red=pngPixel(255,0,0),blue=pngPixel(0,0,255),green=pngPixel(0,255,0);
+  const write=(file:string,bytes:Buffer)=>fs.writeFileSync(path.join(f.root,file),bytes);
+  const bytes=(image:{content:string}|null|undefined)=>image&&Buffer.from(image.content.split(',')[1],'base64');
+  write('image.png',red);const base=f.commit('red image');write('image.png',blue);f.git('add','--','image.png');write('image.png',green);write('new.png',green);
+  const before=f.snapshot(),expectedRevision=f.app.sourceControl(f.root).repositories[0].observedRevision!;
+  const staged=await f.app.diff(f.root,{...f.input,path:'image.png',area:'staged',expectedRevision}),unstaged=await f.app.diff(f.root,{...f.input,path:'image.png',area:'unstaged',expectedRevision}),untracked=await f.app.diff(f.root,{...f.input,path:'new.png',area:'untracked',expectedRevision});
+  assert.deepEqual(bytes(staged.imagePreview?.before),red);assert.deepEqual(bytes(staged.imagePreview?.after),blue);assert.equal(staged.imagePreview?.before?.source.commitHash,base);assert.match(staged.imagePreview!.after!.revision,/^index:/);
+  assert.deepEqual(bytes(unstaged.imagePreview?.before),blue);assert.deepEqual(bytes(unstaged.imagePreview?.after),green);assert.match(unstaged.imagePreview!.after!.revision,/^current:/);
+  assert.equal(untracked.imagePreview?.before,null);assert.deepEqual(bytes(untracked.imagePreview?.after),green);
+  for(const result of [staged,unstaged,untracked]){assert.equal(result.binary,true);assert.equal(result.patch,null);assert.equal(result.imagePreview?.after?.mediaType,'image/png');assert.equal(CODE_HTTP_VALIDATORS.validate(CODE_HTTP_SCHEMAS.diff.$id,result).valid,true);}
+  assert.deepEqual(bytes(await f.app.sourceFile(f.root,{...f.input,path:'image.png',area:'staged',expectedRevision})),blue);assert.deepEqual(bytes(await f.app.sourceFile(f.root,{...f.input,path:'image.png',area:'unstaged',expectedRevision})),green);assert.deepEqual(f.snapshot(),before);
+  f.git('commit','-m','blue image');const pinned=f.git('rev-parse','HEAD');write('image.png',green);f.commit('green image');
+  const history=await f.app.diff(f.root,{...f.input,path:'image.png',area:'commit',commitHash:pinned});assert.equal(history.baseHash,base);assert.deepEqual(bytes(history.imagePreview?.before),red);assert.deepEqual(bytes(history.imagePreview?.after),blue);assert.equal(history.imagePreview?.after?.source.commitHash,pinned);
+  const full=await f.app.sourceFile(f.root,{...f.input,path:'image.png',area:'commit',commitHash:pinned});assert.deepEqual(bytes(full),blue);assert.equal(full.source.commitHash,pinned);
+  await assert.rejects(f.app.diff(f.root,{...f.input,path:'image.png',area:'unstaged',expectedRevision}),hasCode('code_source_changed'));
+});
+
+test('image additions, root commits, renames and deletions describe actual missing sides without Git writes',async t=>{
+  const f=fixture(t),png=pngPixel(10,20,30);fs.writeFileSync(path.join(f.root,'old.png'),png);f.git('add','--','old.png');
+  const added=await f.app.diff(f.root,{...f.input,path:'old.png',area:'staged'});assert.equal(added.imagePreview?.before,null);assert.equal(added.imagePreview?.after?.kind,'image');
+  const root=f.commit('first image'),initial=await f.app.diff(f.root,{...f.input,path:'old.png',area:'commit',commitHash:root});assert.equal(initial.imagePreview?.before,null);
+  f.git('mv','--','old.png','new.png');const rename=await f.app.diff(f.root,{...f.input,path:'new.png',area:'staged'});assert.equal(rename.file.previousPath,'old.png');assert.equal(rename.imagePreview?.before?.path,'old.png');assert.equal(rename.imagePreview?.after?.path,'new.png');assert.equal(rename.imagePreview?.before?.content,rename.imagePreview?.after?.content);
+  const renamed=f.commit('rename image');fs.unlinkSync(path.join(f.root,'new.png'));let before=f.snapshot();
+  const workingDelete=await f.app.diff(f.root,{...f.input,path:'new.png',area:'unstaged'});assert.equal(workingDelete.imagePreview?.after,null);assert.match(workingDelete.imagePreview!.before!.revision,/^index:/);assert.deepEqual(f.snapshot(),before);
+  f.git('add','--','new.png');before=f.snapshot();const stagedDelete=await f.app.diff(f.root,{...f.input,path:'new.png',area:'staged'});assert.equal(stagedDelete.imagePreview?.after,null);assert.equal(stagedDelete.imagePreview?.before?.source.commitHash,renamed);assert.deepEqual(f.snapshot(),before);
+  const removed=f.commit('delete image');before=f.snapshot();const history=await f.app.diff(f.root,{...f.input,path:'new.png',area:'commit',commitHash:removed});assert.equal(history.imagePreview?.after,null);assert.equal(history.imagePreview?.before?.source.commitHash,renamed);assert.notEqual(history.imagePreview?.before?.source.commitHash,removed);assert.deepEqual(f.snapshot(),before);
+});
+
+test('image preview limits remain 8 MiB per side and unsupported binary/text retain their existing behavior',async t=>{
+  const f=fixture(t),png=pngPixel(1,2,3),limit=Buffer.alloc(CODE_LIMITS.imageBytes);png.copy(limit);fs.writeFileSync(path.join(f.root,'image.png'),limit);f.commit('large image');
+  const tooLarge=Buffer.alloc(CODE_LIMITS.imageBytes+1);png.copy(tooLarge);fs.writeFileSync(path.join(f.root,'image.png'),tooLarge);
+  let before=f.snapshot();const modified=await f.app.diff(f.root,{...f.input,path:'image.png',area:'unstaged'});assert.equal(modified.imagePreview?.before?.kind,'image');assert.equal(modified.imagePreview?.before?.sizeBytes,CODE_LIMITS.imageBytes);assert.equal(modified.imagePreview?.after?.kind,'unsupported');assert.equal(modified.imagePreview?.after?.content,'');assert.equal(modified.imagePreview?.after?.limitBytes,CODE_LIMITS.imageBytes);assert.match(modified.imagePreview!.after!.message,/图片超过完整读取上限/);assert.equal(modified.coverage.truncated,true);assert.deepEqual(f.snapshot(),before);
+  fs.writeFileSync(path.join(f.root,'new.png'),tooLarge);const untracked=await f.app.diff(f.root,{...f.input,path:'new.png',area:'untracked'});assert.equal(untracked.imagePreview?.before,null);assert.equal(untracked.imagePreview?.after?.truncated,true);
+  fs.writeFileSync(path.join(f.root,'other.bin'),Buffer.from([0,1,2]));f.write('normal.txt','text\n');before=f.snapshot();const binary=await f.app.diff(f.root,{...f.input,path:'other.bin',area:'untracked'}),text=await f.app.diff(f.root,{...f.input,path:'normal.txt',area:'untracked'});assert.equal(binary.binary,true);assert.equal(binary.imagePreview,undefined);assert.equal(text.binary,false);assert.equal(text.imagePreview,undefined);assert.match(text.patch!,/\+text/);assert.deepEqual(f.snapshot(),before);
+});
+
+test('image diffs reject external paths and changed observations instead of converting failures to missing sides',async t=>{
+  const f=fixture(t);fs.writeFileSync(path.join(f.root,'image.png'),pngPixel(9,8,7));f.commit('base image');const external=path.join(f.base,'external.png');fs.writeFileSync(external,pngPixel(6,5,4));fs.unlinkSync(path.join(f.root,'image.png'));fs.symlinkSync(external,path.join(f.root,'image.png'));
+  const before=f.snapshot();await assert.rejects(f.app.diff(f.root,{...f.input,path:'image.png',area:'unstaged'}),hasCode('code_path_forbidden'));assert.deepEqual(f.snapshot(),before);
+  await assert.rejects(f.app.diff(f.root,{...f.input,path:'../external.png',area:'untracked'}),hasCode('code_path_forbidden'));
+  fs.unlinkSync(path.join(f.root,'image.png'));fs.writeFileSync(path.join(f.root,'image.png'),pngPixel(4,5,6));const expectedRevision=f.app.sourceControl(f.root).repositories[0].observedRevision!;fs.unlinkSync(path.join(f.root,'image.png'));await assert.rejects(f.app.diff(f.root,{...f.input,path:'image.png',area:'unstaged',expectedRevision}),hasCode('code_source_changed'));
+});
 
 test('catalog keeps shared-instance identity, both index/worktree layers, nullable upstream and no Git writes', async t => {
   const f = fixture(t); f.write('a.ts', 'base\n'); f.commit('base'); f.write('a.ts', 'index\n'); f.git('add', '--', 'a.ts'); f.write('a.ts', 'working\n'); f.write('new.ts', 'new\n');
@@ -58,6 +115,7 @@ test('unborn repository and untracked file use actual new contents while unavail
   assert.match((await f.app.diff(f.root, { ...f.input, area: 'staged', path: 'first.ts' })).patch!, /\+initial/);
   const untracked = await f.app.diff(f.root, { ...f.input, area: 'untracked', path: 'new.ts' }); assert.match(untracked.patch!, /\+fresh/); assert.equal(untracked.file.additions, 1);
   assert.deepEqual(f.app.history(f.root, f.input).commits, []);
+  assert.deepEqual(f.app.history(f.root, { ...f.input, branch: 'main' }).commits, [], 'the current unborn branch is an empty history rather than a missing branch');
 });
 
 test('special filenames, renames, path/area rejection and external symlinks preserve index, refs and files', async t => {
@@ -88,6 +146,80 @@ test('branch history contains ancestors, parses actual task trailers, scopes sea
   const next = f.app.history(f.root, { ...f.input, limit: 1, cursor: first.coverage.nextCursor! }); assert.notEqual(next.commits[0].hash, first.commits[0].hash);
   f.write('a.ts', 'five\n'); f.commit('new tip'); assert.throws(() => f.app.history(f.root, { ...f.input, cursor: first.coverage.nextCursor! }), hasCode('code_history_cursor_changed'));
   assert.throws(() => f.app.history(f.root, { ...f.input, branch: '--all' }), hasCode('code_branch_missing'));
+});
+
+test('default history follows the selected checkout HEAD and excludes commits unique to other branches and tags', t => {
+  const f = fixture(t); f.write('base.ts', 'base\n'); const base = f.commit('shared base');
+  const linked = path.join(f.base, 'topic'); f.git('worktree', 'add', '-b', 'topic', linked);
+  fs.writeFileSync(path.join(linked, 'topic.ts'), 'topic\n'); checkoutGit(linked, 'add', '.'); checkoutGit(linked, 'commit', '-m', 'topic only');
+  const topic = checkoutGit(linked, 'rev-parse', 'HEAD'); f.git('tag', 'topic-tag', topic);
+  f.write('main.ts', 'main\n'); const main = f.commit('main only');
+  const catalog = f.app.sourceControl(f.root), worktree = catalog.repositories[0].worktrees.find(item => !item.isMain)!;
+  const mainHistory = f.app.history(f.root, f.input).commits.map(item => item.hash);
+  assert.ok(mainHistory.includes(main) && mainHistory.includes(base)); assert.ok(!mainHistory.includes(topic));
+  const topicInput = { ...f.input, worktreeId: worktree.worktreeId };
+  const topicHistory = f.app.history(f.root, topicInput).commits.map(item => item.hash);
+  assert.ok(topicHistory.includes(topic) && topicHistory.includes(base)); assert.ok(!topicHistory.includes(main));
+  assert.deepEqual(f.app.history(f.root, { ...topicInput, branch: 'HEAD' }).commits.map(item => item.hash), topicHistory);
+  checkoutGit(linked, 'checkout', '--detach', base);
+  assert.deepEqual(f.app.history(f.root, { ...topicInput, branch: 'HEAD' }).commits.map(item => item.hash), [base]);
+  assert.ok(f.app.history(f.root, { ...topicInput, branch: 'main' }).commits.some(item => item.hash === main), 'explicit named branches remain supported');
+});
+
+test('current task links use repository and checkout evidence across repositories without guessing same names', t => {
+  const f = fixture(t); f.write('base.ts', 'base\n'); f.commit('base');
+  const second = path.join(f.base, 'second'); fs.mkdirSync(second); checkoutGit(second, 'init', '--initial-branch=main'); checkoutGit(second, 'config', 'user.name', 'Fixture Person'); checkoutGit(second, 'config', 'user.email', 'fixture@example.com'); checkoutGit(second, 'config', 'commit.gpgSign', 'false');
+  fs.writeFileSync(path.join(second, 'base.ts'), 'base\n'); checkoutGit(second, 'add', '.'); checkoutGit(second, 'commit', '-m', 'base');
+  const firstTopic = path.join(f.base, 'first-group', 'topic'), secondTopic = path.join(f.base, 'second-group', 'topic');
+  f.git('worktree', 'add', '-b', 'task/topic', firstTopic); checkoutGit(second, 'worktree', 'add', '-b', 'task/topic', secondTopic);
+  f.catalog.repositories.push({ id: 'repo-two', code: 'second', name: 'Second Repository', source: { type: 'workspace', path: second } });
+  const directory = path.join(f.base, 'task-evidence'); fs.mkdirSync(directory);
+  const evidence = new Map<string, { evidence: { repositories: Array<{ sourceRepository: string; checkoutPath: string; branch: string }> } }>();
+  const register = (id: string, repositories: Array<{ sourceRepository: string; checkoutPath: string; branch: string }>) => { fs.writeFileSync(path.join(directory, id + '.json'), '{}'); evidence.set(id, { evidence: { repositories } }); };
+  register('task-one', [{ sourceRepository: f.root, checkoutPath: firstTopic, branch: 'task/topic' }, { sourceRepository: second, checkoutPath: secondTopic, branch: 'task/topic' }]);
+  register('retired-other', [{ sourceRepository: f.root, checkoutPath: path.join(f.base, 'retired'), branch: 'old' }]);
+  const app = createCodeApplication({ assetCatalog: () => f.catalog, resolveSourceRoot: (_root, source) => source.path,
+    readTaskScope: () => ({ projects: ['p'], services: [] }), readTask: (_root, id) => { if (id === 'missing-task') throw Error('missing task'); return { taskId: id, title: '任务 ' + id }; },
+    gitWorktreeEvidencePath: (_root, id) => path.join(directory, id + '.json'), readGitWorktreeEvidence: (_root, id) => evidence.get(id) || null });
+  const linked = () => app.sourceControl(f.root).repositories.flatMap(repository => repository.worktrees.filter(worktree => !worktree.isMain));
+  assert.deepEqual(linked().map(worktree => [worktree.name, worktree.taskId, worktree.taskTitle]), [['topic', 'task-one', '任务 task-one'], ['topic', 'task-one', '任务 task-one']]);
+  assert.deepEqual(app.sourceControl(f.root).diagnostics, [], 'retired evidence does not add unrelated failures to current Git status');
+  register('second-task', [{ sourceRepository: f.root, checkoutPath: firstTopic, branch: 'task/topic' }]);
+  const ambiguous = linked().find(worktree => worktree.location === fs.realpathSync(firstTopic))!;
+  assert.equal(ambiguous.taskId, null); assert.match(ambiguous.taskDiagnostic!, /多个任务/);
+  evidence.delete('second-task'); evidence.delete('task-one');
+  register('foreign-task', [{ sourceRepository: second, checkoutPath: firstTopic, branch: 'task/topic' }]);
+  assert.ok(linked().every(worktree => worktree.taskId === null), 'same directory name and branch do not establish task ownership');
+  register('stale-task', [{ sourceRepository: f.root, checkoutPath: firstTopic, branch: 'old-branch' }]);
+  assert.match(linked().find(worktree => worktree.location === fs.realpathSync(firstTopic))!.taskDiagnostic!, /分支与任务记录不同/);
+  evidence.delete('stale-task');
+  register('missing-task', [{ sourceRepository: f.root, checkoutPath: firstTopic, branch: 'task/topic' }]);
+  const missing = linked().find(worktree => worktree.location === fs.realpathSync(firstTopic))!;
+  assert.equal(missing.taskId, null); assert.match(missing.taskDiagnostic!, /任务记录当前不可读取/);
+});
+
+test('task association limits cannot assert a unique task from an incomplete scan, while unrelated invalid evidence stays local', t => {
+  const f = fixture(t); f.write('base.ts', 'base\n'); f.commit('base');
+  const linked = path.join(f.base, 'topic'); f.git('worktree', 'add', '-b', 'task/topic', linked);
+  const current = f.app.sourceControl(f.root).repositories;
+  const directory = path.join(f.base, 'task-evidence'); fs.mkdirSync(directory);
+  for (const id of ['a-task', 'z-task']) fs.writeFileSync(path.join(directory, id + '.json'), '{}');
+  const value = { evidence: { repositories: [{ sourceRepository: f.root, checkoutPath: linked, branch: 'task/topic' }] } };
+  const before = Date.now(), deadline = before + 10000; let expired = false;
+  const clock = t.mock.method(Date, 'now', () => expired ? deadline + 1 : before);
+  const dependencies = { gitWorktreeEvidencePath: (_root: string, id: string) => path.join(directory, id + '.json'),
+    readGitWorktreeEvidence: (_root: string, id: string) => { if (id === 'a-task') expired = true; return value; }, readTask: (_root: string, id: string) => ({ taskId: id, title: id }) };
+  const timedOut = [...readSourceControlTaskAssociations(f.root, current, dependencies, undefined, deadline).values()][0];
+  assert.equal(timedOut.taskId, null); assert.match(timedOut.taskDiagnostic!, /尚未完整读取/);
+  clock.mock.restore();
+  fs.unlinkSync(path.join(directory, 'z-task.json')); fs.writeFileSync(path.join(directory, 'invalid-retired.json'), '{}');
+  const unaffected = [...readSourceControlTaskAssociations(f.root, current, { ...dependencies, readGitWorktreeEvidence: (_root, id) => { if (id === 'invalid-retired') throw Error('invalid retired evidence'); return value; } }).values()][0];
+  assert.equal(unaffected.taskId, 'a-task'); assert.equal(unaffected.taskDiagnostic, null);
+  const entries = ['a-task.json', ...Array.from({ length: 999 }, (_, index) => `filler-${index}.json`), 'z-task.json']; let position = 0;
+  const handle = { readSync: () => position < entries.length ? { name: entries[position++] } : null, closeSync: () => {} };
+  t.mock.method(fs, 'opendirSync', () => handle as unknown as fs.Dir);
+  const limited = [...readSourceControlTaskAssociations(f.root, current, { ...dependencies, readGitWorktreeEvidence: (_root, id) => id === 'a-task' || id === 'z-task' ? value : null }).values()][0];
+  assert.equal(limited.taskId, null); assert.match(limited.taskDiagnostic!, /尚未完整读取/);
 });
 
 test('root and merge commits compare the actual empty tree and first parent in SHA-1 and SHA-256 repositories', async t => {

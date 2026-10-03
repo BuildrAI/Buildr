@@ -4,6 +4,7 @@ import path from 'node:path';
 import { sameFilesystemPath } from '../../../infrastructure/filesystem/filesystem-path-identity.ts';
 import { observeGitCheckoutReadIdentity } from '../../../infrastructure/git/checkout-read-identity.ts';
 import { CODE_LIMITS, codeGit, gitCommonDirectory } from './code-file-reader.ts';
+import type { CodeGitWorktree } from './code-worktree-reader.ts';
 
 export type CodeWorktreeKind = 'main' | 'task' | 'worktree';
 export type CodeWorktree = { id: string; repositoryId: string; groupId: string; path: string; branch: string | null; kind: CodeWorktreeKind; taskId: string | null; available: boolean };
@@ -12,8 +13,80 @@ type Diagnostic = { code: string; message: string; repositoryId: string | null }
 type Repository = { id: string; name: string; location: string; available: boolean };
 export type WorktreeCatalogDependencies = {
   gitWorktreeEvidencePath?(root: string, taskId: string): string;
-  readGitWorktreeEvidence(root: string, taskId: string, options: { optional: boolean }): { evidence: { repositories: Array<{ sourceRepository: string; checkoutPath: string }> } } | null;
+  readGitWorktreeEvidence(root: string, taskId: string, options: { optional: boolean }): { evidence: { repositories: Array<{ sourceRepository: string; checkoutPath: string; branch?: string }> } } | null;
 };
+
+type SourceControlTaskAssociation = { taskId: string | null; taskTitle: string | null; taskDiagnostic: string | null };
+export const codeWorktreeTaskKey = (repositoryId: string, worktreeId: string) => JSON.stringify([repositoryId, worktreeId]);
+
+/** Enrich current Git members only; retired task evidence cannot add directories or invalidate their status. */
+export function readSourceControlTaskAssociations(root: string, repositories: Array<{ id: string; location: string; worktrees: Array<CodeGitWorktree & { available: boolean }> }>, dependencies: WorktreeCatalogDependencies & { readTask?(root: string, taskId: string): { taskId: string; title: string } }, requestedTaskId?: string, deadline = Date.now() + CODE_LIMITS.readMs) {
+  const members = repositories.flatMap(repository => repository.worktrees.filter(worktree => worktree.available && !worktree.isMain).map(worktree => ({ repository, worktree })));
+  const result = new Map<string, SourceControlTaskAssociation>();
+  if (!members.length) return result;
+  const ids = new Set(requestedTaskId ? [requestedTaskId] : []);
+  let incomplete = false, uniquenessUnknown = false;
+  if (dependencies.gitWorktreeEvidencePath) {
+    try {
+      const directory = path.dirname(dependencies.gitWorktreeEvidencePath(root, 'code-worktree-list'));
+      if (fs.existsSync(directory)) {
+        const handle = fs.opendirSync(directory);
+        try {
+          let entry: fs.Dirent | null, count = 0;
+          while ((entry = handle.readSync())) {
+            if (Date.now() >= deadline || count >= 1000) { incomplete = true; uniquenessUnknown = true; break; }
+            if (/^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?\.json$/.test(entry.name)) { ids.add(entry.name.slice(0, -5)); count++; }
+          }
+        } finally { handle.closeSync(); }
+      }
+    } catch { incomplete = true; uniquenessUnknown = true; }
+  }
+  const commons = new Map<string, string>();
+  for (const { repository } of members) if (!commons.has(repository.id)) {
+    try { commons.set(repository.id, gitCommonDirectory(repository.location)); } catch { incomplete = true; }
+  }
+  const matches = new Map<string, Map<string, { task: { taskId: string; title: string } | null; diagnostic: string | null }>>();
+  for (const id of [...ids].sort()) {
+    if (Date.now() >= deadline) { incomplete = true; uniquenessUnknown = true; break; }
+    let evidence;
+    try { evidence = dependencies.readGitWorktreeEvidence(root, id, { optional: true }); } catch { continue; }
+    if (!evidence) continue;
+    const associated = new Set<string>();
+    for (const recorded of evidence.evidence.repositories) {
+      const matching = members.filter(({ worktree }) => sameFilesystemPath(worktree.location, recorded.checkoutPath));
+      if (!matching.length) continue;
+      let common: string;
+      try { common = gitCommonDirectory(recorded.sourceRepository); } catch { incomplete = true; continue; }
+      for (const { repository, worktree } of matching) {
+        const registeredCommon = commons.get(repository.id);
+        if (!registeredCommon || !sameFilesystemPath(common, registeredCommon)) continue;
+        const key = codeWorktreeTaskKey(repository.id, worktree.worktreeId);
+        if (recorded.branch && recorded.branch !== worktree.branch) {
+          result.set(key, { taskId: null, taskTitle: null, taskDiagnostic: '目录当前分支与任务记录不同，尚未确认对应任务。' });
+          continue;
+        }
+        associated.add(key);
+      }
+    }
+    if (!associated.size) continue;
+    let task: { taskId: string; title: string } | null = null;
+    try { const value = dependencies.readTask?.(root, id); if (value?.taskId === id) task = value; } catch { /* Missing tasks cannot become clickable links. */ }
+    for (const key of associated) {
+      let tasks = matches.get(key); if (!tasks) { tasks = new Map(); matches.set(key, tasks); }
+      tasks.set(id, { task, diagnostic: task ? null : '任务记录当前不可读取，尚未建立跳转入口。' });
+    }
+  }
+  for (const { repository, worktree } of members) {
+    const key = codeWorktreeTaskKey(repository.id, worktree.worktreeId), matching = matches.get(key);
+    if (matching && matching.size > 1) result.set(key, { taskId: null, taskTitle: null, taskDiagnostic: '这个工作树被多个任务记录关联，尚未确定对应任务。' });
+    else if (matching?.size === 1 && uniquenessUnknown) result.set(key, { taskId: null, taskTitle: null, taskDiagnostic: '任务目录关联尚未完整读取，无法确认唯一对应任务。' });
+    else if (matching?.size === 1) {
+      const value = [...matching.values()][0];
+      result.set(key, { taskId: value.task?.taskId || null, taskTitle: value.task?.title || null, taskDiagnostic: value.diagnostic });
+    } else if (!result.has(key) && incomplete) result.set(key, { taskId: null, taskTitle: null, taskDiagnostic: '任务目录关联尚未完整读取。' });
+  }
+  return result;
+}
 
 function listedWorktrees(location: string) {
   const entries: Array<{ path: string; branch: string | null }> = [];

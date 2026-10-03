@@ -1,19 +1,28 @@
-import { Button } from 'antd';
-import { SelectableHoverCard } from '../../../components/SelectableHoverCard';
+import { App, Button, Space } from 'antd';
+import { CloseOutlined, CopyOutlined, DownOutlined } from '@ant-design/icons';
+import { copyText } from '../../../lib/copyText';
 
-type Props = { repositoryName: string; location: string; branch?: string | null; taskId?: string; commitHash?: string; area?: 'unstaged' | 'staged' | 'untracked' | 'commit'; observedRevision?: string; worktreeName?: string; kind?: 'default' | 'task' | 'worktree' | 'commit' };
+type LocationProps = { repositoryName: string; location: string; branch?: string | null; taskId?: string; commitHash?: string; area?: 'unstaged' | 'staged' | 'untracked' | 'commit'; worktreeName?: string; kind?: 'default' | 'task' | 'worktree' | 'commit' };
 
-/** One compact source identity, with the actual path and full version available on hover. */
-export function CodeLocationSummary({ repositoryName, location, branch, taskId, commitHash, area, observedRevision, worktreeName, kind }: Props) {
+/** Keep the reading identity visible; disclose location details only on request. */
+export function CodeLocationSummary({ repositoryName, branch, taskId, commitHash, area, worktreeName, kind, expanded, detailsId, onToggle }: LocationProps & {expanded: boolean; detailsId: string; onToggle(): void}) {
   const taskLocation = kind === 'task' || !kind && Boolean(taskId);
   const label = commitHash ? '历史版本' : area === 'staged' ? '已暂存版本' : taskLocation ? '任务目录' : '本机目录';
-  return <SelectableHoverCard title="文件来源" placement="bottomLeft" content={<div aria-label="文件来源信息">
-    <p><strong>{repositoryName}</strong> · {worktreeName || label}</p><p><code>{location || '当前没有可查看的目录'}</code></p>
-    {commitHash ? <p>固定提交：<code>{commitHash}</code></p> : <p>分支：<code>{branch || '—'}</code></p>}
-    {taskId && <p>关联任务：<code>{taskId}</code></p>}
-    {observedRevision && <p>观察版本：<code>{observedRevision}</code></p>}
-    <p>{commitHash ? '读取这次提交保存的内容。' : area === 'staged' ? '读取已观察的索引内容。' : taskLocation ? '读取任务实际使用的目录，不合并其他工作树。' : kind === 'worktree' || worktreeName ? '读取已枚举的所选工作树目录，不合并其他工作树。' : taskId ? '当前任务使用代码库登记的本机目录。' : '读取代码库登记的本机目录。'}</p>
-  </div>}><Button type="text" size="small" className="code-location-summary" aria-label={'查看文件来源 ' + repositoryName}>
-    <span className="code-location-summary-content"><strong>{repositoryName}</strong><span>· {worktreeName || label}</span>{worktreeName && area === 'staged' && <span>· 已暂存</span>}<code>{commitHash ? commitHash.slice(0, 8) : branch || ''}</code></span>
-  </Button></SelectableHoverCard>;
+  return <Button type="text" size="small" className="code-location-summary" aria-label={'查看位置信息 ' + repositoryName} aria-expanded={expanded} aria-controls={detailsId} onClick={onToggle} onKeyDown={event => { if (expanded && event.key === 'Escape') onToggle(); }}>
+    <span className="code-location-summary-content"><strong>{repositoryName}</strong><span>· {worktreeName || label}</span>{worktreeName && area === 'staged' && <span>· 已暂存</span>}<code>{commitHash ? commitHash.slice(0, 8) : branch || ''}</code><DownOutlined className="code-location-summary-caret" /></span>
+  </Button>;
+}
+
+export function CodeLocationDetails({location, branch, commitHash, id, onClose}: LocationProps & {id: string; onClose(): void}) {
+  const { message } = App.useApp();
+  const reference = commitHash || branch;
+  const copy = async (text: string) => {
+    if (await copyText(text)) message.success('已复制');
+    else message.info('可以选中文字复制。');
+  };
+  return <section id={id} className="source-control-source-details" aria-label="位置信息" onKeyDown={event => { if (event.key === 'Escape') onClose(); }}>
+    <header><strong>查看位置</strong><Button type="text" size="small" icon={<CloseOutlined />} aria-label="收起位置信息" onClick={onClose} /></header>
+    <dl><dt>目录</dt><dd><code>{location || '当前没有可查看的目录'}</code></dd><dt>{commitHash ? '固定提交' : '分支'}</dt><dd><code>{reference || '—'}</code></dd></dl>
+    <Space wrap><Button size="small" aria-label="复制路径" icon={<CopyOutlined />} disabled={!location} onClick={() => void copy(location)}>复制路径</Button><Button size="small" aria-label={commitHash ? '复制提交标识' : '复制分支'} icon={<CopyOutlined />} disabled={!reference} onClick={() => reference && void copy(reference)}>{commitHash ? '复制提交标识' : '复制分支'}</Button></Space>
+  </section>;
 }

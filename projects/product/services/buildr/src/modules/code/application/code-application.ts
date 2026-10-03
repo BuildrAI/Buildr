@@ -6,7 +6,7 @@ import { searchCode } from '../infrastructure/code-search.ts';
 import { taskActionId } from '../../task/application/task-validation.ts';
 import { createGitCommitReader } from '../../task/commits/infrastructure/git-commit-reader.ts';
 import { gitCheckoutReadId } from '../../../infrastructure/git/checkout-read-identity.ts';
-import { readCodeWorktreeCatalog } from '../infrastructure/code-worktree-catalog.ts';
+import { readCodeWorktreeCatalog, readSourceControlTaskAssociations } from '../infrastructure/code-worktree-catalog.ts';
 import { createSourceControlApplication } from './source-control-application.ts';
 import { enumerateCodeWorktrees, resolveCodeWorktree } from '../infrastructure/code-worktree-reader.ts';
 type Repository = { id:string; code:string; name:string; source: {type:string;path:string;root?:string}; location?:string };
@@ -21,7 +21,7 @@ export type CodeDependencies = {
   readTaskScope(root:string,id:string):Task['scope'];
   readTask?(root:string,id:string):{taskId:string;title:string};
   gitWorktreeEvidencePath?(root:string,id:string):string;
-  readGitWorktreeEvidence(root:string,id:string,options:{optional:boolean}):{evidence:{repositories:Array<{sourceRepository:string;checkoutPath:string}>}}|null;
+  readGitWorktreeEvidence(root:string,id:string,options:{optional:boolean}):{evidence:{repositories:Array<{sourceRepository:string;checkoutPath:string;branch?:string}>}}|null;
 };
 export function createCodeApplication(dependencies:CodeDependencies) {
   function repositoryScope(root:string,taskId?:string) {
@@ -115,7 +115,7 @@ export function createCodeApplication(dependencies:CodeDependencies) {
     let observed:string;try{observed=gitCheckoutReadId(current.location);}catch{throw codeFailure('code_checkout_unavailable','读取期间所选检出目录已不存在，请重新核对。',404);}
     if(observed!==current.checkoutId)throw codeFailure('code_checkout_changed','读取期间检出目录身份已变化，请重新选择目录。',409);
   }
-  const sourceControlApplication=createSourceControlApplication({repositories:repositoryScope,source:(root,input)=>source(root,input as CodeInput),worktrees:(root,id)=>{const registered=source(root,{repositoryId:id});return enumerateCodeWorktrees(registered.location,id).worktrees;},readTask:dependencies.readTask});
+  const sourceControlApplication=createSourceControlApplication({repositories:repositoryScope,source:(root,input)=>source(root,input as CodeInput),worktrees:(root,id)=>{const registered=source(root,{repositoryId:id});return enumerateCodeWorktrees(registered.location,id).worktrees;},taskAssociations:(root,repositories,taskId,deadline)=>readSourceControlTaskAssociations(root,repositories,dependencies,taskId,deadline),readTask:dependencies.readTask});
   return Object.freeze({
     ...sourceControlApplication,
     repositories,

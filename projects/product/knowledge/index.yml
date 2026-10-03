@@ -354,6 +354,10 @@ artifacts:
       - product-reference-technical-architecture
       - verification-source-23f06815b2
       - verification-source-535557f7c3
+      - code-read-module
+      - code-source-control-read
+      - code-source-control-image-read
+      - code-source-control-image-preview
   - id: technical-layers-map
     title: 技术层、对象与代表方法
     kind: code-map
@@ -1233,6 +1237,26 @@ artifacts:
       - file-responsibility-graph
       - project-terms
 sources:
+  - id: code-read-module
+    title: 代码阅读能力装配
+    kind: code
+    path: services/buildr/src/modules/code/module.ts
+    summary: 装配已登记代码来源的命令行、网页及只读应用入口，不拥有 Git 写入。
+  - id: code-source-control-read
+    title: 源代码管理比较用例
+    kind: code
+    path: services/buildr/src/modules/code/application/source-control-application.ts
+    summary: 按具体工作树与比较层读取状态、历史、差异及图片，核对观察版本和来源身份。
+  - id: code-source-control-image-read
+    title: 图片比较来源读取
+    kind: code
+    path: services/buildr/src/modules/code/infrastructure/source-control-image-reader.ts
+    summary: 复用受限文件读取取得磁盘、索引与固定提交的新旧图片，缺侧依据真实变化类型，读取失败不冒充不存在。
+  - id: code-source-control-image-preview
+    title: 源代码管理图片阅读
+    kind: code
+    path: services/buildr-web/src/features/code/components/SourceControlImagePreview.tsx
+    summary: 展示已核对的新旧图片及缺侧，按宽度安排阅读，实际解码失败明确表达，不自行读取其他来源。
   - id: project-documents-entry
     title: 项目文档
     kind: evidence
@@ -3012,6 +3036,18 @@ sources:
     path: services/buildr-web/src/features/task/components/PrototypeReaderLayout.tsx
     summary: 独立任务阅读与离线预览共用页面目录和阅读布局，页面选择由入口接入。
 relations:
+  - from: code-read-module
+    to: system-structure
+    kind: implements
+  - from: code-source-control-read
+    to: system-structure
+    kind: implements
+  - from: code-source-control-image-read
+    to: system-structure
+    kind: implements
+  - from: code-source-control-image-preview
+    to: system-structure
+    kind: implements
   - from: product-overview-article
     to: product-overview
     kind: explains
