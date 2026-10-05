@@ -397,6 +397,51 @@ test('unrelated documentation does not activate or access Task records', (t: any
   assert.equal(calls.some(args => args.includes('sync') || args.includes('task') || args[0] === 'push'), false);
 });
 
+for (const [role, sourcePath] of [
+  ['module', 'src/modules/workspace/application/runtime-fixture.ts'],
+  ['bin', 'bin/runtime-fixture.mjs'],
+  ['web', 'src/web/application/runtime-fixture.ts'],
+]) {
+  test(`package runtime source ${role} installs and restarts the retained development app before entry and Doctor verification`, (t: any) => {
+    const current: any = fixture(t);
+    const relative = `projects/product/services/buildr/${sourcePath}`;
+    const file = path.join(current.root, relative);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, 'export const deliveredRuntime = true;\n');
+    git(current.root, 'add', '--', relative);
+    git(current.root, 'commit', '-m', `deliver ${role} runtime`);
+    git(current.root, 'push', 'origin', 'dev');
+    const deliveredRef = git(current.root, 'rev-parse', 'HEAD');
+    const perform = executor(current.root, { runningDevelopmentInstance: true });
+    const calls: Array<{ executable: string; args: string[]; entryInspection: boolean }> = [];
+    const result: any = runDirectSelfBootstrapCloseout({
+      workspaceRoot: current.root, baseRef: current.baseRef, deliveredRef,
+      targetBranch: 'dev', remote: 'origin', agent: 'codex', nodeExecutable: process.execPath, environment: current.environment,
+      execute: (executable: string, args: string[], context: any) => { calls.push({ executable, args, entryInspection: context.env?.BUILDR_INTERNAL_DEVELOPMENT_CLI_IDENTITY_JSON === '1' }); return perform(executable, args, context); },
+    });
+    assert.equal(result.status, 'passed', JSON.stringify(result));
+    assert.deepEqual(result.phases.map((phase: any) => phase.id), ['preflight', 'install-buildr-web', 'verify-development-entry', 'finalize']);
+    assert.ok(result.phases.every((phase: any) => phase.status === 'passed'));
+    const canonicalRoot = fs.realpathSync(current.root);
+    const manager = path.join(canonicalRoot, 'projects/product/services/buildr/tools/build/launcher/manage.ts');
+    const continuity = path.join(canonicalRoot, 'skills/buildr-self-bootstrap-sync/scripts/development-web-continuity.mjs');
+    const bridge = fs.realpathSync(current.projectBridge);
+    const inspectIndex = calls.findIndex((call) => call.args[0] === continuity && call.args[1] === 'inspect');
+    const installIndex = calls.findIndex((call) => call.args[0] === manager && call.args[1] === 'install');
+    const restartIndex = calls.findIndex((call) => call.args[0] === continuity && call.args[1] === 'restart');
+    const entryIndex = calls.findIndex((call) => call.executable === bridge && call.entryInspection);
+    const doctorIndex = calls.findIndex((call) => call.executable === bridge && call.args[0] === 'doctor');
+    assert.ok(inspectIndex >= 0 && inspectIndex < installIndex && installIndex < restartIndex && restartIndex < entryIndex && entryIndex < doctorIndex, JSON.stringify(calls));
+    for (const index of [inspectIndex, installIndex, restartIndex]) assert.equal(calls[index].executable, process.execPath);
+    assert.deepEqual(calls[installIndex].args.slice(1), ['install', '--channel', 'development']);
+    const restart = calls[restartIndex].args;
+    assert.equal(restart[restart.indexOf('--previous-pid') + 1], '71173');
+    assert.equal(restart[restart.indexOf('--port') + 1], String(DEFAULT_DEVELOPMENT_WEB_PORT));
+    assert.equal(git(current.root, 'rev-parse', 'HEAD'), deliveredRef);
+    assert.equal(git(current.root, 'ls-remote', 'origin', 'refs/heads/dev').split(/\s+/)[0], deliveredRef);
+  });
+}
+
 test('taskless activation rejects a delivery absent from the remote', (t: any) => {
   const current: any = fixture(t);
   fs.appendFileSync(path.join(current.root, 'skills/generated/SKILL.md'), 'unpublished\n');

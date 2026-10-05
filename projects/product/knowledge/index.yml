@@ -2284,10 +2284,10 @@ sources:
   - id: task-bootstrap-runner
     path: scripts/closeout.mjs
     title: 自举唯一执行器
-    summary: 核对基线和交付、按路径选择动作，完成同步后继提交及推送、开发应用更新、显式入口核验和最终 Doctor；不写任务状态。
+    summary: 核对基线和交付、按实际后端 src/、bin/ 及前端与构建输入选择动作，完成同步后继提交及推送、开发应用更新、显式入口核验和最终 Doctor；不写任务状态。
     kind: skill
     skillId: buildr-self-bootstrap-sync
-    observedDigest: 76740435b1fed6a837440403c11649035e4ed23605ff5b3218850f8d1168be69
+    observedDigest: 3b429f0bc483f6b9cf3d9a235870f0963dd68707cb3947aa2bb4f47f37c5dd63
   - id: task-bootstrap-continuity
     path: scripts/development-web-continuity.mjs
     title: 开发实例连续性

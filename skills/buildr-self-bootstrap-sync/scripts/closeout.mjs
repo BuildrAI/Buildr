@@ -142,7 +142,7 @@ function classifications(changedPaths) {
       `${SERVICE_ROOT}/package.json`,
       `${SERVICE_ROOT}/package-lock.json`,
       `${SERVICE_ROOT}/LICENSE`,
-    ], [`${SERVICE_ROOT}/src/web/`, `${SERVICE_ROOT}/web-dist/`, `${PRODUCT_ROOT}/services/buildr-web/`, `${SERVICE_ROOT}/tools/build/launcher/`])) buildrWeb.push(pathname);
+    ], [`${SERVICE_ROOT}/src/`, `${SERVICE_ROOT}/bin/`, `${SERVICE_ROOT}/web-dist/`, `${PRODUCT_ROOT}/services/buildr-web/`, `${SERVICE_ROOT}/tools/build/launcher/`])) buildrWeb.push(pathname);
   }
   return {
     'sync-retained-workspace': [...new Set(sync)].sort(),
