@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { useLegacyAssetCatalog } from '../helpers/legacy-asset-catalog.ts';
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -375,6 +376,7 @@ test('npm package uses only its compatible host Node for CLI and on-demand Build
     fs.mkdirSync(workflowWorkspace);
     const initialized: any = run(['init', '--target', workflowWorkspace, '--name', 'workflow-route-fixture', '--profile', 'team']);
     assert.equal(initialized.status, 0, initialized.stderr || initialized.stdout);
+    useLegacyAssetCatalog(workflowWorkspace); // Installed compatibility route, not the fresh catalog journey.
     const project: any = run(['project', 'create', 'demo', '--target', workflowWorkspace, '--name', 'Demo', '--description', 'Installed workflow route fixture.']);
     assert.equal(project.status, 0, project.stderr || project.stdout);
 

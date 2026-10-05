@@ -67,7 +67,8 @@ OpenSpec 只通过 `AGENT_ASSETS_OPENSPEC_SUPPORT` 获取所需资产能力，�
 前端不复制后端所有层次。[`features/`](../../services/buildr-web/src/features/) 内的业务客户端、请求状态、组件和页面按需要建立；共享传输在 [`api/client.ts`](../../services/buildr-web/src/api/client.ts)，协议类型来自生成目录。应用壳与功能各自持有状态，不互相复制。
 
 - **共同展示与入口隔离**：[`AppShellView.tsx`](../../services/buildr-web/src/app/AppShellView.tsx) 和 [`AppNavigationItem.tsx`](../../services/buildr-web/src/app/AppNavigationItem.tsx) 提供展示；正式入口接入真实数据，已授权原型可复用展示并注入模拟数据，不能调用真实写入。
-- **连续阅读与当前事实**：已访问页面保留筛选、滚动和草稿，关闭页面或切换工作空间（Workspace）后释放。本地存储（localStorage）只保存偏好，不可用时不应阻断工作；保留页面不等于业务数据最新，保存仍需版本检查。
+- **连续阅读与当前事实**：已访问页面保留筛选、滚动和局部输入；[项目资料阅读钩子（Hook）](../../services/buildr-web/src/lib/useMarkdownDocumentViewer.ts)只接受当前请求世代，重置、切换项目和卸载使先前读取失效，历史从实际初始文档开始。本地存储（localStorage）只保存偏好，不可用时不应阻断工作；保留页面不等于业务数据最新，保存仍需版本检查。
+- **路由与文章编辑退出**：[启动入口](../../services/buildr-web/src/main.tsx)通过单个数据路由器（Data Router）继续装配原有 [App 地址树](../../services/buildr-web/src/App.tsx)，不增加加载器或路由数据缓存。[文章导航边界](../../services/buildr-web/src/features/publication/publication-navigation.ts)按实际路由判断同一工作空间壳是否保留；独立原型页属于释放边界。[文章编辑抽屉](../../services/buildr-web/src/features/publication/components/ArticleEditorDrawer.tsx)持有唯一草稿与保存状态，离开释放现场的位置前复用放弃确认，保存中取消退出且不重放；同工作空间普通导航保持抽屉。浏览器刷新或关闭只请求原生离开提醒，不承诺未保存内容持久恢复。
 - **指令与请求时效**：生成的智能体（Agent）指令只对应当前输入。目标或范围变化后旧指令失效，迟到请求不能恢复旧结果；上下文切换释放旧表单，生成失败也不回退到旧指令。
 - **局部失败与草稿**：任务材料按需读取，某项失败不隐藏其他可读成果。共用抽屉外观不代表所有表单已经具有相同草稿保护；保存、错误和保留输入仍由各功能负责。
 - **原型与侧读**：原型以 `sandbox="allow-scripts"` 隔离，不能继承主页面会话（Session）。说明和清单共用 [`SideReadingPanel.tsx`](../../services/buildr-web/src/components/SideReadingPanel.tsx) 及[阅读状态](../../services/buildr-web/src/components/useSideReading.ts)；任务内、独立阅读及可选说明解析见[任务地图](task-system.md#原型阅读怎样落到实现)，不新增一份业务状态。

@@ -8,13 +8,17 @@ import YAML from 'yaml';
 import { spawnSync } from 'node:child_process';
 import { resolveRuleScope } from '../../src/modules/agent-assets/infrastructure/runtime/rule-projection.ts';
 import { createRuntime } from '../helpers/runtime-harness.ts';
-import { copyPreparedProjectWorkspace } from '../helpers/prepared-fixtures.ts';
+import { copyPreparedProjectWorkspace, copyPreparedLegacyProjectWorkspace } from '../helpers/prepared-fixtures.ts';
 import { createWorkspaceHttpContribution } from '../../src/modules/workspace/interfaces/http/workspace-http.ts';
 
 function setup(t: any) {
   const { root } = copyPreparedProjectWorkspace(t, 'asset-relationships');
   const runtime: any = createRuntime();
   return { root, runtime };
+}
+function setupLegacy(t: any) {
+  const { root } = copyPreparedLegacyProjectWorkspace(t, 'legacy-asset-relationships');
+  return { root, runtime: createRuntime() };
 }
 function ready(runtime: any, root: string) {
   const before = runtime.assetCatalog(root);
@@ -23,8 +27,89 @@ function ready(runtime: any, root: string) {
 function addRepo(runtime: any, root: string, revision: string, code: string, branch: string) {
   return runtime.createCatalogRepository(root, { revision, code, url: 'https://example.com/freshx.git', integrationBranch: branch });
 }
+test('fresh initialization creates a current empty catalog and accepts the first project through HTTP', async (t: any) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-fresh-asset-catalog-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const runtime = createRuntime();
+  runtime.initializeWorkspace({ targetRoot: root, name: 'fresh', description: 'First-use catalog fixture', profile: 'team', agent: null, sourceOnly: true });
+  for (const [file, schemaVersion, key] of [
+    ['projects/manifest.yml', 'buildr.projects/v2', 'projects'],
+    ['services/manifest.yml', 'buildr.services/v3', 'services'],
+    ['repositories/manifest.yml', 'buildr.repositories/v1', 'repositories'],
+  ]) {
+    assert.deepEqual(YAML.parse(fs.readFileSync(path.join(root, file), 'utf8')), { schemaVersion, [key]: {} });
+  }
+  const before = runtime.assetCatalog(root);
+  assert.equal(before.migrationRequired, false);
+  assert.deepEqual([before.projects, before.services, before.repositories], [[], [], []]);
+  let authorized = 0;
+  const response: any = await createWorkspaceHttpContribution(runtime).handle({
+    request: { method: 'POST' }, suffix: '/asset-catalog/projects', root,
+    authorizeWrite: () => authorized++,
+    readJsonBody: async () => ({ revision: before.revision, code: 'first', name: '首个项目' }),
+  });
+  assert.equal(response.status, 200);
+  assert.equal(authorized, 1);
+  assert.equal(response.body.migrationRequired, false);
+  assert.equal(response.body.projects[0].code, 'first');
+  assert.ok(fs.existsSync(path.join(root, 'projects/first/AGENTS.md')));
+  const files = ['.buildr/workspace.yml', 'projects/manifest.yml', 'services/manifest.yml', 'repositories/manifest.yml'];
+  const bytes = files.map(file => fs.readFileSync(path.join(root, file)));
+  runtime.initializeWorkspace({ targetRoot: root, name: 'reinitialized', description: 'Preserve registered assets', profile: 'team', agent: null, sourceOnly: true });
+  files.forEach((file, i) => assert.deepEqual(fs.readFileSync(path.join(root, file)), bytes[i]));
+  assert.equal(runtime.assetCatalog(root).revision, response.body.revision);
+});
+
+test('reinitializing a legacy layout preserves migration, service identities and physical content', (t: any) => {
+  const { root, runtime } = setupLegacy(t);
+  const source = path.join(root, 'incoming'); fs.mkdirSync(source); fs.writeFileSync(path.join(source, 'README.md'), 'legacy service bytes\n');
+  const service = runtime.createServiceAsset({ targetRoot: root, project: 'demo', service: 'api', repoRef: source, attachRef: null, name: 'Legacy', description: 'Legacy service', type: 'service', rulesSource: null, integrationBranch: null, remote: 'origin', remoteExplicit: false, json: false }).service;
+  const files = ['.buildr/workspace.yml', 'projects/manifest.yml', 'projects/demo/services/manifest.yml', 'projects/demo/services/api/README.md'];
+  const bytes = files.map(file => fs.readFileSync(path.join(root, file)));
+  const before = runtime.assetCatalog(root);
+  assert.equal(before.migrationRequired, true);
+  assert.equal(before.services[0].id, service.id);
+  runtime.initializeWorkspace({ targetRoot: root, name: 'legacy', description: 'Preserve legacy assets', profile: 'team', agent: null, sourceOnly: true });
+  assert.deepEqual(runtime.assetCatalog(root), before);
+  files.forEach((file, i) => assert.deepEqual(fs.readFileSync(path.join(root, file)), bytes[i]));
+  for (const file of ['services/manifest.yml', 'repositories/manifest.yml']) assert.equal(fs.existsSync(path.join(root, file)), false);
+  assert.throws(() => runtime.createCatalogProject(root, { revision: before.revision, code: 'blocked', name: 'Requires migration' }), (e: any) => e.code === 'asset_migration_required');
+  const after = ready(runtime, root);
+  assert.equal(after.migrationRequired, false);
+  assert.equal(after.services[0].id, service.id);
+  assert.equal(fs.readFileSync(path.join(root, 'projects/demo/services/api/README.md'), 'utf8'), 'legacy service bytes\n');
+});
+
+test('reinitializing either half of a global catalog preserves the incomplete state', (t: any) => {
+  for (const missing of ['services/manifest.yml', 'repositories/manifest.yml']) {
+    const { root, runtime } = setup(t);
+    fs.rmSync(path.join(root, missing));
+    const files = ['.buildr/workspace.yml', 'projects/manifest.yml', missing === 'services/manifest.yml' ? 'repositories/manifest.yml' : 'services/manifest.yml'];
+    const bytes = files.map(file => fs.readFileSync(path.join(root, file)));
+    assert.throws(() => runtime.assetCatalog(root), (e: any) => e.code === 'asset_registry_incomplete');
+    runtime.initializeWorkspace({ targetRoot: root, name: 'incomplete', description: 'Preserve catalog recovery boundary', profile: 'team', agent: null, sourceOnly: true });
+    assert.equal(fs.existsSync(path.join(root, missing)), false);
+    files.forEach((file, i) => assert.deepEqual(fs.readFileSync(path.join(root, file)), bytes[i]));
+    assert.throws(() => runtime.assetCatalog(root), (e: any) => e.code === 'asset_registry_incomplete');
+  }
+});
+
+test('an existing dangling catalog entry is not treated as a fresh empty layout', (t: any) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-existing-catalog-entry-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, 'services'));
+  const manifest = path.join(root, 'services/manifest.yml');
+  fs.symlinkSync('unavailable.yml', manifest);
+  const runtime = createRuntime();
+  runtime.initializeWorkspace({ targetRoot: root, name: 'existing', description: 'Preserve unknown catalog entries', profile: 'team', agent: null, sourceOnly: true });
+  assert.equal(fs.lstatSync(manifest).isSymbolicLink(), true);
+  assert.equal(fs.readlinkSync(manifest), 'unavailable.yml');
+  assert.equal(fs.existsSync(path.join(root, 'repositories/manifest.yml')), false);
+  assert.throws(() => runtime.assetCatalog(root), (e: any) => e.code === 'asset_symlink_forbidden');
+});
+
 test('global catalog read is zero-write; explicit migration is idempotent and stale mutations fail', (t: any) => {
-  const { root, runtime } = setup(t);
+  const { root, runtime } = setupLegacy(t);
   const file = path.join(root, 'projects/manifest.yml');
   const bytes = fs.readFileSync(file);
   const before = runtime.assetCatalog(root);
@@ -138,7 +223,7 @@ test('shared code repository yields one task worktree and module directories do 
 });
 
 test('explicit migration code mappings preserve legacy identities and physical content', (t: any) => {
-  const { root, runtime } = setup(t);
+  const { root, runtime } = setupLegacy(t);
   runtime.createProjectAsset({ targetRoot: root, project: 'other', repoRef: null, attachRef: null, name: 'Other', description: 'Other project', remote: 'origin', remoteExplicit: false, integrationBranch: null });
   const original: Record<string, string> = {};
   for (const project of ['demo', 'other']) {
@@ -438,7 +523,7 @@ test('register actual workspace root and attached Git roots; reject child and or
 });
 
 test('normalization merges old workspace modules by real root while retaining service identities and content', (t: any) => {
-  const { root, runtime } = setup(t); initRepository(root);
+  const { root, runtime } = setupLegacy(t); initRepository(root);
   for (const code of ['api', 'web']) {
     const source = path.join(root, `incoming-${code}`); fs.mkdirSync(source); fs.writeFileSync(path.join(source, 'README.md'), code);
     runtime.createServiceAsset({ targetRoot: root, project: 'demo', service: code, repoRef: source, attachRef: null, name: code, description: 'Legacy', type: 'service', rulesSource: null, integrationBranch: null, remote: 'origin', remoteExplicit: false, json: false });

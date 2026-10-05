@@ -25,6 +25,7 @@ import { runTaskCommitsJourney } from '../../../buildr-web/test/browser/task-com
 import { runTaskMaterialsJourney } from '../../../buildr-web/test/browser/task-materials-journey.ts';
 import { runWorkbenchJourney } from './workbench-journey.ts';
 import { runPublicationJourney, publicationTestPng } from './publication-journey.ts';
+import { useLegacyAssetCatalog } from '../helpers/legacy-asset-catalog.ts';
 import { runServiceKnowledgeJourney } from './service-knowledge-journey.ts';
 import { runProjectKnowledgeInitializationJourney } from './knowledge-initialization-journey.ts';
 
@@ -89,6 +90,7 @@ function createCoreFixture(root: any): any  {
 
 function createServiceFixture(root: any): any  {
   runBuildr(['init', '--target', root, '--name', 'browser-smoke-service', '--description', '服务目录 Browser Smoke fixture']);
+  useLegacyAssetCatalog(root);
   runBuildr(['project', 'create', 'demo', '--target', root, '--name', '演示项目', '--description', '浏览器测试项目']);
   const source: any = path.join(path.dirname(root), 'service-source');
   fs.mkdirSync(source);
@@ -98,6 +100,7 @@ function createServiceFixture(root: any): any  {
 
 function createProjectFixture(root: any): any  {
   runBuildr(['init', '--target', root, '--name', 'browser-smoke-project', '--description', '项目目录 Browser Smoke fixture']);
+  useLegacyAssetCatalog(root);
   runBuildr(['project', 'create', 'demo', '--target', root, '--name', '演示项目', '--description', '浏览器测试项目']);
   const source: any = path.join(path.dirname(root), 'service-source');
   fs.mkdirSync(source);
@@ -116,6 +119,7 @@ function createArticlesFixture(root: any): any  {
 
 function createShellFixture(root: any): any  {
   runBuildr(['init', '--target', root, '--name', 'browser-smoke', '--description', 'Shell Browser Smoke fixture']);
+  useLegacyAssetCatalog(root);
   runBuildr(['project', 'create', 'demo', '--target', root, '--name', '演示项目', '--description', '浏览器测试项目']);
   runBuildr(['project', 'create', 'other', '--target', root, '--name', '另一项目', '--description', '用于验证 Workspace 摘要不锁定项目']);
   const source: any = path.join(path.dirname(root), 'service-source');
@@ -146,6 +150,7 @@ function createChangeFixture(root: any): any  {
 
 function createFixture(root: any, controllerCli: any, options: any = {}): any  {
   runBuildr(['init', '--target', root, '--name', 'browser-smoke', '--description', '隔离的浏览器 E2E fixture']);
+  useLegacyAssetCatalog(root);
   runBuildr(['project', 'create', 'demo', '--target', root, '--name', '演示项目', '--description', '浏览器测试项目']);
   runBuildr(['project', 'create', 'other', '--target', root, '--name', '另一项目', '--description', '用于验证 Workspace 摘要不锁定项目']);
   if (options.articles) {
@@ -358,7 +363,9 @@ async function capture(page: any, name: any): Promise<any>  {
   await page.screenshot({ path: path.join(SCREENSHOT_DIR, name), fullPage: true, animations: 'disabled' });
 }
 
-test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('all') || SELECTORS.has('task') ? 300_000 : SELECTORS.has('code') ? 240_000 : SELECTORS.has('task-materials') || SELECTORS.has('layout') || SELECTORS.has('workbench') || SELECTORS.has('articles') || SELECTORS.has('shell') || SELECTORS.has('service') || SELECTORS.has('project') ? 120_000 : 45_000 }, async (t: any) => {
+// Code combines explorer and SCM journeys: observed bodies consume 225s before
+// the final case, plus 14s setup. Keep all cases within the dispatcher's 360s cap.
+test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('all') || SELECTORS.has('task') || SELECTORS.has('code') ? 300_000 : SELECTORS.has('task-materials') || SELECTORS.has('layout') || SELECTORS.has('workbench') || SELECTORS.has('articles') || SELECTORS.has('shell') || SELECTORS.has('service') || SELECTORS.has('project') ? 120_000 : 45_000 }, async (t: any) => {
   const requestedSmokeRoot: any = process.env.BUILDR_SMOKE_ROOT;
   const managedSmokeRoot: any = requestedSmokeRoot && fs.existsSync(path.join(requestedSmokeRoot, '.buildr-smoke-owner')) ? requestedSmokeRoot : null;
   const base: any = managedSmokeRoot || fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-browser-smoke-'));
@@ -888,7 +895,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await capture(page, 'navigation-project-desktop.png');
   });
 
-  if (selected('articles')) await runPublicationJourney({ t, page, workspaceRoot, workspaceUrl, expectedBrowserErrors, selectAntdOption, capture });
+  if (selected('articles')) await runPublicationJourney({ t, page, workspaceRoot, workspaceUrl, otherWorkspaceUrl: `${url}/workspaces/${otherWorkspaceId}`, expectedBrowserErrors, selectAntdOption, capture });
 
   if (selected('shell')) await t.test('四类资源目录共享表头、搜索、操作位置与行密度', async () => {
     const heights: number[] = [];
@@ -1027,6 +1034,62 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     } finally {
       release(); await page.unroute(legacyRoute); page.off('request', observe);
     }
+  });
+
+  if (selected('project')) await t.test('项目资料从实际规则文档返回，迟到资料不能恢复旧阅读', async () => {
+    const projectRoot = path.join(workspaceRoot, 'projects/demo');
+    const agents = path.join(projectRoot, 'AGENTS.md'), original = fs.readFileSync(agents, 'utf8');
+    const docs = path.join(projectRoot, 'docs'); fs.mkdirSync(docs, { recursive: true });
+    fs.appendFileSync(agents, '\n## 原始规则阅读\n\n[下一份资料](docs/continuity-fast.md)\n');
+    fs.writeFileSync(path.join(docs, 'continuity-fast.md'), '# 当前资料阅读\n\n[迟到资料](continuity-slow.md)\n');
+    fs.writeFileSync(path.join(docs, 'continuity-slow.md'), '# 迟到资料不得恢复\n');
+    let release!: () => void, requested!: () => void, handled!: () => void;
+    const waiting = new Promise<void>(resolve => { release = resolve; });
+    const entered = new Promise<void>(resolve => { requested = resolve; });
+    const finished = new Promise<void>(resolve => { handled = resolve; });
+    const slow = '**/projects/demo/documents/docs/continuity-slow.md';
+    await page.route(slow, async route => {
+      const response = await route.fetch(); requested();
+      await waiting;
+      try { await route.fulfill({ response }); }
+      catch (error) { if (!route.request().failure()) throw error; }
+      finally { handled(); }
+    });
+    try {
+      await page.goto(`${workspaceUrl}/projects/demo`);
+      await page.locator('[data-doc-row="agents"]').click();
+      const reading = () => page.locator('.workspace-page:not([hidden]) .pane-right:visible');
+      await reading().getByRole('link', { name: '下一份资料', exact: true }).click();
+      await reading().getByRole('heading', { name: '当前资料阅读', exact: true }).waitFor({ state: 'visible' });
+      await reading().getByRole('link', { name: '迟到资料', exact: true }).click();
+      await entered;
+      await reading().getByRole('button', { name: '← 返回上一篇', exact: true }).click();
+      await reading().getByRole('heading', { name: '原始规则阅读', exact: true }).waitFor({ state: 'visible' });
+      release(); await finished;
+      assert.equal(await reading().getByRole('heading', { name: '原始规则阅读', exact: true }).isVisible(), true);
+      assert.equal(await reading().getByRole('heading', { name: '迟到资料不得恢复', exact: true }).count(), 0);
+      assert.equal(await reading().getByRole('button', { name: '← 返回上一篇', exact: true }).count(), 0);
+    } finally {
+      release(); await page.unroute(slow); fs.writeFileSync(agents, original);
+      for (const file of ['continuity-fast.md', 'continuity-slow.md']) fs.rmSync(path.join(docs, file));
+    }
+  });
+
+  if (selected('project')) await t.test('全新工作空间不先迁移即可从网页创建首个项目', async () => {
+    const before = runtime.assetCatalog(otherRoot);
+    assert.equal(before.migrationRequired, false);
+    assert.deepEqual([before.projects, before.services, before.repositories], [[], [], []]);
+    await page.goto(`${url}/workspaces/${otherWorkspaceId}/projects/new`);
+    await page.getByRole('textbox', { name: '项目名称', exact: true }).fill('首次网页项目');
+    await page.getByRole('textbox', { name: '项目标识', exact: true }).fill('first-browser-project');
+    assert.equal(await page.getByRole('button', { name: '迁移登记', exact: true }).count(), 0);
+    await page.getByRole('dialog').getByRole('button', { name: '创建项目', exact: true }).click();
+    await page.waitForURL(`${url}/workspaces/${otherWorkspaceId}/projects/first-browser-project`);
+    await page.getByRole('heading', { name: '首次网页项目', exact: true }).waitFor({ state: 'visible' });
+    const after = runtime.assetCatalog(otherRoot);
+    assert.equal(after.migrationRequired, false);
+    assert.equal(after.projects[0].code, 'first-browser-project');
+    assert.deepEqual([after.services, after.repositories], [[], []]);
   });
 
   if (selected('project')) await t.test('项目列表展示标题与说明，详情展示基础事实与文档', async () => {

@@ -45,13 +45,13 @@ const ENTRY_TITLES: Record<ProjectHomeEntryRef, string> = { knowledge: '项目�
 
 /** 右组项目文档对象。 */
 function ProjectDocObjectView({ projectCode, docPath, title, hint }: { projectCode: string; docPath: string; title: string; hint: string }) {
-  const fetchDocument = useCallback(async (path: string): Promise<MarkdownDocument> => {
-    return projectApi.projectDocument(projectCode, encodeProjectDocumentPath(path));
+  const fetchDocument = useCallback(async (path: string, signal?: AbortSignal): Promise<MarkdownDocument> => {
+    return projectApi.projectDocument(projectCode, encodeProjectDocumentPath(path), { signal });
   }, [projectCode]);
   const documents = useMarkdownDocumentViewer(fetchDocument, projectDocumentMissingMessage);
 
   useEffect(() => {
-    void documents.open(docPath, { pushHistory: false });
+    void documents.open(docPath, { replaceHistory: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectCode, docPath]);
 

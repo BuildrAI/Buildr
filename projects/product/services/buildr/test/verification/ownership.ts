@@ -45,6 +45,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "knowledge/index.yml",
       "src/modules/code/**",
       "test/integration/**",
+      "test/helpers/legacy-asset-catalog.ts",
       "test/verification/integration.ts",
       "test/verification/worker-budget.ts",
       "src/bootstrap/**",
@@ -287,6 +288,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
     "inputs": [
       "knowledge/index.yml",
       "test/contract/**",
+      "test/helpers/legacy-asset-catalog.ts",
       "test/verification/http-contract-fresh-build-inventory.ts",
       "test/fixtures/**",
       ".node-version",
@@ -430,6 +432,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "src/infrastructure/platform.ts",
       "src/infrastructure/product-layout.ts",
       "test/helpers/prepared-fixtures.ts",
+      "test/helpers/legacy-asset-catalog.ts",
       "test/helpers/workspace-product-suite.ts",
       "test/verification/system-suites.ts",
       "test/verification/system.ts",
@@ -440,6 +443,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   },
   "system-task-lifecycle": {
     "inputs": [
+      "test/helpers/legacy-asset-catalog.ts",
       "src/modules/task/persistence/task-repository.ts",
       "src/modules/task/persistence/task-project-repository.ts",
       "src/modules/task/persistence/task-service-repository.ts",
@@ -741,6 +745,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "resources/**",
       "package/**",
       "test/integration/application-payload-release.test.ts",
+      "test/helpers/legacy-asset-catalog.ts",
       "test/verification/release/candidate-package.ts",
       "test/verification/executor.ts",
       ".github/workflows/publish.yml"
@@ -839,6 +844,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
     "inputs": [
       "commands.yml",
       "test/commands-cli.integration.ts",
+      "test/helpers/legacy-asset-catalog.ts",
       "src/modules/agent-assets/application/commands.ts",
       "src/modules/agent-assets/application/components.ts",
       "src/modules/agent-assets/application/skills.ts",
@@ -965,7 +971,8 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "src/modules/agent-assets/application/rules.ts",
       "src/modules/agent-assets/application/skills.ts",
       "test/verification/workspace/fixture.ts",
-      "test/verification/workspace/workspace-lifecycle.ts"
+      "test/verification/workspace/workspace-lifecycle.ts",
+      "test/helpers/legacy-asset-catalog.ts"
     ],
     "inputExclusions": []
   },
@@ -1008,6 +1015,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "src/modules/workspace/**",
       "src/modules/workspace/application/workspace-operations.ts",
       "test/verification/onboarding/init.ts",
+      "test/helpers/legacy-asset-catalog.ts",
       "resources/workspace/manifest.yml",
       "resources/workspace/AGENTS.md",
       "resources/workspace/components/**"
@@ -1062,6 +1070,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
     "inputs": [
       "src/modules/workspace/**",
       "test/verification/onboarding/service-branch.ts",
+      "test/helpers/legacy-asset-catalog.ts",
       "services/manifest.yml"
     ],
     "inputExclusions": [
@@ -1099,6 +1108,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   },
   "managed-data-integrity": {
     "inputs": [
+      "test/helpers/legacy-asset-catalog.ts",
       "src/modules/agent-assets/application/package-maintenance/**",
       "src/modules/agent-assets/application/package-maintenance.ts",
       "src/modules/workspace/application/workspace-operations.ts",

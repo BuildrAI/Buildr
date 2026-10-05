@@ -7,6 +7,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import YAML from 'yaml';
+import { useLegacyAssetCatalog } from '../../helpers/legacy-asset-catalog.ts';
 
 const productRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const buildr: any = path.join(productRoot, 'bin', 'buildr.mjs');
@@ -47,6 +48,7 @@ try {
 
   fs.mkdirSync(workspace);
   run(process.execPath, [buildr, 'init', '--target', workspace, '--name', 'service-branch', '--profile', 'team']);
+  useLegacyAssetCatalog(workspace);
   run(process.execPath, [buildr, 'service', 'create', 'demo/api', remote, '--branch', 'feature', '--target', workspace, '--type', 'backend']);
   const serviceRoot: any = path.join(workspace, 'projects', 'demo', 'services', 'api');
   assert.equal(run('git', ['branch', '--show-current'], { cwd: serviceRoot }).stdout.trim(), 'feature');

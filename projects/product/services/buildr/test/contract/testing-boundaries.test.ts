@@ -268,12 +268,16 @@ test('Prepared Fixture Provider只替代非主证据准备并保持独立sandbox
   assert.match(project, /copyPreparedWorkspace/);
   assert.match(project, /copyPreparedGitRepository/);
   assert.doesNotMatch(project, /runBuildr\(\['init'/);
-  assert.match(service, /copyPreparedProjectWorkspace/);
+  assert.match(service, /copyPreparedLegacyProjectWorkspace/);
   assert.match(service, /copyPreparedGitRepository/);
   assert.doesNotMatch(service, /runBuildr\(\['init'/);
   assert.match(workspace, /selectedSuite === 'manifest-registry' && !options\.freshIdentity/,
     'manifest cases may reuse a foundation, while identity evidence requests a fresh Workspace');
   assert.match(retirement, /copyPreparedWorkspace/);
+  assert.match(helper, /function copyPreparedWorkspace[\s\S]*foundation\(acquire\(t, WORKSPACE_FOUNDATION_CONTEXT_KEY/);
+  assert.match(helper, /function copyPreparedLegacyWorkspace/);
+  assert.match(helper, /function copyPreparedLegacyProjectWorkspace/);
+  assert.match(helper, /useLegacyAssetCatalog/);
 
 });
 

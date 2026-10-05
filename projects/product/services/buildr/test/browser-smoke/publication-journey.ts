@@ -9,19 +9,35 @@ import { openKnowledgeTopicDirectory, selectKnowledgeChildTopic, verifyKnowledge
 export const publicationTestPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aN1sAAAAASUVORK5CYII=', 'base64');
 
 type Context = {
-  t: TestContext; page: Page; workspaceRoot: string; workspaceUrl: string;
+  t: TestContext; page: Page; workspaceRoot: string; workspaceUrl: string; otherWorkspaceUrl: string;
   expectedBrowserErrors: Set<string>;
   selectAntdOption(page: Page, id: string, text: string): Promise<unknown>;
   capture(page: Page, name: string): Promise<unknown>;
 };
 
-export async function runPublicationJourney({ t, page, workspaceRoot, workspaceUrl, expectedBrowserErrors, selectAntdOption, capture }: Context) {
+export async function runPublicationJourney({ t, page, workspaceRoot, workspaceUrl, otherWorkspaceUrl, expectedBrowserErrors, selectAntdOption, capture }: Context) {
   const root = path.join(workspaceRoot, 'projects/product/docs/publications');
   const apiBase = `${new URL(workspaceUrl).origin}/api/v1${new URL(workspaceUrl).pathname}`;
   const visible = () => page.locator('.workspace-page:not([hidden])');
   const editor = () => page.locator('.publication-editor-drawer');
   const primaryTabs = () => page.getByRole('tablist', { name: '打开的页面', exact: true }).getByRole('tab');
   writeReadingFixture(workspaceRoot);
+  const openEditorWithPeerHistory = async () => {
+    await page.goto(`${otherWorkspaceUrl}/overview`);
+    await page.getByRole('button', { name: '切换工作空间', exact: true }).waitFor({ state: 'visible' });
+    const peerHistoryLength = await page.evaluate(() => history.length);
+    await page.getByRole('button', { name: '切换工作空间', exact: true }).click();
+    await page.getByRole('menuitem').filter({ hasText: /^browser-smoke(?:-articles)?$/ }).click();
+    await page.waitForURL(`${workspaceUrl}/overview`);
+    await page.locator('[data-area="workspace"]').click();
+    await page.locator('[data-nav="articles"]').click();
+    await visible().getByRole('link', { name: '浏览器测试文章', exact: true }).click();
+    await visible().getByRole('button', { name: /编辑文章/ }).click();
+    await editor().locator('#article-edit-summary').waitFor({ state: 'visible' });
+    const steps = await page.evaluate(() => history.length) - peerHistoryLength;
+    assert.ok(steps > 0 && steps <= 6, `真实同文档导航建立跨空间历史：${steps}`);
+    return { steps, editingUrl: page.url() };
+  };
   const openKnowledgeSource = async (entry: Locator, sourceId: string) => {
     const base = new URL(apiBase), prefix = `${base.pathname}/knowledge/project/`;
     assert.equal(await entry.count(), 1, `来源 ${sourceId} 必须有唯一可点击入口`);
@@ -404,6 +420,59 @@ export async function runPublicationJourney({ t, page, workspaceRoot, workspaceU
     await editor().getByRole('button', { name: '关闭文章编辑', exact: true }).click();
     await page.getByRole('dialog', { name: '放弃尚未保存的修改？' }).getByRole('button', { name: '放弃修改', exact: true }).click();
     await editor().waitFor({ state: 'hidden' });
+  });
+
+  await t.test('跨工作空间历史退出允许继续编辑，明确放弃后才释放草稿', async () => {
+    const file = path.join(root, 'article.md'), before = fs.readFileSync(file);
+    const { steps, editingUrl } = await openEditorWithPeerHistory();
+    await editor().locator('#article-edit-summary').fill('跨工作空间退出仍保留的输入');
+    await page.evaluate(count => history.go(-count), steps);
+    const leave = page.getByRole('dialog', { name: '放弃尚未保存的修改？', exact: true });
+    await leave.waitFor({ state: 'visible' });
+    await leave.getByRole('button', { name: '继续编辑', exact: true }).click();
+    assert.equal(page.url(), editingUrl);
+    assert.equal(await editor().locator('#article-edit-summary').inputValue(), '跨工作空间退出仍保留的输入');
+    assert.deepEqual(fs.readFileSync(file), before);
+    await page.evaluate(count => history.go(-count), steps);
+    await leave.waitFor({ state: 'visible' });
+    await leave.getByRole('button', { name: '放弃修改', exact: true }).click({ trial: true });
+    await capture(page, 'article-workspace-leave-confirmation.png');
+    await leave.getByRole('button', { name: '放弃修改', exact: true }).click();
+    await page.waitForURL(`${otherWorkspaceUrl}/overview`);
+    await editor().waitFor({ state: 'hidden' });
+    assert.deepEqual(fs.readFileSync(file), before, '放弃未保存输入不修改真实文章');
+  });
+
+  await t.test('保存中跨空间退出被取消，失败后输入保留且不重放旧导航', async () => {
+    const file = path.join(root, 'article.md'), before = fs.readFileSync(file);
+    const { steps, editingUrl } = await openEditorWithPeerHistory();
+    const updateUrl = `${apiBase}/projects/product/publications/browser-article`;
+    let release!: () => void;
+    const waiting = new Promise<void>(resolve => { release = resolve; });
+    await page.route(updateUrl, async route => {
+      if (route.request().method() !== 'PUT') { await route.continue(); return; }
+      await waiting;
+      await route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ error: { code: 'publication_revision_conflict', message: '稿件已变化，输入已保留' } }) });
+    });
+    expectedBrowserErrors.add(updateUrl);
+    try {
+      await editor().locator('#article-edit-summary').fill('保存等待失败后继续保留');
+      const saving = page.waitForRequest(request => request.url() === updateUrl && request.method() === 'PUT');
+      await editor().locator('#article-save').click(); await saving;
+      await page.evaluate(count => history.go(-count), steps);
+      await page.getByText('文章正在保存，请稍候再离开。', { exact: true }).waitFor({ state: 'visible' });
+      assert.equal(page.url(), editingUrl);
+      assert.equal(await editor().locator('#article-edit-summary').inputValue(), '保存等待失败后继续保留');
+      assert.equal(await page.getByRole('dialog', { name: '放弃尚未保存的修改？', exact: true }).count(), 0);
+      release();
+      await editor().getByText('文章已被其他入口修改，你的输入已保留。', { exact: true }).waitFor({ state: 'visible' });
+      assert.equal(page.url(), editingUrl);
+      assert.equal(await editor().locator('#article-edit-summary').inputValue(), '保存等待失败后继续保留');
+      assert.deepEqual(fs.readFileSync(file), before);
+      await editor().getByRole('button', { name: '关闭文章编辑', exact: true }).click();
+      await page.getByRole('dialog', { name: '放弃尚未保存的修改？', exact: true }).getByRole('button', { name: '放弃修改', exact: true }).click();
+      await editor().waitFor({ state: 'hidden' });
+    } finally { release(); await page.unroute(updateUrl); }
   });
 
   await t.test('新建编辑真实文章，上传图片附件后插入并保存引用', async () => {

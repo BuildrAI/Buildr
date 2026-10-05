@@ -7,6 +7,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import YAML from 'yaml';
+import { useLegacyAssetCatalog } from '../../helpers/legacy-asset-catalog.ts';
 
 const productRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const cli: any = path.join(productRoot, 'bin', 'buildr.mjs');
@@ -21,6 +22,33 @@ function run(args: any): any  {
 
 function output(result: any): any  {
   return `${result.stdout || ''}${result.stderr || ''}`;
+}
+
+function freshCatalog(target: string): any {
+  for (const [file, schemaVersion, key] of [
+    ['projects/manifest.yml', 'buildr.projects/v2', 'projects'],
+    ['services/manifest.yml', 'buildr.services/v3', 'services'],
+    ['repositories/manifest.yml', 'buildr.repositories/v1', 'repositories'],
+  ]) {
+    assert.deepEqual(YAML.parse(fs.readFileSync(path.join(target, file), 'utf8')), { schemaVersion, [key]: {} });
+  }
+  const result = run(['assets', 'inspect', '--target', target, '--json']);
+  assert.equal(result.status, 0, output(result));
+  const catalog = JSON.parse(result.stdout);
+  assert.equal(catalog.migrationRequired, false);
+  assert.deepEqual([catalog.projects, catalog.services, catalog.repositories], [[], [], []]);
+  return catalog;
+}
+
+function createFirstProject(target: string, catalog: any): void {
+  const input = path.join(root, `${path.basename(target)}-first-project.json`);
+  fs.writeFileSync(input, JSON.stringify({ revision: catalog.revision, code: 'first', name: 'First project' }));
+  const result = run(['assets', 'create', 'project', '--target', target, '--input', input, '--json']);
+  assert.equal(result.status, 0, output(result));
+  const created = JSON.parse(result.stdout);
+  assert.equal(created.migrationRequired, false);
+  assert.equal(created.projects[0].code, 'first');
+  assert.ok(fs.existsSync(path.join(target, 'projects/first/AGENTS.md')));
 }
 
 try {
@@ -38,6 +66,7 @@ try {
     const standardRoot = path.join(root, identity ?? 'default');
     result = run(['init', ...(identity === null ? [] : ['--agent', identity]), '--target', standardRoot, '--name', 'standard', '--description', 'Standard onboarding fixture']);
     assert.equal(result.status, 0, output(result));
+    freshCatalog(standardRoot);
     assert.ok(fs.existsSync(path.join(standardRoot, '.agents', 'skills', 'buildr', 'SKILL.md')));
     assert.ok(fs.existsSync(path.join(standardRoot, '.agents', 'skills', 'task-triage', 'SKILL.md')));
     const checked = run(['doctor', ...(identity === null ? [] : ['--agent', identity]), '--target', standardRoot, '--json']);
@@ -51,6 +80,7 @@ try {
   const sourceOnly: any = path.join(root, 'source-only');
   result = run(['init', '--source-only', '--target', sourceOnly, '--name', 'source-only', '--profile', 'personal']);
   assert.equal(result.status, 0, output(result));
+  const sourceOnlyCatalog = freshCatalog(sourceOnly);
   assert.equal(fs.existsSync(path.join(sourceOnly, 'projects', 'manifest.yml')), true);
   const workspace: any = YAML.parse(fs.readFileSync(path.join(sourceOnly, '.buildr', 'workspace.yml'), 'utf8'));
   const projects: any = YAML.parse(fs.readFileSync(path.join(sourceOnly, 'projects', 'manifest.yml'), 'utf8'));
@@ -71,15 +101,21 @@ try {
   assert.match(result.stdout, /仅初始化源资产的后续步骤/);
   assert.match(result.stdout, /buildr sync <agent>/);
 
-  result = run(['project', 'create', 'demo', '--target', sourceOnly]);
+  createFirstProject(sourceOnly, sourceOnlyCatalog);
+
+  const legacySourceOnly = path.join(root, 'legacy-source-only');
+  result = run(['init', '--source-only', '--target', legacySourceOnly, '--name', 'legacy', '--profile', 'personal']);
   assert.equal(result.status, 0, output(result));
-  assert.deepEqual(YAML.parse(fs.readFileSync(path.join(sourceOnly, 'projects', 'demo', 'capabilities.yml'), 'utf8')), {
+  useLegacyAssetCatalog(legacySourceOnly);
+  result = run(['project', 'create', 'demo', '--target', legacySourceOnly]);
+  assert.equal(result.status, 0, output(result));
+  assert.deepEqual(YAML.parse(fs.readFileSync(path.join(legacySourceOnly, 'projects', 'demo', 'capabilities.yml'), 'utf8')), {
     schemaVersion: 'buildr.project-capabilities/v1', requires: [], bindings: [], skills: [],
   });
-  assert.deepEqual(YAML.parse(fs.readFileSync(path.join(sourceOnly, 'projects', 'demo', 'commands.yml'), 'utf8')), {
+  assert.deepEqual(YAML.parse(fs.readFileSync(path.join(legacySourceOnly, 'projects', 'demo', 'commands.yml'), 'utf8')), {
     schemaVersion: 'buildr.project-commands/v1', requirements: [],
   });
-  const services: any = YAML.parse(fs.readFileSync(path.join(sourceOnly, 'projects', 'demo', 'services', 'manifest.yml'), 'utf8'));
+  const services: any = YAML.parse(fs.readFileSync(path.join(legacySourceOnly, 'projects', 'demo', 'services', 'manifest.yml'), 'utf8'));
   assert.equal(services.schemaVersion, 'buildr.services/v2');
   assert.match(services.projectId, /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu);
   assert.deepEqual(services.services, {});
@@ -87,6 +123,7 @@ try {
   const onboarded: any = path.join(root, 'onboarded');
   result = run(['init', '--agent', 'codex', '--target', onboarded, '--name', 'onboarded', '--profile', 'team']);
   assert.equal(result.status, 0, output(result));
+  const onboardedCatalog = freshCatalog(onboarded);
   assert.match(result.stdout, /Buildr onboarding 已完成：codex/);
   assert.match(result.stdout, /doctor 通过/);
   assert.match(result.stdout, /首次使用交接/);
@@ -97,15 +134,19 @@ try {
   assert.match(onboardedAgents, /更具体作用域的约定优先于本默认规则/);
   assert.equal(fs.existsSync(path.join(onboarded, '.agents', 'skills', 'buildr', 'SKILL.md')), true);
 
-  result = run(['project', 'create', 'synced', '--target', onboarded]);
+  createFirstProject(onboarded, onboardedCatalog);
+
+  result = run(['sync', 'codex', '--target', legacySourceOnly]);
+  assert.equal(result.status, 0, output(result));
+  result = run(['project', 'create', 'synced', '--target', legacySourceOnly]);
   assert.equal(result.status, 0, output(result));
   for (const relative of ['capabilities.yml', 'commands.yml', 'services/manifest.yml']) {
-    fs.rmSync(path.join(onboarded, 'projects', 'synced', relative));
+    fs.rmSync(path.join(legacySourceOnly, 'projects', 'synced', relative));
   }
-  result = run(['sync', 'codex', '--target', onboarded]);
+  result = run(['sync', 'codex', '--target', legacySourceOnly]);
   assert.equal(result.status, 0, output(result));
   for (const relative of ['capabilities.yml', 'commands.yml', 'services/manifest.yml']) {
-    assert.equal(fs.existsSync(path.join(onboarded, 'projects', 'synced', relative)), true, `sync must generate missing ${relative}`);
+    assert.equal(fs.existsSync(path.join(legacySourceOnly, 'projects', 'synced', relative)), true, `sync must generate missing ${relative}`);
   }
 
   result = run(['init', '--agent', 'codex', '--target', onboarded, '--name', 'onboarded', '--profile', 'team']);
@@ -128,7 +169,7 @@ try {
   assert.match(output(result), /Workspace 源资产已初始化，但 codex onboarding 未完成/);
   assert.match(output(result), new RegExp(`buildr sync codex --adapter agents-standard --target ${conflicted.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
 
-  console.log('Init onboarding verification passed: preflight, source-only compatibility, full runtime, idempotency, and recovery guidance.');
+  console.log('Init onboarding verification passed: preflight, fresh catalog and first project, source-only compatibility, full runtime, idempotency, and recovery guidance.');
 } finally {
   fs.rmSync(root, { recursive: true, force: true });
 }

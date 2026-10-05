@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { assertHealthyDoctor, createSuiteFixture, initializeGitRepository, parseJson, runBuildr } from './fixture.ts';
+import { useLegacyAssetCatalog } from '../../helpers/legacy-asset-catalog.ts';
 
 const fixture: any = createSuiteFixture('workspace-lifecycle');
 let passed: any = false;
@@ -23,6 +24,7 @@ try {
   ].join('\n'));
 
   runBuildr(['init', '--target', fixture.workspace, '--name', 'workspace-e2e', '--profile', 'team']);
+  useLegacyAssetCatalog(fixture.workspace);
   initializeGitRepository(fixture.workspace);
   runBuildr(['project', 'create', 'demo', '--target', fixture.workspace]);
   runBuildr(['service', 'create', 'demo/api', serviceRepository, '--target', fixture.workspace, '--type', 'backend']);

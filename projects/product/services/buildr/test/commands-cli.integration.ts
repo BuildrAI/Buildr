@@ -5,6 +5,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import YAML from 'yaml';
+import { useLegacyAssetCatalog } from './helpers/legacy-asset-catalog.ts';
 
 const buildr: any = path.resolve('bin/buildr.mjs');
 
@@ -31,6 +32,7 @@ test('Commands CLI 分离 catalog、Project requirements 和 machine observation
   const root: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-commands-context-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   run(['init', '--target', root, '--name', 'commands-context', '--profile', 'personal']);
+  useLegacyAssetCatalog(root); // Retained project-owned Service registry recovery.
   for (const project of ['alpha', 'beta', 'legacy']) run(['project', 'create', project, '--target', root]);
   assert.deepEqual(YAML.parse(fs.readFileSync(path.join(root, 'projects', 'alpha', 'commands.yml'), 'utf8')), {
     schemaVersion: 'buildr.project-commands/v1', requirements: [],
