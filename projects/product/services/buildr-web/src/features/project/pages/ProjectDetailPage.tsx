@@ -5,8 +5,8 @@ import { AssetDeleteDialog } from '../../workspace/components/AssetDeleteDialog'
 import { useLocation } from 'react-router-dom';
 import { ProjectServicesPanel } from '../components/ProjectServicesPanel';
 import { useAssetCatalog } from '../../workspace/components/useAssetCatalog';
-import { projectApi } from '../api/project-api';
-import { useCallback, useContext, useEffect, useState, type MouseEvent } from 'react';
+import { projectApi, projectDocumentImage, type ProjectDocument } from '../api/project-api';
+import { useCallback, useContext, useEffect, useState, type MouseEvent, type SyntheticEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Alert, Button, DatePicker, Dropdown, Skeleton, Tabs } from 'antd';
 import dayjs from 'dayjs';
@@ -18,13 +18,14 @@ import { FileTextOutlined, RightOutlined, MoreOutlined } from '@ant-design/icons
 import { useAppShell } from '../../../app/AppShellContext';
 import { MarkdownHost } from '../../../components/MarkdownHost';
 import { encodeProjectDocumentPath, resolveProjectMarkdownHref } from '../../../lib/projectDocuments';
+import { updateMarkdownImageFailures, type MarkdownImageFailures } from '../../../lib/markdownImages';
 import { workspaceHref } from '../../../lib/labels';
 import { dailyProgressActionContext, dailyProgressActivityPath, legacyDailyProgressPath, type DailyProgressGroup } from '../../project-daily-progress/dailyProgressNavigation';
 import { DailyProgressPanel } from '../../project-daily-progress/components/DailyProgressPanel';
 import { useWorkbench } from '../../workbench/hooks/useWorkbench';
 import { WorkbenchDailyProgress } from '../../workbench/components/WorkbenchDailyProgress';
 import { KnowledgeBrowser } from '../../knowledge/components/KnowledgeBrowser';
-import { useMarkdownDocumentViewer, type MarkdownDocument } from '../../../lib/useMarkdownDocumentViewer';
+import { useMarkdownDocumentViewer } from '../../../lib/useMarkdownDocumentViewer';
 import { ProjectEditDrawer } from '../components/ProjectEditDrawer';
 import { useWorkspacePageTabs, WorkspaceViewActiveContext } from '../../../app/pageTabs';
 import { useKnowledgeNavigation } from '../../knowledge/useKnowledgeNavigation';
@@ -44,16 +45,31 @@ const DOC_ROWS: { ref: string; name: string; hint: string }[] = [
 const ENTRY_TITLES: Record<ProjectHomeEntryRef, string> = { knowledge: '项目知识', articles: '项目文章', activity: '项目动态' };
 
 /** 右组项目文档对象。 */
-function ProjectDocObjectView({ projectCode, docPath, title, hint }: { projectCode: string; docPath: string; title: string; hint: string }) {
-  const fetchDocument = useCallback(async (path: string, signal?: AbortSignal): Promise<MarkdownDocument> => {
-    return projectApi.projectDocument(projectCode, encodeProjectDocumentPath(path), { signal });
-  }, [projectCode]);
+function ProjectDocObjectView({ workspaceId, projectCode, docPath, title, hint }: { workspaceId: string | null; projectCode: string; docPath: string; title: string; hint: string }) {
+  const fetchDocument = useCallback(async (path: string, signal?: AbortSignal): Promise<ProjectDocument> => {
+    if (!workspaceId) throw new Error('当前工作空间身份不可确认，请重新打开项目。');
+    return projectApi.projectDocument(projectCode, encodeProjectDocumentPath(path), { signal }, workspaceId);
+  }, [workspaceId, projectCode]);
   const documents = useMarkdownDocumentViewer(fetchDocument, projectDocumentMissingMessage);
+  const [failedImages, setFailedImages] = useState<MarkdownImageFailures>({ version: '', urls: [] });
+  const currentDocument = documents.document as ProjectDocument | null;
+  const imageContext = currentDocument?.imageContext;
+  const imageVersion = JSON.stringify([workspaceId, projectCode, documents.path, imageContext?.sourceIdentity, imageContext?.documentDigest]);
+  const resolveImage = (href: string) => {
+    const url = projectDocumentImage(workspaceId, projectCode, documents.path, href, imageContext);
+    return url ? { href: url } : null;
+  };
+  const imageResult = (event: SyntheticEvent<HTMLElement>, failed: boolean) => {
+    if (event.target instanceof HTMLImageElement) {
+      const source = event.target.getAttribute('src');
+      setFailedImages(current => updateMarkdownImageFailures(current, imageVersion, source, failed, resolveImage));
+    }
+  };
 
   useEffect(() => {
     void documents.open(docPath, { replaceHistory: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectCode, docPath]);
+  }, [workspaceId, projectCode, docPath]);
 
   const onRelativeLinkClick = (linkHref: string) => {
     const resolved = resolveProjectMarkdownHref(documents.path, linkHref);
@@ -63,7 +79,7 @@ function ProjectDocObjectView({ projectCode, docPath, title, hint }: { projectCo
 
   return (
     <>
-      <section className="project-document-pane">
+      <section className="project-document-pane" onErrorCapture={event => imageResult(event, true)} onLoadCapture={event => imageResult(event, false)}>
       <div className="ws-obj-head"><h2>{title}</h2></div>
       <p className="ws-obj-sub">{hint}</p>
       {documents.history.length > 1 ? (
@@ -72,13 +88,15 @@ function ProjectDocObjectView({ projectCode, docPath, title, hint }: { projectCo
           <span className="project-document-path">{documents.path}</span>
         </div>
       ) : null}
+      {failedImages.version === imageVersion && failedImages.urls.length > 0 && <Alert type="warning" message="部分图片暂时不可读取，请重新打开正文后重试。" />}
       {documents.loading ? (
         <p className="page-copy">正在读取…</p>
       ) : documents.document?.exists && documents.document.content != null ? (
         <MarkdownHost
           markdown={documents.document.content}
+          renderVersion={imageVersion}
           className="project-document-content markdown-body"
-          options={{ headingOffset: 1, allowRelativeLinks: true, allowParentRelativeLinks: true, onRelativeLinkClick }}
+          options={{ headingOffset: 1, allowRelativeLinks: true, allowParentRelativeLinks: true, onRelativeLinkClick, imageResolver: resolveImage }}
         />
       ) : (
         <p className="artifact-missing">{documents.message || `项目根目录未找到 ${documents.path}`}</p>
@@ -248,6 +266,7 @@ export function ProjectDetailPage() {
         ) : (
             <ProjectDocObjectView
               key={activeTab.ref}
+              workspaceId={workspaceId}
               projectCode={projectCode}
               docPath={activeTab.ref === 'agents' ? 'AGENTS.md' : 'README.md'}
               title={activeTab.ref === 'agents' ? 'AGENTS.md' : '项目文档'}

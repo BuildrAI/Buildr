@@ -4,9 +4,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { observeGitRepositoryRoot } from '../../../../infrastructure/git/repository-boundary.ts';
 import { taskActionId } from '../../application/task-validation.ts';
+import { observeMarkdownImageContext, readMarkdownImage, type MarkdownImageRequest } from '../../../../infrastructure/filesystem/markdown-images.ts';
 
 // Structural ports deliberately contain no OpenSpec types or queries.
-export type TaskDocumentProject = { source: { type?: string; path: string } };
+export type TaskDocumentProject = { id?: string; source: { type?: string; path: string } };
 export type TaskDocumentProjectQuery = {
   projectDetail(root: string, code: string): { project: TaskDocumentProject };
   resolveSourceRoot(root: string, source: TaskDocumentProject['source']): string;
@@ -111,7 +112,7 @@ export function createTaskProjectDocumentReader(taskQuery: TaskDocumentQuery, pr
     assertPlainPath(executionRoot, path.relative(executionRoot, candidate));
     return candidate;
   }
-  function taskProjectDocument(targetRoot: string, taskId: string, projectCode: string, documentPath: string, options: { requireRootProof?: boolean } = {}) {
+  function resolveTaskProjectDocument(targetRoot: string, taskId: string, projectCode: string, documentPath: string) {
     taskActionId(taskId, 'taskId');
     const task = taskQuery.readTask(targetRoot, taskId);
     const scope = task.record.scope;
@@ -138,7 +139,16 @@ export function createTaskProjectDocumentReader(taskQuery: TaskDocumentQuery, pr
         fromCandidate = true;
       }
     }
-    return { schemaVersion: 'buildr.task-project-document/v1', projectCode, path: relative, name: path.posix.basename(relative), ...readBoundedText(sourceRoot, readPath, MAX_TASK_DOCUMENT_BYTES, options), provenance: fromCandidate ? 'task-worktree-candidate' as const : 'retained-project' as const };
+    return { root: sourceRoot, path: readPath, documentPath: relative, identity: ['task-project', path.resolve(targetRoot), taskId, projectCode, project.id ?? null, project.source, relative], provenance: fromCandidate ? 'task-worktree-candidate' as const : 'retained-project' as const };
   }
-  return Object.freeze({ taskScopedProjectRoot, taskProjectDocument });
+  function taskProjectDocument(targetRoot: string, taskId: string, projectCode: string, documentPath: string, options: { requireRootProof?: boolean } = {}) {
+    const source = resolveTaskProjectDocument(targetRoot, taskId, projectCode, documentPath);
+    const document = readBoundedText(source.root, source.path, MAX_TASK_DOCUMENT_BYTES, options);
+    const imageContext = options.requireRootProof ? undefined : observeMarkdownImageContext(source, document.content, document.actualDigest);
+    return { schemaVersion: 'buildr.task-project-document/v1', projectCode, path: source.documentPath, name: path.posix.basename(source.documentPath), ...document, provenance: source.provenance, ...(imageContext ? { imageContext } : {}) };
+  }
+  function taskProjectDocumentImage(targetRoot: string, taskId: string, projectCode: string, documentPath: string, input: MarkdownImageRequest) {
+    return readMarkdownImage(() => resolveTaskProjectDocument(targetRoot, taskId, projectCode, documentPath), input);
+  }
+  return Object.freeze({ taskScopedProjectRoot, resolveTaskProjectDocument, taskProjectDocument, taskProjectDocumentImage });
 }

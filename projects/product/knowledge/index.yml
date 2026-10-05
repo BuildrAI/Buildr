@@ -371,6 +371,8 @@ artifacts:
       - task-source-module-19a342
       - technical-prompt-request-source
       - task-source-taskagentaction-7a3c7f
+      - markdown-document-images
+      - markdown-image-links
   - id: project-relations-article
     title: 项目、服务与代码库如何协作
     kind: document
@@ -528,7 +530,10 @@ artifacts:
       - task-record-brief-reader
       - task-materials-application
       - task-project-document-reader
+      - markdown-document-images
+      - markdown-image-links
       - task-material-reader
+      - task-linked-document-reader
       - task-materials-browser-journey
       - task-file-task-system-html-80857d
       - task-source-skill-f75bad
@@ -575,7 +580,7 @@ artifacts:
       - current-knowledge-maintenance
       - task-openspec-apply
       - task-source-task-verification-application-68479e
-    observedDigest: d58bcb503d71c0f87a5421c4c08b0dab48c8cf9cd86309f491f8fddbf981bedc
+    observedDigest: bb010f7545d0d65f308c6fe7601ddca643fea5ef79e8586e965f947ec66e0e6f
     files:
       - task-source-2026-08-30-parent-child-task-audit-b28c38
       - parent-completion-html
@@ -691,7 +696,10 @@ artifacts:
       - task-changed-file-count-reader
       - task-materials-application
       - task-project-document-reader
+      - markdown-document-images
+      - markdown-image-links
       - task-material-reader
+      - task-linked-document-reader
       - task-materials-browser-journey
       - task-source-spec-ea9d2d
       - task-source-spec-f12a41
@@ -776,7 +784,7 @@ artifacts:
       - task-git-method
       - task-commits-contract
       - public-json-contracts
-    observedDigest: cadcf0916ff8ca2a390dcdb920a5ac300c948aadbf76894c0d887f6bdfe68107
+    observedDigest: 7d70c319e4e51c1332dc87138d06e399b693446268180add7641f3249d6f0608
     files:
       - task-source-2026-08-30-parent-child-task-audit-b28c38
       - task-file-task-system-md-d14898
@@ -991,7 +999,7 @@ artifacts:
       - verification-ref-73fbe375
       - verification-installed-package
       - verification-ref-e568f1e4
-    observedDigest: 2346163a228e9fcfbd45fca88e2eabcf1fb7cc7b567732b066273ad669de4957
+    observedDigest: 21c39ddb2f64ca550c791c5904c4a71a2c948c07cfd20ac3663650ef6398e11e
     files:
       - verification-file-263d3698
       - verification-file-9894349f
@@ -1750,7 +1758,7 @@ sources:
     title: 资产接口入口
     kind: code
     path: services/buildr/src/modules/workspace/interfaces/http/workspace-http.ts
-    observedDigest: fdba31bd562918ec900f9d222cdedf706ff0d171ca1ef5dd5232e063226e49c9
+    observedDigest: c8df2a824c5875b47e25e5fa26bcd35db54e79168c3fe4b5ffbeb2880865bfb2
     summary: 将网页的对象登记与关系请求转换为应用调用，处理输入协议和响应。业务引用规则和版本检查留在应用与领域对象中。
   - id: project-services-ui
     title: 项目服务关联界面
@@ -2161,7 +2169,7 @@ sources:
     kind: code
     path: services/buildr/src/modules/task/interfaces/http/task-http.ts
     summary: 处理任务查询和具体状态写入，请求转换与写入授权和业务应用职责分离。
-    observedDigest: 9ec0e4476c8164853b3087587306c588dbdf8b92741c6b76576a6e26b709510a
+    observedDigest: 7953ba040eb6ab43e9adbfaa0fe2824f989b68348eb961d4f4ec8b8837596879
   - id: task-source-task-query-application-9f6269
     title: 任务与关系读取
     kind: code
@@ -2300,7 +2308,7 @@ sources:
     kind: evidence
     path: knowledge/code-map/task-system.md
     summary: 保存本主题当前解释或依据，网页与本地使用同一正文；不替代规范和代码。
-    observedDigest: cadcf0916ff8ca2a390dcdb920a5ac300c948aadbf76894c0d887f6bdfe68107
+    observedDigest: 7d70c319e4e51c1332dc87138d06e399b693446268180add7641f3249d6f0608
   - id: task-file-task-system-html-80857d
     title: 完整过程与角色职责 · 独立展示
     kind: evidence
@@ -2458,7 +2466,7 @@ sources:
     summary: 系统测试（System）分组、实际文件和有关资源
     kind: code
     path: services/buildr/test/verification/system-suites.ts
-    observedDigest: eeebe27dd90d806f56e4384e37aa6a9a6efee8e2a2f99cc7ac415a9a88b008f6
+    observedDigest: b5fb1a6cd219481e8bd5e26ea5072e068924fc66053da844b0cca4754aea63c6
   - id: verification-source-a567a4e171
     title: 改动路径与验证归属
     summary: 改动路径归属、排除项、委托与扩大范围的依据
@@ -2470,7 +2478,7 @@ sources:
     summary: 稳定步骤、集成分片、分类、主要证明责任、资源及候选分片
     kind: code
     path: services/buildr/test/verification/registry.ts
-    observedDigest: 3dc8e366a7efe100fb7c13d91e36f7edc510ba4a64e561491eeaeaf9538f4eca
+    observedDigest: cabaca06c40afe232f5150011e7c4ebb0f62f99bac61c8c5f9f1346baad87efa
   - id: verification-source-4aba70c072
     title: 验证选择与预算校验
     summary: 校验步骤与预算，选择范围并给出原因，组合低成本前置检查
@@ -2542,7 +2550,7 @@ sources:
     summary: 前端构建及独立逻辑测试入口
     kind: code
     path: services/buildr-web/package.json
-    observedDigest: 8e7ac8596b9fc65a7f4e18640a331f13a9f5afe9b957cb434f7f783951677016
+    observedDigest: 7595f2f5d16d084b760e9208ce1d37fb0f9adf09e87dddf3cdc8053a9769c038
   - id: verification-source-2067de1414
     title: 项目声明范围内的 npm 调用
     summary: 检查当前 Node.js 是否在项目声明版本范围内（声明版本优先），再使用相邻 npm 和相同进程环境调用真实命令。
@@ -2673,7 +2681,7 @@ sources:
     title: 采用实例：Buildr 产品的测试与验证
     kind: evidence
     path: knowledge/docs/architecture/verification-framework.md
-    observedDigest: 2346163a228e9fcfbd45fca88e2eabcf1fb7cc7b567732b066273ad669de4957
+    observedDigest: 21c39ddb2f64ca550c791c5904c4a71a2c948c07cfd20ac3663650ef6398e11e
   - id: verification-file-8c3c96dd
     title: Node.js 测试上下文：复用、隔离与生命周期
     kind: evidence
@@ -2835,7 +2843,7 @@ sources:
     summary: 组装隔离服务、浏览器与测试现场，选择旅程并清理。
     kind: code
     path: services/buildr/test/browser-smoke/buildr-web-browser.test.ts
-    observedDigest: d9cd8e4084114e00d0d1f794ea8fc4a7aa16a53cf8aa983f84024fa5ef4599fc
+    observedDigest: 1be4dfeffd2e048759d3aa777fcdceb5d868c7799cd3cda62c295dbe6e3c8381
   - id: verification-ref-73fbe375
     title: 工作台真实交互旅程
     summary: 核对答复冲突后的重读保存、资料阅读和偏好恢复。
@@ -2890,12 +2898,24 @@ sources:
     kind: code
     path: services/buildr/src/modules/task/materials/application/task-materials-application.ts
     summary: 维护过程引用及正文版本，普通更新保留旧说明来源；显式导入或释放旧关联，不用文件兜底记录说明。
-    observedDigest: 0cf8c8f1faeba03c4d3431e1fce03636529d040c087e3519730e42d622660534
+    observedDigest: f99291319fd06fbe49e4a56ca753c0753b7d0c3340653e8afd264a6cc505a3af
   - id: task-project-document-reader
     title: 任务项目正文与实际文件根
     kind: code
     path: services/buildr/src/modules/task/materials/application/task-project-document-reader.ts
     summary: 按真实项目及服务边界读取资料与代码候选；确认非 Git 资料不受无关代码诊断阻塞，已知或失效候选不回退原文件，保留有界阅读与路径保护。
+  - id: markdown-document-images
+    title: 文件正文图片的有界读取
+    kind: code
+    path: services/buildr/src/infrastructure/filesystem/markdown-images.ts
+    summary: 从真实正文图片引用解析本地普通文件，核对正文与实际来源观察、类型签名及前后文件身份；领域应用继续拥有任务作用域和候选选择。
+    observedDigest: 4d76f35eb06e9fbb14e4ae38c47bfb008e913e83b4d63c98ed00d54b6e500c25
+  - id: markdown-image-links
+    title: 当前资料图片链接与局部失败
+    kind: code
+    path: services/buildr-web/src/lib/markdownImages.ts
+    summary: 提前过滤非法图片路径，按正文及来源观察构造同源请求；忽略旧阅读的迟到事件并只清除实际恢复的图片失败。
+    observedDigest: 1388fa567c8fd41abd67d6221900bc46e655b34ff19c9b9089ec273a192c22d6
   - id: task-changed-file-count-reader
     title: 任务改动的轻量计数
     kind: code
@@ -2954,19 +2974,26 @@ sources:
     kind: code
     path: services/buildr-web/src/features/task/components/TaskReadingPane.tsx
     summary: 直接排版展示记录 brief，源码在编辑区查看；空说明明确显示缺失，不等待材料或变更读取。
-    observedDigest: b1c7db570c0585f7fc19d6ca5fa4b390adebc8d30205d610a0c17491c11d56c3
+    observedDigest: 43b6353681b0f3f009c122e95e3430dfb8e6856dd1ee2440dd87542d919e4f3c
   - id: task-material-reader
     title: 正式节点材料正文阅读
     kind: code
     path: services/buildr-web/src/features/task/components/TaskMaterialReader.tsx
     summary: 复用Markdown容器呈现过程文件正文及局部缺失，保留原文切换，材料身份和版本可核对。
-    observedDigest: cdf8f18416db1060966c6344456c2dbfa398fb5a6e064a5ccffc8cb9f1dc55f4
+    observedDigest: 0d409e94e21a8b17023ce07438929deb35139bb3453a8820d3eaf49fd7895a00
+  - id: task-linked-document-reader
+    title: 任务链接项目资料的对象阅读
+    kind: code
+    path: services/buildr-web/src/features/task/components/TaskLinkedDocument.tsx
+    summary: 在原对象页签内按明确工作空间和任务读取项目正文与图片，保留局部刷新、原文及原返回现场。
+    observedDigest: 3fd1eb182c97f15e1173b56f035fe81ca51ad4d1a2f483dcbd50b8760b91389a
+
   - id: task-materials-browser-journey
     title: 独立任务材料实际页面回归
     kind: code
     path: services/buildr-web/test/browser/task-materials-journey.ts
     summary: 从任务列表直接阅读无变更正文，核对刷新、专业结果、缺失和归档后的稳定任务引用。
-    observedDigest: 0700bbffe2f8ef597d1473a5b1dec09defd5613a9e3ea1bda6e40854aa21bcc0
+    observedDigest: 4865f2a3641956187f38e7b65b6ea7fea3d9b38635ad6e8bc18e8956125b64d8
   - id: task-node-content
     title: 任务内容目录
     kind: code

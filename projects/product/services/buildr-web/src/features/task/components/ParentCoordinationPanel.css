@@ -4,4 +4,4 @@
 .parent-objective { white-space: pre-wrap; }
 .parent-history { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 420px; overflow: auto; }
 .parent-completion-fields { display: grid; gap: 16px; margin: 16px 0; }
-.parent-completion-fields label { display: grid; gap: 8px; }
+.parent-completion-fields > label:not(.ant-checkbox-wrapper) { display: grid; gap: 8px; color: #2c3932; font-size: 12px; font-weight: 700; }

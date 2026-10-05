@@ -16,7 +16,8 @@ export const TASK_MATERIALS_DEFINITIONS = Object.freeze({
   TaskMaterialDiagnostic: closed({ code: text, message: { type: 'string', minLength: 1 } }),
   TaskMaterialReference: closed(referenceProperties),
   TaskMaterialsManifest: closed({ schemaVersion: { const: 'buildr.task-materials/v2' }, documents: { type: 'array', maxItems: 100, items: ref('TaskMaterialReference') } }),
-  TaskMaterialDocument: closed({ ...referenceProperties, exists: { type: 'boolean' }, content: nullable({ type: 'string' }), actualDigest: nullable(digest), provenance: nullable({ enum: ['task-local', 'task-worktree-candidate', 'retained-project'] }), diagnostic: nullable(ref('TaskMaterialDiagnostic')) }),
+  TaskMaterialImageContext: closed({ documentDigest: digest, sourceIdentity: digest }),
+  TaskMaterialDocument: closed({ ...referenceProperties, exists: { type: 'boolean' }, content: nullable({ type: 'string' }), actualDigest: nullable(digest), provenance: nullable({ enum: ['task-local', 'task-worktree-candidate', 'retained-project'] }), diagnostic: nullable(ref('TaskMaterialDiagnostic')), imageContext: ref('TaskMaterialImageContext') }, [...Object.keys(referenceProperties), 'exists', 'content', 'actualDigest', 'provenance', 'diagnostic']),
 });
 function schema(name: string, title: string, body: Schema) {
   return Object.freeze({ $schema: 'https://json-schema.org/draft/2020-12/schema', $id: `https://schemas.buildr.ai/http/task-materials/${name}/v2`, title, ...body, $defs: TASK_MATERIALS_DEFINITIONS });

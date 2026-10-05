@@ -34,6 +34,12 @@
 
 审查和验证仍从各自应用按需读取；无结果只说明未记录，必要未完成、不适用理由由实际说明或工作摘要表达。真实执行结果和未覆盖理由分别呈现，材料存在不能推导完成。稳定的[浏览器回归](../../services/buildr-web/test/browser/task-materials-journey.ts)直接从列表打开节点、更新正文后刷新、验证无变更专业结果及真实归档后点击，不能只检查顶部链接或文件存在。
 
+## 文件正文图片怎样落到实现？
+
+[材料应用](../../services/buildr/src/modules/task/materials/application/task-materials-application.ts)从当前关联选择同任务本机目录或真实项目候选；[项目读取器](../../services/buildr/src/modules/task/materials/application/task-project-document-reader.ts)让正文与图片共享最终 `sourceRoot` 和 `readPath`，仅服务候选同样不回读主目录。共享[图片文件能力](../../services/buildr/src/infrastructure/filesystem/markdown-images.ts)校验当前正文的实际图片引用、普通文件与类型，读取前后核对来源和摘要；公开上下文不暴露物理路径，也不是许可令牌（Token）。
+
+[图片链接与失败状态](../../services/buildr-web/src/lib/markdownImages.ts)由显式工作空间、任务、材料或项目身份生成同源URL。[任务材料阅读器](../../services/buildr-web/src/features/task/components/TaskMaterialReader.tsx)、[任务内联关联阅读](../../services/buildr-web/src/features/task/components/TaskDocumentPreviewModal.tsx)和[对象页签链接阅读](../../services/buildr-web/src/features/task/components/TaskLinkedDocument.tsx)分别接入实际入口，保留原文与导航。对象页签沿用[资源阅读容器](../../services/buildr-web/src/components/ResourceDocumentPane.tsx)的外框、加载及缺失反馈，任务适配器（Adapter）提供正文与图片；其他资源入口继续使用默认正文。换来源后重建图片，失败只提示该图片并允许刷新，不撤销正文可读事实。数据库任务说明没有文件根，不借其他材料图片兜底。接口与受控类型的完整承诺见[资料图片规范](../../openspec/specs/document-images/spec.md)。
+
 ## 原型阅读怎样落到实现？
 
 任务原型读取先确认任务存在，再独立读取关联变更及主工作空间（Canonical Workspace）的 `.buildr/local/task-prototypes/<task-id>/`；没有关联变更也能读取已保全的原型。来源以 `task` 与 `change` 区分，任务本机来源没有项目、变更或生命周期，使用独立身份命名域；本机目录逐级拒绝符号链接（Symbolic Link），失效变更不阻断安全来源。读取不创建目录、文件或任务记录，也不跟随工作树（Worktree）到同名本机目录。OpenSpec 查询复用带标记 HTML 的体积、深度和数量限制，`prototype-metadata.ts` 有界解析可选页面、状态和纯文本说明，非法说明仅产生局部提示。`TaskNodeContent.tsx` 把关键页面直接列入方案菜单，`PrototypeTab.tsx` 组合隔离画面与说明；`PrototypeReaderPage.tsx` 通过 `PrototypeReaderLayout.tsx` 提供任务限定的独立三栏阅读。原型不能获得真实写入能力，消息仅同步已声明阅读位置，并校验当前画面来源和装载标识。

@@ -95,6 +95,7 @@ export const SYSTEM_SUITES: any = Object.freeze([
     schedulingCostMs: 25000,
     concurrencyClass: 'workspace-heavy',
     resources: Object.freeze(['workspace-saturating']),
+    contexts: Object.freeze([WORKSPACE_FOUNDATION_CONTEXT_KEY]),
     files: Object.freeze([
       'test/system/worktree-create.test.ts',
     ]),

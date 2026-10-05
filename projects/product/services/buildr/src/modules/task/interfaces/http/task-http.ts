@@ -143,6 +143,9 @@ export async function handleTaskHttpRequest({ request, suffix, searchParams, roo
   // This query-bearing read is owned and validated by the changed-files module.
   if (request.method === 'GET' && new RegExp(`^/tasks/(${TASK_ID_SOURCE})/file-diff$`).test(suffix)) return null;
 
+  // Image owners validate their exact query contracts; unknown Task routes keep this guard.
+  if (request.method === 'GET' && new RegExp(`^/tasks/(${TASK_ID_SOURCE})/(?:materials/[A-Za-z0-9][A-Za-z0-9._-]*/image|document-image/[A-Za-z0-9][A-Za-z0-9._-]*)$`).test(suffix)) return null;
+
   if ((suffix === '/tasks' || suffix.startsWith('/tasks/')) && searchParams.size > 0) {
     throw Object.assign(new Error('Task API 不接受 query 参数。'), { code: 'task_api_query_forbidden', status: 400 });
   }

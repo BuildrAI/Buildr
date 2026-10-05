@@ -398,6 +398,8 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
     'test/integration/code-explorer-application.test.ts',
     'test/integration/task-materials-application.test.ts',
     'test/integration/task-materials-http-cli.test.ts',
+    'test/integration/document-images.test.ts',
+    'test/integration/markdown-image-files.test.ts',
     'test/integration/buildr-web-runtime.test.ts',
     'test/integration/buildr-web-workspace.test.ts',
     'test/integration/preview-ownership.test.ts',

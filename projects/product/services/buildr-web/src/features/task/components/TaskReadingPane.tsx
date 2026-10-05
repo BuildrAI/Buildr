@@ -40,14 +40,14 @@ export function TaskReadingPane({ target, task, context, artifacts, evidence, wo
     const documents = artifacts.materials.data?.documents || [];
     const document = documents.find(item => item.id === target.id);
     if (!document) return <Alert type="warning" message={artifacts.materials.error || '关联材料当前不可读取，请刷新任务后重试。'} />;
-    return <TaskMaterialReader document={document} documents={documents} loading={artifacts.materials.loading} error={artifacts.materials.error} onMaterial={id => onRead({ kind: 'material', id, title: documents.find(item => item.id === id)?.title || '任务材料' })} onProjectDocument={(project, path) => void artifacts.openProjectDocument(project, path)} />;
+    return <TaskMaterialReader workspaceId={workspaceId} taskId={record.taskId} document={document} documents={documents} loading={artifacts.materials.loading} error={artifacts.materials.error} onMaterial={id => onRead({ kind: 'material', id, title: documents.find(item => item.id === id)?.title || '任务材料' })} onProjectDocument={(project, path) => void artifacts.openProjectDocument(project, path)} />;
   }
   if (target.kind === 'artifact') {
     const source = artifacts.briefs.find(item => item.kind === 'ready' && item.key === target.changeKey);
     if (!source || source.kind !== 'ready') return <Alert type="warning" message="当前材料不可读取，请刷新任务后重试。" />;
     return <div className="task-reader"><TaskArtifactReader embedded={embedded} sourceDescription={sourceLabel(source.provenance)} change={source.change} artifactPath={target.path} onClose={onClose} onProjectDocument={(path, projectRelative) => void (projectRelative ? artifacts.openProjectDocument(target.changeKey.split('/')[0], path) : artifacts.openChangeDocument(target.changeKey, path))} onSelect={path => onRead({ ...target, path, title: path.split('/').at(-1) || '文档' })} /></div>;
   }
-  if (target.kind === 'document') return <div className="task-reader"><TaskDocumentPreviewModal embedded={inDrawer} reference={target.reference} refreshToken={refreshToken} onClose={onClose} loadDocument={artifacts.loadProjectDocument} /></div>;
+  if (target.kind === 'document') return <div className="task-reader"><TaskDocumentPreviewModal workspaceId={workspaceId} taskId={record.taskId} embedded={inDrawer} reference={target.reference} refreshToken={refreshToken} onClose={onClose} loadDocument={artifacts.loadProjectDocument} /></div>;
   if (target.kind === 'prototype') return <div className="task-reader"><PrototypeTab selectedKey={target.prototypeKey} onSelect={onPrototypeSelect} onAuxiliaryOpen={onPrototypeNotesOpen} closeAuxiliaryToken={prototypeNotesCloseToken} active workspaceId={workspaceId} data={artifacts.prototypeData} error={artifacts.prototypeError} loading={artifacts.prototypeLoading} onRefresh={() => void artifacts.refreshPrototype()} /></div>;
   if (target.kind === 'retrospective') return <RetrospectiveDocumentCard taskId={record.taskId} recordDigest={task.recordDigest} reference={task.retrospectiveDocument} refreshToken={refreshToken} onRecordUpdated={refreshTask} inline />;
   if (target.kind === 'review') {

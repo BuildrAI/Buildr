@@ -19,9 +19,26 @@ import type {
   TaskUpdateResponse,
 } from '../../../../build/generated/task-dto';
 
-import type { TaskMaterialsResult } from '../task-materials';
+import type { TaskMaterialsResult, TaskMaterialDocument } from '../task-materials';
+import { markdownImageQuery, type MarkdownImageContext } from '../../../lib/markdownImages';
 
 type ReadOptions = Pick<RequestInit, 'signal'>;
+export type TaskProjectDocument = WorkspaceDocument & { provenance: string; imageContext?: MarkdownImageContext };
+
+export function taskMaterialImage(workspaceId: string | null, taskId: string, document: TaskMaterialDocument, href: string): string | null {
+  if (!workspaceId || !taskId || !document.id || !document.exists || document.diagnostic || !document.content?.trim() || !document.actualDigest || document.actualDigest !== document.imageContext?.documentDigest) return null;
+  const query = markdownImageQuery(document.source.path, href, document.imageContext);
+  if (!query) return null;
+  return `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/tasks/${encodeURIComponent(taskId)}/materials/${encodeURIComponent(document.id)}/image?${query}`;
+}
+
+export function taskProjectDocumentImage(workspaceId: string | null, taskId: string, projectCode: string, documentPath: string, href: string, context?: MarkdownImageContext | null): string | null {
+  if (!workspaceId || !taskId || !projectCode) return null;
+  const query = markdownImageQuery(documentPath, href, context);
+  if (!query) return null;
+  query.set('documentPath', documentPath);
+  return `/api/v1/workspaces/${encodeURIComponent(workspaceId)}/tasks/${encodeURIComponent(taskId)}/document-image/${encodeURIComponent(projectCode)}?${query}`;
+}
 
 function queryString(input: TaskListRequest): string {
   const query = new URLSearchParams();
@@ -44,8 +61,9 @@ export function createTaskClient(client: ApiClient) {
     detail(taskId: string, options: ReadOptions = {}): Promise<TaskDetailResponse> {
       return typed(client(`/api/v1/tasks/${encodeURIComponent(taskId)}`, options));
     },
-    materials(taskId: string, options: ReadOptions = {}): Promise<TaskMaterialsResult> {
-      return typed(client(`/api/v1/tasks/${encodeURIComponent(taskId)}/materials`, options));
+    materials(taskId: string, options: ReadOptions = {}, workspaceId?: string | null): Promise<TaskMaterialsResult> {
+      const prefix = workspaceId ? `/api/v1/workspaces/${encodeURIComponent(workspaceId)}` : '/api/v1';
+      return typed(client(`${prefix}/tasks/${encodeURIComponent(taskId)}/materials`, options));
     },
     commits(taskId: string, options: ReadOptions = {}): Promise<TaskCommitsResult> {
       return typed(client(`/api/v1/tasks/${encodeURIComponent(taskId)}/commits`, options));
@@ -63,8 +81,9 @@ export function createTaskClient(client: ApiClient) {
     change(taskId: string, project: string, change: string, options: ReadOptions = {}): Promise<unknown> {
       return client(`/api/v1/tasks/${encodeURIComponent(taskId)}/changes/${encodeURIComponent(project)}/${encodeURIComponent(change)}`, options);
     },
-    projectDocument(taskId: string, project: string, encodedPath: string, options: ReadOptions = {}): Promise<WorkspaceDocument & { provenance: string }> {
-      return typed(client(`/api/v1/tasks/${encodeURIComponent(taskId)}/documents/${encodeURIComponent(project)}/${encodedPath}`, options));
+    projectDocument(taskId: string, project: string, encodedPath: string, options: ReadOptions = {}, workspaceId?: string | null): Promise<TaskProjectDocument> {
+      const prefix = workspaceId ? `/api/v1/workspaces/${encodeURIComponent(workspaceId)}` : '/api/v1';
+      return typed(client(`${prefix}/tasks/${encodeURIComponent(taskId)}/documents/${encodeURIComponent(project)}/${encodedPath}`, options));
     },
     prototypes(taskId: string, options: ReadOptions = {}, workspaceId?: string): Promise<unknown> {
       const prefix = workspaceId ? `/api/v1/workspaces/${encodeURIComponent(workspaceId)}` : '/api/v1';

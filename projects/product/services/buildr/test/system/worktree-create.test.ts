@@ -4,12 +4,14 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
-import test, { after } from 'node:test';
+import test, { after, type TestContext } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { registerGitWorktreeProvider } from '../../src/modules/task/infrastructure/git-worktree-provider.ts';
 import { createTaskProjectDocumentReader, type TaskDocumentWorktreeQuery } from '../../src/modules/task/materials/application/task-project-document-reader.ts';
 import { materializeCleanProductSource } from '../helpers/clean-product-source.ts';
+import { copyPreparedWorkspace } from '../helpers/prepared-fixtures.ts';
+import { cleanupDefaultTestContextPool } from '../context/node-test.ts';
 
 type JsonObject = Record<string, unknown>;
 type RepositoryResult = JsonObject & {
@@ -36,6 +38,7 @@ const fixtureRoots: string[] = [];
 
 after(() => {
   for (const root of fixtureRoots) fs.rmSync(root, { recursive: true, force: true });
+  cleanupDefaultTestContextPool();
   fs.rmSync(managerFixtureRoot, { recursive: true, force: true });
 });
 
@@ -93,13 +96,17 @@ function buildr(args: readonly string[], expectedStatus = 0, env: NodeJS.Process
   return parseResult(command(productRoot, process.execPath, [cli, ...args], expectedStatus, env).stdout);
 }
 
-function createGitWorkspace(): string {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-worktree-cli-'));
-  fixtureRoots.push(root);
-  command(productRoot, process.execPath, [
-    cli, 'init', '--agent', 'codex', '--target', root,
-    '--name', 'worktree-fixture', '--description', 'Git Worktree provider fixture', '--profile', 'team',
-  ]);
+function createGitWorkspace(t: TestContext, { viaCli = false } = {}): string {
+  const root = viaCli
+    ? fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-worktree-cli-'))
+    : copyPreparedWorkspace(t, 'worktree-fixture').root;
+  if (viaCli) {
+    fixtureRoots.push(root);
+    command(productRoot, process.execPath, [
+      cli, 'init', '--agent', 'codex', '--target', root,
+      '--name', 'worktree-fixture', '--description', 'Git Worktree provider fixture', '--profile', 'team',
+    ]);
+  }
   git(root, ['init', '-b', 'main']);
   git(root, ['config', 'user.name', 'Buildr Test']);
   git(root, ['config', 'user.email', 'buildr-test@example.com']);
@@ -129,8 +136,8 @@ function observedFile(root: string, checkoutPath: string, branch: string): strin
   return file;
 }
 
-test('缺少历史登记时不误报cleaned，显式当前对象可检查和清理且不补造历史', () => {
-  const root = createGitWorkspace();
+test('缺少历史登记时不误报cleaned，显式当前对象可检查和清理且不补造历史', (t) => {
+  const root = createGitWorkspace(t);
   const taskId = 'external-worktree';
   const checkout = path.join(root, '.worktrees', 'other-host-location');
   const branch = `codex/${taskId}`;
@@ -163,8 +170,8 @@ test('缺少历史登记时不误报cleaned，显式当前对象可检查和清�
   assert.deepEqual(repeated.effects.map((item) => item.type), ['worktree-absence-confirmed', 'local-branch-absence-confirmed']);
 });
 
-test('缺少历史登记时仍保护脏文件、版本、保留引用、锁定和遗漏嵌套仓库', () => {
-  const root = createGitWorkspace();
+test('缺少历史登记时仍保护脏文件、版本、保留引用、锁定和遗漏嵌套仓库', (t) => {
+  const root = createGitWorkspace(t);
   const taskId = 'observed-safety';
   const checkout = path.join(root, '.worktrees', taskId);
   const branch = `codex/${taskId}`;
@@ -196,8 +203,8 @@ test('缺少历史登记时仍保护脏文件、版本、保留引用、锁定�
   assert.equal(fs.existsSync(path.join(nested, 'HEAD')), true);
 });
 
-test('当前对象不能掩盖已有登记冲突或误指主目录及不同Git仓库', () => {
-  const root = createGitWorkspace();
+test('当前对象不能掩盖已有登记冲突或误指主目录及不同Git仓库', (t) => {
+  const root = createGitWorkspace(t);
   const taskId = 'observed-identity';
   const created = buildr(createArgs(root, taskId));
   const checkout = created.repositories[0].checkoutPath;
@@ -226,8 +233,8 @@ test('当前对象不能掩盖已有登记冲突或误指主目录及不同Git�
   assert.equal(fs.existsSync(path.join(foreign, '.git')), true);
 });
 
-test('无登记清理的部分效果可接续，分支被其他位置占用时保留', () => {
-  const root = createGitWorkspace();
+test('无登记清理的部分效果可接续，分支被其他位置占用时保留', (t) => {
+  const root = createGitWorkspace(t);
   const taskId = 'observed-resume';
   const checkout = path.join(root, '.worktrees', taskId);
   const branch = `codex/${taskId}`;
@@ -248,8 +255,8 @@ test('无登记清理的部分效果可接续，分支被其他位置占用时�
   assert.equal(buildr(args).status, 'cleaned');
 });
 
-test('worktree CLI创建、检查并按逐仓完整提交安全清理', () => {
-  const root = createGitWorkspace();
+test('worktree CLI创建、检查并按逐仓完整提交安全清理', (t) => {
+  const root = createGitWorkspace(t, { viaCli: true });
   const taskId = 'direct-worktree';
   const created = buildr(createArgs(root, taskId));
   assert.equal(created.status, 'ready');
@@ -275,8 +282,8 @@ test('worktree CLI创建、检查并按逐仓完整提交安全清理', () => {
   assert.equal(fs.existsSync(created.evidencePath), false);
 });
 
-test('worktree provider完整预检在占用路径前零Git写入失败', () => {
-  const root = createGitWorkspace();
+test('worktree provider完整预检在占用路径前零Git写入失败', (t) => {
+  const root = createGitWorkspace(t);
   const taskId = 'occupied-worktree';
   const occupied = path.join(root, '.worktrees', taskId);
   fs.mkdirSync(occupied, { recursive: true });
@@ -288,8 +295,8 @@ test('worktree provider完整预检在占用路径前零Git写入失败', () => 
   git(root, ['show-ref', '--verify', '--quiet', `refs/heads/codex/${taskId}`], 1);
 });
 
-test('reviewed delivery允许不同提交编号并保护dirty与source漂移', () => {
-  const root = createGitWorkspace();
+test('reviewed delivery允许不同提交编号并保护dirty与source漂移', (t) => {
+  const root = createGitWorkspace(t);
   const taskId = 'reviewed-delivery';
   const created = buildr(createArgs(root, taskId));
   const checkout = created.repositories[0].checkoutPath;
@@ -316,8 +323,8 @@ test('reviewed delivery允许不同提交编号并保护dirty与source漂移', (
   assert.equal(fs.readFileSync(path.join(root, 'result.txt'), 'utf8'), 'result\n');
 });
 
-test('worktree cleanup从工作树已删但本地分支未删的部分效果恢复', () => {
-  const root = createGitWorkspace();
+test('worktree cleanup从工作树已删但本地分支未删的部分效果恢复', (t) => {
+  const root = createGitWorkspace(t);
   const taskId = 'cleanup-resume';
   const created = buildr(createArgs(root, taskId));
   const source = git(created.repositories[0].checkoutPath, ['rev-parse', 'HEAD']);
@@ -336,8 +343,8 @@ test('worktree cleanup从工作树已删但本地分支未删的部分效果恢�
   git(root, ['show-ref', '--verify', '--quiet', `refs/heads/codex/${taskId}`], 1);
 });
 
-test('worktree inspect 对 linked worktree 目标归一到同一证据身份', () => {
-  const root = createGitWorkspace();
+test('worktree inspect 对 linked worktree 目标归一到同一证据身份', (t) => {
+  const root = createGitWorkspace(t);
   const taskId = 'linked-target';
   const created = buildr(createArgs(root, taskId));
   assert.equal(created.status, 'ready');
@@ -359,8 +366,8 @@ test('worktree inspect 对 linked worktree 目标归一到同一证据身份', (
   );
 });
 
-test('多独立仓库要求成对覆盖全部selector并按nested-first清理', () => {
-  const root = createGitWorkspace();
+test('多独立仓库要求成对覆盖全部selector并按nested-first清理', (t) => {
+  const root = createGitWorkspace(t);
   const service = path.join(root, 'projects/demo/services/api');
   fs.mkdirSync(service, { recursive: true });
   git(service, ['init', '-b', 'main']);
@@ -451,8 +458,8 @@ test('非 Git 根通过公共入口隔离独立子仓库并保留资料', { time
   assert.equal(fs.existsSync(receipt.temporaryRoot), false);
 });
 
-test('项目与服务共享实际仓库时两种选择顺序均去重，冲突集成引用零效果拒绝', () => {
-  const root = createGitWorkspace(), projectRoot = path.join(root, 'projects/demo');
+test('项目与服务共享实际仓库时两种选择顺序均去重，冲突集成引用零效果拒绝', (t) => {
+  const root = createGitWorkspace(t), projectRoot = path.join(root, 'projects/demo');
   // This fixture must have no parent checkout that could mask a lost project member.
   fs.rmSync(path.join(root, '.git'), { recursive: true });
   git(root, ['rev-parse', '--show-toplevel'], 128);
@@ -515,8 +522,8 @@ test('项目与服务共享实际仓库时两种选择顺序均去重，冲突�
   git(root, ['rev-parse', '--show-toplevel'], 128);
 });
 
-test('旧 Git 根的有效组记录可独立读取，坏子仓只阻止相关身份与整组删除', () => {
-  const root = createGitWorkspace(), sourcePath = 'projects/demo/services/api', service = path.join(root, sourcePath);
+test('旧 Git 根的有效组记录可独立读取，坏子仓只阻止相关身份与整组删除', (t) => {
+  const root = createGitWorkspace(t), sourcePath = 'projects/demo/services/api', service = path.join(root, sourcePath);
   fs.mkdirSync(service, { recursive: true });
   git(service, ['init', '--initial-branch=main']); git(service, ['config', 'user.name', 'Buildr Test']); git(service, ['config', 'user.email', 'test@example.com']);
   fs.writeFileSync(path.join(service, 'api.md'), '# baseline\n'); git(service, ['add', '--', 'api.md']); git(service, ['-c', 'commit.gpgSign=false', 'commit', '-m', 'baseline']);

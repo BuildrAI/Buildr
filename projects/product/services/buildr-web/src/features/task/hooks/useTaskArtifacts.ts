@@ -10,7 +10,7 @@ import type { ChangePayload } from '../../../components/ChangeBriefPanel';
 import type { UiPrototypeData } from '../components/PrototypeTab';
 import { isTaskReadCancelled, type TaskReadLifecycle } from './useTaskRequestLifecycle';
 
-export type { WorkspaceDocument } from '../../../api/client';
+export type { TaskProjectDocument as WorkspaceDocument } from '../api/task-api';
 
 export type TaskBriefState =
   | { kind: 'empty' }
@@ -58,7 +58,7 @@ export function useTaskArtifacts(taskId: string, data: TaskDetailResponse | null
     const cached = taskMaterialCache.get(key);
     const retained = cached?.recordDigest === recordDigest ? cached.state : null;
     setMaterialsState({ key, recordDigest, state: retained || { taskId, data: null, loading: true, error: null } });
-    const loader = createTaskMaterialsLoader(taskId, signal => lifecycle.run(taskId, `materials:${key}:${++materialsSequence.current}`, lifecycleSignal => taskApi.materials(taskId, { signal: AbortSignal.any([signal, lifecycleSignal]) })), state => {
+    const loader = createTaskMaterialsLoader(taskId, signal => lifecycle.run(taskId, `materials:${key}:${++materialsSequence.current}`, lifecycleSignal => taskApi.materials(taskId, { signal: AbortSignal.any([signal, lifecycleSignal]) }, workspaceId)), state => {
       if (materialKeyRef.current !== key || recordDigestRef.current !== recordDigest) return;
       const previous = taskMaterialCache.get(key);
       // Already-read content stays visible while a real revalidation runs. A failed
@@ -166,7 +166,7 @@ export function useTaskArtifacts(taskId: string, data: TaskDetailResponse | null
     const currentTaskId = taskId;
     try {
       if (!projectRegistryRef.current) {
-        const registry = await projectApi.listProjects();
+        const registry = await projectApi.listProjects({}, workspaceId);
         if (materialKeyRef.current !== key) return;
         projectRegistryRef.current = registry.projects || [];
       }
@@ -188,7 +188,7 @@ export function useTaskArtifacts(taskId: string, data: TaskDetailResponse | null
     const currentTaskId = taskId;
     try {
       if (!projectRegistryRef.current) {
-        const registry = await projectApi.listProjects();
+        const registry = await projectApi.listProjects({}, workspaceId);
         if (materialKeyRef.current !== key) return;
         projectRegistryRef.current = registry.projects || [];
       }
@@ -205,9 +205,9 @@ export function useTaskArtifacts(taskId: string, data: TaskDetailResponse | null
 
   const openChangeDocument = useCallback((changeKey: string, documentPath: string) => openProjectDocument(changeKey.split('/')[0], documentPath, true), [openProjectDocument]);
 
-  const loadProjectDocument = useCallback((reference: TaskDocumentReference, documentPath: string) => (
-    taskApi.projectDocument(taskId, reference.projectCode, documentPath)
-  ), [taskId]);
+  const loadProjectDocument = useCallback((reference: TaskDocumentReference, documentPath: string, signal?: AbortSignal) => (
+    taskApi.projectDocument(taskId, reference.projectCode, documentPath, { signal }, workspaceId)
+  ), [taskId, workspaceId]);
 
   return {
     materials,

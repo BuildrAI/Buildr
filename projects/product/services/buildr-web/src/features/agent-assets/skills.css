@@ -36,7 +36,8 @@
 .skills-field { display: block; margin: 20px 0 8px; font-weight: 500; }
 .skills-action-drawer .ant-segmented { margin: 12px 0 20px; }
 .skills-action-note { margin-top: 24px; }
-.skills-prompt { width: 100%; min-height: 350px; resize: vertical; padding: 12px; border: 1px solid var(--soft-line); border-radius: 8px; font: 13px/1.8 inherit; }
+.skills-prompt { width: 100%; min-height: 350px; resize: vertical; padding: 12px; border: 1px solid var(--soft-line); border-radius: 8px; color: var(--soft-ink); font: 13px/1.8 inherit; }
+.skills-prompt:focus { outline: none; border-color: var(--soft-primary); box-shadow: 0 0 0 3px rgba(57,125,116,.11); }
 @media (max-width: 780px) {
   .skills-list-head, .skills-row { grid-template-columns: minmax(120px,1fr) 76px 12px; gap: 12px; }
   .skills-source-label { display: none; }

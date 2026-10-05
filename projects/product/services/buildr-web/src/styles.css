@@ -1448,7 +1448,7 @@ button.table-action {
 .markdown-body th, .markdown-body td { padding: 6px 8px; border: 1px solid var(--soft-line); text-align: left; vertical-align: top; }
 .markdown-body th { background: #f5f7f5; color: var(--soft-ink); font-weight: 700; }
 .markdown-body strong { color: var(--soft-ink); }
-.markdown-body img { display: block; width: min(100%, 840px); height: auto; margin: 4px auto; border: 1px solid var(--soft-line); border-radius: 8px; }
+.markdown-body img { display: block; width: auto; max-width: min(100%, 840px); height: auto; margin: 4px auto; border: 1px solid var(--soft-line); border-radius: 8px; }
 .task-intent-markdown { margin-top: 8px; }
 .task-intent-markdown > .markdown-body > p { color: inherit; font-size: inherit; line-height: inherit; }
 .task-document-preview { display: grid; gap: 12px; }
@@ -1461,12 +1461,16 @@ button.table-action {
 .task-document-preview-loading { display: flex; align-items: center; gap: 8px; min-height: 80px; color: var(--soft-muted); }
 .task-document-preview-content { max-height: 62vh; overflow: auto; padding: 14px; border: 1px solid var(--soft-line); border-radius: 8px; background: #fbfcfb; }
 
-form { display: grid; gap: 16px; }
-label { display: grid; gap: 6px; color: #2c3932; font-size: 12px; font-weight: 700; }
-input, textarea, select { width: 100%; border: 1px solid #cfdad3; border-radius: 6px; padding: 9px 10px; color: var(--soft-ink); background: #fff; line-height: 1.45; }
-textarea { resize: vertical; }
-input:focus, textarea:focus, select:focus { outline: none; border-color: #5a9d7b; box-shadow: 0 0 0 3px rgba(23,108,75,.11); }
-input:disabled, textarea:disabled, select:disabled { color: #7c8881; background: #f0f3f1; }
+/* 自有表单保留布局；Ant Design 内部标签与控件使用组件主题。 */
+:where(
+  #agent-action-form, #workspace-form, #project-edit-form, #service-edit-form,
+  #task-edit-form, #task-complete-form, #task-abandon-form, #catalog-edit,
+  #project-create-form, #project-register-form, #catalog-service-create,
+  #repository-create, #skill-registration
+) { display: grid; gap: 16px; }
+:where(.prompt-grid, #agent-action-form, #task-complete-form, #task-abandon-form, .prompt-result) > label,
+label:where(.knowledge-field, .task-context-field, .composite-end-note, .skills-field),
+.publication-editor-toolbar > label { display: grid; gap: 6px; color: #2c3932; font-size: 12px; font-weight: 700; }
 .actions { display: flex; justify-content: flex-end; gap: 8px; }
 .findings { display: grid; gap: 6px; margin-top: 12px; }
 .finding { padding: 8px 10px; border-radius: 6px; color: #8a6e2f; background: rgba(196, 163, 90, 0.16); font-size: 11px; line-height: 1.45; }

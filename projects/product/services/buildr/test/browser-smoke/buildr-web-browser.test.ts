@@ -1282,6 +1282,36 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.deepEqual([after.services, after.repositories], [[], []]);
   });
 
+  if (selected('project')) await t.test('项目文件图片保持当前工作空间与正文版本，更新后重新打开读取新观察', async () => {
+    const projectRoot = path.join(workspaceRoot, 'projects/demo');
+    const file = path.join(projectRoot, 'README.md'), imageFile = path.join(projectRoot, 'assets/project-readonly-image.png');
+    const before = fs.existsSync(file) ? fs.readFileSync(file) : null, imageBefore = fs.existsSync(imageFile) ? fs.readFileSync(imageFile) : null;
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==', 'base64');
+    try {
+      fs.mkdirSync(path.dirname(imageFile), { recursive: true }); fs.writeFileSync(imageFile, png);
+      fs.writeFileSync(file, '# 项目配图说明\n\n![项目文档配图](assets/project-readonly-image.png)\n\n正文与图片沿用当前项目来源。\n');
+      await page.goto(`${workspaceUrl}/projects/demo`); await page.locator('[data-doc-row="readme"]').click();
+      const image = page.locator('.pane-right:visible').getByRole('img', { name: '项目文档配图', exact: true });
+      await image.scrollIntoViewIfNeeded();
+      await page.waitForFunction(() => [...document.querySelectorAll<HTMLImageElement>('.pane-right img')].some(item => item.alt === '项目文档配图' && item.complete && item.naturalWidth === 1));
+      const previous = new URL((await image.getAttribute('src'))!, workspaceUrl).href;
+      assert.ok(previous.includes(`/api/v1/workspaces/${initialWorkspaceId}/projects/demo/document-image?`));
+      assert.equal(new URL(previous).searchParams.get('documentPath'), 'README.md');
+      const result = await page.request.get(previous); assert.equal(result.status(), 200); assert.deepEqual(await result.body(), png);
+      assert.ok((await image.boundingBox())!.width <= 4, '图片保留自然尺寸并限制阅读宽度');
+      fs.appendFileSync(file, '\n项目正文已经更新。\n');
+      assert.equal((await page.request.get(previous)).status(), 409, '旧正文观察不能作为新图片读取依据');
+      await page.getByRole('button', { name: '关闭 项目文档', exact: true }).click(); await page.locator('[data-doc-row="readme"]').click();
+      await page.locator('.pane-right:visible .markdown-body').filter({ hasText: '项目正文已经更新' }).waitFor({ state: 'visible' });
+      await page.waitForFunction(() => [...document.querySelectorAll<HTMLImageElement>('.pane-right img')].some(item => item.alt === '项目文档配图' && item.complete && item.naturalWidth === 1));
+      assert.notEqual(await image.getAttribute('src'), new URL(previous).pathname + new URL(previous).search);
+      await capture(page, 'project-document-current-images.png');
+    } finally {
+      if (before) fs.writeFileSync(file, before); else fs.rmSync(file, { force: true });
+      if (imageBefore) fs.writeFileSync(imageFile, imageBefore); else fs.rmSync(imageFile, { force: true });
+    }
+  });
+
   if (selected('project')) await t.test('项目列表展示标题与说明，详情展示基础事实与文档', async () => {
     await page.goto(`${workspaceUrl}/projects`);
     const row: any = page.locator('#project-table-body tr').filter({ hasText: '演示项目' });

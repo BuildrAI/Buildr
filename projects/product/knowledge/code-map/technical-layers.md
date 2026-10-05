@@ -34,6 +34,8 @@
 
 工作空间（Workspace）不拥有每日演进，也不反向绑定全部任务查询。资产模块只取得明确的 `WORKSPACE_ASSET_SUPPORT`，不取得全部业务和测试方法。
 
+项目文档图片由[项目应用](../../services/buildr/src/modules/workspace/application/project-application.ts)复读登记与来源，任务图片由[材料应用](../../services/buildr/src/modules/task/materials/application/task-materials-application.ts)及[项目读取器](../../services/buildr/src/modules/task/materials/application/task-project-document-reader.ts)选择同一本机或候选根。共享[图片文件读取](../../services/buildr/src/infrastructure/filesystem/markdown-images.ts)只负责真实正文引用、有界普通文件、类型签名与前后观察，不拥有任务作用域或登记。前端[图片链接与失败状态](../../services/buildr-web/src/lib/markdownImages.ts)提前过滤明确非法路径，实际身份和权限仍由应用决定。
+
 ## 对象装配与跨模块依赖
 
 | 入口 | 代表职责 |

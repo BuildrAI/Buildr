@@ -6,6 +6,7 @@ import { withExclusiveFileLock } from '../../../../infrastructure/filesystem/exc
 import { taskActionId } from '../../application/task-validation.ts';
 import { LEGACY_TASK_MATERIALS_SCHEMA, TASK_MATERIALS_SCHEMAS, validateMaterials } from './task-materials-contracts.ts';
 import { assertPlainDirectory, assertPlainPath, createTaskProjectDocumentReader, documentDigest, documentError, markdownPath, MAX_TASK_DOCUMENT_BYTES, readBoundedText, type TaskDocumentQuery, type TaskDocumentProjectQuery, type TaskDocumentWorktreeQuery } from './task-project-document-reader.ts';
+import { observeMarkdownImageContext, readMarkdownImage, type MarkdownImageRequest } from '../../../../infrastructure/filesystem/markdown-images.ts';
 
 type Dependencies = {
   taskQuery: TaskDocumentQuery & { assertCanonicalTaskWorkspace(root: string): string };
@@ -52,11 +53,32 @@ export function createTaskMaterialsApplication({ taskQuery, projectQuery, worktr
   }
   function readReference<R extends StoredReference>(targetRoot: string, taskId: string, root: string, relative: string, reference: R, options: { requireRootProof?: boolean } = {}): Omit<TaskMaterialDocument, 'role'> & { role: R['role'] } {
     try {
-      const read = reference.source.kind === 'task'
-        ? { ...readBoundedText(root, `${relative}/${markdownPath(reference.source.path)}`, undefined, options), provenance: 'task-local' as const }
-        : reader.taskProjectDocument(targetRoot, taskId, reference.source.project, reference.source.path, options);
-      return { ...reference, exists: read.exists, content: read.content, actualDigest: read.actualDigest, provenance: read.provenance, diagnostic: !read.exists ? { code: 'task_materials_document_missing', message: '已关联的任务材料当前不存在。' } : !read.content?.trim() ? { code: 'task_materials_document_empty', message: '已关联的任务材料正文为空，尚无真实可读内容。' } : null };
+      // Strict provenance inspection preserves its original descriptor-backed
+      // read and never adds an ordinary path read for optional Web images.
+      const source = options.requireRootProof ? null : materialSource(targetRoot, taskId, reference, { root, relative, directory: assertPlainPath(root, relative) });
+      const read = source
+        ? { ...readBoundedText(source.root, source.path), provenance: source.provenance }
+        : reference.source.kind === 'task'
+          ? { ...readBoundedText(root, `${relative}/${markdownPath(reference.source.path)}`, undefined, options), provenance: 'task-local' as const }
+          : reader.taskProjectDocument(targetRoot, taskId, reference.source.project, reference.source.path, options);
+      const imageContext = source ? observeMarkdownImageContext(source, read.content, read.actualDigest) : undefined;
+      return { ...reference, exists: read.exists, content: read.content, actualDigest: read.actualDigest, provenance: read.provenance, ...(imageContext ? { imageContext } : {}), diagnostic: !read.exists ? { code: 'task_materials_document_missing', message: '已关联的任务材料当前不存在。' } : !read.content?.trim() ? { code: 'task_materials_document_empty', message: '已关联的任务材料正文为空，尚无真实可读内容。' } : null };
     } catch (cause) { if (options.requireRootProof) throw cause; return { ...reference, exists: false, content: null, actualDigest: null, provenance: null, diagnostic: diagnostic(cause) }; }
+  }
+  function materialSource(targetRoot: string, taskId: string, reference: StoredReference, current = context(targetRoot, taskId)) {
+    const source = reference.source.kind === 'task'
+      ? { root: current.directory, path: markdownPath(reference.source.path), identity: ['task-local', current.root, taskId], provenance: 'task-local' as const }
+      : reader.resolveTaskProjectDocument(targetRoot, taskId, reference.source.project, reference.source.path);
+    return { ...source, identity: [source.identity, 'material', reference.id, reference.source] };
+  }
+  function taskMaterialImage(targetRoot: string, taskId: string, materialId: string, input: MarkdownImageRequest) {
+    return readMarkdownImage(() => {
+      const current = context(targetRoot, taskId);
+      const observed = manifest(current.root, current.relative);
+      const reference = observed.materials.documents.find(item => isCurrentReference(item) && item.id === materialId);
+      if (!reference) throw documentError('task_materials_document_missing', '图片所属材料当前未关联，请刷新任务。', 404);
+      return materialSource(targetRoot, taskId, reference, current);
+    }, input);
   }
   function inspectTaskMaterials(targetRoot: string, taskId: string): TaskMaterialsResponse {
     const current = context(targetRoot, taskId);
@@ -216,6 +238,6 @@ export function createTaskMaterialsApplication({ taskQuery, projectQuery, worktr
       return { result, materialsDigest: documentDigest(bytes) };
     });
   }
-  return Object.freeze({ inspectTaskMaterials, inspectTaskMaterial, recordTaskMaterials, writeTaskMaterialDocument, inspectLegacyTaskBrief, migrateLegacyTaskBrief, releaseLegacyTaskBrief, taskProjectDocument: reader.taskProjectDocument });
+  return Object.freeze({ inspectTaskMaterials, inspectTaskMaterial, recordTaskMaterials, writeTaskMaterialDocument, inspectLegacyTaskBrief, migrateLegacyTaskBrief, releaseLegacyTaskBrief, taskProjectDocument: reader.taskProjectDocument, taskProjectDocumentImage: reader.taskProjectDocumentImage, taskMaterialImage });
 }
 export type TaskMaterialsApplication = ReturnType<typeof createTaskMaterialsApplication>;

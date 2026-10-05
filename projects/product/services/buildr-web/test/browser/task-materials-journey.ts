@@ -50,6 +50,92 @@ export async function runTaskMaterialsJourney({ t, page, runtime, workspaceRoot,
   assert.equal(runtime.inspectTask(workspaceRoot, simple).recordDigest, recordBefore.recordDigest);
   assert.deepEqual(runtime.inspectTask(workspaceRoot, simple).record.changes, []);
 
+  await scenario('任务材料图片：本机、项目与链接后的正文同源读取，单图失败可刷新且旧正文观察拒绝', async () => {
+    const id = 'materials-images';
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==', 'base64');
+    const projectRoot = path.join(workspaceRoot, 'projects/demo');
+    const guide = path.join(projectRoot, 'docs/material-images.md');
+    fs.mkdirSync(path.dirname(guide), { recursive: true }); fs.mkdirSync(path.join(projectRoot, 'assets'), { recursive: true });
+    fs.writeFileSync(path.join(projectRoot, 'assets/图 表.png'), png);
+    fs.writeFileSync(guide, '# 项目图片正文\n\n![项目材料配图](../assets/图%20表.png)\n\n![稍后恢复的图片](../assets/later.png)\n\n[链接后的图片资料](linked-images.md)\n');
+    fs.writeFileSync(path.join(projectRoot, 'docs/linked-images.md'), '# 链接后的图片正文\n\n![链接资料配图](../assets/图%20表.png)\n\n![链接后稍后恢复的图片](../assets/linked-later.png)\n');
+    cli(['task', 'create', id, '--title', '受控图片阅读', '--intent', '在原现场阅读已关联资料图片。', '--project', 'demo', '--brief-file', markdown('images-brief', '# 配图阅读\n\n验证资料正文及单图恢复。\n')]);
+    write(id, 'solution.md', '# 本机图片正文\n\n![本机材料配图](assets/local.png)\n');
+    const localAssets = path.join(workspaceRoot, '.buildr/local/task-materials', id, 'assets');
+    fs.mkdirSync(localAssets, { recursive: true }); fs.writeFileSync(path.join(localAssets, 'local.png'), png);
+    associate(id, [local('local-image', 'solution', '本机配图材料', 'solution.md'), { id: 'project-image', role: 'solution', title: '项目配图材料', source: { kind: 'project', project: 'demo', path: 'docs/material-images.md' } }]);
+    expectedBrowserErrors.add(`/tasks/${id}/materials/project-image/image`);
+    expectedBrowserErrors.add(`/tasks/${id}/document-image/demo`);
+    const decoded = async (name: string) => {
+      const image = body().getByRole('img', { name, exact: true });
+      await image.scrollIntoViewIfNeeded();
+      await page.waitForFunction((alt: string) => [...document.querySelectorAll<HTMLImageElement>('#task-node-content img')].some(item => item.alt === alt && item.complete && item.naturalWidth === 1), name);
+      assert.ok((await image.boundingBox())!.width <= 4, '小图按自然尺寸显示，不强制拉伸为大图');
+      return image;
+    };
+    await open(id); await page.locator('[data-task-node=design]').click();
+    await body().getByRole('menuitem').filter({ hasText: '本机配图材料' }).click();
+    const localImage = await decoded('本机材料配图');
+    const localUrl = new URL((await localImage.getAttribute('src'))!, workspaceUrl).href;
+    const localResponse = await page.request.get(localUrl);
+    assert.equal(localResponse.status(), 200); assert.deepEqual(await localResponse.body(), png);
+    assert.equal(localResponse.headers()['cache-control'], 'no-store');
+    await body().getByRole('button', { name: '查看原文', exact: true }).click();
+    assert.match(await body().getByLabel('Markdown 原文', { exact: true }).innerText(), /!\[本机材料配图\]/);
+    await body().getByRole('button', { name: '阅读模式', exact: true }).click(); await decoded('本机材料配图');
+    await body().getByRole('menuitem').filter({ hasText: '项目配图材料' }).click();
+    await decoded('项目材料配图');
+    await body().getByRole('img', { name: '稍后恢复的图片', exact: true }).scrollIntoViewIfNeeded();
+    await body().getByText('部分图片暂时不可读取，请刷新任务正文后重试。', { exact: true }).waitFor({ state: 'visible' });
+    assert.match(await body().innerText(), /项目图片正文/);
+    fs.writeFileSync(path.join(projectRoot, 'assets/later.png'), png);
+    await refresh(); await decoded('稍后恢复的图片');
+    assert.equal(await body().getByText('部分图片暂时不可读取，请刷新任务正文后重试。', { exact: true }).count(), 0);
+    const projectImage = await decoded('项目材料配图');
+    const previousUrl = new URL((await projectImage.getAttribute('src'))!, workspaceUrl).href;
+    fs.appendFileSync(guide, '\n当前正文已从另一个入口更新。\n');
+    assert.equal((await page.request.get(previousUrl)).status(), 409, '旧正文观察不能读取当前图片');
+    await refresh(); await decoded('项目材料配图');
+    assert.match(await body().innerText(), /当前正文已从另一个入口更新/);
+    const linkedRead = page.waitForResponse((response: any) => response.request().method() === 'GET' && new URL(response.url()).pathname.endsWith(`/tasks/${id}/documents/demo/docs/linked-images.md`)).then(async (response: any) => ({ status: response.status(), url: response.url(), body: await response.json() })).catch((error: Error) => ({ error: error.message }));
+    await body().getByRole('link', { name: '链接后的图片资料', exact: true }).click();
+    const linked = page.locator(`[data-task-linked-document="${id}"]:visible`);
+    try { await linked.getByRole('img', { name: '链接资料配图', exact: true }).scrollIntoViewIfNeeded(); }
+    catch (error) {
+      console.error('[task-linked-image-scene]', JSON.stringify({ read: await linkedRead, dom: await page.evaluate(() => ({ location: location.href, taskPreviewCount: document.querySelectorAll('#task-document-preview').length, resources: [...document.querySelectorAll<HTMLElement>('.resource-reader')].filter(item => item.getClientRects().length > 0).map(item => ({ text: item.innerText.slice(0, 1200), images: [...item.querySelectorAll<HTMLImageElement>('img')].map(image => ({ alt: image.alt, src: image.getAttribute('src'), complete: image.complete, width: image.naturalWidth })) })), closeLabels: [...document.querySelectorAll<HTMLButtonElement>('button[aria-label]')].filter(item => item.getClientRects().length > 0).map(item => item.getAttribute('aria-label')).filter(label => label?.includes('关闭')) })) }));
+      await capture(page, 'task-linked-image-failure-scene.png');
+      throw error;
+    }
+    const linkedResponse = await linkedRead;
+    assert.equal(linkedResponse.status, 200, JSON.stringify(linkedResponse));
+    assert.equal(linkedResponse.body.path, 'docs/linked-images.md');
+    await page.waitForFunction(() => [...document.querySelectorAll<HTMLImageElement>('[data-task-linked-document] img')].some(item => item.alt === '链接资料配图' && item.complete && item.naturalWidth === 1));
+    assert.match((await linked.getByRole('img', { name: '链接资料配图', exact: true }).getAttribute('src'))!, new RegExp(`/tasks/${id}/document-image/demo`));
+    await linked.getByRole('img', { name: '链接后稍后恢复的图片', exact: true }).scrollIntoViewIfNeeded();
+    await linked.getByText('部分图片暂时不可读取，请刷新资料后重试。', { exact: true }).waitFor({ state: 'visible' });
+    assert.match(await linked.innerText(), /链接后的图片正文/);
+    fs.writeFileSync(path.join(projectRoot, 'assets/linked-later.png'), png);
+    const linkedRefresh = page.waitForResponse((response: any) => response.request().method() === 'GET' && new URL(response.url()).pathname.endsWith(`/tasks/${id}/documents/demo/docs/linked-images.md`));
+    await linked.getByRole('button', { name: '刷新资料', exact: true }).click();
+    const reread = await linkedRefresh;
+    assert.equal(reread.status(), 200);
+    assert.equal((await reread.json()).path, 'docs/linked-images.md');
+    await linked.getByRole('img', { name: '链接后稍后恢复的图片', exact: true }).waitFor({ state: 'visible' });
+    await linked.getByRole('img', { name: '链接后稍后恢复的图片', exact: true }).scrollIntoViewIfNeeded();
+    await page.waitForFunction(() => [...document.querySelectorAll<HTMLImageElement>('[data-task-linked-document] img')].some(item => item.alt === '链接后稍后恢复的图片' && item.complete && item.naturalWidth === 1));
+    assert.equal(await linked.getByText('部分图片暂时不可读取，请刷新资料后重试。', { exact: true }).count(), 0);
+    await linked.getByRole('button', { name: '查看原文', exact: true }).click();
+    assert.match(await linked.getByLabel('Markdown 原文', { exact: true }).innerText(), /!\[链接资料配图\]/);
+    await linked.getByRole('button', { name: '阅读模式', exact: true }).click();
+    await linked.getByRole('img', { name: '链接资料配图', exact: true }).scrollIntoViewIfNeeded();
+    await page.waitForFunction(() => [...document.querySelectorAll<HTMLImageElement>('[data-task-linked-document] img')].some(item => item.alt === '链接资料配图' && item.complete && item.naturalWidth === 1));
+    await capture(page, 'task-materials-current-local-project-images.png');
+    await page.getByRole('button', { name: '关闭 文档', exact: true }).click();
+    await body().locator('[data-task-material=project-image]').waitFor({ state: 'visible' });
+    assert.match(await body().innerText(), /当前正文已从另一个入口更新/);
+    await capture(page, 'task-materials-images-return-preserved.png');
+  });
+
   await scenario('任务材料：从列表直接打开无变更修复，说明正文在真实节点且刷新仍可读', async () => {
     await page.goto(`${workspaceUrl}/tasks`);
     await page.locator(`#task-table-body [data-task-id="${simple}"]`).waitFor({ state: 'visible' });

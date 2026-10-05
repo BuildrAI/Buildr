@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
 
 import { resolveVerificationWorkerBudget } from './worker-budget.ts';
 import { INTEGRATION_GENERAL_EXCLUDED_FILES } from './registry.ts';
@@ -26,6 +27,16 @@ const files: any = fs.readdirSync(integrationRoot)
 if (suite !== 'general' || files.length === 0) throw new Error('Integration general suite has no test files.');
 const workerBudget: any = resolveVerificationWorkerBudget({ env: process.env, fallback: 6, maximum: files.length, label: 'Integration general suite' });
 process.stderr.write(`[buildr-integration-suite] suite=${suite} files=${files.length} workerBudget=${workerBudget}\n`);
-const result: any = spawnSync(process.execPath, ['--test', `--test-concurrency=${workerBudget}`, '--test-reporter=dot', ...files], { cwd: productRoot, stdio: 'inherit', env: process.env });
+const reporters = process.env.BUILDR_INTEGRATION_FILE_TIMING === '1'
+  ? [
+    '--test-reporter=dot',
+    `--test-reporter=${pathToFileURL(path.join(import.meta.dirname, 'system-file-timing-reporter.ts')).href}`,
+    '--test-reporter=spec',
+    '--test-reporter-destination=stdout',
+    '--test-reporter-destination=stderr',
+    '--test-reporter-destination=stderr',
+  ]
+  : ['--test-reporter=dot'];
+const result: any = spawnSync(process.execPath, ['--test', `--test-concurrency=${workerBudget}`, ...reporters, ...files], { cwd: productRoot, stdio: 'inherit', env: process.env });
 if (result.error) throw result.error;
 if (result.status !== 0) process.exitCode = result.status ?? 1;
