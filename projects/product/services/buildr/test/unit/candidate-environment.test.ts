@@ -6,7 +6,7 @@ import { candidateEnvironmentPlan, CANDIDATE_ENVIRONMENT_PROFILES } from '../../
 const roots = { serviceRoot: '/product/buildr', webRoot: '/product/buildr-web' };
 
 test('Candidate environment profiles are closed and select the minimum preparation recipe', () => {
-  assert.deepEqual(CANDIDATE_ENVIRONMENT_PROFILES, ['base', 'artifact', 'source-runtime', 'consumer', 'host', 'publisher']);
+  assert.deepEqual(CANDIDATE_ENVIRONMENT_PROFILES, ['base', 'artifact', 'frontend', 'browser-artifact', 'source-runtime', 'consumer', 'host', 'publisher']);
   assert.deepEqual(candidateEnvironmentPlan('host', roots).map((item) => item.id), ['buildr-dependencies']);
   assert.deepEqual(candidateEnvironmentPlan('base', roots).map((item) => item.id), [
     'buildr-dependencies',
@@ -46,4 +46,20 @@ test('artifact consumers install only locked production dependencies and never g
   assert.deepEqual(publisher[0].args, ['ci', '--omit=dev', '--ignore-scripts']);
   assert.ok(publisher[1].args.includes('npm@11.5.1'));
   assert.ok(!publisher[1].args.includes('--global'));
+});
+
+test('frontend source shard installs its own locked toolchain and generated inputs without building Web', () => {
+  assert.deepEqual(candidateEnvironmentPlan('frontend', roots), [
+    { id: 'buildr-dependencies', executable: 'npm', args: ['ci'], cwd: roots.serviceRoot },
+    { id: 'buildr-web-dependencies', executable: 'npm', args: ['ci'], cwd: roots.webRoot },
+    { id: 'generated-contracts-and-test-context', executable: 'npm', args: ['run', 'artifacts:prepare'], cwd: roots.serviceRoot },
+  ]);
+});
+
+test('Candidate artifact Browser explicitly prepares Chromium and source harness inputs without Web build dependencies', () => {
+  assert.deepEqual(candidateEnvironmentPlan('browser-artifact', roots), [
+    { id: 'buildr-dependencies', executable: 'npm', args: ['ci'], cwd: roots.serviceRoot },
+    { id: 'generated-contracts-and-test-context', executable: 'npm', args: ['run', 'artifacts:prepare'], cwd: roots.serviceRoot },
+    { id: 'browser-chromium', executable: 'npm', args: ['run', 'test:browser:install'], cwd: roots.serviceRoot },
+  ]);
 });

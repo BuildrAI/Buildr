@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "test": "node --test test/*.test.mjs",
+    "test": "node tools/run-logic-tests.mjs",
     "preview": "vite preview",
     "test:browser:layout": "node ../buildr/test/verification/browser-selector-dispatcher.ts --selector layout --run"
   },

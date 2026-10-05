@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 import { createExactNodeExecutionEnvironment, spawnCommandSync } from '../../src/infrastructure/process.ts';
 
-export const CANDIDATE_ENVIRONMENT_PROFILES = Object.freeze(['base', 'artifact', 'source-runtime', 'consumer', 'host', 'publisher'] as const);
+export const CANDIDATE_ENVIRONMENT_PROFILES = Object.freeze(['base', 'artifact', 'frontend', 'browser-artifact', 'source-runtime', 'consumer', 'host', 'publisher'] as const);
 export type CandidateEnvironmentProfile = typeof CANDIDATE_ENVIRONMENT_PROFILES[number];
 
 const serviceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -30,7 +30,7 @@ export function candidateEnvironmentPlan(profileValue: string, roots = { service
   ];
   if (profile === 'publisher') plan.push({ id: 'publisher-npm', executable: 'npm', args: ['install', '--prefix', path.join(roots.serviceRoot, 'node_modules/.buildr-publisher'), '--ignore-scripts', '--no-save', '--no-package-lock', '--no-audit', '--no-fund', `npm@${PUBLISH_NPM_VERSION}`], cwd: roots.serviceRoot });
   if (consumesArtifact) return plan;
-  if (profile === 'artifact' || profile === 'source-runtime') {
+  if (profile === 'artifact' || profile === 'frontend' || profile === 'source-runtime') {
     plan.push({ id: 'buildr-web-dependencies', executable: 'npm', args: ['ci'], cwd: roots.webRoot });
   }
   // The artifact builder generates its isolated inputs itself. Source tests need
@@ -39,6 +39,7 @@ export function candidateEnvironmentPlan(profileValue: string, roots = { service
   if (profile === 'source-runtime') {
     plan.push({ id: 'buildr-web-source-runtime', executable: 'node', args: ['tools/development/prepare-development-web.ts'], cwd: roots.serviceRoot });
   }
+  if (profile === 'browser-artifact') plan.push({ id: 'browser-chromium', executable: 'npm', args: ['run', 'test:browser:install'], cwd: roots.serviceRoot });
   return plan;
 }
 
@@ -114,7 +115,7 @@ function option(args: string[], name: string): string | null {
 
 if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url))) {
   try {
-    if (process.argv[2] !== 'prepare') throw new Error('Usage: candidate-environment.ts prepare --profile <base|artifact|source-runtime|consumer|host|publisher>');
+    if (process.argv[2] !== 'prepare') throw new Error('Usage: candidate-environment.ts prepare --profile <base|artifact|frontend|browser-artifact|source-runtime|consumer|host|publisher>');
     const result = prepareCandidateEnvironment({ profile: option(process.argv.slice(2), '--profile') || '' });
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   } catch (error: unknown) {

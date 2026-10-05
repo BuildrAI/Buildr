@@ -45,8 +45,9 @@ const allowed: any = new Map([
     'acquireBuildrWebStartLock', 'releaseBuildrWebStartLock', 'clearBuildrWebInstance',
   ])],
   ['src/bootstrap/cli/main.ts', new Set(['writeInternalDownload'])],
-  ['src/web/application/preview-lifecycle.ts', new Set(['clearOwner'])],
+  ['src/web/application/preview-lifecycle.ts', new Set(['clearOwner', 'prepareTaskPreviewStore'])],
   ['src/modules/task/infrastructure/worktree-application.ts', new Set(['writeReceipt'])],
+  ['src/modules/task/materials/application/task-materials-application.ts', new Set(['publish'])],
   ['src/modules/publication/application/publication-application.ts', new Set(['createPublication', 'uploadPublicationAsset'])],
   ['src/modules/task/application/finish/task-finish-run.ts', new Set([
     'acquireFinishTargetLease', 'releaseFinishTargetLease',

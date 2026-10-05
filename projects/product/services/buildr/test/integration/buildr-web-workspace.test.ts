@@ -177,7 +177,10 @@ test('任务详情复用系统副屏与抽屉，独立专业事实按工作节�
   assert.doesNotMatch(detail, /WorkspaceStage|pane-stage|pane-right/);
   assert.match(detail, /TaskWorkPath/);
   assert.match(detail, /TaskContextDrawer/);
-  assert.match(read('../buildr-web/src/features/task/hooks/useTaskReadingState.ts'), /useState<TaskReadingTab>\('requirements'\)/);
+  const readingState = read('../buildr-web/src/features/task/hooks/useTaskReadingState.ts');
+  assert.match(readingState, /const empty = .*selected: 'requirements'/);
+  assert.match(readingState, /restoreHistory = false/);
+  assert.match(readingState, /useState<TaskReadingTab>\(initial\.current\.selected\)/);
   const workContent = read('../buildr-web/src/features/task/components/taskWorkContent.ts');
   assert.match(workContent, /TaskReadingTab = TaskNodeStage \| 'changes'/);
   assert.match(workContent, /\['requirements', 'design', 'implementation', 'closeout'\] as TaskNodeStage\[\]/);

@@ -30,11 +30,11 @@ Buildr 的验证由以下几部分共同组成。**某个入口的“完整”�
 | 前端逻辑 | 在 `services/buildr-web` 执行 `../buildr/tools/development/run-development-npm test`，对应 `buildr-web-unit` | 运行 `test/*.test.mjs`，检查输入转换、筛选、分页等逻辑；不启动浏览器（Browser），不证明页面已正确呈现或可交互 |
 | 前端构建与真实页面旅程 | 在 `services/buildr` 执行 `test:browser:smoke`；按改动选择用 `test:browser:changed`，对应 `buildr-web` | 准备隔离构建产物并验证页面与后端协作；不执行前端 `test/*.test.mjs`。单独构建可在 `services/buildr-web` 执行 `../buildr/tools/development/run-development-npm run build`，但构建成功没有交互证明 |
 | DSH 插件包 | 在 `services/dsh-plugin` 执行 `node tools/verify-all.ts`，对应 `dsh-plugin` | 核对 SDK 基线、构建正式版与开发版、运行逻辑及同场装载测试，并用真实 DSH 装载器验证两种产物；不证明用户当前桌面已更新或跨重启行为已经人工验收 |
-| 本机候选（Candidate） | 在 `services/buildr` 执行 `test:candidate`，由 `candidate.ts` 选择 `candidate` 集合 | 在当前机器检查源码、生成唯一压缩包并运行适用发布物检查；不产生其他平台结果，也不包含独立的前端逻辑和浏览器（Browser）旅程 |
-| 跨平台候选（Candidate）聚合 | 仓库根 `.github/workflows/verify.yml` 调用 `candidate-ci.ts` 的 `plan`、`run`、`host`、`aggregate` | 组织源码分片、单一发布物、macOS/Windows 平台检查和 macOS/Windows/Linux 宿主 Node.js（Host Node）组合；聚合校验来源、登记和发布物身份。当前集合同样未纳入前端逻辑和浏览器（Browser）旅程；其通过不等于整个产品或发布已成功 |
+| 本机候选（Candidate） | 在 `services/buildr` 执行 `test:candidate`，由 `candidate.ts` 选择 `candidate` 集合 | 在当前机器检查源码、真实前端逻辑、唯一压缩包及其核心浏览器旅程（Browser Journey），运行适用发布物检查；不产生其他平台结果，也不证明全部页面或独立 DSH 包已通过 |
+| 跨平台候选（Candidate）聚合 | 仓库根 `.github/workflows/verify.yml` 调用 `candidate-ci.ts` 的 `plan`、`run`、`host`、`aggregate` | 组织源码分片（Shard）、真实前端逻辑、单一发布物及其 macOS 核心浏览器旅程（Browser Journey）、macOS/Windows 平台检查和 macOS/Windows/Linux 宿主 Node.js（Host Node）组合；聚合校验来源、登记和发布物身份。其通过只证明登记集合，不等于全部页面、独立插件或公开发布已成功 |
 | 明确目标环境中的实际运行 | `buildr-environment-smoke` 给出按目标执行的指导，无固定全局命令 | 检查指定安装或发布环境中的命令行（CLI）、HTTP 或页面入口；只证明实际观察到的环境和行为，不用开发目录测试替代它 |
 
-[后端脚本](../../../services/buildr/package.json)、[前端脚本](../../../services/buildr-web/package.json)、[执行注册表](../../../services/buildr/test/verification/registry.ts)、[本机候选入口](../../../services/buildr/test/verification/candidate.ts)和[跨平台候选入口](../../../services/buildr/test/verification/candidate-ci.ts)共同限定上述范围。`dev` 拉取请求的持续集成（CI）还会按受影响路径单独选择浏览器（Browser）检查；这与跨平台候选聚合是不同作业，不能据前者推断后者已覆盖。
+[后端脚本](../../../services/buildr/package.json)、[前端脚本](../../../services/buildr-web/package.json)、[执行注册表](../../../services/buildr/test/verification/registry.ts)、[本机候选入口](../../../services/buildr/test/verification/candidate.ts)和[跨平台候选入口](../../../services/buildr/test/verification/candidate-ci.ts)共同限定上述范围。`frontend-logic` 调用前端完整入口；`dsh-plugin` 在受影响选择中运行插件完整验证，保持独立发布边界。`dev` 合并请求（Pull Request）的持续集成（CI）按受影响路径单独选择源码浏览器检查；候选的 `artifact-browser-core` 则直接消费唯一压缩包内网页载荷，不重新构建网页。两者输入和选择范围不同，不能相互推导完成。所有面向 `main` 的合并请求（Pull Request）实际执行来源及候选证据校验；不支持来源明确失败。
 
 日常定向检查可用 `test:focus -- <step-id>`，用 `test:changed -- --plan` 查看选择及理由，再由 `test:changed` 执行。后者会为选中步骤组合 `fast` 前置检查，关键执行依据变化时扩大到日常完整集合。纯知识修改可选文档质量步骤并补阅读验收。选择预览、类型检查、构建、`coverage:unit` 覆盖率各自提供不同证据，不能互相冒充实际行为测试。
 
@@ -59,7 +59,7 @@ Buildr 的验证由以下几部分共同组成。**某个入口的“完整”�
 
 1. 在最接近事实责任主体（Owner）的测试目录增加案例，复用适用夹具（Fixture）。
 2. 核对所属入口的文件发现方式。后端集成分片由 `INTEGRATION_PRIMARY_SLICES` 与排除集协作，系统测试（System）由 `SYSTEM_SUITES` 维护分组；前端逻辑由前端包的 `test/*.test.mjs` 发现，页面旅程由浏览器（Browser）选择器接入。
-3. 后端步骤在 `ownership.ts` 核对路径影响，页面旅程核对 `browser-selector-dispatcher.ts` 的选择结果；前端逻辑按测试地图与改动选择现有测试。修改选择机制时也要验证其自身。
+3. 后端步骤在 `ownership.ts` 核对路径影响，页面旅程核对 `browser-selector-dispatcher.ts` 的选择结果；前端逻辑与插件路径分别选择 `frontend-logic` 和 `dsh-plugin` 完整入口。修改选择机制时也要验证其自身。
 4. 确需新增稳定步骤时，再维护 `registry.ts` 中的执行器（Executor）、分类、真实依赖、预算和资源，以及 `test/context/dispositions.ts` 的处置。
 5. 用实际测试取得行为证据，再用选择预览确认必要步骤被选中；预览本身不算测试通过。
 6. 只有稳定入口、测试族（Testing Family）的范围或环境变化，才交给声明接入（declaration-intake）和任务验证（task-verification）维护 `verification.yml`。
@@ -69,6 +69,8 @@ Buildr 的验证由以下几部分共同组成。**某个入口的“完整”�
 执行注册表（Registry）描述主要证明责任（`primaryEvidenceOwner`）、公共结果、真实技术边界、目标耗时与副作用。重复辅助检查可以存在，但不能把同一事实包装成多份独立主要证明。
 
 依赖图（DAG）负责等待真实前置结果；执行入口还组合其明确要求的低成本前置检查。调度器（Scheduler）同时考虑步骤类别、具名资源和 `workers/processes/git/workspaceIo` 容量。执行器（Executor）把实际授予额度传给子进程并发或持久工作进程（Worker Host），内层不能自行扩大额度。
+
+前端 `npm test` 与登记步骤 `frontend-logic` 共用 `services/buildr-web/tools/run-logic-tests.mjs`。登记步骤使用 Node.js 执行器（Executor）将获授预算传入同一驱动（Test Runner），后者把 `--test-concurrency` 放在测试文件参数前；直接调用默认 1 个工作进程（Worker）。预算限制影响并发，不缩小完整文件集合。
 
 未知步骤、无效配置、必要依赖缺失或不可满足资源会在相关执行开始前失败。路径选择的成功状态只证明规则匹配通过，不证明待验证的公共行为或测试覆盖已经充分。
 
@@ -80,12 +82,12 @@ Buildr 的验证由以下几部分共同组成。**某个入口的“完整”�
 
 工作空间（Workspace）命令行（CLI）及 HTTP 冒烟必须经 `tools/development/run-isolated-workspace-smoke.ts`：同时隔离工作目录、`BUILDR_APP_DATA_DIR` 和 `BUILDR_PRODUCT_DATA_DIR`，成功或失败后均清理。不能让测试进入真实用户应用状态。
 
-前端服务（Service）负责 React/Vite 源码和构建；后端服务（Service）托管正式 `web-dist`。浏览器（Browser）验证使用隔离构建产物，页面逻辑的 `buildr-web/test/*.test.mjs`、类型检查或构建不能替代真实交互。浏览器（Browser）选择细节见 `browser-selector-dispatcher.ts`，关键页面旅程在 `test/browser-smoke/`。
+前端服务（Service）负责 React/Vite 源码和构建；后端服务（Service）托管正式 `web-dist`。源码浏览器（Browser）验证使用隔离构建产物，候选浏览器（Browser）验证使用唯一压缩包内已校验载荷；后者只准备源码测试运行时（Runtime）和显式浏览器，不安装前端构建依赖或替换载荷。页面逻辑的 `buildr-web/test/*.test.mjs`、类型检查或构建不能替代真实交互。浏览器（Browser）选择细节见 `browser-selector-dispatcher.ts`，关键页面旅程在 `test/browser-smoke/`。
 
 ## 证据如何支持交付
 
 日常执行保留实际结果、选择理由、来源身份、排队与资源等待、执行和清理耗时；上下文（Context）执行另记录创建、复用、取得、重置、污染失效和销毁。这些帮助定位失败与性能，属于测试工具的临时证据，不能冒充正式任务完成或发布成功。
 
-跨平台候选（Candidate）由[证据聚合实现](../../../services/buildr/test/verification/candidate-ci-evidence.ts)核对所需分片与宿主组合是否齐全、是否来自相同源码及登记身份、是否消费同一压缩包；缺失或身份不符会使聚合失败。本机 `test:candidate` 的结果不能替代这份聚合。正式任务报告仍须分别说明所需的前端逻辑、浏览器（Browser）旅程及目标环境检查是否实际完成。发布（Release）还涉及当前外部权限、真实发布与回读，流程和恢复由[开源发布说明](../flows/open-source-release.md)单独维护。`integration-candidate-release`、`integration-candidate-release-effects` 与 `integration-candidate-git-convergence` 是发布专用证据，不默认纳入日常 `core`；三者分别覆盖发布契约、发布副作用恢复与真实 Git 收敛清理，在相同分片内分别执行以保持在能力时限内。
+跨平台候选（Candidate）由[证据聚合实现](../../../services/buildr/test/verification/candidate-ci-evidence.ts)核对所需分片与宿主组合是否齐全、是否来自相同源码及登记身份、是否消费同一压缩包；新增前端逻辑或核心浏览器证据缺失、失败或身份不符同样使聚合失败。本机 `test:candidate` 的结果不能替代这份聚合。正式任务报告仍须分别说明所需前端逻辑、浏览器（Browser）选择范围及目标环境检查是否实际完成。发布（Release）还涉及当前外部权限、真实发布与回读，流程和恢复由[开源发布说明](../flows/open-source-release.md)单独维护。`integration-candidate-release`、`integration-candidate-release-effects` 与 `integration-candidate-git-convergence` 是发布专用证据，不默认纳入日常 `core`；三者分别覆盖发布契约、发布副作用恢复与真实 Git 收敛清理，在相同分片内分别执行以保持在能力时限内。
 
 后续优化先依据当前耗时找出选择放大、重复准备、执行体或清理瓶颈。不能为追求速度删除正在证明的安装、初始化、迁移、恢复、平台或发布物边界。

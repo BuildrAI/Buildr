@@ -70,6 +70,23 @@ jobs:
           node -e 'const fs = require("node:fs"); const plan = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); fs.appendFileSync(process.env.GITHUB_OUTPUT, "selected=" + (plan.status === "selected") + "\n");' "${RUNNER_TEMP}/development-browser-plan.json"
       - name: Install product dependencies
         run: npm ci
+      - name: Plan affected service dependencies
+        id: services
+        shell: bash
+        run: |
+          node test/verification/changed.ts --json --base "${{ steps.base.outputs.sha }}" > "${RUNNER_TEMP}/development-service-plan.json"
+          node -e 'const fs = require("node:fs"); const plan = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); const selected = new Set(plan.steps.map(step => step.id)); fs.appendFileSync(process.env.GITHUB_OUTPUT, "frontend=" + selected.has("frontend-logic") + "\n" + "dsh=" + selected.has("dsh-plugin") + "\n");' "${RUNNER_TEMP}/development-service-plan.json"
+      - name: Install Buildr Web dependencies
+        if: steps.browser.outputs.selected == 'true' || steps.services.outputs.frontend == 'true'
+        working-directory: projects/product/services/buildr-web
+        run: npm ci
+      - name: Install pinned DSH package manager
+        if: steps.services.outputs.dsh == 'true'
+        run: npm install --global pnpm@11.7.0
+      - name: Prepare pinned DSH SDK
+        if: steps.services.outputs.dsh == 'true'
+        working-directory: projects/product/services/dsh-plugin
+        run: node tools/fetch-sdk.ts
       - name: Verify changed product scope
         env:
           BUILDR_TIMING_OUTPUT: ${{ runner.temp }}/development-feedback-timing.json
@@ -77,10 +94,9 @@ jobs:
           BUILDR_VERIFICATION_PROFILE: ci
         shell: bash
         run: npm run test:changed -- --base "${{ steps.base.outputs.sha }}"
-      - name: Install Buildr Web dependencies
+      - name: Prepare affected Browser environment
         if: steps.browser.outputs.selected == 'true'
-        working-directory: projects/product/services/buildr-web
-        run: npm ci
+        run: npm run test:browser:install
       - name: Verify affected Browser evidence
         if: steps.browser.outputs.selected == 'true'
         env:
@@ -94,6 +110,7 @@ jobs:
           name: development-feedback-macos
           path: |
             ${{ runner.temp }}/development-browser-plan.json
+            ${{ runner.temp }}/development-service-plan.json
             ${{ runner.temp }}/development-feedback-timing.json
             ${{ runner.temp }}/development-feedback-diagnostics
           if-no-files-found: warn
@@ -362,7 +379,7 @@ jobs:
 
   candidate-gate:
     name: Candidate gate
-    if: always() && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main' && (github.head_ref == 'dev' || startsWith(github.head_ref, 'codex/release-main-'))))
+    if: always() && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main'))
     needs: [candidate-plan, candidate-bootstrap, candidate-source, candidate-artifact-consumers, candidate-host-node]
     runs-on: ubuntu-24.04
     timeout-minutes: 5

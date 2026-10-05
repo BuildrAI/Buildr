@@ -58,8 +58,10 @@ test('Candidate输入从空暂存生成闭合且可重复的artifact set', async
     'test-context': first.testContextRoot,
     'web-dist': first.webDistRoot,
   });
-  assert.equal(first.manifest.artifacts.find((artifact) => artifact.id === 'backend-dto')?.files.length, 7);
-  assert.equal(first.manifest.artifacts.find((artifact) => artifact.id === 'web-dto')?.files.length, 7);
+  const expectedDtoFiles = ['agent-assets-http-dto.ts', 'code-http-dto.ts', 'knowledge-http-dto.ts', 'runtime-system-http-dto.ts', 'task-dto.ts', 'task-professional-http-dto.ts', 'workbench-dto.ts', 'workspace-http-dto.ts'];
+  for (const id of ['backend-dto', 'web-dto']) {
+    assert.deepEqual(first.manifest.artifacts.find(artifact => artifact.id === id)?.files.map(file => file.path).sort(), expectedDtoFiles);
+  }
   const libraryFiles = first.manifest.artifacts.find((artifact) => artifact.id === 'test-context')?.files.map((file) => file.path) || [];
   assert.equal(libraryFiles.length, 16);
   assert.ok(libraryFiles.includes('public.js'));

@@ -107,6 +107,9 @@ export const VERIFICATION_STEP_TESTING: any = Object.freeze({
   'init-onboarding': testing(PROJECT_OWNER, 'Development', 'System', 15000, 'A user can initialize a Workspace through the public CLI.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'cli-compatibility': testing(SERVICE_OWNER, 'Development', 'System', 15000, 'Documented CLI commands remain compatible.', TEST_ENVIRONMENTS.repeatedCli),
   'cli-package-parity': testing(SERVICE_OWNER, 'Delivery / Release', 'Integration', 20000, 'Representative source and packaged CLI outputs and one init mutation remain equivalent.', TEST_ENVIRONMENTS.repeatedCli),
+  'artifact-browser-core': testing(SERVICE_OWNER, 'Delivery / Release', 'System', 20000, 'The exact Candidate tarball Web payload serves the existing representative Task list and reading journey in an isolated real browser.', TEST_ENVIRONMENTS.workspaceLifecycle),
+  'frontend-logic': testing('service:product/buildr-web', 'Development', 'Unit', 10000, 'The complete Buildr Web logic suite preserves state transitions, navigation, requests and input conversion.', TEST_ENVIRONMENTS.sourceReadOnly),
+  'dsh-plugin': testing('service:product/dsh-plugin', 'Development', 'System', 60000, 'Both plugin variants build against the pinned SDK and pass logic, coexistence and real DSH loader checks.', environment(['filesystem', 'cli'], 'shared', 'none')),
   'service-branch-contract': testing(PROJECT_OWNER, 'Development', 'System', 10000, 'Service branch configuration works in an isolated repository.', TEST_ENVIRONMENTS.isolatedGitCli),
   'remote-skill-timeout': testing(SERVICE_OWNER, 'Development', 'Integration', 10000, 'Remote Skill reads fail within the declared timeout boundary.', TEST_ENVIRONMENTS.loopbackNetwork),
   'release-tarball-smoke': testing(SERVICE_OWNER, 'Delivery / Release', 'System', 25000, 'The shared release tarball installs, keeps ordinary CLI HTTP-free, and serves healthy Buildr Web on demand.', TEST_ENVIRONMENTS.workspaceLifecycle),
@@ -210,6 +213,8 @@ export const VERIFICATION_STEP_EVIDENCE: any = Object.freeze({
 });
 
 export const VERIFICATION_DAILY_CORE_EXCLUSIONS: any = Object.freeze({
+  'artifact-browser-core': 'Consumes the unique Candidate tarball through the representative core Browser journey; it does not replace affected or full source Browser checks.',
+  'frontend-logic': 'The independent frontend logic suite runs for frontend changes and full Candidate; backend Core does not imply frontend coverage.',
   'integration-candidate-release': 'Exercises release infrastructure lifecycle and recovery; selected only for release-related changes or full Candidate.',
   'integration-candidate-release-effects': 'Exercises release publication effects and recovery; selected only for release-related changes or full Candidate.',
   'integration-candidate-git-convergence': 'Exercises release Git convergence and cleanup; selected only for release-related changes or full Candidate.',
@@ -380,6 +385,9 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
     'test/integration/buildr-test-context-provider.test.ts',
     'test/integration/test-context-public-consumer.test.ts',
     'test/integration/verification-test-files.test.ts',
+    'test/integration/frontend-logic-worker-budget.test.ts',
+    'test/integration/browser-candidate.test.ts',
+    'test/integration/docs-quality.test.ts',
   ], { schedulingCostMs: 5000, admission: true, args: ['--test-concurrency=3'] }),
   integrationSlice('integration-runtime', [
     'test/integration/workbench-application.test.ts',
@@ -411,6 +419,7 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
   integrationSlice('integration-data-store', [
     'test/integration/workspace-management-fence.test.ts',
     'test/integration/workspace-sqlite.test.ts',
+    'test/integration/task-read-snapshot.test.ts',
   ], { schedulingCostMs: 2000, args: ['--test-concurrency=1'] }),
   integrationSlice('integration-self-bootstrap', [
     'test/integration/self-bootstrap-closeout.test.ts',
@@ -435,6 +444,9 @@ export const INTEGRATION_GENERAL_EXCLUDED_FILES: any = Object.freeze([...new Set
 ])]);
 
 export const verificationSteps: any = Object.freeze([
+  step({ id: 'artifact-browser-core', name: 'Candidate tarball core Browser journey', executor: { type: 'node', file: 'test/verification/release/browser-candidate.ts', args: ['--selector', 'core'], consumesArtifact: true }, profiles: ['candidate'], groups: ['release'], dependsOn: ['candidate-tarball'], timeoutMs: 360_000, concurrencyClass: 'workspace-heavy', resources: ['app-runtime'] }),
+  step({ id: 'frontend-logic', name: 'Buildr Web complete logic suite', executor: { type: 'node', file: '../buildr-web/tools/run-logic-tests.mjs' }, profiles: ['candidate'], concurrencyClass: 'cpu-heavy' }),
+  step({ id: 'dsh-plugin', name: 'DSH plugin complete build and loader verification', executor: { type: 'node', file: '../dsh-plugin/tools/verify-all.ts' }, timeoutMs: 360_000, concurrencyClass: 'exclusive' }),
   step({ id: 'typecheck', name: 'TypeScript static checking', executor: { type: 'npm', args: ['run', 'typecheck'] }, profiles: ['fast', 'candidate'], }),
   step({ id: 'unit', name: 'fine-grained unit tests', executor: { type: 'npm', args: ['run', 'test:unit'] }, profiles: ['fast', 'candidate'],  concurrencyClass: 'cpu-heavy' }),
   step({ id: 'component', name: 'bounded component tests', executor: { type: 'npm', args: ['run', 'test:component'] }, profiles: ['fast', 'candidate'],  concurrencyClass: 'cpu-heavy' }),
@@ -631,6 +643,8 @@ export const CORE_MACOS_SHARDS: any = Object.freeze([
 ]);
 
 export const CANDIDATE_CI_SHARDS: any = Object.freeze([
+  candidateShard('artifact-browser-macos', 'macos', 'verification', ['artifact-browser-core'], { requiresArtifact: true }),
+  candidateShard('frontend-logic-macos', 'macos', 'verification', ['frontend-logic']),
   candidateShard('preflight-macos', 'macos', 'preflight', [
     'typecheck',
     'unit',

@@ -16,6 +16,7 @@ import { canonicalApplicationPayloadIdentity } from '../../src/infrastructure/pr
 import {
   acquireExclusiveFileLock,
   releaseExclusiveFileLock,
+  withExclusiveFileLock,
 } from '../../src/infrastructure/filesystem/index.ts';
 import {
   PRODUCT_INSTALLATION_REGISTRY_SCHEMA,
@@ -284,6 +285,38 @@ test('registry lock times out fail-closed, releases only its exact token, and sa
     (error: any) => error.code === 'buildr_exclusive_file_lock_timeout' && /invalid-or-unknown/.test(error.message),
   );
   assert.equal(fs.readFileSync(lockFile, 'utf8'), invalidBytes, 'an invalid unknown owner must fail closed instead of being reclaimed');
+});
+
+test('optional lock location guard checks creation, retry and cleanup without masking the primary failure', (t: any) => {
+  const root = temporary(t);
+  const guardFailure = new Error('location changed');
+  const absentDirectory = path.join(root, 'not-created');
+  assert.throws(() => acquireExclusiveFileLock(path.join(absentDirectory, 'lock'), root, { assertSafe() { throw guardFailure; } }), (error: any) => error === guardFailure);
+  assert.equal(fs.existsSync(absentDirectory), false);
+
+  const lockFile = path.join(root, 'guarded.lock');
+  const owner = acquireExclusiveFileLock(lockFile, root);
+  const before = fs.readFileSync(lockFile, 'utf8');
+  let unsafe = false;
+  const assertSafe = () => { if (unsafe) throw guardFailure; };
+  assert.throws(() => acquireExclusiveFileLock(lockFile, root, { assertSafe, wait() { unsafe = true; }, timeoutMs: 1000 }), (error: any) => error === guardFailure);
+  assert.deepEqual(fs.readdirSync(root), ['guarded.lock']);
+  assert.equal(fs.readFileSync(lockFile, 'utf8'), before);
+  assert.equal(releaseExclusiveFileLock(owner), true);
+
+  unsafe = false;
+  let acquired: any;
+  const primary: any = new Error('operation failed');
+  assert.throws(() => withExclusiveFileLock(lockFile, root, lock => {
+    acquired = lock;
+    unsafe = true;
+    throw primary;
+  }, { assertSafe }), (error: any) => error === primary);
+  assert.equal(primary.lockCleanupError, guardFailure);
+  assert.deepEqual(fs.readdirSync(root), ['guarded.lock']);
+  assert.equal(JSON.parse(fs.readFileSync(lockFile, 'utf8')).token, acquired.record.token);
+  unsafe = false;
+  assert.equal(releaseExclusiveFileLock(acquired), true);
 });
 
 test('two npm entries sharing one Host Node remain distinct by explicit envelope, product, and entry paths', (t: any) => {

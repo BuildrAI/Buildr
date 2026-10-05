@@ -270,6 +270,18 @@ export function aggregateCandidateCiEvidence(evidence: any, expectedContext: any
     }
     if (item.status !== 'passed' || item.results.some((result: any) => result.status !== 'passed')) findings.push(evidenceFinding('result-not-passed', id, item.status));
     if (JSON.stringify(item.primaryStepIds) !== JSON.stringify(expectation.primaryStepIds)) findings.push(evidenceFinding('primary-steps-mismatch', id, item.primaryStepIds));
+    for (const stepId of expectation.primaryStepIds) {
+      const stepResult = item.results.find((result: any) => result.id === stepId);
+      if (!stepResult) findings.push(evidenceFinding('primary-result-missing', id, stepId));
+      else if (stepId === 'artifact-browser-core') {
+        for (const phaseId of ['artifact-unpack', 'artifact-verify', 'browser:core', 'artifact-cleanup']) {
+          const phases = (stepResult.phases ?? []).filter((phase: any) => phase.scope === 'candidate-browser-core' && phase.id === phaseId);
+          if (phases.length === 0) findings.push(evidenceFinding('browser-phase-missing', id, phaseId));
+          else if (phases.length !== 1) findings.push(evidenceFinding('browser-phase-duplicate', id, phaseId));
+          else if (phases[0].status !== 'passed') findings.push(evidenceFinding('browser-phase-not-passed', id, phaseId));
+        }
+      }
+    }
     if (expectation.requestedNode && item.requestedNode !== expectation.requestedNode) findings.push(evidenceFinding('host-node-request-mismatch', id, item.requestedNode));
     if (expectation.requiresArtifact && !item.artifact) findings.push(evidenceFinding('artifact-missing', id, null));
     if (item.artifact) {

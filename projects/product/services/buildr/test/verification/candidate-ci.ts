@@ -229,8 +229,8 @@ function aggregate(): any  {
 if (action === 'plan') {
   const platforms: Record<string, string> = { macos: 'macos-15', windows: 'windows-2025', linux: 'ubuntu-24.04' };
   const matrices = {
-    source: CANDIDATE_CI_SHARDS.filter((shard: any) => !shard.requiresArtifact && !shard.producesArtifact).map((shard: any) => ({ shard: shard.id, os: platforms[shard.runner], preparation: ['core-project-task-macos', 'release-infrastructure-macos', 'release-infrastructure-windows'].includes(shard.id) ? 'source-runtime' : 'base' })),
-    artifact: CANDIDATE_CI_SHARDS.filter((shard: any) => shard.requiresArtifact).map((shard: any) => ({ shard: shard.id, os: platforms[shard.runner], preparation: 'source-runtime' })),
+    source: CANDIDATE_CI_SHARDS.filter((shard: any) => !shard.requiresArtifact && !shard.producesArtifact).map((shard: any) => ({ shard: shard.id, os: platforms[shard.runner], preparation: shard.id === 'frontend-logic-macos' ? 'frontend' : ['core-project-task-macos', 'release-infrastructure-macos', 'release-infrastructure-windows'].includes(shard.id) ? 'source-runtime' : 'base' })),
+    artifact: CANDIDATE_CI_SHARDS.filter((shard: any) => shard.requiresArtifact).map((shard: any) => ({ shard: shard.id, os: platforms[shard.runner], preparation: shard.id === 'artifact-browser-macos' ? 'browser-artifact' : 'source-runtime' })),
     host: CANDIDATE_CI_HOST_NODE_TUPLES.map((tuple: any) => ({ id: tuple.id, os: platforms[tuple.runner], node: tuple.requestedNode, preparation: tuple.id === 'host-minimum-linux' ? 'publisher' : 'host' })),
   };
   if (process.env.GITHUB_OUTPUT) for (const [key, include] of Object.entries(matrices)) fs.appendFileSync(process.env.GITHUB_OUTPUT, `${key}=${JSON.stringify({ include })}\n`);

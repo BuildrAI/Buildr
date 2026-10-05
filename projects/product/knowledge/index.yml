@@ -965,6 +965,9 @@ artifacts:
     objects:
       - verification-product-tools
     sources:
+      - verification-frontend-test-runner
+      - verification-candidate-browser
+      - verification-candidate-environment
       - verification-file-263d3698
       - verification-product-map-file
       - verification-source-a9829f3f69
@@ -983,7 +986,7 @@ artifacts:
       - verification-ref-73fbe375
       - verification-installed-package
       - verification-ref-e568f1e4
-    observedDigest: 9ef2ffe87b94268297fa35b25d7b620cec3f3f6ce6d6819b7bd5e410064442fe
+    observedDigest: 2346163a228e9fcfbd45fca88e2eabcf1fb7cc7b567732b066273ad669de4957
     files:
       - verification-file-263d3698
       - verification-file-9894349f
@@ -998,6 +1001,9 @@ artifacts:
     objects:
       - verification-product-tools
     sources:
+      - verification-frontend-test-runner
+      - verification-candidate-browser
+      - verification-candidate-environment
       - verification-changed-paths
       - verification-entrypoints
       - verification-file-263d3698
@@ -1045,7 +1051,7 @@ artifacts:
       - verification-ref-73fbe375
     files:
       - verification-product-map-file
-    observedDigest: 8e660338e558981af019a0f3793dcc46ca8cd11fb1f3d53d8c1d2f2bc0cabffb
+    observedDigest: 92829f9962d60ebecc57038cb5790792abd5f86e819f00c1bd2e273a8ffde345
   - id: verification-context-guide
     title: Node.js 测试上下文：复用、隔离与生命周期
     kind: document
@@ -1534,19 +1540,19 @@ sources:
     kind: code
     path: services/buildr/test/unit/verification-changed-paths.test.ts
     summary: 以真实源码路径验证必要步骤被选中；地图模块采用稳定职责范围，新增位置解析与命令入口也纳入声明回归。
-    observedDigest: 95b773651d7a1188f146ba5fbd7df655fc4c589517e8a5d6e7cb9e1550bfe47b
+    observedDigest: 7afa4530524d3bf97c8ce6cf254aca508e4e776df86a3c7a073aad45a85b71a4
   - id: verification-entrypoints
     title: 产品完整入口与声明范围契约
     kind: code
     path: services/buildr/test/contract/verification-entrypoints.test.ts
     summary: 核对 Buildr 自身公开测试入口、集成与系统测试族的范围及真实命令，不把这些命令强加给用户项目。
-    observedDigest: 74d1024a03b551e3f926569f3e758b5fa8d6ece5e89de0533c658e283fe1f4eb
+    observedDigest: 70a9b72382ceb1c21687a2c10c9e47f1666f0cad55191c18a085cb358dba597e
   - id: verification-installed-package
     title: 安装包中的地图与报告行为
     kind: code
     path: services/buildr/test/integration/application-payload-release.test.ts
     summary: 真实构建、离线安装后验证外部服务登记、地图位置解析与报告读写，证明能力不依赖开发源码目录。
-    observedDigest: 9b95527f9c0937893de2caf47c4d4ab06f0c1b1e1d250472e8bac45173ea9f02
+    observedDigest: e82bd53adf982bb50a74e1c6f653cc7b3018a66b0cc7e834232128d137f7373d
   - id: catalog-query
     title: 知识目录查询与版本分页
     kind: code
@@ -2370,13 +2376,13 @@ sources:
     summary: 当前四个测试族（Testing Family），供智能体（Agent）发现入口
     kind: evidence
     path: verification.yml
-    observedDigest: d9f63adc034b8129e80081bb3e2b1c870988db5d8d1b9c6d103d161ea63114c0
+    observedDigest: 6c07e3b460c7067dc7622cd73f6ec40feacacf1e0c39e53c009e11f073a90798
   - id: verification-source-456f6be9e6
     title: Buildr 产品准备入口
     summary: 两个服务（Service）的依赖安装及产品准备入口
     kind: evidence
     path: preparation.yml
-    observedDigest: f6159f74196e136a3c2963c1653d29da8f8808e2e0d54b617b6b9df952793a57
+    observedDigest: 6fbcc44cf7f75efd8553fd2d2f2722ecc79256ee270e54cc17f5d05c8decbb95
   - id: verification-source-c8ee7d9bf2
     title: 测试地图模块装配
     summary: 声明依赖、公开应用与声明能力、登记命令行（CLI）和诊断入口
@@ -2424,19 +2430,19 @@ sources:
     summary: 系统测试（System）分组、实际文件和有关资源
     kind: code
     path: services/buildr/test/verification/system-suites.ts
-    observedDigest: 31f7ca184238439838603441d29b2812be7f6bc0a7ec3937c3377ad5e0470983
+    observedDigest: eeebe27dd90d806f56e4384e37aa6a9a6efee8e2a2f99cc7ac415a9a88b008f6
   - id: verification-source-a567a4e171
     title: 改动路径与验证归属
     summary: 改动路径归属、排除项、委托与扩大范围的依据
     kind: code
     path: services/buildr/test/verification/ownership.ts
-    observedDigest: d631e18afc0e60275be3735046bbceea3495e8cbf9402a93b1c214e92562d96b
+    observedDigest: eaa44bb44871878b56dadae21c8b9b7d2658b9ab2bb296a30c0f073eaff73644
   - id: verification-source-b5e167a6ea
     title: 产品验证步骤注册表
     summary: 稳定步骤、集成分片、分类、主要证明责任、资源及候选分片
     kind: code
     path: services/buildr/test/verification/registry.ts
-    observedDigest: 8716317ee58c53d31adc33ba0b6257215eddbf847e4b8fe589a43b33227395d8
+    observedDigest: 3dc8e366a7efe100fb7c13d91e36f7edc510ba4a64e561491eeaeaf9538f4eca
   - id: verification-source-4aba70c072
     title: 验证选择与预算校验
     summary: 校验步骤与预算，选择范围并给出原因，组合低成本前置检查
@@ -2472,7 +2478,7 @@ sources:
     summary: 将步骤和实际额度转成具体子进程调用
     kind: code
     path: services/buildr/test/verification/executor.ts
-    observedDigest: 381cf8733b268c0765d7c20d5d5106eba8e1f2652c2a060dea0ac8f5009a0d34
+    observedDigest: a88bff8607347ecc17b75ef8803e876fe1dcecdaa0ce17dd5e923b48282d3ad5
   - id: verification-source-bb45a79c77
     title: 并发执行资源协调
     summary: 同机多次执行间的共享资源协调
@@ -2484,7 +2490,7 @@ sources:
     summary: 选择页面检查，准备隔离 web-dist，通过隔离执行器（Runner）启动浏览器（Browser）测试
     kind: code
     path: services/buildr/test/verification/browser-selector-dispatcher.ts
-    observedDigest: c88e0f64a6255479531d377a0d0de080b54f898e56c265b3cb92afff3c8f3c66
+    observedDigest: 907680316c14454763c9febe174a4312e8cc03522245b6ef88de1862ef52cad1
   - id: verification-source-1a428d5163
     title: 验证耗时与诊断汇总
     summary: 汇总实际步骤结果、上下文（Context）、耗时与诊断文件
@@ -2496,25 +2502,25 @@ sources:
     summary: 检查文档相对链接存在且不越出产品根；不判断正文语义
     kind: code
     path: services/buildr/test/verification/docs/quality.ts
-    observedDigest: 567f013e2f5c38605929d2ffeec502957f9be52968982d3393e4b0ceab7edea1
+    observedDigest: 670a72fccbfd584e3e89e5ca98fcb63ac09aa478447207d2df273cef3f18c2a4
   - id: verification-source-23f06815b2
     title: 后端构建与测试命令
     summary: 稳定命令、生成物准备、测试及公开包导出
     kind: code
     path: services/buildr/package.json
-    observedDigest: 37b4981bbc0326f4d779b475e5f56fb1c708c1803b54c4fb70318b478e345a40
+    observedDigest: 5338a9e12d85cc3c5f5a6afae24498e6c4fb54b2603957d63c0b5d3a40be260f
   - id: verification-source-535557f7c3
     title: 前端构建与测试命令
     summary: 前端构建及独立逻辑测试入口
     kind: code
     path: services/buildr-web/package.json
-    observedDigest: 84983c2a6c9db1482f2a82809b6ee5fd379a9034d34d34da2f5b21d109d3d81b
+    observedDigest: 8e7ac8596b9fc65a7f4e18640a331f13a9f5afe9b957cb434f7f783951677016
   - id: verification-source-2067de1414
     title: 项目声明范围内的 npm 调用
     summary: 检查当前 Node.js 是否在项目声明版本范围内（声明版本优先），再使用相邻 npm 和相同进程环境调用真实命令。
     kind: code
     path: services/buildr/tools/development/run-development-npm.ts
-    observedDigest: 41471738b34ac6ea08a4bde41b3516119be550f42ee77ce0a047323dac18a554
+    observedDigest: f781d493507f8719516625522f93aa26783bf43961c4d9ee578e6f3a914734ff
   - id: verification-source-57ca327cab
     title: 工作空间冒烟隔离
     summary: 隔离工作目录和两类应用数据目录，统一成功与失败清理
@@ -2556,7 +2562,7 @@ sources:
     summary: 每个步骤采用复用、混合或完整生命周期的理由
     kind: code
     path: services/buildr/test/context/dispositions.ts
-    observedDigest: 3bc80885245e075f48771bdb6f254b648eea24b1d23209cf1efd2ee03ffc9e67
+    observedDigest: 9c687ed81ac6f5e979bfa4c2cc485bc65ce528f6d572344cebde13a3c165fdb3
   - id: verification-source-9970cc9595
     title: 应用组装与案例隔离
     summary: 应用组装复用、共享端口恢复与案例工作空间（Workspace）
@@ -2568,13 +2574,13 @@ sources:
     summary: 任务测试所需不可变基础准备
     kind: code
     path: services/buildr/test/context/providers/task-lifecycle.ts
-    observedDigest: 592fbdf44a50b84db965b5a55e7e8f7a99f879ed339bb81d78f3578221240480
+    observedDigest: 2d5eb7851bb0f19a88b098da820e55c39f021a05ff262c2188679055dcba525d
   - id: verification-source-117481e3e7
     title: 可复用项目与仓库准备
     summary: 工作空间（Workspace）、项目（Project）与 Git 准备内容及独立副本
     kind: code
     path: services/buildr/test/context/providers/prepared-fixtures.ts
-    observedDigest: 148c422c08de4909fdea67ebba215b580c9cfc2daf0e3a2ec975dd6feb5e7af6
+    observedDigest: 7a2796430bbb0dda7eeff93513750d9a2146a8bc94e7f2b68e84870e1cd0d2e0
   - id: verification-source-c7378e723e
     title: 测试地图结构检查
     summary: 地图结构与字段边界
@@ -2634,11 +2640,12 @@ sources:
     kind: evidence
     path: knowledge/docs/architecture/workspace-testing-and-verification-framework.md
     summary: 本主题的可独立阅读或维护成果；事实来源见关联文章和实现地图。
-    observedDigest: 21affd27b3e912c6ae6c8d7b1803a3c23930d321efbd4c7923f0816c2e270028
+    observedDigest: fb6051da600c470d8d245b897735b84c2b4cc68d3a1ed621852595f9177ea9eb
   - id: verification-file-9894349f
     title: 采用实例：Buildr 产品的测试与验证
     kind: evidence
     path: knowledge/docs/architecture/verification-framework.md
+    observedDigest: 2346163a228e9fcfbd45fca88e2eabcf1fb7cc7b567732b066273ad669de4957
   - id: verification-file-8c3c96dd
     title: Node.js 测试上下文：复用、隔离与生命周期
     kind: evidence
@@ -2668,7 +2675,7 @@ sources:
     summary: 说明冻结候选、同包消费、明确发布授权与公开事实回读；发布流程保持独立维护。
     kind: evidence
     path: knowledge/docs/flows/open-source-release.md
-    observedDigest: 2a3355a6a5d3a7e939650eb4109ce340c77e26960bb68a89cada791ccf394827
+    observedDigest: 1d5e3d54cd363a33aa656ec7cf5ed6cda7fcbc86fa4cfceefa389b771773cdf5
   - id: verification-context-types
     title: 测试上下文公开类型
     summary: 定义上下文配置、生存范围、并发、生命周期钩子与测试回调的严格类型。
@@ -2692,7 +2699,7 @@ sources:
     summary: Buildr 产品自身的选择执行与上下文复用位置，不是用户项目的必需实现。
     kind: evidence
     path: knowledge/code-map/product-verification-tools.md
-    observedDigest: 8e660338e558981af019a0f3793dcc46ca8cd11fb1f3d53d8c1d2f2bc0cabffb
+    observedDigest: 92829f9962d60ebecc57038cb5790792abd5f86e819f00c1bd2e273a8ffde345
   - id: parent-input-validation
     title: 任务与完成依据输入校验
     kind: code
@@ -2764,13 +2771,31 @@ sources:
     summary: 组织计划、平台分片、宿主Node.js检查与证据聚合。
     kind: code
     path: services/buildr/test/verification/candidate-ci.ts
-    observedDigest: c920757e9765772ceb27eab3b1a0bb7eea4082c8ede1e38a8d7080f9a87c7cd5
+    observedDigest: 17ac8a16f50ae8768915914c154786002c4ef3114d5ad5a9765dd92230b1e86f
+  - id: verification-candidate-browser
+    title: 候选压缩包核心浏览器验收
+    kind: code
+    path: services/buildr/test/verification/release/browser-candidate.ts
+    summary: 校验唯一候选压缩包（Candidate Tarball）及网页载荷，隔离解包、直接托管、执行核心旅程（Browser Journey）并清理；不重新构建源码网页或替代安装后全部行为验收。
+    observedDigest: 1d011240d5b012d304346c0ffc927eadf99c29adc7115a542f9246b7ccd6d7bd
+  - id: verification-candidate-environment
+    title: 候选环境统一准备
+    kind: code
+    path: services/buildr/tools/verification/candidate-environment.ts
+    summary: 按档位（Profile）准备实际运行依赖；前端逻辑档位提供两服务依赖及测试输入，候选浏览器档位提供测试运行时（Runtime）和明确 Chromium，均不重新构建候选网页载荷。
+    observedDigest: add5e58c10e1c5ac7f0dca5be4bce6a5fecd8aacfde94b7ed6603ef75156eb1e
+  - id: verification-frontend-test-runner
+    title: 前端完整逻辑测试驱动
+    kind: code
+    path: services/buildr-web/tools/run-logic-tests.mjs
+    summary: npm test 与前端登记步骤共用全部测试文件发现，显式传递工作进程预算（Worker Budget）到 Node.js 测试并发参数；独立调用默认 1 个工作进程（Worker）。
+    observedDigest: cc338214322b387f85441084ff4309f0bee8cf9f87b6f534ccaf84dbef8a83fd
   - id: verification-ref-e568f1e4
     title: 跨平台候选证据聚合
     summary: 核对来源、登记范围和唯一发布物身份后汇总已有实际结果。
     kind: code
     path: services/buildr/test/verification/candidate-ci-evidence.ts
-    observedDigest: b969aae572ca6a4bb991e954355f30d829cc6709cf8b897afeff2213ede9c53d
+    observedDigest: 6b99438b5a43e321857ae6066429923fdd54e410d0d1e5ccd4e460242aa1b14b
   - id: verification-ref-fad56c76
     title: 任务报告公共入口检查
     summary: 用真实命令行核对报告登记、读取和内容适用性，不替项目执行测试。
@@ -2782,13 +2807,13 @@ sources:
     summary: 组装隔离服务、浏览器与测试现场，选择旅程并清理。
     kind: code
     path: services/buildr/test/browser-smoke/buildr-web-browser.test.ts
-    observedDigest: ba32e34e6e9bf5e16ab616869c18f8639090ca64040fc9a187ba330de30322fa
+    observedDigest: d9cd8e4084114e00d0d1f794ea8fc4a7aa16a53cf8aa983f84024fa5ef4599fc
   - id: verification-ref-73fbe375
     title: 工作台真实交互旅程
     summary: 核对答复冲突后的重读保存、资料阅读和偏好恢复。
     kind: code
     path: services/buildr/test/browser-smoke/workbench-journey.ts
-    observedDigest: 1876befbf1c6d65b2469cb07d8cf856284094bbf941da543d0aab3e391f91a43
+    observedDigest: acf3d55f68fd4441d3eecdff1a793ad98b5dfe2827173a462ad120c95d1f4f04
   - id: project-candidate-directory
     title: 已有项目目录观察
     kind: code

@@ -24,6 +24,8 @@ Buildr 产品是[通用项目与服务测试验证框架](../docs/architecture/w
   - [candidate-ci.ts](../../services/buildr/test/verification/candidate-ci.ts) — 跨平台候选（Candidate）的规划、分片执行、宿主 Node.js（Host Node）检查及聚合入口
   - [candidate-ci-evidence.ts](../../services/buildr/test/verification/candidate-ci-evidence.ts) — 检查证据齐全性以及源码、登记、作业和唯一压缩包身份
   - [browser-selector-dispatcher.ts](../../services/buildr/test/verification/browser-selector-dispatcher.ts) — 选择页面检查，准备隔离 `web-dist`，通过隔离执行器（Runner）启动浏览器（Browser）测试
+  - `release/`
+    - [browser-candidate.ts](../../services/buildr/test/verification/release/browser-candidate.ts) — 校验唯一候选压缩包（Candidate Tarball）、解包并直接托管包内 `web-dist`，执行核心旅程及清理；测试驱动仍来自当前源码，不替代安装后全部行为验收
   - `timing/`
     - [report.ts](../../services/buildr/test/verification/timing/report.ts) — 汇总实际步骤结果、上下文（Context）、耗时与诊断文件
   - `docs/`
@@ -33,6 +35,8 @@ Buildr 产品是[通用项目与服务测试验证框架](../docs/architecture/w
 - **`services/buildr/tools/development/`** — 真实开发环境边界
   - [run-development-npm.ts](../../services/buildr/tools/development/run-development-npm.ts) — 检查当前 Node.js 在项目声明范围内并调用相邻 npm；无扩展名的同名入口负责在声明范围内选择 Node.js（声明版本优先）
   - [run-isolated-workspace-smoke.ts](../../services/buildr/tools/development/run-isolated-workspace-smoke.ts) — 隔离工作目录和两类应用数据目录，统一成功与失败清理
+- **`services/buildr/tools/verification/`** — 候选环境准备
+  - [candidate-environment.ts](../../services/buildr/tools/verification/candidate-environment.ts) — 唯一准备入口按档位（Profile）安装实际运行依赖；`frontend` 提供前端测试输入，`browser-artifact` 提供测试运行时（Runtime）和明确 Chromium，均不替代候选网页载荷
 
 ## 上下文复用：公共能力与项目适配
 
@@ -53,10 +57,12 @@ Buildr 产品是[通用项目与服务测试验证框架](../docs/architecture/w
 
 ## 前端与产品行为：从要证明的结果定位测试
 
-前端逻辑测试由 `services/buildr-web/package.json` 的 `test` 执行，浏览器（Browser）旅程由后端的 `test:browser:smoke` 或 `test:browser:changed` 执行；二者是独立入口。后端 `test:daily-full`、本机 `test:candidate` 以及当前跨平台候选聚合集合均不自动覆盖这两类检查。各入口的工作目录、覆盖边界及六个用例的证明范围见[产品测试架构](../docs/architecture/verification-framework.md#测什么以及一次通过能说明什么)。
+前端逻辑测试由 `services/buildr-web/package.json` 的 `test` 执行，`frontend-logic` 在前端受影响路径和完整候选（Candidate）中调用它。源码浏览器（Browser）旅程由后端 `test:browser:smoke` 或 `test:browser:changed` 执行；完整候选（Candidate）另由 `artifact-browser-core` 消费唯一压缩包内的网页载荷执行核心旅程，不证明全部页面。后端 `test:daily-full` 继续只声明日常后端范围。`dsh-plugin` 在插件受影响路径调用独立完整验证，不进入主包候选集合。各入口的工作目录、覆盖边界及六个用例的证明范围见[产品测试架构](../docs/architecture/verification-framework.md#测什么以及一次通过能说明什么)。
 
 - **`services/buildr-web/test/`** — 前端逻辑的独立测试集合
   - [parentCoordination.test.mjs](../../services/buildr-web/test/parentCoordination.test.mjs) — 父任务确认的默认拒绝、子任务处置和版本保留，不启动网页
+- **`services/buildr-web/tools/`** — 前端验证入口
+  - [run-logic-tests.mjs](../../services/buildr-web/tools/run-logic-tests.mjs) — `npm test` 与 `frontend-logic` 共用的完整测试驱动（Test Runner），明确传递工作进程预算（Worker Budget）并发现全部 `test/*.test.mjs`；独立调用默认 1 个工作进程（Worker）
 - **`services/buildr/test/`** — 产品技术边界及真实旅程
   - `unit/`
     - [verification-changed-paths.test.ts](../../services/buildr/test/unit/verification-changed-paths.test.ts) — 受影响路径必须选中必要步骤，选择成功与实际测试通过分别核对
@@ -72,4 +78,4 @@ Buildr 产品是[通用项目与服务测试验证框架](../docs/architecture/w
     - [buildr-web-browser.test.ts](../../services/buildr/test/browser-smoke/buildr-web-browser.test.ts) — 隔离服务、浏览器（Browser）和测试现场的组装、选择与清理
     - [workbench-journey.ts](../../services/buildr/test/browser-smoke/workbench-journey.ts) — 实际页面回应、并发冲突后的重读保存、偏好恢复与资料阅读旅程
 
-跨平台编排由仓库根 `.github/workflows/verify.yml` 消费 `candidate-ci.ts` 和 `registry.ts` 的分片、平台及宿主组合。它分别组织源码检查和唯一发布物的生产、消费，最后由 `candidate-ci-evidence.ts` 聚合；本机执行同名候选集合不会自动取得这份跨平台证据。
+跨平台编排由仓库根 `.github/workflows/verify.yml` 消费 `candidate-ci.ts` 和 `registry.ts` 的分片（Shard）、平台及宿主组合。`frontend-logic-macos` 持有真实前端逻辑证据，`artifact-browser-macos` 持有同一压缩包的核心浏览器证据；其余源码和产物所有者（Owner）保持自身边界，最后由 `candidate-ci-evidence.ts` 聚合。本机执行同名候选集合不会自动取得跨平台证据。`main` 候选作业实际执行来源校验，不支持来源不能因条件跳过取得成功。

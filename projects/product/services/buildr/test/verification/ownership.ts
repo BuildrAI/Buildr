@@ -42,6 +42,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   "integration": {
     "inputs": [
       "src/modules/knowledge/**",
+      "knowledge/index.yml",
       "src/modules/code/**",
       "test/integration/**",
       "test/verification/integration.ts",
@@ -72,6 +73,9 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "test/integration/test-context-runtime.test.ts",
       "test/integration/node-test-context-host.test.ts",
       "test/integration/verification-test-files.test.ts",
+      "test/integration/frontend-logic-worker-budget.test.ts",
+      "test/integration/browser-candidate.test.ts",
+      "test/integration/docs-quality.test.ts",
       "test/integration/capability-contracts.test.ts",
       "test/integration/capability-runtime.test.ts",
       "test/integration/buildr-web-read-executor.test.ts",
@@ -81,6 +85,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "test/integration/buildr-web-workspace.test.ts",
       "test/integration/preview-ownership.test.ts",
       "test/integration/runtime-skills.test.ts",
+      "test/integration/package-generic-skills.test.ts",
       "test/integration/task-record-http-contract.test.ts",
       "test/integration/task-manager-capability-graph.test.ts",
       "test/integration/task-pre-create-git-capability-graph.test.ts",
@@ -90,6 +95,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "test/integration/product-installation-registry.test.ts",
       "test/integration/workspace-management-fence.test.ts",
       "test/integration/workspace-sqlite.test.ts",
+      "test/integration/task-read-snapshot.test.ts",
       "test/integration/self-bootstrap-closeout.test.ts",
       "test/integration/parent-coordination-application.test.ts",
       "test/integration/parent-coordination-repository.test.ts",
@@ -133,6 +139,9 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "test/integration/test-context-runtime.test.ts",
       "test/integration/node-test-context-host.test.ts",
       "test/integration/verification-test-files.test.ts",
+      "test/integration/frontend-logic-worker-budget.test.ts",
+      "test/integration/browser-candidate.test.ts",
+      "test/integration/docs-quality.test.ts",
       "test/context/**",
       "test/fixtures/node-test-context/**",
       "test-context.mjs",
@@ -161,7 +170,10 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "test/verification/resource-coordinator.ts",
       "test/verification/run-node-tests.ts",
       "test/verification/test-files.ts",
-      "test/verification/worker-budget.ts"
+      "test/verification/worker-budget.ts",
+      "services/buildr-web/tools/run-logic-tests.mjs",
+      "test/verification/release/browser-candidate.ts",
+      "test/verification/docs/quality.ts"
     ],
     "inputExclusions": []
   },
@@ -182,6 +194,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "test/integration/buildr-web-workspace.test.ts",
       "test/integration/preview-ownership.test.ts",
       "test/integration/runtime-skills.test.ts",
+      "test/integration/package-generic-skills.test.ts",
       "test/integration/task-record-http-contract.test.ts",
       "test/integration/task-manager-capability-graph.test.ts",
       "test/integration/task-pre-create-git-capability-graph.test.ts",
@@ -221,6 +234,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
     "inputs": [
       "test/integration/workspace-management-fence.test.ts",
       "test/integration/workspace-sqlite.test.ts",
+      "test/integration/task-read-snapshot.test.ts",
       "src/modules/workspace/**",
       "src/infrastructure/index.ts",
       "src/infrastructure/sqlite/**"
@@ -271,6 +285,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   },
   "contract": {
     "inputs": [
+      "knowledge/index.yml",
       "test/contract/**",
       "test/verification/http-contract-fresh-build-inventory.ts",
       "test/fixtures/**",
@@ -1031,11 +1046,23 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
     ],
     "inputExclusions": []
   },
+  "artifact-browser-core": {
+    "inputs": ["test/verification/release/browser-candidate.ts"],
+    "inputExclusions": []
+  },
+  "frontend-logic": {
+    "inputs": ["services/buildr-web/**"],
+    "inputExclusions": []
+  },
+  "dsh-plugin": {
+    "inputs": ["services/dsh-plugin/**"],
+    "inputExclusions": []
+  },
   "service-branch-contract": {
     "inputs": [
       "src/modules/workspace/**",
       "test/verification/onboarding/service-branch.ts",
-      "services/**"
+      "services/manifest.yml"
     ],
     "inputExclusions": [
       "services/buildr-web/**"

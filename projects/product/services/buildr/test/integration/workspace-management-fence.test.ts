@@ -7,6 +7,7 @@ import test from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
 
 import { createRuntime } from '../helpers/runtime-harness.ts';
+import { createMutationPathGuard } from '../../src/infrastructure/filesystem/workspace-mutation.ts';
 import { createWorkspaceManifestRepository } from '../../src/modules/workspace/persistence/workspace-manifest-repository.ts';
 import { createWorkspaceRegistryRepository, WORKSPACE_REGISTRY_SCHEMA } from '../../src/modules/workspace/persistence/workspace-registry-repository.ts';
 import { registerWorkspaceManagementFence } from '../../src/modules/workspace/infrastructure/workspace-management-fence.ts';
@@ -118,6 +119,33 @@ test('migration前冲突不改变SQLite bytes、mtime或ledger', (t: any) => {
   const reader: any = new DatabaseSync(store, { readOnly: true });
   try { assert.deepEqual(reader.prepare('SELECT * FROM schema_migrations').all().map((row: any) => ({ ...row })), beforeLedger); }
   finally { reader.close(); }
+});
+
+test('claim 操作失败且目录已替换时保留原错误，不清理另一 Workspace 的匹配记录', (t: any) => {
+  const { base, profiles }: any = fixture(t);
+  const root = workspace(base, 'workspace');
+  const other = workspace(base, 'other');
+  const local = path.join(root, '.buildr', 'local');
+  const otherLocal = path.join(other, '.buildr', 'local');
+  fs.mkdirSync(otherLocal);
+  const runtime = runtimeFor(DEVELOPMENT, profiles.development, profiles);
+  const assertPath = createMutationPathGuard(root);
+  const assertSafe = () => assertPath(path.join(local, 'web-management.json'), 'file');
+  const primary: any = new Error('operation failed');
+  let copied: Buffer;
+  assert.throws(() => runtime.withWorkspaceManagementClaim(root, () => {
+    copied = fs.readFileSync(path.join(local, 'web-management.json'));
+    fs.renameSync(local, `${local}.original`);
+    fs.symlinkSync(otherLocal, local, 'dir');
+    // Even a matching record at the replacement location is not ours to delete.
+    fs.writeFileSync(path.join(otherLocal, 'web-management.json'), copied);
+    throw primary;
+  }, { assertSafe }), (error: any) => error === primary);
+  assert.deepEqual(fs.readFileSync(path.join(otherLocal, 'web-management.json')), copied!);
+  assert.deepEqual(fs.readdirSync(otherLocal), ['web-management.json']);
+  assert.ok(primary.managementClaimCleanupError instanceof Error);
+  assert.ok(primary.lockCleanupError instanceof Error);
+  assert.equal(fs.existsSync(path.join(`${local}.original`, 'web-management.json.lock')), true, 'owned lock remains at the original location when cleanup cannot be authorized');
 });
 
 test('从当前registry移除只清理matching claim且不打开SQLite', (t: any) => {

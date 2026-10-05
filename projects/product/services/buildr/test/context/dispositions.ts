@@ -18,6 +18,7 @@ const entries: any[] = [
     'integration-project-daily-progress',
   ]),
   ...disposition('full-lifecycle', 'stateless-direct-evidence', 'The owner is a bounded static or stateless check and has no reusable mutable Context.', [
+    'frontend-logic',
     'typecheck',
     'unit',
     'component',
@@ -45,6 +46,7 @@ const entries: any[] = [
     'commands-cli-integration',
     'openspec-contract-fixtures',
     'remote-skill-timeout',
+    'dsh-plugin',
     'service-branch-contract',
     'cli-compatibility',
   ]),
@@ -71,6 +73,7 @@ const entries: any[] = [
     'integration-candidate-release',
     'integration-candidate-release-effects',
     'integration-candidate-git-convergence',
+    'artifact-browser-core',
     'candidate-tarball',
     'application-payload-release',
     'npm-launcher-candidate',

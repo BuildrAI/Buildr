@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import YAML from 'yaml';
 import { PACKAGE_VERIFIERS, selectPackageVerifiers } from '../../tools/verification/package-check/verification-registry.ts';
 import { createVerificationPlan } from '../verification/planner.ts';
@@ -129,7 +129,7 @@ test('Product live声明采用v4测试地图并保留后端、前端和环境体
   }
 });
 
-test('前端逻辑与浏览器测试分别声明真实完整入口，声明测试根与实际脚本覆盖一致', () => {
+test('前端逻辑与浏览器测试分别声明真实完整入口，声明测试根与实际脚本覆盖一致', async () => {
   const projectRoot: any = path.resolve(productRoot, '../..');
   const declaration: any = YAML.parse(fs.readFileSync(path.join(projectRoot, 'verification.yml'), 'utf8'));
   const webUnit: any = declaration.testing.find((item: any) => item.id === 'buildr-web-unit');
@@ -145,15 +145,15 @@ test('前端逻辑与浏览器测试分别声明真实完整入口，声明测�
 
   const frontendRoot: any = path.resolve(projectRoot, webUnit.full.cwd);
   const scripts: any = JSON.parse(fs.readFileSync(path.join(frontendRoot, 'package.json'), 'utf8')).scripts;
-  const [runner, flag, ...patterns]: string[] = scripts.test.trim().split(/\s+/u);
-  assert.deepEqual([runner, flag], ['node', '--test']);
-  assert.ok(patterns.length > 0, '完整入口必须选择真实测试文件');
+  assert.equal(scripts.test, 'node tools/run-logic-tests.mjs');
+  const { logicTestArguments } = await import(pathToFileURL(path.join(frontendRoot, 'tools/run-logic-tests.mjs')).href);
+  const invocation = logicTestArguments(frontendRoot, 1);
+  assert.deepEqual(invocation.slice(0, 2), ['--test', '--test-concurrency=1']);
   const actualTestFiles: any = fs.readdirSync(path.join(frontendRoot, 'test'))
     .filter((name: string) => name.endsWith('.test.mjs'))
     .map((name: string) => path.join(frontendRoot, 'test', name)).sort();
   assert.ok(actualTestFiles.length > 0, '当前前端测试目录不能为空');
-  const selectedFiles: any = [...new Set(fs.globSync(patterns, { cwd: frontendRoot }))]
-    .map((file: string) => path.resolve(frontendRoot, file)).sort();
+  const selectedFiles: any = [...new Set(invocation.slice(2))].sort();
   const declaredFiles: any = [...new Set(fs.globSync(webUnit.testRoots, { cwd: projectRoot }))]
     .map((file: string) => path.resolve(projectRoot, file)).sort();
   assert.deepEqual(selectedFiles, actualTestFiles, 'package test 脚本必须执行当前全部前端逻辑测试');
@@ -470,4 +470,16 @@ test('package verifier selectors are stable, focused, and fail closed', () => {
   assert.deepEqual(selectPackageVerifiers('static,runtime').map((step: any) => step.id), ['static', 'runtime']);
   assert.throws(() => selectPackageVerifiers('unknown'), /Unknown package verifier/);
 
+});
+
+test('development CI prepares selected frontend and DSH dependencies before their real owners execute', () => {
+  const document = YAML.parse(read('../../../../.github/workflows/verify.yml'));
+  const steps = document.jobs['dev-feedback-macos'].steps;
+  const index = (name: string) => steps.findIndex((step: any) => step.name === name);
+  const verify = index('Verify changed product scope');
+  assert.ok(index('Install Buildr Web dependencies') < verify);
+  assert.ok(index('Prepare pinned DSH SDK') < verify);
+  assert.equal(steps[index('Install pinned DSH package manager')].run, 'npm install --global pnpm@11.7.0');
+  assert.equal(steps[index('Prepare pinned DSH SDK')].run, 'node tools/fetch-sdk.ts');
+  assert.equal(steps[index('Prepare pinned DSH SDK')].if, "steps.services.outputs.dsh == 'true'");
 });

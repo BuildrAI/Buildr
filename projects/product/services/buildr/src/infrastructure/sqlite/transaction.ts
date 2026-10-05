@@ -31,13 +31,31 @@ export const transactionDatabase = sqliteContextDatabase;
 export function runSqliteRead<T>(runtime: TransactionRuntime, targetRoot: string, action: (context: SqliteReadContext) => T): T {
   const root = runtime.assertCanonicalStructuredWorkspace(targetRoot);
   const opened = runtime.openWorkspaceStructuredStore(root, { writable: false });
-  if (!opened.present || !opened.database) return action(Object.freeze({}));
+  const database = opened.database;
   const context = Object.freeze({});
-  DATABASES.set(context, opened.database);
-  try { return action(context); }
-  finally {
+  let began = false;
+  try {
+    if (opened.present && database) {
+      if (database.isTransaction) throw new Error('SQLite 只读事务不支持嵌套执行。');
+      // 首次查询固定单库快照（Snapshot）；延迟事务（Deferred Transaction）允许其他连接继续写入。
+      database.exec('BEGIN');
+      began = true;
+      DATABASES.set(context, database);
+    }
+    const result = action(context);
+    if (result && typeof (result as { then?: unknown }).then === 'function') {
+      throw new Error('SQLite 只读事务回调必须同步执行。');
+    }
+    if (began && database) database.exec('COMMIT');
+    return result;
+  } catch (error) {
+    if (began && database?.isTransaction) {
+      try { database.exec('ROLLBACK'); } catch {}
+    }
+    throw error;
+  } finally {
     DATABASES.delete(context);
-    opened.database?.close();
+    database?.close();
   }
 }
 

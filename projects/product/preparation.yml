@@ -32,6 +32,22 @@ entries:
     cwd: services/buildr
     executable: tools/development/run-development-npm
     args: [run, candidate:prepare, --, --profile, source-runtime]
+  - id: buildr.frontend
+    title: 准备独立前端逻辑验证
+    scope:
+      kind: service
+      service: buildr-web
+    cwd: services/buildr
+    executable: tools/development/run-development-npm
+    args: [run, candidate:prepare, --, --profile, frontend]
+  - id: buildr.browser-artifact
+    title: 准备候选产物核心浏览器验收
+    scope:
+      kind: service
+      service: buildr
+    cwd: services/buildr
+    executable: tools/development/run-development-npm
+    args: [run, candidate:prepare, --, --profile, browser-artifact]
   - id: buildr.candidate-artifact
     title: Prepare Buildr Candidate artifact builder
     scope:

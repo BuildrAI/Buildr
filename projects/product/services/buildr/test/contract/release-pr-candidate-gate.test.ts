@@ -36,3 +36,15 @@ test('release PR gate rejects source drift, missing run identity and expired art
   ] } });
   await assert.rejects(verifyReleasePullRequestCandidate(expired.event, repository, expired.requestJson), /candidate-package is unavailable/u);
 });
+
+test('main PR gate rejects unsupported ordinary and malformed carrier sources before reading remote evidence', async () => {
+  for (const ref of ['codex/ordinary-fix', 'feature/release', 'codex/release-main-invalid']) {
+    const { event } = fixture({ event: { head: { ref, sha: sourceCommit } } });
+    let requested = false;
+    await assert.rejects(verifyReleasePullRequestCandidate(event, repository, async () => {
+      requested = true;
+      throw new Error('Unexpected remote request');
+    }), /Expected a release carrier pull request into main/u);
+    assert.equal(requested, false, ref);
+  }
+});

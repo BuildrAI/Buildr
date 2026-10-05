@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -6,6 +7,7 @@ import test from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
 
 import { createRuntime } from '../helpers/runtime-harness.ts';
+import { acquireExclusiveFileLock } from '../../src/infrastructure/filesystem/exclusive-file-lock.ts';
 import { applyWorkspaceSqliteMigration, loadWorkspaceSqliteMigrations, registerWorkspaceSqlite } from '../../src/infrastructure/sqlite/workspace-sqlite.ts';
 import { buildTaskListCountStatement, buildTaskListPageStatement } from '../../src/modules/task/persistence/task-list-repository.ts';
 
@@ -89,6 +91,138 @@ test('只读打开未初始化 Workspace 不创建目录或数据库', (t: any) 
   });
   assert.equal(fs.existsSync(path.join(root, '.buildr', 'local')), false);
   assert.deepEqual(runtime.inspectWorkspaceStructuredStore(root), { status: 'uninitialized', version: null, integrity: null });
+});
+
+test('数据库或父目录链接不能把 Task 写入转向另一 Workspace', async (t: any) => {
+  for (const linked of ['workspace.sqlite', 'local', '.buildr']) {
+    await t.test(linked, (child: any) => {
+      const root = workspace(child);
+      const other = workspace(child);
+      const runtime = createRuntime();
+      runtime.createTask(other, { taskId: 'owned-task', title: 'Other Workspace', intent: 'Keep this data.', projects: [], services: [], changes: [] });
+      const otherFile = path.join(other, '.buildr', 'local', 'workspace.sqlite');
+      fs.chmodSync(otherFile, 0o640);
+      const before = { bytes: fs.readFileSync(otherFile), mode: fs.statSync(otherFile).mode, entries: fs.readdirSync(path.dirname(otherFile)).sort() };
+      const relative = linked === '.buildr' ? '.buildr' : path.join('.buildr', 'local', ...(linked === 'workspace.sqlite' ? ['workspace.sqlite'] : []));
+      const target = path.join(root, relative);
+      if (linked === 'workspace.sqlite') fs.mkdirSync(path.dirname(target));
+      if (linked === '.buildr') fs.rmSync(target, { recursive: true });
+      fs.symlinkSync(path.join(other, relative), target, linked === 'workspace.sqlite' ? 'file' : 'dir');
+
+      assert.throws(() => runtime.createTask(root, { taskId: 'misdirected-task', title: 'Must not reach another Workspace', intent: 'Reject redirected writes.', projects: [], services: [], changes: [] }), (error: any) => error.code === 'workspace_store_path_invalid');
+      assert.throws(() => runtime.openWorkspaceStructuredStore(root), (error: any) => error.code === 'workspace_store_path_invalid');
+      assert.deepEqual(fs.readFileSync(otherFile), before.bytes);
+      assert.equal(fs.statSync(otherFile).mode, before.mode);
+      assert.deepEqual(fs.readdirSync(path.dirname(otherFile)).sort(), before.entries);
+      assert.equal(runtime.readTask(other, 'owned-task').record.title, 'Other Workspace');
+      assert.throws(() => runtime.readTask(other, 'misdirected-task'), (error: any) => error.code === 'task_record_not_found');
+    });
+  }
+});
+
+test('数据库及 sidecar 的链接、硬链接和非普通文件在管理登记前被拒绝', async (t: any) => {
+  for (const suffix of ['', '-wal', '-shm', '-journal']) {
+    for (const kind of ['dangling-link', 'hard-link', 'directory']) {
+      await t.test(`${suffix || 'database'} ${kind}`, (child: any) => {
+        const root = workspace(child);
+        const other = workspace(child);
+        const target = path.join(root, '.buildr', 'local', `workspace.sqlite${suffix}`);
+        const external = path.join(other, 'external-file');
+        fs.mkdirSync(path.dirname(target));
+        fs.writeFileSync(external, 'unrelated data\n', { mode: 0o640 });
+        const before = fs.readFileSync(external);
+        if (kind === 'dangling-link') fs.symlinkSync(path.join(other, 'missing-file'), target, 'file');
+        if (kind === 'hard-link') fs.linkSync(external, target);
+        if (kind === 'directory') fs.mkdirSync(target);
+        const runtime = createRuntime();
+        let claims = 0;
+        child.mock.method(runtime, 'ensureWorkspaceManagementClaim', () => { claims += 1; });
+
+        for (const writable of [false, true]) assert.throws(() => runtime.openWorkspaceStructuredStore(root, { writable }), (error: any) => error.code === 'workspace_store_path_invalid');
+        assert.equal(claims, 0);
+        assert.deepEqual(fs.readFileSync(external), before);
+        assert.equal(fs.existsSync(path.join(other, 'missing-file')), false);
+        assert.equal(fs.existsSync(path.join(root, '.buildr', 'local', 'web-management.json')), false);
+        if (suffix) assert.equal(fs.existsSync(path.join(root, '.buildr', 'local', 'workspace.sqlite')), false);
+      });
+    }
+  }
+});
+
+test('已观察数据库或目录在管理检查期间被普通对象替换时停止打开', async (t: any) => {
+  for (const replacement of ['database', 'directory']) {
+    await t.test(replacement, (child: any) => {
+      const root = workspace(child);
+      const runtime = createRuntime();
+      const file = path.join(root, '.buildr', 'local', 'workspace.sqlite');
+      runtime.openWorkspaceStructuredStore(root, { writable: true }).database.close();
+      const before = fs.readFileSync(file);
+      const directory = path.dirname(file);
+      let replacementMode: number;
+      child.mock.method(runtime, 'ensureWorkspaceManagementClaim', () => {
+        if (replacement === 'database') {
+          fs.renameSync(file, `${file}.original`);
+          fs.writeFileSync(file, before, { mode: 0o640 });
+        } else {
+          fs.renameSync(directory, `${directory}.original`);
+          fs.mkdirSync(directory);
+          fs.writeFileSync(file, before, { mode: 0o640 });
+        }
+        replacementMode = fs.statSync(file).mode;
+      });
+      assert.throws(() => runtime.openWorkspaceStructuredStore(root, { writable: true }), (error: any) => error.code === 'workspace_store_path_invalid');
+      assert.deepEqual(fs.readFileSync(file), before);
+      assert.equal(fs.statSync(file).mode, replacementMode!);
+    });
+  }
+});
+
+test('管理 claim 等待真实锁时目录被替换，重试不向另一 Workspace 写 candidate、lock 或 claim', (t: any) => {
+  const root = workspace(t);
+  const other = workspace(t);
+  const local = path.join(root, '.buildr', 'local');
+  const otherLocal = path.join(other, '.buildr', 'local');
+  fs.mkdirSync(otherLocal);
+  fs.writeFileSync(path.join(otherLocal, 'preserved.bin'), Buffer.from([0, 1, 2, 255]));
+  const before = fs.readdirSync(otherLocal).sort().map(name => ({ name, bytes: fs.readFileSync(path.join(otherLocal, name)).toString('hex') }));
+  acquireExclusiveFileLock(path.join(local, 'web-management.json.lock'), fs.realpathSync(root));
+  const wait = Atomics.wait;
+  let replaced = false;
+  t.mock.method(Atomics, 'wait', (array: Int32Array, index: number, expected: number, milliseconds: number) => {
+    if (!replaced) {
+      // An actual external process changes the directory during the lock's wait.
+      execFileSync(process.execPath, ['--input-type=module', '-e', "import fs from 'node:fs'; fs.renameSync(process.argv[1], process.argv[1] + '.original'); fs.symlinkSync(process.argv[2], process.argv[1], 'dir');", local, otherLocal]);
+      replaced = true;
+    }
+    return wait(array, index, expected, milliseconds);
+  });
+  const runtime = createRuntime();
+  assert.throws(() => runtime.openWorkspaceStructuredStore(root, { writable: true }), (error: any) => error.code === 'workspace_store_path_invalid');
+  assert.equal(replaced, true, 'the real management lock must reach its wait/retry path');
+  assert.deepEqual(fs.readdirSync(otherLocal).sort().map(name => ({ name, bytes: fs.readFileSync(path.join(otherLocal, name)).toString('hex') })), before);
+  assert.equal(fs.existsSync(path.join(otherLocal, 'web-management.json')), false);
+  assert.equal(fs.existsSync(path.join(otherLocal, 'web-management.json.lock')), false);
+  assert.equal(fs.readdirSync(otherLocal).some(name => name.includes('.candidate-')), false);
+  assert.equal(fs.existsSync(path.join(otherLocal, 'workspace.sqlite')), false);
+});
+
+test('显式 Workspace 根别名可打开自身普通数据库且只读不改变权限', (t: any) => {
+  const root = workspace(t);
+  const alias = `${root}-alias`;
+  t.after(() => fs.rmSync(alias, { force: true }));
+  fs.symlinkSync(root, alias, 'dir');
+  const runtime = createRuntime();
+  const writable = runtime.openWorkspaceStructuredStore(alias, { writable: true });
+  writable.database.close();
+  const file = path.join(root, '.buildr', 'local', 'workspace.sqlite');
+  fs.chmodSync(file, 0o640);
+  const before = fs.statSync(file);
+  const readOnly = runtime.openWorkspaceStructuredStore(alias);
+  assert.equal(readOnly.root, alias);
+  assert.equal(readOnly.file, path.join(alias, '.buildr', 'local', 'workspace.sqlite'));
+  readOnly.database.close();
+  assert.equal(fs.statSync(file).mode, before.mode);
+  assert.equal(fs.statSync(file).mtimeMs, before.mtimeMs);
 });
 
 test('候选 runtime 只能写自身 linked validation Workspace，不能污染 retained canonical store', (t: any) => {

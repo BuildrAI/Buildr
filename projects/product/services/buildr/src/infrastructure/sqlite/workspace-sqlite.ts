@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
+import { createMutationPathGuard } from '../filesystem/workspace-mutation.ts';
 import { observeGitCheckoutIdentity } from '../git/checkout-identity.ts';
 import { resolveControllerSourceRoot, resolveProductResource } from '../product-resources/index.ts';
 
@@ -25,6 +26,73 @@ function structuredStoreError(code: any, message: any, status: any = 409, detail
   error.nextAction = nextAction;
   error.structuredStoreBusiness = true;
   return error;
+}
+
+export function workspaceStructuredStoreLocation(root: string) {
+  const invalid = (target: string) => structuredStoreError(
+    'workspace_store_path_invalid',
+    '工作空间（Workspace）数据库目录或文件不安全，或在打开期间已被替换。',
+    409,
+    { path: path.relative(root, target).split(path.sep).join('/') },
+    '保留现场并检查 .buildr/local 的实际目录和文件；不要删除或覆盖其他工作空间的数据。',
+  );
+  let actualRoot: string;
+  try { actualRoot = fs.realpathSync(root); } catch { throw invalid(root); }
+  const directory = path.join(actualRoot, '.buildr', 'local');
+  const file = path.join(directory, 'workspace.sqlite');
+  const directories = [path.join(actualRoot, '.buildr'), directory];
+  const identities = new Map<string, fs.BigIntStats>();
+  const temporaryFiles = new Set<string>();
+  let assertPath: ReturnType<typeof createMutationPathGuard>;
+  try { assertPath = createMutationPathGuard(actualRoot); } catch { throw invalid(root); }
+
+  function observe(target: string, kind: 'file' | 'directory', pin: boolean) {
+    try {
+      assertPath(target, kind);
+      const entry = fs.lstatSync(target, { bigint: true, throwIfNoEntry: false });
+      const previous = identities.get(target);
+      if (previous && (!entry || entry.dev !== previous.dev || entry.ino !== previous.ino)) throw invalid(target);
+      // A shared inode gives another database name different journal/WAL names.
+      if (kind === 'file' && entry && entry.nlink !== 1n) throw invalid(target);
+      if (entry && pin) identities.set(target, entry);
+      return entry;
+    } catch { throw invalid(path.join(root, path.relative(actualRoot, target))); }
+  }
+
+  function assertSafe() {
+    try { if (fs.realpathSync(root) !== actualRoot) throw invalid(root); } catch { throw invalid(root); }
+    for (const target of directories) observe(target, 'directory', true);
+    const entry = observe(file, 'file', true);
+    // Sidecars may be created/removed normally by other SQLite connections.
+    for (const suffix of ['-wal', '-shm', '-journal']) observe(`${file}${suffix}`, 'file', false);
+    return entry;
+  }
+
+  function assertTemporary(target: string) {
+    assertSafe();
+    if (!temporaryFiles.has(target)) throw invalid(target);
+    const entry = observe(target, 'file', true);
+    for (const suffix of ['-wal', '-shm', '-journal']) observe(`${target}${suffix}`, 'file', false);
+    return entry;
+  }
+
+  function createTemporary() {
+    assertSafe();
+    const target = `${file}.seed-${process.pid}-${crypto.randomBytes(4).toString('hex')}`;
+    for (const candidate of [target, ...['-wal', '-shm', '-journal'].map(suffix => `${target}${suffix}`)]) {
+      if (observe(candidate, 'file', false)) throw invalid(candidate);
+    }
+    const descriptor = fs.openSync(target, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | (fs.constants.O_NOFOLLOW ?? 0), 0o600);
+    try {
+      identities.set(target, fs.fstatSync(descriptor, { bigint: true }));
+      temporaryFiles.add(target);
+      assertTemporary(target);
+    } finally { fs.closeSync(descriptor); }
+    return target;
+  }
+
+  assertSafe();
+  return { file, directory, assertSafe, createTemporary, assertTemporary };
 }
 
 export function loadWorkspaceSqliteMigrations(root: any = MIGRATIONS_ROOT): any  {
@@ -283,25 +351,43 @@ export function registerWorkspaceSqlite(runtime: any, { observeCheckout = observ
 
   function openWorkspaceStructuredStore(targetRoot: any, { writable = false, allowPendingRead = false }: any = {}): any  {
     const root = assertCanonicalStructuredWorkspace(targetRoot, { writable });
+    // Check before the management claim can create anything under .buildr/local.
+    const location = workspaceStructuredStoreLocation(root);
     let candidateValidation = false;
     if (writable) {
       try { candidateValidation = isCandidateValidationWorkspace(runtimeSourceCheckout().checkout, observeCheckout(root)); } catch { /* management fence remains authoritative when checkout identity is unavailable */ }
     }
     if (!candidateValidation) {
-      if (writable) runtime.ensureWorkspaceManagementClaim?.(root);
+      if (writable) runtime.ensureWorkspaceManagementClaim?.(root, { assertSafe: location.assertSafe });
       else runtime.assertWorkspaceManagementAccess?.(root);
     }
     const file = workspaceStructuredStorePathAtRoot(root);
     const scripts = loadWorkspaceSqliteMigrations();
-    if (!fs.existsSync(file) && !writable) return { root, file, present: false, database: null, version: null, scripts };
-    if (writable) fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+    if (!location.assertSafe() && !writable) return { root, file, present: false, database: null, version: null, scripts };
     let database;
     try {
-      database = new DatabaseSync(file, writable ? {} : { readOnly: true });
       if (writable) {
-        try { fs.chmodSync(file, 0o600); } catch {}
+        try { fs.mkdirSync(location.directory, { mode: 0o700 }); } catch (error: any) { if (error.code !== 'EEXIST') throw error; }
+        if (!location.assertSafe()) {
+          // Only a genuinely new file is opened outside SQLite. Closing a separate
+          // descriptor for an existing database could release SQLite's POSIX locks.
+          try {
+            const descriptor = fs.openSync(location.file, fs.constants.O_RDWR | fs.constants.O_CREAT | fs.constants.O_EXCL | (fs.constants.O_NOFOLLOW ?? 0), 0o600);
+            fs.closeSync(descriptor);
+          } catch (error: any) { if (error.code !== 'EEXIST') throw error; }
+        }
       }
+      location.assertSafe();
+      database = new DatabaseSync(location.file, writable ? {} : { readOnly: true });
+      // Node's SQLite API opens a pathname; repeat identity checks before any
+      // permission, WAL, schema or business mutation, without claiming atomicity.
+      location.assertSafe();
+      if (writable) {
+        try { fs.chmodSync(location.file, 0o600); } catch {}
+      }
+      location.assertSafe();
       configure(database, { writable });
+      location.assertSafe();
       const state = validateAppliedMigrations(database, scripts, { allowPending: writable || allowPendingRead || activeOperationScope(root)?.allowPendingRead === true });
       if (writable) {
         for (const script of state.pending) applyWorkspaceSqliteMigration(database, script);

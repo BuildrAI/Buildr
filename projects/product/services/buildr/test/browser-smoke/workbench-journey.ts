@@ -24,7 +24,7 @@ export async function runWorkbenchJourney({ t, page, runtime, workspaceRoot, oth
   const nextId = 'workbench-next';
   const crossTitle = '工作台跨项目目标';
   const nextTitle = '工作台准备推进目标';
-  runtime.createTask(workspaceRoot, { taskId: crossId, title: crossTitle, intent: '请查看 [工作台关联资料](projects/demo/docs/workbench-reference.md)。', status: 'active', projects: ['demo', 'other'], services: [], changes: [] });
+  runtime.createTask(workspaceRoot, { taskId: crossId, title: crossTitle, intent: '梳理共同方向并接续工作台目标。', brief: '# 工作台目标与说明\n\n请查看 [工作台关联资料](projects/demo/docs/workbench-reference.md)。\n', status: 'active', projects: ['demo', 'other'], services: [], changes: [] });
   runtime.createTask(workspaceRoot, { taskId: nextId, title: nextTitle, intent: '准备下一项真实工作。', status: 'todo', projects: ['demo'], services: [], changes: [] });
   runtime.createTask(workspaceRoot, { taskId: 'workbench-other', title: '另一个项目的未安排目标', intent: '跨项目筛选边界。', status: 'todo', projects: ['other'], services: [], changes: [] });
   const documentPath = path.join(workspaceRoot, 'projects/demo/docs/workbench-reference.md');
@@ -98,8 +98,8 @@ export async function runWorkbenchJourney({ t, page, runtime, workspaceRoot, oth
     await page.goto(`${workspaceUrl}/overview`);
     await page.locator(`[data-attention-task="${crossId}"]`).getByRole('link', { name: crossTitle, exact: true }).click();
     await page.locator('#task-detail-id').filter({ hasText: crossId }).waitFor({ state: 'visible' });
-    await page.locator('#task-work-context').waitFor({ state: 'visible' });
-    assert.match(await page.locator('#task-work-context').innerText(), /请确认两项项目采用同一工作方向/);
+    await page.locator('#task-attention-reason').waitFor({ state: 'visible' });
+    assert.match(await page.locator('#task-attention-reason').innerText(), /请确认两项项目采用同一工作方向/);
     await page.locator('#task-attention-respond').click();
     await page.locator('#task-attention-response-input').fill('确认按共同方向推进，保留各自资料来源。');
     const beforeResponse = await read(`/tasks/${crossId}/work-context`);
@@ -306,7 +306,7 @@ export async function runWorkbenchJourney({ t, page, runtime, workspaceRoot, oth
     assert.equal(await page.locator('.pane-right:visible').count(), 1);
     assert.equal(await page.locator('[data-task-node=requirements]').getAttribute('aria-pressed'), 'true');
     assert.match(await page.locator('#task-node-content').innerText(), /目标与说明[\s\S]*请查看 工作台关联资料/);
-    await page.locator('#task-detail-intent').getByRole('link', { name: '工作台关联资料', exact: true }).click();
+    await page.locator(`[data-task-brief="${crossId}"]`).getByRole('link', { name: '工作台关联资料', exact: true }).click();
     await page.locator('.pane-right:visible .markdown-body').getByText('这是当前项目的真实文件内容，用于接续目标并阅读成果。', { exact: true }).waitFor({ state: 'visible' });
     const mainBox = await page.locator('.pane-left').boundingBox();
     const readerBox = await page.locator('.pane-right').boundingBox();

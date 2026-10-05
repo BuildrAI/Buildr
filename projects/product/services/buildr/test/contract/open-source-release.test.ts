@@ -478,7 +478,7 @@ test('CI and publish workflows use the supported Node runtime', () => {
     assert.equal(job.steps.filter((step: any) => /candidate-environment\.ts prepare --profile/u.test(step.run || '')).length, 1);
     assert.equal(job.steps.some((step: any) => step.run === 'npm ci' || /artifacts:prepare|prepare-development-web\.ts/u.test(step.run || '')), false);
   }
-  assert.equal(verifyDocument.jobs['candidate-gate'].if, "always() && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main' && (github.head_ref == 'dev' || startsWith(github.head_ref, 'codex/release-main-'))))");
+  assert.equal(verifyDocument.jobs['candidate-gate'].if, "always() && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main'))");
   const gateSteps: any[] = verifyDocument.jobs['candidate-gate'].steps;
   assert.equal(gateSteps.find((step: any) => step.name === 'Verify existing Candidate for release pull request').run, 'node tools/release/verify-pr-candidate.ts');
   for (const name of ['Prepare aggregate evidence directory', 'Download all Candidate evidence', 'Aggregate the closed Candidate evidence set']) {

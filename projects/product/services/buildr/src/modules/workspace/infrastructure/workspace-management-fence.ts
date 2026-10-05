@@ -214,12 +214,14 @@ export function registerWorkspaceManagementFence(runtime: WorkspaceManagementFen
     const file = managementPath(identity.canonicalRoot);
     const lock = `${file}.lock`;
     return withExclusiveFileLock(lock, identity.canonicalRoot, () => {
+      options.assertSafe?.();
       assertCurrentRegistryReadable();
       assertNoPeerRegistration(identity, profile);
       const observed = readManagementRecord(file);
       assertRecord(identity, profile, observed);
       let created = false;
       if (observed.status === 'absent') {
+        options.assertSafe?.();
         runtime.atomicWriteJson(file, {
           schemaVersion: WORKSPACE_MANAGEMENT_SCHEMA,
           workspaceId: identity.workspaceId,
@@ -230,15 +232,27 @@ export function registerWorkspaceManagementFence(runtime: WorkspaceManagementFen
         created = true;
       }
       try {
+        options.assertSafe?.();
         return operation({ status: 'ready', identity, profile, file, created });
       } catch (error: any) {
         if (created) {
-          const current = readManagementRecord(file);
-          if (current.record?.workspaceId === identity.workspaceId && sameOwner(current.record.owner, ownerFor(profile))) runtime.removePath(file);
+          try {
+            options.assertSafe?.();
+            const current = readManagementRecord(file);
+            if (current.record?.workspaceId === identity.workspaceId && sameOwner(current.record.owner, ownerFor(profile))) {
+              options.assertSafe?.();
+              runtime.removePath(file);
+            }
+          } catch (cleanupError) {
+            if (!options.assertSafe) throw cleanupError;
+            if (error && typeof error === 'object') {
+              try { Object.defineProperty(error, 'managementClaimCleanupError', { value: cleanupError, configurable: true }); } catch {}
+            }
+          }
         }
         throw error;
       }
-    });
+    }, { assertSafe: options.assertSafe });
   }
 
   function ensureWorkspaceManagementClaim(targetRoot: any, options: any = {}) {

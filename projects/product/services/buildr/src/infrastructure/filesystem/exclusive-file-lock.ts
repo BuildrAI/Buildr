@@ -49,8 +49,24 @@ function ownerAlive(record: any, options: any = {}): boolean {
   catch (error: any) { return error.code !== 'ESRCH'; }
 }
 
-function publishCandidate(file: string, record: any): boolean {
+function guardedCleanup(action: () => any, options: any, primaryError: any): any {
+  try {
+    options.assertSafe?.();
+    return action();
+  } catch (cleanupError) {
+    if (options.assertSafe && primaryError) {
+      if (typeof primaryError === 'object') {
+        try { Object.defineProperty(primaryError, 'lockCleanupError', { value: cleanupError, configurable: true }); } catch {}
+      }
+      throw primaryError;
+    }
+    throw cleanupError;
+  }
+}
+
+function publishCandidate(file: string, record: any, options: any): boolean {
   const candidate = `${file}.candidate-${record.pid}-${record.token}`;
+  let primaryError: any = null;
   try {
     fs.writeFileSync(candidate, `${JSON.stringify(record)}\n`, { flag: 'wx', mode: 0o600 });
     const descriptor = fs.openSync(candidate, 'r+');
@@ -59,8 +75,9 @@ function publishCandidate(file: string, record: any): boolean {
     return true;
   } catch (error: any) {
     if (error.code === 'EEXIST') return false;
-    throw lockError(`Cannot acquire exclusive filesystem lock ${file}: ${error.message}`, 'buildr_exclusive_file_lock_acquire_failed', file, error);
-  } finally { fs.rmSync(candidate, { force: true }); }
+    primaryError = lockError(`Cannot acquire exclusive filesystem lock ${file}: ${error.message}`, 'buildr_exclusive_file_lock_acquire_failed', file, error);
+    throw primaryError;
+  } finally { guardedCleanup(() => fs.rmSync(candidate, { force: true }), options, primaryError); }
 }
 
 function moveAndRemove(file: string, observed: any, operationToken: string): boolean {
@@ -92,15 +109,21 @@ export function acquireExclusiveFileLock(file: string, target: string, options: 
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const retryDelayMs = options.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
   if (!Number.isFinite(timeoutMs) || timeoutMs < 0 || !Number.isFinite(retryDelayMs) || retryDelayMs <= 0) throw new Error('Exclusive filesystem lock timeout and retry delay must be bounded non-negative milliseconds.');
+  options.assertSafe?.();
   fs.mkdirSync(path.dirname(resolvedFile), { recursive: true });
   const startedAt = now();
   const deadline = startedAt + timeoutMs;
   const record = Object.freeze({ schemaVersion: SCHEMA, pid: process.pid, token: crypto.randomBytes(16).toString('hex'), createdAt: new Date(startedAt).toISOString(), target: resolvedTarget });
   while (true) {
-    if (publishCandidate(resolvedFile, record)) return Object.freeze({ owner: true, file: resolvedFile, target: resolvedTarget, record });
+    // A bounded wait may give another process time to replace the directory.
+    options.assertSafe?.();
+    if (publishCandidate(resolvedFile, record, options)) return Object.freeze({ owner: true, file: resolvedFile, target: resolvedTarget, record });
     const observed = readLock(resolvedFile, resolvedTarget, options);
     if (!observed) continue;
-    if (observed.record && !ownerAlive(observed.record, options) && moveAndRemove(resolvedFile, observed, 'stale')) continue;
+    if (observed.record && !ownerAlive(observed.record, options)) {
+      options.assertSafe?.();
+      if (moveAndRemove(resolvedFile, observed, 'stale')) continue;
+    }
     const observedAt = now();
     if (observedAt >= deadline) {
       const owner = observed.record ? `pid=${observed.record.pid} createdAt=${observed.record.createdAt}` : 'owner=invalid-or-unknown';
@@ -125,9 +148,10 @@ export function withExclusiveFileLock(file: string, target: string, callback: (l
   const lock = acquireExclusiveFileLock(file, target, options);
   let result: any;
   let primaryError: any = null;
-  try { options.onAcquired?.(lock); result = callback(lock); }
+  try { options.assertSafe?.(); options.onAcquired?.(lock); result = callback(lock); }
   catch (error) { primaryError = error; }
-  if (!releaseExclusiveFileLock(lock)) throw lockError(`Exclusive filesystem lock ownership was lost before release: ${lock.file}.`, 'buildr_exclusive_file_lock_ownership_lost', lock.file, primaryError);
+  const released = guardedCleanup(() => releaseExclusiveFileLock(lock), options, primaryError);
+  if (!released) throw lockError(`Exclusive filesystem lock ownership was lost before release: ${lock.file}.`, 'buildr_exclusive_file_lock_ownership_lost', lock.file, primaryError);
   if (primaryError) throw primaryError;
   return result;
 }

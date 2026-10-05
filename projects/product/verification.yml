@@ -94,6 +94,7 @@ testing:
       - services/buildr-web/package.json
       - services/buildr-web/package-lock.json
       - services/buildr-web/tsconfig*.json
+      - services/buildr-web/tools/run-logic-tests.mjs
     testRoots:
       - services/buildr-web/test/*.test.mjs
     full:
@@ -105,6 +106,10 @@ testing:
     selection:
       - 从真实测试文件选择与当前逻辑变化相关的检查，使用服务已有 Node.js 测试入口
       - 需要完整前端逻辑回归时运行 full；类型构建和浏览器交互由 buildr-web 独立验证
+      - 自动受影响选择通过 frontend-logic 调用本族完整入口；完整主包候选（Candidate）包含该独立源码证据，日常后端 Core
+        不代表前端通过
+      - npm test 与 frontend-logic 使用同一完整测试驱动；获授工作进程预算（Worker Budget）通过 Node.js
+        前置 --test-concurrency 显式生效，独立调用默认 1
     requirements:
       - node
       - npm
@@ -152,6 +157,8 @@ testing:
         自动化入口或其运行依赖
       - 原型候选构建使用前端现有依赖；单独执行 node tools/build-prototype.mjs <output.html>
         并在隔离生产托管中验证，不由完整浏览器入口自动生成或证明原型效果
+      - 完整主包候选（Candidate）由 artifact-browser-core 消费唯一压缩包内 web-dist
+        并执行核心代表旅程（Browser Journey）；该证据不代表全部选择器（Selector）通过，受影响源码验收仍按页面选择
     requirements:
       - node
       - npm
@@ -206,6 +213,8 @@ testing:
       - 开发中按改动选择对应单元、进程或装载测试；完成时运行完整入口
       - 完整入口使用已核验 DSH SDK；若设置 BUILDR_DSH_SDK_ROOT，须指向同一基线，否则按固定标签获取
       - 桌面应用的真实按钮与跨重启交互另行验收，不能由装载测试替代
+      - 自动受影响选择通过 dsh-plugin 调用完整入口并准备固定 SDK 与 pnpm@11.7.0；本族不进入独立 Buildr
+        主包候选（Candidate）集合
     requirements:
       - node 24.15.0
       - pnpm

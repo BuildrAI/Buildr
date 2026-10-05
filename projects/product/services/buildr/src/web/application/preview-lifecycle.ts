@@ -1,5 +1,4 @@
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
-import crypto from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
@@ -9,6 +8,7 @@ import { DatabaseSync } from 'node:sqlite';
 
 import { buildrWebDataRoot } from '../../modules/workspace/module.ts';
 import { sameFilesystemPath } from '../../infrastructure/filesystem/filesystem-path-identity.ts';
+import { workspaceStructuredStoreLocation } from '../../infrastructure/sqlite/workspace-sqlite.ts';
 import { INSTANCE_SCHEMA, healthyBuildrWebInstance, openDefaultBrowser } from '../infrastructure/instance-runtime.ts';
 
 const PREVIEW_SCHEMA = 'buildr.local-app-preview/v1';
@@ -345,35 +345,58 @@ export function resolveTaskPreviewWorktree(runtime: PreviewRuntime, workspaceRoo
   };
 }
 
-function workspaceTaskStorePath(root: string): string {
-  return path.join(root, '.buildr', 'local', 'workspace.sqlite');
-}
-
 // 预览以服务目标工作树为 workspace；其本地 structured store 是隔离本机现场。
 // 缺失时以 canonical 库播种一致副本，已存在时复用——canonical 保持唯一数据权威。
 function prepareTaskPreviewStore(taskWorktree: TaskPreviewWorktree): PreviewOwner['taskStore'] {
-  const target = workspaceTaskStorePath(taskWorktree.worktree);
-  const source = workspaceTaskStorePath(taskWorktree.workspaceRoot);
+  const targetLocation = workspaceStructuredStoreLocation(taskWorktree.worktree);
+  const sourceLocation = workspaceStructuredStoreLocation(taskWorktree.workspaceRoot);
+  const target = targetLocation.file;
+  const source = sourceLocation.file;
   if (sameFilesystemPath(target, source)) return { source: 'existing', seeded: false };
-  const existing = fs.statSync(target, { throwIfNoEntry: false });
-  if (existing?.isFile()) return { source: 'existing', seeded: false };
-  if (!fs.statSync(source, { throwIfNoEntry: false })?.isFile()) {
+  if (targetLocation.assertSafe()) return { source: 'existing', seeded: false };
+  if (!sourceLocation.assertSafe()) {
     throw codedError('Task preview 需要 canonical Workspace 的本地结构化存储作为数据源，但当前不可读取。', 'preview_task_store_unavailable', { source });
   }
-  const staging = `${target}.seed-${process.pid}-${crypto.randomBytes(4).toString('hex')}`;
-  fs.mkdirSync(path.dirname(target), { recursive: true, mode: 0o700 });
+  let staging: string | null = null;
   let database: DatabaseSync | null = null;
+  let primaryError: unknown = null;
   try {
+    sourceLocation.assertSafe(); targetLocation.assertSafe();
+    fs.mkdirSync(targetLocation.directory, { recursive: true, mode: 0o700 });
+    sourceLocation.assertSafe(); targetLocation.assertSafe();
+    staging = targetLocation.createTemporary();
+    sourceLocation.assertSafe(); targetLocation.assertTemporary(staging);
     database = new DatabaseSync(source, { readOnly: true });
+    sourceLocation.assertSafe(); targetLocation.assertTemporary(staging);
     database.exec(`VACUUM INTO '${staging.replaceAll("'", "''")}'`);
+    sourceLocation.assertSafe(); targetLocation.assertTemporary(staging);
+    // A second legitimate preview may publish its own store during the snapshot.
+    // Reuse that observed store instead of replacing it with our snapshot.
+    if (targetLocation.assertSafe()) return { source: 'existing', seeded: false };
+    sourceLocation.assertSafe(); targetLocation.assertTemporary(staging);
+    fs.renameSync(staging, target);
+    staging = null;
+    sourceLocation.assertSafe(); targetLocation.assertSafe();
+    return { source: 'canonical', seeded: true };
   } catch (error) {
-    fs.rmSync(staging, { force: true });
-    throw codedError(`Task preview 数据源快照失败：${errorMessage(error)}`, 'preview_task_store_unavailable', { source });
+    primaryError = error && typeof error === 'object' && 'structuredStoreBusiness' in error
+      ? error
+      : codedError(`Task preview 数据源快照失败：${errorMessage(error)}`, 'preview_task_store_unavailable', { source });
+    throw primaryError;
   } finally {
     try { database?.close(); } catch {}
+    if (staging) {
+      try {
+        targetLocation.assertTemporary(staging);
+        fs.rmSync(staging, { force: true });
+      } catch (cleanupError) {
+        if (!primaryError) throw cleanupError;
+        if (typeof primaryError === 'object') {
+          try { Object.defineProperty(primaryError, 'previewStoreCleanupError', { value: cleanupError, configurable: true }); } catch {}
+        }
+      }
+    }
   }
-  fs.renameSync(staging, target);
-  return { source: 'canonical', seeded: true };
 }
 
 export async function startPreview(runtime: PreviewRuntime, name: string, args: string[], options: PreviewStartOptions = {}): Promise<PreviewResult> {

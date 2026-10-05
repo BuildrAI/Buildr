@@ -44,7 +44,7 @@ function passedEvidence(workflow: any = null): any  {
     finishedAt: '2026-08-13T00:00:01.000Z',
     durationMs: 1000,
     status: 'passed',
-    results: shard.stepIds.map((id: any) => ({ id, status: 'passed', exitCode: 0, durationMs: 1 })),
+    results: shard.stepIds.map((id: any) => ({ id, status: 'passed', exitCode: 0, durationMs: 1, phases: id === 'artifact-browser-core' ? ['artifact-unpack', 'artifact-verify', 'browser:core', 'artifact-cleanup'].map(id => ({ scope: 'candidate-browser-core', id, status: 'passed', durationMs: 1 })) : [] })),
   }));
   const hosts: any = CANDIDATE_CI_HOST_NODE_TUPLES.map((tuple: any) => createCandidateCiEvidence({
     kind: 'host-node',
@@ -198,7 +198,7 @@ test('Candidate checkpoint retains completed evidence but is never aggregate eli
 
 test('Candidate aggregate rejects missing, duplicate, failed and stale evidence', () => {
   const complete: any = passedEvidence();
-  const missing: any = aggregateCandidateCiEvidence(complete.slice(1), candidateContext);
+  const missing: any = aggregateCandidateCiEvidence(complete.filter((item: any) => item.id !== 'preflight-macos'), candidateContext);
   assert.ok(missing.findings.some((item: any) => item.code === 'evidence-missing' && item.id === 'preflight-macos'));
 
   const duplicate: any = aggregateCandidateCiEvidence([...complete, complete[0]], candidateContext);
@@ -224,4 +224,44 @@ test('Release rehearsal evidence is bound to purpose, tree and rehearsal identit
   const drifted: any = structuredClone(evidence);
   drifted[0].sourceTree = 'e'.repeat(40);
   assert.ok(aggregateCandidateCiEvidence(drifted, { purpose: 'release-rehearsal', sourceCommit, sourceTree, rehearsalIdentity }).findings.some((item: any) => item.code === 'source-tree-mismatch'));
+});
+
+test('Candidate has one independent owner for the complete frontend logic suite', () => {
+  const shard = CANDIDATE_CI_SHARDS.find((item: any) => item.id === 'frontend-logic-macos');
+  assert.deepEqual(shard.stepIds, ['frontend-logic']);
+  assert.equal(shard.requiresArtifact, false);
+  const plan = createCandidateCiShardPlan(shard.id);
+  assert.deepEqual(plan.steps.map((item: any) => item.id), ['frontend-logic']);
+  const withoutFrontend = passedEvidence().filter((item: any) => item.id !== shard.id);
+  assert.ok(aggregateCandidateCiEvidence(withoutFrontend, candidateContext).findings.some((item: any) => item.id === shard.id && item.code === 'evidence-missing'));
+});
+
+test('Candidate rejects missing, incomplete, failed and mismatched artifact Browser core evidence', () => {
+  const id = 'artifact-browser-macos';
+  const missing = aggregateCandidateCiEvidence(passedEvidence().filter((item: any) => item.id !== id), candidateContext);
+  assert.ok(missing.findings.some((item: any) => item.code === 'evidence-missing' && item.id === id));
+  for (const [code, mutate] of [
+    ['primary-result-missing', (item: any) => { item.results = []; }],
+    ['browser-phase-missing', (item: any) => { item.results[0].phases = []; }],
+    ['result-not-passed', (item: any) => { item.status = 'failed'; }],
+    ['artifact-identity-mismatch', (item: any) => { item.artifact = { ...item.artifact, sha256: 'e'.repeat(64) }; }],
+  ] as const) {
+    const evidence = passedEvidence();
+    mutate(evidence.find((item: any) => item.id === id));
+    assert.ok(aggregateCandidateCiEvidence(evidence, candidateContext).findings.some((item: any) => item.code === code), code);
+  }
+});
+
+test('Candidate Browser requires exactly one passed unpack, verification, journey and cleanup phase', () => {
+  for (const phaseId of ['artifact-unpack', 'artifact-verify', 'browser:core', 'artifact-cleanup']) {
+    for (const mode of ['missing', 'failed', 'duplicate']) {
+      const evidence = passedEvidence();
+      const step = evidence.find((item: any) => item.id === 'artifact-browser-macos').results[0];
+      if (mode === 'missing') step.phases = step.phases.filter((phase: any) => phase.id !== phaseId);
+      else if (mode === 'failed') step.phases.find((phase: any) => phase.id === phaseId).status = 'failed';
+      else step.phases.push({ ...step.phases.find((phase: any) => phase.id === phaseId) });
+      const code = mode === 'failed' ? 'browser-phase-not-passed' : `browser-phase-${mode}`;
+      assert.ok(aggregateCandidateCiEvidence(evidence, candidateContext).findings.some((item: any) => item.code === code && item.detail === phaseId), `${phaseId}/${mode}`);
+    }
+  }
 });

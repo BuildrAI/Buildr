@@ -116,7 +116,7 @@ test('任务技能的自然意图描述从包同步到发现入口，升级不�
       assert.doesNotMatch(projected, /旧任务管理入口/);
     }
     const consumer = fs.readFileSync(path.join(root, '.agents/skills/task-triage/SKILL.md'), 'utf8');
-    assert.match(consumer, /buildr\.task-record@3.*mode `optional`/);
+    assert.match(consumer, /buildr\.task-record@4.*mode `optional`/);
     assert.match(consumer, /provider: `task-manager`/);
     assert.equal(runtime.inspectTask(root, 'existing-fix').recordDigest, existing.recordDigest);
     assert.deepEqual(runtime.queryTasks(root, { status: 'all' }).tasks.map((item: any) => item.record.taskId), ['existing-fix']);
