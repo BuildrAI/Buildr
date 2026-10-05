@@ -3,6 +3,7 @@ import path from 'node:path';
 import process from 'node:process';
 
 import { withExclusiveFileLock } from '../../../infrastructure/filesystem/index.ts';
+import { isConfirmedMissingPath } from '../../../infrastructure/filesystem/filesystem-path-identity.ts';
 
 export const WORKSPACE_MANAGEMENT_SCHEMA = 'buildr.workspace-web-management/v1';
 const OWNER_SCHEMA = 'buildr.workspace-web-management-owner/v1';
@@ -91,10 +92,10 @@ function validateManagementRecord(value: any) {
 }
 
 function readManagementRecord(file: any) {
-  if (!fs.existsSync(file)) return { status: 'absent', record: null, reason: null };
   try {
     return { status: 'ready', record: validateManagementRecord(JSON.parse(fs.readFileSync(file, 'utf8'))), reason: null };
   } catch (error: any) {
+    if (error.code === 'ENOENT' && isConfirmedMissingPath(file)) return { status: 'absent', record: null, reason: null };
     return { status: 'invalid', record: null, reason: error.message };
   }
 }
@@ -135,9 +136,10 @@ export function registerWorkspaceManagementFence(runtime: WorkspaceManagementFen
     }
   }
 
-  function assertNoPeerRegistration(identity: any, profile: any) {
+  function assertNoPeerRegistration(identity: any, profile: any, claimed = false) {
     const peer = peerRegistry(profile);
     if (peer.observation.status === 'invalid') {
+      if (claimed) return peer;
       throw managementError('workspace_management_peer_registry_invalid', '对侧Workspace registry损坏，当前操作保持fail closed。', {
         registry: peer.observation.file,
         current: ownerFor(profile),
@@ -146,7 +148,21 @@ export function registerWorkspaceManagementFence(runtime: WorkspaceManagementFen
       });
     }
     for (const registeredRoot of peer.observation.registry.roots) {
-      const registered = peerWorkspaceIdentity(registeredRoot);
+      let registered;
+      try {
+        const realRoot = canonicalRoot(registeredRoot);
+        registered = realRoot === identity.canonicalRoot
+          ? { canonicalRoot: realRoot, workspaceId: identity.workspaceId }
+          : peerWorkspaceIdentity(registeredRoot);
+      }
+      catch (error: any) {
+        if (isConfirmedMissingPath(registeredRoot)) continue;
+        // A matching local claim proves this object's owner, not that the other registry is empty.
+        // Continue checking readable entries so a later real conflict can never be hidden.
+        if (claimed) continue;
+        if (error.code === 'workspace_management_peer_identity_unknown') throw error;
+        throw managementError('workspace_management_peer_identity_unknown', `对侧registry中的Workspace identity无法安全读取：${registeredRoot}。`, { root: registeredRoot, reason: error.message });
+      }
       if (registered.canonicalRoot === identity.canonicalRoot || registered.workspaceId === identity.workspaceId) {
         throw managementError('workspace_management_channel_conflict', '同一Workspace已由另一Buildr Web channel登记。', {
           workspace: identity,
@@ -200,10 +216,10 @@ export function registerWorkspaceManagementFence(runtime: WorkspaceManagementFen
     const profile = options.profile || runtime.currentWebProfile();
     const identity = managementIdentity(targetRoot);
     assertCurrentRegistryReadable();
-    assertNoPeerRegistration(identity, profile);
     const file = managementPath(identity.canonicalRoot);
     const observation = readManagementRecord(file);
     assertRecord(identity, profile, observation);
+    assertNoPeerRegistration(identity, profile, observation.status === 'ready');
     return { status: 'ready', claimed: observation.status === 'ready', identity, profile, file, record: observation.record };
   }
 
@@ -216,9 +232,9 @@ export function registerWorkspaceManagementFence(runtime: WorkspaceManagementFen
     return withExclusiveFileLock(lock, identity.canonicalRoot, () => {
       options.assertSafe?.();
       assertCurrentRegistryReadable();
-      assertNoPeerRegistration(identity, profile);
       const observed = readManagementRecord(file);
       assertRecord(identity, profile, observed);
+      assertNoPeerRegistration(identity, profile, observed.status === 'ready');
       let created = false;
       if (observed.status === 'absent') {
         options.assertSafe?.();

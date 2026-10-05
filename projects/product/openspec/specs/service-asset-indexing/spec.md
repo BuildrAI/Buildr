@@ -2,12 +2,14 @@
 
 ## Purpose
 
-定义 Buildr MVP 中 service create、service metadata、共享/基础服务 Project、服务语义和规则入口的资产索引行为。
+定义全局服务（Service）的身份、代码库实例（Repository Instance）引用、项目关系与规则入口，并保留项目级 `service create` 命令及 v1/v2 清单的兼容接入和迁移边界。
+
+全局模型使用根 `services/manifest.yml` 与 `repositories/manifest.yml`，项目通过 `serviceIds` 引用服务（Service）。下文 `service create <project>/<service>`、服务直接持有 `source` 及 v1 到 v2 收敛场景描述仍存在的项目级兼容入口；它们不要求全局服务复制 `source`、Git 来源或唯一 `projectId`，也不把旧项目内清单设为全局登记权威。
 
 ## Requirements
 
 ### Requirement: service create 支持本地路径和 Git URL
-Buildr MUST 使用一个 `service create` 命令将本地内容或Git URL物化为managed Service，或将用户明确选择的既有Git repository登记为Attached Root，并将结果写成canonical Service Domain。
+项目级兼容入口 MUST 使用 `service create` 命令将本地内容或Git URL物化为managed Service，或将用户明确选择的既有Git repository登记为Attached Root，并将结果写成项目级 v2 Service Domain；全局服务（Service）登记继续由全局关系能力维护。
 
 #### Scenario: 接入本地路径
 - **WHEN** Agent 调用 `buildr service create <project>/<service> <local-path>` without `--attach`
@@ -68,14 +70,14 @@ Buildr MUST 将服务作为工作空间全局业务实现对象，使用根 `ser
 - **THEN** 系统 MUST 接受空引用集合且不创建项目内独占清单
 
 ### Requirement: service metadata 支持跨用户补全 repo
-Buildr MVP MUST 允许 Agent 根据 service metadata 识别缺失 service repo，并引导用户决定是否自动 clone 或补全。
+Buildr MUST 允许智能体（Agent）根据服务（Service）引用的代码库实例（Repository Instance）来源识别缺失代码，并引导用户决定是否克隆（Clone）或补全；项目级 v2 兼容入口继续从旧服务 `source` 读取同类来源事实。
 
 #### Scenario: 共享 workspace 后缺失 service repo
 - **WHEN** 新用户或另一个 Agent 打开共享的 Buildr workspace 且某个 metadata 声明的 Git service repo 不存在于本地
 - **THEN** Buildr MUST 能提供足够信息让 Agent 询问用户是否自动 clone 该 repo
 
 #### Scenario: 不要求用户手动查找 Git URL
-- **WHEN** service metadata 已记录 Git URL
+- **WHEN** 服务（Service）引用的代码库实例（Repository Instance）或旧项目级服务清单已记录 Git URL
 - **THEN** Agent MUST NOT 要求用户打开 Git 页面复制该 URL 才能补全 repo
 
 ### Requirement: 共享服务通过 Project 表达
@@ -211,33 +213,42 @@ Buildr MUST 只允许通过 Application 修改 Service 的 `name`、`description
 - **THEN** Buildr MUST 拒绝整次请求
 
 ### Requirement: Buildr 自举 Product 必须登记真实 application Service
-Buildr Product Project MUST 在 canonical Service registry 中登记承载 Buildr 可执行产品的 `buildr` Service，并 MUST 使用真实 workspace source path，而不是空壳、重复路径或只为界面展示生成的 fixture。
+Buildr 产品项目（Product Project）MUST 在工作空间（Workspace）根的全局服务清单登记承载 Buildr 可执行产品的 `buildr` 服务（Service），并通过 `serviceIds` 引用其稳定身份。服务 MUST 使用 `repositoryId` 引用真实的共享代码库实例（Repository Instance），以 `modulePath: projects/product/services/buildr` 定位实现；代码来源 MUST 由该实例的 `source` 声明，不在持久化服务实体重复保存。登记 MUST 对应真实安装包及实现，不能为空壳、重复代码来源或仅供界面展示的替身（Fixture）。
 
 #### Scenario: 读取 Product Service registry
-- **WHEN** CLI、doctor 或本机应用读取 Product Project 的 Service collection
-- **THEN** registry MUST 返回 code 为 `buildr`、名称为“Buildr”、type 为 `application` 的 Service
-- **AND** Service `source.path` MUST 等于 `projects/product/services/buildr`
+- **WHEN** 命令行接口（CLI）、诊断（Doctor）或本机应用从全局关系视图读取产品项目（Product Project）引用的服务（Service）
+- **THEN** 清单 MUST 返回 `code: buildr`、`type: application` 的服务（Service），名称与真实登记保持一致
+- **AND** 服务 MUST 引用真实共享代码库实例（Repository Instance），其 `modulePath` 为 `projects/product/services/buildr`
 
 #### Scenario: 定位 Buildr Service 资产
-- **WHEN** Application 通过 Service metadata 定位 `product/buildr`
-- **THEN** 对应目录 MUST 存在并包含真实 Buildr package 与 Service `AGENTS.md`
-- **AND** Project root 与 Service root MUST NOT 声明重叠 source path
+- **WHEN** 应用（Application）通过服务元信息（Service Metadata）定位 `product/buildr`
+- **THEN** 系统 MUST 从代码库实例（Repository Instance）的 `source` 和服务（Service）的 `modulePath` 解析真实目录，该目录 MUST 包含 Buildr 安装包工程及服务级 `AGENTS.md`
+- **AND** 产品项目（Product Project）根 MUST NOT 被声明为同一安装包的第二份权威实现来源
 
-#### Scenario: 观察 workspace-source Buildr Service
-- **WHEN** Buildr Service 与 Product Project 使用同一上级 Git workspace
-- **THEN** Service Domain MUST 保持 `source.type: workspace`
-- **AND** 页面与 doctor MUST NOT 虚构独立 remote、integration branch 或 Service Git 状态
+#### Scenario: 观察共享代码库的 Buildr Service
+- **WHEN** Buildr 服务（Service）与产品项目（Product Project）使用同一实际 Git 代码库
+- **THEN** 全局服务实体 MUST 保持代码库实例引用与模块路径，Git 来源和观察 MUST 属于被引用实例
+- **AND** 页面与诊断（Doctor）MUST NOT 虚构独立服务的远端（Remote）、集成分支（Integration Branch）或 Git 状态
+
+#### Scenario: 项目级兼容视图读取 Buildr Service
+- **WHEN** 项目级兼容读者读取当前共享代码库中的 `product/buildr`，且代码库实例没有独立 `source.git` 地址声明
+- **THEN** 兼容视图 MUST 从实例 `source` 与服务 `modulePath` 派生 `source.type: workspace` 及 `source.path: projects/product/services/buildr`
+- **AND** 派生 `source` MUST NOT 被解释为全局服务的持久字段或另一份可写代码来源
 
 ### Requirement: Buildr 自举 Product 必须登记真实的 buildr-web Service
-Buildr Product Project MUST 在 canonical Service registry 中登记承载 Buildr Web 前端工程的 `buildr-web` Service，并 MUST 使用真实 workspace source path `projects/product/services/buildr-web`，而不是空壳、重复路径或只为界面展示生成的 fixture。`buildr-web` MUST 与 `buildr` 并列存在，且二者的 `source.path` MUST NOT 重叠。
+Buildr 产品项目（Product Project）MUST 通过 `serviceIds` 引用全局清单中承载 Buildr Web 前端工程的 `buildr-web` 服务（Service）。它 MUST 与 `buildr` 保持独立服务身份，通过相同的 `repositoryId` 引用实际共享代码库实例（Repository Instance），并以 `modulePath: projects/product/services/buildr-web` 定位真实前端工程。两个服务 MUST NOT 被登记为同一模块目录，不能使用空壳或仅供界面展示的替身（Fixture）；代码来源由被引用实例的 `source` 声明。
 
 #### Scenario: 读取 Product Service registry 中的 buildr-web
-- **WHEN** CLI、doctor 或本机应用读取 Product Project 的 Service collection
-- **THEN** registry MUST 返回 code 为 `buildr-web` 的 Service
-- **AND** Service `source.path` MUST 等于 `projects/product/services/buildr-web`
-- **AND** Service `source.type` MUST 为 `workspace`
+- **WHEN** 命令行接口（CLI）、诊断（Doctor）或本机应用从全局关系视图读取产品项目（Product Project）引用的服务（Service）
+- **THEN** 清单 MUST 返回 `code: buildr-web` 的服务（Service）
+- **AND** 服务 MUST 通过代码库实例（Repository Instance）引用及 `modulePath: projects/product/services/buildr-web` 定位前端工程，不要求服务持久化 `source`
 
 #### Scenario: buildr 与 buildr-web 路径不重叠
-- **WHEN** Application 同时定位 `product/buildr` 与 `product/buildr-web`
-- **THEN** 两个 Service 的 `source.path` MUST 分别为 `projects/product/services/buildr` 与 `projects/product/services/buildr-web`
-- **AND** Project root MUST NOT 将二者声明为同一 source path
+- **WHEN** 应用（Application）同时定位 `product/buildr` 与 `product/buildr-web`
+- **THEN** 系统 MUST 从相同代码库实例（Repository Instance）的 `source` 与两个服务（Service）的模块路径分别解析到 `projects/product/services/buildr` 与 `projects/product/services/buildr-web`
+- **AND** 产品项目（Product Project）根 MUST NOT 将二者声明为同一前端或安装包实现来源
+
+#### Scenario: 项目级兼容视图读取 buildr-web
+- **WHEN** 项目级兼容读者读取当前共享代码库中的 `product/buildr-web`，且代码库实例没有独立 `source.git` 地址声明
+- **THEN** 兼容视图 MUST 从实例 `source` 与服务 `modulePath` 派生 `source.type: workspace` 及 `source.path: projects/product/services/buildr-web`
+- **AND** 派生字段 MUST NOT 替代全局 `repositoryId`、`modulePath` 或被引用实例的真实来源

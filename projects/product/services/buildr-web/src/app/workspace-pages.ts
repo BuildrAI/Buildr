@@ -168,6 +168,13 @@ export function moveTab<T extends { key: string }>(
   return next;
 }
 
+/** The strip omits directory tabs, so its index is within the visible page set. */
+export function reorderPageTabs(tabs: WorkspacePageTab[], key: string, index: number): WorkspacePageTab[] {
+  const visible = moveTab(tabs.filter(tab => tab.kind !== 'dir'), key, index);
+  let next = 0;
+  return tabs.map(tab => tab.kind === 'dir' ? tab : visible[next++]);
+}
+
 export function readRatio(raw: string | null): number | null {
   const n = raw === null ? NaN : Number(raw);
   return Number.isFinite(n) && n > 0 && n < 1 ? n : null;

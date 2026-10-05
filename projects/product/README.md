@@ -14,14 +14,15 @@
 
 ## 产品工程
 
-本项目维护产品知识、规则（Rule）、规范（Specification）和两个实现部分：
+本项目维护产品知识、规则（Rule）、规范（Specification）和三个服务（Service）的实现：
 
 | 实现位置 | 职责 |
 | --- | --- |
 | [`services/buildr/`](services/buildr/) | 安装包、命令行接口（CLI）、本机业务能力、网页托管与 npm 分发 |
 | [`services/buildr-web/`](services/buildr-web/) | React 页面、交互与正式前端构建 |
+| [`services/dsh-plugin/`](services/dsh-plugin/) | DSH 桌面插件，独立维护版本、构建、验证与发布边界 |
 
-两个服务（Service）当前位于同一代码库（Repository），不因目录分开就成为两个独立代码库（Repository）。[技术架构](knowledge/docs/architecture/technical.md)解释组成与边界；[正式规范](openspec/specs/)保存行为约定，实际实现仍需按改动核对。
+三个服务（Service）在工作空间（Workspace）根部的 `services/manifest.yml` 登记，通过 `repositoryId` 引用同一个代码库实例（Repository Instance），以 `modulePath` 定位各自目录；本项目在 `projects/manifest.yml` 通过 `serviceIds` 引用它们。代码来源由根部 `repositories/manifest.yml` 登记，不因服务目录分开就成为独立的 Git 仓库。[技术架构](knowledge/docs/architecture/technical.md)解释组成与边界；[正式规范](openspec/specs/)保存行为约定，实际实现仍需按改动核对。
 
 [阅读目录](knowledge/docs/README.md)帮助理解系统、任务（Task）、数据和测试之间的关系；[技术图（Technical Diagram）](knowledge/code-map/README.md#按问题找图)用于按需深入。网页与仓库链接指向同一份正文。
 

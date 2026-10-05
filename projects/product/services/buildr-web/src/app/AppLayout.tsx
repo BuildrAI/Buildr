@@ -7,7 +7,7 @@ import { workspacePageSearch } from './workspace-pages';
 import { runtimeSystemApi } from './api/runtime-system-api';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Outlet, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { Button, Drawer, Typography } from 'antd';
+import { Alert, Button, Drawer, Tooltip, Typography } from 'antd';
 import { AppstoreOutlined, CheckOutlined, MenuOutlined, PlusOutlined, SettingOutlined } from '@ant-design/icons';
 import { api, setWorkspaceId } from '../api';
 import { AppShellContext, type WorkspaceShellInfo } from './AppShellContext';
@@ -20,6 +20,7 @@ import { DrawerShell } from '../components/DrawerShell';
 import { confirmModal } from '../lib/confirm';
 import { ReleaseAwarenessBanner } from '../features/installation/components/ReleaseAwarenessBanner';
 import { ArticleEditorProvider } from '../features/publication/components/ArticleEditorProvider';
+import { readOptionalPreference, writeOptionalPreference } from '../lib/optional-preferences';
 
 type PreviewIdentity = {
   instance: string;
@@ -66,9 +67,9 @@ export function AppLayout({ renderResource }: { renderResource: (item: ResourceP
   const isGlobal = !workspaceId;
   const area = navigationState(location.pathname, location.search, workspaceId).area;
   const retainedSearch = workspaceId ? workspacePageSearch(workspaceId, location.pathname, location.search) : location.search;
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('buildr.sidebar-collapsed') === 'true');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => readOptionalPreference('buildr.sidebar-collapsed') === 'true');
   const [sidebarWidth, setSidebarWidth] = useState(() => {
-    const saved = Number(localStorage.getItem('buildr.sidebar-width'));
+    const saved = Number(readOptionalPreference('buildr.sidebar-width'));
     return Number.isFinite(saved) && saved >= 150 && saved <= 256 ? saved : 256;
   });
   const [navigationOpen, setNavigationOpen] = useState(false);
@@ -109,6 +110,9 @@ export function AppLayout({ renderResource }: { renderResource: (item: ResourceP
   const [drawerAction, setDrawerAction] = useState<string | undefined>();
   const [drawerContext, setDrawerContext] = useState<Record<string, unknown>>({});
   const [exited, setExited] = useState(false);
+  const [quitting, setQuitting] = useState(false);
+  const [quitError, setQuitError] = useState('');
+  const quitPending = useRef(false);
   const [taskListResetToken, setTaskListResetToken] = useState(0);
   const [navigationRevision, setNavigationRevision] = useState(0);
   const refreshNavigation = useCallback(() => setNavigationRevision((value) => value + 1), []);
@@ -211,16 +215,25 @@ export function AppLayout({ renderResource }: { renderResource: (item: ResourceP
 
   useEffect(() => { setNavigationOpen(false); }, [location.pathname, location.search]);
 
-  const quit = async () => {
-    const ok = await confirmModal({
-      title: '退出 Buildr Web？',
-      content: '退出 Buildr Web 后，本机服务将停止。确定退出吗？',
-      okText: '退出',
-      okButtonProps: { danger: true },
-    });
-    if (!ok) return;
-    await runtimeSystemApi.quit();
-    setExited(true);
+  const quit = async (ask = true) => {
+    if (quitPending.current) return;
+    quitPending.current = true;
+    try {
+      const ok = !ask || await confirmModal({
+        title: '退出 Buildr Web？',
+        content: '退出 Buildr Web 后，本机服务将停止。确定退出吗？',
+        okText: '退出',
+        okButtonProps: { danger: true },
+      });
+      if (!ok) return;
+      setQuitError(''); setQuitting(true);
+      await runtimeSystemApi.quit();
+      setExited(true);
+    } catch (error) {
+      setQuitError(error instanceof Error ? error.message : '退出失败，请重试。');
+    } finally {
+      quitPending.current = false; setQuitting(false);
+    }
   };
 
   const shellValue = {
@@ -289,7 +302,7 @@ export function AppLayout({ renderResource }: { renderResource: (item: ResourceP
         <AppShellHeader isGlobal={isGlobal} brandHref={isGlobal ? '/' : workspaceHref('/overview')} development={webProfile === 'development'} workspaceName={isGlobal ? '全部工作空间' : (workspace?.name || '正在读取…')} workspaceMenuItems={workspaceMenuItems} area={area} workbenchHref={workspaceHref('/overview')} codeHref={codeDestination.current.path} workspaceDestination={{to:workspaceDestination.current.path,state:workspaceDestination.current.state}} actions={<>
             {!isGlobal ? <WorkbenchSearch key={workspaceId} /> : null}
             {!isGlobal ? <Button className="shell-menu-toggle" aria-label="打开导航菜单" icon={<MenuOutlined />} onClick={() => setNavigationOpen(true)} /> : null}
-            <Button id="quit-buildr" className="nav-quit" type="text" onClick={() => { void quit(); }}>
+            <Button id="quit-buildr" className="nav-quit" type="text" loading={quitting} onClick={() => { void quit(); }}>
               退出
             </Button>
             <div
@@ -302,18 +315,23 @@ export function AppLayout({ renderResource }: { renderResource: (item: ResourceP
               title={preview?.worktree || undefined}
             />
             {!isGlobal ? (
+              <Tooltip title={area === 'workbench' ? '提出新目标' : '交给 Agent'}>
               <Button
                 id="open-agent-action"
+                aria-label={area === 'workbench' ? '提出新目标' : '交给 Agent'}
                 type="primary"
                 icon={<PlusOutlined />}
                 onClick={() => openAgentAction(area === "workbench" ? "start" : undefined)}
               >
                 {area === "workbench" ? "提出新目标" : "交给 Agent"}
               </Button>
+              </Tooltip>
             ) : null}
 </>} />
         <ReleaseAwarenessBanner openAgentAction={openAgentAction} />
-        <AppShellFrame isGlobal={isGlobal} compactNavigation={compactNavigation} sidebarCollapsed={sidebarCollapsed} sidebarWidth={sidebarWidth} onSidebarResize={width => { setSidebarWidth(width); localStorage.setItem('buildr.sidebar-width', String(Math.round(width))); }} onToggleSidebar={() => { setSidebarCollapsed(value => !value); localStorage.setItem('buildr.sidebar-collapsed', String(!sidebarCollapsed)); }} navigation={<AppNavigation key={workspaceId} />}>{/* Business content stays in the live adapter. */}<>{workspaceId ? <ArticleEditorProvider key={workspaceId} workspaceId={workspaceId}><WorkspacePages workspaceId={workspaceId} renderResource={renderResource} /></ArticleEditorProvider> : <Outlet />}</></AppShellFrame>
+        {quitError && <Alert id="quit-buildr-error" type="error" showIcon message="Buildr Web 尚未退出" description={quitError}
+          action={<Button size="small" loading={quitting} onClick={() => void quit(false)}>重试退出</Button>} />}
+        <AppShellFrame isGlobal={isGlobal} compactNavigation={compactNavigation} sidebarCollapsed={sidebarCollapsed} sidebarWidth={sidebarWidth} onSidebarResize={width => { setSidebarWidth(width); writeOptionalPreference('buildr.sidebar-width', String(Math.round(width))); }} onToggleSidebar={() => { setSidebarCollapsed(value => !value); writeOptionalPreference('buildr.sidebar-collapsed', String(!sidebarCollapsed)); }} navigation={<AppNavigation key={workspaceId} />}>{/* Business content stays in the live adapter. */}<>{workspaceId ? <ArticleEditorProvider key={workspaceId} workspaceId={workspaceId}><WorkspacePages workspaceId={workspaceId} renderResource={renderResource} /></ArticleEditorProvider> : <Outlet />}</></AppShellFrame>
       </div>
 
       {!isGlobal ? <Drawer title="导航" placement="left" width={280} open={navigationOpen}

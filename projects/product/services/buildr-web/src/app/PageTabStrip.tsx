@@ -1,17 +1,22 @@
 import { useResourcePreview } from './resource-preview';
-import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState, type PointerEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { CloseOutlined } from '@ant-design/icons';
 import type { WorkspacePageTab } from './workspace-pages';
+import { useTabNavigation } from '../lib/useTabNavigation';
+import { tabElementId, tabPanelId } from '../lib/tab-navigation';
 
 type Drag = { key: string; start: number; x: number; left: number; top: number; width: number; height: number; moved: boolean };
-type Props = { tabs: WorkspacePageTab[]; onClose: (key: string) => void; onReorder: (key: string, index: number) => void };
-export function PageTabStrip({ tabs, onClose, onReorder }: Props) {
+type Props = { tabs: WorkspacePageTab[]; idPrefix?: string; onClose: (key: string) => void; onReorder: (key: string, index: number) => void };
+export function PageTabStrip({ tabs, idPrefix, onClose, onReorder }: Props) {
   const location = useLocation();
+  const generatedId = useId();
+  const prefix = idPrefix || generatedId;
   const navigate = useNavigate();
   const previews = useResourcePreview();
   const strip = useRef<HTMLDivElement>(null);
+  const navigation = useTabNavigation(tabs.map(tab => tab.key), tabs.find(tab => tab.path === location.pathname)?.key, strip);
   const dragRef = useRef<Drag | null>(null);
   const positions = useRef(new Map<string, number>());
   const suppressed = useRef(false);
@@ -70,17 +75,18 @@ export function PageTabStrip({ tabs, onClose, onReorder }: Props) {
   }
   const draggedTab = tabs.find((t) => t.key === drag?.key);
   return <>
-    <div ref={strip} className="pane-tabstrip workspace-tabstrip" role="tablist" aria-label="打开的页面" onPointerMove={move} onPointerUp={end} onPointerCancel={end}>
+    <div ref={strip} tabIndex={-1} className="pane-tabstrip workspace-tabstrip" role={idPrefix ? 'tablist' : 'group'} aria-label="打开的页面" onPointerMove={move} onPointerUp={end} onPointerCancel={end}>
       {tabs.map((tab, index) => <div key={tab.key} data-page-tab={tab.key} className={`pane-tab-wrap${drag?.key === tab.key ? ' is-dragged' : ''}`} onPointerDown={(e) => start(e, tab)}>
-        <button type="button" role="tab" aria-selected={tab.path === location.pathname} className={`pane-tab${tab.path === location.pathname ? ' on' : ''}`} title={`${tab.title}（Alt + 方向键调整顺序）`}
+        <button type="button" role={idPrefix ? 'tab' : undefined} aria-selected={idPrefix ? tab.path === location.pathname : undefined} aria-pressed={idPrefix ? undefined : tab.path === location.pathname} id={tabElementId(prefix, tab.key)} aria-controls={idPrefix ? tabPanelId(idPrefix, tab.path) : undefined}
+          data-tab-key={tab.key} tabIndex={navigation.focusKey === tab.key ? 0 : -1} onFocus={() => navigation.onFocus(tab.key)} className={`pane-tab${tab.path === location.pathname ? ' on' : ''}`} title={`${tab.title}（Alt + 方向键调整顺序）`}
           onClick={() => { if (!suppressed.current && tab.path !== location.pathname) navigate({pathname:tab.path,search:tab.search||""}, { state: { resourceViews: previews?.states[tab.path] } }); }}
           onKeyDown={(e) => {
             if (e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) { e.preventDefault(); onReorder(tab.key, index + (e.key === 'ArrowLeft' ? -1 : 1)); }
-            if (e.key === 'Delete') { e.preventDefault(); onClose(tab.key); }
+            else navigation.onKeyDown(e, tab.key, onClose);
           }}>
           <span className={`pane-tab-dot ${tab.kind}`} aria-hidden /><span className="pane-tab-text">{tab.title}</span>
         </button>
-        <button type="button" className="pane-tab-x" aria-label={`关闭 ${tab.title}`} onClick={() => onClose(tab.key)}><CloseOutlined /></button>
+        <button type="button" tabIndex={-1} className="pane-tab-x" aria-label={`关闭 ${tab.title}`} onClick={() => navigation.close(tab.key, onClose)}><CloseOutlined /></button>
       </div>)}
     </div>
     {drag && draggedTab ? createPortal(<div aria-hidden className={`pane-tab-drag-ghost${landing ? ' landing' : ''}`} style={{ left: drag.left, top: drag.top, width: drag.width, height: drag.height, transform: `translateX(${drag.x - drag.start}px)` }}><span className={`pane-tab-dot ${draggedTab.kind}`} />{draggedTab.title}<CloseOutlined /></div>, document.body) : null}

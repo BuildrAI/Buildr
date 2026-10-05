@@ -14,6 +14,10 @@ import { registerWorkspaceManagementFence } from '../../src/modules/workspace/in
 import { registerWorkspaceQueryApplication } from '../../src/modules/workspace/application/workspace-query-application.ts';
 import { registerWorkspaceCommandApplication } from '../../src/modules/workspace/application/workspace-command-application.ts';
 import { oppositeWebProfile, resolveWebProfile } from '../../src/modules/installation/contracts/web-profile.ts';
+import { buildInstallationInventory } from '../../src/modules/installation/application/product-installation-status.ts';
+import { acquireExclusiveFileLock, releaseExclusiveFileLock } from '../../src/infrastructure/filesystem/exclusive-file-lock.ts';
+import { spawnSync } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
 
 const RELEASED: any = { channel: 'npm', runtime: { role: 'host' } };
 const DEVELOPMENT: any = { channel: 'development', runtime: { role: 'development' } };
@@ -91,6 +95,132 @@ test('对侧legacy registry、symlink与损坏registry都在claim前fail closed'
   fs.writeFileSync(path.join(releasedRoot, 'workspace-registry.json'), '{broken\n');
   assert.throws(() => register(development, root), (error: any) => error.code === 'workspace_management_peer_registry_invalid');
   assert.equal(fs.existsSync(path.join(root, '.buildr', 'local', 'web-management.json')), false);
+});
+
+test('完全不存在的无关登记不阻断新claim，悬空链接与现存未知身份继续拒绝', (t: any) => {
+  const { base, releasedRoot, profiles } = fixture(t);
+  const root = workspace(base, 'current');
+  const peerFile = path.join(releasedRoot, 'workspace-registry.json');
+  fs.mkdirSync(releasedRoot, { recursive: true });
+  const missing = path.join(base, 'deleted');
+  const writePeer = (roots: string[]) => fs.writeFileSync(peerFile, JSON.stringify({ schemaVersion: WORKSPACE_REGISTRY_SCHEMA, roots, lastOpenedRoot: null }));
+  writePeer([missing]);
+  const development = runtimeFor(DEVELOPMENT, profiles.development, profiles);
+  assert.equal(register(development, root).workspaces.length, 1);
+  const peerBefore = fs.readFileSync(peerFile, 'utf8');
+  assert.equal(development.assertWorkspaceManagementAccess(root).status, 'ready');
+  assert.equal(fs.readFileSync(peerFile, 'utf8'), peerBefore);
+  const dangling = path.join(base, 'dangling');
+  fs.symlinkSync(missing, dangling);
+  const unknown = path.join(base, 'unknown');
+  fs.mkdirSync(unknown);
+  for (const peer of [dangling, path.join(dangling, 'child'), unknown]) {
+    writePeer([peer]);
+    const fresh = workspace(base, crypto.randomUUID());
+    assert.throws(() => register(development, fresh), (error: any) => error.code === 'workspace_management_peer_identity_unknown');
+    assert.equal(fs.existsSync(path.join(fresh, '.buildr', 'local', 'web-management.json')), false);
+  }
+});
+
+test('matching归属保留当前工作和公共诊断，未知条目之后的真实冲突仍拒绝', (t: any) => {
+  const { base, releasedRoot, developmentRoot, profiles } = fixture(t);
+  const root = workspace(base, 'current');
+  const development = runtimeFor(DEVELOPMENT, profiles.development, profiles);
+  register(development, root);
+  const peerFile = path.join(releasedRoot, 'workspace-registry.json');
+  fs.mkdirSync(releasedRoot, { recursive: true });
+  fs.writeFileSync(peerFile, '{broken\n');
+  assert.equal(development.assertWorkspaceManagementAccess(root).claimed, true);
+  assert.equal(development.withWorkspaceManagementClaim(root, () => 'continued'), 'continued');
+  const inventory = buildInstallationInventory(path.resolve(import.meta.dirname, '../..'), {
+    installationRegistryFile: path.join(base, 'global-installations.json'),
+    instanceDataRoots: { released: releasedRoot, development: developmentRoot },
+    launcherTarget: path.join(base, 'unused-launcher'),
+    developmentLauncherRoot: path.join(base, 'unused-development-launcher'),
+  });
+  assert.equal(inventory.workspaceManagement.registries.released.status, 'invalid');
+  assert.ok(inventory.workspaceManagement.conflicts.some((entry: any) => entry.type === 'registry-invalid'));
+  const fresh = workspace(base, 'new');
+  assert.throws(() => register(development, fresh), (error: any) => error.code === 'workspace_management_peer_registry_invalid');
+  const unknown = path.join(base, 'unknown');
+  fs.mkdirSync(unknown);
+  const clone = workspace(base, 'duplicate', development.canonicalWorkspaceManagementIdentity(root).workspaceId);
+  fs.writeFileSync(peerFile, JSON.stringify({ schemaVersion: WORKSPACE_REGISTRY_SCHEMA, roots: [unknown, clone], lastOpenedRoot: null }));
+  assert.throws(() => development.assertWorkspaceManagementAccess(root), (error: any) => error.code === 'workspace_management_channel_conflict');
+  assert.throws(() => development.withWorkspaceManagementClaim(root, () => 'unsafe'), (error: any) => error.code === 'workspace_management_channel_conflict');
+});
+
+test('损坏本机归属不能借对侧故障放行', (t: any) => {
+  const { base, releasedRoot, profiles } = fixture(t);
+  const root = workspace(base, 'current');
+  const development = runtimeFor(DEVELOPMENT, profiles.development, profiles);
+  register(development, root);
+  const file = path.join(root, '.buildr', 'local', 'web-management.json');
+  fs.writeFileSync(file, '{broken\n');
+  fs.mkdirSync(releasedRoot, { recursive: true });
+  fs.writeFileSync(path.join(releasedRoot, 'workspace-registry.json'), '{broken\n');
+  assert.throws(() => development.assertWorkspaceManagementAccess(root), (error: any) => error.code === 'workspace_management_record_invalid');
+});
+
+test('对侧登记访问被拒绝时不能被existsSync误判为不存在并建立新claim', (t: any) => {
+  const { base, releasedRoot, profiles } = fixture(t);
+  const root = workspace(base, 'new');
+  const peerFile = path.join(releasedRoot, 'workspace-registry.json');
+  const development = runtimeFor(DEVELOPMENT, profiles.development, profiles);
+  const exists = fs.existsSync.bind(fs);
+  const read: any = fs.readFileSync.bind(fs);
+  t.mock.method(fs, 'existsSync', (file: any) => path.resolve(String(file)) === peerFile ? false : exists(file));
+  t.mock.method(fs, 'readFileSync', (file: any, ...args: any[]) => {
+    if (path.resolve(String(file)) === peerFile) throw Object.assign(new Error('fixture peer registry access denied'), { code: 'EACCES' });
+    return read(file, ...args);
+  });
+  assert.equal(development.readWorkspaceRegistryFile(peerFile).status, 'invalid');
+  assert.throws(() => register(development, root), (error: any) => error.code === 'workspace_management_peer_registry_invalid');
+  assert.equal(fs.existsSync(path.join(root, '.buildr', 'local', 'web-management.json')), false);
+});
+
+test('本机归属访问被拒绝或悬空时不能视为未认领并放行读取', (t: any) => {
+  const { base, profiles } = fixture(t);
+  const root = workspace(base, 'current');
+  const development = runtimeFor(DEVELOPMENT, profiles.development, profiles);
+  const file = development.workspaceManagementPath(root);
+  const exists = fs.existsSync.bind(fs);
+  const read: any = fs.readFileSync.bind(fs);
+  t.mock.method(fs, 'existsSync', (candidate: any) => path.resolve(String(candidate)) === file ? false : exists(candidate));
+  t.mock.method(fs, 'readFileSync', (candidate: any, ...args: any[]) => {
+    if (path.resolve(String(candidate)) === file) throw Object.assign(new Error('fixture local management access denied'), { code: 'EACCES' });
+    return read(candidate, ...args);
+  });
+  assert.throws(() => development.assertWorkspaceManagementAccess(root), (error: any) => error.code === 'workspace_management_record_invalid');
+  t.mock.restoreAll();
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.symlinkSync(path.join(base, 'missing-record'), file);
+  assert.throws(() => development.assertWorkspaceManagementAccess(root), (error: any) => error.code === 'workspace_management_record_invalid');
+  assert.equal(fs.lstatSync(file).isSymbolicLink(), true);
+});
+
+test('登记锁恢复真实死亡进程，保全活跃持有者、旧空锁和版本冲突', (t: any) => {
+  const { base, profiles } = fixture(t);
+  const runtime = runtimeFor(DEVELOPMENT, profiles.development, profiles);
+  const repository = runtime.registryRepository;
+  const before = repository.readWorkspaceRegistryPersistence();
+  const lockFile = `${before.file}.lock`;
+  const source = pathToFileURL(path.resolve(import.meta.dirname, '../../src/infrastructure/filesystem/exclusive-file-lock.ts')).href;
+  const exited = spawnSync(process.execPath, ['--input-type=module', '-e', `import { acquireExclusiveFileLock } from ${JSON.stringify(source)}; const held = acquireExclusiveFileLock(${JSON.stringify(lockFile)}, ${JSON.stringify(before.file)}, { timeoutMs: 0 }); console.log(held.record.pid); process.exit(0);`], { encoding: 'utf8' });
+  assert.equal(exited.status, 0, exited.stderr);
+  const changed = repository.withWorkspaceRegistryMutation(before.revision, (current: any) => ({ ...current, roots: [path.join(base, 'registered')], lastOpenedRoot: null }));
+  assert.equal(fs.existsSync(lockFile), false);
+  const live = acquireExclusiveFileLock(lockFile, before.file, { timeoutMs: 0 });
+  assert.throws(() => repository.withWorkspaceRegistryMutation(changed.revision, (current: any) => current), (error: any) => error.code === 'workspace_registry_revision_conflict');
+  assert.equal(fs.existsSync(lockFile), true);
+  assert.equal(releaseExclusiveFileLock(live), true);
+  fs.writeFileSync(lockFile, '');
+  assert.throws(() => repository.withWorkspaceRegistryMutation(changed.revision, (current: any) => current), (error: any) => error.code === 'workspace_registry_revision_conflict');
+  assert.equal(fs.readFileSync(lockFile, 'utf8'), '');
+  fs.unlinkSync(lockFile);
+  const content = fs.readFileSync(before.file, 'utf8');
+  assert.throws(() => repository.withWorkspaceRegistryMutation(before.revision, (current: any) => current), (error: any) => error.code === 'workspace_registry_revision_conflict');
+  assert.equal(fs.readFileSync(before.file, 'utf8'), content);
 });
 
 test('migration前冲突不改变SQLite bytes、mtime或ledger', (t: any) => {

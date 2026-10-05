@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 
 const serviceRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const runner: any = path.join(serviceRoot, 'tools/development/run-development-cli');
+const npmRunner: any = path.join(serviceRoot, 'tools/development/run-development-npm');
 const projectBridge: any = path.resolve(serviceRoot, '../../buildr');
 
 function fakeNode(target: any, version: any, marker: any): any  {
@@ -198,4 +199,69 @@ test('开发启动器读取声明版本且 package engines 保留发布兼容范
   assert.equal(packageJson.engines.node, `>=${declared} <${Number(declared.split('.')[0]) + 1}`);
   assert.match(source, /resolve-development-node/u);
   assert.doesNotMatch(source, /workspace\.yml|Workspace Node runtime|BUILDR_NODE_RUNTIME_DATA_DIR/u);
+});
+
+function npmProbe(root: string): void {
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ private: true, scripts: { probe: 'node probe.mjs' } }));
+  fs.writeFileSync(path.join(root, 'probe.mjs'), "console.log(JSON.stringify({ executable: process.execPath, args: process.argv.slice(2) }));\n");
+}
+
+test('npm 开发入口接受显式 Node 链接，并让子进程使用实际 Node 和原始参数', { skip: process.platform === 'win32' }, (t) => {
+  const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-npm-node-link-'));
+  t.after(() => fs.rmSync(fixture, { recursive: true, force: true }));
+  const linkedNode = path.join(fixture, 'linked runtime', 'bin', 'node');
+  fs.mkdirSync(path.dirname(linkedNode), { recursive: true });
+  fs.symlinkSync(process.execPath, linkedNode);
+  const hostileBin = path.join(fixture, 'hostile');
+  fakeNode(path.join(hostileBin, 'node'), '18.0.0', 'wrong-child-runtime');
+  npmProbe(fixture);
+  const args = ['two words', 'literal$(should-not-run)', 'asterisk*'];
+
+  const result = run(npmRunner, ['--silent', 'run', 'probe', '--', ...args], {
+    BUILDR_NODE: path.relative(fixture, linkedNode),
+    BUILDR_TEST_CWD: fixture,
+    PATH: `${hostileBin}:/usr/bin:/bin`,
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), { executable: fs.realpathSync(process.execPath), args });
+});
+
+test('npm 开发入口接受 PATH 中的 Node 链接', { skip: process.platform === 'win32' }, (t) => {
+  const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-npm-path-link-'));
+  t.after(() => fs.rmSync(fixture, { recursive: true, force: true }));
+  const linkedBin = path.join(fixture, 'linked bin');
+  fs.mkdirSync(linkedBin);
+  fs.symlinkSync(process.execPath, path.join(linkedBin, 'node'));
+  npmProbe(fixture);
+
+  const result = run(npmRunner, ['--silent', 'run', 'probe'], {
+    BUILDR_TEST_CWD: fixture,
+    PATH: `${linkedBin}:/usr/bin:/bin`,
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), { executable: fs.realpathSync(process.execPath), args: [] });
+});
+
+test('npm 开发入口可从带空格的检出目录执行', { skip: process.platform === 'win32' }, (t) => {
+  const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-npm-checkout-space-'));
+  t.after(() => fs.rmSync(fixture, { recursive: true, force: true }));
+  const product = path.join(fixture, 'checkout with spaces', 'projects', 'product');
+  const tools = path.join(product, 'services', 'buildr', 'tools', 'development');
+  fs.mkdirSync(tools, { recursive: true });
+  for (const file of ['run-development-npm', 'run-development-npm.ts', 'resolve-development-node']) {
+    fs.copyFileSync(path.join(serviceRoot, 'tools', 'development', file), path.join(tools, file));
+  }
+  fs.copyFileSync(path.resolve(serviceRoot, '../../.node-version'), path.join(product, '.node-version'));
+  npmProbe(fixture);
+
+  const result = run(path.join(tools, 'run-development-npm'), ['--silent', 'run', 'probe'], {
+    BUILDR_NODE: process.execPath,
+    BUILDR_TEST_CWD: fixture,
+    PATH: '/usr/bin:/bin',
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), { executable: fs.realpathSync(process.execPath), args: [] });
 });

@@ -87,10 +87,13 @@ Your agent updates the product, checks its launch entry, and synchronizes the wo
 
 ## Self-bootstrapping: this repository is a workspace
 
-**Buildr uses itself to organize development.** This repository is a working Buildr workspace. Its `projects/product/` project holds product knowledge, designs, and specifications and connects two services:
+**Buildr uses itself to organize development.** This repository is a working Buildr workspace. Its `projects/product/` project holds product knowledge, designs, and specifications and connects three services:
 
 - `projects/product/services/buildr/`: the package, CLI, and local runtime.
 - `projects/product/services/buildr-web/`: the current product interface.
+- `projects/product/services/dsh-plugin/`: the DSH desktop plugin, with its own build, verification, and release boundary.
+
+The three services reference the same repository instance. Each module path locates one of the directories above; separate directories do not imply separate Git repositories.
 
 The repository's Rules, Skills, knowledge, and code support everyday development and show how Buildr organizes real work.
 

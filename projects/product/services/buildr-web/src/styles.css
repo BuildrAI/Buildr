@@ -1794,6 +1794,10 @@ details summary { cursor: pointer; color: var(--soft-ink); font-size: 12px; font
 }
 
 .metadata-edit-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.metadata-conflict { margin-bottom:16px; }
+.metadata-conflict dl { display:grid; grid-template-columns:auto minmax(0, 1fr); gap:6px 12px; margin:12px 0; }
+.metadata-conflict dt { font-weight:600; }
+.metadata-conflict dd { margin:0; white-space:pre-wrap; overflow-wrap:anywhere; }
 @media (max-width: 560px) {
   .drawer-shell .ant-drawer-body { padding: 16px; }
   .drawer-shell .ant-drawer-footer { padding: 12px 16px max(12px, env(safe-area-inset-bottom)); }
@@ -1830,6 +1834,9 @@ details summary { cursor: pointer; color: var(--soft-ink); font-size: 12px; font
 .pane-tab-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pane-tab-x { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; flex: none; border-radius: 5px; color: #b4bcc3; font-size: 10px; }
 .pane-tab-x:hover { background: #e8ecef; color: var(--soft-ink); }
+.pane-tab-wrap.not-closable .pane-tab { padding-right:12px; }
+.pane-tabstrip:not(.workspace-tabstrip) .pane-tab-wrap { touch-action:pan-x; }
+.object-tab-panel { display:flex; flex:1; flex-direction:column; min-width:0; min-height:0; }
 .pane-tab:focus-visible, .pane-tab-x:focus-visible, .pane-divider:focus-visible { outline: 2px solid var(--soft-primary); outline-offset: -2px; }
 
 /* Content dividers share SplitDivider; the header row remains uninterrupted. */

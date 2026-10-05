@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAppShell } from '../../../app/AppShellContext';
+import { tabElementId } from '../../../lib/tab-navigation';
 import { ObjectTabStrip } from '../../../components/ObjectTabStrip';
 import { workspaceHref } from '../../../lib/labels';
 import { SourceControlWorkbench } from '../components/SourceControlWorkbench';
@@ -9,6 +10,7 @@ import { useSourceControl } from '../hooks/useSourceControl';
 import type { SourceControlFileTarget, SourceControlScene } from '../source-control-model';
 
 export function CodeSourceControlPage() {
+  const panelId = useId();
   const {workspaceId, setBreadcrumbParts} = useAppShell();
   const location = useLocation(), navigate = useNavigate();
   const entry = location.state?.sourceControlEntry as {nonce?: string; taskId: string; taskTitle?: string; from: {pathname: string; search: string; hash: string; state: unknown}} | undefined;
@@ -25,12 +27,14 @@ export function CodeSourceControlPage() {
     else navigate(href('/tasks/' + encodeURIComponent(taskId)), {state: {from: location.pathname + location.search}});
   };
   return <div className="code-source-control-page">
-    <ObjectTabStrip className="code-source-control-tab" tabs={[{key: 'source-control', kind: 'svc', title: '源代码管理'}]} active="source-control" closable={false} onActivate={() => {}} />
+    <ObjectTabStrip panelId={panelId} className="code-source-control-tab" tabs={[{key: 'source-control', kind: 'svc', title: '源代码管理'}]} active="source-control" closable={false} onActivate={() => {}} />
+    <div className="object-tab-panel" id={panelId} role="tabpanel" aria-labelledby={tabElementId(panelId, 'source-control')} tabIndex={0}>
     <SourceControlWorkbench repositories={observation.repositories} reader={observation.reader} readKey={observation.readKey}
       observation={observation.observation} onRefresh={observation.refresh} onRetry={() => observation.refresh()}
       scene={scene} onScene={setScene} onOpenTask={openTask}
       task={entry ? {id: entry.taskId, title: entry.taskTitle || entry.taskId} : undefined}
       scopeSelection={entry && observation.selection ? {...observation.selection, key: workspaceId + ':' + (entry.nonce || location.key)} : undefined}
       onViewCurrent={openCurrent} layoutStorageKey={'buildr:source-control:' + workspaceId} />
+    </div>
   </div>;
 }

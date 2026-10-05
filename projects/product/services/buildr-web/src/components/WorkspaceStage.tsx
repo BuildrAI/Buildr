@@ -1,6 +1,6 @@
 import { SplitDivider } from './SplitDivider';
 import { Button } from 'antd';
-import { useContext, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode, type CSSProperties } from 'react';
+import { useContext, useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode, type CSSProperties } from 'react';
 import { useLocation } from 'react-router-dom';
 import { CloseOutlined } from '@ant-design/icons';
 import { ReadingToggle } from './ReadingToggle';
@@ -9,6 +9,7 @@ import { useWorkspacePageTabs, WorkspaceViewActiveContext, type WorkspacePageTab
 
 import { InsideResourcePreview, ProjectPreviewContext, useResourcePreview } from '../app/resource-preview';
 import { paneDimensions } from '../app/workspace-pages';
+import { tabElementId } from '../lib/tab-navigation';
 import './workspace-stage.css';
 
 /** 对象级页签：领域内点开的服务/文档/变更，页内对照，全关时右组退场。 */
@@ -86,6 +87,7 @@ function SplitWorkspaceStage({
   onCloseAll,
 }: Props) {
   const hasRight = Boolean(objectTabs && objectTabs.length > 0);
+  const panelId = useId();
   const stageRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const readingRef = useRef<HTMLElement>(null);
@@ -240,8 +242,8 @@ function SplitWorkspaceStage({
           >
             <div className="pane-overlay-heading"><strong>阅读材料</strong><Button className="pane-overlay-close" type="text" aria-label="关闭阅读" icon={<CloseOutlined />} onClick={closeReading} /></div>
             <ReadingToggle className="pane-reading-toggle" expanded={expanded} onToggle={toggleReading} />
-            <ObjectTabStrip tabs={objectTabs ?? []} active={activeObject} onActivate={onActivateObject} onClose={onCloseObject} />
-            <div ref={readingBody} className="pane-body"><div className="pane-body-inner">{objectContent}</div></div>
+            <ObjectTabStrip panelId={panelId} tabs={objectTabs ?? []} active={activeObject} onActivate={onActivateObject} onClose={onCloseObject} />
+            <div ref={readingBody} id={panelId} role="tabpanel" aria-labelledby={activeObject ? tabElementId(panelId, activeObject) : undefined} tabIndex={0} className="pane-body"><div className="pane-body-inner">{objectContent}</div></div>
           </section>
         </>
       ) : null}

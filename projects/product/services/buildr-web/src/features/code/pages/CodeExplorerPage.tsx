@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useState } from 'react';
 import { Alert, App, Button, Empty, Select, Spin, Tag } from 'antd';
 import { InfoCircleOutlined } from '@ant-design/icons';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAppShell } from '../../../app/AppShellContext';
 import { ReadingToggle } from '../../../components/ReadingToggle';
 import { ObjectTabStrip } from '../../../components/ObjectTabStrip';
+import { tabElementId } from '../../../lib/tab-navigation';
 import { RepositoryFileBrowser, type RepositoryPreviewFile, type RepositoryTreeScope } from '../../workspace/components/RepositoryFileBrowser';
 import { CodeTreePane } from '../components/CodeTreePane';
 import { useCodeExplorer } from '../hooks/useCodeExplorer';
@@ -15,6 +16,7 @@ import { workspaceHref } from '../../../lib/labels';
 import '../code-explorer.css';
 
 export function CodeExplorerPage() {
+  const panelId = useId();
   const {workspaceId,setBreadcrumbParts}=useAppShell();
   const state=useCodeExplorer(workspaceId||'');
   const location=useLocation(),navigate=useNavigate(),{message}=App.useApp();
@@ -93,7 +95,7 @@ export function CodeExplorerPage() {
     <CodeTreePane hidden={treeHidden} onHost={setHost} storageKey={`buildr.code.tree-width.${workspaceId}`} />
     <div className="code-file-stage">
       <div className="code-file-tabstrip">
-        <ObjectTabStrip className="code-open-files" label="打开的文件" tabs={fileTabs} active={active?.key} onActivate={key=>{const tab=state.tabs.find(item=>item.key===key);if(tab)state.activate(tab);}} onClose={state.close} />
+        <ObjectTabStrip panelId={panelId} className="code-open-files" label="打开的文件" tabs={fileTabs} active={active?.key} onActivate={key=>{const tab=state.tabs.find(item=>item.key===key);if(tab)state.activate(tab);}} onClose={state.close} />
         {state.entry&&<Button size="small" type="text" onClick={returnTask}>{isTaskReturnPath(state.entry.from.pathname,workspaceHref(workspaceId,'/tasks')) ? '返回任务' : '返回源代码管理'}</Button>}
         <ReadingToggle className="code-reading-toggle" expanded={treeHidden} onToggle={()=>setTreeHidden(value=>!value)} />
       </div>
@@ -102,6 +104,7 @@ export function CodeExplorerPage() {
       {!state.catalog&&!state.catalogError&&<div className="repository-reading-empty"><Spin />正在读取代码库…</div>}
       {state.catalog?.repositories.length===0&&<Empty description="工作空间尚未登记代码库" />}
       {state.catalog&&state.catalog.repositories.length>0&&!state.sources.length&&<div className="code-range-outside" role="status">所选代码库与工作树没有共同目录，请调整筛选。</div>}
+      <div className="object-tab-panel" id={panelId} role={active ? 'tabpanel' : undefined} aria-labelledby={active ? tabElementId(panelId, active.key) : undefined} tabIndex={active ? 0 : undefined}>
       <RepositoryFileBrowser global readerActive sidebarHost={host} treeRepositories={treeRepositories} files={files} repositoryName={selectedRepo?.name} repositoryId={active?.repositoryId} checkoutId={active?.checkoutId||undefined} observedDigest={file?.digest} observedRevision={file?.revision} observedAt={file?.observedAt} selectedRepositoryId={active?codeBrowserKey(active):undefined} selectedPath={active?.path||''} selectionKey={active?.key}
         onSelect={(path,line,matchQuery)=>active&&state.open(active,path,line,false,matchQuery)} onSelectRepositoryFile={openFile} context={context}
         location={file?.source.location||selectedMember?.path||''} version={file?.source.version||active?.commitHash||'当前文件'} historical={Boolean(active?.commitHash)} focusLine={active?.line} focusRequest={active?.focusRequest}
@@ -113,6 +116,7 @@ export function CodeExplorerPage() {
         </>}
         onRetry={()=>state.refresh()} onViewCurrent={()=>{if(!active)return;if(!active.checkoutId){message.info('此历史文件的当前工作树尚未确认，请从目录选择实际来源。');return;}state.open({repositoryId:active.repositoryId,checkoutId:active.checkoutId},active.path);}} onHideTree={()=>setTreeHidden(true)}
         markdownRevision={Object.keys(media).join(',')} markdownOptions={{allowRelativeLinks:true,imageResolver:href=>media[href]?{href:media[href]}:null,onRelativeLinkClick:href=>{if(!active)return;const path=relativeCodeLink(active.path,href);if(path)state.open(active,path);else message.info('此链接不在当前代码库内。');}}} />
+      </div>
     </div>
   </div>;
 }

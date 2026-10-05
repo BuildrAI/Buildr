@@ -5,7 +5,7 @@ import { Task, type ParentCompletion, type TaskResultHistory, type TaskRetrospec
 
 type SqlRow = Record<string, SQLOutputValue>;
 export type TaskRelation = { taskId: string; title: string; status: TaskStatus };
-export type TaskTableQuery = { taskIds?: string[] };
+export type TaskTableQuery = { taskIds?: string[]; parentTaskId?: string };
 
 function taskRecordError(code: string, message: string, status = 500, details?: unknown): Error {
   return Object.assign(new Error(message), { code, status, details, taskRecordBusiness: true });
@@ -72,11 +72,18 @@ function mapTask(row: SqlRow, summaryOnly = false): Task {
 }
 
 function query(input: TaskTableQuery = {}): { sql: string; parameters: SQLInputValue[] } {
+  const conditions: string[] = [];
+  const parameters: SQLInputValue[] = [];
   if (input.taskIds) {
     if (!input.taskIds.length) return { sql: 'SELECT * FROM tasks WHERE 0 = 1', parameters: [] };
-    return { sql: `SELECT * FROM tasks WHERE task_id IN (${input.taskIds.map(() => '?').join(', ')}) ORDER BY task_id`, parameters: input.taskIds };
+    conditions.push(`task_id IN (${input.taskIds.map(() => '?').join(', ')})`);
+    parameters.push(...input.taskIds);
   }
-  return { sql: 'SELECT * FROM tasks ORDER BY task_id', parameters: [] };
+  if (input.parentTaskId !== undefined) {
+    conditions.push('parent_task_id = ?');
+    parameters.push(input.parentTaskId);
+  }
+  return { sql: `SELECT * FROM tasks${conditions.length ? ` WHERE ${conditions.join(' AND ')}` : ''} ORDER BY task_id`, parameters };
 }
 
 const SUMMARY_COLUMNS = 'task_id, title, intent, status, result_summary, created_at, updated_at, parent_task_id, is_parent, parent_completion_json, retrospective_state, retrospective_document_digest, brief_digest, result_history_digest';

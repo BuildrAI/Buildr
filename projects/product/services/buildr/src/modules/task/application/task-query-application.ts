@@ -294,7 +294,7 @@ export function registerTaskQueryApplication(runtime: TaskQueryApplicationRuntim
 
   function parentContext(context: SqliteContext, root: string, taskIdValue: string, current?: TaskRecord) {
     const parent = current || readIn(context, root, taskIdValue).record;
-    const childTasks = tasks.readMany(context).filter((item) => item.parentTaskId === taskIdValue);
+    const childTasks = tasks.readMany(context, { parentTaskId: taskIdValue });
     const childIds = childTasks.map((item) => item.taskId);
     const childProjects = projects.readMany(context, childIds);
     const childServices = services.readMany(context, childIds);

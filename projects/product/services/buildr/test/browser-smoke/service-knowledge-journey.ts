@@ -58,7 +58,8 @@ export async function runServiceKnowledgeJourney({ page, workspaceRoot, workspac
     assert.equal(await visible().locator('.pane-right:visible').count(), 1, '始终只有一个副屏');
     assert.deepEqual(await page.locator('.workspace-tabstrip .pane-tab-text').allTextContents(), mainTabs, '服务知识不得增加主标签');
     assert.equal(await visible().locator('#service-table-wrap').isVisible(), true, '主屏服务目录保持可见');
-    assert.equal(await page.getByRole('tab', { name: '服务详情 关闭 服务详情', exact: true }).count(), 1, '知识复用当前服务详情标签');
+    assert.equal(await page.getByRole('tab', { name: '服务详情', exact: true }).count(), 1, '知识复用当前服务详情标签');
+    assert.equal(await page.getByRole('button', { name: '关闭 服务详情', exact: true }).count(), 1, '对象关闭是独立可访问控件');
   };
   await visible().locator('#services-search').fill('演示');
   const scopeUrl = `${apiBase}/knowledge/service/${encodeURIComponent(service.id)}`;

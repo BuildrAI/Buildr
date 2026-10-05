@@ -578,7 +578,7 @@ Buildr MUST交付现有`task-manager` workspace Skill作为`buildr.task-record/v
 - **AND** 只有Task业务事实实际变化时才调用Task Record mutation
 
 ### Requirement: 日常正式任务引导必须按阶段装配上下文
-本条研发顺序仅约束显式采用的研发能力；收尾独立触发，MUST不消费研发交接或通过 task next 推荐，已有验证能力只保护自身动作。
+本条只约束当前已触发专业动作所需的上下文；收尾独立触发，MUST不消费已退役的研发交接或依赖统一研发顺序，已有验证能力只保护自身动作。
 Buildr 内置任务 Skills MUST 引导 Agent 只在当前动作成为 next executable action 时读取该动作所需的 Skill、capability contract、selected provider 与直接 authority，并 MUST 将后续阶段的专业上下文延后到对应动作开始前。该引导 MUST NOT允许跳过已触发 Skill、required Rule、provider contract、授权或 result evidence。
 
 #### Scenario: Triage 正在选择任务路径
@@ -587,7 +587,7 @@ Buildr 内置任务 Skills MUST 引导 Agent 只在当前动作成为 next execu
 - **AND** MUST不要求在 proposal 前预先读取 Verification、Completion 等尚未到达阶段的完整 provider 指引
 
 #### Scenario: 已具备进入 proposal 的事实
-- **WHEN** 用户已授权实现，Task、Environment 与 Development begin 所需事实已经完整
+- **WHEN** 用户已授权实现，任务（Task）、实际工作位置及当前动作所需的事实已经明确
 - **THEN** guidance MUST引导 Agent 进入 proposal 或当前首个研发动作
 - **AND** MUST不因收集非当前阶段信息、预读下游 Skills 或建立额外进度 authority而延迟该动作
 
@@ -597,7 +597,7 @@ Buildr 内置任务 Skills MUST 引导 Agent 只在当前动作成为 next execu
 - **AND** 后续 MUST只在 scope、authority 或相关事实变化时增量刷新，不得把该 map 写成新的产品 authority或反复全量扫描
 
 ### Requirement: 验证范围引导必须保持计划预览与正式 evidence 分离
-Buildr 任务 Skills MUST 在 Project 已提供 plan-only 或 dry-run 能力时，引导 Agent先消费该计划以判断 affected 范围、成本与补充风险，再选择必要的反馈和正式 capability；计划预览 MUST NOT作为 Verification evidence、Result fact或跳过 required capability 的依据。Project 未提供计划入口时，guidance MUST允许 Agent依据变更路径、declaration 与风险作出有证据的范围判断，不得因此阻塞。
+Buildr 任务技能（Skill）MUST 在项目（Project）已提供只读计划或试运行能力时，引导智能体（Agent）先消费计划以判断影响范围、成本与补充风险，再选择必要的真实检查；计划预览 MUST NOT 作为实际检查结果、任务验证报告（Task Verification Report）事实或跳过必要检查的依据。项目未提供计划入口时，指引 MUST 允许智能体依据变更路径、测试地图与风险作出有证据的范围判断，不得因此阻塞。
 
 #### Scenario: Project 提供验证计划预览
 - **WHEN** Project registry 或现有命令提供不会执行测试的 affected plan
@@ -605,17 +605,17 @@ Buildr 任务 Skills MUST 在 Project 已提供 plan-only 或 dry-run 能力时�
 - **AND** MUST结合计划覆盖与任务风险决定是否需要额外反馈，避免仅凭习惯重复整套测试
 
 #### Scenario: 进入正式 Verification
-- **WHEN** stable Content Target 已形成且 Development policy 要求正式 capabilities
-- **THEN** Task Verification MUST实际执行或复用符合 invocation 语义的 required capabilities，并由 Application维护 current Result
-- **AND** 先前 plan preview、CLI 输出或 Agent 推理 MUST不替代该 execution 与 repository authority
+- **WHEN** 智能体（Agent）已完成相关检查并准备登记当前内容的正式验证报告
+- **THEN** 任务验证（Task Verification）MUST 校验并保存真实检查、未覆盖项和结论，由应用（Application）维护当前报告，不代替智能体执行测试
+- **AND** 计划预览或推理 MUST NOT 冒充实际执行结果，检查名称或单次命令成功不得替代覆盖判断
 
 #### Scenario: Project 没有计划预览能力
-- **WHEN** Project 只声明可执行 verification capability而没有 plan-only 或 dry-run 入口
+- **WHEN** 项目（Project）只声明已有检查入口而没有只读计划或试运行入口
 - **THEN** Agent MUST基于实际变更、declaration applicability 与已识别风险选择范围
 - **AND** guidance MUST不要求创建 planner、猜测命令或把缺少 preview 记录为 coverage gap
 
 ### Requirement: 日常任务边界检查必须动作就近且保持 Agent 判断
-Buildr 内置任务 Skills MUST 在 Agent 即将写 Change checklist、调用 OpenSpec converge、选择 focused regression 或决定 exact Verification invocation 重执行时提供动作就近的最小检查。该 guidance MUST NOT建立新的状态、关键词门禁、自动 root 选择或基于效率指标的自动推进逻辑。
+Buildr 内置任务技能（Skill）MUST 在智能体（Agent）即将写变更实施清单（Change Checklist）、调用 OpenSpec 合流、选择局部回归或判断已有检查是否仍可复用时提供动作就近的最小检查。该指引 MUST NOT 建立新的状态、关键词门禁、自动工作根选择或基于效率指标的自动推进逻辑。
 
 #### Scenario: Agent 写入 Change checklist
 - **WHEN** Agent 创建或修订 `tasks.md`
@@ -623,9 +623,9 @@ Buildr 内置任务 Skills MUST 在 Agent 即将写 Change checklist、调用 Op
 - **AND** MUST不要求预读 Verification、Candidate、Completion、Finish 或 cleanup 的完整下游流程来填充 checklist
 
 #### Scenario: identity 输入已经变化
-- **WHEN** Content Target、verification declaration、capability set 或其他 invocation identity 输入已经变化
-- **THEN** Task Verification guidance MUST把后续执行视为新 identity 的首次执行
-- **AND** Agent MUST不重复播报“未传 `--retry`”；只有准备重执行 exact identity 或解释复用结果时才说明显式 retry 语义
+- **WHEN** 内容版本、相关测试地图、工具或运行条件已经变化
+- **THEN** 任务验证（Task Verification）指引 MUST 重新判断受影响检查的适用性，并选择必要的补充检查
+- **AND** MUST 保留原执行事实，不把旧结果描述为新内容已经验证，也不因登记报告或阶段转换重复仍有效的检查
 
 #### Scenario: 团队提供窄任务耗时参考
 - **WHEN** 用户或团队为一类任务提供耗时参考区间
@@ -633,12 +633,12 @@ Buildr 内置任务 Skills MUST 在 Agent 即将写 Change checklist、调用 Op
 - **AND** MUST不把该数值固化为通用产品阈值、Result 字段、gate 或自动缩减验证范围的依据
 
 ### Requirement: workflow guidance 必须保留用户调整边界
-Buildr guidance MUST把Snapshot `required`解释为不可安全绕过的authority前置，把`recommended`解释为可由用户根据实际情况调整的默认路径。guidance MUST不把wall-clock参考目标、调用次数或recommendation编码为gate、自动推进或成功条件。
+Buildr 指引 MUST 区分具体动作不可安全绕过的权威与授权边界，以及用户可按实际情况调整的推荐路径；MUST NOT 依赖已退役的统一流程快照（Snapshot）。指引 MUST 不把耗时参考、调用次数或推荐方式编码为门禁、自动推进或成功条件。
 
 #### Scenario: 用户选择合法替代动作
-- **WHEN** 用户基于当前事实调整recommended顺序、验证范围或专业provider
-- **THEN** Agent MUST通过对应owner contract核验并执行该选择
-- **AND** MUST不要求修改Snapshot、伪造next或绕过既有fail-closed authority
+- **WHEN** 用户基于当前事实调整推荐顺序、验证范围或专业能力提供者（Provider）
+- **THEN** 智能体（Agent）MUST 按对应能力契约（Capability Contract）核验并执行该选择
+- **AND** MUST 不补造统一快照或推进状态，也不得绕过既有授权和具体动作的失败关闭边界
 
 ### Requirement: 协作者更新必须与本地 self-bootstrap activation 排他路由
 Buildr Agent workflow MUST依据当前Workspace是否安装自举Component与已交付变化范围选择自举或普通Workspace update。命中自举范围时MUST使用唯一`buildr-self-bootstrap-sync`执行器；Task编号仅为可选说明，不查询Task状态作为门禁。真实基线、delivered ref、retained checkout与Product Node/Doctor事实继续必需；MUST NOT从commit author、缺失Task或任务终态推断适用性。

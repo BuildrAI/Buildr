@@ -92,6 +92,78 @@ export async function runWorkbenchJourney({ t, page, runtime, workspaceRoot, oth
     assert.equal(await page.locator('#project-detail-name').innerText(), demoProjectName);
   });
 
+  await t.test('工作台必要辅助文字保持柔和主题且在实际背景上可读', async () => {
+    await page.goto(`${workspaceUrl}/overview`);
+    await page.locator(`#workbench-active [data-workbench-task="${crossId}"]`).waitFor();
+    const measure = async () => {
+      await page.evaluate(async () => {
+        const workbench = document.getElementById('workbench-overview');
+        const entering = document.getAnimations().filter(animation => {
+          const effect = animation.effect;
+          if (!(effect instanceof KeyframeEffect) || Number(effect.getTiming().iterations) === Infinity) return false;
+          const target = effect.target;
+          return target instanceof Element && Boolean(workbench && (target.contains(workbench) || workbench.contains(target)));
+        });
+        await Promise.all(entering.map(animation => animation.finished.catch(() => {})));
+      });
+      return page.locator('.workbench-task-meta, .workbench-muted, .workbench-observed, .workbench-coverage, .workbench-resource-row small, .workbench-eyebrow, .workbench-count, .workbench-attention-card footer > span, .workbench-upnext h3, .workbench-empty-inline p, .workbench-rail-empty p, .workbench-day-summary dt, .workbench-day-summary dd, .workbench-nav-empty, .workbench-attention-label, .workbench-page .lifecycle-badge, .workbench-page a').evaluateAll(nodes => {
+      const color = (raw: string) => {
+        const match = raw.match(/^rgba?\(([^)]+)\)$/);
+        if (!match) throw new Error(`无法解析实际颜色 ${raw}`);
+        const values = match[1].split(',').map(Number);
+        return { rgb: values.slice(0, 3), alpha: values[3] ?? 1 };
+      };
+      const luminance = (rgb: number[]) => rgb.map(value => {
+        const unit = value / 255;
+        return unit <= 0.04045 ? unit / 12.92 : ((unit + 0.055) / 1.055) ** 2.4;
+      }).reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index], 0);
+      const textElements = new Set<HTMLElement>();
+      for (const root of nodes) {
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+        while (walker.nextNode()) {
+          const parent = walker.currentNode.parentElement;
+          if (walker.currentNode.textContent?.trim() && parent instanceof HTMLElement && parent.getClientRects().length && !parent.closest('[hidden],[aria-hidden="true"]')) textElements.add(parent);
+        }
+      }
+      return [...textElements].map(node => {
+        const foreground = color(getComputedStyle(node).color);
+        for (let ancestor: Element | null = node; ancestor; ancestor = ancestor.parentElement) {
+          const opacity = getComputedStyle(ancestor).opacity;
+          if (Number(opacity) !== 1) throw new Error(`需要核对实际容器透明度的合成：${node.textContent?.trim()}；${ancestor.tagName}#${ancestor.id}.${ancestor.getAttribute('class') || ''} opacity=${opacity}`);
+        }
+        let current: Element | null = node, remaining = 1;
+        const background = [0, 0, 0];
+        while (current) {
+          const style = getComputedStyle(current);
+          const candidate = color(style.backgroundColor);
+          candidate.rgb.forEach((value, index) => { background[index] += value * candidate.alpha * remaining; });
+          remaining *= 1 - candidate.alpha;
+          if (remaining === 0) break;
+          current = current.parentElement;
+        }
+        if (remaining !== 0) throw new Error('实际背景未取得');
+        const paintedText = foreground.rgb.map((value, index) => value * foreground.alpha + background[index] * (1 - foreground.alpha));
+        const front = luminance(paintedText), back = luminance(background);
+        return { text: node.textContent!.trim().slice(0, 80), ratio: (Math.max(front, back) + 0.05) / (Math.min(front, back) + 0.05) };
+      });
+      });
+    };
+    const contrast = await measure();
+    assert.ok(contrast.length >= 8, '检查实际概览、归属、时间、每日摘要和文本链接');
+    assert.ok(contrast.some(item => item.text.includes('新增')) && contrast.some(item => item.text.includes('工作台浏览器场景中的真实每日摘要')), '每日摘要标签与正文进入实际颜色组合检查');
+    for (const item of contrast) assert.ok(item.ratio >= 4.5, `${item.text}: ${item.ratio.toFixed(2)}:1`);
+    await capture(page, 'workbench-readable-secondary-text.png');
+    const observed = await read(`/tasks/${crossId}/work-context`);
+    assert.ok(observed.context);
+    await put(`/tasks/${crossId}/work-context`, { expectedContextDigest: observed.contextDigest, progress: observed.context.progress, nextStep: observed.context.nextStep, attention: { kind: 'acceptance', reason: '请验收这项阶段成果。' } });
+    await page.reload();
+    await page.locator('.workbench-attention-label.acceptance').first().waitFor();
+    const acceptance = await measure();
+    assert.ok(acceptance.some(item => item.text.includes('验收')), '蓝色验收徽标进入实际组合');
+    for (const item of acceptance) assert.ok(item.ratio >= 4.5, `${item.text}: ${item.ratio.toFixed(2)}:1`);
+    assert.equal(runtime.inspectTask(workspaceRoot, crossId).recordDigest, originalRecord.recordDigest);
+  });
+
   await t.test('人的回应保存到同一工作摘要并移出事项，任务记录保持不变', async () => {
     const pending = await read(`/tasks/${crossId}/work-context`);
     await put(`/tasks/${crossId}/work-context`, { expectedContextDigest: pending.contextDigest, progress: '已经梳理两项关联项目的当前资料。', nextStep: '根据本次回应继续实施。', attention: { kind: 'decision', reason: '请确认两项项目采用同一工作方向。' } });

@@ -51,6 +51,9 @@
 [父任务协调文章](../docs/architecture/task-system.md)解释整体目标与独立成果的关系，[完成时序图](../archify/flows/task-parent-coordination.html)展示核对、授权、写入与拒绝分支。实现复用本地图的任务查询、写入和存储，不维护另一份父子状态。
 
 - **读取成果**：任务查询 → 父任务协调应用 → 任务详情中的 `ParentCoordinationPanel.tsx`。查询从当前父任务及直接子任务计算 `recordDigest` 与 `snapshotIdentity`；详情展示总体目标，面板展示各子任务结果和已保存的完成依据，不按子任务数量推断整体完成。
+
+父子观察的 `parentContext` 向记录仓库传入 `parentTaskId`，由 `parent_task_id` 的参数化条件选择直接子项，再按这些子项的身份批量装配项目、服务和变更范围，保持同一事务（Transaction）的当前观察。普通任务完成也使用这条路径，不加载无关任务的说明正文或更正历史；直接子项排序、记录摘要、观察身份和父任务验收语义保持不变。
+
 - **普通完成**：`useTaskActions.ts` 打开表单时重读协调结果；`ParentCompletionFields.tsx` 收集总体验收、逐个子任务处置及确认；`parentCoordination.ts` 把这些输入与已观察身份组成请求。任务写入应用在同一事务内核对任务版本、父子观察身份、子任务终态和处置完整性，成功后只保存这个父任务的结果与授权依据。
 - **组合结束**：任务详情中的 `CompositeTaskEndDrawer.tsx` 读取当前快照，让用户对未结束子任务明确选择解除关联、完成或放弃，再通过 `taskApi.end` 调用 `endTask`，在事务中一起保存。子任务本身仍有子任务时，只能解除关联或先进入该子任务处理。上面的完成时序图仅展示普通完成。
 - **处理冲突**：目标、关系或结果已变化时，后端拒绝陈旧输入；`useTaskActions.ts` 关闭旧完成表单、清除旧确认并重读。智能体（Agent）或人据当前成果重新判断；软件不替用户补造授权，也不自动结束其他任务。
@@ -81,7 +84,7 @@
       - [cli/task.ts](../../services/buildr/src/modules/task/interfaces/cli/task.ts) — 创建、查看、修订、完成和放弃任务
       - [http/task-http.ts](../../services/buildr/src/modules/task/interfaces/http/task-http.ts) — 网页请求、输入转换与写入保护
     - `application/` — 组织任务用例
-      - [task-query-application.ts](../../services/buildr/src/modules/task/application/task-query-application.ts) — 读取当前任务与直接子任务，计算单任务版本及完成相关父子观察身份
+      - [task-query-application.ts](../../services/buildr/src/modules/task/application/task-query-application.ts) — 读取当前任务，以父任务身份限定直接子项及其范围装配，计算单任务版本及完成相关父子观察身份
       - [task-command-application.ts](../../services/buildr/src/modules/task/application/task-command-application.ts) — 在同一事务内重验版本、父子观察身份和子任务处置，保存明确完成依据；失败不改状态
       - [task-validation.ts](../../services/buildr/src/modules/task/application/task-validation.ts) — 校验任务输入，以及父任务总体验收、逐子任务处置和授权来源与原意的合法结构
       - [parent-coordination-application.ts](../../services/buildr/src/modules/task/application/parent-coordination-application.ts) — 展示总体目标、直接子任务、未结束项和既有完成依据；旧计划仅作只读历史
@@ -92,7 +95,7 @@
       - [task-review.ts](../../services/buildr/src/modules/task/domain/task-review.ts) — 被审对象、审阅范围与结论
       - [task-verification.ts](../../services/buildr/src/modules/task/domain/task-verification.ts) — 验证报告及结论约束
     - `persistence/` — 独立事实的保存
-      - [task-repository.ts](../../services/buildr/src/modules/task/persistence/task-repository.ts) — 任务主表、说明正文与摘要、父身份和直接父关系；列表投影不读正文，更正历史随记录保全
+      - [task-repository.ts](../../services/buildr/src/modules/task/persistence/task-repository.ts) — 任务主表、说明正文与摘要、父身份和直接父关系；`taskIds` 与 `parentTaskId` 可组合参数化筛选，列表投影不读正文，更正历史随记录保全
       - [task-review-repository.ts](../../services/buildr/src/modules/task/persistence/task-review-repository.ts) — 两类审查槽的摘要比较与保存
       - [task-verification-repository.ts](../../services/buildr/src/modules/task/persistence/task-verification-repository.ts) — 当前验证报告的原子替换
     - **`work-context/`** — 进展、待决事项与人的答复

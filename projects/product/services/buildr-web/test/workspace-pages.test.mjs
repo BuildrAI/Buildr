@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { tabForPath, parseTabs, paneDimensions, readRatio, moveTab, ratioStorageKey, resourcePreview, previewOwnerPath, previewOwnerSearch, workspacePageSearch } from '../src/app/workspace-pages.ts';
+import { tabForPath, parseTabs, paneDimensions, readRatio, moveTab, reorderPageTabs, ratioStorageKey, resourcePreview, previewOwnerPath, previewOwnerSearch, workspacePageSearch } from '../src/app/workspace-pages.ts';
 test('恢复页签只接受当前工作空间已支持的路由并去重', () => {
  const valid={path:'/workspaces/a/skills',title:'技能'};
  const raw=JSON.stringify([valid,valid,{path:'/workspaces/b/skills'},{path:'https://example.com'},{path:'/workspaces/a/projects/%2e%2e'},{path:'/workspaces/a/services/p/s/edit'}]);
@@ -67,6 +67,14 @@ test('标签移动保留身份与集合，支持向前向后和边界', () => {
  assert.deepEqual(moveTab(tabs,'c',0).map(t=>t.key),['c','a','b']);
  assert.deepEqual(moveTab(tabs,'a',99).map(t=>t.key),['b','c','a']);
  assert.deepEqual(tabs.map(t=>t.key),['a','b','c']);
+});
+
+test('页签重排使用可见索引，目录不占据键盘或拖动的目标位置', () => {
+ const tabs=[{key:'dir:projects',kind:'dir'},{key:'a',kind:'proj'},{key:'dir:services',kind:'dir'},{key:'b',kind:'proj'}];
+ assert.deepEqual(reorderPageTabs(tabs,'a',1).map(tab=>tab.key),['dir:projects','b','dir:services','a']);
+ assert.deepEqual(reorderPageTabs(tabs,'b',0).map(tab=>tab.key),['dir:projects','b','dir:services','a']);
+ assert.deepEqual(reorderPageTabs(tabs,'a',99).filter(tab=>tab.kind!=='dir').map(tab=>tab.key),['b','a']);
+ assert.deepEqual(tabs.map(tab=>tab.key),['dir:projects','a','dir:services','b']);
 });
 
 test('项目详情与知识共享一个项目标签，恢复旧标签去重且保留检索上下文',()=>{

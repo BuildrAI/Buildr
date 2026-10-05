@@ -2,6 +2,22 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 
+/** Missing leaves are only known absent when their nearest existing ancestor can be resolved. */
+export function isConfirmedMissingPath(value: string): boolean {
+  try {
+    const resolved = path.resolve(value);
+    if (fs.lstatSync(resolved, { throwIfNoEntry: false })) return false;
+    let ancestor = path.dirname(resolved);
+    while (!fs.lstatSync(ancestor, { throwIfNoEntry: false })) {
+      const parent = path.dirname(ancestor);
+      if (parent === ancestor) return false;
+      ancestor = parent;
+    }
+    fs.realpathSync.native(ancestor);
+    return true;
+  } catch { return false; }
+}
+
 export function normalizeFilesystemPath(value: any, platform: any = process.platform): any  {
   const pathApi = platform === 'win32' ? path.win32 : path.posix;
   let normalized = String(value);

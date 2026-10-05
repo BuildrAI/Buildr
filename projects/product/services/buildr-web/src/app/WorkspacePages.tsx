@@ -4,7 +4,8 @@ import { UNSAFE_LocationContext, useLocation, useNavigate, useNavigationType, us
 import { WorkspaceTabsContext, WorkspaceViewActiveContext } from './pageTabs';
 import { ResourcePreviewContext, resourcePreview, type PreviewState, type ResourcePreview } from './resource-preview';
 import { PageTabStrip } from './PageTabStrip';
-import { moveTab, parseTabs, previewOwnerPath, previewOwnerSearch, ratioStorageKey, readRatio, tabForPath, tabsStorageKey, workspacePageSearch, type WorkspacePageTab } from './workspace-pages';
+import { tabElementId, tabPanelId } from '../lib/tab-navigation';
+import { reorderPageTabs, parseTabs, previewOwnerPath, previewOwnerSearch, ratioStorageKey, readRatio, tabForPath, tabsStorageKey, workspacePageSearch, type WorkspacePageTab } from './workspace-pages';
 
 type LocationValue = React.ContextType<typeof UNSAFE_LocationContext>;
 type Visited = { path: string; node: ReactNode; location: LocationValue; instance: string };
@@ -13,6 +14,7 @@ function write(key: string, value: string) { try { localStorage.setItem(key, val
 
 /** Retains only visited workspace pages; each outlet keeps its own route and location. */
 export function WorkspacePages({ workspaceId, renderResource }: { workspaceId: string; renderResource: (item: ResourcePreview) => ReactNode }) {
+  const tabPrefix = `workspace-${workspaceId}`;
   const { forgetWorkspacePage } = useAppShell();
   const outlet = useOutlet();
   const location = useLocation();
@@ -145,7 +147,7 @@ export function WorkspacePages({ workspaceId, renderResource }: { workspaceId: s
     setVisited((prev) => prev.filter((p) => tabForPath(workspaceId, p.path)?.key !== key));
     if (tabForPath(workspaceId, location.pathname)?.key === key) { const remaining = next.filter(tab => tab.kind === 'proj'); const target = remaining.at(-1) || fallback; navigate({ pathname: target.path, search: target.search || "" }); }
   }, [tabs, workspaceId, location.pathname, navigate, forgetWorkspacePage]);
-  const reorder = useCallback((key: string, index: number) => setTabs((prev) => moveTab(prev, key, index)), []);
+  const reorder = useCallback((key: string, index: number) => setTabs((prev) => reorderPageTabs(prev, key, index)), []);
   const setRatio = useCallback((value: number) => {
     updateRatio(value);
     write(ratioStorageKey(workspaceId), String(value));
@@ -156,9 +158,11 @@ export function WorkspacePages({ workspaceId, renderResource }: { workspaceId: s
   const displayTabs = current && !resourcePreview(workspaceId, location.pathname) && !tabs.some((t) => t.key === current.key) ? [...tabs, current] : tabs;
   return <ResourcePreviewContext.Provider value={{ navigationType, navigationKey: location.key, taskBriefId: location.state?.taskBriefId, render: renderResource, states: previews, open: openPreview, identifyTask, activate: activatePreview, close: closePreview, clear: clearPreview, remove: removePreviewResource }}><WorkspaceTabsContext.Provider value={{ tabs: displayTabs, register, close, reorder, ratio, setRatio, reportPaneWidth }}>
     <div className="workspace-pages" hidden={!current}>
-      <div className="workspace-page-tabs" hidden={location.pathname.startsWith(`/workspaces/${workspaceId}/code/`)} style={{ width: `calc(100% - ${paneWidths[location.pathname] || 0}px)` }}><PageTabStrip tabs={displayTabs.filter(tab => tab.kind !== 'dir')} onClose={close} onReorder={reorder} /></div>
+      <div className="workspace-page-tabs" hidden={location.pathname.startsWith(`/workspaces/${workspaceId}/code/`)} style={{ width: `calc(100% - ${paneWidths[location.pathname] || 0}px)` }}><PageTabStrip idPrefix={tabPrefix} tabs={displayTabs.filter(tab => tab.kind !== 'dir')} onClose={close} onReorder={reorder} /></div>
       <div className="workspace-page-stack" onClickCapture={captureResourceLink}>
-        {entries.map((entry) => <div key={entry.path + ":" + entry.instance} className="workspace-page" hidden={entry.path !== location.pathname || !current}>
+        {entries.map((entry) => <div key={entry.path + ":" + entry.instance} className="workspace-page" hidden={entry.path !== location.pathname || !current}
+          id={tabPanelId(tabPrefix, entry.path)} role={tabForPath(workspaceId, entry.path)?.kind === 'proj' ? 'tabpanel' : undefined}
+          aria-labelledby={tabForPath(workspaceId, entry.path)?.kind === 'proj' ? tabElementId(tabPrefix, tabForPath(workspaceId, entry.path)!.key) : undefined}>
           <WorkspaceViewActiveContext.Provider value={entry.path === location.pathname && Boolean(current)}><UNSAFE_LocationContext.Provider value={entry.location}>{entry.node}</UNSAFE_LocationContext.Provider></WorkspaceViewActiveContext.Provider>
         </div>)}
       </div>

@@ -27,6 +27,24 @@ function ready(runtime: any, root: string) {
 function addRepo(runtime: any, root: string, revision: string, code: string, branch: string) {
   return runtime.createCatalogRepository(root, { revision, code, url: 'https://example.com/freshx.git', integrationBranch: branch });
 }
+test('自然显示名在初始化和编辑间一致，空白名称在写入前拒绝', (t: any) => {
+  const runtime: any = createRuntime();
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-display-name-'));
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  const root = path.join(base, '中文 工作目录');
+  runtime.initBuildr(['--target', root, '--description', '中文资料工作空间', '--profile', 'personal', '--source-only']);
+  const initial = runtime.getWorkspace(root);
+  assert.equal(initial.workspace.name, '中文 工作目录');
+  const renamed = runtime.updateWorkspaceMetadata(root, { revision: initial.revision, name: '  研究 🌱 项目  ' });
+  assert.equal(renamed.workspace.name, '研究 🌱 项目');
+  assert.equal(renamed.workspace.id, initial.workspace.id);
+  const invalid = path.join(base, 'invalid');
+  assert.throws(() => runtime.initializeWorkspace({ targetRoot: invalid, name: '   ', description: 'Description', profile: 'personal', agent: null, sourceOnly: true }), /name must be a non-empty string/u);
+  assert.equal(fs.existsSync(invalid), false);
+  const metadata = fs.readFileSync(path.join(root, '.buildr', 'workspace.yml'), 'utf8');
+  assert.throws(() => runtime.updateWorkspaceMetadata(root, { revision: renamed.revision, name: '\n\t ' }), /name must be a non-empty string/u);
+  assert.equal(fs.readFileSync(path.join(root, '.buildr', 'workspace.yml'), 'utf8'), metadata);
+});
 test('fresh initialization creates a current empty catalog and accepts the first project through HTTP', async (t: any) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-fresh-asset-catalog-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

@@ -2,6 +2,7 @@ import { runtimeCommandSelector, selectWorkspaceRuntime, type RuntimeSelection }
 import type { WorkspaceRepository } from '../persistence/workspace-manifest-repository.ts';
 import type { ProjectRepository } from '../persistence/project-manifest-repository.ts';
 import { CATALOG_FILES, renderAssetCatalog } from '../persistence/asset-catalog-repository.ts';
+import { createWorkspace } from '../domain/workspace.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import { createMutationPathGuard } from '../../../infrastructure/filesystem/workspace-mutation.ts';
@@ -185,9 +186,9 @@ export function registerWorkspaceOperations(runtime: WorkspaceOperationsRuntime)
   }
 
   function initializeWorkspace(input: WorkspaceInitializationInput, onAssetsReady: (result: WorkspaceInitializationResult) => void = () => {}) {
-    const { targetRoot, name, description, profile, agent } = input;
-    assertName(name, 'Workspace name');
-    if (!description.trim()) throw new Error('Workspace description must be a non-empty string.');
+    const { targetRoot, profile, agent } = input;
+    const workspaceId = createWorkspaceId();
+    const { name, description } = createWorkspace({ id: workspaceId, name: input.name, description: input.description });
     assertName(profile, 'Workspace profile');
     const sourceOnly = input.sourceOnly === true;
     if (sourceOnly && (agent != null || input.adapterId != null)) throw new Error('--source-only cannot be combined with --agent or --adapter.');
@@ -203,7 +204,6 @@ export function registerWorkspaceOperations(runtime: WorkspaceOperationsRuntime)
       ensureDirectory(path.join(targetRoot, relativeDir));
     }
 
-    const workspaceId = createWorkspaceId();
     const variables: Record<string, any> = {};
     for (const rawEntry of manifest.workspaceFiles) {
       const entry = parseManifestFileEntry(rawEntry, 'workspaceFiles');
