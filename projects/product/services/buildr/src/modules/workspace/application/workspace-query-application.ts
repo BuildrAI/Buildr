@@ -43,10 +43,10 @@ export function resolveWorkspaceIdentity(workspaceId: any, skillsWorkspaceId: an
 }
 
 export function registerWorkspaceQueryApplication(runtime: WorkspaceQueryApplicationRuntime) {
-  function readWorkspaceRecord(targetRoot: any) {
+  function readWorkspaceRecord(targetRoot: any, options: { requireRootProof?: boolean } = {}) {
     let persistence;
     try {
-      persistence = runtime.workspaceRepository.readWorkspacePersistence(targetRoot);
+      persistence = runtime.workspaceRepository.readWorkspacePersistence(targetRoot, options);
     } catch (error: any) {
       if (error.code) throw error;
       throw workspaceError('workspace_metadata_invalid', error.message, 409, { path: '.buildr/workspace.yml' });
@@ -82,8 +82,13 @@ export function registerWorkspaceQueryApplication(runtime: WorkspaceQueryApplica
     };
   }
 
-  function getWorkspace(targetRoot: any) {
-    return publicWorkspace(readWorkspaceRecord(targetRoot));
+  /** Passive ancestor-only locator; identity is verified by the ordinary workspace reader. */
+  function resolveSourceWorkspaceRoot(targetDirectory: string): string | null {
+    return runtime.workspaceRepository.sourceWorkspaceRoot(targetDirectory);
+  }
+
+  function getWorkspace(targetRoot: any, options: { requireRootProof?: boolean } = {}) {
+    return publicWorkspace(readWorkspaceRecord(targetRoot, options));
   }
 
   function workspaceRegistryEntry(root: any) {
@@ -334,6 +339,7 @@ export function registerWorkspaceQueryApplication(runtime: WorkspaceQueryApplica
     workspaceRegistryEntry,
     recoveryPrompt,
     getWorkspace,
+    resolveSourceWorkspaceRoot,
     listRegisteredWorkspaces,
     workspaceMigrationPlan,
     generateWorkspaceCreatePrompt,

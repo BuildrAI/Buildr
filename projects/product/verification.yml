@@ -199,6 +199,7 @@ testing:
     sourcePaths:
       - plugin/**
       - tools/**
+      - sdk-patches/**
       - package.json
     testRoots:
       - test/unit/**
@@ -211,11 +212,14 @@ testing:
       cwd: .
     selection:
       - 开发中按改动选择对应单元、进程或装载测试；完成时运行完整入口
-      - 完整入口使用已核验 DSH SDK；若设置 BUILDR_DSH_SDK_ROOT，须指向同一基线，否则按固定标签获取
+      - 增强源码完整入口必须显式提供 --source-sdk 或 BUILDR_DSH_SOURCE_SDK_ROOT，指向经
+        prepare-source-sdk 重建并核对基线、补丁清单、生成声明与产物摘要的独占软件开发工具包（SDK）；普通未补丁 rc.2 或旧
+        rc.1 不代表新接口支持，不自动修改共享检出或真实配置档（Profile）
       - 桌面应用的真实按钮与跨重启交互另行验收，不能由装载测试替代
       - 自动受影响选择通过 dsh-plugin 调用完整入口并准备固定 SDK 与 pnpm@11.7.0；本族不进入独立 Buildr
         主包候选（Candidate）集合
     requirements:
       - node 24.15.0
       - pnpm
-      - 已核验的 DSH SDK 或获取其发布归档的网络
+      - 已核验的来源增强软件开发工具包（SDK）、持久源码补丁清单及完整 SHA256；构建依赖通过冻结锁文件与 --ignore-scripts
+        预先准备，准备器直接调用构建工具，不执行安装脚本或启用运行时（Runtime）

@@ -1,3 +1,8 @@
+import { readSkillText } from './persistence/skill-content-repository.ts';
+import { readPackageRequiredBlock } from '../../infrastructure/filesystem/required-block.ts';
+import { parseSkillsManifestContent } from './persistence/skill-manifest.ts';
+import { sourceRelativePath } from './persistence/source-object-repository.ts';
+import path from 'node:path';
 import { createSkillContentQuery } from './application/skill-content-query.ts';
 import type { DoctorInput } from '../diagnostics/application/doctor-application.ts';
 import { WORKSPACE_ASSET_SUPPORT, type WorkspaceAssetSupport, WORKSPACE_ROOT_GITIGNORE_ENTRIES } from '../workspace/module.ts';
@@ -38,6 +43,7 @@ import { resolveCapabilityRoute, resolveSkillCapabilityGraph } from './persisten
 
 export const AGENT_ASSETS_MODULE_ID = 'agent-assets';
 export const AGENT_ASSETS_APPLICATION = 'agent-assets.application';
+export const AGENT_ASSETS_SOURCE_READ = 'agent-assets.source-read';
 export const AGENT_ASSETS_RUNTIME = 'agent-assets.runtime';
 export const AGENT_ASSETS_CAPABILITY_QUERY = 'agent-assets.capability-query';
 export const AGENT_ASSETS_INTERNAL = 'agent-assets.internal';
@@ -474,6 +480,13 @@ export function createAgentAssetsModule(infrastructure: AgentAssetsInfrastructur
       return Object.freeze({
         provides: {
           [AGENT_ASSETS_APPLICATION]: application,
+          [AGENT_ASSETS_SOURCE_READ]: Object.freeze({
+            readSkills: (root: string) => { sourceRelativePath(root, 'skills/manifest.yml'); return parseSkillsManifestContent(readSkillText(root, 'skills/manifest.yml', { requireRootProof: true }).content, path.join(root, 'skills', 'manifest.yml'), { validateContracts: false }).skills || []; },
+            readRules: (root: string) => { sourceRelativePath(root, 'rules/manifest.yml'); return rules.readRulesManifestForInspection(root).rules; },
+            readContracts: (root: string) => { sourceRelativePath(root, 'skills/manifest.yml'); return parseSkillsManifestContent(readSkillText(root, 'skills/manifest.yml', { requireRootProof: true }).content, path.join(root, 'skills', 'manifest.yml'), { validateContracts: false }).contracts || []; },
+            requiredBlock: () => readPackageRequiredBlock({ requireRootProof: true }),
+            productSkills: () => packageAssets.readPackageManifest().agentSkills || [],
+          }),
           [AGENT_ASSETS_INTERNAL]: internal,
           [AGENT_ASSETS_OPENSPEC_SUPPORT]: createOpenSpecAssetSupport(Object.freeze({
               assertName: runtimeApplication.assertName,

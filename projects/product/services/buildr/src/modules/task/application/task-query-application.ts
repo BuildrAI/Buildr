@@ -200,6 +200,12 @@ export function registerTaskQueryApplication(runtime: TaskQueryApplicationRuntim
     return runtime.runWorkspaceSqliteRead(root, (context) => readIn(context, root, taskIdValue));
   }
 
+  /** Narrow, read-only Task brief and identity over the canonical existing record authority. */
+  function readTaskBrief(targetRoot: string, taskIdValue: string): { root: string; taskId: string; brief: string | null } {
+    const current = readTask(targetRoot, taskIdValue);
+    return { root: current.root, taskId: current.record.taskId, brief: current.record.brief };
+  }
+
   function assertTaskExistsInContext(context: SqliteContext, _root: string, taskIdValue: string): void {
     taskId(taskIdValue, 'taskId');
     if (!tasks.exists(context, taskIdValue)) throw taskRecordError('task_record_not_found', `Task Record 不存在：${taskIdValue}。`, 404);
@@ -477,7 +483,7 @@ export function registerTaskQueryApplication(runtime: TaskQueryApplicationRuntim
     assertCanonicalTaskWorkspace,
     readTaskInContext: readIn, readParentTaskContextIn: parentContext,
     assertTaskExists, assertTaskExistsInContext,
-    readTask, readTaskTitles, prepareTask, queryTaskViews, readTaskView, readParentTaskContext,
+    readTask, readTaskBrief, readTaskTitles, prepareTask, queryTaskViews, readTaskView, readParentTaskContext,
     queryTasks, inspectTask, inspectTaskView, inspectTaskSummaryView, inspectTaskRetrospectiveDocument,
     renderTaskResult: result, resolveTaskChangeReferences: resolveChangeReferences,
   });

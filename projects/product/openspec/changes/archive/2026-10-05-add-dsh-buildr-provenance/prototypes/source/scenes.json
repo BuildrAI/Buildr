@@ -1,0 +1,81 @@
+{
+  "version": 1,
+  "pages": [
+    {
+      "id": "trajectory",
+      "title": "DSH · 轨迹与来源列",
+      "notes": [
+        {
+          "id": "column",
+          "title": "来源与原始类型分开",
+          "text": "七种原始类型不变。新增独立来源列，按内容或能力证据归属，不把所有非 Buildr 内容说成 DSH 提供。混合行只确认各片段。",
+          "position": "source-column"
+        },
+        {
+          "id": "objects",
+          "title": "原详情追加内容对象",
+          "text": "点击记录才展开详情，概述、参数、结果与定义仍保留；新增内容对象标签可选择稳定身份、查看来源依据及正文。当前内容不能代替历史输入。",
+          "position": "object-detail"
+        },
+        {
+          "id": "views",
+          "title": "在同一执行现场切换",
+          "text": "Buildr 标签只查看明确 Buildr 来源记录。可从该页返回原轨迹并选中同一演示记录；未确认记录不强行归入。",
+          "position": "view-tabs"
+        }
+      ],
+      "states": [
+        {
+          "id": "mixed",
+          "title": "混合 AGENTS 区块",
+          "notes": []
+        },
+        {
+          "id": "unknown",
+          "title": "来源证据缺失",
+          "notes": []
+        },
+        {
+          "id": "external-skill",
+          "title": "外部同名技能",
+          "notes": []
+        },
+        {
+          "id": "scope-mismatch",
+          "title": "声明范围不匹配",
+          "notes": []
+        },
+        {
+          "id": "historical-missing",
+          "title": "历史原文未留存",
+          "notes": []
+        }
+      ]
+    },
+    {
+      "id": "buildr",
+      "title": "DSH · Buildr 独立视图",
+      "notes": [
+        {
+          "id": "objects",
+          "title": "按来源查看内容对象",
+          "text": "这里只整理明确 Buildr 来源的规则、技能、资料与能力。选中才展开对象正文和历史／当前版本，不增加业务计数或回传。",
+          "position": "buildr-object-list"
+        },
+        {
+          "id": "return",
+          "title": "返回原轨迹记录",
+          "text": "点击返回原轨迹，在原记录表中选中相同对象关联记录，并保留原请求和返回。示例序号仅用于这份离线数据。",
+          "position": "return-record"
+        }
+      ],
+      "states": [
+        {
+          "id": "historical-missing",
+          "title": "历史原文未留存",
+          "notes": []
+        }
+      ]
+    }
+  ]
+}

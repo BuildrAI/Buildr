@@ -2,7 +2,8 @@ export const productLayerOf = (relative: string): string => {
   if (relative === 'infrastructure/contracts/public-json.ts') return 'infrastructure';
   const parts: any = relative.split('/');
   if (parts[0] === 'infrastructure') return 'infrastructure';
-  const moduleOffset: any = parts[0] === 'modules' && parts[1] === 'task' && ['change', 'commits', 'changed-files', 'daily-progress', 'work-context', 'materials'].includes(parts[2]) ? 3 : parts[0] === 'modules' ? 2 : 1;
+  const registeredSubmodule = parts[0] === 'modules' && ((parts[1] === 'task' && ['change', 'commits', 'changed-files', 'daily-progress', 'work-context', 'materials'].includes(parts[2])) || (parts[1] === 'agent-assets' && parts[2] === 'source'));
+  const moduleOffset: any = registeredSubmodule ? 3 : parts[0] === 'modules' ? 2 : 1;
   if (!['modules', 'web'].includes(parts[0])) return parts[0];
   if (parts.length === moduleOffset + 1 && /^module\.(?:mjs|ts)$/.test(parts[moduleOffset])) return 'module';
   return ({
@@ -24,6 +25,10 @@ const allowedTargets: any = {
   module: new Set(['interfaces', 'application', 'domain', 'infrastructure']),
 };
 const allowedCrossModulePorts: any = new Set([
+  'modules/agent-assets/source/module.ts -> modules/agent-assets/module.ts',
+  'modules/agent-assets/source/module.ts -> modules/workspace/module.ts',
+  'modules/agent-assets/source/module.ts -> modules/task/module.ts',
+  'modules/agent-assets/source/module.ts -> modules/task/materials/module.ts',
   'modules/code/module.ts -> modules/task/module.ts',
   'modules/code/module.ts -> modules/workspace/module.ts',
   'modules/workbench/module.ts -> modules/task/module.ts',

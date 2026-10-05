@@ -1,3 +1,4 @@
+import { createSourceInspectCli } from '../../modules/agent-assets/interfaces/cli/source-inspect.ts';
 import process from 'node:process';
 import { createRuntime, runtimeContributions } from '../runtime.ts';
 import { registerCommandHelp } from './help.ts';
@@ -24,6 +25,7 @@ const OPENSPEC_MODULE_COMMAND_SLOT = Symbol('openspec-module-command-contributio
 const AGENT_ASSETS_PACKAGE_COMMANDS: any = new Set(['package check', 'package build']);
 const AGENT_ASSETS_RUNTIME_COMMANDS: any = new Set(['runtime list', 'commands check', 'commands add', 'commands remove']);
 const AGENT_ASSETS_SOURCE_COMMANDS: any = new Set([
+  'agent-assets source inspect',
   'component list',
   'component check',
   'component install',
@@ -179,6 +181,7 @@ export const COMMAND_REGISTRY = createCommandRegistry([
   ...createWorkspaceCliContributions(),
   ...createDailyProgressCliContributions(null),
   ...createAgentAssetsCliContributions(),
+  createSourceInspectCli(null),
   ...createGitWorktreeCliContributions(),
   ...createTaskCliContributions(),
   ...createTaskReviewCliContributions(),

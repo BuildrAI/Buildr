@@ -1,3 +1,4 @@
+import { readVerifiedReadonlyBytes } from '../../../../infrastructure/filesystem/verified-readonly-file.ts';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -41,11 +42,18 @@ export function assertPlainPath(root: string, relative: string): string {
   }
   return current;
 }
-export function readBoundedText(root: string, relative: string, maxBytes = MAX_TASK_DOCUMENT_BYTES): { exists: boolean; content: string | null; actualDigest: string | null } {
+export function readBoundedText(root: string, relative: string, maxBytes = MAX_TASK_DOCUMENT_BYTES, options: { requireRootProof?: boolean } = {}): { exists: boolean; content: string | null; actualDigest: string | null } {
   const file = assertPlainPath(root, relative);
   const entry = fs.lstatSync(file, { throwIfNoEntry: false });
   if (!entry) return { exists: false, content: null, actualDigest: null };
   if (!entry.isFile() || entry.size > maxBytes) throw documentError('task_document_unreadable', `任务文档必须是 ${maxBytes} 字节以内的普通文件。`);
+  if (options.requireRootProof) {
+    const bytes = readVerifiedReadonlyBytes(root, relative, maxBytes);
+    let content: string;
+    try { content = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes); } catch { throw documentError('task_document_encoding_invalid', '任务文档必须是合法 UTF-8。'); }
+    if (content.includes('\0')) throw documentError('task_document_encoding_invalid', '任务文档必须是普通文本。');
+    return { exists: true, content, actualDigest: documentDigest(bytes) };
+  }
   const descriptor = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
   try {
     const stat = fs.fstatSync(descriptor);
@@ -103,7 +111,7 @@ export function createTaskProjectDocumentReader(taskQuery: TaskDocumentQuery, pr
     assertPlainPath(executionRoot, path.relative(executionRoot, candidate));
     return candidate;
   }
-  function taskProjectDocument(targetRoot: string, taskId: string, projectCode: string, documentPath: string) {
+  function taskProjectDocument(targetRoot: string, taskId: string, projectCode: string, documentPath: string, options: { requireRootProof?: boolean } = {}) {
     taskActionId(taskId, 'taskId');
     const task = taskQuery.readTask(targetRoot, taskId);
     const scope = task.record.scope;
@@ -130,7 +138,7 @@ export function createTaskProjectDocumentReader(taskQuery: TaskDocumentQuery, pr
         fromCandidate = true;
       }
     }
-    return { schemaVersion: 'buildr.task-project-document/v1', projectCode, path: relative, name: path.posix.basename(relative), ...readBoundedText(sourceRoot, readPath), provenance: fromCandidate ? 'task-worktree-candidate' as const : 'retained-project' as const };
+    return { schemaVersion: 'buildr.task-project-document/v1', projectCode, path: relative, name: path.posix.basename(relative), ...readBoundedText(sourceRoot, readPath, MAX_TASK_DOCUMENT_BYTES, options), provenance: fromCandidate ? 'task-worktree-candidate' as const : 'retained-project' as const };
   }
   return Object.freeze({ taskScopedProjectRoot, taskProjectDocument });
 }

@@ -182,11 +182,15 @@ export function migrateSkillsManifestDocument(document: any, options: any = {}):
   };
 }
 
-export function parseSkillsManifestDocument(manifestPath: any, options: any = {}): any  {
-  ensureFile(manifestPath, `Manifest not found: ${manifestPath}`);
-  const original = parseYaml(fs.readFileSync(manifestPath, 'utf8'), manifestPath);
+/** Parse an already bounded manifest snapshot without reading unrelated contract bodies. */
+export function parseSkillsManifestContent(content: string, manifestPath: string, options: any = {}): any {
+  const original = parseYaml(content, manifestPath);
   validateSkillsManifestDocument(original, manifestPath, options);
   return options.migrate === false ? original : migrateSkillsManifestDocument(original, { manifestPath });
+}
+export function parseSkillsManifestDocument(manifestPath: any, options: any = {}): any  {
+  ensureFile(manifestPath, `Manifest not found: ${manifestPath}`);
+  return parseSkillsManifestContent(fs.readFileSync(manifestPath, 'utf8'), manifestPath, options);
 }
 
 export function validateProjectCapabilitiesDocument(document: any, file: any = 'capabilities.yml'): any  {

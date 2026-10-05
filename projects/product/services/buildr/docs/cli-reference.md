@@ -269,3 +269,15 @@ resolved `skill-url` 默认具有有限请求时间。维护者可设置：
 值必须是 `1..120000` 的整数毫秒。生产环境建议为 resolved source 提供 `sha256-<hex>` integrity。
 
 父任务使用 `task create --parent-task` 或 `task update --parent-task` 明确标记；`--parent <id>` 表示子任务归属。完成父任务时提供 `--expected-record <recordDigest>` 与 `--parent-completion <json-file>`，输入格式由随包 `task-manager` 说明。子任务完成不自动完成父任务。
+
+## 被动来源与内容对象读取
+
+`buildr agent-assets source inspect --target <workspace> --input <JSON-file|-> --json` 是独立被动只读入口；`--target` 可为工作空间（Workspace）根或其内部当前目录，仅沿当前目录祖先寻找最近元数据入口，再核对工作空间身份，不扫描其他目录或登记表。文件的相对定位器仍相对已确认工作空间（Workspace）根，实际调用方宜传绝对定位器。该入口不需要网页服务，不启动应用、不修复投射、不登记工作空间（Workspace）、不写业务或遥测。输入版本为 `buildr.agent-asset-source-observations/v1`，包含可选 `scope` 和 `observations`。`scope` 是已登记项目（Project）的查看上下文（Viewing Context），不是来源权威或扩大读取许可；每个对象的 `scope` 单独返回真实登记范围。当前规则（Rule）只解析工作空间（Workspace）根清单和核心区块，不冒称支持项目级规则清单。每项需明确 `id` 与 `type`（`file`、`skill`、`task-brief`、`task-material`、`capability`）；文件和技能（Skill）使用实际 `locator.path`，可附 `resourceBase`、`provider` 和 `adapterId`，当次正文用 `observedContent` 或完整 `observedDigest: sha256-<64hex>`。裸名称和提供者字符串不能证明归属。
+
+输入可选 `mode: metadata|content`，默认 `content` 保持独立读取兼容。`metadata` 返回身份、定位、版本、片段范围和依据，`current` 为 `null`、`observed` 不含正文。DSH 当次来源采集（Capture）以实际读取摘要调用此模式，不发送普通用户正文；保存后的查看路径直接读取原事件来源及片段，不调用本接口反查历史。
+
+输出版本为 `buildr.agent-asset-source-result/v1`，按项返回 `detected`、`unknown`、`conflict` 或 `error`，以及对象身份、实际来源作用域（Scope）、`providedBy`、`managedBy`、当前正文及摘要值（Digest）、观察版本、依据和局部诊断。`historical: matched-current` 仅表示观察文本或摘要值（Digest）与当前权威内容相符，不证明当时治理状态、模型采纳、规则遵循或任务完成；无历史证据时是 `unknown`。核心规则（Rule）只确认精确受管区块（Managed Block），混合文件保留区块外内容的独立关系。投射技能（Skill）需实际定位器与当前回执逐文件摘要匹配。
+
+一次最多 32 项，输入与返回正文分别限 2 MiB，完整 JSON 输出（含包装和换行）限 2 MiB，单份文本限 512 KiB；标准输入等待和查询检查有 5 秒边界。路径越界、秘密、符号链接、特殊文件和局部回执冲突仅影响相关项。当前只读取明确目标工作空间（Workspace）内的源和投射；用户层或其他工作空间（Workspace）的技能（Skill）位置不因同名被自动授权。本来源观察入口仅返回 Buildr 自身方法与能力内容；`task-brief` 与 `task-material` 返回 `unknown` 和 `source_user_material_excluded`，不调用正文读者。经 Buildr 能力访问资料时仅关联调用和必要对象引用；普通任务（Task）及资料读取接口保持原行为。普通产品源码不是方法来源。
+
+严格来源读取（Strict Source Read）在读取正文前、返回正文前，均通过保持打开的根目录及叶文件的文件描述符（File Descriptor）核对实际内核（Kernel）路径，随后始终读取同一个文件描述符（File Descriptor），不重新按可变路径打开文件。它不把重复路径检查冒充原子目录遍历，也不证明同一文件不存在其他硬链接别名（Hard-link Alias）。Linux 使用 `/proc/self/fd`，当前 macOS 使用固定 `/usr/sbin/lsof` 的本进程两个已持有描述符查询，关闭域名和端口解析，不用外壳（Shell）、不扫描其他描述符，不安装依赖或启动服务；查询输出和等待时间有界。平台机制缺失、模糊或路径已变时，仅相关来源读取失败，不降级到旧路径校验。Windows 的严格来源读取（Strict Source Read）当前未支持；原有普通技能（Skill）及任务（Task）读取接口不会因此整体关闭。

@@ -1,0 +1,658 @@
+{
+  "schemaVersion": "buildr.dsh-source-patch/v2",
+  "upstream": {
+    "tag": "dsh-v0.2.0-rc.2",
+    "commit": "639ed015397290b3745d163aafe02ffee4aa3f84",
+    "version": "0.2.0-rc.2"
+  },
+  "patch": {
+    "path": "dsh-v0.2.0-rc.2-event-sources.patch",
+    "sha256": "95f0188dbf319d2417c23bb86c2f8b35c7d1a6ca16d2a165488d01b2a978c355"
+  },
+  "files": [
+    {
+      "path": "docs/config-catalog.md",
+      "baseSha256": "2051bc75e07acfd088ba00ba4ec72e7bfcaca7c0a4aab4f7d26ddd37a344a227",
+      "patchedSha256": "78bff5dc3a44780deed0c545ef71ca8ca5ccfe2799e07b80c12f03e390f19c80"
+    },
+    {
+      "path": "docs/config-catalog.zh.md",
+      "baseSha256": "e40deff653367c338a8c8aa77c6df61d3993a20d3fc8fb6f853a2c501e8b2d29",
+      "patchedSha256": "d232beefc1f24b481967c1b014b1ad3893dd47611ea387ff939caab9d11c6532"
+    },
+    {
+      "path": "docs/event-producer-consumer.md",
+      "baseSha256": "273e9357b71818fe519785791945e4ca7c0f3c7cef46d5c75fe46cc665054856",
+      "patchedSha256": "13ec459be18f3d95e6d5b6794effe1b365c5188f727bfd3f20b4da6eb96da0ba"
+    },
+    {
+      "path": "docs/event-producer-consumer.zh.md",
+      "baseSha256": "6fde648c8e0eeb1858c46fde536ec65d7fa657e3120f523d38cade68f6a9837e",
+      "patchedSha256": "33b1b34e3b6195d869255e6374a443733a2904d8ba4cd17c80dd6288419e7cd0"
+    },
+    {
+      "path": "docs/persistence-catalog.i18n.yaml",
+      "baseSha256": "5c629208abce7f9a67de13ed5eec8275bdb2b2e193b9bfdbe2024bd00111ecf4",
+      "patchedSha256": "cd323107b21a96cfde48e79e7e3b390b58df7574641eb6f5c669a59832c7ff06"
+    },
+    {
+      "path": "docs/persistence-catalog.md",
+      "baseSha256": "7884d96ec60e78fa0812e8b50c6949df2fba701f022ebb71be1d76aa07664f52",
+      "patchedSha256": "7ccc3ffc8e0242ee41096ebb3e696c1001e68669bdae7c0389c34db25f697d0d"
+    },
+    {
+      "path": "docs/persistence-catalog.zh.md",
+      "baseSha256": "bc21360d07498190dde6d30099c7c9c8ff6d30b6d3d3287be08729266c4fa23c",
+      "patchedSha256": "73f7e6b59c0bb4d17b0b3fada6d0df5a09af2b9ed9628d5f6f629ad276a9a871"
+    },
+    {
+      "path": "docs/persistence-changes/2026-10-05-event-sources.i18n.yaml",
+      "baseSha256": null,
+      "patchedSha256": "171b8f4f41c49e9ac3cae17fd7a873b73d320bd3bf1bbc20812a42441fc431d3"
+    },
+    {
+      "path": "docs/persistence-changes/2026-10-05-event-sources.md",
+      "baseSha256": null,
+      "patchedSha256": "f055ef506d4f29b010f14ba05e51997a2e8ba98bc956c0b5a49c5190f16edefa"
+    },
+    {
+      "path": "docs/persistence-changes/2026-10-05-event-sources.schema.json",
+      "baseSha256": null,
+      "patchedSha256": "229008df56d1e694ea964a27f5eeca806bea13db8b215d485931faf69d167587"
+    },
+    {
+      "path": "docs/persistence-changes/2026-10-05-event-sources.zh.md",
+      "baseSha256": null,
+      "patchedSha256": "35af96a8ccebe3045447801d62813498e18b2200e9c8c6191318350c5490cde8"
+    },
+    {
+      "path": "docs/persistence-changes/historical-formats/README.i18n.yaml",
+      "baseSha256": "0204424f9f7f85fdc9fe4bc826bff81e44b2198a622be8400eaef654612ad053",
+      "patchedSha256": "d2a30309cc3a48c2f60bbad9a212ce00aa41f9beb6363e50f3fc7541a5590862"
+    },
+    {
+      "path": "docs/persistence-changes/historical-formats/README.md",
+      "baseSha256": "bff44843afc6e9388f30a1a73ce131f4ab42985e1bd70f90925adbcc271c54bb",
+      "patchedSha256": "80b28acefdf1892c2ef79908f713ea489b1408121b9e1cf510fa904b7db6316b"
+    },
+    {
+      "path": "docs/persistence-changes/historical-formats/README.zh.md",
+      "baseSha256": "06aeca402ded60287520550ab0e7142f8f0609ff180fe70acfb77c8653967dc3",
+      "patchedSha256": "c28020adb4a06accf204302e850e5591f1f1af72937ebb80df1fe79985a9be37"
+    },
+    {
+      "path": "docs/persistence-schema.json",
+      "baseSha256": "b3d7621862f8dfd4384cef8965931031fd9845633749192721d85b2ebb371d40",
+      "patchedSha256": "8b4ffefa0d6a10ae7dfa9f93e08590f146046c2890bf8eb4bd85d2b0dadf939a"
+    },
+    {
+      "path": "docs/subsystems/session.i18n.yaml",
+      "baseSha256": "4b14cb51142cb9d25ee77a1cd732f1749195f0fd904a910fe387243ba9e169dd",
+      "patchedSha256": "410a658972842b79c35199ea9ef3de1a3f0bd05610ec2be98d5bd002425eaf9c"
+    },
+    {
+      "path": "docs/subsystems/session.md",
+      "baseSha256": "f5cb5d264af992ca90b13b01de650bdaac255b9c2b8e4c8e59b23748545a879e",
+      "patchedSha256": "a6ee881cdfff4680407242789ca95dc0c6ac5238197ccae5e141df352111fb64"
+    },
+    {
+      "path": "docs/subsystems/session.zh.md",
+      "baseSha256": "01e0330cb6cd3a0667f21b197d3d13e3aab3ef6cb47a9a633e7ddfad75cbd06b",
+      "patchedSha256": "7af34bff7d23a9954a675db80afc121f3ee953c297aa56646ebf49d72f07f6ac"
+    },
+    {
+      "path": "docs/subsystems/skills.md",
+      "baseSha256": "d37b8cf049f887ff6fc645dea3b1e7fd6079014552d1cee9f991c6e65dd116f9",
+      "patchedSha256": "92eba3a640ce2b5d87802e74110d63e32b769783beffa075d5296df9efa63b92"
+    },
+    {
+      "path": "docs/subsystems/skills.zh.md",
+      "baseSha256": "d09bc88617855741f5bd7ce666567aaaa33dcae15fd8b54165a8f09fc307c1b5",
+      "patchedSha256": "d40be0664055c74bf34221c587566089751d1d7cbc57848f78ff602fd6197bb5"
+    },
+    {
+      "path": "docs/subsystems/tools.i18n.yaml",
+      "baseSha256": "c5f50b4f05c8258cb17268c7e0c0f8831a12906b128d8a4930618bb717e3277e",
+      "patchedSha256": "ef1770a039545713ffbbf8c202b5bcc56c0995a0e362d0fe76fdfa0a1ee13f6c"
+    },
+    {
+      "path": "docs/subsystems/tools.md",
+      "baseSha256": "d060471984addd4bd167b34e8e36e9b163fb96c07535d2a11e1bfbf904875cee",
+      "patchedSha256": "ec474fafabf69ca72481c1a1fc84cd96176804343b59bf30745865989fb761c2"
+    },
+    {
+      "path": "docs/subsystems/tools.zh.md",
+      "baseSha256": "fa96fb1c41f7faeb550ef64a4e422d661c2486051dd5d8016697364759553a98",
+      "patchedSha256": "c49b1cf697934a7c45206156c211a6c935ad066709164ef8f0c03b571e73e23a"
+    },
+    {
+      "path": "packages/client/ui-conversation/src/client/contract/records.ts",
+      "baseSha256": "4fe132948a41de4ddf3e53c7000b02bb0b4f4d34b22dde1298a1a4bbffa9113e",
+      "patchedSha256": "f25a6fcc9f3e0ce0aa1bf5b4f32774fc850b80d59fcc698bba7654528d6653ab"
+    },
+    {
+      "path": "packages/client/ui-trajectory/README.i18n.yaml",
+      "baseSha256": "adaac899a2cc481345509b8cb17f61bf77309fed921b5360ed68691d6e0bb4be",
+      "patchedSha256": "3521481d81796f06372c3f0979a8d4ea6a927125d45bae5b8b5a0181e11d9017"
+    },
+    {
+      "path": "packages/client/ui-trajectory/README.md",
+      "baseSha256": "824a457da0253f564e03cda9ebb6cf9d4a5ed95a8722ec2f0f084db07e6c34a2",
+      "patchedSha256": "15aec79c73d55cfc7363f095826cad129da03293dcdad4f284ead2c98636c050"
+    },
+    {
+      "path": "packages/client/ui-trajectory/README.zh.md",
+      "baseSha256": "3c20dd53d402f179d5d09415e94d8a46a2cd7e042eddaa02c3813ae72bdf46ba",
+      "patchedSha256": "2835afdb84100b1536aeac4d5e6f787618424a24fe755c5248760408da7f24d2"
+    },
+    {
+      "path": "packages/client/ui-trajectory/package.json",
+      "baseSha256": "875155dae18fb63deb666ff3a415a890e77aff05a5c06c464b8437b01786886d",
+      "patchedSha256": "377bd9b3fde5153170b0ac5735c988665870f26f389a583d6205aacb3e38457f"
+    },
+    {
+      "path": "packages/client/ui-trajectory/src/client/TrajectoryTable.module.css",
+      "baseSha256": "dba4683d768a518704f13bbd8acc4d00e5ae23c1db147d5b66d610c39dfe6d88",
+      "patchedSha256": "7f93f314f0951210abdf759c08158a59fb0295a8a5db798c7c27518753e49c7f"
+    },
+    {
+      "path": "packages/client/ui-trajectory/src/client/TrajectoryTable.tsx",
+      "baseSha256": "0b8a5fa7f0f5ceb3d3a49272a0f8ff2c29de047f0bef4713f6cb8e3b8a4052e9",
+      "patchedSha256": "1ee2358f1e557f7dc5f998c8cdcbe58c70376873fefa67675e28ddbd51c6424d"
+    },
+    {
+      "path": "packages/client/ui-trajectory/src/client/TrajectoryView.tsx",
+      "baseSha256": "a27937dc782642dbfded762466e5f4ce64a12c39d3ccd4840e8fe730e690e5c4",
+      "patchedSha256": "3ad359486b46ea713d889841832901247560b535b9839bdd8b563d123104ab25"
+    },
+    {
+      "path": "packages/client/ui-trajectory/src/client/index.ts",
+      "baseSha256": "92e89b552dc674d516d636e26178f4854684ebfed521b84cc229c2166a234926",
+      "patchedSha256": "85e721db4b4f96287d2d40568957750d54dc3db662d76c4b37aa207797d7da81"
+    },
+    {
+      "path": "packages/client/ui-trajectory/src/client/layout.ts",
+      "baseSha256": "e5760027aee36ab68104cc44bc4259fef229590b1fff6ec9f7c45d4baaa5f8c5",
+      "patchedSha256": "8168a886d5258af49ec979e7974cb94a8b8bd3cf223b1ce236c0403dcf348a59"
+    },
+    {
+      "path": "packages/client/ui-trajectory/src/client/locales.ts",
+      "baseSha256": "cb6caa32f3c9c8c3eecf711ad0d7be6a27d7c9b870a97277f2a84626ce3c916c",
+      "patchedSha256": "c0590725de9c02d172f47dfa7bff5b73e98cff883ac8731b09af3d2247ff315b"
+    },
+    {
+      "path": "packages/client/ui-trajectory/src/client/trajectory-contract.ts",
+      "baseSha256": "61e69960f0c08af7d99c555b01b8c0b36b5210a2b1a09989ea2ab16459e29ec4",
+      "patchedSha256": "0573d57973e677300e051f5e9488dd233a47b817a737b125fe2614775cdca63d"
+    },
+    {
+      "path": "packages/client/ui-trajectory/src/client/trajectory-event-projection.ts",
+      "baseSha256": "d38fa4fd56ae078c4d13fdde5f12ddb3ae93e717cd8da039f4f76f3f890ffa69",
+      "patchedSha256": "addbc3136c479ec4aa5cad242c733d7fe221e6b4538072980b81f62ddc6d4282"
+    },
+    {
+      "path": "packages/client/ui-trajectory/src/client/trajectory-extension-contract.ts",
+      "baseSha256": null,
+      "patchedSha256": "220063f39892be11683f7883f38178c9b65c01171eafdde5ca9dc7c68c4f42d4"
+    },
+    {
+      "path": "packages/client/ui-trajectory/src/client/trajectory-extensions.ts",
+      "baseSha256": null,
+      "patchedSha256": "8e6366f7f774707d99f72eb492bdaf7454a2b325c36aa6fe56f4bee5fe57b1b5"
+    },
+    {
+      "path": "packages/client/ui-trajectory/src/client/trajectory-message-definitions.ts",
+      "baseSha256": "1a4eeb432d55820c36c50975ee37b052d2148818705941a9315a2ac0a5b78ea6",
+      "patchedSha256": "e26d60159759f6042c1fbed8a5bc4807fab7fad725c84d24a95c41f18e4326fb"
+    },
+    {
+      "path": "packages/client/ui-trajectory/src/client/trajectory-record.ts",
+      "baseSha256": "fa86cb5f89c99d677793bb673cf723e199baa681ac25f057e04471d6813ba150",
+      "patchedSha256": "f4ef8cbbe306e016f9f2696c91d70a4f998b917ed2dde815d3e4dbc80c7563d6"
+    },
+    {
+      "path": "packages/client/ui-trajectory/src/client/trajectory-snapshot-builder.ts",
+      "baseSha256": "8ce1db4f34542be76c1e78b0fb95705ecef14b2a5105173eb332a94fd0a056c6",
+      "patchedSha256": "ed1e17502652a6f3dad3a1c32ee3e1314541b4ecf40f2652e9cc0a7d0bfdbb0f"
+    },
+    {
+      "path": "packages/client/ui-trajectory/src/client/trajectory-tool-definition.ts",
+      "baseSha256": "d7ddea00a352f79ea5a6ee5f52fe44d0f559edb99829b15b7ba6fadeedb5d118",
+      "patchedSha256": "618f11017409318cd750d97da15f3751b11ea0127483b488f979f019435db2a4"
+    },
+    {
+      "path": "packages/client/ui-trajectory/tests/conversation-definitions.client.spec.ts",
+      "baseSha256": "1a8333f43fdd96fe931cae4426d5f9c23a2b772956d47f214e678a6ee98e8490",
+      "patchedSha256": "817558884b83650185944f68ca97faf74b168b3a891b0c356acb0e2793dda171"
+    },
+    {
+      "path": "packages/client/ui-trajectory/tests/extensions.client.spec.ts",
+      "baseSha256": null,
+      "patchedSha256": "47f526ee16b08b486e4324c91457af7f1907e8d7f6218357a12c1153a9a5ab1e"
+    },
+    {
+      "path": "packages/client/ui-trajectory/tests/table-extensions.client.spec.tsx",
+      "baseSha256": null,
+      "patchedSha256": "a86aadc6129c7e134f2f19cd00b65227909fe1610609b9d7297499e0641190a3"
+    },
+    {
+      "path": "packages/client/ui-trajectory/tests/views.client.spec.tsx",
+      "baseSha256": "b4fb888208dfa102345ce849dc80d162d5f683b5b375d8e34365fe7d4454ef02",
+      "patchedSha256": "ba0b9243d2b83039c8985f78397fe8bcb1ab1c1c3d00216e802617f9492ac242"
+    },
+    {
+      "path": "packages/client/ui-trajectory/tsconfig.json",
+      "baseSha256": "28bcb7cbe94dcda74797f5fd0655b845c20a7861d931d0aceee93be81c7ef36d",
+      "patchedSha256": "7fdcc8cb2cc107a2ca494d9750f981913ef618245c4826b2b2dcd56e5598999d"
+    },
+    {
+      "path": "packages/context/agent-instructions/README.i18n.yaml",
+      "baseSha256": "1b5677603ccc48f3d7f940628aca28a0d0f3a7b170919ed09f1eca06f0f0163e",
+      "patchedSha256": "f51727730645ad41ceb4748473f1128b951990e5e2ebf331f164c45b7de5bc15"
+    },
+    {
+      "path": "packages/context/agent-instructions/README.md",
+      "baseSha256": "eb3481832b5ae10e2cf5a2e01869a7232d8a376224422dd686a5808a6fac4d2a",
+      "patchedSha256": "a0f35101f237e98c8e53cd1380131c2c12305143829a16f45726d9c427db45b5"
+    },
+    {
+      "path": "packages/context/agent-instructions/README.zh.md",
+      "baseSha256": "9470c03602310ae9d93eb2680f436482a1e274a389b81c1a786102c9e39e5dad",
+      "patchedSha256": "a1e8933884a7a09b7b4de0780af0e0cf4c2dca3e57cbd1cbc5841cb390b1fcb2"
+    },
+    {
+      "path": "packages/context/agent-instructions/src/index.ts",
+      "baseSha256": "bca2df91166de1b4eac099c532e6762a8f30387366097cec16a73b8078860d82",
+      "patchedSha256": "d2bb57816797a63fea09b0d6b0d78db6a5a50ce5b06b367e23ac103e6b66475e"
+    },
+    {
+      "path": "packages/context/agent-instructions/src/render.ts",
+      "baseSha256": "00a9fe77d2d2444da27e97f06825710ab919f37a90c50edc9c75764f35450a2e",
+      "patchedSha256": "722f87c3344f5de6631bdb2924e2f562492344ff0edae30b547a3d74bec2aade"
+    },
+    {
+      "path": "packages/context/agent-instructions/src/state.ts",
+      "baseSha256": "4111e4e3e5a5db24257bb2190583950fcf8e5578cea4f1c5a80d81af7924e5bd",
+      "patchedSha256": "10fb23d8af6772a38723e547702d07b5109dd65517f9f65ffc8d8d23c40d100f"
+    },
+    {
+      "path": "packages/context/agent-instructions/tests/agent-instructions.spec.ts",
+      "baseSha256": "7baf3cb3b10ef57d138b642bcea8fc1a2eb1b78883ca239514d89811034a3040",
+      "patchedSha256": "7dee91812e539df1db30ba1dfcf4f15414f00faf4eb2c1cc13e2160a5bd98d9a"
+    },
+    {
+      "path": "packages/core/agent-loop/README.i18n.yaml",
+      "baseSha256": "a4b6816ac2a1c5f6cf84593d553e26ec501f0db15c4da47d7d759f29bdf737d9",
+      "patchedSha256": "96c43d44299c7ab0d04fce10b587b2412ce46282f37c946d7269bf688fe1a58c"
+    },
+    {
+      "path": "packages/core/agent-loop/README.md",
+      "baseSha256": "7e85b7d46c17e5351455821e70441080214e249c2bf19ea356239bb09749e033",
+      "patchedSha256": "742db14c575cd994edc0147637a790a3c3d59c848f4749b38c63216ff82ebebb"
+    },
+    {
+      "path": "packages/core/agent-loop/README.zh.md",
+      "baseSha256": "b2df762bb642f23a6fd8e378aa498f31f9c76bfd3f8c93087f9c88fc171ccef3",
+      "patchedSha256": "582d935758e5df447fcfc28f63ea4ce0064ce84ee303e2b9266ac711a27a0c5d"
+    },
+    {
+      "path": "packages/core/agent-loop/src/tool-calls.ts",
+      "baseSha256": "5c7e8d8ff0028b436efdd13e5dffa4801d2311c211c3af039e7dab705f87b303",
+      "patchedSha256": "3791f24215fe41249ee1525133fb13401c5b3e7ce1157b72166ba07da53ec1e5"
+    },
+    {
+      "path": "packages/core/scope/src/scoped-events.generated.ts",
+      "baseSha256": "7d575021ad9e564f3910ea3fb055d1f40065586512d702a5454fda64678b2cd5",
+      "patchedSha256": "dfd2b922349e5549024a9a36a29c8fda3297fdf8db84ea2e40b9ce390e364140"
+    },
+    {
+      "path": "packages/core/session/src/event-sources.ts",
+      "baseSha256": null,
+      "patchedSha256": "c65e03cf112274e83cc0078bae7cf1a107fe893fb03129a37ff09d4abf980418"
+    },
+    {
+      "path": "packages/core/session/src/types.ts",
+      "baseSha256": "71df05767d4436f7df989a7fe0d634befef54587f1ae63849cc6b28de6921c53",
+      "patchedSha256": "488d53f76ca4f2bcba044dc5ae9213eb79c6284b154f03bb47341da82a9f80d3"
+    },
+    {
+      "path": "packages/core/tools/README.i18n.yaml",
+      "baseSha256": "e92649bc2a40df6f422411d3b445924c50c0da6d8c261c9a8481dbcd4709b4bc",
+      "patchedSha256": "9174e171510446eab8393d7cfc224188cd2136c10393c51deb6b8f57f8be3c85"
+    },
+    {
+      "path": "packages/core/tools/README.md",
+      "baseSha256": "b20de85b7a541964b02681b4f9ea032a5f46ffebd8d28360eb63faa6db2eb3ac",
+      "patchedSha256": "adb4139ecbcb90f8e8d0cafb835adaf3fe9404e3b23a63101a509e39fd25dfc9"
+    },
+    {
+      "path": "packages/core/tools/README.zh.md",
+      "baseSha256": "c2f154ff4bd973c7a67a0d9e1f8d8453d9139453c362cf5c8b171ca564a7d672",
+      "patchedSha256": "ef924bd53346eac929f831b1d75b75aef3f87a3078330b545e48b092bf70f560"
+    },
+    {
+      "path": "packages/core/tools/src/index.ts",
+      "baseSha256": "9107a2b6447b10c2ecb90429d7c1b80b956759e96d35230af16f5a88f5d3eccd",
+      "patchedSha256": "6073286f5e082249b68fafb7066fa62e5cf196fa8bd002cd4de3581c59b12e6c"
+    },
+    {
+      "path": "packages/core/tools/src/ptc.ts",
+      "baseSha256": "a0569c4600191c4395e669ceb20f6bd279cc898d3ba506bd8e6a188e80ed8dfb",
+      "patchedSha256": "aa6853b22d9048423950bf2543af775bf569491126c869dc0f9087dd27281c0f"
+    },
+    {
+      "path": "packages/core/tools/src/source-capture.ts",
+      "baseSha256": null,
+      "patchedSha256": "0d043cdbb2bf82aed064c8a0802644312ebdac478eb73e76090ecb5b34d3b9ec"
+    },
+    {
+      "path": "packages/core/tools/src/types.ts",
+      "baseSha256": "2b2bfa5da56f7ebb67236a33329fff47064bcc8d2658ce24a4cdedc7668e6fe9",
+      "patchedSha256": "ef1eb231098a972b65a7bfa5d3ea688dcbdefd68388c6578418d202ed3c55a2c"
+    },
+    {
+      "path": "packages/core/tools/tests/source-capture.spec.ts",
+      "baseSha256": null,
+      "patchedSha256": "68062a596891033c523cb38d7ce52adc8693728265c19bf32116104048af782a"
+    },
+    {
+      "path": "packages/extensions/cordis-client-runner/src/client/slot-catalog.ts",
+      "baseSha256": "65199695bc6edd94f87ad7b1de7a61fe1a3b962abd24e898c5afba18fd1efd2a",
+      "patchedSha256": "20d0dc6c68a16842777c89287d95ce1e1bd5b642e62520970de0951c5900f66e"
+    },
+    {
+      "path": "packages/extensions/tool-cordis/src/api-catalog.ts",
+      "baseSha256": "4a5098979f529cd2c9f09f961837dee68bb10b7d884d3b115d3008c15d64e7bd",
+      "patchedSha256": "a06a70ec9cd87731b62eafd7d66a7585d8ac8a6369a51f01a1f1e341503dadc6"
+    },
+    {
+      "path": "packages/fs/tool-fs/README.i18n.yaml",
+      "baseSha256": "58988218327d2a089725033a141f952cc6949c678649b97639a2f06abe9c46cc",
+      "patchedSha256": "f6cdd7dfe8f628a523e8c04bf8cba8975ec07fe428e63e2e9cefb9b73dc7c096"
+    },
+    {
+      "path": "packages/fs/tool-fs/README.md",
+      "baseSha256": "f3cc90cd31da1613df826fe47c1a16030aea6866f5412a62af1eedfed8173927",
+      "patchedSha256": "5e1b1058041dc77c6994c8a2f6747607b087bae744e2d9893b329c294c17e744"
+    },
+    {
+      "path": "packages/fs/tool-fs/README.zh.md",
+      "baseSha256": "a532f31b90308f28208bb16324f4da4aa046f3baf71da56c3223492800f6853f",
+      "patchedSha256": "dd7e2bf6aaee494fcab5fe4e2b7cd3e9e9e410bb3286318aa1e6d252979e210f"
+    },
+    {
+      "path": "packages/fs/tool-fs/src/read-target.ts",
+      "baseSha256": "e29d7cc0d30d8c5d1b74d63a2dc1e12ad99dd7e3ebf515169c60aaa1e49bfb5e",
+      "patchedSha256": "3ffe1d3708cf58a137394f34a1aad99cbbe9287ba0a01d0576a7b22f9c588936"
+    },
+    {
+      "path": "packages/fs/tool-fs/src/read.ts",
+      "baseSha256": "1e7d5743be73623b07cde79f2f7168f4466794c26c714b923c289cd0e155115f",
+      "patchedSha256": "5cab791d610feaba0a292954f40549fab0d9db23b7a86c5d8a93f2600507f32f"
+    },
+    {
+      "path": "packages/fs/tool-fs/tests/tools.spec.ts",
+      "baseSha256": "fd0fd5850e6cf861872b245f033db740360e42dbffe000c28190aab20d38e7f5",
+      "patchedSha256": "26ecfb40b69bd8910f19619cebe4122e596bd66a612dbd0c04d4b608c960ac69"
+    },
+    {
+      "path": "packages/shell/tool-bash/README.i18n.yaml",
+      "baseSha256": "c5133f2bf8b193ba218d3fe2e6e42fc91120ea4d47630299a4617b178fe03b24",
+      "patchedSha256": "aea2f8b8c14991c6adf4d745a068271de40a80830ee4a09a04d59208e7f574ec"
+    },
+    {
+      "path": "packages/shell/tool-bash/README.md",
+      "baseSha256": "7d36301d162a0c152fd28a3af746e88bde04ee2da2c457fae73241f23084646c",
+      "patchedSha256": "4f2f487ac55d5d32f44ce082c8a586dbd7874af5a86ed44b61d3df3712b835f5"
+    },
+    {
+      "path": "packages/shell/tool-bash/README.zh.md",
+      "baseSha256": "a3aa9efac2cd11a7cdbd14acc7f19aab003465d0e42fd06afb9f83ffb341d4b9",
+      "patchedSha256": "0eb0e131685c29fcd17ddc497f1fb4a490bc82190e65ff58a902e4a23d8250b7"
+    },
+    {
+      "path": "packages/shell/tool-bash/src/index.ts",
+      "baseSha256": "3642eff3e290e4d308f951a627ced9e0d9fd1c5c38cddcae9d593f11f7b32239",
+      "patchedSha256": "c3db3f7c09e66c9dca85589e9198a02a0f9da745dd6d0a63026991caf91b7dba"
+    },
+    {
+      "path": "packages/shell/tool-bash/tests/background.spec.ts",
+      "baseSha256": "3ce4a15c03fe84cd312c32c72393a432f833cf2bc9e26dc6f7abefd3eca36bef",
+      "patchedSha256": "dc5a3bd384405177fd756102d4706538d107136d61f52711507c14bab1718f41"
+    },
+    {
+      "path": "packages/shell/tool-bash/tests/integration.spec.ts",
+      "baseSha256": "0bb1b1b29ffb99467ac2636302c165fc492561fccdaf8decc4ebe3d3b59e213b",
+      "patchedSha256": "7347cfdbd81936f53992de7a132cfbf531a81b5713c255f082a01e7f37bde12b"
+    },
+    {
+      "path": "packages/shell/tool-bash/tests/tools.spec.ts",
+      "baseSha256": "365f66b942999aeb764b314a4e1e1a821393249e99703f92e59e40eb3670ba48",
+      "patchedSha256": "53c12be740eb51ff1d36d17e6715cfc4c9e59a53432c2add98dfe1ef3a63b5b3"
+    },
+    {
+      "path": "packages/skill/skill-filesystem/README.i18n.yaml",
+      "baseSha256": "2f2a2dcbeeec36298c7f59d1ab22e7c9656b19a8b39153d65f2d631742685e88",
+      "patchedSha256": "edec775bfa7a478a82822f06d968de8e95252545653e87aedaa2958077c556ee"
+    },
+    {
+      "path": "packages/skill/skill-filesystem/README.md",
+      "baseSha256": "8816e192628cdfbce1716a129ab13bec29718b6cdbdf4fd93d9af4f3461967d1",
+      "patchedSha256": "09842531df27475e1e4e5d4a083c14872f298692fdcdc88ae266e2c97a5bf769"
+    },
+    {
+      "path": "packages/skill/skill-filesystem/README.zh.md",
+      "baseSha256": "23664bc5c453df26075fefd19a1ebe1c38287a0cb52327eba9e2304d89d07636",
+      "patchedSha256": "313f8adfbbe974b8c2a6320f22d94b654857a9f453feb035c4f4c4276cfd46d4"
+    },
+    {
+      "path": "packages/skill/skill-filesystem/src/index.ts",
+      "baseSha256": "a3fcfefcc6500f4bd7c19ba48dfa80efad312034f196f81a40d33d0d0098d315",
+      "patchedSha256": "8d12f2a0c52819ec4323de32d9103d6b0f85eb648ff36d8e0cd58f0fdd3a4ac4"
+    },
+    {
+      "path": "packages/skill/skill/README.i18n.yaml",
+      "baseSha256": "8957890508803e3f0c7203e1c690b0be31c0315bc57db30457ebc596e0013c92",
+      "patchedSha256": "f2c95a7096db90026280dfe506c82f74081e7b9eb0f2be23fb4a547a6c1c8949"
+    },
+    {
+      "path": "packages/skill/skill/README.md",
+      "baseSha256": "617d3a0747aca1b594db8a9eca7302af9bb23e910e38be48f0eae7d8ce907814",
+      "patchedSha256": "b5a9caa255b31a38140b5086e7223b4f5d8cd3e11e481b0f69cf4b82a791a4e3"
+    },
+    {
+      "path": "packages/skill/skill/README.zh.md",
+      "baseSha256": "9cad5cde23b696b8bfaae5104d16dd48e682a3be52756d0ffe2994af0398b806",
+      "patchedSha256": "70f49425ca4339341ba5719fdc19b5eb37e9c69aed814eae3ba9e324abadaa7a"
+    },
+    {
+      "path": "packages/skill/skill/package.json",
+      "baseSha256": "44168f2fdd2b4b1f24dfcb6db73764de21ac28afee9bb81085f4df9cffbebb80",
+      "patchedSha256": "c6e177180e95de24ba3a8e974b63ce79ab4c390795cc242b9f5de3cc6f7e2a79"
+    },
+    {
+      "path": "packages/skill/skill/src/index.ts",
+      "baseSha256": "af4fad67fb086c3f5c93aed4604830718b4535e7e59a60d680404b07ea08477c",
+      "patchedSha256": "54dfebf1c7b0ace95d38530493600c1f90d6dd8e626bf3ba68f587704e0e439e"
+    },
+    {
+      "path": "packages/skill/skill/tsconfig.json",
+      "baseSha256": "c7ad688fc252215c92ed6e51fbba9839d26c5e68e6e92b7a72f428ec4eded59d",
+      "patchedSha256": "ccea35e0c234be7acca3cbda0c78738eb26de1c8555813d504b39087fe4517fa"
+    },
+    {
+      "path": "packages/skill/tool-skill/README.i18n.yaml",
+      "baseSha256": "2863ca75bcdeb4f7b9def10f3f1a4bae874d8b37e318de262ed3560e07717986",
+      "patchedSha256": "b89db2f4d3e0e34bc1c5c73d960f15292361f51988416088df96926fa9b2784a"
+    },
+    {
+      "path": "packages/skill/tool-skill/README.md",
+      "baseSha256": "028dd921bc1b958f8d53224e48599a3ab3279c78697bbe992331bd29d20b3312",
+      "patchedSha256": "3b7e838856b7c51bd20f01d58f27a19a4832b574e5758a9f40a8c89cf9ec551f"
+    },
+    {
+      "path": "packages/skill/tool-skill/README.zh.md",
+      "baseSha256": "3f35f11390bdeec1287ac6aea06f029c5f0878e0169c70b6d54fc3cd77796a1f",
+      "patchedSha256": "95b5b17a3aa77b71a2b880086433cdcd14dbe53fc2c444e1f535daa808a36cab"
+    },
+    {
+      "path": "packages/skill/tool-skill/src/index.ts",
+      "baseSha256": "fb7b9f7558d516854ffe159803586decd1da003d7f10e04e026c4b7ca3622a1c",
+      "patchedSha256": "c0a8f75b681a69f1c716b9983974782f9bda4275c56998baee201ca2259ee4bd"
+    },
+    {
+      "path": "pnpm-lock.yaml",
+      "baseSha256": "80fe05eae33582ae26839afd05f1965f9b0e4be11034ddf9797af6085d5ba9b1",
+      "patchedSha256": "2332e92f5aaa5db8bf4470d79cea2100ee8bd8dc5987b2ce6e27e95c778761a4"
+    },
+    {
+      "path": "scripts/gen-cordis-catalog.ts",
+      "baseSha256": "2badd2a36149e4f12a798d3497709637a556bca036c3b68fdd4c1c738f07f21a",
+      "patchedSha256": "7b034c3ac8f6e3084303e5c6930ad2e647915c9fc0d088582519eb727f8b2a8b"
+    },
+    {
+      "path": "scripts/type-equiv.manifest.json",
+      "baseSha256": "7eaf4a26ef34efe6079e0632587b7f2886689f81b94fc4cf7508399c1a20720b",
+      "patchedSha256": "b5499fa0103b6a777261e9cbb30db56a140adcd98cf170a09de7a8efc60dd443"
+    }
+  ],
+  "hostPackages": [
+    "packages/core/tools",
+    "packages/core/agent-loop",
+    "packages/context/agent-instructions",
+    "packages/skill/skill",
+    "packages/skill/skill-filesystem",
+    "packages/skill/tool-skill",
+    "packages/fs/tool-fs",
+    "packages/shell/tool-bash"
+  ],
+  "api": {
+    "slots": [
+      "conversation.trajectory.column",
+      "conversation.trajectory.inspector.objects"
+    ],
+    "recordContext": {
+      "type": "TrajectoryRecordContext",
+      "declarationPath": "packages/client/ui-trajectory/src/client/trajectory-extension-contract.ts",
+      "publicEntry": "@deepseek-ai/dsh-client-ui-trajectory/client",
+      "idEncoding": "JSON.stringify(['trajectory-record', internalRecordId])"
+    },
+    "recordContexts": {
+      "property": "TrajectorySnapshot.recordContexts",
+      "declarationPath": "packages/client/ui-trajectory/src/client/trajectory-contract.ts",
+      "scope": "loaded-session-window"
+    },
+    "rawrefs": {
+      "property": "TrajectoryRecordContext.eventRefs",
+      "declarationPath": "packages/client/ui-trajectory/src/client/trajectory-extension-contract.ts",
+      "sequence": "non-negative-safe-integer"
+    },
+    "eventSources": {
+      "schemaVersion": "dsh.event-sources/v1",
+      "eventProperty": "data.eventSources",
+      "messageProperty": "message.source.eventSources",
+      "recordProperty": "TrajectoryRecordContext.eventSources"
+    }
+  },
+  "capture": {
+    "hook": "tools/source-capture",
+    "toolMethod": "ToolRunContext.captureSource",
+    "executionMethod": "ToolRunContext.recordSourceOutcome",
+    "hintExport": "@deepseek-ai/dsh-tools",
+    "metadataExport": "@deepseek-ai/dsh-session/types",
+    "defaultTimeoutMs": 5000,
+    "maxMatches": 32,
+    "maxMetadataBytes": 65536,
+    "legacyMissing": "uncollected-no-viewer-fallback",
+    "modelContent": "unchanged",
+    "presentationMeta": "unchanged",
+    "executionOutcome": "native-failure-first-then-observed-process-outcome",
+    "processOnlyRuleWindow": "actual-delivered-source-prefix-in-UTF16-with-full-source-digest"
+  },
+  "validation": {
+    "hostFocusedTests": {
+      "command": "node node_modules/vitest/vitest.mjs run packages/core/tools/tests/tools.spec.ts packages/core/tools/tests/source-capture.spec.ts packages/skill/tool-skill/tests/tool-skill.spec.ts packages/skill/skill-filesystem/tests/skill-filesystem.spec.ts packages/context/agent-instructions/tests/agent-instructions.spec.ts packages/fs/tool-fs/tests/tools.spec.ts packages/shell/tool-bash/tests/tools.spec.ts packages/shell/tool-bash/tests/background.spec.ts --reporter=dot",
+      "status": "passed",
+      "passed": 571,
+      "filesPassed": 8,
+      "log": "/tmp/dsh-event-sources-producer-final-freeze-2.log"
+    },
+    "agentLoopBashOutcome": {
+      "command": "node node_modules/vitest/vitest.mjs run packages/shell/tool-bash/tests/integration.spec.ts --reporter=dot -t 'foreground:'",
+      "status": "passed",
+      "passed": 2,
+      "skipped": 2,
+      "log": "/tmp/dsh-event-sources-native-loop-outcomes.log"
+    },
+    "clientFocusedTests": {
+      "status": "passed",
+      "passed": 44,
+      "log": "/tmp/dsh-capture-sdk-client-attempt6.log",
+      "includes": "Session.append -> native Host follow/page -> JSON -> historyEntries -> SDK assembler/recordContext"
+    },
+    "hostTypecheck": {
+      "status": "passed",
+      "log": "/tmp/dsh-event-sources-host-typecheck-final-3.log"
+    },
+    "cleanBaseApply": {
+      "status": "passed",
+      "files": 101,
+      "source": "git-archive-exact-upstream-commit",
+      "steps": [
+        "base-file-hashes",
+        "git-apply-check",
+        "git-apply",
+        "patched-file-hashes"
+      ]
+    },
+    "fullOriginalBashIntegration": {
+      "status": "blocked-native-dependency",
+      "passed": 3,
+      "failed": 1,
+      "reason": "JSONL first-turn fixture requires native/system/packages/darwin-arm64/bin/system.node absent in dependency SDK; foreground process outcome assertions independently passed."
+    },
+    "desktopRuntime": "not-installed-or-verified",
+    "candidateHistory": {
+      "previousPatchSha256": "e6693446077368d1f0fab17bd4bd0b9895e142ab8d4cb2e740cdf3e60fb143ed",
+      "status": "superseded-before-delivery",
+      "reason": "adds-required-persistence-acknowledgement-paired-owner-docs-and-generated-catalogs",
+      "localSnapshot": "build/capture-patch-history-e6693446"
+    },
+    "persistenceAcknowledgement": {
+      "status": "passed",
+      "recordId": "2026-10-05-event-sources",
+      "decision": "same-version",
+      "writerVersion": 4,
+      "roots": 6,
+      "optionalProperties": 10,
+      "verifiedCurrentRoots": 62,
+      "historyRecords": 9,
+      "acceptedBaseline": "unchanged",
+      "log": "/tmp/dsh-event-sources-doc-sync-final-persistence-changes.log"
+    },
+    "documentation": {
+      "status": "partially-verified-environment-blocked",
+      "execution": "actual 43-leaf doc-sync plan via installed direct Node commands; no pnpm lifecycle, quickinstall, or installation",
+      "passed": 40,
+      "blocked": 3,
+      "blockedGates": [
+        "doc-typecheck",
+        "docs-site-build",
+        "docs-site-projection"
+      ],
+      "reason": "Pinned dependency store lacks desktop and website dependencies including commander, electron, vitepress, vue and Panzoom. Full Host compile and site suites fail in those unchanged dependency consumers.",
+      "sourceTypeEquivalence": 479,
+      "pairedDerivatives": 479,
+      "markdownLinksFiles": 2306,
+      "markdownWrapFiles": 2327,
+      "results": "/tmp/dsh-event-sources-doc-sync/final-results.json",
+      "contractsReadyAttempt": "/tmp/dsh-event-sources-doc-contracts-ready.log",
+      "fullUpstreamGates": "not-claimed"
+    }
+  },
+  "supersedes": {
+    "patchSha256": "62cf34d95f044cfc551fc3523d12ee589e0138e5fec5da9a56ffe492ebc7d8ef",
+    "reason": "adds-producer-captured-durable-event-sources-with-native-client-read",
+    "previousManifest": "dsh-v0.2.0-rc.2-trajectory-annotations.json"
+  }
+}

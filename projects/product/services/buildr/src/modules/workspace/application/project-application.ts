@@ -45,7 +45,7 @@ export type ProjectApplicationRuntime = {
   gitDefaultBranch(root: string, remote?: string): string;
   ensureGitBoundaries(targetRoot: string, items: any[]): string[];
   crypto: { randomUUID(): string };
-  getWorkspace(targetRoot: string): any;
+  getWorkspace(targetRoot: string, options?: { requireRootProof?: boolean }): any;
 };
 
 export function projectError(code: any, message: any, status: any = 400, details: any = undefined) {
@@ -83,14 +83,14 @@ export function compareProjectGit(project: any, observed: any, sameGitIdentity: 
 
 export function registerProjectApplication(runtime: ProjectApplicationRuntime) {
   // 读取：登记、列表、详情和文档。
-  function readProjectRegistryRecord(targetRoot: any) {
+  function readProjectRegistryRecord(targetRoot: any, options: { requireRootProof?: boolean } = {}) {
     let workspace;
     let persistence;
     try {
-      workspace = runtime.getWorkspace(targetRoot);
+      workspace = runtime.getWorkspace(targetRoot, options);
       const workspaceId = workspace.workspace.id;
       if (!workspaceId) throw projectError('project_workspace_migration_required', 'Workspace metadata 需要先完成 identity 迁移。', 409);
-      persistence = runtime.projectRepository.readProjectRegistryPersistence(targetRoot, { workspaceId });
+      persistence = runtime.projectRepository.readProjectRegistryPersistence(targetRoot, { workspaceId, requireRootProof: options.requireRootProof });
     } catch (error: any) {
       if (error.code) throw error;
       throw projectError('project_registry_invalid', error.message, 409, { path: 'projects/manifest.yml' });

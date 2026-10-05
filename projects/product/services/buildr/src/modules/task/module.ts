@@ -61,6 +61,7 @@ export function createDailyProgressModule(files: ProjectDailyProgressRepositoryR
 
 export const TASK_MODULE_ID = 'task';
 export const TASK_QUERY_APPLICATION = 'task.query-application';
+export const TASK_BRIEF_QUERY = 'task.brief-query';
 export const TASK_COMMAND_APPLICATION = 'task.command-application';
 export const TASK_RUNTIME_PORT = 'task.runtime-port';
 export const TASK_CHANGE_BINDER = 'task.change-binder';
@@ -372,6 +373,7 @@ function createTaskModule(requires: TaskModuleRequires) {
     provides: {
       [TASK_WORK_CONTEXT_APPLICATION]: workContext,
       [TASK_QUERY_APPLICATION]: query,
+      [TASK_BRIEF_QUERY]: pick(queryRuntime, ['readTaskBrief']),
       [TASK_COMMAND_APPLICATION]: command,
       [TASK_RUNTIME_PORT]: runtimePortValue,
       [TASK_CHANGE_BINDER]: changeBinder,

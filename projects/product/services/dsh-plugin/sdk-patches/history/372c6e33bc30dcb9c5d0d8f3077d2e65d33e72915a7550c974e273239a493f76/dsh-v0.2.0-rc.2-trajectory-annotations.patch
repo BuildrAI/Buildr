@@ -1,0 +1,1137 @@
+diff --git a/packages/client/ui-trajectory/README.md b/packages/client/ui-trajectory/README.md
+index ca4a84a44fd7fc42f6c7ea2ff95fa533731fde0f..23646844779462b22d018002945d356420f2fecf 100644
+--- a/packages/client/ui-trajectory/README.md
++++ b/packages/client/ui-trajectory/README.md
+@@ -37,6 +37,14 @@ Summary and Preview share one ordered attachment list after the message text, pr
+ 
+ Thinking in the inspector uses compact Markdown at the inspector's fixed 13px size and 20px line height, independent of the content-size setting. Headings add bold weight without increasing size or line height. Assistant output keeps its regular Markdown typography.
+ 
++### Record annotations
++
++The original ledger declares `conversation.trajectory.column` and `conversation.trajectory.inspector.objects` as additive Session list slots. A column contribution registers `id`, `order`, and a locale-aware `label`; Trajectory owns each table header, cell, width, and shared virtual-row span, and dispatches one winning contribution per column with the Slot renderer's `only` option. Object contributions appear below the existing Overview without replacing input, output, schema, or timing tabs. Removing all contributions restores the original two-column table and inspector while preserving the selected record.
++
++Both locations receive the type-only [TrajectoryRecordContext](src/client/trajectory-extension-contract.ts): a branded logical record identity, the original seven kinds, durable event addresses and known call ancestry. Event addresses contain the owning branded SessionId and an integer logical sequence; live-only records have empty addresses and `transient: true`. Sorting anchors and row indexes never become durable addresses. The owner data contains no body, result metadata, components, or functions; annotation consumers resolve original events through their existing authorized readers.
++
++The `useTrajectory` source also publishes `recordContexts` for logical records in the loaded Session event window, before the table's 50-node paging, search, or folding. This JSON list is cached with the target snapshot identity and uses the same address derivation as the original table. It does not open another event stream or assert that unloaded history has been inspected.
++
+ ### The timing overview
+ 
+ Historical replies retain TTFT, generation duration, and throughput when their recorded streams contain token timestamps. TTFT measures from the Step start to its first token, including output from an earlier retry attempt; an unloaded Step start or a stream without tokens leaves the corresponding metric unavailable.
+diff --git a/packages/client/ui-trajectory/README.zh.md b/packages/client/ui-trajectory/README.zh.md
+index 1b22723b23ffd53af63f9fba1c8498d6cd60e2f3..1792ab020ebc96d6b2c62c3094c4f9c9e639b3f0 100644
+--- a/packages/client/ui-trajectory/README.zh.md
++++ b/packages/client/ui-trajectory/README.zh.md
+@@ -37,6 +37,14 @@ Trajectory 标签页让你以按轮次组织的事件记录表和交互式时间
+ 
+ 检查器中的思考内容使用紧凑 Markdown，沿用检查器固定的 13px 字号和 20px 行高，不受内容字号设置影响。标题只加粗，不放大字号或行高。助手输出保留常规 Markdown 排版。
+ 
++### 记录附加内容
++
++原记录表声明 `conversation.trajectory.column` 与 `conversation.trajectory.inspector.objects` 两个列表／会话扩展位（List/Session Slot）。列贡献登记 `id`、`order` 和跟随语言的 `label`；Trajectory 自己管理表头、单元格、宽度和虚拟行跨列数，按显示顺序以 `only` 分发每列实际胜出的贡献。内容对象追加在原概述之后，不替换原输入、输出、定义或计时标签。全部贡献撤回时恢复原两列和原详情，保留当前记录选择。
++
++两个位置都接收仅类型导出的 [TrajectoryRecordContext](src/client/trajectory-extension-contract.ts)：带品牌的逻辑记录身份、原七类记录、原始事件地址和已知调用关系。事件地址包含带品牌的 SessionId 和整数逻辑序号；没有持久事件的实时记录（Transient Record）保留空地址，并标 `transient: true`。排序锚与显示索引不成为持久地址。数据中没有正文、结果元数据（Metadata）、组件（Component）或函数，贡献方沿现有受权读取能力解析原事件。
++
++`useTrajectory` 同时发布已加载会话（Session）事件窗口的 `recordContexts`，不等同记录表 50 节点裁剪、搜索或折叠后的子集。此 JSON 列表按原目标快照（Snapshot）身份缓存，使用与原表格相同的记录地址推导；不打开第二条事件流，也不声称已经读取未加载历史。
++
+ ### 时间概览
+ 
+ 当记录的流包含 token 时间戳时，历史回复会保留 TTFT、生成耗时与吞吐量。TTFT 从步骤开始计量到首个 token，包括更早重试尝试中的输出；步骤起点尚未加载或流中没有 token 时，对应指标保持不可用。
+diff --git a/packages/client/ui-trajectory/package.json b/packages/client/ui-trajectory/package.json
+index abbf4bb5d04c324f46b947b578b067d5b1a0c72e..fdfc21eef3fc2ba9989760c4f68444d8659da006 100644
+--- a/packages/client/ui-trajectory/package.json
++++ b/packages/client/ui-trajectory/package.json
+@@ -47,6 +47,7 @@
+   },
+   "devDependencies": {
+     "@deepseek-ai/dsh-agent": "workspace:*",
++    "@deepseek-ai/dsh-brand": "workspace:*",
+     "@deepseek-ai/dsh-client-locale": "workspace:*",
+     "@deepseek-ai/dsh-client-test-runtime": "workspace:*",
+     "@deepseek-ai/dsh-client-ui-primitives": "workspace:*",
+diff --git a/packages/client/ui-trajectory/src/client/TrajectoryTable.module.css b/packages/client/ui-trajectory/src/client/TrajectoryTable.module.css
+index 12b03b1c51ff6b7791a03c7abe7d1a44c2e647ad..f578be2fe27ed1b265660fb10261c7abfc21a306 100644
+--- a/packages/client/ui-trajectory/src/client/TrajectoryTable.module.css
++++ b/packages/client/ui-trajectory/src/client/TrajectoryTable.module.css
+@@ -124,6 +124,28 @@
+   width: auto;
+ }
+ 
++.annotationColumn {
++  width: 112px;
++}
++
++.annotationCell {
++  overflow: hidden;
++  vertical-align: middle;
++  color: var(--dsw-alias-label-secondary);
++}
++
++.annotationObjects {
++  margin-top: 12px;
++  padding-top: 12px;
++  border-top: 0.5px solid var(--dsw-alias-border-l2);
++}
++
++.annotationObjects h3 {
++  margin: 0 0 8px;
++  color: var(--dsw-alias-label-secondary);
++  font: var(--dsw-font-xxs-12);
++}
++
+ .table th {
+   position: sticky;
+   top: 0;
+diff --git a/packages/client/ui-trajectory/src/client/TrajectoryTable.tsx b/packages/client/ui-trajectory/src/client/TrajectoryTable.tsx
+index 9eeeb5c2abb0e62994ae0031be32f21a4d806c06..023b81edf98904d1c58b4e868034690ce1495f63 100644
+--- a/packages/client/ui-trajectory/src/client/TrajectoryTable.tsx
++++ b/packages/client/ui-trajectory/src/client/TrajectoryTable.tsx
+@@ -2,6 +2,8 @@
+ 
+ import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
+ import type { CSSProperties, ReactNode } from 'react'
++import type { SessionId } from '@deepseek-ai/dsh-session/types'
++import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
+ import { useVirtualizer } from '@tanstack/react-virtual'
+ import {
+   CodeBlock,
+@@ -41,6 +43,8 @@ import type { TrajectoryKey, TrajectoryTranslate } from './locales.ts'
+ import { COMPACTION_INTERRUPTED_ERROR } from './copy-codes.ts'
+ import { codeProgram, PTC_TOOL_NAME, type CodeProgram } from './code-program.ts'
+ import css from './TrajectoryTable.module.css'
++import type { TrajectoryExtensionState } from './trajectory-extension-contract.ts'
++import { EMPTY_TRAJECTORY_EXTENSIONS, trajectoryRecordContext } from './trajectory-extensions.ts'
+ 
+ const BOTTOM_FOLLOW_THRESHOLD_PX = 2
+ const OLDER_LOAD_THRESHOLD_PX = 48
+@@ -387,6 +391,13 @@ function AssistantTimingPanel({
+ 
+ /** Props for the trajectory ledger. */
+ export interface TrajectoryTableProps {
++  /** Owning Session supplied by the official conversation view binding. */
++  sessionId?: SessionId
++  /** Live JSON roster; absence keeps the original table and inspector unchanged. */
++  extensions?: TrajectoryExtensionState
++  /** Derived render share of the original Trajectory parent entry. */
++  renderSlot?: PropsRenderSlots<'conversation.trajectory.column'
++    | 'conversation.trajectory.inspector.objects'>['renderSlot']
+   /** Wrapping control shared by all JSON inspectors. */
+   stringWrapping?: JsonTreeProps['stringWrapping']
+   /** Trajectory locale seat. */
+@@ -2067,6 +2078,9 @@ function OverviewSection({
+  * @returns The ledger and an optional local record inspector.
+  */
+ export function TrajectoryTable({
++  sessionId,
++  extensions = EMPTY_TRAJECTORY_EXTENSIONS,
++  renderSlot,
+   t,
+   stringWrapping,
+   renderImages,
+@@ -2092,6 +2106,8 @@ export function TrajectoryTable({
+   inspectCallId = null,
+   onInspectApplied,
+ }: TrajectoryTableProps) {
++  const columns = renderSlot === undefined ? EMPTY_TRAJECTORY_EXTENSIONS.columns : extensions.columns
++  const columnCount = 2 + columns.length
+   const [selectedRecordId, setSelectedRecordId] = useState<string | null>(null)
+   const [selectedRequest, setSelectedRequest] = useState<SelectedRequest | null>(null)
+   const [activeTab, setActiveTab] = useState<DetailTab>('overview')
+@@ -2129,6 +2145,8 @@ export function TrajectoryTable({
+     ? undefined
+     : currentRecord(selectedTemplate)
+   const selectedProgram = selected === undefined ? undefined : codeProgram(selected.cell)
++  const selectedContext = sessionId === undefined || selected === undefined
++    ? undefined : trajectoryRecordContext(sessionId, selected.cell)
+   const thinkingExpanded = thinkingDisclosure?.recordId === selectedRecordId
+     ? thinkingDisclosure.expanded
+     : selected?.cell.kind === 'message'
+@@ -2615,7 +2633,17 @@ export function TrajectoryTable({
+           <colgroup>
+             <col className={css.eventColumn} />
+             <col className={css.contentColumn} />
++            {columns.map(column => <col key={column.id} className={css.annotationColumn} />)}
+           </colgroup>
++          {columns.length > 0 && (
++            <thead>
++              <tr>
++                <th scope="col">{t('column.kind')}</th>
++                <th scope="col">{t('column.content')}</th>
++                {columns.map(column => <th key={column.id} scope="col">{column.label}</th>)}
++              </tr>
++            </thead>
++          )}
+           <tbody>
+             {hasOlderRecords && (
+               <tr
+@@ -2623,7 +2651,7 @@ export function TrajectoryTable({
+                 data-history-load=""
+                 aria-rowindex={1}
+               >
+-                <td colSpan={2}>
++                <td colSpan={columnCount}>
+                   <button
+                     type="button"
+                     className={css.historyLoadButton}
+@@ -2652,7 +2680,7 @@ export function TrajectoryTable({
+             {virtualTop > 0 && (
+               <tr className={css.virtualSpacer} data-virtual-spacer="top" aria-hidden="true">
+                 <td
+-                  colSpan={2}
++                  colSpan={columnCount}
+                   style={{
+                     '--trajectory-virtual-spacer-height': `${virtualTop}px`,
+                   } as VirtualSpacerStyle}
+@@ -2668,6 +2696,8 @@ export function TrajectoryTable({
+                 {({ displayText, listDisplayText, resultText, toolCallOnly, toolCallText }) => {
+                   const isCollapsedSummary = record.collapsedSummary !== undefined
+                   const isRequestOnly = record.cell.requestOnly === true
++                  const recordContext = sessionId === undefined || isCollapsedSummary
++                    ? undefined : trajectoryRecordContext(sessionId, record.cell)
+                   const isInitialSystem = record.cell.kind === 'system'
+                 && record.cell.index === allRecords[0]?.cell.index
+                   const key = requestKey(record.turn, record.group)
+@@ -2912,6 +2942,12 @@ export function TrajectoryTable({
+                               </span>
+                             )}
+                       </td>
++                      {columns.map(column => (
++                        <td key={column.id} className={css.annotationCell} data-trajectory-column={column.id}>
++                          {recordContext === undefined ? null
++                            : renderSlot?.('conversation.trajectory.column', { record: recordContext }, { only: column.id })}
++                        </td>
++                      ))}
+                     </tr>
+                   )
+                 }}
+@@ -2920,7 +2956,7 @@ export function TrajectoryTable({
+             {virtualBottom > 0 && (
+               <tr className={css.virtualSpacer} data-virtual-spacer="bottom" aria-hidden="true">
+                 <td
+-                  colSpan={2}
++                  colSpan={columnCount}
+                   style={{
+                     '--trajectory-virtual-spacer-height': `${virtualBottom}px`,
+                   } as VirtualSpacerStyle}
+@@ -3505,6 +3541,14 @@ export function TrajectoryTable({
+             {!promptSelected && selected !== undefined && activeTab === 'timing' && (
+               <RecordTiming record={selected} t={t} />
+             )}
++            {!promptSelected && selectedContext !== undefined && activeTab === 'overview'
++              && extensions.hasObjects && renderSlot !== undefined && (
++              <section className={css.annotationObjects} aria-label={t('details.contentObjects')}
++                data-trajectory-objects="" key={selectedContext.recordId}>
++                <h3>{t('details.contentObjects')}</h3>
++                {renderSlot('conversation.trajectory.inspector.objects', { record: selectedContext })}
++              </section>
++            )}
+           </div>
+         </aside>
+       )}
+diff --git a/packages/client/ui-trajectory/src/client/TrajectoryView.tsx b/packages/client/ui-trajectory/src/client/TrajectoryView.tsx
+index 6c2cd98ec8de072f940a2d2fae627dbcd1ca409b..6bbc154e47d49166238ec3e61211a3947f94068a 100644
+--- a/packages/client/ui-trajectory/src/client/TrajectoryView.tsx
++++ b/packages/client/ui-trajectory/src/client/TrajectoryView.tsx
+@@ -27,6 +27,7 @@ import {
+ import { trajectoryRecordId } from './trajectory-record.ts'
+ import { TrajectorySearchIndex } from './trajectory-search-index.ts'
+ import type { TrajectorySnapshot } from './trajectory-contract.ts'
++import type { TrajectoryExtensionState } from './trajectory-extension-contract.ts'
+ import css from './views.module.css'
+ 
+ const EMPTY_TURN_IDS: ReadonlySet<number> = new Set()
+@@ -79,6 +80,7 @@ export interface TrajectoryViewInjected {
+   jsonStringWrapping?: Omit<NonNullable<JsonTreeProps['stringWrapping']>, 'label'>
+   hooks: {
+     duration: SnapshotStore<boolean>
++    extensions: SnapshotStore<TrajectoryExtensionState>
+   }
+   loadOlder: () => Promise<boolean>
+   loadImage: MessageImageLoader
+@@ -130,10 +132,11 @@ function addUsage(
+ }
+ 
+ export function TrajectoryView({
+-  useSession, useTrajectory, useDuration, loadOlder, loadImage, setActualDuration,
++  sessionId, useSession, useTrajectory, useDuration, useExtensions, loadOlder, loadImage, setActualDuration,
+   viewRequest, completeViewRequest, renderSlot, t, jsonStringWrapping,
+ }: ConvViewProps
+-  & PropsRenderSlots<'conversation.trajectory.images'>
++  & PropsRenderSlots<'conversation.trajectory.images' | 'conversation.trajectory.column'
++    | 'conversation.trajectory.inspector.objects'>
+   & InjectFace<TrajectoryViewInjected>
+   & PropsLocale<'trajectory'>) {
+   const [collapsedTurns, setCollapsedTurns] = useState<ReadonlySet<number>>(EMPTY_TURN_IDS)
+@@ -145,6 +148,7 @@ export function TrajectoryView({
+     useState<ReadonlySet<string>>(EMPTY_RECORD_IDS)
+   const [timelineSelection, setTimelineSelection] = useState<TrajectoryTimeRange | null>(null)
+   const actualDuration = useDuration(value => value)
++  const extensionState = useExtensions(value => value)
+   const [actualTime, setActualTime] = useState(false)
+   const [searchQuery, setSearchQuery] = useState('')
+   const [searchIndex] = useState(() => new TrajectorySearchIndex())
+@@ -199,6 +203,7 @@ export function TrajectoryView({
+   const runningCalls = inspection.runningCalls
+   const requests = inspection.requests
+   const callSchemas = inspection.callSchemas
++  const callEventSources = inspection.callEventSources
+   const inspectCallId = viewRequest?.view === 'trajectory' ? viewRequest.focus : null
+   const inspectNodeIndex = useMemo(() => inspectCallId === null
+     ? -1
+@@ -324,11 +329,12 @@ export function TrajectoryView({
+       requests,
+       systemPrompts: inspection.systemPrompts,
+       callSchemas,
++      callEventSources,
+     }, t)
+     return { turns, lastIndex: lastCellIndex(turns) }
+   }, [
+     nodes, eventLocations, partialTurn, partialStep,
+-    runningCalls, requests, inspection.systemPrompts, callSchemas, t,
++    runningCalls, requests, inspection.systemPrompts, callSchemas, callEventSources, t,
+   ])
+   const timelinePartialSignature = partialStructureSignature(partial)
+   const timelinePartial = useMemo<TrajectorySnapshot['partial']>(() => partial === null
+@@ -377,9 +383,15 @@ export function TrajectoryView({
+   }, [])
+   const streamingCells = useMemo(
+     () => partialSearchTurns.flatMap(turn =>
+-      turn.groups.flatMap(group => group.cells),
++      turn.groups.flatMap(group => group.cells.map(cell => {
++        const source = cell.callId === undefined ? undefined : callEventSources?.get(cell.callId)
++        return source === undefined ? cell : {
++          ...cell, eventSeqs: source.eventSeqs, rootCallId: source.rootCallId,
++          ...(source.parentCallId === undefined ? {} : { parentCallId: source.parentCallId }),
++        }
++      })),
+     ),
+-    [partialSearchTurns],
++    [partialSearchTurns, callEventSources],
+   )
+   const searchMatchRecordIds = useMemo(
+     () => searchIndex.search(searchQuery),
+@@ -549,6 +561,9 @@ export function TrajectoryView({
+             label: t('record.wrapLines'),
+           }}
+           renderImages={renderImages}
++          sessionId={sessionId}
++          extensions={extensionState}
++          renderSlot={renderSlot}
+           requestNumbers={requestNumbers}
+           turns={timelineTurns}
+           streamingCells={streamingCells}
+diff --git a/packages/client/ui-trajectory/src/client/index.ts b/packages/client/ui-trajectory/src/client/index.ts
+index 935a43ff2c47bd44f1831a7ef4b1a75f81cb7b10..e3e3b184820896058b2811c7977ca8583b54123c 100644
+--- a/packages/client/ui-trajectory/src/client/index.ts
++++ b/packages/client/ui-trajectory/src/client/index.ts
+@@ -5,6 +5,7 @@
+ import type { Context } from '@deepseek-ai/cordis'
+ import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+ import type { SessionBinding } from '@deepseek-ai/dsh-api-session-controller/client'
++import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+ import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
+ import type { SessionId } from '@deepseek-ai/dsh-session/types'
+ // Type-only: pulls the locale plugin's Context merge (ctx.locale).
+@@ -17,6 +18,8 @@ import type {} from '@deepseek-ai/dsh-client-ui-session/client'
+ import { createTrajectoryDurationStore } from './duration-store.ts'
+ import { createTrajectoryStringWrappingStore } from './string-wrapping-store.ts'
+ import { en, NS, zh } from './locales.ts'
++import type { TrajectoryExtensionState } from './trajectory-extension-contract.ts'
++import { EMPTY_TRAJECTORY_EXTENSIONS, sameTrajectoryExtensions, trajectoryColumns, trajectoryRecordContext } from './trajectory-extensions.ts'
+ import { registerTrajectoryAssistantDefinition } from './trajectory-assistant-definition.ts'
+ import { registerTrajectoryCompactionDefinitions } from './trajectory-compaction-definition.ts'
+ import { registerTrajectoryMessageDefinitions } from './trajectory-message-definitions.ts'
+@@ -27,8 +30,12 @@ import {
+ import type { TrajectorySnapshot } from './trajectory-contract.ts'
+ import { registerTrajectoryToolDefinition } from './trajectory-tool-definition.ts'
+ import { TrajectoryView, type TrajectoryViewInjected } from './TrajectoryView.tsx'
++import { deriveTrajectoryLayout } from './layout.ts'
+ 
+ export type { TrajectoryKey } from './locales.ts'
++export type {
++  TrajectoryColumn, TrajectoryEventRef, TrajectoryRecordContext, TrajectoryRecordId, TrajectoryRecordOwner,
++} from './trajectory-extension-contract.ts'
+ export type {
+   TrajectoryContribution,
+   TrajectoryConversationViewNode,
+@@ -51,8 +58,28 @@ export function apply(ctx: Context): void {
+     let source = trajectorySources.get(binding)
+     if (source === undefined) {
+       const target = ctx.uiConversation.binding(binding).target('trajectory')
++      let observed: TrajectorySnapshot | undefined
++      let published: TrajectorySnapshot = EMPTY_TRAJECTORY_SNAPSHOT
+       source = {
+-        getSnapshot: () => target.getSnapshot() ?? EMPTY_TRAJECTORY_SNAPSHOT,
++        getSnapshot: () => {
++          const current = target.getSnapshot() ?? EMPTY_TRAJECTORY_SNAPSHOT
++          if (current === EMPTY_TRAJECTORY_SNAPSHOT) {
++            observed = current
++            published = current
++          } else if (current !== observed) {
++            observed = current
++            const turns = deriveTrajectoryLayout({
++              ...current, nodes: current.eventNodes,
++            }, ctx.locale.bind(NS))
++            const recordContexts = turns.flatMap(turn => turn.groups.flatMap(group =>
++              group.cells.flatMap(cell => {
++                const record = trajectoryRecordContext(binding.sessionId, cell)
++                return record === undefined ? [] : [record]
++              })))
++            published = { ...current, recordContexts }
++          }
++          return published
++        },
+         subscribe: listener => target.subscribe(listener),
+       }
+       trajectorySources.set(binding, source)
+@@ -66,6 +93,21 @@ export function apply(ctx: Context): void {
+   const t = ctx.locale.bind(NS)
+   const duration = createTrajectoryDurationStore()
+   const stringWrapping = createTrajectoryStringWrappingStore()
++  const extensions = createSnapshotStore<TrajectoryExtensionState>(EMPTY_TRAJECTORY_EXTENSIONS)
++  const refreshExtensions = (): void => {
++    const next: TrajectoryExtensionState = {
++      columns: trajectoryColumns(ctx.slots.entriesOfSlot('conversation.trajectory.column')),
++      hasObjects: ctx.slots.entriesOfSlot('conversation.trajectory.inspector.objects').length > 0,
++    }
++    if (!sameTrajectoryExtensions(extensions.getSnapshot(), next)) extensions.set(next)
++  }
++  ctx.effect(() => {
++    const disposeColumns = ctx.slots.subscribe('conversation.trajectory.column', refreshExtensions)
++    const disposeObjects = ctx.slots.subscribe('conversation.trajectory.inspector.objects', refreshExtensions)
++    const disposeLocale = ctx.locale.subscribe(refreshExtensions)
++    refreshExtensions()
++    return () => { disposeLocale(); disposeObjects(); disposeColumns() }
++  }, 'ui-trajectory: annotation roster')
+   registerTrajectoryMessageDefinitions(ctx)
+   registerTrajectoryRequestHeaderDefinition(ctx)
+   registerTrajectoryAssistantDefinition(ctx)
+@@ -84,6 +126,8 @@ export function apply(ctx: Context): void {
+     label: () => t('view.trajectory'),
+     children: {
+       'conversation.trajectory.images': { kind: 'single', scope: 'session' },
++      'conversation.trajectory.column': { kind: 'list', scope: 'session' },
++      'conversation.trajectory.inspector.objects': { kind: 'list', scope: 'session' },
+     },
+     inject: (sessionId: SessionId): TrajectoryViewInjected => {
+       const session = ctx.sessions.binding(sessionId)?.session
+@@ -92,7 +136,7 @@ export function apply(ctx: Context): void {
+       }
+       const trajectory = ctx.uiConversation.binding(sessionId).target('trajectory')
+       return {
+-        hooks: { duration },
++        hooks: { duration, extensions },
+         jsonStringWrapping: {
+           getDefault: () => stringWrapping.getSnapshot(),
+           setDefault: (value) => { stringWrapping.set(value) },
+diff --git a/packages/client/ui-trajectory/src/client/layout.ts b/packages/client/ui-trajectory/src/client/layout.ts
+index 0fe5bd6e76aa6502a533bb0ebcb7c45f0a914a33..46019d4a3aed30fe89e4f417b97a2fe68457c73a 100644
+--- a/packages/client/ui-trajectory/src/client/layout.ts
++++ b/packages/client/ui-trajectory/src/client/layout.ts
+@@ -18,6 +18,7 @@ import type {
+   TrajectorySourceBlock,
+ } from './trajectory-record.ts'
+ import type { TrajectorySnapshot } from './trajectory-contract.ts'
++import type { TrajectoryToolEventSource } from './trajectory-extension-contract.ts'
+ import { formatElapsedSeconds } from './trajectory-record.ts'
+ import type { TrajectoryTranslate } from './locales.ts'
+ import { COMPACTION_INTERRUPTED_ERROR } from './copy-codes.ts'
+@@ -44,6 +45,7 @@ export interface TrajectoryLayoutInput {
+   runningCalls: TrajectorySnapshot['runningCalls']
+   requests?: readonly RequestView[]
+   callSchemas?: RequestInspectionSnapshot['callSchemas']
++  callEventSources?: ReadonlyMap<string, TrajectoryToolEventSource> | undefined
+ }
+ 
+ interface UsageLike {
+@@ -486,6 +488,7 @@ export function deriveTrajectoryLayout(
+               : resultAsText(resultPreview)),
+             ...(node.call !== null ? { inputDetail: node.call.argsRaw } : {}),
+             outputDetail: detailResult(node, t),
++            resultMeta: node.meta,
+             outputBlocks: node.content.map(block => sourceBlock(block)),
+             ...resultPreview,
+             callId: node.callId,
+@@ -563,7 +566,15 @@ export function deriveTrajectoryLayout(
+ 
+   for (const entry of [...turns.values(), ...standaloneCompactions]) {
+     for (const group of entry.groups) {
+-      for (const laid of group.laid) attachToolSchema(laid, callSchemas)
++      for (const laid of group.laid) {
++        attachToolSchema(laid, callSchemas)
++        const source = laid.cell.callId === undefined ? undefined : input.callEventSources?.get(laid.cell.callId)
++        if (source !== undefined) {
++          laid.cell.eventSeqs = source.eventSeqs
++          laid.cell.rootCallId = source.rootCallId
++          if (source.parentCallId !== undefined) laid.cell.parentCallId = source.parentCallId
++        }
++      }
+     }
+   }
+ 
+@@ -756,6 +767,7 @@ function expandAssistant(
+     recordId: `assistant\u0000${node.turn}\u0000${node.step}`,
+     kind: 'message',
+     sourceSeq: node.seq,
++    ...(streaming ? { transient: true } : {}),
+     text: messageText !== '' || thinkingText !== ''
+       ? ''
+       : summarizeAssistantActivity(node.blocks, t),
+@@ -804,6 +816,8 @@ function expandAssistant(
+         ...(result !== undefined
+           ? {
+             outputDetail: detailResult(result, t),
++            sourceSeq: result.seq,
++            resultMeta: result.meta,
+             outputBlocks: result.content.map(block => sourceBlock(block)),
+             ...resultPreview,
+             isError: result.isError,
+@@ -1066,6 +1080,8 @@ function expandSubCalls(
+         ...(settled
+           ? {
+             outputDetail: detailResult(sub, t),
++            sourceSeq: sub.seq,
++            resultMeta: sub.meta,
+             outputBlocks: sub.content.map(block => sourceBlock(block)),
+             ...resultPreview,
+             isError: sub.isError,
+diff --git a/packages/client/ui-trajectory/src/client/locales.ts b/packages/client/ui-trajectory/src/client/locales.ts
+index f131be1f23bb148e13eec6dcadedfdfd8c2f654d..f11912b21a090075bc50249263a106aff2430861 100644
+--- a/packages/client/ui-trajectory/src/client/locales.ts
++++ b/packages/client/ui-trajectory/src/client/locales.ts
+@@ -32,6 +32,9 @@ export const zh = {
+   'column.output': '输出',
+   'column.think': '思考',
+   'column.time': '时间',
++  'column.kind': '类型',
++  'column.content': '内容 / 调用与返回',
++  'details.contentObjects': '关联内容对象',
+   'column.model': '模型',
+   'column.tools': '工具',
+   'turn.label': '第 {turn} 轮',
+@@ -242,6 +245,9 @@ export const en: Record<TrajectoryKey, string> = {
+   'column.output': 'Output',
+   'column.think': 'Think',
+   'column.time': 'Time',
++  'column.kind': 'Kind',
++  'column.content': 'Content / Call and result',
++  'details.contentObjects': 'Related content objects',
+   'column.model': 'Model',
+   'column.tools': 'Tools',
+   'turn.label': 'Turn {turn}',
+diff --git a/packages/client/ui-trajectory/src/client/trajectory-contract.ts b/packages/client/ui-trajectory/src/client/trajectory-contract.ts
+index 5507fd18ea42ecd3757e3f9d1418d2e63f350e34..45534b52f731f2b119272c38138216914d881b2b 100644
+--- a/packages/client/ui-trajectory/src/client/trajectory-contract.ts
++++ b/packages/client/ui-trajectory/src/client/trajectory-contract.ts
+@@ -4,6 +4,7 @@ import type {
+   RequestView, RunningToolCall, SystemPromptNode, ToolCallBlock,
+ } from '@deepseek-ai/dsh-client-ui-conversation/client'
+ import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
++import type { TrajectoryRecordContext, TrajectoryToolEventSource } from './trajectory-extension-contract.ts'
+ 
+ /** Request-header facts retained by the Trajectory target. */
+ export interface TrajectoryRequestHeaderState {
+@@ -30,6 +31,7 @@ export type TrajectoryContribution =
+   | {
+     readonly kind: 'tool'
+     readonly root: ToolCallBlock
++    readonly eventSources?: readonly TrajectoryToolEventSource[]
+   }
+   | {
+     readonly kind: 'request-header'
+@@ -68,8 +70,12 @@ export interface TrajectorySnapshot {
+   readonly eventLocations: ReadonlyMap<number, ConversationLocation>
+   readonly requests: readonly RequestView[]
+   readonly callSchemas: ReadonlyMap<string, ConversationPromptSnapshot['tools'][number]>
++  /** Raw Tool and PTC event addresses retained independently of synthetic interrupted results. */
++  readonly callEventSources?: ReadonlyMap<string, TrajectoryToolEventSource>
+   readonly partial: PartialAssistant | null
+   readonly runningCalls: readonly RunningToolCall[]
++  /** JSON addresses for logical records in the loaded Session window, before view-only filters. */
++  readonly recordContexts?: readonly TrajectoryRecordContext[]
+ }
+ 
+ /** Selector hook over the current Conversation binding's Trajectory target. */
+diff --git a/packages/client/ui-trajectory/src/client/trajectory-extension-contract.ts b/packages/client/ui-trajectory/src/client/trajectory-extension-contract.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..176357acf4e590cdd389a704a50b62b5fad86e01
+--- /dev/null
++++ b/packages/client/ui-trajectory/src/client/trajectory-extension-contract.ts
+@@ -0,0 +1,68 @@
++/** JSON owner data for annotations on the original Trajectory records. */
++import type { Branded } from '@deepseek-ai/dsh-brand'
++import type { SessionId } from '@deepseek-ai/dsh-session/types'
++import type { TrajectoryCellKind } from './trajectory-record.ts'
++
++/** One loaded durable event; seq is a non-negative safe integer, never a layout anchor. */
++export interface TrajectoryEventRef {
++  readonly sessionId: SessionId
++  readonly seq: number
++}
++
++/** Identity minted by Trajectory from a producer-owned call, event, or assistant lifecycle. */
++export type TrajectoryRecordId = Branded<'TrajectoryRecordId'>
++
++/** Stable record identity and original event addresses; contains no content or executable values. */
++export interface TrajectoryRecordContext {
++  readonly recordId: TrajectoryRecordId
++  readonly kind: TrajectoryCellKind
++  readonly eventRefs: readonly TrajectoryEventRef[]
++  readonly callId?: string
++  readonly parentCallId?: string
++  readonly rootCallId?: string
++  /** True when the record has no durable event evidence in the current loaded window. */
++  readonly transient: boolean
++}
++
++/** Event addresses and call ancestry retained by the Trajectory-owned Tool projection. */
++export interface TrajectoryToolEventSource {
++  readonly callId: string
++  readonly eventSeqs: readonly number[]
++  readonly parentCallId?: string
++  readonly rootCallId: string
++}
++
++/** One active list contribution; the official table owns its th, td, and column width. */
++export interface TrajectoryColumn {
++  readonly id: string
++  readonly order: number
++  readonly label: string
++}
++
++/** Entry-private JSON roster synthesized from live Slot winners. */
++export interface TrajectoryExtensionState {
++  readonly columns: readonly TrajectoryColumn[]
++  readonly hasObjects: boolean
++}
++
++/** Owner values supplied for one record annotation occurrence. */
++export interface TrajectoryRecordOwner {
++  readonly record: TrajectoryRecordContext
++}
++
++declare module '@deepseek-ai/dsh-client-ui-slots' {
++  interface SlotMap {
++    /** Additive record cells; id/order/label declare the official table column. */
++    'conversation.trajectory.column': {
++      kind: 'list'
++      scope: 'session'
++      owner: TrajectoryRecordOwner
++    }
++    /** Additive objects below the original inspector's overview; existing tabs remain owned by Trajectory. */
++    'conversation.trajectory.inspector.objects': {
++      kind: 'list'
++      scope: 'session'
++      owner: TrajectoryRecordOwner
++    }
++  }
++}
+diff --git a/packages/client/ui-trajectory/src/client/trajectory-extensions.ts b/packages/client/ui-trajectory/src/client/trajectory-extensions.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..971f8386622b4cb6ae795d9bdbf5358535a40ddd
+--- /dev/null
++++ b/packages/client/ui-trajectory/src/client/trajectory-extensions.ts
+@@ -0,0 +1,74 @@
++/** Original-record addresses and entry-private extension roster. */
++import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
++import type { StoredEntry } from '@deepseek-ai/dsh-client-ui-slots'
++import type { SessionId } from '@deepseek-ai/dsh-session/types'
++import type { TrajectoryCellProps } from './trajectory-record.ts'
++import type {
++  TrajectoryColumn, TrajectoryExtensionState, TrajectoryRecordContext, TrajectoryRecordId,
++} from './trajectory-extension-contract.ts'
++
++/** Empty roster preserves the shipped two-column ledger and inspector. */
++export const EMPTY_TRAJECTORY_EXTENSIONS: TrajectoryExtensionState = {
++  columns: [],
++  hasObjects: false,
++}
++
++/**
++ * Project winning list entries into the table's JSON metadata in render order.
++ * @param entries - Current live list winners, in registration order.
++ * @returns Column labels without components, thunks, or registry objects.
++ */
++export function trajectoryColumns(entries: readonly StoredEntry[]): readonly TrajectoryColumn[] {
++  return entries.flatMap(entry => entry.options.id === undefined ? [] : [{
++    id: entry.options.id,
++    order: entry.options.order ?? 0,
++    label: resolveSlotLabel(entry.options.label) ?? entry.options.id,
++  }]).sort((left, right) => left.order - right.order)
++}
++
++/**
++ * Compare the annotation roster without treating registry revision as new data.
++ * @param left - Previously published metadata.
++ * @param right - Newly resolved metadata.
++ * @returns Whether the table structure and displayed labels are unchanged.
++ */
++export function sameTrajectoryExtensions(
++  left: TrajectoryExtensionState,
++  right: TrajectoryExtensionState,
++): boolean {
++  return left.hasObjects === right.hasObjects && left.columns.length === right.columns.length
++    && left.columns.every((column, index) => {
++      const next = right.columns[index]
++      return next !== undefined && column.id === next.id
++        && column.order === next.order && column.label === next.label
++    })
++}
++
++/**
++ * Resolve public annotation data without exposing the table's index fallback.
++ * @param sessionId - Owning logical Session.
++ * @param cell - Original projected record.
++ * @returns JSON record identity, or undefined for unaddressed fixture-only cells.
++ */
++export function trajectoryRecordContext(
++  sessionId: SessionId,
++  cell: TrajectoryCellProps,
++): TrajectoryRecordContext | undefined {
++  const rawSeqs = cell.eventSeqs ?? (cell.transient === true || cell.sourceSeq === undefined
++    ? [] : [cell.sourceSeq])
++  const seqs = [...new Set(rawSeqs.filter(seq => Number.isSafeInteger(seq) && seq >= 0))]
++    .sort((left, right) => left - right)
++  const recordId = cell.recordId ?? (cell.callId === undefined
++    ? seqs[0] === undefined ? undefined : `${cell.kind}\u0000seq\u0000${seqs[0]}`
++    : `${cell.kind}\u0000call\u0000${cell.callId}`)
++  if (recordId === undefined || cell.requestOnly === true) return undefined
++  return {
++    recordId: recordId as TrajectoryRecordId,
++    kind: cell.kind,
++    eventRefs: seqs.map(seq => ({ sessionId, seq })),
++    ...(cell.callId === undefined ? {} : { callId: cell.callId }),
++    ...(cell.parentCallId === undefined ? {} : { parentCallId: cell.parentCallId }),
++    ...(cell.rootCallId === undefined ? {} : { rootCallId: cell.rootCallId }),
++    transient: seqs.length === 0,
++  }
++}
+diff --git a/packages/client/ui-trajectory/src/client/trajectory-record.ts b/packages/client/ui-trajectory/src/client/trajectory-record.ts
+index bd37189fa499433ddd1291166d65b2dfa5464ad4..cdd3f898ddeeedc9912d02cd9b3b622b97522d3c 100644
+--- a/packages/client/ui-trajectory/src/client/trajectory-record.ts
++++ b/packages/client/ui-trajectory/src/client/trajectory-record.ts
+@@ -51,6 +51,15 @@ export interface TrajectoryCellProps extends HTMLAttributes<HTMLDivElement> {
+   opensTurn?: boolean
+   /** Source session-event seq for cross-record navigation. */
+   sourceSeq?: number
++  /** Loaded durable events associated with this record, independent of its sorting anchor. */
++  eventSeqs?: readonly number[]
++  /** No durable message exists for this live-only projection. */
++  transient?: boolean
++  /** Immediate and root call identities for nested dispatch records. */
++  parentCallId?: string
++  rootCallId?: string
++  /** Model-hidden Tool result metadata; not copied into annotation owner data. */
++  resultMeta?: unknown
+   /** Producer role and name from a user-role message or context injection. */
+   messageSource?: unknown
+   /** Producer-owned model-hidden metadata carried beside the message source. */
+diff --git a/packages/client/ui-trajectory/src/client/trajectory-snapshot-builder.ts b/packages/client/ui-trajectory/src/client/trajectory-snapshot-builder.ts
+index 933cb31f9ca3dac142aec89bf336b07da73cee04..301f22bce3b5afdfac46e6599c1bee0248f42d7d 100644
+--- a/packages/client/ui-trajectory/src/client/trajectory-snapshot-builder.ts
++++ b/packages/client/ui-trajectory/src/client/trajectory-snapshot-builder.ts
+@@ -4,6 +4,7 @@ import type {
+   ConversationViewDefinition, RequestPromptChange, RequestView, ToolCallBlock,
+ } from '@deepseek-ai/dsh-client-ui-conversation/client'
+ import { COMPACTION_INTERRUPTED_ERROR } from './copy-codes.ts'
++import type { TrajectoryToolEventSource } from './trajectory-extension-contract.ts'
+ import type {
+   TrajectoryConversationViewNode, TrajectoryRequestHeaderState,
+   TrajectorySnapshot,
+@@ -213,6 +214,7 @@ export class TrajectorySnapshotBuilder implements ConversationViewBuilder<
+       errorCode?: string
+     }[] = []
+     const callSchemas = new Map<string, ToolSchema>()
++    const callEventSources = new Map<string, TrajectoryToolEventSource>()
+     const consumedPromptChanges = new Set<number>()
+     let previousHeader: TrajectoryRequestHeaderState | undefined
+     let previousTools: ReadonlyMap<string, ToolSchema> = new Map()
+@@ -251,6 +253,7 @@ export class TrajectorySnapshotBuilder implements ConversationViewBuilder<
+         continue
+       }
+       if (data.kind === 'tool') {
++        for (const source of data.eventSources ?? []) callEventSources.set(source.callId, source)
+         if ('kind' in data.root) finalized.push(data.root)
+         else runningCalls.push(data.root)
+         if (previousHeader !== undefined && previousHeader.seq < contribution.anchorSeq) {
+@@ -285,6 +288,7 @@ export class TrajectorySnapshotBuilder implements ConversationViewBuilder<
+       eventLocations,
+       requests,
+       callSchemas,
++      callEventSources,
+       partial,
+       runningCalls,
+     }
+diff --git a/packages/client/ui-trajectory/src/client/trajectory-tool-definition.ts b/packages/client/ui-trajectory/src/client/trajectory-tool-definition.ts
+index 901ba7b0cab79bbcbfd8b55107995d8331c56065..6042b647143086f115507a31e62486d1163e86ca 100644
+--- a/packages/client/ui-trajectory/src/client/trajectory-tool-definition.ts
++++ b/packages/client/ui-trajectory/src/client/trajectory-tool-definition.ts
+@@ -5,6 +5,7 @@ import type {
+ } from '@deepseek-ai/dsh-client-ui-conversation/client'
+ import type {} from '@deepseek-ai/dsh-tools/types'
+ import { trajectoryNode } from './trajectory-definition-common.ts'
++import type { TrajectoryToolEventSource } from './trajectory-extension-contract.ts'
+ 
+ /* jscpd:ignore-start -- Target-owned Definitions intentionally keep their event
+  * state machines independent; see ../../../../../.agents/notes/implemented/
+@@ -18,6 +19,7 @@ interface ToolState {
+   readonly calls: ReadonlyMap<string, ToolCallBlock>
+   readonly children: ReadonlyMap<string, readonly string[]>
+   readonly parents: ReadonlyMap<string, string>
++  readonly eventSeqs: ReadonlyMap<string, readonly number[]>
+ }
+ 
+ interface DispatchData {
+@@ -147,16 +149,18 @@ function updateDispatch(state: ToolState, match: ConversationMatch): ToolState {
+   if (index < 0 && !acceptsEdge(state, parentId, childId)) return state
+   if (event.type === 'tool/ptc-dispatch-start' && index >= 0) return state
+ 
++  const eventSeqs = new Map(state.eventSeqs)
++  eventSeqs.set(childId, [...eventSeqs.get(childId) ?? [], event.seq])
+   const calls = new Map(state.calls)
+   calls.set(childId, event.type === 'tool/ptc-dispatch-start'
+     ? childCall(match, data)
+     : childResult(match, data, calls.get(childId)))
+-  if (index >= 0) return { ...state, calls }
++  if (index >= 0) return { ...state, calls, eventSeqs }
+   const children = new Map(state.children)
+   children.set(parentId, [...siblings, childId])
+   const parents = new Map(state.parents)
+   parents.set(childId, parentId)
+-  return { ...state, calls, children, parents }
++  return { ...state, calls, children, parents, eventSeqs }
+ }
+ 
+ function interruption(
+@@ -211,6 +215,7 @@ function fallbackState(context: ConversationNodeContext<ToolState>): ToolState |
+     calls: new Map([[root.callId, root]]),
+     children: new Map(),
+     parents: new Map(),
++    eventSeqs: new Map([[root.callId, [root.seq]]]),
+   }
+   for (const match of context.matches) state = updateDispatch(state, match)
+   return state
+@@ -240,6 +245,7 @@ const trajectoryToolDefinition: ConversationNodeDefinition<ToolState> = {
+       calls: new Map([[root.callId, root]]),
+       children: new Map(),
+       parents: new Map(),
++      eventSeqs: new Map([[root.callId, [match.event.seq]]]),
+     }
+   },
+   update: (context, match) => {
+@@ -250,7 +256,9 @@ const trajectoryToolDefinition: ConversationNodeDefinition<ToolState> = {
+     if (result === undefined) return context.state
+     const calls = new Map(context.state.calls)
+     calls.set(context.state.rootId, result)
+-    return { ...context.state, calls }
++    const eventSeqs = new Map(context.state.eventSeqs)
++    eventSeqs.set(result.callId, [...eventSeqs.get(result.callId) ?? [], match.event.seq])
++    return { ...context.state, calls, eventSeqs }
+   },
+   buildViewNode: (context) => {
+     const state = context.state ?? fallbackState(context)
+@@ -259,7 +267,14 @@ const trajectoryToolDefinition: ConversationNodeDefinition<ToolState> = {
+     if (root === undefined) return null
+     const anchorSeq = context.start?.event.seq
+       ?? ('kind' in root ? root.seq : context.matches[0]?.event.seq ?? 0)
+-    return trajectoryNode(context, anchorSeq, { kind: 'tool', root })
++    const eventSources: TrajectoryToolEventSource[] = [...state.eventSeqs].map(([callId, eventSeqs]) => {
++      const parentCallId = state.parents.get(callId)
++      return {
++        callId, eventSeqs, rootCallId: state.rootId,
++        ...(parentCallId === undefined ? {} : { parentCallId }),
++      }
++    })
++    return trajectoryNode(context, anchorSeq, { kind: 'tool', root, eventSources })
+   },
+ }
+ /* jscpd:ignore-end */
+diff --git a/packages/client/ui-trajectory/tests/conversation-definitions.client.spec.ts b/packages/client/ui-trajectory/tests/conversation-definitions.client.spec.ts
+index fd994e9b071ee21129dbe5a7cd9e781e448663b3..baba2aa4127609f6ef533ee688108137e4223f63 100644
+--- a/packages/client/ui-trajectory/tests/conversation-definitions.client.spec.ts
++++ b/packages/client/ui-trajectory/tests/conversation-definitions.client.spec.ts
+@@ -493,6 +493,18 @@ describe('Trajectory conversation Definitions', () => {
+       at(10, 'step/end', { turn: 1, step: 1 }),
+     ]))
+ 
++    expect(current.callEventSources?.get('root-a')).toEqual({
++      callId: 'root-a', eventSeqs: [3, 9], rootCallId: 'root-a',
++    })
++    expect(current.callEventSources?.get('root-b')).toEqual({
++      callId: 'root-b', eventSeqs: [4], rootCallId: 'root-b',
++    })
++    expect(current.callEventSources?.get('root-b:code:1')).toEqual({
++      callId: 'root-b:code:1', eventSeqs: [5, 6], parentCallId: 'root-a', rootCallId: 'root-a',
++    })
++    expect(current.callEventSources?.get('root-b:ptc:2')).toEqual({
++      callId: 'root-b:ptc:2', eventSeqs: [7, 8], parentCallId: 'root-b:code:1', rootCallId: 'root-a',
++    })
+     const tools = current.eventNodes.filter(node => node.kind === 'tool-result')
+     expect(tools.map(node => node.callId).sort()).toEqual(['root-a', 'root-b'])
+     expect(tools.find(node => node.callId === 'root-a')).toMatchObject({
+diff --git a/packages/client/ui-trajectory/tests/extensions.client.spec.ts b/packages/client/ui-trajectory/tests/extensions.client.spec.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..6f13d05724669b10a8cbdb228b31e4f3ca90460e
+--- /dev/null
++++ b/packages/client/ui-trajectory/tests/extensions.client.spec.ts
+@@ -0,0 +1,73 @@
++import { describe, expect, it } from 'vitest'
++import type { SessionId } from '@deepseek-ai/dsh-session/types'
++import type { StoredEntry } from '@deepseek-ai/dsh-client-ui-slots'
++import type { TrajectoryCellProps } from '../src/client/trajectory-record.ts'
++import { sameTrajectoryExtensions, trajectoryColumns, trajectoryRecordContext } from '../src/client/trajectory-extensions.ts'
++
++const SID = 'record-session' as SessionId
++const tool: TrajectoryCellProps = {
++  index: 9, kind: 'tool', text: 'read', callId: 'c1', timeSeconds: null,
++}
++
++describe('Trajectory annotation data', () => {
++  it('keeps call identity and loaded raw addresses after history prepending', () => {
++    const cell = { ...tool, eventSeqs: [12, 8, 12], rootCallId: 'c1' }
++    const record = trajectoryRecordContext(SID, cell)
++    expect(record).toEqual({
++      recordId: 'tool\u0000call\u0000c1', kind: 'tool',
++      eventRefs: [{ sessionId: SID, seq: 8 }, { sessionId: SID, seq: 12 }],
++      callId: 'c1', rootCallId: 'c1', transient: false,
++    })
++    expect(trajectoryRecordContext(SID, { ...cell, index: 90 })).toEqual(record)
++    expect(JSON.parse(JSON.stringify(record))).toEqual(record)
++  })
++
++  it('never converts a synthetic ordering anchor into a durable event address', () => {
++    const record = trajectoryRecordContext(SID, { ...tool, sourceSeq: 12.2 })
++    expect(record?.eventRefs).toEqual([])
++    expect(record?.transient).toBe(true)
++    const live = trajectoryRecordContext(SID, {
++      index: 1, kind: 'message', text: '', timeSeconds: null,
++      recordId: 'assistant\u00001\u00002', sourceSeq: Number.MAX_SAFE_INTEGER, transient: true,
++    })
++    expect(live?.eventRefs).toEqual([])
++    expect(live?.recordId).toBe('assistant\u00001\u00002')
++  })
++
++  it('does not publish index-only identities or request separator rows', () => {
++    expect(trajectoryRecordContext(SID, {
++      index: 1, kind: 'context', text: '', timeSeconds: null,
++    })).toBeUndefined()
++    expect(trajectoryRecordContext(SID, { ...tool, requestOnly: true })).toBeUndefined()
++  })
++
++  it('retains nested call ancestry without copying result content or metadata', () => {
++    expect(trajectoryRecordContext(SID, {
++      ...tool, kind: 'subtool', parentCallId: 'parent', rootCallId: 'root', eventSeqs: [4, 6],
++      resultMeta: { secret: 'model-hidden' }, outputDetail: 'private text',
++    })).toEqual({
++      recordId: 'subtool\u0000call\u0000c1', kind: 'subtool',
++      callId: 'c1', parentCallId: 'parent', rootCallId: 'root',
++      eventRefs: [{ sessionId: SID, seq: 4 }, { sessionId: SID, seq: 6 }], transient: false,
++    })
++  })
++
++  it('projects only active column metadata and follows locale label thunks', () => {
++    let label = 'Source'
++    const entries: StoredEntry[] = [
++      { component: {}, options: { id: 'second', order: 20, label: 'Objects' } },
++      { component: {}, options: { id: 'source', order: 10, label: () => label } },
++    ]
++    const columns = trajectoryColumns(entries)
++    expect(columns).toEqual([
++      { id: 'source', order: 10, label: 'Source' },
++      { id: 'second', order: 20, label: 'Objects' },
++    ])
++    expect(sameTrajectoryExtensions({ columns, hasObjects: false }, { columns, hasObjects: false })).toBe(true)
++    label = '来源'
++    const translated = trajectoryColumns(entries)
++    expect(sameTrajectoryExtensions({ columns, hasObjects: false }, { columns: translated, hasObjects: false })).toBe(false)
++    expect(sameTrajectoryExtensions({ columns, hasObjects: false }, { columns, hasObjects: true })).toBe(false)
++    expect(trajectoryColumns([])).toEqual([])
++  })
++})
+diff --git a/packages/client/ui-trajectory/tests/table-extensions.client.spec.tsx b/packages/client/ui-trajectory/tests/table-extensions.client.spec.tsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..f5f490180296c1cd3bb69e3e9d17afe7da926417
+--- /dev/null
++++ b/packages/client/ui-trajectory/tests/table-extensions.client.spec.tsx
+@@ -0,0 +1,61 @@
++// @vitest-environment jsdom
++import { afterEach, describe, expect, it, vi } from 'vitest'
++import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
++import type { SessionId } from '@deepseek-ai/dsh-session/types'
++import { TrajectoryTable } from '../src/client/TrajectoryTable.tsx'
++import type { TrajectoryTableProps } from '../src/client/TrajectoryTable.tsx'
++import { t } from './locale.client.ts'
++
++const SID = 'annotations' as SessionId
++const props: TrajectoryTableProps = {
++  t, sessionId: SID, renderImages: () => null,
++  collapsedTurns: new Set(), collapsedAssistants: new Set(),
++  onToggleTurn: () => {}, onToggleAssistant: () => {},
++  turns: [{ turn: 1, groups: [{ title: 'Step 1', cells: [{
++    index: 1, kind: 'tool', text: 'read', callId: 'call-1', eventSeqs: [2, 4],
++    inputDetail: '{"file_path":"AGENTS.md"}', outputDetail: 'original result',
++    timeSeconds: 0.01,
++  }] }] }],
++}
++
++afterEach(() => cleanup())
++
++describe('Official trajectory annotations', () => {
++  it('owns additive columns and preserves the original inspector when contributions leave', () => {
++    const renderSlot: NonNullable<TrajectoryTableProps['renderSlot']> = vi.fn((key, owner, opts) =>
++      key === 'conversation.trajectory.column'
++        ? <span data-testid={`cell-${opts?.only}`}>{owner.record.callId}</span>
++        : <div data-testid="objects">Object linked to {owner.record.callId}</div>)
++    const extensions = {
++      columns: [{ id: 'source', label: 'Source', order: 1 }, { id: 'audit', label: 'Evidence', order: 2 }],
++      hasObjects: true,
++    }
++    const view = render(<TrajectoryTable {...props} renderSlot={renderSlot} extensions={extensions} />)
++    expect(screen.getAllByRole('columnheader')).toHaveLength(4)
++    const row = view.container.querySelector('tbody tr')
++    expect(row?.querySelectorAll('td')).toHaveLength(4)
++    expect(screen.getByTestId('cell-source').textContent).toBe('call-1')
++    expect(screen.getByTestId('cell-audit').textContent).toBe('call-1')
++    fireEvent.click(screen.getByText('read'))
++    const inspector = screen.getByRole('complementary', { name: 'Event details' })
++    expect(within(inspector).getByTestId('objects').textContent).toContain('call-1')
++    expect(within(inspector).getByRole('tab', { name: t('tab.payload') })).toBeTruthy()
++    view.rerender(<TrajectoryTable {...props} renderSlot={renderSlot}
++      extensions={{ columns: [], hasObjects: false }} />)
++    expect(screen.queryAllByRole('columnheader')).toHaveLength(0)
++    expect(view.container.querySelector('tbody tr')?.querySelectorAll('td')).toHaveLength(2)
++    expect(screen.queryByTestId('objects')).toBeNull()
++    expect(screen.getByRole('complementary', { name: 'Event details' })).toBe(inspector)
++  })
++
++  it('uses the same dynamic span for history and virtual spacer rows', () => {
++    const view = render(<TrajectoryTable {...props} hasOlderRecords
++      onLoadOlder={() => Promise.resolve(false)} renderSlot={() => null}
++      extensions={{ columns: [{ id: 'source', label: 'Source', order: 0 }], hasObjects: false }} />)
++    expect(view.container.querySelector('[data-history-load] td')?.getAttribute('colspan')).toBe('3')
++    view.rerender(<TrajectoryTable {...props} hasOlderRecords
++      onLoadOlder={() => Promise.resolve(false)} renderSlot={() => null}
++      extensions={{ columns: [], hasObjects: false }} />)
++    expect(view.container.querySelector('[data-history-load] td')?.getAttribute('colspan')).toBe('2')
++  })
++})
+diff --git a/packages/client/ui-trajectory/tests/views.client.spec.tsx b/packages/client/ui-trajectory/tests/views.client.spec.tsx
+index 04d4040a6e3eb1a29270ea1f1cd4bcc63eb67af9..ad20b0db6cb827b75999a8e51e4bb3d038197446 100644
+--- a/packages/client/ui-trajectory/tests/views.client.spec.tsx
++++ b/packages/client/ui-trajectory/tests/views.client.spec.tsx
+@@ -7,7 +7,7 @@
+  * event ledger with its timing overview, and fiber disposal removes the tab.
+  * Timeline projection and inclusive focus edge cases ride along.
+  */
+-import type { GlobalStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
++import type { PropsRuntime, GlobalStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
+ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+ import { createElement, type ComponentProps, type FC, type ReactNode } from 'react'
+@@ -49,6 +49,7 @@ import {
+ } from '../src/client/TrajectoryView.tsx'
+ import { createTrajectoryDurationStore } from '../src/client/duration-store.ts'
+ import { EMPTY_TRAJECTORY_SNAPSHOT } from '../src/client/trajectory-snapshot-builder.ts'
++import { EMPTY_TRAJECTORY_EXTENSIONS } from '../src/client/trajectory-extensions.ts'
+ import type { TrajectorySnapshot } from '../src/client/trajectory-contract.ts'
+ import { deriveTrajectoryTimeline } from '../src/client/timeline.ts'
+ import { t as tTrajectory, tZh } from './locale.client.ts'
+@@ -227,6 +228,7 @@ function standaloneProps(
+     useChat: bindSnapshotSelector(createSnapshotStore(EMPTY_CHAT_SNAPSHOT)),
+     useSessions: emptySessions(),
+     usePanelInfo, useResource,
++    useExtensions: bindSnapshotSelector(createSnapshotStore(EMPTY_TRAJECTORY_EXTENSIONS)),
+     useSessionStatus: bindSnapshotSelector(
+       createSnapshotStore<SessionStatusSnapshot>(new Map()),
+     ),
+@@ -385,6 +387,7 @@ function mount(fixture: Awaited<ReturnType<typeof bench>>) {
+           loadOlder: trajectory.loadOlder,
+           setActualDuration: trajectory.setActualDuration,
+           useDuration: bindSnapshotSelector(trajectory.hooks.duration),
++          useExtensions: bindSnapshotSelector(trajectory.hooks.extensions),
+           t: tZh,
+         }
+       })()
+@@ -426,6 +429,55 @@ function mount(fixture: Awaited<ReturnType<typeof bench>>) {
+ }
+ 
+ describe('plugin registration', () => {
++  it('publishes one stable JSON record list for the loaded Session window', async () => {
++    const b = await bench()
++    const source = b.sourceDescriptor.resolve(b.reference.binding).hooks.trajectory as
++      ObservableSnapshot<TrajectorySnapshot>
++    const first = source.getSnapshot()
++    expect(source.getSnapshot()).toBe(first)
++    expect(first.recordContexts?.map(record => record.kind)).toContain('tool')
++    const toolRecord = first.recordContexts?.find(record => record.callId === 'c1')
++    expect(toolRecord?.eventRefs).toEqual([{ sessionId: SID, seq: 3 }])
++    expect(JSON.parse(JSON.stringify(first.recordContexts))).toEqual(first.recordContexts)
++    b.trajectoryStore.set(historySnapshot([...NODES]))
++    const next = source.getSnapshot()
++    expect(next).not.toBe(first)
++    expect(next.recordContexts).toEqual(first.recordContexts)
++  })
++
++  it('withdraws annotation metadata with its contributors and original parent lifetime', async () => {
++    const b = await bench()
++    const entry = b.slots.entries('conversation.view').find(candidate => candidate.options.id === 'trajectory')
++    if (entry?.inject === undefined) throw new Error('missing trajectory injection')
++    const injected = entry.inject(SID as never)
++    const hooks = injected.hooks as TrajectoryViewInjected['hooks']
++    function Column({ record }: PropsRuntime<'conversation.trajectory.column'>) {
++      return <span>{record.kind}</span>
++    }
++    function Objects({ record }: PropsRuntime<'conversation.trajectory.inspector.objects'>) {
++      return <span>{record.callId}</span>
++    }
++    let label = 'Source'
++    const disposeColumn = b.slots.register({
++      name: 'conversation.trajectory.column', id: 'source', order: 2, label: () => label,
++    }, Column)
++    const disposeObjects = b.slots.register({
++      name: 'conversation.trajectory.inspector.objects', id: 'objects',
++    }, Objects)
++    await waitFor(() => expect(hooks.extensions.getSnapshot()).toEqual({
++      columns: [{ id: 'source', order: 2, label: 'Source' }], hasObjects: true,
++    }))
++    label = '来源'
++    act(() => { b.ctx.locale.setLocale('zh') })
++    await waitFor(() => expect(hooks.extensions.getSnapshot().columns[0]?.label).toBe('来源'))
++    disposeColumn()
++    disposeObjects()
++    await waitFor(() => expect(hooks.extensions.getSnapshot()).toEqual(EMPTY_TRAJECTORY_EXTENSIONS))
++    await b.feature.dispose()
++    expect(b.slots.entries('conversation.trajectory.column')).toEqual([])
++    expect(b.slots.entries('conversation.trajectory.inspector.objects')).toEqual([])
++  })
++
+   it('registers trajectory after chat on the ring', async () => {
+     const b = await bench()
+     expect(tabsOf(b.slots)).toEqual([
+diff --git a/packages/client/ui-trajectory/tsconfig.json b/packages/client/ui-trajectory/tsconfig.json
+index c4938ad2551839d0625602503526104c8f5dc5b2..e87e52ae8b5078cd1cd3855ee81d2e715918840b 100644
+--- a/packages/client/ui-trajectory/tsconfig.json
++++ b/packages/client/ui-trajectory/tsconfig.json
+@@ -8,6 +8,9 @@
+     "src"
+   ],
+   "references": [
++    {
++      "path": "../../util/brand"
++    },
+     {
+       "path": "../../../vendor/cordis"
+     },
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index 6c7ce04c19349c2d5060f15a11eef5b642da0f50..17dcc4e921c604f74cdbcb3282ba3ab8884be1ea 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -5989,6 +5989,9 @@ importers:
+       '@deepseek-ai/dsh-attachment':
+         specifier: workspace:*
+         version: link:../../attachment/attachment
++      '@deepseek-ai/dsh-brand':
++        specifier: workspace:*
++        version: link:../../util/brand
+       '@deepseek-ai/dsh-client-locale':
+         specifier: workspace:*
+         version: link:../locale

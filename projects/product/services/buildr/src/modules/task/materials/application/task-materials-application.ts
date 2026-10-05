@@ -36,8 +36,8 @@ export function createTaskMaterialsApplication({ taskQuery, projectQuery, worktr
   function references(documents: TaskMaterialReference[]): void {
     if (new Set(documents.map(item => item.id)).size !== documents.length) throw documentError('task_materials_references_invalid', '材料编码必须唯一。');
   }
-  function manifest(root: string, relative: string) {
-    const observed = readBoundedText(root, `${relative}/materials.json`, MAX_MANIFEST_BYTES);
+  function manifest(root: string, relative: string, options: { requireRootProof?: boolean } = {}) {
+    const observed = readBoundedText(root, `${relative}/materials.json`, MAX_MANIFEST_BYTES, options);
     if (!observed.exists) return { materials: emptyManifest(), materialsDigest: 'absent' };
     let parsed: unknown;
     try { parsed = JSON.parse(observed.content!); } catch { throw documentError('task_materials_manifest_invalid', '任务材料清单不是合法 JSON。', 409); }
@@ -50,13 +50,13 @@ export function createTaskMaterialsApplication({ taskQuery, projectQuery, worktr
     if (materials.documents.filter(item => item.role === 'brief').length > 1 || new Set(materials.documents.map(item => item.id)).size !== materials.documents.length) throw documentError('task_materials_manifest_invalid', '材料清单身份或说明数量不合法。', 409);
     return { materials, materialsDigest: observed.actualDigest! };
   }
-  function readReference<R extends StoredReference>(targetRoot: string, taskId: string, root: string, relative: string, reference: R): Omit<TaskMaterialDocument, 'role'> & { role: R['role'] } {
+  function readReference<R extends StoredReference>(targetRoot: string, taskId: string, root: string, relative: string, reference: R, options: { requireRootProof?: boolean } = {}): Omit<TaskMaterialDocument, 'role'> & { role: R['role'] } {
     try {
       const read = reference.source.kind === 'task'
-        ? { ...readBoundedText(root, `${relative}/${markdownPath(reference.source.path)}`), provenance: 'task-local' as const }
-        : reader.taskProjectDocument(targetRoot, taskId, reference.source.project, reference.source.path);
+        ? { ...readBoundedText(root, `${relative}/${markdownPath(reference.source.path)}`, undefined, options), provenance: 'task-local' as const }
+        : reader.taskProjectDocument(targetRoot, taskId, reference.source.project, reference.source.path, options);
       return { ...reference, exists: read.exists, content: read.content, actualDigest: read.actualDigest, provenance: read.provenance, diagnostic: !read.exists ? { code: 'task_materials_document_missing', message: '已关联的任务材料当前不存在。' } : !read.content?.trim() ? { code: 'task_materials_document_empty', message: '已关联的任务材料正文为空，尚无真实可读内容。' } : null };
-    } catch (cause) { return { ...reference, exists: false, content: null, actualDigest: null, provenance: null, diagnostic: diagnostic(cause) }; }
+    } catch (cause) { if (options.requireRootProof) throw cause; return { ...reference, exists: false, content: null, actualDigest: null, provenance: null, diagnostic: diagnostic(cause) }; }
   }
   function inspectTaskMaterials(targetRoot: string, taskId: string): TaskMaterialsResponse {
     const current = context(targetRoot, taskId);
@@ -64,6 +64,19 @@ export function createTaskMaterialsApplication({ taskQuery, projectQuery, worktr
     const materials = currentManifest(observed.materials);
     const legacy = observed.materials.documents.some(reference => reference.role === 'brief');
     return { schemaVersion: 'buildr.task-materials-result/v2', taskId, materials, materialsDigest: observed.materialsDigest, documents: materials.documents.map(reference => readReference(targetRoot, taskId, current.root, current.relative, reference)), diagnostics: legacy ? [{ code: 'task_materials_legacy_brief', message: '旧任务说明文件关联尚待显式迁移或释放；任务说明仅从 Task Record.brief 读取。' }] : [] };
+  }
+  /** Read only the explicitly selected material; does not load sibling bodies. */
+  function inspectTaskMaterial(targetRoot: string, taskId: string, materialId: string): TaskMaterialDocument | null {
+    taskActionId(materialId, 'materialId');
+    const current = context(targetRoot, taskId);
+    const observed = manifest(current.root, current.relative, { requireRootProof: true });
+    const selected = currentManifest(observed.materials).documents.find(item => item.id === materialId);
+    if (!selected) return null;
+    const relative = selected.source.path;
+    if (relative.split('/').some(part => part.startsWith('.env') || ['.ssh', '.aws', '.gnupg', '.git', 'node_modules'].includes(part)) || /(?:\.pem|\.key|credentials(?:\.[^/]*)?)$/i.test(relative)) {
+      throw documentError('task_document_path_forbidden', '材料路径属于秘密或内部目录，不能用于被动来源读取。');
+    }
+    return readReference(targetRoot, taskId, current.root, current.relative, selected, { requireRootProof: true });
   }
   function ensureDirectory(root: string, relative: string): void {
     let directory = root;
@@ -203,6 +216,6 @@ export function createTaskMaterialsApplication({ taskQuery, projectQuery, worktr
       return { result, materialsDigest: documentDigest(bytes) };
     });
   }
-  return Object.freeze({ inspectTaskMaterials, recordTaskMaterials, writeTaskMaterialDocument, inspectLegacyTaskBrief, migrateLegacyTaskBrief, releaseLegacyTaskBrief, taskProjectDocument: reader.taskProjectDocument });
+  return Object.freeze({ inspectTaskMaterials, inspectTaskMaterial, recordTaskMaterials, writeTaskMaterialDocument, inspectLegacyTaskBrief, migrateLegacyTaskBrief, releaseLegacyTaskBrief, taskProjectDocument: reader.taskProjectDocument });
 }
 export type TaskMaterialsApplication = ReturnType<typeof createTaskMaterialsApplication>;

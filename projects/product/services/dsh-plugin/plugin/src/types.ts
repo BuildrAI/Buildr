@@ -16,6 +16,15 @@ export interface Config {
     nodeSha256?: string;
     cliSha256?: string;
   };
+  /** Development-only passive reader override; does not change the installation used by open(). */
+  sourceBinding?: {
+    nodeExecutable: string;
+    cliEntry: string;
+    nodeSha256?: string;
+    cliSha256?: string;
+  };
   timeoutMs?: number;
   pollMs?: number;
 }
+
+export type * from './source-types.ts';

@@ -17,12 +17,16 @@ const req = createSdkRequire(sdk);
  * build registered both under the same service key and only failed once both were installed.
  */
 test('both plugin packages activate together in one loader without colliding', async t => {
-  const bundles = ['dsh-plugin', 'dsh-plugin-dev'].map(name => join(root, 'build', name));
+  const bundleRoot = resolve(process.env.BUILDR_DSH_BUNDLE_ROOT ?? join(root, 'build'));
+  const bundles = ['dsh-plugin', 'dsh-plugin-dev'].map(name => join(bundleRoot, name));
   for (const bundle of bundles) {
     try { await readFile(join(bundle, 'package.json')); }
-    catch { return t.skip('variants are not built in this workspace'); }
+    catch (error) {
+      if (process.env.BUILDR_DSH_BUNDLE_ROOT !== undefined) throw error;
+      return t.skip('variants are not built in this workspace');
+    }
   }
-  const dir = join(root, 'build/dsh-plugin-coexistence');
+  const dir = join(bundleRoot, 'dsh-plugin-coexistence');
   await mkdir(dir, { recursive: true });
   const { build: bundleWithEsbuild } = req('esbuild') as typeof Esbuild;
   const sources: string[] = [];

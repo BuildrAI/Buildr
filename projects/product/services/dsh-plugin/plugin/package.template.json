@@ -8,7 +8,7 @@
   "exports": {
     ".": { "types": "./lib/types/src/index.d.ts", "default": "./lib/index.js" },
     "./client": { "types": "./lib/types/src/client.d.ts", "default": "./lib/client.js" },
-    "./types": { "types": "./lib/types/src/types.d.ts" },
+    "./types": { "types": "./lib/types/src/types.d.ts", "default": "./lib/types.js" },
     "./typert": { "types": "./lib/typert.host.d.ts", "default": "./lib/typert.host.js" },
     "./remote": { "types": "./lib/typert.remote-client.d.ts", "default": "./lib/typert.remote-client.js" },
     "./package.json": "./package.json"

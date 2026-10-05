@@ -78,7 +78,7 @@ const SERVICE_METHODS = Object.freeze([
   'migrateServiceRegistry', 'updateServiceMetadata', 'generateServiceCreatePrompt', 'createServiceAsset',
 ]);
 const WORKSPACE_QUERY_METHODS = Object.freeze([
-  'getWorkspace', 'readProjectRegistryRecord', 'readServiceRegistryRecord',
+  'getWorkspace', 'resolveSourceWorkspaceRoot', 'readProjectRegistryRecord', 'readServiceRegistryRecord',
   'listProjects', 'listServices', 'projectDetail', 'serviceDetail',
   'resolveSourceRoot', 'resolveProjectRoot', 'resolveServiceRoot',
 ]);

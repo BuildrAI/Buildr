@@ -1,26 +1,52 @@
 /** Artifact-plane verification with the actual Cordis Loader, gateways and Slot registry. No HTTP listener. */
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { readFile, mkdir, writeFile } from 'node:fs/promises';
+import { readFile, mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 import { MessageChannel } from 'node:worker_threads';
 import type * as Esbuild from 'esbuild';
 import { createSdkRequire } from './sdk-require.ts';
+import { ownedBuildRoot, validatePreparedSourceSdk } from './prepare-source-sdk.ts';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const sdk = resolve(process.argv.slice(2).find(argument => !argument.startsWith('--')) ?? process.env.BUILDR_DSH_SDK_ROOT ?? join(root, 'build/dsh-0.2.0-rc.1'));
+const args = process.argv.slice(2);
+const option = (name: string): string | undefined => {
+  const index = args.indexOf(name);
+  if (index < 0) return undefined;
+  if (!args[index + 1] || args[index + 1].startsWith('--')) throw new Error(`Missing ${name} value`);
+  return args[index + 1];
+};
+let legacySdk: string | undefined;
+for (let index = 0; index < args.length; index++) {
+  if (args[index] === '--dev') continue;
+  if (['--source-sdk', '--bundle'].includes(args[index])) { index++; continue; }
+  if (args[index].startsWith('--') || legacySdk !== undefined) throw new Error(`Unknown verification argument ${args[index]}`);
+  legacySdk = args[index];
+}
+const sourceSdk = option('--source-sdk') ?? process.env.BUILDR_DSH_SOURCE_SDK_ROOT;
+const sdk = resolve(sourceSdk ?? legacySdk ?? process.env.BUILDR_DSH_SDK_ROOT ?? join(root, 'build/dsh-0.2.0-rc.1'));
+const sourceReceipt = sourceSdk === undefined ? undefined : validatePreparedSourceSdk(sdk, root);
 const req = createSdkRequire(sdk);
 const uiReq = createRequire(join(sdk, 'packages/client/ui-renderer/package.json'));
 const { build } = req('esbuild') as typeof Esbuild;
-const dir = join(root, 'build/dsh-plugin-verification');
+const dir = await mkdtemp(join(ownedBuildRoot(root), 'dsh-plugin-verification-'));
 // Two packages exist and they must behave identically apart from identity. Verifying only the
 // released one would leave the development entry untested, which is exactly where it broke.
 const variant = process.argv.includes('--dev')
   ? { bundleName: 'dsh-plugin-dev', packageName: '@buildr-ai/buildr-dsh-plugin-dev', entryId: 'buildr-dev', titleKey: 'titleDev', namespace: 'buildr-dev' }
   : { bundleName: 'dsh-plugin', packageName: '@buildr-ai/buildr-dsh-plugin', entryId: 'buildr', titleKey: 'title', namespace: 'buildr' };
-const bundle = join(root, 'build', variant.bundleName);
+const bundle = resolve(option('--bundle') ?? join(process.env.BUILDR_DSH_BUNDLE_ROOT ?? join(root, 'build'), variant.bundleName));
+const selectedManifest = JSON.parse(await readFile(join(bundle, 'package.json'), 'utf8'));
+if (selectedManifest.buildrDshSourceSdk !== undefined) {
+  if (sourceReceipt === undefined) throw new Error('A source-enhanced artifact requires its explicit prepared --source-sdk input');
+  assert.equal(selectedManifest.buildrDshSourceSdk.sourceManifestSha256, sourceReceipt.sourceManifest.sha256);
+  assert.equal(selectedManifest.buildrDshSourceSdk.sourcePatchSha256, sourceReceipt.patchSha256);
+  assert.deepEqual(selectedManifest.buildrDshSourceSdk.compiledContracts, sourceReceipt.contracts);
+} else if (sourceReceipt !== undefined) {
+  throw new Error('The selected artifact does not attest this source SDK candidate');
+}
 await mkdir(dir, { recursive: true });
 // Test assembly shares exact framework identities; only the external RPC transport is in-process.
 const harnessSource = `
@@ -146,7 +172,7 @@ let loaded: { id: string; factory: (require: (key: string) => unknown) => object
 const document = dom.window.document;
 vm.runInNewContext(await readFile(join(bundle, 'lib/client.js'), 'utf8'), { window: { __ModuleLoader__: { load(row: typeof loaded) { loaded = row; } } }, document, globalThis: { dshDesktop: { protocolVersion: 1, browser: {} } } });
 assert.equal(loaded?.id, variant.packageName);
-const modules: Record<string, unknown> = { 'react/jsx-runtime': h.jsx, '@deepseek-ai/dsh-client-store': { createSnapshotStore: h.createSnapshotStore }, '@deepseek-ai/dsh-client-ui-primitives': { Tooltip: h.Tooltip } };
+const modules: Record<string, unknown> = { react: h.React, 'react/jsx-runtime': h.jsx, '@deepseek-ai/dsh-client-store': { createSnapshotStore: h.createSnapshotStore }, '@deepseek-ai/dsh-client-ui-primitives': { Tooltip: h.Tooltip } };
 const clientPlugin = loaded!.factory(key => { assert.ok(key in modules, `unexpected external ${key}`); return modules[key]; });
 // The parent mounts this namespace itself; its child injection consumes the service after mount.
 assert.equal((clientPlugin as { inject?: string[] }).inject?.includes('remote.buildr'), false, 'the mounted namespace must not be a hard injection');

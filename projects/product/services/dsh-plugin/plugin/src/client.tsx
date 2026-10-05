@@ -1,4 +1,4 @@
-/** Native sidebar action and explicit generated Remote namespace mount. */
+/** Native sidebar action and additive source renderers share one generated Remote namespace. */
 import type { Context } from '@deepseek-ai/cordis';
 import { createSnapshotStore, type ObservableSnapshot } from '@deepseek-ai/dsh-client-store';
 import { Tooltip } from '@deepseek-ai/dsh-client-ui-primitives';
@@ -11,6 +11,13 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar-browser/client';
 import type {} from '@deepseek-ai/dsh-api-remotes/client';
 import remote from '../lib/typert.remote-client.js';
 import type { OpenResult } from './types.ts';
+import type { SessionId } from '@deepseek-ai/dsh-session/types';
+import type {} from '@deepseek-ai/dsh-api-session-controller/client';
+import type {} from '@deepseek-ai/dsh-client-ui-conversation/client';
+import type {} from '@deepseek-ai/dsh-client-ui-trajectory/client';
+import type { SourceRecordRequest, SourceRecordResult } from './source-types.ts';
+import { createSourceReader } from './source-reader.ts';
+import { SourceColumn, SourceObjects, SourceView, type SourceInjected } from './SourceViews.tsx';
 import { createOpenAction, type Status } from './orchestration.ts';
 import { en, zh, type BuildrKey } from './locales.ts';
 import styles from './styles.module.css';
@@ -72,7 +79,8 @@ function CompatibilityNotice(props: NoticeProps) {
 // The mounted namespace becomes its own Cordis service key. A child injection can consume it
 // after this plugin mounts it, without making the parent wait for a service it creates itself.
 export const inject = ['slots', 'locale', 'sidebarRight', 'remote', 'layout'];
-/** Register only the supported independent action; never route a main panel. */
+
+/** Register the independent sidebar action and additive source seats without replacing Trajectory. */
 export async function apply(ctx: Context): Promise<void> {
   // This entry is an optional sidebar action. No failure inside it — mount, locale, store or slot
   // registration — may take down the shell boot, so the whole activation is contained and the reason
@@ -115,9 +123,13 @@ export async function apply(ctx: Context): Promise<void> {
     const compatible = createSnapshotStore(false);
     const carrier = (globalThis as typeof globalThis & { dshDesktop?: { protocolVersion: number; browser?: object } }).dshDesktop;
     const desktop = carrier?.protocolVersion === 1 && carrier.browser !== undefined;
-    let remoteNamespace: { open(): Promise<{ ok: boolean; value: OpenResult }> } | undefined;
-    ctx.inject(['remote.buildr'], scope => {
-      const namespace = scope.get('remote.buildr') as typeof remoteNamespace;
+    let remoteNamespace: {
+      open(): Promise<{ ok: boolean; value: OpenResult }>;
+      sourceRecord(input: SourceRecordRequest): Promise<{ ok: boolean; value: SourceRecordResult }>;
+    } | undefined;
+    const remoteKey = LOCALE === 'buildr-dev' ? 'remote.buildr-dev' : 'remote.buildr';
+    ctx.inject([remoteKey], scope => {
+      const namespace = scope.get(remoteKey) as typeof remoteNamespace;
       remoteNamespace = namespace;
       scope.effect(() => () => { if (remoteNamespace === namespace) remoteNamespace = undefined; });
     });
@@ -143,7 +155,43 @@ export async function apply(ctx: Context): Promise<void> {
       compatible.set(true);
       yield () => { compatible.set(false); };
     });
-    ctx.slots.inject('shell.overlay', () => ctx.slots.register({ name: 'shell.overlay', id: 'buildr-compatibility', locale: LOCALE, inject: injected }, CompatibilityNotice));
+    ctx.slots.inject('shell.overlay', () => ctx.slots.register({ name: 'shell.overlay', id: ENTRY_ID + '-compatibility', locale: LOCALE, inject: injected }, CompatibilityNotice));
+    const sources = new Map<SessionId, SourceInjected>();
+    const sourceInjected = (sessionId: SessionId): SourceInjected => {
+      const existing = sources.get(sessionId);
+      if (existing !== undefined) return existing;
+      const reader = createSourceReader(async record => {
+        if (mountFailure !== undefined || remoteNamespace === undefined) return { ready: false, code: 'source-remote-unmounted', message: '' };
+        // The Host reads its own events; client source metadata is never an authority supplied by this request.
+        const address = { recordId: record.recordId, kind: record.kind, transient: record.transient,
+          eventRefs: record.eventRefs.map(ref => ({ ...ref })),
+          ...(record.callId === undefined ? {} : { callId: record.callId }),
+          ...(record.parentCallId === undefined ? {} : { parentCallId: record.parentCallId }),
+          ...(record.rootCallId === undefined ? {} : { rootCallId: record.rootCallId }) };
+        const result = await remoteNamespace.sourceRecord({ sessionId, mode: 'content', record: address });
+        return result.ok ? result.value : { ready: false, code: 'source-remote-failed', message: '' };
+      });
+      const value: SourceInjected = {
+        ensureSource: record => { void reader.ensure(record); },
+        refreshSource: record => { void reader.refresh(record); },
+        ensureSourceWindow: records => { reader.ensureWindow(records); },
+        releaseSourceWindow: () => { reader.releaseWindow(); },
+        hooks: { source: reader },
+      };
+      sources.set(sessionId, value);
+      return value;
+    };
+    ctx.effect(() => () => { for (const value of sources.values()) value.hooks.source.dispose(); sources.clear(); });
+    ctx.slots.inject('conversation.trajectory.column', () => ctx.slots.register({
+      name: 'conversation.trajectory.column', id: ENTRY_ID + '-source', order: 20, label: () => ctx.locale.bind(LOCALE)('sourceTitle'), locale: LOCALE, inject: sourceInjected,
+    }, SourceColumn));
+    ctx.slots.inject('conversation.trajectory.inspector.objects', () => ctx.slots.register({
+      name: 'conversation.trajectory.inspector.objects', id: ENTRY_ID + '-objects', order: 20, locale: LOCALE, inject: sourceInjected,
+    }, SourceObjects));
+    ctx.slots.inject('conversation.view', () => ctx.slots.register({
+      name: 'conversation.view', id: ENTRY_ID, order: 20, label: () => ctx.locale.bind(LOCALE)(LOCALE === 'buildr-dev' ? 'sourceViewDev' : 'sourceView'), locale: LOCALE, inject: sourceInjected,
+    }, SourceView));
+
   } catch (error) {
     console.error('[buildr] activating the sidebar entry failed', error);
   }

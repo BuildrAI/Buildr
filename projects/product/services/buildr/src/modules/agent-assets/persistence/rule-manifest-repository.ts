@@ -1,3 +1,4 @@
+import { readSkillText } from './skill-content-repository.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -70,11 +71,26 @@ export function createRuleManifestRepository(dependencies: Dependencies) {
     return manifest;
   }
 
+  /** Bounded regular-file snapshot for passive reads; share the existing Rule parser/validator. */
+  function readRulesManifestForInspection(scopeRoot: string): any {
+    if (!fs.lstatSync(rulesManifestPath(scopeRoot), { throwIfNoEntry: false })) return { schemaVersion: 'buildr.rules/v1', rules: [] };
+    let content: string;
+    try { content = readSkillText(scopeRoot, 'rules/manifest.yml', { requireRootProof: true }).content; }
+    catch (cause) {
+      if (cause instanceof Error && 'code' in cause && cause.code === 'ENOENT') return { schemaVersion: 'buildr.rules/v1', rules: [] };
+      throw cause;
+    }
+    const manifest = parseRulesManifestYaml(content);
+    const errors = validateRulesManifest(manifest);
+    if (errors.length) throw new Error('rules/manifest.yml is invalid for passive inspection.');
+    return manifest;
+  }
+
   function writeRulesManifest(scopeRoot: string, manifest: any): string {
     const file = rulesManifestPath(scopeRoot);
     dependencies.atomicWriteFile(file, renderRulesManifestYaml(manifest), 'utf8');
     return file;
   }
 
-  return Object.freeze({ rulesManifestPath, parseRulesManifestYaml, renderRulesManifestYaml, validateRulesManifest, readRulesManifestForWrite, writeRulesManifest });
+  return Object.freeze({ rulesManifestPath, parseRulesManifestYaml, renderRulesManifestYaml, validateRulesManifest, readRulesManifestForWrite, readRulesManifestForInspection, writeRulesManifest });
 }

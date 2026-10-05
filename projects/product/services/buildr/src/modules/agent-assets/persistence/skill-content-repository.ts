@@ -1,3 +1,4 @@
+import { readVerifiedReadonlyBytes } from '../../../infrastructure/filesystem/verified-readonly-file.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -27,12 +28,19 @@ export function skillSourceRoot(workspaceRoot: string, relative: string): string
   if (!fs.statSync(directory).isDirectory()) throw skillContentError('技能源不是目录。');
   return directory;
 }
-export function readSkillText(directory: string, relative: string) {
+export function readSkillText(directory: string, relative: string, options: { requireRootProof?: boolean } = {}) {
   const target = safePath(directory, relative);
   const stat = fs.lstatSync(target);
   if (!stat.isFile()) throw skillContentError('只支持读取普通文本文件。');
   if (stat.size > MAX_BYTES) throw skillContentError('文件超过 512 KiB，暂不支持在线阅读。', 413);
   if (path.basename(relative) !== 'SKILL.md' && !textExtensions.has(path.extname(relative).toLowerCase())) throw skillContentError('此文件类型暂不支持在线阅读。', 415);
+  if (options.requireRootProof) {
+    const bytes = readVerifiedReadonlyBytes(directory, relative, MAX_BYTES);
+    let content: string;
+    try { content = new TextDecoder('utf-8', { fatal: true }).decode(bytes); } catch { throw skillContentError('此文件不是有效的 UTF-8 文本。', 415); }
+    if (content.includes('\0')) throw skillContentError('此文件不是可预览的文本。', 415);
+    return { path: relative, content, format: path.extname(relative).toLowerCase() === '.md' ? 'markdown' : 'text', digest: `sha256-${crypto.createHash('sha256').update(bytes).digest('hex')}` };
+  }
   const fd = fs.openSync(target, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
   try {
     const opened = fs.fstatSync(fd);

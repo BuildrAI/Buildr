@@ -1,3 +1,4 @@
+import { readVerifiedReadonlyBytes } from './verified-readonly-file.ts';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -10,8 +11,11 @@ const END = '<!-- buildr:required end -->';
 const pattern = () => /<!-- buildr:required begin -->(?:(?!<!-- buildr:required begin -->)[\s\S])*?<!-- buildr:required end -->/g;
 const sourceFile = () => path.join(resolveProductRoot(), RESOURCE_WORKSPACE_ROOT, 'AGENTS.md');
 
-function packageRequiredBlock(): string {
-  const source = fs.readFileSync(sourceFile(), 'utf8');
+export function readPackageRequiredBlock(options: { requireRootProof?: boolean } = {}): string {
+  const root = path.resolve(resolveProductRoot());
+  const source = options.requireRootProof
+    ? new TextDecoder('utf-8', { fatal: true }).decode(readVerifiedReadonlyBytes(root, path.join(RESOURCE_WORKSPACE_ROOT, 'AGENTS.md').split(path.sep).join('/'), 512 * 1024))
+    : fs.readFileSync(sourceFile(), 'utf8');
   const blocks = [...source.matchAll(pattern())];
   if (blocks.length !== 1) throw new Error('Package AGENTS.md must contain exactly one Buildr required block.');
   return blocks[0][0];
@@ -20,7 +24,7 @@ function packageRequiredBlock(): string {
 export function ensureRootRequiredBlock(targetRoot: string, changed: string[] = []): boolean {
   const file = path.join(targetRoot, 'AGENTS.md');
   const existing = fs.statSync(file, { throwIfNoEntry: false })?.isFile() ? fs.readFileSync(file, 'utf8') : '';
-  const block = packageRequiredBlock();
+  const block = readPackageRequiredBlock();
   let inserted = false;
   let next = '';
   let offset = 0;
@@ -46,7 +50,7 @@ export function rootRequiredBlockStatus(targetRoot: string) {
   const blocks = [...content.matchAll(pattern())];
   return {
     exists: true,
-    valid: blocks.length === 1 && blocks[0][0] === packageRequiredBlock()
+    valid: blocks.length === 1 && blocks[0][0] === readPackageRequiredBlock()
       && content.split(START).length === 2 && content.split(END).length === 2,
     path: 'AGENTS.md',
   };

@@ -1,0 +1,164 @@
+{
+  "schemaVersion": "buildr.dsh-source-patch/v1",
+  "upstream": {
+    "tag": "dsh-v0.2.0-rc.2",
+    "commit": "639ed015397290b3745d163aafe02ffee4aa3f84",
+    "version": "0.2.0-rc.2"
+  },
+  "patch": {
+    "path": "dsh-v0.2.0-rc.2-trajectory-annotations.patch",
+    "sha256": "372c6e33bc30dcb9c5d0d8f3077d2e65d33e72915a7550c974e273239a493f76"
+  },
+  "files": [
+    {
+      "path": "packages/client/ui-trajectory/README.md",
+      "baseSha256": "824a457da0253f564e03cda9ebb6cf9d4a5ed95a8722ec2f0f084db07e6c34a2",
+      "patchedSha256": "62ea3cf2ccbc5a58394b19100f0d1c718f92f69a39de434150bfd102d4673230"
+    },
+    {
+      "path": "packages/client/ui-trajectory/README.zh.md",
+      "baseSha256": "3c20dd53d402f179d5d09415e94d8a46a2cd7e042eddaa02c3813ae72bdf46ba",
+      "patchedSha256": "ebcd73b502207fe5c54eeef41f99716538acf3fb756d2dd5a7377ba222971b3f"
+    },
+    {
+      "path": "packages/client/ui-trajectory/package.json",
+      "baseSha256": "875155dae18fb63deb666ff3a415a890e77aff05a5c06c464b8437b01786886d",
+      "patchedSha256": "377bd9b3fde5153170b0ac5735c988665870f26f389a583d6205aacb3e38457f"
+    },
+    {
+      "path": "packages/client/ui-trajectory/src/client/TrajectoryTable.module.css",
+      "baseSha256": "dba4683d768a518704f13bbd8acc4d00e5ae23c1db147d5b66d610c39dfe6d88",
+      "patchedSha256": "7f93f314f0951210abdf759c08158a59fb0295a8a5db798c7c27518753e49c7f"
+    },
+    {
+      "path": "packages/client/ui-trajectory/src/client/TrajectoryTable.tsx",
+      "baseSha256": "0b8a5fa7f0f5ceb3d3a49272a0f8ff2c29de047f0bef4713f6cb8e3b8a4052e9",
+      "patchedSha256": "1ee2358f1e557f7dc5f998c8cdcbe58c70376873fefa67675e28ddbd51c6424d"
+    },
+    {
+      "path": "packages/client/ui-trajectory/src/client/TrajectoryView.tsx",
+      "baseSha256": "a27937dc782642dbfded762466e5f4ce64a12c39d3ccd4840e8fe730e690e5c4",
+      "patchedSha256": "3ad359486b46ea713d889841832901247560b535b9839bdd8b563d123104ab25"
+    },
+    {
+      "path": "packages/client/ui-trajectory/src/client/index.ts",
+      "baseSha256": "92e89b552dc674d516d636e26178f4854684ebfed521b84cc229c2166a234926",
+      "patchedSha256": "b54452bb65509a96c96d7b4a0eb361638e70c2a55094f50b0cc124137a432e33"
+    },
+    {
+      "path": "packages/client/ui-trajectory/src/client/layout.ts",
+      "baseSha256": "e5760027aee36ab68104cc44bc4259fef229590b1fff6ec9f7c45d4baaa5f8c5",
+      "patchedSha256": "7bd2afdb62dc34f9c6162b737e06adbcf4a9b38b53269cff64ffb76375dcf209"
+    },
+    {
+      "path": "packages/client/ui-trajectory/src/client/locales.ts",
+      "baseSha256": "cb6caa32f3c9c8c3eecf711ad0d7be6a27d7c9b870a97277f2a84626ce3c916c",
+      "patchedSha256": "c0590725de9c02d172f47dfa7bff5b73e98cff883ac8731b09af3d2247ff315b"
+    },
+    {
+      "path": "packages/client/ui-trajectory/src/client/trajectory-contract.ts",
+      "baseSha256": "61e69960f0c08af7d99c555b01b8c0b36b5210a2b1a09989ea2ab16459e29ec4",
+      "patchedSha256": "0573d57973e677300e051f5e9488dd233a47b817a737b125fe2614775cdca63d"
+    },
+    {
+      "path": "packages/client/ui-trajectory/src/client/trajectory-extension-contract.ts",
+      "baseSha256": null,
+      "patchedSha256": "f3ff28cea5427a64b78c4624b7d463697febeadafd52ec777975a0f8161bc1b1"
+    },
+    {
+      "path": "packages/client/ui-trajectory/src/client/trajectory-extensions.ts",
+      "baseSha256": null,
+      "patchedSha256": "53c5425e2878e06e8f766bb79f1d34a6ed783fadbab82f6bba4ec8cafeb6d40f"
+    },
+    {
+      "path": "packages/client/ui-trajectory/src/client/trajectory-record.ts",
+      "baseSha256": "fa86cb5f89c99d677793bb673cf723e199baa681ac25f057e04471d6813ba150",
+      "patchedSha256": "4392884bdff3bb7432cd92a02a1db7faaa5e700a71d0e2c07aaf3b880ef449b4"
+    },
+    {
+      "path": "packages/client/ui-trajectory/src/client/trajectory-snapshot-builder.ts",
+      "baseSha256": "8ce1db4f34542be76c1e78b0fb95705ecef14b2a5105173eb332a94fd0a056c6",
+      "patchedSha256": "ed1e17502652a6f3dad3a1c32ee3e1314541b4ecf40f2652e9cc0a7d0bfdbb0f"
+    },
+    {
+      "path": "packages/client/ui-trajectory/src/client/trajectory-tool-definition.ts",
+      "baseSha256": "d7ddea00a352f79ea5a6ee5f52fe44d0f559edb99829b15b7ba6fadeedb5d118",
+      "patchedSha256": "3ae1a343a0adfc2388d6c2a0307575b0d5d7bdc105a96a1ffe315d2dede12c4d"
+    },
+    {
+      "path": "packages/client/ui-trajectory/tests/conversation-definitions.client.spec.ts",
+      "baseSha256": "1a8333f43fdd96fe931cae4426d5f9c23a2b772956d47f214e678a6ee98e8490",
+      "patchedSha256": "7f6da0ed644c3314de1796988f42e5301e5567a8583cf6a47473536ea5317404"
+    },
+    {
+      "path": "packages/client/ui-trajectory/tests/extensions.client.spec.ts",
+      "baseSha256": null,
+      "patchedSha256": "3394034c22f8d20fa80db842dc856a9e595b4045b8d00da17f36fa5d8da140e7"
+    },
+    {
+      "path": "packages/client/ui-trajectory/tests/table-extensions.client.spec.tsx",
+      "baseSha256": null,
+      "patchedSha256": "a86aadc6129c7e134f2f19cd00b65227909fe1610609b9d7297499e0641190a3"
+    },
+    {
+      "path": "packages/client/ui-trajectory/tests/views.client.spec.tsx",
+      "baseSha256": "b4fb888208dfa102345ce849dc80d162d5f683b5b375d8e34365fe7d4454ef02",
+      "patchedSha256": "ba0b9243d2b83039c8985f78397fe8bcb1ab1c1c3d00216e802617f9492ac242"
+    },
+    {
+      "path": "packages/client/ui-trajectory/tsconfig.json",
+      "baseSha256": "28bcb7cbe94dcda74797f5fd0655b845c20a7861d931d0aceee93be81c7ef36d",
+      "patchedSha256": "7fdcc8cb2cc107a2ca494d9750f981913ef618245c4826b2b2dcd56e5598999d"
+    },
+    {
+      "path": "pnpm-lock.yaml",
+      "baseSha256": "80fe05eae33582ae26839afd05f1965f9b0e4be11034ddf9797af6085d5ba9b1",
+      "patchedSha256": "8c82cc2f5a65d58369e59bd9c8a9ec057a730c4c2714393a27fe32d465f058e2"
+    }
+  ],
+  "api": {
+    "slots": [
+      "conversation.trajectory.column",
+      "conversation.trajectory.inspector.objects"
+    ],
+    "recordContext": {
+      "type": "TrajectoryRecordContext",
+      "declarationPath": "packages/client/ui-trajectory/src/client/trajectory-extension-contract.ts",
+      "publicEntry": "@deepseek-ai/dsh-client-ui-trajectory/client"
+    },
+    "recordContexts": {
+      "property": "TrajectorySnapshot.recordContexts",
+      "declarationPath": "packages/client/ui-trajectory/src/client/trajectory-contract.ts",
+      "scope": "loaded-session-window"
+    },
+    "rawrefs": {
+      "property": "TrajectoryRecordContext.eventRefs",
+      "declarationPath": "packages/client/ui-trajectory/src/client/trajectory-extension-contract.ts",
+      "sequence": "non-negative-safe-integer"
+    }
+  },
+  "validation": {
+    "focusedTests": {
+      "command": "node node_modules/vitest/vitest.mjs run packages/client/ui-trajectory",
+      "passed": 198,
+      "skipped": 3,
+      "filesPassed": 13,
+      "filesSkipped": 1,
+      "status": "passed"
+    },
+    "typecheck": {
+      "command": "node node_modules/typescript/bin/tsc -b packages/client/ui-trajectory/tsconfig.json --pretty false",
+      "status": "failed-dependency-generation",
+      "ownedPackageDiagnostics": 0,
+      "reason": "Host Remote declarations have not been generated in this checkout."
+    },
+    "cleanBaseApply": {
+      "status": "passed",
+      "files": 21,
+      "source": "git-archive-exact-upstream-commit",
+      "steps": ["base-file-hashes", "git-apply-check", "git-apply", "patched-file-hashes"]
+    },
+    "desktopRuntime": "not-installed-or-verified",
+    "newValueExports": []
+  }
+}

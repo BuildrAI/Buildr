@@ -1,0 +1,372 @@
+{
+  "status": "generated",
+  "task": "dsh-buildr-provenance",
+  "change": "add-dsh-buildr-provenance",
+  "productCommit": "0dafaa22d60140006f5511a898eceb80f2b36d37",
+  "productUncommittedSummary": "?? projects/product/openspec/changes/add-dsh-buildr-provenance/",
+  "scope": "Only this change/prototypes; no product source/runtime/plugin changes.",
+  "dshVersion": "0.2.0-rc.2",
+  "prototypeOnlySeams": [
+    "Actual original TrajectoryTable colgroup/thead/td/colSpan source was extended in owned offline copy.",
+    "Original Inspector functions/tabs remain; a simulated content-object tab was appended.",
+    "Temporary factory prototype exports and primitive export pruning are not public production APIs.",
+    "Clipboard uses in-memory mock; no real backend, file navigation, activation or ownership query.",
+    "KaTeX font CSS excluded: math rendering appearance is outside these fixtures.",
+    "Lazy syntax grammar catalog omitted in the owned primitive copy; original boot grammars JSON/TS/shell and original plain-text fallback remain; other code languages not validated.",
+    "Current versus historical bodies and scope/source evidence are fixtures, not new live APIs.",
+    "Record index is the stable allRows fixture identity, not a persistent seq locator."
+  ],
+  "legacy": [
+    {
+      "path": "/var/folders/13/fhx82yyx6gz0h2vpmn8fh4480000gn/T/buildr-agent-observation-88dz9ejz/scene.tsx",
+      "sha256": "4b57f183bc4f4e4c41384c68f0f70f40765bbf70eb449786e0846e119ef6dc64",
+      "preserved": true
+    },
+    {
+      "path": "/var/folders/13/fhx82yyx6gz0h2vpmn8fh4480000gn/T/buildr-agent-observation-88dz9ejz/scene.css",
+      "sha256": "d1ce9d5dc1349e56d6dcf0a41e9ebbf5d3ae2ebd29e379ede04b3ea0c8a0b7c3",
+      "preserved": true
+    },
+    {
+      "path": "/var/folders/13/fhx82yyx6gz0h2vpmn8fh4480000gn/T/buildr-agent-observation-88dz9ejz/runtime.ts",
+      "sha256": "80ed941eaea6c1a9de05dd0905bbc199fd041599ee96e9cf64834614659496a6",
+      "preserved": true
+    },
+    {
+      "path": "/var/folders/13/fhx82yyx6gz0h2vpmn8fh4480000gn/T/buildr-agent-observation-88dz9ejz/data.ts",
+      "sha256": "357225d2f679d24da9e83111c8722df47f9bbdd45b1b037543be6d48966465a5",
+      "preserved": true
+    },
+    {
+      "path": "/var/folders/13/fhx82yyx6gz0h2vpmn8fh4480000gn/T/buildr-agent-observation-88dz9ejz/reader.tsx",
+      "sha256": "0c3e38620d46a8f985767f784c02f839c039b584efbdfac1b041677ac2d85d5f",
+      "preserved": true
+    },
+    {
+      "path": "/var/folders/13/fhx82yyx6gz0h2vpmn8fh4480000gn/T/buildr-agent-observation-88dz9ejz/build.mjs",
+      "sha256": "b2a89bdcb1cb239a051269f72c0c9721584d688668c7c18bb93d17f5a37a565e",
+      "preserved": true
+    },
+    {
+      "path": "/var/folders/13/fhx82yyx6gz0h2vpmn8fh4480000gn/T/buildr-agent-observation-88dz9ejz/scenes.json",
+      "sha256": "2a9a09a730bf182cdfc92d4aeacf21a826414a0356d414f94cd3bdd4313de004",
+      "preserved": true
+    },
+    {
+      "path": "/var/folders/13/fhx82yyx6gz0h2vpmn8fh4480000gn/T/buildr-agent-observation-88dz9ejz/trajectory.js",
+      "sha256": "279289119a81605dad99932affecc73402d8dda1932c5ac89a0cad4fcd4b076e",
+      "preserved": true
+    },
+    {
+      "path": "/var/folders/13/fhx82yyx6gz0h2vpmn8fh4480000gn/T/buildr-agent-observation-88dz9ejz/primitives-lite.js",
+      "sha256": "2014faf692df09ff16199915bba2c745bdc2ca11c821c8d2abcf69d32fc61489",
+      "preserved": true
+    },
+    {
+      "path": "/var/folders/13/fhx82yyx6gz0h2vpmn8fh4480000gn/T/buildr-agent-observation-88dz9ejz/observation-scenes.html",
+      "sha256": "f76977f8e137d9ab610e8453d7eef70a2de1ee6e6c8f18e921109bf16a07d515",
+      "preserved": true
+    },
+    {
+      "path": "/var/folders/13/fhx82yyx6gz0h2vpmn8fh4480000gn/T/buildr-agent-observation-88dz9ejz/preview.html",
+      "sha256": "edb5eaa8d5ceda430a593ab96744317decdce9a2a013a6c8cd64ca56fc2eb6ed",
+      "preserved": true
+    },
+    {
+      "path": "/var/folders/13/fhx82yyx6gz0h2vpmn8fh4480000gn/T/buildr-agent-observation-88dz9ejz/minimal-v2/scene.tsx",
+      "sha256": "5ecc53c6304dea5f525dc4ec8d68f0888141933f0118f2d1c8137d8b63945e50",
+      "preserved": true
+    },
+    {
+      "path": "/var/folders/13/fhx82yyx6gz0h2vpmn8fh4480000gn/T/buildr-agent-observation-88dz9ejz/minimal-v2/scenes.json",
+      "sha256": "cd40fe8ff8ab072c25e9082031d15dab5f39124ff993acaa809e6f9221bb8c8e",
+      "preserved": true
+    },
+    {
+      "path": "/var/folders/13/fhx82yyx6gz0h2vpmn8fh4480000gn/T/buildr-agent-observation-88dz9ejz/minimal-v2/build.mjs",
+      "sha256": "8466dd96f0c1d66cb3459a30ce6b3a9a69afc0b342c50f66136ca0f9f4c8ceda",
+      "preserved": true
+    },
+    {
+      "path": "/var/folders/13/fhx82yyx6gz0h2vpmn8fh4480000gn/T/buildr-agent-observation-88dz9ejz/minimal-v2/observation-scenes.html",
+      "sha256": "329e0df4f9f0ebfee537e32465d10c45c468d32807ca7de28432fe2ea37aa628",
+      "preserved": true
+    },
+    {
+      "path": "/var/folders/13/fhx82yyx6gz0h2vpmn8fh4480000gn/T/buildr-agent-observation-88dz9ejz/minimal-v2/preview.html",
+      "sha256": "6e065f7971ca780aa940bc3ca498274eac03ec8b92624a3a3bad41086f2dfeba",
+      "preserved": true
+    }
+  ],
+  "bytes": {
+    "taskPrototype": 1462219,
+    "standaloneReader": 2181414
+  },
+  "sources": [
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/openspec/changes/add-dsh-buildr-provenance/prototypes/source/ContentObjects.tsx",
+      "sha256": "742c7836085d410b150b45a77f51d672ce0016d7e31058f12d148a14fbabcd3c"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/openspec/changes/add-dsh-buildr-provenance/prototypes/source/Scene.tsx",
+      "sha256": "e25d89f717b09ee7397902efdcf556a419fea2e14578624a91e4015ad8b159eb"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/openspec/changes/add-dsh-buildr-provenance/prototypes/source/data.ts",
+      "sha256": "e3cf539877bc234fd3914beb3126c1ac696200d57c35f0134795725aa4bcb850"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/openspec/changes/add-dsh-buildr-provenance/prototypes/source/dsh-theme.css",
+      "sha256": "d1ce9d5dc1349e56d6dcf0a41e9ebbf5d3ae2ebd29e379ede04b3ea0c8a0b7c3"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/openspec/changes/add-dsh-buildr-provenance/prototypes/source/reader.tsx",
+      "sha256": "e438b507a9be4ae52fafe39510a7c719d383f0ebd83175bf90abc240997af6fb"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/openspec/changes/add-dsh-buildr-provenance/prototypes/source/runtime.ts",
+      "sha256": "96e211fce16d43c46d00b15fe731ef89be9ec2eaa48bfbfc912435dce8dca217"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/openspec/changes/add-dsh-buildr-provenance/prototypes/source/scene.css",
+      "sha256": "d642886c75d2ef818a0cbff7adbe17690d8561e60e606055f93c5f3240be9c37"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/openspec/changes/add-dsh-buildr-provenance/prototypes/source/scenes.json",
+      "sha256": "29c264776902ad0b93db127bf837223d0dcfb7c815a58c2febd87e0c88a5e9a8"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/openspec/changes/add-dsh-buildr-provenance/prototypes/source/vendor/Button.module.css",
+      "sha256": "d5e324be7782f28b320ebac3e5b48e3a3f95a6c8d90656c086a3a933e0b2c7a5"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/openspec/changes/add-dsh-buildr-provenance/prototypes/source/vendor/Checkbox.module.css",
+      "sha256": "ff7cab42e1278f55a5f339fbecd89185c15c6dfa6c49c704e38c38e4d7c1a162"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/openspec/changes/add-dsh-buildr-provenance/prototypes/source/vendor/CodeCard.module.css",
+      "sha256": "56cce1937d45385b9cb5574e8f7d89501154a1f8cd47a38da4d9051d7a740ada"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/openspec/changes/add-dsh-buildr-provenance/prototypes/source/vendor/ConnectionIndicator.module.css",
+      "sha256": "e48ba1dfdb2baf2e094e338621bb0bf6970f60dc7eefaaef1ddeea5864bf3797"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/openspec/changes/add-dsh-buildr-provenance/prototypes/source/vendor/DiffBlock.module.css",
+      "sha256": "20497caac6324eaf06f6f253b79969a2a6def2894d4a97ce3b0ac29f1f17c547"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/openspec/changes/add-dsh-buildr-provenance/prototypes/source/vendor/DisclosureRow.module.css",
+      "sha256": "5b478f058975f44ca930bcb2c30cb8773f5c446f08853c5df82ac42bb6727185"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/openspec/changes/add-dsh-buildr-provenance/prototypes/source/vendor/FileTypeIcon.module.css",
+      "sha256": "bc5756f2834772d4c7cc661d15417aafe0af8d00c959cdfe2dcde19bebcf62fe"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/openspec/changes/add-dsh-buildr-provenance/prototypes/source/vendor/HoverCard.module.css",
+      "sha256": "03e81485eb927d73f3db0352e8910c9bd6ce76fb8a7e5773ca16b2a61f151dfa"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/openspec/changes/add-dsh-buildr-provenance/prototypes/source/vendor/ImageLightbox.module.css",
+      "sha256": "737c90ab64f60803bdc23ab5e38807bf913ca17b3f778ffeed1a1b1929704096"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/openspec/changes/add-dsh-buildr-provenance/prototypes/source/vendor/ImagePreview.module.css",
+      "sha256": "0830f46ff6efe022b33fc0145417ee9e30a893b056cb434baa1eb14f3cc2ebc7"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/openspec/changes/add-dsh-buildr-provenance/prototypes/source/vendor/Input.module.css",
+      "sha256": "e24eb924cfefcc009e486b25cd8de6afaf4bfff5d9c0c3da17b5afb6441c8632"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/openspec/changes/add-dsh-buildr-provenance/prototypes/source/vendor/JsonTree.module.css",
+      "sha256": "7fa75ad3380973de2ada25c94a8ae2fceb50b972ce28a801a87afe10f1575153"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/openspec/changes/add-dsh-buildr-provenance/prototypes/source/vendor/Menu.module.css",
+      "sha256": "77265cc046078c060ca2f5b700b31c77f024a32e1834ebd3a0fc8b4562c7134a"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/openspec/changes/add-dsh-buildr-provenance/prototypes/source/vendor/MenuGroup.module.css",
+      "sha256": "d0b927d0df0026de5211e8ba8bec81e9f1960eeb914dea57bb0dc440bd71fd59"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/openspec/changes/add-dsh-buildr-provenance/prototypes/source/vendor/MenuSurface.module.css",
+      "sha256": "6230cfabdb5294b5cf174bc79842a9596f6aee6cd76a8cd5e183c67279bca9ae"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/openspec/changes/add-dsh-buildr-provenance/prototypes/source/vendor/Modal.module.css",
+      "sha256": "c9d511821e0d13e6f1eb0e69642abb7740acf8a77aece12ad7906713076db24f"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/openspec/changes/add-dsh-buildr-provenance/prototypes/source/vendor/PathLabel.module.css",
+      "sha256": "d9a0a5851bcf16bfb59a5e94223119aff73337c42a255bc2a9dd0df2c4caa0f9"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/openspec/changes/add-dsh-buildr-provenance/prototypes/source/vendor/Pill.module.css",
+      "sha256": "8059dd46e4a5340c00e6758278b6afb4f480c4dd2d11c7b555d914e52bd06f82"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/openspec/changes/add-dsh-buildr-provenance/prototypes/source/vendor/ReadBlock.module.css",
+      "sha256": "fede27713617b2d12201862793336cd999276bf6301af1c31c87652efaceced5"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/openspec/changes/add-dsh-buildr-provenance/prototypes/source/vendor/RiskConfirmation.module.css",
+      "sha256": "e032809655b1e3a269634083b9ede58baeab7c2e01fc5b86f72c18a21e24f538"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/openspec/changes/add-dsh-buildr-provenance/prototypes/source/vendor/SearchBlock.module.css",
+      "sha256": "89287f8f6082dd4f74a01ab8ef66531d1a0f4b58888f04232fb3687fc32002c6"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/openspec/changes/add-dsh-buildr-provenance/prototypes/source/vendor/SegmentedControl.module.css",
+      "sha256": "1891ca684346df51fed598de51545d6d195d0442a59be85271d0ee3f8dce63fd"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/openspec/changes/add-dsh-buildr-provenance/prototypes/source/vendor/SegmentedTabs.module.css",
+      "sha256": "022efca5f83f640c83afcf472ef64b2776b2b20bfa351adda347171ba5cc4c18"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/openspec/changes/add-dsh-buildr-provenance/prototypes/source/vendor/ShortcutKeys.module.css",
+      "sha256": "ffa9624099dafb8dfe3e76c57fe26a523cb7943fa5bedd31d3c67e16e3351139"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/openspec/changes/add-dsh-buildr-provenance/prototypes/source/vendor/StateDot.module.css",
+      "sha256": "ad4603fd7a499dcc3b672dc87663f6c73302a8cedaf4a9859db0abdb9144bee8"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/openspec/changes/add-dsh-buildr-provenance/prototypes/source/vendor/Switch.module.css",
+      "sha256": "74229d867e805e0bb52e921bce35049e94b34a3ebb8997aaf2de9e6a1fcd456b"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/openspec/changes/add-dsh-buildr-provenance/prototypes/source/vendor/Tag.module.css",
+      "sha256": "ac135f028674d5bce37a2617902c86d5934b299742536056a2abc5e99583764e"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/openspec/changes/add-dsh-buildr-provenance/prototypes/source/vendor/TerminalBlock.module.css",
+      "sha256": "168051e60f966b0bb409547e5fceacc47a7090356c46966f6c673086fe10eaef"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/openspec/changes/add-dsh-buildr-provenance/prototypes/source/vendor/TextShimmer.module.css",
+      "sha256": "2353d6d72be5150aee3b528e7ae081a941f508f4ee3aa17243d6b0cc3b4240c7"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/openspec/changes/add-dsh-buildr-provenance/prototypes/source/vendor/Toast.module.css",
+      "sha256": "74cab625e372a6cdaff92fa468b7d59bc037212d738e476ea0f8d485e4f8dbcb"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/openspec/changes/add-dsh-buildr-provenance/prototypes/source/vendor/Tooltip.module.css",
+      "sha256": "d1f3aa2d804d18f234a12b7219498fd1823ce8cc207a4da3778fa414bca97678"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/openspec/changes/add-dsh-buildr-provenance/prototypes/source/vendor/WebBlock.module.css",
+      "sha256": "65a4f4586c92533ad681f78231ddb6541e7ec6479fb9950eb0cce385bfc4d486"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/openspec/changes/add-dsh-buildr-provenance/prototypes/source/vendor/dsh-util-code-language.js",
+      "sha256": "d49730fccc6eec570498d919230556a744e22d48d87182f43c2aa121ea6eb60c"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/openspec/changes/add-dsh-buildr-provenance/prototypes/source/vendor/dsh-util-workspace-path.js",
+      "sha256": "5129d81b46c8f62ef084817af6a8e149724b7e69a253c40e3594805148742528"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/openspec/changes/add-dsh-buildr-provenance/prototypes/source/vendor/markdown/CodeBlock.module.css",
+      "sha256": "2c02318e7f43d24c1acd0400221b63e9ba85b6bffc004ed9b212e994f2535677"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/openspec/changes/add-dsh-buildr-provenance/prototypes/source/vendor/markdown/JsonBlock.module.css",
+      "sha256": "bd2051f52f562c6d39739e313c567405a366b57d03fc62abe675b608fdcc6f20"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/openspec/changes/add-dsh-buildr-provenance/prototypes/source/vendor/markdown/MarkdownText.module.css",
+      "sha256": "b26d4977785a4ac6b60da56ac04c57116643830208ee76bb8095f8d8700cb7a5"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/openspec/changes/add-dsh-buildr-provenance/prototypes/source/vendor/primitives.js",
+      "sha256": "693bcd67d182ebd6202c430208f76290d97b691f9147c3b06045cd7769f85fc2"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/openspec/changes/add-dsh-buildr-provenance/prototypes/source/vendor/settings-form/SettingsForm.module.css",
+      "sha256": "e6f8665558ac3f71e37a7d201a2fbc0f5f2991473747bf0a24795d2a037be26d"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/openspec/changes/add-dsh-buildr-provenance/prototypes/source/vendor/settings-form/fields.module.css",
+      "sha256": "afd83b53d8b053bd6e60967b3b452e307b69312c38f3c64ef22320ed9e32f2a6"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/openspec/changes/add-dsh-buildr-provenance/prototypes/source/vendor/trajectory.js",
+      "sha256": "db1275b91955472bbb64bb919962a78fa7d688911a603eaec5d18198766aea17"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/openspec/changes/add-dsh-buildr-provenance/prototypes/source/vendor/unused-client-store.js",
+      "sha256": "eee723e62475b21cb2c4c11bb96c6bf561a7ae29043fd8838c45ad6e6be49cb7"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/openspec/changes/add-dsh-buildr-provenance/prototypes/source/vendor/user-text.module.css",
+      "sha256": "4a7c80989bc7af1b9d4d1116f7718d57768aaea2945c5caa0428791695b014f7"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/services/buildr-web/src/components/SideReadingPanel.tsx",
+      "sha256": "29500e5c557008909347b97469125be5bf40db250e46c8c35f340b91b6428d0a"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/services/buildr-web/src/components/side-reading.css",
+      "sha256": "3ae62b9029b0619529e34a130500ba3864dc5640f0b816144ab757b0190ce94e"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/services/buildr-web/src/components/useSideReading.ts",
+      "sha256": "3ca0b521b7b78a4866d5b4beaf4739f2439c2f4fac744a8fb5821e339573b33b"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/services/buildr-web/src/features/task/components/PrototypeFeatureNotes.tsx",
+      "sha256": "a00f2a9a2ccaa47adb39b04ca059c47316484f75c7cb2940253b81caa70e2926"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/services/buildr-web/src/features/task/components/PrototypeReaderLayout.tsx",
+      "sha256": "77f6c68fd370560edb7cabdeaecdbd9189b16a839a310904eeb11a73f39938ef"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/services/buildr-web/src/features/task/components/PrototypeTab.tsx",
+      "sha256": "c2429e76114cb80e679e2052c8b560900e9bcbe229dbac1da984e00034b3f568"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/services/buildr-web/src/features/task/components/prototype-content.ts",
+      "sha256": "2699468da507361f4b9c4d5a689cebc191be2e61d25743fdb6c27c1ebc265329"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/services/buildr-web/src/features/task/components/prototype-reader.css",
+      "sha256": "c09a1cd283677132b4b356ea3c5423064dd5cb35c5fa8726151d228ecb6e7512"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/services/buildr-web/src/prototypes/prototype-bridge.ts",
+      "sha256": "28512317ca211fa779b57cf6dea90507256e0ff0e736c0e56d4b4e312f8313df"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/services/buildr-web/src/styles.css",
+      "sha256": "de1df5c2da58f89629d4aad28f582c223b10924267c2a358b3c07ebf8176d40c"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/services/buildr-web/src/theme.ts",
+      "sha256": "db726d944603ef8bdb2eb3c66cc04e4bb647f7a2108d381a73e00f4533210fa0"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/services/buildr/resources/workspace/skills/buildr/ui-prototype/assets/feature-notes.css",
+      "sha256": "0772c8c4e6305be4deb0c0922577b1eb337d1702652910ad9d665b0ed38c37fe"
+    },
+    {
+      "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/services/buildr/resources/workspace/skills/buildr/ui-prototype/assets/feature-notes.js",
+      "sha256": "6ef65fac29f30a6f5aad92c93598770e7e3addc2038d633698bf594833140e44"
+    }
+  ],
+  "originalCurrentDshTrajectory": {
+    "path": "/Users/chenjun/workspaces/BuildrAI/Buildr/.worktrees/dsh-buildr-provenance/projects/product/openspec/changes/add-dsh-buildr-provenance/prototypes/source/vendor/trajectory-original.js",
+    "sha256": "2d68ed266c10a67a69e9dc417a07c2f0fe103ac5fcae1efe7b2c7ab9a965905e"
+  },
+  "currentPrimitiveSource": "/var/folders/13/fhx82yyx6gz0h2vpmn8fh4480000gn/T/buildr-agent-observation-88dz9ejz/primitives.js",
+  "standaloneReaderDiscovery": "source/reader-preview.htm is not .html; existing scanner accepts only .html. Embedded scene marker therefore cannot create a second discovered task prototype.",
+  "browserValidation": "34 focused checks passed; no page errors or HTTP requests; task-host validation remains parent-owned.",
+  "isolatedPrimitiveLimit": "Exact Inspector/JsonTree/Markdown UI retained; only lazy syntax grammar catalog and KaTeX font CSS omitted. JSON/TS/shell boot grammar remains; math/other-language appearance not validated.",
+  "legacyPreservationRechecked": true
+}

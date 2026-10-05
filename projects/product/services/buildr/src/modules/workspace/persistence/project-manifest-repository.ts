@@ -1,3 +1,4 @@
+import { readVerifiedReadonlyBytes } from '../../../infrastructure/filesystem/verified-readonly-file.ts';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -181,7 +182,9 @@ export function createProjectManifestRepository(runtime: ProjectManifestReposito
     const root = path.resolve(targetRoot);
     runtime.assertInitializedBuildrWorkspace(root);
     const manifestPath = projectsManifestPath(root);
-    const content = fs.readFileSync(manifestPath, 'utf8');
+    const content = options.requireRootProof
+      ? new TextDecoder('utf-8', { fatal: true }).decode(readVerifiedReadonlyBytes(root, 'projects/manifest.yml', 512 * 1024))
+      : fs.readFileSync(manifestPath, 'utf8');
     return {
       root,
       manifestPath,

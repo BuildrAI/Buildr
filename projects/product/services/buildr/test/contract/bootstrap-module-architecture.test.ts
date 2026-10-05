@@ -1,3 +1,7 @@
+import { AGENT_ASSETS_SOURCE_READ } from '../../src/modules/agent-assets/module.ts';
+import { AGENT_ASSETS_SOURCE_QUERY } from '../../src/modules/agent-assets/source/module.ts';
+import { TASK_BRIEF_QUERY } from '../../src/modules/task/module.ts';
+import { TASK_MATERIALS_APPLICATION } from '../../src/modules/task/materials/module.ts';
 import { AGENT_ASSETS_DIAGNOSTICS_READ } from '../../src/modules/agent-assets/module.ts';
 import { PROJECT_DAILY_PROGRESS_APPLICATION } from '../../src/modules/task/module.ts';
 import { AGENT_ASSETS_PACKAGE_CHECK_SUPPORT } from '../../src/modules/agent-assets/module.ts';
@@ -156,7 +160,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
   }, {
     id: 'agent-assets',
     requires: [WORKSPACE_ASSET_SUPPORT, AGENT_ASSETS_RUNTIME],
-    provides: [AGENT_ASSETS_APPLICATION, AGENT_ASSETS_INTERNAL, AGENT_ASSETS_OPENSPEC_SUPPORT, AGENT_ASSETS_DIAGNOSTICS_READ, AGENT_ASSETS_PACKAGE_CHECK_SUPPORT, AGENT_ASSETS_DIAGNOSTICS_BINDER],
+    provides: [AGENT_ASSETS_APPLICATION, AGENT_ASSETS_SOURCE_READ, AGENT_ASSETS_INTERNAL, AGENT_ASSETS_OPENSPEC_SUPPORT, AGENT_ASSETS_DIAGNOSTICS_READ, AGENT_ASSETS_PACKAGE_CHECK_SUPPORT, AGENT_ASSETS_DIAGNOSTICS_BINDER],
     contributions: {
       cli: [
         'package check', 'package build', 'runtime list',
@@ -196,7 +200,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
   }, {
     id: 'task',
     requires: [WORKSPACE_TASK_SUPPORT],
-    provides: ['task.work-context-application', TASK_QUERY_APPLICATION, TASK_COMMAND_APPLICATION, TASK_RUNTIME_PORT, TASK_CHANGE_BINDER],
+    provides: ['task.work-context-application', TASK_QUERY_APPLICATION, TASK_BRIEF_QUERY, TASK_COMMAND_APPLICATION, TASK_RUNTIME_PORT, TASK_CHANGE_BINDER],
     contributions: {
       cli: ['task create', 'task inspect', 'task update', 'task activate', 'task complete', 'task abandon', 'task work-context inspect', 'task work-context record', 'task work-context respond'],
       http: ['task-work-context.http', 'task.http'],
@@ -238,6 +242,12 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     requires: [TASK_QUERY_APPLICATION, TASK_COMMAND_APPLICATION, WORKSPACE_QUERY, TASK_WORKTREE_PROVIDER],
     provides: ['task.materials-application', 'task.brief-migration-application'],
     contributions: { cli: ['task materials inspect', 'task materials record', 'task materials write', 'task brief migrate'], http: ['task.materials.http'], diagnostics: [] },
+    lifecycle: 'none',
+  }, {
+    id: 'agent-assets-source',
+    requires: [AGENT_ASSETS_SOURCE_READ, WORKSPACE_QUERY, TASK_BRIEF_QUERY, TASK_MATERIALS_APPLICATION],
+    provides: [AGENT_ASSETS_SOURCE_QUERY],
+    contributions: { cli: ['agent-assets source inspect'], http: [], diagnostics: [] },
     lifecycle: 'none',
   }, {
     id: 'change',
@@ -331,6 +341,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     'worktree create', 'worktree cleanup', 'worktree inspect',
     'task commits', 'task changed-files',
     'task materials inspect', 'task materials record', 'task materials write', 'task brief migrate',
+    'agent-assets source inspect',
     'code repositories', 'code directory', 'code file', 'code search', 'code source-control', 'code history', 'code commit', 'code diff', 'code source-file',
     'project verification inspect', 'project verification validate', 'project verification update',
     'task review inspect', 'task review record',
@@ -362,6 +373,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
   assert.equal(typeof workspace.getWorkspace, 'function');
   assert.equal(typeof project.listProjects, 'function');
   assert.equal(typeof service.listServices, 'function');
+  assert.equal(typeof query.resolveSourceWorkspaceRoot, 'function');
   assert.equal(typeof query.readProjectRegistryRecord, 'function');
   assert.equal(typeof query.readServiceRegistryRecord, 'function');
   const agentAssets: any = runtimeProvide(runtime, AGENT_ASSETS_APPLICATION);
@@ -376,6 +388,10 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
   assert.equal(typeof taskQuery.inspectTask, 'function');
   assert.equal(typeof taskQuery.inspectTaskRetrospectiveDocument, 'function');
   assert.equal(typeof taskQuery.readTask, 'function');
+  const briefQuery = runtimeProvide(runtime, TASK_BRIEF_QUERY);
+  assert.deepEqual(Object.keys(briefQuery), ['readTaskBrief']);
+  assert.equal(typeof briefQuery.readTaskBrief, 'function');
+  assert.equal(briefQuery.readTask, undefined);
   assert.equal(taskQuery.createTask, undefined);
   assert.equal(typeof command.createTask, 'function');
   assert.equal(command.inspectTask, undefined);
@@ -433,6 +449,7 @@ test('Agent Assets CLI contributions 保留公开根帮助的历史位置', () =
     'render', 'sync',
     'skills add', 'skills remove', 'skills bind', 'skills unbind',
     'skill install', 'runtime check', 'skills render', 'rules render',
+    'agent-assets source inspect',
   ]);
 });
 
