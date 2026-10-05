@@ -19,13 +19,15 @@ buildr worktree cleanup <task-id> --target <canonical-workspace> --expected-sour
 
 新建 root 固定为 `<workspace-root>/.worktrees/<task-id>`；独立 Project/Service repository 放在其 canonical nested source path。不得静默回退到 `/tmp`。
 
+总目录已确认非 Git、其中存在明确登记的独立代码库（Repository）时，显式选择实际参与的项目（Project）或服务（Service），仅在各自规范来源层级创建工作树（Worktree）；共享同一来源去重，不初始化总目录 Git，不自动纳入其他代码库（Repository）。资料继续在真实位置维护，不复制进检出目录。来源缺失、损坏或 Git 身份未知不能当作非 Git；只选择健康来源的隔离按自身事实继续。仅子代码库（Repository）的组目录不是完整工作空间（Workspace），依赖完整根的开发预览（Preview）仍按自身范围判断。
+
 新选择的任务标识（Task ID）默认使用简短、稳定的语义名称，不主动添加日期；已有任务标识（Task ID）及用户指定的合法名称继续沿用，不截去日期或自动重命名。同名但不同的任务先核对归属，再用简短语义后缀区分，不复用他人位置。OpenSpec 归档日期只属于归档目录，不改变工作树（Worktree）或分支名称，也不替代交付核验和清理条件。
 
 同一任务涉及多个代码库（Repository）时，沿用同一任务标识（Task ID）作为工作树（Worktree）组的统一名称，不为每个代码库（Repository）另起任务标识（Task ID）。创建时各代码库（Repository）使用同一次任务计划已明确的分支（Branch）名称；实际检出目录（Checkout Path）仍保留登记源的规范相对层级，如 `<workspace-root>/.worktrees/<task-id>/<sourcePath>`，不把每个检出目录（Checkout Path）的末级名称改为任务标识（Task ID）。跨库关联由任务标识（Task ID）及已核对的提供者证据（Provider Evidence）确定，不能仅凭目录或分支（Branch）名称建立。接续已有外部工作树（Worktree）时保留已核对的实际路径与分支（Branch），不为统一名称自动迁移或重命名。
 
 ## 结果与边界
 
-结果只包含 repository selector、source/checkout path、branch、start point、HEAD、clean/registered/remote、精确Git effects与diagnostic；长期只保留 Git provider evidence。evidence位于Git common-dir的`buildr/task-worktrees/<task-id>.json`，不是Task状态或交付证明。
+结果只包含 repository selector、source/checkout path、branch、start point、HEAD、clean/registered/remote、精确Git effects与diagnostic；长期只保留 Git provider evidence。evidence位于Git common-dir的`buildr/task-worktrees/<task-id>.json`，不是Task状态或交付证明。已有 Git 根继续在根的公共目录（Common Directory）保存；非 Git 根按规范来源路径顺序在首个实际参与的代码库（Repository）保存同一完整组证据。提供者（Provider）从登记来源发现证据，发现不扩大任务参与范围；多份记录或身份冲突必须明确处理，不建立第二份索引。
 
 创建、检查与清理按当前有效能力绑定（Capability Binding）交给已选提供者（Provider）。接手智能体（Agent）须核对任务授权、实际归属及当前 Git 身份；更换智能体（Agent）或缺少历史登记不能成为放弃接续的理由。已有证据冲突时保留现场；仅缺少证据时使用下方当前对象输入重新核验，不另建同任务副本、迁移或补造创建历史。绑定变化本身不转移资源归属，也不授权混用不兼容入口。
 
@@ -47,6 +49,8 @@ buildr worktree cleanup <task-id> --target <canonical-workspace> --expected-sour
   }
 ]
 ```
+
+非 Git 总目录的观察集合只包含实际独立代码库（Repository），不补造 `workspace` 项；各项必须对应同一组根下的规范来源层级。清理只处理已证明归属的 Git 检出、分支（Branch）及组证据，保留非 Git 组目录和资料。
 
 必须提供规范绝对路径；独立项目（Project）和服务（Service）逐项使用真实 `project:<code>`、`service:<project>/<service>` 与当前来源，嵌套路径保持与来源一致。已有位置可使用实际路径，创建默认目录不变。先检查完整集合，再核验交付、正在进行的工作以及需要保留的忽略文件；清理继续成对传入全部源与交付提交（Commit）。锁定、其他检出位置占用、未知嵌套代码库（Repository）、未保存内容或版本变化仍会阻止删除。
 
