@@ -198,7 +198,7 @@ test('current task links use repository and checkout evidence across repositorie
   assert.equal(missing.taskId, null); assert.match(missing.taskDiagnostic!, /任务记录当前不可读取/);
 });
 
-test('task association limits cannot assert a unique task from an incomplete scan, while unrelated invalid evidence stays local', t => {
+test('task association limits and unreadable evidence cannot assert a unique task while current Git directories remain available', t => {
   const f = fixture(t); f.write('base.ts', 'base\n'); f.commit('base');
   const linked = path.join(f.base, 'topic'); f.git('worktree', 'add', '-b', 'task/topic', linked);
   const current = f.app.sourceControl(f.root).repositories;
@@ -213,8 +213,14 @@ test('task association limits cannot assert a unique task from an incomplete sca
   assert.equal(timedOut.taskId, null); assert.match(timedOut.taskDiagnostic!, /尚未完整读取/);
   clock.mock.restore();
   fs.unlinkSync(path.join(directory, 'z-task.json')); fs.writeFileSync(path.join(directory, 'invalid-retired.json'), '{}');
-  const unaffected = [...readSourceControlTaskAssociations(f.root, current, { ...dependencies, readGitWorktreeEvidence: (_root, id) => { if (id === 'invalid-retired') throw Error('invalid retired evidence'); return value; } }).values()][0];
-  assert.equal(unaffected.taskId, 'a-task'); assert.equal(unaffected.taskDiagnostic, null);
+  const beforeGit = f.snapshot();
+  const uncertain = [...readSourceControlTaskAssociations(f.root, current, { ...dependencies, readGitWorktreeEvidence: (_root, id) => { if (id === 'invalid-retired') throw Error('invalid retired evidence'); return value; } }).values()][0];
+  assert.equal(uncertain.taskId, null); assert.equal(uncertain.taskTitle, null); assert.match(uncertain.taskDiagnostic!, /尚未完整读取/);
+  assert.equal(current[0].worktrees.find(item => !item.isMain)?.available, true);
+  assert.deepEqual(f.snapshot(), beforeGit);
+  fs.unlinkSync(path.join(directory, 'invalid-retired.json'));
+  const confirmed = [...readSourceControlTaskAssociations(f.root, current, { ...dependencies, readGitWorktreeEvidence: () => value }).values()][0];
+  assert.equal(confirmed.taskId, 'a-task'); assert.equal(confirmed.taskDiagnostic, null);
   const entries = ['a-task.json', ...Array.from({ length: 999 }, (_, index) => `filler-${index}.json`), 'z-task.json']; let position = 0;
   const handle = { readSync: () => position < entries.length ? { name: entries[position++] } : null, closeSync: () => {} };
   t.mock.method(fs, 'opendirSync', () => handle as unknown as fs.Dir);

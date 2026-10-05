@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { observeGitRepositoryRoot } from '../../../../infrastructure/git/repository-boundary.ts';
 import type { TaskRecord } from '../../application/task-dto.ts';
 import { isWorkspaceOnlyTaskRecord } from '../../application/task-validation.ts';
 import { insideFilesystemPath, sameFilesystemPath } from '../../../../infrastructure/filesystem/filesystem-path-identity.ts';
@@ -42,11 +43,16 @@ export function resolveTaskRepositoryScope(targetRoot: string, taskId: string, d
     try { const head = reader.head(location); if (head) current.heads.add(head); }
     catch (error) { report(failureCode(error), '该来源的 HEAD 不可读；继续读取其他有效引用。', reference, current.repository.id); }
   }
-  function add(location: string, reference: string, attached = false): TaskScopeRepository | null {
+  function add(location: string, reference: string, attached = false, source?: Source): TaskScopeRepository | null {
     try {
       const real = fs.realpathSync(location);
       if (!attached && !insideFilesystemPath(root, real)) throw Object.assign(new Error('来源越出已登记工作空间。'), { code: 'task_commits_scope_forbidden' });
-      const repository = reader.repository(real);
+      let repository: GitRepository;
+      try { repository = reader.repository(real); }
+      catch (error) {
+        if (source?.type !== 'git' && observeGitRepositoryRoot(real) === null) return null;
+        throw error;
+      }
       if (!insideFilesystemPath(repository.root, real) || (!attached && !insideFilesystemPath(root, repository.root))) throw Object.assign(new Error('Git 根目录越出任务来源范围。'), { code: 'task_commits_scope_forbidden' });
       const existing = reads.get(repository.id);
       if (existing) {
@@ -86,7 +92,7 @@ export function resolveTaskRepositoryScope(targetRoot: string, taskId: string, d
         try {
           const location = dependencies.resolveSourceRoot(root, project.source);
           sourcePaths.set(`project:${code}`, location);
-          add(location, `project:${code}`, project.source.root === 'attached');
+          add(location, `project:${code}`, project.source.root === 'attached', project.source);
         } catch { report('task_commits_project_unavailable', '任务项目来源当前不可读。', `project:${code}`); }
       } else if (registered) report('task_commits_project_unavailable', '任务项目不在当前登记中。', `project:${code}`);
       const requested = task.record.scope.services.filter(item => item.project === code);
@@ -101,7 +107,7 @@ export function resolveTaskRepositoryScope(targetRoot: string, taskId: string, d
             const source = service.repositorySource || service.source;
             const location = dependencies.resolveSourceRoot(root, source);
             sourcePaths.set(reference, location);
-            add(location, reference, source.root === 'attached');
+            add(location, reference, source.root === 'attached', source);
           } catch { report('task_commits_service_unavailable', '任务服务来源当前不可读。', reference); }
         }
       } catch { report('task_commits_service_registry_unavailable', '任务服务登记当前不可读。', `project:${code}`); }
@@ -114,31 +120,29 @@ export function resolveTaskRepositoryScope(targetRoot: string, taskId: string, d
     // No Git metadata is a valid local workspace. Existing metadata with an unreadable Git probe is not a confirmed empty result.
     if (fs.lstatSync(path.join(root, '.git'), { throwIfNoEntry: false })) report(failureCode(error), '工作空间 Git 来源当前不可读，尚未确认该范围的提交。', 'workspace');
   }
-  if (workspaceRepository) {
-    if (isWorkspaceOnlyTaskRecord(task.record)) add(root, 'workspace');
-    try {
-      const evidence = dependencies.readGitWorktreeEvidence(root, taskId, { optional: true });
-      for (const worktree of evidence?.evidence.repositories || []) {
-        const location = worktree.selector === 'workspace' ? root : sourcePaths.get(worktree.selector);
-        if (!location) { report('task_commits_worktree_outside_scope', '登记工作树不在当前任务项目或服务范围内。', worktree.selector); continue; }
-        try {
-          const source = reader.repository(location);
-          const recordedSource = reader.repository(worktree.sourceRepository);
-          if (source.id !== recordedSource.id) throw new Error('Worktree source identity differs.');
-          const current = reads.get(source.id) || add(location, worktree.selector, !insideFilesystemPath(root, location));
-          if (!current) continue;
-          const checkout = reader.repository(worktree.checkoutPath);
-          if (checkout.id !== source.id || !reader.registeredWorktree(source.root, worktree.checkoutPath)) throw new Error('Worktree identity or registration differs.');
-          if (!current.checkouts.has(worktree.checkoutPath)) current.checkouts.add(worktree.checkoutPath);
-          current.taskCheckouts.add(worktree.checkoutPath);
-          if (options.observeHeads !== false) {
-            const head = reader.head(worktree.checkoutPath);
-            if (head) current.heads.add(head);
-          }
-          if (!current.view.sources.includes(`task-worktree:${worktree.checkoutPath}`)) current.view.sources.push(`task-worktree:${worktree.checkoutPath}`);
-        } catch { report('task_commits_worktree_unavailable', '任务工作树当前不可读或不再属于登记代码库；保留其他可读引用。', worktree.selector); }
-      }
-    } catch { report('task_commits_worktree_evidence_unavailable', '当前任务工作树登记不可读；保留项目与服务范围的读取结果。'); }
-  }
+  if (workspaceRepository && isWorkspaceOnlyTaskRecord(task.record)) add(root, 'workspace');
+  try {
+    const evidence = dependencies.readGitWorktreeEvidence(root, taskId, { optional: true });
+    for (const worktree of evidence?.evidence.repositories || []) {
+      const location = worktree.selector === 'workspace' ? root : sourcePaths.get(worktree.selector);
+      if (!location) { report('task_commits_worktree_outside_scope', '登记工作树不在当前任务项目或服务范围内。', worktree.selector); continue; }
+      try {
+        const source = reader.repository(location);
+        const recordedSource = reader.repository(worktree.sourceRepository);
+        if (source.id !== recordedSource.id) throw new Error('Worktree source identity differs.');
+        const current = reads.get(source.id) || add(location, worktree.selector, !insideFilesystemPath(root, location));
+        if (!current) continue;
+        const checkout = reader.repository(worktree.checkoutPath);
+        if (checkout.id !== source.id || !reader.registeredWorktree(source.root, worktree.checkoutPath)) throw new Error('Worktree identity or registration differs.');
+        if (!current.checkouts.has(worktree.checkoutPath)) current.checkouts.add(worktree.checkoutPath);
+        current.taskCheckouts.add(worktree.checkoutPath);
+        if (options.observeHeads !== false) {
+          const head = reader.head(worktree.checkoutPath);
+          if (head) current.heads.add(head);
+        }
+        if (!current.view.sources.includes(`task-worktree:${worktree.checkoutPath}`)) current.view.sources.push(`task-worktree:${worktree.checkoutPath}`);
+      } catch { report('task_commits_worktree_unavailable', '任务工作树当前不可读或不再属于登记代码库；保留其他可读引用。', worktree.selector); }
+    }
+  } catch { report('task_commits_worktree_evidence_unavailable', '当前任务工作树登记不可读；保留项目与服务范围的读取结果。'); }
   return { targetRoot: root, repositories, reads, diagnostics, truncated };
 }

@@ -3,19 +3,18 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { ChangeQuery, ChangeModel, ChangeLifecycle, Project, PrototypePage, PrototypeDiagnostic } from '../../../openspec/module.ts';
 import { taskActionId } from '../../application/task-validation.ts';
-import { createTaskProjectDocumentReader } from '../../materials/application/task-project-document-reader.ts';
+import { createTaskProjectDocumentReader, type TaskDocumentWorktreeQuery } from '../../materials/application/task-project-document-reader.ts';
 
 type TaskPrototype = PrototypePage & { id: string; provenance: string } & (
   | { source: 'change'; project: string; change: string; lifecycle: ChangeLifecycle }
   | { source: 'task'; project: null; change: null; lifecycle: null }
 );
-type WorktreeRepository = { selector: string; entityType: string; sourcePath: string; checkoutPath: string; state: string };
 export type OpenSpecQuery = Pick<ChangeQuery, 'findLogicalChange' | 'discoverUiPrototypes'>;
 export type ProjectQuery = {
   projectDetail(root: string, code: string): { project: Project };
   resolveSourceRoot(root: string, source: Project['source']): string;
 };
-export type WorktreeQuery = { inspectGitWorktrees(input: { workspaceRoot: string; taskId: string }): { status: string; repositories: WorktreeRepository[]; diagnostic?: { code: string; message: string } | null } };
+export type WorktreeQuery = TaskDocumentWorktreeQuery;
 type ChangeReference = { project: string; change: string };
 type ChangeWorkingCopy = { provenance: string; root: string; change: ChangeModel };
 type ChangeResolution = {

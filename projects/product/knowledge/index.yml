@@ -541,6 +541,7 @@ artifacts:
       - prototype-tab
       - task-source-skill-ee942e
       - task-source-git-worktree-provider-d1b252
+      - task-source-repository-boundary
       - task-source-parent-coordination-application-49a9bd
       - task-source-release-task-evidence-correlation-60b024
       - task-source-spec-5aed6b
@@ -574,7 +575,7 @@ artifacts:
       - current-knowledge-maintenance
       - task-openspec-apply
       - task-source-task-verification-application-68479e
-    observedDigest: 8c9d34e0d2fb69b379daf675bc27ecb44deeb359d706f2b88261a6597d8e735b
+    observedDigest: d58bcb503d71c0f87a5421c4c08b0dab48c8cf9cd86309f491f8fddbf981bedc
     files:
       - task-source-2026-08-30-parent-child-task-audit-b28c38
       - parent-completion-html
@@ -718,6 +719,7 @@ artifacts:
       - task-source-work-context-http-9257a1
       - task-source-work-context-cli-9a134a
       - task-source-git-worktree-provider-d1b252
+      - task-source-repository-boundary
       - task-source-git-worktree-observation
       - task-source-module-19a342
       - task-source-workbench-application-d9c5aa
@@ -774,7 +776,7 @@ artifacts:
       - task-git-method
       - task-commits-contract
       - public-json-contracts
-    observedDigest: 3e8c5e1a1b79c9f1ec8be61b77fdde5d44aaa32152337a7a141138cf0d7867a8
+    observedDigest: cadcf0916ff8ca2a390dcdb920a5ac300c948aadbf76894c0d887f6bdfe68107
     files:
       - task-source-2026-08-30-parent-child-task-audit-b28c38
       - task-file-task-system-md-d14898
@@ -1971,7 +1973,7 @@ sources:
     kind: code
     path: services/buildr/src/modules/task/module.ts
     summary: 组合任务读写、审查、验证、父任务和工作摘要（Work Context）能力，并登记公开接口。
-    observedDigest: 69243bc67f883d868af853f826aad3964a67fdaea26c779ed7b5f660411e083d
+    observedDigest: a8c56f9347164b747c76c0d2fc5741aa168acd9ad35a66176e910e48ad277c84
   - id: task-source-workbench-application-d9c5aa
     title: 工作概览读取
     kind: code
@@ -1992,17 +1994,22 @@ sources:
     link: services/buildr/resources/workspace/skills/buildr/task-triage/SKILL.md
     summary: 分别判断语义、执行形态和独立工作位置；只在实际命中时交接专业方法。
     observedDigest: 9428cfcccbcc95e028980fc8aed15754e16a9ec10dfad01d49721dd9361e49fc
+  - id: task-source-repository-boundary
+    title: 真实 Git 来源边界
+    kind: code
+    path: services/buildr/src/infrastructure/git/repository-boundary.ts
+    summary: 返回实际 Git 顶层或已确认无 Git；工具、权限和损坏元数据保持具体失败，不将身份未知当作非 Git。
   - id: task-source-git-worktree-observation
     title: 当前 Git 对象核验
     kind: code
     path: services/buildr/src/modules/task/infrastructure/git-worktree-observation.ts
-    summary: 核对明确对象的来源、实际 Git 身份、占用和完整嵌套集合；缺少历史登记时支持重新观察，不保存创建历史。
+    summary: 核对明确对象的来源、实际 Git 身份、占用和完整组集合，拒绝未列兄弟或嵌套仓库；仅子来源可重新观察，不保存创建历史。
   - id: task-source-git-worktree-provider-d1b252
     title: Git 工作树安全
     kind: code
     path: services/buildr/src/modules/task/infrastructure/git-worktree-provider.ts
-    summary: 解析真实代码库集合，创建独立位置；检查和清理可使用已有登记或明确当前对象，删除前复核源版本与成果保留。
-    observedDigest: 0d0db4a11616b217663527e867d7f32663b93f8daabca4ad7b4e6b6a18d3cd7a
+    summary: 按真实 Git 边界规划独立位置，在实际参与来源中保存与发现完整组证据；检查和清理核验已有登记或完整当前对象、源版本与成果保留。
+    observedDigest: 561640da1472e315a8bfdc3033fccd71b663c76ba7e1dc12cb5747dc84ce4af4
   - id: task-source-spec-5aed6b
     title: 工作摘要规范
     kind: spec
@@ -2100,7 +2107,7 @@ sources:
     kind: spec
     path: openspec/specs/task-environments/spec.md
     summary: 约束持久修改默认隔离、用户明确指定原地工作的例外，以及工作树（Worktree）的窄职责和具体资源退役责任。
-    observedDigest: d8c88bd6fe57df5d65bee83777553ea59fd0b6b3c0b30825987ef51b09f44986
+    observedDigest: 99fa8d1143e4bbc29cfbc9b0442f390a32ea03ad87df09a75f7d86c76fb4cd18
   - id: task-source-preferences-application-8b4fe8
     title: 偏好维护应用
     kind: code
@@ -2230,7 +2237,7 @@ sources:
     skillId: task-worktree
     link: services/buildr/resources/workspace/skills/buildr/task-worktree/SKILL.md
     summary: 创建、检查和安全清理指定任务的 Git 位置，核验真实交付输入后保护具体删除。
-    observedDigest: 8a7eddf2d038146fbccca69e276bd3af5824cfb99ae1a029f56a5f1a48d967bc
+    observedDigest: a8c7e6152a221f3d7789581ef19005e9ecc60a18b0c9196421793ba6904932db
   - id: task-source-skill-d5bb46
     title: 任务审查（task-review）
     kind: skill
@@ -2293,7 +2300,7 @@ sources:
     kind: evidence
     path: knowledge/code-map/task-system.md
     summary: 保存本主题当前解释或依据，网页与本地使用同一正文；不替代规范和代码。
-    observedDigest: 3e8c5e1a1b79c9f1ec8be61b77fdde5d44aaa32152337a7a141138cf0d7867a8
+    observedDigest: cadcf0916ff8ca2a390dcdb920a5ac300c948aadbf76894c0d887f6bdfe68107
   - id: task-file-task-system-html-80857d
     title: 完整过程与角色职责 · 独立展示
     kind: evidence
@@ -2888,7 +2895,7 @@ sources:
     title: 任务项目正文与实际文件根
     kind: code
     path: services/buildr/src/modules/task/materials/application/task-project-document-reader.ts
-    summary: 通过任务、项目和工作树事实有界读取真实Markdown，拒绝越界、符号链接和静默候选回退。
+    summary: 按真实项目及服务边界读取资料与代码候选；确认非 Git 资料不受无关代码诊断阻塞，已知或失效候选不回退原文件，保留有界阅读与路径保护。
   - id: task-changed-file-count-reader
     title: 任务改动的轻量计数
     kind: code

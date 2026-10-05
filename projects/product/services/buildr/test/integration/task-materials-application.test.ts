@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
 import test from 'node:test';
 import { createTaskMaterialsApplication } from '../../src/modules/task/materials/application/task-materials-application.ts';
 import { documentDigest, MAX_TASK_DOCUMENT_BYTES } from '../../src/modules/task/materials/application/task-project-document-reader.ts';
@@ -17,6 +17,7 @@ function fixture(t: { after(action: () => void): void }) {
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const record = { taskId: 'one', scope: { projects: ['app'], services: [] as Array<{ project: string; service: string }> }, changes: [] as Array<{ project: string; change: string }> };
   let worktrees: Worktrees = { status: 'ready', repositories: [] };
+  let storedSelectors: string[] | null = null;
   let reads = 0;
   const taskQuery = {
     assertCanonicalTaskWorkspace: (target: string) => path.resolve(target),
@@ -24,8 +25,8 @@ function fixture(t: { after(action: () => void): void }) {
     inspectTask: () => { throw new Error('inspectTask/OpenSpec must not be called'); },
   };
   const projectQuery = { projectDetail: (_root: string, code: string) => { assert.equal(code, 'app'); return { project: { source: { type: 'workspace', path: 'projects/app' } } }; }, resolveSourceRoot: (root: string, source: { path: string }) => path.resolve(root, source.path) };
-  const application = createTaskMaterialsApplication({ taskQuery, projectQuery, worktreeQuery: { inspectGitWorktrees: () => worktrees } });
-  return { root, record, application, reads: () => reads, local: (relative = '', id = 'one') => path.join(root, '.buildr/local/task-materials', id, relative), setWorktrees: (value: Worktrees) => { worktrees = value; } };
+  const application = createTaskMaterialsApplication({ taskQuery, projectQuery, worktreeQuery: { inspectGitWorktrees: () => worktrees, readGitWorktreeEvidence: () => storedSelectors === null ? null : { evidence: { repositories: storedSelectors.map(selector => ({ selector })) } } } });
+  return { root, record, application, reads: () => reads, local: (relative = '', id = 'one') => path.join(root, '.buildr/local/task-materials', id, relative), setEvidence: (selectors: string[] | null) => { storedSelectors = selectors; }, setWorktrees: (value: Worktrees) => { worktrees = value; } };
 }
 const taskRef = (id = 'brief', relative = 'brief.md', role: TaskMaterialReference['role'] = 'solution'): TaskMaterialReference => ({ id, role, title: '真实材料', source: { kind: 'task', path: relative } });
 const projectRef = (relative = 'tasks/one/brief.md', id = 'project-brief'): TaskMaterialReference => ({ id, role: 'solution', title: '项目说明', source: { kind: 'project', project: 'app', path: relative } });
@@ -117,6 +118,7 @@ test('服务独立工作树或身份冲突只返回局部诊断，本机材料�
   const f = fixture(t); write(path.join(f.root, 'projects/app/tasks/one/brief.md'), '# project\n');
   f.application.writeTaskMaterialDocument(f.root, 'one', { path: 'notes.md', content: '# local\n', expectedDocumentDigest: 'absent' });
   f.application.recordTaskMaterials(f.root, 'one', { expectedCurrent: 'absent', documents: [projectRef(), taskRef('notes', 'notes.md', 'implementation')] });
+  execFileSync('git', ['init', '--initial-branch=main', path.join(f.root, 'projects/app')], { stdio: 'ignore' });
   f.setWorktrees({ status: 'ready', repositories: [{ selector: 'service:app/backend', entityType: 'service', sourcePath: 'projects/app/services/backend', checkoutPath: '/nonexistent', state: 'ready' }] });
   const result = f.application.inspectTaskMaterials(f.root, 'one');
   assert.equal(result.documents[0].diagnostic?.code, 'task_worktree_project_root_unavailable'); assert.equal(result.documents[1].content, '# local\n');
@@ -206,4 +208,38 @@ test('真实两个进程从同一旧版本并发CAS，record与本机write都至
   const current = f.application.inspectTaskMaterials(f.root, 'one'); assert.ok(['# A\n', '# B\n'].includes(current.documents[0].content!));
   assert.equal(current.documents[0].actualDigest, documentDigest(Buffer.from(current.documents[0].content!)));
   assert.deepEqual(fs.readdirSync(f.local()).sort(), ['brief.md', 'materials.json']);
+});
+
+
+test('有效仅服务组的代码诊断不阻止已确认非 Git 项目资料，已知完整项目候选仍不回退', t => {
+  const f = fixture(t), body = '# current non-Git project material\n';
+  write(path.join(f.root, 'projects/app/tasks/one/brief.md'), body);
+  f.application.recordTaskMaterials(f.root, 'one', { expectedCurrent: 'absent', documents: [projectRef()] });
+  f.setWorktrees({ status: 'blocked', repositories: [], diagnostic: { code: 'git_worktree_identity_drift', message: 'A service checkout is unavailable.' } });
+  f.setEvidence(['service:app/api']);
+  const available = f.application.inspectTaskMaterials(f.root, 'one').documents[0];
+  assert.equal(available.content, body); assert.equal(available.actualDigest, documentDigest(Buffer.from(body))); assert.equal(available.provenance, 'retained-project');
+  for (const selectors of [['workspace', 'service:app/api'], ['project:app', 'service:app/api'], null]) {
+    f.setEvidence(selectors);
+    const unavailable = f.application.inspectTaskMaterials(f.root, 'one').documents[0];
+    assert.equal(unavailable.content, null); assert.equal(unavailable.diagnostic?.code, 'task_worktree_unavailable');
+    assert.equal(fs.readFileSync(path.join(f.root, 'projects/app/tasks/one/brief.md'), 'utf8'), body);
+  }
+});
+
+
+test('非 Git 项目内已选服务的代码资料读取候选，候选缺失或失效不回退原文件', t => {
+  const f = fixture(t), sourcePath = 'projects/app/services/api', logical = 'services/api/docs/result.md';
+  write(path.join(f.root, 'projects/app', logical), '# retained service document\n');
+  const checkoutPath = path.join(f.root, '.worktrees/one', sourcePath);
+  write(path.join(checkoutPath, 'docs/result.md'), '# current task candidate\n');
+  f.setWorktrees({ status: 'ready', repositories: [{ selector: 'service:app/api', entityType: 'service', sourcePath, checkoutPath, state: 'ready' }] });
+  const read = f.application.recordTaskMaterials(f.root, 'one', { expectedCurrent: 'absent', documents: [projectRef(logical)] }).documents[0];
+  assert.equal(f.application.taskProjectDocument(f.root, 'one', 'app', logical).path, logical); assert.equal(read.content, '# current task candidate\n'); assert.equal(read.provenance, 'task-worktree-candidate');
+  fs.unlinkSync(path.join(checkoutPath, 'docs/result.md'));
+  const missing = f.application.inspectTaskMaterials(f.root, 'one').documents[0];
+  assert.equal(missing.content, null); assert.equal(missing.diagnostic?.code, 'task_materials_document_missing');
+  f.setWorktrees({ status: 'blocked', repositories: [{ selector: 'service:app/api', entityType: 'service', sourcePath, checkoutPath, state: 'blocked' }] });
+  const unavailable = f.application.inspectTaskMaterials(f.root, 'one').documents[0];
+  assert.equal(unavailable.content, null); assert.equal(unavailable.diagnostic?.code, 'task_worktree_unavailable');
 });

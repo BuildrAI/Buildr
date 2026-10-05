@@ -104,9 +104,10 @@
       - [persistence/work-context-repository.ts](../../services/buildr/src/modules/task/work-context/persistence/work-context-repository.ts) — 独立版本保护与待处理查询
       - [interfaces/http/work-context-http.ts](../../services/buildr/src/modules/task/work-context/interfaces/http/work-context-http.ts) — 网页读取、记录与回应
       - [interfaces/cli/work-context-cli.ts](../../services/buildr/src/modules/task/work-context/interfaces/cli/work-context-cli.ts) — 智能体（Agent）读取和记录同一摘要
+    - [真实 Git 边界](../../services/buildr/src/infrastructure/git/repository-boundary.ts) — 观察实际 Git 顶层，只在确认无 Git 时返回空；提供者（Provider）与项目资料读取共享判断，工具、权限和损坏来源保持未知诊断
     - `infrastructure/` — Git 位置与删除安全
-      - [git-worktree-provider.ts](../../services/buildr/src/modules/task/infrastructure/git-worktree-provider.ts) — 创建和检查真实位置，清理前复核归属与成果保留；linked worktree 目标在证据解析前归一到 canonical checkout 身份
-      - [git-worktree-observation.ts](../../services/buildr/src/modules/task/infrastructure/git-worktree-observation.ts) — 从明确的当前对象核对来源、Git 身份与嵌套集合，保护既有位置及删除操作；不补造创建历史
+      - [git-worktree-provider.ts](../../services/buildr/src/modules/task/infrastructure/git-worktree-provider.ts) — 按实际 Git 边界创建、检查和清理；非 Git 根的独立来源使用实际公共目录（Common Directory）的完整组证据，统一发现供关联读取；linked worktree 目标归一到 canonical checkout 身份
+      - [git-worktree-observation.ts](../../services/buildr/src/modules/task/infrastructure/git-worktree-observation.ts) — 从明确的当前对象核对来源、Git 身份与完整嵌套集合，支持仅子来源的同一组根；保护既有位置及删除，不补造创建历史
     - **`materials/`** — 独立任务材料关联与真实正文阅读
       - [module.ts](../../services/buildr/src/modules/task/materials/module.ts) — 装配任务、项目与工作树能力，不依赖 OpenSpec
       - `application/`
@@ -123,7 +124,8 @@
       - [change-application.ts](../../services/buildr/src/modules/task/change/application/change-application.ts) — 关联变更与本机任务原型的独立发现、身份、安全读取和局部诊断
     - **`commits/`** — 当前可达提交的只读关联
       - [application/task-commits-application.ts](../../services/buildr/src/modules/task/commits/application/task-commits-application.ts) — 核对任务与明确来源，聚合去重后的提交、覆盖范围和局部诊断
-      - [application/task-repository-scope.ts](../../services/buildr/src/modules/task/commits/application/task-repository-scope.ts) — 与 changed-files 共用的任务范围仓库与检出解析
+      - [application/task-repository-scope.ts](../../services/buildr/src/modules/task/commits/application/task-repository-scope.ts) — 与 changed-files 共用的任务范围仓库与检出解析；根无 Git 时仍读取独立来源的组证据
+      - [代码目录关联](../../services/buildr/src/modules/code/infrastructure/code-worktree-catalog.ts) — Git 持有真实成员，工作树提供者（Provider）发现的完整组证据补充唯一任务关联；跨独立来源保持读取上限与局部诊断
       - [domain/task-commit.ts](../../services/buildr/src/modules/task/commits/domain/task-commit.ts) — 解析实际提交对象与规范任务尾注，区分合法、冲突和非法值
       - [infrastructure/git-commit-reader.ts](../../services/buildr/src/modules/task/commits/infrastructure/git-commit-reader.ts) — 核对真实代码库与工作树，限定读取引用和原始对象，不抓取远端或写入 Git
       - [interfaces/cli/task-commits.ts](../../services/buildr/src/modules/task/commits/interfaces/cli/task-commits.ts) — 接收任务编码与工作空间，输出同一任务提交结果

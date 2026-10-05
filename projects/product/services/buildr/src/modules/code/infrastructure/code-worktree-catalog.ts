@@ -13,8 +13,14 @@ type Diagnostic = { code: string; message: string; repositoryId: string | null }
 type Repository = { id: string; name: string; location: string; available: boolean };
 export type WorktreeCatalogDependencies = {
   gitWorktreeEvidencePath?(root: string, taskId: string): string;
+  gitWorktreeEvidenceDirectories?(root: string, options?: { requireComplete?: boolean }): string[];
   readGitWorktreeEvidence(root: string, taskId: string, options: { optional: boolean }): { evidence: { repositories: Array<{ sourceRepository: string; checkoutPath: string; branch?: string }> } } | null;
 };
+
+function evidenceDirectories(root: string, dependencies: WorktreeCatalogDependencies): string[] {
+  if (dependencies.gitWorktreeEvidenceDirectories) return dependencies.gitWorktreeEvidenceDirectories(root, { requireComplete: true });
+  return dependencies.gitWorktreeEvidencePath ? [path.dirname(dependencies.gitWorktreeEvidencePath(root, 'code-worktree-list'))] : [];
+}
 
 type SourceControlTaskAssociation = { taskId: string | null; taskTitle: string | null; taskDiagnostic: string | null };
 export const codeWorktreeTaskKey = (repositoryId: string, worktreeId: string) => JSON.stringify([repositoryId, worktreeId]);
@@ -26,13 +32,15 @@ export function readSourceControlTaskAssociations(root: string, repositories: Ar
   if (!members.length) return result;
   const ids = new Set(requestedTaskId ? [requestedTaskId] : []);
   let incomplete = false, uniquenessUnknown = false;
-  if (dependencies.gitWorktreeEvidencePath) {
+  if (dependencies.gitWorktreeEvidenceDirectories || dependencies.gitWorktreeEvidencePath) {
     try {
-      const directory = path.dirname(dependencies.gitWorktreeEvidencePath(root, 'code-worktree-list'));
-      if (fs.existsSync(directory)) {
+      let count = 0;
+      for (const directory of evidenceDirectories(root, dependencies)) {
+        if (Date.now() >= deadline || count >= 1000) { incomplete = true; uniquenessUnknown = true; break; }
+        if (!fs.existsSync(directory)) continue;
         const handle = fs.opendirSync(directory);
         try {
-          let entry: fs.Dirent | null, count = 0;
+          let entry: fs.Dirent | null;
           while ((entry = handle.readSync())) {
             if (Date.now() >= deadline || count >= 1000) { incomplete = true; uniquenessUnknown = true; break; }
             if (/^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?\.json$/.test(entry.name)) { ids.add(entry.name.slice(0, -5)); count++; }
@@ -49,14 +57,14 @@ export function readSourceControlTaskAssociations(root: string, repositories: Ar
   for (const id of [...ids].sort()) {
     if (Date.now() >= deadline) { incomplete = true; uniquenessUnknown = true; break; }
     let evidence;
-    try { evidence = dependencies.readGitWorktreeEvidence(root, id, { optional: true }); } catch { continue; }
+    try { evidence = dependencies.readGitWorktreeEvidence(root, id, { optional: true }); } catch { incomplete = true; uniquenessUnknown = true; continue; }
     if (!evidence) continue;
     const associated = new Set<string>();
     for (const recorded of evidence.evidence.repositories) {
       const matching = members.filter(({ worktree }) => sameFilesystemPath(worktree.location, recorded.checkoutPath));
       if (!matching.length) continue;
       let common: string;
-      try { common = gitCommonDirectory(recorded.sourceRepository); } catch { incomplete = true; continue; }
+      try { common = gitCommonDirectory(recorded.sourceRepository); } catch { incomplete = true; uniquenessUnknown = true; continue; }
       for (const { repository, worktree } of matching) {
         const registeredCommon = commons.get(repository.id);
         if (!registeredCommon || !sameFilesystemPath(common, registeredCommon)) continue;
@@ -142,24 +150,34 @@ export function readCodeWorktreeCatalog(root: string, repositories: Repository[]
     } catch { diagnostics.push({ code: 'code_worktrees_unavailable', message: repository.name + ' 的 Git 目录列表当前不可读取，保留其他代码库。', repositoryId: repository.id }); }
   }
   const taskIds = new Set(taskId ? [taskId] : []);
-  if (dependencies.gitWorktreeEvidencePath) {
+  let associationUniquenessUnknown = false;
+  if (dependencies.gitWorktreeEvidenceDirectories || dependencies.gitWorktreeEvidencePath) {
     try {
-      // The provider selects its metadata directory; each discovered record is still validated by the provider.
-      const directory = path.dirname(dependencies.gitWorktreeEvidencePath(root, 'code-worktree-list'));
-      if (fs.existsSync(directory)) {
+      // The provider discovers metadata directories; every group record remains provider-validated.
+      let count = 0;
+      for (const directory of evidenceDirectories(root, dependencies)) {
+        if (count > 1000 || Date.now() >= deadline) break;
+        if (!fs.existsSync(directory)) continue;
         const handle = fs.opendirSync(directory), files: string[] = [];
-        try { let entry: fs.Dirent | null; while ((entry = handle.readSync())) { if (/^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?\.json$/.test(entry.name)) files.push(entry.name); if (files.length > 1000 || Date.now() >= deadline) break; } } finally { handle.closeSync(); }
-        if (files.length > 1000 || Date.now() >= deadline) diagnostics.push({ code: 'code_worktree_associations_truncated', message: '任务目录关联达到读取上限，部分目录保留为独立选项。', repositoryId: null });
-        for (const file of files.sort().slice(0, 1000)) taskIds.add(file.slice(0, -5));
+        try {
+          let entry: fs.Dirent | null;
+          while ((entry = handle.readSync())) {
+            if (/^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?\.json$/.test(entry.name)) { files.push(entry.name); count++; }
+            if (count > 1000 || Date.now() >= deadline) break;
+          }
+        } finally { handle.closeSync(); }
+        for (const file of files.sort()) { if (taskIds.size >= 1000) break; taskIds.add(file.slice(0, -5)); }
       }
-    } catch { diagnostics.push({ code: 'code_worktree_associations_unavailable', message: '任务目录关联当前不可读取，保留 Git 可确定的目录。', repositoryId: null }); }
+      if (count > 1000 || Date.now() >= deadline) { associationUniquenessUnknown = true; diagnostics.push({ code: 'code_worktree_associations_truncated', message: '任务目录关联达到读取上限，部分目录保留为独立选项。', repositoryId: null }); }
+    } catch { associationUniquenessUnknown = true; diagnostics.push({ code: 'code_worktree_associations_unavailable', message: '任务目录关联当前不可读取，保留 Git 可确定的目录。', repositoryId: null }); }
   }
   let requestedTaskHasEvidence = false;
   const associations = new Map<CodeWorktree, Set<string>>();
   for (const id of taskIds) {
-    if (Date.now() >= deadline) { requestedTaskHasEvidence ||= Boolean(taskId); diagnostics.push({ code: 'code_worktree_associations_truncated', message: '任务目录关联达到本次时间上限，不能确定的任务范围不回退到主目录。', repositoryId: null }); break; }
+    if (Date.now() >= deadline) { associationUniquenessUnknown = true; requestedTaskHasEvidence ||= Boolean(taskId); diagnostics.push({ code: 'code_worktree_associations_truncated', message: '任务目录关联达到本次时间上限，不能确定的任务范围不回退到主目录。', repositoryId: null }); break; }
     let evidence;
     try { evidence = dependencies.readGitWorktreeEvidence(root, id, { optional: true }); } catch {
+      associationUniquenessUnknown = true;
       diagnostics.push({ code: 'code_worktree_evidence_unavailable', message: '任务 ' + id + ' 的目录关联当前不可读取。', repositoryId: null });
       if (id === taskId) requestedTaskHasEvidence = true;
       continue;
@@ -167,9 +185,10 @@ export function readCodeWorktreeCatalog(root: string, repositories: Repository[]
     if (!evidence) continue;
     if (id === taskId) requestedTaskHasEvidence = true;
     for (const recorded of evidence.evidence.repositories) {
-      if (Date.now() >= deadline) { diagnostics.push({ code: 'code_worktree_associations_truncated', message: '任务 ' + id + ' 的目录关联达到本次时间上限，保留已确认的成员。', repositoryId: null }); break; }
+      if (Date.now() >= deadline) { associationUniquenessUnknown = true; diagnostics.push({ code: 'code_worktree_associations_truncated', message: '任务 ' + id + ' 的目录关联达到本次时间上限，保留已确认的成员。', repositoryId: null }); break; }
       let common: string;
       try { common = gitCommonDirectory(recorded.sourceRepository); } catch {
+        associationUniquenessUnknown = true;
         diagnostics.push({ code: 'code_worktree_source_unavailable', message: '任务 ' + id + ' 的一个代码库来源当前不可读取。', repositoryId: null }); continue;
       }
       for (const repository of repositories) {
@@ -189,7 +208,8 @@ export function readCodeWorktreeCatalog(root: string, repositories: Repository[]
     }
   }
   for (const [member, tasks] of associations) {
-    if (tasks.size === 1) { const id = [...tasks][0]; member.groupId = 'task:' + id; member.kind = 'task'; member.taskId = id; }
+    if (tasks.size === 1 && associationUniquenessUnknown) diagnostics.push({ code: 'code_worktree_task_unconfirmed', message: '任务目录关联尚未完整读取，无法确认唯一对应任务。', repositoryId: member.repositoryId });
+    else if (tasks.size === 1) { const id = [...tasks][0]; member.groupId = 'task:' + id; member.kind = 'task'; member.taskId = id; }
     else diagnostics.push({ code: 'code_worktree_task_ambiguous', message: '一个目录被多个任务关联，保留独立目录选项并请核对关联。', repositoryId: member.repositoryId });
   }
   for (const member of worktrees) {

@@ -4,9 +4,10 @@ import path from 'node:path';
 import process from 'node:process';
 
 import { normalizeGitWorktreeCleanupDelivery, normalizeGitWorktreeObservedCheckouts, type GitWorktreeCleanupDeliveryInput, type GitWorktreeReviewedDelivery } from '../domain/git-worktree.ts';
-import { assertCurrentCheckoutIdentity, assertNoUnlistedNestedRepositories, assertObservedCheckoutSet } from './git-worktree-observation.ts';
+import { assertCurrentCheckoutIdentity, assertLiteralWorktreePath, assertNoUnlistedNestedRepositories, assertObservedCheckoutSet } from './git-worktree-observation.ts';
 import { spawnSync } from '../../../infrastructure/process.ts';
-import { observeGitCheckoutIdentity, sameFilesystemPath } from '../../../infrastructure/git/checkout-identity.ts';
+import { sameFilesystemPath } from '../../../infrastructure/git/checkout-identity.ts';
+import { observeGitRepositoryRoot as sourceGitRoot } from '../../../infrastructure/git/repository-boundary.ts';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../../infrastructure/contracts/public-json.ts';
 import { controlMetadataPath } from '../../../infrastructure/git/control-metadata-path.ts';
 
@@ -42,6 +43,7 @@ export type GitWorktreeRuntime = {
   removePath(file: string): void;
 };
 export type GitWorktreeProviderRuntime = GitWorktreeRuntime & {
+  gitWorktreeEvidenceDirectories(workspaceRoot: string, options?: { requireComplete?: boolean }): string[];
   gitWorktreeEvidencePath(workspaceRoot: string, taskId: string): string;
   readGitWorktreeEvidence: typeof readGitWorktreeEvidencePlaceholder;
   writeGitWorktreeEvidence: typeof writeGitWorktreeEvidencePlaceholder;
@@ -179,6 +181,10 @@ function inside(parent: string, child: string): boolean {
   return relative === '' || (!path.isAbsolute(relative) && relative !== '..' && !relative.startsWith(`..${path.sep}`));
 }
 
+function repositorySourceOrder(left: { sourcePath: string }, right: { sourcePath: string }): number {
+  return left.sourcePath.split('/').length - right.sourcePath.split('/').length || left.sourcePath.localeCompare(right.sourcePath);
+}
+
 function planDigest(plan: Pick<GitWorktreePlan, 'repositories'>): string {
   const portable = plan.repositories.map(({ selector, entityType, sourcePath, sourceRepository, checkoutPath, branch, startPoint, remote, remoteUrl }) => ({
     selector, entityType, sourcePath, sourceRepository, checkoutPath, branch, startPoint, remote, remoteUrl,
@@ -203,7 +209,10 @@ export function parseGitWorktreeList(text: string): WorktreeListEntry[] {
 
 export function registerGitWorktreeProvider(runtime: GitWorktreeRuntime): GitWorktreeProviderRuntime {
   function git(cwd: string, args: readonly string[], options: Record<string, unknown> = {}): CommandResult {
-    return spawnSync('git', ['-C', cwd, ...args], { encoding: 'utf8', ...options });
+    const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.toUpperCase().startsWith('GIT_')));
+    return spawnSync('git', ['--no-replace-objects', '-c', 'gc.auto=0', '-c', 'maintenance.auto=false', '-C', cwd, ...args], {
+      encoding: 'utf8', ...options, env: { ...env, GIT_TERMINAL_PROMPT: '0', GIT_NO_LAZY_FETCH: '1' },
+    });
   }
 
   function gitText(cwd: string, args: readonly string[]): string | null {
@@ -245,24 +254,113 @@ export function registerGitWorktreeProvider(runtime: GitWorktreeRuntime): GitWor
   function sharedGitDir(repository: string): string {
     const value = gitText(repository, ['rev-parse', '--git-common-dir']);
     if (!value) throw new Error(`Unable to resolve shared Git metadata: ${repository}`);
-    return path.resolve(repository, value);
+    return fs.realpathSync(path.resolve(repository, value));
+  }
+
+  function workspaceGitRoot(root: string): string | null {
+    const actual = sourceGitRoot(root);
+    if (actual && !sameFilesystemPath(actual, root)) throw new Error(`Workspace root belongs to a different Git repository: ${actual}`);
+    return actual;
   }
 
   // Evidence 登记的 workspaceRoot 是 canonical checkout；linked task worktree 作为 target 时
   // 归一到同一身份，否则 realpath 直接指向 worktree 目录会报身份不匹配。
   function canonicalEvidenceWorkspaceRoot(root: string): string {
     const resolved = fs.realpathSync(root);
-    const checkout = observeGitCheckoutIdentity(resolved);
-    if (!checkout?.linkedWorktree) return resolved;
+    const actual = sourceGitRoot(resolved);
+    if (!actual || !sameFilesystemPath(actual, resolved)) return resolved;
+    const gitDirectory = gitText(resolved, ['rev-parse', '--git-dir']);
+    const commonDirectory = sharedGitDir(resolved);
+    if (!gitDirectory || sameFilesystemPath(path.resolve(resolved, gitDirectory), commonDirectory)) return resolved;
     const listed = git(resolved, ['worktree', 'list', '--porcelain']);
     const main = listed.status === 0 ? parseGitWorktreeList(listed.stdout)[0]?.path : null;
-    const candidate = main || path.dirname(checkout.gitCommonDirectory);
+    const candidate = main || path.dirname(commonDirectory);
     try { return fs.realpathSync(candidate); } catch { return resolved; }
   }
 
-  function gitWorktreeEvidencePath(workspaceRoot: string, taskId: string): string {
+  function gitWorktreeEvidenceDirectories(workspaceRoot: string, { requireComplete = false }: { requireComplete?: boolean } = {}): string[] {
+    const root = canonicalEvidenceWorkspaceRoot(workspaceRoot);
+    const rootRepository = workspaceGitRoot(root);
+    const repositories = new Set<string>(rootRepository ? [rootRepository] : []);
+    const incomplete = (error: unknown): never => {
+      throw Object.assign(new Error(`工作树证据来源发现尚未完整：${errorMessage(error)}`), { code: 'git_worktree_evidence_discovery_incomplete' });
+    };
+    const add = (source: GitSource): void => {
+      try {
+        if (!source.path) return;
+        const location = fs.realpathSync(path.resolve(root, source.path));
+        if (!inside(root, location)) return;
+        const actual = sourceGitRoot(location);
+        if (source.type === 'git' && (!actual || !sameFilesystemPath(actual, location))) throw new Error(`已登记 Git 来源没有对应独立根：${source.path}。`);
+        if (actual) {
+          if (!inside(root, actual)) throw new Error(`来源实际 Git 根越出工作空间：${source.path}。`);
+          repositories.add(actual);
+        }
+      } catch (error) { if (requireComplete) incomplete(error); }
+    };
+    let projects: ProjectRegistry;
+    try {
+      projects = runtime.readProjectRegistryRecord(root);
+      if (projects.registry.migrationRequired) throw new Error('Project registry migration is required.');
+    } catch (error) {
+      if (requireComplete || !rootRepository) incomplete(error);
+      projects = { registry: { migrationRequired: false }, projects: {} };
+    }
+    for (const [code, project] of Object.entries(projects.projects)) {
+      add(project.source);
+      try {
+        for (const service of Object.values(runtime.readServiceRegistryRecord(root, code).services)) add(service.repositorySource || service.source);
+      } catch (error) { if (requireComplete) incomplete(error); }
+    }
+    const directories: string[] = [];
+    for (const repository of repositories) {
+      try {
+        const directory = path.join(sharedGitDir(repository), 'buildr', 'task-worktrees');
+        if (!directories.some((candidate) => sameFilesystemPath(candidate, directory))) directories.push(directory);
+      } catch (error) { if (requireComplete) incomplete(error); }
+    }
+    return directories;
+  }
+
+  function evidencePathForRepositories(taskId: string, repositories: Pick<RepositoryDescriptor, 'selector' | 'sourcePath' | 'sourceRepository'>[]): string {
     if (!TASK_ID_PATTERN.test(taskId)) throw new Error(`Invalid task id: ${taskId}`);
-    return path.join(sharedGitDir(fs.realpathSync(workspaceRoot)), 'buildr', 'task-worktrees', `${taskId}.json`);
+    const anchor = repositories.find((item) => item.selector === 'workspace')
+      || [...repositories].sort(repositorySourceOrder)[0];
+    if (!anchor) throw Object.assign(new Error('没有已核对的 Git 来源可保存工作树证据。'), { code: 'git_worktree_evidence_missing' });
+    return path.join(sharedGitDir(anchor.sourceRepository), 'buildr', 'task-worktrees', `${taskId}.json`);
+  }
+
+  function findGitWorktreeEvidenceFile(root: string, taskId: string): string | null {
+    if (!TASK_ID_PATTERN.test(taskId)) throw new Error(`Invalid task id: ${taskId}`);
+    const directories = gitWorktreeEvidenceDirectories(root);
+    if (workspaceGitRoot(root)) {
+      const rootFile = evidencePathForRepositories(taskId, [{ selector: 'workspace', sourcePath: '.', sourceRepository: root }]);
+      if (fs.lstatSync(rootFile, { throwIfNoEntry: false })) {
+        const recorded = readEvidenceFile(rootFile, root, taskId);
+        // A complete existing root record can discover its own group even when
+        // unrelated current registries are unavailable.
+        for (const item of recorded.evidence.repositories) {
+          try {
+            const directory = path.join(sharedGitDir(item.sourceRepository), 'buildr', 'task-worktrees');
+            if (!directories.some((candidate) => sameFilesystemPath(candidate, directory))) directories.push(directory);
+          } catch {
+            // Preserve the valid root record. This does not prove uniqueness:
+            // strict discovery reports gaps, and actions still check each source.
+          }
+        }
+      }
+    }
+    const files = directories.map((directory) => path.join(directory, `${taskId}.json`)).filter((file) => fs.lstatSync(file, { throwIfNoEntry: false }));
+    if (files.length > 1) throw Object.assign(new Error(`同一任务存在多份工作树证据，不能选择或覆盖：${taskId}。`), { code: 'git_worktree_evidence_conflict' });
+    return files[0] || null;
+  }
+
+  function gitWorktreeEvidencePath(workspaceRoot: string, taskId: string): string {
+    const root = canonicalEvidenceWorkspaceRoot(workspaceRoot);
+    const existing = findGitWorktreeEvidenceFile(root, taskId);
+    if (existing) return existing;
+    if (workspaceGitRoot(root)) return evidencePathForRepositories(taskId, [{ selector: 'workspace', sourcePath: '.', sourceRepository: root }]);
+    throw Object.assign(new Error(`Git worktree evidence was not found: ${taskId}`), { code: 'git_worktree_evidence_missing' });
   }
 
   function validateRepository(value: unknown, index: number): RepositoryEvidence {
@@ -348,20 +446,28 @@ export function registerGitWorktreeProvider(runtime: GitWorktreeRuntime): GitWor
 
   function readGitWorktreeEvidence(workspaceRoot: string, taskId: string, { optional = false }: { optional?: boolean } = {}): { file: string; evidence: GitWorktreeEvidence } | null {
     const canonicalRoot = canonicalEvidenceWorkspaceRoot(workspaceRoot);
-    const file = gitWorktreeEvidencePath(canonicalRoot, taskId);
-    if (!fs.existsSync(file)) {
+    const file = findGitWorktreeEvidenceFile(canonicalRoot, taskId);
+    if (!file) {
       if (optional) return null;
-      throw new Error(`Git worktree evidence was not found: ${taskId}`);
+      throw Object.assign(new Error(`Git worktree evidence was not found: ${taskId}`), { code: 'git_worktree_evidence_missing' });
     }
+    return readEvidenceFile(file, canonicalRoot, taskId);
+  }
+
+  function readEvidenceFile(file: string, root: string, taskId: string): { file: string; evidence: GitWorktreeEvidence } {
+    assertLiteralWorktreePath(file);
     const stat = fs.lstatSync(file);
     if (!stat.isFile() || stat.isSymbolicLink()) throw new Error(`Git worktree evidence is not a regular file: ${file}`);
-    return { file, evidence: validateEvidence(JSON.parse(fs.readFileSync(file, 'utf8')), canonicalRoot, taskId) };
+    return { file, evidence: validateEvidence(JSON.parse(fs.readFileSync(file, 'utf8')), root, taskId) };
   }
 
   function writeGitWorktreeEvidence(workspaceRoot: string, evidence: GitWorktreeEvidence): { file: string; evidence: GitWorktreeEvidence } {
     const canonicalRoot = canonicalEvidenceWorkspaceRoot(workspaceRoot);
     const normalized = validateEvidence(evidence, canonicalRoot, evidence.taskId);
-    const file = gitWorktreeEvidencePath(canonicalRoot, evidence.taskId);
+    const file = evidencePathForRepositories(evidence.taskId, normalized.repositories);
+    const current = readGitWorktreeEvidence(canonicalRoot, evidence.taskId, { optional: true });
+    if (current && current.file !== file) throw Object.assign(new Error('工作树证据锚点与当前组来源不符，不能迁移或覆盖。'), { code: 'git_worktree_evidence_conflict' });
+    assertLiteralWorktreePath(file);
     runtime.atomicWriteJson(file, normalized);
     return { file, evidence: normalized };
   }
@@ -377,7 +483,7 @@ export function registerGitWorktreeProvider(runtime: GitWorktreeRuntime): GitWor
     startPoint?: string;
   }): RepositoryDescriptor {
     const sourceRepository = fs.realpathSync(path.resolve(input.workspaceRoot, input.sourcePath));
-    const actualRoot = gitText(sourceRepository, ['rev-parse', '--show-toplevel']);
+    const actualRoot = sourceGitRoot(sourceRepository);
     if (!actualRoot || !sameFilesystemPath(actualRoot, sourceRepository)) throw new Error(`${input.selector} source is not an independent Git repository: ${input.sourcePath}`);
     const remote = input.source.git?.remote ?? null;
     const remoteUrl = remote ? gitText(sourceRepository, ['remote', 'get-url', remote]) : null;
@@ -402,16 +508,43 @@ export function registerGitWorktreeProvider(runtime: GitWorktreeRuntime): GitWor
     };
   }
 
+  function selectedSourceHasGit(selector: string, source: GitSource, root: string, repositories: RepositoryDescriptor[]): boolean {
+    const location = fs.realpathSync(path.resolve(root, requiredString(source.path, 'source.path')));
+    const actual = sourceGitRoot(location);
+    if (source.type === 'git') {
+      if (!actual || !sameFilesystemPath(actual, location)) throw new Error(`${selector} source is not an independent Git repository: ${source.path}`);
+      return true;
+    }
+    if (!actual) return false;
+    if (sameFilesystemPath(actual, location)) return true;
+    if (repositories.some((item) => sameFilesystemPath(item.sourceRepository, actual))) return false;
+    throw new Error(`${selector} belongs to an unselected Git repository: ${actual}`);
+  }
+
   function planGitWorktrees({ workspaceRoot, taskId, branch, startPoint, includes = [] }: PrepareInput): GitWorktreePlan {
     const root = canonicalEvidenceWorkspaceRoot(runtime.assertCanonicalTaskWorkspace(workspaceRoot));
     if (!TASK_ID_PATTERN.test(taskId)) throw new Error(`Invalid task id: ${taskId}`);
     if (!branch) throw new Error('Git worktree plan requires branch.');
     if (git(root, ['check-ref-format', `refs/heads/${branch}`]).status !== 0) throw new Error(`Invalid task branch: ${branch}`);
     const checkoutRoot = path.join(root, '.worktrees', taskId);
-    const repositories: RepositoryDescriptor[] = [sourceDescriptor({ selector: 'workspace', entityType: 'workspace', sourcePath: '.', source: { type: 'git' }, workspaceRoot: root, checkoutRoot, branch, startPoint })];
-    const seen = new Set(['workspace']);
+    const repositories: RepositoryDescriptor[] = workspaceGitRoot(root)
+      ? [sourceDescriptor({ selector: 'workspace', entityType: 'workspace', sourcePath: '.', source: { type: 'git' }, workspaceRoot: root, checkoutRoot, branch, startPoint })]
+      : [];
+    const seen = new Set(repositories.map((item) => item.selector));
     const projects = runtime.readProjectRegistryRecord(root);
     if (projects.registry.migrationRequired) throw new Error('Project registry migration is required before creating Git worktrees.');
+    const addDescriptor = (descriptor: RepositoryDescriptor, source: GitSource): void => {
+      const shared = repositories.find((item) => sameFilesystemPath(item.sourceRepository, descriptor.sourceRepository));
+      if (!shared) { repositories.push(descriptor); return; }
+      if (shared.entityType === 'workspace') {
+        if (startPoint === undefined && (source.integrationBranch || source.git?.integrationBranch)) shared.startPoint = descriptor.startPoint;
+        return;
+      }
+      if (shared.startPoint !== descriptor.startPoint || shared.remoteUrl !== descriptor.remoteUrl) throw new Error(`${descriptor.selector} declares conflicting integration identity for a shared repository.`);
+      // Keep the complete Project meaning when a service and its Project
+      // explicitly select the same checkout, regardless of argument order.
+      if (shared.entityType === 'service' && descriptor.entityType === 'project') repositories[repositories.indexOf(shared)] = descriptor;
+    };
     for (const selector of includes) {
       if (seen.has(selector)) continue;
       seen.add(selector);
@@ -419,8 +552,8 @@ export function registerGitWorktreeProvider(runtime: GitWorktreeRuntime): GitWor
         const code = selector.slice('project:'.length);
         const project = projects.projects[code];
         if (!project) throw new Error(`Unknown Git worktree selector: ${selector}`);
-        if (project.source.type !== 'git') continue;
-        repositories.push(sourceDescriptor({ selector, entityType: 'project', sourcePath: requiredString(project.source.path, 'project.source.path'), source: project.source, workspaceRoot: root, checkoutRoot, branch }));
+        if (!selectedSourceHasGit(selector, project.source, root, repositories)) continue;
+        addDescriptor(sourceDescriptor({ selector, entityType: 'project', sourcePath: requiredString(project.source.path, 'project.source.path'), source: project.source, workspaceRoot: root, checkoutRoot, branch }), project.source);
         continue;
       }
       if (selector.startsWith('service:')) {
@@ -428,28 +561,19 @@ export function registerGitWorktreeProvider(runtime: GitWorktreeRuntime): GitWor
         if (!projectCode || !serviceCode || extra.length) throw new Error(`Invalid Service selector: ${selector}`);
         const project = projects.projects[projectCode];
         if (!project) throw new Error(`Unknown Project in selector: ${selector}`);
-        if (project.source.type === 'git' && !seen.has(`project:${projectCode}`) && !fs.existsSync(path.join(root, 'services', 'manifest.yml'))) throw new Error(`${selector} requires explicit selector project:${projectCode}.`);
+        if (project.source.type === 'git' && !includes.includes(`project:${projectCode}`) && !fs.existsSync(path.join(root, 'services', 'manifest.yml'))) throw new Error(`${selector} requires explicit selector project:${projectCode}.`);
         const service = runtime.readServiceRegistryRecord(root, projectCode).services[serviceCode];
         if (!service) throw new Error(`Unknown Git worktree selector: ${selector}`);
         const source = service.repositorySource || service.source;
-        if (source.type !== 'git') continue;
+        if (!selectedSourceHasGit(selector, source, root, repositories)) continue;
         const descriptor = sourceDescriptor({ selector, entityType: 'service', sourcePath: requiredString(source.path, 'service.source.path'), source, workspaceRoot: root, checkoutRoot, branch, startPoint: sameFilesystemPath(path.resolve(root, source.path!), root) ? startPoint : undefined });
-        const shared = repositories.find(item => sameFilesystemPath(item.sourceRepository, descriptor.sourceRepository));
-        if (shared) {
-          // A service referencing the workspace root shares the explicitly chosen workspace checkout.
-          if (shared.entityType === 'workspace') {
-            if (startPoint === undefined && (source.integrationBranch || source.git?.integrationBranch)) shared.startPoint = descriptor.startPoint;
-            continue;
-          }
-          if (shared.startPoint !== descriptor.startPoint || shared.remoteUrl !== descriptor.remoteUrl) throw new Error(`${selector} declares conflicting integration identity for a shared repository.`);
-          continue;
-        }
-        repositories.push(descriptor);
+        addDescriptor(descriptor, source);
         continue;
       }
       throw new Error(`Unsupported Git worktree selector: ${selector}`);
     }
-    repositories.sort((left, right) => left.sourcePath.split('/').length - right.sourcePath.split('/').length || left.sourcePath.localeCompare(right.sourcePath));
+    if (!repositories.length) throw Object.assign(new Error('工作空间根没有 Git；请明确选择实际独立 Git 项目或服务来源。'), { code: 'git_worktree_repository_selection_required' });
+    repositories.sort(repositorySourceOrder);
     for (const item of repositories) {
       if (!inside(root, item.sourceRepository)) throw new Error(`${item.selector} source escapes the Workspace.`);
       if (!inside(checkoutRoot, item.checkoutPath)) throw new Error(`${item.selector} checkout escapes the task checkout root.`);
@@ -463,7 +587,9 @@ export function registerGitWorktreeProvider(runtime: GitWorktreeRuntime): GitWor
   }
 
   function preflight(plan: GitWorktreePlan): void {
+    assertLiteralWorktreePath(plan.checkoutRoot);
     for (const item of plan.repositories) {
+      assertLiteralWorktreePath(item.checkoutPath);
       const listed = git(item.sourceRepository, ['worktree', 'list', '--porcelain']);
       if (listed.status !== 0) throw new Error(`Unable to inspect Git worktrees: ${item.selector}`);
       const worktrees = parseGitWorktreeList(listed.stdout);
@@ -502,7 +628,9 @@ export function registerGitWorktreeProvider(runtime: GitWorktreeRuntime): GitWor
         const plannedState = item.preflightState;
         let state: RepositoryState = plannedState === 'reused' ? 'reused' : 'blocked';
         if (plannedState === 'create') {
+          assertLiteralWorktreePath(item.checkoutPath);
           fs.mkdirSync(path.dirname(item.checkoutPath), { recursive: true });
+          assertLiteralWorktreePath(item.checkoutPath);
           const branchExists = git(item.sourceRepository, ['show-ref', '--verify', '--quiet', `refs/heads/${item.branch}`]).status === 0;
           const args = branchExists ? ['worktree', 'add', item.checkoutPath, item.branch] : ['worktree', 'add', '-b', item.branch, item.checkoutPath, item.startPoint];
           const added: CommandResult = process.env.BUILDR_FAULT_WORKTREE_ADD_SELECTOR === item.selector
@@ -530,7 +658,10 @@ export function registerGitWorktreeProvider(runtime: GitWorktreeRuntime): GitWor
       const written = writeGitWorktreeEvidence(plan.workspaceRoot, evidence);
       return result('create', 'ready', plan.taskId, written.file, repositories, effects);
     } catch (error) {
-      return result('create', 'blocked', input.taskId, plan ? gitWorktreeEvidencePath(plan.workspaceRoot, plan.taskId) : null, repositories, effects, { code: 'git_worktree_preflight_failed', message: errorMessage(error) }, ['修正 Git plan 后重试；preflight 失败时未执行新的 Git mutation。']);
+      let file: string | null = null;
+      try { if (plan) file = evidencePathForRepositories(plan.taskId, plan.repositories); } catch { /* Preserve the original failure and any completed effects. */ }
+      const code = error instanceof Error && typeof Reflect.get(error, 'code') === 'string' ? String(Reflect.get(error, 'code')) : effects.length ? 'git_worktree_create_failed' : 'git_worktree_preflight_failed';
+      return result('create', 'blocked', input.taskId, file, repositories, effects, { code, message: errorMessage(error) }, [effects.length ? '保留已完成的 Git 效果，核对来源与证据后重试同一计划。' : '修正 Git plan 后重试；preflight 失败时未执行新的 Git mutation。']);
     }
   }
 
@@ -546,10 +677,9 @@ export function registerGitWorktreeProvider(runtime: GitWorktreeRuntime): GitWor
       return { file: stored.file, repositories: stored.evidence.repositories, evidenceSource: 'stored', status: stored.evidence.status };
     }
     if (!observed) throw Object.assign(new Error('缺少历史登记。请核对任务归属、实际 Git 路径与分支，并通过 --observed-checkouts <json-file> 提供当前对象；不能据此认定已清理。'), { code: 'git_worktree_evidence_missing' });
-    const workspace = observed.find((item) => item.selector === 'workspace');
-    if (!workspace) throw Object.assign(new Error('当前对象必须包含 workspace。'), { code: 'git_worktree_observation_invalid' });
-    const plan = planGitWorktrees({ workspaceRoot: root, taskId, branch: workspace.branch, includes: observed.filter((item) => item.selector !== 'workspace').map((item) => item.selector) });
-    assertObservedCheckoutSet(observed, plan.repositories);
+    const branch = observed[0].branch;
+    const plan = planGitWorktrees({ workspaceRoot: root, taskId, branch, includes: observed.filter((item) => item.selector !== 'workspace').map((item) => item.selector) });
+    const groupRoot = assertObservedCheckoutSet(observed, plan.repositories);
     const repositories = plan.repositories.map((descriptor): RepositoryEvidence => {
       const item = observed.find((entry) => entry.selector === descriptor.selector)!;
       const record = { ...descriptor, ...item };
@@ -557,22 +687,23 @@ export function registerGitWorktreeProvider(runtime: GitWorktreeRuntime): GitWor
       const identity = fs.existsSync(item.checkoutPath) ? worktreeIdentity(item.checkoutPath) : null;
       return { ...record, startPoint: null, head: identity?.head ?? gitText(item.sourceRepository, ['rev-parse', '--verify', `refs/heads/${item.branch}^{commit}`]), clean: identity?.clean ?? null, registered: identity?.registered ?? false, state: identity ? 'ready' : 'blocked', diagnostic: identity ? null : '当前检出位置不存在。' };
     });
-    return { file: gitWorktreeEvidencePath(root, taskId), repositories, evidenceSource: 'observed', status: 'ready' };
+    assertNoUnlistedNestedRepositories(repositories, git, { groupRoot });
+    return { file: evidencePathForRepositories(taskId, plan.repositories), repositories, evidenceSource: 'observed', status: 'ready' };
   }
 
   function inspectGitWorktrees({ workspaceRoot, taskId, observedCheckouts }: InspectInput): WorktreeResult {
     try {
       const root = canonicalEvidenceWorkspaceRoot(runtime.assertCanonicalTaskWorkspace(workspaceRoot));
-      const repository = git(root, ['rev-parse', '--show-toplevel'], { env: { ...process.env, LC_ALL: 'C' } });
-      if (repository.status === 128 && /not a git repository/i.test(repository.stderr) && !fs.existsSync(path.join(root, '.git'))) {
-        return result('inspect', 'blocked', taskId, null, [], [], { code: 'git_worktree_evidence_missing', message: 'This Workspace has no Git worktree association.' });
-      }
       const stored = currentRepositories(root, taskId, observedCheckouts);
       const repositories = stored.repositories.map((record) => {
-        assertCurrentCheckoutIdentity(record, git, parseGitWorktreeList);
-        const identity = fs.existsSync(record.checkoutPath) ? worktreeIdentity(record.checkoutPath) : null;
-        const matches = Boolean(identity && sameFilesystemPath(identity.repository, record.checkoutPath) && identity.branch === record.branch && identity.registered);
-        return { ...record, head: identity?.head ?? null, clean: identity?.clean ?? null, registered: identity?.registered ?? false, state: matches ? 'ready' : 'blocked', diagnostic: matches ? null : 'Current Git identity does not match evidence.' };
+        try {
+          assertCurrentCheckoutIdentity(record, git, parseGitWorktreeList);
+          const identity = fs.existsSync(record.checkoutPath) ? worktreeIdentity(record.checkoutPath) : null;
+          const matches = Boolean(identity && sameFilesystemPath(identity.repository, record.checkoutPath) && identity.branch === record.branch && identity.registered);
+          return { ...record, head: identity?.head ?? null, clean: identity?.clean ?? null, registered: identity?.registered ?? false, state: matches ? 'ready' : 'blocked', diagnostic: matches ? null : 'Current Git identity does not match evidence.' };
+        } catch (error) {
+          return { ...record, head: null, clean: null, registered: false, state: 'blocked', diagnostic: errorMessage(error) };
+        }
       });
       const ready = stored.status === 'ready' && repositories.every((item) => item.state === 'ready');
       return { ...result('inspect', ready ? 'ready' : 'blocked', taskId, stored.file, repositories, [], ready ? null : { code: 'git_worktree_identity_drift', message: 'One or more Git worktree identities drifted.' }, ready ? [] : ['检查 Git worktree registration、branch 和 checkout path。']), evidenceSource: stored.evidenceSource };
@@ -693,6 +824,7 @@ export function registerGitWorktreeProvider(runtime: GitWorktreeRuntime): GitWor
   }
 
   return Object.assign(runtime, {
+    gitWorktreeEvidenceDirectories,
     gitWorktreeEvidencePath,
     readGitWorktreeEvidence,
     writeGitWorktreeEvidence,

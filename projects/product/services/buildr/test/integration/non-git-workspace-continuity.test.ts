@@ -20,7 +20,7 @@ const sidebars = [
   ['openspec-archive-change', 'openspec-archive-converge.md'],
 ];
 
-async function scenario() {
+async function scenario({ nestedGit = false } = {}) {
   const smokeRoot = process.env.BUILDR_SMOKE_ROOT;
   const workspace = process.env.BUILDR_SMOKE_WORKSPACE_ROOT;
   assert.ok(smokeRoot && workspace, 'Use the existing isolated Workspace smoke runner.');
@@ -42,12 +42,25 @@ async function scenario() {
     fs.writeFileSync(location, content);
     return location;
   };
+  let nestedRepository: { root: string; head: string; refs: string } | null = null;
   const assertNoGit = () => {
     const observed = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd: workspace, env, encoding: 'utf8' });
     assert.equal(observed.status, 128, observed.stdout || observed.stderr);
     for (const name of fs.readdirSync(workspace, { recursive: true })) {
+      if (nestedRepository && String(name) === path.join('repositories', 'unchanged', '.git')) continue;
       assert.notEqual(path.basename(String(name)), '.git', `Unexpected Git object: ${name}`);
       assert.notEqual(path.basename(String(name)), '.worktrees', `Unexpected task checkout: ${name}`);
+    }
+    if (nestedRepository) {
+      const git = (args: string[]) => {
+        const result = spawnSync('git', args, { cwd: nestedRepository!.root, env, encoding: 'utf8' });
+        assert.equal(result.status, 0, result.stderr || result.stdout);
+        return result.stdout.trim();
+      };
+      assert.equal(git(['rev-parse', 'HEAD']), nestedRepository.head);
+      assert.equal(git(['show-ref']), nestedRepository.refs);
+      assert.equal(git(['status', '--porcelain']), '');
+      assert.equal(fs.readFileSync(path.join(nestedRepository.root, 'base.txt'), 'utf8'), 'Existing code must remain unchanged.\n');
     }
   };
 
@@ -68,10 +81,34 @@ async function scenario() {
     assert.match(effective, /身份未明只停止依赖该身份的写入/);
   }
 
-  const catalog = json(['assets', 'inspect', ...target]);
+  let catalog = json(['assets', 'inspect', ...target]);
+  if (nestedGit) {
+    const codeRoot = path.join(workspace, 'repositories/unchanged');
+    fs.mkdirSync(codeRoot, { recursive: true });
+    const git = (args: string[]) => {
+      const result = spawnSync('git', args, { cwd: codeRoot, env, encoding: 'utf8' });
+      assert.equal(result.status, 0, result.stderr || result.stdout);
+      return result.stdout.trim();
+    };
+    git(['init', '--initial-branch=main']);
+    git(['config', 'user.name', 'Buildr Test']); git(['config', 'user.email', 'buildr-test@example.com']);
+    fs.writeFileSync(path.join(codeRoot, 'base.txt'), 'Existing code must remain unchanged.\n');
+    git(['add', '--', 'base.txt']); git(['-c', 'commit.gpgSign=false', 'commit', '-m', 'existing code']);
+    const repositoryInput = input('repository.json', JSON.stringify({ revision: catalog.revision, code: 'unchanged', path: 'repositories/unchanged', integrationBranch: 'main' }));
+    catalog = json(['assets', 'create', 'repository', ...target, '--input', repositoryInput]);
+    assert.equal(catalog.repositories[0].source.type, 'git');
+    assert.equal(catalog.repositories[0].source.git, undefined, 'A local repository must not acquire a fictional remote.');
+    nestedRepository = { root: codeRoot, head: git(['rev-parse', 'HEAD']), refs: git(['show-ref']) };
+    assertNoGit();
+  }
   const projectInput = input('project.json', JSON.stringify({ revision: catalog.revision, code: 'documents', name: '纯资料项目' }));
   const createdProject = json(['assets', 'create', 'project', ...target, '--input', projectInput]);
   assert.equal(createdProject.projects[0].source.type, 'workspace');
+  if (nestedGit) {
+    const serviceInput = input('service.json', JSON.stringify({ revision: createdProject.revision, projectId: createdProject.projects[0].id, service: { code: 'unchanged-api', name: '已有实现', repositoryId: createdProject.repositories[0].id } }));
+    const withCode = json(['assets', 'create', 'service', ...target, '--input', serviceInput]);
+    assert.deepEqual(withCode.projects[0].serviceIds, [withCode.services[0].id]);
+  }
   const projectRoot = path.join(workspace, 'projects/documents');
   const brief = input('brief.md', '# 资料维护目标\n\n核对当前正文、外部变化和完成结果。\n');
   const created = json(['task', 'create', 'document-work', '--title', '资料接续', '--intent', '维护真实非 Git 资料', '--project', 'documents', '--brief-file', brief, ...target]);
@@ -152,19 +189,301 @@ async function scenario() {
     assert.equal(fs.readFileSync(projectDocument, 'utf8'), external);
     assert.equal(fs.readFileSync(localFile, 'utf8'), externalLocal);
     assertNoGit();
-    process.stdout.write('Non-Git public Task lifecycle, projected policies, shared document reads and scoped material version guards passed.\n');
+    process.stdout.write(`${nestedGit ? 'Mixed-root document' : 'Non-Git public Task'} lifecycle, projected policies, shared document reads and scoped material version guards passed.\n`);
   } finally {
     await new Promise<void>(resolve => instance.server.close(() => resolve()));
   }
 }
 
-if (process.argv.includes('--non-git-scenario')) {
+async function nestedGitIsolationScenario() {
+  const smokeRoot = process.env.BUILDR_SMOKE_ROOT;
+  const workspace = process.env.BUILDR_SMOKE_WORKSPACE_ROOT;
+  assert.ok(smokeRoot && workspace, 'Use the existing isolated Workspace smoke runner.');
+  assert.ok(fs.existsSync(path.join(smokeRoot, '.buildr-smoke-owner')));
+  assert.equal(process.env.BUILDR_APP_DATA_DIR, path.join(smokeRoot, 'app-data'));
+  assert.equal(process.env.BUILDR_PRODUCT_DATA_DIR, path.join(smokeRoot, 'product-data'));
+  const env = { ...process.env };
+  delete env.GIT_DIR; delete env.GIT_WORK_TREE;
+  const run = (args: string[], expected = 0, json = true) => {
+    const result = spawnSync(process.execPath, [path.join(serviceRoot, 'bin/buildr.mjs'), ...args, '--target', workspace, ...(json ? ['--json'] : [])], { cwd: smokeRoot, env, encoding: 'utf8', timeout: 30_000, maxBuffer: 8 * 1024 * 1024 });
+    assert.equal(result.status, expected, `${args.join(' ')}\n${result.error?.message || ''}\n${result.stdout}\n${result.stderr}`);
+    return json ? JSON.parse(result.stdout) : result;
+  };
+  const input = path.join(smokeRoot, 'asset-input.json');
+  const write = (args: string[], value: unknown) => { fs.writeFileSync(input, JSON.stringify(value)); return run([...args, '--input', input]); };
+  const git = (cwd: string, args: string[], expected = 0) => {
+    const result = spawnSync('git', args, { cwd, env, encoding: 'utf8' });
+    assert.equal(result.status, expected, `${cwd}: git ${args.join(' ')}\n${result.stderr || result.stdout}`);
+    return result.stdout.trim();
+  };
+  run(['init', '--name', 'mixed-workspace', '--description', 'Nested Git isolation fixture', '--profile', 'personal'], 0, false);
+  const assertRootHasNoGit = () => {
+    git(workspace, ['rev-parse', '--show-toplevel'], 128);
+    assert.equal(fs.existsSync(path.join(workspace, '.git')), false);
+  };
+  assertRootHasNoGit();
+  const retainedDocument = path.join(workspace, 'notes.md');
+  fs.writeFileSync(retainedDocument, '# 当前资料\n\n普通资料保留在非 Git 位置。\n');
+  const originalDocument = fs.readFileSync(retainedDocument, 'utf8');
+  const createSource = (code: string) => {
+    const root = path.join(workspace, 'repositories', code);
+    fs.mkdirSync(path.join(root, 'modules/shared'), { recursive: true });
+    git(root, ['init', '--initial-branch=main']);
+    git(root, ['config', 'user.name', 'Buildr Test']);
+    git(root, ['config', 'user.email', 'buildr-test@example.com']);
+    fs.writeFileSync(path.join(root, 'base.txt'), `${code} baseline\n`);
+    fs.writeFileSync(path.join(root, 'modules/shared/source.ts'), 'export const initial = true;\n');
+    git(root, ['add', '--', 'base.txt', 'modules/shared/source.ts']);
+    git(root, ['-c', 'commit.gpgSign=false', 'commit', '-m', `${code} baseline`]);
+    return root;
+  };
+  const apiRoot = createSource('api'), workerRoot = createSource('worker');
+  let catalog = run(['assets', 'inspect']);
+  catalog = write(['assets', 'create', 'project'], { revision: catalog.revision, code: 'demo', name: 'Mixed project' });
+  const projectId = catalog.projects[0].id;
+  for (const code of ['api', 'worker']) catalog = write(['assets', 'create', 'repository'], { revision: catalog.revision, code, path: `repositories/${code}`, integrationBranch: 'main' });
+  for (const repository of catalog.repositories) {
+    assert.equal(repository.source.type, 'git');
+    assert.equal(repository.source.git, undefined);
+    assert.equal(repository.source.integrationBranch, 'main');
+  }
+  for (const [code, repositoryCode, modulePath] of [['api', 'api', ''], ['api-view', 'api', 'modules/shared'], ['worker', 'worker', '']]) {
+    catalog = write(['assets', 'create', 'service'], { revision: catalog.revision, projectId, service: { code, name: code, repositoryId: catalog.repositories.find((item: { code: string }) => item.code === repositoryCode).id, modulePath } });
+  }
+  const taskId = 'nested-code', branch = `codex/${taskId}`;
+  const task = run(['task', 'create', taskId, '--title', '隔离嵌套代码', '--intent', '修改两个实际 Git 来源并保留普通资料', '--project', 'demo', '--service', 'demo/api', '--service', 'demo/api-view', '--service', 'demo/worker']);
+  const create = ['worktree', 'create', taskId, '--branch', branch, '--include', 'service:demo/api', '--include', 'service:demo/api-view', '--include', 'service:demo/worker'];
+  const created = run(create);
+  assert.equal(created.status, 'ready');
+  assert.deepEqual(created.repositories.map((item: { selector: string }) => item.selector), ['service:demo/api', 'service:demo/worker']);
+  assertRootHasNoGit();
+  assert.equal(fs.existsSync(path.join(apiRoot, 'modules/shared/.git')), false);
+  assert.ok(fs.existsSync(created.evidencePath));
+  const retry = run(create);
+  assert.equal(retry.status, 'ready');
+  assert.deepEqual(retry.repositories.map((item: { checkoutPath: string }) => item.checkoutPath), created.repositories.map((item: { checkoutPath: string }) => item.checkoutPath));
+  assert.ok(retry.repositories.every((item: { state: string }) => item.state === 'reused'));
+  const inspected = run(['worktree', 'inspect', taskId]);
+  assert.equal(inspected.status, 'ready');
+  assert.equal(inspected.repositories.length, 2);
+  const preview = run(['web', 'preview', 'start', 'nested-preview', '--task', taskId, '--no-open'], 1, false);
+  assert.match(`${preview.stdout}${preview.stderr}`, /preview_worktree_scope_missing/);
+  const projectRelative = 'knowledge/docs/current.md';
+  const projectDocument = path.join(workspace, 'projects/demo', projectRelative);
+  fs.mkdirSync(path.dirname(projectDocument), { recursive: true });
+  fs.writeFileSync(projectDocument, '# 当前项目资料\n\n这份资料属于实际非 Git 项目目录。\n');
+  const materialsInput = path.join(smokeRoot, 'mixed-materials.json');
+  fs.writeFileSync(materialsInput, JSON.stringify({ schemaVersion: 'buildr.task-materials/v2', documents: [{ id: 'project', role: 'implementation', title: '项目当前资料', source: { kind: 'project', project: 'demo', path: projectRelative } }] }));
+  const materials = run(['task', 'materials', 'record', taskId, '--materials', materialsInput, '--expected-current', 'absent']);
+  assert.equal(materials.documents[0].provenance, 'retained-project');
+  assert.equal(materials.documents[0].content, fs.readFileSync(projectDocument, 'utf8'));
+  assert.equal(materials.documents[0].actualDigest, digest(materials.documents[0].content));
+  fs.appendFileSync(projectDocument, '\n其他入口刚更新的资料。\n');
+  const currentMaterials = run(['task', 'materials', 'inspect', taskId]);
+  assert.equal(currentMaterials.documents[0].content, fs.readFileSync(projectDocument, 'utf8'));
+  assert.equal(currentMaterials.documents[0].actualDigest, digest(currentMaterials.documents[0].content));
+  assert.notEqual(currentMaterials.documents[0].actualDigest, materials.documents[0].actualDigest);
+  const projectRoot = path.join(workspace, 'projects/demo');
+  git(projectRoot, ['init', '--initial-branch=main']);
+  const gitProjectMaterials = run(['task', 'materials', 'inspect', taskId]);
+  assert.equal(gitProjectMaterials.documents[0].diagnostic.code, 'task_worktree_project_root_unavailable');
+  assert.equal(gitProjectMaterials.documents[0].content, null);
+  assert.equal(gitProjectMaterials.documents[0].actualDigest, null);
+  assert.equal(fs.readFileSync(projectDocument, 'utf8'), currentMaterials.documents[0].content);
+  fs.rmSync(path.join(projectRoot, '.git'), { recursive: true });
+  assert.equal(run(['task', 'materials', 'inspect', taskId]).documents[0].actualDigest, currentMaterials.documents[0].actualDigest);
+
+  // The second Git source must not hold another authority for the same group.
+  const sourceRecords = created.repositories as Array<{ selector: string; sourceRepository: string; checkoutPath: string; branch: string }>;
+  const originalEvidence = fs.readFileSync(created.evidencePath, 'utf8');
+  const otherDirectory = path.join(path.resolve(workerRoot, git(workerRoot, ['rev-parse', '--git-common-dir'])), 'buildr/task-worktrees');
+  fs.mkdirSync(otherDirectory, { recursive: true });
+  const duplicateEvidence = path.join(otherDirectory, `${taskId}.json`);
+  assert.notEqual(fs.realpathSync(path.dirname(created.evidencePath)), fs.realpathSync(otherDirectory));
+  fs.writeFileSync(duplicateEvidence, originalEvidence, { flag: 'wx' });
+  const ambiguous = run(['worktree', 'inspect', taskId], 1);
+  assert.equal(ambiguous.status, 'blocked');
+  assert.deepEqual(ambiguous.effects, []);
+  assert.equal(fs.readFileSync(created.evidencePath, 'utf8'), originalEvidence);
+  assert.equal(fs.readFileSync(duplicateEvidence, 'utf8'), originalEvidence);
+  sourceRecords.forEach(item => assert.equal(fs.existsSync(item.checkoutPath), true));
+  fs.unlinkSync(duplicateEvidence);
+  assert.equal(run(['worktree', 'inspect', taskId]).status, 'ready');
+
+  // Another group's unreadable/duplicate association may also claim these members.
+  const otherTaskId = 'conflicted-other';
+  run(['task', 'create', otherTaskId, '--title', '需要核对的关联', '--intent', '不能把重复来源吞掉后断言另一个关联唯一', '--project', 'demo']);
+  const uncertainEvidence = JSON.stringify({ ...JSON.parse(originalEvidence), taskId: otherTaskId });
+  const conflictingFiles = [path.join(path.dirname(created.evidencePath), `${otherTaskId}.json`), path.join(otherDirectory, `${otherTaskId}.json`)];
+  conflictingFiles.forEach(location => fs.writeFileSync(location, uncertainEvidence, { flag: 'wx' }));
+  const uncertainCatalog = run(['code', 'repositories', '--task', taskId]);
+  const currentPaths = new Set(sourceRecords.map(item => item.checkoutPath));
+  const uncertainMembers = uncertainCatalog.worktrees.filter((item: { path: string }) => currentPaths.has(item.path));
+  assert.equal(uncertainMembers.length, 2);
+  assert.ok(uncertainMembers.every((item: { taskId: string | null; available: boolean }) => item.available && item.taskId === null));
+  assert.ok(uncertainCatalog.diagnostics.some((item: { code: string }) => item.code === 'code_worktree_task_unconfirmed'));
+  const uncertainControl = run(['code', 'source-control', '--task', taskId]);
+  const controlMembers = uncertainControl.repositories.flatMap((item: { worktrees: Array<{ location: string; taskId: string | null; taskDiagnostic: string | null; available: boolean }> }) => item.worktrees).filter((item: { location: string }) => currentPaths.has(item.location));
+  assert.equal(controlMembers.length, 2);
+  assert.ok(controlMembers.every((item: { taskId: string | null; taskDiagnostic: string | null; available: boolean }) => item.available && item.taskId === null && item.taskDiagnostic));
+  const ambiguousCleanup = run(['worktree', 'cleanup', otherTaskId, ...sourceRecords.flatMap(item => {
+    const head = git(item.checkoutPath, ['rev-parse', 'HEAD']);
+    return ['--expected-source', `${item.selector}=${head}`, '--delivered-ref', `${item.selector}=${head}`];
+  })], 1);
+  assert.equal(ambiguousCleanup.status, 'blocked');
+  assert.deepEqual(ambiguousCleanup.effects, []);
+  sourceRecords.forEach(item => assert.equal(fs.existsSync(item.checkoutPath), true));
+  conflictingFiles.forEach(location => { assert.equal(fs.readFileSync(location, 'utf8'), uncertainEvidence); fs.unlinkSync(location); });
+
+  const codeCatalog = run(['code', 'repositories', '--task', taskId]);
+  assert.deepEqual(codeCatalog.selectedWorktreeGroupIds, [`task:${taskId}`]);
+  assert.deepEqual(new Set(codeCatalog.selectedRepositoryIds), new Set(catalog.repositories.map((item: { id: string }) => item.id)));
+  const taskMembers = codeCatalog.worktrees.filter((item: { kind: string }) => item.kind === 'task');
+  assert.equal(taskMembers.length, 2);
+  assert.ok(taskMembers.every((item: { taskId: string; available: boolean }) => item.taskId === taskId && item.available));
+  assert.deepEqual(new Set(taskMembers.map((item: { path: string }) => item.path)), new Set(sourceRecords.map(item => item.checkoutPath)));
+  const groupRoot = path.join(workspace, '.worktrees', taskId);
+  const groupDocument = path.join(groupRoot, 'implementation.md');
+  fs.writeFileSync(groupDocument, '# 组内资料\n\n清理 Git 对象必须保留本文件。\n');
+  const groupContent = fs.readFileSync(groupDocument, 'utf8');
+  const sourceHeads: Record<string, string> = {}, deliveredHeads: Record<string, string> = {};
+  for (const item of sourceRecords) {
+    fs.writeFileSync(path.join(item.checkoutPath, 'result.txt'), `${item.selector} result\n`);
+    git(item.checkoutPath, ['add', '--', 'result.txt']);
+    git(item.checkoutPath, ['-c', 'commit.gpgSign=false', 'commit', '-m', `feat: ${item.selector}`, '-m', `Buildr-Task: ${taskId}`]);
+    sourceHeads[item.selector] = git(item.checkoutPath, ['rev-parse', 'HEAD']);
+  }
+  const beforeTask = run(['task', 'inspect', taskId]);
+  const commits = run(['task', 'commits', taskId]);
+  assert.equal(commits.status, 'complete', JSON.stringify(commits.diagnostics));
+  assert.deepEqual(new Set(commits.commits.map((item: { hash: string }) => item.hash)), new Set(Object.values(sourceHeads)));
+  assert.equal(commits.repositories.length, 2);
+  assert.equal(run(['task', 'inspect', taskId]).recordDigest, beforeTask.recordDigest);
+  assert.equal(beforeTask.recordDigest, task.recordDigest);
+  for (const item of sourceRecords) {
+    git(item.sourceRepository, ['merge', '--ff-only', branch]);
+    deliveredHeads[item.selector] = git(item.sourceRepository, ['rev-parse', 'HEAD']);
+    assert.equal(deliveredHeads[item.selector], sourceHeads[item.selector]);
+  }
+  const cleanup = (records = sourceRecords) => ['worktree', 'cleanup', taskId, ...records.flatMap(item => ['--expected-source', `${item.selector}=${sourceHeads[item.selector]}`, '--delivered-ref', `${item.selector}=${deliveredHeads[item.selector]}`])];
+  const partialDelivery = run(cleanup(sourceRecords.slice(0, 1)), 1);
+  assert.equal(partialDelivery.status, 'blocked');
+  assert.deepEqual(partialDelivery.effects, []);
+  sourceRecords.forEach(item => assert.equal(fs.existsSync(item.checkoutPath), true));
+  const cleaned = run(cleanup());
+  assert.equal(cleaned.status, 'cleaned');
+  assert.equal(fs.existsSync(created.evidencePath), false);
+  sourceRecords.forEach(item => {
+    assert.equal(fs.existsSync(item.checkoutPath), false);
+    git(item.sourceRepository, ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`], 1);
+    assert.equal(fs.readFileSync(path.join(item.sourceRepository, 'result.txt'), 'utf8'), `${item.selector} result\n`);
+  });
+  assert.equal(fs.readFileSync(groupDocument, 'utf8'), groupContent);
+  assert.equal(fs.readFileSync(retainedDocument, 'utf8'), originalDocument);
+  assert.match(fs.readFileSync(projectDocument, 'utf8'), /其他入口刚更新的资料/);
+
+  // Only current child objects are available after losing this case's evidence.
+  const recreated = run(create);
+  assert.equal(recreated.status, 'ready');
+  fs.unlinkSync(recreated.evidencePath);
+  const observed = path.join(smokeRoot, 'observed-checkouts.json');
+  const currentRecords = recreated.repositories.map((item: { selector: string; sourceRepository: string; checkoutPath: string; branch: string }) => ({ selector: item.selector, sourceRepository: item.sourceRepository, checkoutPath: item.checkoutPath, branch: item.branch }));
+  fs.writeFileSync(observed, JSON.stringify(currentRecords.slice(0, 1)));
+  const omitted = run([...cleanup(sourceRecords.slice(0, 1)), '--observed-checkouts', observed], 1);
+  assert.equal(omitted.status, 'blocked');
+  assert.deepEqual(omitted.effects, []);
+  currentRecords.forEach((item: { checkoutPath: string }) => assert.equal(fs.existsSync(item.checkoutPath), true));
+  fs.writeFileSync(observed, JSON.stringify(currentRecords));
+  const observedInspection = run(['worktree', 'inspect', taskId, '--observed-checkouts', observed]);
+  assert.equal(observedInspection.status, 'ready');
+  assert.equal(observedInspection.evidenceSource, 'observed');
+  assert.equal(fs.existsSync(recreated.evidencePath), false);
+  const recovered = run([...cleanup(), '--observed-checkouts', observed]);
+  assert.equal(recovered.status, 'cleaned');
+  assert.equal(recovered.evidenceSource, 'observed');
+  assert.equal(fs.existsSync(recreated.evidencePath), false);
+  assert.equal(fs.readFileSync(groupDocument, 'utf8'), groupContent);
+  currentRecords.forEach((item: { checkoutPath: string }) => assert.equal(fs.existsSync(item.checkoutPath), false));
+
+  // A damaged, unrelated declaration cannot stop healthy selected work or data.
+  const badRoot = createSource('broken');
+  catalog = write(['assets', 'create', 'project'], { revision: catalog.revision, code: 'other', name: 'Other project' });
+  catalog = write(['assets', 'create', 'repository'], { revision: catalog.revision, code: 'broken', path: 'repositories/broken', integrationBranch: 'main' });
+  catalog = write(['assets', 'create', 'service'], { revision: catalog.revision, projectId: catalog.projects.find((item: { code: string }) => item.code === 'other').id, service: { code: 'broken-api', name: 'Broken API', repositoryId: catalog.repositories.find((item: { code: string }) => item.code === 'broken').id } });
+  const badGit = path.join(badRoot, '.git');
+  fs.renameSync(badGit, path.join(smokeRoot, 'broken-git-preserved'));
+  fs.writeFileSync(badGit, 'gitdir: unavailable-git-directory\n');
+  const goodRefs = [apiRoot, workerRoot].map(root => git(root, ['show-ref']));
+  const rejected = run(['worktree', 'create', 'bad-selection', '--branch', 'codex/bad-selection', '--include', 'service:demo/api', '--include', 'service:other/broken-api'], 1);
+  assert.equal(rejected.status, 'blocked');
+  assert.deepEqual(rejected.effects, []);
+  [apiRoot, workerRoot].forEach((root, index) => assert.equal(git(root, ['show-ref']), goodRefs[index]));
+  assert.equal(fs.existsSync(path.join(workspace, '.worktrees/bad-selection')), false);
+  fs.appendFileSync(retainedDocument, '\n坏代码库不阻止已确认的资料维护。\n');
+  const docsTask = run(['task', 'create', 'mixed-documents', '--title', '资料接续', '--intent', '维护实际资料', '--project', 'demo']);
+  const docsCompleted = run(['task', 'complete', 'mixed-documents', '--summary', '普通资料继续维护，未写损坏来源。', '--expected-record', docsTask.recordDigest]);
+  assert.equal(docsCompleted.record.status, 'completed');
+  const healthy = run(create);
+  assert.equal(healthy.status, 'ready');
+  assert.equal(run(['worktree', 'inspect', taskId]).status, 'ready');
+  const uncertainHealthyCatalog = run(['code', 'repositories', '--task', taskId]);
+  const healthyPaths = new Set(healthy.repositories.map((item: { checkoutPath: string }) => item.checkoutPath));
+  const healthyCatalogMembers = uncertainHealthyCatalog.worktrees.filter((item: { path: string }) => healthyPaths.has(item.path));
+  assert.equal(healthyCatalogMembers.length, 2);
+  assert.ok(healthyCatalogMembers.every((item: { available: boolean; taskId: string | null }) => item.available && item.taskId === null));
+  const uncertainHealthyControl = run(['code', 'source-control', '--task', taskId]);
+  const healthyControlMembers = uncertainHealthyControl.repositories.flatMap((item: { worktrees: Array<{ location: string; available: boolean; taskId: string | null; taskDiagnostic: string | null }> }) => item.worktrees).filter((item: { location: string }) => healthyPaths.has(item.location));
+  assert.equal(healthyControlMembers.length, 2);
+  assert.ok(healthyControlMembers.every((item: { available: boolean; taskId: string | null; taskDiagnostic: string | null }) => item.available && item.taskId === null && item.taskDiagnostic));
+  assert.equal(fs.readFileSync(badGit, 'utf8'), 'gitdir: unavailable-git-directory\n');
+  fs.unlinkSync(badGit); fs.renameSync(path.join(smokeRoot, 'broken-git-preserved'), badGit);
+  const confirmedHealthyCatalog = run(['code', 'repositories', '--task', taskId]);
+  assert.equal(confirmedHealthyCatalog.worktrees.filter((item: { kind: string; taskId: string }) => item.kind === 'task' && item.taskId === taskId).length, 2);
+  const confirmedHealthyControl = run(['code', 'source-control', '--task', taskId]);
+  assert.equal(confirmedHealthyControl.repositories.flatMap((item: { worktrees: Array<{ taskId: string | null }> }) => item.worktrees).filter((item: { taskId: string | null }) => item.taskId === taskId).length, 2);
+  assert.equal(run(cleanup()).status, 'cleaned');
+  assert.equal(fs.readFileSync(groupDocument, 'utf8'), groupContent);
+  assert.match(fs.readFileSync(retainedDocument, 'utf8'), /坏代码库不阻止已确认的资料维护/);
+  assert.equal(git(badRoot, ['status', '--porcelain']), '');
+
+  // A missing leaf does not authorize writing through a symlinked group parent.
+  const unsafeTask = 'escaped-group', unsafeRoot = path.join(workspace, '.worktrees', unsafeTask);
+  const external = path.join(smokeRoot, 'external-group');
+  fs.mkdirSync(unsafeRoot, { recursive: true }); fs.mkdirSync(external);
+  fs.writeFileSync(path.join(external, 'owner.txt'), 'external content must remain unchanged\n');
+  fs.symlinkSync(external, path.join(unsafeRoot, 'repositories'), 'dir');
+  const externalNames = fs.readdirSync(external, { recursive: true });
+  const beforeUnsafeRefs = git(apiRoot, ['show-ref']);
+  const escaped = run(['worktree', 'create', unsafeTask, '--branch', `codex/${unsafeTask}`, '--include', 'service:demo/api'], 1);
+  assert.equal(escaped.status, 'blocked'); assert.deepEqual(escaped.effects, []);
+  assert.deepEqual(fs.readdirSync(external, { recursive: true }), externalNames);
+  assert.equal(fs.readFileSync(path.join(external, 'owner.txt'), 'utf8'), 'external content must remain unchanged\n');
+  assert.equal(git(apiRoot, ['show-ref']), beforeUnsafeRefs);
+  assert.equal(fs.lstatSync(path.join(unsafeRoot, 'repositories')).isSymbolicLink(), true);
+  assertRootHasNoGit();
+  process.stdout.write('Nested Git public Worktree lifecycle passed.\n');
+}
+
+if (process.argv.includes('--nested-git-isolation-scenario')) {
+  await nestedGitIsolationScenario();
+} else if (process.argv.includes('--mixed-document-scenario')) {
+  await scenario({ nestedGit: true });
+} else if (process.argv.includes('--non-git-scenario')) {
   await scenario();
 } else {
   test('纯非 Git 资料工作消费真实投射指引，通过公共任务与读取入口完成并保留外部材料', { timeout: 90_000 }, () => {
     const result = spawnSync(process.execPath, [path.join(serviceRoot, 'tools/development/run-isolated-workspace-smoke.ts'), '--script', file, '--', '--non-git-scenario'], { cwd: serviceRoot, encoding: 'utf8', timeout: 85_000, maxBuffer: 8 * 1024 * 1024 });
     assert.equal(result.status, 0, `${result.error?.message || ''}\n${result.stdout}\n${result.stderr}`);
     assert.match(result.stdout, /Non-Git public Task lifecycle/);
+    assert.match(result.stdout, /"cleanup":"cleaned"/);
+    process.stdout.write(result.stdout);
+    const receipt = JSON.parse(result.stdout.trim().split('\n').at(-1)!);
+    assert.equal(fs.existsSync(receipt.temporaryRoot), false);
+  });
+  test('非 Git 根内有已登记 Git 代码库时，纯资料任务保留原地读取且不隔离无关代码', { timeout: 90_000 }, () => {
+    const result = spawnSync(process.execPath, [path.join(serviceRoot, 'tools/development/run-isolated-workspace-smoke.ts'), '--script', file, '--', '--mixed-document-scenario'], { cwd: serviceRoot, encoding: 'utf8', timeout: 85_000, maxBuffer: 8 * 1024 * 1024 });
+    assert.equal(result.status, 0, `${result.error?.message || ''}\n${result.stdout}\n${result.stderr}`);
+    assert.match(result.stdout, /Mixed-root document lifecycle/);
     assert.match(result.stdout, /"cleanup":"cleaned"/);
     process.stdout.write(result.stdout);
     const receipt = JSON.parse(result.stdout.trim().split('\n').at(-1)!);

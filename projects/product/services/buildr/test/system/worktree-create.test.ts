@@ -8,6 +8,7 @@ import test, { after } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { registerGitWorktreeProvider } from '../../src/modules/task/infrastructure/git-worktree-provider.ts';
+import { createTaskProjectDocumentReader, type TaskDocumentWorktreeQuery } from '../../src/modules/task/materials/application/task-project-document-reader.ts';
 import { materializeCleanProductSource } from '../helpers/clean-product-source.ts';
 
 type JsonObject = Record<string, unknown>;
@@ -434,4 +435,114 @@ test('多独立仓库要求成对覆盖全部selector并按nested-first清理', 
   assert.equal(recovered.evidenceSource, 'observed');
   assert.deepEqual(recovered.effects.filter((item) => item.type === 'worktree-removed').map((item) => item.selector), ['service:demo/api', 'workspace']);
   assert.equal(fs.existsSync(provider.gitWorktreeEvidencePath(root, taskId)), false);
+});
+
+test('非 Git 根通过公共入口隔离独立子仓库并保留资料', { timeout: 90_000 }, () => {
+  const result = spawnSync(process.execPath, [
+    path.join(sourceProductRoot, 'tools/development/run-isolated-workspace-smoke.ts'),
+    '--script', path.join(sourceProductRoot, 'test/integration/non-git-workspace-continuity.test.ts'),
+    '--', '--nested-git-isolation-scenario',
+  ], { cwd: sourceProductRoot, encoding: 'utf8', timeout: 85_000, maxBuffer: 8 * 1024 * 1024 });
+  assert.equal(result.status, 0, `${result.error?.message || ''}\n${result.stdout}\n${result.stderr}`);
+  assert.match(result.stdout, /Nested Git public Worktree lifecycle passed/);
+  assert.match(result.stdout, /"cleanup":"cleaned"/);
+  process.stdout.write(result.stdout);
+  const receipt = JSON.parse(result.stdout.trim().split('\n').at(-1)!);
+  assert.equal(fs.existsSync(receipt.temporaryRoot), false);
+});
+
+test('项目与服务共享实际仓库时两种选择顺序均去重，冲突集成引用零效果拒绝', () => {
+  const root = createGitWorkspace(), projectRoot = path.join(root, 'projects/demo');
+  // This fixture must have no parent checkout that could mask a lost project member.
+  fs.rmSync(path.join(root, '.git'), { recursive: true });
+  git(root, ['rev-parse', '--show-toplevel'], 128);
+  fs.mkdirSync(projectRoot, { recursive: true });
+  git(projectRoot, ['init', '--initial-branch=main']);
+  git(projectRoot, ['config', 'user.name', 'Buildr Test']);
+  git(projectRoot, ['config', 'user.email', 'buildr-test@example.com']);
+  fs.writeFileSync(path.join(projectRoot, 'base.txt'), 'project baseline\n');
+  const documentPath = 'knowledge/current.md', retainedContent = '# 保留项目资料\n\n当前保留正文。\n';
+  fs.mkdirSync(path.join(projectRoot, 'knowledge'));
+  fs.writeFileSync(path.join(projectRoot, documentPath), retainedContent);
+  git(projectRoot, ['add', '--', 'base.txt', documentPath]);
+  git(projectRoot, ['-c', 'commit.gpgSign=false', 'commit', '-m', 'project baseline']);
+  git(projectRoot, ['branch', 'alternative']);
+  let serviceBranch = 'main';
+  const provider = registerGitWorktreeProvider({
+    assertCanonicalTaskWorkspace: () => root,
+    atomicWriteJson: (file, value) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`); },
+    removePath: file => fs.rmSync(file, { force: true }),
+    sameGitIdentity: (left, right) => left === right,
+    readProjectRegistryRecord: () => ({ registry: { migrationRequired: false }, projects: { demo: { source: { type: 'git', path: 'projects/demo', git: { integrationBranch: 'main' } } } } }),
+    readServiceRegistryRecord: () => ({ services: { api: { repositorySource: { type: 'git', path: 'projects/demo', integrationBranch: serviceBranch }, source: { type: 'workspace', path: 'projects/demo/modules/api' } } } }),
+  });
+  const orders = [['project:demo', 'service:demo/api'], ['service:demo/api', 'project:demo']];
+  orders.forEach((includes, index) => {
+    const taskId = `shared-order-${index}`, branch = `codex/${taskId}`;
+    const created = provider.prepareGitWorktrees({ workspaceRoot: root, taskId, branch, includes });
+    assert.equal(created.status, 'ready', JSON.stringify(created.diagnostic));
+    assert.equal(created.repositories.length, 1);
+    assert.equal(created.repositories[0].selector, 'project:demo');
+    assert.equal(created.repositories[0].entityType, 'project');
+    assert.equal(new Set(created.repositories.map(item => item.sourceRepository)).size, 1);
+    assert.equal(created.repositories.filter(item => item.sourceRepository === projectRoot).length, 1);
+    const candidateDocument = path.join(String(created.repositories[0].checkoutPath), documentPath);
+    const candidateContent = `# 候选项目资料\n\n选择顺序 ${index} 的当前正文。\n`;
+    fs.writeFileSync(candidateDocument, candidateContent);
+    const reader = createTaskProjectDocumentReader(
+      { readTask: () => ({ record: { scope: { projects: ['demo'], services: [{ project: 'demo', service: 'api' }] }, changes: [] } }) },
+      { projectDetail: () => ({ project: { source: { type: 'git', path: 'projects/demo' } } }), resolveSourceRoot: (workspaceRoot, source) => path.resolve(workspaceRoot, source.path) },
+      provider as unknown as TaskDocumentWorktreeQuery,
+    );
+    const document = reader.taskProjectDocument(root, taskId, 'demo', documentPath);
+    assert.equal(document.provenance, 'task-worktree-candidate');
+    assert.equal(document.content, candidateContent);
+    assert.equal(fs.readFileSync(path.join(projectRoot, documentPath), 'utf8'), retainedContent);
+    fs.writeFileSync(candidateDocument, retainedContent);
+    const heads = Object.fromEntries(created.repositories.map(item => [String(item.selector), git(String(item.checkoutPath), ['rev-parse', 'HEAD'])]));
+    const cleaned = provider.cleanupGitWorktrees({ workspaceRoot: root, taskId, allowCompleted: true, cleanupDelivery: { expectedSources: heads, deliveredRefs: heads } });
+    assert.equal(cleaned.status, 'cleaned');
+  });
+  serviceBranch = 'alternative';
+  const before = git(projectRoot, ['show-ref']);
+  orders.forEach((includes, index) => {
+    const taskId = `conflicting-order-${index}`;
+    const rejected = provider.prepareGitWorktrees({ workspaceRoot: root, taskId, branch: `codex/${taskId}`, includes });
+    assert.equal(rejected.status, 'blocked'); assert.deepEqual(rejected.effects, []);
+    assert.equal(fs.existsSync(path.join(root, '.worktrees', taskId)), false);
+  });
+  assert.equal(git(projectRoot, ['show-ref']), before);
+  git(root, ['rev-parse', '--show-toplevel'], 128);
+});
+
+test('旧 Git 根的有效组记录可独立读取，坏子仓只阻止相关身份与整组删除', () => {
+  const root = createGitWorkspace(), sourcePath = 'projects/demo/services/api', service = path.join(root, sourcePath);
+  fs.mkdirSync(service, { recursive: true });
+  git(service, ['init', '--initial-branch=main']); git(service, ['config', 'user.name', 'Buildr Test']); git(service, ['config', 'user.email', 'test@example.com']);
+  fs.writeFileSync(path.join(service, 'api.md'), '# baseline\n'); git(service, ['add', '--', 'api.md']); git(service, ['-c', 'commit.gpgSign=false', 'commit', '-m', 'baseline']);
+  let registryUnavailable = false;
+  const provider = registerGitWorktreeProvider({
+    assertCanonicalTaskWorkspace: () => root,
+    atomicWriteJson: (file, value) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, JSON.stringify(value)); },
+    removePath: file => fs.rmSync(file, { force: true }), sameGitIdentity: (left, right) => left === right,
+    readProjectRegistryRecord: () => { if (registryUnavailable) throw new Error('Unrelated project registry is temporarily unreadable.'); return { registry: { migrationRequired: false }, projects: { demo: { source: { type: 'workspace', path: 'projects/demo' } } } }; },
+    readServiceRegistryRecord: () => ({ services: { api: { source: { type: 'git', path: sourcePath, integrationBranch: 'main' } } } }),
+  });
+  const taskId = 'retained-root-evidence', created = provider.prepareGitWorktrees({ workspaceRoot: root, taskId, branch: 'codex/' + taskId, includes: ['service:demo/api'] });
+  assert.equal(created.status, 'ready'); assert.equal(created.repositories.length, 2);
+  registryUnavailable = true;
+  assert.equal(provider.readGitWorktreeEvidence(root, taskId)?.evidence.repositories.length, 2);
+  assert.equal(provider.inspectGitWorktrees({ workspaceRoot: root, taskId }).status, 'ready');
+  assert.throws(() => provider.gitWorktreeEvidenceDirectories(root, { requireComplete: true }), (error: unknown) => error instanceof Error && Reflect.get(error, 'code') === 'git_worktree_evidence_discovery_incomplete');
+  const originalMetadata = path.join(service, '.git'), heldMetadata = path.join(root, 'held-api-metadata');
+  fs.renameSync(originalMetadata, heldMetadata);
+  const damaged = provider.inspectGitWorktrees({ workspaceRoot: root, taskId });
+  assert.equal(damaged.status, 'blocked'); assert.equal(damaged.repositories.find(item => item.selector === 'workspace')?.state, 'ready'); assert.equal(damaged.repositories.find(item => item.selector === 'service:demo/api')?.state, 'blocked');
+  const heads = Object.fromEntries(created.repositories.map(item => [item.selector, item.head!]));
+  const input = { workspaceRoot: root, taskId, allowCompleted: true, cleanupDelivery: { expectedSources: heads, deliveredRefs: heads } };
+  const refused = provider.cleanupGitWorktrees(input);
+  assert.equal(refused.status, 'blocked'); assert.deepEqual(refused.effects, []);
+  for (const item of created.repositories) assert.equal(fs.existsSync(item.checkoutPath), true);
+  fs.renameSync(heldMetadata, originalMetadata);
+  assert.equal(provider.cleanupGitWorktrees(input).status, 'cleaned');
 });

@@ -305,14 +305,14 @@ test('an incomplete timed directory observation cannot report a selected checkou
   try{await assert.rejects(f.app.file(f.temporary,{repositoryId:'one',checkoutId:id,path:'file.ts'}),(error:any)=>error.code==='code_checkout_unconfirmed'&&error.status===503&&!error.message.includes('已不存在'));}finally{Date.now=now;}
   assert.equal((await f.app.file(f.temporary,{repositoryId:'one',checkoutId:id,path:'file.ts'})).content,'native one sharedNeedle\n');
 });
-test('task association deadline also stops inside one provider record while retaining already observed members',t=>{
+test('task association deadline preserves actual Git members without claiming a unique task from incomplete evidence',t=>{
   const f=worktreeFixture(t),now=Date.now;let expired=false,observedSources=0;
   const recorded=f.locations.map(item=>({get sourceRepository(){observedSources++;expired=true;return item.root;},checkoutPath:item.task}));
   Date.now=()=>expired?CODE_LIMITS.readMs+1:0;
   try{
     const catalog=readCodeWorktreeCatalog(f.temporary,f.repositories.map(repo=>({id:repo.id,name:repo.name,location:repo.source.path,available:true})),{readGitWorktreeEvidence:()=>({evidence:{repositories:recorded}})},'feature');
     assert.equal(observedSources,1);assert.ok(catalog.diagnostics.some(item=>item.code==='code_worktree_associations_truncated'));
-    assert.deepEqual(catalog.selectedWorktreeGroupIds,['task:feature']);assert.deepEqual(catalog.worktreeGroups.find(group=>group.id==='task:feature')?.repositoryIds,['one']);assert.equal(catalog.worktrees.filter(item=>item.kind==='main').length,2);
+    assert.deepEqual(catalog.selectedWorktreeGroupIds,['task:feature']);assert.deepEqual(catalog.worktreeGroups.find(group=>group.id==='task:feature')?.repositoryIds,[]);assert.ok(catalog.worktrees.some(item=>item.repositoryId==='one'&&item.path===fs.realpathSync(f.locations[0].task)&&item.kind==='worktree'&&item.taskId===null&&item.available));assert.ok(catalog.diagnostics.some(item=>item.code==='code_worktree_task_unconfirmed'));assert.equal(catalog.worktrees.filter(item=>item.kind==='main').length,2);
   }finally{Date.now=now;}
 });
 test('HTTP and CLI carry explicit checkout identity and reject path-shaped location inputs',async t=>{

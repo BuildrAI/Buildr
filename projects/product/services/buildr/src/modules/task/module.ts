@@ -165,6 +165,7 @@ export function createWorktreeProviderModule(runtime: GitWorktreeRuntime) {
       registerGitWorktreeProvider(composition);
       const application = pick(composition, [
         'gitWorktreeEvidencePath',
+        'gitWorktreeEvidenceDirectories',
         'readGitWorktreeEvidence',
         'writeGitWorktreeEvidence',
         'planGitWorktrees',

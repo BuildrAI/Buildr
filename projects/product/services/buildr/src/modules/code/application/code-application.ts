@@ -21,6 +21,7 @@ export type CodeDependencies = {
   readTaskScope(root:string,id:string):Task['scope'];
   readTask?(root:string,id:string):{taskId:string;title:string};
   gitWorktreeEvidencePath?(root:string,id:string):string;
+  gitWorktreeEvidenceDirectories?(root:string,options?:{requireComplete?:boolean}):string[];
   readGitWorktreeEvidence(root:string,id:string,options:{optional:boolean}):{evidence:{repositories:Array<{sourceRepository:string;checkoutPath:string;branch?:string}>}}|null;
 };
 export function createCodeApplication(dependencies:CodeDependencies) {

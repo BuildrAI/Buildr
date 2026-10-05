@@ -48,7 +48,8 @@ function worktreeDependency(requires: ChangeModuleRequires): WorktreeQuery {
   const value = dependency(requires, TASK_WORKTREE_PROVIDER);
   if (typeof value.inspectGitWorktrees !== 'function') throw new Error('Worktree Query dependency is invalid.');
   const inspectGitWorktrees = value.inspectGitWorktrees;
-  return { inspectGitWorktrees: (input) => Reflect.apply(inspectGitWorktrees, value, [input]) };
+  const readEvidence = value.readGitWorktreeEvidence;
+  return { inspectGitWorktrees: (input) => Reflect.apply(inspectGitWorktrees, value, [input]), ...(typeof readEvidence === 'function' ? { readGitWorktreeEvidence: (root: string, taskId: string, options: { optional: boolean }) => Reflect.apply(readEvidence, value, [root, taskId, options]) } : {}) };
 }
 
 function runtimeMethod(runtime: ChangeRuntime, method: string): Callable {

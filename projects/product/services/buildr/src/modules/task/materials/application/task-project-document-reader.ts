@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { observeGitRepositoryRoot } from '../../../../infrastructure/git/repository-boundary.ts';
 import { taskActionId } from '../../application/task-validation.ts';
 
 // Structural ports deliberately contain no OpenSpec types or queries.
@@ -9,7 +10,7 @@ export type TaskDocumentProjectQuery = {
   projectDetail(root: string, code: string): { project: TaskDocumentProject };
   resolveSourceRoot(root: string, source: TaskDocumentProject['source']): string;
 };
-export type TaskDocumentWorktreeQuery = { inspectGitWorktrees(input: { workspaceRoot: string; taskId: string }): { status: string; repositories: Array<{ selector: string; entityType: string; sourcePath: string; checkoutPath: string; state: string }>; diagnostic?: { code: string; message: string } | null } };
+export type TaskDocumentWorktreeQuery = { readGitWorktreeEvidence?(root: string, taskId: string, options: { optional: boolean }): { evidence: { repositories: Array<{ selector: string; sourcePath?: string }> } } | null; inspectGitWorktrees(input: { workspaceRoot: string; taskId: string }): { status: string; repositories: Array<{ selector: string; entityType: string; sourcePath: string; checkoutPath: string; state: string }>; diagnostic?: { code: string; message: string } | null } };
 export type TaskDocumentQuery = { readTask(root: string, taskId: string): { record: { changes: Array<{ project: string; change: string }>; scope?: { projects: string[]; services: Array<{ project: string; service: string }> } } } };
 export const MAX_TASK_DOCUMENT_BYTES = 512 * 1024;
 export function documentError(code: string, message: string, status = 400) { return Object.assign(new Error(message), { code, status }); }
@@ -66,11 +67,17 @@ export function readBoundedText(root: string, relative: string, maxBytes = MAX_T
 }
 
 export function createTaskProjectDocumentReader(taskQuery: TaskDocumentQuery, projectQuery: TaskDocumentProjectQuery, worktreeQuery?: TaskDocumentWorktreeQuery) {
-  function taskScopedProjectRoot(targetRoot: string, taskId: string, projectCode: string, project: TaskDocumentProject): string | null {
+  function taskScopedProjectRoot(targetRoot: string, taskId: string, projectCode: string, project: TaskDocumentProject, observation?: ReturnType<TaskDocumentWorktreeQuery['inspectGitWorktrees']>): string | null {
     if (!worktreeQuery) return null;
-    const inspected = worktreeQuery.inspectGitWorktrees({ workspaceRoot: targetRoot, taskId });
+    const inspected = observation ?? worktreeQuery.inspectGitWorktrees({ workspaceRoot: targetRoot, taskId });
     if (inspected.status !== 'ready' && !inspected.repositories.length) {
       if (!inspected.diagnostic || inspected.diagnostic.code === 'git_worktree_evidence_missing') return null;
+      // A valid service-only group cannot turn unrelated, confirmed non-Git project materials into Git candidates.
+      try {
+        const stored = worktreeQuery.readGitWorktreeEvidence?.(targetRoot, taskId, { optional: true });
+        const hasProjectCandidate = stored?.evidence.repositories.some(repository => repository.selector === 'workspace' || repository.selector === `project:${projectCode}`);
+        if (stored && !hasProjectCandidate && project.source.type !== 'git' && observeGitRepositoryRoot(projectQuery.resolveSourceRoot(targetRoot, project.source)) === null) return null;
+      } catch { /* Unknown or conflicting group identity cannot authorize retained-candidate substitution. */ }
       throw documentError('task_worktree_unavailable', '任务工作树当前不可读取，不能用主目录替代。', 409);
     }
     const direct = inspected.repositories.find(repository => repository.selector === `project:${projectCode}`);
@@ -80,7 +87,13 @@ export function createTaskProjectDocumentReader(taskQuery: TaskDocumentQuery, pr
     }
     const workspace = inspected.repositories.find(repository => repository.selector === 'workspace');
     if (!workspace) {
-      if (inspected.repositories.some(repository => repository.selector.startsWith(`service:${projectCode}/`))) throw documentError('task_worktree_project_root_unavailable', '服务工作树不能证明完整项目文件根，不能用保留副本替代。', 409);
+      if (inspected.repositories.some(repository => repository.selector.startsWith(`service:${projectCode}/`))) {
+        const retainedRoot = projectQuery.resolveSourceRoot(targetRoot, project.source);
+        let actualGitRoot: string | null;
+        try { actualGitRoot = observeGitRepositoryRoot(retainedRoot); }
+        catch { throw documentError('task_worktree_project_root_unavailable', '项目来源身份当前不可确认，不能用保留副本替代。', 409); }
+        if (actualGitRoot !== null || project.source.type === 'git') throw documentError('task_worktree_project_root_unavailable', '服务工作树不能证明完整项目文件根，不能用保留副本替代。', 409);
+      }
       return null;
     }
     if (workspace.entityType !== 'workspace' || workspace.sourcePath !== '.' || workspace.state !== 'ready') throw documentError('task_worktree_unavailable', '任务工作树身份已变化，不能读取主目录替代。', 409);
@@ -98,12 +111,26 @@ export function createTaskProjectDocumentReader(taskQuery: TaskDocumentQuery, pr
     if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(projectCode)) throw documentError('task_document_scope_forbidden', '项目编码不合法。', 403);
     const { project } = projectQuery.projectDetail(targetRoot, projectCode);
     const projectRoot = projectQuery.resolveSourceRoot(targetRoot, project.source);
-    const candidateRoot = taskScopedProjectRoot(targetRoot, taskId, projectCode, project);
-    const sourceRoot = candidateRoot || projectRoot;
+    const observation = worktreeQuery?.inspectGitWorktrees({ workspaceRoot: targetRoot, taskId });
+    const candidateRoot = taskScopedProjectRoot(targetRoot, taskId, projectCode, project, observation);
+    let sourceRoot = candidateRoot || projectRoot;
     // Also check ancestors inside the selected workspace, not merely the final project root.
     if (!candidateRoot && isInside(targetRoot, sourceRoot)) assertPlainPath(targetRoot, path.relative(targetRoot, sourceRoot));
     const relative = markdownPath(documentPath.startsWith('@project/') ? documentPath.slice('@project/'.length) : documentPath);
-    return { schemaVersion: 'buildr.task-project-document/v1', projectCode, path: relative, name: path.posix.basename(relative), ...readBoundedText(sourceRoot, relative), provenance: candidateRoot ? 'task-worktree-candidate' as const : 'retained-project' as const };
+    let readPath = relative, fromCandidate = candidateRoot !== null;
+    if (!candidateRoot && observation) {
+      const retainedFile = path.resolve(projectRoot, relative);
+      const records = observation.repositories.length ? observation.repositories : worktreeQuery?.readGitWorktreeEvidence?.(targetRoot, taskId, { optional: true })?.evidence.repositories || [];
+      const service = records.filter(repository => repository.selector.startsWith(`service:${projectCode}/`) && repository.sourcePath && isInside(path.resolve(targetRoot, repository.sourcePath), retainedFile)).sort((a, b) => b.sourcePath!.length - a.sourcePath!.length)[0];
+      if (service?.sourcePath) {
+        const current = observation.repositories.find(repository => repository.selector === service.selector);
+        if (!current || current.state !== 'ready') throw documentError('task_worktree_unavailable', '文档所属服务工作树当前不可读取，不能用保留副本替代。', 409);
+        sourceRoot = current.checkoutPath;
+        readPath = path.relative(path.resolve(targetRoot, service.sourcePath), retainedFile).split(path.sep).join('/');
+        fromCandidate = true;
+      }
+    }
+    return { schemaVersion: 'buildr.task-project-document/v1', projectCode, path: relative, name: path.posix.basename(relative), ...readBoundedText(sourceRoot, readPath), provenance: fromCandidate ? 'task-worktree-candidate' as const : 'retained-project' as const };
   }
   return Object.freeze({ taskScopedProjectRoot, taskProjectDocument });
 }
