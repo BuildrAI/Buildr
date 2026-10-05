@@ -50,7 +50,7 @@ buildr task abandon <id> --reason <text> --expected-record <recordDigest> --targ
 
 独立任务材料应用（Task Materials Application）继续管理方案、实施和交付文件，清单使用 `schemaVersion: buildr.task-materials/v2` 与 `documents`。每项为 `{id, role, title, source}`，`role` 仅为 `solution|implementation|delivery`，各角色按实际需要零到多项；来源为 `{kind: task, path: <task-relative-md>}` 或 `{kind: project, project: <code>, path: <project-relative-md>}`。清单不保存正文、物理工作树路径、任务状态或专业检查适用性。旧清单尚含唯一 `brief` 时，公开入口仍只呈现 v2 过程引用；普通材料更新内部保留该旧关联，直到显式迁移或释放，不能因修改方案而丢失说明来源。多任务可引用同一适用过程文档，但每个任务说明由自己的 `brief` 保存。
 
-先 `inspect` 取得 `materialsDigest` 与逐项正文摘要，再维护完整引用或本机正文。关联版本与受控正文版本分别使用已观察值，不借 `recordDigest` 保存材料版本。项目正文通过真实工作树（Worktree）文件工具维护，修改前重读并保留他人内容；应用锁不能保护任意外部编辑器。已有 `knowledge/` 文档保留原位置，不为材料整理移动或复制。
+先 `inspect` 取得 `materialsDigest` 与逐项正文摘要，再维护完整引用或本机正文。关联版本与受控正文版本分别使用已观察值，不借 `recordDigest` 保存材料版本。项目正文通过任务分流已确认的实际工作位置及所属专业文件工具维护：Git 文件使用适用工作树（Worktree），已确认的非 Git 资料使用已授权实际位置；修改前重读目标身份、内容与版本并保留他人内容，修改后从真实资料回读。不能用本机材料写入接口代写项目文件；应用锁不能保护任意外部编辑器。已有 `knowledge/` 文档保留原位置，不为材料整理移动或复制。
 
 ```text
 buildr task materials inspect <id> --target <canonical-workspace> --json

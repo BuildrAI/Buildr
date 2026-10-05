@@ -74,7 +74,7 @@ function injectLegacyTaskRecordV3(root: any): any {
   fs.writeFileSync(manifestFile, YAML.stringify(manifest));
   const target = path.join(root, 'skills', 'contracts', 'buildr', 'task-record', 'v3.md');
   fs.mkdirSync(path.dirname(target), { recursive: true });
-  fs.copyFileSync(path.join(PRODUCT_ROOT, 'resources', 'workspace', 'skills', 'contracts', 'buildr', 'task-record', 'v3.md'), target);
+  fs.copyFileSync(path.join(PRODUCT_ROOT, 'test', 'fixtures', 'legacy-task-record-contract-v3.md'), target);
   return target;
 }
 

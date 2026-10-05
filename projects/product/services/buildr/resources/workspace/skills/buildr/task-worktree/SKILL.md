@@ -7,6 +7,8 @@ description: 按任务分流的默认隔离策略或用户要求，为任务创�
 
 本 Skill 是 `buildr.git-worktree-provider/v1` 的默认 provider，只管理Git checkout、本地任务分支、窄Git evidence和具体删除安全。执行位置选择遵循[任务分流的默认隔离策略](../task-triage/SKILL.md#默认隔离)；本技能（Skill）承接创建、复用检查与清理，不自行放宽主开发分支写入例外。
 
+本技能（Skill）只承接实际 Git 对象的位置动作。已确认的非 Git 资料按任务分流在已授权、已核对的实际位置由所属专业能力维护，不调用本提供者（Provider）；身份未明或已登记仓库缺失不能作为该分支，也不能要求本提供者伪造非 Git 工作树证据。混合范围分别处理，现有 Git 身份、绑定和删除安全保持有效。
+
 ## 公共动作
 
 ```bash

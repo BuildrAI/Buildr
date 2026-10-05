@@ -46,6 +46,13 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "src/modules/code/**",
       "test/integration/**",
       "test/helpers/legacy-asset-catalog.ts",
+      "resources/workspace/skills/buildr/task-triage/**",
+      "resources/workspace/components/buildr/openspec/component.yml",
+      "resources/workspace/components/buildr/openspec/contributions/openspec-propose-sidebar.md",
+      "resources/workspace/components/buildr/openspec/contributions/openspec-apply-sidebar.md",
+      "resources/workspace/components/buildr/openspec/contributions/openspec-update-sidebar.md",
+      "resources/workspace/components/buildr/openspec/contributions/openspec-sync-converge.md",
+      "resources/workspace/components/buildr/openspec/contributions/openspec-archive-converge.md",
       "test/verification/integration.ts",
       "test/verification/worker-budget.ts",
       "src/bootstrap/**",
@@ -425,6 +432,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   "system-workspace-lifecycle": {
     "inputs": [
       "test/system/package-capability-retirement.test.ts",
+      "test/fixtures/legacy-task-record-contract-v3.md",
       "test/system/project-product.test.ts",
       "test/system/service-product.test.ts",
       "test/system/workspace-manifest-registry.test.ts",

@@ -682,6 +682,9 @@ export function createPackageStaticValidator(deps: any): any  {
             '先取得正式Task Record并核对实际工作位置',
             '创建规划文件前执行 `task-triage` 的默认隔离策略',
             '只有用户明确要求在主开发分支修改时使用该位置',
+            'Git 文件默认复用当前任务工作树（Worktree）',
+            '已确认的非 Git 资料',
+            '身份未明只停止依赖该身份的写入',
             '`openspec new change`、`task update --add-change`',
             'Application不额外保存规划快照',
           ]) {
@@ -693,7 +696,9 @@ export function createPackageStaticValidator(deps: any): any  {
             '只修订既有planning artifacts',
             '不授予实现、同步或归档权限',
             '纯规划修订也在写入前执行 `task-triage` 的默认隔离策略',
-            '复用已有当前任务工作树（Worktree）',
+            'Git 文件默认复用当前任务工作树（Worktree）',
+            '已确认的非 Git 资料',
+            '身份未明只停止依赖该身份的写入',
             '`openspec-apply-change`',
           ]) {
             if (!updateContent.includes(requiredText)) problems.push(`OpenSpec update sidebar must include ${JSON.stringify(requiredText)}.`);
@@ -1125,8 +1130,8 @@ export function createPackageStaticValidator(deps: any): any  {
         for (const forbiddenText of ['buildr worktree create', 'buildr verification run', 'buildr task finish run', 'git commit', 'git push']) {
           if (skillContent.includes(forbiddenText)) problems.push(`task-manager Skill must not execute professional action ${JSON.stringify(forbiddenText)}.`);
         }
-        const provided = (skill.provides || []).some((item: any) => item.capability === 'buildr.task-record' && item.version === 3);
-        if (!provided) problems.push('task-manager must provide buildr.task-record@3.');
+        const provided = (skill.provides || []).some((item: any) => item.capability === 'buildr.task-record' && item.version === 4);
+        if (!provided) problems.push('task-manager must provide buildr.task-record@4.');
         try {
           const { description = '' } = parseSkillFrontmatter(skillFile);
           const sentenceStops = description.match(/[。！？]/g)?.length || 0;
@@ -1286,13 +1291,13 @@ export function createPackageStaticValidator(deps: any): any  {
           if (!skillContent.includes(requiredText)) problems.push(`task-retrospective Skill must include ${JSON.stringify(requiredText)}.`);
         }
         if ((skill.provides || []).some((item: any) => item.capability === 'buildr.task-retrospective')) problems.push('task-retrospective must remain a pure Skill without a dedicated capability provider.');
-        if (!(skill.requires || []).some((item: any) => item.capability === 'buildr.task-record' && item.version === 3 && item.mode === 'required')) problems.push('task-retrospective must require buildr.task-record@3.');
+        if (!(skill.requires || []).some((item: any) => item.capability === 'buildr.task-record' && item.version === 4 && item.mode === 'required')) problems.push('task-retrospective must require buildr.task-record@4.');
       }
       if (skill.id === 'task-triage') {
-        for (const requiredText of ['## 2. 两轴决策', '`code-only`', '`spec-maintenance`', '`change-flow`', '`blocked`', 'Repository set', '`implementation`', '`metadata-only`', '`unknown`', '`buildr.task-record/v3`', '待办意向', '任务登记与代码更新', 'Formal Task Record本身不是编辑、构建或有界测试的通用工作许可', '除非用户明确要求在主开发分支修改，否则一律创建或复用当前任务的独立工作树（Worktree）', '`buildr.current-knowledge-maintenance/v3`', '`buildr.git-worktree-provider/v1`', '`maintain`', '`change-required`', 'provider不ready', 'selected `buildr.task-verification/v4` provider']) {
+        for (const requiredText of ['## 2. 两轴决策', '`code-only`', '`spec-maintenance`', '`change-flow`', '`blocked`', 'Repository set', '`implementation`', '`metadata-only`', '`unknown`', '`buildr.task-record/v4`', '待办意向', '任务登记与代码更新', 'Formal Task Record本身不是编辑、构建或有界测试的通用工作许可', '除非用户明确要求在主开发分支修改，否则创建或复用当前任务的独立工作树（Worktree）', '已确认的非 Git 资料', '身份未明', '`none`', '`unresolved`', '不承诺对任意外部编辑器的原子并发保护', '`buildr.current-knowledge-maintenance/v3`', '`buildr.git-worktree-provider/v1`', '`maintain`', '`change-required`', 'provider不ready', 'selected `buildr.task-verification/v4` provider']) {
           if (!skillContent.includes(requiredText)) problems.push(`task-triage Skill must include ${JSON.stringify(requiredText)}.`);
         }
-        if (!(skill.requires || []).some((item: any) => item.capability === 'buildr.task-record' && item.version === 3 && item.mode === 'optional')) problems.push('task-triage must optionally require buildr.task-record@3.');
+        if (!(skill.requires || []).some((item: any) => item.capability === 'buildr.task-record' && item.version === 4 && item.mode === 'optional')) problems.push('task-triage must optionally require buildr.task-record@4.');
         if (!(skill.requires || []).some((item: any) => item.capability === 'buildr.git-operations' && item.version === 1 && item.mode === 'optional')) problems.push('task-triage must optionally require buildr.git-operations@1.');
         for (const retiredText of ['`create-board`', '`continue-board`', '`buildr.task-board-maintenance/v1`']) {
           if (skillContent.includes(retiredText)) problems.push(`task-triage Skill must not route retired Task Board behavior: ${JSON.stringify(retiredText)}.`);
@@ -1371,16 +1376,16 @@ export function createPackageStaticValidator(deps: any): any  {
           problems.push('Workspace skills baseline must declare enabled installed Buildr task-verification.');
         }
         const taskManager = baselineSkills.find((entry: any) => entry.id === 'task-manager');
-        if (!taskManager || taskManager.source !== 'buildr' || taskManager.state !== 'installed' || taskManager.enabled !== true || !(taskManager.provides || []).some((item: any) => item.capability === 'buildr.task-record' && item.version === 3)) {
-          problems.push('Workspace skills baseline must declare enabled installed Buildr task-manager providing buildr.task-record@3.');
+        if (!taskManager || taskManager.source !== 'buildr' || taskManager.state !== 'installed' || taskManager.enabled !== true || !(taskManager.provides || []).some((item: any) => item.capability === 'buildr.task-record' && item.version === 4)) {
+          problems.push('Workspace skills baseline must declare enabled installed Buildr task-manager providing buildr.task-record@4.');
         }
         const taskReview = baselineSkills.find((entry: any) => entry.id === 'task-review');
         if (!taskReview || taskReview.source !== 'buildr' || taskReview.state !== 'installed' || taskReview.enabled !== true || !(taskReview.provides || []).some((item: any) => item.capability === 'buildr.task-review' && item.version === 2)) {
           problems.push('Workspace skills baseline must declare enabled installed Buildr task-review providing buildr.task-review@2.');
         }
         const taskRetrospective = baselineSkills.find((entry: any) => entry.id === 'task-retrospective');
-        if (!taskRetrospective || taskRetrospective.source !== 'buildr' || taskRetrospective.state !== 'installed' || taskRetrospective.enabled !== true || (taskRetrospective.provides || []).some((item: any) => item.capability === 'buildr.task-retrospective') || !(taskRetrospective.requires || []).some((item: any) => item.capability === 'buildr.task-record' && item.version === 3)) {
-          problems.push('Workspace skills baseline must declare enabled installed pure task-retrospective requiring buildr.task-record@3.');
+        if (!taskRetrospective || taskRetrospective.source !== 'buildr' || taskRetrospective.state !== 'installed' || taskRetrospective.enabled !== true || (taskRetrospective.provides || []).some((item: any) => item.capability === 'buildr.task-retrospective') || !(taskRetrospective.requires || []).some((item: any) => item.capability === 'buildr.task-record' && item.version === 4)) {
+          problems.push('Workspace skills baseline must declare enabled installed pure task-retrospective requiring buildr.task-record@4.');
         }
         if (baselineSkills.some((entry: any) => entry.id === 'task-asset-review' || (entry.provides || []).some((item: any) => item.capability === 'buildr.task-asset-review') || (entry.requires || []).some((item: any) => item.capability === 'buildr.task-asset-review'))) {
           problems.push('Workspace skills baseline must not retain Task Asset Review provider or consumer declarations.');

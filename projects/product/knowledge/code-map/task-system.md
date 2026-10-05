@@ -246,4 +246,4 @@
 
 ### 规范与实现的核对点
 
-[自举编排规范](../../openspec/specs/task-closeout-orchestration/spec.md)、[任务工作方式](../../openspec/specs/agent-task-workflows/spec.md)和[任务环境规范](../../openspec/specs/task-environments/spec.md)分别约束自举适用性、工作位置与退役。当前执行器的任务编号可选，工作树（Worktree）提供者只管理 Git 位置和删除安全，不自动执行 Doctor 或同步；持久修改默认隔离，用户明确指定原地修改时例外。移除自举任务前置的决定可追溯至[归档变更](../../openspec/changes/archive/2026-09-08-remove-self-bootstrap-task-prerequisite/specs/agent-task-workflows/spec.md)。这些边界不能从旧执行记录或图的线性顺序反推。
+[自举编排规范](../../openspec/specs/task-closeout-orchestration/spec.md)、[任务工作方式](../../openspec/specs/agent-task-workflows/spec.md)和[任务环境规范](../../openspec/specs/task-environments/spec.md)分别约束自举适用性、工作位置与退役。当前执行器的任务编号可选，工作树（Worktree）提供者只管理 Git 位置和删除安全，不自动执行 Doctor 或同步；持久文件先按真实路径与实际 Git 归属选择位置：Git 文件默认隔离，用户明确指定主开发分支修改时例外；已确认的非 Git 资料在已授权实际位置由所属专业工具维护，身份未明只停止相关写入。父仓库的新文件仍属于 Git 现场，普通文件重读与补丁不承诺跨编辑器原子并发保护。移除自举任务前置的决定可追溯至[归档变更](../../openspec/changes/archive/2026-09-08-remove-self-bootstrap-task-prerequisite/specs/agent-task-workflows/spec.md)。这些边界不能从旧执行记录或图的线性顺序反推。
