@@ -4,7 +4,7 @@
 
 ## 本轮：当次来源采集与直接读取
 
-最新确认已取代历史阶段的查看时反查：真实生产者（Producer）当次写入 `dsh.event-sources/v1`，工具／受支持子调用使用 `data.eventSources`，规则注入使用 `message.source.eventSources`；原保存重载及查询保全，轨迹上下文发布少量元数据（Metadata），三个入口直接读取。没有字段明确未采集，不自动按当前资产、目录、名称或绑定入口补历史；正文以原事件 UTF-16 片段引用读取，用户正文不复制。规范和新待验清单见[本轮设计](<../../../openspec/changes/add-dsh-buildr-provenance/design.md>)及[第 9 节清单](<../../../openspec/changes/add-dsh-buildr-provenance/tasks.md>)。
+最新确认已取代历史阶段的查看时反查：真实生产者（Producer）当次写入 `dsh.event-sources/v1`，工具／受支持子调用使用 `data.eventSources`，规则注入使用 `message.source.eventSources`；原保存重载及查询保全，轨迹上下文发布少量元数据（Metadata），三个入口直接读取。没有字段明确未采集，不自动按当前资产、目录、名称或绑定入口补历史；正文以原事件 UTF-16 片段引用读取，用户正文不复制。规范和新待验清单见[本轮设计](<../../../openspec/changes/archive/2026-10-05-add-dsh-buildr-provenance/design.md>)及[第 9 节清单](<../../../openspec/changes/archive/2026-10-05-add-dsh-buildr-provenance/tasks.md>)。
 
 可选 `EventSources.execution` 仅由当次实际命令解释器（Bash）前台正规化结果保存 `outcome`／`exitCode`；原生失败优先、后台／转后台未知，不在查看时解析标准输出推成功。Buildr 公有 `source inspect` 输入的 `mode` 默认 `content` 保持兼容，采集选 `metadata` 核验实际原始摘要及提供证据，响应不返回当前／观察正文，输入不发普通用户正文；查看路径完全不调用此接口。默认 `content` 的解析兼容由单元检查覆盖；摘要、片段及混合／遮蔽识别另由受控检查覆盖，未将默认正文兼容集成用例的源码存在称为本轮执行通过。
 
@@ -37,7 +37,7 @@ node tools/build-development-composition.ts --source-sdk <prepared-v2-sdk> --ent
 
 当前现场：精确 `f3b934`／`WC8mR4` 组合已通过官方入口安装，`runtime-entry-c2f1a25bb563a49d` 已冷启动激活；三个根服务（Root3）及 standard／ptc／cordis 共十五个私有模块配置和运行状态已核对，保持同一 `774a` 图。随后 95 个事件中有 11 个保存来源字段，原生窗口（Native Window）显示五条已确认 Buildr 记录：规则注入、规则读取、技能加载，以及命令行（CLI）成功／失败各一条。成功事件 `seq: 84` 同期 `exitCode: 0`，失败事件 `seq: 89` 同期 `exitCode: 1`；两者来源均为 `confirmed`，各保留一个必要目标引用，均无正文引用，原失败结果的 `isError: false` 保持。普通 README 读取 `seq: 38` 排除。 本轮软件开发工具包（SDK）`B1UEnW` 和 106 文件补丁 `4e7b3d` 保持不变；项目 Node 声明为 `24.15.0`，完整检查的 195 项 Node 检查、12 项原界面受控检查及两种实际装载器（Loader）检查通过。
 
-这 95 个事件经同一主机端（Host）的原查询、原事件读取、持久读取及两个只读句柄重开保持一致，12 项检查通过，原历史来源、模型／请求及工具元数据（Metadata）保全。实际技能加载的原事件正文已可见，技能文件正文读取样本仍为零。原调用跳转、来源列及详情、两条能力过滤、关闭后全宽／回焦与搜索保留、清搜索不重开已在原生界面（Native UI）验证。该证明没有释放智能体（Agent）或重启 Host；整应用冷启动后的这 95 个事件前缀仍待核验，不能借此前配置冷启动通过替代。 证据见[95 事件元数据回执](<../build/capture-session-observed-0104a5f0-8c02-41c0-afcd-8e71c560dd77.json>)及[当前原生验证](<../build/capture-source-native-current-before-cold.json>)；历次配置互操作失败、版本恢复和较早受限样本保留在[实施索引](<../../../openspec/changes/add-dsh-buildr-provenance/implementation-progress.md>)。
+这 95 个事件经同一主机端（Host）的原查询、原事件读取、持久读取及两个只读句柄重开保持一致，12 项检查通过，原历史来源、模型／请求及工具元数据（Metadata）保全。实际技能加载的原事件正文已可见，技能文件正文读取样本仍为零。原调用跳转、来源列及详情、两条能力过滤、关闭后全宽／回焦与搜索保留、清搜索不重开已在原生界面（Native UI）验证。该证明没有释放智能体（Agent）或重启 Host；整应用冷启动后的这 95 个事件前缀仍待核验，不能借此前配置冷启动通过替代。 证据见[95 事件元数据回执](<../build/capture-session-observed-0104a5f0-8c02-41c0-afcd-8e71c560dd77.json>)及[当前原生验证](<../build/capture-source-native-current-before-cold.json>)；历次配置互操作失败、版本恢复和较早受限样本保留在[实施索引](<../../../openspec/changes/archive/2026-10-05-add-dsh-buildr-provenance/implementation-progress.md>)。
 
 ## 历史阶段：v10 当前关联与现有显示补丁
 
@@ -45,7 +45,7 @@ node tools/build-development-composition.ts --source-sdk <prepared-v2-sdk> --ent
 
 当次来源采集（Capture）尚缺实际生产者的技能（Skill）胜出位置、规则（Rule）绝对基准和可持久化成功结果元数据（Metadata）接口。本目录没有该采集契约，不将两个显示扩展位（Slot）、私加结果字段或内容摘要比较称为历史提供者证明；不替换 DSH 引擎或另造事件流。完整采集保留待办，新验证须另列精确输入及范围。
 
-旧[原型范围](<../../../openspec/changes/add-dsh-buildr-provenance/prototypes/README.md>)中的 `owner`／`hasBuildr` 模拟用户资料及独立历史正文仓，不作为本轮实现依据；最新确认优先，只保留七类型、附加来源维度和原详情交互的历史参考。
+旧[原型范围](<../../../openspec/changes/archive/2026-10-05-add-dsh-buildr-provenance/prototypes/README.md>)中的 `owner`／`hasBuildr` 模拟用户资料及独立历史正文仓，不作为本轮实现依据；最新确认优先，只保留七类型、附加来源维度和原详情交互的历史参考。
 
 ## 历史显示阶段的精确输入
 
@@ -66,7 +66,7 @@ node tools/build-development-composition.ts --source-sdk <prepared-v2-sdk> --ent
 
 只从上述精确提交的干净源码应用补丁，先核对每文件原始摘要值（Digest），执行 `git apply --check` 后应用，再核对所有候选摘要值（Digest）。原版本号或提交标记不足以证明补丁已生效。软件开发工具包（SDK）类型、正式构建产物与目标运行时（Runtime）必须分别校验；不能复制研究缓存、手改安装归档、使用版本豁免或启动替代服务器冒充桌面生效。
 
-旧私有 v9 的完整构建、官方安装与限定原桌面结果见[实施索引](<../../../openspec/changes/add-dsh-buildr-provenance/implementation-progress.md>)；本轮精确组合的安装与限定验收已在当前现场段登记，本目录不执行发布、安装或升级动作。正常禁用贡献可以撤回列及对象区域；不会关闭现有 Buildr 页面、停止服务、删除业务数据或改写原日志。
+旧私有 v9 的完整构建、官方安装与限定原桌面结果见[实施索引](<../../../openspec/changes/archive/2026-10-05-add-dsh-buildr-provenance/implementation-progress.md>)；本轮精确组合的安装与限定验收已在当前现场段登记，本目录不执行发布、安装或升级动作。正常禁用贡献可以撤回列及对象区域；不会关闭现有 Buildr 页面、停止服务、删除业务数据或改写原日志。
 
 ## 实际验证与未覆盖
 

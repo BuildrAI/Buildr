@@ -2,7 +2,27 @@
 
 范围仅 `dsh-buildr-provenance` 的原来源列、原详情附加区和并列 Buildr 标签。本页关联源码、回执（Receipt）与已报告检查，不是任务（Task）状态、正式验证结果（Verification Result）或发布权威。安装、实测及本次调整分别列明，文档维护不冒充构建或运行验证。
 
-## 2026-10-05 首步补齐完成与当前目标结论
+本页随变更归档，顶部最新验收索引已按归档后的目录层级定位。以下历史段落保留归档前相对链接，其中 `../../../services/` 原指产品的 `services/`，从当前归档位置应按 `../../../../services/` 定位；本轮核心验收产物的实际保全位置及逐文件摘要见[保全清单](../../../../services/dsh-plugin/build/dsh-buildr-provenance-evidence-LmHBEj/preservation-manifest.json)，原执行输入和路径仅作为历史证据。
+
+## 2026-10-05 主开发交付与自举接入
+
+第一步目标已在约定入口内交付。实现提交 `9deb75b5a20cb55739dd4caa8c167a9ec2069eb7` 已快进集成并普通推送到 `dev`；本变更已由唯一收敛入口同步16项主规范并归档。唯一自举执行器（Runner）已用保留的 Node 24.15.0 更新主目录开发应用、显式核验入口并得到最终 Doctor ready；未公开发布，父观察任务仍进行中。
+
+DSH 开发组合已从主目录独立构建并通过官方管理器更新，包摘要 `11dd36d89b68ff8d81a5176ef8e6498b8b479e6d96dbb61ee5c62ee474b6d36f`，来源身份 `task:dsh-buildr-provenance@sha256-3d3053218a612459ac77de960ff08e1a526f1c28087352547eea76fb64c78e1a`。实际来源绑定指向主目录 `projects/product/services/buildr/bin/buildr.mjs` 与保留 Node，279实体逐字核对；公开只读观察确认三根服务、十五预设叶及入口已激活，根原始声明与默认值保留，技能原始配置仍缺失。构建源码与依赖已独立保全在主目录；旧工作树路径仅留作历史执行证据。
+
+集成后 Buildr 完整快速检查及新SDK的232项自动化、16项界面、两种原装载器（Loader）通过；精确正式／开发客户端（Client）宽窄、真实420px容器、七类、来源列、原Markdown／原文、筛选关闭与无正文零额外读取通过。新SDK生成路径和样式类名变化已单独核验，未把旧客户端摘要冒充新产物。实际原窗口的新主目录只读调用在三入口显示同一保存来源，筛选关闭保留焦点、清空恢复全宽十行。
+
+两次正常整应用退出后，最终主进程（Main Process）20225／主机端（Host）20234；恢复完成后的标准152事件与PTC46事件，在原查询／页／事件读取及两个只读存储句柄中，来源、工具完整数据、元数据（Metadata）、关联封装及原请求事实同切点一致，两组17检查、样本覆盖与旧95事实保护全部通过。启动初次观察151而存储152的不同切点报告保留；旧只读助手的读取字段和摘要格式误判也保留，最终结论只采用修正后的真实结果，不修改原会话补证。
+
+当前四项正常插件保留，所有临时检查助手已移除，用户原模型保持。现装旧正式包仅提供打开入口；两个新增强版本同时启用会注册两套观察界面并增加来源核对，原工具不会因此执行两次。唯一观察接入与双渠道协调作为公开发布前缺口登记，不扩大本次首步交付。上游文档与完整集成依赖环境缺口继续保留，未声称全上游工程矩阵通过；参与深度、采纳和业务贡献属于父任务后续工作。
+
+- [主目录实际接入与四插件证明](../../../../services/dsh-plugin/build/closeout-main-proof-final.json)、[新来源保存与冷启动](../../../../services/dsh-plugin/build/closeout-main-restart-final.json)。
+- [原查询／完整数据／只读存储核对](../../../../services/dsh-plugin/build/capture-dual-session-observed-ad4d52fd-36b2-4eed-9985-8bb23685a75f.json)、[原窗口三入口与关闭观察](../../../../services/dsh-plugin/build/closeout-main-native.json)。
+- [精确新客户端检查](../../../../services/dsh-plugin/build/sdk-retained-browser-ocQLNw/browser-final-proof.json)、[主目录软件开发工具包（SDK）与完整检查](../../../../services/dsh-plugin/build/dsh-source-retained-input-lq7y49/full-verification-proof.json)。
+
+以下为各阶段的原时点事实；历史的“当前／未提交／待验”不代表本节的交付状态。
+
+## 历史：2026-10-05 首步补齐完成与目标结论
 
 **第一步“打通观察数据源”在约定支持入口内已实现。** 当次来源随原会话事件（Session Event）保存，原来源列、原详情和 Buildr 标签读取同一字段；能查看实际规则／技能读取或加载、批准命令入口与本地附属能力调用、必要对象引用及原执行结果。不追认旧记录，普通资料直接读取排除，能力不新增资料正文。读取／加载或进程成功不等于智能体（Agent）采纳、遵循或业务贡献，父任务仍未完成。
 
@@ -16,10 +36,10 @@
 
 既有受控性能按未变界面／读取器／样式摘要复用，新产物仅补精确浏览器（Browser）行为检查；不把旧单点／中位数升级为本次原窗口冷态5000条性能或全内存保证。上游三项文档／一项完整集成检查的依赖环境缺口保留。当前源码未提交或发布，本轮不执行归档或父任务完成。
 
-- [唯一产物及232项检查](../../../services/dsh-plugin/build/source-first-step-target-order-artifact-final.json)、[精确客户端检查](../../../services/dsh-plugin/build/source-first-step-client-basic-016dmS-72f62a6a/validation-result.json)。
-- [原窗口新入口](../../../services/dsh-plugin/build/source-first-step-native-new-entrances-final.json)、[根服务及十五叶冷启动](../../../services/dsh-plugin/build/source-first-step-target-order-cold-active-final.json)。
-- [双会话原查询／存储／重开](../../../services/dsh-plugin/build/capture-dual-session-observed-3080e859-7f9a-4ec2-ae76-0e31494d5d6a.json)、[最终收口证明及四项插件](../../../services/dsh-plugin/build/source-first-step-closeout-proof-final.json)。
-- [过期版本零写入](../../../services/dsh-plugin/build/capture-preset-apply-observed-4db69a8caa1049ccb6d4d6b87659c00e.json)、[真实补偿](../../../services/dsh-plugin/build/capture-preset-rollback-observed-88b21bee7f224291a03c366009f537bd.json)、[最新恢复计划](../../../services/dsh-plugin/build/source-lifecycle-restoration-plans-actual-ba973-final/proof.json)。
+- [唯一产物及232项检查](../../../../services/dsh-plugin/build/dsh-buildr-provenance-evidence-LmHBEj/source-first-step-target-order-artifact-final.json)、[精确客户端检查](../../../../services/dsh-plugin/build/dsh-buildr-provenance-evidence-LmHBEj/source-first-step-client-basic-016dmS-72f62a6a/validation-result.json)。
+- [原窗口新入口](../../../../services/dsh-plugin/build/dsh-buildr-provenance-evidence-LmHBEj/source-first-step-native-new-entrances-final.json)、[根服务及十五叶冷启动](../../../../services/dsh-plugin/build/dsh-buildr-provenance-evidence-LmHBEj/source-first-step-target-order-cold-active-final.json)。
+- [双会话原查询／存储／重开](../../../../services/dsh-plugin/build/dsh-buildr-provenance-evidence-LmHBEj/capture-dual-session-observed-3080e859-7f9a-4ec2-ae76-0e31494d5d6a.json)、[最终收口证明及四项插件](../../../../services/dsh-plugin/build/dsh-buildr-provenance-evidence-LmHBEj/source-first-step-closeout-proof-final.json)。
+- [过期版本零写入](../../../../services/dsh-plugin/build/dsh-buildr-provenance-evidence-LmHBEj/capture-preset-apply-observed-4db69a8caa1049ccb6d4d6b87659c00e.json)、[真实补偿](../../../../services/dsh-plugin/build/dsh-buildr-provenance-evidence-LmHBEj/capture-preset-rollback-observed-88b21bee7f224291a03c366009f537bd.json)、[最新恢复计划](../../../../services/dsh-plugin/build/dsh-buildr-provenance-evidence-LmHBEj/source-lifecycle-restoration-plans-actual-ba973-final/proof.json)。
 
 以下各阶段保留原时点事实；旧“当前／待验”不代表上述最新结论。
 
