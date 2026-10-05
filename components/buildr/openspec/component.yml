@@ -48,8 +48,8 @@ integrity:
   - skills/buildr/openspec-contract-guard=sha256-420b5dff453b4077ff25a06c2518a9b9137f924926a8f4cd8e06aa8619a3a3e9
   - commands/buildr/openspec/manifest.yml=sha256-34633130abe5ef0e88d83ab205ce3cd46f962c3cc93fba4019b49fd3ae939ec0
   - components/buildr/openspec/contributions/openspec-explore-terminology.md=sha256-ca6a33bc8afad93f80865c2147832b214159639fca774568e8736959f009b66c
-  - components/buildr/openspec/contributions/openspec-propose-sidebar.md=sha256-ea0729953008493840c240e0b5d3c0b64e86eb9649b8c61fcbd811e4d2d68255
-  - components/buildr/openspec/contributions/openspec-update-sidebar.md=sha256-9e7de565c5d6db9b8317ef11007bcc281e9b0f8ce25c767f506b71fc50a1b4d8
-  - components/buildr/openspec/contributions/openspec-apply-sidebar.md=sha256-16acfb2afc78d2d2221a2ffe039ae116e8d636b046e9cd451b20c7fee6d85983
-  - components/buildr/openspec/contributions/openspec-sync-converge.md=sha256-d8f6750739f5306843a1b928a61b227b16e37c0470282cf1ccee784183cb0956
-  - components/buildr/openspec/contributions/openspec-archive-converge.md=sha256-5f90e1b91d238b1d551850ef2b34fe7622a1517cbea41e368281d9118e25a8c7
+  - components/buildr/openspec/contributions/openspec-propose-sidebar.md=sha256-26d2c6d91059905ab809228015c3ce82aa2d19bb0718675d4d87f5fa54ce97a2
+  - components/buildr/openspec/contributions/openspec-update-sidebar.md=sha256-b9987a356fdd26b6be3292f297fecc11a088598343de2ddd0f094cb980aa5d1d
+  - components/buildr/openspec/contributions/openspec-apply-sidebar.md=sha256-dcf930af2298d913a5d628dfd5cd95d04b3cf60e1ee0f77e3ec5016ce7f31158
+  - components/buildr/openspec/contributions/openspec-sync-converge.md=sha256-34121c704785bfe6db81bfd73584763a95d6252cd5f51b3f7bc09cba14183363
+  - components/buildr/openspec/contributions/openspec-archive-converge.md=sha256-fef81fa991a72a58ca8cb8461d48e9db3e881803178f2fc8df9ed8b7a5556554
