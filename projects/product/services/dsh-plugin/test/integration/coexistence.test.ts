@@ -12,11 +12,11 @@ const sdk = resolve(process.env.BUILDR_DSH_SDK_ROOT ?? join(root, 'build/dsh-0.2
 const req = createSdkRequire(sdk);
 
 /**
- * The released and development entries are separate packages that must be installable in one DSH at
- * the same time. Verifying them one at a time cannot catch a collision between them — an earlier
- * build registered both under the same service key and only failed once both were installed.
+ * Isolate package service keys even when a loader is given both variants directly. This is a loader
+ * regression check, not permission to install both variants in one profile; the original installer
+ * has a separate Buildr exclusion check. An earlier build reused one service key for both variants.
  */
-test('both plugin packages activate together in one loader without colliding', async t => {
+test('plugin variants have distinct service keys in a controlled loader', async t => {
   const bundleRoot = resolve(process.env.BUILDR_DSH_BUNDLE_ROOT ?? join(root, 'build'));
   const bundles = ['dsh-plugin', 'dsh-plugin-dev'].map(name => join(bundleRoot, name));
   for (const bundle of bundles) {

@@ -71,7 +71,8 @@ await symlink(join(sdk, 'node_modules'), join(stage, 'node_modules'), 'dir');
 await cp(source, pkg, { recursive: true });
 // Cordis and the Remote generator both require the service key to be a literal, so the development
 // variant takes its own key here rather than at runtime. This is the whole difference between the
-// two packages' Host halves: they must be able to coexist in one DSH profile.
+// two packages' Host halves: their namespaces stay isolated in controlled loader checks. Installation
+// policy is enforced separately by the original DSH installer and permits only one Buildr variant.
 if (dev) {
   const hostFile = join(pkg, 'src/index.ts');
   await writeFile(hostFile, (await readFile(hostFile, 'utf8')).replace("super(ctx, 'buildr')", "super(ctx, 'buildr-dev')"));

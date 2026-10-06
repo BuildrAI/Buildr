@@ -42,6 +42,14 @@ node tools/build-development-composition.ts --source-sdk <prepared-source-sdk> -
 
 这 95 个事件经同一主机端（Host）的原查询、原事件读取、持久读取及两个只读句柄重开保持一致，12 项检查通过，原历史来源、模型／请求及工具元数据（Metadata）保全。实际技能加载的原事件正文已可见，技能文件正文读取样本仍为零。原调用跳转、来源列及详情、两条能力过滤、关闭后全宽／回焦与搜索保留、清搜索不重开已在原生界面（Native UI）验证。该同Host回执本身没有释放智能体（Agent）或重启Host；随后正常整应用退出／重启已另证95原前缀来源／工具／请求保持，恢复总数96，原查询／存储及重开通过。此新证据与此前配置冷启动分开，不声称总数不变，也不核销扩展矩阵。 证据见95 事件元数据回执（本机临时证据：`services/dsh-plugin/build/capture-session-observed-0104a5f0-8c02-41c0-afcd-8e71c560dd77.json`）及当前原生验证（本机临时证据：`services/dsh-plugin/build/capture-source-native-current-before-cold.json`）。精确双客户端（Client）的WC8 浏览器证明（本机临时证据：`services/dsh-plugin/build/source-ui-browser-WC8mR4-input-proof-0e4dda9d.json`）和七类伴随证明（本机临时证据：`services/dsh-plugin/build/source-seven-kinds-companion-20261005-ed633e8b/browser/seven-kind-result.json`）以及原接口双页证明（本机临时证据：`services/dsh-plugin/build/source-pagination-companion-20261005-53f4c8d1/pagination-result.json`）覆盖受控渲染与内存存储上的原控制器／组装接口，不代表原生分页按钮、JSONL 后端分页、真实子动作或跨平台验证。历史构建、互操作失败、恢复及安装仍见[实施索引](<../../../openspec/changes/archive/2026-10-05-add-dsh-buildr-provenance/implementation-progress.md>)；平台严格读取边界见[插件说明](<../../../services/dsh-plugin/plugin/README.md#严格来源文件读取的平台边界>)。这些结果不代表公开发布或父观察体系完成。
 
+## 原安装器的 Buildr 互斥检查
+
+一个 DSH 配置档（Profile）同时只安装一个 Buildr 插件（Plugin）。正式包、开发包、本机开发组合和旧开发包的真实身份共同受检，停用仍算已安装。原插件安装页提示用户先卸载；安装与更新在同一写锁内复查，不自动停用、卸载或替换。已识别的无关包保持原行为。实现与精确输入见[安装检查交付边界](<../../../services/dsh-plugin/sdk-patches/README.md#buildr-插件安装检查>)。
+
+独立 Buildr 包没有安装前拦截接口，这项检查需要 DSH 原安装器（Installer）及完整运行时（Runtime）一起更新，不随单独的插件（Plugin）发布自动生效。本轮保存独立增量源码补丁（Source Patch）与完整 DSH 候选，尚未替换日常 DSH。插件（Plugin）装载器（Loader）的两变体命名空间隔离检查只证明直接装载不冲突，不代表安装共存策略。
+
+本机增强开发组合的普通卸载尚不会自动恢复十五个预设（Preset）引用；切换前须完成下文已有完整撤回步骤。本轮不实现自动撤回，不能以安装检查通过证明卸载安全。历史共存现场保留为旧版本事实。
+
 ## 发布与安装
 
 公开 npm 发布和 `dsh-plugin-v<version>` 标签属于插件自己的版本事实，需针对准确版本、源码和同一候选字节单独取得发布授权。候选生成不等于公开发布。发布失败、尚未授权或注册表仍不可见时，不能承诺用户已经能一句话安装。

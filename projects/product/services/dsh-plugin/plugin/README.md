@@ -1,6 +1,6 @@
 # Buildr DSH 桌面插件
 
-本插件（Plugin）在 DSH（DeepSeek Harness）桌面版侧栏底部提供 Buildr 按钮。点击后，主机端（Host）发现本机 Buildr、查询健康状态，客户端（Client）在右侧浏览器打开页面。正式版包 `@buildr-ai/buildr-dsh-plugin` 只服务 npm 安装的 Buildr；开发版包 `@buildr-ai/buildr-dsh-plugin-dev` 只服务本机源码，两者可共存。
+本插件（Plugin）在 DSH（DeepSeek Harness）桌面版侧栏底部提供 Buildr 按钮。点击后，主机端（Host）发现本机 Buildr、查询健康状态，客户端（Client）在右侧浏览器打开页面。正式版包 `@buildr-ai/buildr-dsh-plugin` 只服务 npm 安装的 Buildr；开发版包 `@buildr-ai/buildr-dsh-plugin-dev` 只服务本机源码。当前安装方案要求一个 DSH 配置档（Profile）同时只安装一个 Buildr 插件（Plugin），切换前由用户卸载已有版本。
 
 ## 兼容边界
 
@@ -12,11 +12,13 @@
 - DSH 公开标签列表不提供浏览器当前地址，因此不能可靠认领用户手动打开的 Buildr 标签，也不能识别插件标签后来被导航到其他网站。本机存储不可用时，跨重启复用不可用。
 - 禁用或卸载只撤销插件贡献，不关闭现有页面、不停止 Buildr、不删除其数据。
 
-### 正式版与开发版的增强共存边界
+### 一个配置档只安装一个 Buildr 插件
 
-安装身份、服务与客户端（Client）命名空间隔离，只证明两包可以同时加载。当前两个增强入口会分别注册来源列、原详情附加区及 Buildr 标签，且都查看同一批 `providedBy=buildr` 记录；两入口还会各自参与来源核验，完全相同匹配可合并，不保证不同证据或界面去重。原工具仍只由 DSH 执行一次。
+安装检查识别 `@buildr-ai/buildr-dsh-plugin`、`@buildr-ai/buildr-dsh-plugin-dev`、`@buildr-ai/buildr-dsh-development-composition` 与旧 `@buildr-ai/dsh-plugin-dev` 的直接依赖、真实包清单及 npm 别名；停用仍算已安装。DSH 原插件安装页检查已有版本，并提示“同一时间只能安装一个 Buildr 插件，请先卸载当前版本，再继续安装”；实际安装与更新在配置档（Profile）写锁内复查，拒绝时不运行包管理器（Package Manager）、不保存构建脚本授权，不自动停用、卸载或替换已有包。已识别的无关包保持原行为；已有 Buildr 而待安装来源无法核实身份时，报告身份检查失败。
 
-本机开发组合内已经包含开发入口；其补丁只禁用明确旧开发包，不协调所有独立正式／开发增强包。当前旧正式发行包只提供打开入口，与本开发组合实测共存；新的增强正式包尚未发布。发布前须明确唯一观察接入与两版本同时启用策略，共存装载检查不能代替界面去重和采集成本验证。
+这个安装前检查属于 DSH 原安装器（Installer），独立插件（Plugin）没有安装前拦截接口，不能通过安装 Buildr 包把它注入当前安装器。增量源码补丁（Source Patch）及完整 DSH 候选与当次来源软件开发工具包（SDK）分开保全，见[安装检查交付边界](<../sdk-patches/README.md#buildr-插件安装检查>)。当前日常 DSH 尚未替换为该候选；旧正式发行包与本机开发组合同时存在的历史结果不证明新方案允许共存。两包的命名空间隔离检查只证明装载器（Loader）不会因同名服务冲突，不证明原安装页检查已生效。
+
+本机增强开发组合还替换了三个根服务及十五个预设（Preset）引用。普通卸载目前不会自动恢复这些引用；切换该组合前必须完成已记录的完整撤回，不能把本轮安装互斥检查当成撤回实现。简单独立插件（Plugin）的正常卸载仍由 DSH 管理，本轮不增加自动卸载能力。
 
 ## Buildr 自身参与观察
 

@@ -1,0 +1,163 @@
+{
+  "schemaVersion": "buildr.dsh-installation-patch/v1",
+  "upstream": {
+    "tag": "dsh-v0.2.0-rc.2",
+    "commit": "639ed015397290b3745d163aafe02ffee4aa3f84",
+    "version": "0.2.0-rc.2"
+  },
+  "basePatch": {
+    "path": "dsh-v0.2.0-rc.2-event-sources-settings.patch",
+    "sha256": "4e7b3dcba52721577aad27923d5e1a865e24d3b593ef489ec6a1f5b642d2bd7b"
+  },
+  "patch": {
+    "path": "dsh-v0.2.0-rc.2-buildr-install-exclusion.patch",
+    "sha256": "9a773956fe4b3735d8dbb7d5a49249f01dcf016b4e1ff388b63e5e5d21d356cd"
+  },
+  "files": [
+    {
+      "path": "docs/upgrade-guide/v0.2.0-rc.2/buildr-plugin-exclusion/guide.i18n.yaml",
+      "baseSha256": null,
+      "patchedSha256": "bb9850d68c03f21e9356f483181fe598ee66862dfdd0a70c492511343da4be99"
+    },
+    {
+      "path": "docs/upgrade-guide/v0.2.0-rc.2/buildr-plugin-exclusion/guide.md",
+      "baseSha256": null,
+      "patchedSha256": "4837f8e44228b595612a2b4767eb2f19fdbe3a4a2bf4e8eb7ae61e9e44f96685"
+    },
+    {
+      "path": "docs/upgrade-guide/v0.2.0-rc.2/buildr-plugin-exclusion/guide.zh.md",
+      "baseSha256": null,
+      "patchedSha256": "2562bf8e99da513149640e355cd7178f1a204bd6539b0b77266f8078d5f4ab17"
+    },
+    {
+      "path": "packages/boot/plugin-manager/README.i18n.yaml",
+      "baseSha256": "20cc2615eafadcf01e827d2c9f16d3204c67412304ef2f8cd523995d0a1baba5",
+      "patchedSha256": "7284b711a46020f51518c9727597accb6d99aacc295c7adbafd78a0faa571886"
+    },
+    {
+      "path": "packages/boot/plugin-manager/README.md",
+      "baseSha256": "edfe88482bd9e5e6d8342d2da788d751b3b988ea2175d9b47735145a48ce92b0",
+      "patchedSha256": "0d413510733b1c074357a3c8d776e1b4006f19fa5ae322d54488e987cd43fafd"
+    },
+    {
+      "path": "packages/boot/plugin-manager/README.zh.md",
+      "baseSha256": "6c6a1de52d342df6369f0d5b2daecf256637f5be113f9679ea71b7abf71a83d6",
+      "patchedSha256": "3a712cfd018e9be11d795562d00fe71eb633486d8fc010455f5fc9d6276138c3"
+    },
+    {
+      "path": "packages/boot/plugin-manager/src/buildr-install.ts",
+      "baseSha256": null,
+      "patchedSha256": "605f36b8b9c0a653c2b3c244592e606bbab795288a525ce57f1a8070234adb12"
+    },
+    {
+      "path": "packages/boot/plugin-manager/src/failure.ts",
+      "baseSha256": "28eff38fbd9cf39b81138e7391bcf5ee32c22b76ab7d98d49a195160b730951a",
+      "patchedSha256": "737a35996206eb01b719014fe245785025dd78fbaaeffe2434f33ccff4ca3b46"
+    },
+    {
+      "path": "packages/boot/plugin-manager/src/index.ts",
+      "baseSha256": "09c3dfd8bb1cb777caec2f30e036461ec253ca864de5a6d7bd508049b70558ba",
+      "patchedSha256": "536425a0eac98b050edb09dac8485163eb6465c79a4159f6bbc476d80a618e66"
+    },
+    {
+      "path": "packages/boot/plugin-manager/src/operations.ts",
+      "baseSha256": "16d141f794041d06122ce9f8ab7bae6f55b4a78feefb620f9cb6c7ba5efac547",
+      "patchedSha256": "96f20e3faf4e5cc7d50bd766ffa88420b858fdbec6c7a9fa5d0004c4d039a63e"
+    },
+    {
+      "path": "packages/boot/plugin-manager/src/types.ts",
+      "baseSha256": "2e365137643183cda363ebd820d6e8f47a58b5525f5b5d9f51c967d6e032127e",
+      "patchedSha256": "ea1ff02048bed5c9d160b072bbdd6a616a19265e9fab504c95644760d7ce78a2"
+    },
+    {
+      "path": "packages/boot/plugin-manager/tests/buildr-install.spec.ts",
+      "baseSha256": null,
+      "patchedSha256": "ec6fee589636ed1eabd8941243991b52fe0a94d4c8377ca3a6e99b435a346a58"
+    },
+    {
+      "path": "packages/boot/plugin-manager/tests/manager.spec.ts",
+      "baseSha256": "6260ff8267f562af1dac227c391af7f9f00b94914aa572db22472619fb4f666e",
+      "patchedSha256": "d72696f088ddbe67cf228aacb013eb9277f1f788649b05e92e588a228abdade6"
+    },
+    {
+      "path": "packages/boot/plugin-manager/tests/operations.spec.ts",
+      "baseSha256": "385ebe1a7218828a61ac73dd799ff805267c340517643dcef358cec0cd6dff8c",
+      "patchedSha256": "c7f5b2e963f776346766958b66a6ac8f910fb0c4a1649ae6b0447cf7f89c1632"
+    },
+    {
+      "path": "packages/boot/plugin-manager/tests/tar-fixture.ts",
+      "baseSha256": null,
+      "patchedSha256": "58559e695957ab2d6b863a6d254a4e3405f910e682740088d32a154b4d2e7fb1"
+    },
+    {
+      "path": "packages/client/ui-plugin-manager/src/client/PluginManagerPage.tsx",
+      "baseSha256": "d6f706cfd7ec0bdfffe5981fecf75b485ccc73d3e6ca63404ea31da87558b432",
+      "patchedSha256": "47c30197c53fe8d8e2aa2b5f9f23cfe1a01476aa668c985564d5f52ee038225e"
+    },
+    {
+      "path": "packages/client/ui-plugin-manager/src/client/locales.ts",
+      "baseSha256": "7e8693881f2636e10cb03c6af26a0482fb500eb614b496c9770c636a5cd47039",
+      "patchedSha256": "286b4c13063d021785861692bdd3aba39ffb1d75cd40d0eee45e02ff7683bb02"
+    },
+    {
+      "path": "packages/client/ui-plugin-manager/src/client/manager-store.ts",
+      "baseSha256": "ce9a5aee9846078defd75f6f84af54a062363bab79bca15e40750a5ae0ff8a08",
+      "patchedSha256": "2a6fa3365d51e2936155f9dc2bae306dd509aae8a018600c47a79c0ead580f5f"
+    },
+    {
+      "path": "packages/client/ui-plugin-manager/src/client/presentation.ts",
+      "baseSha256": "f60267886bea87909922f346a8fb03071a43ee945290ca2535fd8ccabf4176a5",
+      "patchedSha256": "e039895637ba67a3e271a4802f6b9cf6d2962eae5b82b540bd1b2b67aeab1883"
+    },
+    {
+      "path": "packages/client/ui-plugin-manager/tests/components.client.spec.tsx",
+      "baseSha256": "7467a6ae7121c95b253c950178522647aee38c3f23b6a0258f3ff5b6e8556348",
+      "patchedSha256": "9053084195e5923b735e663f95ee5b145855e73b422531e7d5f97b54c6e50210"
+    },
+    {
+      "path": "packages/client/ui-plugin-manager/tests/manager-store.client.spec.ts",
+      "baseSha256": "2d1ff829c269f8fc4b9f9966abfdf3f5437f593e0295aa0027d41c22b2273ad4",
+      "patchedSha256": "29a1f9562b61e572bad27c1b08f8f59925441662cff1617af641889b3663ed2f"
+    },
+    {
+      "path": "packages/client/ui-settings-agent-loop/tests/apply.client.spec.ts",
+      "baseSha256": "c5b6189c00a5fe7d0aa94596086e98796d85ed84afe0d6c11b7e24b5831d623c",
+      "patchedSha256": "fa7928c41c41cee625cf3b5fb31b00286a841f9d25d98f1dae08cce5540c1db5"
+    },
+    {
+      "path": "packages/client/ui-trajectory/tests/conversation-definitions.client.spec.ts",
+      "baseSha256": "817558884b83650185944f68ca97faf74b168b3a891b0c356acb0e2793dda171",
+      "patchedSha256": "49d13da92bd56a884204206f3f7a05d98a65e548c806af06a7eedc12cacd60de"
+    },
+    {
+      "path": "packages/client/ui-trajectory/tests/views.client.spec.tsx",
+      "baseSha256": "ba0b9243d2b83039c8985f78397fe8bcb1ab1c1c3d00216e802617f9492ac242",
+      "patchedSha256": "355c768c8fe6ac0660ba51afb65e4a802488dd51f71da6ee0efe81ebb1a2583a"
+    },
+    {
+      "path": "packages/extensions/tool-cordis/src/api-catalog.ts",
+      "baseSha256": "a06a70ec9cd87731b62eafd7d66a7585d8ac8a6369a51f01a1f1e341503dadc6",
+      "patchedSha256": "e583066f782a44e13032d515e83837d8a4aa82a2fb525ff7177b7bcc90333e23"
+    },
+    {
+      "path": "packages/fs/tool-fs/tests/tools.spec.ts",
+      "baseSha256": "26ecfb40b69bd8910f19619cebe4122e596bd66a612dbd0c04d4b608c960ac69",
+      "patchedSha256": "6fb7c27228b3d296335e598faf516bc4341ebe933599d0d1e2b1c6773bd43099"
+    },
+    {
+      "path": "packages/schedule/schedule/tests/tools.spec.ts",
+      "baseSha256": "86c5accb958867dc24c701f0b8d3f46bc4554b5c537f836e3621222a16401f5b",
+      "patchedSha256": "037aa9d635ae1b59ba920737bdd7597c09ee6512a25ac4709423fc16e47d8c26"
+    },
+    {
+      "path": "tsconfig.client.json",
+      "baseSha256": "eff33581ce82353dd0178ca0926605faf72141277804f8b3d0771dfae12d2d57",
+      "patchedSha256": "7aea3a285132519f8041a57729ebde0a3bb8b9f6fbf9e53a84563f44924acb4d"
+    }
+  ],
+  "delivery": {
+    "target": "DSH-original-installer-and-full-runtime",
+    "appliedToCurrentDesktop": false,
+    "includedInBuildrPlugin": false
+  }
+}

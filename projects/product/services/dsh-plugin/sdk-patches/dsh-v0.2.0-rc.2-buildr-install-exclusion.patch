@@ -1,0 +1,1893 @@
+diff --git a/docs/upgrade-guide/v0.2.0-rc.2/buildr-plugin-exclusion/guide.i18n.yaml b/docs/upgrade-guide/v0.2.0-rc.2/buildr-plugin-exclusion/guide.i18n.yaml
+new file mode 100644
+index 0000000000000000000000000000000000000000..2ccd5303453f35159602c88620039452dbb7cb4c
+--- /dev/null
++++ b/docs/upgrade-guide/v0.2.0-rc.2/buildr-plugin-exclusion/guide.i18n.yaml
+@@ -0,0 +1,16 @@
++# Bilingual-pair consistency record for guide.md (docs/i18n/README.md): per heading
++# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
++# After editing either side, bring the other along and re-record with:
++#   pnpm run verify-translation-pairing --write docs/upgrade-guide/v0.2.0-rc.2/buildr-plugin-exclusion/guide.md
++/:
++  en: ce45cb4155514839
++  zh: cdc07065c4f8f687
++/buildr-plugin-installations-are-mutually-exclusive:
++  en: ed28cb67e029c4e7
++  zh: 273ea12977059253
++/buildr-plugin-installations-are-mutually-exclusive/change:
++  en: 4854369187648140
++  zh: e36aa6862e8880e8
++/buildr-plugin-installations-are-mutually-exclusive/migration:
++  en: 330e0bcc4c51e2f7
++  zh: 1e1d58a22164e209
+diff --git a/docs/upgrade-guide/v0.2.0-rc.2/buildr-plugin-exclusion/guide.md b/docs/upgrade-guide/v0.2.0-rc.2/buildr-plugin-exclusion/guide.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..d85b809d71c53c159d54f8654a8c3e4989ec422c
+--- /dev/null
++++ b/docs/upgrade-guide/v0.2.0-rc.2/buildr-plugin-exclusion/guide.md
+@@ -0,0 +1,20 @@
++---
++kind: upgrade-guide
++description: "Buildr plugin installation and updates require uninstalling the existing Buildr bundle first."
++---
++
++# Buildr plugin installations are mutually exclusive
++
++English | [中文](guide.zh.md)
++
++## Change
++
++Profiles previously accepted separate Buildr release and development packages, and pnpm could update the same package in place. The install form and shared installer now refuse a Buildr install when a Buildr bundle is already installed, even when disabled or installed through a direct npm alias. The refusal identifies the existing package and asks the user to uninstall it first; it neither switches versions nor deletes configuration or sessions. An unidentifiable source fails its identity check when a Buildr bundle is installed. Identified unrelated packages continue normally.
++
++## Migration
++
++1. Read the existing Buildr package name in the Plugins page. Disabling it does not satisfy the installation check.
++2. Complete that package's supported withdrawal before uninstalling it. If preset rows reference files inside a development composition, restore those references and the original DSH modules before removing its package; this installation check does not automate withdrawal.
++3. Install the selected Buildr version. Confirm that it is the only installed Buildr bundle and that installing another version reports the existing package and asks for uninstallation.
++
++The [plugin manager reference](../../../../packages/boot/plugin-manager/README.md) defines the recognized packages and identification limits. These actions require a DSH runtime containing the new installer; compiling a Buildr plugin or an SDK alone does not update an installed desktop application.
+diff --git a/docs/upgrade-guide/v0.2.0-rc.2/buildr-plugin-exclusion/guide.zh.md b/docs/upgrade-guide/v0.2.0-rc.2/buildr-plugin-exclusion/guide.zh.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..24ec1d63376c5bfd2028521eff438694b1b81ebe
+--- /dev/null
++++ b/docs/upgrade-guide/v0.2.0-rc.2/buildr-plugin-exclusion/guide.zh.md
+@@ -0,0 +1,20 @@
++---
++kind: upgrade-guide
++description: "安装或更新 Buildr 插件前必须先卸载当前 Buildr 组合包。"
++---
++
++# Buildr 插件安装互斥
++
++[English](guide.md) | 中文
++
++## 变更
++
++配置档（Profile）此前允许分别安装 Buildr 正式版和开发版，也允许 pnpm 原地更新同一个包。现在原安装表单及共用安装器会在已有 Buildr 组合包时拒绝 Buildr 安装，禁用或通过直接 npm 别名安装的包同样计入。提示点明已有包并要求先卸载，不切换版本或删除配置、会话（Session）。已有 Buildr 而安装源身份不能确认时，本次身份检查失败；已确认身份的无关包继续正常安装。
++
++## 迁移
++
++1. 在插件页面查看当前 Buildr 包名；禁用不能替代卸载。
++2. 完成该包支持的完整撤回后再卸载。开发组合的文件仍被预设（Preset）引用时，先恢复引用及 DSH 原模块，再移除包；这项安装检查不会自动完成撤回。
++3. 安装选定的 Buildr 版本。确认只安装一个 Buildr 组合包，再尝试另一版时会点明当前包并提示先卸载。
++
++[插件管理说明](../../../../packages/boot/plugin-manager/README.zh.md)列出识别范围和身份核对限制。上述行为需要实际采用新安装器的 DSH 运行时（Runtime）；仅编译 Buildr 插件或软件开发工具包（SDK）不会更新已安装的桌面应用。
+diff --git a/packages/boot/plugin-manager/README.i18n.yaml b/packages/boot/plugin-manager/README.i18n.yaml
+index 034b9efee0d40d46b541f819770e1cddc31af34b..43f6def2a6c3c238613814fa7c2d68e3d73d7260 100644
+--- a/packages/boot/plugin-manager/README.i18n.yaml
++++ b/packages/boot/plugin-manager/README.i18n.yaml
+@@ -15,8 +15,8 @@
+   en: 87679c51aa3693f5
+   zh: 11684a48a5806afb
+ /deepseek-ai-dsh-plugin-manager/use-this-package:
+-  en: b8d7061ee289b2a0
+-  zh: 49aba7df4761fb23
++  en: 8b015732b7c0097b
++  zh: 6d1ce80d220a03e4
+ /deepseek-ai-dsh-plugin-manager/use-this-package/version-compatibility-and-exemptions:
+   en: 920c0acb3b9feaf3
+   zh: ba6e832a256880a7
+diff --git a/packages/boot/plugin-manager/README.md b/packages/boot/plugin-manager/README.md
+index ca470bcd3a60c02181eea9118883db5f7528d90f..6ef930f5a54b55177902772d04d10d17d4b0b9cd 100644
+--- a/packages/boot/plugin-manager/README.md
++++ b/packages/boot/plugin-manager/README.md
+@@ -32,6 +32,8 @@ Base-backed profiles provide the manager. In Web, the sidebar's **Plugins** page
+ 
+ For a deployment without agent presets, enable the tool in the profile patch. Preset-backed sessions use their preset’s `tool-plugin-manager` entry.
+ 
++Buildr bundles are mutually exclusive in one profile. The manager identifies `@buildr-ai/buildr-dsh-plugin`, `@buildr-ai/buildr-dsh-plugin-dev`, `@buildr-ai/buildr-dsh-development-composition`, and the legacy `@buildr-ai/dsh-plugin-dev` by their package manifests, including direct npm aliases. A disabled bundle is still installed. Adding or updating a Buildr bundle while one is installed is refused before pnpm or build-script approval writes; the Web install form identifies the existing package and asks the user to uninstall it first. The manager does not remove, disable, or replace the existing bundle. Registry names, local directories, and bounded local tarball manifests supply identities. When Buildr is installed and another source cannot be identified before installation, that request reports an identity-check failure rather than guessing a conflict or continuing. Identified unrelated packages retain their normal behavior. See the [upgrade guide](../../../docs/upgrade-guide/v0.2.0-rc.2/buildr-plugin-exclusion/guide.md).
++
+ ```yaml
+ - id: tool-plugin-manager
+   disabled: false
+@@ -43,7 +45,7 @@ A selected bundle that cannot load remains in `listBundles` with an `error`; `en
+ 
+ `listBundles` includes optional display `meta` for each bundle and its declared plugin rows, including disabled bundles. The Client selects a language from these values. The separate `description` field is the bundle's raw `package.json.description`; a metadata diagnostic does not block management. The `plugin_manager` tool omits UI display metadata from list results.
+ 
+-`inspect(spec, options)` reads what a spec names before anything installs: a registry name is asked of the registry through `pnpm view`, run in the profile directory so the same proxy and authentication settings apply as to the install; an absolute path has its `package.json` read; a git address or tarball answers only its form and the `host` it is fetched from. The answer carries the name, version, description, whether the package declares a bundle, and the `registry` that answered, or a `problem`: `invalid-spec`, `already-installed`, `not-found`, `not-a-package`, `not-a-bundle`, `network`, or `unknown`, with the `registries` asked. A caller's `signal` or `inspectTimeoutMs` ends the lookup.
++`inspect(spec, options)` checks Buildr installation identity first: a bounded local tarball manifest can identify a Buildr package without extracting or executing it. A refusal returns `buildr-conflict` or `package-identity-unverified` with the structured `installRejection`. Otherwise, a registry name is asked of the registry through `pnpm view`, run in the profile directory so the same proxy and authentication settings apply as to the install; an absolute path has its `package.json` read; a git address or tarball answers only its form and the `host` it is fetched from. The answer carries the name, version, description, whether the package declares a bundle, and the `registry` that answered, or a `problem`: `invalid-spec`, `already-installed`, `not-found`, `not-a-package`, `not-a-bundle`, `network`, or `unknown`, with the `registries` asked. A caller's `signal` or `inspectTimeoutMs` ends the registry lookup.
+ 
+ `installBundle` checks GitHub repositories with `git ls-remote` before starting pnpm, using the profile directory and the installer's Git and proxy configuration. `githubConnectionTimeoutMs` defaults to 5000 ms and limits only this check, not package download or builds. The check disables credential helpers and prompts; only network failures and timeouts stop installation, reporting `failedAt: 'spec-host'` with the existing failure kind and diagnostic log. Authentication, repository lookup and other failures are left to pnpm, including its HTTPS-to-SSH fallback. Cancellation and manager disposal stop the check and its descendants. Registry packages, paths, tarballs and other Git hosts skip this check. A reachable repository can still fail during download or bundle validation.
+ 
+diff --git a/packages/boot/plugin-manager/README.zh.md b/packages/boot/plugin-manager/README.zh.md
+index 24f9351aa69d07f2590b6035b0a8b202c79d5416..b4ca686fe822ff03b640e2409700f7e2af5cca93 100644
+--- a/packages/boot/plugin-manager/README.zh.md
++++ b/packages/boot/plugin-manager/README.zh.md
+@@ -32,6 +32,8 @@ kind: "package-reference"
+ 
+ 未使用 Agent 预设的部署在 profile patch 中启用工具；使用预设的会话由其预设中的 `tool-plugin-manager` 条目控制。
+ 
++同一个配置档（Profile）的 Buildr 组合包安装互斥。管理器依据真实包清单识别 `@buildr-ai/buildr-dsh-plugin`、`@buildr-ai/buildr-dsh-plugin-dev`、`@buildr-ai/buildr-dsh-development-composition` 和旧 `@buildr-ai/dsh-plugin-dev`，包括直接 npm 别名。禁用的组合包仍算已安装。已有 Buildr 时新增或更新 Buildr 会在 pnpm 运行和依赖脚本批准写入前被拒绝；原安装表单显示已有包并提示先卸载。管理器不自动删除、禁用或替换旧包。注册表（Registry）名称、本地目录和有界读取的本地压缩包清单提供身份；已有 Buildr 而另一安装来源无法在安装前确认身份时，本次请求报告身份检查失败，不猜测冲突或继续安装。已确认身份的无关包保留正常行为。迁移见[升级说明](../../../docs/upgrade-guide/v0.2.0-rc.2/buildr-plugin-exclusion/guide.zh.md)。
++
+ ```yaml
+ - id: tool-plugin-manager
+   disabled: false
+@@ -43,7 +45,7 @@ kind: "package-reference"
+ 
+ `listBundles` 为各组合包及其声明的插件行提供可选的展示 `meta`，包括已禁用的组合包。Client 从这些值中选择语言。单独的 `description` 字段是该组合包原始的 `package.json.description`；元信息诊断不会阻止管理操作。`plugin_manager` 工具的列表结果不包含 UI 展示元信息。
+ 
+-`inspect(spec, options)` 在任何东西安装之前读出 spec 指向什么：注册表包名通过 `pnpm view` 询问注册表，在 profile 目录中运行，因而与安装使用同样的代理与认证设置；绝对路径读取其 `package.json`；git 地址或 tarball 只答复自己的形式和它被拉取的 `host`。答复携带名称、版本、描述、该包是否声明组合包，以及作答的 `registry`，否则给出 `problem`：`invalid-spec`、`already-installed`、`not-found`、`not-a-package`、`not-a-bundle`、`network` 或 `unknown`，并附上问过的 `registries`。调用方的 `signal` 或 `inspectTimeoutMs` 会结束查询。
++`inspect(spec, options)` 首先检查 Buildr 安装身份：有界读取本地压缩包清单即可识别 Buildr 包，不解包、不执行。拒绝时返回 `buildr-conflict` 或 `package-identity-unverified` 及结构化的 `installRejection`。否则，注册表包名通过 `pnpm view` 询问注册表，在 profile 目录中运行，因而与安装使用同样的代理与认证设置；绝对路径读取其 `package.json`；git 地址或 tarball 只答复自己的形式和它被拉取的 `host`。答复携带名称、版本、描述、该包是否声明组合包，以及作答的 `registry`，否则给出 `problem`：`invalid-spec`、`already-installed`、`not-found`、`not-a-package`、`not-a-bundle`、`network` 或 `unknown`，并附上问过的 `registries`。调用方的 `signal` 或 `inspectTimeoutMs` 会结束注册表查询。
+ 
+ `installBundle` 在启动 pnpm 前通过 `git ls-remote` 检查 GitHub 仓库，使用 profile 目录及安装器的 Git 与代理配置。`githubConnectionTimeoutMs` 默认为 5000 毫秒，只限制这次检查，不限制包下载或构建。检查禁用凭据助手和认证提示；只有网络失败与超时会停止安装，通过现有失败类型与诊断日志返回，并标记 `failedAt: 'spec-host'`。认证、仓库查找及其他失败继续交给 pnpm，包括其 HTTPS 到 SSH 的回退。取消安装或销毁管理器会停止检查及其子进程。注册表包、本地路径、压缩包和其他 Git 主机跳过此检查。仓库可达后，下载或组合包验证仍可能失败。
+ 
+diff --git a/packages/boot/plugin-manager/src/buildr-install.ts b/packages/boot/plugin-manager/src/buildr-install.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..0ebe2078049f7ef66e4a89df8dbf215d7800bb39
+--- /dev/null
++++ b/packages/boot/plugin-manager/src/buildr-install.ts
+@@ -0,0 +1,323 @@
++/** Exact Buildr package identity checks shared by inspection and locked installation. */
++import { open } from 'node:fs/promises'
++import { join, posix } from 'node:path'
++import { createGunzip } from 'node:zlib'
++import type { ProfileManifest } from '@deepseek-ai/dsh-app-boot'
++import { parseInstallSpec, type ParsedInstallSpec } from './install-spec.ts'
++import type { BuildrInstallRejection } from './types.ts'
++
++/** Installed packages count even when their bundle is not enabled. */
++const BUILDR_PACKAGES = new Set([
++  '@buildr-ai/buildr-dsh-plugin',
++  '@buildr-ai/buildr-dsh-plugin-dev',
++  '@buildr-ai/buildr-dsh-development-composition',
++  '@buildr-ai/dsh-plugin-dev',
++])
++/** Limits apply to the entire archive, including skipped members. */
++const MAX_MANIFEST_BYTES = 256 * 1024
++const MAX_ARCHIVE_BYTES = 64 * 1024 * 1024
++const MAX_EXPANDED_BYTES = 256 * 1024 * 1024
++const MAX_ARCHIVE_ENTRIES = 50_000
++
++type InstallIdentity =
++  | { readonly name: string; readonly manifest?: object; readonly spec: string }
++  | { readonly spec: string; readonly reason: string; readonly local: boolean }
++
++/** pnpm's direct fields, without following any package's dependency closure.
++ * @param manifest The current profile manifest.
++ * @returns All direct declarations, including disabled bundles.
++ */
++export function directDependencies(manifest: ProfileManifest): Record<string, string> {
++  const extra = manifest as ProfileManifest & { devDependencies?: Record<string, string>; optionalDependencies?: Record<string, string> }
++  return { ...extra.devDependencies, ...manifest.dependencies, ...extra.optionalDependencies }
++}
++
++/** Explicit npm aliases name the target; other named protocols need their own readable manifest. */
++function registryIdentity(parsed: Extract<ParsedInstallSpec, { kind: 'registry' }>): string | undefined {
++  if (parsed.range?.startsWith('npm:')) {
++    const target = parseInstallSpec(parsed.range.slice(4))
++    return target.kind === 'registry' && !target.range?.includes(':') ? target.name : undefined
++  }
++  return parsed.range?.includes(':') ? undefined : parsed.name
++}
++
++/** Only exact family identities, including an explicitly declared npm alias. */
++async function installedBuildrPackages(manifest: ProfileManifest, dir: string): Promise<{
++  installed: string[]; unverified: BuildrInstallRejection['unverified']
++}> {
++  const installed: string[] = []
++  const unverified: BuildrInstallRejection['unverified'] = []
++  for (const [name, range] of Object.entries(directDependencies(manifest))) {
++    if (BUILDR_PACKAGES.has(name)) { installed.push(name); continue }
++    try {
++      const declared = parseInstallSpec(name)
++      if (declared.kind !== 'registry' || declared.range !== undefined || typeof range !== 'string') throw new Error('invalid direct package declaration')
++      if (range.startsWith('npm:')) {
++        const alias = parseInstallSpec(`${name}@${range}`)
++        const target = alias.kind === 'registry' ? registryIdentity(alias) : undefined
++        if (target === undefined) throw new Error('unverified npm alias target')
++        if (BUILDR_PACKAGES.has(target)) installed.push(`${name} (${target})`)
++        continue
++      }
++      const identity = manifestIdentity(await readManifest(join(dir, 'node_modules', name, 'package.json')))
++      if (BUILDR_PACKAGES.has(identity.name)) installed.push(`${name} (${identity.name})`)
++    } catch (error) {
++      // A missing plain registry dependency has no alternate manifest identity.
++      // Missing or invalid local/aliased packages must not be treated as unrelated.
++      if ((error as NodeJS.ErrnoException).code === 'ENOENT' && typeof range === 'string'
++        && !range.includes(':') && !range.includes('/') && !range.startsWith('.')) continue
++      unverified.push({ spec: name, reason: error instanceof Error ? error.message : String(error) })
++    }
++  }
++  return { installed: installed.sort(), unverified }
++}
++
++/** Validate the file boundary before using a manifest as an identity. */
++function manifestIdentity(text: Buffer): { name: string; manifest: object } {
++  if (text.length > MAX_MANIFEST_BYTES) throw new Error('package.json exceeds the 256 KiB identity limit')
++  const value: unknown = JSON.parse(text.toString('utf8'))
++  if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error('package.json is not an object')
++  const name = (value as Record<string, unknown>).name
++  if (typeof name !== 'string') throw new Error('package.json names no package')
++  const parsed = parseInstallSpec(name)
++  if (parsed.kind !== 'registry' || parsed.range !== undefined || parsed.name !== name) throw new Error('package.json has no valid package name')
++  return { name, manifest: value }
++}
++
++/** Read one regular file through its opened descriptor, never load its code. */
++async function readManifest(path: string): Promise<Buffer> {
++  const file = await open(path, 'r')
++  try {
++    const stat = await file.stat()
++    if (!stat.isFile() || stat.size > MAX_MANIFEST_BYTES) throw new Error('package.json is not a bounded regular file')
++    const bytes = Buffer.alloc(MAX_MANIFEST_BYTES + 1)
++    let length = 0
++    while (length < bytes.length) {
++      const read = await file.read(bytes, length, bytes.length - length, length)
++      if (read.bytesRead === 0) break
++      length += read.bytesRead
++    }
++    if (length > MAX_MANIFEST_BYTES) throw new Error('package.json exceeds the 256 KiB identity limit')
++    const after = await file.stat()
++    if (length !== stat.size || after.size !== stat.size || after.mtimeMs !== stat.mtimeMs || after.ctimeMs !== stat.ctimeMs) {
++      throw new Error('package.json changed while its identity was being read')
++    }
++    return bytes.subarray(0, length)
++  } finally { await file.close() }
++}
++
++function tarText(bytes: Buffer): string { return bytes.toString('utf8').replace(/\0.*$/s, '') }
++function tarNumber(bytes: Buffer): number {
++  const text = tarText(bytes).trim()
++  if (!/^[0-7]+$/.test(text)) throw new Error('unsupported tar size or checksum')
++  const number = Number.parseInt(text, 8)
++  if (!Number.isSafeInteger(number)) throw new Error('tar member size is not bounded')
++  return number
++}
++
++/** Match pnpm 11.7's stripped member key, then reject ambiguous filesystem aliases. */
++function archivePackageManifest(name: string, extended: boolean): boolean {
++  // Ordinary USTAR names strip the first slash or backslash. PAX/GNU paths
++  // strip only their first slash, as pnpm's tarball worker does.
++  const separator = extended ? name.indexOf('/') : name.search(/[\/\\]/)
++  let relative = separator < 0 ? name : name.slice(separator + 1)
++  if (relative.includes('./') || relative.includes('.\\')) {
++    relative = posix.join('/', relative.replaceAll('\\', '/')).slice(1)
++  }
++  relative = relative.replaceAll('//', '/')
++  if (relative === 'package.json') return true
++  // A different Map key can still denote the same written file after path
++  // joining/normalization. Do not use an ambiguous member as an identity.
++  if (posix.join('/', relative.replaceAll('\\', '/')).slice(1) === 'package.json') {
++    throw new Error('ambiguous extracted package.json path')
++  }
++  return false
++}
++
++/** PAX path metadata is scoped to the following member; size overrides are not accepted. */
++function paxPath(bytes: Buffer): string | undefined {
++  let offset = 0
++  let path: string | undefined
++  while (offset < bytes.length) {
++    const space = bytes.indexOf(32, offset)
++    if (space < 0) throw new Error('invalid tar path metadata')
++    const digits = bytes.subarray(offset, space).toString('ascii')
++    const length = /^\d+$/.test(digits) ? Number(digits) : 0
++    if (!Number.isSafeInteger(length) || length <= space - offset + 1 || offset + length > bytes.length) throw new Error('invalid tar path metadata')
++    const entry = bytes.subarray(space + 1, offset + length)
++    if (entry.at(-1) !== 10) throw new Error('invalid tar path metadata')
++    const record = entry.subarray(0, -1).toString('utf8')
++    if (record.startsWith('path=')) {
++      if (path !== undefined) throw new Error('duplicate tar path metadata')
++      path = record.slice(5)
++    }
++    if (record.startsWith('size=')) throw new Error('unsupported tar size override')
++    offset += length
++  }
++  return path
++}
++
++/** Stream a gzip tar and retain its single extracted root package.json, without extraction. */
++async function archiveManifest(path: string): Promise<Buffer> {
++  const file = await open(path, 'r')
++  let input: ReturnType<typeof file.createReadStream> | undefined
++  const decoder = createGunzip()
++  try {
++    const stat = await file.stat()
++    if (!stat.isFile() || stat.size > MAX_ARCHIVE_BYTES) throw new Error('archive exceeds the 64 MiB identity limit or is not a regular file')
++    input = file.createReadStream({ autoClose: false, end: MAX_ARCHIVE_BYTES })
++    input.on('error', error => decoder.destroy(error))
++    input.pipe(decoder)
++    let pending = Buffer.alloc(0)
++    let expanded = 0
++    let entries = 0
++    let remaining = 0
++    let padding = 0
++    let zeroBlocks = 0
++    let nextPath: string | undefined
++    let capture: 'manifest' | 'pax' | 'long-path' | undefined
++    let parts: Buffer[] = []
++    let found: Buffer | undefined
++    for await (const chunk of decoder) {
++      const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string)
++      expanded += bytes.length
++      if (expanded > MAX_EXPANDED_BYTES) throw new Error('archive exceeds the 256 MiB expanded identity limit')
++      pending = Buffer.concat([pending, bytes])
++      while (pending.length > 0) {
++        if (remaining > 0) {
++          const size = Math.min(remaining, pending.length)
++          if (capture !== undefined) parts.push(Buffer.from(pending.subarray(0, size)))
++          remaining -= size
++          pending = pending.subarray(size)
++          if (remaining > 0) break
++          if (capture === 'manifest') found = Buffer.concat(parts)
++          if (capture === 'pax') nextPath = paxPath(Buffer.concat(parts))
++          if (capture === 'long-path') nextPath = tarText(Buffer.concat(parts))
++          if ((capture === 'pax' || capture === 'long-path') && nextPath !== undefined
++            && nextPath.slice(nextPath.indexOf('/') + 1) === '') {
++            throw new Error('empty stripped tar path metadata')
++          }
++          parts = []
++          capture = undefined
++        }
++        if (padding > 0) {
++          const size = Math.min(padding, pending.length)
++          padding -= size
++          pending = pending.subarray(size)
++          if (padding > 0) break
++        }
++        if (pending.length < 512) break
++        const header = pending.subarray(0, 512)
++        pending = pending.subarray(512)
++        if (header.every(byte => byte === 0)) { zeroBlocks += 1; continue }
++        if (zeroBlocks > 0) throw new Error('nonzero archive member after tar terminator')
++        entries += 1
++        if (entries > MAX_ARCHIVE_ENTRIES) throw new Error('archive has too many members')
++        const checksum = header.reduce((sum, byte, index) => sum + (index >= 148 && index < 156 ? 32 : byte), 0)
++        if (checksum !== tarNumber(header.subarray(148, 156))) throw new Error('invalid tar header checksum')
++        const size = tarNumber(header.subarray(124, 136))
++        const type = header[156]
++        const prefix = tarText(header.subarray(345, 500))
++        const extended = nextPath !== undefined
++        const name = nextPath ?? [prefix, tarText(header.subarray(0, 100))].filter(Boolean).join('/')
++        nextPath = undefined
++        if (type === 103 || type === 75) throw new Error('unsupported global or link tar metadata')
++        if (type === 120 || type === 76) {
++          if (extended) throw new Error('overlapping tar path metadata')
++          if (size > MAX_MANIFEST_BYTES || size === 0) throw new Error('tar path metadata exceeds its identity limit')
++          capture = type === 120 ? 'pax' : 'long-path'
++        } else if (archivePackageManifest(name, extended)) {
++          if (found !== undefined) throw new Error('duplicate extracted package.json')
++          if (type !== 0 && type !== 48) throw new Error('extracted package.json is not a regular tar member')
++          if (size === 0 || size > MAX_MANIFEST_BYTES) throw new Error('package.json exceeds its identity limit or is empty')
++          capture = 'manifest'
++        }
++        remaining = size
++        padding = (512 - size % 512) % 512
++      }
++    }
++    if (remaining > 0 || padding > 0 || pending.some(byte => byte !== 0) || zeroBlocks < 2 || nextPath !== undefined) throw new Error('incomplete tar archive')
++    if (found === undefined) throw new Error('archive has no extracted root package.json')
++    const after = await file.stat()
++    if (after.size !== stat.size || after.mtimeMs !== stat.mtimeMs || after.ctimeMs !== stat.ctimeMs) throw new Error('archive changed while its identity was being read')
++    return found
++  } finally {
++    input?.destroy()
++    decoder.destroy()
++    await file.close()
++  }
++}
++
++/** Resolve explicit names or bounded local manifests; remote fetches remain unknown. */
++async function installIdentity(spec: string): Promise<InstallIdentity> {
++  let parsed: ParsedInstallSpec
++  try { parsed = parseInstallSpec(spec) } catch (error) {
++    return { spec, reason: error instanceof Error ? error.message : String(error), local: false }
++  }
++  if (parsed.kind === 'registry') {
++    try {
++      const name = registryIdentity(parsed)
++      if (name !== undefined) return { spec, name }
++    } catch { /* An unsupported alias cannot establish package identity. */ }
++    return { spec, reason: 'the named source does not establish a registry package identity', local: false }
++  }
++  if (parsed.kind === 'git' || parsed.kind === 'tarball' && parsed.path === undefined) {
++    return { spec, reason: 'remote Git and tarball sources do not expose a verified package manifest before installation', local: false }
++  }
++  try {
++    const bytes = parsed.kind === 'path' ? await readManifest(join(parsed.path, 'package.json')) : await archiveManifest(parsed.path as string)
++    return { spec, ...manifestIdentity(bytes) }
++  } catch (error) {
++    return { spec, reason: error instanceof Error ? error.message : String(error), local: parsed.kind === 'tarball' }
++  }
++}
++
++/** Check all requested identities against the current direct declarations, including disabled bundles.
++ * A corrupt local source always fails. A remote unknown source fails when an installed or requested
++ * Buildr package makes its identity necessary. Callers enforce this under the profile write lock.
++ * @param manifest Current direct installation declarations.
++ * @param specs Anchored package sources requested together.
++ * @param dir The profile whose direct installed manifests may be read.
++ * @param operation Whether this updates all packages and which option boundaries cannot be verified.
++ * @returns A structured local refusal, or undefined to continue existing package checks.
++ */
++export async function checkBuildrInstall(
++  manifest: ProfileManifest, specs: readonly string[], dir: string,
++  operation?: { updateAll: boolean; unsupported: readonly string[]; scopeProblems?: BuildrInstallRejection['unverified'] },
++): Promise<BuildrInstallRejection | undefined> {
++  if (specs.length === 0 && !operation?.updateAll && !operation?.unsupported.length && !operation?.scopeProblems?.length) return undefined
++  const existing = await installedBuildrPackages(manifest, dir)
++  const installed = existing.installed
++  const identities = await Promise.all([...new Set(specs)].map(installIdentity))
++  const unknownCount = identities.filter(identity => 'reason' in identity).length
++  const requested = identities.flatMap(identity => 'name' in identity && BUILDR_PACKAGES.has(identity.name) ? [identity.name] : [])
++  if (operation?.scopeProblems?.length) {
++    return { code: 'package-identity-unverified', installed, requested, unverified: operation.scopeProblems }
++  }
++  if (operation?.unsupported.length) {
++    return { code: 'package-identity-unverified', installed, requested, unverified: operation.unsupported.map(spec => ({
++      spec, reason: 'this pnpm option has no verified argument boundary in the pre-install identity check; use supported options or an explicit option=value',
++    })) }
++  }
++  if (operation?.updateAll && installed.length > 0) return { code: 'buildr-conflict', installed, requested, unverified: [] }
++  if (requested.length > 1 || requested.length > 0 && installed.length > 0) {
++    return { code: 'buildr-conflict', installed, requested, unverified: [] }
++  }
++  const unverified = identities.flatMap(identity => 'reason' in identity && (identity.local || installed.length > 0 || requested.length > 0 || existing.unverified.length > 0 || unknownCount > 1)
++    ? [{ spec: identity.spec, reason: identity.reason }] : [])
++  if (requested.length > 0 || operation?.updateAll) unverified.push(...existing.unverified)
++  return unverified.length === 0 ? undefined : { code: 'package-identity-unverified', installed, requested, unverified }
++}
++
++/** CLI diagnostic; clients localize the structured identities and refusal code.
++ * @param rejection The check's verified identities and refusal.
++ * @returns The install diagnostic, without loading or changing any package.
++ */
++export function installRejectionText(rejection: BuildrInstallRejection): string {
++  const installed = rejection.installed.length === 0 ? '' : ` Existing: ${rejection.installed.join(', ')}.`
++  if (rejection.code === 'buildr-conflict') {
++    return `同一时间只能安装一个 Buildr 插件，请先卸载当前版本，再继续安装。${installed} Requested: ${rejection.requested.join(', ')}.`
++  }
++  return `Package identity could not be verified before installation.${installed} `
++    + rejection.unverified.map(item => `${item.spec}: ${item.reason}`).join('; ')
++}
+diff --git a/packages/boot/plugin-manager/src/failure.ts b/packages/boot/plugin-manager/src/failure.ts
+index b8f01b075ece8d6283c3b4ff694c78a724ffb602..df2a2669a4be0351d5ca4cc130be4d2699aeb632 100644
+--- a/packages/boot/plugin-manager/src/failure.ts
++++ b/packages/boot/plugin-manager/src/failure.ts
+@@ -1,6 +1,6 @@
+ /** Localizable rejections shared by profile management operations. */
+ import type { PluginCompatibility } from '@deepseek-ai/dsh-app-boot'
+-import type { IncompatiblePlugin, ManagementError } from './types.ts'
++import type { BuildrInstallRejection, IncompatiblePlugin, ManagementError } from './types.ts'
+ 
+ /** Expected management rejection; presentation belongs to the caller's locale. */
+ export class ManagementFailure extends Error {
+@@ -8,14 +8,17 @@ export class ManagementFailure extends Error {
+   readonly code: ManagementError['code']
+   /** The packages an `incompatible-version` rejection names. */
+   readonly incompatible: IncompatiblePlugin[] | undefined
++  readonly installRejection: BuildrInstallRejection | undefined
+   /**
+    * @param code Localizable management rejection.
+    * @param incompatible Packages the running DSH version rejects, for `incompatible-version`.
++   * @param installRejection Structured pre-install identity refusal.
+    */
+-  constructor(code: ManagementError['code'], incompatible?: IncompatiblePlugin[]) {
++  constructor(code: ManagementError['code'], incompatible?: IncompatiblePlugin[], installRejection?: BuildrInstallRejection) {
+     super(code)
+     this.code = code
+     this.incompatible = incompatible
++    this.installRejection = installRejection
+   }
+ }
+ 
+diff --git a/packages/boot/plugin-manager/src/index.ts b/packages/boot/plugin-manager/src/index.ts
+index ea8a94f5482112639d6e2f7976401cb4db3f8ed6..c49d9fc88cd1e1084dc00cd99f96826d916f975b 100644
+--- a/packages/boot/plugin-manager/src/index.ts
++++ b/packages/boot/plugin-manager/src/index.ts
+@@ -19,7 +19,8 @@ import {
+ } from '@deepseek-ai/dsh-app-boot'
+ import type {} from '@deepseek-ai/dsh-hmr'
+ import type { ProfileContext, ProfileManifest } from '@deepseek-ai/dsh-app-boot'
+-import { bundleManifest, readProfileRegistry, registryArguments, runProfilePnpm, saveManifest, viewProfilePackage } from './operations.ts'
++import { anchorPathSpec, bundleManifest, readProfileRegistry, registryArguments, runProfilePnpm, saveManifest, viewProfilePackage } from './operations.ts'
++import { checkBuildrInstall, installRejectionText } from './buildr-install.ts'
+ import { classifyInstallFailure } from './install-failure.ts'
+ import { InvalidInstallSpecError, parseInstallSpec, type ParsedInstallSpec } from './install-spec.ts'
+ import { attributeFailure, normalizeRegistry, NPMMIRROR_REGISTRY, registryPlan } from './registry.ts'
+@@ -92,7 +93,8 @@ function messageOf(error: unknown): string { return error instanceof Error ? err
+ /** An expected refusal keeps its code; anything else becomes an operation error carrying its exact diagnostic. */
+ function managementError(error: unknown): ManagementError {
+   if (!(error instanceof ManagementFailure)) return { code: 'operation-error', diagnostic: messageOf(error) }
+-  return { code: error.code, ...error.incompatible === undefined ? {} : { incompatible: error.incompatible } }
++  return { code: error.code, ...error.incompatible === undefined ? {} : { incompatible: error.incompatible },
++    ...error.installRejection === undefined ? {} : { installRejection: error.installRejection } }
+ }
+ 
+ /** The caller stopped an installation; its files are restored before this is thrown. */
+@@ -347,7 +349,12 @@ export class PluginManager extends TypertRemoteService {
+       if (!(error instanceof InvalidInstallSpecError)) throw error
+       return refused('invalid-spec', error.reason)
+     }
++    if (parsed.kind === 'tarball' && parsed.path !== undefined && !existsSync(parsed.path)) return refused('not-a-package', 'the tarball does not exist')
+     const manifest = readProfileManifest('dsh', this.profile.dir)
++    const installRejection = await checkBuildrInstall(manifest, [parsed.spec], this.profile.dir)
++    if (installRejection !== undefined) return {
++      status: 'refused', problem: installRejection.code, reason: installRejectionText(installRejection), installRejection,
++    }
+     const installation = JSON.parse(readFileSync(this.profile.installAnchor, 'utf8')) as InstallationManifest
+     const known = new Set([
+       ...manifest.dsh?.profile?.bundles ?? [], ...Object.keys(manifest.dependencies ?? {}), ...Object.keys(installation.dependencies ?? {}),
+@@ -357,7 +364,6 @@ export class PluginManager extends TypertRemoteService {
+     switch (parsed.kind) {
+       case 'git': return { status: 'accepted', kind: 'git', bundle: null, registry, host: parsed.host }
+       case 'tarball':
+-        if (parsed.path !== undefined && !existsSync(parsed.path)) return refused('not-a-package', 'the tarball does not exist')
+         return { status: 'accepted', kind: 'tarball', bundle: null, registry, ...parsed.host === undefined ? {} : { host: parsed.host } }
+       case 'path': {
+         if (!existsSync(parsed.path)) return refused('not-a-package', 'the path does not exist')
+@@ -470,6 +476,10 @@ export class PluginManager extends TypertRemoteService {
+     const result = this.change(async (result) => {
+       if (spec.trim() === '' || spec.startsWith('-')) throw new ManagementFailure('invalid-spec')
+       if (stopped()) throw new InstallCancelledError()
++      // check under change()'s profile lock, before even saving script approvals.
++      const installRejection = await checkBuildrInstall(readProfileManifest('dsh', this.profile.dir), [anchorPathSpec(spec, this.profile.cwd)], this.profile.dir)
++      if (stopped()) throw new InstallCancelledError()
++      if (installRejection !== undefined) throw new ManagementFailure(installRejection.code, undefined, installRejection)
+       if (options?.approvedBuilds !== undefined) {
+         await approveBuilds(this.profile.dir, options.approvedBuilds)
+         result.approvedBuilds = options.approvedBuilds
+@@ -506,6 +516,7 @@ export class PluginManager extends TypertRemoteService {
+           run = await this.runPnpm(['add', spec, ...registryArguments(registry)], control.abort.signal, requestId)
+           result.packageResult = run
+           if (stopped()) throw new InstallCancelledError()
++          if (run.installRejection !== undefined) throw new ManagementFailure(run.installRejection.code, undefined, run.installRejection)
+           // A compatibility refusal is the package's own answer, so no other registry is asked.
+           if (run.incompatible !== undefined) throw new ManagementFailure('incompatible-version', run.incompatible)
+           // A run this manager terminated is not a success, even when pnpm trapped the signal and exited 0.
+diff --git a/packages/boot/plugin-manager/src/operations.ts b/packages/boot/plugin-manager/src/operations.ts
+index 2df35b7efc94b00188f75b0351cc2035d5f6ebf1..8ea717599e83237a692961877058fef72790d09f 100644
+--- a/packages/boot/plugin-manager/src/operations.ts
++++ b/packages/boot/plugin-manager/src/operations.ts
+@@ -1,7 +1,7 @@
+ /** Shared profile package operations used by dsh plugin and the running manager. */
+ import { once } from 'node:events'
+ import { existsSync, readFileSync } from 'node:fs'
+-import { mkdir, mkdtemp, open, rm } from 'node:fs/promises'
++import { mkdir, mkdtemp, open, realpath, rm } from 'node:fs/promises'
+ import { join, resolve } from 'node:path'
+ import { execa } from 'execa'
+ import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
+@@ -13,6 +13,7 @@ import {
+ } from '@deepseek-ai/dsh-app-boot'
+ import { scrubbedParentEnv } from '@deepseek-ai/dsh-subprocess'
+ import { parseInstallSpec } from './install-spec.ts'
++import { checkBuildrInstall, directDependencies, installRejectionText } from './buildr-install.ts'
+ import { awaitTreeGone, leadsOwnGroup, treeAlive, type RunTree } from './run-tree.ts'
+ import { incompatiblePlugin } from './failure.ts'
+ import type { IncompatiblePlugin, PackageResult, Registry } from './types.ts'
+@@ -141,16 +142,109 @@ async function drainWithin(collectors: readonly Promise<void>[], ms: number): Pr
+ 
+ /** Install commands that take the packages to install as positionals. */
+ const INSTALL_COMMANDS = new Set(['add', 'install', 'i'])
++const UPDATE_COMMANDS = new Set(['update', 'up', 'upgrade'])
++const RECURSIVE_COMMANDS = new Set(['recursive', 'multi', 'm'])
++/** Public pnpm options whose separate value cannot be mistaken for a package or command. */
++const VALUE_OPTIONS = new Set([
++  '--registry', '--dir', '-C', '--filter', '--filter-prod', '-F',
++  '--store-dir', '--virtual-store-dir', '--modules-dir', '--lockfile-dir', '--global-dir', '--global-bin-dir',
++  '--cache-dir', '--state-dir', '--reporter', '--loglevel', '--use-node-version',
++  '--network-concurrency', '--child-concurrency', '--workspace-concurrency',
++  '--fetch-retries', '--fetch-retry-factor', '--fetch-retry-mintimeout', '--fetch-retry-maxtimeout', '--fetch-timeout',
++])
++const BOOLEAN_OPTIONS = new Set([
++  '-D', '-O', '-P', '-E', '-g', '-r', '-w', '-i', '-L',
++  '--save-dev', '--save-optional', '--save-prod', '--save-peer', '--save-exact', '--global', '--recursive',
++  '--workspace-root', '--workspace', '--ignore-scripts', '--ignore-pnpmfile', '--offline', '--prefer-offline',
++  '--frozen-lockfile', '--no-frozen-lockfile', '--lockfile-only', '--no-lockfile', '--prod', '--dev', '--optional',
++  '--no-optional', '--no-save', '--force', '--latest', '--interactive', '--aggregate-output', '--stream',
++  '--report-summary', '--strict-peer-dependencies', '--no-strict-peer-dependencies', '--fix-lockfile',
++  '--dedupe', '--resolution-only', '--ignore-workspace', '--no-hoist', '--silent',
++  '--no-global', '--no-recursive', '--no-workspace-root',
++])
+ 
+ /** Bound on a pre-install registry lookup when the caller names none. */
+ const LOOKUP_TIMEOUT_MS = 20_000
+ 
+ /** Package specs an install command names explicitly, in order. */
+-function namedSpecs(args: readonly string[]): string[] {
+-  const index = args.findIndex(argument => !argument.startsWith('-'))
+-  const command = index < 0 ? undefined : args[index]
+-  if (command === undefined || !INSTALL_COMMANDS.has(command)) return []
+-  return args.slice(index + 1).filter(argument => !argument.startsWith('-'))
++function packageTargets(args: readonly string[]): { specs: string[]; updateAll: boolean; unsupported: string[]; writes: boolean; command?: string } {
++  let command: string | undefined
++  let positional = false
++  let ambiguousPrefix = false
++  const specs: string[] = []
++  const unsupported: string[] = []
++  for (let index = 0; index < args.length; index += 1) {
++    const argument = args[index]!
++    if (!positional && argument === '--') { positional = true; continue }
++    if (!positional && argument.startsWith('-')) {
++      if (argument.includes('=')) continue
++      if (VALUE_OPTIONS.has(argument)) {
++        if (args[index + 1] === undefined) unsupported.push(argument)
++        else index += 1
++      } else if (!BOOLEAN_OPTIONS.has(argument)) {
++        unsupported.push(argument)
++        if (command === undefined) ambiguousPrefix = true
++      }
++      continue
++    }
++    if (command === undefined) command = argument
++    else specs.push(argument)
++  }
++  if (command !== undefined && RECURSIVE_COMMANDS.has(command)
++    && specs[0] !== undefined && (INSTALL_COMMANDS.has(specs[0]) || UPDATE_COMMANDS.has(specs[0]))) {
++    return { specs: [], updateAll: false, unsupported, writes: true, command }
++  }
++  if (command === undefined || !INSTALL_COMMANDS.has(command) && !UPDATE_COMMANDS.has(command)) {
++    // An unsupported value-taking prefix may hide the command. Refuse the
++    // ambiguous install/update form instead of treating its value as an identity.
++    if (ambiguousPrefix && args.some(argument => INSTALL_COMMANDS.has(argument) || UPDATE_COMMANDS.has(argument))) {
++      return { specs: [], updateAll: false, unsupported, writes: true }
++    }
++    return { specs: [], updateAll: false, unsupported: [], writes: false }
++  }
++  return { specs, updateAll: UPDATE_COMMANDS.has(command) && specs.length === 0, unsupported, writes: true, command }
++}
++
++/** A profile lock cannot authorize pnpm to select a different directory or workspace. */
++async function packageScopeProblems(args: readonly string[], dir: string, command?: string): Promise<{ spec: string; reason: string }[]> {
++  const problems: { spec: string; reason: string }[] = []
++  if (command !== undefined && RECURSIVE_COMMANDS.has(command)) problems.push({
++    spec: command, reason: 'recursive workspace package writes are outside this locked profile operation',
++  })
++  const externalScopes = new Set([
++    '--global', '-g', '--global-dir', '--global-bin-dir', '--workspace-root', '-w',
++    '--recursive', '-r', '--filter', '--filter-prod', '-F',
++  ])
++  let currentDir: string | undefined
++  for (let index = 0; index < args.length; index += 1) {
++    const argument = args[index]!
++    if (argument === '--') break
++    const equals = argument.indexOf('=')
++    const option = (equals < 0 ? argument : argument.slice(0, equals)).replace(/^--config\./, '--')
++    if (option === '--dir' || option === '-C') {
++      const value = equals < 0 ? args[++index] : argument.slice(equals + 1)
++      if (value === undefined || value === '') {
++        problems.push({ spec: argument, reason: 'the installation directory cannot be verified against the locked profile' })
++        continue
++      }
++      try {
++        currentDir ??= await realpath(dir)
++        if (await realpath(resolve(dir, value)) !== currentDir) {
++          problems.push({ spec: argument, reason: 'the installation directory differs from the inspected and locked profile' })
++        }
++      } catch {
++        problems.push({ spec: argument, reason: 'the installation directory cannot be verified against the locked profile' })
++      }
++    } else if (externalScopes.has(option)) {
++      if (equals >= 0 && argument.slice(equals + 1) === 'false'
++        && ['--global', '-g', '--workspace-root', '-w', '--recursive', '-r'].includes(option)) continue
++      // A selector can turn add/install/update into a different global or
++      // workspace transaction. This operation owns only its current profile.
++      problems.push({ spec: argument, reason: 'global, recursive, and workspace-selected package writes are outside this locked profile operation' })
++      if (equals < 0 && VALUE_OPTIONS.has(option)) index += 1
++    }
++  }
++  return problems
+ }
+ 
+ /** The manifest a named spec would install, read without installing it.
+@@ -239,12 +333,6 @@ async function activeRecordedRun(dir: string): Promise<string | undefined> {
+   return undefined
+ }
+ 
+-/** pnpm can install plugins through any direct-dependency field. */
+-function directDependencies(manifest: ProfileManifest): Record<string, string> {
+-  const extra = manifest as ProfileManifest & { devDependencies?: Record<string, string>; optionalDependencies?: Record<string, string> }
+-  return { ...extra.devDependencies, ...manifest.dependencies, ...extra.optionalDependencies }
+-}
+-
+ /** Inspect only plugin rows contributed by the changed bundle, not its dependency closure. */
+ function bundleComponentManifests(manifest: ProfileManifest, dir: string, anchor: string): ProfileManifest[] {
+   const bundle = manifest.dsh?.bundle
+@@ -323,11 +411,22 @@ export async function runProfilePnpm(
+   const incompatible: IncompatiblePlugin[] = []
+   const rejected = async (warnings: readonly string[], restoration: string): Promise<PackageResult> => {
+     const diagnostic = `\ndsh: installation rejected: ${warnings.join('\n')}\ndsh: ${restoration}.\n`
+-    await log.write(diagnostic)
+-    options.onOutput?.(diagnostic, 'stderr')
+-    append(Buffer.from(diagnostic))
+-    await log.close()
+-    return { exitCode: 1, output: output.toString('utf8'), truncated, logPath, incompatible }
++    try {
++      await log.write(diagnostic)
++      options.onOutput?.(diagnostic, 'stderr')
++      append(Buffer.from(diagnostic))
++      return { exitCode: 1, output: output.toString('utf8'), truncated, logPath, incompatible }
++    } finally { await log.close() }
++  }
++  // This refusal must stay outside the best-effort compatibility lookup's catch.
++  // The launcher holds the profile lock; no pnpm add or profile mutation precedes it.
++  const targets = packageTargets(args)
++  const scopeProblems = targets.writes ? await packageScopeProblems(args.map(raw => anchorPathSpec(raw, context.cwd)), dir, targets.command) : []
++  const installRejection = await checkBuildrInstall(before, targets.specs.map(raw => anchorPathSpec(raw, context.cwd)), dir, { ...targets, scopeProblems })
++  if (installRejection !== undefined) {
++    const outcome = await rejected([installRejectionText(installRejection)], 'nothing was installed')
++    delete outcome.incompatible
++    return { ...outcome, installRejection }
+   }
+   // An install command names the packages it adds, so their manifests are read and checked before
+   // pnpm runs: an incompatible version is never installed, and the one already in use keeps working.
+@@ -335,7 +434,7 @@ export async function runProfilePnpm(
+   const exemptions = readProfileVersionExemptions(dir)
+   // The run's own registry flags, so the lookup asks the registry the installation will use.
+   const registryFlags = args.filter(argument => argument.startsWith('--registry='))
+-  for (const raw of namedSpecs(args)) {
++  for (const raw of targets.specs) {
+     // A spec whose manifest cannot be read or validated is left to the run itself and to the check
+     // after installation, which reports what it could not validate.
+     try {
+diff --git a/packages/boot/plugin-manager/src/types.ts b/packages/boot/plugin-manager/src/types.ts
+index b87f231e60113a90032435d2cc3408dadc4ade06..c899dc6ddcd2c6f34ef63b86f52ad2577517509f 100644
+--- a/packages/boot/plugin-manager/src/types.ts
++++ b/packages/boot/plugin-manager/src/types.ts
+@@ -17,12 +17,25 @@ export interface IncompatiblePlugin {
+   peers: Record<string, string>
+ }
+ 
++/** Pre-install identity refusal, independent of DSH peer compatibility. */
++export interface BuildrInstallRejection {
++  code: 'buildr-conflict' | 'package-identity-unverified'
++  /** Direct installed declarations, whether enabled or disabled. */
++  installed: string[]
++  /** Verified Buildr identities requested in this operation. */
++  requested: string[]
++  /** Sources whose identity this operation could not establish. */
++  unverified: { spec: string; reason: string }[]
++}
++
+ /** Localizable management failure and optional external diagnostic. */
+ export interface ManagementError {
+-  code: ReadOnlyReason | 'unknown-plugin' | 'invalid-spec' | 'ambiguous-install' | 'not-bundle' | 'not-removable' | 'stop-profile' | 'bundle-in-use' | 'stale-approval' | 'incompatible-version' | 'operation-error'
++  code: ReadOnlyReason | BuildrInstallRejection['code'] | 'unknown-plugin' | 'invalid-spec' | 'ambiguous-install' | 'not-bundle' | 'not-removable' | 'stop-profile' | 'bundle-in-use' | 'stale-approval' | 'incompatible-version' | 'operation-error'
+   diagnostic?: string
+   /** Present with `incompatible-version`: the packages the running DSH version rejects. */
+   incompatible?: IncompatiblePlugin[]
++  /** Present when the pre-install identity check refused this request. */
++  installRejection?: BuildrInstallRejection
+ }
+ 
+ /** One running-profile entry and its persistent control availability. */
+@@ -105,6 +118,8 @@ export interface PackageResult {
+   timedOut?: boolean
+   /** Present when a compatibility check refused the run: the packages the running DSH version rejects. */
+   incompatible?: IncompatiblePlugin[]
++  /** Refused before pnpm started; the profile's installed packages remain unchanged. */
++  installRejection?: BuildrInstallRejection
+ }
+ 
+ /** Persisted change and independently observed application outcome. */
+@@ -159,6 +174,7 @@ export type InstallSpecKind = 'registry' | 'path' | 'git' | 'tarball'
+ 
+ /** Why a spec was refused before anything installed. */
+ export type PluginInspectProblem =
++  | BuildrInstallRejection['code']
+   | 'invalid-spec'
+   | 'already-installed'
+   | 'not-found'
+@@ -192,6 +208,8 @@ export type PluginSpecInspection =
+     readonly problem: PluginInspectProblem
+     /** What pnpm, the registry, or the file system said. */
+     readonly reason: string
++    /** Structured identity refusal, rendered by the caller's locale. */
++    readonly installRejection?: BuildrInstallRejection
+     /** The registries asked, in order, when the refusal came from asking them; `reason` is the last one's. */
+     readonly registries?: Registry[]
+   }
+diff --git a/packages/boot/plugin-manager/tests/buildr-install.spec.ts b/packages/boot/plugin-manager/tests/buildr-install.spec.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..7e79af0330d037c8c4479d580d9ac799d890d0d1
+--- /dev/null
++++ b/packages/boot/plugin-manager/tests/buildr-install.spec.ts
+@@ -0,0 +1,128 @@
++/** Identity-only tar inspection is bounded and never invokes package code. */
++import { createWriteStream, mkdtempSync, rmSync, truncateSync, writeFileSync } from 'node:fs'
++import { tmpdir } from 'node:os'
++import { join } from 'node:path'
++import { Readable } from 'node:stream'
++import { pipeline } from 'node:stream/promises'
++import { createGzip, gzipSync } from 'node:zlib'
++import { expect, it, onTestFinished } from 'vitest'
++import { checkBuildrInstall } from '../src/buildr-install.ts'
++import { tarball, tarMember } from './tar-fixture.ts'
++
++const BUILDR = '@buildr-ai/buildr-dsh-plugin'
++function fixture() {
++  const dir = mkdtempSync(join(tmpdir(), 'buildr-install-identity-'))
++  onTestFinished(() => { rmSync(dir, { recursive: true, force: true }) })
++  return { dir, archive: join(dir, 'renamed.tgz'), installed: { dependencies: { [BUILDR]: '1.0.0' } } }
++}
++function paxRecord(path: string): Buffer {
++  const body = `path=${path}\n`
++  let length = Buffer.byteLength(body) + 2
++  while (Buffer.byteLength(`${length} ${body}`) !== length) length = Buffer.byteLength(`${length} ${body}`)
++  return Buffer.from(`${length} ${body}`)
++}
++
++it.each(['package/./package.json', 'other/package.json', 'other\\package.json', 'package/sub/../package.json'])(
++  'refuses the manifest overwrite spelling %s before package execution',
++  async name => {
++    const { dir, archive, installed } = fixture()
++    writeFileSync(archive, tarball({ name: 'ordinary' }, [tarMember(name, JSON.stringify({ name: BUILDR }))]))
++    const outcome = await checkBuildrInstall(installed, [archive], dir)
++    expect(outcome?.code).toBe('package-identity-unverified')
++    expect(outcome?.requested).toEqual([])
++    expect(outcome?.unverified[0]?.reason).toContain('duplicate')
++  },
++)
++
++it('reads the actual stripped manifest identity even when its first directory is not package', async () => {
++  const { dir, archive, installed } = fixture()
++  writeFileSync(archive, gzipSync(Buffer.concat([tarMember('other/package.json', JSON.stringify({ name: BUILDR })), Buffer.alloc(1024)])))
++  expect(await checkBuildrInstall(installed, [archive], dir)).toMatchObject({ code: 'buildr-conflict', requested: [BUILDR] })
++})
++
++it.each([
++  { type: 'x', metadata: paxRecord('package/') },
++  { type: 'x', metadata: paxRecord('') },
++  { type: 'L', metadata: Buffer.from('package/\0') },
++  { type: 'L', metadata: Buffer.from('\0') },
++])('refuses empty stripped $type path metadata instead of overlooking the following header', async ({ type, metadata }) => {
++  const { dir, archive, installed } = fixture()
++  writeFileSync(archive, tarball({ name: 'ordinary' }, [
++    tarMember('package/metadata', metadata, type),
++    tarMember('package/package.json', JSON.stringify({ name: BUILDR })),
++  ]))
++  const outcome = await checkBuildrInstall(installed, [archive], dir)
++  expect(outcome?.code).toBe('package-identity-unverified')
++  expect(outcome?.unverified[0]?.reason).toContain('empty stripped')
++})
++
++it('reads a PAX-scoped package manifest and rejects a duplicate through an alternate tar path', async () => {
++  const { dir, archive, installed } = fixture()
++  const members = [tarMember('package/metadata', paxRecord('package/package.json'), 'x'),
++    tarMember('package/renamed', JSON.stringify({ name: BUILDR }))]
++  writeFileSync(archive, gzipSync(Buffer.concat([...members, Buffer.alloc(1024)])))
++  expect(await checkBuildrInstall(installed, [archive], dir)).toMatchObject({ code: 'buildr-conflict', requested: [BUILDR] })
++  writeFileSync(archive, tarball({ name: 'ordinary' }, members))
++  const outcome = await checkBuildrInstall(installed, [archive], dir)
++  expect(outcome?.code).toBe('package-identity-unverified')
++  expect(outcome?.unverified[0]?.reason).toContain('duplicate')
++})
++
++it.each(['invalid checksum', 'truncated archive', 'missing manifest', 'global path metadata'])('refuses %s without extracting an archive', async form => {
++  const { dir, archive, installed } = fixture()
++  const header = tarMember('package/package.json', JSON.stringify({ name: 'ordinary' }))
++  const bytes = form === 'invalid checksum' ? Buffer.from(header) : header
++  if (form === 'invalid checksum') bytes[0] = 255
++  writeFileSync(archive, gzipSync(form === 'missing manifest' ? Buffer.alloc(1024)
++    : form === 'global path metadata' ? Buffer.concat([tarMember('package/metadata', paxRecord('package/package.json'), 'g'), header, Buffer.alloc(1024)])
++      : form === 'truncated archive' ? header : Buffer.concat([bytes, Buffer.alloc(1024)])))
++  expect(await checkBuildrInstall(installed, [archive], dir)).toMatchObject({ code: 'package-identity-unverified' })
++})
++
++it('accepts the exact manifest byte limit and rejects the next byte', async () => {
++  const { dir, archive } = fixture()
++  const manifest = { name: 'ordinary', padding: '' }
++  manifest.padding = 'x'.repeat(256 * 1024 - Buffer.byteLength(JSON.stringify(manifest)))
++  writeFileSync(archive, tarball(manifest))
++  expect(await checkBuildrInstall({}, [archive], dir)).toBeUndefined()
++  manifest.padding += 'x'
++  writeFileSync(archive, tarball(manifest))
++  expect(await checkBuildrInstall({}, [archive], dir)).toMatchObject({ code: 'package-identity-unverified' })
++})
++
++it('bounds compressed input using the opened regular file before starting decompression', async () => {
++  const { dir, archive } = fixture()
++  writeFileSync(archive, '')
++  truncateSync(archive, 64 * 1024 * 1024 + 1)
++  const outcome = await checkBuildrInstall({}, [archive], dir)
++  expect(outcome?.code).toBe('package-identity-unverified')
++  expect(outcome?.unverified[0]?.reason).toContain('64 MiB')
++})
++
++it('bounds all expanded bytes, including a skipped member after the package manifest', async () => {
++  const { dir, archive } = fixture()
++  const header = tarMember('package/large', '')
++  header.write((256 * 1024 * 1024).toString(8).padStart(11, '0') + '\0', 124)
++  header.fill(32, 148, 156)
++  header.write(header.reduce((sum, byte) => sum + byte, 0).toString(8).padStart(6, '0') + '\0 ', 148)
++  const chunk = Buffer.alloc(64 * 1024)
++  function* contents() {
++    yield tarMember('package/package.json', '{"name":"ordinary"}')
++    yield header
++    for (let index = 0; index < 4096; index += 1) yield chunk
++    yield Buffer.alloc(1024)
++  }
++  await pipeline(Readable.from(contents()), createGzip(), createWriteStream(archive))
++  const outcome = await checkBuildrInstall({}, [archive], dir)
++  expect(outcome?.code).toBe('package-identity-unverified')
++  expect(outcome?.unverified[0]?.reason).toContain('256 MiB expanded')
++}, 20_000)
++
++it('bounds member count even when every skipped member is empty', async () => {
++  const { dir, archive } = fixture()
++  const empty = tarMember('package/empty', '')
++  writeFileSync(archive, tarball({ name: 'ordinary' }, Array.from({ length: 50_000 }, () => empty)))
++  const outcome = await checkBuildrInstall({}, [archive], dir)
++  expect(outcome?.code).toBe('package-identity-unverified')
++  expect(outcome?.unverified[0]?.reason).toContain('too many')
++})
+diff --git a/packages/boot/plugin-manager/tests/manager.spec.ts b/packages/boot/plugin-manager/tests/manager.spec.ts
+index 81acd6ddf82f9eef195c946a0f20eff2edbd0f3e..6055aa6977c0817f22e53f62667a87f164363608 100644
+--- a/packages/boot/plugin-manager/tests/manager.spec.ts
++++ b/packages/boot/plugin-manager/tests/manager.spec.ts
+@@ -24,6 +24,8 @@ import * as operations from '../src/operations.ts'
+ import * as githubConnection from '../src/github-connection.ts'
+ import { parse, parseDocument } from 'yaml'
+ import { isolateGitCommandLineConfig } from './git-environment.ts'
++import { tarball as npmTarball } from './tar-fixture.ts'
++import * as buildrInstall from '../src/buildr-install.ts'
+ 
+ // These cases install through real Git and pnpm, so the host's command-line configuration group must not reach their children.
+ let restoreGitCommandLineConfig: () => void
+@@ -83,6 +85,91 @@ async function fixture(reload: 'live' | 'startup' = 'live', overlay = false, pre
+   return { ctx, dir, manager: ctx.pluginManager, bundle, profile, stopHmr, overlays, connection }
+ }
+ 
++const BUILDR_FAMILY = [
++  '@buildr-ai/buildr-dsh-plugin', '@buildr-ai/buildr-dsh-plugin-dev',
++  '@buildr-ai/buildr-dsh-development-composition', '@buildr-ai/dsh-plugin-dev',
++]
++
++it('cancels after asynchronous identity inspection before saving script approvals', async () => {
++  const { manager, dir } = await fixture()
++  const identity = Promise.withResolvers<Awaited<ReturnType<typeof buildrInstall.checkBuildrInstall>>>()
++  const check = vi.spyOn(buildrInstall, 'checkBuildrInstall').mockImplementationOnce(() => identity.promise)
++  const run = vi.spyOn(operations, 'runProfilePnpm')
++  onTestFinished(() => { check.mockRestore(); run.mockRestore() })
++  const before = readFileSync(join(dir, 'pnpm-workspace.yaml'), 'utf8')
++  const requestId = '11111111-1111-4111-8111-111111111111' as PluginInstallRequestId
++  const installing = manager.installBundle('ordinary-addon', { requestId, approvedBuilds: ['native'] })
++  await vi.waitFor(() => { expect(check).toHaveBeenCalledOnce() })
++  const cancelling = manager.cancelInstall(requestId)
++  identity.resolve(undefined)
++  expect(await installing).toMatchObject({ changed: false, application: 'cancelled' })
++  expect(await cancelling).toEqual({ status: 'cancelled' })
++  expect(readFileSync(join(dir, 'pnpm-workspace.yaml'), 'utf8')).toBe(before)
++  expect(run).not.toHaveBeenCalled()
++})
++
++it.each(BUILDR_FAMILY)('the original Loader manager refuses installs beside disabled %s before approvals or package execution', async (existing) => {
++  const { manager, dir, bundle, connection } = await fixture()
++  bundle(existing, [])
++  const manifest = readProfileManifest('test', dir)
++  manifest.dependencies = { ...manifest.dependencies, [existing]: '1.0.0' }
++  writeFileSync(join(dir, 'package.json'), JSON.stringify(manifest))
++  writeFileSync(join(dir, 'pnpm-lock.yaml'), 'original-lock\n')
++  const files = ['package.json', 'pnpm-lock.yaml', 'cordis.patch.yml', 'pnpm-workspace.yaml', `node_modules/${existing}/package.json`]
++  const before = files.map(file => readFileSync(join(dir, file)))
++  const packageRun = vi.spyOn(operations, 'runProfilePnpm')
++  onTestFinished(() => { packageRun.mockRestore() })
++  for (const spec of [existing, `${existing}@2.0.0`, '@buildr-ai/buildr-dsh-plugin-dev@next']) {
++    expect(await manager.inspect(spec)).toMatchObject({
++      status: 'refused', problem: 'buildr-conflict', installRejection: { installed: [existing] },
++    })
++    expect(await manager.installBundle(spec, { approvedBuilds: ['native'] })).toMatchObject({
++      changed: false, application: 'failed', error: { code: 'buildr-conflict', installRejection: { installed: [existing] } },
++    })
++  }
++  expect(packageRun).not.toHaveBeenCalled()
++  expect(connection).not.toHaveBeenCalled()
++  files.forEach((file, i) => { expect(readFileSync(join(dir, file))).toEqual(before[i]) })
++})
++
++it('rechecks actual locked installation after a formerly accepted page inspection', async () => {
++  const { manager, dir, bundle } = await fixture()
++  const archive = join(dir, 'renamed.tgz')
++  writeFileSync(archive, npmTarball({ name: BUILDR_FAMILY[1] }))
++  expect(await manager.inspect(archive)).toMatchObject({ status: 'accepted' })
++  const existing = BUILDR_FAMILY[0]!
++  bundle(existing, [])
++  const manifest = readProfileManifest('test', dir)
++  manifest.dependencies = { ...manifest.dependencies, [existing]: '1.0.0' }
++  writeFileSync(join(dir, 'package.json'), JSON.stringify(manifest))
++  const packageRun = vi.spyOn(operations, 'runProfilePnpm')
++  onTestFinished(() => { packageRun.mockRestore() })
++  expect(await manager.installBundle(archive)).toMatchObject({
++    changed: false, application: 'failed', error: { code: 'buildr-conflict', installRejection: { requested: [BUILDR_FAMILY[1]] } },
++  })
++  expect(packageRun).not.toHaveBeenCalled()
++})
++
++it('reports an unverifiable remote source separately while allowing an unrelated registry inspection', async () => {
++  const { manager, dir, bundle, connection } = await fixture()
++  const existing = BUILDR_FAMILY[2]!
++  bundle(existing, [])
++  const manifest = readProfileManifest('test', dir)
++  manifest.dependencies = { ...manifest.dependencies, [existing]: '1.0.0' }
++  writeFileSync(join(dir, 'package.json'), JSON.stringify(manifest))
++  for (const spec of ['github:acme/addon', 'https://cdn.example.com/addon.tgz']) {
++    expect(await manager.inspect(spec)).toMatchObject({ status: 'refused', problem: 'package-identity-unverified' })
++    expect(await manager.installBundle(spec)).toMatchObject({ changed: false, error: { code: 'package-identity-unverified' } })
++  }
++  const view = vi.spyOn(operations, 'viewProfilePackage').mockResolvedValue({
++    exitCode: 0, stdout: JSON.stringify({ name: 'ordinary-addon', dsh: { bundle: { patch: './cordis.patch.yml' } } }), stderr: '', timedOut: false,
++  })
++  onTestFinished(() => { view.mockRestore() })
++  expect(await manager.inspect('ordinary-addon')).toMatchObject({ status: 'accepted', name: 'ordinary-addon' })
++  expect(connection).not.toHaveBeenCalled()
++})
++
++
+ it.each(['network', 'timeout'] as const)('stops a GitHub %s before pnpm and attributes it to the repository', async (kind) => {
+   const { manager, dir, connection } = await fixture()
+   const before = readFileSync(join(dir, 'package.json'), 'utf8')
+@@ -965,6 +1052,8 @@ it('reads what a spec names before installing it', async () => {
+   const tarball = join(profile.home, 'pack.tgz')
+   expect(await manager.inspect(tarball)).toEqual({ status: 'refused', problem: 'not-a-package', reason: 'the tarball does not exist' })
+   writeFileSync(tarball, '')
++  expect(await manager.inspect(tarball)).toMatchObject({ status: 'refused', problem: 'package-identity-unverified' })
++  writeFileSync(tarball, npmTarball({ name: 'dsh-x' }))
+   expect(await manager.inspect(tarball)).toEqual({ status: 'accepted', kind: 'tarball', bundle: null, registry: null })
+   expect(await manager.inspect('https://cdn.example.com/x/y/z/dsh-x-1.0.0.tgz')).toEqual({ status: 'accepted', kind: 'tarball', bundle: null, registry: null, host: 'cdn.example.com' })
+   // A directory answers from its own manifest.
+diff --git a/packages/boot/plugin-manager/tests/operations.spec.ts b/packages/boot/plugin-manager/tests/operations.spec.ts
+index 9a062e8af9095effed0dde19f1957727540ac82c..957cd73cb7d9efa0acd5e83081ae29ca190eba54 100644
+--- a/packages/boot/plugin-manager/tests/operations.spec.ts
++++ b/packages/boot/plugin-manager/tests/operations.spec.ts
+@@ -4,9 +4,11 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
+ import { join, resolve } from 'node:path'
+ import { tmpdir } from 'node:os'
+ import { PassThrough } from 'node:stream'
++import { gzipSync } from 'node:zlib'
+ import { expect, it, onTestFinished, vi } from 'vitest'
+ import { getDshRuntimeVersion, initProfile, readProfileManifest } from '@deepseek-ai/dsh-app-boot'
+ import { anchorPathSpec, readProfileRegistry, runPluginCommand, runProfilePnpm, viewProfilePackage } from '../src/operations.ts'
++import { tarball, tarMember } from './tar-fixture.ts'
+ 
+ /** What execa resolves for a run that settled, including the buffered output the pre-install lookup is read for. */
+ interface FakeOutcome {
+@@ -89,6 +91,344 @@ function fixture() {
+   return { home, dir, context: { home, profile: 'test', installAnchor, cwd: home }, pnpm }
+ }
+ 
++const BUILDR_FAMILY = [
++  '@buildr-ai/buildr-dsh-plugin',
++  '@buildr-ai/buildr-dsh-plugin-dev',
++  '@buildr-ai/buildr-dsh-development-composition',
++  '@buildr-ai/dsh-plugin-dev',
++]
++
++it.each(['package/./package.json', 'other/package.json'])('refuses the actual root manifest overwrite %s without invoking pnpm or changing the profile', async name => {
++  const { home, dir, context } = fixture()
++  declareBuildr(dir, BUILDR_FAMILY[0]!)
++  const archive = join(home, 'misleading.tgz')
++  writeFileSync(archive, tarball({ name: 'ordinary' }, [tarMember(name, JSON.stringify({ name: BUILDR_FAMILY[1] }))]))
++  writeFileSync(join(dir, 'pnpm-lock.yaml'), 'original-lock\n')
++  const before = readFileSync(join(dir, 'package.json'), 'utf8')
++  expect(await runProfilePnpm(context, ['add', archive], { execution: 'service', outputBytes: 8192 }))
++    .toMatchObject({ exitCode: 1, installRejection: { code: 'package-identity-unverified' } })
++  expect(command.run).not.toHaveBeenCalled()
++  expect(readFileSync(join(dir, 'package.json'), 'utf8')).toBe(before)
++  expect(readFileSync(join(dir, 'pnpm-lock.yaml'), 'utf8')).toBe('original-lock\n')
++})
++
++it.each(['--dir', '--dir=', '-C'])('refuses %s selecting another directory while preserving both profile targets', async flag => {
++  const { home, dir, context } = fixture()
++  const other = join(home, 'other-profile')
++  mkdirSync(other)
++  writeFileSync(join(other, 'package.json'), JSON.stringify({ dependencies: { [BUILDR_FAMILY[0]!]: '1.0.0' } }))
++  writeFileSync(join(other, 'pnpm-lock.yaml'), 'other-lock\n')
++  const original = readFileSync(join(dir, 'package.json'), 'utf8')
++  const otherOriginal = readFileSync(join(other, 'package.json'), 'utf8')
++  const args = flag.endsWith('=') ? [flag + other, 'add', BUILDR_FAMILY[1]!] : [flag, other, 'add', BUILDR_FAMILY[1]!]
++  const outcome = await runPluginCommand(context, args, { execution: 'service', outputBytes: 8192 })
++  expect(outcome).toMatchObject({ exitCode: 1, installRejection: { code: 'package-identity-unverified' } })
++  expect(outcome.output).toContain('directory differs')
++  expect(command.run).not.toHaveBeenCalled()
++  expect(readFileSync(join(dir, 'package.json'), 'utf8')).toBe(original)
++  expect(readFileSync(join(other, 'package.json'), 'utf8')).toBe(otherOriginal)
++  expect(readFileSync(join(other, 'pnpm-lock.yaml'), 'utf8')).toBe('other-lock\n')
++})
++
++it('permits an equivalent directory flag and retains the current profile exclusion', async () => {
++  const { dir, context } = fixture()
++  expect(await runProfilePnpm(context, ['add', 'ordinary-addon', '-C', join(dir, '..', 'test')], {
++    execution: 'service', outputBytes: 8192,
++  })).toMatchObject({ exitCode: 0 })
++  declareBuildr(dir, BUILDR_FAMILY[0]!)
++  command.run.mockClear()
++  expect(await runProfilePnpm(context, ['update', BUILDR_FAMILY[0]!, '--dir=' + dir], {
++    execution: 'service', outputBytes: 8192,
++  })).toMatchObject({ exitCode: 1, installRejection: { code: 'buildr-conflict' } })
++  expect(command.run).not.toHaveBeenCalled()
++})
++
++it.each([
++  ['add', 'ordinary-addon', '--global'],
++  ['add', 'ordinary-addon', '-g'],
++  ['add', 'ordinary-addon', '--workspace-root'],
++  ['add', 'ordinary-addon', '-w'],
++  ['add', 'ordinary-addon', '--recursive'],
++  ['add', 'ordinary-addon', '-r'],
++  ['--filter', 'other-project', 'add', 'ordinary-addon'],
++  ['update', 'ordinary-addon', '--filter=other-project'],
++  ['recursive', 'add', 'ordinary-addon'],
++  ['multi', 'upgrade', 'ordinary-addon'],
++  ['m', 'install'],
++])('refuses external global/workspace package writes before pnpm: %s', async (...args) => {
++  const { dir, context } = fixture()
++  const before = readFileSync(join(dir, 'package.json'), 'utf8')
++  const outcome = await runProfilePnpm(context, args, { execution: 'service', outputBytes: 8192 })
++  expect(outcome).toMatchObject({ exitCode: 1, installRejection: { code: 'package-identity-unverified' } })
++  expect(outcome.output).toContain('locked profile')
++  expect(command.run).not.toHaveBeenCalled()
++  expect(readFileSync(join(dir, 'package.json'), 'utf8')).toBe(before)
++})
++
++it('allows explicit false global/recursive options in a normal profile install', async () => {
++  const { context } = fixture()
++  expect(await runProfilePnpm(context, ['add', 'ordinary-addon', '--global=false', '--recursive=false'], {
++    execution: 'service', outputBytes: 8192,
++  })).toMatchObject({ exitCode: 0 })
++})
++
++
++it('refuses multiple unknown first-install sources without guessing their identity, while permitting a single unknown beside a verified unrelated source', async () => {
++  const { context, dir } = fixture()
++  const original = readFileSync(join(dir, 'package.json'), 'utf8')
++  const unknown = ['github:acme/first', 'https://cdn.example.com/second.tgz']
++  const refused = await runProfilePnpm(context, ['add', ...unknown], { execution: 'service', outputBytes: 8192 })
++  expect(refused).toMatchObject({ exitCode: 1, installRejection: { code: 'package-identity-unverified', installed: [], requested: [] } })
++  expect(refused.output).not.toContain('同一时间只能安装一个')
++  expect(command.run).not.toHaveBeenCalled()
++  expect(readFileSync(join(dir, 'package.json'), 'utf8')).toBe(original)
++  expect(existsSync(join(dir, 'node_modules'))).toBe(false)
++  expect(await runProfilePnpm(context, ['add', unknown[0]!, 'ordinary-addon'], { execution: 'service', outputBytes: 8192 }))
++    .toMatchObject({ exitCode: 0 })
++})
++
++it.each(['update', 'up', 'upgrade'])('refuses named and full %s updates of an installed Buildr but permits a named unrelated update', async (operation) => {
++  const { context, dir } = fixture()
++  const existing = BUILDR_FAMILY[0]!
++  declareBuildr(dir, existing)
++  for (const args of [[operation, existing, '--latest'], [operation, '--latest']]) {
++    expect(await runProfilePnpm(context, args, { execution: 'service', outputBytes: 8192 }))
++      .toMatchObject({ exitCode: 1, installRejection: { code: 'buildr-conflict', installed: [existing] } })
++  }
++  expect(command.run).not.toHaveBeenCalled()
++  expect(await runProfilePnpm(context, [operation, 'ordinary-addon', '--latest'], { execution: 'service', outputBytes: 8192 }))
++    .toMatchObject({ exitCode: 0 })
++})
++
++it('does not treat a separate registry value as a package identity', async () => {
++  const { context, dir } = fixture()
++  declareBuildr(dir, BUILDR_FAMILY[0]!)
++  expect(await runProfilePnpm(context, ['add', 'ordinary-addon', '--registry', 'https://npm.example.com/'], {
++    execution: 'service', outputBytes: 8192,
++  })).toMatchObject({ exitCode: 0 })
++  command.run.mockClear()
++  expect(await runProfilePnpm(context, ['add', BUILDR_FAMILY[1]!, '--registry', 'https://npm.example.com/'], {
++    execution: 'service', outputBytes: 8192,
++  })).toMatchObject({ exitCode: 1, installRejection: { code: 'buildr-conflict', requested: [BUILDR_FAMILY[1]] } })
++  expect(command.run).not.toHaveBeenCalled()
++})
++
++it.each([
++  ['add', 'ordinary-addon', '--unverified-option'],
++  ['--unverified-option', 'ambiguous-value', 'add', '@buildr-ai/buildr-dsh-plugin'],
++])('reports an unsupported argument boundary locally instead of guessing a Buildr conflict: %s', async (...args) => {
++  const { context, dir } = fixture()
++  declareBuildr(dir, BUILDR_FAMILY[0]!)
++  expect(await runProfilePnpm(context, args, { execution: 'service', outputBytes: 8192 }))
++    .toMatchObject({ exitCode: 1, installRejection: { code: 'package-identity-unverified', unverified: [{ spec: '--unverified-option' }] } })
++  expect(command.run).not.toHaveBeenCalled()
++})
++
++it('leaves noninstallation commands unchanged while Buildr is installed', async () => {
++  const { context, dir } = fixture()
++  declareBuildr(dir, BUILDR_FAMILY[0]!)
++  expect(await runProfilePnpm(context, ['remove', BUILDR_FAMILY[0]!], { execution: 'service', outputBytes: 8192 }))
++    .toMatchObject({ exitCode: 0 })
++})
++
++
++it.each(['npm alias', 'installed local alias'])('counts an existing Buildr through its %s identity', async (form) => {
++  const { dir, context } = fixture()
++  const existing = BUILDR_FAMILY[0]!
++  const manifest = readProfileManifest('test', dir)
++  manifest.dependencies = { alternate: form === 'npm alias' ? `npm:${existing}@1.0.0` : 'file:/source/alternate' }
++  writeFileSync(join(dir, 'package.json'), JSON.stringify(manifest))
++  if (form === 'installed local alias') {
++    mkdirSync(join(dir, 'node_modules', 'alternate'), { recursive: true })
++    writeFileSync(join(dir, 'node_modules', 'alternate', 'package.json'), JSON.stringify({ name: existing }))
++  }
++  expect(await runProfilePnpm(context, ['add', BUILDR_FAMILY[1]!], { execution: 'service', outputBytes: 8192 }))
++    .toMatchObject({ exitCode: 1, installRejection: { code: 'buildr-conflict', installed: [`alternate (${existing})`] } })
++  expect(command.run).not.toHaveBeenCalled()
++})
++
++it('does not classify an invalid directly installed local manifest as an unrelated package', async () => {
++  const { dir, context } = fixture()
++  const manifest = readProfileManifest('test', dir)
++  manifest.dependencies = { alternate: 'file:/source/alternate' }
++  writeFileSync(join(dir, 'package.json'), JSON.stringify(manifest))
++  mkdirSync(join(dir, 'node_modules', 'alternate'), { recursive: true })
++  writeFileSync(join(dir, 'node_modules', 'alternate', 'package.json'), '{"version":"1.0.0"}')
++  expect(await runProfilePnpm(context, ['add', BUILDR_FAMILY[0]!], { execution: 'service', outputBytes: 8192 }))
++    .toMatchObject({ exitCode: 1, installRejection: { code: 'package-identity-unverified', installed: [], unverified: [{ spec: 'alternate' }] } })
++  expect(command.run).not.toHaveBeenCalled()
++})
++
++it('does not count a Buildr package in an unrelated dependency closure', async () => {
++  const { dir, context } = fixture()
++  install(dir, 'ordinary')
++  const nested = join(dir, 'node_modules', 'ordinary', 'node_modules', BUILDR_FAMILY[0]!)
++  mkdirSync(nested, { recursive: true })
++  writeFileSync(join(nested, 'package.json'), JSON.stringify({ name: BUILDR_FAMILY[0] }))
++  expect(await runProfilePnpm(context, ['add', BUILDR_FAMILY[1]!], { execution: 'service', outputBytes: 8192 }))
++    .toMatchObject({ exitCode: 0 })
++})
++
++it('serializes two first-install requests and refuses the later Buildr under the shared profile lock', async () => {
++  const { context, dir, pnpm } = fixture()
++  pnpm.mutate = target => {
++    const argv = command.run.mock.calls.findLast(call => (call[1] as string[]).includes('add'))![1] as string[]
++    install(target, argv[argv.indexOf('add') + 1]!)
++  }
++  const outcomes = await Promise.all(BUILDR_FAMILY.slice(0, 2).map(name =>
++    runPluginCommand(context, ['add', name], { execution: 'service', outputBytes: 8192, lockWaitMs: 2000 })))
++  expect(outcomes.map(outcome => outcome.exitCode).sort()).toEqual([0, 1])
++  const installed = Object.keys(readProfileManifest('test', dir).dependencies ?? {})
++  expect(installed).toHaveLength(1)
++  const refused = outcomes.find(outcome => outcome.exitCode === 1)!
++  expect(refused.installRejection).toMatchObject({ code: 'buildr-conflict', installed })
++  expect(command.run.mock.calls.filter(call => (call[1] as string[]).includes('add'))).toHaveLength(1)
++})
++
++
++/** Only direct declarations count; a disabled bundle deliberately has no selection row. */
++function declareBuildr(dir: string, name: string, field = 'dependencies'): void {
++  const manifest = readProfileManifest('test', dir)
++  Object.assign(manifest, { [field]: { [name]: '1.0.0' } })
++  writeFileSync(join(dir, 'package.json'), JSON.stringify(manifest))
++  const packageDir = join(dir, 'node_modules', name)
++  mkdirSync(packageDir, { recursive: true })
++  writeFileSync(join(packageDir, 'package.json'), JSON.stringify({ name, version: '1.0.0' }))
++}
++
++it.each(BUILDR_FAMILY)('refuses a Buildr install while %s is declared but disabled, before any pnpm invocation', async (existing) => {
++  const { dir, context } = fixture()
++  declareBuildr(dir, existing)
++  writeFileSync(join(dir, 'pnpm-lock.yaml'), 'original-lock\n')
++  writeFileSync(join(dir, 'cordis.patch.yml'), 'original-patches\n')
++  const before = ['package.json', 'pnpm-lock.yaml', 'cordis.patch.yml', `node_modules/${existing}/package.json`]
++    .map(file => [file, readFileSync(join(dir, file), 'utf8')] as const)
++  const outcome = await runProfilePnpm(context, ['add', '@buildr-ai/buildr-dsh-plugin@2.0.0'], {
++    execution: 'service', outputBytes: 8192,
++  })
++  expect(outcome).toMatchObject({ exitCode: 1, installRejection: { code: 'buildr-conflict', installed: [existing] } })
++  expect(outcome.output).toContain('同一时间只能安装一个 Buildr 插件，请先卸载当前版本，再继续安装')
++  expect(outcome.output).toContain(existing)
++  expect(outcome.incompatible).toBeUndefined()
++  expect(command.run).not.toHaveBeenCalled()
++  for (const [file, text] of before) expect(readFileSync(join(dir, file), 'utf8')).toBe(text)
++})
++
++it.each(['devDependencies', 'optionalDependencies'])('counts the directly declared Buildr in %s', async (field) => {
++  const { dir, context } = fixture()
++  declareBuildr(dir, BUILDR_FAMILY[3]!, field)
++  const outcome = await runProfilePnpm(context, ['add', BUILDR_FAMILY[1]!], { execution: 'cli', outputBytes: 8192 })
++  expect(outcome.installRejection?.code).toBe('buildr-conflict')
++  expect(command.run).not.toHaveBeenCalled()
++})
++
++it('refuses a same-package version change and an npm alias target without consulting the registry', async () => {
++  const { dir, context } = fixture()
++  const existing = BUILDR_FAMILY[0]!
++  declareBuildr(dir, existing)
++  for (const spec of [`${existing}@next`, `alternate@npm:${existing}@1.0.0`]) {
++    expect(await runProfilePnpm(context, ['add', spec], { execution: 'service', outputBytes: 8192 }))
++      .toMatchObject({ exitCode: 1, installRejection: { code: 'buildr-conflict', installed: [existing], requested: [existing] } })
++  }
++  expect(command.run).not.toHaveBeenCalled()
++})
++
++it('refuses two Buildr identities in one batch when none is installed', async () => {
++  const { dir, context } = fixture()
++  const original = readFileSync(join(dir, 'package.json'), 'utf8')
++  expect(await runProfilePnpm(context, ['add', ...BUILDR_FAMILY.slice(0, 2)], { execution: 'service', outputBytes: 8192 }))
++    .toMatchObject({ exitCode: 1, installRejection: { code: 'buildr-conflict', installed: [], requested: BUILDR_FAMILY.slice(0, 2) } })
++  expect(command.run).not.toHaveBeenCalled()
++  expect(readFileSync(join(dir, 'package.json'), 'utf8')).toBe(original)
++  expect(existsSync(join(dir, 'node_modules'))).toBe(false)
++})
++
++it('reads a Buildr directory identity rather than the directory name', async () => {
++  const { home, dir, context } = fixture()
++  declareBuildr(dir, BUILDR_FAMILY[0]!)
++  const packageDir = join(home, 'ordinary-directory')
++  mkdirSync(packageDir)
++  writeFileSync(join(packageDir, 'package.json'), JSON.stringify({ name: BUILDR_FAMILY[2] }))
++  const outcome = await runProfilePnpm(context, ['add', `file:${packageDir}`], { execution: 'service', outputBytes: 8192 })
++  expect(outcome.installRejection).toMatchObject({ code: 'buildr-conflict', requested: [BUILDR_FAMILY[2]] })
++  expect(command.run).not.toHaveBeenCalled()
++})
++
++it('reads a renamed local tarball manifest without extracting or running its lifecycle script', async () => {
++  const { home, dir, context } = fixture()
++  declareBuildr(dir, BUILDR_FAMILY[0]!)
++  const archive = join(home, 'unrelated-name.tgz')
++  writeFileSync(archive, tarball({ name: BUILDR_FAMILY[2], scripts: { preinstall: 'touch SHOULD_NOT_EXECUTE' } },
++    [tarMember('package/SHOULD_NOT_EXTRACT', 'private fixture')]))
++  const before = readFileSync(archive)
++  expect(await runProfilePnpm(context, ['add', archive], { execution: 'service', outputBytes: 8192 }))
++    .toMatchObject({ exitCode: 1, installRejection: { code: 'buildr-conflict', requested: [BUILDR_FAMILY[2]] } })
++  expect(command.run).not.toHaveBeenCalled()
++  expect(readFileSync(archive)).toEqual(before)
++  expect(existsSync(join(home, 'SHOULD_NOT_EXECUTE'))).toBe(false)
++  expect(existsSync(join(home, 'package'))).toBe(false)
++})
++
++it.each(['git', 'remote tarball', 'corrupt local tarball', 'duplicate manifest', 'oversized manifest', 'nonregular manifest'])(
++  'refuses an unverified %s locally without claiming it is a Buildr conflict',
++  async (form) => {
++    const { home, dir, context } = fixture()
++    declareBuildr(dir, BUILDR_FAMILY[0]!)
++    let spec = form === 'git' ? 'github:acme/addon' : 'https://cdn.example.com/addon.tgz'
++    if (form.includes('local') || form.includes('manifest')) {
++      spec = join(home, 'source.tgz')
++      const extra = form === 'duplicate manifest' ? [tarMember('package/package.json', JSON.stringify({ name: 'ordinary' }))] : []
++      writeFileSync(spec, form === 'corrupt local tarball' ? 'broken' : form === 'oversized manifest'
++        ? gzipSync(Buffer.concat([tarMember('package/package.json', Buffer.alloc(256 * 1024 + 1, 32)), Buffer.alloc(1024)]))
++        : form === 'nonregular manifest'
++          ? gzipSync(Buffer.concat([tarMember('package/package.json', '{"name":"ordinary"}', '2'), Buffer.alloc(1024)]))
++          : tarball({ name: 'ordinary' }, extra))
++    }
++    const before = readFileSync(join(dir, 'package.json'), 'utf8')
++    const outcome = await runProfilePnpm(context, ['add', spec], { execution: 'service', outputBytes: 8192 })
++    expect(outcome.installRejection).toMatchObject({ code: 'package-identity-unverified', installed: [BUILDR_FAMILY[0]] })
++    expect(outcome.output).not.toContain('同一时间只能安装一个')
++    expect(command.run).not.toHaveBeenCalled()
++    expect(readFileSync(join(dir, 'package.json'), 'utf8')).toBe(before)
++  },
++)
++
++it('refuses a corrupt local tarball even before the first Buildr installation', async () => {
++  const { home, context } = fixture()
++  const archive = join(home, 'broken.tgz')
++  writeFileSync(archive, 'not gzip')
++  expect(await runProfilePnpm(context, ['add', archive], { execution: 'service', outputBytes: 8192 }))
++    .toMatchObject({ exitCode: 1, installRejection: { code: 'package-identity-unverified', installed: [] } })
++  expect(command.run).not.toHaveBeenCalled()
++})
++
++it('does not block verified unrelated directory, tarball, or registry identities beside Buildr', async () => {
++  const { home, dir, context } = fixture()
++  declareBuildr(dir, BUILDR_FAMILY[0]!)
++  const ordinary = join(home, 'buildr-misleading-directory')
++  mkdirSync(ordinary)
++  writeFileSync(join(ordinary, 'package.json'), JSON.stringify({ name: 'ordinary-addon' }))
++  const archive = join(home, 'buildr-misleading-name.tgz')
++  writeFileSync(archive, tarball({ name: 'ordinary-addon' }))
++  for (const spec of [ordinary, archive, 'ordinary-addon@1.0.0']) {
++    const outcome = await runProfilePnpm(context, ['add', spec], { execution: 'service', outputBytes: 8192, activateNewBundles: false })
++    expect(outcome).toMatchObject({ exitCode: 0 })
++    expect(outcome.installRejection).toBeUndefined()
++  }
++  expect(command.run.mock.calls.filter(call => (call[1] as string[]).includes('add'))).toHaveLength(3)
++})
++
++it('allows the first Buildr package and refuses an unknown companion in the same batch', async () => {
++  const { context } = fixture()
++  expect(await runProfilePnpm(context, ['add', BUILDR_FAMILY[0]!], { execution: 'service', outputBytes: 8192 }))
++    .toMatchObject({ exitCode: 0 })
++  command.run.mockClear()
++  expect(await runProfilePnpm(context, ['add', BUILDR_FAMILY[0]!, 'github:acme/addon'], { execution: 'service', outputBytes: 8192 }))
++    .toMatchObject({ exitCode: 1, installRejection: { code: 'package-identity-unverified' } })
++  expect(command.run).not.toHaveBeenCalled()
++})
++
++
+ function result(
+   exitCode: number | undefined, output: string, mutate: () => void = () => {},
+   details: { code?: string; shortMessage?: string } = {},
+diff --git a/packages/boot/plugin-manager/tests/tar-fixture.ts b/packages/boot/plugin-manager/tests/tar-fixture.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..26a5352e4833e7a586337dde1829e9256893b874
+--- /dev/null
++++ b/packages/boot/plugin-manager/tests/tar-fixture.ts
+@@ -0,0 +1,25 @@
++/** Standard npm tar members, created entirely in a temporary test fixture. */
++import { gzipSync } from 'node:zlib'
++
++export function tarMember(name: string, content: Buffer | string, type = '0'): Buffer {
++  const bytes = Buffer.isBuffer(content) ? content : Buffer.from(content)
++  const header = Buffer.alloc(512)
++  header.write(name, 0, 100, 'utf8')
++  header.write('0000644\0', 100)
++  header.write('0000000\0', 108)
++  header.write('0000000\0', 116)
++  header.write(bytes.length.toString(8).padStart(11, '0') + '\0', 124)
++  header.write('00000000000\0', 136)
++  header.fill(32, 148, 156)
++  header.write(type, 156, 1)
++  header.write('ustar\0', 257)
++  header.write('00', 263)
++  const checksum = header.reduce((sum, byte) => sum + byte, 0)
++  header.write(checksum.toString(8).padStart(6, '0') + '\0 ', 148)
++  return Buffer.concat([header, bytes, Buffer.alloc((512 - bytes.length % 512) % 512)])
++}
++
++export function tarball(manifest: object, extra: Buffer[] = []): Buffer {
++  return gzipSync(Buffer.concat([tarMember('package/package.json', JSON.stringify(manifest)), ...extra, Buffer.alloc(1024)]))
++}
++
+diff --git a/packages/client/ui-plugin-manager/src/client/PluginManagerPage.tsx b/packages/client/ui-plugin-manager/src/client/PluginManagerPage.tsx
+index 9bd3992611a7dcf2022621c59c19b249f2ac22a5..621fa871d78be3701d6e76ff0e41e558984c88cb 100644
+--- a/packages/client/ui-plugin-manager/src/client/PluginManagerPage.tsx
++++ b/packages/client/ui-plugin-manager/src/client/PluginManagerPage.tsx
+@@ -30,7 +30,7 @@ import {
+   type InstallInputError, type InstallState, type InstallSubject, type PackageRow, type PackageView,
+   type PluginManagerFace, type RegistryChoice,
+ } from './manager-store.ts'
+-import { managementText, noticeText, packageText, registryText, rowText, type Translate } from './presentation.ts'
++import { installationRejectionText, managementText, noticeText, packageText, registryText, rowText, type Translate } from './presentation.ts'
+ import type { PluginPackageRef, PluginRowRef, PluginsSubject } from './slot-contract.ts'
+ import type { ConfigPageForm } from './slot-contract.ts'
+ import css from './PluginManagerPage.module.css'
+@@ -651,6 +651,8 @@ function terminalLabels(t: Translate): TerminalBlockLabels {
+ 
+ /** The sentence under the field for a spec the check refused. */
+ const INPUT_PROBLEM_KEYS = {
++  'buildr-conflict': 'reasonBuildrConflict',
++  'package-identity-unverified': 'reasonPackageIdentityUnverified',
+   'invalid-spec': 'installProblemInvalid',
+   'already-installed': 'installProblemInstalled',
+   'shipped': 'installProblemShipped',
+@@ -741,7 +743,8 @@ function failureText(failure: InstallState['failure'], t: Translate, install?: P
+     return t('installFailureNetworkAll', { registries: registryList(asked, t, install?.registries?.resolved ?? null) })
+   }
+   if (failure.kind !== undefined) return t(FAILURE_KIND_KEYS[failure.kind])
+-  if (failure.code !== undefined) return managementText({ code: failure.code, diagnostic: failure.reason }, t)
++  if (failure.code !== undefined) return managementText({ code: failure.code, diagnostic: failure.reason,
++    ...failure.installRejection === undefined ? {} : { installRejection: failure.installRejection } }, t)
+   return failure.reason === '' ? t('installFailureGeneric') : failure.reason
+ }
+ 
+@@ -873,7 +876,9 @@ function InstallDialog({
+     const askedByCheck = inputProblem?.registries ?? []
+     const inputSentence = inputProblem === null
+       ? null
+-      : inputProblem.problem === 'network' && askedByCheck.length > 1
++      : inputProblem.installRejection !== undefined
++        ? installationRejectionText(inputProblem.installRejection, t)
++        : inputProblem.problem === 'network' && askedByCheck.length > 1
+         ? t('installProblemNetworkAll', { registries: registryList(askedByCheck, t, resolved) })
+         : t(INPUT_PROBLEM_KEYS[inputProblem.problem], { reason: inputProblem.reason })
+     const templateHint = install.spec === INSTALL_GIT_EXAMPLE
+diff --git a/packages/client/ui-plugin-manager/src/client/locales.ts b/packages/client/ui-plugin-manager/src/client/locales.ts
+index 4274937afaaa64f658df644dbaae5383331ef84f..f52e6d3e6d254ebbc0ce93a3b285c75170b825ac 100644
+--- a/packages/client/ui-plugin-manager/src/client/locales.ts
++++ b/packages/client/ui-plugin-manager/src/client/locales.ts
+@@ -91,6 +91,11 @@ export const zh = {
+   installProblemNetwork: '无法连接插件源，请检查网络后重试',
+   installProblemNetworkAll: '所有安装源都无法连接（已尝试：{registries}），请检查网络或代理设置，或更换安装源',
+   installProblemUnknown: '无法获取插件信息：{reason}',
++  reasonBuildrConflict: '同一时间只能安装一个 Buildr 插件，请先卸载当前版本，再继续安装',
++  reasonPackageIdentityUnverified: '无法在安装前核实包身份，请使用可核实的 npm 包名、目录或本地压缩包后重试',
++  installedBuildrPackages: '当前已安装：{packages}',
++  requestedBuildrPackages: '本次请求：{packages}',
++  unverifiedInstallSources: '无法核实：{sources}',
+   installingTitle: '插件安装中…',
+   installedTitle: '已安装',
+   installFailedTitle: '插件安装失败',
+@@ -287,6 +292,11 @@ export const en = {
+   installProblemNetwork: 'The plugin registry could not be reached; check the network and try again',
+   installProblemNetworkAll: 'No registry could be reached (tried: {registries}); check the network or proxy settings, or change the registry',
+   installProblemUnknown: 'The plugin could not be looked up: {reason}',
++  reasonBuildrConflict: 'Only one Buildr plugin can be installed at a time. Uninstall the current version before installing another.',
++  reasonPackageIdentityUnverified: 'The package identity could not be verified before installation. Retry with a verifiable npm name, directory, or local tarball.',
++  installedBuildrPackages: 'Currently installed: {packages}',
++  requestedBuildrPackages: 'Requested: {packages}',
++  unverifiedInstallSources: 'Could not verify: {sources}',
+   installingTitle: 'Installing the plugin…',
+   installedTitle: 'Installed',
+   installFailedTitle: 'The plugin could not be installed',
+diff --git a/packages/client/ui-plugin-manager/src/client/manager-store.ts b/packages/client/ui-plugin-manager/src/client/manager-store.ts
+index a6dee445d35f85d383ad0d6a7c801f883f3c6704..0f3305f63f97db5a88819c2bb44400a25f703407 100644
+--- a/packages/client/ui-plugin-manager/src/client/manager-store.ts
++++ b/packages/client/ui-plugin-manager/src/client/manager-store.ts
+@@ -151,6 +151,7 @@ export interface InstallInputError {
+   /** The Host's refusal, or `shipped` for a listed bundle the installation supplies. */
+   readonly problem: PluginInspectProblem | 'shipped'
+   readonly reason: string
++  readonly installRejection?: ManagementError['installRejection']
+   /** The registries the check asked, in order, when the refusal came from asking them. */
+   readonly registries?: readonly Registry[]
+ }
+@@ -219,6 +220,7 @@ export interface InstallState {
+     readonly code?: ManagementError['code']
+     /** The packages an `incompatible-version` refusal names. */
+     readonly incompatible?: readonly IncompatiblePlugin[]
++    readonly installRejection?: ManagementError['installRejection']
+     readonly kind?: PluginInstallFailureKind
+     /** What the last failed run could not reach, as the Host attributed it: the registry, or the spec's own host. */
+     readonly failedAt?: 'registry' | 'spec-host'
+@@ -369,6 +371,7 @@ function failureOf(
+     reason: error?.diagnostic ?? '',
+     ...error === undefined ? {} : { code: error.code },
+     ...error?.incompatible === undefined ? {} : { incompatible: error.incompatible },
++    ...error?.installRejection === undefined ? {} : { installRejection: error.installRejection },
+     ...kind === undefined ? {} : { kind },
+     ...failedAt === undefined ? {} : { failedAt },
+     ...pendingBuilds === undefined || pendingBuilds.length === 0 ? {} : { pendingBuilds },
+@@ -838,11 +841,12 @@ export class PluginManagerController {
+       this.analyticsAttempt = { input: sanitizeInstallInput(spec), started: Date.now() }
+       this.ctx.get('productAnalytics')?.track('plugin_install_click', { input_value: sanitizeInstallInput(spec) })
+     }
+-    // A name the list already shows is refused at once, before the Host is asked.
++    // Installation-owned bundles cannot be removed here. Profile-installed names
++    // still ask the Host, whose current identity check includes disabled packages.
+     const listed = state.packages.find(pkg => pkg.name === spec)
+-    if (listed !== undefined) {
++    if (listed !== undefined && !listed.installed) {
+       this.finishAnalytics('failed', 'already-installed')
+-      this.patchInstall({ phase: 'idle', inputError: { problem: listed.installed ? 'already-installed' : 'shipped', reason: spec } })
++      this.patchInstall({ phase: 'idle', inputError: { problem: 'shipped', reason: spec } })
+       return
+     }
+     const choice = install.registry
+@@ -877,9 +881,10 @@ export class PluginManagerController {
+       return
+     }
+     if (inspected.value.status === 'refused') {
+-      const { problem, reason, registries } = inspected.value
++      const { problem, reason, registries, installRejection } = inspected.value
+       this.finishAnalytics('failed', problem)
+-      this.patchInstall({ phase: 'idle', inputError: { problem, reason, ...registries === undefined ? {} : { registries } } })
++      this.patchInstall({ phase: 'idle', inputError: { problem, reason, ...registries === undefined ? {} : { registries },
++        ...installRejection === undefined ? {} : { installRejection } } })
+       return
+     }
+     await this.startInstall({ spec, ...inspected.value })
+diff --git a/packages/client/ui-plugin-manager/src/client/presentation.ts b/packages/client/ui-plugin-manager/src/client/presentation.ts
+index 33998a49aec53cf62d9c1f74b9e336a088ecdf2e..d6714f157d284bb470cd4d754a09cfa2b4038de8 100644
+--- a/packages/client/ui-plugin-manager/src/client/presentation.ts
++++ b/packages/client/ui-plugin-manager/src/client/presentation.ts
+@@ -57,6 +57,8 @@ const CODE_KEYS = {
+   'bundle-in-use': 'reasonBundleInUse',
+   'stale-approval': 'reasonStaleApproval',
+   'incompatible-version': 'reasonIncompatibleVersionUnnamed',
++  'buildr-conflict': 'reasonBuildrConflict',
++  'package-identity-unverified': 'reasonPackageIdentityUnverified',
+   'operation-error': 'reasonOperationError',
+ } satisfies Record<ManagementError['code'], PluginManagerLocaleKey>
+ 
+@@ -80,9 +82,11 @@ export function managementText(error: {
+   readonly code: ManagementError['code']
+   readonly diagnostic?: string
+   readonly incompatible?: readonly IncompatiblePlugin[]
++  readonly installRejection?: ManagementError['installRejection']
+   /** Set when the refused package is being installed rather than already installed; selects the incompatibility remedy. */
+   readonly installing?: true
+ }, t: Translate): string {
++  if (error.installRejection !== undefined) return installationRejectionText(error.installRejection, t)
+   if (error.code === 'incompatible-version') {
+     const named = error.incompatible ?? []
+     const sentences = named.length === 0
+@@ -97,6 +101,21 @@ export function managementText(error: {
+   return error.diagnostic === undefined || error.diagnostic === '' ? t('reasonOperationError') : error.diagnostic
+ }
+ 
++/** The localized refusal and the exact installed/requested identities the Host checked.
++ * @param rejection The Host's identity refusal.
++ * @param t The current locale's dictionary.
++ * @returns A clear refusal and the identities or sources involved.
++ */
++export function installationRejectionText(rejection: NonNullable<ManagementError['installRejection']>, t: Translate): string {
++  const sentences = [t(CODE_KEYS[rejection.code])]
++  if (rejection.installed.length > 0) sentences.push(t('installedBuildrPackages', { packages: rejection.installed.join(', ') }))
++  if (rejection.requested.length > 0) sentences.push(t('requestedBuildrPackages', { packages: rejection.requested.join(', ') }))
++  if (rejection.unverified.length > 0) sentences.push(t('unverifiedInstallSources', {
++    sources: rejection.unverified.map(item => `${item.spec}: ${item.reason}`).join('; '),
++  }))
++  return sentences.join(' ')
++}
++
+ /**
+  * Compact a package name to what a person calls it.
+  * @param name - the package name.
+diff --git a/packages/client/ui-plugin-manager/tests/components.client.spec.tsx b/packages/client/ui-plugin-manager/tests/components.client.spec.tsx
+index d8f0f51508efdae5f5ec0035828fcc11260e71b3..c6665a021b3cf3e6a6f8776321beaaa7e12703b5 100644
+--- a/packages/client/ui-plugin-manager/tests/components.client.spec.tsx
++++ b/packages/client/ui-plugin-manager/tests/components.client.spec.tsx
+@@ -76,6 +76,37 @@ const READY: PluginManagerState = {
+   highlight: null,
+ }
+ 
++it('shows the original install dialog exclusion with the exact current Buildr identities', () => {
++  const existing = '@buildr-ai/buildr-dsh-development-composition'
++  const requested = '@buildr-ai/buildr-dsh-plugin'
++  const installRejection = { code: 'buildr-conflict' as const, installed: [existing], requested: [requested], unverified: [] }
++  const { set } = renderTab({ install: { ...IDLE_INSTALL, open: true, spec: requested,
++    inputError: { problem: 'buildr-conflict', reason: 'ignored Host diagnostic', installRejection } } })
++  const sentence = [
++    en.reasonBuildrConflict,
++    en.installedBuildrPackages.replace('{packages}', existing),
++    en.requestedBuildrPackages.replace('{packages}', requested),
++  ].join(' ')
++  expect(screen.getByRole('alert').textContent).toBe(sentence)
++  set({ install: { ...IDLE_INSTALL, open: true, spec: requested, phase: 'failed',
++    failure: { code: 'buildr-conflict', reason: '', installRejection } } })
++  expect(screen.getByText(sentence)).toBeTruthy()
++})
++
++it('shows unverified package identity separately from a Buildr conflict in the original dialog', () => {
++  const existing = '@buildr-ai/buildr-dsh-plugin'
++  const spec = 'https://cdn.example.com/addon.tgz'
++  const installRejection = { code: 'package-identity-unverified' as const, installed: [existing], requested: [],
++    unverified: [{ spec, reason: 'remote manifest unavailable' }] }
++  renderTab({ install: { ...IDLE_INSTALL, open: true, spec,
++    inputError: { problem: 'package-identity-unverified', reason: 'Host diagnostic', installRejection } } })
++  expect(screen.getByRole('alert').textContent).toContain(en.reasonPackageIdentityUnverified)
++  expect(screen.getByRole('alert').textContent).toContain(existing)
++  expect(screen.getByRole('alert').textContent).toContain(spec)
++  expect(screen.getByRole('alert').textContent).not.toContain(en.reasonBuildrConflict)
++})
++
++
+ /**
+  * Slot entries a test supplies: what each slot cell renders, by `<slot>:<cell>`
+  * (a list slot's cell is empty), the view asked for — `detail` for a detail
+diff --git a/packages/client/ui-plugin-manager/tests/manager-store.client.spec.ts b/packages/client/ui-plugin-manager/tests/manager-store.client.spec.ts
+index 91a5fc3a8c0db68f9b9ce261dc6518a3811eac81..50ad380651d55c99f93a8d57e6a30115dbe5a6d0 100644
+--- a/packages/client/ui-plugin-manager/tests/manager-store.client.spec.ts
++++ b/packages/client/ui-plugin-manager/tests/manager-store.client.spec.ts
+@@ -112,6 +112,47 @@ it('hands a custom page the shared configuration form of its entry', () => {
+   expect(face.configForm('bundle#row')).toBe('form:bundle#row' as never)
+ })
+ 
++const BUILDR_FAMILY = [
++  '@buildr-ai/buildr-dsh-plugin', '@buildr-ai/buildr-dsh-plugin-dev',
++  '@buildr-ai/buildr-dsh-development-composition', '@buildr-ai/dsh-plugin-dev',
++]
++
++it.each(BUILDR_FAMILY.flatMap(existing => [existing, `${existing}@2.0.0`, '@buildr-ai/buildr-dsh-plugin@next']
++  .map(spec => ({ existing, spec }))))('asks the Host for $spec with disabled $existing listed and retains the specific exclusion', async ({ existing, spec }) => {
++  const installRejection = { code: 'buildr-conflict' as const, installed: [existing], requested: [existing], unverified: [] }
++  const { plugins, face, state, controller } = bench({
++    listBundles: vi.fn(async () => ok([{ ...BUNDLE, name: existing, enabled: false }])),
++    inspect: vi.fn(async () => ok({ status: 'refused', problem: 'buildr-conflict', reason: 'Host diagnostic', installRejection })),
++  })
++  await controller.load()
++  face.openInstall()
++  face.editInstallSpec(spec)
++  face.runInstall()
++  await vi.waitFor(() => { expect(state().install.inputError?.problem).toBe('buildr-conflict') })
++  expect(plugins.inspect).toHaveBeenCalledWith(spec, { registry: null }, expect.any(AbortSignal))
++  expect(state().install.inputError?.installRejection).toEqual(installRejection)
++  expect(plugins.installBundle).not.toHaveBeenCalled()
++  expect(plugins.setBundleEnabled).not.toHaveBeenCalled()
++})
++
++it('keeps a fresh locked refusal with the installed identity after an accepted page inspection', async () => {
++  const installRejection = { code: 'buildr-conflict' as const, installed: [BUILDR_FAMILY[2]!], requested: [BUILDR_FAMILY[0]!], unverified: [] }
++  const { plugins, face, state, controller } = bench({
++    installBundle: vi.fn(async () => ok({
++      changed: false, application: 'failed', stage: 'install', target: BUILDR_FAMILY[0],
++      error: { code: 'buildr-conflict', installRejection },
++    })),
++  })
++  await controller.load()
++  face.openInstall()
++  face.editInstallSpec(BUILDR_FAMILY[0]!)
++  face.runInstall()
++  await vi.waitFor(() => { expect(state().install.phase).toBe('failed') })
++  expect(state().install.failure).toEqual({ reason: '', code: 'buildr-conflict', installRejection })
++  expect(plugins.setBundleEnabled).not.toHaveBeenCalled()
++})
++
++
+ describe('packageView', () => {
+   it('joins a bundle with the entries its rows run as', () => {
+     expect(packageView(BUNDLE, PLUGINS)).toEqual({
+@@ -636,11 +677,12 @@ describe('PluginManagerController', () => {
+     expect(state().install.open).toBe(false)
+   })
+ 
+-  it('refuses a spec the list already shows without asking the Host, and words what the Host refused', async () => {
++  it('asks the Host for an installed name, keeps shipped bundles local, and words what the Host refused', async () => {
+     const shipped: BundleInfo = { ...BUNDLE, name: '@deepseek-ai/dsh-official', installed: false, optional: true, removable: false }
+     const { plugins, face, state, controller } = bench({
+       listBundles: vi.fn(() => Promise.resolve(ok([BUNDLE, shipped]))),
+       inspect: vi.fn()
++        .mockResolvedValueOnce(ok({ status: 'refused', problem: 'already-installed', reason: BUNDLE.name }))
+         .mockResolvedValueOnce(ok({ status: 'refused', problem: 'not-found', reason: 'E404', registries: [null, MIRROR] }))
+         .mockResolvedValueOnce(ok({ status: 'refused', problem: 'not-a-bundle', reason: 'plain declares no dsh.bundle' }))
+         .mockResolvedValueOnce(refused('gateway/internal', 'offline')),
+@@ -649,7 +691,8 @@ describe('PluginManagerController', () => {
+     face.openInstall()
+     face.editInstallSpec(BUNDLE.name)
+     face.runInstall()
+-    expect(plugins.inspect).not.toHaveBeenCalled()
++    await vi.waitFor(() => { expect(state().install.inputError?.problem).toBe('already-installed') })
++    expect(plugins.inspect).toHaveBeenCalledTimes(1)
+     expect(state().install).toMatchObject({ phase: 'idle', inputError: { problem: 'already-installed', reason: BUNDLE.name } })
+     // A bundle the installation supplies upgrades with DSH instead.
+     face.editInstallSpec(shipped.name)
+diff --git a/packages/client/ui-settings-agent-loop/tests/apply.client.spec.ts b/packages/client/ui-settings-agent-loop/tests/apply.client.spec.ts
+index 22712bf19fa44a17a399a076e6539c4c813f50e3..3f1198f3e7c53e5529318dcdf8877a3bb9d78970 100644
+--- a/packages/client/ui-settings-agent-loop/tests/apply.client.spec.ts
++++ b/packages/client/ui-settings-agent-loop/tests/apply.client.spec.ts
+@@ -120,7 +120,12 @@ describe('ui-settings-agent-loop apply', () => {
+         namespaces: names.map(ns => view(ns, revision, configs.get(ns)?.maxParallelToolCalls)) } })
+       remote.emit('settings/document-updated', [names[0] ?? 'agent-loop', revision])
+     }
+-    const face = (): AgentLoopCardFace => slots.entries('plugins.item')[0]!.inject!() as AgentLoopCardFace
++    const face = (): AgentLoopCardFace => {
++      const entry = slots.entries('plugins.item')[0]
++      if (entry?.inject === undefined) throw new Error('missing agent-loop card injection')
++      const injectFace = entry.inject as () => Pick<AgentLoopCardFace, keyof AgentLoopCardFace>
++      return injectFace()
++    }
+     const fiber = ctx.plugin({ inject: [...inject], apply })
+     await fiber.await(); publish(['agent-loop'], 3)
+     await vi.waitFor(() => { expect(face().hooks.agentLoopCard.getSnapshot().maxParallelToolCalls.text).toBe('10') })
+diff --git a/packages/client/ui-trajectory/tests/conversation-definitions.client.spec.ts b/packages/client/ui-trajectory/tests/conversation-definitions.client.spec.ts
+index 4e3a9935047f63d58dd04b07e26ab33d22449973..37fb83e2f442c8b2e88991a14ffccc0c430d9ff2 100644
+--- a/packages/client/ui-trajectory/tests/conversation-definitions.client.spec.ts
++++ b/packages/client/ui-trajectory/tests/conversation-definitions.client.spec.ts
+@@ -1069,7 +1069,10 @@ it('carries persisted source facts through the actual Host history page and live
+   await ctx.plugin(SessionStore)
+   await ctx.plugin(AgentRegistry)
+   installSessionReadTestServices(ctx)
+-  const session = ctx.sessions.create(undefined, { meta: { cwd: '/captured-workspace' } })
++  const registered = ctx.get('sessions')
++  if (!(registered instanceof SessionStore)) throw new Error('Expected the real Host Session Store')
++  const store: SessionStore = registered
++  const session = store.create(undefined, { meta: { cwd: '/captured-workspace' } })
+   const prefix = 'Original event prefix\n', methodBody = 'Actual injected Buildr method'
+   const method = { schemaVersion: 'dsh.event-sources/v1' as const, status: 'confirmed' as const, matches: [{ providedBy: 'buildr', kind: 'rule' as const, identity: 'buildr:rule:journal', name: 'Journal rule', action: 'load' as const, evidence: [{ authority: 'producer', identity: 'receipt' }], completeness: 'partial' as const, contentRefs: [{ block: 0, start: prefix.length, end: prefix.length + methodBody.length, unit: 'utf16' as const }] }] }
+   const capability = { ...method, execution: { outcome: 'failed' as const, exitCode: 9 }, matches: [{ ...method.matches[0]!, kind: 'capability' as const, identity: 'buildr:cli:journal', name: 'Journal CLI', action: 'call' as const, completeness: 'none' as const, contentRefs: [] }] }
+diff --git a/packages/client/ui-trajectory/tests/views.client.spec.tsx b/packages/client/ui-trajectory/tests/views.client.spec.tsx
+index ad20b0db6cb827b75999a8e51e4bb3d038197446..4c8bdeb240e710703b87627056af048cba4dad1e 100644
+--- a/packages/client/ui-trajectory/tests/views.client.spec.tsx
++++ b/packages/client/ui-trajectory/tests/views.client.spec.tsx
+@@ -32,7 +32,7 @@ import type {
+ } from '@deepseek-ai/dsh-api-session-controller/client'
+ import type { WorkspaceSnapshot } from '@deepseek-ai/dsh-api-workspace-controller/client'
+ import type { SessionId } from '@deepseek-ai/dsh-session/types'
+-import type { SessionStatusSnapshot } from '@deepseek-ai/dsh-client-ui-session/client'
++import type { SessionSourceDescriptor, SessionStatusSnapshot } from '@deepseek-ai/dsh-client-ui-session/client'
+ import {
+   ConversationSession, ConversationSessionHeader,
+   type ConversationSessionHeaderProps, type ConversationSessionProps,
+@@ -301,7 +301,9 @@ async function bench(snapshot = historySnapshot(NODES)) {
+   await runtime.mount(localePlugin)
+   const provide = vi.spyOn(ctx.uiSession, 'provide')
+   const feature = await runtime.mount({ inject: [...inject], apply })
+-  const sourceDescriptor = provide.mock.calls[0]?.[0]
++  const observedDescriptor = provide.mock.calls[0]?.[0]
++  expect(observedDescriptor?.hooks).toEqual(['trajectory'])
++  const sourceDescriptor: Pick<SessionSourceDescriptor<readonly ['trajectory']>, 'resolve'> | undefined = observedDescriptor
+   if (sourceDescriptor === undefined) throw new Error('ui-trajectory did not provide its standard source')
+   return {
+     runtime, ctx, slots, feature, loadOlder, trajectoryStore, conversationStore,
+@@ -431,7 +433,11 @@ function mount(fixture: Awaited<ReturnType<typeof bench>>) {
+ describe('plugin registration', () => {
+   it('publishes one stable JSON record list for the loaded Session window', async () => {
+     const b = await bench()
+-    const source = b.sourceDescriptor.resolve(b.reference.binding).hooks.trajectory as
++    const contribution = b.sourceDescriptor.resolve(b.reference.binding)
++    if (contribution === undefined) throw new Error('missing trajectory standard source')
++    const hooks = contribution.hooks
++    if (hooks === undefined) throw new Error('missing trajectory standard source hooks')
++    const source = hooks.trajectory as
+       ObservableSnapshot<TrajectorySnapshot>
+     const first = source.getSnapshot()
+     expect(source.getSnapshot()).toBe(first)
+diff --git a/packages/extensions/tool-cordis/src/api-catalog.ts b/packages/extensions/tool-cordis/src/api-catalog.ts
+index 181822fd4b64c2543c4e30fc011020f69bdfcb8d..cb663f720b1da956d157aad2082a7e05379eab6d 100644
+--- a/packages/extensions/tool-cordis/src/api-catalog.ts
++++ b/packages/extensions/tool-cordis/src/api-catalog.ts
+@@ -4719,6 +4719,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
+     name: 'BrowserUseProviderName',
+     declaration: 'export type BrowserUseProviderName = Branded<\'BrowserUseProviderName\'>;',
+   },
++  {
++    name: 'BuildrInstallRejection',
++    declaration: 'export interface BuildrInstallRejection {\n    code: \'buildr-conflict\' | \'package-identity-unverified\';\n    installed: string[];\n    requested: string[];\n    unverified: {\n        spec: string;\n        reason: string;\n    }[];\n}',
++  },
+   {
+     name: 'BundleInfo',
+     declaration: 'export interface BundleInfo {\n    name: string;\n    version?: string;\n    meta?: PluginLocalizedMeta;\n    description?: string;\n    enabled: boolean;\n    installed: boolean;\n    optional: boolean;\n    removable: boolean;\n    readOnlyReason?: ReadOnlyReason;\n    error?: ManagementError;\n    rows: BundleRowInfo[];\n    overrides: string[];\n}',
+@@ -5737,7 +5741,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
+   },
+   {
+     name: 'ManagementError',
+-    declaration: 'export interface ManagementError {\n    code: ReadOnlyReason | \'unknown-plugin\' | \'invalid-spec\' | \'ambiguous-install\' | \'not-bundle\' | \'not-removable\' | \'stop-profile\' | \'bundle-in-use\' | \'stale-approval\' | \'incompatible-version\' | \'operation-error\';\n    diagnostic?: string;\n    incompatible?: IncompatiblePlugin[];\n}',
++    declaration: 'export interface ManagementError {\n    code: ReadOnlyReason | BuildrInstallRejection[\'code\'] | \'unknown-plugin\' | \'invalid-spec\' | \'ambiguous-install\' | \'not-bundle\' | \'not-removable\' | \'stop-profile\' | \'bundle-in-use\' | \'stale-approval\' | \'incompatible-version\' | \'operation-error\';\n    diagnostic?: string;\n    incompatible?: IncompatiblePlugin[];\n    installRejection?: BuildrInstallRejection;\n}',
+   },
+   {
+     name: 'ManualCompactAgentContext',
+@@ -5945,7 +5949,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
+   },
+   {
+     name: 'PackageResult',
+-    declaration: 'export interface PackageResult {\n    exitCode: number;\n    output: string;\n    truncated: boolean;\n    logPath: string;\n    kind?: PluginInstallFailureKind;\n    timedOut?: boolean;\n    incompatible?: IncompatiblePlugin[];\n}',
++    declaration: 'export interface PackageResult {\n    exitCode: number;\n    output: string;\n    truncated: boolean;\n    logPath: string;\n    kind?: PluginInstallFailureKind;\n    timedOut?: boolean;\n    incompatible?: IncompatiblePlugin[];\n    installRejection?: BuildrInstallRejection;\n}',
+   },
+   {
+     name: 'PeerAdmission',
+@@ -5985,7 +5989,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
+   },
+   {
+     name: 'PluginInspectProblem',
+-    declaration: 'export type PluginInspectProblem = \'invalid-spec\' | \'already-installed\' | \'not-found\' | \'not-a-package\' | \'not-a-bundle\' | \'network\' | \'unknown\';',
++    declaration: 'export type PluginInspectProblem = BuildrInstallRejection[\'code\'] | \'invalid-spec\' | \'already-installed\' | \'not-found\' | \'not-a-package\' | \'not-a-bundle\' | \'network\' | \'unknown\';',
+   },
+   {
+     name: 'PluginInstallCancellation',
+@@ -6021,7 +6025,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
+   },
+   {
+     name: 'PluginSpecInspection',
+-    declaration: 'export type PluginSpecInspection = {\n    readonly status: \'accepted\';\n    readonly kind: InstallSpecKind;\n    readonly name?: string;\n    readonly version?: string;\n    readonly description?: string;\n    readonly bundle: boolean | null;\n    readonly registry: Registry;\n    readonly host?: string;\n} | {\n    readonly status: \'refused\';\n    readonly problem: PluginInspectProblem;\n    readonly reason: string;\n    readonly registries?: Registry[];\n};',
++    declaration: 'export type PluginSpecInspection = {\n    readonly status: \'accepted\';\n    readonly kind: InstallSpecKind;\n    readonly name?: string;\n    readonly version?: string;\n    readonly description?: string;\n    readonly bundle: boolean | null;\n    readonly registry: Registry;\n    readonly host?: string;\n} | {\n    readonly status: \'refused\';\n    readonly problem: PluginInspectProblem;\n    readonly reason: string;\n    readonly installRejection?: BuildrInstallRejection;\n    readonly registries?: Registry[];\n};',
+   },
+   {
+     name: 'PostToolDecision',
+diff --git a/packages/fs/tool-fs/tests/tools.spec.ts b/packages/fs/tool-fs/tests/tools.spec.ts
+index c64d08181dc1329939b62c655468061fcf80d320..ed44f3c3bffa34ecab71ef56b5d9d1772b63ae4f 100644
+--- a/packages/fs/tool-fs/tests/tools.spec.ts
++++ b/packages/fs/tool-fs/tests/tools.spec.ts
+@@ -1129,7 +1129,7 @@ it.each(['not-found', 'stat', 'read', 'resolve'] as const)('captures only a reso
+   const { ctx, fs } = await setup()
+   try {
+     fs.files.set('key:/attempted.md', 'private contents')
+-    const nativeError = new FsError('original provider failure', 'FS_READ_FAILED')
++    const nativeError = new FsError('original provider failure', 'FS_IO_ERROR')
+     if (failure === 'not-found') fs.files.delete('key:/attempted.md')
+     else vi.spyOn(fs, failure === 'resolve' ? 'resolve' : failure === 'stat' ? 'stat' : 'readText').mockRejectedValue(nativeError)
+     const captures: EventSourceHint[] = []
+diff --git a/packages/schedule/schedule/tests/tools.spec.ts b/packages/schedule/schedule/tests/tools.spec.ts
+index ac37566c3e5f327beb0cbbc25ea4cab738bba38b..da9699870d583a053adb96e780797ec47e411179 100644
+--- a/packages/schedule/schedule/tests/tools.spec.ts
++++ b/packages/schedule/schedule/tests/tools.spec.ts
+@@ -34,6 +34,7 @@ async function executeBody(test: Awaited<ReturnType<typeof setup>>, name: string
+   return await definition.execute(args, {
+     callId: ToolCallId('body-call'), rootCallId: ToolCallId('body-call'), token: Symbol('test-body') as ToolExecutionToken,
+     name, arguments: args, agent: test.agent, signal, deferContext() {}, concludeTurn() {},
++    async captureSource() {}, recordSourceOutcome() {},
+   })
+ }
+ 
+diff --git a/tsconfig.client.json b/tsconfig.client.json
+index 738ed0c5b48aba398e4ffc251db5beb413eefa7d..74ac45d287eebd0cf1741b114fc6dcddabfd074f 100644
+--- a/tsconfig.client.json
++++ b/tsconfig.client.json
+@@ -34,6 +34,8 @@
+     "packages/*/*/tests/**/*.client.spec.tsx",
+     "packages/*/*/tests/**/*.client.tsx",
+     "packages/*/*/tests/**/*.client.ts",
++    // The trajectory wire-boundary regression mounts the real Host history using this existing fixture.
++    "packages/api/session-controller/tests/test-remote.ts",
+     // Client package outside packages/client with a local CSS module face.
+     "packages/extensions/ui-cordis/src/css-modules.d.ts",
+     "packages/client/tsdown.client.ts",

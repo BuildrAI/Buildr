@@ -39,6 +39,16 @@ node tools/build-development-composition.ts --source-sdk <prepared-v2-sdk> --ent
 
 这 95 个事件经同一主机端（Host）的原查询、原事件读取、持久读取及两个只读句柄重开保持一致，12 项检查通过，原历史来源、模型／请求及工具元数据（Metadata）保全。实际技能加载的原事件正文已可见，技能文件正文读取样本仍为零。原调用跳转、来源列及详情、两条能力过滤、关闭后全宽／回焦与搜索保留、清搜索不重开已在原生界面（Native UI）验证。该证明没有释放智能体（Agent）或重启 Host；整应用冷启动后的这 95 个事件前缀仍待核验，不能借此前配置冷启动通过替代。 证据见[95 事件元数据回执](<../build/capture-session-observed-0104a5f0-8c02-41c0-afcd-8e71c560dd77.json>)及[当前原生验证](<../build/capture-source-native-current-before-cold.json>)；历次配置互操作失败、版本恢复和较早受限样本保留在[实施索引](<../../../openspec/changes/archive/2026-10-05-add-dsh-buildr-provenance/implementation-progress.md>)。
 
+## Buildr 插件安装检查
+
+[安装互斥增量补丁](<dsh-v0.2.0-rc.2-buildr-install-exclusion.patch>)与[逐文件清单](<dsh-v0.2.0-rc.2-buildr-install-exclusion.json>)基于精确上游 `639ed015397290b3745d163aafe02ffee4aa3f84`，在已交付的 106 文件 `dsh-v0.2.0-rc.2-event-sources-settings.patch` 之后应用。旧来源补丁与软件开发工具包（SDK）保持原字节；新的 `buildr.dsh-installation-patch/v1` 是原安装器（Installer）的独立输入，不能交给生产者软件开发工具包（SDK）准备器冒充受支持来源范围，也不打包进 Buildr 插件（Plugin）。
+
+新补丁修改 DSH 原 `PluginManager.inspect`、共用包操作、安装页和中英文提示；主机端（Host）、客户端（Client）、桌面主程序与命令行（CLI）必须从同一完整源码构建。准备时逐文件验证 `baseSha256`，应用后验证 `patchedSha256`；源码目录位于另一代码库（Repository）内部时，必须先确认补丁工具操作的是独立 DSH 根，不能把返回码 0 当成补丁全部应用。完整原构建、原页面与候选命令行（CLI）验证仍须分别证明，不以内存替身、插件激活失败或局部检查替代。
+
+检查针对四个真实 Buildr 包身份，停用仍算已安装；原页面提示先卸载，安装执行在写锁内复查。实际安装目标必须是持锁的配置档（Profile）；不能通过另一个目录或工作区范围参数绕过检查。已识别的无关包保持原行为，本地压缩包只有限读取清单，不解包或执行；无法可靠判断身份则给出可说明的失败。不会自动切换版本或恢复开发组合改写的预设（Preset）引用。
+
+本轮候选的完整构建、原安装页及候选命令行（CLI）验证已完成：正式版启用／停用均拒绝开发版，卸载后开发版正常安装并启用，反向安装正式版也被拒绝；拒绝保持原安装配置。独立候选已退出，日常 DSH 已恢复，尚未替换、公开发布或纳入 Buildr 插件（Plugin）发布输入。长期验证入口见[当前任务](<../../../openspec/changes/add-dsh-buildr-install-exclusion/brief.md>)；本机候选与失败日志保全在服务 `build/`，不可作为其他检出位置的可用输入。
+
 ## 历史阶段：v10 当前关联与现有显示补丁
 
 最新用户确认要求来源列、原详情与 Buildr 标签使用同一来源标记（Source Marker），标签只过滤已确认标记的原记录；自身方法仅 `providedBy=buildr`，不把 `managedBy` 用户方法／资料或未知候选放入主列表。原事件正文与调用结果继续由 DSH 承载，当前对象关联明确历史未确认。这些业务及协议修正在独立插件（Plugin）与公开来源能力实施，当前补丁只证明已有正式接线，旧 SDK 或 v9 安装不证明新业务语义。
