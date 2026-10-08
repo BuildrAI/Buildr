@@ -20,6 +20,10 @@ function printHumanInstance(instance: any) {
   console.log(`current instance: status=${humanValue(instance?.status)} readiness=${humanValue(instance?.observation?.health)} pid=${humanValue(identity?.pid)} url=${humanValue(identity?.url)}`);
   console.log(`  identity: channel=${humanValue(identity?.channel)} Buildr=${humanValue(identity?.version)} protocol=${humanValue(identity?.protocolIdentity)} payload=${humanValue(identity?.applicationPayloadDigest)} ownership=${humanValue(identity?.ownershipIdentity)}`);
   console.log(`  runtime: role=${humanValue(identity?.runtimeRole || runtime?.role)} Node=${humanValue(runtime?.version)} executable=${humanValue(runtime?.executable)} identity=${humanValue(runtime?.identity)}`);
+  if (Object.hasOwn(instance, 'matchesCurrentInstallation')) {
+    console.log(`  开发来源匹配：${instance.matchesCurrentInstallation === true ? '匹配' : instance.matchesCurrentInstallation === false ? '不匹配' : '无法证明'}`);
+    if (instance.installationMatchReason) console.log(`  ${instance.installationMatchReason}`);
+  }
 }
 
 async function runInstallationStatus(application: any, args: string[]) {

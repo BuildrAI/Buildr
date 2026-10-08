@@ -6,6 +6,7 @@ import type http from 'node:http';
 
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../infrastructure/contracts/public-json.ts';
 import { assertLauncherWebProfile, resolveWebProfile, sameWebProfile } from '../../modules/installation/contracts/web-profile.ts';
+import { developmentInstanceMatchesInstallation } from '../../modules/installation/module.ts';
 import {
   clearBuildrWebInstance,
   acquireBuildrWebStartLock,
@@ -183,6 +184,12 @@ export function registerWebInstanceLifecycle(runtime: WebRuntime, options: WebLi
       const launcherProtocol = launcherIdentity?.protocolIdentity || (launcherIdentity?.protocolVersion ? `buildr.web-protocol/v${launcherIdentity.protocolVersion}` : null);
       const healthyLauncherProtocol = healthy.launcherIdentity?.protocolIdentity || (healthy.launcherIdentity?.protocolVersion ? `buildr.web-protocol/v${healthy.launcherIdentity.protocolVersion}` : null);
       if (launcherProtocol && healthyLauncherProtocol && launcherProtocol !== healthyLauncherProtocol) throw new Error(`已运行 Buildr Web protocol ${healthyLauncherProtocol} 与当前 Launcher ${launcherProtocol} 不兼容，请先退出旧实例。`);
+      if (webProfile.profile === 'development' && developmentInstanceMatchesInstallation(productIdentity, healthy.productIdentity) !== true) {
+        throw codedError('正在运行的 Buildr 开发版与当前来源不同，或旧记录缺少来源证明；请通过现有 Buildr 入口正常退出旧实例，再重新启动。', 'web_instance_development_source_conflict', 409, {
+          expectedInstallationIdentity: productIdentity.installationIdentity || null,
+          runningInstallationIdentity: healthy.productIdentity?.installationIdentity || null,
+        });
+      }
       return healthy;
     };
 

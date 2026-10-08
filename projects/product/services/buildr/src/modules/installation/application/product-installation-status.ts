@@ -8,6 +8,7 @@ import {
   readCurrentInstallationOrigin,
   runtimeIdentityForOrigin,
 } from '../infrastructure/installation-origin.ts';
+import { developmentInstanceMatchesInstallation } from '../infrastructure/current-product-identity.ts';
 import { registeredProductInstallations } from '../infrastructure/installation-registry.ts';
 import { sameFilesystemPath } from '../../../infrastructure/filesystem/filesystem-path-identity.ts';
 import { buildrWebDataRoot, parseWorkspaceManifest, readWorkspaceRegistryFile } from '../../workspace/module.ts';
@@ -64,11 +65,28 @@ function developmentLauncherIdentity(options: any = {}) {
     return { channel: 'development', status: 'invalid', location: file, identity: null, runtime: null, reason: 'development launcher ownership identity is invalid' };
   }
   const developmentRuntime = identity.developmentRuntime || identity.nodeRuntime || null;
+  let source: any = null;
+  try {
+    if (typeof identity.sourceRoot === 'string' && path.isAbsolute(identity.sourceRoot)) {
+      // The Launcher points to a checkout; its build-time HEAD is historical evidence. Query the
+      // current checkout through the same origin reader as the development CLI. An npm caller's
+      // explicit installation receipt must never be applied to that other source root.
+      source = readCurrentInstallationOrigin(identity.sourceRoot, {
+        includeWorkingTree: false, env: { BUILDR_INSTALLATION_IDENTITY: '' },
+      });
+    }
+  } catch { /* an unreadable checkout cannot prove a current development origin */ }
+  const sourceReady = source?.channel === 'development';
   return {
     channel: 'development',
     status: 'installed',
     location: file,
-    identity: {
+    identity: sourceReady ? source : {
+      channel: 'unknown', sourceRoot: identity.sourceRoot || null,
+      version: null, protocolIdentity: null, applicationPayloadDigest: null,
+      ownershipIdentity: null, sourceCommit: null,
+    },
+    launcherIdentity: {
       version: identity.version || null,
       protocolIdentity: identity.protocolIdentity || (identity.protocolVersion ? `buildr.web-protocol/v${identity.protocolVersion}` : null),
       applicationPayloadDigest: identity.applicationPayloadDigest || null,
@@ -77,7 +95,7 @@ function developmentLauncherIdentity(options: any = {}) {
       sourceCommit: identity.checkout?.head || null,
     },
     runtime: developmentRuntime ? { role: 'development', version: developmentRuntime.version || null, executable: developmentRuntime.executable || null, identity: developmentRuntime.identity || null } : null,
-    reason: null,
+    reason: sourceReady ? null : `当前登记的开发来源无法证明：${source?.blockingReasons?.join('; ') || '来源目录不可读取或不是有效的 Buildr 开发源码。'}`,
   };
 }
 
@@ -224,6 +242,21 @@ function annotateInstanceVersion(instance: any, npm: any, registered: any) {
   };
 }
 
+function annotateDevelopmentInstanceSource(instance: any, development: any) {
+  if (!instance || instance.status !== 'ready') return instance;
+  const matchesCurrentInstallation = developmentInstanceMatchesInstallation(development?.identity, instance.identity);
+  const sourceUnavailable = development?.identity?.channel !== 'development';
+  return {
+    ...instance,
+    matchesCurrentInstallation,
+    installationMatchReason: sourceUnavailable
+      ? '当前登记的开发来源无法读取或核验；请先恢复已登记源码目录或更新开发入口，再重新查询。'
+      : matchesCurrentInstallation === true ? null : matchesCurrentInstallation === false
+      ? '正在运行的 Buildr 开发版不属于当前来源；请通过现有 Buildr 入口正常退出旧实例，再重新启动。'
+      : '现有开发记录缺少可比较的来源证明；请通过现有 Buildr 入口正常退出旧实例，再重新启动并更新接入。',
+  };
+}
+
 function observeCurrentInstance(options: any = {}) {
   const file = path.resolve(options.instanceFile || path.join(options.dataRoot || buildrWebDataRoot(), 'instance.json'));
   if (!fs.existsSync(file)) return { receipt: null, result: { status: 'absent', identity: null, observation: { file, pidAlive: false, endpoint: 'absent', health: 'not-probed' } } };
@@ -238,19 +271,22 @@ function observeCurrentInstance(options: any = {}) {
   const pidAlive = instancePidAlive(value.pid, options.pidProbe);
   const launcher = value.launcherIdentity || null;
   const product = value.productIdentity || null;
+  const developmentProduct = product?.channel === 'development';
   return { receipt: value, endpoint, result: {
     status: pidAlive ? 'live-unverified' : 'stale',
     identity: {
       pid: value.pid,
       url: endpoint,
       channel: launcher?.channel || product?.channel || 'unknown',
-      version: launcher?.version || product?.version || null,
-      protocolIdentity: launcher?.protocolIdentity || (launcher?.protocolVersion ? `buildr.web-protocol/v${launcher.protocolVersion}` : null) || product?.protocolIdentity || null,
+      version: developmentProduct ? product.version || null : launcher?.version || product?.version || null,
+      protocolIdentity: developmentProduct ? product.protocolIdentity || null : launcher?.protocolIdentity || (launcher?.protocolVersion ? `buildr.web-protocol/v${launcher.protocolVersion}` : null) || product?.protocolIdentity || null,
       applicationPayloadDigest: launcher?.applicationPayloadDigest || product?.applicationPayloadDigest || null,
       runtimeRole: launcher?.runtimeRole || product?.runtime?.role || 'unknown',
       ownershipIdentity: launcher?.ownershipIdentity || product?.installationIdentity || null,
       installationSlotIdentity: launcher?.installationSlotIdentity || null,
       installationIdentity: product?.installationIdentity || null,
+      sourceCommit: product?.sourceCommit || null,
+      sourceRoot: product?.sourceRoot || launcher?.sourceRoot || null,
       runtime: product?.runtime || null,
       webProfile: value.webProfile || null,
     },
@@ -400,7 +436,9 @@ export async function buildInstallationStatusInventory(productRoot: any, options
   const npmChannel = inventory.channels.npm;
   const annotate = (instance: any, profile: any) => {
     const annotated = annotateInstanceProfile(instance, profile);
-    return profile === 'released' ? annotateInstanceVersion(annotated, npmChannel, registered) : annotated;
+    return profile === 'released'
+      ? annotateInstanceVersion(annotated, npmChannel, registered)
+      : annotateDevelopmentInstanceSource(annotated, inventory.channels.development);
   };
   const instances: Record<string, any> = {
     released: annotate(await inspectCurrentInstanceReadiness({
@@ -427,7 +465,9 @@ export async function buildInstallationStatusInventory(productRoot: any, options
     });
     currentInstance = observed?.identity?.channel === 'npm'
       ? annotateInstanceVersion(observed, npmChannel, registered)
-      : observed;
+      : observed?.identity?.channel === 'development'
+        ? annotateDevelopmentInstanceSource(observed, inventory.channels.development)
+        : observed;
   } else {
     const profile = inventory.currentInstallation.channel === 'npm' ? 'released' : inventory.currentInstallation.channel === 'development' ? 'development' : null;
     currentInstance = profile ? instances[profile] : inventory.currentInstance;

@@ -8,6 +8,24 @@ import {
 } from '../../../infrastructure/product-resources/index.ts';
 import { readCurrentInstallationOrigin, runtimeIdentityForOrigin } from './installation-origin.ts';
 
+/** Compare source origins, never launcher build IDs or the querying process's Node runtime. */
+export function developmentInstanceMatchesInstallation(expected: any, running: any): boolean | null {
+  const expectedOwnership = expected?.installationIdentity ?? expected?.ownershipIdentity;
+  const runningOwnership = running?.installationIdentity;
+  const validOwnership = (value: any) => typeof value === 'string' && /^sha256-[a-f0-9]{64}$/.test(value);
+  const validCommit = (value: any) => typeof value === 'string' && /^[a-f0-9]{40}$/.test(value);
+  if (expected?.channel !== 'development' || running?.channel !== 'development'
+      || !validOwnership(expectedOwnership) || !validOwnership(runningOwnership)
+      || !validCommit(expected.sourceCommit) || !validCommit(running.sourceCommit)
+      || !expected.version || !running.version || !expected.protocolIdentity || !running.protocolIdentity) return null;
+  // The origin ownership digest already binds the canonical source root, commit, version and
+  // protocol. Older products with that digest still prove their root without a separate field.
+  return expectedOwnership === runningOwnership
+    && expected.sourceCommit === running.sourceCommit
+    && expected.version === running.version
+    && expected.protocolIdentity === running.protocolIdentity;
+}
+
 export function readCurrentProductIdentity() {
   const productRoot = resolveProductRoot();
   const metadata = JSON.parse(fs.readFileSync(path.join(productRoot, 'package.json'), 'utf8'));
@@ -25,6 +43,7 @@ export function readCurrentProductIdentity() {
     channel: origin.channel,
     runtime,
     installationIdentity: origin.ownershipIdentity,
-    sourceCommit: formal ? origin.sourceCommit : payload?.sourceCommit || origin.sourceCommit,
+    sourceCommit: origin.channel === 'development' || formal ? origin.sourceCommit : payload?.sourceCommit || origin.sourceCommit,
+    ...(origin.channel === 'development' ? { sourceRoot: origin.sourceRoot || origin.installUnit } : {}),
   });
 }

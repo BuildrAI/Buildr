@@ -1,6 +1,6 @@
 import { registerProductInstallationStatus } from '../../src/modules/installation/application/product-installation-status.ts';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -11,7 +11,7 @@ import {
   inspectCurrentInstance,
   inspectCurrentInstanceReadiness,
 } from '../../src/modules/installation/application/product-installation-status.ts';
-import { createInstallationOrigin } from '../../src/modules/installation/infrastructure/installation-origin.ts';
+import { createInstallationOrigin, readCurrentInstallationOrigin } from '../../src/modules/installation/infrastructure/installation-origin.ts';
 import { canonicalApplicationPayloadIdentity } from '../../src/infrastructure/product-resources/index.ts';
 import {
   acquireExclusiveFileLock,
@@ -764,4 +764,142 @@ test('installation status 对外来实例与匹配实例分别保持 ready 判�
   });
   assert.equal(matchedResult.instances.released.status, 'ready');
   assert.equal(matchedResult.instances.released.identity.version, slot.newerEntry.origin.version);
+});
+
+test('development status separates health from current source, commit, and legacy identity proof', async (t: any) => {
+  const root = temporary(t);
+  const sourceGitRoot = path.join(root, 'source');
+  const sourceDirectory = path.join(sourceGitRoot, 'projects', 'product', 'services', 'buildr');
+  fs.mkdirSync(sourceDirectory, { recursive: true });
+  fs.writeFileSync(path.join(sourceDirectory, 'package.json'), '{"name":"@buildr-ai/buildr","version":"1.2.3"}\n');
+  const gitSource = (args: string[]) => {
+    const result = spawnSync('git', ['-C', sourceGitRoot, ...args], { encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    return result.stdout.trim();
+  };
+  gitSource(['init', '-q']);
+  gitSource(['config', 'user.name', 'Buildr Fixture']);
+  gitSource(['config', 'user.email', 'fixture@buildr.invalid']);
+  gitSource(['add', '.']);
+  gitSource(['commit', '-qm', 'initial development source']);
+  const sourceOptions = { includeWorkingTree: false, env: { BUILDR_INSTALLATION_IDENTITY: '' } };
+  const currentOrigin = readCurrentInstallationOrigin(sourceDirectory, sourceOptions);
+  assert.equal(currentOrigin.channel, 'development');
+  const sourceRoot = currentOrigin.sourceRoot;
+  const sourceCommit = currentOrigin.sourceCommit;
+  const launcherRoot = path.join(root, 'development-launcher');
+  const launcherFile = process.platform === 'darwin'
+    ? path.join(launcherRoot, 'Contents', 'Resources', 'launcher-identity.json')
+    : path.join(launcherRoot, 'launcher-identity.json');
+  fs.mkdirSync(path.dirname(launcherFile), { recursive: true });
+  fs.writeFileSync(launcherFile, JSON.stringify({
+    schemaVersion: 'buildr.launcher-identity/v1', channel: 'development',
+    version: currentOrigin.version, protocolIdentity: currentOrigin.protocolIdentity,
+    sourceRoot, checkout: { head: sourceCommit }, buildId: 'current-launcher-build',
+  }));
+  const developmentRoot = path.join(root, 'development');
+  const instanceFile = path.join(developmentRoot, 'instance.json');
+  fs.mkdirSync(developmentRoot, { recursive: true });
+  const npmFixture = installationFixture(path.join(root, 'npm-query'), 'npm');
+  const productRoot = npmFixture.productRoot;
+  const matchedProduct: any = {
+    channel: 'development', package: '@buildr-ai/buildr', version: currentOrigin.version,
+    protocolIdentity: currentOrigin.protocolIdentity, applicationPayloadDigest: null,
+    installationIdentity: currentOrigin.ownershipIdentity, sourceCommit,
+    runtime: { role: 'development', identity: 'running-node' },
+  };
+  for (const [name, productInput, match] of [
+    ['matched', matchedProduct, true],
+    ['old-commit', { ...matchedProduct, sourceCommit: 'd'.repeat(40), installationIdentity: createInstallationOrigin({ ...currentOrigin, sourceCommit: 'd'.repeat(40) }).ownershipIdentity }, false],
+    ['other-source-root', { ...matchedProduct, installationIdentity: createInstallationOrigin({ ...currentOrigin, installUnit: path.join(root, 'other-source') }).ownershipIdentity }, false],
+    ['legacy', { ...matchedProduct, installationIdentity: undefined }, null],
+  ] as const) {
+    const product = JSON.parse(JSON.stringify(productInput));
+    const receipt = {
+      schemaVersion: 'buildr.local-app-instance/v2', pid: 4242, secret: 'private-fixture-secret',
+      url: 'http://127.0.0.1:4317', productIdentity: product,
+      launcherIdentity: { channel: 'development', version: currentOrigin.version, ownershipIdentity: 'different-launcher-build' },
+    };
+    fs.writeFileSync(instanceFile, JSON.stringify(receipt));
+    const before = fs.readFileSync(instanceFile, 'utf8');
+    const result: any = await registerProductInstallationStatus({ productRoot: () => productRoot }).installationStatus({
+      registeredInstallations: { status: 'ready', file: path.join(root, 'registry.json'), installations: [] },
+      developmentLauncherRoot: launcherRoot,
+      launcherTarget: path.join(root, 'absent-npm-launcher'),
+      instanceDataRoots: { released: path.join(root, 'released'), development: developmentRoot },
+      instanceFile, webProfileOptions: { home: root, env: {} }, pidProbe: () => {},
+      env: { BUILDR_INSTALLATION_IDENTITY: npmFixture.envelopePath }, payloadRoot: path.dirname(npmFixture.envelopePath),
+      fetchImpl: async () => ({ ok: true, json: async () => ({
+        schemaVersion: 'buildr.local-app-health/v1', status: 'ready', pid: receipt.pid, productIdentity: product,
+      }) }),
+    });
+    assert.equal(result.currentInstallation.channel, 'npm', name);
+    for (const observed of [result.instances.development, result.currentInstance]) {
+      assert.equal(observed.status, 'ready', name);
+      assert.equal(observed.observation.health, 'ready', name);
+      assert.equal(observed.matchesCurrentInstallation, match, name);
+      assert.equal(observed.identity.sourceCommit, product.sourceCommit, name);
+      if (match !== true) assert.match(observed.installationMatchReason, /退出.*重新启动/, name);
+    }
+    assert.equal(JSON.stringify(result).includes(receipt.secret), false, name);
+    assert.equal(fs.readFileSync(instanceFile, 'utf8'), before, `${name}: query must not rewrite the receipt`);
+  }
+  const launcherBefore = fs.readFileSync(launcherFile, 'utf8');
+  fs.writeFileSync(path.join(sourceRoot, 'package.json'), '{"name":"@buildr-ai/buildr","version":"1.2.4"}\n');
+  gitSource(['add', '.']);
+  gitSource(['commit', '-qm', 'advance source without rebuilding launcher']);
+  const advancedOrigin = readCurrentInstallationOrigin(sourceRoot, sourceOptions);
+  assert.notEqual(advancedOrigin.sourceCommit, sourceCommit);
+  const advancedProduct = {
+    ...matchedProduct, version: advancedOrigin.version, sourceCommit: advancedOrigin.sourceCommit,
+    installationIdentity: advancedOrigin.ownershipIdentity,
+  };
+  for (const [name, product, match] of [
+    ['old-running-with-old-launcher', matchedProduct, false],
+    ['new-running-with-old-launcher', advancedProduct, true],
+  ] as const) {
+    const receipt = {
+      schemaVersion: 'buildr.local-app-instance/v2', pid: 4242, secret: 'private-fixture-secret',
+      url: 'http://127.0.0.1:4317', productIdentity: product,
+      launcherIdentity: { channel: 'development', version: currentOrigin.version, ownershipIdentity: 'old-launcher-build' },
+    };
+    fs.writeFileSync(instanceFile, JSON.stringify(receipt));
+    const result: any = await registerProductInstallationStatus({ productRoot: () => productRoot }).installationStatus({
+      registeredInstallations: { status: 'ready', file: path.join(root, 'registry.json'), installations: [] },
+      developmentLauncherRoot: launcherRoot, launcherTarget: path.join(root, 'absent-npm-launcher'),
+      instanceDataRoots: { released: path.join(root, 'released'), development: developmentRoot },
+      instanceFile, webProfileOptions: { home: root, env: {} }, pidProbe: () => {},
+      env: { BUILDR_INSTALLATION_IDENTITY: npmFixture.envelopePath }, payloadRoot: path.dirname(npmFixture.envelopePath),
+      fetchImpl: async () => ({ ok: true, json: async () => ({
+        schemaVersion: 'buildr.local-app-health/v1', status: 'ready', pid: receipt.pid, productIdentity: product,
+      }) }),
+    });
+    assert.equal(result.currentInstallation.channel, 'npm', name);
+    assert.equal(result.channels.development.identity.sourceCommit, advancedOrigin.sourceCommit, name);
+    assert.equal(result.channels.development.identity.version, advancedOrigin.version, name);
+    assert.equal(result.channels.development.launcherIdentity.sourceCommit, sourceCommit, name);
+    assert.equal(result.channels.development.launcherIdentity.version, currentOrigin.version, name);
+    assert.equal(result.instances.development.status, 'ready', name);
+    assert.equal(result.instances.development.observation.health, 'ready', name);
+    assert.equal(result.instances.development.matchesCurrentInstallation, match, name);
+    assert.equal(result.currentInstance.matchesCurrentInstallation, match, name);
+  }
+  assert.equal(fs.readFileSync(launcherFile, 'utf8'), launcherBefore, 'query reads current source without rebuilding or rewriting the launcher');
+  fs.rmSync(path.join(sourceRoot, 'package.json'));
+  const unavailable: any = await registerProductInstallationStatus({ productRoot: () => productRoot }).installationStatus({
+    registeredInstallations: { status: 'ready', file: path.join(root, 'registry.json'), installations: [] },
+    developmentLauncherRoot: launcherRoot, launcherTarget: path.join(root, 'absent-npm-launcher'),
+    instanceDataRoots: { released: path.join(root, 'released'), development: developmentRoot },
+    instanceFile, webProfileOptions: { home: root, env: {} }, pidProbe: () => {},
+    env: { BUILDR_INSTALLATION_IDENTITY: npmFixture.envelopePath }, payloadRoot: path.dirname(npmFixture.envelopePath),
+    fetchImpl: async () => ({ ok: true, json: async () => ({
+      schemaVersion: 'buildr.local-app-health/v1', status: 'ready', pid: 4242, productIdentity: advancedProduct,
+    }) }),
+  });
+  assert.equal(unavailable.channels.development.identity.channel, 'unknown');
+  assert.equal(unavailable.channels.development.identity.sourceCommit, null);
+  assert.equal(unavailable.instances.development.status, 'ready');
+  assert.equal(unavailable.instances.development.observation.health, 'ready');
+  assert.equal(unavailable.instances.development.matchesCurrentInstallation, null);
+  assert.match(unavailable.instances.development.installationMatchReason, /恢复.*源码目录/);
 });

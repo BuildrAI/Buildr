@@ -16,7 +16,7 @@ import { createLocalWorkspaceRequestRouter } from '../../src/web/http/router.ts'
 import { apiError } from '../../src/web/http/responses.ts';
 import { ensureRegisteredTarget } from '../../src/modules/workspace/module.ts';
 import { registerWebInstanceLifecycle, handoffWaitBudget } from '../../src/web/application/instance-lifecycle.ts';
-import { assertCurrentNpmLauncherBinding, readCurrentProductIdentity } from '../../src/modules/installation/module.ts';
+import { assertCurrentNpmLauncherBinding, createInstallationOrigin, readCurrentInstallationOrigin, readCurrentProductIdentity } from '../../src/modules/installation/module.ts';
 import {
   acquireBuildrWebStartLock,
   releaseBuildrWebStartLock,
@@ -145,6 +145,57 @@ test('正式Web与Task Preview生命周期均不创建后台maintenance schedule
   });
   const preview: any = await previewRuntime.startBuildrWeb(['--port', '0', '--no-open']);
   await new Promise((resolve: any) => preview.server.close(resolve));
+});
+
+test('development start reuses the current source and preserves a healthy instance when the source differs or is unproven', async (t) => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-development-reuse-'));
+  const previousDataRoot = process.env.BUILDR_APP_DATA_DIR;
+  const previousPreview = process.env.BUILDR_LOCAL_APP_PREVIEW;
+  process.env.BUILDR_APP_DATA_DIR = path.join(base, 'app-data');
+  delete process.env.BUILDR_LOCAL_APP_PREVIEW;
+  let server: any;
+  t.after(async () => {
+    if (server) await new Promise<void>(resolve => server.close(resolve));
+    if (previousDataRoot === undefined) delete process.env.BUILDR_APP_DATA_DIR;
+    else process.env.BUILDR_APP_DATA_DIR = previousDataRoot;
+    if (previousPreview === undefined) delete process.env.BUILDR_LOCAL_APP_PREVIEW;
+    else process.env.BUILDR_LOCAL_APP_PREVIEW = previousPreview;
+    fs.rmSync(base, { recursive: true, force: true });
+  });
+  const runtime = createRuntime();
+  const currentProduct = readCurrentProductIdentity();
+  assert.equal(currentProduct.channel, 'development');
+  const currentOrigin = readCurrentInstallationOrigin(runtime.productRoot());
+  let expected: any = currentProduct;
+  registerWebInstanceLifecycle(runtime, {
+    readProductIdentity: () => expected,
+    assertNpmLauncherBinding: assertCurrentNpmLauncherBinding,
+    createLocalWorkspaceServer, ensureRegisteredTarget,
+  });
+  const first = await runtime.startBuildrWeb(['--port', '0', '--no-open']);
+  server = first.server;
+  const file = path.join(process.env.BUILDR_APP_DATA_DIR, 'instance.json');
+  const before = fs.readFileSync(file, 'utf8');
+  const reused = await runtime.startBuildrWeb(['--port', '0', '--no-open']);
+  assert.equal(reused.reused, true);
+  assert.equal(reused.url, first.url);
+  for (const changedOrigin of [
+    createInstallationOrigin({ ...currentOrigin, sourceCommit: 'd'.repeat(40) }),
+    createInstallationOrigin({ ...currentOrigin, installUnit: path.join(base, 'other-source') }),
+  ]) {
+    expected = { ...currentProduct, installationIdentity: changedOrigin.ownershipIdentity, sourceCommit: changedOrigin.sourceCommit };
+    await assert.rejects(runtime.startBuildrWeb(['--port', '0', '--no-open']), (error: any) => {
+      assert.equal(error.code, 'web_instance_development_source_conflict');
+      assert.match(error.message, /退出.*重新启动/);
+      return true;
+    });
+  }
+  expected = { ...currentProduct, installationIdentity: undefined };
+  await assert.rejects(runtime.startBuildrWeb(['--port', '0', '--no-open']), (error: any) => error.code === 'web_instance_development_source_conflict');
+  assert.equal(fs.readFileSync(file, 'utf8'), before, 'rejected reuse preserves the running receipt');
+  assert.equal(fs.existsSync(path.join(process.env.BUILDR_APP_DATA_DIR, 'instance-start.lock')), false);
+  const health = await fetch(`${first.url}/api/v1/health`, { headers: { 'x-buildr-instance': JSON.parse(before).secret } });
+  assert.equal(health.status, 200, 'rejected reuse never stops the existing server');
 });
 
 

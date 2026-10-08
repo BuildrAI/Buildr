@@ -11,7 +11,7 @@
   },
   "patch": {
     "path": "dsh-v0.2.0-rc.2-buildr-install-exclusion.patch",
-    "sha256": "9a773956fe4b3735d8dbb7d5a49249f01dcf016b4e1ff388b63e5e5d21d356cd"
+    "sha256": "f2f2cf823dba5150360a3116dc273f4ebce4f4a9f8f69eed493508b13c05fd27"
   },
   "files": [
     {
@@ -47,7 +47,7 @@
     {
       "path": "packages/boot/plugin-manager/src/buildr-install.ts",
       "baseSha256": null,
-      "patchedSha256": "605f36b8b9c0a653c2b3c244592e606bbab795288a525ce57f1a8070234adb12"
+      "patchedSha256": "359d23b8c27858aa896e5b7afe9d35fc6cafa4f8ea3679602f0f8b3e9a30e81b"
     },
     {
       "path": "packages/boot/plugin-manager/src/failure.ts",
@@ -57,12 +57,12 @@
     {
       "path": "packages/boot/plugin-manager/src/index.ts",
       "baseSha256": "09c3dfd8bb1cb777caec2f30e036461ec253ca864de5a6d7bd508049b70558ba",
-      "patchedSha256": "536425a0eac98b050edb09dac8485163eb6465c79a4159f6bbc476d80a618e66"
+      "patchedSha256": "6a0e148aee0e49ac7b43f86f4462361c384bd4b14065439737da189760365097"
     },
     {
       "path": "packages/boot/plugin-manager/src/operations.ts",
       "baseSha256": "16d141f794041d06122ce9f8ab7bae6f55b4a78feefb620f9cb6c7ba5efac547",
-      "patchedSha256": "96f20e3faf4e5cc7d50bd766ffa88420b858fdbec6c7a9fa5d0004c4d039a63e"
+      "patchedSha256": "a908004c9a56d3463b926cd6baaa8ed020d2feaa7303636cea1935eed13067fe"
     },
     {
       "path": "packages/boot/plugin-manager/src/types.ts",
@@ -72,17 +72,17 @@
     {
       "path": "packages/boot/plugin-manager/tests/buildr-install.spec.ts",
       "baseSha256": null,
-      "patchedSha256": "ec6fee589636ed1eabd8941243991b52fe0a94d4c8377ca3a6e99b435a346a58"
+      "patchedSha256": "10565a67809c038de34d5a9d7bc397a3527b60e520456f2897f711d74a51c220"
     },
     {
       "path": "packages/boot/plugin-manager/tests/manager.spec.ts",
       "baseSha256": "6260ff8267f562af1dac227c391af7f9f00b94914aa572db22472619fb4f666e",
-      "patchedSha256": "d72696f088ddbe67cf228aacb013eb9277f1f788649b05e92e588a228abdade6"
+      "patchedSha256": "d0130f3c943bb5b79d0cd61f0e004e28a30e5e7d16cd26c1cde00f10edc6e5a2"
     },
     {
       "path": "packages/boot/plugin-manager/tests/operations.spec.ts",
       "baseSha256": "385ebe1a7218828a61ac73dd799ff805267c340517643dcef358cec0cd6dff8c",
-      "patchedSha256": "c7f5b2e963f776346766958b66a6ac8f910fb0c4a1649ae6b0447cf7f89c1632"
+      "patchedSha256": "7ec2e0d741332534d030c22beafe0ce0980d431e43452142f60449f93edb229a"
     },
     {
       "path": "packages/boot/plugin-manager/tests/tar-fixture.ts",

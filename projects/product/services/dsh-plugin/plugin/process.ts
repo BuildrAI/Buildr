@@ -37,6 +37,9 @@ export interface ProcessDependencies {
 const execute = promisify(execFile);
 const digestPattern = /^sha256-[a-f0-9]{64}$/;
 
+/** Internal provenance: launcher drift must never trigger installation rediscovery. */
+class InstallationEntryDriftError extends BuildrBridgeError {}
+
 function invalid(message: string): never { throw new BuildrBridgeError('invalid-binding', message); }
 
 /** Validate a registration that came from configuration; every field is a machine-local path. */
@@ -208,8 +211,15 @@ export function childEnvironment(environment: NodeJS.ProcessEnv, binding: Bindin
 /** Execute the registered entry. The query is channel-neutral; the caller decides which channel to act on. */
 export async function queryInstallation(binding: Binding, signal: AbortSignal, { exec = execute, environment = process.env, digest = fileDigest }: ProcessDependencies = {}): Promise<unknown> {
   signal.throwIfAborted();
-  await verifyFile(binding.nodeExecutable, binding.nodeSha256, digest);
-  await verifyFile(binding.cliEntry, binding.cliSha256, digest);
+  try {
+    await verifyFile(binding.nodeExecutable, binding.nodeSha256, digest);
+    await verifyFile(binding.cliEntry, binding.cliSha256, digest);
+  } catch (error) {
+    if (error instanceof BuildrBridgeError && error.code === 'installation-drift') {
+      throw new InstallationEntryDriftError(error.code, error.message);
+    }
+    throw error;
+  }
   signal.throwIfAborted();
   const command = channelCommand(binding, 'npm');
   try {
@@ -271,6 +281,64 @@ export function createInstalledBuildrBridge(
     launch: (target, status, signal) => launchInstallation(binding, target, status, signal, dependencies),
     timeoutMs: config.timeoutMs ?? 30_000, pollMs: config.pollMs ?? 300,
   });
+}
+
+/** One lifetime for explicit binding or discovery; concurrent opens share one bounded recovery. */
+export function createDiscoveringBuildrBridge(
+  config: Config, channel: BuildrChannel, dependencies: ProcessDependencies = {},
+  discover: (signal: AbortSignal) => Promise<Readonly<Binding> | null> = () => discoverBinding(
+    dependencies.environment, dependencies.platform, dependencies.executable,
+  ),
+) {
+  const explicit = config.binding?.nodeExecutable !== undefined || config.binding?.cliEntry !== undefined;
+  const lifetime = new AbortController();
+  let bridge = explicit ? createInstalledBuildrBridge(config, channel, dependencies) : null;
+  let pending: Promise<Awaited<ReturnType<NonNullable<typeof bridge>['open']>> | null> | undefined;
+
+  async function resolve() {
+    lifetime.signal.throwIfAborted();
+    if (bridge !== null || explicit) return bridge;
+    let abort: (() => void) | undefined;
+    try {
+      const cancelled = new Promise<never>((_, reject) => {
+        abort = () => reject(lifetime.signal.reason);
+        lifetime.signal.addEventListener('abort', abort, { once: true });
+      });
+      const binding = await Promise.race([discover(lifetime.signal), cancelled]);
+      lifetime.signal.throwIfAborted();
+      if (binding !== null) bridge = createInstalledBuildrBridge({ ...config, binding: { ...binding } }, channel, dependencies);
+      return bridge;
+    } finally {
+      if (abort) lifetime.signal.removeEventListener('abort', abort);
+    }
+  }
+
+  async function run() {
+    const current = await resolve();
+    if (current === null) return null;
+    try {
+      return await current.open();
+    } catch (error) {
+      lifetime.signal.throwIfAborted();
+      if (explicit || !(error instanceof InstallationEntryDriftError)) throw error;
+      current.dispose();
+      bridge = null;
+      const refreshed = await resolve();
+      return refreshed === null ? null : refreshed.open();
+    }
+  }
+
+  return {
+    open() {
+      if (lifetime.signal.aborted) return Promise.reject(lifetime.signal.reason);
+      if (!pending) pending = run().finally(() => { pending = undefined; });
+      return pending;
+    },
+    dispose() {
+      lifetime.abort(new BuildrBridgeError('disposed', 'Buildr 插件已停用。'));
+      bridge?.dispose();
+    },
+  };
 }
 
 export type { BuildrChannel } from './platform.ts';

@@ -86,7 +86,7 @@ export function observeBoundInstance(value: unknown, channel: BuildrChannel): Ob
     : typeof identity.sourceRoot === 'string' && path.isAbsolute(identity.sourceRoot);
   if (!common || !identified) {
     fail('installation-mismatch', channel === 'development'
-      ? 'Buildr 开发版信息不完整，请检查开发安装后重试。'
+      ? '当前登记的 Buildr 开发来源无法核验，请恢复源码目录或更新开发入口后重试。'
       : 'Buildr 安装信息不完整，请检查安装后重试。');
   }
   const instance = objectRecord(objectRecord(status.instances)[INSTANCE_KEY[channel]]);
@@ -94,17 +94,14 @@ export function observeBoundInstance(value: unknown, channel: BuildrChannel): Ob
   if (instance.status === 'ready') {
     const instanceIdentity = objectRecord(instance.identity);
     if (!instance.identity) fail('instance-mismatch', '正在运行的 Buildr 缺少实例身份，未打开。');
-    // An npm installation registers a payload identity that its own running instance echoes, so the
-    // two are comparable and a mismatch means the running process belongs to something else. A
-    // development installation instead registers its source identity, which its running process never
-    // restates — comparing them would reject every development instance. There, the channel the
-    // instance declares is what proves it is the development build rather than the released one.
+    // Buildr compares development source origins: launcher build IDs have a different meaning and
+    // cannot be compared here. A healthy process remains healthy even when its source is different.
     const matches = channel === 'npm'
       ? identityFields.every(field => (instanceIdentity[field] ?? null) === (identity[field] ?? null))
-      : instanceIdentity.channel === 'development';
+      : instanceIdentity.channel === 'development' && instance.matchesCurrentInstallation === true;
     if (!matches) {
       fail('instance-mismatch', channel === 'development'
-        ? '正在运行的 Buildr 不是当前登记的开发版实例，未打开另一份实例。'
+        ? '正在运行的 Buildr 开发版与当前来源不匹配或缺少来源证明；请通过 Buildr 入口正常退出旧实例，再重新启动并更新接入。'
         : '正在运行的 Buildr 不属于该安装，未打开另一份实例。');
     }
     return { ready: true, url: readyOrigin(instanceIdentity.url), channel: WIRE_NAME[channel], ownershipIdentity: identity.ownershipIdentity as string };

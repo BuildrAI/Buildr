@@ -5,8 +5,7 @@ import { fileURLToPath } from 'node:url';
 import type { Context } from '@deepseek-ai/cordis';
 import z from '@deepseek-ai/schemastery';
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol';
-import { createInstalledBuildrBridge, discoverBinding } from '../process.ts';
-import type { Binding } from '../process.ts';
+import { createDiscoveringBuildrBridge } from '../process.ts';
 import { channelForPackage } from '../platform.ts';
 import { BuildrBridgeError } from '../bridge.ts';
 import type { Config, OpenResult } from './types.ts';
@@ -22,7 +21,7 @@ export type { SourceRecordRequest, SourceRecordResult } from './source-types.ts'
 export type { Config, OpenResult } from './types.ts';
 
 /** Shown only when this machine has no Buildr this plugin can reach. */
-const MISSING_MESSAGE = '这台机器上没有检测到 Buildr。请先安装 Buildr，再重启 DSH 后重试。';
+const MISSING_MESSAGE = '这台机器上没有检测到 Buildr。请先安装 Buildr 后重试。';
 
 /**
  * The package decides which installation it serves, so the user is never asked to choose. Reading the
@@ -37,8 +36,6 @@ function ownPackageName(): string {
   }
 }
 const CHANNEL = channelForPackage(ownPackageName());
-
-type Bridge = NonNullable<ReturnType<typeof createInstalledBuildrBridge>>;
 
 /**
  * One gateway per plugin lifetime. The machine pointer comes from configuration when present; when it
@@ -63,23 +60,17 @@ export default class BuildrGateway extends TypertRemoteService {
   private readonly config: Config;
   private readonly hostContext: Context;
   private readonly sourceLifetime = new AbortController();
-  private bridge: Bridge | null = null;
-  private resolving: Promise<Bridge | null> | undefined;
+  private readonly bridge: ReturnType<typeof createDiscoveringBuildrBridge>;
   constructor(ctx: Context, config: Config) {
     super(ctx, 'buildr');
     this.config = config;
     this.hostContext = ctx;
-    // Schemastery parses an omitted optional object as `binding: {}`. It is not an override:
-    // installation discovery remains the normal path for an unconfigured package.
-    const binding = config.binding;
-    if (binding?.nodeExecutable !== undefined || binding?.cliEntry !== undefined) {
-      this.bridge = createInstalledBuildrBridge(config, CHANNEL);
-    }
+    this.bridge = createDiscoveringBuildrBridge(config, CHANNEL);
     // Registered unconditionally: a discovered bridge is disposed with the plugin exactly like a
     // configured one, and activation must not depend on whether a pointer happened to be present.
     ctx.effect(() => () => {
       this.sourceLifetime.abort();
-      this.bridge?.dispose();
+      this.bridge.dispose();
     });
     const capture = createEventSourceCapture({
       channel: CHANNEL, signal: this.sourceLifetime.signal,
@@ -95,24 +86,6 @@ export default class BuildrGateway extends TypertRemoteService {
         return mergeCapturedSources(source, other);
       } catch { return source; }
     });
-  }
-
-  /** Resolve the machine pointer once, on first use, and keep serving that result. */
-  private async resolve(): Promise<Bridge | null> {
-    if (this.bridge !== null) return this.bridge;
-    if (this.resolving !== undefined) return this.resolving;
-    this.resolving = (async () => {
-      const discovered: Readonly<Binding> | null = await discoverBinding();
-      if (discovered === null) return null;
-      const bridge = createInstalledBuildrBridge({ ...this.config, binding: { ...discovered } }, CHANNEL);
-      if (bridge !== null) this.bridge = bridge;
-      return bridge;
-    })();
-    try {
-      return await this.resolving;
-    } finally {
-      this.resolving = undefined;
-    }
   }
 
   /** Read only the selected record's original events and captured Buildr fragments. */
@@ -133,9 +106,7 @@ export default class BuildrGateway extends TypertRemoteService {
   @Remote('open')
   async open(): Promise<OpenResult> {
     try {
-      const bridge = await this.resolve();
-      if (bridge === null) return { ready: false, code: 'not-installed', message: MISSING_MESSAGE };
-      return await bridge.open();
+      return await this.bridge.open() ?? { ready: false, code: 'not-installed', message: MISSING_MESSAGE };
     } catch (error) {
       return error instanceof BuildrBridgeError
         ? { ready: false, code: error.code, message: error.message }
