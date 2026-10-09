@@ -7,6 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { gzipSync } from 'node:zlib';
 import test from 'node:test';
 import { runReleaseOperation } from '../../tools/release/release-orchestration-runner.ts';
+import { containsCredentialMaterial } from '../../tools/release/release-authority.ts';
 import { artifactFromTarball } from '../../tools/release/package-artifact-observation.ts';
 import { createPluginSourceAggregate } from '../../tools/release/verify-pr-candidate.ts';
 import { createReleaseCandidate, PLUGIN_SERVICE_PATH, SOURCE_SDK_MANIFEST, sourceSdkIdentityFromFiles } from '../../../dsh-plugin/tools/release-candidate.ts';
@@ -60,7 +61,7 @@ function git(repo: string, args: string[]): string {
   assert.equal(value.status, 0, value.stderr); return value.stdout.trim();
 }
 
-function fixture(t: any, changes: { mainRuntime?: boolean; mutateAggregate?: (value: any) => void } = {}): any {
+function fixture(t: any, changes: { mainRuntime?: boolean; omitSourcePatch?: boolean; mutateAggregate?: (value: any) => void } = {}): any {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-package-selection-operation-')));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const workspace = path.join(root, 'workspace'), remote = path.join(root, 'remote.git');
@@ -68,7 +69,8 @@ function fixture(t: any, changes: { mainRuntime?: boolean; mutateAggregate?: (va
   const write = (file: string, bytes: string | Buffer) => { fs.mkdirSync(path.dirname(path.join(workspace, file)), { recursive: true }); fs.writeFileSync(path.join(workspace, file), bytes); };
   write('projects/product/services/buildr/package.json', JSON.stringify({ name: '@buildr-ai/buildr', version: mainVersion, buildrCompatibility: mainCompatibility }));
   write(PLUGIN_SERVICE_PATH + '/package.json', JSON.stringify({ name: '@buildr-ai/buildr-dsh-plugin', version: '0.1.0-rc.6', buildrCompatibility: pluginCompatibility }));
-  write(PLUGIN_SERVICE_PATH + '/' + SOURCE_SDK_MANIFEST, manifestBytes); write(PLUGIN_SERVICE_PATH + '/' + sdkPatch, patchBytes);
+  write(PLUGIN_SERVICE_PATH + '/' + SOURCE_SDK_MANIFEST, manifestBytes);
+  if (!changes.omitSourcePatch) write(PLUGIN_SERVICE_PATH + '/' + sdkPatch, patchBytes);
   write('projects/product/.node-version', process.versions.node + '\n');
   write('.github/workflows/verify.yml', 'name: Verify fixture\n'); write('.github/workflows/publish-dsh-plugin.yml', 'name: Plugin fixture\n');
   git(workspace, ['init', '-b', 'dev']); git(workspace, ['config', 'user.name', 'Buildr Test']); git(workspace, ['config', 'user.email', 'buildr@example.com']);
@@ -206,6 +208,45 @@ test('plugin-only target selection cannot waive main QA required by the complete
   assert.match(result.diagnostic.message, /Main QA evidence must be read/u);
   assert.equal(data.counts().mainReads, 1); assert.equal(data.counts().merges, 0); assert.equal(data.counts().pluginSourceReads, 0); assert.equal(data.counts().pluginDispatches, 0);
   assert.equal(data.counts().unpublishedReads, 0); assert.equal(data.counts().candidateDispatches, 1);
+});
+
+test('failed source Git read preserves its bounded cause and freezes without any Candidate dispatch', async t => {
+  const data = fixture(t, { omitSourcePatch: true });
+  const result = await runReleaseOperation(data.options, data.dependencies);
+  assert.equal(result.status, 'blocked');
+  assert.match(result.diagnostic.message, /^Candidate source inspection failed: /u);
+  const failure = JSON.parse(result.diagnostic.message.slice('Candidate source inspection failed: '.length));
+  assert.equal(failure.command, 'git');
+  assert.deepEqual(failure.args, ['show', `${data.state().sourceCommit}:${PLUGIN_SERVICE_PATH}/${sdkPatch}`]);
+  assert.equal(failure.status, 128); assert.equal(failure.errorCode, null); assert.equal(failure.signal, null);
+  assert.equal(failure.stdoutBytes, 0); assert.ok(failure.stderr.length > 0 && failure.stderr.length <= 2048);
+  assert.equal(data.counts().candidateDispatches, 0); assert.equal(data.counts().merges, 0); assert.equal(data.counts().pluginDispatches, 0);
+  assert.ok(data.state().sourceCommit); assert.ok(data.requests.every((args: string[]) => args[0] !== 'workflow' && args[0] !== 'pr'));
+});
+
+test('source Git diagnostics omit complete credential-shaped stderr before the size boundary', async t => {
+  const cases = [
+    ['npm', () => String.fromCharCode(110, 112, 109, 95) + 'a'.repeat(36)],
+    ['JWT', () => ['eyJ' + 'a'.repeat(12), 'b'.repeat(12), 'c'.repeat(12)].join('.')],
+  ] as const;
+  for (const [label, material] of cases) await t.test(label, async nested => {
+    const privateDiagnostic = 'x'.repeat(2045) + ' ' + material();
+    assert.ok(containsCredentialMaterial(privateDiagnostic), 'The controlled case must be credential-shaped.');
+    assert.ok(!containsCredentialMaterial(privateDiagnostic.trim().slice(0, 2048)), 'The controlled case must span the previous truncation boundary.');
+    const data = fixture(nested, { omitSourcePatch: true }), originalExecute = data.dependencies.execute;
+    data.dependencies.execute = (command: string, args: string[], config: any) => {
+      const result = originalExecute(command, args, config);
+      return command === 'git' && args[0] === 'show' && args[1]?.endsWith(`:${PLUGIN_SERVICE_PATH}/${sdkPatch}`) && result.status !== 0
+        ? { ...result, stderr: privateDiagnostic } : result;
+    };
+    const result = await runReleaseOperation(data.options, data.dependencies);
+    assert.equal(result.status, 'blocked');
+    const failure = JSON.parse(result.diagnostic.message.slice('Candidate source inspection failed: '.length));
+    assert.ok(failure.stderr === '[credential-shaped diagnostic omitted]', 'The entire private diagnostic must be omitted.');
+    assert.equal(failure.status, 128); assert.ok(data.state().sourceCommit);
+    assert.equal(data.counts().candidateDispatches, 0); assert.equal(data.counts().merges, 0); assert.equal(data.counts().pluginDispatches, 0);
+    assert.ok(data.requests.every((args: string[]) => args[0] !== 'workflow' && args[0] !== 'pr'));
+  });
 });
 
 test('wrong frozen registry peer or source aggregate blocks before any main PR or post-main preparation', async t => {

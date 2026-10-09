@@ -14,7 +14,7 @@ import { createReleaseSelection, selectReleaseCommit, freezeReleaseSelection, re
 import { resolveReleaseExecutionBinding } from './release-execution-binding.ts';
 import { observeUnpublishedRelease } from './release-observation.ts';
 import { retryCandidateFailedShards, classifyCandidateFailure } from './candidate-failed-shard-retry.ts';
-import { releasePublishAuthority } from './release-authority.ts';
+import { containsCredentialMaterial, releasePublishAuthority } from './release-authority.ts';
 import { createReleaseLifecycle, projectReleaseLifecycleOrchestration } from './release-lifecycle.ts';
 import { compactReleasePhaseTimeline, createReleasePhaseTimeline, projectCandidateAttempts } from './release-phase-timeline.ts';
 import { inspectHostedReleaseTransaction } from './release-transaction-evidence.ts';
@@ -603,7 +603,13 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
         const rawGit = (args: string[]) => {
           if (args.join(' ') === 'rev-parse HEAD') return sourceCommit;
           const value = execute('git', args, { cwd: repo, timeout: 30_000, encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 });
-          if (value.status !== 0) throw new Error('Candidate source inspection failed.');
+          if (value.status !== 0) {
+            const stderr = String(value.stderr ?? '');
+            const failure = { command: 'git', args, status: value.status ?? null, signal: value.signal ?? null,
+              errorCode: value.error?.code ?? null, stdoutBytes: Buffer.byteLength(String(value.stdout ?? ''), 'utf8'),
+              stderr: containsCredentialMaterial(stderr) ? '[credential-shaped diagnostic omitted]' : stderr.trim().slice(0, 2048) };
+            throw new Error(`Candidate source inspection failed: ${JSON.stringify(failure)}`);
+          }
           return String(value.stdout ?? '');
         };
         plan = createReleaseCandidatePlan({ BUILDR_RELEASE_PACKAGES: targets.packages.join(','), BUILDR_SOURCE_BUILDR_VERSION: targets.versions.buildr,

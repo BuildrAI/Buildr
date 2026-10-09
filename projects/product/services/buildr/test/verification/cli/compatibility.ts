@@ -166,7 +166,7 @@ assert.equal(versionJson.status, 0);
 const versionIdentity: any = JSON.parse(versionJson.stdout);
 assert.deepEqual(Object.keys(versionIdentity), [
   'schemaVersion', 'package', 'version', 'protocolIdentity', 'applicationPayloadDigest',
-  'channel', 'runtime', 'installationIdentity', 'sourceCommit',
+  'channel', 'runtime', 'installationIdentity', 'sourceCommit', 'sourceRoot',
 ]);
 assert.equal(versionIdentity.schemaVersion, 'buildr.version/v1');
 assert.equal(versionIdentity.package, '@buildr-ai/buildr');
@@ -174,6 +174,7 @@ assert.equal(versionIdentity.version, packageVersion);
 assert.equal(versionIdentity.protocolIdentity, 'buildr.web-protocol/v1');
 assert.equal(versionIdentity.applicationPayloadDigest, null);
 assert.equal(versionIdentity.channel, 'development');
+assert.equal(versionIdentity.sourceRoot, fs.realpathSync(productRoot));
 assert.match(versionIdentity.installationIdentity, /^sha256-[a-f0-9]{64}$/);
 assert.match(versionIdentity.sourceCommit, /^[a-f0-9]{40}$/);
 assert.deepEqual(Object.keys(versionIdentity.runtime), [

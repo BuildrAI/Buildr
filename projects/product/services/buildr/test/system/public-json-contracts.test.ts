@@ -98,9 +98,13 @@ test('全部 workspace JSON command family 输出登记的 schemaVersion', async
 });
 
 test('schema registry 覆盖全部当前公开 JSON family', () => {
+  assert.equal(PUBLIC_JSON_SCHEMAS.agentAssetSourceObservations, 'buildr.agent-asset-source-observations/v1');
+  assert.equal(PUBLIC_JSON_SCHEMAS.agentAssetSourceResult, 'buildr.agent-asset-source-result/v1');
   assert.equal(PUBLIC_JSON_SCHEMAS.localAppPreview, 'buildr.local-app-preview/v1');
   assert.equal(PUBLIC_JSON_SCHEMAS.launcherStatus, 'buildr.launcher-status/v1');
   assert.deepEqual(Object.keys(PUBLIC_JSON_SCHEMAS).sort(), [
+    'agentAssetSourceObservations',
+    'agentAssetSourceResult',
     'builtinList',
     'cliError',
     'commandsCheck',
