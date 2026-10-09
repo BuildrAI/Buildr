@@ -288,14 +288,26 @@ releaseSelectionTest('failed source Git read preserves its bounded cause and fre
 });
 
 releaseSelectionTest('wrong frozen registry peer or source aggregate blocks before any main PR or post-main preparation', async t => {
-  for (const [name, mutateAggregate] of [
+  let mutateAggregate: (value: any) => void = () => {};
+  const data = fixture(t, { mutateAggregate: value => mutateAggregate(value) });
+  assertReleaseStatus(await runReleaseOperation(data.options, data.dependencies), 'candidate-dispatch-unconfirmed'); data.revealCandidate();
+  const frozenSource = data.state().sourceCommit, frozenRef = `refs/buildr/release/${selectionId}/frozen`;
+  const frozenTree = git(data.repo, ['rev-parse', frozenSource + '^{tree}']);
+  assert.equal(git(data.repo, ['rev-parse', frozenRef]), frozenSource);
+  for (const [name, mutate] of [
     ['peer', (value: any) => { value.verification.peer.artifactSha256 = 'f'.repeat(64); }],
     ['source', (value: any) => { value.sourceTree = 'e'.repeat(40); }],
-  ] as const) await t.test(name, (nested: any) => captureReleaseSelectionFailure(name, async () => {
-    const data = fixture(nested, { mutateAggregate });
-    assertReleaseStatus(await runReleaseOperation(data.options, data.dependencies), 'candidate-dispatch-unconfirmed'); data.revealCandidate();
+  ] as const) await t.test(name, () => captureReleaseSelectionFailure(name, async () => {
+    const previousReads = data.counts().pluginSourceReads;
+    mutateAggregate = value => {
+      assert.equal(value.sourceTree, frozenTree);
+      assert.deepEqual(value.verification.peer, data.peer);
+      mutate(value);
+    };
     const result = await runReleaseOperation(data.options, data.dependencies);
-    assertReleaseStatus(result, 'blocked'); assert.equal(data.counts().pluginSourceReads, 1);
+    assertReleaseStatus(result, 'blocked'); assert.equal(data.counts().pluginSourceReads, previousReads + 1);
+    assert.equal(data.state().sourceCommit, frozenSource);
+    assert.equal(git(data.repo, ['rev-parse', frozenRef]), frozenSource);
     assert.equal(data.counts().merges, 0); assert.equal(data.counts().pluginDispatches, 0); assert.equal(data.counts().mainReads, 0);
     assert.ok(data.requests.every((args: string[]) => args[0] !== 'pr')); assert.equal(data.counts().candidateDispatches, 1);
   }));
