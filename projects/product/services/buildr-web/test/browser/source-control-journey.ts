@@ -1,7 +1,14 @@
 import assert from 'node:assert/strict';
+import { runSourceControlBranchesJourney } from './source-control-branches-journey.ts';
 
 /** The host owns isolated Git data; every successful read below comes from production HTTP. */
 export async function runSourceControlJourney({t, page, workspaceUrl, capture, fixture, expectedBrowserErrors}: any) {
+  const focus = process.env.BUILDR_SOURCE_CONTROL_FOCUS || '';
+  const selectedCases: string[] = [];
+  const scenario = async (name: string, action: () => Promise<void>) => {
+    if (focus && !focus.split('|').some(part => part && name.includes(part))) return;
+    selectedCases.push(name); await t.test(name, action);
+  };
   const root = () => page.locator('.code-source-control-page:visible');
   const api = workspaceUrl.replace('/workspaces/', '/api/v1/workspaces/');
   let mainWorktreeId = '';
@@ -66,6 +73,31 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     await page.mouse.move(box.x + Math.min(160, box.width - 4), box.y + box.height / 2, {steps: 8}); await page.mouse.up();
     assert.ok(await page.evaluate(() => (window.getSelection()?.toString().length || 0) > 0), '移入悬浮层后可以真实选择文字');
   };
+  const enterHoverCard = async (card: any) => {
+    await card.evaluate(async (element: HTMLElement) => {
+      const layer = element.closest('.ant-popover') || element;
+      await Promise.all(layer.getAnimations({subtree:true}).map(animation => animation.finished.catch(() => {})));
+    });
+    const box = await card.boundingBox(); assert.ok(box);
+    // Enter the observed card directly, as a user does. Locator.hover's automatic
+    // scroll/stability wait can outlast the card's pointer-leave grace period.
+    await page.mouse.move(box.x + Math.min(20, box.width / 2), box.y + Math.min(20, box.height / 2), {steps: 4});
+    const point = {x:box.x + Math.min(20,box.width/2),y:box.y + Math.min(20,box.height/2)};
+    await card.evaluate(async () => { await new Promise(requestAnimationFrame); await new Promise(requestAnimationFrame); });
+    const pointerInside = await card.evaluate((element:HTMLElement, position:{x:number;y:number}) => { const hit=document.elementFromPoint(position.x,position.y);return Boolean(hit && element.contains(hit) && hit.closest('article')===element); }, point);
+    assert.equal(pointerInside, true, '真实命中必须属于同一个工作树信息层');
+    await page.waitForFunction(({x,y}: {x:number;y:number}) => {
+      const hit=document.elementFromPoint(x,y), owner=hit?.closest('article[aria-label="工作树来源信息"]');
+      return Boolean(owner && owner.matches(':hover'));
+    }, point, {polling:'raf',timeout:1500}).catch(()=>{});
+    const entered = await card.evaluate((element: HTMLElement) => element.matches(':hover'));
+    if (!entered) {
+      const actual = await page.evaluate(({x,y}: {x:number;y:number}) => { const hit = document.elementFromPoint(x,y);return {hit:hit ? {tag:hit.tagName,className:hit.getAttribute('class'),text:hit.textContent?.slice(0,180),owner:hit.closest('article')?.getAttribute('aria-label')} : null,hovered:[...document.querySelectorAll(':hover')].map(element=>({tag:element.tagName,className:element.getAttribute('class')})).slice(-12)}; }, point);
+      process.stderr.write('[source-control-hover-hit-failure] '+JSON.stringify({box,pointerInside,actual})+'\n');
+      await capture(page,'source-control-hover-hit-failure.png');
+    }
+    assert.equal(entered, true, '指针实际进入可操作的信息层');
+  };
   const assertSelectionContrast = async (control: any, label: string) => {
     assert.equal(await control.getByRole('radio', {name: label, exact: true}).isChecked(), true);
     const appearance = (element: HTMLElement) => { const style = getComputedStyle(element); return [style.color, style.backgroundColor, style.fontWeight]; };
@@ -128,7 +160,7 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     await page.mouse.move(x + dx, y + dy, {steps: 12}); await page.mouse.up();
   };
 
-  await t.test('源代码管理真实清单、同文件两层差异与实际暂存全文', async () => {
+  await scenario('源代码管理真实清单、同文件两层差异与实际暂存全文', async () => {
     await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
     await page.setViewportSize({width: 1440, height: 900}); await open();
     const observed = await catalog();
@@ -380,7 +412,7 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     });
   });
 
-  await t.test('源码文件名优先，同名文件只补最短区分目录', async () => {
+  await scenario('源码文件名优先，同名文件只补最短区分目录', async () => {
     await fixture.withDuplicateFiles(async ({location,files}:any) => {
       await page.setViewportSize({width:1440,height:900}); await open();
       const refreshed=page.waitForResponse((response:any)=>new URL(response.url()).pathname.endsWith('/code/source-control'));
@@ -428,7 +460,7 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     });
   });
 
-  await t.test('固定历史全文、悬浮信息选择复制与准确任务往返', async () => {
+  await scenario('固定历史全文、悬浮信息选择复制与准确任务往返', async () => {
     await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
     await page.setViewportSize({width: 1440, height: 900}); await openHistory();
     await root().getByRole('button', {name: '查看完整文件', exact: true}).click(); await waitFull(fixture.historyText);
@@ -464,7 +496,7 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     await noOverflow();
   });
 
-  await t.test('鼠标调整两轴、展开恢复、刷新与窄分屏保留手动比例', async () => {
+  await scenario('鼠标调整两轴、展开恢复、刷新与窄分屏保留手动比例', async () => {
     await page.setViewportSize({width: 1440, height: 900}); await open();
     await row('未暂存').click(); await diff().getByText('sourceControlWorking = 34', {exact: false}).waitFor();
     const horizontal = root().getByRole('separator', {name: '调整源代码管理与阅读区宽度', exact: true});
@@ -492,7 +524,7 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     assert.deepEqual([Number(await horizontal.getAttribute('aria-valuenow')), Number(await vertical.getAttribute('aria-valuenow'))], after);
   });
 
-  await t.test('迟到的差异不能覆盖当前层，清单刷新失败保留已读取现场', async () => {
+  await scenario('迟到的差异不能覆盖当前层，清单刷新失败保留已读取现场', async () => {
     await page.setViewportSize({width: 1440, height: 900}); await open();
     await row('未暂存').click(); await diff().getByText('sourceControlWorking = 34', {exact: false}).waitFor();
     let release = () => {}; const gate = new Promise<void>(resolve => { release = resolve; });
@@ -526,7 +558,7 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     await noOverflow();
   });
 
-  await t.test('离开保留的源代码管理页面时悬浮信息层关闭', async () => {
+  await scenario('离开保留的源代码管理页面时悬浮信息层关闭', async () => {
     await page.setViewportSize({width: 1440, height: 900});
     await page.goto(workspaceUrl + '/code/explorer'); await page.locator('.code-explorer-stage').waitFor();
     await page.getByRole('navigation', {name: '代码导航', exact: true}).getByRole('link', {name: '源代码管理', exact: true}).click();
@@ -541,7 +573,7 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     await noOverflow();
   });
 
-  await t.test('任务改动与提交保留原列表、提交详情、完整文件与返回现场', async () => {
+  await scenario('任务改动与提交保留原列表、提交详情、完整文件与返回现场', async () => {
     await page.setViewportSize({width: 1440, height: 900}); await page.goto(workspaceUrl + '/tasks/browser-task');
     const task = page.locator('#task-detail-main:visible');
     await task.locator('[data-task-content=changes]').click();
@@ -604,7 +636,7 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     assert.equal(body.source.commitHash, hash || null); assert.equal(body.content, content);
     await waitFull(content); await root().getByRole('button', {name: '返回差异', exact: true}).click();
   };
-  await t.test('同库全部真实工作树分组，同路径两层及全文保持各自版本', async () => {
+  await scenario('同库全部真实工作树分组，同路径两层及全文保持各自版本', async () => {
     await page.setViewportSize({width: 1440, height: 1000}); await open();
     const values = await worktrees(), observed = await catalog();
     const repository = observed.repositories.find((item: any) => item.id === values[0].repositoryId);
@@ -709,7 +741,7 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     await noOverflow(); await capture(page, 'source-control-fixture-all-worktrees.png');
   });
 
-  await t.test('代码库列表和比较层折叠保留选择，同名跨库工作树保持单一准确来源', async () => {
+  await scenario('代码库列表和比较层折叠保留选择，同名跨库工作树保持单一准确来源', async () => {
     await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
     await page.setViewportSize({width: 1440, height: 1000}); await open();
     const values = await worktrees(), alpha = values.find((item: any) => item.name === 'alpha'), beta = values.find((item: any) => item.name === 'beta'), peer = values.find((item: any) => item.name === 'peer');
@@ -747,7 +779,7 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     assert.equal(await sourceName.locator('code').count(), 0, '真实分支只在按需信息层展示');
     assert.ok(!(await catalogWorktree.innerText()).includes(alpha.location), '完整路径平时不占用目录行');
     await sourceName.hover();
-    const locationInfo = page.getByRole('article', {name: '工作树来源信息', exact: true}); await locationInfo.waitFor(); await locationInfo.hover();
+    const locationInfo = page.getByRole('article', {name: '工作树来源信息', exact: true}); await locationInfo.waitFor(); await enterHoverCard(locationInfo);
     await assertHoverBesideList(locationInfo);
     assert.equal(await locationInfo.locator('.source-control-worktree-info-task').innerText(), '任务：浏览器任务');
     assert.equal(await locationInfo.locator('.source-control-worktree-info-location').innerText(), alpha.repositoryName + ' · 工作树 · ' + alpha.observed.name);
@@ -766,7 +798,7 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     const focusState = () => sourceName.evaluate((element: HTMLElement) => ({active: document.activeElement === element, focusVisible: element.matches(':focus-visible'), activeLabel: document.activeElement?.getAttribute('aria-label')}));
     const initialFocus = await focusState();
     assert.ok(initialFocus.active && initialFocus.focusVisible, '键盘Tab能回到工作树名称并呈现键盘焦点：' + JSON.stringify(initialFocus));
-    await locationInfo.waitFor(); await locationInfo.hover();
+    await locationInfo.waitFor(); await enterHoverCard(locationInfo);
     await page.mouse.move(5, 5); await page.waitForTimeout(450);
     await capture(page, 'source-control-fixture-worktree-keyboard-away.png');
     assert.equal(await locationInfo.isVisible(), true, '鼠标移开超过关闭延时后，键盘焦点继续保留来源信息：' + JSON.stringify(await focusState()));
@@ -801,7 +833,7 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     await capture(page, 'source-control-fixture-single-worktree-selection.png'); await noOverflow();
   });
 
-  await t.test('当前分支历史没有重复筛选，提交展开文件后点击差异，搜索从两个字符开始', async () => {
+  await scenario('当前分支历史仅提供范围与作者筛选，提交展开文件后点击差异，搜索从两个字符开始', async () => {
     await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
     await page.setViewportSize({width: 1440, height: 1000}); await open();
     const values = await worktrees(), alpha = values.find((item: any) => item.name === 'alpha'), beta = values.find((item: any) => item.name === 'beta');
@@ -809,7 +841,9 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     await root().locator('.source-control-browse-tabs').getByText('提交历史', {exact: true}).click();
     const commit = commitRow(alpha.commitHash); await commit.waitFor();
     assert.equal(await commitRow(beta.commitHash).count(), 0, '当前分支历史不混入同库其他任务独有提交');
-    assert.equal(await root().locator('.source-control-history-filter .ant-select').count(), 0);
+    assert.equal(await root().getByRole('button', {name: '选择历史查看范围', exact: true}).count(), 1);
+    assert.equal(await root().getByRole('button', {name: '筛选提交作者', exact: true}).count(), 1);
+    assert.equal(await root().getByRole('button', {name: '重置筛选条件', exact: true}).isDisabled(), true);
     const toggle = commit.locator('.source-control-commit-toggle');
     const historyRows = root().locator('.source-control-graph > li'); assert.ok(await historyRows.count() >= 3);
     const middle = commitRow(fixture.commitHash), last = historyRows.nth(2), lastHash = await last.getAttribute('data-source-commit'); assert.ok(lastHash);
@@ -939,7 +973,7 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     await noOverflow(); await capture(page, 'source-control-fixture-branch-history-search.png');
   });
 
-  await t.test('跨工作树迟到读取隔离，固定历史与同名无尾注提交保持精确来源', async () => {
+  await scenario('跨工作树迟到读取隔离，固定历史与同名无尾注提交保持精确来源', async () => {
     await page.setViewportSize({width: 1440, height: 1000}); await open();
     const values = await worktrees(), alpha = values.find((item: any) => item.name === 'alpha'), beta = values.find((item: any) => item.name === 'beta'), peer = values.find((item: any) => item.name === 'peer');
     await selectFile(beta, 'unstaged');
@@ -977,7 +1011,7 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     await capture(page, 'source-control-fixture-worktree-history-source.png'); await noOverflow();
   });
 
-  await t.test('任务原改动阅读与源代码管理双向关联，真实工作树预选和返回保留现场', async () => {
+  await scenario('任务原改动阅读与源代码管理双向关联，真实工作树预选和返回保留现场', async () => {
     const values = await worktrees(), alpha = values.find((item: any) => item.name === 'alpha');
     await page.setViewportSize({width: 1440, height: 1000}); await page.goto(workspaceUrl + '/tasks/browser-task');
     const task = page.locator('#task-detail-main:visible'); await task.locator('[data-task-content=changes]').click();
@@ -1007,4 +1041,9 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     assert.ok((await reader.getByRole('region', {name: '差异内容', exact: true}).innerText()).includes(alpha.workingText.trim()));
     await noOverflow(); await capture(page, 'source-control-fixture-task-worktree-return.png');
   });
+  await runSourceControlBranchesJourney({t,page,workspaceUrl,capture,fixture,expectedBrowserErrors,scenario});
+  if (focus) {
+    assert.ok(selectedCases.length, '源码管理 focus 必须选择至少一个真实场景');
+    process.stderr.write('[buildr-browser-code-focus] ' + JSON.stringify({focus,cases:selectedCases}) + '\n');
+  }
 }

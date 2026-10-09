@@ -10,9 +10,9 @@ export function relativeCodePath(value:string, allowEmpty=false) {
   if ((!value && !allowEmpty) || value.includes('\\') || value.includes('\0') || value.includes('//') || path.posix.isAbsolute(value) || value.split('/').some(p=>p==='..'||p==='.'||p.toLowerCase()==='.git') || /^[A-Za-z]:/.test(value)) throw codeFailure('code_path_forbidden','文件路径必须位于所选代码库内。');
   return value.replace(/\/$/,'');
 }
-export function codeGit(root:string,args:string[],maxBuffer=CODE_LIMITS.imageBytes+1,input?:string|Buffer): Buffer {
+export function codeGit(root:string,args:string[],maxBuffer=CODE_LIMITS.imageBytes+1,input?:string|Buffer,config: string[] = []): Buffer {
   const env=Object.fromEntries(Object.entries(process.env).filter(([key])=>!key.startsWith('GIT_')));
-  try { return execFileSync('git',['--literal-pathspecs','--no-optional-locks','--no-replace-objects','-c','gc.auto=0','-c','maintenance.auto=false','-C',root,...args],{env:{...env,GIT_OPTIONAL_LOCKS:'0',GIT_NO_LAZY_FETCH:'1',GIT_TERMINAL_PROMPT:'0',GIT_CONFIG_NOSYSTEM:'1'},timeout:4000,maxBuffer,input,stdio:[input===undefined?'ignore':'pipe','pipe','ignore']}); }
+  try { return execFileSync('git',['--literal-pathspecs','--no-optional-locks','--no-replace-objects','-c','gc.auto=0','-c','maintenance.auto=false','-c','core.fsmonitor=false',...config.flatMap(value => ['-c',value]),'-C',root,...args],{env:{...env,GIT_OPTIONAL_LOCKS:'0',GIT_NO_LAZY_FETCH:'1',GIT_TERMINAL_PROMPT:'0',GIT_CONFIG_NOSYSTEM:'1'},timeout:4000,maxBuffer,input,stdio:[input===undefined?'ignore':'pipe','pipe','ignore']}); }
   catch { throw codeFailure('code_git_unavailable','该代码库的指定 Git 内容当前不可读取。',404); }
 }
 export function gitCommonDirectory(root:string) { const value=codeGit(root,['rev-parse','--git-common-dir']).toString().trim(); return fs.realpathSync(path.resolve(root,value)); }

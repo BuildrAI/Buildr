@@ -3,11 +3,12 @@ import path from 'node:path';
 import { codeFailure, relativeCodePath, type CodeSource } from '../infrastructure/code-file-reader.ts';
 import { readCodeFile } from '../infrastructure/code-file-content.ts';
 import { readSourceControlImages, type CodeImageFile } from '../infrastructure/source-control-image-reader.ts';
+import { readCodeConfiguredAuthor } from '../infrastructure/code-author-identity.ts';
 import { parseTaskCommitTrailer } from '../../task/commits/domain/task-commit.ts';
 import type { CodeGitWorktree } from '../infrastructure/code-worktree-reader.ts';
 import { codeWorktreeTaskKey, type readSourceControlTaskAssociations } from '../infrastructure/code-worktree-catalog.ts';
-import { SOURCE_CONTROL_LIMITS, assertCodeRevision, assertSourceControlPath, codeRevision, observeSourceControl, readIndexEntry, readSourceControlRefs, readRawCodeCommit, readRawCodeCommits, listCodeCommitIds, readCodeCommitFiles, readCodePatch } from '../infrastructure/source-control-git-reader.ts';
-import type { CodeReadMeta, CodeReadDiagnostic, CodeSourceControlInput, CodeSourceControlResponse, CodeSourceControlRepository, CodeHistoryCommit, CodeHistoryResponse, CodeCommitResponse, CodeDiffResponse, CodeSourceFileResponse } from './source-control-model.ts';
+import { SOURCE_CONTROL_LIMITS, assertCodeRevision, assertSourceControlPath, codeRevision, observeSourceControl, readIndexEntry, readSourceControlRefs, sourceControlHistoryTips, readRawCodeCommit, readRawCodeCommits, listCodeCommitIds, readCodeCommitFiles, readCodePatch } from '../infrastructure/source-control-git-reader.ts';
+import type { CodeReadMeta, CodeReadDiagnostic, CodeSourceControlInput, CodeSourceControlResponse, CodeSourceControlRepository, CodeHistoryCommit, CodeHistoryResponse, CodeAuthorsResponse, CodeCommitResponse, CodeDiffResponse, CodeSourceFileResponse } from './source-control-model.ts';
 
 type Catalog = { repositories: Array<{ id: string; code: string; name: string; location: string; available: boolean; gitId: string | null }>; selectedRepositoryIds: string[]; scopeReason: string; diagnostics: CodeReadDiagnostic[] };
 type Dependencies = { repositories(root: string, taskId?: string): Catalog; source(root: string, input: CodeSourceControlInput): CodeSource;worktrees(root:string,repositoryId:string):CodeGitWorktree[]; taskAssociations?(root:string,repositories:CodeSourceControlRepository[],taskId?:string,deadline?:number):ReturnType<typeof readSourceControlTaskAssociations>; readTask?(root: string, taskId: string): { taskId: string; title: string } };
@@ -19,6 +20,8 @@ function requireRepository(input: CodeSourceControlInput) { if (!input.repositor
 function validateInput(input: CodeSourceControlInput) {
   if (input.limit !== undefined && (!Number.isSafeInteger(input.limit) || input.limit < 1 || input.limit > SOURCE_CONTROL_LIMITS.history)) throw codeFailure('code_history_limit_invalid', '历史条数必须为 1–200。');
   if (input.query !== undefined && (typeof input.query !== 'string' || input.query.length > 200 || input.query.includes('\0'))) throw codeFailure('code_query_invalid', '历史关键词最长 200 个字符。');
+  if (input.authorEmail !== undefined && (typeof input.authorEmail !== 'string' || !input.authorEmail || input.authorEmail.length > 320 || /[\0\r\n]/.test(input.authorEmail))) throw codeFailure('code_author_invalid', '作者（Author）邮箱身份无效。');
+  if (input.branch !== undefined && (typeof input.branch !== 'string' || !input.branch || input.branch.length > 1024 || /[\0\r\n]/.test(input.branch))) throw codeFailure('code_branch_invalid', '历史分支（Branch）范围无效。');
   if (input.area !== undefined && !['unstaged', 'staged', 'untracked', 'commit'].includes(input.area)) throw codeFailure('code_area_invalid', '比较层无效。');
 }
 
@@ -96,13 +99,8 @@ export function createSourceControlApplication(dependencies: Dependencies) {
   function history(root: string, input: CodeSourceControlInput): CodeHistoryResponse {
     requireRepository(input); validateInput(input);
     const source = dependencies.source(root, input), refs = readSourceControlRefs(source);
-    let tips = refs.head ? [refs.head] : [];
-    if (input.branch && input.branch !== 'HEAD') {
-      const branch = refs.branches.find(branch => branch.name === input.branch);
-      if (!branch && (refs.head || refs.current !== input.branch)) throw codeFailure('code_branch_missing', '所选本机分支不存在，请刷新分支清单。', 404);
-      tips = branch ? [branch.hash] : [];
-    }
-    const revision = codeRevision([refs.revision, input.branch || 'HEAD', input.query || null]);
+    const tips = sourceControlHistoryTips(refs, input.branch);
+    const revision = codeRevision([refs.revision, input.branch || 'HEAD', input.query || null, input.authorEmail || null]);
     assertCodeRevision(revision, input.expectedRevision);
     let offset = 0;
     if (input.cursor) {
@@ -111,7 +109,7 @@ export function createSourceControlApplication(dependencies: Dependencies) {
     }
     const listing = listCodeCommitIds(source, tips), objects = readRawCodeCommits(source, listing.ids), commits = objects.commits;
     const query = (input.query || '').trim().toLowerCase();
-    const matching = query ? commits.filter(commit => [commit.message, commit.authorName, commit.authorEmail, commit.hash].join('\n').toLowerCase().includes(query)) : commits;
+    const matching = commits.filter(commit => (!input.authorEmail || commit.authorEmail === input.authorEmail) && (!query || [commit.message, commit.authorName, commit.authorEmail, commit.hash].join('\n').toLowerCase().includes(query)));
     const limit = input.limit || SOURCE_CONTROL_LIMITS.history, selected = decorate(root, matching.slice(offset, offset + limit), refs);
     const more = offset + limit < matching.length, nextCursor = more ? Buffer.from(JSON.stringify({ revision, offset: offset + limit })).toString('base64url') : null;
     assertCodeRevision(refs.revision, readSourceControlRefs(source).revision);
@@ -119,6 +117,26 @@ export function createSourceControlApplication(dependencies: Dependencies) {
     if(objects.truncated)diagnostics.push({code:'code_history_bytes_truncated',message:'部分提交说明超过本次 8 MiB 对象读取上限，保留其他已读取提交。',repositoryId:source.repositoryId});
     verifySource(root,input,source);
     return { ...metadata(revision, SOURCE_CONTROL_LIMITS.scan, listing.truncated || objects.truncated || more, diagnostics, nextCursor), source, branches: refs.branches, commits: selected };
+  }
+  function authors(root: string, input: CodeSourceControlInput): CodeAuthorsResponse {
+    requireRepository(input); validateInput(input);
+    const source = dependencies.source(root, input), refs = readSourceControlRefs(source);
+    const identity = () => {
+      try { return { currentAuthor: readCodeConfiguredAuthor(source), unavailable: false }; }
+      catch { return { currentAuthor: null, unavailable: true }; }
+    };
+    const observedIdentity = identity();
+    const listing = listCodeCommitIds(source, sourceControlHistoryTips(refs, input.branch));
+    const objects = readRawCodeCommits(source, listing.ids), byEmail = new Map<string, { name: string; email: string }>();
+    for (const commit of objects.commits) if (commit.authorEmail && !byEmail.has(commit.authorEmail)) byEmail.set(commit.authorEmail, { name: commit.authorName, email: commit.authorEmail });
+    const revision = codeRevision([refs.revision, input.branch || 'HEAD', 'authors', observedIdentity]);
+    assertCodeRevision(revision, input.expectedRevision);
+    assertCodeRevision(refs.revision, readSourceControlRefs(source).revision); verifySource(root, input, source);
+    assertCodeRevision(codeRevision(observedIdentity), codeRevision(identity()));
+    const truncated = listing.truncated || objects.truncated;
+    const diagnostics: CodeReadDiagnostic[] = truncated ? [{ code: 'code_authors_truncated', message: '作者（Author）候选只覆盖最近 2000 条可达提交（Commit）及本次 8 MiB 对象读取范围。', repositoryId: source.repositoryId }] : [];
+    if (observedIdentity.unavailable) diagnostics.push({ code: 'code_author_identity_unavailable', message: '当前 Git 作者（Author）身份暂不可确认，仍可选择其他作者（Author）筛选。', repositoryId: source.repositoryId });
+    return { ...metadata(revision, SOURCE_CONTROL_LIMITS.scan, truncated, diagnostics), source, currentAuthor: observedIdentity.currentAuthor, authors: [...byEmail.values()].sort((a, b) => a.name.localeCompare(b.name) || a.email.localeCompare(b.email)) };
   }
   function commit(root: string, input: CodeSourceControlInput): CodeCommitResponse {
     requireRepository(input); if (!input.commitHash) throw codeFailure('code_commit_required', '必须提供完整提交标识。');
@@ -190,5 +208,5 @@ export function createSourceControlApplication(dependencies: Dependencies) {
     verifySource(root,input,source);
     return { ...result, ...metadata(result.revision, result.limitBytes, result.truncated) };
   }
-  return Object.freeze({ sourceControl, history, commit, diff, sourceFile });
+  return Object.freeze({ sourceControl, history, authors, commit, diff, sourceFile });
 }

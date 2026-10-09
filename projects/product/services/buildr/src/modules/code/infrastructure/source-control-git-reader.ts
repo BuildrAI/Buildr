@@ -32,8 +32,8 @@ function entry(source:CodeSource, area: CodeChangeArea, relative: string, code: 
 }
 
 /** Metadata only: preserve both XY columns and never pre-read patches or file contents. */
-export function observeSourceControl(source: CodeSource) {
-  const raw = text(source, ['status', '--porcelain=v2', '-z', '--untracked-files=all', '--branch']);
+export function observeSourceControl(source: CodeSource, options: { gitConfig?: string[] } = {}) {
+  const raw = codeGit(source.location, ['status', '--porcelain=v2', '-z', '--untracked-files=all', '--branch'], SOURCE_CONTROL_LIMITS.bytes, undefined, options.gitConfig).toString('utf8');
   const records = raw.split('\0'), files: CodeChange[] = [];
   let branch: string | null = null, head: string | null = null, upstream: string | null = null, ahead: number | null = null, behind: number | null = null;
   for (let index = 0; index < records.length; index++) {
@@ -72,13 +72,23 @@ export function readIndexEntry(source: CodeSource, relative: string) {
 }
 
 export function readSourceControlRefs(source: CodeSource) {
-  const raw = text(source, ['for-each-ref', '--format=%(refname)%00%(objectname)%00%(*objectname)%00%(objecttype)%00%(upstream:short)%00%(*objecttype)', 'refs/heads/', 'refs/remotes/', 'refs/tags/']);
+  const raw = text(source, ['for-each-ref', '--format=%(refname)%00%(objectname)%00%(*objectname)%00%(objecttype)%00%(upstream:short)%00%(*objecttype)%00%(symref)%00%(upstream)', 'refs/heads/', 'refs/remotes/', 'refs/tags/']);
   const rows = raw.split('\n').filter(Boolean).map(line => line.split('\0'));
   const current = optional(source, ['symbolic-ref', '--short', 'HEAD']);
   const branches: CodeBranch[] = rows.filter(row => row[0].startsWith('refs/heads/')).map(row => ({ name: row[0].slice(11), hash: row[1], current: row[0].slice(11) === current, upstream: row[4] || null }));
   const head = optional(source, ['rev-parse', '--verify', 'HEAD^{commit}']);
   const tips = [...new Set([...rows.filter(row => row[3] === 'commit' || row[3] === 'tag' && row[5] === 'commit').map(row => row[2] || row[1]), ...(head ? [head] : [])])];
-  return { branches, rows, tips, head, current, revision: codeRevision([source.repositoryId, source.location, raw, head]) };
+  return { branches, rows, tips, head, current, revision: codeRevision([source.repositoryId, source.location, raw, head, current]) };
+}
+
+/** Resolve only literal local/remote branch refs; never hand a user expression to Git. */
+export function sourceControlHistoryTips(refs: ReturnType<typeof readSourceControlRefs>, branch?: string) {
+  if (!branch || branch === 'HEAD') return refs.head ? [refs.head] : [];
+  const ref = branch.startsWith('refs/') ? branch : 'refs/heads/' + branch;
+  const row = refs.rows.find(row => row[0] === ref && (ref.startsWith('refs/heads/') || ref.startsWith('refs/remotes/')) && row[3] === 'commit' && !row[6]);
+  if (row) return [row[1]];
+  if (!refs.head && (branch === refs.current || ref === 'refs/heads/' + refs.current)) return [];
+  throw codeFailure('code_branch_missing', '所选本地或远程分支（Branch）记录不存在，请刷新清单。', 404);
 }
 
 export function readRawCodeCommit(source: CodeSource, hash: string): CodeHistoryCommit {

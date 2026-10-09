@@ -1,6 +1,6 @@
 # 只读代码观察
 
-人在“代码”区域与智能体（Agent）通过以下命令读取同一应用能力。先明确工作空间（Workspace），再使用登记代码库实例（Repository Instance）标识；不从目录、分支（Branch）或远端地址猜测归属。请求只读，不暂存、提交、抓取远端、切换分支或修改任务。
+人在“代码”区域与智能体（Agent）通过以下命令读取同一应用能力。先明确工作空间（Workspace），再使用登记代码库实例（Repository Instance）标识；不从目录、分支（Branch）或远端地址猜测归属。以下命令始终只读，不暂存、提交、抓取远端、切换分支（Branch）或修改任务（Task）。
 
 ## 查看清单和改动
 
@@ -25,13 +25,21 @@ buildr code source-file --repository <id> --worktree <worktree-id> --path <relat
 ## 查看本机历史
 
 ```text
-buildr code history --repository <id> --worktree <worktree-id> --branch <local-branch> --query <text> --limit 200 --target <workspace> --json
+buildr code branches --repository <id> --worktree <worktree-id> --target <workspace> --json
+buildr code authors --repository <id> --worktree <worktree-id> --branch refs/remotes/origin/main --target <workspace> --json
+buildr code history --repository <id> --worktree <worktree-id> --branch refs/remotes/origin/main --author-email <email> --query <text> --limit 200 --target <workspace> --json
 buildr code commit --repository <id> --worktree <worktree-id> --commit <full-sha> --target <workspace> --json
 buildr code diff --repository <id> --worktree <worktree-id> --commit <full-sha> --path <relative-path> --area commit --target <workspace> --json
 buildr code source-file --repository <id> --worktree <worktree-id> --commit <full-sha> --path <relative-path> --area commit --target <workspace> --json
 ```
 
 历史读取本机可达记录，包括尚未推送的提交，不抓取远端。首版每次检查最近2000条，默认每页200条，`limit`为1–200；关键词只覆盖实际检查范围。分支筛选按可达关系读取，引用标记只说明哪些分支或标签当前指向该提交。查看 `coverage`及`nextCursor`，超限不得声称覆盖全部历史。根提交没有父提交，合并提交首版以第一父提交作为差异基线。
+
+`branches` 最多返回1000个本地、远程记录，完整 `ref` 区分同名来源；`localBranch` 只表示所选远程项对应的已确认本地跟踪关系，不能凭名称自行归并。`worktreeId/worktreeLocation` 表达真实占用。历史范围兼容本地名称，也接受完整 `refs/heads/…`、`refs/remotes/…`；不指定或 `HEAD` 随当前位置变化。`authors` 独立观察所选可达范围内的作者（Author），按邮箱区分同名人员，不使用一页历史推断全量候选；其2000条扫描及8 MiB对象上限和截断须检查。`--author-email` 精确匹配邮箱，和关键词组合后才分页；改变范围或条件后重新从首页观察，不复用旧游标（Cursor）。
+
+`authors.currentAuthor` 独立表示具体工作位置的有效已配置作者（Author）身份：非空 `author.email`、`author.name` 优先，否则使用 `user.email`、`user.name`，Git 工作树（Worktree）独立配置及条件包含均按该目录生效。姓名可空，邮箱未配置、无效或暂不可确认时返回 `null`；不得使用登录用户、系统名称或 `EMAIL` 等环境值猜测。“我的提交（me）”按该明确邮箱筛选，即使它尚未出现在已扫描候选中也可选择；无确认邮箱时仅禁用此快捷项，不阻止其他候选。该身份纳入作者（Author）观察版本，配置变化后重读，不沿用旧身份观察。网页姓名或邮箱输入仅搜索候选，实际仍按准确邮箱读取历史。
+
+网页工作位置旁的管理入口与历史过滤分别提供实际切换和只读查看。实际切换使用独立 `POST /code/branch-switch`，绑定已观察位置版本、完整目标引用（Ref）及提交（Commit），并由本机会话（Session）授权；它不作为上述只读命令或工作进程（Worker）动作开放。远程独有项会建立对应本地跟踪分支（Tracking Branch）并检出（Checkout）；已跟踪本地项使用自身成果，不重置到远程。占用、覆盖现有或被忽略文件的风险、版本变化时保留现场；不自动执行钩子（Hook）或外部文件转换，需要外部转换的相关切换局部拒绝，不能关闭转换后把错误内容当正常文件。失败结果包含可确认的当前事实及已发生效果；未知结果不能解释成没有变化。智能体（Agent）需要执行 Git 变更时，仍使用当前工作空间（Workspace）绑定的 Git 操作能力并核对用户目标、对象和副作用。
 
 关联任务只接受服务确认的有效唯一 `Buildr-Task` 尾注（Trailer）及可读取任务；正文示例、冲突、无效编号或缺失任务不形成可用关联。任务内“改动与提交”继续保留原查看，与全局源代码管理仅通过准确来源及返回入口双向关联，不复制或替代详情。
 

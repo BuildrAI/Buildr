@@ -1,0 +1,24 @@
+.branch-history-filters { display:grid; grid-template-columns:minmax(0,1fr) 104px 54px; align-items:center; gap:6px; min-width:0; padding:0 0 8px; }
+.branch-history-filter-branch { min-width:0; }
+.branch-history-filter-branch .source-control-branch-picker-trigger { width:100%; justify-content:space-between; }
+.branch-history-filter-author.ant-btn { display:flex; align-items:center; justify-content:space-between; gap:7px; width:100%; min-width:0; font-size:12px; color:var(--soft-ink); }
+.branch-history-filter-author>span:first-child { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.branch-history-filter-author>.anticon { flex:none; font-size:9px; color:var(--soft-muted); }
+.branch-history-filter-reset { display:block; min-width:0; }
+.branch-history-filter-clear.ant-btn { display:inline-flex; align-items:center; justify-content:center; gap:3px; width:100%; padding:0 3px; color:var(--soft-muted); font-size:11px; white-space:nowrap; }
+.branch-history-filter-clear.ant-btn:hover:not(:disabled) { color:var(--soft-primary); }
+.branch-history-filter-clear.ant-btn:disabled { color:var(--soft-muted); opacity:.45; }
+.branch-history-author-popup { width:260px; max-width:calc(100vw - 24px); }
+.branch-history-author-popover .ant-popover-inner { padding:4px; border:1px solid var(--soft-line); background:var(--soft-surface); }
+.branch-history-author-search { padding:4px 4px 8px; }
+.branch-history-author-me.ant-btn,.branch-history-author-item.ant-btn { display:flex; width:100%; height:auto; min-height:32px; justify-content:space-between; gap:8px; text-align:left; padding:5px 8px; font-size:12px; }
+.branch-history-author-me.ant-btn { min-height:42px; }
+.branch-history-author-me .branch-history-author-option,.branch-history-author-item .branch-history-author-option { min-width:0; }
+.branch-history-author-menu { border-top:1px solid var(--soft-line); margin-top:4px; padding-top:4px; max-height:min(240px,calc(100vh - 180px)); overflow:auto; }
+.branch-history-author-item[aria-selected="true"] { background:var(--soft-primary-soft,color-mix(in srgb,var(--soft-primary) 8%,var(--soft-surface))); }
+.branch-history-author-item[aria-selected="true"]>.anticon,.branch-history-author-me>.anticon { flex:none; color:var(--soft-primary); font-size:11px; }
+.branch-history-author-empty { padding:8px; margin:0; color:var(--soft-muted); font-size:12px; }
+.branch-history-author-option { display:flex; flex-direction:column; gap:1px; font-size:12px; }
+.branch-history-author-option>span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.branch-history-author-option small { color:var(--soft-muted); font-size:10px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.branch-history-filter-note { margin:0 0 8px; color:var(--soft-muted); font-size:11px; line-height:1.6; }

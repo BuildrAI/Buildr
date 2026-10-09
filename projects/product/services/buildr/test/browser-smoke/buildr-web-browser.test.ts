@@ -17,6 +17,7 @@ import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
 import { materializeCleanProductSource } from '../helpers/clean-product-source.ts';
 import { recordVerificationResultFromEvidence } from '../helpers/task-verification-result-fixture.ts';
 import { gitCheckoutReadId } from '../../src/infrastructure/git/checkout-read-identity.ts';
+import { withSourceControlBranchFixture } from '../helpers/source-control-branch-fixture.ts';
 import { runWorkspaceCompositionJourney } from './workspace-composition-journey.ts';
 import { runCodeExplorerJourney } from '../../../buildr-web/test/browser/code-explorer-journey.ts';
 import { runSourceControlJourney } from '../../../buildr-web/test/browser/source-control-journey.ts';
@@ -363,9 +364,10 @@ async function capture(page: any, name: any): Promise<any>  {
   await page.screenshot({ path: path.join(SCREENSHOT_DIR, name), fullPage: true, animations: 'disabled' });
 }
 
-// Code combines explorer and SCM journeys: observed bodies consume 225s before
-// the final case, plus 14s setup. Keep all cases within the dispatcher's 360s cap.
-test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('all') || SELECTORS.has('task') || SELECTORS.has('code') ? 300_000 : SELECTORS.has('task-materials') || SELECTORS.has('layout') || SELECTORS.has('workbench') || SELECTORS.has('articles') || SELECTORS.has('shell') || SELECTORS.has('service') || SELECTORS.has('project') ? 120_000 : 45_000 }, async (t: any) => {
+// The code selector combines explorer, SCM and branch-write journeys. Its
+// observed 300s run reached the new write cases without enough remaining time;
+// reserve their budget while staying below the dispatcher's 360s process cap.
+test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('code') ? 345_000 : SELECTORS.has('all') || SELECTORS.has('task') ? 300_000 : SELECTORS.has('task-materials') || SELECTORS.has('layout') || SELECTORS.has('workbench') || SELECTORS.has('articles') || SELECTORS.has('shell') || SELECTORS.has('service') || SELECTORS.has('project') ? 120_000 : 45_000 }, async (t: any) => {
   const requestedSmokeRoot: any = process.env.BUILDR_SMOKE_ROOT;
   const managedSmokeRoot: any = requestedSmokeRoot && fs.existsSync(path.join(requestedSmokeRoot, '.buildr-smoke-owner')) ? requestedSmokeRoot : null;
   const base: any = managedSmokeRoot || fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-browser-smoke-'));
@@ -497,7 +499,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     runBuildr(['task','update','browser-task','--brief-file',linkedBrief,'--expected-record',linkedTask.recordDigest,'--target',workspaceRoot,'--json']);
     const codeFile=path.join(workspaceRoot,'projects/demo/services/api/zz-segmented-text.txt');
     const history=spawnSync('git',['rev-parse','HEAD'],{cwd:workspaceRoot,encoding:'utf8'});assert.equal(history.status,0,history.stderr);
-    await runCodeExplorerJourney({t,page,workspaceUrl,capture,expectedBrowserErrors,codeFixture:{...codeWorktreeFixture,current:codeSegmentedText('current'),history:codeSegmentedText('history'),commitHash:history.stdout.trim(),change:()=>fs.writeFileSync(codeFile,'changed segmented text\n'+codeSegmentedText('current')),restore:()=>fs.writeFileSync(codeFile,codeSegmentedText('current'))}});
+    if (!process.env.BUILDR_SOURCE_CONTROL_FOCUS) await runCodeExplorerJourney({t,page,workspaceUrl,capture,expectedBrowserErrors,codeFixture:{...codeWorktreeFixture,current:codeSegmentedText('current'),history:codeSegmentedText('history'),commitHash:history.stdout.trim(),change:()=>fs.writeFileSync(codeFile,'changed segmented text\n'+codeSegmentedText('current')),restore:()=>fs.writeFileSync(codeFile,codeSegmentedText('current'))}});
     // This file belongs to the finished explorer fixture. SCM also needs a real clean checkout.
     fs.rmSync(path.join(codeWorktreeFixture.nativeCheckoutLocation,codeWorktreeFixture.nativeWorktree.path));
     // Prepare the SCM comparison only after the explorer canary. Both layers remain
@@ -651,7 +653,11 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
       const retained=peerRoot+'-temporarily-unavailable';fs.renameSync(peerRoot,retained);
       try{await read();}finally{fs.renameSync(retained,peerRoot);}
     };
-    await runSourceControlJourney({t,page,workspaceUrl,capture,expectedBrowserErrors,fixture:{path:sourceControlPath,location:fs.realpathSync(workspaceRoot),commitHash:history.stdout.trim(),historyText:historicalSource.stdout,indexText,workingText,prepareWorktrees,prepareRemoteStatuses,withStatusDigits,withDuplicateFiles,withImages,cleanLocation:codeWorktreeFixture.nativeCheckoutLocation,baselineWorktrees,unrelatedRetiredTaskId:codeWorktreeFixture.worktreeTaskId,unavailableRepositoryLocation,withUnavailableRepository}});
+    const withBranches=(verify:(branches:any)=>Promise<void>)=>withSourceControlBranchFixture({base,repository:workspaceRoot,peerRepository:peerRoot,startPoint:history.stdout.trim(),originalPath:sourceControlPath},async branches=>{
+      try { await verify(branches); }
+      finally { await page.goto('about:blank').catch(()=>{}); }
+    });
+    await runSourceControlJourney({t,page,workspaceUrl,capture,expectedBrowserErrors,fixture:{path:sourceControlPath,location:fs.realpathSync(workspaceRoot),commitHash:history.stdout.trim(),historyText:historicalSource.stdout,indexText,workingText,prepareWorktrees,prepareRemoteStatuses,withStatusDigits,withDuplicateFiles,withImages,withBranches,cleanLocation:codeWorktreeFixture.nativeCheckoutLocation,baselineWorktrees,unrelatedRetiredTaskId:codeWorktreeFixture.worktreeTaskId,unavailableRepositoryLocation,withUnavailableRepository}});
   }
   if (selected('layout')) await runLayoutJourney({ t, page, workspaceUrl, capture });
 

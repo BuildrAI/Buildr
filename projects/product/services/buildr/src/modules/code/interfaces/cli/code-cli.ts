@@ -10,12 +10,12 @@ export function createCodeCliContributions(application: CodeApplication) {
     const command = CODE_HTTP_PATHS[operation];
     return Object.freeze({
       key: 'code ' + command, surface: 'agent-machine', summary: '按已登记代码库、比较层及固定版本只读查看代码，不执行 Git 或文件写入。',
-      help: ['Usage: buildr code ' + command + ' [--repository <id>] [--checkout <opaque-id>] [--worktree <opaque-id>] [--task <id>] [--commit <full-sha>] [--path <relative>] [--area unstaged|staged|untracked|commit] [--branch <local-name>] [--query <text>] [--limit <1-200>] [--cursor <value>] [--expected-revision <value>] [--page <index> | --line <number>] [--match-query <text>] [--mode name|content] [--show-ignored] [--target <workspace>] [--json]', '每个操作只接受其适用参数；source-control 保留全部 Git 工作树，--task 仅提供已核对范围的预选提示。'],
+      help: ['Usage: buildr code ' + command + ' [--repository <id>] [--checkout <opaque-id>] [--worktree <opaque-id>] [--task <id>] [--commit <full-sha>] [--path <relative>] [--area unstaged|staged|untracked|commit] [--branch <local-name-or-full-ref>] [--author-email <email>] [--query <text>] [--limit <1-200>] [--cursor <value>] [--expected-revision <value>] [--page <index> | --line <number>] [--match-query <text>] [--mode name|content] [--show-ignored] [--target <workspace>] [--json]', '每个操作只接受其适用参数；source-control 保留全部 Git 工作树，--task 仅提供已核对范围的预选提示。'],
       match: ({ domain, action }: { domain?: string; action?: string }) => domain === 'code' && action === command,
       run: async (_runtime: unknown, context: { argv: string[] }) => {
         const args = context.argv.slice(4), input: Partial<CodeInput & CodeSourceControlInput> = {}; let target = process.cwd();
         const seen = new Set<string>();
-        const flags: Record<string, string> = { '--repository': 'repositoryId','--worktree':'worktreeId','--checkout':'checkoutId', '--path': 'path', '--task': 'taskId', '--commit': 'commitHash', '--query': 'query', '--mode': 'mode', '--page': 'page', '--line': 'line', '--match-query': 'matchQuery', '--expected-revision': 'expectedRevision', '--area': 'area', '--branch': 'branch', '--limit': 'limit', '--cursor': 'cursor' };
+        const flags: Record<string, string> = { '--repository': 'repositoryId','--worktree':'worktreeId','--checkout':'checkoutId', '--path': 'path', '--task': 'taskId', '--commit': 'commitHash', '--query': 'query', '--mode': 'mode', '--page': 'page', '--line': 'line', '--match-query': 'matchQuery', '--expected-revision': 'expectedRevision', '--area': 'area', '--branch': 'branch', '--author-email': 'authorEmail', '--limit': 'limit', '--cursor': 'cursor' };
         const allowed = Object.keys(CODE_HTTP_REQUESTS[operation].properties);
         for (let index = 0; index < args.length; index++) {
           const flag = args[index]; if (seen.has(flag)) throw codeFailure('code_cli_invalid', '不能重复参数：' + flag); seen.add(flag);

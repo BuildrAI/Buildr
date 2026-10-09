@@ -1,0 +1,32 @@
+.branch-management-popover .ant-popover-inner { padding:0; border:1px solid var(--soft-line); background:var(--soft-surface); overflow:hidden; }
+.branch-management-panel { display:flex; flex-direction:column; width:min(300px,calc(100vw - 24px)); color:var(--soft-ink); overflow:hidden; }
+.branch-management-scope { flex:none; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding:8px 11px 0; font-size:11px; color:var(--soft-muted); }
+.branch-management-search { flex:none; padding:9px; border-bottom:1px solid var(--soft-line); }
+.branch-management-search .ant-input-affix-wrapper,.branch-management-search .ant-input { font-size:12px; }
+.branch-management-list { flex:1 1 auto; min-height:0; overflow:auto; overscroll-behavior:contain; padding:4px 0 6px; }
+.branch-management-group h4 { margin:0; padding:7px 11px 4px; color:var(--soft-muted); font-size:11px; font-weight:500; }
+.branch-management-entry { display:flex; align-items:center; gap:7px; width:100%; padding:7px 11px; border:0; background:transparent; color:var(--soft-ink); font:inherit; font-size:12px; text-align:left; cursor:pointer; }
+.branch-management-entry:hover,.branch-management-entry.is-active { background:color-mix(in srgb,var(--soft-primary) 7%,var(--soft-surface)); }
+.branch-management-entry:focus-visible { outline:2px solid var(--soft-primary); outline-offset:-2px; }
+.branch-management-entry>strong { min-width:0; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:500; }
+.branch-management-entry-icon,.branch-management-entry-more { flex:none; color:var(--soft-muted); font-size:11px; }
+.branch-management-entry-state { display:flex; align-items:center; gap:5px; flex:none; color:var(--soft-muted); font-size:10px; }
+.branch-management-entry.is-current .branch-management-entry-state { color:var(--soft-primary); }
+.branch-management-remote-heading { display:flex; align-items:center; gap:7px; padding:10px 11px 0; margin-top:5px; border-top:1px solid var(--soft-line); color:var(--soft-muted); font-size:11px; }
+.branch-management-none { margin:0; padding:8px 29px; font-size:11px; color:var(--soft-muted); }
+.branch-management-panel>footer { display:flex; align-items:center; flex-wrap:wrap; gap:4px; flex:none; padding:6px 9px; border-top:1px solid var(--soft-line); background:var(--soft-sidebar); font-size:10px; color:var(--soft-muted); }
+.branch-management-panel>footer>span { flex:1; min-width:0; }
+.branch-management-panel>footer .ant-btn { padding:0 4px; flex:none; color:var(--soft-primary); }
+.branch-management-panel>footer>p { flex-basis:100%; margin:0; line-height:1.6; color:var(--soft-danger,var(--soft-muted)); }
+.branch-management-action-popover { max-width:calc(100vw - 24px); }
+.branch-management-action-popover .ant-popover-inner { padding:0; background:transparent; }
+.branch-management-action { width:max-content; min-width:min(150px,calc(100vw - 24px)); max-width:min(220px,calc(100vw - 24px)); max-height:calc(100vh - 24px); overflow:auto; padding:4px; border:1px solid var(--soft-line); border-radius:8px; box-shadow:0 6px 22px color-mix(in srgb,var(--soft-ink) 12%,transparent); background:var(--soft-surface); color:var(--soft-ink); }
+.branch-management-action>p { margin:8px 5px; color:var(--soft-muted); font-size:11px; line-height:1.6; }
+.branch-management-action>p.branch-management-warning { color:var(--soft-warning,var(--soft-ink)); }
+.branch-management-action>.ant-btn { justify-content:flex-start; padding:5px 7px; min-height:30px; height:auto; font-size:12px; text-align:left; white-space:normal; }
+.branch-management-action>.ant-btn>span { overflow-wrap:anywhere; }
+.branch-management-action>.ant-btn.branch-management-primary-action { color:var(--soft-primary); }
+.branch-management-affected-files { margin:0 5px 5px; padding:0; list-style:none; color:var(--soft-muted); font-size:10px; line-height:1.7; }
+.branch-management-affected-files>li { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.branch-management-local-name { display:flex; flex-direction:column; gap:4px; margin:8px 5px; color:var(--soft-muted); font-size:11px; }
+.branch-management-local-name .ant-input { font-size:12px; }

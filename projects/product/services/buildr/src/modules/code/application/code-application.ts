@@ -8,6 +8,7 @@ import { createGitCommitReader } from '../../task/commits/infrastructure/git-com
 import { gitCheckoutReadId } from '../../../infrastructure/git/checkout-read-identity.ts';
 import { readCodeWorktreeCatalog, readSourceControlTaskAssociations } from '../infrastructure/code-worktree-catalog.ts';
 import { createSourceControlApplication } from './source-control-application.ts';
+import { createCodeBranchApplication } from './code-branch-application.ts';
 import { enumerateCodeWorktrees, resolveCodeWorktree } from '../infrastructure/code-worktree-reader.ts';
 type Repository = { id:string; code:string; name:string; source: {type:string;path:string;root?:string}; location?:string };
 type Service = {id:string;code:string;repositoryId:string;legacyRefs?:string[]};
@@ -119,6 +120,7 @@ export function createCodeApplication(dependencies:CodeDependencies) {
   const sourceControlApplication=createSourceControlApplication({repositories:repositoryScope,source:(root,input)=>source(root,input as CodeInput),worktrees:(root,id)=>{const registered=source(root,{repositoryId:id});return enumerateCodeWorktrees(registered.location,id).worktrees;},taskAssociations:(root,repositories,taskId,deadline)=>readSourceControlTaskAssociations(root,repositories,dependencies,taskId,deadline),readTask:dependencies.readTask});
   return Object.freeze({
     ...sourceControlApplication,
+    ...createCodeBranchApplication({ source: (root, input) => source(root, input as CodeInput) }),
     repositories,
     directory:(root:string,input:CodeInput)=>{const current=source(root,input),result=readCodeDirectory(current,input.path||'',Boolean(input.showIgnored));assertReadSource(current);return result;},
     file:async(root:string,input:CodeInput)=>{const current=source(root,input),result=await readCodeFile(current,input.path||'',input);assertReadSource(current);return result;},

@@ -20,6 +20,8 @@ const operations: Readonly<Record<string, Readonly<{ capability: string; method:
   'code-file': Object.freeze({capability:CODE_APPLICATION,method:'file',fields:['input']}),
   'code-search': Object.freeze({capability:CODE_APPLICATION,method:'search',fields:['input']}),
   'code-source-control': Object.freeze({capability:CODE_APPLICATION,method:'sourceControl',fields:['input']}),
+  'code-branches': Object.freeze({capability:CODE_APPLICATION,method:'branches',fields:['input']}),
+  'code-authors': Object.freeze({capability:CODE_APPLICATION,method:'authors',fields:['input']}),
   'code-history': Object.freeze({capability:CODE_APPLICATION,method:'history',fields:['input']}),
   'code-commit': Object.freeze({capability:CODE_APPLICATION,method:'commit',fields:['input']}),
   'code-diff': Object.freeze({capability:CODE_APPLICATION,method:'diff',fields:['input']}),

@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { Alert, Button, Empty, Input, Segmented, Spin, Tooltip } from 'antd';
 import { ArrowRightOutlined, DownOutlined, InfoCircleOutlined, ProjectOutlined, ReloadOutlined, RightOutlined, SearchOutlined } from '@ant-design/icons';
 import { TaskDiffReader, type RailRepository } from '../../task/components/TaskDiffReader';
@@ -19,17 +19,24 @@ import type { CodeSourceControlInput } from '../api/code-api';
 import '../source-control.css';
 export type { SourceControlChange, SourceControlCommit, SourceControlRepository, SourceControlFileTarget, SourceControlScene, SourceControlState } from '../source-control-model';
 
+export type SourceControlBranchExtension = {
+  historyRange(repository: SourceControlRepository, worktree: SourceControlWorktree): {branch?: string; authorEmail?: string};
+  selection?: {key: string; repositoryId: string; worktreeId: string; scene: 'changes' | 'history'};
+  rowControl(repository: SourceControlRepository, worktree: SourceControlWorktree, ready: boolean): ReactNode;
+  historyControls(repository: SourceControlRepository, worktree: SourceControlWorktree, controls: {query: string; clearSearch(): void}): ReactNode;
+};
+
 type Props = {
   repositories: SourceControlRepository[]; scene: SourceControlScene; reader: SourceControlReader; readKey: string;
   observation: SourceControlObservation; onRefresh(): void | Promise<void>; onRetry?(repositoryId?: string): void | Promise<void>;
   onScene(scene: SourceControlScene): void; onOpenTask(taskId: string): void;
   onOpenFile?(target: SourceControlFileTarget): void; onViewCurrent?(target: SourceControlFileTarget): void;
-  task?: { id: string; title: string }; scopeSelection?: SourceControlScopeSelection; layoutStorageKey?: string;
+  task?: { id: string; title: string }; scopeSelection?: SourceControlScopeSelection; layoutStorageKey?: string; branchExtension?: SourceControlBranchExtension;
 };
 const readNote = (data: { coverage: { limit: number; truncated: boolean }; diagnostics: Array<{message: string}> } | null) => data ? [data.coverage.truncated ? '当前读取范围不完整。' : '', ...data.diagnostics.map(item => item.message)].filter(Boolean).join('；') : '';
 
 /** Shared view: all observed facts and reads come from the caller, including in the offline prototype. */
-export function SourceControlWorkbench({ repositories, scene, reader, readKey, observation, onRefresh, onRetry, onScene, onOpenTask, onOpenFile, onViewCurrent, task, scopeSelection, layoutStorageKey }: Props) {
+export function SourceControlWorkbench({ repositories, scene, reader, readKey, observation, onRefresh, onRetry, onScene, onOpenTask, onOpenFile, onViewCurrent, task, scopeSelection, layoutStorageKey, branchExtension }: Props) {
   const [selectedWorktreeKey, setSelectedWorktreeKey] = useState('');
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [catalogExpanded, setCatalogExpanded] = useState(true);
@@ -54,6 +61,26 @@ export function SourceControlWorkbench({ repositories, scene, reader, readKey, o
   const selectedRepository = selectedSource?.repository, selectedWorktree = selectedSource?.worktree;
   const selectedIdentity = selectedSource ? sourceControlWorktreeKey(selectedSource.repository.id, selectedSource.worktree.worktreeId) : '';
   useEffect(() => { setSourceDetailsExpanded(false); }, [selectedIdentity]);
+  const historyRange = selectedRepository && selectedWorktree ? branchExtension?.historyRange(selectedRepository, selectedWorktree) : undefined;
+  useEffect(() => {
+    const selection = branchExtension?.selection;
+    if (!selection) return;
+    const nextWorktreeKey = sourceControlWorktreeKey(selection.repositoryId, selection.worktreeId);
+    if (nextWorktreeKey !== selectedWorktreeKey) { setQuery(''); setSearchQuery(''); }
+    setSelectedWorktreeKey(nextWorktreeKey);
+    setChangeFileKey(''); setHistoryFileKey(''); setCommitHash(''); setCommitSummary(undefined);
+    setHistoryReaderMode('detail'); setCommitBaseHash(null); onScene(selection.scene);
+  }, [branchExtension?.selection?.key]);
+  const branchHistoryRevision = branchExtension ? historyRange?.branch || selectedWorktree?.head : undefined;
+  const previousBranchHistory = useRef({identity: '', revision: branchHistoryRevision, author: historyRange?.authorEmail});
+  useEffect(() => {
+    const previous = previousBranchHistory.current;
+    previousBranchHistory.current = {identity: selectedIdentity, revision: branchHistoryRevision, author: historyRange?.authorEmail};
+    // A Task caller has its own selection restoration; only invalidate a changed history scope in this entry.
+    if (!branchExtension || previous.identity !== selectedIdentity || previous.revision === branchHistoryRevision && previous.author === historyRange?.authorEmail) return;
+    setHistoryFileKey(''); setCommitHash(''); setCommitSummary(undefined); setHistoryReaderMode('detail'); setCommitBaseHash(null);
+    if (scene === 'full-file' && returnScene === 'history') onScene('history');
+  }, [branchHistoryRevision, historyRange?.authorEmail, selectedIdentity]);
   const fileKey = history ? historyFileKey : changeFileKey;
   const setFileKey = history ? setHistoryFileKey : setChangeFileKey;
   useEffect(() => { if (!selectedWorktreeKey && selectedIdentity && !scopeSelection) setSelectedWorktreeKey(selectedIdentity); }, [selectedWorktreeKey, selectedIdentity, scopeSelection]);
@@ -88,7 +115,7 @@ export function SourceControlWorkbench({ repositories, scene, reader, readKey, o
     if (task && scopeSelection && selectionEpoch === scopeSelection.key) taskSelections.current.set(task.id, {selectedWorktreeKey: selectedIdentity, changeFileKey, historyFileKey, commitHash, commitSummary, commitBaseHash, historyReaderMode, scene, returnScene});
   }, [task, scopeSelection, selectionEpoch, selectedIdentity, changeFileKey, historyFileKey, commitHash, commitSummary, commitBaseHash, historyReaderMode, scene, returnScene]);
   const version = observation.readAt + ':' + refreshToken;
-  const historyInput: CodeSourceControlInput = { repositoryId: selectedRepository?.id, worktreeId: selectedWorktree?.worktreeId, query: searchQuery || undefined, limit: 100 };
+  const historyInput: CodeSourceControlInput = { repositoryId: selectedRepository?.id, worktreeId: selectedWorktree?.worktreeId, branch: historyRange?.branch, authorEmail: historyRange?.authorEmail, query: searchQuery || undefined, limit: 100 };
   const historyRead = useSourceControlRead(JSON.stringify([readKey, historyInput]), historyInput, reader.history, Boolean(history && selectedWorktree && selectedWorktree.status !== 'offline'), version);
   const commits = historyRead.data?.commits.map(commit => sourceControlCommit(commit)) || [];
   const selectedCommit = commitSummary?.hash === commitHash ? commitSummary : undefined;
@@ -142,13 +169,14 @@ export function SourceControlWorkbench({ repositories, scene, reader, readKey, o
     if (!fullImage) onOpenFile?.({ repositoryId: selectedRepository.id, worktreeId: selectedWorktree?.worktreeId, path: currentFile.path, location, area: target.area, commitHash: target.commitHash, taskId: target.taskId, expectedRevision: target.expectedRevision });
     onScene('full-file');
   }
+  const historySearch = <div className="source-control-history-search"><Input size="small" allowClear prefix={<SearchOutlined />} placeholder="搜索提交、作者或任务编号（至少2字符）" aria-label="搜索提交历史" value={query} onCompositionStart={() => setComposing(true)} onCompositionEnd={event => { setComposing(false); setQuery(event.currentTarget.value); }} onChange={event => setQuery(event.target.value)} />{Array.from(query.trim()).length === 1 && <small>输入至少2个字符开始搜索</small>}</div>;
   return <section className="source-control-workbench" aria-label="源代码管理" data-prototype-position="scm-panels">
     <ResizablePanels direction="horizontal" className="source-control-columns" initialSize={360} minFirst={260} minSecond={300} firstHidden={readingExpanded} storageKey={layoutStorageKey ? layoutStorageKey + ':columns' : undefined} separatorLabel="调整源代码管理与阅读区宽度" first={<aside className="source-control-sidebar">
       <header className="source-control-title"><button type="button" className="source-control-catalog-toggle" aria-label={catalogExpanded ? '折叠代码库列表' : '展开代码库列表'} aria-expanded={catalogExpanded} onClick={() => setCatalogExpanded(value => !value)}>{catalogExpanded ? <DownOutlined /> : <RightOutlined />}<strong>源代码管理</strong></button><Tooltip title="重新读取本机代码状态"><Button type="text" size="small" aria-label="刷新源代码管理" icon={<ReloadOutlined spin={observation.loading} />} onClick={() => void refresh()} /></Tooltip></header>
-      <ResizablePanels direction="vertical" className="source-control-stack" firstHidden={!catalogExpanded} storageKey={layoutStorageKey ? layoutStorageKey + ':stack' : undefined} initialRatio={0.42} minFirst={120} minSecond={180} separatorLabel="调整代码库与浏览区高度"
+      <ResizablePanels direction="vertical" className="source-control-stack" firstHidden={!catalogExpanded} storageKey={layoutStorageKey ? layoutStorageKey + ':stack' : undefined} initialRatio={branchExtension ? 0.30 : 0.42} minFirst={120} minSecond={180} separatorLabel="调整代码库与浏览区高度"
         first={<div className="source-control-catalog-pane">
         <SourceControlRepositoryTree repositories={repositories} ready={Boolean(observation.readAt)} expanded={expanded} onToggle={toggle}
-          selectedWorktreeKey={selectedIdentity} onPick={pickWorktree} onOpenTask={onOpenTask} />
+          selectedWorktreeKey={selectedIdentity} onPick={pickWorktree} onOpenTask={onOpenTask} renderWorktreeControl={branchExtension?.rowControl} />
         {task && <div className="source-control-task-origin" data-prototype-position="task-link"><span>来自任务 · {task.title}</span><Button type="link" size="small" onClick={() => onOpenTask(task.id)}>返回任务 <ArrowRightOutlined /></Button></div>}
         </div>}
         second={<div className="source-control-browser">      <div className="source-control-browse-tabs"><Segmented block value={history ? 'history' : 'changes'} options={[{ label: '未提交变更', value: 'changes' }, { label: '提交历史', value: 'history' }]} onChange={value => changeScene(value as SourceControlScene)} /></div>
@@ -156,9 +184,9 @@ export function SourceControlWorkbench({ repositories, scene, reader, readKey, o
       <div className="source-control-list" data-prototype-position={history ? 'history-list' : 'change-list'}>
 
         {observation.loading && !observation.readAt ? <div className="source-control-list-state"><Spin size="small" /><p>正在读取本机记录…</p></div> : history ? <>
-          <div className="source-control-history-search"><Input size="small" allowClear prefix={<SearchOutlined />} placeholder="搜索提交、作者或任务编号（至少2字符）" aria-label="搜索提交历史" value={query} onCompositionStart={() => setComposing(true)} onCompositionEnd={event => { setComposing(false); setQuery(event.currentTarget.value); }} onChange={event => setQuery(event.target.value)} />{Array.from(query.trim()).length === 1 && <small>输入至少2个字符开始搜索</small>}</div>
-          {historyRead.loading && !historyRead.data ? <div className="source-control-list-state"><Spin size="small" /><p>正在读取历史…</p></div> : historyRead.error && !historyRead.data ? <div className="source-control-list-state"><p>历史暂不可读取。</p></div> : selectedRepository?.worktreeCount === null || selectedWorktree?.status === 'offline' ? <div className="source-control-list-state"><p>该工作树历史暂不可读取。</p><Button size="small" onClick={() => void retry(selectedRepository?.id)}>重新读取</Button></div> : commits.length ? <SourceControlHistory key={selectedIdentity} commits={commits} expanded={expanded} onToggle={toggle} selectedHash={selectedCommit?.hash} selectedFileKey={effectiveFileKey} reader={reader} readKey={readKey} version={version} repositoryId={selectedRepository!.id} worktreeId={selectedWorktree!.worktreeId} worktreeLocation={location} onOpenTask={onOpenTask} onSelect={commit => { if (commit.hash !== commitHash) setHistoryFileKey(''); setCommitHash(commit.hash); setCommitSummary(commit); setHistoryReaderMode('detail'); if (scene === 'full-file') changeScene('history'); }} onPick={(commit, file, baseHash) => { setHistoryReaderMode('file'); setCommitBaseHash(baseHash); setCommitHash(commit.hash); setCommitSummary(commit); setHistoryFileKey(fileIdentity(file)); if (scene === 'full-file') changeScene('history'); }} /> : <div className="source-control-list-state"><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={searchQuery ? '没有匹配的提交' : '当前分支暂无提交'} /></div>}
-          <p className="source-control-list-note">当前分支的本机记录，包含未推送提交。{readNote(historyRead.data)}</p>{historyRead.data?.coverage.nextCursor && <Button size="small" className="source-control-load-more" loading={historyRead.loading} onClick={() => void historyRead.refresh({cursor: historyRead.data!.coverage.nextCursor!}, (previous, next) => ({...next, commits: [...new Map([...(previous?.commits || []), ...next.commits].map(commit => [commit.hash, commit])).values()]}))}>继续读取历史</Button>}
+          {branchExtension ? <div className="source-control-history-toolbar" data-prototype-position="history-filters">{historySearch}{selectedRepository && selectedWorktree && branchExtension.historyControls(selectedRepository, selectedWorktree, {query, clearSearch: () => { setQuery(''); setSearchQuery(''); }})}</div> : historySearch}
+          {historyRead.loading && !historyRead.data ? <div className="source-control-list-state"><Spin size="small" /><p>正在读取历史…</p></div> : historyRead.error && !historyRead.data ? <div className="source-control-list-state"><p>历史暂不可读取。</p></div> : selectedRepository?.worktreeCount === null || selectedWorktree?.status === 'offline' ? <div className="source-control-list-state"><p>该工作树历史暂不可读取。</p><Button size="small" onClick={() => void retry(selectedRepository?.id)}>重新读取</Button></div> : commits.length ? <SourceControlHistory key={selectedIdentity + ':' + JSON.stringify(historyRange || {})} commits={commits} expanded={expanded} onToggle={toggle} selectedHash={selectedCommit?.hash} selectedFileKey={effectiveFileKey} reader={reader} readKey={readKey} version={version} repositoryId={selectedRepository!.id} worktreeId={selectedWorktree!.worktreeId} worktreeLocation={location} onOpenTask={onOpenTask} onSelect={commit => { if (commit.hash !== commitHash) setHistoryFileKey(''); setCommitHash(commit.hash); setCommitSummary(commit); setHistoryReaderMode('detail'); if (scene === 'full-file') changeScene('history'); }} onPick={(commit, file, baseHash) => { setHistoryReaderMode('file'); setCommitBaseHash(baseHash); setCommitHash(commit.hash); setCommitSummary(commit); setHistoryFileKey(fileIdentity(file)); if (scene === 'full-file') changeScene('history'); }} /> : <div className="source-control-list-state"><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={searchQuery || historyRange?.authorEmail || historyRange?.branch ? '没有匹配的提交' : '当前分支暂无提交'} /></div>}
+          <p className="source-control-list-note">{historyRange?.branch ? '当前查看范围的本机记录。' : '当前分支的本机记录，包含未推送提交。'}{readNote(historyRead.data)}</p>{historyRead.data?.coverage.nextCursor && <Button size="small" className="source-control-load-more" loading={historyRead.loading} onClick={() => void historyRead.refresh({cursor: historyRead.data!.coverage.nextCursor!}, (previous, next) => ({...next, commits: [...new Map([...(previous?.commits || []), ...next.commits].map(commit => [commit.hash, commit])).values()]}))}>继续读取历史</Button>}
         </> : <>
           <SourceControlChanges repositories={selectedRepository ? [selectedRepository] : []} names={[]} exact={selectedIdentity ? [selectedIdentity] : []} expanded={expanded} onToggle={toggle} selectedKey={effectiveFileKey} onPick={pickFile} onRetry={id => void retry(id)} />
         </>}

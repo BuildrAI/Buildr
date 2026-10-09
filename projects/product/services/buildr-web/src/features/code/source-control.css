@@ -243,3 +243,5 @@
   .source-control-diff .task-diff-toolbar.is-compact-file { grid-template-columns:minmax(0,1fr); }
   .source-control-diff .is-compact-file .task-diff-actions { grid-row:3; }
 }
+.source-control-history-toolbar { padding:8px 12px 2px; }
+.source-control-history-toolbar .source-control-history-search { padding:0 0 7px; }
