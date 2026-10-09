@@ -239,6 +239,7 @@ async function nestedGitIsolationScenario() {
     const root = path.join(workspace, 'repositories', code);
     fs.mkdirSync(path.join(root, 'modules/shared'), { recursive: true });
     git(root, ['init', '--initial-branch=main']);
+    git(root, ['config', 'core.autocrlf', 'false']);
     git(root, ['config', 'user.name', 'Buildr Test']);
     git(root, ['config', 'user.email', 'buildr-test@example.com']);
     fs.writeFileSync(path.join(root, 'base.txt'), `${code} baseline\n`);

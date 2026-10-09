@@ -66,8 +66,9 @@ export function createCodeApplication(dependencies:CodeDependencies) {
     let location=dependencies.resolveSourceRoot(root,repo.source),kind:CodeSource['kind']='default';
     let sourceTaskId=input.taskId||null,checkoutId:string|null=null,worktreeGroupId:string|null=null;
     try { location=fs.realpathSync(location); } catch { throw codeFailure('code_repository_unavailable','代码库本机目录当前不可读取。',404); }
-    location=createGitCommitReader().repository(location).root;
-    const registeredLocation=location,common=gitCommonDirectory(location);
+    const registeredRepository=createGitCommitReader().repository(location);
+    location=registeredRepository.root;
+    const registeredLocation=location,common=registeredRepository.commonDir;
     if(input.worktreeId!==undefined&&input.checkoutId!==undefined&&input.worktreeId!==input.checkoutId)throw codeFailure('code_checkout_conflict','检出目录与工作树身份必须指向同一来源。',409);
     if(input.worktreeId!==undefined){
       if(input.taskId)dependencies.readTaskScope(root,taskActionId(input.taskId,'taskId'));

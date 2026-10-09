@@ -15,11 +15,31 @@ import { registerGitWorktreeProvider } from '../../src/modules/task/infrastructu
 import { CODE_LIMITS } from '../../src/modules/code/infrastructure/code-file-reader.ts';
 import { readSourceControlTaskAssociations } from '../../src/modules/code/infrastructure/code-worktree-catalog.ts';
 
+function configureFixtureGit(root: string, git: (...args: string[]) => unknown) {
+  const redirected = ['GIT_CONFIG', 'GIT_DIR', 'GIT_COMMON_DIR', 'GIT_WORK_TREE'].some(key => Object.hasOwn(process.env, key));
+  const directory = path.join(root, '.git'), file = path.join(directory, 'config');
+  if (!redirected && fs.lstatSync(directory, { throwIfNoEntry: false })?.isDirectory() && fs.lstatSync(file, { throwIfNoEntry: false })?.isFile()) {
+    const contents = fs.readFileSync(file, 'utf8');
+    const headers = contents.split(/\r?\n/).filter(line => line.trimStart().startsWith('['));
+    if (headers.length && headers.every(line => {
+      const section = /^\s*\[([A-Za-z][A-Za-z0-9-]*)\]\s*(?:[#;].*)?$/.exec(line);
+      return section && ['core', 'extensions'].includes(section[1].toLowerCase());
+    })) {
+      // Only the ordinary config just created by this fixture's real Git init is appended.
+      fs.appendFileSync(file, '\n[user]\n\tname = Fixture Person\n\temail = fixture@example.com\n[commit]\n\tgpgSign = false\n');
+      return;
+    }
+  }
+  git('config', 'user.name', 'Fixture Person');
+  git('config', 'user.email', 'fixture@example.com');
+  git('config', 'commit.gpgSign', 'false');
+}
+
 function fixture(t: test.TestContext, format = 'sha1') {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-source-control-')), root = path.join(base, 'repository');
   fs.mkdirSync(root); t.after(() => fs.rmSync(base, { recursive: true, force: true }));
   const git = (...args: string[]) => execFileSync('git', ['--no-optional-locks', '-C', root, ...args], { encoding: 'utf8', env: { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0' }, stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-  git('init', '--initial-branch=main', '--object-format=' + format); git('config', 'user.name', 'Fixture Person'); git('config', 'user.email', 'fixture@example.com'); git('config', 'commit.gpgSign', 'false');
+  git('init', '--initial-branch=main', '--object-format=' + format); configureFixtureGit(root, git);
   const write = (relative: string, content: string) => { fs.mkdirSync(path.dirname(path.join(root, relative)), { recursive: true }); fs.writeFileSync(path.join(root, relative), content); };
   const commit = (message: string) => { git('add', '--', '.'); git('commit', '-m', message); return git('rev-parse', 'HEAD'); };
   const tasks = new Map([['task-one', { taskId: 'task-one', title: '当前明确任务' }]]);
@@ -168,7 +188,7 @@ test('default history follows the selected checkout HEAD and excludes commits un
 
 test('current task links use repository and checkout evidence across repositories without guessing same names', t => {
   const f = fixture(t); f.write('base.ts', 'base\n'); f.commit('base');
-  const second = path.join(f.base, 'second'); fs.mkdirSync(second); checkoutGit(second, 'init', '--initial-branch=main'); checkoutGit(second, 'config', 'user.name', 'Fixture Person'); checkoutGit(second, 'config', 'user.email', 'fixture@example.com'); checkoutGit(second, 'config', 'commit.gpgSign', 'false');
+  const second = path.join(f.base, 'second'); fs.mkdirSync(second); checkoutGit(second, 'init', '--initial-branch=main'); configureFixtureGit(second, (...args) => checkoutGit(second, ...args));
   fs.writeFileSync(path.join(second, 'base.ts'), 'base\n'); checkoutGit(second, 'add', '.'); checkoutGit(second, 'commit', '-m', 'base');
   const firstTopic = path.join(f.base, 'first-group', 'topic'), secondTopic = path.join(f.base, 'second-group', 'topic');
   f.git('worktree', 'add', '-b', 'task/topic', firstTopic); checkoutGit(second, 'worktree', 'add', '-b', 'task/topic', secondTopic);

@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import test, { after } from 'node:test';
-import { createRuntime, runtimeProvide } from '../helpers/runtime-harness.ts';
+import { runtimeProvide } from '../helpers/runtime-harness.ts';
+import { createBuildrApplicationTest } from '../context/buildr-node-test.ts';
 import { taskRecordFixture, runBuildrJson } from '../helpers/task-record-system-fixture.ts';
 import { cleanupLocalTaskLifecycleSystemContext } from '../helpers/task-lifecycle-system-context.ts';
 import { TASK_BRIEF_MIGRATION_APPLICATION, TASK_MATERIALS_APPLICATION } from '../../src/modules/task/materials/module.ts';
@@ -10,6 +11,7 @@ import { createTaskBriefMigrationApplication } from '../../src/modules/task/mate
 import { normalizeTaskBriefLinks } from '../../src/modules/task/materials/application/task-brief-links.ts';
 
 after(() => cleanupLocalTaskLifecycleSystemContext());
+const applicationTest = createBuildrApplicationTest('integration-task-brief-migration');
 const create = (runtime: any, root: string, taskId: string) => runtime.createTask(root, { taskId, title: '迁移说明', intent: '导入真实旧正文', projects: [], services: [], changes: [] });
 const local = (id: string, role: string, file: string) => ({ id, role, title: id, source: { kind: 'task', path: file } });
 function legacy(root: string, taskId: string, body: string, documents = [local('brief', 'brief', 'brief.md')]) {
@@ -22,9 +24,9 @@ function legacy(root: string, taskId: string, body: string, documents = [local('
 }
 const observed = (read: any) => ({ expectedRecordDigest: read.observation.recordDigest, expectedMaterialsDigest: read.observation.materialsDigest, expectedDocumentDigest: read.observation.documentDigest || 'absent' });
 
-test('普通方案更新保留遗留说明关联；公开v2不再提供brief文件正文', t => {
+applicationTest('普通方案更新保留遗留说明关联；公开v2不再提供brief文件正文', t => {
   const { root } = taskRecordFixture(t, 'legacy-brief-preserve');
-  const runtime = createRuntime(); create(runtime, root, 'legacy-preserve');
+  const runtime = t.buildrContexts.application; create(runtime, root, 'legacy-preserve');
   const owner = legacy(root, 'legacy-preserve', '# 唯一旧说明\n');
   const materials: any = runtimeProvide(runtime, TASK_MATERIALS_APPLICATION);
   const before = runtime.readTask(root, 'legacy-preserve');
@@ -46,9 +48,9 @@ test('普通方案更新保留遗留说明关联；公开v2不再提供brief文�
   assert.equal(materials.inspectLegacyTaskBrief(root, 'legacy-preserve').document.content, '# 唯一旧说明\n');
 });
 
-test('单任务导入原样保全源文件及其他材料，来源链接规范化且幂等', t => {
+applicationTest('单任务导入原样保全源文件及其他材料，来源链接规范化且幂等', t => {
   const { root } = taskRecordFixture(t, 'brief-import-local');
-  const runtime = createRuntime(); create(runtime, root, 'import-local');
+  const runtime = t.buildrContexts.application; create(runtime, root, 'import-local');
   const original = '\ufeff# 旧任务说明\r\n\r\n[实施](../implementation.md)  \r\n';
   const owner = legacy(root, 'import-local', original, [local('brief', 'brief', 'docs/brief.md'), local('implementation', 'implementation', 'implementation.md')]);
   fs.writeFileSync(path.join(owner.directory, 'implementation.md'), '# 实施过程\n');
@@ -66,9 +68,9 @@ test('单任务导入原样保全源文件及其他材料，来源链接规范�
   assert.deepEqual(runtime.readTask(root, 'import-local'), prior);
 });
 
-test('记录、关联或正文漂移均拒绝；坏来源不被intent或变更说明替代', t => {
+applicationTest('记录、关联或正文漂移均拒绝；坏来源不被intent或变更说明替代', t => {
   const { root } = taskRecordFixture(t, 'brief-import-conflicts');
-  const runtime = createRuntime(); create(runtime, root, 'import-conflicts');
+  const runtime = t.buildrContexts.application; create(runtime, root, 'import-conflicts');
   const owner = legacy(root, 'import-conflicts', '# 旧正文\n');
   const migration: any = runtimeProvide(runtime, TASK_BRIEF_MIGRATION_APPLICATION);
   const read = migration.migrateTaskBrief(root, 'import-conflicts', { dryRun: true });
@@ -88,9 +90,9 @@ test('记录、关联或正文漂移均拒绝；坏来源不被intent或变更�
   assert.equal(migration.migrateTaskBrief(root, 'no-source').status, 'no-legacy-brief');
 });
 
-test('关联释放失败保留已导入正文；后续编辑和重试不会丢失内容', t => {
+applicationTest('关联释放失败保留已导入正文；后续编辑和重试不会丢失内容', t => {
   const { root } = taskRecordFixture(t, 'brief-import-partial');
-  const runtime = createRuntime(); create(runtime, root, 'import-partial');
+  const runtime = t.buildrContexts.application; create(runtime, root, 'import-partial');
   const owner = legacy(root, 'import-partial', '# 观察的旧正文\n');
   const materials: any = runtimeProvide(runtime, TASK_MATERIALS_APPLICATION);
   const migration = createTaskBriefMigrationApplication(runtime, { importTaskBrief(...args: any[]) {
@@ -110,9 +112,9 @@ test('关联释放失败保留已导入正文；后续编辑和重试不会丢�
   assert.equal(materials.inspectLegacyTaskBrief(root, 'import-partial').reference, null);
 });
 
-test('批次先遍历分页再导入；CLI dry-run零写入并覆盖超过100项', { timeout: 60000 }, t => {
+applicationTest('批次先遍历分页再导入；CLI dry-run零写入并覆盖超过100项', { timeout: 60000 }, t => {
   const { root } = taskRecordFixture(t, 'brief-import-batch');
-  const runtime = createRuntime();
+  const runtime = t.buildrContexts.application;
   const ids = Array.from({ length: 105 }, (_, index) => `legacy-${String(index).padStart(3, '0')}`);
   for (const id of ids) { create(runtime, root, id); legacy(root, id, `# ${id}\n`); }
   const dry = runBuildrJson(['task', 'brief', 'migrate', '--all', '--dry-run', '--target', root]);
