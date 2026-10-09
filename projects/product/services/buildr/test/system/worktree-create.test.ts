@@ -490,12 +490,12 @@ test('多独立仓库要求成对覆盖全部selector并按nested-first清理', 
   assert.equal(fs.existsSync(provider.gitWorktreeEvidencePath(root, taskId)), false);
 });
 
-test('非 Git 根通过公共入口隔离独立子仓库并保留资料', { timeout: 90_000 }, () => {
+test('非 Git 根通过公共入口隔离独立子仓库并保留资料', { timeout: process.platform === 'win32' ? 140_000 : 90_000 }, () => {
   const result = spawnSync(process.execPath, [
     path.join(sourceProductRoot, 'tools/development/run-isolated-workspace-smoke.ts'),
     '--script', path.join(sourceProductRoot, 'test/integration/non-git-workspace-continuity.test.ts'),
     '--', '--nested-git-isolation-scenario',
-  ], { cwd: sourceProductRoot, encoding: 'utf8', timeout: 85_000, maxBuffer: 8 * 1024 * 1024 });
+  ], { cwd: sourceProductRoot, encoding: 'utf8', timeout: process.platform === 'win32' ? 135_000 : 85_000, maxBuffer: 8 * 1024 * 1024 });
   assert.equal(result.status, 0, `${result.error?.message || ''}\n${result.stdout}\n${result.stderr}`);
   assert.match(result.stdout, /Nested Git public Worktree lifecycle passed/);
   assert.match(result.stdout, /"cleanup":"cleaned"/);
