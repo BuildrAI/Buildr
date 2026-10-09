@@ -23,6 +23,7 @@ import { createReleaseContext, evaluateReleaseReadiness, releaseContextIdentity,
 import { inspectReleaseSelection } from './release-selection.ts';
 import { createReleaseTaskEvidenceCorrelationFromRuntime, releaseTaskAssociationProjection } from './release-task-evidence-correlation.ts';
 import { inspectHostedReleaseTransaction } from './release-transaction-evidence.ts';
+import { artifactFromTarball } from './package-artifact-observation.ts';
 
 const serviceRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const workspaceRoot: any = path.resolve(serviceRoot, '../../../..');
@@ -160,7 +161,10 @@ export function readCandidateEvidence({ candidateRunId, ghCommand, repo, execute
     }
     const aggregate: any = JSON.parse(fs.readFileSync(findSingleFile(path.join(root, 'candidate-aggregate'), 'candidate-ci-aggregate.json'), 'utf8'));
     const artifact: any = readReleaseArtifact(findSingleFile(path.join(root, 'candidate-package'), 'release-artifact.json'));
-    return { aggregate, manifest: artifact.manifest };
+    const tarballBytes = fs.readFileSync(artifact.tarball);
+    const packageArtifact = artifactFromTarball(tarballBytes, { origin: 'candidate', packageName: artifact.manifest.packageName,
+      version: artifact.manifest.version, integrity: artifact.manifest.integrity, sourceCommit: artifact.manifest.sourceCommit });
+    return { aggregate, manifest: artifact.manifest, packageArtifact, tarballBytes };
   } finally {
     (dependencies.removeDirectory ?? ((directory: any) => fs.rmSync(directory, { recursive: true, force: true })))(root);
   }
@@ -237,7 +241,7 @@ export async function runHostedReleaseTransaction(options: any = {}, dependencie
       source: { sourceCommit, sourceTree: actualTree, remoteRef: remoteMain },
     });
     const inspectSelection: any = dependencies.inspectSelection ?? inspectReleaseSelection;
-    const selection: any = inspectSelection({ version, repo, devRef: options.devCommit || 'origin/dev' }, { execute: rawExecute });
+    const selection: any = inspectSelection({ version, ...(options.selectionId ? { selectionId: options.selectionId, targets: options.targets } : {}), repo, devRef: options.devCommit || 'origin/dev' }, { execute: rawExecute });
     const mainParents: any = commitParents(execute, repo, sourceCommit);
     if (selection.status !== 'frozen' || selection.releaseHead !== candidateBase) throw new Error(`Candidate base ${candidateBase} does not match current frozen release generation ${selection.releaseHead ?? '<missing>'}.`);
     if (candidateSourceCommit !== selection.releaseHead) throw new Error(`Candidate run source ${candidateSourceCommit} is stale; current final release source is ${selection.releaseHead}.`);
@@ -263,6 +267,7 @@ export async function runHostedReleaseTransaction(options: any = {}, dependencie
       selection: selection.selectionIdentity ? {
         identity: selection.selectionIdentity,
         version: selection.version,
+        ...(selection.selectionId ? { selectionId: selection.selectionId, targets: selection.targets } : {}),
         branch: selection.branch,
         releaseHead: selection.releaseHead,
         releaseTree: selection.releaseTree,

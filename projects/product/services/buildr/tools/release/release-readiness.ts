@@ -7,6 +7,7 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.ts';
+import { normalizeReleaseTargets } from './release-targets.ts';
 
 export const releaseContextSchema: any = 'buildr.release-context/v2';
 export const releaseReadinessSchema: any = 'buildr.release-readiness/v1';
@@ -41,7 +42,7 @@ export function createReleaseContext(input: any): any  {
   closed(input, ['selection', 'release', 'candidate', 'artifact', 'convergence', 'preparation', 'node', 'workflow', 'taskCorrelation'], 'release context input');
   const value: any = {
     schemaVersion: releaseContextSchema,
-    selection: optionalProjection(input.selection, ['identity', 'version', 'branch', 'releaseHead', 'releaseTree', 'generation', 'status', 'reconciliationIdentity'], 'selection'),
+    selection: optionalProjection(input.selection, ['identity', 'version', 'selectionId', 'targets', 'branch', 'releaseHead', 'releaseTree', 'generation', 'status', 'reconciliationIdentity'], 'selection'),
     release: optionalProjection(input.release, ['version', 'sourceCommit', 'sourceTree'], 'release'),
     candidate: optionalProjection(input.candidate, ['workflow', 'runId', 'runAttempt', 'runUrl', 'sourceCommit', 'sourceTree', 'registryIdentity', 'aggregateIdentity', 'status'], 'candidate'),
     artifact: optionalProjection(input.artifact, ['artifactName', 'sourceCommit', 'filename', 'size', 'sha256', 'integrity', 'applicationPayloadDigest'], 'artifact'),
@@ -51,6 +52,13 @@ export function createReleaseContext(input: any): any  {
     workflow: optionalProjection(input.workflow, ['path', 'digest', 'repository', 'environment'], 'workflow'),
     taskCorrelation: optionalProjection(input.taskCorrelation, ['identity', 'status', 'sourceCommit', 'sourceTree', 'remoteRef'], 'taskCorrelation'),
   };
+  if (value.selection?.targets) {
+    const targets = normalizeReleaseTargets({ packages: value.selection.targets.packages, version: value.selection.targets.versions?.buildr,
+      pluginVersion: value.selection.targets.versions?.['dsh-plugin'], selectionId: value.selection.targets.selectionId });
+    if (JSON.stringify(canonical(targets)) !== JSON.stringify(canonical(value.selection.targets)) || !targets.packages.includes('buildr')
+        || value.selection.selectionId !== targets.selectionId || value.selection.version !== targets.versions.buildr
+        || value.release?.version !== targets.versions.buildr) throw new Error('Main release context does not match its shared target identity.');
+  }
   value.identity = releaseContextIdentity(value);
   return value;
 }

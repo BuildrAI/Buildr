@@ -82,6 +82,7 @@ test('publication effects use the real artifact and recover each external partia
       const fetchImpl: typeof fetch = (url, init) => fetch(`${api}${new URL(String(url)).pathname}`, init);
       const dependencies = {
         fetchImpl,
+        observePublishedPackageArtifact: async () => ({ observation: { status: 'absent', packageName: '@buildr-ai/buildr-dsh-plugin' } }),
         publish: async (args: string[]) => {
           assert.equal(args[0], artifact.tarball, 'the exact prebuilt tarball is consumed');
           try { const response = await fetch(`${api}/registry-write`, { method: 'PUT', body: fs.readFileSync(args[0]!) }); return { status: response.status === 201 ? 0 : 1 }; }

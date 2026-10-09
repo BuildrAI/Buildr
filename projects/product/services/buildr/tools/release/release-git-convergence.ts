@@ -8,8 +8,9 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.ts';
-import { cleanupReleaseSelection, inspectReleaseSelection, inspectReleaseSelectionCleanup, reconcileReleaseSelectionWithMain, inspectReleaseSourceProvenance } from './release-selection.ts';
+import { cleanupReleaseSelection, inspectReleaseSelection, inspectReleaseSelectionCleanup, reconcileReleaseSelectionWithMain, inspectReleaseSourceProvenance, releaseSelectionKey } from './release-selection.ts';
 import { validateReleaseTransactionEvidence } from './release-transaction-evidence.ts';
+import { packagePublicationEvidenceSchema, packageReleaseContextSchema, validatePackagePublicationEvidence } from './release-package-evidence.ts';
 import { repositoryFromUrl } from './release-authority-preflight.ts';
 
 export const releaseGitConvergenceSchema: any = 'buildr.release-git-convergence/v1';
@@ -47,7 +48,7 @@ function requiredSha(value: any, label: any): any  {
 }
 
 function branchFor(version: any): any  {
-  return `release-${requiredVersion(version)}`;
+  return `release-${releaseSelectionKey({ selectionId: version })}`;
 }
 
 function requiredGeneration(value: any): any  {
@@ -57,7 +58,7 @@ function requiredGeneration(value: any): any  {
 }
 
 export function releaseCarrierBranchFor(version: any, generation: any): any  {
-  return `codex/release-main-${requiredVersion(version)}-g${requiredGeneration(generation)}`;
+  return `codex/release-main-${releaseSelectionKey({ selectionId: version })}-g${requiredGeneration(generation)}`;
 }
 
 function identity(value: any): any  {
@@ -154,9 +155,18 @@ function blocked(operation: any, code: any, message: any, data: any = {}): any  
 }
 
 function releaseSource(context: any): any  {
+  if (context.schemaVersion === packageReleaseContextSchema) return {
+    version: context.selection.version,
+    selectionId: context.targets.selectionId,
+    releaseCommit: context.selection.releaseHead,
+    releaseTree: context.selection.releaseTree,
+    mainCommit: context.convergence.mainCommit,
+    selection: context.selection,
+  };
   if (context.schemaVersion === 'buildr.release-context/v2') {
     return {
       version: context.release?.version,
+      selectionId: context.selection?.selectionId ?? null,
       releaseCommit: context.release?.sourceCommit,
       releaseTree: context.release?.sourceTree,
       mainCommit: context.convergence?.mainCommit,
@@ -173,7 +183,14 @@ function releaseSource(context: any): any  {
 }
 
 function passedPublication(value: any): any  {
+  if (value?.schemaVersion === packagePublicationEvidenceSchema) {
+    const evidence = validatePackagePublicationEvidence(value);
+    const main = evidence.publications.buildr?.ownerEvidence;
+    return { ...evidence, release: main?.release ?? { tag: null, tagCommit: null },
+      publish: { repository: 'BuildrAI/Buildr', headSha: evidence.context.convergence.mainCommit } };
+  }
   const evidence: any = validateReleaseTransactionEvidence(value);
+  if (evidence.context.selection?.targets?.packages?.length > 1) throw new Error('Joint release cleanup requires every selected package publication, not only the main package.');
   if (evidence.status !== 'passed'
       || evidence.release.registryPublished !== true
       || evidence.release.registrySmoke !== 'passed'
@@ -190,8 +207,13 @@ function verifyPublishedSourcePreservation(repo: string, remote: string, evidenc
   const source = releaseSource(evidence.context);
   const expectedMain = requiredSha(source.mainCommit ?? evidence.publish.headSha, 'publication main commit');
   const expectedSource = requiredSha(source.releaseCommit, 'publication release commit');
-  const tag = remoteTag(repo, remote, evidence.release.tag, dependencies);
-  if (evidence.release.tag !== `v${source.version}` || !tag || tag.target !== expectedMain || tag.target !== evidence.release.tagCommit) {
+  const requiresTag = evidence.context.schemaVersion !== packageReleaseContextSchema || evidence.context.targets.packages.includes('buildr');
+  if (evidence.context.schemaVersion === packageReleaseContextSchema) {
+    const actualParents = parents(repo, expectedMain, dependencies);
+    if (actualParents.length !== 2 || actualParents[1] !== expectedSource) throw new Error('Protected main merge no longer proves the exact frozen source as second parent.');
+  }
+  const tag = requiresTag ? remoteTag(repo, remote, evidence.release.tag, dependencies) : null;
+  if (requiresTag && (evidence.release.tag !== `v${source.version}` || !tag || tag.target !== expectedMain || tag.target !== evidence.release.tagCommit)) {
     throw new Error('Official remote Tag does not preserve the published main commit.');
   }
   const mainHead = remoteHeads(repo, remote, [main], dependencies)[main];
@@ -230,7 +252,7 @@ export function inspectReleaseToMain(options: any = {}, dependencies: any = {}):
   const operation: any = 'inspect-main';
   try {
     const repo: any = path.resolve(options.repo ?? process.cwd());
-    const version: any = requiredVersion(options.version);
+    const version: any = releaseSelectionKey(options);
     const remote: any = options.remote ?? 'origin';
     const main: any = releaseBranchName(options.main ?? 'main', remote);
     const dev: any = releaseBranchName(options.dev ?? 'dev', remote);
@@ -239,7 +261,7 @@ export function inspectReleaseToMain(options: any = {}, dependencies: any = {}):
     const carrierBranch: any = releaseCarrierBranchFor(version, generation);
     const candidateCommit: any = requiredSha(options.candidateCommit, 'candidateCommit');
     const candidateTree: any = requiredSha(options.candidateTree, 'candidateTree');
-    const selection: any = inspectReleaseSelection({ version, repo, devRef: `${remote}/${dev}` }, dependencies);
+    const selection: any = inspectReleaseSelection({ ...options, repo, devRef: `${remote}/${dev}` }, dependencies);
     const findings: any[] = [];
     if (selection.status !== 'frozen') findings.push({ code: 'release-selection-not-frozen', expected: 'frozen', actual: selection.status });
     if (selection.generation !== generation) findings.push({ code: 'release-selection-generation-mismatch', expected: selection.generation ?? null, actual: generation });
@@ -400,7 +422,7 @@ export function reconcilePublishedReleaseWithDev(options: any = {}, dependencies
     const dev: any = releaseBranchName(options.dev ?? 'dev', remote);
     const evidence: any = passedPublication(options.publicationEvidence);
     const source: any = releaseSource(evidence.context);
-    const version: any = requiredVersion(source.version ?? evidence.release.npmVersion);
+    const version: any = releaseSelectionKey({ version: source.version ?? evidence.release.npmVersion, selectionId: source.selectionId ?? undefined });
     const branch: any = branchFor(version);
     const expectedMain: any = requiredSha(source.mainCommit ?? evidence.publish.headSha, 'publication main commit');
     const expectedRelease: any = requiredSha(source.releaseCommit, 'publication release commit');
@@ -448,7 +470,7 @@ export function reconcilePublishedReleaseWithDev(options: any = {}, dependencies
       });
     }
     if (!selection || selection.status !== 'passed' || contextSelection?.status !== 'frozen'
-        || contextSelection.version !== version || contextSelection.generation !== selection.generation
+        || (contextSelection.selectionId ?? contextSelection.version) !== version || contextSelection.generation !== selection.generation
         || contextSelection.releaseHead !== expectedRelease || contextSelection.releaseTree !== expectedTree
         || selection.releaseHead !== expectedRelease || selection.releaseTree !== expectedTree) {
       return blocked(operation, 'published-release-selection-invalid', 'Published Git history does not match the frozen source and current dev provenance.', {
@@ -564,7 +586,7 @@ function closeoutPublishedReleaseBranches(options: any, dependencies: any, evide
   try {
     const repo = path.resolve(options.repo ?? process.cwd());
     const remote = options.remote ?? 'origin';
-    const version = requiredVersion(options.version);
+    const version = releaseSelectionKey(options);
     const generation = requiredGeneration(options.generation);
     const expectedCommit = requiredSha(options.expectedCommit, 'expectedCommit');
     if (evidence.context.selection?.generation !== generation) throw new Error('Cleanup generation differs from the published context.');
@@ -591,8 +613,8 @@ function closeoutPublishedReleaseBranches(options: any, dependencies: any, evide
     const names = [...new Set([formalBranch, releaseCarrierBranchFor(version, generation), ...remoteRefs.keys(), ...localRefs.keys()])].sort();
     const ownedWorktrees = releaseOwnedWorktrees(repo, names, dependencies);
     const repository = releaseActivityRepository(options, evidence, repo, remote, dependencies);
-    const localReleaseTag = localTag(repo, evidence.release.tag, dependencies);
-    if (localReleaseTag && (localReleaseTag.object !== preservation.tag.object || localReleaseTag.target !== preservation.tag.target)) {
+    const localReleaseTag = evidence.release.tag ? localTag(repo, evidence.release.tag, dependencies) : null;
+    if (localReleaseTag && (localReleaseTag.object !== preservation.tag?.object || localReleaseTag.target !== preservation.tag?.target)) {
       return blocked(operation, 'release-closeout-local-tag-drift', 'Local Tag differs from the official remote Tag and was retained.');
     }
     for (const branch of names) {
@@ -645,7 +667,7 @@ function closeoutPublishedReleaseBranches(options: any, dependencies: any, evide
     const formal = branches.find(item => item.ref === `refs/heads/${formalBranch}`);
     const formalReleaseRef = { ref: formal.ref, commit: expectedCommit, observedCommit: formal.observedCommit, disposition: formal.remote === 'absent' ? 'cleaned-and-verified' : formal.disposition === 'retained-by-policy' ? 'retained-and-verified' : 'retained' };
     if (findings.length) return blocked(operation, 'release-cleanup-partial', 'Some release resources were retained; independently safe resources were cleaned.', { version, generation, expectedCommit, formalReleaseRef, branches, findings, effects });
-    const selectionCleanup = cleanupReleaseSelection({ repo, version, confirm: true, publicationEvidence: evidence }, dependencies);
+    const selectionCleanup = cleanupReleaseSelection({ ...options, repo, confirm: true, publicationEvidence: evidence }, dependencies);
     effects.push(...selectionCleanup.effects);
     if (selectionCleanup.status !== 'passed') return blocked(operation, 'release-selection-cleanup-blocked', selectionCleanup.diagnostic?.message ?? 'Local selection cleanup failed.', { version, branches, effects, selectionCleanup });
     if (localReleaseTag) {
@@ -653,8 +675,8 @@ function closeoutPublishedReleaseBranches(options: any, dependencies: any, evide
       effects.push({ type: 'local-release-tag-deleted', ref: localReleaseTag.ref, object: localReleaseTag.object, target: localReleaseTag.target });
     }
     return result(operation, 'passed', { action: effects.length ? 'cleaned' : 'already-cleaned', version, generation, expectedCommit,
-      identity: identity({ version, generation, expectedCommit, policy: options.cleanupPolicy ?? 'retain-formal-release-branch', remoteTag: preservation.tag.object, resources: 'absent' }),
-      formalReleaseRef, branches, tag: { ...preservation.tag, remote: 'retained-and-verified', local: 'absent' },
+      identity: identity({ version, generation, expectedCommit, policy: options.cleanupPolicy ?? 'retain-formal-release-branch', remoteTag: preservation.tag?.object ?? null, resources: 'absent' }),
+      formalReleaseRef, branches, tag: preservation.tag ? { ...preservation.tag, remote: 'retained-and-verified', local: 'absent' } : null,
       resources: { carrier: { ref: `refs/heads/${currentCarrier}`, local: 'absent', remote: 'absent' },
         ...(allGenerations ? { carriers: { scope: 'same-version', disposition: 'absent' } } : {}), selection: { localBranch: 'absent', lifecycleRefs: 'absent' } }, effects });
   } catch (error: any) {
@@ -667,7 +689,7 @@ export function closeoutReleaseGitResources(options: any = {}, dependencies: any
     const evidence = passedPublication(options.publicationEvidence);
     const source = releaseSource(evidence.context);
     const generation = requiredGeneration(options.generation);
-    if (source.version !== options.version || source.releaseCommit !== options.expectedCommit || evidence.context.selection?.generation !== generation) {
+    if ((source.selectionId ?? source.version) !== releaseSelectionKey(options) || source.releaseCommit !== options.expectedCommit || evidence.context.selection?.generation !== generation) {
       return blocked('closeout', 'release-closeout-publication-mismatch', 'Publication evidence does not match the requested release source and generation.');
     }
     return closeoutPublishedReleaseBranches({ ...options, generation }, dependencies, evidence);
@@ -684,7 +706,7 @@ export function cleanupRemoteReleaseBranch(options: any = {}, dependencies: any 
     const remote: any = options.remote ?? 'origin';
     const evidence: any = passedPublication(options.publicationEvidence);
     const source: any = releaseSource(evidence.context);
-    const version: any = requiredVersion(source.version ?? evidence.release.npmVersion);
+    const version: any = releaseSelectionKey({ version: source.version ?? evidence.release.npmVersion, selectionId: source.selectionId ?? undefined });
     const branch: any = branchFor(version);
     const expected: any = requiredSha(source.releaseCommit, 'published release commit');
     const actual: any = remoteHeads(repo, remote, [branch], dependencies)[branch];
@@ -729,7 +751,8 @@ function parseArgs(argv: any): any  {
     if (!key?.startsWith('--') || value === undefined) throw new Error(`Invalid argument: ${key || '<missing>'}`);
     options[key.slice(2)] = value;
   }
-  const common: any = { repo: options.repo, remote: options.remote, main: options.main, dev: options.dev };
+  const common: any = { repo: options.repo, remote: options.remote, main: options.main, dev: options.dev,
+    ...(options['selection-id'] ? { selectionId: options['selection-id'] } : {}) };
   if (operation === 'inspect-dev-policy') return { ...common, repository: options.repository, ghCommand: options.gh };
   if (operation === 'inspect-main' || operation === 'ensure-main-pr') return {
     ...common,

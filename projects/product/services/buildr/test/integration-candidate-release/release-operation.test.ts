@@ -79,13 +79,14 @@ test('prepare creates one isolated release, validates before main, and reuses th
   const evidence = [
     ...CANDIDATE_CI_SHARDS.map((shard: any) => createCandidateCiEvidence({ ...execution, workflow, kind: 'shard', id: shard.id, platform: shard.runner === 'macos' ? 'darwin' : 'win32', registryIdentity: candidateCiRegistryIdentity(),
       artifact: shard.requiresArtifact || shard.producesArtifact ? artifactIdentity : null, primaryStepIds: shard.stepIds, status: 'passed', startedAt: '2026-01-01T00:00:00Z', finishedAt: '2026-01-01T00:00:01Z', durationMs: 1000,
-      results: shard.stepIds.map((id: string) => ({ id, status: 'passed', exitCode: 0, durationMs: 1 })) })),
+      results: shard.stepIds.map((id: string) => ({ id, status: 'passed', exitCode: 0, durationMs: 1,
+        ...(id === 'artifact-browser-core' ? { phases: ['artifact-unpack', 'artifact-verify', 'browser:core', 'artifact-cleanup'].map(id => ({ scope: 'candidate-browser-core', id, status: 'passed' })) } : {}) })) })),
     ...CANDIDATE_CI_HOST_NODE_TUPLES.map((tuple: any) => createCandidateCiEvidence({ ...execution, workflow, kind: 'host-node', id: tuple.id, platform: tuple.runner === 'macos' ? 'darwin' : tuple.runner === 'windows' ? 'win32' : 'linux', registryIdentity: candidateCiRegistryIdentity(),
       artifact: artifactIdentity, primaryStepIds: [], requestedNode: tuple.requestedNode, status: 'passed', startedAt: '2026-01-01T00:00:00Z', finishedAt: '2026-01-01T00:00:01Z', durationMs: 1000,
       results: [{ id: 'host-node-compatibility', status: 'passed', exitCode: 0, durationMs: 1 }] })),
   ];
   const aggregate = aggregateCandidateCiEvidence(evidence, execution, workflow);
-  assert.equal(aggregate.status, 'passed');
+  assert.equal(aggregate.status, 'passed', JSON.stringify(aggregate.findings));
   let task: any = null;
   let worktreeCreated = false;
   let dispatched = 0;

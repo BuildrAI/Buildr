@@ -5,19 +5,10 @@ import path from 'node:path';
 import test from 'node:test';
 import type { TestContext } from 'node:test';
 import { inspectSourceInstallation, queryAssetSources } from '../../plugin/source-process.ts';
-import { fileURLToPath } from 'node:url';
 import type { SourceObservations } from '../../plugin/src/source-types.ts';
 import { fileDigest } from '../../plugin/process.ts';
 
 const input: SourceObservations = { schemaVersion: 'buildr.agent-asset-source-observations/v1', observations: [{ id: 'record:1', type: 'file', locator: { path: 'AGENTS.md' } }] };
-test('real public Buildr installation status proves its own development Node/bin command prefix', async () => {
-  const sourceRoot = await fs.realpath(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../buildr'));
-  const cliEntry = path.join(sourceRoot, 'bin/buildr.mjs');
-  const binding = { nodeExecutable: process.execPath, cliEntry, nodeSha256: await fileDigest(process.execPath), cliSha256: await fileDigest(cliEntry) };
-  const result = await inspectSourceInstallation(binding, 'development', AbortSignal.timeout(30_000));
-  assert.deepEqual(result.prefixes, [[path.resolve(sourceRoot, '../../buildr')], [binding.nodeExecutable, binding.cliEntry]]);
-  assert.equal(result.prefixes.some(prefix => prefix.length === 1 && prefix[0] === cliEntry), false);
-});
 async function fixture(t: TestContext, mode = 'valid') {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'buildr-source-'));
   const resolved = await fs.realpath(root);
@@ -54,6 +45,15 @@ else {
 `);
   return { root, status, binding: { nodeExecutable: process.execPath, cliEntry: entry }, wrapper };
 }
+
+test('owned development status fixture proves Node/bin prefixes without sibling source', async t => {
+  const { binding, status } = await fixture(t);
+  const cliEntry = path.join(status.channels.development.identity.sourceRoot, 'bin/buildr.mjs');
+  await fs.mkdir(path.dirname(cliEntry)); await fs.copyFile(binding.cliEntry, cliEntry);
+  const result = await inspectSourceInstallation({ ...binding, cliEntry, nodeSha256: await fileDigest(binding.nodeExecutable), cliSha256: await fileDigest(cliEntry) }, 'development', AbortSignal.timeout(30_000));
+  assert.deepEqual(result.prefixes, [[path.resolve(status.channels.development.identity.sourceRoot, '../../buildr')], [binding.nodeExecutable, cliEntry]]);
+  assert.equal(result.prefixes.some(prefix => prefix.length === 1 && prefix[0] === cliEntry), false);
+});
 
 test('passive source query uses exact CLI/stdin and succeeds without a ready Web instance', async t => {
   const { root, binding } = await fixture(t);

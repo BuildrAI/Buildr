@@ -20,7 +20,7 @@
 | 系统怎样组成，代码和数据由谁维护？ | [技术架构](architecture/technical.md) · [代码地图（Code Map）](../code-map/README.md) · [数据设计](architecture/buildr-data-design.md) · [数据库表](architecture/buildr-database-tables.md) |
 | 怎样准备开发并验证实际改动？ | [产品开发入口](../../README.md) · [贡献指南](../../../../CONTRIBUTING.md) · [项目测试与验证](architecture/workspace-testing-and-verification-framework.md) · [产品验证框架](architecture/verification-framework.md) |
 | 怎样查命令、数据格式与扩展约定？ | [命令参考](../../services/buildr/docs/cli-reference.md) · [公开数据格式](reference/json-contracts.md) · [工具适配开发](reference/agent-runtime-adapter-contribution.md) · [能力契约（Capability Contract）](../../services/buildr/docs/skill-capability-contracts.md) |
-| 怎样恢复安装、维护版本或发布产品？ | [安装、更新与恢复](guides/getting-started.md) · [发布流程](flows/open-source-release.md) · [版本记录](../../../../CHANGELOG.md) |
+| 怎样恢复安装、维护版本或发布产品？ | [安装、更新与恢复](guides/getting-started.md) · [主包、插件与联合发布流程](flows/open-source-release.md) · [DSH 插件构建与发布身份](flows/dsh-plugin-release.md) · [版本记录](../../../../CHANGELOG.md) |
 | Buildr 如何看待长期工作积累？ | [工作基础设施](../../docs/publications/buildr-agent-work-infrastructure.md) · [更多、更好的工作](../../docs/publications/buildr-agent-more-and-better.md) |
 
 [首版准备审查](../reviews/v0.1.0-readiness.md)保留当时的检查依据，不作为当前使用说明或发布完成证明。涉及漏洞请使用[安全报告](../../../../SECURITY.md)入口。

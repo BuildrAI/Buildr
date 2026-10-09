@@ -1,6 +1,16 @@
 {
   "name": "@buildr-ai/buildr",
   "version": "0.1.0-rc.38",
+  "buildrCompatibility": {
+    "schemaVersion": "buildr.package-compatibility/v1",
+    "provides": [
+      "buildr.installation-status/v1",
+      "buildr.web-protocol/v1",
+      "buildr.agent-asset-source-observations/v1",
+      "buildr.agent-asset-source-result/v1"
+    ],
+    "requires": []
+  },
   "private": false,
   "description": "Buildr CLI for managing Agent workspace assets.",
   "license": "MIT",
@@ -90,7 +100,7 @@
     "test:browser:task": "node --import ./test/register-development-entry.ts test/verification/browser-selector-dispatcher.ts --selector task --run",
     "test:browser:articles": "node --import ./test/register-development-entry.ts test/verification/browser-selector-dispatcher.ts --selector articles --run",
     "smoke:workspace": "node tools/development/run-isolated-workspace-smoke.ts",
-    "test:integration:candidate:release": "node --import ./test/register-development-entry.ts test/verification/run-node-tests.ts test/integration-candidate-release/**/*.test.ts",
+    "test:integration:candidate:release": "node --import ./test/register-development-entry.ts test/verification/run-node-tests.ts \"test/integration-candidate-release/**/*.test.ts\"",
     "coverage:unit": "node --import ./test/register-development-entry.ts test/verification/unit-coverage.ts",
     "test:changed": "node --import ./test/register-development-entry.ts test/verification/changed.ts",
     "test:audit:verification": "node --import ./test/register-development-entry.ts test/verification/audit.ts",

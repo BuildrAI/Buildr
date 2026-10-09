@@ -95,6 +95,7 @@ function stagingPackageJson(payloadManifest: any, productMetadata: any): any  {
     bugs: productMetadata.bugs,
     keywords: productMetadata.keywords,
     publishConfig: productMetadata.publishConfig,
+    ...(productMetadata.buildrCompatibility ? { buildrCompatibility: productMetadata.buildrCompatibility } : {}),
     type: 'module',
     exports: {
       './test-context': {

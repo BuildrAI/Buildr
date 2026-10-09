@@ -5,7 +5,10 @@ import { appendFileSync, readFileSync } from 'node:fs';
 export const REPOSITORY = 'BuildrAI/Buildr';
 export const WORKFLOW = '.github/workflows/publish-dsh-plugin.yml';
 export const PUBLISH_STEP = 'Publish immutable plugin';
-export interface WorkflowInput { operation: 'prepare' | 'publish'; version: string; candidateRunId?: string; recoveryRunId?: string }
+export const BUILDR_CANDIDATE_WORKFLOW = '.github/workflows/verify.yml';
+export interface BuildrPeerInput { origin: 'registry' | 'candidate'; version: string; integrity: string; candidateRunId?: string }
+export interface WorkflowInput { operation: 'prepare' | 'publish'; version: string; candidateRunId?: string; recoveryRunId?: string; buildrPeer?: BuildrPeerInput }
+export interface BuildrPeerCandidateSource { mainCommit: string; candidateCommit: string; mainParents: string[]; mainTree: string; candidateTree: string; workflowId: number }
 type Run = { id: number; workflow_id: number; path: string; event: string; head_branch: string; head_sha: string; status: string; conclusion: string | null; display_title: string; run_attempt: number; run_number: number; repository: { full_name: string } };
 type Job = { name: string; status: string; conclusion: string | null; steps?: Array<{ name: string; status: string; conclusion: string | null }> };
 export type GithubRead = (path: string) => Promise<any>;
@@ -15,18 +18,62 @@ function runId(value: string | undefined, required: boolean): string | undefined
   if (!/^[1-9]\d*$/.test(value ?? '') || !Number.isSafeInteger(Number(value))) fail('run-id');
   return value;
 }
+const exactVersion = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
+function buildrPeerInput(env: NodeJS.ProcessEnv, operation: WorkflowInput['operation']): BuildrPeerInput | undefined {
+  const values = [env.PLUGIN_BUILDR_PEER_ORIGIN, env.PLUGIN_BUILDR_PEER_VERSION, env.PLUGIN_BUILDR_PEER_INTEGRITY, env.PLUGIN_BUILDR_CANDIDATE_RUN_ID];
+  if (operation === 'publish') {
+    if (values.some(Boolean)) fail('publish-cannot-replace-peer');
+    return undefined;
+  }
+  const [origin, version, integrity, candidateValue] = values;
+  if (origin !== 'registry' && origin !== 'candidate') fail('buildr-peer-origin');
+  if (!exactVersion.test(version ?? '')) fail('buildr-peer-exact-version');
+  if (!/^sha512-[A-Za-z0-9+/]+={0,2}$/.test(integrity ?? '')) fail('buildr-peer-integrity');
+  const hash = Buffer.from(integrity!.slice('sha512-'.length), 'base64');
+  if (hash.length !== 64 || `sha512-${hash.toString('base64')}` !== integrity) fail('buildr-peer-integrity');
+  const candidateRunId = runId(candidateValue, origin === 'candidate');
+  if (origin === 'registry' && candidateRunId) fail('registry-peer-cannot-consume-candidate');
+  if (candidateRunId === env.GITHUB_RUN_ID) fail('current-run-cannot-be-peer-source');
+  return { origin, version: version!, integrity: integrity!, ...(candidateRunId ? { candidateRunId } : {}) };
+}
 export function validateWorkflowInput(env: NodeJS.ProcessEnv, source: { commit: string; version: string }): WorkflowInput {
   if (env.GITHUB_REPOSITORY !== REPOSITORY || env.GITHUB_SERVER_URL !== 'https://github.com' || env.GITHUB_EVENT_NAME !== 'workflow_dispatch' || env.GITHUB_REF !== 'refs/heads/main' || env.GITHUB_WORKFLOW_REF !== `${REPOSITORY}/${WORKFLOW}@refs/heads/main` || env.GITHUB_SHA !== source.commit || env.GITHUB_RUN_ATTEMPT !== '1') fail('manual-main-first-attempt-required');
   runId(env.GITHUB_RUN_ID, true);
   const operation = env.PLUGIN_OPERATION;
   if (operation !== 'prepare' && operation !== 'publish') fail('operation');
   const version = env.PLUGIN_VERSION ?? '';
-  if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.test(version) || version !== source.version) fail('version-must-match-source');
+  if (!exactVersion.test(version) || version !== source.version) fail('version-must-match-source');
   const candidateRunId = runId(env.PLUGIN_CANDIDATE_RUN_ID, operation === 'publish');
   const recoveryRunId = runId(env.PLUGIN_RECOVERY_RUN_ID, false);
   if (operation === 'prepare' && (candidateRunId || recoveryRunId)) fail('prepare-cannot-consume-publication');
   if (candidateRunId === env.GITHUB_RUN_ID || recoveryRunId === env.GITHUB_RUN_ID) fail('current-run-cannot-be-source');
-  return { operation, version, candidateRunId, recoveryRunId };
+  const buildrPeer = buildrPeerInput(env, operation);
+  return { operation, version, candidateRunId, recoveryRunId, ...(buildrPeer ? { buildrPeer } : {}) };
+}
+/** A pre-main Buildr candidate is consumed only through its exact protected merge. */
+export function validateBuildrPeerCandidateRun(run: Run, input: BuildrPeerInput, source: BuildrPeerCandidateSource): void {
+  if (input.origin !== 'candidate' || !input.candidateRunId) fail('buildr-candidate-peer-required');
+  if (!run || run.repository?.full_name !== REPOSITORY || run.path !== BUILDR_CANDIDATE_WORKFLOW || run.event !== 'workflow_dispatch'
+    || String(run.id) !== input.candidateRunId || run.workflow_id !== source.workflowId || !Number.isSafeInteger(run.run_attempt) || run.run_attempt < 1
+    || run.status !== 'completed' || run.conclusion !== 'success' || run.head_sha !== source.candidateCommit) fail('buildr-peer-candidate-run-mismatch');
+  if (![source.mainCommit, source.candidateCommit, source.mainTree, source.candidateTree].every(value => /^[a-f0-9]{40,64}$/.test(value))) fail('buildr-peer-source-identity');
+  // The existing protected PR merge preserves the frozen selection as its second parent.
+  if (source.mainParents.length !== 2 || source.mainParents[1] !== source.candidateCommit || source.mainTree !== source.candidateTree) fail('buildr-peer-protected-merge-mismatch');
+}
+export async function verifyBuildrPeerCandidate(input: WorkflowInput, mainCommit: string, manifest: Record<string, any>, api: GithubRead): Promise<void> {
+  const peer = input.buildrPeer;
+  if (input.operation !== 'prepare' || peer?.origin !== 'candidate' || !peer.candidateRunId) fail('buildr-candidate-peer-required');
+  if (manifest.schemaVersion !== 'buildr.release-artifact/v1' || manifest.packageName !== '@buildr-ai/buildr' || manifest.version !== peer.version
+    || manifest.integrity !== peer.integrity || !/^[a-f0-9]{40,64}$/.test(manifest.sourceCommit ?? '')) fail('buildr-peer-candidate-artifact-mismatch');
+  const base = `/repos/${REPOSITORY}/actions`;
+  const workflow = await api(`${base}/workflows/verify.yml`);
+  if (workflow.path !== BUILDR_CANDIDATE_WORKFLOW || !Number.isSafeInteger(workflow.id)) fail('buildr-candidate-workflow-unavailable');
+  const run: Run = await api(`${base}/runs/${peer.candidateRunId}`);
+  const git = (...args: string[]) => execFileSync('git', args, { encoding: 'utf8' }).trim();
+  const parents = git('rev-list', '--parents', '-n', '1', mainCommit).split(' ');
+  if (parents[0] !== mainCommit) fail('buildr-peer-source-identity');
+  validateBuildrPeerCandidateRun(run, peer, { mainCommit, candidateCommit: manifest.sourceCommit, mainParents: parents.slice(1),
+    mainTree: git('rev-parse', `${mainCommit}^{tree}`), candidateTree: git('rev-parse', `${manifest.sourceCommit}^{tree}`), workflowId: workflow.id });
 }
 function ownRun(run: Run): void {
   if (!run || run.repository?.full_name !== REPOSITORY || run.path !== WORKFLOW || run.event !== 'workflow_dispatch' || !Number.isSafeInteger(run.id) || !Number.isSafeInteger(run.workflow_id) || !Number.isSafeInteger(run.run_number) || !Number.isSafeInteger(run.run_attempt) || run.run_attempt < 1 || run.run_attempt > 100) fail('remote-workflow-identity');
@@ -101,6 +148,10 @@ if (import.meta.main) {
     const version = JSON.parse(readFileSync('package.json', 'utf8')).version;
     const input = validateWorkflowInput(process.env, { commit, version });
     if (process.argv[2] === 'publish-check') await verifyPublishRuns(input, commit, process.env.GITHUB_RUN_ID!, githubReader(process.env.GH_TOKEN ?? ''));
+    else if (process.argv[2] === 'peer-check') {
+      if (process.argv.length !== 5 || process.argv[3] !== '--manifest' || !process.argv[4]) fail('peer-manifest-required');
+      await verifyBuildrPeerCandidate(input, commit, JSON.parse(readFileSync(process.argv[4], 'utf8')), githubReader(process.env.GH_TOKEN ?? ''));
+    }
     else if (process.argv[2] !== 'input-check') fail('command');
     if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `version=${input.version}\n`);
     console.log(JSON.stringify({ status: 'validated', ...input }));

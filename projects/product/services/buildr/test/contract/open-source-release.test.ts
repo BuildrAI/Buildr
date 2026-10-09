@@ -482,7 +482,7 @@ test('CI and publish workflows use the supported Node runtime', () => {
   const gateSteps: any[] = verifyDocument.jobs['candidate-gate'].steps;
   assert.equal(gateSteps.find((step: any) => step.name === 'Verify existing Candidate for release pull request').run, 'node tools/release/verify-pr-candidate.ts');
   for (const name of ['Prepare aggregate evidence directory', 'Download all Candidate evidence', 'Aggregate the closed Candidate evidence set']) {
-    assert.equal(gateSteps.find((step: any) => step.name === name).if, "github.event_name == 'workflow_dispatch' || github.head_ref == 'dev'");
+    assert.equal(gateSteps.find((step: any) => step.name === name).if, "(github.event_name == 'workflow_dispatch' || github.head_ref == 'dev') && needs.candidate-plan.outputs.buildr == 'true'");
   }
   assert.equal(verifyDocument.jobs['candidate-gate'].permissions.actions, 'read');
   assert.match(fs.readFileSync(path.join(serviceRoot, 'tools/release/release-orchestration-runner.ts'), 'utf8'), /Candidate run ID: \$\{state\.candidate\.runId\}/u);

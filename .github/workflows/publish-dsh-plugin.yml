@@ -22,6 +22,22 @@ on:
         description: Latest prior publish run for this version; required after a possible request
         required: false
         type: string
+      buildr_peer_origin:
+        description: Frozen Buildr peer origin, registry or candidate (prepare only)
+        required: false
+        type: string
+      buildr_peer_version:
+        description: Exact frozen Buildr peer version (prepare only)
+        required: false
+        type: string
+      buildr_peer_integrity:
+        description: Exact frozen Buildr peer SHA512 SRI (prepare only)
+        required: false
+        type: string
+      buildr_candidate_run_id:
+        description: Successful frozen Buildr candidate run, required for candidate peer (prepare only)
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -36,6 +52,15 @@ jobs:
     if: inputs.operation == 'prepare'
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    env:
+      PLUGIN_OPERATION: ${{ inputs.operation }}
+      PLUGIN_VERSION: ${{ inputs.version }}
+      PLUGIN_CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+      PLUGIN_RECOVERY_RUN_ID: ${{ inputs.recovery_run_id }}
+      PLUGIN_BUILDR_PEER_ORIGIN: ${{ inputs.buildr_peer_origin }}
+      PLUGIN_BUILDR_PEER_VERSION: ${{ inputs.buildr_peer_version }}
+      PLUGIN_BUILDR_PEER_INTEGRITY: ${{ inputs.buildr_peer_integrity }}
+      PLUGIN_BUILDR_CANDIDATE_RUN_ID: ${{ inputs.buildr_candidate_run_id }}
     defaults:
       run:
         working-directory: projects/product/services/dsh-plugin
@@ -49,11 +74,6 @@ jobs:
           node-version: '24.15.0'
           package-manager-cache: false
       - name: Validate manual source inputs
-        env:
-          PLUGIN_OPERATION: ${{ inputs.operation }}
-          PLUGIN_VERSION: ${{ inputs.version }}
-          PLUGIN_CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
-          PLUGIN_RECOVERY_RUN_ID: ${{ inputs.recovery_run_id }}
         run: node tools/release-workflow.ts input-check
       - name: Install isolated fixed preparation tooling
         run: |
@@ -62,14 +82,30 @@ jobs:
           cd "${RUNNER_TEMP}/tooling"
           env -i PATH="${PATH}" NPM_CONFIG_USERCONFIG="${RUNNER_TEMP}/tooling/user.npmrc" NPM_CONFIG_GLOBALCONFIG="${RUNNER_TEMP}/tooling/global.npmrc" \
             npm install --prefix "${RUNNER_TEMP}/tooling" --ignore-scripts --no-save --no-package-lock --no-audit --no-fund --registry=https://registry.npmjs.org/ npm@11.5.1 pnpm@11.7.0
-      - name: Install locked Buildr CLI dependencies
-        working-directory: projects/product/services/buildr
+      - name: Download the frozen Buildr candidate bytes
+        if: inputs.buildr_peer_origin == 'candidate'
+        uses: actions/download-artifact@v7
+        with:
+          name: candidate-package
+          path: ${{ runner.temp }}/buildr-candidate
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.buildr_candidate_run_id }}
+      - name: Verify the Buildr candidate and protected merge
+        if: inputs.buildr_peer_origin == 'candidate'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node tools/release-workflow.ts peer-check --manifest "${RUNNER_TEMP}/buildr-candidate/release-artifact.json"
+      - name: Freeze the exact Buildr peer input
         run: |
-          mkdir -p "${RUNNER_TEMP}/buildr-cli-dependencies"
-          : > "${RUNNER_TEMP}/buildr-cli-dependencies/user.npmrc"
-          : > "${RUNNER_TEMP}/buildr-cli-dependencies/global.npmrc"
-          env -i PATH="${PATH}" NPM_CONFIG_USERCONFIG="${RUNNER_TEMP}/buildr-cli-dependencies/user.npmrc" NPM_CONFIG_GLOBALCONFIG="${RUNNER_TEMP}/buildr-cli-dependencies/global.npmrc" \
-            node "${RUNNER_TEMP}/tooling/node_modules/npm/bin/npm-cli.js" ci --omit=dev --ignore-scripts --no-audit --no-fund --registry=https://registry.npmjs.org/ --cache "${RUNNER_TEMP}/buildr-cli-dependencies/npm-cache"
+          if [ "${PLUGIN_BUILDR_PEER_ORIGIN}" = "registry" ]; then
+            node ../buildr/tools/release/package-artifact-observation.ts --package buildr \
+              --version "${PLUGIN_BUILDR_PEER_VERSION}" --integrity "${PLUGIN_BUILDR_PEER_INTEGRITY}" \
+              --output "${RUNNER_TEMP}/buildr-peer/input.json" --tarball "${RUNNER_TEMP}/buildr-peer/package.tgz"
+          else
+            node ../buildr/tools/release/package-artifact-observation.ts --package buildr \
+              --version "${PLUGIN_BUILDR_PEER_VERSION}" --integrity "${PLUGIN_BUILDR_PEER_INTEGRITY}" \
+              --candidate-manifest "${RUNNER_TEMP}/buildr-candidate/release-artifact.json" --output "${RUNNER_TEMP}/buildr-peer/input.json"
+          fi
       - name: Prepare fixed source SDK
         id: sdk
         run: |
@@ -78,11 +114,22 @@ jobs:
       - name: Verify both plugin variants and real loaders
         env:
           PLUGIN_SOURCE_SDK: ${{ steps.sdk.outputs.root }}
-        run: node tools/verify-all.ts --source-sdk "${PLUGIN_SOURCE_SDK}"
+        run: >-
+          node tools/verify-all.ts --source-sdk "${PLUGIN_SOURCE_SDK}"
+          --buildr-peer "${RUNNER_TEMP}/buildr-peer/input.json"
+          --output "${RUNNER_TEMP}/plugin-full-verification.json"
+          --npm "${RUNNER_TEMP}/tooling/node_modules/npm/bin/npm-cli.js"
       - name: Prepare immutable plugin candidate
         env:
           PLUGIN_SOURCE_SDK: ${{ steps.sdk.outputs.root }}
         run: node tools/release.ts prepare --source-sdk "${PLUGIN_SOURCE_SDK}"
+      - name: Bind compatibility proof to the final candidate bytes
+        run: >-
+          node tools/bind-buildr-peer.ts
+          --candidate "build/release-candidates/${PLUGIN_VERSION}/candidate.json"
+          --buildr-peer "${RUNNER_TEMP}/buildr-peer/input.json"
+          --verification "${RUNNER_TEMP}/plugin-full-verification.json"
+          --npm "${RUNNER_TEMP}/tooling/node_modules/npm/bin/npm-cli.js"
       - name: Upload the original candidate bytes
         uses: actions/upload-artifact@v7
         with:
@@ -90,6 +137,13 @@ jobs:
           path: |
             projects/product/services/dsh-plugin/build/release-candidates/${{ inputs.version }}/candidate.json
             projects/product/services/dsh-plugin/build/release-candidates/${{ inputs.version }}/*.tgz
+          if-no-files-found: error
+          retention-days: 90
+      - name: Upload exact peer compatibility evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: plugin-candidate-aggregate
+          path: ${{ runner.temp }}/plugin-full-verification.json
           if-no-files-found: error
           retention-days: 90
 
@@ -121,12 +175,24 @@ jobs:
           PLUGIN_VERSION: ${{ inputs.version }}
           PLUGIN_CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
           PLUGIN_RECOVERY_RUN_ID: ${{ inputs.recovery_run_id }}
+          PLUGIN_BUILDR_PEER_ORIGIN: ${{ inputs.buildr_peer_origin }}
+          PLUGIN_BUILDR_PEER_VERSION: ${{ inputs.buildr_peer_version }}
+          PLUGIN_BUILDR_PEER_INTEGRITY: ${{ inputs.buildr_peer_integrity }}
+          PLUGIN_BUILDR_CANDIDATE_RUN_ID: ${{ inputs.buildr_candidate_run_id }}
         run: node tools/release-workflow.ts publish-check
       - name: Download the exact prepared candidate
         uses: actions/download-artifact@v7
         with:
           name: plugin-candidate-v${{ inputs.version }}
           path: ${{ runner.temp }}/candidate
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.candidate_run_id }}
+      - name: Download the original prepare compatibility evidence
+        continue-on-error: true
+        uses: actions/download-artifact@v7
+        with:
+          name: plugin-candidate-aggregate
+          path: ${{ runner.temp }}/verification
           github-token: ${{ github.token }}
           run-id: ${{ inputs.candidate_run_id }}
       - name: Recover the prior publication journal
@@ -155,6 +221,7 @@ jobs:
           --manifest "${RUNNER_TEMP}/candidate/candidate.json"
           --version "${PLUGIN_VERSION}"
           --source-commit "${GITHUB_SHA}"
+          --verification "${RUNNER_TEMP}/verification/plugin-full-verification.json"
           --output "${RUNNER_TEMP}/publication/publication.json"
           --npm-cli "${RUNNER_TEMP}/tooling/node_modules/npm/bin/npm-cli.js"
       - name: Preserve publication evidence even after failure

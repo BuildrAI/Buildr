@@ -1,4 +1,4 @@
-/** Real producer capture through a source-only candidate and stdin under the official isolated runner.
+/** Development-binding capture through owned command/status fixtures under the official isolated runner.
  * Original event windows and public installation status are fixtures. No open/launcher/profile activation.
  */
 import assert from 'node:assert/strict';
@@ -14,9 +14,6 @@ import { fileDigest } from '../../plugin/process.ts';
 import type { Config } from '../../plugin/src/types.ts';
 import type { SourceProcessDependencies } from '../../plugin/source-process.ts';
 
-const serviceRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../buildr');
-const cli = path.join(serviceRoot, 'bin/buildr.mjs');
-const wrapper = path.resolve(serviceRoot, '../../buildr');
 const workspaceEntry = process.env.BUILDR_SMOKE_WORKSPACE_ROOT;
 const app = process.env.BUILDR_APP_DATA_DIR;
 const product = process.env.BUILDR_PRODUCT_DATA_DIR;
@@ -24,8 +21,19 @@ const runnerRoot = process.env.BUILDR_SMOKE_ROOT;
 assert.ok(workspaceEntry && app && product && runnerRoot);
 assert.ok(fs.statSync(path.join(runnerRoot, '.buildr-smoke-owner')).isFile());
 for (const directory of [workspaceEntry, app, product]) assert.ok(path.relative(runnerRoot, directory) && !path.relative(runnerRoot, directory).startsWith('..'));
-const setup = spawnSync(process.execPath, [cli, 'init', '--source-only', '--target', workspaceEntry, '--name', 'source-binding-integration', '--description', 'isolated source-only candidate', '--profile', 'personal'], { env: process.env, encoding: 'utf8', timeout: 15_000 });
-assert.equal(setup.status, 0, setup.stderr);
+const serviceRoot = path.join(runnerRoot, 'fixture/projects/product/services/buildr');
+const cli = path.join(serviceRoot, 'bin/buildr.mjs');
+const wrapper = path.resolve(serviceRoot, '../../buildr');
+fs.mkdirSync(path.dirname(cli), { recursive: true });
+fs.mkdirSync(workspaceEntry, { recursive: true });
+const fixtureBody = '<!-- buildr:required begin -->\nOwned development fixture.\n<!-- buildr:required end -->';
+fs.writeFileSync(path.join(workspaceEntry, 'AGENTS.md'), fixtureBody);
+fs.writeFileSync(cli, `import fs from 'node:fs';
+const args=process.argv.slice(2);
+if(args[0]==='version') console.log(JSON.stringify({version:'fixture'}));
+else {let raw='';for await(const chunk of process.stdin)raw+=chunk;const input=JSON.parse(raw);
+console.log(JSON.stringify({schemaVersion:'buildr.agent-asset-source-result/v1',workspace:{id:'fixture-workspace',scope:'.'},effects:[],items:input.observations.map(item=>({id:item.id,status:'detected',diagnostic:null,mixed:false,objects:[{identity:'fixture:core',kind:'rule',workspaceId:'fixture-workspace',scope:'.',providedBy:'buildr',managedBy:'buildr',selector:{managedBlock:'buildr:required'},current:null,observed:{digest:item.observedDigest},historical:'matched-current',evidence:[{authority:'fixture-core',locator:'AGENTS.md',digest:item.observedDigest}],selection:{startOffset:0,endOffset:${fixtureBody.length},unit:'utf16'}}]}))}));}`);
+fs.writeFileSync(wrapper, '#!/bin/sh\nexec "$BUILDR_NODE" "'+cli+'" "$@"\n', {mode:0o755});
 const workspace = fs.realpathSync(workspaceEntry);
 const hash = (data: Uint8Array) => crypto.createHash('sha256').update(data).digest('hex');
 function snapshot(root: string) {
@@ -110,4 +118,4 @@ const dtoFile = path.join(runnerRoot, 'source-binding-recorded-dtos.json'); fs.w
 assert.equal(sourceQueries, 1, 'viewer must run zero current-source CLI queries'); assert.equal(statusQueries, 2, 'viewer must not resolve the current installation');
 assert.equal(config.binding, installed); assert.equal(config.sourceBinding, candidate);
 assert.deepEqual({ workspace: snapshot(workspace), app: snapshot(app), product: snapshot(product) }, before);
-console.log(JSON.stringify({ schemaVersion: 'buildr.plugin-source-binding-smoke/v1', status: 'passed', queries: 1, viewerQueries: 0, effects: [], checks: ['producer-explicit-dev-source-pointer-and-real-file-digests', 'actual-raw-file-version', 'development-wrapper-real-stdin-metadata-query', 'bound-command-entry-digest-and-actual-exit', 'source-binding-drift-and-channel-rejected', 'original-events-and-recorded-dtos-saved-roundtrip', 'viewer-zero-cli-and-original-method-fragment', 'installed-open-pointer-unchanged', 'no-discovery-fallback-or-web-start', 'workspace-app-product-snapshot-unchanged'], simulated: ['exact-session-window-not-native-persistence', 'current-development-installation-status'], isolation: 'official-runner-owned-process-adapter' }));
+console.log(JSON.stringify({ schemaVersion: 'buildr.plugin-source-binding-smoke/v1', status: 'passed', queries: 1, viewerQueries: 0, effects: [], checks: ['producer-explicit-dev-source-pointer-and-real-file-digests', 'actual-raw-file-version', 'owned-development-wrapper-stdin-fixture', 'bound-command-entry-digest-and-actual-exit', 'source-binding-drift-and-channel-rejected', 'original-events-and-recorded-dtos-saved-roundtrip', 'viewer-zero-cli-and-original-method-fragment', 'installed-open-pointer-unchanged', 'no-discovery-fallback-or-web-start', 'workspace-app-product-snapshot-unchanged'], simulated: ['exact-session-window-not-native-persistence', 'development-cli-and-installation-status-fixtures'], isolation: 'official-runner-owned-process-adapter' }));

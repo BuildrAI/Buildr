@@ -226,6 +226,8 @@ Buildr MUST以closed release transaction context/evidence schema关联source rel
 - **AND** MUST不通过复盘状态补足或绕过缺失事实
 
 ### Requirement: 公开发布必须绑定release集合并分离两次Git收敛
+以下旧 `release-<version>`、完整产品候选（Product Candidate）和主包发布后事实 SHALL 保留为已选择主包的原要求。通用源码选择 SHALL 以 `selectionId` 固定目标及各版本，最终准确源码按实际差异消费适用主包和／或插件（Plugin）证明，再沿同一受保护载体（Carrier）纳入 `main`；主包或网页变化 MUST 保持完整主包检查，仅插件（Plugin）证明 MUST NOT 冒充主包完整证明。未选择主包时源码纳入 MUST NOT 检查主包版本未公开或要求主包发布上下文（Context），后续只使用已选择逐包事实核验开发来源。受保护合入、树一致、双亲回读和冲突边界对三种选择同样适用。
+
 Buildr MUST在完整Product Candidate前，对current `release-<version>` frozen selection完成current main coverage检查与保持release tree不变的历史收敛，并把该post-reconciliation generation作为唯一final source。Buildr MUST只对通过完整Product Candidate的final generation创建一个generation-scoped受保护release→main收敛PR；PR MUST以current generation carrier为head并使用merge commit合入，且merge后`main` tree MUST等于Candidate绑定的frozen release tree并可验证main/release父提交关系。正式Publication成功后 MUST执行post-publication dev provenance reconciliation，证明发布使用的current frozen selection全部源自current `dev`或具有独立可验证的dev回流证据；该动作 MUST为只读、幂等且允许`dev`保留冻结后的新提交，MUST NOT要求published `main`成为`dev`祖先，也 MUST NOT创建merge commit、rebase、reset、force push或修改`dev`。
 
 #### Scenario: final release source进入Candidate
@@ -266,6 +268,8 @@ Buildr MUST在完整Product Candidate前，对current `release-<version>` frozen
 - **AND** MUST NOT依赖管理员绕过、改写dev历史或把push rejection当作暂态成功
 
 ### Requirement: 受保护发布事务必须消费唯一冻结Context
+本条唯一 `.github/workflows/publish.yml`、标签（Tag）及主包上下文（Context）义务仅适用于已选择主包。插件（Plugin）公开发布 SHALL 继续由 `.github/workflows/publish-dsh-plugin.yml` 独立拥有，两种选择 MUST NOT 串用身份；联合编排只传递各包既有冻结事实和运行指针，MUST NOT 合并权限或生成第二发布所有者（Owner）。
+
 Buildr正式publication MUST只由`.github/workflows/publish.yml`的唯一protected transaction执行。Workflow MUST在一次`npm-production`approval内消费与dispatch完全相同的context digest、matching Candidate aggregate与冻结tarball，依次完成hosted OIDC、final pre-tag convergence、tag ensure、npm publish/dist-tag、GitHub Release与Registry readback。
 
 #### Scenario: 显式授权后dispatch
@@ -315,6 +319,7 @@ Release transaction readiness/dispatch 与 hosted evidence inspect MUST缺省返
 - **AND** explicit full MUST从同一run artifact校验后返回完整 portable evidence
 
 ### Requirement: 发布完成必须以零中间资源和正式release ref核验为边界
+以下主包公开标签（Tag）保全条件只用于主包发布收尾。仅插件（Plugin）选择 SHALL 依据自身公开原字节及受保护源码历史保全；联合共享资源 MUST 等全部已选择发布事实成立且活动用途结束才可清理。纯源码交付 SHALL 按明确用途结束，不要求未选择主包的公开事实。任何实际删除仍须证明归属、实时提交（Commit）、保全与对应授权。
 
 Publication和dev provenance已成立后，Release closeout MUST从canonical Workspace即时解析retained controller，完成release Task后直接调用Worktree provider cleanup，再运行Doctor。Worktree或Doctor cleanup失败 MUST保留已成立的Publication、Task结果和Git convergence事实。
 
@@ -482,3 +487,28 @@ Buildr release workflow 在 `npm publish` 返回后从官方 Registry 回读精�
 #### Scenario: 发布保全根事实缺失
 - **WHEN** 官方标签（Tag）缺失或当前main未保有已发布源码历史
 - **THEN** 工具 MUST停止依赖该保全事实的删除且保留现有资源，等待补齐真实保全证据
+
+### Requirement: 发布准备必须按实际变化消费各包证明
+发布准备 SHALL 明确选择仅主包、仅插件（Plugin）或联合。源码进入 `main` 的门禁（Gate）MUST 绑定准确源码、已观察 `main` 与最终冻结源码的完整树差异及适用的候选（Candidate）证据；差异 MUST 包含基线（Baseline）自带变化、共享构建／检查配方和主包生成输入，MUST NOT 仅比较最后选入提交（Commit）。涉及主包或网页产物（Artifact）的变化 MUST 保持完整主包检查；仅插件（Plugin）变化 SHALL 使用独立完整检查，MUST NOT 把主包绿色结果冒充插件（Plugin）已验证。调用方的目标输入 MUST NOT 绕过实际主包变化要求。
+
+#### Scenario: 插件选择混入主包运行实现
+- **WHEN** 输入仅选择插件（Plugin），实际差异包含主包或网页产物（Artifact）实现
+- **THEN** 源码纳入 MUST 同时要求相应完整主包检查
+
+#### Scenario: 独立插件源码证明
+- **WHEN** 源码只改变插件（Plugin）及对应发布工具，并通过独立完整检查
+- **THEN** 系统 SHALL 保存绑定准确源码与检查配方的插件（Plugin）证明
+- **AND** 该证明 MUST NOT 冒充合入后 `main` 上可公开发布的候选（Candidate）
+
+### Requirement: 联合发布必须保留逐包事实并局部恢复
+两个包 SHALL 继续由各自受保护工作流（Workflow）及确切版本授权发布原候选（Candidate）字节。联合发布 MUST NOT 承诺跨包原子性。公开成功、失败与请求未知 SHALL 分别保存；恢复 MUST 核对同版本原字节，已成功包只回读，未知请求只查询，不得自动重复发送。
+
+#### Scenario: 主包已公开而插件失败
+- **WHEN** 联合发布已证明主包公开，插件（Plugin）尚未成功
+- **THEN** 系统 MUST 保留主包事实并只恢复插件（Plugin）未完成事项
+- **AND** MUST NOT 重发、撤销主包或重新打包
+
+#### Scenario: 插件请求响应丢失
+- **WHEN** 插件（Plugin）可能已进入公开写入但结果未知
+- **THEN** 恢复 MUST 使用原请求及候选（Candidate）身份回读
+- **AND** 没有明确未发生写入证据之前 MUST NOT 再次派发

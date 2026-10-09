@@ -5,7 +5,7 @@ import test from 'node:test';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-test('explicit development source binding uses the real candidate CLI without changing open under isolation', { timeout: 50_000 }, () => {
+test('explicit development source binding uses an owned command fixture without changing open under isolation', { timeout: 50_000 }, () => {
   const directory = path.dirname(fileURLToPath(import.meta.url));
   const serviceRoot = path.resolve(directory, '../../../buildr');
   const runner = path.join(serviceRoot, 'tools/development/run-isolated-workspace-smoke.ts');

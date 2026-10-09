@@ -81,6 +81,10 @@ export async function completePublicationEffects(options: any, dependencies: any
     },
     'github-release-state': () => ensureGitHubRelease(expectedRelease, { token, mode: 'preflight', fetchImpl: dependencies.fetchImpl }),
     'npm-publish': async () => {
+      if (!values.registry?.published) {
+        values.compatibility = await checkPublicationCompatibility({ context, artifact }, dependencies);
+        if (values.compatibility.status !== 'passed') throw Object.assign(new Error('Current public plugin cannot consume the frozen main package.'), { code: 'release-package-compatibility-blocked' });
+      }
       const published = await publishFrozenArtifact({ manifestPath: artifact.manifestPath, npmTag }, { ...dependencies,
         onEffects: (effects: any[]) => checkpoint({ pendingEffects: effects }),
       });
@@ -106,6 +110,20 @@ export async function completePublicationEffects(options: any, dependencies: any
   try { values.registry = await registryVersionState(artifact.manifest.packageName, version, dependencies.fetchImpl); }
   catch { /* Keep the last confirmed observation; do not replace it with absent. */ }
   return { ...result, values };
+}
+
+/** Recheck after platform approval, immediately before the package owner's write. */
+export async function checkPublicationCompatibility({ context, artifact }: any, dependencies: any = {}): Promise<any> {
+  const { artifactFromTarball, observePublishedPackageArtifact } = await import('./package-artifact-observation.ts');
+  const { normalizeReleaseTargets } = await import('./release-targets.ts');
+  const { evaluateObservedPackagePlan } = await import('./package-release-operation.ts');
+  const bytes = fs.readFileSync(artifact.tarball);
+  const candidate = artifactFromTarball(bytes, { origin: 'candidate', packageName: '@buildr-ai/buildr', version: context.release.version,
+    integrity: artifact.manifest.integrity, sourceCommit: artifact.manifest.sourceCommit });
+  if (!candidate.compatibility) return { status: 'passed', legacy: true };
+  const plugin = await (dependencies.observePublishedPackageArtifact ?? observePublishedPackageArtifact)('dsh-plugin', { fetchImpl: dependencies.fetchImpl, ...dependencies.compatibilityObservationOptions });
+  return evaluateObservedPackagePlan(normalizeReleaseTargets({ version: candidate.version, selectionId: context.selection?.selectionId }),
+    { buildr: { artifact: candidate, bytes } }, { 'dsh-plugin': plugin }, dependencies);
 }
 
 export async function runReleasePublication(options: any, dependencies: any = {}): Promise<any> {
@@ -138,7 +156,7 @@ export async function runReleasePublication(options: any, dependencies: any = {}
       return authority;
     },
     'source-convergence': () => {
-      const convergence = checkReleaseConvergence({ repo, version: context.release.version, candidateBase: context.release.sourceCommit, candidateTree: context.release.sourceTree,
+      const convergence = checkReleaseConvergence({ repo, version: context.release.version, selectionId: context.selection?.selectionId ?? context.release.version, candidateBase: context.release.sourceCommit, candidateTree: context.release.sourceTree,
         stage: 'pre-tag', authorityEvidence: authority, publicationSourceCommit: context.convergence.mainCommit });
       if (convergence.ok) inspectReleaseSourceProvenance({ repo, sourceCommit: context.release.sourceCommit, generation: context.selection.generation, devRef: 'origin/dev' });
       return convergence;

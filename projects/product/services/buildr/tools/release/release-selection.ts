@@ -7,9 +7,13 @@ import process from 'node:process';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-import { parseArguments, requireOption } from './release-files.ts';
-import { resolveReleaseExecutionBinding, validateReleaseExecutionBinding } from './release-execution-binding.ts';
+import { parseArguments } from './release-files.ts';
+import { releaseSelectionKey, resolveReleaseExecutionBinding, validateReleaseExecutionBinding } from './release-execution-binding.ts';
 import { validateReleaseTransactionEvidence } from './release-transaction-evidence.ts';
+import { normalizeReleaseTargets } from './release-targets.ts';
+import { validatePackagePublicationEvidence } from './release-package-evidence.ts';
+
+export { releaseSelectionKey } from './release-execution-binding.ts';
 
 export const releaseSelectionSchema: any = 'buildr.release-selection/v1';
 export const releaseSelectionSchemaVersion: any = releaseSelectionSchema;
@@ -35,12 +39,12 @@ function requiredVersion(value: any): any  {
   return value;
 }
 
-function branchFor(version: any): any  {
-  return `release-${requiredVersion(version)}`;
+function branchFor(key: any): any  {
+  return `release-${key}`;
 }
 
-function lifecycleRef(version: any, state: any): any  {
-  return `refs/buildr/release/${requiredVersion(version)}/${state}`;
+function lifecycleRef(key: any, state: any): any  {
+  return `refs/buildr/release/${key}/${state}`;
 }
 
 function freezeHistoryRef(version: any, generation: any): any  {
@@ -68,17 +72,78 @@ function cleanWorktree(repo: any, dependencies: any): any  {
 }
 
 function requireExecutionBinding(options: any, repo: any): any  {
-  const current = options.executionBinding ?? (options.workspace ? resolveReleaseExecutionBinding({ version: options.version, workspace: options.workspace, repo }) : null);
+  const current = options.executionBinding ?? (options.workspace ? resolveReleaseExecutionBinding({ version: options.version, selectionId: options.selectionId, workspace: options.workspace, repo }) : null);
   if (!current) throw new Error('Release Git mutation requires a canonical Workspace and matching Task Worktree.');
   const binding: any = validateReleaseExecutionBinding(current, { repo });
-  if (binding.version !== options.version) throw new Error(`Release execution binding version ${binding.version} does not match ${options.version}.`);
+  if (releaseSelectionKey(binding) !== releaseSelectionKey(options)) throw new Error('Release execution binding selectionId does not match the requested selection.');
+  if (binding.version !== (options.version ?? null)) throw new Error(`Release execution binding version ${binding.version} does not match ${options.version ?? null}.`);
   return binding;
+}
+
+function normalizedTargets(value: any, selectionId: string): any {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || !Array.isArray(value.packages) || !value.versions) throw new Error('Release selection targets are invalid.');
+  const normalized = normalizeReleaseTargets({ packages: value.packages.join(','), version: value.versions.buildr,
+    pluginVersion: value.versions['dsh-plugin'], selectionId: value.selectionId });
+  if (normalized.selectionId !== selectionId || JSON.stringify(normalized) !== JSON.stringify(value)) throw new Error('Release selection targets are not the exact normalized target binding.');
+  return normalized;
+}
+
+/** Read the immutable target object from the existing selection ref family. Never writes. */
+function readTargets(options: any, key: string, repo: string, dependencies: any): any {
+  const ref = lifecycleRef(key, 'targets');
+  if (!refExists(ref, repo, dependencies)) {
+    if (options.selectionId !== undefined && key !== options.version) throw new Error('Release selection immutable targets ref is missing.');
+    const version = requiredVersion(options.version);
+    if (options.targets !== undefined) {
+      const expected = normalizedTargets(options.targets, key);
+      if (expected.packages.length !== 1 || expected.packages[0] !== 'buildr' || expected.versions.buildr !== version) throw new Error('Legacy release selection cannot be rebound to other package targets.');
+    }
+    return null;
+  }
+  if (options.selectionId === undefined) throw new Error('Release selection has an explicit target binding; use its selectionId and targets.');
+  const object = runGit(['rev-parse', '--verify', ref], repo, dependencies).stdout.trim();
+  if (!SHA.test(object) || runGit(['cat-file', '-t', object], repo, dependencies).stdout.trim() !== 'blob') throw new Error('Release targets ref must identify a Git blob.');
+  const bytes = runGit(['cat-file', 'blob', object], repo, dependencies).stdout;
+  if (Buffer.byteLength(bytes) > 64 * 1024) throw new Error('Release targets object exceeds its bound.');
+  const targets = normalizedTargets(JSON.parse(bytes), key);
+  if (options.targets !== undefined && JSON.stringify(normalizedTargets(options.targets, key)) !== JSON.stringify(targets)) throw new Error('Release selection target/version binding conflicts with the existing selection.');
+  if (options.version !== undefined && (options.version ?? null) !== (targets.versions.buildr ?? null)) throw new Error('Release selection main version conflicts with its immutable targets.');
+  return { selectionId: key, targets, targetsIdentity: digest(targets), targetsRefObject: object };
+}
+
+function targetsGuard(state: any): string[] {
+  return state.targetsRefObject ? [`verify ${lifecycleRef(state.selectionId, 'targets')} ${state.targetsRefObject}`] : [];
 }
 
 function requireCleanupAuthority(options: any, repo: any, state: any): any  {
   if (options.executionBinding) {
     const executionBinding: any = requireExecutionBinding(options, repo);
     return { kind: 'task-worktree', identity: executionBinding.identity };
+  }
+  if (options.publicationEvidence?.schemaVersion === 'buildr.package-publication-evidence/v1') {
+    const evidence = validatePackagePublicationEvidence(options.publicationEvidence);
+    const context = evidence.context;
+    const key = releaseSelectionKey(options);
+    if (context.selection.selectionId !== key || context.targets.selectionId !== key
+        || context.selection.version !== (context.targets.versions.buildr ?? null)
+        || (options.version !== undefined && context.selection.version !== (options.version ?? null))
+        || (options.targets !== undefined && JSON.stringify(normalizedTargets(options.targets, key)) !== JSON.stringify(context.targets))
+        || (state && (!state.targets || JSON.stringify(context.targets) !== JSON.stringify(state.targets)
+          || context.selection.identity !== state.selectionIdentity || state.status !== 'frozen'
+          || context.selection.releaseHead !== state.releaseHead || context.selection.releaseTree !== state.releaseTree
+          || context.selection.generation !== state.generation))) {
+      throw new Error('Package Publication evidence does not match the immutable frozen release selection.');
+    }
+    return { kind: 'publication', identity: evidence.identity };
+  }
+  if (state?.selectionId !== undefined || options.selectionId !== undefined && options.selectionId !== options.version) {
+    throw new Error('Package-bound release cleanup requires complete package Publication evidence.');
+  }
+  if (options.targets !== undefined) {
+    const targets = normalizedTargets(options.targets, releaseSelectionKey(options));
+    if (targets.packages.length !== 1 || targets.packages[0] !== 'buildr' || targets.versions.buildr !== options.version) {
+      throw new Error('Legacy Publication evidence cannot authorize other package targets.');
+    }
   }
   const evidence: any = validateReleaseTransactionEvidence(options.publicationEvidence);
   const context: any = evidence.context;
@@ -238,6 +303,7 @@ export function selectionIdentity(model: any, legacyDevRef?: string): any  {
     freeze: model.freeze,
     freezeHistory: model.freezeHistory,
     abandon: model.abandon,
+    ...(model.selectionId === undefined ? {} : { selectionId: model.selectionId, targets: model.targets, targetsIdentity: model.targetsIdentity }),
   };
   return `sha256-${crypto.createHash('sha256').update(JSON.stringify(stable)).digest('hex')}`;
 }
@@ -260,15 +326,17 @@ function errorResult(operation: any, version: any, error: any, extra: any = {}):
 }
 
 function readState(options: any, dependencies: any): any  {
-  const version: any = requiredVersion(options.version);
-  const branch: any = branchFor(version);
+  const key = releaseSelectionKey(options);
+  const branch: any = branchFor(key);
   const repo: any = path.resolve(options.repo ?? process.cwd());
   const devRef: any = options.devRef ?? 'dev';
-  const baselineRef: any = lifecycleRef(version, 'baseline');
-  const frozenRef: any = lifecycleRef(version, 'frozen');
-  const abandonedRef: any = lifecycleRef(version, 'abandoned');
+  const baselineRef: any = lifecycleRef(key, 'baseline');
+  const frozenRef: any = lifecycleRef(key, 'frozen');
+  const abandonedRef: any = lifecycleRef(key, 'abandoned');
   if (!refExists(`refs/heads/${branch}`, repo, dependencies)) throw new Error(`Release branch ${branch} does not exist.`);
   if (!refExists(baselineRef, repo, dependencies)) throw new Error(`Release baseline ref is missing: ${baselineRef}`);
+  const targetBinding = readTargets(options, key, repo, dependencies);
+  const version = targetBinding ? targetBinding.targets.versions.buildr ?? null : requiredVersion(options.version);
   const devHead: any = resolveCommit(devRef, repo, dependencies);
   const devBaseline: any = resolveCommit(baselineRef, repo, dependencies);
   const releaseHead: any = resolveCommit(`refs/heads/${branch}`, repo, dependencies);
@@ -278,7 +346,7 @@ function readState(options: any, dependencies: any): any  {
   const invalidSelection: any = releaseHistory.selectionChain.find((entry: any) => !ancestor(devBaseline, entry.sourceDevCommit, repo, dependencies) || !ancestor(entry.sourceDevCommit, devHead, repo, dependencies));
   const invalidHistory: any = releaseHistory.history.find((entry: any) => entry.kind === 'invalid');
   const invalidProvenance: any = invalidSelection ?? invalidHistory;
-  const freezeHistory: any = readFreezeHistory(version, releaseHistory.history, devBaseline, repo, dependencies);
+  const freezeHistory: any = readFreezeHistory(key, releaseHistory.history, devBaseline, repo, dependencies);
   const invalidFreeze: any = freezeHistory.find((entry: any) => entry.state !== 'valid');
   const freeze: any = frozenAt ? { state: frozenAt === releaseHead ? 'frozen' : 'stale', commit: frozenAt } : { state: 'open', commit: null };
   const abandon: any = abandonedAt ? { state: 'abandoned', commit: abandonedAt } : { state: 'active', commit: null };
@@ -286,6 +354,7 @@ function readState(options: any, dependencies: any): any  {
     schemaVersion: releaseSelectionSchema,
     operation: 'inspect',
     version,
+    ...(targetBinding ?? {}),
     branch,
     devRef,
     devHead,
@@ -318,17 +387,18 @@ function readState(options: any, dependencies: any): any  {
 }
 
 function assertActive(state: any, action: any): any  {
-  if (state.status === 'abandoned') throw new Error(`Release ${state.version} was abandoned and cannot ${action}.`);
-  if (state.status === 'stale') throw new Error(`Release ${state.version} has a stale freeze ref; inspect and recover before ${action}.`);
-  if (state.status === 'blocked') throw new Error(`Release ${state.version} has invalid selection provenance.`);
-  if (action === 'update' && state.status === 'frozen') throw new Error(`Release ${state.version} is frozen and cannot update.`);
+  const key = state.selectionId ?? state.version;
+  if (state.status === 'abandoned') throw new Error(`Release ${key} was abandoned and cannot ${action}.`);
+  if (state.status === 'stale') throw new Error(`Release ${key} has a stale freeze ref; inspect and recover before ${action}.`);
+  if (state.status === 'blocked') throw new Error(`Release ${key} has invalid selection provenance.`);
+  if (action === 'update' && state.status === 'frozen') throw new Error(`Release ${key} is frozen and cannot update.`);
 }
 
 export function inspectReleaseSelection(options: any = {}, dependencies: any = {}): any  {
   try {
     return readState(options, dependencies);
   } catch (error: any) {
-    return errorResult('inspect', options.version, error);
+    return errorResult('inspect', options.version ?? null, error);
   }
 }
 
@@ -347,10 +417,14 @@ export function inspectReleaseSourceProvenance(options: any, dependencies: any =
 }
 
 export function createReleaseSelection(options: any = {}, dependencies: any = {}): any  {
-  const version: any = options.version;
+  const version: any = options.version ?? null;
   const effects: any[] = [];
   try {
-    const required: any = requiredVersion(version);
+    const required = releaseSelectionKey(options);
+    if (options.targets !== undefined && options.selectionId === undefined) throw new Error('Explicit package targets require their selectionId.');
+    const targets = options.selectionId === undefined ? null : normalizedTargets(options.targets, required);
+    if (targets && (targets.versions.buildr ?? null) !== (options.version ?? null)) throw new Error('Release selection version differs from its selected main target.');
+    if (targets && (targets.packages.length !== 1 || targets.packages[0] !== 'buildr') && VERSION.test(required)) throw new Error('Plugin/joint selectionId cannot occupy the legacy main-version namespace.');
     const branch: any = branchFor(required);
     const repo: any = path.resolve(options.repo ?? process.cwd());
     const executionBinding: any = requireExecutionBinding(options, repo);
@@ -361,25 +435,30 @@ export function createReleaseSelection(options: any = {}, dependencies: any = {}
     const baseline: any = resolveCommit(options.baseline, repo, dependencies);
     const devHead: any = resolveCommit(devRef, repo, dependencies);
     if (!ancestor(baseline, devHead, repo, dependencies)) throw new Error(`Dev baseline ${baseline} is not contained by current ${devRef} (${devHead}).`);
-    if (refExists(branchRef, repo, dependencies) || refExists(baselineRef, repo, dependencies)) {
-      const existing = readState({ version: required, repo, devRef }, dependencies);
+    const targetsRef = lifecycleRef(required, 'targets');
+    if (refExists(branchRef, repo, dependencies) || refExists(baselineRef, repo, dependencies) || refExists(targetsRef, repo, dependencies)) {
+      if (targets && !refExists(targetsRef, repo, dependencies)) throw new Error('Existing legacy selection has no immutable targets; retain its version-only recovery or choose a new selectionId.');
+      const existing = readState({ ...options, repo, devRef }, dependencies);
       if (existing.devBaseline !== baseline || existing.releaseHead !== executionBinding.head || existing.status === 'abandoned' || existing.status === 'blocked') throw new Error(`Release ${branch} exists with a different baseline or execution head.`);
       return { ...existing, operation: 'create', status: 'passed', action: 'reused', effects: [] };
     }
     if (executionBinding.head !== baseline) throw new Error(`Release Task Worktree HEAD ${executionBinding.head} does not match selected baseline ${baseline}.`);
-    const created = { type: 'release-selection-created', refs: [branchRef, baselineRef], commit: baseline, state: 'unknown' };
+    const targetObject = targets ? runGit(['hash-object', '-w', '--stdin'], repo, dependencies, { input: `${JSON.stringify(targets)}\n` }).stdout.trim() : null;
+    if (targetObject && !SHA.test(targetObject)) throw new Error('Release targets did not produce a valid Git blob identity.');
+    if (targetObject) effects.push({ type: 'release-targets-object-written', object: targetObject, state: 'confirmed' });
+    const created = { type: 'release-selection-created', refs: [branchRef, baselineRef, ...(targets ? [targetsRef] : [])], commit: baseline, state: 'unknown' };
     effects.push(created);
-    updateRefs([`create ${branchRef} ${baseline}`, `create ${baselineRef} ${baseline}`], repo, dependencies);
+    updateRefs([`create ${branchRef} ${baseline}`, `create ${baselineRef} ${baseline}`, ...(targetObject ? [`create ${targetsRef} ${targetObject}`] : [])], repo, dependencies);
     created.state = 'confirmed';
-    const result: any = readState({ version: required, repo, devRef }, dependencies);
-    return { ...result, operation: 'create', status: 'passed', executionBindingIdentity: executionBinding.identity, effects: [{ type: 'branch-created', ref: branchRef, commit: baseline }, { type: 'baseline-ref-created', ref: baselineRef, commit: baseline }], nextActions: ['按维护者明确顺序逐个调用 update；普通 dev 前进不会自动进入 release。'] };
+    const result: any = readState({ ...options, repo, devRef }, dependencies);
+    return { ...result, operation: 'create', status: 'passed', executionBindingIdentity: executionBinding.identity, effects: [{ type: 'branch-created', ref: branchRef, commit: baseline }, { type: 'baseline-ref-created', ref: baselineRef, commit: baseline }, ...(targetObject ? [{ type: 'targets-ref-created', ref: targetsRef, object: targetObject }] : [])], nextActions: ['按维护者明确顺序逐个调用 update；普通 dev 前进不会自动进入 release。'] };
   } catch (error: any) {
     return errorResult('create', version, error, { code: 'release_selection_create_blocked', effects });
   }
 }
 
 export function selectReleaseCommit(options: any = {}, dependencies: any = {}): any  {
-  const version: any = options.version;
+  const version: any = options.version ?? null;
   const effects: any[] = [];
   try {
     const repo: any = path.resolve(options.repo ?? process.cwd());
@@ -400,7 +479,7 @@ export function selectReleaseCommit(options: any = {}, dependencies: any = {}): 
         && selectionSource(currentHead, repo, dependencies) === source) {
       const repaired = { type: 'formal-release-ref-recovered', ref: `refs/heads/${state.branch}`, commit: currentHead, sourceDevCommit: source, state: 'unknown' };
       effects.push({ type: 'release-commit-reused', commit: currentHead, state: 'confirmed' }, repaired);
-      runGit(['update-ref', repaired.ref, currentHead, state.releaseHead], repo, dependencies);
+      updateRefs([...targetsGuard(state), `update ${repaired.ref} ${currentHead} ${state.releaseHead}`], repo, dependencies);
       repaired.state = 'confirmed';
       const recovered = readState(options, dependencies);
       if (recovered.integrity.status !== 'valid') throw new Error('Recovered release selection provenance is invalid.');
@@ -420,6 +499,7 @@ export function selectReleaseCommit(options: any = {}, dependencies: any = {}): 
     }
     if (!ancestor(state.devBaseline, source, repo, dependencies) || source === state.devBaseline) throw new Error(`Selected source ${source} must be after the release baseline.`);
     const before: any = state.releaseHead;
+    if (state.targetsRefObject) updateRefs(targetsGuard(state), repo, dependencies);
     const selected = { type: 'release-commit-created', sourceDevCommit: source, state: 'unknown', resultReleaseCommit: null as string | null };
     effects.push(selected);
     const cherryPick: any = runGit(['cherry-pick', '-x', source], repo, dependencies, { allowFailure: true });
@@ -437,8 +517,8 @@ export function selectReleaseCommit(options: any = {}, dependencies: any = {}): 
     selected.state = 'confirmed';
     const selectedHead: any = resolveCommit('HEAD', repo, dependencies);
     effects[0].resultReleaseCommit = selectedHead;
-    runGit(['update-ref', `refs/heads/${state.branch}`, selectedHead, before], repo, dependencies);
-    const synchronized: any = readState({ version, repo, devRef: options.devRef ?? state.devRef }, dependencies);
+    updateRefs([...targetsGuard(state), `update refs/heads/${state.branch} ${selectedHead} ${before}`], repo, dependencies);
+    const synchronized: any = readState({ ...options, repo, devRef: options.devRef ?? state.devRef }, dependencies);
     const entry: any = synchronized.selectionChain.at(-1);
     if (synchronized.releaseHead === before || entry?.sourceDevCommit !== source) throw new Error('cherry-pick result did not produce a verifiable -x provenance commit.');
     return { ...synchronized, operation: 'update', status: 'passed', executionBindingIdentity: executionBinding.identity, effects: [{ type: 'release-commit-created', sourceDevCommit: source, resultReleaseCommit: synchronized.releaseHead, generation: synchronized.generation }], nextActions: ['继续逐个选择 commit，或对当前 release HEAD 执行 freeze。'] };
@@ -448,7 +528,7 @@ export function selectReleaseCommit(options: any = {}, dependencies: any = {}): 
 }
 
 export function freezeReleaseSelection(options: any = {}, dependencies: any = {}): any  {
-  const version: any = options.version;
+  const version: any = options.version ?? null;
   const effects: any[] = [];
   try {
     const repo: any = path.resolve(options.repo ?? process.cwd());
@@ -456,11 +536,11 @@ export function freezeReleaseSelection(options: any = {}, dependencies: any = {}
     const state: any = readState(options, dependencies);
     assertActive(state, 'freeze');
     cleanWorktree(repo, dependencies);
-    const frozenRef: any = lifecycleRef(version, 'frozen');
-    const historyRef: any = freezeHistoryRef(version, state.generation);
+    const frozenRef: any = lifecycleRef(state.selectionId ?? state.version, 'frozen');
+    const historyRef: any = freezeHistoryRef(state.selectionId ?? state.version, state.generation);
     const existingHistory: any = state.freezeHistory.find((entry: any) => entry.generation === state.generation);
     if (state.freeze.state === 'frozen' && existingHistory?.commit === state.releaseHead) return { ...state, operation: 'freeze', status: 'passed', executionBindingIdentity: executionBinding.identity, effects: [], nextActions: ['下游 Candidate consumer 可使用当前 selectionIdentity。'] };
-    const commands: any[] = [existingHistory ? `verify ${historyRef} ${state.releaseHead}` : `create ${historyRef} ${state.releaseHead}`];
+    const commands: any[] = [...targetsGuard(state), existingHistory ? `verify ${historyRef} ${state.releaseHead}` : `create ${historyRef} ${state.releaseHead}`];
     if (state.freeze.state === 'frozen') commands.push(`verify ${frozenRef} ${state.releaseHead}`);
     else commands.push(`create ${frozenRef} ${state.releaseHead}`);
     const updated = { type: 'release-lifecycle-refs-updated', commands, state: 'unknown' };
@@ -476,7 +556,7 @@ export function freezeReleaseSelection(options: any = {}, dependencies: any = {}
 }
 
 export function reconcileReleaseSelectionWithMain(options: any = {}, dependencies: any = {}): any  {
-  const version: any = options.version;
+  const version: any = options.version ?? null;
   const effects: any[] = [];
   try {
     if (options.confirm !== true) throw new Error('Main reconciliation requires explicit confirmation.');
@@ -485,7 +565,7 @@ export function reconcileReleaseSelectionWithMain(options: any = {}, dependencie
     const repo: any = path.resolve(options.repo ?? process.cwd());
     const executionBinding: any = requireExecutionBinding(options, repo);
     const state: any = readState(options, dependencies);
-    if (state.status !== 'frozen') throw new Error(`Release ${state.version} must be currently frozen before main reconciliation.`);
+    if (state.status !== 'frozen') throw new Error(`Release ${state.selectionId ?? state.version} must be currently frozen before main reconciliation.`);
     const currentBranch: any = runGit(['branch', '--show-current'], repo, dependencies).stdout.trim() || null;
     const currentHead: any = resolveCommit('HEAD', repo, dependencies);
     if (currentBranch !== executionBinding.branch || currentHead !== state.releaseHead) throw new Error(`Main reconciliation requires bound Task branch ${executionBinding.branch} at ${state.releaseHead}; current checkout is ${currentBranch ?? 'detached'} at ${currentHead}.`);
@@ -496,25 +576,26 @@ export function reconcileReleaseSelectionWithMain(options: any = {}, dependencie
       return { ...state, operation: 'reconcile-main', status: 'passed', action: 'already-converged', effects: [], reconciliation: previous, nextActions: ['使用当前 release generation 重新生成 Candidate、artifact 与 readiness。'] };
     }
     const releaseParent: any = state.releaseHead;
+    const targetIdentity = state.selectionId === undefined ? {} : { selectionId: state.selectionId, targetsIdentity: state.targetsIdentity };
     cleanWorktree(repo, dependencies);
     if (ancestor(mainCommit, releaseParent, repo, dependencies)) {
-      const coverageIdentity: any = digest({ version: state.version, mainParent: mainCommit, releaseParent, disposition: 'main-ancestor' });
+      const coverageIdentity: any = digest({ version: state.version, ...targetIdentity, mainParent: mainCommit, releaseParent, disposition: 'main-ancestor' });
       return { ...state, operation: 'reconcile-main', status: 'passed', action: 'already-converged', executionBindingIdentity: executionBinding.identity, effects: [], reconciliation: { mainParent: mainCommit, releaseParent, coverageIdentity, resultReleaseCommit: releaseParent }, nextActions: ['current main已在release历史中；当前frozen generation可作为Candidate最终source。'] };
     }
     const mergeBase: any = runGit(['merge-base', releaseParent, mainCommit], repo, dependencies).stdout.trim();
     const mainPaths: any = changedPaths(mergeBase, mainCommit, repo, dependencies).filter(releaseProductPath);
     const releasePaths: any = new Set(historyChangedPaths(mergeBase, releaseParent, repo, dependencies).filter(releaseProductPath));
     const uncoveredPaths: any = mainPaths.filter((entry: any) => !releasePaths.has(entry));
-    const coverageIdentity: any = digest({ version: state.version, mainParent: mainCommit, releaseParent, mergeBase, mainPaths, releasePaths: [...releasePaths].sort(), uncoveredPaths });
+    const coverageIdentity: any = digest({ version: state.version, ...targetIdentity, mainParent: mainCommit, releaseParent, mergeBase, mainPaths, releasePaths: [...releasePaths].sort(), uncoveredPaths });
     if (uncoveredPaths.length) return errorResult('reconcile-main', version, new Error('Current main contains product paths not covered by current dev/release provenance.'), {
       code: 'release_main_coverage_incomplete',
       details: { mainParent: mainCommit, releaseParent, mergeBase, uncoveredPaths, coverageIdentity },
       nextActions: ['先通过正式Task把列出的main独有内容交付dev，再选择该dev commit并重新执行coverage。'],
     });
     const releaseTree: any = treeOf(releaseParent, repo, dependencies);
-    const resolutionIdentity: any = digest({ version: state.version, mainParent: mainCommit, releaseParent, releaseTree, coverageIdentity, reason });
+    const resolutionIdentity: any = digest({ version: state.version, ...targetIdentity, mainParent: mainCommit, releaseParent, releaseTree, coverageIdentity, reason });
     const message: any = [
-      `Release ${state.version} main reconciliation`,
+      `Release ${state.selectionId ?? state.version} main reconciliation`,
       '',
       reason,
       '',
@@ -529,14 +610,15 @@ export function reconcileReleaseSelectionWithMain(options: any = {}, dependencie
     const parents: any = commitParents(reconciledCommit, repo, dependencies);
     if (!parents.includes(mainCommit) || !parents.includes(releaseParent)) throw new Error('Main reconciliation commit does not contain the expected main and release parents.');
     const newGeneration: any = state.generation + 1;
-    const frozenRef: any = lifecycleRef(state.version, 'frozen');
-    const historyRef: any = freezeHistoryRef(state.version, newGeneration);
+    const frozenRef: any = lifecycleRef(state.selectionId ?? state.version, 'frozen');
+    const historyRef: any = freezeHistoryRef(state.selectionId ?? state.version, newGeneration);
     const branchUpdates: any = executionBinding.branch === state.branch
       ? [`update refs/heads/${state.branch} ${reconciledCommit} ${releaseParent}`]
       : [`update refs/heads/${executionBinding.branch} ${reconciledCommit} ${releaseParent}`, `update refs/heads/${state.branch} ${reconciledCommit} ${releaseParent}`];
     const updated = { type: 'main-reconciliation-refs-updated', commit: reconciledCommit, state: 'unknown' };
     effects.push(updated);
     updateRefs([
+      ...targetsGuard(state),
       `create ${historyRef} ${reconciledCommit}`,
       `update ${frozenRef} ${reconciledCommit} ${state.freeze.commit}`,
       ...branchUpdates,
@@ -560,7 +642,7 @@ export function reconcileReleaseSelectionWithMain(options: any = {}, dependencie
 }
 
 export function reopenReleaseSelection(options: any = {}, dependencies: any = {}): any  {
-  const version: any = options.version;
+  const version: any = options.version ?? null;
   const effects: any[] = [];
   try {
     if (options.confirm !== true) throw new Error('Release reopen requires explicit confirmation.');
@@ -571,12 +653,12 @@ export function reopenReleaseSelection(options: any = {}, dependencies: any = {}
     const state: any = readState(options, dependencies);
     assertActive(state, 'reopen');
     if (state.status === 'ready' && state.freezeHistory.some((entry: any) => entry.commit === state.releaseHead)) return { ...state, operation: 'reopen', status: 'passed', action: 'reused', effects: [] };
-    if (state.status !== 'frozen') throw new Error(`Release ${state.version} is not currently frozen and cannot reopen.`);
+    if (state.status !== 'frozen') throw new Error(`Release ${state.selectionId ?? state.version} is not currently frozen and cannot reopen.`);
     cleanWorktree(repo, dependencies);
-    const frozenRef: any = lifecycleRef(version, 'frozen');
-    const historyRef: any = freezeHistoryRef(version, state.generation);
+    const frozenRef: any = lifecycleRef(state.selectionId ?? state.version, 'frozen');
+    const historyRef: any = freezeHistoryRef(state.selectionId ?? state.version, state.generation);
     const existingHistory: any = state.freezeHistory.find((entry: any) => entry.generation === state.generation);
-    const commands: any[] = [existingHistory ? `verify ${historyRef} ${state.releaseHead}` : `create ${historyRef} ${state.releaseHead}`, `delete ${frozenRef} ${state.releaseHead}`];
+    const commands: any[] = [...targetsGuard(state), existingHistory ? `verify ${historyRef} ${state.releaseHead}` : `create ${historyRef} ${state.releaseHead}`, `delete ${frozenRef} ${state.releaseHead}`];
     const updated = { type: 'release-lifecycle-refs-updated', commands, state: 'unknown' };
     effects.push(updated);
     updateRefs(commands, repo, dependencies);
@@ -596,17 +678,17 @@ export function reopenReleaseSelection(options: any = {}, dependencies: any = {}
 }
 
 export function abandonReleaseSelection(options: any = {}, dependencies: any = {}): any  {
-  const version: any = options.version;
+  const version: any = options.version ?? null;
   const effects: any[] = [];
   try {
     const repo: any = path.resolve(options.repo ?? process.cwd());
     const executionBinding: any = requireExecutionBinding(options, repo);
     const state: any = readState(options, dependencies);
-    const abandonedRef: any = lifecycleRef(version, 'abandoned');
+    const abandonedRef: any = lifecycleRef(state.selectionId ?? state.version, 'abandoned');
     if (state.abandon.state === 'abandoned') return { ...state, operation: 'abandon', status: 'passed', effects: [], nextActions: ['保留既有 Git/Task 事实；不得将 abandoned 集合送入 Candidate 或 publication。'] };
     const abandoned = { type: 'release-abandoned', ref: abandonedRef, commit: state.releaseHead, state: 'unknown' };
     effects.push(abandoned);
-    runGit(['update-ref', abandonedRef, state.releaseHead], repo, dependencies);
+    updateRefs([...targetsGuard(state), `create ${abandonedRef} ${state.releaseHead}`], repo, dependencies);
     abandoned.state = 'confirmed';
     const result: any = readState(options, dependencies);
     return { ...result, operation: 'abandon', status: 'passed', executionBindingIdentity: executionBinding.identity, effects: [{ type: 'release-abandoned', ref: abandonedRef, commit: state.releaseHead }], nextActions: ['如确认不再需要本地恢复，另行显式调用 cleanup；远端 ref 需要独立授权。'] };
@@ -616,30 +698,33 @@ export function abandonReleaseSelection(options: any = {}, dependencies: any = {
 }
 
 export function inspectReleaseSelectionCleanup(options: any = {}, dependencies: any = {}): any  {
-  const version: any = options.version;
+  const version: any = options.version ?? null;
   try {
-    const required: any = requiredVersion(version);
+    const required = releaseSelectionKey(options);
     const repo: any = path.resolve(options.repo ?? process.cwd());
     const branch: any = branchFor(required);
     const branchRef: any = `refs/heads/${branch}`;
     const currentBranch: any = runGit(['branch', '--show-current'], repo, dependencies).stdout.trim();
     const worktrees = runGit(['worktree', 'list', '--porcelain'], repo, dependencies).stdout;
     const checkedOut = currentBranch === branch || worktrees.split(/\r?\n/u).includes(`branch refs/heads/${branch}`);
-    const refs: any = refsUnder(`refs/buildr/release/${required}/`, repo, dependencies).map((entry: any) => entry.ref);
+    const observedRefs = refsUnder(`refs/buildr/release/${required}/`, repo, dependencies);
+    const refs: any = observedRefs.map((entry: any) => entry.ref);
     const branchExists: any = refExists(branchRef, repo, dependencies);
     const state: any = branchExists || refs.length ? readState(options, dependencies) : null;
+    if (state?.targetsRefObject && observedRefs.find((entry: any) => entry.ref === lifecycleRef(required, 'targets'))?.commit !== state.targetsRefObject) throw new Error('Release targets ref changed during cleanup inspection.');
+    const observed = [...(branchExists ? [{ ref: branchRef, commit: state.releaseHead }] : []), ...observedRefs];
     const cleanupAuthority: any = requireCleanupAuthority(options, repo, state);
-    return { schemaVersion: releaseSelectionSchema, operation: 'inspect-cleanup', version: required, branch, status: 'ready', branchExists, refs, checkedOut, cleanupAuthority, effects: [], nextActions: [] };
+    return { schemaVersion: releaseSelectionSchema, operation: 'inspect-cleanup', version: state?.version ?? options.version ?? null, ...(options.selectionId === undefined ? {} : { selectionId: required }), branch, status: 'ready', branchExists, refs, observedRefs: observed, checkedOut, cleanupAuthority, effects: [], nextActions: [] };
   } catch (error: any) {
     return errorResult('inspect-cleanup', version, error, { code: 'release_selection_cleanup_blocked' });
   }
 }
 
 export function cleanupReleaseSelection(options: any = {}, dependencies: any = {}): any  {
-  const version: any = options.version;
+  const version: any = options.version ?? null;
   const effects: any[] = [];
   try {
-    const required: any = requiredVersion(version);
+    const required = releaseSelectionKey(options);
     if (options.confirm !== true) throw new Error('Local release cleanup requires explicit confirmation.');
     const repo: any = path.resolve(options.repo ?? process.cwd());
     const inspected: any = inspectReleaseSelectionCleanup(options, dependencies);
@@ -651,14 +736,15 @@ export function cleanupReleaseSelection(options: any = {}, dependencies: any = {
     const branchExists: any = inspected.branchExists;
     const cleanupAuthority: any = inspected.cleanupAuthority;
     if (!branchExists && refs.length === 0) {
-      return { schemaVersion: releaseSelectionSchema, operation: 'cleanup', version: required, branch, status: 'passed', action: 'already-cleaned', cleanupAuthority, effects: [], nextActions: [] };
+      return { schemaVersion: releaseSelectionSchema, operation: 'cleanup', version: inspected.version, ...(options.selectionId === undefined ? {} : { selectionId: required }), branch, status: 'passed', action: 'already-cleaned', cleanupAuthority, effects: [], nextActions: [] };
     }
-    const observed = [...(branchExists ? [{ ref: branchRef, commit: resolveCommit(branchRef, repo, dependencies) }] : []), ...refsUnder(`refs/buildr/release/${required}/`, repo, dependencies)];
+    const observed = inspected.observedRefs;
     const removed = { type: 'release-local-refs-deleted', refs: observed, state: 'unknown' };
     effects.push(removed);
     updateRefs(observed.map(({ ref, commit }: any) => `delete ${ref} ${commit}`), repo, dependencies);
     removed.state = 'confirmed';
-    return { schemaVersion: releaseSelectionSchema, operation: 'cleanup', version: required, branch, status: 'passed', action: 'cleaned', cleanupAuthority, effects: [...(branchExists ? [{ type: 'branch-deleted', ref: branchRef }] : []), ...refs.map((ref: any) => ({ type: 'lifecycle-ref-deleted', ref }))], nextActions: [] };
+    if (refExists(branchRef, repo, dependencies) || refsUnder(`refs/buildr/release/${required}/`, repo, dependencies).length) throw new Error('Release local refs remain after cleanup; preserve and inspect the current facts.');
+    return { schemaVersion: releaseSelectionSchema, operation: 'cleanup', version: inspected.version, ...(options.selectionId === undefined ? {} : { selectionId: required }), branch, status: 'passed', action: 'cleaned', cleanupAuthority, effects: [...(branchExists ? [{ type: 'branch-deleted', ref: branchRef }] : []), ...refs.map((ref: any) => ({ type: 'lifecycle-ref-deleted', ref }))], nextActions: [] };
   } catch (error: any) {
     return errorResult('cleanup', version, error, { code: 'release_selection_cleanup_blocked', effects, nextActions: ['确认本地 branch 未 checkout、资源ownership明确且传入 --confirm 后重试；正式远端release ref由独立owner核验。'] });
   }
@@ -670,8 +756,11 @@ export const inspectReleaseCollection: any = inspectReleaseSelection;
 
 function cliOptions(parsed: any): any  {
   const executionBindingFile: any = parsed.option('execution-binding');
+  const targetsFile = parsed.option('targets');
   return {
-    version: requireOption(parsed, 'version'),
+    version: parsed.option('version'),
+    selectionId: parsed.option('selection-id'),
+    targets: targetsFile ? JSON.parse(fs.readFileSync(path.resolve(targetsFile), 'utf8')) : undefined,
     repo: parsed.option('repo'),
     devRef: parsed.option('dev-ref', 'dev'),
     workspace: parsed.option('workspace'),
@@ -687,7 +776,7 @@ function cliOptions(parsed: any): any  {
 function runCli(argv: any): any  {
   const parsed: any = parseArguments(argv);
   const operation: any = parsed.positionals[0];
-  if (!['create', 'update', 'inspect', 'freeze', 'reconcile-main', 'reopen', 'abandon', 'cleanup'].includes(operation)) throw new Error('Usage: release-selection.ts <create|update|inspect|freeze|reconcile-main|reopen|abandon|cleanup> --version <version> [--repo <path>] [--execution-binding <json>] [--dev-ref <ref>] [--baseline <commit>] [--source <commit>] [--main-ref <ref>] [--reason <text>] [--confirm]');
+  if (!['create', 'update', 'inspect', 'freeze', 'reconcile-main', 'reopen', 'abandon', 'cleanup'].includes(operation)) throw new Error('Usage: release-selection.ts <create|update|inspect|freeze|reconcile-main|reopen|abandon|cleanup> [--version <main-version>] [--selection-id <id>] [--targets <json>] [--repo <path>] [--execution-binding <json>] [--dev-ref <ref>] [--baseline <commit>] [--source <commit>] [--main-ref <ref>] [--reason <text>] [--confirm]');
   const options: any = cliOptions(parsed);
   if (operation === 'create' && !options.baseline) throw new Error('Missing required --baseline.');
   if (operation === 'update' && !options.source) throw new Error('Missing required --source.');

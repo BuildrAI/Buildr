@@ -8,6 +8,12 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   Object.entries({
   "typecheck": {
     "inputs": [
+      "tools/release/release-targets.ts",
+      "tools/release/package-compatibility.ts",
+      "tools/release/package-artifact-observation.ts",
+      "tools/release/release-package-evidence.ts",
+      "tools/release/plugin-hosted-release.ts",
+      "tools/release/package-release-operation.ts",
       "src/**/*.ts",
       "tsconfig.json",
       "tsconfig.test-context.json",
@@ -18,6 +24,12 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   },
   "unit": {
     "inputs": [
+      "tools/release/release-targets.ts",
+      "tools/release/package-compatibility.ts",
+      "tools/release/package-artifact-observation.ts",
+      "tools/release/release-package-evidence.ts",
+      "tools/release/plugin-hosted-release.ts",
+      "tools/release/package-release-operation.ts",
       "test/unit/**",
       "src/**",
       "services/buildr-web/**",
@@ -635,6 +647,12 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   },
   "integration-candidate-release": {
     "inputs": [
+      "tools/release/release-targets.ts",
+      "tools/release/package-compatibility.ts",
+      "tools/release/package-artifact-observation.ts",
+      "tools/release/release-package-evidence.ts",
+      "tools/release/plugin-hosted-release.ts",
+      "tools/release/package-release-operation.ts",
       "test/integration-candidate-release/**",
       "tools/release/release-git-convergence.ts",
       "tools/release/release-authority.ts",
@@ -654,6 +672,12 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   },
   "integration-candidate-release-effects": {
     "inputs": [
+      "tools/release/release-targets.ts",
+      "tools/release/package-compatibility.ts",
+      "tools/release/package-artifact-observation.ts",
+      "tools/release/release-package-evidence.ts",
+      "tools/release/plugin-hosted-release.ts",
+      "tools/release/package-release-operation.ts",
       "test/integration-candidate-release/**",
       "tools/release/release-git-convergence.ts",
       "tools/release/release-authority.ts",
@@ -673,6 +697,12 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   },
   "integration-candidate-git-convergence": {
     "inputs": [
+      "tools/release/release-targets.ts",
+      "tools/release/package-compatibility.ts",
+      "tools/release/package-artifact-observation.ts",
+      "tools/release/release-package-evidence.ts",
+      "tools/release/plugin-hosted-release.ts",
+      "tools/release/package-release-operation.ts",
       "test/integration-candidate-release/**",
       "tools/release/release-git-convergence.ts",
       "tools/release/release-authority.ts",

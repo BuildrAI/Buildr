@@ -20,6 +20,11 @@ import { compactReleasePhaseTimeline, createReleasePhaseTimeline, projectCandida
 import { inspectHostedReleaseTransaction } from './release-transaction-evidence.ts';
 import { runHostedReleaseTransaction, readCandidateEvidence } from './release-transaction-runner.ts';
 import { assertReleaseConsumptionCoverage } from './release-consumption.ts';
+import { normalizeReleaseTargets } from './release-targets.ts';
+import { preparePackageRelease, continuePackageRelease, evaluateObservedPackagePlan, observePackageCounterparts } from './package-release-operation.ts';
+import { observePublishedPackageArtifact } from './package-artifact-observation.ts';
+import { createReleaseCandidatePlan, assertPluginSourceAggregate } from './verify-pr-candidate.ts';
+import { readPluginSourceCandidate } from './plugin-hosted-release.ts';
 
 export const releaseOrchestrationSchema: any = 'buildr.release-orchestration-result/v1';
 
@@ -352,24 +357,51 @@ export function reconcilePublicationAfterPreparedContext(publication: any, conte
 export async function runReleaseOperation(options: any, dependencies: any = {}): Promise<any> {
   let action = options.action;
   if (!['prepare', 'inspect', 'publish', 'resume'].includes(action)) throw new Error('Release operation must be prepare, inspect, publish or resume.');
-  required(options.version, VERSION, 'version');
+  const targets = normalizeReleaseTargets({ packages: options.packages, version: options.version, pluginVersion: options.pluginVersion, selectionId: options.selectionId });
+  const key = targets.selectionId;
   if (!options.workspace) throw new Error('Release operation requires --workspace <canonical-workspace>.');
   const workspace = fs.realpathSync(path.resolve(options.workspace));
-  const file = operationFile(workspace, options.version);
+  const file = operationFile(workspace, key);
   const saved = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : null;
-  if (saved && (saved.version !== options.version || saved.workspace !== workspace)) throw new Error('Release operation document identity conflicts with the requested Workspace/version.');
-  let state: any = saved ?? { schemaVersion: 'buildr.release-operation-input/v1', version: options.version, workspace, sources: [], candidate: null, publication: null };
+  const metadataFile = path.join(workspace, 'projects/product/services/buildr/package.json');
+  const declaresCompatibility = fs.existsSync(metadataFile) && Object.hasOwn(JSON.parse(fs.readFileSync(metadataFile, 'utf8')), 'buildrCompatibility');
+  const explicitTargets = options.packages !== undefined || options.pluginVersion !== undefined || options.selectionId !== undefined;
+  const scoped = saved ? Boolean(saved.targets) : explicitTargets || declaresCompatibility;
+  if (saved && (saved.workspace !== workspace || (saved.targets
+      ? JSON.stringify(saved.targets) !== JSON.stringify(targets) : saved.version !== options.version || explicitTargets))) throw new Error('Release operation identity conflicts with the requested Workspace, targets or versions.');
+  const selectionArgs = scoped ? { version: targets.versions.buildr ?? null, selectionId: key, targets } : { version: options.version };
+  let state: any = saved ?? { schemaVersion: scoped ? 'buildr.release-operation-input/v2' : 'buildr.release-operation-input/v1',
+    version: targets.versions.buildr ?? null, ...(scoped ? { targets } : {}), workspace, sources: [], candidate: null, publication: null };
   const currentEffects: any[] = [];
   const execute = dependencies.execute ?? ((command: string, args: string[], spawnOptions: any) => spawnSync(command, args, { timeout: 30_000, ...spawnOptions, encoding: 'utf8' }));
   const command = (executable: string, args: string[], cwd = workspace) => {
     const timeout = executable === (options.ghCommand || 'gh') && args.includes('--log-failed') ? 90_000 : 30_000;
-    const value = execute(executable, args, { cwd, timeout });
+    const value = execute(executable, args, { cwd, timeout, maxBuffer: 8 * 1024 * 1024 });
     if (value.status !== 0) throw new Error(`${executable} ${args[0]} failed: ${String(value.stderr || value.stdout || value.error?.message || '').trim()}`);
     return String(value.stdout || '').trim();
   };
   const git = (args: string[], cwd = workspace) => command('git', args, cwd);
   const gh = (args: string[], cwd = workspace) => command(options.ghCommand || 'gh', args, cwd);
   const readRun = (runId: number) => JSON.parse(gh(['api', `repos/${releasePublishAuthority.repository}/actions/runs/${runId}`]));
+  const save = () => writeOperation(file, state);
+  const packageDependencies = { ...dependencies.orchestrationDependencies, ...dependencies.packageDependencies,
+    execute, runtime: dependencies.runtime, resolveRetainedController: dependencies.resolveRetainedController ?? resolveRetainedController,
+    invokeRetainedController: dependencies.invokeRetainedController ?? defaultInvokeRetained,
+    readCandidateEvidence: (runId: number) => readCandidateEvidence({ candidateRunId: runId, ghCommand: options.ghCommand || 'gh', repo: state.executionRoot ?? workspace, execute, dependencies: dependencies.candidateDependencies }),
+  };
+  const packageScope = () => ({ state, workspace, save, effects: currentEffects, execute, git, gh, readRun, ghCommand: options.ghCommand });
+  const legacyRetryCompatibility = async () => {
+    const runId = state.candidate?.runId ?? state.context?.candidate?.runId ?? state.transaction?.candidateRunId;
+    if (!runId) return !declaresCompatibility;
+    const original = packageDependencies.readCandidateEvidence(runId);
+    if (!original.packageArtifact?.compatibility) return original.packageArtifact ? true : !declaresCompatibility;
+    if (original.packageArtifact.integrity !== state.context.artifact?.integrity || original.packageArtifact.artifactSha256 !== state.context.artifact?.sha256
+        || original.packageArtifact.sourceCommit !== state.context.release?.sourceCommit) throw new Error('Legacy retry Candidate differs from original authorized bytes.');
+    const compatibility = await evaluateObservedPackagePlan(targets, { buildr: { artifact: original.packageArtifact, bytes: original.tarballBytes } },
+      await observePackageCounterparts(packageDependencies), packageDependencies);
+    state.compatibility = compatibility; save();
+    return compatibility.status === 'passed';
+  };
   const answer = (status: string, nextActions: string[] = [], extra: any = {}) => {
     if (options.detail !== 'full') {
       const { result: _result, run, selection, ...rest } = extra;
@@ -379,13 +411,14 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
       };
     }
     return {
-    schemaVersion: 'buildr.release-operation-result/v1', action, status, version: options.version,
+    schemaVersion: 'buildr.release-operation-result/v1', action, status, version: targets.versions.buildr ?? null,
+    ...(scoped ? { selectionId: key, targets, compatibility: state.compatibility ?? null, packagePublications: state.packagePublications ?? {} } : {}),
     baseline: state.baseline ?? null, selectedSources: state.sources, sourceCommit: state.sourceCommit ?? null,
     candidate: state.candidate, publication: state.publication, contextIdentity: state.context?.identity ?? null,
     cleanupPlan: state.context ? { policy: state.publication?.requested ? state.publication.cleanupAuthorization?.policy ?? 'retain-formal-release-branch' : 'delete-owned-release-branches/v2',
-      remoteBranches: [`release-${options.version}`, !state.publication?.requested || state.publication.cleanupAuthorization?.policy === 'delete-owned-release-branches/v2'
-        ? `codex/release-main-${options.version}-g*` : releaseCarrierBranchFor(options.version, state.context.selection.generation)],
-      retainedTag: `v${options.version}` } : null,
+      remoteBranches: [`release-${key}`, scoped || !state.publication?.requested || state.publication.cleanupAuthorization?.policy === 'delete-owned-release-branches/v2'
+        ? `codex/release-main-${key}-g*` : releaseCarrierBranchFor(key, state.context.selection.generation)],
+      retainedTag: targets.packages.includes('buildr') ? `v${targets.versions.buildr}` : null } : null,
     effects: currentEffects, nextActions, ...extra,
     };
   };
@@ -395,7 +428,7 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
     return value;
   };
   if (action === 'inspect') {
-    const selection = inspectReleaseSelection({ version: options.version, repo: workspace, devRef: 'origin/dev' });
+    const selection = inspectReleaseSelection({ ...selectionArgs, repo: workspace, devRef: 'origin/dev' });
     const run = state.publication?.runId ? readRun(state.publication.runId) : state.candidate?.runId ? readRun(state.candidate.runId) : null;
     return answer('inspected', ['按当前运行终态继续同一prepare或resume。'], { selection, run });
   }
@@ -413,6 +446,19 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
   }
   try {
     if (fs.existsSync(file)) state = JSON.parse(fs.readFileSync(file, 'utf8'));
+    if (scoped && JSON.stringify(state.targets) !== JSON.stringify(targets)) throw new Error('Stored release targets changed while acquiring the operation lock.');
+    if (scoped && (action === 'publish' || action === 'resume' || (action === 'prepare' && (state.publicationAuthorization || Object.values(state.packagePublications ?? {}).some((value: any) => value.requested))))) {
+      if (action === 'prepare') action = 'resume';
+      const continued = await continuePackageRelease({ ...options, action }, packageScope(), packageDependencies);
+      save(); return answer(continued.status, continued.nextActions, continued);
+    }
+    // Real legacy records retain their successful observations and authorization.
+    // They cannot authorize a fresh publication of newly declared package bytes.
+    if (!scoped && action === 'publish' && !state.publication?.requested && declaresCompatibility) return answer('preparation-required', ['此历史操作缺少逐包兼容证据；先迁移准确选择与候选，再授权新的公开写入。']);
+    if (!scoped && action === 'publish' && !state.publication?.requested && state.candidate?.runId) {
+      const original = packageDependencies.readCandidateEvidence(state.candidate.runId);
+      if (original.packageArtifact?.compatibility) return answer('preparation-required', ['冻结主包已声明兼容契约，历史操作需迁移逐包证据后才能新增公开写入。']);
+    }
     let observedPublicationRun: any = null;
     if (action === 'prepare' && state.publication?.requested) {
       observedPublicationRun = state.publication.runId ? readRun(state.publication.runId) : null;
@@ -456,6 +502,7 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
         if (state.publication.retryRequested && Number(run.run_attempt) < 2) return answer('publication-retry-unconfirmed', ['回读同一运行的新attempt；不重复重跑请求。']);
         const failure = classifyCandidateFailure(gh(['run', 'view', String(run.id), '--repo', releasePublishAuthority.repository, '--log-failed']));
         if (failure !== 'transient' || Number(run.run_attempt) >= 2) return answer('diagnosis-required', ['读取发布步骤证据并诊断失败；已成立公开事实必须保留。'], { run });
+        if (!await legacyRetryCompatibility()) return answer('compatibility-blocked', ['原事实保留；新增重跑前需准确候选字节及当前公开对端兼容证据。'], { run });
         const effect = { type: 'publication-failed-jobs-rerun', runId: run.id, previousAttempt: run.run_attempt, state: 'unknown' };
         currentEffects.push(effect);
         state.publication.retryRequested = true;
@@ -478,11 +525,12 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
       writeOperation(file, state);
       return answer(closed.status, closed.nextActions, { outcomes: closed.outcomes, cleanup: closed.cleanup, result: closed });
     }
+    if (!scoped && declaresCompatibility) return answer('preparation-required', ['此历史操作需迁移到逐包选择后重新准备；原请求和已成立公开事实继续保留。']);
     // The explicit selection is resolved once. Later dev changes never become
     // additional release content unless the caller selects their exact commits.
     git(['fetch', '--no-tags', 'origin', 'refs/heads/dev:refs/remotes/origin/dev', 'refs/heads/main:refs/remotes/origin/main']);
     currentEffects.push({ type: 'remote-refs-refreshed', refs: ['origin/dev', 'origin/main'] });
-    const existingSelection = inspectReleaseSelection({ version: options.version, repo: workspace, devRef: 'origin/dev' });
+    const existingSelection = inspectReleaseSelection({ ...selectionArgs, repo: workspace, devRef: 'origin/dev' });
     const baseline = git(['rev-parse', '--verify', `${options.baseline || state.baseline || existingSelection.devBaseline || 'origin/dev'}^{commit}`]);
     if (state.baseline && state.baseline !== baseline) throw new Error('Existing release baseline differs; select a deliberate replacement before changing it.');
     state.baseline = baseline;
@@ -490,11 +538,23 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
     state.sources = [...new Set([...state.sources, ...sources])];
     state.supportTasks = options.supportTasks || state.supportTasks || [];
     writeOperation(file, state);
-    const token = process.env.GH_TOKEN || process.env.GITHUB_TOKEN || command(options.ghCommand || 'gh', ['auth', 'token']);
-    const publicState = await observeUnpublishedRelease(options.version, { token, ...dependencies.observationOptions });
-    if (publicState.status !== 'unpublished') return answer('public-state-blocked', ['先核实当前公开事实或活动发布运行；不改变已发布集合。'], { publicState });
+    if (targets.packages.includes('buildr')) {
+      const token = process.env.GH_TOKEN || process.env.GITHUB_TOKEN || command(options.ghCommand || 'gh', ['auth', 'token']);
+      const publicState = await (dependencies.observeUnpublishedRelease ?? observeUnpublishedRelease)(targets.versions.buildr, { token, ...dependencies.observationOptions });
+      if (publicState.status !== 'unpublished') return answer('public-state-blocked', ['先核实当前公开事实或活动发布运行；不改变已发布集合。'], { publicState });
+    }
+    if (scoped && targets.packages.includes('dsh-plugin')) {
+      const observe = packageDependencies.observePublishedPackageArtifact ?? observePublishedPackageArtifact;
+      const plugin = await observe('dsh-plugin', { ...packageDependencies.observationOptions, version: targets.versions['dsh-plugin'] });
+      if (plugin.observation.status !== 'absent') return answer('public-state-blocked', ['核对所选插件版本公开事实；不替换已公开或未知的包。'], { publicState: plugin.observation });
+      if (!targets.packages.includes('buildr') && !state.preparationPeer) {
+        const peer = await observe('buildr', packageDependencies.observationOptions ?? {});
+        if (peer.observation.status !== 'present') return answer('peer-observation-blocked', ['核对准确公开主包对端；不要求发布新的主包版本。'], { publicState: peer.observation });
+        state.preparationPeer = peer.observation.artifact; save();
+      }
+    }
     const runtime = dependencies.runtime ?? createReleaseToolRuntime();
-    const taskId = `release-${options.version}`;
+    const taskId = `release-${key}`;
     const controller = (dependencies.resolveRetainedController ?? resolveRetainedController)(workspace);
     const invoke = dependencies.invokeRetainedController ?? defaultInvokeRetained;
     let task: any;
@@ -502,39 +562,63 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
     catch (error: any) {
       if (error.code !== 'task_record_not_found') throw error;
       if (git(['branch', '--show-current']) !== 'dev' || git(['status', '--porcelain=v1']).trim() || git(['rev-parse', 'HEAD']) !== git(['rev-parse', 'origin/dev'])) throw new Error('Creating a release Task requires the clean retained dev baseline to be synchronized first.');
-      task = take(invoke(controller, ['task', 'create', taskId, '--title', `准备发布 ${options.version}`, '--intent', '验证已明确选择的最终发布组合和唯一产物；公开发布需独立授权。', '--project', 'product', '--service', 'product/buildr', '--service', 'product/buildr-web', '--target', workspace, '--json']));
+      const services = targets.packages.flatMap(name => name === 'buildr' ? ['product/buildr', 'product/buildr-web'] : ['product/dsh-plugin']);
+      task = take(invoke(controller, ['task', 'create', taskId, '--title', `准备发布 ${key}`, '--intent', '验证已明确选择的最终发布组合和唯一产物；公开发布需独立授权。', '--project', 'product', ...services.flatMap(service => ['--service', service]), '--target', workspace, '--json']));
     }
     if (task.record?.status !== 'active') throw new Error('Release preparation requires the matching active Task.');
     let worktree = runtime.inspectGitWorktrees({ workspaceRoot: workspace, taskId });
     if (worktree.status !== 'ready') worktree = take(invoke(controller, ['worktree', 'create', taskId, '--target', workspace, '--branch', `codex/${taskId}`, '--start-point', baseline, '--include', 'workspace', '--json']));
     const repo = worktree.repositories.find((entry: any) => entry.selector === 'workspace')?.checkoutPath;
     if (!repo) throw new Error('Release Worktree has no matching workspace repository.');
-    const binding = () => resolveReleaseExecutionBinding({ version: options.version, workspace, repo }, runtime);
-    let selection = inspectReleaseSelection({ version: options.version, repo, devRef: 'origin/dev' });
+    state.executionRoot = repo; save();
+    const binding = () => resolveReleaseExecutionBinding({ ...selectionArgs, workspace, repo }, runtime);
+    let selection = inspectReleaseSelection({ ...selectionArgs, repo, devRef: 'origin/dev' });
     if (selection.status === 'blocked') {
-      const existing = git(['for-each-ref', '--format=%(refname)', `refs/heads/release-${options.version}`, `refs/buildr/release/${options.version}/`], repo);
+      const existing = git(['for-each-ref', '--format=%(refname)', `refs/heads/release-${key}`, `refs/buildr/release/${key}/`], repo);
       if (existing) throw new Error(selection.diagnostic?.message || 'Existing release selection cannot be read.');
-      selection = take(createReleaseSelection({ version: options.version, repo, baseline, devRef: 'origin/dev', executionBinding: binding() }));
+      selection = take(createReleaseSelection({ ...selectionArgs, repo, baseline, devRef: 'origin/dev', executionBinding: binding() }));
     }
     if (selection.devBaseline !== baseline) throw new Error('The existing release baseline differs from the explicit selection.');
     state.sources = [...new Set([...selection.selectionChain.map((entry: any) => entry.sourceDevCommit), ...state.sources])];
     const unselected = state.sources.filter((source: string) => !selection.selectionChain.some((entry: any) => entry.sourceDevCommit === source));
-    if (unselected.length && selection.status === 'frozen') take(reopenReleaseSelection({ version: options.version, repo, devRef: 'origin/dev', executionBinding: binding(), confirm: true, reason: '纳入已授权并完成相关验证的明确dev修复提交' }));
-    for (const source of state.sources) take(selectReleaseCommit({ version: options.version, repo, source, devRef: 'origin/dev', executionBinding: binding() }));
-    selection = take(freezeReleaseSelection({ version: options.version, repo, devRef: 'origin/dev', executionBinding: binding() }));
+    if (unselected.length && selection.status === 'frozen') take(reopenReleaseSelection({ ...selectionArgs, repo, devRef: 'origin/dev', executionBinding: binding(), confirm: true, reason: '纳入已授权并完成相关验证的明确dev修复提交' }));
+    for (const source of state.sources) take(selectReleaseCommit({ ...selectionArgs, repo, source, devRef: 'origin/dev', executionBinding: binding() }));
+    selection = take(freezeReleaseSelection({ ...selectionArgs, repo, devRef: 'origin/dev', executionBinding: binding() }));
     const main = git(['rev-parse', 'origin/main'], repo);
     const mainParents = git(['rev-list', '--parents', '-n', '1', main], repo).split(/\s/u).slice(1);
-    const alreadyMerged = mainParents.length === 2 && mainParents.includes(selection.releaseHead) && git(['rev-parse', `${main}^{tree}`], repo) === selection.releaseTree;
-    if (!alreadyMerged) selection = take(reconcileReleaseToMain({ version: options.version, repo, devRef: 'origin/dev', mainRef: 'origin/main', executionBinding: binding(), confirm: true, reason: '冻结完整候选前核验当前main来源与最终组合' }));
+    const alreadyMerged = mainParents.length === 2 && mainParents[1] === selection.releaseHead && git(['rev-parse', `${main}^{tree}`], repo) === selection.releaseTree;
+    if (!alreadyMerged) selection = take(reconcileReleaseToMain({ ...selectionArgs, repo, devRef: 'origin/dev', mainRef: 'origin/main', executionBinding: binding(), confirm: true, reason: '冻结完整候选前核验当前main来源与最终组合' }));
+    // Lifecycle action completion is not the selection's lifecycle state.
+    selection = inspectReleaseSelection({ ...selectionArgs, repo, devRef: 'origin/dev' });
+    if (selection.status !== 'frozen') throw new Error('Final release selection is no longer frozen.');
     const sourceCommit = selection.releaseHead;
-    if (JSON.parse(git(['show', `${sourceCommit}:projects/product/services/buildr/package.json`], repo)).version !== options.version) throw new Error('Selected source package version differs from the requested release; first deliver and select its version materials on dev.');
+    for (const name of targets.packages) if (JSON.parse(git(['show', `${sourceCommit}:projects/product/services/${name}/package.json`], repo)).version !== targets.versions[name]) throw new Error(`Selected ${name} version differs from requested release; first deliver and select its version materials on dev.`);
     state.sourceCommit = sourceCommit;
-    const carrier = releaseCarrierBranchFor(options.version, selection.generation);
+    let plan: any = null;
+    if (scoped) {
+      if (alreadyMerged) {
+        plan = state.candidatePlan;
+        if (!plan || plan.sourceCommit !== sourceCommit || plan.selection.identity !== selection.selectionIdentity) throw new Error('Merged release requires its original frozen source-admission plan.');
+      } else {
+        const rawGit = (args: string[]) => {
+          if (args.join(' ') === 'rev-parse HEAD') return sourceCommit;
+          const value = execute('git', args, { cwd: repo, timeout: 30_000, encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 });
+          if (value.status !== 0) throw new Error('Candidate source inspection failed.');
+          return String(value.stdout ?? '');
+        };
+        plan = createReleaseCandidatePlan({ BUILDR_RELEASE_PACKAGES: targets.packages.join(','), BUILDR_SOURCE_BUILDR_VERSION: targets.versions.buildr,
+          BUILDR_PLUGIN_VERSION: targets.versions['dsh-plugin'], BUILDR_SELECTION_ID: key, BUILDR_SELECTION_BASELINE: baseline,
+          BUILDR_SELECTION_MAIN: main, BUILDR_SELECTION_IDENTITY: selection.selectionIdentity, CANDIDATE_SOURCE_SHA: sourceCommit,
+          ...(!targets.packages.includes('buildr') ? { BUILDR_BUILDR_PEER_VERSION: state.preparationPeer?.version, BUILDR_BUILDR_PEER_INTEGRITY: state.preparationPeer?.integrity } : {}) }, rawGit);
+        state.candidatePlan = plan; save();
+      }
+    }
+    const carrier = releaseCarrierBranchFor(key, selection.generation);
     const ensureCandidateBranch = (branch: string) => {
       const observed = git(['ls-remote', 'origin', `refs/heads/${branch}`], repo).split(/\s/u)[0] || null;
       if (observed !== sourceCommit) pushReleaseBranch({ repo, branch, commit: sourceCommit, before: observed }, { execute }, currentEffects);
     };
-    ensureCandidateBranch(`release-${options.version}`);
+    if (!alreadyMerged) ensureCandidateBranch(`release-${key}`);
     if (state.candidate?.sourceCommit !== sourceCommit) state.candidate = { sourceCommit, branch: carrier, runId: options.candidateRunId || null, dispatchRequested: false };
     if (!state.candidate.runId) {
       const find = () => JSON.parse(gh(['run', 'list', '--repo', releasePublishAuthority.repository, '--workflow', 'verify.yml', '--branch', carrier, '--event', 'workflow_dispatch', '--limit', '100', '--json', 'databaseId,headSha,status,conclusion'])).find((run: any) => run.headSha === sourceCommit);
@@ -545,7 +629,11 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
         writeOperation(file, state);
         const effect = { type: 'candidate-dispatched', branch: carrier, sourceCommit, state: 'unknown' };
         currentEffects.push(effect);
-        try { gh(['workflow', 'run', 'verify.yml', '--repo', releasePublishAuthority.repository, '--ref', carrier, '-f', 'purpose=candidate']); effect.state = 'confirmed'; }
+        const fields = scoped ? [`release_packages=${targets.packages.join(',')}`, `buildr_version=${JSON.parse(git(['show', `${sourceCommit}:projects/product/services/buildr/package.json`], repo)).version}`,
+          `plugin_version=${plan.pluginVersion}`, `selection_id=${key}`, `selection_baseline=${baseline}`, `selection_main=${plan.selection.main}`,
+          `selection_identity=${selection.selectionIdentity}`, ...(!targets.packages.includes('buildr') && plan.requirements.plugin
+            ? [`buildr_peer_version=${state.preparationPeer.version}`, `buildr_peer_integrity=${state.preparationPeer.integrity}`] : [])] : [];
+        try { gh(['workflow', 'run', 'verify.yml', '--repo', releasePublishAuthority.repository, '--ref', carrier, '-f', 'purpose=candidate', ...fields.flatMap(field => ['-f', field])]); effect.state = 'confirmed'; }
         catch { /* Resolve response loss by the same source/carrier readback. */ }
         existing = find();
       }
@@ -555,7 +643,7 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
     writeOperation(file, state);
     const candidate = readRun(state.candidate.runId);
     if (candidate.head_sha !== sourceCommit) throw new Error('Candidate run source differs from the frozen release.');
-    if (candidate.repository?.full_name !== releasePublishAuthority.repository || candidate.path?.split('@')[0] !== '.github/workflows/verify.yml' || candidate.event !== 'workflow_dispatch') throw new Error('Candidate run does not belong to the expected repository and verification workflow.');
+      if (candidate.repository?.full_name !== releasePublishAuthority.repository || candidate.path?.split('@')[0] !== '.github/workflows/verify.yml' || candidate.event !== 'workflow_dispatch' || (scoped && candidate.head_branch !== carrier)) throw new Error('Candidate run does not belong to the expected repository, carrier and verification workflow.');
     if (candidate.status !== 'completed' || candidate.conclusion !== 'success') ensureCandidateBranch(carrier);
     if (candidate.status !== 'completed') return answer('candidate-running', ['等待当前候选终态，再继续同一prepare。'], { run: candidate });
     if (candidate.conclusion !== 'success') {
@@ -563,11 +651,21 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
       currentEffects.push(...retried.effects);
       return answer(retried.status === 'dispatched' ? 'candidate-running' : 'diagnosis-required', retried.nextActions, { retry: retried });
     }
-    const candidateEvidence = readCandidateEvidence({ candidateRunId: state.candidate.runId, ghCommand: options.ghCommand || 'gh', repo, execute, dependencies: dependencies.candidateDependencies });
-    assertReleaseConsumptionCoverage(candidateEvidence.aggregate, { sourceCommit, sourceTree: selection.releaseTree }, candidateEvidence.manifest);
-    if (String(candidateEvidence.aggregate.workflow?.runId) !== String(state.candidate.runId) || Number(candidateEvidence.aggregate.workflow?.aggregateAttempt) !== Number(candidate.run_attempt)) throw new Error('Candidate evidence belongs to a different run/attempt.');
-    const pr = take(ensureReleaseToMainPullRequest({ version: options.version, generation: selection.generation, repo, candidateCommit: sourceCommit, candidateTree: selection.releaseTree,
-      body: `Release ${options.version} from frozen ${sourceCommit}.\n\nCandidate run ID: ${state.candidate.runId}`,
+    const candidateEvidence = !scoped || plan.requirements.buildr ? readCandidateEvidence({ candidateRunId: state.candidate.runId, ghCommand: options.ghCommand || 'gh', repo, execute, dependencies: dependencies.candidateDependencies }) : null;
+    if (candidateEvidence) {
+      assertReleaseConsumptionCoverage(candidateEvidence.aggregate, { sourceCommit, sourceTree: selection.releaseTree }, candidateEvidence.manifest);
+      if (String(candidateEvidence.aggregate.workflow?.runId) !== String(state.candidate.runId) || Number(candidateEvidence.aggregate.workflow?.aggregateAttempt) !== Number(candidate.run_attempt)) throw new Error('Candidate evidence belongs to a different run/attempt.');
+    }
+    if (scoped && plan.requirements.plugin) {
+      plan.expectedPeer = targets.packages.includes('buildr') ? candidateEvidence?.packageArtifact : state.preparationPeer;
+      plan.peerSourceCommit = sourceCommit;
+      const pluginSource = readPluginSourceCandidate({ repo, plan, runId: state.candidate.runId, runAttempt: candidate.run_attempt, ghCommand: options.ghCommand }, { execute, ...dependencies.pluginSourceDependencies });
+      assertPluginSourceAggregate(pluginSource.aggregate, plan, state.candidate.runId, candidate.run_attempt);
+      if (!targets.packages.includes('buildr') && (pluginSource.aggregate.verification.peer.version !== state.preparationPeer.version || pluginSource.aggregate.verification.peer.integrity !== state.preparationPeer.integrity || pluginSource.aggregate.verification.peer.artifactSha256 !== state.preparationPeer.artifactSha256)) throw new Error('Plugin source Candidate consumed a different frozen registry peer.');
+      state.pluginSourceAggregate = pluginSource.aggregate; save();
+    }
+    const pr = take(ensureReleaseToMainPullRequest({ ...selectionArgs, generation: selection.generation, repo, candidateCommit: sourceCommit, candidateTree: selection.releaseTree,
+      title: `Release ${key}`, body: `Release ${key} from frozen ${sourceCommit}.\n\nCandidate run ID: ${state.candidate.runId}${scoped ? `\nRelease selection: ${JSON.stringify(plan.selection)}${plan.requirements.plugin ? `\nBuildr peer: ${JSON.stringify(state.pluginSourceAggregate.verification.peer)}` : ''}` : ''}`,
       authorizeReleasePush: true, authorizePullRequest: true }, { execute }));
     if (pr.pullRequest.state !== 'MERGED') {
       const effect = { type: 'release-main-merge', url: pr.pullRequest.url, sourceCommit, state: 'unknown' };
@@ -575,6 +673,13 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
       gh(['pr', 'merge', pr.pullRequest.url, '--repo', releasePublishAuthority.repository, '--merge', '--match-head-commit', sourceCommit], repo);
       effect.state = 'confirmed';
       git(['fetch', '--no-tags', 'origin', 'refs/heads/main:refs/remotes/origin/main'], repo);
+    }
+    if (scoped) {
+      const mainCommit = git(['rev-parse', 'origin/main'], repo);
+      const actualParents = git(['rev-list', '--parents', '-n', '1', mainCommit], repo).split(/\s/u).slice(1);
+      if (actualParents.length !== 2 || actualParents[1] !== sourceCommit || git(['rev-parse', `${mainCommit}^{tree}`], repo) !== selection.releaseTree) throw new Error('Protected main does not preserve the exact frozen tree through its merge second parent.');
+      const prepared = await preparePackageRelease({ ...options, repo, selection, mainCommit, candidateEvidence }, packageScope(), packageDependencies);
+      save(); return answer(prepared.status, prepared.nextActions, prepared);
     }
     state.transaction = { repo, canonicalWorkspace: workspace, version: options.version, sourceCommit: 'origin/main', remoteMain: 'origin/main', candidateBase: sourceCommit,
       candidateTree: selection.releaseTree, releaseTask: taskId, supportTasks: state.supportTasks, candidateRunId: state.candidate.runId,
@@ -616,9 +721,10 @@ function parseOptions(argv: any): any  {
   }
   if (!options.input && ['prepare', 'inspect', 'publish', 'resume'].includes(action)) return {
     ...options, normalOperation: true, candidateRunId: options['candidate-run-id'] ? Number(options['candidate-run-id']) : null,
+    pluginVersion: options['plugin-version'], selectionId: options['selection-id'],
     supportTasks: options['support-tasks'] ? options['support-tasks'].split(',').filter(Boolean) : undefined,
   };
-  if (!options.input) throw new Error('Usage: release-orchestration-runner.ts <prepare|inspect|publish|resume> --version <version> --workspace <root> [--baseline <ref>] [--source <sha> ...] [--authorized]');
+  if (!options.input) throw new Error('Usage: release-orchestration-runner.ts <prepare|inspect|publish|resume> --workspace <root> [--packages buildr|dsh-plugin|buildr,dsh-plugin] [--version <main-version>] [--plugin-version <plugin-version>] [--baseline <ref>] [--source <sha> ...] [--authorized]');
   if (!['compact', 'full'].includes(options.detail)) throw new Error('--detail must be compact or full.');
   const input: any = JSON.parse(fs.readFileSync(path.resolve(options.input), 'utf8'));
   if (action === 'inspect') return { action, detail: options.detail, output: options.output ? path.resolve(options.output) : null, expectedTimelineIdentity: options['timeline-identity'] ?? null, inspectedResult: input };

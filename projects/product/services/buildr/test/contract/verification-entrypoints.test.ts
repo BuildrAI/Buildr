@@ -36,7 +36,7 @@ test('product verification exposes four gates, direct layers, and one focus entr
     assert.equal(scripts[`test:browser:${selector}`], `node --import ./test/register-development-entry.ts test/verification/browser-selector-dispatcher.ts --selector ${selector} --run`);
   }
   assert.equal(scripts['test:integration:candidate:recovery'], undefined);
-  assert.equal(scripts['test:integration:candidate:release'], 'node --import ./test/register-development-entry.ts test/verification/run-node-tests.ts test/integration-candidate-release/**/*.test.ts');
+  assert.equal(scripts['test:integration:candidate:release'], 'node --import ./test/register-development-entry.ts test/verification/run-node-tests.ts "test/integration-candidate-release/**/*.test.ts"', 'The shell must preserve the complete root-and-subdirectory pattern for the shared test selector.');
   assert.equal(scripts['coverage:unit'], 'node --import ./test/register-development-entry.ts test/verification/unit-coverage.ts');
   assert.equal(scripts['test:changed'], 'node --import ./test/register-development-entry.ts test/verification/changed.ts');
   assert.equal(scripts['test:focus'], 'node --import ./test/register-development-entry.ts test/verification/focus.ts');
@@ -379,7 +379,10 @@ test('Candidate source work is independent and all consumers use the one immutab
   }
   for (const id of ['candidate-source', 'candidate-artifact-consumers', 'candidate-host-node']) assert.equal(document.jobs[id].strategy['fail-fast'], false);
   assert.ok(CANDIDATE_CI_SHARDS.some((shard: any) => shard.id === 'release-infrastructure-windows'));
-  assert.deepEqual(document.jobs['candidate-gate'].needs, ['candidate-plan', 'candidate-bootstrap', 'candidate-source', 'candidate-artifact-consumers', 'candidate-host-node']);
+  assert.deepEqual(document.jobs['candidate-gate'].needs, ['candidate-plan', 'candidate-bootstrap', 'candidate-source', 'candidate-artifact-consumers', 'candidate-host-node', 'plugin-source-candidate']);
+  for (const id of ['candidate-bootstrap', 'candidate-source', 'candidate-artifact-consumers', 'candidate-host-node']) assert.equal(document.jobs[id].if, "needs.candidate-plan.outputs.buildr == 'true'");
+  assert.deepEqual(document.jobs['plugin-source-candidate'].needs, ['candidate-plan', 'candidate-bootstrap']);
+  assert.equal(document.jobs['plugin-source-candidate'].if, "always() && needs.candidate-plan.result == 'success' && needs.candidate-plan.outputs.plugin == 'true' && (needs.candidate-plan.outputs.candidate_peer != 'true' || needs.candidate-bootstrap.result == 'success')");
   assert.match(document.jobs['candidate-gate'].if, /^always\(\)/);
   for (const [id, job] of Object.entries(document.jobs) as any[]) {
     if (!id.startsWith('candidate-')) continue;

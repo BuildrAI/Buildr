@@ -5,6 +5,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { gunzipSync } from 'node:zlib';
 import { isDeepStrictEqual } from 'node:util';
 import { containsCredentialMaterial } from '../../buildr/tools/release/release-authority.ts';
+import { parsePackageCompatibility, type PackageCompatibility } from '../../buildr/tools/release/package-compatibility.ts';
 
 export const PLUGIN_PACKAGE = '@buildr-ai/buildr-dsh-plugin';
 export const PLUGIN_REGISTRY = 'https://registry.npmjs.org/';
@@ -30,6 +31,7 @@ export interface ReleaseCandidate {
   integrity: string;
   npmTag: 'next' | 'latest';
   sourceSdk: SourceSdkIdentity;
+  compatibility?: PackageCompatibility;
   fileCount: number;
   published: false;
 }
@@ -37,7 +39,7 @@ const sha = (bytes: Buffer, algorithm: string, encoding: 'hex' | 'base64' = 'hex
 const gitIdentity = /^[a-f0-9]{40}$/;
 const digest = /^[a-f0-9]{64}$/;
 const semver = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?$/;
-const fail = (reason: string): never => { throw new Error(`dsh_release_candidate_invalid: ${reason}`); };
+function fail(reason: string): never { throw new Error(`dsh_release_candidate_invalid: ${reason}`); }
 function object(value: unknown): Record<string, any> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) fail('expected an object');
   return value as Record<string, any>;
@@ -71,12 +73,14 @@ export function parseReleaseCandidate(value: unknown): ReleaseCandidate {
   if (!Number.isSafeInteger(input.fileCount) || input.fileCount < 1 || input.npmTag !== (input.version.includes('-') ? 'next' : 'latest')) fail('invalid inventory or npm tag');
   if ('sdk' in input || 'tarball' in input) fail('candidate cannot depend on absolute build paths');
   return { schemaVersion: CANDIDATE_SCHEMA, packageName: PLUGIN_PACKAGE, version: input.version, sourceCommit: input.sourceCommit, sourceTree: input.sourceTree, registry: PLUGIN_REGISTRY,
-    filename: filename(input.filename), size: input.size, sha256: input.sha256, integrity: input.integrity, npmTag: input.npmTag, sourceSdk: sdkIdentity(input.sourceSdk), fileCount: input.fileCount, published: false };
+    filename: filename(input.filename), size: input.size, sha256: input.sha256, integrity: input.integrity, npmTag: input.npmTag, sourceSdk: sdkIdentity(input.sourceSdk), ...(input.compatibility === undefined ? {} : { compatibility: parsePackageCompatibility(input.compatibility) }), fileCount: input.fileCount, published: false };
 }
 export function createReleaseCandidate(input: { version: string; sourceCommit: string; sourceTree: string; filename: string; bytes: Buffer; sourceSdk: SourceSdkIdentity; fileCount: number }): ReleaseCandidate {
-  return parseReleaseCandidate({ schemaVersion: CANDIDATE_SCHEMA, packageName: PLUGIN_PACKAGE, registry: PLUGIN_REGISTRY, version: input.version, sourceCommit: input.sourceCommit, sourceTree: input.sourceTree,
+  const candidate = parseReleaseCandidate({ schemaVersion: CANDIDATE_SCHEMA, packageName: PLUGIN_PACKAGE, registry: PLUGIN_REGISTRY, version: input.version, sourceCommit: input.sourceCommit, sourceTree: input.sourceTree,
     filename: input.filename, size: input.bytes.length, sha256: sha(input.bytes, 'sha256'), integrity: `sha512-${sha(input.bytes, 'sha512', 'base64')}`,
     sourceSdk: input.sourceSdk, fileCount: input.fileCount, published: false, npmTag: input.version.includes('-') ? 'next' : 'latest' });
+  const metadata = inspectPluginTarballContents(input.bytes, candidate, false);
+  return metadata.buildrCompatibility === undefined ? candidate : parseReleaseCandidate({ ...candidate, compatibility: metadata.buildrCompatibility });
 }
 function regularFile(path: string, limit: number): Buffer {
   const state = lstatSync(path);
@@ -105,6 +109,9 @@ function paxPath(bytes: Buffer): string | undefined {
 }
 /** Read only archive metadata; never extract or execute the package. */
 export function inspectPluginTarball(bytes: Buffer, candidate: ReleaseCandidate): Record<string, any> {
+  return inspectPluginTarballContents(bytes,candidate,true);
+}
+function inspectPluginTarballContents(bytes: Buffer, candidate: ReleaseCandidate, enforceCompatibility: boolean): Record<string, any> {
   const tar = gunzipSync(bytes, { maxOutputLength: 256 * 1024 * 1024 });
   let position = 0, nextPath: string | undefined, metadata: Record<string, any> | undefined, files = 0;
   const paths = new Set<string>();
@@ -139,6 +146,8 @@ export function inspectPluginTarball(bytes: Buffer, candidate: ReleaseCandidate)
   if (typeof repository !== 'string' || repository.replace(/^git\+/, '').replace(/\.git\/?$/, '').replace(/\/$/, '') !== 'https://github.com/BuildrAI/Buildr') fail('archive repository mismatch');
   if (['preinstall', 'install', 'postinstall', 'prepare'].some(key => Object.hasOwn(metadata.scripts ?? {}, key))) fail('plugin cannot contain installation scripts');
   const sdk = object(metadata.buildrDshSourceSdk);
+  const compatibility=metadata.buildrCompatibility===undefined?undefined:parsePackageCompatibility(metadata.buildrCompatibility);
+  if (enforceCompatibility && !isDeepStrictEqual(compatibility, candidate.compatibility)) fail('archive compatibility mismatch');
   if (!isDeepStrictEqual(sdk.upstream, candidate.sourceSdk.baseline) || sdk.sourceManifestSha256 !== candidate.sourceSdk.manifestSha256 || sdk.sourcePatchSha256 !== candidate.sourceSdk.patchSha256 || !isDeepStrictEqual(sdk.compiledContracts, candidate.sourceSdk.contracts)) fail('archive source SDK identity mismatch');
   return metadata;
 }

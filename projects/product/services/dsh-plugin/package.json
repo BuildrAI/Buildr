@@ -1,6 +1,26 @@
 {
   "name": "@buildr-ai/buildr-dsh-plugin-source",
   "version": "0.1.0-rc.1",
+  "buildrCompatibility": {
+    "schemaVersion": "buildr.package-compatibility/v1",
+    "provides": [],
+    "requires": [
+      {
+        "packageName": "@buildr-ai/buildr",
+        "feature": "entry",
+        "required": true,
+        "versions": { "minInclusive": "0.1.0-rc.38", "maxExclusive": "0.2.0-0", "includePrerelease": true },
+        "contracts": ["buildr.installation-status/v1", "buildr.web-protocol/v1"]
+      },
+      {
+        "packageName": "@buildr-ai/buildr",
+        "feature": "sourceCapture",
+        "required": false,
+        "versions": { "minInclusive": "0.1.0-rc.38", "maxExclusive": "0.2.0-0", "includePrerelease": true },
+        "contracts": ["buildr.agent-asset-source-observations/v1", "buildr.agent-asset-source-result/v1"]
+      }
+    ]
+  },
   "private": true,
   "type": "module",
   "engines": { "node": "24.15.0" },

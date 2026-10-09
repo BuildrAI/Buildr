@@ -17,6 +17,43 @@ on:
         description: Closed release rehearsal identity
         required: false
         type: string
+      release_packages:
+        description: Explicit publication targets (buildr, dsh-plugin, or buildr,dsh-plugin); omitted preserves the Buildr Candidate entry
+        required: false
+        default: ''
+        type: string
+      buildr_version:
+        description: Exact selected Buildr version (only when Buildr is selected)
+        required: false
+        type: string
+      plugin_version:
+        description: Exact selected plugin version (only when the plugin is selected)
+        required: false
+        type: string
+      buildr_peer_version:
+        description: Exact published Buildr peer for an independent plugin Candidate
+        required: false
+        type: string
+      buildr_peer_integrity:
+        description: Observed published Buildr tarball integrity
+        required: false
+        type: string
+      selection_id:
+        description: Frozen source selection identity namespace
+        required: false
+        type: string
+      selection_baseline:
+        description: Exact selected development baseline commit
+        required: false
+        type: string
+      selection_main:
+        description: Exact observed protected main commit before freezing
+        required: false
+        type: string
+      selection_identity:
+        description: Frozen source selection digest
+        required: false
+        type: string
   pull_request:
     branches: [dev, main]
 
@@ -32,6 +69,15 @@ env:
   BUILDR_CANDIDATE_PURPOSE: ${{ inputs.purpose || 'candidate' }}
   BUILDR_CANDIDATE_EXPECTED_SOURCE_TREE: ${{ inputs.expected_source_tree || '' }}
   BUILDR_RELEASE_REHEARSAL_IDENTITY: ${{ inputs.rehearsal_identity || '' }}
+  BUILDR_RELEASE_PACKAGES: ${{ inputs.release_packages || '' }}
+  BUILDR_SOURCE_BUILDR_VERSION: ${{ inputs.buildr_version || '' }}
+  BUILDR_PLUGIN_VERSION: ${{ inputs.plugin_version || '' }}
+  BUILDR_SELECTION_ID: ${{ inputs.selection_id || '' }}
+  BUILDR_SELECTION_BASELINE: ${{ inputs.selection_baseline || '' }}
+  BUILDR_SELECTION_MAIN: ${{ inputs.selection_main || '' }}
+  BUILDR_SELECTION_IDENTITY: ${{ inputs.selection_identity || '' }}
+  BUILDR_BUILDR_PEER_VERSION: ${{ inputs.buildr_peer_version || '' }}
+  BUILDR_BUILDR_PEER_INTEGRITY: ${{ inputs.buildr_peer_integrity || '' }}
 
 jobs:
   dev-feedback-macos:
@@ -97,6 +143,12 @@ jobs:
         run: |
           node tools/prepare-release-sdk.ts --node "$(command -v node)" --pnpm "${RUNNER_TEMP}/dsh-tooling/node_modules/pnpm/bin/pnpm.cjs" > "${RUNNER_TEMP}/development-dsh-sdk.json"
           node --input-type=module -e 'import fs from "node:fs"; import path from "node:path"; const result = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); if (result.schemaVersion !== "buildr.dsh-release-sdk/v1" || result.status !== "prepared" || typeof result.sdk !== "string" || !path.isAbsolute(result.sdk) || /[\u0000-\u001f\u007f]/.test(result.sdk)) throw new Error("SDK output missing"); fs.appendFileSync(process.env.GITHUB_ENV, `BUILDR_DSH_SOURCE_SDK_ROOT=${result.sdk}\n`);' "${RUNNER_TEMP}/development-dsh-sdk.json"
+      - name: Observe the exact published Buildr peer for affected plugin checks
+        if: steps.services.outputs.dsh == 'true'
+        shell: bash
+        run: |
+          node tools/release/package-artifact-observation.ts --package buildr --discover current --tarball "${RUNNER_TEMP}/development-buildr-peer.tgz" --output "${RUNNER_TEMP}/development-buildr-peer.json"
+          node --input-type=module -e 'import fs from "node:fs"; fs.appendFileSync(process.env.GITHUB_ENV, `BUILDR_DSH_BUILDR_PEER_INPUT=${process.argv[1]}\n`);' "${RUNNER_TEMP}/development-buildr-peer.json"
       - name: Verify changed product scope
         env:
           BUILDR_TIMING_OUTPUT: ${{ runner.temp }}/development-feedback-timing.json
@@ -190,21 +242,33 @@ jobs:
       source: ${{ steps.plan.outputs.source }}
       artifact: ${{ steps.plan.outputs.artifact }}
       host: ${{ steps.plan.outputs.host }}
+      buildr: ${{ steps.scope.outputs.buildr }}
+      plugin: ${{ steps.scope.outputs.plugin }}
+      joint: ${{ steps.scope.outputs.joint }}
+      candidate_peer: ${{ steps.scope.outputs.candidate_peer }}
+      plugin_version: ${{ steps.scope.outputs.plugin_version }}
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ env.CANDIDATE_SOURCE_SHA }}
+          fetch-depth: 0
       - uses: actions/setup-node@v6
         with:
           node-version-file: projects/product/.node-version
           package-manager-cache: false
+      - name: Resolve checks from the complete frozen source difference
+        id: scope
+        working-directory: projects/product/services/buildr
+        run: node tools/release/verify-pr-candidate.ts plan
       - id: plan
+        if: steps.scope.outputs.buildr == 'true'
         working-directory: projects/product/services/buildr
         run: node test/verification/candidate-ci.ts plan
 
   candidate-bootstrap:
     name: Candidate bootstrap
     needs: candidate-plan
+    if: needs.candidate-plan.outputs.buildr == 'true'
     runs-on: macos-15
     timeout-minutes: 15
     defaults:
@@ -255,6 +319,7 @@ jobs:
   candidate-source:
     name: Candidate source (${{ matrix.shard }})
     needs: candidate-plan
+    if: needs.candidate-plan.outputs.buildr == 'true'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
@@ -297,6 +362,7 @@ jobs:
   candidate-artifact-consumers:
     name: Candidate artifact (${{ matrix.shard }})
     needs: [candidate-plan, candidate-bootstrap]
+    if: needs.candidate-plan.outputs.buildr == 'true'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
@@ -344,6 +410,7 @@ jobs:
   candidate-host-node:
     name: Candidate Host Node (${{ matrix.id }})
     needs: [candidate-plan, candidate-bootstrap]
+    if: needs.candidate-plan.outputs.buildr == 'true'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     strategy:
@@ -387,10 +454,133 @@ jobs:
           if-no-files-found: warn
           overwrite: true
 
+  plugin-source-candidate:
+    name: Plugin source Candidate
+    needs: [candidate-plan, candidate-bootstrap]
+    if: always() && needs.candidate-plan.result == 'success' && needs.candidate-plan.outputs.plugin == 'true' && (needs.candidate-plan.outputs.candidate_peer != 'true' || needs.candidate-bootstrap.result == 'success')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: projects/product/services/dsh-plugin
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CANDIDATE_SOURCE_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: projects/product/.node-version
+          package-manager-cache: false
+      - name: Validate the frozen source and complete difference
+        working-directory: projects/product/services/buildr
+        run: node tools/release/verify-pr-candidate.ts plan
+      - name: Install isolated fixed preparation tooling
+        run: |
+          mkdir -p "${RUNNER_TEMP}/plugin-tooling"
+          : > "${RUNNER_TEMP}/plugin-tooling/user.npmrc"
+          : > "${RUNNER_TEMP}/plugin-tooling/global.npmrc"
+          cd "${RUNNER_TEMP}/plugin-tooling"
+          env -i PATH="${PATH}" NPM_CONFIG_USERCONFIG="${RUNNER_TEMP}/plugin-tooling/user.npmrc" NPM_CONFIG_GLOBALCONFIG="${RUNNER_TEMP}/plugin-tooling/global.npmrc" \
+            npm install --prefix "${RUNNER_TEMP}/plugin-tooling" --ignore-scripts --no-save --no-package-lock --no-audit --no-fund --registry=https://registry.npmjs.org/ npm@11.5.1 pnpm@11.7.0
+      - name: Install locked Buildr CLI development dependencies
+        working-directory: projects/product/services/buildr
+        run: |
+          mkdir -p "${RUNNER_TEMP}/buildr-cli-dependencies"
+          : > "${RUNNER_TEMP}/buildr-cli-dependencies/user.npmrc"
+          : > "${RUNNER_TEMP}/buildr-cli-dependencies/global.npmrc"
+          env -i PATH="${PATH}" NPM_CONFIG_USERCONFIG="${RUNNER_TEMP}/buildr-cli-dependencies/user.npmrc" NPM_CONFIG_GLOBALCONFIG="${RUNNER_TEMP}/buildr-cli-dependencies/global.npmrc" \
+            node "${RUNNER_TEMP}/plugin-tooling/node_modules/npm/bin/npm-cli.js" ci --ignore-scripts --no-audit --no-fund --registry=https://registry.npmjs.org/ --cache "${RUNNER_TEMP}/buildr-cli-dependencies/npm-cache"
+      - name: Prepare shared release-tool generated test inputs
+        working-directory: projects/product/services/buildr
+        run: node "${RUNNER_TEMP}/plugin-tooling/node_modules/npm/bin/npm-cli.js" run artifacts:prepare
+      - name: Verify shared source-admission release tools
+        working-directory: projects/product/services/buildr
+        run: |
+          node "${RUNNER_TEMP}/plugin-tooling/node_modules/npm/bin/npm-cli.js" run test:integration:candidate:release
+          node test/verification/run-node-tests.ts 'test/unit/release-*.test.ts' 'test/unit/package-compatibility.test.ts' 'test/contract/release-*.test.ts' 'test/contract/open-source-release.test.ts' 'test/contract/package-compatibility.test.ts'
+      - name: Prepare pinned source SDK
+        id: sdk
+        run: |
+          node tools/prepare-release-sdk.ts --node "$(command -v node)" --pnpm "${RUNNER_TEMP}/plugin-tooling/node_modules/pnpm/bin/pnpm.cjs" > "${RUNNER_TEMP}/plugin-sdk.json"
+          node --input-type=module -e 'import fs from "node:fs"; import path from "node:path"; const value = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); if (value.status !== "prepared" || !path.isAbsolute(value.sdk ?? "") || /[\u0000-\u001f\u007f]/.test(value.sdk)) throw new Error("Prepared SDK output missing"); fs.appendFileSync(process.env.GITHUB_OUTPUT, `root=${value.sdk}\n`);' "${RUNNER_TEMP}/plugin-sdk.json"
+      - name: Download the joint Buildr Candidate original bytes
+        if: needs.candidate-plan.outputs.candidate_peer == 'true'
+        uses: actions/download-artifact@v7
+        with:
+          name: candidate-package
+          path: ${{ runner.temp }}/joint-buildr-candidate
+      - name: Read the joint Candidate integrity
+        if: needs.candidate-plan.outputs.candidate_peer == 'true'
+        id: joint-peer
+        run: |
+          node --input-type=module -e 'import fs from "node:fs"; const value = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); if (!/^sha512-[A-Za-z0-9+/]{86}==$/.test(value.integrity ?? "")) throw new Error("Candidate integrity missing"); fs.appendFileSync(process.env.GITHUB_OUTPUT, `integrity=${value.integrity}\n`);' "${RUNNER_TEMP}/joint-buildr-candidate/release-artifact.json"
+      - name: Observe the joint Candidate Buildr peer
+        if: needs.candidate-plan.outputs.candidate_peer == 'true'
+        working-directory: projects/product/services/buildr
+        env:
+          PEER_VERSION: ${{ inputs.buildr_version }}
+          PEER_INTEGRITY: ${{ steps.joint-peer.outputs.integrity }}
+        run: >-
+          node tools/release/package-artifact-observation.ts --package buildr
+          --candidate-manifest "${RUNNER_TEMP}/joint-buildr-candidate/release-artifact.json"
+          --version "${PEER_VERSION}" --integrity "${PEER_INTEGRITY}"
+          --output "${RUNNER_TEMP}/plugin-buildr-peer.json"
+      - name: Observe the exact published Buildr peer
+        if: needs.candidate-plan.outputs.candidate_peer != 'true'
+        working-directory: projects/product/services/buildr
+        env:
+          PEER_VERSION: ${{ inputs.buildr_peer_version }}
+          PEER_INTEGRITY: ${{ inputs.buildr_peer_integrity }}
+        run: >-
+          node tools/release/package-artifact-observation.ts --package buildr
+          --version "${PEER_VERSION}" --integrity "${PEER_INTEGRITY}"
+          --tarball "${RUNNER_TEMP}/published-buildr-peer.tgz"
+          --output "${RUNNER_TEMP}/plugin-buildr-peer.json"
+      - name: Verify complete plugin against the exact peer
+        env:
+          PLUGIN_SOURCE_SDK: ${{ steps.sdk.outputs.root }}
+        run: >-
+          node tools/verify-all.ts --source-sdk "${PLUGIN_SOURCE_SDK}"
+          --buildr-peer "${RUNNER_TEMP}/plugin-buildr-peer.json"
+          --output "${RUNNER_TEMP}/plugin-full-verification.json"
+          --npm "${RUNNER_TEMP}/plugin-tooling/node_modules/npm/bin/npm-cli.js"
+      - name: Prepare plugin source Candidate bytes
+        env:
+          PLUGIN_SOURCE_SDK: ${{ steps.sdk.outputs.root }}
+        run: node tools/release.ts prepare --source-sdk "${PLUGIN_SOURCE_SDK}"
+      - name: Bind full verification to the final source Candidate bytes
+        env:
+          PLUGIN_VERSION: ${{ needs.candidate-plan.outputs.plugin_version }}
+        run: >-
+          node tools/bind-buildr-peer.ts
+          --candidate "build/release-candidates/${PLUGIN_VERSION}/candidate.json"
+          --buildr-peer "${RUNNER_TEMP}/plugin-buildr-peer.json"
+          --verification "${RUNNER_TEMP}/plugin-full-verification.json"
+          --npm "${RUNNER_TEMP}/plugin-tooling/node_modules/npm/bin/npm-cli.js"
+      - name: Bind plugin source-admission aggregate
+        working-directory: projects/product/services/buildr
+        run: node tools/release/verify-pr-candidate.ts plugin-aggregate
+      - name: Upload plugin source Candidate bytes
+        uses: actions/upload-artifact@v7
+        with:
+          name: plugin-candidate-v${{ needs.candidate-plan.outputs.plugin_version }}
+          path: |
+            projects/product/services/dsh-plugin/build/release-candidates/${{ needs.candidate-plan.outputs.plugin_version }}/candidate.json
+            projects/product/services/dsh-plugin/build/release-candidates/${{ needs.candidate-plan.outputs.plugin_version }}/*.tgz
+          if-no-files-found: error
+      - name: Upload plugin source-admission aggregate
+        uses: actions/upload-artifact@v7
+        with:
+          name: plugin-candidate-aggregate
+          path: ${{ runner.temp }}/plugin-candidate-ci-aggregate.json
+          if-no-files-found: error
+
   candidate-gate:
     name: Candidate gate
     if: always() && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main'))
-    needs: [candidate-plan, candidate-bootstrap, candidate-source, candidate-artifact-consumers, candidate-host-node]
+    needs: [candidate-plan, candidate-bootstrap, candidate-source, candidate-artifact-consumers, candidate-host-node, plugin-source-candidate]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -414,27 +604,36 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: node tools/release/verify-pr-candidate.ts
       - name: Prepare aggregate evidence directory
-        if: github.event_name == 'workflow_dispatch' || github.head_ref == 'dev'
+        if: (github.event_name == 'workflow_dispatch' || github.head_ref == 'dev') && needs.candidate-plan.outputs.buildr == 'true'
         run: mkdir -p "${{ runner.temp }}/candidate-evidence"
       - name: Download all Candidate evidence
-        if: github.event_name == 'workflow_dispatch' || github.head_ref == 'dev'
+        if: (github.event_name == 'workflow_dispatch' || github.head_ref == 'dev') && needs.candidate-plan.outputs.buildr == 'true'
         continue-on-error: true
         uses: actions/download-artifact@v7
         with:
           pattern: candidate-evidence-*
           path: ${{ runner.temp }}/candidate-evidence
       - name: Aggregate the closed Candidate evidence set
-        if: github.event_name == 'workflow_dispatch' || github.head_ref == 'dev'
+        if: (github.event_name == 'workflow_dispatch' || github.head_ref == 'dev') && needs.candidate-plan.outputs.buildr == 'true'
         env:
           BUILDR_CANDIDATE_SOURCE_SHA: ${{ env.CANDIDATE_SOURCE_SHA }}
           BUILDR_CANDIDATE_CI_EVIDENCE_DIR: ${{ runner.temp }}/candidate-evidence
           BUILDR_CANDIDATE_CI_AGGREGATE_OUTPUT: ${{ runner.temp }}/candidate-aggregate/candidate-ci-aggregate.json
         run: node test/verification/candidate-ci.ts aggregate
       - name: Upload aggregate result
-        if: always() && (github.event_name == 'workflow_dispatch' || github.head_ref == 'dev')
+        if: always() && (github.event_name == 'workflow_dispatch' || github.head_ref == 'dev') && needs.candidate-plan.outputs.buildr == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: candidate-aggregate
           path: ${{ runner.temp }}/candidate-aggregate
           if-no-files-found: warn
           overwrite: true
+      - name: Require every selected source Candidate job
+        if: github.event_name == 'workflow_dispatch' || github.head_ref == 'dev'
+        env:
+          PLAN_RESULT: ${{ needs.candidate-plan.result }}
+          PLUGIN_REQUIRED: ${{ needs.candidate-plan.outputs.plugin }}
+          PLUGIN_RESULT: ${{ needs.plugin-source-candidate.result }}
+        run: |
+          test "${PLAN_RESULT}" = success
+          if [ "${PLUGIN_REQUIRED}" = true ]; then test "${PLUGIN_RESULT}" = success; fi

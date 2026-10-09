@@ -1,13 +1,25 @@
-# Buildr npm 发布流程
+# Buildr 与 DSH 插件发布流程
 
 本页是当前发布选择、准备、验证、公开发布和恢复的流程正文。维护者决定版本、内容与授权；智能体核对现场、解释风险并持续推进；发布工具执行确定性动作。历史运行和已归档变更保留原始事实，不作为当前成功的替代证明。
+
+## 选择发布内容
+
+Buildr 主包 `@buildr-ai/buildr` 与 DSH（DeepSeek Harness）插件（Plugin）包 `@buildr-ai/buildr-dsh-plugin` 独立版本、独立产物（Artifact）、独立公开发布。统一入口接受以下三种选择；新选择推荐显式指定 `--packages`。未指定时仍选择主包并保留旧命名空间，但新选择不能绕过当前兼容检查；真实旧操作仅按原身份与已成立事实恢复。
+
+| 选择 | 版本输入 | 对端及公开动作 |
+|---|---|---|
+| `--packages buildr` | `--version <buildr-version>` | 验证已公开插件与新主包的兼容性；确认插件不存在时仍可单独发布主包。只发布主包 |
+| `--packages dsh-plugin` | `--plugin-version <plugin-version>` | 消费已公开 Buildr 精确版本的原包并验证；不要求新主包版本或发布主包 |
+| `--packages buildr,dsh-plugin` | 两个独立版本输入 | 验证新包组合及公开过程中的新／旧组合，再按安全顺序分别发布 |
+
+包选择决定公开目标，不决定源码选择或验证范围。三个选择共用明确基线、按序选择提交、最终组合冻结和受保护 `main` 纳入。共享工作流（Workflow）、Buildr 主包或前端实际有变化时仍须完整主包候选验证（Candidate Verification），即使本次只发布插件；纯插件变化使用插件自己的完整验证。为纳入源码而完成主包候选，不因此新增主包版本或取得主包发布授权。
 
 ## 正常主线
 
 日常相关验证 → 交付 `dev` → 明确选择提交 → 收敛 `main` 关系并冻结最终组合 → 一次完整候选验证（Candidate Verification）与打包 → 发布同一份产物（Artifact）。
 
 - 基线是明确的完整提交，不自动追随后续 `dev`。额外内容通过明确、有序的 `cherry-pick -x` 纳入。
-- 版本号和 `CHANGELOG.md` 必须已由正常开发交付到 `dev`，并进入选择组合。支持任务在所需修复、相关验证和交付完成前保留现场。
+- 所选包的版本材料必须已由正常开发交付到 `dev`，并进入选择组合；主包使用根 `CHANGELOG.md`，插件按自身交付材料核验。不强制两个包使用相同版本。支持任务在所需修复、相关验证和交付完成前保留现场。
 - 完整候选前处理 `main` 历史关系。已有 `main` 是祖先时直接使用当前源码；必要的历史收敛保持已选产品内容，记录真实父提交。未知独有内容或语义冲突由维护者决定。
 - 完整候选绑定精确源码提交、生成物、唯一 npm 压缩包、检查配方和平台证据。绿色工作流状态不能代替聚合与实际产物核验。
 - 完整结果通过后，以受保护的合并请求（Pull Request）将同一发布组合纳入 `main`，保留所需合并父关系，再检查发布就绪。
@@ -30,9 +42,15 @@
 
 产品开发入口在 `.node-version` 声明版本的同主版本范围内选择 Node（声明版本优先）；发布编排与候选（Candidate）环境准备仍要求声明版本的精确 Node；宿主 Node 验证覆盖声明支持的平台与版本，记录实际执行版本。缓存只加速下载；干净检出不依赖未声明缓存或本机残留。
 
-## DSH 插件独立发布检查
+## 真实包与兼容检查
 
-Buildr 主包不捆绑 DSH（DeepSeek Harness）插件（Plugin），`artifact` 档位也不获取 DSH 软件开发工具包（SDK）。主包候选是否完整由 Buildr 自身产物检查决定。准备主包发布时，另到插件服务（Service）运行 `node tools/release.ts status`，核对插件源码、独立版本和 npm 公开状态。有尚未发布的插件变化时，按[插件独立发布流程](dsh-plugin-release.md)准备候选并分别取得插件、主包发布授权；插件无变化时不重建或重发。插件仍未公开时，只能报告候选状态，不能称用户已可一句话安装。
+Buildr 主包不捆绑插件，`artifact` 档位也不获取 DSH 软件开发工具包（SDK）。主包候选完整性由自身检查决定；插件准备、受保护发布和桌面验收的专属事实见[插件发布说明](dsh-plugin-release.md)。插件尚未公开时只报告候选状态，不能称用户已可一句话安装。主包选择不会自动改为联合发布；尚未发布的插件源码可随共享选择纳入 `main`，公开插件仍需明确选择及对应授权。
+
+兼容声明 `buildrCompatibility` 只在各自包的 `package.json` 维护，并从真实压缩包读取。公开对端固定官方 npm 注册表（Registry）、精确版本和 SHA512 完整性（Integrity）；联合候选固定原运行编号、精确源码和原压缩包。同号版本、邻近开发源码、本机 PATH 或可变 `latest` 不构成对端证明。必要入口必须通过真实安装后的原命令行（CLI）验证；声明版本范围不能替代契约（Contract）观察。
+
+旧公开包没有兼容声明时保留 `legacy` 状态。以旧 `0.1.0-rc.38` 为对端也须检查其原字节及真实入口，不能继承当前源码能力。必需的安装／打开入口通过才满足基本兼容；可选来源采集（Source Capture）缺失只令该功能为 `unsupported`，不阻塞基本入口。声明提供但执行报错、超时或证明缺失时分别保留 `failed` 或 `unknown`，不能改称不支持。注册表（Registry）明确缺失与查询未知也分别处理，未知不能解释为不存在。
+
+联合发布先验证新插件／新主包，再检查旧插件／新主包及新插件／旧主包的中间状态。工具选择已证明安全的顺序；两种顺序均不安全或必要公开事实未知时停止受影响发布。顺序不是版本号大小或固定“主包先发”推断。
 
 ## 候选、演练和复用
 
@@ -53,22 +71,22 @@ Buildr 主包不捆绑 DSH（DeepSeek Harness）插件（Plugin），`artifact` 
 
 ## 操作入口
 
-使用 `tools/development/run-development-node` 按产品精确 Node 执行[发布入口](../../../services/buildr/tools/release/release-orchestration-runner.ts)。入口以明确版本和主工作空间定位任务数据，自动解析实际工作树、引用、关联输入与运行编号。
+使用 `tools/development/run-development-node` 按产品精确 Node 执行[发布入口](../../../services/buildr/tools/release/release-orchestration-runner.ts)。入口以所选包版本、稳定选择标识 `selectionId` 和主工作空间定位任务数据，自动解析实际工作树、引用、关联输入与运行编号。`--selection-id` 可显式提供标识；默认主包选择保留旧版本命名空间，插件和联合选择使用各自命名空间，避免碰撞。
 
 ```text
-release-orchestration-runner.ts prepare --version <version> --workspace <workspace> [--baseline <ref>] [--source <sha> ...]
-release-orchestration-runner.ts inspect --version <version> --workspace <workspace>
-release-orchestration-runner.ts publish --version <version> --workspace <workspace> --authorized
-release-orchestration-runner.ts resume --version <version> --workspace <workspace>
+release-orchestration-runner.ts prepare --packages buildr --version <buildr-version> --workspace <workspace> [--baseline <ref>] [--source <sha> ...]
+release-orchestration-runner.ts prepare --packages dsh-plugin --plugin-version <plugin-version> --workspace <workspace> [--baseline <ref>] [--source <sha> ...]
+release-orchestration-runner.ts prepare --packages buildr,dsh-plugin --version <buildr-version> --plugin-version <plugin-version> --workspace <workspace> [--baseline <ref>] [--source <sha> ...]
+release-orchestration-runner.ts inspect|publish|resume <同一包选择与版本> --workspace <workspace> [--selection-id <id>]
 ```
 
-`prepare` 创建或复用 matching 发布任务与隔离工作树，固定选择、运行候选、核验聚合与原包、完成受保护 `main` 纳入并返回就绪内容。已有选择保持原基线；新选择前智能体先明确用户希望的版本和范围。主工作空间的 Git 基线准备遵循现有内部流程。
+`prepare` 创建或复用匹配发布任务与隔离工作树，固定选择、运行充分候选、核验聚合与原包、完成受保护 `main` 纳入并返回逐包就绪内容。已有选择保持原基线、目标、版本与对端身份；改变它们需新选择，不能恢复时静默替换。主工作空间的 Git 基线准备遵循现有内部流程。准备仅完成源码纳入时保留该事实，不称未选主包已公开。
 
 准备或恢复时，先核对精确源码的完整候选结果和对应合并请求（Pull Request）的已合并事实。临时承载分支（Carrier Branch）已合并、源码历史已保全且被平台自动删除时，直接复用已有结果，不重建引用或重新派发候选；尚需新候选或尚未合并时，仍建立该轮次所需的精确引用。正式 `release-<version>` 保留到产品发布成功。
 
 `inspect` 只读。运行尚未完成时返回运行编号；智能体跟踪终态后继续同一入口。`publish` 只用于已授权公开发布，不能由“准备”自动升级；新发布展示并绑定本轮分支清理政策与上下文。`resume` 从真实运行与公开事实继续未完成事项，不重新构造已验证提交或重新打包。
 
-Git 目录内的单一版本操作文档只保存选择意图、冻结上下文及远端运行指针，以便中断后继续；它不代替 Git、任务记录、GitHub 或 npm 的事实。无需智能体复制大段 JSON、手工补字段或计算摘要。旧窄工具只用于对应所有者的诊断；不再独立执行依赖安装以制造准备绑定。
+Git 目录内的选择操作记录只保存目标、冻结上下文及逐包远端运行指针，以便中断后继续；它不代替 Git、任务记录、GitHub 或 npm 的事实。无需智能体复制大段 JSON、手工补字段或计算摘要。旧默认主包记录继续按原格式和授权读取；不能因升级推导插件授权或清理授权。旧窄工具只用于对应所有者的诊断；不再独立执行依赖安装以制造准备绑定。
 
 ## 受保护发布与恢复
 
@@ -91,7 +109,9 @@ Git 目录内的单一版本操作文档只保存选择意图、冻结上下文�
 | 临时承载分支（Carrier Branch）合并后被平台自动删除 | 核对同一源码的候选与合并历史，继续准备或恢复，不重建已完成用途的引用 |
 | 本轮发布分支已清理 | 核验官方标签、发布源码及主线历史，只补尚未完成的登记和本机收尾，不重建分支 |
 
-跨 Git、npm 与 GitHub 不承诺单一原子事务。每一步报告已确认、未发生或未知效果；异常不能用空 `effects` 抹去前序写入。阶段记录与每个运行尝试的证据保留，恢复读取匹配尝试，不把旧成功分片说成新执行。
+两个包各自由既有受保护发布所有者（Owner）发布；主包使用 `publish.yml`，插件使用 `publish-dsh-plugin.yml`，授权绑定各自准确版本、源码及原字节。`publish --authorized` 仅覆盖当前明确选择，平台权限和审批继续有效。跨包、Git、npm 与 GitHub 不承诺单一原子事务。每一步报告已确认、未发生或未知效果；异常不能用空 `effects` 抹去前序写入。阶段记录与每个运行尝试的证据保留，恢复读取匹配尝试，不把旧成功分片说成新执行。
+
+一个包已公开而另一个失败时保留逐包发布事实，`resume` 只恢复未完成包及后续事项，不重新发送成功包。可能已发送而公开回读仍未知时只继续查询；不能换候选运行、对端版本或字节重发。登记、清理和自举各自失败不否定已确认公开版本。
 
 ## 超时、诊断与完成
 
@@ -111,8 +131,12 @@ Git 目录内的单一版本操作文档只保存选择意图、冻结上下文�
 
 执行器先核验产品发布与回读成功、官方远端标签（Tag）匹配，以及发布源码保存在发布提交和当前 `main` 历史内。同版本旧轮次从已发布源码的选择历史重建轮次与预期提交，名称只用于定位，不能单凭前缀或源码文件相同推断归属与历史保全。官方标签（Tag）缺失或主线历史未保全时，停止依赖该事实的删除并保留现有资源。
 
+新插件或联合选择复用 `delete-owned-release-branches/v2` 的授权绑定，明确当前选择和实际共享引用；共享源码引用须等全部所选包公开成功、历史保全且无活动用途后才清理。部分成功保留未完成包仍需的共享引用。只为纳入未选包源码而完成的 `main` 交付按源码保全及实际用途判断，不虚构主包发布要求；公开版本、官方标签（Tag）、GitHub Release 和逐包发布证据长期保留。旧记录继续按已绑定政策恢复，不扩大其删除范围。
+
 每个待删引用都须完整查询开放合并请求（Pull Request）的源与目标以及未结束运行，不能把未读完的分页或查询失败当作没有活动。逐项核对实时远端提交后，以观察到的精确提交条件删除并回读；引用漂移、仍有活动、归属不明或查询未知只保留受影响对象，其他独立且已证明安全的清理继续。已不存在且保全证据完整的引用直接复用清理事实；单项删除失败保留已经发生的其他效果，不否定产品发布成功。
 
 报告逐项列出引用、预期提交、实际效果或保留原因，区分已删除、已不存在、仍保留与查询未知，不以一个 `cleaned` 概括全部完成。本地临时资源同样只清理可证明归属且已保全的对象；官方远端标签（Tag）、GitHub Release、npm 版本和发布证据长期保留。本机自举只由既有唯一执行器负责，不能因投射失败重发产品。
 
 无公开副作用验收需覆盖干净候选及同包消费，并列出实际执行、复用和未验证边界。真实平台审批、OIDC 与生产 npm 写入只有在真实发布授权下才能验证；本地服务模拟不能充当生产凭证或公开发布证据。
+
+当前独立包选择实现的本地检查不代表真实 GitHub 候选或生产可信发布（Trusted Publishing）已通过。实际持续集成（CI）运行及其覆盖须单独报告；本次未发布、未修改 npm 信任。主线 `main` 激活仍待确认，执行前须读取实际主线版本和当前平台事实。

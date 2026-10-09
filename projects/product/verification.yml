@@ -55,6 +55,32 @@ testing:
       - node
       - npm
       - git
+  - id: buildr-release-infrastructure
+    title: Buildr 发布选择与恢复完整检查
+    scope:
+      project: product
+      services:
+        - buildr
+    purpose: 验证源码选择、独立版本、逐包发布编排、真实 Git 收敛及失败恢复；隔离外部发布副作用，不证明实际公开发布
+    sourcePaths:
+      - services/buildr/tools/release/**
+      - services/buildr/src/modules/installation/domain/release-version.ts
+    testRoots:
+      - services/buildr/test/integration-candidate-release/**
+    full:
+      kind: command
+      argv:
+        - tools/development/run-development-npm
+        - run
+        - test:integration:candidate:release
+      cwd: services/buildr
+    selection:
+      - 既有三类发布基础设施检查分别拥有选择、公开副作用恢复和 Git 收敛边界；完整入口运行全部检查
+      - 开发中的受影响选择保留低成本检查；本族通过显式发布组或完整候选（Candidate）执行，不混入日常完整核心检查
+      - 三种包选择、同版本身份漂移、联合顺序、响应未知和共享清理使用隔离 Git 仓库及外部系统替身，不派发真实发布
+    requirements:
+      - 项目锁定 Node 与 npm，通过项目 wrapper 执行
+      - git
   - id: buildr-system
     title: Buildr 系统测试
     scope:
@@ -215,6 +241,10 @@ testing:
       - 增强源码完整入口必须显式提供 --source-sdk 或 BUILDR_DSH_SOURCE_SDK_ROOT，指向经
         prepare-source-sdk 重建并核对基线、补丁清单、生成声明与产物摘要的独占软件开发工具包（SDK）；普通未补丁 rc.2 或旧
         rc.1 不代表新接口支持，不自动修改共享检出或真实配置档（Profile）
+      - 完整入口还须显式提供 --buildr-peer 原字节清单、--buildr-peer-manifest 就绪对端清单，或对应
+        BUILDR_DSH_BUILDR_PEER_INPUT／BUILDR_DSH_BUILDR_PEER_MANIFEST
+        文件引用；原始和就绪输入互斥，不能默认消费相邻开发源码
+      - 仅插件（Plugin）发布核对准确公开主包，联合候选（Candidate）消费准确主包候选；两个包版本相同不证明能力或字节相同
       - 独立发布工作流（Workflow）由仓库级选择映射指向本族；完整入口包含候选搬运与可信发布恢复的隔离检查，真实 npm
         信任和公开发布仍需另外授权及验收
       - 新托管准备使用 prepare-release-sdk.ts，固定真实上游提交及补丁后的冻结依赖；必须显式提供对应 Node 和 pnpm
@@ -225,8 +255,8 @@ testing:
     requirements:
       - node 24.15.0
       - pnpm
-      - 当前检出的 Buildr 命令行（CLI）锁定运行依赖（Runtime Dependencies）；通过 preparation.yml 的
-        buildr.npm-ci 在 services/buildr 准备。隔离持续集成（CI）可按同一 package-lock.json 执行
-        npm ci --omit=dev --ignore-scripts；来源集成检查不使用本机发布版
+      - 与明确 Node 配套的 npm 入口，或 --npm 指定的固定
+        npm；对端在独占临时前缀（Prefix）按原字节安装，使用空认证配置（Configuration）且禁用安装脚本
+      - 经过完整性（Integrity）核验的准确公开主包或联合候选（Candidate）及其文件清单；基础公开入口、可选能力缺失和实际调用失败分别验证，不复用本机默认安装或认证
       - 已核验的来源增强软件开发工具包（SDK）、持久源码补丁清单及完整 SHA256；构建依赖通过冻结锁文件与 --ignore-scripts
         预先准备，准备器直接调用构建工具，不执行安装脚本或启用运行时（Runtime）

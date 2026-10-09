@@ -112,6 +112,7 @@ function runtimePackageMetadata(metadata: any): any  {
   return {
     name: metadata.name,
     version: metadata.version,
+    ...(metadata.buildrCompatibility !== undefined ? { buildrCompatibility: metadata.buildrCompatibility } : {}),
     description: metadata.description,
     license: metadata.license,
     repository: metadata.repository,

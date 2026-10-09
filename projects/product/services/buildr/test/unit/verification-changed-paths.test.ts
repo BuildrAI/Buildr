@@ -6,6 +6,7 @@ import {
   isVersionOnlyPackageMetadataChange,
 } from '../verification/changed-paths.ts';
 import { createVerificationPlan } from '../verification/planner.ts';
+import { verificationStepOwnership } from '../verification/ownership.ts';
 
 const ids: any = (plan: any) => plan.steps.map((step: any) => step.id);
 
@@ -128,4 +129,31 @@ test('package skill projection regression selects the slice that actually execut
   const plan = createVerificationPlan({ paths: ['test/integration/package-generic-skills.test.ts'] });
   assert.equal(plan.status, 'ready');
   assert.deepEqual(ids(plan), ['integration-runtime']);
+});
+
+
+test('independent package release helpers select pure feedback and the real lifecycle owners', () => {
+  for (const source of [
+    'tools/release/release-targets.ts',
+    'tools/release/package-compatibility.ts',
+    'tools/release/package-artifact-observation.ts',
+    'tools/release/release-package-evidence.ts',
+    'tools/release/plugin-hosted-release.ts',
+    'tools/release/package-release-operation.ts',
+  ]) {
+    const plan = createVerificationPlan({ paths: [source] });
+    assert.equal(plan.status, 'ready');
+    assert.equal(plan.scope.mode, 'affected');
+    assert.deepEqual(plan.unmapped, []);
+    const selected = ids(plan);
+    for (const owner of ['unit', 'typecheck']) {
+      assert.ok(selected.includes(owner), `${source} must select ${owner}`);
+    }
+    for (const owner of ['integration-candidate-release', 'integration-candidate-release-effects', 'integration-candidate-git-convergence']) {
+      assert.ok(verificationStepOwnership(owner).inputs.includes(source), `${source} must belong to ${owner}`);
+      assert.equal(selected.includes(owner), false, 'daily feedback keeps publication lifecycle checks in their explicit release scope');
+      assert.ok(ids(createVerificationPlan({ paths: [source], groups: ['release'] })).includes(owner));
+    }
+    assert.equal(selected.includes('dsh-plugin'), false, 'main helper checks do not claim independent plugin loader evidence');
+  }
 });

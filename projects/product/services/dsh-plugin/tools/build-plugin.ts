@@ -80,9 +80,11 @@ if (dev) {
   await writeFile(clientFile, (await readFile(clientFile, 'utf8')).replaceAll("'remote.buildr'", "'remote.buildr-dev'"));
 }
 const template = JSON.parse(await readFile(join(source, 'package.template.json'), 'utf8')) as Manifest;
+const sourceMetadata = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
 const manifest = {
   ...template,
-  version: JSON.parse(await readFile(join(root, 'package.json'), 'utf8')).version,
+  version: sourceMetadata.version,
+  buildrCompatibility: sourceMetadata.buildrCompatibility,
   name: VARIANT.name,
   // Exact candidate target version, not proof that an unpatched runtime exposes the optional slots.
   peerDependencies: {

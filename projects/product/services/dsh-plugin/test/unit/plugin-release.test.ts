@@ -31,7 +31,9 @@ function metadata(overrides: Record<string, unknown> = {}) {
 }
 function fixture(t: TestContext, overrides: Record<string, unknown> = {}, extra: Array<{ path: string; body: string; kind?: string }> = []) {
   const root = temporary(t), bytes = archive(metadata(overrides), extra), filename = 'buildr-ai-buildr-dsh-plugin-0.1.0-rc.1.tgz';
-  const manifest = createReleaseCandidate({ version, sourceCommit, sourceTree, filename, bytes, sourceSdk, fileCount: 2 + extra.length });
+  const validBytes = archive(metadata());
+  const valid = createReleaseCandidate({ version, sourceCommit, sourceTree, filename, bytes: validBytes, sourceSdk, fileCount: 2 });
+  const manifest = parseReleaseCandidate({ ...valid, size: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex'), integrity: `sha512-${createHash('sha512').update(bytes).digest('base64')}`, fileCount: 2 + extra.length });
   const manifestPath = join(root, 'candidate.json'), tarball = join(root, filename);
   writeFileSync(manifestPath, JSON.stringify(manifest)); writeFileSync(tarball, bytes);
   return { root, bytes, manifest, manifestPath, tarball };
@@ -75,6 +77,17 @@ test('portable candidate consumes the identical archive after the original direc
   assert.equal(result.tarball, join(moved, original.manifest.filename));
   assert.equal(result.manifest.integrity, `sha512-${createHash('sha512').update(original.bytes).digest('base64')}`);
   assert.equal(JSON.stringify(result.manifest).includes(original.root), false);
+});
+test('candidate compatibility mirror cannot be stripped or invented independently of archive metadata', t => {
+  const compatibility={schemaVersion:'buildr.package-compatibility/v1',provides:[],requires:[]};
+  const item=fixture(t),bytes=archive(metadata({buildrCompatibility:compatibility}));
+  const declared=createReleaseCandidate({version,sourceCommit,sourceTree,filename:item.manifest.filename,bytes,sourceSdk,fileCount:2});
+  writeFileSync(item.tarball,bytes);writeFileSync(item.manifestPath,JSON.stringify(declared));
+  assert.deepEqual(readReleaseCandidate(item.manifestPath).manifest.compatibility,compatibility);
+  const stripped={...declared};delete stripped.compatibility;writeFileSync(item.manifestPath,JSON.stringify(stripped));
+  assert.throws(()=>readReleaseCandidate(item.manifestPath),/archive compatibility mismatch/);
+  const legacy=fixture(t);writeFileSync(legacy.manifestPath,JSON.stringify({...legacy.manifest,compatibility}));
+  assert.throws(()=>readReleaseCandidate(legacy.manifestPath),/archive compatibility mismatch/);
 });
 test('a real offline npm pack archive satisfies the portable reader without SDK dependencies', t => {
   const root = temporary(t), pkg = join(root, 'package');
