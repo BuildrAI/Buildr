@@ -5,6 +5,7 @@ import crypto from 'node:crypto';
 import { spawnSync } from '../../../infrastructure/process.ts';
 import fs from 'node:fs';
 import path from 'node:path';
+import { insideFilesystemPath, sameFilesystemPath } from '../../../infrastructure/filesystem/filesystem-path-identity.ts';
 import { createProject, isProjectCode } from '../domain/project.ts';
 import { assetError, createBusinessService, createRepositoryInstance, object, relativeAssetPath, validateAssetCatalog, type AssetCatalog } from '../domain/asset-relationships.ts';
 import { CATALOG_FILES, assertCatalogFile, readAssetCatalog, renderAssetCatalog } from '../persistence/asset-catalog-repository.ts';
@@ -85,13 +86,13 @@ export function registerAssetRelationshipsApplication(runtime: Record<string, an
     const observation = { ...runtime.observeProjectGit(location, remote), remote };
     let actualRoot: string | null = null;
     try { actualRoot = gitRoot(location); } catch { /* reported as unavailable */ }
-    const validRoot = actualRoot !== null && actualRoot === fs.realpathSync(location);
+    const validRoot = actualRoot !== null && sameFilesystemPath(actualRoot, location);
     const identityConflict = Boolean(repository.source.git && (!observation.remoteUrl || !runtime.sameGitIdentity(observation.remoteUrl, repository.source.git.url)));
     const moduleIssues: string[] = [];
     if (validRoot) for (const service of c.catalog.services.filter(s => s.repositoryId === repository.id)) {
       const module = path.join(location, service.modulePath);
       if (!fs.existsSync(module) || !fs.statSync(module).isDirectory()) moduleIssues.push(`${service.name}：模块目录 ${service.modulePath || '.'} 尚未准备`);
-      else { const actual = fs.realpathSync(module); if (actual !== actualRoot && !actual.startsWith(actualRoot! + path.sep)) moduleIssues.push(`${service.name}：模块目录超出代码库范围`); }
+      else { const actual = fs.realpathSync(module); if (!insideFilesystemPath(actualRoot, actual)) moduleIssues.push(`${service.name}：模块目录超出代码库范围`); }
     }
     const issues = [!validRoot ? '目录不是独立 Git 仓库根目录，或本地代码缺失。' : null,
       identityConflict ? `远端 ${remote} 的实际地址与声明不一致，需要对齐。` : null, ...moduleIssues].filter((issue): issue is string => Boolean(issue));
@@ -102,6 +103,9 @@ export function registerAssetRelationshipsApplication(runtime: Record<string, an
   function repositoryLocationKey(root: string, repository: AssetCatalog['repositories'][number]) {
     const location = resolveSourceRoot(root, repository.source);
     return fs.existsSync(location) ? fs.realpathSync(location) : path.resolve(location);
+  }
+  function sameRepositoryLocation(root: string, left: AssetCatalog['repositories'][number], right: AssetCatalog['repositories'][number]) {
+    return sameFilesystemPath(repositoryLocationKey(root, left), repositoryLocationKey(root, right));
   }
   function repositoryFromDraft(root: string, workspaceId: string, raw: any, allowUnaligned = false) {
     object(raw, ['code', 'name', 'description', 'url', 'remote', 'integrationBranch', 'path', 'observation'], '代码库');
@@ -123,7 +127,7 @@ export function registerAssetRelationshipsApplication(runtime: Record<string, an
     if (fs.existsSync(location)) {
       const real = fs.realpathSync(location), workspace = fs.realpathSync(root);
       if (!attached && real !== workspace && !real.startsWith(workspace + path.sep)) throw assetError('repository_path_invalid', '目录链接超出工作空间，请使用明确的外部绝对路径登记。');
-      if (gitRoot(location) !== fs.realpathSync(location)) throw assetError('repository_not_root', '请选择 Git 仓库根目录，子目录应填写到服务的模块目录。');
+      if (!sameFilesystemPath(gitRoot(location), location)) throw assetError('repository_not_root', '请选择 Git 仓库根目录，子目录应填写到服务的模块目录。');
       if (repository.source.git && !allowUnaligned) {
         const observed = runtime.observeProjectGit(location, repository.source.git.remote);
         if (!observed.remoteUrl || !runtime.sameGitIdentity(observed.remoteUrl, repository.source.git.url)) throw assetError('repository_identity_conflict', '实际远端与声明不一致。', 409);
@@ -141,7 +145,7 @@ export function registerAssetRelationshipsApplication(runtime: Record<string, an
       for (const r of catalog.repositories.filter(r => r.source.type === 'git')) {
         const location = resolveSourceRoot(root, r.source);
         next.push(r);
-        try { if (fs.existsSync(location) && gitRoot(location) === fs.realpathSync(location)) roots.set(fs.realpathSync(location), r); } catch { /* Unrelated broken Git declarations do not block workspace-source normalization. */ }
+        try { if (fs.existsSync(location)) { const actual = gitRoot(location); if (sameFilesystemPath(actual, location)) roots.set(actual, r); } } catch { /* Unrelated broken Git declarations do not block workspace-source normalization. */ }
       }
       for (const r of catalog.repositories.filter(r => r.source.type === 'workspace')) {
         const location = resolveSourceRoot(root, r.source), actual = gitRoot(location);
@@ -248,7 +252,7 @@ export function registerAssetRelationshipsApplication(runtime: Record<string, an
     return mutate(root, revision, 'assets.repository.create', (catalog, workspaceId, directories) => {
       if (observation && observeCatalogDirectory(root, draft.path).observation !== observation) throw assetError('asset_directory_changed', '目录已变化，请重新选择。', 409);
       const repository = repositoryFromDraft(root, workspaceId, draft);
-      if (catalog.repositories.some(r => repositoryLocationKey(root, r) === repositoryLocationKey(root, repository))) throw assetError('repository_duplicate_path', '该目录已登记为代码库，请复用已有代码库。', 409);
+      if (catalog.repositories.some(r => sameRepositoryLocation(root, r, repository))) throw assetError('repository_duplicate_path', '该目录已登记为代码库，请复用已有代码库。', 409);
       catalog.repositories.push(repository);
       if (observation) directories.push({ serviceId: `repository:${repository.id}`, path: draft.path, observation });
     });
@@ -278,7 +282,7 @@ export function registerAssetRelationshipsApplication(runtime: Record<string, an
         let ancestor = location; while (!fs.existsSync(ancestor)) ancestor = path.dirname(ancestor);
         let actual = ''; try { actual = gitRoot(ancestor); } catch { /* New standalone code can be prepared later. */ }
         const repositoryRoot = actual || location;
-        let repository = catalog.repositories.find(r => repositoryLocationKey(root, r) === repositoryRoot);
+        let repository = catalog.repositories.find(r => sameFilesystemPath(repositoryLocationKey(root, r), repositoryRoot));
         if (!repository) {
           let code = `${raw.code}-code`, suffix = 2; while (catalog.repositories.some(r => r.code === code)) code = `${raw.code}-code-${suffix++}`;
           const relative = path.relative(fs.realpathSync(root), repositoryRoot).split(path.sep).join('/') || '.';
@@ -291,7 +295,7 @@ export function registerAssetRelationshipsApplication(runtime: Record<string, an
     }
     if (raw.repository) {
       const repository = repositoryFromDraft(root, workspaceId, raw.repository);
-      if (catalog.repositories.some(r => repositoryLocationKey(root, r) === repositoryLocationKey(root, repository))) throw assetError('repository_duplicate_path', '该目录已登记为代码库，请复用已有代码库。', 409);
+      if (catalog.repositories.some(r => sameRepositoryLocation(root, r, repository))) throw assetError('repository_duplicate_path', '该目录已登记为代码库，请复用已有代码库。', 409);
       catalog.repositories.push(repository); repositoryId = repository.id;
     }
     if (serviceDirectory) {
@@ -425,7 +429,7 @@ export function registerAssetRelationshipsApplication(runtime: Record<string, an
           integrationBranch: input.integrationBranch ?? existing.source.integrationBranch ?? existing.source.git?.integrationBranch ?? '',
         }, true);
         const location = resolveSourceRoot(root, replacement.source);
-        if (catalog.repositories.some(r => r.id !== existing.id && repositoryLocationKey(root, r) === repositoryLocationKey(root, replacement))) throw assetError('repository_duplicate_path', '该目录已登记为代码库，请复用已有代码库。', 409);
+        if (catalog.repositories.some(r => r.id !== existing.id && sameRepositoryLocation(root, r, replacement))) throw assetError('repository_duplicate_path', '该目录已登记为代码库，请复用已有代码库。', 409);
         // Module declarations stay relative to the new root. Never move their files as part of saving.
         if (fs.existsSync(location)) for (const service of catalog.services.filter(s => s.repositoryId === existing.id)) {
           let module = path.join(location, service.modulePath);
@@ -440,7 +444,7 @@ export function registerAssetRelationshipsApplication(runtime: Record<string, an
       if (kind === 'service' && repositoryDraft !== undefined) {
         if (Object.hasOwn(input, 'repositoryId')) throw assetError('service_repository_ambiguous', '请选择已有代码库或新增代码库，不能同时提供。');
         const repository = repositoryFromDraft(root, catalog.services[index].workspaceId, repositoryDraft);
-        if (catalog.repositories.some(r => repositoryLocationKey(root, r) === repositoryLocationKey(root, repository))) throw assetError('repository_duplicate_path', '该目录已登记为代码库，请复用已有代码库。', 409);
+        if (catalog.repositories.some(r => sameRepositoryLocation(root, r, repository))) throw assetError('repository_duplicate_path', '该目录已登记为代码库，请复用已有代码库。', 409);
         catalog.repositories.push(repository);
         patch.repositoryId = repository.id;
       }

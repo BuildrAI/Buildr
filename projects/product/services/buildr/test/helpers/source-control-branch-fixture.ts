@@ -20,7 +20,7 @@ export async function withSourceControlBranchFixture(
   const branch = 'fixture/team/current-review', alternate = 'fixture/team/alternate-review';
   const remoteName = 'feature/browser-review', remoteRef = 'refs/remotes/' + remote + '/' + remoteName;
   const historyPath = 'scm-browser-branches/history.ts', keepPath = 'scm-browser-branches/keep.txt';
-  const authorName = '同名作者', authorEmail = 'first.author@example.invalid', otherEmail = 'second.author@example.invalid';
+  const authorName = '同名作者', authorEmail = 'first.author@example.com', otherEmail = 'second.author@example.com';
   const originalBranch = git(root, ['symbolic-ref', '--short', 'HEAD']);
   for (const reference of ['refs/heads/' + branch, 'refs/heads/' + alternate, 'refs/heads/' + remoteName, remoteRef]) {
     assert.equal(spawnSync('git', ['show-ref', '--verify', '--quiet', reference], { cwd: root }).status, 1, '验收引用必须尚不存在');

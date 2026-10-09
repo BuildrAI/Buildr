@@ -405,7 +405,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
   }
   let codeWorktreeFixture:any={};
   if(SELECTORS.has('code')){
-    const second=path.join(workspaceRoot,'.buildr/local/second-code-repository');fs.mkdirSync(path.join(second,'src'),{recursive:true});runGit(second,['init','-b','main']);runGit(second,['config','user.name','Fixture']);runGit(second,['config','user.email','fixture@example.invalid']);
+    const second=path.join(workspaceRoot,'.buildr/local/second-code-repository');fs.mkdirSync(path.join(second,'src'),{recursive:true});runGit(second,['init','-b','main']);runGit(second,['config','user.name','Fixture']);runGit(second,['config','user.email','fixture@example.com']);
     fs.writeFileSync(path.join(second,'src/main.ts'),'export const secondRepository = true;\n');fs.writeFileSync(path.join(second,'src/search-matches.ts'),'export const secondSearch = "Search.Hit[0]";\n');fs.writeFileSync(path.join(second,'README.md'),'# Second repository\n');fs.writeFileSync(path.join(second,'zz-segmented-text.txt'),'second repository isolated text\n');for(let i=1;i<=9;i++)fs.writeFileSync(path.join(second,'src/file'+i+'.ts'),'export const cachedFile'+i+' = true;\n');runGit(second,['add','.']);runGit(second,['commit','-qm','second repository']);
     let catalog=runtime.createCatalogRepository(workspaceRoot,{revision:runtime.assetCatalog(workspaceRoot).revision,code:'second-code',name:'另一个代码库',path:second});
     const secondRepositoryId=catalog.repositories.find((item:any)=>item.code==='second-code').id;
@@ -548,7 +548,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
       const value=(cwd:string,args:string[])=>{const result=spawnSync('git',args,{cwd,encoding:'utf8'});assert.equal(result.status,0,result.stderr);return result.stdout.trim();};
       const createRemote=(repository:string,name:string)=>{
         const remote=path.join(base,name+'.git');fs.mkdirSync(remote);runGit(remote,['init','--bare','-q']);
-        runGit(remote,['config','user.name','Remote Status Fixture']);runGit(remote,['config','user.email','remote-fixture@example.invalid']);
+        runGit(remote,['config','user.name','Remote Status Fixture']);runGit(remote,['config','user.email','remote-fixture@example.com']);
         runGit(repository,['remote','add','status-fixture',remote]);return remote;
       };
       const remoteCommit=(remote:string,baseHash:string,reference:string)=>{

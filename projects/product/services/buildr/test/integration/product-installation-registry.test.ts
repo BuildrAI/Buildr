@@ -779,7 +779,7 @@ test('development status separates health from current source, commit, and legac
   };
   gitSource(['init', '-q']);
   gitSource(['config', 'user.name', 'Buildr Fixture']);
-  gitSource(['config', 'user.email', 'fixture@buildr.invalid']);
+  gitSource(['config', 'user.email', 'fixture@example.com']);
   gitSource(['add', '.']);
   gitSource(['commit', '-qm', 'initial development source']);
   const sourceOptions = { includeWorkingTree: false, env: { BUILDR_INSTALLATION_IDENTITY: '' } };

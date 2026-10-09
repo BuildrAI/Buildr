@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { sameFilesystemPath } from '../../../src/infrastructure/filesystem/filesystem-path-identity.ts';
 import { createCandidatePackage, readSharedCandidatePackage } from './candidate-package.ts';
@@ -12,6 +13,62 @@ import { createCandidatePackage, readSharedCandidatePackage } from './candidate-
 const productRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const workspaceRoot: any = path.resolve(productRoot, '../../../..');
 const maximumTrackedFileBytes: any = 1024 * 1024;
+
+type FrozenSourceAsset = {
+  role: 'prototype-reader' | 'sdk-source-patch';
+  bytes: number;
+  sha256: string;
+  manifest?: string;
+};
+
+// These existing source assets have their own roles, not the ordinary-file role.
+// Keep the archived readers byte-bound; the .htm reader is documented in its
+// prototypes/README.md. The SDK patches must also retain their source manifests.
+// An unknown path or any byte change falls back to the ordinary/prototype bound.
+const frozenSourceAssets: Record<string, FrozenSourceAsset> = {
+  'projects/product/openspec/changes/archive/2026-10-03-add-code-source-control/prototypes/viewer.html': {
+    role: 'prototype-reader', bytes: 1170701,
+    sha256: '4619661befa242a666e2434cf01c1af30fdfdcc1502df7e635e6af6bca418741',
+  },
+  'projects/product/openspec/changes/archive/2026-10-05-add-dsh-buildr-provenance/prototypes/source/reader-preview.htm': {
+    role: 'prototype-reader', bytes: 2181414,
+    sha256: '81c77ff1b5c2b10561c2df52965c5ee35875c03eb4e6532ae79e1c7db0c18a58',
+  },
+  'projects/product/openspec/changes/archive/2026-10-09-add-source-control-branches/prototypes/source-control-branches-viewer.html': {
+    role: 'prototype-reader', bytes: 1166245,
+    sha256: '2131f42cda631dfb4adb24d40581aeb06db9c7a1a4e53e234f86a7a5adb80fc8',
+  },
+  'projects/product/services/dsh-plugin/sdk-patches/dsh-v0.2.0-rc.2-event-sources-settings.patch': {
+    role: 'sdk-source-patch', bytes: 1587539,
+    sha256: '4e7b3dcba52721577aad27923d5e1a865e24d3b593ef489ec6a1f5b642d2bd7b',
+    manifest: 'dsh-v0.2.0-rc.2-event-sources-settings.json',
+  },
+  'projects/product/services/dsh-plugin/sdk-patches/dsh-v0.2.0-rc.2-event-sources.patch': {
+    role: 'sdk-source-patch', bytes: 1562881,
+    sha256: '95f0188dbf319d2417c23bb86c2f8b35c7d1a6ca16d2a165488d01b2a978c355',
+    manifest: 'dsh-v0.2.0-rc.2-event-sources.json',
+  },
+};
+
+function frozenSourceAssetBytes(root: string, relativePath: string, content: string, size: number): number | undefined {
+  const normalizedPath = relativePath.split(path.sep).join('/');
+  const asset = frozenSourceAssets[normalizedPath];
+  if (!asset || size !== asset.bytes || Buffer.byteLength(content) !== asset.bytes
+    || createHash('sha256').update(content).digest('hex') !== asset.sha256) return undefined;
+  if (asset.role === 'prototype-reader') return asset.bytes;
+  try {
+    const manifest = JSON.parse(fs.readFileSync(path.join(root, path.dirname(normalizedPath), asset.manifest!), 'utf8'));
+    if (manifest.schemaVersion !== 'buildr.dsh-source-patch/v2'
+      || manifest.upstream?.tag !== 'dsh-v0.2.0-rc.2'
+      || manifest.upstream?.commit !== '639ed015397290b3745d163aafe02ffee4aa3f84'
+      || manifest.upstream?.version !== '0.2.0-rc.2'
+      || manifest.patch?.path !== path.basename(normalizedPath)
+      || manifest.patch?.sha256 !== asset.sha256) return undefined;
+    return asset.bytes;
+  } catch {
+    return undefined;
+  }
+}
 
 const contentRules: any[] = [
   { id: 'secret.private-key', pattern: /-----BEGIN (?:RSA |OPENSSH |EC )?PRIVATE KEY-----/ },
@@ -31,10 +88,11 @@ function finding(rule: any, relativePath: any, message: any): any  {
   return { rule, path: relativePath.split(path.sep).join('/'), message };
 }
 
-export function inspectCandidateFile(relativePath: any, content: any, size: any = Buffer.byteLength(content)): any  {
+export function inspectCandidateFile(relativePath: any, content: any, size: any = Buffer.byteLength(content), root: string = workspaceRoot): any  {
   const findings: any[] = [];
   const prototype = relativePath.endsWith('.html') && content.includes('<!-- buildr:ui-prototype -->');
-  const maximumBytes = prototype ? 2 * maximumTrackedFileBytes : maximumTrackedFileBytes;
+  const maximumBytes = frozenSourceAssetBytes(root, relativePath, content, size)
+    ?? (prototype ? 2 * maximumTrackedFileBytes : maximumTrackedFileBytes);
   if (size > maximumBytes) findings.push(finding('candidate.large-file', relativePath, `tracked file exceeds ${maximumBytes} bytes`));
   if (content.includes('\0')) return findings;
   for (const rule of contentRules) {
@@ -105,7 +163,7 @@ export function inspectCandidatePaths(root: any, relativePaths: any): any  {
     const absolutePath: any = path.join(root, relativePath);
     if (!fs.statSync(absolutePath, { throwIfNoEntry: false })?.isFile()) continue;
     const buffer: any = fs.readFileSync(absolutePath);
-    findings.push(...inspectCandidateFile(relativePath, buffer.toString('utf8'), buffer.length));
+    findings.push(...inspectCandidateFile(relativePath, buffer.toString('utf8'), buffer.length, root));
   }
   return findings;
 }

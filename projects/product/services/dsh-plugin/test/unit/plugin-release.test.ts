@@ -55,7 +55,7 @@ test('release preparation probes the exact prerelease version instead of the lat
 test('release source snapshot rejects dirty source and committed changes during preparation', t => {
   const repo = temporary(t), service = join(repo, 'projects/product/services/dsh-plugin'); mkdirSync(service, { recursive: true });
   const git = (...args: string[]) => execFileSync('git', args, { cwd: repo, stdio: ['ignore', 'pipe', 'pipe'] });
-  git('init', '-q'); git('config', 'user.name', 'Release test'); git('config', 'user.email', 'release@example.invalid');
+  git('init', '-q'); git('config', 'user.name', 'Release test'); git('config', 'user.email', 'release@example.com');
   writeFileSync(join(service, 'source.txt'), 'original'); git('add', '.'); git('commit', '-qm', 'original');
   const original = captureReleaseSource(repo); assertReleaseSourceStable(original, captureReleaseSource(repo));
   writeFileSync(join(service, 'source.txt'), 'drift'); assert.throws(() => captureReleaseSource(repo), /Commit plugin source/);

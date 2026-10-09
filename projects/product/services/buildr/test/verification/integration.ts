@@ -27,16 +27,18 @@ const files: any = fs.readdirSync(integrationRoot)
 if (suite !== 'general' || files.length === 0) throw new Error('Integration general suite has no test files.');
 const workerBudget: any = resolveVerificationWorkerBudget({ env: process.env, fallback: 6, maximum: files.length, label: 'Integration general suite' });
 process.stderr.write(`[buildr-integration-suite] suite=${suite} files=${files.length} workerBudget=${workerBudget}\n`);
-const reporters = process.env.BUILDR_INTEGRATION_FILE_TIMING === '1'
-  ? [
-    '--test-reporter=dot',
+const reporters = [
+  '--test-reporter=dot',
+  `--test-reporter=${pathToFileURL(path.join(import.meta.dirname, 'integration-progress-reporter.ts')).href}`,
+];
+const destinations = ['--test-reporter-destination=stdout', '--test-reporter-destination=stderr'];
+if (process.env.BUILDR_INTEGRATION_FILE_TIMING === '1') {
+  reporters.push(
     `--test-reporter=${pathToFileURL(path.join(import.meta.dirname, 'system-file-timing-reporter.ts')).href}`,
     '--test-reporter=spec',
-    '--test-reporter-destination=stdout',
-    '--test-reporter-destination=stderr',
-    '--test-reporter-destination=stderr',
-  ]
-  : ['--test-reporter=dot'];
-const result: any = spawnSync(process.execPath, ['--test', `--test-concurrency=${workerBudget}`, ...reporters, ...files], { cwd: productRoot, stdio: 'inherit', env: process.env });
+  );
+  destinations.push('--test-reporter-destination=stderr', '--test-reporter-destination=stderr');
+}
+const result: any = spawnSync(process.execPath, ['--test', `--test-concurrency=${workerBudget}`, ...reporters, ...destinations, ...files], { cwd: productRoot, stdio: 'inherit', env: process.env });
 if (result.error) throw result.error;
 if (result.status !== 0) process.exitCode = result.status ?? 1;

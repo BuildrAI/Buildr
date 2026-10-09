@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 
 import { buildApplicationPayload } from '../../tools/release/application-payload.ts';
 import { createReleaseArtifact, readReleaseArtifact } from '../../tools/release/release-artifact.ts';
-import { inspectCandidatePaths } from '../verification/release/open-source-candidate.ts';
+import { inspectCandidateFile, inspectCandidatePaths } from '../verification/release/open-source-candidate.ts';
 import {
   CANDIDATE_PACK_METADATA_ENV,
   CANDIDATE_RELEASE_MANIFEST_ENV,
@@ -24,6 +24,14 @@ import { createVerificationExecutor } from '../verification/executor.ts';
 import { createGeneratedReleaseInputs } from '../helpers/generated-release-inputs.ts';
 
 const serviceRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const workspaceRoot = path.resolve(serviceRoot, '../../../..');
+const existingSourceAssets = [
+  'projects/product/openspec/changes/archive/2026-10-03-add-code-source-control/prototypes/viewer.html',
+  'projects/product/openspec/changes/archive/2026-10-05-add-dsh-buildr-provenance/prototypes/source/reader-preview.htm',
+  'projects/product/openspec/changes/archive/2026-10-09-add-source-control-branches/prototypes/source-control-branches-viewer.html',
+  'projects/product/services/dsh-plugin/sdk-patches/dsh-v0.2.0-rc.2-event-sources-settings.patch',
+  'projects/product/services/dsh-plugin/sdk-patches/dsh-v0.2.0-rc.2-event-sources.patch',
+];
 
 test('release smoke readiness retries a stale instance connection while startup continues', async (t: any) => {
   const appData: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-release-readiness-'));
@@ -153,6 +161,56 @@ test('open-source candidate ignores tracked paths deleted from the frozen worktr
     assert.deepEqual(inspectCandidatePaths(root, ['kept.md', 'deleted.md']), []);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('existing readers and manifest-bound SDK patches retain only their exact source identity', () => {
+  assert.deepEqual(inspectCandidatePaths(workspaceRoot, existingSourceAssets), []);
+  for (const relativePath of existingSourceAssets) {
+    const content = fs.readFileSync(path.join(workspaceRoot, relativePath), 'utf8');
+    const changed = String.fromCharCode(content.charCodeAt(0) ^ 1) + content.slice(1);
+    assert.equal(Buffer.byteLength(changed), Buffer.byteLength(content));
+    assert.ok(inspectCandidateFile(relativePath, changed).some((item: any) => item.rule === 'candidate.large-file'), relativePath);
+    assert.ok(inspectCandidateFile('unknown-source-asset.txt', content).some((item: any) => item.rule === 'candidate.large-file'));
+    assert.ok(inspectCandidateFile(relativePath, content, Buffer.byteLength(content) + 1).some((item: any) => item.rule === 'candidate.large-file'));
+    const privateKey = ['-----BEGIN ', 'PRIVATE KEY-----'].join('');
+    const privateIdentity = ['fixture', 'private.test'].join('@');
+    const findings = inspectCandidateFile(relativePath, `${content}\n${privateKey}\n${privateIdentity}`);
+    assert.ok(findings.some((item: any) => item.rule === 'candidate.large-file'));
+    assert.ok(findings.some((item: any) => item.rule === 'secret.private-key'));
+    assert.ok(findings.some((item: any) => item.rule === 'private.email-address'));
+    assert.equal(JSON.stringify(findings).includes(privateKey), false);
+    assert.equal(JSON.stringify(findings).includes(privateIdentity), false);
+  }
+});
+
+test('frozen SDK patch size requires its existing source manifest path, upstream and hash', (t: any) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-source-asset-manifest-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  for (const relativePath of existingSourceAssets.filter((item) => item.endsWith('.patch'))) {
+    const patch = path.join(root, relativePath);
+    const manifestRelativePath = relativePath.replace(/\.patch$/, '.json');
+    const manifestPath = path.join(root, manifestRelativePath);
+    const original = JSON.parse(fs.readFileSync(path.join(workspaceRoot, manifestRelativePath), 'utf8'));
+    fs.mkdirSync(path.dirname(patch), { recursive: true });
+    fs.copyFileSync(path.join(workspaceRoot, relativePath), patch);
+    const check = () => inspectCandidatePaths(root, [relativePath]);
+    assert.ok(check().some((item: any) => item.rule === 'candidate.large-file'), 'missing manifest');
+    fs.writeFileSync(manifestPath, '{');
+    assert.ok(check().some((item: any) => item.rule === 'candidate.large-file'), 'invalid JSON');
+    fs.writeFileSync(manifestPath, JSON.stringify(original));
+    assert.deepEqual(check(), []);
+    for (const [field, changed] of [
+      ['schemaVersion', { ...original, schemaVersion: 'buildr.dsh-source-patch/v1' }],
+      ['patch.path', { ...original, patch: { ...original.patch, path: 'other.patch' } }],
+      ['patch.sha256', { ...original, patch: { ...original.patch, sha256: '0'.repeat(64) } }],
+      ['upstream.tag', { ...original, upstream: { ...original.upstream, tag: 'other' } }],
+      ['upstream.commit', { ...original, upstream: { ...original.upstream, commit: '0'.repeat(40) } }],
+      ['upstream.version', { ...original, upstream: { ...original.upstream, version: '0.0.0' } }],
+    ]) {
+      fs.writeFileSync(manifestPath, JSON.stringify(changed));
+      assert.ok(check().some((item: any) => item.rule === 'candidate.large-file'), `${relativePath}: ${field}`);
+    }
   }
 });
 

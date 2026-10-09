@@ -1,3 +1,5 @@
+import YAML from 'yaml';
+
 export function createBuildrSelfInvoker({ currentProductInvocation, productInvocationArgs, execFileSync, spawnSync }: any): any  {
   let invocation;
   const invoke = (runner: any, args: any, options: any) => {
@@ -395,16 +397,27 @@ export function createPackageSmokeChecks(deps: any): any  {
       problems.push('project create must not create the removed Project practices/ baseline.');
     }
     const projectsAfterCreate = parseProjectsYaml(fs.readFileSync(path.join(tempRoot, 'projects', 'manifest.yml'), 'utf8'));
-    if (projectsAfterCreate.schemaVersion !== 'buildr.projects/v2'
+    if (projectsAfterCreate.schemaVersion !== 'buildr.projects/v3'
       || !/^[0-9a-f-]{36}$/.test(projectsAfterCreate.projects.demo?.id || '')
       || projectsAfterCreate.projects.demo?.code !== 'demo'
       || projectsAfterCreate.projects.demo?.name !== 'demo'
       || projectsAfterCreate.projects.demo?.source?.type !== 'workspace'
-      || projectsAfterCreate.projects.demo?.source?.path !== 'projects/demo') {
+      || projectsAfterCreate.projects.demo?.source?.path !== 'projects/demo'
+      || !Array.isArray(projectsAfterCreate.projects.demo?.serviceIds)
+      || projectsAfterCreate.projects.demo.serviceIds.length !== 0) {
       problems.push('project create must register workspace-managed Project metadata in projects/manifest.yml.');
     }
-    if (!existsFile(path.join(tempRoot, 'projects', 'demo', 'services', 'manifest.yml'))) {
-      problems.push('project create must install services/manifest.yml.');
+    const globalServicesPath = path.join(tempRoot, 'services', 'manifest.yml');
+    const globalServices = existsFile(globalServicesPath)
+      ? YAML.parse(fs.readFileSync(globalServicesPath, 'utf8'))
+      : null;
+    if (globalServices?.schemaVersion !== 'buildr.services/v3'
+      || !globalServices.services || typeof globalServices.services !== 'object'
+      || Array.isArray(globalServices.services) || Object.keys(globalServices.services).length !== 0) {
+      problems.push('project create must retain the initialized global services/manifest.yml registry.');
+    }
+    if (existsFile(path.join(tempRoot, 'projects', 'demo', 'services', 'manifest.yml'))) {
+      problems.push('project create must use the global Service registry without installing a legacy Project services/manifest.yml.');
     }
     if (!existsFile(path.join(tempRoot, 'projects', 'demo', 'capabilities.yml')) || existsDirectory(path.join(tempRoot, 'projects', 'demo', 'skills'))) {
       problems.push('project create must install capabilities.yml without creating a legacy Project Skill source scope.');

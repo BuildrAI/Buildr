@@ -14,7 +14,7 @@ import {readCodeWorktreeCatalog} from '../../src/modules/code/infrastructure/cod
 function fixture(t:any){
   const temporary=fs.mkdtempSync(path.join(os.tmpdir(),'buildr-code-explorer-'));t.after(()=>fs.rmSync(temporary,{recursive:true,force:true}));
   const root=path.join(temporary,'repo');fs.mkdirSync(root);const git=(...args:string[])=>execFileSync('git',['-C',root,...args],{encoding:'utf8',stdio:['ignore','pipe','ignore']}).trim();
-  git('init');git('config','user.email','fixture@example.invalid');git('config','user.name','Fixture');
+  git('init');git('config','user.email','fixture@example.com');git('config','user.name','Fixture');
   fs.mkdirSync(path.join(root,'src'));fs.writeFileSync(path.join(root,'src','main.ts'),'export const answer = 1;\n');fs.writeFileSync(path.join(root,'README.md'),'# Code\n');fs.writeFileSync(path.join(root,'.gitignore'),'ignored.txt\n');fs.writeFileSync(path.join(root,'ignored.txt'),'ignored content');fs.writeFileSync(path.join(root,'wild*.txt'),'literal');fs.writeFileSync(path.join(root,'wild-other.txt'),'other');git('add','.');git('commit','-m','initial');const hash=git('rev-parse','HEAD');
   const repo={id:'repo-id',code:'repo',name:'Repo',source:{type:'local',path:root}};
   let evidence:any=null;
@@ -251,7 +251,7 @@ function worktreeFixture(t:any){
   for(const code of ['one','two']){
     const root=path.join(temporary,code,'main');fs.mkdirSync(root,{recursive:true});
     const git=(...args:string[])=>execFileSync('git',['-C',root,...args],{encoding:'utf8',stdio:['ignore','pipe','ignore']}).trim();
-    git('init');git('config','user.email','fixture@example.invalid');git('config','user.name','Fixture');fs.writeFileSync(path.join(root,'file.ts'),'initial '+code+'\n');git('add','.');git('commit','-m','initial');
+    git('init');git('config','user.email','fixture@example.com');git('config','user.name','Fixture');fs.writeFileSync(path.join(root,'file.ts'),'initial '+code+'\n');git('add','.');git('commit','-m','initial');
     const hash=git('rev-parse','HEAD'),task=path.join(temporary,code,'task'),native=path.join(temporary,code,'native');
     git('worktree','add','-b','task-'+code,task,'HEAD');git('worktree','add','-b','native-shared',native,'HEAD');
     fs.writeFileSync(path.join(root,'file.ts'),'main '+code+' sharedNeedle\n');fs.writeFileSync(path.join(task,'file.ts'),'task '+code+' sharedNeedle\n');fs.writeFileSync(path.join(task,'only-task.ts'),'taskOnlyNeedle');fs.writeFileSync(path.join(native,'file.ts'),'native '+code+' sharedNeedle\n');

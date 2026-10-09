@@ -505,7 +505,10 @@ test('非 Git 根通过公共入口隔离独立子仓库并保留资料', { time
 });
 
 test('项目与服务共享实际仓库时两种选择顺序均去重，冲突集成引用零效果拒绝', (t) => {
-  const root = createGitWorkspace(t), projectRoot = path.join(root, 'projects/demo');
+  const actualRoot = createGitWorkspace(t);
+  const caseAlias = path.join(path.dirname(actualRoot), path.basename(actualRoot).toUpperCase());
+  // Exercise a real case alias where supported, including Windows temporary path spellings.
+  const root = fs.existsSync(caseAlias) ? caseAlias : actualRoot, projectRoot = path.join(root, 'projects/demo');
   // This fixture must have no parent checkout that could mask a lost project member.
   fs.rmSync(path.join(root, '.git'), { recursive: true });
   git(root, ['rev-parse', '--show-toplevel'], 128);

@@ -540,6 +540,26 @@ test('register actual workspace root and attached Git roots; reject child and or
   assert.equal(status.status, 200); assert.equal(status.body.available, true); assert.equal(status.body.observed.currentBranch, 'dev');
 });
 
+test('repository root registration and status use filesystem identity for valid path aliases', (t: any) => {
+  const { root, runtime } = setup(t);
+  let catalog = ready(runtime, root);
+  const actual = path.join(root, 'MixedCaseRepository'), alias = path.join(root, 'mixedcaserepository');
+  initRepository(actual);
+  if (!fs.existsSync(alias)) fs.symlinkSync(actual, alias, 'junction');
+  const actualStat = fs.statSync(actual, { bigint: true }), aliasStat = fs.statSync(alias, { bigint: true });
+  assert.equal(aliasStat.dev, actualStat.dev); assert.equal(aliasStat.ino, actualStat.ino);
+  fs.mkdirSync(path.join(actual, 'ordinary-child'));
+  catalog = runtime.createCatalogRepository(root, { revision: catalog.revision, code: 'aliased-root', path: 'mixedcaserepository' });
+  const registered = catalog.repositories.find((repository: any) => repository.code === 'aliased-root');
+  assert.equal(registered.source.path, 'mixedcaserepository');
+  catalog = runtime.createCatalogService(root, { revision: catalog.revision, service: { code: 'aliased-module', name: 'Alias module', repositoryId: registered.id, modulePath: 'ordinary-child' } });
+  assert.equal(runtime.catalogRepositoryStatus(root, registered.id).available, true);
+  const revision = catalog.revision;
+  assert.throws(() => runtime.createCatalogRepository(root, { revision, code: 'aliased-child', path: 'mixedcaserepository/ordinary-child' }), (error: any) => error.code === 'repository_not_root');
+  assert.throws(() => runtime.createCatalogRepository(root, { revision, code: 'duplicate-alias', path: 'MixedCaseRepository' }), (error: any) => error.code === 'repository_duplicate_path');
+  assert.equal(runtime.assetCatalog(root).revision, revision);
+});
+
 test('normalization merges old workspace modules by real root while retaining service identities and content', (t: any) => {
   const { root, runtime } = setupLegacy(t); initRepository(root);
   for (const code of ['api', 'web']) {

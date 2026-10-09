@@ -7,6 +7,7 @@ import { normalizeGitWorktreeCleanupDelivery, normalizeGitWorktreeObservedChecko
 import { assertCurrentCheckoutIdentity, assertLiteralWorktreePath, assertNoUnlistedNestedRepositories, assertObservedCheckoutSet } from './git-worktree-observation.ts';
 import { spawnSync } from '../../../infrastructure/process.ts';
 import { sameFilesystemPath } from '../../../infrastructure/git/checkout-identity.ts';
+import { insideFilesystemPath } from '../../../infrastructure/filesystem/filesystem-path-identity.ts';
 import { observeGitRepositoryRoot as sourceGitRoot } from '../../../infrastructure/git/repository-boundary.ts';
 import { PUBLIC_JSON_SCHEMAS, withJsonSchema } from '../../../infrastructure/contracts/public-json.ts';
 import { controlMetadataPath } from '../../../infrastructure/git/control-metadata-path.ts';
@@ -289,11 +290,11 @@ export function registerGitWorktreeProvider(runtime: GitWorktreeRuntime): GitWor
       try {
         if (!source.path) return;
         const location = fs.realpathSync(path.resolve(root, source.path));
-        if (!inside(root, location)) return;
+        if (!insideFilesystemPath(root, location)) return;
         const actual = sourceGitRoot(location);
         if (source.type === 'git' && (!actual || !sameFilesystemPath(actual, location))) throw new Error(`已登记 Git 来源没有对应独立根：${source.path}。`);
         if (actual) {
-          if (!inside(root, actual)) throw new Error(`来源实际 Git 根越出工作空间：${source.path}。`);
+          if (!insideFilesystemPath(root, actual)) throw new Error(`来源实际 Git 根越出工作空间：${source.path}。`);
           repositories.add(actual);
         }
       } catch (error) { if (requireComplete) incomplete(error); }

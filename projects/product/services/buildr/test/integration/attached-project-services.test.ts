@@ -16,7 +16,7 @@ async function fixture(t: any, name: string) {
   const source = path.join(base, 'attached-project');
   fs.mkdirSync(path.join(source, 'docs'), { recursive: true });
   fs.writeFileSync(path.join(source, 'docs', 'brief.md'), '# 外部项目资料\n');
-  for (const args of [['init', '-q', '--initial-branch=dev'], ['config', 'user.name', 'Test'], ['config', 'user.email', 'test@example.invalid'], ['remote', 'add', 'origin', 'https://example.invalid/attached.git'], ['add', '.'], ['commit', '-qm', 'fixture']]) {
+  for (const args of [['init', '-q', '--initial-branch=dev'], ['config', 'user.name', 'Test'], ['config', 'user.email', 'test@example.com'], ['remote', 'add', 'origin', 'https://example.invalid/attached.git'], ['add', '.'], ['commit', '-qm', 'fixture']]) {
     const result = spawnSync('git', args, { cwd: source, encoding: 'utf8' });
     assert.equal(result.status, 0, result.stderr);
   }
