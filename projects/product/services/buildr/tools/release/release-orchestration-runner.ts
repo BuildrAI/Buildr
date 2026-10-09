@@ -592,7 +592,7 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
     selection = inspectReleaseSelection({ ...selectionArgs, repo, devRef: 'origin/dev' });
     if (selection.status !== 'frozen') throw new Error('Final release selection is no longer frozen.');
     const sourceCommit = selection.releaseHead;
-    for (const name of targets.packages) if (JSON.parse(git(['show', `${sourceCommit}:projects/product/services/${name}/package.json`], repo)).version !== targets.versions[name]) throw new Error(`Selected ${name} version differs from requested release; first deliver and select its version materials on dev.`);
+    for (const name of targets.packages) if (JSON.parse(git(['show', `${sourceCommit}:projects/product/services/${name}/package.json`, '--'], repo)).version !== targets.versions[name]) throw new Error(`Selected ${name} version differs from requested release; first deliver and select its version materials on dev.`);
     state.sourceCommit = sourceCommit;
     let plan: any = null;
     if (scoped) {
@@ -635,7 +635,7 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
         writeOperation(file, state);
         const effect = { type: 'candidate-dispatched', branch: carrier, sourceCommit, state: 'unknown' };
         currentEffects.push(effect);
-        const fields = scoped ? [`release_packages=${targets.packages.join(',')}`, `buildr_version=${JSON.parse(git(['show', `${sourceCommit}:projects/product/services/buildr/package.json`], repo)).version}`,
+        const fields = scoped ? [`release_packages=${targets.packages.join(',')}`, `buildr_version=${JSON.parse(git(['show', `${sourceCommit}:projects/product/services/buildr/package.json`, '--'], repo)).version}`,
           `plugin_version=${plan.pluginVersion}`, `selection_id=${key}`, `selection_baseline=${baseline}`, `selection_main=${plan.selection.main}`,
           `selection_identity=${selection.selectionIdentity}`, ...(!targets.packages.includes('buildr') && plan.requirements.plugin
             ? [`buildr_peer_version=${state.preparationPeer.version}`, `buildr_peer_integrity=${state.preparationPeer.integrity}`] : [])] : [];

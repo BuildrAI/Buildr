@@ -172,7 +172,7 @@ function candidateFixture(changes: any = {}): any {
   const execute = (command: string, args: string[], config: any): any => {
     calls.push({ command, args: [...args], config });
     if (command === 'git') {
-      assert.equal(args[0], 'show'); assert.ok(args[1].startsWith(mainSource + ':' + PLUGIN_SERVICE_PATH + '/'));
+      assert.equal(args[0], 'show'); assert.equal(args.at(-1), '--'); assert.ok(args[1].startsWith(mainSource + ':' + PLUGIN_SERVICE_PATH + '/'));
       return { status: 0, stdout: args[1].endsWith('.json') ? manifestBytes.toString('utf8') : patchBytes.toString('utf8') };
     }
     assert.equal(command, 'recorded-gh'); assert.deepEqual(args.slice(0, 2), ['run', 'download']); assert.equal(args[2], '11');

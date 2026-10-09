@@ -134,7 +134,10 @@ function fixture(t: any, changes: { mainRuntime?: boolean; omitSourcePatch?: boo
   };
   const body = (value: any) => ({ status: 0, stdout: JSON.stringify(value) });
   const execute = (command: string, args: string[], config: any): any => {
-    if (command !== 'gh') return spawnSync(command, args, { ...config, encoding: 'utf8' });
+    if (command !== 'gh') {
+      if (command === 'git' && args[0] === 'show' && /^[a-f0-9]{40}:/u.test(args[1] ?? '')) assert.equal(args.at(-1), '--', 'Object reads must disable filename disambiguation.');
+      return spawnSync(command, args, { ...config, encoding: 'utf8' });
+    }
     requests.push([...args]);
     if (args[0] === 'auth') assert.fail('plugin-only must not read GitHub credentials for main publication observation');
     if (args[0] === 'workflow') {
@@ -215,8 +218,8 @@ releaseSelectionTest('plugin-only prepare recovers one lost source dispatch, adm
   const record = data.state(); assert.deepEqual(record.candidatePlan.requirements, { buildr: false, plugin: true });
   assert.equal(record.candidate.runId, 700); assert.equal(record.pluginPreparation.runId, 800); assert.equal(record.context.selection.version, null);
   assert.equal(record.context.selection.status, 'frozen'); assert.equal(record.sources.length, 1);
-  assert.equal(git(data.repo, ['show', record.context.convergence.mainCommit + ':projects/product/services/buildr/package.json']),
-    git(data.workspace, ['show', data.baseline + ':projects/product/services/buildr/package.json']));
+  assert.equal(git(data.repo, ['show', record.context.convergence.mainCommit + ':projects/product/services/buildr/package.json', '--']),
+    git(data.workspace, ['show', data.baseline + ':projects/product/services/buildr/package.json', '--']));
   const dispatch = data.requests.find((args: string[]) => args[0] === 'workflow' && args[2] === 'verify.yml');
   for (const field of ['release_packages=dsh-plugin', 'buildr_version=' + mainVersion, 'plugin_version=' + pluginVersion,
     'selection_id=' + selectionId, 'buildr_peer_version=' + mainVersion, 'buildr_peer_integrity=' + data.peer.integrity]) assert.ok(dispatch.includes(field));
@@ -247,7 +250,7 @@ releaseSelectionTest('failed source Git read preserves its bounded cause and fre
   assertReleaseStatus(result, 'blocked');
   const failure = sourceGitFailure(result);
   assert.equal(failure.command, 'git');
-  assert.deepEqual(failure.args, ['show', `${data.state().sourceCommit}:${PLUGIN_SERVICE_PATH}/${sdkPatch}`]);
+  assert.deepEqual(failure.args, ['show', `${data.state().sourceCommit}:${PLUGIN_SERVICE_PATH}/${sdkPatch}`, '--']);
   assert.equal(failure.status, 128); assert.equal(failure.errorCode, null); assert.equal(failure.signal, null);
   assert.equal(failure.stdoutBytes, 0); assert.ok(failure.stderr.length > 0 && failure.stderr.length <= 2048);
   assert.equal(data.counts().candidateDispatches, 0); assert.equal(data.counts().merges, 0); assert.equal(data.counts().pluginDispatches, 0);

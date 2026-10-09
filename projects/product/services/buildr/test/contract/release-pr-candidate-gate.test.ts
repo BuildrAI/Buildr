@@ -30,9 +30,10 @@ function fixture(overrides: any = {}) {
     git: (args: string[]) => {
       if (args[1] === `${sourceCommit}:projects/product/services/buildr/package.json`) {
         assert.equal(args[0], 'show');
+        assert.equal(args.at(-1), '--');
         return JSON.stringify({ name: '@buildr-ai/buildr', version: '0.1.0-rc.36', ...overrides.sourcePackage });
       }
-      assert.deepEqual(args, ['show', `${sourceCommit}:.github/workflows/verify.yml`]);
+      assert.deepEqual(args, ['show', `${sourceCommit}:.github/workflows/verify.yml`, '--']);
       return overrides.sourceWorkflow ?? 'name: Verify Buildr\non:\n  workflow_dispatch:\n    inputs:\n      purpose: {}\n';
     },
     loadAggregate: async () => { throw new Error('A legacy source never loads plugin proof.'); },
@@ -126,7 +127,8 @@ function scopedFixture(changedPaths = ['projects/product/services/dsh-plugin/plu
   const selection = { id: packages.map(name => `${name}-${versions[name]}`).join('_'), packages, versions, baseline: 'b'.repeat(40), main: 'c'.repeat(40), identity: 'd'.repeat(64) };
   const scopedBranch = `codex/release-main-${selection.id}-g1`;
   const git = (args: string[]): string => {
-    const key = args.join(' ');
+    if (args[0] === 'show') assert.equal(args.at(-1), '--');
+    const key = (args[0] === 'show' ? args.slice(0, -1) : args).join(' ');
     if (key === 'rev-parse HEAD') return sourceCommit;
     if (key === 'rev-parse refs/remotes/origin/main') return selection.main;
     if (key === `rev-parse ${sourceCommit}^{tree}`) return 'e'.repeat(40);

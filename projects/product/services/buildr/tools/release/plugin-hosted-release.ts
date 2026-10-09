@@ -63,7 +63,7 @@ export function readHostedPluginCandidate(options: any, dependencies: any = {}):
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-hosted-plugin-candidate-'));
   try {
     gh(['run', 'download', String(options.runId), '--repo', repository, '--name', `plugin-candidate-v${options.version}`, '--dir', path.join(root, 'candidate')], 120_000);
-    const committed = (file: string) => Buffer.from(git(['show', `${options.sourceCommit}:${PLUGIN_SERVICE_PATH}/${file}`]));
+    const committed = (file: string) => Buffer.from(git(['show', `${options.sourceCommit}:${PLUGIN_SERVICE_PATH}/${file}`, '--']));
     const sourceSdk = sourceSdkIdentityFromFiles(committed(SOURCE_SDK_MANIFEST), committed('sdk-patches/dsh-v0.2.0-rc.2-event-sources-settings.patch'));
     const owned = readReleaseCandidate(singleFile(path.join(root, 'candidate'), 'candidate.json'), { version: options.version, sourceCommit: options.sourceCommit, sourceTree: options.sourceTree, sourceSdk });
     const tarballBytes = fs.readFileSync(owned.tarball);
@@ -86,7 +86,7 @@ export function readPluginSourceCandidate(options: any, dependencies: any = {}):
   try {
     gh(['run', 'download', String(options.runId), '--repo', repository, '--name', `plugin-candidate-v${plan.pluginVersion}`, '--dir', path.join(root, 'candidate')], 120_000);
     gh(['run', 'download', String(options.runId), '--repo', repository, '--name', 'plugin-candidate-aggregate', '--dir', path.join(root, 'aggregate')], 60_000);
-    const committed = (file: string) => Buffer.from(git(['show', `${plan.sourceCommit}:${PLUGIN_SERVICE_PATH}/${file}`]));
+    const committed = (file: string) => Buffer.from(git(['show', `${plan.sourceCommit}:${PLUGIN_SERVICE_PATH}/${file}`, '--']));
     const sourceSdk = sourceSdkIdentityFromFiles(committed(SOURCE_SDK_MANIFEST), committed('sdk-patches/dsh-v0.2.0-rc.2-event-sources-settings.patch'));
     const owned = readReleaseCandidate(singleFile(path.join(root, 'candidate'), 'candidate.json'), { version: plan.pluginVersion, sourceCommit: plan.sourceCommit, sourceTree: plan.serviceTree, sourceSdk });
     const filename = singleFile(path.join(root, 'aggregate'), 'plugin-candidate-ci-aggregate.json');

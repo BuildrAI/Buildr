@@ -66,14 +66,16 @@ export function createReleaseCandidatePlan(env: NodeJS.ProcessEnv, git: GitRead)
   requireFact(sha.test(sourceCommit) && sourceCommit === (env.CANDIDATE_SOURCE_SHA ?? env.GITHUB_SHA), 'Candidate checkout differs from exact source.');
   requireFact(git(['rev-parse', 'refs/remotes/origin/main']).trim() === selection.main, 'Observed main differs from frozen selection main.');
   for (const name of packages) {
-    const sourceVersion = JSON.parse(git(['show', `${sourceCommit}:projects/product/services/${name}/package.json`])).version;
+    const sourceVersion = JSON.parse(git(['show', `${sourceCommit}:projects/product/services/${name}/package.json`, '--'])).version;
     requireFact(sourceVersion === versions[name], `Selected ${name} version differs from source.`);
   }
   // Comparing only the picked commits would miss product changes already in
   // the selected dev baseline. Disable rename detection to retain both sides.
   const changedPaths = git(['diff', '--no-renames', '--name-only', '-z', selection.main, sourceCommit, '--']).split('\0').filter(Boolean).sort();
   const requirements = releaseCandidateRequirements({ packages, changedPaths });
-  const sourceSdk = requirements.plugin ? sourceSdkIdentityFromFiles(Buffer.from(git(['show', `${sourceCommit}:${PLUGIN_SERVICE_PATH}/${SOURCE_SDK_MANIFEST}`])), Buffer.from(git(['show', `${sourceCommit}:${PLUGIN_SERVICE_PATH}/sdk-patches/dsh-v0.2.0-rc.2-event-sources-settings.patch`]))) : undefined;
+  // Mark object expressions as revisions. Otherwise Git also stats them as
+  // worktree filenames, which can exceed Windows path limits in deep checkouts.
+  const sourceSdk = requirements.plugin ? sourceSdkIdentityFromFiles(Buffer.from(git(['show', `${sourceCommit}:${PLUGIN_SERVICE_PATH}/${SOURCE_SDK_MANIFEST}`, '--'])), Buffer.from(git(['show', `${sourceCommit}:${PLUGIN_SERVICE_PATH}/sdk-patches/dsh-v0.2.0-rc.2-event-sources-settings.patch`, '--']))) : undefined;
   let registryPeer: { version: string; integrity: string } | undefined;
   if (requirements.plugin && !packages.includes('buildr')) {
     const peerVersion = compatibilityVersion(env.BUILDR_BUILDR_PEER_VERSION);
@@ -83,8 +85,8 @@ export function createReleaseCandidatePlan(env: NodeJS.ProcessEnv, git: GitRead)
   return { schemaVersion: 'buildr.package-candidate-plan/v1', legacy: false, selection, sourceCommit,
     sourceTree: git(['rev-parse', `${sourceCommit}^{tree}`]).trim(),
     serviceTree: git(['rev-parse', `${sourceCommit}:${PLUGIN_SERVICE_PATH}`]).trim(),
-    pluginVersion: JSON.parse(git(['show', `${sourceCommit}:${PLUGIN_SERVICE_PATH}/package.json`])).version,
-    workflowSha256: createHash('sha256').update(git(['show', `${sourceCommit}:${workflowPath}`])).digest('hex'),
+    pluginVersion: JSON.parse(git(['show', `${sourceCommit}:${PLUGIN_SERVICE_PATH}/package.json`, '--'])).version,
+    workflowSha256: createHash('sha256').update(git(['show', `${sourceCommit}:${workflowPath}`, '--'])).digest('hex'),
     changedPaths, requirements, ...(sourceSdk ? { sourceSdk } : {}), ...(registryPeer ? { registryPeer } : {}) };
 }
 
@@ -157,10 +159,10 @@ export async function verifyReleasePullRequestCandidate(
     try { normalizeReleaseTargets({ version: legacyVersion }); }
     catch { throw new Error('Release selection proof is required for a scoped release carrier.'); }
     requireFact(scoped, 'Legacy release requires frozen source inspection.');
-    const sourcePackage = JSON.parse(scoped.git(['show', `${sourceCommit}:projects/product/services/buildr/package.json`]));
+    const sourcePackage = JSON.parse(scoped.git(['show', `${sourceCommit}:projects/product/services/buildr/package.json`, '--']));
     requireFact(sourcePackage?.name === MAIN_PACKAGE && sourcePackage.version === legacyVersion, 'Legacy release carrier differs from frozen main package.');
     requireFact(!Object.hasOwn(sourcePackage, 'buildrCompatibility') && !/^Buildr peer:/mu.test(String(pullRequest.body ?? '')), 'Release selection proof is required for compatibility-aware source.');
-    const sourceWorkflow = scoped.git(['show', `${sourceCommit}:${workflowPath}`]);
+    const sourceWorkflow = scoped.git(['show', `${sourceCommit}:${workflowPath}`, '--']);
     requireFact(!/\b(?:release_packages|BUILDR_RELEASE_PACKAGES)\b/u.test(sourceWorkflow), 'Release selection proof is required for a scoped verification recipe.');
   }
 
@@ -177,7 +179,7 @@ export async function verifyReleasePullRequestCandidate(
   const artifacts = await requestJson(`repos/${repository}/actions/runs/${runId}/artifacts?per_page=100`);
   requireFact(Number.isSafeInteger(artifacts?.total_count) && artifacts.total_count >= 0 && artifacts.total_count < 100 && artifacts.artifacts?.length === artifacts.total_count, 'Candidate artifact list is incomplete.');
   const names = !plan || plan.requirements.buildr ? ['candidate-package', 'candidate-aggregate'] : [];
-  if (plan?.requirements.plugin) names.push(`plugin-candidate-v${plan.selection.versions['dsh-plugin'] ?? JSON.parse(scoped!.git(['show', `${sourceCommit}:${PLUGIN_SERVICE_PATH}/package.json`])).version}`, 'plugin-candidate-aggregate');
+  if (plan?.requirements.plugin) names.push(`plugin-candidate-v${plan.selection.versions['dsh-plugin'] ?? JSON.parse(scoped!.git(['show', `${sourceCommit}:${PLUGIN_SERVICE_PATH}/package.json`, '--'])).version}`, 'plugin-candidate-aggregate');
   for (const name of names) {
     requireFact(artifacts?.artifacts?.filter((artifact: any) => artifact.name === name && artifact.expired === false && artifact.size_in_bytes > 0).length === 1, `Matching Candidate ${name} is unavailable or not unique.`);
   }
@@ -199,8 +201,8 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
     } else if (action === 'plugin-aggregate') {
       const plan = createReleaseCandidatePlan(process.env, git);
       const candidateFile = path.join(repo, PLUGIN_SERVICE_PATH, 'build/release-candidates', plan.pluginVersion, 'candidate.json');
-      const manifestBytes = Buffer.from(git(['show', `${plan.sourceCommit}:${PLUGIN_SERVICE_PATH}/${SOURCE_SDK_MANIFEST}`]));
-      const patchBytes = Buffer.from(git(['show', `${plan.sourceCommit}:${PLUGIN_SERVICE_PATH}/sdk-patches/dsh-v0.2.0-rc.2-event-sources-settings.patch`]));
+      const manifestBytes = Buffer.from(git(['show', `${plan.sourceCommit}:${PLUGIN_SERVICE_PATH}/${SOURCE_SDK_MANIFEST}`, '--']));
+      const patchBytes = Buffer.from(git(['show', `${plan.sourceCommit}:${PLUGIN_SERVICE_PATH}/sdk-patches/dsh-v0.2.0-rc.2-event-sources-settings.patch`, '--']));
       const { manifest } = readReleaseCandidate(candidateFile, { version: plan.pluginVersion, sourceCommit: plan.sourceCommit, sourceTree: plan.serviceTree, sourceSdk: sourceSdkIdentityFromFiles(manifestBytes, patchBytes) });
       const full = JSON.parse(fs.readFileSync(path.join(process.env.RUNNER_TEMP ?? os.tmpdir(), 'plugin-full-verification.json'), 'utf8'));
       plan.expectedPeer = readArtifactInput(path.join(process.env.RUNNER_TEMP ?? os.tmpdir(), 'plugin-buildr-peer.json')).artifact;
