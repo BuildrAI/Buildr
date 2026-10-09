@@ -46,3 +46,47 @@ test('Integration progress keeps only test identity and safe error metadata', as
   assert.match(output, /"exitCode":1,"signal":"SIGTERM"/);
   assert.equal(output.split('\n').filter(Boolean).length, 1);
 });
+
+test('Archify timeout diagnostics retain the last fixed scenario phase without copying child output', async () => {
+  async function* events(): Promise<any> {
+    yield { type: 'test:complete', data: {
+      file: '/workspace/test/integration/archify-component.test.ts', name: 'Archify lifecycle', details: {
+        duration_ms: 175_000, passed: false, error: {
+          code: 'ERR_TEST_FAILURE', failureType: 'testCodeFailure', cause: {
+            code: 'ERR_ASSERTION', message: [
+              'spawnSync /private/fixture-tool/bin/node ETIMEDOUT',
+              'secret-child-output',
+              '[archify-scenario] 16: passed project create example',
+              '[archify-scenario] 17: start installed renderer',
+              '[archify-scenario] 18: passed secret-child-output',
+              '[archify-scenario] 19: passed constructor',
+              '[archify-scenario] 20: passed __proto__',
+              '[archify-scenario] 99: start component uninstall archify',
+            ].join('\n'),
+          },
+        },
+      },
+    } };
+  }
+  let output = '';
+  for await (const chunk of integrationProgressReporter(events())) output += chunk;
+  const diagnostic = JSON.parse(output.trim().replace('[buildr-integration-progress] ', ''));
+  assert.deepEqual(diagnostic.error.lastPhase, { scope: 'archify', step: 17, status: 'started', operation: 'installed-renderer' });
+  assert.equal(diagnostic.error.childErrorCode, 'ETIMEDOUT');
+  assert.doesNotMatch(output, /secret-child-output|fixture-tool|spawnSync/);
+});
+
+test('Scenario-looking child output is omitted for other files and non-assertion errors', async () => {
+  async function* events(): Promise<any> {
+    for (const [file, code] of [['other.test.ts', 'ERR_ASSERTION'], ['archify-component.test.ts', 'EPERM']]) {
+      yield { type: 'test:complete', data: { file, name: 'read boundary', details: {
+        duration_ms: 1, passed: false, error: { code: 'ERR_TEST_FAILURE', cause: {
+          code, message: '[archify-scenario] 17: start installed renderer\nspawnSync /private/fixture-tool/bin/node ETIMEDOUT',
+        } },
+      } } };
+    }
+  }
+  let output = '';
+  for await (const chunk of integrationProgressReporter(events())) output += chunk;
+  assert.doesNotMatch(output, /lastPhase|childErrorCode|fixture-tool|archify-scenario/);
+});

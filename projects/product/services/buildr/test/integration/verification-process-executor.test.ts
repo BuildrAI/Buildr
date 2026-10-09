@@ -44,6 +44,36 @@ test('Integration progress preserves real Node failure status and reports every 
   assert.doesNotMatch(result.stdout, /expected|actual|AssertionError|1 !== 2/);
 });
 
+test('Real Archify child timeout exposes only the last fixed scenario phase and native code', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-archify-timeout-reporter-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const fixture = path.join(root, 'archify-component.test.ts');
+  const childSource = "process.stderr.write('secret-child-output\\n[archify-scenario] 17: start installed renderer\\n'); setInterval(() => {}, 1000);";
+  fs.writeFileSync(fixture, [
+    "import test from 'node:test';",
+    "import assert from 'node:assert/strict';",
+    "import { spawnSync } from 'node:child_process';",
+    "test('Archify child timeout boundary', () => {",
+    `  const result = spawnSync(process.execPath, ['-e', ${JSON.stringify(childSource)}], { encoding: 'utf8', timeout: 3000 });`,
+    "  assert.equal(result.status, 0, `${result.error?.message ?? ''}\\n${result.stdout}\\n${result.stderr}`);",
+    "});",
+  ].join('\n'));
+  const reporter = pathToFileURL(path.resolve(import.meta.dirname, '../verification/integration-progress-reporter.ts')).href;
+  const result = spawnSync(process.execPath, ['--test', `--test-reporter=${reporter}`, fixture], {
+    encoding: 'utf8', timeout: 15_000, env: { ...process.env, NODE_TEST_CONTEXT: undefined },
+  });
+  assert.ifError(result.error);
+  assert.equal(result.status, 1);
+  const lines = result.stdout.trim().split('\n').map(line => JSON.parse(line.replace('[buildr-integration-progress] ', '')));
+  const failure = lines.find(line => line.name === 'Archify child timeout boundary' && line.status === 'failed');
+  assert.equal(failure?.error.causeCode, 'ERR_ASSERTION');
+  assert.equal(failure?.error.childErrorCode, 'ETIMEDOUT');
+  assert.deepEqual(failure?.error.lastPhase, { scope: 'archify', step: 17, status: 'started', operation: 'installed-renderer' });
+  assert.doesNotMatch(result.stdout, /secret-child-output|spawnSync|setInterval|AssertionError/);
+  assert.equal(result.stdout.includes(root), false);
+  assert.equal(result.stdout.includes(process.execPath), false);
+});
+
 test('Real failed file and earlier test identities remain visible before a file timeout', t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-integration-timeout-reporter-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

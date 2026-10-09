@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import test from 'node:test';
+import test, { after } from 'node:test';
 
 import { createReleaseExecutionBinding, validateReleaseExecutionBinding } from '../../tools/release/release-execution-binding.ts';
 import { abandonReleaseSelection, cleanupReleaseSelection, createReleaseSelection, freezeReleaseSelection, inspectReleaseSelection, inspectReleaseSelectionCleanup, reconcileReleaseSelectionWithMain, releaseSelectionKey, reopenReleaseSelection, selectionIdentity, selectReleaseCommit } from '../../tools/release/release-selection.ts';
@@ -19,25 +19,49 @@ function git(repo: any, ...args: any[]): any  {
   return result.stdout.trim();
 }
 
+let baseTemplate: any = null;
+const templateRoots: string[] = [];
+after(() => { for (const root of templateRoots) fs.rmSync(root, { recursive: true, force: true }); });
+
+function frozenBaseTemplate(): any {
+  if (baseTemplate) return baseTemplate;
+  const root: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-release-selection-base-'));
+  templateRoots.push(root);
+  const remote: any = path.join(root, 'remote.git');
+  git(root, 'init', '--bare', remote);
+  git(root, 'clone', remote, 'seed');
+  const seed: any = path.join(root, 'seed');
+  git(seed, 'checkout', '-b', 'dev');
+  git(seed, 'config', 'user.name', 'Buildr Test');
+  git(seed, 'config', 'user.email', 'buildr@example.com');
+  fs.mkdirSync(path.join(seed, 'projects/product'), { recursive: true });
+  fs.writeFileSync(path.join(seed, 'projects/product/version.txt'), 'baseline\n');
+  git(seed, 'add', '.'); git(seed, 'commit', '-m', 'baseline');
+  const baseline: any = git(seed, 'rev-parse', 'HEAD');
+  fs.writeFileSync(path.join(seed, 'projects/product/version.txt'), 'dev selected\n');
+  git(seed, 'commit', '-am', 'selected dev content');
+  const source: any = git(seed, 'rev-parse', 'HEAD');
+  git(seed, 'push', '-u', 'origin', 'dev');
+  baseTemplate = { root, remote, baseline, source };
+  return baseTemplate;
+}
+
 function fixture(version: any, targets?: any): any  {
   const selectionId = targets?.selectionId;
   const key = releaseSelectionKey({ version, selectionId });
+  const template: any = frozenBaseTemplate();
   const root: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-release-selection-'));
   const remote: any = path.join(root, 'remote.git');
-  git(root, 'init', '--bare', remote);
-  git(root, 'clone', remote, 'retained');
+  // Copy only the frozen bare graph. Every case owns its objects, refs and
+  // actual clone; no linked-worktree, selection or provider state is reused.
+  fs.cpSync(template.remote, remote, { recursive: true, errorOnExist: true, force: false });
+  git(root, 'clone', '--branch', 'dev', remote, 'retained');
   const retained: any = path.join(root, 'retained');
-  git(retained, 'checkout', '-b', 'dev');
   git(retained, 'config', 'user.name', 'Buildr Test');
   git(retained, 'config', 'user.email', 'buildr@example.com');
-  fs.mkdirSync(path.join(retained, 'projects/product'), { recursive: true });
-  fs.writeFileSync(path.join(retained, 'projects/product/version.txt'), 'baseline\n');
-  git(retained, 'add', '.'); git(retained, 'commit', '-m', 'baseline');
-  const baseline: any = git(retained, 'rev-parse', 'HEAD');
-  fs.writeFileSync(path.join(retained, 'projects/product/version.txt'), 'dev selected\n');
-  git(retained, 'commit', '-am', 'selected dev content');
   const source: any = git(retained, 'rev-parse', 'HEAD');
-  git(retained, 'push', '-u', 'origin', 'dev');
+  const baseline: any = git(retained, 'rev-parse', 'HEAD^');
+  assert.equal(source, template.source); assert.equal(baseline, template.baseline);
   const repo: any = path.join(root, 'task-worktree');
   const taskBranch: any = `codex/release-${key}`;
   git(retained, 'worktree', 'add', '-b', taskBranch, repo, baseline);

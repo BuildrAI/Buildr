@@ -516,6 +516,7 @@ test('项目与服务共享实际仓库时两种选择顺序均去重，冲突�
   git(projectRoot, ['init', '--initial-branch=main']);
   git(projectRoot, ['config', 'user.name', 'Buildr Test']);
   git(projectRoot, ['config', 'user.email', 'buildr-test@example.com']);
+  git(projectRoot, ['config', 'core.autocrlf', 'true']);
   fs.writeFileSync(path.join(projectRoot, 'base.txt'), 'project baseline\n');
   const documentPath = 'knowledge/current.md', retainedContent = '# 保留项目资料\n\n当前保留正文。\n';
   fs.mkdirSync(path.join(projectRoot, 'knowledge'));
@@ -523,6 +524,9 @@ test('项目与服务共享实际仓库时两种选择顺序均去重，冲突�
   git(projectRoot, ['add', '--', 'base.txt', documentPath]);
   git(projectRoot, ['-c', 'commit.gpgSign=false', 'commit', '-m', 'project baseline']);
   git(projectRoot, ['branch', 'alternative']);
+  const differentRoot = path.join(root, 'repositories/different');
+  fs.mkdirSync(differentRoot, { recursive: true });
+  git(differentRoot, ['init', '--initial-branch=main']);
   let serviceBranch = 'main';
   const provider = registerGitWorktreeProvider({
     assertCanonicalTaskWorkspace: () => root,
@@ -542,7 +546,33 @@ test('项目与服务共享实际仓库时两种选择顺序均去重，冲突�
     assert.equal(created.repositories[0].entityType, 'project');
     assert.equal(new Set(created.repositories.map(item => item.sourceRepository)).size, 1);
     assert.equal(created.repositories.filter(item => item.sourceRepository === projectRoot).length, 1);
+    const stored = provider.readGitWorktreeEvidence(root, taskId)!;
+    const alternateSource = path.join(path.dirname(projectRoot), path.basename(projectRoot).toUpperCase());
+    if (fs.existsSync(alternateSource)) {
+      const sourceStat = fs.statSync(projectRoot, { bigint: true }), aliasStat = fs.statSync(alternateSource, { bigint: true });
+      assert.equal(aliasStat.dev, sourceStat.dev); assert.equal(aliasStat.ino, sourceStat.ino);
+      const aliased = { ...stored.evidence, repositories: stored.evidence.repositories.map(item => ({ ...item, sourceRepository: alternateSource })) };
+      provider.writeGitWorktreeEvidence(root, aliased);
+      assert.equal(provider.inspectGitWorktrees({ workspaceRoot: root, taskId }).status, 'ready');
+    }
+    const evidenceBeforeConflict = fs.readFileSync(stored.file);
+    const differentEvidence = {
+      ...stored.evidence, repositories: stored.evidence.repositories.map(item => ({ ...item, sourceRepository: differentRoot })),
+    };
+    assert.throws(() => provider.writeGitWorktreeEvidence(root, differentEvidence), { code: 'git_worktree_evidence_conflict' });
+    assert.deepEqual(fs.readFileSync(stored.file), evidenceBeforeConflict);
+    const differentFile = path.join(differentRoot, '.git/buildr/task-worktrees', `${taskId}.json`);
+    assert.equal(fs.existsSync(differentFile), false);
+    fs.mkdirSync(path.dirname(differentFile), { recursive: true });
+    fs.linkSync(stored.file, differentFile);
+    assert.equal(fs.statSync(differentFile, { bigint: true }).ino, fs.statSync(stored.file, { bigint: true }).ino);
+    assert.throws(() => provider.writeGitWorktreeEvidence(root, differentEvidence), { code: 'git_worktree_evidence_conflict' });
+    assert.deepEqual(fs.readFileSync(stored.file), evidenceBeforeConflict);
+    assert.deepEqual(fs.readFileSync(differentFile), evidenceBeforeConflict);
+    fs.unlinkSync(differentFile);
     const candidateDocument = path.join(String(created.repositories[0].checkoutPath), documentPath);
+    const candidateOriginal = fs.readFileSync(candidateDocument);
+    assert.ok(candidateOriginal.includes(Buffer.from('\r\n')));
     const candidateContent = `# 候选项目资料\n\n选择顺序 ${index} 的当前正文。\n`;
     fs.writeFileSync(candidateDocument, candidateContent);
     const reader = createTaskProjectDocumentReader(
@@ -554,10 +584,11 @@ test('项目与服务共享实际仓库时两种选择顺序均去重，冲突�
     assert.equal(document.provenance, 'task-worktree-candidate');
     assert.equal(document.content, candidateContent);
     assert.equal(fs.readFileSync(path.join(projectRoot, documentPath), 'utf8'), retainedContent);
-    fs.writeFileSync(candidateDocument, retainedContent);
+    // Restore the checkout's own bytes, including Git's configured CRLF conversion.
+    fs.writeFileSync(candidateDocument, candidateOriginal);
     const heads = Object.fromEntries(created.repositories.map(item => [String(item.selector), git(String(item.checkoutPath), ['rev-parse', 'HEAD'])]));
     const cleaned = provider.cleanupGitWorktrees({ workspaceRoot: root, taskId, allowCompleted: true, cleanupDelivery: { expectedSources: heads, deliveredRefs: heads } });
-    assert.equal(cleaned.status, 'cleaned');
+    assert.equal(cleaned.status, 'cleaned', cleaned.diagnostic?.code);
   });
   serviceBranch = 'alternative';
   const before = git(projectRoot, ['show-ref']);

@@ -467,7 +467,7 @@ export function registerGitWorktreeProvider(runtime: GitWorktreeRuntime): GitWor
     const normalized = validateEvidence(evidence, canonicalRoot, evidence.taskId);
     const file = evidencePathForRepositories(evidence.taskId, normalized.repositories);
     const current = readGitWorktreeEvidence(canonicalRoot, evidence.taskId, { optional: true });
-    if (current && current.file !== file) throw Object.assign(new Error('工作树证据锚点与当前组来源不符，不能迁移或覆盖。'), { code: 'git_worktree_evidence_conflict' });
+    if (current && !sameFilesystemPath(path.dirname(current.file), path.dirname(file))) throw Object.assign(new Error('工作树证据锚点与当前组来源不符，不能迁移或覆盖。'), { code: 'git_worktree_evidence_conflict' });
     assertLiteralWorktreePath(file);
     runtime.atomicWriteJson(file, normalized);
     return { file, evidence: normalized };
