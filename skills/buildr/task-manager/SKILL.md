@@ -21,6 +21,8 @@ description: 在已初始化的 Buildr 工作空间中，用户授权修复、�
 
 确认当前工作空间（Workspace）、任务标识、授权范围及真实目标。已有任务缺少当前记录时先 `task inspect`，刚读取或前一步成功写入返回的完整记录可直接接续。Task Record自身结构有效时始终返回完整记录；响应中的`referenceDiagnostics`只说明当前Project、Service或Change可用性，不属于Task业务事实。`todo`只保存尚未启动的意向；`active`表示已开始。子任务只用于可独立说明目标、范围及成果的交付，临时智能体分工不创建子任务。
 
+原型先于正式任务但已形成同一目标的源码隔离位置时，接续 `task-triage` 核对的稳定隔离标识；确认未被其他目标占用后沿用该标识创建任务，不因进入实施阶段另起名称，不补造原型期间的开始历史。已有匹配任务继续接续该任务。
+
 新选择的任务标识（Task ID）默认使用简短、稳定的语义名称，不主动添加日期；已有任务标识（Task ID）及用户指定的合法名称继续沿用。同名但不同的任务先核对归属，再用简短语义后缀区分，不覆盖或借用已有任务，不为去掉日期另建记录。
 
 使用已有动作：
@@ -34,7 +36,7 @@ buildr task complete <id> --summary <text> --expected-record <recordDigest> [--p
 buildr task abandon <id> --reason <text> --expected-record <recordDigest> --target <workspace> --json
 ```
 
-`intent`（目标）表达一句话级的任务目标与入口定位，不复述完整需求；不得写成标题复述、内部步骤清单或长篇正文。整体问题、需求、范围和完成依据由唯一任务说明（Task Brief）承载，不委托关联变更说明（Change Brief）。任务可以关联零到多个变更（Change）；各 Change `brief.md` 只解释具体规范变化并引用同一任务正文，不复制同义需求，也不宣称变更只能被一个任务引用。
+`intent`（目标）表达一句话级的任务目标与入口定位，不复述完整需求；不得写成标题复述、内部步骤清单或长篇正文。整体问题、需求、范围和完成依据由任务记录中的唯一任务说明（Task Brief）承载。任务可以关联零到多个变更（Change），多个任务也可以引用同一变更；具体变化由已有 proposal、design、specs 和 tasks 表达，按需要引用任务正文，不生成或维护额外 `brief.md`。旧文件与链接保留普通阅读，不自动迁移或复制同义需求。
 
 ## 形成与保存任务说明
 

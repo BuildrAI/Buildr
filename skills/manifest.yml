@@ -18,7 +18,7 @@ skills:
         version: 1
         mode: optional
       - capability: buildr.current-knowledge-maintenance
-        version: 3
+        version: 4
         mode: optional
       - capability: buildr.git-worktree-provider
         version: 1
@@ -209,7 +209,7 @@ skills:
     runtimePath: current-knowledge-maintenance
     provides:
       - capability: buildr.current-knowledge-maintenance
-        version: 3
+        version: 4
     requires:
       - capability: buildr.terminology-governance
         version: 1
@@ -397,6 +397,10 @@ contracts:
     version: 4
     path: contracts/buildr/task-record/v4.md
     description: 管理主工作空间中的任务说明、顶层事实及本机复盘文档摘要与决定状态。
+  - id: buildr.current-knowledge-maintenance
+    version: 4
+    path: contracts/buildr/current-knowledge-maintenance/v4.md
+    description: 按明确范围建设、检查与维护代码地图、技术图和解释文档，不维护变更说明文件。
 bindings:
   - capability: buildr.terminology-governance
     version: 1
@@ -422,4 +426,7 @@ bindings:
   - capability: buildr.task-record
     version: 4
     provider: task-manager
+  - capability: buildr.current-knowledge-maintenance
+    version: 4
+    provider: current-knowledge-maintenance
 workspaceId: f2f40b71-2382-5906-82bd-76a7927b59f3

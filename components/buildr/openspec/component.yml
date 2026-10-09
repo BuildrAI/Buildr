@@ -1,7 +1,7 @@
 schemaVersion: buildr.component/v1
 id: openspec
 kind: integration
-version: "1.13.0+buildr.4"
+version: "1.13.0+buildr.5"
 source: buildr
 upstream:
   name: "@fission-ai/openspec"
@@ -24,11 +24,11 @@ contributions:
       mode: required
     - skill: openspec-propose
       capability: buildr.current-knowledge-maintenance
-      version: 3
+      version: 4
       mode: required
     - skill: openspec-update-change
       capability: buildr.current-knowledge-maintenance
-      version: 3
+      version: 4
       mode: required
     - skill: openspec-apply-change
       capability: buildr.task-record
@@ -36,7 +36,7 @@ contributions:
       mode: required
     - skill: openspec-apply-change
       capability: buildr.current-knowledge-maintenance
-      version: 3
+      version: 4
       mode: required
 integrity:
   - skills/openspec/openspec-explore=sha256-500fca4e0ae48c58f11af0467d0ec6adc48912e2236cbd4d7eda6d63771f7754
@@ -48,8 +48,8 @@ integrity:
   - skills/buildr/openspec-contract-guard=sha256-420b5dff453b4077ff25a06c2518a9b9137f924926a8f4cd8e06aa8619a3a3e9
   - commands/buildr/openspec/manifest.yml=sha256-34633130abe5ef0e88d83ab205ce3cd46f962c3cc93fba4019b49fd3ae939ec0
   - components/buildr/openspec/contributions/openspec-explore-terminology.md=sha256-ca6a33bc8afad93f80865c2147832b214159639fca774568e8736959f009b66c
-  - components/buildr/openspec/contributions/openspec-propose-sidebar.md=sha256-26d2c6d91059905ab809228015c3ce82aa2d19bb0718675d4d87f5fa54ce97a2
-  - components/buildr/openspec/contributions/openspec-update-sidebar.md=sha256-b9987a356fdd26b6be3292f297fecc11a088598343de2ddd0f094cb980aa5d1d
-  - components/buildr/openspec/contributions/openspec-apply-sidebar.md=sha256-dcf930af2298d913a5d628dfd5cd95d04b3cf60e1ee0f77e3ec5016ce7f31158
+  - components/buildr/openspec/contributions/openspec-propose-sidebar.md=sha256-d856eea379af1cde80bda2ec4661f073ad0148b5c3ebf23edae789c6ec92c88f
+  - components/buildr/openspec/contributions/openspec-update-sidebar.md=sha256-72712ca8e2e0b8174aeb9add20c3fe137cb62062b02e6ed1e2ea7d104fcc75b8
+  - components/buildr/openspec/contributions/openspec-apply-sidebar.md=sha256-397a8ea5822f44caf73f54b24cc767d07fb09a78a1d1c98b30654859d38bccfc
   - components/buildr/openspec/contributions/openspec-sync-converge.md=sha256-34121c704785bfe6db81bfd73584763a95d6252cd5f51b3f7bc09cba14183363
-  - components/buildr/openspec/contributions/openspec-archive-converge.md=sha256-fef81fa991a72a58ca8cb8461d48e9db3e881803178f2fc8df9ed8b7a5556554
+  - components/buildr/openspec/contributions/openspec-archive-converge.md=sha256-baa7f9389a6914d9bdc46cea446721e76036cb020e7ded83eb53a5c6b4b72af7

@@ -21,6 +21,8 @@ buildr worktree cleanup <task-id> --target <canonical-workspace> --expected-sour
 
 总目录已确认非 Git、其中存在明确登记的独立代码库（Repository）时，显式选择实际参与的项目（Project）或服务（Service），仅在各自规范来源层级创建工作树（Worktree）；共享同一来源去重，不初始化总目录 Git，不自动纳入其他代码库（Repository）。资料继续在真实位置维护，不复制进检出目录。来源缺失、损坏或 Git 身份未知不能当作非 Git；只选择健康来源的隔离按自身事实继续。仅子代码库（Repository）的组目录不是完整工作空间（Workspace），依赖完整根的开发预览（Preview）仍按自身范围判断。
 
+任务分流已确认原型（Prototype）源码位置属于同一目标时，以其稳定隔离标识执行 `inspect`，复用返回的实际路径和分支（Branch），保留未提交成果；原型到正式开发不构成重新创建或要求工作目录干净的理由。正式任务登记仍由 `task-manager` 负责，原型存在或提供者证据不证明正式任务已登记；归属冲突继续按现有停止条件处理。
+
 新选择的任务标识（Task ID）默认使用简短、稳定的语义名称，不主动添加日期；已有任务标识（Task ID）及用户指定的合法名称继续沿用，不截去日期或自动重命名。同名但不同的任务先核对归属，再用简短语义后缀区分，不复用他人位置。OpenSpec 归档日期只属于归档目录，不改变工作树（Worktree）或分支名称，也不替代交付核验和清理条件。
 
 同一任务涉及多个代码库（Repository）时，沿用同一任务标识（Task ID）作为工作树（Worktree）组的统一名称，不为每个代码库（Repository）另起任务标识（Task ID）。创建时各代码库（Repository）使用同一次任务计划已明确的分支（Branch）名称；实际检出目录（Checkout Path）仍保留登记源的规范相对层级，如 `<workspace-root>/.worktrees/<task-id>/<sourcePath>`，不把每个检出目录（Checkout Path）的末级名称改为任务标识（Task ID）。跨库关联由任务标识（Task ID）及已核对的提供者证据（Provider Evidence）确定，不能仅凭目录或分支（Branch）名称建立。接续已有外部工作树（Worktree）时保留已核对的实际路径与分支（Branch），不为统一名称自动迁移或重命名。

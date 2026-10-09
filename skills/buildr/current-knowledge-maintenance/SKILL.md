@@ -7,11 +7,11 @@ description: 理解或探索项目与服务、建设结构化项目知识，检�
 
 帮助人掌握项目的目标、结构、关键行为和设计取舍，并由智能体（Agent）按需核实最新实现。建设与维护代码地图（Code Map）、技术图（Technical Diagram）和解释文档（Explanatory Documentation）时，依据正式规范、当前代码、登记配置和已确认决定，按理解目标选择表达方式，没有固定生成顺序。
 
-本技能（Skill）提供 `buildr.current-knowledge-maintenance/v3`。通过其他能力调用时读取已解析的协作约定（Capability Contract）；直接用户请求同样按以下步骤执行，不要求先有 OpenSpec 变更。
+本技能（Skill）提供 `buildr.current-knowledge-maintenance/v4`。通过其他能力调用时读取已解析的协作约定（Capability Contract）；直接用户请求同样按以下步骤执行，不要求先有 OpenSpec 变更。
 
 按用户意图选择工作：了解或追问时解释当前事实；首次建立时形成整体认识和主干主题；检查时指出有依据的差异；维护时更新已授权且实际受影响的成果。它们共享同一组知识文件与来源，不各建一套内容。
 
-本技能（Skill）只承载可长期复用、有当前事实来源的知识与具体变更说明（Change Brief）；保留 v3 已授权 Change Brief 创建、刷新与一致性检查保证。独立任务说明（Task Brief）的形成、保存与接续由 `task-manager` 通过任务记录（Task Record）的 `brief` 字段负责，不要求有变更（Change）或知识影响。方案、实施、交付及专业审查、验证报告不默认收纳到 `knowledge/`；已有任务文档位于该目录时可显式引用原文，保留位置与历史。过程成果确有长期价值且维护范围已获授权时，核对来源后维护对应当前知识，不复制整份报告、执行历史或任务状态。
+本技能（Skill）只承载可长期复用、有当前事实来源的知识。不再创建、刷新或要求 Buildr 增强的 `brief.md`；历史文件保留普通阅读，不批量改写。独立任务说明（Task Brief）的形成、保存与接续由 `task-manager` 通过任务记录（Task Record）的 `brief` 字段负责，不要求有变更（Change）或知识影响。方案、实施、交付及专业审查、验证报告不默认收纳到 `knowledge/`；已有任务文档位于该目录时可显式引用原文，保留位置与历史。过程成果确有长期价值且维护范围已获授权时，核对来源后维护对应当前知识，不复制整份报告、执行历史或任务状态。
 
 ## 1. 确定本次范围
 
@@ -47,7 +47,7 @@ OpenSpec 指导规范建设，`code-architecture` 指导代码建设；本技能
 
 复用当前可用的代码分析、技术图制作和文档编写能力；按对应能力的真实适用条件使用，不把它们全部声明为每次执行的前置依赖。遇到新术语、歧义、定义或作用域变化时，才读取已绑定术语治理（Terminology Governance）提供者；普通维护沿用已确认术语。专项能力不可用只影响实际依赖它的结论。
 
-OpenSpec 的 `assess|reconcile|inspect` 调用读取[变更协作与结果](references/change-collaboration.md)。独立 `maintain` 不创建或要求 OpenSpec 变更、`brief.md` 或 `.buildr/knowledge-impact.yml`；若拟写内容实际改变产品承诺，交回变更处理并保留其他已确认成果。
+OpenSpec 的 `assess|reconcile|inspect` 调用读取[变更协作与结果](references/change-collaboration.md)。这些操作均不创建或要求 `brief.md`；独立 `maintain` 也不创建或要求 OpenSpec 变更或 `.buildr/knowledge-impact.yml`；若拟写内容实际改变产品承诺，交回变更处理并保留其他已确认成果。
 
 ## 5. 验证实际成果
 
