@@ -25,6 +25,23 @@ import { markdownImageQuery, type MarkdownImageContext } from '../../../lib/mark
 type ReadOptions = Pick<RequestInit, 'signal'>;
 export type TaskProjectDocument = WorkspaceDocument & { provenance: string; imageContext?: MarkdownImageContext };
 
+export type ChangeArtifact = {
+  path: string;
+  exists: boolean;
+  content?: string;
+  capability?: string;
+};
+
+export type ChangePayload = {
+  name: string;
+  artifacts: {
+    proposal: ChangeArtifact;
+    design: ChangeArtifact;
+    specs: ChangeArtifact[];
+    tasks: ChangeArtifact;
+  };
+};
+
 export function taskMaterialImage(workspaceId: string | null, taskId: string, document: TaskMaterialDocument, href: string): string | null {
   if (!workspaceId || !taskId || !document.id || !document.exists || document.diagnostic || !document.content?.trim() || !document.actualDigest || document.actualDigest !== document.imageContext?.documentDigest) return null;
   const query = markdownImageQuery(document.source.path, href, document.imageContext);

@@ -175,7 +175,7 @@ buildr help assets
 
 材料 `inspect` 返回 `buildr.task-materials-result/v2`，包含 `materialsDigest: absent|sha256-<64hex>`、清单、逐项 `content`、`actualDigest`、来源（Provenance）及局部诊断；本机正文写入返回 `buildr.task-materials-write-result/v2`。`record` 和 `write` 使用同一逐任务独占锁（Exclusive Lock），锁内重读并比较各自版本，原子发布（Atomic Publication）；冲突需重读判断。旧失效引用可安全修改元数据或解除，不阻止无关材料。读取不创建目录或清单。任务限定超文本传输协议（HTTP）入口为 `GET /tasks/:taskId/materials`、`POST /tasks/:taskId/materials`（`{expectedCurrent,documents}`）及 `POST /tasks/:taskId/materials/documents`（`{path,content,expectedDocumentDigest}`）；写入仍校验同源、会话（Session）、闭合字段与有界正文。记录说明通过已有任务创建/更新入口的 `brief` 字段维护。
 
-新变更说明使用 `[任务说明](@task/<task-id>)` 进入当前工作空间的稳定任务正文；任务记录中的项目文档引用使用明确 `projects/<project>/<path>`。导入时可证明的旧相对文档链接转为明确引用，未知链接报告诊断，不扩大文件读取范围；旧文件和归档内的原链接继续保持文件语义。
+变更的 proposal、design 等标准材料可按需要使用 `[任务说明](@task/<task-id>)` 进入当前工作空间的稳定任务正文；Buildr 不再生成、更新或专用展示额外 `brief.md`，已有历史文件仍按普通项目文档读取。任务记录中的项目文档引用使用明确 `projects/<project>/<path>`。导入时可证明的旧相对文档链接转为明确引用，未知链接报告诊断，不扩大文件读取范围；旧文件和归档内的原链接继续保持文件语义。
 
 `task commits` 先确认任务存在，再读取其项目、服务、关联变更对应项目与已知任务工作树（Worktree）中的真实代码库（Repository）；不会扫描任意目录。没有项目、服务或关联变更的工作空间级任务（Workspace-only Task），只检查任务所属主工作空间（Canonical Workspace）根目录本身的 Git 代码库，不向父目录寻找替代来源。关联依据是实际提交说明（Commit Message）末尾的 `Buildr-Task: <taskId>`，正文普通提及不算关联。查询按真实代码库和完整哈希值（Hash）去重，读取本机当前可达引用；JSON 使用 `buildr.task-commits/v1`，必须结合 `status`、`coverage` 与 `diagnostics` 判断结果完整性。部分结果不能表述为确定的零提交，读取成功也不代表任务完成。旧提交不自动补尾注或改写历史。
 

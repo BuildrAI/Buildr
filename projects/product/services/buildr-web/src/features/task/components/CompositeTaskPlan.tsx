@@ -3,9 +3,9 @@ import { taskDocumentLabel, taskDocumentTarget, type TaskDocumentItem, type Task
 import type { TaskMaterialsState } from '../task-materials';
 import { Alert, Select } from 'antd';
 import type { TaskRecord } from '../../../../build/generated/task-dto';
-import type { TaskBriefState } from '../hooks/useTaskArtifacts';
+import type { TaskChangeState } from '../hooks/useTaskArtifacts';
 
-export function CompositeTaskPlan({ record, briefs, documents, materials, selected = 'record:brief', onSelect, renderContent }: { record: TaskRecord; briefs: TaskBriefState[]; documents: TaskDocumentItem[]; materials: TaskMaterialsState; selected?: string; onSelect?(key: string): void; renderContent(target: TaskReadTarget): ReactNode }) {
+export function CompositeTaskPlan({ record, changes, documents, materials, selected = 'record:brief', onSelect, renderContent }: { record: TaskRecord; changes: TaskChangeState[]; documents: TaskDocumentItem[]; materials: TaskMaterialsState; selected?: string; onSelect?(key: string): void; renderContent(target: TaskReadTarget): ReactNode }) {
   const entries = documents.filter(item => item.stage === 'design');
   const options = [{ key: 'record:brief', label: '任务说明', target: { kind: 'brief', title: '任务说明' } as TaskReadTarget }, ...entries.map(item => ({ key: item.key, label: taskDocumentLabel(item, entries), target: taskDocumentTarget(item) }))];
   const active = options.find(item => item.key === selected) || options[0];
@@ -16,7 +16,7 @@ export function CompositeTaskPlan({ record, briefs, documents, materials, select
     {!readingBrief && <>
       {materials.loading && active.target.kind !== 'material' && <Alert type="info" message="材料关联正在重新核对，当前显示上次读取的内容。" />}
       {materials.error && active.target.kind !== 'material' && <Alert type="warning" message={`任务材料读取失败：${materials.error}`} description="材料关联的新版本尚未确认。请刷新任务后重试。" />}
-      {briefs.map(item => item.kind === 'missing' ? <Alert key={item.key} type="warning" message={item.message} /> : item.kind === 'ready' && !item.change.brief.exists ? <Alert key={item.key} type="warning" message={`${item.key} 的变更说明当前缺失。`} /> : null)}
+      {changes.map(item => item.kind === 'missing' ? <Alert key={item.key} type="warning" message={item.message} /> : null)}
       {materials.data?.diagnostics.map((item, index) => <Alert key={index} type="warning" message={item.message} />)}
     </>}
     {renderContent(active.target)}

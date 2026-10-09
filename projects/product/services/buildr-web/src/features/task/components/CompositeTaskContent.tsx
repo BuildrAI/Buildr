@@ -9,7 +9,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useResourcePreview } from '../../../app/resource-preview';
 import type { TaskDetailResponse } from '../../../../build/generated/task-dto';
 import type { ParentCoordinationResult } from './parentCoordination';
-import type { TaskBriefState } from '../hooks/useTaskArtifacts';
+import type { TaskChangeState } from '../hooks/useTaskArtifacts';
 import { CreatableResourceSelect } from '../../../components/CreatableResourceSelect';
 import { TaskTypeBadge } from '../../../components/TaskTypeBadge';
 import { taskApi } from '../api/task-api';
@@ -17,8 +17,8 @@ import { CompositeTaskPlan } from './CompositeTaskPlan';
 import { formatDateTime, taskStatusLabel } from '../../../lib/taskLabels';
 import './composite-task.css';
 
-type Props = { choices: Record<string, string>; choose(key: string, value: string): void; refreshToken: number; task: TaskDetailResponse; coordination: ParentCoordinationResult | null; loading: boolean; briefs: TaskBriefState[]; documents: TaskDocumentItem[]; materials: TaskMaterialsState; renderContent(target: TaskReadTarget): ReactNode; refresh(): Promise<void>; onEnd(): void; href(path: string): string };
-export function CompositeTaskContent({ task, choices, choose, refreshToken, coordination, loading, briefs, documents, materials, renderContent, refresh, onEnd, href }: Props) {
+type Props = { choices: Record<string, string>; choose(key: string, value: string): void; refreshToken: number; task: TaskDetailResponse; coordination: ParentCoordinationResult | null; loading: boolean; changes: TaskChangeState[]; documents: TaskDocumentItem[]; materials: TaskMaterialsState; renderContent(target: TaskReadTarget): ReactNode; refresh(): Promise<void>; onEnd(): void; href(path: string): string };
+export function CompositeTaskContent({ task, choices, choose, refreshToken, coordination, loading, changes, documents, materials, renderContent, refresh, onEnd, href }: Props) {
   const previews = useResourcePreview();
   const location = useLocation();
   const navigate = useNavigate();
@@ -63,7 +63,7 @@ export function CompositeTaskContent({ task, choices, choose, refreshToken, coor
       {tab !== 'acceptance' && tab !== 'commits' && coordination?.diagnostic && <Alert type="warning" message={coordination.diagnostic.message} action={<Button onClick={() => void refresh()}>重试</Button>} />}
       {tab === 'overview' && <>
         {loading ? <Spin size="small" /> : coordination?.children && <div className="composite-task-counts"><button onClick={() => selectCount('all')}><b>{children.length}</b>项子任务</button>{(['completed', 'active', 'todo', 'abandoned'] as const).filter(status => status !== 'abandoned' || children.some(child => child.status === status)).map(status => <button key={status} onClick={() => selectCount(status)}><b>{children.filter(child => child.status === status).length}</b>{taskStatusLabel(status)}</button>)}</div>}
-        <CompositeTaskPlan record={task.record} briefs={briefs} documents={documents} materials={materials} selected={choices['composite:plan']} onSelect={value => choose('composite:plan', value)} renderContent={renderContent} />
+        <CompositeTaskPlan record={task.record} changes={changes} documents={documents} materials={materials} selected={choices['composite:plan']} onSelect={value => choose('composite:plan', value)} renderContent={renderContent} />
       </>}
       {tab === 'children' && <>
         <div className="composite-task-toolbar"><Input aria-label="搜索子任务" placeholder="搜索子任务" value={query} onChange={event => setQuery(event.target.value)} /><Select aria-label="子任务状态" value={filter} onChange={setFilter} options={[{ value: 'all', label: '全部状态' }, ...['completed', 'active', 'todo', 'abandoned'].map(value => ({ value, label: taskStatusLabel(value) }))]} />{!terminal && <div className="composite-task-picker"><CreatableResourceSelect label="关联子任务" placeholder="关联子任务" options={options} value={null} disabled={saving || task.record.status !== 'active'} loading={optionsLoading} onOpen={() => void loadOptions()} onChange={value => void associate(value as string)} /></div>}</div>

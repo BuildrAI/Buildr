@@ -136,6 +136,52 @@ function observedFile(root: string, checkoutPath: string, branch: string): strin
   return file;
 }
 
+test('原型先于正式任务时沿用隔离标识并保留同一工作树的未提交成果', (t) => {
+  const root = createGitWorkspace(t);
+  const taskId = 'prototype-continuation';
+  const inspectTask = () => JSON.parse(command(productRoot, process.execPath,
+    [cli, 'task', 'inspect', taskId, '--target', root, '--json'], 1).stdout);
+  assert.equal(inspectTask().diagnostic.code, 'task_record_not_found');
+
+  const prototype = buildr(createArgs(root, taskId));
+  const checkout = prototype.repositories[0].checkoutPath;
+  const evidence = fs.readFileSync(prototype.evidencePath);
+  const source = 'prototype implementation in progress\n';
+  const page = '<!doctype html><!-- buildr:ui-prototype --><html><body>confirmed version</body></html>\n';
+  fs.writeFileSync(path.join(checkout, 'base.txt'), source);
+  fs.writeFileSync(path.join(checkout, 'prototype.html'), page);
+  const status = git(checkout, ['status', '--porcelain']);
+  const inventory = git(root, ['worktree', 'list', '--porcelain']);
+
+  const input = path.join(root, '.buildr', 'local', 'prototype-task-input.md');
+  fs.mkdirSync(path.dirname(input), { recursive: true });
+  fs.writeFileSync(input, '# 接续确认原型\n\n在原型实际位置完成同一目标，保留现有源码与确认页面。\n');
+  const registered = JSON.parse(command(productRoot, process.execPath, [
+    cli, 'task', 'create', taskId, '--title', '接续确认原型', '--intent', '在既有隔离位置完成同一目标。',
+    '--status', 'active', '--brief-file', input, '--target', root, '--json',
+  ]).stdout);
+  fs.unlinkSync(input);
+  assert.equal(registered.status, 'created');
+  assert.equal(registered.record.taskId, taskId);
+  assert.match(registered.record.brief, /保留现有源码与确认页面/);
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const continued = buildr(['worktree', 'inspect', taskId, '--target', root, '--json']);
+    assert.equal(continued.status, 'ready');
+    assert.equal(continued.evidenceSource, 'stored');
+    assert.equal(continued.repositories[0].checkoutPath, checkout);
+    assert.equal(continued.repositories[0].branch, prototype.repositories[0].branch);
+    assert.equal(continued.repositories[0].head, prototype.repositories[0].head);
+    assert.equal(continued.repositories[0].clean, false);
+    assert.deepEqual(continued.effects, []);
+  }
+  assert.equal(git(root, ['worktree', 'list', '--porcelain']), inventory);
+  assert.equal(git(checkout, ['status', '--porcelain']), status);
+  assert.equal(fs.readFileSync(path.join(checkout, 'base.txt'), 'utf8'), source);
+  assert.equal(fs.readFileSync(path.join(checkout, 'prototype.html'), 'utf8'), page);
+  assert.deepEqual(fs.readFileSync(prototype.evidencePath), evidence);
+});
+
 test('缺少历史登记时不误报cleaned，显式当前对象可检查和清理且不补造历史', (t) => {
   const root = createGitWorkspace(t);
   const taskId = 'external-worktree';

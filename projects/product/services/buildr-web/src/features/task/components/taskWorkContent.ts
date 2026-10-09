@@ -2,8 +2,8 @@ import type { TaskDocumentReference } from '../../../lib/taskDocumentLinks';
 import type { TaskRecord } from '../../../../build/generated/task-dto';
 import type { ReviewsResponse, VerificationResponse } from '../../../../build/generated/task-professional-http-dto';
 import type { TaskWorkContext } from '../../../../build/generated/workbench-dto';
-import type { TaskBriefState } from '../hooks/useTaskArtifacts';
-import type { ChangeArtifact } from '../../../components/ChangeBriefPanel';
+import type { TaskChangeState } from '../hooks/useTaskArtifacts';
+import type { ChangeArtifact } from '../api/task-api';
 import { taskMaterialSourceLabel, type TaskMaterialDocument, type TaskMaterialsResult } from '../task-materials.ts';
 
 export type TaskStage = NonNullable<TaskWorkContext['stage']>;
@@ -20,18 +20,17 @@ export const taskStageLabels: Record<TaskStage, { title: string; english: string
   closeout: { title: '任务收尾', english: 'Task Closeout', description: '已记录的完成摘要、实际交付情况与遗留事项。' },
 };
 
-export type TaskDocumentItem = { key: string; changeKey: string; stage: TaskNodeStage; title: string; description: string; file: string; artifact: ChangeArtifact; provenance: string; material?: TaskMaterialDocument; purpose?: 'change-brief' | 'checklist' };
-export function taskDocuments(briefs: TaskBriefState[], materials?: TaskMaterialsResult | null): TaskDocumentItem[] {
+export type TaskDocumentItem = { key: string; changeKey: string; stage: TaskNodeStage; title: string; description: string; file: string; artifact: ChangeArtifact; provenance: string; material?: TaskMaterialDocument; purpose?: 'checklist' };
+export function taskDocuments(changes: TaskChangeState[], materials?: TaskMaterialsResult | null): TaskDocumentItem[] {
   const roles: Record<TaskMaterialDocument['role'], TaskNodeStage> = { solution: 'design', implementation: 'implementation', delivery: 'closeout' };
   const documents: TaskDocumentItem[] = (materials?.materials?.documents || []).filter(reference => roles[reference.role]).map(reference => {
     const document = materials!.documents.find(item => item.id === reference.id) || { ...reference, exists: false, content: null, actualDigest: null, provenance: null, diagnostic: { code: 'task_material_unavailable', message: '关联材料当前不可读取。' } };
     return { key: `material:${document.id}`, changeKey: taskMaterialSourceLabel(document), stage: roles[document.role], title: document.title, description: taskMaterialSourceLabel(document), file: document.source.path.split('/').at(-1) || document.title, artifact: { path: document.source.path, exists: document.exists, content: document.content ?? undefined }, provenance: document.provenance || '', material: document };
   });
-  return [...documents, ...briefs.flatMap(item => {
+  return [...documents, ...changes.flatMap(item => {
     if (item.kind !== 'ready') return [];
     const { change } = item;
     const entries: Array<{ stage: TaskDocumentItem['stage']; title: string; description: string; artifact: ChangeArtifact; purpose?: TaskDocumentItem['purpose'] }> = [
-      { stage: 'design', title: `变更说明 · ${item.key}`, description: '具体规范变化的辅助说明，非任务说明正文', artifact: change.brief, purpose: 'change-brief' },
       { stage: 'design', title: '提案', description: '为什么做、改变什么', artifact: change.artifacts.proposal },
       { stage: 'design', title: '设计', description: '实现做法与关键取舍', artifact: change.artifacts.design },
       ...change.artifacts.specs.map(artifact => ({ stage: 'design' as const, title: `规范 · ${artifact.capability || artifact.path.split('/').at(-2) || '行为要求'}`, description: '应满足的行为与边界', artifact })),

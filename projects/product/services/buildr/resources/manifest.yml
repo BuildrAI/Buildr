@@ -162,6 +162,11 @@ capabilityContracts:
         integrity: sha256-c15781d5fbc18516908f3f285057a9316364508607a4fbd00c791e1b9226f995
         provider: current-knowledge-maintenance
         description: 按 Change 或已确认当前事实的真实影响评估、收敛、检查或独立维护 Project 当前认知。
+  - id: buildr.current-knowledge-maintenance
+    version: 4
+    description: 按明确范围建设、检查与维护代码地图、技术图和解释文档，不维护变更说明文件。
+    path: resources/workspace/skills/contracts/buildr/current-knowledge-maintenance/v4.md
+    target: skills/contracts/buildr/current-knowledge-maintenance/v4.md
 initialSkillBindings:
   - capability: buildr.git-operations
     version: 1
@@ -185,7 +190,7 @@ initialSkillBindings:
     version: 1
     provider: terminology-governance
   - capability: buildr.current-knowledge-maintenance
-    version: 3
+    version: 4
     provider: current-knowledge-maintenance
 builtins:
   rules: []
@@ -203,7 +208,7 @@ builtins:
           version: 1
           mode: optional
         - capability: buildr.current-knowledge-maintenance
-          version: 3
+          version: 4
           mode: optional
         - capability: buildr.git-worktree-provider
           version: 1
@@ -355,7 +360,7 @@ builtins:
       required: false
       provides:
         - capability: buildr.current-knowledge-maintenance
-          version: 3
+          version: 4
       requires:
         - capability: buildr.terminology-governance
           version: 1
@@ -497,6 +502,7 @@ workspaceFiles:
   - resources/workspace/skills/buildr/task-finish/SKILL.md => skills/buildr/task-finish/SKILL.md copy
   - resources/workspace/skills/buildr/terminology-governance/SKILL.md => skills/buildr/terminology-governance/SKILL.md copy
   - resources/workspace/skills/contracts/buildr/current-knowledge-maintenance/v3.md => skills/contracts/buildr/current-knowledge-maintenance/v3.md copy
+  - resources/workspace/skills/contracts/buildr/current-knowledge-maintenance/v4.md => skills/contracts/buildr/current-knowledge-maintenance/v4.md copy
   - resources/workspace/skills/buildr/project-composition-maintenance/SKILL.md => skills/buildr/project-composition-maintenance/SKILL.md copy
   - resources/workspace/skills/buildr/current-knowledge-maintenance/SKILL.md => skills/buildr/current-knowledge-maintenance/SKILL.md copy
   - resources/workspace/skills/buildr/current-knowledge-maintenance/references/architecture-knowledge.md => skills/buildr/current-knowledge-maintenance/references/architecture-knowledge.md copy

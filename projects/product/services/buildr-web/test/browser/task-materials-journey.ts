@@ -263,16 +263,13 @@ export async function runTaskMaterialsJourney({ t, page, runtime, workspaceRoot,
     await refresh(); await body().locator('.markdown-body').filter({ hasText: '本次新保存的记录正文' }).waitFor({ state: 'visible' });
   });
 
-  await scenario('任务材料：变更清单独立阅读，方案优先展示提案并区分变更说明', async () => {
+  await scenario('任务材料：变更清单独立阅读，方案展示提案且不再列出专用brief', async () => {
     await open(history);
     await body().locator('.markdown-body').filter({ hasText: '本次新保存的记录正文' }).waitFor({ state: 'visible' });
     await page.locator('[data-task-node=design]').click();
     await body().locator('.markdown-reader-toolbar > span').filter({ hasText: 'proposal.md' }).waitFor({ state: 'visible' });
-    const auxiliary = body().getByRole('menuitem', { name: 'demo/browser-flow', exact: true });
-    await auxiliary.click();
-    await body().locator('.markdown-reader-toolbar > span').filter({ hasText: '变更说明' }).waitFor({ state: 'visible' });
-    assert.match(await body().innerText(), /关联变更说明/);
-    assert.doesNotMatch(await body().locator('.markdown-reader-toolbar > span').innerText(), /^brief\.md$/);
+    assert.equal(await body().locator('[data-task-artifact$="brief.md"]').count(), 0);
+    assert.doesNotMatch(await body().innerText(), /关联变更说明|变更说明当前缺失/);
     await page.locator('[data-task-node=implementation]').click();
     assert.equal(await body().locator('[data-task-artifact$="tasks.md"]').count(), 0);
     assert.doesNotMatch(await body().innerText(), /实施清单/);
@@ -481,22 +478,23 @@ export async function runTaskMaterialsJourney({ t, page, runtime, workspaceRoot,
     const changeRoot = path.join(workspaceRoot, 'projects/demo/openspec/changes', change);
     fs.mkdirSync(changeRoot, { recursive: true });
     fs.writeFileSync(path.join(changeRoot, '.openspec.yaml'), 'schema: spec-driven\n');
-    fs.writeFileSync(path.join(changeRoot, 'brief.md'), '# 当前任务的关联变更说明\n\n' + Array.from({ length: 35 }, (_, index) => `第 ${index + 1} 段：保留方案阅读位置。\n\n`).join('') + `[读取本任务说明](@task/${id})\n`);
-    fs.writeFileSync(path.join(changeRoot, 'proposal.md'), '## Why\n\n同任务稳定链接夹具。\n');
+    fs.writeFileSync(path.join(changeRoot, 'proposal.md'), '## Why\n\n同任务稳定链接夹具。\n\n' + Array.from({ length: 35 }, (_, index) => `第 ${index + 1} 段：保留方案阅读位置。\n\n`).join('') + `[读取本任务说明](@task/${id})\n`);
     fs.writeFileSync(path.join(changeRoot, 'design.md'), '## Context\n\n同任务稳定链接夹具。\n');
     fs.writeFileSync(path.join(changeRoot, 'tasks.md'), '- [x] 验证同任务正文导航与返回。\n');
     cli(['task', 'create', id, '--title', '同任务说明链接', '--intent', '同任务明确阅读正文。', '--brief-file', markdown(`${id}-brief`, '# 本任务记录正文\n\n这是同一任务数据库中的正文。\n'), ...(composite ? ['--parent-task'] : []), '--project', 'demo', '--change', `demo/${change}`]);
     const unchanged = runtime.inspectTask(workspaceRoot, id).recordDigest;
+    assert.equal(fs.existsSync(path.join(changeRoot, 'brief.md')), false);
     await open(id);
     await body().locator('[data-task-brief]').filter({ hasText: '这是同一任务数据库中的正文' }).waitFor({ state: 'visible' });
     assert.equal(await body().getByRole('button', { name: '查看原文', exact: true }).count(), 0);
     if (composite) {
       await body().locator('.ant-select').click();
-      await page.locator('.ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option-content').filter({ hasText: `demo/${change}` }).click();
+      await page.locator('.ant-select-dropdown:not(.ant-select-dropdown-hidden) .ant-select-item-option-content').filter({ hasText: '提案' }).click();
     } else {
       await page.locator('[data-task-node=design]').click();
-      await body().getByRole('menuitem', { name: `demo/${change}`, exact: true }).click();
+      await body().locator('[data-task-artifact$="/proposal.md"]').click();
     }
+    assert.doesNotMatch(await body().innerText(), /变更说明当前缺失/);
     const link = body().getByRole('link', { name: '读取本任务说明', exact: true });
     await link.scrollIntoViewIfNeeded();
     const reader = page.locator(`#task-detail-main:visible ${composite ? '.composite-task-reader' : '.task-node-reading'}`);
@@ -529,8 +527,9 @@ export async function runTaskMaterialsJourney({ t, page, runtime, workspaceRoot,
     const changeRoot = path.join(projectRoot, 'openspec/changes', change);
     fs.mkdirSync(path.join(changeRoot, 'specs/materials-link-fixture'), { recursive: true });
     fs.writeFileSync(path.join(changeRoot, '.openspec.yaml'), 'schema: spec-driven\n');
-    fs.writeFileSync(path.join(changeRoot, 'brief.md'), '# 本次具体变化\n\n[查看历史文件](@project/tasks/materials-linked/brief.md)\n\n[非法任务引用](@task/../other)\n\n' + Array.from({ length: 35 }, (_, index) => `阅读位置段落 ${index + 1}：保留关联阅读上下文。\n\n`).join('') + '[查看唯一任务说明](@task/materials-linked)\n');
-    fs.writeFileSync(path.join(changeRoot, 'proposal.md'), '## Why\n\n验证归档引用。\n\n## What Changes\n\n稳定任务说明入口。\n\n## Capabilities\n\n### New Capabilities\n- `materials-link-fixture`: 验证引用。\n\n## Impact\n\n隔离夹具。\n');
+    const historicalBrief = '# 保留的历史变更说明\n\n退役后此文件只作为普通文档读取，不替代数据库任务说明。\n';
+    fs.writeFileSync(path.join(changeRoot, 'brief.md'), historicalBrief);
+    fs.writeFileSync(path.join(changeRoot, 'proposal.md'), '## Why\n\n验证归档引用。\n\n## What Changes\n\n稳定任务说明入口。\n\n## Capabilities\n\n### New Capabilities\n- `materials-link-fixture`: 验证引用。\n\n## Impact\n\n隔离夹具。\n\n[查看历史变更说明](brief.md)\n\n[查看历史文件](@project/tasks/materials-linked/brief.md)\n\n[非法任务引用](@task/../other)\n\n' + Array.from({ length: 35 }, (_, index) => `阅读位置段落 ${index + 1}：保留关联阅读上下文。\n\n`).join('') + '[查看唯一任务说明](@task/materials-linked)\n');
     fs.writeFileSync(path.join(changeRoot, 'design.md'), '## Context\n\n隔离归档夹具。\n');
     fs.writeFileSync(path.join(changeRoot, 'tasks.md'), '- [x] 1.1 保存稳定引用夹具。\n');
     fs.writeFileSync(path.join(changeRoot, 'specs/materials-link-fixture/spec.md'), '## Purpose\n\n通过隔离材料证明稳定任务引用不受归档深度改变影响。\n\n## ADDED Requirements\n\n### Requirement: Stable task reference fixture\nThe fixture MUST retain its task reference.\n\n#### Scenario: Archive fixture\n- **WHEN** the fixture is archived\n- **THEN** the task reference MUST remain readable\n');
@@ -540,14 +539,23 @@ export async function runTaskMaterialsJourney({ t, page, runtime, workspaceRoot,
       await open('materials-archive-reader');
       await body().getByText('尚未填写任务说明。', { exact: true }).waitFor({ state: 'visible' });
       await page.locator('[data-task-node=design]').click();
-      await body().getByRole('menuitem', { name: `demo/${change}`, exact: true }).click();
+      await body().locator('[data-task-artifact$="/proposal.md"]').click();
+      assert.equal(await body().locator('[data-task-artifact$="brief.md"]').count(), 0);
       const link = body().getByRole('link', { name: '查看唯一任务说明', exact: true });
       await link.waitFor({ state: 'visible' });
       assert.equal(await link.getAttribute('href'), `${new URL(workspaceUrl).pathname}/tasks/materials-linked`);
       assert.equal(await body().getByText('非法任务引用', { exact: true }).getAttribute('href'), null);
       return link;
     };
+    const readHistoricalBrief = async () => {
+      await body().getByRole('link', { name: '查看历史变更说明', exact: true }).click();
+      await page.locator('.pane-right:visible .resource-reader .markdown-body').filter({ hasText: '退役后此文件只作为普通文档读取' }).waitFor({ state: 'visible' });
+      await page.getByRole('button', { name: '关闭 文档', exact: true }).click();
+      await body().getByRole('link', { name: '查看历史变更说明', exact: true }).waitFor({ state: 'visible' });
+    };
     let link = await linkInChange();
+    await readHistoricalBrief();
+    assert.equal(fs.readFileSync(path.join(changeRoot, 'brief.md'), 'utf8'), historicalBrief);
     await body().getByRole('link', { name: '查看历史文件', exact: true }).click();
     await page.locator('.pane-right:visible .resource-reader .markdown-body').filter({ hasText: '明确文件引用仍读取原文' }).waitFor({ state: 'visible' });
     await page.getByRole('button', { name: '关闭 文档', exact: true }).click();
@@ -559,7 +567,7 @@ export async function runTaskMaterialsJourney({ t, page, runtime, workspaceRoot,
     await page.goBack();
     await body().getByRole('link', { name: '查看唯一任务说明', exact: true }).waitFor({ state: 'visible' });
     await page.waitForFunction((top: number) => Math.abs((document.querySelector('#task-node-content .task-node-reading')?.scrollTop || 0) - top) < 3, before, { timeout: 3000 }).catch(async () => {
-      assert.ok(Math.abs(await body().locator('.task-node-reading').evaluate((reader: HTMLElement) => reader.scrollTop) - before) < 3, '返回关联任务恢复原变更说明与阅读位置');
+      assert.ok(Math.abs(await body().locator('.task-node-reading').evaluate((reader: HTMLElement) => reader.scrollTop) - before) < 3, '返回关联任务恢复提案与阅读位置');
     });
     await page.getByRole('button', { name: '关闭 普通任务', exact: true }).click();
     await page.locator('#task-table-body [data-task-id=materials-archive-reader]').click();
@@ -567,6 +575,12 @@ export async function runTaskMaterialsJourney({ t, page, runtime, workspaceRoot,
     cli(['openspec', 'converge', change, '--project', 'demo']);
     assert.equal(fs.existsSync(changeRoot), false);
     link = await linkInChange();
+    await readHistoricalBrief();
+    const changeDetail = await page.request.get(`${workspaceUrl.replace('/workspaces/', '/api/v1/workspaces/')}/tasks/materials-archive-reader/changes/demo/${change}`);
+    assert.equal(changeDetail.status(), 200);
+    const archived = (await changeDetail.json()).resolution.workingCopy.change;
+    assert.equal(Object.hasOwn(archived, 'brief'), false);
+    assert.equal(fs.readFileSync(path.join(projectRoot, path.dirname(archived.artifacts.proposal.path.replace(/^projects\/demo\//, '')), 'brief.md'), 'utf8'), historicalBrief);
     await link.click(); await body().locator('[data-task-brief="materials-linked"] .markdown-body').filter({ hasText: '数据库正文不随变更归档移动' }).waitFor({ state: 'visible' });
     assert.equal(runtime.inspectTask(workspaceRoot, 'materials-linked').record.status, 'active');
     assert.match(fs.readFileSync(taskFile, 'utf8'), /明确文件引用仍读取原文/);

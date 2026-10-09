@@ -6,19 +6,19 @@ import { type ApiError } from '../../../api';
 import { resolveTaskDocumentReference, type RegisteredProject, type TaskDocumentReference } from '../../../lib/taskDocumentLinks';
 import { taskApi } from '../api/task-api';
 import type { TaskDetailResponse } from '../../../../build/generated/task-dto';
-import type { ChangePayload } from '../../../components/ChangeBriefPanel';
+import type { ChangePayload } from '../api/task-api';
 import type { UiPrototypeData } from '../components/PrototypeTab';
 import { isTaskReadCancelled, type TaskReadLifecycle } from './useTaskRequestLifecycle';
 
 export type { TaskProjectDocument as WorkspaceDocument } from '../api/task-api';
 
-export type TaskBriefState =
+export type TaskChangeState =
   | { kind: 'empty' }
   | { kind: 'missing'; key: string; message: string }
   | { kind: 'ready'; key: string; change: ChangePayload; provenance: string };
 
 // Session-only, bounded by task count. Never share task content between workspaces.
-const materialCache = new Map<string, { references: string; briefs: TaskBriefState[] }>();
+const materialCache = new Map<string, { references: string; changes: TaskChangeState[] }>();
 const taskMaterialCache = new Map<string, { recordDigest: string; state: TaskMaterialsState }>();
 const materialKey = (workspaceId: string | null, taskId: string) => JSON.stringify([workspaceId, taskId]);
 
@@ -28,10 +28,10 @@ export function useTaskArtifacts(taskId: string, data: TaskDetailResponse | null
   const referenceIdentity = references === null ? null : JSON.stringify(references);
   const recordDigest = data?.record.taskId === taskId ? data.recordDigest : null;
   const cached = materialCache.get(key);
-  const [briefState, setBriefState] = useState<{ key: string; references: string; briefs: TaskBriefState[]; loading: boolean } | null>(null);
-  const visibleState = briefState?.key === key && briefState.references === referenceIdentity ? briefState : null;
-  const briefs = visibleState?.briefs ?? (cached?.references === referenceIdentity ? cached.briefs : []);
-  const briefsLoading = references === null || (references.length > 0 && (visibleState?.loading ?? true));
+  const [changeState, setChangeState] = useState<{ key: string; references: string; changes: TaskChangeState[]; loading: boolean } | null>(null);
+  const visibleState = changeState?.key === key && changeState.references === referenceIdentity ? changeState : null;
+  const changes = visibleState?.changes ?? (cached?.references === referenceIdentity ? cached.changes : []);
+  const changesLoading = references === null || (references.length > 0 && (visibleState?.loading ?? true));
   const [materialsState, setMaterialsState] = useState<{ key: string; recordDigest: string | null; state: TaskMaterialsState } | null>(null);
   const cachedMaterials = taskMaterialCache.get(key);
   const materials = materialsState?.key === key && materialsState.recordDigest === recordDigest
@@ -48,7 +48,7 @@ export function useTaskArtifacts(taskId: string, data: TaskDetailResponse | null
   const [documentError, setDocumentError] = useState<string | null>(null);
   const taskIdRef = useRef(taskId);
   const prototypeRequestRef = useRef(0);
-  const briefsRequestRef = useRef(0);
+  const changesRequestRef = useRef(0);
   const projectRegistryRef = useRef<RegisteredProject[] | null>(null);
   taskIdRef.current = taskId;
   const materialKeyRef = useRef(key);
@@ -89,19 +89,19 @@ export function useTaskArtifacts(taskId: string, data: TaskDetailResponse | null
     setDocumentError(null);
     projectRegistryRef.current = null;
     prototypeRequestRef.current += 1;
-    briefsRequestRef.current += 1;
+    changesRequestRef.current += 1;
   }, [taskId, workspaceId]);
 
-  const loadBriefs = useCallback(async (references: TaskDetailResponse['record']['changes'], replacePending = false) => {
+  const loadChanges = useCallback(async (references: TaskDetailResponse['record']['changes'], replacePending = false) => {
     if (materialKeyRef.current !== key) return;
-    const requestId = ++briefsRequestRef.current;
+    const requestId = ++changesRequestRef.current;
     const identity = JSON.stringify(references);
     const previous = materialCache.get(key);
-    const retained = previous?.references === identity ? previous.briefs : [];
-    setBriefState({ key, references: identity, briefs: retained, loading: references.length > 0 });
+    const retained = previous?.references === identity ? previous.changes : [];
+    setChangeState({ key, references: identity, changes: retained, loading: references.length > 0 });
     const currentTaskId = taskId;
     if (!references.length) {
-      setBriefState({ key, references: identity, briefs: [{ kind: 'empty' }], loading: false });
+      setChangeState({ key, references: identity, changes: [{ kind: 'empty' }], loading: false });
       return;
     }
     try {
@@ -117,29 +117,29 @@ export function useTaskArtifacts(taskId: string, data: TaskDetailResponse | null
           return { kind: 'missing' as const, key: changeKey, message: `${changeKey} 当前不可读取：${cause instanceof Error ? cause.message : '读取失败'}` };
         }
       }));
-      if (taskIdRef.current !== currentTaskId || materialKeyRef.current !== key || briefsRequestRef.current !== requestId) return;
+      if (taskIdRef.current !== currentTaskId || materialKeyRef.current !== key || changesRequestRef.current !== requestId) return;
       if (results.every(item => item.kind === 'ready')) {
         materialCache.delete(key);
-        materialCache.set(key, { references: identity, briefs: results });
+        materialCache.set(key, { references: identity, changes: results });
         if (materialCache.size > 20) materialCache.delete(materialCache.keys().next().value!);
       }
       // A failed refresh retains readable content and adds the current local diagnostic.
-      const next = results.flatMap((item): TaskBriefState[] => item.kind === 'missing'
+      const next = results.flatMap((item): TaskChangeState[] => item.kind === 'missing'
         ? [...retained.filter(old => old.kind === 'ready' && old.key === item.key), item]
         : [item]);
-      setBriefState({ key, references: identity, briefs: next, loading: false });
+      setChangeState({ key, references: identity, changes: next, loading: false });
     } catch (cause) {
       if (!isTaskReadCancelled(cause)) throw cause;
     }
   }, [taskId, key, lifecycle]);
 
   useEffect(() => {
-    if (referenceIdentity !== null) void loadBriefs(JSON.parse(referenceIdentity));
-    return () => { briefsRequestRef.current += 1; };
-  }, [referenceIdentity, loadBriefs]);
+    if (referenceIdentity !== null) void loadChanges(JSON.parse(referenceIdentity));
+    return () => { changesRequestRef.current += 1; };
+  }, [referenceIdentity, loadChanges]);
 
-  const refreshBriefs = useCallback((next = data) => next?.record.taskId === taskId
-    ? loadBriefs(next.record.changes, true) : Promise.resolve(), [data, taskId, loadBriefs]);
+  const refreshChanges = useCallback((next = data) => next?.record.taskId === taskId
+    ? loadChanges(next.record.changes, true) : Promise.resolve(), [data, taskId, loadChanges]);
 
   const refreshPrototype = useCallback(async () => {
     const requestId = ++prototypeRequestRef.current;
@@ -212,9 +212,9 @@ export function useTaskArtifacts(taskId: string, data: TaskDetailResponse | null
   return {
     materials,
     refreshMaterials,
-    briefs,
-    briefsLoading,
-    refreshBriefs,
+    changes,
+    changesLoading,
+    refreshChanges,
     prototypeData,
     prototypeLoading,
     prototypeError,

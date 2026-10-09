@@ -147,11 +147,9 @@ export function createTaskMaterialsApplication({ taskQuery, projectQuery, worktr
       if (observed.materials.documents.some(previous => previous.role === 'brief' && input.documents.some(reference => reference.id === previous.id))) throw documentError('task_materials_legacy_id_conflict', '材料编码仍由旧任务说明关联使用，请先显式迁移或释放该关联。', 409);
       for (const reference of input.documents) {
         if (observed.materials.documents.some(previous => previous.source.kind === reference.source.kind && previous.source.path === reference.source.path && (previous.source.kind !== 'project' || (reference.source.kind === 'project' && previous.source.project === reference.source.project)))) continue;
-        // Match the reader's one project-root alias expansion before guarding
-        // moving artifacts; spelling the same file with @project/ is not a bypass.
+        // Validate the same project-root alias expansion used by the reader.
         const relative = reference.source.kind === 'project' && reference.source.path.startsWith('@project/') ? reference.source.path.slice('@project/'.length) : reference.source.path;
         markdownPath(relative);
-        if (reference.source.kind === 'project' && /^openspec\/changes\/(?!archive\/)[^/]+\/brief\.md$/.test(relative)) throw documentError('task_materials_moving_change_reference', '活跃变更说明会随归档移动，请使用既有逻辑变更入口而非独立材料引用。');
         const document = readReference(targetRoot, taskId, current.root, current.relative, reference);
         if (!document.exists || document.diagnostic) throw documentError(document.diagnostic?.code || 'task_materials_document_missing', document.diagnostic?.message || '新材料引用必须可读取。', 409);
       }

@@ -37,7 +37,7 @@ const { TaskNodeContent } = await import('../src/features/task/components/TaskNo
 const { CompositeTaskPlan } = await import('../src/features/task/components/CompositeTaskPlan.tsx');
 const { TaskReadingPane } = await import('../src/features/task/components/TaskReadingPane.tsx');
 const { TaskChecklist } = await import('../src/features/task/components/TaskChecklist.tsx');
-const { TaskArtifactReader } = await import('../src/features/task/components/TaskArtifactReader.tsx');
+const { TaskArtifactReader, taskChangeArtifacts } = await import('../src/features/task/components/TaskArtifactReader.tsx');
 const { createTaskClient } = await import('../src/features/task/api/task-api.ts');
 const material = (id = 'solution', role = 'solution', source = { kind: 'task', path: 'solution.md' }) => ({ id, role, title: `${role}正文`, source, exists: true, content: '真实独立材料正文', actualDigest: 'sha256-new', provenance: source.kind === 'task' ? 'task-local' : 'task-worktree-candidate', diagnostic: null });
 const result = (documents = [], taskId = 'one') => ({ schemaVersion: 'buildr.task-materials-result/v2', taskId, materialsDigest: documents.length ? 'sha256-manifest' : 'absent', materials: { schemaVersion: 'buildr.task-materials/v2', documents: documents.map(({ id, role, title, source }) => ({ id, role, title, source })) }, documents, diagnostics: [] });
@@ -46,7 +46,7 @@ const change = (key = 'demo/active', archived = false) => {
   const artifact = name => ({ path: dir + name, exists: true, content: '历史正文' });
   return { kind: 'ready', key, provenance: archived ? 'retained-archive' : 'task-worktree-candidate', change: { name: key, brief: artifact('brief.md'), artifacts: { proposal: artifact('proposal.md'), design: artifact('design.md'), tasks: artifact('tasks.md'), specs: [] } } };
 };
-const nodeProps = (documents, selected = 'requirements') => ({ selected, record: { taskId: 'one', status: 'active', brief: '# 记录正文', intent: '短目标不得作为正文', changes: [] }, documents, briefs: [], reviews: null, verification: null, reviewError: null, verificationError: null, reviewLoading: false, verificationLoading: false, prototypeData: null, prototypeError: null, choices: {}, onChoose() {}, hasRetrospective: false, hasCoordination: false, renderContent: target => React.createElement('p', { 'data-reading-kind': target.kind, 'data-reading-id': target.id }, '已进入材料阅读器') });
+const nodeProps = (documents, selected = 'requirements') => ({ selected, record: { taskId: 'one', status: 'active', brief: '# 记录正文', intent: '短目标不得作为正文', changes: [] }, documents, changes: [], reviews: null, verification: null, reviewError: null, verificationError: null, reviewLoading: false, verificationLoading: false, prototypeData: null, prototypeError: null, choices: {}, onChoose() {}, hasRetrospective: false, hasCoordination: false, renderContent: target => React.createElement('p', { 'data-reading-kind': target.kind, 'data-reading-id': target.id }, '已进入材料阅读器') });
 const markup = (Component, props) => renderToStaticMarkup(React.createElement(Component, props));
 const readingContent = (materials, record = { taskId: 'one' }) => target => React.createElement(TaskReadingPane, { task: { record }, target, artifacts: { materials }, onRead() {}, onClose() {} });
 const deferred = () => { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; };
@@ -87,7 +87,7 @@ test('任务记录说明独立读取，solution/implementation/delivery材料有
   const documents = taskDocuments([], result([material(), material('impl', 'implementation'), material('delivery', 'delivery')]));
   assert.deepEqual(documents.map(item => item.stage), ['design', 'implementation', 'closeout']);
   assert.deepEqual(documents.map(taskDocumentTarget).map(target => target.kind), ['material', 'material', 'material']);
-  const briefNode = markup(TaskNodeContent, { ...nodeProps(documents), materialsLoading: true, materialsError: '材料失败', briefsLoading: true });
+  const briefNode = markup(TaskNodeContent, { ...nodeProps(documents), materialsLoading: true, materialsError: '材料失败', changesLoading: true });
   assert.match(briefNode, /data-reading-kind="brief"/); assert.doesNotMatch(briefNode, /材料失败|正在读取|节点内容目录/);
   for (const [stage, id] of [['design', 'solution'], ['implementation', 'impl'], ['closeout', 'delivery']]) {
     const html = markup(TaskNodeContent, nodeProps(documents, stage));
@@ -97,12 +97,12 @@ test('任务记录说明独立读取，solution/implementation/delivery材料有
   }
 });
 
-test('记录说明为空时显示真实缺失，多个历史及归档Change只保留辅助来源', () => {
+test('记录说明为空时显示真实缺失，历史及归档变更不再提供专用brief入口', () => {
   const old = [change(), change('demo/archived', true)];
   for (const data of [null, result(), result([{ ...material('legacy-brief', 'brief'), exists: true, content: '旧说明文件' }])]) {
     const documents = taskDocuments(old, data);
     assert.equal(documents.filter(item => item.stage === 'requirements').length, 0);
-    assert.equal(documents.filter(item => item.purpose === 'change-brief').length, 2);
+    assert.ok(documents.every(item => !item.artifact.path.endsWith('/brief.md')));
     const record = { taskId: 'one', brief: null, intent: '短目标不得作为正文' };
     const html = markup(TaskNodeContent, { ...nodeProps(documents), record, materialsError: '材料失败', renderContent: readingContent({ data, loading: false, error: null }, record) });
     assert.match(html, /尚未填写任务说明/); assert.doesNotMatch(html, /旧说明文件|历史正文|短目标不得作为正文|材料失败/);
@@ -110,38 +110,44 @@ test('记录说明为空时显示真实缺失，多个历史及归档Change只�
 });
 
 test('变更实施清单只在独立清单入口显示，旧开发实现选择不会重复打开tasks.md', () => {
-  const briefs = [change(), change('demo/archived', true)];
+  const changes = [change(), change('demo/archived', true)];
   const data = result([material()]);
-  const documents = taskDocuments(briefs, data);
+  const documents = taskDocuments(changes, data);
   const renderContent = target => React.createElement('p', { 'data-reading-path': target.path }, target.title);
   const implementation = markup(TaskNodeContent, { ...nodeProps(documents, 'implementation'), choices: { implementation: documents.find(item => item.purpose === 'checklist').key }, renderContent });
   assert.doesNotMatch(implementation, /tasks\.md|实施清单/);
   assert.match(implementation, /实现审查/); assert.match(implementation, /开发验证/);
-  const checklist = markup(TaskChecklist, { open: true, pinned: false, canPin: true, onTogglePin() {}, onClose() {}, briefs, materials: { data, loading: false, error: null }, documents, renderContent });
-  for (const source of briefs) assert.ok(checklist.includes(`data-reading-path="${source.change.artifacts.tasks.path}"`));
+  const checklist = markup(TaskChecklist, { open: true, pinned: false, canPin: true, onTogglePin() {}, onClose() {}, changes, materials: { data, loading: false, error: null }, documents, renderContent });
+  for (const source of changes) assert.ok(checklist.includes(`data-reading-path="${source.change.artifacts.tasks.path}"`));
 });
 
-test('方案默认阅读真实方案，变更说明作为带身份的末尾辅助入口保留', () => {
+test('方案默认阅读提案，历史brief字段和旧选择不再提供专用入口或缺失告警', () => {
   const source = change();
   const documents = taskDocuments([source], result());
   const renderContent = target => React.createElement('p', { 'data-reading-path': target.path }, target.title);
-  const design = markup(TaskNodeContent, { ...nodeProps(documents, 'design'), renderContent });
-  assert.ok(design.includes(`data-reading-path="${source.change.artifacts.proposal.path}"`));
-  assert.match(design, /关联变更说明/);
-  assert.ok(design.indexOf('方案审查') < design.indexOf('关联变更说明'));
-  const briefItem = documents.find(item => item.purpose === 'change-brief');
-  const chosen = markup(TaskNodeContent, { ...nodeProps(documents, 'design'), choices: { design: briefItem.key }, renderContent });
-  assert.ok(chosen.includes(`data-reading-path="${source.change.brief.path}"`));
-  const reader = markup(TaskArtifactReader, { change: source.change, artifactPath: source.change.brief.path, embedded: true, onClose() {}, onSelect() {} });
-  assert.match(reader, /变更说明 · demo\/active/);
-  assert.doesNotMatch(reader, /<span[^>]*>brief\.md<\/span>/);
+  for (const choices of [{}, { design: `${source.key}:${source.change.brief.path}` }]) {
+    const design = markup(TaskNodeContent, { ...nodeProps(documents, 'design'), changes: [source], choices, renderContent });
+    assert.ok(design.includes(`data-reading-path="${source.change.artifacts.proposal.path}"`));
+    assert.doesNotMatch(design, /关联变更说明|变更说明当前缺失|brief\.md/);
+  }
+  const { brief, ...withoutBrief } = source.change;
+  assert.deepEqual(taskChangeArtifacts(withoutBrief), taskChangeArtifacts(source.change));
+  assert.ok(taskChangeArtifacts(withoutBrief).every(item => item.artifact.path !== brief.path));
+  const missingBriefSource = { ...source, change: withoutBrief };
+  const node = markup(TaskNodeContent, { ...nodeProps(documents, 'design'), changes: [missingBriefSource], renderContent });
+  assert.doesNotMatch(node, /变更说明当前缺失|brief\.md/);
+  const composite = markup(CompositeTaskPlan, { record: { taskId: 'one' }, changes: [missingBriefSource], documents, materials: { data: result(), loading: false, error: null }, selected: documents[0].key, renderContent });
+  assert.doesNotMatch(composite, /变更说明当前缺失|brief\.md/);
+  const reader = markup(TaskArtifactReader, { change: withoutBrief, artifactPath: withoutBrief.artifacts.proposal.path, embedded: true, onClose() {}, onSelect() {} });
+  assert.match(reader, /<span[^>]*>proposal\.md<\/span>/);
+  assert.doesNotMatch(reader, /变更说明|brief\.md/);
 });
 
 test('组合任务默认直接阅读记录说明，材料读取等待或失败不阻断说明', () => {
   const data = result([material()]);
   const record = { taskId: 'one', brief: '# 组合任务正文', intent: '短目标不得作为正文', scope: { projects: [], services: [] } };
   for (const state of [{ data: null, loading: true, error: null }, { data, loading: false, error: '材料重核失败' }]) {
-    const props = { record, briefs: [], documents: taskDocuments([], data), materials: state, onDocument() {}, renderContent: readingContent(state, record) };
+    const props = { record, changes: [], documents: taskDocuments([], data), materials: state, onDocument() {}, renderContent: readingContent(state, record) };
     const html = markup(CompositeTaskPlan, props);
     assert.match(html, /data-task-brief="one"/); assert.doesNotMatch(html, /材料重核失败|正在读取任务材料|上次读取的正文/);
     assert.doesNotMatch(html, /markdown-reader-toolbar|查看原文/);
@@ -236,7 +242,7 @@ test('Drawer与普通ReadingPane保留材料时都由共享reader显示重核及
 test('实施清单复用同一ReadingPane和TaskMaterialReader，缓存正文的loading/error不会遗漏或重复', () => {
   const data = result([material('impl', 'implementation')]);
   const documents = taskDocuments([], data);
-  const props = { open: true, pinned: false, canPin: true, onTogglePin() {}, onClose() {}, briefs: [], documents };
+  const props = { open: true, pinned: false, canPin: true, onTogglePin() {}, onClose() {}, changes: [], documents };
   for (const state of [{ data, loading: true, error: null }, { data, loading: false, error: '清单材料读取异常' }]) {
     const html = markup(TaskChecklist, { ...props, materials: state, renderContent: readingContent(state) });
     assert.match(html, /id="task-checklist-panel"/); assert.match(html, /data-task-material="impl"/); assert.match(html, /data-task-material-role="implementation"/);
@@ -247,7 +253,7 @@ test('实施清单复用同一ReadingPane和TaskMaterialReader，缓存正文的
 });
 
 test('没有已读实施材料时，首次等待、读取失败及空清单重核不能误报暂无', () => {
-  const props = { open: true, pinned: false, canPin: true, onTogglePin() {}, onClose() {}, briefs: [{ kind: 'empty' }], documents: [], renderContent() { throw new Error('没有条目不应调用阅读器'); } };
+  const props = { open: true, pinned: false, canPin: true, onTogglePin() {}, onClose() {}, changes: [{ kind: 'empty' }], documents: [], renderContent() { throw new Error('没有条目不应调用阅读器'); } };
   for (const data of [null, result()]) {
     const waiting = markup(TaskChecklist, { ...props, materials: { data, loading: true, error: null } });
     assert.match(waiting, /正在读取实施清单/); assert.doesNotMatch(waiting, /暂无实施清单/);
@@ -256,7 +262,7 @@ test('没有已读实施材料时，首次等待、读取失败及空清单重�
   }
   const ready = { data: result(), loading: false, error: null };
   assert.match(markup(TaskChecklist, { ...props, materials: ready }), /暂无实施清单/);
-  assert.doesNotMatch(markup(TaskChecklist, { ...props, briefsLoading: true, materials: ready }), /暂无实施清单/);
+  assert.doesNotMatch(markup(TaskChecklist, { ...props, changesLoading: true, materials: ready }), /暂无实施清单/);
   const diagnostic = { ...ready, data: { ...result(), diagnostics: [{ code: 'unreadable', message: '关联状态无法确认' }] } };
   const unknown = markup(TaskChecklist, { ...props, materials: diagnostic });
   assert.match(unknown, /关联状态无法确认/); assert.doesNotMatch(unknown, /暂无实施清单/);
@@ -396,7 +402,7 @@ test('全文差异客户端传递已观察检出来源，历史和旧请求可�
 });
 
 test('审查与验证独立于changes：保存对象/依据可读，missing不标不适用，failed与gaps分离', () => {
-  const base = { task: { record: { taskId: 'one', changes: [], scope: { projects: ['demo'] } } }, artifacts: { briefs: [] }, evidence: {}, onClose() {}, onRead() {}, href: path => path };
+  const base = { task: { record: { taskId: 'one', changes: [], scope: { projects: ['demo'] } } }, artifacts: { changes: [] }, evidence: {}, onClose() {}, onRead() {}, href: path => path };
   const review = { taskId: 'one', subjectIdentity: 'reviewed-v1', completedAt: '2026-01-01T00:00:00Z', method: 'self', reviewed: ['任务目标与候选方案'], findings: [], uncovered: [{ subject: '窄屏', reason: '未执行浏览器验收' }], conclusion: { outcome: 'accepted', summary: '已保存审查' } };
   const reviewed = markup(TaskReadingPane, { ...base, target: { kind: 'review', reviewType: 'planning', title: '方案审查', digest: '' }, evidence: { reviewData: { slots: { planning: { result: review, resultDigest: 'sha256-one' } } } } });
   for (const text of ['reviewed-v1', '任务目标与候选方案', '未执行浏览器验收', '保存结论：通过', '不代表当前材料版本']) assert.ok(reviewed.includes(text));

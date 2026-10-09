@@ -1,12 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { Alert, Button } from 'antd';
 import { MarkdownReader } from '../../../components/MarkdownReader';
-import type { ChangeArtifact, ChangePayload } from '../../../components/ChangeBriefPanel';
+import type { ChangeArtifact, ChangePayload } from '../api/task-api';
 import { resolveProjectMarkdownHref } from '../../../lib/projectDocuments';
 
 export function taskChangeArtifacts(change: ChangePayload): Array<{ label: string; artifact: ChangeArtifact }> {
   return [
-    { label: '变更说明', artifact: change.brief },
     { label: '提案', artifact: change.artifacts.proposal },
     { label: '设计', artifact: change.artifacts.design },
     ...change.artifacts.specs.map(artifact => ({ label: `规范 · ${artifact.capability || artifact.path.split('/').at(-2) || '行为说明'}`, artifact })),
@@ -49,7 +48,7 @@ export function TaskArtifactReader({ change, artifactPath, onClose, onSelect, on
     <div id={embedded ? undefined : "task-artifact-reader"} className="task-document-preview">
       <div className="task-document-preview-heading" hidden={embedded}><div><strong>{selected?.label || '关联成果'}</strong><small>{change.name}</small></div></div>
       {message && <Alert type="info" message={message} />}
-      {selected?.artifact.exists && selected.artifact.content?.trim() ? <MarkdownReader toolbarStart={<span title={`${sourceDescription ? `${sourceDescription} · ` : ''}${artifactPath}`}>{artifactPath === change.brief.path ? `变更说明 · ${change.name}` : artifactPath.split('/').at(-1)}</span>} path={artifactPath} content={selected.artifact.content} className="task-document-preview-content markdown-body" options={{ headingOffset: 1, allowRelativeLinks: true, allowParentRelativeLinks: true, onRelativeLinkClick: followLink }} /> : <Alert type="info" message="当前文档为空或没有可读取的正文。" />}
+      {selected?.artifact.exists && selected.artifact.content?.trim() ? <MarkdownReader toolbarStart={<span title={`${sourceDescription ? `${sourceDescription} · ` : ''}${artifactPath}`}>{artifactPath.split('/').at(-1)}</span>} path={artifactPath} content={selected.artifact.content} className="task-document-preview-content markdown-body" options={{ headingOffset: 1, allowRelativeLinks: true, allowParentRelativeLinks: true, onRelativeLinkClick: followLink }} /> : <Alert type="info" message="当前文档为空或没有可读取的正文。" />}
     </div>
   </aside>;
 }

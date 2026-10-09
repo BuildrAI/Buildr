@@ -28,7 +28,7 @@
 
 [材料模块](../../services/buildr/src/modules/task/materials/module.ts)依赖任务查询、项目查询和工作树能力，不依赖 OpenSpec 查询。[HTTP 入口](../../services/buildr/src/modules/task/materials/interfaces/http/task-materials-http.ts)与[命令行入口](../../services/buildr/src/modules/task/materials/interfaces/cli/task-materials.ts)调用同一应用，旧项目文档入口也使用共享读取器。过程材料更新保持自己的版本，不重写记录正文或专业状态。
 
-前端[正文阅读面](../../services/buildr-web/src/features/task/components/TaskReadingPane.tsx)直接以 Markdown 排版展示 `record.brief`，不提供原文切换；源码在任务编辑区查看和修改。不等待材料或变更请求，也不显示重复文件名。[节点材料投影](../../services/buildr-web/src/features/task/components/taskWorkContent.ts)仅将过程角色与辅助 OpenSpec 材料投射到设计、实施和收尾；实施清单仍由独立入口阅读。[材料钩子](../../services/buildr-web/src/features/task/hooks/useTaskArtifacts.ts)独立加载过程文件并取消旧请求，[材料阅读器](../../services/buildr-web/src/features/task/components/TaskMaterialReader.tsx)展示实际过程文件正文、来源与局部诊断，继续提供正文/原文切换。记录说明为空时明确显示尚未填写，旧变更说明在辅助入口按来源分别阅读，不选择主变更或合并正文。
+前端[正文阅读面](../../services/buildr-web/src/features/task/components/TaskReadingPane.tsx)直接以 Markdown 排版展示 `record.brief`，不提供原文切换；源码在任务编辑区查看和修改。不等待材料或变更请求，也不显示重复文件名。[节点材料投影](../../services/buildr-web/src/features/task/components/taskWorkContent.ts)仅将过程角色与辅助 OpenSpec 材料投射到设计、实施和收尾；实施清单仍由独立入口阅读。[材料钩子](../../services/buildr-web/src/features/task/hooks/useTaskArtifacts.ts)独立加载过程文件并取消旧请求，[材料阅读器](../../services/buildr-web/src/features/task/components/TaskMaterialReader.tsx)展示实际过程文件正文、来源与局部诊断，继续提供正文/原文切换。记录说明为空时明确显示尚未填写，标准变更材料在方案入口按来源分别阅读，历史说明文件继续经普通文档链接读取，不选择主变更或合并正文。
 
 共用[Markdown 主体](../../services/buildr-web/src/components/MarkdownHost.tsx)通过[任务引用解析](../../services/buildr-web/src/lib/taskBriefLinks.ts)识别严格的 `@task/<task-id>` 稳定任务引用，在当前工作空间进入对应任务，不依赖归档目录深度。记录正文使用明确的逻辑项目引用 `projects/<project>/<path>`；[共享文档解析](../../services/buildr-web/src/lib/workspaceMarkdownReferences.ts)核对当前任务范围与登记项目后按项目身份读取，支持附接项目（Attached Project），不拼接物理目录。旧普通文件链接保留原语义，不能扩大文件读取范围。[阅读状态](../../services/buildr-web/src/features/task/hooks/useTaskReadingState.ts)与[会话阅读历史](../../services/buildr-web/src/features/task/task-reading-history.ts)按工作空间、任务和浏览器历史条目保存有限快照，普通与组合任务的节点、方案选择及滚动分别接续。新打开任务默认说明；`@task` 链接明确进入记录正文，即使复用同任务阅读面也不会吞掉请求，浏览器返回恢复原条目的阅读选择。 [任务页面](../../services/buildr-web/src/features/task/pages/TaskDetailPage.tsx)通过“查看源文件”或选中文件进入代码区域（Code），传递任务、代码库、文件及可选提交身份和返回现场；进入代码前清除旧的说明打开意图，返回后接续原任务阅读，不将代码定位改成新的说明请求。
 
@@ -171,7 +171,7 @@
       - `components/`
         - [TaskReadingPane.tsx](../../services/buildr-web/src/features/task/components/TaskReadingPane.tsx) — 记录说明仅展示排版正文，过程文件仍可查看原文；说明不依赖文件关联
         - [TaskEditModal.tsx](../../services/buildr-web/src/features/task/components/TaskEditModal.tsx) — 区分一句话目标与 Markdown 正文，保留编辑草稿与既有更正要求
-        - [TaskNodeContent.tsx](../../services/buildr-web/src/features/task/components/TaskNodeContent.tsx) — 按过程材料与专业记录组织节点目录；说明直接读记录 brief，空值不兜底，变更说明保留辅助入口
+        - [TaskNodeContent.tsx](../../services/buildr-web/src/features/task/components/TaskNodeContent.tsx) — 按过程材料与专业记录组织节点目录；说明直接读记录 brief，空值不兜底，标准变更材料按来源展示，历史文件经普通链接读取
         - [PrototypeTab.tsx](../../services/buildr-web/src/features/task/components/PrototypeTab.tsx) — 隔离预览、说明、状态选择与阅读消息校验
         - [PrototypeReaderLayout.tsx](../../services/buildr-web/src/features/task/components/PrototypeReaderLayout.tsx) — 独立任务阅读与离线预览共同使用的页面目录和阅读布局
         - [TaskAgentAction.tsx](../../services/buildr-web/src/features/task/components/TaskAgentAction.tsx) — 开始与继续工作的指令，按当前范围重新读取

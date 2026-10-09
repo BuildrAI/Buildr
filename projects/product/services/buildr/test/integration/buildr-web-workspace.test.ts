@@ -88,24 +88,26 @@ test('API client 通过 LocalSessionAdapter 为写请求附加 session，并拒�
   assert.match(session, /Task API 不接受 filesystem path/);
 });
 
-test('Task-scoped Change 详情先提供人类可读 Brief，再展示技术 artifacts', () => {
+test('Task-scoped Change 详情直接展示标准产物，不要求专用变更说明', () => {
   const source: any = read('../buildr-web/src/features/task/pages/TaskChangeDetailPage.tsx');
-  const briefPanel: any = read('../buildr-web/src/components/ChangeBriefPanel.tsx');
   const styles: any = read('../buildr-web/src/styles.css');
   const markdown: any = read('../buildr-web/src/markdown.ts');
-  assert.ok(source.indexOf('id="change-brief"') < source.indexOf('technical-artifacts-panel'));
+  const taskApi: any = read('../buildr-web/src/features/task/api/task-api.ts');
+  const reader: any = read('../buildr-web/src/features/task/components/TaskArtifactReader.tsx');
+  assert.ok(source.indexOf('artifact={change.artifacts.proposal}') < source.indexOf('artifact={change.artifacts.design}'));
   assert.match(source, /MarkdownHost/);
-  assert.match(source, /ChangeBriefPanel/);
-  assert.match(briefPanel, /没有可读取的 Brief/);
-  assert.match(briefPanel, /headingOffset:\s*1/);
-  assert.match(briefPanel, /allowRelativeLinks:\s*true/);
+  assert.match(source, /id="change-artifacts"/);
+  assert.match(source, /headingOffset:\s*1/);
+  assert.match(source, /allowRelativeLinks:\s*true/);
+  assert.doesNotMatch(source, /ChangeBriefPanel|change-brief|change\.brief/);
+  assert.doesNotMatch(reader, /change\.brief/);
+  assert.match(taskApi, /export type ChangePayload/);
   assert.doesNotMatch(source, /brief\.content.*innerHTML|artifact\.content.*innerHTML|dangerouslySetInnerHTML/);
   assert.doesNotMatch(markdown, /innerHTML/);
   assert.match(markdown, /headingOffset/);
   assert.match(markdown, /allowRelativeLinks/);
   assert.match(markdown, /resolveSafeHref/);
-  assert.match(styles, /\.change-brief-panel/);
-  assert.match(briefPanel, /className="brief-content markdown-body"/);
+  assert.equal(fs.existsSync(path.join(productRoot, '../buildr-web/src/components/ChangeBriefPanel.tsx')), false);
   assert.match(styles, /\.markdown-body/);
   assert.match(styles, /\.artifact-content/);
   assert.match(styles, /\.content-view-toggle/);

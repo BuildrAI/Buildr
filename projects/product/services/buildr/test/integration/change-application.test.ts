@@ -12,7 +12,7 @@ type ChangeSummary = {
   code: string;
   lifecycle: string;
   progress: { exists: boolean; completed: number | null; total: number | null; remaining: number | null };
-  brief: { exists: boolean; content?: string };
+  updatedAt: string;
   artifacts: { proposal: { content?: string } };
 };
 type ScopedResolution = {
@@ -100,15 +100,42 @@ function coded(error: unknown, code: string): boolean {
 test('Change read model直接投影当前active与archived artifacts', (t) => {
   const { root, runtime, projectRoot } = fixture();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  writeChange(projectRoot, 'ship-ui', { 'brief.md': '# Brief\n', 'proposal.md': '# Ship UI\n', 'tasks.md': '- [x] model\n- [ ] ui\n' });
+  writeChange(projectRoot, 'ship-ui', { 'proposal.md': '# Ship UI\n', 'tasks.md': '- [x] model\n- [ ] ui\n' });
   writeChange(projectRoot, 'archive/2026-07-22-old-flow', { 'proposal.md': '# Old Flow\n' });
   const result = runtime.listChanges(root);
   assert.deepEqual(result.changes.map(({ code, lifecycle }) => [code, lifecycle]).sort(), [['old-flow', 'archived'], ['ship-ui', 'active']].sort());
   const detail = runtime.changeDetail(root, 'product', 'active~ship-ui').change;
-  assert.equal(detail.brief.content, '# Brief\n');
+  assert.equal(Object.hasOwn(detail, 'brief'), false);
+  assert.equal(fs.existsSync(path.join(projectRoot, 'openspec/changes/ship-ui/brief.md')), false);
   assert.equal(detail.artifacts.proposal.content, '# Ship UI\n');
   assert.deepEqual(detail.progress, { exists: true, completed: 1, total: 2, remaining: 1 });
   assert.throws(() => runtime.changeDetail(root, 'product', 'active~..'), /不合法/);
+});
+
+test('旧变更说明只作为普通文档保留可读，不进入变更模型或更新时间', (t) => {
+  const { root, runtime, projectRoot } = fixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const body = '\ufeff# 旧变更说明\r\n\r\n[方案](proposal.md)  \r\n';
+  const archivedDirectory = 'archive/2026-10-09-old-note';
+  const directories = ['current-note', archivedDirectory];
+  runtime.readTask = (_root, taskId) => ({ record: { taskId, changes: [{ project: 'product', change: 'current-note' }, { project: 'product', change: 'old-note' }] } });
+  for (const directory of directories) {
+    const changeRoot = writeChange(projectRoot, directory, { 'brief.md': body, 'proposal.md': '# 标准提案\n\n[历史说明](brief.md)\n' });
+    const timestamp = new Date('2026-10-01T00:00:00.000Z');
+    for (const file of ['.openspec.yaml', 'proposal.md']) fs.utimesSync(path.join(changeRoot, file), timestamp, timestamp);
+    fs.utimesSync(changeRoot, timestamp, timestamp);
+    const legacyTimestamp = new Date('2029-01-01T00:00:00.000Z');
+    fs.utimesSync(path.join(changeRoot, 'brief.md'), legacyTimestamp, legacyTimestamp);
+    const ref = directory.startsWith('archive/') ? `archived~${path.basename(directory)}` : `active~${directory}`;
+    const detail = runtime.changeDetail(root, 'product', ref).change;
+    assert.equal(Object.hasOwn(detail, 'brief'), false);
+    assert.equal(detail.updatedAt, timestamp.toISOString(), '旧说明的修改不能再改变自动变更模型');
+    const document = runtime.taskProjectDocument(root, 'reader-task', 'product', `openspec/changes/${directory}/brief.md`);
+    assert.equal(document.content, body);
+    assert.equal(document.provenance, 'retained-project');
+    assert.equal(fs.readFileSync(path.join(changeRoot, 'brief.md'), 'utf8'), body, '读取必须保全原字节及相对链接');
+  }
+  assert.ok(runtime.listChanges(root).changes.every(change => !Object.hasOwn(change, 'brief')));
 });
 
 test('带两位归档序号的Change仍以原始code解析', (t) => {
@@ -193,7 +220,7 @@ test('OpenSpec 查询独立于任务，保持全局保留副本、归档提示�
   fs.symlinkSync(outside, path.join(retained, 'brief.md'));
   fs.symlinkSync(outside, path.join(retained, 'escape.html'));
   assert.deepEqual(query.listChanges(root).changes.map((item) => item.code).sort(), ['done', 'shared']);
-  assert.equal(query.changeDetail(root, 'product', 'active~shared').change.brief.exists, false);
+  assert.equal(Object.hasOwn(query.changeDetail(root, 'product', 'active~shared').change, 'brief'), false);
   assert.equal(query.findLogicalChange(root, project, projectRoot, 'done')?.ref, 'archived~2026-09-03-01-done');
   assert.throws(() => query.findLogicalChange(root, project, projectRoot, '../outside'), (error) => coded(error, 'change_reference_invalid'));
   assert.deepEqual(query.discoverUiPrototypes(retained).prototypes, []);

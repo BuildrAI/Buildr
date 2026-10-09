@@ -2,7 +2,7 @@ import { Link, useLocation, useParams } from 'react-router-dom';
 import { Button } from 'antd';
 import { useAppShell } from '../../../app/AppShellContext';
 import { MarkdownHost } from '../../../components/MarkdownHost';
-import { ChangeBriefPanel, type ChangeArtifact as Artifact } from '../../../components/ChangeBriefPanel';
+import type { ChangeArtifact as Artifact } from '../api/task-api';
 import { workspaceHref } from '../../../lib/labels';
 import { useTaskChangeDetail } from '../hooks/useTaskChangeDetail';
 
@@ -85,14 +85,10 @@ export function TaskChangeDetailPage() {
           ))}
         </dl>
       </section>
-      <div id="change-brief">
-        <ChangeBriefPanel change={change} />
-      </div>
       <section className="panel technical-artifacts-panel">
         <div className="panel-heading">
           <div>
-            <p className="eyebrow">深入技术细节</p>
-            <h2>OpenSpec 产物</h2>
+            <h2>OpenSpec 文档</h2>
           </div>
           <span className="state">只读</span>
         </div>
@@ -102,7 +98,7 @@ export function TaskChangeDetailPage() {
           {change.artifacts.specs.map((spec) => (
             <ArtifactPanel key={spec.path} label={`规格 · ${spec.capability || spec.path}`} artifact={spec} />
           ))}
-          <ArtifactPanel label="任务" artifact={change.artifacts.tasks} />
+          <ArtifactPanel label="实施清单" artifact={change.artifacts.tasks} />
         </div>
       </section>
     </>

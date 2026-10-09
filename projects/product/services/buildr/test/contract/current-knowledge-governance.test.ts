@@ -20,13 +20,17 @@ const resolveChangeRoot: any = (change: any) => {
   return path.join(archive, matches[0]);
 };
 
-test('当前知识 v3 使用可解析协作约定且默认包不再提供旧版本', () => {
+test('当前知识 v4 使用可解析协作约定，旧 v3 保留而不冒充新提供者保证', () => {
   const terminology = path.join(WORKSPACE_TARGET, 'skills/contracts/buildr/terminology-governance/v1.md');
-  const knowledge = path.join(WORKSPACE_TARGET, 'skills/contracts/buildr/current-knowledge-maintenance/v3.md');
+  const knowledge = path.join(WORKSPACE_TARGET, 'skills/contracts/buildr/current-knowledge-maintenance/v4.md');
   assert.equal(parseCapabilityContract(terminology).id, 'buildr.terminology-governance');
   const parsed = parseCapabilityContract(knowledge);
   assert.equal(parsed.id, 'buildr.current-knowledge-maintenance');
-  assert.equal(parsed.version, 3);
+  assert.equal(parsed.version, 4);
+  const historical = path.join(WORKSPACE_TARGET, 'skills/contracts/buildr/current-knowledge-maintenance/v3.md');
+  assert.equal(parseCapabilityContract(historical).version, 3);
+  assert.match(read(historical), /`assess` 识别真实影响并维护已授权变更说明/);
+  assert.match(read(knowledge), /均不创建、刷新或要求 Buildr 增强的 `brief\.md`/);
   for (const version of [1, 2]) assert.equal(fs.existsSync(path.join(WORKSPACE_TARGET, `skills/contracts/buildr/current-knowledge-maintenance/v${version}.md`)), false);
 });
 
@@ -45,7 +49,7 @@ test('默认 providers 与 bindings 可解析，当前认知与收尾只按实�
     { capability: 'buildr.git-operations', version: 1, mode: 'optional' },
   ]);
   const triage: any = packageManifest.builtins.skills.find((item: any) => item.id === 'task-triage');
-  assert.ok(triage.requires.some((item: any) => item.capability === 'buildr.current-knowledge-maintenance' && item.version === 3 && item.mode === 'optional'));
+  assert.ok(triage.requires.some((item: any) => item.capability === 'buildr.current-knowledge-maintenance' && item.version === 4 && item.mode === 'optional'));
   assert.equal(triage.requires.some((item: any) => item.capability === 'buildr.task-board-maintenance'), false);
   assert.ok(triage.requires.some((item: any) => item.capability === 'buildr.git-worktree-provider' && item.version === 1 && item.mode === 'optional'));
   assert.equal(triage.requires.some((item: any) => item.capability === 'buildr.task-environment'), false);
@@ -61,12 +65,12 @@ test('默认 providers 与 bindings 可解析，当前认知与收尾只按实�
   assert.equal(fs.existsSync(path.join(WORKSPACE_TARGET, 'skills/contracts/buildr/task-metadata-publication/v1.md')), false);
 });
 
-test('当前知识的参考文件均在交付清单中，默认绑定只选择 v3', () => {
+test('当前知识的参考文件均在交付清单中，默认绑定只选择 v4', () => {
   const manifest = YAML.parse(read(path.join(SERVICE_ROOT, 'resources/manifest.yml')));
   const provider = manifest.builtins.skills.find((item: any) => item.id === 'current-knowledge-maintenance');
-  assert.deepEqual(provider.provides, [{ capability: 'buildr.current-knowledge-maintenance', version: 3 }]);
+  assert.deepEqual(provider.provides, [{ capability: 'buildr.current-knowledge-maintenance', version: 4 }]);
   assert.deepEqual(manifest.initialSkillBindings.filter((item: any) => item.capability === 'buildr.current-knowledge-maintenance'), [
-    { capability: 'buildr.current-knowledge-maintenance', version: 3, provider: 'current-knowledge-maintenance' },
+    { capability: 'buildr.current-knowledge-maintenance', version: 4, provider: 'current-knowledge-maintenance' },
   ]);
   const folder = path.join(WORKSPACE_TARGET, 'skills/buildr/current-knowledge-maintenance');
   const skill = read(path.join(folder, 'SKILL.md'));
@@ -84,7 +88,7 @@ test('OpenSpec capability dependencies 由 Component 与 fragments 原子维护'
   for (const id of ['openspec-explore', 'openspec-propose', 'openspec-update-change', 'openspec-apply-change', 'openspec-sync-specs', 'openspec-archive-change']) assert.equal(skills.get(id).requires, undefined, id);
   const component: any = YAML.parse(read(path.join(WORKSPACE_TARGET, 'components/buildr/openspec/component.yml')));
   const dependencies: any = component.contributions.skillDependencies;
-  const has: any = (skill: any, capability: any, mode: any) => dependencies.some((item: any) => item.skill === skill && item.capability === capability && item.mode === mode && (capability !== 'buildr.current-knowledge-maintenance' || item.version === 3) && (capability !== 'buildr.task-record' || item.version === 4));
+  const has: any = (skill: any, capability: any, mode: any) => dependencies.some((item: any) => item.skill === skill && item.capability === capability && item.mode === mode && (capability !== 'buildr.current-knowledge-maintenance' || item.version === 4) && (capability !== 'buildr.task-record' || item.version === 4));
   assert.equal(has('openspec-explore', 'buildr.terminology-governance', 'optional'), true);
   for (const id of ['openspec-propose', 'openspec-apply-change']) for (const capability of ['buildr.task-record', 'buildr.current-knowledge-maintenance']) assert.equal(has(id, capability, 'required'), true, `${id}:${capability}`);
   assert.equal(dependencies.some((item: any) => item.capability === 'buildr.task-environment'), false);

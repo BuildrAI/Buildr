@@ -1,9 +1,18 @@
-# human-readable-change-brief Specification
+## REMOVED Requirements
 
-## Purpose
-定义正式 OpenSpec Change 的人类可读 Brief、权威边界、生命周期兼容性和只读展示要求。
+### Requirement: 正式 Change 必须提供人类可读 Brief
+**Reason**: 额外 companion 与数据库任务正文及标准变更材料重叠，停止生成与维护。
+**Migration**: 每个任务使用 TaskRecord.brief，具体变化由 proposal/design/specs/tasks 表达，旧文件保留普通阅读。
 
-## Requirements
+### Requirement: Brief 不得成为第二套规范来源
+**Reason**: 专用 Change Brief 增强退役，不再维护该来源。
+**Migration**: 沿用既有标准材料的权威分工和独立数据库任务正文。
+
+### Requirement: Brief 必须随 Change 生命周期保持稳定可读
+**Reason**: 停止固定优先阅读入口与缺失警告，历史文件按普通文档保全。
+**Migration**: 旧归档和既有链接保持普通安全阅读；无brief.md的变更正常展示标准产物，不自动回写。
+
+## ADDED Requirements
 
 ### Requirement: Buildr 不得要求额外变更说明文件
 

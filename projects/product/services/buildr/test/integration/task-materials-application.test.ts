@@ -33,20 +33,32 @@ const projectRef = (relative = 'tasks/one/brief.md', id = 'project-brief'): Task
 function write(file: string, bytes: string | Uint8Array) { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, bytes); }
 const code = (value: string) => (error: unknown) => error instanceof Error && 'code' in error && error.code === value;
 
-test('项目根别名不能绕过活跃Change brief移动保护，普通阅读及已归档引用保留', t => {
+test('旧变更说明按普通材料读取、显式关联及归档，不改任务正文或源文件', t => {
   const f = fixture(t);
+  const recordBefore = JSON.stringify(f.record);
   const source = 'openspec/changes/moving/brief.md';
-  write(path.join(f.root, 'projects/app', source), '# 具体变更解释\n');
-  assert.equal(f.application.taskProjectDocument(f.root, 'one', 'app', `@project/${source}`).content, '# 具体变更解释\n');
+  const body = '\ufeff# 旧变更解释\r\n\r\n[方案](proposal.md)  \r\n';
+  write(path.join(f.root, 'projects/app', source), body);
+  assert.equal(f.application.taskProjectDocument(f.root, 'one', 'app', `@project/${source}`).content, body);
+  let expectedCurrent = 'absent';
   for (const relative of [source, `@project/${source}`]) {
-    assert.throws(() => f.application.recordTaskMaterials(f.root, 'one', { expectedCurrent: 'absent', documents: [projectRef(relative)] }), code('task_materials_moving_change_reference'));
-    assert.equal(fs.existsSync(f.local()), false, '旁路拒绝不得创建材料清单或正文');
+    const recorded = f.application.recordTaskMaterials(f.root, 'one', { expectedCurrent, documents: [projectRef(relative)] });
+    assert.equal(recorded.documents[0].content, body);
+    assert.equal(recorded.documents[0].role, 'solution');
+    assert.deepEqual(recorded.diagnostics, []);
+    expectedCurrent = recorded.materialsDigest;
+    assert.equal(fs.readFileSync(path.join(f.root, 'projects/app', source), 'utf8'), body);
   }
   const archived = 'openspec/changes/archive/2026-10-01-moving/brief.md';
-  write(path.join(f.root, 'projects/app', archived), '# 固定历史解释\n');
-  const result = f.application.recordTaskMaterials(f.root, 'one', { expectedCurrent: 'absent', documents: [projectRef(`@project/${archived}`)] });
-  assert.equal(result.documents[0].content, '# 固定历史解释\n');
-  assert.deepEqual(f.record.changes, []);
+  fs.mkdirSync(path.dirname(path.dirname(path.join(f.root, 'projects/app', archived))), { recursive: true });
+  fs.renameSync(path.dirname(path.join(f.root, 'projects/app', source)), path.dirname(path.join(f.root, 'projects/app', archived)));
+  assert.equal(f.application.inspectTaskMaterials(f.root, 'one').documents[0].diagnostic?.code, 'task_materials_document_missing', '普通文件引用不能被静默替换为另一个路径');
+  const result = f.application.recordTaskMaterials(f.root, 'one', { expectedCurrent, documents: [projectRef(`@project/${archived}`)] });
+  assert.equal(result.documents[0].content, body);
+  assert.equal(f.application.taskProjectDocument(f.root, 'one', 'app', archived).content, body);
+  assert.equal(fs.readFileSync(path.join(f.root, 'projects/app', archived), 'utf8'), body);
+  assert.equal(JSON.stringify(f.record), recordBefore);
+  assert.throws(() => f.application.recordTaskMaterials(f.root, 'one', { expectedCurrent, documents: [] }), code('task_materials_conflict'));
 });
 
 test('超大损坏材料锁局部拒绝写入，不全文读取或改写正文及任务事实', t => {
@@ -159,8 +171,6 @@ test('路径、未知字段、重复身份及退役brief、symlink、非法UTF8�
   assert.throws(() => f.application.recordTaskMaterials(f.root, 'one', { expectedCurrent: 'absent', documents: [taskRef('link', 'link.md')] }), code('task_document_path_forbidden'));
   fs.mkdirSync(f.local('dir.md'));
   assert.throws(() => f.application.recordTaskMaterials(f.root, 'one', { expectedCurrent: 'absent', documents: [taskRef('directory', 'dir.md')] }), code('task_document_unreadable'));
-  write(path.join(f.root, 'projects/app/openspec/changes/active/brief.md'), '# moving\n');
-  assert.throws(() => f.application.recordTaskMaterials(f.root, 'one', { expectedCurrent: 'absent', documents: [projectRef('openspec/changes/active/brief.md')] }), code('task_materials_moving_change_reference'));
   f.record.scope.projects = [];
   assert.throws(() => f.application.recordTaskMaterials(f.root, 'one', { expectedCurrent: 'absent', documents: [projectRef()] }), code('task_document_scope_forbidden'));
 });

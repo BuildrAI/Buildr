@@ -1413,13 +1413,8 @@ button.table-action {
 /* Task / article detail layout restored for smoke geometry */
 .content-view { display: grid; gap: 8px; }
 .content-view-toggle { display: inline-flex; width: fit-content; margin: 0 14px; }
-.change-brief-panel .content-view-toggle { margin: 0 20px; }
 .content-view-pane[hidden] { display: none !important; }
 .content-view-source { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; color: #34473d; }
-.brief-source, .brief-missing small { display: block; padding: 0 20px 18px; overflow-wrap: anywhere; color: var(--soft-muted); font: 10px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
-.brief-missing { padding: 4px 20px 20px; }
-.brief-missing p { margin: 0 0 8px; color: var(--soft-muted); font-size: 13px; line-height: 1.6; }
-.brief-missing small { padding: 0; }
 .technical-artifacts-panel .artifact-panel { background: #fff; }
 .artifact-list { display: grid; gap: 12px; }
 .artifact-panel { overflow: hidden; border: 1px solid var(--soft-line); border-radius: 6px; background: #fbfcfb; }

@@ -59,7 +59,6 @@ function writeChange(projectRoot: any, relative: any, title: any): any  {
   const changeRoot: any = path.join(projectRoot, 'openspec', 'changes', relative);
   fs.mkdirSync(path.join(changeRoot, 'specs', 'demo-capability'), { recursive: true });
   fs.writeFileSync(path.join(changeRoot, '.openspec.yaml'), 'schema: spec-driven\n');
-  fs.writeFileSync(path.join(changeRoot, 'brief.md'), `# ${title}\n\n## 一句话摘要\n\n普通用户先从这里了解变更。\n\n## 核心流程\n\n- 查看 Brief\n- 深入技术产物\n`);
   fs.writeFileSync(path.join(changeRoot, 'proposal.md'), `# ${title}\n\n验证 Buildr Web。\n`);
   fs.writeFileSync(path.join(changeRoot, 'design.md'), '## Context\n\nBrowser smoke fixture.\n' + '\n方案阅读位置验证。\n'.repeat(35));
   fs.writeFileSync(path.join(changeRoot, 'tasks.md'), '- [x] 准备 fixture\n- [ ] 验证页面\n');
@@ -2211,7 +2210,12 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.waitForURL(`${workspaceUrl}/tasks/browser-task/changes/demo/browser-flow`);
     await page.locator('#task-change-provenance').waitFor({ state: 'visible' });
     assert.match(await page.locator('#task-change-provenance-facts').innerText(), /工作副本/);
-    assert.match(await page.locator('#change-brief').innerText(), /浏览器流程/);
+    assert.match(await page.locator('#change-artifacts').innerText(), /浏览器流程/);
+    assert.equal(await page.locator('#change-brief').count(), 0);
+    assert.equal(fs.existsSync(path.join(workspaceRoot, 'projects/demo/openspec/changes/browser-flow/brief.md')), false);
+    const response = await page.request.get(`${url}/api/v1/workspaces/${initialWorkspaceId}/tasks/browser-task/changes/demo/browser-flow`);
+    assert.equal(response.status(), 200);
+    assert.equal(Object.hasOwn((await response.json()).resolution.workingCopy.change, 'brief'), false);
     assert.equal(await page.getByRole('button', { name: /审查|继续推进/ }).count(), 0, 'Change 详情只读展示');
   });
 
@@ -2279,10 +2283,11 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.deepEqual(await page.locator('[data-task-node]').evaluateAll(nodes => nodes.map(node => node.getAttribute('data-task-node'))), ['requirements','design','implementation','closeout']);
     assert.match(await page.locator('#task-node-content .markdown-body').innerText(), /验证 Task Record 页面/, '说明节点默认显示记录正文');
     await page.locator('[data-task-node=design]').click();
-    await page.locator('[data-task-artifact$="brief.md"]').click();
-    await page.locator('#task-node-content .markdown-body').filter({ hasText: '普通用户先从这里了解变更' }).waitFor({ state: 'visible' });
+    await page.locator('[data-task-artifact$="proposal.md"]').click();
+    assert.equal(await page.locator('[data-task-artifact$="brief.md"]').count(), 0);
+    await page.locator('#task-node-content .markdown-body').filter({ hasText: '验证 Buildr Web' }).waitFor({ state: 'visible' });
     await page.locator('#task-node-content').getByRole('button',{name:'查看原文',exact:true}).click();
-    assert.match(await page.locator('#task-node-content .markdown-reader-source').innerText(), /普通用户先从这里了解变更/);
+    assert.match(await page.locator('#task-node-content .markdown-reader-source').innerText(), /验证 Buildr Web/);
     await page.locator('#task-node-content').getByRole('button',{name:'阅读模式',exact:true}).click();
     assert.equal(await page.locator('.pane-stage:visible').count(), 1, '任务详情复用列表分屏，内部不得再创建分屏');
     assert.equal(await page.locator('.pane-right:visible').count(), 1);
@@ -2556,8 +2561,8 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.equal(await page.locator('.pane-stage:visible').count(), 1, '任务详情中没有嵌套副屏');
     assert.match(await page.locator('#task-node-content .markdown-body').innerText(), /验证 Buildr Web 轻量查询客户端/, '说明节点默认显示记录正文');
     await page.locator('[data-task-node=design]').click();
-    await page.locator('[data-task-artifact$="brief.md"]').click();
-    await page.locator('#task-node-content .markdown-body').filter({ hasText: '普通用户先从这里了解变更' }).waitFor({ state: 'visible' });
+    await page.locator('[data-task-artifact$="proposal.md"]').click();
+    await page.locator('#task-node-content .markdown-body').filter({ hasText: '验证 Buildr Web' }).waitFor({ state: 'visible' });
     assert.equal(await page.getByRole('link', {name:'查看关联变更',exact:true}).count(), 0, '节点正文不重复提供技术目录入口');
     assert.match(await page.locator('#task-detail-parent').innerText(), /浏览器协调任务[\s\S]*进行中/);
     await page.locator('#task-detail-parent a').click();
@@ -2617,13 +2622,21 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     const worktreeProject = path.join(workspaceRoot, '.worktrees/browser-task/projects/demo');
     fs.writeFileSync(path.join(worktreeProject, 'docs/task-reference.md'), '# 任务参考资料\n\n这是工作树的未提交说明。\n\n[继续阅读](more.md)\n');
     fs.writeFileSync(path.join(worktreeProject, 'docs/more.md'), '# 后续资料\n\n继续读取同一工作树。\n');
-    fs.writeFileSync(path.join(worktreeProject, 'openspec/changes/browser-flow/brief.md'), '# 工作树的需求或说明\n\n独立文件系统中的最新需求。\n');
+    fs.writeFileSync(path.join(worktreeProject, 'openspec/changes/browser-flow/proposal.md'), '# 工作树中的提案\n\n独立文件系统中的最新提案。\n\n[阅读历史说明](brief.md)\n');
+    const historicalBrief = '\ufeff# 旧变更说明\r\n\r\n旧文件保留，通过普通链接读取。\r\n';
+    const historicalBriefPath = path.join(worktreeProject, 'openspec/changes/browser-flow/brief.md');
+    fs.writeFileSync(historicalBriefPath, historicalBrief);
     await page.goto(`${workspaceUrl}/tasks/browser-task`);
     assert.equal(await page.locator('[data-task-node=requirements]').getAttribute('aria-pressed'), 'true');
     assert.match(await page.locator('#task-node-content .markdown-body').innerText(), /验证 Task Record 页面/, '说明节点默认显示记录正文');
     await page.locator('[data-task-node=design]').click();
-    await page.locator('[data-task-artifact$="brief.md"]').click();
-    await page.locator('#task-node-content .markdown-body').filter({ hasText: '独立文件系统中的最新需求' }).waitFor({ state: 'visible' });
+    await page.locator('[data-task-artifact$="proposal.md"]').click();
+    assert.equal(await page.locator('[data-task-artifact$="brief.md"]').count(), 0);
+    await page.locator('#task-node-content .markdown-body').filter({ hasText: '独立文件系统中的最新提案' }).waitFor({ state: 'visible' });
+    await page.locator('#task-node-content').getByRole('link', { name: '阅读历史说明', exact: true }).click();
+    await page.locator('.resource-reader:visible .markdown-body').filter({ hasText: '旧文件保留，通过普通链接读取' }).waitFor({ state: 'visible' });
+    assert.equal(fs.readFileSync(historicalBriefPath, 'utf8'), historicalBrief);
+    await page.getByRole('button', { name: '关闭 文档', exact: true }).click();
     await page.waitForLoadState('networkidle');
     const prototypeFailureRoute = /\/tasks\/browser-task\/ui-prototypes(?:\?|$)/;
     await page.route(prototypeFailureRoute, async (route: any) => {
@@ -2639,8 +2652,8 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
       await page.locator('#task-detail-refresh:not(.ant-btn-loading)').waitFor({ state: 'visible' });
       assert.match(await page.locator('#task-node-content .markdown-body').innerText(), /验证 Task Record 页面/, '原型失败不影响记录说明');
       await page.locator('[data-task-node=design]').click();
-      await page.locator('[data-task-artifact$="brief.md"]').click();
-      assert.match(await page.locator('#task-node-content .markdown-body').innerText(), /独立文件系统中的最新需求/, '原型局部读取失败不影响已读取的变更辅助材料');
+      await page.locator('[data-task-artifact$="proposal.md"]').click();
+      assert.match(await page.locator('#task-node-content .markdown-body').innerText(), /独立文件系统中的最新提案/, '原型局部读取失败不影响已读取的标准提案');
     } finally { await page.unroute(prototypeFailureRoute); }
     await page.locator('#task-detail-intent').getByRole('link', { name: '任务参考资料', exact: true }).click();
     const linkedDocument = page.locator('.resource-reader:visible');
@@ -2655,13 +2668,13 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await linkedDocument.getByRole('link', { name: '继续阅读', exact: true }).click();
     await linkedDocument.filter({ hasText: '工作树相关文档在阅读期间更新' }).waitFor({ state: 'visible' });
     await page.getByRole('button', { name: '关闭 文档', exact: true }).click();
-    await page.locator('#task-node-content .markdown-body').filter({ hasText: '独立文件系统中的最新需求' }).waitFor({ state: 'visible' });
+    await page.locator('#task-node-content .markdown-body').filter({ hasText: '独立文件系统中的最新提案' }).waitFor({ state: 'visible' });
     await openTaskActionModal(page, 'task-edit-action');
     assert.match(await antdSelectDisplay(page, 'task-edit-parent'), /browser-parent/);
     await selectAntdOption(page, 'task-edit-parent', '不关联组合任务');
     await page.getByRole('button', { name: '保存任务记录', exact: true }).click();
     await page.locator('#task-edit-form').waitFor({ state: 'hidden' });
-    assert.match(await page.locator('#task-node-content .markdown-body').innerText(), /独立文件系统中的最新需求/, '保存后保留阅读内容');
+    assert.match(await page.locator('#task-node-content .markdown-body').innerText(), /独立文件系统中的最新提案/, '保存后保留阅读内容');
     assert.equal(runtime.inspectTask(workspaceRoot, 'browser-task').record.parentTaskId, null);
     await closeTaskReading(page); await page.locator('[data-task-node=closeout]').click();
     assert.equal(await page.getByRole('button', {name:/^任务信息/}).count(), 0);

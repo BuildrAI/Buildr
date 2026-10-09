@@ -21,7 +21,7 @@ test('task-manager 保持记录命令兼容，形成记录正文并保护过程�
   assert.match(manager, /简单任务可用一个短段落/);
   assert.match(manager, /任务记录（Task Record）的 `brief` 字段保存真实任务说明/);
   assert.match(manager, /所有任务类型共用这一正文，不要求 OpenSpec/);
-  assert.match(manager, /不委托关联变更说明（Change Brief）/);
+  assert.match(manager, /不生成或维护额外 `brief\.md`/);
   assert.match(manager, /buildr\.task-materials\/v2/);
   assert.match(manager, /solution\|implementation\|delivery/);
   assert.match(manager, /清单不保存正文、物理工作树路径、任务状态或专业检查适用性/);
@@ -79,19 +79,22 @@ test('finish 分别核对记录正文、材料交付引用与实际刷新，并�
   assert.match(finish, /task brief migrate/);
 });
 
-test('current-knowledge 保留 v3 授权 Change Brief 保证，不接管任务正文与所有过程报告', () => {
+test('current-knowledge v4 退役变更说明，不接管任务正文与所有过程报告', () => {
   const knowledge = skill('current-knowledge-maintenance');
   const collaboration = read('skills/buildr/current-knowledge-maintenance/references/change-collaboration.md');
-  assert.match(knowledge, /保留 v3 已授权 Change Brief 创建、刷新与一致性检查保证/);
+  assert.match(knowledge, /buildr\.current-knowledge-maintenance\/v4/);
+  assert.match(knowledge, /不再创建、刷新或要求 Buildr 增强的 `brief\.md`/);
   assert.match(knowledge, /独立任务说明（Task Brief）的形成、保存与接续由 `task-manager` 通过任务记录（Task Record）的 `brief` 字段负责/);
   assert.match(knowledge, /专业审查、验证报告不默认收纳到 `knowledge\/`/);
-  assert.match(collaboration, /`assess` 保持 v3 的已授权创建或刷新保证/);
-  assert.match(collaboration, /`reconcile\|inspect` 核对它与当前权威材料的一致性/);
+  assert.match(collaboration, /`assess\|reconcile\|inspect\|maintain` 均不创建、刷新或要求 Buildr 增强的 `brief\.md`/);
+  assert.match(collaboration, /历史文件及已有链接保持普通阅读语义/);
   assert.match(collaboration, /@task\/<task-id>/);
   assert.doesNotMatch(collaboration, /作为任务需求或说明|没有补充内容时可以为空/);
-  const contract = read('skills/contracts/buildr/current-knowledge-maintenance/v3.md');
-  assert.match(contract, /`assess` 识别真实影响并维护已授权变更说明/);
-  for (const [id, version] of [['task-record', 4], ['task-review', 2], ['task-verification', 4], ['current-knowledge-maintenance', 3]] as const) {
+  const contract = read('skills/contracts/buildr/current-knowledge-maintenance/v4.md');
+  assert.match(contract, /`assess` 识别真实影响并将授权维护工作纳入执行清单/);
+  assert.doesNotMatch(contract, /`assess` 识别真实影响并维护已授权变更说明/);
+  assert.equal(assetIntegrity(path.join(workspace, 'skills/contracts/buildr/current-knowledge-maintenance/v3.md')), 'sha256-8449c6486d0db88f78d775d6e367a278b726376b84d896cbd77c568e9940b64b', '旧 v3 协作保证必须原样保留');
+  for (const [id, version] of [['task-record', 4], ['task-review', 2], ['task-verification', 4], ['current-knowledge-maintenance', 4]] as const) {
     const parsed = parseCapabilityContract(path.join(workspace, `skills/contracts/buildr/${id}/v${version}.md`));
     assert.equal(parsed.id, `buildr.${id}`);
     assert.equal(parsed.version, version);
@@ -107,6 +110,8 @@ test('Buildr-owned OpenSpec 增强指向唯一正文，归档保留正文且不�
     assert.match(text, /普通相对链接|旧文件链接/);
     assert.match(text, /历史/);
     assert.match(text, /旧(?:说明|文件链接)/);
+    assert.match(text, /Buildr 不再生成、刷新或要求 `brief\.md`/);
+    assert.doesNotMatch(text, /核对 Change root 内 `brief\.md` 实际存在|创建或刷新`brief\.md`|tasks 中的 Brief/);
     assert.doesNotMatch(text, /规划材料齐备后默认执行一次|此时默认执行一次实现审查|Planning Review 默认已在规划阶段执行/);
   }
   const archive = fragment('openspec-archive-converge');
@@ -124,13 +129,31 @@ test('本次实现审查表现术语统一，completion 接口类型保持兼容
   assert.match(skill('task-review'), /--type <planning\|completion>/);
 });
 
-test('OpenSpec source integrity 使用真实成员内容且保留既有 knowledge v3 requires', () => {
+test('OpenSpec source integrity 使用真实成员内容，增强只迁移 knowledge v4 requires', () => {
   const component = YAML.parse(read('components/buildr/openspec/component.yml'));
   for (const entry of component.integrity as string[]) {
     const [relative, expected] = entry.split('=');
     assert.equal(assetIntegrity(path.join(workspace, relative)), expected, relative);
   }
   for (const id of ['openspec-propose', 'openspec-update-change', 'openspec-apply-change']) {
-    assert.ok(component.contributions.skillDependencies.some((entry: { skill: string; capability: string; version: number; mode: string }) => entry.skill === id && entry.capability === 'buildr.current-knowledge-maintenance' && entry.version === 3 && entry.mode === 'required'));
+    assert.ok(component.contributions.skillDependencies.some((entry: { skill: string; capability: string; version: number; mode: string }) => entry.skill === id && entry.capability === 'buildr.current-knowledge-maintenance' && entry.version === 4 && entry.mode === 'required'));
+  }
+});
+
+test('变更说明退役保持 OpenSpec 1.13.0 上游来源不变', () => {
+  const component = YAML.parse(read('components/buildr/openspec/component.yml'));
+  assert.deepEqual(component.upstream, { name: '@fission-ai/openspec', version: '1.13.0' });
+  const upstream = {
+    'openspec-explore': '500fca4e0ae48c58f11af0467d0ec6adc48912e2236cbd4d7eda6d63771f7754',
+    'openspec-propose': '45600f776574c2e4f653c0c483f5c4c3f2c9698a800a5b1eb01e9b745d8082d6',
+    'openspec-update-change': 'ccfbfe61f4d64cafed50a6652c46a19491106dbd9d8df25a3b65b5fae24616a5',
+    'openspec-apply-change': '3784f26f0ff6008e677e0262d5549e26c7b16f8856e5d32e0bf9452bee64e1ff',
+    'openspec-sync-specs': 'f6bb88404830058a17feb7e261a1aeab884a6fb89bdee4cf1a9ad33000064e1e',
+    'openspec-archive-change': '917e77290f5cc266f4e881cda18e527b69ed7b4d0e4cfbaf4ce710f4b763a8de',
+  };
+  for (const [id, digest] of Object.entries(upstream)) {
+    const relative = `skills/openspec/${id}`;
+    assert.equal(assetIntegrity(path.join(workspace, relative)), `sha256-${digest}`, id);
+    assert.ok(component.integrity.includes(`${relative}=sha256-${digest}`), id);
   }
 });
