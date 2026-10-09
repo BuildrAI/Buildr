@@ -26,6 +26,37 @@ const mainCompatibility = { schemaVersion: 'buildr.package-compatibility/v1', pr
 const pluginCompatibility = { schemaVersion: 'buildr.package-compatibility/v1', provides: [], requires: [{ packageName: '@buildr-ai/buildr', feature: 'entry', required: true,
   versions: { minInclusive: '0.1.0-rc.0', maxExclusive: '0.2.0', includePrerelease: true }, contracts: ['buildr.entry/v1'] }] };
 
+function reportUnexpectedReleaseResult(result: any, expected: string): void {
+  const diagnostic = { expected, status: result.status, code: result.diagnostic?.code ?? null, message: result.diagnostic?.message ?? null };
+  const safe = containsCredentialMaterial(diagnostic)
+    ? { expected, message: '[credential-shaped diagnostic omitted]' }
+    : { expected, status: String(result.status).slice(0, 64), code: diagnostic.code === null ? null : String(diagnostic.code).slice(0, 128),
+      message: diagnostic.message === null ? null : String(diagnostic.message).trim().slice(0, 2048) };
+  process.stderr.write(`[package-release-selection-operation] ${JSON.stringify(safe)}\n`);
+}
+function assertReleaseStatus(result: any, expected: string): void {
+  if (result.status !== expected) reportUnexpectedReleaseResult(result, expected);
+  assert.equal(result.status, expected);
+}
+function sourceGitFailure(result: any): any {
+  const prefix = 'Candidate source inspection failed: ';
+  if (!result.diagnostic?.message?.startsWith(prefix)) {
+    reportUnexpectedReleaseResult(result, 'source-git-failure');
+    assert.fail('The source Git failure diagnostic is missing.');
+  }
+  return JSON.parse(result.diagnostic.message.slice(prefix.length));
+}
+async function captureReleaseSelectionFailure(name: string, body: () => Promise<void>): Promise<void> {
+  try { await body(); }
+  catch (error: any) {
+    reportUnexpectedReleaseResult({ status: 'thrown', diagnostic: { code: error.code ?? error.name ?? null, message: error.message ?? null } }, name);
+    throw error;
+  }
+}
+function releaseSelectionTest(name: string, body: (context: any) => Promise<void>): void {
+  test(name, context => captureReleaseSelectionFailure(name, () => body(context)));
+}
+
 function archive(metadata: any): Buffer {
   const body = Buffer.from(JSON.stringify(metadata)), header = Buffer.alloc(512);
   const field = (value: string, start: number, length: number) => header.write(value, start, length, 'utf8');
@@ -172,14 +203,14 @@ function fixture(t: any, changes: { mainRuntime?: boolean; omitSourcePatch?: boo
   };
 }
 
-test('plugin-only prepare recovers one lost source dispatch, admits exact peer proof, and prepares separate main bytes without resurrecting refs', async t => {
+releaseSelectionTest('plugin-only prepare recovers one lost source dispatch, admits exact peer proof, and prepares separate main bytes without resurrecting refs', async t => {
   const data = fixture(t);
   const first = await runReleaseOperation(data.options, data.dependencies);
-  assert.equal(first.status, 'candidate-dispatch-unconfirmed', JSON.stringify(first)); assert.equal(first.version, null); assert.equal(first.selectionId, selectionId);
+  assertReleaseStatus(first, 'candidate-dispatch-unconfirmed'); assert.equal(first.version, null); assert.equal(first.selectionId, selectionId);
   assert.equal(data.counts().candidateDispatches, 1); assert.equal(data.state().candidate.runId, null); assert.equal(data.counts().merges, 0);
   data.revealCandidate();
   const ready = await runReleaseOperation(data.options, data.dependencies);
-  assert.equal(ready.status, 'awaiting-publication-authorization', JSON.stringify(ready));
+  assertReleaseStatus(ready, 'awaiting-publication-authorization');
   assert.deepEqual(data.counts(), { candidateDispatches: 1, pluginDispatches: 1, merges: 1, mainReads: 0, unpublishedReads: 0, pluginSourceReads: 1, postMainReads: 1 });
   const record = data.state(); assert.deepEqual(record.candidatePlan.requirements, { buildr: false, plugin: true });
   assert.equal(record.candidate.runId, 700); assert.equal(record.pluginPreparation.runId, 800); assert.equal(record.context.selection.version, null);
@@ -194,71 +225,75 @@ test('plugin-only prepare recovers one lost source dispatch, admits exact peer p
   assert.ok(data.events.indexOf('source-proof') < data.events.indexOf('main-merge')); assert.ok(data.events.indexOf('main-merge') < data.events.indexOf('post-main-dispatch'));
   assert.equal(data.remoteRef('release-' + selectionId), ''); assert.equal(data.remoteRef(record.candidate.branch), '');
   const repeated = await runReleaseOperation(data.options, data.dependencies);
-  assert.equal(repeated.status, 'awaiting-publication-authorization', JSON.stringify(repeated)); assert.equal(repeated.contextIdentity, ready.contextIdentity);
+  assertReleaseStatus(repeated, 'awaiting-publication-authorization'); assert.equal(repeated.contextIdentity, ready.contextIdentity);
   assert.equal(data.counts().candidateDispatches, 1); assert.equal(data.counts().pluginDispatches, 1); assert.equal(data.counts().merges, 1);
   assert.equal(data.remoteRef('release-' + selectionId), ''); assert.equal(data.remoteRef(record.candidate.branch), '');
   assert.ok(data.requests.filter((args: string[]) => args[0] === 'workflow').every((args: string[]) => !args.includes('operation=publish')));
 });
 
-test('plugin-only target selection cannot waive main QA required by the complete source diff', async t => {
+releaseSelectionTest('plugin-only target selection cannot waive main QA required by the complete source diff', async t => {
   const data = fixture(t, { mainRuntime: true });
-  assert.equal((await runReleaseOperation(data.options, data.dependencies)).status, 'candidate-dispatch-unconfirmed'); data.revealCandidate();
+  assertReleaseStatus(await runReleaseOperation(data.options, data.dependencies), 'candidate-dispatch-unconfirmed'); data.revealCandidate();
   const result = await runReleaseOperation(data.options, data.dependencies);
-  assert.equal(result.status, 'blocked', JSON.stringify(result)); assert.deepEqual(data.state().candidatePlan.requirements, { buildr: true, plugin: true });
+  assertReleaseStatus(result, 'blocked'); assert.deepEqual(data.state().candidatePlan.requirements, { buildr: true, plugin: true });
   assert.match(result.diagnostic.message, /Main QA evidence must be read/u);
   assert.equal(data.counts().mainReads, 1); assert.equal(data.counts().merges, 0); assert.equal(data.counts().pluginSourceReads, 0); assert.equal(data.counts().pluginDispatches, 0);
   assert.equal(data.counts().unpublishedReads, 0); assert.equal(data.counts().candidateDispatches, 1);
 });
 
-test('failed source Git read preserves its bounded cause and freezes without any Candidate dispatch', async t => {
+releaseSelectionTest('failed source Git read preserves its bounded cause and freezes without any Candidate dispatch', async t => {
   const data = fixture(t, { omitSourcePatch: true });
   const result = await runReleaseOperation(data.options, data.dependencies);
-  assert.equal(result.status, 'blocked');
-  assert.match(result.diagnostic.message, /^Candidate source inspection failed: /u);
-  const failure = JSON.parse(result.diagnostic.message.slice('Candidate source inspection failed: '.length));
+  assertReleaseStatus(result, 'blocked');
+  const failure = sourceGitFailure(result);
   assert.equal(failure.command, 'git');
   assert.deepEqual(failure.args, ['show', `${data.state().sourceCommit}:${PLUGIN_SERVICE_PATH}/${sdkPatch}`]);
   assert.equal(failure.status, 128); assert.equal(failure.errorCode, null); assert.equal(failure.signal, null);
   assert.equal(failure.stdoutBytes, 0); assert.ok(failure.stderr.length > 0 && failure.stderr.length <= 2048);
   assert.equal(data.counts().candidateDispatches, 0); assert.equal(data.counts().merges, 0); assert.equal(data.counts().pluginDispatches, 0);
   assert.ok(data.state().sourceCommit); assert.ok(data.requests.every((args: string[]) => args[0] !== 'workflow' && args[0] !== 'pr'));
-});
-
-test('source Git diagnostics omit complete credential-shaped stderr before the size boundary', async t => {
+  const frozenSource = data.state().sourceCommit, originalExecute = data.dependencies.execute;
   const cases = [
     ['npm', () => String.fromCharCode(110, 112, 109, 95) + 'a'.repeat(36)],
     ['JWT', () => ['eyJ' + 'a'.repeat(12), 'b'.repeat(12), 'c'.repeat(12)].join('.')],
   ] as const;
-  for (const [label, material] of cases) await t.test(label, async nested => {
+  for (const [label, material] of cases) await t.test(label, () => captureReleaseSelectionFailure(label, async () => {
     const privateDiagnostic = 'x'.repeat(2045) + ' ' + material();
     assert.ok(containsCredentialMaterial(privateDiagnostic), 'The controlled case must be credential-shaped.');
     assert.ok(!containsCredentialMaterial(privateDiagnostic.trim().slice(0, 2048)), 'The controlled case must span the previous truncation boundary.');
-    const data = fixture(nested, { omitSourcePatch: true }), originalExecute = data.dependencies.execute;
+    let failedGitReads = 0;
     data.dependencies.execute = (command: string, args: string[], config: any) => {
       const result = originalExecute(command, args, config);
-      return command === 'git' && args[0] === 'show' && args[1]?.endsWith(`:${PLUGIN_SERVICE_PATH}/${sdkPatch}`) && result.status !== 0
-        ? { ...result, stderr: privateDiagnostic } : result;
+      if (command === 'git' && args[0] === 'show' && args[1]?.endsWith(`:${PLUGIN_SERVICE_PATH}/${sdkPatch}`) && result.status !== 0) {
+        failedGitReads++;
+        return { ...result, stderr: privateDiagnostic };
+      }
+      return result;
     };
-    const result = await runReleaseOperation(data.options, data.dependencies);
-    assert.equal(result.status, 'blocked');
-    const failure = JSON.parse(result.diagnostic.message.slice('Candidate source inspection failed: '.length));
+    let result: any;
+    try { result = await runReleaseOperation(data.options, data.dependencies); }
+    finally { data.dependencies.execute = originalExecute; }
+    assertReleaseStatus(result, 'blocked');
+    const failure = sourceGitFailure(result);
     assert.ok(failure.stderr === '[credential-shaped diagnostic omitted]', 'The entire private diagnostic must be omitted.');
-    assert.equal(failure.status, 128); assert.ok(data.state().sourceCommit);
+    assert.equal(failure.status, 128); assert.equal(failedGitReads, 1);
+    assert.equal(data.state().sourceCommit, frozenSource);
+    assert.equal(git(data.repo, ['rev-parse', `refs/buildr/release/${selectionId}/frozen`]), frozenSource);
     assert.equal(data.counts().candidateDispatches, 0); assert.equal(data.counts().merges, 0); assert.equal(data.counts().pluginDispatches, 0);
     assert.ok(data.requests.every((args: string[]) => args[0] !== 'workflow' && args[0] !== 'pr'));
-  });
+  }));
 });
 
-test('wrong frozen registry peer or source aggregate blocks before any main PR or post-main preparation', async t => {
+releaseSelectionTest('wrong frozen registry peer or source aggregate blocks before any main PR or post-main preparation', async t => {
   for (const [name, mutateAggregate] of [
     ['peer', (value: any) => { value.verification.peer.artifactSha256 = 'f'.repeat(64); }],
     ['source', (value: any) => { value.sourceTree = 'e'.repeat(40); }],
-  ] as const) await t.test(name, async (nested: any) => {
+  ] as const) await t.test(name, (nested: any) => captureReleaseSelectionFailure(name, async () => {
     const data = fixture(nested, { mutateAggregate });
-    assert.equal((await runReleaseOperation(data.options, data.dependencies)).status, 'candidate-dispatch-unconfirmed'); data.revealCandidate();
+    assertReleaseStatus(await runReleaseOperation(data.options, data.dependencies), 'candidate-dispatch-unconfirmed'); data.revealCandidate();
     const result = await runReleaseOperation(data.options, data.dependencies);
-    assert.equal(result.status, 'blocked', JSON.stringify(result)); assert.equal(data.counts().pluginSourceReads, 1);
+    assertReleaseStatus(result, 'blocked'); assert.equal(data.counts().pluginSourceReads, 1);
     assert.equal(data.counts().merges, 0); assert.equal(data.counts().pluginDispatches, 0); assert.equal(data.counts().mainReads, 0);
     assert.ok(data.requests.every((args: string[]) => args[0] !== 'pr')); assert.equal(data.counts().candidateDispatches, 1);
-  });
+  }));
 });
