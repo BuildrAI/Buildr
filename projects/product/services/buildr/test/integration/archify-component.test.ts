@@ -8,6 +8,7 @@ import YAML from 'yaml';
 
 import { assetIntegrity } from '../../src/modules/agent-assets/infrastructure/component-source.ts';
 import { skillDestinationRoot } from '../../src/modules/agent-assets/infrastructure/runtime/adapter-contract.ts';
+import { ARCHIFY_SCENARIO_LABELS, archifyScenarioTimings } from '../verification/integration-progress-reporter.ts';
 
 const file = fileURLToPath(import.meta.url);
 const serviceRoot = path.resolve(path.dirname(file), '../..');
@@ -23,9 +24,20 @@ function scenario() {
   // Only these child processes use the fixture home; the host installation is untouched.
   const env = { ...process.env, HOME: userHome, USERPROFILE: userHome };
   const entry = path.join(serviceRoot, 'bin/buildr.mjs');
+  const scenarioStartedAt = performance.now();
   let step = 0;
+  let commandStartedAt = scenarioStartedAt;
   function progress(label: string) {
     process.stderr.write(`[archify-scenario] ${++step}: ${label}\n`);
+    const started = label.startsWith('start ');
+    const operationLabel = label.slice(started ? 6 : 7);
+    const operation = Object.hasOwn(ARCHIFY_SCENARIO_LABELS, operationLabel) ? ARCHIFY_SCENARIO_LABELS[operationLabel] : null;
+    const now = performance.now();
+    if (started) commandStartedAt = now;
+    if (operation) process.stderr.write(`[archify-scenario-timing] ${JSON.stringify({
+      step, operation, status: started ? 'started' : 'completed', elapsedMs: Math.round(now - scenarioStartedAt),
+      ...(started ? {} : { durationMs: Math.round(now - commandStartedAt) }),
+    })}\n`);
   }
   function run(args: string[], expected = 0) {
     const label = args.slice(0, 3).join(' ');
@@ -132,6 +144,10 @@ if (process.argv.includes('--archify-scenario')) {
       '--script', file, '--', '--archify-scenario'], {
       cwd: serviceRoot, encoding: 'utf8', timeout: 175_000, maxBuffer: 8 * 1024 * 1024,
     });
+    // Forward only validated numeric phase records, never arbitrary child output.
+    for (const timing of archifyScenarioTimings(result.stderr)) {
+      process.stderr.write(`[archify-scenario-timing] ${JSON.stringify(timing)}\n`);
+    }
     assert.equal(result.status, 0, `${result.error?.message ?? ''}\n${result.stdout}\n${result.stderr}`);
     assert.match(result.stdout, /"cleanup":"cleaned"/);
   });

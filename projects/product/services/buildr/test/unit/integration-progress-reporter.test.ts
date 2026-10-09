@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import integrationProgressReporter from '../verification/integration-progress-reporter.ts';
+import integrationProgressReporter, { archifyScenarioTimings } from '../verification/integration-progress-reporter.ts';
 
 test('Integration failure and completed file diagnostics arrive before the remaining event stream ends', async () => {
   const file = '/workspace/test/integration/http.test.ts';
@@ -89,4 +89,51 @@ test('Scenario-looking child output is omitted for other files and non-assertion
   let output = '';
   for await (const chunk of integrationProgressReporter(events())) output += chunk;
   assert.doesNotMatch(output, /lastPhase|childErrorCode|fixture-tool|archify-scenario/);
+});
+
+test('Archify elapsed and command durations survive the real event shapes as closed numeric records', async () => {
+  const records = [
+    { step: 1, operation: 'workspace-init', status: 'started', elapsedMs: 250, path: 'secret-path' },
+    { step: 2, operation: 'workspace-init', status: 'completed', elapsedMs: 1_000, durationMs: 750, stdout: 'secret-output' },
+    { step: 25, operation: 'runtime-sync', status: 'started', elapsedMs: 170_000 },
+  ];
+  const message = records.map(record => `[archify-scenario-timing] ${JSON.stringify(record)}`).join('\n');
+  const expected = records.map(({ path: _path, stdout: _stdout, ...record }: any) => record);
+  assert.deepEqual(archifyScenarioTimings(message), expected);
+  async function* events(): Promise<any> {
+    yield { type: 'test:stderr', data: { file: '/private/archify-component.test.ts', message } };
+    yield { type: 'test:complete', data: { file: '/private/archify-component.test.ts', name: 'Archify lifecycle', details: {
+      passed: false, duration_ms: 175_000, error: { code: 'ERR_TEST_FAILURE', cause: {
+        code: 'ERR_ASSERTION', message: `[archify-scenario] 25: start sync codex --target\n${message}`,
+      } },
+    } } };
+  }
+  let output = '';
+  for await (const chunk of integrationProgressReporter(events())) output += chunk;
+  const lines = output.trim().split('\n').map(line => JSON.parse(line.replace(/^\[[^\]]+\] /, '')));
+  assert.equal(lines.length, 4);
+  assert.deepEqual(lines.slice(0, 3).map(({ file: _file, ...record }: any) => record), expected);
+  assert.deepEqual(lines[3].error.phaseTimings, expected);
+  assert.deepEqual(lines[3].error.lastPhase, { scope: 'archify', step: 25, status: 'started', operation: 'runtime-sync', elapsedMs: 170_000 });
+  assert.doesNotMatch(output, /secret-|\/private|stdout/);
+});
+
+test('Archify timing rejects invalid numbers, roles and phase shapes without admitting process output', async () => {
+  const valid = { step: 25, operation: 'runtime-sync', status: 'started', elapsedMs: 100 };
+  const invalid = [null, [], { ...valid, step: 27 }, { ...valid, operation: 'constructor' },
+    { ...valid, status: 'completed', durationMs: 1 }, { ...valid, step: 24, operation: 'component-uninstall' },
+    { step: 26, operation: 'runtime-sync', status: 'completed', elapsedMs: 100 },
+    { step: 26, operation: 'runtime-sync', status: 'completed', elapsedMs: 100, durationMs: 101 },
+    ...[-1, 300_001, 1.5, '1', null, NaN, Infinity].map(elapsedMs => ({ ...valid, elapsedMs })),
+  ];
+  const message = ['[archify-scenario-timing] malformed-secret-output',
+    ...invalid.map(record => `[archify-scenario-timing] ${JSON.stringify(record)}`)].join('\n');
+  assert.deepEqual(archifyScenarioTimings(message), []);
+  async function* events(): Promise<any> {
+    yield { type: 'test:stderr', data: { file: 'archify-component.test.ts', message } };
+    yield { type: 'test:stderr', data: { file: 'other.test.ts', message: `[archify-scenario-timing] ${JSON.stringify(valid)}` } };
+  }
+  let output = '';
+  for await (const chunk of integrationProgressReporter(events())) output += chunk;
+  assert.equal(output, '');
 });

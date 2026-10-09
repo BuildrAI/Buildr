@@ -3,7 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawnCommandSync } from '../../src/infrastructure/process.ts';
 import { resolveNodeTestFiles } from './test-files.ts';
 import { resolveVerificationWorkerBudget } from './worker-budget.ts';
@@ -18,6 +18,7 @@ try {
   if (diagnostics) {
     fs.mkdirSync(diagnostics, { recursive: true });
     reporters.push('--test-reporter=spec', '--test-reporter-destination=stdout', '--test-reporter=tap', `--test-reporter-destination=${path.join(diagnostics, `node-tests-${process.pid}.tap`)}`);
+    reporters.push(`--test-reporter=${pathToFileURL(path.join(import.meta.dirname, 'integration-progress-reporter.ts')).href}`, '--test-reporter-destination=stderr');
   }
   process.stderr.write(`[managed-node-tests] files=${files.length} workerBudget=${workerBudget}\n`);
   const result: any = spawnCommandSync(process.execPath, ['--test', `--test-concurrency=${workerBudget}`, ...reporters, ...files], { cwd: productRoot, stdio: 'inherit' });

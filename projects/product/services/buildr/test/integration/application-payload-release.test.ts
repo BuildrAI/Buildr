@@ -546,7 +546,9 @@ test('npm package uses only its compatible host Node for CLI and on-demand Build
     const registeredWorkspace=workspaceRegistry.workspaces.find((entry:any)=>sameFilesystemPath(entry.rootPath,workflowWorkspace));assert.ok(registeredWorkspace,JSON.stringify(workspaceRegistry));
     const codeQuery=new URLSearchParams({repositoryId:codeRepository.id,query:'External service',mode:'content'});
     const codeResponse=await fetch(instance.url+'/api/v1/workspaces/'+registeredWorkspace.workspace.id+'/code/search?'+codeQuery,{headers:{'x-buildr-instance':instance.secret}});assert.equal(codeResponse.status,200);
-    const httpCodeResult=await codeResponse.json();assert.deepEqual(httpCodeResult.matches,codeResult.matches);assert.equal(httpCodeResult.truncated,false);assert.deepEqual(httpCodeResult.diagnostics,[]);
+    const httpCodeResult=await codeResponse.json();
+    const byPath=(left:any,right:any)=>left.path.localeCompare(right.path);
+    assert.deepEqual([...httpCodeResult.matches].sort(byPath),[...codeResult.matches].sort(byPath));assert.equal(httpCodeResult.truncated,false);assert.deepEqual(httpCodeResult.diagnostics,[]);
     const fullText='x'.repeat(5*1024*1024);fs.writeFileSync(path.join(external,'five-mib.txt'),fullText);
     const fileQuery=new URLSearchParams({repositoryId:codeRepository.id,filePath:'five-mib.txt'});
     const fileResponse=await fetch(instance.url+'/api/v1/workspaces/'+registeredWorkspace.workspace.id+'/code/file?'+fileQuery,{headers:{'x-buildr-instance':instance.secret}});assert.equal(fileResponse.status,200);

@@ -7,6 +7,11 @@ import test from 'node:test';
 const serviceRoot = path.resolve(import.meta.dirname, '../..');
 const runner = path.join(serviceRoot, 'test/verification/run-node-tests.ts');
 
+function progressRecords(stderr: string): any[] {
+  const prefix = '[buildr-integration-progress] ';
+  return stderr.split(/\r?\n/u).filter(line => line.startsWith(prefix)).map(line => JSON.parse(line.slice(prefix.length)));
+}
+
 test('release test runner respects the granted worker count and retains abnormal exit details', t => {
   fs.mkdirSync(path.join(serviceRoot, 'package/targets'), { recursive: true });
   const root = fs.mkdtempSync(path.join(serviceRoot, 'package/targets/release-runner-fixture-'));
@@ -36,10 +41,22 @@ test('release test runner respects the granted worker count and retains abnormal
     else { assert.ok(active.delete(item.id)); }
   }
   assert.equal(active.size, 0);
+  const completed = progressRecords(success.stderr);
+  for (const file of ['one.test.mjs', 'two.test.mjs']) {
+    assert.ok(completed.some(record => record.file === file && record.name === file && record.status === 'started'));
+    assert.ok(completed.some(record => record.file === file && record.name === file && record.status === 'passed'));
+  }
+  assert.equal(JSON.stringify(completed).includes(root), false, 'Progress must use file identities without copying the fixture path.');
   const crash = path.join(root, 'crash.test.mjs');
-  fs.writeFileSync(crash, 'process.exit(9);\n');
+  fs.writeFileSync(crash, "process.stderr.write('private-fixture-output\\n'); process.exit(9);\n");
   const failure = spawnSync(process.execPath, [runner, crash], { cwd: serviceRoot, env, encoding: 'utf8', timeout: 30_000 });
   assert.equal(failure.status, 1);
+  const failed = progressRecords(failure.stderr);
+  assert.ok(failed.some(record => record.file === 'crash.test.mjs' && record.status === 'failed' && record.error.exitCode === 9));
+  assert.equal(JSON.stringify(failed).includes('private-fixture-output'), false, 'Progress must omit child output.');
+  assert.equal(JSON.stringify(failed).includes(root), false);
   const reports = fs.readdirSync(diagnostics).map(file => fs.readFileSync(path.join(diagnostics, file), 'utf8')).join('\n');
+  assert.match(reports, /# Subtest: one/u);
+  assert.match(reports, /# Subtest: two/u);
   assert.match(reports, /exitCode: 9/u);
 });

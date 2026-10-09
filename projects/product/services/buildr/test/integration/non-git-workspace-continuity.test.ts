@@ -8,10 +8,20 @@ import test from 'node:test';
 import { createRuntime, runtimeProvide } from '../../src/bootstrap/runtime.ts';
 import { WORKSPACE_APPLICATION } from '../../src/modules/workspace/module.ts';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
+import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.ts';
 
 const serviceRoot = path.resolve(import.meta.dirname, '../..');
 const file = path.join(import.meta.dirname, 'non-git-workspace-continuity.test.ts');
 const digest = (content: string) => `sha256-${crypto.createHash('sha256').update(content).digest('hex')}`;
+function sameExistingDirectory(left: string, right: string): boolean {
+  try { return fs.statSync(left).isDirectory() && fs.statSync(right).isDirectory() && sameFilesystemPath(left, right); }
+  catch { return false; }
+}
+function assertSameDirectories(actual: string[], expected: string[]): void {
+  assert.equal(actual.length, expected.length);
+  for (const reference of expected) assert.equal(actual.filter(observed => sameExistingDirectory(observed, reference)).length, 1);
+  for (const observed of actual) assert.equal(expected.filter(reference => sameExistingDirectory(observed, reference)).length, 1);
+}
 const sidebars = [
   ['openspec-propose', 'openspec-propose-sidebar.md'],
   ['openspec-apply-change', 'openspec-apply-sidebar.md'],
@@ -317,14 +327,30 @@ async function nestedGitIsolationScenario() {
   const conflictingFiles = [path.join(path.dirname(created.evidencePath), `${otherTaskId}.json`), path.join(otherDirectory, `${otherTaskId}.json`)];
   conflictingFiles.forEach(location => fs.writeFileSync(location, uncertainEvidence, { flag: 'wx' }));
   const uncertainCatalog = run(['code', 'repositories', '--task', taskId]);
-  const currentPaths = new Set(sourceRecords.map(item => item.checkoutPath));
-  const uncertainMembers = uncertainCatalog.worktrees.filter((item: { path: string }) => currentPaths.has(item.path));
+  const currentPaths = sourceRecords.map(item => {
+    const alias = path.join(path.dirname(item.checkoutPath), path.basename(item.checkoutPath).toUpperCase());
+    if (!fs.existsSync(alias)) return item.checkoutPath;
+    const actualStat = fs.statSync(item.checkoutPath, { bigint: true }), aliasStat = fs.statSync(alias, { bigint: true });
+    assert.equal(actualStat.dev, aliasStat.dev); assert.equal(actualStat.ino, aliasStat.ino);
+    assert.notEqual(actualStat.ino, 0n);
+    return alias;
+  });
+  assertSameDirectories(currentPaths, sourceRecords.map(item => item.checkoutPath));
+  const missingCheckout = path.join(workspace, '.worktrees/missing-checkout');
+  assert.equal(fs.existsSync(missingCheckout), false);
+  assert.equal(sameExistingDirectory(missingCheckout, missingCheckout), false);
+  assert.throws(() => assertSameDirectories([currentPaths[0], missingCheckout], currentPaths), { code: 'ERR_ASSERTION' });
+  assert.throws(() => assertSameDirectories([sourceRecords[0].sourceRepository, currentPaths[1]], currentPaths), { code: 'ERR_ASSERTION' });
+  assert.throws(() => assertSameDirectories([currentPaths[0], currentPaths[0]], currentPaths), { code: 'ERR_ASSERTION' });
+  const uncertainMembers = uncertainCatalog.worktrees.filter((item: { path: string }) => currentPaths.some(reference => sameExistingDirectory(item.path, reference)));
   assert.equal(uncertainMembers.length, 2);
+  assertSameDirectories(uncertainMembers.map((item: { path: string }) => item.path), currentPaths);
   assert.ok(uncertainMembers.every((item: { taskId: string | null; available: boolean }) => item.available && item.taskId === null));
   assert.ok(uncertainCatalog.diagnostics.some((item: { code: string }) => item.code === 'code_worktree_task_unconfirmed'));
   const uncertainControl = run(['code', 'source-control', '--task', taskId]);
-  const controlMembers = uncertainControl.repositories.flatMap((item: { worktrees: Array<{ location: string; taskId: string | null; taskDiagnostic: string | null; available: boolean }> }) => item.worktrees).filter((item: { location: string }) => currentPaths.has(item.location));
+  const controlMembers = uncertainControl.repositories.flatMap((item: { worktrees: Array<{ location: string; taskId: string | null; taskDiagnostic: string | null; available: boolean }> }) => item.worktrees).filter((item: { location: string }) => currentPaths.some(reference => sameExistingDirectory(item.location, reference)));
   assert.equal(controlMembers.length, 2);
+  assertSameDirectories(controlMembers.map((item: { location: string }) => item.location), currentPaths);
   assert.ok(controlMembers.every((item: { taskId: string | null; taskDiagnostic: string | null; available: boolean }) => item.available && item.taskId === null && item.taskDiagnostic));
   const ambiguousCleanup = run(['worktree', 'cleanup', otherTaskId, ...sourceRecords.flatMap(item => {
     const head = git(item.checkoutPath, ['rev-parse', 'HEAD']);
@@ -341,7 +367,7 @@ async function nestedGitIsolationScenario() {
   const taskMembers = codeCatalog.worktrees.filter((item: { kind: string }) => item.kind === 'task');
   assert.equal(taskMembers.length, 2);
   assert.ok(taskMembers.every((item: { taskId: string; available: boolean }) => item.taskId === taskId && item.available));
-  assert.deepEqual(new Set(taskMembers.map((item: { path: string }) => item.path)), new Set(sourceRecords.map(item => item.checkoutPath)));
+  assertSameDirectories(taskMembers.map((item: { path: string }) => item.path), currentPaths);
   const groupRoot = path.join(workspace, '.worktrees', taskId);
   const groupDocument = path.join(groupRoot, 'implementation.md');
   fs.writeFileSync(groupDocument, '# 组内资料\n\n清理 Git 对象必须保留本文件。\n');
@@ -427,13 +453,15 @@ async function nestedGitIsolationScenario() {
   assert.equal(healthy.status, 'ready');
   assert.equal(run(['worktree', 'inspect', taskId]).status, 'ready');
   const uncertainHealthyCatalog = run(['code', 'repositories', '--task', taskId]);
-  const healthyPaths = new Set(healthy.repositories.map((item: { checkoutPath: string }) => item.checkoutPath));
-  const healthyCatalogMembers = uncertainHealthyCatalog.worktrees.filter((item: { path: string }) => healthyPaths.has(item.path));
+  const healthyPaths = healthy.repositories.map((item: { checkoutPath: string }) => item.checkoutPath);
+  const healthyCatalogMembers = uncertainHealthyCatalog.worktrees.filter((item: { path: string }) => healthyPaths.some((reference: string) => sameExistingDirectory(item.path, reference)));
   assert.equal(healthyCatalogMembers.length, 2);
+  assertSameDirectories(healthyCatalogMembers.map((item: { path: string }) => item.path), healthyPaths);
   assert.ok(healthyCatalogMembers.every((item: { available: boolean; taskId: string | null }) => item.available && item.taskId === null));
   const uncertainHealthyControl = run(['code', 'source-control', '--task', taskId]);
-  const healthyControlMembers = uncertainHealthyControl.repositories.flatMap((item: { worktrees: Array<{ location: string; available: boolean; taskId: string | null; taskDiagnostic: string | null }> }) => item.worktrees).filter((item: { location: string }) => healthyPaths.has(item.location));
+  const healthyControlMembers = uncertainHealthyControl.repositories.flatMap((item: { worktrees: Array<{ location: string; available: boolean; taskId: string | null; taskDiagnostic: string | null }> }) => item.worktrees).filter((item: { location: string }) => healthyPaths.some((reference: string) => sameExistingDirectory(item.location, reference)));
   assert.equal(healthyControlMembers.length, 2);
+  assertSameDirectories(healthyControlMembers.map((item: { location: string }) => item.location), healthyPaths);
   assert.ok(healthyControlMembers.every((item: { available: boolean; taskId: string | null; taskDiagnostic: string | null }) => item.available && item.taskId === null && item.taskDiagnostic));
   assert.equal(fs.readFileSync(badGit, 'utf8'), 'gitdir: unavailable-git-directory\n');
   fs.unlinkSync(badGit); fs.renameSync(path.join(smokeRoot, 'broken-git-preserved'), badGit);

@@ -48,7 +48,12 @@ test('Real Archify child timeout exposes only the last fixed scenario phase and 
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-archify-timeout-reporter-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const fixture = path.join(root, 'archify-component.test.ts');
-  const childSource = "process.stderr.write('secret-child-output\\n[archify-scenario] 17: start installed renderer\\n'); setInterval(() => {}, 1000);";
+  const childSource = [
+    'const startedAt = performance.now();',
+    "process.stderr.write('secret-child-output\\n[archify-scenario] 17: start installed renderer\\n');",
+    "process.stderr.write('[archify-scenario-timing] ' + JSON.stringify({ step: 17, operation: 'installed-renderer', status: 'started', elapsedMs: Math.round(performance.now() - startedAt) }) + '\\n');",
+    'setInterval(() => {}, 1000);',
+  ].join(' ');
   fs.writeFileSync(fixture, [
     "import test from 'node:test';",
     "import assert from 'node:assert/strict';",
@@ -68,7 +73,10 @@ test('Real Archify child timeout exposes only the last fixed scenario phase and 
   const failure = lines.find(line => line.name === 'Archify child timeout boundary' && line.status === 'failed');
   assert.equal(failure?.error.causeCode, 'ERR_ASSERTION');
   assert.equal(failure?.error.childErrorCode, 'ETIMEDOUT');
-  assert.deepEqual(failure?.error.lastPhase, { scope: 'archify', step: 17, status: 'started', operation: 'installed-renderer' });
+  const { elapsedMs, ...phase } = failure?.error.lastPhase ?? {};
+  assert.deepEqual(phase, { scope: 'archify', step: 17, status: 'started', operation: 'installed-renderer' });
+  assert.ok(Number.isInteger(elapsedMs) && elapsedMs >= 0 && elapsedMs <= 300_000);
+  assert.deepEqual(failure?.error.phaseTimings, [{ step: 17, operation: 'installed-renderer', status: 'started', elapsedMs }]);
   assert.doesNotMatch(result.stdout, /secret-child-output|spawnSync|setInterval|AssertionError/);
   assert.equal(result.stdout.includes(root), false);
   assert.equal(result.stdout.includes(process.execPath), false);

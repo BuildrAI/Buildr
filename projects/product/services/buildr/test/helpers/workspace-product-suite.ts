@@ -380,6 +380,8 @@ suiteTest('manifest-registry', 'sync 显式迁移 legacy Workspace，并在 iden
 });
 
 suiteTest('buildr-web-http', 'Buildr Web Runtime 只监听 loopback，并保护写 API、revision 与 prompt-only 创建', async (t: any) => {
+  let phase = 'workspace-setup';
+  try {
   const root: any = initWorkspace(t);
   isolateBuildrWebData(t, path.join(temporaryRoot(t), 'local-app-data'));
   const runtime: any = createRuntime();
@@ -392,6 +394,7 @@ suiteTest('buildr-web-http', 'Buildr Web Runtime 只监听 loopback，并保护�
   const apiBase: any = `/api/v1/workspaces/${initialWorkspaceId}`;
   assert.match(url, /^http:\/\/127\.0\.0\.1:\d+$/);
 
+  phase = 'spa-and-assets';
   const html: any = await fetch(url).then((response: any) => response.text());
   assert.match(html, /<title>Buildr Web<\/title>/);
   assert.match(html, /id="root"/);
@@ -421,14 +424,17 @@ suiteTest('buildr-web-http', 'Buildr Web Runtime 只监听 loopback，并保护�
   assert.equal(response.status, 404);
   response = await fetch(`${url}/api/v1/unknown`);
   assert.equal(response.status, 404);
+  phase = 'workspace-read';
   const registry: any = await fetch(`${url}/api/v1/workspaces`).then((response: any) => response.json());
   assert.equal(registry.workspaces.length, 1);
   assert.equal(registry.workspaces[0].workspace.id, initialWorkspaceId);
   const current: any = await fetch(`${url}${apiBase}`).then((response: any) => response.json());
   assert.equal(current.workspace.name, 'Demo');
   assert.equal(sha256(metadataFile), beforeHash, '只读启动和读取不得修改 Workspace');
+  phase = 'project-create';
   const created: any = runBuildr(['project', 'create', 'web-demo', '--target', root, '--name', 'Web Demo', '--description', 'HTTP projection fixture']);
   assert.equal(created.status, 0, created.stderr);
+  phase = 'read-after-project-create';
   const gettingStarted: any = await fetch(`${url}${apiBase}/getting-started?project=missing`).then((response: any) => response.json());
   assert.equal(gettingStarted.phase, 'service-empty');
   assert.equal(gettingStarted.projects.length, 1);
@@ -436,6 +442,7 @@ suiteTest('buildr-web-http', 'Buildr Web Runtime 只监听 loopback，并保护�
   response = await fetch(`${url}${apiBase}/changes`);
   assert.equal(response.status, 404);
 
+  phase = 'write-authorization';
   response = await fetch(`${url}${apiBase}`, {
     method: 'PUT',
     headers: { 'content-type': 'application/json', 'x-buildr-session': sessionToken },
@@ -457,6 +464,7 @@ suiteTest('buildr-web-http', 'Buildr Web Runtime 只监听 loopback，并保护�
   });
   assert.equal(response.status, 415);
 
+  phase = 'oversize-body';
   response = await fetch(`${url}/api/v1/prompts/workspace-create`, {
     method: 'POST',
     headers: { origin: url, 'content-type': 'application/json', 'x-buildr-session': sessionToken },
@@ -464,6 +472,7 @@ suiteTest('buildr-web-http', 'Buildr Web Runtime 只监听 loopback，并保护�
   });
   assert.equal(response.status, 413);
 
+  phase = 'path-and-revision';
   response = await fetch(`${url}${apiBase}?path=/tmp/other`);
   assert.equal(response.status, 400);
 
@@ -484,6 +493,7 @@ suiteTest('buildr-web-http', 'Buildr Web Runtime 只监听 loopback，并保护�
   assert.equal(response.status, 409);
   assert.equal((await response.json()).error.code, 'workspace_revision_conflict');
 
+  phase = 'prompt-only-create';
   response = await fetch(`${url}/api/v1/prompts/workspace-create`, {
     method: 'POST',
     headers: { origin: url, 'content-type': 'application/json', 'x-buildr-session': sessionToken },
@@ -494,6 +504,10 @@ suiteTest('buildr-web-http', 'Buildr Web Runtime 只监听 loopback，并保护�
   assert.match(prompt.prompt, /先读取并遵循当前可用的 Buildr Skill/);
   assert.match(prompt.prompt, /目标位置尚未指定/);
   assert.equal(prompt.copiedMeansCreated, false);
+  } catch (cause) {
+    // Fixed phase labels retain the original error without copying request data.
+    throw new Error(`[buildr-web-http-scenario] phase=${phase}`, { cause });
+  }
 });
 
 suiteTest('buildr-web-http', 'Buildr Web 文章入口只读投影项目文章、配图和稳定错误状态', async (t: any) => {

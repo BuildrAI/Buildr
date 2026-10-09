@@ -66,6 +66,12 @@ function refExists(ref: any, repo: any, dependencies: any): any  {
   return runGit(['for-each-ref', '--format=%(refname)', ref], repo, dependencies).stdout.trim().split(/\r?\n/u).includes(ref);
 }
 
+function readRefPresence(refs: string[], repo: any, dependencies: any): Set<string> {
+  // for-each-ref patterns also match child refs. Membership must use the full
+  // returned ref name; a child must never prove that its parent exists.
+  return new Set(runGit(['for-each-ref', '--format=%(refname)', ...refs], repo, dependencies).stdout.trim().split(/\r?\n/u));
+}
+
 function cleanWorktree(repo: any, dependencies: any): any  {
   const result: any = runGit(['status', '--porcelain=v1', '--untracked-files=all'], repo, dependencies);
   if (result.stdout.trim()) throw new Error('Release selection requires a clean worktree.');
@@ -89,9 +95,9 @@ function normalizedTargets(value: any, selectionId: string): any {
 }
 
 /** Read the immutable target object from the existing selection ref family. Never writes. */
-function readTargets(options: any, key: string, repo: string, dependencies: any): any {
+function readTargets(options: any, key: string, repo: string, dependencies: any, presence?: Set<string>): any {
   const ref = lifecycleRef(key, 'targets');
-  if (!refExists(ref, repo, dependencies)) {
+  if (!(presence === undefined ? refExists(ref, repo, dependencies) : presence.has(ref))) {
     if (options.selectionId !== undefined && key !== options.version) throw new Error('Release selection immutable targets ref is missing.');
     const version = requiredVersion(options.version);
     if (options.targets !== undefined) {
@@ -333,15 +339,17 @@ function readState(options: any, dependencies: any): any  {
   const baselineRef: any = lifecycleRef(key, 'baseline');
   const frozenRef: any = lifecycleRef(key, 'frozen');
   const abandonedRef: any = lifecycleRef(key, 'abandoned');
-  if (!refExists(`refs/heads/${branch}`, repo, dependencies)) throw new Error(`Release branch ${branch} does not exist.`);
-  if (!refExists(baselineRef, repo, dependencies)) throw new Error(`Release baseline ref is missing: ${baselineRef}`);
-  const targetBinding = readTargets(options, key, repo, dependencies);
+  const branchRef = `refs/heads/${branch}`;
+  const presence = readRefPresence([branchRef, baselineRef, lifecycleRef(key, 'targets'), frozenRef, abandonedRef], repo, dependencies);
+  if (!presence.has(branchRef)) throw new Error(`Release branch ${branch} does not exist.`);
+  if (!presence.has(baselineRef)) throw new Error(`Release baseline ref is missing: ${baselineRef}`);
+  const targetBinding = readTargets(options, key, repo, dependencies, presence);
   const version = targetBinding ? targetBinding.targets.versions.buildr ?? null : requiredVersion(options.version);
   const devHead: any = resolveCommit(devRef, repo, dependencies);
   const devBaseline: any = resolveCommit(baselineRef, repo, dependencies);
   const releaseHead: any = resolveCommit(`refs/heads/${branch}`, repo, dependencies);
-  const frozenAt: any = refExists(frozenRef, repo, dependencies) ? resolveCommit(frozenRef, repo, dependencies) : null;
-  const abandonedAt: any = refExists(abandonedRef, repo, dependencies) ? resolveCommit(abandonedRef, repo, dependencies) : null;
+  const frozenAt: any = presence.has(frozenRef) ? resolveCommit(frozenRef, repo, dependencies) : null;
+  const abandonedAt: any = presence.has(abandonedRef) ? resolveCommit(abandonedRef, repo, dependencies) : null;
   const releaseHistory: any = selectionCommits(devBaseline, releaseHead, repo, dependencies);
   const invalidSelection: any = releaseHistory.selectionChain.find((entry: any) => !ancestor(devBaseline, entry.sourceDevCommit, repo, dependencies) || !ancestor(entry.sourceDevCommit, devHead, repo, dependencies));
   const invalidHistory: any = releaseHistory.history.find((entry: any) => entry.kind === 'invalid');
