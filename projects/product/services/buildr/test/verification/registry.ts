@@ -328,7 +328,7 @@ export const VERIFICATION_RESOURCE_CONTRACTS: any = Object.freeze({
 export const VERIFICATION_EXECUTION_PROFILES: any = Object.freeze({
   local: concurrency(4, 3, 2, { integration: 4, ...Object.fromEntries(SYSTEM_SUITES.map((suite: any) => [suite.id, suite.innerConcurrency])), 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 3 }, { workers: 8, processes: 8, git: 3, workspaceIo: 3 }),
   ci: concurrency(4, 3, 2, { integration: 4, ...Object.fromEntries(SYSTEM_SUITES.map((suite: any) => [suite.id, suite.innerConcurrency])), 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 3 }, { workers: 8, processes: 8, git: 3, workspaceIo: 3 }),
-  'ci-workspace-limited': concurrency(4, 2, 1, { integration: 3, ...Object.fromEntries(SYSTEM_SUITES.map((suite: any) => [suite.id, Math.min(suite.innerConcurrency, 2)])), 'integration-candidate-release': 2, 'integration-candidate-release-effects': 1, 'integration-candidate-git-convergence': 2, 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 2 }, { workers: 6, processes: 6, git: 2, workspaceIo: 2 }),
+  'ci-workspace-limited': concurrency(4, 2, 1, { integration: 3, 'integration-runtime': 3, ...Object.fromEntries(SYSTEM_SUITES.map((suite: any) => [suite.id, Math.min(suite.innerConcurrency, 2)])), 'integration-candidate-release': 2, 'integration-candidate-release-effects': 1, 'integration-candidate-git-convergence': 2, 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 2 }, { workers: 3, processes: 3, git: 2, workspaceIo: 2 }),
 });
 
 export const VERIFICATION_CONCURRENCY: any = VERIFICATION_EXECUTION_PROFILES.local;
