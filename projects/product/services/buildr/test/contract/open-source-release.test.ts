@@ -471,7 +471,7 @@ test('CI and publish workflows use the supported Node runtime', () => {
   assert.equal(verifyDocument.jobs['dev-feedback-windows']['runs-on'], 'windows-latest');
   assert.equal(verifyDocument.jobs['candidate-plan'].if, "(!inputs.diagnostic_scope || inputs.diagnostic_scope == 'none') && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'dev'))");
   assert.deepEqual(verifyDocument.on.workflow_dispatch.inputs.purpose.options, ['candidate', 'release-rehearsal']);
-  assert.deepEqual(verifyDocument.on.workflow_dispatch.inputs.diagnostic_scope.options, ['none', 'core-project-task-macos']);
+  assert.deepEqual(verifyDocument.on.workflow_dispatch.inputs.diagnostic_scope.options, ['none', 'core-project-task-macos', 'nested-git-isolation-windows']);
   assert.equal(verifyDocument.on.workflow_dispatch.inputs.diagnostic_scope.default, 'none');
   assert.equal(verifyDocument.on.workflow_dispatch.inputs.expected_source_tree.required, false);
   assert.equal(verifyDocument.on.workflow_dispatch.inputs.rehearsal_identity.required, false);
@@ -482,7 +482,7 @@ test('CI and publish workflows use the supported Node runtime', () => {
   }
   assert.equal(verifyDocument.jobs['candidate-gate'].if, "always() && (!inputs.diagnostic_scope || inputs.diagnostic_scope == 'none') && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main'))");
   const diagnosis = verifyDocument.jobs['diagnostic-core-project-task-macos'];
-  assert.equal(diagnosis.if, "github.event_name == 'workflow_dispatch' && inputs.diagnostic_scope && inputs.diagnostic_scope != 'none'");
+  assert.equal(diagnosis.if, "github.event_name == 'workflow_dispatch' && inputs.diagnostic_scope == 'core-project-task-macos'");
   assert.equal(diagnosis.needs, undefined);
   assert.equal(diagnosis['runs-on'], 'macos-15');
   assert.equal(diagnosis['timeout-minutes'], 20);
@@ -523,6 +523,54 @@ test('CI and publish workflows use the supported Node runtime', () => {
   assert.match(verifyWorkflow, /BUILDR_VERIFICATION_PROFILE: ci-workspace-limited/);
   assert.match(publishWorkflow, /node-version: "24\.15\.0"/);
   assert.doesNotMatch(`${verifyWorkflow}\n${publishWorkflow}`, /node-version: ?(?:20|22)|node: \[20, 22\]/);
+});
+
+test('Windows nested Git diagnosis keeps closed inputs, original isolated assertions and honest cleanup evidence', () => {
+  const document: any = YAML.parse(fs.readFileSync(path.join(workspaceRoot, '.github/workflows/verify.yml'), 'utf8'));
+  const diagnosis = document.jobs['diagnostic-nested-git-isolation-windows'];
+  assert.equal(diagnosis.if, "github.event_name == 'workflow_dispatch' && inputs.diagnostic_scope == 'nested-git-isolation-windows'");
+  assert.equal(diagnosis.needs, undefined);
+  assert.equal(diagnosis['runs-on'], 'windows-2025');
+  assert.equal(diagnosis['timeout-minutes'], 20);
+  assert.equal(diagnosis.defaults.run.shell, 'bash');
+  assert.equal(diagnosis.defaults.run['working-directory'], 'projects/product/services/buildr');
+  const guard = diagnosis.steps[0];
+  assert.equal(guard.name, 'Verify the closed diagnosis inputs');
+  for (const input of ['release_packages', 'buildr_version', 'plugin_version', 'buildr_peer_version', 'buildr_peer_integrity', 'selection_id', 'selection_baseline', 'selection_main', 'selection_identity', 'rehearsal_identity']) {
+    assert.ok(guard.env.RELEASE_INPUTS_PRESENT.includes(`inputs.${input} != ''`), `Diagnosis must reject ${input}`);
+  }
+  assert.ok(guard.run.includes(`[[ "$DIAGNOSTIC_SCOPE" == 'nested-git-isolation-windows' ]] || fail`));
+  assert.ok(guard.run.includes(`[[ "$DISPATCH_REF" == 'refs/heads/dev' && "$DISPATCH_PURPOSE" == 'candidate' ]] || fail`));
+  assert.ok(guard.run.includes(`[[ "$RELEASE_INPUTS_PRESENT" == 'false' ]] || fail`));
+  assert.ok(guard.run.includes(`[[ "$EXPECTED_SOURCE_TREE" =~ ^([a-f0-9]{40}|[a-f0-9]{64})$ ]] || fail`));
+  const checkout = diagnosis.steps.find((step: any) => step.uses?.startsWith('actions/checkout@'));
+  assert.equal(checkout.with.ref, '${{ env.CANDIDATE_SOURCE_SHA }}');
+  assert.equal(checkout.with['fetch-depth'], 0);
+  const node = diagnosis.steps.find((step: any) => step.uses?.startsWith('actions/setup-node@'));
+  assert.equal(node.with['node-version-file'], 'projects/product/.node-version');
+  const source = diagnosis.steps.find((step: any) => step.name === 'Verify the closed diagnosis source');
+  assert.match(source.run, /sourceCommit !== process\.env\.CANDIDATE_SOURCE_SHA \|\| sourceTree !== process\.env\.EXPECTED_SOURCE_TREE/u);
+  assert.match(source.run, /process\.versions\.node !== '24\.15\.0'/u);
+  assert.equal(diagnosis.steps.filter((step: any) => step.run === 'node tools/verification/candidate-environment.ts prepare --profile base').length, 1);
+  const measurement = diagnosis.steps.find((step: any) => step.name === 'Measure the original isolated nested Git scenario');
+  assert.match(measurement.run, /'tools\/development\/run-isolated-workspace-smoke\.ts'/u);
+  assert.match(measurement.run, /'--script', 'test\/integration\/non-git-workspace-continuity\.test\.ts'/u);
+  assert.match(measurement.run, /'--', '--nested-git-isolation-scenario'/u);
+  assert.doesNotMatch(measurement.run, /worktree-create\.test|['"]--test['"]|BUILDR_SMOKE_ROOT|BUILDR_APP_DATA_DIR|BUILDR_PRODUCT_DATA_DIR/u);
+  assert.match(measurement.run, /stderr\.split\('\\n'\)/u);
+  assert.match(measurement.run, /receipt\.status === 'passed' && receipt\.exitCode === 0 && receipt\.cleanup === 'cleaned' && rootAbsent/u);
+  assert.match(measurement.run, /!fs\.existsSync\(receipt\.temporaryRoot\)/u);
+  assert.match(measurement.run, /originalSystemCaseVerified: false/u);
+  assert.match(measurement.run, /phases\.length === 24/u);
+  assert.match(measurement.run, /path\.join\(output, 'stdout\.log'\)/u);
+  assert.match(measurement.run, /path\.join\(output, 'stderr\.log'\)/u);
+  assert.match(measurement.run, /process\.stdout\.write\(`\$\{JSON\.stringify\(summary\)\}/u);
+  assert.doesNotMatch(measurement.run, /process\.(?:stdout|stderr)\.write\((?:stdout|stderr|result\.)/u);
+  assert.equal(diagnosis.steps.find((step: any) => step.uses?.startsWith('actions/upload-artifact@')).with.name, 'diagnostic-nested-git-isolation-windows');
+  assert.equal(diagnosis.steps.some((step: any) => /aggregate|publish|npm (?:pack|publish)/u.test(step.run || '')), false);
+  const scenario = fs.readFileSync(path.join(serviceRoot, 'test/integration/non-git-workspace-continuity.test.ts'), 'utf8');
+  assert.match(scenario, /timeout: 30_000/u);
+  assert.match(scenario, /await nestedGitIsolationScenario\(\)/u);
 });
 
 test('release convergence and self-bootstrap runner fail closed on unmatched authority evidence', () => {
