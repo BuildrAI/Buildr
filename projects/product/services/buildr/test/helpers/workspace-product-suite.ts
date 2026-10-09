@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { execFileSync, spawn, spawnSync } from 'node:child_process';
+import { execFile, execFileSync, spawn, spawnSync } from 'node:child_process';
 import test from 'node:test';
 import YAML from 'yaml';
 
@@ -48,6 +48,28 @@ function runBuildr(args: any, options: any = {}): any  {
   const env: any = options.env || { ...process.env, ...(scopedAppData ? { BUILDR_APP_DATA_DIR: scopedAppData } : {}) };
   try {
     return spawnSync(process.execPath, [BUILDR, ...args], { cwd: PRODUCT_ROOT, encoding: 'utf8', ...options, env });
+  } finally {
+    if (transientAppData) fs.rmSync(transientAppData, { recursive: true, force: true });
+  }
+}
+
+async function runBuildrAsync(args: any, options: any = {}): Promise<any> {
+  const targetIndex: any = args.indexOf('--target');
+  const targetRoot: any = targetIndex >= 0 ? args[targetIndex + 1] : null;
+  const scopedAppData: any = options.env || process.env.BUILDR_APP_DATA_DIR
+    ? null
+    : targetRoot
+      ? path.join(path.dirname(path.resolve(targetRoot)), 'app-data')
+      : fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-workspace-product-command-'));
+  const transientAppData: any = scopedAppData && !targetRoot ? scopedAppData : null;
+  const env: any = options.env || { ...process.env, ...(scopedAppData ? { BUILDR_APP_DATA_DIR: scopedAppData } : {}) };
+  try {
+    return await new Promise((resolve: any) => {
+      const child: any = execFile(process.execPath, [BUILDR, ...args], { cwd: PRODUCT_ROOT, encoding: 'utf8', ...options, env }, (error: any, stdout: any, stderr: any) => {
+        resolve({ status: error ? (Number.isInteger(error.code) ? error.code : null) : 0, signal: error?.signal || null, stdout, stderr, error });
+      });
+      child.stdin?.end();
+    });
   } finally {
     if (transientAppData) fs.rmSync(transientAppData, { recursive: true, force: true });
   }
@@ -432,7 +454,7 @@ suiteTest('buildr-web-http', 'Buildr Web Runtime 只监听 loopback，并保护�
   assert.equal(current.workspace.name, 'Demo');
   assert.equal(sha256(metadataFile), beforeHash, '只读启动和读取不得修改 Workspace');
   phase = 'project-create';
-  const created: any = runBuildr(['project', 'create', 'web-demo', '--target', root, '--name', 'Web Demo', '--description', 'HTTP projection fixture']);
+  const created: any = await runBuildrAsync(['project', 'create', 'web-demo', '--target', root, '--name', 'Web Demo', '--description', 'HTTP projection fixture']);
   assert.equal(created.status, 0, created.stderr);
   phase = 'read-after-project-create';
   const gettingStarted: any = await fetch(`${url}${apiBase}/getting-started?project=missing`).then((response: any) => response.json());

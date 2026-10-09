@@ -206,6 +206,20 @@ async function scenario({ nestedGit = false } = {}) {
 }
 
 async function nestedGitIsolationScenario() {
+  const scenarioStarted = performance.now();
+  type Phase = 'preconditions' | 'workspace-init' | 'source-registration' | 'worktree-selection'
+    | 'materials-provenance' | 'anchor-conflict' | 'association-ambiguity' | 'delivery'
+    | 'group-cleanup' | 'observed-recovery' | 'unrelated-source' | 'escape-guard';
+  const startPhase = (phase: Phase) => {
+    const started = performance.now();
+    const record = { schemaVersion: 'buildr.nested-git-phase/v1', operation: 'nested-git-isolation', phase };
+    fs.writeSync(process.stderr.fd, `${JSON.stringify({ ...record, event: 'started', elapsedMs: Math.round(started - scenarioStarted) })}\n`);
+    return () => {
+      const completed = performance.now();
+      fs.writeSync(process.stderr.fd, `${JSON.stringify({ ...record, event: 'completed', elapsedMs: Math.round(completed - scenarioStarted), durationMs: Math.round(completed - started) })}\n`);
+    };
+  };
+  let completePhase = startPhase('preconditions');
   const smokeRoot = process.env.BUILDR_SMOKE_ROOT;
   const workspace = process.env.BUILDR_SMOKE_WORKSPACE_ROOT;
   assert.ok(smokeRoot && workspace, 'Use the existing isolated Workspace smoke runner.');
@@ -226,6 +240,8 @@ async function nestedGitIsolationScenario() {
     assert.equal(result.status, expected, `${cwd}: git ${args.join(' ')}\n${result.stderr || result.stdout}`);
     return result.stdout.trim();
   };
+  completePhase();
+  completePhase = startPhase('workspace-init');
   run(['init', '--name', 'mixed-workspace', '--description', 'Nested Git isolation fixture', '--profile', 'personal'], 0, false);
   const assertRootHasNoGit = () => {
     git(workspace, ['rev-parse', '--show-toplevel'], 128);
@@ -235,6 +251,8 @@ async function nestedGitIsolationScenario() {
   const retainedDocument = path.join(workspace, 'notes.md');
   fs.writeFileSync(retainedDocument, '# 当前资料\n\n普通资料保留在非 Git 位置。\n');
   const originalDocument = fs.readFileSync(retainedDocument, 'utf8');
+  completePhase();
+  completePhase = startPhase('source-registration');
   const createSource = (code: string) => {
     const root = path.join(workspace, 'repositories', code);
     fs.mkdirSync(path.join(root, 'modules/shared'), { recursive: true });
@@ -263,6 +281,8 @@ async function nestedGitIsolationScenario() {
   }
   const taskId = 'nested-code', branch = `codex/${taskId}`;
   const task = run(['task', 'create', taskId, '--title', '隔离嵌套代码', '--intent', '修改两个实际 Git 来源并保留普通资料', '--project', 'demo', '--service', 'demo/api', '--service', 'demo/api-view', '--service', 'demo/worker']);
+  completePhase();
+  completePhase = startPhase('worktree-selection');
   const create = ['worktree', 'create', taskId, '--branch', branch, '--include', 'service:demo/api', '--include', 'service:demo/api-view', '--include', 'service:demo/worker'];
   const created = run(create);
   assert.equal(created.status, 'ready');
@@ -279,6 +299,8 @@ async function nestedGitIsolationScenario() {
   assert.equal(inspected.repositories.length, 2);
   const preview = run(['web', 'preview', 'start', 'nested-preview', '--task', taskId, '--no-open'], 1, false);
   assert.match(`${preview.stdout}${preview.stderr}`, /preview_worktree_scope_missing/);
+  completePhase();
+  completePhase = startPhase('materials-provenance');
   const projectRelative = 'knowledge/docs/current.md';
   const projectDocument = path.join(workspace, 'projects/demo', projectRelative);
   fs.mkdirSync(path.dirname(projectDocument), { recursive: true });
@@ -303,6 +325,8 @@ async function nestedGitIsolationScenario() {
   assert.equal(fs.readFileSync(projectDocument, 'utf8'), currentMaterials.documents[0].content);
   fs.rmSync(path.join(projectRoot, '.git'), { recursive: true });
   assert.equal(run(['task', 'materials', 'inspect', taskId]).documents[0].actualDigest, currentMaterials.documents[0].actualDigest);
+  completePhase();
+  completePhase = startPhase('anchor-conflict');
 
   // The second Git source must not hold another authority for the same group.
   const sourceRecords = created.repositories as Array<{ selector: string; sourceRepository: string; checkoutPath: string; branch: string }>;
@@ -320,6 +344,8 @@ async function nestedGitIsolationScenario() {
   sourceRecords.forEach(item => assert.equal(fs.existsSync(item.checkoutPath), true));
   fs.unlinkSync(duplicateEvidence);
   assert.equal(run(['worktree', 'inspect', taskId]).status, 'ready');
+  completePhase();
+  completePhase = startPhase('association-ambiguity');
 
   // Another group's unreadable/duplicate association may also claim these members.
   const otherTaskId = 'conflicted-other';
@@ -361,6 +387,8 @@ async function nestedGitIsolationScenario() {
   assert.deepEqual(ambiguousCleanup.effects, []);
   sourceRecords.forEach(item => assert.equal(fs.existsSync(item.checkoutPath), true));
   conflictingFiles.forEach(location => { assert.equal(fs.readFileSync(location, 'utf8'), uncertainEvidence); fs.unlinkSync(location); });
+  completePhase();
+  completePhase = startPhase('delivery');
 
   const codeCatalog = run(['code', 'repositories', '--task', taskId]);
   assert.deepEqual(codeCatalog.selectedWorktreeGroupIds, [`task:${taskId}`]);
@@ -392,6 +420,8 @@ async function nestedGitIsolationScenario() {
     deliveredHeads[item.selector] = git(item.sourceRepository, ['rev-parse', 'HEAD']);
     assert.equal(deliveredHeads[item.selector], sourceHeads[item.selector]);
   }
+  completePhase();
+  completePhase = startPhase('group-cleanup');
   const cleanup = (records = sourceRecords) => ['worktree', 'cleanup', taskId, ...records.flatMap(item => ['--expected-source', `${item.selector}=${sourceHeads[item.selector]}`, '--delivered-ref', `${item.selector}=${deliveredHeads[item.selector]}`])];
   const partialDelivery = run(cleanup(sourceRecords.slice(0, 1)), 1);
   assert.equal(partialDelivery.status, 'blocked');
@@ -408,6 +438,8 @@ async function nestedGitIsolationScenario() {
   assert.equal(fs.readFileSync(groupDocument, 'utf8'), groupContent);
   assert.equal(fs.readFileSync(retainedDocument, 'utf8'), originalDocument);
   assert.match(fs.readFileSync(projectDocument, 'utf8'), /其他入口刚更新的资料/);
+  completePhase();
+  completePhase = startPhase('observed-recovery');
 
   // Only current child objects are available after losing this case's evidence.
   const recreated = run(create);
@@ -431,6 +463,8 @@ async function nestedGitIsolationScenario() {
   assert.equal(fs.existsSync(recreated.evidencePath), false);
   assert.equal(fs.readFileSync(groupDocument, 'utf8'), groupContent);
   currentRecords.forEach((item: { checkoutPath: string }) => assert.equal(fs.existsSync(item.checkoutPath), false));
+  completePhase();
+  completePhase = startPhase('unrelated-source');
 
   // A damaged, unrelated declaration cannot stop healthy selected work or data.
   const badRoot = createSource('broken');
@@ -474,6 +508,8 @@ async function nestedGitIsolationScenario() {
   assert.equal(fs.readFileSync(groupDocument, 'utf8'), groupContent);
   assert.match(fs.readFileSync(retainedDocument, 'utf8'), /坏代码库不阻止已确认的资料维护/);
   assert.equal(git(badRoot, ['status', '--porcelain']), '');
+  completePhase();
+  completePhase = startPhase('escape-guard');
 
   // A missing leaf does not authorize writing through a symlinked group parent.
   const unsafeTask = 'escaped-group', unsafeRoot = path.join(workspace, '.worktrees', unsafeTask);
@@ -490,6 +526,7 @@ async function nestedGitIsolationScenario() {
   assert.equal(git(apiRoot, ['show-ref']), beforeUnsafeRefs);
   assert.equal(fs.lstatSync(path.join(unsafeRoot, 'repositories')).isSymbolicLink(), true);
   assertRootHasNoGit();
+  completePhase();
   process.stdout.write('Nested Git public Worktree lifecycle passed.\n');
 }
 

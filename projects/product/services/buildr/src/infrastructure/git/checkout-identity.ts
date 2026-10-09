@@ -27,6 +27,7 @@ export function sameGitCheckoutIdentity(left: any, right: any): any  {
 
 export function observeGitCheckoutIdentity(root: any): any  {
   const checkoutRoot = gitPath(root, '--show-toplevel');
+  if (!checkoutRoot) return null;
   const gitDirectory = gitPath(root, '--git-dir');
   const gitCommonDirectory = gitPath(root, '--git-common-dir');
   if (!checkoutRoot || !gitDirectory || !gitCommonDirectory) return null;
