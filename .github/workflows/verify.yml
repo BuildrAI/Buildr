@@ -9,8 +9,14 @@ on:
         default: candidate
         type: choice
         options: [candidate, release-rehearsal]
+      diagnostic_scope:
+        description: Independent source diagnosis; does not produce a complete Candidate
+        required: false
+        default: none
+        type: choice
+        options: [none, core-project-task-macos]
       expected_source_tree:
-        description: Exact source tree required for release rehearsal
+        description: Exact source tree required for release rehearsal or source diagnosis
         required: false
         type: string
       rehearsal_identity:
@@ -235,7 +241,7 @@ jobs:
 
   candidate-plan:
     name: Candidate plan
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'dev')
+    if: (!inputs.diagnostic_scope || inputs.diagnostic_scope == 'none') && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'dev'))
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
@@ -264,6 +270,71 @@ jobs:
         if: steps.scope.outputs.buildr == 'true'
         working-directory: projects/product/services/buildr
         run: node test/verification/candidate-ci.ts plan
+
+  diagnostic-core-project-task-macos:
+    name: Independent diagnosis (core-project-task-macos)
+    if: github.event_name == 'workflow_dispatch' && inputs.diagnostic_scope && inputs.diagnostic_scope != 'none'
+    runs-on: macos-15
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: projects/product/services/buildr
+    steps:
+      - name: Verify the closed diagnosis inputs
+        working-directory: .
+        shell: bash
+        env:
+          DIAGNOSTIC_SCOPE: ${{ inputs.diagnostic_scope }}
+          DISPATCH_REF: ${{ github.ref }}
+          DISPATCH_PURPOSE: ${{ inputs.purpose }}
+          EXPECTED_SOURCE_TREE: ${{ inputs.expected_source_tree }}
+          RELEASE_INPUTS_PRESENT: ${{ inputs.release_packages != '' || inputs.buildr_version != '' || inputs.plugin_version != '' || inputs.buildr_peer_version != '' || inputs.buildr_peer_integrity != '' || inputs.selection_id != '' || inputs.selection_baseline != '' || inputs.selection_main != '' || inputs.selection_identity != '' || inputs.rehearsal_identity != '' }}
+        run: |
+          fail() { printf '%s\n' "$1" >&2; exit 1; }
+          [[ "$DIAGNOSTIC_SCOPE" == 'core-project-task-macos' ]] || fail 'Unsupported source diagnosis scope.'
+          [[ "$DISPATCH_REF" == 'refs/heads/dev' && "$DISPATCH_PURPOSE" == 'candidate' ]] || fail 'Source diagnosis requires the dev Candidate entry.'
+          [[ "$RELEASE_INPUTS_PRESENT" == 'false' ]] || fail 'Source diagnosis does not accept release selection or rehearsal inputs.'
+          [[ "$EXPECTED_SOURCE_TREE" =~ ^([a-f0-9]{40}|[a-f0-9]{64})$ ]] || fail 'Source diagnosis requires an exact source tree.'
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CANDIDATE_SOURCE_SHA }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: projects/product/.node-version
+          cache: npm
+          cache-dependency-path: projects/product/services/buildr/package-lock.json
+      - name: Verify the closed diagnosis source
+        env:
+          EXPECTED_SOURCE_TREE: ${{ inputs.expected_source_tree }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { execFileSync } from 'node:child_process';
+          const expectedTree = process.env.EXPECTED_SOURCE_TREE ?? '';
+          const sourceCommit = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+          const sourceTree = execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim();
+          if (sourceCommit !== process.env.CANDIDATE_SOURCE_SHA || sourceTree !== expectedTree) throw new Error('Source diagnosis checkout differs from the dispatched source.');
+          process.stdout.write(`[source-diagnosis] commit=${sourceCommit} tree=${sourceTree}\n`);
+          NODE
+      - name: Prepare the original Candidate source environment
+        run: node tools/verification/candidate-environment.ts prepare --profile source-runtime
+      - name: Diagnose the original independent source shard
+        env:
+          BUILDR_CANDIDATE_SOURCE_SHA: ${{ env.CANDIDATE_SOURCE_SHA }}
+          BUILDR_CANDIDATE_CI_OUTPUT_DIR: ${{ runner.temp }}/diagnostic-core-project-task-macos/run
+          BUILDR_CANDIDATE_CI_EVIDENCE_OUTPUT: ${{ runner.temp }}/diagnostic-core-project-task-macos/evidence/candidate-ci-evidence-core-project-task-macos.json
+          BUILDR_DIAGNOSTICS_OUTPUT: ${{ runner.temp }}/diagnostic-core-project-task-macos/diagnostics
+          BUILDR_VERIFICATION_PROFILE: ci-workspace-limited
+          BUILDR_ARCHIFY_COST_DIAGNOSTICS: '1'
+        run: node test/verification/candidate-ci.ts run core-project-task-macos
+      - name: Upload independent source diagnosis
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: diagnostic-core-project-task-macos
+          path: ${{ runner.temp }}/diagnostic-core-project-task-macos
+          if-no-files-found: warn
+          overwrite: true
 
   candidate-bootstrap:
     name: Candidate bootstrap
@@ -579,7 +650,7 @@ jobs:
 
   candidate-gate:
     name: Candidate gate
-    if: always() && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main'))
+    if: always() && (!inputs.diagnostic_scope || inputs.diagnostic_scope == 'none') && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main'))
     needs: [candidate-plan, candidate-bootstrap, candidate-source, candidate-artifact-consumers, candidate-host-node, plugin-source-candidate]
     runs-on: ubuntu-24.04
     timeout-minutes: 5

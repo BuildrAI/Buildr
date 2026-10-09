@@ -24,26 +24,41 @@ const ARCHIFY_COMMAND_ROLES = Object.freeze([
   'runtime-sync', 'component-check', 'project-create', 'installed-renderer', 'runtime-sync',
   'component-uninstall', 'component-uninstall', 'runtime-sync',
 ]);
+const validArchifyTime = (time: unknown): time is number => typeof time === 'number'
+  && Number.isInteger(time) && time >= 0 && time <= 300_000;
 
 export function archifyScenarioTimings(value: unknown): any[] {
   if (typeof value !== 'string') return [];
   const records = new Map<number, any>();
-  const validTime = (time: unknown): time is number => typeof time === 'number'
-    && Number.isInteger(time) && time >= 0 && time <= 300_000;
   for (const match of value.slice(-65_536).matchAll(/^\[archify-scenario-timing\] ([^\r\n]+)\r?$/gmu)) {
     let input: any;
     try { input = JSON.parse(match[1]); } catch { continue; }
     if (!input || !Number.isInteger(input.step) || input.step < 1 || input.step > 26
       || input.operation !== ARCHIFY_COMMAND_ROLES[Math.floor((input.step - 1) / 2)]
       || input.status !== (input.step % 2 === 1 ? 'started' : 'completed')
-      || !validTime(input.elapsedMs)) continue;
-    if (input.status === 'completed' && (!validTime(input.durationMs) || input.durationMs > input.elapsedMs)) continue;
+      || !validArchifyTime(input.elapsedMs)) continue;
+    if (input.status === 'completed' && (!validArchifyTime(input.durationMs) || input.durationMs > input.elapsedMs)) continue;
     records.set(input.step, {
       step: input.step, operation: input.operation, status: input.status, elapsedMs: input.elapsedMs,
+      ...(validArchifyTime(input.wrapperElapsedMs) && input.commandTimeoutMs === 60_000
+        ? { wrapperElapsedMs: input.wrapperElapsedMs, commandTimeoutMs: 60_000 } : {}),
       ...(input.status === 'completed' ? { durationMs: input.durationMs } : {}),
     });
   }
   return [...records.values()].sort((left, right) => left.step - right.step);
+}
+
+export function archifyWrapperTimings(value: unknown): any[] {
+  if (typeof value !== 'string') return [];
+  let latest: any = null;
+  for (const match of value.slice(-65_536).matchAll(/^\[archify-wrapper-timing\] ([^\r\n]+)\r?$/gmu)) {
+    let input: any;
+    try { input = JSON.parse(match[1]); } catch { continue; }
+    if (!input || !validArchifyTime(input.elapsedMs) || input.timeoutMs !== 175_000
+      || input.caseTimeoutMs !== 180_000 || !['passed', 'failed', 'timed-out'].includes(input.status)) continue;
+    latest = { elapsedMs: input.elapsedMs, timeoutMs: 175_000, caseTimeoutMs: 180_000, status: input.status };
+  }
+  return latest ? [latest] : [];
 }
 
 function archifyFailureContext(error: any, file: string): any {
@@ -97,6 +112,9 @@ export default async function* integrationProgressReporter(source: any): Promise
       && path.basename(data.file) === 'archify-component.test.ts') {
       for (const timing of archifyScenarioTimings(data.message)) {
         yield `[buildr-archify-phase-timing] ${JSON.stringify({ file: 'archify-component.test.ts', ...timing })}\n`;
+      }
+      for (const timing of archifyWrapperTimings(data.message)) {
+        yield `[buildr-archify-wrapper-timing] ${JSON.stringify({ file: 'archify-component.test.ts', ...timing })}\n`;
       }
       continue;
     }

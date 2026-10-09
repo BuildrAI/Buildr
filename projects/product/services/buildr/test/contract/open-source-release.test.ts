@@ -469,8 +469,10 @@ test('CI and publish workflows use the supported Node runtime', () => {
   assert.equal(verifyDocument.jobs['dev-feedback-windows'].if, "github.event_name == 'pull_request' && github.base_ref == 'dev'");
   assert.equal(verifyDocument.jobs['dev-feedback-macos']['runs-on'], 'macos-latest');
   assert.equal(verifyDocument.jobs['dev-feedback-windows']['runs-on'], 'windows-latest');
-  assert.equal(verifyDocument.jobs['candidate-plan'].if, "github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'dev')");
+  assert.equal(verifyDocument.jobs['candidate-plan'].if, "(!inputs.diagnostic_scope || inputs.diagnostic_scope == 'none') && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'dev'))");
   assert.deepEqual(verifyDocument.on.workflow_dispatch.inputs.purpose.options, ['candidate', 'release-rehearsal']);
+  assert.deepEqual(verifyDocument.on.workflow_dispatch.inputs.diagnostic_scope.options, ['none', 'core-project-task-macos']);
+  assert.equal(verifyDocument.on.workflow_dispatch.inputs.diagnostic_scope.default, 'none');
   assert.equal(verifyDocument.on.workflow_dispatch.inputs.expected_source_tree.required, false);
   assert.equal(verifyDocument.on.workflow_dispatch.inputs.rehearsal_identity.required, false);
   const candidateJobs: any[] = ['candidate-bootstrap', 'candidate-source', 'candidate-artifact-consumers', 'candidate-host-node'].map(id => verifyDocument.jobs[id]);
@@ -478,7 +480,19 @@ test('CI and publish workflows use the supported Node runtime', () => {
     assert.equal(job.steps.filter((step: any) => /candidate-environment\.ts prepare --profile/u.test(step.run || '')).length, 1);
     assert.equal(job.steps.some((step: any) => step.run === 'npm ci' || /artifacts:prepare|prepare-development-web\.ts/u.test(step.run || '')), false);
   }
-  assert.equal(verifyDocument.jobs['candidate-gate'].if, "always() && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main'))");
+  assert.equal(verifyDocument.jobs['candidate-gate'].if, "always() && (!inputs.diagnostic_scope || inputs.diagnostic_scope == 'none') && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main'))");
+  const diagnosis = verifyDocument.jobs['diagnostic-core-project-task-macos'];
+  assert.equal(diagnosis.if, "github.event_name == 'workflow_dispatch' && inputs.diagnostic_scope && inputs.diagnostic_scope != 'none'");
+  assert.equal(diagnosis.needs, undefined);
+  assert.equal(diagnosis['runs-on'], 'macos-15');
+  assert.equal(diagnosis['timeout-minutes'], 20);
+  assert.equal(diagnosis.steps[0].name, 'Verify the closed diagnosis inputs');
+  assert.equal(diagnosis.steps.filter((step: any) => step.run === 'node tools/verification/candidate-environment.ts prepare --profile source-runtime').length, 1);
+  const diagnosedShard = diagnosis.steps.find((step: any) => step.run === 'node test/verification/candidate-ci.ts run core-project-task-macos');
+  assert.equal(diagnosedShard.env.BUILDR_VERIFICATION_PROFILE, 'ci-workspace-limited');
+  assert.equal(diagnosedShard.env.BUILDR_ARCHIFY_COST_DIAGNOSTICS, '1');
+  assert.equal(diagnosis.steps.find((step: any) => step.uses?.startsWith('actions/upload-artifact@')).with.name, 'diagnostic-core-project-task-macos');
+  assert.equal(diagnosis.steps.some((step: any) => /aggregate|publish|npm (?:pack|publish)/u.test(step.run || '')), false);
   const gateSteps: any[] = verifyDocument.jobs['candidate-gate'].steps;
   assert.equal(gateSteps.find((step: any) => step.name === 'Verify existing Candidate for release pull request').run, 'node tools/release/verify-pr-candidate.ts');
   for (const name of ['Prepare aggregate evidence directory', 'Download all Candidate evidence', 'Aggregate the closed Candidate evidence set']) {
@@ -495,7 +509,7 @@ test('CI and publish workflows use the supported Node runtime', () => {
   assert.match(verifyWorkflow, /github\.base_ref == 'main'/);
   assert.match(verifyWorkflow, /github\.head_ref == 'dev'/);
   assert.doesNotMatch(verifyWorkflow, /^  release-smoke:/m);
-  assert.equal((verifyWorkflow.match(/node test\/verification\/candidate-ci\.ts run/g) || []).length, 3);
+  assert.equal((verifyWorkflow.match(/node test\/verification\/candidate-ci\.ts run/g) || []).length, 4);
   assert.equal((verifyWorkflow.match(/node test\/verification\/candidate-ci\.ts host/g) || []).length, 1);
   assert.equal((verifyWorkflow.match(/node test\/verification\/candidate-ci\.ts aggregate/g) || []).length, 1);
   assert.match(hostNodeSmoke, /cliIdentity\.runtime\?\.role, 'host'/);

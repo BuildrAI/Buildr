@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import integrationProgressReporter, { archifyScenarioTimings } from '../verification/integration-progress-reporter.ts';
+import integrationProgressReporter, { archifyScenarioTimings, archifyWrapperTimings } from '../verification/integration-progress-reporter.ts';
 
 test('Integration failure and completed file diagnostics arrive before the remaining event stream ends', async () => {
   const file = '/workspace/test/integration/http.test.ts';
@@ -136,4 +136,37 @@ test('Archify timing rejects invalid numbers, roles and phase shapes without adm
   let output = '';
   for await (const chunk of integrationProgressReporter(events())) output += chunk;
   assert.equal(output, '');
+});
+
+test('Archify diagnostics distinguish scenario elapsed time from the actual outer deadline', async () => {
+  const phase = { step: 23, operation: 'component-uninstall', status: 'started', elapsedMs: 173_058,
+    wrapperElapsedMs: 173_490, commandTimeoutMs: 60_000 };
+  const wrapper = { elapsedMs: 175_020, timeoutMs: 175_000, caseTimeoutMs: 180_000, status: 'timed-out' };
+  const message = `[archify-scenario-timing] ${JSON.stringify({ ...phase, env: 'secret-value' })}\n`
+    + `[archify-wrapper-timing] ${JSON.stringify({ ...wrapper, stderr: 'secret-output' })}`;
+  assert.deepEqual(archifyScenarioTimings(message), [phase]);
+  assert.deepEqual(archifyWrapperTimings(message), [wrapper]);
+  async function* events(): Promise<any> {
+    yield { type: 'test:stderr', data: { file: '/private/archify-component.test.ts', message } };
+  }
+  let output = '';
+  for await (const chunk of integrationProgressReporter(events())) output += chunk;
+  const records = output.trim().split('\n').map(line => JSON.parse(line.replace(/^\[[^\]]+\] /, '')));
+  assert.deepEqual(records, [{ file: 'archify-component.test.ts', ...phase }, { file: 'archify-component.test.ts', ...wrapper }]);
+  assert.doesNotMatch(output, /secret-|\/private|stderr|env/);
+});
+
+test('Archify budget diagnostics cannot admit an invented timeout or unsafe metadata', () => {
+  const phase = { step: 23, operation: 'component-uninstall', status: 'started', elapsedMs: 100 };
+  const invalidPhases = [-1, 300_001, 1.5, '1', null].map(wrapperElapsedMs => ({ ...phase, wrapperElapsedMs, commandTimeoutMs: 60_000 }));
+  invalidPhases.push({ ...phase, wrapperElapsedMs: 100, commandTimeoutMs: 120_000 });
+  for (const input of invalidPhases) {
+    assert.deepEqual(archifyScenarioTimings(`[archify-scenario-timing] ${JSON.stringify(input)}`), [phase]);
+  }
+  const wrapper = { elapsedMs: 175_020, timeoutMs: 175_000, caseTimeoutMs: 180_000, status: 'timed-out' };
+  for (const input of [null, { ...wrapper, status: 'secret-output' }, { ...wrapper, elapsedMs: -1 },
+    { ...wrapper, elapsedMs: 300_001 }, { ...wrapper, elapsedMs: '1' }, { ...wrapper, timeoutMs: 300_000 },
+    { ...wrapper, caseTimeoutMs: 360_000 }]) {
+    assert.deepEqual(archifyWrapperTimings(`[archify-wrapper-timing] ${JSON.stringify(input)}`), []);
+  }
 });
