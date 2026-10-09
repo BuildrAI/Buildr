@@ -3,6 +3,7 @@
   "version": "0.1.0-rc.1",
   "private": false,
   "description": "Buildr desktop action for DSH, registered in the shipped sidebar.footer.action seat",
+  "repository": { "type": "git", "url": "git+https://github.com/BuildrAI/Buildr.git", "directory": "projects/product/services/dsh-plugin" },
   "type": "module",
   "main": "./lib/index.js",
   "exports": {

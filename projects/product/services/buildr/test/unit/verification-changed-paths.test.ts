@@ -102,9 +102,11 @@ test('frontend and plugin paths select their real Service test entrypoints', () 
     assert.deepEqual(frontend.executor, { type: 'node', file: '../buildr-web/tools/run-logic-tests.mjs' });
     assert.equal(ids(plan).includes('service-branch-contract'), false);
   }
-  for (const source of ['services/dsh-plugin/plugin/client.ts', 'services/dsh-plugin/tools/verify-all.ts']) {
+  for (const source of ['services/dsh-plugin/plugin/client.ts', 'services/dsh-plugin/tools/verify-all.ts', '.github/workflows/publish-dsh-plugin.yml']) {
     const plan = createVerificationPlan({ paths: [source] });
     assert.equal(plan.status, 'ready');
+    assert.equal(plan.scope.mode, 'affected');
+    assert.deepEqual(plan.unmapped, []);
     assert.deepEqual(ids(plan), ['dsh-plugin']);
     assert.equal(plan.steps[0].executor.file, '../dsh-plugin/tools/verify-all.ts');
   }

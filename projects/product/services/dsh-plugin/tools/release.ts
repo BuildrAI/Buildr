@@ -1,10 +1,12 @@
 /** Inspect the independent plugin release or prepare one immutable local candidate. Never publishes. */
 import { execFileSync, spawnSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { newBuildOutput, validatePreparedSourceSdk } from './prepare-source-sdk.ts';
+import { createReleaseCandidate, readReleaseCandidate, PLUGIN_PACKAGE, PLUGIN_REGISTRY } from './release-candidate.ts';
+import { isolatedPluginNpmEnvironment } from './trusted-publish.ts';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const repository = resolve(root, '../../../..');
@@ -16,19 +18,38 @@ if (!/^\d+\.\d+\.\d+(?:-[\w.-]+)?$/.test(version)) throw new Error(`Invalid plug
 function git(...args: string[]): string {
   return execFileSync('git', args, { cwd: repository, encoding: 'utf8' }).trim();
 }
+export interface ReleaseSourceIdentity { sourceCommit: string; sourceTree: string }
+export function captureReleaseSource(repo: string): ReleaseSourceIdentity {
+  const read = (...args: string[]) => execFileSync('git', args, { cwd: repo, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+  if (read('status', '--porcelain', '--', servicePath) !== '') throw new Error('Commit plugin source before preparing a release candidate.');
+  const sourceCommit = read('rev-parse', 'HEAD');
+  return { sourceCommit, sourceTree: read('rev-parse', `${sourceCommit}:${servicePath}`) };
+}
+export function assertReleaseSourceStable(expected: ReleaseSourceIdentity, current: ReleaseSourceIdentity): void {
+  if (current.sourceCommit !== expected.sourceCommit || current.sourceTree !== expected.sourceTree) throw new Error('Plugin source changed while preparing the release candidate.');
+}
 function npm(args: string[]): { status: number | null; stdout: string; stderr: string } {
-  const result = spawnSync('npm', args, {
-    cwd: root, encoding: 'utf8',
-    env: { ...process.env, PATH: `${dirname(process.execPath)}:${process.env.PATH ?? ''}` },
-  });
-  if (result.error) throw result.error;
-  return { status: result.status, stdout: result.stdout, stderr: result.stderr };
+  const directory = mkdtempSync(join(tmpdir(), 'buildr-dsh-npm-prepare-'));
+  try {
+    writeFileSync(join(directory, 'user.npmrc'), '', { mode: 0o600 });
+    writeFileSync(join(directory, 'global.npmrc'), '', { mode: 0o600 });
+    const result = spawnSync('npm', [...args, '--ignore-scripts'], {
+      cwd: directory, encoding: 'utf8',
+      env: isolatedPluginNpmEnvironment({ ...process.env, PATH: `${dirname(process.execPath)}:${process.env.PATH ?? ''}` }, directory),
+    });
+    if (result.error) throw new Error('Isolated npm preparation command could not start.');
+    return { status: result.status, stdout: result.stdout, stderr: result.stderr };
+  } finally { rmSync(directory, { recursive: true }); }
+}
+export function releaseRegistryVersionArguments(version: string): string[] {
+  if (!/^\d+\.\d+\.\d+(?:-[\w.-]+)?$/.test(version)) throw new Error('Invalid plugin registry version.');
+  return ['view', `${PLUGIN_PACKAGE}@${version}`, 'version', '--json', `--registry=${PLUGIN_REGISTRY}`];
 }
 function registryVersion(): string | null {
-  const result = npm(['view', '@buildr-ai/buildr-dsh-plugin', 'version', '--json']);
+  const result = npm(releaseRegistryVersionArguments(version));
   if (result.status === 0) return String(JSON.parse(result.stdout));
   if (/E404|404 Not Found/.test(result.stderr)) return null;
-  throw new Error(`npm registry lookup failed: ${result.stderr.trim()}`);
+  throw new Error('Isolated npm registry lookup failed.');
 }
 
 /** Parse release inputs before registry, Git release checks, compilation or candidate writes. */
@@ -50,6 +71,7 @@ export function releasePrepareCommands(sourceSdk: string, bundle: string): { bui
 function main(): void {
   const request = parseReleaseInput(process.argv.slice(2));
   const sourceReceipt = request.action === 'prepare' ? validatePreparedSourceSdk(request.sourceSdk, root) : undefined;
+  const frozenSource = request.action === 'prepare' ? captureReleaseSource(repository) : undefined;
   const latestTag = git('tag', '--list', 'dsh-plugin-v*', '--sort=-version:refname').split('\n')[0] || null;
   const uncommitted = git('status', '--porcelain', '--', servicePath) !== '';
   const changedSinceTag = latestTag === null || git('diff', '--name-only', latestTag, 'HEAD', '--', servicePath) !== '';
@@ -74,19 +96,20 @@ function main(): void {
     execFileSync(process.execPath, commands.verify, { cwd: root, stdio: 'inherit' });
     const packed = npm([...commands.pack, '--pack-destination', stage]);
     if (packed.status !== 0) throw new Error(`npm pack failed: ${packed.stderr.trim()}`);
-    const [pack] = JSON.parse(packed.stdout) as Array<{ filename: string; name: string; version: string; files: Array<{ path: string }> }>;
-    if (pack.name !== '@buildr-ai/buildr-dsh-plugin' || pack.version !== version || pack.files.some(file => /\.(?:ts|tsx|mts)$/.test(file.path) && !file.path.endsWith('.d.ts'))) {
+    const packs = JSON.parse(packed.stdout) as Array<{ filename: string; name: string; version: string; files: Array<{ path: string }> }>;
+    const pack = packs[0];
+    if (!Array.isArray(packs) || packs.length !== 1 || !pack || pack.name !== PLUGIN_PACKAGE || pack.version !== version || !Array.isArray(pack.files) || !/^[A-Za-z0-9][A-Za-z0-9._-]*\.tgz$/.test(pack.filename) || pack.files.some(file => /\.(?:ts|tsx|mts)$/.test(file.path) && !file.path.endsWith('.d.ts'))) {
       throw new Error('Packed plugin identity or file inventory is invalid.');
     }
-    const tarball = join(output, pack.filename);
-    const candidate = {
-      package: pack.name, version, sourceCommit: git('rev-parse', 'HEAD'),
-      sourceTree: git('rev-parse', `HEAD:${servicePath}`), sdk,
-      sourceSdk: sourceReceipt === undefined ? undefined : { baseline: sourceReceipt.baseline, manifestSha256: sourceReceipt.sourceManifest.sha256, patchSha256: sourceReceipt.patchSha256, contracts: sourceReceipt.contracts },
-      tarball, sha256: createHash('sha256').update(readFileSync(join(stage, pack.filename))).digest('hex'),
-      fileCount: pack.files.length, published: false,
-    };
+    if (!sourceReceipt) throw new Error('Release preparation requires a verified source SDK receipt.');
+    if (!frozenSource) throw new Error('Release preparation requires frozen source identity.');
+    assertReleaseSourceStable(frozenSource, captureReleaseSource(repository));
+    const candidate = createReleaseCandidate({ version, ...frozenSource,
+      filename: pack.filename, bytes: readFileSync(join(stage, pack.filename)),
+      sourceSdk: { baseline: sourceReceipt.baseline, manifestSha256: sourceReceipt.sourceManifest.sha256, patchSha256: sourceReceipt.patchSha256, contracts: sourceReceipt.contracts }, fileCount: pack.files.length });
     writeFileSync(join(stage, 'candidate.json'), `${JSON.stringify(candidate, null, 2)}\n`);
+    readReleaseCandidate(join(stage, 'candidate.json'), { version, sourceCommit: candidate.sourceCommit, sourceTree: candidate.sourceTree });
+    assertReleaseSourceStable(frozenSource, captureReleaseSource(repository));
     if (realpathSync(stage) !== stage || realpathSync(dirname(output)) !== dirname(output) || dirname(stage) !== dirname(output) || !stage.startsWith(join(dirname(output), '.candidate-')) || existsSync(output)) throw new Error('Release candidate publication paths changed or are not owned.');
     renameSync(stage, output);
     process.stdout.write(`${JSON.stringify(candidate, null, 2)}\n`);

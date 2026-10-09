@@ -1071,7 +1071,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
     "inputExclusions": []
   },
   "dsh-plugin": {
-    "inputs": ["services/dsh-plugin/**"],
+    "inputs": ["services/dsh-plugin/**", ".github/workflows/publish-dsh-plugin.yml"],
     "inputExclusions": []
   },
   "service-branch-contract": {
@@ -1156,6 +1156,7 @@ export const VERIFICATION_IGNORED_INPUTS: any = Object.freeze([
 
 export const VERIFICATION_GOVERNED_REPOSITORY_INPUTS: any = Object.freeze([
   ".github/workflows/publish.yml",
+  ".github/workflows/publish-dsh-plugin.yml",
   ".github/workflows/verify.yml"
 ]);
 

@@ -4,14 +4,14 @@ DSH（DeepSeek Harness）插件（Plugin）由独立服务（Service）[插件�
 
 ## 版本与候选
 
-既有插件（Plugin）的版本查询与发布身份仍由原发布入口负责，在插件服务根目录使用[项目 Node 版本声明](<../../../.node-version>)对应运行环境；发布准备显式消费已核验的源码软件开发工具包（SDK），不是当前已生成或已公开的事实：
+插件（Plugin）保持独立版本，在插件服务根目录使用[项目 Node 版本声明](<../../../.node-version>)对应运行环境。发布准备显式消费已核验的源码软件开发工具包（SDK），查询与打包不使用本机 npm 认证配置：
 
 ```sh
 node tools/release.ts status
 node tools/release.ts prepare --source-sdk <prepared-source-sdk>
 ```
 
-`status` 对照插件版本、最近的 `dsh-plugin-v*` 标签、插件服务路径的源码变化和 npm 注册表（Registry）的公开版本，给出 `not-public`、`changes-pending` 或 `up-to-date`。注册表查询失败会报错，不推测“已发布”。准备编排要求插件源码已提交且该版本尚未公开，并依次构建、用真实 DSH 装载器（Loader）验证和压缩。当前入口显式使用 `--source-sdk`，将同一经核验源码输入与独占产物交给构建／验证；本轮只校准该接线，尚未实际运行发布准备或公开发布，不能把源码检查当发布候选已生成。`build/release-candidates/<version>/candidate.json` 记录准确提交、服务源码树、SDK、压缩包路径和 SHA-256；候选目录已存在时拒绝覆盖。
+`status` 对照插件版本、最近的 `dsh-plugin-v*` 标签（Tag）、插件服务路径的源码变化和 npm 注册表（Registry）的公开版本，给出 `not-public`、`changes-pending` 或 `up-to-date`。注册表（Registry）查询失败会报错，不推测“已发布”。准备要求源码已提交且该版本尚未公开，依次构建、用真实 DSH 装载器（Loader）验证和压缩。`build/release-candidates/<version>/candidate.json` 记录准确提交、服务源码树、软件开发工具包（SDK）的基线与补丁摘要、相对压缩包名、大小、SHA-256 和 npm 完整性（Integrity）；候选目录已存在时拒绝覆盖。将说明和原压缩包整体搬运后仍须验证同一字节，发布不重新打包。本次代码交付不证明公开候选或 npm 版本已生成。
 
 压缩包必须只含预编译插件、默认启用的组合补丁和许可文件，不含本机路径、凭证或安装脚本。正式版包名是 `@buildr-ai/buildr-dsh-plugin`。开发版变体 `@buildr-ai/buildr-dsh-plugin-dev` 仅在开发者机器构建、安装，不公开发布。
 
@@ -55,6 +55,29 @@ node tools/build-development-composition.ts --source-sdk <prepared-source-sdk> -
 ## 发布与安装
 
 公开 npm 发布和 `dsh-plugin-v<version>` 标签属于插件自己的版本事实，需针对准确版本、源码和同一候选字节单独取得发布授权。候选生成不等于公开发布。发布失败、尚未授权或注册表仍不可见时，不能承诺用户已经能一句话安装。
+
+独立[发布工作流（Workflow）](<../../../../../.github/workflows/publish-dsh-plugin.yml>)只接受 `workflow_dispatch`，不因提交、Buildr 主包发布或标签（Tag）自动发布插件。默认 `operation=prepare`，`version` 必须与服务 `package.json` 相同，不修改版本。准备运行限定 `main`，固定 GitHub 托管执行器（Hosted Runner）、Node `24.15.0`、pnpm `11.7.0`，由[固定准备入口](<../../../services/dsh-plugin/tools/prepare-release-sdk.ts>)取得真实上游 Git 检出 `deepseek-ai/deepseek-harness` 的 `639ed015397290b3745d163aafe02ffee4aa3f84`，验证并应用入库补丁，按补丁后的锁文件冻结安装，再重建源码软件开发工具包（SDK）。完整检查覆盖正式版、开发版及真实装载器（Loader），只上传 `candidate.json` 和原压缩包。
+
+完整检查还会在隔离环境调用当前检出的 Buildr 源码命令行（CLI），验证来源绑定与实际读取。执行前通过[准备声明（Preparation Declaration）](<../../../preparation.yml>)的 `buildr.npm-ci` 准备 `services/buildr` 锁定依赖；独立工作流（Workflow）按同一 `package-lock.json` 隔离执行 `npm ci --omit=dev --ignore-scripts`，只安装所需运行依赖（Runtime Dependencies）。这项准备不生成 Buildr 主包候选（Candidate）、修改主包版本或执行主包发布。
+
+另一运行选择 `operation=publish`，填写同一 `main` 提交的成功准备运行编号 `candidate_run_id`，在 `npm-production` 中审批。只有该发布作业（Job）授予 `id-token: write`；[插件发布器](<../../../services/dsh-plugin/tools/trusted-publish.ts>)验证真实开放身份连接（OIDC）与包的 npm 信任，隔离用户／全局 npm 配置及长期认证环境，再发布原压缩包。不提供本机令牌（Token）回退，不读取或修改现有凭据。主包的 `publish.yml` 身份不能用于插件。
+
+发布前完整查询同版本历史运行和每次尝试；尚未进入发布步骤的已完成失败可另启新运行。已进入发布、被取消或结果不明时，必须填写最新该次 `recovery_run_id` 并下载 `plugin-publication-v<version>` 的 `publication.json`。该证据记录原请求身份与候选摘要；已公开相同完整性（Integrity）直接复用，前次可能已派发而注册表（Registry）仍缺失或未知时只回读，不重复发送。缺少证据、原提交不符或历史查询不完整就停止相关发布；本工作流不支持点击重新运行，恢复使用新的手动运行。证据保留 90 天，过期前须保全必要证据；候选和发布证据缺失不自动重建或重发。
+
+npm 网站需为 **`@buildr-ai/buildr-dsh-plugin` 单独配置可信发布者（Trusted Publisher）**：
+
+| 字段 | 精确值 |
+| --- | --- |
+| 提供者（Provider） | GitHub Actions |
+| Organization or user | `BuildrAI` |
+| Repository | `Buildr` |
+| Workflow filename | `publish-dsh-plugin.yml` |
+| Environment name | `npm-production` |
+| Allowed actions | `npm publish`（须明确允许直接发布） |
+
+正式包的 `repository.url` 对应 `git+https://github.com/BuildrAI/Buildr.git`。现有主包绑定不证明插件已配置。已只读观察到 GitHub 环境要求 `elevenching` 审批、允许自审且没有部署分支规则；工作流自身仍校验 `main`，发布前重新核对平台现状。本次不修改信任或保护，也不执行公开发布和标签（Tag）写入。
+
+依 npm [可信发布说明](https://docs.npmjs.com/trusted-publishers/)，新绑定需在 48 小时内成功发布验证，宜在准确版本已获准发布且候选可用时配置。若包尚未存在，可另行授权通过 npm [暂存发布（Staged Publishing）](https://github.blog/changelog/2026-10-02-npm-staged-publishing-now-supports-creating-new-packages/)使用短期登录会话（Session）创建首个包并审批；该首次设置不要求保留长期令牌（Token）。这些平台动作须独立确认，代码和配置文件存在不证明当前绑定已生效。确认其他用途均已迁移后，才另行决定移除或撤销旧凭据。
 
 公开后，智能体（Agent）在目标 DSH 配置档（Profile）中使用受支持入口安装 `@buildr-ai/buildr-dsh-plugin`。`desktop` 仍由 Electron 桌面应用管理；当前已安装官方桌面运行时（Desktop Runtime）的 `runtime/cli/bin/dsh` 通过桌面主机入口启用 `manageDesktopProfile: true`，支持其插件管理。通用／npm 命令行（CLI）入口不具该能力，仍拒绝 `desktop`；不能仅凭命令名称相同推定支持，也不手改配置档（Profile）、自行开权限或增加兼容豁免。普通用户可使用应用插件界面，其他非受管配置档使用各自已核对入口。
 

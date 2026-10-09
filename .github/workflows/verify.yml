@@ -82,11 +82,21 @@ jobs:
         run: npm ci
       - name: Install pinned DSH package manager
         if: steps.services.outputs.dsh == 'true'
-        run: npm install --global pnpm@11.7.0
+        shell: bash
+        run: |
+          mkdir -p "${RUNNER_TEMP}/dsh-tooling"
+          : > "${RUNNER_TEMP}/dsh-tooling/user.npmrc"
+          : > "${RUNNER_TEMP}/dsh-tooling/global.npmrc"
+          cd "${RUNNER_TEMP}/dsh-tooling"
+          env -i PATH="${PATH}" NPM_CONFIG_USERCONFIG="${RUNNER_TEMP}/dsh-tooling/user.npmrc" NPM_CONFIG_GLOBALCONFIG="${RUNNER_TEMP}/dsh-tooling/global.npmrc" \
+            npm install --prefix "${RUNNER_TEMP}/dsh-tooling" --ignore-scripts --no-save --no-package-lock --no-audit --no-fund --registry=https://registry.npmjs.org/ pnpm@11.7.0
       - name: Prepare pinned DSH SDK
         if: steps.services.outputs.dsh == 'true'
         working-directory: projects/product/services/dsh-plugin
-        run: node tools/fetch-sdk.ts
+        shell: bash
+        run: |
+          node tools/prepare-release-sdk.ts --node "$(command -v node)" --pnpm "${RUNNER_TEMP}/dsh-tooling/node_modules/pnpm/bin/pnpm.cjs" > "${RUNNER_TEMP}/development-dsh-sdk.json"
+          node --input-type=module -e 'import fs from "node:fs"; import path from "node:path"; const result = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); if (result.schemaVersion !== "buildr.dsh-release-sdk/v1" || result.status !== "prepared" || typeof result.sdk !== "string" || !path.isAbsolute(result.sdk) || /[\u0000-\u001f\u007f]/.test(result.sdk)) throw new Error("SDK output missing"); fs.appendFileSync(process.env.GITHUB_ENV, `BUILDR_DSH_SOURCE_SDK_ROOT=${result.sdk}\n`);' "${RUNNER_TEMP}/development-dsh-sdk.json"
       - name: Verify changed product scope
         env:
           BUILDR_TIMING_OUTPUT: ${{ runner.temp }}/development-feedback-timing.json

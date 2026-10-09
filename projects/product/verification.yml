@@ -195,7 +195,7 @@ testing:
     location:
       kind: service
       service: dsh-plugin
-    purpose: 验证正式版和开发版的构建、逻辑、同场装载与 DSH 真实加载器边界
+    purpose: 验证正式版和开发版的构建、逻辑、同场装载、候选字节与发布恢复检查，以及 DSH 真实加载器边界
     sourcePaths:
       - plugin/**
       - tools/**
@@ -215,11 +215,18 @@ testing:
       - 增强源码完整入口必须显式提供 --source-sdk 或 BUILDR_DSH_SOURCE_SDK_ROOT，指向经
         prepare-source-sdk 重建并核对基线、补丁清单、生成声明与产物摘要的独占软件开发工具包（SDK）；普通未补丁 rc.2 或旧
         rc.1 不代表新接口支持，不自动修改共享检出或真实配置档（Profile）
+      - 独立发布工作流（Workflow）由仓库级选择映射指向本族；完整入口包含候选搬运与可信发布恢复的隔离检查，真实 npm
+        信任和公开发布仍需另外授权及验收
+      - 新托管准备使用 prepare-release-sdk.ts，固定真实上游提交及补丁后的冻结依赖；必须显式提供对应 Node 和 pnpm
+        入口，不复用本机认证配置
       - 桌面应用的真实按钮与跨重启交互另行验收，不能由装载测试替代
       - 自动受影响选择通过 dsh-plugin 调用完整入口并准备固定 SDK 与 pnpm@11.7.0；本族不进入独立 Buildr
         主包候选（Candidate）集合
     requirements:
       - node 24.15.0
       - pnpm
+      - 当前检出的 Buildr 命令行（CLI）锁定运行依赖（Runtime Dependencies）；通过 preparation.yml 的
+        buildr.npm-ci 在 services/buildr 准备。隔离持续集成（CI）可按同一 package-lock.json 执行
+        npm ci --omit=dev --ignore-scripts；来源集成检查不使用本机发布版
       - 已核验的来源增强软件开发工具包（SDK）、持久源码补丁清单及完整 SHA256；构建依赖通过冻结锁文件与 --ignore-scripts
         预先准备，准备器直接调用构建工具，不执行安装脚本或启用运行时（Runtime）

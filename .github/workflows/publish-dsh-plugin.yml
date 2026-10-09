@@ -1,0 +1,167 @@
+name: Publish DSH plugin
+run-name: DSH ${{ inputs.operation }} ${{ inputs.version }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Prepare a candidate, or publish exactly one previously prepared candidate
+        required: true
+        default: prepare
+        type: choice
+        options: [prepare, publish]
+      version:
+        description: Exact current plugin version without v; this workflow never changes it
+        required: true
+        type: string
+      candidate_run_id:
+        description: Successful prepare run from the same main commit (publish only)
+        required: false
+        type: string
+      recovery_run_id:
+        description: Latest prior publish run for this version; required after a possible request
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: dsh-plugin-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: inputs.operation == 'prepare'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: projects/product/services/dsh-plugin
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24.15.0'
+          package-manager-cache: false
+      - name: Validate manual source inputs
+        env:
+          PLUGIN_OPERATION: ${{ inputs.operation }}
+          PLUGIN_VERSION: ${{ inputs.version }}
+          PLUGIN_CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+          PLUGIN_RECOVERY_RUN_ID: ${{ inputs.recovery_run_id }}
+        run: node tools/release-workflow.ts input-check
+      - name: Install isolated fixed preparation tooling
+        run: |
+          mkdir -p "${RUNNER_TEMP}/tooling"
+          touch "${RUNNER_TEMP}/tooling/user.npmrc" "${RUNNER_TEMP}/tooling/global.npmrc"
+          cd "${RUNNER_TEMP}/tooling"
+          env -i PATH="${PATH}" NPM_CONFIG_USERCONFIG="${RUNNER_TEMP}/tooling/user.npmrc" NPM_CONFIG_GLOBALCONFIG="${RUNNER_TEMP}/tooling/global.npmrc" \
+            npm install --prefix "${RUNNER_TEMP}/tooling" --ignore-scripts --no-save --no-package-lock --no-audit --no-fund --registry=https://registry.npmjs.org/ npm@11.5.1 pnpm@11.7.0
+      - name: Install locked Buildr CLI dependencies
+        working-directory: projects/product/services/buildr
+        run: |
+          mkdir -p "${RUNNER_TEMP}/buildr-cli-dependencies"
+          : > "${RUNNER_TEMP}/buildr-cli-dependencies/user.npmrc"
+          : > "${RUNNER_TEMP}/buildr-cli-dependencies/global.npmrc"
+          env -i PATH="${PATH}" NPM_CONFIG_USERCONFIG="${RUNNER_TEMP}/buildr-cli-dependencies/user.npmrc" NPM_CONFIG_GLOBALCONFIG="${RUNNER_TEMP}/buildr-cli-dependencies/global.npmrc" \
+            node "${RUNNER_TEMP}/tooling/node_modules/npm/bin/npm-cli.js" ci --omit=dev --ignore-scripts --no-audit --no-fund --registry=https://registry.npmjs.org/ --cache "${RUNNER_TEMP}/buildr-cli-dependencies/npm-cache"
+      - name: Prepare fixed source SDK
+        id: sdk
+        run: |
+          node tools/prepare-release-sdk.ts --node "$(command -v node)" --pnpm "${RUNNER_TEMP}/tooling/node_modules/pnpm/bin/pnpm.cjs" > "${RUNNER_TEMP}/sdk.json"
+          node --input-type=module -e 'import fs from "node:fs"; const result = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); if (result.status !== "prepared" || typeof result.sdk !== "string" || /[\r\n]/.test(result.sdk)) throw new Error("SDK output missing"); fs.appendFileSync(process.env.GITHUB_OUTPUT, `root=${result.sdk}\n`);' "${RUNNER_TEMP}/sdk.json"
+      - name: Verify both plugin variants and real loaders
+        env:
+          PLUGIN_SOURCE_SDK: ${{ steps.sdk.outputs.root }}
+        run: node tools/verify-all.ts --source-sdk "${PLUGIN_SOURCE_SDK}"
+      - name: Prepare immutable plugin candidate
+        env:
+          PLUGIN_SOURCE_SDK: ${{ steps.sdk.outputs.root }}
+        run: node tools/release.ts prepare --source-sdk "${PLUGIN_SOURCE_SDK}"
+      - name: Upload the original candidate bytes
+        uses: actions/upload-artifact@v7
+        with:
+          name: plugin-candidate-v${{ inputs.version }}
+          path: |
+            projects/product/services/dsh-plugin/build/release-candidates/${{ inputs.version }}/candidate.json
+            projects/product/services/dsh-plugin/build/release-candidates/${{ inputs.version }}/*.tgz
+          if-no-files-found: error
+          retention-days: 90
+
+  publish:
+    if: inputs.operation == 'publish'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: npm-production
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: projects/product/services/dsh-plugin
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24.15.0'
+          package-manager-cache: false
+      - name: Verify candidate run and complete publication history
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PLUGIN_OPERATION: ${{ inputs.operation }}
+          PLUGIN_VERSION: ${{ inputs.version }}
+          PLUGIN_CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+          PLUGIN_RECOVERY_RUN_ID: ${{ inputs.recovery_run_id }}
+        run: node tools/release-workflow.ts publish-check
+      - name: Download the exact prepared candidate
+        uses: actions/download-artifact@v7
+        with:
+          name: plugin-candidate-v${{ inputs.version }}
+          path: ${{ runner.temp }}/candidate
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.candidate_run_id }}
+      - name: Recover the prior publication journal
+        if: inputs.recovery_run_id != ''
+        uses: actions/download-artifact@v7
+        with:
+          name: plugin-publication-v${{ inputs.version }}
+          path: ${{ runner.temp }}/publication
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.recovery_run_id }}
+      - name: Require downloaded recovery evidence
+        if: inputs.recovery_run_id != ''
+        run: test -f "${RUNNER_TEMP}/publication/publication.json"
+      - name: Install isolated fixed publisher
+        run: |
+          mkdir -p "${RUNNER_TEMP}/tooling"
+          touch "${RUNNER_TEMP}/tooling/user.npmrc" "${RUNNER_TEMP}/tooling/global.npmrc"
+          cd "${RUNNER_TEMP}/tooling"
+          env -i PATH="${PATH}" NPM_CONFIG_USERCONFIG="${RUNNER_TEMP}/tooling/user.npmrc" NPM_CONFIG_GLOBALCONFIG="${RUNNER_TEMP}/tooling/global.npmrc" \
+            npm install --prefix "${RUNNER_TEMP}/tooling" --ignore-scripts --no-save --no-package-lock --no-audit --no-fund --registry=https://registry.npmjs.org/ npm@11.5.1
+      - name: Publish immutable plugin
+        env:
+          PLUGIN_VERSION: ${{ inputs.version }}
+        run: >-
+          node tools/trusted-publish.ts
+          --manifest "${RUNNER_TEMP}/candidate/candidate.json"
+          --version "${PLUGIN_VERSION}"
+          --source-commit "${GITHUB_SHA}"
+          --output "${RUNNER_TEMP}/publication/publication.json"
+          --npm-cli "${RUNNER_TEMP}/tooling/node_modules/npm/bin/npm-cli.js"
+      - name: Preserve publication evidence even after failure
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: plugin-publication-v${{ inputs.version }}
+          path: ${{ runner.temp }}/publication/publication.json
+          if-no-files-found: warn
+          retention-days: 90
