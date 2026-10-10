@@ -31,12 +31,13 @@ type Props = {
   observation: SourceControlObservation; onRefresh(): void | Promise<void>; onRetry?(repositoryId?: string): void | Promise<void>;
   onScene(scene: SourceControlScene): void; onOpenTask(taskId: string): void;
   onOpenFile?(target: SourceControlFileTarget): void; onViewCurrent?(target: SourceControlFileTarget): void;
+  renderChangeActions?(repository: SourceControlRepository, worktree: SourceControlWorktree): ReactNode;
   task?: { id: string; title: string }; scopeSelection?: SourceControlScopeSelection; layoutStorageKey?: string; branchExtension?: SourceControlBranchExtension;
 };
 const readNote = (data: { coverage: { limit: number; truncated: boolean }; diagnostics: Array<{message: string}> } | null) => data ? [data.coverage.truncated ? '当前读取范围不完整。' : '', ...data.diagnostics.map(item => item.message)].filter(Boolean).join('；') : '';
 
 /** Shared view: all observed facts and reads come from the caller, including in the offline prototype. */
-export function SourceControlWorkbench({ repositories, scene, reader, readKey, observation, onRefresh, onRetry, onScene, onOpenTask, onOpenFile, onViewCurrent, task, scopeSelection, layoutStorageKey, branchExtension }: Props) {
+export function SourceControlWorkbench({ repositories, scene, reader, readKey, observation, onRefresh, onRetry, onScene, onOpenTask, onOpenFile, onViewCurrent, task, scopeSelection, layoutStorageKey, branchExtension, renderChangeActions }: Props) {
   const [selectedWorktreeKey, setSelectedWorktreeKey] = useState('');
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [catalogExpanded, setCatalogExpanded] = useState(true);
@@ -173,7 +174,7 @@ export function SourceControlWorkbench({ repositories, scene, reader, readKey, o
   return <section className="source-control-workbench" aria-label="源代码管理" data-prototype-position="scm-panels">
     <ResizablePanels direction="horizontal" className="source-control-columns" initialSize={360} minFirst={260} minSecond={300} firstHidden={readingExpanded} storageKey={layoutStorageKey ? layoutStorageKey + ':columns' : undefined} separatorLabel="调整源代码管理与阅读区宽度" first={<aside className="source-control-sidebar">
       <header className="source-control-title"><button type="button" className="source-control-catalog-toggle" aria-label={catalogExpanded ? '折叠代码库列表' : '展开代码库列表'} aria-expanded={catalogExpanded} onClick={() => setCatalogExpanded(value => !value)}>{catalogExpanded ? <DownOutlined /> : <RightOutlined />}<strong>源代码管理</strong></button><Tooltip title="重新读取本机代码状态"><Button type="text" size="small" aria-label="刷新源代码管理" icon={<ReloadOutlined spin={observation.loading} />} onClick={() => void refresh()} /></Tooltip></header>
-      <ResizablePanels direction="vertical" className="source-control-stack" firstHidden={!catalogExpanded} storageKey={layoutStorageKey ? layoutStorageKey + ':stack' : undefined} initialRatio={branchExtension ? 0.30 : 0.42} minFirst={120} minSecond={180} separatorLabel="调整代码库与浏览区高度"
+      <ResizablePanels direction="vertical" className="source-control-stack" firstHidden={!catalogExpanded} storageKey={layoutStorageKey ? layoutStorageKey + ':stack' : undefined} initialRatio={renderChangeActions ? 0.29 : branchExtension ? 0.30 : 0.42} minFirst={120} minSecond={180} separatorLabel="调整代码库与浏览区高度"
         first={<div className="source-control-catalog-pane">
         <SourceControlRepositoryTree repositories={repositories} ready={Boolean(observation.readAt)} expanded={expanded} onToggle={toggle}
           selectedWorktreeKey={selectedIdentity} onPick={pickWorktree} onOpenTask={onOpenTask} renderWorktreeControl={branchExtension?.rowControl} />
@@ -181,6 +182,7 @@ export function SourceControlWorkbench({ repositories, scene, reader, readKey, o
         </div>}
         second={<div className="source-control-browser">      <div className="source-control-browse-tabs"><Segmented block value={history ? 'history' : 'changes'} options={[{ label: '未提交变更', value: 'changes' }, { label: '提交历史', value: 'history' }]} onChange={value => changeScene(value as SourceControlScene)} /></div>
 
+      {!history && selectedRepository && selectedWorktree && renderChangeActions?.(selectedRepository, selectedWorktree)}
       <div className="source-control-list" data-prototype-position={history ? 'history-list' : 'change-list'}>
 
         {observation.loading && !observation.readAt ? <div className="source-control-list-state"><Spin size="small" /><p>正在读取本机记录…</p></div> : history ? <>

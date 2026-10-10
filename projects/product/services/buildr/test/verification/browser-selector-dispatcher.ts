@@ -210,7 +210,8 @@ async function main(): Promise<any>  {
     // contaminate another selector; the production build is immutable and shared.
     const selectors = plan.selectors.includes('all') ? BROWSER_SELECTORS : plan.selectors;
     for (const selector of selectors) {
-      const result = await runPhase(`browser:${selector}`, [process.execPath, isolationRunner, '--script', browserTest, '--', selector], productRoot, 360_000, { ...process.env, BUILDR_BROWSER_SELECTOR_PLAN_JSON: JSON.stringify(plan), BUILDR_BROWSER_WEB_DIST_ROOT: stagingRoot });
+      const processBudget = selector === 'code' ? 495_000 : 360_000;
+      const result = await runPhase(`browser:${selector}`, [process.execPath, isolationRunner, '--script', browserTest, '--', selector], productRoot, processBudget, { ...process.env, BUILDR_BROWSER_SELECTOR_PLAN_JSON: JSON.stringify(plan), BUILDR_BROWSER_WEB_DIST_ROOT: stagingRoot });
       if (result.status !== 'passed') process.exitCode = 1;
     }
   } finally {

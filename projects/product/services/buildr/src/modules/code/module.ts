@@ -3,10 +3,21 @@ import { TASK_QUERY_APPLICATION, TASK_WORKTREE_PROVIDER } from '../task/module.t
 import { createCodeApplication, type CodeDependencies } from './application/code-application.ts';
 import { createCodeHttpContribution } from './interfaces/http/code-http.ts';
 import { createCodeCliContributions } from './interfaces/cli/code-cli.ts';
+import { AGENT_OPERATIONS_APPLICATION } from '../agent-operations/module.ts';
+import { AGENT_ASSETS_SOURCE_READ } from '../agent-assets/module.ts';
+import { createCodeCommitMessageApplication, type CodeCommitMessageDependencies } from './application/code-commit-message-application.ts';
+import { createCodeGenerationHttpContribution } from './interfaces/http/code-generation-http.ts';
+import { readCodeCommitGuidance } from './infrastructure/code-commit-guidance.ts';
+import { createCodeCommitMaterialReader, type CodeCommitMaterialReaderDependencies } from './infrastructure/code-commit-material.ts';
 export const CODE_APPLICATION='code.application';
-export const CODE_MODULE=Object.freeze({id:'code',requires:Object.freeze([WORKSPACE_APPLICATION,WORKSPACE_QUERY,TASK_QUERY_APPLICATION,TASK_WORKTREE_PROVIDER]),create(requires:Record<string,any>){
+export const CODE_GENERATION_APPLICATION='code.generation.application';
+export const CODE_MODULE=Object.freeze({id:'code',requires:Object.freeze([WORKSPACE_APPLICATION,WORKSPACE_QUERY,TASK_QUERY_APPLICATION,TASK_WORKTREE_PROVIDER,AGENT_OPERATIONS_APPLICATION,AGENT_ASSETS_SOURCE_READ]),create(requires:Record<string,any>){
   const readTask=requires[TASK_QUERY_APPLICATION].readTask;
   const dependencies:CodeDependencies={assetCatalog:requires[WORKSPACE_APPLICATION].assetCatalog,resolveSourceRoot:requires[WORKSPACE_QUERY].resolveSourceRoot,readTaskScope:(root,id)=>readTask(root,id).record.scope,gitWorktreeEvidencePath:requires[TASK_WORKTREE_PROVIDER].gitWorktreeEvidencePath,gitWorktreeEvidenceDirectories:requires[TASK_WORKTREE_PROVIDER].gitWorktreeEvidenceDirectories,readTask:(root,id)=>{const record=readTask(root,id).record;return {taskId:record.taskId,title:record.title};},readGitWorktreeEvidence:requires[TASK_WORKTREE_PROVIDER].readGitWorktreeEvidence};
   const application=createCodeApplication(dependencies);
-  return Object.freeze({provides:{[CODE_APPLICATION]:application},contributions:{http:[createCodeHttpContribution(application)],cli:createCodeCliContributions(application)}});
+  const agents=requires[AGENT_OPERATIONS_APPLICATION] as Pick<CodeCommitMessageDependencies,'startGeneration'>;
+  const assets=requires[AGENT_ASSETS_SOURCE_READ] as Pick<CodeCommitMaterialReaderDependencies,'readRules'>;
+  const commitMaterial=createCodeCommitMaterialReader({readRules:root=>assets.readRules(root)});
+  const generation=createCodeCommitMessageApplication({commitSnapshot:application.commitSnapshot,commitGuidance:(root,snapshot)=>readCodeCommitGuidance(root,snapshot,{...dependencies,taskContext:(root,id)=>{const record=readTask(root,id).record;return {taskId:record.taskId,title:record.title,intent:record.intent,scope:record.scope};}}),commitMaterial,startGeneration:input=>agents.startGeneration(input)});
+  return Object.freeze({provides:{[CODE_APPLICATION]:application,[CODE_GENERATION_APPLICATION]:generation},contributions:{http:[createCodeHttpContribution(application),createCodeGenerationHttpContribution(generation)],cli:createCodeCliContributions(application)}});
 }});

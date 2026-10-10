@@ -363,10 +363,9 @@ async function capture(page: any, name: any): Promise<any>  {
   await page.screenshot({ path: path.join(SCREENSHOT_DIR, name), fullPage: true, animations: 'disabled' });
 }
 
-// The code selector combines explorer, SCM and branch-write journeys. Its
-// observed 300s run reached the new write cases without enough remaining time;
-// reserve their budget while staying below the dispatcher's 360s process cap.
-test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('code') ? 345_000 : SELECTORS.has('all') || SELECTORS.has('task') ? 300_000 : SELECTORS.has('task-materials') || SELECTORS.has('layout') || SELECTORS.has('workbench') || SELECTORS.has('articles') || SELECTORS.has('shell') || SELECTORS.has('service') || SELECTORS.has('project') ? 120_000 : 45_000 }, async (t: any) => {
+// 代码页组还包含真实生成、提交与推送场景；实测前38项已接近345秒。
+// 为完整场景保留480秒有界预算，调度器另留15秒用于清理。
+test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('code') ? 480_000 : SELECTORS.has('all') || SELECTORS.has('task') ? 300_000 : SELECTORS.has('task-materials') || SELECTORS.has('layout') || SELECTORS.has('workbench') || SELECTORS.has('articles') || SELECTORS.has('shell') || SELECTORS.has('service') || SELECTORS.has('project') ? 120_000 : 45_000 }, async (t: any) => {
   const requestedSmokeRoot: any = process.env.BUILDR_SMOKE_ROOT;
   const managedSmokeRoot: any = requestedSmokeRoot && fs.existsSync(path.join(requestedSmokeRoot, '.buildr-smoke-owner')) ? requestedSmokeRoot : null;
   const base: any = managedSmokeRoot || fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-browser-smoke-'));
@@ -2581,6 +2580,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.match(await page.locator('#task-node-content').innerText(), /暂无审查记录/);
     assert.equal(await page.getByRole('button', { name: '交给智能体审查', exact: true }).count(), 0);
     await closeTaskReading(page); await page.locator('[data-task-node=implementation]').click(); await page.locator('[data-task-content=verification]').click();
+    await page.locator('#task-node-content .task-node-empty').filter({ hasText: '尚未保存验证结果。' }).waitFor({ state: 'visible' });
     assert.match(await page.locator('#task-node-content').innerText(), /尚未保存验证结果/);
     await openTaskActionModal(page, 'task-complete-action');
     await page.locator('#task-complete-summary').fill('页面确认完成');

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { runSourceControlActionsJourney } from './source-control-actions-journey.ts';
 import { runSourceControlBranchesJourney } from './source-control-branches-journey.ts';
 
 /** The host owns isolated Git data; every successful read below comes from production HTTP. */
@@ -1042,6 +1043,7 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     await noOverflow(); await capture(page, 'source-control-fixture-task-worktree-return.png');
   });
   await runSourceControlBranchesJourney({t,page,workspaceUrl,capture,fixture,expectedBrowserErrors,scenario});
+  await runSourceControlActionsJourney({t,page,workspaceUrl,capture,fixture,scenario});
   if (focus) {
     assert.ok(selectedCases.length, '源码管理 focus 必须选择至少一个真实场景');
     process.stderr.write('[buildr-browser-code-focus] ' + JSON.stringify({focus,cases:selectedCases}) + '\n');

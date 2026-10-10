@@ -1,0 +1,21 @@
+.source-control-commit-panel { padding: 9px 11px; border-bottom: 1px solid var(--soft-line); background: var(--soft-surface); flex: none; }
+.source-control-message-input { position: relative; border: 1px solid var(--soft-line); border-radius: 5px; background: var(--soft-surface); }
+.source-control-message-input:focus-within { border-color: var(--soft-primary); }
+.source-control-message-input textarea.ant-input { padding: 5px 58px 5px 8px; border: 0; box-shadow: none; line-height: 20px; min-height: 30px; background: transparent; font-size: 12px; resize: none; }
+.source-control-message-input > .agent-action-control { position: absolute; right: 3px; top: 3px; }
+.source-control-commit-actions { display: flex; align-items: center; gap: 3px; margin-top: 8px; }
+.source-control-commit-split { min-width: 0; flex: 1; }
+.source-control-commit-split > #commit-changes { flex: 1; min-width: 0; font-size: 12px; justify-content: center; }
+.source-control-commit-split > #commit-action-menu { flex: none; width: 28px; font-size: 10px; padding: 0; }
+.source-control-commit-actions > .ant-btn { width: 23px; padding: 0; color: var(--soft-muted); }
+.source-control-generation-status { display: flex; align-items: center; gap: 7px; font-size: 11px; color: var(--soft-muted); margin: 4px 0 0; }
+.source-control-generation-status > .ant-btn { font-size: 11px; margin-left: auto; height: 22px; }
+.source-control-commit-result { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--soft-primary); margin-top: 7px; line-height: 1.7; }
+.source-control-commit-result.is-warning { color: #9b6d26; }
+.source-control-commit-result .ant-btn { font-size: 11px; padding: 0; height: auto; }
+.source-control-action-note { font-size: 11px; color: var(--soft-muted); margin: 5px 0 0; line-height: 1.6; }
+.source-control-action-note .ant-btn { font-size: 11px; padding: 0 5px; height: auto; }
+.source-control-commit-panel .ant-alert { margin: 6px 0 0; padding: 6px; }
+.source-control-commit-panel .ant-alert-message { font-size: 11px; }
+.source-control-browser:has(.source-control-commit-panel) { overflow: auto; }
+.source-control-browser:has(.source-control-commit-panel) .source-control-list { min-height: 90px; }

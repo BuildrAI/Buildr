@@ -1,3 +1,6 @@
+import { AgentRuntimeProvider, useAgentRuntime } from './AgentRuntimeContext';
+import { AgentRegistryDrawer } from '../features/agents/components/AgentRegistryDrawer';
+import { agentStatusLabel } from '../features/agents/agent-model';
 import { AppShellHeader, AppShellFrame } from './AppShellView';
 import { WorkbenchPreferencesProvider } from '../features/workbench/hooks/useWorkbenchPreferences';
 import { WorkbenchSearch } from '../features/workbench/components/WorkbenchSearch';
@@ -8,7 +11,7 @@ import { runtimeSystemApi } from './api/runtime-system-api';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Outlet, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { Alert, Button, Drawer, Tooltip, Typography } from 'antd';
-import { AppstoreOutlined, CheckOutlined, MenuOutlined, PlusOutlined, SettingOutlined } from '@ant-design/icons';
+import { AppstoreOutlined, CheckOutlined, MenuOutlined, PlusOutlined, RobotOutlined, SettingOutlined } from '@ant-design/icons';
 import { api, setWorkspaceId } from '../api';
 import { AppShellContext, type WorkspaceShellInfo } from './AppShellContext';
 import { AppNavigation } from './AppNavigation';
@@ -57,7 +60,13 @@ function productTitle(webProfile: WebProfile | null): string {
   return webProfile === 'development' ? 'Buildr Web Dev' : 'Buildr Web';
 }
 
-export function AppLayout({ renderResource }: { renderResource: (item: ResourcePreview) => ReactNode }) {
+export function AppLayout(props: { renderResource: (item: ResourcePreview) => ReactNode }) {
+  return <AgentRuntimeProvider><AppLayoutView {...props} /></AgentRuntimeProvider>;
+}
+
+function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePreview) => ReactNode }) {
+  const agents = useAgentRuntime();
+  const defaultAgent = agents.registry?.agents.find(agent => agent.id === agents.registry?.defaultAgentId);
   const params = useParams();
   const navigate = useNavigate();
   const location = useLocation();
@@ -226,7 +235,7 @@ export function AppLayout({ renderResource }: { renderResource: (item: ResourceP
         okButtonProps: { danger: true },
       });
       if (!ok) return;
-      setQuitError(''); setQuitting(true);
+      setQuitError(''); setQuitting(true); agents.setOpen(false);
       await runtimeSystemApi.quit();
       setExited(true);
     } catch (error) {
@@ -302,6 +311,7 @@ export function AppLayout({ renderResource }: { renderResource: (item: ResourceP
         <AppShellHeader isGlobal={isGlobal} brandHref={isGlobal ? '/' : workspaceHref('/overview')} development={webProfile === 'development'} workspaceName={isGlobal ? '全部工作空间' : (workspace?.name || '正在读取…')} workspaceMenuItems={workspaceMenuItems} area={area} workbenchHref={workspaceHref('/overview')} codeHref={codeDestination.current.path} workspaceDestination={{to:workspaceDestination.current.path,state:workspaceDestination.current.state}} actions={<>
             {!isGlobal ? <WorkbenchSearch key={workspaceId} /> : null}
             {!isGlobal ? <Button className="shell-menu-toggle" aria-label="打开导航菜单" icon={<MenuOutlined />} onClick={() => setNavigationOpen(true)} /> : null}
+            <Tooltip title={defaultAgent ? defaultAgent.label + ' · ' + agentStatusLabel(defaultAgent) : agents.error || '查看或接入智能体'}><Button id="global-agents-entry" aria-label="智能体" type="text" icon={<RobotOutlined />} onClick={() => agents.setOpen(true)}><span className="global-agent-label">{defaultAgent?.label || '智能体'} <span className={'global-agent-status' + (defaultAgent?.availability === 'available' ? ' is-available' : '')} /></span></Button></Tooltip>
             <Button id="quit-buildr" className="nav-quit" type="text" loading={quitting} onClick={() => { void quit(); }}>
               退出
             </Button>
@@ -365,6 +375,7 @@ export function AppLayout({ renderResource }: { renderResource: (item: ResourceP
           ) : null}
         </div>
       </DrawerShell>
+      <AgentRegistryDrawer />
       <WorkspaceSettingsDrawer open={settingsOpen} workspaceId={settingsWorkspaceId}
         onClose={() => setSettingsOpen(false)} onSaved={workspaceSettingsSaved} />
     </WorkbenchPreferencesProvider>

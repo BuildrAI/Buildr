@@ -2135,3 +2135,8 @@ details summary { cursor: pointer; color: var(--soft-ink); font-size: 12px; font
 
 /* Collapsed navigation has a fixed boundary instead of a resize handle. */
 .sidebar-collapsed .app-sidebar-head::after { content:''; position:absolute; right:0; top:12px; height:19px; width:1px; background:var(--soft-line); }
+
+.global-agent-status { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-left: 3px; vertical-align: middle; background: #b68b4c; }
+.global-agent-status.is-available { background: #408c67; }
+@media (max-width: 1050px) { .app-shell .topbar { gap: 9px; padding-inline: 16px; } .app-shell .topbar-actions { gap: 4px; } .app-shell .top-nav { flex-shrink: 0; } .app-shell .top-nav a { padding-inline: 10px; white-space: nowrap; } .app-shell #global-agents-entry { padding-inline: 5px; } }
+@media (max-width: 680px) { .app-shell #global-agents-entry .global-agent-label { display: none; } .app-shell #global-agents-entry { width: 30px; padding-inline: 0; } }

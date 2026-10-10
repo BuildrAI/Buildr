@@ -1,10 +1,10 @@
 ---
 name: buildr
-description: 安装或更新 Buildr、同步工作空间、诊断或维护工作资产，以及采用组织工作方式时使用；任务执行使用对应专业技能。
+description: 安装或更新 Buildr、接入本机智能体、同步工作空间、诊断或维护工作资产，以及采用组织工作方式时使用；任务执行使用对应专业技能。
 ---
 # Buildr Skill
 
-Buildr 治理组织工作资产并投射到智能体运行时（Agent runtime）。工作事实说明“做什么”，工作方法说明“怎么做”；源资产、当前诊断和实际命令是依据，运行时（Runtime）是可重建入口。Buildr 不接管智能体（Agent）的理解、推理或执行，也不保存本机版本偏好。
+Buildr 治理组织工作资产并投射到智能体运行时（Agent runtime）。工作事实说明“做什么”，工作方法说明“怎么做”；源资产、当前诊断和实际命令是依据，运行时（Runtime）是可重建入口。Buildr 通过已接入智能体（Agent）交付明确功能结果，理解和推理仍由智能体（Agent）承担，不保存本机版本偏好。
 
 Agent 是 Buildr 功能的默认操作入口。在用户目标和已有授权内直接执行并验证；只在缺少业务决定或授权时询问。用户选择手动操作，或当前工具、权限、登录态不支持时，再提供准确手动入口。
 
@@ -19,6 +19,7 @@ Agent 是 Buildr 功能的默认操作入口。在用户目标和已有授权内
 | 当前目标 | 读取与动作 |
 |---|---|
 | 安装、检查或更新 Buildr | [安装与更新](references/asset-maintenance.md#安装与更新)；不猜目标工作空间（Workspace） |
+| 将当前 Codex 接入 Buildr，或查看当前接入与默认选择 | [本机智能体接入](references/agent-operations.md)；登记真实可调用入口，不让用户填写安装路径 |
 | 初始化工作空间（Workspace） | `buildr init --agent <agent> --target <dir> --name <name> --profile <personal\|team\|company>`；身份未知可省略 `--agent`，默认完整准备标准或唯一既有方式，使用内置最终 Doctor。仅源资产使用 `init --source-only`；首次使用交接见 [资产维护](references/asset-maintenance.md#workspace--organization-root) |
 | 更新或同步工作空间（Workspace），或处理检出内容变化 | [工作空间更新与检出变化](references/asset-maintenance.md#工作空间更新与检出变化) |
 | 项目（Project）、服务（Service）、代码库实例（Repository Instance）、规则（Rule）、技能（Skill）、命令（Command）、组件（Component）或内置能力（Builtin）维护 | 按对象读取 [资产维护](references/asset-maintenance.md) 中对应小节；涉及组件（Component）成员时先核对整体所有权 |

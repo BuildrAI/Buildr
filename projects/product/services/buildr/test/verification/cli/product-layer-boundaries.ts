@@ -31,6 +31,8 @@ const allowedCrossModulePorts: any = new Set([
   'modules/agent-assets/source/module.ts -> modules/task/materials/module.ts',
   'modules/code/module.ts -> modules/task/module.ts',
   'modules/code/module.ts -> modules/workspace/module.ts',
+  'modules/code/module.ts -> modules/agent-operations/module.ts',
+  'modules/code/module.ts -> modules/agent-assets/module.ts',
   'modules/workbench/module.ts -> modules/task/module.ts',
   'modules/workbench/module.ts -> modules/workspace/module.ts',
   'modules/knowledge/module.ts -> modules/workspace/module.ts',

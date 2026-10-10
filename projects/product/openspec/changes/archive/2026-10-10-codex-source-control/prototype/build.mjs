@@ -1,0 +1,31 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import crypto from 'node:crypto';
+import {execFileSync} from 'node:child_process';
+import {gzipSync} from 'node:zlib';
+import {fileURLToPath,pathToFileURL} from 'node:url';
+const tmp=path.dirname(fileURLToPath(import.meta.url));
+const root=path.resolve(tmp,'../../../../services/buildr-web');
+const output=path.resolve(process.argv[2]||path.join(tmp,'rebuilt'));
+if(output===tmp)throw Error('Rebuild output must not overwrite the accepted prototype.');
+await fs.mkdir(output,{recursive:true});
+const {build}=await import(pathToFileURL(path.join(root,'node_modules/vite/dist/node/index.js')).href);
+const alias=[{find:'buildr-web-source',replacement:root},...['react','react-dom','react-router-dom','antd','@ant-design/icons','dayjs'].map(name=>({find:name,replacement:path.join(root,'node_modules',name)}))];
+const metadata=JSON.parse(await fs.readFile(tmp+'/source/scenes.json','utf8'));
+const observedAt=new Date().toISOString();
+const commit=execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim();
+const json=v=>JSON.stringify(v).replaceAll('<','\\u003c');
+async function document(entry,viewer=false,define={}){
+ const sources=new Set();
+ const result=await build({root,configFile:false,resolve:{alias},esbuild:{jsx:'automatic'},plugins:[{name:'offline-codex-message-prototype',enforce:'pre',resolveId(source){if(source.endsWith('/features/code/components/SourceControlWorkbench')||source.endsWith('/features/code/components/SourceControlWorkbench.tsx'))return tmp+'/source/SourceControlWorkbench.tsx';},transform(_code,id){if(id.startsWith(root+'/src/')||id.startsWith(tmp+'/source/')||id.includes('/ui-prototype/assets/'))sources.add(id.split('?')[0]);}}],build:{write:false,minify:true,assetsInlineLimit:Infinity,lib:{entry:tmp+'/source/'+entry,name:viewer?'BuildrCodexMessageReader':'BuildrCodexMessagePrototype',formats:['iife']},rollupOptions:{onwarn(warning,warn){if(warning.code!=='MODULE_LEVEL_DIRECTIVE')warn(warning);},output:{inlineDynamicImports:true}}},define:{'process.env.NODE_ENV':'"production"',...define}});
+ const chunks=(Array.isArray(result)?result:[result]).flatMap(x=>x.output);
+ const script=chunks.filter(x=>x.type==='chunk').map(x=>x.code).join('\n');
+ const css=chunks.filter(x=>x.type==='asset'&&x.fileName.endsWith('.css')).map(x=>x.source).join('\n');
+ const observation={observedAt,commit,uncommittedSummary:'从任务中已保全的第四版模拟来源重建；复用当前检出位置的公共组件与主题，记录实际来源摘要，不覆盖原确认文件。所有生成、提交、推送与接入仅为内存模拟，不调用真实模型或执行Git写入。',snapshotSource:'src/features/code/components/SourceControlWorkbench.tsx',sources:await Promise.all([...sources].sort().map(async source=>({path:path.relative(root,source),sha256:crypto.createHash('sha256').update(await fs.readFile(source)).digest('hex')})))};
+ const html='<!doctype html>\n<!-- buildr:ui-prototype -->\n'+(viewer?'<!-- buildr:ui-prototype-viewer -->\n':'')+'<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Codex · 生成提交说明'+(viewer?' · 原型阅读器':' · 原型')+'</title><script id="buildr-prototype" type="application/json">'+json(metadata)+'</script><script id="buildr-prototype-source" type="application/json">'+json(observation)+'</script><style>'+css.replaceAll('</style','<\\/style')+'</style></head><body><div id="root"></div><script>'+script.replaceAll('</script','<\\/script')+'</script></body></html>\n';
+ if(Buffer.byteLength(html)>2*1024*1024)throw Error('Over 2 MiB: '+Buffer.byteLength(html));
+ return html;
+}
+const body=await document('main.tsx');await fs.writeFile(output+'/body.html',body);
+const viewer=await document('viewer.tsx',true,{__PROTOTYPE_DOCUMENT_GZIP__:JSON.stringify(gzipSync(body).toString('base64')),__PROTOTYPE_DOCUMENT_BYTES__:String(Buffer.byteLength(body)),__PROTOTYPE_OBSERVED_AT__:JSON.stringify(observedAt)});await fs.writeFile(output+'/viewer.html',viewer);
+console.log(JSON.stringify({body:Buffer.byteLength(body),viewer:Buffer.byteLength(viewer),commit,observedAt}));

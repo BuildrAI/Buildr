@@ -1,4 +1,6 @@
 import { CODE_HTTP_SCHEMAS } from '../../../src/modules/code/interfaces/http/code-http-contracts.ts';
+import { AGENT_OPERATIONS_HTTP_SCHEMAS } from '../../../src/modules/agent-operations/interfaces/http/agent-operations-http-contracts.ts';
+import { CODE_GENERATION_HTTP_SCHEMAS } from '../../../src/modules/code/interfaces/http/code-generation-http.ts';
 import { KNOWLEDGE_HTTP_SCHEMAS } from '../../../src/modules/knowledge/interfaces/http/knowledge-http-contracts.ts';
 
 import fs from 'node:fs';
@@ -13,6 +15,8 @@ const productRoot: any = path.resolve(serviceRoot, '../..');
 
 const targets: any = Object.freeze([
   { name: 'code-http-dto.ts', schemas: CODE_HTTP_SCHEMAS },
+  { name: 'agent-operations-http-dto.ts', schemas: AGENT_OPERATIONS_HTTP_SCHEMAS },
+  { name: 'code-generation-http-dto.ts', schemas: CODE_GENERATION_HTTP_SCHEMAS },
   { name: 'knowledge-http-dto.ts', schemas: KNOWLEDGE_HTTP_SCHEMAS },
   { name: 'workspace-http-dto.ts', backendRelative: 'modules/workspace/interfaces/http', schemas: WORKSPACE_HTTP_SCHEMAS },
   { name: 'agent-assets-http-dto.ts', backendRelative: 'modules/agent-assets/interfaces/http', schemas: AGENT_ASSETS_HTTP_SCHEMAS },

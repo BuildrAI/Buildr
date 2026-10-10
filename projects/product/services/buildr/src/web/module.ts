@@ -23,7 +23,7 @@ type WebModuleDependency = {
 };
 type WebModuleRequires = Record<string, WebModuleDependency>;
 
-export function createWebModule(runtime: WebInstanceLifecycleRuntime, options: { httpContributions?: unknown[] } = {}) {
+export function createWebModule(runtime: WebInstanceLifecycleRuntime, options: { httpContributions?: unknown[]; closeResources?: () => Promise<void> } = {}) {
   const httpContributions = options.httpContributions || [];
   return Object.freeze({
     id: WEB_MODULE_ID,
@@ -46,6 +46,7 @@ export function createWebModule(runtime: WebInstanceLifecycleRuntime, options: {
       }) as WebInstanceLifecycleRuntime;
       registerWebInstanceLifecycle(composition, {
         httpContributions,
+        closeResources: options.closeResources,
         createLocalWorkspaceServer: (webRuntime, serverOptions) => Reflect.apply(createLocalWorkspaceServer, undefined, [webRuntime, serverOptions]),
         ensureRegisteredTarget: workspace.ensureRegisteredTarget,
         resolveRegisteredWorkspace: workspace.resolveRegisteredWorkspace,

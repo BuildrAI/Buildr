@@ -2,8 +2,19 @@ import type { CodeApplication, CodeInput } from '../../application/code-applicat
 import { CODE_HTTP_SCHEMAS, CODE_HTTP_REQUESTS, CODE_HTTP_OPERATIONS, CODE_HTTP_VALIDATORS, CODE_HTTP_PATHS } from './code-http-contracts.ts';
 import { codeFailure } from '../../infrastructure/code-file-reader.ts';
 import type { CodeBranchSwitchInput } from '../../application/source-control-model.ts';
+import type { CodeCommitChangesInput, CodePushInput } from '../../application/code-commit-model.ts';
 export function createCodeHttpContribution(application:CodeApplication) {
   return Object.freeze({id:'code.files.http',schemas:{...CODE_HTTP_SCHEMAS,...Object.fromEntries(Object.entries(CODE_HTTP_REQUESTS).map(([key,value])=>[key+'Request',value]))},operations:CODE_HTTP_OPERATIONS,handle:async({request,suffix,searchParams,root,submitTaskRead,authorizeWrite,readJsonBody}:{request:{method?:string};suffix:string;searchParams:URLSearchParams;root:string;submitTaskRead?:(operation:string,readId:string,input:Record<string,string>)=>Promise<unknown>;authorizeWrite?:()=>void;readJsonBody?:()=>Promise<unknown>})=>{
+    if (request.method === 'POST' && ['/code/commit-changes','/code/push'].includes(suffix)) {
+      if (!authorizeWrite || !readJsonBody) throw codeFailure('code_write_unauthorized','写入请求缺少本机会话（Session）授权。',403);
+      authorizeWrite();
+      if (searchParams.size) throw codeFailure('code_query_invalid','Git 写入接口不接受查询参数。');
+      const operation = suffix === '/code/push' ? 'push' : 'commitChanges', input = await readJsonBody();
+      if (!CODE_HTTP_VALIDATORS.validate(CODE_HTTP_REQUESTS[operation].$id,input).valid) throw codeFailure('code_commit_input_invalid','Git 写入请求不符合契约。');
+      const body = operation === 'push' ? await application.push(root,input as CodePushInput) : await application.commitChanges(root,input as CodeCommitChangesInput);
+      if (!CODE_HTTP_VALIDATORS.validate(CODE_HTTP_SCHEMAS[operation].$id,body).valid) throw codeFailure('code_response_invalid','Git 写入结果不符合契约。',500);
+      return {status:200,body};
+    }
     if (request.method === 'POST' && suffix === '/code/branch-switch') {
       if (!authorizeWrite || !readJsonBody) throw codeFailure('code_branch_write_unauthorized','切换请求缺少本机会话（Session）授权。',403);
       authorizeWrite();

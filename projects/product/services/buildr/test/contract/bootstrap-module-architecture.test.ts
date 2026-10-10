@@ -15,6 +15,8 @@ import { createRuntime, runtimeContributions, runtimeModuleSnapshot, runtimeProv
 import { createRuntime as createProductRuntime } from '../../src/bootstrap/runtime.ts';
 import { OPENSPEC_QUERY, createOpenSpecModule } from '../../src/modules/openspec/module.ts';
 import { CHANGE_APPLICATION } from '../../src/modules/task/change/module.ts';
+import { AGENT_OPERATIONS_APPLICATION } from '../../src/modules/agent-operations/module.ts';
+import { CODE_APPLICATION, CODE_GENERATION_APPLICATION } from '../../src/modules/code/module.ts';
 
 test('OpenSpec 独占通用内容查询，任务能力只提供关联组合', () => {
   const runtime = createProductRuntime();
@@ -256,10 +258,16 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     contributions: { cli: [], http: ['change.http'], diagnostics: [] },
     lifecycle: 'none',
   }, {
+    id: 'agent-operations',
+    requires: [],
+    provides: [AGENT_OPERATIONS_APPLICATION],
+    contributions: { cli: ['agent', 'agent list', 'agent register', 'agent select'], http: ['agent-operations.http'], diagnostics: [] },
+    lifecycle: 'none',
+  }, {
     id: 'code',
-    requires: [WORKSPACE_APPLICATION, WORKSPACE_QUERY, TASK_QUERY_APPLICATION, TASK_WORKTREE_PROVIDER],
-    provides: ['code.application'],
-    contributions: {cli:['code repositories','code directory','code file','code search','code source-control','code branches','code authors','code history','code commit','code diff','code source-file'],http:['code.files.http'],diagnostics:[]},
+    requires: [WORKSPACE_APPLICATION, WORKSPACE_QUERY, TASK_QUERY_APPLICATION, TASK_WORKTREE_PROVIDER, AGENT_OPERATIONS_APPLICATION, AGENT_ASSETS_SOURCE_READ],
+    provides: [CODE_APPLICATION, CODE_GENERATION_APPLICATION],
+    contributions: {cli:['code repositories','code directory','code file','code search','code source-control','code commit-context','code branches','code authors','code history','code commit','code diff','code source-file'],http:['code.files.http', 'code.generation.http'],diagnostics:[]},
     lifecycle: 'none',
   }, {
     id: 'project-verification',
@@ -342,7 +350,8 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     'task commits', 'task changed-files',
     'task materials inspect', 'task materials record', 'task materials write', 'task brief migrate',
     'agent-assets source inspect',
-    'code repositories', 'code directory', 'code file', 'code search', 'code source-control', 'code branches', 'code authors', 'code history', 'code commit', 'code diff', 'code source-file',
+    'agent', 'agent list', 'agent register', 'agent select',
+    'code repositories', 'code directory', 'code file', 'code search', 'code source-control', 'code commit-context', 'code branches', 'code authors', 'code history', 'code commit', 'code diff', 'code source-file',
     'project verification inspect', 'project verification validate', 'project verification update',
     'task review inspect', 'task review record',
     'task verification inspect', 'task verification record',
@@ -353,7 +362,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     'doctor',
   ]);
   assert.deepEqual(runtimeContributions(runtime, 'http').map((item: any) => item.id), [
-    'workspace-core.http', 'agent-assets.http', 'knowledge.http', 'publication.http', 'task-work-context.http', 'task.http', 'task.daily-progress.http', 'workbench.http', 'task.commits.http', 'task.changed-files.http', 'task.materials.http', 'change.http', 'code.files.http',
+    'workspace-core.http', 'agent-assets.http', 'knowledge.http', 'publication.http', 'task-work-context.http', 'task.http', 'task.daily-progress.http', 'workbench.http', 'task.commits.http', 'task.changed-files.http', 'task.materials.http', 'change.http', 'agent-operations.http', 'code.files.http', 'code.generation.http',
     'task-review.http', 'task-verification.http',
     'task-parent-coordination.http', 'system-installation.release-awareness.http',
   ]);
@@ -383,6 +392,10 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
   const agentRuntime: any = runtimeProvide(runtime, AGENT_ASSETS_RUNTIME);
   assert.equal(typeof agentRuntime.getRuntimeAdapter, 'function');
   assert.equal(typeof agentRuntime.assembleRuntimeProjection, 'function');
+  const agentOperations = runtimeProvide(runtime, AGENT_OPERATIONS_APPLICATION);
+  for (const name of ['listRegistry', 'registerCodex', 'selectAgent', 'startGeneration', 'getRun', 'cancelRun', 'close']) assert.equal(typeof agentOperations[name], 'function', name);
+  assert.equal(agentAssets.startGeneration, undefined);
+  assert.equal(typeof runtimeProvide(runtime, CODE_GENERATION_APPLICATION).generateCommitMessage, 'function');
   const taskQuery: any = runtimeProvide(runtime, TASK_QUERY_APPLICATION);
   const command: any = runtimeProvide(runtime, TASK_COMMAND_APPLICATION);
   assert.equal(typeof taskQuery.inspectTask, 'function');

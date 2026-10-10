@@ -6,6 +6,8 @@ import { ObjectTabStrip } from '../../../components/ObjectTabStrip';
 import { workspaceHref } from '../../../lib/labels';
 import { SourceControlWorkbench } from '../components/SourceControlWorkbench';
 import { isTaskReturnPath } from '../code-navigation';
+import { SourceControlCommitPanel } from '../components/SourceControlCommitPanel';
+import { useSourceControlActions } from '../hooks/useSourceControlActions';
 import { useSourceControl } from '../hooks/useSourceControl';
 import { useSourceControlBranches } from '../hooks/useSourceControlBranches';
 import type { SourceControlFileTarget, SourceControlScene } from '../source-control-model';
@@ -16,6 +18,7 @@ export function CodeSourceControlPage() {
   const location = useLocation(), navigate = useNavigate();
   const entry = location.state?.sourceControlEntry as {nonce?: string; taskId: string; taskTitle?: string; from: {pathname: string; search: string; hash: string; state: unknown}} | undefined;
   const observation = useSourceControl(workspaceId || '', entry?.taskId);
+  const actions = useSourceControlActions(workspaceId || '', observation.refresh);
   const branches = useSourceControlBranches(workspaceId || '', observation.observation.readAt, observation.refresh);
   const [scene, setScene] = useState<SourceControlScene>('changes');
   useEffect(() => { setBreadcrumbParts(['代码', '源代码管理']); }, [setBreadcrumbParts]);
@@ -36,6 +39,7 @@ export function CodeSourceControlPage() {
       scene={scene} onScene={setScene} onOpenTask={openTask}
       task={entry ? {id: entry.taskId, title: entry.taskTitle || entry.taskId} : undefined}
       scopeSelection={entry && observation.selection ? {...observation.selection, key: workspaceId + ':' + (entry.nonce || location.key)} : undefined}
+      renderChangeActions={(repository, worktree) => workspaceId ? <SourceControlCommitPanel workspaceId={workspaceId} repository={repository} worktree={worktree} actions={actions} version={observation.observation.readAt} /> : null}
       onViewCurrent={openCurrent} branchExtension={branches} layoutStorageKey={'buildr:source-control:' + workspaceId} />
     </div>
   </div>;

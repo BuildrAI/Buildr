@@ -1,9 +1,18 @@
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import test from 'node:test';
+import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 
 import { createChangeHttpContribution } from '../../src/modules/task/change/interfaces/http/change-http.ts';
 import { createBoundedBuildrWebReadExecutor } from '../../src/web/http/read-executor.ts';
+import { copyPreparedWorkspace } from '../helpers/prepared-fixtures.ts';
+import { createRuntime } from '../helpers/runtime-harness.ts';
+import { runtimeProvide } from '../../src/bootstrap/runtime.ts';
+import { CODE_APPLICATION } from '../../src/modules/code/module.ts';
+import { createCodeHttpContribution } from '../../src/modules/code/interfaces/http/code-http.ts';
 
 function fakeWorkerFactory({ delayMs = 20, failFirst = false, metrics }: any): any  {
   let created: any = 0;
@@ -166,5 +175,21 @@ test('Web预热仅加载固定容量，不读取任务，并继续复用已有Wo
     await executor.run('changed-files', input('task-one'));
     assert.equal(created, 2);
     assert.equal(metrics.calls, 1);
+  } finally { await executor.close(); }
+});
+
+test('commit-context HTTP traverses the real bounded worker and resolves the registered checkout', async t => {
+  const { root } = copyPreparedWorkspace(t, 'commit-context-worker'), runtime = createRuntime(), workspaceId = runtime.getWorkspace(root).workspace.id;
+  const repositoryPath = path.join(root, 'fixture-repository'); fs.mkdirSync(repositoryPath);
+  execFileSync('git', ['-C', repositoryPath, 'init', '--initial-branch=main'], { stdio: 'ignore' }); fs.writeFileSync(path.join(repositoryPath, 'new.txt'), 'new content\n');
+  const repositoryId = crypto.randomUUID();
+  fs.writeFileSync(path.join(root, 'repositories', 'manifest.yml'), JSON.stringify({ schemaVersion: 'buildr.repositories/v1', repositories: { fixture: { id: repositoryId, workspaceId, code: 'fixture', name: 'Fixture', description: '', source: { type: 'git', path: 'fixture-repository' } } } }));
+  const code = runtimeProvide(runtime, CODE_APPLICATION), tree = code.sourceControl(root).repositories[0].worktrees.find((item: { isMain: boolean }) => item.isMain);
+  const location = { repositoryId, worktreeId: tree.worktreeId }, expected = code.commitContext(root, location);
+  const executor = createBoundedBuildrWebReadExecutor({ workerCount: 1 });
+  try {
+    const response = await createCodeHttpContribution(code).handle({ request: { method: 'GET' }, root, suffix: '/code/commit-context', searchParams: new URLSearchParams(location), submitTaskRead: (operation, taskId, input) => executor.run(operation, { targetRoot: root, taskId, ...input }) });
+    assert.equal(response?.status, 200); assert.equal(response?.body.revision, expected.revision); assert.equal(response?.body.source.worktreeId, tree.worktreeId); assert.equal(response?.body.hasChanges, true);
+    assert.throws(() => executor.run('code-commit-changes', { targetRoot: root, taskId: 'code-files', input: JSON.stringify(location) }), (error: { code: string }) => error.code === 'local_app_read_operation_forbidden');
   } finally { await executor.close(); }
 });

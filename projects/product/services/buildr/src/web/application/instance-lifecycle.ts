@@ -63,7 +63,7 @@ type LauncherBinding = LauncherIdentity & {
 };
 type StartLock = { file: string; owner: boolean };
 type ServerReady = { url: string; initialWorkspaceId: string | null };
-type ServerInstance = { server: http.Server; ready: Promise<ServerReady> };
+type ServerInstance = { server: http.Server; ready: Promise<ServerReady>; shutdown?: () => Promise<void> };
 type ServerOptions = {
   port: number;
   instanceSecret: string;
@@ -74,7 +74,8 @@ type ServerOptions = {
   httpContributions: unknown[];
   ensureRegisteredTarget(root: string | null): string | null;
   resolveRegisteredWorkspace?: (workspaceId: string, options: { touch: boolean }) => { rootPath: string };
-  onShutdown(): void;
+  onShutdown(cleanupError?: unknown): void;
+  beforeShutdown?: () => Promise<void>;
 };
 type WebRuntime = PreviewRuntime & {
   prepareWorkspaceStructuredStore(root: string): unknown;
@@ -85,6 +86,7 @@ type WebRuntime = PreviewRuntime & {
 export type WebInstanceLifecycleRuntime = WebRuntime;
 export type WebLifecycleOptions = {
   httpContributions?: unknown[];
+  closeResources?: () => Promise<void>;
   createLocalWorkspaceServer(runtime: WebRuntime, options: ServerOptions): ServerInstance;
   ensureRegisteredTarget(root: string | null): string | null;
   resolveRegisteredWorkspace?: (workspaceId: string, options: { touch: boolean }) => { rootPath: string };
@@ -286,8 +288,13 @@ export function registerWebInstanceLifecycle(runtime: WebRuntime, options: WebLi
             httpContributions,
             ensureRegisteredTarget: options.ensureRegisteredTarget,
             resolveRegisteredWorkspace: options.resolveRegisteredWorkspace,
-            onShutdown: () => {
+            beforeShutdown: options.closeResources,
+            onShutdown: (cleanupError?: unknown) => {
               if (state) clearInstance(state, webProfile);
+              if (cleanupError) {
+                console.error('Buildr Web owned resources did not confirm shutdown:', errorDetails(cleanupError).message);
+                process.exit(1);
+              }
               if (previewIdentity) process.exit(0);
             },
           });
@@ -311,7 +318,17 @@ export function registerWebInstanceLifecycle(runtime: WebRuntime, options: WebLi
         if (!verified || !matchesBinding(verified, npmLauncherBinding)) throw codedError('新 Buildr Web health 未返回当前 Launcher binding identity，已停止启动。', 'launcher_handoff_readiness_identity_mismatch');
       }
       const cleanupReceipt = (): void => { if (state) clearInstance(state, webProfile); };
-      const closeForSignal = (): void => { cleanupReceipt(); instance?.server.close(() => process.exit(0)); };
+      const closeForSignal = (): void => {
+        void (async () => {
+          cleanupReceipt();
+          if (instance?.shutdown) await instance.shutdown();
+          else await new Promise<void>(resolve => instance?.server.close(() => resolve()));
+          process.exit(0);
+        })().catch(error => {
+          console.error('Buildr Web resource shutdown failed:', error);
+          process.exit(1);
+        });
+      };
       const signalNames: NodeJS.Signals[] = process.platform === 'win32' ? ['SIGINT', 'SIGTERM'] : ['SIGINT', 'SIGTERM', 'SIGHUP'];
       const detachLifecycleListeners = (): void => {
         cleanupReceipt();
