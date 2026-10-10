@@ -45,7 +45,7 @@ export { default as Composition } from ${JSON.stringify(join(root, 'plugin/compo
     { id: 'ui-settings-agent-loop', name: CLIENT_MODULES['ui-settings-agent-loop'], config: { userSetting: 'keep' } },
     { id: 'fixture-llm-provider', name: 'fixture:llm-provider', config: { selected: 'original' } },
   ];
-  const names = ['fixture-official', 'fixture-buildr-a', 'fixture-buildr-b'];
+  const names = ['fixture-official', '@buildr-ai/buildr-dsh-plugin', '@buildr-ai/buildr-dsh-plugin-dev'];
   const graphs: Array<Record<string, string>> = [];
   const presetOwners: string[] = [];
   for (const [index, name] of names.entries()) {
@@ -70,14 +70,17 @@ const value={enhanced:true,variant,config};roots.set(${JSON.stringify(id)},value
       await writeFile(fileURLToPath(presetOwner), `import {EnhancedPreset} from ${JSON.stringify(pathToFileURL(join(runtime, 'harness.mjs')).href)};export const variant=${index};export default class extends EnhancedPreset {}`);
       await writeFile(join(packageDir, 'runtime-composition/definition.json'), JSON.stringify({ schemaVersion: COMPOSITION_SCHEMA, modules: graph, presetOwner }));
     }
-    await writeFile(join(packageDir, 'cordis.patch.yml'), index ? compositionPatch(index === 1 ? 'buildr' : 'buildr-dev', 'entry', 'runtime-composition', 'trajectory', [])
+    await writeFile(join(packageDir, 'cordis.patch.yml'), index ? compositionPatch(index === 1 ? 'buildr' : 'buildr-dev', name, 'runtime-composition', 'trajectory', [])
       : yaml.dump([{ insert: baseRows }]));
   }
   const profileFile = join(profileDir, 'package.json'), userFile = join(profileDir, 'cordis.patch.yml');
+  const configuredGateway = { binding: { nodeExecutable: '/fixture/retained-node', cliEntry: '/fixture/canonical-cli', nodeSha256: 'sha256-' + 'a'.repeat(64), cliSha256: 'sha256-' + 'b'.repeat(64) },
+    sourceBinding: { nodeExecutable: '/fixture/source-node', cliEntry: '/fixture/source-cli' } };
   await writeFile(userFile, yaml.dump([
     { id: 'tools', name: ROOT_MODULES.tools, disabled: false },
     { id: 'preset-standard', name: '@deepseek-ai/dsh-agent-preset', disabled: false },
     { id: 'ui-trajectory', name: CLIENT_MODULES['ui-trajectory'], disabled: false },
+    { id: 'buildr-dev', name: names[2], config: configuredGateway },
   ]));
   async function select(selected: string[]) { await writeFile(profileFile, JSON.stringify({ name: 'fixture-profile', dsh: { profile: { bundles: selected } } })); }
   await select([names[0]]);
@@ -99,12 +102,14 @@ const value={enhanced:true,variant,config};roots.set(${JSON.stringify(id)},value
     return () => { if (activeRoots.get(id) === value) activeRoots.delete(id); };
   } });
   const officialRoots = Object.fromEntries(Object.entries({ ...ROOT_MODULES, ...CLIENT_MODULES }).map(([id, name]) => [name, rootPlugin(id, false)]));
+  const gatewayConfigs = new Map<string, unknown>();
   host.loader.internal = { version: 'v2', async import(name: string) {
     if (name in officialRoots) return officialRoots[name];
     if (name.startsWith(pathToFileURL(join(profileDir, 'node_modules')).href) && name.endsWith('.mjs')) return import(name);
     if (name === '@deepseek-ai/dsh-agent-preset') return h.OfficialPreset;
     if (name === 'file:///fixture/preset-owner.js') return h.EnhancedPreset;
     if (name.endsWith('/runtime-composition/index.js')) return h.Composition;
+    if (names.slice(1).includes(name)) return { apply(_ctx: unknown, config: unknown) { gatewayConfigs.set(name, config); } };
     return { apply() {} };
   } };
   const hmr = new h.Hmr(host.extend({ baseUrl: pathToFileURL(dir + '/').href }), { root: [], ignored: [], debounce: 1 });
@@ -164,6 +169,8 @@ const value={enhanced:true,variant,config};roots.set(${JSON.stringify(id)},value
   assert.ok(inventory[0].rows.some((row: any) => row.moduleName === graphs[0][PRESET_MODULES[0]]));
   // Two cooperating layers produce exactly one common owner and one set of registered presets.
   await reload(names);
+  assert.equal(host.loader.resolve('include:buildr-dev').options.name, names[2], 'the original name assertion remains the actual Loader declaration');
+  assert.deepEqual(gatewayConfigs.get(names[2]), configuredGateway, 'existing binding and sourceBinding must reach the loaded gateway unchanged');
   assert.equal([...host.loader.entries()].filter((entry: any) => entry.options.id === 'buildr-composition').length, 1);
   for (const [id, name] of Object.entries({ ...ROOT_MODULES, ...CLIENT_MODULES })) assert.equal((activeRoots.get(id) as any)?.variant, name + ':2');
   assert.equal(host.loader.resolve('include:buildr-composition:preset-standard').fiber.runtime.callback, (await import(presetOwners[1])).default);

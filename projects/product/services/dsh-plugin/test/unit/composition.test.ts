@@ -38,9 +38,11 @@ test('unknown owners and missing or duplicate preset producers fail without modi
   assert.throws(() => deriveEntries([{ id: 'tools', name: 'third-party-tools' }], definition), /unknown root owner/);
 });
 test('variants share one enhanced owner and component row identities but retain separate thin entry identities', () => {
-  const released = compositionPatch('buildr', 'entry-a', 'runtime-composition', 'trajectory-a', []);
-  const development = compositionPatch('buildr-dev', 'entry-b', 'runtime-composition', 'trajectory-b', []);
+  const released = compositionPatch('buildr', '@buildr-ai/buildr-dsh-plugin', 'runtime-composition', 'trajectory-a', []);
+  const development = compositionPatch('buildr-dev', '@buildr-ai/buildr-dsh-plugin-dev', 'runtime-composition', 'trajectory-b', []);
   assert.match(released, /id: buildr-composition/); assert.match(development, /id: buildr-composition/);
+  assert.match(released, /id: buildr\n      name: '@buildr-ai\/buildr-dsh-plugin'/);
+  assert.match(development, /id: buildr-dev\n      name: '@buildr-ai\/buildr-dsh-plugin-dev'/);
   assert.doesNotMatch(released + development, /buildr-enhanced-trajectory/);
   assert.doesNotMatch(released + development, /sourceBinding|nodeExecutable|cliEntry|\/Users\//);
 });

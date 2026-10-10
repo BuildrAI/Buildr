@@ -22,7 +22,7 @@ async function treeFiles(base: string, directory = base): Promise<Array<{ path: 
   }
   return result.sort((a, b) => a.path.localeCompare(b.path));
 }
-export function compositionPatch(entryId: string, entry: string, host: string, _trajectory: string, clients: readonly { entryId: string; name: string; directory: string }[]): string {
+export function compositionPatch(entryId: string, entryName: string, host: string, _trajectory: string, clients: readonly { entryId: string; name: string; directory: string }[]): string {
   const rows = [
     ...Object.entries(ROOT_MODULES).filter(([id]) => id !== 'agent-loop').flatMap(([id, name]) => [`- id: ${id}`, `  name: '${name}'`, '  disabled: true']),
     ...PRESET_IDS.flatMap(id => [`- id: ${id}`, `  name: '${PRESET_MODULE}'`, '  disabled: true']),
@@ -30,7 +30,9 @@ export function compositionPatch(entryId: string, entry: string, host: string, _
     ...clients.flatMap(client => [`- id: ${client.entryId}`, `  name: '${client.name}'`, '  disabled: true']),
     '- insert:',
     `    - id: ${COMPOSITION_OWNER_ID}`, `      name: './${host}/index.js'`, '      disabled: false',
-    `    - id: ${entryId}`, `      name: './${entry}/lib/index.js'`, '      disabled: false',
+    // The public declaration is also the identity targeted by existing user configuration patches.
+    // The outer package's main/exports resolve it to the exact packaged thin implementation.
+    `    - id: ${entryId}`, `      name: '${entryName}'`, '      disabled: false',
   ];
   return rows.join('\n') + '\n';
 }
@@ -96,7 +98,7 @@ export async function buildComposition(args: string[]): Promise<{ output: string
       '@deepseek-ai/dsh-client-ui-trajectory': `../${trajectoryDirectory}/lib/index.js`,
       ...Object.fromEntries(clients.map(item => [item.name, `../${item.directory}/lib/index.js`])) }, presetOwner: './preset-owner.js' }, null, 2) + '\n');
   const isDev = metadata.name.endsWith('-dev');
-  await writeFile(path.join(output, 'cordis.patch.yml'), compositionPatch(isDev ? 'buildr-dev' : 'buildr', entryDirectory, compositionDirectory, trajectoryDirectory, clients));
+  await writeFile(path.join(output, 'cordis.patch.yml'), compositionPatch(isDev ? 'buildr-dev' : 'buildr', metadata.name, compositionDirectory, trajectoryDirectory, clients));
   const nestedPath = (value: string): string => `./${entryDirectory}/${value.replace(/^\.\//, '')}`;
   const exports = Object.fromEntries(Object.entries(metadata.exports as Record<string, string | Record<string, string>>).map(([key, value]) =>
     [key, key === './package.json' ? './package.json' : typeof value === 'string' ? nestedPath(value)
