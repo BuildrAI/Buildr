@@ -12,6 +12,12 @@ v2 另可显式选择 `clientPackages: ["packages/client/ui-settings-agent-loop"
 
 来源契约为 `dsh.event-sources/v1`，工具及受支持子调用使用 `data.eventSources`，规则注入使用 `message.source.eventSources`；上下文（Context）透传少量元数据（Metadata）。无字段明确未采集，不按旧记录反查当前资产。正文片段引用原事件，不新增正文仓或原七类之外的类型。Buildr `source inspect` 默认 `mode: content` 保持兼容，采集用 `metadata` 核验真实摘要与资产依据；查看端完全不调用。默认 `content` 的解析兼容由单元检查覆盖；摘要、片段及混合／遮蔽识别另由受控检查覆盖，未将默认正文兼容集成用例的源码存在称为本轮执行通过。可选命令解释器（Bash）`execution` 是实际前台同期结果，后台未知、原生失败优先，不靠查看时解析输出猜成功。
 
+## 官方应用的当前交付
+
+精确来源补丁继续作为选定增强组件的构建输入，不要求构建或替换整个 DSH 应用。`tools/build-package.ts` 串联薄入口与 `tools/build-composition.ts`，输出可正常停用、卸载的完整插件（Plugin）；`tools/verify-package.ts` 核对完整物理文件与内层实际装载。当前组合只在内存派生根服务（Root Service）和预设（Preset），不持久写入十五个私有模块引用。
+
+下述旧 `build-development-composition.ts`、快照与五叶编辑描述保留为历史迁移资料，不作为新包的正常安装要求。实际官方发行物的构建身份与精确源码基准可能不同，仍须独立核对实际装载、来源保存与原生界面。
+
 ## 准备与构建
 
 构建依赖须已使用冻结锁文件和 `--ignore-scripts` 安装。准备器只读复用第三方依赖，将工作空间（Workspace）链接定向到独占输出，不调用 pnpm 或安装脚本；输入依赖不齐时失败，不自动下载。使用已选择兼容的明确 Node 绝对路径，示例变量不修改全局绑定。

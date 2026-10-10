@@ -18,7 +18,13 @@ node tools/release.ts prepare --source-sdk <prepared-source-sdk>
 
 压缩包必须只含预编译插件、默认启用的组合补丁和许可文件，不含本机路径、凭证或安装脚本。正式版包名是 `@buildr-ai/buildr-dsh-plugin`。开发版变体 `@buildr-ai/buildr-dsh-plugin-dev` 仅在开发者机器构建、安装，不公开发布。
 
-## 当次来源采集的精确构建输入
+## 官方应用与正常装卸
+
+当前完整插件（Plugin）由 `tools/build-package.ts` 交付选定来源组件、增强原轨迹、详情和 Buildr 页面，不替换官方 DSH 应用。正式版与开发版均使用同一可撤销组合层；原根服务（Root Service）与预设（Preset）的当前配置在内存派生，停用或卸载后由官方声明接续，不把包内模块地址持久写入用户预设（Preset）。完整包及内层实际装载由 `tools/verify-package.ts` 检查，桌面安装、停用、卸载、重装与来源持久读取另行验收。
+
+合作新版本只保证同一运行域的单个业务拥有者，冲突版本显示说明；不改官方安装器（Installer），不再要求全入口安装前拒绝第二个包。下文原安装器（Installer）补丁、本机构建采用和持久五叶编辑属于历史阶段，保留用于旧现场撤回与追溯，不作为新包的正常安装流程。
+
+## 当次来源采集的精确构建输入与历史采用
 
 下文 `services/dsh-plugin/build/` 中的证据文件属于原验证现场的本机临时产物，不随源码交付，也不保证在其他检出位置可读；文件名仅保留为现场定位信息。已入库的验证范围与结果以[实施记录](<../../../openspec/changes/archive/2026-10-05-add-dsh-buildr-provenance/implementation-progress.md>)为长期入口，不能用不存在的本机文件作为当前验证证明。
 
@@ -34,8 +40,13 @@ node tools/release.ts prepare --source-sdk <prepared-source-sdk>
 
 ```sh
 node tools/prepare-source-sdk.ts --source <exact-upstream-checkout> --manifest sdk-patches/dsh-v0.2.0-rc.2-event-sources-settings.json --node <selected-compatible-node>
-node tools/build-plugin.ts --source-sdk <prepared-source-sdk> --output <owned-candidate-root>
-node tools/verify-plugin.ts --source-sdk <prepared-source-sdk> --bundle <owned-candidate-root>
+node tools/build-package.ts --source-sdk <prepared-source-sdk> --output <owned-candidate-root>
+node tools/verify-package.ts --source-sdk <prepared-source-sdk> --bundle <owned-candidate-root>
+```
+
+以下为旧开发组合的构建与持久接线记录，仅用于追溯与撤回；新完整包不运行该入口：
+
+```sh
 node tools/build-development-composition.ts --source-sdk <prepared-source-sdk> --entry <exact-dev-bundle> --source-cli <explicit-source-cli> --node <selected-compatible-node> --host-config <observed-host-config.json> --output <new-owned-output>
 ```
 
@@ -45,7 +56,7 @@ node tools/build-development-composition.ts --source-sdk <prepared-source-sdk> -
 
 这 95 个事件经同一主机端（Host）的原查询、原事件读取、持久读取及两个只读句柄重开保持一致，12 项检查通过，原历史来源、模型／请求及工具元数据（Metadata）保全。实际技能加载的原事件正文已可见，技能文件正文读取样本仍为零。原调用跳转、来源列及详情、两条能力过滤、关闭后全宽／回焦与搜索保留、清搜索不重开已在原生界面（Native UI）验证。该同Host回执本身没有释放智能体（Agent）或重启Host；随后正常整应用退出／重启已另证95原前缀来源／工具／请求保持，恢复总数96，原查询／存储及重开通过。此新证据与此前配置冷启动分开，不声称总数不变，也不核销扩展矩阵。 证据见95 事件元数据回执（本机临时证据：`services/dsh-plugin/build/capture-session-observed-0104a5f0-8c02-41c0-afcd-8e71c560dd77.json`）及当前原生验证（本机临时证据：`services/dsh-plugin/build/capture-source-native-current-before-cold.json`）。精确双客户端（Client）的WC8 浏览器证明（本机临时证据：`services/dsh-plugin/build/source-ui-browser-WC8mR4-input-proof-0e4dda9d.json`）和七类伴随证明（本机临时证据：`services/dsh-plugin/build/source-seven-kinds-companion-20261005-ed633e8b/browser/seven-kind-result.json`）以及原接口双页证明（本机临时证据：`services/dsh-plugin/build/source-pagination-companion-20261005-53f4c8d1/pagination-result.json`）覆盖受控渲染与内存存储上的原控制器／组装接口，不代表原生分页按钮、JSONL 后端分页、真实子动作或跨平台验证。历史构建、互操作失败、恢复及安装仍见[实施索引](<../../../openspec/changes/archive/2026-10-05-add-dsh-buildr-provenance/implementation-progress.md>)；平台严格读取边界见[插件说明](<../../../services/dsh-plugin/plugin/README.md#严格来源文件读取的平台边界>)。这些结果不代表公开发布或父观察体系完成。
 
-## 原安装器的 Buildr 互斥检查
+## 原安装器的 Buildr 互斥检查（历史开发构建）
 
 一个 DSH 配置档（Profile）同时只安装一个 Buildr 插件（Plugin）。正式包、开发包、本机开发组合和旧开发包的真实身份共同受检，停用仍算已安装。原插件安装页提示用户先卸载；安装与更新在同一写锁内复查，不自动停用、卸载或替换。已识别的无关包保持原行为。实现与精确输入见[安装检查交付边界](<../../../services/dsh-plugin/sdk-patches/README.md#buildr-插件安装检查>)。
 

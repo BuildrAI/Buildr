@@ -1,6 +1,6 @@
 # Buildr DSH 桌面插件
 
-本插件（Plugin）在 DSH（DeepSeek Harness）桌面版侧栏底部提供 Buildr 按钮。点击后，主机端（Host）发现本机 Buildr、查询健康状态，客户端（Client）在右侧浏览器打开页面。正式版包 `@buildr-ai/buildr-dsh-plugin` 只服务 npm 安装的 Buildr；开发版包 `@buildr-ai/buildr-dsh-plugin-dev` 只服务本机源码。当前安装方案要求一个 DSH 配置档（Profile）同时只安装一个 Buildr 插件（Plugin），切换前由用户卸载已有版本。
+本插件（Plugin）在 DSH（DeepSeek Harness）桌面版侧栏底部提供 Buildr 按钮。点击后，主机端（Host）发现本机 Buildr、查询健康状态，客户端（Client）在右侧浏览器打开页面。正式版包 `@buildr-ai/buildr-dsh-plugin` 只服务 npm 安装的 Buildr；开发版包 `@buildr-ai/buildr-dsh-plugin-dev` 只服务本机源码。官方安装管理器正常管理包；合作的新版本在同一运行域核对共同业务资格，冲突版本提供诊断，不自动停用或卸载其他包。
 
 ## 兼容边界
 
@@ -14,13 +14,17 @@
 - DSH 公开标签列表不提供浏览器当前地址，因此不能可靠认领用户手动打开的 Buildr 标签，也不能识别插件标签后来被导航到其他网站。本机存储不可用时，跨重启复用不可用。
 - 禁用或卸载只撤销插件贡献，不关闭现有页面、不停止 Buildr、不删除其数据。
 
-### 一个配置档只安装一个 Buildr 插件
+### 官方应用中的增强组合
 
-安装检查识别 `@buildr-ai/buildr-dsh-plugin`、`@buildr-ai/buildr-dsh-plugin-dev`、`@buildr-ai/buildr-dsh-development-composition` 与旧 `@buildr-ai/dsh-plugin-dev` 的直接依赖、真实包清单及 npm 别名；停用仍算已安装。DSH 原插件安装页检查已有版本，并提示“同一时间只能安装一个 Buildr 插件，请先卸载当前版本，再继续安装”；实际安装与更新在配置档（Profile）写锁内复查，拒绝时不运行包管理器（Package Manager）、不保存构建脚本授权，不自动停用、卸载或替换已有包。已识别的无关包保持原行为；已有 Buildr 而待安装来源无法核实身份时，报告身份检查失败。
+正式版和开发版通过同一[完整包构建入口](<../tools/build-package.ts>)生成自足组合包（Composition Package），包含薄入口、选定来源生产者（Producer）、增强轨迹与必要设置贡献。应用仍使用厂商发行字节；来源列、详情和并列 Buildr 页面随插件（Plugin）生效，不需要替换 DSH 应用。
 
-这个安装前检查属于 DSH 原安装器（Installer），独立插件（Plugin）没有安装前拦截接口，不能通过安装 Buildr 包把它注入当前安装器。增量源码补丁（Source Patch）及完整 DSH 候选与当次来源软件开发工具包（SDK）分开保全，见[安装检查交付边界](<../sdk-patches/README.md#buildr-插件安装检查>)。日常 DSH 已采用完整源码构建的本机开发应用和独立开发插件；后续源码修正仍需独立构建与采用，不因修改补丁或构建插件便宣称已生效。旧正式发行包与本机开发组合同时存在的历史结果不证明新方案允许共存。两包的命名空间隔离检查只证明装载器（Loader）不会因同名服务冲突，不证明原安装页检查已生效。
+[组合适配](<composition/index.ts>)通过官方配置读取与合成能力，排除合作组合层后派生当前原声明；保留更高用户层、条件、注入、隔离及原地址基准。增强模块引用仅用于内存装载，不写进用户预设（Preset）正文。停用整个包后撤回增强接线，正常卸载不会留下指向已删除包的私有地址。根服务（Root Service）换代可能释放运行智能体（Agent），已有会话通过原持久存储及正常恢复入口接续；旧日志不补写来源。
 
-本机增强开发组合还替换了三个根服务及十五个预设（Preset）引用。普通卸载目前不会自动恢复这些引用；切换该组合前必须完成已记录的完整撤回，不能把本轮安装互斥检查当成撤回实现。简单独立插件（Plugin）的正常卸载仍由 DSH 管理，本轮不增加自动卸载能力。
+并行工具设置继续由官方配置编辑器（ConfigEditor）保存。`agent-loop` 保留真实原配置条目（Entry），[生命周期适配](<composition/configuration-owner.ts>)通过公开停止／初始化装载增强实现，稳定态保留官方配置名称；`buildrCompositionRuntime.inspect()` 单独报告实际实现及运行身份。其余组件使用内存子树。停用恢复官方组件后仍读取同一设置，不另建设置仓库或持久写入增强模块地址。
+
+共同业务资格同时保护主机端（Host）的采集、打开和来源读取；客户端（Client）依据同一资格登记侧栏、来源列、详情与 Buildr 页面，冲突说明和重新检查入口保持可达。拥有者停用后其他合作版本可重新检查接续。该保证限于同一运行域的合作版本，不覆盖不合作旧包或其他配置档（Profile）；官方安装器（Installer）仍允许安装第二个包，不能将运行资格称为安装前全局拦截。
+
+此前修改原安装器（Installer）的互斥补丁及本机构建采用保持历史事实，不进入新的独立插件（Plugin）交付。旧开发组合曾持久改写十五个预设（Preset）引用，迁移前仍须按历史撤回方法恢复；新正常装卸不依赖该方法。
 
 ## Buildr 自身参与观察
 
@@ -103,16 +107,16 @@ Linux 有 `/proc/self/fd` 核验分支，但本轮 macOS 检查没有实际执�
 从本服务（Service）根目录，使用指定兼容 Node 和外部已核验输入；示例不固化本机路径：
 
 ```sh
-node tools/prepare-source-sdk.ts --source <exact-upstream-checkout> --manifest sdk-patches/dsh-v0.2.0-rc.2-event-sources.json --node <selected-compatible-node>
-node tools/build-plugin.ts --source-sdk <prepared-source-sdk> --output <owned-candidate-root>
-node tools/verify-plugin.ts --source-sdk <prepared-source-sdk> --bundle <owned-candidate-root>
+node tools/prepare-source-sdk.ts --source <exact-upstream-checkout> --manifest sdk-patches/dsh-v0.2.0-rc.2-event-sources-settings.json --node <selected-compatible-node>
+node tools/build-package.ts --source-sdk <prepared-source-sdk> --output <owned-candidate-root>
+node tools/verify-package.ts --source-sdk <prepared-source-sdk> --bundle <owned-candidate-root>
 ```
 
 准备器从精确上游归档与保全补丁重建源树，生成主机端（Host）远程声明、客户端（Client）类型、轨迹浏览器及选定生产者实体产物后，原子发布 `buildr.dsh-source-sdk/v2` 就绪回执（Receipt）；构建会复核源、补丁、声明、API 检查与产物摘要值（Digest），不是只看 `status: ready` 或版本标记。可复现 SDK 准备通过不等于 Buildr 客户端完整编译、真实组合或桌面部署通过。准备失败的回执不能作为构建输入。
 
 正式版和开发版均消费明确源码输入；开发版额外使用 `--dev`。候选产物未完成当前检查前不压缩、发布或安装。发布准备现已按 `prepare --source-sdk <prepared-source-sdk>` 将同一源码输入与独占产物传给构建／验证，并记录基线、补丁与生成声明依据；尚未实际运行此发布准备，不能凭接线完成宣称候选已生成或已公开。独立发布边界见[发布说明](<../../../knowledge/docs/flows/dsh-plugin-release.md>)。
 
-输出压缩包（Tarball）只有预编译主机端、客户端、类型、组合补丁、说明和许可证。`cordis.patch.yml` 以 `insert` 注册默认启用的 `buildr` 条目；没有本机绑定、凭证、安装脚本或 TypeScript 源码。
+输出压缩包（Tarball）包含预编译主机端（Host）、客户端（Client）、类型、来源增强组件、可撤销组合层、说明和许可证。`cordis.patch.yml` 注册完整组合，不携带本机绑定、凭证、安装脚本或 TypeScript 源码。`build-plugin.ts` 仅编译内层薄入口，不能单独当作官方应用上的完整来源增强包。
 
 公开 npm 安装前，先核对用户实际使用的 DSH 版本及相关依赖。用户已指定插件版本时核对该版本；未指定时，先查询公开标签（Dist-tag），再核对目标版本的精确版本及对等依赖（peerDependencies）：
 
@@ -125,9 +129,13 @@ npm view @buildr-ai/buildr-dsh-plugin@<目标版本> version peerDependencies --
 
 确认兼容后，在 DSH 桌面版的插件界面安装 `@buildr-ai/buildr-dsh-plugin`，或由智能体（Agent）调用其受支持的桌面插件管理入口。通过实际入口支持的参数指定精确版本；安装后回读包名、版本与实体文件。`desktop` 配置档（Profile）仍由桌面应用管理：当前官方桌面运行时（Desktop Runtime）的 `runtime/cli/bin/dsh` 通过桌面主机入口具备 `manageDesktopProfile: true`，支持该配置档的插件管理；不具此能力的通用／npm 命令行（CLI）入口仍拒绝。先核对实际入口及帮助，不手改配置档（Profile）、自行打开权限或增加兼容豁免。
 
-发布前可把生成的 `.tgz` 安装到隔离的 DSH 配置档（Profile）验证。安装、禁用和卸载由 DSH 插件管理器完成；正常用户安装不需要 `buildr runtime dsh-plugin prepare`。开发版在同一根目录使用 `node tools/build-plugin.ts --dev --source-sdk <prepared-source-sdk> --output <owned-candidate-root>` 单独生成，不向公众发布。
+发布前可把生成的 `.tgz` 安装到隔离的 DSH 配置档（Profile）验证。安装、禁用和卸载由 DSH 插件管理器完成；正常用户安装不需要 `buildr runtime dsh-plugin prepare`。开发版在同一根目录使用 `node tools/build-package.ts --dev --source-sdk <prepared-source-sdk> --output <owned-candidate-root>` 单独生成，不向公众发布。
 
 构建、装载器（Loader）验证、安装、运行激活与真实桌面验收是不同证据。官方桌面命令行（CLI）退出 0、包已安装且选中，只证明安装事实，不等待热更新（HMR）或就绪；不能据此称当前窗口已换代。首次组合安装可能热更新（HMR），须另外取得宿主（Host）条目与客户端（Client）贡献实际就绪及新当次来源保存／重载／原查询依据。直接覆盖已加载的同名入口可能受模块缓存影响；按受支持管理器结果与运行事实决定是否需重启，不以刷新页面代替。授权修复可以保留旧压缩包（Tarball），移除旧组合后安装内层目录按内容摘要值（Digest）命名的新实体包；包名、客户端工厂（Client Factory）和版本门禁保持。失败从已保全产物恢复，不手改归档、配置档（Profile）或另起宿主（Host）掩盖状态。真实桌面验收仍须核对三入口、侧栏按钮和页面行为。
+
+### 历史开发组合与撤回
+
+以下记录描述旧开发组合，保留用于迁移与历史核对；不是新组合的正常安装步骤。
 
 本机开发试用由[开发组合构建器](<../tools/build-development-composition.ts>)生成私有包 `@buildr-ai/buildr-dsh-development-composition`，显示名称为「Buildr 开发版」。组合根只承载组合补丁（Composition Patch）；内层开发入口、官方轨迹和选定生产者保留各自真实包名及公开服务／客户端工厂（Client Factory）身份，不注册替代业务别名。安装使用包含实体文件及根依赖的压缩包（Tarball），不把缺依赖的构建目录当运行时链接；从链接安装改为同名实体包时，运行中的 Node 模块装载器（Module Loader）可能仍复用旧链接解析，不能靠重命名内层目录修复。首次安装独立组合根可避免旧入口安装根的解析残留；已装组合的后续更新仍按管理器结果处理重启。禁用此组合恢复旧开发入口与原轨迹，不改 DSH 应用文件、会话日志（Session Log）或当前 Buildr 安装。
 

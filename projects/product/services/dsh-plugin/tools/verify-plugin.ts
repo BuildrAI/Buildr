@@ -142,7 +142,8 @@ assert.equal(host.loader.resolve(variant.entryId).disabled, false);
 }
 // Register the generated Host descriptors, so the Remote surface is validated against the artifact.
 const unregister = host.typert.register(h.TYPERT);
-assert.equal(h.TYPERT_REMOTE.descriptors[0].id, `${variant.packageName}#${variant.entryId}/open`);
+assert.ok(h.TYPERT_REMOTE.descriptors.some((descriptor: { id: string }) => descriptor.id === `${variant.packageName}#${variant.entryId}/open`));
+assert.ok(h.TYPERT_REMOTE.descriptors.some((descriptor: { id: string }) => descriptor.id === `${variant.packageName}#${variant.entryId}/activation`));
 const client = new h.Context();
 await client.plugin(h.Loader); await client.plugin(h.Registry); await client.plugin(h.SlotRegistry);
 const locale = new h.LocaleRuntime(client); client.provide('locale', locale);
@@ -158,7 +159,9 @@ async function invokeBuildrOpen(payload: { args: object }) {
 }
 client.provide('connection', { rpc: {
   async call(channel: string, endpoint: string, payload: { args: object }) {
-    assert.equal(channel, '/api'); assert.equal(endpoint, `${variant.namespace}/open`);
+    assert.equal(channel, '/api');
+    if (endpoint === `${variant.namespace}/activation`) return { ok: true, value: await clientService.activation() };
+    assert.equal(endpoint, `${variant.namespace}/open`);
     return invokeBuildrOpen(payload);
   },
   open() { throw new Error('No stream expected'); },
@@ -170,7 +173,7 @@ client.provide('layout', { panelInfo });
 client.provide('sidebarRight', { mounted, openTabs: h.createSnapshotStore([]), active: () => undefined, openTab() { throw new Error('No browser navigation expected'); } });
 let loaded: { id: string; factory: (require: (key: string) => unknown) => object } | undefined;
 const document = dom.window.document;
-vm.runInNewContext(await readFile(join(bundle, 'lib/client.js'), 'utf8'), { window: { __ModuleLoader__: { load(row: typeof loaded) { loaded = row; } } }, document, globalThis: { dshDesktop: { protocolVersion: 1, browser: {} } } });
+vm.runInNewContext(await readFile(join(bundle, 'lib/client.js'), 'utf8'), { window: { __ModuleLoader__: { load(row: typeof loaded) { loaded = row; } } }, document, setTimeout, clearTimeout, console, globalThis: { dshDesktop: { protocolVersion: 1, browser: {} } } });
 assert.equal(loaded?.id, variant.packageName);
 const modules: Record<string, unknown> = { react: h.React, 'react/jsx-runtime': h.jsx, '@deepseek-ai/dsh-client-store': { createSnapshotStore: h.createSnapshotStore }, '@deepseek-ai/dsh-client-ui-primitives': { Tooltip: h.Tooltip } };
 const clientPlugin = loaded!.factory(key => { assert.ok(key in modules, `unexpected external ${key}`); return modules[key]; });
@@ -221,7 +224,7 @@ for (let attempt = 0; attempt < 20 && /Preparing Buildr/.test(container.textCont
 assert.match(container.textContent ?? '', /Buildr 安装入口缺失或已变化/, 'Host failure must reach the action instead of a generic Remote error');
 await h.act(async () => { await client.loader.update(variant.entryId, { disabled: true }); await client.loader.await(); });
 assert.equal(client.slots.entriesOfSlot('sidebar.footer.action').length, 0);
-assert.equal(client.slots.entriesOfSlot('shell.overlay').some((entry: { options: { id?: string } }) => entry.options.id === 'buildr-compatibility'), false);
+assert.equal(client.slots.entriesOfSlot('shell.overlay').some((entry: { options: { id?: string } }) => entry.options.id === `${variant.entryId}-compatibility`), false);
 assert.equal(client.get(`remote.${variant.namespace}`), undefined);
 await h.act(async () => { reactRoot.unmount(); }); dom.window.close();
 await client.fiber.dispose(); await unregister(); await host.loader.update(variant.entryId, { disabled: true }); await host.loader.await();

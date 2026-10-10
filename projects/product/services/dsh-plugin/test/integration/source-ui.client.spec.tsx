@@ -22,6 +22,7 @@ import { zh } from '../../plugin/src/locales.ts';
 import { recordedSourceSummary } from '../../plugin/src/event-sources.ts';
 import { sources, withBody } from '../support/recorded-sources.ts';
 import type { EventSources } from '../../plugin/src/source-types.ts';
+import type { ActivationStatus } from '../../plugin/src/types.ts';
 const markdownFailure = vi.hoisted(() => ({ enabled: false }));
 vi.mock('@deepseek-ai/dsh-client-ui-primitives', async importOriginal => {
  const original = await importOriginal<typeof import('@deepseek-ai/dsh-client-ui-primitives')>();
@@ -79,7 +80,7 @@ function trajectoryFixture(nodes: TrajectorySnapshot['eventNodes']) {
 function readySource(input: SourceRecordRequest, body = 'Recorded method body'): SourceRecordResult {
  return withBody(input.record as never, body);
 }
-async function createScene(nodes: TrajectorySnapshot['eventNodes'], query: (input: SourceRecordRequest) => Promise<SourceRecordResult>, only = 'buildr') {
+async function createScene(nodes: TrajectorySnapshot['eventNodes'], query: (input: SourceRecordRequest) => Promise<SourceRecordResult>, only = 'buildr', qualification?: () => ActivationStatus) {
  const runtime = await SlotTestRuntime.create(); runtimes.push(runtime); const ctx = runtime.ctx;
  await runtime.sessions.add({ id: SID, snapshot: { blank: false }, session: { loadOlder: () => Promise.resolve() } });
  const reference = runtime.sessions.retain(SID); references.push(reference); await reference.ready;
@@ -94,10 +95,11 @@ async function createScene(nodes: TrajectorySnapshot['eventNodes'], query: (inpu
  const requests: SourceRecordRequest[] = [];
  const sourceRecord = async (input: SourceRecordRequest): Promise<{ ok: true; value: SourceRecordResult }> => { const parsed = parseSourceRecordRequest(input); requests.push(parsed); const originalRecord = trajectoryStore.getSnapshot().recordContexts?.find(record => record.recordId === parsed.record.recordId); if (!originalRecord) throw Error('Missing original captured fixture record'); return { ok: true, value: await query({ ...parsed, record: originalRecord }) }; };
  vi.spyOn(runtime.remote, '$mount').mockResolvedValue(async () => {});
- runtime.remote.provideNamespaces({ buildr: { open: async () => ({ ok: true, value: { ready: false, code: 'fixture-only', message: '' } }), sourceRecord } });
+ runtime.remote.provideNamespaces({ buildr: { activation: async () => ({ ok: true, value: qualification?.() ?? { active: true, packageName: '@buildr-ai/buildr-dsh-plugin' } }), open: async () => ({ ok: true, value: { ready: false, code: 'fixture-only', message: '' } }), sourceRecord } });
  ctx.provide('sidebarRight', { mounted: createSnapshotStore(SID), openTabs: createSnapshotStore([]), active: () => undefined, isExpanded: () => false, toggleExpanded: () => {}, focus: () => {}, openTab: () => { throw Error('unexpected sidebar navigation'); } } as never);
  ctx.provide('layout', { panelInfo: runtime.panelInfo } as never);
  await runtime.mount(trajectoryPlugin); const buildr = await runtime.mount(buildrPlugin);
+ if (qualification === undefined) await waitFor(() => expect(runtime.slots.entries('conversation.view').some(entry => entry.options.id === 'buildr')).toBe(true));
  const owner = { inspectCall: undefined, viewRequest: undefined, openView: () => {}, completeViewRequest: () => {} };
  const original = runtime.renderSlot('conversation.view', owner, { session: reference, only });
  return { runtime, reference, buildr, owner, original, requests, trajectoryStore, ...fixture };
@@ -298,4 +300,29 @@ it('a Markdown renderer fault preserves the list, recorded source and raw-conten
   fireEvent.click(scene.original.view.getByRole('button', { name: zh.sourceRaw, exact: true }));
   expect(scene.original.container.querySelector('[data-content-view] pre')?.textContent).toBe('# Exact original body'); expect(scene.requests.length).toBe(1);
  } finally { markdownFailure.enabled = false; error.mockRestore(); }
+});
+
+
+it('a rejected Client keeps diagnostics reachable and gates all business seats by the Host qualification', async () => {
+ let active = false;
+ const scene = await createScene([contextNode(1)], async input => readySource(input), 'trajectory', () => active
+  ? { active: true, packageName: '@buildr-ai/buildr-dsh-plugin' }
+  : { active: false, packageName: '@buildr-ai/buildr-dsh-plugin', code: 'plugin-conflict', ownerPackage: '@buildr-ai/buildr-dsh-plugin-dev', message: 'conflict' });
+ const notice = scene.runtime.renderSlot('shell.overlay', {}, { only: 'buildr-compatibility' });
+ await waitFor(() => expect(notice.view.getByText(zh.activationConflict)).toBeTruthy());
+ for (const seat of ['sidebar.footer.action', 'conversation.trajectory.column', 'conversation.trajectory.inspector.objects', 'conversation.view'] as const) {
+  expect(scene.runtime.slots.entries(seat).some(entry => entry.options.id?.startsWith('buildr'))).toBe(false);
+ }
+ expect(scene.requests).toEqual([]);
+ active = true; scene.runtime.remote.emit('plugin-manager/changed', [{ reason: 'bundle' }]);
+ await waitFor(() => expect(scene.runtime.slots.entries('conversation.view').some(entry => entry.options.id === 'buildr')).toBe(true));
+ expect(notice.view.queryByText(zh.activationConflict)).toBeNull();
+ await waitFor(() => expect(scene.original.container.querySelectorAll('col').length).toBe(3));
+ expect(scene.requests).toEqual([]);
+ // A management refresh cannot remount a healthy owner's components and lose its reader state.
+ scene.runtime.remote.emit('plugin-manager/changed', [{ reason: 'plugin' }]);
+ await waitFor(() => expect(scene.runtime.slots.entries('conversation.trajectory.column').filter(entry => entry.options.id === 'buildr-source')).toHaveLength(1));
+ await act(() => scene.buildr.dispose());
+ expect(scene.runtime.slots.entries('conversation.view').some(entry => entry.options.id === 'trajectory')).toBe(true);
+ expect(scene.runtime.slots.entries('conversation.view').some(entry => entry.options.id === 'buildr')).toBe(false);
 });

@@ -221,7 +221,7 @@ testing:
     location:
       kind: service
       service: dsh-plugin
-    purpose: 验证正式版和开发版的构建、逻辑、同场装载、候选字节与发布恢复检查，以及 DSH 真实加载器边界
+    purpose: 验证正式版和开发版完整组合的构建、逻辑、同场装载、可撤销接线、候选字节与发布恢复检查，以及 DSH 真实加载器边界
     sourcePaths:
       - plugin/**
       - tools/**
@@ -238,6 +238,7 @@ testing:
       cwd: .
     selection:
       - 开发中按改动选择对应单元、进程或装载测试；完成时运行完整入口
+      - 完整入口构建可安装组合并验证物理文件、自足引用及内层真实入口；组合生命周期测试覆盖停用恢复与配置保全，厂商发行应用的原生装卸另行验收
       - 增强源码完整入口必须显式提供 --source-sdk 或 BUILDR_DSH_SOURCE_SDK_ROOT，指向经
         prepare-source-sdk 重建并核对基线、补丁清单、生成声明与产物摘要的独占软件开发工具包（SDK）；普通未补丁 rc.2 或旧
         rc.1 不代表新接口支持，不自动修改共享检出或真实配置档（Profile）

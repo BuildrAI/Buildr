@@ -12,11 +12,10 @@ const sdk = resolve(process.env.BUILDR_DSH_SDK_ROOT ?? join(root, 'build/dsh-0.2
 const req = createSdkRequire(sdk);
 
 /**
- * Isolate package service keys even when a loader is given both variants directly. This is a loader
- * regression check, not permission to install both variants in one profile; the original installer
- * has a separate Buildr exclusion check. An earlier build reused one service key for both variants.
+ * Separate diagnostic namespaces load together, while the cooperative business lease selects
+ * one gateway. Installation itself remains the official manager's responsibility.
  */
-test('plugin variants have distinct service keys in a controlled loader', async t => {
+test('built variants load diagnostics but qualify only one business gateway', async t => {
   const bundleRoot = resolve(process.env.BUILDR_DSH_BUNDLE_ROOT ?? join(root, 'build'));
   const bundles = ['dsh-plugin', 'dsh-plugin-dev'].map(name => join(bundleRoot, name));
   for (const bundle of bundles) {
@@ -58,28 +57,41 @@ ${sources.join('\n')}
   const h = await import(pathToFileURL(join(dir, 'harness.mjs')).href);
   const yaml = req('js-yaml') as any;
   const configPath = join(dir, 'cordis.yml');
-  await writeFile(configPath, yaml.dump(activeRows));
-  const host = new h.Context();
-  await host.plugin(h.Loader, { baseUrl: pathToFileURL(configPath).href });
-  await host.plugin(h.Registry); await host.plugin(h.Gateway);
-  const loaded: string[] = [];
-  host.loader.internal = {
-    version: 'v2',
-    async import(name: string) {
-      loaded.push(name);
-      const index = ['@buildr-ai/buildr-dsh-plugin', '@buildr-ai/buildr-dsh-plugin-dev'].indexOf(name);
-      if (index < 0) throw new Error(`unexpected package ${name}`);
-      return { default: (h as any)[`plugin${index}`].default };
-    },
-  };
-  await host.loader.root.update(yaml.load(await readFile(configPath, 'utf8')));
-  await host.loader.await();
-  // Both packages must reach activation. This loader does not surface entry services on the host
-  // context, so activation is observed through the loader itself rather than through `host.get`.
-  assert.deepEqual(loaded.sort(), ['@buildr-ai/buildr-dsh-plugin', '@buildr-ai/buildr-dsh-plugin-dev']);
-  for (const [index, name] of ['buildr', 'buildr-dev'].entries()) {
-    const entry: any = host.loader.resolve(name);
-    assert.equal(entry?.disabled, false, `${name} must stay enabled`);
-    assert.equal(entry?.fiber?.error ?? null, null, `${name} must activate without an error`);
+  await writeFile(configPath, yaml.dump([]));
+  for (const rows of [structuredClone(activeRows), structuredClone([...activeRows].reverse())]) {
+    const host = new h.Context();
+    await host.plugin(h.Loader, { baseUrl: pathToFileURL(configPath).href });
+    await host.plugin(h.Registry); await host.plugin(h.Gateway);
+    const loaded: string[] = [];
+    host.loader.internal = {
+      version: 'v2',
+      async import(name: string) {
+        loaded.push(name);
+        const index = ['@buildr-ai/buildr-dsh-plugin', '@buildr-ai/buildr-dsh-plugin-dev'].indexOf(name);
+        if (index < 0) throw new Error(`unexpected package ${name}`);
+        return { default: (h as any)[`plugin${index}`].default };
+      },
+    };
+    await host.loader.root.update(rows);
+    await host.loader.await();
+    // Both packages must reach activation. This loader does not surface entry services on the host
+    // context, so activation is observed through the loader itself rather than through `host.get`.
+    assert.deepEqual(loaded.sort(), ['@buildr-ai/buildr-dsh-plugin', '@buildr-ai/buildr-dsh-plugin-dev']);
+    const gateways: any[] = [];
+    for (const name of ['buildr', 'buildr-dev']) {
+      const entry: any = host.loader.resolve(name);
+      assert.equal(entry?.disabled, false, `${name} must stay enabled`);
+      assert.equal(entry?.fiber?.error ?? null, null, `${name} must activate without an error`);
+      gateways.push(entry.fiber.ctx.get(name));
+    }
+    assert.equal(gateways.filter(gateway => gateway.activation().active).length, 1);
+    const rejected = gateways.find(gateway => !gateway.activation().active);
+    assert.equal((await rejected.open()).code, 'plugin-conflict');
+    assert.equal((await rejected.sourceRecord({})).code, 'plugin-conflict', 'a rejected gateway must not read a source record');
+    const owner = gateways.find(gateway => gateway.activation().active);
+    const ownerName = owner.name;
+    await host.loader.resolve(ownerName).fiber.dispose();
+    assert.equal(rejected.activation().active, true, 'the surviving gateway can resume after the real owner unloads');
+    await host.fiber.dispose();
   }
 });

@@ -63,8 +63,8 @@ export function parseReleaseInput(args: string[], env: NodeJS.ProcessEnv = proce
 /** Pass one explicit prepared SDK and one unique bundle to the existing builders and verifier. */
 export function releasePrepareCommands(sourceSdk: string, bundle: string): { build: string[]; verify: string[]; pack: string[] } {
   return {
-    build: [join(root, 'tools/build-plugin.ts'), '--source-sdk', sourceSdk, '--output', bundle],
-    verify: [join(root, 'tools/verify-plugin.ts'), '--source-sdk', sourceSdk, '--bundle', bundle],
+    build: [join(root, 'tools/build-package.ts'), '--source-sdk', sourceSdk, '--output', bundle],
+    verify: [join(root, 'tools/verify-package.ts'), '--source-sdk', sourceSdk, '--bundle', bundle],
     pack: ['pack', bundle, '--json'],
   };
 }

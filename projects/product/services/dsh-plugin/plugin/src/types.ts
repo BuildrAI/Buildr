@@ -3,6 +3,11 @@ export type OpenResult =
   | { ready: true; url: string; channel: 'released' | 'development'; ownershipIdentity: string }
   | { ready: false; code: string; message: string };
 
+/** Qualification of this gateway in the current cooperative plugin service domain. */
+export type ActivationStatus =
+  | { active: true; packageName: string }
+  | { active: false; packageName: string; code: 'plugin-conflict' | 'disposed'; message: string; ownerPackage?: string };
+
 /**
  * Host configuration. `binding` is the machine pointer to this Buildr installation and is optional:
  * a package installed from npm or a repository carries no machine paths, and the plugin discovers

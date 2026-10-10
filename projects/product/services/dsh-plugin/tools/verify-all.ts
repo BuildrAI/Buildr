@@ -31,20 +31,23 @@ const peer = request.peerInput ? prepareBuildrPeer({ artifactManifest: request.p
 const raw = request.peerInput ?? join(bundles, 'peer-input.json');
 if (!request.peerInput) writeFileSync(raw, JSON.stringify({ schemaVersion: 'buildr.package-artifact-input/v1', artifact: peer.artifact, tarball: join(peer.root, 'artifact.tgz') }));
 const environment = { ...process.env, BUILDR_DSH_SDK_ROOT: sdk, BUILDR_DSH_SOURCE_SDK_ROOT: sdk, BUILDR_DSH_BUNDLE_ROOT: bundles,
-  BUILDR_DSH_SOURCE_UI_SDK_ROOT: sdk, BUILDR_DSH_SOURCE_UI_CONSUMER_ROOT: join(bundles, 'dsh-plugin'), BUILDR_DSH_BUILDR_PEER_MANIFEST: peer.manifestPath };
+  BUILDR_DSH_SOURCE_UI_SDK_ROOT: sdk, BUILDR_DSH_SOURCE_UI_CONSUMER_ROOT: join(bundles, 'dsh-plugin'), BUILDR_DSH_BUILDR_PEER_MANIFEST: peer.manifestPath,
+  BUILDR_DSH_COMPOSITION_ROOT: join(bundles, 'composition'), BUILDR_DSH_COMPOSITION_DEV_ROOT: join(bundles, 'composition-dev') };
 const run = (script: string, ...parameters: string[]): void => {
   execFileSync(process.execPath, [join(root, script), ...parameters], { cwd: root, stdio: 'inherit', env: environment, shell: false });
 };
 run('tools/build-plugin.ts', '--source-sdk', sdk, '--output', join(bundles, 'dsh-plugin'));
 run('tools/build-plugin.ts', '--dev', '--source-sdk', sdk, '--output', join(bundles, 'dsh-plugin-dev'));
+run('tools/build-composition.ts', '--source-sdk', sdk, '--entry', join(bundles, 'dsh-plugin'), '--output', join(bundles, 'composition'));
+run('tools/build-composition.ts', '--source-sdk', sdk, '--entry', join(bundles, 'dsh-plugin-dev'), '--output', join(bundles, 'composition-dev'));
 const testFiles = ['unit', 'integration'].flatMap(group => readdirSync(join(root, 'test', group))
   .filter(name => name.endsWith('.test.ts')).map(name => join(root, 'test', group, name)));
 execFileSync(process.execPath, ['--test', ...testFiles], { cwd: root, stdio: 'inherit', env: environment, shell: false });
 run('test/integration/run-source-ui.ts');
-run('tools/verify-plugin.ts', '--source-sdk', sdk, '--bundle', join(bundles, 'dsh-plugin'));
-run('tools/verify-plugin.ts', '--dev', '--source-sdk', sdk, '--bundle', join(bundles, 'dsh-plugin-dev'));
+run('tools/verify-package.ts', '--source-sdk', sdk, '--bundle', join(bundles, 'composition'));
+run('tools/verify-package.ts', '--dev', '--source-sdk', sdk, '--bundle', join(bundles, 'composition-dev'));
 const packEnvironment = smokePeerEnvironment({ root: bundles, workspace: join(bundles, 'pack-workspace'), appData: join(bundles, 'pack-app'), productData: join(bundles, 'pack-product') }, process.execPath);
-const packed = spawnSync(process.execPath, [resolvePeerNpm(process.execPath, request.npmCli), 'pack', join(bundles, 'dsh-plugin'), '--json', '--ignore-scripts', '--pack-destination', bundles], { cwd: root, env: packEnvironment, shell: false, encoding: 'utf8', timeout: 30_000 });
+const packed = spawnSync(process.execPath, [resolvePeerNpm(process.execPath, request.npmCli), 'pack', join(bundles, 'composition'), '--json', '--ignore-scripts', '--pack-destination', bundles], { cwd: root, env: packEnvironment, shell: false, encoding: 'utf8', timeout: 30_000 });
 if (packed.error || packed.status !== 0) throw new Error('Verified bundle packing failed');
 const rows = JSON.parse(String(packed.stdout)); if (!Array.isArray(rows) || rows.length !== 1 || !/^[A-Za-z0-9._-]+\.tgz$/.test(rows[0].filename)) throw new Error('Verified package inventory invalid');
 const tarball = join(bundles, rows[0].filename), bytes = readFileSync(tarball), sourceCommit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
