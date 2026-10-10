@@ -1,9 +1,4 @@
-# agent-operations Specification
-
-## Purpose
-为 Buildr 内部功能提供独立于具体智能体（Agent）的统一调用能力，管理本机接入身份、默认选择、执行结果与专用进程生命周期，使人无需理解本机安装细节即可使用已接入能力，同时保留来源与失败边界。
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: 本机接入登记与选择
 
@@ -36,26 +31,6 @@ Codex 与 DSH 生成 MUST 复用同一业务输入、执行状态和结果校验
 #### Scenario: 选择 DSH 生成
 - **WHEN** 用户选择已通过生成能力验证的 DSH
 - **THEN** 业务 MUST 通过同一入口获取运行状态、取消及可校验结果，MUST 不要求业务直接操作 ACP 会话
-
-### Requirement: 临时生成与只读权限
-
-Codex 说明生成 MUST 使用明确请求的临时会话（Ephemeral Session），核对服务端确认，不保存持久生成对话。提交说明 MUST 使用供应资料模式，MUST 关闭原生工具（Tool）、代码执行宿主（Code Mode Host）及外部工具（Tool），并关闭自动项目文档注入和宿主技能发现；MUST 仅按业务给定资料发起一次生成，不自行读取、写入或联网。出现工具执行事件 MUST 拒绝本次结果并有界关闭自有实例，MUST NOT 自动回退到原生读取。其他明确请求的内部原生读取调用 MAY 保留具名受限只读环境及实际权限边界；该模式 MUST 核对成功读取且禁止写入、联网和越界。按结构化输出要求返回结果；取消、超时及失败 MUST 保留用户已有说明。临时会话（Ephemeral Session）不承诺删除供应商自身诊断日志。
-
-#### Scenario: 连续生成两次
-- **WHEN** 用户连续生成两次提交说明
-- **THEN** 每次 MUST 使用独立临时会话（Ephemeral Session），结果可原位编辑，MUST 不新增持久对话历史
-
-#### Scenario: 取消生成
-- **WHEN** 用户取消已开始的生成
-- **THEN** 系统 MUST 中断本次执行，迟到结果 MUST 不替换草稿，其他来源仍可读取或提交
-
-#### Scenario: 其他内部调用受限原生读取
-- **WHEN** 明确请求原生读取的内部调用查看已授权工作位置或规则入口
-- **THEN** 允许范围 MUST 可读；范围外文件、文件写入及网络 MUST 被实际权限拒绝，工具环境 MUST 不继承供应商认证与父进程通信秘密
-
-#### Scenario: 提交说明只使用所给材料
-- **WHEN** 提交说明向Codex发起生成
-- **THEN** 原生及外部工具（Tool）MUST 不可用，自动项目文档及宿主技能 MUST 不注入，出现工具执行 MUST 局部失败，MUST NOT 自动补读或重放请求
 
 ### Requirement: 专用实例复用与回收
 
@@ -102,6 +77,8 @@ DSH 调用 MUST 沿用原生登录和桌面有效默认；需要桥接时 MUST �
 #### Scenario: DSH 继承包含自定义路由的默认配置
 - **WHEN** DSH 桌面有效默认使用自定义提供者
 - **THEN** 本次调用 MUST 使用对应原生认证及必要路由，并展示真实确认值；无法确认必要配置时 MUST 在模型请求前局部失败
+
+## ADDED Requirements
 
 ### Requirement: DSH 临时生成的实际限制
 

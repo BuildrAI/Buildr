@@ -391,6 +391,7 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
   ], { schedulingCostMs: 5000, admission: true, args: ['--test-concurrency=3'] }),
   integrationSlice('integration-runtime', [
     'test/integration/agent-operations.test.ts',
+    'test/integration/dsh-acp-provider.test.ts',
     'test/integration/code-commit-application.test.ts',
     'test/integration/code-commit-message-http.test.ts',
     'test/integration/web-resource-shutdown.test.ts',

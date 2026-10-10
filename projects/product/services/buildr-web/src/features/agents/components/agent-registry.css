@@ -18,6 +18,8 @@
 .agent-registry-details dt { color: var(--soft-muted); }
 .agent-registry-details dd { margin: 0; color: var(--soft-ink); overflow-wrap: anywhere; }
 .agent-registry-execution { padding-bottom: 12px; border-bottom: 1px solid var(--soft-line); }
+.agent-registry-execution:first-of-type > dl { margin-top: 0; }
+.agent-registry-execution + .agent-registry-execution { padding-top: 12px; }
 .agent-registry-execution > strong { font-size: 12px; }
 .agent-registry-execution > p { margin: 4px 0 0; color: var(--soft-muted); font-size: 11px; line-height: 1.7; }
 .agent-registry-details .ant-alert { margin-top: 8px; padding: 8px; }

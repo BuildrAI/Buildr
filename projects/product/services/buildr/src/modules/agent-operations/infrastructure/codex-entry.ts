@@ -2,12 +2,12 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnCommandSync } from '../../../infrastructure/process.ts';
-import { agentFailure, type AgentRegistration } from '../domain/agent-operations.ts';
+import { agentFailure, type CodexAgentRegistration } from '../domain/agent-operations.ts';
 
-export function codexEntryAvailable(record: AgentRegistration): boolean {
+export function codexEntryAvailable(record: CodexAgentRegistration): boolean {
   try { fs.accessSync(record.executable, fs.constants.X_OK); return fs.statSync(record.executable).isFile() && fs.statSync(record.codexHome).isDirectory(); } catch { return false; }
 }
-export function inspectCodexEntry(input: { executable: string; codexHome?: string; label?: string }): Omit<AgentRegistration, 'id' | 'kind'> {
+export function inspectCodexEntry(input: { executable: string; codexHome?: string; label?: string }): Omit<CodexAgentRegistration, 'id' | 'kind'> {
   if (!path.isAbsolute(input.executable || '') || /[\0\r\n]/.test(input.executable)) throw agentFailure('agent_executable_invalid', '接入需要智能体（Agent）发现的真实绝对程序入口。');
   const home = input.codexHome ?? process.env.CODEX_HOME ?? path.join(os.homedir(), '.codex');
   if (!path.isAbsolute(home) || /[\0\r\n]/.test(home)) throw agentFailure('agent_home_invalid', 'Codex 配置目录必须是已发现的绝对路径。');

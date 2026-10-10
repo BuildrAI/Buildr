@@ -15,7 +15,7 @@ function canonical(value: unknown): Registry {
   if (!fields(item, ['schemaVersion', 'defaultAgentId', 'agents']) || item.schemaVersion !== 'buildr.agent-registrations/v1' || !Array.isArray(item.agents) || item.agents.length > 32) throw agentFailure('agent_registry_invalid', '本机智能体（Agent）登记格式无效。', 409);
   const ids = new Set<string>();
   for (const agent of item.agents) {
-    if (!agent || typeof agent !== 'object' || !fields(agent, ['id', 'kind', 'label', 'executable', 'codexHome', 'version']) || !/^agent-[a-f0-9-]{36}$/.test(agent.id) || ids.has(agent.id) || agent.kind !== 'codex' || typeof agent.label !== 'string' || !agent.label.trim() || agent.label.length > 100 || !path.isAbsolute(agent.executable || '') || !path.isAbsolute(agent.codexHome || '') || typeof agent.version !== 'string' || !agent.version) throw agentFailure('agent_registry_invalid', '本机智能体（Agent）登记条目无效。', 409);
+    if (!agent || typeof agent !== 'object' || !fields(agent, ['id', 'kind', 'label', 'executable', agent.kind === 'dsh' ? 'dshHome' : 'codexHome', 'version']) || !/^agent-[a-f0-9-]{36}$/.test(agent.id) || ids.has(agent.id) || !['codex', 'dsh'].includes(agent.kind) || typeof agent.label !== 'string' || !agent.label.trim() || agent.label.length > 100 || !path.isAbsolute(agent.executable || '') || !path.isAbsolute((agent.kind === 'dsh' ? agent.dshHome : agent.codexHome) || '') || typeof agent.version !== 'string' || !agent.version) throw agentFailure('agent_registry_invalid', '本机智能体（Agent）登记条目无效。', 409);
     ids.add(agent.id);
   }
   if (item.defaultAgentId !== null && !ids.has(item.defaultAgentId)) throw agentFailure('agent_registry_invalid', '默认智能体（Agent）没有对应登记。', 409);

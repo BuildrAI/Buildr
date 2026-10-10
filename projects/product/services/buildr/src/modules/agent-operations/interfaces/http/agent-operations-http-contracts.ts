@@ -9,7 +9,7 @@ const executionConfig = { anyOf: [{ type: 'null' }, closed({ model: configuredTe
 export const AGENT_OPERATIONS_HTTP_SCHEMAS = Object.freeze({
   registry: schema('AgentRegistryView', {
     revision: text, defaultAgentId: { type: ['string', 'null'] },
-    agents: { type: 'array', items: closed({ id: text, kind: { const: 'codex' }, label: text, capabilities: { type: 'array', items: text }, availability: { enum: ['available', 'unavailable'] }, runtimeStatus: { enum: ['stopped', 'starting', 'running', 'idle', 'stopping'] }, lastExecutionConfig: executionConfig, safeReason: { type: ['string', 'null'] } }) },
+    agents: { type: 'array', items: closed({ id: text, kind: { enum: ['codex', 'dsh'] }, label: text, capabilities: { type: 'array', items: text }, availability: { enum: ['available', 'unavailable'] }, runtimeStatus: { enum: ['stopped', 'starting', 'running', 'idle', 'stopping'] }, lastExecutionConfig: executionConfig, safeReason: { type: ['string', 'null'] } }) },
   }),
   run: schema('AgentRunView', {
     id: text, agentId: text, registrationRevision: text, executionConfig,

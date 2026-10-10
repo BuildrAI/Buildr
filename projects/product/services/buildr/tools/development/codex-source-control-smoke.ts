@@ -60,7 +60,7 @@ const clients: CodexAppServer[] = [];
 let nativeCommandCount = 0, inspectionEvents = 0;
 const profile = resolveWebProfile(readCurrentProductIdentity());
 assert.ok(profile.dataRoot.startsWith(base), 'agent data must stay within the runner-owned profile');
-const agents = new AgentOperationsApplication({ dataRoot: profile.dataRoot, providerFactory: registration => { const client = new CodexAppServer(registration, { onInspection: event => { inspectionEvents++; console.log(JSON.stringify({ inspection: event })); if (event.status === 'completed' && event.exitCode === 0) nativeCommandCount++; }, onProtocolError: (method, error) => console.error(JSON.stringify({ method, protocolError: error })) }); clients.push(client); return client; } });
+const agents = new AgentOperationsApplication({ dataRoot: profile.dataRoot, providerFactory: registration => { if (registration.kind !== 'codex') throw new Error('This smoke verifies only the Codex provider.'); const client = new CodexAppServer(registration, { onInspection: event => { inspectionEvents++; console.log(JSON.stringify({ inspection: event })); if (event.status === 'completed' && event.exitCode === 0) nativeCommandCount++; }, onProtocolError: (method, error) => console.error(JSON.stringify({ method, protocolError: error })) }); clients.push(client); return client; } });
 const assets = runtimeProvide(createRuntime(), AGENT_ASSETS_SOURCE_READ) as Pick<CodeCommitMaterialReaderDependencies, 'readRules'>;
 const generation = createCodeCommitMessageApplication({
   commitSnapshot: (workspace, input, options) => code.commitSnapshot(workspace, input, options),

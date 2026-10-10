@@ -125,8 +125,9 @@ export async function runSourceControlActionsJourney({t, page, workspaceUrl, cap
         const titleBox = await drawer.locator('.drawer-shell-title').boundingBox(), closeBox = await close.boundingBox();
         assert.ok(titleBox && closeBox && closeBox.x > titleBox.x + titleBox.width);
         await drawer.getByRole('button', {name: 'Codex 详情', exact: true}).click();
-        await drawer.getByText('首次调用后确认', {exact: true}).waitFor();
-        await drawer.getByText('沿用 Codex 配置', {exact: true}).waitFor();
+        await drawer.getByText('首次调用后确认实际值', {exact: true}).waitFor();
+        await drawer.getByText('应用服务（App Server）', {exact: true}).waitFor();
+        await drawer.getByText('沿用 Codex 原生配置', {exact: true}).waitFor();
         assert.equal(protocol.starts.length, 0, '打开详情不启动生成探测');
         await capture(page, 'refinement-agent-drawer-first-use.png');
         await close.click(); await closed();

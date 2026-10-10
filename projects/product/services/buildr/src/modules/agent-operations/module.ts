@@ -4,7 +4,7 @@ import { createAgentOperationsCliContributions } from './interfaces/cli/agent-op
 
 export const AGENT_OPERATIONS_APPLICATION = 'agent-operations.application';
 export { AgentOperationsApplication } from './application/agent-operations-application.ts';
-export type { AgentExecutionConfig, AgentGenerationEnvironment, AgentGenerationExecution, AgentGenerationInput, AgentRegistryView, AgentRunView } from './domain/agent-operations.ts';
+export type { AgentExecutionConfig, AgentExecutionProvider, AgentGenerationEnvironment, AgentGenerationExecution, AgentGenerationInput, AgentRegistryView, AgentRunView } from './domain/agent-operations.ts';
 export function createAgentOperationsModule(options: { readProductIdentity(): unknown; resolveWebProfile(identity: unknown): { dataRoot: string } }) {
   return Object.freeze({ id: 'agent-operations', requires: Object.freeze([]), create() {
     const profile = options.resolveWebProfile(options.readProductIdentity());

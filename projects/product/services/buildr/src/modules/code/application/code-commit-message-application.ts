@@ -14,7 +14,7 @@ export type CodeCommitMessageDependencies = {
   startGeneration(input: AgentGenerationInput): AgentRunView | Promise<AgentRunView>;
 };
 export const COMMIT_MESSAGE_PROMPT = [
-  '为所选代码库当前工作树的全部未提交最终变更生成简明、准确的 Git 提交说明，只返回结构化 commitMessage。',
+  '为所选代码库当前工作树的全部未提交最终变更生成简明、准确的 Git 提交说明，只返回 JSON 对象 {"commitMessage":"提交说明"}，不要代码围栏或其他文字。',
   '只依据下方 Buildr 已准备的材料一次生成，不自行补查，不调用任何工具、读取文件、执行命令或访问网络。材料明确说明覆盖范围与省略；不得把片段说成全文或宣称完成全面审计。',
   '默认标题为 <type>(<scope>): <subject>，scope 可省略且不得猜测；type 按实际内容选择 feat、fix、docs、style、refactor、perf、test、build、ci、chore 或 revert。实际适用的语言和格式约定优先。',
   '标题概括有证据的实际目的或行为变化，避免只罗列文件名。正文仅在必要时解释动机、行为差异或破坏性影响；确有破坏性变更才写 BREAKING CHANGE:。',

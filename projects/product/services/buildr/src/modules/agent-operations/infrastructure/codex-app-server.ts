@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import readline from 'node:readline';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { buildCommandInvocation } from '../../../infrastructure/process.ts';
-import { agentFailure, readAgentExecutionConfig, type AgentExecutionConfig, type AgentGenerationEnvironment, type AgentGenerationExecution, type AgentRegistration } from '../domain/agent-operations.ts';
+import { agentFailure, readAgentExecutionConfig, type AgentProviderGenerationInput, type CodexAgentRegistration } from '../domain/agent-operations.ts';
 import { assertAgentGenerationEnvironmentCurrent } from './agent-generation-environment.ts';
 import { CODEX_SHELL_ENVIRONMENT, createCodexReadOnlyProfile } from './codex-readonly-profile.ts';
 
@@ -10,7 +10,6 @@ type Message = { id?: number | string; method?: string; params?: Record<string, 
 type Pending = { method: string; resolve(value: any): void; reject(error: Error): void; timer: NodeJS.Timeout };
 export type CodexInspectionEvent = { kind: 'command'; status: 'completed' | 'failed' | 'declined'; exitCode: number | null };
 export type CodexAppServerOptions = { spawnProcess?: typeof spawn; requestTimeoutMs?: number; generationTimeoutMs?: number; closeTimeoutMs?: number; onProtocolError?: (method: string, error: unknown) => void; onInspection?: (event: CodexInspectionEvent) => void };
-type GenerationInput = { cwd: string; prompt: string; outputSchema: unknown; environment?: AgentGenerationEnvironment; execution?: AgentGenerationExecution; signal: AbortSignal; onConfigured(config: AgentExecutionConfig): void; onRunning(): void };
 const cancelled = () => agentFailure('agent_run_cancelled', '生成已取消。', 409);
 const timeout = () => agentFailure('agent_generation_timeout', '生成超时，已有说明保持。', 504);
 const disabledFeatures = ['apps', 'plugins', 'remote_plugin', 'hooks', 'computer_use', 'code_mode_host', 'multi_agent', 'multi_agent_v2', 'image_generation', 'view_image', 'memories', 'workspace_dependencies', 'shell_tool', 'unified_exec', 'browser_use', 'browser_use_external', 'skill_mcp_dependency_install', 'shell_snapshot', 'shell_snapshot_v2', 'skill_search', 'request_permissions_tool', 'exec_permission_approvals'];
@@ -34,9 +33,9 @@ export class CodexAppServer {
   private closing: Promise<void> | null = null;
   private dead = false;
   private failure: Error | null = null;
-  private registration: AgentRegistration;
+  private registration: CodexAgentRegistration;
   private options: CodexAppServerOptions;
-  constructor(registration: AgentRegistration, options: CodexAppServerOptions = {}) { this.registration = registration; this.options = options; }
+  constructor(registration: CodexAgentRegistration, options: CodexAppServerOptions = {}) { this.registration = registration; this.options = options; }
   get alive() { return this.child !== null && !this.dead && !this.closing; }
   private write(message: Message) {
     if (!this.child || this.dead) throw this.failure || agentFailure('agent_transport_closed', 'Codex 专用实例已关闭。', 503);
@@ -118,7 +117,7 @@ export class CodexAppServer {
     })().catch(async error => { await this.close(); throw error; });
     return this.ready;
   }
-  private async prepareThread(input: GenerationInput): Promise<{ threadId: string; permissions: string | null }> {
+  private async prepareThread(input: AgentProviderGenerationInput): Promise<{ threadId: string; permissions: string | null }> {
     assertAgentGenerationEnvironmentCurrent(input.cwd, input.environment);
     // Read effective project configuration anew. Only server identifiers are retained;
     // credentials, headers and configuration layers are never copied or logged.
@@ -169,7 +168,7 @@ export class CodexAppServer {
     }
     return { threadId, permissions: profile?.id ?? null };
   }
-  async generate(input: GenerationInput): Promise<unknown> {
+  async generate(input: AgentProviderGenerationInput): Promise<unknown> {
     const invokedAt = Date.now();
     await this.start();
     if (input.signal.aborted) throw cancelled();

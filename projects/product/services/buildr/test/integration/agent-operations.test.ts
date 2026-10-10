@@ -22,7 +22,7 @@ function fixture(t: test.TestContext, mode = 'normal', idleMs = 30 * 60 * 1000, 
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-agent-operations-')), home = path.join(root, 'codex-home'), dataRoot = path.join(root, 'buildr-profile');
   fs.mkdirSync(home); const executable = path.join(root, 'codex-fixture');
   fs.writeFileSync(executable, '#!/bin/sh\nexport BUILDR_FAKE_CODEX_MODE=' + quote(mode) + '\nexec ' + quote(process.execPath) + ' ' + quote(path.resolve(import.meta.dirname, '../fixtures/agent-codex-app-server.ts')) + ' "$@"\n', { mode: 0o755 });
-  const app = new AgentOperationsApplication({ dataRoot, idleMs, closeWaitMs: 50, providerFactory: record => new CodexAppServer(record, { requestTimeoutMs: 2000, generationTimeoutMs: mode === 'timeout' ? 60 : 2000, closeTimeoutMs: 50, onInspection }) });
+  const app = new AgentOperationsApplication({ dataRoot, idleMs, closeWaitMs: 50, providerFactory: record => { assert.equal(record.kind, 'codex'); if (record.kind !== 'codex') throw new Error('Expected Codex fixture registration.'); return new CodexAppServer(record, { requestTimeoutMs: 2000, generationTimeoutMs: mode === 'timeout' ? 60 : 2000, closeTimeoutMs: 50, onInspection }); } });
   t.after(async () => { await app.close(); fs.rmSync(root, { recursive: true, force: true }); });
   const register = (codexHome = home, label = 'Codex') => app.registerCodex({ executable, codexHome, label, expectedRevision: app.listRegistry().revision });
   const messages = (codexHome = home): any[] => fs.existsSync(path.join(codexHome, 'protocol.jsonl')) ? fs.readFileSync(path.join(codexHome, 'protocol.jsonl'), 'utf8').trim().split('\n').map(line => JSON.parse(line)) : [];
@@ -60,6 +60,80 @@ test('agent registration validates real entry, is lazy and idempotent, exposes s
   assert.throws(() => f.app.selectAgent({ agentId: added.agents[1].id, expectedRevision: first.revision }), code('agent_registry_changed'));
   const selected = f.app.selectAgent({ agentId: added.agents[1].id, expectedRevision: added.revision }); assert.equal(selected.defaultAgentId, added.agents[1].id);
   assert.equal(AGENT_OPERATIONS_HTTP_VALIDATORS.validate(AGENT_OPERATIONS_HTTP_SCHEMAS.registry.$id, selected).valid, true);
+});
+
+test('legacy Codex registration coexists with idempotent DSH registration and shared selection/generation contracts', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-agent-dsh-registration-'));
+  const inputs: unknown[] = [], created: string[] = [];
+  const app = new AgentOperationsApplication({
+    dataRoot: root,
+    inspectEntry: () => ({ executable: process.execPath, codexHome: root, label: 'Codex', version: 'codex-test' }),
+    inspectDshEntry: input => { inputs.push(input); return { executable: process.execPath, dshHome: root, label: 'DSH', version: 'dsh-test' }; },
+    available: () => true,
+    providerFactory: record => { created.push(record.kind); let alive = false; return { get alive() { return alive; }, start: async () => { alive = true; }, generate: async input => { input.onConfigured({ model: 'fixture-model', modelProvider: record.kind, reasoningEffort: 'low' }); input.onRunning(); return { commitMessage: 'feat: ' + record.kind }; }, close: async () => { alive = false; } }; },
+  });
+  t.after(async () => { await app.close(); fs.rmSync(root, { recursive: true, force: true }); });
+  const legacy = app.registerCodex({ executable: process.execPath, expectedRevision: app.listRegistry().revision });
+  const before = fs.readFileSync(path.join(root, 'agent-registrations.json'), 'utf8');
+  assert.equal(new AgentOperationsApplication({ dataRoot: root, available: () => true }).listRegistry().revision, legacy.revision);
+  assert.equal(fs.readFileSync(path.join(root, 'agent-registrations.json'), 'utf8'), before, 'reading legacy data must not rewrite it');
+  const register = createAgentOperationsCliContributions(app).find(command => command.key === 'agent register')!;
+  const stdout = t.mock.method(process.stdout, 'write', () => true);
+  const added = await register.run({}, { argv: ['node', 'buildr', 'agent', 'register', 'dsh', '--executable', process.execPath, '--dsh-home', root, '--expected-revision', legacy.revision, '--json'] }) as ReturnType<typeof app.listRegistry>;
+  stdout.mock.restore();
+  assert.deepEqual(inputs, [{ executable: process.execPath, dshHome: root, label: undefined, expectedRevision: legacy.revision }]);
+  assert.equal(added.defaultAgentId, legacy.defaultAgentId); assert.deepEqual(added.agents.map(agent => agent.kind), ['codex', 'dsh']); assert.deepEqual(created, []);
+  const duplicate = app.registerDsh({ executable: process.execPath, dshHome: root, expectedRevision: added.revision });
+  assert.equal(duplicate.revision, added.revision); assert.equal(duplicate.agents[1].id, added.agents[1].id);
+  assert.equal(AGENT_OPERATIONS_HTTP_VALIDATORS.validate(AGENT_OPERATIONS_HTTP_SCHEMAS.registry.$id, duplicate).valid, true);
+  assert.equal(JSON.stringify(duplicate).includes(root), false);
+  await assert.rejects(Promise.resolve(register.run({}, { argv: ['node', 'buildr', 'agent', 'register', 'dsh', '--codex-home', root] })), code('agent_cli_invalid'));
+  assert.throws(() => app.selectAgent({ agentId: added.agents[1].id, expectedRevision: legacy.revision }), code('agent_registry_changed'));
+  const dsh = await app.startGeneration({ agentId: added.agents[1].id, cwd: root, prompt: 'Supplied changes only.', outputSchema });
+  assert.deepEqual((await settled(app, dsh.id)).output, { commitMessage: 'feat: dsh' });
+  assert.equal(app.listRegistry().defaultAgentId, legacy.defaultAgentId, 'single-run selection must not mutate the default');
+  const codex = await app.startGeneration({ cwd: root, prompt: 'Supplied changes only.', outputSchema });
+  assert.deepEqual((await settled(app, codex.id)).output, { commitMessage: 'feat: codex' }); assert.deepEqual(created, ['dsh', 'codex']);
+});
+
+test('re-registration serially replaces the same identity only after the old run and owned process finish', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-agent-registration-replace-'));
+  let version = 'one', live = 0, maximumLive = 0, release!: () => void;
+  const firstResult = new Promise<void>(resolve => { release = resolve; }), events: string[] = [];
+  const app = new AgentOperationsApplication({
+    dataRoot: root, available: () => true,
+    inspectEntry: () => ({ executable: process.execPath, codexHome: root, label: 'Codex', version }),
+    providerFactory: record => {
+      events.push('create-' + record.version); let alive = false;
+      return { get alive() { return alive; }, start: async () => { if (!alive) { alive = true; live++; maximumLive = Math.max(maximumLive, live); } }, generate: async input => { input.onConfigured({ model: 'model-' + record.version, modelProvider: 'fixture', reasoningEffort: 'low' }); input.onRunning(); events.push('generate-' + record.version); if (record.version === 'one') await firstResult; return { commitMessage: record.version }; }, close: async () => { if (alive) { events.push('close-' + record.version); alive = false; live--; } } };
+    },
+  });
+  t.after(async () => { release(); await app.close(); fs.rmSync(root, { recursive: true, force: true }); });
+  const old = app.registerCodex({ executable: process.execPath, expectedRevision: app.listRegistry().revision });
+  const one = await app.startGeneration({ cwd: root, prompt: 'Supplied changes only.', outputSchema }); await settled(app, one.id, ['running']);
+  version = 'two'; const updated = app.registerCodex({ executable: process.execPath, expectedRevision: old.revision });
+  assert.equal(updated.agents[0].id, old.agents[0].id); assert.equal(updated.agents[0].runtimeStatus, 'running');
+  assert.equal(updated.agents[0].lastExecutionConfig?.model, 'model-one', 're-registration must retain the last actually confirmed configuration until a new run confirms its own');
+  const two = await app.startGeneration({ cwd: root, prompt: 'Supplied changes only.', outputSchema });
+  await new Promise(resolve => setTimeout(resolve, 10)); assert.deepEqual(events, ['create-one', 'generate-one']); assert.equal(app.getRun(two.id).status, 'queued');
+  release(); assert.deepEqual((await settled(app, one.id)).output, { commitMessage: 'one' }); assert.deepEqual((await settled(app, two.id)).output, { commitMessage: 'two' });
+  assert.notEqual(app.getRun(one.id).registrationRevision, app.getRun(two.id).registrationRevision); assert.equal(maximumLive, 1);
+  assert.equal(app.getRun(one.id).executionConfig?.model, 'model-one'); assert.equal(app.getRun(two.id).executionConfig?.model, 'model-two'); assert.equal(app.listRegistry().agents[0].lastExecutionConfig?.model, 'model-two');
+  assert.deepEqual(events, ['create-one', 'generate-one', 'close-one', 'create-two', 'generate-two']);
+});
+
+test('failed disposal during re-registration cannot start a replacement for the same identity', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-agent-registration-close-failure-'));
+  let version = 'one', factories = 0, generations = 0;
+  const app = new AgentOperationsApplication({ dataRoot: root, available: () => true, inspectEntry: () => ({ executable: process.execPath, codexHome: root, label: 'Codex', version }), providerFactory: () => {
+    factories++; return { alive: true, start: async () => {}, generate: async input => { generations++; input.onRunning(); return { commitMessage: 'one' }; }, close: async () => { throw Object.assign(new Error('Owned process exit is unconfirmed.'), { code: 'agent_close_timeout' }); } };
+  } });
+  t.after(async () => { await assert.rejects(app.close(), code('agent_close_incomplete')); fs.rmSync(root, { recursive: true, force: true }); });
+  const old = app.registerCodex({ executable: process.execPath, expectedRevision: app.listRegistry().revision });
+  const one = await app.startGeneration({ cwd: root, prompt: 'Supplied changes only.', outputSchema }); assert.equal((await settled(app, one.id)).status, 'succeeded');
+  version = 'two'; app.registerCodex({ executable: process.execPath, expectedRevision: old.revision });
+  for (let index = 0; index < 2; index++) { const run = await app.startGeneration({ cwd: root, prompt: 'Supplied changes only.', outputSchema }); assert.equal((await settled(app, run.id)).error?.code, 'agent_close_timeout'); }
+  assert.equal(factories, 1); assert.equal(generations, 1);
 });
 
 test('two generations reuse one child but create separate confirmed read-only ephemeral threads and validate structure', posix, async t => {

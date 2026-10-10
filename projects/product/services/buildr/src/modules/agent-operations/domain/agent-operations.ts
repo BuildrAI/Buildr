@@ -22,7 +22,7 @@ export type AgentRegistryView = {
   defaultAgentId: string | null;
   agents: {
     id: string;
-    kind: 'codex';
+    kind: AgentRegistration['kind'];
     label: string;
     capabilities: string[];
     availability: 'available' | 'unavailable';
@@ -31,14 +31,15 @@ export type AgentRegistryView = {
     safeReason: string | null;
   }[];
 };
-export type AgentRegistration = {
+type AgentRegistrationBase = {
   id: string;
-  kind: 'codex';
   label: string;
   executable: string;
-  codexHome: string;
   version: string;
 };
+export type CodexAgentRegistration = AgentRegistrationBase & { kind: 'codex'; codexHome: string };
+export type DshAgentRegistration = AgentRegistrationBase & { kind: 'dsh'; dshHome: string };
+export type AgentRegistration = CodexAgentRegistration | DshAgentRegistration;
 export type AgentGenerationEnvironment = { kind: 'workspace-read-only'; readableRoots: string[] };
 export type AgentGenerationExecution = { reasoningEffort?: 'low'; timeoutMs?: number };
 export type AgentGenerationInput = {
@@ -50,6 +51,22 @@ export type AgentGenerationInput = {
   execution?: AgentGenerationExecution;
   validateResult?: (output: unknown) => void | Promise<void>;
 };
+export type AgentProviderGenerationInput = {
+  cwd: string;
+  prompt: string;
+  outputSchema: unknown;
+  environment?: AgentGenerationEnvironment;
+  execution?: AgentGenerationExecution;
+  signal: AbortSignal;
+  onConfigured(config: AgentExecutionConfig): void;
+  onRunning(): void;
+};
+export interface AgentExecutionProvider {
+  readonly alive: boolean;
+  start(): Promise<void>;
+  generate(input: AgentProviderGenerationInput): Promise<unknown>;
+  close(): Promise<void>;
+}
 export function agentFailure(code: string, message: string, status = 400): Error & { code: string; status: number } {
   return Object.assign(new Error(message), { code, status });
 }

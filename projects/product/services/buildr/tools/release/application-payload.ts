@@ -181,6 +181,9 @@ async function buildApplicationPayload(output: any, sourceCommit: any, options: 
 
     const resourceRoot: any = path.join(destination, 'resources');
     for (const [source, target, options] of RESOURCE_SOURCES) copyTree(path.join(serviceRoot, source), path.join(resourceRoot, target), options);
+    // The installed DSH carrier executes this small native composition itself.
+    // Keep it separate from the controller's CommonJS bundle; .mts preserves ESM.
+    copyFile(path.join(serviceRoot, 'src/modules/agent-operations/infrastructure/dsh-runtime.ts'), path.join(resourceRoot, 'runtime/dsh-agent.mts'), 0o644);
     copyTree(webDistRoot, path.join(resourceRoot, 'product/web-dist'));
     fs.mkdirSync(path.join(resourceRoot, 'build'), { recursive: true });
     fs.writeFileSync(path.join(resourceRoot, 'build/generated-artifacts.json'), `${JSON.stringify(generatedArtifactManifest, null, 2)}\n`, { encoding: 'utf8', mode: 0o644 });

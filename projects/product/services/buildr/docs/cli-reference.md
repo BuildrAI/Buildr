@@ -126,6 +126,9 @@ buildr help assets
 | `buildr init [--agent <agent>] [--adapter <adapter-id>]` | 默认初始化源资产并完整同步标准或已选文件约定，安装产品入口技能（Skill）、投射并执行最终诊断（Doctor）。仅源资产使用互斥的 `--source-only`。 |
 | `buildr web [--target <workspace>] [--no-open]` | 启动或复用只监听 `127.0.0.1` 的默认本机 Web 应用；默认打开浏览器，登记和切换多个 Workspace，`--target` 登记并打开指定 Workspace。 |
 | `buildr web preview start\|list\|stop` | 启动、查看或停止隔离的开发预览。带 `--task <task-id> --target <canonical-workspace>` 时，Preview使用matching Task Worktree并保存精确owner；停止时复核Worktree evidence与进程secret。不带Task时保持独立checkout preview。 |
+| `buildr agent list --json` | 查看本机执行接入与唯一默认；区别于规则、技能文件投射的 `runtime list`。 |
+| `buildr agent register codex\|dsh --executable <actual-entry> --expected-revision <revision> --json` | 由智能体（Agent）发现并验证真实入口后登记，不复制凭据或启动模型。Codex 可显式传 `--codex-home`，DSH 可显式传 `--dsh-home`；其余沿用原生默认。 |
+| `buildr agent select <agent-id> --expected-revision <revision> --json` | 按已观察版本改变默认，仅影响新执行；单次生成仍可覆盖选择。 |
 | `buildr installation status [--json]` | 分别报告receipt证明的npm CLI、Buildr Web Launcher、Buildr Web Dev、当前安装与当前Web实例的版本、路径、runtime role、protocol、payload和ownership identity；不扫描PATH。 |
 | `buildr web launcher install/status/repair/uninstall` | 从verified formal npm安装显式创建、诊断、修复或卸载本机Buildr Web Launcher；wrapper只执行binding中的Host Node和同一package entry。Development checkout使用隔离的Buildr Web Dev入口。 |
 | `buildr project create <code>` | 创建或登记 Project；`--name`/`--description` 设置 metadata，`--repo`、`--remote`、`--integration-branch` 声明独立 Git source，并补齐空 `commands.yml` requirement context。 |
