@@ -89,7 +89,7 @@ function Preview() {
     }
   }
   const bridge = usePrototypeBridge(scenes.pages, current, selectScene);
-  const state = selected?.readOnlyReason ? 'readonly' : session?.status === 'conflict' ? 'conflict' : session?.status === 'error' ? 'failure' : session?.mode === 'edit' ? session.status === 'saved' && session.historyIndex > 0 ? 'saved' : 'editing' : '';
+  const state = selected?.readOnlyReason ? 'readonly' : session?.status === 'conflict' ? 'conflict' : session?.status === 'error' ? 'failure' : session && (session.mode === 'edit' || selected?.kind === 'text') ? session.status === 'saved' && session.historyIndex > 0 ? 'saved' : 'editing' : '';
   useEffect(() => { bridge.report(page, page === 'project-docs' && state === 'readonly' ? '' : state); }, [page, state]);
 
   const area = isCode ? 'code' : 'workspace';

@@ -28,10 +28,6 @@
 .file-editing-reading>pre{font:13px/1.9 ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;white-space:pre;overflow:auto;margin:0}
 .file-editing-source{display:flex;flex:1;min-height:0;min-width:0;overflow:hidden;background:var(--ant-color-bg-container,#fff)}
 .file-code-editor{flex:1;height:100%;min-width:0;min-height:0;overflow:hidden}
-.file-editing-read-source{margin:0!important;padding:0!important;overflow:visible!important}
-.file-editing-read-line{display:flex;min-height:23px;white-space:pre}
-.file-editing-read-line>span{flex-shrink:0;min-width:42px;padding-right:14px;text-align:right;color:var(--ant-color-text-quaternary,#9aa4ad);user-select:none}
-.file-editing-read-line>code{font:inherit;color:inherit;background:none;border:0;padding:0}
 .file-editing-gutter{display:flex;flex-direction:column;flex-shrink:0;width:48px;text-align:right;padding-right:13px;border-right:1px solid #eef1f3;color:#a1aab2;background:#fcfdfd;font:13px/23px ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;user-select:none}
 .file-editing-gutter span{height:23px}
 .file-editing-source>textarea{flex:1;min-width:0;min-height:400px;border:0;border-radius:0;outline:none;resize:none;padding:0 18px;background:transparent;color:#32473f;white-space:pre;overflow-wrap:normal;overflow-x:auto;font:13px/23px ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;tab-size:2}

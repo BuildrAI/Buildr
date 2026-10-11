@@ -59,7 +59,7 @@ async function buildDocument(entry, { viewer = false, define = {} } = {}) {
     commit,
     lifecycle: 'active',
     uncommittedSummary: {
-      scope: '按已确认原型实现文件编辑；两个入口共用正式 CodeMirror 编辑组件与会话行为。此原型仅通过内存适配模拟读取、保存、外部变化、失败和历史来源，没有真实文件写入；正式能力由 add-file-editing 变更维护。',
+      scope: '按已确认原型实现文件编辑；两个入口共用正式 CodeMirror 编辑组件与会话行为。此原型仅通过内存适配模拟读取、保存、外部变化、失败和历史来源，没有真实文件写入；正式能力由 file-editing 规范与 file-display-modes 变更维护。',
       trackedDiffStat: diffSummary,
       untrackedFiles: newFiles,
       entry: viewer ? '复用 PrototypeReaderLayout、PrototypeTab 及当前功能说明组件，内联压缩后的原型正文。' : '复用正式应用壳、页面组件及主题，只隔离模拟数据、导航和写入副作用。',

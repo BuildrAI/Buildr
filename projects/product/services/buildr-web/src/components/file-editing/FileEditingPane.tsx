@@ -54,8 +54,10 @@ export function FileEditingPane({ file, editing, active = true, markdownOptions,
 
   if (!session) return <div className="file-editing-loading"><Spin /></div>;
   const editable = !session.file.readOnlyReason;
+  const markdown = file.kind === 'markdown';
   const editingSource = session.mode === 'edit' && editable;
-  const showPreview = editingSource && file.kind === 'markdown' && preview;
+  const showSource = !markdown || editingSource;
+  const showPreview = editingSource && markdown && preview;
   const pathParts = file.path.split('/');
   const fileName = pathParts.pop() || file.path;
   const parentPath = pathParts.join('/');
@@ -65,12 +67,12 @@ export function FileEditingPane({ file, editing, active = true, markdownOptions,
   const statusText = session.status === 'conflict' ? '保存已暂停' : session.status === 'error' ? '保存失败' : session.status === 'saving' ? '保存中…' : '已保存';
   const statusIcon = session.status === 'saving' ? <LoadingOutlined /> : session.status === 'saved' ? <CheckCircleOutlined /> : <ExclamationCircleOutlined />;
 
-  return <section className={'file-editing-pane' + (editingSource ? ' is-editing' : '')} aria-label="文件阅读与编辑" data-file-id={file.id} data-file-status={session.status}>
+  return <section className={'file-editing-pane' + (showSource ? ' is-editing' : '')} aria-label="文件阅读与编辑" data-file-id={file.id} data-file-status={session.status} data-file-presentation={showSource ? 'source' : 'rendered'}>
     <header className="file-editing-header" data-prototype-position="file-identity">
       <div className="file-editing-header-top">
         <div className="file-editing-path" title={fullPath} aria-label={'文件路径：' + file.path}>{parentPath && <span>{parentPath} / </span>}<strong>{fileName}</strong></div>
         <Space size={6} className="file-editing-header-actions">
-          <span className="file-editing-mode" data-prototype-position="file-mode"><Segmented block size="small" aria-label="文件查看模式" value={editingSource ? 'edit' : 'read'} options={[{ label: '阅读', value: 'read' }, { label: '编辑', value: 'edit', disabled: !editable }]} onChange={value => editing.setMode(file.id, value as 'read' | 'edit')} /></span>
+          {markdown && <span className="file-editing-mode" data-prototype-position="file-mode"><Segmented block size="small" aria-label="文件查看模式" value={editingSource ? 'edit' : 'read'} options={[{ label: '阅读', value: 'read' }, { label: '编辑', value: 'edit', disabled: !editable }]} onChange={value => editing.setMode(file.id, value as 'read' | 'edit')} /></span>}
           {onOpenInExplorer && <Tooltip title="在资源管理器（Explorer）中打开同一文件"><Button type="text" size="small" aria-label="在资源管理器中打开" icon={<FolderOpenOutlined />} onClick={onOpenInExplorer} /></Tooltip>}
           {onViewCurrent && <Button size="small" onClick={onViewCurrent}>打开当前文件</Button>}
           {toolbarEnd}
@@ -79,7 +81,7 @@ export function FileEditingPane({ file, editing, active = true, markdownOptions,
       <div className="file-editing-header-meta">
         <span className="file-editing-location" title={file.location} aria-label="文件位置与版本"><FolderOpenOutlined /><span>{file.locationLabel || '当前目录'}</span>{versionLabel && <><span aria-hidden="true">·</span><strong title={versionLabel}>{versionLabel}</strong></>}<span className="file-editing-line-count">· {lineCount} 行</span></span>
         <div className="file-editing-meta-actions">
-          {file.kind === 'markdown' && <span className="file-editing-preview-action">{editingSource && <Button type={preview ? 'primary' : 'text'} size="small" aria-pressed={preview} onClick={() => setPreview(value => !value)}>预览</Button>}</span>}
+          {markdown && <span className="file-editing-preview-action">{editingSource && <Button type={preview ? 'primary' : 'text'} size="small" aria-pressed={preview} onClick={() => setPreview(value => !value)}>预览</Button>}</span>}
           <div className="file-editing-save" data-prototype-position="save-status" aria-live="polite">{editable ? <><span className="file-editing-save-detail" title={session.savedAt ? '最近保存：' + session.savedAt : '停止输入后自动保存'}>自动保存</span><span className={'file-editing-save-state state-' + session.status}>{statusIcon}{statusText}</span></> : <Tag bordered={false}>只读</Tag>}</div>
         </div>
       </div>
@@ -92,8 +94,8 @@ export function FileEditingPane({ file, editing, active = true, markdownOptions,
     {session.status === 'error' && !session.bindingError && <Alert className="file-editing-notice" type="error" showIcon message="保存失败，输入已保留" description={session.error} action={<Button size="small" onClick={() => void editing.retry(file.id)}>重试保存</Button>} />}
     {session.conflict && <Alert className="file-editing-notice" type="warning" showIcon message="文件已被外部修改，自动保存已暂停" description="你的输入和磁盘最新内容都已保留。处理差异后继续保存。" action={<Button size="small" onClick={() => setConflictOpen(true)}>处理冲突</Button>} />}
     <div className={'file-editing-body' + (showPreview ? ' with-preview' : '')}>
-      {editingSource ? <div className="file-editing-source" data-prototype-position="editor-input"><FileCodeEditor documentId={file.id} state={session.editorState} onTransactions={transactions => editing.applyTransactions(file.id, transactions)} onComposing={value => editing.setComposing(file.id, value)} onBlur={() => void editing.saveNow(file.id)} autoFocus={active} focusLine={focusLine} focusRequest={focusRequest} /></div>
-        : <div className="file-editing-reading" ref={readHost} data-prototype-position="editor-input">{file.kind === 'markdown' ? <MarkdownHost markdown={session.content} className="markdown-body" renderVersion={markdownRevision} options={markdownOptions} /> : <pre className="file-editing-read-source" aria-label="文件内容">{session.editorState.doc.toString().split('\n').map((line, index) => <span className="file-editing-read-line" key={index} data-line={index + 1}><span aria-hidden="true">{index + 1}</span><code>{line || '\u200b'}</code></span>)}</pre>}</div>}
+      {showSource ? <div className="file-editing-source" data-prototype-position="editor-input"><FileCodeEditor documentId={file.id} state={session.editorState} onTransactions={transactions => editing.applyTransactions(file.id, transactions)} onComposing={value => editing.setComposing(file.id, value)} onBlur={() => void editing.saveNow(file.id)} autoFocus={active && markdown && editingSource} focusLine={focusLine} focusRequest={focusRequest} /></div>
+        : <div className="file-editing-reading" ref={readHost} data-prototype-position="editor-input"><MarkdownHost markdown={session.content} className="markdown-body" renderVersion={markdownRevision} options={markdownOptions} /></div>}
       {showPreview && <div className="file-editing-preview"><div className="file-editing-preview-label">Markdown 预览</div><MarkdownHost markdown={session.content} className="markdown-body" renderVersion={markdownRevision} options={markdownOptions} /></div>}
     </div>
     {session.conflict && active && <FileConflictDialog file={file} session={session} editing={editing} open={conflictOpen} onClose={() => setConflictOpen(false)} />}

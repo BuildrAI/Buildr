@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { EditorState, Facet, StateEffect } from '@codemirror/state';
+import { EditorView } from '@codemirror/view';
+import { undoDepth } from '@codemirror/commands';
 import { FileEditingSessionStore } from '../src/components/file-editing/file-editing-session.ts';
 import { normalizeEditorText, originalTextOffset, editorTextOffset } from '../src/components/file-editing/file-editing-text.ts';
 
@@ -318,12 +321,22 @@ test('same-version policy refresh updates readonly metadata in both directions w
     await store.refresh(initial.id);
     assert.equal(store.getSnapshot()[initial.id].file.readOnlyReason, disk.readOnlyReason);
     assert.equal(store.getSnapshot()[initial.id].content, 'retained draft');
-    assert.equal(store.getSnapshot()[initial.id].editorState, retained);
+    assert.equal(store.getSnapshot()[initial.id].editorState.facet(EditorState.readOnly), true);
+    assert.equal(store.getSnapshot()[initial.id].editorState.facet(EditorView.editable), false);
+    assert.equal(store.getSnapshot()[initial.id].editorState.doc, retained.doc);
+    assert.ok(store.getSnapshot()[initial.id].editorState.selection.eq(retained.selection));
+    assert.equal(undoDepth(store.getSnapshot()[initial.id].editorState), undoDepth(retained));
+    store.undo(initial.id); store.redo(initial.id);
+    assert.equal(store.getSnapshot()[initial.id].content, 'retained draft');
     await store.saveNow(initial.id); assert.deepEqual(writes, []);
     disk = { ...initial, observedAt: '2026-10-11T03:00:00Z' };
     await store.refresh(initial.id);
     assert.equal(store.getSnapshot()[initial.id].file.readOnlyReason, undefined);
-    assert.equal(store.getSnapshot()[initial.id].editorState, retained);
+    assert.equal(store.getSnapshot()[initial.id].editorState.facet(EditorState.readOnly), false);
+    assert.equal(store.getSnapshot()[initial.id].editorState.facet(EditorView.editable), true);
+    assert.equal(store.getSnapshot()[initial.id].editorState.doc, retained.doc);
+    assert.ok(store.getSnapshot()[initial.id].editorState.selection.eq(retained.selection));
+    assert.equal(undoDepth(store.getSnapshot()[initial.id].editorState), undoDepth(retained));
     assert.equal(store.getSnapshot()[initial.id].content, 'retained draft');
     await store.saveNow(initial.id); assert.deepEqual(writes, ['r1']);
     store.undo(initial.id); assert.equal(store.getSnapshot()[initial.id].content, 'base');
@@ -345,10 +358,40 @@ test('fresh same-binding policy snapshots update metadata while stale, alternati
     store.ensure({ ...initial, versionLabel: 'new-branch · 当前文件', observedAt: '2026-10-11T03:00:00Z' });
     assert.equal(store.getSnapshot()[initial.id].file.readOnlyReason, undefined);
     assert.equal(store.getSnapshot()[initial.id].file.versionLabel, 'new-branch · 当前文件');
-    assert.equal(store.getSnapshot()[initial.id].editorState, retained);
+    assert.equal(store.getSnapshot()[initial.id].editorState.doc, retained.doc);
+    assert.ok(store.getSnapshot()[initial.id].editorState.selection.eq(retained.selection));
+    assert.equal(undoDepth(store.getSnapshot()[initial.id].editorState), undoDepth(retained));
     assert.equal(store.getSnapshot()[initial.id].content, 'draft');
     store.ensure({ ...initial, sourceRevision: 'project2', observedAt: '2026-10-11T04:00:00Z' });
     assert.match(store.getSnapshot()[initial.id].bindingError, /来源/);
     assert.equal(store.getSnapshot()[initial.id].file.sourceRevision, 'project1');
+  } finally { store.clearTimers(); }
+});
+
+test('readonly editor state rejects body transactions while selection and asynchronous language/configuration updates remain available', async () => {
+  const initial = file('export const answer = 42;\n', { kind: 'text', path: 'answer.ts', readOnlyReason: '历史代码保持只读' });
+  const writes = [];
+  const store = new FileEditingSessionStore({ save: async (source, content) => { writes.push(content); return { ...source, content }; } }, 100_000);
+  store.ensure(initial);
+  try {
+    let state = store.getSnapshot()[initial.id].editorState;
+    assert.equal(state.facet(EditorState.readOnly), true);
+    assert.equal(state.facet(EditorView.editable), false);
+    assert.ok(state.facet(EditorView.contentAttributes).some(attributes => typeof attributes === 'object' && attributes.tabindex === '0'));
+    assert.equal(store.applyTransactions(initial.id, [state.update({ changes: { from: 0, to: 6, insert: 'replace' }, filter: false, userEvent: 'input.paste' })]), false);
+    assert.equal(store.getSnapshot()[initial.id].editorState, state);
+    assert.equal(store.applyTransactions(initial.id, [state.update({ selection: { anchor: 0, head: 6 } })]), true);
+    const marker = Facet.define({ combine: values => values[0] || 'unloaded' });
+    await Promise.resolve().then(() => store.setLanguage(initial.id, marker.of('loaded')));
+    state = store.getSnapshot()[initial.id].editorState;
+    assert.equal(state.facet(marker), 'loaded');
+    assert.equal(store.applyTransactions(initial.id, [state.update({ effects: StateEffect.appendConfig.of(EditorState.tabSize.of(8)) })]), true);
+    state = store.getSnapshot()[initial.id].editorState;
+    assert.equal(state.facet(EditorState.tabSize), 8);
+    assert.equal(state.facet(EditorState.readOnly), true);
+    assert.equal(state.facet(EditorView.editable), false);
+    assert.equal(state.selection.main.from, 0); assert.equal(state.selection.main.to, 6);
+    store.change(initial.id, 'cannot type'); store.undo(initial.id); store.redo(initial.id); await store.saveNow(initial.id);
+    assert.equal(store.getSnapshot()[initial.id].content, initial.content); assert.deepEqual(writes, []);
   } finally { store.clearTimers(); }
 });

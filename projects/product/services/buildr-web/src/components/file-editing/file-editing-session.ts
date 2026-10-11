@@ -37,6 +37,7 @@ export class FileEditingSessionStore {
   private refreshing = new Map<string, Promise<void>>();
   private active = new Map<string, number>();
   private languages = new Map<string, Compartment>();
+  private editability = new Map<string, Compartment>();
   private languageExtensions = new Map<string, Extension>();
   private observed = new Map<string, Set<string>>();
   private observedTimes = new Map<string, string>();
@@ -51,6 +52,10 @@ export class FileEditingSessionStore {
   getSnapshot = () => this.sessions;
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   private publish(id: string, session: FileEditingSession) {
+    const compartment = this.editability.get(id), readOnly = Boolean(session.file.readOnlyReason);
+    if (compartment && (session.editorState.facet(EditorState.readOnly) !== readOnly || session.editorState.facet(EditorView.editable) === readOnly)) {
+      session = { ...session, editorState: session.editorState.update({ effects: compartment.reconfigure([EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)]), annotations: Transaction.addToHistory.of(false) }).state };
+    }
     this.sessions = { ...this.sessions, [id]: session };
     for (const listener of this.listeners) listener();
   }
@@ -66,10 +71,12 @@ export class FileEditingSessionStore {
   }
   private createEditor(file: FileEditingDocument, content = file.content): EditorState {
     const language = new Compartment(); this.languages.set(file.id, language);
+    const editability = new Compartment(); this.editability.set(file.id, editability);
+    const readOnly = Boolean(file.readOnlyReason);
     const ranges = (file.protectedRanges || []).map(range => ({ from: editorTextOffset(content, range.from), to: editorTextOffset(content, range.to) }));
     return EditorState.create({ doc: normalizeEditorText(content), extensions: [
-      basicSetup, editorTheme, language.of(this.languageExtensions.get(file.id) || []), initialRanges.of(ranges), protectedRanges,
-      EditorView.contentAttributes.of({ 'aria-label': '文件源码编辑器', 'aria-keyshortcuts': 'Meta+Z Meta+Shift+Z Meta+S Control+Z Control+Shift+Z Control+S' }),
+      basicSetup, editorTheme, language.of(this.languageExtensions.get(file.id) || []), editability.of([EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)]), initialRanges.of(ranges), protectedRanges,
+      EditorView.contentAttributes.of({ 'aria-label': '文件源码编辑器', 'aria-keyshortcuts': 'Meta+Z Meta+Shift+Z Meta+S Control+Z Control+Shift+Z Control+S', tabindex: '0' }),
       keymap.of([{ key: 'Mod-s', run: () => { void this.saveNow(file.id); return true; } }]),
       EditorState.changeFilter.of(transaction => {
         if (!transaction.docChanged) return true;
@@ -143,7 +150,7 @@ export class FileEditingSessionStore {
       this.remember(id, file.revision, file.observedAt);
       if (checkBinding && current.file.sourceKey === file.sourceKey && latestMetadata) {
         // Policy/labels can change without a byte revision. Keep the draft and
-        // exact EditorState, including its selection and undo history.
+        // editor document, selection and undo history across configuration updates.
         this.update(id, session => ({ ...session, file, readError: undefined }));
         if (file.readOnlyReason) this.cancel(id);
         else if (current.file.readOnlyReason) this.schedule(id);
@@ -214,6 +221,7 @@ export class FileEditingSessionStore {
     let previous = session.editorState;
     for (const transaction of transactions) {
       if (transaction.startState !== previous) return false;
+      if (transaction.docChanged && (session.file.readOnlyReason || transaction.startState.facet(EditorState.readOnly))) return false;
       let blocked = false;
       transaction.changes.iterChangedRanges((from, to) => {
         if (transaction.startState.field(protectedRanges).some(range => from === to ? from > range.from && from < range.to : from < range.to && to > range.from)) blocked = true;
@@ -320,7 +328,7 @@ export class FileEditingSessionStore {
   clearTimers = () => { for (const timer of this.timers.values()) clearTimeout(timer); this.timers.clear(); };
   /** The offline prototype can reset its memory without touching a real filesystem. */
   reset = (files: FileEditingDocument[]) => {
-    this.epoch += 1; this.clearTimers(); this.pending.clear(); this.saveGenerations.clear(); this.diskGenerations.clear(); this.sessions = {}; this.observed.clear(); this.observedTimes.clear(); this.languages.clear(); this.languageExtensions.clear();
+    this.epoch += 1; this.clearTimers(); this.pending.clear(); this.saveGenerations.clear(); this.diskGenerations.clear(); this.sessions = {}; this.observed.clear(); this.observedTimes.clear(); this.languages.clear(); this.editability.clear(); this.languageExtensions.clear();
     for (const file of files) this.ensure(file);
   };
 }

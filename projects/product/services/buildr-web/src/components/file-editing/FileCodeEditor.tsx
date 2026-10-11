@@ -11,6 +11,8 @@ type Props = {
   autoFocus?: boolean;
   focusLine?: number;
   focusRequest?: number;
+  initialScrollTop?: number;
+  onScroll?(top: number): void;
 };
 
 /** The same mature editor view is used for source editing and conflict comparison. */
@@ -32,19 +34,30 @@ export function FileCodeEditor(props: Props) {
     const start = () => current.current.onComposing?.(true);
     const end = () => current.current.onComposing?.(false);
     const blur = () => current.current.onBlur?.();
+    const scroll = () => current.current.onScroll?.(editor.scrollDOM.scrollTop);
     editor.contentDOM.addEventListener('compositionstart', start, true);
     editor.contentDOM.addEventListener('compositionend', end, true);
     editor.contentDOM.addEventListener('blur', blur);
+    editor.scrollDOM.addEventListener('scroll', scroll, { passive: true });
+    const restore = requestAnimationFrame(() => { if (current.current.initialScrollTop !== undefined && !current.current.focusLine) editor.scrollDOM.scrollTop = current.current.initialScrollTop; });
     if (current.current.autoFocus) editor.focus();
     return () => {
       editor.contentDOM.removeEventListener('compositionstart', start, true);
       editor.contentDOM.removeEventListener('compositionend', end, true);
       editor.contentDOM.removeEventListener('blur', blur);
+      editor.scrollDOM.removeEventListener('scroll', scroll);
+      cancelAnimationFrame(restore);
       editor.destroy(); view.current = null;
     };
   }, [props.documentId]);
 
-  useEffect(() => { if (view.current && view.current.state !== props.state) view.current.setState(props.state); }, [props.state]);
+  useEffect(() => {
+    const editor = view.current;
+    if (!editor || editor.state === props.state) return;
+    const scroll = props.initialScrollTop !== undefined && editor.state.doc === props.state.doc ? editor.scrollSnapshot() : undefined;
+    editor.setState(props.state);
+    if (scroll) editor.dispatch({ effects: scroll });
+  }, [props.state]);
   useEffect(() => { if (props.autoFocus) view.current?.focus(); }, [props.autoFocus]);
   useEffect(() => {
     const editor = view.current;
