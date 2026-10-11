@@ -92,17 +92,25 @@ export function resolveProjectMarkdownHref(currentDocPath: string, href: string)
     return rootPath?.toLowerCase().endsWith('.md') && !/^[a-z][a-z0-9+.-]*:/i.test(rootPath) ? rootPath : null;
   }
   if (pathPart.startsWith('@')) return null;
-  const current = String(currentDocPath || '').replace(/^\/+/, '').replace(/\\/g, '/');
-  const slash = current.lastIndexOf('/');
-  const baseDir = slash >= 0 ? current.slice(0, slash + 1) : '';
-  let resolved: string;
+  if (/^(?:[a-z][a-z0-9+.-]*:|\/|\\)/i.test(pathPart)) return null;
+  const current = normalizedWorkspaceRelativePath(currentDocPath);
+  if (!current) return null;
+  let target: string;
   try {
-    resolved = decodeURIComponent(new URL(pathPart, `https://project.local/${baseDir}`).pathname).replace(/^\/+/, '');
+    target = decodeURIComponent(pathPart);
   } catch {
     return null;
   }
-  if (!resolved || resolved.includes('\0') || /(^|\/)\.\.(\/|$)/.test(resolved)) return null;
-  if (!resolved.toLowerCase().endsWith('.md')) return null;
+  if (!target || /[\\\0]/.test(target) || /^(?:[a-z][a-z0-9+.-]*:|\/)/i.test(target)) return null;
+  const parts = current.split('/').slice(0, -1);
+  for (const part of target.split('/')) {
+    if (part === '..') {
+      if (!parts.length) return null;
+      parts.pop();
+    } else if (part && part !== '.') parts.push(part);
+  }
+  const resolved = parts.join('/');
+  if (!resolved.toLowerCase().endsWith('.md') || parts.some(part => part.toLowerCase() === '.git')) return null;
   return resolved;
 }
 

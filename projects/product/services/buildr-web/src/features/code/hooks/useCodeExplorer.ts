@@ -34,7 +34,7 @@ export function useCodeExplorer(workspaceId:string) {
   const filterOptions=codeFilterOptions(catalog,scope,worktreeScope);
   const selectedIds=[...new Set(sources.map(item=>item.source.repositoryId))];
   const selectedLocationsKey=JSON.stringify(sources.map(item=>item.id));
-  const current=useRef({directories,files,catalog,tabs,sources,worktreeScope});current.current={directories,files,catalog,tabs,sources,worktreeScope};
+  const current=useRef({directories,files,catalog,tabs,sources,worktreeScope,entry});current.current={directories,files,catalog,tabs,sources,worktreeScope,entry};
   const run=useCallback(async<T,>(operation:(signal:AbortSignal)=>Promise<T>):Promise<T>=>{
     const controller=new AbortController();controllers.current.add(controller);
     try{return await operation(controller.signal);}finally{controllers.current.delete(controller);}
@@ -105,6 +105,17 @@ export function useCodeExplorer(workspaceId:string) {
       }
     }catch(error){if(version===epoch.current&&entrySequence.current===sequence)setCatalogError(failure(error));}
   },[workspaceId,run,open]);
+  const clearEntry=useCallback(()=>{
+    if(!current.current.entry)return;
+    setEntry(null);setCatalogError('');const version=epoch.current,sequence=++entrySequence.current;
+    // A direct navigation can supersede a cold entry before its catalog arrives.
+    if(current.current.catalog)return;
+    const catalogRequest=++catalogSequence.current;
+    void run(signal=>codeApi.repositories(workspaceId,undefined,signal)).then(value=>{
+      if(version!==epoch.current||sequence!==entrySequence.current||catalogRequest!==catalogSequence.current)return;
+      latestCatalog.current=value;setCatalog(value);
+    }).catch(error=>{if(version===epoch.current&&sequence===entrySequence.current&&catalogRequest===catalogSequence.current)setCatalogError(failure(error));});
+  },[workspaceId,run]);
   const search=useCallback((value:string,mode:'name'|'content')=>{const query=repositorySearchQuery(value);setSearchInput(previous=>previous.query===query&&previous.mode===mode?previous:{query,mode});},[]);
   useEffect(()=>{
     let alive=true;const abort=new AbortController();setSearchResults([]);setSearchErrors([]);
@@ -143,7 +154,7 @@ export function useCodeExplorer(workspaceId:string) {
     if(active)await loadFile(active,true);
   },[workspaceId,entry?.taskId,active,loadDirectory,loadFile,run,directoryErrors,directoryKey]);
   return {catalog,catalogError,scope,worktreeScope,origin,locations,sources,filterOptions,directories,directoryErrors,tabs,active,files,fileErrors,loading,showIgnored,searchResults,searchLoading,searchErrors,entry,selectedIds,
-    locationFor,directoryKey,loadDirectory,open,applyEntry,search,setShowIgnored,refresh,readPage,
+    locationFor,directoryKey,loadDirectory,open,applyEntry,clearEntry,search,setShowIgnored,refresh,readPage,
     setWorktreeScope:(id:string|undefined)=>{
       const previousId=current.current.worktreeScope,latest=latestCatalog.current;
       if(latest)setCatalog(observed=>selectCodeWorktreeGroup(latest,observed,previousId,id));

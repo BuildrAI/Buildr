@@ -78,6 +78,8 @@ type Props = {
   markdownOptions?: MarkdownRenderOptions;
   markdownRevision?: string;
   canModify?: boolean;
+  /** Candidate shared file surface; the caller owns editing and persistence. */
+  readerSurface?: ReactNode;
 };
 
 function shortName(path: string) { return path.split('/').at(-1) || path; }
@@ -280,7 +282,7 @@ export function RepositoryFileBrowser(props: Props) {
               })}
             </div> : <Tree.DirectoryTree expandAction="click" blockNode showIcon loadedKeys={props.loadedDirectoryKeys} loadData={props.onLoadDirectory ? node => {const [repositoryId,...rest]=String(node.key).split('::');return props.onLoadDirectory!(repositoryId,rest.join('::'));} : undefined} expandedKeys={expanded} onExpand={keys => setExpanded(keys.map(String))} selectedKeys={[treeKey(props.selectedPath, props.selectedRepositoryId)]} treeData={treeData} onSelect={keys => { const item = visible.find(item => treeKey(item.path, item.repositoryId) === String(keys[0] || '')); if (item && !item.directory && !item.link) selectTreeFile(item); }} />}
           </div>
-          <footer className="repository-tree-footer">{props.treeRepositories ? new Set(props.treeRepositories.map(repo=>repo.repositoryId||repo.id)).size + ' 个代码库 · '+props.treeRepositories.length+' 个目录 · ' : ''}{visible.filter(item=>!item.directory).length} 个已加载文件 · 只读</footer>
+          <footer className="repository-tree-footer">{props.treeRepositories ? new Set(props.treeRepositories.map(repo=>repo.repositoryId||repo.id)).size + ' 个代码库 · '+props.treeRepositories.length+' 个目录 · ' : ''}{visible.filter(item=>!item.directory).length} 个已加载文件 · {props.readerSurface ? props.historical ? '历史只读' : '当前文本可编辑' : '只读'}</footer>
         </>}
       </aside>
 </>;
@@ -293,7 +295,7 @@ export function RepositoryFileBrowser(props: Props) {
         {!props.global && <div className="repository-file-tabs" role="tablist" aria-label="打开的文件">
           {openPaths.map(path => <div key={path} className={'repository-file-tab' + (path === props.selectedPath ? ' active' : '')}><button type="button" role="tab" aria-selected={path === props.selectedPath} title={path} onClick={() => select(path)}>{shortName(path)}</button>{openPaths.length > 1 && <button className="repository-file-close" type="button" aria-label={'关闭文件 ' + shortName(path)} onClick={() => { const next = openPaths.filter(item => item !== path); setOpenPaths(next); if (path === props.selectedPath) select(next.at(-1)!); }}>×</button>}</div>)}
         </div>}
-        {file && <header className="repository-reader-toolbar">
+        {props.readerSurface ?? <>{file && <header className="repository-reader-toolbar">
           <div className="repository-file-identity"><strong>{shortName(file.path)}</strong><small title={props.location + ' / ' + file.path}>{props.repositoryName ? props.repositoryName + ' · ' : ''}{file.path}</small><small className="repository-reading-location">{props.location} · {props.version}</small></div>
           <Space wrap size={4}>
             {props.onReturnTask && <Button size="small" onClick={props.onReturnTask} data-prototype-position="return-task">返回任务</Button>}
@@ -316,7 +318,7 @@ export function RepositoryFileBrowser(props: Props) {
         {file && <footer className="repository-reader-footer" data-prototype-position="agent-file-context">
           <span>{props.global || props.historical ? props.version : '当前文件'}{range ? ' · 已选择第 ' + range[0] + (range[1] !== range[0] ? '–' + range[1] : '') + ' 行' : file.kind === 'unsupported' ? ' · 类型暂不支持' : file.kind === 'image' ? ' · 图片' : props.readPage?' · 本段第 '+props.readPage.startLine+'–'+props.readPage.endLine+' 行':' · 完整文件 · '+lines.length+' 行'}</span>
           <Space size={6}><Button size="small" type="text" onClick={() => setRequest('explain')}>请智能体解释</Button><Tooltip title={props.historical ? '查看当前文件后提出修改' : '带上当前文件和选中范围'}><Button size="small" type="primary" disabled={props.historical || props.canModify === false} onClick={() => { setRequestGoal(''); setRequest('modify'); }}>提出修改</Button></Tooltip></Space>
-        </footer>}
+        </footer>}</>}
       </div>
     </div>
     <Modal open={Boolean(request)} title={request === 'modify' ? '交给智能体（Agent）修改' : '交给智能体（Agent）解释'} onCancel={() => setRequest(null)} footer={<Space><Button onClick={() => setRequest(null)}>返回文件</Button><Button type="primary" icon={<CopyOutlined />} onClick={() => void copy(prompt)}>复制指令</Button></Space>}>

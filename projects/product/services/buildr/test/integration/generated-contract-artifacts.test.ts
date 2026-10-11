@@ -40,7 +40,7 @@ test('全部HTTP DTO从空显式目标生成两端闭合输出', async (t) => {
     artifacts: [{ id: 'backend-dto', root: backend }, { id: 'web-dto', root: web }],
   });
   // Preserve the seven existing outputs and the Code HTTP contract's current eighth leaf.
-  const expectedFiles = ['agent-assets-http-dto.ts', 'code-http-dto.ts', 'knowledge-http-dto.ts', 'runtime-system-http-dto.ts', 'task-dto.ts', 'task-professional-http-dto.ts', 'workbench-dto.ts', 'workspace-http-dto.ts'];
+  const expectedFiles = ['agent-assets-http-dto.ts', 'agent-operations-http-dto.ts', 'code-generation-http-dto.ts', 'code-http-dto.ts', 'knowledge-http-dto.ts', 'runtime-system-http-dto.ts', 'task-dto.ts', 'task-professional-http-dto.ts', 'workbench-dto.ts', 'workspace-http-dto.ts'];
   for (const artifact of manifest.artifacts) assert.deepEqual(artifact.files.map(file => file.path).sort(), expectedFiles);
   for (const directory of [backend, web]) {
     const knowledgeDto = fs.readFileSync(path.join(directory, 'knowledge-http-dto.ts'), 'utf8');

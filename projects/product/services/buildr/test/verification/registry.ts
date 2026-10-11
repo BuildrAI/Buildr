@@ -401,6 +401,7 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
     'test/integration/capability-runtime.test.ts',
     'test/integration/buildr-web-read-executor.test.ts',
     'test/integration/code-explorer-application.test.ts',
+    'test/integration/file-editing-application.test.ts',
     'test/integration/task-materials-application.test.ts',
     'test/integration/task-materials-http-cli.test.ts',
     'test/integration/document-images.test.ts',

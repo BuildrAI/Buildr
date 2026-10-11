@@ -3,8 +3,30 @@ import { CODE_HTTP_SCHEMAS, CODE_HTTP_REQUESTS, CODE_HTTP_OPERATIONS, CODE_HTTP_
 import { codeFailure } from '../../infrastructure/code-file-reader.ts';
 import type { CodeBranchSwitchInput } from '../../application/source-control-model.ts';
 import type { CodeCommitChangesInput, CodePushInput } from '../../application/code-commit-model.ts';
+import type { EditorFileSelector, SaveEditorFileInput } from '../../application/file-editing-application.ts';
+import { EDITABLE_FILE_JSON_BYTES } from '../../infrastructure/editable-file.ts';
 export function createCodeHttpContribution(application:CodeApplication) {
-  return Object.freeze({id:'code.files.http',schemas:{...CODE_HTTP_SCHEMAS,...Object.fromEntries(Object.entries(CODE_HTTP_REQUESTS).map(([key,value])=>[key+'Request',value]))},operations:CODE_HTTP_OPERATIONS,handle:async({request,suffix,searchParams,root,submitTaskRead,authorizeWrite,readJsonBody}:{request:{method?:string};suffix:string;searchParams:URLSearchParams;root:string;submitTaskRead?:(operation:string,readId:string,input:Record<string,string>)=>Promise<unknown>;authorizeWrite?:()=>void;readJsonBody?:()=>Promise<unknown>})=>{
+  return Object.freeze({id:'code.files.http',schemas:{...CODE_HTTP_SCHEMAS,...Object.fromEntries(Object.entries(CODE_HTTP_REQUESTS).map(([key,value])=>[key+'Request',value]))},operations:CODE_HTTP_OPERATIONS,handle:async({request,suffix,searchParams,root,submitTaskRead,authorizeWrite,readJsonBody}:{request:{method?:string};suffix:string;searchParams:URLSearchParams;root:string;submitTaskRead?:(operation:string,readId:string,input:Record<string,string>)=>Promise<unknown>;authorizeWrite?:()=>void;readJsonBody?:(maxBytes?:number)=>Promise<unknown>})=>{
+    if (request.method === 'GET' && suffix === '/code/editor-file') {
+      const allowed=Object.keys(CODE_HTTP_REQUESTS.editorFile.properties);
+      for(const key of searchParams.keys())if(!allowed.includes(key)||searchParams.getAll(key).length!==1)throw codeFailure('file_query_invalid','文件编辑查询参数无效。');
+      const values=Object.fromEntries(searchParams);
+      if(!CODE_HTTP_VALIDATORS.validate(CODE_HTTP_REQUESTS.editorFile.$id,values).valid)throw codeFailure('file_query_invalid','文件编辑查询参数不符合契约。');
+      const selector:EditorFileSelector=values.kind==='code'?{kind:'code',repositoryId:values.repositoryId,checkoutId:values.checkoutId,path:values.filePath}:{kind:'project',projectCode:values.projectCode,path:values.filePath};
+      const body=await(submitTaskRead?submitTaskRead('code-editor-file','code-files',{input:JSON.stringify(selector)}):application.editorFile(root,selector));
+      if(!CODE_HTTP_VALIDATORS.validate(CODE_HTTP_SCHEMAS.editorFile.$id,body).valid)throw codeFailure('code_response_invalid','文件编辑读取结果不符合契约。',500);
+      return {status:200,body};
+    }
+    if (request.method === 'POST' && suffix === '/code/save-file') {
+      if(!authorizeWrite||!readJsonBody)throw codeFailure('file_write_unauthorized','保存请求缺少本机会话（Session）授权。',403);
+      authorizeWrite();
+      if(searchParams.size)throw codeFailure('file_query_invalid','文件保存不接受查询参数。');
+      const input=await readJsonBody(EDITABLE_FILE_JSON_BYTES);
+      if(!CODE_HTTP_VALIDATORS.validate(CODE_HTTP_REQUESTS.saveFile.$id,input).valid)throw codeFailure('file_save_input_invalid','文件保存请求不符合契约。');
+      const body=application.saveFile(root,input as SaveEditorFileInput);
+      if(!CODE_HTTP_VALIDATORS.validate(CODE_HTTP_SCHEMAS.saveFile.$id,body).valid)throw codeFailure('code_response_invalid','文件保存结果不符合契约。',500);
+      return {status:200,body};
+    }
     if (request.method === 'POST' && ['/code/commit-changes','/code/push'].includes(suffix)) {
       if (!authorizeWrite || !readJsonBody) throw codeFailure('code_write_unauthorized','写入请求缺少本机会话（Session）授权。',403);
       authorizeWrite();

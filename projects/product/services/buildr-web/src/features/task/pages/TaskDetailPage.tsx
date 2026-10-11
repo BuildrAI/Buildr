@@ -131,11 +131,11 @@ export function TaskDetailPage({ taskId: providedTaskId }: { taskId?: string } =
   const openCode=(file?:{gitRepositoryId:string;path:string;commitHash?:string;line?:number;checkoutId?:string})=>{
     // Opening the Code page must not replay the earlier brief-opening intent on return.
     const { taskBriefId: _briefIntent, ...returnState } = location.state || {};
-    navigate(href('/code/explorer'),{state:{codeEntry:{taskId,taskTitle:record.title,file,from:{pathname:location.pathname,search:location.search,hash:location.hash,state:returnState}}}});
+    navigate(href('/code/explorer'),{state:{codeEntry:{origin:'task',taskId,taskTitle:record.title,file,from:{pathname:location.pathname,search:location.search,hash:location.hash,state:returnState}}}});
   };
   const openSourceControl = () => {
     const { taskBriefId: _briefIntent, ...returnState } = location.state || {};
-    navigate(href('/code/source-control'), {state: {sourceControlEntry: {nonce: crypto.randomUUID(), taskId, taskTitle: record.title, from: {pathname: location.pathname, search: location.search, hash: location.hash, state: returnState}}}});
+    navigate(href('/code/source-control'), {state: {sourceControlEntry: {origin: 'task', nonce: crypto.randomUUID(), taskId, taskTitle: record.title, from: {pathname: location.pathname, search: location.search, hash: location.hash, state: returnState}}}});
   };
   const terminal = !['todo', 'active'].includes(record.status);
   const documents = taskDocuments(artifacts.changes, artifacts.materials.data);

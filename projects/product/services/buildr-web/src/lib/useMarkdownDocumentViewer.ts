@@ -7,7 +7,7 @@ export type MarkdownDocument = {
   content: string | null;
 };
 
-type OpenOptions = { pushHistory?: boolean; replaceHistory?: boolean };
+type OpenOptions = { pushHistory?: boolean; replaceHistory?: boolean; restoredHistory?: string[] };
 type DocumentReader = (path: string, signal?: AbortSignal) => Promise<MarkdownDocument>;
 type ViewerState = {
   reader: DocumentReader;
@@ -66,13 +66,14 @@ export function useMarkdownDocumentViewer(
     const controller = new AbortController();
     pending.current = controller;
     const previous = current.current;
-    commit({ ...previous, ...(options.replaceHistory ? { path: nextPath, history: [nextPath], document: null } : {}), loading: true, message: null });
+    const restoredHistory = options.restoredHistory?.length && options.restoredHistory.at(-1) === nextPath ? [...options.restoredHistory] : undefined;
+    commit({ ...previous, ...(options.replaceHistory ? { path: nextPath, history: restoredHistory || [nextPath], document: null } : {}), loading: true, message: null });
     try {
       const next = await fetchDocument(nextPath, controller.signal);
       if (version !== generation.current) return;
       const resolvedPath = next.path || nextPath;
       const history = current.current.history;
-      const nextHistory = options.replaceHistory ? [resolvedPath]
+      const nextHistory = options.replaceHistory ? (restoredHistory && resolvedPath === nextPath ? restoredHistory : [resolvedPath])
         : options.pushHistory === false || history[history.length - 1] === resolvedPath ? history : [...history, resolvedPath];
       commit({ ...current.current, path: resolvedPath, history: nextHistory, document: next,
         message: !next.exists || next.content == null ? missingMessage(resolvedPath) : null });

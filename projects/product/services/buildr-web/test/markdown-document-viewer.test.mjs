@@ -106,6 +106,46 @@ test('真实 AGENTS 根与快速连续返回按当前历史退栈，未完成链
   } finally { harness.dispose(); }
 });
 
+test('冷返回直接读取叶文档并恢复多层返回，手动重开 README 从根开始', async () => {
+  const { reader, requests } = readerFixture(), harness = hookHarness(reader);
+  try {
+    const history = ['README.md', 'guides/index.md', 'guides/leaf.md'];
+    const promise = harness.render().open('guides/leaf.md', { replaceHistory: true, restoredHistory: history });
+    assert.deepEqual(requests.map(request => request.path), ['guides/leaf.md']);
+    requests[0].resolve(document('guides/leaf.md')); await promise;
+    history.push('outside.md');
+    assert.deepEqual(harness.render().history, ['README.md', 'guides/index.md', 'guides/leaf.md']);
+    harness.render().back();
+    assert.equal(requests[1].path, 'guides/index.md');
+    requests[1].resolve(document('guides/index.md')); await settle();
+    assert.deepEqual(harness.render().history, ['README.md', 'guides/index.md']);
+    harness.render().back();
+    requests[2].resolve(document('README.md')); await settle();
+    assert.deepEqual(harness.render().history, ['README.md']);
+    const reset = harness.render().open('README.md', { replaceHistory: true });
+    requests[3].resolve(document('README.md')); await reset;
+    assert.deepEqual(harness.render().history, ['README.md']);
+  } finally { harness.dispose(); }
+});
+
+test('资料互切可恢复各自导航，路径不匹配的恢复历史不会进入阅读器', async () => {
+  const { reader, requests } = readerFixture(), harness = hookHarness(reader);
+  try {
+    for (const [path, history] of [
+      ['guides/leaf.md', ['README.md', 'guides/leaf.md']],
+      ['rules/review.md', ['AGENTS.md', 'rules/review.md']],
+      ['guides/leaf.md', ['README.md', 'guides/leaf.md']],
+    ]) {
+      const promise = harness.render().open(path, { replaceHistory: true, restoredHistory: history });
+      requests.at(-1).resolve(document(path)); await promise;
+      assert.deepEqual(harness.render().history, history);
+    }
+    const promise = harness.render().open('README.md', { replaceHistory: true, restoredHistory: ['README.md', 'wrong.md'] });
+    requests.at(-1).resolve(document('README.md')); await promise;
+    assert.deepEqual(harness.render().history, ['README.md']);
+  } finally { harness.dispose(); }
+});
+
 test('重置取消旧读取并立即结束等待，晚响应不能改写已重置正文或局部提示', async () => {
   const { reader, requests } = readerFixture(), harness = hookHarness(reader);
   try {

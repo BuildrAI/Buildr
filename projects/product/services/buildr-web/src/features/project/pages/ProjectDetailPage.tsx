@@ -6,9 +6,9 @@ import { useLocation } from 'react-router-dom';
 import { ProjectServicesPanel } from '../components/ProjectServicesPanel';
 import { useAssetCatalog } from '../../workspace/components/useAssetCatalog';
 import { projectApi, projectDocumentImage, type ProjectDocument } from '../api/project-api';
-import { useCallback, useContext, useEffect, useState, type MouseEvent, type SyntheticEvent } from 'react';
+import { useCallback, useContext, useEffect, useRef, useState, type MouseEvent, type SyntheticEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { Alert, Button, DatePicker, Dropdown, Skeleton, Tabs } from 'antd';
+import { Alert, App, Button, DatePicker, Dropdown, Skeleton, Tabs } from 'antd';
 import dayjs from 'dayjs';
 import { WorkspaceComposition } from '../../workspace/components/WorkspaceComposition';
 import { useWorkspaceComposition } from '../../workspace/components/useWorkspaceComposition';
@@ -17,8 +17,13 @@ import { FileTextOutlined, RightOutlined, MoreOutlined } from '@ant-design/icons
 
 import { useAppShell } from '../../../app/AppShellContext';
 import { MarkdownHost } from '../../../components/MarkdownHost';
+import { FileEditingPane } from '../../../components/file-editing/FileEditingPane';
+import type { FileEditingDocument } from '../../../components/file-editing/file-editing-types';
+import { useFileEditingContext } from '../../../app/FileEditingContext';
+import { codeApi } from '../../code/api/code-api';
+import { editableDocument, fileSnapshot } from '../../code/hooks/useEditableFile';
 import { encodeProjectDocumentPath, resolveProjectMarkdownHref } from '../../../lib/projectDocuments';
-import { updateMarkdownImageFailures, type MarkdownImageFailures } from '../../../lib/markdownImages';
+import { updateMarkdownImageFailures, type MarkdownImageFailures, type MarkdownImageContext } from '../../../lib/markdownImages';
 import { workspaceHref } from '../../../lib/labels';
 import { dailyProgressActionContext, dailyProgressActivityPath, legacyDailyProgressPath, type DailyProgressGroup } from '../../project-daily-progress/dailyProgressNavigation';
 import { DailyProgressPanel } from '../../project-daily-progress/components/DailyProgressPanel';
@@ -31,11 +36,13 @@ import { useWorkspacePageTabs, WorkspaceViewActiveContext } from '../../../app/p
 import { useKnowledgeNavigation } from '../../knowledge/useKnowledgeNavigation';
 import { canInitializeKnowledge, knowledgeInitializationContext } from '../../knowledge/knowledge-initialize';
 import { WorkspaceStage, type WorkspaceObjectTab } from '../../../components/WorkspaceStage';
+import { consumeProjectDocumentReturn, isProjectDocumentRef, projectDocumentRoot, readProjectDocumentReturn, withProjectDocumentReturn, type ProjectDocumentPosition, type ProjectDocumentPositions, type ProjectDocumentRef } from '../project-document-navigation';
 import '../project-home.css';
 
 type ObjTab = { key: string; kind: 'doc'; ref: string };
 
 const projectDocumentMissingMessage = (path: string) => `项目内未找到 ${path}`;
+type EditableProjectDocument = ProjectDocument & { editingFile?: FileEditingDocument; readOnlyReason?: string };
 
 const DOC_ROWS: { ref: string; name: string; hint: string }[] = [
   { ref: 'readme', name: '项目文档', hint: '使用、开发与参考 · README.md' },
@@ -45,15 +52,39 @@ const DOC_ROWS: { ref: string; name: string; hint: string }[] = [
 const ENTRY_TITLES: Record<ProjectHomeEntryRef, string> = { knowledge: '项目知识', articles: '项目文章', activity: '项目动态' };
 
 /** 右组项目文档对象。 */
-function ProjectDocObjectView({ workspaceId, projectCode, docPath, title, hint }: { workspaceId: string | null; projectCode: string; docPath: string; title: string; hint: string }) {
-  const fetchDocument = useCallback(async (path: string, signal?: AbortSignal): Promise<ProjectDocument> => {
+function ProjectDocObjectView({ workspaceId, projectCode, documentRef, position, positions, navigationRequest, onPosition }: { workspaceId: string | null; projectCode: string; documentRef: ProjectDocumentRef; position?: ProjectDocumentPosition; positions: ProjectDocumentPositions; navigationRequest: number; onPosition(ref: ProjectDocumentRef, position: ProjectDocumentPosition): void }) {
+  const editing = useFileEditingContext();
+  const navigate = useNavigate(), location = useLocation(), { message } = App.useApp();
+  const active = useContext(WorkspaceViewActiveContext);
+  const fetchDocument = useCallback(async (path: string, signal?: AbortSignal): Promise<EditableProjectDocument> => {
     if (!workspaceId) throw new Error('当前工作空间身份不可确认，请重新打开项目。');
-    return projectApi.projectDocument(projectCode, encodeProjectDocumentPath(path), { signal }, workspaceId);
+    const snapshot = await codeApi.editorFile(workspaceId, { kind: 'project', projectCode, path }, signal);
+    if (snapshot.kind === 'unsupported') {
+      // Preserve the existing read-only presentation without making its decoded text a save baseline.
+      const document = await projectApi.projectDocument(projectCode, encodeProjectDocumentPath(path), { signal }, workspaceId);
+      return { ...document, readOnlyReason: snapshot.readonlyReason || '当前文件只支持阅读。' };
+    }
+    return { path: snapshot.path, name: snapshot.path, exists: true, content: snapshot.content, editingFile: editableDocument(workspaceId, snapshot), imageContext: snapshot.imageContext };
   }, [workspaceId, projectCode]);
   const documents = useMarkdownDocumentViewer(fetchDocument, projectDocumentMissingMessage);
+  const rememberPosition = useRef(onPosition); rememberPosition.current = onPosition;
   const [failedImages, setFailedImages] = useState<MarkdownImageFailures>({ version: '', urls: [] });
-  const currentDocument = documents.document as ProjectDocument | null;
-  const imageContext = currentDocument?.imageContext;
+  const currentDocument = documents.document as EditableProjectDocument | null;
+  const editorFile = currentDocument?.editingFile;
+  const session = editorFile ? editing.sessions[editorFile.id] : undefined;
+  const [imageObservation, setImageObservation] = useState<{ revision: string; context?: MarkdownImageContext }>();
+  const imageContext = session?.file.imageContext
+    || (imageObservation?.revision === session?.revision ? imageObservation?.context : undefined)
+    || (!session || editorFile?.revision === session.revision ? currentDocument?.imageContext : undefined);
+  useEffect(() => {
+    if (!active || !workspaceId || !editorFile || !session || session.file.imageContext || editorFile.revision === session.revision) return;
+    const selector = fileSnapshot(editorFile).selector;
+    const abort = new AbortController();
+    void codeApi.editorFile(workspaceId, selector, abort.signal).then(snapshot => {
+      if (!abort.signal.aborted) setImageObservation({ revision: snapshot.revision, context: (snapshot as typeof snapshot & { imageContext?: MarkdownImageContext }).imageContext });
+    }).catch(() => {});
+    return () => abort.abort();
+  }, [active, workspaceId, editorFile?.id, session?.revision, session?.file.imageContext]);
   const imageVersion = JSON.stringify([workspaceId, projectCode, documents.path, imageContext?.sourceIdentity, imageContext?.documentDigest]);
   const resolveImage = (href: string) => {
     const url = projectDocumentImage(workspaceId, projectCode, documents.path, href, imageContext);
@@ -67,30 +98,49 @@ function ProjectDocObjectView({ workspaceId, projectCode, docPath, title, hint }
   };
 
   useEffect(() => {
-    void documents.open(docPath, { replaceHistory: true });
+    void documents.open(position?.path || projectDocumentRoot(documentRef), { replaceHistory: true, restoredHistory: position?.history });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workspaceId, projectCode, docPath]);
+  }, [workspaceId, projectCode, documentRef, navigationRequest]);
+  useEffect(() => {
+    if (!documents.loading && documents.document?.exists) rememberPosition.current(documentRef, { path: documents.path, history: documents.history });
+  }, [documentRef, documents.loading, documents.document, documents.path, documents.history]);
 
   const onRelativeLinkClick = (linkHref: string) => {
     const resolved = resolveProjectMarkdownHref(documents.path, linkHref);
     if (!resolved) { documents.setMessage('仅支持打开项目内的 .md 文档链接。'); return; }
     void documents.open(resolved, { pushHistory: true });
   };
+  const openInExplorer = async () => {
+    if (!workspaceId || !editorFile) return;
+    try {
+      const file = fileSnapshot(editorFile).absolutePath.replaceAll('\\', '/');
+      const catalog = await codeApi.repositories(workspaceId);
+      const candidates = catalog.worktrees.map(member => ({ ...member, path: member.path.replaceAll('\\', '/').replace(/\/$/, '') })).filter(member => member.available && file.startsWith(member.path + '/')).sort((a, b) => b.path.length - a.path.length);
+      const member = candidates[0];
+      if (!member || candidates[1]?.path.length === member.path.length) { message.info('此文件没有唯一可用的代码库目录，请从资源管理器（Explorer）选择来源。'); return; }
+      const returnState = withProjectDocumentReturn(location.state, { returnId: crypto.randomUUID(), projectCode, ref: documentRef, path: documents.path, history: documents.history, positions });
+      navigate(workspaceHref(workspaceId, '/code/explorer'), { state: { codeEntry: { origin: 'project', file: { repositoryId: member.repositoryId, checkoutId: member.id, path: file.slice(member.path.replace(/\/$/, '').length + 1) }, from: { pathname: location.pathname, search: location.search, hash: location.hash, state: returnState } } } });
+    } catch (error) { message.error(error instanceof Error ? error.message : '无法打开资源管理器（Explorer）。'); }
+  };
 
   return (
     <>
-      <section className="project-document-pane" onErrorCapture={event => imageResult(event, true)} onLoadCapture={event => imageResult(event, false)}>
-      <div className="ws-obj-head"><h2>{title}</h2></div>
-      <p className="ws-obj-sub">{hint}</p>
-      {documents.history.length > 1 ? (
+      <section className={'project-document-pane' + (editorFile ? ' project-document-editor' : '')} onErrorCapture={event => imageResult(event, true)} onLoadCapture={event => imageResult(event, false)}>
+      {!editorFile && documents.history.length > 1 ? (
         <div className="project-document-toolbar">
           <button type="button" className="back-link project-document-back" onClick={documents.back}>← 返回上一篇</button>
           <span className="project-document-path">{documents.path}</span>
         </div>
       ) : null}
+      {currentDocument?.readOnlyReason && <Alert type="info" showIcon message={currentDocument.readOnlyReason} />}
       {failedImages.version === imageVersion && failedImages.urls.length > 0 && <Alert type="warning" message="部分图片暂时不可读取，请重新打开正文后重试。" />}
       {documents.loading ? (
         <p className="page-copy">正在读取…</p>
+      ) : editorFile ? (
+        <FileEditingPane file={editorFile} editing={editing} active={active} markdownRevision={imageVersion}
+          onOpenInExplorer={() => void openInExplorer()}
+          toolbarEnd={documents.history.length > 1 ? <button type="button" className="back-link project-document-back" onClick={documents.back}>← 返回上一篇</button> : undefined}
+          markdownOptions={{ headingOffset: 1, allowRelativeLinks: true, allowParentRelativeLinks: true, onRelativeLinkClick, imageResolver: resolveImage }} />
       ) : documents.document?.exists && documents.document.content != null ? (
         <MarkdownHost
           markdown={documents.document.content}
@@ -168,8 +218,23 @@ export function ProjectDetailPage() {
   const [editOpen, setEditOpen] = useState(Boolean(editLocation.state?.editResource));
   useEffect(() => { if (editLocation.state?.editResource) setEditOpen(true); }, [editLocation.key]);
   const workspaceName = workspace?.name || '工作空间';
-  const [objects, setObjects] = useState<ObjTab[]>([]);
-  const [activeObj, setActiveObj] = useState<string | null>(null);
+  const initialDocumentReturn = readProjectDocumentReturn(editLocation.state, projectCode);
+  const [objects, setObjects] = useState<ObjTab[]>(() => initialDocumentReturn ? Object.keys(initialDocumentReturn.positions).map(ref => ({ key: `doc:${ref}`, kind: 'doc', ref })) : []);
+  const [activeObj, setActiveObj] = useState<string | null>(() => initialDocumentReturn ? `doc:${initialDocumentReturn.ref}` : null);
+  const [documentPositions, setDocumentPositions] = useState<ProjectDocumentPositions>(() => initialDocumentReturn?.positions || {});
+  const [documentRequests, setDocumentRequests] = useState<Partial<Record<ProjectDocumentRef, number>>>({});
+  const consumedDocumentReturns = useRef(new Set(initialDocumentReturn ? [initialDocumentReturn.returnId] : []));
+  const rememberDocumentPosition = useCallback((ref: ProjectDocumentRef, position: ProjectDocumentPosition) => {
+    setDocumentPositions(current => JSON.stringify(current[ref]) === JSON.stringify(position) ? current : { ...current, [ref]: position });
+  }, []);
+  useEffect(() => {
+    const restored = consumeProjectDocumentReturn(editLocation.state, projectCode, consumedDocumentReturns.current);
+    if (!restored) return;
+    setDocumentPositions(current => ({ ...current, ...restored.positions }));
+    setObjects(current => [...current, ...Object.keys(restored.positions).filter(ref => !current.some(tab => tab.key === `doc:${ref}`)).map(ref => ({ key: `doc:${ref}`, kind: 'doc' as const, ref }))]);
+    setActiveObj(`doc:${restored.ref}`);
+    setDocumentRequests(current => ({ ...current, [restored.ref]: (current[restored.ref] || 0) + 1 }));
+  }, [editLocation.key, editLocation.state, projectCode]);
 
   useEffect(() => {
     if (!project || !workspaceId) return;
@@ -184,6 +249,11 @@ export function ProjectDetailPage() {
   }, [project?.name, projectCode, workspaceId, workspaceName, setBreadcrumbParts]);
 
   const openObject = (tab: ObjTab) => {
+    if (isProjectDocumentRef(tab.ref)) {
+      const ref = tab.ref;
+      rememberDocumentPosition(ref, { path: projectDocumentRoot(ref), history: [projectDocumentRoot(ref)] });
+      setDocumentRequests(current => ({ ...current, [ref]: (current[ref] || 0) + 1 }));
+    }
     setObjects((current) => current.some((o) => o.key === tab.key) ? current : [...current, tab]);
     setActiveObj(tab.key);
   };
@@ -192,6 +262,10 @@ export function ProjectDetailPage() {
     if (activityPath) navigate(workspaceHref(workspaceId, activityPath), { replace: true });
   }, [editLocation.search, projectCode, workspaceId, navigate]);
   const closeObject = (key: string) => {
+    const ref = objects.find(tab => tab.key === key)?.ref;
+    if (isProjectDocumentRef(ref)) {
+      setDocumentPositions(current => { const next = { ...current }; delete next[ref]; return next; });
+    }
     setObjects((current) => {
       const index = current.findIndex((o) => o.key === key);
       const next = current.filter((o) => o.key !== key);
@@ -268,9 +342,11 @@ export function ProjectDetailPage() {
               key={activeTab.ref}
               workspaceId={workspaceId}
               projectCode={projectCode}
-              docPath={activeTab.ref === 'agents' ? 'AGENTS.md' : 'README.md'}
-              title={activeTab.ref === 'agents' ? 'AGENTS.md' : '项目文档'}
-              hint={activeTab.ref === 'agents' ? '规则与授权边界' : '使用、开发与参考 · README.md'}
+              documentRef={activeTab.ref === 'agents' ? 'agents' : 'readme'}
+              position={documentPositions[activeTab.ref === 'agents' ? 'agents' : 'readme']}
+              positions={documentPositions}
+              navigationRequest={documentRequests[activeTab.ref === 'agents' ? 'agents' : 'readme'] || 0}
+              onPosition={rememberDocumentPosition}
             />
         ) : null}
       >

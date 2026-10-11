@@ -162,6 +162,10 @@ export function registerProjectApplication(runtime: ProjectApplicationRuntime) {
     return readMarkdownImage(() => projectImageSource(targetRoot, code, documentPath), input);
   }
 
+  function projectDocumentImageContext(targetRoot: string, code: string, documentPath: string, content: string) {
+    return observeMarkdownImageContext(projectImageSource(targetRoot, code, documentPath), content);
+  }
+
   // 变更：迁移和元数据更新。
   function migrateProjectRegistry(targetRoot: any) {
     const before = readProjectRegistryRecord(targetRoot);
@@ -349,6 +353,7 @@ export function registerProjectApplication(runtime: ProjectApplicationRuntime) {
     projectDetail,
     projectDocument,
     projectDocumentImage,
+    projectDocumentImageContext,
     projectMigrationPlan,
     migrateProjectRegistry,
     updateProjectMetadata,

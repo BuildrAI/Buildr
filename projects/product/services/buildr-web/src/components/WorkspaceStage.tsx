@@ -49,7 +49,7 @@ export function WorkspaceStage(props: Props) {
   const normalStage = <SplitWorkspaceStage {...props} onCloseAll={() => { previews?.clear(location.pathname); for (const tab of props.objectTabs || []) props.onCloseObject?.(tab.key); }} objectTabs={[...(props.objectTabs || []), ...resourceTabs]} activeObject={active}
     onActivateObject={key => { if (key.startsWith('preview:')) previews?.activate(location.pathname, key.slice(8)); else { previews?.activate(location.pathname, ''); props.onActivateObject?.(key); } }}
     onCloseObject={key => { if (key.startsWith('preview:')) previews?.close(location.pathname, key.slice(8)); else props.onCloseObject?.(key); }}
-    objectContent={<><div hidden={Boolean(state?.active)}>{props.objectContent}</div><div hidden={!state?.active}>{resources}</div></>}>
+    objectContent={<><div hidden={Boolean(state?.active)}><WorkspaceViewActiveContext.Provider value={viewActive && !state?.active}>{props.objectContent}</WorkspaceViewActiveContext.Provider></div><div hidden={!state?.active}>{resources}</div></>}>
     <div className="resource-main-content" onClickCapture={event => { if ((event.target as HTMLElement).closest('[data-doc-row]')) previews?.activate(location.pathname, ''); }}>{props.children}</div>
   </SplitWorkspaceStage>;
   return normalStage;

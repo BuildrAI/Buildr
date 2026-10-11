@@ -397,6 +397,13 @@ export function registerApplicationPackageMaintenance(dependencies: PackageMaint
   });
 
   return Object.freeze({
+    builtinManagedFiles: (targetRoot: string): string[] => {
+      const directory = fs.lstatSync(path.join(targetRoot, '.buildr'), { throwIfNoEntry: false });
+      const receipt = fs.lstatSync(path.join(targetRoot, '.buildr', 'builtin-receipts.json'), { throwIfNoEntry: false });
+      if (directory?.isSymbolicLink() || receipt && (!receipt.isFile() || receipt.isSymbolicLink() || receipt.size > 1024 * 1024)) throw new Error('Builtin ownership receipt cannot be inspected safely.');
+      // Command receipts prove individual registry records, not ownership of the whole mixed manifest.
+      return readBuiltinReceipts(targetRoot).builtins.flatMap((item: any) => item.type === 'skill' ? item.files.map((file: any) => path.posix.join(item.target, file.path)) : item.type === 'rule' ? [item.target] : []);
+    },
     syncPackageBuiltins,
     builtinList,
     builtinUninstall,

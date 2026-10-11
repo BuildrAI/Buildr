@@ -1,0 +1,20 @@
+.file-editing-prototype .workspace-page-stack { flex:1; min-height:0; }
+.file-editing-prototype .file-editing-project-page { height:100%; padding:0; }
+.file-editing-prototype .pane-left .pane-body-inner { padding:24px 26px; }
+.file-editing-prototype .pane-right .pane-body-inner { height:100%; padding:0; }
+.file-editing-prototype .pane-right .pane-body-inner > div { height:100%; }
+.file-editing-prototype .project-home { width:100%; max-width:none; }
+.file-editing-prototype .project-home-actions { flex-wrap:wrap; justify-content:flex-end; }
+.file-editing-prototype .project-home-description { max-width:100%; }
+.file-editing-prototype .file-editing-tree { display:flex; flex:none; min-height:0; }
+.file-editing-prototype .global-reader .repository-file-pane { height:100%; }
+.file-editing-prototype .code-file-stage .repository-file-browser { flex:1; min-height:0; }
+.file-editing-prototype .ws-obj-row { text-align:left; }
+.file-editing-prototype .project-home .resource-section { margin-top:20px; }
+@media (max-width:1100px) {
+  .file-editing-prototype .pane-left .pane-body-inner { padding:20px; }
+  .file-editing-prototype .project-home-actions .ant-btn:first-child { display:none; }
+}
+.file-editing-prototype .file-editing-pane { height:100%; min-height:0; }
+.file-editing-prototype .file-editing-body { min-height:0; }
+.file-editing-prototype .file-editing-source > textarea { min-height:260px; }

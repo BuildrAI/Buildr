@@ -5,7 +5,7 @@ import { tabElementId } from '../../../lib/tab-navigation';
 import { ObjectTabStrip } from '../../../components/ObjectTabStrip';
 import { workspaceHref } from '../../../lib/labels';
 import { SourceControlWorkbench } from '../components/SourceControlWorkbench';
-import { isTaskReturnPath } from '../code-navigation';
+import { codeReturnTarget } from '../code-navigation';
 import { SourceControlCommitPanel } from '../components/SourceControlCommitPanel';
 import { useSourceControlActions } from '../hooks/useSourceControlActions';
 import { useSourceControl } from '../hooks/useSourceControl';
@@ -16,7 +16,7 @@ export function CodeSourceControlPage() {
   const panelId = useId();
   const {workspaceId, setBreadcrumbParts} = useAppShell();
   const location = useLocation(), navigate = useNavigate();
-  const entry = location.state?.sourceControlEntry as {nonce?: string; taskId: string; taskTitle?: string; from: {pathname: string; search: string; hash: string; state: unknown}} | undefined;
+  const entry = location.state?.sourceControlEntry as {origin?: 'task'; nonce?: string; taskId: string; taskTitle?: string; from: {pathname: string; search: string; hash: string; state: unknown}} | undefined;
   const observation = useSourceControl(workspaceId || '', entry?.taskId);
   const actions = useSourceControlActions(workspaceId || '', observation.refresh);
   const branches = useSourceControlBranches(workspaceId || '', observation.observation.readAt, observation.refresh);
@@ -24,11 +24,13 @@ export function CodeSourceControlPage() {
   useEffect(() => { setBreadcrumbParts(['代码', '源代码管理']); }, [setBreadcrumbParts]);
   const href = (path: string) => workspaceHref(workspaceId, path);
   const openCurrent = (target: SourceControlFileTarget) => navigate(href('/code/explorer'), {state: {codeEntry: {
+    origin: 'source-control',
     file: {repositoryId: target.repositoryId, checkoutId: target.worktreeId, path: target.path}, taskId: target.taskId,
     from: {pathname: location.pathname, search: location.search, hash: location.hash, state: location.state},
   }}});
   const openTask = (taskId: string) => {
-    if (entry?.taskId === taskId && isTaskReturnPath(entry.from.pathname, href('/tasks'))) navigate({pathname: entry.from.pathname, search: entry.from.search, hash: entry.from.hash}, {state: entry.from.state});
+    const target = codeReturnTarget(entry, href(''));
+    if (entry?.taskId === taskId && target?.origin === 'task') navigate({pathname: target.from.pathname, search: target.from.search, hash: target.from.hash}, {state: target.from.state});
     else navigate(href('/tasks/' + encodeURIComponent(taskId)), {state: {from: location.pathname + location.search}});
   };
   return <div className="code-source-control-page">

@@ -70,7 +70,7 @@ const WORKSPACE_METHODS = Object.freeze([
   'generateStartWorkPrompt', 'diagnoseWorkspaceMetadata', 'initializeWorkspace', 'recoverWorkspaceMutation',
 ]);
 const PROJECT_METHODS = Object.freeze([
-  'readProjectRegistryRecord', 'listProjects', 'projectDetail', 'projectDocument', 'projectDocumentImage', 'projectMigrationPlan',
+  'readProjectRegistryRecord', 'listProjects', 'projectDetail', 'projectDocument', 'projectDocumentImage', 'projectDocumentImageContext', 'projectMigrationPlan',
   'migrateProjectRegistry', 'updateProjectMetadata', 'generateProjectCreatePrompt', 'createProjectAsset',
 ]);
 const SERVICE_METHODS = Object.freeze([
@@ -79,7 +79,7 @@ const SERVICE_METHODS = Object.freeze([
 ]);
 const WORKSPACE_QUERY_METHODS = Object.freeze([
   'getWorkspace', 'resolveSourceWorkspaceRoot', 'readProjectRegistryRecord', 'readServiceRegistryRecord',
-  'listProjects', 'listServices', 'projectDetail', 'serviceDetail',
+  'listProjects', 'listServices', 'projectDetail', 'projectDocumentImageContext', 'serviceDetail',
   'resolveSourceRoot', 'resolveProjectRoot', 'resolveServiceRoot',
 ]);
 

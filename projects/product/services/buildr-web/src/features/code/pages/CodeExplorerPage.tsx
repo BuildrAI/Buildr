@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useMemo, useState } from 'react';
+import { useCallback, useContext, useEffect, useId, useMemo, useState } from 'react';
 import { Alert, App, Button, Empty, Select, Spin, Tag } from 'antd';
 import { InfoCircleOutlined } from '@ant-design/icons';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -10,9 +10,14 @@ import { RepositoryFileBrowser, type RepositoryPreviewFile, type RepositoryTreeS
 import { CodeTreePane } from '../components/CodeTreePane';
 import { useCodeExplorer } from '../hooks/useCodeExplorer';
 import { codeApi } from '../api/code-api';
-import { codeBrowserKey, codeLocationKey, isTaskReturnPath, relativeCodeLink, type CodeTaskEntry } from '../code-navigation';
+import { useEditableFile } from '../hooks/useEditableFile';
+import { useFileEditingContext } from '../../../app/FileEditingContext';
+import { WorkspaceViewActiveContext } from '../../../app/pageTabs';
+import { FileEditingPane } from '../../../components/file-editing/FileEditingPane';
+import { codeBrowserKey, codeLocationKey, codeReturnTarget, relativeCodeLink, type CodeTaskEntry } from '../code-navigation';
 import { codeWorktreeGroupScope } from '../code-filters';
 import { workspaceHref } from '../../../lib/labels';
+import type { MarkdownRenderOptions } from '../../../markdown';
 import '../code-explorer.css';
 
 export function CodeExplorerPage() {
@@ -23,10 +28,18 @@ export function CodeExplorerPage() {
   const [host,setHost]=useState<HTMLDivElement|null>(null),[treeHidden,setTreeHidden]=useState(()=>window.innerWidth<680);
   const [processed,setProcessed]=useState(''),[media,setMedia]=useState<Record<string,string>>({});
   useEffect(()=>{setBreadcrumbParts(['代码','资源管理器']);},[setBreadcrumbParts]);
-  useEffect(()=>{const entry=location.state?.codeEntry as CodeTaskEntry|undefined;if(entry&&processed!==location.key){setProcessed(location.key);void state.applyEntry(entry);}},[location.key,location.state,processed,state.applyEntry]);
+  useEffect(()=>{if(processed===location.key)return;setProcessed(location.key);const entry=location.state?.codeEntry as CodeTaskEntry|undefined;if(entry)void state.applyEntry(entry);else state.clearEntry();},[location.key,location.state,processed,state.applyEntry,state.clearEntry]);
   const active=state.active,file=active?state.files[active.key]:undefined;
+  const viewActive=useContext(WorkspaceViewActiveContext);
+  const editing=useFileEditingContext();
+  const currentText=Boolean(active?.checkoutId&&!active.commitHash&&file&&!file.page&&!file.truncated&&(file.kind==='markdown'||file.kind==='text')&&!state.fileErrors[active.key]);
+  const editable=useEditableFile(workspaceId,currentText&&active?.checkoutId?{kind:'code',repositoryId:active.repositoryId,checkoutId:active.checkoutId,path:active.path}:null,file?.observedAt);
+  const editorSession=editable.file?editing.sessions[editable.file.id]:undefined;
+  const markdownContent=editorSession?.content??file?.content??'';
+  const imageHrefs=useMemo(()=>[...new Set([...markdownContent.matchAll(/!\[[^\]]*\]\(([^\s)]+)(?:\s+[^)]*)?\)/g)].map(match=>match[1]))].slice(0,8),[markdownContent]);
   const selectedRepo=state.catalog?.repositories.find(r=>r.id===active?.repositoryId);
   const selectedMember=state.catalog?.worktrees.find(member=>member.repositoryId===active?.repositoryId&&member.id===active?.checkoutId);
+  const selectedGroup=state.catalog?.worktreeGroups.find(group=>group.id===selectedMember?.groupId);
   const treeRepositories=useMemo<RepositoryTreeScope[]>(()=>state.sources.map(({id,source,member})=>{
     const prefix=state.directoryKey(source,'');
     const directories=Object.entries(state.directories).filter(([key])=>key.startsWith(prefix)).map(([,value])=>value);
@@ -54,17 +67,28 @@ export function CodeExplorerPage() {
     const prefix=state.directoryKey(source,'');return Object.entries(state.directoryErrors).filter(([key])=>key.startsWith(prefix)).map(([key,error])=>sourceName(id)+' / '+(key.slice(prefix.length)||'根目录')+'：'+error);
   });
   const partial=state.sources.some(({source})=>Object.entries(state.directories).some(([key,dir])=>key.startsWith(state.directoryKey(source,''))&&dir.truncated));
-  const returnTask=()=>{const from=state.entry?.from;if(from?.pathname.startsWith(`/workspaces/${workspaceId}/`))navigate({pathname:from.pathname,search:from.search,hash:from.hash},{state:from.state});};
+  const returnTarget=codeReturnTarget(state.entry,workspaceHref(workspaceId,''));
+  const returnToSource=()=>{if(!returnTarget)return;const {from}=returnTarget;navigate({pathname:from.pathname,search:from.search,hash:from.hash},{state:from.state});};
   const openFile=(id:string,path:string,line?:number,matchQuery?:string)=>{const source=state.locationFor(id);if(!source)return;state.open(source,path,line,false,matchQuery);if(window.innerWidth<680)setTreeHidden(true);};
   const onSearch=useCallback((query:string,mode:'name'|'content')=>state.search(query,mode),[state.search]);
+  const markdownOptions: MarkdownRenderOptions = {
+    allowRelativeLinks: true,
+    allowParentRelativeLinks: true,
+    imageResolver: href => media[href] ? { href: media[href] } : null,
+    onRelativeLinkClick: href => {
+      if (!active) return;
+      const path = relativeCodeLink(active.path, href);
+      if (path) state.open(active, path);
+      else message.info('此链接不在当前代码库内。');
+    },
+  };
   // Resolve relative document media through the same repository/version reader; never construct filesystem URLs.
   useEffect(()=>{
     setMedia({});if(!active||file?.kind!=='markdown'||file.page||!workspaceId)return;
     const controller=new AbortController();let alive=true;
-    const hrefs=[...new Set([...file.content.matchAll(/!\[[^\]]*\]\(([^\s)]+)(?:\s+[^)]*)?\)/g)].map(match=>match[1]))].slice(0,8);
-    void Promise.allSettled(hrefs.map(async href=>{const path=relativeCodeLink(active.path,href);if(!path)return;const image=await codeApi.file(workspaceId,{repositoryId:active.repositoryId,checkoutId:active.checkoutId,taskId:active.taskId,commitHash:active.commitHash,path},controller.signal);if(image.kind==='image'&&alive)setMedia(previous=>({...previous,[href]:image.content}));}));
+    void Promise.allSettled(imageHrefs.map(async href=>{const path=relativeCodeLink(active.path,href);if(!path)return;const image=await codeApi.file(workspaceId,{repositoryId:active.repositoryId,checkoutId:active.checkoutId,taskId:active.taskId,commitHash:active.commitHash,path},controller.signal);if(image.kind==='image'&&alive)setMedia(previous=>({...previous,[href]:image.content}));}));
     return()=>{alive=false;controller.abort();};
-  },[workspaceId,active?.key,file?.digest]);
+  },[workspaceId,active?.key,imageHrefs.join('\n')]);
   const fileTabs=state.tabs.map(tab=>{
     const name=tab.path.split('/').at(-1)||tab.path;
     const repo=state.catalog?.repositories.find(r=>r.id===tab.repositoryId);
@@ -96,7 +120,7 @@ export function CodeExplorerPage() {
     <div className="code-file-stage">
       <div className="code-file-tabstrip">
         <ObjectTabStrip panelId={panelId} className="code-open-files" label="打开的文件" tabs={fileTabs} active={active?.key} onActivate={key=>{const tab=state.tabs.find(item=>item.key===key);if(tab)state.activate(tab);}} onClose={state.close} />
-        {state.entry&&<Button size="small" type="text" onClick={returnTask}>{isTaskReturnPath(state.entry.from.pathname,workspaceHref(workspaceId,'/tasks')) ? '返回任务' : '返回源代码管理'}</Button>}
+        {returnTarget&&<Button size="small" type="text" onClick={returnToSource}>{returnTarget.label}</Button>}
         <ReadingToggle className="code-reading-toggle" expanded={treeHidden} onToggle={()=>setTreeHidden(value=>!value)} />
       </div>
       {state.catalogError&&<Alert type="warning" message={state.catalogError} action={<Button onClick={()=>void state.refresh().catch(error=>message.error(String(error)))}>重试</Button>} />}
@@ -106,6 +130,8 @@ export function CodeExplorerPage() {
       {state.catalog&&state.catalog.repositories.length>0&&!state.sources.length&&<div className="code-range-outside" role="status">所选代码库与工作树没有共同目录，请调整筛选。</div>}
       <div className="object-tab-panel" id={panelId} role={active ? 'tabpanel' : undefined} aria-labelledby={active ? tabElementId(panelId, active.key) : undefined} tabIndex={active ? 0 : undefined}>
       <RepositoryFileBrowser global readerActive sidebarHost={host} treeRepositories={treeRepositories} files={files} repositoryName={selectedRepo?.name} repositoryId={active?.repositoryId} checkoutId={active?.checkoutId||undefined} observedDigest={file?.digest} observedRevision={file?.revision} observedAt={file?.observedAt} selectedRepositoryId={active?codeBrowserKey(active):undefined} selectedPath={active?.path||''} selectionKey={active?.key}
+        readerSurface={currentText ? editable.file ? <FileEditingPane file={{...editable.file,locationLabel:selectedGroup?.name||editable.file.locationLabel}} editing={editing} active={viewActive} focusLine={active?.line} focusRequest={active?.focusRequest}
+          markdownRevision={Object.keys(media).join(',')} markdownOptions={markdownOptions} /> : editable.error ? <Alert type="error" showIcon message={editable.error} action={<Button onClick={()=>void state.refresh()}>重试</Button>} /> : <div className="repository-reading-empty"><Spin />正在读取文件…</div> : undefined}
         onSelect={(path,line,matchQuery)=>active&&state.open(active,path,line,false,matchQuery)} onSelectRepositoryFile={openFile} context={context}
         location={file?.source.location||selectedMember?.path||''} version={file?.source.version||active?.commitHash||'当前文件'} historical={Boolean(active?.commitHash)} focusLine={active?.line} focusRequest={active?.focusRequest}
         readLoading={Boolean(active&&state.loading.includes(active.key))} readError={active?state.fileErrors[active.key]:undefined} readMessage={file?.message||undefined} readPage={file?.page} readMatchQuery={file?.observedMatch?.query} sizeBytes={file?.sizeBytes} onReadPage={state.readPage} canModify={Boolean(file&&!file.truncated&&file.kind!=='unsupported'&&!state.fileErrors[active?.key||''])} taskTitle={state.entry?.taskTitle}
@@ -115,7 +141,7 @@ export function CodeExplorerPage() {
           {(diagnostics.length>0||directoryFailures.length>0)&&<Alert type="warning" showIcon message="部分内容不可读取" description={[...new Set([...diagnostics,...directoryFailures])].join('；')} action={<Button size="small" onClick={()=>void state.refresh().catch(error=>message.error(String(error)))}>重试</Button>} />}
         </>}
         onRetry={()=>state.refresh()} onViewCurrent={()=>{if(!active)return;if(!active.checkoutId){message.info('此历史文件的当前工作树尚未确认，请从目录选择实际来源。');return;}state.open({repositoryId:active.repositoryId,checkoutId:active.checkoutId},active.path);}} onHideTree={()=>setTreeHidden(true)}
-        markdownRevision={Object.keys(media).join(',')} markdownOptions={{allowRelativeLinks:true,imageResolver:href=>media[href]?{href:media[href]}:null,onRelativeLinkClick:href=>{if(!active)return;const path=relativeCodeLink(active.path,href);if(path)state.open(active,path);else message.info('此链接不在当前代码库内。');}}} />
+        markdownRevision={Object.keys(media).join(',')} markdownOptions={markdownOptions} />
       </div>
     </div>
   </div>;

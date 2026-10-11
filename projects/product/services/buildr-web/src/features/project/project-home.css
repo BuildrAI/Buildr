@@ -45,3 +45,9 @@
 @media (prefers-reduced-motion: reduce) {
   .project-home-entry { transition: none; }
 }
+/* The shared editor owns scrolling; the surrounding document host supplies the full pane. */
+.pane-right > .pane-body:has(> .pane-body-inner > div:not([hidden]) > .project-document-editor) { overflow: hidden; }
+.pane-right > .pane-body:has(> .pane-body-inner > div:not([hidden]) > .project-document-editor) > .pane-body-inner { height: 100%; padding: 0; }
+.pane-right > .pane-body > .pane-body-inner > div:has(> .project-document-editor) { height: 100%; }
+.project-document-pane.project-document-editor { display: flex; flex-direction: column; height: 100%; max-width: none; min-height: 0; }
+.project-document-editor > .project-document-toolbar { flex: none; padding: 8px 16px; margin: 0; }

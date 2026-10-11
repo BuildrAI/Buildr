@@ -11,6 +11,8 @@ import { createSourceControlApplication } from './source-control-application.ts'
 import { createCodeBranchApplication } from './code-branch-application.ts';
 import { createCodeCommitApplication } from './code-commit-application.ts';
 import { enumerateCodeWorktrees, resolveCodeWorktree } from '../infrastructure/code-worktree-reader.ts';
+import { createFileEditingApplication } from './file-editing-application.ts';
+import type { MarkdownImageContext } from '../../../infrastructure/filesystem/markdown-images.ts';
 type Repository = { id:string; code:string; name:string; source: {type:string;path:string;root?:string}; location?:string };
 type Service = {id:string;code:string;repositoryId:string;legacyRefs?:string[]};
 type Project = {id:string;code:string;serviceIds:string[]};
@@ -25,6 +27,9 @@ export type CodeDependencies = {
   gitWorktreeEvidencePath?(root:string,id:string):string;
   gitWorktreeEvidenceDirectories?(root:string,options?:{requireComplete?:boolean}):string[];
   readGitWorktreeEvidence(root:string,id:string,options:{optional:boolean}):{evidence:{repositories:Array<{sourceRepository:string;checkoutPath:string;branch?:string}>}}|null;
+  projectDetail?(root:string,code:string):{project:{id:string;code:string;source:unknown};sourceLocation:{path:string;identity:string}};
+  builtinManagedFiles?(root:string,relative?:string):string[];
+  projectDocumentImageContext?(root:string,code:string,path:string,content:string):MarkdownImageContext|undefined;
 };
 export function createCodeApplication(dependencies:CodeDependencies) {
   function repositoryScope(root:string,taskId?:string) {
@@ -121,6 +126,7 @@ export function createCodeApplication(dependencies:CodeDependencies) {
   }
   const sourceControlApplication=createSourceControlApplication({repositories:repositoryScope,source:(root,input)=>source(root,input as CodeInput),worktrees:(root,id)=>{const registered=source(root,{repositoryId:id});return enumerateCodeWorktrees(registered.location,id).worktrees;},taskAssociations:(root,repositories,taskId,deadline)=>readSourceControlTaskAssociations(root,repositories,dependencies,taskId,deadline),readTask:dependencies.readTask});
   return Object.freeze({
+    ...createFileEditingApplication({codeSource:source,projectSource:dependencies.projectDetail,builtinManagedFiles:dependencies.builtinManagedFiles,projectDocumentImageContext:dependencies.projectDocumentImageContext}),
     ...sourceControlApplication,
     ...createCodeBranchApplication({ source: (root, input) => source(root, input as CodeInput) }),
     ...createCodeCommitApplication({ source: (root, input) => source(root, input as CodeInput) }),

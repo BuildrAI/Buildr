@@ -14,6 +14,9 @@ export const CODE_GENERATION_APPLICATION='code.generation.application';
 export const CODE_MODULE=Object.freeze({id:'code',requires:Object.freeze([WORKSPACE_APPLICATION,WORKSPACE_QUERY,TASK_QUERY_APPLICATION,TASK_WORKTREE_PROVIDER,AGENT_OPERATIONS_APPLICATION,AGENT_ASSETS_SOURCE_READ]),create(requires:Record<string,any>){
   const readTask=requires[TASK_QUERY_APPLICATION].readTask;
   const dependencies:CodeDependencies={assetCatalog:requires[WORKSPACE_APPLICATION].assetCatalog,resolveSourceRoot:requires[WORKSPACE_QUERY].resolveSourceRoot,readTaskScope:(root,id)=>readTask(root,id).record.scope,gitWorktreeEvidencePath:requires[TASK_WORKTREE_PROVIDER].gitWorktreeEvidencePath,gitWorktreeEvidenceDirectories:requires[TASK_WORKTREE_PROVIDER].gitWorktreeEvidenceDirectories,readTask:(root,id)=>{const record=readTask(root,id).record;return {taskId:record.taskId,title:record.title};},readGitWorktreeEvidence:requires[TASK_WORKTREE_PROVIDER].readGitWorktreeEvidence};
+  dependencies.projectDetail=requires[WORKSPACE_QUERY].projectDetail;
+  dependencies.projectDocumentImageContext=requires[WORKSPACE_QUERY].projectDocumentImageContext;
+  dependencies.builtinManagedFiles=requires[AGENT_ASSETS_SOURCE_READ].builtinManagedFiles;
   const application=createCodeApplication(dependencies);
   const agents=requires[AGENT_OPERATIONS_APPLICATION] as Pick<CodeCommitMessageDependencies,'startGeneration'>;
   const assets=requires[AGENT_ASSETS_SOURCE_READ] as Pick<CodeCommitMaterialReaderDependencies,'readRules'>;

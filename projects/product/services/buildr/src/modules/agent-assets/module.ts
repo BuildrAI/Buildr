@@ -1,4 +1,5 @@
 import { readSkillText } from './persistence/skill-content-repository.ts';
+import { listSkillProjectionOwnershipReceipts } from './infrastructure/runtime/skills/projection-files.ts';
 import { readPackageRequiredBlock } from '../../infrastructure/filesystem/required-block.ts';
 import { parseSkillsManifestContent } from './persistence/skill-manifest.ts';
 import { sourceRelativePath } from './persistence/source-object-repository.ts';
@@ -481,6 +482,18 @@ export function createAgentAssetsModule(infrastructure: AgentAssetsInfrastructur
         provides: {
           [AGENT_ASSETS_APPLICATION]: application,
           [AGENT_ASSETS_SOURCE_READ]: Object.freeze({
+            builtinManagedFiles: (root: string, relative?: string): string[] => {
+              const files = packageMaintenance.builtinManagedFiles(root), seen = new Set<string>();
+              if (!relative) return files;
+              for (const adapter of Object.values(RUNTIME_ADAPTERS) as Array<{ id: string; traits: { skills?: { root: string } } }>) {
+                const runtimeRoot = adapter.traits.skills?.root;
+                if (!runtimeRoot || seen.has(runtimeRoot) || !relative.startsWith(`${runtimeRoot}/skills/`)) continue;
+                seen.add(runtimeRoot);
+                const receipts = listSkillProjectionOwnershipReceipts({ targetRoot: root, runtimeRoot, destination: 'workspace', adapterId: adapter.id });
+                for (const entry of receipts) for (const member of entry.receipt.files) files.push(path.relative(root, path.join(entry.targetDir, member.path)).split(path.sep).join('/'));
+              }
+              return files;
+            },
             readSkills: (root: string) => { sourceRelativePath(root, 'skills/manifest.yml'); return parseSkillsManifestContent(readSkillText(root, 'skills/manifest.yml', { requireRootProof: true }).content, path.join(root, 'skills', 'manifest.yml'), { validateContracts: false }).skills || []; },
             readRules: (root: string) => { sourceRelativePath(root, 'rules/manifest.yml'); return rules.readRulesManifestForInspection(root).rules; },
             readContracts: (root: string) => { sourceRelativePath(root, 'skills/manifest.yml'); return parseSkillsManifestContent(readSkillText(root, 'skills/manifest.yml', { requireRootProof: true }).content, path.join(root, 'skills', 'manifest.yml'), { validateContracts: false }).contracts || []; },
