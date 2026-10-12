@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { CodexDesktopApplication } from '../../src/modules/codex-desktop/application/codex-desktop-application.ts';
 import { createCodexDesktopHttpContribution } from '../../src/modules/codex-desktop/interfaces/http/codex-desktop-http.ts';
+import { createCodexDesktopCliContributions } from '../../src/modules/codex-desktop/interfaces/cli/codex-desktop-cli.ts';
 
 const workspaceId = '10000000-0000-0000-0000-000000000001';
 const sessionA = '10000000-0000-0000-0000-000000000002', sessionB = '10000000-0000-0000-0000-000000000003';
@@ -42,6 +43,84 @@ test('task/session many-to-many is idempotent and has independent unlink version
   f.application.unlinkSession(workspaceId, { relationId: first.relations[0].id, expectedRevision: first.relations[0].revision });
   assert.equal(f.application.sessionRelations(workspaceId, { taskId: 'first-task' }).relations.length, 1);
   assert.equal(f.tasks.get('first-task')?.title, '任务一');
+});
+test('direct chat linking needs no pending request or ready panel and preserves many-to-many identities', async t => {
+  const f = fixture(t), { id } = await f.connect();
+  assert.equal(f.application.listConnections().connections[0].status, 'awaiting-desktop');
+  const first = f.application.linkSession(workspaceId, { taskId: 'first-task', nativeSessionId: sessionA });
+  f.application.linkSession(workspaceId, { taskId: 'first-task', nativeSessionId: sessionB });
+  f.application.linkSession(workspaceId, { taskId: 'second-task', nativeSessionId: sessionA });
+  const replay = f.application.linkSession(workspaceId, { taskId: 'first-task', nativeSessionId: sessionA, connectionId: id });
+  assert.equal(first.alreadyLinked, false);
+  assert.equal(replay.alreadyLinked, true);
+  assert.deepEqual(replay.relation, first.relation);
+  assert.equal(first.sessionUrl, `codex://threads/${sessionA}`);
+  assert.equal(first.taskUrl, `/workspaces/${workspaceId}/codex#/tasks/first-task`);
+  assert.equal(first.taskHref, `http://127.0.0.1:12345${first.taskUrl}`);
+  assert.equal(f.application.sessionRelations(workspaceId, { taskId: 'first-task' }).relations.length, 2);
+  assert.equal(f.application.sessionRelations(workspaceId, { nativeSessionId: sessionA }).relations.length, 2);
+  const state = JSON.parse(fs.readFileSync(path.join(f.root, '.buildr/local/codex-desktop-sessions.json'), 'utf8'));
+  assert.deepEqual(state.bindings, []); assert.deepEqual(state.handoffs, []);
+  assert.equal(f.tasks.get('first-task')?.title, '任务一');
+});
+test('direct linking leaves an old pending request unchanged and does not hide the durable relation', async t => {
+  const f = fixture(t), { id } = await f.connect();
+  const pending = f.application.createBinding(workspaceId, { connectionId: id, taskId: 'first-task' });
+  const linked = f.application.linkSession(workspaceId, { taskId: 'first-task', nativeSessionId: sessionA });
+  assert.deepEqual(f.application.bindingReceipt(workspaceId, pending.id), pending);
+  assert.equal(f.application.sessionRelations(workspaceId, { taskId: 'first-task' }).relations[0].id, linked.relation.id);
+});
+test('direct linking rejects absent or ambiguous Codex selection and accepts an explicit active connection', async t => {
+  const f = fixture(t), input = { taskId: 'first-task', nativeSessionId: sessionA };
+  assert.throws(() => f.application.linkSession(workspaceId, input), { code: 'codex_connection_missing' });
+  await f.connect();
+  const secondHome = path.join(f.base, 'codex-second'); fs.mkdirSync(secondHome);
+  const second = await f.application.connect({ ...f.registration, id: 'agent-' + crypto.randomUUID(), codexHome: secondHome }, { appPath: path.join(f.base, 'ChatGPT.app'), appVersion: '1' });
+  assert.throws(() => f.application.linkSession(workspaceId, input), { code: 'codex_connection_ambiguous' });
+  assert.equal(f.application.sessionRelations(workspaceId).relations.length, 0);
+  assert.equal(f.application.linkSession(workspaceId, { ...input, connectionId: second.id }).relation.connectionId, second.id);
+});
+test('direct linking rejects invalid identity, missing task, changed scope and removed access without changing relations', async t => {
+  const f = fixture(t), { id } = await f.connect(), input = { taskId: 'first-task', nativeSessionId: sessionA, connectionId: id };
+  assert.throws(() => f.application.linkSession(workspaceId, { ...input, nativeSessionId: 'shared-root' }), { code: 'codex_native_session_invalid' });
+  assert.throws(() => f.application.linkSession('not-a-workspace', input), { code: 'codex_workspace_invalid' });
+  assert.throws(() => f.application.linkSession(workspaceId, { ...input, taskId: 'missing-task' }), { code: 'codex_task_missing' });
+  assert.equal(f.application.sessionRelations(workspaceId).relations.length, 0);
+  const original = f.application.linkSession(workspaceId, input).relation;
+  fs.writeFileSync(path.join(f.home, 'auth.json'), JSON.stringify({ tokens: { account_id: 'changed' } }));
+  assert.throws(() => f.application.linkSession(workspaceId, input), { code: 'codex_connection_scope_changed' });
+  fs.rmSync(path.join(f.home, 'auth.json'));
+  f.application.disconnect(f.registration.id);
+  assert.throws(() => f.application.linkSession(workspaceId, input), { code: 'codex_connection_disconnected' });
+  assert.deepEqual(f.application.sessionRelations(workspaceId).relations, [original]);
+});
+test('direct link CLI requires an explicit task, target and identity and never falls back to inherited chat environment', async t => {
+  const f = fixture(t); await f.connect();
+  const targets: string[] = [];
+  const command = createCodexDesktopCliContributions(f.application, target => { targets.push(target); assert.equal(target, f.root); return workspaceId; }).find(c => c.key === 'codex link')!;
+  const run = (args: string[]) => command.run(null, { argv: ['node', 'buildr', 'codex', 'link', ...args] });
+  const inherited = process.env.CODEX_THREAD_ID;
+  process.env.CODEX_THREAD_ID = sessionB;
+  try {
+    await assert.rejects(() => run(['--target', f.root, '--task', 'first-task', '--json']), { code: 'codex_cli_invalid' });
+    await assert.rejects(() => run(['--task', 'first-task', '--native-session-id', sessionA]), { code: 'codex_cli_invalid' });
+    await assert.rejects(() => run(['--target', f.root, '--native-session-id', sessionA]), { code: 'codex_cli_invalid' });
+    await assert.rejects(() => run(['--target', f.root, '--task', 'first-task', '--native-session-id', sessionA, '--task', 'second-task']), { code: 'codex_cli_invalid' });
+    await assert.rejects(() => run(['--target', f.root, '--task', 'first-task', '--native-session-id', sessionA, '--workspace-id', workspaceId]), { code: 'codex_cli_invalid' });
+    assert.deepEqual(targets, []);
+    let output = '';
+    const write = process.stdout.write;
+    process.stdout.write = ((chunk: unknown) => { output += String(chunk); return true; }) as typeof process.stdout.write;
+    try {
+      const result = await run(['--target', f.root, '--task', 'first-task', '--native-session-id', sessionA, '--json']);
+      assert.equal((result as ReturnType<CodexDesktopApplication['linkSession']>).relation.nativeSessionId, sessionA);
+    } finally { process.stdout.write = write; }
+    assert.equal(JSON.parse(output).sessionUrl, `codex://threads/${sessionA}`);
+    assert.deepEqual(targets, [f.root]);
+    assert.equal(f.application.sessionRelations(workspaceId, { nativeSessionId: sessionB }).relations.length, 0);
+  } finally {
+    if (inherited === undefined) delete process.env.CODEX_THREAD_ID; else process.env.CODEX_THREAD_ID = inherited;
+  }
 });
 test('old bound request replay cannot resurrect an explicitly unlinked relation', async t => {
   const f = fixture(t), { id } = await f.connect();

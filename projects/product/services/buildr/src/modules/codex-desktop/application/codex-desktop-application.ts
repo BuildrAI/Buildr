@@ -171,6 +171,43 @@ export class CodexDesktopApplication {
     if (!value || !value.revision || value.taskId !== taskId) throw codexFailure('codex_task_missing', '任务不存在或当前不可用。', 404);
     return value;
   }
+  private linkConnection(connectionId?: string) {
+    if (connectionId) {
+      const connection = this.connection(connectionId);
+      this.assertConnectionScope(connection);
+      return connection;
+    }
+    const candidates = this.repository.readConnections().connections.filter(connection => {
+      try { this.assertConnectionScope(connection); return true; } catch { return false; }
+    });
+    if (!candidates.length) throw codexFailure('codex_connection_missing', '尚未接入可用的 Codex，请先在智能体中确认接入。', 404);
+    if (candidates.length > 1) throw codexFailure('codex_connection_ambiguous', '发现多个 Codex 接入，请通过 --connection-id 明确选择。', 409);
+    return candidates[0];
+  }
+  private ensureRelation(state: CodexWorkspaceSessions, rootPath: string, input: { taskId: string; connectionId: string; nativeSessionId: string }) {
+    this.task(rootPath, input.taskId);
+    const existing = state.relations.find(r => r.taskId === input.taskId && r.connectionId === input.connectionId && r.nativeSessionId === input.nativeSessionId);
+    if (existing) return { relation: existing, alreadyLinked: true };
+    if (state.relations.length >= 10_000) throw codexFailure('codex_relation_limit', '任务会话关联数量已达上限。', 409);
+    const relation: CodexSessionRelation = { id: crypto.randomUUID(), workspaceId: state.workspaceId, ...input, createdAt: this.stamp(), revision: '' };
+    relation.revision = codexDigest(relation);
+    state.relations.push(relation);
+    return { relation, alreadyLinked: false };
+  }
+  /** The receiving chat supplies its directly observed identity after user authorization. */
+  linkSession(workspaceId: string, input: { taskId: string; nativeSessionId: string; connectionId?: string }) {
+    if (!isNativeSessionId(input.nativeSessionId)) throw codexFailure('codex_native_session_invalid', '需要当前聊天直接采集的 CODEX_THREAD_ID，不能使用服务进程或子智能体的身份。');
+    const { rootPath } = this.workspace(workspaceId);
+    const connection = this.linkConnection(input.connectionId);
+    let linked: ReturnType<CodexDesktopApplication['ensureRelation']>;
+    this.repository.mutateWorkspace(rootPath, workspaceId, state => {
+      this.assertConnectionScope(this.connection(connection.id));
+      linked = this.ensureRelation(state, rootPath, { taskId: input.taskId, connectionId: connection.id, nativeSessionId: input.nativeSessionId });
+    });
+    const sessionUrl = codexSessionUrl(input.nativeSessionId), taskUrl = codexTaskUrl(workspaceId, input.taskId);
+    const origin = this.currentOrigin();
+    return { workspaceId, ...linked!, relation: { ...linked!.relation, sessionUrl, taskUrl }, sessionUrl, taskUrl, taskHref: origin ? origin + taskUrl : null };
+  }
   private prune(state: CodexWorkspaceSessions) {
     state.bindings = state.bindings.filter(b => Date.parse(b.expiresAt) > this.now());
     state.handoffs = state.handoffs.filter(h => Date.parse(h.expiresAt) > this.now());
@@ -219,13 +256,7 @@ export class CodexDesktopApplication {
       if (b.status === 'bound' && b.nativeSessionId !== input.nativeSessionId) throw codexFailure('codex_binding_target_changed', '关联回执已属于另一个原聊天，不能改绑。', 409);
       if (b.status === 'bound') return; // A replay must not resurrect a relation explicitly unlinked later.
       if (b.taskId) {
-        this.task(rootPath, b.taskId);
-        if (!state.relations.some(r => r.taskId === b.taskId && r.connectionId === b.connectionId && r.nativeSessionId === input.nativeSessionId)) {
-          if (state.relations.length >= 10_000) throw codexFailure('codex_relation_limit', '任务会话关联数量已达上限。', 409);
-          const relation: CodexSessionRelation = { id: crypto.randomUUID(), workspaceId, taskId: b.taskId, connectionId: b.connectionId, nativeSessionId: input.nativeSessionId, createdAt: this.stamp(), revision: '' };
-          relation.revision = codexDigest(relation);
-          state.relations.push(relation);
-        }
+        this.ensureRelation(state, rootPath, { taskId: b.taskId, connectionId: b.connectionId, nativeSessionId: input.nativeSessionId });
       }
       Object.assign(b, { status: 'bound', nativeSessionId: input.nativeSessionId });
     });

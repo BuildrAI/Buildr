@@ -4,7 +4,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
-import { createRuntime, runtimeProvide } from '../helpers/runtime-harness.ts';
+import { createRuntime, runtimeContributions, runtimeProvide } from '../helpers/runtime-harness.ts';
 import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
 import { CODEX_DESKTOP_APPLICATION } from '../../src/modules/codex-desktop/module.ts';
 import type { CodexDesktopApplication } from '../../src/modules/codex-desktop/application/codex-desktop-application.ts';
@@ -90,6 +90,27 @@ test('Codex desktop production module composes registered Workspace/Task identit
   assert.equal(denied.status, 403);
   assert.equal(fs.existsSync(path.join(root, '.buildr', 'local', 'codex-desktop-sessions.json')), false);
   const nativeOne = crypto.randomUUID(), nativeTwo = crypto.randomUUID();
+  const linkCommand = runtimeContributions(runtime, 'cli').find((command: { key: string }) => command.key === 'codex link');
+  assert.ok(linkCommand);
+  const linkArgs = ['node', 'buildr', 'codex', 'link', '--target', root, '--task', 'codex-module-one', '--native-session-id', nativeOne, '--json'];
+  let cliOutput = '';
+  const stdout = t.mock.method(process.stdout, 'write', (chunk: unknown) => { cliOutput += String(chunk); return true; });
+  try {
+    await linkCommand.run(runtime, { argv: linkArgs });
+  } finally { stdout.mock.restore(); }
+  const linked = JSON.parse(cliOutput);
+  assert.equal(linked.relation.nativeSessionId, nativeOne);
+  assert.equal(linked.relation.workspaceId, workspaceId);
+  assert.equal(linked.sessionUrl, `codex://threads/${nativeOne}`);
+  assert.equal(linked.taskUrl, `/workspaces/${workspaceId}/codex#/tasks/codex-module-one`);
+  assert.equal(taskQuery.inspectTaskSummaryView(root, 'codex-module-one').recordDigest, before.recordDigest);
+  const copiedRoot = path.join(base, 'unregistered-copy'); fs.cpSync(root, copiedRoot, { recursive: true });
+  assert.equal(workspaceQuery.getWorkspace(copiedRoot).workspace.id, workspaceId);
+  const relationsFile = path.join(root, '.buildr', 'local', 'codex-desktop-sessions.json'), relationBytes = fs.readFileSync(relationsFile, 'utf8');
+  await assert.rejects(() => linkCommand.run(runtime, { argv: linkArgs.map(value => value === root ? copiedRoot : value) }), { code: 'codex_workspace_target_changed' });
+  assert.equal(fs.readFileSync(relationsFile, 'utf8'), relationBytes);
+  assert.equal(fs.readFileSync(path.join(copiedRoot, '.buildr', 'local', 'codex-desktop-sessions.json'), 'utf8'), relationBytes);
+  assert.equal(fs.existsSync(called), false, 'Linking never invokes a model or installs a plugin.');
   async function bind(taskId: string, nativeSessionId: string) {
     const bindingRequestId = crypto.randomUUID();
     const created = await post('/codex/bindings', { connectionId: connection.id, taskId, bindingRequestId });

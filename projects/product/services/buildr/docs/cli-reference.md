@@ -129,6 +129,7 @@ buildr help assets
 | `buildr agent list --json` | 查看本机执行接入与唯一默认；区别于规则、技能文件投射的 `runtime list`。 |
 | `buildr agent register codex\|dsh --executable <actual-entry> --expected-revision <revision> --json` | 由智能体（Agent）发现并验证真实入口后登记，不复制凭据或启动模型。Codex 可显式传 `--codex-home`，DSH 可显式传 `--dsh-home`；其余沿用原生默认。 |
 | `buildr codex connections --json` | 查看 Codex 桌面连接状态。生成登记、组件安装和桌面握手分别表达，不接管桌面后台。 |
+| `buildr codex link --target <workspace> --task <code> --native-session-id <direct-thread-id> [--connection-id <id>] --json` | 用户在当前 Codex 聊天要求关联，或该聊天新建任务成功后，直接采集 `CODEX_THREAD_ID` 并幂等建立关系。无需面板或待确认请求；多接入时明确选择，返回准确聊天与固定任务链接。 |
 | `buildr codex complete-binding --workspace-id <id> --connection-id <id> --binding-request-id <id> --native-session-id <direct-thread-id> --json` | 承载原聊天收到明确请求后，直接采集 `CODEX_THREAD_ID` 并提交绑定回执；不使用共享根或子执行身份。 |
 | `buildr codex acknowledge-handoff --workspace-id <id> --connection-id <id> --handoff-request-id <id> --native-session-id <direct-thread-id> --json` | 准确原聊天提交单次接收回执；重复回执先核对工作现场，不把接收当成任务完成。 |
 | `buildr codex serve --connection-id <id>` | 供已确认的桌面组件启动标准输入输出（stdio）工具服务，不执行模型生成。普通用户无需手工启动。 |

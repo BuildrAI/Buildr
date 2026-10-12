@@ -268,7 +268,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     id: 'codex-desktop',
     requires: [AGENT_OPERATIONS_APPLICATION, WORKSPACE_APPLICATION, WORKSPACE_QUERY, TASK_QUERY_APPLICATION],
     provides: [CODEX_DESKTOP_APPLICATION],
-    contributions: { cli: ['codex connections', 'codex serve', 'codex complete-binding', 'codex acknowledge-handoff', 'codex'], http: ['codex-desktop.http'], diagnostics: [] },
+    contributions: { cli: ['codex connections', 'codex link', 'codex serve', 'codex complete-binding', 'codex acknowledge-handoff', 'codex'], http: ['codex-desktop.http'], diagnostics: [] },
     lifecycle: 'none',
   }, {
     id: 'code',
@@ -358,7 +358,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     'task materials inspect', 'task materials record', 'task materials write', 'task brief migrate',
     'agent-assets source inspect',
     'agent', 'agent list', 'agent register', 'agent select',
-    'codex connections', 'codex serve', 'codex complete-binding', 'codex acknowledge-handoff', 'codex',
+    'codex connections', 'codex link', 'codex serve', 'codex complete-binding', 'codex acknowledge-handoff', 'codex',
     'code repositories', 'code directory', 'code file', 'code search', 'code source-control', 'code commit-context', 'code branches', 'code authors', 'code history', 'code commit', 'code diff', 'code source-file',
     'project verification inspect', 'project verification validate', 'project verification update',
     'task review inspect', 'task review record',
