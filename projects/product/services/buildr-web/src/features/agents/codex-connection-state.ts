@@ -7,10 +7,10 @@ export type ConnectionTone = 'neutral' | 'success' | 'warning';
 
 export function codexDesktopState(state: CodexConnectionsState, agentId: string): {label: string; tone: ConnectionTone; connection: CodexConnection | null} {
   const connection = state.connections?.find(item => item.agentId === agentId) || null;
-  if (state.error) return {label: '桌面状态未能确认', tone: 'warning', connection: null};
-  if (!state.connections) return {label: state.loading ? '正在读取桌面状态…' : '桌面状态未能确认', tone: state.loading ? 'neutral' : 'warning', connection: null};
-  if (!connection) return {label: '桌面未连接', tone: 'warning', connection: null};
-  return {label: codexConnectionStatus(connection), tone: connection.status === 'ready' ? 'success' : connection.status === 'unavailable' || connection.status === 'disconnected' ? 'warning' : 'neutral', connection};
+  if (state.error) return {label: '未能确认', tone: 'warning', connection: null};
+  if (!state.connections) return {label: state.loading ? '正在读取…' : '未能确认', tone: state.loading ? 'neutral' : 'warning', connection: null};
+  if (!connection) return {label: '未配置', tone: 'warning', connection: null};
+  return {label: codexConnectionStatus(connection), tone: connection.status === 'configured' ? 'success' : connection.status === 'unavailable' || connection.status === 'disconnected' ? 'warning' : 'neutral', connection};
 }
 
 export function agentGenerationState(agent: AgentRegistry['agents'][number]): {label: string; tone: ConnectionTone} {

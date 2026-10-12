@@ -77,7 +77,7 @@ export class AgentOperationsApplication {
     const candidate = candidates.find(record => record.view.id === input.candidateId);
     if (!candidate) throw agentFailure('agent_candidate_not_found', '所选 Codex 候选已不可用，请刷新候选。', 404);
     if (!candidate.entry) throw agentFailure('agent_entry_unavailable', candidate.view.safeReason || '所选 Codex 程序或配置来源当前不可用。', 503);
-    if (input.existingAgentId !== undefined && !candidate.installation) throw agentFailure('agent_desktop_unavailable', '此接入未发现可重新准备的 Codex 桌面安装；现有独立生成仍可使用。', 503);
+    if (input.existingAgentId !== undefined && !candidate.installation) throw agentFailure('agent_desktop_unavailable', '此接入未发现可重新检查的 Codex 桌面安装；现有独立生成仍可使用。', 503);
     const agentId = this.saveCodexConnection({ kind: 'codex', ...candidate.entry }, candidate.view.registeredAgentId, input);
     let desktop: CodexDesktopConnectionView | null = null, desktopError: CodexConnectResult['desktopError'] = null;
     if (candidate.installation && this.desktopConnector) {
@@ -87,7 +87,7 @@ export class AgentOperationsApplication {
         desktop = await this.desktopConnector.connect(structuredClone(registration), structuredClone(candidate.installation));
       } catch (error) {
         const known = error as { code?: string; message?: string };
-        desktopError = { code: known.code?.startsWith('codex_') || known.code?.startsWith('agent_') ? known.code : 'agent_desktop_prepare_failed', message: '生成来源已保存；Codex 桌面连接准备未完成，请重新检查桌面连接状态。' };
+        desktopError = { code: known.code?.startsWith('codex_') || known.code?.startsWith('agent_') ? known.code : 'agent_desktop_prepare_failed', message: '生成来源已保存；Codex 原聊天关联配置未完成，请重新检查安装与配置范围。' };
       } finally {
         const remaining = this.codexConnectionsPreparing.get(agentId)! - 1;
         if (remaining) this.codexConnectionsPreparing.set(agentId, remaining); else this.codexConnectionsPreparing.delete(agentId);
@@ -160,7 +160,7 @@ export class AgentOperationsApplication {
     if (registration.kind !== 'codex') throw agentFailure('agent_kind_unsupported', '本次仅支持移除 Codex 接入，其他智能体（Agent）保持。');
     this.assertCodexNotRemoving(registration);
     const pool = this.pools.get(registration.id);
-    if (pool?.activity || this.codexConnectionsPreparing.get(registration.id) || [...this.runs.values()].some(run => run.view.agentId === registration.id && !final(run.view))) throw agentFailure('agent_codex_busy', '此 Codex 仍有生成或桌面连接准备，请先等待结束或取消已有生成，再移除接入。', 409);
+    if (pool?.activity || this.codexConnectionsPreparing.get(registration.id) || [...this.runs.values()].some(run => run.view.agentId === registration.id && !final(run.view))) throw agentFailure('agent_codex_busy', '此 Codex 仍有生成或关联配置检查，请先等待结束或取消已有生成，再移除接入。', 409);
     const key = codexEntryKey(registration);
     this.codexRemovals.add(key);
     let removed = false;

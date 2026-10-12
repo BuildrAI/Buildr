@@ -61,14 +61,14 @@ test('new confirmation retains DSH identity/default and blocks repeated preparat
   const connected: unknown[] = [];
   f.application.bindCodexDesktopConnector({ disconnect() {}, connect: async (registration, installation) => {
     connected.push({ registration, installation });
-    return { id: 'connection-one', agentId: registration.id, label: registration.label, installationLabel: 'ChatGPT', configurationLabel: '~/.codex', status: 'awaiting-desktop', safeReason: '待桌面加载', pluginVersion: '1', lastSeenAt: null };
+    return { id: 'connection-one', agentId: registration.id, label: registration.label, installationLabel: 'ChatGPT', configurationLabel: '~/.codex', status: 'configured', safeReason: null };
   } });
   const candidate = f.application.listCodexDiscovery().candidates.find(item => item.desktopAvailable)!;
   assert.equal(f.application.listCodexDiscovery().candidates.every(item => item.label === 'Codex'), true);
   const result = await selected(f, candidate.id);
   assert.equal(result.registry.defaultAgentId, legacy.defaultAgentId);
   assert.notEqual(result.agentId, legacy.defaultAgentId);
-  assert.equal(result.desktop?.status, 'awaiting-desktop');
+  assert.equal(result.desktop?.status, 'configured');
   assert.equal(result.desktopError, null);
   assert.equal((connected[0] as any).installation.appPath, fs.realpathSync(desktop.appPath));
   assert.equal((connected[0] as any).installation.appVersion, '26.1007');
@@ -96,7 +96,7 @@ test('a later default selection remains authoritative while desktop preparation 
   let release!: () => void;
   const pending = new Promise<void>(resolve => { release = resolve; });
   t.after(() => release());
-  f.application.bindCodexDesktopConnector({ disconnect() {}, connect: async registration => { await pending; return { id: 'connection-one', agentId: registration.id, label: 'Codex', installationLabel: 'ChatGPT', configurationLabel: '~/.codex', status: 'awaiting-desktop', safeReason: null, pluginVersion: '1', lastSeenAt: null }; } });
+  f.application.bindCodexDesktopConnector({ disconnect() {}, connect: async registration => { await pending; return { id: 'connection-one', agentId: registration.id, label: 'Codex', installationLabel: 'ChatGPT', configurationLabel: '~/.codex', status: 'configured', safeReason: null }; } });
   const candidate = f.application.listCodexDiscovery().candidates.find(item => item.desktopAvailable)!;
   const result = selected(f, candidate.id, true);
   const afterRegistration = f.application.listRegistry();
@@ -170,7 +170,7 @@ test('maintenance cannot change default, create a missing target, or replace a d
   const dsh = f.application.registerDsh({ executable: f.executable(path.join(f.bin, 'dsh')), dshHome: f.codexHome, expectedRevision: f.application.listRegistry().revision });
   const candidate = f.application.listCodexDiscovery().candidates.find(item => item.installationLabel.includes('ChatGPT.app'))!;
   const connected: string[] = [];
-  f.application.bindCodexDesktopConnector({ disconnect() {}, connect: async registration => { connected.push(registration.id); return { id: 'connection-one', agentId: registration.id, label: registration.label, installationLabel: 'Codex', configurationLabel: '~/.codex', status: 'awaiting-desktop', safeReason: null, pluginVersion: '1', lastSeenAt: null }; } });
+  f.application.bindCodexDesktopConnector({ disconnect() {}, connect: async registration => { connected.push(registration.id); return { id: 'connection-one', agentId: registration.id, label: registration.label, installationLabel: 'Codex', configurationLabel: '~/.codex', status: 'configured', safeReason: null }; } });
   const first = await selected(f, candidate.id);
   const before = fs.readFileSync(path.join(f.root, 'profile/agent-registrations.json'), 'utf8');
   await assert.rejects(selected(f, candidate.id, true, first.agentId), code('agent_request_invalid'));
@@ -194,7 +194,7 @@ test('another application cannot prepare the desktop twice while the first new c
   const f = inventory(t); f.app('ChatGPT.app');
   let release!: () => void, prepared = 0;
   const pending = new Promise<void>(resolve => { release = resolve; }); t.after(() => release());
-  f.application.bindCodexDesktopConnector({ disconnect() {}, connect: async registration => { prepared++; await pending; return { id: 'connection-one', agentId: registration.id, label: registration.label, installationLabel: 'Codex', configurationLabel: '~/.codex', status: 'awaiting-desktop', safeReason: null, pluginVersion: '1', lastSeenAt: null }; } });
+  f.application.bindCodexDesktopConnector({ disconnect() {}, connect: async registration => { prepared++; await pending; return { id: 'connection-one', agentId: registration.id, label: registration.label, installationLabel: 'Codex', configurationLabel: '~/.codex', status: 'configured', safeReason: null }; } });
   const candidate = f.application.listCodexDiscovery().candidates[0];
   const first = selected(f, candidate.id);
   const peer = f.createApplication();

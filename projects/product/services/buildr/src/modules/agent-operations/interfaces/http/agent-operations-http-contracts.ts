@@ -7,7 +7,7 @@ const schema = (name: string, properties: Record<string, unknown>, required = Ob
 const configuredText = { type: ['string', 'null'], minLength: 1, maxLength: AGENT_EXECUTION_CONFIG_VALUE_LIMIT };
 const executionConfig = { anyOf: [{ type: 'null' }, closed({ model: configuredText, modelProvider: configuredText, reasoningEffort: configuredText })] };
 const safeError = closed({ code: text, message: text });
-const desktopConnection = closed({ id: text, agentId: text, label: text, installationLabel: text, configurationLabel: text, status: { enum: ['pending', 'awaiting-desktop', 'ready', 'unavailable', 'disconnected'] }, safeReason: { type: ['string', 'null'] }, pluginVersion: { type: ['string', 'null'] }, lastSeenAt: { type: ['string', 'null'] } });
+const desktopConnection = closed({ id: text, agentId: text, label: text, installationLabel: text, configurationLabel: text, status: { enum: ['configured', 'unavailable', 'disconnected'] }, safeReason: { type: ['string', 'null'] } });
 const registryFields = {
   revision: text, defaultAgentId: { type: ['string', 'null'] },
   agents: { type: 'array', items: closed({ id: text, kind: { enum: ['codex', 'dsh'] }, label: text, capabilities: { type: 'array', items: text }, availability: { enum: ['available', 'unavailable'] }, runtimeStatus: { enum: ['stopped', 'starting', 'running', 'idle', 'stopping'] }, lastExecutionConfig: executionConfig, safeReason: { type: ['string', 'null'] } }) },

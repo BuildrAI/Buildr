@@ -1,5 +1,5 @@
 import type { CodexDesktopApplication } from '../../application/codex-desktop-application.ts';
-import { codexFailure } from '../../domain/codex-desktop.ts';
+import { codexFailure, retiredCodexPlugin } from '../../domain/codex-desktop.ts';
 import { CODEX_DESKTOP_HTTP_OPERATIONS, CODEX_DESKTOP_HTTP_REQUESTS, CODEX_DESKTOP_HTTP_SCHEMAS, CODEX_DESKTOP_HTTP_VALIDATORS } from './codex-desktop-http-contracts.ts';
 
 type Context = { request: { method?: string }; root: string; suffix: string; searchParams: URLSearchParams; authorizeWrite(): void; readJsonBody(): Promise<unknown> };
@@ -28,20 +28,15 @@ export function createCodexDesktopHttpContribution(application: CodexDesktopAppl
         const input = query(CODEX_DESKTOP_HTTP_REQUESTS.sessions.$id, searchParams) as Parameters<CodexDesktopApplication['sessionRelations']>[1];
         return result(CODEX_DESKTOP_HTTP_SCHEMAS.sessions.$id, application.sessionRelations(id, input));
       }
-      const receipt = suffix.match(/^\/codex\/bindings\/([a-f0-9-]{36})$/);
-      if (request.method === 'GET' && receipt) {
-        query(CODEX_DESKTOP_HTTP_REQUESTS.receipt.$id, searchParams);
-        return result(CODEX_DESKTOP_HTTP_SCHEMAS.binding.$id, application.bindingReceipt(id, receipt[1]));
+      if (suffix === '/codex/bindings' || /^\/codex\/bindings\/[^/]+$/.test(suffix)) {
+        if (request.method !== 'GET') context.authorizeWrite();
+        throw retiredCodexPlugin();
       }
-      if (request.method === 'POST' && ['/codex/bindings', '/codex/sessions/unlink'].includes(suffix)) {
+      if (request.method === 'POST' && suffix === '/codex/sessions/unlink') {
         context.authorizeWrite();
         query(CODEX_DESKTOP_HTTP_REQUESTS.empty.$id, searchParams);
-        if (suffix.endsWith('/unlink')) {
-          const input = validate(CODEX_DESKTOP_HTTP_REQUESTS.unlink.$id, await context.readJsonBody()) as Parameters<CodexDesktopApplication['unlinkSession']>[1];
-          return result(CODEX_DESKTOP_HTTP_SCHEMAS.sessions.$id, application.unlinkSession(id, input));
-        }
-        const input = validate(CODEX_DESKTOP_HTTP_REQUESTS.binding.$id, await context.readJsonBody()) as Parameters<CodexDesktopApplication['createBinding']>[1];
-        return result(CODEX_DESKTOP_HTTP_SCHEMAS.binding.$id, application.createBinding(id, input));
+        const input = validate(CODEX_DESKTOP_HTTP_REQUESTS.unlink.$id, await context.readJsonBody()) as Parameters<CodexDesktopApplication['unlinkSession']>[1];
+        return result(CODEX_DESKTOP_HTTP_SCHEMAS.sessions.$id, application.unlinkSession(id, input));
       }
       return null;
     },

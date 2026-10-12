@@ -25,10 +25,8 @@ export type CodexDesktopConnectionView = {
   label: string;
   installationLabel: string;
   configurationLabel: string;
-  status: 'pending' | 'awaiting-desktop' | 'ready' | 'unavailable' | 'disconnected';
+  status: 'configured' | 'unavailable' | 'disconnected';
   safeReason: string | null;
-  pluginVersion: string | null;
-  lastSeenAt: string | null;
 };
 export type CodexDiscoveryCandidate = {
   id: string;

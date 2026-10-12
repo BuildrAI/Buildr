@@ -9,7 +9,7 @@
 | 工作空间（Workspace）、项目（Project）、服务（Service）与代码库（Repository） | [workspace/module.ts](../../services/buildr/src/modules/workspace/module.ts) | 身份、来源、登记、组成与受管写入；见[关系地图](project-service-repositories.md) |
 | 代码目录、文件与源代码管理 | [code/module.ts](../../services/buildr/src/modules/code/module.ts) | 已登记来源的读取、提交说明、直接 Git 提交与推送；[比较用例](../../services/buildr/src/modules/code/application/source-control-application.ts)核对来源与观察版本，[图片读取](../../services/buildr/src/modules/code/infrastructure/source-control-image-reader.ts)按磁盘、索引及完整提交（Commit）组织新旧侧，保持缺侧与读取失败的区别 |
 | 本机智能体（Agent）接入与统一生成 | [agent-operations/module.ts](../../services/buildr/src/modules/agent-operations/module.ts) | 登记、默认选择、执行（Run）及单进程生命周期；具体提供者负责 Codex 应用服务（App Server）与 DSH 智能体客户端协议（ACP），不承载提交规范或持久会话平台 |
-| Codex 桌面原聊天协作 | [codex-desktop/module.ts](../../services/buildr/src/modules/codex-desktop/module.ts) | 连接组件安装、绑定回执、任务（Task）与原聊天多对多关联、双向定位和交接；独立生成仍由上一模块执行，见[Codex 接入](../docs/architecture/codex-integration.md) |
+| Codex 原聊天关联 | [codex-desktop/module.ts](../../services/buildr/src/modules/codex-desktop/module.ts) | 确认稳定配置范围、任务（Task）与原聊天多对多关联及双向定位；不安装插件（Plugin）或等待握手，独立生成仍由上一模块执行，见[Codex 接入](../docs/architecture/codex-integration.md) |
 | 任务（Task）、答复、审查、验证与工作树（Worktree） | [task/module.ts](../../services/buildr/src/modules/task/module.ts) | 各项独立协作事实及 Git 位置；见[任务地图](task-system.md) |
 | 项目每日演进 | [task/daily-progress/](../../services/buildr/src/modules/task/daily-progress/) | 同一任务装配入口中的独立能力；保存本机摘要并关联提交和任务，见[使用与边界](../docs/flows/project-daily-progress.md) |
 | 工作台（Workbench） | [workbench/module.ts](../../services/buildr/src/modules/workbench/module.ts) | 有界组合已有事实，独立保存个人计划、关注、收藏与最近访问 |

@@ -26,7 +26,7 @@ export function useCodexConnections(active: boolean) {
       const result = await codexDesktopApi.connections(current.signal);
       if (!current.signal.aborted && enabled.current && request.current === serial) setState({connections: result.connections, loading: false, error: ''});
     } catch (failure) {
-      if (!current.signal.aborted && enabled.current && request.current === serial) setState({connections: null, loading: false, error: failure instanceof Error ? failure.message : '无法读取桌面连接。'});
+      if (!current.signal.aborted && enabled.current && request.current === serial) setState({connections: null, loading: false, error: failure instanceof Error ? failure.message : '无法读取原聊天关联配置。'});
     } finally {
       if (request.current === serial) controller.current = null;
     }
@@ -38,9 +38,8 @@ export function useCodexConnections(active: boolean) {
     if (!active) return;
     void read();
     const observe = () => {if (document.visibilityState === 'visible') void read();};
-    const timer = window.setInterval(observe, 4000);
-    window.addEventListener('focus', observe);
-    return () => {++request.current; controller.current?.abort(); controller.current = null; window.clearInterval(timer); window.removeEventListener('focus', observe);};
+    window.addEventListener('focus', observe); document.addEventListener('visibilitychange', observe);
+    return () => {++request.current; controller.current?.abort(); controller.current = null; window.removeEventListener('focus', observe); document.removeEventListener('visibilitychange', observe);};
   }, [active, read]);
   return {state: active ? state : emptyState, refresh, refreshAfterChange};
 }

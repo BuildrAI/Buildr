@@ -36,7 +36,7 @@ function fixture(t: test.TestContext, options: { idleMs?: number } = {}) {
   const b = app.registerCodex({ executable: process.execPath, codexHome: homes[1], label: 'Other Codex', expectedRevision: app.listRegistry().revision }).agents.find(record => record.id !== a)!.id;
   const dsh = app.registerDsh({ executable: process.execPath, dshHome: homes[2], expectedRevision: app.listRegistry().revision }).agents.find(record => record.kind === 'dsh')!.id;
   const disconnects: string[] = [];
-  app.bindCodexDesktopConnector({ connect: async registration => ({ id: 'desktop-a', agentId: registration.id, label: 'Codex', installationLabel: 'Codex 桌面', configurationLabel: '测试配置', status: 'awaiting-desktop', safeReason: null, pluginVersion: '1', lastSeenAt: null }), disconnect: id => { events.push('disconnect:' + id); disconnects.push(id); } });
+  app.bindCodexDesktopConnector({ connect: async registration => ({ id: 'desktop-a', agentId: registration.id, label: 'Codex', installationLabel: 'Codex 桌面', configurationLabel: '测试配置', status: 'configured', safeReason: null }), disconnect: id => { events.push('disconnect:' + id); disconnects.push(id); } });
   const generate = (agentId = a) => app.startGeneration({ agentId, cwd: root, prompt: 'Supplied changes only.', outputSchema });
   const remove = (agentId = a) => app.removeCodex({ agentId, expectedRevision: app.listRegistry().revision });
   const connect = () => app.connectCodex({ candidateId: 'candidate-a', expectedDiscoveryRevision: app.listCodexDiscovery().revision, expectedRevision: app.listRegistry().revision, existingAgentId: a, makeDefault: false });
@@ -103,7 +103,7 @@ test('starting work and desktop preparation are busy until their existing operat
   await assert.rejects(f.remove(), code('agent_codex_busy'));
   start.resolve(); await settled(f.app, run.id);
   const preparation = deferred(); f.cleanup.push(preparation.resolve);
-  f.app.bindCodexDesktopConnector({ connect: async registration => { await preparation.promise; return { id: 'desktop-a', agentId: registration.id, label: 'Codex', installationLabel: 'Codex 桌面', configurationLabel: '测试配置', status: 'awaiting-desktop', safeReason: null, pluginVersion: '1', lastSeenAt: null }; }, disconnect: id => f.disconnects.push(id) });
+  f.app.bindCodexDesktopConnector({ connect: async registration => { await preparation.promise; return { id: 'desktop-a', agentId: registration.id, label: 'Codex', installationLabel: 'Codex 桌面', configurationLabel: '测试配置', status: 'configured', safeReason: null }; }, disconnect: id => f.disconnects.push(id) });
   const pending = f.connect();
   await assert.rejects(f.remove(), code('agent_codex_busy')); assert.equal(f.states.get(f.a)?.closes, 0);
   preparation.resolve(); await pending; await f.remove(); assert.deepEqual(f.disconnects, [f.a]);
@@ -111,7 +111,7 @@ test('starting work and desktop preparation are busy until their existing operat
 
 test('one completed connection preparation does not hide another pending preparation of the same entry', async t => {
   const f = fixture(t), first = deferred(), second = deferred(); f.cleanup.push(first.resolve, second.resolve); let count = 0;
-  f.app.bindCodexDesktopConnector({ connect: async registration => { await (++count === 1 ? first.promise : second.promise); return { id: 'desktop-a', agentId: registration.id, label: 'Codex', installationLabel: 'Codex 桌面', configurationLabel: '测试配置', status: 'awaiting-desktop', safeReason: null, pluginVersion: '1', lastSeenAt: null }; }, disconnect: id => f.disconnects.push(id) });
+  f.app.bindCodexDesktopConnector({ connect: async registration => { await (++count === 1 ? first.promise : second.promise); return { id: 'desktop-a', agentId: registration.id, label: 'Codex', installationLabel: 'Codex 桌面', configurationLabel: '测试配置', status: 'configured', safeReason: null }; }, disconnect: id => f.disconnects.push(id) });
   const one = f.connect(), two = f.connect();
   first.resolve(); await one;
   await assert.rejects(f.remove(), code('agent_codex_busy')); assert.equal(f.app.hasCodexRegistration(f.a), true);

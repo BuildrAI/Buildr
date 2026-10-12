@@ -41,7 +41,6 @@ test('Codex desktop production module composes registered Workspace/Task identit
   const { url, initialWorkspaceId: workspaceId, sessionToken } = await instance.ready;
   assert.equal(workspaceQuery.getWorkspace(root).workspace.id, workspaceId);
   assert.equal(workspace.resolveRegisteredWorkspace(workspaceId, { touch: false }).workspace.workspace.id, workspaceId);
-  assert.deepEqual(desktop.listWorkspaces().workspaces.map(value => value.id), [workspaceId]);
   const endpoint = `${url}/api/v1/workspaces/${workspaceId}`;
   const headers = { origin: url, 'x-buildr-session': sessionToken, 'content-type': 'application/json' };
   const get = async (suffix: string) => { const response = await fetch(endpoint + suffix); return { status: response.status, body: await response.json() as any }; };
@@ -80,7 +79,7 @@ test('Codex desktop production module composes registered Workspace/Task identit
   assert.equal(operations.listRegistry().revision, registered.revision);
   assert.equal(fs.existsSync(called), false);
   const connection = await desktop.connect({ id: agentId, kind: 'codex', label: 'Fixture desktop', executable, codexHome: home, version: '0.162.0' }, { appPath, appVersion: 'fixture' });
-  assert.equal(connection.status, 'unavailable'); // Candidate entry must not install a desktop plugin.
+  assert.equal(connection.status, 'configured'); // Scope confirmation must not install a plugin.
   assert.equal(fs.existsSync(called), false);
   const connectionsResponse = await fetch(url + '/api/v1/app/codex/connections');
   assert.equal(connectionsResponse.status, 200);
@@ -111,23 +110,9 @@ test('Codex desktop production module composes registered Workspace/Task identit
   assert.equal(fs.readFileSync(relationsFile, 'utf8'), relationBytes);
   assert.equal(fs.readFileSync(path.join(copiedRoot, '.buildr', 'local', 'codex-desktop-sessions.json'), 'utf8'), relationBytes);
   assert.equal(fs.existsSync(called), false, 'Linking never invokes a model or installs a plugin.');
-  async function bind(taskId: string, nativeSessionId: string) {
-    const bindingRequestId = crypto.randomUUID();
-    const created = await post('/codex/bindings', { connectionId: connection.id, taskId, bindingRequestId });
-    assert.equal(created.status, 200, JSON.stringify(created.body)); validate('binding', created.body);
-    assert.equal(created.body.id, bindingRequestId); assert.equal(created.body.workspaceId, workspaceId); assert.equal(created.body.taskId, taskId);
-    assert.match(created.body.message, /buildr_codex_complete_binding/u);
-    const replay = await post('/codex/bindings', { connectionId: connection.id, taskId, bindingRequestId });
-    assert.equal(replay.status, 200); assert.equal(replay.body.id, bindingRequestId);
-    const pending = await get('/codex/bindings/' + bindingRequestId); assert.equal(pending.status, 200); assert.equal(pending.body.status, 'pending');
-    desktop.completeBinding(workspaceId, { connectionId: connection.id, bindingRequestId, nativeSessionId });
-    const confirmed = await get('/codex/bindings/' + bindingRequestId); assert.equal(confirmed.status, 200); validate('binding', confirmed.body); assert.equal(confirmed.body.nativeSessionId, nativeSessionId);
-    return confirmed.body;
-  }
-  const first = await bind('codex-module-one', nativeOne);
-  await bind('codex-module-one', nativeTwo);
-  await bind('codex-module-two', nativeOne);
-  desktop.completeBinding(workspaceId, { connectionId: connection.id, bindingRequestId: first.id, nativeSessionId: nativeOne });
+  desktop.linkSession(workspaceId, { connectionId: connection.id, taskId: 'codex-module-one', nativeSessionId: nativeTwo });
+  desktop.linkSession(workspaceId, { connectionId: connection.id, taskId: 'codex-module-two', nativeSessionId: nativeOne });
+  assert.equal(desktop.linkSession(workspaceId, { connectionId: connection.id, taskId: 'codex-module-one', nativeSessionId: nativeOne }).alreadyLinked, true);
   const byTask = await get('/codex/sessions?taskId=codex-module-one');
   assert.equal(byTask.status, 200); validate('sessions', byTask.body); assert.equal(byTask.body.workspaceId, workspaceId); assert.equal(byTask.body.relations.length, 2);
   assert.deepEqual(new Set(byTask.body.relations.map((relation: any) => relation.nativeSessionId)), new Set([nativeOne, nativeTwo]));
@@ -140,13 +125,13 @@ test('Codex desktop production module composes registered Workspace/Task identit
   assert.equal((await get('/codex/sessions?root=/etc')).status, 400);
   assert.equal((await get('/codex/sessions?taskId=codex-module-one&taskId=codex-module-two')).status, 400);
 
-  // This invokes the real Task Query summary adapter used by production handoff composition.
-  const handoff = desktop.createHandoff(workspaceId, { bindingRequestId: first.id, taskId: 'codex-module-one', handoffRequestId: crypto.randomUUID(), goal: '核对当前材料' });
-  assert.equal(handoff.taskRevision, before.recordDigest); assert.match(handoff.message, /buildr_codex_acknowledge_handoff/u);
-  assert.equal(handoff.message.includes(before.recordDigest), true);
-  const acknowledged = desktop.acknowledgeHandoff(workspaceId, { connectionId: connection.id, handoffRequestId: handoff.id, nativeSessionId: nativeOne });
-  assert.equal(acknowledged.status, 'received'); assert.equal(acknowledged.alreadyReceived, false);
-  assert.equal(desktop.acknowledgeHandoff(workspaceId, { connectionId: connection.id, handoffRequestId: handoff.id, nativeSessionId: nativeOne }).alreadyReceived, true);
+  const sessionsCommand = runtimeContributions(runtime, 'cli').find((command: { key: string }) => command.key === 'codex sessions');
+  assert.ok(sessionsCommand);
+  let sessionsOutput = '';
+  const queryOutput = t.mock.method(process.stdout, 'write', (chunk: unknown) => { sessionsOutput += String(chunk); return true; });
+  try { await sessionsCommand.run(runtime, { argv: ['node', 'buildr', 'codex', 'sessions', '--target', root, '--native-session-id', nativeOne, '--json'] }); }
+  finally { queryOutput.mock.restore(); }
+  assert.deepEqual(new Set(JSON.parse(sessionsOutput).relations.map((r: any) => r.taskId)), new Set(['codex-module-one', 'codex-module-two']));
   assert.equal(taskQuery.inspectTaskSummaryView(root, 'codex-module-one').recordDigest, before.recordDigest);
 
   const relation = byTask.body.relations[0];
@@ -172,9 +157,7 @@ test('Codex desktop production module composes registered Workspace/Task identit
   assert.equal(operations.hasCodexRegistration(agentId), false);
   assert.equal(desktop.listConnections().connections[0].status, 'disconnected');
   assert.deepEqual(desktop.sessionRelations(workspaceId), retainedRelations);
-  assert.throws(() => desktop.createBinding(workspaceId, { connectionId: connection.id }), { status: 409 });
-  assert.throws(() => desktop.completeBinding(workspaceId, { connectionId: connection.id, bindingRequestId: first.id, nativeSessionId: nativeOne }), { status: 409 });
-  assert.throws(() => desktop.acknowledgeHandoff(workspaceId, { connectionId: connection.id, handoffRequestId: handoff.id, nativeSessionId: nativeOne }), { status: 409 });
+  assert.throws(() => desktop.linkSession(workspaceId, { connectionId: connection.id, taskId: 'codex-module-one', nativeSessionId: nativeOne }), { code: 'codex_connection_disconnected' });
   assert.equal(taskQuery.inspectTaskSummaryView(root, 'codex-module-one').recordDigest, before.recordDigest);
   for (const [file, content] of preserved) assert.equal(fs.readFileSync(path.join(home, file), 'utf8'), content);
   const reRegistered = operations.registerCodex({ executable, codexHome: home, label: 'Fixture desktop', expectedRevision: operations.listRegistry().revision });

@@ -128,11 +128,9 @@ buildr help assets
 | `buildr web preview start\|list\|stop` | 启动、查看或停止隔离的开发预览。带 `--task <task-id> --target <canonical-workspace>` 时，Preview使用matching Task Worktree并保存精确owner；停止时复核Worktree evidence与进程secret。不带Task时保持独立checkout preview。 |
 | `buildr agent list --json` | 查看本机执行接入与唯一默认；区别于规则、技能文件投射的 `runtime list`。 |
 | `buildr agent register codex\|dsh --executable <actual-entry> --expected-revision <revision> --json` | 由智能体（Agent）发现并验证真实入口后登记，不复制凭据或启动模型。Codex 可显式传 `--codex-home`，DSH 可显式传 `--dsh-home`；其余沿用原生默认。 |
-| `buildr codex connections --json` | 查看 Codex 桌面连接状态。生成登记、组件安装和桌面握手分别表达，不接管桌面后台。 |
+| `buildr codex connections --json` | 查看已确认的 Codex 关联登记及配置范围。已配置不表示桌面在线，不要求插件、卡片或握手。 |
 | `buildr codex link --target <workspace> --task <code> --native-session-id <direct-thread-id> [--connection-id <id>] --json` | 用户在当前 Codex 聊天要求关联，或该聊天新建任务成功后，直接采集 `CODEX_THREAD_ID` 并幂等建立关系。无需面板或待确认请求；多接入时明确选择，返回准确聊天与固定任务链接。 |
-| `buildr codex complete-binding --workspace-id <id> --connection-id <id> --binding-request-id <id> --native-session-id <direct-thread-id> --json` | 承载原聊天收到明确请求后，直接采集 `CODEX_THREAD_ID` 并提交绑定回执；不使用共享根或子执行身份。 |
-| `buildr codex acknowledge-handoff --workspace-id <id> --connection-id <id> --handoff-request-id <id> --native-session-id <direct-thread-id> --json` | 准确原聊天提交单次接收回执；重复回执先核对工作现场，不把接收当成任务完成。 |
-| `buildr codex serve --connection-id <id>` | 供已确认的桌面组件启动标准输入输出（stdio）工具服务，不执行模型生成。普通用户无需手工启动。 |
+| `buildr codex sessions --target <workspace> [--task <code>] [--native-session-id <id>] [--connection-id <id>] --json` | 查询任务或具体聊天的长期关系和准确双向链接，不创建请求、发送消息或要求插件。 |
 | `buildr agent select <agent-id> --expected-revision <revision> --json` | 按已观察版本改变默认，仅影响新执行；单次生成仍可覆盖选择。 |
 | `buildr installation status [--json]` | 分别报告receipt证明的npm CLI、Buildr Web Launcher、Buildr Web Dev、当前安装与当前Web实例的版本、路径、runtime role、protocol、payload和ownership identity；不扫描PATH。 |
 | `buildr web launcher install/status/repair/uninstall` | 从verified formal npm安装显式创建、诊断、修复或卸载本机Buildr Web Launcher；wrapper只执行binding中的Host Node和同一package entry。Development checkout使用隔离的Buildr Web Dev入口。 |

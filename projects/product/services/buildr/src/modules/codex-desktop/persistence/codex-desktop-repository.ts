@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { atomicWriteJson } from '../../../infrastructure/filesystem/atomic-files.ts';
 import { withExclusiveFileLock } from '../../../infrastructure/filesystem/exclusive-file-lock.ts';
-import { codexFailure, isNativeSessionId, type CodexConnections, type CodexConnectorLeases, type CodexWorkspaceSessions } from '../domain/codex-desktop.ts';
+import { codexFailure, isNativeSessionId, type CodexConnections, type CodexWorkspaceSessions } from '../domain/codex-desktop.ts';
 
 const text = (value: unknown, max = 256): value is string => typeof value === 'string' && value.length > 0 && value.length <= max && !/[\u0000-\u001f\u007f]/.test(value);
 const nullableText = (value: unknown) => value === null || text(value, 2000);
@@ -66,39 +66,11 @@ export class CodexDesktopRepository {
     return this.read(this.connectionsFile(), () => ({ schemaVersion: 'buildr.codex-desktop-connections/v1', connections: [] }), (value): value is CodexConnections => {
       const v = value as CodexConnections;
       return v?.schemaVersion === 'buildr.codex-desktop-connections/v1' && exact(v, ['schemaVersion', 'connections']) && Array.isArray(v.connections) && v.connections.length <= 64
-        && new Set(v.connections.map(c => c.id)).size === v.connections.length && v.connections.every(c => c && exact(c, ['id', 'agentId', 'label', 'installationLabel', 'configurationLabel', 'status', 'safeReason', 'pluginVersion', 'lastSeenAt', 'executable', 'codexHome', 'appPath', 'appVersion', 'scopeIdentity', 'connectorPid', 'preparationId', 'pluginEntryIdentity']) && connectionId(c.id) && /^agent-[a-f0-9-]{36}$/.test(c.agentId) && text(c.label, 100) && text(c.installationLabel) && text(c.configurationLabel) && ['pending', 'awaiting-desktop', 'ready', 'unavailable', 'disconnected'].includes(c.status) && nullableText(c.safeReason) && nullableText(c.pluginVersion) && nullableText(c.appVersion) && (c.lastSeenAt === null || stamp(c.lastSeenAt)) && path.isAbsolute(c.executable) && path.isAbsolute(c.codexHome) && path.isAbsolute(c.appPath) && digest(c.scopeIdentity) && (c.connectorPid === null || Number.isSafeInteger(c.connectorPid) && c.connectorPid > 0) && (c.preparationId === null || isNativeSessionId(c.preparationId)) && (c.pluginEntryIdentity === null || digest(c.pluginEntryIdentity)));
+        && new Set(v.connections.map(c => c.id)).size === v.connections.length && v.connections.every(c => c && exact(c, ['id', 'agentId', 'label', 'installationLabel', 'configurationLabel', 'status', 'safeReason', 'pluginVersion', 'lastSeenAt', 'executable', 'codexHome', 'appPath', 'appVersion', 'scopeIdentity', 'connectorPid', 'preparationId', 'pluginEntryIdentity']) && connectionId(c.id) && /^agent-[a-f0-9-]{36}$/.test(c.agentId) && text(c.label, 100) && text(c.installationLabel) && text(c.configurationLabel) && ['configured', 'pending', 'awaiting-desktop', 'ready', 'unavailable', 'disconnected'].includes(c.status) && nullableText(c.safeReason) && nullableText(c.pluginVersion) && nullableText(c.appVersion) && (c.lastSeenAt === null || stamp(c.lastSeenAt)) && path.isAbsolute(c.executable) && path.isAbsolute(c.codexHome) && path.isAbsolute(c.appPath) && digest(c.scopeIdentity) && (c.connectorPid === null || Number.isSafeInteger(c.connectorPid) && c.connectorPid > 0) && (c.preparationId === null || isNativeSessionId(c.preparationId)) && (c.pluginEntryIdentity === null || digest(c.pluginEntryIdentity)));
     });
   }
-  // Desktop chats initialize separate MCP clients against this one short-lived local write.
+  // Concurrent confirmations share this short-lived local write.
   mutateConnections(change: (value: CodexConnections) => void) { return this.mutate(this.connectionsFile(), this.dataRoot, () => this.readConnections(), change, connectionLockTimeoutMs); }
-  private leasesFile() { return path.join(this.dataRoot, 'codex-desktop', 'connector-leases.json'); }
-  readConnectorLeases(): CodexConnectorLeases {
-    this.assertDirectory(path.dirname(this.leasesFile()), this.dataRoot);
-    return this.read(this.leasesFile(), () => ({ schemaVersion: 'buildr.codex-desktop-connector-leases/v1', owners: [] }), (value): value is CodexConnectorLeases => {
-      const v = value as CodexConnectorLeases;
-      return v?.schemaVersion === 'buildr.codex-desktop-connector-leases/v1' && exact(v, ['schemaVersion', 'owners']) && Array.isArray(v.owners) && v.owners.length <= 512
-        && new Set(v.owners.map(owner => JSON.stringify([owner?.connectionId, owner?.pid]))).size === v.owners.length
-        && v.owners.every(owner => owner && exact(owner, ['connectionId', 'pid', 'scopeIdentity', 'pluginVersion', 'pluginEntryIdentity', 'startedAt', 'phase']) && connectionId(owner.connectionId)
-          && Number.isSafeInteger(owner.pid) && owner.pid > 0 && digest(owner.scopeIdentity) && text(owner.pluginVersion)
-          && (owner.pluginEntryIdentity === null || digest(owner.pluginEntryIdentity)) && stamp(owner.startedAt) && ['starting', 'active'].includes(owner.phase));
-    });
-  }
-  mutateConnectionRuntime(change: (state: CodexConnections, runtime: CodexConnectorLeases) => void) {
-    const file = this.connectionsFile();
-    return this.locked(file, this.dataRoot, () => {
-      const state = this.readConnections(), runtime = this.readConnectorLeases();
-      const previous = new Set(runtime.owners.filter(owner => owner.phase === 'active').map(owner => JSON.stringify(owner)));
-      change(state, runtime);
-      if (runtime.owners.length > 512) throw codexFailure('codex_connector_limit', 'Codex 桌面连接实例数量已达上限。', 409);
-      // Publish a non-ready marker before the legacy write. If either later write fails,
-      // this PID cannot fall back to its legacy ready record after a failed initialize.
-      const staged = { ...runtime, owners: runtime.owners.map(owner => owner.phase === 'active' && !previous.has(JSON.stringify(owner)) ? { ...owner, phase: 'starting' as const } : owner) };
-      if (JSON.stringify(staged) !== JSON.stringify(runtime)) this.write(this.leasesFile(), staged);
-      this.write(file, state);
-      this.write(this.leasesFile(), runtime);
-      return structuredClone(state);
-    }, connectionLockTimeoutMs);
-  }
   private workspaceFile(root: string) { return path.join(root, '.buildr', 'local', 'codex-desktop-sessions.json'); }
   readWorkspace(root: string, workspaceId: string): CodexWorkspaceSessions {
     this.assertDirectory(path.dirname(this.workspaceFile(root)), root);

@@ -46,8 +46,8 @@ export function AgentRuntimeProvider({children}: {children: ReactNode}) {
     if (!current) throw new Error('请先重新读取智能体列表。');
     if (input.existingAgentId) {
       if (!current.agents.some(agent => agent.id === input.existingAgentId && agent.kind === 'codex')) throw new Error('Codex 接入已变化，请关闭并重新检查。');
-      if (input.makeDefault) throw new Error('连接维护不会更改默认智能体。');
-    } else if (current.agents.some(agent => agent.kind === 'codex')) throw new Error('Codex 已接入。请在现有条目的详情中检查连接。');
+      if (input.makeDefault) throw new Error('接入维护不会更改默认智能体。');
+    } else if (current.agents.some(agent => agent.kind === 'codex')) throw new Error('Codex 已接入。请在现有条目的详情中检查接入。');
     writing.current = true; ++serial.current; setConnecting(true); setError('');
     try {
       const result = await agentOperationsApi.connectCodex(input);
@@ -68,10 +68,10 @@ export function AgentRuntimeProvider({children}: {children: ReactNode}) {
       return {removed: true, error: '', warning: result.desktopWarning?.message || ''};
     } catch (failure) {
       // A lost response can follow a successful removal. Reconcile the registry;
-      // never issue another POST from recovery or the drawer's polling loop.
+      // never issue another POST from recovery or the drawer refresh.
       writing.current = false;
       const current = await refresh();
-      if (current && !current.agents.some(agent => agent.id === agentId)) return {removed: true, error: '', warning: '已重新读取并确认接入已移除；桌面断开结果未取得，请在桌面连接状态中核对。'};
+      if (current && !current.agents.some(agent => agent.id === agentId)) return {removed: true, error: '', warning: '已重新读取并确认接入已移除；已有任务与聊天关联已保留。'};
       const knownFailure = failure instanceof Error && Boolean((failure as ApiError).code);
       return {removed: false, warning: '', error: knownFailure ? (failure as Error).message : '移除结果尚未确认。已尝试刷新智能体列表，请核对后再决定是否重试；不会自动再次发送。'};
     } finally {writing.current = false; if (mounted.current) setRemoving(null);}

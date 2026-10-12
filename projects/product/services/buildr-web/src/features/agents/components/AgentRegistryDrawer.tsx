@@ -72,7 +72,7 @@ export function AgentRegistryDrawer() {
           <button type="button" className="agent-registry-select" aria-label={'设为默认智能体 ' + agent.label} aria-pressed={isDefault} disabled={busy} onClick={() => void select(agent.id)}>
             <span className="agent-registry-choice">{isDefault ? <CheckCircleFilled /> : <span />}</span>
             <span className="agent-registry-icon"><RobotOutlined /></span>
-            <span className="agent-registry-copy"><span className="agent-registry-name"><strong>{agent.label}</strong>{isDefault && <Tag bordered={false}>默认</Tag>}</span><span className="agent-registry-summary"><span className={`agent-registry-status is-${generation.tone}`}>{generation.label}</span><span aria-hidden="true">·</span>{agent.kind === 'codex' ? <span data-agent-desktop-status className={`agent-registry-desktop-status is-${connection.tone}`}>{connection.label}</span> : <span>DSH 桌面默认配置</span>}</span></span>
+            <span className="agent-registry-copy"><span className="agent-registry-name"><strong>{agent.label}</strong>{isDefault && <Tag bordered={false}>默认</Tag>}</span><span className="agent-registry-summary"><span className={`agent-registry-status is-${generation.tone}`}>{generation.label}</span><span aria-hidden="true">·</span>{agent.kind === 'codex' ? <span data-agent-desktop-status className={`agent-registry-desktop-status is-${connection.tone}`}>原聊天关联：{connection.label}</span> : <span>DSH 桌面默认配置</span>}</span></span>
           </button>
           <Popover trigger="click" placement="bottom" align={{points: ['tr', 'br'], offset: [0, 8]}} autoAdjustOverflow arrow={false} destroyOnHidden overlayClassName="agent-registry-details-popover" open={detailOpen} onOpenChange={next => {if (next && viewActive) restoreDetailsFocus.current = false; setDetails(previous => next && viewActive ? agent.id : previous === agent.id ? null : previous);}} afterOpenChange={visible => {if (visible && detailOpen) document.getElementById(`agent-connection-details-${agent.id}`)?.focus();}} content={<>{detailOpen && <AgentConnectionDetails agent={agent} desktop={desktop.state} busy={busy} lastOperationReason={feedbackAgentId === agent.id ? warning : undefined} onClose={closeDetails} onRefresh={() => void desktop.refresh()} onPrepare={() => {if (!busy) {setDetails(null); setRepairing(agent.id); setFeedback(''); setWarning('');}}} />}</>}>
             <div className="agent-registry-actions" onKeyDown={event => {if (event.key === 'Escape' && detailOpen) {event.stopPropagation(); closeDetails();}}}>
@@ -84,16 +84,16 @@ export function AgentRegistryDrawer() {
       })}</section>
     </> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={registry ? '尚未接入智能体' : '暂时无法读取智能体'} />}
     {feedback && <Alert className="agent-registry-result" role="status" type={feedbackTone} showIcon closable={{closeIcon: true, 'aria-label': '关闭操作提示'}} onClose={() => setFeedback('')} message={feedback} description={!feedbackAgentId && warning ? warning : undefined} action={feedbackAgentId && agents.some(agent => agent.id === feedbackAgentId) ? <Button type="text" size="small" onClick={event => {detailsTrigger.current = event.currentTarget; restoreDetailsFocus.current = false; setDetails(feedbackAgentId);}}>查看详情</Button> : undefined} />}
-    {open && (adding === 'codex' || repairing) && <CodexConnectDrawer registry={registry} connectCodex={connectCodex} existingAgentId={repairing ?? undefined} onClose={() => {setAdding(null); setRepairing(null);}} onConnected={(result, desktopWarning) => {
-      const status = result.desktop?.status, ready = status === 'ready';
-      const outcome = status === 'awaiting-desktop' ? '等待 Codex 桌面加载连接' : status === 'pending' ? '桌面连接正在准备' : ready ? '桌面聊天已连接' : status === 'unavailable' || status === 'disconnected' ? '桌面聊天尚未接通' : '桌面连接尚未确认';
+    {open && (adding === 'codex' || repairing) && <CodexConnectDrawer registry={registry} connectCodex={connectCodex} existingAgentId={repairing ?? undefined} onClose={() => {setAdding(null); setRepairing(null);}} onConnected={(result, associationWarning) => {
+      const configured = result.desktop?.status === 'configured';
+      const outcome = configured ? '原聊天关联已配置' : result.desktop?.status === 'unavailable' ? '原聊天关联需检查' : '原聊天关联未配置';
       setAdding(null); setRepairing(null);
-      setFeedback(repairing ? ready ? '桌面聊天已连接；现有接入与默认选择已保留。' : '桌面聊天仍未接通；现有生成配置与默认选择已保留。' : `提交说明等一次性生成已配置；${outcome}。`);
-      setFeedbackTone(ready && !desktopWarning ? 'info' : 'warning'); setFeedbackAgentId(result.agentId); setWarning(desktopWarning); void desktop.refreshAfterChange();
+      setFeedback(repairing ? `${outcome}；现有接入与默认选择已保留。` : `提交说明等一次性生成已配置；${outcome}。`);
+      setFeedbackTone(configured && !associationWarning ? 'info' : 'warning'); setFeedbackAgentId(result.agentId); setWarning(associationWarning); void desktop.refreshAfterChange();
     }} />}
     {open && adding === 'dsh' && <DrawerShell open title="让智能体接入 Buildr" width="min(520px, 100vw)" onClose={() => setAdding(null)} closeAriaLabel="关闭 DSH 接入提示" footer={<Button onClick={() => setAdding(null)}>返回</Button>}><section className="agent-registry-add"><p>把这句话发给你希望使用的智能体：</p><Input.TextArea id="agent-registration-prompt" value={agentRegistrationRequest} readOnly autoSize={{minRows: 3, maxRows: 4}} /><Button id="copy-registration-prompt" size="small" icon={<CopyOutlined />} onClick={() => void copy()}>复制接入请求</Button></section></DrawerShell>}
     <Modal open={open && Boolean(removeTarget)} title="移除 Codex 接入？" onCancel={() => {if (!removing) setRemoveTarget(null);}} closable={!removing} maskClosable={!removing} keyboard={!removing} footer={<><Button disabled={Boolean(removing)} onClick={() => setRemoveTarget(null)}>取消</Button><Button id="confirm-remove-codex" danger type="primary" loading={Boolean(removing)} disabled={selecting} onClick={() => void remove()}>确认移除</Button></>}>
-      <p>将移除 {removeTarget?.label} 的接入，断开桌面连接并停止 Buildr 的独立生成服务。</p><p>桌面聊天、记忆（Memory）、配置和已有任务及聊天关联都会保留。已有聊天仍可打开。</p>{removalError && <Alert type="warning" showIcon message={removalError} />}
+      <p>将移除 {removeTarget?.label} 的接入并停止 Buildr 的独立生成服务。</p><p>桌面聊天、记忆（Memory）、配置和已有任务及聊天关联都会保留。已有聊天仍可打开。</p>{removalError && <Alert type="warning" showIcon message={removalError} />}
     </Modal>
   </DrawerShell>;
 }
