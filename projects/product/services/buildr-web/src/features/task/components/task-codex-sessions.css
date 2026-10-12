@@ -1,0 +1,17 @@
+.task-codex-sessions { margin: 10px 0; border: 1px solid var(--soft-line); border-radius: 7px; padding: 7px 10px; }
+.task-codex-sessions > header { display: flex; gap: 8px; justify-content: space-between; align-items: center; flex-wrap: wrap; }
+.task-codex-toggle { border: 0; background: none; color: var(--soft-ink); cursor: pointer; font-size: 12px; padding: 4px 0; }
+.task-codex-toggle > span:last-child { color: var(--soft-muted); margin-left: 5px; }
+.task-codex-sessions > header .ant-btn { font-size: 11px; }
+.task-codex-caption, .task-codex-feedback { font-size: 11px; color: var(--soft-muted); line-height: 1.7; margin: 7px 0; }
+.task-codex-feedback { color: var(--soft-primary); }
+.task-codex-sessions ul { list-style: none; padding: 0; margin: 8px 0; }
+.task-codex-sessions li { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px; border-bottom: 1px solid var(--soft-line); padding: 8px 0; }
+.task-codex-sessions li:last-child { border-bottom: 0; }
+.task-codex-sessions li > div:first-child { min-width: 0; flex: 1 1 170px; font-size: 12px; }
+.task-codex-sessions li code { display: block; color: var(--soft-muted); font-size: 10px; overflow-wrap: anywhere; margin-top: 3px; }
+.task-codex-sessions li .ant-tag { font-size: 10px; margin-left: 6px; }
+.task-codex-bind { display: flex; gap: 7px; align-items: center; flex-wrap: wrap; margin: 9px 0; }
+.task-codex-bind .ant-select { flex: 1 1 180px; min-width: 0; max-width: 330px; }
+.task-codex-sessions .ant-alert { margin-top: 8px; font-size: 11px; }
+.task-codex-sessions .ant-alert p { margin: 4px 0; overflow-wrap: anywhere; }

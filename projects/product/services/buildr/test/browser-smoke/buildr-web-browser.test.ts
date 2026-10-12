@@ -24,6 +24,7 @@ import { runSourceControlJourney } from '../../../buildr-web/test/browser/source
 import { runLayoutJourney } from '../../../buildr-web/test/browser/layout-journey.ts';
 import { runTaskCommitsJourney } from '../../../buildr-web/test/browser/task-commits-journey.ts';
 import { runTaskMaterialsJourney } from '../../../buildr-web/test/browser/task-materials-journey.ts';
+import { runCodexNavigationJourney } from '../../../buildr-web/test/browser/codex-navigation-journey.ts';
 import { runWorkbenchJourney } from './workbench-journey.ts';
 import { runPublicationJourney, publicationTestPng } from './publication-journey.ts';
 import { useLegacyAssetCatalog } from '../helpers/legacy-asset-catalog.ts';
@@ -2778,6 +2779,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
   });
 
   if (selected('task')) await runTaskCommitsJourney({ t, page, runtime, workspaceRoot, workspaceUrl, expectedBrowserErrors, capture });
+  if (selected('task')) await runCodexNavigationJourney({ t, page, runtime, workspaceRoot, workspaceUrl, runBuildr, capture, expectedBrowserErrors });
 
   if (selected('task') || selected('task-materials')) await runTaskMaterialsJourney({ t, page, runtime, workspaceRoot, workspaceUrl, runBuildr, runGit, capture, expectedBrowserErrors });
 

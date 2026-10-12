@@ -22,7 +22,7 @@ function fixture(t: test.TestContext, mode = 'normal', idleMs = 30 * 60 * 1000, 
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-agent-operations-')), home = path.join(root, 'codex-home'), dataRoot = path.join(root, 'buildr-profile');
   fs.mkdirSync(home); const executable = path.join(root, 'codex-fixture');
   fs.writeFileSync(executable, '#!/bin/sh\nexport BUILDR_FAKE_CODEX_MODE=' + quote(mode) + '\nexec ' + quote(process.execPath) + ' ' + quote(path.resolve(import.meta.dirname, '../fixtures/agent-codex-app-server.ts')) + ' "$@"\n', { mode: 0o755 });
-  const app = new AgentOperationsApplication({ dataRoot, idleMs, closeWaitMs: 50, providerFactory: record => { assert.equal(record.kind, 'codex'); if (record.kind !== 'codex') throw new Error('Expected Codex fixture registration.'); return new CodexAppServer(record, { requestTimeoutMs: 2000, generationTimeoutMs: mode === 'timeout' ? 60 : 2000, closeTimeoutMs: 50, onInspection }); } });
+  const app = new AgentOperationsApplication({ dataRoot, idleMs, closeWaitMs: 50, providerFactory: record => { assert.equal(record.kind, 'codex'); if (record.kind !== 'codex') throw new Error('Expected Codex fixture registration.'); return new CodexAppServer(record, { requestTimeoutMs: mode.startsWith('create-') ? 250 : 2000, generationTimeoutMs: mode === 'timeout' ? 60 : 2000, closeTimeoutMs: 50, onInspection }); } });
   t.after(async () => { await app.close(); fs.rmSync(root, { recursive: true, force: true }); });
   const register = (codexHome = home, label = 'Codex') => app.registerCodex({ executable, codexHome, label, expectedRevision: app.listRegistry().revision });
   const messages = (codexHome = home): any[] => fs.existsSync(path.join(codexHome, 'protocol.jsonl')) ? fs.readFileSync(path.join(codexHome, 'protocol.jsonl'), 'utf8').trim().split('\n').map(line => JSON.parse(line)) : [];
@@ -44,9 +44,9 @@ function controlledExecution(t: test.TestContext, providerFactory: AgentOperatio
 }
 
 test('dedicated child strips invoking chat tool pipes and permissions while retaining ordinary authentication/proxy environment', () => {
-  const inherited = { CODEX_HOME: '/old-home', CODEX_APP_TOOLS_PIPE_PATH: 'private-chat-pipe', CODEX_SESSION_ID: 'parent-session', CODEX_THREAD_ID: 'parent-thread', CODEX_PERMISSION_PROFILE: 'parent-permissions', BROWSER_USE_ACCESS_VERIFYING_IDENTITY: 'parent-browser-proof', OPENAI_API_KEY: 'auth-fixture', CODEX_API_KEY: 'alternate-auth-fixture', HTTPS_PROXY: 'proxy-fixture', PATH: 'path-fixture' };
+  const inherited = { CODEX_HOME: '/old-home', CODEX_APP_TOOLS_PIPE_PATH: 'private-chat-pipe', CODEX_SESSION_ID: 'parent-session', CODEX_THREAD_ID: 'parent-thread', CODEX_PERMISSION_PROFILE: 'parent-permissions', BROWSER_USE_ACCESS_VERIFYING_IDENTITY: 'parent-browser-proof', CODEX_APP_SERVER_WS_URL: 'ws://desktop-private', CODEX_APP_SERVER_USE_LOCAL_DAEMON: '1', OPENAI_API_KEY: 'auth-fixture', CODEX_API_KEY: 'alternate-auth-fixture', HTTPS_PROXY: 'proxy-fixture', PATH: 'path-fixture' };
   const child = codexChildEnvironment('/registered-home', inherited);
-  for (const key of ['CODEX_APP_TOOLS_PIPE_PATH', 'CODEX_SESSION_ID', 'CODEX_THREAD_ID', 'CODEX_PERMISSION_PROFILE', 'BROWSER_USE_ACCESS_VERIFYING_IDENTITY']) assert.equal(child[key], undefined);
+  for (const key of ['CODEX_APP_TOOLS_PIPE_PATH', 'CODEX_SESSION_ID', 'CODEX_THREAD_ID', 'CODEX_PERMISSION_PROFILE', 'BROWSER_USE_ACCESS_VERIFYING_IDENTITY', 'CODEX_APP_SERVER_WS_URL', 'CODEX_APP_SERVER_USE_LOCAL_DAEMON']) assert.equal(child[key], undefined);
   assert.equal(child.CODEX_HOME, '/registered-home'); assert.equal(child.OPENAI_API_KEY, inherited.OPENAI_API_KEY); assert.equal(child.CODEX_API_KEY, inherited.CODEX_API_KEY); assert.equal(child.HTTPS_PROXY, inherited.HTTPS_PROXY); assert.equal(inherited.CODEX_THREAD_ID, 'parent-thread');
 });
 
@@ -134,6 +134,29 @@ test('failed disposal during re-registration cannot start a replacement for the 
   version = 'two'; app.registerCodex({ executable: process.execPath, expectedRevision: old.revision });
   for (let index = 0; index < 2; index++) { const run = await app.startGeneration({ cwd: root, prompt: 'Supplied changes only.', outputSchema }); assert.equal((await settled(app, run.id)).error?.code, 'agent_close_timeout'); }
   assert.equal(factories, 1); assert.equal(generations, 1);
+});
+
+test('new Codex owned provider rechecks installation version while live-provider reuse avoids repeated probes', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-agent-upgrade-'));
+  let version = 'one', inspections = 0, factories = 0;
+  const app = new AgentOperationsApplication({ dataRoot: root, idleMs: 30, available: () => true, inspectEntry: () => { inspections++; return { executable: process.execPath, codexHome: root, label: 'Codex', version }; }, providerFactory: () => {
+    factories++; let alive = false;
+    return { get alive() { return alive; }, start: async () => { alive = true; }, generate: async input => { input.onRunning(); return { commitMessage: 'feat: supplied result' }; }, close: async () => { alive = false; } };
+  } });
+  t.after(async () => { await app.close(); fs.rmSync(root, { recursive: true, force: true }); });
+  const original = app.registerCodex({ executable: process.execPath, expectedRevision: app.listRegistry().revision });
+  const generate = () => app.startGeneration({ cwd: root, prompt: 'Supplied changes only.', outputSchema });
+  const first = await generate(); assert.equal((await settled(app, first.id)).status, 'succeeded');
+  const probesAfterStart = inspections;
+  const second = await generate(); assert.equal((await settled(app, second.id)).status, 'succeeded'); assert.equal(inspections, probesAfterStart);
+  const deadline = Date.now() + 1000;
+  while (app.listRegistry().agents[0].runtimeStatus !== 'stopped' && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 5));
+  version = 'two';
+  const stale = await generate(); assert.equal((await settled(app, stale.id)).error?.code, 'agent_entry_changed'); assert.equal(factories, 1);
+  assert.equal(app.listRegistry().defaultAgentId, original.defaultAgentId);
+  const confirmed = app.registerCodex({ executable: process.execPath, expectedRevision: app.listRegistry().revision });
+  assert.equal(confirmed.defaultAgentId, original.defaultAgentId);
+  const upgraded = await generate(); assert.equal((await settled(app, upgraded.id)).status, 'succeeded'); assert.equal(factories, 2);
 });
 
 test('two generations reuse one child but create separate confirmed read-only ephemeral threads and validate structure', posix, async t => {
@@ -413,6 +436,66 @@ for (const [mode, expected] of [['handshake', 'agent_handshake_invalid'], ['spec
     if (['persistent', 'writable', 'approval'].includes(mode)) { assert.equal(result.executionConfig, null); assert.equal(f.app.listRegistry().agents[0].lastExecutionConfig, null); }
   });
 }
+
+for (const [mode, expected] of [['create-response-lost', 'agent_protocol_timeout'], ['create-late-response', 'agent_protocol_timeout'], ['create-missing-id', 'agent_generation_permissions_unconfirmed']]) {
+  test('unknown temporary creation ' + mode + ' closes only its owned child before pool reuse', posix, async t => {
+    const f = fixture(t, mode); f.register();
+    const run = await f.generate(), result = await settled(f.app, run.id);
+    assert.equal(result.status, 'failed'); assert.equal(result.error?.code, expected); assert.equal(result.output, null);
+    const messages = f.messages(), pid = messages.find(message => message.boot).pid;
+    assert.equal(messages.filter(message => message.method === 'thread/start').length, 1);
+    assert.equal(messages.some(message => message.method === 'turn/start'), false);
+    assert.throws(() => process.kill(pid, 0), 'uncertain child must already have exited, not wait for idle recycle');
+    fs.writeFileSync(f.executable, fs.readFileSync(f.executable, 'utf8').replace(mode, 'normal'), { mode: 0o755 });
+    const next = await f.generate(); assert.equal((await settled(f.app, next.id)).status, 'succeeded');
+    assert.equal(f.messages().filter(message => message.boot).length, 2);
+  });
+}
+
+test('cancellation during temporary creation prevents a late response from starting a turn or publishing output', posix, async t => {
+  const f = fixture(t, 'create-late-response'); f.register();
+  const run = await f.generate(), deadline = Date.now() + 2000;
+  while (!f.messages().some(message => message.method === 'thread/start') && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 5));
+  assert.equal(f.messages().some(message => message.method === 'thread/start'), true);
+  const pid = f.messages().find(message => message.boot).pid;
+  assert.equal(f.app.cancelRun(run.id).status, 'cancelled');
+  while (f.app.listRegistry().agents[0].runtimeStatus !== 'stopped' && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 5));
+  await new Promise(resolve => setTimeout(resolve, 550));
+  assert.equal(f.app.getRun(run.id).output, null); assert.equal(f.app.getRun(run.id).status, 'cancelled');
+  assert.equal(f.messages().some(message => message.method === 'turn/start'), false);
+  assert.throws(() => process.kill(pid, 0));
+});
+
+test('valid Codex output survives uncertain cleanup while the same identity cannot start a replacement', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-agent-cleanup-warning-'));
+  const client = new CodexAppServer({ id: 'cleanup-fixture', kind: 'codex', label: 'Codex', executable: process.execPath, codexHome: root, version: 'test' });
+  const protocol = client as unknown as { prepareThread(): Promise<{ threadId: string; permissions: string | null }>; request(method: string): Promise<unknown>; receive(line: string): void };
+  Object.defineProperty(client, 'alive', { get: () => !client.cleanupWarning });
+  t.mock.method(client, 'start', async () => {});
+  t.mock.method(protocol, 'prepareThread', async () => ({ threadId: 'temporary-one', permissions: null }));
+  t.mock.method(protocol, 'request', async method => {
+    if (method === 'thread/unsubscribe') throw Error('release reply lost');
+    if (method === 'turn/start') {
+      queueMicrotask(() => {
+        protocol.receive(JSON.stringify({ method: 'item/completed', params: { threadId: 'temporary-one', item: { type: 'agentMessage', text: '{"commitMessage":"feat: valid result"}' } } }));
+        protocol.receive(JSON.stringify({ method: 'turn/completed', params: { threadId: 'temporary-one', turn: { id: 'turn-one', status: 'completed' } } }));
+      });
+      return { turn: { id: 'turn-one' } };
+    }
+    return {};
+  });
+  t.mock.method(client, 'close', async () => { throw Object.assign(Error('exit unconfirmed'), { code: 'agent_close_timeout' }); });
+  let factories = 0;
+  const app = new AgentOperationsApplication({ dataRoot: root, available: () => true, inspectEntry: () => ({ executable: process.execPath, codexHome: root, label: 'Codex', version: 'test' }), providerFactory: () => { factories++; return client; } });
+  t.after(async () => { await assert.rejects(app.close(), code('agent_close_incomplete')); fs.rmSync(root, { recursive: true, force: true }); });
+  app.registerCodex({ executable: process.execPath, expectedRevision: app.listRegistry().revision });
+  const first = await app.startGeneration({ cwd: root, prompt: 'Supplied facts only.', outputSchema }), result = await settled(app, first.id);
+  assert.equal(result.status, 'succeeded'); assert.deepEqual(result.output, { commitMessage: 'feat: valid result' }); assert.equal(result.cleanupWarning?.code, 'agent_close_timeout');
+  assert.equal(AGENT_OPERATIONS_HTTP_VALIDATORS.validate(AGENT_OPERATIONS_HTTP_SCHEMAS.run.$id, result).valid, true);
+  assert.ok(app.listRegistry().agents[0].safeReason);
+  const next = await app.startGeneration({ cwd: root, prompt: 'Next independent request.', outputSchema });
+  assert.equal((await settled(app, next.id)).error?.code, 'agent_close_timeout'); assert.equal(factories, 1);
+});
 
 test('server-initiated tools are refused and do not become additional authority', posix, async t => {
   const f = fixture(t, 'tool-request'); f.register(); const run = await f.generate(); assert.equal((await settled(f.app, run.id)).status, 'succeeded');

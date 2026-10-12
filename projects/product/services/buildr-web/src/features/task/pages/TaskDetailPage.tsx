@@ -14,6 +14,7 @@ import { workspaceHref } from '../../../lib/labels';
 import { TaskOverview } from '../components/TaskOverview';
 import { TaskChecklist } from '../components/TaskChecklist';
 import { TaskSummary } from '../components/TaskSummary';
+import { TaskCodexSessions } from '../components/TaskCodexSessions';
 import { TaskHeaderMetadata } from '../components/TaskHeaderMetadata';
 import { useTaskVisit } from '../hooks/useTaskVisit';
 import { useWorkbenchPreferences } from '../../workbench/hooks/useWorkbenchPreferences';
@@ -164,6 +165,7 @@ export function TaskDetailPage({ taskId: providedTaskId }: { taskId?: string } =
     {alert && <Alert id="task-detail-alert" type={alert.error ? 'error' : 'success'} message={alert.message} closable onClose={() => setAlert(null)} />}
     {data.referenceDiagnostics.length > 0 && <Alert id="task-reference-diagnostics" type="warning" message={`部分引用不可用：${data.referenceDiagnostics.map(item => item.message).join('；')}`} />}
     <TaskSummary context={workContext.data} error={workContext.error} onRespond={() => editor.open('respond')} />
+    {workspaceId && <TaskCodexSessions key={`${workspaceId}:${taskId}`} workspaceId={workspaceId} taskId={taskId} />}
     {record.isParent ? <CompositeTaskContent key={taskId} choices={reading.choices} choose={reading.choose} refreshToken={readerRefreshToken} task={data} coordination={evidence.coordinationData} loading={evidence.coordinationLoading} changes={artifacts.changes} documents={documents} materials={artifacts.materials} renderContent={readContent} refresh={async () => { await refresh(); }} onEnd={() => setEndOpen(true)} href={href} /> : <>
     <TaskWorkPath actions={checklistTrigger} record={record} context={workContext.data?.context} selected={selected === 'changes' ? null : selected} onSelect={selectNode} contentTabs={[{ key: 'changes', label: <span data-prototype-position="changes-entry" title={changedCount.error || (countResult?.status === 'partial' ? '数量为已读范围，详情见改动与提交。' : undefined)}>改动与提交{changedFileCount !== null && changedFileCount > 0 && <span className="task-badge">{changedFileCount}</span>}</span>, selected: selected === 'changes', onSelect: () => selectNode('changes') }]} />
     <div className={`task-detail-layout${checklist.open && checklist.pinned ? ' checklist-pinned' : ''}${checklistResizing ? ' checklist-resizing' : ''}`}>

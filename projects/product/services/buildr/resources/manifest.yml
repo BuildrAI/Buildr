@@ -10,6 +10,7 @@ include:
   - resources/contracts/bootstrap.yml
   - resources/installation/launcher/
   - resources/runtime/
+  - resources/codex-desktop/
 
 agentSkills:
   - id: buildr

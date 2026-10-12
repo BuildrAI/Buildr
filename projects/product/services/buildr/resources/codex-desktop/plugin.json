@@ -1,0 +1,17 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "buildr-desktop",
+  "version": "1.0.0",
+  "description": "将 Buildr 任务与 Codex 原聊天关联，在桌面接续工作并打开准确任务。",
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Buildr",
+        "shortDescription": "连接原聊天与 Buildr 任务",
+        "developerName": "BuildrAI",
+        "category": "Productivity",
+        "defaultPrompt": ["打开当前聊天的 Buildr 面板，查看并关联任务。"]
+      }
+    }
+  }
+}

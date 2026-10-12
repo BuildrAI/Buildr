@@ -12,6 +12,7 @@ export type SourceControlActionState = {
   generation: Generation | null;
   generatedBy: {agentId: string; label: string; registrationRevision: string; revision: string; executionConfig: AgentRun['executionConfig']} | null;
   generationError: string;
+  generationWarning: string;
   stale: boolean;
   gitPending: CommitMode | 'push' | null;
   gitResult: GitMutationResult | null;
@@ -21,7 +22,7 @@ export type SourceControlActionState = {
 type Ticket = {token: number; cancelled: boolean; runId: string | null; textVersion: number; label: string; agentId: string; revision: string};
 export const actionSourceKey = (source: CodeActionSource) => JSON.stringify([source.workspaceId, source.repositoryId, source.worktreeId, source.branch]);
 export function emptyActionState(): SourceControlActionState {
-  return {text: '', textVersion: 0, overrideId: null, context: null, contextLoading: false, contextError: '', generation: null, generatedBy: null, generationError: '', stale: false, gitPending: null, gitResult: null, gitError: '', unknownCommit: false};
+  return {text: '', textVersion: 0, overrideId: null, context: null, contextLoading: false, contextError: '', generation: null, generatedBy: null, generationError: '', generationWarning: '', stale: false, gitPending: null, gitResult: null, gitError: '', unknownCommit: false};
 }
 export function commitMessageOutput(value: unknown): string | null {
   if (typeof value !== 'object' || value === null || !('commitMessage' in value) || typeof value.commitMessage !== 'string' || !value.commitMessage.trim()) return null;
@@ -71,7 +72,7 @@ export class SourceControlActions {
     if (!context || previous.contextLoading || previous.contextError || !context.hasChanges || previous.generation || previous.gitPending) return;
     const ticket: Ticket = {token: ++this.serial, cancelled: false, runId: null, textVersion: previous.textVersion, label: executor.label, agentId: executor.id, revision: context.revision};
     this.tickets.set(key, ticket);
-    this.update(source, {overrideId: null, generationError: '', generation: {token: ticket.token, agentId: executor.id, label: executor.label, runId: null, phase: 'queued', revision: context.revision}});
+    this.update(source, {overrideId: null, generationError: '', generationWarning: '', generation: {token: ticket.token, agentId: executor.id, label: executor.label, runId: null, phase: 'queued', revision: context.revision}});
     const current = () => !this.disposed && this.tickets.get(key) === ticket;
     try {
       let run = await this.client.generate(source, context.revision, executor.id);
@@ -94,6 +95,7 @@ export class SourceControlActions {
     const key = actionSourceKey(source), previous = this.state(source);
     if (this.tickets.get(key) !== ticket) return;
     this.tickets.delete(key);
+    this.update(source, {generationWarning: run.cleanupWarning?.message || ''});
     if (ticket.cancelled || run.status === 'cancelled') {this.update(source, {generation: null, generationError: ''}); return;}
     const output = run.status === 'succeeded' ? commitMessageOutput(run.output) : null;
     const contentChanged = previous.context?.revision !== ticket.revision;

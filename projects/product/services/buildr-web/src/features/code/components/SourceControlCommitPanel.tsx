@@ -44,6 +44,7 @@ export function SourceControlCommitPanel({workspaceId, repository, worktree, act
     {state.unknownCommit && <Alert type="warning" showIcon message="提交结果尚未确认，请先重新核对。" action={<Button id="recheck-commit" size="small" disabled={writing || state.contextLoading} onClick={() => void actions.recheck(source)}>重新核对</Button>} />}
     {state.contextError && <Alert type="warning" showIcon message={state.contextError} action={<Button size="small" onClick={() => void actions.recheck(source)}>重新读取</Button>} />}
     {(state.generationError || state.gitError) && <Alert type="warning" showIcon message={state.generationError || state.gitError} />}
+    {state.generationWarning && <Alert id="commit-generation-cleanup-warning" type="warning" showIcon message={state.generationWarning} />}
     {state.stale && !state.generationError && <p className="source-control-action-note">变更已更新，请核对说明。</p>}
     {!generating && !agents.loading && !nextExecutor?.available && <p className="source-control-action-note">暂时无法生成说明<Button type="link" size="small" onClick={() => agents.setOpen(true)}>查看智能体</Button></p>}
     {feedback && <p className="source-control-action-note" role="status">{feedback}</p>}

@@ -16,7 +16,36 @@ export type AgentRunView = {
   status: AgentRunStatus;
   output: unknown | null;
   error: { code: string; message: string } | null;
+  cleanupWarning?: { code: string; message: string };
 };
+export type CodexDesktopInstallation = { appPath: string; appVersion: string | null };
+export type CodexDesktopConnectionView = {
+  id: string;
+  agentId: string;
+  label: string;
+  installationLabel: string;
+  configurationLabel: string;
+  status: 'pending' | 'awaiting-desktop' | 'ready' | 'unavailable' | 'disconnected';
+  safeReason: string | null;
+  pluginVersion: string | null;
+  lastSeenAt: string | null;
+};
+export type CodexDiscoveryCandidate = {
+  id: string;
+  label: string;
+  version: string;
+  installationLabel: string;
+  configurationLabel: string;
+  source: 'desktop-bundled' | 'path' | 'registered';
+  registeredAgentId: string | null;
+  desktopAvailable: boolean;
+  generationAvailability: 'available' | 'unavailable';
+  safeReason: string | null;
+};
+export type CodexDiscoveryView = { revision: string; candidates: CodexDiscoveryCandidate[] };
+export type CodexConnectInput = { candidateId: string; expectedDiscoveryRevision: string; expectedRevision: string; makeDefault?: boolean; existingAgentId?: string };
+export type CodexConnectResult = { registry: AgentRegistryView; agentId: string; desktop: CodexDesktopConnectionView | null; desktopError: { code: string; message: string } | null };
+export type CodexRemoveResult = { registry: AgentRegistryView; removedAgentId: string; desktopWarning: { code: string; message: string } | null };
 export type AgentRegistryView = {
   revision: string;
   defaultAgentId: string | null;
@@ -63,6 +92,7 @@ export type AgentProviderGenerationInput = {
 };
 export interface AgentExecutionProvider {
   readonly alive: boolean;
+  readonly cleanupWarning?: { code: string; message: string } | null;
   start(): Promise<void>;
   generate(input: AgentProviderGenerationInput): Promise<unknown>;
   close(): Promise<void>;

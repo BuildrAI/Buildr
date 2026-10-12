@@ -62,6 +62,14 @@ test('生成期间的新草稿与失败结果都不被覆盖；内容漂移保�
   assert.equal(failed.state(source).text, 'keep'); assert.equal(failed.state(source).stale, true);
 });
 
+test('有效生成结果照常回填，清理异常独立提示且不触发重复生成', async () => {
+  let generations = 0;
+  const actions = create(client({generate: async () => {generations++; return {...run(), cleanupWarning: {code: 'cleanup_failed', message: '结果已生成，临时资源清理未确认。'}};}}));
+  await actions.observe(source); await actions.generate(source, {id: 'codex', label: 'Codex'});
+  assert.equal(actions.state(source).text, 'generated'); assert.equal(actions.state(source).generationError, '');
+  assert.equal(actions.state(source).generationWarning, '结果已生成，临时资源清理未确认。'); assert.equal(generations, 1);
+});
+
 test('手写提交不调用智能体，清除的仅是提交时说明并刷新真实读取', async () => {
   let writes = 0, refreshes = 0;
   const actions = create(client({generate: async () => {throw Error('must not call agent');}, commit: async value => {writes++; return result(value);}}), () => {refreshes++;});

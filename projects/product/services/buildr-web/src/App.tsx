@@ -26,6 +26,7 @@ import { TaskDetailPage } from './features/task/pages/TaskDetailPage';
 import { TasksSection } from './features/task/pages/TasksSection';
 import { WorkspacesPage } from './features/workspace/pages/WorkspacesPage';
 import { CodeExplorerPage, CodeSourceControlPage } from './features/code/pages/CodeExplorerPage';
+import { CodexEntryNotice } from './features/agents/components/CodexEntryNotice';
 
 function renderResource(item: ResourcePreview) {
   if (item.kind === 'task-document') return <TaskLinkedDocument item={item} />;
@@ -46,6 +47,7 @@ export function App() {
         <Route index element={<Navigate to="overview" replace />} />
         <Route path="workspace-overview" element={<WorkspaceOverviewPage />} />
         <Route path="overview" element={<WorkbenchPage />} />
+        <Route path="codex" element={<CodexEntryNotice />} />
         <Route path="activity" element={<WorkbenchActivityPage />} />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="code" element={<Navigate to="explorer" replace />} />

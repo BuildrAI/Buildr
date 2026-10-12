@@ -5,13 +5,14 @@ import zhCN from 'antd/locale/zh_CN';
 import { App } from './App';
 import { ConfirmModalHost } from './lib/ConfirmModalHost';
 import { softProductTheme } from './theme';
+import { createCodexNavigationWindow } from './app/codex-navigation';
 import 'antd/dist/reset.css';
 import './styles.css';
 
 const root = document.getElementById('root');
 if (!root) throw new Error('缺少 #root');
 // Keep App's existing page tree and retained workspace shell under one data route.
-const router = createBrowserRouter([{ path: '*', element: <App /> }]);
+const router = createBrowserRouter([{ path: '*', element: <App /> }], {window: createCodexNavigationWindow(window)});
 
 // Production Buildr Web hosts a single long-lived shell; avoid StrictMode double-mount
 // races with imperative legacy page renderers under browser smoke.

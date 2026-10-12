@@ -52,6 +52,7 @@ readline.createInterface({ input: process.stdin }).on('line', line => {
   else if (message.method === 'config/read') reply(message.id, { config: { model: 'config-default-model', model_provider: 'config-default-provider', model_reasoning_effort: 'config-default-effort', credential: 'private-config-credential', mcp_servers: mode === 'with-mcp' ? { node_repl: { command: 'not-executed', secret: 'private-credential-fixture' } } : mode === 'special-mcp' ? { 'dot.and"quote': { command: 'not-executed' } } : {} }, layers: null, origins: {} });
   else if (message.method === 'thread/start') {
     if (mode === 'thread-exit') { process.exit(2); return; }
+    if (mode === 'create-response-lost') return;
     if (mode === 'with-mcp' && message.params.config['mcp_servers.node_repl.enabled'] !== false) { send({ id: message.id, error: { code: -32600, message: 'invalid transport: dotted overrides treat quotes literally' } }); return; }
     const cwdName = path.basename(message.params.cwd);
     const selected = mode === 'execution-config' ? { model: 'model-' + cwdName, modelProvider: 'provider-' + cwdName, reasoningEffort: cwdName === 'first' ? 'high' : 'low', credential: 'private-config-credential' } : mode === 'invalid-config' ? { model: 'm'.repeat(257), modelProvider: 42, reasoningEffort: { invalid: true } } : {};
@@ -61,7 +62,9 @@ readline.createInterface({ input: process.stdin }).on('line', line => {
     }
     const threadId = 'thread-' + ++sequence, permissions = message.params.permissions;
     threads.set(threadId, { cwd: message.params.cwd, permissions, profile: permissions ? message.params.config['permissions.' + permissions] : undefined });
-    reply(message.id, { ...selected, ...(permissions && mode !== 'profile-missing' ? { activePermissionProfile: { id: mode === 'profile-mismatch' ? 'unexpected-profile' : permissions, ...(mode === 'profile-unknown-parent' ? {} : { extends: mode === 'profile-inherited' ? ':workspace' : null }) } } : {}), thread: { id: threadId, ephemeral: mode !== 'persistent', model: 'persisted-model', modelProvider: 'persisted-provider', reasoningEffort: 'persisted-effort' }, approvalPolicy: mode === 'approval' ? 'on-request' : 'never', sandbox: { type: mode === 'writable' ? 'workspaceWrite' : 'readOnly', ...(mode === 'profile-unknown-network' ? {} : { networkAccess: mode === 'profile-network' }) } });
+    const response = { ...selected, ...(permissions && mode !== 'profile-missing' ? { activePermissionProfile: { id: mode === 'profile-mismatch' ? 'unexpected-profile' : permissions, ...(mode === 'profile-unknown-parent' ? {} : { extends: mode === 'profile-inherited' ? ':workspace' : null }) } } : {}), thread: { ...(mode === 'create-missing-id' ? {} : { id: threadId }), ephemeral: mode !== 'persistent', model: 'persisted-model', modelProvider: 'persisted-provider', reasoningEffort: 'persisted-effort' }, approvalPolicy: mode === 'approval' ? 'on-request' : 'never', sandbox: { type: mode === 'writable' ? 'workspaceWrite' : 'readOnly', ...(mode === 'profile-unknown-network' ? {} : { networkAccess: mode === 'profile-network' }) } };
+    if (mode === 'create-late-response') setTimeout(() => reply(message.id, response), 500);
+    else reply(message.id, response);
   } else if (message.method === 'mcpServerStatus/list') reply(message.id, { data: mode === 'with-mcp' ? [{ name: 'node_repl', runtimeStatus: 'disabled', tools: {} }] : mode === 'unsafe-mcp' ? [{ name: 'unsafe', runtimeStatus: 'connected', tools: { write: {} } }] : [], nextCursor: null });
   else if (message.method === 'turn/start') {
     current = { id: 'turn-' + sequence, threadId: message.params.threadId }; reply(message.id, { turn: { id: current.id, status: 'inProgress' } });

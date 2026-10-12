@@ -16,6 +16,22 @@ export function createAgentOperationsHttpContribution(application: AgentOperatio
         if (searchParams.size) throw agentFailure('agent_request_invalid', '智能体（Agent）列表不接受查询参数。');
         return result(AGENT_OPERATIONS_HTTP_SCHEMAS.registry.$id, application.listRegistry());
       }
+      if (request.method === 'GET' && pathname === '/api/v1/app/agents/codex/discovery') {
+        if (searchParams.size) throw agentFailure('agent_request_invalid', 'Codex 本机发现不接受查询参数。');
+        return result(AGENT_OPERATIONS_HTTP_SCHEMAS.discovery.$id, application.listCodexDiscovery());
+      }
+      if (request.method === 'POST' && pathname === '/api/v1/app/agents/codex/connect') {
+        authorizeWrite();
+        if (searchParams.size) throw agentFailure('agent_request_invalid', 'Codex 接入不接受查询参数。');
+        const input = validate(AGENT_OPERATIONS_HTTP_REQUESTS.connect.$id, await readJsonBody()) as Parameters<AgentOperationsApplication['connectCodex']>[0];
+        return result(AGENT_OPERATIONS_HTTP_SCHEMAS.connect.$id, await application.connectCodex(input));
+      }
+      if (request.method === 'POST' && pathname === '/api/v1/app/agents/codex/remove') {
+        authorizeWrite();
+        if (searchParams.size) throw agentFailure('agent_request_invalid', 'Codex 移除不接受查询参数。');
+        const input = validate(AGENT_OPERATIONS_HTTP_REQUESTS.remove.$id, await readJsonBody()) as Parameters<AgentOperationsApplication['removeCodex']>[0];
+        return result(AGENT_OPERATIONS_HTTP_SCHEMAS.remove.$id, await application.removeCodex(input));
+      }
       if (request.method === 'GET' && pathname === '/api/v1/app/agents/runs') {
         const input = Object.fromEntries(searchParams);
         if (searchParams.getAll('runId').length !== 1) throw agentFailure('agent_request_invalid', '必须指定唯一生成身份。');

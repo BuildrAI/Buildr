@@ -1,6 +1,7 @@
 import { AGENT_ASSETS_SOURCE_MODULE } from '../modules/agent-assets/source/module.ts';
 import { CODE_MODULE } from '../modules/code/module.ts';
 import { AGENT_OPERATIONS_APPLICATION, createAgentOperationsModule } from '../modules/agent-operations/module.ts';
+import { createCodexDesktopModule } from '../modules/codex-desktop/module.ts';
 import { WORKBENCH_MODULE } from '../modules/workbench/module.ts';
 import { createKnowledgeModule } from '../modules/knowledge/module.ts';
 import * as platform from '../infrastructure/platform.ts';
@@ -28,7 +29,7 @@ import {
   createParentCoordinationModule,
 } from '../modules/task/module.ts';
 import { createModuleRegistry } from './module-registry.ts';
-import { createWebModule } from '../web/module.ts';
+import { createWebModule, readCurrentBuildrWebOrigin } from '../web/module.ts';
 import { createWorkspaceModule, WORKSPACE_AGENT_ASSETS_BINDER, WORKSPACE_APPLICATION, WORKSPACE_QUERY } from '../modules/workspace/module.ts';
 import { createSystemInstallationModule, readCurrentProductIdentity, SYSTEM_INSTALLATION_APPLICATION } from '../modules/installation/module.ts';
 import { createSystemDoctorModule, SYSTEM_DOCTOR_APPLICATION } from '../modules/diagnostics/module.ts';
@@ -73,6 +74,7 @@ export function createRuntime(): any  {
   registry.install(AGENT_ASSETS_SOURCE_MODULE);
   registry.install(createChangeModule(runtime));
   registry.install(createAgentOperationsModule({ readProductIdentity: readCurrentProductIdentity, resolveWebProfile: webProfileContract.resolveWebProfile }));
+  registry.install(createCodexDesktopModule({ readProductIdentity: readCurrentProductIdentity, resolveWebProfile: webProfileContract.resolveWebProfile, readOrigin: readCurrentBuildrWebOrigin }));
   registry.install(CODE_MODULE);
   registry.provide(TASK_CHANGE_BINDER).bindChangeResolver(registry.provide(CHANGE_APPLICATION));
   registry.install(createVerificationModule(runtime));

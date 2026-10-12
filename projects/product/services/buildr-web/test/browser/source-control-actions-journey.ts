@@ -4,6 +4,14 @@ import assert from 'node:assert/strict';
 export async function runSourceControlActionsJourney({t, page, workspaceUrl, capture, fixture, scenario = (name: string, action: () => Promise<void>) => t.test(name, action)}: any) {
   const root = () => page.locator('.code-source-control-page:visible');
   const api = workspaceUrl.replace('/workspaces/', '/api/v1/workspaces/');
+  const details = () => page.getByRole('dialog', {name: 'Codex 接入详情', exact: true});
+  const openDetails = async (drawer: any) => {
+    await drawer.getByRole('button', {name: 'Codex 详情', exact: true}).click();
+    await details().waitFor({state: 'visible'});
+    await details().getByRole('button', {name: /配置与运行信息$/u}).click();
+    await details().getByText('最近读取的生成配置', {exact: true}).waitFor({state: 'visible'});
+    return details();
+  };
   const assertCommitSplit = async (panel: any) => {
     const layout = await panel.locator('.source-control-commit-split').evaluate((element: HTMLElement) => {
       const main = element.querySelector<HTMLElement>('#commit-changes')!, menu = element.querySelector<HTMLElement>('#commit-action-menu')!;
@@ -48,8 +56,8 @@ export async function runSourceControlActionsJourney({t, page, workspaceUrl, cap
         await page.getByRole('button', {name: '智能体', exact: true}).click();
         const drawer = page.locator('.agent-registry-drawer:visible');
         assert.equal(await drawer.getByRole('button', {name: '设为默认智能体 Codex', exact: true}).getAttribute('aria-pressed'), 'true');
-        await drawer.getByRole('button', {name: 'Codex 详情', exact: true}).click();
-        await drawer.getByText('临时会话不积累对话历史，结果可在原处编辑和复制。', {exact: true}).waitFor();
+        const detail = await openDetails(drawer);
+        await detail.getByText(/一次性生成不积累聊天历史。/u).waitFor({state: 'visible'});
         await capture(page, 'source-control-global-agent-registry.png');
         await drawer.getByRole('button', {name: '关闭智能体', exact: true}).click();
         const panel = root().locator('.source-control-commit-panel'), input = panel.getByRole('textbox', {name: '提交说明内容', exact: true});
@@ -124,10 +132,10 @@ export async function runSourceControlActionsJourney({t, page, workspaceUrl, cap
         const close = drawer.getByRole('button', {name: '关闭智能体', exact: true});
         const titleBox = await drawer.locator('.drawer-shell-title').boundingBox(), closeBox = await close.boundingBox();
         assert.ok(titleBox && closeBox && closeBox.x > titleBox.x + titleBox.width);
-        await drawer.getByRole('button', {name: 'Codex 详情', exact: true}).click();
-        await drawer.getByText('首次调用后确认实际值', {exact: true}).waitFor();
-        await drawer.getByText('应用服务（App Server）', {exact: true}).waitFor();
-        await drawer.getByText('沿用 Codex 原生配置', {exact: true}).waitFor();
+        const detail = await openDetails(drawer);
+        await detail.getByText('本次服务尚未读取生成配置。', {exact: true}).waitFor({state: 'visible'});
+        await detail.getByText('独立一次性生成', {exact: true}).waitFor({state: 'visible'});
+        await detail.getByText('Codex 基础配置已接入，使用独立服务完成提交说明等一次性生成。', {exact: true}).waitFor({state: 'visible'});
         assert.equal(protocol.starts.length, 0, '打开详情不启动生成探测');
         await capture(page, 'refinement-agent-drawer-first-use.png');
         await close.click(); await closed();
@@ -144,11 +152,16 @@ export async function runSourceControlActionsJourney({t, page, workspaceUrl, cap
         await panel.locator('#generate-commit-message').click();
         await page.waitForFunction(() => document.querySelector<HTMLTextAreaElement>('#commit-message-text')?.value.startsWith('feat: 浏览器生成提交说明'));
         await opened();
-        await drawer.getByText('browser-confirmed-model', {exact: true}).waitFor();
-        await drawer.getByText('high', {exact: true}).waitFor();
+        await openDetails(drawer);
+        await details().getByText('browser-confirmed-model', {exact: true}).waitFor({state: 'visible'});
+        await details().getByText('high', {exact: true}).waitFor({state: 'visible'});
         protocol.setLastExecutionConfig({model: 'browser-later-model', modelProvider: 'browser-later-provider', reasoningEffort: 'low'});
+        const refreshed = page.waitForResponse((response: any) => new URL(response.url()).pathname === '/api/v1/app/agents');
         await drawer.getByRole('button', {name: '刷新智能体状态', exact: true}).click();
-        await drawer.getByText('browser-later-model', {exact: true}).waitFor();
+        await refreshed;
+        await details().waitFor({state: 'hidden'});
+        await openDetails(drawer);
+        await details().getByText('browser-later-model', {exact: true}).waitFor({state: 'visible'});
         await capture(page, 'refinement-agent-drawer-latest-config.png');
         await drawer.getByRole('button', {name: '关闭智能体', exact: true}).click(); await closed();
         await panel.getByRole('button', {name: '查看说明来源', exact: true}).hover();
