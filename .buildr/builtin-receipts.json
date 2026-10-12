@@ -53,7 +53,7 @@
       "type": "skill",
       "id": "code-map",
       "target": "skills/buildr/code-map",
-      "integrity": "sha256-75779ce756d97b9b8230a5b220496eb04e7be9ea4920bf94c1b64344e1b3e23a",
+      "integrity": "sha256-e00f19be1547b13433ccdfb146b511d4e84f176232cbd6b500fa903482656f72",
       "files": [
         {
           "path": "SKILL.md",
@@ -61,7 +61,7 @@
         },
         {
           "path": "references/knowledge-index.md",
-          "integrity": "sha256-d0031f13dd7ffd881ade3c5d6b6f58b22264243adc1f9fa1cbe3f1530cc5b7ec"
+          "integrity": "sha256-a5cb5e443be579942446d361af21656348743f76da5f175e9e343da82995b5b0"
         }
       ]
     },
@@ -69,7 +69,7 @@
       "type": "skill",
       "id": "current-knowledge-maintenance",
       "target": "skills/buildr/current-knowledge-maintenance",
-      "integrity": "sha256-ca44fe1f7b29229c8738dbf41fc3c4dd3febbab00c7d4b86a792ec14e18ef29b",
+      "integrity": "sha256-d46d7d026a3fd43afed452b6fb2a7e91ffb8fb8a741c60bc91c8ad916b88d849",
       "files": [
         {
           "path": "SKILL.md",
@@ -81,7 +81,7 @@
         },
         {
           "path": "references/artifacts.md",
-          "integrity": "sha256-e2f3868c70fe2798c45fcebc3a43077226f7954f8ab2680a3a63d98ae6757646"
+          "integrity": "sha256-3ffc368d6cde9b8975a2ed0a2df8e0aeadb2ab575a9d18daea7751258f85b752"
         },
         {
           "path": "references/change-collaboration.md",
@@ -237,11 +237,11 @@
       "type": "skill",
       "id": "task-manager",
       "target": "skills/buildr/task-manager",
-      "integrity": "sha256-c812dd77c8a7702b866f3a2b010ee1355c173d77be57093f028f23703830b864",
+      "integrity": "sha256-23b53e390daf2a6fa700f7b6c1d9a019e17f35bbd298f3b0335b58da1ef1ac27",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-a823832978cad5dafe14a993f4f87ac9e87c44c93a38e40348c6c3dd8827f41e"
+          "integrity": "sha256-e2fe1d1b60b8eb35a2c01a914a76894ade0ee4b7ad1541924c8a7228bb49b5fb"
         },
         {
           "path": "agents/openai.yaml",
