@@ -4,10 +4,31 @@ import { registerHooks } from 'node:module';
 
 registerHooks({resolve(specifier, context, next) {
   if (specifier === '../../../api' && /\/(?:codex-desktop-api|agent-operations-api)\.ts$/u.test(context.parentURL || '')) return {url: 'data:text/javascript,export const api = () => { throw Error("unexpected real API"); };', shortCircuit: true};
+  if (specifier.startsWith('.') && /\/codex-connection-state\.ts$/u.test(context.parentURL || '')) return {url: new URL(specifier + '.ts', context.parentURL).href, shortCircuit: true};
   return next(specifier, context);
 }});
 const {createCodexDesktopClient, codexSessionHref, codexConnectionStatus} = await import('../src/features/agents/api/codex-desktop-api.ts');
 const {createAgentOperationsClient} = await import('../src/features/agents/api/agent-operations-api.ts');
+const {codexDesktopState} = await import('../src/features/agents/codex-connection-state.ts');
+
+test('首次桌面读取显示加载，已有快照刷新保留真实状态而不退回加载', () => {
+  assert.equal(codexDesktopState({connections: null, loading: true, error: ''}, 'codex-one').label, '正在读取桌面状态…');
+  for (const [status, label] of [['ready', '桌面已连接'], ['awaiting-desktop', '待桌面加载'], ['unavailable', '桌面连接不可用']]) {
+    const connection = {agentId: 'codex-one', status};
+    const result = codexDesktopState({connections: [connection], loading: true, error: ''}, 'codex-one');
+    assert.equal(result.label, label); assert.equal(result.connection, connection);
+  }
+  assert.equal(codexDesktopState({connections: [], loading: true, error: ''}, 'codex-one').label, '桌面未连接', '成功的无记录快照也不在刷新时闪回初载');
+});
+
+test('桌面读取失败立即变为未确认，后台重试保留错误且真实恢复可更新', () => {
+  const connection = {agentId: 'codex-one', status: 'ready'};
+  for (const connections of [null, [connection]]) {
+    const result = codexDesktopState({connections, loading: true, error: '连接状态读取失败'}, 'codex-one');
+    assert.equal(result.label, '桌面状态未能确认'); assert.equal(result.tone, 'warning'); assert.equal(result.connection, null);
+  }
+  assert.equal(codexDesktopState({connections: [connection], loading: false, error: ''}, 'codex-one').label, '桌面已连接');
+});
 
 test('本机发现是只读，确认仅传候选身份和观察版本，不从网页指定程序路径', async () => {
   const requests = [], client = createAgentOperationsClient(async (...args) => {requests.push(args); return {};});

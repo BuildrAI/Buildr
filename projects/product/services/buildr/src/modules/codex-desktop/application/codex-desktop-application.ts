@@ -6,7 +6,7 @@ import { CodexDesktopRepository } from '../persistence/codex-desktop-repository.
 import { codexDesktopPluginId } from '../infrastructure/codex-plugin-installation.ts';
 import {
   assertCodexText, codexDigest, codexFailure, codexSessionUrl, codexTaskUrl, isNativeSessionId,
-  type CodexBinding, type CodexBindingView, type CodexDesktopConnection, type CodexDesktopConnectionView,
+  type CodexBinding, type CodexBindingView, type CodexDesktopConnection, type CodexDesktopConnectionView, type CodexConnectorLease,
   type CodexHandoffView, type CodexSessionRelation, type CodexWorkspaceSessions,
 } from '../domain/codex-desktop.ts';
 
@@ -44,6 +44,10 @@ export class CodexDesktopApplication {
   private readonly dependencies: Dependencies;
   constructor(dependencies: Dependencies) { this.dependencies = dependencies; this.repository = new CodexDesktopRepository(dependencies.dataRoot); this.now = dependencies.now ?? Date.now; }
   private stamp() { return new Date(this.now()).toISOString(); }
+  private ownerAlive(pid: number) { try { process.kill(pid, 0); return true; } catch { return false; } }
+  private ownerMatches(owner: CodexConnectorLease, connection: CodexDesktopConnection) {
+    return owner.connectionId === connection.id && owner.scopeIdentity === connection.scopeIdentity && owner.pluginVersion === connection.pluginVersion && owner.pluginEntryIdentity === connection.pluginEntryIdentity;
+  }
   private connection(id: string) {
     const connection = this.repository.readConnections().connections.find(c => c.id === id);
     if (!connection) throw codexFailure('codex_connection_missing', 'Codex 桌面连接不存在，请在接入页面确认。', 404);
@@ -61,17 +65,26 @@ export class CodexDesktopApplication {
     let status = connection.status, safeReason = connection.safeReason;
     try { this.assertConnectionScope(connection); }
     catch (error) { status = (error as { code?: string }).code === 'codex_connection_disconnected' ? 'disconnected' : 'unavailable'; safeReason = (error as Error).message; }
-    if (status === 'ready') {
-      try { if (!connection.connectorPid) throw new Error('no process'); process.kill(connection.connectorPid, 0); }
-      catch { status = 'awaiting-desktop'; safeReason = '桌面连接组件尚未加载，请在目标原聊天打开 Buildr 入口。'; }
+    let lastSeenAt = connection.lastSeenAt;
+    if (status === 'ready' || status === 'awaiting-desktop') {
+      try {
+        const owners = this.repository.readConnectorLeases().owners;
+        const active = owners.filter(owner => owner.phase === 'active' && this.ownerMatches(owner, connection) && this.ownerAlive(owner.pid));
+        const legacy = status === 'ready' && connection.connectorPid && !owners.some(owner => owner.connectionId === connection.id && owner.pid === connection.connectorPid) && this.ownerAlive(connection.connectorPid);
+        if (active.length || legacy) {
+          status = 'ready'; safeReason = null;
+          lastSeenAt = active.map(owner => owner.startedAt).concat(lastSeenAt ?? []).sort().at(-1) ?? null;
+        } else { status = 'awaiting-desktop'; safeReason = '桌面连接组件尚未加载，请在目标原聊天打开 Buildr 入口。'; }
+      } catch { status = 'unavailable'; safeReason = 'Codex 桌面连接实例状态无法确认；原有关联保留。'; }
     }
-    return { id: connection.id, agentId: connection.agentId, label: connection.label === 'Codex（ChatGPT）' ? 'Codex' : connection.label, installationLabel: connection.installationLabel === 'Codex（ChatGPT）桌面' ? 'Codex 桌面' : connection.installationLabel, configurationLabel: connection.configurationLabel, status, safeReason, pluginVersion: connection.pluginVersion, lastSeenAt: connection.lastSeenAt };
+    return { id: connection.id, agentId: connection.agentId, label: connection.label === 'Codex（ChatGPT）' ? 'Codex' : connection.label, installationLabel: connection.installationLabel === 'Codex（ChatGPT）桌面' ? 'Codex 桌面' : connection.installationLabel, configurationLabel: connection.configurationLabel, status, safeReason, pluginVersion: connection.pluginVersion, lastSeenAt };
   }
   listConnections() { return { connections: this.repository.readConnections().connections.map(c => this.view(c)) }; }
   assertConnectionActive(connectionId: string): void { this.assertConnectionScope(this.connection(connectionId)); }
   disconnect(agentId: string): void {
-    this.repository.mutateConnections(state => {
+    this.repository.mutateConnectionRuntime((state, runtime) => {
       for (const connection of state.connections) if (connection.agentId === agentId) Object.assign(connection, { status: 'disconnected', safeReason: DISCONNECTED_REASON, connectorPid: null, preparationId: null });
+      runtime.owners = runtime.owners.filter(owner => !state.connections.some(connection => connection.id === owner.connectionId && connection.agentId === agentId));
     });
   }
   listWorkspaces() { return { workspaces: this.dependencies.listWorkspaces().workspaces.filter(w => w.status === 'ready' && w.workspace).map(w => ({ id: w.workspace!.id, name: w.workspace!.name ?? w.workspace!.id })) }; }
@@ -85,7 +98,7 @@ export class CodexDesktopApplication {
     const scopeIdentity = connectionScope(installation.appPath, registration.codexHome);
     const preparationId = crypto.randomUUID();
     let id: string;
-    this.repository.mutateConnections(state => {
+    this.repository.mutateConnectionRuntime((state, runtime) => {
       let connection = state.connections.find(c => c.scopeIdentity === scopeIdentity);
       if (!connection) {
         if (state.connections.length >= 64) throw codexFailure('codex_connection_limit', 'Codex 桌面连接数量已达上限。', 409);
@@ -93,19 +106,21 @@ export class CodexDesktopApplication {
         state.connections.push(connection);
       } else {
         const reconnect = connection.status === 'disconnected' || this.dependencies.readRegistrationActive && !this.dependencies.readRegistrationActive(connection.agentId);
+        if (reconnect) runtime.owners = runtime.owners.filter(owner => owner.connectionId !== connection!.id);
         Object.assign(connection, { agentId: registration.id, executable: registration.executable, appVersion: installation.appVersion, label: registration.label, preparationId, ...(reconnect ? { status: 'pending', safeReason: null, connectorPid: null } : {}) });
       }
       id = connection.id;
     });
     try {
       const installed = await this.dependencies.installPlugin({ registration, installation, connectionId: id! });
-      this.repository.mutateConnections(state => {
+      this.repository.mutateConnectionRuntime((state, runtime) => {
         const c = state.connections.find(c => c.id === id)!;
         if (c.preparationId !== preparationId) return;
         if (c.status === 'disconnected' || this.dependencies.readRegistrationActive && !this.dependencies.readRegistrationActive(c.agentId)) {
           Object.assign(c, { status: 'disconnected', safeReason: DISCONNECTED_REASON, connectorPid: null, preparationId: null }); return;
         }
         const activeSameVersion = c.status === 'ready' && c.pluginVersion === installed.pluginVersion && c.pluginEntryIdentity === (installed.entryIdentity ?? null);
+        if (c.pluginVersion !== installed.pluginVersion || c.pluginEntryIdentity !== (installed.entryIdentity ?? null)) runtime.owners = runtime.owners.filter(owner => owner.connectionId !== c.id);
         Object.assign(c, { preparationId: null, pluginVersion: installed.pluginVersion, pluginEntryIdentity: installed.entryIdentity ?? null, ...(activeSameVersion ? {} : { status: installed.status, safeReason: installed.safeReason, connectorPid: null }) });
       });
     } catch (error) {
@@ -123,19 +138,24 @@ export class CodexDesktopApplication {
     const connection = this.connection(connectionId);
     this.assertConnectionScope(connection);
     assertCodexText(pluginVersion, '连接组件版本');
-    this.repository.mutateConnections(state => {
+    this.repository.mutateConnectionRuntime((state, runtime) => {
       const c = state.connections.find(c => c.id === connectionId)!;
       this.assertConnectionScope(c);
       if (c.pluginVersion !== pluginVersion) throw codexFailure('codex_plugin_version_changed', '桌面加载的连接版本与已安装版本不符，请刷新桌面连接。', 409);
-      Object.assign(c, { status: 'ready', safeReason: null, connectorPid: process.pid, lastSeenAt: this.stamp() });
+      const startedAt = this.stamp();
+      runtime.owners = runtime.owners.filter(owner => this.ownerAlive(owner.pid) && !(owner.connectionId === connectionId && owner.pid === process.pid));
+      runtime.owners.push({ connectionId, pid: process.pid, scopeIdentity: c.scopeIdentity, pluginVersion, pluginEntryIdentity: c.pluginEntryIdentity, startedAt, phase: 'active' });
+      Object.assign(c, { status: 'ready', safeReason: null, connectorPid: process.pid, lastSeenAt: startedAt });
     });
   }
   connectorStopped(connectionId: string, pid = process.pid) {
-    this.repository.mutateConnections(state => {
+    this.repository.mutateConnectionRuntime((state, runtime) => {
       const c = state.connections.find(c => c.id === connectionId);
+      runtime.owners = runtime.owners.filter(owner => this.ownerAlive(owner.pid) && !(owner.connectionId === connectionId && owner.pid === pid));
       if (c?.connectorPid === pid && c.status !== 'disconnected') {
         const disconnected = this.dependencies.readRegistrationActive && !this.dependencies.readRegistrationActive(c.agentId);
-        Object.assign(c, { status: disconnected ? 'disconnected' : 'awaiting-desktop', connectorPid: null, safeReason: disconnected ? DISCONNECTED_REASON : '桌面连接组件已断开，关联关系保留。' });
+        const next = runtime.owners.filter(owner => owner.phase === 'active' && this.ownerMatches(owner, c)).sort((a, b) => a.startedAt.localeCompare(b.startedAt)).at(-1);
+        Object.assign(c, { status: disconnected ? 'disconnected' : next ? 'ready' : 'awaiting-desktop', connectorPid: disconnected ? null : next?.pid ?? null, safeReason: disconnected ? DISCONNECTED_REASON : next ? null : '桌面连接组件已断开，关联关系保留。' });
       }
     });
   }

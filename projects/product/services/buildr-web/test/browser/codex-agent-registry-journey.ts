@@ -89,6 +89,112 @@ export async function runCodexAgentRegistryJourney({t, page, workspaceUrl, taskI
       await page.getByRole('button', {name: '关闭智能体', exact: true}).click();
     } finally {await page.unroute(pattern, handler); await page.unroute('**/api/v1/app/codex/connections', connections);}
   });
+  await t.test('Codex 接入界面：两次后台轮询保留已加载正文、节点、浮窗位置、焦点及折叠，真实变化与失败恢复仍可见', async () => {
+    const registryPath = '/api/v1/app/agents', desktopPath = '/api/v1/app/codex/connections';
+    expectedBrowserErrors.add(new URL(desktopPath, workspaceUrl).href);
+    let mode = 'awaiting-desktop', writes = 0;
+    const reads = {registry: 0, desktop: 0};
+    type Gate = {entered: Promise<void>; enter(): void};
+    const gate = (): Gate => {let enter!: () => void; const entered = new Promise<void>(resolve => {enter = resolve;}); return {entered, enter};};
+    let held: {registry: Gate; desktop: Gate; waiting: Promise<void>; release(): void} | null = null;
+    const handler = async (route: any) => {
+      if (route.request().method() !== 'GET') {writes++; assert.fail('后台状态观察不得修改接入或默认项');}
+      const url = new URL(route.request().url()), kind = url.pathname === registryPath ? 'registry' : url.pathname === desktopPath ? 'desktop' : null;
+      if (!kind) assert.fail('轮询不应发现安装或准备桌面连接');
+      reads[kind!]++;
+      const current = held;
+      if (current) {current[kind!].enter(); await current.waiting;}
+      if (kind === 'registry') return route.fulfill({json: {revision: 'registry-polling', defaultAgentId: dsh.id, agents: [agent, dsh]}});
+      if (mode === 'error') return route.fulfill({status: 503, json: {error: {code: 'fixture_poll_failed', message: '隔离轮询读取失败。'}}});
+      return route.fulfill({json: {connections: [{...connection, status: mode, safeReason: mode === 'unavailable' ? '隔离连接已不可用。' : null}]}});
+    };
+    const nextAutomaticPoll = () => {
+      const registry = gate(), desktop = gate(); let release!: () => void;
+      const waiting = new Promise<void>(resolve => {release = resolve;});
+      const current = {registry, desktop, waiting, release: () => {if (held === current) held = null; release();}};
+      held = current;
+      const requests = [registryPath, desktopPath].map(path => page.waitForRequest((request: any) => request.method() === 'GET' && new URL(request.url()).pathname === path, {timeout: 6500}));
+      const completed = Promise.all([registryPath, desktopPath].map(path => page.waitForResponse((response: any) => new URL(response.url()).pathname === path, {timeout: 10_000})));
+      void completed.catch(() => {});
+      return {entered: Promise.all([registry.entered, desktop.entered, ...requests]), completed, release: current.release};
+    };
+    const frames = () => page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+    const assertState = async (label: string) => {await row(agent.id).getByText(label, {exact: true}).waitFor({state: 'visible'}); await details(agent.label).getByText(label, {exact: true}).waitFor({state: 'visible'});};
+    const assertStable = async () => {
+      const observations = await page.evaluate(() => {const probe = (window as any).__buildrCodexPollingProbe; probe.sample(); return {violations: probe.violations, samples: probe.samples};});
+      assert.deepEqual(observations.violations, [], '已加载的后台轮询不能闪回加载、重挂载、移动浮窗或丢失焦点/折叠：' + JSON.stringify(observations));
+    };
+    await page.route(pattern, handler); await page.route('**/api/v1/app/codex/connections', handler);
+    let activePoll: ReturnType<typeof nextAutomaticPoll> | null = null;
+    try {
+      await open(); await row(agent.id).getByText('待桌面加载', {exact: true}).waitFor({state: 'visible'});
+      await row(agent.id).getByRole('button', {name: agent.label + ' 详情', exact: true}).click(); await details(agent.label).waitFor({state: 'visible'});
+      await page.waitForFunction((id: string) => document.getElementById(`agent-connection-details-${id}`)?.contains(document.activeElement), agent.id);
+      await details(agent.label).getByRole('button', {name: /配置与运行信息$/u}).click();
+      await floating(agent.label).evaluate(async (element: HTMLElement) => {await Promise.all(element.getAnimations({subtree: true}).map(animation => animation.finished.catch(() => {})));});
+      await page.waitForFunction((id: string) => {const fold = document.getElementById(`agent-connection-details-${id}`)?.querySelector('.ant-collapse-content'); return fold && fold.getBoundingClientRect().height > 40 && !fold.getAnimations({subtree: true}).some(animation => animation.playState === 'running');}, agent.id);
+      await details(agent.label).getByRole('button', {name: /刷新连接状态$/u}).focus();
+      await page.evaluate((id: string) => {
+        const item = document.querySelector<HTMLElement>(`.agent-registry-drawer [data-agent-id="${id}"]`)!, detail = document.getElementById(`agent-connection-details-${id}`)!, popup = detail.closest<HTMLElement>('.agent-registry-details-popover')!;
+        const status = item.querySelector('[data-agent-desktop-status]')!, fold = detail.querySelector('.ant-collapse-item')!, content = detail.querySelector('.ant-collapse-content')!, explanation = detail.querySelector('[aria-label="Codex 桌面聊天"] > p')!, focus = document.activeElement;
+        const originalBox = popup.getBoundingClientRect(), violations: string[] = [];
+        const probe = {violations, samples: 0, observer: null as MutationObserver | null, sample() {
+          probe.samples++;
+          const fail = (reason: string) => {if (!violations.includes(reason)) violations.push(reason);};
+          if (!item.isConnected || document.querySelector(`.agent-registry-drawer [data-agent-id="${id}"]`) !== item || item.querySelector('[data-agent-desktop-status]') !== status) fail('registered row or status node replaced');
+          if (!detail.isConnected || document.getElementById(`agent-connection-details-${id}`) !== detail || detail.querySelector('.ant-collapse-item') !== fold || detail.querySelector('.ant-collapse-content') !== content) fail('detail or expanded content node replaced');
+          if (!explanation.isConnected || detail.querySelector('[aria-label="Codex 桌面聊天"] > p') !== explanation || explanation.textContent !== '原聊天绑定与任务交接仍需桌面连接。') fail('loaded explanatory paragraph removed');
+          if (status.textContent?.trim() !== '待桌面加载' || detail.querySelector('[data-agent-desktop-status]')?.textContent?.trim() !== '待桌面加载') fail('known desktop state replaced by loading');
+          if (document.querySelector('#refresh-agent-registry.ant-btn-loading') || detail.querySelector('.ant-btn-loading')) fail('background poll displayed foreground spinner');
+          if (detail.querySelector('.ant-collapse-header')?.getAttribute('aria-expanded') !== 'true' || content.getBoundingClientRect().height <= 40) fail('expanded technical information collapsed');
+          if ([...detail.querySelectorAll('button')].some(button => button.textContent?.trim() === '重新检查连接' && button.disabled)) fail('background poll disabled existing action');
+          if (document.activeElement !== focus) fail('focused detail action lost focus');
+          const currentBox = popup.getBoundingClientRect();
+          if (['x', 'y', 'width', 'height'].some(key => Math.abs(currentBox[key as keyof DOMRect] as number - (originalBox[key as keyof DOMRect] as number)) > 1)) fail('floating detail geometry changed');
+        }};
+        probe.observer = new MutationObserver(probe.sample); probe.observer.observe(document.body, {subtree: true, childList: true, characterData: true, attributes: true});
+        (window as any).__buildrCodexPollingProbe = probe; probe.sample();
+      }, agent.id);
+      await assertStable();
+      // No manual refresh or focus event is sent: both cycles come from the real
+      // four-second timers. Hold each response so the in-flight UI is observable.
+      for (let index = 0; index < 2; index++) {
+        activePoll = nextAutomaticPoll(); await activePoll.entered; await frames(); await assertStable();
+        activePoll.release(); await activePoll.completed; activePoll = null; await frames(); await assertStable();
+      }
+      await capture(page, 'codex-background-polling-stable.png');
+      await page.evaluate(() => (window as any).__buildrCodexPollingProbe.observer.disconnect());
+      activePoll = nextAutomaticPoll(); await activePoll.entered; await frames();
+      const pendingReads = {...reads}, refreshButton = details(agent.label).getByRole('button', {name: /刷新连接状态$/u});
+      await refreshButton.click(); await details(agent.label).locator('.ant-btn-loading').waitFor({state: 'visible'}); await frames();
+      await assertState('待桌面加载');
+      await details(agent.label).getByText('原聊天绑定与任务交接仍需桌面连接。', {exact: true}).waitFor({state: 'visible'});
+      assert.equal(await details(agent.label).getByRole('button', {name: /配置与运行信息$/u}).getAttribute('aria-expanded'), 'true');
+      assert.deepEqual(reads, pendingReads, '用户刷新复用在途后台读取，不能再发第二个GET');
+      activePoll.release(); await activePoll.completed; activePoll = null;
+      await details(agent.label).locator('.ant-btn-loading').waitFor({state: 'hidden'}); await assertState('待桌面加载');
+      assert.equal(await refreshButton.evaluate((element: HTMLElement) => document.activeElement === element), true);
+      const observeChange = async (next: string, label: string) => {
+        mode = next; const response = page.waitForResponse((item: any) => new URL(item.url()).pathname === desktopPath);
+        await page.evaluate(() => window.dispatchEvent(new Event('focus'))); await response; await assertState(label);
+      };
+      await observeChange('unavailable', '桌面连接不可用'); await details(agent.label).getByText('隔离连接已不可用。', {exact: true}).waitFor({state: 'visible'});
+      await observeChange('error', '桌面状态未能确认'); await details(agent.label).getByText('隔离轮询读取失败。', {exact: true}).waitFor({state: 'visible'});
+      mode = 'ready'; activePoll = nextAutomaticPoll(); await activePoll.entered; await frames(); await assertState('桌面状态未能确认');
+      assert.equal(await row(agent.id).getByText('正在读取桌面状态…', {exact: true}).count(), 0, '后台重试保留读取失败，不能假装首次加载');
+      await details(agent.label).getByText('隔离轮询读取失败。', {exact: true}).waitFor({state: 'visible'});
+      activePoll.release(); await activePoll.completed; activePoll = null; await assertState('桌面已连接');
+      assert.equal(await details(agent.label).getByText('隔离轮询读取失败。', {exact: true}).count(), 0, '真实成功后才清除上次错误');
+      assert.equal(await details(agent.label).getByRole('button', {name: /配置与运行信息$/u}).getAttribute('aria-expanded'), 'true');
+      assert.equal(await details(agent.label).getByRole('button', {name: /刷新连接状态$/u}).evaluate((element: HTMLElement) => document.activeElement === element), true);
+      assert.equal(await row(dsh.id).getByRole('button', {name: '设为默认智能体 ' + dsh.label, exact: true}).getAttribute('aria-pressed'), 'true'); assert.equal(writes, 0);
+      await closeDetails(agent.label); await page.getByRole('button', {name: '关闭智能体', exact: true}).click();
+    } finally {
+      if (activePoll) {activePoll.release(); await activePoll.completed.catch(() => {});}
+      await page.evaluate(() => {(window as any).__buildrCodexPollingProbe?.observer.disconnect(); delete (window as any).__buildrCodexPollingProbe;}).catch(() => {});
+      await page.unroute(pattern, handler); await page.unroute('**/api/v1/app/codex/connections', handler);
+    }
+  });
   await t.test('Codex 接入界面：生成配置与桌面状态独立，列表及详情共享只读查询且失效目标自动关闭', async () => {
     expectedBrowserErrors.add(new URL('/api/v1/app/codex/connections', workspaceUrl).href);
     let mode = 'loading', reads = 0, writes = 0, present = true, currentAgent: any = agent, release: (() => void) | null = null;

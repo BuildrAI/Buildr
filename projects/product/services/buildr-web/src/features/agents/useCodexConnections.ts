@@ -9,12 +9,19 @@ export function useCodexConnections(active: boolean) {
   const [state, setState] = useState<CodexConnectionsState>(emptyState);
   const enabled = useRef(active), controller = useRef<AbortController | null>(null), request = useRef(0);
   enabled.current = active;
-  const read = useCallback(async (invalidatePending = false) => {
-    if (!enabled.current || controller.current && !invalidatePending) return;
+  const read = useCallback(async ({invalidatePending = false, foreground = false}: {invalidatePending?: boolean; foreground?: boolean} = {}) => {
+    if (!enabled.current) return;
+    if (controller.current && !invalidatePending) {
+      if (foreground) setState(previous => ({...previous, loading: true}));
+      return;
+    }
     if (invalidatePending) controller.current?.abort();
     const current = new AbortController(), serial = ++request.current;
     controller.current = current;
-    setState(previous => ({...previous, loading: true, error: ''}));
+    // Automatic observations retain the last result until a response changes it.
+    // A completed connection mutation invalidates that result before rereading.
+    if (invalidatePending) setState({...emptyState, loading: true});
+    else if (foreground) setState(previous => ({...previous, loading: true}));
     try {
       const result = await codexDesktopApi.connections(current.signal);
       if (!current.signal.aborted && enabled.current && request.current === serial) setState({connections: result.connections, loading: false, error: ''});
@@ -24,16 +31,16 @@ export function useCodexConnections(active: boolean) {
       if (request.current === serial) controller.current = null;
     }
   }, []);
-  const refresh = useCallback(() => read(), [read]);
-  const refreshAfterChange = useCallback(() => read(true), [read]);
+  const refresh = useCallback(() => read({foreground: true}), [read]);
+  const refreshAfterChange = useCallback(() => read({invalidatePending: true, foreground: true}), [read]);
   useEffect(() => {
-    setState(emptyState);
+    setState(active ? {...emptyState, loading: true} : emptyState);
     if (!active) return;
-    void refresh();
-    const observe = () => {if (document.visibilityState === 'visible') void refresh();};
+    void read();
+    const observe = () => {if (document.visibilityState === 'visible') void read();};
     const timer = window.setInterval(observe, 4000);
     window.addEventListener('focus', observe);
     return () => {++request.current; controller.current?.abort(); controller.current = null; window.clearInterval(timer); window.removeEventListener('focus', observe);};
-  }, [active, refresh]);
+  }, [active, read]);
   return {state: active ? state : emptyState, refresh, refreshAfterChange};
 }

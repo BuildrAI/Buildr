@@ -22,15 +22,16 @@ export function AgentRuntimeProvider({children}: {children: ReactNode}) {
   const [registry, setRegistry] = useState<AgentRegistry | null>(null), [loading, setLoading] = useState(false), [selecting, setSelecting] = useState(false), [removing, setRemoving] = useState<string | null>(null), [error, setError] = useState(''), [open, setOpen] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const observed = useRef(registry), mounted = useRef(false), serial = useRef(0), writing = useRef(false);
-  const refresh = useCallback(async () => {
+  const readRegistry = useCallback(async (foreground = false) => {
     if (writing.current) return null;
     const request = ++serial.current;
-    setLoading(true);
+    if (foreground) setLoading(true);
     try { const result = await agentOperationsApi.list(); if (mounted.current && request === serial.current) {observed.current = result; setRegistry(result); setError(''); return result;} }
     catch (failure) { if (mounted.current && request === serial.current) setError(failure instanceof Error ? failure.message : '无法读取智能体。'); }
     finally { if (mounted.current && request === serial.current) setLoading(false); }
     return null;
   }, []);
+  const refresh = useCallback(() => readRegistry(true), [readRegistry]);
   const select = useCallback(async (agentId: string) => {
     const snapshot = observed.current;
     if (!snapshot || writing.current || snapshot.defaultAgentId === agentId) return;
@@ -75,14 +76,14 @@ export function AgentRuntimeProvider({children}: {children: ReactNode}) {
       return {removed: false, warning: '', error: knownFailure ? (failure as Error).message : '移除结果尚未确认。已尝试刷新智能体列表，请核对后再决定是否重试；不会自动再次发送。'};
     } finally {writing.current = false; if (mounted.current) setRemoving(null);}
   }, [refresh]);
-  useEffect(() => { mounted.current = true; void refresh(); return () => {mounted.current = false; ++serial.current;}; }, [refresh]);
+  useEffect(() => { mounted.current = true; void readRegistry(true); return () => {mounted.current = false; ++serial.current;}; }, [readRegistry]);
   useEffect(() => {
     if (!open) return;
-    void refresh();
-    const timer = window.setInterval(() => { if (document.visibilityState === 'visible' && !writing.current) void refresh(); }, 4000);
+    void readRegistry();
+    const timer = window.setInterval(() => { if (document.visibilityState === 'visible' && !writing.current) void readRegistry(); }, 4000);
     return () => window.clearInterval(timer);
-  }, [open, refresh]);
-  useEffect(() => {const observe = () => { if (document.visibilityState === 'visible' && !writing.current) void refresh(); }; window.addEventListener('focus', observe); return () => window.removeEventListener('focus', observe);}, [refresh]);
+  }, [open, readRegistry]);
+  useEffect(() => {const observe = () => { if (document.visibilityState === 'visible' && !writing.current) void readRegistry(); }; window.addEventListener('focus', observe); return () => window.removeEventListener('focus', observe);}, [readRegistry]);
   return <AgentRuntimeContext.Provider value={{registry, loading, selecting, connecting, removing, error, open, setOpen, refresh, select, connectCodex, removeCodex}}>{children}</AgentRuntimeContext.Provider>;
 }
 export function useAgentRuntime() {

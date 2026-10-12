@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { atomicWriteJson } from '../../../infrastructure/filesystem/atomic-files.ts';
 import { withExclusiveFileLock } from '../../../infrastructure/filesystem/exclusive-file-lock.ts';
-import { codexFailure, isNativeSessionId, type CodexConnections, type CodexWorkspaceSessions } from '../domain/codex-desktop.ts';
+import { codexFailure, isNativeSessionId, type CodexConnections, type CodexConnectorLeases, type CodexWorkspaceSessions } from '../domain/codex-desktop.ts';
 
 const text = (value: unknown, max = 256): value is string => typeof value === 'string' && value.length > 0 && value.length <= max && !/[\u0000-\u001f\u007f]/.test(value);
 const nullableText = (value: unknown) => value === null || text(value, 2000);
@@ -12,6 +12,7 @@ const taskId = (value: unknown) => typeof value === 'string' && value.length <= 
 const digest = (value: unknown) => typeof value === 'string' && /^sha256-[a-f0-9]{64}$/.test(value);
 const exact = (value: object, fields: string[]) => Object.keys(value).length === fields.length && Object.keys(value).every(k => fields.includes(k));
 const maxStateBytes = 4 * 1024 * 1024;
+const connectionLockTimeoutMs = 1_000;
 
 /** One local owner for connections; workspace relations never rewrite Task Record. */
 export class CodexDesktopRepository {
@@ -39,22 +40,25 @@ export class CodexDesktopRepository {
       catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw codexFailure('codex_storage_scope_invalid', 'Codex 本机数据目录被替换或不可用。', 409); }
     }
   }
-  private mutate<T>(file: string, boundary: string, read: () => T, change: (value: T) => void): T {
+  private locked<T>(file: string, boundary: string, action: () => T, timeoutMs = 0): T {
     this.assertDirectory(path.dirname(file), boundary);
     fs.mkdirSync(path.dirname(file), { recursive: true });
     try {
       return withExclusiveFileLock(file + '.lock', file, () => {
         this.assertDirectory(path.dirname(file), boundary);
-        const value = read();
-        change(value);
-        if (Buffer.byteLength(JSON.stringify(value, null, 2) + '\n', 'utf8') > maxStateBytes) throw codexFailure('codex_local_state_full', 'Codex 本机关联数据已达容量限制；原有关系和回执已保留。', 409);
-        atomicWriteJson(file, value, { mode: 0o600 });
-        return structuredClone(value);
-      }, { timeoutMs: 0 });
+        return action();
+      }, { timeoutMs, assertSafe: () => this.assertDirectory(path.dirname(file), boundary) });
     } catch (error) {
       if ((error as { code?: string }).code === 'buildr_exclusive_file_lock_timeout') throw codexFailure('codex_local_state_busy', 'Codex 关联正在更新，请刷新后重试。', 409);
       throw error;
     }
+  }
+  private write(file: string, value: unknown) {
+    if (Buffer.byteLength(JSON.stringify(value, null, 2) + '\n', 'utf8') > maxStateBytes) throw codexFailure('codex_local_state_full', 'Codex 本机关联数据已达容量限制；原有关系和回执已保留。', 409);
+    atomicWriteJson(file, value, { mode: 0o600 });
+  }
+  private mutate<T>(file: string, boundary: string, read: () => T, change: (value: T) => void, timeoutMs = 0): T {
+    return this.locked(file, boundary, () => { const value = read(); change(value); this.write(file, value); return structuredClone(value); }, timeoutMs);
   }
   private connectionsFile() { return path.join(this.dataRoot, 'codex-desktop', 'connections.json'); }
   readConnections(): CodexConnections {
@@ -65,7 +69,36 @@ export class CodexDesktopRepository {
         && new Set(v.connections.map(c => c.id)).size === v.connections.length && v.connections.every(c => c && exact(c, ['id', 'agentId', 'label', 'installationLabel', 'configurationLabel', 'status', 'safeReason', 'pluginVersion', 'lastSeenAt', 'executable', 'codexHome', 'appPath', 'appVersion', 'scopeIdentity', 'connectorPid', 'preparationId', 'pluginEntryIdentity']) && connectionId(c.id) && /^agent-[a-f0-9-]{36}$/.test(c.agentId) && text(c.label, 100) && text(c.installationLabel) && text(c.configurationLabel) && ['pending', 'awaiting-desktop', 'ready', 'unavailable', 'disconnected'].includes(c.status) && nullableText(c.safeReason) && nullableText(c.pluginVersion) && nullableText(c.appVersion) && (c.lastSeenAt === null || stamp(c.lastSeenAt)) && path.isAbsolute(c.executable) && path.isAbsolute(c.codexHome) && path.isAbsolute(c.appPath) && digest(c.scopeIdentity) && (c.connectorPid === null || Number.isSafeInteger(c.connectorPid) && c.connectorPid > 0) && (c.preparationId === null || isNativeSessionId(c.preparationId)) && (c.pluginEntryIdentity === null || digest(c.pluginEntryIdentity)));
     });
   }
-  mutateConnections(change: (value: CodexConnections) => void) { return this.mutate(this.connectionsFile(), this.dataRoot, () => this.readConnections(), change); }
+  // Desktop chats initialize separate MCP clients against this one short-lived local write.
+  mutateConnections(change: (value: CodexConnections) => void) { return this.mutate(this.connectionsFile(), this.dataRoot, () => this.readConnections(), change, connectionLockTimeoutMs); }
+  private leasesFile() { return path.join(this.dataRoot, 'codex-desktop', 'connector-leases.json'); }
+  readConnectorLeases(): CodexConnectorLeases {
+    this.assertDirectory(path.dirname(this.leasesFile()), this.dataRoot);
+    return this.read(this.leasesFile(), () => ({ schemaVersion: 'buildr.codex-desktop-connector-leases/v1', owners: [] }), (value): value is CodexConnectorLeases => {
+      const v = value as CodexConnectorLeases;
+      return v?.schemaVersion === 'buildr.codex-desktop-connector-leases/v1' && exact(v, ['schemaVersion', 'owners']) && Array.isArray(v.owners) && v.owners.length <= 512
+        && new Set(v.owners.map(owner => JSON.stringify([owner?.connectionId, owner?.pid]))).size === v.owners.length
+        && v.owners.every(owner => owner && exact(owner, ['connectionId', 'pid', 'scopeIdentity', 'pluginVersion', 'pluginEntryIdentity', 'startedAt', 'phase']) && connectionId(owner.connectionId)
+          && Number.isSafeInteger(owner.pid) && owner.pid > 0 && digest(owner.scopeIdentity) && text(owner.pluginVersion)
+          && (owner.pluginEntryIdentity === null || digest(owner.pluginEntryIdentity)) && stamp(owner.startedAt) && ['starting', 'active'].includes(owner.phase));
+    });
+  }
+  mutateConnectionRuntime(change: (state: CodexConnections, runtime: CodexConnectorLeases) => void) {
+    const file = this.connectionsFile();
+    return this.locked(file, this.dataRoot, () => {
+      const state = this.readConnections(), runtime = this.readConnectorLeases();
+      const previous = new Set(runtime.owners.filter(owner => owner.phase === 'active').map(owner => JSON.stringify(owner)));
+      change(state, runtime);
+      if (runtime.owners.length > 512) throw codexFailure('codex_connector_limit', 'Codex 桌面连接实例数量已达上限。', 409);
+      // Publish a non-ready marker before the legacy write. If either later write fails,
+      // this PID cannot fall back to its legacy ready record after a failed initialize.
+      const staged = { ...runtime, owners: runtime.owners.map(owner => owner.phase === 'active' && !previous.has(JSON.stringify(owner)) ? { ...owner, phase: 'starting' as const } : owner) };
+      if (JSON.stringify(staged) !== JSON.stringify(runtime)) this.write(this.leasesFile(), staged);
+      this.write(file, state);
+      this.write(this.leasesFile(), runtime);
+      return structuredClone(state);
+    }, connectionLockTimeoutMs);
+  }
   private workspaceFile(root: string) { return path.join(root, '.buildr', 'local', 'codex-desktop-sessions.json'); }
   readWorkspace(root: string, workspaceId: string): CodexWorkspaceSessions {
     this.assertDirectory(path.dirname(this.workspaceFile(root)), root);

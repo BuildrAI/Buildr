@@ -26,6 +26,11 @@ export type CodexHandoff = {
 export type CodexHandoffView = Omit<CodexHandoff, 'status'> & { status: CodexHandoff['status'] | 'expired' };
 export type CodexWorkspaceSessions = { schemaVersion: 'buildr.codex-workspace-sessions/v1'; workspaceId: string; relations: CodexSessionRelation[]; bindings: CodexBinding[]; handoffs: CodexHandoff[] };
 export type CodexConnections = { schemaVersion: 'buildr.codex-desktop-connections/v1'; connections: CodexDesktopConnection[] };
+export type CodexConnectorLease = {
+  connectionId: string; pid: number; scopeIdentity: string; pluginVersion: string; pluginEntryIdentity: string | null;
+  startedAt: string; phase: 'starting' | 'active';
+};
+export type CodexConnectorLeases = { schemaVersion: 'buildr.codex-desktop-connector-leases/v1'; owners: CodexConnectorLease[] };
 export const codexDigest = (value: unknown) => 'sha256-' + crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');
 export const codexFailure = (code: string, message: string, status = 400): Error & { code: string; status: number } => Object.assign(new Error(message), { code, status });
 export const isNativeSessionId = (value: unknown): value is string => typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value);
