@@ -8,6 +8,7 @@ import test from 'node:test';
 import { CodexDesktopApplication } from '../../src/modules/codex-desktop/application/codex-desktop-application.ts';
 import { CodexDesktopRepository } from '../../src/modules/codex-desktop/persistence/codex-desktop-repository.ts';
 import { runCodexMcpServer } from '../../src/modules/codex-desktop/interfaces/mcp/codex-mcp-server.ts';
+import { CODEX_DESKTOP_PLUGIN_VERSION } from '../../src/modules/codex-desktop/infrastructure/codex-plugin-installation.ts';
 
 const workspaceId = '30000000-0000-4000-8000-000000000001', nativeSessionId = '30000000-0000-4000-8000-000000000002';
 type Installed = { pluginVersion: string; status: 'awaiting-desktop'; safeReason: string | null };
@@ -114,7 +115,8 @@ for (const rejectInstallation of [false, true]) {
 }
 
 test('an already initialized MCP process reads current registration for every business call and exposes only disabled status after removal', async t => {
-  const f = fixture(t), connection = await f.connect(), binding = f.bind(connection.id), history = fs.readFileSync(f.sessionsFile, 'utf8');
+  const f = fixture(t, async () => ({pluginVersion: CODEX_DESKTOP_PLUGIN_VERSION, status: 'awaiting-desktop', safeReason: '待桌面加载'}));
+  const connection = await f.connect(), binding = f.bind(connection.id), history = fs.readFileSync(f.sessionsFile, 'utf8');
   const input = new PassThrough(), waiting = new Map<number, (value: any) => void>();
   const output = new Writable({ write(chunk, _encoding, callback) { const response = JSON.parse(chunk.toString()); waiting.get(response.id)?.(response); waiting.delete(response.id); callback(); } });
   const running = runCodexMcpServer(f.application, { connectionId: connection.id, input, output });

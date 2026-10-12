@@ -155,6 +155,6 @@ body{margin:0;padding:20px;box-sizing:border-box}h1{font-size:19px;margin:0 0 6p
     else if(value.method==='ui/notifications/host-context-changed')applyHostContext(value.params?.hostContext||value.params);
     else if(value.method==='ui/resource-teardown'&&value.id!==undefined)window.parent.postMessage({jsonrpc:'2.0',id:value.id,result:{}},'*');
   });
-  (async()=>{try{const result=await rpc('ui/initialize',{appInfo:{name:'buildr-desktop',version:'1.0.0'},appCapabilities:{availableDisplayModes:['inline','fullscreen']},protocolVersion:'2026-01-26'});capabilities=result.hostCapabilities||{};applyHostContext(result.hostContext);notify('ui/notifications/initialized');if(window.openai?.toolOutput)applyContext(window.openai.toolOutput);if(!context)status('宿主已连接，等待入口工具结果。');resize();}catch(error){status(error.message);}refreshButtons();})();
+  (async()=>{try{const result=await rpc('ui/initialize',{appInfo:{name:'buildr-desktop',version:'1.0.1'},appCapabilities:{availableDisplayModes:['inline','fullscreen']},protocolVersion:'2026-01-26'});capabilities=result.hostCapabilities||{};applyHostContext(result.hostContext);notify('ui/notifications/initialized');if(window.openai?.toolOutput)applyContext(window.openai.toolOutput);if(!context)status('宿主已连接，等待入口工具结果。');resize();}catch(error){status(error.message);}refreshButtons();})();
 })();
 </script></body></html>

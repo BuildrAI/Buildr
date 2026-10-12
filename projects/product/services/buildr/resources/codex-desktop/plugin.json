@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "buildr-desktop",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "将 Buildr 任务与 Codex 原聊天关联，在桌面接续工作并打开准确任务。",
   "extensions": {
     "com.openai": {

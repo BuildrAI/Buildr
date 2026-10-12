@@ -6,7 +6,8 @@ import { isDeepStrictEqual } from 'node:util';
 import { spawnCommandSync } from '../../../infrastructure/process.ts';
 import type { CodexAgentRegistration, CodexDesktopInstallation } from '../../agent-operations/domain/agent-operations.ts';
 
-export const CODEX_DESKTOP_PLUGIN_VERSION = '1.0.0';
+export const CODEX_DESKTOP_PLUGIN_VERSION = '1.0.1';
+const DESKTOP_LAUNCHER = 'bin/buildr-codex-desktop';
 export type CodexPluginInvocation = { command: string; argsPrefix: string[]; kind?: string };
 export type CodexPluginInstallationResult = {
   pluginId: string;
@@ -42,6 +43,37 @@ function writeJson(file: string, value: unknown): void {
   try { fs.writeFileSync(temporary, JSON.stringify(value, null, 2) + '\n', { flag: 'wx', mode: 0o600 }); fs.renameSync(temporary, file); }
   finally { fs.rmSync(temporary, { force: true }); }
 }
+function launcherContent(server: ReturnType<typeof desktopServerInvocation>): string {
+  const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
+  return '#!/bin/sh\nexec ' + [server.command, ...server.args].map(quote).join(' ') + '\n';
+}
+function prepareOwnedDirectories(dataRoot: string, parts: string[]): void {
+  fs.mkdirSync(dataRoot, { recursive: true });
+  let directory = fs.realpathSync(dataRoot);
+  for (const part of parts) {
+    directory = path.join(directory, part);
+    try { fs.mkdirSync(directory); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
+    if (!fs.lstatSync(directory).isDirectory()) throw failure('codex_plugin_entry_invalid', '桌面连接文件目录不能是符号链接或其他文件。');
+  }
+}
+function writeLauncher(pluginRoot: string, content: string): void {
+  const root = fs.realpathSync(pluginRoot), directory = path.join(root, 'bin');
+  fs.mkdirSync(directory, { recursive: true });
+  if (!fs.lstatSync(directory).isDirectory() || fs.realpathSync(directory) !== directory) throw failure('codex_plugin_entry_invalid', '桌面连接启动文件必须保存在插件目录内。');
+  const file = path.join(root, DESKTOP_LAUNCHER), temporary = file + '.' + crypto.randomUUID() + '.tmp';
+  try { if (!fs.lstatSync(file).isFile()) throw failure('codex_plugin_entry_invalid', '桌面连接启动文件不能是符号链接或其他文件。'); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+  try {
+    fs.writeFileSync(temporary, content, { flag: 'wx', mode: 0o755 });
+    fs.chmodSync(temporary, 0o755); fs.renameSync(temporary, file);
+  } finally { fs.rmSync(temporary, { force: true }); }
+}
+function cachedFile(installedPath: string, relative: string): string {
+  const root = fs.realpathSync(installedPath), file = path.join(root, relative);
+  if (!fs.statSync(root).isDirectory() || !fs.lstatSync(file).isFile() || fs.realpathSync(file) !== file) throw new Error('cached file is not a contained ordinary file');
+  return file;
+}
 
 /** Uses only the public plugin CLI. Never restarts or replaces the desktop backend. */
 export async function installCodexDesktopPlugin(input: {
@@ -53,6 +85,8 @@ export async function installCodexDesktopPlugin(input: {
 }): Promise<CodexPluginInstallationResult> {
   const { registration, invocation } = input;
   const server = desktopServerInvocation(invocation, input.dataRoot, input.connectionId);
+  const launcher = launcherContent(server);
+  const pluginServer = { command: './' + DESKTOP_LAUNCHER, args: [], env: server.env };
   const entry = server.args[0];
   if (/(?:^|[\\/])(?:\.worktrees|test|tests)(?:[\\/]|$)|(?:^|[\\/])\.codex[\\/]worktrees(?:[\\/]|$)/u.test(entry)) {
     throw failure('codex_plugin_candidate_entry', '当前是候选或测试入口，未安装到桌面配置。交付到保留安装后可继续准备桌面连接。');
@@ -67,21 +101,22 @@ export async function installCodexDesktopPlugin(input: {
   const root = path.join(input.dataRoot, 'codex-desktop', 'marketplace', input.connectionId);
   const pluginRoot = path.join(root, 'plugins', 'buildr-desktop');
   const source = fileURLToPath(new URL('../../../../resources/codex-desktop/', import.meta.url));
-  fs.mkdirSync(pluginRoot, { recursive: true });
+  prepareOwnedDirectories(input.dataRoot, ['codex-desktop', 'marketplace', input.connectionId, 'plugins', 'buildr-desktop']);
+  writeLauncher(pluginRoot, launcher);
   fs.cpSync(path.join(source, 'skills'), path.join(pluginRoot, 'skills'), { recursive: true });
   fs.copyFileSync(path.join(source, 'panel.html'), path.join(pluginRoot, 'panel.html'));
   const manifest = JSON.parse(fs.readFileSync(path.join(source, 'plugin.json'), 'utf8'));
   writeJson(path.join(pluginRoot, 'plugin.json'), manifest);
   writeJson(path.join(pluginRoot, 'mcp.json'), {
     $schema: 'https://agent-plugins.org/schemas/1.0.0/mcp.schema.json',
-    mcpServers: { buildr: { type: 'stdio', ...server } },
+    mcpServers: { buildr: { type: 'stdio', ...pluginServer } },
   });
   // The installed desktop version already supports this compatibility layout.
   writeJson(path.join(pluginRoot, '.codex-plugin', 'plugin.json'), {
     name: manifest.name, version: manifest.version, description: manifest.description,
     mcpServers: './.mcp.json', skills: './skills/', interface: manifest.extensions['com.openai'].interface,
   });
-  writeJson(path.join(pluginRoot, '.mcp.json'), { mcpServers: { buildr: server } });
+  writeJson(path.join(pluginRoot, '.mcp.json'), { mcpServers: { buildr: pluginServer } });
   writeJson(path.join(root, '.agents', 'plugins', 'marketplace.json'), {
     name: marketplaceName, interface: { displayName: 'Buildr 本机连接' },
     plugins: [{ name: 'buildr-desktop', source: { source: 'local', path: './plugins/buildr-desktop' },
@@ -112,11 +147,21 @@ export async function installCodexDesktopPlugin(input: {
   } catch { throw failure('codex_plugin_cache_unconfirmed', '桌面插件安装副本当前无法核对，仍需准备；生成登记已保留。'); }
   if (installedVersion !== CODEX_DESKTOP_PLUGIN_VERSION || (typeof observed.version === 'string' && !['local', CODEX_DESKTOP_PLUGIN_VERSION].includes(observed.version))) throw failure('codex_plugin_version_unconfirmed', '桌面插件安装副本版本尚未更新，仍需准备；不会把源文件版本当成运行版本。');
   try {
-    const portable = fs.existsSync(path.join(installedPath, 'mcp.json'));
-    const cachedServer = JSON.parse(fs.readFileSync(path.join(installedPath, portable ? 'mcp.json' : '.mcp.json'), 'utf8')).mcpServers?.buildr;
-    if (!isDeepStrictEqual(cachedServer, portable ? { type: 'stdio', ...server } : server)) throw new Error('cached entry differs');
+    let checkedServer = false;
+    for (const name of ['mcp.json', '.mcp.json']) {
+      if (!fs.existsSync(path.join(installedPath, name))) continue;
+      const cachedServer = JSON.parse(fs.readFileSync(cachedFile(installedPath, name), 'utf8')).mcpServers?.buildr;
+      if (!isDeepStrictEqual(cachedServer, name === 'mcp.json' ? { type: 'stdio', ...pluginServer } : pluginServer)) throw new Error('cached entry differs');
+      checkedServer = true;
+    }
+    if (!checkedServer) throw new Error('cached server is missing');
+    const cachedLauncher = cachedFile(installedPath, DESKTOP_LAUNCHER);
+    if (!(fs.statSync(cachedLauncher).mode & 0o111)) throw new Error('cached launcher is not executable');
+    fs.accessSync(cachedLauncher, fs.constants.X_OK);
+    if (fs.readFileSync(cachedLauncher, 'utf8') !== launcher) throw new Error('cached launcher differs');
     const skill = path.join('skills', 'buildr-desktop', 'SKILL.md');
-    if (!fs.readFileSync(path.join(installedPath, skill)).equals(fs.readFileSync(path.join(pluginRoot, skill)))) throw new Error('cached instructions differ');
+    if (!fs.readFileSync(cachedFile(installedPath, skill)).equals(fs.readFileSync(path.join(pluginRoot, skill)))) throw new Error('cached instructions differ');
+    if (!fs.readFileSync(cachedFile(installedPath, 'panel.html')).equals(fs.readFileSync(path.join(pluginRoot, 'panel.html')))) throw new Error('cached panel differs');
   } catch { throw failure('codex_plugin_cache_unconfirmed', '桌面插件安装副本尚未对齐本次确认的入口及指引，仍需准备；生成登记已保留。'); }
   return { pluginId, pluginVersion: CODEX_DESKTOP_PLUGIN_VERSION, entryIdentity: codexDesktopEntryIdentity(invocation, input.dataRoot, input.connectionId), installedPath, status: 'awaiting-desktop',
     safeReason: '连接组件已安装，等待桌面加载并完成握手；需要刷新时由用户决定，不会自动中断聊天。' };

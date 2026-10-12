@@ -2,49 +2,140 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { PassThrough, Writable } from 'node:stream';
 import test from 'node:test';
 import vm from 'node:vm';
-import { codexDesktopEntryIdentity, installCodexDesktopPlugin } from '../../src/modules/codex-desktop/infrastructure/codex-plugin-installation.ts';
+import { CODEX_DESKTOP_PLUGIN_VERSION, codexDesktopEntryIdentity, installCodexDesktopPlugin } from '../../src/modules/codex-desktop/infrastructure/codex-plugin-installation.ts';
 import { runCodexMcpServer } from '../../src/modules/codex-desktop/interfaces/mcp/codex-mcp-server.ts';
 import type { CodexDesktopApplication } from '../../src/modules/codex-desktop/application/codex-desktop-application.ts';
 
-function installationFixture() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-codex-plugin-'));
-  const executable = path.join(root, 'codex'), codexHome = path.join(root, 'codex-home'), dataRoot = path.join(root, 'data'), entry = path.join(root, 'bin', 'buildr.mjs'), appPath = path.join(root, 'ChatGPT.app');
+function installationFixture(quoted = false) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), quoted ? "buildr codex 'quoted plugin-" : 'buildr-codex-plugin-'));
+  const executable = path.join(root, 'codex'), codexHome = path.join(root, quoted ? "Codex profile 'local'" : 'codex-home'), dataRoot = path.join(root, quoted ? "Buildr data 'local'" : 'data'), entry = path.join(root, quoted ? "retained product 'canonical'" : 'bin', 'buildr.mjs'), appPath = path.join(root, 'ChatGPT.app');
   for (const directory of [codexHome, dataRoot, path.dirname(entry), appPath]) fs.mkdirSync(directory, { recursive: true });
-  fs.writeFileSync(entry, '// isolated retained-entry fixture\n');
-  fs.writeFileSync(executable, `#!${process.execPath}\nconst fs=require('node:fs'),path=require('node:path');const args=process.argv.slice(2),home=process.env.CODEX_HOME;fs.appendFileSync(path.join(home,'calls.jsonl'),JSON.stringify(args)+'\\n');if(args[1]==='marketplace'){fs.writeFileSync(path.join(home,'marketplace-root'),args[3]);console.log(JSON.stringify({name:'fixture'}));}else if(args[1]==='add'){fs.writeFileSync(path.join(home,'plugin-id'),args[2]);const root=fs.readFileSync(path.join(home,'marketplace-root'),'utf8');fs.cpSync(path.join(root,'plugins','buildr-desktop'),path.join(home,'cache'),{recursive:true});if(fs.existsSync(path.join(home,'stale')))fs.writeFileSync(path.join(home,'cache','plugin.json'),JSON.stringify({version:'0.0.1'}));console.log(JSON.stringify({pluginId:args[2],version:'1.0.0',installedPath:path.join(home,'cache')}));}else if(args[1]==='list'){console.log(JSON.stringify({installed:[{pluginId:fs.readFileSync(path.join(home,'plugin-id'),'utf8'),installed:true,enabled:!fs.existsSync(path.join(home,'disabled')),version:'1.0.0'}],available:[]}));}else process.exit(2);\n`, { mode: 0o755 });
-  fs.appendFileSync(executable, "if(args[1]==='add'&&fs.existsSync(path.join(home,'stale-entry'))){const file=path.join(home,'cache','mcp.json'),value=JSON.parse(fs.readFileSync(file,'utf8'));value.mcpServers.buildr.args.push('unexpected');fs.writeFileSync(file,JSON.stringify(value));}\n");
-  return { root, executable, codexHome, dataRoot, entry, appPath, input: { dataRoot, connectionId: 'codex-connection-one', registration: { id: 'agent-one', kind: 'codex' as const, label: 'Codex', executable, codexHome, version: '0.162.0' }, installation: { appPath, appVersion: '26.1007' }, invocation: { command: process.execPath, argsPrefix: [entry], kind: 'host-node' } } };
+  fs.writeFileSync(entry, "process.stdout.write(JSON.stringify({runtime:process.execPath,entry:process.argv[1],args:process.argv.slice(2),dataRoot:process.env.BUILDR_APP_DATA_DIR,inherited:process.env.BUILDR_PLUGIN_TEST_SENTINEL}));\n");
+  let runtime = process.execPath, invokedEntry = entry;
+  if (quoted) {
+    runtime = path.join(root, "node executable 'quoted'");
+    fs.writeFileSync(runtime, '#!' + process.execPath + '\n' + "process.stdout.write(JSON.stringify({runtime:process.argv[1],entry:process.argv[2],args:process.argv.slice(3),dataRoot:process.env.BUILDR_APP_DATA_DIR,inherited:process.env.BUILDR_PLUGIN_TEST_SENTINEL}));\n", {mode: 0o755});
+    invokedEntry = path.join(root, "entry alias 'chosen'.mjs"); fs.symlinkSync(entry, invokedEntry);
+  }
+  fs.writeFileSync(executable, '#!' + process.execPath + '\n' + String.raw`
+const fs=require('node:fs'),path=require('node:path');
+const args=process.argv.slice(2),home=process.env.CODEX_HOME,cache=path.join(home,'cache');
+fs.appendFileSync(path.join(home,'calls.jsonl'),JSON.stringify(args)+'\n');
+const version=()=>JSON.parse(fs.readFileSync(path.join(cache,'plugin.json'),'utf8')).version;
+const server=(root,file)=>JSON.parse(fs.readFileSync(path.join(root,file),'utf8')).mcpServers.buildr;
+// The external native loader accepts a contained executable path, not an absolute
+// host command. Enforce that boundary before a fake installation can report success.
+const nativeEntry=(root,file)=>{
+  root=fs.realpathSync(root);
+  const entry=server(root,file),command=entry.command;
+  if(typeof command!=='string'||!command.startsWith('./')||path.isAbsolute(command))throw Error('native command must be relative');
+  const resolved=path.resolve(root,command),relative=path.relative(root,fs.realpathSync(resolved));
+  if(relative==='..'||relative.startsWith('..'+path.sep)||path.isAbsolute(relative)||!fs.lstatSync(resolved).isFile())throw Error('native command escapes plugin');
+  fs.accessSync(resolved,fs.constants.X_OK);
+  return resolved;
+};
+if(args[1]==='marketplace'){
+  fs.writeFileSync(path.join(home,'marketplace-root'),args[3]);console.log(JSON.stringify({name:'fixture'}));
+}else if(args[1]==='add'){
+  fs.writeFileSync(path.join(home,'plugin-id'),args[2]);
+  const root=fs.readFileSync(path.join(home,'marketplace-root'),'utf8'),source=path.join(root,'plugins','buildr-desktop');
+  nativeEntry(source,'mcp.json');nativeEntry(source,'.mcp.json');
+  fs.rmSync(cache,{recursive:true,force:true});fs.cpSync(source,cache,{recursive:true});
+  const launcher=nativeEntry(cache,'mcp.json');
+  const alter=(file,change)=>{const value=JSON.parse(fs.readFileSync(path.join(cache,file),'utf8'));change(value.mcpServers.buildr);fs.writeFileSync(path.join(cache,file),JSON.stringify(value));};
+  const mode=fs.existsSync(path.join(home,'cache-mode'))?fs.readFileSync(path.join(home,'cache-mode'),'utf8'):'';
+  if(mode==='missing-launcher')fs.rmSync(launcher);
+  if(mode==='modified-launcher')fs.appendFileSync(launcher,'\n# stale runtime entry\n');
+  if(mode==='nonexec-launcher')fs.chmodSync(launcher,0o600);
+  if(mode==='launcher-symlink'){const outside=path.join(home,'outside-launcher');fs.copyFileSync(launcher,outside);fs.rmSync(launcher);fs.symlinkSync(outside,launcher);}
+  if(mode==='bin-symlink'){const bin=path.dirname(launcher),outside=path.join(home,'outside-bin');fs.renameSync(bin,outside);fs.symlinkSync(outside,bin);}
+  if(mode==='portable-command-absolute')alter('mcp.json',entry=>entry.command=process.execPath);
+  if(mode==='compat-command-traversal')alter('.mcp.json',entry=>entry.command='../outside-launcher');
+  if(mode==='modified-panel')fs.appendFileSync(path.join(cache,'panel.html'),'\n<!-- stale panel -->\n');
+  if(mode==='panel-symlink'){const panel=path.join(cache,'panel.html'),outside=path.join(home,'outside-panel');fs.copyFileSync(panel,outside);fs.rmSync(panel);fs.symlinkSync(outside,panel);}
+  if(mode==='compat-only'){fs.rmSync(path.join(cache,'mcp.json'));fs.rmSync(path.join(cache,'plugin.json'));}
+  if(fs.existsSync(path.join(home,'stale')))fs.writeFileSync(path.join(cache,'plugin.json'),JSON.stringify({version:'1.0.0'}));
+  if(fs.existsSync(path.join(home,'stale-entry')))alter('mcp.json',entry=>entry.args.push('unexpected'));
+  const installedVersion=fs.existsSync(path.join(cache,'plugin.json'))?version():JSON.parse(fs.readFileSync(path.join(cache,'.codex-plugin','plugin.json'),'utf8')).version;
+  console.log(JSON.stringify({pluginId:args[2],version:installedVersion,installedPath:cache}));
+}else if(args[1]==='list'){
+  const installedVersion=fs.existsSync(path.join(cache,'plugin.json'))?version():JSON.parse(fs.readFileSync(path.join(cache,'.codex-plugin','plugin.json'),'utf8')).version;
+  console.log(JSON.stringify({installed:[{pluginId:fs.readFileSync(path.join(home,'plugin-id'),'utf8'),installed:true,enabled:!fs.existsSync(path.join(home,'disabled')),version:installedVersion}],available:[]}));
+}else process.exit(2);
+`, { mode: 0o755 });
+  return { root, executable, codexHome, dataRoot, entry, appPath, input: { dataRoot, connectionId: 'codex-connection-one', registration: { id: 'agent-one', kind: 'codex' as const, label: 'Codex', executable, codexHome, version: '0.162.0' }, installation: { appPath, appVersion: '26.1007' }, invocation: { command: runtime, argsPrefix: [invokedEntry], kind: 'host-node' } } };
 }
 
-test('desktop plugin uses public commands and a stable profile-scoped connector entry', async () => {
+function assertLauncher(pluginRoot: string, fixture: ReturnType<typeof installationFixture>, connectionId = fixture.input.connectionId) {
+  const compatibility = JSON.parse(fs.readFileSync(path.join(pluginRoot, '.mcp.json'), 'utf8')).mcpServers.buildr;
+  const portableFile = path.join(pluginRoot, 'mcp.json');
+  if (fs.existsSync(portableFile)) {
+    const portable = JSON.parse(fs.readFileSync(portableFile, 'utf8')).mcpServers.buildr;
+    assert.deepEqual(portable, {type: 'stdio', ...compatibility});
+  }
+  assert.match(compatibility.command, /^\.\//u);
+  assert.deepEqual(compatibility.args, []);
+  assert.deepEqual(compatibility.env, {BUILDR_APP_DATA_DIR: fixture.dataRoot});
+  const canonicalRoot = fs.realpathSync(pluginRoot), launcher = path.resolve(canonicalRoot, compatibility.command), relative = path.relative(canonicalRoot, fs.realpathSync(launcher));
+  assert.ok(relative && relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative), 'native loader entry stays inside installed plugin');
+  assert.equal(fs.lstatSync(launcher).isFile(), true, 'native loader entry is a regular file');
+  fs.accessSync(launcher, fs.constants.X_OK);
+  assert.ok(fs.statSync(launcher).mode & 0o111, 'native loader entry remains executable');
+  const executed = spawnSync(launcher, compatibility.args, {cwd: pluginRoot, encoding: 'utf8', timeout: 5000, env: {...process.env, PATH: '', BUILDR_PLUGIN_TEST_SENTINEL: 'inherited fixture environment', ...compatibility.env}});
+  assert.equal(executed.error, undefined); assert.equal(executed.status, 0, executed.stderr);
+  assert.deepEqual(JSON.parse(executed.stdout), {runtime: fs.realpathSync(fixture.input.invocation.command), entry: fs.realpathSync(fixture.entry), args: ['codex', 'serve', '--connection-id', connectionId], dataRoot: fixture.dataRoot, inherited: 'inherited fixture environment'});
+}
+
+test('desktop plugin uses public commands and a portable executable profile-scoped connector entry', async () => {
   const fixture = installationFixture();
   try {
     const result = await installCodexDesktopPlugin(fixture.input);
-    assert.equal(result.status, 'awaiting-desktop');
+    assert.equal(result.status, 'awaiting-desktop'); assert.equal(result.pluginVersion, '1.0.1'); assert.equal(CODEX_DESKTOP_PLUGIN_VERSION, '1.0.1');
     const calls = fs.readFileSync(path.join(fixture.codexHome, 'calls.jsonl'), 'utf8').trim().split('\n').map(line => JSON.parse(line));
     assert.equal(calls.length, 3);
     assert.deepEqual(calls.map(args => args.slice(0, 3)), [['plugin', 'marketplace', 'add'], ['plugin', 'add', result.pluginId], ['plugin', 'list', '--json']]);
     const pluginRoot = path.join(calls[0][3], 'plugins', 'buildr-desktop');
-    const manifest = JSON.parse(fs.readFileSync(path.join(pluginRoot, '.mcp.json'), 'utf8'));
-    assert.deepEqual(manifest.mcpServers.buildr, { command: fs.realpathSync(process.execPath), args: [fs.realpathSync(fixture.entry), 'codex', 'serve', '--connection-id', 'codex-connection-one'], env: { BUILDR_APP_DATA_DIR: fixture.dataRoot } });
+    assertLauncher(pluginRoot, fixture); assertLauncher(result.installedPath, fixture);
     assert.equal(fs.existsSync(path.join(pluginRoot, 'skills', 'buildr-desktop', 'SKILL.md')), true);
-    assert.equal(fs.existsSync(path.join(pluginRoot, 'mcp.json')), true);
-    const repeated = await installCodexDesktopPlugin(fixture.input);
-    assert.equal(repeated.pluginId, result.pluginId);
-    assert.equal(repeated.entryIdentity, result.entryIdentity);
     assert.equal(result.entryIdentity, codexDesktopEntryIdentity(fixture.input.invocation, fixture.dataRoot, fixture.input.connectionId));
     const nextEntry = path.join(fixture.root, 'bin', 'next-buildr.mjs'); fs.writeFileSync(nextEntry, '// next retained entry\n');
     assert.notEqual(codexDesktopEntryIdentity({ ...fixture.input.invocation, argsPrefix: [nextEntry] }, fixture.dataRoot, fixture.input.connectionId), result.entryIdentity);
     const another = await installCodexDesktopPlugin({ ...fixture.input, connectionId: 'codex-connection-two' });
-    assert.notEqual(another.pluginId, result.pluginId);
+    assert.notEqual(another.pluginId, result.pluginId); assertLauncher(another.installedPath, fixture, 'codex-connection-two');
     assert.equal(fs.existsSync(path.join(fixture.codexHome, 'config.toml')), false);
   } finally { fs.rmSync(fixture.root, { recursive: true, force: true }); }
 });
 
-test('candidate entry cannot install into a desktop profile and disabled plugins remain unconfirmed', async () => {
+test('portable connector safely forwards quoted runtime and canonical entry paths without PATH lookup', async () => {
+  const fixture = installationFixture(true);
+  try {
+    const result = await installCodexDesktopPlugin(fixture.input);
+    assertLauncher(result.installedPath, fixture);
+    assert.equal(result.entryIdentity, codexDesktopEntryIdentity(fixture.input.invocation, fixture.dataRoot, fixture.input.connectionId));
+    assert.equal(fs.existsSync(path.join(fixture.codexHome, 'config.toml')), false);
+  } finally {fs.rmSync(fixture.root, {recursive: true, force: true});}
+});
+
+test('desktop maintenance replaces a 1.0.0 cache and repeats with the same connection identity', async () => {
+  const fixture = installationFixture();
+  try {
+    const cache = path.join(fixture.codexHome, 'cache'); fs.mkdirSync(cache);
+    fs.writeFileSync(path.join(cache, 'plugin.json'), JSON.stringify({version: '1.0.0'}));
+    fs.writeFileSync(path.join(cache, 'mcp.json'), JSON.stringify({mcpServers: {buildr: {command: process.execPath, args: [fixture.entry]}}}));
+    const first = await installCodexDesktopPlugin(fixture.input), repeated = await installCodexDesktopPlugin(fixture.input);
+    assert.equal(first.pluginVersion, '1.0.1'); assert.equal(repeated.pluginVersion, '1.0.1');
+    assert.equal(repeated.pluginId, first.pluginId); assert.equal(repeated.entryIdentity, first.entryIdentity); assert.equal(repeated.installedPath, first.installedPath);
+    assertLauncher(repeated.installedPath, fixture);
+    const calls = fs.readFileSync(path.join(fixture.codexHome, 'calls.jsonl'), 'utf8').trim().split('\n').map(line => JSON.parse(line));
+    assert.equal(calls.filter(args => args[1] === 'add').length, 2, 'both explicit maintenance requests refresh the installed copy');
+  } finally {fs.rmSync(fixture.root, {recursive: true, force: true});}
+});
+
+test('candidate entry cannot install into a desktop profile and disabled or stale copies remain unconfirmed', async () => {
   const fixture = installationFixture();
   try {
     const candidateEntry = path.join(fixture.root, '.worktrees', 'candidate', 'bin', 'buildr.mjs');
@@ -60,6 +151,44 @@ test('candidate entry cannot install into a desktop profile and disabled plugins
     fs.writeFileSync(path.join(fixture.codexHome, 'stale-entry'), '');
     await assert.rejects(installCodexDesktopPlugin(fixture.input), { code: 'codex_plugin_cache_unconfirmed' });
   } finally { fs.rmSync(fixture.root, { recursive: true, force: true }); }
+});
+
+test('installed connector rejects missing, changed, nonexecutable or escaped cache entries', async t => {
+  for (const mode of ['missing-launcher', 'modified-launcher', 'nonexec-launcher', 'launcher-symlink', 'bin-symlink', 'portable-command-absolute', 'compat-command-traversal', 'modified-panel', 'panel-symlink']) await t.test(mode, async () => {
+    const fixture = installationFixture();
+    try {
+      fs.writeFileSync(path.join(fixture.codexHome, 'cache-mode'), mode);
+      await assert.rejects(installCodexDesktopPlugin(fixture.input), {code: 'codex_plugin_cache_unconfirmed'});
+      assert.equal(fs.existsSync(path.join(fixture.codexHome, 'config.toml')), false);
+    } finally {fs.rmSync(fixture.root, {recursive: true, force: true});}
+  });
+});
+
+test('a verified compatibility-only installed copy retains an executable contained launcher', async () => {
+  const fixture = installationFixture();
+  try {
+    fs.writeFileSync(path.join(fixture.codexHome, 'cache-mode'), 'compat-only');
+    const result = await installCodexDesktopPlugin(fixture.input);
+    assert.equal(result.pluginVersion, '1.0.1'); assertLauncher(result.installedPath, fixture);
+  } finally {fs.rmSync(fixture.root, {recursive: true, force: true});}
+});
+
+test('source preparation refuses preexisting directory or launcher symlinks without writing outside its plugin', async t => {
+  for (const mode of ['marketplace-directory', 'launcher-directory', 'launcher-file']) await t.test(mode, async () => {
+    const fixture = installationFixture();
+    try {
+      const marketplace = path.join(fixture.dataRoot, 'codex-desktop', 'marketplace'), connectionRoot = path.join(marketplace, fixture.input.connectionId), pluginRoot = path.join(connectionRoot, 'plugins', 'buildr-desktop');
+      const outside = path.join(fixture.root, 'outside-source'), sentinel = path.join(outside, 'sentinel');
+      fs.mkdirSync(outside); fs.writeFileSync(sentinel, 'unrelated retained bytes', {mode: 0o600});
+      if (mode === 'marketplace-directory') {fs.mkdirSync(marketplace, {recursive: true}); fs.symlinkSync(outside, connectionRoot);}
+      else if (mode === 'launcher-directory') {fs.mkdirSync(pluginRoot, {recursive: true}); fs.symlinkSync(outside, path.join(pluginRoot, 'bin'));}
+      else {fs.mkdirSync(path.join(pluginRoot, 'bin'), {recursive: true}); fs.symlinkSync(sentinel, path.join(pluginRoot, 'bin', 'buildr-codex-desktop'));}
+      const before = {names: fs.readdirSync(outside).sort(), content: fs.readFileSync(sentinel), mode: fs.statSync(sentinel).mode};
+      await assert.rejects(installCodexDesktopPlugin(fixture.input), {code: 'codex_plugin_entry_invalid'});
+      assert.deepEqual(fs.readdirSync(outside).sort(), before.names); assert.deepEqual(fs.readFileSync(sentinel), before.content); assert.equal(fs.statSync(sentinel).mode, before.mode, 'rejection must not chmod a linked external file');
+      assert.equal(fs.existsSync(path.join(fixture.codexHome, 'calls.jsonl')), false, 'unsafe source layout is rejected before invoking the native installer');
+    } finally {fs.rmSync(fixture.root, {recursive: true, force: true});}
+  });
 });
 
 function mockApplication() {
@@ -156,6 +285,8 @@ async function panelFixture(surface: 'thread' | 'global', deepLink?: string, unk
 
 test('global panel never sends ui/message while explicit thread confirmation sends exactly once', async () => {
   const global = await panelFixture('global');
+  const appInfo = global.requests.find(request => request.method === 'ui/initialize')?.params?.appInfo as {name: string; version: string};
+  assert.equal(appInfo?.name, 'buildr-desktop'); assert.equal(appInfo?.version, '1.0.1');
   assert.equal(global.elements.get('confirm')!.disabled, true);
   global.elements.get('confirm')!.click(); await global.settle();
   assert.equal(global.requests.filter(value => value.method === 'ui/message').length, 0);
