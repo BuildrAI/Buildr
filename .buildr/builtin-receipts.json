@@ -107,6 +107,18 @@
     },
     {
       "type": "skill",
+      "id": "feature-design",
+      "target": "skills/buildr/feature-design",
+      "integrity": "sha256-9838e8c53c3284ff2edadde9c529e8783bc8b87e5412b78fd5323549b37bb71c",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "integrity": "sha256-1a12dcfeeb70fbbf107d26c739983fb311b538657aba1b3447445659e2b9476b"
+        }
+      ]
+    },
+    {
+      "type": "skill",
       "id": "frontend-development",
       "target": "skills/buildr/frontend-development",
       "integrity": "sha256-09ef179b397df25608128eafd1f3b3782a2848a37c89b1a84cde473d178f9e3b",

@@ -364,6 +364,16 @@ skills:
     required: false
     state: installed
     runtimePath: project-composition-maintenance
+  - id: feature-design
+    assetIdentity: buildr:skill:feature-design
+    sourceIdentity: package:skills/buildr/feature-design
+    source: buildr
+    path: buildr/feature-design
+    description: 讨论或逐步设计新功能、收敛较大需求或接续已有方案时使用；基于真实产品形成可评审的小范围成果，不用于已定设计的局部实现。
+    enabled: true
+    required: false
+    state: installed
+    runtimePath: feature-design
 contracts:
   - id: buildr.terminology-governance
     version: 1
