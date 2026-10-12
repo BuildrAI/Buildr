@@ -31,7 +31,7 @@ export function createCodexDesktopModule(options: { readProductIdentity(): unkno
       const resolveWorkspaceTarget = (root: string) => {
         const current = query.getWorkspace(root);
         const registered = workspace.resolveRegisteredWorkspace(current.workspace.id, { touch: false });
-        if (fs.realpathSync(current.rootPath) !== fs.realpathSync(registered.rootPath)) throw codexFailure('codex_workspace_target_changed', '目标目录不是当前已登记工作空间，未建立聊天关联。', 409);
+        if (fs.realpathSync(current.rootPath) !== fs.realpathSync(registered.rootPath)) throw codexFailure('codex_workspace_target_changed', '目标目录不是当前已登记工作空间，未建立会话关联。', 409);
         return current.workspace.id;
       };
       return Object.freeze({ provides: { [CODEX_DESKTOP_APPLICATION]: application }, contributions: { http: [createCodexDesktopHttpContribution(application, root => query.getWorkspace(root).workspace.id)], cli: createCodexDesktopCliContributions(application, resolveWorkspaceTarget) } });

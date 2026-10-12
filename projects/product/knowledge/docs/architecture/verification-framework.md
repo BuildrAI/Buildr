@@ -2,6 +2,8 @@
 
 Buildr 产品自身是在通用框架下建设测试能力的一个项目实例。它把测试建设、选哪些检查、怎样执行、怎样消费证据分开。通用工作方式见[完整验证框架](workspace-testing-and-verification-framework.md)；本文只解释 `product` 项目（Project）的真实实现。路径除注明外相对于 `services/buildr/`，定位入口见[实例工具地图](../../code-map/product-verification-tools.md)。
 
+项目地图与任务报告的公共实现见[通用框架实现地图](../../code-map/verification-framework.md)，与本实例的测试执行工具分别维护。
+
 ## 从项目地图到执行工具
 
 [项目测试地图](../../../verification.yml)目前有七个测试族（Testing Family）：`buildr-fast`、`buildr-functional`、`buildr-system`、`buildr-web-unit`、`buildr-web`、`buildr-environment-smoke` 和 `dsh-plugin`。前三项负责后端与工程检查；`buildr-web-unit` 负责前端逻辑；`buildr-web` 负责构建及真实页面交互；`buildr-environment-smoke` 用于明确目标环境中的安装与运行检查；`dsh-plugin` 独立验证桌面插件包。地图供智能体（Agent）发现稳定入口，具体文件发现、路径归属、步骤和资源另由项目工具维护。

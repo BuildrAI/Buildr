@@ -183,6 +183,86 @@ export async function runPublicationJourney({ t, page, workspaceRoot, workspaceU
     } finally { page.off('request', collectWrites); await page.setViewportSize({ width: 1680, height: 1000 }); }
   });
 
+  await t.test('文章内嵌技术图与链接代码地图在主题目录合并，类型检索定位文章且地图原址保留', async () => {
+    const knowledgeUrl = `${workspaceUrl}/knowledge/project/product`;
+    const indexFile = path.join(workspaceRoot, 'projects/product/knowledge/index.yml'), articleFile = path.join(workspaceRoot, 'projects/product/knowledge/docs/explanation.md');
+    const beforeIndex = fs.readFileSync(indexFile, 'utf8'), beforeArticle = fs.readFileSync(articleFile, 'utf8');
+    const fixture = JSON.parse(beforeIndex);
+    fixture.relations.push({ from: 'browser-explanation', to: 'browser-diagram', kind: 'contains' }, { from: 'browser-explanation', to: 'browser-map', kind: 'guides' });
+    fs.writeFileSync(indexFile, JSON.stringify(fixture));
+    fs.writeFileSync(articleFile, beforeArticle.replace('![测试地图]', '[实现地图参考]'));
+    const main = () => visible().locator('.knowledge-page:visible');
+    const search = () => main().getByRole('textbox', { name: '检索知识', exact: true });
+    try {
+      await page.goto(`${knowledgeUrl}?object=browser-reading`);
+      await main().locator('[data-knowledge-chapter="browser-explanation"] iframe').waitFor({ state: 'visible' });
+      for (const [label, query] of [['图示', '测试技术图'], ['代码地图', '测试代码地图']]) {
+        await main().getByRole('group', { name: '内容类型', exact: true }).getByRole('button', { name: label, exact: true }).click();
+        await search().fill(query);
+        await main().locator('[data-knowledge-entry="browser-explanation"]:visible').waitFor({ state: 'visible' });
+        assert.equal(await main().locator('[data-knowledge-entry="browser-diagram"]:visible, [data-knowledge-entry="browser-map"]:visible').count(), 0);
+        assert.equal(await main().locator('[data-knowledge-entry]:visible').count(), 1);
+      }
+      await main().getByRole('link', { name: '实现地图参考', exact: true }).waitFor({ state: 'visible' });
+      await page.goto(`${knowledgeUrl}?artifact=browser-map`);
+      await main().locator('[data-knowledge-artifact="browser-map"]').waitFor({ state: 'visible' });
+    } finally { fs.writeFileSync(indexFile, beforeIndex); fs.writeFileSync(articleFile, beforeArticle); }
+  });
+
+  await t.test('主题按文章标题连续阅读，目录与正文链接定位本页，明确单篇与小节引用仍独立', async () => {
+    const knowledgeUrl = `${workspaceUrl}/knowledge/project/product`;
+    const projectRoot = path.join(workspaceRoot, 'projects/product');
+    const indexFile = path.join(projectRoot, 'knowledge/index.yml');
+    const firstFile = path.join(projectRoot, 'knowledge/docs/explanation.md'), secondFile = path.join(projectRoot, 'knowledge/docs/details.md');
+    const beforeIndex = fs.readFileSync(indexFile, 'utf8'), firstBody = fs.readFileSync(firstFile, 'utf8'), secondBody = fs.readFileSync(secondFile, 'utf8');
+    const fixture = JSON.parse(beforeIndex);
+    const second = fixture.artifacts.find((item: { id: string }) => item.id === 'browser-details-article');
+    second.objects.push('browser-reading');
+    fixture.artifacts = fixture.artifacts.filter((item: { id: string }) => item.id !== second.id);
+    fixture.artifacts.splice(fixture.artifacts.findIndex((item: { id: string }) => item.id === 'browser-explanation') + 1, 0, second);
+    fs.writeFileSync(indexFile, JSON.stringify(fixture));
+    fs.writeFileSync(firstFile, firstBody.replace('\n\n', '\n\n[阅读第二章](details.md) · [精确查看第二章小节](details.md#章节内小节)\n\n'));
+    fs.writeFileSync(secondFile, `${secondBody}\n[回看第一章](explanation.md)\n\n## 章节内小节\n\n${Array.from({ length: 20 }, () => '第二篇保留完整正文，支持章节定位后继续阅读。'.repeat(5)).join('\n\n')}\n`);
+    const main = () => visible().locator('.knowledge-page:visible');
+    const chapter = (id: string) => main().locator(`[data-knowledge-chapter="${id}"]`);
+    const positioned = async (id: string) => page.waitForFunction(value => {
+      const root = document.querySelector('.workspace-page:not([hidden]) .knowledge-page');
+      const target = root?.querySelector<HTMLElement>(`[data-knowledge-chapter="${value}"]`), host = root?.closest<HTMLElement>('.pane-body');
+      if (!target || !host) return false;
+      const offset = target.getBoundingClientRect().top - host.getBoundingClientRect().top;
+      return Math.abs(offset - (root?.querySelector<HTMLElement>('.knowledge-sticky-navigation')?.offsetHeight || 0) - 12) < 3;
+    }, id);
+    try {
+      await page.goto(`${knowledgeUrl}?object=browser-reading`);
+      await chapter('browser-details-article').waitFor({ state: 'visible' });
+      assert.deepEqual(await main().locator('[data-knowledge-chapter] > header h2').allTextContents(), ['浏览器知识说明', '深入阅读说明']);
+      await chapter('browser-details-article').getByRole('heading', { level: 3, name: '章节内小节', exact: true }).waitFor({ state: 'visible' });
+      const historyBefore = await page.evaluate(() => history.length);
+      const branch = main().locator('[data-knowledge-branch="topic:browser-reading"]:visible');
+      if (await branch.getAttribute('aria-expanded') !== 'true') await branch.click();
+      await main().locator('[data-knowledge-entry="browser-details-article"]:visible').first().click();
+      await positioned('browser-details-article');
+      assert.equal(new URL(page.url()).searchParams.get('object'), 'browser-reading');
+      assert.equal(new URL(page.url()).searchParams.has('artifact'), false);
+      assert.equal(await page.evaluate(() => history.length), historyBefore, '定位章节不创建页面历史');
+      assert.equal(await main().locator('[data-knowledge-entry="browser-details-article"]:visible').first().getAttribute('aria-current'), 'page');
+      await chapter('browser-details-article').getByRole('link', { name: '回看第一章', exact: true }).click();
+      await positioned('browser-explanation');
+      await chapter('browser-explanation').getByRole('link', { name: '阅读第二章', exact: true }).click();
+      await positioned('browser-details-article');
+      assert.equal(await page.evaluate(() => history.length), historyBefore);
+      await chapter('browser-explanation').getByRole('link', { name: '精确查看第二章小节', exact: true }).click();
+      await visible().locator('.pane-right [data-knowledge-reference] #章节内小节').waitFor({ state: 'visible' });
+      assert.equal(new URL(page.url()).searchParams.get('object'), 'browser-reading', '小节引用仍保留精确引用阅读');
+      await page.goto(`${knowledgeUrl}?artifact=browser-details-article`);
+      await main().locator('[data-knowledge-artifact="browser-details-article"]').getByRole('heading', { level: 2, name: '章节内小节', exact: true }).waitFor({ state: 'visible' });
+      assert.equal(await main().locator('[data-knowledge-chapter]').count(), 0, '明确单篇地址不套用主题章节模式');
+      assert.equal(await main().locator('[data-knowledge-artifact="browser-explanation"]').count(), 0);
+    } finally {
+      fs.writeFileSync(indexFile, beforeIndex); fs.writeFileSync(firstFile, firstBody); fs.writeFileSync(secondFile, secondBody);
+    }
+  });
+
   await t.test('主目录中文组合输入保持焦点，筛选目录可以收展且清空恢复原状态', async () => {
     await page.setViewportSize({ width: 1440, height: 1000 });
     const main = () => visible().locator('.knowledge-page:visible');

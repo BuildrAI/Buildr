@@ -134,8 +134,13 @@ export const KNOWLEDGE_HTTP_SCHEMAS = {
         maxItems: 500,
         items: obj({ id: text, title: text, kind: artifactFields.kind, path: text, objects: strings }),
       },
+      relations: {
+        type: "array",
+        maxItems: 500,
+        items: obj({ from: text, to: text, kind: { enum: ["contains", "guides"] } }),
+      },
       diagnostics: strings,
-    }),
+    }, ["scope", "revision", "entryObject", "artifactCount", "topics", "artifacts", "diagnostics"]),
   },
   CatalogResponse: {
     $schema: "https://json-schema.org/draft/2020-12/schema",

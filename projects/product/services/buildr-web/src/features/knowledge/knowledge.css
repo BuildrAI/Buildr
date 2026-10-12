@@ -142,6 +142,8 @@
 .knowledge-embedded small {
   color: #7a857f;
 }
+.knowledge-artifact[data-knowledge-chapter] + .knowledge-artifact[data-knowledge-chapter] { margin-top: 36px; padding-top: 26px; border-top: 1px solid var(--soft-line); }
+.knowledge-artifact[data-knowledge-chapter] > header h2 { font-size: 21px; }
 .knowledge-embedded {
   margin: 25px 0;
   padding: 20px;

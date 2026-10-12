@@ -87,7 +87,7 @@ export class AgentOperationsApplication {
         desktop = await this.desktopConnector.connect(structuredClone(registration), structuredClone(candidate.installation));
       } catch (error) {
         const known = error as { code?: string; message?: string };
-        desktopError = { code: known.code?.startsWith('codex_') || known.code?.startsWith('agent_') ? known.code : 'agent_desktop_prepare_failed', message: '生成来源已保存；Codex 原聊天关联配置未完成，请重新检查安装与配置范围。' };
+        desktopError = { code: known.code?.startsWith('codex_') || known.code?.startsWith('agent_') ? known.code : 'agent_desktop_prepare_failed', message: '生成来源已保存；Codex 原生会话关联配置未完成，请重新检查安装与配置范围。' };
       } finally {
         const remaining = this.codexConnectionsPreparing.get(agentId)! - 1;
         if (remaining) this.codexConnectionsPreparing.set(agentId, remaining); else this.codexConnectionsPreparing.delete(agentId);
@@ -198,7 +198,7 @@ export class AgentOperationsApplication {
       removed = true; this.pools.delete(registration.id);
       let desktopWarning: CodexRemoveResult['desktopWarning'] = null;
       try { this.desktopConnector?.disconnect(registration.id); }
-      catch { desktopWarning = { code: 'agent_desktop_disconnect_unconfirmed', message: '接入登记已移除，桌面业务调用已停用；断开状态未能保存，原聊天与任务关联保留。' }; }
+      catch { desktopWarning = { code: 'agent_desktop_disconnect_unconfirmed', message: '接入登记已移除，桌面业务调用已停用；断开状态未能保存，原生会话与任务关联保留。' }; }
       return { registry: this.listRegistry(), removedAgentId: registration.id, desktopWarning };
     } finally {
       this.codexRemovals.delete(key);

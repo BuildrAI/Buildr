@@ -72,9 +72,9 @@ export function KnowledgeTopicNavigation({ nodes, selected, documentsSelected, p
         disabled={key !== 'all' && !filterReadingTree(nodes, '', key).length} onClick={() => onPreferences({ ...preferences, filter: key })}>{label}</button>)}
     </div>
     {filter === "maps" && <p className="knowledge-reader-hint">代码地图按专题帮助定位实现。</p>}
-    <p className="knowledge-reader-hint">搜索标题、摘要、路径及所属主题或章节，不搜索正文。</p>
+    <p className="knowledge-reader-hint">搜索标题、摘要、路径及所属主题或章节；图与地图名称可定位承载说明，不搜索正文。</p>
     <p className="knowledge-reader-count" aria-live="polite">{loading && !nodes.length ? '正在读取目录…' : `${searching ? '匹配 ' : '共 '}${readingNodeCount(visible)} ${documentsSelected ? '份文档' : '项资料'}`}</p>
-    <p className="knowledge-reader-hint">{documentsSelected ? '统计已发现的普通 Markdown 文档（含补充阅读并去重）；不含规范历史、规则、技能与生成副本。' : '统计已登记的说明、图示和代码地图，关联多个主题仍只计一次。'}</p>
+    <p className="knowledge-reader-hint">{documentsSelected ? '统计已发现的普通 Markdown 文档（含补充阅读并去重）；不含规范历史、规则、技能与生成副本。' : '统计说明、独立图示和代码地图；文章已承载的图与地图不重复计数，多主题关联只计一次。'}</p>
   </div>;
   const contents = () => <nav aria-label={documentsSelected ? '文档目录' : '知识主题目录'} data-knowledge-navigation>
     {loading && !nodes.length ? <Spin size="small" /> : visible.length ? branch(visible) : <p className="knowledge-topic-empty">{searching ? '没有匹配内容，试试其他关键词。' : '当前没有可阅读内容。'}</p>}

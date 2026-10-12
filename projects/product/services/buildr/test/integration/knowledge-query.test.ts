@@ -217,6 +217,58 @@ test("导航成果总数包含仅有技术图、地图或术语的范围，空�
   assert.equal(typeof empty.revision, "string");
 });
 
+test("导航只投射文章承载图与地图的有界关系，保留地图内嵌图且不读取正文", (t) => {
+  const { root, put, app } = setup(t);
+  const diagram = { ...prototype.artifacts[0], id: "diagram", title: "订单图", kind: "diagram" as const, path: "knowledge/order.html" };
+  const map = { ...prototype.artifacts[0], id: "map", title: "订单代码地图", kind: "code-map" as const, path: "knowledge/code-map/order.md" };
+  const terms = { ...prototype.artifacts[0], id: "terms", title: "订单术语", kind: "terms" as const, path: "knowledge/docs/terms.md" };
+  const expected = [
+    { from: "doc", to: "diagram", kind: "contains" },
+    { from: "doc", to: "map", kind: "contains" },
+    { from: "map", to: "diagram", kind: "contains" },
+    { from: "doc", to: "diagram", kind: "guides" },
+    { from: "doc", to: "map", kind: "guides" },
+    { from: "terms", to: "map", kind: "contains" },
+    { from: "terms", to: "diagram", kind: "guides" },
+  ] as const;
+  const index: KnowledgeIndex = {
+    ...prototype,
+    artifacts: [...prototype.artifacts, diagram, map, terms],
+    relations: [
+      ...expected,
+      { from: "doc", to: "diagram", kind: "explains" },
+      { from: "object", to: "diagram", kind: "contains" },
+      { from: "diagram", to: "doc", kind: "contains" },
+      { from: "doc", to: "code", kind: "contains" },
+      { from: "doc", to: "doc", kind: "contains" },
+      { from: "map", to: "map", kind: "contains" },
+      { from: "map", to: "terms", kind: "contains" },
+      { from: "map", to: "diagram", kind: "guides" },
+      { from: "diagram", to: "map", kind: "guides" },
+      { from: "doc", to: "doc", kind: "guides" },
+    ],
+  };
+  put("projects/demo/knowledge/index.yml", stringify(index, { aliasDuplicateObjects: false }));
+  const opens: string[] = [], originalOpen = fs.openSync;
+  t.mock.method(fs, "openSync", (...args: Parameters<typeof fs.openSync>) => {
+    opens.push(String(args[0]));
+    return originalOpen(...args);
+  });
+  const result = app.navigation(root, { kind: "project", id: "demo" });
+  validateKnowledgeNavigationResponse(result);
+  assert.deepEqual(result.relations, expected);
+  assert.equal(result.artifactCount, 4, "原始登记数量仍用于已有知识判断");
+  assert.equal(result.artifacts.length, 4, "图与地图登记保留以支持原身份定位");
+  assert.deepEqual(opens, [fs.realpathSync(path.join(root, "projects/demo/knowledge/index.yml"))]);
+  const { relations: _relations, ...legacy } = result;
+  validateKnowledgeNavigationResponse(legacy);
+  for (const relations of [
+    [{ from: "doc", to: "diagram", kind: "explains" }],
+    [{ from: "doc", to: "diagram", kind: "contains", content: "不可夹带正文" }],
+    Array.from({ length: 501 }, () => result.relations[0]),
+  ]) assert.throws(() => validateKnowledgeNavigationResponse({ ...result, relations }));
+});
+
 test("主题导航 HTTP 使用当前项目或服务范围，旧索引与无索引不自动指定入口", (t) => {
   const { root, put, app } = setup(t);
   const http = createKnowledgeHttpContribution(app);

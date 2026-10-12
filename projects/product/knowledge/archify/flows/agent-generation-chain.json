@@ -1,0 +1,139 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "临时生成提交说明：独立于原生会话",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "column_fit": "spread",
+    "viewBox": [
+      1120,
+      632
+    ]
+  },
+  "participants": [
+    {
+      "id": "web",
+      "type": "frontend",
+      "label": "网页界面"
+    },
+    {
+      "id": "code",
+      "type": "backend",
+      "label": "代码业务"
+    },
+    {
+      "id": "ops",
+      "type": "backend",
+      "label": "统一操作"
+    },
+    {
+      "id": "provider",
+      "type": "backend",
+      "label": "生成提供者"
+    },
+    {
+      "id": "runtime",
+      "type": "external",
+      "label": "独立生成进程"
+    }
+  ],
+  "messages": [
+    {
+      "id": "agent-generation-chain-1",
+      "from": "web",
+      "to": "code",
+      "y": 180,
+      "label": "POST code/commit-message",
+      "variant": "emphasis"
+    },
+    {
+      "id": "agent-generation-chain-2",
+      "from": "code",
+      "to": "ops",
+      "y": 212,
+      "label": "有界资料 + startGeneration",
+      "variant": "emphasis"
+    },
+    {
+      "id": "agent-generation-chain-3",
+      "from": "ops",
+      "to": "code",
+      "y": 244,
+      "label": "已受理的运行（Run）",
+      "variant": "return"
+    },
+    {
+      "id": "agent-generation-chain-4",
+      "from": "code",
+      "to": "web",
+      "y": 276,
+      "label": "202 + 运行身份",
+      "variant": "return"
+    },
+    {
+      "id": "agent-generation-chain-5",
+      "from": "ops",
+      "to": "provider",
+      "y": 308,
+      "label": "本身份空闲后 generate",
+      "variant": "emphasis"
+    },
+    {
+      "id": "agent-generation-chain-6",
+      "from": "provider",
+      "to": "runtime",
+      "y": 340,
+      "label": "一次生成请求",
+      "variant": "emphasis"
+    },
+    {
+      "id": "agent-generation-chain-7",
+      "from": "runtime",
+      "to": "provider",
+      "y": 372,
+      "label": "结果与终止通知",
+      "variant": "return"
+    },
+    {
+      "id": "agent-generation-chain-8",
+      "from": "provider",
+      "to": "ops",
+      "y": 404,
+      "label": "解析后的 JSON",
+      "variant": "return"
+    },
+    {
+      "id": "agent-generation-chain-9",
+      "from": "ops",
+      "to": "code",
+      "y": 436,
+      "label": "调用 validateResult",
+      "variant": "security"
+    },
+    {
+      "id": "agent-generation-chain-10",
+      "from": "code",
+      "to": "ops",
+      "y": 468,
+      "label": "来源与内容检查通过",
+      "variant": "return"
+    },
+    {
+      "id": "agent-generation-chain-11",
+      "from": "web",
+      "to": "ops",
+      "y": 500,
+      "label": "轮询本次运行状态",
+      "variant": "default"
+    },
+    {
+      "id": "agent-generation-chain-12",
+      "from": "ops",
+      "to": "web",
+      "y": 532,
+      "label": "终态与已确认结果",
+      "variant": "return"
+    }
+  ]
+}

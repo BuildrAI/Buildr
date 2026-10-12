@@ -17,7 +17,7 @@ type Dependencies = {
   readOrigin(): string | null;
   now?: () => number;
 };
-const DISCONNECTED_REASON = 'Codex 接入已移除；原聊天、配置和任务关系均保留。重新确认接入后可恢复。';
+const DISCONNECTED_REASON = 'Codex 接入已移除；原生会话、配置和任务关系均保留。重新确认接入后可恢复。';
 function accountScope(home: string): string | null {
   // Only a hash of an optional public account identifier; no token is persisted.
   try {
@@ -124,7 +124,7 @@ export class CodexDesktopApplication {
   }
   /** The receiving chat supplies its directly observed identity after user authorization. */
   linkSession(workspaceId: string, input: { taskId: string; nativeSessionId: string; connectionId?: string }) {
-    if (!isNativeSessionId(input.nativeSessionId)) throw codexFailure('codex_native_session_invalid', '需要当前聊天直接采集的 CODEX_THREAD_ID，不能使用服务进程或子智能体的身份。');
+    if (!isNativeSessionId(input.nativeSessionId)) throw codexFailure('codex_native_session_invalid', '需要当前会话直接采集的 CODEX_THREAD_ID，不能使用服务进程或子智能体的身份。');
     const { rootPath } = this.workspace(workspaceId);
     const connection = this.linkConnection(input.connectionId);
     let linked: ReturnType<CodexDesktopApplication['ensureRelation']>;
@@ -150,7 +150,7 @@ export class CodexDesktopApplication {
     const { rootPath } = this.workspace(workspaceId);
     if (input.taskId) this.task(rootPath, input.taskId);
     if (input.bindingRequestId) throw retiredCodexPlugin();
-    if (input.nativeSessionId && !isNativeSessionId(input.nativeSessionId)) throw codexFailure('codex_native_session_invalid', '原聊天身份无效。');
+    if (input.nativeSessionId && !isNativeSessionId(input.nativeSessionId)) throw codexFailure('codex_native_session_invalid', '原生会话身份无效。');
     return { workspaceId, relations: this.repository.readWorkspace(rootPath, workspaceId).relations.filter(r => (!input.taskId || r.taskId === input.taskId) && (!input.connectionId || r.connectionId === input.connectionId) && (!input.nativeSessionId || r.nativeSessionId === input.nativeSessionId)).map(r => ({ ...r, sessionUrl: codexSessionUrl(r.nativeSessionId), taskUrl: codexTaskUrl(workspaceId, r.taskId) })) };
   }
   unlinkSession(workspaceId: string, input: { relationId: string; expectedRevision: string }) {

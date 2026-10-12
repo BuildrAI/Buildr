@@ -12,6 +12,7 @@ import { resolveKnowledgePath } from '../knowledge-navigation';
 import { useCompleteKnowledgeReading } from '../useCompleteKnowledgeReading';
 import { useKnowledgeNavigation } from '../useKnowledgeNavigation';
 import { useKnowledgeDocuments } from '../useKnowledgeDocuments';
+import { useKnowledgeTopicChapters } from '../useKnowledgeTopicChapters';
 import { documentReadingTree, emptyReadingPreferences, topicReadingTree, type ReadingPreferences, type ReadingTarget } from '../knowledge-reader-navigation';
 import { knowledgeReadingTopics, knowledgeTopicArtifacts } from '../knowledge-topics';
 import { KnowledgeArtifactReader } from './KnowledgeArtifactReader';
@@ -141,6 +142,8 @@ function KnowledgeBrowserView({ entry, refresh, active, workspaceId, scope, onOp
   useLayoutEffect(() => { callbacks.current.onLoadingChange(entry.key, loading); }, [entry.key, loading]);
   const { openAgentAction } = useAppShell(), previews = useResourcePreview(), location = useLocation();
   const artifact = data?.artifacts?.find(item => item.id === entry.id);
+  const shownArtifacts = entry.kind === 'artifact' ? artifact ? [artifact] : [] : knowledgeTopicArtifacts(data?.artifacts || [], category);
+  const chapters = useKnowledgeTopicChapters(root, entry.kind === 'object' && !documentsMode ? entry.id || null : null, shownArtifacts);
   const source = data?.observations.find(item => item.id === entry.id);
   const sourceMeta = data?.index?.sources.find(item => item.id === entry.id);
   const object = index?.objects.find(item => item.id === entry.id);
@@ -153,9 +156,13 @@ function KnowledgeBrowserView({ entry, refresh, active, workspaceId, scope, onOp
     return () => cancelAnimationFrame(frame);
   }, [active, loading, entry.key]);
   const navigationArtifacts = topicIndex ? topicIndex.artifacts : topicIndex === null ? [] : navigation.data?.artifacts || [];
-  const nodes = documentsMode ? documentReadingTree(documentCatalog.data, navigationArtifacts) : topicReadingTree(topics, navigationArtifacts);
+  const navigationRelations = topicIndex ? topicIndex.relations : topicIndex === null ? [] : navigation.data?.relations || [];
+  const nodes = documentsMode ? documentReadingTree(documentCatalog.data, navigationArtifacts, navigationRelations) : topicReadingTree(topics, navigationArtifacts, navigationRelations);
   const readingTarget: ReadingTarget | null = entry.id && ['object', 'artifact', 'documents'].includes(entry.kind) ? { kind: entry.kind === 'documents' ? 'document' : entry.kind as 'object' | 'artifact', id: entry.id } : null;
-  const selectReading = (target: ReadingTarget, title?: string) => callbacks.current.onOpen({ kind: target.kind === 'document' ? 'documents' : target.kind, id: target.id, title, scope: readingScope, documentsMode });
+  const selectReading = (target: ReadingTarget, title?: string) => {
+    if (target.kind === 'artifact' && chapters.select(target.id)) return;
+    callbacks.current.onOpen({ kind: target.kind === 'document' ? 'documents' : target.kind, id: target.id, title, scope: readingScope, documentsMode });
+  };
   const openArtifact = (id: string) => {
     const target = index?.artifacts.find(item => item.id === id) || navigation.data?.artifacts.find(item => item.id === id);
     if (target) callbacks.current.onOpen({ kind: 'artifact', id, title: target.title, scope: readingScope, documentsMode });
@@ -172,7 +179,7 @@ function KnowledgeBrowserView({ entry, refresh, active, workspaceId, scope, onOp
     const sources = path ? index?.sources.filter(item => (item.link || item.path) === path) || [] : [];
     const target = path && index?.artifacts.find(item => item.path === path);
     if (file && sources.length === 1) openSource(sources[0].id, description);
-    else if (target) openArtifact(target.id);
+    else if (target) { if (file || !chapters.select(target.id)) openArtifact(target.id); }
     else if (sources.length === 1) openSource(sources[0].id, description);
     else if (sources.length > 1) setChoices(sources.map(item => item.id));
     else {
@@ -216,12 +223,11 @@ function KnowledgeBrowserView({ entry, refresh, active, workspaceId, scope, onOp
     onReference: openReference,
     onObject: (id: string) => { const target = index?.objects.find(item => item.id === id); if (target) callbacks.current.onOpen({ kind: 'object', id, title: target.title, scope: readingScope }); },
   };
-  const shownArtifacts = entry.kind === 'artifact' ? artifact ? [artifact] : [] : knowledgeTopicArtifacts(data?.artifacts || [], category);
   const unavailableSources = data?.observations.filter(item => ['missing', 'unreadable'].includes(item.status)) || [];
   const openTopic = (id: string) => selectReading({ kind: 'object', id }, topics.find(topic => topic.id === id)?.title);
   return <div ref={root} className="knowledge-side-reader knowledge-browser-view" data-knowledge-view={entry.kind}>
     <div className="knowledge-browser-actions"><KnowledgeActions disabled={!pageScope} onAction={construct} /></div>
-    <KnowledgeTopicNavigation compact={navLayout === 'compact'} nodes={nodes} selected={readingTarget} documentsSelected={documentsMode}
+    <KnowledgeTopicNavigation compact={navLayout === 'compact'} nodes={nodes} selected={chapters.selected ? { kind: 'artifact', id: chapters.selected } : readingTarget} documentsSelected={documentsMode}
       prose={isDocuments || (shownArtifacts.length > 0 && shownArtifacts.every(item => item.kind === 'document'))}
       preferences={preferences} onPreferences={onPreferences}
       loading={documentsMode ? documentCatalog.loading : navigation.loading} error={documentsMode ? documentCatalog.error : navigation.error}
@@ -247,7 +253,7 @@ function KnowledgeBrowserView({ entry, refresh, active, workspaceId, scope, onOp
         {object?.summary && <p className="knowledge-summary">{object.summary}</p>}
         {entry.kind === 'object' && entry.id && <KnowledgeTopicChildren topics={topics} parent={entry.id} onSelect={openTopic} />}
         {unavailableSources.length > 0 && <Alert type="warning" data-knowledge-unavailable-sources message="部分来源缺失或暂不可读，其余内容仍可查看。" description={<Space wrap>{unavailableSources.map(item => <Button key={item.id} size="small" type="link" onClick={() => openSource(item.id)}>{index?.sources.find(source => source.id === item.id)?.title || item.id} · {item.status === 'missing' ? '缺失' : '不可读'}</Button>)}</Space>} />}
-        {shownArtifacts.map(item => <KnowledgeArtifactReader key={item.id} {...reader} showTitle={entry.kind !== 'artifact'} artifact={item} artifacts={data?.artifacts || []} />)}
+        {shownArtifacts.map(item => <KnowledgeArtifactReader key={item.id} {...reader} showTitle={entry.kind !== 'artifact'} chapter={entry.kind === 'object' && !documentsMode && (item.kind === 'document' || item.kind === 'terms')} artifact={item} artifacts={data?.artifacts || []} />)}
         {!shownArtifacts.length && !needsInitialize && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="这个主题下暂时没有此类资料。" />}
       </section>}
       <Modal open={choices.length > 0} title="选择对应文件" footer={null} onCancel={() => setChoices([])}>{choices.map(id => <p key={id}><Button onClick={() => { setChoices([]); openSource(id); }}>{index?.sources.find(item => item.id === id)?.title || id}</Button></p>)}</Modal>

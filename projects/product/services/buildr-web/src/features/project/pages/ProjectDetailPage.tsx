@@ -126,7 +126,7 @@ function ProjectDocObjectView({ workspaceId, projectCode, documentRef, position,
   return (
     <>
       <section className={'project-document-pane' + (editorFile ? ' project-document-editor' : '')} onErrorCapture={event => imageResult(event, true)} onLoadCapture={event => imageResult(event, false)}>
-      {!editorFile && documents.history.length > 1 ? (
+      {(!editorFile || documents.loading) && documents.history.length > 1 ? (
         <div className="project-document-toolbar">
           <button type="button" className="back-link project-document-back" onClick={documents.back}>← 返回上一篇</button>
           <span className="project-document-path">{documents.path}</span>

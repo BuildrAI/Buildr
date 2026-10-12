@@ -10,17 +10,19 @@ type Props = {
   reference: KnowledgeReference;
   fragment?: string;
   headingCounts?: Record<string, number>;
+  headingOffset?: number;
   onLink?: (href: string) => boolean;
   onReference: (reference: KnowledgeReference, title: string, fragment?: string) => void;
 };
 
 /** Registered and discovered documents share local-link and image behavior. */
-export function KnowledgeMarkdown({ content, path, workspaceId, scope, reference, fragment, headingCounts, onLink, onReference }: Props) {
-  return <MarkdownHost markdown={content} className="markdown-body" fragment={fragment} options={{
+export function KnowledgeMarkdown({ content, path, workspaceId, scope, reference, fragment, headingCounts, headingOffset, onLink, onReference }: Props) {
+  return <MarkdownHost key={headingOffset || 0} markdown={content} className="markdown-body" fragment={fragment} options={{
     allowRelativeLinks: true,
     allowParentRelativeLinks: true,
     sourcePath: path,
     headingCounts,
+    headingOffset,
     imageResolver: href => /\.(png|jpe?g|gif|webp)(?:[?#].*)?$/i.test(href) && resolveKnowledgePath(path, href)
       ? { href: knowledgeReferenceImage(workspaceId, scope, { ...reference, links: [...reference.links, href] }) } : null,
     onRelativeLinkClick: href => {

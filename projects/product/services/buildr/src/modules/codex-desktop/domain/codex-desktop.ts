@@ -27,7 +27,7 @@ export type CodexWorkspaceSessions = { schemaVersion: 'buildr.codex-workspace-se
 export type CodexConnections = { schemaVersion: 'buildr.codex-desktop-connections/v1'; connections: CodexDesktopConnection[] };
 export const codexDigest = (value: unknown) => 'sha256-' + crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');
 export const codexFailure = (code: string, message: string, status = 400): Error & { code: string; status: number } => Object.assign(new Error(message), { code, status });
-export const retiredCodexPlugin = () => codexFailure('codex_plugin_retired', 'Buildr 的 Codex 插件与聊天卡片已退役。请在当前聊天提供任务编号，通过 buildr codex link 关联，或用 buildr codex sessions 查询已有关系。', 410);
+export const retiredCodexPlugin = () => codexFailure('codex_plugin_retired', 'Buildr 的 Codex 插件与聊天卡片已退役。请在当前会话提供任务编号，通过 buildr codex link 关联，或用 buildr codex sessions 查询已有关系。', 410);
 export const isNativeSessionId = (value: unknown): value is string => typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value);
 export const codexTaskUrl = (workspaceId: string, taskId: string) => `/workspaces/${encodeURIComponent(workspaceId)}/codex#/tasks/${encodeURIComponent(taskId)}`;
 export const codexSessionUrl = (id: string) => `codex://threads/${encodeURIComponent(id)}`;

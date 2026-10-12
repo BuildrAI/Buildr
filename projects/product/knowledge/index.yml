@@ -106,6 +106,15 @@ documentSections:
         title: "Buildr 怎样实现"
         summary: "理解三个服务（Service）、模块协作、运行和写入保护。"
       - location: scope
+        path: knowledge/docs/architecture/agent-integration.md
+        title: "接入方式与职责"
+        summary: "从检测、确认接入到原生会话关联与独立生成。"
+      - location: scope
+        path: knowledge/docs/architecture/agent-integration-generation.md
+        title: "提交说明怎样生成"
+        summary: "只沿一次生成查看函数调用、材料预算和草稿保护。"
+        supplementary: true
+      - location: scope
         path: knowledge/code-map/README.md
         title: "代码全景与定位指南"
         summary: "从产品总树找到服务、模块和修改应归属的位置。"
@@ -285,7 +294,72 @@ objects:
   - id: knowledge-maintenance
     title: 知识建设与维护
     summary: 谁指导事实建设，谁维护表达，职责落在哪些文件，以及变化后怎样跟上。
+  - id: agent-integration
+    parent: system-structure
+    title: 智能体接入与执行
+    summary: 从确认接入到关联原生会话与独立生成，理解 Codex 与 DSH 的区别。
 artifacts:
+  - id: agent-integration-article
+    title: 接入方式与职责
+    kind: document
+    path: knowledge/docs/architecture/agent-integration.md
+    objects:
+      - agent-integration
+    sources:
+      - codex-discovery-source
+      - codex-chat-relations-source
+      - task-codex-sessions-ui-source
+      - agent-operations-application-source
+      - codex-generation-source
+      - dsh-acp-generation-source
+      - dsh-native-composition-source
+  - id: agent-integration-generation-article
+    title: 提交说明怎样生成
+    kind: document
+    path: knowledge/docs/architecture/agent-integration-generation.md
+    objects:
+      - agent-integration
+    sources:
+      - code-commit-generation-source
+      - code-commit-ui-source
+      - agent-operations-application-source
+      - codex-generation-source
+      - dsh-acp-generation-source
+  - id: agent-integration-diagram
+    title: 接入关系图
+    kind: diagram
+    path: knowledge/archify/system/agent-integration.html
+    objects:
+      - agent-integration
+    sources:
+      - codex-discovery-source
+      - codex-chat-relations-source
+      - task-codex-sessions-ui-source
+      - agent-operations-application-source
+      - codex-generation-source
+      - dsh-acp-generation-source
+    graphSource: knowledge/archify/system/agent-integration.json
+    graphDigest: 3e650cd1321f2ede48a8d4b9e405c8c85583ce2b011432c8ce86a74d4165de1c
+    observedDigest: 5494d8b1aab06e240170a77ed3e0749a8222f5db468cd398611c02561d0f726e
+    files:
+      - agent-integration-diagram-html
+      - agent-integration-diagram-json
+  - id: agent-generation-chain-diagram
+    title: 提交说明时序图
+    kind: diagram
+    path: knowledge/archify/flows/agent-generation-chain.html
+    objects:
+      - agent-integration
+    sources:
+      - code-commit-generation-source
+      - agent-operations-application-source
+      - code-commit-ui-source
+    graphSource: knowledge/archify/flows/agent-generation-chain.json
+    graphDigest: 29fabd63f906c1ef4d46bf43f4191f242850898163c5edb15f23cff58f3afb09
+    observedDigest: 5a0da5faf83f8f9182f7e6059e9186041ba497390163537aae8a6a28c77e436d
+    files:
+      - agent-generation-chain-diagram-html
+      - agent-generation-chain-diagram-json
   - id: product-overview-article
     title: Buildr 整体认识
     kind: document
@@ -1256,6 +1330,75 @@ artifacts:
       - file-responsibility-graph
       - project-terms
 sources:
+  - id: codex-discovery-source
+    title: Codex 本机程序与配置发现
+    kind: code
+    path: services/buildr/src/modules/agent-operations/infrastructure/codex-discovery.ts
+    summary: 发现桌面内置、搜索路径和已登记程序，核对原生配置及可接入候选。
+  - id: codex-chat-relations-source
+    title: Codex 原生会话与任务关联
+    kind: code
+    path: services/buildr/src/modules/codex-desktop/application/codex-desktop-application.ts
+    summary: 保存多对多关系、查询和解除，返回原生会话与任务链接。
+  - id: task-codex-sessions-ui-source
+    title: 任务的原生会话入口
+    kind: code
+    path: services/buildr-web/src/features/task/components/TaskCodexSessions.tsx
+    summary: 显示任务关联会话并提供打开与管理入口。
+  - id: agent-integration-diagram-html
+    title: 接入关系图 · 展示文件
+    kind: evidence
+    path: knowledge/archify/system/agent-integration.html
+    summary: 由 Archify 生成的独立图示，包含图形与阅读交互；表达设计及当前代码关系，不是运行日志。
+    observedDigest: 5494d8b1aab06e240170a77ed3e0749a8222f5db468cd398611c02561d0f726e
+  - id: agent-integration-diagram-json
+    title: 接入关系图 · 可维护图源
+    kind: evidence
+    path: knowledge/archify/system/agent-integration.json
+    summary: 定义节点、关系、事实来源与布局；修改后重新生成配套展示并复核事实。
+    observedDigest: 3e650cd1321f2ede48a8d4b9e405c8c85583ce2b011432c8ce86a74d4165de1c
+  - id: agent-generation-chain-diagram-html
+    title: 提交说明时序图 · 展示文件
+    kind: evidence
+    path: knowledge/archify/flows/agent-generation-chain.html
+    summary: 由 Archify 生成的独立图示，包含图形与阅读交互；表达设计及当前代码关系，不是运行日志。
+    observedDigest: 5a0da5faf83f8f9182f7e6059e9186041ba497390163537aae8a6a28c77e436d
+  - id: agent-generation-chain-diagram-json
+    title: 提交说明时序图 · 可维护图源
+    kind: evidence
+    path: knowledge/archify/flows/agent-generation-chain.json
+    summary: 定义节点、关系、事实来源与布局；修改后重新生成配套展示并复核事实。
+    observedDigest: 29fabd63f906c1ef4d46bf43f4191f242850898163c5edb15f23cff58f3afb09
+  - id: agent-operations-application-source
+    title: 统一智能体操作
+    kind: code
+    path: services/buildr/src/modules/agent-operations/application/agent-operations-application.ts
+    summary: 登记、选择、单身份串行队列、结果校验、取消和回收。
+  - id: codex-generation-source
+    title: Codex 应用服务调用
+    kind: code
+    path: services/buildr/src/modules/agent-operations/infrastructure/codex-app-server.ts
+    summary: 独立原生进程、临时线程、实际选定配置、生成和中断。
+  - id: dsh-acp-generation-source
+    title: DSH ACP 调用
+    kind: code
+    path: services/buildr/src/modules/agent-operations/infrastructure/dsh-acp-server.ts
+    summary: 配置指纹、协议协商、临时会话、低推理与释放确认。
+  - id: dsh-native-composition-source
+    title: DSH 最小原生组合
+    kind: code
+    path: services/buildr/src/modules/agent-operations/infrastructure/dsh-runtime.ts
+    summary: 安装组件导入、原生配置与认证桥接、内存会话及执行守卫。
+  - id: code-commit-generation-source
+    title: 提交说明生成业务
+    kind: code
+    path: services/buildr/src/modules/code/application/code-commit-message-application.ts
+    summary: 固定指令、业务预算、提交规范和来源结果复核。
+  - id: code-commit-ui-source
+    title: 提交说明界面动作状态
+    kind: code
+    path: services/buildr-web/src/features/code/source-control-actions.ts
+    summary: 按工作对象隔离的草稿、选择、查询、取消及迟到结果保护。
   - id: code-read-module
     title: 代码阅读能力装配
     kind: code
@@ -3116,6 +3259,30 @@ sources:
     path: services/buildr-web/src/features/task/components/PrototypeReaderLayout.tsx
     summary: 独立任务阅读与离线预览共用页面目录和阅读布局，页面选择由入口接入。
 relations:
+  - { from: product-overview-article, to: system, kind: guides }
+  - { from: reference-technical-document, to: system, kind: guides }
+  - { from: reference-technical-document, to: system-services-assets-map, kind: guides }
+  - { from: reference-technical-document, to: technical-layers-map, kind: guides }
+  - { from: project-relations-article, to: project-relations-diagram, kind: guides }
+  - { from: project-relations-article, to: project-relations-map, kind: guides }
+  - { from: skill-system-explanation, to: skill-system-map, kind: guides }
+  - { from: task-system-article, to: task-system-map, kind: guides }
+  - { from: task-system-article, to: task-parent-completion-flow, kind: guides }
+  - { from: task-system-article, to: task-system-bootstrap, kind: guides }
+  - { from: data-design-explanation, to: data-sqlite-diagram, kind: guides }
+  - { from: data-sqlite-explanation, to: data-sqlite-diagram, kind: guides }
+  - { from: verification-overview, to: verification-implementation-map, kind: guides }
+  - { from: verification-product-architecture, to: verification-product-map, kind: guides }
+  - { from: verification-product-architecture, to: verification-implementation-map, kind: guides }
+  - { from: explanation, to: implementation-map, kind: guides }
+  - { from: agent-integration-article, to: agent-integration-diagram, kind: contains }
+  - { from: agent-integration-generation-article, to: agent-generation-chain-diagram, kind: contains }
+  - { from: reference-technical-document, to: responsibilities, kind: contains }
+  - { from: skill-system-explanation, to: skill-projection, kind: contains }
+  - { from: task-system-article, to: task-system-flow, kind: contains }
+  - { from: data-design-explanation, to: data-domain-diagram, kind: contains }
+  - { from: verification-overview, to: verification-lifecycle, kind: contains }
+  - { from: explanation, to: responsibility, kind: contains }
   - from: code-read-module
     to: system-structure
     kind: implements

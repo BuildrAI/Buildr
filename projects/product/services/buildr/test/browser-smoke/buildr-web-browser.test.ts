@@ -1242,12 +1242,19 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     const waiting = new Promise<void>(resolve => { release = resolve; });
     const entered = new Promise<void>(resolve => { requested = resolve; });
     const finished = new Promise<void>(resolve => { handled = resolve; });
-    const slow = '**/projects/demo/documents/docs/continuity-slow.md';
+    let routed = false;
+    const slow = (target: URL) => target.pathname === `/api/v1/workspaces/${initialWorkspaceId}/code/editor-file`
+      && target.searchParams.get('kind') === 'project'
+      && target.searchParams.get('projectCode') === 'demo'
+      && target.searchParams.get('filePath') === 'docs/continuity-slow.md';
     await page.route(slow, async route => {
-      const response = await route.fetch(); requested();
-      await waiting;
-      try { await route.fulfill({ response }); }
-      catch (error) { if (!route.request().failure()) throw error; }
+      routed = true;
+      try {
+        const response = await route.fetch(); requested();
+        await waiting;
+        try { await route.fulfill({ response }); }
+        catch (error) { if (!route.request().failure()) throw error; }
+      }
       finally { handled(); }
     });
     try {
@@ -1265,7 +1272,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
       assert.equal(await reading().getByRole('heading', { name: '迟到资料不得恢复', exact: true }).count(), 0);
       assert.equal(await reading().getByRole('button', { name: '← 返回上一篇', exact: true }).count(), 0);
     } finally {
-      release(); await page.unroute(slow); fs.writeFileSync(agents, original);
+      release(); if (routed) await finished; await page.unroute(slow); fs.writeFileSync(agents, original);
       for (const file of ['continuity-fast.md', 'continuity-slow.md']) fs.rmSync(path.join(docs, file));
     }
   });
@@ -1387,10 +1394,25 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.locator('[data-doc-row="readme"]').click();
     assert.ok(Math.abs((await paneSize()).right - draggedPanes.right) <= 1);
     await page.reload();
+    const missingReadme = page.waitForResponse(response => {
+      const target = new URL(response.url());
+      return response.request().method() === 'GET'
+        && target.pathname === `/api/v1/workspaces/${initialWorkspaceId}/code/editor-file`
+        && target.searchParams.get('kind') === 'project'
+        && target.searchParams.get('projectCode') === 'demo'
+        && target.searchParams.get('filePath') === 'README.md';
+    });
+    void missingReadme.catch(() => {});
     await page.locator('[data-doc-row="readme"]').click();
+    const missingResponse = await missingReadme;
+    const missingError = (await missingResponse.json()).error;
+    assert.equal(missingResponse.status(), 404, '当前项目的README缺失，不是其他请求错误');
+    assert.equal(missingError.code, 'file_missing');
+    assert.equal(missingError.message, '文件当前不存在，请保留输入并重新核对位置。');
+    expectedBrowserErrors.add(missingResponse.url());
     await page.locator('.pane-right .artifact-missing').waitFor({ state: 'visible' });
     assert.ok(Math.abs((await paneSize()).right - draggedPanes.right) <= 1);
-    assert.match(await page.locator('.pane-right .artifact-missing').innerText(), /未找到 README\.md/);
+    assert.equal(await page.locator('.pane-right .artifact-missing').innerText(), missingError.message);
     await page.locator('[data-doc-row="agents"]').click();
     await page.waitForFunction(() => {
       const body: any = document.querySelector('.pane-right .markdown-body')?.textContent || '';

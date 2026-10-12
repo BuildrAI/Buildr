@@ -129,8 +129,8 @@ buildr help assets
 | `buildr agent list --json` | 查看本机执行接入与唯一默认；区别于规则、技能文件投射的 `runtime list`。 |
 | `buildr agent register codex\|dsh --executable <actual-entry> --expected-revision <revision> --json` | 由智能体（Agent）发现并验证真实入口后登记，不复制凭据或启动模型。Codex 可显式传 `--codex-home`，DSH 可显式传 `--dsh-home`；其余沿用原生默认。 |
 | `buildr codex connections --json` | 查看已确认的 Codex 关联登记及配置范围。已配置不表示桌面在线，不要求插件、卡片或握手。 |
-| `buildr codex link --target <workspace> --task <code> --native-session-id <direct-thread-id> [--connection-id <id>] --json` | 用户在当前 Codex 聊天要求关联，或该聊天新建任务成功后，直接采集 `CODEX_THREAD_ID` 并幂等建立关系。无需面板或待确认请求；多接入时明确选择，返回准确聊天与固定任务链接。 |
-| `buildr codex sessions --target <workspace> [--task <code>] [--native-session-id <id>] [--connection-id <id>] --json` | 查询任务或具体聊天的长期关系和准确双向链接，不创建请求、发送消息或要求插件。 |
+| `buildr codex link --target <workspace> --task <code> --native-session-id <direct-thread-id> [--connection-id <id>] --json` | 用户在当前 Codex 会话要求关联，或该会话新建任务成功后，直接采集 `CODEX_THREAD_ID` 并幂等建立关系。无需面板或待确认请求；多接入时明确选择，返回准确会话与固定任务链接。 |
+| `buildr codex sessions --target <workspace> [--task <code>] [--native-session-id <id>] [--connection-id <id>] --json` | 查询任务或具体会话的长期关系和准确双向链接，不创建请求、发送消息或要求插件。 |
 | `buildr agent select <agent-id> --expected-revision <revision> --json` | 按已观察版本改变默认，仅影响新执行；单次生成仍可覆盖选择。 |
 | `buildr installation status [--json]` | 分别报告receipt证明的npm CLI、Buildr Web Launcher、Buildr Web Dev、当前安装与当前Web实例的版本、路径、runtime role、protocol、payload和ownership identity；不扫描PATH。 |
 | `buildr web launcher install/status/repair/uninstall` | 从verified formal npm安装显式创建、诊断、修复或卸载本机Buildr Web Launcher；wrapper只执行binding中的Host Node和同一package entry。Development checkout使用隔离的Buildr Web Dev入口。 |

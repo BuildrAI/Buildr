@@ -4,6 +4,8 @@ Buildr 把项目事实和工作方法组织成可持续使用的共同依据，�
 
 你不必先学完内部概念或命令。把现有项目和想做的事交给智能体（Agent），让它协助准备环境，再开始第一项真实工作。具体入口见[开始使用](guides/getting-started.md)。
 
+[系统全景图](../archify/system/buildr-system-overview.html)展示主要组成与职责，作为本文的可视化参考。
+
 ## 它在什么情况下有用
 
 | 你遇到的问题 | Buildr 帮助留下什么 |

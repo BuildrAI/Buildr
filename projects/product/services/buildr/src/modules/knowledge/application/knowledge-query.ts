@@ -284,6 +284,7 @@ export function createKnowledgeQuery(deps: KnowledgeDependencies) {
   }
   function navigation(root: string, ref: ScopeRef) {
     const { scope, index, revision } = load(root, ref);
+    const artifacts = new Map(index?.artifacts.map(artifact => [artifact.id, artifact]));
     return {
       scope,
       revision,
@@ -295,6 +296,13 @@ export function createKnowledgeQuery(deps: KnowledgeDependencies) {
       artifacts: (index?.artifacts || []).map(({ id, title, kind, path, objects }) => ({
         id, title, kind, path, objects: [...objects],
       })),
+      relations: (index?.relations || []).filter(relation => {
+        const from = artifacts.get(relation.from), to = artifacts.get(relation.to);
+        if (!from || !to || from.id === to.id) return false;
+        const article = from.kind === "document" || from.kind === "terms";
+        if (relation.kind === "guides") return article && (to.kind === "diagram" || to.kind === "code-map");
+        return relation.kind === "contains" && ((from.kind !== "diagram" && to.kind === "diagram") || (article && to.kind === "code-map"));
+      }).map(({ from, to, kind }) => ({ from, to, kind: kind as "contains" | "guides" })),
       diagnostics: [],
     };
   }

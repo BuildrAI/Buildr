@@ -419,6 +419,7 @@ export async function runLayoutJourney({ t, page, workspaceUrl, capture }: any) 
     const changedPattern = `**/tasks/${second}/changed-file-count`;
     const firstCountPattern = `**/tasks/${first}/changed-file-count`;
     const materialsPattern = `**/tasks/${second}/materials`;
+    const sessionsPattern = `**/codex/sessions?taskId=${second}`;
     const contextsPattern = /\/tasks\/work-contexts\?/;
     const changePattern = /\/tasks\/(browser-task|layout-reading-other)\/changes\/demo\/browser-flow$/;
     const detailPattern = /\/tasks\/(browser-task|layout-reading-other)(?:\?[^/]*)?$/;
@@ -456,6 +457,7 @@ export async function runLayoutJourney({ t, page, workspaceUrl, capture }: any) 
       await route.fulfill({ response, json: { ...payload, taskId: second, fileCount: 7 } });
     });
     await page.route(contextPattern, (route: any) => route.fulfill({ json: { schemaVersion: 'buildr.task-work-context/v1', taskId: second, context: null, contextDigest: null } }));
+    await page.route(sessionsPattern, (route: any) => route.fulfill({ json: { workspaceId: new URL(route.request().url()).pathname.split('/')[4], relations: [] } }));
     await page.route(materialsPattern, async (route: any) => {
       const response = await route.fetch({ url: route.request().url().replace(second, first) });
       const payload = await response.json();
@@ -557,7 +559,7 @@ export async function runLayoutJourney({ t, page, workspaceUrl, capture }: any) 
       await page.waitForLoadState('networkidle');
     } finally {
       release?.(); releaseList?.(); page.off('request', scans);
-      await page.unroute(listPattern); await page.unroute(otherPattern); await page.unroute(detailPattern); await page.unroute(changePattern); await page.unroute(contextPattern); await page.unroute(changedPattern); await page.unroute(firstCountPattern); await page.unroute(materialsPattern); await page.unroute(contextsPattern);
+      await page.unroute(listPattern); await page.unroute(otherPattern); await page.unroute(detailPattern); await page.unroute(changePattern); await page.unroute(contextPattern); await page.unroute(changedPattern); await page.unroute(firstCountPattern); await page.unroute(materialsPattern); await page.unroute(sessionsPattern); await page.unroute(contextsPattern);
     }
   });
 

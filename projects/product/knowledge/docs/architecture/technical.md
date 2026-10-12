@@ -2,6 +2,8 @@
 
 本文帮助开发者判断改动属于哪里、会影响哪些事实，以及需要分别验证什么。Buildr 由三个服务（Service）协作：`services/buildr` 负责命令、业务能力、文件与 SQLite、本机网页托管和 Buildr npm 分发；`services/buildr-web` 负责 React 页面与交互；`services/dsh-plugin` 独立构建、验证和发布 DSH 桌面插件。三者共用一个 Git 代码库（Repository），各自维护版本与构建边界，沿用同一[产品术语表](../glossary.md)。
 
+整体组成见[系统全景图](../../archify/system/buildr-system-overview.html)，下面按调用与写入职责展开。
+
 ## 一次操作怎样到达真实数据
 
 ![调用、数据与副作用责任](../../archify/flows/capability-data-responsibility.html)
@@ -22,9 +24,9 @@
 
 前端按功能维护页面、业务请求和完整交互，应用壳只组合导航及真正跨页共享的状态。缓存页面、筛选或草稿不表示数据一直最新；编辑前仍需核对当前事实，保存时比较已观察版本。工作摘要（Work Context）中的答复不自动启动智能体（Agent），界面原型（UI Prototype）不能继承正式页面的写入能力。具体状态与隔离边界见[前端技术层](../../code-map/technical-layers.md#前端技术层)。
 
-智能体（Agent）生成由 `agent-operations` 统一管理登记、默认与单次选择、执行（Run）、取消和结果；具体提供者封装 Codex 应用服务（App Server）或 DSH 智能体客户端协议（ACP）。每个被使用的登记最多一个自有服务进程，串行复用、空闲回收，临时上下文在单次生成内部创建释放，不另建持久会话平台。原生默认配置与本次确认值分开表达；DSH 自定义路由仍依赖其原有模型端点。提交说明由 `code` 准备有界材料并校验来源及结果，提交、推送继续直接调用 Git。
+智能体（Agent）生成由 `agent-operations` 统一管理登记、默认与单次选择、执行（Run）、取消和结果；具体提供者封装 Codex 应用服务（App Server）或 DSH 智能体客户端协议（ACP）。每个被使用的登记最多一个自有服务进程，串行复用、空闲回收，临时上下文在单次生成内部创建释放，不另建持久会话（Session）平台。原生默认配置与本次确认值分开表达；DSH 自定义路由仍依赖其原有模型端点。提交说明由 `code` 准备有界材料并校验来源及结果，提交、推送继续直接调用 Git。
 
-Codex 桌面协作由 `codex-desktop` 独立维护连接、原聊天绑定、任务（Task）多对多关系和交接回执，历史与记忆（Memory）继续由桌面维护。选择本机 Codex 时一并准备桌面连接和既有独立生成，不接入共享执行服务；具体范围和固定任务入口见[Codex 接入](codex-integration.md)。DSH 不采用此次改造。
+Codex 原生会话（Session）关联由 `codex-desktop` 保存任务（Task）与会话（Session）的多对多关系及双向链接；对话内容与持续执行由 Codex 管理。临时生成仍由 `agent-operations` 独立执行，不共享原生会话（Session）后台。两条链路和 DSH 接入见[智能体（Agent）接入架构](agent-integration.md)。
 
 ## 写入保护和失败边界
 

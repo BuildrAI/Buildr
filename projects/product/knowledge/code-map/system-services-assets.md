@@ -8,8 +8,8 @@
 | --- | --- | --- |
 | 工作空间（Workspace）、项目（Project）、服务（Service）与代码库（Repository） | [workspace/module.ts](../../services/buildr/src/modules/workspace/module.ts) | 身份、来源、登记、组成与受管写入；见[关系地图](project-service-repositories.md) |
 | 代码目录、文件与源代码管理 | [code/module.ts](../../services/buildr/src/modules/code/module.ts) | 已登记来源的读取、提交说明、直接 Git 提交与推送；[比较用例](../../services/buildr/src/modules/code/application/source-control-application.ts)核对来源与观察版本，[图片读取](../../services/buildr/src/modules/code/infrastructure/source-control-image-reader.ts)按磁盘、索引及完整提交（Commit）组织新旧侧，保持缺侧与读取失败的区别 |
-| 本机智能体（Agent）接入与统一生成 | [agent-operations/module.ts](../../services/buildr/src/modules/agent-operations/module.ts) | 登记、默认选择、执行（Run）及单进程生命周期；具体提供者负责 Codex 应用服务（App Server）与 DSH 智能体客户端协议（ACP），不承载提交规范或持久会话平台 |
-| Codex 原聊天关联 | [codex-desktop/module.ts](../../services/buildr/src/modules/codex-desktop/module.ts) | 确认稳定配置范围、任务（Task）与原聊天多对多关联及双向定位；不安装插件（Plugin）或等待握手，独立生成仍由上一模块执行，见[Codex 接入](../docs/architecture/codex-integration.md) |
+| 本机智能体（Agent）接入与统一生成 | [agent-operations/module.ts](../../services/buildr/src/modules/agent-operations/module.ts) | 登记、默认选择、执行（Run）及单进程生命周期；具体提供者负责 Codex 应用服务（App Server）与 DSH 智能体客户端协议（ACP），不承载提交规范或持久会话（Session）平台 |
+| Codex 原生会话（Session）关联 | [codex-desktop/module.ts](../../services/buildr/src/modules/codex-desktop/module.ts) | 确认稳定配置范围、任务（Task）与原生会话（Session）多对多关联及双向定位；不安装插件（Plugin）或等待握手，独立生成仍由上一模块执行，见[智能体（Agent）接入架构](../docs/architecture/agent-integration.md) |
 | 任务（Task）、答复、审查、验证与工作树（Worktree） | [task/module.ts](../../services/buildr/src/modules/task/module.ts) | 各项独立协作事实及 Git 位置；见[任务地图](task-system.md) |
 | 项目每日演进 | [task/daily-progress/](../../services/buildr/src/modules/task/daily-progress/) | 同一任务装配入口中的独立能力；保存本机摘要并关联提交和任务，见[使用与边界](../docs/flows/project-daily-progress.md) |
 | 工作台（Workbench） | [workbench/module.ts](../../services/buildr/src/modules/workbench/module.ts) | 有界组合已有事实，独立保存个人计划、关注、收藏与最近访问 |
@@ -44,11 +44,11 @@
 - **[`services/buildr-web/src/features/`](../../services/buildr-web/src/features/)**：功能拥有自己的页面、业务请求、完整交互与状态。只按实际需要建立 `pages/`、`components/`、`hooks/`、`api/`，不要求目录对称。
   - **[`code/`](../../services/buildr-web/src/features/code/)**：具体工作树（Worktree）的文件、差异（Diff）与固定历史阅读。[`SourceControlImagePreview.tsx`](../../services/buildr-web/src/features/code/components/SourceControlImagePreview.tsx)消费已核对比较结果的新旧图片及缺侧，在共享阅读壳内按宽度显示；图片格式、字节和版本由后端读取负责，页面不猜路径或替换来源。
   - **[`agents/`](../../services/buildr-web/src/features/agents/)**：全局接入列表、默认选择与统一生成控件；显示接入方式、原生配置来源及最近实际确认值，不复制业务生成或 Git 写入规则。
-  - **Codex 协作入口**：[`CodexSetupPanel.tsx`](../../services/buildr-web/src/features/agents/components/CodexSetupPanel.tsx) 发现并确认本机安装；[`TaskCodexSessions.tsx`](../../services/buildr-web/src/features/task/components/TaskCodexSessions.tsx) 维护任务（Task）侧原聊天关系；[`codex-navigation.ts`](../../services/buildr-web/src/app/codex-navigation.ts) 将固定入口映射到既有页面，不复制另一套任务（Task）视图。
+  - **Codex 协作入口**：[`CodexSetupPanel.tsx`](../../services/buildr-web/src/features/agents/components/CodexSetupPanel.tsx) 发现并确认本机安装；[`TaskCodexSessions.tsx`](../../services/buildr-web/src/features/task/components/TaskCodexSessions.tsx) 维护任务（Task）侧原生会话（Session）关系；[`codex-navigation.ts`](../../services/buildr-web/src/app/codex-navigation.ts) 将固定入口映射到既有页面，不复制另一套任务（Task）视图。
 - **[`src/app/`](../../services/buildr-web/src/app/)**：应用壳和跨页组合。[`AppNavigation.tsx`](../../services/buildr-web/src/app/AppNavigation.tsx) 与 [`navigation.ts`](../../services/buildr-web/src/app/navigation.ts) 管理导航；[`WorkspacePages.tsx`](../../services/buildr-web/src/app/WorkspacePages.tsx) 保留已访问页面，[`WorkspaceStage.tsx`](../../services/buildr-web/src/components/WorkspaceStage.tsx) 组织主副阅读区。
 - **[`src/api/`](../../services/buildr-web/src/api/)**：共享传输、会话（Session）和当前请求范围，不组装各功能业务客户端。
 - [`src/components/`](../../services/buildr-web/src/components/)、[`src/lib/`](../../services/buildr-web/src/lib/)：真实跨功能复用的展示和纯逻辑；功能私有状态留在原处。
-- [`App.tsx`](../../services/buildr-web/src/App.tsx)、[`index.html`](../../services/buildr-web/index.html)、[`vite.config.ts`](../../services/buildr-web/vite.config.ts)：分别维护路由、页面壳与会话注入位置、构建配置。
+- [`App.tsx`](../../services/buildr-web/src/App.tsx)、[`index.html`](../../services/buildr-web/index.html)、[`vite.config.ts`](../../services/buildr-web/vite.config.ts)：分别维护路由、页面壳与会话（Session）注入位置、构建配置。
 - [`test/`](../../services/buildr-web/test/) 同时有前端逻辑检查和独立浏览器检查；不能将逻辑检查通过当成真实页面已验证。
 
 当前可见入口以路由和导航为准，不从目录名推断页面已经开放。前端沿用 Ant Design 5 和随构建交付的资源，不依赖远程界面脚本。状态、安全和正式页面与原型的共享边界见[前端技术层](technical-layers.md#前端技术层)。

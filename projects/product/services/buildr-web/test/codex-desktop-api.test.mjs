@@ -40,7 +40,7 @@ test('本机发现是只读，确认仅传候选身份和观察版本，不从�
   assert.equal(requests[1][0], '/api/v1/app/agents/codex/connect'); assert.equal(requests[1][1].method, 'POST'); assert.deepEqual(JSON.parse(requests[1][1].body), input); assert.equal(requests[1][1].signal, undefined);
 });
 
-test('Codex移除只提交接入身份与已观察登记版本，已断开状态保留原聊天深链', async () => {
+test('Codex移除只提交接入身份与已观察登记版本，已断开状态保留原生会话深链', async () => {
   const requests = [], client = createAgentOperationsClient(async (...args) => {requests.push(args); return {};});
   await client.removeCodex('codex-one', 'registry-observed');
   assert.equal(requests[0][0], '/api/v1/app/agents/codex/remove'); assert.equal(requests[0][1].method, 'POST'); assert.deepEqual(JSON.parse(requests[0][1].body), {agentId: 'codex-one', expectedRevision: 'registry-observed'});

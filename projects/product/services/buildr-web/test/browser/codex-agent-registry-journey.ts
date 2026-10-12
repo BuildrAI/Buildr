@@ -99,7 +99,7 @@ export async function runCodexAgentRegistryJourney({t, page, workspaceUrl, taskI
     const connections = (route: any) => {reads++; return route.fulfill({json: {connections: [connection]}});};
     await page.route(pattern, handler); await page.route('**/api/v1/app/codex/connections', connections);
     try {
-      await open(); await row(agent.id).getByText('原聊天关联：已配置', {exact: true}).waitFor({state: 'visible'});
+      await open(); await row(agent.id).getByText('原生会话关联：已配置', {exact: true}).waitFor({state: 'visible'});
       await row(agent.id).getByRole('button', {name: agent.label + ' 详情', exact: true}).click(); await details(agent.label).waitFor({state: 'visible'});
       await details(agent.label).getByRole('button', {name: /配置与运行信息$/u}).click();
       await details(agent.label).getByRole('button', {name: /刷新接入状态$/u}).focus();
@@ -137,8 +137,8 @@ export async function runCodexAgentRegistryJourney({t, page, workspaceUrl, taskI
       return route.fulfill({json: {connections: mode === 'none' ? [] : [{...connection, status: mode, safeReason: mode === 'unavailable' ? '隔离桌面连接当前不可用。' : null}]}});
     };
     const state = async (text: string) => {
-      await row(agent.id).getByText('原聊天关联：' + text, {exact: true}).waitFor({state: 'visible'});
-      assert.equal((await row(agent.id).locator('[data-agent-desktop-status]').innerText()).trim(), '原聊天关联：' + text);
+      await row(agent.id).getByText('原生会话关联：' + text, {exact: true}).waitFor({state: 'visible'});
+      assert.equal((await row(agent.id).locator('[data-agent-desktop-status]').innerText()).trim(), '原生会话关联：' + text);
       await details(agent.label).getByText(text, {exact: true}).waitFor({state: 'visible'});
     };
     const observeRegistry = async () => {
@@ -147,13 +147,13 @@ export async function runCodexAgentRegistryJourney({t, page, workspaceUrl, taskI
     };
     await page.route(pattern, handler); await page.route('**/api/v1/app/codex/connections', connections);
     try {
-      await open(); await row(agent.id).getByText('原聊天关联：正在读取…', {exact: true}).waitFor({state: 'visible'}); await row(agent.id).getByText('生成：按需启动', {exact: true}).waitFor({state: 'visible'});
+      await open(); await row(agent.id).getByText('原生会话关联：正在读取…', {exact: true}).waitFor({state: 'visible'}); await row(agent.id).getByText('生成：按需启动', {exact: true}).waitFor({state: 'visible'});
       const readsBeforeDetails = reads; await row(agent.id).getByRole('button', {name: agent.label + ' 详情', exact: true}).click(); await details(agent.label).waitFor({state: 'visible'}); await state('正在读取…'); assert.equal(reads, readsBeforeDetails, '打开详情共享现有读取，不建立第二套查询');
       mode = 'configured'; release!(); await state('已配置');
       for (const [next, label] of [['error', '未能确认'], ['unavailable', '需检查'], ['disconnected', '已移除'], ['none', '未配置']]) {
         mode = next; const previousReads = reads, response = page.waitForResponse((item: any) => new URL(item.url()).pathname === '/api/v1/app/codex/connections');
         await details(agent.label).getByRole('button', {name: /刷新接入状态$/u}).click(); await response; await state(label); assert.ok(reads > previousReads);
-        if (next === 'error') {assert.equal(await row(agent.id).getByText('原聊天关联：已配置', {exact: true}).count(), 0, '读取失败不能继续宣称旧ready有效'); assert.equal(await row(agent.id).getByText('原聊天关联：未配置', {exact: true}).count(), 0, '读取失败不能冒充成功的无记录结果');}
+        if (next === 'error') {assert.equal(await row(agent.id).getByText('原生会话关联：已配置', {exact: true}).count(), 0, '读取失败不能继续宣称旧ready有效'); assert.equal(await row(agent.id).getByText('原生会话关联：未配置', {exact: true}).count(), 0, '读取失败不能冒充成功的无记录结果');}
         await row(agent.id).getByText('生成：按需启动', {exact: true}).waitFor({state: 'visible'});
       }
       await capture(page, 'codex-desktop-status-unconfigured.png');
@@ -166,7 +166,7 @@ export async function runCodexAgentRegistryJourney({t, page, workspaceUrl, taskI
       const requestedWhileClosed = await page.waitForRequest((request: any) => new URL(request.url()).pathname === '/api/v1/app/codex/connections', {timeout: 4500}).then(() => true, (failure: Error) => {if (failure.name === 'TimeoutError') return false; throw failure;});
       assert.equal(requestedWhileClosed, false, '关闭抽屉后跨过正常轮询间隔也不再查询桌面状态'); assert.equal(reads, closedReads);
       const reopened = page.waitForResponse((response: any) => new URL(response.url()).pathname === '/api/v1/app/codex/connections');
-      await page.locator('#global-agents-entry').click(); await parent().waitFor({state: 'visible'}); await reopened; await row(agent.id).getByText('原聊天关联：未配置', {exact: true}).waitFor({state: 'visible'}); assert.ok(reads > closedReads, '同页重开抽屉重新读取状态');
+      await page.locator('#global-agents-entry').click(); await parent().waitFor({state: 'visible'}); await reopened; await row(agent.id).getByText('原生会话关联：未配置', {exact: true}).waitFor({state: 'visible'}); assert.ok(reads > closedReads, '同页重开抽屉重新读取状态');
       await row(agent.id).getByRole('button', {name: agent.label + ' 详情', exact: true}).click(); await details(agent.label).waitFor({state: 'visible'});
       present = false; await page.evaluate(() => {window.dispatchEvent(new Event('focus'));}); await details(agent.label).waitFor({state: 'hidden'}); await row(agent.id).waitFor({state: 'hidden'});
       assert.equal(await page.locator('.agent-registry-details').count(), 0, '详情目标失效时销毁浮窗内容'); assert.equal(await row(dsh.id).getByRole('button', {name: '设为默认智能体 ' + dsh.label, exact: true}).getAttribute('aria-pressed'), 'true'); assert.equal(writes, 0);
@@ -237,7 +237,7 @@ export async function runCodexAgentRegistryJourney({t, page, workspaceUrl, taskI
       assert.equal(await page.locator('#cancel-local-codex').isDisabled(), true); assert.equal(await page.getByRole('button', {name: '关闭 Codex 接入', exact: true}).isDisabled(), true); assert.equal(await page.getByRole('button', {name: '关闭智能体', exact: true}).isDisabled(), true); assert.equal(await parent().getByRole('button', {name: '设为默认智能体 ' + dsh.label, exact: true}).isDisabled(), true);
       await page.keyboard.press('Escape'); await child().waitFor({state: 'visible'}); release!(); await child().waitFor({state: 'hidden'});
       await parent().getByRole('button', {name: '设为默认智能体 ' + agent.label, exact: true}).waitFor({state: 'visible'}); assert.equal(await page.locator('.agent-registry-details').count(), 0, '接入成功只返回简洁列表，不自动展开详情');
-      const result = parent().locator('.agent-registry-result'); await result.getByText('提交说明等一次性生成已配置；原聊天关联需检查。', {exact: true}).waitFor({state: 'visible'}); assert.equal(await result.count(), 1); assert.match(await result.getAttribute('class') || '', /ant-alert-warning/u); assert.equal(await parent().locator('.agent-registry-feedback').count(), 0, '部分接入结果不再用统一绿色成功文本表示');
+      const result = parent().locator('.agent-registry-result'); await result.getByText('提交说明等一次性生成已配置；原生会话关联需检查。', {exact: true}).waitFor({state: 'visible'}); assert.equal(await result.count(), 1); assert.match(await result.getAttribute('class') || '', /ant-alert-warning/u); assert.equal(await parent().locator('.agent-registry-feedback').count(), 0, '部分接入结果不再用统一绿色成功文本表示');
       const resultBox = await result.boundingBox(), listBox = await parent().locator('.agent-registry-list').boundingBox(); assert.ok(resultBox && listBox && resultBox.y >= listBox.y + listBox.height - 1, '操作结果位于条目列表下方');
       await result.getByRole('button', {name: '查看详情', exact: true}).click(); await details(agent.label).getByText('需检查', {exact: true}).waitFor({state: 'visible'}); await details(agent.label).getByRole('button', {name: /配置与运行信息$/u}).click(); await details(agent.label).getByText(partialReason, {exact: true}).waitFor({state: 'visible'});
       assert.equal(confirmations, 1); assert.equal(await page.evaluate(() => (window as any).__codexDocumentProof), 'same-document'); assert.equal(new URL(page.url()).hash, `#/tasks/${taskId}`);
@@ -303,20 +303,20 @@ export async function runCodexAgentRegistryJourney({t, page, workspaceUrl, taskI
       const readsBefore = connectionReads, readResponse = page.waitForResponse((response: any) => new URL(response.url()).pathname === '/api/v1/app/codex/connections');
       await details(agent.label).getByRole('button', {name: /刷新接入状态$/u}).click(); await readResponse; assert.ok(connectionReads > readsBefore); assert.equal(confirmations, 0, '只读刷新不得重复准备桌面组件');
       await inspect(); assert.equal(await repair().locator('[data-codex-candidate]').count(), 1, '维护只能选择原登记匹配的安装，不接入新Codex'); assert.equal(await repair().getByRole('checkbox').count(), 0, '维护不提供改默认项或采用入口');
-      await repair().getByText('未发现原 Codex 桌面安装，无法确认当前关联范围。独立生成配置与已有聊天关联仍保留。', {exact: true}).waitFor({state: 'visible'}); assert.equal(await page.locator('#confirm-local-codex').isDisabled(), true); assert.equal(confirmations, 0, '关联范围不完整时禁用维护且不发送POST，保留现有生成配置');
+      await repair().getByText('未发现原 Codex 桌面安装，无法确认当前关联范围。独立生成配置与已有会话关联仍保留。', {exact: true}).waitFor({state: 'visible'}); assert.equal(await page.locator('#confirm-local-codex').isDisabled(), true); assert.equal(confirmations, 0, '关联范围不完整时禁用维护且不发送POST，保留现有生成配置');
       await capture(page, 'codex-maintenance-cli-only.png');
       desktopAvailable = true; await page.locator('#discover-local-codex').click(); await page.locator('[data-codex-candidate="candidate-ui-fixture"]').waitFor({state: 'visible'}); assert.equal(await page.locator('#confirm-local-codex').isEnabled(), true);
       await page.locator('#cancel-local-codex').click(); await repair().waitFor({state: 'hidden'}); assert.equal(confirmations, 0);
       await inspect(); holdNextRead = true; const pendingRead = page.waitForRequest((request: any) => new URL(request.url()).pathname === '/api/v1/app/codex/connections'); await page.evaluate(() => {window.dispatchEvent(new Event('focus'));}); await pendingRead;
-      await repair().getByRole('button', {name: '确认检查', exact: true}).click(); await repair().waitFor({state: 'hidden'}); await row(agent.id).getByText('原聊天关联：已配置', {exact: true}).waitFor({state: 'visible'});
-      releaseOldRead!(); await oldReadFinished; await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve()))); assert.equal((await row(agent.id).locator('[data-agent-desktop-status]').innerText()).trim(), '原聊天关联：已配置', '维护完成后的新状态不能被迟到的旧查询降级');
+      await repair().getByRole('button', {name: '确认检查', exact: true}).click(); await repair().waitFor({state: 'hidden'}); await row(agent.id).getByText('原生会话关联：已配置', {exact: true}).waitFor({state: 'visible'});
+      releaseOldRead!(); await oldReadFinished; await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve()))); assert.equal((await row(agent.id).locator('[data-agent-desktop-status]').innerText()).trim(), '原生会话关联：已配置', '维护完成后的新状态不能被迟到的旧查询降级');
       assert.equal(confirmations, 1); assert.equal(await parent().locator('.agent-registry-list > article').count(), 2); assert.equal(await row(dsh.id).getByRole('button', {name: '设为默认智能体 ' + dsh.label, exact: true}).getAttribute('aria-pressed'), 'true'); assert.equal(await row(agent.id).getByRole('button', {name: '设为默认智能体 ' + agent.label, exact: true}).getAttribute('aria-pressed'), 'false');
       assert.equal(page.url(), originalUrl); assert.equal(await page.evaluate(() => (window as any).__codexMaintenanceProof), 'original-document'); assert.equal(await page.locator('.agent-registry-details').count(), 0, '维护完成回到列表，无残留详情');
-      const result = parent().locator('.agent-registry-result'); await result.getByText('原聊天关联已配置；现有接入与默认选择已保留。', {exact: true}).waitFor({state: 'visible'}); assert.match(await result.getAttribute('class') || '', /ant-alert-info/u); assert.equal(await result.count(), 1); await capture(page, 'codex-maintained-dsh-default.png'); await result.getByRole('button', {name: '关闭操作提示', exact: true}).click(); await result.waitFor({state: 'hidden'}); assert.equal(confirmations, 1);
+      const result = parent().locator('.agent-registry-result'); await result.getByText('原生会话关联已配置；现有接入与默认选择已保留。', {exact: true}).waitFor({state: 'visible'}); assert.match(await result.getAttribute('class') || '', /ant-alert-info/u); assert.equal(await result.count(), 1); await capture(page, 'codex-maintained-dsh-default.png'); await result.getByRole('button', {name: '关闭操作提示', exact: true}).click(); await result.waitFor({state: 'hidden'}); assert.equal(confirmations, 1);
       await page.getByRole('button', {name: '关闭智能体', exact: true}).click();
     } finally {releaseOldRead!(); await page.unroute(pattern, handler); await page.unroute('**/api/v1/app/codex/connections', connections);}
   });
-  await t.test('Codex 接入界面：移除忙碌失败与结果不明只核对登记，保留DSH和旧聊天', async () => {
+  await t.test('Codex 接入界面：移除忙碌失败与结果不明只核对登记，保留DSH和旧会话', async () => {
     expectedBrowserErrors.add(new URL('/api/v1/app/agents/codex/remove', workspaceUrl).href);
     let removed = false, attempts = 0, mode = 'busy', reads = 0;
     const registry = () => ({revision: removed ? 'registry-removed' : 'registry-registered', defaultAgentId: removed ? null : agent.id, agents: removed ? [dsh] : [agent, dsh]});

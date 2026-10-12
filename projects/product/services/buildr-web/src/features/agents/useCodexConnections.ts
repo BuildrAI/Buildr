@@ -26,7 +26,7 @@ export function useCodexConnections(active: boolean) {
       const result = await codexDesktopApi.connections(current.signal);
       if (!current.signal.aborted && enabled.current && request.current === serial) setState({connections: result.connections, loading: false, error: ''});
     } catch (failure) {
-      if (!current.signal.aborted && enabled.current && request.current === serial) setState({connections: null, loading: false, error: failure instanceof Error ? failure.message : '无法读取原聊天关联配置。'});
+      if (!current.signal.aborted && enabled.current && request.current === serial) setState({connections: null, loading: false, error: failure instanceof Error ? failure.message : '无法读取原生会话关联配置。'});
     } finally {
       if (request.current === serial) controller.current = null;
     }

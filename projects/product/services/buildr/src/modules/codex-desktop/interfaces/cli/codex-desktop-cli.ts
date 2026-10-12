@@ -4,9 +4,9 @@ import { codexFailure, retiredCodexPlugin } from '../../domain/codex-desktop.ts'
 
 const retiredActions = new Set(['serve', 'complete-binding', 'acknowledge-handoff']);
 export function createCodexDesktopCliContributions(application: CodexDesktopApplication, resolveWorkspaceTarget: (root: string) => string) {
-  const help = ['Usage: buildr codex <connections|link|sessions> [options]', 'buildr codex connections --json', 'buildr codex link --target <workspace> --task <code> --native-session-id <direct-CODEX_THREAD_ID> [--connection-id <id>] --json', 'buildr codex sessions --target <workspace> [--task <code>] [--native-session-id <id>] [--connection-id <id>] --json', 'link 用于用户要求关联当前聊天，或在当前聊天按默认约定新建任务之后。身份只能由承载原聊天直接采集；工具服务环境、共享根身份与子执行不能代替。sessions 只读查询已有关系，不发消息、不启动执行。'];
+  const help = ['Usage: buildr codex <connections|link|sessions> [options]', 'buildr codex connections --json', 'buildr codex link --target <workspace> --task <code> --native-session-id <direct-CODEX_THREAD_ID> [--connection-id <id>] --json', 'buildr codex sessions --target <workspace> [--task <code>] [--native-session-id <id>] [--connection-id <id>] --json', 'link 用于用户要求关联当前会话，或在当前会话按默认约定新建任务之后。身份只能由承载原生会话直接采集；工具服务环境、共享根身份与子执行不能代替。sessions 只读查询已有关系，不发消息、不启动执行。'];
   return ['connections', 'link', 'sessions', ''].map(action => Object.freeze({
-    key: ['codex', action].filter(Boolean).join(' '), surface: 'agent-machine', summary: '查看 Codex 关联配置、准确关联当前聊天或查询任务与聊天关系。', help,
+    key: ['codex', action].filter(Boolean).join(' '), surface: 'agent-machine', summary: '查看 Codex 关联配置、准确关联当前会话或查询任务与会话关系。', help,
     match: ({ domain, action: candidate }: { domain?: string; action?: string }) => domain === 'codex' && ((candidate || '') === action || !action && retiredActions.has(candidate || '')),
     run: async (_runtime: unknown, context: { argv: string[] }) => {
       if (retiredActions.has(context.argv[3])) throw retiredCodexPlugin();

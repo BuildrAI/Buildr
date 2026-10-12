@@ -29,6 +29,7 @@ export type ArtifactReaderProps = {
   reference?: KnowledgeReference;
   embedded?: boolean;
   showTitle?: boolean;
+  chapter?: boolean;
   preserveHeading?: boolean;
   stack?: string[];
 };
@@ -41,6 +42,7 @@ export function KnowledgeArtifactReader(props: ArtifactReaderProps) {
     workspaceId,
     embedded = false,
     showTitle = true,
+    chapter = false,
     stack = [a.id],
   } = props;
   const current = useRef(props);
@@ -57,6 +59,7 @@ export function KnowledgeArtifactReader(props: ArtifactReaderProps) {
       key={key}
       content={text} path={a.path || ''} workspaceId={workspaceId} scope={scope}
       headingCounts={initialHeadings}
+      headingOffset={chapter ? 1 : undefined}
       reference={props.reference || { kind: 'artifact', id: a.id, links: [] }}
       onReference={props.onReference}
       onLink={href => {
@@ -91,12 +94,13 @@ export function KnowledgeArtifactReader(props: ArtifactReaderProps) {
     <article
       className={`${embedded ? "knowledge-embedded" : "knowledge-artifact"}${a.kind === "code-map" ? " knowledge-code-map" : ""}${a.kind === "diagram" ? " knowledge-diagram-artifact" : ""}`}
       data-knowledge-artifact={a.id}
+      data-knowledge-chapter={chapter ? a.id : undefined}
     >
       {body.anchor && <span id={body.anchor} className="knowledge-document-anchor" aria-hidden />}
       {(embedded || (showTitle && a.kind !== "diagram")) && (
         <header>
           <div>
-            <small>{title}</small>
+            {!chapter && <small>{title}</small>}
             <h2>{a.title}</h2>
           </div>
           {embedded && (
@@ -136,6 +140,7 @@ export function KnowledgeArtifactReader(props: ArtifactReaderProps) {
                 artifact={linked}
                 reference={undefined}
                 embedded
+                chapter={false}
                 preserveHeading={false}
                 stack={[...stack, linked.id]}
               />
