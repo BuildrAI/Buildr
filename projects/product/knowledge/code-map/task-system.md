@@ -251,9 +251,9 @@
 
 [自举图](../archify/flows/task-self-bootstrap.html)只适用于已安装 `buildr-self-bootstrap`、已交付改动命中输入的工作空间（Workspace），不包含首次交付或 npm 发布。唯一执行器为已安装 `buildr-self-bootstrap-sync` 中的 `scripts/closeout.mjs`：`runDirectSelfBootstrapCloseout` 按范围编排，`classifications` 判断适用输入。任务编号可选；它不是任务完成或清理总控制器。
 
-执行器从基线、交付提交、分支、远端、宿主和保留 Node 核对真实现场；检查目标身份、干净目录、锁、祖先及远端包含关系。适用时从保留目录同步，精确提交实际变化并普通推送，安装开发应用，以 `verifyDevelopmentEntryIdentity` 核对入口、版本、通道和源码身份，再由同一入口完成 Doctor。原来健康运行的开发实例才按连续性脚本证据恢复；不能把应用安装或文件渲染成功当作完整激活。
+执行器从基线、交付提交、分支、远端、宿主和保留 Node 核对真实现场；检查目标身份、未提交集合、锁、祖先及远端包含关系。适用时从保留目录同步，精确提交实际变化并普通推送，安装开发应用，以 `verifyDevelopmentEntryIdentity` 核对入口、版本、通道和源码身份，再由同一入口完成 Doctor。原来健康运行的开发实例才按连续性脚本证据恢复；不能把应用安装或文件渲染成功当作完整激活。
 
-结果为 `passed`、`blocked` 或 `not-applicable`；成功要求最终 `health.ready === true`。推送等局部失败不撤销已交付事实，可按同一输入恢复；未提交内容、未知锁和身份漂移先保留。后续清理由原工作树（Worktree）或预览（Preview）所有者独立核对，不借自举结果推断资源可删。具体来源由知识索引连接唯一技能（Skill）及执行器、连续性脚本；[执行器测试](../../services/buildr/test/integration/self-bootstrap-closeout.test.ts)只证明测试覆盖的分支，不证明某次真实激活。
+结果为 `passed`、`blocked` 或 `not-applicable`；成功要求最终 `health.ready === true`。推送等局部失败不撤销已交付事实，可按同一输入恢复；未提交内容、未知锁和身份漂移先保留。同步已成功但尚未提交时，可由智能体（Agent）核对精确产物并提供临时 `--resume-sync` 输入；唯一执行器重新校验交付身份、当前提交、完整路径及字节摘要后接续，普通未知内容仍拒绝。输入格式与接续操作由原技能（Skill）维护。后续清理由原工作树（Worktree）或预览（Preview）所有者独立核对，不借自举结果推断资源可删。具体来源由知识索引连接唯一技能（Skill）及执行器、连续性脚本；[执行器测试](../../services/buildr/test/integration/self-bootstrap-closeout.test.ts)只证明测试覆盖的分支，不证明某次真实激活。
 
 ### 规范与实现的核对点
 

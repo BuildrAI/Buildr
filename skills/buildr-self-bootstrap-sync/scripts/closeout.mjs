@@ -8,6 +8,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 export const SELF_BOOTSTRAP_CLOSEOUT_RESULT_SCHEMA = 'buildr.self-bootstrap-closeout-result/v1';
+export const SELF_BOOTSTRAP_SYNC_RESUME_SCHEMA = 'buildr.self-bootstrap-sync-resume/v1';
 export const LONG_RUNNING_OPERATION_SUMMARY_SCHEMA = 'buildr.long-running-operation-summary/v1';
 const LONG_RUNNING_OPERATION_SUMMARY_MAX_BYTES = 16 * 1024;
 export const SELF_BOOTSTRAP_CLOSEOUT_PHASES = Object.freeze([
@@ -173,7 +174,7 @@ function operation(id, result, extra = {}) {
 }
 
 function defaultExecute(executable, args, options) {
-  const result = spawnSync(executable, args, { cwd: options.cwd, encoding: 'utf8', env: options.env || process.env });
+  const result = spawnSync(executable, args, { cwd: options.cwd, encoding: options.binary ? null : 'utf8', env: options.env || process.env });
   return { status: Number.isInteger(result.status) ? result.status : 1, stdout: result.stdout || '', stderr: result.stderr || result.error?.message || '' };
 }
 
@@ -464,6 +465,68 @@ function changedPaths(execute, workspaceRoot, phaseResult, idPrefix, { ignoredUn
   return [...new Set([...tracked, ...staged, ...untracked])].sort();
 }
 
+function contentDigest(value) {
+  return `sha256-${crypto.createHash('sha256').update(value).digest('hex')}`;
+}
+
+function readSyncResumeInput(filename, expected) {
+  let input;
+  try { input = JSON.parse(fs.readFileSync(filename, 'utf8')); }
+  catch (error) { throw closeoutError('self-bootstrap-closeout.resume-input-invalid', '同步恢复输入不是可读取的 JSON。', { error: error.message }); }
+  if (input?.schemaVersion !== SELF_BOOTSTRAP_SYNC_RESUME_SCHEMA || !sameFilesystemPath(input.workspaceRoot, expected.workspaceRoot)
+    || !/^[a-f0-9]{40,64}$/.test(input.expectedHead || '') || !Array.isArray(input.files) || !input.files.length || !Array.isArray(input.stagedPaths)) {
+    throw closeoutError('self-bootstrap-closeout.resume-input-invalid', '同步恢复输入缺少明确的工作空间、HEAD 或文件快照。');
+  }
+  for (const key of ['baseRef', 'deliveredRef', 'targetBranch', 'remote', 'agent']) {
+    if (input[key] !== expected[key]) throw closeoutError('self-bootstrap-closeout.resume-input-mismatch', `同步恢复输入的 ${key} 与本次激活不一致。`);
+  }
+  const paths = [];
+  for (const file of input.files) {
+    const pathname = file?.path;
+    if (typeof pathname !== 'string' || pathname.includes('\\') || pathname.includes('\0') || pathname.split('/').some((part) => !part || part === '.' || part === '..' || part === '.git')
+      || !matches(pathname, ['AGENTS.md', '.buildr/builtin-receipts.json', 'rules/manifest.yml', 'skills/manifest.yml', 'commands/manifest.yml', 'components/manifest.yml'],
+        ['rules/buildr/', 'skills/buildr/', 'skills/openspec/', 'commands/buildr/', 'components/buildr/'])
+      || !/^sha256-[a-f0-9]{64}$/.test(file.sha256 || '')) {
+      throw closeoutError('self-bootstrap-closeout.resume-input-invalid', '同步恢复文件必须是同步源资产区内的普通文件及精确 SHA-256 摘要。', { path: pathname || null });
+    }
+    paths.push(pathname);
+  }
+  if (new Set(paths).size !== paths.length || new Set(input.stagedPaths).size !== input.stagedPaths.length || input.stagedPaths.some((pathname) => !paths.includes(pathname))) {
+    throw closeoutError('self-bootstrap-closeout.resume-input-invalid', '同步恢复文件或暂存集合重复或超出声明范围。');
+  }
+  return { ...input, files: [...input.files].sort((a, b) => a.path.localeCompare(b.path)), paths: paths.sort(), stagedPaths: [...input.stagedPaths].sort(), inputIdentity: contentDigest(fs.readFileSync(filename)) };
+}
+
+function verifySyncResumeSnapshot({ resume, root, execute, phaseResult, expectedStaged, id }) {
+  const dirty = changedPaths(execute, root, phaseResult, `${id}-dirty`);
+  const staged = zeroList(gitText(execute, root, ['diff', '--cached', '--name-only', '-z'], `${id}-staged`, phaseResult, 'self-bootstrap-closeout.git-diff-failed'));
+  const unstaged = zeroList(gitText(execute, root, ['diff', '--name-only', '-z'], `${id}-unstaged`, phaseResult, 'self-bootstrap-closeout.git-diff-failed'));
+  if (JSON.stringify(dirty) !== JSON.stringify(resume.paths) || JSON.stringify(staged) !== JSON.stringify(expectedStaged) || staged.some((pathname) => unstaged.includes(pathname))) {
+    throw closeoutError('self-bootstrap-closeout.resume-scope-drift', '同步恢复的未提交或暂存集合已变化，未创建提交。', { expected: resume.paths, dirty, expectedStaged, staged });
+  }
+  for (const file of resume.files) {
+    let target = root;
+    try {
+      for (const part of file.path.split('/')) {
+        target = path.join(target, part);
+        if (fs.lstatSync(target).isSymbolicLink()) throw new Error('symbolic link');
+      }
+      if (!fs.lstatSync(target).isFile() || contentDigest(fs.readFileSync(target)) !== file.sha256) throw new Error('content or file type changed');
+    } catch (error) {
+      throw closeoutError('self-bootstrap-closeout.resume-content-drift', '同步恢复文件的类型或内容已变化，未创建提交。', { path: file.path, error: error.message });
+    }
+  }
+}
+
+function verifySyncResumeIndex({ resume, root, execute, phaseResult }) {
+  for (const file of resume.files) {
+    const observed = execute('git', ['show', `:${file.path}`], { cwd: root, binary: true });
+    const sha256 = observed.status === 0 ? contentDigest(observed.stdout) : null;
+    phaseResult.operations.push(operation('verify-resumed-index-blob', { ...observed, stdout: '' }, { kind: 'git', path: file.path, sha256 }));
+    if (sha256 !== file.sha256) throw closeoutError('self-bootstrap-closeout.resume-content-drift', '同步恢复的暂存内容与已核验快照不一致，未创建提交。', { path: file.path, expected: file.sha256, actual: sha256 });
+  }
+}
+
 function markPassed(stage, inputIdentity, outputIdentity, effects = []) {
   stage.status = 'passed';
   stage.inputIdentity = inputIdentity || null;
@@ -479,7 +542,7 @@ function option(args, name) {
   return value;
 }
 
-export function runDirectSelfBootstrapCloseout({ workspaceRoot, taskId = null, baseRef, deliveredRef, targetBranch, remote, agent, nodeExecutable, execute = defaultExecute, environment = process.env }) {
+export function runDirectSelfBootstrapCloseout({ workspaceRoot, taskId = null, baseRef, deliveredRef, targetBranch, remote, agent, nodeExecutable, resumeSync = null, execute = defaultExecute, environment = process.env }) {
   const root = fs.realpathSync(path.resolve(workspaceRoot));
   const phases = [];
   let active = null;
@@ -499,10 +562,12 @@ export function runDirectSelfBootstrapCloseout({ workspaceRoot, taskId = null, b
     if (!fs.existsSync(path.join(root, 'components/workspace/buildr-self-bootstrap/component.yml'))) return result('not-applicable');
     if ((taskId !== null && !/^[a-z0-9][a-z0-9._-]*$/.test(taskId)) || !/^[a-f0-9]{40,64}$/.test(baseRef || '') || !/^[a-f0-9]{40,64}$/.test(deliveredRef || '') || !targetBranch || !remote || !agent) throw closeoutError('self-bootstrap-closeout.direct-input-invalid', '需要明确的基线和交付提交、分支、远端及宿主；任务编号可选。');
     if (remote.startsWith('-') || targetBranch.startsWith('-')) throw closeoutError('self-bootstrap-closeout.direct-input-invalid', '分支和远端不能是命令选项。');
+    const resume = resumeSync === null ? null : readSyncResumeInput(resumeSync, { workspaceRoot: root, baseRef, deliveredRef, targetBranch, remote, agent });
     requirePassed(git(execute, root, ['check-ref-format', `refs/heads/${targetBranch}`], 'target-ref', active), 'self-bootstrap-closeout.target-invalid', '目标分支无效。');
     if (!sameFilesystemPath(read(['rev-parse', '--show-toplevel'], 'workspace-root'), root)) throw closeoutError('self-bootstrap-closeout.workspace-mismatch', '目标必须是工作空间的真实 Git 根。');
     const scopedPaths = zeroList(read(['diff', '--name-only', '-z', baseRef, deliveredRef, '--'], 'activation-paths'));
     const actions = classifications(scopedPaths);
+    if (resume && !actions['sync-retained-workspace'].length) throw closeoutError('self-bootstrap-closeout.resume-input-mismatch', '本次交付范围不包含可恢复的同步动作。');
     if (!Object.values(actions).some((paths) => paths.length)) return result('not-applicable');
     // A short-lived lock belongs to this runner; it is not delivery evidence.
     const common = read(['rev-parse', '--path-format=absolute', '--git-common-dir'], 'git-common-directory');
@@ -511,14 +576,19 @@ export function runDirectSelfBootstrapCloseout({ workspaceRoot, taskId = null, b
     lock = path.join(lockParent, 'self-bootstrap-direct.lock');
     try { fs.mkdirSync(lock); ownsLock = true; fs.writeFileSync(path.join(lock, 'owner.json'), JSON.stringify({ pid: process.pid, taskId, deliveredRef })); }
     catch { throw closeoutError('self-bootstrap-closeout.activation-busy', '已有自举激活占用；保留现场并核对锁的进程，不自动夺锁。', { lock }); }
-    if (changedPaths(execute, root, active, 'before-activation').length) throw closeoutError('self-bootstrap-closeout.workspace-dirty', '保留工作空间有未提交内容，不能把它们混入激活。');
+    if (!resume && changedPaths(execute, root, active, 'before-activation').length) throw closeoutError('self-bootstrap-closeout.workspace-dirty', '保留工作空间有未提交内容，不能把它们混入激活。');
     const head = read(['rev-parse', 'HEAD'], 'head');
     assertHead(head);
+    if (resume) {
+      if (head !== resume.expectedHead) throw closeoutError('self-bootstrap-closeout.target-drift', '当前 HEAD 与同步恢复输入不一致，未创建提交。');
+      verifySyncResumeSnapshot({ resume, root, execute, phaseResult: active, expectedStaged: resume.stagedPaths, id: 'resume-preflight' });
+    }
     requirePassed(git(execute, root, ['merge-base', '--is-ancestor', baseRef, deliveredRef], 'base-ancestry', active), 'self-bootstrap-closeout.base-mismatch', '基线不是交付提交的祖先。');
     requirePassed(git(execute, root, ['merge-base', '--is-ancestor', deliveredRef, head], 'delivery-ancestry', active), 'self-bootstrap-closeout.delivery-mismatch', '当前工作空间不包含交付提交。');
     const beforeRemote = remoteRef(execute, root, remote, targetBranch, active);
     requirePassed(git(execute, root, ['merge-base', '--is-ancestor', deliveredRef, beforeRemote], 'remote-containment', active), 'self-bootstrap-closeout.delivery-unconfirmed', '当前远端未证明包含交付提交。');
     delivered = true;
+    if (resume && head !== beforeRemote) throw closeoutError('self-bootstrap-closeout.remote-drift', '同步恢复要求当前 HEAD 与已观察远端一致，未创建提交。');
     let pendingSuccessor = false;
     if (head !== beforeRemote) {
       const parents = read(['rev-list', '--parents', '-n', '1', 'HEAD'], 'successor-parents').split(/\s+/);
@@ -529,25 +599,32 @@ export function runDirectSelfBootstrapCloseout({ workspaceRoot, taskId = null, b
       pendingSuccessor = parents.length === 2 && parents[1] === beforeRemote && (matchesIdentity || matchesLegacyTask) && trailers.includes(`Buildr-Activation-Delivery: ${deliveredRef}`);
       if (!pendingSuccessor) throw closeoutError('self-bootstrap-closeout.remote-drift', '保留分支与远端不同，且不是本次激活尚未推送的后继提交。');
     }
-    markPassed(active, deliveredRef, head);
+    markPassed(active, deliveredRef, head, resume ? [{ type: 'workspace-sync-resume', inputIdentity: resume.inputIdentity, paths: resume.paths, expectedHead: resume.expectedHead }] : []);
     successor = head;
-    if (actions['sync-retained-workspace'].length && !pendingSuccessor) {
+    let ownedPaths = resume?.paths || [];
+    if (actions['sync-retained-workspace'].length && !pendingSuccessor && !resume) {
       start('sync'); assertHead(successor);
       requirePassed(productCommand(execute, root, nodeExecutable, ['sync', agent, '--target', root, '--json'], 'workspace-sync', active), 'self-bootstrap-closeout.sync-failed', '工作空间同步失败；保留已发生变更。');
       assertHead(successor);
-      const ownedPaths = changedPaths(execute, root, active, 'after-sync');
+      ownedPaths = changedPaths(execute, root, active, 'after-sync');
       markPassed(active, deliveredRef, successor, [{ type: 'workspace-sync', paths: ownedPaths }]);
-      if (ownedPaths.length) {
+    }
+    if (ownedPaths.length) {
         start('commit'); assertHead(successor);
+        if (resume) verifySyncResumeSnapshot({ resume, root, execute, phaseResult: active, expectedStaged: resume.stagedPaths, id: 'resume-before-stage' });
         requirePassed(git(execute, root, ['add', '--', ...ownedPaths], 'stage-sync', active), 'self-bootstrap-closeout.stage-failed', '精确暂存同步结果失败。');
         const staged = zeroList(read(['diff', '--cached', '--name-only', '-z'], 'staged-paths')).sort();
         if (JSON.stringify(staged) !== JSON.stringify(ownedPaths)) throw closeoutError('self-bootstrap-closeout.scope-drift', '暂存集合发生变化，未创建提交。');
+        if (resume) {
+          verifySyncResumeSnapshot({ resume, root, execute, phaseResult: active, expectedStaged: resume.paths, id: 'resume-after-stage' });
+          verifySyncResumeIndex({ resume, root, execute, phaseResult: active });
+          assertHead(successor);
+        }
         const message = `收敛 Buildr 自举工作空间\n\nBuildr-Activation-Identity: ${activationIdentity}\nBuildr-Activation-Delivery: ${deliveredRef}${taskId === null ? '' : `\nBuildr-Activation-Task: ${taskId}\nBuildr-Task: ${taskId}`}`;
         requirePassed(git(execute, root, ['commit', '-m', message], 'sync-commit', active), 'self-bootstrap-closeout.commit-failed', '同步结果提交失败。');
         const next = read(['rev-parse', 'HEAD'], 'successor');
         if (read(['rev-parse', 'HEAD^'], 'parent') !== successor) throw closeoutError('self-bootstrap-closeout.target-drift', '同步提交的父提交不匹配。');
         markPassed(active, successor, next, [{ type: 'git-commit', paths: ownedPaths, ref: next }]); successor = next;
-      }
     }
     if (successor !== beforeRemote) {
       start('push'); assertHead(successor);
@@ -586,7 +663,7 @@ export function runDirectSelfBootstrapCloseout({ workspaceRoot, taskId = null, b
 }
 
 export function runSelfBootstrapCloseoutCommand({ args = process.argv.slice(2), actualNodeExecutable = process.execPath, execute = defaultExecute, environment = process.env } = {}) {
-  const allowed = new Set(['--target', '--node-executable', '--detail', '--task', '--base-ref', '--delivered-ref', '--branch', '--remote', '--agent']);
+  const allowed = new Set(['--target', '--node-executable', '--detail', '--task', '--base-ref', '--delivered-ref', '--branch', '--remote', '--agent', '--resume-sync']);
   if (args.length % 2 !== 0) throw closeoutError('self-bootstrap-closeout.arguments-invalid', '参数必须是选项和值。');
   for (let index = 0; index < args.length; index += 2) if (!allowed.has(args[index])) throw closeoutError('self-bootstrap-closeout.option-unknown', `不支持的选项：${args[index]}。`);
   const nodeExecutable = option(args, '--node-executable');
@@ -595,7 +672,7 @@ export function runSelfBootstrapCloseoutCommand({ args = process.argv.slice(2), 
   if (!['compact', 'full'].includes(detail)) throw closeoutError('self-bootstrap-closeout.detail-invalid', 'detail 只支持 compact 或 full。');
   const workspaceRoot = option(args, '--target');
   if (!workspaceRoot) throw closeoutError('self-bootstrap-closeout.arguments-incomplete', '需要明确的工作空间。');
-  return runDirectSelfBootstrapCloseout({ workspaceRoot, taskId: option(args, '--task'), baseRef: option(args, '--base-ref'), deliveredRef: option(args, '--delivered-ref'), targetBranch: option(args, '--branch'), remote: option(args, '--remote'), agent: option(args, '--agent'), nodeExecutable, execute, environment });
+  return runDirectSelfBootstrapCloseout({ workspaceRoot, taskId: option(args, '--task'), baseRef: option(args, '--base-ref'), deliveredRef: option(args, '--delivered-ref'), targetBranch: option(args, '--branch'), remote: option(args, '--remote'), agent: option(args, '--agent'), nodeExecutable, resumeSync: option(args, '--resume-sync'), execute, environment });
 }
 
 function main() {

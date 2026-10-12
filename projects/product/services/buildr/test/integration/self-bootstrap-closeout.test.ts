@@ -1,15 +1,16 @@
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
-import { runDirectSelfBootstrapCloseout, runSelfBootstrapCloseoutCommand } from '../../../../../../skills/buildr-self-bootstrap-sync/scripts/closeout.mjs';
+import { runDirectSelfBootstrapCloseout, runSelfBootstrapCloseoutCommand, SELF_BOOTSTRAP_SYNC_RESUME_SCHEMA } from '../../../../../../skills/buildr-self-bootstrap-sync/scripts/closeout.mjs';
 import { DEFAULT_DEVELOPMENT_WEB_PORT } from '../../../../../../skills/buildr-self-bootstrap-sync/scripts/development-web-continuity.mjs';
 import { parseTaskCommitTrailer } from '../../src/modules/task/commits/domain/task-commit.ts';
 
-function run(executable: any, args: any, cwd: any): any  {
-  const result: any = spawnSync(executable, args, { cwd, encoding: 'utf8' });
+function run(executable: any, args: any, cwd: any, binary = false): any  {
+  const result: any = spawnSync(executable, args, { cwd, encoding: binary ? null : 'utf8' });
   return { status: result.status, stdout: result.stdout || '', stderr: result.stderr || '' };
 }
 
@@ -98,12 +99,13 @@ function executor(root: any, options: any = {}): any  {
   let postPushReadbacks: any = 0;
   return (executable: any, args: any, context: any) => {
     if (executable === 'git') {
+      if (args[0] === 'add' && options.failStage) return { status: 128, stdout: '', stderr: 'simulated index.lock contention' };
       if (args[0] === 'push' && options.failPush) return { status: 1, stdout: '', stderr: 'simulated push failure' };
       if (args[0] === 'ls-remote' && successfulPushes > 0 && postPushReadbacks < (options.failRemoteReadbackAttempts || 0)) {
         postPushReadbacks += 1;
         return { status: 1, stdout: '', stderr: 'simulated transient remote readback failure' };
       }
-      const result: any = run(executable, args, context.cwd);
+      const result: any = run(executable, args, context.cwd, context.binary);
       if (args[0] === 'push' && result.status === 0) successfulPushes += 1;
       return result;
     }
@@ -163,7 +165,11 @@ function executor(root: any, options: any = {}): any  {
         return { status: 0, stdout: JSON.stringify(payload), stderr: '' };
       }
       if (productArgs[0] === 'sync') {
-        fs.writeFileSync(path.join(root, 'skills', 'generated', 'SKILL.md'), 'v2\n');
+        for (const [relative, content] of Object.entries(options.syncFiles || { 'skills/generated/SKILL.md': 'v2\n' })) {
+          const file = path.join(root, relative);
+          fs.mkdirSync(path.dirname(file), { recursive: true });
+          fs.writeFileSync(file, content as any);
+        }
         return { status: options.failSync ? 1 : 0, stdout: '{"status":"synced"}', stderr: options.failSync ? 'sync failed' : '' };
       }
     }
@@ -265,6 +271,147 @@ function directFixture(t: any): any  {
   const options: any = { taskInspections: { [taskId]: { record: { taskId, status: 'completed', result: { summary: 'Delivered.' }, scope: { projects: ['product'] } } } } };
   const input: any = { workspaceRoot: current.root, taskId, baseRef: current.baseRef, deliveredRef, targetBranch: 'dev', remote: 'origin', agent: 'codex', nodeExecutable: process.execPath, environment: current.environment };
   return { ...current, input, options };
+}
+
+function syncResumeFixture(t: any): any {
+  const current = directFixture(t);
+  const syncFiles = {
+    '.buildr/builtin-receipts.json': '{"synced":true}\n',
+    'skills/manifest.yml': 'skills: []\n',
+    'skills/buildr/generated/SKILL.md': '已同步的源文件\n',
+  };
+  const failed: any = runDirectSelfBootstrapCloseout({ ...current.input, execute: executor(current.root, { failStage: true, syncFiles }) });
+  assert.equal(failed.diagnostic.code, 'self-bootstrap-closeout.stage-failed');
+  assert.equal(failed.phases.find((stage: any) => stage.id === 'sync').status, 'passed');
+  const request = {
+    schemaVersion: SELF_BOOTSTRAP_SYNC_RESUME_SCHEMA,
+    workspaceRoot: current.root,
+    baseRef: current.input.baseRef,
+    deliveredRef: current.input.deliveredRef,
+    targetBranch: current.input.targetBranch,
+    remote: current.input.remote,
+    agent: current.input.agent,
+    expectedHead: git(current.root, 'rev-parse', 'HEAD'),
+    stagedPaths: [],
+    files: Object.keys(syncFiles).sort().map(relative => ({ path: relative, sha256: `sha256-${crypto.createHash('sha256').update(fs.readFileSync(path.join(current.root, relative))).digest('hex')}` })),
+  };
+  const resumeSync = path.join(path.dirname(current.root), 'resume-sync.json');
+  return { ...current, request, resumeSync };
+}
+
+function writeSyncResume(current: any): void {
+  fs.writeFileSync(current.resumeSync, JSON.stringify(current.request));
+}
+
+test('explicit sync resume commits the reviewed snapshot at a fresh delivered HEAD without repeating sync', (t: any) => {
+  const current = syncResumeFixture(t);
+  // An independently delivered owner repair can advance HEAD while preserving the sync snapshot.
+  git(current.root, 'commit', '--allow-empty', '-m', 'delivered owner repair');
+  git(current.root, 'push', 'origin', 'dev');
+  current.request.expectedHead = git(current.root, 'rev-parse', 'HEAD');
+  git(current.root, 'add', '--', 'skills/manifest.yml');
+  current.request.stagedPaths = ['skills/manifest.yml'];
+  writeSyncResume(current);
+  const calls: any[] = [];
+  const perform = executor(current.root);
+  const result: any = runSelfBootstrapCloseoutCommand({
+    args: ['--target', current.root, '--base-ref', current.input.baseRef, '--delivered-ref', current.input.deliveredRef,
+      '--branch', 'dev', '--remote', 'origin', '--agent', 'codex', '--node-executable', process.execPath, '--resume-sync', current.resumeSync],
+    environment: current.environment,
+    execute: (command: any, args: any, context: any) => { calls.push([command, ...args]); return perform(command, args, context); },
+  });
+  assert.equal(result.status, 'passed', JSON.stringify(result));
+  assert.equal(result.phases.some((stage: any) => stage.id === 'sync'), false);
+  assert.equal(calls.some(args => args.includes('sync')), false);
+  assert.equal(result.phases[0].effects[0].type, 'workspace-sync-resume');
+  assert.equal(git(current.root, 'rev-parse', 'HEAD^'), current.request.expectedHead);
+  assert.deepEqual(git(current.root, 'diff-tree', '--no-commit-id', '--name-only', '-r', result.successor).split('\n').sort(), current.request.files.map((file: any) => file.path));
+  assert.equal(git(current.root, 'ls-remote', 'origin', 'refs/heads/dev').split(/\s+/)[0], result.successor);
+  assert.equal(git(current.root, 'status', '--porcelain'), '');
+  assert.ok(result.phases.some((stage: any) => stage.id === 'verify-development-entry' && stage.status === 'passed'));
+  assert.ok(result.phases.some((stage: any) => stage.id === 'finalize' && stage.status === 'passed'));
+});
+
+for (const scenario of ['content', 'extra-path', 'missing-path', 'staging', 'partial-staging', 'head', 'remote', 'unsafe-path', 'traversal', 'symlink']) {
+  test(`sync resume rejects ${scenario} drift without staging, committing or pushing`, (t: any) => {
+    const current = syncResumeFixture(t);
+    const first = current.request.files[0];
+    if (scenario === 'content') fs.appendFileSync(path.join(current.root, first.path), 'changed\n');
+    if (scenario === 'extra-path') fs.writeFileSync(path.join(current.root, 'skills/buildr/generated/other.md'), 'unreviewed\n');
+    if (scenario === 'missing-path') fs.unlinkSync(path.join(current.root, first.path));
+    if (scenario === 'staging') {
+      fs.writeFileSync(path.join(current.root, 'user-staged.txt'), 'unrelated staged work\n');
+      git(current.root, 'add', '--', 'user-staged.txt');
+    }
+    if (scenario === 'partial-staging') {
+      git(current.root, 'add', '--', first.path);
+      fs.appendFileSync(path.join(current.root, first.path), 'working copy differs\n');
+      current.request.stagedPaths = [first.path];
+      first.sha256 = `sha256-${crypto.createHash('sha256').update(fs.readFileSync(path.join(current.root, first.path))).digest('hex')}`;
+    }
+    if (scenario === 'head') git(current.root, 'commit', '--allow-empty', '-m', 'unexpected HEAD');
+    if (scenario === 'remote') git(current.root, '--git-dir', current.remote, 'update-ref', 'refs/heads/dev', current.baseRef);
+    if (scenario === 'unsafe-path' || scenario === 'symlink') {
+      const relative = scenario === 'unsafe-path' ? 'projects/product/services/buildr/src/unreviewed.ts' : 'skills/buildr/generated/link.md';
+      fs.mkdirSync(path.dirname(path.join(current.root, relative)), { recursive: true });
+      if (scenario === 'symlink') fs.symlinkSync(path.join(current.root, first.path), path.join(current.root, relative));
+      else fs.writeFileSync(path.join(current.root, relative), 'outside sync sources\n');
+      current.request.files.push({ path: relative, sha256: `sha256-${crypto.createHash('sha256').update(fs.readFileSync(path.join(current.root, relative))).digest('hex')}` });
+    }
+    if (scenario === 'traversal') first.path = 'skills/buildr/../manifest.yml';
+    writeSyncResume(current);
+    const before = git(current.root, 'rev-parse', 'HEAD');
+    const calls: any[] = [];
+    const perform = executor(current.root);
+    const result: any = runDirectSelfBootstrapCloseout({ ...current.input, resumeSync: current.resumeSync,
+      execute: (command: any, args: any, context: any) => { calls.push([command, ...args]); return perform(command, args, context); } });
+    assert.equal(result.status, 'blocked', JSON.stringify(result));
+    assert.equal(git(current.root, 'rev-parse', 'HEAD'), before);
+    assert.equal(calls.some(args => args[0] === 'git' && ['add', 'commit', 'push'].includes(args[1])), false);
+    assert.equal(calls.some(args => args.includes('sync')), false);
+  });
+}
+
+for (const field of ['baseRef', 'deliveredRef', 'targetBranch', 'remote', 'agent', 'workspaceRoot']) {
+  test(`sync resume rejects a mismatched ${field} input before writes`, (t: any) => {
+    const current = syncResumeFixture(t);
+    current.request[field] = field.endsWith('Ref') ? current.baseRef : 'different-input';
+    if (field === 'baseRef') current.request[field] = current.input.deliveredRef;
+    writeSyncResume(current);
+    const calls: any[] = [];
+    const perform = executor(current.root);
+    const result: any = runDirectSelfBootstrapCloseout({ ...current.input, resumeSync: current.resumeSync,
+      execute: (command: any, args: any, context: any) => { calls.push([command, ...args]); return perform(command, args, context); } });
+    assert.equal(result.status, 'blocked', JSON.stringify(result));
+    assert.equal(git(current.root, 'rev-parse', 'HEAD'), current.input.deliveredRef);
+    assert.equal(calls.some(args => args[0] === 'git' && ['add', 'commit', 'push'].includes(args[1])), false);
+  });
+}
+
+for (const scenario of ['working-file', 'index-blob']) {
+  test(`sync resume rejects ${scenario} changes during staging before commit`, (t: any) => {
+    const current = syncResumeFixture(t);
+    writeSyncResume(current);
+    const perform = executor(current.root);
+    const calls: any[] = [];
+    const first = current.request.files[0];
+    const result: any = runDirectSelfBootstrapCloseout({ ...current.input, resumeSync: current.resumeSync,
+      execute: (command: any, args: any, context: any) => {
+        calls.push([command, ...args]);
+        if (command === 'git' && args[0] === 'add' && scenario === 'working-file') fs.appendFileSync(path.join(current.root, first.path), 'changed while staging\n');
+        if (command === 'git' && args[0] === 'show' && args[1] === `:${first.path}` && scenario === 'index-blob') {
+          const original = fs.readFileSync(path.join(current.root, first.path));
+          fs.appendFileSync(path.join(current.root, first.path), 'unreviewed index bytes\n');
+          git(current.root, 'add', '--', first.path);
+          fs.writeFileSync(path.join(current.root, first.path), original);
+        }
+        return perform(command, args, context);
+      } });
+    assert.equal(result.status, 'blocked', JSON.stringify(result));
+    assert.equal(git(current.root, 'rev-parse', 'HEAD'), current.input.deliveredRef);
+    assert.equal(calls.some(args => args[0] === 'git' && ['commit', 'push'].includes(args[1])), false);
+    assert.equal(calls.some(args => args.includes('sync')), false);
+  });
 }
 
 test('direct activation uses real Git without Finish and does not repeat a successful push', (t: any) => {
