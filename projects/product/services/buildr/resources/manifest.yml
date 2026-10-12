@@ -229,6 +229,11 @@ builtins:
       target: skills/buildr/code-architecture
       description: 设计代码结构、调整模块职责或审查文件拆分与合并时使用；局部实现沿用既有结构。
       required: false
+    - id: feature-design
+      path: resources/workspace/skills/buildr/feature-design
+      target: skills/buildr/feature-design
+      description: 讨论或逐步设计新功能、收敛较大需求或接续已有方案时使用；基于真实产品形成可评审的小范围成果，不用于已定设计的局部实现。
+      required: false
     - id: project-testing
       path: resources/workspace/skills/buildr/project-testing
       target: skills/buildr/project-testing
@@ -466,6 +471,7 @@ workspaceFiles:
   - resources/workspace/skills/buildr/code-map/SKILL.md => skills/buildr/code-map/SKILL.md copy
   - resources/workspace/skills/buildr/code-architecture/SKILL.md => skills/buildr/code-architecture/SKILL.md copy
   - resources/workspace/skills/buildr/code-architecture/references/examples.md => skills/buildr/code-architecture/references/examples.md copy
+  - resources/workspace/skills/buildr/feature-design/SKILL.md => skills/buildr/feature-design/SKILL.md copy
   - resources/workspace/skills/buildr/project-testing/SKILL.md => skills/buildr/project-testing/SKILL.md copy
   - resources/workspace/skills/buildr/project-testing/references/testing-model-v1.md => skills/buildr/project-testing/references/testing-model-v1.md copy
   - resources/workspace/skills/buildr/task-manager/SKILL.md => skills/buildr/task-manager/SKILL.md copy

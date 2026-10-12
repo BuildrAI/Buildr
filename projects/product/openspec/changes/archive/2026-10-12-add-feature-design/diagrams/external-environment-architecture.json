@@ -1,0 +1,294 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "拟议设计：一个工作空间连接 qa / prod 的 MySQL",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1240,
+      640
+    ]
+  },
+  "components": [
+    {
+      "id": "environments",
+      "type": "backend",
+      "label": "环境（Environment）登记",
+      "sublabel": "qa 与 prod 各有稳定 ID",
+      "pos": [
+        80,
+        50
+      ],
+      "size": [
+        280,
+        80
+      ]
+    },
+    {
+      "id": "resource-map",
+      "type": "backend",
+      "label": "服务资源关联",
+      "sublabel": "环境 ID → 连接 ID → 允许库表",
+      "pos": [
+        480,
+        50
+      ],
+      "size": [
+        280,
+        80
+      ]
+    },
+    {
+      "id": "shared-entry",
+      "type": "frontend",
+      "label": "人 / 智能体（Agent）",
+      "sublabel": "共同查看、编辑和运行查询",
+      "pos": [
+        80,
+        180
+      ],
+      "size": [
+        280,
+        80
+      ]
+    },
+    {
+      "id": "query-target",
+      "type": "backend",
+      "label": "固定查询目标",
+      "sublabel": "环境 ID + 连接 ID + 库 + 只读动作",
+      "pos": [
+        480,
+        180
+      ],
+      "size": [
+        280,
+        80
+      ]
+    },
+    {
+      "id": "query-result",
+      "type": "frontend",
+      "label": "查询与结果",
+      "sublabel": "保留实际目标、时间及截断情况",
+      "pos": [
+        880,
+        180
+      ],
+      "size": [
+        280,
+        80
+      ]
+    },
+    {
+      "id": "mysql-connector",
+      "type": "backend",
+      "label": "MySQL 对接器（Connector）",
+      "sublabel": "同一份实现，按连接 ID 选择绑定",
+      "pos": [
+        480,
+        340
+      ],
+      "size": [
+        280,
+        80
+      ]
+    },
+    {
+      "id": "qa-binding",
+      "type": "security",
+      "label": "qa 本机身份绑定",
+      "sublabel": "执行时解析 qa 凭据",
+      "pos": [
+        80,
+        340
+      ],
+      "size": [
+        280,
+        80
+      ]
+    },
+    {
+      "id": "prod-binding",
+      "type": "security",
+      "label": "prod 本机身份绑定",
+      "sublabel": "执行时解析 prod 只读凭据",
+      "pos": [
+        880,
+        340
+      ],
+      "size": [
+        280,
+        80
+      ]
+    },
+    {
+      "id": "qa-mysql",
+      "type": "database",
+      "label": "qa · MySQL",
+      "sublabel": "qa 真实目标 / qa 允许库表",
+      "pos": [
+        80,
+        510
+      ],
+      "size": [
+        280,
+        80
+      ]
+    },
+    {
+      "id": "prod-mysql",
+      "type": "database",
+      "label": "prod · MySQL",
+      "sublabel": "prod 真实目标 / prod 允许库表",
+      "pos": [
+        880,
+        510
+      ],
+      "size": [
+        280,
+        80
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "工作空间（Workspace）｜可共享声明与查询成果，不保存凭据值",
+      "wraps": [
+        "environments",
+        "resource-map",
+        "shared-entry",
+        "query-target",
+        "query-result"
+      ],
+      "pad": 28
+    },
+    {
+      "kind": "region",
+      "label": "本机执行端（Executor）｜网络访问、工具与身份绑定",
+      "wraps": [
+        "mysql-connector",
+        "qa-binding",
+        "prod-binding"
+      ],
+      "pad": 28
+    },
+    {
+      "kind": "region",
+      "label": "qa 真实系统｜模拟目标",
+      "wraps": [
+        "qa-mysql"
+      ],
+      "pad": 28
+    },
+    {
+      "kind": "region",
+      "label": "prod 真实系统｜模拟目标",
+      "wraps": [
+        "prod-mysql"
+      ],
+      "pad": 28
+    }
+  ],
+  "connections": [
+    {
+      "id": "env-resource",
+      "from": "environments",
+      "to": "resource-map",
+      "label": "关联",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "resolve-target",
+      "from": "resource-map",
+      "to": "query-target",
+      "label": "解析目标",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": 29
+    },
+    {
+      "id": "shared-query",
+      "from": "shared-entry",
+      "to": "query-target",
+      "label": "使用同一目标",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "execute-query",
+      "from": "query-target",
+      "to": "mysql-connector",
+      "label": "只读查询",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "variant": "emphasis",
+      "labelDy": 48,
+      "labelDx": -50
+    },
+    {
+      "id": "qa-route",
+      "from": "mysql-connector",
+      "to": "qa-binding",
+      "label": "选 qa",
+      "fromSide": "left",
+      "toSide": "right",
+      "variant": "security"
+    },
+    {
+      "id": "prod-route",
+      "from": "mysql-connector",
+      "to": "prod-binding",
+      "label": "选 prod",
+      "fromSide": "right",
+      "toSide": "left",
+      "variant": "security"
+    },
+    {
+      "id": "qa-query",
+      "from": "qa-binding",
+      "to": "qa-mysql",
+      "label": "qa 身份查询",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": 53
+    },
+    {
+      "id": "prod-query",
+      "from": "prod-binding",
+      "to": "prod-mysql",
+      "label": "prod 身份查询",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": 53
+    },
+    {
+      "id": "record-result",
+      "from": "mysql-connector",
+      "to": "query-result",
+      "label": "返回并记录",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "首例范围",
+      "items": [
+        "仅 MySQL 只读：qa 与 prod 各自固定目标和身份；示意对象未连接真实系统。"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "隔离成立的依据",
+      "items": [
+        "环境标签只表达归属；真实访问范围由目标、原生账号权限和专业工具落实。网络隔离需另行核实。"
+      ]
+    }
+  ]
+}

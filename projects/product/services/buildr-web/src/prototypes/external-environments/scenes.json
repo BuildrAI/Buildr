@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "pages": [
+    {
+      "id": "directory",
+      "title": "环境目录",
+      "notes": [
+        { "id": "placement", "title": "环境放在工作空间内", "text": "顶部沿用工作台、工作空间和代码。环境作为工作空间左侧的长期对象入口，与项目、服务、代码库同级。" },
+        { "id": "isolation", "title": "qa 与 prod 分别登记", "text": "每个环境使用独立连接标识、目标和本机身份。目录分组表达所属关系，不证明实际网络隔离。首例只展开 MySQL。", "position": "environment-groups" },
+        { "id": "filter", "title": "筛选目录不改变查询目标", "text": "环境筛选仅缩小目录。打开 qa 查询后，可以返回目录筛选 prod，再打开另一项查询；qa 查询继续保留原目标与结果。", "position": "environment-filter" }
+      ],
+      "states": [
+        { "id": "qa", "title": "仅查看 qa", "notes": [] },
+        { "id": "prod", "title": "仅查看 prod", "notes": [] }
+      ]
+    },
+    {
+      "id": "connection",
+      "title": "MySQL 连接",
+      "notes": [
+        { "id": "target", "title": "连接定位真实目标", "text": "连接声明包含稳定标识、明确环境、目标地址、数据库和表范围，并关联使用服务。本原型的地址和对象都是示例。", "position": "connection-target" },
+        { "id": "binding", "title": "本机身份单独绑定", "text": "共享的目标声明与当前本机身份分开。此处只展示认证来源引用，不显示凭据值；绑定与检查按钮只改变演示状态。", "position": "local-binding" }
+      ],
+      "states": [
+        { "id": "prod", "title": "prod 连接", "notes": [] },
+        { "id": "unbound", "title": "本机身份未绑定", "notes": [{ "id": "unbound-note", "title": "局部不可用", "text": "身份未绑定时仍可查看登记信息；仅相关查询不能执行。采用模拟身份后，可以继续本页演示。", "position": "local-binding" }] }
+      ]
+    },
+    {
+      "id": "query",
+      "title": "MySQL 查询",
+      "notes": [
+        { "id": "fixed-target", "title": "每项查询固定目标", "text": "查询始终显示环境、连接和数据库。qa 与 prod 在不同页签中打开；查看其他环境不会悄悄改变本项查询的目标。", "position": "fixed-query-target" },
+        { "id": "sql", "title": "首例只演示有界查询", "text": "可以编辑示例语句并运行，最多展示 100 行。演示支持 orders 示例表、status 筛选及 LIMIT；没有连接数据库，也不执行数据修改。", "position": "query-editor" },
+        { "id": "result", "title": "结果带实际范围说明", "text": "模拟结果显示目标身份、完成时间、返回行数与是否截断。失败只影响对应查询；重试不会重置另一个环境的结果。", "position": "query-result" }
+      ],
+      "states": [
+        { "id": "idle", "title": "尚未运行", "notes": [] },
+        { "id": "prod", "title": "prod 查询", "notes": [] },
+        { "id": "paired", "title": "qa 与 prod 分别打开", "notes": [] },
+        { "id": "truncated", "title": "结果达到上限", "notes": [] },
+        { "id": "failure", "title": "查询失败与重试", "notes": [] },
+        { "id": "unbound", "title": "身份未绑定，查询禁用", "notes": [] }
+      ]
+    }
+  ]
+}
