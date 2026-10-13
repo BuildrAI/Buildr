@@ -5,6 +5,7 @@ import type { TaskRecord } from '../../../../build/generated/task-dto';
 import type { ReviewsResponse, VerificationResponse } from '../../../../build/generated/task-professional-http-dto';
 import type { TaskChangeState } from '../hooks/useTaskArtifacts';
 import { reviewRecords, taskDocumentLabel, taskDocumentTarget, type TaskDocumentItem, type TaskNodeStage, type TaskReadTarget } from './taskWorkContent';
+import { hasDeliveryFiles } from './task-delivery-files';
 
 type ContentOption = { key: string; label: ReactNode; target: TaskReadTarget; group?: string; path?: string };
 export function TaskNodeContent({ selected, record, documents, changes, changesLoading = false, reviews, verification, reviewError, verificationError, reviewLoading, verificationLoading, prototypeData, prototypeError, choices, onChoose, renderContent, hasRetrospective, hasCoordination, materialsLoading, materialsError, materialDiagnostics = [] }: {
@@ -39,6 +40,7 @@ export function TaskNodeContent({ selected, record, documents, changes, changesL
   if (selected === 'closeout') {
     // 常驻「用户确认」目录项已移除：验收入口由后续真实设计决定，当前收尾只展示交付结果与适用内容。
     options.push({key:'result',label:'交付结果',target:{kind:'result',title:'交付结果'}});
+    if (hasDeliveryFiles(changes)) options.push({key:'delivery-files',label:'交付资料',target:{kind:'delivery-files',title:'交付资料'}});
     if (hasCoordination) options.push({key:'coordination',label:'子任务交付',target:{kind:'coordination',title:'子任务交付'}});
     if (hasRetrospective) options.push({key:'retrospective',label:'任务复盘',target:{kind:'retrospective',title:'任务复盘'}});
   }
@@ -53,7 +55,7 @@ export function TaskNodeContent({ selected, record, documents, changes, changesL
       group.children.push(item);
     } else items.push(item);
   }
-  const readingEvidence = choices[selected]?.startsWith('review') || choices[selected] === 'verification' || choices[selected]?.startsWith('prototype:') || ['result', 'coordination', 'retrospective'].includes(choices[selected]);
+  const readingEvidence = choices[selected]?.startsWith('review') || choices[selected] === 'verification' || choices[selected]?.startsWith('prototype:') || ['result', 'coordination', 'retrospective', 'delivery-files'].includes(choices[selected]);
   const waitingForChanges = selected === 'design' && !choices[selected] && changesLoading && !entries.length;
   const waitingForMaterials = materialsLoading && !readingEvidence && !entries.length;
   const loading = waitingForChanges || waitingForMaterials || (active?.target.kind === 'review' ? reviewLoading && !reviews : active?.target.kind === 'verification' ? verificationLoading && !verification : false);

@@ -6,7 +6,7 @@ import { createTaskChangedFilesHttpContribution } from './interfaces/http/task-c
 
 export const TASK_CHANGED_FILES_APPLICATION = 'task.changed-files-application';
 type Dependencies = {
-  [TASK_QUERY_APPLICATION]: Pick<TaskChangedFilesDependencies, 'readTask'>;
+  [TASK_QUERY_APPLICATION]: Pick<TaskChangedFilesDependencies, 'readTask' | 'readTaskCommitTargets'>;
   [WORKSPACE_QUERY]: Pick<TaskChangedFilesDependencies, 'readProjectRegistryRecord' | 'readServiceRegistryRecord' | 'resolveSourceRoot'>;
   [TASK_WORKTREE_PROVIDER]: Pick<TaskChangedFilesDependencies, 'readGitWorktreeEvidence'>;
 };
@@ -16,6 +16,7 @@ export const TASK_CHANGED_FILES_MODULE = Object.freeze({
   create(requires: Dependencies) {
     const application = createTaskChangedFilesApplication({
       readTask: requires[TASK_QUERY_APPLICATION].readTask,
+      readTaskCommitTargets: requires[TASK_QUERY_APPLICATION].readTaskCommitTargets,
       readProjectRegistryRecord: requires[WORKSPACE_QUERY].readProjectRegistryRecord,
       readServiceRegistryRecord: requires[WORKSPACE_QUERY].readServiceRegistryRecord,
       resolveSourceRoot: requires[WORKSPACE_QUERY].resolveSourceRoot,

@@ -3260,8 +3260,8 @@ sources:
   - id: task-commits-pane
     title: 任务提交阅读组织
     kind: code
-    path: services/buildr-web/src/features/task/components/TaskCommitsPane.tsx
-    summary: 组合任务提交查询、详情展开和说明示例，不新增任务工作阶段。
+    path: services/buildr-web/src/features/task/components/TaskChangesPane.tsx
+    summary: 普通任务与组合任务共享文件、提交说明及差异阅读，组合提交保留真实任务来源，不新增工作阶段。
   - id: task-commit-records
     title: 任务提交记录展示
     kind: code
@@ -3270,7 +3270,7 @@ sources:
   - id: task-commits-hook
     title: 任务提交读取接续
     kind: code
-    path: services/buildr-web/src/features/task/hooks/useTaskCommits.ts
+    path: services/buildr-web/src/features/task/hooks/useTaskChangedFiles.ts
     summary: 进入及刷新时按任务读取，切换任务取消旧请求；保留已有结果并单独提示刷新失败。
   - id: task-git-method
     title: Git 操作（git-operations）

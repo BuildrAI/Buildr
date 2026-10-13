@@ -1,6 +1,8 @@
 import { inspectChangeChecklist, parseChangeChecklistText } from './application/change-checklist.ts';
 import { createChangeQuery, type ProjectQuery } from './application/change-query.ts';
 export type { ChangeQuery, ChangeModel, ChangeLifecycle, Project, PrototypePage, PrototypeDiagnostic } from './application/change-query.ts';
+export { inspectChangeAsset, readChangeAsset } from './application/change-assets.ts';
+export type { ChangeAsset, ChangeAssetKind, ChangeAssetDiagnostic } from './application/change-assets.ts';
 import { registerOpenSpecApplication, type OpenSpecRuntime } from './application/openspec-application.ts';
 import { WORKSPACE_QUERY } from '../workspace/module.ts';
 import { AGENT_ASSETS_OPENSPEC_SUPPORT, createOpenSpecAssetSupport, type OpenSpecAssetSupport } from '../agent-assets/module.ts';

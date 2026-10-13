@@ -36,6 +36,7 @@ const operations: Readonly<Record<string, Readonly<{ capability: string; method:
   verification: Object.freeze({ capability: TASK_VERIFICATION_APPLICATION, method: 'inspectTaskVerificationView' }),
   coordination: Object.freeze({ capability: PARENT_COORDINATION_APPLICATION, method: 'inspectParentCoordination' }),
   change: Object.freeze({ capability: CHANGE_APPLICATION, method: 'taskScopedChangeDetail', fields: ['project', 'change'] }),
+  'change-asset': Object.freeze({ capability: CHANGE_APPLICATION, method: 'taskChangeAsset', fields: ['project', 'change', 'assetPath', 'expectedSourceIdentity'] }),
   materials: Object.freeze({ capability: TASK_MATERIALS_APPLICATION, method: 'inspectTaskMaterials' }),
   documents: Object.freeze({ capability: TASK_MATERIALS_APPLICATION, method: 'taskProjectDocument', fields: ['project', 'documentPath'] }),
   prototypes: Object.freeze({ capability: CHANGE_APPLICATION, method: 'taskUiPrototypes' }),

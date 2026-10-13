@@ -247,10 +247,11 @@ export const TASK_HTTP_SCHEMAS = Object.freeze({
       fileCount: { type: 'integer', minimum: 0 }, scannedCommitCount: { type: 'integer', minimum: 0 },
     }, ['id', 'label', 'root', 'sources', 'status', 'branch', 'ahead', 'fileCount', 'scannedCommitCount'])),
     commits: arrayOf(closed({
+      taskId: { $ref: '#/$defs/TaskId' }, taskTitle: nonEmptyText,
       repositoryId: nonEmptyText, hash: { type: 'string', pattern: '^(?:[a-f0-9]{40}|[a-f0-9]{64})$' },
       shortHash: { type: 'string', pattern: '^[a-f0-9]{12}$' }, subject: { type: 'string' }, message: { type: 'string' },
       authorName: { type: 'string' }, authorEmail: { type: 'string' }, authoredAt: nonEmptyText, committedAt: nonEmptyText,
-    }, ['repositoryId', 'hash', 'shortHash', 'subject', 'message', 'authorName', 'authorEmail', 'authoredAt', 'committedAt'])),
+    }, ['taskId', 'taskTitle', 'repositoryId', 'hash', 'shortHash', 'subject', 'message', 'authorName', 'authorEmail', 'authoredAt', 'committedAt'])),
     commitFiles: { type: 'object', additionalProperties: arrayOf(closed({
       repositoryId: nonEmptyText, path: nonEmptyText, previousPath: nullable(nonEmptyText),
       kind: { enum: ['tracked', 'untracked'] }, status: { enum: ['modified', 'untracked', 'added', 'deleted', 'renamed', 'conflicted'] },
@@ -268,10 +269,11 @@ export const TASK_HTTP_SCHEMAS = Object.freeze({
     schemaVersion: { const: 'buildr.task-commits/v1' }, taskId: { $ref: '#/$defs/TaskId' }, readAt: nonEmptyText,
     status: { enum: ['complete', 'partial'] },
     commits: arrayOf(closed({
+      taskId: { $ref: '#/$defs/TaskId' }, taskTitle: nonEmptyText,
       repositoryId: nonEmptyText, hash: { type: 'string', pattern: '^(?:[a-f0-9]{40}|[a-f0-9]{64})$' },
       shortHash: { type: 'string', pattern: '^[a-f0-9]{12}$' }, subject: { type: 'string' }, message: { type: 'string' },
       authorName: { type: 'string' }, authorEmail: { type: 'string' }, authoredAt: nonEmptyText, committedAt: nonEmptyText,
-    }, ['repositoryId', 'hash', 'shortHash', 'subject', 'message', 'authorName', 'authorEmail', 'authoredAt', 'committedAt'])),
+    }, ['taskId', 'taskTitle', 'repositoryId', 'hash', 'shortHash', 'subject', 'message', 'authorName', 'authorEmail', 'authoredAt', 'committedAt'])),
     repositories: arrayOf(closed({
       id: nonEmptyText, label: nonEmptyText, root: nonEmptyText, sources: arrayOf(nonEmptyText),
       status: { enum: ['complete', 'unavailable', 'truncated'] }, scannedCommitCount: { type: 'integer', minimum: 0 },

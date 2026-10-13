@@ -21,6 +21,8 @@ import { useWorkbenchPreferences } from '../../workbench/hooks/useWorkbenchPrefe
 import { TaskContextDrawer } from '../components/TaskWorkContextCard';
 import { TaskWorkPath } from '../components/TaskWorkPath';
 import { TaskChangesPane } from '../components/TaskChangesPane';
+import { TaskDeliveryFiles } from '../components/TaskDeliveryFiles';
+import { hasDeliveryFiles } from '../components/task-delivery-files';
 import { useTaskChangedFileCount } from '../hooks/useTaskChangedFileCount';
 import { useTaskChangedFiles } from '../hooks/useTaskChangedFiles';
 import { TaskNodeContent } from '../components/TaskNodeContent';
@@ -85,7 +87,8 @@ export function TaskDetailPage({ taskId: providedTaskId }: { taskId?: string } =
   const onBreadcrumb = useCallback((workspaceName: string, title: string) => { if (!insidePreview) setBreadcrumbParts([workspaceName, '任务', title]); }, [insidePreview, setBreadcrumbParts]);
   const detail = useTaskDetail({ taskId, lifecycle, onWorkspace, onBreadcrumb, workspaceName: workspace?.name });
   const changedCount = useTaskChangedFileCount(taskId, detail.data?.record.taskId === taskId && !detail.data.record.isParent, workspaceId ?? '');
-  const changedFiles = useTaskChangedFiles(taskId, selected === 'changes', workspaceId ?? '');
+  const parentCommits = Boolean(detail.data?.record.isParent && reading.choices['composite:tab'] === 'commits');
+  const changedFiles = useTaskChangedFiles(taskId, selected === 'changes' || parentCommits, workspaceId ?? '');
   const countResult = changedCount.data;
   const changedFileCount = changedFiles.data && (!countResult || changedFiles.data.readAt >= countResult.readAt) ? changedFiles.data.files.length : countResult?.fileCount ?? null;
   useEffect(() => { if (detail.data) previewContext?.identifyTask(location.pathname, taskId, detail.data.record.isParent === true); }, [detail.data?.record.taskId, detail.data?.record.isParent, previewContext, location.pathname, taskId]);
@@ -113,7 +116,7 @@ export function TaskDetailPage({ taskId: providedTaskId }: { taskId?: string } =
   const refresh = useCallback(async (includePrototype = selected === 'design') => {
     setRefreshing(true);
     try {
-      const results = await Promise.allSettled([detail.refresh().then(next => artifacts.refreshChanges(next)), workContext.refresh(), evidence.refreshLoaded(), artifacts.refreshMaterials(), ...(!detail.data?.record.isParent ? [changedCount.refresh()] : []), ...(changedFiles.data || selected === 'changes' ? [changedFiles.refresh()] : []), ...(includePrototype ? [artifacts.refreshPrototype()] : [])]);
+      const results = await Promise.allSettled([detail.refresh().then(next => artifacts.refreshChanges(next)), workContext.refresh(), evidence.refreshLoaded(), artifacts.refreshMaterials(), ...(!detail.data?.record.isParent ? [changedCount.refresh()] : []), ...(changedFiles.data || selected === 'changes' || parentCommits ? [changedFiles.refresh()] : []), ...(includePrototype ? [artifacts.refreshPrototype()] : [])]);
       resetTaskList();
       const taskRead = results[0];
       if (currentTask.current === taskId && taskRead.status === 'rejected' && !isTaskReadCancelled(taskRead.reason)) setAlert({ message: '任务信息刷新失败，当前仍显示上次读取的内容。请重试。', error: true });
@@ -123,7 +126,7 @@ export function TaskDetailPage({ taskId: providedTaskId }: { taskId?: string } =
         setReaderRefreshToken(value => value + 1);
       }
     }
-  }, [taskId, selected, detail.data?.record.isParent, detail.refresh, workContext.refresh, evidence.refreshLoaded, changedCount.refresh, changedFiles.refresh, changedFiles.data, artifacts.refreshMaterials, artifacts.refreshPrototype, artifacts.refreshChanges, resetTaskList]);
+  }, [taskId, selected, parentCommits, detail.data?.record.isParent, detail.refresh, workContext.refresh, evidence.refreshLoaded, changedCount.refresh, changedFiles.refresh, changedFiles.data, artifacts.refreshMaterials, artifacts.refreshPrototype, artifacts.refreshChanges, resetTaskList]);
   const closeExtraContent = () => { reading.closeExtra(); artifacts.closeDocument(); };
   const closeReadingDrawer = () => { reading.clearExtra(); artifacts.closeDocument(); };
   if (detail.error) return <Alert type="warning" message="任务不可用" description={detail.error} />;
@@ -159,18 +162,18 @@ export function TaskDetailPage({ taskId: providedTaskId }: { taskId?: string } =
       else actions.setActionModal(key as 'edit' | 'abandon');
     } }} trigger={['click']}><Button id="task-more-actions" size="small" type="text" icon={<MoreOutlined />} aria-label="更多任务操作" /></Dropdown>
   </>;
-  return <article ref={reading.rootRef} className={`task-detail-page${selected === 'changes' ? ' is-wide' : ''}`} id="task-detail-main" data-task-id={taskId}>
+  return <article ref={reading.rootRef} className={`task-detail-page${selected === 'changes' || parentCommits ? ' is-wide' : ''}`} id="task-detail-main" data-task-id={taskId}>
     <TaskOverview actions={headerActions} record={record} onRelativeLink={link => void artifacts.openIntentDocument(link)} metadata={<TaskHeaderMetadata task={data} context={workContext.data} href={href} onOpen={(node, content) => { selectNode(node); if (content) reading.choose(node, content); }} />} />
     {visitError && <Alert type="warning" message={visitError} />}
     {alert && <Alert id="task-detail-alert" type={alert.error ? 'error' : 'success'} message={alert.message} closable onClose={() => setAlert(null)} />}
     {data.referenceDiagnostics.length > 0 && <Alert id="task-reference-diagnostics" type="warning" message={`部分引用不可用：${data.referenceDiagnostics.map(item => item.message).join('；')}`} />}
     <TaskSummary context={workContext.data} error={workContext.error} onRespond={() => editor.open('respond')} />
     {workspaceId && <TaskAgentSessions key={`${workspaceId}:${taskId}`} workspaceId={workspaceId} taskId={taskId} />}
-    {record.isParent ? <CompositeTaskContent key={taskId} choices={reading.choices} choose={reading.choose} refreshToken={readerRefreshToken} task={data} coordination={evidence.coordinationData} loading={evidence.coordinationLoading} changes={artifacts.changes} documents={documents} materials={artifacts.materials} renderContent={readContent} refresh={async () => { await refresh(); }} onEnd={() => setEndOpen(true)} href={href} /> : <>
+    {record.isParent ? <CompositeTaskContent key={taskId} choices={reading.choices} choose={reading.choose} changed={changedFiles} onOpenFile={(file,repository,commit)=>openCode({gitRepositoryId:repository.id,path:file.path,commitHash:commit?.commit.hash})} deliveryFiles={hasDeliveryFiles(artifacts.changes) ? <TaskDeliveryFiles changes={artifacts.changes} loading={artifacts.changesLoading} onRead={reading.openExtra} /> : undefined} task={data} coordination={evidence.coordinationData} loading={evidence.coordinationLoading} changes={artifacts.changes} documents={documents} materials={artifacts.materials} renderContent={readContent} refresh={async () => { await refresh(); }} onEnd={() => setEndOpen(true)} href={href} /> : <>
     <TaskWorkPath actions={checklistTrigger} record={record} context={workContext.data?.context} selected={selected === 'changes' ? null : selected} onSelect={selectNode} contentTabs={[{ key: 'changes', label: <span data-prototype-position="changes-entry" title={changedCount.error || (countResult?.status === 'partial' ? '数量为已读范围，详情见改动与提交。' : undefined)}>改动与提交{changedFileCount !== null && changedFileCount > 0 && <span className="task-badge">{changedFileCount}</span>}</span>, selected: selected === 'changes', onSelect: () => selectNode('changes') }]} />
     <div className={`task-detail-layout${checklist.open && checklist.pinned ? ' checklist-pinned' : ''}${checklistResizing ? ' checklist-resizing' : ''}`}>
       <div className="task-detail-reading">
-    {selected === 'changes' ? <div id="task-node-content" className="task-node-content"><div className="task-node-reading"><TaskChangesPane key={taskId} changed={changedFiles} onOpenFile={(file,repository,commit)=>openCode({gitRepositoryId:repository.id,path:file.path,commitHash:commit?.commit.hash,...(!commit && file.checkoutId ? {checkoutId:file.checkoutId} : {})})} /></div></div> : <TaskNodeContent choices={reading.choices} onChoose={reading.choose} selected={selected} record={record} documents={documents} changes={artifacts.changes} changesLoading={artifacts.changesLoading} materialsLoading={artifacts.materials.loading} materialsError={artifacts.materials.error} materialDiagnostics={artifacts.materials.data?.diagnostics} reviews={evidence.reviewData} verification={evidence.verificationData} reviewError={evidence.reviewError} verificationError={evidence.verificationError} reviewLoading={evidence.reviewLoading} verificationLoading={evidence.verificationLoading} prototypeData={artifacts.prototypeData} prototypeError={artifacts.prototypeError} hasRetrospective={Boolean(data.retrospectiveDocument.registered)} hasCoordination={data.taskRelations.children.length > 0} renderContent={readContent} />}
+    {selected === 'changes' ? <div id="task-node-content" className="task-node-content"><div className="task-node-reading"><TaskChangesPane key={taskId} changed={changedFiles} defaultCommit={terminal} onOpenFile={(file,repository,commit)=>openCode({gitRepositoryId:repository.id,path:file.path,commitHash:commit?.commit.hash,...(!commit && file.checkoutId ? {checkoutId:file.checkoutId} : {})})} /></div></div> : <TaskNodeContent choices={reading.choices} onChoose={reading.choose} selected={selected} record={record} documents={documents} changes={artifacts.changes} changesLoading={artifacts.changesLoading} materialsLoading={artifacts.materials.loading} materialsError={artifacts.materials.error} materialDiagnostics={artifacts.materials.data?.diagnostics} reviews={evidence.reviewData} verification={evidence.verificationData} reviewError={evidence.reviewError} verificationError={evidence.verificationError} reviewLoading={evidence.reviewLoading} verificationLoading={evidence.verificationLoading} prototypeData={artifacts.prototypeData} prototypeError={artifacts.prototypeError} hasRetrospective={Boolean(data.retrospectiveDocument.registered)} hasCoordination={data.taskRelations.children.length > 0} renderContent={readContent} />}
 
       </div>
     {checklist.open && checklist.pinned ? <SplitDivider className="task-checklist-resize" aria-label="拖拽调整实施清单宽度" title="拖拽调整宽度" onPointerDown={event => { checklistDrag.current = { x: event.clientX, width: checklistWidth ?? Math.round(reading.rootRef.current!.clientWidth * 0.35) }; setChecklistResizing(true); event.preventDefault(); }} /> : null}

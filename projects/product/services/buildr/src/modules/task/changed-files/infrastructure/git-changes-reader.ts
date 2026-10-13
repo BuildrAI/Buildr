@@ -37,7 +37,7 @@ export function createGitChangesReader(limits: ChangedFileLimits = TASK_CHANGED_
   }
   function output(root: string, args: string[], input?: string): { ok: boolean; text: string; status: number } {
     const result = git(root, args, input);
-    return { ok: !result.error && result.status !== null, text: result.stdout?.toString('utf8') ?? '', status: result.status ?? -1 };
+    return { ok: !result.error && result.status === 0, text: result.stdout?.toString('utf8') ?? '', status: result.status ?? -1 };
   }
   function truncate(text: string, lineLimit = limits.previewLineLimit): { value: string; truncated: boolean } {
     const lines = text.split('\n');
@@ -197,7 +197,8 @@ export function createGitChangesReader(limits: ChangedFileLimits = TASK_CHANGED_
     const meta = output(repository.root, ['rev-list', '--parents', '-n', '1', hash]);
     const parents = meta.ok ? meta.text.trim().split(/\s+/).slice(1).filter(Boolean) : [];
     const base = parents[0] || EMPTY_TREE;
-    const filesList = output(repository.root, ['diff-tree', '--root', '-r', '--find-renames', '--numstat', '-z', '--no-commit-id', hash]);
+    const revisions = parents.length > 1 ? [base, hash] : [hash];
+    const filesList = output(repository.root, ['diff-tree', '--root', '-r', '--find-renames', '--numstat', '-z', '--no-commit-id', ...revisions]);
     const names: Array<{ path: string; previousPath: string | null; additions: number | null; deletions: number | null; status: TaskChangedFile['status'] }> = [];
     if (filesList.ok) {
       const parts = filesList.text.split('\0');
@@ -214,7 +215,7 @@ export function createGitChangesReader(limits: ChangedFileLimits = TASK_CHANGED_
         names.push({ path: target, previousPath: null, additions: Number.isFinite(adds) ? adds : null, deletions: Number.isFinite(dels) ? dels : null, status: 'modified' });
       }
     } else failures.push({ code: 'task_changed_files_commit_files_failed', message: '该提交的文件清单读取失败。' });
-    const nameStatus = output(repository.root, ['diff-tree', '--root', '-r', '--find-renames', '--name-status', '-z', '--no-commit-id', hash]);
+    const nameStatus = output(repository.root, ['diff-tree', '--root', '-r', '--find-renames', '--name-status', '-z', '--no-commit-id', ...revisions]);
     if (nameStatus.ok) {
       const parts = nameStatus.text.split('\0').filter(Boolean);
       for (let index = 0; index + 1 < parts.length; index += 2) {

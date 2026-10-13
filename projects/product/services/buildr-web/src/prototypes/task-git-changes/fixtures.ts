@@ -87,7 +87,7 @@ const commitExamples = [
   { hash: '8e2b14ca071d5fe90aab76c933d125608e71c42d', subject: 'feat(task): 在内容标签中登记变更文件入口', authorName: 'chenjun', committedAt: '2026-09-30 13:25', repositoryId: 'prototype-buildr', message: `feat(task): 在内容标签中登记变更文件入口\n\n变更文件与提交记录并列，位于任务收尾之后。\n\nBuildr-Task: ${taskId}` },
   { hash: '7f4a91c2d380be65e19a2c44d8f1a0b563c92e17', subject: 'docs(trace): 初版操作记录规范说明', authorName: 'chenjun', committedAt: '2026-09-29 17:02', repositoryId: 'prototype-operation-trace', message: `docs(trace): 初版操作记录规范说明\n\n记录操作面板的需求与查询边界。\n\nBuildr-Task: ${taskId}` },
 ];
-export const commits: TaskCommit[] = commitExamples.map(commit => ({ ...commit, shortHash: commit.hash.slice(0, 12), authorEmail: 'example@example.com', committedAt: commit.committedAt.replace(' ', 'T') + ':00+08:00', authoredAt: commit.committedAt.replace(' ', 'T') + ':00+08:00' }));
+export const commits: TaskCommit[] = commitExamples.map(commit => ({ ...commit, taskId, taskTitle: record.title, shortHash: commit.hash.slice(0, 12), authorEmail: 'example@example.com', committedAt: commit.committedAt.replace(' ', 'T') + ':00+08:00', authoredAt: commit.committedAt.replace(' ', 'T') + ':00+08:00' }));
 const committedFiles: ChangedFileEntry[][] = [
   [
     {

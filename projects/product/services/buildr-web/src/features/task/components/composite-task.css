@@ -1,5 +1,6 @@
 .task-list-table .task-row-summary{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .composite-task-reader{flex:1;min-height:0;overflow:auto;padding:22px 10px 24px 0}
+.composite-task-reader.is-commits{display:flex;flex-direction:column;padding:0;overflow:hidden}
 .composite-task-counts{display:flex;flex-wrap:wrap;gap:24px;border-bottom:1px solid var(--soft-line,#e3e7eb);padding-bottom:22px;margin-bottom:24px}
 .composite-task-counts button{border:0;background:none;padding:0;color:var(--soft-muted,#7b8490);cursor:pointer;font:inherit;font-size:12px}
 .composite-task-counts b{font-size:21px;margin-right:6px;color:var(--soft-text,#252a31)}

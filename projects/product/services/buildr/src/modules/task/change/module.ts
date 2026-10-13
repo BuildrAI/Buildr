@@ -9,7 +9,7 @@ export const CHANGE_MODULE_ID = 'change';
 export const CHANGE_APPLICATION = 'change.application';
 
 const METHODS = Object.freeze([
-  'resolveTaskScopedChange', 'taskScopedChangeDetail', 'taskProjectDocument',
+  'resolveTaskScopedChange', 'taskScopedChangeDetail', 'taskChangeAsset', 'taskProjectDocument',
   'taskUiPrototypes', 'taskUiPrototype',
 ]);
 
@@ -75,6 +75,7 @@ export function createChangeModule(runtime: ChangeRuntime) {
         ...Object.fromEntries(METHODS.map((method) => [method, runtimeMethod(composition, method)])),
         inspectTask: (...args: Parameters<typeof registered.inspectTask>) => registered.inspectTask(...args),
         taskScopedChangeDetail: (...args: Parameters<typeof registered.taskScopedChangeDetail>) => registered.taskScopedChangeDetail(...args),
+        taskChangeAsset: (...args: Parameters<typeof registered.taskChangeAsset>) => registered.taskChangeAsset(...args),
         taskProjectDocument: (...args: Parameters<typeof registered.taskProjectDocument>) => registered.taskProjectDocument(...args),
         taskUiPrototypes: (...args: Parameters<typeof registered.taskUiPrototypes>) => registered.taskUiPrototypes(...args),
         taskUiPrototype: (...args: Parameters<typeof registered.taskUiPrototype>) => registered.taskUiPrototype(...args),

@@ -50,6 +50,52 @@ export async function runTaskMaterialsJourney({ t, page, runtime, workspaceRoot,
   assert.equal(runtime.inspectTask(workspaceRoot, simple).recordDigest, recordBefore.recordDigest);
   assert.deepEqual(runtime.inspectTask(workspaceRoot, simple).record.changes, []);
 
+  await scenario('交付资料：普通收尾与组合验收同源读取脚本配置图片，归档后仍可读', async () => {
+    const id = 'delivery-reader', parent = 'delivery-parent', change = 'delivery-files';
+    const projectRoot = path.join(workspaceRoot, 'projects/demo');
+    const changeRoot = path.join(projectRoot, 'openspec/changes', change);
+    fs.mkdirSync(path.join(changeRoot, 'artifacts/migration'), { recursive: true });
+    fs.mkdirSync(path.join(changeRoot, 'custom'), { recursive: true });
+    fs.writeFileSync(path.join(changeRoot, '.openspec.yaml'), 'schema: spec-driven\n');
+    fs.writeFileSync(path.join(changeRoot, 'proposal.md'), '## Why\n\n交付资料浏览器夹具。\n');
+    fs.writeFileSync(path.join(changeRoot, 'design.md'), '## Context\n\n保留既有标准入口。\n');
+    fs.writeFileSync(path.join(changeRoot, 'tasks.md'), '- [x] 1.1 可读资料。\n');
+    fs.writeFileSync(path.join(changeRoot, 'artifacts/migration/README.md'), '# 数据库交付说明\n\nSQL 未执行，部署待处理。\n\n[查看脚本](01-schema.sql)\n\n![迁移截图](../diagram.png)\n');
+    fs.writeFileSync(path.join(changeRoot, 'artifacts/migration/01-schema.sql'), 'SELECT 42 AS delivery_fixture;\n');
+    fs.writeFileSync(path.join(changeRoot, 'custom/config.yml'), 'delivery:\n  enabled: false\n');
+    fs.writeFileSync(path.join(changeRoot, 'artifacts/diagram.png'), Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==', 'base64'));
+    cli(['task', 'create', parent, '--title', '组合交付资料夹具', '--intent', '查看整体交付资料。', '--parent-task', '--project', 'demo', '--change', `demo/${change}`]);
+    cli(['task', 'create', id, '--title', '普通交付资料夹具', '--intent', '查看可读资料与待处理事项。', '--parent', parent, '--project', 'demo', '--change', `demo/${change}`]);
+    cli(['task', 'complete', id, '--expected-record', runtime.inspectTask(workspaceRoot, id).recordDigest, '--summary', '已交付脚本；SQL 未执行，配置和部署待处理。']);
+    const unchanged = runtime.inspectTask(workspaceRoot, id).recordDigest;
+    const close = async () => { await page.getByRole('button', { name: '关闭内容阅读', exact: true }).click(); await page.locator('.task-reading-drawer:visible').waitFor({ state: 'hidden' }); };
+    const file = (path: string) => page.locator(`[data-task-delivery-file="${path}"]:visible`);
+    const reader = () => page.locator('.task-reading-drawer:visible [data-task-change-asset]');
+    await open(id); await page.locator('[data-task-node=closeout]').click();
+    await body().getByText('已交付脚本；SQL 未执行，配置和部署待处理。', { exact: true }).waitFor({ state: 'visible' });
+    await body().locator('[data-task-closeout=delivery-files]').click();
+    await file('artifacts/migration/README.md').click();
+    await reader().getByRole('heading', { name: '数据库交付说明', exact: true }).waitFor({ state: 'visible' });
+    await page.waitForFunction(() => [...document.querySelectorAll<HTMLImageElement>('[data-task-change-asset] img')].some(image => image.alt === '迁移截图' && image.complete && image.naturalWidth === 1));
+    await reader().getByRole('link', { name: '查看脚本', exact: true }).click();
+    await reader().locator('.cm-content').filter({ hasText: 'SELECT 42 AS delivery_fixture;' }).waitFor({ state: 'visible' });
+    await close();
+    await file('custom/config.yml').click();
+    await reader().locator('.cm-content').filter({ hasText: 'enabled: false' }).waitFor({ state: 'visible' }); await close();
+    await file('artifacts/diagram.png').click();
+    await page.waitForFunction(() => [...document.querySelectorAll<HTMLImageElement>('[data-task-change-asset] img')].some(image => image.complete && image.naturalWidth === 1)); await close();
+    const archivedRoot = path.join(projectRoot, 'openspec/changes/archive/2026-10-13-delivery-files');
+    fs.mkdirSync(path.dirname(archivedRoot), { recursive: true }); fs.renameSync(changeRoot, archivedRoot);
+    await refresh(); await file('artifacts/migration/README.md').click();
+    await reader().getByText('已归档内容', { exact: false }).waitFor({ state: 'visible' });
+    await reader().getByRole('heading', { name: '数据库交付说明', exact: true }).waitFor({ state: 'visible' }); await close();
+    await open(parent); await page.getByRole('tab', { name: '验收', exact: true }).click();
+    await file('custom/config.yml').click();
+    await reader().locator('.cm-content').filter({ hasText: 'enabled: false' }).waitFor({ state: 'visible' });
+    assert.equal(runtime.inspectTask(workspaceRoot, id).recordDigest, unchanged, '查阅交付资料不修改任务记录');
+    await capture(page, 'task-delivery-files-archived-composite.png'); await close();
+  });
+
   await scenario('任务材料图片：本机、项目与链接后的正文同源读取，单图失败可刷新且旧正文观察拒绝', async () => {
     const id = 'materials-images';
     const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==', 'base64');

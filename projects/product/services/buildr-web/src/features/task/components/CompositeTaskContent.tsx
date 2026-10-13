@@ -1,4 +1,4 @@
-import { TaskCommitsPane } from './TaskCommitsPane';
+import { TaskChangesPane, type TaskChangesPaneProps } from './TaskChangesPane';
 import { TaskGoalSummary } from './TaskGoalSummary';
 import { useState, type ReactNode } from 'react';
 import type { TaskDocumentItem, TaskReadTarget } from './taskWorkContent';
@@ -17,8 +17,8 @@ import { CompositeTaskPlan } from './CompositeTaskPlan';
 import { formatDateTime, taskStatusLabel } from '../../../lib/taskLabels';
 import './composite-task.css';
 
-type Props = { choices: Record<string, string>; choose(key: string, value: string): void; refreshToken: number; task: TaskDetailResponse; coordination: ParentCoordinationResult | null; loading: boolean; changes: TaskChangeState[]; documents: TaskDocumentItem[]; materials: TaskMaterialsState; renderContent(target: TaskReadTarget): ReactNode; refresh(): Promise<void>; onEnd(): void; href(path: string): string };
-export function CompositeTaskContent({ task, choices, choose, refreshToken, coordination, loading, changes, documents, materials, renderContent, refresh, onEnd, href }: Props) {
+type Props = { choices: Record<string, string>; choose(key: string, value: string): void; changed: TaskChangesPaneProps['changed']; onOpenFile?: TaskChangesPaneProps['onOpenFile']; deliveryFiles?: ReactNode; task: TaskDetailResponse; coordination: ParentCoordinationResult | null; loading: boolean; changes: TaskChangeState[]; documents: TaskDocumentItem[]; materials: TaskMaterialsState; renderContent(target: TaskReadTarget): ReactNode; refresh(): Promise<void>; onEnd(): void; href(path: string): string };
+export function CompositeTaskContent({ task, choices, choose, changed, onOpenFile, deliveryFiles, coordination, loading, changes, documents, materials, renderContent, refresh, onEnd, href }: Props) {
   const previews = useResourcePreview();
   const location = useLocation();
   const navigate = useNavigate();
@@ -57,8 +57,8 @@ export function CompositeTaskContent({ task, choices, choose, refreshToken, coor
 
   return <>
     <div className="task-work-path"><div className="task-path-track" role="tablist" aria-label="组合任务内容">{[['overview', '概览'], ['children', '子任务'], ['acceptance', '验收'], ['commits', '提交记录']].map(([key, label]) => <Button key={key} role="tab" aria-selected={tab === key} type="text" className={`task-work-tab ${tab === key ? 'selected' : ''}`} onClick={() => setTab(key)}>{label}</Button>)}</div></div>
-    <div className="composite-task-reader">
-      {tab === 'commits' && <TaskCommitsPane key={task.record.taskId} taskId={task.record.taskId} refreshToken={refreshToken} />}
+    <div className={`composite-task-reader${tab === 'commits' ? ' is-commits' : ''}`}>
+      {tab === 'commits' && <TaskChangesPane key={task.record.taskId} changed={changed} commitsOnly defaultCommit onOpenFile={onOpenFile} />}
       {error && <Alert message={error} type="warning" closable onClose={() => setError('')} />}
       {tab !== 'acceptance' && tab !== 'commits' && coordination?.diagnostic && <Alert type="warning" message={coordination.diagnostic.message} action={<Button onClick={() => void refresh()}>重试</Button>} />}
       {tab === 'overview' && <>
@@ -82,6 +82,7 @@ export function CompositeTaskContent({ task, choices, choose, refreshToken, coor
         /></div>
       </>}
       {tab === 'acceptance' && <section className="task-reader"><h2>{task.record.status === 'completed' ? '已完成' : task.record.status === 'abandoned' ? '已放弃' : '尚未验收'}</h2>{task.record.result ? <><p className="task-report-meta">记录时间：{formatDateTime(task.record.result.parentCompletion?.recordedAt || task.record.updatedAt)}</p><p>{task.record.result.summary}</p>{task.record.status === 'completed' && !task.record.result.parentCompletion && <p>历史记录未保存独立验收依据。</p>}</> : <><p>{coordination?.children ? `当前 ${children.length} 项子任务，${children.filter(child => ['todo', 'active'].includes(child.status)).length} 项未结束。` : '子任务情况暂不可读取。'}</p><Button onClick={onEnd}>结束组合任务</Button></>}</section>}
+      {tab === 'acceptance' && deliveryFiles}
     </div>
   </>;
 }

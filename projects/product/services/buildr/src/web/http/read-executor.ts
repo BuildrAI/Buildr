@@ -3,7 +3,7 @@ import { Worker } from 'node:worker_threads';
 import { resolveProductResource } from '../../infrastructure/product-resources/index.ts';
 
 const TASK_ID_PATTERN = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/u;
-const OPERATIONS = new Set(['reviews', 'verification', 'coordination', 'change', 'documents', 'prototypes', 'prototype', 'commits', 'changed-file-count', 'changed-files', 'file-diff', 'materials', 'code-repositories', 'code-directory', 'code-file', 'code-editor-file', 'code-search', 'code-source-control', 'code-commit-context', 'code-branches', 'code-authors', 'code-history', 'code-commit', 'code-diff', 'code-source-file']);
+const OPERATIONS = new Set(['reviews', 'verification', 'coordination', 'change', 'change-asset', 'documents', 'prototypes', 'prototype', 'commits', 'changed-file-count', 'changed-files', 'file-diff', 'materials', 'code-repositories', 'code-directory', 'code-file', 'code-editor-file', 'code-search', 'code-source-control', 'code-commit-context', 'code-branches', 'code-authors', 'code-history', 'code-commit', 'code-diff', 'code-source-file']);
 const DEFAULT_WORKER_COUNT = 2;
 const DEFAULT_QUEUE_LIMIT = 32;
 const WORKER_PATH = resolveProductResource('runtime/read-worker.cjs', {
@@ -35,13 +35,14 @@ function validateRequest(operation: any, input: any) {
   if (input.signal !== undefined && (typeof input.signal !== 'object' || typeof input.signal.addEventListener !== 'function')) {
     throw readExecutorError('local_app_read_signal_invalid', 'Buildr Web read executor signal 不合法。', 400);
   }
-  const extra = operation.startsWith('code-') ? ['input'] : operation === 'file-diff' ? ['repositoryId', 'filePath', 'commitHash'] : operation === 'change' ? ['project', 'change'] : operation === 'documents' ? ['project', 'documentPath'] : operation === 'prototype' ? ['prototypeId'] : [];
+  const extra = operation.startsWith('code-') ? ['input'] : operation === 'file-diff' ? ['repositoryId', 'filePath', 'commitHash'] : operation === 'change-asset' ? ['project', 'change', 'assetPath', 'expectedSourceIdentity'] : operation === 'change' ? ['project', 'change'] : operation === 'documents' ? ['project', 'documentPath'] : operation === 'prototype' ? ['prototypeId'] : [];
   for (const field of extra) {
     if (typeof input[field] !== 'string' || !input[field]) throw readExecutorError('local_app_read_input_invalid', `Buildr Web read ${field} 无效。`, 400);
   }
   if (operation === 'file-diff' && input.checkoutId !== undefined && (typeof input.checkoutId !== 'string' || !/^checkout-[a-f0-9]{64}$/.test(input.checkoutId))) throw readExecutorError('local_app_read_input_invalid', '检出来源身份无效。', 400);
   if (extra.includes('project') && !/^[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(input.project)) throw readExecutorError('local_app_read_input_invalid', 'Project 标识无效。', 400);
-  if (operation === 'change' && !TASK_ID_PATTERN.test(input.change)) throw readExecutorError('local_app_read_input_invalid', 'Change 标识无效。', 400);
+  if (['change', 'change-asset'].includes(operation) && !TASK_ID_PATTERN.test(input.change)) throw readExecutorError('local_app_read_input_invalid', 'Change 标识无效。', 400);
+  if (operation === 'change-asset' && !/^sha256-[0-9a-f]{64}$/.test(input.expectedSourceIdentity)) throw readExecutorError('local_app_read_input_invalid', '资料来源身份无效。', 400);
   if (operation === 'prototype' && !/^[a-f0-9]{32}$/u.test(input.prototypeId)) throw readExecutorError('local_app_read_input_invalid', 'Prototype 标识无效。', 400);
   const allowed = new Set(['targetRoot', 'taskId', 'signal', ...extra, ...(operation === 'file-diff' ? ['checkoutId'] : [])]);
   for (const field of Object.keys(input)) {
@@ -171,6 +172,7 @@ export function createBoundedBuildrWebReadExecutor({ workerCount = DEFAULT_WORKE
           ...(item.project === undefined ? {} : { project: item.project }),
           ...(item.change === undefined ? {} : { change: item.change }),
           ...(item.documentPath === undefined ? {} : { documentPath: item.documentPath }),
+          ...(item.assetPath === undefined ? {} : { assetPath: item.assetPath, expectedSourceIdentity: item.expectedSourceIdentity }),
           ...(item.repositoryId === undefined ? {} : { repositoryId: item.repositoryId, filePath: item.filePath, commitHash: item.commitHash }),
           ...(item.checkoutId === undefined ? {} : { checkoutId: item.checkoutId }),
           ...(item.prototypeId === undefined ? {} : { prototypeId: item.prototypeId }),
@@ -206,6 +208,7 @@ export function createBoundedBuildrWebReadExecutor({ workerCount = DEFAULT_WORKE
         project: input.project,
         change: input.change,
         documentPath: input.documentPath,
+        assetPath: input.assetPath, expectedSourceIdentity: input.expectedSourceIdentity,
         prototypeId: input.prototypeId,
         repositoryId: input.repositoryId, filePath: input.filePath, commitHash: input.commitHash, checkoutId: input.checkoutId, input:input.input,
         state: 'queued',

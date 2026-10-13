@@ -5,7 +5,7 @@ import { Task, type ParentCompletion, type TaskResultHistory, type TaskRetrospec
 
 type SqlRow = Record<string, SQLOutputValue>;
 export type TaskRelation = { taskId: string; title: string; status: TaskStatus };
-export type TaskTableQuery = { taskIds?: string[]; parentTaskId?: string };
+export type TaskTableQuery = { taskIds?: string[]; parentTaskId?: string; limit?: number };
 
 function taskRecordError(code: string, message: string, status = 500, details?: unknown): Error {
   return Object.assign(new Error(message), { code, status, details, taskRecordBusiness: true });
@@ -83,7 +83,11 @@ function query(input: TaskTableQuery = {}): { sql: string; parameters: SQLInputV
     conditions.push('parent_task_id = ?');
     parameters.push(input.parentTaskId);
   }
-  return { sql: `SELECT * FROM tasks${conditions.length ? ` WHERE ${conditions.join(' AND ')}` : ''} ORDER BY task_id`, parameters };
+  if (input.limit !== undefined) {
+    if (!Number.isSafeInteger(input.limit) || input.limit < 1) throw taskRecordError('task_record_filter_invalid', 'Task读取数量上限无效。', 400);
+    parameters.push(input.limit);
+  }
+  return { sql: `SELECT * FROM tasks${conditions.length ? ` WHERE ${conditions.join(' AND ')}` : ''} ORDER BY task_id${input.limit === undefined ? '' : ' LIMIT ?'}`, parameters };
 }
 
 const SUMMARY_COLUMNS = 'task_id, title, intent, status, result_summary, created_at, updated_at, parent_task_id, is_parent, parent_completion_json, retrospective_state, retrospective_document_digest, brief_digest, result_history_digest';

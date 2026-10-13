@@ -222,6 +222,34 @@ export function registerTaskQueryApplication(runtime: TaskQueryApplicationRuntim
     return runtime.runWorkspaceSqliteRead(root, context => tasks.titles(context, ids));
   }
 
+  function readTaskCommitTargets(targetRoot: string, taskIdValue: string, limit: number) {
+    const root = assertCanonicalTaskWorkspace(targetRoot);
+    taskId(taskIdValue, 'taskId');
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw taskRecordError('task_record_filter_invalid', '提交查询任务数量上限必须在1至100之间。', 400);
+    return runtime.runWorkspaceSqliteRead(root, context => {
+      const parent = tasks.readSummaries(context, { taskIds: [taskIdValue] })[0];
+      if (!parent) throw taskRecordError('task_record_not_found', `Task Record 不存在：${taskIdValue}。`, 404);
+      // One extra direct child proves truncation without reading bodies, history, or descendants.
+      const children = tasks.readSummaries(context, { parentTaskId: taskIdValue, limit });
+      const selected = [parent, ...children.slice(0, limit - 1)];
+      const ids = selected.map(item => item.taskId);
+      const projectValues = projects.readMany(context, ids);
+      const serviceValues = services.readMany(context, ids);
+      const changeValues = changes.readMany(context, ids);
+      return {
+        root, includesChildren: parent.isParent || children.length > 0, truncated: children.length >= limit,
+        records: selected.map(item => ({
+          taskId: item.taskId, title: item.title,
+          scope: {
+            projects: (projectValues.get(item.taskId) || []).map(value => value.project),
+            services: (serviceValues.get(item.taskId) || []).map(value => ({ project: value.project, service: value.service })),
+          },
+          changes: (changeValues.get(item.taskId) || []).map(value => ({ project: value.project, change: value.change })),
+        })),
+      };
+    });
+  }
+
   function prepareTask(targetRoot: string, taskIdValue: string): TaskPersistence {
     const root = assertCanonicalTaskWorkspace(targetRoot);
     runtime.prepareWorkspaceStructuredStore(root);
@@ -483,7 +511,7 @@ export function registerTaskQueryApplication(runtime: TaskQueryApplicationRuntim
     assertCanonicalTaskWorkspace,
     readTaskInContext: readIn, readParentTaskContextIn: parentContext,
     assertTaskExists, assertTaskExistsInContext,
-    readTask, readTaskBrief, readTaskTitles, prepareTask, queryTaskViews, readTaskView, readParentTaskContext,
+    readTask, readTaskBrief, readTaskTitles, readTaskCommitTargets, prepareTask, queryTaskViews, readTaskView, readParentTaskContext,
     queryTasks, inspectTask, inspectTaskView, inspectTaskSummaryView, inspectTaskRetrospectiveDocument,
     renderTaskResult: result, resolveTaskChangeReferences: resolveChangeReferences,
   });

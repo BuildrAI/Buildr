@@ -5,7 +5,8 @@ import path from 'node:path';
 import test from 'node:test';
 
 import { registerChangeApplication } from '../../src/modules/task/change/application/change-application.ts';
-import { createChangeQuery } from '../../src/modules/openspec/application/change-query.ts';
+import { createChangeQuery, type ChangeModel } from '../../src/modules/openspec/application/change-query.ts';
+import { createTaskProjectDocumentReader } from '../../src/modules/task/materials/application/task-project-document-reader.ts';
 
 type Project = { id: string; code: string; name: string; source: { type: string; path: string } };
 type ChangeSummary = {
@@ -38,6 +39,7 @@ type ChangeRuntime = {
   taskUiPrototypes(root: string, taskId: string): { taskId: string; prototypes: Prototype[]; diagnostics: Array<{ code: string }> };
   taskUiPrototype(root: string, taskId: string, id: string): { html: string };
   taskProjectDocument(root: string, taskId: string, project: string, documentPath: string): { content: string | null; exists: boolean; provenance: string };
+  taskChangeAsset(root: string, taskId: string, project: string, change: string, assetPath: string, expectedSourceIdentity: string): { content: string | null; imageDataUrl: string | null; kind: string; provenance: string; documentPath: string; imageContext?: { sourceIdentity: string; documentDigest: string } };
 };
 
 function unavailable(): never {
@@ -69,6 +71,7 @@ function fixture(projectCode = 'product'): { root: string; runtime: ChangeRuntim
     taskUiPrototypes: unavailable,
     taskUiPrototype: unavailable,
     taskProjectDocument: unavailable,
+    taskChangeAsset: unavailable,
   };
   const projectQuery = { listProjects: runtime.listProjects, projectDetail: runtime.projectDetail, resolveSourceRoot: runtime.resolveSourceRoot };
   const openSpecQuery = createChangeQuery(projectQuery);
@@ -149,6 +152,81 @@ test('带两位归档序号的Change仍以原始code解析', (t) => {
   assert.equal(resolved.availability, 'available');
   assert.equal(resolved.workingCopy?.provenance, 'retained-archive');
   assert.equal(resolved.workingCopy?.change.code, 'finalize-flow');
+});
+
+test('交付资料自动发现根目录和任意子目录，只读正文与图片并保留标准入口', (t) => {
+  const { root, runtime, projectRoot } = fixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  runtime.readTask = (_root, taskId) => ({ record: { taskId, changes: [{ project: 'product', change: 'delivery' }] } });
+  const changeRoot = writeChange(projectRoot, 'delivery', {
+    'proposal.md': '# 方案\n', 'design.md': '# 设计\n', 'tasks.md': '- [x] 完成\n', 'specs/demo/spec.md': '# 规范\n',
+    'brief.md': '# 历史补充\n', 'handoff/README.md': '# 使用说明\n\n![截图](screen.png)\n',
+    'handoff/migration/01-schema.sql': 'ALTER TABLE orders ADD business_type VARCHAR(20);\n',
+    'other/settings.yml': 'enabled: true\n', 'other/archive.pdf': '%PDF-1.0',
+  });
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jhAAAAABJRU5ErkJggg==', 'base64');
+  fs.writeFileSync(path.join(changeRoot, 'handoff/screen.png'), png);
+  fs.symlinkSync(path.join(changeRoot, 'brief.md'), path.join(changeRoot, 'linked.md'));
+  const detail = runtime.taskScopedChangeDetail(root, 'reader-task', 'product', 'delivery').resolution.workingCopy!.change as ChangeModel;
+  assert.deepEqual(detail.assets.map(item => item.relativePath).sort(), ['brief.md', 'handoff/README.md', 'handoff/migration/01-schema.sql', 'handoff/screen.png', 'other/archive.pdf', 'other/settings.yml'].sort());
+  assert.equal(detail.artifacts.proposal.content, '# 方案\n');
+  assert.equal(detail.assetDiagnostics[0].code, 'change_asset_symlink_ignored');
+  const read = (relative: string) => runtime.taskChangeAsset(root, 'reader-task', 'product', 'delivery', relative, detail.assets.find(item => item.relativePath === relative)!.sourceIdentity);
+  assert.equal(read('handoff/migration/01-schema.sql').content, 'ALTER TABLE orders ADD business_type VARCHAR(20);\n');
+  assert.equal(read('other/settings.yml').kind, 'text');
+  const markdown = read('handoff/README.md');
+  assert.ok(markdown.imageContext);
+  assert.equal(markdown.documentPath, 'openspec/changes/delivery/handoff/README.md');
+  const reader = createTaskProjectDocumentReader(runtime, runtime, { inspectGitWorktrees: input => runtime.inspectGitWorktrees(input) });
+  assert.deepEqual(reader.taskProjectDocumentImage(root, 'reader-task', 'product', markdown.documentPath, { ...markdown.imageContext!, href: 'screen.png' }).bytes, png);
+  assert.equal(read('brief.md').content, '# 历史补充\n');
+  assert.equal(read('handoff/screen.png').imageDataUrl, `data:image/png;base64,${png.toString('base64')}`);
+  assert.throws(() => read('other/archive.pdf'), error => coded(error, 'task_change_asset_unsupported'));
+  const observed = detail.assets[0].sourceIdentity;
+  for (const relative of ['../outside.sql', '/etc/passwd', 'linked.md', '.openspec.yaml']) assert.throws(() => runtime.taskChangeAsset(root, 'reader-task', 'product', 'delivery', relative, observed), error => coded(error, 'task_change_asset_path_forbidden'));
+  assert.throws(() => runtime.taskChangeAsset(root, 'reader-task', 'product', 'other', 'brief.md', observed), error => coded(error, 'task_change_not_associated'));
+});
+
+test('交付资料按已观察的真实来源读取，归档移动、文件替换及工作树切换不静默换源', (t) => {
+  const { root, runtime, projectRoot } = fixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  runtime.readTask = (_root, taskId) => ({ record: { taskId, changes: [{ project: 'product', change: 'delivery' }] } });
+  const active = writeChange(projectRoot, 'delivery', { 'handoff.sql': 'retained\n' });
+  const detail = () => runtime.taskScopedChangeDetail(root, 'reader-task', 'product', 'delivery').resolution.workingCopy!.change as ChangeModel;
+  const activeIdentity = detail().assets[0].sourceIdentity;
+  const archived = path.join(projectRoot, 'openspec/changes/archive/2026-10-14-delivery');
+  fs.mkdirSync(path.dirname(archived), { recursive: true }); fs.renameSync(active, archived);
+  assert.throws(() => runtime.taskChangeAsset(root, 'reader-task', 'product', 'delivery', 'handoff.sql', activeIdentity), error => coded(error, 'task_change_asset_source_changed'));
+  let identity = detail().assets[0].sourceIdentity;
+  assert.equal(runtime.taskChangeAsset(root, 'reader-task', 'product', 'delivery', 'handoff.sql', identity).provenance, 'retained-archive');
+  fs.renameSync(path.join(archived, 'handoff.sql'), path.join(archived, 'old.sql'));
+  fs.writeFileSync(path.join(archived, 'handoff.sql'), 'new copy\n');
+  assert.throws(() => runtime.taskChangeAsset(root, 'reader-task', 'product', 'delivery', 'handoff.sql', identity), error => coded(error, 'task_change_asset_source_changed'));
+  identity = detail().assets.find(item => item.relativePath === 'handoff.sql')!.sourceIdentity;
+  const worktreeRoot = path.join(root, '.worktrees/reader-task');
+  const candidate = writeChange(path.join(worktreeRoot, 'projects/product'), 'delivery', { 'handoff.sql': 'candidate\n' });
+  runtime.inspectGitWorktrees = () => ({ status: 'ready', repositories: [{ selector: 'workspace', entityType: 'workspace', sourcePath: '.', checkoutPath: worktreeRoot, state: 'ready' }] });
+  assert.throws(() => runtime.taskChangeAsset(root, 'reader-task', 'product', 'delivery', 'handoff.sql', identity), error => coded(error, 'task_change_asset_source_changed'));
+  identity = detail().assets[0].sourceIdentity;
+  assert.equal(runtime.taskChangeAsset(root, 'reader-task', 'product', 'delivery', 'handoff.sql', identity).content, 'candidate\n');
+  fs.unlinkSync(path.join(candidate, 'handoff.sql'));
+  assert.throws(() => runtime.taskChangeAsset(root, 'reader-task', 'product', 'delivery', 'handoff.sql', identity), error => coded(error, 'task_change_asset_missing'));
+});
+
+test('交付资料有界索引和局部正文限制保留其他可读文件', (t) => {
+  const { root, runtime, projectRoot } = fixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  runtime.readTask = (_root, taskId) => ({ record: { taskId, changes: [{ project: 'product', change: 'limits' }] } });
+  const changeRoot = writeChange(projectRoot, 'limits', { 'small.sql': 'SELECT 1;\n', 'invalid.png': 'not a PNG', 'invalid.txt': '\0binary', 'large.sql': 'x'.repeat(512 * 1024 + 1), [`${'nested/'.repeat(10)}deep.md`]: '# 深层资料\n' });
+  fs.symlinkSync(changeRoot, path.join(changeRoot, 'loop'));
+  const detail = runtime.taskScopedChangeDetail(root, 'reader-task', 'product', 'limits').resolution.workingCopy!.change as ChangeModel;
+  assert.ok(detail.assetDiagnostics.some(item => item.code === 'change_asset_depth_limit'));
+  assert.ok(detail.assetDiagnostics.some(item => item.code === 'change_asset_symlink_ignored'));
+  const read = (relative: string) => runtime.taskChangeAsset(root, 'reader-task', 'product', 'limits', relative, detail.assets.find(item => item.relativePath === relative)!.sourceIdentity);
+  assert.throws(() => read('large.sql'), error => coded(error, 'task_change_asset_too_large'));
+  assert.throws(() => read('invalid.png'), error => coded(error, 'document_image_invalid'));
+  assert.throws(() => read('invalid.txt'), error => coded(error, 'task_change_asset_encoding_invalid'));
+  assert.equal(read('small.sql').content, 'SELECT 1;\n');
 });
 
 test('Task-scoped Change优先使用matching Worktree，缺失时仍可读取retained Change', (t) => {

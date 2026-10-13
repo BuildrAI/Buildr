@@ -11,6 +11,7 @@ import { TASK_HTTP_SCHEMAS, TASK_HTTP_VALIDATORS } from '../../src/modules/task/
 import { TASK_CHANGED_FILE_LIMITS } from '../../src/modules/task/changed-files/infrastructure/git-changes-reader.ts';
 import { TASK_COMMIT_LIMITS } from '../../src/modules/task/commits/infrastructure/git-commit-reader.ts';
 import { gitCheckoutReadId } from '../../src/infrastructure/git/checkout-read-identity.ts';
+import type { TaskCommitTarget } from '../../src/modules/task/commits/application/task-repository-scope.ts';
 
 function git(root: string, args: string[], input?: string): string {
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')));
@@ -381,4 +382,91 @@ test('完整差异不调用代码库配置的外部差异程序', t => {
   const id = f.application.inspectTaskChangedFiles(f.root, 'task-one').repositories[0].id;
   assert.match(f.application.inspectTaskFileDiff(f.root, 'task-one', id, 'a.ts', 'worktree').files[0].preview || '', /\+after/);
   assert.equal(fs.existsSync(marker), false);
+});
+
+test('组合任务展开直接子任务提交文件及固定差异，不混入当前工作区且清理工作树后仍读取保留提交', t => {
+  const f = fixture(t);
+  write(f.root, 'shared.ts', 'original\n'); git(f.root, ['add', 'shared.ts']);
+  const parent = commit(f.root, 'parent baseline\n\nBuildr-Task: task-one');
+  const checkout = path.join(f.base, 'child-checkout'); git(f.root, ['worktree', 'add', '-b', 'child', checkout]);
+  write(checkout, 'shared.ts', 'child delivered\n'); git(checkout, ['add', 'shared.ts']);
+  const child = commit(checkout, 'child delivery\n\nBuildr-Task: child-one');
+  write(checkout, 'shared.ts', 'uncommitted child\n'); write(f.root, 'parent-draft.ts', 'uncommitted parent\n');
+  const records: TaskCommitTarget[] = [{ ...f.record, title: '组合交付' }, { ...f.record, taskId: 'child-one', title: '代码交付' }];
+  let recorded = true;
+  const dependencies: TaskChangedFilesDependencies = { ...f.dependencies,
+    readTaskCommitTargets: (_root, taskId) => ({ root: f.root, records: taskId === 'task-one' ? records : records.filter(record => record.taskId === taskId), includesChildren: taskId === 'task-one', truncated: false }),
+    readGitWorktreeEvidence: (_root, taskId) => recorded && taskId === 'child-one' ? { evidence: { repositories: [{ selector: 'project:app', sourceRepository: f.root, checkoutPath: checkout }] } } : null,
+  };
+  const application = createTaskChangedFilesApplication(dependencies);
+  const result = application.inspectTaskChangedFiles(f.root, 'task-one');
+  assert.equal(result.status, 'complete'); assert.deepEqual(result.files, []);
+  assert.deepEqual(new Set(result.commits.map(item => item.hash)), new Set([parent, child]));
+  const repositoryId = result.repositories[0].id;
+  assert.equal(result.repositories[0].fileCount, 0);
+  const childFiles = result.commitFiles[`${encodeURIComponent(repositoryId)}:${child}`];
+  assert.equal(childFiles[0].path, 'shared.ts'); assert.match(childFiles[0].preview || '', /\+child delivered/);
+  const full = application.inspectTaskFileDiff(f.root, 'task-one', repositoryId, 'shared.ts', child);
+  assert.match(full.files[0].preview || '', /-original\n\+child delivered/);
+  assert.doesNotMatch(full.files[0].preview || '', /uncommitted/);
+  assert.equal(TASK_HTTP_VALIDATORS.validate(TASK_HTTP_SCHEMAS.changedFilesResponse.$id, result).valid, true);
+  const own = application.inspectTaskChangedFiles(f.root, 'child-one');
+  assert.deepEqual(own.commits.map(item => item.hash), [child]);
+  assert.throws(() => application.inspectTaskFileDiff(f.root, 'child-one', repositoryId, 'shared.ts', parent), /提交不属于当前任务/);
+  git(f.root, ['branch', 'delivered', child]); git(f.root, ['worktree', 'remove', '--force', checkout]); git(f.root, ['branch', '-D', 'child']); recorded = false;
+  assert.match(application.inspectTaskFileDiff(f.root, 'task-one', repositoryId, 'shared.ts', child).files[0].preview || '', /\+child delivered/);
+  write(f.root, 'unrelated.ts', 'other\n'); git(f.root, ['add', 'unrelated.ts']);
+  const unrelated = commit(f.root, 'unrelated\n\nBuildr-Task: unrelated');
+  assert.throws(() => application.inspectTaskFileDiff(f.root, 'task-one', repositoryId, 'unrelated.ts', unrelated), /提交不属于当前任务/);
+});
+
+test('Git暂时失败的空差异返回503保留来源，确认文件已无改动才返回404', { skip: process.platform === 'win32' }, t => {
+  const f = fixture(t); write(f.root, 'a.ts', 'before\n'); git(f.root, ['add', 'a.ts']);
+  const hash = commit(f.root, 'baseline\n\nBuildr-Task: task-one'); write(f.root, 'a.ts', 'after\n');
+  const observed = f.application.inspectTaskChangedFiles(f.root, 'task-one');
+  const repositoryId = observed.repositories[0].id, checkoutId = observed.files[0].checkoutId;
+  const gitRoot = git(f.root, ['--exec-path']), realGit = path.join(gitRoot, 'git');
+  const bin = path.join(f.base, 'bin'), selector = path.join(f.base, 'failure-selector'); fs.mkdirSync(bin); fs.writeFileSync(selector, '');
+  fs.writeFileSync(path.join(bin, 'git'), `#!${process.execPath}\nconst fs = require('node:fs'); const { spawnSync } = require('node:child_process'); const mode = fs.readFileSync(${JSON.stringify(selector)}, 'utf8'); const args = process.argv.slice(2); if ((mode === 'status' && args.includes('status')) || (mode === 'files' && args.includes('diff-tree')) || (mode === 'history' && args.includes('rev-list') && args.includes('--stdin')) || (mode === 'identity' && args.includes('--git-dir'))) process.exit(128); const result = spawnSync(${JSON.stringify(realGit)}, args, {stdio:'inherit'}); process.exit(result.status ?? 1);\n`, { mode: 0o755 });
+  const originalPath = process.env.PATH;
+  const unavailable = (error: unknown) => Boolean(error && typeof error === 'object' && 'code' in error && error.code === 'task_file_diff_unconfirmed' && 'status' in error && error.status === 503);
+  try {
+    process.env.PATH = `${bin}${path.delimiter}${originalPath}`;
+    fs.writeFileSync(selector, 'status');
+    assert.throws(() => f.application.inspectTaskFileDiff(f.root, 'task-one', repositoryId, 'a.ts', 'worktree'), unavailable);
+    fs.writeFileSync(selector, 'identity');
+    assert.throws(() => f.application.inspectTaskFileDiff(f.root, 'task-one', repositoryId, 'a.ts', 'worktree', checkoutId), unavailable);
+    for (const mode of ['files', 'history']) {
+      fs.writeFileSync(selector, mode);
+      assert.throws(() => f.application.inspectTaskFileDiff(f.root, 'task-one', repositoryId, 'a.ts', hash), unavailable);
+    }
+    fs.writeFileSync(selector, '');
+    assert.match(f.application.inspectTaskFileDiff(f.root, 'task-one', repositoryId, 'a.ts', 'worktree').files[0].preview || '', /\+after/);
+    write(f.root, 'a.ts', 'before\n');
+    const missing = (error: unknown) => Boolean(error && typeof error === 'object' && 'code' in error && error.code === 'task_file_diff_invalid' && 'status' in error && error.status === 404);
+    assert.throws(() => f.application.inspectTaskFileDiff(f.root, 'task-one', repositoryId, 'a.ts', 'worktree'), missing);
+    assert.throws(() => f.application.inspectTaskFileDiff(f.root, 'task-one', repositoryId, 'missing.ts', hash), missing);
+  } finally { process.env.PATH = originalPath; }
+});
+
+test('组合子任务的合并提交文件与固定差异都比较第一父提交', t => {
+  const f = fixture(t); write(f.root, 'base.txt', 'base\n'); git(f.root, ['add', 'base.txt']);
+  commit(f.root, 'parent baseline\n\nBuildr-Task: task-one');
+  git(f.root, ['checkout', '-b', 'child-delivery']);
+  write(f.root, 'child.txt', 'child merge delivered\n'); git(f.root, ['add', 'child.txt']); commit(f.root, 'prepare child content');
+  git(f.root, ['checkout', 'main']);
+  write(f.root, 'main.txt', 'main branch only\n'); git(f.root, ['add', 'main.txt']); commit(f.root, 'advance main');
+  git(f.root, ['-c', 'commit.gpgSign=false', 'merge', '--no-ff', 'child-delivery', '-m', 'merge child delivery\n\nBuildr-Task: child-one']);
+  const merge = git(f.root, ['rev-parse', 'HEAD']);
+  assert.equal(git(f.root, ['rev-list', '--parents', '-n', '1', merge]).split(/\s+/).length, 3);
+  const records: TaskCommitTarget[] = [{ ...f.record, title: '组合交付' }, { ...f.record, taskId: 'child-one', title: '子任务合并交付' }];
+  const application = createTaskChangedFilesApplication({ ...f.dependencies, readTaskCommitTargets: () => ({ root: f.root, records, includesChildren: true, truncated: false }) });
+  const result = application.inspectTaskChangedFiles(f.root, 'task-one');
+  assert.equal(result.status, 'complete');
+  const entry = result.commits.find(item => item.hash === merge); assert.equal(entry?.taskId, 'child-one');
+  const files = result.commitFiles[`${encodeURIComponent(entry!.repositoryId)}:${merge}`];
+  assert.deepEqual(files.map(file => [file.path, file.status]), [['child.txt', 'added']]);
+  const full = application.inspectTaskFileDiff(f.root, 'task-one', entry!.repositoryId, 'child.txt', merge);
+  assert.equal(full.status, 'complete'); assert.match(full.files[0].preview || '', /\+child merge delivered/);
+  assert.doesNotMatch(full.files[0].preview || '', /main branch only/);
 });

@@ -44,7 +44,7 @@ export function sourceControlFilePathHints(files: Array<Pick<ChangedFileEntry, '
 export type SourceControlScene = 'changes' | 'history' | 'task' | 'full-file';
 export type SourceControlState = '' | 'empty' | 'partial' | 'loading' | 'failure' | 'clean';
 export type SourceControlChange = ChangedFileEntry & { worktreeId?: string | null; area: 'unstaged' | 'staged' | 'untracked'; content: string; previousContent?: string };
-export type SourceControlCommit = TaskCommit & { worktreeId?: string | null; files: SourceControlChange[]; branches: string[]; tags: string[]; taskId?: string | null; taskTitle?: string | null; taskDiagnostic?: string | null };
+export type SourceControlCommit = Omit<TaskCommit, 'taskId' | 'taskTitle'> & { worktreeId?: string | null; files: SourceControlChange[]; branches: string[]; tags: string[]; taskId?: string | null; taskTitle?: string | null; taskDiagnostic?: string | null };
 export type SourceControlRepository = {
   id: string; name: string; location: string; taskLocation?: string; taskBranch?: string | null;
   gitId?: string | null; checkoutId?: string | null; readVersion?: string;

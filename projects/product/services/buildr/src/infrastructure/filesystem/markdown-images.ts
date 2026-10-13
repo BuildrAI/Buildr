@@ -136,6 +136,15 @@ function validImage(bytes: Buffer, type: string): boolean {
     : type === 'image/webp' && bytes.subarray(0, 4).toString('ascii') === 'RIFF' && bytes.subarray(8, 12).toString('ascii') === 'WEBP';
 }
 
+/** Read a directly selected in-scope image with the same limits and format checks as Markdown images. */
+export function readDocumentImage(root: string, relative: string) {
+  const contentType = imageTypes[path.posix.extname(relative).toLowerCase()];
+  if (!contentType) throw failure('document_image_type_forbidden', '仅支持 PNG、JPEG、GIF 和 WebP 图片。');
+  const bytes = readFile(root, relative, MAX_DOCUMENT_IMAGE_BYTES);
+  if (!validImage(bytes, contentType)) throw failure('document_image_invalid', '图片实际内容与允许类型不符。');
+  return { bytes, contentType, filename: path.posix.basename(relative) };
+}
+
 function snapshot(source: MarkdownImageSource) {
   const bytes = readFile(source.root, source.path, MAX_MARKDOWN_BYTES);
   let content: string;

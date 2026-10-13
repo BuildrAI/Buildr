@@ -14,6 +14,8 @@ import { PrototypeTab } from './PrototypeTab';
 import { ParentCoordinationPanel } from './ParentCoordinationPanel';
 import { RetrospectiveDocumentCard } from './RetrospectiveDocumentCard';
 import { normalizedWorkspaceRelativePath } from '../../../lib/workspaceMarkdownReferences';
+import { TaskDeliveryFiles } from './TaskDeliveryFiles';
+import { TaskChangeAssetReader } from './TaskChangeAssetReader';
 
 function TextList({ title, items }: { title: string; items: string[] }) {
   return items.length ? <section className="task-reader-section"><h3>{title}</h3><ul>{items.map((item, index) => <li key={index}>{item}</li>)}</ul></section> : null;
@@ -26,6 +28,8 @@ export function TaskReadingPane({ target, task, context, artifacts, evidence, wo
 }) {
   if (!target) return null;
   const record = task.record;
+  if (target.kind === 'delivery-files') return <TaskDeliveryFiles changes={artifacts.changes} loading={artifacts.changesLoading} onRead={onRead} />;
+  if (target.kind === 'change-asset') return <TaskChangeAssetReader key={JSON.stringify([workspaceId, record.taskId, target.changeKey, target.path, target.sourceIdentity])} taskId={record.taskId} workspaceId={workspaceId} target={target} changes={artifacts.changes} refreshToken={refreshToken} onRead={onRead} />;
   if (target.kind === 'brief') {
     const follow = (href: string) => {
       const path = normalizedWorkspaceRelativePath(href);

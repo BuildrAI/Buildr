@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import { readPrototypeMetadata, type PrototypeMetadata } from './prototype-metadata.ts';
 import path from 'node:path';
 import { inspectChangeChecklist } from './change-checklist.ts';
+import { discoverChangeAssets, type ChangeAsset, type ChangeAssetDiagnostic } from './change-assets.ts';
 
 export type ChangeLifecycle = 'active' | 'archived';
 export type Project = { id: string; code: string; name: string; source: { type?: string; path: string } };
@@ -15,6 +16,8 @@ export type ChangeModel = {
   updatedAt: string;
   progress: unknown;
   artifacts: { root: string; proposal: Artifact; design: Artifact; tasks: Artifact; specs: Array<Artifact & { capability: string }> };
+  assets: ChangeAsset[];
+  assetDiagnostics: ChangeAssetDiagnostic[];
 };
 export type PrototypePage = { path: string; title: string; html: string; sizeBytes: number; updatedAt: string; metadata?: PrototypeMetadata };
 export type PrototypeDiagnostic = { code: string; message: string; path?: string; project?: string; change?: string };
@@ -237,6 +240,7 @@ function buildChangeAtProjectRoot(targetRoot: string, project: Project, projectR
     project: { id: project.id, code: project.code, name: project.name },
     updatedAt: updatedAt(changeRoot),
     progress: inspectChecklist(changeRoot),
+    ...(includeContent ? discoverChangeAssets(changeRoot, projectRoot, targetRoot) : { assets: [], assetDiagnostics: [] }),
     artifacts: {
       root: relativePath(targetRoot, changeRoot),
       proposal,

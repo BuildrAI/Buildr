@@ -177,9 +177,8 @@
         - [TaskAgentAction.tsx](../../services/buildr-web/src/features/task/components/TaskAgentAction.tsx) — 开始与继续工作的指令，按当前范围重新读取
         - [TaskWorkContextCard.tsx](../../services/buildr-web/src/features/task/components/TaskWorkContextCard.tsx) — 人查看与回应事项，冲突保留输入
         - [TaskArtifactReader.tsx](../../services/buildr-web/src/features/task/components/TaskArtifactReader.tsx) — 并排阅读真实方案和成果材料
-        - [TaskCommitsPane.tsx](../../services/buildr-web/src/features/task/components/TaskCommitsPane.tsx) — 组合任务提交查询、展开状态及说明示例（组合任务页）
         - [TaskCommitRecords.tsx](../../services/buildr-web/src/features/task/components/TaskCommitRecords.tsx) — 按仓库分组展示实际提交、读取范围、局部失败与复制操作
-        - [TaskChangesPane.tsx](../../services/buildr-web/src/features/task/components/TaskChangesPane.tsx) — 「改动与提交」工作台与列表视图的组合入口
+        - [TaskChangesPane.tsx](../../services/buildr-web/src/features/task/components/TaskChangesPane.tsx) — 普通任务与组合任务共享的文件、提交说明及差异阅读入口，组合提交保留真实任务来源
         - [TaskChangedFiles.tsx](../../services/buildr-web/src/features/task/components/TaskChangedFiles.tsx) — 变更文件行、分组与状态标记
         - [TaskDiffReader.tsx](../../services/buildr-web/src/features/task/components/TaskDiffReader.tsx) — 主从式差异阅读面（左右/上下对比及完整文件上下文）
         - [useTaskChangedFileCount.ts](../../services/buildr-web/src/features/task/hooks/useTaskChangedFileCount.ts) — 详情打开和刷新时读取轻量计数，按工作空间与任务隔离缓存
@@ -193,7 +192,6 @@
       - [hooks/useTaskReadingState.ts](../../services/buildr-web/src/features/task/hooks/useTaskReadingState.ts) — 接续普通/组合节点、方案与滚动，按历史条目恢复，稳定任务链接明确进入正文
       - [hooks/useTaskActions.ts](../../services/buildr-web/src/features/task/hooks/useTaskActions.ts) — 完成前重读、提交版本与授权；冲突后清除旧确认、刷新成果，等待重新判断
       - [hooks/useTaskWorkContext.ts](../../services/buildr-web/src/features/task/hooks/useTaskWorkContext.ts) — 刷新与取消旧请求，防止不同任务内容混入
-      - [hooks/useTaskCommits.ts](../../services/buildr-web/src/features/task/hooks/useTaskCommits.ts) — 按任务进入或刷新读取，取消旧请求并区分加载、失败和已有结果
     - **`features/workbench/`** — 日常关注入口
       - [pages/WorkbenchPage.tsx](../../services/buildr-web/src/features/workbench/pages/WorkbenchPage.tsx) — 等我回应（明确的决定、验收或补充信息请求）、继续推进、项目变化与常用资料；没有回应请求时紧凑展示
 

@@ -34,6 +34,7 @@ export const changes = [
   { ...changed(browserPath, '@@ -0,0 +1,7 @@\n+import { useEffect, useMemo, useState } from "react";\n+import { Button, Input, Tree } from "antd";\n+\n+export function RepositoryFileBrowser(props) {\n+  const [query, setQuery] = useState("");\n+  return <section aria-label="资源管理器">文件与内容</section>;\n+}', 7), kind: 'untracked' as const, status: 'untracked' as const },
 ];
 const commit: TaskCommit = {
+  taskId: record.taskId, taskTitle: record.title,
   hash: 'a13c8f294d507b671e329ad704dd39128fc051b6', shortHash: 'a13c8f294d50',
   repositoryId: repository.id, subject: 'feat(task): 支持从改动进入完整文件',
   message: 'feat(task): 支持从改动进入完整文件\n\n保留当前查看位置，支持从审阅进入完整上下文。\n\nBuildr-Task: repository-explorer',

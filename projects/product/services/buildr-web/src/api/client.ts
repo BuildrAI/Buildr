@@ -1,6 +1,6 @@
 import type { SessionAdapter } from './LocalSessionAdapter';
 
-export type ApiError = Error & { code?: string; details?: unknown };
+export type ApiError = Error & { code?: string; status?: number; details?: unknown };
 
 export type ApiClient = (resource: string, options?: RequestInit) => Promise<unknown>;
 
@@ -39,6 +39,7 @@ export function createApiClient(options: {
     if (!response.ok) {
       const error: ApiError = new Error(body.error?.message || 'Buildr 请求失败。');
       error.code = body.error?.code;
+      error.status = response.status;
       error.details = body.error?.details;
       throw error;
     }

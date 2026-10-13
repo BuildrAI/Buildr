@@ -1,26 +1,16 @@
 import type { TaskCommitsResult } from '../../../../../build/generated/task-dto.ts';
-import type { TaskRecord } from '../../application/task-dto.ts';
 import { taskActionId } from '../../application/task-validation.ts';
 import { PUBLIC_JSON_SCHEMAS } from '../../../../infrastructure/contracts/public-json.ts';
 import { parseTaskCommitTrailer } from '../domain/task-commit.ts';
 import { createGitCommitReader, TASK_COMMIT_LIMITS, type CommitLimits } from '../infrastructure/git-commit-reader.ts';
-import { resolveTaskRepositoryScope, type TaskRepositoryScopeDependencies, type TaskRepositoryScope } from './task-repository-scope.ts';
+import { resolveTaskCommitRepositoryScope, type TaskRepositoryScopeDependencies, type TaskRepositoryScope } from './task-repository-scope.ts';
 
-type Source = { path: string; root?: string; type?: string };
-type Entity = { source: Source; repositorySource?: Source };
-type Worktree = { selector: string; sourceRepository: string; checkoutPath: string };
-export type TaskCommitsDependencies = {
-  readTask(root: string, taskId: string): { root: string; record: Pick<TaskRecord, 'taskId' | 'scope' | 'changes'> };
-  readProjectRegistryRecord(root: string): { registry: { migrationRequired: boolean }; projects: Record<string, Entity> };
-  readServiceRegistryRecord(root: string, project: string): { services: Record<string, Entity> };
-  resolveSourceRoot(root: string, source: Source): string;
-  readGitWorktreeEvidence(root: string, taskId: string, options: { optional: boolean }): { evidence: { repositories: Worktree[] } } | null;
-};
+export type TaskCommitsDependencies = TaskRepositoryScopeDependencies;
 
 export function createTaskCommitsApplication(dependencies: TaskCommitsDependencies, limits: CommitLimits = TASK_COMMIT_LIMITS) {
   function inspectTaskCommits(targetRoot: string, taskIdValue: string): TaskCommitsResult {
     const taskId = taskActionId(taskIdValue, 'taskId');
-    const scope = resolveTaskRepositoryScope(targetRoot, taskId, dependencies, limits);
+    const scope = resolveTaskCommitRepositoryScope(targetRoot, taskId, dependencies, limits);
     return readTaskCommits(scope, taskId, limits);
   }
   return Object.freeze({ inspectTaskCommits });
@@ -48,7 +38,10 @@ export function readTaskCommits(scope: TaskRepositoryScope, taskId: string, limi
           report(`task_commits_trailer_${trailer.diagnostic}`, trailer.diagnostic === 'conflict' ? '提交包含不同的任务编码，未确认唯一归属。' : '提交任务尾注的编码无效，未确认归属。', null, current.repository.id, commit.hash);
           continue;
         }
-        if (trailer.taskId === taskId) commits.push({ repositoryId: current.repository.id, ...commit });
+        const owner = trailer.taskId && scope.taskTargets.get(trailer.taskId);
+        if (owner && scope.repositoryTaskIds.get(current.repository.id)?.has(owner.taskId)) {
+          commits.push({ repositoryId: current.repository.id, ...commit, taskId: owner.taskId, taskTitle: owner.title || owner.taskId });
+        }
       }
     } catch (error) { current.view.status = 'unavailable'; report(failureCode(error), '代码库提交读取失败；其他代码库的结果仍保留。', null, current.repository.id); }
   }

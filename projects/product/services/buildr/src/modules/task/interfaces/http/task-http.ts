@@ -146,6 +146,9 @@ export async function handleTaskHttpRequest({ request, suffix, searchParams, roo
   // Image owners validate their exact query contracts; unknown Task routes keep this guard.
   if (request.method === 'GET' && new RegExp(`^/tasks/(${TASK_ID_SOURCE})/(?:materials/[A-Za-z0-9][A-Za-z0-9._-]*/image|document-image/[A-Za-z0-9][A-Za-z0-9._-]*)$`).test(suffix)) return null;
 
+  // Change assets validate exactly one observed source identity in their owning HTTP contribution.
+  if (request.method === 'GET' && new RegExp(`^/tasks/(${TASK_ID_SOURCE})/changes/[A-Za-z0-9][A-Za-z0-9._-]*/(${TASK_ID_SOURCE})/assets/.+$`).test(suffix)) return null;
+
   if ((suffix === '/tasks' || suffix.startsWith('/tasks/')) && searchParams.size > 0) {
     throw Object.assign(new Error('Task API 不接受 query 参数。'), { code: 'task_api_query_forbidden', status: 400 });
   }

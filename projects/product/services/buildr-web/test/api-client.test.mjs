@@ -31,3 +31,12 @@ test('missing write session fails before any preference deletion request', async
   await assert.rejects(client('/api/v1/workbench/preferences/planned-task/task-a', { method: 'DELETE' }), /session expired/);
   assert.equal(requests, 0);
 });
+
+test('read errors retain HTTP status and code so unavailable sources are distinguished from transient failures', async t => {
+  let status = 404;
+  t.mock.method(globalThis, 'fetch', async () => new Response(JSON.stringify({ error: { code: 'task_file_checkout_unavailable', message: '所选来源不可用' } }), { status }));
+  const client = createApiClient({ getWorkspaceId: () => 'space-a', sessionAdapter: { writeHeaders() { throw Error('read must not acquire a write session'); } } });
+  await assert.rejects(client('/api/v1/tasks/one/file-diff'), error => error.status === 404 && error.code === 'task_file_checkout_unavailable');
+  status = 503;
+  await assert.rejects(client('/api/v1/tasks/one/file-diff'), error => error.status === 503 && error.code === 'task_file_checkout_unavailable');
+});

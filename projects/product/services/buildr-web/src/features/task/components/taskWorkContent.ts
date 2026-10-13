@@ -84,6 +84,8 @@ export type TaskReadTarget =
   | { kind: 'prototype'; title: string; prototypeKey?: string }
   | { kind: 'material'; id: string; title: string }
   | { kind: 'artifact'; changeKey: string; path: string; title: string }
+  | { kind: 'delivery-files'; title: string }
+  | { kind: 'change-asset'; changeKey: string; path: string; sourceIdentity: string; title: string }
   | { kind: 'review'; reviewType: 'planning' | 'completion'; digest: string; title: string }
   | { kind: 'document'; reference: TaskDocumentReference; title: string }
   | { kind: 'result' | 'coordination' | 'verification' | 'context' | 'record' | 'closeout' | 'retrospective' | 'intent'; title: string };

@@ -1,10 +1,19 @@
-type ChangeHttpInput = { request: { method?: string }; suffix: string; root: string; submitTaskRead(operation: string, taskId: string, input?: Record<string, string>): Promise<any>; respond: { uiPrototypeHtml(html: string): unknown } };
+type ChangeHttpInput = { request: { method?: string }; suffix: string; root: string; searchParams?: URLSearchParams; submitTaskRead(operation: string, taskId: string, input?: Record<string, string>): Promise<any>; respond: { uiPrototypeHtml(html: string): unknown } };
 const TASK_ID = '[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?';
 
 export function createChangeHttpContribution() {
   return Object.freeze({
     id: 'change.http',
-    handle: async ({ request, suffix, submitTaskRead, respond }: ChangeHttpInput) => {
+    handle: async ({ request, suffix, searchParams, submitTaskRead, respond }: ChangeHttpInput) => {
+      const asset = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/changes/([A-Za-z0-9][A-Za-z0-9._-]*)/(${TASK_ID})/assets/(.+)$`));
+      if (request.method === 'GET' && asset) {
+        const expectedSourceIdentity = searchParams?.get('expectedSourceIdentity');
+        if (searchParams?.size !== 1 || !expectedSourceIdentity || !/^sha256-[0-9a-f]{64}$/.test(expectedSourceIdentity)) throw Object.assign(new Error('读取资料需要唯一且合法的已观察来源身份。'), { code: 'task_change_asset_input_invalid', status: 400 });
+        let assetPath: string;
+        try { assetPath = asset[4].split('/').map(decodeURIComponent).join('/'); }
+        catch { throw Object.assign(new Error('资料路径编码无效。'), { code: 'task_change_asset_path_forbidden', status: 400 }); }
+        return { status: 200, body: await submitTaskRead('change-asset', asset[1], { project: asset[2], change: asset[3], assetPath, expectedSourceIdentity }) };
+      }
       const document = suffix.match(new RegExp(`^/tasks/(${TASK_ID})/documents/([A-Za-z0-9][A-Za-z0-9._-]*)/(.+)$`));
       if (request.method === 'GET' && document) {
         let documentPath: string;

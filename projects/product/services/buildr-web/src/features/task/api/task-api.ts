@@ -34,12 +34,26 @@ export type ChangeArtifact = {
 
 export type ChangePayload = {
   name: string;
+  assets?: ChangeAsset[];
+  assetDiagnostics?: Array<{ code: string; message: string; path?: string }>;
   artifacts: {
     proposal: ChangeArtifact;
     design: ChangeArtifact;
     specs: ChangeArtifact[];
     tasks: ChangeArtifact;
   };
+};
+
+export type ChangeAsset = {
+  path: string; relativePath: string; name: string;
+  kind: 'markdown' | 'text' | 'image' | 'unsupported';
+  sizeBytes: number; updatedAt: string; sourceIdentity: string;
+};
+export type TaskChangeAsset = {
+  schemaVersion: 'buildr.task-change-asset/v1'; taskId: string; projectCode: string; changeCode: string;
+  path: string; documentPath: string; name: string; kind: ChangeAsset['kind'];
+  content: string | null; imageDataUrl: string | null; actualDigest: string; provenance: string;
+  imageContext?: MarkdownImageContext;
 };
 
 export function taskMaterialImage(workspaceId: string | null, taskId: string, document: TaskMaterialDocument, href: string): string | null {
@@ -97,6 +111,12 @@ export function createTaskClient(client: ApiClient) {
     },
     change(taskId: string, project: string, change: string, options: ReadOptions = {}): Promise<unknown> {
       return client(`/api/v1/tasks/${encodeURIComponent(taskId)}/changes/${encodeURIComponent(project)}/${encodeURIComponent(change)}`, options);
+    },
+    changeAsset(taskId: string, project: string, change: string, asset: ChangeAsset, options: ReadOptions = {}, workspaceId?: string | null): Promise<TaskChangeAsset> {
+      const prefix = workspaceId ? `/api/v1/workspaces/${encodeURIComponent(workspaceId)}` : '/api/v1';
+      const file = asset.relativePath.split('/').map(encodeURIComponent).join('/');
+      const query = new URLSearchParams({ expectedSourceIdentity: asset.sourceIdentity });
+      return typed(client(`${prefix}/tasks/${encodeURIComponent(taskId)}/changes/${encodeURIComponent(project)}/${encodeURIComponent(change)}/assets/${file}?${query}`, options));
     },
     projectDocument(taskId: string, project: string, encodedPath: string, options: ReadOptions = {}, workspaceId?: string | null): Promise<TaskProjectDocument> {
       const prefix = workspaceId ? `/api/v1/workspaces/${encodeURIComponent(workspaceId)}` : '/api/v1';

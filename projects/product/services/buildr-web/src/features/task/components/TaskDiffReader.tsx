@@ -14,7 +14,7 @@ type DiffMode = 'split' | 'unified';
 function fileName(path: string) { return path.split('/').at(-1) || path; }
 function fileDir(path: string) { const index = path.lastIndexOf('/'); return index < 0 ? '' : path.slice(0, index); }
 
-export type RailCommit = { key: string; commit: TaskCommit; files: ChangedFileEntry[] };
+export type RailCommit = { key: string; commit: Omit<TaskCommit, 'taskId' | 'taskTitle'> & { taskId?: string | null; taskTitle?: string | null }; files: ChangedFileEntry[] };
 export type RailRepository = {
   id: string;
   label: string;
@@ -28,7 +28,7 @@ export type RailRepository = {
 };
 
 /** Persistent master-detail workbench: repository tree on the left, diff pane on the right. */
-export function TaskDiffReader({ repositories, selected, onSelect, notice, taskId, refreshVersion, readScope, onRegisterRefresh, onOpenFile, previewContent, filePresentation }: {
+export function TaskDiffReader({ repositories, selected, onSelect, notice, taskId, refreshVersion, readScope, onRegisterRefresh, onOpenFile, previewContent, filePresentation, railTitle = '文件与提交', defaultCommit = false, showTaskSource = false }: {
   taskId?: string;
   refreshVersion?: string;
   readScope?: string;
@@ -40,6 +40,9 @@ export function TaskDiffReader({ repositories, selected, onSelect, notice, taskI
   onOpenFile?(file: ChangedFileEntry, repository: RailRepository, commit?: RailCommit): void;
   previewContent?: ReactNode;
   filePresentation?: { absolutePath?: string; previousAbsolutePath?: string; comparison: string; comparisonDescription?: string };
+  railTitle?: string;
+  defaultCommit?: boolean;
+  showTaskSource?: boolean;
 }) {
   const { message } = App.useApp();
   const [view, setView] = useState<DiffMode>('split');
@@ -56,9 +59,17 @@ export function TaskDiffReader({ repositories, selected, onSelect, notice, taskI
   const dragStart = useRef<{ x: number; width: number } | null>(null);
   const [selectedCommit, setSelectedCommit] = useState<string | null>(null);
   const [fileCommit, setFileCommit] = useState<string | null>(null);
+  const [selectionMessage, setSelectionMessage] = useState('');
   const [selectionVersion, setSelectionVersion] = useState(0);
-  const selectFile = (key: string, commitKey: string | null = null) => { setSelectedCommit(null); setFileCommit(commitKey); setSelectionVersion(value => value + 1); onSelect(key); };
+  const selectFile = (key: string, commitKey: string | null = null) => { setSelectionMessage(''); setSelectedCommit(null); setFileCommit(commitKey); setSelectionVersion(value => value + 1); onSelect(key); };
   const [openCommits, setOpenCommits] = useState<Record<string, boolean>>({});
+  useEffect(() => { setSelectedCommit(null); setFileCommit(null); setSelectionMessage(''); setOpenCommits({}); }, [readScope, taskId]);
+  const commitEntries = useMemo(() => repositories.flatMap(repository => repository.commits.map(entry => ({ repository, entry }))), [repositories]);
+  const firstCommit = useMemo(() => [...commitEntries].sort((left, right) => Date.parse(right.entry.commit.committedAt) - Date.parse(left.entry.commit.committedAt))[0], [commitEntries]);
+  useEffect(() => {
+    if (selectedCommit && !commitEntries.some(item => item.entry.key === selectedCommit)) setSelectedCommit(null);
+    else if (defaultCommit && !selected && !fileCommit && !selectedCommit && firstCommit) setSelectedCommit(firstCommit.entry.key);
+  }, [defaultCommit, selected, fileCommit, selectedCommit, firstCommit, commitEntries]);
   useEffect(() => { setCopied(false); }, [selected, filePresentation?.absolutePath]);
   const [openRepos, setOpenRepos] = useState<Record<string, boolean>>({});
   useEffect(() => {
@@ -101,10 +112,16 @@ export function TaskDiffReader({ repositories, selected, onSelect, notice, taskI
   useEffect(() => { if (listedSelection) observedSelection.current = { identity: selectionIdentity, value: listedSelection }; }, [listedSelection, selectionIdentity]);
   // Refresh may remove or de-duplicate the selected row. Recheck its observed checkout;
   // a same-path row from another checkout must never become this selection.
-  const selection = listedSelection ?? (!fileCommit && observedSelection.current?.identity === selectionIdentity && observedSelection.current.value.file.checkoutId ? observedSelection.current.value : undefined);
+  const selection = listedSelection ?? (observedSelection.current?.identity === selectionIdentity && (fileCommit || observedSelection.current.value.file.checkoutId) ? observedSelection.current.value : undefined);
   const selectionMissing = Boolean(selection && !listedSelection);
   const sourceFile = selection?.file;
   const full = useTaskFileDiff(taskId, sourceFile ? { repositoryId: sourceFile.repositoryId, filePath: sourceFile.path, commitHash: selection?.commit?.commit.hash ?? 'worktree', ...(!selection?.commit && sourceFile.checkoutId ? { checkoutId: sourceFile.checkoutId } : {}) } : null, `${refreshVersion ?? ''}:${sourceFile?.preview ?? ''}`, readScope);
+  useEffect(() => {
+    if (!taskId || full.loading || full.errorStatus !== 404 || !['task_file_diff_invalid', 'task_file_checkout_unavailable'].includes(full.errorCode || '')) return;
+    observedSelection.current = null;
+    setSelectionMessage('上次所选文件已不在当前范围，已清除旧预览。');
+    setSelectedCommit(null); setFileCommit(null); onSelect(null);
+  }, [taskId, full.loading, full.errorStatus, full.errorCode, onSelect]);
   useEffect(() => {
     onRegisterRefresh?.(full.refresh);
     return () => onRegisterRefresh?.(null);
@@ -113,7 +130,7 @@ export function TaskDiffReader({ repositories, selected, onSelect, notice, taskI
     ? sourceFile && { ...sourceFile, preview: null, previewTruncated: false }
     : full.data?.files[0] ?? sourceFile;
   const owner = selection;
-  const commitEntry = repositories.flatMap(repository => repository.commits.map(entry => ({ repository, entry }))).find(item => item.entry.key === selectedCommit);
+  const commitEntry = commitEntries.find(item => item.entry.key === selectedCommit);
   const parsed = useMemo(() => current?.preview ? parseUnifiedDiff(current.preview) : null, [current?.preview]);
   const compactFile = Boolean(filePresentation);
   const missingFinalNewline = compactFile && parsed?.rows.some(row => row.kind === 'meta' && row.text.startsWith('\\ No newline'));
@@ -190,31 +207,27 @@ export function TaskDiffReader({ repositories, selected, onSelect, notice, taskI
                   <span className="task-commits-expand">{repoOpen ? <DownOutlined /> : <RightOutlined />}</span>
                   <span className="task-changed-repo-label"><strong>{repository.label}</strong></span>
                 </button>
-                <span className="task-changed-repo-count">{repository.status === 'unavailable' ? '不可读取' : `${repository.changes.length} 改 / ${repository.commits.length} 提交`}</span>
+                {repository.branch && <code className="task-changed-repo-branch" title={`当前分支：${repository.branch}`}><BranchesOutlined /> {repository.branch}</code>}
+                {(repository.ahead ?? 0) > 0 && <span className="task-changed-ahead" title={`当前分支领先远端 ${repository.ahead} 个提交`}>↑{repository.ahead}</span>}
+                <span className="task-changed-repo-count">{repository.status === 'unavailable' ? '不可读取' : [repository.changes.length ? `${repository.changes.length} 改动` : '', repository.commits.length ? `${repository.commits.length} 提交` : ''].filter(Boolean).join(' · ') || '无改动'}</span>
               </div>
-              {(repository.branch || (repository.ahead ?? 0) > 0) && <div className="task-rail-repo-meta">
-                {repository.branch && <code className="task-changed-repo-branch" title="当前分支"><BranchesOutlined /> {repository.branch}</code>}
-                {(repository.ahead ?? 0) > 0 && <span className="task-changed-ahead" title={`本地领先远端 ${repository.ahead} 个提交`}>↑{repository.ahead}</span>}
-              </div>}
             </header>
             {repoOpen && <>
               {repository.status === 'unavailable' && <p className="task-changed-repo-error">{repository.message || '该仓库暂不可读取。'}</p>}
               {repository.status !== 'unavailable' && <>
-                <p className="task-rail-group" data-prototype-position="rail-group">更改 · {repository.changes.length}</p>
-                {repository.changes.length === 0 && <p className="task-rail-empty">工作区干净</p>}
+                {repository.changes.length > 0 && repository.commits.length > 0 && <p className="task-rail-group" data-prototype-position="rail-group">未提交改动</p>}
                 {repository.changes.length > 0 && <ChangedFileList selectable files={repository.changes} expanded={null} onExpand={key => { if (key) selectFile(key); }} selectedKey={!fileCommit && current ? changedFileKey(current) : null} />}
-                <p className="task-rail-group">提交 · {repository.commits.length}</p>
-                {repository.commits.length === 0 && <p className="task-rail-empty">暂无关联提交</p>}
+                {repository.changes.length > 0 && repository.commits.length > 0 && <p className="task-rail-group">提交记录</p>}
                 <ol className="task-rail-commits">
                   {repository.commits.map(entry => {
                     const open = Boolean(openCommits[entry.key]);
                     return <li key={entry.key}>
-                      <button type="button" className="task-rail-commit" aria-expanded={open} onClick={() => { setOpenCommits(previous => ({ ...previous, [entry.key]: !previous[entry.key] })); setSelectedCommit(entry.key); onSelect(null); }}>
+                      <button type="button" className={`task-rail-commit${selectedCommit === entry.key ? ' is-selected' : ''}`} aria-expanded={open} aria-controls={`task-commit-files-${encodeURIComponent(entry.key)}`} onClick={() => { setSelectionMessage(''); setOpenCommits(previous => ({ ...previous, [entry.key]: !previous[entry.key] })); setSelectedCommit(entry.key); setFileCommit(null); onSelect(null); }}>
                         <span className="task-commits-expand">{open ? <DownOutlined /> : <RightOutlined />}</span>
-                        <span className="task-rail-commit-content"><strong>{entry.commit.subject}</strong><span className="task-commits-meta"><code>{entry.commit.shortHash}</code><time dateTime={entry.commit.committedAt}>{formatShortDateTime(entry.commit.committedAt)}</time></span></span>
+                        <span className="task-rail-commit-content"><strong>{entry.commit.subject}</strong><span className="task-commits-meta"><code>{entry.commit.shortHash}</code><time dateTime={entry.commit.committedAt}>{formatShortDateTime(entry.commit.committedAt)}</time></span>{showTaskSource && <small className="task-rail-commit-source" title={entry.commit.taskId || taskId}>来源：{entry.commit.taskTitle || entry.commit.taskId || taskId}</small>}</span>
                       </button>
-                      {open && <div className="task-rail-commit-files">
-                        {entry.files.length === 0 ? <p className="task-rail-empty">文件列表暂不可读取</p> : <ChangedFileList compact selectable files={entry.files} expanded={null} onExpand={key => { if (key) selectFile(key, entry.key); }} selectedKey={fileCommit === entry.key && current ? changedFileKey(current) : null} />}
+                      {open && <div className="task-rail-commit-files" id={`task-commit-files-${encodeURIComponent(entry.key)}`}>
+                        {entry.files.length === 0 ? <p className="task-rail-empty">文件列表尚未读取或暂不可展示</p> : <ChangedFileList compact selectable files={entry.files} expanded={null} onExpand={key => { if (key) selectFile(key, entry.key); }} selectedKey={fileCommit === entry.key && current ? changedFileKey(current) : null} />}
                       </div>}
                     </li>;
                   })}
@@ -230,7 +243,7 @@ export function TaskDiffReader({ repositories, selected, onSelect, notice, taskI
       onPointerEnter={() => { if (railCollapsed) setRailPeek(true); }}
       onPointerLeave={() => { if (railCollapsed) setRailPeek(false); }}>
       <header className="task-diff-rail-head">
-        <div className="task-diff-rail-title"><strong>文件与提交</strong></div>
+        <div className="task-diff-rail-title"><strong>{railTitle}</strong></div>
         <Button type="text" size="small" aria-label={railCollapsed ? '展开文件栏' : '收起文件栏'} icon={railCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />} onClick={() => { setRailCollapsed(value => !value); setRailPeek(false); }} />
       </header>
       {!railCollapsed && railContent}
@@ -256,11 +269,12 @@ export function TaskDiffReader({ repositories, selected, onSelect, notice, taskI
         </div>
         {!commitEntry && current && filePresentation && <div className="task-diff-absolute-path"><code aria-label="完整绝对路径">{filePresentation.absolutePath ? `${filePresentation.previousAbsolutePath ? `${filePresentation.previousAbsolutePath} → ` : ''}${filePresentation.absolutePath}` : '完整绝对路径暂不可读取'}</code></div>}
       </header>
+      {selectionMessage && <p className="task-diff-read-status" role="status">{selectionMessage}</p>}
       {taskId && current && (selectionMissing || (!full.loading && (full.error || current.previewTruncated || !current.preview))) && <p className="task-diff-read-status" role="status">{full.error ? `完整差异读取失败：${full.error}` : selectionMissing ? '上次所选改动已不在当前列表，仍按原检出来源核对；可从左侧重新选择。' : current.previewTruncated ? '差异已达到读取上限或无法完整读取，当前内容不完整。' : '该文件未提供可读的文本差异。'}</p>}
       <div ref={bodyRef} className="task-diff-body" role="region" aria-label="差异内容">
         {commitEntry && <article className="task-commit-details" aria-label="提交完整信息">
           <h2>{commitEntry.entry.commit.subject}</h2>
-          <dl><dt>仓库</dt><dd>{commitEntry.repository.label}</dd><dt>提交</dt><dd><code>{commitEntry.entry.commit.hash}</code></dd><dt>作者</dt><dd>{commitEntry.entry.commit.authorName} &lt;{commitEntry.entry.commit.authorEmail}&gt;</dd><dt>时间</dt><dd>{formatShortDateTime(commitEntry.entry.commit.committedAt)}</dd></dl>
+          <dl><dt>仓库</dt><dd>{commitEntry.repository.label}</dd>{(commitEntry.entry.commit.taskId || (showTaskSource && taskId)) && <><dt>来源任务</dt><dd>{commitEntry.entry.commit.taskTitle || commitEntry.entry.commit.taskId || taskId} <code>{commitEntry.entry.commit.taskId || taskId}</code></dd></>}<dt>提交</dt><dd><code>{commitEntry.entry.commit.hash}</code></dd><dt>作者</dt><dd>{commitEntry.entry.commit.authorName} &lt;{commitEntry.entry.commit.authorEmail}&gt;</dd><dt>时间</dt><dd>{formatShortDateTime(commitEntry.entry.commit.committedAt)}</dd></dl>
           <div className="task-commit-actions"><Button size="small" aria-label="复制提交说明" icon={<CopyOutlined />} onClick={() => void copyCommit(commitEntry.entry.commit.message)}>复制提交说明</Button><Button size="small" aria-label="复制完整哈希" icon={<CopyOutlined />} onClick={() => void copyCommit(commitEntry.entry.commit.hash)}>复制完整哈希</Button></div>
           <pre>{commitEntry.entry.commit.message}</pre>
         </article>}

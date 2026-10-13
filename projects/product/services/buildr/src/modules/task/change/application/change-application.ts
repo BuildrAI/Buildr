@@ -1,9 +1,10 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import type { ChangeQuery, ChangeModel, ChangeLifecycle, Project, PrototypePage, PrototypeDiagnostic } from '../../../openspec/module.ts';
+import { inspectChangeAsset, readChangeAsset, type ChangeQuery, type ChangeModel, type ChangeLifecycle, type Project, type PrototypePage, type PrototypeDiagnostic } from '../../../openspec/module.ts';
 import { taskActionId } from '../../application/task-validation.ts';
 import { createTaskProjectDocumentReader, type TaskDocumentWorktreeQuery } from '../../materials/application/task-project-document-reader.ts';
+import { assertMarkdownImageSourceRoot, observeMarkdownImageContext } from '../../../../infrastructure/filesystem/markdown-images.ts';
 
 type TaskPrototype = PrototypePage & { id: string; provenance: string } & (
   | { source: 'change'; project: string; change: string; lifecycle: ChangeLifecycle }
@@ -100,7 +101,7 @@ export function registerChangeApplication(runtime: ChangeRuntime, options: Chang
   }
   const requiredOpenSpecQuery = openSpecQuery;
   const requiredProjectQuery = projectQuery;
-  const { taskScopedProjectRoot, taskProjectDocument } = createTaskProjectDocumentReader(runtime, requiredProjectQuery, worktreeQuery);
+  const { taskScopedProjectRoot, taskProjectDocument, resolveTaskProjectDocument } = createTaskProjectDocumentReader(runtime, requiredProjectQuery, worktreeQuery);
 
   function resolveTaskScopedChange(targetRoot: string, taskId: string, reference: unknown, options: { includeContent?: boolean; allowMissingTask?: boolean; taskRecordObserved?: boolean } = {}): ChangeResolution {
     const includeContent = options.includeContent || false;
@@ -147,6 +148,39 @@ export function registerChangeApplication(runtime: ChangeRuntime, options: Chang
     const resolution = resolveTaskScopedChange(targetRoot, taskId, { project: projectCode, change: changeCode }, { includeContent: true, taskRecordObserved: true });
     if (resolution.availability !== 'available') throw changeError('change_not_found', resolution.diagnostic?.message || 'Change 不存在。', 404, resolution.reference);
     return { resolution };
+  }
+
+  function taskChangeAsset(targetRoot: string, taskId: string, projectCode: string, changeCode: string, assetPath: string, expectedSourceIdentity: string) {
+    taskActionId(taskId, 'taskId');
+    function currentSource() {
+      const task = runtime.readTask(targetRoot, taskId);
+      if (!task.record.changes.some(reference => reference.project === projectCode && reference.change === changeCode)) throw changeError('task_change_not_associated', '这个变更未关联当前任务。', 404);
+      const resolution = resolveTaskScopedChange(targetRoot, taskId, { project: projectCode, change: changeCode }, { taskRecordObserved: true });
+      const working = resolution.workingCopy;
+      if (!working) throw changeError('task_change_asset_source_changed', resolution.diagnostic?.message || '资料来源当前不可读取，请刷新任务。', 409);
+      const base = working.provenance === 'task-worktree-candidate' ? working.root : targetRoot;
+      const changeRoot = path.resolve(base, working.change.artifacts.root);
+      if (!inside(working.root, changeRoot)) throw changeError('task_change_asset_path_forbidden', '资料目录不在当前变更来源内。');
+      assertMarkdownImageSourceRoot(working.root, changeRoot);
+      return { working, changeRoot };
+    }
+    try {
+      const { working, changeRoot } = currentSource();
+      const document = readChangeAsset(changeRoot, assetPath, expectedSourceIdentity);
+      const documentPath = path.relative(working.root, path.join(changeRoot, assetPath)).split(path.sep).join('/');
+      let imageContext;
+      if (document.kind === 'markdown' && documentPath.endsWith('.md')) {
+        const source = resolveTaskProjectDocument(targetRoot, taskId, projectCode, documentPath);
+        if (path.resolve(source.root, source.path) !== path.resolve(changeRoot, assetPath)) throw changeError('task_change_asset_source_changed', '资料来源已变化，请刷新交付资料列表。', 409);
+        imageContext = observeMarkdownImageContext(source, document.content, document.actualDigest);
+      }
+      const refreshed = currentSource();
+      if (inspectChangeAsset(refreshed.changeRoot, assetPath, refreshed.changeRoot).sourceIdentity !== expectedSourceIdentity) throw changeError('task_change_asset_source_changed', '资料来源在读取时变化，请刷新交付资料列表。', 409);
+      return { schemaVersion: 'buildr.task-change-asset/v1', taskId, projectCode, changeCode, ...document, documentPath, provenance: working.provenance, ...(imageContext ? { imageContext } : {}) };
+    } catch (cause) {
+      if (cause && typeof cause === 'object' && 'code' in cause && ['ENOENT', 'ENOTDIR'].includes(String(cause.code))) throw changeError('task_change_asset_missing', '交付资料当前不存在，请刷新列表。', 404);
+      throw cause;
+    }
   }
 
   function taskUiPrototypeEntries(targetRoot: string, taskId: string): { taskId: string; prototypes: TaskPrototype[]; diagnostics: PrototypeDiagnostic[] } {
@@ -244,6 +278,7 @@ export function registerChangeApplication(runtime: ChangeRuntime, options: Chang
   return Object.assign(runtime, {
     resolveTaskScopedChange,
     taskScopedChangeDetail,
+    taskChangeAsset,
     taskProjectDocument,
     taskUiPrototypes,
     taskUiPrototype,
