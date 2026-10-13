@@ -24,7 +24,7 @@ export function createAgentOperationsCliContributions(application: AgentOperatio
       }
       const result = action === 'list' ? application.listRegistry() : action === 'select'
         ? application.selectAgent({ agentId: identity!, expectedRevision: values['--expected-revision'] })
-        : identity === 'dsh' ? application.registerDsh({ executable: values['--executable'], dshHome: values['--dsh-home'], label: values['--label'], expectedRevision: values['--expected-revision'] })
+        : identity === 'dsh' ? await application.registerDsh({ executable: values['--executable'], dshHome: values['--dsh-home'], label: values['--label'], expectedRevision: values['--expected-revision'] })
         : application.registerCodex({ executable: values['--executable'], codexHome: values['--codex-home'], label: values['--label'], expectedRevision: values['--expected-revision'] });
       process.stdout.write(JSON.stringify(result, null, 2) + '\n'); return result;
     },

@@ -2,7 +2,8 @@ import { useAppShell } from './AppShellContext';
 import { useRef, useCallback, useContext, useEffect, useLayoutEffect, useState, type ReactNode, type MouseEvent } from 'react';
 import { UNSAFE_LocationContext, useLocation, useNavigate, useNavigationType, useOutlet } from 'react-router-dom';
 import { WorkspaceTabsContext, WorkspaceViewActiveContext } from './pageTabs';
-import { ResourcePreviewContext, resourcePreview, type PreviewState, type ResourcePreview } from './resource-preview';
+import { InsideResourcePreview, ResourcePreviewContext, resourcePreview, type PreviewState, type ResourcePreview } from './resource-preview';
+import { dshResourceDestination, dshTaskResource } from './dsh-resource-navigation';
 import { PageTabStrip } from './PageTabStrip';
 import { tabElementId, tabPanelId } from '../lib/tab-navigation';
 import { reorderPageTabs, parseTabs, previewOwnerPath, previewOwnerSearch, ratioStorageKey, readRatio, tabForPath, tabsStorageKey, workspacePageSearch, workspacePageLayout, type WorkspacePageTab } from './workspace-pages';
@@ -25,6 +26,7 @@ export function WorkspacePages({ workspaceId, renderResource }: { workspaceId: s
   const navigate = useNavigate();
   const current = tabForPath(workspaceId, location.pathname);
   const directPreview = resourcePreview(workspaceId, location.pathname + location.search);
+  const directDshTask = dshTaskResource(workspaceId, location.pathname, location.search);
   const [previews, setPreviews] = useState<Record<string, PreviewState>>({});
   const removedResources = useRef(new Set<string>());
   const removePreviewResource = (kind: string, id: string) => {
@@ -42,13 +44,14 @@ export function WorkspacePages({ workspaceId, renderResource }: { workspaceId: s
   const openPreview = useCallback((owner: string, path: string, intent?: { taskBrief: true }) => {
     const resolved = resourcePreview(workspaceId, path);
     if (!resolved) return false;
+    if (directDshTask) { navigate(dshResourceDestination(workspaceId, path, location.search)); return true; }
     const state = previews[owner] || { items: [], active: null };
     const taskBriefId = intent?.taskBrief && ['task', 'composite-task'].includes(resolved.kind) ? resolved.id : undefined;
     const item = taskBriefId ? state.items.find(item => ['task', 'composite-task'].includes(item.kind) && item.id === taskBriefId) || resolved : resolved;
     if (!taskBriefId && state.active === item.kind && state.items.some(p => p.path === item.path)) return true;
     commitPreview(owner, { items: state.items.some(p => p.kind === item.kind) ? state.items.map(p => p.kind === item.kind ? item : p) : [...state.items, item], active: item.kind }, taskBriefId);
     return true;
-  }, [workspaceId, previews, commitPreview]);
+  }, [workspaceId, previews, commitPreview, Boolean(directDshTask), navigate, location.search]);
   const identifyTask = useCallback((owner: string, id: string, composite: boolean) => {
     const state = previews[owner];
     if (!state) return;
@@ -90,6 +93,7 @@ export function WorkspacePages({ workspaceId, renderResource }: { workspaceId: s
     if (url.origin === window.location.origin && openPreview(location.pathname, url.pathname + url.search + url.hash, link.classList.contains('markdown-task-link') ? { taskBrief: true } : undefined)) { event.preventDefault(); event.stopPropagation(); }
   };
   useEffect(() => {
+    if (directDshTask) return;
     if (location.pathname === `/workspaces/${workspaceId}/projects/new`) { navigate(`/workspaces/${workspaceId}/projects`, { replace: true, state: { createProject: true } }); return; }
     const preview = resourcePreview(workspaceId, location.pathname + location.search);
     if (preview) {
@@ -97,7 +101,7 @@ export function WorkspacePages({ workspaceId, renderResource }: { workspaceId: s
       const listSearch = previewOwnerSearch(workspaceId, preview, location.state);
       navigate({ pathname: owner, search: listSearch }, { replace: true, state: { resourceViews: { items: [preview], active: preview.kind } } });
     }
-  }, [workspaceId, location.pathname, location.search, navigate]);
+  }, [workspaceId, location.pathname, location.search, navigate, Boolean(directDshTask)]);
   const [tabs, setTabs] = useState(() => parseTabs(workspaceId, read(tabsStorageKey(workspaceId))));
   const [ratio, updateRatio] = useState(() => readRatio(read(ratioStorageKey(workspaceId))));
   const [paneWidths, setPaneWidths] = useState<Record<string, number>>({});
@@ -167,6 +171,6 @@ export function WorkspacePages({ workspaceId, renderResource }: { workspaceId: s
         </div>)}
       </div>
     </div>
-    {!current && !directPreview ? outlet : null}
+    {directDshTask ? <InsideResourcePreview.Provider value={true}><WorkspaceViewActiveContext.Provider value={true}><div key={directDshTask.id} className="resource-preview-content" onClickCapture={captureResourceLink}>{renderResource(directDshTask)}</div></WorkspaceViewActiveContext.Provider></InsideResourcePreview.Provider> : !current && !directPreview ? outlet : null}
   </WorkspaceTabsContext.Provider></ResourcePreviewContext.Provider>;
 }

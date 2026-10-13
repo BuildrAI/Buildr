@@ -80,6 +80,11 @@ export async function buildComposition(args: string[]): Promise<{ output: string
     await copyClient(source, directory); clients.push({ ...selected, directory });
   }
   await mkdir(path.join(output, compositionDirectory));
+  // A path-based Host row must stop at its own package boundary: otherwise a
+  // native metadata scan can inherit the outer public gateway's Client twice.
+  await writeFile(path.join(output, compositionDirectory, 'package.json'), JSON.stringify({
+    name: metadata.name + '-composition-runtime', version: metadata.version, type: 'module',
+  }, null, 2) + '\n');
   const req = createSdkRequire(sdk);
   const ts = req('typescript');
   const program = ts.createProgram(['index.ts', 'preset-owner.ts', 'definition.ts', 'configuration-owner.ts'].map(file => path.join(root, 'plugin/composition', file)), {
@@ -109,7 +114,9 @@ export async function buildComposition(args: string[]): Promise<{ output: string
     buildrDshSourceSdk: metadata.buildrDshSourceSdk,
     buildrComposition: { schemaVersion: COMPOSITION_SCHEMA, entryDirectory, upstream: receipt.baseline, patchSha256: receipt.patchSha256 },
     files: [entryDirectory, hostDirectory, compositionDirectory, trajectoryDirectory, ...clients.map(row => row.directory), 'cordis.patch.yml', 'composition.json', 'LICENSE', 'README.md'],
-    exports, dsh: { bundle: { patch: 'cordis.patch.yml' } },
+    // Loaders without internal.resolveSync read this public package boundary;
+    // current native loaders resolve main and read the same declaration inside.
+    exports, dsh: { bundle: { patch: 'cordis.patch.yml' }, client: metadata.dsh.client },
     peerDependencies: { '@deepseek-ai/dsh': receipt.baseline.version, '@deepseek-ai/cordis': '4.0.4' },
     peerDependenciesMeta: { '@deepseek-ai/dsh': { optional: true } }, dependencies: metadata.dependencies };
   await writeFile(path.join(output, 'package.json'), JSON.stringify(manifest, null, 2) + '\n');

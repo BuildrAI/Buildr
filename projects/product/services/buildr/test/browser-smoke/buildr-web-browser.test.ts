@@ -366,7 +366,7 @@ async function capture(page: any, name: any): Promise<any>  {
 
 // 代码页组还包含真实生成、提交与推送场景；实测前38项已接近345秒。
 // 为完整场景保留480秒有界预算，调度器另留15秒用于清理。
-test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('code') ? 480_000 : SELECTORS.has('all') || SELECTORS.has('task') ? 300_000 : SELECTORS.has('task-materials') || SELECTORS.has('layout') || SELECTORS.has('workbench') || SELECTORS.has('articles') || SELECTORS.has('shell') || SELECTORS.has('service') || SELECTORS.has('project') ? 120_000 : 45_000 }, async (t: any) => {
+test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('code') ? 480_000 : SELECTORS.has('task') ? 360_000 : SELECTORS.has('all') ? 300_000 : SELECTORS.has('task-materials') || SELECTORS.has('layout') || SELECTORS.has('workbench') || SELECTORS.has('articles') || SELECTORS.has('shell') || SELECTORS.has('service') || SELECTORS.has('project') ? 120_000 : 45_000 }, async (t: any) => {
   const requestedSmokeRoot: any = process.env.BUILDR_SMOKE_ROOT;
   const managedSmokeRoot: any = requestedSmokeRoot && fs.existsSync(path.join(requestedSmokeRoot, '.buildr-smoke-owner')) ? requestedSmokeRoot : null;
   const base: any = managedSmokeRoot || fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-browser-smoke-'));

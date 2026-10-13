@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
-import { agentOperationsApi, type AgentRegistry, type CodexConnectRequest, type CodexConnectResult } from '../features/agents/api/agent-operations-api';
+import { agentOperationsApi, type AgentRegistry, type AgentKind, type AgentConnectRequest, type AgentConnectResult } from '../features/agents/api/agent-operations-api';
 import type { ApiError } from '../api/client';
 
 type RemovalFeedback = {removed: boolean; error: string; warning: string};
@@ -14,8 +14,10 @@ type AgentRuntimeContextValue = {
   setOpen(open: boolean): void;
   refresh(): Promise<AgentRegistry | null>;
   select(agentId: string): Promise<void>;
-  connectCodex(input: CodexConnectRequest): Promise<CodexConnectResult>;
+  connectCodex(input: AgentConnectRequest): Promise<AgentConnectResult>;
+  connectDsh(input: AgentConnectRequest): Promise<AgentConnectResult>;
   removeCodex(agentId: string): Promise<RemovalFeedback>;
+  removeDsh(agentId: string): Promise<RemovalFeedback>;
 };
 const AgentRuntimeContext = createContext<AgentRuntimeContextValue | null>(null);
 export function AgentRuntimeProvider({children}: {children: ReactNode}) {
@@ -40,29 +42,33 @@ export function AgentRuntimeProvider({children}: {children: ReactNode}) {
     catch (failure) { if (mounted.current) {writing.current = false; await refresh(); if (mounted.current) setError(failure instanceof Error ? failure.message : '未能修改默认智能体。');} }
     finally { writing.current = false; if (mounted.current) setSelecting(false); }
   }, [refresh]);
-  const connectCodex = useCallback(async (input: CodexConnectRequest): Promise<CodexConnectResult> => {
+  const connectAgent = useCallback(async (kind: AgentKind, input: AgentConnectRequest): Promise<AgentConnectResult> => {
+    const brand = kind === 'codex' ? 'Codex' : 'DSH';
     if (writing.current) throw new Error('请等待当前智能体操作完成后重试。');
     const current = observed.current;
     if (!current) throw new Error('请先重新读取智能体列表。');
     if (input.existingAgentId) {
-      if (!current.agents.some(agent => agent.id === input.existingAgentId && agent.kind === 'codex')) throw new Error('Codex 接入已变化，请关闭并重新检查。');
+      if (!current.agents.some(agent => agent.id === input.existingAgentId && agent.kind === kind)) throw new Error(`${brand} 接入已变化，请关闭并重新检查。`);
       if (input.makeDefault) throw new Error('接入维护不会更改默认智能体。');
-    } else if (current.agents.some(agent => agent.kind === 'codex')) throw new Error('Codex 已接入。请在现有条目的详情中检查接入。');
+    } else if (current.agents.some(agent => agent.kind === kind)) throw new Error(`${brand} 已接入。请在现有条目的详情中检查接入。`);
     writing.current = true; ++serial.current; setConnecting(true); setError('');
     try {
-      const result = await agentOperationsApi.connectCodex(input);
-      if (!result?.agentId || typeof result.registry?.revision !== 'string' || !Array.isArray(result.registry.agents) || !result.registry.agents.some(agent => agent.id === result.agentId)) throw new Error('接入结果尚未确认。请刷新智能体列表核对后再决定是否重试。');
+      const result = await (kind === 'codex' ? agentOperationsApi.connectCodex : agentOperationsApi.connectDsh)(input);
+      if (!result?.agentId || typeof result.registry?.revision !== 'string' || !Array.isArray(result.registry.agents) || !result.registry.agents.some(agent => agent.id === result.agentId && agent.kind === kind)) throw new Error('接入结果尚未确认。请刷新智能体列表核对后再决定是否重试。');
       if (mounted.current) {observed.current = result.registry; setRegistry(result.registry); setLoading(false);}
       return result;
     } catch (failure) {writing.current = false; await refresh(); throw failure;}
     finally {writing.current = false; if (mounted.current) setConnecting(false);}
   }, [refresh]);
-  const removeCodex = useCallback(async (agentId: string): Promise<RemovalFeedback> => {
+  const connectCodex = useCallback((input: AgentConnectRequest) => connectAgent('codex', input), [connectAgent]);
+  const connectDsh = useCallback((input: AgentConnectRequest) => connectAgent('dsh', input), [connectAgent]);
+  const removeAgent = useCallback(async (kind: AgentKind, agentId: string): Promise<RemovalFeedback> => {
+    const brand = kind === 'codex' ? 'Codex' : 'DSH';
     const snapshot = observed.current;
-    if (!snapshot || writing.current || snapshot.agents.find(agent => agent.id === agentId)?.kind !== 'codex') return {removed: false, warning: '', error: '请等待当前操作完成并重新读取 Codex 接入。'};
+    if (!snapshot || writing.current || snapshot.agents.find(agent => agent.id === agentId)?.kind !== kind) return {removed: false, warning: '', error: `请等待当前操作完成并重新读取 ${brand} 接入。`};
     writing.current = true; ++serial.current; setRemoving(agentId); setError('');
     try {
-      const result = await agentOperationsApi.removeCodex(agentId, snapshot.revision);
+      const result = await (kind === 'codex' ? agentOperationsApi.removeCodex : agentOperationsApi.removeDsh)(agentId, snapshot.revision);
       if (result?.removedAgentId !== agentId || typeof result.registry?.revision !== 'string' || !Array.isArray(result.registry.agents) || result.registry.agents.some(agent => agent.id === agentId)) throw new Error('无法确认移除响应。');
       if (mounted.current) {observed.current = result.registry; setRegistry(result.registry); setLoading(false);}
       return {removed: true, error: '', warning: result.desktopWarning?.message || ''};
@@ -76,6 +82,8 @@ export function AgentRuntimeProvider({children}: {children: ReactNode}) {
       return {removed: false, warning: '', error: knownFailure ? (failure as Error).message : '移除结果尚未确认。已尝试刷新智能体列表，请核对后再决定是否重试；不会自动再次发送。'};
     } finally {writing.current = false; if (mounted.current) setRemoving(null);}
   }, [refresh]);
+  const removeCodex = useCallback((agentId: string) => removeAgent('codex', agentId), [removeAgent]);
+  const removeDsh = useCallback((agentId: string) => removeAgent('dsh', agentId), [removeAgent]);
   useEffect(() => { mounted.current = true; void readRegistry(true); return () => {mounted.current = false; ++serial.current;}; }, [readRegistry]);
   useEffect(() => {
     if (!open) return;
@@ -84,7 +92,7 @@ export function AgentRuntimeProvider({children}: {children: ReactNode}) {
     return () => window.clearInterval(timer);
   }, [open, readRegistry]);
   useEffect(() => {const observe = () => { if (document.visibilityState === 'visible' && !writing.current) void readRegistry(); }; window.addEventListener('focus', observe); return () => window.removeEventListener('focus', observe);}, [readRegistry]);
-  return <AgentRuntimeContext.Provider value={{registry, loading, selecting, connecting, removing, error, open, setOpen, refresh, select, connectCodex, removeCodex}}>{children}</AgentRuntimeContext.Provider>;
+  return <AgentRuntimeContext.Provider value={{registry, loading, selecting, connecting, removing, error, open, setOpen, refresh, select, connectCodex, connectDsh, removeCodex, removeDsh}}>{children}</AgentRuntimeContext.Provider>;
 }
 export function useAgentRuntime() {
   const context = useContext(AgentRuntimeContext);

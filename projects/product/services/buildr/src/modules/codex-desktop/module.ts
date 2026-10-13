@@ -6,11 +6,12 @@ import { CodexDesktopApplication } from './application/codex-desktop-application
 import { createCodexDesktopHttpContribution } from './interfaces/http/codex-desktop-http.ts';
 import { createCodexDesktopCliContributions } from './interfaces/cli/codex-desktop-cli.ts';
 import { codexFailure } from './domain/codex-desktop.ts';
+import { NATIVE_SESSION_LINKS_APPLICATION, type NativeSessionLinksApplication } from '../native-session-links/module.ts';
 
 export const CODEX_DESKTOP_APPLICATION = 'codex-desktop.application';
 export function createCodexDesktopModule(options: { readProductIdentity(): unknown; resolveWebProfile(identity: unknown): { dataRoot: string }; readOrigin(profile: { dataRoot: string }): string | null }) {
   return Object.freeze({
-    id: 'codex-desktop', requires: Object.freeze([AGENT_OPERATIONS_APPLICATION, WORKSPACE_APPLICATION, WORKSPACE_QUERY, TASK_QUERY_APPLICATION]),
+    id: 'codex-desktop', requires: Object.freeze([AGENT_OPERATIONS_APPLICATION, WORKSPACE_APPLICATION, WORKSPACE_QUERY, TASK_QUERY_APPLICATION, NATIVE_SESSION_LINKS_APPLICATION]),
     create(requires: Record<string, any>) {
       const profile = options.resolveWebProfile(options.readProductIdentity());
       const workspace = requires[WORKSPACE_APPLICATION], query = requires[WORKSPACE_QUERY], tasks = requires[TASK_QUERY_APPLICATION];
@@ -28,6 +29,7 @@ export function createCodexDesktopModule(options: { readProductIdentity(): unkno
         readRegistrationActive: agentId => (requires[AGENT_OPERATIONS_APPLICATION] as AgentOperationsApplication).hasCodexRegistration(agentId),
       });
       (requires[AGENT_OPERATIONS_APPLICATION] as AgentOperationsApplication).bindCodexDesktopConnector(application);
+      (requires[NATIVE_SESSION_LINKS_APPLICATION] as NativeSessionLinksApplication).bindCodexDesktop(application);
       const resolveWorkspaceTarget = (root: string) => {
         const current = query.getWorkspace(root);
         const registered = workspace.resolveRegisteredWorkspace(current.workspace.id, { touch: false });

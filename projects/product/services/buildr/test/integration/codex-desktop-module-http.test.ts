@@ -9,6 +9,7 @@ import { createLocalWorkspaceServer } from '../../src/web/http/server.ts';
 import { CODEX_DESKTOP_APPLICATION } from '../../src/modules/codex-desktop/module.ts';
 import type { CodexDesktopApplication } from '../../src/modules/codex-desktop/application/codex-desktop-application.ts';
 import { CODEX_DESKTOP_HTTP_SCHEMAS, CODEX_DESKTOP_HTTP_VALIDATORS } from '../../src/modules/codex-desktop/interfaces/http/codex-desktop-http-contracts.ts';
+import { NATIVE_SESSION_LINKS_HTTP_SCHEMAS, NATIVE_SESSION_LINKS_HTTP_VALIDATORS } from '../../src/modules/native-session-links/interfaces/http/native-session-links-http-contracts.ts';
 import { TASK_QUERY_APPLICATION } from '../../src/modules/task/module.ts';
 import { WORKSPACE_APPLICATION, WORKSPACE_QUERY } from '../../src/modules/workspace/module.ts';
 import { AGENT_OPERATIONS_APPLICATION, type AgentOperationsApplication } from '../../src/modules/agent-operations/module.ts';
@@ -122,6 +123,15 @@ test('Codex desktop production module composes registered Workspace/Task identit
   }
   const bySession = await get(`/codex/sessions?connectionId=${connection.id}&nativeSessionId=${nativeOne}`);
   assert.equal(bySession.status, 200); assert.deepEqual(new Set(bySession.body.relations.map((relation: any) => relation.taskId)), new Set(['codex-module-one', 'codex-module-two']));
+  const unified = await get('/agent-sessions?taskId=codex-module-one');
+  assert.equal(unified.status, 200);
+  assert.equal(NATIVE_SESSION_LINKS_HTTP_VALIDATORS.validate(NATIVE_SESSION_LINKS_HTTP_SCHEMAS.sessions.$id, unified.body).valid, true);
+  assert.deepEqual(unified.body.diagnostics, []);
+  assert.deepEqual(unified.body.relations.map(({ provider, ...relation }: any) => { assert.equal(provider, 'codex'); return relation; }), byTask.body.relations);
+  assert.deepEqual((await get('/agent-sessions?provider=dsh')).body.relations, []);
+  const unifiedRelation = unified.body.relations[0];
+  assert.equal((await post('/agent-sessions/unlink', { provider: 'codex', relationId: unifiedRelation.id, expectedRevision: 'stale' })).status, 409);
+  assert.equal((await post('/agent-sessions/open', { provider: 'dsh', relationId: crypto.randomUUID(), expectedRevision: 'stale' })).status, 404);
   assert.equal((await get('/codex/sessions?root=/etc')).status, 400);
   assert.equal((await get('/codex/sessions?taskId=codex-module-one&taskId=codex-module-two')).status, 400);
 

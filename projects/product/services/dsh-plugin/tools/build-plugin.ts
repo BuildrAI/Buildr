@@ -69,6 +69,16 @@ const source = join(root, 'plugin');
 await mkdir(pkg, { recursive: true });
 await symlink(join(sdk, 'node_modules'), join(stage, 'node_modules'), 'dir');
 await cp(source, pkg, { recursive: true });
+// The main package owns the sole wire source. Materialize only a build projection so published
+// extensions remain self-contained and never import a sibling service or another npm package.
+const desktopContract = 'src/modules/agent-operations/contracts/dsh-desktop-bridge.ts';
+await cp(join(root, '..', 'buildr', desktopContract), join(pkg, 'desktop-contract.ts'));
+for (const file of ['desktop-server.ts', 'desktop-navigation.ts', 'src/index.ts', 'src/desktop-client.ts', 'src/types.ts']) {
+  const filename = join(pkg, file), prefix = file.startsWith('src/') ? '../' : './';
+  await writeFile(filename, (await readFile(filename, 'utf8')).replaceAll(
+    file.startsWith('src/') ? '../../../buildr/' + desktopContract : '../../buildr/' + desktopContract,
+    prefix + 'desktop-contract.ts'));
+}
 // Cordis and the Remote generator both require the service key to be a literal, so the development
 // variant takes its own key here rather than at runtime. This is the whole difference between the
 // two packages' Host halves: diagnostics retain separate namespaces. Cooperative business ownership
@@ -158,6 +168,7 @@ await build({ entryPoints: [join(pkg, 'src/client.tsx')], outfile: join(pkg, 'li
   tsconfig: join(pkg, 'tsconfig.client.json'), external: [...PLATFORM_MODULES], nodePaths: [join(sdk, 'node_modules')], alias: { zod: zodEntry },
   define: {
     __BUILDR_ENTRY_ID__: JSON.stringify(VARIANT.entryId),
+    __BUILDR_PACKAGE_NAME__: JSON.stringify(VARIANT.name),
     __BUILDR_TITLE_KEY__: JSON.stringify(VARIANT.titleKey),
     // A locale namespace is a registration key: two packages claiming the same one collide, and the
     // rejected registration is what previously stopped the development entry from reaching its slot.

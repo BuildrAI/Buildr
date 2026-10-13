@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { codexDesktopApi } from './api/codex-desktop-api';
+import { dshDesktopApi } from './api/dsh-desktop-api';
+import type { AgentKind } from './api/agent-operations-api';
 import type { CodexConnectionsState } from './codex-connection-state';
 
 const emptyState: CodexConnectionsState = {connections: null, loading: false, error: ''};
 
 /** The open registry and its detail dialog share one read-only connection query. */
-export function useCodexConnections(active: boolean) {
+export function useAgentConnections(kind: AgentKind, active: boolean) {
   const [state, setState] = useState<CodexConnectionsState>(emptyState);
   const enabled = useRef(active), controller = useRef<AbortController | null>(null), request = useRef(0);
   enabled.current = active;
@@ -23,14 +25,14 @@ export function useCodexConnections(active: boolean) {
     if (invalidatePending) setState({...emptyState, loading: true});
     else if (foreground) setState(previous => ({...previous, loading: true}));
     try {
-      const result = await codexDesktopApi.connections(current.signal);
+      const result = await (kind === 'codex' ? codexDesktopApi : dshDesktopApi).connections(current.signal);
       if (!current.signal.aborted && enabled.current && request.current === serial) setState({connections: result.connections, loading: false, error: ''});
     } catch (failure) {
       if (!current.signal.aborted && enabled.current && request.current === serial) setState({connections: null, loading: false, error: failure instanceof Error ? failure.message : '无法读取原生会话关联配置。'});
     } finally {
       if (request.current === serial) controller.current = null;
     }
-  }, []);
+  }, [kind]);
   const refresh = useCallback(() => read({foreground: true}), [read]);
   const refreshAfterChange = useCallback(() => read({invalidatePending: true, foreground: true}), [read]);
   useEffect(() => {
@@ -43,3 +45,4 @@ export function useCodexConnections(active: boolean) {
   }, [active, read]);
   return {state: active ? state : emptyState, refresh, refreshAfterChange};
 }
+export function useCodexConnections(active: boolean) { return useAgentConnections('codex', active); }

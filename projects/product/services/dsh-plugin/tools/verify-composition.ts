@@ -23,6 +23,10 @@ export async function verifyComposition(bundle: string): Promise<{ entry: string
   assert.equal(inner.name, metadata.name); assert.equal(inner.version, metadata.version);
   assert.deepEqual(metadata.buildrCompatibility, inner.buildrCompatibility);
   assert.deepEqual(metadata.buildrDshSourceSdk, inner.buildrDshSourceSdk);
+  assert.deepEqual(metadata.dsh.client, inner.dsh.client, 'public package must retain the gateway Client declaration for native fallback resolution');
+  const compositionMetadata = JSON.parse(await readFile(join(bundle, 'runtime-composition/package.json'), 'utf8'));
+  assert.equal(compositionMetadata.type, 'module');
+  assert.equal(compositionMetadata.dsh?.client, undefined, 'path-based composition Host must not inherit the public gateway Client');
   const main = resolve(bundle, metadata.main);
   assert.ok(relative(entry, main) && !relative(entry, main).startsWith('..'), 'public Host entry must forward to the packaged gateway');
   assert.ok((await lstat(main)).isFile());

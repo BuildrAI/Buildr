@@ -25,6 +25,9 @@ export const AGENT_OPERATIONS_HTTP_SCHEMAS = Object.freeze({
     candidates: { type: 'array', maxItems: 32, items: closed({ id: text, label: text, version: text, installationLabel: text, configurationLabel: text, source: { enum: ['desktop-bundled', 'path', 'registered'] }, registeredAgentId: { type: ['string', 'null'] }, desktopAvailable: { type: 'boolean' }, generationAvailability: { enum: ['available', 'unavailable'] }, safeReason: { type: ['string', 'null'] } }) },
   }),
   connect: schema('CodexConnectResult', { registry: closed(registryFields), agentId: text, desktop: { anyOf: [{ type: 'null' }, desktopConnection] }, desktopError: { anyOf: [{ type: 'null' }, safeError] } }),
+  dshDiscovery: schema('DshDiscoveryView', { revision: text, candidates: { type: 'array', maxItems: 32, items: closed({ id: text, label: text, version: text, installationLabel: text, configurationLabel: text, source: { enum: ['desktop-bundled', 'registered'] }, registeredAgentId: { type: ['string', 'null'] }, desktopAvailable: { type: 'boolean' }, generationAvailability: { enum: ['available', 'unavailable'] }, safeReason: { type: ['string', 'null'] } }) } }),
+  dshConnect: schema('DshConnectResult', { registry: closed(registryFields), agentId: text, desktop: { anyOf: [{ type: 'null' }, desktopConnection] }, desktopError: { anyOf: [{ type: 'null' }, safeError] } }),
+  dshRemove: schema('DshRemoveResult', { registry: closed(registryFields), removedAgentId: text, desktopWarning: { anyOf: [{ type: 'null' }, safeError] } }),
   remove: schema('CodexRemoveResult', { registry: closed(registryFields), removedAgentId: text, desktopWarning: { anyOf: [{ type: 'null' }, safeError] } }),
 });
 export const AGENT_OPERATIONS_HTTP_REQUESTS = Object.freeze({
@@ -34,6 +37,9 @@ export const AGENT_OPERATIONS_HTTP_REQUESTS = Object.freeze({
   cancel: schema('AgentCancelRequest', { runId: text }),
   discovery: schema('CodexDiscoveryQuery', {}),
   connect: schema('CodexConnectRequest', { candidateId: text, expectedDiscoveryRevision: text, expectedRevision: text, makeDefault: { type: 'boolean' }, existingAgentId: text }, ['candidateId', 'expectedDiscoveryRevision', 'expectedRevision']),
+  dshDiscovery: schema('DshDiscoveryQuery', {}),
+  dshConnect: schema('DshConnectRequest', { candidateId: text, expectedDiscoveryRevision: text, expectedRevision: text, makeDefault: { type: 'boolean' }, existingAgentId: text }, ['candidateId', 'expectedDiscoveryRevision', 'expectedRevision']),
+  dshRemove: schema('DshRemoveRequest', { agentId: text, expectedRevision: text }),
   remove: schema('CodexRemoveRequest', { agentId: text, expectedRevision: text }),
 });
 export const AGENT_OPERATIONS_HTTP_OPERATIONS = Object.freeze([
@@ -41,6 +47,9 @@ export const AGENT_OPERATIONS_HTTP_OPERATIONS = Object.freeze([
   { id: 'agent-operations.select', method: 'POST', path: '/api/v1/app/agents/select', requestSchemaId: AGENT_OPERATIONS_HTTP_REQUESTS.select.$id, successSchemaId: AGENT_OPERATIONS_HTTP_SCHEMAS.registry.$id },
   { id: 'agent-operations.run', method: 'GET', path: '/api/v1/app/agents/runs', requestSchemaId: AGENT_OPERATIONS_HTTP_REQUESTS.run.$id, successSchemaId: AGENT_OPERATIONS_HTTP_SCHEMAS.run.$id },
   { id: 'agent-operations.cancel', method: 'POST', path: '/api/v1/app/agents/cancel', requestSchemaId: AGENT_OPERATIONS_HTTP_REQUESTS.cancel.$id, successSchemaId: AGENT_OPERATIONS_HTTP_SCHEMAS.run.$id },
+  { id: 'agent-operations.dsh-discovery', method: 'GET', path: '/api/v1/app/agents/dsh/discovery', requestSchemaId: AGENT_OPERATIONS_HTTP_REQUESTS.dshDiscovery.$id, successSchemaId: AGENT_OPERATIONS_HTTP_SCHEMAS.dshDiscovery.$id },
+  { id: 'agent-operations.dsh-connect', method: 'POST', path: '/api/v1/app/agents/dsh/connect', requestSchemaId: AGENT_OPERATIONS_HTTP_REQUESTS.dshConnect.$id, successSchemaId: AGENT_OPERATIONS_HTTP_SCHEMAS.dshConnect.$id },
+  { id: 'agent-operations.dsh-remove', method: 'POST', path: '/api/v1/app/agents/dsh/remove', requestSchemaId: AGENT_OPERATIONS_HTTP_REQUESTS.dshRemove.$id, successSchemaId: AGENT_OPERATIONS_HTTP_SCHEMAS.dshRemove.$id },
   { id: 'agent-operations.codex-discovery', method: 'GET', path: '/api/v1/app/agents/codex/discovery', requestSchemaId: AGENT_OPERATIONS_HTTP_REQUESTS.discovery.$id, successSchemaId: AGENT_OPERATIONS_HTTP_SCHEMAS.discovery.$id },
   { id: 'agent-operations.codex-connect', method: 'POST', path: '/api/v1/app/agents/codex/connect', requestSchemaId: AGENT_OPERATIONS_HTTP_REQUESTS.connect.$id, successSchemaId: AGENT_OPERATIONS_HTTP_SCHEMAS.connect.$id },
   { id: 'agent-operations.codex-remove', method: 'POST', path: '/api/v1/app/agents/codex/remove', requestSchemaId: AGENT_OPERATIONS_HTTP_REQUESTS.remove.$id, successSchemaId: AGENT_OPERATIONS_HTTP_SCHEMAS.remove.$id },

@@ -16,7 +16,10 @@ test('the complete composition survives relocation and rejects a missing install
   const checked = await verifyComposition(relocated);
   assert.ok(checked.fileCount > 31, 'the installable package includes the producer and presentation components');
   const manifest = JSON.parse(await readFile(join(relocated, 'package.json'), 'utf8'));
-  assert.equal(manifest.dsh.client, undefined, 'only the composition registers the packaged client');
+  const gateway = JSON.parse(await readFile(join(relocated, manifest.buildrComposition.entryDirectory, 'package.json'), 'utf8'));
+  assert.deepEqual(manifest.dsh.client, gateway.dsh.client, 'both native resolution branches find the same public Client declaration');
+  const owner = JSON.parse(await readFile(join(relocated, 'runtime-composition/package.json'), 'utf8'));
+  assert.equal(owner.dsh?.client, undefined, 'the composition Host owns no duplicate Client declaration');
   const definition = JSON.parse(await readFile(join(relocated, 'runtime-composition/definition.json'), 'utf8'));
   const producer = join(relocated, 'runtime-composition', definition.modules['@deepseek-ai/dsh-tools']);
   await rm(producer);

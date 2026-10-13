@@ -35,7 +35,7 @@
     {
       "id": "runtime",
       "type": "external",
-      "label": "独立生成进程"
+      "label": "Codex 进程 / DSH 桌面"
     }
   ],
   "messages": [
@@ -84,7 +84,7 @@
       "from": "provider",
       "to": "runtime",
       "y": 340,
-      "label": "一次生成请求",
+      "label": "给定资料 · 一次生成",
       "variant": "emphasis"
     },
     {

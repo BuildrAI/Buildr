@@ -2,18 +2,23 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { compileJsonSchemaCatalog } from '../../../infrastructure/contracts/json-schema-validator.ts';
-import { agentFailure, readAgentExecutionConfig, type AgentExecutionConfig, type AgentExecutionProvider, type AgentGenerationExecution, type AgentGenerationInput, type AgentRegistration, type AgentRegistryView, type AgentRunView, type CodexAgentRegistration, type CodexConnectInput, type CodexConnectResult, type CodexDesktopConnectionView, type CodexDesktopInstallation, type CodexDiscoveryView, type CodexRemoveResult } from '../domain/agent-operations.ts';
+import { agentFailure, readAgentExecutionConfig, type AgentExecutionConfig, type AgentExecutionProvider, type AgentGenerationExecution, type AgentGenerationInput, type AgentRegistration, type AgentRegistryView, type AgentRunView, type CodexAgentRegistration, type CodexConnectInput, type CodexConnectResult, type CodexDesktopConnectionView, type CodexDesktopInstallation, type CodexDiscoveryView, type CodexRemoveResult, type DshAgentRegistration, type DshConnectInput, type DshConnectResult, type DshDiscoveryView, type DshRemoveResult, type DshDesktopConnectionView } from '../domain/agent-operations.ts';
 import { AgentRegistrationRepository, registrationRevision } from '../persistence/agent-registration-repository.ts';
 import { codexEntryAvailable, inspectCodexEntry } from '../infrastructure/codex-entry.ts';
 import { CodexAppServer } from '../infrastructure/codex-app-server.ts';
-import { dshEntryAvailable, inspectDshEntry } from '../infrastructure/dsh-entry.ts';
-import { DshAcpServer } from '../infrastructure/dsh-acp-server.ts';
+import { dshEntryAvailable, inspectDshEntry, dshDesktopScopeIdentity } from '../infrastructure/dsh-entry.ts';
+import { DshDesktopProvider } from '../infrastructure/dsh-desktop-provider.ts';
+import { readDesktopDiscovery, DshDesktopTransport } from '../infrastructure/dsh-desktop-transport.ts';
+import { discoverDshInstallations, dshDiscoveryRevision, type DiscoveredDsh } from '../infrastructure/dsh-discovery.ts';
+import type { DshDesktopChannel } from '../contracts/dsh-desktop-bridge.ts';
 import { resolveAgentGenerationEnvironment } from '../infrastructure/agent-generation-environment.ts';
 import { codexDiscoveryRevision, discoverCodexInstallations, type DiscoveredCodex } from '../infrastructure/codex-discovery.ts';
 
 export type { AgentExecutionProvider } from '../domain/agent-operations.ts';
 export type AgentOperationsOptions = {
   dataRoot: string;
+  dshChannel?: DshDesktopChannel;
+  discoverDsh?: (registrations: readonly DshAgentRegistration[]) => DiscoveredDsh[];
   inspectEntry?: typeof inspectCodexEntry;
   inspectDshEntry?: typeof inspectDshEntry;
   available?: (record: AgentRegistration) => boolean;
@@ -24,11 +29,12 @@ export type AgentOperationsOptions = {
   discoverCodex?: (registrations: readonly CodexAgentRegistration[]) => DiscoveredCodex[];
 };
 export type CodexDesktopConnector = { connect(registration: CodexAgentRegistration, installation: CodexDesktopInstallation): Promise<CodexDesktopConnectionView>; disconnect(agentId: string): void };
+export type DshDesktopConnector = { connect(registration: DshAgentRegistration): Promise<DshDesktopConnectionView>; disconnect(agentId: string): void };
 type Pool = { registration: AgentRegistration; client: AgentExecutionProvider | null; activeRunId: string | null; lastExecutionConfig: AgentExecutionConfig | null; activity: number; started: boolean; stopping: boolean; stopFailure: unknown; tail: Promise<unknown>; idleTimer: NodeJS.Timeout | null };
 type Run = { view: AgentRunView; controller: AbortController; job: Promise<unknown> | null; settled: boolean };
 const final = (view: AgentRunView) => ['succeeded', 'failed', 'cancelled'].includes(view.status);
 const entryAvailable = (record: AgentRegistration) => record.kind === 'codex' ? codexEntryAvailable(record) : dshEntryAvailable(record);
-const executionProvider = (record: AgentRegistration): AgentExecutionProvider => record.kind === 'codex' ? new CodexAppServer(record) : new DshAcpServer(record);
+const executionProvider = (record: AgentRegistration): AgentExecutionProvider => record.kind === 'codex' ? new CodexAppServer(record) : new DshDesktopProvider(record);
 const codexEntryKey = (record: Pick<CodexAgentRegistration, 'executable' | 'codexHome'>) => JSON.stringify([record.executable, record.codexHome]);
 function captureExecution(input?: AgentGenerationExecution): AgentGenerationExecution | undefined {
   if (input === undefined) return undefined;
@@ -44,6 +50,9 @@ export class AgentOperationsApplication {
   private closing: Promise<void> | null = null;
   private options: AgentOperationsOptions;
   private desktopConnector: CodexDesktopConnector | null = null;
+  private dshConnector: DshDesktopConnector | null = null;
+  private dshRemovals = new Set<string>();
+  private dshPreparing = new Set<string>();
   private codexRemovals = new Set<string>();
   private codexConnectionsPreparing = new Map<string, number>();
   constructor(options: AgentOperationsOptions) { this.options = options; this.repository = new AgentRegistrationRepository(options.dataRoot); }
@@ -51,11 +60,14 @@ export class AgentOperationsApplication {
     const { registry, revision } = this.repository.read();
     return { revision, defaultAgentId: registry.defaultAgentId, agents: registry.agents.map(record => {
       const pool = this.pools.get(record.id);
-      const available = (this.options.available || entryAvailable)(record);
+      let available = (this.options.available || entryAvailable)(record);
+      if (record.kind === 'dsh' && !this.options.available) { try { const d = readDesktopDiscovery(record.dshHome, record.desktop?.channel ?? this.options.dshChannel ?? 'development'); available = !!record.desktop && dshDesktopScopeIdentity(record.executable, record.dshHome, record.desktop.appPath) === record.desktop.scopeIdentity && d.appPath === record.desktop.appPath && d.executable === record.executable && d.dshVersion === record.version; } catch { available = false; } }
       const runtimeStatus = pool?.stopping ? 'stopping' : !pool?.client?.alive ? pool?.activity ? 'starting' : 'stopped' : pool.activity ? pool.started ? 'running' : 'starting' : 'idle';
-      return { id: record.id, kind: record.kind, label: record.kind === 'codex' && record.label === 'Codex（ChatGPT）' ? 'Codex' : record.label, capabilities: ['structured-generation'], availability: available ? 'available' : 'unavailable', runtimeStatus, lastExecutionConfig: structuredClone(pool?.lastExecutionConfig ?? null), safeReason: record.kind === 'codex' && pool?.stopFailure ? '专用生成实例尚未确认退出，本项生成暂不可复用；已生成结果保留。' : available ? null : '已登记的本机入口当前不可用，请由智能体（Agent）重新核对接入。' };
+      return { id: record.id, kind: record.kind, label: record.kind === 'codex' && record.label === 'Codex（ChatGPT）' ? 'Codex' : record.label, capabilities: ['structured-generation'], availability: available ? 'available' : 'unavailable', runtimeStatus, lastExecutionConfig: structuredClone(pool?.lastExecutionConfig ?? null), safeReason: record.kind === 'codex' && pool?.stopFailure ? '专用生成实例尚未确认退出，本项生成暂不可复用；已生成结果保留。' : available ? null : record.kind === 'dsh' ? record.desktop ? 'DSH 桌面后台或插件连接当前不可用，请打开桌面并重新检查接入。' : '此 DSH 为旧登记，请重新检查接入以原地迁移；编号和默认项保留。' : '已登记的本机入口当前不可用，请由智能体（Agent）重新核对接入。' };
     }) };
   }
+  bindDshDesktopConnector(connector: DshDesktopConnector) { this.dshConnector = connector; }
+  hasDshRegistration(agentId: string) { return this.repository.read().registry.agents.some(record => record.id === agentId && record.kind === 'dsh' && record.desktop !== undefined); }
   bindCodexDesktopConnector(connector: CodexDesktopConnector): void { this.desktopConnector = connector; }
   hasCodexRegistration(agentId: string): boolean { return this.repository.read().registry.agents.some(record => record.id === agentId && record.kind === 'codex'); }
   private assertCodexNotRemoving(record: Pick<CodexAgentRegistration, 'executable' | 'codexHome'>) {
@@ -120,13 +132,85 @@ export class AgentOperationsApplication {
     const entry = (this.options.inspectEntry || inspectCodexEntry)(input);
     return this.register({ kind: 'codex', ...entry }, input.expectedRevision);
   }
-  registerDsh(input: { executable: string; dshHome?: string; label?: string; expectedRevision: string }): AgentRegistryView {
-    if (this.closed) throw agentFailure('agent_operations_closed', 'Buildr 正在退出，不能接入智能体（Agent）。', 503);
-    const entry = (this.options.inspectDshEntry || inspectDshEntry)(input);
-    return this.register({ kind: 'dsh', ...entry }, input.expectedRevision);
+  private dshKey(record: Pick<DshAgentRegistration, 'executable' | 'dshHome'>) { return JSON.stringify([record.executable, record.dshHome]); }
+  private assertDshNotRemoving(record: Pick<DshAgentRegistration, 'executable' | 'dshHome'>) { if (this.dshRemovals.has(this.dshKey(record))) throw agentFailure('agent_removal_in_progress', '此 DSH 正在移除接入，请等待后刷新。', 409); }
+  private discoverDsh(): DiscoveredDsh[] {
+    const registrations = this.repository.read().registry.agents.filter((r): r is DshAgentRegistration => r.kind === 'dsh');
+    return this.options.discoverDsh?.(registrations) ?? discoverDshInstallations({ registrations, channel: this.options.dshChannel ?? 'development' });
+  }
+  listDshDiscovery(): DshDiscoveryView { const candidates = this.discoverDsh(); return { revision: dshDiscoveryRevision(candidates), candidates: candidates.map(c => structuredClone(c.view)) }; }
+  async connectDsh(input: DshConnectInput, newLabel?: string): Promise<DshConnectResult> {
+    if (this.closed) throw agentFailure('agent_operations_closed', 'Buildr 正在退出，不能接入 DSH。', 503);
+    if (!input || typeof input.candidateId !== 'string' || !input.candidateId || typeof input.expectedDiscoveryRevision !== 'string' || !input.expectedDiscoveryRevision || input.makeDefault !== undefined && typeof input.makeDefault !== 'boolean' || input.existingAgentId !== undefined && (typeof input.existingAgentId !== 'string' || !input.existingAgentId || input.makeDefault === true)) throw agentFailure('agent_request_invalid', 'DSH 接入需要已观察候选及版本，维护不能改变默认项。');
+    const candidates = this.discoverDsh();
+    if (dshDiscoveryRevision(candidates) !== input.expectedDiscoveryRevision) throw agentFailure('agent_discovery_changed', 'DSH 桌面安装、配置或后台已变化，请重新检测。', 409);
+    const candidate = candidates.find(c => c.view.id === input.candidateId);
+    if (!candidate?.entry || !candidate.discovery) throw agentFailure('agent_dsh_desktop_unavailable', '所选 DSH 桌面后台当前不可用，请打开桌面并检查 Buildr 插件。', 503);
+    const entry = { ...candidate.entry };
+    if (newLabel !== undefined) { const label = newLabel.trim(); if (!label || label.length > 100 || /[\0\r\n]/.test(label)) throw agentFailure('agent_label_invalid', '智能体（Agent）名称无效。'); entry.label = label; }
+    const key = this.dshKey(entry);
+    this.assertDshNotRemoving(entry);
+    if (this.dshPreparing.has(key)) throw agentFailure('agent_dsh_busy', '此 DSH 接入正在检查，请等待完成。', 409);
+    this.dshPreparing.add(key);
+    try {
+      const client = new DshDesktopTransport(candidate.discovery);
+      try { const inspection = await client.start(); if (!inspection.capabilities.generate) throw agentFailure('agent_dsh_generation_unavailable', '当前 DSH 插件尚未提供生成能力，请检查兼容版本。', 503); } finally { await client.close(); }
+      if (this.closed) throw agentFailure('agent_operations_closed', 'Buildr 正在退出，接入登记保留。', 503);
+      this.assertDshNotRemoving(entry);
+      if (!entry.desktop || dshDesktopScopeIdentity(entry.executable, entry.dshHome, entry.desktop.appPath) !== entry.desktop.scopeIdentity) throw agentFailure('agent_dsh_connection_scope_changed', 'DSH 配置目录在确认期间变化，请重新检测。', 409);
+      let agentId = '';
+      this.repository.mutate(input.expectedRevision, registry => {
+        if (input.existingAgentId !== undefined) {
+          const target = registry.agents.find(r => r.id === input.existingAgentId);
+          if (!target || target.kind !== 'dsh' || candidate.view.registeredAgentId !== target.id || target.executable !== entry.executable || target.dshHome !== entry.dshHome || target.desktop && (target.desktop.appPath !== entry.desktop?.appPath || target.desktop.channel !== entry.desktop?.channel || target.desktop.scopeIdentity !== entry.desktop?.scopeIdentity)) throw agentFailure('agent_dsh_connection_mismatch', '候选不属于此 DSH 原安装和配置范围，原登记已保留。', 409);
+          const label = target.label; Object.assign(target, entry, { label }); agentId = target.id;
+        } else {
+          if (registry.agents.some(r => r.kind === 'dsh')) throw agentFailure('agent_dsh_already_connected', 'DSH 已接入，请从原条目重新检查；不能重复接入。', 409);
+          if (registry.agents.length >= 32) throw agentFailure('agent_registry_limit', '本机接入数量已达到上限。', 409);
+          agentId = 'agent-' + crypto.randomUUID(); registry.agents.push({ id: agentId, kind: 'dsh', ...entry });
+          if (input.makeDefault === true || registry.defaultAgentId === null) registry.defaultAgentId = agentId;
+        }
+        return registry;
+      });
+      let desktop: DshDesktopConnectionView | null = null, desktopError: DshConnectResult['desktopError'] = null;
+      try {
+        const registration = this.repository.read().registry.agents.find((record): record is DshAgentRegistration => record.kind === 'dsh' && record.id === agentId)!;
+        desktop = await this.dshConnector?.connect(structuredClone(registration)) ?? null;
+      }
+      catch { desktopError = { code: 'agent_dsh_desktop_prepare_failed', message: 'DSH 生成来源已保存，聊天关联配置尚未完成，请重新检查接入。' }; }
+      return { registry: this.listRegistry(), agentId, desktop, desktopError };
+    } finally { this.dshPreparing.delete(key); }
+  }
+  async registerDsh(input: { executable: string; dshHome?: string; label?: string; expectedRevision: string }): Promise<AgentRegistryView> {
+    const inspected = (this.options.inspectDshEntry || inspectDshEntry)(input), candidates = this.discoverDsh();
+    const candidate = candidates.find(c => c.entry?.executable === inspected.executable && c.entry.dshHome === inspected.dshHome);
+    if (!candidate) throw agentFailure('agent_dsh_desktop_unavailable', '未发现匹配的 DSH 桌面连接，请先打开桌面并检查插件。', 503);
+    const result = await this.connectDsh({ candidateId: candidate.view.id, expectedDiscoveryRevision: dshDiscoveryRevision(candidates), expectedRevision: input.expectedRevision, ...(candidate.view.registeredAgentId ? { existingAgentId: candidate.view.registeredAgentId } : {}) }, input.label);
+    return result.registry;
+  }
+  async removeDsh(input: { agentId: string; expectedRevision: string }): Promise<DshRemoveResult> {
+    if (this.closed) throw agentFailure('agent_operations_closed', 'Buildr 正在退出，不能移除接入。', 503);
+    const observed = this.repository.read();
+    if (observed.revision !== input.expectedRevision) throw agentFailure('agent_registry_changed', '登记或默认选择已变化，请刷新。', 409);
+    const record = observed.registry.agents.find(r => r.id === input.agentId);
+    if (!record) throw agentFailure('agent_not_registered', '接入已不存在，请刷新核对。', 404);
+    if (record.kind !== 'dsh') throw agentFailure('agent_kind_unsupported', '本次仅支持移除 DSH。');
+    this.assertDshNotRemoving(record);
+    const key = this.dshKey(record), pool = this.pools.get(record.id);
+    if (pool?.activity || this.dshPreparing.has(key) || [...this.runs.values()].some(r => r.view.agentId === record.id && !final(r.view))) throw agentFailure('agent_dsh_busy', '此 DSH 仍有生成或接入检查，请等待结束或取消后移除。', 409);
+    this.dshRemovals.add(key);
+    try {
+      if (pool) { if (pool.idleTimer) clearTimeout(pool.idleTimer); await pool.tail.catch(() => {}); await pool.client?.close(); }
+      if (this.closed) throw agentFailure('agent_operations_closed', 'Buildr 正在退出，接入登记已保留，请下次打开后核对。', 503);
+      this.repository.mutate(input.expectedRevision, registry => { registry.agents = registry.agents.filter(r => r.id !== record.id); if (registry.defaultAgentId === record.id) registry.defaultAgentId = null; return registry; });
+      this.pools.delete(record.id);
+      let desktopWarning: DshRemoveResult['desktopWarning'] = null;
+      try { this.dshConnector?.disconnect(record.id); } catch { desktopWarning = { code: 'agent_desktop_disconnect_unconfirmed', message: '接入已移除，旧业务调用停用；断开状态未保存，原聊天和关系保留。' }; }
+      return { registry: this.listRegistry(), removedAgentId: record.id, desktopWarning };
+    } finally { this.dshRemovals.delete(key); }
   }
   private register(entry: Omit<Extract<AgentRegistration, { kind: 'codex' }>, 'id'> | Omit<Extract<AgentRegistration, { kind: 'dsh' }>, 'id'>, expectedRevision: string, makeDefault = false): AgentRegistryView {
-    if (entry.kind === 'codex') this.assertCodexNotRemoving(entry);
+    if (entry.kind === 'codex') this.assertCodexNotRemoving(entry); else this.assertDshNotRemoving(entry);
     this.repository.mutate(expectedRevision, registry => {
       const existing = registry.agents.find(record => record.executable === entry.executable && (record.kind === 'codex' && entry.kind === 'codex' && record.codexHome === entry.codexHome || record.kind === 'dsh' && entry.kind === 'dsh' && record.dshHome === entry.dshHome));
       if (existing) Object.assign(existing, entry);
@@ -145,7 +229,7 @@ export class AgentOperationsApplication {
     this.repository.mutate(input.expectedRevision, registry => {
       const selected = registry.agents.find(record => record.id === input.agentId);
       if (!selected) throw agentFailure('agent_not_registered', '所选智能体（Agent）尚未接入。', 404);
-      if (selected.kind === 'codex') this.assertCodexNotRemoving(selected);
+      if (selected.kind === 'codex') this.assertCodexNotRemoving(selected); else this.assertDshNotRemoving(selected);
       registry.defaultAgentId = input.agentId; return registry;
     });
     return this.listRegistry();
@@ -234,7 +318,8 @@ export class AgentOperationsApplication {
     const { registry } = this.repository.read(), agentId = input.agentId ?? registry.defaultAgentId;
     const registration = registry.agents.find(record => record.id === agentId);
     if (!registration) throw agentFailure('agent_not_registered', '尚未接入可用于本次生成的智能体（Agent）。', 409);
-    if (registration.kind === 'codex') this.assertCodexNotRemoving(registration);
+    if (registration.kind === 'codex') this.assertCodexNotRemoving(registration); else this.assertDshNotRemoving(registration);
+    if (registration.kind === 'dsh' && !registration.desktop && !this.options.providerFactory) throw agentFailure('agent_dsh_desktop_confirmation_required', '请重新检查此旧 DSH 接入以原地迁移，原编号和默认项保留。', 409);
     if (!(this.options.available || entryAvailable)(registration)) throw agentFailure('agent_entry_unavailable', '所选智能体（Agent）的本机入口当前不可用。', 503);
     const outputSchema = structuredClone(input.outputSchema) as Record<string, unknown>;
     let validators: ReturnType<typeof compileJsonSchemaCatalog>;

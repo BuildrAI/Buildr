@@ -65,7 +65,13 @@ type AgentRegistrationBase = {
   version: string;
 };
 export type CodexAgentRegistration = AgentRegistrationBase & { kind: 'codex'; codexHome: string };
-export type DshAgentRegistration = AgentRegistrationBase & { kind: 'dsh'; dshHome: string };
+export type DshAgentRegistration = AgentRegistrationBase & { kind: 'dsh'; dshHome: string; desktop?: { appPath: string; channel: 'released' | 'development'; scopeIdentity: string } };
+export type DshDiscoveryCandidate = Omit<CodexDiscoveryCandidate, 'source'> & { source: 'desktop-bundled' | 'registered' };
+export type DshDiscoveryView = { revision: string; candidates: DshDiscoveryCandidate[] };
+export type DshConnectInput = CodexConnectInput;
+export type DshConnectResult = CodexConnectResult;
+export type DshRemoveResult = CodexRemoveResult;
+export type DshDesktopConnectionView = CodexDesktopConnectionView;
 export type AgentRegistration = CodexAgentRegistration | DshAgentRegistration;
 export type AgentGenerationEnvironment = { kind: 'workspace-read-only'; readableRoots: string[] };
 export type AgentGenerationExecution = { reasoningEffort?: 'low'; timeoutMs?: number };

@@ -9,6 +9,7 @@ export function executionConfigSummary(config: AgentExecutionConfig | null): str
 
 export type AgentDescriptor = {
   id: string;
+  kind?: 'codex' | 'dsh';
   label: string;
   capabilities: string[];
   availability: 'available' | 'unavailable';
@@ -22,6 +23,6 @@ export function agentStatusLabel(agent: AgentDescriptor): string {
   if (agent.availability !== 'available') return agent.safeReason?.includes('登录') || agent.safeReason?.includes('授权') ? '需要授权' : '暂不可用';
   if (agent.runtimeStatus === 'starting') return '准备中';
   if (agent.runtimeStatus === 'stopping') return '正在关闭';
-  return agent.runtimeStatus === 'running' || agent.runtimeStatus === 'idle' ? '运行中' : '按需启动';
+  return agent.runtimeStatus === 'running' || agent.runtimeStatus === 'idle' ? agent.kind === 'dsh' ? '已连接' : '运行中' : agent.kind === 'dsh' ? '按需连接' : '按需启动';
 }
 export const agentRegistrationRequest = '请将当前智能体接入本机 Buildr，以便我在 Buildr 中调用你完成工作。';

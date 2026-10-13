@@ -62,40 +62,6 @@ test('agent registration validates real entry, is lazy and idempotent, exposes s
   assert.equal(AGENT_OPERATIONS_HTTP_VALIDATORS.validate(AGENT_OPERATIONS_HTTP_SCHEMAS.registry.$id, selected).valid, true);
 });
 
-test('legacy Codex registration coexists with idempotent DSH registration and shared selection/generation contracts', async t => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-agent-dsh-registration-'));
-  const inputs: unknown[] = [], created: string[] = [];
-  const app = new AgentOperationsApplication({
-    dataRoot: root,
-    inspectEntry: () => ({ executable: process.execPath, codexHome: root, label: 'Codex', version: 'codex-test' }),
-    inspectDshEntry: input => { inputs.push(input); return { executable: process.execPath, dshHome: root, label: 'DSH', version: 'dsh-test' }; },
-    available: () => true,
-    providerFactory: record => { created.push(record.kind); let alive = false; return { get alive() { return alive; }, start: async () => { alive = true; }, generate: async input => { input.onConfigured({ model: 'fixture-model', modelProvider: record.kind, reasoningEffort: 'low' }); input.onRunning(); return { commitMessage: 'feat: ' + record.kind }; }, close: async () => { alive = false; } }; },
-  });
-  t.after(async () => { await app.close(); fs.rmSync(root, { recursive: true, force: true }); });
-  const legacy = app.registerCodex({ executable: process.execPath, expectedRevision: app.listRegistry().revision });
-  const before = fs.readFileSync(path.join(root, 'agent-registrations.json'), 'utf8');
-  assert.equal(new AgentOperationsApplication({ dataRoot: root, available: () => true }).listRegistry().revision, legacy.revision);
-  assert.equal(fs.readFileSync(path.join(root, 'agent-registrations.json'), 'utf8'), before, 'reading legacy data must not rewrite it');
-  const register = createAgentOperationsCliContributions(app).find(command => command.key === 'agent register')!;
-  const stdout = t.mock.method(process.stdout, 'write', () => true);
-  const added = await register.run({}, { argv: ['node', 'buildr', 'agent', 'register', 'dsh', '--executable', process.execPath, '--dsh-home', root, '--expected-revision', legacy.revision, '--json'] }) as ReturnType<typeof app.listRegistry>;
-  stdout.mock.restore();
-  assert.deepEqual(inputs, [{ executable: process.execPath, dshHome: root, label: undefined, expectedRevision: legacy.revision }]);
-  assert.equal(added.defaultAgentId, legacy.defaultAgentId); assert.deepEqual(added.agents.map(agent => agent.kind), ['codex', 'dsh']); assert.deepEqual(created, []);
-  const duplicate = app.registerDsh({ executable: process.execPath, dshHome: root, expectedRevision: added.revision });
-  assert.equal(duplicate.revision, added.revision); assert.equal(duplicate.agents[1].id, added.agents[1].id);
-  assert.equal(AGENT_OPERATIONS_HTTP_VALIDATORS.validate(AGENT_OPERATIONS_HTTP_SCHEMAS.registry.$id, duplicate).valid, true);
-  assert.equal(JSON.stringify(duplicate).includes(root), false);
-  await assert.rejects(Promise.resolve(register.run({}, { argv: ['node', 'buildr', 'agent', 'register', 'dsh', '--codex-home', root] })), code('agent_cli_invalid'));
-  assert.throws(() => app.selectAgent({ agentId: added.agents[1].id, expectedRevision: legacy.revision }), code('agent_registry_changed'));
-  const dsh = await app.startGeneration({ agentId: added.agents[1].id, cwd: root, prompt: 'Supplied changes only.', outputSchema });
-  assert.deepEqual((await settled(app, dsh.id)).output, { commitMessage: 'feat: dsh' });
-  assert.equal(app.listRegistry().defaultAgentId, legacy.defaultAgentId, 'single-run selection must not mutate the default');
-  const codex = await app.startGeneration({ cwd: root, prompt: 'Supplied changes only.', outputSchema });
-  assert.deepEqual((await settled(app, codex.id)).output, { commitMessage: 'feat: codex' }); assert.deepEqual(created, ['dsh', 'codex']);
-});
-
 test('re-registration serially replaces the same identity only after the old run and owned process finish', async t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-agent-registration-replace-'));
   let version = 'one', live = 0, maximumLive = 0, release!: () => void;

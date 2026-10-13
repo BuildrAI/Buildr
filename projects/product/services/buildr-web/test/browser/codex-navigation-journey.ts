@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import {runCodexAgentRegistryJourney} from './codex-agent-registry-journey.ts';
+import { runDshDesktopJourney } from './dsh-desktop-journey.ts';
+import { runDshTaskPageJourney } from './dsh-task-page-journey.ts';
 
 /** Production-hosted routing; the connection fixture is explicitly isolated and never installs a plugin. */
 export async function runCodexNavigationJourney({t, page, runtime, workspaceRoot, workspaceUrl, runBuildr, capture, expectedBrowserErrors}: any) {
@@ -40,6 +42,8 @@ export async function runCodexNavigationJourney({t, page, runtime, workspaceRoot
     await capture(page, 'codex-legacy-material.png');
   });
   await runCodexAgentRegistryJourney({t, page, workspaceUrl, taskId: first, capture, expectedBrowserErrors});
+  await runDshDesktopJourney({t, page, workspaceUrl, taskId: first, capture, expectedBrowserErrors});
+  await runDshTaskPageJourney({t, page, workspaceUrl, taskId: first, nextTaskId: second, capture});
   await t.test('Codex 外部片段导航保留工作空间草稿，离开编辑器边界时保护原文与网址', async () => {
     const root = path.join(workspaceRoot, 'projects/demo/docs/publications');
     fs.mkdirSync(root, {recursive: true});
@@ -73,25 +77,25 @@ export async function runCodexNavigationJourney({t, page, runtime, workspaceRoot
     const connectionId = 'connection-recovery-fixture', requestId = '33333333-3333-3333-3333-333333333333';
     let posts = 0, receipts = 0, bound = false, readFailed = false;
     const removed = new Set<string>();
-    const relations = () => bound ? [nativeId, otherNativeId].filter(id => !removed.has(id)).map((id, index) => ({id: 'relation-' + id, workspaceId, taskId: first, connectionId, nativeSessionId: id, createdAt: new Date().toISOString(), revision: 'relation-revision-' + index, sessionUrl: 'codex://threads/' + id, taskUrl: new URL(workspaceUrl).pathname + '/codex#/tasks/' + first})) : [];
-    const scopedPattern = '**/api/v1/workspaces/*/codex/**';
-    expectedBrowserErrors.add(new URL(workspaceUrl).origin + '/api/v1/workspaces/' + workspaceId + '/codex/sessions');
+    const relations = () => bound ? [nativeId, otherNativeId].filter(id => !removed.has(id)).map((id, index) => ({provider: 'codex', id: 'relation-' + id, workspaceId, taskId: first, connectionId, nativeSessionId: id, createdAt: new Date().toISOString(), revision: 'relation-revision-' + index, sessionUrl: 'codex://threads/' + id, taskUrl: new URL(workspaceUrl).pathname + '/codex#/tasks/' + first})) : [];
+    const scopedPattern = '**/api/v1/workspaces/*/agent-sessions**';
+    expectedBrowserErrors.add(new URL(workspaceUrl).origin + '/api/v1/workspaces/' + workspaceId + '/agent-sessions');
     const scopedHandler = async (route: any) => {
       const url = new URL(route.request().url());
-      if (url.pathname.endsWith('/sessions/unlink')) {
+      if (url.pathname.endsWith('/agent-sessions/unlink')) {
         posts++;
         const input = route.request().postDataJSON(), relation = relations().find(item => item.id === input.relationId);
-        assert.ok(relation); assert.deepEqual(input, {relationId: relation.id, expectedRevision: relation.revision});
-        removed.add(relation.nativeSessionId); return route.fulfill({json: {workspaceId, relations: relations()}});
+        assert.ok(relation); assert.deepEqual(input, {provider: 'codex', relationId: relation.id, expectedRevision: relation.revision});
+        removed.add(relation.nativeSessionId); return route.fulfill({json: {workspaceId, diagnostics: [], relations: relations()}});
       }
-      if (url.pathname.endsWith('/sessions')) return readFailed ? route.fulfill({status: 503, json: {error: {code: 'fixture_read_failed', message: '隔离会话关联读取失败。'}}}) : route.fulfill({json: {workspaceId, relations: relations()}});
+      if (url.pathname.endsWith('/agent-sessions')) return readFailed ? route.fulfill({status: 503, json: {error: {code: 'fixture_read_failed', message: '隔离会话关联读取失败。'}}}) : route.fulfill({json: {workspaceId, diagnostics: [], relations: relations()}});
       if (url.pathname.endsWith('/bindings') && route.request().method() === 'POST') {posts++; assert.fail('任务页面不得创建等待用户去总览确认的关联请求。');}
       if (url.pathname.includes('/bindings/')) {receipts++; assert.fail('新版任务页面不再恢复或查询旧的关联请求。');}
       return route.continue();
     };
     const geometry: Array<{kind: string; viewport: number; width: number; height: number; x?: number; y?: number}> = [];
     const section = () => visibleTask(first).locator('#task-codex-sessions');
-    const panel = () => page.getByRole('dialog', {name: 'Codex 会话关联', exact: true});
+    const panel = () => page.getByRole('dialog', {name: '智能体会话关联', exact: true});
     const openPanel = async () => {await section().locator('#task-codex-manage').click(); await panel().waitFor({state: 'visible'});};
     const closePanel = async () => {await panel().getByRole('button', {name: '关闭会话关联', exact: true}).click(); await panel().waitFor({state: 'hidden'});};
     const assertCompact = async () => {
@@ -141,7 +145,7 @@ export async function runCodexNavigationJourney({t, page, runtime, workspaceRoot
       assert.equal(await page.evaluate(() => (window as any).__selectedCodexHref), 'codex://threads/' + otherNativeId, '点击第二条打开第二个准确会话');
       assert.equal(await page.evaluate((key: string) => sessionStorage.getItem(key), storageKey), JSON.stringify(storedRequest));
       for (const width of [1280, 390]) {
-        await page.setViewportSize({width, height: 900}); await assertCompact();
+        await page.setViewportSize({width, height: 900}); await page.waitForFunction(() => {const box = document.querySelector('.task-codex-popover')?.getBoundingClientRect(); return box && box.x >= -1 && box.right <= innerWidth + 1;}); await assertCompact();
         const box = await page.locator('.task-codex-popover:visible').boundingBox(); assert.ok(box && box.x >= -1 && box.x + box.width <= width + 1 && box.y >= -1 && box.y + box.height <= 901, '会话浮层外框在宽窄视口内：' + JSON.stringify({width, box}));
         geometry.push({kind: 'popover', viewport: width, ...box});
         await capture(page, 'codex-session-compact-popover-' + width + '.png');
@@ -150,7 +154,7 @@ export async function runCodexNavigationJourney({t, page, runtime, workspaceRoot
       await visibleTask(first).getByRole('heading', {name: 'Codex 导航 ' + first, exact: true}).click(); await panel().waitFor({state: 'hidden'});
       await assertCompact(); await capture(page, 'codex-session-compact-multiple.png');
       await section().locator('#task-codex-manage').focus(); await page.keyboard.press('Enter'); await panel().waitFor({state: 'visible'});
-      await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Codex 会话关联');
+      await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === '智能体会话关联');
       readFailed = true; await panel().getByRole('button', {name: '刷新会话关联', exact: true}).click();
       await section().getByText(' · 读取失败', {exact: true}).waitFor({state: 'visible'});
       await panel().getByText('隔离会话关联读取失败。', {exact: true}).waitFor({state: 'visible'});
@@ -166,7 +170,7 @@ export async function runCodexNavigationJourney({t, page, runtime, workspaceRoot
       await capture(page, 'codex-session-compact-single.png');
       await openPanel(); await panel().locator('[data-codex-session="' + otherNativeId + '"]').getByRole('button', {name: '解除关联', exact: true}).click();
       await panel().getByText('尚未关联会话', {exact: true}).waitFor({state: 'visible'});
-      await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Codex 会话关联');
+      await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === '智能体会话关联');
       await page.keyboard.press('Escape'); await panel().waitFor({state: 'hidden'});
       assert.equal(await section().locator('#task-codex-manage').evaluate((element: HTMLElement) => document.activeElement === element), true, '解除最后一条后Escape关闭并恢复管理入口焦点');
       await section().getByText(/尚未关联会话/u).waitFor({state: 'visible'}); await assertCompact();
@@ -177,35 +181,35 @@ export async function runCodexNavigationJourney({t, page, runtime, workspaceRoot
   await t.test('Codex 解除关联：浮层随任务切换关闭，旧失败不污染新任务且操作可继续', async () => {
     const workspaceId = new URL(workspaceUrl).pathname.split('/').at(-1)!;
     const nativeIds = {[first]: '11111111-1111-1111-1111-111111111111', [second]: '22222222-2222-2222-2222-222222222222'};
-    const scopedPattern = '**/api/v1/workspaces/*/codex/**';
+    const scopedPattern = '**/api/v1/workspaces/*/agent-sessions**';
     let release!: () => void, secondRemoved = false, oldSettled = false;
     const held = new Promise<void>(resolve => {release = resolve;});
-    const relations = (taskId: string) => taskId === second && secondRemoved ? [] : [{id: 'relation-' + taskId, workspaceId, taskId, connectionId: 'fixture', nativeSessionId: nativeIds[taskId], revision: taskId + '-v1', createdAt: new Date().toISOString(), sessionUrl: 'codex://threads/' + nativeIds[taskId], taskUrl: new URL(workspaceUrl).pathname + '/codex#/tasks/' + taskId}];
-    const oldFailureUrl = new URL(workspaceUrl).origin + '/api/v1/workspaces/' + workspaceId + '/codex/sessions/unlink';
+    const relations = (taskId: string) => taskId === second && secondRemoved ? [] : [{provider: 'codex', id: 'relation-' + taskId, workspaceId, taskId, connectionId: 'fixture', nativeSessionId: nativeIds[taskId], revision: taskId + '-v1', createdAt: new Date().toISOString(), sessionUrl: 'codex://threads/' + nativeIds[taskId], taskUrl: new URL(workspaceUrl).pathname + '/codex#/tasks/' + taskId}];
+    const oldFailureUrl = new URL(workspaceUrl).origin + '/api/v1/workspaces/' + workspaceId + '/agent-sessions/unlink';
     expectedBrowserErrors.add(oldFailureUrl);
     const scopedHandler = async (route: any) => {
       const url = new URL(route.request().url());
-      if (url.pathname.endsWith('/sessions')) return route.fulfill({json: {workspaceId, relations: relations(url.searchParams.get('taskId')!)}});
-      if (url.pathname.endsWith('/sessions/unlink')) {
+      if (url.pathname.endsWith('/agent-sessions')) return route.fulfill({json: {workspaceId, diagnostics: [], relations: relations(url.searchParams.get('taskId')!)}});
+      if (url.pathname.endsWith('/agent-sessions/unlink')) {
         const input = route.request().postDataJSON();
         if (input.relationId === 'relation-' + first) {
           assert.equal(input.expectedRevision, first + '-v1'); await held;
           try {return await route.fulfill({status: 503, json: {error: {code: 'fixture_old_task_unlink_failed', message: '旧任务解除失败，不能显示在新任务。'}}});}
           finally {oldSettled = true;}
         }
-        assert.deepEqual(input, {relationId: 'relation-' + second, expectedRevision: second + '-v1'});
-        secondRemoved = true; return route.fulfill({json: {workspaceId, relations: []}});
+        assert.deepEqual(input, {provider: 'codex', relationId: 'relation-' + second, expectedRevision: second + '-v1'});
+        secondRemoved = true; return route.fulfill({json: {workspaceId, diagnostics: [], relations: []}});
       }
       return route.continue();
     };
-    const panel = () => page.getByRole('dialog', {name: 'Codex 会话关联', exact: true});
+    const panel = () => page.getByRole('dialog', {name: '智能体会话关联', exact: true});
     await page.route(scopedPattern, scopedHandler);
     try {
       await page.goto(workspaceUrl + '/codex#/tasks/' + first); await visibleTask(first).waitFor({state: 'visible'});
       const initial = visibleTask(first).locator('#task-codex-sessions');
       await initial.getByRole('link', {name: '打开会话', exact: true}).waitFor({state: 'visible'});
       await initial.locator('#task-codex-manage').click(); await panel().waitFor({state: 'visible'});
-      const unlinkStarted = page.waitForRequest((request: any) => new URL(request.url()).pathname.endsWith('/sessions/unlink'), {timeout: 4000});
+      const unlinkStarted = page.waitForRequest((request: any) => new URL(request.url()).pathname.endsWith('/agent-sessions/unlink'), {timeout: 4000});
       await panel().getByRole('button', {name: '解除关联', exact: true}).click(); await unlinkStarted;
       await fragment('/tasks/' + second); await visibleTask(second).waitFor({state: 'visible'}); await panel().waitFor({state: 'hidden'});
       const current = visibleTask(second).locator('#task-codex-sessions');

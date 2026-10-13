@@ -53,6 +53,10 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   },
   "integration": {
     "inputs": [
+      "src/modules/native-session-links/**",
+      "src/modules/codex-desktop/**",
+      "src/modules/dsh-desktop/**",
+      "src/modules/agent-operations/**",
       "src/modules/knowledge/**",
       "knowledge/index.yml",
       "src/modules/code/**",

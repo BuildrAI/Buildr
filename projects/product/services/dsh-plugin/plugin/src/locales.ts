@@ -1,5 +1,10 @@
 /** Plugin-owned UI copy. */
 export const zh = {
+  bindingSummary: '维护已核验的本机 Buildr 入口', bindingMaintainer: '维护者入口配置',
+  bindingHint: '通常使用自动发现。仅维护者为已核验的本机 Buildr 入口设置绑定；不填写认证信息。保存可能重新装载本插件，请先结束本插件的生成。',
+  bindingNode: 'Node 绝对路径', bindingCli: 'Buildr 命令行入口（CLI）绝对路径', bindingNodeDigest: 'Node 文件摘要（SHA-256）', bindingCliDigest: '入口文件摘要（SHA-256）',
+  bindingSave: '保存绑定', bindingRestore: '恢复本次维护前的绑定', bindingAuto: '使用自动发现', bindingRead: '重新读取',
+  bindingReadFailed: '绑定暂不可读取，请检查当前插件状态后重试。', bindingSaveUnconfirmed: '保存结果尚未确认。插件可能已重新装载，请重新读取；若绑定已变化，以当前值为准。', bindingSaved: '原生配置已保存。',
   sourceExecutionFailed: '执行失败', sourceExecutionSucceeded: '执行成功', sourceActionFailed: '动作失败', sourceReadOutcome: '已读取', sourceLoadedOutcome: '已装载', sourceRemovedOutcome: '已移除', sourceReplacedOutcome: '已替换', sourceExitCode: '退出码',
   sourceInspectTask: '查看任务', sourceReadAction: '读取', sourceSkillAction: '装载技能', sourceFragment: '当次片段', sourceRecordedContent: '当次内容', sourceContentDisplay: '正文显示方式', sourcePreview: '预览', sourceRaw: '原文', sourceCopy: '复制', sourceCopied: '已复制', sourceFootnotes: '脚注', sourceMarkdownFailed: 'Markdown 预览暂时无法显示；可切换到原文查看。',
   title: 'Buildr', titleDev: 'Buildr 开发版', open: '打开 Buildr', loading: '正在准备 Buildr…', retry: '重试打开 Buildr',
@@ -45,6 +50,11 @@ export const zh = {
 } satisfies Record<string, string>;
 export type BuildrKey = keyof typeof zh;
 export const en = {
+  bindingSummary: 'Maintain the verified local Buildr entry', bindingMaintainer: 'Maintainer entry configuration',
+  bindingHint: 'Automatic discovery is normally sufficient. Maintainers may bind a verified local Buildr entry here; do not enter credentials. Saving may reload this plugin, so finish its generation requests first.',
+  bindingNode: 'Absolute Node path', bindingCli: 'Absolute Buildr CLI entry', bindingNodeDigest: 'Node SHA-256 digest', bindingCliDigest: 'CLI SHA-256 digest',
+  bindingSave: 'Save binding', bindingRestore: 'Restore binding before this maintenance', bindingAuto: 'Use automatic discovery', bindingRead: 'Read again',
+  bindingReadFailed: 'The binding is unavailable. Check this plugin and retry.', bindingSaveUnconfirmed: 'The save is not confirmed. The plugin may have reloaded; read again and use the observed current value.', bindingSaved: 'Native configuration saved.',
   sourceExecutionFailed: 'Execution failed', sourceExecutionSucceeded: 'Execution succeeded', sourceActionFailed: 'Action failed', sourceReadOutcome: 'Read', sourceLoadedOutcome: 'Loaded', sourceRemovedOutcome: 'Removed', sourceReplacedOutcome: 'Replaced', sourceExitCode: 'Exit code',
   sourceInspectTask: 'Inspect task', sourceReadAction: 'Read', sourceSkillAction: 'Load skill', sourceFragment: 'Recorded fragment', sourceRecordedContent: 'Recorded content', sourceContentDisplay: 'Content display', sourcePreview: 'Preview', sourceRaw: 'Raw', sourceCopy: 'Copy', sourceCopied: 'Copied', sourceFootnotes: 'Footnotes', sourceMarkdownFailed: 'Markdown preview is unavailable. Switch to raw text to inspect the recorded content.',
   title: 'Buildr', titleDev: 'Buildr (development)', open: 'Open Buildr', loading: 'Preparing Buildr…', retry: 'Retry opening Buildr',

@@ -16,6 +16,20 @@ export function createAgentOperationsHttpContribution(application: AgentOperatio
         if (searchParams.size) throw agentFailure('agent_request_invalid', '智能体（Agent）列表不接受查询参数。');
         return result(AGENT_OPERATIONS_HTTP_SCHEMAS.registry.$id, application.listRegistry());
       }
+      if (request.method === 'GET' && pathname === '/api/v1/app/agents/dsh/discovery') {
+        if (searchParams.size) throw agentFailure('agent_request_invalid', 'DSH 发现不接受查询参数。');
+        return result(AGENT_OPERATIONS_HTTP_SCHEMAS.dshDiscovery.$id, application.listDshDiscovery());
+      }
+      if (request.method === 'POST' && pathname === '/api/v1/app/agents/dsh/connect') {
+        authorizeWrite(); if (searchParams.size) throw agentFailure('agent_request_invalid', 'DSH 接入不接受查询参数。');
+        const input = validate(AGENT_OPERATIONS_HTTP_REQUESTS.dshConnect.$id, await readJsonBody()) as Parameters<AgentOperationsApplication['connectDsh']>[0];
+        return result(AGENT_OPERATIONS_HTTP_SCHEMAS.dshConnect.$id, await application.connectDsh(input));
+      }
+      if (request.method === 'POST' && pathname === '/api/v1/app/agents/dsh/remove') {
+        authorizeWrite(); if (searchParams.size) throw agentFailure('agent_request_invalid', 'DSH 移除不接受查询参数。');
+        const input = validate(AGENT_OPERATIONS_HTTP_REQUESTS.dshRemove.$id, await readJsonBody()) as Parameters<AgentOperationsApplication['removeDsh']>[0];
+        return result(AGENT_OPERATIONS_HTTP_SCHEMAS.dshRemove.$id, await application.removeDsh(input));
+      }
       if (request.method === 'GET' && pathname === '/api/v1/app/agents/codex/discovery') {
         if (searchParams.size) throw agentFailure('agent_request_invalid', 'Codex 本机发现不接受查询参数。');
         return result(AGENT_OPERATIONS_HTTP_SCHEMAS.discovery.$id, application.listCodexDiscovery());

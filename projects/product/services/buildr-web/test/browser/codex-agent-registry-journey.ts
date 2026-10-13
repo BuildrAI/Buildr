@@ -33,7 +33,7 @@ export async function runCodexAgentRegistryJourney({t, page, workspaceUrl, taskI
       await open();
       assert.equal(await parent().locator('.agent-registry-list > article').count(), 2);
       assert.equal(await row(dsh.id).getByRole('button', {name: '设为默认智能体 ' + dsh.label, exact: true}).getAttribute('aria-pressed'), 'true');
-      assert.equal(await row(dsh.id).getByRole('button', {name: /^移除 /u}).count(), 0, 'DSH既有条目保留且不增加移除操作');
+      assert.equal(await row(dsh.id).getByRole('button', {name: /^移除 /u}).count(), 1, 'DSH既有条目提供同一移除入口');
       assert.equal(await removeEntry().count(), 1, 'Codex移除操作直接属于其列表条目');
       assert.equal(await page.locator('.agent-registry-details').count(), 0, '一级列表不自动展开详情');
       await page.locator('#add-agent-entry').hover();
@@ -45,9 +45,9 @@ export async function runCodexAgentRegistryJourney({t, page, workspaceUrl, taskI
       assert.equal(await child().count(), 0); assert.equal(discoveries, 0);
       await parent().getByText('智能体', {exact: true}).hover(); await connected.waitFor({state: 'hidden'});
       await page.locator('#add-agent-entry').focus(); await page.keyboard.press('Enter'); await connected.waitFor({state: 'visible'});
-      const dshChoice = page.getByRole('menuitem', {name: 'DSH · 发送接入请求', exact: true});
-      await dshChoice.focus(); await dshChoice.press('Enter'); await page.locator('#agent-registration-prompt').waitFor({state: 'visible'});
-      await page.getByRole('button', {name: '关闭 DSH 接入提示', exact: true}).click();
+      const dshChoice = page.getByRole('menuitem', {name: 'DSH · 已接入', exact: true});
+      assert.equal(await dshChoice.getAttribute('aria-disabled'), 'true');
+      await parent().getByText('智能体', {exact: true}).click(); await dshChoice.waitFor({state: 'hidden'});
       const viewport = page.viewportSize();
       for (const width of [1280, 390]) {
         await page.setViewportSize({width, height: 900});
@@ -180,6 +180,7 @@ export async function runCodexAgentRegistryJourney({t, page, workspaceUrl, taskI
     const handler = async (route: any) => {
       const url = new URL(route.request().url());
       if (url.pathname === '/api/v1/app/agents') return route.fulfill({json: empty});
+      if (url.pathname.endsWith('/dsh/discovery')) return route.fulfill({json: {revision: 'dsh-discovery-empty', candidates: []}});
       if (url.pathname.endsWith('/codex/discovery')) {
         discoveries++;
         if (discoveries === 1) await gate;
@@ -192,10 +193,10 @@ export async function runCodexAgentRegistryJourney({t, page, workspaceUrl, taskI
     await page.route(pattern, handler);
     try {
       await open();
-      assert.equal(await page.locator('#codex-local-setup').count(), 0); assert.equal(await page.locator('#agent-registration-prompt').count(), 0); assert.equal(discoveries, 0, '一级空列表不自动展开接入表单');
-      await page.locator('#add-agent-entry').click(); await page.getByRole('menuitem', {name: 'DSH · 发送接入请求', exact: true}).click();
-      await page.locator('#agent-registration-prompt').waitFor({state: 'visible'}); assert.equal(discoveries, 0, 'DSH原接入提示不探测Codex');
-      await page.getByRole('button', {name: '关闭 DSH 接入提示', exact: true}).click(); await parent().waitFor({state: 'visible'});
+      assert.equal(await page.locator('#codex-local-setup').count(), 0); assert.equal(await page.locator('#dsh-local-setup').count(), 0); assert.equal(discoveries, 0, '一级空列表不自动展开接入表单');
+      await page.locator('#add-agent-entry').click(); await page.getByRole('menuitem', {name: 'DSH', exact: true}).click();
+      await page.locator('#dsh-local-setup').getByText('未发现 DSH', {exact: true}).waitFor({state: 'visible'}); assert.equal(discoveries, 0, 'DSH接入抽屉不探测Codex');
+      await page.locator('#cancel-local-dsh').click(); await parent().waitFor({state: 'visible'});
       await choose(); await child().getByText('正在检测本机 Codex…', {exact: true}).waitFor({state: 'visible'}); assert.equal(await page.locator('#confirm-local-codex').isDisabled(), true);
       release!(); await child().getByText('未发现 Codex', {exact: true}).waitFor({state: 'visible'}); assert.equal(await page.locator('#confirm-local-codex').isDisabled(), true);
       const viewport = page.viewportSize();
@@ -334,7 +335,7 @@ export async function runCodexAgentRegistryJourney({t, page, workspaceUrl, taskI
     const connections = (route: any) => route.fulfill({json: {connections: [{...connection, status: removed ? 'disconnected' : 'configured'}]}});
     await page.route(pattern, handler); await page.route('**/api/v1/app/codex/connections', connections);
     try {
-      await open(); assert.equal(await row(dsh.id).getByRole('button', {name: /^移除 /u}).count(), 0, 'DSH不增加移除操作'); await parent().getByRole('button', {name: dsh.label + ' 详情', exact: true}).click(); await details(dsh.label).waitFor({state: 'visible'}); await closeDetails(dsh.label);
+      await open(); assert.equal(await row(dsh.id).getByRole('button', {name: /^移除 /u}).count(), 1, 'DSH也提供移除操作'); await parent().getByRole('button', {name: dsh.label + ' 详情', exact: true}).click(); await details(dsh.label).waitFor({state: 'visible'}); await closeDetails(dsh.label);
       await parent().getByRole('button', {name: agent.label + ' 详情', exact: true}).click(); await details(agent.label).waitFor({state: 'visible'}); await closeDetails(agent.label); await removeEntry().click();
       const dialog = page.getByRole('dialog', {name: '移除 Codex 接入？', exact: true}); await dialog.waitFor({state: 'visible'}); await dialog.getByRole('button', {name: /^取\s*消$/u}).click({trial: true}); await dialog.evaluate(async (element: HTMLElement) => {await Promise.all(element.getAnimations({subtree: true}).map(animation => animation.finished.catch(() => {})));}); await capture(page, 'codex-remove-confirmation.png');
       assert.equal(await page.locator('.agent-registry-details').count(), 0, '移除确认不残留详情浮窗');

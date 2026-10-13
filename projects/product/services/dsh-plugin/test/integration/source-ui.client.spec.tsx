@@ -2,7 +2,7 @@
 /** Real SlotRegistry, ui-session and renderer with actual Trajectory and Buildr applies. */
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { createElement } from 'react';
-import { act, cleanup, fireEvent, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
 import { SlotTestRuntime, stubConfigForm, usePinnedBrowserLanguages } from '@deepseek-ai/dsh-client-test-runtime';
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store';
 import { UiConversation, EMPTY_CONVERSATION_SNAPSHOT } from '@deepseek-ai/dsh-client-ui-conversation/client';
@@ -23,6 +23,8 @@ import { recordedSourceSummary } from '../../plugin/src/event-sources.ts';
 import { sources, withBody } from '../support/recorded-sources.ts';
 import type { EventSources } from '../../plugin/src/source-types.ts';
 import type { ActivationStatus } from '../../plugin/src/types.ts';
+import type { BindingMaintenanceView } from '../../plugin/src/types.ts';
+import { BindingConfiguration, type BindingConfigurationRemote } from '../../plugin/src/BindingConfiguration.tsx';
 const markdownFailure = vi.hoisted(() => ({ enabled: false }));
 vi.mock('@deepseek-ai/dsh-client-ui-primitives', async importOriginal => {
  const original = await importOriginal<typeof import('@deepseek-ai/dsh-client-ui-primitives')>();
@@ -325,4 +327,70 @@ it('a rejected Client keeps diagnostics reachable and gates all business seats b
  await act(() => scene.buildr.dispose());
  expect(scene.runtime.slots.entries('conversation.view').some(entry => entry.options.id === 'trajectory')).toBe(true);
  expect(scene.runtime.slots.entries('conversation.view').some(entry => entry.options.id === 'buildr')).toBe(false);
+});
+
+async function bindingForm(remote: BindingConfigurationRemote) {
+ const view = render(createElement(BindingConfiguration, { entryId: 'binding-timeout-fixture', view: 'page',
+  remote: () => remote, t: (key: keyof typeof zh) => zh[key] } as never));
+ const details = view.container.querySelector('details')!;
+ await act(async () => { details.open = true; fireEvent(details, new Event('toggle')); });
+ return view;
+}
+const bindingView = (revision: string, cliEntry: string): BindingMaintenanceView => ({ revision,
+ binding: { nodeExecutable: '/verified/node', cliEntry } });
+
+it('an unresolved binding read times out, enables retry and ignores its late reply', async () => {
+ vi.useFakeTimers(); sessionStorage.clear();
+ try {
+  const pending = Promise.withResolvers<{ ok: boolean; value: BindingMaintenanceView }>();
+  const remote = { bindingView: vi.fn().mockReturnValueOnce(pending.promise).mockResolvedValue({ ok: true, value: bindingView('fresh', '/verified/fresh') }), updateBinding: vi.fn() };
+  const view = await bindingForm(remote), read = view.getByRole('button', { name: zh.bindingRead }) as HTMLButtonElement;
+  expect(read.disabled).toBe(true); expect(remote.bindingView).toHaveBeenCalledTimes(1);
+  await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+  expect(read.disabled).toBe(false); expect(view.getByRole('status').textContent).toBe(zh.bindingReadFailed);
+  await act(async () => { fireEvent.click(read); });
+  expect(view.getByDisplayValue('/verified/fresh')).toBeTruthy();
+  await act(async () => { pending.resolve({ ok: true, value: bindingView('late', '/verified/late') }); });
+  expect(view.queryByDisplayValue('/verified/late')).toBeNull(); expect(view.getByDisplayValue('/verified/fresh')).toBeTruthy();
+  expect(remote.bindingView).toHaveBeenCalledTimes(2);
+ } finally { vi.useRealTimers(); sessionStorage.clear(); }
+});
+
+it('a lost binding restore reply releases controls without replaying and cannot override a fresh read', async () => {
+ vi.useFakeTimers(); sessionStorage.clear();
+ try {
+  sessionStorage.setItem('buildr.maintainer-binding-backup.v1.binding-timeout-fixture', JSON.stringify({ binding: bindingView('original', '/verified/original').binding }));
+  const pending = Promise.withResolvers<{ ok: boolean; value: BindingMaintenanceView }>();
+  const remote = { bindingView: vi.fn().mockResolvedValueOnce({ ok: true, value: bindingView('observed', '/verified/preview') })
+   .mockResolvedValue({ ok: true, value: bindingView('restored', '/verified/original') }), updateBinding: vi.fn().mockReturnValue(pending.promise) };
+  const view = await bindingForm(remote), restore = view.getByRole('button', { name: zh.bindingRestore }) as HTMLButtonElement;
+  await act(async () => { fireEvent.click(restore); fireEvent.click(restore); });
+  expect(remote.updateBinding).toHaveBeenCalledTimes(1);
+  expect(remote.updateBinding).toHaveBeenCalledWith({ expectedRevision: 'observed', binding: bindingView('original', '/verified/original').binding });
+  expect([...view.container.querySelectorAll('input,button')].every(element => (element as HTMLInputElement).disabled)).toBe(true);
+  await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+  expect([...view.container.querySelectorAll('input,button')].every(element => !(element as HTMLInputElement).disabled)).toBe(true);
+  expect(view.getByRole('status').textContent).toBe(zh.bindingSaveUnconfirmed);
+  expect(sessionStorage.getItem('buildr.maintainer-binding-backup.v1.binding-timeout-fixture')).not.toBeNull();
+  await act(async () => { fireEvent.click(view.getByRole('button', { name: zh.bindingRead })); });
+  expect(view.getByDisplayValue('/verified/original')).toBeTruthy();
+  await act(async () => { pending.resolve({ ok: true, value: bindingView('late', '/verified/late') }); });
+  expect(view.queryByDisplayValue('/verified/late')).toBeNull(); expect(view.getByDisplayValue('/verified/original')).toBeTruthy();
+  expect(view.queryByText(zh.bindingSaved)).toBeNull(); expect(remote.updateBinding).toHaveBeenCalledTimes(1);
+  expect(sessionStorage.getItem('buildr.maintainer-binding-backup.v1.binding-timeout-fixture')).not.toBeNull();
+ } finally { vi.useRealTimers(); sessionStorage.clear(); }
+});
+
+it('a replaced binding form cannot clear the restore backup on an old successful reply', async () => {
+ vi.useFakeTimers(); sessionStorage.clear();
+ try {
+  const pending = Promise.withResolvers<{ ok: boolean; value: BindingMaintenanceView }>();
+  const remote = { bindingView: vi.fn().mockResolvedValue({ ok: true, value: bindingView('observed', '/verified/original') }), updateBinding: vi.fn().mockReturnValue(pending.promise) };
+  const view = await bindingForm(remote);
+  await act(async () => { fireEvent.click(view.getByRole('button', { name: zh.bindingRestore })); });
+  view.unmount();
+  await act(async () => { pending.resolve({ ok: true, value: bindingView('late', '/verified/original') }); });
+  expect(sessionStorage.getItem('buildr.maintainer-binding-backup.v1.binding-timeout-fixture')).not.toBeNull();
+  expect(remote.updateBinding).toHaveBeenCalledTimes(1);
+ } finally { vi.useRealTimers(); sessionStorage.clear(); }
 });

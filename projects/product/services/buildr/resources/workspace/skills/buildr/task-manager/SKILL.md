@@ -29,6 +29,20 @@ buildr codex link --target <canonical-workspace> --task <task-id> --native-sessi
 
 关联动作只保存任务与会话的多对多关系，不发送消息、不启动任务或新会话。唯一有效 Codex 接入可自动选择；多个有效接入时明确指定，不能借默认生成智能体猜测。缺少准确身份或有效接入、接入范围变化、关联失败或结果不明时，保留已创建任务并如实说明尚未关联；结果不明先查询已有关系，不重复创建任务、重装插件或重启桌面。成功后核对返回的工作空间、任务与 `nativeSessionId`，并在回复中使用返回的固定任务链接，供用户在已有侧边页面打开任务。
 
+## DSH 原生会话与任务关联
+
+用户在 DSH 原生会话（Session）中要求关联任务（Task），或当前会话（Session）新建任务（Task）成功后，直接核对目标工作空间（Workspace）和任务（Task），由承载用户请求的会话（Session）通过本次原生 Bash 工具（Tool）读取 `DSH_SESSION_ID`，再显式关联。新任务（Task）默认关联，无需重复询问；用户明确不关联时遵从，接续已有任务（Task）不因普通读取自动新增关系。
+
+```text
+buildr dsh link --target <canonical-workspace> --task <task-id> --native-session-id <direct-DSH_SESSION_ID> [--connection-id <dsh-connection-id>] --json
+buildr dsh sessions --target <canonical-workspace> [--task <task-id>] [--native-session-id <id>] --json
+buildr dsh open-task <task-id> --target <canonical-workspace> --native-session-id <direct-DSH_SESSION_ID> [--connection-id <dsh-connection-id>] --json
+```
+
+DSH 原生 Bash 工具（Tool）按本次执行注入当前会话（Session）的 `DSH_SESSION_ID`；普通终端或无智能体（Agent）的命令不保证有该字段。不得用桌面当前选中聊天、全局进程环境、子智能体（Subagent）或临时生成身份代替，命令不会隐式猜测编号。子执行只交还任务（Task）创建结果，由原生会话（Session）采集并关联。无准确身份、无明确有效接入、关联失败或结果不明时，保留已创建任务（Task）并说明尚未关联；先查询已有关系，不重建任务（Task）或启动替代聊天。关联只保存多对多关系，不复制历史或发送消息；成功后核对返回的工作空间（Workspace）、任务（Task）及 `nativeSessionId`，使用返回的准确任务（Task）链接供用户打开。
+
+用户要求在当前 DSH 会话（Session）内打开已关联任务（Task）时，使用 `dsh open-task`，由准确关系构造本渠道地址并委托桌面导航；不接受任意网址，不广播到其他窗口。只有返回准确原生身份及实际打开回执时才说明已打开，歧义或结果不明时不冒称送达。
+
 ## 普通任务
 
 确认当前工作空间（Workspace）、任务标识、授权范围及真实目标。已有任务缺少当前记录时先 `task inspect`，刚读取或前一步成功写入返回的完整记录可直接接续。Task Record自身结构有效时始终返回完整记录；响应中的`referenceDiagnostics`只说明当前Project、Service或Change可用性，不属于Task业务事实。`todo`只保存尚未启动的意向；`active`表示已开始。子任务只用于可独立说明目标、范围及成果的交付，临时智能体分工不创建子任务。

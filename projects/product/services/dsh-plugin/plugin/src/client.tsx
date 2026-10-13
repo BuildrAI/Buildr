@@ -22,6 +22,8 @@ import { createSourceReader } from './source-reader.ts';
 import { SourceColumn, SourceObjects, SourceView, type SourceInjected } from './SourceViews.tsx';
 import { createOpenAction, type Status } from './orchestration.ts';
 import { en, zh, type BuildrKey } from './locales.ts';
+import { mountDesktopClient, type DesktopClientRemote } from './desktop-client.ts';
+import { BindingConfiguration, type BindingConfigurationRemote } from './BindingConfiguration.tsx';
 import styles from './styles.module.css';
 
 /**
@@ -31,6 +33,7 @@ import styles from './styles.module.css';
 declare const __BUILDR_ENTRY_ID__: string;
 declare const __BUILDR_TITLE_KEY__: 'title' | 'titleDev';
 declare const __BUILDR_LOCALE__: 'buildr' | 'buildr-dev';
+declare const __BUILDR_PACKAGE_NAME__: string;
 const ENTRY_ID = typeof __BUILDR_ENTRY_ID__ === 'string' ? __BUILDR_ENTRY_ID__ : 'buildr';
 const TITLE_KEY: BuildrKey = typeof __BUILDR_TITLE_KEY__ === 'string' && __BUILDR_TITLE_KEY__ === 'titleDev' ? 'titleDev' : 'title';
 /** Locale and Remote registrations are keys: each package must own its own or the later one is refused. */
@@ -121,17 +124,21 @@ export async function apply(ctx: Context): Promise<void> {
     ctx.effect(() => () => { clearTimeout(missingRemote); });
     const carrier = (globalThis as typeof globalThis & { dshDesktop?: { protocolVersion: number; browser?: object } }).dshDesktop;
     const desktop = carrier?.protocolVersion === 1 && carrier.browser !== undefined;
-    let remoteNamespace: {
+    let remoteNamespace: ({
       activation(): Promise<{ ok: boolean; value: ActivationStatus }>;
       open(): Promise<{ ok: boolean; value: OpenResult }>;
       sourceRecord(input: SourceRecordRequest): Promise<{ ok: boolean; value: SourceRecordResult }>;
-    } | undefined;
+    } & DesktopClientRemote & BindingConfigurationRemote) | undefined;
     let recheck = (): void => {};
     const injected = (): Injected => ({ open: () => {}, recheck: () => recheck(), desktop,
       hooks: { status, compatible, activation, mounted: ctx.sidebarRight.mounted } });
     // Diagnostics belong to this entry even while its business contributions are inactive.
     ctx.slots.inject('shell.overlay', () => ctx.slots.register({ name: 'shell.overlay', id: ENTRY_ID + '-compatibility', locale: LOCALE, inject: injected }, CompatibilityNotice));
     const registerFeatures = async (ctx: Context): Promise<void> => {
+      if (desktop) ctx.slots.inject('plugins.row.config', () => ctx.slots.register({
+        name: 'plugins.row.config', key: __BUILDR_PACKAGE_NAME__ + '#' + ENTRY_ID, locale: LOCALE,
+        inject: () => ({ entryId: ENTRY_ID, remote: () => remoteNamespace }),
+      }, BindingConfiguration));
       // The footer action seat is a flex row owned by the sidebar, and a seat cannot express layout.
       // This rule only affects a container that actually holds one of our entries, so it cannot touch a
       // sidebar that has none, and it never references the sidebar's hashed class names.
@@ -167,6 +174,13 @@ export async function apply(ctx: Context): Promise<void> {
         }
       }, desktop, value => status.set(value), ctx.layout.panelInfo, ENTRY_ID as 'buildr' | 'buildr-dev');
       ctx.effect(() => () => action.dispose());
+      if (desktop) ctx.inject(['uiWorkspace'], scope => {
+        const namespace = remoteNamespace;
+        if (namespace && typeof namespace.desktopCommands === 'function') scope.effect(() => {
+          try { return mountDesktopClient(scope, namespace, ENTRY_ID); }
+          catch { return () => {}; }
+        });
+      });
       const injected = (): Injected => ({ open: () => { void action.click(); }, recheck: () => recheck(), desktop,
         hooks: { status, compatible, activation, mounted: ctx.sidebarRight.mounted } });
       ctx.slots.inject('sidebar.footer.action', function* () {

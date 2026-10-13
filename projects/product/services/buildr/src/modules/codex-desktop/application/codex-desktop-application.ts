@@ -3,9 +3,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { CodexAgentRegistration } from '../../agent-operations/module.ts';
 import { CodexDesktopRepository } from '../persistence/codex-desktop-repository.ts';
+import { NativeSessionRelationOperations } from '../../native-session-links/domain/native-session-links.ts';
 import {
   codexDigest, codexFailure, codexSessionUrl, codexTaskUrl, isNativeSessionId, retiredCodexPlugin,
-  type CodexDesktopConnection, type CodexDesktopConnectionView, type CodexSessionRelation, type CodexWorkspaceSessions,
+  type CodexDesktopConnection, type CodexDesktopConnectionView, type CodexWorkspaceSessions,
 } from '../domain/codex-desktop.ts';
 
 type Installation = { appPath: string; appVersion: string | null };
@@ -34,10 +35,9 @@ function connectionScope(appPath: string, codexHome: string) {
 }
 export class CodexDesktopApplication {
   private readonly repository: CodexDesktopRepository;
-  private readonly now: () => number;
+  private readonly relations: NativeSessionRelationOperations;
   private readonly dependencies: Dependencies;
-  constructor(dependencies: Dependencies) { this.dependencies = dependencies; this.repository = new CodexDesktopRepository(dependencies.dataRoot); this.now = dependencies.now ?? Date.now; }
-  private stamp() { return new Date(this.now()).toISOString(); }
+  constructor(dependencies: Dependencies) { this.dependencies = dependencies; this.repository = new CodexDesktopRepository(dependencies.dataRoot); this.relations = new NativeSessionRelationOperations((code, message, status) => codexFailure('codex_' + code, message, status), dependencies.now); }
   private connection(id: string) {
     const connection = this.repository.readConnections().connections.find(c => c.id === id);
     if (!connection) throw codexFailure('codex_connection_missing', 'Codex 关联配置不存在，请在接入页面确认。', 404);
@@ -114,13 +114,7 @@ export class CodexDesktopApplication {
   }
   private ensureRelation(state: CodexWorkspaceSessions, rootPath: string, input: { taskId: string; connectionId: string; nativeSessionId: string }) {
     this.task(rootPath, input.taskId);
-    const existing = state.relations.find(r => r.taskId === input.taskId && r.connectionId === input.connectionId && r.nativeSessionId === input.nativeSessionId);
-    if (existing) return { relation: existing, alreadyLinked: true };
-    if (state.relations.length >= 10_000) throw codexFailure('codex_relation_limit', '任务会话关联数量已达上限。', 409);
-    const relation: CodexSessionRelation = { id: crypto.randomUUID(), workspaceId: state.workspaceId, ...input, createdAt: this.stamp(), revision: '' };
-    relation.revision = codexDigest(relation);
-    state.relations.push(relation);
-    return { relation, alreadyLinked: false };
+    return this.relations.ensure(state, input);
   }
   /** The receiving chat supplies its directly observed identity after user authorization. */
   linkSession(workspaceId: string, input: { taskId: string; nativeSessionId: string; connectionId?: string }) {
@@ -151,16 +145,11 @@ export class CodexDesktopApplication {
     if (input.taskId) this.task(rootPath, input.taskId);
     if (input.bindingRequestId) throw retiredCodexPlugin();
     if (input.nativeSessionId && !isNativeSessionId(input.nativeSessionId)) throw codexFailure('codex_native_session_invalid', '原生会话身份无效。');
-    return { workspaceId, relations: this.repository.readWorkspace(rootPath, workspaceId).relations.filter(r => (!input.taskId || r.taskId === input.taskId) && (!input.connectionId || r.connectionId === input.connectionId) && (!input.nativeSessionId || r.nativeSessionId === input.nativeSessionId)).map(r => ({ ...r, sessionUrl: codexSessionUrl(r.nativeSessionId), taskUrl: codexTaskUrl(workspaceId, r.taskId) })) };
+    return { workspaceId, relations: this.relations.query(this.repository.readWorkspace(rootPath, workspaceId).relations, input).map(r => ({ ...r, sessionUrl: codexSessionUrl(r.nativeSessionId), taskUrl: codexTaskUrl(workspaceId, r.taskId) })) };
   }
   unlinkSession(workspaceId: string, input: { relationId: string; expectedRevision: string }) {
     const { rootPath } = this.workspace(workspaceId);
-    this.repository.mutateWorkspace(rootPath, workspaceId, state => {
-      const r = state.relations.find(r => r.id === input.relationId);
-      if (!r) throw codexFailure('codex_relation_missing', '关联关系已不存在，请刷新。', 404);
-      if (r.revision !== input.expectedRevision) throw codexFailure('codex_relation_changed', '关联版本已变化，请刷新后重试。', 409);
-      state.relations = state.relations.filter(r => r.id !== input.relationId);
-    });
+    this.repository.mutateWorkspace(rootPath, workspaceId, state => this.relations.unlink(state, input));
     return this.sessionRelations(workspaceId);
   }
 }
