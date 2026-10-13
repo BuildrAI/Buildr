@@ -12,8 +12,8 @@ import { useSourceControlRead } from './useSourceControlRead';
 const observationNote = (data: CodeBranchesResponse | CodeAuthorsResponse | null) => data ? [data.coverage.truncated ? '读取范围达到上限，当前记录不完整。' : '', ...data.diagnostics.map(item => item.message)].filter(Boolean).join('；') : '';
 type LocationProps = { workspaceId: string; repository: SourceControlRepository; worktree: SourceControlWorktree; version: string };
 
-function BranchControl({workspaceId, repository, worktree, version, ready, onRefresh, onOpenPosition, onViewChanges}: LocationProps & {
-  ready: boolean; onRefresh(): void | Promise<void>; onOpenPosition(worktreeId: string): void; onViewChanges(): void;
+function BranchControl({workspaceId, repository, worktree, version, ready, onOpenPosition, onViewChanges}: LocationProps & {
+  ready: boolean; onOpenPosition(worktreeId: string): void; onViewChanges(): void;
 }) {
   const {message} = App.useApp();
   const [open, setOpen] = useState(false), [pending, setPending] = useState(false);
@@ -44,8 +44,8 @@ function BranchControl({workspaceId, repository, worktree, version, ready, onRef
         setFailure(observedFailure); message.error(observedFailure.message);
       }
     } finally {
-      // Closing a popup does not revoke an issued write. Reobserve both success and failure effects.
-      await Promise.allSettled([onRefresh(), ...(isCurrent() ? [branches.refresh()] : [])]);
+      // Catalog readers receive the API completion notice independently of this popup's lifecycle.
+      if (isCurrent()) await branches.refresh();
       writing.current = false;
       if (isCurrent()) setPending(false);
     }
@@ -80,16 +80,10 @@ function HistoryControls({workspaceId, repository, worktree, version, branchRef,
 }
 
 /** Each concrete location owns its read-only history conditions. All writes live in the row adapter. */
-export function useSourceControlBranches(workspaceId: string, version: string, onRefresh: () => void | Promise<void>): SourceControlBranchExtension {
+export function useSourceControlBranches(workspaceId: string, version: string): SourceControlBranchExtension {
   const [ranges, setRanges] = useState<Record<string, {branchRef: string; authorEmail: string}>>({});
   const [selection, setSelection] = useState<SourceControlBranchExtension['selection']>();
   const serial = useRef(0);
-  const owner = useRef({workspaceId, onRefresh, mounted: false});
-  owner.current.workspaceId = workspaceId; owner.current.onRefresh = onRefresh;
-  useEffect(() => { owner.current.mounted = true; return () => { owner.current.mounted = false; }; }, []);
-  const refreshOwner = useCallback(async () => {
-    if (owner.current.mounted && owner.current.workspaceId === workspaceId) await owner.current.onRefresh();
-  }, [workspaceId]);
   const key = (repository: SourceControlRepository, worktree: SourceControlWorktree) => JSON.stringify([workspaceId, sourceControlWorktreeKey(repository.id, worktree.worktreeId)]);
   const range = (repository: SourceControlRepository, worktree: SourceControlWorktree) => ranges[key(repository, worktree)] || {branchRef: 'HEAD', authorEmail: ''};
   const openPosition = (repositoryId: string, worktreeId: string, scene: 'history' | 'changes') => setSelection({key: workspaceId + ':' + ++serial.current, repositoryId, worktreeId, scene});
@@ -100,7 +94,7 @@ export function useSourceControlBranches(workspaceId: string, version: string, o
       return {branch: current.branchRef === 'HEAD' ? undefined : current.branchRef, authorEmail: current.authorEmail || undefined};
     },
     selection,
-    rowControl: (repository, worktree, ready) => <BranchControl key={JSON.stringify([workspaceId, repository.id, worktree.worktreeId])} workspaceId={workspaceId} repository={repository} worktree={worktree} version={version} ready={ready} onRefresh={refreshOwner}
+    rowControl: (repository, worktree, ready) => <BranchControl key={JSON.stringify([workspaceId, repository.id, worktree.worktreeId])} workspaceId={workspaceId} repository={repository} worktree={worktree} version={version} ready={ready}
       onOpenPosition={worktreeId => openPosition(repository.id, worktreeId, 'history')} onViewChanges={() => openPosition(repository.id, worktree.worktreeId, 'changes')} />,
     historyControls(repository, worktree, controls) {
       const id = key(repository, worktree), current = range(repository, worktree);

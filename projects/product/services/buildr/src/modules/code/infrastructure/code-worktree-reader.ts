@@ -40,3 +40,24 @@ export function resolveCodeWorktree(registeredLocation:string,repositoryId:strin
   if(identity.id!==worktreeId||!sameFilesystemPath(identity.commonDirectory,listing.commonDirectory)||!sameFilesystemPath(identity.root,worktree.location))throw codeFailure('code_worktree_identity_changed','工作树目录已不再属于该代码库，不能读取替代目录。',409);
   return {...worktree,location:identity.root};
 }
+
+/** One catalog read owns its inventory; only the selected member is re-observed around each status read. */
+export function createCodeWorktreeReadSession(registeredLocation: string, repositoryId: string) {
+  const listing = enumerateCodeWorktrees(registeredLocation, repositoryId);
+  function resolve(worktreeId: string) {
+    const worktree = listing.worktrees.find(member => member.worktreeId === worktreeId);
+    if (!worktree) throw codeFailure('code_worktree_not_registered', '所选工作树已移除或不属于这个登记代码库，请刷新清单。', 409);
+    let identity: ReturnType<typeof observeGitCheckoutReadIdentity>;
+    try { identity = observeGitCheckoutReadIdentity(worktree.location); }
+    catch { throw codeFailure('code_worktree_unavailable', 'Git 已登记的工作树目录当前不可读取。', 404); }
+    if (identity.id !== worktreeId || !sameFilesystemPath(identity.commonDirectory, listing.commonDirectory) || !sameFilesystemPath(identity.root, worktree.location)) throw codeFailure('code_worktree_identity_changed', '工作树目录已不再属于该代码库，不能读取替代目录。', 409);
+    return { ...worktree, location: identity.root };
+  }
+  function verify(worktreeId: string, currentRegisteredLocation: string) {
+    const worktree = listing.worktrees.find(member => member.worktreeId === worktreeId)!;
+    const fields = codeGit(currentRegisteredLocation, ['worktree', 'list', '--porcelain', '-z'], 8 * 1024 * 1024).toString('utf8').split('\0');
+    if (!fields.some(field => field.startsWith('worktree ') && sameFilesystemPath(field.slice(9), worktree.location))) throw codeFailure('code_worktree_not_registered', '所选工作树已移除或不属于这个登记代码库，请刷新清单。', 409);
+    resolve(worktreeId);
+  }
+  return { ...listing, resolve, verify };
+}

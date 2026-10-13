@@ -77,7 +77,18 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
   const enterHoverCard = async (card: any) => {
     await card.evaluate(async (element: HTMLElement) => {
       const layer = element.closest('.ant-popover') || element;
-      await Promise.all(layer.getAnimations({subtree:true}).map(animation => animation.finished.catch(() => {})));
+      // rc-motion starts its animation on a later frame. A one-time animation
+      // snapshot can therefore precede the final placement and produce a stale hit point.
+      let previous = '', stable = 0;
+      for (let frame = 0; frame < 120; frame++) {
+        await new Promise(requestAnimationFrame);
+        const box = element.getBoundingClientRect(), bounds = [box.x,box.y,box.width,box.height].join(',');
+        const moving = /(?:appear|enter)(?:-|\s|$)/.test(layer.className) || layer.getAnimations({subtree:true}).some(animation => animation.playState === 'running' || animation.pending);
+        stable = !moving && box.width > 0 && box.height > 0 && bounds === previous ? stable + 1 : 0;
+        previous = bounds;
+        if (stable >= 3) return;
+      }
+      throw new Error('工作树信息层未在取点前稳定');
     });
     const box = await card.boundingBox(); assert.ok(box);
     // Enter the observed card directly, as a user does. Locator.hover's automatic
@@ -86,6 +97,11 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     const point = {x:box.x + Math.min(20,box.width/2),y:box.y + Math.min(20,box.height/2)};
     await card.evaluate(async () => { await new Promise(requestAnimationFrame); await new Promise(requestAnimationFrame); });
     const pointerInside = await card.evaluate((element:HTMLElement, position:{x:number;y:number}) => { const hit=document.elementFromPoint(position.x,position.y);return Boolean(hit && element.contains(hit) && hit.closest('article')===element); }, point);
+    if (!pointerInside) {
+      const actual = await card.evaluate((element:HTMLElement, position:{x:number;y:number}) => {const hit=document.elementFromPoint(position.x,position.y);return {bounds:element.getBoundingClientRect().toJSON(), hit:hit?.outerHTML.slice(0,400), parent:hit?.closest('article')?.getAttribute('aria-label')};}, point);
+      process.stderr.write('[source-control-hover-position-failure] ' + JSON.stringify({box, point, actual}) + '\n');
+      await capture(page, 'source-control-hover-position-failure.png');
+    }
     assert.equal(pointerInside, true, '真实命中必须属于同一个工作树信息层');
     await page.waitForFunction(({x,y}: {x:number;y:number}) => {
       const hit=document.elementFromPoint(x,y), owner=hit?.closest('article[aria-label="工作树来源信息"]');
@@ -126,10 +142,10 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     const pathname = new URL(page.url()).pathname, owner = new URL(workspaceUrl).pathname + '/tasks';
     assert.ok(pathname === owner || pathname === owner + '/browser-task', '同一任务仍在任务领域内查看');
   };
-  const fullText = async () => root().locator('.repository-source-code code').evaluateAll((elements: HTMLElement[]) => elements.map(element => element.textContent).join('\n'));
+  const fullText = async () => root().locator('.repository-source-code .cm-line').evaluateAll((elements: HTMLElement[]) => elements.map(element => element.textContent).join('\n'));
   const waitFull = async (text: string) => {
     await root().locator('.repository-source-code').waitFor();
-    await page.waitForFunction((expected: string) => Array.from(document.querySelectorAll('.code-source-control-page:not([hidden]) .repository-source-code code')).map(element => element.textContent).join('\n') === expected, text);
+    await page.waitForFunction((expected: string) => Array.from(document.querySelectorAll('.code-source-control-page:not([hidden]) .repository-source-code .cm-line')).map(element => element.textContent).join('\n') === expected, text);
     assert.equal(await fullText(), text);
   };
   const commitRow = (hash: string) => root().locator('.source-control-graph > li[data-source-commit="' + hash + '"]');
@@ -635,7 +651,12 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     const response = await returned; assert.equal(response.status(), 200);
     const body = await response.json(); assert.equal(body.source.worktreeId, worktree.worktreeId); assert.equal(body.source.location, worktree.location);
     assert.equal(body.source.commitHash, hash || null); assert.equal(body.content, content);
-    await waitFull(content); await root().getByRole('button', {name: '返回差异', exact: true}).click();
+    try { await waitFull(content); }
+    catch (error) {
+      process.stderr.write('[source-control-full-file-failure] ' + JSON.stringify({worktree:worktree.worktreeId, area, expected:content, actual:await fullText(), visible:await root().locator('.source-control-reader').innerText()}) + '\n');
+      await capture(page, 'source-control-full-file-failure.png'); throw error;
+    }
+    await root().getByRole('button', {name: '返回差异', exact: true}).click();
   };
   await scenario('同库全部真实工作树分组，同路径两层及全文保持各自版本', async () => {
     await page.setViewportSize({width: 1440, height: 1000}); await open();
@@ -651,10 +672,16 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
       const columns = await rendered.locator('.' + statusClass).evaluateAll((elements: HTMLElement[]) => elements.map(element => element.getBoundingClientRect().x));
       assert.ok(columns.length === repository.worktrees.length && columns.every((x: number) => Math.abs(x - columns[0]) <= 2), '主工作树和各工作树的远程、文件及任务状态保持列对齐：' + statusClass);
     }
-    for (const selector of ['.source-control-repository-copy strong', '.source-control-remote-status', '.source-control-file-status', '.source-control-task-slot']) {
+    for (const selector of ['.source-control-remote-status', '.source-control-file-status', '.source-control-task-slot']) {
       const boundaries = await root().locator('.source-control-repository-tree-scroll').locator(selector).evaluateAll((elements: HTMLElement[]) => elements.map(element => ({left: element.getBoundingClientRect().left, right: element.getBoundingClientRect().right})));
-      assert.ok(boundaries.every((box: any) => Math.abs(box.left - boundaries[0].left) <= 2 && Math.abs(box.right - boundaries[0].right) <= 2), '各代码库主工作树与子工作树的名称和状态上下对齐：' + selector);
+      assert.ok(boundaries.every((box: any) => Math.abs(box.left - boundaries[0].left) <= 2 && Math.abs(box.right - boundaries[0].right) <= 2), '各代码库主工作树与子工作树的状态上下对齐：' + selector);
     }
+    const hierarchy = await rendered.evaluate((element: HTMLElement) => {
+      const parent = element.querySelector('.source-control-repository-copy strong')!.getBoundingClientRect().left;
+      const children = [...element.querySelectorAll('.source-control-worktree .source-control-repository-copy strong')].map(child => child.getBoundingClientRect().left);
+      return {parent, children};
+    });
+    assert.ok(hierarchy.children.length > 0 && hierarchy.children.every((left: number) => left >= hierarchy.parent + 16 && left <= hierarchy.parent + 32), '子工作树名称比所属代码库缩进一级，保持清楚的树状层级');
     for (const expected of remoteStatuses) {
       const owner = observed.repositories.find((item: any) => item.worktrees.some((worktree: any) => worktree.location === expected.location));
       const worktree = owner.worktrees.find((item: any) => item.location === expected.location);

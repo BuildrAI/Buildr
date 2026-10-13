@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {branchSwitchImpact, branchSwitchFailure} from '../src/features/code/source-control-branches.ts';
+import {branchSwitchImpact, branchSwitchFailure, sourceControlAfterBranchSwitch} from '../src/features/code/source-control-branches.ts';
 
 const main = {worktreeId: 'main', name: 'main', isMain: true, location: '/repo', branch: 'dev', status: 'ready'};
 const linked = {worktreeId: 'linked', name: 'task', isMain: false, location: '/repo/.worktrees/task', branch: 'main', status: 'ready'};
@@ -47,4 +47,23 @@ test('部分写入与无法重读的失败保留真实效果，不表达为零�
   assert.equal(branchSwitchFailure(error).message, '后续核对失败 已建立本地分支 feature/review。 当前位置已切换到 feature/review。');
   const unknown = Object.assign(new Error('当前状态不可读取'), {details: {resultUnconfirmed: true}});
   assert.match(branchSwitchFailure(unknown).message, /当前效果尚未确认/);
+});
+
+test('确认切换立即更新准确工作树的分支，旧文件与数值等待重新观察', () => {
+  const tree = (id, isRegistered = false) => ({worktreeId:id, isRegistered, branch:'old', head:'old-head', upstream:'origin/old', ahead:2, behind:3, changes:[{path:'old.ts'}], fileCount:1, observedRevision:'old-revision', status:'complete'});
+  const primary = tree('main', true), child = tree('linked'), other = {id:'other', worktrees:[tree('linked')]};
+  const current = {readAt:'before', repositories:[{id:'repo', worktrees:[primary, child], branch:'old', fileCount:2, changes:primary.changes}, other]};
+  const result = {source:{repositoryId:'repo', worktreeId:'linked'}, branch:'feature/new', head:'new-head', upstream:'origin/feature/new', readAt:'after'};
+  const updated = sourceControlAfterBranchSwitch(current, result), changed = updated.repositories[0].worktrees[1];
+  assert.equal(changed.branch, 'feature/new'); assert.equal(changed.head, 'new-head'); assert.equal(changed.upstream, 'origin/feature/new');
+  assert.deepEqual([changed.ahead, changed.behind, changed.fileCount, changed.observedRevision], [null, null, null, null]);
+  assert.deepEqual(changed.changes, []); assert.equal(changed.status, 'partial');
+  assert.equal(updated.repositories[0].worktrees[0], primary); assert.equal(updated.repositories[0].branch, 'old');
+  assert.equal(updated.repositories[1], other); assert.equal(updated.readAt, 'after');
+  assert.equal(current.repositories[0].worktrees[1].branch, 'old');
+  const mainUpdated = sourceControlAfterBranchSwitch(current, {...result, source:{repositoryId:'repo', worktreeId:'main'}}).repositories[0];
+  assert.equal(mainUpdated.branch, 'feature/new'); assert.deepEqual(mainUpdated.changes, []); assert.equal(mainUpdated.fileCount, null);
+  assert.equal(sourceControlAfterBranchSwitch(current, {...result, source:{repositoryId:'missing', worktreeId:'linked'}}), current);
+  const newer = {...current, repositories:[{...current.repositories[0], worktrees:[primary, {...child, branch:'newer', readAt:'2026-10-13T09:00:02.000Z'}]}, other]};
+  assert.equal(sourceControlAfterBranchSwitch(newer, {...result, readAt:'2026-10-13T09:00:01.000Z'}), newer, '迟到的写入结果不能回退较新的工作树观察');
 });

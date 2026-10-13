@@ -60,13 +60,14 @@ export async function runSourceControlBranchesJourney({ t, page, workspaceUrl, c
     assert.equal(await page.locator('.ant-modal-mask:visible,.ant-drawer-mask:visible').count(), 0, '切换使用相邻小浮层，没有整页遮罩');
     return { manager, action };
   };
-  const switchTo = async (worktree: any, name: string, target: string, remote = false, collapseWhileWriting = false) => {
+  const switchTo = async (worktree: any, name: string, target: string, remote = false, collapseWhileWriting = false, lifecycle: {whileWriting?(): Promise<void>; afterWrite?(result: any): Promise<void>} = {}) => {
     const { manager, action } = await manage(worktree, name);
     assert.equal(await action.getByRole('button').count(), 1, '正常切换只提供一个明确动作');
     const button = action.getByRole('button', { name: (remote ? '检出并切换为 ' : '切换到 ') + target, exact: true });
     // A cached list may open while its fresh observation is still loading. Start
     // the write-response clock only when that explicit action is actually usable.
     await page.waitForFunction((label: string) => [...document.querySelectorAll<HTMLElement>('[aria-label]')].some(element => element.getAttribute('aria-label') === label && [...element.querySelectorAll<HTMLButtonElement>('button')].some(candidate => !candidate.disabled && !candidate.classList.contains('ant-btn-loading'))), '分支操作 · ' + name);
+    await button.click({trial:true});
     const beforeClick = await button.evaluate((element: HTMLButtonElement) => {
       const rect = element.getBoundingClientRect(), hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
       return {disabled:element.disabled,html:element.outerHTML,rect:rect.toJSON(),hitInside:Boolean(hit && element.contains(hit)),hit:hit ? {tag:hit.tagName,className:hit.getAttribute('class'),text:hit.textContent?.slice(0,120)} : null};
@@ -88,20 +89,23 @@ export async function runSourceControlBranchesJourney({ t, page, workspaceUrl, c
     let release = () => {};
     const gate = new Promise<void>(resolve => { release = resolve; });
     const delayed = async (route: any) => { await gate; await route.continue(); };
-    if (collapseWhileWriting) await page.route('**/code/branch-switch', delayed);
+    const delayWrite = collapseWhileWriting || Boolean(lifecycle.whileWriting);
+    if (delayWrite) await page.route('**/code/branch-switch', delayed);
     try {
       const returned = page.waitForResponse((response: any) => response.request().method() === 'POST' && new URL(response.url()).pathname.endsWith('/code/branch-switch'), { timeout: 20_000 }).then((response:any) => ({response}), (error:unknown) => ({error}));
-      const started = collapseWhileWriting ? page.waitForRequest((request: any) => request.method() === 'POST' && new URL(request.url()).pathname.endsWith('/code/branch-switch')) : null;
+      const started = delayWrite ? page.waitForRequest((request: any) => request.method() === 'POST' && new URL(request.url()).pathname.endsWith('/code/branch-switch')) : null;
       await button.click();
+      if (started) await started;
       if (collapseWhileWriting) {
-        await started;
         await root().getByRole('button', { name: '折叠代码库列表', exact: true }).click();
         assert.equal(await root().locator('.source-control-repository-tree-scroll').isVisible(), false);
       }
+      await lifecycle.whileWriting?.();
       release();
       const outcome = await returned; if (outcome.error) throw outcome.error;
       const response = outcome.response; assert.equal(response.status(), 200);
       const result = await response.json(); assert.equal(result.source.worktreeId, worktree.worktreeId); assert.equal(result.branch, target);
+      await lifecycle.afterWrite?.(result);
       await manager.waitFor({ state: 'hidden' });
       if (collapseWhileWriting) await root().getByRole('button', { name: '展开代码库列表', exact: true }).click();
       await page.waitForFunction(({ id, title }: { id: string; title: string }) => [...document.querySelectorAll('.code-source-control-page:not([hidden]) [data-source-worktree]')].some(element => element.getAttribute('data-source-worktree') === id && element.querySelector('.source-control-row-action-button')?.getAttribute('title') === title), { id: worktree.worktreeId, title: target + ' · 管理分支' });
@@ -119,7 +123,7 @@ export async function runSourceControlBranchesJourney({ t, page, workspaceUrl, c
         const state = window as unknown as {__branchWriteListener?: EventListener};
         if (state.__branchWriteListener) { document.removeEventListener('pointerdown',state.__branchWriteListener,true);document.removeEventListener('click',state.__branchWriteListener,true);delete state.__branchWriteListener; }
       }).catch(()=>{});
-      if (collapseWhileWriting) await page.unroute('**/code/branch-switch', delayed);
+      if (delayWrite) await page.unroute('**/code/branch-switch', delayed);
     }
   };
   const noOverflow = async () => assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
@@ -287,6 +291,92 @@ export async function runSourceControlBranchesJourney({ t, page, workspaceUrl, c
       await commit(branches.second).waitFor(); assert.equal(await commit(branches.tip).count(), 0);
       assert.equal(await scope().innerText(), '分支：当前');
       await noOverflow(); await capture(page, 'source-control-remote-checkout-current-history.png');
+    });
+  });
+
+  for (const refreshMode of ['delayed', 'failed']) await scenario(`远程检出后目录读取${refreshMode === 'delayed' ? '延迟' : '失败'}，立即显示已确认分支且旧状态不冒充新状态`, async () => {
+    await fixture.withBranches(async (branches: any) => {
+      await page.setViewportSize({width:1440, height:1000});
+      const {worktree} = await open(branches);
+      await root().locator('.source-control-browse-tabs').getByText('未提交变更', {exact:true}).click();
+      const retainedFile = () => root().locator('.source-control-change-area .task-changed-row').filter({has:page.locator('.task-changed-path[data-file-path="' + branches.keepPath + '"]')});
+      await retainedFile().waitFor();
+      assert.equal(await row(worktree).locator('.source-control-file-count').innerText(), '1', '切换前确实存在旧分支的已读文件数量');
+      const catalogPath = new URL(api + '/code/source-control').pathname;
+      const matchesCatalog = (url: URL) => url.pathname === catalogPath;
+      let release = () => {};
+      const gate = new Promise<void>(resolve => { release = resolve; });
+      const intercept = async (route: any) => {
+        if (refreshMode === 'delayed') { await gate; await route.continue(); }
+        else await route.fulfill({status:503, json:{error:{code:'browser_catalog_unavailable', message:'浏览器回归：目录读取暂不可用。'}}});
+      };
+      if (refreshMode === 'failed') expectedBrowserErrors.add(catalogPath);
+      await page.route(matchesCatalog, intercept);
+      const refreshed = page.waitForResponse((response: any) => new URL(response.url()).pathname === catalogPath).then((response: any) => ({response}), (error: unknown) => ({error}));
+      try {
+        await switchTo(worktree, branches.remote + '/' + branches.remoteName, branches.remoteName, true, false, {afterWrite:async result => {
+          // Holding the full catalog response distinguishes a server-confirmed
+          // switch from a UI that only updates after its next complete read.
+          await page.waitForFunction(({id, title}: {id:string; title:string}) => [...document.querySelectorAll('.code-source-control-page:not([hidden]) [data-source-worktree]')].some(element => element.getAttribute('data-source-worktree') === id && element.querySelector('.source-control-row-action-button')?.getAttribute('title') === title), {id:worktree.worktreeId, title:branches.remoteName + ' · 管理分支'});
+          assert.equal(result.head, branches.second);
+          assert.match(await row(worktree).locator('.source-control-file-status').getAttribute('aria-label'), /未知|不可读取/);
+          assert.match(await row(worktree).locator('.source-control-remote-status').getAttribute('aria-label'), /未知|不可读取/);
+          assert.equal(await row(worktree).locator('.source-control-file-count,.source-control-remote-count').count(), 0, '旧分支的数量不沿用到新分支');
+          assert.equal(await retainedFile().count(), 0, '尚未重读时不把旧变更列表当作新分支的当前内容');
+          assert.ok((await root().locator('.code-location-summary').innerText()).includes(branches.remoteName), '阅读位置也使用服务端确认的新分支');
+          await capture(page, 'source-control-checkout-catalog-' + refreshMode + '.png');
+          if (refreshMode === 'failed') {
+            const outcome = await refreshed; if (outcome.error) throw outcome.error;
+            assert.equal(outcome.response.status(), 503);
+            await root().getByText('读取失败，保留已有内容。', {exact:true}).waitFor();
+            assert.equal(await row(worktree).locator('.source-control-row-action-button').getAttribute('title'), branches.remoteName + ' · 管理分支', '刷新失败也不能退回旧分支名称');
+            await page.unroute(matchesCatalog, intercept);
+            await root().getByRole('button', {name:'刷新源代码管理', exact:true}).click();
+          } else {
+            release();
+            const outcome = await refreshed; if (outcome.error) throw outcome.error;
+            assert.equal(outcome.response.status(), 200);
+          }
+          await retainedFile().waitFor();
+          assert.equal(await row(worktree).locator('.source-control-file-status').getAttribute('aria-label'), '1 个未提交文件', '完整重读后恢复实际数量与变更列表');
+        }});
+        assert.equal(branches.keepContent(), 'preserve current work\n');
+      } finally {
+        release();
+        await page.unroute(matchesCatalog, intercept);
+      }
+    });
+  });
+
+  await scenario('远程检出写入中切换工作空间再返回，旧页面完成结果刷新当前页面', async () => {
+    await fixture.withBranches(async (branches: any) => {
+      await page.setViewportSize({width:1440, height:1000});
+      const {worktree} = await open(branches);
+      const workspaceId = new URL(workspaceUrl).pathname.split('/').at(-1);
+      const response = await page.request.get(new URL('/api/v1/workspaces', workspaceUrl).href);
+      assert.equal(response.status(), 200);
+      const registry = await response.json();
+      const current = registry.workspaces.find((entry: any) => entry.workspace?.id === workspaceId);
+      const other = registry.workspaces.find((entry: any) => entry.status === 'ready' && entry.workspace?.id && entry.workspace.id !== workspaceId);
+      assert.ok(current?.workspace && other?.workspace, '跨工作空间回归使用宿主真实登记的两个有效对象');
+      const switchWorkspace = async (entry: any) => {
+        await page.getByRole('button', {name:'切换工作空间', exact:true}).click();
+        await page.locator('.workspace-switcher-popup:visible').getByRole('menuitem', {name:entry.workspace.name, exact:true}).click();
+        await page.waitForURL(new URL('/workspaces/' + entry.workspace.id + '/overview', workspaceUrl).href);
+      };
+      await page.evaluate(() => { (window as unknown as {__branchContinuationDocument:string}).__branchContinuationDocument = 'same-document'; });
+      await switchTo(worktree, branches.remote + '/' + branches.remoteName, branches.remoteName, true, false, {whileWriting:async () => {
+        await switchWorkspace(other);
+        await switchWorkspace(current);
+        await page.getByRole('navigation', {name:'主导航', exact:true}).getByRole('link', {name:'代码', exact:true}).click();
+        await page.getByRole('navigation', {name:'代码导航', exact:true}).getByRole('link', {name:'源代码管理', exact:true}).click();
+        await row(worktree).locator('.source-control-row-action-button').waitFor();
+        assert.equal(await row(worktree).locator('.source-control-row-action-button').getAttribute('title'), branches.branch + ' · 管理分支', '旧请求放行前，新页面实际读到原分支');
+        assert.equal(await page.evaluate(() => (window as unknown as {__branchContinuationDocument?:string}).__branchContinuationDocument), 'same-document', '经应用内切换保留原写入请求，没有整页重载');
+      }});
+      assert.equal(branches.localTracking().head, branches.second);
+      assert.equal(branches.keepContent(), 'preserve current work\n');
+      await capture(page, 'source-control-checkout-workspace-return.png');
     });
   });
 

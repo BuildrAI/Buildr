@@ -7,6 +7,34 @@ export async function runLayoutJourney({ t, page, workspaceUrl, capture }: any) 
   const reachable = async (locator: any) => {
     await locator.click({ trial: true });
   };
+  await t.test('工作空间菜单：选项名称对齐、右侧选中标记与窄屏可达', async () => {
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({width, height:900});
+      await page.goto(`${workspaceUrl}/overview`);
+      await page.locator('#workbench-overview').waitFor();
+      await page.waitForLoadState('networkidle');
+      const trigger = page.getByRole('button', {name:'切换工作空间', exact:true});
+      await trigger.click();
+      const menu = page.locator('.workspace-switcher-popup:visible');
+      await menu.locator('.workspace-switcher-option[aria-current="true"]').waitFor();
+      await menu.locator('.workspace-switcher-option').nth(1).waitFor();
+      await reachable(menu.locator('.workspace-switcher-option[aria-current="true"]'));
+      const options = await menu.evaluate((element: HTMLElement) => [...element.querySelectorAll('.workspace-switcher-option')].map(element => {
+        const name = element.querySelector('.workspace-switcher-option-name')!.getBoundingClientRect();
+        const check = element.querySelector('.workspace-switcher-option-check')!.getBoundingClientRect();
+        return {left:name.left, right:name.right, checkLeft:check.left, current:element.getAttribute('aria-current') === 'true'};
+      }));
+      assert.ok(options.length >= 2, '真实登记中至少两个工作空间用于选中与未选中对照');
+      assert.ok(options.every((option: any) => Math.abs(option.left - options[0].left) <= 1 && option.checkLeft > option.right), '名称左对齐，选中标记在文字右侧且不挤占名称起点');
+      assert.equal(options.filter((option: any) => option.current).length, 1);
+      const bounds = await menu.boundingBox();
+      assert.ok(bounds && bounds.x >= 0 && bounds.x + bounds.width <= width + 1, '菜单完整落在视口内');
+      await reachable(menu.locator('[data-action="workspace-settings"]'));
+      await reachable(menu.getByText('全部工作空间', {exact:true}));
+      await noPageOverflow(); await capture(page, `workspace-switcher-${width}.png`);
+      await trigger.click(); await menu.waitFor({state:'hidden'});
+    }
+  });
   const readableDirectoryHeader = async () => {
     const geometry = await page.locator('.resource-directory').evaluate((directory: HTMLElement) => {
       const header = directory.querySelector('.resource-directory-head')!;
@@ -558,6 +586,7 @@ export async function runLayoutJourney({ t, page, workspaceUrl, capture }: any) 
       assert.equal(counts.diffs, 0, '说明刷新仍不读取文件差异');
       await page.waitForLoadState('networkidle');
     } finally {
+      await page.goto('about:blank');
       release?.(); releaseList?.(); page.off('request', scans);
       await page.unroute(listPattern); await page.unroute(otherPattern); await page.unroute(detailPattern); await page.unroute(changePattern); await page.unroute(contextPattern); await page.unroute(changedPattern); await page.unroute(firstCountPattern); await page.unroute(materialsPattern); await page.unroute(sessionsPattern); await page.unroute(contextsPattern);
     }

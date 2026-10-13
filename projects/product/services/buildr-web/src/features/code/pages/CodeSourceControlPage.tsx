@@ -19,7 +19,7 @@ export function CodeSourceControlPage() {
   const entry = location.state?.sourceControlEntry as {origin?: 'task'; nonce?: string; taskId: string; taskTitle?: string; from: {pathname: string; search: string; hash: string; state: unknown}} | undefined;
   const observation = useSourceControl(workspaceId || '', entry?.taskId);
   const actions = useSourceControlActions(workspaceId || '', observation.refresh);
-  const branches = useSourceControlBranches(workspaceId || '', observation.observation.readAt, observation.refresh);
+  const branches = useSourceControlBranches(workspaceId || '', observation.observation.readAt);
   const [scene, setScene] = useState<SourceControlScene>('changes');
   useEffect(() => { setBreadcrumbParts(['代码', '源代码管理']); }, [setBreadcrumbParts]);
   const href = (path: string) => workspaceHref(workspaceId, path);

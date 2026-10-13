@@ -1,4 +1,5 @@
 import { api } from '../../../api';
+import { notifySourceControlChange } from '../source-control-events.ts';
 import type { CodeRepositoriesRepositories, CodeDirectoryDirectory, CodeFileFile, CodeSearchSearch, CodeSourceControlSourceControl, CodeHistoryHistory, CodeCommitCommit, CodeDiffDiff, CodeSourceFileSourceFile, CodeBranchesBranches, CodeAuthorsAuthors, CodeBranchSwitchBranchSwitch, CodeEditorFileEditorFile, CodeSaveFileSaveFile } from '../../../../build/generated/code-http-dto';
 export type CodeSourceControlInput = { repositoryId?: string; worktreeId?: string; taskId?: string; commitHash?: string; path?: string; area?: 'unstaged' | 'staged' | 'untracked' | 'commit'; branch?: string; authorEmail?: string; query?: string; limit?: number; cursor?: string; expectedRevision?: string; page?: number; line?: number; matchQuery?: string };
 export type CodeSourceControlResponse = CodeSourceControlSourceControl;
@@ -37,6 +38,13 @@ export const codeApi = {
   diff:(id:string,input:CodeSourceControlInput,signal?:AbortSignal)=>request<CodeDiffResponse>(id,'diff',input,signal),
   branches:(id:string,input:CodeSourceControlInput,signal?:AbortSignal)=>request<CodeBranchesResponse>(id,'branches',input,signal),
   authors:(id:string,input:CodeSourceControlInput,signal?:AbortSignal)=>request<CodeAuthorsResponse>(id,'authors',input,signal),
-  switchBranch:(id:string,input:CodeBranchSwitchInput)=>api(`/api/v1/workspaces/${encodeURIComponent(id)}/code/branch-switch`,{method:'POST',body:JSON.stringify(input)}) as Promise<CodeBranchSwitchResponse>,
+  switchBranch:async (id:string,input:CodeBranchSwitchInput):Promise<CodeBranchSwitchResponse> => {
+    const notice = {workspaceId:id, repositoryId:input.repositoryId, worktreeId:input.worktreeId};
+    let result: CodeBranchSwitchResponse;
+    try { result = await api(`/api/v1/workspaces/${encodeURIComponent(id)}/code/branch-switch`,{method:'POST',body:JSON.stringify(input)}) as CodeBranchSwitchResponse; }
+    catch (error) { notifySourceControlChange(notice); throw error; }
+    notifySourceControlChange({...notice, result});
+    return result;
+  },
   sourceFile:(id:string,input:CodeSourceControlInput,signal?:AbortSignal)=>request<CodeSourceFileResponse>(id,'source-file',input,signal),
 };

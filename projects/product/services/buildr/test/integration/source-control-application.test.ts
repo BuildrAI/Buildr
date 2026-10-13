@@ -5,7 +5,8 @@ import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { deflateSync } from 'node:zlib';
-import { execFileSync } from 'node:child_process';
+import childProcess, { execFileSync } from 'node:child_process';
+import { syncBuiltinESMExports } from 'node:module';
 import { createCodeApplication } from '../../src/modules/code/application/code-application.ts';
 import { createCodeHttpContribution } from '../../src/modules/code/interfaces/http/code-http.ts';
 import { createCodeCliContributions } from '../../src/modules/code/interfaces/cli/code-cli.ts';
@@ -326,6 +327,55 @@ test('all Git checkouts retain independent same-path index/worktree versions, so
   const pinned=await f.app.sourceFile(f.root,{...f.input,worktreeId:find(b).worktreeId,path:'same.ts',area:'commit',commitHash:first});assert.equal(pinned.content,'root-base\n');assert.equal(pinned.source.worktreeId,find(b).worktreeId);
   assert.equal((await f.app.file(f.root,{...f.input,path:'same.ts'})).content,'main-working\n');assert.equal((await f.app.file(f.root,{...f.input,path:'same.ts',taskId:'task-one'})).content,'a-working\n');
   assert.equal(f.app.sourceControl(f.root,{taskId:'missing-task'}).repositories[0].worktrees.length,3);assert.deepEqual([f.root,a,b].map(checkoutSnapshot),before);
+});
+
+test('catalog refresh scales Git reads linearly and observes fresh status and inventory on the next request', t => {
+  const f = fixture(t); f.write('same.ts', 'base\n'); f.commit('base');
+  const linked = Array.from({ length: 5 }, (_, index) => path.join(f.base, 'topic-' + index));
+  for (const [index, directory] of linked.entries()) f.git('worktree', 'add', '-b', 'topic-' + index, directory);
+  const canonicalLinked = linked.map(directory => fs.realpathSync(directory));
+  const original = childProcess.execFileSync, originalSpawn = childProcess.spawnSync; let gitReads = 0;
+  const capture = t.mock.method(childProcess, 'execFileSync', (file: any, args: any, options: any) => {
+    if (file === 'git') gitReads++;
+    return original(file, args, options);
+  });
+  const captureSpawn = t.mock.method(childProcess, 'spawnSync', (file: any, args: any, options: any) => {
+    if (file === 'git') gitReads++;
+    return originalSpawn(file, args, options);
+  });
+  syncBuiltinESMExports();
+  let catalog: ReturnType<typeof f.app.sourceControl>;
+  try { catalog = f.app.sourceControl(f.root); }
+  finally { capture.mock.restore(); captureSpawn.mock.restore(); syncBuiltinESMExports(); }
+  assert.equal(catalog.repositories[0].worktreeCount, 6); assert.equal(catalog.worktreeCoverage.read, 6); assert.deepEqual(catalog.diagnostics, []);
+  assert.ok(gitReads <= 10 + 8 * 6, `six worktrees should stay within a linear Git-read budget; observed ${gitReads}`);
+  fs.writeFileSync(path.join(linked[0], 'same.ts'), 'changed after first refresh\n'); f.git('worktree', 'remove', linked[1]);
+  const refreshed = f.app.sourceControl(f.root).repositories[0];
+  assert.equal(refreshed.worktreeCount, 5); assert.equal(refreshed.worktrees.find(worktree => worktree.location === fs.realpathSync(linked[0]))?.fileCount, 1);
+  assert.ok(!refreshed.worktrees.some(worktree => worktree.location === canonicalLinked[1]));
+});
+
+test('catalog refresh rejects a checkout replaced while its status was being read and keeps other members available', t => {
+  const f = fixture(t); f.write('same.ts', 'base\n'); f.commit('base');
+  const linked = path.join(f.base, 'topic'); f.git('worktree', 'add', '-b', 'topic', linked);
+  const canonicalLinked = fs.realpathSync(linked);
+  const original = childProcess.execFileSync; let replaced = false;
+  const capture = t.mock.method(childProcess, 'execFileSync', (file: any, args: any, options: any) => {
+    const result = original(file, args, options);
+    if (!replaced && file === 'git' && args.includes('status') && args[args.indexOf('-C') + 1] === canonicalLinked) {
+      replaced = true; f.git('worktree', 'remove', linked); f.git('worktree', 'add', linked, 'topic');
+    }
+    return result;
+  });
+  syncBuiltinESMExports();
+  let catalog: ReturnType<typeof f.app.sourceControl>;
+  try { catalog = f.app.sourceControl(f.root); }
+  finally { capture.mock.restore(); syncBuiltinESMExports(); }
+  assert.equal(replaced, true);
+  const repository = catalog.repositories[0], changed = repository.worktrees.find(worktree => !worktree.isMain)!;
+  assert.equal(repository.status, 'partial'); assert.equal(repository.worktrees.find(worktree => worktree.isMain)?.status, 'complete');
+  assert.equal(changed.status, 'unavailable'); assert.equal(changed.fileCount, null); assert.equal(changed.observedRevision, null);
+  assert.ok(changed.diagnostics.some(item => item.code === 'code_worktree_identity_changed'));
 });
 
 test('opaque worktree identities reject forged, removed, reused and foreign directories without inventing Git inventory',async t=>{

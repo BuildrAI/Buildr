@@ -9,6 +9,7 @@ registerHooks({resolve(specifier, context, next) {
   return next(specifier, context);
 }});
 const {codeApi} = await import('../src/features/code/api/code-api.ts');
+const {subscribeSourceControlChanges} = await import('../src/features/code/source-control-events.ts');
 
 test('历史条件和分页由真实客户端完整传到服务器，作者目录不依赖关键词', async () => {
   const requests = [];
@@ -44,4 +45,22 @@ test('切换使用单独POST并绑定目标完整引用、目标提交和已观�
     await codeApi.branches('ws', {repositoryId: 'repo', worktreeId: 'main'});
     assert.equal(requests[1][1].method, undefined, '清单只通过既有只读请求读取');
   } finally {delete globalThis.__branchApi;}
+});
+
+test('写入完成通知当前订阅者，保留发起工作空间与准确来源，失败也重读', async () => {
+  const input = {repositoryId:'repo', worktreeId:'main', targetRef:'refs/heads/new', expectedTargetHash:'a'.repeat(40), expectedRevision:'observed'};
+  let finish;
+  globalThis.__branchApi = () => new Promise(resolve => {finish = resolve;});
+  const pending = codeApi.switchBranch('original-workspace', input), notices = [];
+  const unsubscribe = subscribeSourceControlChanges(notice => notices.push(notice));
+  const result = {source:{repositoryId:'repo', worktreeId:'main'}, branch:'new'};
+  try {
+    finish(result); assert.equal(await pending, result);
+    assert.deepEqual(notices, [{workspaceId:'original-workspace', repositoryId:'repo', worktreeId:'main', result}]);
+    const failure = new Error('read after write unavailable');
+    globalThis.__branchApi = async () => {throw failure;};
+    await assert.rejects(codeApi.switchBranch('original-workspace', input), error => error === failure);
+    assert.deepEqual(notices[1], {workspaceId:'original-workspace', repositoryId:'repo', worktreeId:'main'});
+    unsubscribe(); await assert.rejects(codeApi.switchBranch('original-workspace', input)); assert.equal(notices.length, 2);
+  } finally {unsubscribe(); delete globalThis.__branchApi;}
 });

@@ -26,7 +26,7 @@ export function AppShellHeader({isGlobal,brandHref,development,workspaceName,wor
             </span>
           ) : null}
 
-            <Dropdown menu={{ items: workspaceMenuItems }} trigger={['click']}>
+            <Dropdown overlayClassName="workspace-switcher-popup" menu={{ items: workspaceMenuItems }} trigger={['click']}>
               <button type="button" className="workspace-switcher" aria-label="切换工作空间">
                 <span className="context-label">工作空间</span>
                 <strong id="shell-workspace-name">

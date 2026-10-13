@@ -1,4 +1,4 @@
-import type { CodeBranchesResponse } from './api/code-api';
+import type { CodeBranchesResponse, CodeBranchSwitchResponse, CodeSourceControlResponse } from './api/code-api';
 import type { ApiError } from '../../api';
 import type { SourceControlRepository, SourceControlWorktree } from './source-control-model';
 
@@ -12,6 +12,24 @@ export type BranchSwitchImpact = {
   createTracking: boolean;
 };
 export type BranchSwitchFailure = { message: string; affectedFiles: string[] };
+
+/** A confirmed write replaces branch facts immediately; file/status observations must be read again. */
+export function sourceControlAfterBranchSwitch(catalog: CodeSourceControlResponse, result: CodeBranchSwitchResponse): CodeSourceControlResponse {
+  const {repositoryId, worktreeId} = result.source;
+  const observed = catalog.repositories.find(repository => repository.id === repositoryId)?.worktrees.find(worktree => worktree.worktreeId === worktreeId);
+  if (!worktreeId || !observed || Date.parse(observed.readAt) > Date.parse(result.readAt)) return catalog;
+  return {...catalog, readAt:result.readAt, repositories:catalog.repositories.map(repository => {
+    if (repository.id !== repositoryId) return repository;
+    const worktrees = repository.worktrees.map(worktree => worktree.worktreeId !== worktreeId ? worktree : {
+      ...worktree, source:result.source, branch:result.branch, head:result.head, upstream:result.upstream, readAt:result.readAt,
+      ahead:null, behind:null, fileCount:null, changes:[], observedRevision:null, status:'partial' as const,
+    });
+    const registered = worktrees.find(worktree => worktree.isRegistered);
+    return {...repository, worktrees, status:'partial' as const, fileCount:null,
+      ...(registered?.worktreeId === worktreeId ? {source:result.source, branch:result.branch, head:result.head, upstream:result.upstream, ahead:null, behind:null, changes:[], observedRevision:null} : {}),
+    };
+  })};
+}
 
 /** Resolve only observed tracking relationships; a same-named local ref is not a remote match. */
 export function branchSwitchImpact(repository: SourceControlRepository, worktree: SourceControlWorktree, entries: SourceControlBranch[], entry: SourceControlBranch): BranchSwitchImpact {

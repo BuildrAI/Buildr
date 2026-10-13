@@ -275,8 +275,11 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
       return {
         key: id || entry.rootPath,
         disabled: !id || entry.status !== 'ready',
-        icon: id === workspaceId ? <CheckOutlined /> : undefined,
-        label: name,
+        className: id === workspaceId ? 'workspace-switcher-current' : undefined,
+        label: <span className="workspace-switcher-option" aria-current={id === workspaceId ? 'true' : undefined}>
+          <span className="workspace-switcher-option-name" title={name}>{name}</span>
+          <span className="workspace-switcher-option-check" aria-hidden="true">{id === workspaceId ? <CheckOutlined /> : null}</span>
+        </span>,
         onClick: id ? () => switchWorkspace(id) : undefined,
       };
     }),

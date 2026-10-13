@@ -1,6 +1,6 @@
 import type { CSSProperties, ReactElement, ReactNode } from 'react';
 import { App, Button, Empty, Space, Tooltip } from 'antd';
-import { ArrowDownOutlined, ArrowUpOutlined, BranchesOutlined, CloudOutlined, CloudSyncOutlined, CopyOutlined, DownOutlined, FileOutlined, FileTextFilled, FileUnknownOutlined, FolderOpenOutlined, FolderOutlined, InfoCircleOutlined, ProjectOutlined, RightOutlined } from '@ant-design/icons';
+import { ArrowDownOutlined, ArrowUpOutlined, BookOutlined, BranchesOutlined, CloudOutlined, CloudSyncOutlined, CopyOutlined, DownOutlined, FileOutlined, FileTextFilled, FileUnknownOutlined, InfoCircleOutlined, ProjectOutlined, RightOutlined } from '@ant-design/icons';
 import { SelectableHoverCard } from '../../../components/SelectableHoverCard';
 import { copyText } from '../../../lib/copyText';
 import { ChangedFileList, changedFileKey, type ChangedFileEntry } from '../../task/components/TaskChangedFiles';
@@ -87,7 +87,7 @@ export function SourceControlRepositoryTree({repositories, ready, selectedWorktr
       const group = 'catalog-repo:' + repository.id, isOpen = open(fold.expanded, group);
       return <section key={repository.id} data-source-repository={repository.id}>
       <div className={'source-control-repository' + (main && selectedWorktreeKey === sourceControlWorktreeKey(repository.id, main.worktreeId) ? ' is-selected' : '')} data-source-worktree={main?.worktreeId}>
-        <button type="button" className="source-control-fold source-control-repository-fold" aria-label={(isOpen ? '折叠' : '展开') + '代码库 ' + repository.name} aria-expanded={isOpen} onClick={() => fold.onToggle(group)}>{isOpen ? <FolderOpenOutlined /> : <FolderOutlined />}</button>
+        <button type="button" className="source-control-fold source-control-repository-fold" aria-label={(isOpen ? '折叠' : '展开') + '代码库 ' + repository.name} aria-expanded={isOpen} onClick={() => fold.onToggle(group)}><span className="source-control-repository-chevron" aria-hidden="true">{isOpen ? <DownOutlined /> : <RightOutlined />}</span><BookOutlined /></button>
         <WorktreeLocationCard repository={repository} worktree={main}><button type="button" className="source-control-repository-copy" disabled={!main} onClick={() => main && onPick(repository, main)} aria-label={'查看主工作树 · ' + repository.name} aria-pressed={Boolean(main && selectedWorktreeKey === sourceControlWorktreeKey(repository.id, main.worktreeId))}>
           <strong>{repository.name}{repository.simulated && <small>模拟</small>}</strong>
         </button></WorktreeLocationCard>

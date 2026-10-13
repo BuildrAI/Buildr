@@ -10,7 +10,7 @@ import { readCodeWorktreeCatalog, readSourceControlTaskAssociations } from '../i
 import { createSourceControlApplication } from './source-control-application.ts';
 import { createCodeBranchApplication } from './code-branch-application.ts';
 import { createCodeCommitApplication } from './code-commit-application.ts';
-import { enumerateCodeWorktrees, resolveCodeWorktree } from '../infrastructure/code-worktree-reader.ts';
+import { createCodeWorktreeReadSession, resolveCodeWorktree } from '../infrastructure/code-worktree-reader.ts';
 import { createFileEditingApplication } from './file-editing-application.ts';
 import type { MarkdownImageContext } from '../../../infrastructure/filesystem/markdown-images.ts';
 type Repository = { id:string; code:string; name:string; source: {type:string;path:string;root?:string}; location?:string };
@@ -32,6 +32,10 @@ export type CodeDependencies = {
   projectDocumentImageContext?(root:string,code:string,path:string,content:string):MarkdownImageContext|undefined;
 };
 export function createCodeApplication(dependencies:CodeDependencies) {
+  function sourceVersion(location: string) {
+    try { return codeGit(location, ['symbolic-ref', '--short', 'HEAD']).toString().trim() + ' · 当前文件'; }
+    catch { try { return codeGit(location, ['rev-parse', '--short', 'HEAD']).toString().trim() + ' · 当前文件'; } catch { return '当前文件'; } }
+  }
   function repositoryScope(root:string,taskId?:string) {
     const catalog=dependencies.assetCatalog(root);
     const diagnostics:Array<{code:string;message:string;repositoryId:string|null}>=[];
@@ -108,7 +112,7 @@ export function createCodeApplication(dependencies:CodeDependencies) {
         }
       }
     }
-    let version='当前文件';try{version=codeGit(location,['symbolic-ref','--short','HEAD']).toString().trim()+' · 当前文件';}catch{try{version=codeGit(location,['rev-parse','--short','HEAD']).toString().trim()+' · 当前文件';}catch{/* empty git repo remains readable */}}
+    let version=sourceVersion(location);
     let commitHash:string|null=null;
     if(input.commitHash){
       if(!/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/.test(input.commitHash))throw codeFailure('code_commit_invalid','历史文件必须指定完整提交标识。');
@@ -124,7 +128,26 @@ export function createCodeApplication(dependencies:CodeDependencies) {
     let observed:string;try{observed=gitCheckoutReadId(current.location);}catch{throw codeFailure('code_checkout_unavailable','读取期间所选检出目录已不存在，请重新核对。',404);}
     if(observed!==current.checkoutId)throw codeFailure('code_checkout_changed','读取期间检出目录身份已变化，请重新选择目录。',409);
   }
-  const sourceControlApplication=createSourceControlApplication({repositories:repositoryScope,source:(root,input)=>source(root,input as CodeInput),worktrees:(root,id)=>{const registered=source(root,{repositoryId:id});return enumerateCodeWorktrees(registered.location,id).worktrees;},taskAssociations:(root,repositories,taskId,deadline)=>readSourceControlTaskAssociations(root,repositories,dependencies,taskId,deadline),readTask:dependencies.readTask});
+  function sourceControlWorktrees(root: string, repositoryId: string) {
+    const registered = source(root, { repositoryId }), reading = createCodeWorktreeReadSession(registered.location, repositoryId);
+    return {
+      worktrees: reading.worktrees,
+      source(worktreeId: string): CodeSource {
+        const member = reading.resolve(worktreeId);
+        return { repositoryId, taskId: null, commitHash: null, checkoutId: worktreeId, worktreeId, worktreeGroupId: member.isRegistered ? 'main' : 'worktree:' + worktreeId, location: member.location, version: sourceVersion(member.location), kind: member.isMain ? 'default' : 'worktree' };
+      },
+      verify(current: CodeSource) {
+        const repository = dependencies.assetCatalog(root).repositories.find(item => item.id === repositoryId);
+        if (!repository) throw codeFailure('code_repository_not_registered', '代码库不在当前工作空间的登记范围内。', 404);
+        let location = dependencies.resolveSourceRoot(root, repository.source);
+        try { location = fs.realpathSync(location); } catch { throw codeFailure('code_repository_unavailable', '代码库本机目录当前不可读取。', 404); }
+        const currentRepository = createGitCommitReader().repository(location);
+        if (!sameFilesystemPath(currentRepository.commonDir, reading.commonDirectory)) throw codeFailure('code_worktree_identity_changed', '读取期间工作树身份已变化，请刷新后继续。', 409);
+        reading.verify(current.worktreeId!, currentRepository.root);
+      },
+    };
+  }
+  const sourceControlApplication=createSourceControlApplication({repositories:repositoryScope,source:(root,input)=>source(root,input as CodeInput),worktrees:sourceControlWorktrees,taskAssociations:(root,repositories,taskId,deadline)=>readSourceControlTaskAssociations(root,repositories,dependencies,taskId,deadline),readTask:dependencies.readTask});
   return Object.freeze({
     ...createFileEditingApplication({codeSource:source,projectSource:dependencies.projectDetail,builtinManagedFiles:dependencies.builtinManagedFiles,projectDocumentImageContext:dependencies.projectDocumentImageContext}),
     ...sourceControlApplication,

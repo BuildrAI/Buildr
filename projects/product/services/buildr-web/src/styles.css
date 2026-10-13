@@ -186,6 +186,17 @@ a {
   font-size: 10px;
 }
 
+/* The dropdown is portalled outside the shell; keep overrides local to this menu. */
+.workspace-switcher-popup { min-width:220px; max-width:min(320px,calc(100vw - 24px)); }
+.workspace-switcher-popup .ant-dropdown-menu { padding:6px; border:1px solid var(--soft-line); border-radius:10px; background:var(--soft-surface); box-shadow:0 8px 24px color-mix(in srgb,var(--soft-ink) 12%,transparent); }
+.workspace-switcher-popup .ant-dropdown-menu .ant-dropdown-menu-item { min-height:36px; padding:8px 10px; border-radius:6px; color:var(--soft-ink); font-size:12px; }
+.workspace-switcher-popup .ant-dropdown-menu .workspace-switcher-current { color:var(--soft-primary); background:color-mix(in srgb,var(--soft-primary) 8%,var(--soft-surface)); font-weight:600; }
+.workspace-switcher-popup .ant-dropdown-menu .ant-dropdown-menu-item-disabled { color:var(--soft-muted); }
+.workspace-switcher-popup .ant-dropdown-menu-item-divider { margin:6px 4px; background:var(--soft-line); }
+.workspace-switcher-option { display:flex; align-items:center; justify-content:space-between; gap:20px; min-width:0; }
+.workspace-switcher-option-name { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.workspace-switcher-option-check { display:flex; justify-content:center; width:16px; flex:none; color:var(--soft-primary); }
+
 .app-shell .nav-quit,
 .app-shell .nav-quit.ant-btn {
   height: 32px;
