@@ -169,6 +169,14 @@ export function applyWorkspaceSqliteMigration(database: any, script: any): any  
       if (database.prepare('PRAGMA foreign_keys').get()?.foreign_keys !== 0) throw new Error('migration could not disable foreign keys');
     }
     database.exec('BEGIN IMMEDIATE');
+    // Another opener may have applied this pending script while we waited for the writer lock.
+    const applied = hasMigrationLedger(database) ? database.prepare('SELECT name, checksum FROM schema_migrations WHERE version = ?').get(script.version) : null;
+    if (applied) {
+      if (applied.name !== script.name || applied.checksum !== script.checksum) throw structuredStoreError('workspace_store_migration_drift', `已应用 migration 与 package script 不一致：${script.name}。`, 409, { version: script.version, appliedName: applied.name, expectedName: script.name, appliedChecksum: applied.checksum, expectedChecksum: script.checksum }, '恢复原 migration script；修正 schema 只能新增连续 migration。');
+      database.exec('COMMIT');
+      if (rebuildsReferencedTable) database.exec('PRAGMA foreign_keys = ON;');
+      return;
+    }
     database.exec(script.sql);
     if (rebuildsReferencedTable) {
       const violations = database.prepare('PRAGMA foreign_key_check').all();

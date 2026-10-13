@@ -11,7 +11,7 @@
 
 ## 本机数据与协作
 
-- 长期源资产由文件与 Git 管理。本机 SQLite 保存任务（Task）、工作摘要（Work Context）、审查（Review）及验证（Verification）等结构化记录；这些数据不进入 Git，也不自动跨机器同步。
+- 长期源资产由文件与 Git 管理。本机 SQLite 保存任务（Task）、工作摘要（Work Context）、审查（Review）、验证（Verification）、个人外部系统连接及选库偏好等结构化记录；这些数据不进入 Git，也不自动跨机器同步。连接密码独立加密保存，查询结果不自动持久化。
 - 每日演进和复盘正文同样属于本机资料。复制源资产或克隆代码库不等于迁移完整工作现场；完整企业权限、远程多用户协作和跨机器自动恢复尚未完整交付。
 - 父子任务（Parent/Child Task）仅支持同一工作空间（Workspace）中的单父关系和多个直接子项，不是通用依赖图。待办不含排期、责任人或优先级，也不会自动创建 OpenSpec 变更或执行工作。
 - 旧 `.buildr/tasks/<task-id>/` 文件不读取、迁移或双写。复盘正文位于当前机器的 `.buildr/local/task-retrospectives/`，任务（Task）只保存正文摘要和决定状态；它不自动采集耗时或词元（Token），不保存结构化行动项或跨工作空间（Workspace）汇总。

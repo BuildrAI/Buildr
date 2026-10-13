@@ -1,5 +1,5 @@
 import type { ApiClient } from '../../../api/client';
-import type { ConnectionInput, ConnectionTestInput, ConnectionTestResult, ExternalConnection, MySqlConnection, MySqlQueryResult } from '../connection-types';
+import type { ConnectionInput, ConnectionTestInput, ConnectionTestResult, ExternalConnection, MySqlConnection, MySqlQueryResult, QueryPreferences } from '../connection-types';
 
 /** Bind every operation to its visible workspace, including after an asynchronous response. */
 export function createConnectionClient(api: ApiClient, workspaceId: string) {
@@ -24,6 +24,12 @@ export function createConnectionClient(api: ApiClient, workspaceId: string) {
     },
     databases(id: string, signal?: AbortSignal) {
       return api(`${item(id)}/databases`, { signal }) as Promise<{ connectionId: string; databases: string[] }>;
+    },
+    queryPreferences(id: string, signal?: AbortSignal) {
+      return api(`${item(id)}/query-preferences`, { signal }) as Promise<QueryPreferences>;
+    },
+    saveQueryPreferences(id: string, input: { enabledDatabases: string[]; currentDatabase: string | null; expectedRevision: string }, signal?: AbortSignal) {
+      return api(`${item(id)}/query-preferences`, json('PUT', input, signal)) as Promise<QueryPreferences>;
     },
     query(id: string, input: { sql: string; database?: string | null }, signal?: AbortSignal) {
       return api(`${item(id)}/query`, json('POST', input, signal)) as Promise<MySqlQueryResult>;

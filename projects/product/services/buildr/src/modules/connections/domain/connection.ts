@@ -7,6 +7,7 @@ export type MySqlConfiguration = { host: string; port: number; username: string;
 export type ConnectionRecord = ConnectionConfiguration & { id: string; credentialId: string | null; createdAt: string; updatedAt: string };
 export type PublicConnection = ConnectionConfiguration & { id: string; hasCredentials: boolean; revision: string; createdAt: string; updatedAt: string };
 export type ConnectionScope = { rootPath: string; workspaceId: string };
+export type QueryPreferences = { enabledDatabases: string[]; currentDatabase: string | null; revision: string };
 export type MySqlAccess = MySqlConfiguration & { password: string };
 export type QueryResult = {
   connectionId: string; database: string | null; submittedSql: string; executedSql: string;
@@ -71,4 +72,12 @@ export function passwordInput(value: unknown): string {
 export function expectedRevision(value: unknown): string {
   if (typeof value !== 'string' || !/^sha256-[a-f0-9]{64}$/.test(value)) throw connectionFailure('connection_revision_required', '请刷新连接后再提交修改。', 409);
   return value;
+}
+export function queryPreferenceValues(value: unknown): Omit<QueryPreferences, 'revision'> {
+  const input = inputObject(value, ['enabledDatabases', 'currentDatabase']);
+  if (!Array.isArray(input.enabledDatabases) || input.enabledDatabases.length > 1000 || input.currentDatabase !== null && typeof input.currentDatabase !== 'string') throw connectionFailure('connection_query_preferences_invalid', '数据库选择无效。');
+  const enabledDatabases = [...new Set(input.enabledDatabases.map(databaseName))];
+  const currentDatabase = input.currentDatabase === null ? null : databaseName(input.currentDatabase);
+  if (currentDatabase !== null && !enabledDatabases.includes(currentDatabase)) throw connectionFailure('connection_query_preferences_invalid', '当前数据库必须在已启用的数据库中。');
+  return { enabledDatabases, currentDatabase };
 }

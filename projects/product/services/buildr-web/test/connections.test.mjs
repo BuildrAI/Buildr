@@ -74,3 +74,17 @@ test('结果显示保留NULL、小数、大整数文本和JSON值，不再次转
   assert.equal(resultCell({ status: '待处理', count: 2 }), '{"status":"待处理","count":2}');
   assert.equal(resultCell(''), '');
 });
+
+test('数据库选择使用独立偏好版本，并绑定工作空间和连接', async t => {
+  const requests = [];
+  t.mock.method(globalThis, 'fetch', async (url, init) => { requests.push({ url, init }); return new Response('{"enabledDatabases":[],"currentDatabase":null,"revision":"preference-v1"}', { headers: { 'content-type': 'application/json' } }); });
+  const client = createConnectionClient(createApiClient({ getWorkspaceId: () => 'unrelated', sessionAdapter: { writeHeaders: () => ({ 'x-buildr-session': 'test-session' }) } }), 'owned/workspace');
+  const initial = await client.queryPreferences('connection/id');
+  assert.deepEqual(initial, { enabledDatabases: [], currentDatabase: null, revision: 'preference-v1' });
+  await client.saveQueryPreferences('connection/id', { enabledDatabases: ['orders'], currentDatabase: 'orders', expectedRevision: initial.revision });
+  assert.deepEqual(requests.map(request => request.url), Array(2).fill('/api/v1/workspaces/owned%2Fworkspace/connections/connection%2Fid/query-preferences'));
+  assert.equal(requests[0].init.headers.has('x-buildr-session'), false);
+  assert.equal(requests[1].init.method, 'PUT');
+  assert.equal(requests[1].init.headers.get('x-buildr-session'), 'test-session');
+  assert.deepEqual(JSON.parse(requests[1].init.body), { enabledDatabases: ['orders'], currentDatabase: 'orders', expectedRevision: 'preference-v1' });
+});

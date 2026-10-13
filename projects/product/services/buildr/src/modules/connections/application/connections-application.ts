@@ -1,15 +1,15 @@
 import crypto from 'node:crypto';
-import { ConnectionRepository } from '../persistence/connection-repository.ts';
+import { ConnectionRepository, type ConnectionStoreRuntime } from '../persistence/connection-repository.ts';
 import { ConnectionProviderRegistry, type ConnectionProvider } from './connection-provider.ts';
 import { createMySqlProvider } from '../infrastructure/mysql-query.ts';
-import { CONNECTION_FIELDS, configuration, connectionFailure, connectionId, databaseName, expectedRevision, inputObject, recordRevision, type ConnectionConfiguration, type ConnectionRecord, type ConnectionScope } from '../domain/connection.ts';
+import { CONNECTION_FIELDS, configuration, connectionFailure, connectionId, databaseName, expectedRevision, inputObject, recordRevision, type ConnectionConfiguration, type ConnectionRecord, type ConnectionScope, queryPreferenceValues } from '../domain/connection.ts';
 
 export class ConnectionsApplication {
   private readonly repository: ConnectionRepository;
   private readonly providers: ConnectionProviderRegistry;
   private readonly resolveScope: (root: string) => ConnectionScope;
-  constructor(options: { dataRoot: string; resolveScope(root: string): ConnectionScope; providers?: ConnectionProvider[] }) {
-    this.repository = new ConnectionRepository(options.dataRoot);
+  constructor(options: { dataRoot: string; store: ConnectionStoreRuntime; resolveScope(root: string): ConnectionScope; providers?: ConnectionProvider[] }) {
+    this.repository = new ConnectionRepository(options.dataRoot, options.store);
     this.resolveScope = options.resolveScope;
     this.providers = new ConnectionProviderRegistry(options.providers ?? [createMySqlProvider()]);
   }
@@ -50,25 +50,28 @@ export class ConnectionsApplication {
   create(root: string, value: unknown) {
     const input = inputObject(value, [...CONNECTION_FIELDS, 'credentials']);
     const scope = this.resolveScope(root), normalized = this.normalize(input);
-    const record = this.repository.mutate(scope, records => {
+    let newCredential: string | null = null;
+    let record: ConnectionRecord;
+    try { record = this.repository.mutate(scope, records => {
       if (records.length >= 1000) throw connectionFailure('connection_limit_reached', '连接数量已达 1000 个。', 409);
       const stamp = new Date().toISOString();
-      const current: ConnectionRecord = { ...normalized.configuration, id: 'connection-' + crypto.randomUUID(), credentialId: normalized.credentials === undefined ? null : this.repository.writeCredentials(scope, normalized.credentials, this.bindingDigest(normalized.configuration, normalized.provider)), createdAt: stamp, updatedAt: stamp };
+      const current: ConnectionRecord = { ...normalized.configuration, id: 'connection-' + crypto.randomUUID(), credentialId: normalized.credentials === undefined ? null : (newCredential = this.repository.writeCredentials(scope, normalized.credentials, this.bindingDigest(normalized.configuration, normalized.provider))), createdAt: stamp, updatedAt: stamp };
       records.push(current); return current;
-    });
+    }); } catch (error) { this.repository.discardUnreferencedCredentials(scope, newCredential); throw error; }
     return { connection: this.public(scope, record) };
   }
   update(root: string, id: string, value: unknown) {
     const input = inputObject(value, [...CONNECTION_FIELDS, 'credentials', 'expectedRevision']);
-    const scope = this.resolveScope(root); let previousCredential: string | null = null;
-    const record = this.repository.mutate(scope, records => {
+    const scope = this.resolveScope(root); let previousCredential: string | null = null, newCredential: string | null = null;
+    let record: ConnectionRecord;
+    try { record = this.repository.mutate(scope, records => {
       const current = this.find(scope, id, records); this.observed(current, input.expectedRevision);
       const normalized = this.normalize(input, current);
       previousCredential = current.credentialId;
-      const next: ConnectionRecord = { ...current, ...normalized.configuration, credentialId: normalized.credentials === undefined ? current.credentialId : this.repository.writeCredentials(scope, normalized.credentials, this.bindingDigest(normalized.configuration, normalized.provider)), updatedAt: new Date().toISOString() };
+      const next: ConnectionRecord = { ...current, ...normalized.configuration, credentialId: normalized.credentials === undefined ? current.credentialId : (newCredential = this.repository.writeCredentials(scope, normalized.credentials, this.bindingDigest(normalized.configuration, normalized.provider))), updatedAt: new Date().toISOString() };
       records.splice(records.indexOf(current), 1, next); return next;
-    });
-    if (previousCredential !== record.credentialId) { try { this.repository.removeCredentials(scope, previousCredential); } catch { /* The committed declaration remains authoritative; unreferenced local ciphertext can be cleaned later. */ } }
+    }); } catch (error) { this.repository.discardUnreferencedCredentials(scope, newCredential); throw error; }
+    if (previousCredential !== record.credentialId) { try { this.repository.removeCredentials(scope, previousCredential); } catch { /* The committed connection remains authoritative; unreferenced local ciphertext can be cleaned later. */ } }
     return { connection: this.public(scope, record) };
   }
   remove(root: string, id: string, value: unknown) {
@@ -76,6 +79,16 @@ export class ConnectionsApplication {
     const credentialId = this.repository.mutate(scope, records => { const current = this.find(scope, id, records); this.observed(current, input.expectedRevision); records.splice(records.indexOf(current), 1); return current.credentialId; });
     try { this.repository.removeCredentials(scope, credentialId); } catch { /* Removal of registration never operates on the external system. */ }
     return { removedId: id };
+  }
+  queryPreferences(root: string, id: string) {
+    connectionId(id); return this.repository.queryPreferences(this.resolveScope(root), id);
+  }
+  saveQueryPreferences(root: string, id: string, value: unknown) {
+    connectionId(id);
+    const input = inputObject(value, ['enabledDatabases', 'currentDatabase', 'expectedRevision']);
+    if (typeof input.expectedRevision !== 'string' || !/^sha256-[a-f0-9]{64}$/.test(input.expectedRevision)) throw connectionFailure('connection_query_preferences_revision_required', '请刷新数据库选择后再保存。', 409);
+    const values = queryPreferenceValues({ enabledDatabases: input.enabledDatabases, currentDatabase: input.currentDatabase });
+    return this.repository.saveQueryPreferences(this.resolveScope(root), id, values, input.expectedRevision);
   }
   async test(root: string, value: unknown) {
     const input = inputObject(value, [...CONNECTION_FIELDS, 'credentials', 'id', 'expectedRevision']), scope = this.resolveScope(root);

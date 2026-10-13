@@ -292,7 +292,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     lifecycle: 'none',
   }, {
     id: 'connections',
-    requires: [WORKSPACE_APPLICATION, WORKSPACE_QUERY],
+    requires: [WORKSPACE_APPLICATION, WORKSPACE_QUERY, WORKSPACE_TASK_SUPPORT],
     provides: ['connections.application'],
     contributions: { cli: ['connection'], http: ['connections.http'], diagnostics: [] },
     lifecycle: 'none',

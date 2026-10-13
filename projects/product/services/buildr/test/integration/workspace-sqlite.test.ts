@@ -46,7 +46,7 @@ test('fresh Workspace 按完整 SQL scripts 初始化且重复只读打开零写
   assert.equal(writable.version, latest);
   assert.deepEqual(writable.database.prepare('SELECT version, name FROM schema_migrations ORDER BY version').all().map((row: any) => ({ ...row })), migrations.map(({ version, name }: any) => ({ version, name })));
   assert.deepEqual(writable.database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all().map((row: any) => row.name), [
-    'schema_migrations', 'task_changes', 'task_projects', 'task_review_current', 'task_review_history',
+    'connection_query_preferences', 'external_connection_store', 'external_connections', 'schema_migrations', 'task_changes', 'task_projects', 'task_review_current', 'task_review_history',
     'task_search', 'task_search_config', 'task_search_data', 'task_search_docsize', 'task_search_idx',
     'task_services', 'task_verification_current', 'task_work_context_current', 'tasks', 'workbench_preferences',
   ]);
@@ -962,4 +962,21 @@ test('Doctor 区分未初始化、healthy 与 unavailable 且不暴露数据库 
   assert.equal(result.structuredStore.status, 'unavailable');
   assert.equal(result.findings[0].status, 'error');
   assert.equal(JSON.stringify(result).includes(file), false);
+});
+
+
+test('migration retry rechecks its ledger under the writer lock without reapplying DDL or accepting drift', () => {
+  const database = new DatabaseSync(':memory:'), migrations = loadWorkspaceSqliteMigrations();
+  try {
+    for (const script of migrations) {
+      applyWorkspaceSqliteMigration(database, script);
+      const before = database.prepare('SELECT * FROM schema_migrations WHERE version = ?').get(script.version);
+      applyWorkspaceSqliteMigration(database, script);
+      assert.deepEqual(database.prepare('SELECT * FROM schema_migrations WHERE version = ?').get(script.version), before);
+      assert.throws(() => applyWorkspaceSqliteMigration(database, { ...script, checksum: 'sha256-different' }), { code: 'workspace_store_migration_drift' });
+      assert.throws(() => applyWorkspaceSqliteMigration(database, { ...script, name: 'different.sql' }), { code: 'workspace_store_migration_drift' });
+      assert.equal(database.isTransaction, false);
+      assert.equal(database.prepare('PRAGMA foreign_keys').get()?.foreign_keys, 1, 'foreign keys remain enabled after skipped rebuilds');
+    }
+  } finally { database.close(); }
 });

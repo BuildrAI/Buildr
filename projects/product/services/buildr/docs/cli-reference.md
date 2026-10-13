@@ -228,7 +228,11 @@ Git provider evidence使用`buildr.git-worktree-evidence/v1`，保存在Git comm
 
 查询返回 `submittedSql`、`executedSql`、独立的 `columns` 与行数组 `rows`，以及 `rowCount`、`rowLimit`、`elapsedMs`、`limitReached`。列和行按位置对应，支持重名列和空结果表头，大整数与小数以文本保留精度。到达行数限制只表示本次受限，不自动推断总数或读取下一页。
 
-同一工作空间（Workspace）的代码工作树（Worktree）使用同一规范来源的连接。密码独立加密保存在本机应用数据目录，另一执行机器需要重新绑定认证和具备网络访问条件。首版只提供 MySQL 只读查询，本场景生产修改继续使用 DMP；更多使用方法见[连接与 MySQL 查询](../resources/runtime/skills/buildr/references/external-connections.md)。
+连接配置保存在本机工作空间（Workspace）的 `.buildr/local/workspace.sqlite`，不通过 Git 同步，由每位用户自行配置。升级后首次使用会完整导入旧 `connections/manifest.yml`，保留编号和本机认证；原文件保留用于恢复，但不再作为当前配置读写，不会因删除数据库连接而重新导入。导入失败或数据冲突明确报错，不回退旧文件覆盖数据库。
+
+同一工作空间（Workspace）的代码工作树（Worktree）使用同一规范来源的连接。密码独立加密保存在本机应用数据目录。配置保存、已有认证和实际测试成功分别核对。首版只提供 MySQL 只读查询，本场景生产修改继续使用 DMP；更多使用方法见[连接与 MySQL 查询](../resources/runtime/skills/buildr/references/external-connections.md)。
+
+页面初次使用不启用任何数据库；启用库和当前库按工作空间及连接独立保存在 SQLite，刷新后恢复，不用兼容字段 `config.selectedDatabases` 或连接默认库重新填充。当前库只从已启用且可访问的库选择；禁用当前库后清空，限定库名查询和命令行工具（CLI）仍按数据库原生权限工作。页面优先运行选中单条语句，否则运行光标所在语句；选中多条时提示调整选择，不批量执行。结果保持单行，点击单元格可查看并复制全文，查询结果不落库。
 
 ## Runtime 与诊断
 

@@ -3,12 +3,8 @@
 .buildr-connections-page>.ant-tabs>.ant-tabs-nav{flex:none;margin:0;padding:0 24px;border-bottom:1px solid var(--soft-line)}
 .buildr-connections-page>.ant-tabs>.ant-tabs-content-holder{min-height:0;flex:1;overflow:auto}
 .buildr-connections-page>.ant-tabs>.ant-tabs-content-holder>.ant-tabs-content{height:100%}
-.buildr-connections-directory{max-width:1180px;margin:auto;padding:28px 30px}
-.buildr-connections-directory .page-header{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;margin-bottom:24px}
-.buildr-connections-directory h1{font-size:24px;margin:0 0 8px}
-.buildr-connections-directory .page-header p{margin:0;color:var(--soft-muted);font-size:13px}
-.buildr-connections-directory>.ant-alert{margin-bottom:16px}
-.buildr-connections-directory .ant-table{font-size:13px}
+.buildr-connections-directory{width:100%;padding:24px 32px 56px}
+.buildr-connections-directory .resource-name>strong{font-size:14px;font-weight:500;color:var(--soft-ink)}
 .buildr-connection-address code{font-size:12px;overflow-wrap:anywhere}
 .buildr-connection-address small{display:block;font-size:12px;color:var(--soft-muted);margin-top:4px}
 .buildr-connection-form{display:flex;flex-direction:column;gap:17px;padding:4px 0 18px}
@@ -43,10 +39,16 @@
 .buildr-mysql-result>header{display:flex;align-items:center;flex-wrap:wrap;gap:16px;padding:10px 14px;font-size:12px;color:var(--soft-muted);border-bottom:1px solid var(--soft-line)}
 .buildr-mysql-result>header>strong{color:var(--soft-ink);font-weight:500}
 .buildr-mysql-result .ant-table{font-size:12px}
-.buildr-mysql-result .ant-table-cell{white-space:pre-wrap;overflow-wrap:anywhere}
+.buildr-mysql-result .ant-table-cell{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-right:1px solid #d5ded9!important;border-bottom:1px solid #d5ded9!important}
+.buildr-mysql-result .ant-table-tbody>tr>td{height:34px;padding:6px 10px;line-height:20px}
+.buildr-mysql-result .ant-table-thead>tr>th{padding:8px 10px;background:#f0f5f2}
+.buildr-mysql-cell{display:block;width:100%;height:20px;line-height:20px;border:0;padding:0;background:transparent;text-align:left;font:inherit;color:inherit;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+.buildr-mysql-cell:focus-visible{outline:2px solid var(--soft-primary);outline-offset:-2px}
+.buildr-mysql-cell:hover{color:var(--soft-primary)}
+.buildr-mysql-full-value{margin:0;padding:14px;background:var(--soft-bg,#f7f9f8);border:1px solid var(--soft-line);border-radius:6px;font:12px/1.7 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere;user-select:text}
 .buildr-mysql-result>details{padding:10px 14px;border-top:1px solid var(--soft-line);font-size:12px;color:var(--soft-muted)}
 .buildr-mysql-result summary{cursor:pointer}
 .buildr-mysql-result pre{padding:12px;background:#f7f9f8;color:var(--soft-ink);white-space:pre-wrap;overflow-wrap:anywhere;max-height:240px;overflow:auto}
 .buildr-mysql-null{color:var(--soft-muted);font-style:italic}
-@media(max-width:900px){.buildr-connections-directory{padding:24px 18px}.buildr-mysql-query{padding:16px}.buildr-mysql-target{flex-wrap:wrap}.buildr-mysql-target>span{margin-left:0}.buildr-database-resources{width:150px}.buildr-mysql-toolbar .ant-select{width:150px}.buildr-mysql-toolbar>small{display:none}}
-@media(max-width:600px){.buildr-connections-directory .page-header{flex-wrap:wrap}.buildr-mysql-target>label{min-width:0;width:100%}.buildr-mysql-query-layout{height:330px}.buildr-database-resources{width:115px}.buildr-mysql-toolbar>label{align-items:flex-start;flex-direction:column;gap:4px}.buildr-mysql-toolbar .ant-select{width:140px}}
+@media(max-width:900px){.buildr-connections-directory{padding:24px var(--main-content-gutter,18px) 56px}.buildr-mysql-query{padding:16px}.buildr-mysql-target{flex-wrap:wrap}.buildr-mysql-target>span{margin-left:0}.buildr-database-resources{width:150px}.buildr-mysql-toolbar .ant-select{width:150px}.buildr-mysql-toolbar>small{display:none}}
+@media(max-width:600px){.buildr-mysql-target>label{min-width:0;width:100%}.buildr-mysql-query-layout{height:330px}.buildr-database-resources{width:115px}.buildr-mysql-toolbar>label{align-items:flex-start;flex-direction:column;gap:4px;width:100%;max-width:100%;min-width:0}.buildr-mysql-toolbar .ant-select{width:100%;max-width:100%;min-width:0}}

@@ -48,3 +48,9 @@ export type MySqlQueryResult = {
   elapsedMs: number;
   limitReached: boolean;
 };
+
+export type QueryPreferences = {
+  enabledDatabases: string[];
+  currentDatabase: string | null;
+  revision: string;
+};
