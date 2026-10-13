@@ -10,7 +10,7 @@ export function createCodeCliContributions(application: CodeApplication) {
     const command = CODE_HTTP_PATHS[operation];
     return Object.freeze({
       key: 'code ' + command, surface: 'agent-machine', summary: '按已登记代码库、比较层及固定版本只读查看代码，不执行 Git 或文件写入。',
-      help: ['Usage: buildr code ' + command + ' [--repository <id>] [--checkout <opaque-id>] [--worktree <opaque-id>] [--task <id>] [--commit <full-sha>] [--path <relative>] [--area unstaged|staged|untracked|commit] [--branch <local-name-or-full-ref>] [--author-email <email>] [--query <text>] [--limit <1-200>] [--cursor <value>] [--expected-revision <value>] [--page <index> | --line <number>] [--match-query <text>] [--mode name|content] [--show-ignored] [--target <workspace>] [--json]', '每个操作只接受其适用参数；source-control 保留全部 Git 工作树，--task 仅提供已核对范围的预选提示。'],
+      help: ['Usage: buildr code ' + command + ' [--repository <id>] [--checkout <opaque-id>] [--worktree <opaque-id>] [--task <id>] [--commit <full-sha>] [--path <relative>] [--area unstaged|staged|untracked|commit] [--branch <local-name-or-full-ref>] [--author-email <email>] [--query <text>] [--limit <1-200>] [--cursor <value>] [--expected-revision <value>] [--page <index> | --line <number>] [--match-query <text>] [--mode name|content] [--show-ignored] [--target <workspace>] [--json]', '每个操作只接受其适用参数；source-control 缺省保留全部 Git 工作树，--repository 只读指定代码库，--task 仅提供已核对范围的预选提示；刷新不执行获取远程（Fetch）。'],
       match: ({ domain, action }: { domain?: string; action?: string }) => domain === 'code' && action === command,
       run: async (_runtime: unknown, context: { argv: string[] }) => {
         const args = context.argv.slice(4), input: Partial<CodeInput & CodeSourceControlInput> = {}; let target = process.cwd();

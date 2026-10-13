@@ -14,6 +14,7 @@ type Repository = { id: string; name: string; location: string; available: boole
 export type WorktreeCatalogDependencies = {
   gitWorktreeEvidencePath?(root: string, taskId: string): string;
   gitWorktreeEvidenceDirectories?(root: string, options?: { requireComplete?: boolean }): string[];
+  createGitWorktreeEvidenceReader?(root: string, options?: { requireComplete?: boolean }): { directories: readonly string[]; read(taskId: string, options: { optional: boolean }): ReturnType<WorktreeCatalogDependencies['readGitWorktreeEvidence']> };
   readGitWorktreeEvidence(root: string, taskId: string, options: { optional: boolean }): { evidence: { repositories: Array<{ sourceRepository: string; checkoutPath: string; branch?: string }> } } | null;
 };
 
@@ -32,10 +33,13 @@ export function readSourceControlTaskAssociations(root: string, repositories: Ar
   if (!members.length) return result;
   const ids = new Set(requestedTaskId ? [requestedTaskId] : []);
   let incomplete = false, uniquenessUnknown = false;
-  if (dependencies.gitWorktreeEvidenceDirectories || dependencies.gitWorktreeEvidencePath) {
+  let readEvidence = (id: string) => dependencies.readGitWorktreeEvidence(root, id, { optional: true });
+  if (dependencies.createGitWorktreeEvidenceReader || dependencies.gitWorktreeEvidenceDirectories || dependencies.gitWorktreeEvidencePath) {
     try {
+      const reading = dependencies.createGitWorktreeEvidenceReader?.(root, { requireComplete: true });
+      if (reading) readEvidence = id => reading.read(id, { optional: true });
       let count = 0;
-      for (const directory of evidenceDirectories(root, dependencies)) {
+      for (const directory of reading?.directories || evidenceDirectories(root, dependencies)) {
         if (Date.now() >= deadline || count >= 1000) { incomplete = true; uniquenessUnknown = true; break; }
         if (!fs.existsSync(directory)) continue;
         const handle = fs.opendirSync(directory);
@@ -57,7 +61,7 @@ export function readSourceControlTaskAssociations(root: string, repositories: Ar
   for (const id of [...ids].sort()) {
     if (Date.now() >= deadline) { incomplete = true; uniquenessUnknown = true; break; }
     let evidence;
-    try { evidence = dependencies.readGitWorktreeEvidence(root, id, { optional: true }); } catch { incomplete = true; uniquenessUnknown = true; continue; }
+    try { evidence = readEvidence(id); } catch { incomplete = true; uniquenessUnknown = true; continue; }
     if (!evidence) continue;
     const associated = new Set<string>();
     for (const recorded of evidence.evidence.repositories) {

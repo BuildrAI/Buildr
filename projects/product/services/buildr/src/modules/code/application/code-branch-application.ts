@@ -2,24 +2,33 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { codeFailure, codeGit, type CodeSource } from '../infrastructure/code-file-reader.ts';
 import { enumerateCodeWorktrees } from '../infrastructure/code-worktree-reader.ts';
-import { assertCodeRevision, codeRevision, observeSourceControl, readSourceControlRefs } from '../infrastructure/source-control-git-reader.ts';
+import { assertCodeRevision, codeRevision, observeSourceControl } from '../infrastructure/source-control-git-reader.ts';
+import { readCodeBranchRefs, type CodeBranchSourceObservation } from '../infrastructure/code-branch-reader.ts';
 import { assertNoExternalCheckoutFilters, readCodeCheckoutFilterConfig, switchCodeBranch } from '../infrastructure/code-branch-switch.ts';
 import type { CodeBranchEntry, CodeLocalBranch } from '../domain/source-control.ts';
 import type { CodeBranchesResponse, CodeBranchSwitchInput, CodeBranchSwitchResponse, CodeSourceControlInput } from './source-control-model.ts';
 
 const BRANCH_LIMIT = 1000;
-type Dependencies = { source(root: string, input: CodeSourceControlInput): CodeSource };
+type Dependencies = {
+  source(root: string, input: CodeSourceControlInput): CodeSource;
+  observation?(root: string, input: CodeSourceControlInput): CodeBranchSourceObservation | undefined;
+};
 const progressFiles = ['MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'REBASE_HEAD', 'rebase-merge', 'rebase-apply', 'sequencer', 'BISECT_START'];
 
 export function createCodeBranchApplication(dependencies: Dependencies) {
   function observe(root: string, input: CodeSourceControlInput) {
     if (!input.repositoryId) throw codeFailure('code_repository_required', '必须选择已登记代码库（Repository）。');
-    const source = dependencies.source(root, input);
+    const observation = dependencies.observation?.(root, input);
+    const source = observation?.source || dependencies.source(root, input);
     if (source.commitHash) throw codeFailure('code_branch_source_invalid', '分支（Branch）操作必须选择当前工作位置。');
-    const refs = readSourceControlRefs(source), filters = readCodeCheckoutFilterConfig(source), status = observeSourceControl(source, { gitConfig: filters.overrides });
-    const worktrees = enumerateCodeWorktrees(source.location, source.repositoryId);
-    const currentIdentity = dependencies.source(root, { repositoryId: source.repositoryId, worktreeId: source.worktreeId || undefined });
-    if (currentIdentity.location !== source.location || currentIdentity.worktreeId !== source.worktreeId) throw codeFailure('code_worktree_identity_changed', '工作位置身份已变化，请刷新后继续。', 409);
+    const refs = readCodeBranchRefs(source), filters = readCodeCheckoutFilterConfig(source), status = observeSourceControl(source, { gitConfig: filters.overrides });
+    const worktrees = observation?.worktrees || enumerateCodeWorktrees(source.location, source.repositoryId);
+    function verifyIdentity() {
+      if (observation) { observation.verify(); return; }
+      const current = dependencies.source(root, { repositoryId: source.repositoryId, worktreeId: source.worktreeId || undefined });
+      if (current.location !== source.location || current.worktreeId !== source.worktreeId) throw codeFailure('code_worktree_identity_changed', '读取期间工作位置身份已变化，请刷新后继续。', 409);
+    }
+    verifyIdentity();
     const gitDirectory = codeGit(source.location, ['rev-parse', '--absolute-git-dir']).toString().trim();
     const progress = progressFiles.filter(name => fs.existsSync(path.join(gitDirectory, name)));
     const occupants = new Map(worktrees.worktrees.filter(worktree => worktree.branch).map(worktree => [worktree.branch, worktree]));
@@ -43,11 +52,11 @@ export function createCodeBranchApplication(dependencies: Dependencies) {
       entries.push({ ref: row[0], name, kind: 'remote', remote, hash: row[1], current: localBranch?.name === status.branch, upstream: null, worktreeId: null, worktreeLocation: null, localBranch });
     }
     const observedRevision = codeRevision([source.worktreeId, refs.revision, status.observedRevision, filters.revision, worktrees.worktrees.map(worktree => [worktree.worktreeId, worktree.location, worktree.branch, worktree.head]), progress]);
-    assertCodeRevision(refs.revision, readSourceControlRefs(source).revision);
+    assertCodeRevision(refs.revision, readCodeBranchRefs(source).revision);
     const verifiedFilters = readCodeCheckoutFilterConfig(source); assertCodeRevision(filters.revision, verifiedFilters.revision);
     assertCodeRevision(status.observedRevision, observeSourceControl(source, { gitConfig: verifiedFilters.overrides }).observedRevision);
-    const verifiedIdentity = dependencies.source(root, { repositoryId: source.repositoryId, worktreeId: source.worktreeId || undefined });
-    if (verifiedIdentity.location !== source.location || verifiedIdentity.worktreeId !== source.worktreeId) throw codeFailure('code_worktree_identity_changed', '读取期间工作位置身份已变化，请刷新后继续。', 409);
+    verifyIdentity();
+    if (observation) { const currentVersion = status.branch || status.head; source.version = currentVersion ? currentVersion + ' · 当前文件' : '当前文件'; }
     return { source, refs, status, worktrees, entries, progress, trackingByRemote, observedRevision, readAt: new Date().toISOString() };
   }
   const currentState = (observed: ReturnType<typeof observe>, effects = { switched: false, createdLocalBranch: null as string | null }): CodeBranchSwitchResponse => ({ source: observed.source, branch: observed.status.branch, head: observed.status.head, upstream: observed.status.upstream, observedRevision: observed.observedRevision, readAt: observed.readAt, effects });
@@ -58,7 +67,7 @@ export function createCodeBranchApplication(dependencies: Dependencies) {
   function switchBranch(root: string, input: CodeBranchSwitchInput): CodeBranchSwitchResponse {
     if (!input.repositoryId || !/^checkout-[a-f0-9]{64}$/.test(input.worktreeId || '') || !/^refs\/(?:heads|remotes)\/.+/.test(input.targetRef || '') || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(input.expectedTargetHash || '') || !input.expectedRevision) throw codeFailure('code_branch_switch_invalid', '切换必须明确代码库（Repository）、工作位置、目标引用（Ref）与已观察版本。');
     // Inspect the actual local tip used by a remote item before any switch-state read.
-    const initialSource = dependencies.source(root, input), initialRefs = readSourceControlRefs(initialSource);
+    const initialSource = dependencies.observation?.(root, input)?.source || dependencies.source(root, input), initialRefs = readCodeBranchRefs(initialSource);
     const initialTarget = initialRefs.rows.find(row => row[0] === input.targetRef && row[3] === 'commit' && !row[6]);
     if (!initialTarget || initialTarget[1] !== input.expectedTargetHash) throw codeFailure('code_branch_target_changed', '目标分支（Branch）已变化，请刷新清单。', 409);
     let checkoutHash = initialTarget[1];

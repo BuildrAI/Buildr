@@ -6,10 +6,11 @@ import { searchCode } from '../infrastructure/code-search.ts';
 import { taskActionId } from '../../task/application/task-validation.ts';
 import { createGitCommitReader } from '../../task/commits/infrastructure/git-commit-reader.ts';
 import { gitCheckoutReadId } from '../../../infrastructure/git/checkout-read-identity.ts';
-import { readCodeWorktreeCatalog, readSourceControlTaskAssociations } from '../infrastructure/code-worktree-catalog.ts';
+import { readCodeWorktreeCatalog, readSourceControlTaskAssociations, type WorktreeCatalogDependencies } from '../infrastructure/code-worktree-catalog.ts';
 import { createSourceControlApplication } from './source-control-application.ts';
 import { createCodeBranchApplication } from './code-branch-application.ts';
 import { createCodeCommitApplication } from './code-commit-application.ts';
+import { createCodeFetchApplication } from './code-fetch-application.ts';
 import { createCodeWorktreeReadSession, resolveCodeWorktree } from '../infrastructure/code-worktree-reader.ts';
 import { createFileEditingApplication } from './file-editing-application.ts';
 import type { MarkdownImageContext } from '../../../infrastructure/filesystem/markdown-images.ts';
@@ -26,6 +27,7 @@ export type CodeDependencies = {
   readTask?(root:string,id:string):{taskId:string;title:string};
   gitWorktreeEvidencePath?(root:string,id:string):string;
   gitWorktreeEvidenceDirectories?(root:string,options?:{requireComplete?:boolean}):string[];
+  createGitWorktreeEvidenceReader?: WorktreeCatalogDependencies['createGitWorktreeEvidenceReader'];
   readGitWorktreeEvidence(root:string,id:string,options:{optional:boolean}):{evidence:{repositories:Array<{sourceRepository:string;checkoutPath:string;branch?:string}>}}|null;
   projectDetail?(root:string,code:string):{project:{id:string;code:string;source:unknown};sourceLocation:{path:string;identity:string}};
   builtinManagedFiles?(root:string,relative?:string):string[];
@@ -36,10 +38,11 @@ export function createCodeApplication(dependencies:CodeDependencies) {
     try { return codeGit(location, ['symbolic-ref', '--short', 'HEAD']).toString().trim() + ' · 当前文件'; }
     catch { try { return codeGit(location, ['rev-parse', '--short', 'HEAD']).toString().trim() + ' · 当前文件'; } catch { return '当前文件'; } }
   }
-  function repositoryScope(root:string,taskId?:string) {
+  function repositoryScope(root:string,taskId?:string,repositoryId?:string) {
     const catalog=dependencies.assetCatalog(root);
     const diagnostics:Array<{code:string;message:string;repositoryId:string|null}>=[];
-    const items=catalog.repositories.map(repo=>{
+    if(repositoryId!==undefined&&!catalog.repositories.some(repo=>repo.id===repositoryId))throw codeFailure('code_repository_not_registered','代码库不在当前工作空间的登记范围内。',404);
+    const items=catalog.repositories.filter(repo=>repositoryId===undefined||repo.id===repositoryId).map(repo=>{
       let location='',available=false,gitId:string|null=null;
       try { location=dependencies.resolveSourceRoot(root,repo.source);available=fs.statSync(location).isDirectory();const gitRepository=createGitCommitReader().repository(location);gitId=gitRepository.id;location=gitRepository.root; } catch { available=false;diagnostics.push({code:'code_repository_unavailable',message:repo.name+' 的本机目录或 Git 身份当前不可读取。',repositoryId:repo.id}); }
       return {id:repo.id,code:repo.code,name:repo.name,location,available,gitId};
@@ -128,13 +131,14 @@ export function createCodeApplication(dependencies:CodeDependencies) {
     let observed:string;try{observed=gitCheckoutReadId(current.location);}catch{throw codeFailure('code_checkout_unavailable','读取期间所选检出目录已不存在，请重新核对。',404);}
     if(observed!==current.checkoutId)throw codeFailure('code_checkout_changed','读取期间检出目录身份已变化，请重新选择目录。',409);
   }
-  function sourceControlWorktrees(root: string, repositoryId: string) {
-    const registered = source(root, { repositoryId }), reading = createCodeWorktreeReadSession(registered.location, repositoryId);
+  function sourceControlWorktrees(root: string, repositoryId: string, registered: { location: string; available: boolean }) {
+    if(!registered.available)throw codeFailure('code_repository_unavailable','代码库本机目录或 Git 身份当前不可读取。',404);
+    const reading = createCodeWorktreeReadSession(registered.location, repositoryId);
     return {
       worktrees: reading.worktrees,
       source(worktreeId: string): CodeSource {
         const member = reading.resolve(worktreeId);
-        return { repositoryId, taskId: null, commitHash: null, checkoutId: worktreeId, worktreeId, worktreeGroupId: member.isRegistered ? 'main' : 'worktree:' + worktreeId, location: member.location, version: sourceVersion(member.location), kind: member.isMain ? 'default' : 'worktree' };
+        return { repositoryId, taskId: null, commitHash: null, checkoutId: worktreeId, worktreeId, worktreeGroupId: member.isRegistered ? 'main' : 'worktree:' + worktreeId, location: member.location, version: '当前文件', kind: member.isMain ? 'default' : 'worktree' };
       },
       verify(current: CodeSource) {
         const repository = dependencies.assetCatalog(root).repositories.find(item => item.id === repositoryId);
@@ -142,7 +146,7 @@ export function createCodeApplication(dependencies:CodeDependencies) {
         let location = dependencies.resolveSourceRoot(root, repository.source);
         try { location = fs.realpathSync(location); } catch { throw codeFailure('code_repository_unavailable', '代码库本机目录当前不可读取。', 404); }
         const currentRepository = createGitCommitReader().repository(location);
-        if (!sameFilesystemPath(currentRepository.commonDir, reading.commonDirectory)) throw codeFailure('code_worktree_identity_changed', '读取期间工作树身份已变化，请刷新后继续。', 409);
+        if (!sameFilesystemPath(currentRepository.root, registered.location) || !sameFilesystemPath(currentRepository.commonDir, reading.commonDirectory)) throw codeFailure('code_worktree_identity_changed', '读取期间工作树身份已变化，请刷新后继续。', 409);
         reading.verify(current.worktreeId!, currentRepository.root);
       },
     };
@@ -151,7 +155,22 @@ export function createCodeApplication(dependencies:CodeDependencies) {
   return Object.freeze({
     ...createFileEditingApplication({codeSource:source,projectSource:dependencies.projectDetail,builtinManagedFiles:dependencies.builtinManagedFiles,projectDocumentImageContext:dependencies.projectDocumentImageContext}),
     ...sourceControlApplication,
-    ...createCodeBranchApplication({ source: (root, input) => source(root, input as CodeInput) }),
+    ...createCodeBranchApplication({ source: (root, input) => source(root, input as CodeInput), observation: (root,input) => {
+      if(!input.repositoryId||!input.worktreeId||!/^checkout-[a-f0-9]{64}$/.test(input.worktreeId||'')||input.taskId||input.commitHash||input.checkoutId!==undefined)return undefined;
+      const repository=dependencies.assetCatalog(root).repositories.find(item=>item.id===input.repositoryId);
+      if(!repository)throw codeFailure('code_repository_not_registered','代码库不在当前工作空间的登记范围内。',404);
+      let location:string;
+      try{location=fs.realpathSync(dependencies.resolveSourceRoot(root,repository.source));}catch{throw codeFailure('code_repository_unavailable','代码库本机目录当前不可读取。',404);}
+      const registered=createGitCommitReader().repository(location);
+      const reading=sourceControlWorktrees(root,repository.id,{location:registered.root,available:true});
+      const current=reading.source(input.worktreeId);
+      return {source:current,worktrees:{worktrees:reading.worktrees},verify:()=>reading.verify(current)};
+    } }),
+    ...createCodeFetchApplication({registeredLocation:(root,repositoryId)=>{
+      const repository=dependencies.assetCatalog(root).repositories.find(item=>item.id===repositoryId);
+      if(!repository)throw codeFailure('code_repository_not_registered','代码库不在当前工作空间的登记范围内。',404);
+      return createGitCommitReader().repository(dependencies.resolveSourceRoot(root,repository.source)).root;
+    }}),
     ...createCodeCommitApplication({ source: (root, input) => source(root, input as CodeInput) }),
     repositories,
     directory:(root:string,input:CodeInput)=>{const current=source(root,input),result=readCodeDirectory(current,input.path||'',Boolean(input.showIgnored));assertReadSource(current);return result;},

@@ -18,6 +18,20 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     assert.equal(response.status(), 200); return response.json();
   };
   const noOverflow = async () => assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, '源代码管理不能产生页面横向溢出');
+  const statusDetails = () => page.locator('.source-control-status-details:visible');
+  const assertStatusCounts = async (status: any, expected: {ahead?: number; behind?: number; files?: number}) => {
+    const counts = await status.locator('.source-control-status-count').evaluateAll((elements: HTMLElement[]) => elements.map(element => ({
+      kind: element.getAttribute('data-status-kind'), count: Number(element.querySelector('.source-control-status-number')!.textContent),
+    })));
+    assert.deepEqual(counts, Object.entries(expected).filter(([, count]) => typeof count === 'number' && count > 0).map(([kind, count]) => ({kind, count})), '目录只常驻实际非零数量，零值可在状态详情查看');
+  };
+  const assertStatusDetails = async (status: any, remote: string, files: string) => {
+    await status.click(); const details = statusDetails(); await details.waitFor();
+    assert.equal(await details.locator('dd').nth(0).innerText(), remote);
+    assert.equal(await details.locator('dd').nth(1).innerText(), files);
+    await status.press('Escape'); await details.waitFor({state: 'hidden'});
+    assert.equal(await status.getAttribute('aria-expanded'), 'false');
+  };
   const assertLocationCopyRows = async (details: any) => {
     const values = details.locator('dd');
     assert.equal(await values.count(), 2);
@@ -192,8 +206,14 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
       assert.equal(await rendered.count(), 1);
       const main = repository.worktrees.find((item: any) => item.isMain);
       const primary = rendered.locator(':scope > .source-control-repository');
-      if (main?.upstream === null && main.status !== 'unavailable') assert.equal(await primary.locator('.source-control-remote-status').getAttribute('aria-label'), '未跟踪远程分支');
-      if (main?.fileCount > 0) assert.equal(await primary.locator('.source-control-file-status').getAttribute('aria-label'), main.fileCount + ' 个未提交文件');
+      const status = primary.locator('.source-control-status-button');
+      if (main?.upstream === null && main.status !== 'unavailable') {
+        assert.equal(await status.getAttribute('data-remote-state'), 'untracked');
+        assert.ok((await status.getAttribute('aria-label')).includes('未跟踪远程分支'));
+        assert.equal(await status.locator('.anticon-cloud.is-untracked').count(), 1);
+        assert.equal(await status.locator('.anticon-check').count(), 0, '没有远程跟踪时不冒充综合清洁');
+      }
+      if (main?.fileCount > 0) assert.ok((await status.getAttribute('aria-label')).includes(main.fileCount + ' 个未提交文件'));
     }
     assert.equal(await row('已暂存').count(), 1); assert.equal(await row('未暂存').count(), 1);
     await row('已暂存').click(); await diff().getByText('export const sourceControlIndex = 21;', {exact: false}).waitFor();
@@ -261,7 +281,11 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
       const unavailable = (await refreshCatalog()).repositories.find((repository: any) => repository.id === peer.id);
       assert.ok(unavailable); assert.equal(unavailable.worktreeCount, null); assert.equal(unavailable.fileCount, null); assert.ok(unavailable.diagnostics.length);
       const upper = root().locator('[data-source-repository="' + peer.id + '"]');
-      assert.equal(await upper.locator('.source-control-file-status').getAttribute('aria-label'), '未提交文件数量不可读取');
+      const status = upper.locator('.source-control-status-button');
+      assert.equal(await status.getAttribute('data-remote-state'), 'unavailable');
+      assert.equal(await status.getAttribute('data-file-state'), 'unavailable');
+      assert.equal(await status.locator('.anticon-question-circle').count(), 1);
+      await assertStatusDetails(status, '远程状态不可读取', '未提交文件数量不可读取');
       assert.equal(await root().locator('[data-change-repository="' + peer.id + '"]').count(), 0, '无关不可读代码库不进入当前工作树变更列表');
       assert.equal(await root().locator('[data-change-worktree]:visible').count(), 1);
       await waitFull(fixture.workingText); await capture(page, 'source-control-fixture-unavailable-repository.png');
@@ -668,14 +692,8 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     assert.equal(repository.fileCount, repository.worktrees.reduce((total: number, worktree: any) => total + worktree.fileCount, 0), '同一路径在不同工作树独立计数');
     const rendered = root().locator('[data-source-repository="' + repository.id + '"]');
     for (const value of repository.worktrees) assert.equal(await rendered.locator('[data-source-worktree="' + value.worktreeId + '"]').count(), 1);
-    for (const statusClass of ['source-control-remote-status', 'source-control-file-status', 'source-control-task-slot']) {
-      const columns = await rendered.locator('.' + statusClass).evaluateAll((elements: HTMLElement[]) => elements.map(element => element.getBoundingClientRect().x));
-      assert.ok(columns.length === repository.worktrees.length && columns.every((x: number) => Math.abs(x - columns[0]) <= 2), '主工作树和各工作树的远程、文件及任务状态保持列对齐：' + statusClass);
-    }
-    for (const selector of ['.source-control-remote-status', '.source-control-file-status', '.source-control-task-slot']) {
-      const boundaries = await root().locator('.source-control-repository-tree-scroll').locator(selector).evaluateAll((elements: HTMLElement[]) => elements.map(element => ({left: element.getBoundingClientRect().left, right: element.getBoundingClientRect().right})));
-      assert.ok(boundaries.every((box: any) => Math.abs(box.left - boundaries[0].left) <= 2 && Math.abs(box.right - boundaries[0].right) <= 2), '各代码库主工作树与子工作树的状态上下对齐：' + selector);
-    }
+    assert.equal(await rendered.locator('.source-control-status-button').count(), repository.worktrees.length, '主工作树与每个子工作树各有一个可操作的状态入口');
+    assert.equal(await root().locator('.source-control-task-slot:empty:visible').count(), 0, '没有关联任务时不保留空任务位置');
     const hierarchy = await rendered.evaluate((element: HTMLElement) => {
       const parent = element.querySelector('.source-control-repository-copy strong')!.getBoundingClientRect().left;
       const children = [...element.querySelectorAll('.source-control-worktree .source-control-repository-copy strong')].map(child => child.getBoundingClientRect().left);
@@ -687,22 +705,25 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
       const worktree = owner.worktrees.find((item: any) => item.location === expected.location);
       assert.deepEqual([worktree.ahead, worktree.behind], [expected.ahead, expected.behind], '真实本机裸远程推送/抓取后的生产接口数量');
       assert.ok(worktree.upstream?.startsWith('status-fixture/'));
-      const status = root().locator('[data-source-repository="' + owner.id + '"] [data-source-worktree="' + worktree.worktreeId + '"] .source-control-remote-status');
-      if (expected.ahead === 0 && expected.behind === 0) {
-        assert.equal(await status.getAttribute('aria-label'), '本地与远程没有提交差异');
-        assert.equal(await status.locator('.anticon-cloud-sync').count(), 1); assert.equal((await status.innerText()).trim(), '');
-      } else {
-        assert.equal(await status.getAttribute('aria-label'), `未推送 ${expected.ahead} 个提交，远程未同步 ${expected.behind} 个提交`);
-        assert.deepEqual((await status.locator(':scope > span:not(.anticon)').allTextContents()).map((text: string) => text.trim()), [String(expected.ahead), String(expected.behind)]);
-        assert.equal(await status.locator('.anticon-arrow-up').count(), 1); assert.equal(await status.locator('.anticon-arrow-down').count(), 1);
-      }
+      const status = root().locator('[data-source-repository="' + owner.id + '"] [data-source-worktree="' + worktree.worktreeId + '"] .source-control-status-button');
+      const remote = `未推送 ${expected.ahead} 个提交，落后远程跟踪记录 ${expected.behind} 个提交`;
+      assert.equal(await status.getAttribute('data-remote-state'), expected.ahead === 0 && expected.behind === 0 ? 'clean' : 'changed');
+      assert.ok((await status.getAttribute('aria-label')).includes(remote));
+      await assertStatusCounts(status, {ahead: expected.ahead, behind: expected.behind, files: worktree.fileCount});
+      assert.equal(await status.locator('.anticon-arrow-up').count(), expected.ahead > 0 ? 1 : 0);
+      assert.equal(await status.locator('.anticon-arrow-down').count(), expected.behind > 0 ? 1 : 0);
+      assert.equal(await status.locator('.anticon-check').count(), expected.ahead === 0 && expected.behind === 0 && worktree.fileCount === 0 ? 1 : 0, '仅远程与文件两方面都确认没有差异时显示单勾');
+      await assertStatusDetails(status, remote, worktree.fileCount === 0 ? '没有未提交文件' : worktree.fileCount + ' 个未提交文件');
     }
     const cleanOwner = observed.repositories.find((item: any) => item.worktrees.some((worktree: any) => worktree.location === fixture.cleanLocation));
     const clean = cleanOwner.worktrees.find((item: any) => item.location === fixture.cleanLocation); assert.equal(clean.fileCount, 0);
-    const cleanStatus = root().locator('[data-source-repository="' + cleanOwner.id + '"] [data-source-worktree="' + clean.worktreeId + '"] .source-control-file-status');
-    assert.equal(await cleanStatus.getAttribute('aria-label'), '没有未提交文件'); assert.equal(await cleanStatus.locator('.anticon-file').count(), 1);
-    const changedStatus = rendered.locator('[data-source-worktree="' + values[0].worktreeId + '"] .source-control-file-status');
-    assert.equal(await changedStatus.locator('.anticon-file-text').count(), 1); assert.ok((await changedStatus.getAttribute('class')).includes('is-changed'));
+    const cleanStatus = root().locator('[data-source-repository="' + cleanOwner.id + '"] [data-source-worktree="' + clean.worktreeId + '"] .source-control-status-button');
+    assert.equal(await cleanStatus.getAttribute('data-file-state'), 'clean');
+    assert.ok((await cleanStatus.getAttribute('aria-label')).includes('没有未提交文件'));
+    assert.equal(await cleanStatus.locator('[data-status-kind="files"],.anticon-file').count(), 0, '文件零值不单独占用图标或数量位置');
+    const changedStatus = rendered.locator('[data-source-worktree="' + values[0].worktreeId + '"] .source-control-status-button');
+    assert.equal(await changedStatus.getAttribute('data-file-state'), 'changed');
+    assert.equal(await changedStatus.locator('[data-status-kind="files"] .anticon-file-text').count(), 1);
     await fixture.withStatusDigits(linked, async (expected: any) => {
       await open(); const digitCatalog = await catalog();
       const observedLocation = (location: string) => digitCatalog.repositories.flatMap((owner: any) => owner.worktrees).find((worktree: any) => worktree.location === location);
@@ -712,51 +733,52 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
       }
       for (const files of expected.files) assert.equal(observedLocation(files.location)?.fileCount, files.count, '0／1／12／123文件计数来自实际独立路径');
       const separator = root().getByRole('separator', {name: '调整源代码管理与阅读区宽度', exact: true});
-      await separator.dblclick();
-      for (const width of ['normal', '300px']) {
-        if (width === '300px') {
-          await separator.press('End');
-          await page.waitForFunction(() => (document.querySelector('.code-source-control-page:not([hidden]) .source-control-reader')?.getBoundingClientRect().width || Infinity) <= 301);
+      await separator.dblclick(); await drag(separator, 80, 0);
+      for (const width of ['440px', '260px']) {
+        if (width === '260px') {
+          await separator.press('Home');
+          await page.waitForFunction(() => (document.querySelector('.code-source-control-page:not([hidden]) .source-control-sidebar')?.getBoundingClientRect().width || Infinity) <= 261);
         }
-        const geometry = await root().locator('.source-control-repository-tree-scroll [data-source-worktree]').evaluateAll((elements: HTMLElement[]) => {
-          const bounds = (element: Element) => { const box = element.getBoundingClientRect(); return {left: box.left, right: box.right}; };
+        const sidebar = await root().locator('.source-control-sidebar').boundingBox();
+        assert.ok(sidebar && Math.abs(sidebar.width - Number.parseInt(width)) <= 2, '本轮测量实际目录宽度：' + JSON.stringify({width, sidebar}));
+        for (const remote of expected.remote) {
+          const worktree = observedLocation(remote.location);
+          const status = root().locator('[data-source-worktree="' + worktree.worktreeId + '"] .source-control-status-button');
+          await assertStatusCounts(status, {ahead: remote.ahead, behind: remote.behind, files: worktree.fileCount});
+        }
+        for (const files of expected.files) {
+          const worktree = observedLocation(files.location);
+          const status = root().locator('[data-source-worktree="' + worktree.worktreeId + '"] .source-control-status-button');
+          assert.deepEqual(await status.locator('[data-status-kind="files"] .source-control-status-number').allTextContents(), files.count > 0 ? [String(files.count)] : []);
+        }
+        const geometry = await root().locator('.source-control-repository-tree-scroll .source-control-repository,.source-control-repository-tree-scroll .source-control-worktree').evaluateAll((elements: HTMLElement[]) => {
+          const bounds = (element: Element) => { const box = element.getBoundingClientRect(); return {left: box.left, right: box.right, top: box.top, bottom: box.bottom, width: box.width}; };
           const textBounds = (element: Element | null) => {
             if (!element) return null;
             const range = document.createRange(); range.selectNodeContents(element); const box = range.getBoundingClientRect();
             return {text: element.textContent, left: box.left, right: box.right, lines: range.getClientRects().length};
           };
           return elements.map(row => {
-            const file = row.querySelector('.source-control-file-status')!, remote = row.querySelector('.source-control-remote-status')!;
+            const name = row.querySelector('.source-control-repository-copy')!, status = row.querySelector('.source-control-status-button')!;
+            const controls = [...row.querySelectorAll(':scope > .source-control-task-slot,:scope > .source-control-row-action-slot')].map(bounds).filter(box => box.width > 0);
+            const branch = row.querySelector(':scope > .source-control-row-action-slot');
             return {
-              name: row.querySelector('strong')!.textContent,
-              file: {icon: bounds(file.querySelector('.anticon > svg')!), count: textBounds(file.querySelector('.source-control-file-count')), column: bounds(file)},
-              remote: {
-                column: bounds(remote),
-                single: remote.querySelector(':scope > .anticon > svg') ? bounds(remote.querySelector(':scope > .anticon > svg')!) : null,
-                label: remote.getAttribute('aria-label'),
-                directions: [...remote.querySelectorAll('.source-control-remote-direction')].map(direction => ({icon: bounds(direction.querySelector('.anticon > svg')!), count: textBounds(direction.querySelector('.source-control-remote-count'))!})),
-              },
+              label: name.textContent, row: bounds(row), name: bounds(name), status: bounds(status),
+              controls, branch: branch ? bounds(branch) : null,
+              parts: [...status.children].map(bounds),
+              counts: [...status.querySelectorAll('.source-control-status-count')].map(count => ({kind: count.getAttribute('data-status-kind'), box: bounds(count), icon: bounds(count.querySelector('.anticon > svg')!), number: textBounds(count.querySelector('.source-control-status-number'))!})),
             };
           });
         });
-        const aligned = (coordinates: number[]) => coordinates.length > 1 && coordinates.every(value => Math.abs(value - coordinates[0]) <= 1);
-        assert.ok(aligned(geometry.map((row: any) => row.file.icon.left)), '0及一／二／三位文件数的实际SVG起点上下对齐：' + JSON.stringify(geometry));
-        const fileCounts = geometry.map((row: any) => row.file.count).filter(Boolean);
-        assert.ok(aligned(fileCounts.map((count: any) => count.right)), '文件数字实际字尾对齐，不能只校验外层span：' + JSON.stringify(fileCounts));
-        assert.ok(fileCounts.every((count: any) => count.lines === 1), '文件数字保持单行');
-        const directions = geometry.map((row: any) => row.remote.directions).filter((entries: any[]) => entries.length === 2);
-        assert.ok(directions.length >= 3, '包括两向混合和单向有差异来源');
-        for (const index of [0, 1]) {
-          assert.ok(aligned(directions.map((entries: any[]) => entries[index].icon.left)), '每个方向箭头SVG起点固定：' + index);
-          assert.ok(aligned(directions.map((entries: any[]) => entries[index].count.right)), '每个方向一／二位数字实际字尾固定：' + index);
-          assert.ok(directions.every((entries: any[]) => entries[index].count.lines === 1 && entries[index].icon.right < entries[index].count.left), '箭头与单行数值之间保留边界：' + index);
-        }
-        const remoteAnchor = directions[0][0].icon.left, singleIcons = geometry.filter((row: any) => row.remote.single);
-        assert.ok(singleIcons.some((row: any) => row.remote.label === '本地与远程没有提交差异') && singleIcons.some((row: any) => row.remote.label === '未跟踪远程分支'));
-        assert.ok(singleIcons.every((row: any) => Math.abs(row.remote.single.left - remoteAnchor) <= 1), '同步和未跟踪单图标固定在第一远程图标格');
-        assert.ok(geometry.every((row: any) => row.file.icon.right <= row.file.column.right && (!row.file.count || row.file.count.left > row.file.icon.right && row.file.count.right <= row.file.column.right + 1) && row.remote.directions.every((direction: any) => direction.count.right <= row.remote.column.right + 1)), '内部图标与文字不越状态列');
-        process.stderr.write('[source-control-numeric-alignment] ' + JSON.stringify({width,rows:geometry}) + '\n');
-        await noOverflow(); await capture(page, 'source-control-fixture-numeric-alignment-' + width + '.png');
+        assert.ok(geometry.every((row: any) => row.name.width >= 48), '多位数量下名称仍保留可辨认空间：' + JSON.stringify(geometry));
+        assert.ok(geometry.every((row: any) => [row.name, row.status, ...row.controls].every((box: any) => box.left >= row.row.left - 1 && box.right <= row.row.right + 1)), '名称、状态和操作均位于所属目录行边界内：' + JSON.stringify(geometry));
+        assert.ok(geometry.every((row: any) => [row.name, row.status, ...row.controls].every((box: any, index: number, boxes: any[]) => boxes.slice(index + 1).every(next => box.right <= next.left + 1 || next.right <= box.left + 1 || box.bottom <= next.top + 1 || next.bottom <= box.top + 1))), '数量同行或局部下移均不能覆盖名称和相邻操作');
+        const branches = geometry.map((row: any) => row.branch).filter(Boolean);
+        assert.ok(branches.every((box: any) => Math.abs(box.right - branches[0].right) <= 1), '提供分支入口时各行右沿保持稳定');
+        assert.ok(geometry.every((row: any) => row.parts.every((box: any, index: number) => box.left >= row.status.left - 1 && box.right <= row.status.right + 1 && row.parts.slice(index + 1).every((next: any) => box.right <= next.left + 1 || next.right <= box.left + 1))), '状态标记与各项数量不重叠或越过入口边界');
+        assert.ok(geometry.every((row: any) => row.counts.every((count: any) => count.number.lines === 1 && Number(count.number.text) > 0 && count.icon.right < count.number.left && count.number.right <= count.box.right + 1)), '一／二／三位数字保持单行并与对应图标分开');
+        process.stderr.write('[source-control-compact-status] ' + JSON.stringify({width,rows:geometry}) + '\n');
+        await noOverflow(); await capture(page, 'source-control-fixture-compact-status-' + width + '.png');
       }
       await separator.dblclick();
     });
@@ -822,7 +844,27 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     await capture(page, 'source-control-fixture-worktree-path-hover.png');
     await closeHover(locationInfo);
     const taskIcon = catalogWorktree.getByRole('button', {name: '打开任务 浏览器任务', exact: true});
+    const statusButton = catalogWorktree.locator('.source-control-status-button');
     await taskIcon.focus(); await taskIcon.press('Shift+Tab');
+    assert.equal(await statusButton.evaluate((element: HTMLElement) => document.activeElement === element && element.matches(':focus-visible')), true, '从任务入口按Shift+Tab先到可操作的状态入口');
+    await statusButton.press('Enter'); const details = statusDetails(); await details.waitFor();
+    assert.equal(await statusButton.getAttribute('aria-expanded'), 'true');
+    assert.equal(await details.locator('dd').nth(2).innerText(), '浏览器任务', '键盘打开状态详情保留当前工作树任务');
+    await statusButton.press('Escape'); await details.waitFor({state: 'hidden'});
+    assert.equal(await statusButton.getAttribute('aria-expanded'), 'false');
+    await statusButton.press('Enter'); await details.waitFor();
+    const statusOwnerFold = catalogRepository.locator('.source-control-repository-fold');
+    await statusOwnerFold.focus(); await statusOwnerFold.press('Enter');
+    await details.waitFor({state: 'hidden'});
+    assert.equal(await statusButton.getAttribute('aria-expanded'), 'false', '键盘折叠所属代码库也关闭隐藏行的状态详情');
+    await statusOwnerFold.press('Enter'); await statusButton.focus();
+    await statusButton.press('Enter'); await details.waitFor();
+    const statusCatalogToggle = root().getByRole('button', {name:'折叠代码库列表', exact:true});
+    await statusCatalogToggle.focus(); await statusCatalogToggle.press('Enter');
+    await details.waitFor({state:'hidden'});
+    assert.equal(await statusButton.getAttribute('aria-expanded'), 'false', '键盘折叠整体目录关闭状态详情');
+    await root().getByRole('button', {name:'展开代码库列表', exact:true}).press('Enter'); await statusButton.focus();
+    await statusButton.press('Shift+Tab');
     const focusState = () => sourceName.evaluate((element: HTMLElement) => ({active: document.activeElement === element, focusVisible: element.matches(':focus-visible'), activeLabel: document.activeElement?.getAttribute('aria-label')}));
     const initialFocus = await focusState();
     assert.ok(initialFocus.active && initialFocus.focusVisible, '键盘Tab能回到工作树名称并呈现键盘焦点：' + JSON.stringify(initialFocus));
@@ -836,7 +878,7 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     await capture(page, 'source-control-fixture-worktree-keyboard-hover.png');
     await closeHover(locationInfo); await narrowSeparator.dblclick();
     assert.equal(await taskIcon.locator('.anticon-project').count(), 1);
-    assert.equal(await catalogWorktree.locator('.source-control-remote-status .anticon-arrow-up,.source-control-remote-status .anticon-arrow-down').count(), 2, '真实分叉的远程状态使用上下箭头，与任务项目图标区分');
+    assert.equal(await statusButton.locator('[data-status-kind="ahead"] .anticon-arrow-up,[data-status-kind="behind"] .anticon-arrow-down').count(), [alpha.observed.ahead, alpha.observed.behind].filter((count: number) => count > 0).length, '真实分叉的非零远程数量使用对应箭头，与任务项目图标区分');
     await taskIcon.hover(); await page.getByRole('tooltip', {name: '任务：浏览器任务', exact: true}).waitFor();
     assert.equal(await root().locator('.source-control-context').count(), 0, '浏览区不重复代码库和分支');
     for (const button of [catalogRepository.locator('.source-control-repository-fold')]) {

@@ -301,12 +301,14 @@ export async function runSourceControlBranchesJourney({ t, page, workspaceUrl, c
       await root().locator('.source-control-browse-tabs').getByText('未提交变更', {exact:true}).click();
       const retainedFile = () => root().locator('.source-control-change-area .task-changed-row').filter({has:page.locator('.task-changed-path[data-file-path="' + branches.keepPath + '"]')});
       await retainedFile().waitFor();
-      assert.equal(await row(worktree).locator('.source-control-file-count').innerText(), '1', '切换前确实存在旧分支的已读文件数量');
+      assert.equal(await row(worktree).locator('.source-control-status-count[data-status-kind="files"]').innerText(), '1', '切换前确实存在旧分支的已读文件数量');
       const catalogPath = new URL(api + '/code/source-control').pathname;
       const matchesCatalog = (url: URL) => url.pathname === catalogPath;
+      const scopedReads: string[] = [];
       let release = () => {};
       const gate = new Promise<void>(resolve => { release = resolve; });
       const intercept = async (route: any) => {
+        scopedReads.push(new URL(route.request().url()).searchParams.get('repositoryId') || '');
         if (refreshMode === 'delayed') { await gate; await route.continue(); }
         else await route.fulfill({status:503, json:{error:{code:'browser_catalog_unavailable', message:'浏览器回归：目录读取暂不可用。'}}});
       };
@@ -315,20 +317,21 @@ export async function runSourceControlBranchesJourney({ t, page, workspaceUrl, c
       const refreshed = page.waitForResponse((response: any) => new URL(response.url()).pathname === catalogPath).then((response: any) => ({response}), (error: unknown) => ({error}));
       try {
         await switchTo(worktree, branches.remote + '/' + branches.remoteName, branches.remoteName, true, false, {afterWrite:async result => {
-          // Holding the full catalog response distinguishes a server-confirmed
-          // switch from a UI that only updates after its next complete read.
+          // Hold the target observation to distinguish confirmed write facts from a later read.
           await page.waitForFunction(({id, title}: {id:string; title:string}) => [...document.querySelectorAll('.code-source-control-page:not([hidden]) [data-source-worktree]')].some(element => element.getAttribute('data-source-worktree') === id && element.querySelector('.source-control-row-action-button')?.getAttribute('title') === title), {id:worktree.worktreeId, title:branches.remoteName + ' · 管理分支'});
           assert.equal(result.head, branches.second);
-          assert.match(await row(worktree).locator('.source-control-file-status').getAttribute('aria-label'), /未知|不可读取/);
-          assert.match(await row(worktree).locator('.source-control-remote-status').getAttribute('aria-label'), /未知|不可读取/);
-          assert.equal(await row(worktree).locator('.source-control-file-count,.source-control-remote-count').count(), 0, '旧分支的数量不沿用到新分支');
+          assert.equal(await row(worktree).locator('.source-control-status-button').getAttribute('data-file-state'), 'unknown');
+          assert.equal(await row(worktree).locator('.source-control-status-button').getAttribute('data-remote-state'), 'unknown');
+          assert.equal(await row(worktree).locator('.source-control-status-count').count(), 0, '旧分支的数量不沿用到新分支');
           assert.equal(await retainedFile().count(), 0, '尚未重读时不把旧变更列表当作新分支的当前内容');
           assert.ok((await root().locator('.code-location-summary').innerText()).includes(branches.remoteName), '阅读位置也使用服务端确认的新分支');
+          await page.locator('.branch-management-panel:visible').waitFor({state:'hidden', timeout:2000});
+          assert.deepEqual(scopedReads, [worktree.repositoryId], '切换只重新读取目标代码库');
           await capture(page, 'source-control-checkout-catalog-' + refreshMode + '.png');
           if (refreshMode === 'failed') {
             const outcome = await refreshed; if (outcome.error) throw outcome.error;
             assert.equal(outcome.response.status(), 503);
-            await root().getByText('读取失败，保留已有内容。', {exact:true}).waitFor();
+            await root().getByText(new RegExp(worktree.repositoryName + '：浏览器回归：目录读取暂不可用。')).waitFor();
             assert.equal(await row(worktree).locator('.source-control-row-action-button').getAttribute('title'), branches.remoteName + ' · 管理分支', '刷新失败也不能退回旧分支名称');
             await page.unroute(matchesCatalog, intercept);
             await root().getByRole('button', {name:'刷新源代码管理', exact:true}).click();
@@ -338,13 +341,204 @@ export async function runSourceControlBranchesJourney({ t, page, workspaceUrl, c
             assert.equal(outcome.response.status(), 200);
           }
           await retainedFile().waitFor();
-          assert.equal(await row(worktree).locator('.source-control-file-status').getAttribute('aria-label'), '1 个未提交文件', '完整重读后恢复实际数量与变更列表');
+          assert.equal(await row(worktree).locator('.source-control-status-count[data-status-kind="files"]').innerText(), '1', '完整重读后恢复实际数量与变更列表');
         }});
         assert.equal(branches.keepContent(), 'preserve current work\n');
       } finally {
         release();
         await page.unroute(matchesCatalog, intercept);
       }
+    });
+  });
+
+  await scenario('切换成功后续分支读取延迟，浮层关闭与操作等待及时结束', async () => {
+    await fixture.withBranches(async (branches: any) => {
+      await page.setViewportSize({width:1440, height:1000});
+      const {worktree} = await open(branches);
+      let writing = false, release = () => {};
+      const gate = new Promise<void>(resolve => {release = resolve;});
+      const pendingRoutes = new Set<Promise<void>>();
+      const observe = (request: any) => {if (new URL(request.url()).pathname.endsWith('/code/branch-switch')) writing = true;};
+      const hold = (route: any) => {
+        const handled = (async () => {
+          if (writing) await gate;
+          try {await route.continue();} catch (error) {
+            // Successful close legitimately aborts this read while the fixture holds its route.
+            if (!(error instanceof Error) || !/Route is already handled|Target page, context or browser has been closed/.test(error.message)) throw error;
+          }
+        })();
+        pendingRoutes.add(handled); return handled.finally(() => pendingRoutes.delete(handled));
+      };
+      page.on('request', observe); await page.route('**/code/branches?**', hold);
+      try {
+        await switchTo(worktree, branches.alternate, branches.alternate, false, false, {afterWrite:async () => {
+          await page.locator('.branch-management-panel:visible').waitFor({state:'hidden', timeout:2000});
+          assert.equal(await row(worktree).locator('.source-control-row-action-button').isEnabled(), true, '后续只读清单不保持切换操作的pending状态');
+          await capture(page, 'source-control-switch-background-branches.png');
+        }});
+      } finally {release(); await Promise.all([...pendingRoutes]); page.off('request', observe); await page.unroute('**/code/branches?**', hold);}
+    });
+  });
+
+  await scenario('单库获取远程发现新分支，关闭浮层不取消写入且保留当前成果', async () => {
+    await fixture.withBranches(async (branches: any) => {
+      await page.setViewportSize({width:1440, height:1000});
+      const {worktree} = await open(branches), before = branches.snapshot();
+      const {manager} = await manage(worktree, branches.remote + '/' + branches.remoteName);
+      const added = branches.publishRemoteBranch('dev');
+      assert.equal(await manager.getByRole('button', {name:'管理 ' + branches.remote + '/' + added.name, exact:true}).count(), 0);
+      const reads: string[] = [];
+      const observe = (request: any) => { const url = new URL(request.url()); if (url.pathname === new URL(api + '/code/source-control').pathname) reads.push(url.searchParams.get('repositoryId') || ''); };
+      page.on('request', observe);
+      let release = () => {}; const gate = new Promise<void>(resolve => {release = resolve;});
+      const hold = async (route: any) => { await gate; await route.continue(); };
+      await page.route('**/code/fetch', hold);
+      try {
+        const sent = page.waitForRequest((request: any) => new URL(request.url()).pathname.endsWith('/code/fetch'));
+        const returned = page.waitForResponse((response: any) => new URL(response.url()).pathname.endsWith('/code/fetch'));
+        await manager.getByRole('button', {name:'获取远程 · ' + worktree.repositoryName, exact:true}).click();
+        const request = await sent;
+        assert.deepEqual(request.postDataJSON().repositories.map((item: any) => item.repositoryId), [worktree.repositoryId]);
+        assert.ok(request.postDataJSON().repositories[0].expectedGitId && request.postDataJSON().repositories[0].expectedCheckoutId);
+        await manager.locator('button.ant-btn-loading').waitFor();
+        await root().getByRole('button', {name:'全部获取远程', exact:true}).locator('.anticon-loading').waitFor();
+        await row(worktree).getByRole('button', {name:'管理分支 · ' + worktree.repositoryName + ' · ' + worktree.name, exact:true}).click();
+        await manager.waitFor({state:'hidden'});
+        release(); const response = await returned; assert.equal(response.status(), 200);
+        const result = await response.json(); assert.equal(result.repositories[0].status, 'succeeded', JSON.stringify(result));
+        await root().locator('[data-fetch-repository="' + worktree.repositoryId + '"][data-fetch-status="succeeded"]').waitFor();
+        assert.deepEqual(reads, [worktree.repositoryId], '单库获取只进行一次目标目录观察');
+        const reopened = await manage(worktree, branches.remote + '/' + added.name);
+        await reopened.manager.getByRole('button', {name:'管理 ' + branches.remote + '/' + added.name, exact:true}).waitFor();
+        const after = branches.snapshot();
+        assert.deepEqual(after.positions, before.positions, '获取只更新远程跟踪记录，HEAD、索引及当前文件不变');
+        const localRefs = (snapshots: string[]) => snapshots.map(refs => refs.split('\n').filter(line => line.startsWith('refs/heads/')));
+        assert.deepEqual(localRefs(after.refs), localRefs(before.refs), '新远程dev可发现，但不自动创建或切换本地dev');
+        assert.deepEqual(after.config, before.config, '获取不改远程或本地分支配置');
+        assert.equal(branches.keepContent(), 'preserve current work\n');
+        await capture(page, 'source-control-fetch-single.png');
+        await row(worktree).getByRole('button', {name:'管理分支 · ' + worktree.repositoryName + ' · ' + worktree.name, exact:true}).click();
+        await reopened.manager.waitFor({state:'hidden'});
+        await root().getByRole('separator', {name:'调整源代码管理与阅读区宽度', exact:true}).press('Home');
+        await page.waitForFunction(() => (document.querySelector('.code-source-control-page:not([hidden]) .source-control-sidebar')?.getBoundingClientRect().width || Infinity) <= 261);
+        const narrow = await manage(worktree, branches.remote + '/' + added.name);
+        const geometry = await narrow.manager.locator('footer').evaluate((footer: HTMLElement) => {
+          const bounds = footer.getBoundingClientRect();
+          const buttons = [...footer.querySelectorAll('button')].map(button => button.getBoundingClientRect());
+          return {contained:buttons.every(button => button.left >= bounds.left && button.right <= bounds.right), distinct:buttons.every((button, index) => buttons.slice(index + 1).every(other => button.right <= other.left || other.right <= button.left || button.bottom <= other.top || other.bottom <= button.top))};
+        });
+        assert.deepEqual(geometry, {contained:true, distinct:true}, '窄栏分支底部的只读刷新与获取入口不重叠');
+        await narrow.manager.getByRole('button', {name:'获取远程 · ' + worktree.repositoryName, exact:true}).click({trial:true});
+        await noOverflow(); await capture(page, 'source-control-fetch-single-260px.png');
+      } finally {release(); page.off('request', observe); await page.unroute('**/code/fetch', hold);}
+    });
+  });
+
+  await scenario('两库获取后局部读取交错，旧全量迟到不回滚且无关阅读不重读', async () => {
+    await fixture.withBranches(async (branches: any) => {
+      await page.setViewportSize({width:1440, height:1000});
+      const {worktree} = await open(branches);
+      const observed = await (await page.request.get(api + '/code/source-control')).json();
+      const peer = observed.repositories.find((item: any) => item.id !== worktree.repositoryId && item.source?.checkoutId);
+      assert.ok(peer, '并发回归需要第二个真实可观察代码库');
+      const peerTree = {...peer.worktrees.find((item: any) => item.isRegistered), repositoryId:peer.id, repositoryName:peer.name};
+      const reads: string[] = [], contentReads: string[] = [];
+      const gates = new Map<string, {gate:Promise<void>; release():void}>();
+      for (const id of ['', worktree.repositoryId, peer.id]) {
+        let release = () => {}; const gate = new Promise<void>(resolve => {release = resolve;}); gates.set(id, {gate, release});
+      }
+      const catalogPath = new URL(api + '/code/source-control').pathname;
+      const matchesCatalog = (url: URL) => url.pathname === catalogPath;
+      const interceptCatalog = async (route: any) => {
+        const id = new URL(route.request().url()).searchParams.get('repositoryId') || ''; reads.push(id);
+        await gates.get(id)!.gate;
+        const repository = observed.repositories.find((item: any) => item.id === id);
+        const branch = id === worktree.repositoryId ? 'concurrent-a-new' : 'concurrent-b-new';
+        const value = id ? {...observed, readAt:new Date().toISOString(), repositories:[{...repository, branch, worktrees:repository.worktrees.map((item: any) => ({...item, branch}))}]} : observed;
+        await route.fulfill({json:value});
+      };
+      const interceptFetch = async (route: any) => {
+        const input = route.request().postDataJSON();
+        await route.fulfill({json:{readAt:new Date().toISOString(), repositories:input.repositories.map((item: any) => ({repositoryId:item.repositoryId, gitId:item.expectedGitId, status:'succeeded', message:'隔离获取成功', remotes:[]}))}});
+      };
+      const observeContents = (request: any) => {
+        const url = new URL(request.url());
+        if (/\/code\/(?:history|commit|diff|source-file|branches|authors)$/.test(url.pathname)) contentReads.push(url.searchParams.get('repositoryId') || '');
+      };
+      await page.route(matchesCatalog, interceptCatalog); await page.route('**/code/fetch', interceptFetch);
+      page.on('request', observeContents);
+      const fetchOne = async (tree: any) => {
+        const label = tree.isMain ? '主工作树' : tree.name;
+        await row(tree).getByRole('button', {name:'管理分支 · ' + tree.repositoryName + ' · ' + label, exact:true}).click();
+        const manager = page.getByRole('region', {name:'分支管理 · ' + tree.repositoryName + ' · ' + label, exact:true});
+        await manager.getByRole('button', {name:'获取远程 · ' + tree.repositoryName, exact:true}).click();
+      };
+      try {
+        const fullReturned = page.waitForResponse((response: any) => {const url = new URL(response.url()); return url.pathname === catalogPath && !url.searchParams.has('repositoryId');});
+        const fullStarted = page.waitForRequest((request: any) => {const url = new URL(request.url()); return url.pathname === catalogPath && !url.searchParams.has('repositoryId');});
+        await root().getByRole('button', {name:'刷新源代码管理', exact:true}).click(); await fullStarted;
+        const aStarted = page.waitForRequest((request: any) => new URL(request.url()).searchParams.get('repositoryId') === worktree.repositoryId && new URL(request.url()).pathname === catalogPath);
+        const aReturned = page.waitForResponse((response: any) => new URL(response.url()).searchParams.get('repositoryId') === worktree.repositoryId && new URL(response.url()).pathname === catalogPath);
+        await fetchOne(worktree); await aStarted;
+        // Let A's own invalidation publish before measuring B's effect on retained A reading.
+        await page.evaluate(async () => {await new Promise(requestAnimationFrame); await new Promise(requestAnimationFrame);});
+        const aReads = contentReads.filter(id => id === worktree.repositoryId).length;
+        const bStarted = page.waitForRequest((request: any) => new URL(request.url()).searchParams.get('repositoryId') === peer.id && new URL(request.url()).pathname === catalogPath);
+        const bReturned = page.waitForResponse((response: any) => new URL(response.url()).searchParams.get('repositoryId') === peer.id && new URL(response.url()).pathname === catalogPath);
+        await fetchOne(peerTree); await bStarted;
+        gates.get(peer.id)!.release(); await bReturned;
+        await page.waitForFunction(({id}: {id:string}) => [...document.querySelectorAll('[data-source-worktree]')].some(element => element.getAttribute('data-source-worktree') === id && element.querySelector('.source-control-row-action-button')?.getAttribute('title') === 'concurrent-b-new · 管理分支'), {id:peerTree.worktreeId});
+        assert.equal(contentReads.filter(id => id === worktree.repositoryId).length, aReads, 'B更新不触发A的分支、历史、作者、提交或文件读取');
+        gates.get(worktree.repositoryId)!.release(); await aReturned;
+        gates.get('')!.release(); await fullReturned;
+        await page.evaluate(async () => {await new Promise(requestAnimationFrame); await new Promise(requestAnimationFrame);});
+        assert.equal(await row(worktree).locator('.source-control-row-action-button').getAttribute('title'), 'concurrent-a-new · 管理分支');
+        assert.equal(await row(peerTree).locator('.source-control-row-action-button').getAttribute('title'), 'concurrent-b-new · 管理分支');
+        assert.equal(await row(worktree).locator('.source-control-repository-copy').getAttribute('aria-pressed'), 'true');
+        assert.deepEqual(reads, ['', worktree.repositoryId, peer.id]);
+        await capture(page, 'source-control-scoped-concurrent.png');
+      } finally {
+        for (const value of gates.values()) value.release(); page.off('request', observeContents);
+        await page.unroute(matchesCatalog, interceptCatalog); await page.unroute('**/code/fetch', interceptFetch);
+      }
+    });
+  });
+
+  await scenario('全部获取远程绑定已观察范围，逐库反馈且只重新读取一次全目录', async () => {
+    await fixture.withBranches(async (branches: any) => {
+      await page.setViewportSize({width:1440, height:1000});
+      const {worktree} = await open(branches), before = branches.snapshot();
+      const observed = await (await page.request.get(api + '/code/source-control')).json();
+      const reads: string[] = [], writes: any[] = [];
+      const observe = (request: any) => { const url = new URL(request.url()); if (url.pathname === new URL(api + '/code/source-control').pathname) reads.push(url.searchParams.get('repositoryId') || ''); };
+      const intercept = async (route: any) => {
+        const input = route.request().postDataJSON(); writes.push(input);
+        await route.fulfill({json:{readAt:new Date().toISOString(), repositories:input.repositories.map((item: any, index: number) => ({repositoryId:item.repositoryId, gitId:item.expectedGitId, status:index === 0 ? 'succeeded' : 'failed', message:index === 0 ? '隔离获取成功' : '隔离远程认证失败', remotes:[{name:'origin', status:index === 0 ? 'succeeded' : 'failed', message:index === 0 ? '已获取' : '认证失败'}]}))}});
+      };
+      await page.route('**/code/fetch', intercept); page.on('request', observe);
+      try {
+        await root().getByRole('button', {name:'刷新源代码管理', exact:true}).click();
+        await root().locator('.source-control-title .anticon-spin').waitFor({state:'hidden'});
+        assert.equal(writes.length, 0, '只读刷新不执行获取远程'); reads.length = 0;
+        const refreshed = page.waitForResponse((response: any) => new URL(response.url()).pathname === new URL(api + '/code/source-control').pathname);
+        await root().getByRole('button', {name:'全部获取远程', exact:true}).click(); await refreshed;
+        assert.equal(writes.length, 1);
+        assert.deepEqual(writes[0].repositories, observed.repositories.map((item: any) => ({repositoryId:item.id, expectedGitId:item.gitId, expectedCheckoutId:item.source?.checkoutId || null})));
+        assert.deepEqual(reads, [''], '一批全部获取只作一次全目录观察');
+        await root().locator('[data-fetch-status="succeeded"]').waitFor(); await root().locator('[data-fetch-status="failed"]').first().waitFor();
+        assert.equal(await root().locator('[data-fetch-repository]').count(), observed.repositories.length);
+        assert.equal(await row(worktree).locator('.source-control-row-action-button').getAttribute('title'), branches.branch + ' · 管理分支');
+        assert.deepEqual(branches.snapshot(), before, '隔离响应替身不触发真实Git写入');
+        await capture(page, 'source-control-fetch-batch-partial.png');
+        await root().getByRole('separator', {name:'调整源代码管理与阅读区宽度', exact:true}).press('Home');
+        await page.waitForFunction(() => (document.querySelector('.code-source-control-page:not([hidden]) .source-control-sidebar')?.getBoundingClientRect().width || Infinity) <= 261);
+        const header = await root().locator('.source-control-title').evaluate((element: HTMLElement) => {
+          const bounds = element.getBoundingClientRect(), actions = [...element.querySelectorAll('button')].map(button => button.getBoundingClientRect());
+          return {contained:actions.every(button => button.left >= bounds.left && button.right <= bounds.right), distinct:actions.every((button, index) => actions.slice(index + 1).every(other => button.right <= other.left || other.right <= button.left))};
+        });
+        assert.deepEqual(header, {contained:true, distinct:true}, '260px目录标题内全部获取与只读刷新均可达且不重叠');
+        await noOverflow(); await capture(page, 'source-control-fetch-batch-260px.png');
+      } finally {page.off('request', observe); await page.unroute('**/code/fetch', intercept);}
     });
   });
 
@@ -391,7 +585,7 @@ export async function runSourceControlBranchesJourney({ t, page, workspaceUrl, c
       await page.mouse.click(5, 5); await occupied.manager.waitFor({ state: 'hidden' });
       branches.blockCheckout();
       await root().getByRole('button', { name: '刷新源代码管理', exact: true }).click();
-      await row(worktree).locator('.source-control-file-status').filter({ hasText: '2' }).waitFor();
+      await row(worktree).locator('.source-control-status-count[data-status-kind="files"]').filter({ hasText: '2' }).waitFor();
       const beforeBlocked = branches.snapshot(), blocked = await manage(worktree, branches.alternate);
       expectedBrowserErrors.add('/code/branch-switch');
       const returned = page.waitForResponse((response: any) => response.request().method() === 'POST' && new URL(response.url()).pathname.endsWith('/code/branch-switch'));

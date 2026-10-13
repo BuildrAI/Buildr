@@ -46,11 +46,12 @@ function fixture(t: test.TestContext, format = 'sha1') {
   const tasks = new Map([['task-one', { taskId: 'task-one', title: '当前明确任务' }]]);
   let evidence:{evidence:{repositories:Array<{sourceRepository:string;checkoutPath:string}>}}|null=null;
   const catalog = { repositories: [{ id: 'repo-one', code: 'repo', name: 'Fixture Repository', source: { type: 'workspace', path: root } }], services: [{ id: 's1', code: 'one', repositoryId: 'repo-one' }, { id: 's2', code: 'two', repositoryId: 'repo-one' }], projects: [{ id: 'p-id', code: 'p', serviceIds: ['s1', 's2'] }] };
-  const app = createCodeApplication({ assetCatalog: () => catalog, resolveSourceRoot: (_root, source) => source.path,
+  let catalogReads=0;
+  const app = createCodeApplication({ assetCatalog: () => {catalogReads++;return catalog;}, resolveSourceRoot: (_root, source) => source.path,
     readTaskScope: (_root, id) => { if (!tasks.has(id)) throw Error('missing task'); return { projects: ['p'], services: [] }; },
     readTask: (_root, id) => { const task = tasks.get(id); if (!task) throw Error('missing task'); return task; }, readGitWorktreeEvidence: () => evidence });
   const snapshot = () => ({ status: git('status', '--porcelain=v2', '-z'), head: (() => { try { return git('rev-parse', 'HEAD'); } catch { return ''; } })(), index: fs.existsSync(path.join(root, '.git/index')) ? crypto.createHash('sha256').update(fs.readFileSync(path.join(root, '.git/index'))).digest('hex') : '', refs: git('for-each-ref', '--format=%(refname) %(objectname)') });
-  return { base, root, git, write, commit, app, catalog, snapshot,setEvidence:(value:typeof evidence)=>{evidence=value;}, input: { repositoryId: 'repo-one' } };
+  return { base, root, git, write, commit, app, catalog, snapshot,catalogReads:()=>catalogReads,setEvidence:(value:typeof evidence)=>{evidence=value;}, input: { repositoryId: 'repo-one' } };
 }
 const hasCode = (code: string) => (error: unknown) => (error as { code?: string }).code === code;
 function checkoutGit(checkout:string,...args:string[]){return execFileSync('git',['--no-optional-locks','-C',checkout,...args],{encoding:'utf8',stdio:['ignore','pipe','pipe']}).trim();}
@@ -132,7 +133,9 @@ test('catalog keeps shared-instance identity, both index/worktree layers, nullab
 test('unborn repository and untracked file use actual new contents while unavailable instances remain local', async t => {
   const f = fixture(t); f.write('first.ts', 'initial\n'); f.git('add', '--', 'first.ts'); f.write('new.ts', 'fresh\n');
   f.catalog.repositories.push({ id: 'missing', code: 'missing', name: 'Missing', source: { type: 'workspace', path: path.join(f.base, 'missing') } });
-  const catalog = f.app.sourceControl(f.root); assert.equal(catalog.repositories.length, 2); assert.equal(catalog.repositories[0].head, null); assert.equal(catalog.repositories[0].fileCount, 2); assert.equal(catalog.repositories[1].fileCount, null); assert.equal(catalog.repositories[1].status, 'unavailable');
+  f.catalog.repositories.push({ id: 'invalid', code: 'invalid', name: 'Invalid', source: { type: 'workspace', path: '' } });
+  const catalog = f.app.sourceControl(f.root); assert.equal(catalog.repositories.length, 3); assert.equal(catalog.repositories[0].head, null); assert.equal(catalog.repositories[0].fileCount, 2); assert.equal(catalog.repositories[1].fileCount, null); assert.equal(catalog.repositories[1].status, 'unavailable');
+  assert.deepEqual(catalog.repositories[1].worktrees,[]);assert.equal(catalog.repositories[2].status,'unavailable');assert.deepEqual(catalog.repositories[2].worktrees,[], 'an invalid registered directory must not enumerate the process working directory');
   assert.match((await f.app.diff(f.root, { ...f.input, area: 'staged', path: 'first.ts' })).patch!, /\+initial/);
   const untracked = await f.app.diff(f.root, { ...f.input, area: 'untracked', path: 'new.ts' }); assert.match(untracked.patch!, /\+fresh/); assert.equal(untracked.file.additions, 1);
   assert.deepEqual(f.app.history(f.root, f.input).commits, []);
@@ -349,6 +352,7 @@ test('catalog refresh scales Git reads linearly and observes fresh status and in
   finally { capture.mock.restore(); captureSpawn.mock.restore(); syncBuiltinESMExports(); }
   assert.equal(catalog.repositories[0].worktreeCount, 6); assert.equal(catalog.worktreeCoverage.read, 6); assert.deepEqual(catalog.diagnostics, []);
   assert.ok(gitReads <= 10 + 8 * 6, `six worktrees should stay within a linear Git-read budget; observed ${gitReads}`);
+  assert.ok(f.catalogReads()<=7, `reuse the observed catalog when entering each repository; observed ${f.catalogReads()} reads`);
   fs.writeFileSync(path.join(linked[0], 'same.ts'), 'changed after first refresh\n'); f.git('worktree', 'remove', linked[1]);
   const refreshed = f.app.sourceControl(f.root).repositories[0];
   assert.equal(refreshed.worktreeCount, 5); assert.equal(refreshed.worktrees.find(worktree => worktree.location === fs.realpathSync(linked[0]))?.fileCount, 1);
@@ -376,6 +380,46 @@ test('catalog refresh rejects a checkout replaced while its status was being rea
   assert.equal(repository.status, 'partial'); assert.equal(repository.worktrees.find(worktree => worktree.isMain)?.status, 'complete');
   assert.equal(changed.status, 'unavailable'); assert.equal(changed.fileCount, null); assert.equal(changed.observedRevision, null);
   assert.ok(changed.diagnostics.some(item => item.code === 'code_worktree_identity_changed'));
+});
+
+for(const sameRepository of [false,true])test('catalog refresh rejects a repository registration retargeted during status to '+(sameRepository?'the same common Git directory':'a foreign repository')+' and keeps other repositories available', t => {
+  const f=fixture(t);f.write('same.ts','base\n');f.commit('base');
+  const other=path.join(f.base,'other');
+  if(sameRepository)f.git('worktree','add','-b','other',other);
+  else{fs.mkdirSync(other);checkoutGit(other,'init','--initial-branch=other');}
+  f.catalog.repositories.push({id:'repo-other',code:'other',name:'Other Repository',source:{type:'workspace',path:other}});
+  const before=f.snapshot(),original=childProcess.execFileSync;let retargeted=false;
+  const capture=t.mock.method(childProcess,'execFileSync',(file:any,args:any,options:any)=>{
+    const result=original(file,args,options);
+    if(!retargeted&&file==='git'&&args.includes('status')&&args[args.indexOf('-C')+1]===fs.realpathSync(f.root)){
+      retargeted=true;f.catalog.repositories[0].source.path=other;
+    }
+    return result;
+  });
+  syncBuiltinESMExports();
+  let catalog:ReturnType<typeof f.app.sourceControl>;
+  try{catalog=f.app.sourceControl(f.root);}finally{capture.mock.restore();syncBuiltinESMExports();}
+  assert.equal(retargeted,true);
+  const changed=catalog.repositories.find(repository=>repository.id==='repo-one')!;
+  assert.equal(changed.status,'unavailable');assert.equal(changed.worktrees[0].observedRevision,null);
+  assert.ok(changed.diagnostics.some(item=>item.code==='code_worktree_identity_changed'));
+  assert.equal(catalog.repositories.find(repository=>repository.id==='repo-other')?.status,'complete');
+  assert.deepEqual(f.snapshot(),before);
+});
+
+test('catalog source version comes from the same status observation as the displayed branch',t=>{
+  const f=fixture(t);f.write('same.ts','base\n');f.commit('base');
+  const original=childProcess.execFileSync;let switched=false;
+  const capture=t.mock.method(childProcess,'execFileSync',(file:any,args:any,options:any)=>{
+    if(!switched&&file==='git'&&args.includes('status')){switched=true;f.git('switch','-c','status-observation');}
+    return original(file,args,options);
+  });
+  syncBuiltinESMExports();
+  let catalog:ReturnType<typeof f.app.sourceControl>;
+  try{catalog=f.app.sourceControl(f.root);}finally{capture.mock.restore();syncBuiltinESMExports();}
+  const observed=catalog.repositories[0].worktrees[0];
+  assert.equal(switched,true);assert.equal(observed.status,'complete');
+  assert.equal(observed.branch,'status-observation');assert.equal(observed.source?.version,'status-observation · 当前文件');
 });
 
 test('opaque worktree identities reject forged, removed, reused and foreign directories without inventing Git inventory',async t=>{
@@ -410,4 +454,30 @@ test('SCM registry reads ignore unrelated retired-task evidence while Explorer a
   const explorer=app.repositories(f.root);assert.ok(explorer.diagnostics.some(item=>item.code==='code_task_location_unavailable'&&item.message.includes('retired-other')));assert.ok(explorer.worktrees.some(item=>item.taskId==='retired-other'&&!item.available));
   reads.length=0;associationDiscovery=0;const scoped=app.sourceControl(f.root,{taskId:'task-one'});assert.equal(scoped.repositories[0].status,'complete');assert.ok(scoped.diagnostics.some(item=>item.code==='code_task_location_unavailable'));assert.ok(scoped.diagnostics.every(item=>!item.message.includes('retired-other')));assert.deepEqual(reads,['task-one']);assert.equal(associationDiscovery,0);assert.deepEqual(scoped.selectedWorktrees,[{repositoryId:'repo-one',worktreeId:scoped.repositories[0].worktrees[0].worktreeId}]);assert.match(scoped.scopeReason,/登记目录/);assert.deepEqual(f.snapshot(),before);
   f.catalog.repositories.push({id:'unavailable',code:'unavailable',name:'Unavailable',source:{type:'workspace',path:path.join(f.base,'missing')}});const partial=app.sourceControl(f.root);assert.ok(partial.diagnostics.some(item=>item.code==='code_repository_unavailable'&&item.repositoryId==='unavailable'));assert.equal(partial.repositories[0].status,'complete');assert.equal(partial.repositories[1].status,'unavailable');
+});
+
+test('explicit repository reads filter before source resolution and retain the complete selected worktree inventory', async t => {
+  const f=fixture(t);f.write('same.ts','base\n');f.commit('base');
+  const linked=path.join(f.base,'linked');f.git('worktree','add','-b','linked',linked);
+  f.catalog.repositories.push({id:'other',code:'other',name:'Unrelated',source:{type:'workspace',path:path.join(f.base,'unrelated')}});
+  f.catalog.services.push({id:'s-other',code:'other',repositoryId:'other'});f.catalog.projects[0].serviceIds.push('s-other');
+  const resolved:string[]=[];
+  const app=createCodeApplication({assetCatalog:()=>f.catalog,resolveSourceRoot:(_root,source)=>{resolved.push(source.path);return source.path;},readTaskScope:()=>({projects:['p'],services:[]}),readGitWorktreeEvidence:()=>null});
+  const scoped=app.sourceControl(f.root,{repositoryId:'repo-one'});
+  assert.deepEqual(scoped.repositories.map(item=>item.id),['repo-one']);
+  assert.equal(scoped.repositories[0].worktrees.length,2);assert.equal(scoped.worktreeCoverage.read,2);
+  assert.ok(resolved.length>0);assert.ok(resolved.every(location=>location===f.root),'unrelated registered source must not be resolved or inspected');
+  assert.equal(CODE_HTTP_VALIDATORS.validate(CODE_HTTP_SCHEMAS.sourceControl.$id,scoped).valid,true);
+  resolved.length=0;
+  assert.throws(()=>app.sourceControl(f.root,{repositoryId:'unknown'}),hasCode('code_repository_not_registered'));
+  assert.deepEqual(resolved,[],'unknown explicit scope must not fall back to all repositories');
+  const taskScoped=app.sourceControl(f.root,{repositoryId:'repo-one',taskId:'task-one'});assert.deepEqual(taskScoped.selectedRepositoryIds,['repo-one']);assert.ok(resolved.every(location=>location===f.root));
+  const full=app.sourceControl(f.root);assert.equal(full.repositories.length,2);assert.equal(full.repositories[1].status,'unavailable');
+  resolved.length=0;
+  const unavailable=app.sourceControl(f.root,{repositoryId:'other'});assert.equal(unavailable.repositories.length,1);assert.equal(unavailable.repositories[0].status,'unavailable');assert.ok(resolved.every(location=>location!==f.root));
+  const http=createCodeHttpContribution(app);
+  let forwarded:unknown;
+  const response=await http.handle({request:{method:'GET'},root:f.root,suffix:'/code/source-control',searchParams:new URLSearchParams({repositoryId:'repo-one'}),submitTaskRead:async(_operation,_readId,params)=>{forwarded=JSON.parse(params.input);return scoped;}});
+  assert.equal(response?.status,200);assert.equal((forwarded as {repositoryId:string}).repositoryId,'repo-one');
+  await assert.rejects(http.handle({request:{method:'GET'},root:f.root,suffix:'/code/source-control',searchParams:new URLSearchParams({repositoryId:'unknown'})}),hasCode('code_repository_not_registered'));
 });

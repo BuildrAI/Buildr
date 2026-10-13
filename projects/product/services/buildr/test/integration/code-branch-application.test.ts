@@ -20,7 +20,8 @@ function fixture(t: test.TestContext, format = 'sha1') {
   git('init', '--initial-branch=main', '--object-format=' + format); git('config', 'user.name', 'Same Name'); git('config', 'user.email', 'first@example.com'); git('config', 'commit.gpgSign', 'false');
   const write = (file: string, value: string, location = root) => fs.writeFileSync(path.join(location, file), value);
   const commit = (message: string, email = 'first@example.com') => { git('add', '--', '.'); git('commit', '--author=Same Name <' + email + '>', '-m', message); return git('rev-parse', 'HEAD'); };
-  const app = createCodeApplication({ assetCatalog: () => ({ repositories: [{ id: 'repo-one', code: 'repo', name: 'Fixture', source: { type: 'workspace', path: root } }], services: [], projects: [] }), resolveSourceRoot: (_root, source) => source.path, readTaskScope: () => ({ projects: [], services: [] }), readGitWorktreeEvidence: () => null });
+  let registeredPath = root, catalogRead: (() => void) | undefined;
+  const app = createCodeApplication({ assetCatalog: () => { catalogRead?.(); return { repositories: [{ id: 'repo-one', code: 'repo', name: 'Fixture', source: { type: 'workspace', path: registeredPath } }], services: [], projects: [] }; }, resolveSourceRoot: (_root, source) => source.path, readTaskScope: () => ({ projects: [], services: [] }), readGitWorktreeEvidence: () => null });
   const source = () => app.sourceControl(root).repositories[0].worktrees.find(item => item.isRegistered)!;
   const input = () => ({ repositoryId: 'repo-one', worktreeId: source().worktreeId });
   const catalog = () => app.branches(root, input());
@@ -30,7 +31,7 @@ function fixture(t: test.TestContext, format = 'sha1') {
     return { branch: gitAt(location, 'symbolic-ref', '--short', 'HEAD'), head: gitAt(location, 'rev-parse', 'HEAD'), status: gitAt(location, 'status', '--porcelain=v2', '-z'), index: fs.existsSync(index) ? crypto.createHash('sha256').update(fs.readFileSync(index)).digest('hex') : '', files: Object.fromEntries(fs.readdirSync(location).filter(file => file !== '.git' && fs.statSync(path.join(location, file)).isFile()).map(file => [file, fs.readFileSync(path.join(location, file), 'utf8')])) };
   };
   const remote = (name: string, branch: string, hash: string) => { if (!git('remote').split('\n').includes(name)) git('remote', 'add', name, path.join(base, name + '.git')); git('update-ref', 'refs/remotes/' + name + '/' + branch, hash); };
-  return { root, base, app, git, gitAt, write, commit, source, input, catalog, request, snapshot, remote };
+  return { root, base, app, git, gitAt, write, commit, source, input, catalog, request, snapshot, remote, onCatalogRead: (read?: () => void) => { catalogRead = read; }, register: (location: string) => { registeredPath = location; } };
 }
 const code = (expected: string) => (error: unknown) => (error as { code?: string }).code === expected;
 
@@ -171,6 +172,51 @@ test('removed and same-path rebuilt worktree identities reject old observations 
   f.git('worktree', 'remove', linked); assert.throws(() => f.app.switchBranch(f.root, request), code('code_worktree_not_registered')); f.git('worktree', 'add', linked, 'linked');
   assert.throws(() => f.app.switchBranch(f.root, request), code('code_worktree_not_registered')); assert.notEqual(f.app.sourceControl(f.root).repositories[0].worktrees.find(item => !item.isMain)?.worktreeId, wt.worktreeId); assert.deepEqual(f.snapshot(), before);
   assert.throws(() => f.app.switchBranch(f.root, { ...f.request('refs/heads/target'), repositoryId: 'foreign' }), code('code_repository_not_registered')); assert.deepEqual(f.snapshot(), before);
+});
+
+test('branch observations recheck registered root at both identity boundaries without reading replacement state', t => {
+  for (const boundary of [2, 3]) {
+    const f = fixture(t); f.write('same.ts', 'original\n'); f.commit('original'); f.git('branch', 'target');
+    const replacement = path.join(f.base, 'replacement'); fs.mkdirSync(replacement); f.gitAt(replacement, 'init', '--initial-branch=foreign');
+    f.gitAt(replacement, 'config', 'user.name', 'Replacement'); f.gitAt(replacement, 'config', 'user.email', 'replacement@example.com');
+    f.write('same.ts', 'replacement\n', replacement); f.gitAt(replacement, 'add', '.'); f.gitAt(replacement, '-c', 'commit.gpgSign=false', 'commit', '-m', 'replacement');
+    const input = f.input(), before = f.snapshot(), replacementBefore = f.snapshot(replacement); let reads = 0;
+    f.onCatalogRead(() => { if (++reads === boundary) f.register(replacement); });
+    assert.throws(() => f.app.branches(f.root, input), (error: unknown) => ['code_worktree_identity_changed', 'code_worktree_not_registered'].includes((error as { code?: string }).code || ''));
+    f.onCatalogRead(); assert.deepEqual(f.snapshot(), before); assert.deepEqual(f.snapshot(replacement), replacementBefore);
+  }
+});
+
+test('branch observations reject same-path checkout replacement during the read', t => {
+  const f = fixture(t); f.write('same.ts', 'base\n'); f.commit('base');
+  const linked = path.join(f.base, 'linked'); f.git('worktree', 'add', '-b', 'linked', linked);
+  const worktree = f.app.sourceControl(f.root).repositories[0].worktrees.find(item => !item.isMain)!, input = { repositoryId: 'repo-one', worktreeId: worktree.worktreeId };
+  const before = f.snapshot(); let reads = 0, replacement: ReturnType<typeof f.snapshot> | undefined;
+  f.onCatalogRead(() => { if (++reads === 2) { f.git('worktree', 'remove', linked); f.git('worktree', 'add', linked, 'linked'); replacement = f.snapshot(linked); } });
+  assert.throws(() => f.app.branches(f.root, input), code('code_worktree_identity_changed'));
+  f.onCatalogRead(); assert.deepEqual(f.snapshot(), before); assert.ok(replacement); assert.deepEqual(f.snapshot(linked), replacement);
+});
+
+test('a new occupant before the write rejects the switch and preserves the requested checkout', t => {
+  const f = fixture(t); f.write('same.ts', 'base\n'); f.commit('base'); f.git('branch', 'target');
+  const request = f.request('refs/heads/target'), before = f.snapshot(), linked = path.join(f.base, 'new-occupant'); let reads = 0;
+  // Initial target discovery and the first observation use four catalog reads; planning is then re-observed.
+  f.onCatalogRead(() => { if (++reads === 5) f.git('worktree', 'add', linked, 'target'); });
+  assert.throws(() => f.app.switchBranch(f.root, request), code('code_source_changed'));
+  f.onCatalogRead(); assert.deepEqual(f.snapshot(), before); assert.equal(f.gitAt(linked, 'branch', '--show-current'), 'target');
+});
+
+test('paired branch observations still reject ref and dirty-file changes within a read', t => {
+  for (const drift of ['ref', 'file']) {
+    const f = fixture(t); f.write('same.ts', 'base\n'); const base = f.commit('base');
+    f.git('switch', '-c', 'other'); f.write('same.ts', 'other\n'); const other = f.commit('other'); f.git('switch', 'main'); f.git('branch', 'target', base);
+    const input = f.input(); let reads = 0;
+    f.onCatalogRead(() => { if (++reads === 2) { if (drift === 'ref') f.git('update-ref', 'refs/heads/target', other); else f.write('same.ts', 'concurrent edit\n'); } });
+    assert.throws(() => f.app.branches(f.root, input), code('code_source_changed'));
+    f.onCatalogRead(); assert.equal(f.git('branch', '--show-current'), 'main'); assert.equal(f.git('rev-parse', 'HEAD'), base);
+    assert.equal(f.git('rev-parse', 'refs/heads/target'), drift === 'ref' ? other : base);
+    assert.equal(fs.readFileSync(path.join(f.root, 'same.ts'), 'utf8'), drift === 'file' ? 'concurrent edit\n' : 'base\n');
+  }
 });
 
 test('in-progress operations and conflicted index stay local failures with no branch or file writes', t => {

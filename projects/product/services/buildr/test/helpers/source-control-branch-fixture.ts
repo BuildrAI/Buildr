@@ -83,6 +83,11 @@ export async function withSourceControlBranchFixture(
       location: fs.realpathSync(location), root, originalBranch, branch, alternate, remote, remoteName, remoteRef,
       historyPath, keepPath, authorName, authorEmail, otherEmail, first, second, tip,
       snapshot, otherPositions, observe, configureAuthor,
+      publishRemoteBranch: (name = 'feature/added-after-observation') => {
+        // Only the isolated bare remote changes; local remote-tracking refs stay stale until UI Fetch.
+        git(remoteDirectory, ['update-ref', 'refs/heads/' + name, second]);
+        return {name, remoteRef:'refs/remotes/' + remote + '/' + name};
+      },
       keepContent: () => fs.readFileSync(path.join(location, keepPath), 'utf8'),
       blockCheckout: () => fs.writeFileSync(path.join(location, historyPath), 'preserve conflicting work\n'),
       localTracking: () => ({

@@ -1,10 +1,6 @@
-.source-control-repositories.has-worktree-actions .source-control-repository,
-.source-control-repositories.has-worktree-actions .source-control-worktree {
-  grid-template-columns:calc(22px + var(--source-control-tree-indent,0px)) minmax(0,1fr) var(--source-control-remote-width,26px) var(--source-control-file-width,26px) 26px minmax(0,min(72px,22%));
-}
-.source-control-row-action-slot { display:flex; align-items:center; justify-content:flex-end; width:100%; height:28px; min-width:0; }
-.source-control-row-action-slot .source-control-row-action-button { display:flex; align-items:center; justify-content:flex-end; gap:4px; width:auto; min-width:0; max-width:72px; margin-left:auto; padding:0 4px; color:var(--soft-muted); }
-.source-control-row-action-slot .source-control-row-branch-name { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11px; }
+.source-control-row-action-slot { --source-control-branch-width:64px; display:flex; align-items:center; justify-content:flex-end; width:var(--source-control-branch-width); height:28px; min-width:var(--source-control-branch-width); flex:0 0 var(--source-control-branch-width); }
+.source-control-row-action-slot .source-control-row-action-button { display:flex; align-items:center; justify-content:space-between; gap:4px; width:var(--source-control-branch-width); min-width:var(--source-control-branch-width); max-width:var(--source-control-branch-width); padding:0 2px; color:var(--soft-muted); }
+.source-control-row-action-slot .source-control-row-branch-name { flex:1 1 0; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:left; font-size:11px; }
 .source-control-row-action-slot .source-control-row-action-button .anticon { flex:none; font-size:9px; }
 .source-control-repositories.has-worktree-actions .source-control-repository:hover .source-control-row-action-button,
 .source-control-repositories.has-worktree-actions .source-control-worktree:hover .source-control-row-action-button,
@@ -12,3 +8,12 @@
 .source-control-row-action-slot .source-control-row-action-button:focus-visible { color:var(--soft-ink); }
 .source-control-row-action-slot .source-control-row-action-button:focus-visible { outline:2px solid var(--soft-primary); outline-offset:1px; }
 .source-control-row-action-slot .source-control-row-action-button:disabled { color:var(--soft-muted); opacity:.55; }
+
+@container source-control-catalog (max-width:320px) {
+  .source-control-row-action-slot { --source-control-branch-width:24px; }
+  .source-control-repositories.has-worktree-actions .source-control-row-branch-name { display:none; }
+  .source-control-repositories.has-worktree-actions .source-control-row-action-button { justify-content:center; padding:0; }
+  .source-control-repository:has(>.source-control-worktree-status.has-many-counts),
+  .source-control-worktree:has(>.source-control-worktree-status.has-many-counts) { flex-wrap:wrap; row-gap:0; }
+  .source-control-worktree-status.has-many-counts { order:5; flex-basis:calc(100% - var(--source-control-tree-leading-width) - var(--source-control-tree-indent,0px)); margin-left:calc(var(--source-control-tree-leading-width) + var(--source-control-tree-indent,0px)); }
+}

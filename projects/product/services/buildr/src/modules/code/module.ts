@@ -15,6 +15,7 @@ export const CODE_MODULE=Object.freeze({id:'code',requires:Object.freeze([WORKSP
   const readTask=requires[TASK_QUERY_APPLICATION].readTask;
   const dependencies:CodeDependencies={assetCatalog:requires[WORKSPACE_APPLICATION].assetCatalog,resolveSourceRoot:requires[WORKSPACE_QUERY].resolveSourceRoot,readTaskScope:(root,id)=>readTask(root,id).record.scope,gitWorktreeEvidencePath:requires[TASK_WORKTREE_PROVIDER].gitWorktreeEvidencePath,gitWorktreeEvidenceDirectories:requires[TASK_WORKTREE_PROVIDER].gitWorktreeEvidenceDirectories,readTask:(root,id)=>{const record=readTask(root,id).record;return {taskId:record.taskId,title:record.title};},readGitWorktreeEvidence:requires[TASK_WORKTREE_PROVIDER].readGitWorktreeEvidence};
   dependencies.projectDetail=requires[WORKSPACE_QUERY].projectDetail;
+  dependencies.createGitWorktreeEvidenceReader=requires[TASK_WORKTREE_PROVIDER].createGitWorktreeEvidenceReader;
   dependencies.projectDocumentImageContext=requires[WORKSPACE_QUERY].projectDocumentImageContext;
   dependencies.builtinManagedFiles=requires[AGENT_ASSETS_SOURCE_READ].builtinManagedFiles;
   const application=createCodeApplication(dependencies);

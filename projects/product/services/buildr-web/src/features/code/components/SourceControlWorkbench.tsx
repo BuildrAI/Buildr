@@ -29,6 +29,7 @@ export type SourceControlBranchExtension = {
 type Props = {
   repositories: SourceControlRepository[]; scene: SourceControlScene; reader: SourceControlReader; readKey: string;
   observation: SourceControlObservation; onRefresh(): void | Promise<void>; onRetry?(repositoryId?: string): void | Promise<void>;
+  catalogActions?: ReactNode; catalogFeedback?: ReactNode;
   onScene(scene: SourceControlScene): void; onOpenTask(taskId: string): void;
   onOpenFile?(target: SourceControlFileTarget): void; onViewCurrent?(target: SourceControlFileTarget): void;
   renderChangeActions?(repository: SourceControlRepository, worktree: SourceControlWorktree): ReactNode;
@@ -37,7 +38,7 @@ type Props = {
 const readNote = (data: { coverage: { limit: number; truncated: boolean }; diagnostics: Array<{message: string}> } | null) => data ? [data.coverage.truncated ? '当前读取范围不完整。' : '', ...data.diagnostics.map(item => item.message)].filter(Boolean).join('；') : '';
 
 /** Shared view: all observed facts and reads come from the caller, including in the offline prototype. */
-export function SourceControlWorkbench({ repositories, scene, reader, readKey, observation, onRefresh, onRetry, onScene, onOpenTask, onOpenFile, onViewCurrent, task, scopeSelection, layoutStorageKey, branchExtension, renderChangeActions }: Props) {
+export function SourceControlWorkbench({ repositories, scene, reader, readKey, observation, onRefresh, onRetry, onScene, onOpenTask, onOpenFile, onViewCurrent, task, scopeSelection, layoutStorageKey, branchExtension, renderChangeActions, catalogActions, catalogFeedback }: Props) {
   const [selectedWorktreeKey, setSelectedWorktreeKey] = useState('');
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [catalogExpanded, setCatalogExpanded] = useState(true);
@@ -115,7 +116,7 @@ export function SourceControlWorkbench({ repositories, scene, reader, readKey, o
   useEffect(() => {
     if (task && scopeSelection && selectionEpoch === scopeSelection.key) taskSelections.current.set(task.id, {selectedWorktreeKey: selectedIdentity, changeFileKey, historyFileKey, commitHash, commitSummary, commitBaseHash, historyReaderMode, scene, returnScene});
   }, [task, scopeSelection, selectionEpoch, selectedIdentity, changeFileKey, historyFileKey, commitHash, commitSummary, commitBaseHash, historyReaderMode, scene, returnScene]);
-  const version = observation.readAt + ':' + refreshToken;
+  const version = (selectedRepository?.readVersion ?? observation.readAt) + ':' + refreshToken;
   const historyInput: CodeSourceControlInput = { repositoryId: selectedRepository?.id, worktreeId: selectedWorktree?.worktreeId, branch: historyRange?.branch, authorEmail: historyRange?.authorEmail, query: searchQuery || undefined, limit: 100 };
   const historyRead = useSourceControlRead(JSON.stringify([readKey, historyInput]), historyInput, reader.history, Boolean(history && selectedWorktree && selectedWorktree.status !== 'offline'), version);
   const commits = historyRead.data?.commits.map(commit => sourceControlCommit(commit)) || [];
@@ -173,10 +174,11 @@ export function SourceControlWorkbench({ repositories, scene, reader, readKey, o
   const historySearch = <div className="source-control-history-search"><Input size="small" allowClear prefix={<SearchOutlined />} placeholder="搜索提交、作者或任务编号（至少2字符）" aria-label="搜索提交历史" value={query} onCompositionStart={() => setComposing(true)} onCompositionEnd={event => { setComposing(false); setQuery(event.currentTarget.value); }} onChange={event => setQuery(event.target.value)} />{Array.from(query.trim()).length === 1 && <small>输入至少2个字符开始搜索</small>}</div>;
   return <section className="source-control-workbench" aria-label="源代码管理" data-prototype-position="scm-panels">
     <ResizablePanels direction="horizontal" className="source-control-columns" initialSize={360} minFirst={260} minSecond={300} firstHidden={readingExpanded} storageKey={layoutStorageKey ? layoutStorageKey + ':columns' : undefined} separatorLabel="调整源代码管理与阅读区宽度" first={<aside className="source-control-sidebar">
-      <header className="source-control-title"><button type="button" className="source-control-catalog-toggle" aria-label={catalogExpanded ? '折叠代码库列表' : '展开代码库列表'} aria-expanded={catalogExpanded} onClick={() => setCatalogExpanded(value => !value)}>{catalogExpanded ? <DownOutlined /> : <RightOutlined />}<strong>源代码管理</strong></button><Tooltip title="重新读取本机代码状态"><Button type="text" size="small" aria-label="刷新源代码管理" icon={<ReloadOutlined spin={observation.loading} />} onClick={() => void refresh()} /></Tooltip></header>
+      <header className="source-control-title"><button type="button" className="source-control-catalog-toggle" aria-label={catalogExpanded ? '折叠代码库列表' : '展开代码库列表'} aria-expanded={catalogExpanded} onClick={() => setCatalogExpanded(value => !value)}>{catalogExpanded ? <DownOutlined /> : <RightOutlined />}<strong>源代码管理</strong></button><div className="source-control-catalog-actions">{catalogActions}<Tooltip title="重新读取本机代码状态"><Button type="text" size="small" aria-label="刷新源代码管理" icon={<ReloadOutlined spin={observation.loading} />} onClick={() => void refresh()} /></Tooltip></div></header>
       <ResizablePanels direction="vertical" className="source-control-stack" firstHidden={!catalogExpanded} storageKey={layoutStorageKey ? layoutStorageKey + ':stack' : undefined} initialRatio={renderChangeActions ? 0.29 : branchExtension ? 0.30 : 0.42} minFirst={120} minSecond={180} separatorLabel="调整代码库与浏览区高度"
         first={<div className="source-control-catalog-pane">
-        <SourceControlRepositoryTree repositories={repositories} ready={Boolean(observation.readAt)} expanded={expanded} onToggle={toggle}
+        {catalogFeedback}
+        <SourceControlRepositoryTree repositories={repositories} ready={Boolean(observation.readAt)} active={catalogExpanded && !readingExpanded} expanded={expanded} onToggle={toggle}
           selectedWorktreeKey={selectedIdentity} onPick={pickWorktree} onOpenTask={onOpenTask} renderWorktreeControl={branchExtension?.rowControl} />
         {task && <div className="source-control-task-origin" data-prototype-position="task-link"><span>来自任务 · {task.title}</span><Button type="link" size="small" onClick={() => onOpenTask(task.id)}>返回任务 <ArrowRightOutlined /></Button></div>}
         </div>}

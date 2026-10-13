@@ -9,7 +9,7 @@ registerHooks({resolve(specifier, context, next) {
   return next(specifier, context);
 }});
 const {codeApi} = await import('../src/features/code/api/code-api.ts');
-const {subscribeSourceControlChanges} = await import('../src/features/code/source-control-events.ts');
+const {subscribeSourceControlChanges, currentSourceControlFetchResults} = await import('../src/features/code/source-control-events.ts');
 
 test('历史条件和分页由真实客户端完整传到服务器，作者目录不依赖关键词', async () => {
   const requests = [];
@@ -62,5 +62,53 @@ test('写入完成通知当前订阅者，保留发起工作空间与准确来�
     await assert.rejects(codeApi.switchBranch('original-workspace', input), error => error === failure);
     assert.deepEqual(notices[1], {workspaceId:'original-workspace', repositoryId:'repo', worktreeId:'main'});
     unsubscribe(); await assert.rejects(codeApi.switchBranch('original-workspace', input)); assert.equal(notices.length, 2);
+  } finally {unsubscribe(); delete globalThis.__branchApi;}
+});
+
+test('单库观察绑定repositoryId，获取远程只提交已观察实例身份并通知新订阅页面', async () => {
+  const requests = [], notices = []; let finish;
+  globalThis.__branchApi = (...request) => { requests.push(request); return request[1]?.method === 'POST' ? new Promise(resolve => {finish = resolve;}) : Promise.resolve({}); };
+  const input = {repositories:[{repositoryId:'a', expectedGitId:'git-a', expectedCheckoutId:'checkout-a'}, {repositoryId:'b', expectedGitId:null, expectedCheckoutId:null}]};
+  try {
+    await codeApi.sourceControl('ws/id', {repositoryId:'a'});
+    assert.equal(new URL(requests[0][0], 'http://localhost').searchParams.get('repositoryId'), 'a');
+    const pending = codeApi.fetch('ws/id', input);
+    const unsubscribe = subscribeSourceControlChanges(notice => notices.push(notice));
+    const result = {readAt:'now', repositories:[{repositoryId:'a', gitId:'git-a', status:'succeeded', message:'已获取', remotes:[{name:'origin', status:'succeeded', message:'已获取'}]}, {repositoryId:'b', gitId:null, status:'unavailable', message:'不可读取', remotes:[]}]};
+    finish(result); assert.equal(await pending, result); unsubscribe();
+    assert.equal(requests[1][0], '/api/v1/workspaces/ws%2Fid/code/fetch');
+    assert.deepEqual(JSON.parse(requests[1][1].body), input); assert.equal(requests[1][1].signal, undefined);
+    assert.deepEqual(notices.map(({fetchSequences, ...notice}) => notice), [{workspaceId:'ws/id', repositoryId:'a', repositoryIds:['a', 'b'], fetchResults:result.repositories}], '全部获取只通知一次，避免逐库重复严格来源发现');
+    assert.equal(typeof notices[0].fetchSequences.a, 'number'); assert.equal(notices[0].fetchSequences.a, notices[0].fetchSequences.b);
+  } finally {delete globalThis.__branchApi;}
+});
+
+test('获取请求失联逐库表达未知并重新观察，不重发写入', async () => {
+  let requests = 0; const notices = [], unsubscribe = subscribeSourceControlChanges(notice => notices.push(notice));
+  globalThis.__branchApi = async () => {requests++; throw new Error('connection lost');};
+  try {
+    const result = await codeApi.fetch('original', {repositories:[{repositoryId:'a', expectedGitId:'git-a', expectedCheckoutId:'checkout-a'}]});
+    assert.equal(requests, 1); assert.equal(result.repositories[0].status, 'unknown');
+    assert.match(result.repositories[0].message, /结果未知/);
+    assert.deepEqual(notices.map(({fetchSequences, ...notice}) => notice), [{workspaceId:'original', repositoryId:'a', repositoryIds:['a'], fetchResults:result.repositories}]);
+  } finally {unsubscribe(); delete globalThis.__branchApi;}
+});
+
+test('旧获取请求后返回仍通知重新观察，但不能回退新实例的较新结果反馈', async () => {
+  const pending = [], notices = [];
+  globalThis.__branchApi = () => new Promise(resolve => pending.push(resolve));
+  const unsubscribe = subscribeSourceControlChanges(notice => notices.push(notice));
+  const target = id => ({repositoryId:id, expectedGitId:'git-' + id, expectedCheckoutId:'checkout-' + id});
+  const result = (id, status) => ({repositoryId:id, gitId:'git-' + id, status, message:status, remotes:[]});
+  try {
+    const old = codeApi.fetch('remounted-workspace', {repositories:[target('a'), target('b')]}), newer = codeApi.fetch('remounted-workspace', {repositories:[target('a')]});
+    pending[1]({readAt:'newer', repositories:[result('a', 'succeeded')]}); await newer;
+    assert.deepEqual(currentSourceControlFetchResults(notices[0]).map(item => [item.repositoryId, item.status]), [['a', 'succeeded']]);
+    pending[0]({readAt:'old', repositories:[result('a', 'failed'), result('b', 'succeeded')]}); await old;
+    assert.equal(notices.length, 2, '晚完成仍触发事实核对，不能静默丢弃可能发生的Git效果');
+    assert.ok(notices[1].fetchSequences.a < notices[0].fetchSequences.a);
+    assert.deepEqual(currentSourceControlFetchResults(notices[1]).map(item => item.repositoryId), ['b'], '批量旧结果只影响未被较新动作替代的代码库');
+    const otherWorkspace = codeApi.fetch('another-workspace', {repositories:[target('a')]}); pending[2]({readAt:'other', repositories:[result('a', 'failed')]}); await otherWorkspace;
+    assert.deepEqual(currentSourceControlFetchResults(notices[0]).map(item => item.status), ['succeeded'], '同名代码库在其他工作空间独立排序');
   } finally {unsubscribe(); delete globalThis.__branchApi;}
 });

@@ -112,7 +112,7 @@ export function SourceControlBranchPicker({ entries, value, currentBranch, curre
       {query.trim() && !filtered.length && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="没有匹配名称" />}
     </div>
     <footer className="source-control-branch-picker-footer" data-prototype-position="remote-records">
-      <div><span>{remoteLoading ? '正在更新远程记录…' : remoteUpdatedAt ? `上次更新 ${remoteUpdatedAt}` : '远程记录尚未更新'}</span><Button type="text" size="small" icon={<SyncOutlined spin={remoteLoading} />} loading={remoteLoading} onClick={onRefreshRemote} aria-label="更新远程记录" title="更新远程记录" /></div>
+      <div><span>{remoteLoading ? '正在读取本机记录…' : remoteUpdatedAt ? `读取时间 ${remoteUpdatedAt}` : '尚未读取本机记录'}</span><Button type="text" size="small" icon={<SyncOutlined spin={remoteLoading} />} loading={remoteLoading} onClick={onRefreshRemote} aria-label="重新读取本机分支记录" title="重新读取本机分支记录" /></div>
       {remoteError && <Alert showIcon type="warning" message={remoteError} />}
       {mode === 'history' && <small>选择只查看历史</small>}
     </footer>

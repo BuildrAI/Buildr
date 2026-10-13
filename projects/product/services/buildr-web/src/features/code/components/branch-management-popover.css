@@ -18,6 +18,7 @@
 .branch-management-panel>footer>span { flex:1; min-width:0; }
 .branch-management-panel>footer .ant-btn { padding:0 4px; flex:none; color:var(--soft-primary); }
 .branch-management-panel>footer>p { flex-basis:100%; margin:0; line-height:1.6; color:var(--soft-danger,var(--soft-muted)); }
+.branch-management-panel>footer>.branch-management-fetch-result.is-succeeded { color:var(--soft-primary); }
 .branch-management-action-popover { max-width:calc(100vw - 24px); }
 .branch-management-action-popover .ant-popover-inner { padding:0; background:transparent; }
 .branch-management-action { width:max-content; min-width:min(150px,calc(100vw - 24px)); max-width:min(220px,calc(100vw - 24px)); max-height:calc(100vh - 24px); overflow:auto; padding:4px; border:1px solid var(--soft-line); border-radius:8px; box-shadow:0 6px 22px color-mix(in srgb,var(--soft-ink) 12%,transparent); background:var(--soft-surface); color:var(--soft-ink); }

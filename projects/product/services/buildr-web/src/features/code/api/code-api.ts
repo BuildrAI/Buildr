@@ -1,6 +1,6 @@
 import { api } from '../../../api';
-import { notifySourceControlChange } from '../source-control-events.ts';
-import type { CodeRepositoriesRepositories, CodeDirectoryDirectory, CodeFileFile, CodeSearchSearch, CodeSourceControlSourceControl, CodeHistoryHistory, CodeCommitCommit, CodeDiffDiff, CodeSourceFileSourceFile, CodeBranchesBranches, CodeAuthorsAuthors, CodeBranchSwitchBranchSwitch, CodeEditorFileEditorFile, CodeSaveFileSaveFile } from '../../../../build/generated/code-http-dto';
+import { beginSourceControlFetch, notifySourceControlChange } from '../source-control-events.ts';
+import type { CodeRepositoriesRepositories, CodeDirectoryDirectory, CodeFileFile, CodeSearchSearch, CodeSourceControlSourceControl, CodeHistoryHistory, CodeCommitCommit, CodeDiffDiff, CodeSourceFileSourceFile, CodeBranchesBranches, CodeAuthorsAuthors, CodeBranchSwitchBranchSwitch, CodeFetchFetch, CodeEditorFileEditorFile, CodeSaveFileSaveFile } from '../../../../build/generated/code-http-dto';
 export type CodeSourceControlInput = { repositoryId?: string; worktreeId?: string; taskId?: string; commitHash?: string; path?: string; area?: 'unstaged' | 'staged' | 'untracked' | 'commit'; branch?: string; authorEmail?: string; query?: string; limit?: number; cursor?: string; expectedRevision?: string; page?: number; line?: number; matchQuery?: string };
 export type CodeSourceControlResponse = CodeSourceControlSourceControl;
 export type CodeHistoryResponse = CodeHistoryHistory;
@@ -11,6 +11,8 @@ export type CodeBranchesResponse = CodeBranchesBranches;
 export type CodeAuthorsResponse = CodeAuthorsAuthors;
 export type CodeBranchSwitchResponse = CodeBranchSwitchBranchSwitch;
 export type CodeBranchSwitchInput = { repositoryId: string; worktreeId: string; targetRef: string; expectedTargetHash: string; expectedRevision: string; localName?: string };
+export type CodeFetchInput = {repositories:Array<{repositoryId:string; expectedGitId:string | null; expectedCheckoutId:string | null}>};
+export type CodeFetchResponse = CodeFetchFetch;
 export type CodeCatalog = CodeRepositoriesRepositories;
 export type CodeDirectory = CodeDirectoryDirectory;
 export type CodeFile = CodeFileFile;
@@ -44,6 +46,18 @@ export const codeApi = {
     try { result = await api(`/api/v1/workspaces/${encodeURIComponent(id)}/code/branch-switch`,{method:'POST',body:JSON.stringify(input)}) as CodeBranchSwitchResponse; }
     catch (error) { notifySourceControlChange(notice); throw error; }
     notifySourceControlChange({...notice, result});
+    return result;
+  },
+  fetch:async (id:string,input:CodeFetchInput):Promise<CodeFetchResponse> => {
+    const repositoryIds = input.repositories.map(repository => repository.repositoryId);
+    const fetchSequences = beginSourceControlFetch(id, repositoryIds);
+    let result: CodeFetchResponse;
+    try { result = await api(`/api/v1/workspaces/${encodeURIComponent(id)}/code/fetch`, {method:'POST', body:JSON.stringify(input)}) as CodeFetchResponse; }
+    catch (error) {
+      result = {readAt:new Date().toISOString(), repositories:input.repositories.map(repository => ({repositoryId:repository.repositoryId, gitId:repository.expectedGitId, status:'unknown', message:'获取结果未知，请重新读取核对。' + (error instanceof Error ? ' ' + error.message : ''), remotes:[]}))};
+    }
+    // An issued Git write outlives the row or page that started it. Never retry it here.
+    if (repositoryIds.length) notifySourceControlChange({workspaceId:id, repositoryId:repositoryIds[0], repositoryIds, fetchResults:result.repositories, fetchSequences});
     return result;
   },
   sourceFile:(id:string,input:CodeSourceControlInput,signal?:AbortSignal)=>request<CodeSourceFileResponse>(id,'source-file',input,signal),

@@ -8,12 +8,13 @@ import { branchSwitchFailure, branchSwitchImpact, type BranchSwitchFailure, type
 import { sourceControlWorktreeKey, type SourceControlRepository, type SourceControlWorktree } from '../source-control-model';
 import { formatShortDateTime } from '../../../lib/taskLabels';
 import { useSourceControlRead } from './useSourceControlRead';
+import type { SourceControlFetchActions } from './useSourceControlFetch';
 
 const observationNote = (data: CodeBranchesResponse | CodeAuthorsResponse | null) => data ? [data.coverage.truncated ? '读取范围达到上限，当前记录不完整。' : '', ...data.diagnostics.map(item => item.message)].filter(Boolean).join('；') : '';
 type LocationProps = { workspaceId: string; repository: SourceControlRepository; worktree: SourceControlWorktree; version: string };
 
-function BranchControl({workspaceId, repository, worktree, version, ready, onOpenPosition, onViewChanges}: LocationProps & {
-  ready: boolean; onOpenPosition(worktreeId: string): void; onViewChanges(): void;
+function BranchControl({workspaceId, repository, worktree, version, ready, fetchActions, onOpenPosition, onViewChanges}: LocationProps & {
+  ready: boolean; fetchActions?:SourceControlFetchActions; onOpenPosition(worktreeId: string): void; onViewChanges(): void;
 }) {
   const {message} = App.useApp();
   const [open, setOpen] = useState(false), [pending, setPending] = useState(false);
@@ -44,10 +45,10 @@ function BranchControl({workspaceId, repository, worktree, version, ready, onOpe
         setFailure(observedFailure); message.error(observedFailure.message);
       }
     } finally {
-      // Catalog readers receive the API completion notice independently of this popup's lifecycle.
-      if (isCurrent()) await branches.refresh();
       writing.current = false;
       if (isCurrent()) setPending(false);
+      // The completed write ends its wait now. Subsequent reads own independent feedback.
+      if (isCurrent() && !succeeded) void branches.refresh();
     }
     return succeeded;
   }
@@ -55,6 +56,8 @@ function BranchControl({workspaceId, repository, worktree, version, ready, onOpe
     reading={branches.loading} pending={pending} failure={failure} readNote={observationNote(branches.data)}
     remoteLoading={branches.loading} remoteUpdatedAt={formatShortDateTime(branches.data?.readAt || '')} remoteError={branches.error}
     onOpenChange={setOpen} onTargetChange={() => setFailure(null)} onRefreshRemote={refresh}
+    fetchPending={fetchActions?.pending[repository.id]} fetchResult={fetchActions?.results[repository.id]}
+    onFetch={fetchActions ? () => { void fetchActions.run([repository]); } : undefined}
     inspect={entry => branchSwitchImpact(repository, worktree, entries, entry)} onUse={use} onOpenPosition={onOpenPosition} onViewChanges={onViewChanges} />;
 }
 
@@ -80,7 +83,7 @@ function HistoryControls({workspaceId, repository, worktree, version, branchRef,
 }
 
 /** Each concrete location owns its read-only history conditions. All writes live in the row adapter. */
-export function useSourceControlBranches(workspaceId: string, version: string): SourceControlBranchExtension {
+export function useSourceControlBranches(workspaceId: string, fetchActions?: SourceControlFetchActions): SourceControlBranchExtension {
   const [ranges, setRanges] = useState<Record<string, {branchRef: string; authorEmail: string}>>({});
   const [selection, setSelection] = useState<SourceControlBranchExtension['selection']>();
   const serial = useRef(0);
@@ -94,11 +97,11 @@ export function useSourceControlBranches(workspaceId: string, version: string): 
       return {branch: current.branchRef === 'HEAD' ? undefined : current.branchRef, authorEmail: current.authorEmail || undefined};
     },
     selection,
-    rowControl: (repository, worktree, ready) => <BranchControl key={JSON.stringify([workspaceId, repository.id, worktree.worktreeId])} workspaceId={workspaceId} repository={repository} worktree={worktree} version={version} ready={ready}
+    rowControl: (repository, worktree, ready) => <BranchControl key={JSON.stringify([workspaceId, repository.id, worktree.worktreeId])} workspaceId={workspaceId} repository={repository} worktree={worktree} version={repository.readVersion || ''} ready={ready} fetchActions={fetchActions}
       onOpenPosition={worktreeId => openPosition(repository.id, worktreeId, 'history')} onViewChanges={() => openPosition(repository.id, worktree.worktreeId, 'changes')} />,
     historyControls(repository, worktree, controls) {
       const id = key(repository, worktree), current = range(repository, worktree);
-      return <HistoryControls key={id} workspaceId={workspaceId} repository={repository} worktree={worktree} version={version} {...current} query={controls.query}
+      return <HistoryControls key={id} workspaceId={workspaceId} repository={repository} worktree={worktree} version={repository.readVersion || ''} {...current} query={controls.query}
         onBranchChange={branchRef => setRanges(previous => ({...previous, [id]: {...current, branchRef}}))}
         onAuthorChange={authorEmail => setRanges(previous => ({...previous, [id]: {...current, authorEmail}}))}
         onClear={() => { setRanges(previous => ({...previous, [id]: {branchRef: 'HEAD', authorEmail: ''}})); controls.clearSearch(); }} />;

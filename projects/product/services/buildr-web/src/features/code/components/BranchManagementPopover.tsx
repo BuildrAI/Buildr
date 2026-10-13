@@ -1,11 +1,13 @@
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ComponentRef } from 'react';
 import { Button, Input, Popover, Spin } from 'antd';
-import { BranchesOutlined, CheckOutlined, CloudOutlined, DownOutlined, RightOutlined, SearchOutlined, SyncOutlined } from '@ant-design/icons';
+import { BranchesOutlined, CheckOutlined, CloudDownloadOutlined, CloudOutlined, DownOutlined, RightOutlined, SearchOutlined, SyncOutlined } from '@ant-design/icons';
 import type { BranchSwitchFailure, BranchSwitchImpact, SourceControlBranch } from '../source-control-branches';
 import type { SourceControlRepository, SourceControlWorktree } from '../source-control-model';
 import { WorkspaceViewActiveContext } from '../../../app/pageTabs';
 import './branch-management-popover.css';
+import type { SourceControlFetchResult } from '../hooks/useSourceControlFetch';
+import { sourceControlFetchStatus } from './SourceControlFetchResults';
 
 export type BranchManagementPopoverProps = {
   repository: SourceControlRepository;
@@ -19,6 +21,9 @@ export type BranchManagementPopoverProps = {
   readNote: string;
   pending: boolean;
   failure: BranchSwitchFailure | null;
+  fetchPending?: boolean;
+  fetchResult?: SourceControlFetchResult;
+  onFetch?(): void;
   onOpenChange(open: boolean): void;
   onTargetChange(): void;
   onRefreshRemote(): void;
@@ -40,7 +45,7 @@ function groupsFor(entries: SourceControlBranch[]): BranchGroup[] {
   ];
 }
 
-export function BranchManagementPopover({ repository, worktree, entries, ready, remoteLoading, remoteUpdatedAt, remoteError, reading, readNote, pending, failure, onOpenChange, onTargetChange, onRefreshRemote, inspect, onUse, onOpenPosition, onViewChanges }: BranchManagementPopoverProps) {
+export function BranchManagementPopover({ repository, worktree, entries, ready, remoteLoading, remoteUpdatedAt, remoteError, reading, readNote, pending, failure, fetchPending, fetchResult, onFetch, onOpenChange, onTargetChange, onRefreshRemote, inspect, onUse, onOpenPosition, onViewChanges }: BranchManagementPopoverProps) {
   const viewActive = useContext(WorkspaceViewActiveContext);
   const triggerRef = useRef<ComponentRef<typeof Button>>(null);
   const [open, setOpen] = useState(false);
@@ -134,7 +139,10 @@ export function BranchManagementPopover({ repository, worktree, entries, ready, 
       <div className="branch-management-remote-heading"><CloudOutlined /><span>远程</span></div>
       {groups.length > 1 ? groups.slice(1).map(renderGroup) : <p className="branch-management-none">{query.trim() ? '没有匹配项' : '暂无远程记录'}</p>}
     </div>
-    <footer><span>{remoteLoading ? '正在更新远程记录…' : remoteUpdatedAt ? `上次更新 ${remoteUpdatedAt}` : '远程记录尚未更新'}</span><Button type="text" size="small" icon={<SyncOutlined spin={remoteLoading} />} disabled={remoteLoading} onClick={onRefreshRemote} aria-label="更新远程分支（Remote Branch）记录" title="更新远程记录" />{remoteError && <p role="alert">{remoteError}</p>}{readNote && <p>{readNote}</p>}</footer>
+    <footer><span>{remoteLoading ? '正在读取本机记录…' : remoteUpdatedAt ? `读取时间 ${remoteUpdatedAt}` : '尚未读取本机记录'}</span><Button type="text" size="small" icon={<SyncOutlined spin={remoteLoading} />} disabled={remoteLoading} onClick={onRefreshRemote} aria-label="重新读取本机分支记录" title="重新读取本机分支记录" />
+      {onFetch && <Button type="text" size="small" icon={<CloudDownloadOutlined />} loading={fetchPending} disabled={pending || !repository.gitId || !repository.checkoutId} onClick={onFetch} aria-label={'获取远程 · ' + repository.name}>获取远程</Button>}
+      {fetchResult && <p className={'branch-management-fetch-result is-' + fetchResult.status} role={fetchResult.status === 'succeeded' ? 'status' : 'alert'}>{sourceControlFetchStatus[fetchResult.status]} · {fetchResult.message}</p>}
+      {remoteError && <p role="alert">{remoteError}</p>}{readNote && <p>{readNote}</p>}</footer>
   </section>;
   return <Popover open={viewActive && open} onOpenChange={next => { if (next && viewActive) { measure(); setOpen(true); onOpenChange(true); } else close(); }} trigger="click" placement="rightTop" autoAdjustOverflow content={content} overlayClassName="branch-management-popover" destroyOnHidden>
     <Button ref={triggerRef} type="text" size="small" className="source-control-row-action-button" disabled={!ready || pending} title={`${currentName} · 管理分支`} aria-label={`管理分支 · ${repository.name} · ${worktreeName}`} aria-expanded={open} aria-haspopup="menu" onClick={event => event.stopPropagation()}><span className="source-control-row-branch-name">{compactCurrentName}</span><DownOutlined /></Button>

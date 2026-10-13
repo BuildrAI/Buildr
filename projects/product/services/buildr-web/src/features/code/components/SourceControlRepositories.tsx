@@ -1,10 +1,11 @@
-import type { CSSProperties, ReactElement, ReactNode } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 import { App, Button, Empty, Space, Tooltip } from 'antd';
-import { ArrowDownOutlined, ArrowUpOutlined, BookOutlined, BranchesOutlined, CloudOutlined, CloudSyncOutlined, CopyOutlined, DownOutlined, FileOutlined, FileTextFilled, FileUnknownOutlined, InfoCircleOutlined, ProjectOutlined, RightOutlined } from '@ant-design/icons';
+import { BookOutlined, BranchesOutlined, CopyOutlined, DownOutlined, FileOutlined, InfoCircleOutlined, ProjectOutlined, RightOutlined } from '@ant-design/icons';
 import { SelectableHoverCard } from '../../../components/SelectableHoverCard';
 import { copyText } from '../../../lib/copyText';
 import { ChangedFileList, changedFileKey, type ChangedFileEntry } from '../../task/components/TaskChangedFiles';
 import { sourceControlFileKey, sourceControlFileTooltip, sourceControlFilePathHints, sourceControlVisibleWorktrees, sourceControlWorktreeKey, type SourceControlChange, type SourceControlRepository, type SourceControlWorktree } from '../source-control-model';
+import { SourceControlWorktreeStatus } from './SourceControlWorktreeStatus';
 import '../source-control-row-actions.css';
 
 export const areaLabels = { unstaged: '未暂存', staged: '已暂存', untracked: '未跟踪' };
@@ -12,21 +13,6 @@ export const layerFile = (file: SourceControlChange, version?: string): ChangedF
 export const worktreeLabel = (worktree: SourceControlWorktree) => worktree.isMain ? '主工作树' : worktree.name;
 type FoldProps = { expanded: Record<string, boolean>; onToggle(key: string, defaultExpanded?: boolean): void };
 const open = (expanded: Record<string, boolean>, key: string, defaultExpanded = true) => expanded[key] ?? defaultExpanded;
-
-/** All catalog rows share columns sized for their observed numeric values. */
-function catalogColumns(repositories: SourceControlRepository[]): CSSProperties {
-  const available = repositories.flatMap(repository => repository.worktrees).filter(worktree => worktree.status !== 'offline');
-  const remoteCounts = available.filter(worktree => worktree.upstream !== null).flatMap(worktree => [worktree.ahead, worktree.behind]);
-  const knownCounts = (counts: Array<number | null>) => counts.filter((count): count is number => count !== null && Number.isFinite(count) && count >= 0);
-  const digits = (counts: number[]) => Math.max(1, ...counts.map(count => String(count).length));
-  const remote = knownCounts(remoteCounts), files = knownCounts(available.map(worktree => worktree.fileCount));
-  const remoteDigits = digits(remote), fileDigits = digits(files);
-  return {
-    '--source-control-remote-count-width': `${remoteDigits}ch`,
-    '--source-control-remote-width': remote.some(count => count > 0) ? `calc(34px + ${remoteDigits * 2}ch)` : '26px',
-    '--source-control-file-width': files.some(count => count > 0) ? `max(26px, calc(16px + ${fileDigits}ch))` : '26px',
-  } as CSSProperties;
-}
 
 function WorktreeLocationCard({repository, worktree, children}: {repository: SourceControlRepository; worktree?: SourceControlWorktree; children: ReactElement}) {
   const { message } = App.useApp();
@@ -47,39 +33,22 @@ function WorktreeLocationCard({repository, worktree, children}: {repository: Sou
   </article>}>{children}</SelectableHoverCard>;
 }
 
-function WorktreeStatus({worktree}: {worktree?: SourceControlWorktree}) {
-  const unavailable = !worktree || worktree.status === 'offline';
-  const untracked = !unavailable && worktree.upstream === null;
-  const remoteUnknown = !unavailable && !untracked && (worktree.ahead === null || worktree.behind === null);
-  const synchronized = !unavailable && !untracked && !remoteUnknown && worktree.ahead === 0 && worktree.behind === 0;
-  const remoteLabel = unavailable ? '远程状态不可读取' : untracked ? '未跟踪远程分支' : remoteUnknown ? '远程提交数量未知' : synchronized ? '本地与远程没有提交差异' : `未推送 ${worktree.ahead} 个提交，远程未同步 ${worktree.behind} 个提交`;
-  const fileLabel = unavailable ? '未提交文件数量不可读取' : worktree.fileCount === null ? '未提交文件数量未知' : worktree.fileCount === 0 ? '没有未提交文件' : `${worktree.fileCount} 个未提交文件`;
-  return <span className="source-control-worktree-status">
-    <Tooltip title={remoteLabel}><span className={'source-control-remote-status' + (synchronized ? ' is-clear' : '') + (untracked ? ' is-untracked' : '')} aria-label={remoteLabel}>
-      {unavailable || untracked || remoteUnknown ? <CloudOutlined /> : synchronized ? <CloudSyncOutlined /> : <><span className="source-control-remote-direction"><ArrowUpOutlined /><span className="source-control-remote-count">{worktree.ahead}</span></span><span className="source-control-remote-direction"><ArrowDownOutlined /><span className="source-control-remote-count">{worktree.behind}</span></span></>}
-    </span></Tooltip>
-    <Tooltip title={fileLabel}><span className={'source-control-file-status' + (!unavailable && worktree.fileCount === 0 ? ' is-clear' : '') + (!unavailable && worktree.fileCount !== null && worktree.fileCount > 0 ? ' is-changed' : '')} aria-label={fileLabel}>
-      {unavailable || worktree.fileCount === null ? <FileUnknownOutlined /> : worktree.fileCount === 0 ? <FileOutlined /> : <><FileTextFilled /><span className="source-control-file-count">{worktree.fileCount}</span></>}
-    </span></Tooltip>
-  </span>;
-}
-
 function TaskLink({worktree, onOpenTask}: {worktree?: SourceControlWorktree; onOpenTask(taskId: string): void}) {
   return <span className="source-control-task-slot">{worktree?.taskId ? <Tooltip title={'任务：' + (worktree.taskTitle || worktree.taskId)}><Button type="text" size="small" className="source-control-task-link" icon={<ProjectOutlined />} aria-label={'打开任务 ' + (worktree.taskTitle || worktree.taskId)} onClick={() => onOpenTask(worktree.taskId!)} /></Tooltip> : worktree?.taskDiagnostic ? <Tooltip title="任务：关联未确认"><InfoCircleOutlined aria-label={'任务关联未确认：' + worktree.taskDiagnostic} /></Tooltip> : null}</span>;
 }
 
 export type TreeProps = FoldProps & {
-  repositories: SourceControlRepository[]; ready: boolean; selectedWorktreeKey: string;
+  repositories: SourceControlRepository[]; ready: boolean; active: boolean; selectedWorktreeKey: string;
   onPick(repository: SourceControlRepository, worktree: SourceControlWorktree): void; onOpenTask(taskId: string): void;
   renderWorktreeControl?(repository: SourceControlRepository, worktree: SourceControlWorktree, ready: boolean): ReactNode;
 };
-export function SourceControlRepositoryTree({repositories, ready, selectedWorktreeKey, onPick, onOpenTask, renderWorktreeControl, ...fold}: TreeProps) {
+export function SourceControlRepositoryTree({repositories, ready, active, selectedWorktreeKey, onPick, onOpenTask, renderWorktreeControl, ...fold}: TreeProps) {
   const hasWorktreeActions = Boolean(renderWorktreeControl);
   function worktreeControl(repository: SourceControlRepository, worktree: SourceControlWorktree) {
     if (renderWorktreeControl) return <span className="source-control-row-action-slot" data-prototype-position="worktree-row-actions" onClick={event => event.stopPropagation()}>{renderWorktreeControl(repository, worktree, ready)}</span>;
     return null;
   }
-  return <section className={'source-control-repositories' + (hasWorktreeActions ? ' has-worktree-actions' : '')} data-prototype-position="repositories" style={catalogColumns(repositories)}>
+  return <section className={'source-control-repositories' + (hasWorktreeActions ? ' has-worktree-actions' : '')} data-prototype-position="repositories">
     <div className="source-control-repository-tree-scroll" aria-label="代码库与工作树列表">
     {repositories.map(repository => {
       const main = repository.worktrees.find(worktree => worktree.isMain);
@@ -91,7 +60,7 @@ export function SourceControlRepositoryTree({repositories, ready, selectedWorktr
         <WorktreeLocationCard repository={repository} worktree={main}><button type="button" className="source-control-repository-copy" disabled={!main} onClick={() => main && onPick(repository, main)} aria-label={'查看主工作树 · ' + repository.name} aria-pressed={Boolean(main && selectedWorktreeKey === sourceControlWorktreeKey(repository.id, main.worktreeId))}>
           <strong>{repository.name}{repository.simulated && <small>模拟</small>}</strong>
         </button></WorktreeLocationCard>
-        <WorktreeStatus worktree={main} /><TaskLink worktree={main} onOpenTask={onOpenTask} />
+        <SourceControlWorktreeStatus worktree={main} name={repository.name} visible={active} /><TaskLink worktree={main} onOpenTask={onOpenTask} />
         {hasWorktreeActions && (main ? worktreeControl(repository, main) : <span className="source-control-row-action-slot" />)}
       </div>
       <div hidden={!isOpen} className="source-control-worktree-children">
@@ -100,7 +69,7 @@ export function SourceControlRepositoryTree({repositories, ready, selectedWorktr
             <span className="source-control-worktree-icon" aria-hidden="true"><BranchesOutlined /></span>
             <WorktreeLocationCard repository={repository} worktree={worktree}><button type="button" className="source-control-repository-copy" onClick={() => onPick(repository, worktree)} aria-label={'查看工作树 ' + worktreeLabel(worktree) + ' · ' + repository.name} aria-pressed={selectedWorktreeKey === sourceControlWorktreeKey(repository.id, worktree.worktreeId)}>
               <strong>{worktreeLabel(worktree)}</strong>
-            </button></WorktreeLocationCard><WorktreeStatus worktree={worktree} /><TaskLink worktree={worktree} onOpenTask={onOpenTask} />
+            </button></WorktreeLocationCard><SourceControlWorktreeStatus worktree={worktree} name={worktreeLabel(worktree)} visible={active && isOpen} /><TaskLink worktree={worktree} onOpenTask={onOpenTask} />
             {hasWorktreeActions && worktreeControl(repository, worktree)}
           </div>
         </div>)}

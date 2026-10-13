@@ -1,0 +1,108 @@
+{
+  "version": 1,
+  "pages": [
+    {
+      "id": "compact",
+      "title": "推荐：名称优先的紧凑目录",
+      "notes": [
+        {
+          "id": "names",
+          "title": "名称优先",
+          "text": "代码库（Repository）和工作树（Worktree）沿用原有选择、缩进和折叠。状态与任务（Task）按实际信息紧凑占位；分支入口在最右侧统一定宽，没有任务时不留空位。切到“改造前”可以对照相同数据。",
+          "position": "repositories"
+        },
+        {
+          "id": "status",
+          "title": "只显示有意义的状态",
+          "text": "远程提交有差异时保留非零的↑／↓及数量，文件有变更时显示文件数量；两方面确认无差异时合并为一个勾。未知、未跟踪和不可读分别表达。点击状态或用键盘聚焦后按回车，可查看两个方面的完整事实，零值仍在详情中。",
+          "position": "density-status"
+        },
+        {
+          "id": "branch",
+          "title": "分支入口等宽靠右",
+          "text": "分支（Branch）入口在目录最右侧统一固定宽度：常规栏64像素，窄栏24像素。文字左对齐，箭头靠右，短名称和长名称具有相同点击区域；长名称省略，完整名称仍可按需查看。打开后沿用原有分组、搜索与切换，所有操作只改变演示数据。",
+          "position": "worktree-row-actions"
+        },
+        {
+          "id": "width",
+          "title": "对照260与440宽度",
+          "text": "通过上方宽度按钮切换目录宽度，主体保持原有完整页面。高数量状态用于观察右侧信息较多时的名称空间；每条信息均可按需展开。",
+          "position": "density-controls"
+        }
+      ],
+      "states": [
+        {
+          "id": "narrow",
+          "title": "260px窄栏",
+          "notes": [
+            {
+              "id": "narrow-note",
+              "title": "窄栏保留主要名称",
+              "text": "窄栏优先收短分支（Branch）入口，不为其他行的大数字或空任务（Task）预留宽度。三项非零数量同时出现时，仅该行数量移到名称下方，保留完整数字和名称空间；完整事实仍可点击查看。",
+              "position": "repositories"
+            }
+          ]
+        },
+        {
+          "id": "many-counts",
+          "title": "多位数量",
+          "notes": [
+            {
+              "id": "counts-note",
+              "title": "数量不制造全目录空白",
+              "text": "某一行出现三位数量，不会使所有其他行跟随增加右侧宽度。",
+              "position": "density-status"
+            }
+          ]
+        },
+        {
+          "id": "no-task",
+          "title": "没有任务关联",
+          "notes": [
+            {
+              "id": "task-note",
+              "title": "无关联不占空列",
+              "text": "没有已确认任务（Task）的行不保留空图标槽位；有任务的行仍提供明确、可直接打开的入口。",
+              "position": "repositories"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "current",
+      "title": "改造前：固定对齐的状态列",
+      "notes": [
+        {
+          "id": "current-columns",
+          "title": "改造前的目录布局",
+          "text": "这页保留改造前的固定状态列作为对照，同样的模拟数据按全目录最大数量统一列宽，未关联任务也保留列空间。可以选择来源、打开分支（Branch）管理并与紧凑方案对照。",
+          "position": "repositories"
+        },
+        {
+          "id": "current-width",
+          "title": "对照宽度",
+          "text": "使用同样的260px或440px目录宽度比较名称可见空间；切换对照方案不自动改变所选工作位置。",
+          "position": "density-controls"
+        }
+      ],
+      "states": [
+        {
+          "id": "narrow",
+          "title": "260px窄栏",
+          "notes": []
+        },
+        {
+          "id": "many-counts",
+          "title": "多位数量",
+          "notes": []
+        },
+        {
+          "id": "no-task",
+          "title": "没有任务关联",
+          "notes": []
+        }
+      ]
+    }
+  ]
+}

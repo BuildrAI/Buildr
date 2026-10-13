@@ -11,7 +11,7 @@ import { SOURCE_CONTROL_LIMITS, assertCodeRevision, assertSourceControlPath, cod
 import type { CodeReadMeta, CodeReadDiagnostic, CodeSourceControlInput, CodeSourceControlResponse, CodeSourceControlRepository, CodeHistoryCommit, CodeHistoryResponse, CodeAuthorsResponse, CodeCommitResponse, CodeDiffResponse, CodeSourceFileResponse } from './source-control-model.ts';
 
 type Catalog = { repositories: Array<{ id: string; code: string; name: string; location: string; available: boolean; gitId: string | null }>; selectedRepositoryIds: string[]; scopeReason: string; diagnostics: CodeReadDiagnostic[] };
-type Dependencies = { repositories(root: string, taskId?: string): Catalog; source(root: string, input: CodeSourceControlInput): CodeSource;worktrees(root:string,repositoryId:string):{worktrees:CodeGitWorktree[];source(worktreeId:string):CodeSource;verify(source:CodeSource):void}; taskAssociations?(root:string,repositories:CodeSourceControlRepository[],taskId?:string,deadline?:number):ReturnType<typeof readSourceControlTaskAssociations>; readTask?(root: string, taskId: string): { taskId: string; title: string } };
+type Dependencies = { repositories(root: string, taskId?: string, repositoryId?: string): Catalog; source(root: string, input: CodeSourceControlInput): CodeSource;worktrees(root:string,repositoryId:string,registered:Catalog['repositories'][number]):{worktrees:CodeGitWorktree[];source(worktreeId:string):CodeSource;verify(source:CodeSource):void}; taskAssociations?(root:string,repositories:CodeSourceControlRepository[],taskId?:string,deadline?:number):ReturnType<typeof readSourceControlTaskAssociations>; readTask?(root: string, taskId: string): { taskId: string; title: string } };
 const diagnostic = (error: unknown, repositoryId: string | null,worktreeId?:string): CodeReadDiagnostic => ({ code: (error as { code?: string })?.code || 'code_source_unavailable', message: error instanceof Error ? error.message : '代码来源暂不可读取。', repositoryId,...(worktreeId?{worktreeId}:{}) });
 function metadata(observedRevision: string, limit: number, truncated = false, diagnostics: CodeReadDiagnostic[] = [], nextCursor: string | null = null): CodeReadMeta {
   return { readAt: new Date().toISOString(), observedRevision, coverage: { limit, truncated, nextCursor }, diagnostics };
@@ -31,19 +31,22 @@ export function createSourceControlApplication(dependencies: Dependencies) {
     if(current.worktreeId!==source.worktreeId||current.location!==source.location)throw codeFailure('code_worktree_identity_changed','读取期间工作树身份已变化，请刷新后继续。',409);
   }
   function sourceControl(root: string, input: CodeSourceControlInput = {}): CodeSourceControlResponse {
-    const catalog = dependencies.repositories(root), repositories: CodeSourceControlRepository[] = [];
+    if(input.repositoryId!==undefined&&(typeof input.repositoryId!=='string'||!input.repositoryId))throw codeFailure('code_repository_required','必须选择已登记代码库。');
+    const catalog = dependencies.repositories(root,undefined,input.repositoryId), repositories: CodeSourceControlRepository[] = [];
     const diagnostics = [...catalog.diagnostics]; let truncated = false,statusAttempts=0;const deadline=Date.now()+SOURCE_CONTROL_LIMITS.statusReadMs;
     for (const [index, registered] of [...new Map(catalog.repositories.map(repository => [repository.id, repository])).values()].entries()) {
       const output: CodeSourceControlRepository = { ...registered, source: null, status: 'unavailable', branch: null, head: null, upstream: null, ahead: null, behind: null, fileCount: null, changes: [], observedRevision: null, diagnostics: [],worktrees:[],worktreeCount:null,worktreeCoverage:{limit:SOURCE_CONTROL_LIMITS.worktrees,total:null,read:0,truncated:false} };
       repositories.push(output);
       try {
-        const reading=dependencies.worktrees(root,registered.id),worktrees=reading.worktrees;output.worktreeCount=worktrees.length;output.worktreeCoverage.total=worktrees.length;
+        const reading=dependencies.worktrees(root,registered.id,registered),worktrees=reading.worktrees;output.worktreeCount=worktrees.length;output.worktreeCoverage.total=worktrees.length;
         for(const [position,worktree]of worktrees.entries()){
           const checkout={...worktree,available:false,source:null as CodeSource|null,status:'unavailable' as 'complete'|'partial'|'unavailable',upstream:null as string|null,ahead:null as number|null,behind:null as number|null,taskId:null as string|null,taskTitle:null as string|null,taskDiagnostic:null as string|null,fileCount:null as number|null,changes:[] as CodeSourceControlRepository['changes'],observedRevision:null as string|null,readAt:new Date().toISOString(),coverage:{fileLimit:SOURCE_CONTROL_LIMITS.files,truncated:false},diagnostics:[] as CodeReadDiagnostic[]};output.worktrees.push(checkout);
           try{
             if(index>=SOURCE_CONTROL_LIMITS.repositories||position>=SOURCE_CONTROL_LIMITS.worktrees||statusAttempts>=SOURCE_CONTROL_LIMITS.totalWorktrees||Date.now()>=deadline){truncated=true;output.worktreeCoverage.truncated=true;throw codeFailure('code_worktree_read_limit','超出本次读取预算（128个代码库、共128个检出、12秒），保留Git清单但状态尚未确认。',413);}
             statusAttempts++;
             const source=reading.source(worktree.worktreeId),observed=observeSourceControl(source);reading.verify(source);
+            const currentVersion=observed.branch||observed.head;
+            source.version=currentVersion?currentVersion+' · 当前文件':'当前文件';
             Object.assign(checkout,{available:true,source,status:observed.truncated?'partial':'complete',branch:observed.branch,head:observed.head,upstream:observed.upstream,ahead:observed.ahead,behind:observed.behind,fileCount:observed.fileCount,changes:observed.files,observedRevision:observed.observedRevision,coverage:{fileLimit:SOURCE_CONTROL_LIMITS.files,truncated:observed.truncated}});output.worktreeCoverage.read++;
             if(observed.truncated){truncated=true;checkout.diagnostics.push({code:'code_changes_truncated',message:'单个检出最多返回1000个路径的变更元信息，已确认数量仍包含其余路径。',repositoryId:registered.id,worktreeId:worktree.worktreeId});}
           }catch(error){checkout.diagnostics.push(diagnostic(error,registered.id,worktree.worktreeId));}
@@ -57,10 +60,10 @@ export function createSourceControlApplication(dependencies: Dependencies) {
       } catch (error) { output.available = false; output.diagnostics.push(diagnostic(error, registered.id)); }
       diagnostics.push(...output.diagnostics);
     }
-    let selectedRepositoryIds:string[]=[],selectedWorktreeIds:string[]=[],scopeReason='显示全部代码库和 Git 实际登记工作树';
+    let selectedRepositoryIds:string[]=[],selectedWorktreeIds:string[]=[],scopeReason=input.repositoryId?'显示指定代码库和 Git 实际登记工作树':'显示全部代码库和 Git 实际登记工作树';
     if(input.taskId){
       try{
-        const scoped=dependencies.repositories(root,input.taskId);selectedRepositoryIds=scoped.selectedRepositoryIds;diagnostics.push(...scoped.diagnostics);let fallback=false;
+        const scoped=dependencies.repositories(root,input.taskId,input.repositoryId);selectedRepositoryIds=scoped.selectedRepositoryIds.filter(id=>repositories.some(repository=>repository.id===id));diagnostics.push(...scoped.diagnostics);let fallback=false;
         for(const repositoryId of selectedRepositoryIds){
           let source:CodeSource|undefined;
           try{source=dependencies.source(root,{repositoryId,taskId:input.taskId});}catch(error){diagnostics.push(diagnostic(error,repositoryId));fallback=true;try{source=dependencies.source(root,{repositoryId});}catch(fallbackError){diagnostics.push(diagnostic(fallbackError,repositoryId));}}
