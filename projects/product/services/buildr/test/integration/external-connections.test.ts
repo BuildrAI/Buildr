@@ -12,7 +12,7 @@ import { ConnectionsApplication } from '../../src/modules/connections/applicatio
 import { ConnectionRepository } from '../../src/modules/connections/persistence/connection-repository.ts';
 import { resolveConnectionWorkspace } from '../../src/modules/connections/infrastructure/connection-workspace.ts';
 import type { ConnectionProvider } from '../../src/modules/connections/application/connection-provider.ts';
-import { connectionFailure, inputObject } from '../../src/modules/connections/domain/connection.ts';
+import { connectionFailure, inputObject, mysqlConfiguration, passwordInput } from '../../src/modules/connections/domain/connection.ts';
 import { createConnectionsModule, CONNECTIONS_APPLICATION } from '../../src/modules/connections/module.ts';
 import { registerWorkspaceSqlite, applyWorkspaceSqliteMigration, loadWorkspaceSqliteMigrations } from '../../src/infrastructure/sqlite/workspace-sqlite.ts';
 import { registerSqliteTransaction, transactionDatabase } from '../../src/infrastructure/sqlite/transaction.ts';
@@ -31,6 +31,47 @@ function fixture(t: { after(action: () => void): void }) {
   return { base, root, dataRoot, workspaceId, scope, store, application };
 }
 const mysql = { name: '测试 MySQL', category: 'data-source', type: 'mysql', environment: ' 客户A测试 ', config: { host: '127.0.0.1', port: 3306, username: 'test_reader', defaultDatabase: 'orders_demo', selectedDatabases: ['orders_demo'] } };
+
+function credentialSnapshot(dataRoot: string) {
+  const directory = path.join(dataRoot, 'external-connections');
+  if (!fs.existsSync(directory)) return null;
+  const entries: { relative: string; mode: number; mtimeMs: number; ctimeMs: number; digest: string | null }[] = [];
+  const visit = (relative: string) => {
+    const file = path.join(directory, relative), stat = fs.lstatSync(file);
+    entries.push({ relative, mode: stat.mode, mtimeMs: stat.mtimeMs, ctimeMs: stat.ctimeMs, digest: stat.isFile() ? crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex') : null });
+    if (stat.isDirectory()) for (const name of fs.readdirSync(file).sort()) visit(path.join(relative, name));
+  };
+  visit(''); return entries;
+}
+
+function credentialPreviewFixture(t: { after(action: () => void): void }) {
+  const f = fixture(t), password = 'preview-test-only-' + crypto.randomUUID(), calls: string[] = [];
+  const accessed = (operation: string, config: Record<string, unknown>, credentials: Record<string, unknown>) => {
+    assert.equal(config.host, mysql.config.host); assert.equal(credentials.password, password); calls.push(operation);
+  };
+  const provider: ConnectionProvider = {
+    category: mysql.category, type: mysql.type,
+    validateConfig(value) { return mysqlConfiguration(value); },
+    validateCredentials(value) { return { password: passwordInput(inputObject(value, ['password']).password) }; },
+    authenticationTargetIdentity: config => JSON.stringify([config.host, config.port, config.username]),
+    async test(config, credentials) { accessed('test', config, credentials); return { ok: true, elapsedMs: 1 }; },
+    mysql: {
+      async databases(config, credentials) { accessed('databases', config, credentials); return ['orders_demo']; },
+      async tables(config, credentials, database) { accessed('tables', config, credentials); assert.equal(database, 'orders_demo'); return [{ name: 'orders', type: 'BASE TABLE' }]; },
+      async columns(config, credentials, database, table) { accessed('columns', config, credentials); assert.equal(database, 'orders_demo'); assert.equal(table, 'orders'); return [{ name: 'id', type: 'int', nullable: false, key: 'PRI', comment: '' }]; },
+      async query(config, credentials, input) {
+        accessed('query', config, credentials); assert.equal(input.sql, 'SELECT 1');
+        return { database: 'orders_demo', submittedSql: 'SELECT 1', executedSql: 'SELECT 1 LIMIT 100', columns: [{ name: '1', type: 'number' }], rows: [[1]], rowCount: 1, rowLimit: 100, elapsedMs: 1, limitReached: false };
+      },
+    },
+  };
+  const source = new ConnectionsApplication({ dataRoot: f.dataRoot, store: f.store, resolveScope: () => f.scope, providers: [provider] });
+  const connection = source.create(f.root, { ...mysql, credentials: { password } }).connection;
+  const stored = new ConnectionRepository(f.dataRoot, f.store).read(f.scope)[0];
+  const previewDataRoot = path.join(f.base, 'preview-profile'); fs.mkdirSync(previewDataRoot);
+  const preview = new ConnectionsApplication({ dataRoot: previewDataRoot, credentialDataRoot: f.dataRoot, readonlyScope: f.scope, store: f.store, resolveScope: () => f.scope, providers: [provider] });
+  return { ...f, source, preview, previewDataRoot, provider, password, calls, connection, stored };
+}
 
 test('connections composition consumes actual workspace query and application port boundaries', t => {
   const f = fixture(t), module = createConnectionsModule({ readProductIdentity: () => ({}), resolveWebProfile: () => ({ dataRoot: f.dataRoot }) });
@@ -94,6 +135,110 @@ test('unbound or tampered local credentials fail without hiding target or leakin
   const value = JSON.parse(fs.readFileSync(file, 'utf8')); value.tag = Buffer.alloc(16).toString('base64'); fs.writeFileSync(file, JSON.stringify(value));
   assert.equal(f.application.list(f.root).connections[0].hasCredentials, false);
   await assert.rejects(() => f.application.test(f.root, { id: bound.id, expectedRevision: bound.revision }), error => (error as { code: string }).code === 'connection_credentials_unavailable' && !String(error).includes('only-test-password'));
+});
+test('explicit credential previews decrypt the source vault without copying secrets or changing source files', async t => {
+  const f = credentialPreviewFixture(t), before = credentialSnapshot(f.dataRoot);
+  const listed = f.preview.list(f.root);
+  assert.equal(listed.configurationWritable, false); assert.deepEqual(listed.connections, [f.connection]);
+  const serialized = JSON.stringify(listed);
+  assert.equal(serialized.includes(f.password), false); assert.equal(serialized.includes(f.stored.credentialId!), false);
+  assert.equal('credentials' in listed.connections[0], false); assert.equal('password' in listed.connections[0], false);
+  assert.deepEqual(await f.preview.test(f.root, { id: f.connection.id, expectedRevision: f.connection.revision }), { ok: true, elapsedMs: 1 });
+  assert.deepEqual(await f.preview.databases(f.root, f.connection.id), { connectionId: f.connection.id, databases: ['orders_demo'] });
+  assert.deepEqual(await f.preview.tables(f.root, f.connection.id, 'orders_demo'), { connectionId: f.connection.id, database: 'orders_demo', tables: [{ name: 'orders', type: 'BASE TABLE' }] });
+  assert.deepEqual(await f.preview.columns(f.root, f.connection.id, 'orders_demo', 'orders'), { connectionId: f.connection.id, database: 'orders_demo', table: 'orders', columns: [{ name: 'id', type: 'int', nullable: false, key: 'PRI', comment: '' }] });
+  assert.deepEqual((await f.preview.query(f.root, f.connection.id, { sql: 'SELECT 1', database: 'orders_demo' })).rows, [[1]]);
+  assert.deepEqual(f.calls, ['test', 'databases', 'tables', 'columns', 'query']);
+  const initial = f.preview.queryPreferences(f.root, f.connection.id);
+  const saved = f.preview.saveQueryPreferences(f.root, f.connection.id, { expectedRevision: initial.revision, enabledDatabases: ['orders_demo'], currentDatabase: 'orders_demo' });
+  assert.deepEqual(f.preview.queryPreferences(f.root, f.connection.id), saved);
+  assert.deepEqual(f.source.queryPreferences(f.root, f.connection.id), saved, 'preview database choices remain a writable workspace preference');
+  assert.deepEqual(new ConnectionRepository(f.dataRoot, f.store).read(f.scope), [f.stored], 'query preferences do not alter connection metadata');
+  assert.deepEqual(credentialSnapshot(f.dataRoot), before, 'source directories, key, ciphertext, permissions and timestamps remain unchanged');
+  assert.equal(credentialSnapshot(f.previewDataRoot), null); assert.deepEqual(fs.readdirSync(f.previewDataRoot), [], 'preview never creates its own vault or key');
+});
+test('credential previews reject connection and vault writes before parsing input or requesting a transaction', t => {
+  const f = credentialPreviewFixture(t), before = credentialSnapshot(f.dataRoot), databaseFile = path.join(f.root, '.buildr/local/workspace.sqlite'), beforeDatabase = fs.readFileSync(databaseFile);
+  let reads = 0, writes = 0;
+  const store = {
+    runWorkspaceSqliteRead<T>(): T { reads++; throw new Error('preview mutation must not read connection metadata'); },
+    runWorkspaceTransaction<T>(): T { writes++; throw new Error('preview mutation must not request a writer'); },
+  };
+  const preview = new ConnectionsApplication({ dataRoot: f.previewDataRoot, credentialDataRoot: f.dataRoot, readonlyScope: f.scope, store, resolveScope: () => f.scope, providers: [f.provider] });
+  const unreadable = new Proxy({}, { ownKeys() { throw new Error('preview mutation must not inspect input'); } });
+  for (const input of [{ ...mysql, credentials: { password: 'replacement-test-only' } }, unreadable]) assert.throws(() => preview.create(f.root, input), { code: 'connection_preview_readonly' });
+  for (const input of [{ expectedRevision: f.connection.revision, name: '禁止改名', credentials: { password: 'replacement-test-only' } }, unreadable]) assert.throws(() => preview.update(f.root, f.connection.id, input), { code: 'connection_preview_readonly' });
+  for (const input of [{ expectedRevision: f.connection.revision }, unreadable]) assert.throws(() => preview.remove(f.root, f.connection.id, input), { code: 'connection_preview_readonly' });
+  assert.equal(reads, 0); assert.equal(writes, 0);
+  const repository = new ConnectionRepository(f.previewDataRoot, store, f.dataRoot);
+  assert.throws(() => repository.mutate(f.scope, () => { throw new Error('preview must not invoke the connection mutation'); }), { code: 'connection_preview_readonly' });
+  assert.throws(() => repository.writeCredentials(f.scope, { password: 'replacement-test-only' }, 'sha256-' + '0'.repeat(64)), { code: 'connection_preview_readonly' });
+  assert.throws(() => repository.removeCredentials(f.scope, f.stored.credentialId), { code: 'connection_preview_readonly' });
+  for (const id of [f.stored.credentialId, null]) assert.throws(() => repository.discardUnreferencedCredentials(f.scope, id), { code: 'connection_preview_readonly' });
+  assert.equal(reads, 0); assert.equal(writes, 0);
+  assert.deepEqual(fs.readFileSync(databaseFile), beforeDatabase); assert.deepEqual(new ConnectionRepository(f.dataRoot, f.store).read(f.scope), [f.stored]);
+  assert.deepEqual(credentialSnapshot(f.dataRoot), before); assert.equal(credentialSnapshot(f.previewDataRoot), null);
+});
+test('credential previews refuse an unprepared connection store without requesting a writer or creating SQLite', async t => {
+  const f = fixture(t), previewDataRoot = path.join(f.base, 'preview-profile'), databaseFile = path.join(f.root, '.buildr/local/workspace.sqlite'), id = 'connection-' + crypto.randomUUID();
+  fs.mkdirSync(previewDataRoot); assert.equal(fs.existsSync(databaseFile), false);
+  let writes = 0;
+  const store = { ...f.store, runWorkspaceTransaction<T>(): T { writes++; throw new Error('preview must not initialize the connection store'); } };
+  const preview = new ConnectionsApplication({ dataRoot: previewDataRoot, credentialDataRoot: f.dataRoot, readonlyScope: f.scope, store, resolveScope: () => f.scope });
+  assert.throws(() => preview.list(f.root), { code: 'connection_preview_store_unprepared' });
+  assert.throws(() => preview.queryPreferences(f.root, id), { code: 'connection_preview_store_unprepared' });
+  assert.throws(() => preview.saveQueryPreferences(f.root, id, { expectedRevision: 'sha256-' + '0'.repeat(64), enabledDatabases: [], currentDatabase: null }), { code: 'connection_preview_store_unprepared' });
+  await assert.rejects(() => preview.query(f.root, id, { sql: 'SELECT 1' }), { code: 'connection_preview_store_unprepared' });
+  assert.equal(writes, 0); assert.equal(fs.existsSync(databaseFile), false);
+  assert.equal(credentialSnapshot(f.dataRoot), null); assert.equal(credentialSnapshot(previewDataRoot), null);
+  assert.deepEqual(fs.readdirSync(f.dataRoot), []); assert.deepEqual(fs.readdirSync(previewDataRoot), []);
+});
+test('borrowed credentials still enforce source target bindings and authenticated ciphertext', async t => {
+  const f = credentialPreviewFixture(t);
+  const replace = (record: typeof f.stored) => f.store.runWorkspaceTransaction(f.root, (context: object) => transactionDatabase(context).prepare('UPDATE external_connections SET record_json = ? WHERE connection_id = ?').run(JSON.stringify(record), record.id));
+  const rejectAccess = async (code: string) => {
+    const current = f.preview.list(f.root).connections[0]; assert.equal(current.hasCredentials, false);
+    await assert.rejects(() => f.preview.test(f.root, { id: current.id, expectedRevision: current.revision }), { code });
+    await assert.rejects(() => f.preview.databases(f.root, current.id), { code });
+    await assert.rejects(() => f.preview.query(f.root, current.id, { sql: 'SELECT 1' }), error => (error as { code: string }).code === code && !String(error).includes(f.password));
+    assert.deepEqual(f.calls, [], 'no provider receives a credential after a binding or ciphertext failure');
+  };
+  replace({ ...f.stored, config: { ...f.stored.config, host: 'changed-target.invalid' } });
+  let before = credentialSnapshot(f.dataRoot);
+  await rejectAccess('connection_credentials_target_changed'); assert.deepEqual(credentialSnapshot(f.dataRoot), before);
+  replace(f.stored);
+  const file = path.join(f.dataRoot, 'external-connections', f.workspaceId, f.stored.credentialId + '.json'), original = fs.readFileSync(file, 'utf8');
+  const tampered = JSON.parse(original); tampered.tag = Buffer.alloc(16).toString('base64'); fs.writeFileSync(file, JSON.stringify(tampered));
+  before = credentialSnapshot(f.dataRoot);
+  await rejectAccess('connection_credentials_unavailable'); assert.deepEqual(credentialSnapshot(f.dataRoot), before, 'failed preview reads preserve tampered source evidence');
+  const unbound = JSON.parse(original); unbound.schemaVersion = 'buildr.connection-credential/v1'; delete unbound.bindingDigest; fs.writeFileSync(file, JSON.stringify(unbound));
+  before = credentialSnapshot(f.dataRoot);
+  await rejectAccess('connection_credentials_binding_invalid'); assert.deepEqual(credentialSnapshot(f.dataRoot), before);
+  assert.equal(credentialSnapshot(f.previewDataRoot), null);
+});
+test('credential previews require an explicit scope and reject every read and preference entry for another scope', async t => {
+  const f = credentialPreviewFixture(t), options = { dataRoot: f.previewDataRoot, store: f.store, resolveScope: () => f.scope, providers: [f.provider] };
+  assert.throws(() => new ConnectionsApplication({ ...options, credentialDataRoot: f.dataRoot }), { code: 'connection_preview_scope_required' });
+  assert.throws(() => new ConnectionsApplication({ ...options, readonlyScope: f.scope }), { code: 'connection_preview_scope_required' });
+  let accessed = 0;
+  const store = {
+    runWorkspaceSqliteRead<T>(): T { accessed++; throw new Error('mismatched preview must not read a workspace'); },
+    runWorkspaceTransaction<T>(): T { accessed++; throw new Error('mismatched preview must not request a writer'); },
+  };
+  const before = credentialSnapshot(f.dataRoot), preferences = f.source.queryPreferences(f.root, f.connection.id);
+  for (const scope of [{ ...f.scope, rootPath: path.join(f.base, 'other-workspace') }, { ...f.scope, workspaceId: crypto.randomUUID() }]) {
+    const preview = new ConnectionsApplication({ ...options, store, credentialDataRoot: f.dataRoot, readonlyScope: f.scope, resolveScope: () => scope });
+    assert.throws(() => preview.list(f.root), { code: 'connection_preview_scope_mismatch' });
+    assert.throws(() => preview.queryPreferences(f.root, f.connection.id), { code: 'connection_preview_scope_mismatch' });
+    assert.throws(() => preview.saveQueryPreferences(f.root, f.connection.id, { expectedRevision: preferences.revision, enabledDatabases: ['orders_demo'], currentDatabase: 'orders_demo' }), { code: 'connection_preview_scope_mismatch' });
+    await assert.rejects(() => preview.test(f.root, { id: f.connection.id, expectedRevision: f.connection.revision }), { code: 'connection_preview_scope_mismatch' });
+    await assert.rejects(() => preview.databases(f.root, f.connection.id), { code: 'connection_preview_scope_mismatch' });
+    await assert.rejects(() => preview.tables(f.root, f.connection.id, 'orders_demo'), { code: 'connection_preview_scope_mismatch' });
+    await assert.rejects(() => preview.columns(f.root, f.connection.id, 'orders_demo', 'orders'), { code: 'connection_preview_scope_mismatch' });
+    await assert.rejects(() => preview.query(f.root, f.connection.id, { sql: 'SELECT 1' }), { code: 'connection_preview_scope_mismatch' });
+  }
+  assert.equal(accessed, 0); assert.deepEqual(f.calls, []); assert.deepEqual(credentialSnapshot(f.dataRoot), before);
+  assert.deepEqual(f.source.queryPreferences(f.root, f.connection.id), preferences); assert.equal(credentialSnapshot(f.previewDataRoot), null);
 });
 test('the generic connection layer supports a provider with no authentication requirement', async t => {
   const f = fixture(t);

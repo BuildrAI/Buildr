@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { sameFilesystemPath } from '../../../infrastructure/filesystem/filesystem-path-identity.ts';
 import { ConnectionRepository, type ConnectionStoreRuntime } from '../persistence/connection-repository.ts';
 import { ConnectionProviderRegistry, type ConnectionProvider } from './connection-provider.ts';
 import { createMySqlProvider } from '../infrastructure/mysql-query.ts';
@@ -8,15 +9,23 @@ export class ConnectionsApplication {
   private readonly repository: ConnectionRepository;
   private readonly providers: ConnectionProviderRegistry;
   private readonly resolveScope: (root: string) => ConnectionScope;
-  constructor(options: { dataRoot: string; store: ConnectionStoreRuntime; resolveScope(root: string): ConnectionScope; providers?: ConnectionProvider[] }) {
-    this.repository = new ConnectionRepository(options.dataRoot, options.store);
-    this.resolveScope = options.resolveScope;
+  private readonly configurationWritable: boolean;
+  constructor(options: { dataRoot: string; store: ConnectionStoreRuntime; resolveScope(root: string): ConnectionScope; providers?: ConnectionProvider[]; credentialDataRoot?: string; readonlyScope?: ConnectionScope }) {
+    if (Boolean(options.credentialDataRoot) !== Boolean(options.readonlyScope)) throw connectionFailure('connection_preview_scope_required', '只读认证来源必须绑定准确工作空间。', 409);
+    this.repository = new ConnectionRepository(options.dataRoot, options.store, options.credentialDataRoot);
+    this.configurationWritable = options.readonlyScope === undefined;
+    this.resolveScope = root => {
+      const scope = options.resolveScope(root), bound = options.readonlyScope;
+      if (bound && (scope.workspaceId !== bound.workspaceId || !sameFilesystemPath(scope.rootPath, bound.rootPath))) throw connectionFailure('connection_preview_scope_mismatch', '此预览的认证来源仅适用于启动时绑定的工作空间。', 409);
+      return scope;
+    };
     this.providers = new ConnectionProviderRegistry(options.providers ?? [createMySqlProvider()]);
   }
   list(root: string) {
     const scope = this.resolveScope(root);
-    return { connections: this.repository.read(scope).map(record => this.public(scope, record)) };
+    return { connections: this.repository.read(scope).map(record => this.public(scope, record)), ...(!this.configurationWritable ? { configurationWritable: false } : {}) };
   }
+  private assertConfigurationWritable() { if (!this.configurationWritable) throw connectionFailure('connection_preview_readonly', '此预览使用日常 Buildr 的认证，仅支持查询；连接配置请在日常 Buildr 中修改。', 409); }
   private bindingDigest(config: ConnectionConfiguration, provider = this.providers.get(config.type, config.category)): string {
     const identity = provider.authenticationTargetIdentity(config.config);
     if (typeof identity !== 'string' || !identity || Buffer.byteLength(identity) > 32 * 1024) throw connectionFailure('connection_credentials_binding_invalid', '提供者无法确认认证对应的连接目标。', 409);
@@ -48,6 +57,7 @@ export class ConnectionsApplication {
     return { configuration: merged, provider, credentials };
   }
   create(root: string, value: unknown) {
+    this.assertConfigurationWritable();
     const input = inputObject(value, [...CONNECTION_FIELDS, 'credentials']);
     const scope = this.resolveScope(root), normalized = this.normalize(input);
     let newCredential: string | null = null;
@@ -61,6 +71,7 @@ export class ConnectionsApplication {
     return { connection: this.public(scope, record) };
   }
   update(root: string, id: string, value: unknown) {
+    this.assertConfigurationWritable();
     const input = inputObject(value, [...CONNECTION_FIELDS, 'credentials', 'expectedRevision']);
     const scope = this.resolveScope(root); let previousCredential: string | null = null, newCredential: string | null = null;
     let record: ConnectionRecord;
@@ -75,6 +86,7 @@ export class ConnectionsApplication {
     return { connection: this.public(scope, record) };
   }
   remove(root: string, id: string, value: unknown) {
+    this.assertConfigurationWritable();
     const input = inputObject(value, ['expectedRevision']), scope = this.resolveScope(root);
     const credentialId = this.repository.mutate(scope, records => { const current = this.find(scope, id, records); this.observed(current, input.expectedRevision); records.splice(records.indexOf(current), 1); return current.credentialId; });
     try { this.repository.removeCredentials(scope, credentialId); } catch { /* Removal of registration never operates on the external system. */ }

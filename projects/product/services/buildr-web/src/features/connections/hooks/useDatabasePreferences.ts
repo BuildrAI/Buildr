@@ -21,20 +21,22 @@ export function useDatabasePreferences(client: ConnectionClient, connection: MyS
     if (!active) return;
     const serial = ++requests.current.serial, controller = new AbortController();
     requests.current.mutation?.abort(); setSaving(false);
-    setSnapshot({ client, target, databases: [], preferences: null, databaseError: '', preferenceError: '', loading: Boolean(connection) });
+    // A refresh can disable editing without temporarily changing the confirmed query target.
+    const observed = snapshot?.client === client && snapshot.target === target ? snapshot : null;
+    setSnapshot(observed ? { ...observed, loading: Boolean(connection) } : { client, target, databases: [], preferences: null, databaseError: '', preferenceError: '', loading: Boolean(connection) });
     if (connection) void (async () => {
       const [databaseResult, preferenceResult] = await Promise.allSettled([client.databases(connection.id, controller.signal), client.queryPreferences(connection.id, controller.signal)]);
       if (controller.signal.aborted || serial !== requests.current.serial) return;
       const next: Snapshot = {
         client, target, loading: false,
-        databases: databaseResult.status === 'fulfilled' ? databaseResult.value.databases : [],
-        preferences: preferenceResult.status === 'fulfilled' ? preferenceResult.value : null,
+        databases: databaseResult.status === 'fulfilled' ? databaseResult.value.databases : observed?.databases ?? [],
+        preferences: preferenceResult.status === 'fulfilled' ? preferenceResult.value : observed?.preferences ?? null,
         databaseError: databaseResult.status === 'rejected' ? (databaseResult.reason as Error).message : '',
         preferenceError: preferenceResult.status === 'rejected' ? (preferenceResult.reason as Error).message : '',
       };
       setSnapshot(next);
       // A confirmed disappearance clears the saved current database. Discovery failure is not disappearance.
-      if (!next.databaseError && next.preferences?.currentDatabase && !databasePreferenceView(next.preferences, next.databases).currentDatabase) {
+      if (!next.databaseError && preferenceResult.status === 'fulfilled' && next.preferences?.currentDatabase && !databasePreferenceView(next.preferences, next.databases).currentDatabase) {
         await save(next, next.preferences.enabledDatabases, null, serial);
       }
     })();

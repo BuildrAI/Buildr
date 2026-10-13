@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useContext, useEffect, useRef, useState } from 'react';
 import { Alert, Button, Empty, Select } from 'antd';
 import { PlayCircleOutlined } from '@ant-design/icons';
+import { WorkspaceViewActiveContext } from '../../../app/pageTabs';
 import { RefreshButton } from '../../../components/RefreshButton';
+import { ResizablePanels } from '../../../components/ResizablePanels';
 import type { ConnectionClient } from '../api/connection-api';
 import type { MySqlConnection } from '../connection-types';
 import { useDatabasePreferences } from '../hooks/useDatabasePreferences';
@@ -10,9 +12,10 @@ import { MySqlResults, type DisplayResult } from './MySqlResults';
 import { DatabaseResources } from './DatabaseResources';
 import { SqlQueryEditor } from './SqlQueryEditor';
 
-type Props = { connections: MySqlConnection[]; client: ConnectionClient; entry: { id: string; nonce: number } | null; active: boolean };
+type Props = { connections: MySqlConnection[]; client: ConnectionClient; entry: { id: string; nonce: number } | null; active: boolean; layoutKey: string };
 
-export function MySqlQuery({ connections, client, entry, active }: Props) {
+export function MySqlQuery({ connections, client, entry, active: requestedActive, layoutKey }: Props) {
+  const viewActive = useContext(WorkspaceViewActiveContext), active = requestedActive && viewActive;
   const [connectionId, setConnectionId] = useState(''), [sql, setSql] = useState('');
   const [selection, setSelection] = useState<SqlSelection>({ from: 0, to: 0 });
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [result, setResult] = useState<DisplayResult | null>(null);
@@ -21,21 +24,25 @@ export function MySqlQuery({ connections, client, entry, active }: Props) {
   const preferences = useDatabasePreferences(client, connection, active);
   const database = preferences.currentDatabase;
   function clearResult() { request.current.controller?.abort(); request.current.serial++; setBusy(false); setResult(null); setError(''); }
-  function selectConnection(id: string) { clearResult(); setConnectionId(id); }
+  function selectConnection(id: string) { if (id === connectionId) return; clearResult(); setConnectionId(id); }
   function selectDatabase(value: string) { if (value === database) return; clearResult(); preferences.select(value); }
   useEffect(() => {
     if (!entry) return;
     const selected = connections.find(item => item.id === entry.id);
-    if (selected) { selectConnection(selected.id); setSql(''); }
+    if (selected && selected.id !== connectionId) { selectConnection(selected.id); setSql(''); }
   }, [entry?.nonce]);
   useEffect(() => {
     if (!connectionId && connections[0]) selectConnection(connections[0].id);
     if (connectionId && !connection) { clearResult(); setConnectionId(''); }
   }, [connections, connectionId]);
   useEffect(() => { clearResult(); }, [client, connectionId, connection?.revision, database]);
+  useEffect(() => {
+    if (active) return;
+    request.current.controller?.abort(); request.current.serial++; setBusy(false);
+  }, [active]);
   useEffect(() => () => { request.current.controller?.abort(); request.current.serial++; }, []);
   async function run(selected = selection) {
-    if (!connection || !sql.trim() || busy || preferences.loading || preferences.saving) return;
+    if (!active || !connection || !sql.trim() || busy || preferences.loading || preferences.saving) return;
     let statement: string;
     try { statement = sqlExecutionTarget(sql, selected).sql; }
     catch (cause) { setError(cause instanceof Error ? cause.message : '请选择一条查询语句。'); return; }
@@ -49,17 +56,20 @@ export function MySqlQuery({ connections, client, entry, active }: Props) {
     finally { if (serial === request.current.serial) setBusy(false); }
   }
   const databaseOptions = preferences.enabledDatabases;
+  const notices = <>
+    {preferences.databaseError && <Alert type="warning" showIcon message={`数据库列表读取失败：${preferences.databaseError}`} />}
+    {preferences.preferenceError && <Alert id="mysql-query-preferences-error" type="warning" showIcon message={`数据库选择：${preferences.preferenceError}`} />}
+    {error && <Alert id="mysql-query-error" type="error" showIcon message={error} />}
+    {result && result.editorSql !== sql && <p className="buildr-mysql-stale">语句已修改，运行后更新结果。</p>}
+  </>;
   return <section className="buildr-mysql-query" aria-label="MySQL 查询">
     <header className="buildr-mysql-target"><label>连接<Select aria-label="选择连接" value={connectionId || undefined} placeholder="选择 MySQL 连接" options={connections.map(item => ({ value: item.id, label: `${item.name} · ${item.environment}` }))} onChange={selectConnection} /></label><span>只读查询 · 默认 100 行 · 最多 500 行</span></header>
-    {!connections.length ? <Empty description="请先添加 MySQL 连接" image={Empty.PRESENTED_IMAGE_SIMPLE} /> : <>
-      <div className="buildr-mysql-query-layout"><DatabaseResources key={connectionId} databases={preferences.databases} visible={preferences.enabledDatabases} current={database} loading={preferences.loading} saving={preferences.saving} writable={preferences.writable} active={active} onCurrent={selectDatabase} onVisible={preferences.enable} />
-        <section className="buildr-mysql-query-input"><div className="buildr-mysql-toolbar"><label>当前数据库<Select aria-label="当前数据库" showSearch disabled={!preferences.writable} loading={preferences.saving} value={database} options={[{ value: '', label: '未选择' }, ...databaseOptions.map(value => ({ value, label: value }))]} onChange={selectDatabase} /></label><RefreshButton label="刷新数据库列表" loading={preferences.loading} disabled={!connection || preferences.saving} onClick={preferences.refresh} /><Button id="run-mysql-query" type="primary" icon={<PlayCircleOutlined />} loading={busy} disabled={!connection || !sql.trim() || preferences.loading || preferences.saving} onClick={() => void run()}>{selection.from !== selection.to ? '运行选中' : '运行当前语句'}</Button><small>⌘ / Ctrl + Enter</small></div><SqlQueryEditor value={sql} busy={busy} onChange={setSql} onSelectionChange={setSelection} onRun={selected => void run(selected)} /></section>
-      </div>
-      {preferences.databaseError && <Alert type="warning" showIcon message={`数据库列表读取失败：${preferences.databaseError}`} />}
-      {preferences.preferenceError && <Alert id="mysql-query-preferences-error" type="warning" showIcon message={`数据库选择：${preferences.preferenceError}`} />}
-      {error && <Alert id="mysql-query-error" type="error" showIcon message={error} />}
-      {result && result.editorSql !== sql && <p className="buildr-connections-muted">语句已修改，运行后更新结果。</p>}
-      <MySqlResults key={`${connectionId}:${database}`} result={result} />
-    </>}
+    {!connections.length ? <div className="buildr-mysql-query-empty"><Empty description="请先添加 MySQL 连接" image={Empty.PRESENTED_IMAGE_SIMPLE} /></div> :
+      <ResizablePanels className="buildr-mysql-query-layout" direction="vertical" initialRatio={0.4} minFirst={160} minSecond={160} separatorLabel="调整上方查询与下方结果区域大小" storageKey={`buildr-mysql-editor-height:${layoutKey}`}
+        first={<ResizablePanels className="buildr-mysql-query-top" initialSize={200} minFirst={130} minSecond={260} separatorLabel="调整数据库与编写查询区域大小" storageKey={`buildr-mysql-database-width:${layoutKey}`}
+          first={<DatabaseResources key={connectionId} databases={preferences.databases} visible={preferences.enabledDatabases} current={database} loading={preferences.loading} saving={preferences.saving} writable={preferences.writable} active={active} onCurrent={selectDatabase} onVisible={preferences.enable} />}
+          second={<section className="buildr-mysql-query-input" aria-label="编写查询"><div className="buildr-mysql-toolbar"><label>当前数据库<Select aria-label="当前数据库" showSearch disabled={!preferences.writable} loading={preferences.saving} value={database} options={[{ value: '', label: '未选择' }, ...databaseOptions.map(value => ({ value, label: value }))]} onChange={selectDatabase} /></label><RefreshButton label="刷新数据库列表" loading={preferences.loading} disabled={!active || !connection || preferences.saving} onClick={preferences.refresh} /><Button id="run-mysql-query" type="primary" icon={<PlayCircleOutlined />} loading={busy} disabled={!active || !connection || !sql.trim() || preferences.loading || preferences.saving} onClick={() => void run()}>{selection.from !== selection.to ? '运行选中' : '运行当前语句'}</Button><small>⌘ / Ctrl + Enter</small></div><SqlQueryEditor value={sql} busy={busy} onChange={setSql} onSelectionChange={setSelection} onRun={selected => void run(selected)} /></section>} />}
+        second={<MySqlResults key={`${connectionId}:${database}`} result={result} notices={notices} active={active} />}
+      />}
   </section>;
 }

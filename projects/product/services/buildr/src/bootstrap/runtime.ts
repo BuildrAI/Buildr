@@ -1,6 +1,6 @@
 import { AGENT_ASSETS_SOURCE_MODULE } from '../modules/agent-assets/source/module.ts';
 import { CODE_MODULE } from '../modules/code/module.ts';
-import { createConnectionsModule } from '../modules/connections/module.ts';
+import { createConnectionsModule, resolveConnectionWorkspace } from '../modules/connections/module.ts';
 import { AGENT_OPERATIONS_APPLICATION, createAgentOperationsModule } from '../modules/agent-operations/module.ts';
 import { createCodexDesktopModule } from '../modules/codex-desktop/module.ts';
 import { createNativeSessionLinksModule, NATIVE_SESSION_LINKS_APPLICATION } from '../modules/native-session-links/module.ts';
@@ -32,7 +32,7 @@ import {
   createParentCoordinationModule,
 } from '../modules/task/module.ts';
 import { createModuleRegistry } from './module-registry.ts';
-import { createWebModule, readCurrentBuildrWebOrigin } from '../web/module.ts';
+import { createWebModule, readCurrentBuildrWebOrigin, readPreviewConnectionCredentials } from '../web/module.ts';
 import { createWorkspaceModule, WORKSPACE_AGENT_ASSETS_BINDER, WORKSPACE_APPLICATION, WORKSPACE_QUERY } from '../modules/workspace/module.ts';
 import { createSystemInstallationModule, readCurrentProductIdentity, SYSTEM_INSTALLATION_APPLICATION } from '../modules/installation/module.ts';
 import { createSystemDoctorModule, SYSTEM_DOCTOR_APPLICATION } from '../modules/diagnostics/module.ts';
@@ -82,14 +82,16 @@ export function createRuntime(): any  {
   registry.install(createDshDesktopModule({ readProductIdentity: readCurrentProductIdentity, resolveWebProfile: webProfileContract.resolveWebProfile, readOrigin: readCurrentBuildrWebOrigin }));
   registry.provide(NATIVE_SESSION_LINKS_APPLICATION).bindDshDesktop(registry.provide(DSH_DESKTOP_APPLICATION));
   registry.install(CODE_MODULE);
-  registry.install(createConnectionsModule({ readProductIdentity: readCurrentProductIdentity, resolveWebProfile: webProfileContract.resolveWebProfile }));
+  const connectionWorkspace = { getWorkspace: registry.provide(WORKSPACE_QUERY).getWorkspace, resolveSourceWorkspaceRoot: registry.provide(WORKSPACE_QUERY).resolveSourceWorkspaceRoot, listRegisteredWorkspaces: registry.provide(WORKSPACE_APPLICATION).listRegisteredWorkspaces };
+  const resolvePreviewConnectionScope = (root: string) => resolveConnectionWorkspace(root, connectionWorkspace);
+  registry.install(createConnectionsModule({ readProductIdentity: readCurrentProductIdentity, resolveWebProfile: webProfileContract.resolveWebProfile, readPreviewCredentials: productIdentity => readPreviewConnectionCredentials({ productIdentity, productRoot: runtime.productRoot(), resolveScope: resolvePreviewConnectionScope }) }));
   registry.provide(TASK_CHANGE_BINDER).bindChangeResolver(registry.provide(CHANGE_APPLICATION));
   registry.install(createVerificationModule(runtime));
   registry.install(TASK_REVIEW_MODULE);
   registry.install(createTaskVerificationModule(runtime, { verificationDeclaration: VERIFICATION_DECLARATION }));
   registry.install(createParentCoordinationModule(runtime));
   registry.install(createSystemInstallationModule(runtime));
-  registry.install(createWebModule(runtime, { httpContributions: registry.contributions('http'), closeResources: async () => {
+  registry.install(createWebModule(runtime, { resolvePreviewConnectionScope, httpContributions: registry.contributions('http'), closeResources: async () => {
     registry.provide(DSH_PAGE_OBSERVATIONS).close();
     await Promise.all([registry.provide(DSH_DESKTOP_APPLICATION).close(), registry.provide(AGENT_OPERATIONS_APPLICATION).close()]);
   } }));

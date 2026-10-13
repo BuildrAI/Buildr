@@ -8,7 +8,7 @@ export function createConnectionClient(api: ApiClient, workspaceId: string) {
   const json = (method: string, body: unknown, signal?: AbortSignal): RequestInit => ({ method, body: JSON.stringify(body), signal });
   return {
     list(signal?: AbortSignal) {
-      return api(root, { signal }) as Promise<{ connections: ExternalConnection[] }>;
+      return api(root, { signal }) as Promise<{ connections: ExternalConnection[]; configurationWritable?: boolean }>;
     },
     create(input: ConnectionInput) {
       return api(root, json('POST', input)) as Promise<{ connection: MySqlConnection }>;

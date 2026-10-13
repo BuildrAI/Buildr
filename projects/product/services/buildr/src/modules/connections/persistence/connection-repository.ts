@@ -16,8 +16,11 @@ export type ConnectionStoreRuntime = {
 /** The workspace SQLite owns local connection metadata; the host profile owns encrypted credentials. */
 export class ConnectionRepository {
   readonly dataRoot: string;
+  private readonly credentialDataRoot: string;
+  private readonly credentialsReadonly: boolean;
   private readonly store: ConnectionStoreRuntime;
-  constructor(dataRoot: string, store: ConnectionStoreRuntime) { this.dataRoot = path.resolve(dataRoot); this.store = store; }
+  constructor(dataRoot: string, store: ConnectionStoreRuntime, credentialDataRoot?: string) { this.dataRoot = path.resolve(dataRoot); this.store = store; this.credentialDataRoot = path.resolve(credentialDataRoot ?? dataRoot); this.credentialsReadonly = credentialDataRoot !== undefined; }
+  private assertCredentialWritable() { if (this.credentialsReadonly) throw connectionFailure('connection_preview_readonly', '此预览使用日常 Buildr 的认证，仅支持查询；连接配置请在日常 Buildr 中修改。', 409); }
   private assertDirectory(directory: string, boundary: string) {
     const relative = path.relative(boundary, directory);
     if (relative.startsWith('..') || path.isAbsolute(relative)) throw connectionFailure('connection_storage_invalid', '连接存储目录越界。', 409);
@@ -30,7 +33,7 @@ export class ConnectionRepository {
   private file(scope: ConnectionScope) { return path.join(scope.rootPath, 'connections', 'manifest.yml'); }
   private secretDirectory(scope: ConnectionScope) {
     if (!uuid(scope.workspaceId)) throw connectionFailure('connection_workspace_invalid', '工作空间编号无效。', 409);
-    return path.join(this.dataRoot, 'external-connections', scope.workspaceId);
+    return path.join(this.credentialDataRoot, 'external-connections', scope.workspaceId);
   }
   private readFile(file: string, maxBytes = MAX_BYTES): string | null {
     try {
@@ -115,6 +118,7 @@ export class ConnectionRepository {
       result = pending;
     }
     if (result !== pending) return result;
+    if (this.credentialsReadonly) throw connectionFailure('connection_preview_store_unprepared', '规范工作空间的连接存储尚未准备完成；请先在日常 Buildr 中打开连接，预览不会迁移正式连接配置。', 409);
     // Schema upgrades happen in the store before this atomic business import transaction.
     return this.store.runWorkspaceTransaction(scope.rootPath, context => {
       const database = transactionDatabase(context); this.initialize(database, scope); return action(database);
@@ -122,6 +126,7 @@ export class ConnectionRepository {
   }
   read(scope: ConnectionScope): ConnectionRecord[] { return this.readInitialized(scope, database => this.records(database)); }
   mutate<T>(scope: ConnectionScope, action: (records: ConnectionRecord[]) => T): T {
+    this.assertCredentialWritable();
     return this.store.runWorkspaceTransaction(scope.rootPath, context => {
       const database = transactionDatabase(context); this.initialize(database, scope);
       const records = this.records(database), result = action(records);
@@ -148,6 +153,7 @@ export class ConnectionRepository {
     return this.readInitialized(scope, database => { const { generation, ...preference } = this.preference(database, scope, id); return preference; });
   }
   saveQueryPreferences(scope: ConnectionScope, id: string, values: Omit<QueryPreferences, 'revision'>, expectedRevision: string): QueryPreferences {
+    if (this.credentialsReadonly) this.readInitialized(scope, () => true);
     return this.store.runWorkspaceTransaction(scope.rootPath, context => {
       const database = transactionDatabase(context); this.initialize(database, scope);
       const previous = this.preference(database, scope, id);
@@ -157,8 +163,8 @@ export class ConnectionRepository {
     });
   }
   private key(create: boolean): Buffer | null {
-    const directory = path.join(this.dataRoot, 'external-connections');
-    this.assertDirectory(directory, this.dataRoot);
+    const directory = path.join(this.credentialDataRoot, 'external-connections');
+    this.assertDirectory(directory, this.credentialDataRoot);
     if (create) { fs.mkdirSync(directory, { recursive: true, mode: 0o700 }); fs.chmodSync(directory, 0o700); }
     const file = path.join(directory, 'credential-key.json');
     if (create) {
@@ -174,9 +180,10 @@ export class ConnectionRepository {
     } catch { throw connectionFailure('connection_credentials_unavailable', '本机认证密钥不可用；请重新配置密码。', 409); }
   }
   writeCredentials(scope: ConnectionScope, credentials: Record<string, unknown>, bindingDigest: string): string {
+    this.assertCredentialWritable();
     if (!/^sha256-[a-f0-9]{64}$/.test(bindingDigest)) throw connectionFailure('connection_credentials_binding_invalid', '无法确认认证对应的连接目标。', 409);
     const directory = this.secretDirectory(scope);
-    this.assertDirectory(directory, this.dataRoot);
+    this.assertDirectory(directory, this.credentialDataRoot);
     const key = this.key(true)!;
     fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
     fs.chmodSync(directory, 0o700);
@@ -192,7 +199,7 @@ export class ConnectionRepository {
     if (id === null) return null;
     if (!uuid(id)) throw connectionFailure('connection_credentials_unavailable', '本机认证编号无效。', 409);
     const directory = this.secretDirectory(scope);
-    this.assertDirectory(directory, this.dataRoot);
+    this.assertDirectory(directory, this.credentialDataRoot);
     const file = path.join(directory, id + '.json'), raw = this.readFile(file, 32 * 1024);
     if (raw === null) return null;
     const key = this.key(false);
@@ -212,6 +219,7 @@ export class ConnectionRepository {
     }
   }
   discardUnreferencedCredentials(scope: ConnectionScope, id: string | null): void {
+    this.assertCredentialWritable();
     if (!uuid(id)) return;
     try {
       const unreferenced = this.store.runWorkspaceSqliteRead(scope.rootPath, context => {
@@ -225,8 +233,9 @@ export class ConnectionRepository {
     } catch { /* An unreadable or unconfirmed store cannot prove that newly written ciphertext is unreferenced. */ }
   }
   removeCredentials(scope: ConnectionScope, id: string | null): void {
+    this.assertCredentialWritable();
     if (!uuid(id)) return;
-    this.assertDirectory(this.secretDirectory(scope), this.dataRoot);
+    this.assertDirectory(this.secretDirectory(scope), this.credentialDataRoot);
     fs.rmSync(path.join(this.secretDirectory(scope), id + '.json'), { force: true });
   }
   public(scope: ConnectionScope, record: ConnectionRecord, bindingDigest: string | null): PublicConnection {

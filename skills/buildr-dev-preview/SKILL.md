@@ -44,6 +44,7 @@ description: 在 Buildr 自身开发或验收中，需要启动服务验证时�
 
 - `--task` 形态：自动解析任务受管工作树、服务目标指向工作树、为目标缺失的本地任务库从 canonical 播种一致副本（结果 `taskStore` 如实标注 `canonical` 播种或 `existing` 复用）。这是隔离快照模式的托管实现，优先使用。
 - canonical 实时库模式：`web preview start <instance> --target <canonical-root>` 不提供 `--task`，服务目标为 canonical，任务材料按 worktree evidence 读工作树候选副本。
+- 验收已保存的真实连接时，先通过公开连接列表核对所属工作空间，不能把开发 Buildr 的工作空间当成业务连接来源。使用上述 canonical 实时库模式，并显式加入 `--connection-credentials-from development`（发布渠道使用 `released`，必须与当前代码渠道一致）。该选项只读使用同渠道默认认证来源，不复制密码或密钥；连接配置新增、编辑和删除在此预览中被拒绝，查询偏好仍按已有版本保护保存。不支持任务快照、任意认证目录或跨渠道来源。目标或数据源模式改变时使用新实例名，保留原实例的数据，不能直接覆盖旧登记。
 - 托管实例持有 owner、secret 与启动锁，`preview stop` 需匹配 owner 身份；不要直接 `kill` 进程绕过 owner 检查。
 - 启动输出即为验收链接：loopback URL + 实例名 + worktree/branch/HEAD + dirty 状态 + 任务库来源；向维护者交接时原样给出。
 

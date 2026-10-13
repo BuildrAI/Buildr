@@ -47,9 +47,11 @@ export function WorkspaceStage(props: Props) {
     <WorkspaceViewActiveContext.Provider value={viewActive && item.kind === state?.active}>{previews?.render(item)}</WorkspaceViewActiveContext.Provider>
   </div>)}</InsideResourcePreview.Provider></ProjectPreviewContext.Provider>;
   const normalStage = <SplitWorkspaceStage {...props} onCloseAll={() => { previews?.clear(location.pathname); for (const tab of props.objectTabs || []) props.onCloseObject?.(tab.key); }} objectTabs={[...(props.objectTabs || []), ...resourceTabs]} activeObject={active}
+    objectContentLayout={state?.active ? 'reading' : props.objectContentLayout}
+    objectLabel={state?.active ? undefined : props.objectLabel}
     onActivateObject={key => { if (key.startsWith('preview:')) previews?.activate(location.pathname, key.slice(8)); else { previews?.activate(location.pathname, ''); props.onActivateObject?.(key); } }}
     onCloseObject={key => { if (key.startsWith('preview:')) previews?.close(location.pathname, key.slice(8)); else props.onCloseObject?.(key); }}
-    objectContent={<><div hidden={Boolean(state?.active)}><WorkspaceViewActiveContext.Provider value={viewActive && !state?.active}>{props.objectContent}</WorkspaceViewActiveContext.Provider></div><div hidden={!state?.active}>{resources}</div></>}>
+    objectContent={<><div className="workspace-object-content" hidden={Boolean(state?.active)}><WorkspaceViewActiveContext.Provider value={viewActive && (!props.retainObjectContent || Boolean(props.activeObject)) && !state?.active}>{props.objectContent}</WorkspaceViewActiveContext.Provider></div><div hidden={!state?.active}>{resources}</div></>}>
     <div className="resource-main-content" onClickCapture={event => { if ((event.target as HTMLElement).closest('[data-doc-row]')) previews?.activate(location.pathname, ''); }}>{props.children}</div>
   </SplitWorkspaceStage>;
   return normalStage;
@@ -70,6 +72,11 @@ type Props = {
   onCloseObject?: (key: string) => void;
   /** 当前激活对象的内容。 */
   objectContent?: ReactNode;
+  /** 功能工作面占满右组；阅读内容保持原有留白。 */
+  objectContentLayout?: 'reading' | 'fill';
+  objectLabel?: string;
+  /** 关闭右组时保留局部草稿；调用方须使隐藏内容失活。 */
+  retainObjectContent?: boolean;
   onCloseAll?: () => void;
 };
 
@@ -84,6 +91,9 @@ function SplitWorkspaceStage({
   onActivateObject,
   onCloseObject,
   objectContent,
+  objectContentLayout = 'reading',
+  objectLabel = '阅读材料',
+  retainObjectContent = false,
   onCloseAll,
 }: Props) {
   const hasRight = Boolean(objectTabs && objectTabs.length > 0);
@@ -213,10 +223,11 @@ function SplitWorkspaceStage({
       <section className="pane-group pane-left" inert={overlay || undefined}>
         <div className="pane-body"><div ref={contentRef} className="pane-body-inner">{children}</div></div>
       </section>
-      {hasRight ? (
+      {hasRight || retainObjectContent ? (
         <>
           {overlay && <div className="pane-reading-mask" onClick={closeReading} aria-hidden="true" />}
           <SplitDivider
+            hidden={!hasRight}
             className="pane-divider"
             children={<span className="split-divider-header-marker" aria-hidden="true" />}
             aria-label="拖拽调整两侧宽度"
@@ -233,15 +244,16 @@ function SplitWorkspaceStage({
           />
           <section
             ref={readingRef}
-            className="pane-group pane-right"
+            hidden={!hasRight}
+            className={`pane-group pane-right${objectContentLayout === 'fill' ? ' pane-content-fill' : ''}`}
             role={overlay ? 'dialog' : undefined}
             aria-modal={overlay || undefined}
-            aria-label={overlay ? '阅读材料' : undefined}
+            aria-label={overlay ? objectLabel : undefined}
             onKeyDown={readingKeyDown}
             style={overlay ? { width: Math.min(720, Math.max(280, stageWidth - 20)) } : expanded ? { width: '100%', flexBasis: '100%' } : rightWidth ? { width: rightWidth, flexBasis: rightWidth } : undefined}
           >
-            <div className="pane-overlay-heading"><strong>阅读材料</strong><Button className="pane-overlay-close" type="text" aria-label="关闭阅读" icon={<CloseOutlined />} onClick={closeReading} /></div>
-            <ReadingToggle className="pane-reading-toggle" expanded={expanded} onToggle={toggleReading} />
+            <div className="pane-overlay-heading"><strong>{objectLabel}</strong><Button className="pane-overlay-close" type="text" aria-label={objectContentLayout === 'fill' ? `关闭${objectLabel}` : '关闭阅读'} icon={<CloseOutlined />} onClick={closeReading} /></div>
+            <ReadingToggle className="pane-reading-toggle" expanded={expanded} onToggle={toggleReading} expandLabel={objectContentLayout === 'fill' ? `展开${objectLabel}` : undefined} />
             <ObjectTabStrip panelId={panelId} tabs={objectTabs ?? []} active={activeObject} onActivate={onActivateObject} onClose={onCloseObject} />
             <div ref={readingBody} id={panelId} role="tabpanel" aria-labelledby={activeObject ? tabElementId(panelId, activeObject) : undefined} tabIndex={0} className="pane-body"><div className="pane-body-inner">{objectContent}</div></div>
           </section>

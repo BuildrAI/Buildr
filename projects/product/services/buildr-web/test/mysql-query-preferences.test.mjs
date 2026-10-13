@@ -49,6 +49,7 @@ function harness(client, selected) {
     async settle() { for (let count = 0; count < 8; count++) { await new Promise(resolve => setImmediate(resolve)); if (dirty) render(); } },
     select(next) { current = next; render(); },
     hide() { active = false; render(); },
+    show() { active = true; render(); },
     dispose() { for (const slot of slots) slot?.cleanup?.(); },
   };
 }
@@ -108,4 +109,47 @@ test('确认当前库消失才清空持久选择，数据库读取失败不冒�
       else assert.deepEqual(writes, [{ enabledDatabases: ['orders', 'billing'], currentDatabase: null, expectedRevision: 'pref-1' }]);
     } finally { h.dispose(); }
   }
+});
+
+test('刷新期间保留已确认的当前库，新的权威选择读取完成后才切换', async () => {
+  let next;
+  const client = {
+    databases: () => next ? next.databases.promise : Promise.resolve({ databases: ['orders', 'billing'] }),
+    queryPreferences: () => next ? next.preferences.promise : Promise.resolve(pref(['orders', 'billing'], 'orders')),
+  };
+  const h = harness(client, connection('first'));
+  try {
+    await h.settle(); assert.equal(h.value.currentDatabase, 'orders');
+    next = { databases: deferred(), preferences: deferred() };
+    h.value.refresh(); await h.settle();
+    assert.equal(h.value.loading, true); assert.equal(h.value.writable, false);
+    assert.equal(h.value.currentDatabase, 'orders'); assert.deepEqual(h.value.enabledDatabases, ['orders', 'billing']);
+    next.databases.resolve({ databases: ['orders', 'billing'] });
+    next.preferences.resolve(pref(['orders', 'billing'], 'billing', 'other-writer'));
+    await h.settle();
+    assert.equal(h.value.loading, false); assert.equal(h.value.currentDatabase, 'billing');
+  } finally { h.dispose(); }
+});
+
+test('关闭重开保持原查询目标，重新读取失败不冒充切库，连接版本改变仍隔离旧目标', async () => {
+  let next, reads = 0;
+  const client = {
+    databases: () => { reads++; return next ? next.databases.promise : Promise.resolve({ databases: ['orders'] }); },
+    queryPreferences: () => next ? next.preferences.promise : Promise.resolve(pref(['orders'], 'orders')),
+  };
+  const h = harness(client, connection('first'));
+  try {
+    await h.settle(); h.hide(); await h.settle();
+    assert.equal(reads, 1); assert.equal(h.value.currentDatabase, 'orders'); assert.equal(h.value.writable, false);
+    next = { databases: deferred(), preferences: deferred() };
+    h.show(); await h.settle();
+    assert.equal(reads, 2); assert.equal(h.value.loading, true); assert.equal(h.value.currentDatabase, 'orders');
+    next.databases.reject(new Error('discovery unavailable')); next.preferences.reject(new Error('preferences unavailable'));
+    await h.settle();
+    assert.equal(h.value.loading, false); assert.equal(h.value.currentDatabase, 'orders');
+    assert.match(h.value.databaseError, /discovery unavailable/); assert.match(h.value.preferenceError, /preferences unavailable/);
+    assert.equal(h.value.writable, false);
+    h.select({ ...connection('first'), revision: 'changed-connection' }); await h.settle();
+    assert.equal(h.value.currentDatabase, ''); assert.deepEqual(h.value.enabledDatabases, []);
+  } finally { h.dispose(); }
 });

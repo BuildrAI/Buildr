@@ -11,6 +11,10 @@
 .workspace-page .pane-stage.reading-expanded > .pane-divider { display: none; }
 .workspace-page .pane-stage.reading-expanded > .pane-right { flex: 1 1 100%; width: 100% !important; }
 .resource-preview-content > [hidden] { display: none !important; }
+.pane-stage > [hidden], .workspace-object-content[hidden] { display:none !important; }
+.workspace-page .pane-right.pane-content-fill > .pane-body { overflow:hidden; }
+.workspace-page .pane-right.pane-content-fill > .pane-body > .pane-body-inner { height:100%; min-height:0; padding:0; }
+.pane-content-fill .workspace-object-content { height:100%; min-height:0; }
 .pane-overlay-heading { display: none; }
 .workspace-page .pane-stage.reading-overlay { position: relative; }
 .workspace-page .pane-stage.reading-overlay > .pane-divider { display: none; }
