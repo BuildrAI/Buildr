@@ -20,6 +20,7 @@ import { resolveCommandIdentityBindings, resolveSourceBinding } from '../source-
 import type { SourceRecordRequest, SourceRecordResult } from './source-types.ts';
 import { createDesktopServer, resolveDesktopIdentity, type DesktopNativeServices } from '../desktop-server.ts';
 import { DesktopNavigation, desktopFault } from '../desktop-navigation.ts';
+import { activateDesktopWindow } from '../desktop-window.ts';
 import { createBindingMaintenance, type NativeBindingEditor } from '../binding-maintenance.ts';
 import type { BindingMaintenanceView, BindingMaintenanceUpdate } from './types.ts';
 import type { DshDesktopClientAck, DshDesktopClientCommand, DshDesktopClientState, DshDesktopTaskPageRequest, DshDesktopTaskPageResult } from '../../../buildr/src/modules/agent-operations/contracts/dsh-desktop-bridge.ts';
@@ -74,7 +75,11 @@ export default class BuildrGateway extends TypertRemoteService {
   private bridge: ReturnType<typeof createDiscoveringBuildrBridge> | undefined;
   private readonly qualification: ReturnType<typeof createActivation>;
   private captureRegistered = false;
-  private readonly desktopNavigation = new DesktopNavigation();
+  private readonly desktopNavigation = new DesktopNavigation(undefined, async signal => {
+    if (!this.activation().active || this.sourceLifetime.signal.aborted) throw desktopFault('disposed', 'Buildr 桌面扩展不可用。');
+    const identity = resolveDesktopIdentity(this.hostContext.get('dshHomePath'), CHANNEL === 'npm' ? 'released' : 'development', packageVersion());
+    await activateDesktopWindow(identity.appPath, signal);
+  });
   private desktopServer: Promise<Awaited<ReturnType<typeof createDesktopServer>>> | undefined;
   constructor(ctx: Context, config: Config) {
     super(ctx, 'buildr');

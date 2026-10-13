@@ -174,7 +174,7 @@ export async function apply(ctx: Context): Promise<void> {
         }
       }, desktop, value => status.set(value), ctx.layout.panelInfo, ENTRY_ID as 'buildr' | 'buildr-dev');
       ctx.effect(() => () => action.dispose());
-      if (desktop) ctx.inject(['uiWorkspace'], scope => {
+      if (desktop) ctx.inject(['uiWorkspace', 'sessions', 'conversation'], scope => {
         const namespace = remoteNamespace;
         if (namespace && typeof namespace.desktopCommands === 'function') scope.effect(() => {
           try { return mountDesktopClient(scope, namespace, ENTRY_ID); }

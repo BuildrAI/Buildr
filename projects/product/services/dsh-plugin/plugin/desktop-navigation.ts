@@ -1,4 +1,4 @@
-/** Host-side Client leases and observed navigation acknowledgements. */
+/** Host-side Client leases, bounded native window activation and observed navigation acknowledgements. */
 import { randomUUID } from 'node:crypto';
 import { DSH_DESKTOP_BRIDGE_LIMITS, dshDesktopIdentifier,
   type DshDesktopClientAck, type DshDesktopClientCommand, type DshDesktopClientState,
@@ -12,14 +12,18 @@ export class DesktopFault extends Error {
 export function desktopFault(code: string, message: string): DesktopFault { return new DesktopFault(code, message); }
 type Lease = { state: DshDesktopClientState; queue: DshDesktopClientCommand[]; wake?: () => void; disposed: boolean };
 type Pending = { clientId: string; sessionId: string; resolve(value: DshDesktopNavigationResult): void;
-  reject(error: unknown): void; taskUrl?: string };
+  reject(error: unknown): void; dispatched: boolean; taskUrl?: string };
 
 export class DesktopNavigation {
   private readonly leases = new Map<string, Lease>();
   private readonly pending = new Map<string, Pending>();
   private disposed = false;
   private readonly timeoutMs: number;
-  constructor(timeoutMs: number = DSH_DESKTOP_BRIDGE_LIMITS.navigationTimeoutMs) { this.timeoutMs = timeoutMs; }
+  private readonly activateWindow: (signal: AbortSignal) => Promise<void>;
+  constructor(timeoutMs: number = DSH_DESKTOP_BRIDGE_LIMITS.navigationTimeoutMs,
+    activateWindow: (signal: AbortSignal) => Promise<void> = async () => {
+      throw desktopFault('window_activation_unavailable', '当前桌面连接没有可用的窗口唤起能力。');
+    }) { this.timeoutMs = timeoutMs; this.activateWindow = activateWindow; }
   clients(): DshDesktopClientState[] { return [...this.leases.values()].map(row => ({ ...row.state })); }
   update(state: DshDesktopClientState): void {
     const lease = this.leases.get(state.clientId);
@@ -66,32 +70,58 @@ export class DesktopNavigation {
       candidates.length ? '有多个桌面客户端，请明确目标窗口。' : '没有可用的桌面客户端。');
     return candidates[0];
   }
+  private assertPrimaryClient(): void {
+    // The supported native URL raises the primary window, without a renderer/window identifier.
+    // An explicit Client ID alone cannot prove which of several Clients owns that window.
+    if ([...this.leases.values()].filter(row => !row.disposed && row.state.desktop).length !== 1)
+      throw desktopFault('window_ambiguous', '有多个桌面客户端，当前 DSH 唤起接口不能精确定位所选窗口。');
+  }
   async navigate(method: 'openSession' | 'openTask', target: DshDesktopSessionTarget | DshDesktopTaskTarget,
     signal: AbortSignal): Promise<DshDesktopNavigationResult> {
     signal.throwIfAborted();
     if (!dshDesktopIdentifier(target.sessionId)) throw desktopFault('session_invalid', '原生会话编号无效。');
     const lease = this.select(target.clientId), clientId = lease.state.clientId;
+    this.assertPrimaryClient();
     if ([...this.pending.values()].some(row => row.clientId === clientId)) throw desktopFault('navigation_busy', '目标窗口正在处理另一项导航。');
     const commandId = randomUUID();
     const taskUrl = 'taskUrl' in target ? target.taskUrl : undefined;
     return new Promise<DshDesktopNavigationResult>((resolve, reject) => {
+      const lifetime = new AbortController();
+      let settled = false;
       const cleanup = () => { clearTimeout(timer); signal.removeEventListener('abort', abort);
+        settled = true; lifetime.abort();
         this.pending.delete(commandId); lease.queue = lease.queue.filter(row => row.commandId !== commandId); };
       const fail = (error: unknown) => { cleanup(); reject(error); };
       const abort = () => fail(desktopFault('navigation_cancelled', '本次导航已取消。'));
-      const timer = setTimeout(() => fail(desktopFault('navigation_timeout', '未观察到目标会话选中，请重试。')), this.timeoutMs);
-      this.pending.set(commandId, { clientId, sessionId: target.sessionId, ...(taskUrl ? { taskUrl } : {}),
-        resolve: value => { cleanup(); resolve(value); }, reject: fail });
+      const timer = setTimeout(() => fail(desktopFault('navigation_timeout', '未观察到目标聊天在前台显示，请重试。')), this.timeoutMs);
+      const pending: Pending = { clientId, sessionId: target.sessionId, dispatched: false, ...(taskUrl ? { taskUrl } : {}),
+        resolve: value => { cleanup(); resolve(value); }, reject: fail };
+      this.pending.set(commandId, pending);
       signal.addEventListener('abort', abort, { once: true });
-      lease.queue.push({ commandId, method, sessionId: target.sessionId, ...(taskUrl ? { taskUrl } : {}) });
-      lease.wake?.(); lease.wake = undefined;
+      if (signal.aborted) { abort(); return; }
+      void (async () => {
+        try {
+          await this.activateWindow(lifetime.signal);
+          if (settled) return;
+          lifetime.signal.throwIfAborted();
+          if (this.disposed || lease.disposed || this.leases.get(clientId) !== lease)
+            throw desktopFault('client_disconnected', '目标桌面客户端已断开。');
+          this.assertPrimaryClient();
+          pending.dispatched = true;
+          lease.queue.push({ commandId, method, sessionId: target.sessionId, ...(taskUrl ? { taskUrl } : {}) });
+          lease.wake?.(); lease.wake = undefined;
+        } catch (error) {
+          if (!settled) fail(error instanceof DesktopFault ? error : desktopFault('window_activation_failed', 'DSH 桌面窗口未能唤起，请重试。'));
+        }
+      })();
     });
   }
   acknowledge(ack: DshDesktopClientAck): void {
     const row = this.pending.get(ack.commandId), lease = this.leases.get(ack.clientId);
-    if (!row || row.clientId !== ack.clientId || !lease) return;
+    if (!row || !row.dispatched || row.clientId !== ack.clientId || !lease) return;
+    try { this.assertPrimaryClient(); } catch (error) { row.reject(error); return; }
     if (!ack.ok || ack.sessionId !== row.sessionId || lease.state.sessionId !== row.sessionId) {
-      row.reject(desktopFault('navigation_unconfirmed', '目标客户端未确认准确会话选中。')); return;
+      row.reject(desktopFault('navigation_unconfirmed', '目标客户端未确认准确聊天在 DSH 前台显示。')); return;
     }
     row.resolve({ clientId: ack.clientId, sessionId: row.sessionId, opened: true, ...(row.taskUrl ? { taskUrl: row.taskUrl } : {}) });
   }

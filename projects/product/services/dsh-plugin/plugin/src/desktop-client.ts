@@ -1,7 +1,9 @@
-/** Client-local navigation; confirmation follows native mounted state, never command delivery. */
+/** Client-local navigation; confirmation requires the visible, focused native target. */
 import type { Context } from '@deepseek-ai/cordis';
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client';
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client';
+import type {} from '@deepseek-ai/dsh-client-ui-conversation/client';
+import type {} from '@deepseek-ai/dsh-api-session-controller/client';
 import type { SessionId } from '@deepseek-ai/dsh-session/types';
 import { DSH_DESKTOP_BRIDGE_LIMITS, dshDesktopIdentifier,
   type DshDesktopClientAck, type DshDesktopClientCommand, type DshDesktopClientState, type DshDesktopTaskPageResult,
@@ -17,6 +19,27 @@ export interface DesktopClientRemote {
 }
 type StoredTab = { sessionId: string; taskUrl: string; tabId: string; pageId: string };
 type StorageFace = Pick<Storage, 'getItem' | 'setItem'>;
+export interface DesktopForeground {
+  visible(): boolean;
+  focused(): boolean;
+  subscribe(listener: () => void): () => void;
+}
+function nativeForeground(): DesktopForeground {
+  return {
+    visible: () => document.visibilityState === 'visible',
+    focused: () => document.hasFocus(),
+    subscribe(listener) {
+      window.addEventListener('focus', listener);
+      window.addEventListener('blur', listener);
+      document.addEventListener('visibilitychange', listener);
+      return () => {
+        window.removeEventListener('focus', listener);
+        window.removeEventListener('blur', listener);
+        document.removeEventListener('visibilitychange', listener);
+      };
+    },
+  };
+}
 function optionalStorage(): StorageFace | undefined { try { return localStorage; } catch { return undefined; } }
 function untilDeadline<T>(promise: Promise<T>, deadline: number, signal: AbortSignal): Promise<T> {
   if (Date.now() >= deadline) return Promise.reject(new Error('navigation-timeout'));
@@ -31,8 +54,11 @@ function untilDeadline<T>(promise: Promise<T>, deadline: number, signal: AbortSi
 }
 
 export function createDesktopClientNavigation(sidebar: Sidebar, workspace: Workspace, entryId: string,
-  options: { timeoutMs?: number; storage?: StorageFace; probeTaskPage?(pageId: string): Promise<string | null> } = {}) {
+  options: { timeoutMs?: number; storage?: StorageFace; foreground?: DesktopForeground;
+    focusSession?(sessionId: string): void; probeTaskPage?(pageId: string): Promise<string | null> } = {}) {
   const controller = new AbortController(), tabs = new Map<string, StoredTab>();
+  const foreground = options.foreground ?? nativeForeground();
+  const isForeground = () => foreground.visible() && foreground.focused();
   const storage = options.storage ?? optionalStorage(), key = `buildr.dsh.task-tabs.v1.${entryId}`;
   const tabKey = (sessionId: string, taskUrl: string) => JSON.stringify([sessionId, taskUrl]);
   try {
@@ -52,6 +78,17 @@ export function createDesktopClientNavigation(sidebar: Sidebar, workspace: Works
     controller.signal.addEventListener('abort', abort, { once: true });
     unsubscribe = sidebar.mounted.subscribe(check);
     try { workspace.openSession(sessionId as SessionId); check(); } catch (error) { cleanup(); reject(error); }
+  });
+  const observeForeground = (deadline: number) => new Promise<void>((resolve, reject) => {
+    let unsubscribe: (() => void) | undefined;
+    const cleanup = () => { clearTimeout(timer); unsubscribe?.(); controller.signal.removeEventListener('abort', abort); };
+    const check = () => { if (isForeground()) { cleanup(); resolve(); } };
+    const abort = () => { cleanup(); reject(new Error('navigation-cancelled')); };
+    const timer = setTimeout(() => { cleanup(); reject(new Error('window-not-foreground')); }, Math.max(1, deadline - Date.now()));
+    if (controller.signal.aborted) { abort(); return; }
+    controller.signal.addEventListener('abort', abort, { once: true });
+    unsubscribe = foreground.subscribe(check);
+    check();
   });
   return {
     async execute(command: DshDesktopClientCommand): Promise<DshDesktopClientAck> {
@@ -91,7 +128,12 @@ export function createDesktopClientNavigation(sidebar: Sidebar, workspace: Works
           }
           if (!sidebar.isExpanded()) sidebar.toggleExpanded();
         } else if (command.method !== 'openSession') throw new Error('navigation-invalid');
-        if (sidebar.mounted.getSnapshot() !== command.sessionId) throw new Error('session-changed');
+        // The right-hand native webview owns a separate document. Return its keyboard focus to
+        // this exact retained chat without submitting or changing the draft/caret.
+        options.focusSession?.(command.sessionId);
+        await observeForeground(deadline);
+        controller.signal.throwIfAborted();
+        if (sidebar.mounted.getSnapshot() !== command.sessionId || !isForeground()) throw new Error('target-not-visible');
         return { clientId: '', commandId: command.commandId, sessionId: command.sessionId, ok: true };
       } catch {
         return { clientId: '', commandId: command.commandId, sessionId: sidebar.mounted.getSnapshot() ?? null,
@@ -104,6 +146,11 @@ export function createDesktopClientNavigation(sidebar: Sidebar, workspace: Works
 
 export function mountDesktopClient(ctx: Context, remote: DesktopClientRemote, entryId: string): () => void {
   const clientId = crypto.randomUUID(), navigation = createDesktopClientNavigation(ctx.sidebarRight, ctx.uiWorkspace, entryId, {
+    focusSession: sessionId => {
+      const scope = ctx.sessions.scope(sessionId as SessionId);
+      if (!scope) throw new Error('session-scope-unavailable');
+      ctx.conversation.input.for(scope).focus();
+    },
     probeTaskPage: async pageId => { const reply = await remote.desktopTaskPage({ pageId }); return reply.ok ? reply.value.taskUrl : null; },
   });
   const state = (): DshDesktopClientState => ({ clientId, desktop: true, sessionId: ctx.sidebarRight.mounted.getSnapshot() ?? null });
