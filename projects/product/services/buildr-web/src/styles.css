@@ -1927,8 +1927,10 @@ details summary { cursor: pointer; color: var(--soft-ink); font-size: 12px; font
 #app-view > .workspace-pages { animation:none; }
 .workspace-page-stack { flex:1; min-height:0; position:relative; }
 .workspace-page { height:100%; overflow:auto; }
-.workspace-page:not(:has(.pane-stage)) { padding:24px var(--main-content-gutter) 56px; }
-.workspace-page:not(:has(.pane-stage)) > * { max-width:calc(var(--main-content-width) - 2 * var(--main-content-gutter)); margin-left:auto; margin-right:auto; }
+.workspace-page:not(.workspace-page-functional):not(:has(.pane-stage)) { padding:24px var(--main-content-gutter) 56px; }
+.workspace-page:not(.workspace-page-functional):not(:has(.pane-stage)) > * { max-width:calc(var(--main-content-width) - 2 * var(--main-content-gutter)); margin-left:auto; margin-right:auto; }
+.workspace-page-functional { padding:0; }
+.workspace-page-functional > * { width:100%; max-width:none; margin:0; }
 .workspace-page .pane-stage { container-type:inline-size; }
 .workspace-page .pane-left { container-type:inline-size; overflow:hidden; }
 .workspace-page .pane-left > .pane-body > .pane-body-inner { width:var(--workspace-content-width,100%); max-width:min(100%,var(--main-content-width)); padding:24px var(--main-content-gutter) 56px; margin:0 auto; transition:none; }

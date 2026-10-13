@@ -91,6 +91,7 @@ export function tabForPath(
       projects: "项目目录",
       services: "服务目录",
       repositories: "代码库目录",
+      connections: "连接",
       skills: "技能",
       articles: "文章",
       tasks: "任务",
@@ -116,6 +117,12 @@ export function tabForPath(
     /* Malformed escapes are not routes. */
   }
   return null;
+}
+
+/** Query and code tools use their panel; document-oriented pages retain a reading measure. */
+export function workspacePageLayout(workspaceId: string, path: string): 'functional' | 'reading' {
+  const key = tabForPath(workspaceId, path)?.key;
+  return key === 'dir:connections' || key?.startsWith('dir:code:') ? 'functional' : 'reading';
 }
 
 /** Remember the project home, rather than replaying a retired daily-progress redirect. */

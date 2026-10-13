@@ -1,6 +1,6 @@
 ---
 name: buildr
-description: 安装或更新 Buildr、接入本机智能体、同步工作空间、诊断或维护工作资产，以及采用组织工作方式时使用；任务执行使用对应专业技能。
+description: 安装或更新 Buildr、接入本机智能体、同步工作空间、诊断或维护工作资产、管理外部系统连接或通过已保存连接查询数据库，以及采用组织工作方式时使用；任务执行使用对应专业技能。
 ---
 # Buildr Skill
 
@@ -12,9 +12,9 @@ Agent 是 Buildr 功能的默认操作入口。在用户目标和已有授权内
 
 1. 确认目标工作空间（Workspace）；未指定时从当前目录定位组织根，`--target` 不指向服务（Service）代码仓。
 2. `<agent>` 使用当前宿主的明确身份；用户指定其他运行时（Runtime）时遵从其选择。不得从技能路径、生成标记或 Doctor 检测结果推断宿主。身份未知可省略；`codex`、`dsh` 及未登记的有效品牌采用 `agents-standard`，已知专用例外保留。按需用 `buildr runtime list --json` 核对文件约定，而非等待品牌登记。显式 `--adapter` 必须存在；执行失败不借用其他适配器（Adapter）。
-3. 已初始化且本次维护需要现状时，运行一次 `buildr doctor --agent <agent> --target <dir> --json`；已有同一现场的诊断直接复用。首次初始化按下表办理，不先制造缺失诊断。
+3. 已初始化且本次维护规则、技能等受管工作资产需要现状时，运行一次 `buildr doctor --agent <agent> --target <dir> --json`；已有同一现场的诊断直接复用。首次初始化按下表办理，不先制造缺失诊断。连接管理与数据库查询直接使用下表对应入口，不以 Doctor 为前置条件。
 4. 选择下表对应动作；采用内部流程、调整工作方式、修改或替换 Skill 行为时，先加载 `capability-adaptation` 判断是否触达或产生跨 Skill 稳定依赖边界。
-5. 写入后消费最新 Doctor 结果：完整 `init`、`sync`、组件（Component）安装或卸载已包含最终诊断；其他资产写入后再运行 Doctor。只有诊断指向专项问题或用户要求细查时追加 `commands check` 或 `runtime check`。文件准备成功不证明宿主安装、发现或当前会话激活已经验证。
+5. 受管工作资产写入后消费最新 Doctor 结果：完整 `init`、`sync`、组件（Component）安装或卸载已包含最终诊断；其他此类资产写入后再运行 Doctor。连接配置按对应入口核对保存与实际连接，不额外运行 Doctor。只有诊断指向专项问题或用户要求细查时追加 `commands check` 或 `runtime check`。文件准备成功不证明宿主安装、发现或当前会话激活已经验证。
 
 | 当前目标 | 读取与动作 |
 |---|---|
@@ -26,6 +26,7 @@ Agent 是 Buildr 功能的默认操作入口。在用户目标和已有授权内
 | 投射、发现或适配器（Adapter）问题 | 读取 [运行时维护](references/runtime.md)；只检查当前目标运行时（Runtime） |
 | 查看任务、测试或交付事实 | 下方专业入口；只读查看不创建记录，也不补造过去历史 |
 | 查看全部代码库改动、提交历史及对应文件 | [只读代码观察](references/code-observation.md)；按登记实例、比较层与真实版本查看，网页与命令行接口（CLI）共享应用 |
+| 管理外部系统连接（Connection），或通过已保存连接查看 MySQL 结构、查询数据 | [连接与 MySQL 查询](references/external-connections.md)；直接使用已保存连接与本机认证，查询不要求重新提供密码 |
 | 授权开始或继续持久修改 | `task-triage` 分流并由 `task-manager` 在首次文件写入前登记或接续任务 |
 
 ## 专业入口

@@ -294,6 +294,16 @@ function hostRouterFixture(t: any, { origin = 'http://127.0.0.1:4457', closing =
   };
 }
 
+test('HTTP Host serves the connections workspace route on direct navigation and refresh', async t => {
+  const fixture = hostRouterFixture(t);
+  for (const suffix of ['connections', 'connections/']) {
+    const response = await fixture.request({ url: `/workspaces/00000000-0000-4000-8000-000000000000/${suffix}` });
+    assert.equal(response.status, 200);
+    assert.match(response.headers['content-type'], /text\/html/);
+  }
+  assert.equal((await fixture.request({ url: '/workspaces/00000000-0000-4000-8000-000000000000/connections-extra' })).status, 404);
+});
+
 test('HTTP Host rejects a foreign authority before shell, static, health, contributions or shutdown', async t => {
   const fixture = hostRouterFixture(t);
   for (const [method, url] of [

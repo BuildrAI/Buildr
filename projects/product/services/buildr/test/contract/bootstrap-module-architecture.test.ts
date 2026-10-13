@@ -277,6 +277,12 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     contributions: {cli:['code repositories','code directory','code file','code search','code source-control','code commit-context','code branches','code authors','code history','code commit','code diff','code source-file'],http:['code.files.http', 'code.generation.http'],diagnostics:[]},
     lifecycle: 'none',
   }, {
+    id: 'connections',
+    requires: [WORKSPACE_APPLICATION, WORKSPACE_QUERY],
+    provides: ['connections.application'],
+    contributions: { cli: ['connection'], http: ['connections.http'], diagnostics: [] },
+    lifecycle: 'none',
+  }, {
     id: 'project-verification',
     requires: [WORKSPACE_QUERY],
     provides: [VERIFICATION_APPLICATION, VERIFICATION_DECLARATION],
@@ -360,6 +366,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     'agent', 'agent list', 'agent register', 'agent select',
     'codex connections', 'codex link', 'codex sessions', 'codex',
     'code repositories', 'code directory', 'code file', 'code search', 'code source-control', 'code commit-context', 'code branches', 'code authors', 'code history', 'code commit', 'code diff', 'code source-file',
+    'connection',
     'project verification inspect', 'project verification validate', 'project verification update',
     'task review inspect', 'task review record',
     'task verification inspect', 'task verification record',
@@ -371,6 +378,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
   ]);
   assert.deepEqual(runtimeContributions(runtime, 'http').map((item: any) => item.id), [
     'workspace-core.http', 'agent-assets.http', 'knowledge.http', 'publication.http', 'task-work-context.http', 'task.http', 'task.daily-progress.http', 'workbench.http', 'task.commits.http', 'task.changed-files.http', 'task.materials.http', 'change.http', 'agent-operations.http', 'codex-desktop.http', 'code.files.http', 'code.generation.http',
+    'connections.http',
     'task-review.http', 'task-verification.http',
     'task-parent-coordination.http', 'system-installation.release-awareness.http',
   ]);

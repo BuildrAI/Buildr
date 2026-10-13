@@ -1,0 +1,52 @@
+.buildr-connections-page{height:100%;min-height:0;background:#fff}
+.buildr-connections-page>.ant-tabs{height:100%;display:flex;flex-direction:column}
+.buildr-connections-page>.ant-tabs>.ant-tabs-nav{flex:none;margin:0;padding:0 24px;border-bottom:1px solid var(--soft-line)}
+.buildr-connections-page>.ant-tabs>.ant-tabs-content-holder{min-height:0;flex:1;overflow:auto}
+.buildr-connections-page>.ant-tabs>.ant-tabs-content-holder>.ant-tabs-content{height:100%}
+.buildr-connections-directory{max-width:1180px;margin:auto;padding:28px 30px}
+.buildr-connections-directory .page-header{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;margin-bottom:24px}
+.buildr-connections-directory h1{font-size:24px;margin:0 0 8px}
+.buildr-connections-directory .page-header p{margin:0;color:var(--soft-muted);font-size:13px}
+.buildr-connections-directory>.ant-alert{margin-bottom:16px}
+.buildr-connections-directory .ant-table{font-size:13px}
+.buildr-connection-address code{font-size:12px;overflow-wrap:anywhere}
+.buildr-connection-address small{display:block;font-size:12px;color:var(--soft-muted);margin-top:4px}
+.buildr-connection-form{display:flex;flex-direction:column;gap:17px;padding:4px 0 18px}
+.buildr-connection-form>label,.buildr-connection-host>label{display:flex;flex-direction:column;gap:7px;font-size:13px}
+.buildr-connection-host{display:grid;grid-template-columns:minmax(0,1fr) 112px;gap:16px}
+.buildr-connection-host .ant-input-number{width:100%}
+.buildr-connections-muted{color:var(--soft-muted);font-size:12px;line-height:1.7;margin:0}
+.buildr-mysql-query{padding:20px 24px 24px;display:flex;flex-direction:column;gap:14px;min-height:100%}
+.buildr-mysql-target{display:flex;align-items:flex-end;gap:20px}
+.buildr-mysql-target>label{display:flex;flex-direction:column;gap:6px;font-size:12px;min-width:270px}
+.buildr-mysql-target>span{color:var(--soft-muted);font-size:12px;margin-left:auto}
+.buildr-mysql-query-layout{height:260px;min-height:200px;display:flex;border:1px solid var(--soft-line);border-radius:8px;overflow:hidden}
+.buildr-database-resources{width:180px;flex:none;background:#f7f9f8;border-right:1px solid var(--soft-line);padding:8px;overflow:auto}
+.buildr-database-resources>header{display:flex;justify-content:space-between;align-items:center;font-size:12px;margin-bottom:8px}
+.buildr-database-resources>.ant-btn{display:block;width:100%;height:auto;min-height:30px;overflow:hidden;text-overflow:ellipsis;text-align:left;padding:5px 8px;font-size:12px}
+.buildr-database-resources>.ant-btn[aria-pressed=true]{background:#eaf2ee;color:var(--ant-color-primary)}
+.buildr-database-resources>p{font-size:12px;color:var(--soft-muted)}
+.buildr-database-resources .ant-empty{font-size:11px;margin:16px 0}
+.buildr-database-resources .ant-empty-image{height:30px}
+.buildr-database-visibility{display:flex;flex-direction:column;gap:12px;min-width:180px;max-height:360px;overflow:auto}
+.buildr-database-visibility .ant-checkbox-group{display:flex;flex-direction:column;gap:8px}
+.buildr-database-visibility small{color:var(--soft-muted);font-size:11px}
+.buildr-database-visibility>.ant-btn{align-self:flex-end}
+.buildr-mysql-query-input{flex:1;min-width:0;display:flex;flex-direction:column}
+.buildr-mysql-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 12px;border-bottom:1px solid var(--soft-line);background:#fbfcfb}
+.buildr-mysql-toolbar>label{display:flex;align-items:center;gap:8px;font-size:12px}
+.buildr-mysql-toolbar .ant-select{width:200px}
+.buildr-mysql-toolbar>small{font-size:11px;color:var(--soft-muted);margin-left:auto}
+.buildr-mysql-editor,.buildr-mysql-editor>.file-code-editor{display:flex;flex:1;height:100%;min-height:0;min-width:0;overflow:hidden}
+.buildr-mysql-editor .cm-editor{flex:1;min-width:0}
+.buildr-mysql-result{border:1px solid var(--soft-line);border-radius:8px;overflow:hidden;min-height:210px}
+.buildr-mysql-result>header{display:flex;align-items:center;flex-wrap:wrap;gap:16px;padding:10px 14px;font-size:12px;color:var(--soft-muted);border-bottom:1px solid var(--soft-line)}
+.buildr-mysql-result>header>strong{color:var(--soft-ink);font-weight:500}
+.buildr-mysql-result .ant-table{font-size:12px}
+.buildr-mysql-result .ant-table-cell{white-space:pre-wrap;overflow-wrap:anywhere}
+.buildr-mysql-result>details{padding:10px 14px;border-top:1px solid var(--soft-line);font-size:12px;color:var(--soft-muted)}
+.buildr-mysql-result summary{cursor:pointer}
+.buildr-mysql-result pre{padding:12px;background:#f7f9f8;color:var(--soft-ink);white-space:pre-wrap;overflow-wrap:anywhere;max-height:240px;overflow:auto}
+.buildr-mysql-null{color:var(--soft-muted);font-style:italic}
+@media(max-width:900px){.buildr-connections-directory{padding:24px 18px}.buildr-mysql-query{padding:16px}.buildr-mysql-target{flex-wrap:wrap}.buildr-mysql-target>span{margin-left:0}.buildr-database-resources{width:150px}.buildr-mysql-toolbar .ant-select{width:150px}.buildr-mysql-toolbar>small{display:none}}
+@media(max-width:600px){.buildr-connections-directory .page-header{flex-wrap:wrap}.buildr-mysql-target>label{min-width:0;width:100%}.buildr-mysql-query-layout{height:330px}.buildr-database-resources{width:115px}.buildr-mysql-toolbar>label{align-items:flex-start;flex-direction:column;gap:4px}.buildr-mysql-toolbar .ant-select{width:140px}}

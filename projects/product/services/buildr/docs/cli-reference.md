@@ -206,6 +206,30 @@ Git provider evidence使用`buildr.git-worktree-evidence/v1`，保存在Git comm
 没有登记也没有明确对象时返回 `blocked` 和接续指引；实际删除或逐项确认对象不存在后才返回 `cleaned`。部分删除后可重传相同对象集合，重新核验版本与占用，结果区分删除和不存在确认。
 
 
+## 外部系统连接（Connection）与 MySQL 查询
+
+`connection` 是工作空间（Workspace）的通用连接入口，当前支持数据源类别的 MySQL。类别、具体类型和自由环境属性位于顶层，专业连接参数位于 `config`。用户页面与智能体（Agent）命令调用相同查询能力，不要求另装 MySQL 客户端或部署工具服务。命令行工具（CLI）成功输出 `schemaVersion: "buildr.connection-result/v1"`、当前动作 `operation` 及相应结果字段；HTTP 直接返回应用结果字段。
+
+| 命令 | 用途 |
+|---|---|
+| `buildr connection list --target <workspace> --json` | 返回连接及稳定编号、`revision`、`config` 和 `hasCredentials`，不返回密码。 |
+| `buildr connection create --file <json-file> --target <workspace> --json` | 保存连接，输入为 `{name,category,type,environment,config,credentials?:{password}}`；`--file -` 从标准输入读取。 |
+| `buildr connection update --connection <id> --expected-revision <revision> --file <json-file> --target <workspace> --json` | 按已观察版本修改。省略 `credentials` 保留认证；地址、端口或用户名变化须显式提供新认证。版本也可放在文件的 `expectedRevision`，不能重复提供。 |
+| `buildr connection remove --connection <id> --expected-revision <revision> --target <workspace> --json` | 只删除登记和本机认证，不删除外部数据。 |
+| `buildr connection test --connection <id> --target <workspace> --json` | 测试已保存连接，返回 `ok`、服务版本和耗时；未保存配置可使用 `--file <json-file>` 测试，测试不保存。 |
+| `buildr connection databases --connection <id> --target <workspace> --json` | 列出账号可访问的数据库，不受页面显示选择限制。 |
+| `buildr connection tables --connection <id> --database <name> --target <workspace> --json` | 查看指定库的表。 |
+| `buildr connection columns --connection <id> --database <name> --table <name> --target <workspace> --json` | 查看字段类型、空值、键与说明。 |
+| `buildr connection query --connection <id> [--database <name>] --sql-file <file> --target <workspace> --json` | 执行单条只读查询；`--sql <text>` 可替换文件，二者只能选一个，文件可为 `-`。 |
+
+首版 MySQL 配置使用 `category: "data-source"`、`type: "mysql"`，`config` 包含 `host`、`port`（默认 3306）、`username`、可空 `defaultDatabase` 和可选 `selectedDatabases`。MySQL 认证使用独立的 `credentials: {password: <本机输入>}`，不放入 `config`；显式空密码为 `credentials: {password: ""}`。这些是 MySQL 专业字段，通用连接不固定配置或认证形状；未来类型需注册专业提供者（Provider）与专用工具，目前不提供 Nacos、Kibana、DMP 或 XXL-JOB 对接。输入文件不超过 128 KiB，使用 UTF-8；含认证的输入只留在本机，不进入仓库、聊天或任务材料。
+
+未传 `--database` 时使用连接默认库，`--database ""` 明确不设当前库，`database.table` 按实际账号权限访问同一连接中的其他库。无最外层 LIMIT 时补充 100 行，显式 1—500 保留，超过 500 拒绝；需要更多时自行调整条件或 OFFSET。查询执行时间上限 10 秒，结果容量上限 4 MiB；语法不支持、权限、网络、超时或容量失败明确返回，不把部分输出描述为成功。
+
+查询返回 `submittedSql`、`executedSql`、独立的 `columns` 与行数组 `rows`，以及 `rowCount`、`rowLimit`、`elapsedMs`、`limitReached`。列和行按位置对应，支持重名列和空结果表头，大整数与小数以文本保留精度。到达行数限制只表示本次受限，不自动推断总数或读取下一页。
+
+同一工作空间（Workspace）的代码工作树（Worktree）使用同一规范来源的连接。密码独立加密保存在本机应用数据目录，另一执行机器需要重新绑定认证和具备网络访问条件。首版只提供 MySQL 只读查询，本场景生产修改继续使用 DMP；更多使用方法见[连接与 MySQL 查询](../resources/runtime/skills/buildr/references/external-connections.md)。
+
 ## Runtime 与诊断
 
 | 命令 | 用途 |

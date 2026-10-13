@@ -1,7 +1,7 @@
 import { AppNavigationItem } from './AppNavigationItem';
 import type { ReactNode } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { UnorderedListOutlined, FileTextOutlined, FolderOutlined, BranchesOutlined, AppstoreOutlined, ThunderboltOutlined, HistoryOutlined, HomeOutlined, RightOutlined } from '@ant-design/icons';
+import { UnorderedListOutlined, FileTextOutlined, FolderOutlined, BranchesOutlined, AppstoreOutlined, ThunderboltOutlined, HistoryOutlined, HomeOutlined, RightOutlined, DatabaseOutlined } from '@ant-design/icons';
 import { useWorkbenchPreferences } from '../features/workbench/hooks/useWorkbenchPreferences';
 import { useAppShell } from './AppShellContext';
 import { navigationState } from './navigation';
@@ -27,6 +27,7 @@ export function AppNavigation({ onNavigate }: { onNavigate?: () => void }) {
     projects: <FolderOutlined />,
     services: <AppstoreOutlined />,
     repositories: <BranchesOutlined />,
+    connections: <DatabaseOutlined />,
     skills: <ThunderboltOutlined />,
     explorer: <FolderOutlined />,
     'source-control': <BranchesOutlined />,
@@ -59,6 +60,7 @@ export function AppNavigation({ onNavigate }: { onNavigate?: () => void }) {
           {item('/projects', '项目', 'projects')}
           {item('/services', '服务', 'services')}
           {item('/repositories', '代码库', 'repositories')}
+          {item('/connections', '连接', 'connections')}
           {item('/skills', '技能', 'skills')}
           {item('/articles', '文章', 'articles')}
         </>

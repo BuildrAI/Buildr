@@ -9,12 +9,13 @@ import { softProductTheme } from '../../theme';
 import scenes from './scenes.json';
 import 'antd/dist/reset.css';
 import '../../styles.css';
+import './viewer.css';
 
 declare const __PROTOTYPE_DOCUMENT_GZIP__: string;
 declare const __PROTOTYPE_DOCUMENT_BYTES__: number;
 declare const __PROTOTYPE_OBSERVED_AT__: string;
 function Viewer() {
-  const [selectedKey, setSelectedKey] = useState('external-environments:directory');
+  const [selectedKey, setSelectedKey] = useState('external-environments:data');
   const [revision, setRevision] = useState(0);
   const [documentHtml, setDocumentHtml] = useState<string | null>(null);
   const [decodeError, setDecodeError] = useState('');
@@ -24,8 +25,8 @@ function Viewer() {
     void new Response(stream).text().then(setDocumentHtml).catch(() => setDecodeError('原型读取失败，请直接打开原型正文。'));
   }, []);
   const data = useMemo<UiPrototypeData>(() => ({
-    taskId: 'progressive-feature-design',
-    prototypes: [{ id: 'external-environments', source: 'task', project: null, change: null, lifecycle: null, provenance: 'task-local', path: 'external-environments.html', title: '环境与 MySQL 查询', sizeBytes: __PROTOTYPE_DOCUMENT_BYTES__, updatedAt: __PROTOTYPE_OBSERVED_AT__ + ':' + revision, metadata: { version: 1, pages: scenes.pages } }],
+    taskId: 'discussion-preview',
+    prototypes: [{ id: 'external-environments', source: 'task', project: null, change: null, lifecycle: null, provenance: 'task-local', path: 'connections.html', title: '连接与查看数据', sizeBytes: __PROTOTYPE_DOCUMENT_BYTES__, updatedAt: __PROTOTYPE_OBSERVED_AT__ + ':' + revision, metadata: { version: 1, pages: scenes.pages } }],
     diagnostics: [],
   }), [revision]);
   return <PrototypeReaderLayout entries={prototypeEntries(data)} selectedKey={selectedKey} onSelect={setSelectedKey}>

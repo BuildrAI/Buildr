@@ -27,6 +27,7 @@ import { TasksSection } from './features/task/pages/TasksSection';
 import { WorkspacesPage } from './features/workspace/pages/WorkspacesPage';
 import { CodeExplorerPage, CodeSourceControlPage } from './features/code/pages/CodeExplorerPage';
 import { CodexEntryNotice } from './features/agents/components/CodexEntryNotice';
+import { ConnectionsPage } from './features/connections/pages/ConnectionsPage';
 
 function renderResource(item: ResourcePreview) {
   if (item.kind === 'task-document') return <TaskLinkedDocument item={item} />;
@@ -57,6 +58,7 @@ export function App() {
         <Route path="skills" element={<SkillsPage />} />
         <Route path="skills/:skillId" element={<SkillsPage />} />
         <Route path="repositories" element={<RepositoriesPage />} />
+        <Route path="connections" element={<ConnectionsPage />} />
         <Route path="repositories/:assetId" element={<AssetHome kind="repository" />} />
         <Route path="tasks" element={<TasksSection />}>
           <Route path=":taskId/changes/:projectCode/:changeCode" element={<TaskChangeDetailPage />} />

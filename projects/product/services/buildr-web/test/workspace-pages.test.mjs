@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { tabForPath, parseTabs, paneDimensions, readRatio, moveTab, reorderPageTabs, ratioStorageKey, resourcePreview, previewOwnerPath, previewOwnerSearch, workspacePageSearch } from '../src/app/workspace-pages.ts';
+import { tabForPath, parseTabs, paneDimensions, readRatio, moveTab, reorderPageTabs, ratioStorageKey, resourcePreview, previewOwnerPath, previewOwnerSearch, workspacePageSearch, workspacePageLayout } from '../src/app/workspace-pages.ts';
+
+test('连接查询和代码工具铺满功能面板，文档与跨工作空间路径保持阅读宽度', () => {
+ for (const path of ['/connections', '/code/explorer', '/code/source-control']) assert.equal(workspacePageLayout('w', '/workspaces/w' + path), 'functional');
+ for (const path of ['/projects/product', '/articles', '/services', '/tasks']) assert.equal(workspacePageLayout('w', '/workspaces/w' + path), 'reading');
+ assert.equal(workspacePageLayout('w', '/workspaces/other/connections'), 'reading');
+ assert.equal(workspacePageLayout('w', '/workspaces/w/connections/unknown'), 'reading');
+});
 test('恢复页签只接受当前工作空间已支持的路由并去重', () => {
  const valid={path:'/workspaces/a/skills',title:'技能'};
  const raw=JSON.stringify([valid,valid,{path:'/workspaces/b/skills'},{path:'https://example.com'},{path:'/workspaces/a/projects/%2e%2e'},{path:'/workspaces/a/services/p/s/edit'}]);
