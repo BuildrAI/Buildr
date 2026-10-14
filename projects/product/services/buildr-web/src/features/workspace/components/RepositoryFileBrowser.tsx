@@ -7,6 +7,7 @@ import { MarkdownHost } from '../../../components/MarkdownHost';
 import { ReadOnlyFileCodeEditor } from '../../../components/file-editing/ReadOnlyFileCodeEditor';
 import type { MarkdownRenderOptions } from '../../../markdown';
 import { RepositorySearchText } from './RepositorySearchText';
+import { SelectableHoverCard } from '../../../components/SelectableHoverCard';
 import { repositorySearchQuery } from './repository-search-query';
 import { repositorySourceLines, visibleRepositoryMatch, type RepositoryFilePage } from './repository-file-page';
 export type { RepositoryFilePage } from './repository-file-page';
@@ -23,7 +24,7 @@ export type RepositoryPreviewFile = {
   link?: boolean;
 };
 
-export type RepositoryTreeScope = { id: string; repositoryId?: string; name: string; location?: string; files: RepositoryPreviewFile[] };
+export type RepositoryTreeScope = { id: string; repositoryId?: string; name: string; location?: string; locationLabel?: string; version?: string; files: RepositoryPreviewFile[] };
 type TreeFile = RepositoryPreviewFile & { repositoryId?: string; sourceRepositoryId?: string; repositoryName?: string };
 type SearchResult = RepositoryPreviewFile & {repositoryId?:string;sourceRepositoryId?:string;repositoryName?:string;line?:number;excerpt?:string;occurrences?:Array<{line:number;excerpt:string}>};
 function treeKey(path: string, repositoryId?: string) { return repositoryId ? repositoryId + '::' + path : path; }
@@ -76,6 +77,9 @@ type Props = {
   observedRevision?: string;
   observedAt?: string;
   selectionKey?: string;
+  defaultCollapsedTree?: boolean;
+  collapseTreeKey?: string;
+  revealSelectionRequest?: number;
   markdownOptions?: MarkdownRenderOptions;
   markdownRevision?: string;
   canModify?: boolean;
@@ -143,12 +147,18 @@ export function RepositoryFileBrowser(props: Props) {
     setRange(null);
   }, [props.resetKey]);
   useEffect(() => {
+    if (props.global && props.defaultCollapsedTree && props.collapseTreeKey !== undefined) setExpanded([]);
+  }, [props.global, props.defaultCollapsedTree, props.collapseTreeKey]);
+  useEffect(() => {
     setOpenPaths(paths => paths.includes(props.selectedPath) ? paths : [...paths, props.selectedPath]);
     setRange(null);
     setRaw(false);
     const parts = props.selectedPath.split('/');
-    setExpanded(current => [...new Set([...current, ...(props.treeRepositories || []).map(repo => treeKey('', repo.id)), ...parts.slice(0, -1).map((_, i) => treeKey(parts.slice(0, i + 1).join('/'), props.selectedRepositoryId))])]);
-  }, [props.selectedPath, props.selectedRepositoryId, props.treeRepositories?.map(repo => repo.id).join(',')]);
+    const roots = props.defaultCollapsedTree
+      ? props.selectedPath && props.selectedRepositoryId ? [treeKey('', props.selectedRepositoryId)] : []
+      : (props.treeRepositories || []).map(repo => treeKey('', repo.id));
+    setExpanded(current => [...new Set([...current, ...roots, ...parts.slice(0, -1).map((_, i) => treeKey(parts.slice(0, i + 1).join('/'), props.selectedRepositoryId))])]);
+  }, [props.selectedPath, props.selectedRepositoryId, props.revealSelectionRequest, props.defaultCollapsedTree, props.defaultCollapsedTree ? undefined : props.treeRepositories?.map(repo => repo.id).join(',')]);
   useEffect(() => {
     if (props.global && !props.readerActive) return;
     if (!props.focusLine) { setRange(null);codeRef.current?.scrollTo({ top: scrolls.current.get(readingKey) || 0 }); return; }
@@ -192,7 +202,12 @@ export function RepositoryFileBrowser(props: Props) {
     }
     return props.treeRepositories ? props.treeRepositories.map(repo => ({
       key: treeKey('', repo.id), isLeaf:false, icon: <FolderOpenOutlined />,
-      title: <span className="repository-root-name" title={repo.location}><strong>{repo.name}</strong><small>{repo.location}</small></span>,
+      title: <SelectableHoverCard closeOnTriggerClick title={repo.name} content={<article className="repository-root-info" aria-label="代码库完整路径" onClick={event => event.stopPropagation()} onPointerDown={event => event.stopPropagation()}>
+        {repo.locationLabel && <p className="repository-root-location-label">{repo.locationLabel}</p>}
+        <code className="repository-root-location">{repo.location}</code>
+        {repo.version && <p className="repository-root-version">版本：{repo.version}</p>}
+        {repo.location && <Button type="text" size="small" icon={<CopyOutlined />} aria-label="复制代码库完整路径" onClick={() => void copy(repo.location!)}>复制路径</Button>}
+      </article>}><span tabIndex={0} className="repository-root-name" data-location={repo.location} data-location-label={repo.locationLabel} data-version={repo.version} data-repository-id={repo.repositoryId || repo.id}><strong>{repo.name}</strong></span></SelectableHoverCard>,
       children: build(visible.filter(item => item.repositoryId === repo.id)),
     })) : build(visible);
   }, [props.files, props.treeRepositories, showIgnored, props.global]);

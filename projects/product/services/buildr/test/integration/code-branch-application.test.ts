@@ -11,6 +11,7 @@ import { createCodeCliContributions } from '../../src/modules/code/interfaces/cl
 import { CODE_HTTP_REQUESTS, CODE_HTTP_SCHEMAS, CODE_HTTP_VALIDATORS } from '../../src/modules/code/interfaces/http/code-http-contracts.ts';
 import { createBoundedBuildrWebReadExecutor } from '../../src/web/http/read-executor.ts';
 import { assertWriteRequest } from '../../src/web/http/session.ts';
+import { codeGitConfigurationFixture } from '../helpers/code-git-configuration-fixture.ts';
 
 function fixture(t: test.TestContext, format = 'sha1') {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-branch-operation-')), root = path.join(base, 'repository');
@@ -34,6 +35,18 @@ function fixture(t: test.TestContext, format = 'sha1') {
   return { root, base, app, git, gitAt, write, commit, source, input, catalog, request, snapshot, remote, onCatalogRead: (read?: () => void) => { catalogRead = read; }, register: (location: string) => { registeredPath = location; } };
 }
 const code = (expected: string) => (error: unknown) => (error as { code?: string }).code === expected;
+
+test('system checkout filters remain a local refusal while unrelated branch changes are allowed', t => {
+  const f = fixture(t); f.write('filtered.txt', 'base\n'); f.commit('base'); f.git('switch', '-c', 'converted');
+  f.write('.gitattributes', 'filtered.txt filter=review\n'); f.write('filtered.txt', 'converted\n'); f.commit('converted'); f.git('switch', 'main');
+  f.git('switch', '-c', 'plain'); f.write('plain.ts', 'plain\n'); f.commit('plain'); f.git('switch', 'main');
+  const before = f.snapshot(), config = codeGitConfigurationFixture(t, f.base), marker = path.join(f.base, 'system-filter-ran'), filter = path.join(f.base, 'filter.mjs');
+  fs.writeFileSync(filter, "import fs from 'node:fs';\nfs.writeFileSync(" + JSON.stringify(marker) + ", 'ran'); process.stdin.pipe(process.stdout);\n");
+  config.setSystem('filter.review.clean', config.command(filter)); config.setSystem('filter.review.smudge', config.command(filter));
+  assert.throws(() => f.app.switchBranch(f.root, f.request('refs/heads/converted')), code('code_branch_external_filter'));
+  assert.equal(fs.existsSync(marker), false); assert.deepEqual(f.snapshot(), before);
+  assert.equal(f.app.switchBranch(f.root, f.request('refs/heads/plain')).branch, 'plain'); assert.equal(fs.existsSync(marker), false);
+});
 
 test('branch catalog distinguishes full refs and tracking/occupation, excludes remote HEAD, and is read-only', t => {
   const f = fixture(t); f.write('one.ts', 'base\n'); const hash = f.commit('base'); f.remote('origin', 'main', hash); f.remote('upstream', 'main', hash);

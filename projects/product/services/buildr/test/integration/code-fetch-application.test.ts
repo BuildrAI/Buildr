@@ -10,6 +10,7 @@ import { createCodeFetchApplication, type CodeFetchTarget } from '../../src/modu
 import { createCodeHttpContribution } from '../../src/modules/code/interfaces/http/code-http.ts';
 import { CODE_HTTP_PATHS, CODE_HTTP_SCHEMAS, CODE_HTTP_VALIDATORS } from '../../src/modules/code/interfaces/http/code-http-contracts.ts';
 import { runCodeGitMutation, type GitMutationProcessResult } from '../../src/modules/code/infrastructure/code-git-mutation-runner.ts';
+import { codeGitConfigurationFixture } from '../helpers/code-git-configuration-fixture.ts';
 
 const success: GitMutationProcessResult = { ok: true, timedOut: false, stdout: '', stderr: '', code: 0 };
 const hasCode = (code: string) => (error: unknown) => error instanceof Error && Reflect.get(error, 'code') === code;
@@ -59,6 +60,64 @@ function fixture(t: test.TestContext) {
   });
   return { base, origin, local, seed, roots, git, app, remote, target, isolated, advance, clone, linked, snapshot };
 }
+
+test('fetch observes and executes system URL rewriting without changing stored repository configuration', async t => {
+  const f = fixture(t), expected = f.advance(), config = codeGitConfigurationFixture(t, f.base);
+  f.git(f.local, 'config', 'remote.origin.url', 'system-fixture:origin');
+  config.setSystem('url.' + f.origin + '.insteadOf', 'system-fixture:origin');
+  const response = await f.app.fetch(f.base, { repositories: [f.target()] });
+  assert.equal(response.repositories[0].status, 'succeeded');
+  assert.equal(f.git(f.local, 'rev-parse', 'refs/remotes/origin/dev'), expected);
+  assert.equal(f.git(f.local, 'config', '--local', '--get', 'remote.origin.url'), 'system-fixture:origin');
+});
+
+test('system URL configuration drift before fetching refuses the stale source without entering the transport', async t => {
+  const f = fixture(t), config = codeGitConfigurationFixture(t, f.base);
+  f.git(f.local, 'config', 'remote.origin.url', 'system-fixture:origin');
+  config.setSystem('url.' + f.origin + '.insteadOf', 'system-fixture:origin');
+  const target = f.target(); let reads = 0, writes = 0;
+  const app = createCodeFetchApplication({ registeredLocation: () => {
+    if (++reads === 2) config.setSystem('fixture.changed', 'after-observation');
+    return f.local;
+  }, run: async () => { writes++; return success; } });
+  const response = await app.fetch(f.base, { repositories: [target] });
+  assert.equal(writes, 0); assert.equal(response.repositories[0].status, 'unavailable');
+  assert.match(response.repositories[0].remotes[0].message, /配置已变化/);
+});
+
+test('non-UTF8 configuration byte drift refuses fetching even when decoded text is unchanged', async t => {
+  const f = fixture(t), configPath = path.join(f.git(f.local, 'rev-parse', '--absolute-git-dir'), 'config');
+  const base = fs.readFileSync(configPath), prefix = Buffer.from('\n[fixture]\n raw = '), suffix = Buffer.from('\n');
+  fs.writeFileSync(configPath, Buffer.concat([base, prefix, Buffer.from([0xff]), suffix]));
+  const target = f.target(); let observations = 0, transports = 0;
+  const app = createCodeFetchApplication({ registeredLocation: () => {
+    if (++observations === 2) fs.writeFileSync(configPath, Buffer.concat([base, prefix, Buffer.from([0xfe]), suffix]));
+    return f.local;
+  }, run: async () => { transports++; return success; } });
+  const response = await app.fetch(f.base, { repositories: [target] });
+  assert.equal(transports, 0); assert.equal(response.repositories[0].status, 'unavailable');
+  assert.match(response.repositories[0].remotes[0].message, /配置已变化/);
+});
+
+test('fetch transport diagnostics classify failures without exposing process output or secrets', async t => {
+  const cases = [
+    { stderr: "fatal: could not read Username for 'https://user:secret-token@private.invalid/repo': terminal prompts disabled", expected: /无法取得远程认证凭证/ },
+    { stderr: "fatal: Authentication failed for 'https://user:secret-token@private.invalid/repo'", expected: /远程拒绝认证或访问/ },
+    { stderr: 'fatal: unable to access https://private.invalid/repo?token=secret-token: Could not resolve host: private.invalid', expected: /网络连接或证书校验失败/ },
+    { stderr: 'fatal: remote rejected operation secret-token https://private.invalid', expected: /远程获取未完成/ },
+  ];
+  for (const item of cases) {
+    const f = fixture(t); let attempts = 0;
+    const app = f.isolated(async (source, args, options) => {
+      if (!args.includes('fetch')) return runCodeGitMutation(source, args, options);
+      attempts++; return { ...success, ok: false, code: 128, stderr: item.stderr };
+    });
+    const response = await app.fetch(f.base, { repositories: [f.target()] });
+    assert.equal(attempts, 1); assert.equal(response.repositories[0].status, 'failed');
+    assert.match(response.repositories[0].remotes[0].message, item.expected);
+    assert.doesNotMatch(JSON.stringify(response), /secret-token|private\.invalid|https:\/\//);
+  }
+});
 
 test('authorized HTTP fetch discovers remote dev without changing local work, tags, stale refs or FETCH_HEAD', async t => {
   const f = fixture(t), expected = f.advance();

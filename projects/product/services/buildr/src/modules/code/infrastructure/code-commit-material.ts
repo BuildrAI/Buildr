@@ -7,6 +7,7 @@ import { insideFilesystemPath } from '../../../infrastructure/filesystem/filesys
 import { codeRevision } from './source-control-git-reader.ts';
 import type { CodeCommitSnapshot, CodeCommitSnapshotFile } from './code-commit-snapshot.ts';
 import type { CodeCommitGuidance } from './code-commit-guidance.ts';
+import { codeGitEnvironment } from './code-git-environment.ts';
 
 export const CODE_COMMIT_MATERIAL_LIMITS = Object.freeze({ rulesBytes: 2048, rangeBytes: 2048, evidenceBytes: 8192, fileBytes: 1536, files: 8, ruleFileBytes: 64 * 1024, ruleReadBytes: 256 * 1024, ruleFiles: 32 });
 export type CodeCommitMaterialCoverage = {
@@ -135,7 +136,7 @@ export function commitRuleExcerpt(text: string): string {
   return selected.map((text, index) => ({ text, index })).sort((left, right) => priority(left.text) - priority(right.text) || left.index - right.index).map(item => item.text).join('\n\n');
 }
 
-function gitEnvironment() { return { ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_'))), GIT_OPTIONAL_LOCKS: '0', GIT_NO_LAZY_FETCH: '1', GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_NOSYSTEM: '1' }; }
+function gitEnvironment() { return { ...codeGitEnvironment(), GIT_OPTIONAL_LOCKS: '0' }; }
 /** Git worktree conversion can invoke clean/process filters even with external diffs disabled. */
 function readFilterOverrides(snapshot: CodeCommitSnapshot): string[] | null {
   let names: string;

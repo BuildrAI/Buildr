@@ -27,12 +27,16 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
   };
   const assertStatusDetails = async (status: any, remote: string, files: string) => {
     const button = await status.evaluate((element:HTMLElement) => element.matches('button')) ? status : status.locator('.source-control-status-button');
-    if (!await button.count()) {assert.ok((await status.locator('.source-control-sync-button').getAttribute('aria-label')).includes(remote), '无文件差异时箭头入口说明远程状态'); return;}
-    await button.click(); const details = statusDetails(); await details.waitFor();
+    const inline = await button.count() && await button.isVisible();
+    const menuLabel = await status.evaluate((element:HTMLElement) => element.closest('.source-control-repository,.source-control-worktree')!.querySelector('.source-control-row-menu-button')?.getAttribute('aria-label'));
+    const menuButton = root().getByRole('button', {name:menuLabel, exact:true});
+    if (inline) await button.click();
+    else {await menuButton.click(); await page.getByRole('menu', {name:menuLabel, exact:true}).getByRole('menuitem', {name:'查看状态', exact:true}).click();}
+    const details = statusDetails(); await details.waitFor();
     assert.equal(await details.locator('dd').nth(0).innerText(), remote);
     assert.equal(await details.locator('dd').nth(1).innerText(), files);
-    await button.press('Escape'); await details.waitFor({state: 'hidden'});
-    assert.equal(await button.getAttribute('aria-expanded'), 'false');
+    await (inline ? button : menuButton).press('Escape'); await details.waitFor({state: 'hidden'});
+    if (inline) assert.equal(await button.getAttribute('aria-expanded'), 'false');
   };
   const assertLocationCopyRows = async (details: any) => {
     const values = details.locator('dd');
@@ -619,6 +623,19 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     await noOverflow();
   });
 
+  await scenario('代码主导航与默认路由始终进入源代码管理', async () => {
+    await page.goto(workspaceUrl + '/code'); await root().locator('.source-control-repository-copy').first().waitFor();
+    assert.equal(new URL(page.url()).pathname, new URL(workspaceUrl + '/code/source-control').pathname);
+    await page.locator('.shell-navigation [data-nav="explorer"]').click(); await page.locator('.code-explorer-stage:visible').waitFor();
+    await page.getByRole('navigation', {name:'主导航', exact:true}).getByRole('link', {name:'代码', exact:true}).click();
+    await root().locator('.source-control-repository-copy').first().waitFor();
+    await page.locator('.shell-navigation [data-nav="explorer"]').click(); await page.locator('.code-explorer-stage:visible').waitFor();
+    await page.getByRole('navigation', {name:'主导航', exact:true}).getByRole('link', {name:'工作台', exact:true}).click();
+    await page.getByRole('navigation', {name:'主导航', exact:true}).getByRole('link', {name:'代码', exact:true}).click();
+    await root().locator('.source-control-repository-copy').first().waitFor();
+    assert.equal(new URL(page.url()).pathname, new URL(workspaceUrl + '/code/source-control').pathname);
+  });
+
   await scenario('离开保留的源代码管理页面时悬浮信息层关闭', async () => {
     await page.setViewportSize({width: 1440, height: 900});
     await page.goto(workspaceUrl + '/code/explorer'); await page.locator('.code-explorer-stage').waitFor();
@@ -702,6 +719,122 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     }
     await root().getByRole('button', {name: '返回差异', exact: true}).click();
   };
+  await scenario('来源行按名称实测逐级隐藏，窄栏全部能力仍在操作菜单', async () => {
+    await page.setViewportSize({width:1440, height:1000}); await open();
+    const value = (await worktrees()).find((item:any) => item.name === 'alpha'); assert.ok(value);
+    const sourceName = '名称优先完整显示的实际工作树'.repeat(2);
+    const matchesCatalog = (url:URL) => url.pathname === new URL(api + '/code/source-control').pathname;
+    const rename = async (route:any) => {
+      const response = await route.fetch(), actual = await response.json();
+      // Only display metadata changes; the source identities, Git facts and task route remain real.
+      await route.fulfill({response, json:{...actual, repositories:actual.repositories.map((repository:any) => repository.id !== value.repositoryId ? repository : {...repository, worktrees:repository.worktrees.map((worktree:any) => worktree.worktreeId !== value.worktreeId ? worktree : {...worktree, name:sourceName})})}});
+    };
+    await page.route(matchesCatalog, rename);
+    try {
+      await open(); await selectWorktree(value);
+      const row = root().locator('[data-source-repository="' + value.repositoryId + '"] [data-source-worktree="' + value.worktreeId + '"] .source-control-worktree');
+      const separator = root().getByRole('separator', {name:'调整源代码管理与阅读区宽度', exact:true});
+      const menuButton = row.locator('.source-control-row-menu-button');
+      const menuLabel = await menuButton.getAttribute('aria-label');
+      const menu = () => page.getByRole('menu', {name:menuLabel, exact:true});
+      const measure = () => row.evaluate((element:HTMLElement) => {
+        const width = (selector:string) => element.querySelector(selector)!.getBoundingClientRect().width;
+        const style = getComputedStyle(element), icon = element.querySelector('.source-control-worktree-icon')!, iconStyle = getComputedStyle(icon);
+        const name = width('.source-control-row-name-text'), branch = element.querySelector('.source-control-row-action-button')!, branchStyle = getComputedStyle(branch);
+        const branchWidth = Math.ceil(Math.max(width('.source-control-row-branch-measure') + parseFloat(branchStyle.paddingLeft) + parseFloat(branchStyle.paddingRight) + parseFloat(branchStyle.borderLeftWidth) + parseFloat(branchStyle.borderRightWidth), parseFloat(branchStyle.minWidth)));
+        const shortcuts = width('.source-control-row-shortcuts'), gap = parseFloat(style.columnGap);
+        const fixed = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight) + icon.getBoundingClientRect().width + parseFloat(iconStyle.marginLeft) + parseFloat(iconStyle.marginRight) + width('.source-control-row-action-slot') + gap * 3;
+        const copyGap = parseFloat(getComputedStyle(element.querySelector('.source-control-row-copy')!).columnGap);
+        return {full:fixed + name + branchWidth + copyGap + shortcuts, branchMinimum:fixed + name + Math.min(branchWidth,48) + copyGap + shortcuts, nameStatus:fixed + name + shortcuts, name, width:element.getBoundingClientRect().width};
+      });
+      const setWidth = async (width:number, layout:string) => {
+        const current = await root().locator('.source-control-sidebar').boundingBox();
+        await drag(separator, width - current.width, 0);
+        await page.waitForFunction(({id, layout}:{id:string;layout:string}) => [...document.querySelectorAll<HTMLElement>('.code-source-control-page:not([hidden]) .source-control-worktree')].find(element => element.closest('[data-source-worktree]')?.getAttribute('data-source-worktree') === id)?.dataset.sourceRowLayout === layout, {id:value.worktreeId, layout});
+        await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+        assert.equal(await row.getAttribute('data-source-row-layout'), layout);
+        const actual = await row.evaluate((element:HTMLElement) => {const strong = element.querySelector('strong')!.getBoundingClientRect(), text = element.querySelector('.source-control-row-name-text')!.getBoundingClientRect(), box = element.getBoundingClientRect(), menu = element.querySelector('.source-control-row-menu-button')!.getBoundingClientRect(); return {nameComplete:strong.width >= text.width - 1, height:box.height, menuInside:menu.left >= box.left && menu.right <= box.right, width:box.width};});
+        assert.equal(actual.height, 36, '不同宽度均维持单行来源'); assert.equal(actual.menuInside, true, '末尾菜单始终位于行内');
+        return actual;
+      };
+      await separator.press('End'); const required = await measure();
+      assert.ok(required.nameStatus > 280 && required.full < 1000, '实测长名称覆盖三级压缩的真实宽度区间：' + JSON.stringify(required));
+      assert.equal((await setWidth(Math.ceil(required.full) + 12, 'full')).nameComplete, true);
+      const branch = row.locator('.source-control-row-action-button'); assert.equal(await branch.isVisible(), true);
+      const branchLabel = branch.locator('.source-control-row-branch-name');
+      assert.equal(await branchLabel.textContent(), value.branch, '宽栏完整分支名称');
+      const widthBeforeFont = (await row.boundingBox()).width;
+      await row.locator('.source-control-row-name-text').evaluate((element:HTMLElement) => {element.style.fontSize='24px';});
+      await page.waitForFunction((id:string) => [...document.querySelectorAll<HTMLElement>('.code-source-control-page:not([hidden]) .source-control-worktree')].find(element => element.closest('[data-source-worktree]')?.getAttribute('data-source-worktree') === id)?.dataset.sourceRowLayout !== 'full', value.worktreeId);
+      assert.equal((await row.boundingBox()).width, widthBeforeFont, '字号变化时栏宽不变仍重新测量');
+      await row.locator('.source-control-row-name-text').evaluate((element:HTMLElement) => {element.style.fontSize='';});
+      await setWidth(Math.ceil(required.full) + 12, 'full');
+      assert.ok(required.full - required.branchMinimum > 24, '实际长分支提供连续省略区间');
+      let previousWidth = (await branch.boundingBox()).width;
+      const naturalWidth = await branch.locator('.source-control-row-branch-measure').evaluate((element:HTMLElement) => element.getBoundingClientRect().width);
+      for (const ratio of [0.8, 0.5, 0.2]) {
+        assert.equal((await setWidth(Math.floor(required.branchMinimum + (required.full - required.branchMinimum) * ratio), 'branch-clipped')).nameComplete, true);
+        const clipping = await branch.evaluate((element:HTMLElement) => {const label=element.querySelector<HTMLElement>('.source-control-row-branch-name')!, style=getComputedStyle(label);return {width:element.getBoundingClientRect().width, overflow:label.scrollWidth > label.clientWidth, ellipsis:style.textOverflow, whiteSpace:style.whiteSpace, transition:getComputedStyle(element).transitionProperty};});
+        assert.equal(await branch.isVisible(), true, '连续缩窄时分支保持可用');
+        assert.ok(clipping.width < previousWidth - 1 && clipping.width >= 48, '分支宽度连续递减，低于可读下限才隐藏：' + JSON.stringify(clipping));
+        assert.equal(clipping.overflow, true); assert.equal(clipping.ellipsis, 'ellipsis'); assert.equal(clipping.whiteSpace, 'nowrap');
+        assert.ok(!clipping.transition.includes('all') && !clipping.transition.includes('width'), '可见分支的宽度跟随拖动，不能滞后覆盖名称或快捷');
+        assert.equal(await branch.locator('.source-control-row-branch-measure').evaluate((element:HTMLElement) => element.getBoundingClientRect().width), naturalWidth, '截断不会改变自然宽读数或导致密度振荡');
+        assert.equal(await branchLabel.textContent(), value.branch); assert.equal(await branch.getAttribute('title'), value.branch + ' · 管理分支');
+        assert.equal(await row.locator('.source-control-worktree-status').isVisible(), true);
+        previousWidth = clipping.width;
+      }
+      await capture(page, 'source-control-branch-progressive-clipping.png');
+      await branch.click();
+      const clippedManager = page.getByRole('region', {name:'分支管理 · ' + value.repositoryName + ' · ' + sourceName, exact:true}); await clippedManager.waitFor();
+      await clippedManager.getByRole('button', {name:'管理 ' + value.branch, exact:true}).waitFor();
+      await branch.press('Escape'); await clippedManager.waitFor({state:'hidden'}); assert.equal(await branch.getAttribute('aria-expanded'), 'false', '省略后的原分支按钮仍打开同一真实来源管理层');
+      assert.equal((await setWidth(Math.ceil(required.full) + 12, 'full')).nameComplete, true);
+      assert.equal(await branchLabel.evaluate((element:HTMLElement) => element.scrollWidth <= element.clientWidth + 1), true, '拉宽恢复完整分支文字');
+      assert.equal((await setWidth(Math.floor(required.branchMinimum) - 2, 'name-status')).nameComplete, true);
+      const branchVisibility = await branch.evaluate((element:HTMLElement) => {
+        const matches:unknown[] = [];
+        const inspect = (rules:CSSRuleList, href:string|null) => {for (const rule of rules) {
+          if (rule instanceof CSSStyleRule && rule.style.getPropertyValue('visibility') && element.matches(rule.selectorText)) matches.push({href, selector:rule.selectorText, value:rule.style.getPropertyValue('visibility'), priority:rule.style.getPropertyPriority('visibility')});
+          else if ('cssRules' in rule) inspect((rule as CSSGroupingRule).cssRules, href);
+        }};
+        for (const sheet of document.styleSheets) inspect(sheet.cssRules, sheet.href);
+        return {css:getComputedStyle(element).visibility, parentCSS:getComputedStyle(element.parentElement!).visibility, rowLayout:element.closest('.source-control-worktree')?.getAttribute('data-source-row-layout'), html:element.outerHTML, parents:element.parentElement!.outerHTML, rowWidth:element.closest('.source-control-worktree')!.getBoundingClientRect().width, stylesheets:[...document.styleSheets].map(sheet => sheet.href), matches};
+      });
+      assert.equal(await branch.isVisible(), false, '整段分支隐藏：' + JSON.stringify(branchVisibility)); assert.equal(await row.locator('.source-control-worktree-status').isVisible(), true, '名称完整时先隐藏整段分支');
+      const noShortcuts = await setWidth(Math.floor(required.nameStatus) - 8, 'name'); assert.equal(noShortcuts.nameComplete, true, '隐藏快捷后仍优先完整名称');
+      assert.equal(await row.locator('.source-control-worktree-status').isVisible(), false); assert.equal(await row.locator('.source-control-task-link').isVisible(), false);
+      for (const shortcut of await row.locator('.source-control-row-shortcuts button').all()) assert.equal(await shortcut.isVisible(), false, '快捷子按钮不能被浮层触发器显式visibility重新显示');
+      assert.equal((await setWidth(260, 'name')).nameComplete, false, '所有次要入口隐藏后才省略长名称');
+      const parentFold = root().locator('[data-source-repository="' + value.repositoryId + '"] .source-control-repository-fold');
+      await menuButton.focus(); await menuButton.press('Shift+Tab');
+      assert.equal(await row.locator('.source-control-repository-copy').evaluate((element:HTMLElement) => document.activeElement === element && element.matches(':focus-visible')), true, '隐藏快捷与分支后菜单的上一个键盘入口是来源名称');
+      const locationCard = page.getByRole('article', {name:'工作树来源信息', exact:true}); await locationCard.waitFor();
+      await parentFold.focus(); await parentFold.press('Enter'); await locationCard.waitFor({state:'hidden'});
+      await parentFold.press('Enter'); assert.equal(await locationCard.isVisible(), false, '隐藏行来源路径卡关闭，重新展开不重播');
+      await menuButton.focus(); await menuButton.press('Enter'); await menu().waitFor();
+      for (const label of ['管理分支', '查看状态', '打开关联任务', '同步', '获取远程']) assert.equal(await menu().getByRole('menuitem', {name:label, exact:true}).count(), 1);
+      await menu().getByRole('menuitem', {name:'管理分支', exact:true}).focus(); await page.keyboard.press('Enter');
+      const manager = page.getByRole('region', {name:'分支管理 · ' + value.repositoryName + ' · ' + sourceName, exact:true}); await manager.waitFor();
+      const branchSearch = manager.getByRole('textbox', {name:'搜索可用分支（Branch）', exact:true});
+      await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === '搜索可用分支（Branch）');
+      assert.equal(await branchSearch.evaluate((element:HTMLElement) => document.activeElement === element), true, '隐藏分支的键盘菜单进入真实管理层');
+      await manager.getByRole('button', {name:'管理 ' + value.branch, exact:true}).waitFor();
+      await branchSearch.press('Escape'); await manager.waitFor({state:'hidden'});
+      assert.equal(await menuButton.evaluate((element:HTMLElement) => document.activeElement === element), true, '关闭管理层焦点返回可见菜单');
+      await menuButton.click(); await menu().getByRole('menuitem', {name:'管理分支', exact:true}).click(); await manager.waitFor();
+      await parentFold.focus(); await parentFold.press('Enter'); await manager.waitFor({state:'hidden'});
+      await parentFold.press('Enter'); assert.equal(await manager.isVisible(), false, '键盘重新展开父库不重播旧管理请求');
+      await menuButton.click(); await menu().getByRole('menuitem', {name:'查看状态', exact:true}).click(); const details = statusDetails(); await details.waitFor();
+      assert.equal(await details.locator('dd').nth(2).innerText(), '浏览器任务');
+      await parentFold.focus(); await parentFold.press('Enter'); await details.waitFor({state:'hidden'});
+      await parentFold.press('Enter'); assert.equal(await details.count(), 0, '键盘重新展开父库不重播旧状态详情');
+      await capture(page, 'source-control-name-priority-menu-260px.png'); await noOverflow();
+      await menuButton.click(); await menu().getByRole('menuitem', {name:'打开关联任务', exact:true}).click(); await assertTaskIdentity();
+      await page.goto(workspaceUrl + '/code/source-control'); await root().locator('.source-control-repository-copy').first().waitFor(); await separator.dblclick();
+    } finally {await page.unroute(matchesCatalog, rename);}
+  });
+
   await scenario('同库全部真实工作树分组，同路径两层及全文保持各自版本', async () => {
     await page.setViewportSize({width: 1440, height: 1000}); await open();
     const values = await worktrees(), observed = await catalog();
@@ -778,29 +911,30 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
             const range = document.createRange(); range.selectNodeContents(element); const box = range.getBoundingClientRect();
             return {text: element.textContent, left: box.left, right: box.right, lines: range.getClientRects().length, numericStyle:getComputedStyle(element).fontVariantNumeric};
           };
-          return elements.map(row => {
+          return elements.filter(row => row.getBoundingClientRect().width > 0).map(row => {
             const name = row.querySelector('.source-control-repository-copy')!, status = row.querySelector('.source-control-worktree-status')!;
-            const controls = [...row.querySelectorAll(':scope > .source-control-task-slot,:scope > .source-control-row-action-slot')].map(bounds).filter(box => box.width > 0);
+            const controls = [...row.querySelectorAll('.source-control-task-slot,:scope > .source-control-row-action-slot')].filter(element => getComputedStyle(element).visibility !== 'hidden').map(bounds).filter(box => box.width > 0);
             const branch = row.querySelector('.source-control-row-branch-slot');
             const menu = row.querySelector(':scope > .source-control-row-action-slot');
             return {
-              label: name.textContent, remoteState:status.getAttribute('data-remote-state'), multipleGroups:status.classList.contains('has-many-counts'), row: bounds(row), name: bounds(name), status: bounds(status),
-              controls, branch: branch ? bounds(branch) : null, menu:menu ? bounds(menu) : null,
+              label: name.textContent, layout:row.dataset.sourceRowLayout, remoteState:status.getAttribute('data-remote-state'), multipleGroups:status.classList.contains('has-many-counts'), row: bounds(row), name: bounds(name), nameNatural:bounds(row.querySelector('.source-control-row-name-text')!), status: bounds(status), statusVisible:getComputedStyle(status).visibility !== 'hidden',
+              controls, branch: branch && getComputedStyle(branch).visibility !== 'hidden' ? bounds(branch) : null, menu:menu ? bounds(menu) : null,
               parts: [...status.children].map(bounds),
               groups:[...status.querySelectorAll('.source-control-status-content')].map(content => ({box:bounds(content), parts:[...content.children].map(bounds)})),
               counts: [...status.querySelectorAll('.source-control-status-count')].map(count => ({kind: count.getAttribute('data-status-kind'), box: bounds(count), icon: bounds(count.querySelector('.anticon > svg')!), number: textBounds(count.querySelector('.source-control-status-number'))!})),
             };
           });
         });
-        assert.ok(geometry.every((row: any) => row.name.width >= 48), '多位数量下名称仍保留可辨认空间：' + JSON.stringify(geometry));
-        assert.ok(geometry.every((row: any) => [row.name, row.status, ...row.controls].every((box: any) => box.left >= row.row.left - 1 && box.right <= row.row.right + 1)), '名称、状态和操作均位于所属目录行边界内：' + JSON.stringify(geometry));
-        assert.ok(geometry.every((row: any) => [row.name, row.status, ...row.controls].every((box: any, index: number, boxes: any[]) => boxes.slice(index + 1).every(next => box.right <= next.left + 1 || next.right <= box.left + 1 || box.bottom <= next.top + 1 || next.bottom <= box.top + 1))), '数量同行或局部下移均不能覆盖名称和相邻操作');
+        assert.ok(geometry.every((row: any) => row.name.width > 0 && (row.layout === 'name' || row.name.width >= row.nameNatural.width - 1)), '优先完整名称，全部次要快捷隐藏后才允许名称省略：' + JSON.stringify(geometry));
+        const visibleBoxes = (row:any) => [row.name, ...(row.statusVisible ? [row.status] : []), ...row.controls];
+        assert.ok(geometry.every((row: any) => visibleBoxes(row).every((box: any) => box.left >= row.row.left - 1 && box.right <= row.row.right + 1)), '可见名称、状态和操作均位于所属目录行边界内：' + JSON.stringify(geometry));
+        assert.ok(geometry.every((row: any) => visibleBoxes(row).every((box: any, index: number, boxes: any[]) => boxes.slice(index + 1).every(next => box.right <= next.left + 1 || next.right <= box.left + 1))), '可见项目同行且不能覆盖名称和相邻操作');
         const menus = geometry.map((row: any) => row.menu).filter(Boolean);
         assert.ok(menus.every((box: any) => Math.abs(box.right - menus[0].right) <= 1 && Math.abs(box.width - 24) <= 1), '三个点操作入口固定等宽并在各行右沿对齐');
-        assert.ok(geometry.every((row:any) => !row.branch || row.branch.width >= 24 && row.name.right <= row.branch.left + 1 && row.branch.right <= row.menu.left + 1 && (row.branch.right <= row.status.left + 1 || row.branch.bottom <= row.status.top + 1 || row.status.bottom <= row.branch.top + 1)), '分支紧随名称且不覆盖状态或末尾操作：' + JSON.stringify({width, rows:geometry}));
+        assert.ok(geometry.every((row:any) => !row.branch || row.branch.width >= 24 && row.name.right <= row.branch.left + 1 && row.branch.right <= row.menu.left + 1 && (!row.statusVisible || row.branch.right <= row.status.left + 1)), '完整分支紧随名称且不覆盖可见状态或末尾操作：' + JSON.stringify({width, rows:geometry}));
         assert.ok(geometry.every((row: any) => row.parts.every((box: any, index: number) => box.left >= row.status.left - 1 && box.right <= row.status.right + 1 && row.parts.slice(index + 1).every((next: any) => box.right <= next.left + 1 || next.right <= box.left + 1))), '状态标记与各项数量不重叠或越过入口边界');
         assert.ok(geometry.some((row:any) => row.remoteState === 'untracked' && row.counts.some((count:any) => count.kind === 'files' && Number(count.number.text) >= 10) && row.groups.some((group:any) => group.parts.length >= 2)), '真实未跟踪来源和多位文件数共同验证标识分组间距');
-        assert.ok(geometry.filter((row:any) => row.remoteState === 'untracked' && row.counts.some((count:any) => count.kind === 'files')).every((row:any) => row.multipleGroups && (width !== '260px' || row.status.top >= row.name.bottom - 1)), '未跟踪标识与文件数共同计为多组，260px时状态下移而不挤占名称：' + JSON.stringify({width, rows:geometry}));
+        assert.ok(geometry.filter((row:any) => row.remoteState === 'untracked' && row.counts.some((count:any) => count.kind === 'files')).every((row:any) => row.multipleGroups && (!row.statusVisible || Math.abs((row.status.top + row.status.bottom - row.name.top - row.name.bottom) / 2) <= 1)), '未跟踪与文件数量保持同排，空间不足时整组隐藏：' + JSON.stringify({width, rows:geometry}));
         assert.ok(geometry.every((row:any) => !row.counts.length || row.groups.length > 0), '状态内容使用显式分组，避免按钮自动包裹片段吞掉间距');
         assert.ok(geometry.every((row:any) => row.groups.every((group:any) => group.parts.every((part:any, index:number) => part.left >= group.box.left - 1 && part.right <= group.box.right + 1 && (index === 0 || part.left - group.parts[index - 1].right >= 7.5 && Math.abs((part.top + part.bottom) / 2 - (group.parts[index - 1].top + group.parts[index - 1].bottom) / 2) <= 1)))), '远程标识、文件组和远程数量组之间保留8px间距并垂直对齐：' + JSON.stringify({width, rows:geometry}));
         assert.ok(geometry.every((row: any) => row.counts.every((count: any) => count.number.lines === 1 && Number(count.number.text) > 0 && count.number.left - count.icon.right >= 2.5 && count.number.right <= count.box.right + 1 && count.number.numericStyle.includes('tabular-nums'))), '一／二／三位数字保持单行、等宽字形，与对应图标保留3px间距');
@@ -870,6 +1004,9 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     await assertHoverBesideList(locationInfo);
     await capture(page, 'source-control-fixture-worktree-path-hover.png');
     await closeHover(locationInfo);
+    const keyboardWidth = await root().locator('.source-control-sidebar').boundingBox();
+    await drag(narrowSeparator, 640 - keyboardWidth.width, 0);
+    await page.waitForFunction((id:string) => [...document.querySelectorAll<HTMLElement>('.code-source-control-page:not([hidden]) .source-control-worktree')].find(element => element.closest('[data-source-worktree]')?.getAttribute('data-source-worktree') === id)?.dataset.sourceRowLayout === 'full', alpha.worktreeId);
     const taskIcon = catalogWorktree.getByRole('button', {name: '打开任务 浏览器任务', exact: true});
     const statusButton = catalogWorktree.locator('.source-control-status-button');
     await taskIcon.focus(); await taskIcon.press('Shift+Tab');
@@ -910,10 +1047,11 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     await locationInfo.getByRole('button', {name: /复制路径$/}).click();
     assert.equal(await page.evaluate(() => navigator.clipboard.readText()), alpha.location, '键盘打开的来源卡仍可移入并复制');
     await capture(page, 'source-control-fixture-worktree-keyboard-hover.png');
-    await closeHover(locationInfo); await narrowSeparator.dblclick();
+    await closeHover(locationInfo);
     assert.equal(await taskIcon.locator('.anticon-project').count(), 1);
     assert.equal(await catalogWorktree.locator('.source-control-worktree-status [data-status-kind="ahead"] .anticon-arrow-up,.source-control-worktree-status [data-status-kind="behind"] .anticon-arrow-down').count(), [alpha.observed.ahead, alpha.observed.behind].filter((count: number) => count > 0).length, '真实分叉的非零远程数量使用对应箭头，与任务项目图标区分');
     await taskIcon.hover(); await page.getByRole('tooltip', {name: '任务：浏览器任务', exact: true}).waitFor();
+    await narrowSeparator.dblclick();
     assert.equal(await root().locator('.source-control-context').count(), 0, '浏览区不重复代码库和分支');
     for (const button of [catalogRepository.locator('.source-control-repository-fold')]) {
       const initial = await button.getAttribute('aria-expanded');

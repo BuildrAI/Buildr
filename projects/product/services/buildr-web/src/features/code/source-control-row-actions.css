@@ -1,6 +1,11 @@
-.source-control-row-branch-slot { display:flex; align-items:center; flex:0 1 auto; min-width:24px; max-width:48%; height:28px; }
-.source-control-row-branch-slot .source-control-row-action-button { display:flex; align-items:center; width:100%; min-width:24px; max-width:100%; padding:0 2px; color:var(--soft-muted); }
-.source-control-row-branch-slot .source-control-row-branch-name { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:left; font-size:11px; }
+.source-control-row-branch-slot { display:flex; align-items:center; flex:none; width:var(--source-control-row-branch-width,max-content); height:28px; }
+.source-control-row-branch-slot .source-control-row-action-button { display:flex; align-items:center; width:100%; min-width:24px; padding:0 2px; overflow:hidden; color:var(--soft-muted); transition-property:color,background-color,border-color,box-shadow!important; }
+.source-control-row-branch-slot .source-control-row-branch-name { display:block; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:left; font-size:11px; }
+.source-control-row-branch-measure { position:absolute; top:0; left:0; display:block; width:max-content; visibility:hidden!important; pointer-events:none; white-space:nowrap; font-size:11px; }
+:is(.source-control-repository,.source-control-worktree):is([data-source-row-layout="name-status"],[data-source-row-layout="name"]) .source-control-row-branch-slot { position:absolute; right:10px; top:3px; width:24px; pointer-events:none; }
+/* AntD's all-property transition must not leave a hidden trigger over the menu while resizing. */
+:is(.source-control-repository,.source-control-worktree):is([data-source-row-layout="name-status"],[data-source-row-layout="name"]) :is(.source-control-row-branch-slot,.source-control-row-branch-slot *) { visibility:hidden!important; transition:none!important; }
+:is(.source-control-repository,.source-control-worktree):is([data-source-row-layout="name-status"],[data-source-row-layout="name"]) .source-control-row-branch-slot .source-control-row-action-button { width:24px; }
 .source-control-row-action-slot { display:flex; align-items:center; justify-content:center; width:24px; height:28px; flex:0 0 24px; }
 .source-control-row-action-slot .source-control-row-menu-button { display:flex; align-items:center; justify-content:center; width:24px; min-width:24px; height:28px; padding:0; color:var(--soft-muted); }
 .source-control-row-menu-button .ant-btn-loading-icon { margin:0!important; }
@@ -18,13 +23,3 @@
 .source-control-row-action-button:focus-visible,.source-control-row-menu-button:focus-visible { color:var(--soft-ink); }
 .source-control-row-action-button:focus-visible,.source-control-row-menu-button:focus-visible { outline:2px solid var(--soft-primary); outline-offset:1px; }
 .source-control-row-branch-slot .source-control-row-action-button:disabled { color:var(--soft-muted); opacity:.55; }
-
-@container source-control-catalog (max-width:320px) {
-  .source-control-row-copy { gap:4px; }
-  .source-control-repository:has(>.source-control-worktree-status.has-many-counts),
-  .source-control-worktree:has(>.source-control-worktree-status.has-many-counts),
-  .source-control-repository:has(>.source-control-task-slot:not(:empty)),
-  .source-control-worktree:has(>.source-control-task-slot:not(:empty)) { flex-wrap:wrap; row-gap:0; }
-  .source-control-worktree-status.has-many-counts,
-  :is(.source-control-repository,.source-control-worktree):has(>.source-control-task-slot:not(:empty))>.source-control-worktree-status { order:5; flex-basis:calc(100% - var(--source-control-tree-leading-width) - var(--source-control-tree-indent,0px)); margin-left:calc(var(--source-control-tree-leading-width) + var(--source-control-tree-indent,0px)); }
-}

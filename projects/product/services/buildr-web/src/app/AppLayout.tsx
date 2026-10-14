@@ -92,9 +92,6 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
     return () => media.removeEventListener('change', update);
   }, []);
   const workspaceDestination = useRef({ workspaceId, path: `/workspaces/${workspaceId}/workspace-overview`, state: location.state });
-  const codeDestination = useRef({workspaceId,path:`/workspaces/${workspaceId}/code/explorer`});
-  if(codeDestination.current.workspaceId!==workspaceId)codeDestination.current={workspaceId,path:`/workspaces/${workspaceId}/code/explorer`};
-  if(area==='code')codeDestination.current={workspaceId,path:location.pathname+location.search};
   if (workspaceDestination.current.workspaceId !== workspaceId) {
     workspaceDestination.current = { workspaceId, path: `/workspaces/${workspaceId}/workspace-overview`, state: null };
   }
@@ -313,7 +310,7 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
     <AppShellContext.Provider value={shellValue}>
       <WorkbenchPreferencesProvider key={workspaceId || "global"} workspaceId={workspaceId}>
       <div className={"app-shell area-" + area}>
-        <AppShellHeader isGlobal={isGlobal} brandHref={isGlobal ? '/' : workspaceHref('/overview')} development={webProfile === 'development'} workspaceName={isGlobal ? '全部工作空间' : (workspace?.name || '正在读取…')} workspaceMenuItems={workspaceMenuItems} area={area} workbenchHref={workspaceHref('/overview')} codeHref={codeDestination.current.path} workspaceDestination={{to:workspaceDestination.current.path,state:workspaceDestination.current.state}} actions={<>
+        <AppShellHeader isGlobal={isGlobal} brandHref={isGlobal ? '/' : workspaceHref('/overview')} development={webProfile === 'development'} workspaceName={isGlobal ? '全部工作空间' : (workspace?.name || '正在读取…')} workspaceMenuItems={workspaceMenuItems} area={area} workbenchHref={workspaceHref('/overview')} codeHref={workspaceHref('/code/source-control')} workspaceDestination={{to:workspaceDestination.current.path,state:workspaceDestination.current.state}} actions={<>
             {!isGlobal ? <WorkbenchSearch key={workspaceId} /> : null}
             {!isGlobal ? <Button className="shell-menu-toggle" aria-label="打开导航菜单" icon={<MenuOutlined />} onClick={() => setNavigationOpen(true)} /> : null}
             <Tooltip title={defaultAgent ? defaultAgent.label + ' · ' + agentStatusLabel(defaultAgent) : agents.error || '查看或接入智能体'}><Button id="global-agents-entry" aria-label="智能体" type="text" icon={<RobotOutlined />} onClick={() => agents.setOpen(true)}><span className="global-agent-label">{defaultAgent?.label || '智能体'} <span className={'global-agent-status' + (defaultAgent?.availability === 'available' ? ' is-available' : '')} /></span></Button></Tooltip>

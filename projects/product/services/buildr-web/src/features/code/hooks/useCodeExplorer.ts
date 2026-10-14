@@ -13,6 +13,7 @@ export function useCodeExplorer(workspaceId:string) {
   const [directories,setDirectories]=useState<Record<string,CodeDirectory>>({});
   const [directoryErrors,setDirectoryErrors]=useState<Record<string,string>>({});
   const [tabs,setTabs]=useState<CodeFileTab[]>([]),[activeKey,setActiveKey]=useState('');
+  const [selectionRequest,setSelectionRequest]=useState(0);
   const [files,setFiles]=useState<Record<string,CachedCodeFile>>({}),[fileErrors,setFileErrors]=useState<Record<string,string>>({});
   const [loading,setLoading]=useState<string[]>([]),[catalogError,setCatalogError]=useState('');
   const [showIgnored,setShowIgnored]=useState(false);
@@ -81,7 +82,7 @@ export function useCodeExplorer(workspaceId:string) {
     const tab={...source,path,line,matchQuery,focusRequest:line?++focusSequence.current:undefined,key:codeFileKey(source,path)};
     setLocations(previous=>codeLocationKey(previous[codeCheckoutKey(source)]||{repositoryId:source.repositoryId,checkoutId:source.checkoutId})===codeLocationKey(source)?previous:{...previous,[codeCheckoutKey(source)]:source});
     setTabs(previous=>{const found=previous.find(t=>t.key===tab.key);return found?previous.map(t=>t.key===tab.key?tab:t):[...previous,tab];});
-    setActiveKey(tab.key);void loadFile(tab,force);
+    setActiveKey(tab.key);setSelectionRequest(value=>value+1);void loadFile(tab,force);
     const parents=path.split('/').slice(0,-1),browserId=codeBrowserKey(source);void loadDirectory(browserId,'',false,source);
     parents.forEach((_,index)=>void loadDirectory(browserId,parents.slice(0,index+1).join('/'),false,source));
   },[loadFile,loadDirectory]);
@@ -153,7 +154,7 @@ export function useCodeExplorer(workspaceId:string) {
     }));
     if(active)await loadFile(active,true);
   },[workspaceId,entry?.taskId,active,loadDirectory,loadFile,run,directoryErrors,directoryKey]);
-  return {catalog,catalogError,scope,worktreeScope,origin,locations,sources,filterOptions,directories,directoryErrors,tabs,active,files,fileErrors,loading,showIgnored,searchResults,searchLoading,searchErrors,entry,selectedIds,
+  return {catalog,catalogError,scope,worktreeScope,origin,locations,sources,filterOptions,directories,directoryErrors,tabs,active,selectionRequest,files,fileErrors,loading,showIgnored,searchResults,searchLoading,searchErrors,entry,selectedIds,
     locationFor,directoryKey,loadDirectory,open,applyEntry,clearEntry,search,setShowIgnored,refresh,readPage,
     setWorktreeScope:(id:string|undefined)=>{
       const previousId=current.current.worktreeScope,latest=latestCatalog.current;

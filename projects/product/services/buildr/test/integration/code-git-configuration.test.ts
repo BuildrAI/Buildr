@@ -1,0 +1,30 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import test from 'node:test';
+import { execFileSync } from 'node:child_process';
+import { codeGit, type CodeSource } from '../../src/modules/code/infrastructure/code-file-reader.ts';
+import { runCodeGitMutation } from '../../src/modules/code/infrastructure/code-git-mutation-runner.ts';
+import { codeGitConfigurationFixture } from '../helpers/code-git-configuration-fixture.ts';
+
+test('system and selected user configuration are shared by observation and a real noninteractive credential helper', async t => {
+  const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-code-configuration-')));
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  execFileSync('git', ['-C', base, 'init', '--initial-branch=main'], { stdio: ['ignore', 'pipe', 'pipe'] });
+  const config = codeGitConfigurationFixture(t, base), marker = path.join(base, 'helper-ran.json'), helper = path.join(base, 'helper.mjs');
+  fs.writeFileSync(helper, "import fs from 'node:fs';\nif (process.argv.at(-1) === 'get') { fs.writeFileSync(" + JSON.stringify(marker) + ", JSON.stringify({ terminal: process.env.GIT_TERMINAL_PROMPT, manager: process.env.GCM_INTERACTIVE, lazy: process.env.GIT_NO_LAZY_FETCH })); process.stdout.write('username=fixture-user\\npassword=fixture-password\\n\\n'); }\n");
+  const helperCommand = '!' + config.command(helper);
+  config.setSystem('credential.helper', helperCommand); config.setSystem('fixture.scope', 'system'); config.setGlobal('fixture.scope', 'user');
+  const source: CodeSource = { repositoryId: 'fixture', taskId: null, commitHash: null, checkoutId: null, worktreeGroupId: null, location: base, version: 'current', kind: 'default' };
+  assert.equal(codeGit(base, ['config', '--get', 'credential.helper']).toString().trim(), helperCommand);
+  assert.equal(codeGit(base, ['config', '--get', 'fixture.scope']).toString().trim(), 'user');
+  const observed = await runCodeGitMutation(source, ['config', '--get', 'fixture.scope']); assert.equal(observed.stdout.trim(), 'user');
+  const result = await runCodeGitMutation(source, ['credential', 'fill'], { input: 'protocol=https\nhost=fixture.invalid\n\n' });
+  assert.equal(result.ok, true); assert.match(result.stdout, /username=fixture-user\npassword=fixture-password/);
+  assert.deepEqual(JSON.parse(fs.readFileSync(marker, 'utf8')), { terminal: '0', manager: '0', lazy: '1' });
+  fs.rmSync(marker); process.env.GIT_CONFIG_NOSYSTEM = '1';
+  assert.throws(() => codeGit(base, ['config', '--get', 'credential.helper']));
+  const disabled = await runCodeGitMutation(source, ['credential', 'fill'], { input: 'protocol=https\nhost=fixture.invalid\n\n' });
+  assert.equal(disabled.ok, false); assert.match(disabled.stderr, /terminal prompts disabled/); assert.equal(fs.existsSync(marker), false);
+});

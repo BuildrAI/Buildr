@@ -51,7 +51,7 @@ export function App() {
         <Route path="codex" element={<CodexEntryNotice />} />
         <Route path="activity" element={<WorkbenchActivityPage />} />
         <Route path="settings" element={<SettingsPage />} />
-        <Route path="code" element={<Navigate to="explorer" replace />} />
+        <Route path="code" element={<Navigate to="source-control" replace />} />
         <Route path="code/explorer" element={<CodeExplorerPage />} />
         <Route path="code/source-control" element={<CodeSourceControlPage />} />
         <Route path="knowledge/:scopeKind/:scopeId" element={<KnowledgePage />} />

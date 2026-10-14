@@ -15,11 +15,17 @@
 .source-control-section-title span { color:var(--soft-muted); margin-left:5px; font-weight:400; }
 .source-control-section-title .ant-btn { font-size:12px; height:26px; }
 .source-control-repositories { --source-control-tree-leading-width:40px; --source-control-tree-indent-step:22px; display:flex; flex:1; flex-direction:column; min-height:0; overflow:hidden; }
-.source-control-repository,.source-control-worktree { display:flex; align-items:center; gap:4px; min-height:36px; padding:3px 10px; font-size:12px; }
+.source-control-repository,.source-control-worktree { position:relative; display:flex; align-items:center; gap:4px; min-height:36px; padding:3px 10px; font-size:12px; }
 .source-control-repository:hover,.source-control-worktree:hover { background:color-mix(in srgb,var(--soft-primary) 4%,var(--soft-surface)); }
 .source-control-repository.is-selected,.source-control-worktree.is-selected { background:var(--soft-primary-soft,color-mix(in srgb,var(--soft-primary) 8%,var(--soft-surface))); box-shadow:inset 2px 0 var(--soft-primary); }
 .source-control-row-copy { display:flex; align-items:center; gap:6px; flex:1 1 0; min-width:0; }
-.source-control-row-copy>.selectable-hover-trigger { display:block; flex:0 1 auto; min-width:48px; }
+.source-control-row-copy>.selectable-hover-trigger { display:block; flex:0 1 auto; min-width:0; }
+.source-control-row-name-text { display:inline-block; width:max-content; }
+.source-control-row-shortcuts { display:flex; align-items:center; flex:none; width:max-content; gap:4px; }
+/* Keep the same controls measurable and remove hidden controls from keyboard navigation. */
+:is(.source-control-repository,.source-control-worktree)[data-source-row-layout="name"]>.source-control-row-shortcuts { position:absolute; right:38px; pointer-events:none; }
+/* Visibility transitions must not leave shortcut icons over the prioritized name. */
+:is(.source-control-repository,.source-control-worktree)[data-source-row-layout="name"] :is(.source-control-row-shortcuts,.source-control-row-shortcuts *) { visibility:hidden!important; transition:none!important; }
 .source-control-repository-copy { display:grid; grid-template-columns:minmax(0,1fr); align-items:center; column-gap:8px; width:100%; min-width:0; min-height:28px; border:0; text-align:left; padding:2px 0; background:transparent; color:inherit; font:inherit; cursor:pointer; }
 .source-control-repository-copy:disabled { cursor:default; }
 .source-control-repository-copy strong { min-width:0; font-size:12px; line-height:20px; font-weight:550; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }

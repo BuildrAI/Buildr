@@ -1,4 +1,4 @@
-import { useContext, useEffect, useState } from 'react';
+import { useContext, useEffect, useRef, useState, type ReactElement } from 'react';
 import { Button, Popover, Tooltip } from 'antd';
 import { ArrowDownOutlined, ArrowUpOutlined, CheckOutlined, CloudOutlined, FileTextFilled, FileUnknownOutlined, QuestionCircleOutlined } from '@ant-design/icons';
 import { WorkspaceViewActiveContext } from '../../../app/pageTabs';
@@ -6,18 +6,23 @@ import type { SourceControlWorktree } from '../source-control-model';
 import { sourceControlWorktreeStatus } from '../source-control-worktree-status';
 import './source-control-worktree-status.css';
 
-type Props = { worktree?: SourceControlWorktree; name: string; visible: boolean; syncAction?:{pending:boolean;run():void} };
+type Props = { worktree?: SourceControlWorktree; name: string; visible: boolean; syncAction?:{pending:boolean;run():void}; trigger?:ReactElement; open?:boolean; onOpenChange?(open:boolean):void };
 
-export function SourceControlWorktreeStatus({worktree, name, visible, syncAction}: Props) {
-  const [open, setOpen] = useState(false), [syncTooltipOpen, setSyncTooltipOpen] = useState(false);
+export function SourceControlWorktreeStatus({worktree, name, visible, syncAction, trigger, open:controlledOpen, onOpenChange}: Props) {
+  const [localOpen, setLocalOpen] = useState(false), [syncTooltipOpen, setSyncTooltipOpen] = useState(false);
+  const anchor = useRef<HTMLSpanElement>(null);
+  const open = controlledOpen ?? localOpen;
+  const setOpen = (next:boolean) => {setLocalOpen(next); onOpenChange?.(next);};
   const viewActive = useContext(WorkspaceViewActiveContext);
   const status = sourceControlWorktreeStatus(worktree);
   useEffect(() => { setOpen(false); setSyncTooltipOpen(false); }, [worktree?.worktreeId, worktree?.branch, worktree?.head, worktree?.upstream, status.remoteLabel, viewActive, visible, syncAction?.pending]);
   useEffect(() => {
     if (!open) return;
     const close = (event: KeyboardEvent) => { if (event.key === 'Escape') setOpen(false); };
+    const outside = (event:PointerEvent) => {const target = event.target; if (trigger && target instanceof Element && !anchor.current?.contains(target) && !target.closest('.source-control-status-details')) setOpen(false);};
     window.addEventListener('keydown', close);
-    return () => window.removeEventListener('keydown', close);
+    window.addEventListener('pointerdown', outside);
+    return () => {window.removeEventListener('keydown', close); window.removeEventListener('pointerdown', outside);};
   }, [open]);
   const content = <section className="source-control-status-details" aria-label={'状态详情 · ' + name}>
     <strong>{name}</strong>
@@ -25,6 +30,7 @@ export function SourceControlWorktreeStatus({worktree, name, visible, syncAction
     {!!worktree?.diagnostics.length && <p>{worktree.diagnostics.join('；')}</p>}
     <p>本机已观察记录；查看详情不获取远程。</p>
   </section>;
+  if (trigger) return <Popover trigger={[]} open={viewActive && visible && open} onOpenChange={setOpen} placement="rightTop" content={content} destroyOnHidden><span ref={anchor} className="source-control-menu-status-anchor">{trigger}</span></Popover>;
   const canSync = status.remoteState === 'changed' && Boolean(syncAction);
   const remoteCounts = status.counts.filter(count => count.kind !== 'files');
   const detailCounts = canSync ? status.counts.filter(count => count.kind === 'files') : status.counts;

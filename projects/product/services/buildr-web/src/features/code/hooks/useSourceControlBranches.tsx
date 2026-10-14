@@ -15,8 +15,8 @@ import { SourceControlWorktreeMenu } from '../components/SourceControlWorktreeMe
 const observationNote = (data: CodeBranchesResponse | CodeAuthorsResponse | null) => data ? [data.coverage.truncated ? '读取范围达到上限，当前记录不完整。' : '', ...data.diagnostics.map(item => item.message)].filter(Boolean).join('；') : '';
 type LocationProps = { workspaceId: string; repository: SourceControlRepository; worktree: SourceControlWorktree; version: string };
 
-function BranchControl({workspaceId, repository, worktree, version, ready, onOpenPosition, onViewChanges}: LocationProps & {
-  ready: boolean; onOpenPosition(worktreeId: string): void; onViewChanges(): void;
+function BranchControl({workspaceId, repository, worktree, version, ready, inlineVisible, rowVisible, openRequest, onOpenPosition, onViewChanges}: LocationProps & {
+  ready: boolean; inlineVisible:boolean; rowVisible:boolean; openRequest:number; onOpenPosition(worktreeId: string): void; onViewChanges(): void;
 }) {
   const {message} = App.useApp();
   const [open, setOpen] = useState(false), [pending, setPending] = useState(false);
@@ -26,6 +26,8 @@ function BranchControl({workspaceId, repository, worktree, version, ready, onOpe
   const mounted = useRef(false), writing = useRef(false);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   useEffect(() => { setFailure(null); setOpen(false); }, [sourceKey]);
+  useEffect(() => {setOpen(false);}, [inlineVisible, rowVisible]);
+  useEffect(() => {if (openRequest && ready && rowVisible) setOpen(true);}, [openRequest]);
   const loader = useCallback((input: CodeSourceControlInput, signal: AbortSignal) => codeApi.branches(workspaceId, input, signal), [workspaceId]);
   const input = {repositoryId: repository.id, worktreeId: worktree.worktreeId};
   const branches = useSourceControlRead(sourceKey, input, loader, Boolean(open && ready), version);
@@ -54,7 +56,7 @@ function BranchControl({workspaceId, repository, worktree, version, ready, onOpe
     }
     return succeeded;
   }
-  return <BranchManagementPopover repository={repository} worktree={worktree} entries={entries} ready={ready && worktree.status !== 'offline'}
+  return <BranchManagementPopover repository={repository} worktree={worktree} entries={entries} ready={ready && worktree.status !== 'offline'} open={open}
     reading={branches.loading} pending={pending} failure={failure} readNote={observationNote(branches.data)}
     remoteLoading={branches.loading} remoteUpdatedAt={formatShortDateTime(branches.data?.readAt || '')} remoteError={branches.error}
     onOpenChange={setOpen} onTargetChange={() => setFailure(null)} onRefreshRemote={refresh}
@@ -86,6 +88,7 @@ function HistoryControls({workspaceId, repository, worktree, version, branchRef,
 export function useSourceControlBranches(workspaceId: string, fetchActions?: SourceControlFetchActions, syncActions?:SourceControlSyncActions): SourceControlBranchExtension {
   const [ranges, setRanges] = useState<Record<string, {branchRef: string; authorEmail: string}>>({});
   const [openMenu, setOpenMenu] = useState('');
+  const [branchRequest, setBranchRequest] = useState({key:'', serial:0});
   const [selection, setSelection] = useState<SourceControlBranchExtension['selection']>();
   const serial = useRef(0);
   const key = (repository: SourceControlRepository, worktree: SourceControlWorktree) => JSON.stringify([workspaceId, sourceControlWorktreeKey(repository.id, worktree.worktreeId)]);
@@ -99,16 +102,16 @@ export function useSourceControlBranches(workspaceId: string, fetchActions?: Sou
       return {branch: current.branchRef === 'HEAD' ? undefined : current.branchRef, authorEmail: current.authorEmail || undefined};
     },
     selection,
-    rowControl: (repository, worktree, ready) => <BranchControl key={JSON.stringify([workspaceId, repository.id, worktree.worktreeId])} workspaceId={workspaceId} repository={repository} worktree={worktree} version={repository.readVersion || ''} ready={ready && !syncing(repository)}
+    rowControl: (repository, worktree, ready, context) => <BranchControl key={JSON.stringify([workspaceId, repository.id, worktree.worktreeId])} workspaceId={workspaceId} repository={repository} worktree={worktree} version={repository.readVersion || ''} ready={ready && !syncing(repository)} inlineVisible={context.branchVisible} rowVisible={context.rowVisible} openRequest={branchRequest.key === key(repository, worktree) ? branchRequest.serial : 0}
       onOpenPosition={worktreeId => openPosition(repository.id, worktreeId, 'history')} onViewChanges={() => openPosition(repository.id, worktree.worktreeId, 'changes')} />,
-    rowActions: fetchActions && syncActions ? (repository, worktree, ready) => {
+    rowActions: fetchActions && syncActions ? (repository, worktree, ready, context) => {
       const available = ready && worktree.status !== 'offline' && Boolean(repository.gitId && repository.checkoutId);
       const unavailableReason = !available ? '当前来源尚未就绪，请刷新后重试'
         : !worktree.branch ? '当前工作树没有可同步的本地分支'
         : !worktree.head ? '当前分支还没有提交'
         : worktree.upstream === null ? '当前分支未设置远端跟踪分支'
         : !worktree.upstream ? '尚未确认当前分支的远端跟踪关系，请刷新后重试' : undefined;
-      return <SourceControlWorktreeMenu sourceKey={JSON.stringify([key(repository, worktree), worktree.branch, worktree.head, worktree.upstream])} open={openMenu === key(repository, worktree)} onOpenChange={next => setOpenMenu(previous => next ? key(repository, worktree) : previous === key(repository, worktree) ? '' : previous)} repositoryName={repository.name} worktreeName={worktree.isMain ? '主工作树' : worktree.name} ready={available} unavailableReason={unavailableReason} fetching={Boolean(fetchActions.pending[repository.id])} syncing={syncing(repository)} onFetch={() => {void fetchActions.run([repository]);}} onSync={() => {void syncActions.run(repository, worktree);}} />;
+      return <SourceControlWorktreeMenu sourceKey={JSON.stringify([key(repository, worktree), worktree.branch, worktree.head, worktree.upstream])} open={openMenu === key(repository, worktree)} onOpenChange={next => setOpenMenu(previous => next ? key(repository, worktree) : previous === key(repository, worktree) ? '' : previous)} repositoryName={repository.name} worktreeName={worktree.isMain ? '主工作树' : worktree.name} worktree={worktree} visible={context.rowVisible} ready={available} unavailableReason={unavailableReason} fetching={Boolean(fetchActions.pending[repository.id])} syncing={syncing(repository)} onManageBranch={() => setBranchRequest(previous => ({key:key(repository, worktree), serial:previous.serial + 1}))} onOpenTask={context.onOpenTask} onFetch={() => {void fetchActions.run([repository]);}} onSync={() => {void syncActions.run(repository, worktree);}} />;
     } : undefined,
     syncAction: syncActions ? (repository, worktree) => ({pending:syncing(repository) || Boolean(fetchActions?.pending[repository.id]), run:() => {if (!fetchActions?.pending[repository.id]) void syncActions.run(repository, worktree);}}) : undefined,
     viewChanges:(repositoryId, worktreeId) => openPosition(repositoryId, worktreeId, 'changes'),

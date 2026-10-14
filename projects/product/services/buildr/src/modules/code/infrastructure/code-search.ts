@@ -4,6 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { resolveProductResource } from '../../../infrastructure/product-resources/index.ts';
 import { insideFilesystemPath } from '../../../infrastructure/filesystem/filesystem-path-identity.ts';
 import { CODE_LIMITS, codeFailure, codeGit, fallbackIgnored, gitCommonDirectory, localPath, relativeCodePath, type CodeSource } from './code-file-reader.ts';
+import { codeGitEnvironment } from './code-git-environment.ts';
 
 type Occurrence = { line:number; excerpt:string };
 type Match = { path:string; line:number|null; excerpt:string; occurrences:Occurrence[] };
@@ -17,8 +18,8 @@ export function codeRipgrepPath() {
 }
 
 function searchProcess(source:CodeSource,command:string,args:string[]) {
-  const env=Object.fromEntries(Object.entries(process.env).filter(([key])=>!key.startsWith('GIT_')&&key!=='RIPGREP_CONFIG_PATH'));
-  const result=spawnSync(command,args,{cwd:source.location,env:{...env,GIT_OPTIONAL_LOCKS:'0',GIT_NO_LAZY_FETCH:'1',GIT_TERMINAL_PROMPT:'0',GIT_CONFIG_NOSYSTEM:'1'},timeout:CODE_LIMITS.searchMs,killSignal:'SIGKILL',maxBuffer:CODE_LIMITS.searchOutputBytes,stdio:['ignore','pipe','pipe']});
+  const env=codeGitEnvironment(); delete env.RIPGREP_CONFIG_PATH;
+  const result=spawnSync(command,args,{cwd:source.location,env:{...env,GIT_OPTIONAL_LOCKS:'0'},timeout:CODE_LIMITS.searchMs,killSignal:'SIGKILL',maxBuffer:CODE_LIMITS.searchOutputBytes,stdio:['ignore','pipe','pipe']});
   if(result.error&&['ENOENT','EACCES','ENOEXEC'].includes((result.error as NodeJS.ErrnoException).code||''))throw codeFailure('code_search_engine_unavailable','产品搜索引擎当前不可用，请修复产品安装后重试。',503);
   const diagnostics:Diagnostic[]=[];
   if(result.error||result.signal)diagnostics.push({code:'code_search_limit',message:'搜索超过执行时间或输出上限，仅保留已取得结果。',repositoryId:source.repositoryId});

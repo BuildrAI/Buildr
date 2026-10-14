@@ -3,9 +3,10 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { codeFailure, codeGit, type CodeSource } from './code-file-reader.ts';
 import { codeRevision } from './source-control-git-reader.ts';
+import { codeGitEnvironment } from './code-git-environment.ts';
 
-export function readCodeCheckoutFilterConfig(source: CodeSource) {
-  const config = codeGit(source.location, ['config', '--null', '--list'], 1024 * 1024).toString();
+export function readCodeCheckoutFilterConfig(source: CodeSource, configuration?: Buffer) {
+  const config = (configuration ?? codeGit(source.location, ['config', '--null', '--list'], 1024 * 1024)).toString();
   const external = new Set<string>(), records: string[] = [];
   for (const record of config.split('\0')) {
     const boundary = record.indexOf('\n'), key = record.slice(0, boundary), value = record.slice(boundary + 1);
@@ -62,10 +63,10 @@ function overwrittenFiles(message: string): string[] {
 
 /** The only Git write in the code module. Never invokes checkout hooks or submodule updates. */
 export function switchCodeBranch(source: CodeSource, ref: string, createLocal?: string, changedPaths: string[] = []) {
-  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')));
+  const env = codeGitEnvironment();
   const args = ['--no-replace-objects', '-c', 'gc.auto=0', '-c', 'maintenance.auto=false', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', '-c', 'core.quotePath=false', '-C', source.location,
     'switch', '--no-guess', '--no-recurse-submodules', '--no-overwrite-ignore', ...(createLocal ? ['--create', createLocal, '--track'] : []), '--', ref];
-  const result = spawnSync('git', args, { env: { ...env, LC_ALL: 'C', LANG: 'C', GIT_NO_LAZY_FETCH: '1', GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_NOSYSTEM: '1' }, timeout: 15000, maxBuffer: 1024 * 1024, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+  const result = spawnSync('git', args, { env: { ...env, LC_ALL: 'C', LANG: 'C' }, timeout: 15000, maxBuffer: 1024 * 1024, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
   if (result.status === 0 && !result.error) return;
   const detail = String(result.stderr || '').trim().slice(0, 4000);
   const timeout = result.error && (result.error as NodeJS.ErrnoException).code === 'ETIMEDOUT';

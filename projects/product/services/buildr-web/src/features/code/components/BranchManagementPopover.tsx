@@ -19,6 +19,7 @@ export type BranchManagementPopoverProps = {
   readNote: string;
   pending: boolean;
   failure: BranchSwitchFailure | null;
+  open?: boolean;
   onOpenChange(open: boolean): void;
   onTargetChange(): void;
   onRefreshRemote(): void;
@@ -40,10 +41,12 @@ function groupsFor(entries: SourceControlBranch[]): BranchGroup[] {
   ];
 }
 
-export function BranchManagementPopover({ repository, worktree, entries, ready, remoteLoading, remoteUpdatedAt, remoteError, reading, readNote, pending, failure, onOpenChange, onTargetChange, onRefreshRemote, inspect, onUse, onOpenPosition, onViewChanges }: BranchManagementPopoverProps) {
+export function BranchManagementPopover({ repository, worktree, entries, ready, remoteLoading, remoteUpdatedAt, remoteError, reading, readNote, pending, failure, open:controlledOpen, onOpenChange, onTargetChange, onRefreshRemote, inspect, onUse, onOpenPosition, onViewChanges }: BranchManagementPopoverProps) {
   const viewActive = useContext(WorkspaceViewActiveContext);
   const triggerRef = useRef<ComponentRef<typeof Button>>(null);
-  const [open, setOpen] = useState(false);
+  const searchRef = useRef<ComponentRef<typeof Input>>(null);
+  const [localOpen, setOpen] = useState(false);
+  const open = controlledOpen ?? localOpen;
   const [activeRef, setActiveRef] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [localName, setLocalName] = useState('');
@@ -65,7 +68,10 @@ export function BranchManagementPopover({ repository, worktree, entries, ready, 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
       event.stopPropagation();
-      if (activeRef) setActiveRef(null); else close();
+      if (activeRef) setActiveRef(null); else {
+        close();
+        if (triggerRef.current?.closest('[inert]')) triggerRef.current.closest('.source-control-repository,.source-control-worktree')?.querySelector<HTMLButtonElement>('.source-control-row-menu-button')?.focus();
+      }
     };
     window.addEventListener('resize', measure);
     window.addEventListener('scroll', measure, true);
@@ -126,7 +132,7 @@ export function BranchManagementPopover({ repository, worktree, entries, ready, 
   </section>;
   const content = <section role="region" aria-label={`分支管理 · ${repository.name} · ${worktreeName}`} className="branch-management-panel" style={{ maxHeight }} onClick={event => event.stopPropagation()} data-prototype-position="work-position-branch-manager">
     <header className="branch-management-scope" title={worktree.location}>{repository.name} · {worktreeName}</header>
-    <div className="branch-management-search"><Input size="small" value={query} allowClear onChange={event => { setQuery(event.target.value); setActiveRef(null); }} prefix={<SearchOutlined />} placeholder="搜索分支名称" aria-label="搜索可用分支（Branch）" /></div>
+    <div className="branch-management-search"><Input ref={searchRef} size="small" value={query} allowClear onChange={event => { setQuery(event.target.value); setActiveRef(null); }} prefix={<SearchOutlined />} placeholder="搜索分支名称" aria-label="搜索可用分支（Branch）" /></div>
     <div className="branch-management-list">
       {reading && !entries.length && <p className="branch-management-none" role="status"><Spin size="small" /> 正在读取…</p>}
       {renderGroup(groups[0])}
@@ -136,7 +142,7 @@ export function BranchManagementPopover({ repository, worktree, entries, ready, 
     <footer><span>{remoteLoading ? '正在读取本机记录…' : remoteUpdatedAt ? `读取时间 ${remoteUpdatedAt}` : '尚未读取本机记录'}</span><Button type="text" size="small" icon={<SyncOutlined spin={remoteLoading} />} disabled={remoteLoading} onClick={onRefreshRemote} aria-label="重新读取本机分支记录" title="重新读取本机分支记录" />
       {remoteError && <p role="alert">{remoteError}</p>}{readNote && <p>{readNote}</p>}</footer>
   </section>;
-  return <Popover open={viewActive && open} onOpenChange={next => { if (next && viewActive) { measure(); setOpen(true); onOpenChange(true); } else close(); }} trigger="click" placement="rightTop" autoAdjustOverflow content={content} overlayClassName="branch-management-popover" destroyOnHidden>
-    <Button ref={triggerRef} type="text" size="small" className="source-control-row-action-button" disabled={!ready || pending} title={`${currentName} · 管理分支`} aria-label={`管理分支 · ${repository.name} · ${worktreeName}`} aria-expanded={open} aria-haspopup="menu" onClick={event => event.stopPropagation()}><span className="source-control-row-branch-name">{currentName}</span></Button>
+  return <Popover open={viewActive && open} afterOpenChange={next => {if (next && triggerRef.current?.closest('[inert]')) searchRef.current?.focus();}} onOpenChange={next => { if (next && viewActive) { measure(); setOpen(true); onOpenChange(true); } else close(); }} trigger="click" placement="rightTop" autoAdjustOverflow content={content} overlayClassName="branch-management-popover" destroyOnHidden>
+    <Button ref={triggerRef} type="text" size="small" className="source-control-row-action-button" disabled={!ready || pending} title={`${currentName} · 管理分支`} aria-label={`管理分支 · ${repository.name} · ${worktreeName}`} aria-expanded={open} aria-haspopup="menu" onClick={event => event.stopPropagation()}><span className="source-control-row-branch-name">{currentName}</span><span className="source-control-row-branch-measure" aria-hidden="true">{currentName}</span></Button>
   </Popover>;
 }

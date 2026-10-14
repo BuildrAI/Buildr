@@ -9,6 +9,15 @@ import { runCodeGitMutation } from './code-git-mutation-runner.ts';
 type Remote = { url: string; refspecs: string[] };
 type Result = { status: 'succeeded' | 'failed' | 'unavailable' | 'unknown'; message: string };
 type Ref = { name: string; hash: string; symbolic: string };
+
+/** Diagnose transport failures without returning Git output, addresses or credentials. */
+function fetchFailureMessage(stderr: string): string {
+  const retained = '其他已完成的更新保留。';
+  if (/could not read (?:username|password)|terminal prompts disabled|could not obtain credentials|no credentials|credential.*(?:not found|unavailable)/i.test(stderr)) return '无法取得远程认证凭证，请核对本机已配置的凭证助手（Credential Helper）及登录状态；' + retained;
+  if (/authentication failed|authentication.*rejected|invalid (?:username|password|credentials)|access denied|returned error:\s*(?:401|403)|permission denied/i.test(stderr)) return '远程拒绝认证或访问，请核对本机凭证及代码库权限；' + retained;
+  if (/could not resolve|failed to connect|could not connect|connection (?:timed out|refused|reset|closed)|network is unreachable|ssl certificate problem|certificate verification failed/i.test(stderr)) return '远程网络连接或证书校验失败，请核对网络及本机传输配置；' + retained;
+  return '远程获取未完成，请核对网络、认证和本机远程配置；' + retained;
+}
 /** Fetch into an owned namespace, then publish without following symbolic refs into local branches. */
 export async function fetchCodeRemoteRefs(source: CodeSource, remote: Remote, options: { run: typeof runCodeGitMutation; verify(): void }): Promise<Result> {
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-code-fetch-'));
@@ -28,7 +37,7 @@ export async function fetchCodeRemoteRefs(source: CodeSource, remote: Remote, op
     // A unique exact alias pins the already expanded URL without applying insteadOf a second time.
     const transportAlias = 'buildr-fetch-' + crypto.randomUUID() + ':';
     const fetched = await options.run(source, [...gitOptions, 'fetch', '--atomic', '--no-tags', '--no-prune', '--no-prune-tags', '--recurse-submodules=no', '--no-write-fetch-head', '--refmap=', '--', transportAlias, ...refspecs], { timeoutMs: 60_000, env: { GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'url.' + remote.url + '.insteadOf', GIT_CONFIG_VALUE_0: transportAlias } });
-    if (!fetched.ok) return { status: fetched.timedOut ? 'unknown' : 'failed', message: fetched.timedOut ? '获取超时，可能已下载远程内容；请刷新核对，不会自动重试。' : '远程获取未完成，请核对网络、认证和本机远程配置；其他已完成的更新保留。' };
+    if (!fetched.ok) return { status: fetched.timedOut ? 'unknown' : 'failed', message: fetched.timedOut ? '获取超时，可能已下载远程内容；请刷新核对，不会自动重试。' : fetchFailureMessage(fetched.stderr) };
     options.verify();
     const refs = staged();
     const commands: string[] = ['start'];

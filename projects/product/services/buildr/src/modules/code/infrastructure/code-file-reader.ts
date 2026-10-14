@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { insideFilesystemPath } from '../../../infrastructure/filesystem/filesystem-path-identity.ts';
+import { codeGitEnvironment } from './code-git-environment.ts';
 export const CODE_LIMITS = Object.freeze({ entries: 1000, textBytes: 5 * 1024 * 1024, pageBytes: 512 * 1024, readMs: 15000, imageBytes: 8 * 1024 * 1024, matches: 100, matchLines: 200, searchOutputBytes: 8 * 1024 * 1024, searchMs: 15000 });
 export type CodeSource = { repositoryId:string; worktreeId?:string|null; taskId:string|null; commitHash:string|null; checkoutId:string|null;worktreeGroupId:string|null;location:string; version:string; kind:'default'|'task'|'worktree'|'commit' };
 export type DirectoryEntry = { name:string; path:string; kind:'directory'|'file'|'link'; ignored:boolean };
@@ -11,8 +12,8 @@ export function relativeCodePath(value:string, allowEmpty=false) {
   return value.replace(/\/$/,'');
 }
 export function codeGit(root:string,args:string[],maxBuffer=CODE_LIMITS.imageBytes+1,input?:string|Buffer,config: string[] = []): Buffer {
-  const env=Object.fromEntries(Object.entries(process.env).filter(([key])=>!key.startsWith('GIT_')));
-  try { return execFileSync('git',['--literal-pathspecs','--no-optional-locks','--no-replace-objects','-c','gc.auto=0','-c','maintenance.auto=false','-c','core.fsmonitor=false',...config.flatMap(value => ['-c',value]),'-C',root,...args],{env:{...env,GIT_OPTIONAL_LOCKS:'0',GIT_NO_LAZY_FETCH:'1',GIT_TERMINAL_PROMPT:'0',GIT_CONFIG_NOSYSTEM:'1'},timeout:4000,maxBuffer,input,stdio:[input===undefined?'ignore':'pipe','pipe','ignore']}); }
+  const env=codeGitEnvironment();
+  try { return execFileSync('git',['--literal-pathspecs','--no-optional-locks','--no-replace-objects','-c','gc.auto=0','-c','maintenance.auto=false','-c','core.fsmonitor=false',...config.flatMap(value => ['-c',value]),'-C',root,...args],{env:{...env,GIT_OPTIONAL_LOCKS:'0'},timeout:4000,maxBuffer,input,stdio:[input===undefined?'ignore':'pipe','pipe','ignore']}); }
   catch { throw codeFailure('code_git_unavailable','该代码库的指定 Git 内容当前不可读取。',404); }
 }
 export function gitCommonDirectory(root:string) { const value=codeGit(root,['rev-parse','--git-common-dir']).toString().trim(); return fs.realpathSync(path.resolve(root,value)); }
@@ -31,7 +32,7 @@ export const fallbackIgnored = new Set(['node_modules','dist','build','web-dist'
 function ignoredPaths(root:string,paths:string[]) {
   const ignored=new Set<string>();
   try {
-    const output=execFileSync('git',['-C',root,'check-ignore','--no-index','-z','--stdin'],{input:Buffer.from(paths.join('\0')+'\0'),timeout:1500,maxBuffer:2*1024*1024,stdio:['pipe','pipe','ignore']});
+    const output=execFileSync('git',['-C',root,'check-ignore','--no-index','-z','--stdin'],{env:{...codeGitEnvironment(),GIT_OPTIONAL_LOCKS:'0'},input:Buffer.from(paths.join('\0')+'\0'),timeout:1500,maxBuffer:2*1024*1024,stdio:['pipe','pipe','ignore']});
     for(const item of output.toString().split('\0'))if(item)ignored.add(item);
   } catch { /* No ignored matches is git status 1; common build directories remain bounded. */ }
   for(const value of paths)if(value.split('/').some(p=>fallbackIgnored.has(p)))ignored.add(value);

@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { StringDecoder } from 'node:string_decoder';
 import { CODE_LIMITS, codeFailure, codeGit, localPath, relativeCodePath, type CodeSource } from './code-file-reader.ts';
+import { codeGitEnvironment } from './code-git-environment.ts';
 
 export type CodeFileOptions = { page?:number; line?:number; matchQuery?:string; expectedRevision?:string; indexBlob?:{hash:string;mode:string} };
 export type CodeFilePage = { index:number; total:number; offset:number; endOffset:number; startLine:number; endLine:number; startsMidLine:boolean; endsMidLine:boolean; matchOffset?:number; matchEndOffset?:number };
@@ -83,8 +84,8 @@ async function readWindow(chunks:()=>AsyncIterable<Buffer>,size:number,index:num
 function historicalChunks(source:CodeSource,object:string,deadline:number):AsyncIterable<Buffer> {
   return {async *[Symbol.asyncIterator]() {
     checkDeadline(deadline);
-    const env=Object.fromEntries(Object.entries(process.env).filter(([key])=>!key.startsWith('GIT_')));
-    const child=spawn('git',['--no-optional-locks','--no-replace-objects','-c','gc.auto=0','-c','maintenance.auto=false','-C',source.location,'cat-file','blob',object],{env:{...env,GIT_OPTIONAL_LOCKS:'0',GIT_NO_LAZY_FETCH:'1',GIT_TERMINAL_PROMPT:'0',GIT_CONFIG_NOSYSTEM:'1'},stdio:['ignore','pipe','ignore']});
+    const env=codeGitEnvironment();
+    const child=spawn('git',['--no-optional-locks','--no-replace-objects','-c','gc.auto=0','-c','maintenance.auto=false','-C',source.location,'cat-file','blob',object],{env:{...env,GIT_OPTIONAL_LOCKS:'0'},stdio:['ignore','pipe','ignore']});
     let failure:Error|null=null,timedOut=false,completed=false;
     const closed=new Promise<void>(resolve=>{child.once('error',error=>{failure=error;resolve();});child.once('close',code=>{completed=true;if(code!==0&&!timedOut)failure=codeFailure('code_git_unavailable','该历史文件当前不可读取。',404);resolve();});});
     const timer=setTimeout(()=>{timedOut=true;child.stdout.destroy(codeFailure('code_file_read_limit','文件定位或读取超过时间上限，请缩小查看范围后重试。',503));child.kill('SIGKILL');},Math.max(1,deadline-Date.now()));

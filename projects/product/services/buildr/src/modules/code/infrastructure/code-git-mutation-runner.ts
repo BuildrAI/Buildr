@@ -1,13 +1,14 @@
 import { spawn } from 'node:child_process';
 import type { CodeSource } from './code-file-reader.ts';
+import { codeGitEnvironment } from './code-git-environment.ts';
 
 export type GitMutationProcessResult = { ok: boolean; timedOut: boolean; stdout: string; stderr: string; code: number | null };
 /** Keep repository hooks, filters, signing and transport configuration effective. */
 export function runCodeGitMutation(source: CodeSource, args: string[], options: { env?: NodeJS.ProcessEnv; input?: string; timeoutMs?: number; outputLimit?: number } = {}): Promise<GitMutationProcessResult> {
-  const inherited = Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith('GIT_')));
+  const inherited = codeGitEnvironment();
   return new Promise(resolve => {
     const child = spawn('git', ['--literal-pathspecs', '--no-replace-objects', '-c', 'gc.auto=0', '-c', 'maintenance.auto=false', '-C', source.location, ...args], {
-      env: { ...inherited, GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0', GIT_NO_LAZY_FETCH: '1', ...options.env }, stdio: ['pipe', 'pipe', 'pipe'], detached: process.platform !== 'win32',
+      env: { ...inherited, ...options.env }, stdio: ['pipe', 'pipe', 'pipe'], detached: process.platform !== 'win32',
     });
     const limit = options.outputLimit ?? 1024 * 1024;
     let stdout = '', stderr = '', timedOut = false, settled = false;

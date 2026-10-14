@@ -61,6 +61,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "knowledge/index.yml",
       "src/modules/code/**",
       "test/integration/**",
+      "test/helpers/code-git-configuration-fixture.ts",
       "test/helpers/legacy-asset-catalog.ts",
       "resources/workspace/skills/buildr/task-triage/**",
       "resources/workspace/components/buildr/openspec/component.yml",

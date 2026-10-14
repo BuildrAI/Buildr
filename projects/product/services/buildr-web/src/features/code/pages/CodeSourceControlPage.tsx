@@ -15,8 +15,7 @@ import { useSourceControl } from '../hooks/useSourceControl';
 import { useSourceControlBranches } from '../hooks/useSourceControlBranches';
 import { useSourceControlFetch } from '../hooks/useSourceControlFetch';
 import { useSourceControlSync } from '../hooks/useSourceControlSync';
-import { SourceControlSyncResults } from '../components/SourceControlSyncResults';
-import { SourceControlFetchResults } from '../components/SourceControlFetchResults';
+import { SourceControlOperationNotices } from '../components/SourceControlOperationNotices';
 import type { SourceControlFileTarget, SourceControlScene } from '../source-control-model';
 
 export function CodeSourceControlPage() {
@@ -47,12 +46,12 @@ export function CodeSourceControlPage() {
     else navigate(href('/tasks/' + encodeURIComponent(taskId)), {state: {from: location.pathname + location.search}});
   };
   return <div className="code-source-control-page">
+    <SourceControlOperationNotices workspaceId={workspaceId || ''} repositories={observation.repositories} fetchResults={fetchActions.feedback} syncResults={syncActions.results} onViewChanges={(repositoryId, worktreeId) => branches.viewChanges?.(repositoryId, worktreeId)} />
     <ObjectTabStrip panelId={panelId} className="code-source-control-tab" tabs={[{key: 'source-control', kind: 'svc', title: '源代码管理'}]} active="source-control" closable={false} onActivate={() => {}} />
     <div className="object-tab-panel" id={panelId} role="tabpanel" aria-labelledby={tabElementId(panelId, 'source-control')} tabIndex={0}>
     <SourceControlWorkbench repositories={observation.repositories} reader={observation.reader} readKey={observation.readKey}
       observation={observation.observation} onRefresh={observation.refresh} onRetry={observation.refresh}
       catalogActions={<Dropdown open={viewActive && catalogMenuOpen} onOpenChange={setCatalogMenuOpen} trigger={['click']} placement="bottomRight" menu={{'aria-label':'源代码管理操作菜单', items:[{key:'fetch', icon:<CloudDownloadOutlined aria-hidden />, label:'全部获取远程', disabled:fetching || syncing || !observation.repositories.length}], onClick:() => {setCatalogMenuOpen(false); void fetchActions.run(observation.repositories);}}}><Button type="text" size="small" icon={<MoreOutlined rotate={90} />} loading={fetching} aria-label="源代码管理操作菜单" title="源代码管理操作菜单" aria-expanded={catalogMenuOpen} aria-haspopup="menu" /></Dropdown>}
-      catalogFeedback={<><SourceControlFetchResults repositories={observation.repositories} results={fetchActions.results} /><SourceControlSyncResults repositories={observation.repositories} results={syncActions.results} onViewChanges={(repositoryId, worktreeId) => branches.viewChanges?.(repositoryId, worktreeId)} /></>}
       scene={scene} onScene={setScene} onOpenTask={openTask}
       task={entry ? {id: entry.taskId, title: entry.taskTitle || entry.taskId} : undefined}
       scopeSelection={entry && observation.selection ? {...observation.selection, key: workspaceId + ':' + (entry.nonce || location.key)} : undefined}

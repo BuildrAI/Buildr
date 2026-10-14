@@ -16,7 +16,11 @@ export type CodeSyncStatus = 'succeeded' | 'failed' | 'unavailable' | 'unknown';
 export type CodeSyncStage = { status: CodeSyncStatus | 'not-requested'; message: string };
 export type CodeSyncContext = { source: CodeSource; revision: string; head: string | null; branch: string | null; target: string | null; available: boolean; reason: string | null; ahead: number | null; behind: number | null; hasChanges: boolean };
 export type CodeSyncResult = { source: CodeSource; readAt: string; branch: string | null; head: string | null; upstream: string | null; status: CodeSyncStatus; message: string; fetch: CodeSyncStage; rebase: CodeSyncStage; push: CodeSyncStage };
-type Dependencies = { source(root: string, input: CodeSyncLocation): CodeSource; run?: typeof runCodeGitMutation };
+type Dependencies = {
+  source(root: string, input: CodeSyncLocation): CodeSource;
+  observation?(root: string, input: CodeSyncLocation): { source: CodeSource; verify(): void } | undefined;
+  run?: typeof runCodeGitMutation;
+};
 const progressNames = ['MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'REBASE_HEAD', 'rebase-merge', 'rebase-apply', 'sequencer', 'BISECT_START'];
 const text = (source: CodeSource, args: string[]) => codeGit(source.location, args).toString('utf8').trim();
 const hash = (value: Buffer) => crypto.createHash('sha256').update(value).digest('hex');
@@ -25,16 +29,23 @@ const notRequested = (message: string): CodeSyncStage => ({ status: 'not-request
 
 export function createCodeSyncApplication(dependencies: Dependencies) {
   const run = dependencies.run || runCodeGitMutation;
-  function source(root: string, input: Partial<CodeSyncLocation>) {
+  function assertLocation(input: Partial<CodeSyncLocation>) {
     if (!input.repositoryId || !/^checkout-[a-f0-9]{64}$/.test(input.worktreeId || '')) throw codeFailure('code_sync_location_invalid', '同步必须明确已登记代码库与具体工作位置。');
+  }
+  function source(root: string, input: Partial<CodeSyncLocation>) {
+    assertLocation(input);
     const current = dependencies.source(root, input as CodeSyncLocation);
     if (current.commitHash || current.worktreeId !== input.worktreeId) throw codeFailure('code_sync_source_invalid', '同步必须选择当前真实工作位置。', 409);
     return current;
   }
   function observe(root: string, input: Partial<CodeSyncLocation>) {
-    const current = source(root, input), filters = readCodeCheckoutFilterConfig(current);
+    assertLocation(input);
+    const observation = dependencies.observation?.(root, input as CodeSyncLocation);
+    const current = observation?.source || source(root, input);
+    if (current.commitHash || current.worktreeId !== input.worktreeId) throw codeFailure('code_sync_source_invalid', '同步必须选择当前真实工作位置。', 409);
+    const configuration = codeGit(current.location, ['config', '--null', '--list'], 1024 * 1024);
+    const filters = readCodeCheckoutFilterConfig(current, configuration);
     const status = observeSourceControl(current, { gitConfig: filters.overrides }), push = readCodePushSnapshot(current);
-    const configuration = codeGit(current.location, ['config', '--null', '--list']);
     const index = codeGit(current.location, ['ls-files', '--stage', '-v', '-z']);
     const gitDirectory = text(current, ['rev-parse', '--absolute-git-dir']);
     const progress = progressNames.filter(name => fs.existsSync(path.join(gitDirectory, name)));
@@ -57,12 +68,16 @@ export function createCodeSyncApplication(dependencies: Dependencies) {
     const localRevision = codeRevision([current.worktreeId, current.location, push.branchRef, status.head, status.files, fileMetadata, hash(index), progress, filters.revision]);
     const contentRevision = codeRevision([localRevision, status.observedRevision]);
     const revision = codeRevision([targetRevision, contentRevision, push.revision]);
-    const verified = source(root, input);
-    if (verified.location !== current.location || verified.worktreeId !== current.worktreeId) throw codeFailure('code_worktree_identity_changed', '同步观察期间工作位置身份已变化，请刷新。', 409);
+    function verifyIdentity() {
+      if (observation) { observation.verify(); return; }
+      const verified = source(root, input);
+      if (verified.location !== current.location || verified.worktreeId !== current.worktreeId) throw codeFailure('code_worktree_identity_changed', '同步观察期间工作位置身份已变化，请刷新。', 409);
+    }
+    verifyIdentity();
     assertCodeRevision(status.observedRevision, observeSourceControl(current, { gitConfig: filters.overrides }).observedRevision);
     if (hash(codeGit(current.location, ['config', '--null', '--list'])) !== hash(configuration) || hash(codeGit(current.location, ['ls-files', '--stage', '-v', '-z'])) !== hash(index)) throw codeFailure('code_source_changed', '同步观察期间索引或配置已变化，请刷新。', 409);
-    const finalSource = source(root, input);
-    if (finalSource.location !== current.location || finalSource.worktreeId !== current.worktreeId) throw codeFailure('code_worktree_identity_changed', '同步观察期间工作位置身份已变化，请刷新。', 409);
+    verifyIdentity();
+    if (observation) { const version = status.branch || status.head; current.version = version ? version + ' · 当前文件' : '当前文件'; }
     return { source: current, status, push, fetchUrl, progress, reason, ahead, behind, targetRevision, localRevision, revision, unsafeIndex: index.toString().split('\0').some(entry => /^[a-zS] /.test(entry)) };
   }
   function syncContext(root: string, input: Partial<CodeSyncLocation>): CodeSyncContext {
@@ -114,7 +129,7 @@ export function createCodeSyncApplication(dependencies: Dependencies) {
         response.status = status; response.message = message; response.readAt = new Date().toISOString();
         try {
           const final = status === 'succeeded' ? observe(root, input) : null;
-          const current = final?.source || source(root, input), filters = readCodeCheckoutFilterConfig(current), state = final?.status || observeSourceControl(current, { gitConfig: filters.overrides });
+          const current = final?.source || source(root, input), state = final?.status || observeSourceControl(current, { gitConfig: readCodeCheckoutFilterConfig(current).overrides });
           response.source = current; response.branch = state.branch; response.head = state.head; response.upstream = state.upstream;
           if (final) {
             if (state.branch !== before.status.branch || state.head !== expectedFinalHead || final.push.upstreamHead !== expectedFinalHead || final.targetRevision !== before.targetRevision) {
