@@ -357,11 +357,11 @@
       "type": "skill",
       "id": "ui-prototype",
       "target": "skills/buildr/ui-prototype",
-      "integrity": "sha256-54e45232aea1b07a80d346cbc19aced417d92f40c83dc63d32433d3ba57a024d",
+      "integrity": "sha256-0bd09806920d8ca17101e021562ada9deb676b6816a3294c02bab3ea55145053",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-7e0900aed38a796f83101a205160ae0244619f77c257778fdc571675a9b7f631"
+          "integrity": "sha256-968b28bc5c9f31c775483e7a0500eb5301d36544736db061a8117c39b3240d2b"
         },
         {
           "path": "assets/feature-notes.css",
@@ -377,7 +377,7 @@
         },
         {
           "path": "references/feature-notes.md",
-          "integrity": "sha256-32b640e1ccc0562bde8108057bf7271a883941ca58c961167b5597ba6ed43306"
+          "integrity": "sha256-c709850b959c0603d90cff7cd8eabd338a8115bba0a1406a33a20a4e7fe6d55f"
         }
       ]
     },
