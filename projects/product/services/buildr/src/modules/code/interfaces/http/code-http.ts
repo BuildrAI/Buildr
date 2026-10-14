@@ -3,6 +3,7 @@ import { CODE_HTTP_SCHEMAS, CODE_HTTP_REQUESTS, CODE_HTTP_OPERATIONS, CODE_HTTP_
 import { codeFailure } from '../../infrastructure/code-file-reader.ts';
 import type { CodeBranchSwitchInput } from '../../application/source-control-model.ts';
 import type { CodeFetchInput } from '../../application/code-fetch-application.ts';
+import type { CodeSyncInput } from '../../application/code-sync-application.ts';
 import type { CodeCommitChangesInput, CodePushInput } from '../../application/code-commit-model.ts';
 import type { EditorFileSelector, SaveEditorFileInput } from '../../application/file-editing-application.ts';
 import { EDITABLE_FILE_JSON_BYTES } from '../../infrastructure/editable-file.ts';
@@ -36,6 +37,16 @@ export function createCodeHttpContribution(application:CodeApplication) {
       if (!CODE_HTTP_VALIDATORS.validate(CODE_HTTP_REQUESTS[operation].$id,input).valid) throw codeFailure('code_commit_input_invalid','Git 写入请求不符合契约。');
       const body = operation === 'push' ? await application.push(root,input as CodePushInput) : await application.commitChanges(root,input as CodeCommitChangesInput);
       if (!CODE_HTTP_VALIDATORS.validate(CODE_HTTP_SCHEMAS[operation].$id,body).valid) throw codeFailure('code_response_invalid','Git 写入结果不符合契约。',500);
+      return {status:200,body};
+    }
+    if (request.method === 'POST' && suffix === '/code/sync') {
+      if (!authorizeWrite || !readJsonBody) throw codeFailure('code_write_unauthorized','同步请求缺少本机会话（Session）授权。',403);
+      authorizeWrite();
+      if (searchParams.size) throw codeFailure('code_query_invalid','同步接口不接受查询参数。');
+      const input = await readJsonBody();
+      if (!CODE_HTTP_VALIDATORS.validate(CODE_HTTP_REQUESTS.sync.$id,input).valid) throw codeFailure('code_sync_input_invalid','同步请求不符合契约。');
+      const body = await application.sync(root,input as CodeSyncInput);
+      if (!CODE_HTTP_VALIDATORS.validate(CODE_HTTP_SCHEMAS.sync.$id,body).valid) throw codeFailure('code_response_invalid','同步结果不符合契约。',500);
       return {status:200,body};
     }
     if (request.method === 'POST' && suffix === '/code/fetch') {

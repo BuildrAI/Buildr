@@ -2,8 +2,10 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import { codeFailure, codeGit, type CodeSource } from '../infrastructure/code-file-reader.ts';
 import { assertCodeRevision } from '../infrastructure/source-control-git-reader.ts';
-import { readCommitSnapshot, readCodeIndexDigest, readCodePushSnapshot, type CodeCommitSnapshot, type CodeCommitSnapshotOptions, type CodePushSnapshot } from '../infrastructure/code-commit-snapshot.ts';
+import { readCommitSnapshot, readCodeIndexDigest, readCodePushSnapshot, type CodeCommitSnapshot, type CodeCommitSnapshotOptions } from '../infrastructure/code-commit-snapshot.ts';
 import { runCodeGitMutation } from '../infrastructure/code-git-mutation-runner.ts';
+import { pushObservedCodeSource } from './code-push-operation.ts';
+import { acquireCodeGitOperation } from '../infrastructure/code-git-operation-lock.ts';
 import type { CodeCommitLocation, CodeCommitContext, CodeCommitChangesInput, CodePushInput, CodeGitMutationResult } from './code-commit-model.ts';
 
 type Dependencies = { source(root: string, input: CodeCommitLocation): CodeSource };
@@ -25,41 +27,12 @@ export function createCodeCommitApplication(dependencies: Dependencies) {
     const snapshot = commitSnapshot(root, input, { includeDiff: false }), push = readCodePushSnapshot(snapshot.source);
     return { source: snapshot.source, revision: snapshot.revision, head: snapshot.head, branch: snapshot.branch, hasChanges: snapshot.hasChanges, fileCount: snapshot.paths.length, push: { revision: push.revision, target: push.target, available: push.available, reason: push.reason, ahead: push.ahead } };
   }
-  async function pushObserved(root: string, input: CodeCommitLocation, observed: CodePushSnapshot): Promise<CodeGitMutationResult['push']> {
-    if (!observed.available || !observed.head || !observed.url || !observed.destinationRef) return { status: 'unavailable', target: observed.target, message: observed.reason || '当前没有可核对的推送目标。', retry: null };
-    const currentSource = source(root, input), before = readCodePushSnapshot(currentSource);
-    assertCodeRevision(before.revision, observed.revision);
-    const advertised = await runCodeGitMutation(currentSource, ['ls-remote', '--refs', '--', observed.url, observed.destinationRef], { timeoutMs: 15_000 });
-    if (!advertised.ok) return { status: 'failed', target: observed.target, message: safeMessage(advertised.stderr) || '尚无法核对远端分支，未开始推送。', retry: { expectedHead: observed.head, expectedPushRevision: observed.revision } };
-    const remoteHead = advertised.stdout.split('\n').find(line => line.split(/\s+/)[1] === observed.destinationRef)?.split(/\s+/)[0] || null;
-    assertCodeRevision(readCodePushSnapshot(source(root, input)).revision, observed.revision);
-    if (remoteHead === observed.head) {
-      if (observed.upstreamRef && observed.upstreamHead) await runCodeGitMutation(currentSource, ['update-ref', observed.upstreamRef, observed.head, observed.upstreamHead]);
-      return { status: 'succeeded', target: observed.target, message: '已核对远端包含当前提交，无需重复推送。', retry: null };
-    }
-    if (remoteHead !== observed.upstreamHead) return { status: 'unavailable', target: observed.target, message: '远端分支已变化，未按陈旧范围推送；请同步并重新核对目标。', retry: null };
-    const result = await runCodeGitMutation(currentSource, ['push', '--porcelain', '--no-follow-tags', '--recurse-submodules=no', '--', observed.url, observed.head + ':' + observed.destinationRef], { timeoutMs: 60_000 });
-    let succeeded = result.ok, remoteConfirmed = result.ok;
-    if (!succeeded) {
-      const remote = await runCodeGitMutation(currentSource, ['ls-remote', '--refs', '--', observed.url, observed.destinationRef], { timeoutMs: 15_000 });
-      remoteConfirmed = remote.ok;
-      succeeded = remote.ok && remote.stdout.split('\n').some(line => line.split(/\s+/)[0] === observed.head && line.split(/\s+/)[1] === observed.destinationRef);
-    }
-    if (succeeded) {
-      if (observed.upstreamRef && observed.upstreamHead) await runCodeGitMutation(currentSource, ['update-ref', observed.upstreamRef, observed.head, observed.upstreamHead]);
-      return { status: 'succeeded', target: observed.target, message: '已推送当前分支的全部待推送提交。', retry: null };
-    }
-    if (result.timedOut || !remoteConfirmed) return { status: 'unknown', target: observed.target, message: '推送结果尚无法从远端确认；请刷新核对后再决定。', retry: null };
-    let retry: CodeGitMutationResult['push']['retry'] = null;
-    try { const after = readCodePushSnapshot(source(root, input)); if (after.revision === observed.revision) retry = { expectedHead: observed.head, expectedPushRevision: after.revision }; } catch { /* A changed or unavailable source cannot be retried from this observation. */ }
-    return { status: 'failed', target: observed.target, message: safeMessage(result.stderr) || 'Git 未完成推送，已成立的本机提交保留。', retry };
-  }
   async function push(root: string, input: CodePushInput): Promise<CodeGitMutationResult> {
     const current = source(root, input), observed = readCodePushSnapshot(current);
     if (!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(input.expectedHead || '') || !input.expectedPushRevision) throw codeFailure('code_push_input_invalid', '推送必须提供已观察的完整提交和目标版本。');
     assertCodeRevision(observed.revision, input.expectedPushRevision);
     if (observed.head !== input.expectedHead) throw codeFailure('code_source_changed', '当前提交已变化，请刷新推送范围。', 409);
-    return { source: current, commit: { completed: true, status: 'succeeded', hash: observed.head, message: text(current, ['show', '-s', '--format=%B', observed.head]) }, push: await pushObserved(root, input, observed), effects: { indexUpdated: false, warnings: [] } };
+    return { source: current, commit: { completed: true, status: 'succeeded', hash: observed.head, message: text(current, ['show', '-s', '--format=%B', observed.head]) }, push: await pushObservedCodeSource(root, input, observed, source), effects: { indexUpdated: false, warnings: [] } };
   }
   async function commitChanges(root: string, input: CodeCommitChangesInput): Promise<CodeGitMutationResult> {
     if (typeof input.message !== 'string' || !input.message.trim() || Buffer.byteLength(input.message) > 32 * 1024 || input.message.includes('\0') || !['commit', 'commit-push'].includes(input.mode) || !input.expectedRevision) throw codeFailure('code_commit_input_invalid', '提交需要非空说明、明确操作和已观察版本；说明不能超过 32 KiB。');
@@ -118,7 +91,7 @@ export function createCodeCommitApplication(dependencies: Dependencies) {
         try {
           const after = readCodePushSnapshot(source(root, input));
           if (after.head !== hash || after.configurationRevision !== pushBefore.configurationRevision) response.push = { status: 'unavailable', target: pushBefore.target, message: '提交已成立，但当前提交或推送目标已变化；请刷新后重新判断。', retry: null };
-          else response.push = await pushObserved(root, input, after);
+          else response.push = await pushObservedCodeSource(root, input, after, source);
         } catch (error) { response.push = { status: 'unavailable', target: pushBefore.target, message: (error as Error).message, retry: null }; }
       }
       return response;
@@ -128,5 +101,8 @@ export function createCodeCommitApplication(dependencies: Dependencies) {
       for (const file of [temporary, temporary + '.lock']) { try { fs.unlinkSync(file); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') warnings.push('临时索引清理未完成。'); } }
     }
   }
-  return Object.freeze({ commitContext, commitSnapshot, commitChanges, push });
+  return Object.freeze({ commitContext, commitSnapshot,
+    async commitChanges(root: string, input: CodeCommitChangesInput) { const release = acquireCodeGitOperation(source(root, input)); try { return await commitChanges(root, input); } finally { release(); } },
+    async push(root: string, input: CodePushInput) { const release = acquireCodeGitOperation(source(root, input)); try { return await push(root, input); } finally { release(); } },
+  });
 }

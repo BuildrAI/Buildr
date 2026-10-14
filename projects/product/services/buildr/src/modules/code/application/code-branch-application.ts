@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { codeFailure, codeGit, type CodeSource } from '../infrastructure/code-file-reader.ts';
+import { acquireCodeGitOperation } from '../infrastructure/code-git-operation-lock.ts';
 import { enumerateCodeWorktrees } from '../infrastructure/code-worktree-reader.ts';
 import { assertCodeRevision, codeRevision, observeSourceControl } from '../infrastructure/source-control-git-reader.ts';
 import { readCodeBranchRefs, type CodeBranchSourceObservation } from '../infrastructure/code-branch-reader.ts';
@@ -64,8 +65,7 @@ export function createCodeBranchApplication(dependencies: Dependencies) {
     const observed = observe(root, input), truncated = observed.entries.length > BRANCH_LIMIT;
     return { source: observed.source, readAt: observed.readAt, observedRevision: observed.observedRevision, coverage: { limit: BRANCH_LIMIT, truncated, nextCursor: null }, diagnostics: truncated ? [{ code: 'code_branches_truncated', message: '只返回前 1000 个本地与远程分支（Branch）记录。', repositoryId: observed.source.repositoryId }] : [], branches: observed.entries.slice(0, BRANCH_LIMIT) };
   }
-  function switchBranch(root: string, input: CodeBranchSwitchInput): CodeBranchSwitchResponse {
-    if (!input.repositoryId || !/^checkout-[a-f0-9]{64}$/.test(input.worktreeId || '') || !/^refs\/(?:heads|remotes)\/.+/.test(input.targetRef || '') || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(input.expectedTargetHash || '') || !input.expectedRevision) throw codeFailure('code_branch_switch_invalid', '切换必须明确代码库（Repository）、工作位置、目标引用（Ref）与已观察版本。');
+  function switchBranchUnlocked(root: string, input: CodeBranchSwitchInput): CodeBranchSwitchResponse {
     // Inspect the actual local tip used by a remote item before any switch-state read.
     const initialSource = dependencies.observation?.(root, input)?.source || dependencies.source(root, input), initialRefs = readCodeBranchRefs(initialSource);
     const initialTarget = initialRefs.rows.find(row => row[0] === input.targetRef && row[3] === 'commit' && !row[6]);
@@ -140,6 +140,12 @@ export function createCodeBranchApplication(dependencies: Dependencies) {
       }
       throw failure;
     }
+  }
+  function switchBranch(root: string, input: CodeBranchSwitchInput): CodeBranchSwitchResponse {
+    if (!input.repositoryId || !/^checkout-[a-f0-9]{64}$/.test(input.worktreeId || '') || !/^refs\/(?:heads|remotes)\/.+/.test(input.targetRef || '') || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(input.expectedTargetHash || '') || !input.expectedRevision) throw codeFailure('code_branch_switch_invalid', '切换必须明确代码库（Repository）、工作位置、目标引用（Ref）与已观察版本。');
+    const current = dependencies.observation?.(root, input)?.source || dependencies.source(root, input);
+    const release = acquireCodeGitOperation(current);
+    try { return switchBranchUnlocked(root, input); } finally { release(); }
   }
   return Object.freeze({ branches, switchBranch });
 }

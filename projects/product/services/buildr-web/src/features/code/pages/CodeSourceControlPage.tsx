@@ -1,8 +1,9 @@
-import { useEffect, useId, useState } from 'react';
-import { Button, Tooltip } from 'antd';
-import { CloudDownloadOutlined } from '@ant-design/icons';
+import { useContext, useEffect, useId, useState } from 'react';
+import { Button, Dropdown } from 'antd';
+import { CloudDownloadOutlined, MoreOutlined } from '@ant-design/icons';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAppShell } from '../../../app/AppShellContext';
+import { WorkspaceViewActiveContext } from '../../../app/pageTabs';
 import { tabElementId } from '../../../lib/tab-navigation';
 import { ObjectTabStrip } from '../../../components/ObjectTabStrip';
 import { workspaceHref } from '../../../lib/labels';
@@ -13,18 +14,25 @@ import { useSourceControlActions } from '../hooks/useSourceControlActions';
 import { useSourceControl } from '../hooks/useSourceControl';
 import { useSourceControlBranches } from '../hooks/useSourceControlBranches';
 import { useSourceControlFetch } from '../hooks/useSourceControlFetch';
+import { useSourceControlSync } from '../hooks/useSourceControlSync';
+import { SourceControlSyncResults } from '../components/SourceControlSyncResults';
 import { SourceControlFetchResults } from '../components/SourceControlFetchResults';
 import type { SourceControlFileTarget, SourceControlScene } from '../source-control-model';
 
 export function CodeSourceControlPage() {
   const panelId = useId();
+  const viewActive = useContext(WorkspaceViewActiveContext);
+  const [catalogMenuOpen, setCatalogMenuOpen] = useState(false);
   const {workspaceId, setBreadcrumbParts} = useAppShell();
+  useEffect(() => {setCatalogMenuOpen(false);}, [workspaceId, viewActive]);
   const location = useLocation(), navigate = useNavigate();
   const entry = location.state?.sourceControlEntry as {origin?: 'task'; nonce?: string; taskId: string; taskTitle?: string; from: {pathname: string; search: string; hash: string; state: unknown}} | undefined;
   const observation = useSourceControl(workspaceId || '', entry?.taskId);
   const actions = useSourceControlActions(workspaceId || '', observation.refresh);
   const fetchActions = useSourceControlFetch(workspaceId || '');
-  const branches = useSourceControlBranches(workspaceId || '', fetchActions);
+  const syncActions = useSourceControlSync(workspaceId || '');
+  const branches = useSourceControlBranches(workspaceId || '', fetchActions, syncActions);
+  const fetching = Object.values(fetchActions.pending).some(Boolean), syncing = Object.values(syncActions.pending).some(Boolean);
   const [scene, setScene] = useState<SourceControlScene>('changes');
   useEffect(() => { setBreadcrumbParts(['代码', '源代码管理']); }, [setBreadcrumbParts]);
   const href = (path: string) => workspaceHref(workspaceId, path);
@@ -43,8 +51,8 @@ export function CodeSourceControlPage() {
     <div className="object-tab-panel" id={panelId} role="tabpanel" aria-labelledby={tabElementId(panelId, 'source-control')} tabIndex={0}>
     <SourceControlWorkbench repositories={observation.repositories} reader={observation.reader} readKey={observation.readKey}
       observation={observation.observation} onRefresh={observation.refresh} onRetry={observation.refresh}
-      catalogActions={<Tooltip title="获取当前已观察代码库的远程记录"><Button type="text" size="small" icon={<CloudDownloadOutlined />} loading={Object.values(fetchActions.pending).some(Boolean)} disabled={!observation.repositories.length} aria-label="全部获取远程" onClick={() => void fetchActions.run(observation.repositories)}>全部获取远程</Button></Tooltip>}
-      catalogFeedback={<SourceControlFetchResults repositories={observation.repositories} results={fetchActions.results} />}
+      catalogActions={<Dropdown open={viewActive && catalogMenuOpen} onOpenChange={setCatalogMenuOpen} trigger={['click']} placement="bottomRight" menu={{'aria-label':'源代码管理操作菜单', items:[{key:'fetch', icon:<CloudDownloadOutlined aria-hidden />, label:'全部获取远程', disabled:fetching || syncing || !observation.repositories.length}], onClick:() => {setCatalogMenuOpen(false); void fetchActions.run(observation.repositories);}}}><Button type="text" size="small" icon={<MoreOutlined rotate={90} />} loading={fetching} aria-label="源代码管理操作菜单" title="源代码管理操作菜单" aria-expanded={catalogMenuOpen} aria-haspopup="menu" /></Dropdown>}
+      catalogFeedback={<><SourceControlFetchResults repositories={observation.repositories} results={fetchActions.results} /><SourceControlSyncResults repositories={observation.repositories} results={syncActions.results} onViewChanges={(repositoryId, worktreeId) => branches.viewChanges?.(repositoryId, worktreeId)} /></>}
       scene={scene} onScene={setScene} onOpenTask={openTask}
       task={entry ? {id: entry.taskId, title: entry.taskTitle || entry.taskId} : undefined}
       scopeSelection={entry && observation.selection ? {...observation.selection, key: workspaceId + ':' + (entry.nonce || location.key)} : undefined}

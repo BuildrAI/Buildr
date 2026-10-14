@@ -9,12 +9,14 @@ import { sourceControlWorktreeKey, type SourceControlRepository, type SourceCont
 import { formatShortDateTime } from '../../../lib/taskLabels';
 import { useSourceControlRead } from './useSourceControlRead';
 import type { SourceControlFetchActions } from './useSourceControlFetch';
+import type { SourceControlSyncActions } from './useSourceControlSync';
+import { SourceControlWorktreeMenu } from '../components/SourceControlWorktreeMenu';
 
 const observationNote = (data: CodeBranchesResponse | CodeAuthorsResponse | null) => data ? [data.coverage.truncated ? '读取范围达到上限，当前记录不完整。' : '', ...data.diagnostics.map(item => item.message)].filter(Boolean).join('；') : '';
 type LocationProps = { workspaceId: string; repository: SourceControlRepository; worktree: SourceControlWorktree; version: string };
 
-function BranchControl({workspaceId, repository, worktree, version, ready, fetchActions, onOpenPosition, onViewChanges}: LocationProps & {
-  ready: boolean; fetchActions?:SourceControlFetchActions; onOpenPosition(worktreeId: string): void; onViewChanges(): void;
+function BranchControl({workspaceId, repository, worktree, version, ready, onOpenPosition, onViewChanges}: LocationProps & {
+  ready: boolean; onOpenPosition(worktreeId: string): void; onViewChanges(): void;
 }) {
   const {message} = App.useApp();
   const [open, setOpen] = useState(false), [pending, setPending] = useState(false);
@@ -56,8 +58,6 @@ function BranchControl({workspaceId, repository, worktree, version, ready, fetch
     reading={branches.loading} pending={pending} failure={failure} readNote={observationNote(branches.data)}
     remoteLoading={branches.loading} remoteUpdatedAt={formatShortDateTime(branches.data?.readAt || '')} remoteError={branches.error}
     onOpenChange={setOpen} onTargetChange={() => setFailure(null)} onRefreshRemote={refresh}
-    fetchPending={fetchActions?.pending[repository.id]} fetchResult={fetchActions?.results[repository.id]}
-    onFetch={fetchActions ? () => { void fetchActions.run([repository]); } : undefined}
     inspect={entry => branchSwitchImpact(repository, worktree, entries, entry)} onUse={use} onOpenPosition={onOpenPosition} onViewChanges={onViewChanges} />;
 }
 
@@ -83,22 +83,27 @@ function HistoryControls({workspaceId, repository, worktree, version, branchRef,
 }
 
 /** Each concrete location owns its read-only history conditions. All writes live in the row adapter. */
-export function useSourceControlBranches(workspaceId: string, fetchActions?: SourceControlFetchActions): SourceControlBranchExtension {
+export function useSourceControlBranches(workspaceId: string, fetchActions?: SourceControlFetchActions, syncActions?:SourceControlSyncActions): SourceControlBranchExtension {
   const [ranges, setRanges] = useState<Record<string, {branchRef: string; authorEmail: string}>>({});
+  const [openMenu, setOpenMenu] = useState('');
   const [selection, setSelection] = useState<SourceControlBranchExtension['selection']>();
   const serial = useRef(0);
   const key = (repository: SourceControlRepository, worktree: SourceControlWorktree) => JSON.stringify([workspaceId, sourceControlWorktreeKey(repository.id, worktree.worktreeId)]);
   const range = (repository: SourceControlRepository, worktree: SourceControlWorktree) => ranges[key(repository, worktree)] || {branchRef: 'HEAD', authorEmail: ''};
   const openPosition = (repositoryId: string, worktreeId: string, scene: 'history' | 'changes') => setSelection({key: workspaceId + ':' + ++serial.current, repositoryId, worktreeId, scene});
-  useEffect(() => { setSelection(undefined); }, [workspaceId]);
+  useEffect(() => { setSelection(undefined); setOpenMenu(''); }, [workspaceId]);
+  const syncing = (repository:SourceControlRepository) => repository.worktrees.some(worktree => syncActions?.pending[sourceControlWorktreeKey(repository.id, worktree.worktreeId)]);
   return {
     historyRange(repository, worktree) {
       const current = range(repository, worktree);
       return {branch: current.branchRef === 'HEAD' ? undefined : current.branchRef, authorEmail: current.authorEmail || undefined};
     },
     selection,
-    rowControl: (repository, worktree, ready) => <BranchControl key={JSON.stringify([workspaceId, repository.id, worktree.worktreeId])} workspaceId={workspaceId} repository={repository} worktree={worktree} version={repository.readVersion || ''} ready={ready} fetchActions={fetchActions}
+    rowControl: (repository, worktree, ready) => <BranchControl key={JSON.stringify([workspaceId, repository.id, worktree.worktreeId])} workspaceId={workspaceId} repository={repository} worktree={worktree} version={repository.readVersion || ''} ready={ready && !syncing(repository)}
       onOpenPosition={worktreeId => openPosition(repository.id, worktreeId, 'history')} onViewChanges={() => openPosition(repository.id, worktree.worktreeId, 'changes')} />,
+    rowActions: fetchActions && syncActions ? (repository, worktree, ready) => <SourceControlWorktreeMenu sourceKey={JSON.stringify([key(repository, worktree), worktree.branch, worktree.head])} open={openMenu === key(repository, worktree)} onOpenChange={next => setOpenMenu(previous => next ? key(repository, worktree) : previous === key(repository, worktree) ? '' : previous)} repositoryName={repository.name} worktreeName={worktree.isMain ? '主工作树' : worktree.name} ready={ready && worktree.status !== 'offline' && Boolean(repository.gitId && repository.checkoutId)} fetching={Boolean(fetchActions.pending[repository.id])} syncing={syncing(repository)} onFetch={() => {void fetchActions.run([repository]);}} onSync={() => {void syncActions.run(repository, worktree);}} /> : undefined,
+    syncAction: syncActions ? (repository, worktree) => ({pending:syncing(repository) || Boolean(fetchActions?.pending[repository.id]), run:() => {if (!fetchActions?.pending[repository.id]) void syncActions.run(repository, worktree);}}) : undefined,
+    viewChanges:(repositoryId, worktreeId) => openPosition(repositoryId, worktreeId, 'changes'),
     historyControls(repository, worktree, controls) {
       const id = key(repository, worktree), current = range(repository, worktree);
       return <HistoryControls key={id} workspaceId={workspaceId} repository={repository} worktree={worktree} version={repository.readVersion || ''} {...current} query={controls.query}

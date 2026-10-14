@@ -1,7 +1,16 @@
-import type { CodeBranchSwitchResponse, CodeFetchResponse } from './api/code-api';
+import type { CodeBranchSwitchResponse, CodeFetchResponse, CodeSyncResponse } from './api/code-api';
 
-export type SourceControlChangeNotice = { workspaceId: string; repositoryId: string; worktreeId?: string; result?: CodeBranchSwitchResponse; fetchResults?: CodeFetchResponse['repositories']; repositoryIds?:string[]; fetchSequences?:Record<string, number> };
+export type SourceControlChangeNotice = { workspaceId: string; repositoryId: string; worktreeId?: string; result?: CodeBranchSwitchResponse; fetchResults?: CodeFetchResponse['repositories']; repositoryIds?:string[]; fetchSequences?:Record<string, number>; syncResult?:CodeSyncResponse; syncError?:string; syncSequence?:number };
 const changes = new EventTarget();
+let syncSequence = 0;
+const syncSequences = new Map<string, number>();
+const syncKey = (workspaceId: string, repositoryId: string, worktreeId: string) => JSON.stringify([workspaceId, repositoryId, worktreeId]);
+export function beginSourceControlSync(workspaceId: string, repositoryId: string, worktreeId: string) {
+  const sequence = ++syncSequence; syncSequences.set(syncKey(workspaceId, repositoryId, worktreeId), sequence); return sequence;
+}
+export function isCurrentSourceControlSync(notice: SourceControlChangeNotice) {
+  return notice.worktreeId && notice.syncSequence !== undefined && notice.syncSequence === syncSequences.get(syncKey(notice.workspaceId, notice.repositoryId, notice.worktreeId));
+}
 let fetchSequence = 0;
 const fetchSequences = new Map<string, number>();
 const fetchKey = (workspaceId: string, repositoryId: string) => JSON.stringify([workspaceId, repositoryId]);

@@ -269,6 +269,10 @@ test('commit-context HTTP traverses the real bounded worker and resolves the reg
   try {
     const response = await createCodeHttpContribution(code).handle({ request: { method: 'GET' }, root, suffix: '/code/commit-context', searchParams: new URLSearchParams(location), submitTaskRead: (operation, taskId, input) => executor.run(operation, { targetRoot: root, taskId, ...input }) });
     assert.equal(response?.status, 200); assert.equal(response?.body.revision, expected.revision); assert.equal(response?.body.source.worktreeId, tree.worktreeId); assert.equal(response?.body.hasChanges, true);
+    const syncContext = code.syncContext(root, location);
+    const syncResponse = await createCodeHttpContribution(code).handle({ request: { method: 'GET' }, root, suffix: '/code/sync-context', searchParams: new URLSearchParams(location), submitTaskRead: (operation, taskId, input) => executor.run(operation, { targetRoot: root, taskId, ...input }) });
+    assert.equal(syncResponse?.status, 200); assert.equal(syncResponse?.body.revision, syncContext.revision); assert.equal(syncResponse?.body.source.worktreeId, tree.worktreeId); assert.equal(syncResponse?.body.available, false);
+    assert.throws(() => executor.run('code-sync', { targetRoot: root, taskId: 'code-files', input: JSON.stringify(location) }), (error: { code: string }) => error.code === 'local_app_read_operation_forbidden');
     assert.throws(() => executor.run('code-commit-changes', { targetRoot: root, taskId: 'code-files', input: JSON.stringify(location) }), (error: { code: string }) => error.code === 'local_app_read_operation_forbidden');
   } finally { await executor.close(); }
 });

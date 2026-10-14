@@ -21,6 +21,7 @@ const operations: Readonly<Record<string, Readonly<{ capability: string; method:
   'code-editor-file': Object.freeze({capability:CODE_APPLICATION,method:'editorFile',fields:['input']}),
   'code-search': Object.freeze({capability:CODE_APPLICATION,method:'search',fields:['input']}),
   'code-source-control': Object.freeze({capability:CODE_APPLICATION,method:'sourceControl',fields:['input']}),
+  'code-sync-context': Object.freeze({capability:CODE_APPLICATION,method:'syncContext',fields:['input']}),
   'code-commit-context': Object.freeze({capability:CODE_APPLICATION,method:'commitContext',fields:['input']}),
   'code-branches': Object.freeze({capability:CODE_APPLICATION,method:'branches',fields:['input']}),
   'code-authors': Object.freeze({capability:CODE_APPLICATION,method:'authors',fields:['input']}),

@@ -112,3 +112,36 @@ test('旧获取请求后返回仍通知重新观察，但不能回退新实例�
     assert.deepEqual(currentSourceControlFetchResults(notices[0]).map(item => item.status), ['succeeded'], '同名代码库在其他工作空间独立排序');
   } finally {unsubscribe(); delete globalThis.__branchApi;}
 });
+
+test('同步按原来源通知新页面，迟到结果不能覆盖较新动作或其他工作空间', async () => {
+  const {isCurrentSourceControlSync} = await import('../src/features/code/source-control-events.ts');
+  const pending = [], notices = [], requests = [];
+  globalThis.__branchApi = (...request) => {requests.push(request); return new Promise(resolve => pending.push(resolve));};
+  const input = {repositoryId:'repo', worktreeId:'tree', expectedRevision:'observed-sync'};
+  const result = status => ({source:{repositoryId:'repo', worktreeId:'tree'}, status, message:status});
+  const old = codeApi.sync('original-workspace', input), newer = codeApi.sync('original-workspace', input);
+  const unsubscribe = subscribeSourceControlChanges(notice => notices.push(notice));
+  try {
+    pending[1](result('succeeded')); await newer;
+    pending[0](result('failed')); await old;
+    assert.deepEqual(notices.map(notice => [notice.workspaceId, notice.repositoryId, notice.worktreeId, isCurrentSourceControlSync(notice)]), [['original-workspace', 'repo', 'tree', true], ['original-workspace', 'repo', 'tree', false]]);
+    assert.deepEqual(JSON.parse(requests[0][1].body), input); assert.equal(requests[0][1].signal, undefined, '已发同步写入不随发起页面撤销');
+    const other = codeApi.sync('another-workspace', input); pending[2](result('failed')); await other;
+    assert.equal(isCurrentSourceControlSync(notices[0]), true, '另一工作空间的同名来源不改变排序');
+  } finally {unsubscribe(); delete globalThis.__branchApi;}
+});
+
+test('同步失联或来源不匹配只发布未知结果并核对原来源，不自动重发', async () => {
+  const notices = [], unsubscribe = subscribeSourceControlChanges(notice => notices.push(notice)); let requests = 0;
+  const input = {repositoryId:'repo', worktreeId:'tree', expectedRevision:'observed-sync'};
+  globalThis.__branchApi = async () => {requests++; throw new Error('connection lost');};
+  try {
+    await assert.rejects(codeApi.sync('original-workspace', input), /connection lost/);
+    assert.equal(requests, 1); assert.match(notices[0].syncError, /结果尚未确认/);
+    assert.equal(notices[0].workspaceId, 'original-workspace'); assert.equal(notices[0].repositoryId, 'repo'); assert.equal(notices[0].worktreeId, 'tree');
+    assert.equal(notices[0].syncResult, undefined);
+    globalThis.__branchApi = async () => {requests++; return {source:{repositoryId:'other', worktreeId:'tree'}, status:'succeeded'};};
+    await assert.rejects(codeApi.sync('original-workspace', input), /来源不匹配/);
+    assert.equal(requests, 2); assert.equal(notices[1].syncResult, undefined); assert.match(notices[1].syncError, /来源不匹配/);
+  } finally {unsubscribe(); delete globalThis.__branchApi;}
+});

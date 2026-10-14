@@ -21,8 +21,11 @@ export type { SourceControlChange, SourceControlCommit, SourceControlRepository,
 
 export type SourceControlBranchExtension = {
   historyRange(repository: SourceControlRepository, worktree: SourceControlWorktree): {branch?: string; authorEmail?: string};
+  viewChanges?(repositoryId:string, worktreeId:string):void;
   selection?: {key: string; repositoryId: string; worktreeId: string; scene: 'changes' | 'history'};
   rowControl(repository: SourceControlRepository, worktree: SourceControlWorktree, ready: boolean): ReactNode;
+  rowActions?(repository: SourceControlRepository, worktree: SourceControlWorktree, ready: boolean): ReactNode;
+  syncAction?(repository: SourceControlRepository, worktree: SourceControlWorktree): {pending: boolean; run(): void};
   historyControls(repository: SourceControlRepository, worktree: SourceControlWorktree, controls: {query: string; clearSearch(): void}): ReactNode;
 };
 
@@ -179,7 +182,7 @@ export function SourceControlWorkbench({ repositories, scene, reader, readKey, o
         first={<div className="source-control-catalog-pane">
         {catalogFeedback}
         <SourceControlRepositoryTree repositories={repositories} ready={Boolean(observation.readAt)} active={catalogExpanded && !readingExpanded} expanded={expanded} onToggle={toggle}
-          selectedWorktreeKey={selectedIdentity} onPick={pickWorktree} onOpenTask={onOpenTask} renderWorktreeControl={branchExtension?.rowControl} />
+          selectedWorktreeKey={selectedIdentity} onPick={pickWorktree} onOpenTask={onOpenTask} renderWorktreeControl={branchExtension?.rowControl} renderWorktreeActions={branchExtension?.rowActions} syncAction={branchExtension?.syncAction} />
         {task && <div className="source-control-task-origin" data-prototype-position="task-link"><span>来自任务 · {task.title}</span><Button type="link" size="small" onClick={() => onOpenTask(task.id)}>返回任务 <ArrowRightOutlined /></Button></div>}
         </div>}
         second={<div className="source-control-browser">      <div className="source-control-browse-tabs"><Segmented block value={history ? 'history' : 'changes'} options={[{ label: '未提交变更', value: 'changes' }, { label: '提交历史', value: 'history' }]} onChange={value => changeScene(value as SourceControlScene)} /></div>

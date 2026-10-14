@@ -57,7 +57,7 @@ export async function runSourceControlActionsJourney({t, page, workspaceUrl, cap
         const drawer = page.locator('.agent-registry-drawer:visible');
         assert.equal(await drawer.getByRole('button', {name: '设为默认智能体 Codex', exact: true}).getAttribute('aria-pressed'), 'true');
         const detail = await openDetails(drawer);
-        await detail.getByText(/一次性生成不积累聊天历史。/u).waitFor({state: 'visible'});
+        await detail.getByText(/一次性生成不积累对话历史。/u).waitFor({state: 'visible'});
         await capture(page, 'source-control-global-agent-registry.png');
         await drawer.getByRole('button', {name: '关闭智能体', exact: true}).click();
         const panel = root().locator('.source-control-commit-panel'), input = panel.getByRole('textbox', {name: '提交说明内容', exact: true});

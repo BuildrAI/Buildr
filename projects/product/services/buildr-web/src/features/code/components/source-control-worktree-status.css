@@ -1,8 +1,8 @@
-.source-control-worktree-status { display:flex; flex:none; align-items:center; }
-.source-control-status-button.ant-btn { display:inline-flex; height:28px; align-items:center; gap:5px; min-width:18px; padding:0 1px; color:var(--soft-muted); font-size:11px; }
+.source-control-worktree-status { display:flex; gap:4px; flex:none; align-items:center; }
+:is(.source-control-status-button,.source-control-sync-button).ant-btn { display:inline-flex; height:28px; align-items:center; gap:5px; min-width:18px; padding:0 1px; color:var(--soft-muted); font-size:11px; }
 .source-control-status-button.is-clean { color:var(--soft-primary); }
-.source-control-status-button .anticon { font-size:13px; }
-.source-control-status-button:focus-visible { outline:2px solid var(--soft-primary); outline-offset:1px; }
+:is(.source-control-status-button,.source-control-sync-button) .anticon { font-size:13px; }
+:is(.source-control-status-button,.source-control-sync-button):focus-visible { outline:2px solid var(--soft-primary); outline-offset:1px; }
 .source-control-status-count,.source-control-status-unknown { display:inline-flex; align-items:center; gap:1px; font-variant-numeric:tabular-nums; white-space:nowrap; }
 .source-control-status-number { white-space:nowrap; }
 .source-control-status-button .is-untracked { position:relative; }
@@ -12,3 +12,5 @@
 .source-control-status-details dt,.source-control-status-details p { color:var(--soft-muted); }
 .source-control-status-details dd { margin:0; }
 .source-control-status-details p { font-size:11px; margin:0; }
+
+.source-control-sync-tooltip { pointer-events:none; }

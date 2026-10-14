@@ -41,12 +41,17 @@ export type TreeProps = FoldProps & {
   repositories: SourceControlRepository[]; ready: boolean; active: boolean; selectedWorktreeKey: string;
   onPick(repository: SourceControlRepository, worktree: SourceControlWorktree): void; onOpenTask(taskId: string): void;
   renderWorktreeControl?(repository: SourceControlRepository, worktree: SourceControlWorktree, ready: boolean): ReactNode;
+  renderWorktreeActions?(repository: SourceControlRepository, worktree: SourceControlWorktree, ready: boolean): ReactNode;
+  syncAction?(repository: SourceControlRepository, worktree: SourceControlWorktree): {pending: boolean; run(): void};
 };
-export function SourceControlRepositoryTree({repositories, ready, active, selectedWorktreeKey, onPick, onOpenTask, renderWorktreeControl, ...fold}: TreeProps) {
-  const hasWorktreeActions = Boolean(renderWorktreeControl);
+export function SourceControlRepositoryTree({repositories, ready, active, selectedWorktreeKey, onPick, onOpenTask, renderWorktreeControl, renderWorktreeActions, syncAction, ...fold}: TreeProps) {
+  const hasWorktreeActions = Boolean(renderWorktreeControl || renderWorktreeActions);
   function worktreeControl(repository: SourceControlRepository, worktree: SourceControlWorktree) {
-    if (renderWorktreeControl) return <span className="source-control-row-action-slot" data-prototype-position="worktree-row-actions" onClick={event => event.stopPropagation()}>{renderWorktreeControl(repository, worktree, ready)}</span>;
+    if (renderWorktreeControl) return <span className="source-control-row-branch-slot" data-prototype-position="worktree-row-branch" onClick={event => event.stopPropagation()}>{renderWorktreeControl(repository, worktree, ready)}</span>;
     return null;
+  }
+  function worktreeActions(repository: SourceControlRepository, worktree?: SourceControlWorktree) {
+    return renderWorktreeActions && <span className="source-control-row-action-slot" data-prototype-position="worktree-row-actions" onClick={event => event.stopPropagation()}>{worktree && renderWorktreeActions(repository, worktree, ready)}</span>;
   }
   return <section className={'source-control-repositories' + (hasWorktreeActions ? ' has-worktree-actions' : '')} data-prototype-position="repositories">
     <div className="source-control-repository-tree-scroll" aria-label="代码库与工作树列表">
@@ -57,20 +62,20 @@ export function SourceControlRepositoryTree({repositories, ready, active, select
       return <section key={repository.id} data-source-repository={repository.id}>
       <div className={'source-control-repository' + (main && selectedWorktreeKey === sourceControlWorktreeKey(repository.id, main.worktreeId) ? ' is-selected' : '')} data-source-worktree={main?.worktreeId}>
         <button type="button" className="source-control-fold source-control-repository-fold" aria-label={(isOpen ? '折叠' : '展开') + '代码库 ' + repository.name} aria-expanded={isOpen} onClick={() => fold.onToggle(group)}><span className="source-control-repository-chevron" aria-hidden="true">{isOpen ? <DownOutlined /> : <RightOutlined />}</span><BookOutlined /></button>
-        <WorktreeLocationCard repository={repository} worktree={main}><button type="button" className="source-control-repository-copy" disabled={!main} onClick={() => main && onPick(repository, main)} aria-label={'查看主工作树 · ' + repository.name} aria-pressed={Boolean(main && selectedWorktreeKey === sourceControlWorktreeKey(repository.id, main.worktreeId))}>
+        <div className="source-control-row-copy"><WorktreeLocationCard repository={repository} worktree={main}><button type="button" className="source-control-repository-copy" disabled={!main} onClick={() => main && onPick(repository, main)} aria-label={'查看主工作树 · ' + repository.name} aria-pressed={Boolean(main && selectedWorktreeKey === sourceControlWorktreeKey(repository.id, main.worktreeId))}>
           <strong>{repository.name}{repository.simulated && <small>模拟</small>}</strong>
-        </button></WorktreeLocationCard>
-        <SourceControlWorktreeStatus worktree={main} name={repository.name} visible={active} /><TaskLink worktree={main} onOpenTask={onOpenTask} />
-        {hasWorktreeActions && (main ? worktreeControl(repository, main) : <span className="source-control-row-action-slot" />)}
+        </button></WorktreeLocationCard>{main && worktreeControl(repository, main)}</div>
+        <SourceControlWorktreeStatus worktree={main} name={repository.name} visible={active} syncAction={main && syncAction?.(repository, main)} /><TaskLink worktree={main} onOpenTask={onOpenTask} />
+        {worktreeActions(repository, main)}
       </div>
       <div hidden={!isOpen} className="source-control-worktree-children">
         {children.map(worktree => <div key={worktree.worktreeId} data-source-worktree={worktree.worktreeId}>
           <div className={'source-control-worktree' + (selectedWorktreeKey === sourceControlWorktreeKey(repository.id, worktree.worktreeId) ? ' is-selected' : '')}>
             <span className="source-control-worktree-icon" aria-hidden="true"><BranchesOutlined /></span>
-            <WorktreeLocationCard repository={repository} worktree={worktree}><button type="button" className="source-control-repository-copy" onClick={() => onPick(repository, worktree)} aria-label={'查看工作树 ' + worktreeLabel(worktree) + ' · ' + repository.name} aria-pressed={selectedWorktreeKey === sourceControlWorktreeKey(repository.id, worktree.worktreeId)}>
+            <div className="source-control-row-copy"><WorktreeLocationCard repository={repository} worktree={worktree}><button type="button" className="source-control-repository-copy" onClick={() => onPick(repository, worktree)} aria-label={'查看工作树 ' + worktreeLabel(worktree) + ' · ' + repository.name} aria-pressed={selectedWorktreeKey === sourceControlWorktreeKey(repository.id, worktree.worktreeId)}>
               <strong>{worktreeLabel(worktree)}</strong>
-            </button></WorktreeLocationCard><SourceControlWorktreeStatus worktree={worktree} name={worktreeLabel(worktree)} visible={active && isOpen} /><TaskLink worktree={worktree} onOpenTask={onOpenTask} />
-            {hasWorktreeActions && worktreeControl(repository, worktree)}
+            </button></WorktreeLocationCard>{worktreeControl(repository, worktree)}</div><SourceControlWorktreeStatus worktree={worktree} name={worktreeLabel(worktree)} visible={active && isOpen} syncAction={syncAction?.(repository, worktree)} /><TaskLink worktree={worktree} onOpenTask={onOpenTask} />
+            {worktreeActions(repository, worktree)}
           </div>
         </div>)}
       </div>

@@ -7,7 +7,7 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
   const focus = process.env.BUILDR_SOURCE_CONTROL_FOCUS || '';
   const selectedCases: string[] = [];
   const scenario = async (name: string, action: () => Promise<void>) => {
-    if (focus && !focus.split('|').some(part => part && name.includes(part))) return;
+    if (focus && focus !== 'all' && !focus.split('|').some(part => part && name.includes(part))) return;
     selectedCases.push(name); await t.test(name, action);
   };
   const root = () => page.locator('.code-source-control-page:visible');
@@ -26,11 +26,13 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     assert.deepEqual(counts, Object.entries(expected).filter(([, count]) => typeof count === 'number' && count > 0).map(([kind, count]) => ({kind, count})), '目录只常驻实际非零数量，零值可在状态详情查看');
   };
   const assertStatusDetails = async (status: any, remote: string, files: string) => {
-    await status.click(); const details = statusDetails(); await details.waitFor();
+    const button = await status.evaluate((element:HTMLElement) => element.matches('button')) ? status : status.locator('.source-control-status-button');
+    if (!await button.count()) {assert.ok((await status.locator('.source-control-sync-button').getAttribute('aria-label')).includes(remote), '无文件差异时箭头入口说明远程状态'); return;}
+    await button.click(); const details = statusDetails(); await details.waitFor();
     assert.equal(await details.locator('dd').nth(0).innerText(), remote);
     assert.equal(await details.locator('dd').nth(1).innerText(), files);
-    await status.press('Escape'); await details.waitFor({state: 'hidden'});
-    assert.equal(await status.getAttribute('aria-expanded'), 'false');
+    await button.press('Escape'); await details.waitFor({state: 'hidden'});
+    assert.equal(await button.getAttribute('aria-expanded'), 'false');
   };
   const assertLocationCopyRows = async (details: any) => {
     const values = details.locator('dd');
@@ -156,11 +158,29 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     const pathname = new URL(page.url()).pathname, owner = new URL(workspaceUrl).pathname + '/tasks';
     assert.ok(pathname === owner || pathname === owner + '/browser-task', '同一任务仍在任务领域内查看');
   };
-  const fullText = async () => root().locator('.repository-source-code .cm-line').evaluateAll((elements: HTMLElement[]) => elements.map(element => element.textContent).join('\n'));
+  // CodeMirror renders a viewport. Read every actual numbered line by scrolling,
+  // then restore the user's position instead of requiring the whole document in DOM.
+  const readOnlyText = async (code:any) => {
+    await code.locator('.cm-scroller').waitFor();
+    return code.evaluate(async (element:HTMLElement) => {
+      const scroller = element.querySelector<HTMLElement>('.cm-scroller')!, originalTop = scroller.scrollTop;
+      const lines = new Map<number,string>();
+      const rendered = async () => {await new Promise(requestAnimationFrame); await new Promise(requestAnimationFrame);};
+      try {
+        scroller.scrollTop = 0; await rendered();
+        for (let step = 0; step < 1000; step++) {
+          for (const line of element.querySelectorAll<HTMLElement>('.cm-line[data-line]')) lines.set(Number(line.dataset.line), line.textContent || '');
+          if (scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 1) break;
+          scroller.scrollTop += Math.max(1, scroller.clientHeight * 0.7); await rendered();
+        }
+      } finally {scroller.scrollTop = originalTop; await rendered();}
+      return [...lines].sort(([a], [b]) => a - b).map(([number, text], index) => number === index + 1 ? text : '[missing rendered line ' + (index + 1) + ']').join('\n');
+    });
+  };
+  const fullText = async () => readOnlyText(root().locator('.repository-source-code'));
   const waitFull = async (text: string) => {
-    await root().locator('.repository-source-code').waitFor();
-    await page.waitForFunction((expected: string) => Array.from(document.querySelectorAll('.code-source-control-page:not([hidden]) .repository-source-code .cm-line')).map(element => element.textContent).join('\n') === expected, text);
-    assert.equal(await fullText(), text);
+    await root().locator('.repository-source-code .cm-line').first().waitFor();
+    assert.equal(await fullText(), text, '滚动读取的完整只读正文保持精确来源与全部行');
   };
   const commitRow = (hash: string) => root().locator('.source-control-graph > li[data-source-commit="' + hash + '"]');
   const openCommitFile = async (hash: string, filePath: string) => {
@@ -628,7 +648,7 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     await reader.getByRole('region', {name: '差异内容', exact: true}).getByText('explorerAnswer = 1', {exact: false}).waitFor();
     await reader.getByRole('button', {name: '查看完整文件', exact: true}).click();
     await page.locator('.repository-source-code').waitFor();
-    assert.equal(await page.locator('.repository-source-code code').evaluateAll((elements: HTMLElement[]) => elements.map(element => element.textContent).join('\n')), fixture.historyText);
+    assert.equal(await readOnlyText(page.locator('.repository-source-code:visible')), fixture.historyText);
     await page.getByRole('button', {name: '返回任务', exact: true}).click(); await reader.waitFor();
     await assertTaskIdentity();
     assert.ok((await reader.getByRole('region', {name: '差异内容', exact: true}).innerText()).includes('explorerAnswer = 1'));
@@ -692,7 +712,7 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     assert.equal(repository.fileCount, repository.worktrees.reduce((total: number, worktree: any) => total + worktree.fileCount, 0), '同一路径在不同工作树独立计数');
     const rendered = root().locator('[data-source-repository="' + repository.id + '"]');
     for (const value of repository.worktrees) assert.equal(await rendered.locator('[data-source-worktree="' + value.worktreeId + '"]').count(), 1);
-    assert.equal(await rendered.locator('.source-control-status-button').count(), repository.worktrees.length, '主工作树与每个子工作树各有一个可操作的状态入口');
+    assert.equal(await rendered.locator('.source-control-worktree-status').count(), repository.worktrees.length, '主工作树与每个子工作树各有独立状态区域');
     assert.equal(await root().locator('.source-control-task-slot:empty:visible').count(), 0, '没有关联任务时不保留空任务位置');
     const hierarchy = await rendered.evaluate((element: HTMLElement) => {
       const parent = element.querySelector('.source-control-repository-copy strong')!.getBoundingClientRect().left;
@@ -705,7 +725,7 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
       const worktree = owner.worktrees.find((item: any) => item.location === expected.location);
       assert.deepEqual([worktree.ahead, worktree.behind], [expected.ahead, expected.behind], '真实本机裸远程推送/抓取后的生产接口数量');
       assert.ok(worktree.upstream?.startsWith('status-fixture/'));
-      const status = root().locator('[data-source-repository="' + owner.id + '"] [data-source-worktree="' + worktree.worktreeId + '"] .source-control-status-button');
+      const status = root().locator('[data-source-repository="' + owner.id + '"] [data-source-worktree="' + worktree.worktreeId + '"] .source-control-worktree-status');
       const remote = `未推送 ${expected.ahead} 个提交，落后远程跟踪记录 ${expected.behind} 个提交`;
       assert.equal(await status.getAttribute('data-remote-state'), expected.ahead === 0 && expected.behind === 0 ? 'clean' : 'changed');
       assert.ok((await status.getAttribute('aria-label')).includes(remote));
@@ -717,7 +737,7 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     }
     const cleanOwner = observed.repositories.find((item: any) => item.worktrees.some((worktree: any) => worktree.location === fixture.cleanLocation));
     const clean = cleanOwner.worktrees.find((item: any) => item.location === fixture.cleanLocation); assert.equal(clean.fileCount, 0);
-    const cleanStatus = root().locator('[data-source-repository="' + cleanOwner.id + '"] [data-source-worktree="' + clean.worktreeId + '"] .source-control-status-button');
+    const cleanStatus = root().locator('[data-source-repository="' + cleanOwner.id + '"] [data-source-worktree="' + clean.worktreeId + '"] .source-control-worktree-status');
     assert.equal(await cleanStatus.getAttribute('data-file-state'), 'clean');
     assert.ok((await cleanStatus.getAttribute('aria-label')).includes('没有未提交文件'));
     assert.equal(await cleanStatus.locator('[data-status-kind="files"],.anticon-file').count(), 0, '文件零值不单独占用图标或数量位置');
@@ -743,12 +763,12 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
         assert.ok(sidebar && Math.abs(sidebar.width - Number.parseInt(width)) <= 2, '本轮测量实际目录宽度：' + JSON.stringify({width, sidebar}));
         for (const remote of expected.remote) {
           const worktree = observedLocation(remote.location);
-          const status = root().locator('[data-source-worktree="' + worktree.worktreeId + '"] .source-control-status-button');
+          const status = root().locator('[data-source-worktree="' + worktree.worktreeId + '"] .source-control-worktree-status');
           await assertStatusCounts(status, {ahead: remote.ahead, behind: remote.behind, files: worktree.fileCount});
         }
         for (const files of expected.files) {
           const worktree = observedLocation(files.location);
-          const status = root().locator('[data-source-worktree="' + worktree.worktreeId + '"] .source-control-status-button');
+          const status = root().locator('[data-source-worktree="' + worktree.worktreeId + '"] .source-control-worktree-status');
           assert.deepEqual(await status.locator('[data-status-kind="files"] .source-control-status-number').allTextContents(), files.count > 0 ? [String(files.count)] : []);
         }
         const geometry = await root().locator('.source-control-repository-tree-scroll .source-control-repository,.source-control-repository-tree-scroll .source-control-worktree').evaluateAll((elements: HTMLElement[]) => {
@@ -759,12 +779,13 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
             return {text: element.textContent, left: box.left, right: box.right, lines: range.getClientRects().length};
           };
           return elements.map(row => {
-            const name = row.querySelector('.source-control-repository-copy')!, status = row.querySelector('.source-control-status-button')!;
+            const name = row.querySelector('.source-control-repository-copy')!, status = row.querySelector('.source-control-worktree-status')!;
             const controls = [...row.querySelectorAll(':scope > .source-control-task-slot,:scope > .source-control-row-action-slot')].map(bounds).filter(box => box.width > 0);
-            const branch = row.querySelector(':scope > .source-control-row-action-slot');
+            const branch = row.querySelector('.source-control-row-branch-slot');
+            const menu = row.querySelector(':scope > .source-control-row-action-slot');
             return {
               label: name.textContent, row: bounds(row), name: bounds(name), status: bounds(status),
-              controls, branch: branch ? bounds(branch) : null,
+              controls, branch: branch ? bounds(branch) : null, menu:menu ? bounds(menu) : null,
               parts: [...status.children].map(bounds),
               counts: [...status.querySelectorAll('.source-control-status-count')].map(count => ({kind: count.getAttribute('data-status-kind'), box: bounds(count), icon: bounds(count.querySelector('.anticon > svg')!), number: textBounds(count.querySelector('.source-control-status-number'))!})),
             };
@@ -773,8 +794,9 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
         assert.ok(geometry.every((row: any) => row.name.width >= 48), '多位数量下名称仍保留可辨认空间：' + JSON.stringify(geometry));
         assert.ok(geometry.every((row: any) => [row.name, row.status, ...row.controls].every((box: any) => box.left >= row.row.left - 1 && box.right <= row.row.right + 1)), '名称、状态和操作均位于所属目录行边界内：' + JSON.stringify(geometry));
         assert.ok(geometry.every((row: any) => [row.name, row.status, ...row.controls].every((box: any, index: number, boxes: any[]) => boxes.slice(index + 1).every(next => box.right <= next.left + 1 || next.right <= box.left + 1 || box.bottom <= next.top + 1 || next.bottom <= box.top + 1))), '数量同行或局部下移均不能覆盖名称和相邻操作');
-        const branches = geometry.map((row: any) => row.branch).filter(Boolean);
-        assert.ok(branches.every((box: any) => Math.abs(box.right - branches[0].right) <= 1), '提供分支入口时各行右沿保持稳定');
+        const menus = geometry.map((row: any) => row.menu).filter(Boolean);
+        assert.ok(menus.every((box: any) => Math.abs(box.right - menus[0].right) <= 1 && Math.abs(box.width - 24) <= 1), '三个点操作入口固定等宽并在各行右沿对齐');
+        assert.ok(geometry.every((row:any) => !row.branch || row.branch.width >= 24 && row.name.right <= row.branch.left + 1 && row.branch.right <= row.menu.left + 1 && (row.branch.right <= row.status.left + 1 || row.branch.bottom <= row.status.top + 1 || row.status.bottom <= row.branch.top + 1)), '分支紧随名称且不覆盖状态或末尾操作：' + JSON.stringify({width, rows:geometry}));
         assert.ok(geometry.every((row: any) => row.parts.every((box: any, index: number) => box.left >= row.status.left - 1 && box.right <= row.status.right + 1 && row.parts.slice(index + 1).every((next: any) => box.right <= next.left + 1 || next.right <= box.left + 1))), '状态标记与各项数量不重叠或越过入口边界');
         assert.ok(geometry.every((row: any) => row.counts.every((count: any) => count.number.lines === 1 && Number(count.number.text) > 0 && count.icon.right < count.number.left && count.number.right <= count.box.right + 1)), '一／二／三位数字保持单行并与对应图标分开');
         process.stderr.write('[source-control-compact-status] ' + JSON.stringify({width,rows:geometry}) + '\n');
@@ -864,7 +886,14 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     await details.waitFor({state:'hidden'});
     assert.equal(await statusButton.getAttribute('aria-expanded'), 'false', '键盘折叠整体目录关闭状态详情');
     await root().getByRole('button', {name:'展开代码库列表', exact:true}).press('Enter'); await statusButton.focus();
-    await statusButton.press('Shift+Tab');
+    const syncButton = catalogWorktree.locator('.source-control-sync-button'), branchButton = catalogWorktree.locator('.source-control-row-action-button');
+    if (await syncButton.count()) {
+      await statusButton.press('Shift+Tab');
+      assert.equal(await syncButton.evaluate((element:HTMLElement) => document.activeElement === element && element.matches(':focus-visible')), true, '文件状态之前是独立同步快捷入口');
+      await syncButton.press('Shift+Tab');
+    } else await statusButton.press('Shift+Tab');
+    assert.equal(await branchButton.evaluate((element:HTMLElement) => document.activeElement === element && element.matches(':focus-visible')), true, '分支名称保持独立键盘入口');
+    await branchButton.press('Shift+Tab');
     const focusState = () => sourceName.evaluate((element: HTMLElement) => ({active: document.activeElement === element, focusVisible: element.matches(':focus-visible'), activeLabel: document.activeElement?.getAttribute('aria-label')}));
     const initialFocus = await focusState();
     assert.ok(initialFocus.active && initialFocus.focusVisible, '键盘Tab能回到工作树名称并呈现键盘焦点：' + JSON.stringify(initialFocus));
@@ -878,7 +907,7 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     await capture(page, 'source-control-fixture-worktree-keyboard-hover.png');
     await closeHover(locationInfo); await narrowSeparator.dblclick();
     assert.equal(await taskIcon.locator('.anticon-project').count(), 1);
-    assert.equal(await statusButton.locator('[data-status-kind="ahead"] .anticon-arrow-up,[data-status-kind="behind"] .anticon-arrow-down').count(), [alpha.observed.ahead, alpha.observed.behind].filter((count: number) => count > 0).length, '真实分叉的非零远程数量使用对应箭头，与任务项目图标区分');
+    assert.equal(await catalogWorktree.locator('.source-control-worktree-status [data-status-kind="ahead"] .anticon-arrow-up,.source-control-worktree-status [data-status-kind="behind"] .anticon-arrow-down').count(), [alpha.observed.ahead, alpha.observed.behind].filter((count: number) => count > 0).length, '真实分叉的非零远程数量使用对应箭头，与任务项目图标区分');
     await taskIcon.hover(); await page.getByRole('tooltip', {name: '任务：浏览器任务', exact: true}).waitFor();
     assert.equal(await root().locator('.source-control-context').count(), 0, '浏览区不重复代码库和分支');
     for (const button of [catalogRepository.locator('.source-control-repository-fold')]) {
@@ -1068,7 +1097,9 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
         await root().getByRole('button', {name: '查看当前文件', exact: true}).click();
         const response = await returned; assert.equal(response.status(), 200);
         const current = await response.json(); assert.equal(current.source.checkoutId, value.worktreeId); assert.equal(current.source.location, value.location); assert.equal(current.source.commitHash, null); assert.equal(current.content, value.workingText);
-        const explorer = page.locator('.code-explorer-stage:visible'); await explorer.locator('.repository-source-code').getByText(value.workingText.trim(), {exact: true}).waitFor();
+        const explorer = page.locator('.code-explorer-stage:visible');
+        const editor = explorer.locator('.file-editing-source .cm-line').filter({hasText:value.workingText.trim()}); await editor.waitFor();
+        assert.equal(await editor.textContent(), value.workingText.trim(), '当前文件通过实际编辑器显示对应工作树正文');
         await explorer.getByRole('button', {name: '返回源代码管理', exact: true}).click(); await waitFull(value.historyText);
         await root().getByRole('button', {name: '返回差异', exact: true}).click();
       }

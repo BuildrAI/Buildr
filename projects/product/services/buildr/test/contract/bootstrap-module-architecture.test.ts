@@ -288,7 +288,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     id: 'code',
     requires: [WORKSPACE_APPLICATION, WORKSPACE_QUERY, TASK_QUERY_APPLICATION, TASK_WORKTREE_PROVIDER, AGENT_OPERATIONS_APPLICATION, AGENT_ASSETS_SOURCE_READ],
     provides: [CODE_APPLICATION, CODE_GENERATION_APPLICATION],
-    contributions: {cli:['code repositories','code directory','code file','code search','code source-control','code commit-context','code branches','code authors','code history','code commit','code diff','code source-file'],http:['code.files.http', 'code.generation.http'],diagnostics:[]},
+    contributions: {cli:['code repositories','code directory','code file','code search','code source-control','code commit-context','code sync-context','code branches','code authors','code history','code commit','code diff','code source-file'],http:['code.files.http', 'code.generation.http'],diagnostics:[]},
     lifecycle: 'none',
   }, {
     id: 'connections',
@@ -380,7 +380,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     'agent', 'agent list', 'agent register', 'agent select',
     'dsh', 'dsh link', 'dsh sessions', 'dsh open-task',
     'codex connections', 'codex link', 'codex sessions', 'codex',
-    'code repositories', 'code directory', 'code file', 'code search', 'code source-control', 'code commit-context', 'code branches', 'code authors', 'code history', 'code commit', 'code diff', 'code source-file',
+    'code repositories', 'code directory', 'code file', 'code search', 'code source-control', 'code commit-context', 'code sync-context', 'code branches', 'code authors', 'code history', 'code commit', 'code diff', 'code source-file',
     'connection',
     'project verification inspect', 'project verification validate', 'project verification update',
     'task review inspect', 'task review record',

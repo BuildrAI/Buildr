@@ -2,9 +2,9 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createPortal } from 'react-dom';
 import { MemoryRouter } from 'react-router-dom';
-import { App, Button, ConfigProvider, Drawer, Segmented, Tag } from 'antd';
+import { App, Button, ConfigProvider, Drawer, Dropdown, Segmented, Tag } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
-import { BranchesOutlined, CloudDownloadOutlined, FolderOpenOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons';
+import { BranchesOutlined, CloudDownloadOutlined, MoreOutlined, FolderOpenOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons';
 import { AppShellHeader, AppShellFrame } from '../../app/AppShellView';
 import { AppNavigationItem } from '../../app/AppNavigationItem';
 import { ObjectTabStrip } from '../../components/ObjectTabStrip';
@@ -16,6 +16,7 @@ import { densityRepositories } from './fixtures';
 import { densityReader } from './mock-reader';
 import { LegacyStatus, legacyCatalogColumns } from './LegacyStatus';
 import { MockBranchControl } from './MockBranchControl';
+import { SourceControlWorktreeMenu } from '../../features/code/components/SourceControlWorktreeMenu';
 import scenes from './scenes.json';
 import 'antd/dist/reset.css';
 import '../../styles.css';
@@ -46,15 +47,17 @@ function Preview() {
   const reader = useMemo(() => densityReader(repositories), [repositories]);
   const branches:SourceControlBranchExtension = {historyRange:() => ({}), historyControls:() => null, selection,
     rowControl:(repository, worktree) => <MockBranchControl repository={repository} worktree={worktree} onSwitch={branch => setRepositories(previous => previous.map(item => item.id !== repository.id ? item : {...item, worktrees:item.worktrees.map(tree => tree.worktreeId === worktree.worktreeId ? {...tree,branch} : tree), ...(worktree.isRegistered ? {branch} : {})}))}
-      onPosition={id => setSelection({key:String(Date.now()), repositoryId:repository.id, worktreeId:id, scene:'history'})} />};
+      onPosition={id => setSelection({key:String(Date.now()), repositoryId:repository.id, worktreeId:id, scene:'history'})} />,
+    rowActions:(repository, worktree) => <SourceControlWorktreeMenu repositoryName={repository.name} worktreeName={worktree.name} ready fetching={false} syncing={false} onFetch={() => {void message.success('演示：远程记录已更新。');}} onSync={() => {void message.success('演示：已拉取后推送。');}} />,
+    syncAction:() => ({pending:false, run:() => {void message.success('演示：已拉取后推送。');}})};
   const info = () => {void message.info('交互只影响演示数据。');};
   const narrow = state === 'narrow';
   return <div ref={root} className={'app-shell area-code density-preview density-mode-' + page + (narrow ? ' density-narrow' : '')}>
     <AppShellHeader development brandHref="/" workspaceName="集鲜" workspaceMenuItems={[{key:'demo',label:'集鲜 · 演示',onClick:info}]} area="code" codeHref="/code" workbenchHref="/" workspaceDestination={{to:'/workspace'}}
       actions={<><Tag bordered={false}>交互原型</Tag><Button type="text" icon={<SearchOutlined />} onClick={info} /><Button type="text" onClick={info}>智能体</Button><Button type="primary" icon={<PlusOutlined />} onClick={info}>交给 Agent</Button></>} />
     <AppShellFrame sidebarCollapsed={collapsed} onToggleSidebar={() => setCollapsed(value => !value)} navigation={<nav className="shell-navigation" aria-label="代码导航">
-      <AppNavigationItem name="explorer" label="资源管理器" icon={<FolderOpenOutlined />} to="/explorer" path="/explorer" active={false} onClick={event => {event.preventDefault();info();}} />
       <AppNavigationItem name="source-control" label="源代码管理" icon={<BranchesOutlined />} to="/code" path="/code" active onClick={event => event.preventDefault()} />
+      <AppNavigationItem name="explorer" label="资源管理器" icon={<FolderOpenOutlined />} to="/explorer" path="/explorer" active={false} onClick={event => {event.preventDefault();info();}} />
     </nav>}>
       <section className="workspace-pages density-page"><ObjectTabStrip tabs={[{key:'scm',kind:'svc',title:'源代码管理'}]} active="scm" onActivate={() => {}} closable={false} />
         <div className="density-controls" data-prototype-position="density-controls"><Segmented size="small" aria-label="对照方案" value={page} options={[{value:'current',label:'改造前'},{value:'compact',label:'紧凑'}]} onChange={value => setPage(String(value))} />
@@ -65,7 +68,7 @@ function Preview() {
           <SourceControlWorkbench repositories={repositories} reader={reader} readKey="density-demo" scene={scene} onScene={setScene}
             observation={{loading:false,error:'',readAt:'2026-10-13T12:00:00.000Z',diagnostics:[]}} onRefresh={info} onOpenTask={id => setTask(id)} branchExtension={branches}
             scopeSelection={{key:'density-initial',repositoryIds:['base'],worktrees:[{repositoryId:'base',worktreeId:'demo-base-task'}],reason:'模拟预选'}}
-            catalogActions={<Button type="text" size="small" icon={<CloudDownloadOutlined />} onClick={() => message.success('演示：当前已观察的远程记录已更新。')}>全部获取远程</Button>} />
+            catalogActions={<Dropdown trigger={['click']} menu={{items:[{key:'fetch',label:'全部获取远程',icon:<CloudDownloadOutlined />}],onClick:() => {void message.success('演示：当前已观察的远程记录已更新。');}}}><Button type="text" size="small" icon={<MoreOutlined rotate={90} />} aria-label="源代码管理操作菜单" /></Dropdown>} />
         </div>
       </section>
     </AppShellFrame>

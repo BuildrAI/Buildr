@@ -11,6 +11,7 @@ import { createSourceControlApplication } from './source-control-application.ts'
 import { createCodeBranchApplication } from './code-branch-application.ts';
 import { createCodeCommitApplication } from './code-commit-application.ts';
 import { createCodeFetchApplication } from './code-fetch-application.ts';
+import { createCodeSyncApplication } from './code-sync-application.ts';
 import { createCodeWorktreeReadSession, resolveCodeWorktree } from '../infrastructure/code-worktree-reader.ts';
 import { createFileEditingApplication } from './file-editing-application.ts';
 import type { MarkdownImageContext } from '../../../infrastructure/filesystem/markdown-images.ts';
@@ -172,6 +173,7 @@ export function createCodeApplication(dependencies:CodeDependencies) {
       return createGitCommitReader().repository(dependencies.resolveSourceRoot(root,repository.source)).root;
     }}),
     ...createCodeCommitApplication({ source: (root, input) => source(root, input as CodeInput) }),
+    ...createCodeSyncApplication({ source: (root, input) => source(root, input as CodeInput) }),
     repositories,
     directory:(root:string,input:CodeInput)=>{const current=source(root,input),result=readCodeDirectory(current,input.path||'',Boolean(input.showIgnored));assertReadSource(current);return result;},
     file:async(root:string,input:CodeInput)=>{const current=source(root,input),result=await readCodeFile(current,input.path||'',input);assertReadSource(current);return result;},

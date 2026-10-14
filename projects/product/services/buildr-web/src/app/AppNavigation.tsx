@@ -39,7 +39,7 @@ export function AppNavigation({ onNavigate }: { onNavigate?: () => void }) {
 
   return (
     <nav className="shell-navigation" aria-label={state.area === 'code' ? '代码导航' : state.area === 'workbench' ? '工作台导航' : '工作空间导航'}>
-      {state.area === 'code' ? <>{item('/code/explorer', '资源管理器', 'explorer')}{item('/code/source-control', '源代码管理', 'source-control')}</> : state.area === 'workbench' ? (
+      {state.area === 'code' ? <>{item('/code/source-control', '源代码管理', 'source-control')}{item('/code/explorer', '资源管理器', 'explorer')}</> : state.area === 'workbench' ? (
         <>
           {item('/overview', '概览', 'overview')}
           {item('/tasks', '任务', 'tasks')}

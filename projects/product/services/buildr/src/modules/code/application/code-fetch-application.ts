@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { observeGitCheckoutReadIdentity } from '../../../infrastructure/git/checkout-read-identity.ts';
 import { codeFailure, codeGit, type CodeSource } from '../infrastructure/code-file-reader.ts';
 import { runCodeGitMutation } from '../infrastructure/code-git-mutation-runner.ts';
+import { acquireCodeGitOperation } from '../infrastructure/code-git-operation-lock.ts';
 import { fetchCodeRemoteRefs } from '../infrastructure/code-fetch-refs.ts';
 
 export type CodeFetchStatus = 'succeeded' | 'failed' | 'unavailable' | 'unknown';
@@ -13,7 +14,6 @@ export type CodeFetchResponse = { readAt: string; repositories: CodeFetchReposit
 type Dependencies = { registeredLocation(root: string, repositoryId: string): string; run?: typeof runCodeGitMutation };
 type Remote = { name: string; url: string; refspecs: string[]; valid: boolean };
 type Observation = { target: CodeFetchTarget; source: CodeSource; gitId: string; commonDirectory: string; configuration: string; remoteRevision: string; remotes: Remote[] };
-const inflight = new Set<string>();
 const digest = (value: unknown) => crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const result = (target: CodeFetchTarget, status: CodeFetchStatus, message: string, gitId: string | null = target.expectedGitId, remotes: CodeFetchRemoteResult[] = []): CodeFetchRepositoryResult => ({ repositoryId: target.repositoryId, gitId, status, message, remotes });
 
@@ -64,10 +64,11 @@ export function createCodeFetchApplication(dependencies: Dependencies) {
     if (now.source.location !== observed.source.location || now.configuration !== observed.configuration || now.remoteRevision !== observed.remoteRevision) throw codeFailure('code_fetch_configuration_changed', '来源或远程配置已变化，本次不继续获取；请重新观察。', 409);
   }
   async function fetchGroup(root: string, group: Observation[]): Promise<CodeFetchRepositoryResult[]> {
-    const first = group[0], common = first.commonDirectory;
+    const first = group[0];
     if (group.some(item => item.remoteRevision !== first.remoteRevision)) return group.map(item => result(item.target, 'unavailable', '同一 Git 仓库的登记位置具有不同远程配置，未选择其中一个执行。', item.gitId));
-    if (inflight.has(common)) return group.map(item => result(item.target, 'unavailable', '该 Git 仓库正在获取远程，请等待当前操作结束。', item.gitId));
-    inflight.add(common);
+    let release: () => void;
+    try { release = acquireCodeGitOperation(first.source); }
+    catch { return group.map(item => result(item.target, 'unavailable', '该 Git 仓库正在获取远程或执行其他 Git 操作，请等待当前操作结束。', item.gitId)); }
     const remotes: CodeFetchRemoteResult[] = [];
     try {
       for (const remote of first.remotes) {
@@ -86,7 +87,7 @@ export function createCodeFetchApplication(dependencies: Dependencies) {
       const status: CodeFetchStatus = remotes.some(item => item.status === 'unknown') ? 'unknown' : remotes.some(item => item.status === 'failed') ? 'failed' : remotes.some(item => item.status === 'unavailable') || !remotes.length ? 'unavailable' : 'succeeded';
       const message = !remotes.length ? '没有已配置的远程。' : status === 'succeeded' ? '已获取全部已配置远程，当前分支和未提交内容保留。' : '部分远程尚未完成，请查看各远程结果；已完成的更新保留。';
       return group.map(item => result(item.target, status, message, item.gitId, remotes));
-    } finally { inflight.delete(common); }
+    } finally { release(); }
   }
   async function fetch(root: string, input: CodeFetchInput): Promise<CodeFetchResponse> {
     if (!input || !Array.isArray(input.repositories) || input.repositories.length < 1 || input.repositories.length > 128 || new Set(input.repositories.map(item => item?.repositoryId)).size !== input.repositories.length || input.repositories.some(item => !item || typeof item.repositoryId !== 'string' || !item.repositoryId || !(item.expectedGitId === null || /^sha256-[a-f0-9]{64}$/.test(item.expectedGitId)) || !(item.expectedCheckoutId === null || /^checkout-[a-f0-9]{64}$/.test(item.expectedCheckoutId)))) throw codeFailure('code_fetch_input_invalid', '获取必须指定 1–128 个不同的已观察代码库及 Git 身份。');

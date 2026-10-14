@@ -127,6 +127,14 @@ export async function runSourceControlBranchesJourney({ t, page, workspaceUrl, c
     }
   };
   const noOverflow = async () => assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
+  const operationMenu = (worktree?:any) => page.getByRole('menu', {name:worktree ? '操作菜单 · ' + worktree.repositoryName + ' · ' + (worktree.isMain ? '主工作树' : worktree.name) : '源代码管理操作菜单', exact:true});
+  const openOperations = async (worktree:any) => {
+    await row(worktree).getByRole('button', {name:'操作菜单 · ' + worktree.repositoryName + ' · ' + (worktree.isMain ? '主工作树' : worktree.name), exact:true}).click();
+    await operationMenu(worktree).waitFor(); return operationMenu(worktree);
+  };
+  const fetchOne = async (worktree:any) => {const menu = await openOperations(worktree); await menu.getByRole('menuitem', {name:'获取远程', exact:true}).click();};
+  const fetchAll = async () => {await root().getByRole('button', {name:'源代码管理操作菜单', exact:true}).click(); await operationMenu().getByRole('menuitem', {name:'全部获取远程', exact:true}).click();};
+
 
   await scenario('分支与同名作者组合过滤只读，窄区同排重置恢复当前范围', async () => {
     await fixture.withBranches(async (branches: any) => {
@@ -154,9 +162,11 @@ export async function runSourceControlBranchesJourney({ t, page, workspaceUrl, c
         assert.ok(controls.scrollWidth <= controls.width + 1 && controls.parts.every((part: any) => part.left >= controls.left - 1 && part.right <= controls.right + 1), '窄列表筛选操作全部可达：' + JSON.stringify(controls));
         assert.ok(controls.parts.every((part: any) => Math.abs(part.top - controls.parts[0].top) <= 3), '重置始终与范围和作者同排');
         const branchButton = row(worktree).locator('.source-control-row-action-button'), bounds = await branchButton.boundingBox();
-        assert.ok(bounds && bounds.width <= 73, '当前工作分支入口不占据长列');
+        assert.ok(bounds && bounds.width >= 24, '窄栏仍保留可点击的分支名称入口');
+        const layout = await row(worktree).locator('.source-control-row-copy').evaluate((element:HTMLElement) => {const name = element.querySelector('.source-control-repository-copy')!.getBoundingClientRect(), branch = element.querySelector('.source-control-row-action-button')!.getBoundingClientRect(), box = element.getBoundingClientRect(); return {adjacent:name.right <= branch.left && branch.right <= box.right + 1, contained:element.scrollWidth <= element.clientWidth + 1};});
+        assert.deepEqual(layout, {adjacent:true, contained:true}, '来源名称后分支共同收缩，不越过名称区域');
         assert.equal(await branchButton.getAttribute('title'), branches.branch + ' · 管理分支');
-        assert.ok(!(await branchButton.innerText()).includes('fixture/team/'), '长名称紧凑显示末段，完整名称可按需查看');
+        assert.equal(await branchButton.innerText(), branches.branch, '保留完整分支文本，视觉省略不改变名称');
         await noOverflow(); await capture(page, 'source-control-branch-filters-' + width + '.png');
       }
       const resetResult = historyResult(worktree.worktreeId, { branch: null, authorEmail: null, query: null });
@@ -396,13 +406,12 @@ export async function runSourceControlBranchesJourney({ t, page, workspaceUrl, c
       try {
         const sent = page.waitForRequest((request: any) => new URL(request.url()).pathname.endsWith('/code/fetch'));
         const returned = page.waitForResponse((response: any) => new URL(response.url()).pathname.endsWith('/code/fetch'));
-        await manager.getByRole('button', {name:'获取远程 · ' + worktree.repositoryName, exact:true}).click();
+        await fetchOne(worktree);
         const request = await sent;
         assert.deepEqual(request.postDataJSON().repositories.map((item: any) => item.repositoryId), [worktree.repositoryId]);
         assert.ok(request.postDataJSON().repositories[0].expectedGitId && request.postDataJSON().repositories[0].expectedCheckoutId);
-        await manager.locator('button.ant-btn-loading').waitFor();
-        await root().getByRole('button', {name:'全部获取远程', exact:true}).locator('.anticon-loading').waitFor();
-        await row(worktree).getByRole('button', {name:'管理分支 · ' + worktree.repositoryName + ' · ' + worktree.name, exact:true}).click();
+        await row(worktree).locator('.source-control-row-menu-button.ant-btn-loading').waitFor();
+        await root().getByRole('button', {name:'源代码管理操作菜单', exact:true}).locator('.anticon-loading').waitFor();
         await manager.waitFor({state:'hidden'});
         release(); const response = await returned; assert.equal(response.status(), 200);
         const result = await response.json(); assert.equal(result.repositories[0].status, 'succeeded', JSON.stringify(result));
@@ -427,8 +436,10 @@ export async function runSourceControlBranchesJourney({ t, page, workspaceUrl, c
           const buttons = [...footer.querySelectorAll('button')].map(button => button.getBoundingClientRect());
           return {contained:buttons.every(button => button.left >= bounds.left && button.right <= bounds.right), distinct:buttons.every((button, index) => buttons.slice(index + 1).every(other => button.right <= other.left || other.right <= button.left || button.bottom <= other.top || other.bottom <= button.top))};
         });
-        assert.deepEqual(geometry, {contained:true, distinct:true}, '窄栏分支底部的只读刷新与获取入口不重叠');
-        await narrow.manager.getByRole('button', {name:'获取远程 · ' + worktree.repositoryName, exact:true}).click({trial:true});
+        assert.deepEqual(geometry, {contained:true, distinct:true}, '窄栏分支底部只读刷新可达');
+        assert.equal(await narrow.manager.getByRole('button', {name:/获取远程/}).count(), 0, '分支浮窗不重复放置获取远程');
+        const menu = await openOperations(worktree);
+        await menu.getByRole('menuitem', {name:'获取远程', exact:true}).click({trial:true});
         await noOverflow(); await capture(page, 'source-control-fetch-single-260px.png');
       } finally {release(); page.off('request', observe); await page.unroute('**/code/fetch', hold);}
     });
@@ -467,12 +478,6 @@ export async function runSourceControlBranchesJourney({ t, page, workspaceUrl, c
       };
       await page.route(matchesCatalog, interceptCatalog); await page.route('**/code/fetch', interceptFetch);
       page.on('request', observeContents);
-      const fetchOne = async (tree: any) => {
-        const label = tree.isMain ? '主工作树' : tree.name;
-        await row(tree).getByRole('button', {name:'管理分支 · ' + tree.repositoryName + ' · ' + label, exact:true}).click();
-        const manager = page.getByRole('region', {name:'分支管理 · ' + tree.repositoryName + ' · ' + label, exact:true});
-        await manager.getByRole('button', {name:'获取远程 · ' + tree.repositoryName, exact:true}).click();
-      };
       try {
         const fullReturned = page.waitForResponse((response: any) => {const url = new URL(response.url()); return url.pathname === catalogPath && !url.searchParams.has('repositoryId');});
         const fullStarted = page.waitForRequest((request: any) => {const url = new URL(request.url()); return url.pathname === catalogPath && !url.searchParams.has('repositoryId');});
@@ -521,7 +526,7 @@ export async function runSourceControlBranchesJourney({ t, page, workspaceUrl, c
         await root().locator('.source-control-title .anticon-spin').waitFor({state:'hidden'});
         assert.equal(writes.length, 0, '只读刷新不执行获取远程'); reads.length = 0;
         const refreshed = page.waitForResponse((response: any) => new URL(response.url()).pathname === new URL(api + '/code/source-control').pathname);
-        await root().getByRole('button', {name:'全部获取远程', exact:true}).click(); await refreshed;
+        await fetchAll(); await refreshed;
         assert.equal(writes.length, 1);
         assert.deepEqual(writes[0].repositories, observed.repositories.map((item: any) => ({repositoryId:item.id, expectedGitId:item.gitId, expectedCheckoutId:item.source?.checkoutId || null})));
         assert.deepEqual(reads, [''], '一批全部获取只作一次全目录观察');
@@ -536,9 +541,77 @@ export async function runSourceControlBranchesJourney({ t, page, workspaceUrl, c
           const bounds = element.getBoundingClientRect(), actions = [...element.querySelectorAll('button')].map(button => button.getBoundingClientRect());
           return {contained:actions.every(button => button.left >= bounds.left && button.right <= bounds.right), distinct:actions.every((button, index) => actions.slice(index + 1).every(other => button.right <= other.left || other.right <= button.left))};
         });
-        assert.deepEqual(header, {contained:true, distinct:true}, '260px目录标题内全部获取与只读刷新均可达且不重叠');
+        assert.deepEqual(header, {contained:true, distinct:true}, '260px目录标题内操作菜单与只读刷新均可达且不重叠');
         await noOverflow(); await capture(page, 'source-control-fetch-batch-260px.png');
       } finally {page.off('request', observe); await page.unroute('**/code/fetch', intercept);}
+    });
+  });
+
+  await scenario('菜单与箭头同步共用等待，逐阶段结果和来源漂移不误写', async () => {
+    await fixture.withBranches(async (branches:any) => {
+      await page.setViewportSize({width:1440, height:1000});
+      const {worktree} = await open(branches), before = branches.snapshot();
+      assert.deepEqual(await page.locator('.shell-navigation [data-nav]').evaluateAll((items:HTMLElement[]) => items.map(item => item.dataset.nav)), ['source-control', 'explorer'], '代码导航交换显示顺序');
+      const input = {repositoryId:worktree.repositoryId, worktreeId:worktree.worktreeId};
+      const contextResponse = await page.request.get(api + '/code/sync-context?' + new URLSearchParams(input)); assert.equal(contextResponse.status(), 200);
+      const actual = await contextResponse.json(), target = branches.remote + '/' + branches.remoteName;
+      const observed = await (await page.request.get(api + '/code/source-control')).json();
+      const catalogPath = new URL(api + '/code/source-control').pathname, reads:string[] = [], writes:any[] = [];
+      const matchesCatalog = (url:URL) => url.pathname === catalogPath;
+      const catalogRoute = async (route:any) => {
+        const id = new URL(route.request().url()).searchParams.get('repositoryId') || ''; reads.push(id);
+        await route.fulfill({json:{...observed, repositories:observed.repositories.filter((repository:any) => !id || repository.id === id).map((repository:any) => repository.id !== worktree.repositoryId ? repository : {...repository, worktrees:repository.worktrees.map((tree:any) => tree.worktreeId !== worktree.worktreeId ? tree : {...tree, upstream:target, ahead:1, behind:2})})}});
+      };
+      let changed = false, holdContext = false, release = () => {}, releaseContext = () => {};
+      const gate = new Promise<void>(resolve => {release = resolve;}), contextGate = new Promise<void>(resolve => {releaseContext = resolve;});
+      const contextRoute = async (route:any) => {if (holdContext) await contextGate; await route.fulfill({json:{...actual, available:true, reason:null, target, branch:changed ? 'changed-before-sync' : worktree.branch, head:worktree.head, revision:'browser-sync-observation', ahead:1, behind:2, hasChanges:true}});};
+      const syncRoute = async (route:any) => {
+        writes.push(route.request().postDataJSON()); await gate;
+        await route.fulfill({json:{source:actual.source, readAt:new Date().toISOString(), branch:worktree.branch, head:worktree.head, upstream:target, status:'failed', message:'本地整合已完成，远程认证失败。', fetch:{status:'succeeded',message:'已获取固定上游'}, rebase:{status:'succeeded',message:'已整合到本次上游'}, push:{status:'failed',message:'远程认证失败'}}});
+      };
+      await page.route(matchesCatalog, catalogRoute); await page.route('**/code/sync-context?**', contextRoute); await page.route('**/code/sync', syncRoute);
+      try {
+        await root().getByRole('button', {name:'刷新源代码管理', exact:true}).click();
+        const shortcut = row(worktree).locator('.source-control-sync-button'); await shortcut.waitFor(); reads.length = 0;
+        assert.ok((await shortcut.getAttribute('title')).includes('先拉取并变基，再推送到 ' + target));
+        await row(worktree).locator('.source-control-status-button').click(); await page.locator('.source-control-status-details:visible').waitFor();
+        assert.equal(writes.length, 0, '文件状态详情不会执行同步'); await row(worktree).locator('.source-control-status-button').press('Escape');
+        const menu = await openOperations(worktree); await menu.getByRole('menuitem', {name:'同步（拉取后推送）', exact:true}).click({trial:true});
+        await row(worktree).locator('.source-control-row-menu-button').press('Escape'); await menu.waitFor({state:'hidden'});
+        const syncSent = page.waitForRequest((request:any) => new URL(request.url()).pathname.endsWith('/code/sync'));
+        await shortcut.focus(); await shortcut.press('Enter'); await syncSent;
+        await shortcut.locator('.anticon-loading').waitFor();
+        assert.equal(await shortcut.isDisabled(), true, '等待期间箭头入口防重复');
+        assert.equal(await row(worktree).locator('.source-control-row-menu-button').isDisabled(), true, '菜单等待和快捷入口共享状态');
+        assert.deepEqual(writes, [{...input, expectedRevision:'browser-sync-observation'}]);
+        await capture(page, 'source-control-sync-pending.png');
+        const refreshed = page.waitForResponse((response:any) => new URL(response.url()).pathname === catalogPath);
+        release(); await refreshed;
+        const result = root().locator('[data-sync-worktree="' + worktree.worktreeId + '"]'); await result.waitFor();
+        await result.locator('[data-sync-phase="fetch"][data-sync-phase-status="succeeded"]').waitFor();
+        await result.locator('[data-sync-phase="rebase"][data-sync-phase-status="succeeded"]').waitFor();
+        await result.locator('[data-sync-phase="push"][data-sync-phase-status="failed"]').waitFor();
+        await shortcut.locator('.anticon-loading').waitFor({state:'hidden'});
+        assert.deepEqual(reads, [worktree.repositoryId], '完成后只重新观察本库');
+        assert.equal(writes.length, 1, '部分成功不自动重发');
+        await capture(page, 'source-control-sync-partial-result.png');
+        changed = true;
+        // The next click reads a different branch; it must refresh facts without a second write.
+        const menuAgain = await openOperations(worktree); await menuAgain.getByRole('menuitem', {name:'同步（拉取后推送）', exact:true}).click();
+        await root().locator('[data-sync-worktree="' + worktree.worktreeId + '"]').getByText('来源、分支或提交已变化，请核对更新后的状态再同步。', {exact:true}).waitFor();
+        assert.equal(writes.length, 1, '观察来源漂移拒绝同步POST');
+        changed = false; holdContext = true;
+        const contextSent = page.waitForRequest((request:any) => new URL(request.url()).pathname.endsWith('/code/sync-context'));
+        const contextReturned = page.waitForResponse((response:any) => new URL(response.url()).pathname.endsWith('/code/sync-context'));
+        const delayed = await openOperations(worktree); await delayed.getByRole('menuitem', {name:'同步（拉取后推送）', exact:true}).click(); await contextSent;
+        await page.locator('.shell-navigation [data-nav="explorer"]').click(); await page.locator('.code-explorer-stage:visible').waitFor();
+        releaseContext(); await contextReturned;
+        await page.waitForFunction((id:string) => [...document.querySelectorAll('.code-source-control-page [data-source-worktree]')].find(element => element.getAttribute('data-source-worktree') === id)?.querySelector('.source-control-row-menu-button:not(.ant-btn-loading)'), worktree.worktreeId);
+        await page.locator('.shell-navigation [data-nav="source-control"]').click(); await row(worktree).locator('.source-control-row-menu-button:not(.ant-btn-loading)').waitFor();
+        assert.equal(writes.length, 1, '读取同步上下文期间离开页，迟到观察不发起新写入');
+        assert.deepEqual(branches.snapshot(), before, '界面替身没有触发真实Git写入');
+        await noOverflow();
+      } finally {release(); releaseContext(); await page.unroute(matchesCatalog, catalogRoute); await page.unroute('**/code/sync-context?**', contextRoute); await page.unroute('**/code/sync', syncRoute);}
     });
   });
 
