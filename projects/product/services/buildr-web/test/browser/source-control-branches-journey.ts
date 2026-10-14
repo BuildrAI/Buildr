@@ -390,24 +390,29 @@ export async function runSourceControlBranchesJourney({ t, page, workspaceUrl, c
     });
   });
 
-  await scenario('未跟踪上游的同步与获取菜单置灰，悬停说明原因且跟踪后恢复', async () => {
+  await scenario('未跟踪上游的同步与获取菜单置灰，菜单内说明原因且跟踪后恢复', async () => {
     await fixture.withBranches(async (branches:any) => {
       await page.setViewportSize({width:1440, height:1000});
       const {worktree} = await open(branches), before = branches.snapshot();
       assert.equal(worktree.upstream, null, '夹具真实当前分支尚未设置上游');
-      const requests:string[] = [], reason = '当前分支未设置远端跟踪分支';
+      const requests:string[] = [], reason = '未设置远端跟踪分支';
       const observe = (request:any) => {const path = new URL(request.url()).pathname; if (/\/code\/(?:fetch|sync|sync-context)$/.test(path)) requests.push(path);};
       page.on('request', observe);
       try {
         const menu = await openOperations(worktree), disabledColors = new Map<string,string>();
+        const panel = page.locator('.source-control-worktree-menu-panel:visible');
+        const note = panel.getByRole('note'); await note.waitFor(); assert.equal(await note.innerText(), reason);
+        assert.equal(await menu.getAttribute('aria-describedby'), await note.getAttribute('id'), '菜单与就地原因保留可访问关联');
+        const panelStyle = await panel.evaluate((element:HTMLElement) => {const style = getComputedStyle(element);return {background:style.backgroundColor,border:style.borderTopWidth};});
+        assert.equal(panelStyle.background, 'rgb(255, 255, 255)', '禁用项与原因位于同一白色面板内');
+        assert.equal(panelStyle.border, '1px', '面板有清晰而轻的边界');
         for (const name of ['同步', '获取远程']) {
           const item = menu.getByRole('menuitem', {name, exact:true});
           assert.equal(await item.getAttribute('aria-disabled'), 'true', name + '在未跟踪时明确禁用');
           assert.ok((await item.getAttribute('class')).includes('ant-dropdown-menu-item-disabled'), name + '使用真实禁用样式');
           disabledColors.set(name, await item.evaluate((element:HTMLElement) => getComputedStyle(element).color));
           await item.hover();
-          const titles = await item.evaluate((element:HTMLElement) => [element.getAttribute('title') || '', ...Array.from(element.querySelectorAll('[title]'), part => part.getAttribute('title') || '')]);
-          if (!titles.some(title => title.includes(reason))) await page.getByRole('tooltip', {name:reason, exact:true}).waitFor();
+          assert.equal(await page.getByRole('tooltip', {name:/未设置远端跟踪分支/}).count(), 0, '禁用原因不弹出遮挡菜单的大块提示');
           const bounds = await item.boundingBox(); assert.ok(bounds);
           await page.mouse.click(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
         }

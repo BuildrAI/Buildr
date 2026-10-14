@@ -6,6 +6,12 @@
 .source-control-row-menu-button .ant-btn-loading-icon { margin:0!important; }
 .source-control-row-menu-label { display:block; }
 .source-control-row-menu-tooltip { pointer-events:none; }
+.source-control-worktree-menu-panel { min-width:184px; max-width:min(240px,calc(100vw - 24px)); padding:4px; border:1px solid var(--soft-line); border-radius:8px; background:var(--soft-surface); box-shadow:0 8px 24px color-mix(in srgb,var(--soft-ink) 12%,transparent); }
+.source-control-worktree-menu-panel .ant-dropdown-menu { padding:0; background:transparent; box-shadow:none; }
+.source-control-worktree-menu-panel .ant-dropdown-menu .ant-dropdown-menu-item { min-height:30px; padding:6px 9px; border-radius:5px; font-size:12px; }
+.source-control-worktree-menu-panel .ant-dropdown-menu-item-icon { min-width:14px; font-size:13px; }
+.source-control-worktree-menu-panel .ant-dropdown-menu .ant-dropdown-menu-item-disabled { color:color-mix(in srgb,var(--soft-muted) 68%,var(--soft-surface)); }
+.source-control-worktree-menu-note { max-width:210px; margin:4px 5px 2px; padding:8px 4px 4px; border-top:1px solid var(--soft-line); color:var(--soft-muted); font-size:11px; line-height:1.5; white-space:normal; overflow-wrap:anywhere; }
 .source-control-repositories.has-worktree-actions .source-control-repository:hover .source-control-row-action-button,
 .source-control-repositories.has-worktree-actions .source-control-worktree:hover .source-control-row-action-button,
 .source-control-repositories.has-worktree-actions .is-selected .source-control-row-action-button,

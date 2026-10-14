@@ -776,7 +776,7 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
           const textBounds = (element: Element | null) => {
             if (!element) return null;
             const range = document.createRange(); range.selectNodeContents(element); const box = range.getBoundingClientRect();
-            return {text: element.textContent, left: box.left, right: box.right, lines: range.getClientRects().length};
+            return {text: element.textContent, left: box.left, right: box.right, lines: range.getClientRects().length, numericStyle:getComputedStyle(element).fontVariantNumeric};
           };
           return elements.map(row => {
             const name = row.querySelector('.source-control-repository-copy')!, status = row.querySelector('.source-control-worktree-status')!;
@@ -784,9 +784,10 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
             const branch = row.querySelector('.source-control-row-branch-slot');
             const menu = row.querySelector(':scope > .source-control-row-action-slot');
             return {
-              label: name.textContent, row: bounds(row), name: bounds(name), status: bounds(status),
+              label: name.textContent, remoteState:status.getAttribute('data-remote-state'), multipleGroups:status.classList.contains('has-many-counts'), row: bounds(row), name: bounds(name), status: bounds(status),
               controls, branch: branch ? bounds(branch) : null, menu:menu ? bounds(menu) : null,
               parts: [...status.children].map(bounds),
+              groups:[...status.querySelectorAll('.source-control-status-content')].map(content => ({box:bounds(content), parts:[...content.children].map(bounds)})),
               counts: [...status.querySelectorAll('.source-control-status-count')].map(count => ({kind: count.getAttribute('data-status-kind'), box: bounds(count), icon: bounds(count.querySelector('.anticon > svg')!), number: textBounds(count.querySelector('.source-control-status-number'))!})),
             };
           });
@@ -798,7 +799,11 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
         assert.ok(menus.every((box: any) => Math.abs(box.right - menus[0].right) <= 1 && Math.abs(box.width - 24) <= 1), '三个点操作入口固定等宽并在各行右沿对齐');
         assert.ok(geometry.every((row:any) => !row.branch || row.branch.width >= 24 && row.name.right <= row.branch.left + 1 && row.branch.right <= row.menu.left + 1 && (row.branch.right <= row.status.left + 1 || row.branch.bottom <= row.status.top + 1 || row.status.bottom <= row.branch.top + 1)), '分支紧随名称且不覆盖状态或末尾操作：' + JSON.stringify({width, rows:geometry}));
         assert.ok(geometry.every((row: any) => row.parts.every((box: any, index: number) => box.left >= row.status.left - 1 && box.right <= row.status.right + 1 && row.parts.slice(index + 1).every((next: any) => box.right <= next.left + 1 || next.right <= box.left + 1))), '状态标记与各项数量不重叠或越过入口边界');
-        assert.ok(geometry.every((row: any) => row.counts.every((count: any) => count.number.lines === 1 && Number(count.number.text) > 0 && count.icon.right < count.number.left && count.number.right <= count.box.right + 1)), '一／二／三位数字保持单行并与对应图标分开');
+        assert.ok(geometry.some((row:any) => row.remoteState === 'untracked' && row.counts.some((count:any) => count.kind === 'files' && Number(count.number.text) >= 10) && row.groups.some((group:any) => group.parts.length >= 2)), '真实未跟踪来源和多位文件数共同验证标识分组间距');
+        assert.ok(geometry.filter((row:any) => row.remoteState === 'untracked' && row.counts.some((count:any) => count.kind === 'files')).every((row:any) => row.multipleGroups && (width !== '260px' || row.status.top >= row.name.bottom - 1)), '未跟踪标识与文件数共同计为多组，260px时状态下移而不挤占名称：' + JSON.stringify({width, rows:geometry}));
+        assert.ok(geometry.every((row:any) => !row.counts.length || row.groups.length > 0), '状态内容使用显式分组，避免按钮自动包裹片段吞掉间距');
+        assert.ok(geometry.every((row:any) => row.groups.every((group:any) => group.parts.every((part:any, index:number) => part.left >= group.box.left - 1 && part.right <= group.box.right + 1 && (index === 0 || part.left - group.parts[index - 1].right >= 7.5 && Math.abs((part.top + part.bottom) / 2 - (group.parts[index - 1].top + group.parts[index - 1].bottom) / 2) <= 1)))), '远程标识、文件组和远程数量组之间保留8px间距并垂直对齐：' + JSON.stringify({width, rows:geometry}));
+        assert.ok(geometry.every((row: any) => row.counts.every((count: any) => count.number.lines === 1 && Number(count.number.text) > 0 && count.number.left - count.icon.right >= 2.5 && count.number.right <= count.box.right + 1 && count.number.numericStyle.includes('tabular-nums'))), '一／二／三位数字保持单行、等宽字形，与对应图标保留3px间距');
         process.stderr.write('[source-control-compact-status] ' + JSON.stringify({width,rows:geometry}) + '\n');
         await noOverflow(); await capture(page, 'source-control-fixture-compact-status-' + width + '.png');
       }
