@@ -1,4 +1,4 @@
-import type { ConnectionInput, MySqlConnection } from './connection-types';
+import type { MySqlConnectionInput, MySqlConnection } from './connection-types';
 
 export type ConnectionDraft = { name: string; environment: string; host: string; port: number | null; username: string; password: string; defaultDatabase: string };
 
@@ -6,7 +6,7 @@ export function connectionDraft(connection?: MySqlConnection): ConnectionDraft {
   return { name: connection?.name || '', environment: connection?.environment || '', host: connection?.config.host || '', port: connection?.config.port || 3306, username: connection?.config.username || '', password: '', defaultDatabase: connection?.config.defaultDatabase || '' };
 }
 
-export function connectionInput(draft: ConnectionDraft, previous?: MySqlConnection): ConnectionInput {
+export function connectionInput(draft: ConnectionDraft, previous?: MySqlConnection): MySqlConnectionInput {
   const name = draft.name.trim(), environment = draft.environment.trim(), host = draft.host.trim(), username = draft.username.trim();
   if (!name || !environment || !host || !username) throw new Error('请填写名称、环境、主机和用户。');
   if (!Number.isInteger(draft.port) || draft.port! < 1 || draft.port! > 65535) throw new Error('端口应为 1–65535 的整数。');

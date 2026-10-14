@@ -839,7 +839,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.locator('[data-area="workspace"]').click();
     await page.waitForURL(`${workspaceUrl}/workspace-overview`);
     await page.waitForFunction(() => [...document.querySelectorAll('.shell-navigation .shell-nav-item')].some((node: any) => node.textContent === '项目'));
-    assert.deepEqual(await page.locator('.shell-navigation .shell-nav-item').allTextContents(), ['总览', '项目', '服务', '代码库', '技能', '文章']);
+    assert.deepEqual(await page.locator('.shell-navigation .shell-nav-item').allTextContents(), ['总览', '项目', '服务', '代码库', '连接', '技能', '文章']);
     await page.locator('[data-nav=projects]').click();
     assert.equal(await page.getByRole('tab', { name: '项目目录', exact: true }).count(), 0);
     await page.locator('#project-table-body tr').filter({ hasText: '演示项目' }).click();
@@ -886,7 +886,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.setViewportSize({ width: 390, height: 844 });
     await page.getByRole('button', { name: '打开导航菜单', exact: true }).click();
     await page.getByRole('dialog').waitFor({ state: 'visible' });
-    assert.deepEqual(await page.getByRole('dialog').locator('.shell-nav-item').allTextContents(), ['总览', '项目', '服务', '代码库', '技能', '文章']);
+    assert.deepEqual(await page.getByRole('dialog').locator('.shell-nav-item').allTextContents(), ['总览', '项目', '服务', '代码库', '连接', '技能', '文章']);
     await page.getByRole('dialog').locator('[data-nav="projects"]').click();
     await page.waitForURL(`${workspaceUrl}/projects`);
     await page.getByRole('dialog').waitFor({ state: 'hidden' });

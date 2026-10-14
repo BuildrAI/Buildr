@@ -25,7 +25,27 @@ export function isMySqlConnection(connection: ExternalConnection): connection is
   return connection.category === 'data-source' && connection.type === 'mysql';
 }
 
-export type ConnectionInput = {
+export type NacosApiVersion = 'auto' | 'v1' | 'v2' | 'v3';
+export type NacosConfig = {
+  consoleUrl: string;
+  username: string;
+  namespaceId: string;
+  defaultGroup: string;
+  production: boolean;
+  apiVersion: NacosApiVersion;
+};
+export type NacosConnection = ExternalConnection<NacosConfig> & { category: 'configuration'; type: 'nacos' };
+export type EditableConnection = MySqlConnection | NacosConnection;
+
+export function isNacosConnection(connection: ExternalConnection): connection is NacosConnection {
+  return connection.category === 'configuration' && connection.type === 'nacos';
+}
+
+export function isEditableConnection(connection: ExternalConnection): connection is EditableConnection {
+  return isMySqlConnection(connection) || isNacosConnection(connection);
+}
+
+export type MySqlConnectionInput = {
   name: string;
   category: 'data-source';
   type: 'mysql';
@@ -34,8 +54,19 @@ export type ConnectionInput = {
   credentials?: { password: string };
 };
 
+export type NacosConnectionInput = {
+  name: string;
+  category: 'configuration';
+  type: 'nacos';
+  environment: string;
+  config: NacosConfig;
+  credentials?: { password: string };
+};
+
+export type ConnectionInput = MySqlConnectionInput | NacosConnectionInput;
+
 export type ConnectionTestInput = ConnectionInput & { id?: string; expectedRevision?: string };
-export type ConnectionTestResult = { ok: true; serverVersion: string; elapsedMs: number };
+export type ConnectionTestResult = { ok: true; serverVersion?: string; elapsedMs: number; apiVersion?: Exclude<NacosApiVersion, 'auto'>; namespaceId?: string };
 export type MySqlQueryResult = {
   connectionId: string;
   database: string | null;

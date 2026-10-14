@@ -8,6 +8,13 @@
 .buildr-connection-host{display:grid;grid-template-columns:minmax(0,1fr) 112px;gap:16px}
 .buildr-connection-host .ant-input-number{width:100%}
 .buildr-connections-muted{color:var(--soft-muted);font-size:12px;line-height:1.7;margin:0}
+.buildr-nacos-production{display:flex;flex-direction:column;gap:7px}
+.buildr-nacos-settings-fields{display:flex;flex-direction:column;gap:14px}
+.buildr-nacos-settings-fields>label{display:flex;flex-direction:column;gap:7px;font-size:13px}
+.buildr-nacos-settings.ant-collapse>.ant-collapse-item>.ant-collapse-header{padding-inline:0}
+.buildr-nacos-settings.ant-collapse>.ant-collapse-item>.ant-collapse-content>.ant-collapse-content-box{padding-inline:0}
+.buildr-connection-website{display:inline-flex;align-items:center;min-height:32px;padding:4px 8px;border-radius:6px;color:var(--soft-ink);white-space:nowrap}
+.buildr-connection-website:hover{color:var(--soft-primary);background:var(--soft-bg,#f7f9f8)}
 .buildr-mysql-query{height:100%;min-height:0;min-width:0;padding:12px;display:flex;flex-direction:column;gap:12px;overflow:hidden}
 .buildr-mysql-target{display:flex;flex:none;align-items:center;flex-wrap:wrap;gap:8px 16px;min-width:0}
 .buildr-mysql-target>label{display:flex;align-items:center;gap:8px;font-size:12px;min-width:0;max-width:100%}

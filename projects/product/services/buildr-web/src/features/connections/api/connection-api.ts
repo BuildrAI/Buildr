@@ -1,5 +1,5 @@
 import type { ApiClient } from '../../../api/client';
-import type { ConnectionInput, ConnectionTestInput, ConnectionTestResult, ExternalConnection, MySqlConnection, MySqlQueryResult, QueryPreferences } from '../connection-types';
+import type { ConnectionInput, ConnectionTestInput, ConnectionTestResult, EditableConnection, ExternalConnection, MySqlQueryResult, QueryPreferences } from '../connection-types';
 
 /** Bind every operation to its visible workspace, including after an asynchronous response. */
 export function createConnectionClient(api: ApiClient, workspaceId: string) {
@@ -11,10 +11,10 @@ export function createConnectionClient(api: ApiClient, workspaceId: string) {
       return api(root, { signal }) as Promise<{ connections: ExternalConnection[]; configurationWritable?: boolean }>;
     },
     create(input: ConnectionInput) {
-      return api(root, json('POST', input)) as Promise<{ connection: MySqlConnection }>;
+      return api(root, json('POST', input)) as Promise<{ connection: EditableConnection }>;
     },
     update(id: string, expectedRevision: string, input: ConnectionInput) {
-      return api(item(id), json('PATCH', { ...input, expectedRevision })) as Promise<{ connection: MySqlConnection }>;
+      return api(item(id), json('PATCH', { ...input, expectedRevision })) as Promise<{ connection: EditableConnection }>;
     },
     remove(id: string, expectedRevision: string) {
       return api(item(id), json('DELETE', { expectedRevision })) as Promise<unknown>;

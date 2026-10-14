@@ -34,6 +34,25 @@ test('固定入口只解析当前工作空间的受限目标，错误任务和�
   }
 });
 
+test('固定入口从技能页点击连接可达，刷新及历史导航保留同一工作空间入口', () => {
+  const target = resolveCodexTarget('w', '/connections#details');
+  assert.deepEqual(target, {workspaceId: 'w', route: {pathname: '/workspaces/w/connections', search: '', hash: '#details'}, error: null});
+  assert.equal(codexRouteHref('w', target.route), '/workspaces/w/codex#/connections#details');
+  for (const value of ['/connections?q=mysql', '/connections?redirect=https://evil.example', '/connections/unknown']) assert.ok(resolveCodexTarget('w', value).error, value);
+
+  const {browser} = browserAt('http://local/workspaces/w/codex#/skills');
+  const adapted = createCodexNavigationWindow(browser);
+  adapted.history.pushState({idx: 1, key: 'connections', usr: null}, '', '/workspaces/w/connections');
+  assert.equal(browser.location.pathname, '/workspaces/w/codex');
+  assert.equal(browser.location.hash, '#/connections');
+  assert.equal(adapted.location.pathname, '/workspaces/w/connections');
+  assert.equal(createCodexNavigationWindow(browser).location.pathname, '/workspaces/w/connections');
+  adapted.history.go(-1);
+  assert.equal(adapted.location.pathname, '/workspaces/w/skills');
+  adapted.history.go(1);
+  assert.equal(adapted.location.pathname, '/workspaces/w/connections');
+});
+
 test('首次载入及刷新准确保留任务片段，资源列表归一不吞掉具体任务', () => {
   const {browser} = browserAt('http://local/workspaces/w/codex#/tasks/task-one?taskType=composite');
   const adapted = createCodexNavigationWindow(browser);

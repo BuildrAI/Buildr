@@ -10,7 +10,7 @@ const queryKeys: Record<string, string[]> = {
   overview: ['project'], activity: ['project', 'date', 'group'], tasks: ['q', 'status', 'project', 'service', 'type', 'retrospective', 'group', 'taskType', 'file', 'page', 'state'],
   projects: ['q', 'project', 'document', 'date', 'group', 'view'], services: ['q', 'project', 'edit'], repositories: ['q'], skills: ['q'],
   articles: ['q', 'project', 'status', 'sort', 'scope', 'view'], knowledge: ['object', 'artifact', 'document', 'reading', 'fromProject', 'q', 'browse', 'type', 'view'],
-  code: [], settings: [], 'workspace-overview': [],
+  code: [], connections: [], settings: [], 'workspace-overview': [],
 };
 
 export function codexWorkspace(pathname: string): string | null {

@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import type { NacosOperations } from './nacos-types.ts';
 
 export type ConnectionConfiguration = {
   name: string; category: string; type: string; environment: string; config: Record<string, unknown>;
@@ -19,6 +20,7 @@ export type ConnectionProvider = {
   validateCredentials(value: unknown): Record<string, unknown>;
   authenticationTargetIdentity(config: Record<string, unknown>): string;
   test(config: Record<string, unknown>, credentials: Record<string, unknown>): Promise<{ ok: true; serverVersion?: string; elapsedMs: number }>;
+  nacos?: NacosOperations;
   mysql?: {
     databases(config: Record<string, unknown>, credentials: Record<string, unknown>): Promise<string[]>;
     tables(config: Record<string, unknown>, credentials: Record<string, unknown>, database: string): Promise<{ name: string; type: string }[]>;

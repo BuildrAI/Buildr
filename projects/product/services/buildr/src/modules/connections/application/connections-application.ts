@@ -3,6 +3,8 @@ import { sameFilesystemPath } from '../../../infrastructure/filesystem/filesyste
 import { ConnectionRepository, type ConnectionStoreRuntime } from '../persistence/connection-repository.ts';
 import { ConnectionProviderRegistry, type ConnectionProvider } from './connection-provider.ts';
 import { createMySqlProvider } from '../infrastructure/mysql-query.ts';
+import { createNacosProvider } from '../infrastructure/nacos-provider.ts';
+import { NacosConfigurationApplication } from './nacos-configuration-application.ts';
 import { CONNECTION_FIELDS, configuration, connectionFailure, connectionId, databaseName, expectedRevision, inputObject, recordRevision, type ConnectionConfiguration, type ConnectionRecord, type ConnectionScope, queryPreferenceValues } from '../domain/connection.ts';
 
 export class ConnectionsApplication {
@@ -10,6 +12,7 @@ export class ConnectionsApplication {
   private readonly providers: ConnectionProviderRegistry;
   private readonly resolveScope: (root: string) => ConnectionScope;
   private readonly configurationWritable: boolean;
+  readonly nacos: NacosConfigurationApplication;
   constructor(options: { dataRoot: string; store: ConnectionStoreRuntime; resolveScope(root: string): ConnectionScope; providers?: ConnectionProvider[]; credentialDataRoot?: string; readonlyScope?: ConnectionScope }) {
     if (Boolean(options.credentialDataRoot) !== Boolean(options.readonlyScope)) throw connectionFailure('connection_preview_scope_required', '只读认证来源必须绑定准确工作空间。', 409);
     this.repository = new ConnectionRepository(options.dataRoot, options.store, options.credentialDataRoot);
@@ -19,7 +22,13 @@ export class ConnectionsApplication {
       if (bound && (scope.workspaceId !== bound.workspaceId || !sameFilesystemPath(scope.rootPath, bound.rootPath))) throw connectionFailure('connection_preview_scope_mismatch', '此预览的认证来源仅适用于启动时绑定的工作空间。', 409);
       return scope;
     };
-    this.providers = new ConnectionProviderRegistry(options.providers ?? [createMySqlProvider()]);
+    this.providers = new ConnectionProviderRegistry(options.providers ?? [createMySqlProvider(), createNacosProvider()]);
+    this.nacos = new NacosConfigurationApplication((root, id) => {
+      const scope = this.resolveScope(root), record = this.find(scope, id), provider = this.providers.get(record.type, record.category);
+      if (!provider.nacos) throw connectionFailure('connection_operation_unsupported', '该连接不提供 Nacos 配置管理能力。', 422);
+      const credentials = this.repository.readCredentials(scope, record.credentialId, this.bindingDigest(record, provider));
+      return { scope, record, credentials: credentials ?? {}, nacos: provider.nacos };
+    }, () => this.assertConfigurationWritable());
   }
   list(root: string) {
     const scope = this.resolveScope(root);

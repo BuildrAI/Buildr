@@ -8,7 +8,9 @@ import { workspaceHref } from '../../../lib/labels';
 import { ResourceDirectory } from '../../../components/ResourceDirectory';
 import { WorkspaceStage } from '../../../components/WorkspaceStage';
 import { createConnectionClient } from '../api/connection-api';
-import { isMySqlConnection, type ExternalConnection, type MySqlConnection } from '../connection-types';
+import { isEditableConnection, isMySqlConnection, isNacosConnection, type EditableConnection, type ExternalConnection } from '../connection-types';
+import { connectionSearchText, connectionTypeLabel } from '../connection-presentation';
+import { nacosConsoleHref } from '../nacos-connection-form';
 import { ConnectionEditDrawer } from '../components/ConnectionEditDrawer';
 import { MySqlQuery } from '../components/MySqlQuery';
 import '../connections.css';
@@ -18,7 +20,7 @@ export function ConnectionsPage() {
   const client = useMemo(() => createConnectionClient(api, workspaceId || ''), [workspaceId]);
   const [connections, setConnections] = useState<ExternalConnection[]>([]), [loading, setLoading] = useState(true), [error, setError] = useState(''), [refresh, setRefresh] = useState(0);
   const [configurationWritable, setConfigurationWritable] = useState(true);
-  const [queryOpen, setQueryOpen] = useState(false), [editing, setEditing] = useState<MySqlConnection | null>(), [removing, setRemoving] = useState('');
+  const [queryOpen, setQueryOpen] = useState(false), [editing, setEditing] = useState<EditableConnection | null>(), [removing, setRemoving] = useState('');
   const [query, setQuery] = useState(''), [environment, setEnvironment] = useState<string>();
   const [entry, setEntry] = useState<{ id: string; nonce: number } | null>(null);
   const reload = useCallback(() => setRefresh(value => value + 1), []);
@@ -49,18 +51,25 @@ export function ConnectionsPage() {
     title="连接" noun="连接" description={configurationWritable ? "管理外部系统连接，供你和智能体（Agent）使用。" : "此预览只支持查询；连接配置请在日常 Buildr 中修改。"}
     data={connections.filter(item => environment === undefined || item.environment === environment)} total={connections.length} showTotal
     loading={loading} error={error} onRefresh={reload} rowKey={item => item.id} name={item => item.name}
-    summary={item => `${categoryLabels[item.category] || item.category} / ${item.type === 'mysql' ? 'MySQL' : item.type}`}
-    nameContent={item => <div className="resource-name"><strong>{item.name}</strong><span>{categoryLabels[item.category] || item.category} / {item.type === 'mysql' ? 'MySQL' : item.type}</span></div>}
-    searchText={item => `${item.name} ${item.environment} ${item.category} ${item.type} ${isMySqlConnection(item) ? `${item.config.host}:${item.config.port} ${item.config.defaultDatabase || ''} ${item.config.selectedDatabases.join(' ')}` : ''}`}
-    query={query} onQueryChange={setQuery} searchPlaceholder="搜索名称、地址或数据库" searchId="connections-search" tableId="connections-table" countId="connections-count"
+    summary={item => `${categoryLabels[item.category] || item.category} / ${connectionTypeLabel(item)}`}
+    nameContent={item => <div className="resource-name"><strong>{item.name}</strong><span>{categoryLabels[item.category] || item.category} / {connectionTypeLabel(item)}</span></div>}
+    searchText={connectionSearchText}
+    query={query} onQueryChange={setQuery} searchPlaceholder="搜索名称、地址或范围" searchId="connections-search" tableId="connections-table" countId="connections-count"
     filtered={environment !== undefined} onClearFilters={() => setEnvironment(undefined)}
     filters={<Select aria-label="筛选连接环境" allowClear value={environment} placeholder="全部环境" options={environments.map(value => ({ value, label: value || '未填写环境' }))} onChange={setEnvironment} />}
     actions={<Button id="create-mysql-connection" disabled={!configurationWritable} type="primary" icon={<PlusOutlined />} onClick={() => setEditing(null)}>新增连接</Button>}
     columns={[
-      { title: '环境', dataIndex: 'environment', width: 120, render: value => <Tag>{value || '未填写'}</Tag> },
-      { title: '地址 / 默认数据库', width: 360, render: (_, connection) => isMySqlConnection(connection) ? <div className="buildr-connection-address"><code>{connection.config.host}:{connection.config.port}</code><small>{connection.config.defaultDatabase || '未设置默认数据库'}</small></div> : '—' },
+      { title: '环境', dataIndex: 'environment', width: 120, render: (value, connection) => <><Tag>{value || '未填写'}</Tag>{isNacosConnection(connection) && connection.config.production && <Tag color="orange">生产</Tag>}</> },
+      { title: '地址 / 默认范围', width: 360, render: (_, connection) => isMySqlConnection(connection) ? <div className="buildr-connection-address"><code>{connection.config.host}:{connection.config.port}</code><small>{connection.config.defaultDatabase || '未设置默认数据库'}</small></div> : isNacosConnection(connection) ? <div className="buildr-connection-address"><code>{connection.config.consoleUrl}</code><small>{connection.config.namespaceId} / {connection.config.defaultGroup}</small></div> : '—' },
     ]}
-    actionWidth={150} rowActions={connection => <><Button type="text" disabled={!isMySqlConnection(connection)} onClick={() => openQuery(connection)}>查询</Button><Button type="text" disabled={!configurationWritable || !isMySqlConnection(connection)} onClick={() => { if (configurationWritable && isMySqlConnection(connection)) setEditing(connection); }}>编辑</Button><Dropdown trigger={['click']} menu={{ items: [{ key: 'delete', label: '删除连接', danger: true, disabled: !configurationWritable || removing === connection.id }], onClick: () => { modal.confirm({ title: '删除这个连接？', content: '只删除连接配置和本机认证，不删除外部系统中的内容。', okText: '删除', cancelText: '取消', okButtonProps: { danger: true }, onOk: () => remove(connection) }); } }}><Button type="text" aria-label={`更多操作：${connection.name}`} loading={removing === connection.id} icon={<MoreOutlined />} /></Dropdown></>}
+    actionWidth={170} rowActions={connection => {
+      const nacos = isNacosConnection(connection), website = nacos ? nacosConsoleHref(connection) : null;
+      return <>
+        {nacos ? website ? <a className="buildr-connection-website" href={website} target="_blank" rel="noopener noreferrer" aria-label={`打开 Nacos 网站：${connection.name}`}>打开网站</a> : <Button type="text" disabled>打开网站</Button> : <Button type="text" disabled={!isMySqlConnection(connection)} onClick={() => openQuery(connection)}>查询</Button>}
+        <Button type="text" disabled={!configurationWritable || !isEditableConnection(connection)} onClick={() => { if (configurationWritable && isEditableConnection(connection)) setEditing(connection); }}>编辑</Button>
+        <Dropdown trigger={['click']} menu={{ items: [{ key: 'delete', label: '删除连接', danger: true, disabled: !configurationWritable || removing === connection.id }], onClick: () => { modal.confirm({ title: '删除这个连接？', content: '只删除连接配置和本机认证，不删除外部系统中的内容。', okText: '删除', cancelText: '取消', okButtonProps: { danger: true }, onOk: () => remove(connection) }); } }}><Button type="text" aria-label={`更多操作：${connection.name}`} loading={removing === connection.id} icon={<MoreOutlined />} /></Dropdown>
+      </>;
+    }}
   /></div>;
   return <div className="buildr-connections-page"><WorkspaceStage pageTabs={tabs.tabs} onClosePageTab={tabs.close}
     objectTabs={queryOpen ? [{ key: 'mysql-query', kind: 'doc', title: 'MySQL 查询' }] : []}

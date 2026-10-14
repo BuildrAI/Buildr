@@ -206,9 +206,9 @@ Git provider evidence使用`buildr.git-worktree-evidence/v1`，保存在Git comm
 没有登记也没有明确对象时返回 `blocked` 和接续指引；实际删除或逐项确认对象不存在后才返回 `cleaned`。部分删除后可重传相同对象集合，重新核验版本与占用，结果区分删除和不存在确认。
 
 
-## 外部系统连接（Connection）与 MySQL 查询
+## 外部系统连接（Connection）与专业操作
 
-`connection` 是工作空间（Workspace）的通用连接入口，当前支持数据源类别的 MySQL。类别、具体类型和自由环境属性位于顶层，专业连接参数位于 `config`。用户页面与智能体（Agent）命令调用相同查询能力，不要求另装 MySQL 客户端或部署工具服务。命令行工具（CLI）成功输出 `schemaVersion: "buildr.connection-result/v1"`、当前动作 `operation` 及相应结果字段；HTTP 直接返回应用结果字段。
+`connection` 是工作空间（Workspace）的通用连接入口，当前支持数据源类别的 MySQL 与配置系统类别的 Nacos。类别、具体类型和自由环境属性位于顶层，专业连接参数位于 `config`。用户页面与智能体（Agent）命令调用相同查询能力，不要求另装 MySQL 客户端或部署工具服务。命令行工具（CLI）成功输出 `schemaVersion: "buildr.connection-result/v1"`、当前动作 `operation` 及相应结果字段；HTTP 直接返回应用结果字段。
 
 | 命令 | 用途 |
 |---|---|
@@ -222,7 +222,7 @@ Git provider evidence使用`buildr.git-worktree-evidence/v1`，保存在Git comm
 | `buildr connection columns --connection <id> --database <name> --table <name> --target <workspace> --json` | 查看字段类型、空值、键与说明。 |
 | `buildr connection query --connection <id> [--database <name>] --sql-file <file> --target <workspace> --json` | 执行单条只读查询；`--sql <text>` 可替换文件，二者只能选一个，文件可为 `-`。 |
 
-首版 MySQL 配置使用 `category: "data-source"`、`type: "mysql"`，`config` 包含 `host`、`port`（默认 3306）、`username`、可空 `defaultDatabase` 和可选 `selectedDatabases`。MySQL 认证使用独立的 `credentials: {password: <本机输入>}`，不放入 `config`；显式空密码为 `credentials: {password: ""}`。这些是 MySQL 专业字段，通用连接不固定配置或认证形状；未来类型需注册专业提供者（Provider）与专用工具，目前不提供 Nacos、Kibana、DMP 或 XXL-JOB 对接。输入文件不超过 128 KiB，使用 UTF-8；含认证的输入只留在本机，不进入仓库、聊天或任务材料。
+首版 MySQL 配置使用 `category: "data-source"`、`type: "mysql"`，`config` 包含 `host`、`port`（默认 3306）、`username`、可空 `defaultDatabase` 和可选 `selectedDatabases`。MySQL 认证使用独立的 `credentials: {password: <本机输入>}`，不放入 `config`；显式空密码为 `credentials: {password: ""}`。这些是 MySQL 专业字段，通用连接不固定配置或认证形状；未来类型需注册专业提供者（Provider）与专用工具，目前不提供 Kibana、DMP 或 XXL-JOB 对接。输入文件不超过 128 KiB，使用 UTF-8；含认证的输入只留在本机，不进入仓库、聊天或任务材料。
 
 未传 `--database` 时使用连接默认库，`--database ""` 明确不设当前库，`database.table` 按实际账号权限访问同一连接中的其他库。无最外层 LIMIT 时补充 100 行，显式 1—500 保留，超过 500 拒绝；需要更多时自行调整条件或 OFFSET。查询执行时间上限 10 秒，结果容量上限 4 MiB；语法不支持、权限、网络、超时或容量失败明确返回，不把部分输出描述为成功。
 
@@ -230,9 +230,28 @@ Git provider evidence使用`buildr.git-worktree-evidence/v1`，保存在Git comm
 
 连接配置保存在本机工作空间（Workspace）的 `.buildr/local/workspace.sqlite`，不通过 Git 同步，由每位用户自行配置。升级后首次使用会完整导入旧 `connections/manifest.yml`，保留编号和本机认证；原文件保留用于恢复，但不再作为当前配置读写，不会因删除数据库连接而重新导入。导入失败或数据冲突明确报错，不回退旧文件覆盖数据库。
 
-同一工作空间（Workspace）的代码工作树（Worktree）使用同一规范来源的连接。密码独立加密保存在本机应用数据目录。配置保存、已有认证和实际测试成功分别核对。首版只提供 MySQL 只读查询，本场景生产修改继续使用 DMP；更多使用方法见[连接与 MySQL 查询](../resources/runtime/skills/buildr/references/external-connections.md)。
+同一工作空间（Workspace）的代码工作树（Worktree）使用同一规范来源的连接。密码独立加密保存在本机应用数据目录。配置保存、已有认证和实际测试成功分别核对。MySQL 继续只提供只读查询，其生产数据修改使用明确授权的其他工具；Nacos 通过专业命令提供配置操作。更多使用方法见[外部系统连接](../resources/runtime/skills/buildr/references/external-connections.md)。
 
 页面初次使用不启用任何数据库；启用库和当前库按工作空间及连接独立保存在 SQLite，刷新后恢复，不用兼容字段 `config.selectedDatabases` 或连接默认库重新填充。当前库只从已启用且可访问的库选择；禁用当前库后清空，限定库名查询和命令行工具（CLI）仍按数据库原生权限工作。页面优先运行选中单条语句，否则运行光标所在语句；选中多条时提示调整选择，不批量执行。结果保持单行，点击单元格可查看并复制全文，查询结果不落库。
+
+## Nacos 配置操作
+
+配置使用 `category: "configuration"`、`type: "nacos"`，`config` 包含完整 `consoleUrl`、`username`、`namespaceId`（默认 public）、`defaultGroup`（默认 DEFAULT_GROUP）、`production`（默认 true）与 `apiVersion`（默认 auto，可选 v1/v2/v3）。认证为独立的 `credentials: {password}`。页面提供原网站新标签页入口，不复制配置控制台。
+
+| 命令 | 用途 |
+|---|---|
+| `buildr connection nacos namespaces --connection <id> --target <workspace> --json` | 发现可访问命名空间（Namespace）。 |
+| `buildr connection nacos list --connection <id> [--data-id <filter>] [--group <filter>] [--page <n>] [--page-size <1..100>] --json` | 返回一页完整配置标识及总量。 |
+| `buildr connection nacos get --connection <id> --data-id <name> [--group <name>] [--output-file <new-file>] --json` | 读取完整原文、格式、MD5 和连接版本；可创建权限 0600 的本机原文文件，不覆盖已有文件。 |
+| `buildr connection nacos diff --connection <id> --data-id <name> --content-file <file> --json` | 比较当前配置与候选文件，返回完整摘要、差异及本次授权范围。 |
+| `buildr connection nacos diff --connection <id> --data-id <name> --compare-connection <id> [--compare-data-id <name>] [--compare-group <name>] --json` | 比较两个明确选定的远端配置，不执行写入。 |
+| `buildr connection nacos publish --connection <id> --data-id <name> --content-file <file> --expected-revision <revision> --expected-md5 <md5> [--authorization-file <json-file>] --json` | 发布已存在配置，检查连接、正文与格式；优先使用原生比较并交换（CAS），其他路线在提交前再次核对管理详情后普通发布，再回读验证。 |
+
+以上配置操作按需接受 `--group` 和 `--target`；默认分组（Group）由连接提供，命名空间（Namespace）由连接固定。候选文件可为 `-`，最多 4 MiB UTF-8；授权输入最多 32 KiB，不能与候选同时使用标准输入。差异显示最多 200 行/32 KiB，摘要始终覆盖全文。只读凭据来源预览不允许发布。
+
+生产每次实际发布必须先取得用户针对当前目标和差异的授权，再提交 `{source,statement,scope}`；`scope` 使用当前 `diff.authorizationScope`。同一授权依据只用于一次生产尝试；不能用永久开关或 `--yes` 代替。依据只是本次对话授权的限定记录，程序不能独立证明人类来源。二次读取不放宽生产授权，本轮开发授权也不等于真实生产发布授权。
+
+结果通过 `concurrencyProtection` 区分 `native-cas` 与 `preflight-recheck`。已确认兼容的路线优先使用原生比较并交换（CAS）；旧版、未知、自定义或已知忽略原生参数的路线在发布前再次读取最新管理详情，核对完整正文摘要及格式，保留当前元数据（Metadata）后普通发布。二次读取仍有最后读取与写入之间的竞争窗口，结果必须披露该局限，不承诺原子保护；原生能力不足不单独阻止发布。原生新增或更新语义（Upsert）也可能在并发删除后重建配置，不承诺严格存在性保护。`published` 与 `verified` 独立，`serviceReloaded: false` 表示本次未重启服务；网络未知不自动重发。实际验证仅操作用户授权的测试环境专用临时配置。详见[使用指引](../resources/runtime/skills/buildr/references/external-connections.md#nacos-配置管理)。
 
 ## Runtime 与诊断
 
