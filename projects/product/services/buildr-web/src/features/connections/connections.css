@@ -64,3 +64,8 @@
 .buildr-mysql-null{color:var(--soft-muted);font-style:italic}
 @media(max-width:900px){.buildr-mysql-target>span{margin-left:0}.buildr-mysql-toolbar .ant-select{width:150px}.buildr-mysql-toolbar>small{display:none}}
 @media(max-width:600px){.buildr-mysql-target>label{width:100%}.buildr-mysql-target .ant-select{flex:1;width:auto}.buildr-mysql-toolbar>label{align-items:flex-start;flex-direction:column;gap:4px;width:100%}.buildr-mysql-toolbar .ant-select{width:100%}}
+.buildr-kibana-fields { display: grid; gap: 14px; }
+.buildr-kibana-fields > label, .buildr-kibana-discovery > label { display: grid; gap: 7px; font-size: 13px; }
+.buildr-kibana-discovery { display: grid; gap: 10px; }
+.buildr-kibana-discovery > button { justify-self: start; }
+.buildr-kibana-pagination { color: var(--soft-muted); font-size: 12px; }

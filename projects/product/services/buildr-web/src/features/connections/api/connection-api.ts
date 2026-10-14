@@ -1,5 +1,5 @@
 import type { ApiClient } from '../../../api/client';
-import type { ConnectionInput, ConnectionTestInput, ConnectionTestResult, EditableConnection, ExternalConnection, MySqlQueryResult, QueryPreferences } from '../connection-types';
+import type { ConnectionInput, ConnectionTestInput, ConnectionTestResult, EditableConnection, ExternalConnection, KibanaDataViewsInput, KibanaDataViewsResult, MySqlQueryResult, QueryPreferences } from '../connection-types';
 
 /** Bind every operation to its visible workspace, including after an asynchronous response. */
 export function createConnectionClient(api: ApiClient, workspaceId: string) {
@@ -19,8 +19,11 @@ export function createConnectionClient(api: ApiClient, workspaceId: string) {
     remove(id: string, expectedRevision: string) {
       return api(item(id), json('DELETE', { expectedRevision })) as Promise<unknown>;
     },
-    test(input: ConnectionTestInput) {
-      return api(`${root}/test`, json('POST', input)) as Promise<ConnectionTestResult>;
+    test(input: ConnectionTestInput, signal?: AbortSignal) {
+      return api(`${root}/test`, json('POST', input, signal)) as Promise<ConnectionTestResult>;
+    },
+    discoverKibanaViews(input: KibanaDataViewsInput, signal?: AbortSignal) {
+      return api(`${root}/kibana/data-views`, json('POST', input, signal)) as Promise<KibanaDataViewsResult>;
     },
     databases(id: string, signal?: AbortSignal) {
       return api(`${item(id)}/databases`, { signal }) as Promise<{ connectionId: string; databases: string[] }>;

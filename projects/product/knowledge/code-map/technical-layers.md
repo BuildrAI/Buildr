@@ -36,6 +36,21 @@
 
 项目文档图片由[项目应用](../../services/buildr/src/modules/workspace/application/project-application.ts)复读登记与来源，任务图片由[材料应用](../../services/buildr/src/modules/task/materials/application/task-materials-application.ts)及[项目读取器](../../services/buildr/src/modules/task/materials/application/task-project-document-reader.ts)选择同一本机或候选根。共享[图片文件读取](../../services/buildr/src/infrastructure/filesystem/markdown-images.ts)只负责真实正文引用、有界普通文件、类型签名与前后观察，不拥有任务作用域或登记。前端[图片链接与失败状态](../../services/buildr-web/src/lib/markdownImages.ts)提前过滤明确非法路径，实际身份和权限仍由应用决定。
 
+## 外部连接的公共身份与专业操作
+
+连接（Connection）维护与专业查询共享同一当前身份和本机认证；工作树（Worktree）解析回规范工作空间（Canonical Workspace），不复制连接。代表链路为 `connection kibana search` → `KibanaLogsApplication.search` → 已绑定的连接访问 → Kibana 提供者（Provider）→ 当前远端数据视图（Data View）和受控结果。
+
+| 职责 | 来源与代表入口 |
+| --- | --- |
+| 公共身份、版本与认证解析 | [connections-application.ts](../../services/buildr/src/modules/connections/application/connections-application.ts) 的 `create/update/test/discoverKibanaViews`；草稿视图发现复用版本保护但不保存草稿 |
+| 当前连接与本机认证存储 | [connection-repository.ts](../../services/buildr/src/modules/connections/persistence/connection-repository.ts)，SQLite 保存元数据、独立本机存储保护密码，不持久保存日志 |
+| Kibana 用例与观察身份 | [kibana-logs-application.ts](../../services/buildr/src/modules/connections/application/kibana-logs-application.ts) 的 `views/fields/search/aggregate`，为结果加入连接编号、版本和环境 |
+| 配置与查询输入约束 | [kibana-connection.ts](../../services/buildr/src/modules/connections/domain/kibana-connection.ts)，目标、数据视图（Data View）和时间；[kibana-types.ts](../../services/buildr/src/modules/connections/domain/kibana-types.ts) 独立公开纯类型，避免公共连接与专业校验循环引用 |
+| 固定协议与安全结果 | [kibana-provider.ts](../../services/buildr/src/modules/connections/infrastructure/kibana-provider.ts)，原生 `fetch`、同步查询、当前元数据、流式上限和秘密遮蔽；[kibana-query.ts](../../services/buildr/src/modules/connections/infrastructure/kibana-query.ts) 解析精确字段、展示字段与受控条件 |
+| 命令与配置页面 | [kibana-cli.ts](../../services/buildr/src/modules/connections/interfaces/cli/kibana-cli.ts) 解析参数与有界过滤文件；[连接抽屉（Drawer）](../../services/buildr-web/src/features/connections/components/ConnectionEditDrawer.tsx) 管理配置、视图发现及迟到响应，专业字段由 [KibanaConnectionFields.tsx](../../services/buildr-web/src/features/connections/components/KibanaConnectionFields.tsx) 承接 |
+
+网页接口（API）只增加草稿视图发现，查询与统计不为入口对称而另建接口。远端仍是日志和字段的权威；视图编号不能替代账号权限，展示排除不等于文档过滤。内部接口（Internal API）不兼容、字段不可用或部分执行只影响相关动作，结果不得将这些状态转换为成功零命中。
+
 ## 对象装配与跨模块依赖
 
 | 入口 | 代表职责 |

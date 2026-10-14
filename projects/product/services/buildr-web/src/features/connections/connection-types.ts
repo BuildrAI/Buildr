@@ -35,14 +35,20 @@ export type NacosConfig = {
   apiVersion: NacosApiVersion;
 };
 export type NacosConnection = ExternalConnection<NacosConfig> & { category: 'configuration'; type: 'nacos' };
-export type EditableConnection = MySqlConnection | NacosConnection;
+export type KibanaConfig = { consoleUrl: string; username: string; dataViewId: string | null };
+export type KibanaConnection = ExternalConnection<KibanaConfig> & { category: 'logs'; type: 'kibana' };
+export type EditableConnection = MySqlConnection | NacosConnection | KibanaConnection;
 
 export function isNacosConnection(connection: ExternalConnection): connection is NacosConnection {
   return connection.category === 'configuration' && connection.type === 'nacos';
 }
 
 export function isEditableConnection(connection: ExternalConnection): connection is EditableConnection {
-  return isMySqlConnection(connection) || isNacosConnection(connection);
+  return isMySqlConnection(connection) || isNacosConnection(connection) || isKibanaConnection(connection);
+}
+
+export function isKibanaConnection(connection: ExternalConnection): connection is KibanaConnection {
+  return connection.category === 'logs' && connection.type === 'kibana';
 }
 
 export type MySqlConnectionInput = {
@@ -63,10 +69,18 @@ export type NacosConnectionInput = {
   credentials?: { password: string };
 };
 
-export type ConnectionInput = MySqlConnectionInput | NacosConnectionInput;
+export type KibanaConnectionInput = { name: string; category: 'logs'; type: 'kibana'; environment: string; config: KibanaConfig; credentials?: { password: string } };
+export type ConnectionInput = MySqlConnectionInput | NacosConnectionInput | KibanaConnectionInput;
 
 export type ConnectionTestInput = ConnectionInput & { id?: string; expectedRevision?: string };
-export type ConnectionTestResult = { ok: true; serverVersion?: string; elapsedMs: number; apiVersion?: Exclude<NacosApiVersion, 'auto'>; namespaceId?: string };
+export type KibanaDataView = { id: string; name: string; title: string };
+export type KibanaWarning = { code: string; message: string; field?: string };
+export type KibanaDataViewsResult = { dataViews: KibanaDataView[]; total: number; offset: number; limit: number; limitReached: boolean; target?: string; serverVersion?: string | null; warnings: KibanaWarning[] };
+export type KibanaDataViewsInput = ConnectionTestInput & { viewName?: string; offset?: number; limit?: number };
+export type ConnectionTestResult = {
+  ok: true; serverVersion?: string; elapsedMs: number; apiVersion?: Exclude<NacosApiVersion, 'auto'>; namespaceId?: string;
+  kibana?: { dataView: KibanaDataView & { timeFieldName: string | null }; searchVerified: true; queryChannel: string; warnings: KibanaWarning[] };
+};
 export type MySqlQueryResult = {
   connectionId: string;
   database: string | null;

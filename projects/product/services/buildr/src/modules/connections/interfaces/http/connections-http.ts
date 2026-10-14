@@ -13,6 +13,7 @@ export function createConnectionsHttpContribution(application: ConnectionsApplic
     if (request.method === 'GET' && suffix === '/connections') return { status: 200, body: application.list(root) };
     if (request.method === 'POST' && suffix === '/connections') { authorizeWrite(); return { status: 201, body: application.create(root, await readJsonBody(64 * 1024)) }; }
     if (request.method === 'POST' && suffix === '/connections/test') { authorizeWrite(); return { status: 200, body: await application.test(root, await readJsonBody(64 * 1024)) }; }
+    if (request.method === 'POST' && suffix === '/connections/kibana/data-views') { authorizeWrite(); return { status: 200, body: await application.discoverKibanaViews(root, await readJsonBody(64 * 1024)) }; }
     if (!match) return null;
     const id = match[1];
     if (!operation && request.method === 'PATCH') { authorizeWrite(); return { status: 200, body: application.update(root, id, await readJsonBody(64 * 1024)) }; }

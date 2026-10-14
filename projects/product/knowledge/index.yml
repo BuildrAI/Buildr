@@ -415,6 +415,8 @@ artifacts:
       - system-structure
     sources:
       - technical-http-host-source
+      - external-connections-application
+      - kibana-logs-provider
   - id: responsibilities
     title: 能力、数据与副作用
     kind: diagram
@@ -443,6 +445,8 @@ artifacts:
       - code-source-control-read
       - code-source-control-image-read
       - code-source-control-image-preview
+      - external-connections-application
+      - kibana-logs-provider
   - id: technical-layers-map
     title: 技术层、对象与代表方法
     kind: code-map
@@ -458,6 +462,10 @@ artifacts:
       - task-source-taskagentaction-7a3c7f
       - markdown-document-images
       - markdown-image-links
+      - external-connections-application
+      - kibana-logs-provider
+      - kibana-logs-query
+      - kibana-connection-ui
   - id: project-relations-article
     title: 项目、服务与代码库如何协作
     kind: document
@@ -1455,6 +1463,26 @@ sources:
     path: services/buildr/src/web/http/session.ts
     summary: 在路由分发前核对实际监听主机与端口，写入继续校验来源、会话和内容类型。
     observedDigest: bb6e62fda12062a189ad96935de3b0820ee13d9105925d13ea1825da13b43a97
+  - id: external-connections-application
+    title: 外部连接公共身份与认证
+    kind: code
+    path: services/buildr/src/modules/connections/application/connections-application.ts
+    summary: 统一本机连接维护、配置版本及认证绑定，草稿视图发现不保存配置。
+  - id: kibana-logs-provider
+    title: Kibana 固定协议与安全结果
+    kind: code
+    path: services/buildr/src/modules/connections/infrastructure/kibana-provider.ts
+    summary: 当前视图读取、同步只读查询、兼容诊断及有界敏感信息处理。
+  - id: kibana-logs-query
+    title: Kibana 字段与查询范围
+    kind: code
+    path: services/buildr/src/modules/connections/infrastructure/kibana-query.ts
+    summary: 时间、精确字段、展示排除和受控过滤，不接受任意查询或脚本。
+  - id: kibana-connection-ui
+    title: Kibana 连接配置与视图发现
+    kind: code
+    path: services/buildr-web/src/features/connections/components/KibanaConnectionFields.tsx
+    summary: 当前草稿的视图选择、分页和反馈，不提供另一套日志查询控制台。
   - id: technical-prompt-request-source
     title: 生成指令的输入与请求时效
     kind: code

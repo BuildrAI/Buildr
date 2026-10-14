@@ -28,6 +28,8 @@
 
 原生会话（Session）关联由 `native-session-links` 聚合 Codex 与 DSH 的多对多关系；`codex-desktop` 保留原有文件和深层链接（Deep Link），`dsh-desktop` 核验桌面范围并确认准确导航。原生程序继续保存对话与持续执行；一次生成不继承已有聊天的内容、工具或记忆。两条链路见[智能体（Agent）接入架构](agent-integration.md)。
 
+外部连接（Connection）由 `connections` 统一维护本机工作空间（Workspace）SQLite 中的身份、配置和观察版本；密码独立加密并绑定真实目标。MySQL、Nacos 和 `logs/kibana` 复用该应用，专业操作按提供者（Provider）选择。Kibana 网页只管理连接和数据视图（Data View），日志发现、只读搜索和统计由命令行接口（CLI）提供；智能体（Agent）根据当前字段和目标组合调查，应用不保存日志或固定故障流程。内部查询通道、实际字段、时间范围、部分结果和遮蔽限制由每次返回说明，账号原生权限继续约束数据访问。职责文件和调用链见[连接专业能力](../../code-map/technical-layers.md#外部连接的公共身份与专业操作)。
+
 ## 写入保护和失败边界
 
 | 对象 | 当前保护 | 不能据此推断什么 |

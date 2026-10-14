@@ -5,6 +5,8 @@ import { ConnectionProviderRegistry, type ConnectionProvider } from './connectio
 import { createMySqlProvider } from '../infrastructure/mysql-query.ts';
 import { createNacosProvider } from '../infrastructure/nacos-provider.ts';
 import { NacosConfigurationApplication } from './nacos-configuration-application.ts';
+import { KibanaLogsApplication } from './kibana-logs-application.ts';
+import { createKibanaProvider, sanitizeKibanaOutput } from '../infrastructure/kibana-provider.ts';
 import { CONNECTION_FIELDS, configuration, connectionFailure, connectionId, databaseName, expectedRevision, inputObject, recordRevision, type ConnectionConfiguration, type ConnectionRecord, type ConnectionScope, queryPreferenceValues } from '../domain/connection.ts';
 
 export class ConnectionsApplication {
@@ -13,6 +15,7 @@ export class ConnectionsApplication {
   private readonly resolveScope: (root: string) => ConnectionScope;
   private readonly configurationWritable: boolean;
   readonly nacos: NacosConfigurationApplication;
+  readonly kibana: KibanaLogsApplication;
   constructor(options: { dataRoot: string; store: ConnectionStoreRuntime; resolveScope(root: string): ConnectionScope; providers?: ConnectionProvider[]; credentialDataRoot?: string; readonlyScope?: ConnectionScope }) {
     if (Boolean(options.credentialDataRoot) !== Boolean(options.readonlyScope)) throw connectionFailure('connection_preview_scope_required', '只读认证来源必须绑定准确工作空间。', 409);
     this.repository = new ConnectionRepository(options.dataRoot, options.store, options.credentialDataRoot);
@@ -22,13 +25,19 @@ export class ConnectionsApplication {
       if (bound && (scope.workspaceId !== bound.workspaceId || !sameFilesystemPath(scope.rootPath, bound.rootPath))) throw connectionFailure('connection_preview_scope_mismatch', '此预览的认证来源仅适用于启动时绑定的工作空间。', 409);
       return scope;
     };
-    this.providers = new ConnectionProviderRegistry(options.providers ?? [createMySqlProvider(), createNacosProvider()]);
+    this.providers = new ConnectionProviderRegistry(options.providers ?? [createMySqlProvider(), createNacosProvider(), createKibanaProvider()]);
     this.nacos = new NacosConfigurationApplication((root, id) => {
       const scope = this.resolveScope(root), record = this.find(scope, id), provider = this.providers.get(record.type, record.category);
       if (!provider.nacos) throw connectionFailure('connection_operation_unsupported', '该连接不提供 Nacos 配置管理能力。', 422);
       const credentials = this.repository.readCredentials(scope, record.credentialId, this.bindingDigest(record, provider));
       return { scope, record, credentials: credentials ?? {}, nacos: provider.nacos };
     }, () => this.assertConfigurationWritable());
+    this.kibana = new KibanaLogsApplication((root, id) => {
+      const scope = this.resolveScope(root), record = this.find(scope, id), provider = this.providers.get(record.type, record.category);
+      if (!provider.kibana) throw connectionFailure('connection_operation_unsupported', '该连接不提供 Kibana 日志查询能力。', 422);
+      const credentials = this.repository.readCredentials(scope, record.credentialId, this.bindingDigest(record, provider));
+      return { record, credentials: credentials ?? {}, kibana: provider.kibana };
+    });
   }
   list(root: string) {
     const scope = this.resolveScope(root);
@@ -111,13 +120,24 @@ export class ConnectionsApplication {
     const values = queryPreferenceValues({ enabledDatabases: input.enabledDatabases, currentDatabase: input.currentDatabase });
     return this.repository.saveQueryPreferences(this.resolveScope(root), id, values, input.expectedRevision);
   }
-  async test(root: string, value: unknown) {
-    const input = inputObject(value, [...CONNECTION_FIELDS, 'credentials', 'id', 'expectedRevision']), scope = this.resolveScope(root);
+  private draftAccess(root: string, value: unknown, extraFields: string[] = []) {
+    const input = inputObject(value, [...CONNECTION_FIELDS, 'credentials', 'id', 'expectedRevision', ...extraFields]), scope = this.resolveScope(root);
     const previous = input.id === undefined ? undefined : this.find(scope, connectionId(input.id));
     if (previous) this.observed(previous, input.expectedRevision);
-    const normalized = this.normalize(input, previous);
+    const normalized = this.normalize(Object.fromEntries(Object.entries(input).filter(([key]) => !extraFields.includes(key))), previous);
     const credentials = normalized.credentials ?? (previous ? this.repository.readCredentials(scope, previous.credentialId, this.bindingDigest(normalized.configuration, normalized.provider)) : null);
-    return normalized.provider.test(normalized.configuration.config, credentials ?? {});
+    return { input, normalized, credentials: credentials ?? {} };
+  }
+  async test(root: string, value: unknown) {
+    const { normalized, credentials } = this.draftAccess(root, value);
+    return normalized.provider.test(normalized.configuration.config, credentials);
+  }
+  async discoverKibanaViews(root: string, value: unknown) {
+    const { input, normalized, credentials } = this.draftAccess(root, value, ['viewName', 'offset', 'limit']);
+    const { provider, configuration: draft } = normalized;
+    if (!provider.kibana) throw connectionFailure('connection_operation_unsupported', '该连接不提供 Kibana 数据视图（Data View）发现能力。', 422);
+    const options = Object.fromEntries([['name', input.viewName], ['offset', input.offset], ['limit', input.limit]].filter(([, value]) => value !== undefined));
+    return sanitizeKibanaOutput(await provider.kibana.views(draft.config, credentials, options), credentials, draft.config);
   }
   private access(root: string, id: string) {
     const scope = this.resolveScope(root), record = this.find(scope, id), provider = this.providers.get(record.type, record.category);

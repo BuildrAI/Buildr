@@ -8,9 +8,10 @@ import { workspaceHref } from '../../../lib/labels';
 import { ResourceDirectory } from '../../../components/ResourceDirectory';
 import { WorkspaceStage } from '../../../components/WorkspaceStage';
 import { createConnectionClient } from '../api/connection-api';
-import { isEditableConnection, isMySqlConnection, isNacosConnection, type EditableConnection, type ExternalConnection } from '../connection-types';
+import { isEditableConnection, isKibanaConnection, isMySqlConnection, isNacosConnection, type EditableConnection, type ExternalConnection } from '../connection-types';
 import { connectionSearchText, connectionTypeLabel } from '../connection-presentation';
 import { nacosConsoleHref } from '../nacos-connection-form';
+import { kibanaConsoleHref } from '../kibana-connection-form';
 import { ConnectionEditDrawer } from '../components/ConnectionEditDrawer';
 import { MySqlQuery } from '../components/MySqlQuery';
 import '../connections.css';
@@ -60,12 +61,12 @@ export function ConnectionsPage() {
     actions={<Button id="create-mysql-connection" disabled={!configurationWritable} type="primary" icon={<PlusOutlined />} onClick={() => setEditing(null)}>新增连接</Button>}
     columns={[
       { title: '环境', dataIndex: 'environment', width: 120, render: (value, connection) => <><Tag>{value || '未填写'}</Tag>{isNacosConnection(connection) && connection.config.production && <Tag color="orange">生产</Tag>}</> },
-      { title: '地址 / 默认范围', width: 360, render: (_, connection) => isMySqlConnection(connection) ? <div className="buildr-connection-address"><code>{connection.config.host}:{connection.config.port}</code><small>{connection.config.defaultDatabase || '未设置默认数据库'}</small></div> : isNacosConnection(connection) ? <div className="buildr-connection-address"><code>{connection.config.consoleUrl}</code><small>{connection.config.namespaceId} / {connection.config.defaultGroup}</small></div> : '—' },
+      { title: '地址 / 默认范围', width: 360, render: (_, connection) => isMySqlConnection(connection) ? <div className="buildr-connection-address"><code>{connection.config.host}:{connection.config.port}</code><small>{connection.config.defaultDatabase || '未设置默认数据库'}</small></div> : isNacosConnection(connection) ? <div className="buildr-connection-address"><code>{connection.config.consoleUrl}</code><small>{connection.config.namespaceId} / {connection.config.defaultGroup}</small></div> : isKibanaConnection(connection) ? <div className="buildr-connection-address"><code>{connection.config.consoleUrl}</code><small>{connection.config.dataViewId ? `数据视图（Data View）：${connection.config.dataViewId}` : '未设置默认数据视图（Data View）'}</small></div> : '—' },
     ]}
     actionWidth={170} rowActions={connection => {
-      const nacos = isNacosConnection(connection), website = nacos ? nacosConsoleHref(connection) : null;
+      const nacos = isNacosConnection(connection), kibana = isKibanaConnection(connection), website = nacos ? nacosConsoleHref(connection) : kibana ? kibanaConsoleHref(connection) : null;
       return <>
-        {nacos ? website ? <a className="buildr-connection-website" href={website} target="_blank" rel="noopener noreferrer" aria-label={`打开 Nacos 网站：${connection.name}`}>打开网站</a> : <Button type="text" disabled>打开网站</Button> : <Button type="text" disabled={!isMySqlConnection(connection)} onClick={() => openQuery(connection)}>查询</Button>}
+        {nacos || kibana ? website ? <a className="buildr-connection-website" href={website} target="_blank" rel="noopener noreferrer" aria-label={`打开 ${kibana ? 'Kibana' : 'Nacos'} 网站：${connection.name}`}>打开网站</a> : <Button type="text" disabled>打开网站</Button> : <Button type="text" disabled={!isMySqlConnection(connection)} onClick={() => openQuery(connection)}>查询</Button>}
         <Button type="text" disabled={!configurationWritable || !isEditableConnection(connection)} onClick={() => { if (configurationWritable && isEditableConnection(connection)) setEditing(connection); }}>编辑</Button>
         <Dropdown trigger={['click']} menu={{ items: [{ key: 'delete', label: '删除连接', danger: true, disabled: !configurationWritable || removing === connection.id }], onClick: () => { modal.confirm({ title: '删除这个连接？', content: '只删除连接配置和本机认证，不删除外部系统中的内容。', okText: '删除', cancelText: '取消', okButtonProps: { danger: true }, onOk: () => remove(connection) }); } }}><Button type="text" aria-label={`更多操作：${connection.name}`} loading={removing === connection.id} icon={<MoreOutlined />} /></Dropdown>
       </>;

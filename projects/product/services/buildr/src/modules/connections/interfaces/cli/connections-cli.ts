@@ -4,6 +4,7 @@ import process from 'node:process';
 import type { ConnectionsApplication } from '../../application/connections-application.ts';
 import { connectionFailure, inputObject } from '../../domain/connection.ts';
 import { NACOS_CLI_HELP, runNacosCli } from './nacos-cli.ts';
+import { KIBANA_CLI_HELP, runKibanaCli } from './kibana-cli.ts';
 
 const ACTION_FLAGS: Record<string, string[]> = {
   list: [], create: ['--file'], update: ['--connection', '--file', '--expected-revision'], remove: ['--connection', '--expected-revision'],
@@ -25,11 +26,13 @@ export function createConnectionsCliContributions(application: ConnectionsApplic
       '编辑保留认证时省略 credentials；地址、端口或用户名改变时必须提供新 credentials。',
       '查询为单条只读 SELECT，默认100行、最多500行；--database 空值表示不使用默认库，database.table按真实账号权限执行。',
       ...NACOS_CLI_HELP,
+      ...KIBANA_CLI_HELP,
     ],
     match: ({ domain }: { domain?: string }) => domain === 'connection',
     async run(_runtime: unknown, context: { argv: string[] }) {
       const [action = 'list', ...args] = context.argv.slice(3);
       if (action === 'nacos') return runNacosCli(application, args);
+      if (action === 'kibana') return runKibanaCli(application, args);
       const flags = ACTION_FLAGS[action];
       if (!flags) throw connectionFailure('connection_cli_invalid', '未知连接操作。');
       const values = new Map<string, string>();
