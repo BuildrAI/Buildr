@@ -427,7 +427,13 @@ export async function runSourceControlBranchesJourney({ t, page, workspaceUrl, c
           await item.click({trial:true});
         }
         assert.deepEqual(requests, [], '只查看恢复后的菜单不执行远程操作');
-        await capture(page, 'source-control-remote-actions-tracked-enabled.png'); await noOverflow();
+        await capture(page, 'source-control-remote-actions-tracked-enabled.png');
+        await enabled.getByRole('menuitem', {name:'同步', exact:true}).getByText('同步', {exact:true}).hover();
+        await page.getByRole('tooltip', {name:'先拉取并变基，再推送到当前远端跟踪分支', exact:true}).waitFor();
+        await row(worktree).locator('.source-control-row-menu-button').click(); await enabled.waitFor({state:'hidden'});
+        await page.evaluate(async () => {await new Promise(requestAnimationFrame); await new Promise(requestAnimationFrame);});
+        assert.deepEqual(requests, [], '同步提示不遮挡同一行三个点，鼠标关闭菜单不会执行远程操作');
+        await noOverflow();
       } finally {page.off('request', observe);}
     });
   });

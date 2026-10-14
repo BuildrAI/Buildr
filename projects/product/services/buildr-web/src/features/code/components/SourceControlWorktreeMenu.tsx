@@ -16,7 +16,7 @@ export function SourceControlWorktreeMenu({sourceKey, open:controlledOpen, onOpe
   const open = controlledOpen ?? localOpen, pending = fetching || syncing;
   const disabled = !ready || pending || Boolean(unavailableReason);
   const reason = unavailableReason || (!ready ? '当前来源尚未就绪，请刷新后重试' : undefined);
-  const label = (text: string, description?: string) => <Tooltip title={reason || description}><span className="source-control-row-menu-label">{text}</span></Tooltip>;
+  const label = (text: string, description?: string) => <Tooltip title={reason || description} classNames={{root:'source-control-row-menu-tooltip'}}><span className="source-control-row-menu-label">{text}</span></Tooltip>;
   const change = (next:boolean) => {setLocalOpen(next); onOpenChange?.(next);};
   useEffect(() => {change(false);}, [sourceKey, viewActive]);
   useEffect(() => {if (pending) change(false);}, [pending]);
