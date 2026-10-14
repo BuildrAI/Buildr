@@ -13,7 +13,20 @@ export function createConnectionsModule(options: { readProductIdentity(): unknow
     const workspace = { getWorkspace: query.getWorkspace, resolveSourceWorkspaceRoot: query.resolveSourceWorkspaceRoot, listRegisteredWorkspaces: registry.listRegisteredWorkspaces };
     const store = requires[WORKSPACE_TASK_SUPPORT];
     const identity = options.readProductIdentity(), profile = options.resolveWebProfile(identity), preview = options.readPreviewCredentials?.(identity);
-    const application = new ConnectionsApplication({ dataRoot: profile.dataRoot, store: { runWorkspaceSqliteRead: store.runWorkspaceSqliteRead, runWorkspaceTransaction: store.runWorkspaceTransaction }, resolveScope: root => {
+    const application = new ConnectionsApplication({ dataRoot: profile.dataRoot, store: { runWorkspaceSqliteRead: store.runWorkspaceSqliteRead, runWorkspaceTransaction: store.runWorkspaceTransaction }, resolveService: (root, serviceId) => {
+      if (typeof query.listProjects !== 'function' || typeof query.listServices !== 'function') throw connectionFailure('xxl_job_service_registry_unavailable', '当前入口无法读取已登记服务（Service）。', 409);
+      const projects = query.listProjects(root).projects;
+      if (!Array.isArray(projects)) throw connectionFailure('xxl_job_service_registry_unavailable', '项目登记不可读取，未猜测服务（Service）身份。', 409);
+      let unavailable = false;
+      for (const project of projects) {
+        try {
+          const services = query.listServices(root, project.code).services;
+          if (!Array.isArray(services)) { unavailable = true; continue; }
+          if (services.some((service: { id: string }) => service.id === serviceId)) return;
+        } catch { unavailable = true; }
+      }
+      throw connectionFailure(unavailable ? 'xxl_job_service_registry_unavailable' : 'xxl_job_service_not_found', unavailable ? '部分服务登记不可读取，无法确认目标服务（Service）；请核对当前登记。' : '目标服务（Service）未登记，请先核对稳定编号。', 409);
+    }, resolveScope: root => {
       // Recheck the managed preview record and workspace identity before every operation.
       if (preview && JSON.stringify(options.readPreviewCredentials?.(identity)) !== JSON.stringify(preview)) throw connectionFailure('connection_preview_scope_mismatch', '预览认证来源已变化，请重新启动预览。', 409);
       return resolveConnectionWorkspace(root, workspace);

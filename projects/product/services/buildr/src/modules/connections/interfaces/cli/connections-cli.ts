@@ -5,6 +5,7 @@ import type { ConnectionsApplication } from '../../application/connections-appli
 import { connectionFailure, inputObject } from '../../domain/connection.ts';
 import { NACOS_CLI_HELP, runNacosCli } from './nacos-cli.ts';
 import { KIBANA_CLI_HELP, runKibanaCli } from './kibana-cli.ts';
+import { XXL_JOB_CLI_HELP, runXxlJobCli } from './xxl-job-cli.ts';
 
 const ACTION_FLAGS: Record<string, string[]> = {
   list: [], create: ['--file'], update: ['--connection', '--file', '--expected-revision'], remove: ['--connection', '--expected-revision'],
@@ -19,7 +20,7 @@ function fileInput(file: string): string {
 }
 export function createConnectionsCliContributions(application: ConnectionsApplication) {
   return [Object.freeze({
-    key: 'connection', surface: 'agent-machine', summary: '管理工作空间连接、MySQL 只读查询与 Nacos 配置操作。',
+    key: 'connection', surface: 'agent-machine', summary: '管理外部连接，查询 MySQL、Kibana，维护 Nacos 配置和 XXL-JOB 调度。',
     help: [
       'Usage: buildr connection <list|create|update|remove|test|databases|tables|columns|query> [--connection <id>] [--file <json-file>] [--expected-revision <revision>] [--database <name>] [--table <name>] [--sql <sql> | --sql-file <file>] [--target <workspace>] [--json]',
       'create/update 的 JSON 使用 {name,category,type,environment,config,credentials?:{password}}；认证只从本机文件或标准输入读取，永不输出。',
@@ -27,12 +28,14 @@ export function createConnectionsCliContributions(application: ConnectionsApplic
       '查询为单条只读 SELECT，默认100行、最多500行；--database 空值表示不使用默认库，database.table按真实账号权限执行。',
       ...NACOS_CLI_HELP,
       ...KIBANA_CLI_HELP,
+      ...XXL_JOB_CLI_HELP,
     ],
     match: ({ domain }: { domain?: string }) => domain === 'connection',
     async run(_runtime: unknown, context: { argv: string[] }) {
       const [action = 'list', ...args] = context.argv.slice(3);
       if (action === 'nacos') return runNacosCli(application, args);
       if (action === 'kibana') return runKibanaCli(application, args);
+      if (action === 'xxl-job') return runXxlJobCli(application, args);
       const flags = ACTION_FLAGS[action];
       if (!flags) throw connectionFailure('connection_cli_invalid', '未知连接操作。');
       const values = new Map<string, string>();

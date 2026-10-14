@@ -208,7 +208,7 @@ Git provider evidence使用`buildr.git-worktree-evidence/v1`，保存在Git comm
 
 ## 外部系统连接（Connection）与专业操作
 
-`connection` 是工作空间（Workspace）的通用连接入口，当前支持数据源类别的 MySQL 与配置系统类别的 Nacos。类别、具体类型和自由环境属性位于顶层，专业连接参数位于 `config`。用户页面与智能体（Agent）命令调用相同查询能力，不要求另装 MySQL 客户端或部署工具服务。命令行工具（CLI）成功输出 `schemaVersion: "buildr.connection-result/v1"`、当前动作 `operation` 及相应结果字段；HTTP 直接返回应用结果字段。
+`connection` 是工作空间（Workspace）的通用连接入口，当前支持 MySQL、Nacos、Kibana 与 XXL-JOB。类别、具体类型和自由环境属性位于顶层，专业连接参数位于 `config`。用户页面与智能体（Agent）命令调用相同应用能力，不要求另装 MySQL 客户端或部署工具服务。命令行工具（CLI）成功输出 `schemaVersion: "buildr.connection-result/v1"`、当前动作 `operation` 及相应结果字段；HTTP 直接返回应用结果字段。
 
 | 命令 | 用途 |
 |---|---|
@@ -222,7 +222,7 @@ Git provider evidence使用`buildr.git-worktree-evidence/v1`，保存在Git comm
 | `buildr connection columns --connection <id> --database <name> --table <name> --target <workspace> --json` | 查看字段类型、空值、键与说明。 |
 | `buildr connection query --connection <id> [--database <name>] --sql-file <file> --target <workspace> --json` | 执行单条只读查询；`--sql <text>` 可替换文件，二者只能选一个，文件可为 `-`。 |
 
-首版 MySQL 配置使用 `category: "data-source"`、`type: "mysql"`，`config` 包含 `host`、`port`（默认 3306）、`username`、可空 `defaultDatabase` 和可选 `selectedDatabases`。MySQL 认证使用独立的 `credentials: {password: <本机输入>}`，不放入 `config`；显式空密码为 `credentials: {password: ""}`。这些是 MySQL 专业字段，通用连接不固定配置或认证形状；未来类型需注册专业提供者（Provider）与专用工具，目前不提供 Kibana、DMP 或 XXL-JOB 对接。输入文件不超过 128 KiB，使用 UTF-8；含认证的输入只留在本机，不进入仓库、聊天或任务材料。
+首版 MySQL 配置使用 `category: "data-source"`、`type: "mysql"`，`config` 包含 `host`、`port`（默认 3306）、`username`、可空 `defaultDatabase` 和可选 `selectedDatabases`。MySQL 认证使用独立的 `credentials: {password: <本机输入>}`，不放入 `config`；显式空密码为 `credentials: {password: ""}`。这些是 MySQL 专业字段，通用连接不固定配置或认证形状；新增类型需注册专业提供者（Provider）与专用工具，未支持的类型或动作明确拒绝。输入文件不超过 128 KiB，使用 UTF-8；含认证的输入只留在本机，不进入仓库、聊天或任务材料。
 
 未传 `--database` 时使用连接默认库，`--database ""` 明确不设当前库，`database.table` 按实际账号权限访问同一连接中的其他库。无最外层 LIMIT 时补充 100 行，显式 1—500 保留，超过 500 拒绝；需要更多时自行调整条件或 OFFSET。查询执行时间上限 10 秒，结果容量上限 4 MiB；语法不支持、权限、网络、超时或容量失败明确返回，不把部分输出描述为成功。
 
@@ -252,6 +252,12 @@ Git provider evidence使用`buildr.git-worktree-evidence/v1`，保存在Git comm
 生产每次实际发布必须先取得用户针对当前目标和差异的授权，再提交 `{source,statement,scope}`；`scope` 使用当前 `diff.authorizationScope`。同一授权依据只用于一次生产尝试；不能用永久开关或 `--yes` 代替。依据只是本次对话授权的限定记录，程序不能独立证明人类来源。二次读取不放宽生产授权，本轮开发授权也不等于真实生产发布授权。
 
 结果通过 `concurrencyProtection` 区分 `native-cas` 与 `preflight-recheck`。已确认兼容的路线优先使用原生比较并交换（CAS）；旧版、未知、自定义或已知忽略原生参数的路线在发布前再次读取最新管理详情，核对完整正文摘要及格式，保留当前元数据（Metadata）后普通发布。二次读取仍有最后读取与写入之间的竞争窗口，结果必须披露该局限，不承诺原子保护；原生能力不足不单独阻止发布。原生新增或更新语义（Upsert）也可能在并发删除后重建配置，不承诺严格存在性保护。`published` 与 `verified` 独立，`serviceReloaded: false` 表示本次未重启服务；网络未知不自动重发。实际验证仅操作用户授权的测试环境专用临时配置。详见[使用指引](../resources/runtime/skills/buildr/references/external-connections.md#nacos-配置管理)。
+
+## XXL-JOB 调度操作
+
+配置使用 `scheduling/xxl-job`，`config` 为 `{consoleUrl,username,production,apiVersion,serviceBindings}`。默认生产标识为 true、适配版本 auto、关联为空；当前支持2.3.0。服务（Service）关联经 `resolve/bind` 对照远端确认，网页只配置连接并新标签页打开原站。网站身份改变清空关联并要求新认证。
+
+`buildr connection xxl-job --help` 提供完整参数。执行器（Executor）发现使用 `executors`；`resolve/bind` 接收 `--service <uuid> --app-name <observed-appname>`，绑定再携带 `--expected-revision`。业务动作均接受明确 `--connection` 和 `--service`：`jobs/get` 查询，`prepare` 准备动作与授权范围，`create/update` 使用 `--job-file`，`start/stop/trigger` 控制调度，`logs/log` 查看记录与正文，`preview` 预览远端调度时间。已有任务使用 `--job`，写入需要连接及任务观察摘要。生产动作需要本次授权文件；触发未覆盖参数时沿用当前完整参数，未知创建或触发不重发。详细字段、默认值、并发局限及结果判断见 [XXL-JOB 使用方法](../resources/runtime/skills/buildr/references/xxl-job.md)。
 
 ## Runtime 与诊断
 

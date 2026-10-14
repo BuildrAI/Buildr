@@ -9,6 +9,7 @@ import { Worker } from 'node:worker_threads';
 import { pathToFileURL } from 'node:url';
 import YAML from 'yaml';
 import { ConnectionsApplication } from '../../src/modules/connections/application/connections-application.ts';
+import { createXxlJobProvider } from '../../src/modules/connections/infrastructure/xxl-job-provider.ts';
 import { ConnectionRepository } from '../../src/modules/connections/persistence/connection-repository.ts';
 import { resolveConnectionWorkspace } from '../../src/modules/connections/infrastructure/connection-workspace.ts';
 import type { ConnectionProvider } from '../../src/modules/connections/application/connection-provider.ts';
@@ -532,6 +533,31 @@ test('concurrent first reads both upgrade schema35 and import exactly once after
   } finally { database.close(); }
 });
 
+
+test('XXL-JOB generic connection edits cannot bypass verified service binding and preserve authentication', async t => {
+  const f = fixture(t), serviceId = crypto.randomUUID(), password = 'fixture-only-' + crypto.randomUUID();
+  const provider = createXxlJobProvider();
+  provider.xxlJob = { ...provider.xxlJob!, async executors() {
+    return { apiVersion: '2.3.0', offset: 0, limit: 100, totalCount: 1, hasMore: false, items: [{ id: 7, appName: 'example-api', name: 'Example', addressType: 0, addresses: [] }] };
+  } };
+  const application = new ConnectionsApplication({ dataRoot: f.dataRoot, store: f.store, resolveScope: () => f.scope, resolveService: (_root, observed) => assert.equal(observed, serviceId), providers: [provider] });
+  const input = { name: 'Example scheduler', category: 'scheduling', type: 'xxl-job', environment: 'qa', config: { consoleUrl: 'http://example.invalid/xxl-job-admin/', username: 'reader', production: false }, credentials: { password } };
+  const binding = { serviceId, executorId: 7, appName: 'example-api' };
+  assert.throws(() => application.create(f.root, { ...input, config: { ...input.config, serviceBindings: [binding] } }), { code: 'xxl_job_binding_requires_verification' });
+  let connection = application.create(f.root, input).connection;
+  assert.throws(() => application.update(f.root, connection.id, { expectedRevision: connection.revision, config: { serviceBindings: [binding] } }), { code: 'xxl_job_binding_requires_verification' });
+  await application.xxlJob.bind(f.root, connection.id, { serviceId, appName: binding.appName, expectedRevision: connection.revision });
+  connection = application.list(f.root).connections[0];
+  assert.deepEqual(connection.config.serviceBindings, [binding]);
+  connection = application.update(f.root, connection.id, { expectedRevision: connection.revision, name: 'Renamed', config: { consoleUrl: 'http://example.invalid/xxl-job-admin' } }).connection;
+  assert.equal(connection.hasCredentials, true);
+  assert.deepEqual(connection.config.serviceBindings, [binding]);
+  assert.throws(() => application.update(f.root, connection.id, { expectedRevision: connection.revision, config: { serviceBindings: [{ ...binding, executorId: 8 }] } }), { code: 'xxl_job_binding_requires_verification' });
+  connection = application.update(f.root, connection.id, { expectedRevision: connection.revision, config: { consoleUrl: 'http://other.invalid/xxl-job-admin/' }, credentials: { password } }).connection;
+  assert.deepEqual(connection.config.serviceBindings, []);
+  assert.equal(connection.hasCredentials, true);
+  assert.equal(JSON.stringify(connection).includes(password), false);
+});
 
 test('an empty SQLite file is initialized while a missing table in a claimed current schema is preserved and rejected', t => {
   const f = fixture(t), file = path.join(f.root, '.buildr/local/workspace.sqlite');

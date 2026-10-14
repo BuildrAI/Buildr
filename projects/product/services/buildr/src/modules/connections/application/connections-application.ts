@@ -4,6 +4,8 @@ import { ConnectionRepository, type ConnectionStoreRuntime } from '../persistenc
 import { ConnectionProviderRegistry, type ConnectionProvider } from './connection-provider.ts';
 import { createMySqlProvider } from '../infrastructure/mysql-query.ts';
 import { createNacosProvider } from '../infrastructure/nacos-provider.ts';
+import { createXxlJobProvider } from '../infrastructure/xxl-job-provider.ts';
+import { XxlJobApplication } from './xxl-job-application.ts';
 import { NacosConfigurationApplication } from './nacos-configuration-application.ts';
 import { KibanaLogsApplication } from './kibana-logs-application.ts';
 import { createKibanaProvider, sanitizeKibanaOutput } from '../infrastructure/kibana-provider.ts';
@@ -16,7 +18,8 @@ export class ConnectionsApplication {
   private readonly configurationWritable: boolean;
   readonly nacos: NacosConfigurationApplication;
   readonly kibana: KibanaLogsApplication;
-  constructor(options: { dataRoot: string; store: ConnectionStoreRuntime; resolveScope(root: string): ConnectionScope; providers?: ConnectionProvider[]; credentialDataRoot?: string; readonlyScope?: ConnectionScope }) {
+  readonly xxlJob: XxlJobApplication;
+  constructor(options: { dataRoot: string; store: ConnectionStoreRuntime; resolveScope(root: string): ConnectionScope; resolveService?(root: string, serviceId: string): void; providers?: ConnectionProvider[]; credentialDataRoot?: string; readonlyScope?: ConnectionScope }) {
     if (Boolean(options.credentialDataRoot) !== Boolean(options.readonlyScope)) throw connectionFailure('connection_preview_scope_required', '只读认证来源必须绑定准确工作空间。', 409);
     this.repository = new ConnectionRepository(options.dataRoot, options.store, options.credentialDataRoot);
     this.configurationWritable = options.readonlyScope === undefined;
@@ -25,7 +28,7 @@ export class ConnectionsApplication {
       if (bound && (scope.workspaceId !== bound.workspaceId || !sameFilesystemPath(scope.rootPath, bound.rootPath))) throw connectionFailure('connection_preview_scope_mismatch', '此预览的认证来源仅适用于启动时绑定的工作空间。', 409);
       return scope;
     };
-    this.providers = new ConnectionProviderRegistry(options.providers ?? [createMySqlProvider(), createNacosProvider(), createKibanaProvider()]);
+    this.providers = new ConnectionProviderRegistry(options.providers ?? [createMySqlProvider(), createNacosProvider(), createKibanaProvider(), createXxlJobProvider()]);
     this.nacos = new NacosConfigurationApplication((root, id) => {
       const scope = this.resolveScope(root), record = this.find(scope, id), provider = this.providers.get(record.type, record.category);
       if (!provider.nacos) throw connectionFailure('connection_operation_unsupported', '该连接不提供 Nacos 配置管理能力。', 422);
@@ -38,6 +41,15 @@ export class ConnectionsApplication {
       const credentials = this.repository.readCredentials(scope, record.credentialId, this.bindingDigest(record, provider));
       return { record, credentials: credentials ?? {}, kibana: provider.kibana };
     });
+    this.xxlJob = new XxlJobApplication((root, id) => {
+      const scope = this.resolveScope(root), record = this.find(scope, id), provider = this.providers.get(record.type, record.category);
+      if (!provider.xxlJob) throw connectionFailure('connection_operation_unsupported', '该连接不提供 XXL-JOB 调度能力。', 422);
+      const credentials = this.repository.readCredentials(scope, record.credentialId, this.bindingDigest(record, provider));
+      return { scope, record, credentials: credentials ?? {}, xxlJob: provider.xxlJob };
+    }, () => this.assertConfigurationWritable(), (root, serviceId) => {
+      if (!options.resolveService) throw connectionFailure('xxl_job_service_registry_unavailable', '当前入口无法核对已登记服务（Service），未操作远端任务。', 409);
+      options.resolveService(this.resolveScope(root).rootPath, serviceId);
+    }, (root, id, value) => this.updateConnection(root, id, value, true));
   }
   list(root: string) {
     const scope = this.resolveScope(root);
@@ -64,12 +76,19 @@ export class ConnectionsApplication {
   private observed(record: ConnectionRecord, revision: unknown): void {
     if (recordRevision(record) !== expectedRevision(revision)) throw connectionFailure('connection_revision_conflict', '连接已被其他入口修改，请刷新后重试。', 409);
   }
-  private normalize(input: Record<string, unknown>, previous?: ConnectionRecord) {
+  private normalize(input: Record<string, unknown>, previous?: ConnectionRecord, verifiedBindings = false) {
     const fields = Object.fromEntries(CONNECTION_FIELDS.filter(key => key in input).map(key => [key, input[key]]));
     const merged = configuration({ ...fields, config: fields.config === undefined ? previous?.config : { ...(previous?.config || {}), ...inputObject(fields.config, Object.keys((fields.config || {}) as object)) } }, previous);
     const provider = this.providers.get(merged.type, merged.category);
     if (previous && (previous.type !== merged.type || previous.category !== merged.category)) throw connectionFailure('connection_type_change_forbidden', '连接类型创建后不可更换，请新建连接。');
     merged.config = provider.validateConfig(merged.config, previous?.config);
+    if (merged.type === 'xxl-job' && !verifiedBindings) {
+      const before = (previous?.config.serviceBindings ?? []) as { serviceId: string; executorId: number; appName: string }[];
+      const after = merged.config.serviceBindings as typeof before;
+      if (after.some(binding => !before.some(old => old.serviceId === binding.serviceId && old.executorId === binding.executorId && old.appName === binding.appName))) {
+        throw connectionFailure('xxl_job_binding_requires_verification', '新增或修改服务（Service）关联必须先通过 XXL-JOB bind 核对真实执行器（Executor）；连接表单可保留或解除已有关联。', 409);
+      }
+    }
     if (previous?.credentialId && this.bindingDigest(previous, provider) !== this.bindingDigest(merged, provider) && input.credentials === undefined) throw connectionFailure('connection_credentials_required', '地址、端口或用户名改变后，请重新填写认证信息，避免将旧认证交给新目标。');
     const credentials = input.credentials === undefined ? undefined : provider.validateCredentials(input.credentials);
     return { configuration: merged, provider, credentials };
@@ -89,13 +108,16 @@ export class ConnectionsApplication {
     return { connection: this.public(scope, record) };
   }
   update(root: string, id: string, value: unknown) {
+    return this.updateConnection(root, id, value, false);
+  }
+  private updateConnection(root: string, id: string, value: unknown, verifiedBindings: boolean) {
     this.assertConfigurationWritable();
     const input = inputObject(value, [...CONNECTION_FIELDS, 'credentials', 'expectedRevision']);
     const scope = this.resolveScope(root); let previousCredential: string | null = null, newCredential: string | null = null;
     let record: ConnectionRecord;
     try { record = this.repository.mutate(scope, records => {
       const current = this.find(scope, id, records); this.observed(current, input.expectedRevision);
-      const normalized = this.normalize(input, current);
+      const normalized = this.normalize(input, current, verifiedBindings);
       previousCredential = current.credentialId;
       const next: ConnectionRecord = { ...current, ...normalized.configuration, credentialId: normalized.credentials === undefined ? current.credentialId : (newCredential = this.repository.writeCredentials(scope, normalized.credentials, this.bindingDigest(normalized.configuration, normalized.provider))), updatedAt: new Date().toISOString() };
       records.splice(records.indexOf(current), 1, next); return next;

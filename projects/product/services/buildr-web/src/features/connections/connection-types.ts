@@ -37,18 +37,32 @@ export type NacosConfig = {
 export type NacosConnection = ExternalConnection<NacosConfig> & { category: 'configuration'; type: 'nacos' };
 export type KibanaConfig = { consoleUrl: string; username: string; dataViewId: string | null };
 export type KibanaConnection = ExternalConnection<KibanaConfig> & { category: 'logs'; type: 'kibana' };
-export type EditableConnection = MySqlConnection | NacosConnection | KibanaConnection;
+export type XxlJobApiVersion = 'auto' | '2.3.0';
+export type XxlJobServiceBinding = { serviceId: string; executorId: number; appName: string };
+export type XxlJobConfig = {
+  consoleUrl: string;
+  username: string;
+  production: boolean;
+  apiVersion: XxlJobApiVersion;
+  serviceBindings: XxlJobServiceBinding[];
+};
+export type XxlJobConnection = ExternalConnection<XxlJobConfig> & { category: 'scheduling'; type: 'xxl-job' };
+export type EditableConnection = MySqlConnection | NacosConnection | KibanaConnection | XxlJobConnection;
 
 export function isNacosConnection(connection: ExternalConnection): connection is NacosConnection {
   return connection.category === 'configuration' && connection.type === 'nacos';
 }
 
 export function isEditableConnection(connection: ExternalConnection): connection is EditableConnection {
-  return isMySqlConnection(connection) || isNacosConnection(connection) || isKibanaConnection(connection);
+  return isMySqlConnection(connection) || isNacosConnection(connection) || isKibanaConnection(connection) || isXxlJobConnection(connection);
 }
 
 export function isKibanaConnection(connection: ExternalConnection): connection is KibanaConnection {
   return connection.category === 'logs' && connection.type === 'kibana';
+}
+
+export function isXxlJobConnection(connection: ExternalConnection): connection is XxlJobConnection {
+  return connection.category === 'scheduling' && connection.type === 'xxl-job';
 }
 
 export type MySqlConnectionInput = {
@@ -70,7 +84,8 @@ export type NacosConnectionInput = {
 };
 
 export type KibanaConnectionInput = { name: string; category: 'logs'; type: 'kibana'; environment: string; config: KibanaConfig; credentials?: { password: string } };
-export type ConnectionInput = MySqlConnectionInput | NacosConnectionInput | KibanaConnectionInput;
+export type XxlJobConnectionInput = { name: string; category: 'scheduling'; type: 'xxl-job'; environment: string; config: XxlJobConfig; credentials?: { password: string } };
+export type ConnectionInput = MySqlConnectionInput | NacosConnectionInput | KibanaConnectionInput | XxlJobConnectionInput;
 
 export type ConnectionTestInput = ConnectionInput & { id?: string; expectedRevision?: string };
 export type KibanaDataView = { id: string; name: string; title: string };
@@ -80,6 +95,7 @@ export type KibanaDataViewsInput = ConnectionTestInput & { viewName?: string; of
 export type ConnectionTestResult = {
   ok: true; serverVersion?: string; elapsedMs: number; apiVersion?: Exclude<NacosApiVersion, 'auto'>; namespaceId?: string;
   kibana?: { dataView: KibanaDataView & { timeFieldName: string | null }; searchVerified: true; queryChannel: string; warnings: KibanaWarning[] };
+  xxlJob?: { apiVersion: '2.3.0'; readVerified: true; executorCount: number; warnings: string[] };
 };
 export type MySqlQueryResult = {
   connectionId: string;

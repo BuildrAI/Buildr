@@ -28,6 +28,8 @@
 
 ## 工作资产与专业执行
 
+- XXL-JOB 当前适配2.3.0管理接口（API），页面只管理连接。服务（Service）与执行器（Executor）关联由智能体（Agent）根据真实环境配置核实并本机保存；范围不等于远端权限隔离。创建/修改支持代码处理器模式（BEAN），不部署方法或编辑在线脚本（GLUE）；停止不终止在途业务，手动触发响应不等于执行完成。写前重读仍有并发窗口，正文读取依赖执行节点与日志文件，未完整/不可用分别报告。详见 [XXL-JOB 使用方法](../resources/runtime/skills/buildr/references/xxl-job.md)。
+
 - 组件（Component）只支持工作空间（Workspace）范围，没有项目（Project）或服务（Service）级组件（Component）、远程目录、依赖求解或可执行钩子（Hook）。
 - 命令（Command）只声明和诊断外部工具，不负责安装、升级或登录。智能体（Agent）仍需在实际环境和授权内完成专业执行。
 - 远端技能（Skill）当前只支持 `resolved.kind: skill-url` 指向单个原始 `SKILL.md`，不推测相邻目录；未声明完整性摘要（Integrity）时允许投射，但诊断会警告。
