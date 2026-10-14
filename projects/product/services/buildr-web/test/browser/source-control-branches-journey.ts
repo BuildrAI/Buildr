@@ -390,10 +390,55 @@ export async function runSourceControlBranchesJourney({ t, page, workspaceUrl, c
     });
   });
 
+  await scenario('未跟踪上游的同步与获取菜单置灰，悬停说明原因且跟踪后恢复', async () => {
+    await fixture.withBranches(async (branches:any) => {
+      await page.setViewportSize({width:1440, height:1000});
+      const {worktree} = await open(branches), before = branches.snapshot();
+      assert.equal(worktree.upstream, null, '夹具真实当前分支尚未设置上游');
+      const requests:string[] = [], reason = '当前分支未设置远端跟踪分支';
+      const observe = (request:any) => {const path = new URL(request.url()).pathname; if (/\/code\/(?:fetch|sync|sync-context)$/.test(path)) requests.push(path);};
+      page.on('request', observe);
+      try {
+        const menu = await openOperations(worktree), disabledColors = new Map<string,string>();
+        for (const name of ['同步', '获取远程']) {
+          const item = menu.getByRole('menuitem', {name, exact:true});
+          assert.equal(await item.getAttribute('aria-disabled'), 'true', name + '在未跟踪时明确禁用');
+          assert.ok((await item.getAttribute('class')).includes('ant-dropdown-menu-item-disabled'), name + '使用真实禁用样式');
+          disabledColors.set(name, await item.evaluate((element:HTMLElement) => getComputedStyle(element).color));
+          await item.hover();
+          const titles = await item.evaluate((element:HTMLElement) => [element.getAttribute('title') || '', ...Array.from(element.querySelectorAll('[title]'), part => part.getAttribute('title') || '')]);
+          if (!titles.some(title => title.includes(reason))) await page.getByRole('tooltip', {name:reason, exact:true}).waitFor();
+          const bounds = await item.boundingBox(); assert.ok(bounds);
+          await page.mouse.click(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+        }
+        await page.evaluate(async () => {await new Promise(requestAnimationFrame); await new Promise(requestAnimationFrame);});
+        assert.deepEqual(requests, [], '禁用菜单项点击不会读取同步上下文或发出获取/同步请求');
+        assert.deepEqual(branches.snapshot(), before, '禁用操作不改变文件、索引、引用或配置');
+        await capture(page, 'source-control-remote-actions-untracked-disabled.png');
+        await row(worktree).locator('.source-control-row-menu-button').press('Escape'); await menu.waitFor({state:'hidden'});
+        await switchTo(worktree, branches.remote + '/' + branches.remoteName, branches.remoteName, true);
+        await row(worktree).locator('.source-control-worktree-status[data-remote-state="clean"],.source-control-worktree-status[data-remote-state="changed"]').waitFor();
+        const enabled = await openOperations(worktree);
+        for (const name of ['同步', '获取远程']) {
+          const item = enabled.getByRole('menuitem', {name, exact:true});
+          assert.notEqual(await item.getAttribute('aria-disabled'), 'true', name + '在真实检出并建立上游后恢复可用');
+          assert.equal((await item.getAttribute('class')).includes('ant-dropdown-menu-item-disabled'), false);
+          assert.notEqual(await item.evaluate((element:HTMLElement) => getComputedStyle(element).color), disabledColors.get(name), '可用项与禁用项颜色可区分');
+          await item.click({trial:true});
+        }
+        assert.deepEqual(requests, [], '只查看恢复后的菜单不执行远程操作');
+        await capture(page, 'source-control-remote-actions-tracked-enabled.png'); await noOverflow();
+      } finally {page.off('request', observe);}
+    });
+  });
+
   await scenario('单库获取远程发现新分支，关闭浮层不取消写入且保留当前成果', async () => {
     await fixture.withBranches(async (branches: any) => {
       await page.setViewportSize({width:1440, height:1000});
-      const {worktree} = await open(branches), before = branches.snapshot();
+      const {worktree} = await open(branches);
+      await switchTo(worktree, branches.remote + '/' + branches.remoteName, branches.remoteName, true);
+      await row(worktree).locator('.source-control-worktree-status[data-remote-state="clean"],.source-control-worktree-status[data-remote-state="changed"]').waitFor();
+      const before = branches.snapshot();
       const {manager} = await manage(worktree, branches.remote + '/' + branches.remoteName);
       const added = branches.publishRemoteBranch('dev');
       assert.equal(await manager.getByRole('button', {name:'管理 ' + branches.remote + '/' + added.name, exact:true}).count(), 0);
@@ -449,7 +494,10 @@ export async function runSourceControlBranchesJourney({ t, page, workspaceUrl, c
     await fixture.withBranches(async (branches: any) => {
       await page.setViewportSize({width:1440, height:1000});
       const {worktree} = await open(branches);
-      const observed = await (await page.request.get(api + '/code/source-control')).json();
+      const actual = await (await page.request.get(api + '/code/source-control')).json();
+      // This case owns response substitutes for concurrency, including the
+      // tracked availability of its two observed click targets; Git is unchanged.
+      const observed = {...actual, repositories:actual.repositories.map((repository:any) => ({...repository, worktrees:repository.worktrees.map((tree:any) => tree.branch && tree.status !== 'unavailable' ? {...tree, upstream:tree.upstream || 'browser-observed/' + tree.branch, ahead:tree.ahead ?? 0, behind:tree.behind ?? 0} : tree)}))};
       const peer = observed.repositories.find((item: any) => item.id !== worktree.repositoryId && item.source?.checkoutId);
       assert.ok(peer, '并发回归需要第二个真实可观察代码库');
       const peerTree = {...peer.worktrees.find((item: any) => item.isRegistered), repositoryId:peer.id, repositoryName:peer.name};
@@ -476,6 +524,12 @@ export async function runSourceControlBranchesJourney({ t, page, workspaceUrl, c
         const url = new URL(request.url());
         if (/\/code\/(?:history|commit|diff|source-file|branches|authors)$/.test(url.pathname)) contentReads.push(url.searchParams.get('repositoryId') || '');
       };
+      const initialCatalog = async (route:any) => {await route.fulfill({json:observed});};
+      await page.route(matchesCatalog, initialCatalog);
+      const initialReturned = page.waitForResponse((response:any) => new URL(response.url()).pathname === catalogPath);
+      await root().getByRole('button', {name:'刷新源代码管理', exact:true}).click(); await initialReturned;
+      await root().locator('.source-control-title .anticon-spin').waitFor({state:'hidden'});
+      await page.unroute(matchesCatalog, initialCatalog);
       await page.route(matchesCatalog, interceptCatalog); await page.route('**/code/fetch', interceptFetch);
       page.on('request', observeContents);
       try {
@@ -576,7 +630,7 @@ export async function runSourceControlBranchesJourney({ t, page, workspaceUrl, c
         assert.ok((await shortcut.getAttribute('title')).includes('先拉取并变基，再推送到 ' + target));
         await row(worktree).locator('.source-control-status-button').click(); await page.locator('.source-control-status-details:visible').waitFor();
         assert.equal(writes.length, 0, '文件状态详情不会执行同步'); await row(worktree).locator('.source-control-status-button').press('Escape');
-        const menu = await openOperations(worktree); await menu.getByRole('menuitem', {name:'同步（拉取后推送）', exact:true}).click({trial:true});
+        const menu = await openOperations(worktree); await menu.getByRole('menuitem', {name:'同步', exact:true}).click({trial:true});
         await row(worktree).locator('.source-control-row-menu-button').press('Escape'); await menu.waitFor({state:'hidden'});
         const syncSent = page.waitForRequest((request:any) => new URL(request.url()).pathname.endsWith('/code/sync'));
         await shortcut.focus(); await shortcut.press('Enter'); await syncSent;
@@ -597,13 +651,13 @@ export async function runSourceControlBranchesJourney({ t, page, workspaceUrl, c
         await capture(page, 'source-control-sync-partial-result.png');
         changed = true;
         // The next click reads a different branch; it must refresh facts without a second write.
-        const menuAgain = await openOperations(worktree); await menuAgain.getByRole('menuitem', {name:'同步（拉取后推送）', exact:true}).click();
+        const menuAgain = await openOperations(worktree); await menuAgain.getByRole('menuitem', {name:'同步', exact:true}).click();
         await root().locator('[data-sync-worktree="' + worktree.worktreeId + '"]').getByText('来源、分支或提交已变化，请核对更新后的状态再同步。', {exact:true}).waitFor();
         assert.equal(writes.length, 1, '观察来源漂移拒绝同步POST');
         changed = false; holdContext = true;
         const contextSent = page.waitForRequest((request:any) => new URL(request.url()).pathname.endsWith('/code/sync-context'));
         const contextReturned = page.waitForResponse((response:any) => new URL(response.url()).pathname.endsWith('/code/sync-context'));
-        const delayed = await openOperations(worktree); await delayed.getByRole('menuitem', {name:'同步（拉取后推送）', exact:true}).click(); await contextSent;
+        const delayed = await openOperations(worktree); await delayed.getByRole('menuitem', {name:'同步', exact:true}).click(); await contextSent;
         await page.locator('.shell-navigation [data-nav="explorer"]').click(); await page.locator('.code-explorer-stage:visible').waitFor();
         releaseContext(); await contextReturned;
         await page.waitForFunction((id:string) => [...document.querySelectorAll('.code-source-control-page [data-source-worktree]')].find(element => element.getAttribute('data-source-worktree') === id)?.querySelector('.source-control-row-menu-button:not(.ant-btn-loading)'), worktree.worktreeId);

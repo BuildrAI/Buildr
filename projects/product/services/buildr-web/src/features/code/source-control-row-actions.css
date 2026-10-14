@@ -4,6 +4,7 @@
 .source-control-row-action-slot { display:flex; align-items:center; justify-content:center; width:24px; height:28px; flex:0 0 24px; }
 .source-control-row-action-slot .source-control-row-menu-button { display:flex; align-items:center; justify-content:center; width:24px; min-width:24px; height:28px; padding:0; color:var(--soft-muted); }
 .source-control-row-menu-button .ant-btn-loading-icon { margin:0!important; }
+.source-control-row-menu-label { display:block; }
 .source-control-repositories.has-worktree-actions .source-control-repository:hover .source-control-row-action-button,
 .source-control-repositories.has-worktree-actions .source-control-worktree:hover .source-control-row-action-button,
 .source-control-repositories.has-worktree-actions .is-selected .source-control-row-action-button,
