@@ -1,6 +1,6 @@
 ---
 name: buildr
-description: 安装或更新 Buildr、接入本机智能体、同步工作空间、诊断或维护工作资产、管理外部系统连接或通过已保存连接查询数据库，以及采用组织工作方式时使用；任务执行使用对应专业技能。
+description: 安装或更新 Buildr、接入本机智能体、同步工作空间、诊断或维护工作资产、管理外部系统连接、获取任务所需的外部系统信息，以及采用组织工作方式时使用；任务执行使用对应专业技能。
 ---
 # Buildr Skill
 
@@ -26,7 +26,7 @@ Agent 是 Buildr 功能的默认操作入口。在用户目标和已有授权内
 | 投射、发现或适配器（Adapter）问题 | 读取 [运行时维护](references/runtime.md)；只检查当前目标运行时（Runtime） |
 | 查看任务、测试或交付事实 | 下方专业入口；只读查看不创建记录，也不补造过去历史 |
 | 查看全部代码库改动、提交历史及对应文件 | [只读代码观察](references/code-observation.md)；按登记实例、比较层与真实版本查看，网页与命令行接口（CLI）共享应用 |
-| 管理外部系统连接（Connection），或通过已保存连接查看 MySQL 结构、查询数据 | [连接与 MySQL 查询](references/external-connections.md)；直接使用已保存连接与本机认证，查询不要求重新提供密码 |
+| 任务需要外部系统信息，或管理外部系统连接（Connection） | [外部系统连接](references/external-connections.md)；先查 `buildr connection --help`，主动发现已配置连接，再按类别与类型调用已支持能力 |
 | 授权开始或继续持久修改 | `task-triage` 分流并由 `task-manager` 在首次文件写入前登记或接续任务 |
 
 ## 专业入口
