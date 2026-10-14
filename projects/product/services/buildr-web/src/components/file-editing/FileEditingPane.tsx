@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Alert, Button, Segmented, Space, Spin, Tag, Tooltip } from 'antd';
 import { CheckCircleOutlined, ExclamationCircleOutlined, FolderOpenOutlined, LoadingOutlined } from '@ant-design/icons';
 import { LanguageDescription } from '@codemirror/language';
@@ -6,7 +6,9 @@ import { fileEditingLanguages } from './file-editing-language';
 import { MarkdownHost } from '../MarkdownHost';
 import type { MarkdownRenderOptions } from '../../markdown';
 import { FileCodeEditor } from './FileCodeEditor';
+import { ReadOnlyFileCodeEditor } from './ReadOnlyFileCodeEditor';
 import { FileConflictDialog } from './FileConflictDialog';
+import { WorkspaceViewTransientContext } from '../../app/pageTabs';
 import type { FileEditingController, FileEditingDocument } from './file-editing-types';
 import './file-editing-pane.css';
 
@@ -18,17 +20,26 @@ export type FileEditingPaneProps = {
   markdownRevision?: string;
   focusLine?: number;
   focusRequest?: number;
+  searchQuery?: string;
+  onSelectLines?(lines: [number, number] | null): void;
   onOpenInExplorer?: () => void;
   onViewCurrent?: () => void;
   toolbarEnd?: ReactNode;
 };
 
 /** Shared file identity, editor, autosave feedback and conflict handling for every entry. */
-export function FileEditingPane({ file, editing, active = true, markdownOptions, markdownRevision, focusLine, focusRequest, onOpenInExplorer, onViewCurrent, toolbarEnd }: FileEditingPaneProps) {
+export function FileEditingPane({ file, editing, active = true, markdownOptions, markdownRevision, focusLine, focusRequest, searchQuery, onSelectLines, onOpenInExplorer, onViewCurrent, toolbarEnd }: FileEditingPaneProps) {
+  const transient = useContext(WorkspaceViewTransientContext);
   const session = editing.sessions[file.id];
   const [preview, setPreview] = useState(false);
   const [conflictOpen, setConflictOpen] = useState(false);
   const readHost = useRef<HTMLDivElement>(null);
+  const scrolls = useRef(new Map<string, number>());
+  const focusKey = focusLine ? JSON.stringify([file.id, focusLine, focusRequest]) : '';
+  const appliedFocus = useRef('');
+  const [dismissedFocus, setDismissedFocus] = useState('');
+  const [selectedLines, setSelectedLines] = useState<[number, number] | null>(null);
+  const selectLines = (lines: [number, number] | null) => { setSelectedLines(lines); onSelectLines?.(lines); };
   const current = useRef(editing); current.current = editing;
   useEffect(() => { editing.ensure(file); }, [file.id, file.revision, file.content, file.observedAt, file.sourceRevision, editing.ensure]);
   useEffect(() => {
@@ -37,7 +48,7 @@ export function FileEditingPane({ file, editing, active = true, markdownOptions,
     void editing.refresh(file.id);
     return release;
   }, [file.id, active, editing.watch, editing.refresh]);
-  useEffect(() => { setPreview(false); setConflictOpen(false); }, [file.id]);
+  useEffect(() => { setPreview(false); setConflictOpen(false); setSelectedLines(null); }, [file.id]);
   useEffect(() => { if (session?.mode !== 'edit' || session?.file.readOnlyReason) setPreview(false); }, [session?.mode, session?.file.readOnlyReason]);
   useEffect(() => {
     let cancelled = false;
@@ -47,16 +58,23 @@ export function FileEditingPane({ file, editing, active = true, markdownOptions,
   }, [file.id, file.path]);
   const conflictKey = session?.conflict ? file.id + ':' + session.conflict.file.revision : '';
   useEffect(() => { setConflictOpen(Boolean(conflictKey) && active); }, [conflictKey, active]);
+  const markdown = file.kind === 'markdown';
+  const editingSource = session?.mode === 'edit' && !session.file.readOnlyReason;
+  const readingSource = markdown && !editingSource && Boolean(focusKey) && dismissedFocus !== focusKey;
+  const showSource = !markdown || editingSource || readingSource;
   useEffect(() => {
-    if (!active || !focusLine || !readHost.current) return;
-    readHost.current.querySelector<HTMLElement>(`[data-line="${focusLine}"]`)?.scrollIntoView({ block: 'center' });
-  }, [file.id, focusLine, focusRequest, active]);
+    if (!showSource && readHost.current) readHost.current.scrollTop = scrolls.current.get(file.id + ':read') || 0;
+    if (!showSource) onSelectLines?.(null);
+  }, [file.id, showSource]);
+  useEffect(() => {
+    if (active && focusLine && appliedFocus.current !== focusKey) {
+      appliedFocus.current = focusKey;
+      selectLines([focusLine, focusLine]);
+    }
+  }, [focusKey, active]);
 
   if (!session) return <div className="file-editing-loading"><Spin /></div>;
   const editable = !session.file.readOnlyReason;
-  const markdown = file.kind === 'markdown';
-  const editingSource = session.mode === 'edit' && editable;
-  const showSource = !markdown || editingSource;
   const showPreview = editingSource && markdown && preview;
   const pathParts = file.path.split('/');
   const fileName = pathParts.pop() || file.path;
@@ -72,7 +90,8 @@ export function FileEditingPane({ file, editing, active = true, markdownOptions,
       <div className="file-editing-header-top">
         <div className="file-editing-path" title={fullPath} aria-label={'文件路径：' + file.path}>{parentPath && <span>{parentPath} / </span>}<strong>{fileName}</strong></div>
         <Space size={6} className="file-editing-header-actions">
-          {markdown && <span className="file-editing-mode" data-prototype-position="file-mode"><Segmented block size="small" aria-label="文件查看模式" value={editingSource ? 'edit' : 'read'} options={[{ label: '阅读', value: 'read' }, { label: '编辑', value: 'edit', disabled: !editable }]} onChange={value => editing.setMode(file.id, value as 'read' | 'edit')} /></span>}
+          {readingSource && <Button size="small" onClick={() => setDismissedFocus(focusKey)}>返回阅读</Button>}
+          {markdown && <span className="file-editing-mode" data-prototype-position="file-mode"><Segmented block size="small" aria-label="文件查看模式" value={editingSource ? 'edit' : 'read'} options={[{ label: '阅读', value: 'read' }, { label: '编辑', value: 'edit', disabled: !editable }]} onChange={value => { setDismissedFocus(focusKey); editing.setMode(file.id, value as 'read' | 'edit'); }} /></span>}
           {onOpenInExplorer && <Tooltip title="在资源管理器（Explorer）中打开同一文件"><Button type="text" size="small" aria-label="在资源管理器中打开" icon={<FolderOpenOutlined />} onClick={onOpenInExplorer} /></Tooltip>}
           {onViewCurrent && <Button size="small" onClick={onViewCurrent}>打开当前文件</Button>}
           {toolbarEnd}
@@ -94,8 +113,11 @@ export function FileEditingPane({ file, editing, active = true, markdownOptions,
     {session.status === 'error' && !session.bindingError && <Alert className="file-editing-notice" type="error" showIcon message="保存失败，输入已保留" description={session.error} action={<Button size="small" onClick={() => void editing.retry(file.id)}>重试保存</Button>} />}
     {session.conflict && <Alert className="file-editing-notice" type="warning" showIcon message="文件已被外部修改，自动保存已暂停" description="你的输入和磁盘最新内容都已保留。处理差异后继续保存。" action={<Button size="small" onClick={() => setConflictOpen(true)}>处理冲突</Button>} />}
     <div className={'file-editing-body' + (showPreview ? ' with-preview' : '')}>
-      {showSource ? <div className="file-editing-source" data-prototype-position="editor-input"><FileCodeEditor documentId={file.id} state={session.editorState} onTransactions={transactions => editing.applyTransactions(file.id, transactions)} onComposing={value => editing.setComposing(file.id, value)} onBlur={() => void editing.saveNow(file.id)} autoFocus={active && markdown && editingSource} focusLine={focusLine} focusRequest={focusRequest} /></div>
-        : <div className="file-editing-reading" ref={readHost} data-prototype-position="editor-input"><MarkdownHost markdown={session.content} className="markdown-body" renderVersion={markdownRevision} options={markdownOptions} /></div>}
+      {readingSource ? <div className="file-editing-source" data-prototype-position="editor-input"><ReadOnlyFileCodeEditor documentId={file.id + ':search'} path={file.path} content={session.content} query={searchQuery} selectedLines={selectedLines} active={active} focusLine={focusLine} focusRequest={focusRequest}
+        onSelectLine={(line, extend) => selectLines(extend && selectedLines ? [Math.min(selectedLines[0], line), Math.max(selectedLines[1], line)] : [line, line])} readOnlyReason="源码定位：只读查看，可返回阅读或明确进入编辑。" initialScrollTop={scrolls.current.get(file.id + ':search') || 0} onScroll={top => scrolls.current.set(file.id + ':search', top)} /></div>
+        : showSource ? <div className="file-editing-source" data-prototype-position="editor-input"><FileCodeEditor documentId={file.id} state={session.editorState} onTransactions={transactions => editing.applyTransactions(file.id, transactions)} onComposing={value => editing.setComposing(file.id, value)} onBlur={() => void editing.saveNow(file.id)} active={active} autoFocus={active && !transient && markdown && editingSource} focusLine={focusLine} focusRequest={focusRequest} searchQuery={searchQuery} selectedLines={selectedLines} onSelectLines={selectLines}
+          initialScrollTop={scrolls.current.get(file.id + ':source') || 0} onScroll={top => scrolls.current.set(file.id + ':source', top)} /></div>
+        : <div className="file-editing-reading" ref={readHost} data-prototype-position="editor-input" onScroll={event => scrolls.current.set(file.id + ':read', event.currentTarget.scrollTop)}><MarkdownHost markdown={session.content} className="markdown-body" renderVersion={markdownRevision} options={markdownOptions} /></div>}
       {showPreview && <div className="file-editing-preview"><div className="file-editing-preview-label">Markdown 预览</div><MarkdownHost markdown={session.content} className="markdown-body" renderVersion={markdownRevision} options={markdownOptions} /></div>}
     </div>
     {session.conflict && active && <FileConflictDialog file={file} session={session} editing={editing} open={conflictOpen} onClose={() => setConflictOpen(false)} />}

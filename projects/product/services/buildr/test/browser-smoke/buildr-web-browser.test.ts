@@ -18,6 +18,7 @@ import { materializeCleanProductSource } from '../helpers/clean-product-source.t
 import { recordVerificationResultFromEvidence } from '../helpers/task-verification-result-fixture.ts';
 import { gitCheckoutReadId } from '../../src/infrastructure/git/checkout-read-identity.ts';
 import { withSourceControlBranchFixture } from '../helpers/source-control-branch-fixture.ts';
+import { planCodeBrowserGroups } from '../verification/browser-selector-dispatcher.ts';
 import { runWorkspaceCompositionJourney } from './workspace-composition-journey.ts';
 import { runCodeExplorerJourney } from '../../../buildr-web/test/browser/code-explorer-journey.ts';
 import { runSourceControlJourney } from '../../../buildr-web/test/browser/source-control-journey.ts';
@@ -43,7 +44,11 @@ const SELECTORS: any = new Set(SELECTOR_INPUT.split(',').map((item: any) => item
 for (const selector of SELECTORS) if (!KNOWN_SELECTORS.has(selector)) throw new Error(`Unknown browser integration selector: ${selector}`);
 if (SELECTORS.size === 0) throw new Error('Browser integration selector cannot be empty.');
 const selected: any = (name: any) => SELECTORS.has('all') || SELECTORS.has(name);
-const selectorLabel: any = [...SELECTORS].join(',');
+const codeFocusProvided = Boolean(process.env.BUILDR_CODE_EXPLORER_FOCUS || process.env.BUILDR_SOURCE_CONTROL_FOCUS);
+const codeGroup = selected('code') && codeFocusProvided ? planCodeBrowserGroups()[0] : null;
+const runCodeExplorer = !codeGroup || codeGroup.id === 'explorer';
+const runSourceControl = !codeGroup || codeGroup.id === 'source-control';
+const selectorLabel: any = [...SELECTORS].join(',') + (SELECTORS.has('code') && codeGroup ? ':' + codeGroup.id : '');
 
 function runBuildr(args: any, buildr: any = BUILDR): any  {
   const result: any = spawnSync(process.execPath, [buildr, ...args], { cwd: PRODUCT_ROOT, encoding: 'utf8' });
@@ -237,7 +242,8 @@ function createSelectedFixture(root: any, controllerCli: any): any  {
     createShellFixture(root);
     const source=path.join(root,'projects/demo/services/api');fs.mkdirSync(path.join(source,'src'),{recursive:true});
     fs.writeFileSync(path.join(source,'src/main.ts'),'export const explorerAnswer = 1;\n'+'// readable source line\n'.repeat(120));
-    fs.writeFileSync(path.join(source,'README.md'),'# Explorer document\n\n[Source](src/main.ts)\n\n![Image](image.png)\n');
+    fs.writeFileSync(path.join(source,'README.md'),'# Explorer document\n\n[Source](src/main.ts)\n\n[同库父级资料](../services/foo)\n\n[代码关联任务说明](@task/browser-task)\n\n![Image](image.png)\n');
+    const parentRelativeFile=path.join(source,'../services/foo');fs.mkdirSync(path.dirname(parentRelativeFile),{recursive:true});fs.writeFileSync(parentRelativeFile,'export const parentRelativeSource = "same checkout";\n');
     fs.writeFileSync(path.join(source,'image.png'),publicationTestPng);
     fs.writeFileSync(path.join(source,'src/𠮷𠮷.ts'),'export const unicodeSearch = "𠮷𠮷";\n');
     fs.writeFileSync(path.join(source,'large-text.txt'),'large text start\n'+('x'.repeat(80*1024-1)+'\n').repeat(63)+'large text end\n');
@@ -257,6 +263,7 @@ function createSelectedFixture(root: any, controllerCli: any): any  {
   }
   else if (selector === 'layout') {
     createShellFixture(root);
+    for (const code of ['demo', 'other']) fs.writeFileSync(path.join(root, 'projects', code, 'README.md'), `# ${code} 项目文档\n\n独立来源的可编辑项目资料。\n`);
     const source = path.join(root, 'projects/demo/services/api');
     fs.mkdirSync(source, { recursive: true });
     fs.writeFileSync(path.join(source, 'README.md'), '# 布局阅读资料\n\n' + Array.from({ length: 35 }, (_, index) => `## 阅读段落 ${index + 1}\n\n${'这是具有稳定价值的前端阅读说明，用于验证宽屏、分屏和窄屏下正文可读，必要操作可达。'.repeat(8)}\n`).join('\n'));
@@ -364,9 +371,9 @@ async function capture(page: any, name: any): Promise<any>  {
   await page.screenshot({ path: path.join(SCREENSHOT_DIR, name), fullPage: true, animations: 'disabled' });
 }
 
-// 代码页组还包含真实生成、提交与推送场景；实测前38项已接近345秒。
-// 为完整场景保留480秒有界预算，调度器另留15秒用于清理。
-test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('code') ? 480_000 : SELECTORS.has('task') ? 360_000 : SELECTORS.has('all') ? 300_000 : SELECTORS.has('task-materials') || SELECTORS.has('layout') || SELECTORS.has('workbench') || SELECTORS.has('articles') || SELECTORS.has('shell') || SELECTORS.has('service') || SELECTORS.has('project') ? 120_000 : 45_000 }, async (t: any) => {
+// Dispatcher splits code into independent Explorer/SCM parents (240/480 seconds)
+// and reserves 15 seconds outside each parent for its isolated cleanup.
+test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('code') && codeGroup ? codeGroup.nodeTimeoutMs : SELECTORS.has('code') || SELECTORS.has('task') ? 480_000 : SELECTORS.has('all') ? 300_000 : SELECTORS.has('task-materials') ? 240_000 : SELECTORS.has('layout') || SELECTORS.has('workbench') || SELECTORS.has('articles') || SELECTORS.has('shell') || SELECTORS.has('service') || SELECTORS.has('project') ? 120_000 : 45_000 }, async (t: any) => {
   const requestedSmokeRoot: any = process.env.BUILDR_SMOKE_ROOT;
   const managedSmokeRoot: any = requestedSmokeRoot && fs.existsSync(path.join(requestedSmokeRoot, '.buildr-smoke-owner')) ? requestedSmokeRoot : null;
   const base: any = managedSmokeRoot || fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-browser-smoke-'));
@@ -498,7 +505,8 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     runBuildr(['task','update','browser-task','--brief-file',linkedBrief,'--expected-record',linkedTask.recordDigest,'--target',workspaceRoot,'--json']);
     const codeFile=path.join(workspaceRoot,'projects/demo/services/api/zz-segmented-text.txt');
     const history=spawnSync('git',['rev-parse','HEAD'],{cwd:workspaceRoot,encoding:'utf8'});assert.equal(history.status,0,history.stderr);
-    if (!process.env.BUILDR_SOURCE_CONTROL_FOCUS) await runCodeExplorerJourney({t,page,workspaceUrl,capture,expectedBrowserErrors,codeFixture:{...codeWorktreeFixture,current:codeSegmentedText('current'),history:codeSegmentedText('history'),commitHash:history.stdout.trim(),change:()=>fs.writeFileSync(codeFile,'changed segmented text\n'+codeSegmentedText('current')),restore:()=>fs.writeFileSync(codeFile,codeSegmentedText('current'))}});
+    if (runCodeExplorer) await runCodeExplorerJourney({t,page,workspaceUrl,capture,expectedBrowserErrors,codeFixture:{...codeWorktreeFixture,current:codeSegmentedText('current'),history:codeSegmentedText('history'),commitHash:history.stdout.trim(),change:()=>fs.writeFileSync(codeFile,'changed segmented text\n'+codeSegmentedText('current')),restore:()=>fs.writeFileSync(codeFile,codeSegmentedText('current'))}});
+    if (runSourceControl) {
     // This file belongs to the finished explorer fixture. SCM also needs a real clean checkout.
     fs.rmSync(path.join(codeWorktreeFixture.nativeCheckoutLocation,codeWorktreeFixture.nativeWorktree.path));
     // Prepare the SCM comparison only after the explorer canary. Both layers remain
@@ -657,6 +665,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
       finally { await page.goto('about:blank').catch(()=>{}); }
     });
     await runSourceControlJourney({t,page,workspaceUrl,capture,expectedBrowserErrors,fixture:{path:sourceControlPath,location:fs.realpathSync(workspaceRoot),commitHash:history.stdout.trim(),historyText:historicalSource.stdout,indexText,workingText,prepareWorktrees,prepareRemoteStatuses,withStatusDigits,withDuplicateFiles,withImages,withBranches,cleanLocation:codeWorktreeFixture.nativeCheckoutLocation,baselineWorktrees,unrelatedRetiredTaskId:codeWorktreeFixture.worktreeTaskId,unavailableRepositoryLocation,withUnavailableRepository}});
+    }
   }
   if (selected('layout')) await runLayoutJourney({ t, page, workspaceUrl, capture });
 
@@ -841,7 +850,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.waitForFunction(() => [...document.querySelectorAll('.shell-navigation .shell-nav-item')].some((node: any) => node.textContent === '项目'));
     assert.deepEqual(await page.locator('.shell-navigation .shell-nav-item').allTextContents(), ['总览', '项目', '服务', '代码库', '连接', '技能', '文章']);
     await page.locator('[data-nav=projects]').click();
-    assert.equal(await page.getByRole('tab', { name: '项目目录', exact: true }).count(), 0);
+    assert.equal(await page.getByRole('tab', { name: '项目目录', exact: true }).count(), 1);
     await page.locator('#project-table-body tr').filter({ hasText: '演示项目' }).click();
     await page.waitForURL(`${workspaceUrl}/projects/demo`);
     await page.locator('.workspace-tabstrip .pane-tab.on').filter({ hasText: '演示项目' }).waitFor({ state: 'visible' });
@@ -1033,8 +1042,11 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.locator('[data-nav="projects"]').click();
     await page.locator('#project-table-body tr').filter({ hasText: '另一项目' }).click();
     await page.waitForURL(`${workspaceUrl}/projects/other`);
-    await page.waitForFunction(() => document.querySelector('.workspace-page:not([hidden]) #project-detail-name')?.textContent === '另一项目');
+    await page.locator('#project-detail-name:visible').filter({ hasText: '另一项目' }).waitFor();
     const strip = page.getByRole('tablist', { name: '打开的页面', exact: true });
+    for (const title of await strip.locator('.pane-tab-text').allTextContents()) {
+      if (!['项目目录', '演示项目', '另一项目'].includes(title)) await strip.getByRole('button', { name: `关闭 ${title}`, exact: true }).click();
+    }
     const demo = strip.getByRole('tab', { name: '演示项目', exact: true }), other = strip.getByRole('tab', { name: '另一项目', exact: true });
     await other.focus();
     assert.equal(await strip.locator('[role="tab"][tabindex="0"]').count(), 1);
@@ -1050,17 +1062,17 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     }, { control, tabId });
     assert.deepEqual(await page.evaluate((id: string) => { const panel = document.getElementById(id)!; return { role: panel.getAttribute('role'), label: panel.getAttribute('aria-labelledby'), hidden: panel.hasAttribute('hidden') }; }, control), { role: 'tabpanel', label: tabId, hidden: false });
     await demo.press('End'); assert.equal(await other.evaluate((node: HTMLElement) => node === document.activeElement), true);
-    await other.press('Home'); assert.equal(await demo.evaluate((node: HTMLElement) => node === document.activeElement), true);
+    await other.press('Home'); assert.equal(await strip.getByRole('tab', { name: '项目目录', exact: true }).evaluate((node: HTMLElement) => node === document.activeElement), true);
     await demo.press('Alt+ArrowRight');
-    await page.waitForFunction(() => Array.from(document.querySelectorAll('.workspace-tabstrip .pane-tab-text')).map(node => node.textContent).join('|') === '另一项目|演示项目');
-    assert.deepEqual(await strip.locator('.pane-tab-text').allTextContents(), ['另一项目', '演示项目'], '重排索引不包含隐藏的目录页签');
+    await page.waitForFunction(() => Array.from(document.querySelectorAll('.workspace-tabstrip .pane-tab-text')).map(node => node.textContent).join('|') === '项目目录|另一项目|演示项目');
+    assert.deepEqual(await strip.locator('.pane-tab-text').allTextContents(), ['项目目录', '另一项目', '演示项目'], '目录与页面使用同一可见重排索引');
     const demoBox = await demo.boundingBox(), otherBox = await other.boundingBox();
     assert.ok(demoBox && otherBox);
     await page.mouse.move(demoBox.x + demoBox.width / 2, demoBox.y + demoBox.height / 2);
     await page.mouse.down();
     await page.mouse.move(otherBox.x + 8, otherBox.y + otherBox.height / 2, { steps: 8 });
     await page.mouse.up();
-    await page.waitForFunction(() => Array.from(document.querySelectorAll('.workspace-tabstrip .pane-tab-text')).map(node => node.textContent).join('|') === '演示项目|另一项目');
+    await page.waitForFunction(() => Array.from(document.querySelectorAll('.workspace-tabstrip .pane-tab-text')).map(node => node.textContent).join('|') === '项目目录|演示项目|另一项目');
     await page.locator('.pane-tab-drag-ghost').waitFor({ state: 'hidden' });
     await demo.press('Delete'); await demo.waitFor({ state: 'hidden' });
     assert.equal(await other.evaluate((node: HTMLElement) => node === document.activeElement), true, '关闭后焦点进入邻近页签');
@@ -1124,7 +1136,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
         await page.locator('#service-table-body a[href*="/repositories/"]').first().click();
         await page.getByRole('button', { name: '编辑代码库', exact: true }).waitFor({ state: 'visible' });
       }
-      assert.equal(await page.getByRole('tab', { name: /^(项目目录|服务目录|代码库目录|技能目录|设置)$/ }).count(), 0);
+      assert.ok(await page.getByRole('tab', { name: /^(项目目录|服务目录|代码库目录|技能目录)$/ }).count() > 0, '已打开目录保留可恢复标签');
     }
     await page.setViewportSize({ width: 1280, height: 720 });
 
@@ -1441,11 +1453,29 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.getByRole('tab', { name: '演示项目', exact: true }).click();
     await page.waitForURL(`${workspaceUrl}/projects/demo`);
     await page.locator('#service-detail-name:visible').waitFor({ state: 'visible' });
-    assert.equal(await page.locator('#project-detail-name').isVisible(), true);
+    assert.equal(await page.locator('#project-detail-name:visible').innerText(), '演示项目');
     await page.getByRole('link', { name: '返回项目列表', exact: true }).click();
-    await page.locator('#project-table-body tr').filter({ hasText: '演示项目' }).click();
-    await page.locator('#project-detail-name').waitFor({ state: 'visible' });
-    assert.equal(await page.locator('#service-detail-name:visible').count(), 0);
+    await page.waitForURL(`${workspaceUrl}/projects`);
+    await page.locator('#project-table-body:visible tr').filter({ hasText: '演示项目' }).locator('.resource-name a').click();
+    await page.waitForURL(`${workspaceUrl}/projects/demo`).catch(async (error: Error) => {
+      console.error('[project-directory-reentry-scene]', JSON.stringify(await page.evaluate(() => {
+        const visible = (node: Element) => node.getClientRects().length > 0 && getComputedStyle(node).visibility !== 'hidden';
+        const rows = [...document.querySelectorAll<HTMLElement>('#project-table-body tr')].filter(row => row.textContent?.includes('演示项目')).slice(0, 4);
+        return {
+          url: location.href,
+          headings: [...document.querySelectorAll<HTMLElement>('h1, #service-detail-name')].filter(visible).slice(0, 8).map(node => ({ id: node.id, text: node.innerText.slice(0, 160) })),
+          rows: rows.map(row => ({ text: row.innerText.slice(0, 240), visible: visible(row), inertAncestor: row.closest('[inert]')?.className || null, links: [...row.querySelectorAll<HTMLAnchorElement>('a')].slice(0, 3).map(link => ({ text: link.innerText.slice(0, 80), href: link.href })) })),
+          leftPanes: [...document.querySelectorAll<HTMLElement>('.pane-left')].filter(visible).slice(0, 4).map(pane => ({ className: pane.className, inert: pane.inert, bodyInert: pane.querySelector<HTMLElement>('.pane-body')?.inert ?? null })),
+          hosts: [...document.querySelectorAll<HTMLElement>('.workspace-pane-host')].slice(0, 4).map(host => ({ className: host.className, visible: visible(host), stageClass: host.querySelector('.pane-stage')?.className })),
+        };
+      })));
+      throw error;
+    });
+    await page.locator('#project-detail-name:visible').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#project-detail-name:visible').innerText(), '演示项目');
+    await page.locator('#service-detail-name:visible').waitFor({ state: 'visible' });
+    assert.equal(await page.getByRole('tab', { name: '服务详情', exact: true }).count(), 1, '目录重入复用项目页并保留已开服务对象');
+    assert.equal(await page.getByRole('tab', { name: 'AGENTS.md', exact: true }).count(), 1, '目录重入保留已有文档标签');
     await page.locator('#project-activity-link').click();
     assert.equal(page.url(), `${workspaceUrl}/projects/demo`, '项目动态在项目主页副屏打开，不离开当前页');
     await page.getByRole('tab', { name: '项目动态', exact: true }).waitFor({ state: 'visible' });
@@ -1459,7 +1489,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     assert.equal(await page.locator('.pane-right #progress-body').count(), 0, '项目主页进入统一动态页，不挂载旧侧栏详情');
     await page.goBack();
     await page.waitForURL(`${workspaceUrl}/projects/demo`);
-    await page.locator('#project-detail-name').waitFor({ state: 'visible' });
+    await page.locator('#project-detail-name:visible').waitFor({ state: 'visible' });
     await page.getByRole('button', { name: '编辑项目', exact: true }).click();
     await page.locator('#project-edit-form').waitFor({ state: 'visible' });
     assert.equal(await page.url(), `${workspaceUrl}/projects/demo`);
@@ -1554,6 +1584,25 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
       await route.continue();
     };
     expectedBrowserErrors.add(target);
+    const saveRequests: Array<{ method: string; url: string; status: number | null; migrationRequired?: boolean; revision?: string; errorCode?: string }> = [];
+    const saveRequestEntries = new Map<any, (typeof saveRequests)[number]>();
+    const observeSaveRequest = (request: any) => {
+      if (request.url() !== target || saveRequests.length >= 16) return;
+      const observation = { method: request.method(), url: request.url(), status: null };
+      saveRequests.push(observation); saveRequestEntries.set(request, observation);
+    };
+    const observeSaveResponse = async (response: any) => {
+      const observation = saveRequestEntries.get(response.request());
+      if (!observation) return;
+      observation.status = response.status();
+      try {
+        const body = await response.json();
+        observation.migrationRequired = body.migrationRequired;
+        observation.revision = body.revision;
+        observation.errorCode = body.error?.code;
+      } catch { /* Status and identity remain useful if the body is unavailable. */ }
+    };
+    page.on('request', observeSaveRequest); page.on('response', observeSaveResponse);
     await page.route(target, injected);
     try {
       await page.getByRole('button', { name: '保存修改', exact: true }).click();
@@ -1579,7 +1628,26 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
       assert.equal(await page.locator('#project-description').isDisabled(), true);
       releaseWrite(); assert.equal((await saved).status(), 200);
       await page.getByRole('dialog').waitFor({ state: 'hidden' });
-    } finally { releaseRead(); releaseWrite(); await page.unroute(target, injected); }
+    } catch (error) {
+      console.error('[project-metadata-recovery-scene]', JSON.stringify({
+        target, reads, writes, requests: saveRequests,
+        original: { migrationRequired: original.migrationRequired, revision: original.revision },
+        scene: await page.evaluate(() => {
+          const visible = (node: Element) => node.getClientRects().length > 0 && getComputedStyle(node).visibility !== 'hidden';
+          const form = document.querySelector<HTMLElement>('#project-edit-form');
+          const save = document.querySelector<HTMLButtonElement>('#project-save-button');
+          const alert = document.querySelector<HTMLElement>('#project-edit-alert');
+          return {
+            url: location.href, formVisible: Boolean(form && visible(form)),
+            save: save ? { disabled: save.disabled, loading: save.classList.contains('ant-btn-loading'), text: save.innerText.slice(0, 120) } : null,
+            fields: ['project-name', 'project-description'].map(id => { const field = document.getElementById(id) as HTMLInputElement | HTMLTextAreaElement | null; return { id, disabled: field?.disabled ?? null, value: field?.value.slice(0, 240) ?? null }; }),
+            alert: alert ? { visible: visible(alert), text: alert.innerText.slice(0, 1200) } : null,
+            recoveryButtons: [...document.querySelectorAll<HTMLButtonElement>('.metadata-conflict button')].filter(visible).slice(0, 8).map(button => ({ text: button.innerText.slice(0, 120), disabled: button.disabled, loading: button.classList.contains('ant-btn-loading') })),
+          };
+        }),
+      }));
+      throw error;
+    } finally { releaseRead(); releaseWrite(); await page.unroute(target, injected); page.off('request', observeSaveRequest); page.off('response', observeSaveResponse); }
     const current = await (await page.request.get(target)).json();
     const restored = await page.request.put(target, { headers, data: { revision: current.revision, name: original.project.name, description: original.project.description } });
     assert.equal(restored.status(), 200, await restored.text());
@@ -1711,8 +1779,8 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await capture(page, 'project-register-existing-desktop.png');
     await page.getByRole('button', { name: '登记项目', exact: true }).click();
     await page.waitForURL(`${workspaceUrl}/projects/register-browser`);
-    await page.locator('#project-detail-name').waitFor({ state: 'visible' });
-    assert.equal(await page.locator('#project-detail-name').innerText(), '重新登记后的名称');
+    await page.locator('#project-detail-name:visible').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#project-detail-name:visible').innerText(), '重新登记后的名称');
     const registered = runtime.assetCatalog(workspaceRoot).projects.find((project: any) => project.code === original.code);
     assert.notEqual(registered.id, original.id);
     assert.deepEqual(registered.serviceIds, []);
@@ -2188,14 +2256,15 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.getByRole('link', { name: /演示服务/ }).filter({ hasText: '演示服务' }).last().click();
     await page.setViewportSize({ width: 390, height: 844 });
     await page.locator('[data-doc-row="readme"]').click();
-    await page.getByRole('dialog', { name: '阅读材料' }).waitFor({ state: 'visible' });
+    await page.locator('.pane-stage.reading-overlay .pane-right:visible').waitFor();
     assert.equal(await page.locator('.workspace-page:not([hidden]) .pane-right:visible').count(), 1);
-    assert.equal(await page.getByRole('dialog', { name: '阅读材料' }).getAttribute('aria-modal'), 'true');
+    assert.equal(await page.locator('.pane-right:visible').getAttribute('role'), 'region');
     assert.equal(await page.locator('.workspace-page:not([hidden]) .pane-reading-mask:visible').count(), 1);
-    assert.equal(await page.locator('.workspace-page:not([hidden]) .pane-left').getAttribute('inert'), '');
-    await page.getByRole('button', { name: '关闭阅读', exact: true }).click();
-    await page.getByRole('dialog', { name: '阅读材料' }).waitFor({ state: 'hidden' });
-    assert.equal(await page.locator('.workspace-page:not([hidden]) .pane-left').getAttribute('inert'), null);
+    assert.equal(await page.locator('.workspace-page:not([hidden]) .pane-left > .pane-body').getAttribute('inert'), '');
+    await page.getByRole('button', { name: '关闭 服务详情', exact: true }).click();
+    await page.getByRole('button', { name: '关闭 代码库详情', exact: true }).click();
+    await page.locator('.pane-stage.reading-overlay').waitFor({ state: 'hidden' });
+    assert.equal(await page.locator('.workspace-page:not([hidden]) .pane-left > .pane-body').getAttribute('inert'), null);
     assert.equal(await page.getByRole('heading', { name: '服务', exact: true }).isVisible(), true);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
     await page.setViewportSize({ width: 1280, height: 720 });
@@ -2221,7 +2290,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await capture(page, 'service-edit-drawer-mobile.png');
     await page.keyboard.press('Escape');
     await page.locator('.metadata-edit-drawer').waitFor({ state: 'hidden' });
-    await page.getByRole('button', { name: '关闭阅读', exact: true }).click();
+    await page.getByRole('button', { name: '关闭 服务详情', exact: true }).click();
     await page.setViewportSize({ width: 1280, height: 720 });
   });
 
@@ -2259,11 +2328,14 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.locator('#task-prototype-source summary').click();
     assert.match(await page.locator('#task-prototype-source').innerText(), /任务原型[\s\S]*screen.html/);
     assert.doesNotMatch(await page.locator('#task-prototype-source').innerText(), /null\/null/);
+    assert.equal(await page.locator('#prototype-notes-panel').isVisible(), false, '任务内原型的功能说明默认收回');
     await page.locator('#prototype-notes-toggle').click();
     await page.getByText('此页面属于当前任务，不要求关联规范变更。').waitFor({ state: 'visible' });
     const [reader] = await Promise.all([page.waitForEvent('popup'), page.locator('#task-prototype-open-window').click()]);
     await reader.waitForURL((opened: any) => new URL(opened).pathname.endsWith(`/tasks/${taskId}/prototypes`));
     await reader.frameLocator('#task-prototype-frame').locator('#local-prototype-heading').waitFor({ state: 'visible' });
+    assert.equal(await reader.locator('#prototype-notes-panel').isVisible(), false, '单独查看也保持功能说明默认收回');
+    await reader.locator('#prototype-notes-toggle').click();
     await reader.getByText('此页面属于当前任务，不要求关联规范变更。').waitFor({ state: 'visible' });
     assert.equal(await reader.locator('#task-prototype-frame').getAttribute('sandbox'), 'allow-scripts');
     await reader.close();
@@ -2795,7 +2867,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
       assert.equal(await page.locator('.pane-right:visible').count(),1);
       assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
       await capture(page,`local-app-task-detail-${width}.png`);
-      if(width===390) { await openTaskActionModal(page, 'task-edit-action'); await page.locator('#task-edit-title').fill('取消不写入'); await page.locator('#task-edit-title').press('Escape'); assert.notEqual(runtime.inspectTask(workspaceRoot,'browser-task').record.title,'取消不写入'); await page.getByRole('button',{name:'关闭阅读',exact:true}).click(); await page.locator('#task-table-body').waitFor({state:'visible'}); assert.equal(await page.locator('#task-detail-main').count(),0); }
+      if(width===390) { await openTaskActionModal(page, 'task-edit-action'); await page.locator('#task-edit-title').fill('取消不写入'); await page.locator('#task-edit-title').press('Escape'); assert.notEqual(runtime.inspectTask(workspaceRoot,'browser-task').record.title,'取消不写入'); await page.getByRole('button',{name:'关闭 普通任务',exact:true}).click(); await page.locator('#task-table-body').waitFor({state:'visible'}); assert.equal(await page.locator('#task-detail-main:visible').count(),0); }
     }
     await page.setViewportSize({width:1280,height:720});
   });

@@ -1,5 +1,37 @@
 import assert from 'node:assert/strict';
 
+export async function reportAgentUiFailure(page: any, scene: string) {
+  console.error('[agent-ui-failure-scene]', JSON.stringify({ scene, state: await page.evaluate(() => {
+    const visible = (node: Element) => node.getClientRects().length > 0 && getComputedStyle(node).visibility !== 'hidden';
+    const describe = (node: Element) => {
+      const rect = node.getBoundingClientRect(), style = getComputedStyle(node);
+      return { tag: node.tagName, id: node.id, className: String(node.className).slice(0, 180), role: node.getAttribute('role'), label: node.getAttribute('aria-label'), text: (node.textContent || '').trim().slice(0, 100), rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height, right: rect.right }, width: style.width, minWidth: style.minWidth, overflowX: style.overflowX, position: style.position, transform: style.transform };
+    };
+    const rightmost = [...document.body.querySelectorAll('*')].filter(visible).map(node => ({ node, rect: node.getBoundingClientRect() })).filter(item => item.rect.width > 0).sort((a, b) => b.rect.right - a.rect.right || a.rect.width - b.rect.width).slice(0, 5);
+    return {
+      url: location.href, viewport: { width: innerWidth, height: innerHeight, scrollX }, document: { scrollWidth: document.documentElement.scrollWidth, clientWidth: document.documentElement.clientWidth, bodyScrollWidth: document.body.scrollWidth },
+      activeElement: document.activeElement ? describe(document.activeElement) : null,
+      rightmost: rightmost.map(({ node }) => { const parents = []; let parent = node.parentElement; for (let depth = 0; parent && depth < 4; depth++, parent = parent.parentElement) parents.push(describe(parent)); return { element: describe(node), parents }; }),
+      overlays: [...document.querySelectorAll('.task-codex-popover, .agent-registry-details-popover, .codex-connect-drawer, .agent-registry-drawer')].filter(visible).slice(0, 8).map(describe),
+    };
+  }) }));
+}
+
+export async function waitForTaskSessionPopover(page: any) {
+  const popup = page.locator('.task-codex-popover:visible');
+  await popup.waitFor({ state: 'visible' });
+  await popup.evaluate(async (element: HTMLElement) => {
+    await Promise.all(element.getAnimations({ subtree: true }).map(animation => animation.finished.catch(() => {})));
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  });
+  await page.waitForFunction(() => {
+    const popup = [...document.querySelectorAll<HTMLElement>('.task-codex-popover')].find(node => node.getClientRects().length > 0 && getComputedStyle(node).visibility !== 'hidden');
+    if (!popup || popup.getAnimations({ subtree: true }).some(animation => animation.playState === 'running')) return false;
+    const rect = popup.getBoundingClientRect();
+    return rect.width > 0 && rect.x >= -1 && rect.right <= innerWidth + 1;
+  });
+}
+
 /** Only transport fixtures are mocked; the hosted drawer and global registry are real. */
 export async function runCodexAgentRegistryJourney({t, page, workspaceUrl, taskId, capture, expectedBrowserErrors = new Set()}: any) {
   const pattern = '**/api/v1/app/agents**';
@@ -112,7 +144,9 @@ export async function runCodexAgentRegistryJourney({t, page, workspaceUrl, taskI
       await page.evaluate(() => window.dispatchEvent(new Event('focus'))); await observed;
       assert.equal(await original!.evaluate((element: HTMLElement) => element.isConnected), true);
       assert.deepEqual(await floating(agent.label).boundingBox(), box, '聚焦读取不移动浮窗');
-      assert.equal(await details(agent.label).getByRole('button', {name: /刷新接入状态$/u}).evaluate((element: HTMLElement) => document.activeElement === element), true);
+      try {
+        assert.equal(await details(agent.label).getByRole('button', {name: /刷新接入状态$/u}).evaluate((element: HTMLElement) => document.activeElement === element), true);
+      } catch (error) { await reportAgentUiFailure(page, 'registry-focus-refresh'); throw error; }
       assert.equal(await details(agent.label).locator('.ant-collapse-header').getAttribute('aria-expanded'), 'true');
       assert.equal(await details(agent.label).getByText(/等待.*加载|组件版本|重启|桌面已连接/u).count(), 0, '不再显示插件握手或桌面在线语义');
       assert.equal(await row(dsh.id).getByRole('button', {name: '设为默认智能体 ' + dsh.label, exact: true}).getAttribute('aria-pressed'), 'true'); assert.equal(writes, 0);
@@ -200,7 +234,12 @@ export async function runCodexAgentRegistryJourney({t, page, workspaceUrl, taskI
       await choose(); await child().getByText('正在检测本机 Codex…', {exact: true}).waitFor({state: 'visible'}); assert.equal(await page.locator('#confirm-local-codex').isDisabled(), true);
       release!(); await child().getByText('未发现 Codex', {exact: true}).waitFor({state: 'visible'}); assert.equal(await page.locator('#confirm-local-codex').isDisabled(), true);
       const viewport = page.viewportSize();
-      for (const width of [1280, 390]) {await page.setViewportSize({width, height: 900}); await capture(page, `codex-no-install-${width}.png`); assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));}
+      for (const width of [1280, 390]) {
+        await page.waitForFunction(() => document.querySelectorAll('.ant-dropdown.ant-slide-up-leave-active').length === 0);
+        await page.setViewportSize({width, height: 900}); await capture(page, `codex-no-install-${width}.png`);
+        try { assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)); }
+        catch (error) { await reportAgentUiFailure(page, `registry-no-install-${width}`); throw error; }
+      }
       if (viewport) await page.setViewportSize(viewport);
       mode = 'error'; await page.locator('#discover-local-codex').click(); await child().getByText('检测失败，请重新检测。', {exact: true}).waitFor({state: 'visible'}); assert.equal(await page.locator('#confirm-local-codex').isDisabled(), true);
       mode = 'candidates'; await page.locator('#discover-local-codex').click(); await page.locator('[data-codex-candidate="candidate-other"]').waitFor({state: 'visible'});

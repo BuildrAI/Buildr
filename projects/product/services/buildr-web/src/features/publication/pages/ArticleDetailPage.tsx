@@ -3,9 +3,10 @@ import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { Alert, Button, Drawer, Dropdown, Empty, Segmented, Space, Spin, Tag, message } from 'antd';
 import { CopyOutlined, DownloadOutlined, EditOutlined, MoreOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useAppShell } from '../../../app/AppShellContext';
-import { useWorkspacePageTabs } from '../../../app/pageTabs';
+import { useWorkspacePageTabs, WorkspaceViewActiveContext, WorkspaceViewTransientContext } from '../../../app/pageTabs';
+import { useWorkspacePaneHost } from '../../../app/WorkspacePaneHost';
 import { InsideResourcePreview, useResourcePreview } from '../../../app/resource-preview';
-import { WorkspaceStage } from '../../../components/WorkspaceStage';
+import { WorkspaceStage, type WorkspaceObjectContentState } from '../../../components/WorkspaceStage';
 import { workspaceHref } from '../../../lib/labels';
 import { ResourceActions } from '../../workbench/components/ResourceActions';
 import { knowledgeApi } from '../../knowledge/api/knowledge-api';
@@ -29,6 +30,7 @@ export function ArticleDetailPage({ preview, initialView, initialEditing = false
   const projectCode = preview?.projectCode || params.projectCode || 'product';
   const publicationId = preview?.publicationId || params.publicationId || '';
   const embedded = useContext(InsideResourcePreview), previews = useResourcePreview();
+  const paneHost = useWorkspacePaneHost(), inheritedTransient = useContext(WorkspaceViewTransientContext);
   const { workspaceId, workspace, setBreadcrumbParts } = useAppShell();
   const tabs = useWorkspacePageTabs(workspaceId), location = useLocation(), navigate = useNavigate();
   const { data, error, loading, reload } = usePublication(workspaceId, projectCode, publicationId);
@@ -68,12 +70,12 @@ export function ArticleDetailPage({ preview, initialView, initialEditing = false
     return () => controller.abort();
   }, [workspaceId, projectCode, publicationId]);
   const copy = (text: string) => { void navigator.clipboard.writeText(text).then(() => messages.success('已复制')).catch(() => messages.error('自动复制失败，请选择文本复制')); };
-  const openRelated = (item: ArticleRelated) => { setPanes(current => current.some(pane => pane.key === item.key) ? current : [...current, item]); setActivePane(item.key); };
+  const openRelated = (item: ArticleRelated) => { setPanes(current => current.some(pane => pane.key === item.key) ? current : [...current, item]); setActivePane(item.key); paneHost?.revealContent(location.pathname, embedded ? undefined : item.key); };
   const jump = (index: number) => { setView('rendered'); requestAnimationFrame(() => scrollTo.current(index)); };
   const toc = <nav className="publication-toc-links" aria-label="本文目录">{headings.length ? headings.map(heading => <button type="button" key={heading.index} className={heading.level > 2 ? 'nested' : ''} onClick={() => jump(heading.index)}>{heading.text}</button>) : <span className="publication-muted">本文暂无章节标题</span>}</nav>;
   const article = data?.publication;
   const resources = article && data ? referencedAssets(data.content).map(path => ({ path, asset: data.assets?.find(asset => asset.relativePath === path) })) : [];
-  return <WorkspaceStage pageTabs={tabs.tabs} onClosePageTab={tabs.close} objectTabs={panes.map(pane => ({ key: pane.key, title: pane.title, kind: 'doc' }))} activeObject={activePane} onActivateObject={setActivePane} onCloseObject={key => { const next = panes.filter(pane => pane.key !== key); setPanes(next); if (activePane === key) setActivePane(next.at(-1)?.key || null); }} objectContent={<>{panes.map(pane => <div key={pane.key} hidden={activePane !== pane.key}><ArticleRelatedPane item={pane} workspaceId={workspaceId || ''} /></div>)}</>}>
+  return <WorkspaceStage pageTabs={tabs.tabs} onClosePageTab={tabs.close} objectTabs={panes.map(pane => ({ key: pane.key, title: pane.title, kind: 'doc', identity: `${workspaceId}:article:${projectCode}:${publicationId}:${pane.key}`, contentLayout: 'reading', contentLabel: pane.title }))} activeObject={activePane} onActivateObject={setActivePane} onCloseObject={key => setPanes(current => { const next = current.filter(pane => pane.key !== key); setActivePane(active => active === key ? next.at(-1)?.key || null : active); return next; })} objectContent={({ displayedKey, visible, transient }: WorkspaceObjectContentState) => <WorkspaceViewTransientContext.Provider value={inheritedTransient || transient}>{panes.map(pane => <WorkspaceViewActiveContext.Provider key={pane.key} value={visible && displayedKey === pane.key}><div hidden={displayedKey !== pane.key}><ArticleRelatedPane item={pane} workspaceId={workspaceId || ''} /></div></WorkspaceViewActiveContext.Provider>)}</WorkspaceViewTransientContext.Provider>}>
     <div className="publication-page publication-reader">{holder}{embedded ? <Button className="publication-back" type="link" onClick={() => previews?.close(location.pathname, 'article')}>← 返回</Button> : <Link className="publication-back" to={href('/articles') + listSearch}>← 返回文章列表</Link>}
       {error && <Alert type="error" message={data ? '正文暂时无法更新，仍显示上次读取的内容。' : '文章不可用'} description={error} action={<Button size="small" onClick={reload}>重试</Button>} />}
       {!data ? loading ? <div className="publication-loading"><Spin /><p>正在读取文章…</p></div> : <Empty description="这篇文章目前不可用" /> : article && <>

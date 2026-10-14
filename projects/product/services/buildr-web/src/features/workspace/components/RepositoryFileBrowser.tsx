@@ -85,6 +85,8 @@ type Props = {
   canModify?: boolean;
   /** Candidate shared file surface; the caller owns editing and persistence. */
   readerSurface?: ReactNode;
+  readerContent?: string;
+  readerSelectedLines?: [number, number] | null;
 };
 
 function shortName(path: string) { return path.split('/').at(-1) || path; }
@@ -112,6 +114,7 @@ export function RepositoryFileBrowser(props: Props) {
   const [refreshing, setRefreshing] = useState(false);
   const codeRef = useRef<HTMLDivElement>(null);
   const scrolls=useRef(new Map<string,number>());
+  const appliedFocus = useRef<string | null>(null);
   const selectionKey=props.selectionKey || props.selectedPath;
   const readingKey=selectionKey+':'+(props.readPage?.index??'full');
   const searchQuery = repositorySearchQuery(query);
@@ -160,12 +163,15 @@ export function RepositoryFileBrowser(props: Props) {
     setExpanded(current => [...new Set([...current, ...roots, ...parts.slice(0, -1).map((_, i) => treeKey(parts.slice(0, i + 1).join('/'), props.selectedRepositoryId))])]);
   }, [props.selectedPath, props.selectedRepositoryId, props.revealSelectionRequest, props.defaultCollapsedTree, props.defaultCollapsedTree ? undefined : props.treeRepositories?.map(repo => repo.id).join(',')]);
   useEffect(() => {
-    if (props.global && !props.readerActive) return;
+    if (props.global && !props.readerActive || props.readLoading || refreshing || props.readError || props.unavailable || !file) return;
+    const key = JSON.stringify([readingKey, props.focusLine, props.focusRequest]);
+    if (appliedFocus.current === key) return;
+    appliedFocus.current = key;
     if (!props.focusLine) { setRange(null);codeRef.current?.scrollTo({ top: scrolls.current.get(readingKey) || 0 }); return; }
     if(file?.kind==='markdown')setRaw(true);
     setRange([props.focusLine, props.focusLine]);
-    requestAnimationFrame(() => {const row=codeRef.current?.querySelector('[data-line="' + props.focusLine + '"]');(row?.querySelector('.repository-search-hit')||row)?.scrollIntoView({ block: 'center',inline:'nearest' });});
-  }, [props.focusLine, props.focusRequest, readingKey, props.readerActive, props.readLoading]);
+    // The shared code editor owns precise character scrolling; visibility must not replay this selection.
+  }, [props.focusLine, props.focusRequest, readingKey, props.readerActive, props.readLoading, refreshing, props.readError, props.unavailable, file?.path]);
 
   const treeData = useMemo(() => {
     function sort(nodes: DataNode[]) {
@@ -220,10 +226,7 @@ export function RepositoryFileBrowser(props: Props) {
 
   function select(path: string, line?: number, matchQuery?: string) {
     props.onSelect(path, line, matchQuery);
-    if (line) requestAnimationFrame(() => {
-      setRange([line, line]);
-      const row=codeRef.current?.querySelector('[data-line="' + line + '"]');(row?.querySelector('.repository-search-hit')||row)?.scrollIntoView({ block: 'center',inline:'nearest' });
-    });
+    if (line) setRange([line, line]);
     const target = props.files.find(item => item.path === path);
     props.onScene?.(needle ? 'search' : target?.kind === 'image' ? 'image' : target?.kind === 'markdown' ? 'markdown' : '');
   }
@@ -246,9 +249,10 @@ export function RepositoryFileBrowser(props: Props) {
   const readMatchActive=searchMode==='content'&&Boolean(searchQuery)&&searchQuery.toLowerCase()===props.readMatchQuery?.toLowerCase();
   const visibleMatch=useMemo(()=>readMatchActive&&props.readPage&&file?visibleRepositoryMatch(file.content,props.readPage):null,[file?.content,props.readPage,readMatchActive]);
   const omitTrailingEmpty=Boolean(props.readPage&&props.readPage.index<props.readPage.total-1);
-  const sourceRows=useMemo(()=>repositorySourceLines(file?.content||'',firstLine,visibleMatch||undefined,omitTrailingEmpty),[file?.content,firstLine,visibleMatch,omitTrailingEmpty]);
+  const sourceRows=useMemo(()=>repositorySourceLines(props.readerContent??file?.content??'',firstLine,visibleMatch||undefined,omitTrailingEmpty),[props.readerContent,file?.content,firstLine,visibleMatch,omitTrailingEmpty]);
   const lines=sourceRows.map(row=>row.text);
-  const selectedText = range ? lines.slice(Math.max(0,range[0]-firstLine),range[1]-firstLine+1).join('\n') : '';
+  const selectedRange = props.readerSurface ? props.readerSelectedLines || null : range;
+  const selectedText = selectedRange ? lines.slice(Math.max(0,selectedRange[0]-firstLine),selectedRange[1]-firstLine+1).join('\n') : '';
   const prompt = [
     request === 'modify' ? '请修改以下文件，先核对当前内容，再根据我的目标实施并提供改动与验证依据。' : '请解释以下文件或选中内容的职责、行为和相关影响。',
     '', props.taskTitle ? '任务：'+props.taskTitle : '', '代码库：' + (props.repositoryName || 'Buildr 源码库'),
@@ -259,7 +263,7 @@ export function RepositoryFileBrowser(props: Props) {
     props.observedRevision ? '文件修订标识：'+props.observedRevision : '',
     props.observedAt ? '观察时间：'+props.observedAt : '',
     props.readPage ? '读取片段：第 '+(props.readPage.index+1)+' / '+props.readPage.total+' 段，字节 '+(props.readPage.offset+1)+'–'+props.readPage.endOffset+' / '+props.sizeBytes+'，第 '+props.readPage.startLine+'–'+props.readPage.endLine+' 行'+(props.readPage.startsMidLine||props.readPage.endsMidLine?'（包含续行）':'') : '',
-    range ? '范围：第 ' + range[0] + '–' + range[1] + ' 行'+(props.readPage?'（仅限本段可见内容）':'') : props.readMessage ? '范围：当前可见内容（'+props.readMessage+'）' : '范围：完整文件',
+    selectedRange ? '范围：第 ' + selectedRange[0] + '–' + selectedRange[1] + ' 行'+(props.readPage?'（仅限本段可见内容）':'') : props.readMessage ? '范围：当前可见内容（'+props.readMessage+'）' : '范围：完整文件',
     selectedText ? '\n选中内容：\n' + selectedText : '',
     request === 'modify' ? '\n我的修改目标：\n' + requestGoal : '',
   ].filter(Boolean).join('\n');
@@ -330,15 +334,16 @@ export function RepositoryFileBrowser(props: Props) {
           {props.readError ? <div className="repository-reading-empty"><h3>文件暂不可读取</h3><p>{props.readError}</p><Button onClick={()=>void refresh()}>重新读取</Button>{props.historical && <Button onClick={props.onViewCurrent}>查看当前文件</Button>}</div> : refreshing || props.readLoading ? <div className="repository-reading-empty"><Spin /><p>正在重新读取…</p></div> : props.unavailable ? <div className="repository-reading-empty"><FolderOpenOutlined /><h3>当前工作目录暂不可读取</h3><p>保留查看位置，恢复后可继续浏览。</p><Button onClick={()=>void refresh()}>重新读取</Button></div> : !file ? <Empty description="从目录选择一个文件" /> : file.kind === 'unsupported' ? <Empty description="此文件类型暂不支持阅读" /> : file.kind === 'image' ? <div className="repository-image-preview"><img src={file.image} alt={shortName(file.path)} /><p>{shortName(file.path)} · 图片预览</p></div> : file.kind === 'markdown' && !raw && !props.readPage ? <MarkdownHost markdown={file.content} className="markdown-body repository-markdown" renderVersion={props.markdownRevision} options={props.markdownOptions || { allowRelativeLinks: true, onRelativeLinkClick: () => message.info('相关文件可从目录打开。') }} /> : <ReadOnlyFileCodeEditor key={readingKey} documentId={readingKey} path={file.path} content={file.content}
             startLine={firstLine} omitTrailingEmpty={omitTrailingEmpty} startsMidLine={props.readPage?.startsMidLine} endsMidLine={props.readPage?.endsMidLine}
             selectedLines={range} query={searchMode==='content'?searchQuery:''} observedMatch={visibleMatch}
-            focusLine={props.global&&!props.readerActive?undefined:props.focusLine} focusRequest={props.focusRequest}
+            active={!props.global || props.readerActive} focusLine={props.focusLine} focusRequest={props.focusRequest}
             initialScrollTop={scrolls.current.get(readingKey)||0} onScroll={top=>scrolls.current.set(readingKey,top)}
             onSelectLine={(line,extend)=>setRange(extend&&range?[Math.min(range[0],line),Math.max(range[0],line)]:[line,line])}
             readOnlyReason={props.readMessage?undefined:props.historical?'历史版本只读；需要修改时请查看当前文件。':props.readPage?'当前仅显示文件片段，内容只读。':'当前入口只读，可选择和复制内容。'} />}
         </div>
+        </>}
         {file && <footer className="repository-reader-footer" data-prototype-position="agent-file-context">
-          <span>{props.global || props.historical ? props.version : '当前文件'}{range ? ' · 已选择第 ' + range[0] + (range[1] !== range[0] ? '–' + range[1] : '') + ' 行' : file.kind === 'unsupported' ? ' · 类型暂不支持' : file.kind === 'image' ? ' · 图片' : props.readPage?' · 本段第 '+props.readPage.startLine+'–'+props.readPage.endLine+' 行':' · 完整文件 · '+lines.length+' 行'}</span>
+          <span>{props.global || props.historical ? props.version : '当前文件'}{selectedRange ? ' · 已选择第 ' + selectedRange[0] + (selectedRange[1] !== selectedRange[0] ? '–' + selectedRange[1] : '') + ' 行' : file.kind === 'unsupported' ? ' · 类型暂不支持' : file.kind === 'image' ? ' · 图片' : props.readPage?' · 本段第 '+props.readPage.startLine+'–'+props.readPage.endLine+' 行':' · 完整文件 · '+lines.length+' 行'}</span>
           <Space size={6}><Button size="small" type="text" onClick={() => setRequest('explain')}>请智能体解释</Button><Tooltip title={props.historical ? '查看当前文件后提出修改' : '带上当前文件和选中范围'}><Button size="small" type="primary" disabled={props.historical || props.canModify === false} onClick={() => { setRequestGoal(''); setRequest('modify'); }}>提出修改</Button></Tooltip></Space>
-        </footer>}</>}
+        </footer>}
       </div>
     </div>
     <Modal open={Boolean(request)} title={request === 'modify' ? '交给智能体（Agent）修改' : '交给智能体（Agent）解释'} onCancel={() => setRequest(null)} footer={<Space><Button onClick={() => setRequest(null)}>返回文件</Button><Button type="primary" icon={<CopyOutlined />} onClick={() => void copy(prompt)}>复制指令</Button></Space>}>

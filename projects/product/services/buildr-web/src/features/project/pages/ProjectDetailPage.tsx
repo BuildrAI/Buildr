@@ -32,14 +32,16 @@ import { WorkbenchDailyProgress } from '../../workbench/components/WorkbenchDail
 import { KnowledgeBrowser } from '../../knowledge/components/KnowledgeBrowser';
 import { useMarkdownDocumentViewer } from '../../../lib/useMarkdownDocumentViewer';
 import { ProjectEditDrawer } from '../components/ProjectEditDrawer';
-import { useWorkspacePageTabs, WorkspaceViewActiveContext } from '../../../app/pageTabs';
+import { useWorkspacePageTabs, WorkspaceViewActiveContext, WorkspaceViewTransientContext } from '../../../app/pageTabs';
+import { useWorkspacePaneHost } from '../../../app/WorkspacePaneHost';
 import { useKnowledgeNavigation } from '../../knowledge/useKnowledgeNavigation';
 import { canInitializeKnowledge, knowledgeInitializationContext } from '../../knowledge/knowledge-initialize';
-import { WorkspaceStage, type WorkspaceObjectTab } from '../../../components/WorkspaceStage';
+import { WorkspaceStage, type WorkspaceObjectContentState, type WorkspaceObjectTab } from '../../../components/WorkspaceStage';
 import { consumeProjectDocumentReturn, isProjectDocumentRef, projectDocumentRoot, readProjectDocumentReturn, withProjectDocumentReturn, type ProjectDocumentPosition, type ProjectDocumentPositions, type ProjectDocumentRef } from '../project-document-navigation';
 import '../project-home.css';
 
 type ObjTab = { key: string; kind: 'doc'; ref: string };
+type ProjectDocumentPaneState = { dirty: boolean; contentLayout: 'reading' | 'fill'; identity: string };
 
 const projectDocumentMissingMessage = (path: string) => `项目内未找到 ${path}`;
 type EditableProjectDocument = ProjectDocument & { editingFile?: FileEditingDocument; readOnlyReason?: string };
@@ -52,7 +54,7 @@ const DOC_ROWS: { ref: string; name: string; hint: string }[] = [
 const ENTRY_TITLES: Record<ProjectHomeEntryRef, string> = { knowledge: '项目知识', articles: '项目文章', activity: '项目动态' };
 
 /** 右组项目文档对象。 */
-function ProjectDocObjectView({ workspaceId, projectCode, documentRef, position, positions, navigationRequest, onPosition }: { workspaceId: string | null; projectCode: string; documentRef: ProjectDocumentRef; position?: ProjectDocumentPosition; positions: ProjectDocumentPositions; navigationRequest: number; onPosition(ref: ProjectDocumentRef, position: ProjectDocumentPosition): void }) {
+function ProjectDocObjectView({ workspaceId, projectCode, objectKey, documentRef, position, positions, navigationRequest, onPosition, onPaneState }: { workspaceId: string | null; projectCode: string; objectKey: string; documentRef: ProjectDocumentRef; position?: ProjectDocumentPosition; positions: ProjectDocumentPositions; navigationRequest: number; onPosition(ref: ProjectDocumentRef, position: ProjectDocumentPosition): void; onPaneState(key: string, state: ProjectDocumentPaneState): void }) {
   const editing = useFileEditingContext();
   const navigate = useNavigate(), location = useLocation(), { message } = App.useApp();
   const active = useContext(WorkspaceViewActiveContext);
@@ -72,6 +74,10 @@ function ProjectDocObjectView({ workspaceId, projectCode, documentRef, position,
   const currentDocument = documents.document as EditableProjectDocument | null;
   const editorFile = currentDocument?.editingFile;
   const session = editorFile ? editing.sessions[editorFile.id] : undefined;
+  const dirty = Boolean(session && session.content !== session.diskContent);
+  const contentLayout = editorFile ? 'fill' : 'reading';
+  const documentIdentity = editorFile?.id || `${workspaceId}:project:${projectCode}:${documents.path}`;
+  useEffect(() => { onPaneState(objectKey, { dirty, contentLayout, identity: documentIdentity }); }, [objectKey, dirty, contentLayout, documentIdentity, onPaneState]);
   const [imageObservation, setImageObservation] = useState<{ revision: string; context?: MarkdownImageContext }>();
   const imageContext = session?.file.imageContext
     || (imageObservation?.revision === session?.revision ? imageObservation?.context : undefined)
@@ -201,6 +207,7 @@ export function ProjectDetailPage() {
   const pageTabs = useWorkspacePageTabs(workspaceId);
   const catalog = useAssetCatalog(), data = catalog.data;
   const active = useContext(WorkspaceViewActiveContext);
+  const inheritedTransient = useContext(WorkspaceViewTransientContext), paneHost = useWorkspacePaneHost();
   const composition = useWorkspaceComposition(active);
   const project = (!catalog.error && data?.projects.find(item => item.workspaceId === workspaceId && item.code === projectCode)) || composition.data?.projects.find(item => item.code === projectCode);
   const previews = useResourcePreview();
@@ -223,6 +230,13 @@ export function ProjectDetailPage() {
   const [activeObj, setActiveObj] = useState<string | null>(() => initialDocumentReturn ? `doc:${initialDocumentReturn.ref}` : null);
   const [documentPositions, setDocumentPositions] = useState<ProjectDocumentPositions>(() => initialDocumentReturn?.positions || {});
   const [documentRequests, setDocumentRequests] = useState<Partial<Record<ProjectDocumentRef, number>>>({});
+  const [documentPaneStates, setDocumentPaneStates] = useState<Record<string, ProjectDocumentPaneState>>({});
+  const reportDocumentPaneState = useCallback((key: string, state: ProjectDocumentPaneState) => {
+    setDocumentPaneStates(current => {
+      const previous = current[key];
+      return previous?.dirty === state.dirty && previous.contentLayout === state.contentLayout && previous.identity === state.identity ? current : { ...current, [key]: state };
+    });
+  }, []);
   const consumedDocumentReturns = useRef(new Set(initialDocumentReturn ? [initialDocumentReturn.returnId] : []));
   const rememberDocumentPosition = useCallback((ref: ProjectDocumentRef, position: ProjectDocumentPosition) => {
     setDocumentPositions(current => JSON.stringify(current[ref]) === JSON.stringify(position) ? current : { ...current, [ref]: position });
@@ -234,6 +248,7 @@ export function ProjectDetailPage() {
     setObjects(current => [...current, ...Object.keys(restored.positions).filter(ref => !current.some(tab => tab.key === `doc:${ref}`)).map(ref => ({ key: `doc:${ref}`, kind: 'doc' as const, ref }))]);
     setActiveObj(`doc:${restored.ref}`);
     setDocumentRequests(current => ({ ...current, [restored.ref]: (current[restored.ref] || 0) + 1 }));
+    paneHost?.revealContent(editLocation.pathname, `doc:${restored.ref}`);
   }, [editLocation.key, editLocation.state, projectCode]);
 
   useEffect(() => {
@@ -256,12 +271,14 @@ export function ProjectDetailPage() {
     }
     setObjects((current) => current.some((o) => o.key === tab.key) ? current : [...current, tab]);
     setActiveObj(tab.key);
+    paneHost?.revealContent(editLocation.pathname, tab.key);
   };
   useEffect(() => {
     const activityPath = legacyDailyProgressPath(projectCode, editLocation.search);
     if (activityPath) navigate(workspaceHref(workspaceId, activityPath), { replace: true });
   }, [editLocation.search, projectCode, workspaceId, navigate]);
   const closeObject = (key: string) => {
+    setDocumentPaneStates(current => { if (!(key in current)) return current; const next = { ...current }; delete next[key]; return next; });
     const ref = objects.find(tab => tab.key === key)?.ref;
     if (isProjectDocumentRef(ref)) {
       setDocumentPositions(current => { const next = { ...current }; delete next[ref]; return next; });
@@ -269,7 +286,7 @@ export function ProjectDetailPage() {
     setObjects((current) => {
       const index = current.findIndex((o) => o.key === key);
       const next = current.filter((o) => o.key !== key);
-      if (activeObj === key) setActiveObj(next.length ? next[Math.max(0, index - 1)].key : null);
+      setActiveObj(activeKey => activeKey === key ? next.length ? next[Math.max(0, index - 1)].key : null : activeKey);
       return next;
     });
   };
@@ -314,8 +331,7 @@ export function ProjectDetailPage() {
     );
   }
 
-  const objectTabs: WorkspaceObjectTab[] = objects.map((o) => ({ key: o.key, kind: o.kind, title: objectTitle(o) }));
-  const activeTab = objects.find((o) => o.key === activeObj) ?? null;
+  const objectTabs: WorkspaceObjectTab[] = objects.map((o) => ({ key: o.key, kind: o.kind, title: objectTitle(o), contentLabel: objectTitle(o), dirty: documentPaneStates[o.key]?.dirty, contentLayout: documentPaneStates[o.key]?.contentLayout || 'reading', identity: documentPaneStates[o.key]?.identity || `${workspaceId}:project:${projectCode}:${o.key}` }));
 
   return (
     <>
@@ -326,29 +342,29 @@ export function ProjectDetailPage() {
         activeObject={activeObj}
         onActivateObject={setActiveObj}
         onCloseObject={closeObject}
-        objectContent={activeTab ? activeTab.ref === 'knowledge' ? (
+        objectContent={({ displayedKey, visible, transient }: WorkspaceObjectContentState) => <WorkspaceViewTransientContext.Provider value={inheritedTransient || transient}>{objects.map(tab => <WorkspaceViewActiveContext.Provider key={tab.key} value={visible && displayedKey === tab.key}><div hidden={displayedKey !== tab.key} style={documentPaneStates[tab.key]?.contentLayout === 'fill' ? { height: '100%' } : undefined}>{tab.ref === 'knowledge' ? (
             <KnowledgeBrowser
-              key={activeTab.key}
               workspaceId={workspaceId || ''}
               scope={{ kind: 'project', id: project?.id || projectCode }}
               navLayout="full"
-              onBack={() => closeObject(activeTab.key)}
+              onBack={() => closeObject(tab.key)}
               backLabel="返回项目"
             />
-        ) : activeTab.ref === 'activity' ? (
-            <ProjectActivityPane key={activeTab.key} projectCode={projectCode} workspaceId={workspaceId} />
+        ) : tab.ref === 'activity' ? (
+            <ProjectActivityPane projectCode={projectCode} workspaceId={workspaceId} />
         ) : (
             <ProjectDocObjectView
-              key={activeTab.ref}
               workspaceId={workspaceId}
               projectCode={projectCode}
-              documentRef={activeTab.ref === 'agents' ? 'agents' : 'readme'}
-              position={documentPositions[activeTab.ref === 'agents' ? 'agents' : 'readme']}
+              objectKey={tab.key}
+              documentRef={tab.ref === 'agents' ? 'agents' : 'readme'}
+              position={documentPositions[tab.ref === 'agents' ? 'agents' : 'readme']}
               positions={documentPositions}
-              navigationRequest={documentRequests[activeTab.ref === 'agents' ? 'agents' : 'readme'] || 0}
+              navigationRequest={documentRequests[tab.ref === 'agents' ? 'agents' : 'readme'] || 0}
               onPosition={rememberDocumentPosition}
+              onPaneState={reportDocumentPaneState}
             />
-        ) : null}
+        )}</div></WorkspaceViewActiveContext.Provider>)}</WorkspaceViewTransientContext.Provider>}
       >
         <div className="project-home">
         {deleting && <AssetDeleteDialog kind="project" id={deleting} onClose={() => setDeleting(null)} />}

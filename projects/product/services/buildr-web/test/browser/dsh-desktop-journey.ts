@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { reportAgentUiFailure, waitForTaskSessionPopover } from './codex-agent-registry-journey.ts';
 
 /** The hosted components are real; only desktop transport is replaced, so no native chat is changed. */
 export async function runDshDesktopJourney({t, page, workspaceUrl, taskId, capture, expectedBrowserErrors}: any) {
@@ -106,7 +107,15 @@ export async function runDshDesktopJourney({t, page, workspaceUrl, taskId, captu
       failed = true; await panel().getByRole('button', {name: '刷新会话关联', exact: true}).click(); await section().getByText(' · 部分未确认', {exact: true}).waitFor({state: 'visible'});
       await dshRow().getByText(/上次读取/u).waitFor({state: 'visible'}); await panel().getByText('DSH：DSH关系暂不可读取。', {exact: true}).waitFor({state: 'visible'}); assert.equal(await panel().locator('[data-codex-session]').count(), 1);
       assert.equal(await panel().locator('[data-codex-session] a').getAttribute('href'), 'codex://threads/' + refreshedCodexId, '成功提供者使用本次关系而非旧快照');
-      for (const width of [1280, 390]) {await page.setViewportSize({width, height: 900}); await page.waitForFunction(() => {const box = document.querySelector('.task-codex-popover')?.getBoundingClientRect(); return box && box.x >= -1 && box.right <= innerWidth + 1;}); const box = await page.locator('.task-codex-popover:visible').boundingBox(); assert.ok(box && box.x >= -1 && box.x + box.width <= width + 1); await capture(page, 'dsh-mixed-sessions-' + width + '.png');}
+      for (const width of [1280, 390]) {
+        await page.setViewportSize({width, height: 900});
+        try {
+          await waitForTaskSessionPopover(page);
+          const box = await page.locator('.task-codex-popover:visible').boundingBox();
+          assert.ok(box && box.x >= -1 && box.x + box.width <= width + 1);
+        } catch (error) { await reportAgentUiFailure(page, `dsh-mixed-sessions-${width}`); throw error; }
+        await capture(page, 'dsh-mixed-sessions-' + width + '.png');
+      }
       await page.setViewportSize({width: 1280, height: 900}); await dshRow().getByRole('button', {name: '解除关联', exact: true}).click(); await dshRow().waitFor({state: 'hidden'}); assert.equal(unlinks, 1); assert.equal(await panel().locator('[data-codex-session]').count(), 1, '解除返回整空间其他任务时只显示当前任务');
       await panel().getByRole('button', {name: '关闭会话关联', exact: true}).click(); await panel().waitFor({state: 'hidden'}); assert.equal(await section().getByRole('link', {name: '打开会话', exact: true}).getAttribute('href'), 'codex://threads/' + refreshedCodexId);
     } finally {await page.setViewportSize({width: 1280, height: 900}); await page.unroute(pattern, handler);}

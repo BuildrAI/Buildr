@@ -6,6 +6,7 @@ import { WorkbenchPreferencesProvider } from '../features/workbench/hooks/useWor
 import { WorkbenchSearch } from '../features/workbench/components/WorkbenchSearch';
 import type { ResourcePreview } from './resource-preview';
 import { WorkspacePages } from './WorkspacePages';
+import type { WorkspacePageNavigationRequest } from './WorkspacePaneHost';
 import { workspacePageSearch } from './workspace-pages';
 import { runtimeSystemApi } from './api/runtime-system-api';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
@@ -84,6 +85,8 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
     return Number.isFinite(saved) && saved >= 150 && saved <= 256 ? saved : 256;
   });
   const [navigationOpen, setNavigationOpen] = useState(false);
+  const [pageNavigationRequest, setPageNavigationRequest] = useState<WorkspacePageNavigationRequest>();
+  const requestWorkspacePage = useCallback((destination: string) => setPageNavigationRequest(previous => ({ sequence: (previous?.sequence || 0) + 1, destination })), []);
   const [compactNavigation, setCompactNavigation] = useState(() => window.matchMedia('(max-width: 899px)').matches);
   useEffect(() => {
     const media = window.matchMedia('(max-width: 899px)');
@@ -245,6 +248,7 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
   };
 
   const shellValue = {
+    requestWorkspacePage,
     workspaceId,
     navigationRevision,
     refreshNavigation,
@@ -343,7 +347,7 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
         <ReleaseAwarenessBanner openAgentAction={openAgentAction} />
         {quitError && <Alert id="quit-buildr-error" type="error" showIcon message="Buildr Web 尚未退出" description={quitError}
           action={<Button size="small" loading={quitting} onClick={() => void quit(false)}>重试退出</Button>} />}
-        <AppShellFrame isGlobal={isGlobal} compactNavigation={compactNavigation} sidebarCollapsed={sidebarCollapsed} sidebarWidth={sidebarWidth} onSidebarResize={width => { setSidebarWidth(width); writeOptionalPreference('buildr.sidebar-width', String(Math.round(width))); }} onToggleSidebar={() => { setSidebarCollapsed(value => !value); writeOptionalPreference('buildr.sidebar-collapsed', String(!sidebarCollapsed)); }} navigation={<AppNavigation key={workspaceId} />}>{/* Business content stays in the live adapter. */}<>{workspaceId ? <WorkspaceFileEditingProvider key={workspaceId} workspaceId={workspaceId}><ArticleEditorProvider workspaceId={workspaceId}><WorkspacePages workspaceId={workspaceId} renderResource={renderResource} /></ArticleEditorProvider></WorkspaceFileEditingProvider> : <Outlet />}</></AppShellFrame>
+        <AppShellFrame isGlobal={isGlobal} compactNavigation={compactNavigation} sidebarCollapsed={sidebarCollapsed} sidebarWidth={sidebarWidth} onSidebarResize={width => { setSidebarWidth(width); writeOptionalPreference('buildr.sidebar-width', String(Math.round(width))); }} onToggleSidebar={() => { setSidebarCollapsed(value => !value); writeOptionalPreference('buildr.sidebar-collapsed', String(!sidebarCollapsed)); }} navigation={<AppNavigation key={workspaceId} />}>{/* Business content stays in the live adapter. */}<>{workspaceId ? <WorkspaceFileEditingProvider key={workspaceId} workspaceId={workspaceId}><ArticleEditorProvider workspaceId={workspaceId}><WorkspacePages workspaceId={workspaceId} renderResource={renderResource} navigationRequest={pageNavigationRequest} /></ArticleEditorProvider></WorkspaceFileEditingProvider> : <Outlet />}</></AppShellFrame>
       </div>
 
       {!isGlobal ? <Drawer title="导航" placement="left" width={280} open={navigationOpen}

@@ -12,7 +12,7 @@ import { workspaceHref } from '../lib/labels';
  * 不在导航内展开项目树或所属服务；对象由页面级页签与领域全景承载。
  */
 export function AppNavigation({ onNavigate }: { onNavigate?: () => void }) {
-  const { workspaceId, workspaceMenuTarget } = useAppShell();
+  const { workspaceId, workspaceMenuTarget, requestWorkspacePage } = useAppShell();
   const { preferences } = useWorkbenchPreferences(workspaceId);
   const location = useLocation();
   const state = navigationState(location.pathname, location.search, workspaceId);
@@ -34,7 +34,7 @@ export function AppNavigation({ onNavigate }: { onNavigate?: () => void }) {
   };
   const item = (path: string, label: string, name: string, onClick?: () => void) => {
     const destination = state.area === 'workspace' && !['projects', 'articles'].includes(name) ? workspaceMenuTarget(name) : { to: href(path), state: undefined };
-    return <AppNavigationItem to={destination.to} state={destination.state} path={path} name={name} label={label} icon={icons[name]} active={location.pathname === href(path) || location.pathname.startsWith(href(path) + '/')} onClick={event => { if (state.area === 'workspace' && destination.to === location.pathname + location.search + location.hash) event.preventDefault(); onClick?.(); onNavigate?.(); }} />;
+    return <AppNavigationItem to={destination.to} state={destination.state} path={path} name={name} label={label} icon={icons[name]} active={location.pathname === href(path) || location.pathname.startsWith(href(path) + '/')} onClick={event => { if (event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey && state.area === 'workspace') { requestWorkspacePage?.(destination.to); if (destination.to === location.pathname + location.search + location.hash) event.preventDefault(); } onClick?.(); onNavigate?.(); }} />;
   };
 
   return (

@@ -1,4 +1,5 @@
 import { SplitDivider } from '../components/SplitDivider';
+import { PaneToggleButton } from '../components/PaneToggleButton';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { Button, Dropdown, type MenuProps } from 'antd';
@@ -45,7 +46,7 @@ export function AppShellHeader({isGlobal,brandHref,development,workspaceName,wor
         </header>
   );
 }
-export function AppShellFrame({isGlobal,compactNavigation,sidebarCollapsed,sidebarWidth,onSidebarResize,onToggleSidebar,navigation,children}:{isGlobal?:boolean;compactNavigation?:boolean;sidebarCollapsed:boolean;sidebarWidth?:number;onSidebarResize?(width:number):void;onToggleSidebar():void;navigation:ReactNode;children:ReactNode}) {
+export function AppShellFrame({isGlobal,compactNavigation,sidebarCollapsed,sidebarWidth,onSidebarResize,onToggleSidebar,navigation,children,unifiedCollapse=false}:{isGlobal?:boolean;compactNavigation?:boolean;sidebarCollapsed:boolean;sidebarWidth?:number;onSidebarResize?(width:number):void;onToggleSidebar():void;navigation:ReactNode;children:ReactNode;unifiedCollapse?:boolean}) {
   const dragOrigin = useRef<{x:number;width:number} | null>(null);
   const [dragging, setDragging] = useState(false);
   const move = useCallback((event: PointerEvent) => {
@@ -59,9 +60,9 @@ export function AppShellFrame({isGlobal,compactNavigation,sidebarCollapsed,sideb
     window.addEventListener('pointerup', release, { once: true });
     return () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', release); };
   }, [dragging, move, release]);
-  return <div className={`app-frame${isGlobal ? ' is-global' : ''}${sidebarCollapsed && !compactNavigation ? ' sidebar-collapsed' : ''}`}>
+  return <div className={`app-frame${isGlobal ? ' is-global' : ''}${sidebarCollapsed && !compactNavigation ? ' sidebar-collapsed' : ''}${unifiedCollapse ? ' unified-pane-controls' : ''}`}>
     {!isGlobal && !compactNavigation ? <aside className={`app-sidebar${dragging ? ' is-resizing' : ''}`} style={sidebarCollapsed || sidebarWidth === undefined ? undefined : { flexBasis: sidebarWidth, width: sidebarWidth }}>
-      <div className="app-sidebar-head"><Button type="text" className="sidebar-toggle" aria-label={sidebarCollapsed ? '展开菜单' : '折叠菜单'} title={sidebarCollapsed ? '展开菜单' : '折叠菜单'} icon={sidebarCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />} onClick={onToggleSidebar} /></div>
+      <div className="app-sidebar-head">{unifiedCollapse ? <PaneToggleButton collapsed={sidebarCollapsed} label="导航" position="navigation-toggle" onToggle={onToggleSidebar} /> : <Button type="text" className="sidebar-toggle" aria-label={sidebarCollapsed ? '展开菜单' : '折叠菜单'} title={sidebarCollapsed ? '展开菜单' : '折叠菜单'} icon={sidebarCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />} onClick={onToggleSidebar} />}</div>
       {navigation}
     </aside> : null}
     {!isGlobal && !compactNavigation && !sidebarCollapsed && onSidebarResize ? <SplitDivider className="sidebar-resize" children={<span className="split-divider-header-marker" aria-hidden="true" />} aria-label="拖拽调整菜单宽度" title="拖拽调整菜单宽度（150–256px）" onPointerDown={event => { dragOrigin.current = { x: event.clientX, width: sidebarWidth ?? 256 }; setDragging(true); event.preventDefault(); }} onDoubleClick={() => onSidebarResize(256)} /> : null}

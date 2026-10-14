@@ -4,14 +4,15 @@ import { ResourceActions } from '../../workbench/components/ResourceActions';
 import { useRepositoryLocalConfig } from './useRepositoryLocalConfig';
 import { AssetDeleteDialog } from './AssetDeleteDialog';
 import { RepositoryStatus } from './RepositoryStatus';
-import { ProjectPreviewContext, useResourcePreview } from '../../../app/resource-preview';
+import { InsideResourcePreview, ProjectPreviewContext, useResourcePreview } from '../../../app/resource-preview';
 import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import { Alert, Button, Card, Input, Space } from 'antd';
 import { BranchesOutlined, FileTextOutlined, RightOutlined } from '@ant-design/icons';
 import { useAppShell } from '../../../app/AppShellContext';
-import { useWorkspacePageTabs } from '../../../app/pageTabs';
-import { WorkspaceStage } from '../../../components/WorkspaceStage';
+import { useWorkspacePageTabs, WorkspaceViewActiveContext, WorkspaceViewTransientContext } from '../../../app/pageTabs';
+import { useWorkspacePaneHost } from '../../../app/WorkspacePaneHost';
+import { WorkspaceStage, type WorkspaceObjectContentState } from '../../../components/WorkspaceStage';
 import { DrawerShell } from '../../../components/DrawerShell';
 import { ResourceDocumentPane } from '../../../components/ResourceDocumentPane';
 import { workspaceHref } from '../../../lib/labels';
@@ -25,7 +26,9 @@ import './asset-home.css';
 
 export function AssetHome({ kind, previewId, knowledge, initialEditing }: { kind: 'service' | 'repository'; previewId?: string; knowledge?: { artifactId?: string; objectId?: string }; initialEditing?: boolean }) {
   const projectContext = useContext(ProjectPreviewContext);
+  const embedded = useContext(InsideResourcePreview);
   const previews = useResourcePreview(), location = useLocation();
+  const paneHost = useWorkspacePaneHost(), inheritedTransient = useContext(WorkspaceViewTransientContext);
   const lastKnowledge = useRef(knowledge);
   if (knowledge) lastKnowledge.current = knowledge;
   const params = useParams();
@@ -51,7 +54,7 @@ export function AssetHome({ kind, previewId, knowledge, initialEditing }: { kind
   const href = (route: string) => workspaceHref(workspaceId, route);
   const loadDocument = useCallback(async (file: string) => { const result = await assetCatalogApi.serviceDocument(assetId, file); return { path: result.path || file, exists: Boolean(result.exists), content: result.content ?? null }; }, [assetId]);
   useEffect(() => { if (item) tabs.register({ key: `${kind}:${item.id}`, kind: 'svc', title: item.name, path: workspaceHref(workspaceId, `/${area}/${item.id}`) }); }, [item?.id, item?.name, workspaceId]);
-  const openDocument = (file: string) => { setDocuments(current => current.includes(file) ? current : [...current, file]); setActiveDocument(file); };
+  const openDocument = (file: string) => { setDocuments(current => current.includes(file) ? current : [...current, file]); setActiveDocument(file); paneHost?.revealContent(location.pathname, embedded ? undefined : file); };
   const closeDocument = (file: string) => {
     setDocuments(current => { const next = current.filter(value => value !== file); setActiveDocument(active => active === file ? next.at(-1) || null : active); return next; });
   };
@@ -65,8 +68,8 @@ export function AssetHome({ kind, previewId, knowledge, initialEditing }: { kind
   if (!item) return <Alert type="error" message={`${label}不存在`} />;
   const related = kind === 'service' ? data.projects.filter(p => p.serviceIds?.includes(item.id)) : data.services.filter(s => s.repositoryId === item.id);
   return <WorkspaceStage pageTabs={tabs.tabs} onClosePageTab={tabs.close}
-    objectTabs={documents.map(file => ({ key: file, kind: 'doc', title: file }))} activeObject={knowledge ? null : activeDocument} onActivateObject={setActiveDocument} onCloseObject={closeDocument}
-    objectContent={documents.map(file => <div key={file} hidden={file !== activeDocument}><ResourceDocumentPane file={file} load={loadDocument} onOpen={openDocument} /></div>)}>
+    objectTabs={documents.map(file => ({ key: file, kind: 'doc', title: file, identity: `${kind}:${assetId}:${file}`, contentLayout: 'reading', contentLabel: file }))} activeObject={knowledge ? null : activeDocument} onActivateObject={setActiveDocument} onCloseObject={closeDocument}
+    objectContent={({ displayedKey, visible, transient }: WorkspaceObjectContentState) => <WorkspaceViewTransientContext.Provider value={inheritedTransient || transient}>{documents.map(file => <WorkspaceViewActiveContext.Provider key={file} value={visible && displayedKey === file}><div hidden={file !== displayedKey}><ResourceDocumentPane file={file} load={loadDocument} onOpen={openDocument} /></div></WorkspaceViewActiveContext.Provider>)}</WorkspaceViewTransientContext.Provider>}>
     {lastKnowledge.current && <div hidden={!knowledge}><KnowledgeBrowser workspaceId={workspaceId || ''} scope={{ kind: 'service', id: assetId }} initialArtifactId={lastKnowledge.current.artifactId} initialObjectId={lastKnowledge.current.objectId} onBack={() => previews?.open(location.pathname, href(`/services/${encodeURIComponent(assetId)}`))} backLabel="返回服务" /></div>}
     <AssetHomeView kind={kind} item={item} hidden={Boolean(knowledge)} hideRelated={Boolean(kind === 'service' && projectContext)} related={related} relationHref={object => href(kind === 'service' ? `/projects/${object.code}` : `/services/${object.id}`)} actions={<Space wrap className="resource-home-actions"><ResourceActions size="middle" resource={{ kind: kind === "service" ? "service" : "repository", key: kind + ":" + item.id, label: item.name, href: workspaceHref(workspaceId, "/" + (kind === "service" ? "services" : "repositories") + "/" + encodeURIComponent(item.id)) }} /><Button disabled={data.migrationRequired} onClick={() => setDeleting(true)}>移除</Button><Button disabled={data.migrationRequired} onClick={() => setEditing(true)}>编辑{label}</Button></Space>} notices={<>      <CatalogMigration catalog={data} onSaved={catalog.setData} />
       {data.diagnostics.filter(d => d.objectId === item.id || d.objectId === repository?.id).map(d => <Alert key={d.code + d.objectId} type="warning" showIcon message={d.message} />)}

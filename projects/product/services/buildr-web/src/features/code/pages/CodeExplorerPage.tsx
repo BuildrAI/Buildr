@@ -27,6 +27,8 @@ export function CodeExplorerPage() {
   const location=useLocation(),navigate=useNavigate(),{message}=App.useApp();
   const [host,setHost]=useState<HTMLDivElement|null>(null),[treeHidden,setTreeHidden]=useState(()=>window.innerWidth<680);
   const [processed,setProcessed]=useState(''),[media,setMedia]=useState<Record<string,string>>({});
+  const [selection,setSelection]=useState<{key:string;lines:[number,number]|null}>({key:'',lines:null});
+  const [readQuery,setReadQuery]=useState('');
   useEffect(()=>{setBreadcrumbParts(['代码','资源管理器']);},[setBreadcrumbParts]);
   useEffect(()=>{if(processed===location.key)return;setProcessed(location.key);const entry=location.state?.codeEntry as CodeTaskEntry|undefined;if(entry)void state.applyEntry(entry);else state.clearEntry();},[location.key,location.state,processed,state.applyEntry,state.clearEntry]);
   const active=state.active,file=active?state.files[active.key]:undefined;
@@ -70,7 +72,7 @@ export function CodeExplorerPage() {
   const returnTarget=codeReturnTarget(state.entry,workspaceHref(workspaceId,''));
   const returnToSource=()=>{if(!returnTarget)return;const {from}=returnTarget;navigate({pathname:from.pathname,search:from.search,hash:from.hash},{state:from.state});};
   const openFile=(id:string,path:string,line?:number,matchQuery?:string)=>{const source=state.locationFor(id);if(!source)return;state.open(source,path,line,false,matchQuery);if(window.innerWidth<680)setTreeHidden(true);};
-  const onSearch=useCallback((query:string,mode:'name'|'content')=>state.search(query,mode),[state.search]);
+  const onSearch=useCallback((query:string,mode:'name'|'content')=>{setReadQuery(mode==='content'?query:'');state.search(query,mode);},[state.search]);
   const markdownOptions: MarkdownRenderOptions = {
     allowRelativeLinks: true,
     allowParentRelativeLinks: true,
@@ -129,9 +131,11 @@ export function CodeExplorerPage() {
       {state.catalog?.repositories.length===0&&<Empty description="工作空间尚未登记代码库" />}
       {state.catalog&&state.catalog.repositories.length>0&&!state.sources.length&&<div className="code-range-outside" role="status">所选代码库与工作树没有共同目录，请调整筛选。</div>}
       <div className="object-tab-panel" id={panelId} role={active ? 'tabpanel' : undefined} aria-labelledby={active ? tabElementId(panelId, active.key) : undefined} tabIndex={active ? 0 : undefined}>
-      <RepositoryFileBrowser global readerActive={viewActive} defaultCollapsedTree collapseTreeKey={viewActive && !location.state?.codeEntry?.file ? location.key : undefined} revealSelectionRequest={state.selectionRequest} sidebarHost={host} treeRepositories={treeRepositories} files={files} repositoryName={selectedRepo?.name} repositoryId={active?.repositoryId} checkoutId={active?.checkoutId||undefined} observedDigest={file?.digest} observedRevision={file?.revision} observedAt={file?.observedAt} selectedRepositoryId={active?codeBrowserKey(active):undefined} selectedPath={active?.path||''} selectionKey={active?.key}
+      <RepositoryFileBrowser global readerActive={viewActive} defaultCollapsedTree collapseTreeKey={viewActive && !location.state?.codeEntry?.file ? location.key : undefined} revealSelectionRequest={state.selectionRequest} sidebarHost={host} treeRepositories={treeRepositories} files={files} repositoryName={selectedRepo?.name} repositoryId={active?.repositoryId} checkoutId={active?.checkoutId||undefined} observedDigest={currentText?undefined:file?.digest} observedRevision={currentText?editorSession?.file.revision||editable.file?.revision:file?.revision} observedAt={currentText?editorSession?.file.observedAt||editable.file?.observedAt:file?.observedAt} selectedRepositoryId={active?codeBrowserKey(active):undefined} selectedPath={active?.path||''} selectionKey={active?.key}
         readerSurface={currentText ? editable.file ? <FileEditingPane file={{...editable.file,locationLabel:selectedGroup?.name||editable.file.locationLabel}} editing={editing} active={viewActive} focusLine={active?.line} focusRequest={active?.focusRequest}
+          searchQuery={readQuery} onSelectLines={lines=>{if(active)setSelection({key:active.key,lines});}}
           markdownRevision={Object.keys(media).join(',')} markdownOptions={markdownOptions} /> : editable.error ? <Alert type="error" showIcon message={editable.error} action={<Button onClick={()=>void state.refresh()}>重试</Button>} /> : <div className="repository-reading-empty"><Spin />正在读取文件…</div> : undefined}
+        readerContent={currentText?editorSession?.content:undefined} readerSelectedLines={selection.key===active?.key?selection.lines:null}
         onSelect={(path,line,matchQuery)=>active&&state.open(active,path,line,false,matchQuery)} onSelectRepositoryFile={openFile} context={context}
         location={file?.source.location||selectedMember?.path||''} version={file?.source.version||active?.commitHash||'当前文件'} historical={Boolean(active?.commitHash)} focusLine={active?.line} focusRequest={active?.focusRequest}
         readLoading={Boolean(active&&state.loading.includes(active.key))} readError={active?state.fileErrors[active.key]:undefined} readMessage={file?.message||undefined} readPage={file?.page} readMatchQuery={file?.observedMatch?.query} sizeBytes={file?.sizeBytes} onReadPage={state.readPage} canModify={Boolean(file&&!file.truncated&&file.kind!=='unsupported'&&!state.fileErrors[active?.key||''])} taskTitle={state.entry?.taskTitle}

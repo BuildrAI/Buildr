@@ -1,5 +1,5 @@
 import { ResourceActions } from "../../workbench/components/ResourceActions";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   Link,
   useLocation,
@@ -10,8 +10,9 @@ import { Alert, Button, Breadcrumb, Empty, Modal, Space, Spin } from "antd";
 import { ArrowUpOutlined } from "@ant-design/icons";
 import { useAppShell } from "../../../app/AppShellContext";
 import { useResourcePreview } from "../../../app/resource-preview";
-import { useWorkspacePageTabs } from "../../../app/pageTabs";
-import { WorkspaceStage } from "../../../components/WorkspaceStage";
+import { useWorkspacePageTabs, WorkspaceViewActiveContext, WorkspaceViewTransientContext } from "../../../app/pageTabs";
+import { useWorkspacePaneHost } from "../../../app/WorkspacePaneHost";
+import { WorkspaceStage, type WorkspaceObjectContentState } from "../../../components/WorkspaceStage";
 import { RefreshButton } from "../../../components/RefreshButton";
 import { workspaceHref } from "../../../lib/labels";
 import { KnowledgeActions } from "../components/KnowledgeActions";
@@ -40,6 +41,7 @@ import {
 import type { KnowledgeIndex, KnowledgeScope, KnowledgeReference } from "../api/knowledge-api";
 import "../knowledge.css";
 export function KnowledgePage() {
+  const paneHost = useWorkspacePaneHost(), inheritedTransient = useContext(WorkspaceViewTransientContext);
   const { scopeKind, scopeId = "" } = useParams();
   const scope: KnowledgeScope = {
       kind: scopeKind === "service" ? "service" : "project",
@@ -302,6 +304,7 @@ export function KnowledgePage() {
       };
     });
     previews?.activate(location.pathname, "");
+    paneHost?.revealContent(location.pathname, key);
   };
   const closePane = (key: string) => {
     setReadingState((s) => {
@@ -340,6 +343,7 @@ export function KnowledgePage() {
       return { scope: scopeKey, active: key, items: items.some(pane => pane.key === key) ? items : [...items, { key, kind: 'reference', id: key, title: referenceTitle, origin: title, reference, fragment }] };
     });
     previews?.activate(location.pathname, '');
+    paneHost?.revealContent(location.pathname, key);
   };
   const follow = (
     base: string,
@@ -416,6 +420,9 @@ export function KnowledgePage() {
         kind: p.kind,
         id: p.id,
         title: p.title,
+        identity: `${workspaceId}:${scopeKey}:${p.key}`,
+        contentLayout: "reading" as const,
+        contentLabel: p.title,
         origin: p.origin,
         observation: p.observation,
       })),
@@ -435,10 +442,10 @@ export function KnowledgePage() {
         setReadingState((s) => ({ ...s, active: key }))
       }
       onCloseObject={closePane}
-      objectContent={
-        <>
+      objectContent={({ displayedKey, visible, transient }: WorkspaceObjectContentState) =>
+        <WorkspaceViewTransientContext.Provider value={inheritedTransient || transient}>
           {panes.map((p) => (
-            <div key={p.key} hidden={activePane !== p.key}>
+            <WorkspaceViewActiveContext.Provider key={p.key} value={visible && displayedKey === p.key}><div hidden={displayedKey !== p.key}>
               <KnowledgeReadingPane
                 pane={p}
                 scope={scope}
@@ -459,9 +466,9 @@ export function KnowledgePage() {
                   )
                 }
               />
-            </div>
+            </div></WorkspaceViewActiveContext.Provider>
           ))}
-        </>
+        </WorkspaceViewTransientContext.Provider>
       }
     >
       <div ref={root} className="knowledge-page">

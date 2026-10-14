@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
+import { runWorkspacePaneJourney } from './workspace-pane-journey.ts';
 
 // Frontend assertions own visible behavior. The Buildr host supplies an isolated
 // production URL, fixture and optional evidence writer; no browser-tool adapter.
 export async function runLayoutJourney({ t, page, workspaceUrl, capture }: any) {
+  await runWorkspacePaneJourney({ t, page, workspaceUrl, capture });
   const noPageOverflow = async () => assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, '页面不应出现非预期横向溢出');
   const reachable = async (locator: any) => {
     await locator.click({ trial: true });
@@ -75,9 +77,7 @@ export async function runLayoutJourney({ t, page, workspaceUrl, capture }: any) 
           await page.locator('.pane-right:visible').waitFor();
           await noPageOverflow();
           if (width >= 860) await readableDirectoryHeader();
-          const close = width < 860
-            ? page.getByRole('button', { name: '关闭阅读', exact: true })
-            : page.getByRole('button', { name: `关闭 ${noun}详情`, exact: true });
+          const close = page.getByRole('button', { name: `关闭 ${noun}详情`, exact: true });
           await reachable(close);
           await capture(page, `layout-${area}-detail-${width}.png`);
           await close.click();
@@ -100,14 +100,14 @@ export async function runLayoutJourney({ t, page, workspaceUrl, capture }: any) 
     const related = page.locator('.pane-right:visible [data-related-resources="projects"]');
     assert.match(await related.innerText(), /演示项目/);
     assert.match(await related.getByRole('link').first().getAttribute('href'), /\/projects\/demo/);
-    await page.getByRole('button', { name: '展开阅读', exact: true }).click();
-    await page.getByRole('button', { name: '恢复分屏', exact: true }).waitFor({ state: 'visible' });
+    await page.getByRole('button', { name: '收起页面', exact: true }).click();
+    await page.getByRole('button', { name: '展开页面', exact: true }).waitFor({ state: 'visible' });
     const functionalWidth = await page.locator('.pane-right:visible').evaluate((pane: HTMLElement) => {
       const inner = pane.querySelector<HTMLElement>('.pane-body-inner')!;
       return { pane: pane.clientWidth, content: inner.getBoundingClientRect().width };
     });
     assert.ok(Math.abs(functionalWidth.pane - functionalWidth.content) < 2, `功能详情使用右分屏全部宽度：${JSON.stringify(functionalWidth)}`);
-    await page.getByRole('button', { name: '恢复分屏', exact: true }).click();
+    await page.getByRole('button', { name: '展开页面', exact: true }).click();
     await page.locator('[data-doc-row="readme"]').click();
     const body = page.locator('.pane-right:visible .markdown-body');
     await body.getByRole('heading', { name: '布局阅读资料', exact: true }).waitFor();
@@ -115,8 +115,8 @@ export async function runLayoutJourney({ t, page, workspaceUrl, capture }: any) 
     await scroll.evaluate((el: HTMLElement) => { el.scrollTop = 500; });
     const before = await scroll.evaluate((el: HTMLElement) => el.scrollTop);
     assert.ok(before > 0, '使用真实长文验证阅读位置');
-    await page.getByRole('button', { name: '展开阅读', exact: true }).click();
-    await page.getByRole('button', { name: '恢复分屏', exact: true }).waitFor({ state: 'visible' });
+    await page.getByRole('button', { name: '收起页面', exact: true }).click();
+    await page.getByRole('button', { name: '展开页面', exact: true }).waitFor({ state: 'visible' });
     const geometry = await body.locator('p').first().evaluate((el: HTMLElement) => ({ width: el.getBoundingClientRect().width, fontSize: parseFloat(getComputedStyle(el).fontSize) }));
     assert.ok(geometry.width > 300 && geometry.width / geometry.fontSize < 100, `宽屏展开后正文不能拉长成整屏行宽：${JSON.stringify(geometry)}`);
     assert.ok(geometry.width > 1040, '文档阅读宽度比上一版 1040 像素适度增加');
@@ -128,7 +128,7 @@ export async function runLayoutJourney({ t, page, workspaceUrl, capture }: any) 
     assert.ok(Math.abs(readingMargins.left - readingMargins.right) < 2, `文档在右分屏居中：${JSON.stringify(readingMargins)}`);
     await noPageOverflow();
     await capture(page, 'layout-reading-expanded-1920.png');
-    await page.getByRole('button', { name: '恢复分屏', exact: true }).click();
+    await page.getByRole('button', { name: '展开页面', exact: true }).click();
     assert.ok(Math.abs(await scroll.evaluate((el: HTMLElement) => el.scrollTop) - before) < 24, '恢复分屏后保留阅读位置，允许不足一行的取整差异');
     await body.getByRole('heading', { name: '布局阅读资料', exact: true }).waitFor({ state: 'attached' });
     await page.getByRole('button', { name: '← 返回详情', exact: true }).click();
@@ -292,7 +292,7 @@ export async function runLayoutJourney({ t, page, workspaceUrl, capture }: any) 
             return Math.abs(marker.left + marker.width / 2 - bodyX);
           }));
           assert.ok(boundaries.length >= 2 && boundaries.every(distance => distance < 1), '顶部短线与菜单、内容分屏的下方线严格对齐');
-          await page.getByRole('button', { name: '展开阅读', exact: true }).click();
+          await page.getByRole('button', { name: '收起页面', exact: true }).click();
           const modes = detail.locator('.task-diff-mode');
           await modes.getByText('上下对比', { exact: true }).click();
           await detail.locator('.task-diff-text').waitFor();
@@ -336,7 +336,7 @@ export async function runLayoutJourney({ t, page, workspaceUrl, capture }: any) 
           await assertAlignedRows();
 
           await capture(page, 'layout-task-diff-mode-selected.png');
-          await page.getByRole('button', { name: '恢复分屏', exact: true }).click();
+          await page.getByRole('button', { name: '展开页面', exact: true }).click();
         }
         await detail.locator('.task-rail-commit').first().click();
         await detail.locator('.task-commit-details').waitFor();

@@ -93,29 +93,40 @@ export async function runSourceControlBranchesJourney({ t, page, workspaceUrl, c
     const delayed = async (route: any) => { await gate; await route.continue(); };
     const delayWrite = collapseWhileWriting || Boolean(lifecycle.whileWriting);
     if (delayWrite) await page.route('**/code/branch-switch', delayed);
+    const writeStartedAt = Date.now();
+    let stage = 'click-action', failed = false;
     try {
       const returned = page.waitForResponse((response: any) => response.request().method() === 'POST' && new URL(response.url()).pathname.endsWith('/code/branch-switch'), { timeout: 20_000 }).then((response:any) => ({response}), (error:unknown) => ({error}));
       const started = delayWrite ? page.waitForRequest((request: any) => request.method() === 'POST' && new URL(request.url()).pathname.endsWith('/code/branch-switch')) : null;
       await button.click();
-      if (started) await started;
+      if (started) { stage = 'await-write-request'; await started; }
       if (collapseWhileWriting) {
+        stage = 'collapse-while-writing';
         await root().getByRole('button', { name: '折叠代码库列表', exact: true }).click();
         assert.equal(await root().locator('.source-control-repository-tree-scroll').isVisible(), false);
       }
+      stage = 'while-writing';
       await lifecycle.whileWriting?.();
       release();
+      stage = 'await-write-response';
       const outcome = await returned; if (outcome.error) throw outcome.error;
+      stage = 'validate-write-response';
       const response = outcome.response; assert.equal(response.status(), 200);
       const result = await response.json(); assert.equal(result.source.worktreeId, worktree.worktreeId); assert.equal(result.branch, target);
+      stage = 'after-write';
       await lifecycle.afterWrite?.(result);
+      stage = 'close-branch-manager';
       await manager.waitFor({ state: 'hidden' });
-      if (collapseWhileWriting) await root().getByRole('button', { name: '展开代码库列表', exact: true }).click();
+      if (collapseWhileWriting) { stage = 'expand-repository-list'; await root().getByRole('button', { name: '展开代码库列表', exact: true }).click(); }
+      stage = 'await-current-branch';
       await page.waitForFunction(({ id, title }: { id: string; title: string }) => [...document.querySelectorAll('.code-source-control-page:not([hidden]) [data-source-worktree]')].some(element => element.getAttribute('data-source-worktree') === id && element.querySelector('.source-control-row-action-button')?.getAttribute('title') === title), { id: worktree.worktreeId, title: target + ' · 管理分支' });
       assert.equal(await row(worktree).locator('.source-control-row-action-button').getAttribute('title'), target + ' · 管理分支');
       return result;
     } catch (error) {
+      failed = true;
+      const failure = error instanceof Error ? {name:error.name,message:error.message} : {name:typeof error,message:String(error)};
       const state = await page.evaluate(() => ({events:(window as unknown as {__branchWriteEvents?:unknown[]}).__branchWriteEvents,panels:[...document.querySelectorAll<HTMLElement>('.branch-management-panel,.branch-management-action')].map(element=>({label:element.getAttribute('aria-label'),text:element.innerText,visible:Boolean(element.getClientRects().length)}))})).catch(()=>null);
-      process.stderr.write('[source-control-branch-write-failure] '+JSON.stringify({name,target,collapseWhileWriting,beforeClick,requests,state})+'\n');
+      process.stderr.write('[source-control-branch-write-failure] '+JSON.stringify({name,target,collapseWhileWriting,stage,error:failure,elapsedMs:Date.now()-writeStartedAt,pageClosed:page.isClosed(),cancelled:Boolean(t.signal?.aborted),beforeClick,requests,state})+'\n');
       await capture(page, 'source-control-branch-write-failure.png').catch(()=>{});
       throw error;
     } finally {
@@ -125,7 +136,15 @@ export async function runSourceControlBranchesJourney({ t, page, workspaceUrl, c
         const state = window as unknown as {__branchWriteListener?: EventListener};
         if (state.__branchWriteListener) { document.removeEventListener('pointerdown',state.__branchWriteListener,true);document.removeEventListener('click',state.__branchWriteListener,true);delete state.__branchWriteListener; }
       }).catch(()=>{});
-      if (delayWrite) await page.unroute('**/code/branch-switch', delayed);
+      if (delayWrite) {
+        try { await page.unroute('**/code/branch-switch', delayed); }
+        catch (error) {
+          const pageClosed = page.isClosed(), cancelled = Boolean(t.signal?.aborted);
+          if (!failed && !pageClosed && !cancelled) throw error;
+          const failure = error instanceof Error ? {name:error.name,message:error.message} : {name:typeof error,message:String(error)};
+          process.stderr.write('[source-control-branch-write-cleanup-failure] '+JSON.stringify({name,target,stage,error:failure,originalFailure:failed,pageClosed,cancelled})+'\n');
+        }
+      }
     }
   };
   const noOverflow = async () => assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);

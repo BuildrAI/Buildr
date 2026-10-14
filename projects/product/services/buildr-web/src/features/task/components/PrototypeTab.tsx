@@ -13,7 +13,7 @@ export function PrototypeTab({ active, workspaceId, data, loading, error, onRefr
   const selected = entries.find(entry => entry.key === (selectedKey ?? localKey)) || entries[0];
   const [state,setState] = useState(initialState), [position,setPosition] = useState<string>();
   const rootRef = useRef<HTMLElement>(null), frameRef = useRef<HTMLIFrameElement>(null);
-  const notes = useSideReading(data?.taskId || '',rootRef,'prototype-notes',standalone);
+  const notes = useSideReading(data?.taskId || '',rootRef,'prototype-notes');
   const highlighted=useRef<string|undefined>(undefined);
   const nonce = useRef(''), loaded = useRef(false), inbound = useRef('');
   const [selectionNotice,setSelectionNotice] = useState(false);
@@ -60,13 +60,13 @@ export function PrototypeTab({ active, workspaceId, data, loading, error, onRefr
   return <section ref={rootRef} id="task-prototype-panel" hidden={!active} className="prototype-reader" data-task-panel="prototype">
     {error && <Alert type="warning" message={error} />}
     {selectionNotice && <Alert type="info" closable onClose={() => setSelectionNotice(false)} message="上次选择的页面已变化，已显示当前可用页面。" />}
-    <div className="prototype-toolbar"><h2 id="task-prototype-title">{selected?.scene.title || '界面原型'}</h2><div>
+    <div className="prototype-toolbar"><h2 id="task-prototype-title" title={selected?.scene.title || '界面原型'}>{selected?.scene.title || '界面原型'}</h2><div className="prototype-toolbar-actions">
+      {!!selected?.scene.states.length && <Select className="prototype-state-select" size="small" aria-label="关键状态" value={effectiveState} onChange={value => { setState(value); setPosition(undefined); }} options={[{value:'',label:'默认状态'},...selected.scene.states.map(item => ({value:item.id,label:item.title}))]} />}
       <Button id="task-prototype-refresh" size="small" type="text" loading={loading} onClick={onRefresh}>刷新</Button>
       {!standalone && selected && <Button id="task-prototype-open-window" size="small" onClick={() => window.open(`/workspaces/${encodeURIComponent(workspaceId || '')}/tasks/${encodeURIComponent(data?.taskId || '')}/prototypes?page=${encodeURIComponent(selected.key)}&state=${encodeURIComponent(effectiveState)}`,'_blank','noopener,noreferrer')}>单独查看</Button>}
       <Button id="prototype-notes-toggle" size="small" aria-expanded={notes.open} aria-controls="prototype-notes-panel" onPointerEnter={event => notes.enter('trigger',event.pointerType)} onPointerLeave={event => notes.exit('trigger',event.pointerType)} onFocus={notes.cancel} onBlur={notes.leave} onClick={notes.toggle} onKeyDown={event => { if(event.key === 'Escape') closeNotes(); }}>功能说明</Button>
     </div></div>
     {selected && <details id="task-prototype-source" className="prototype-source"><summary>来源与范围</summary>{prototypeSourceLabel(selected.file)} · {selected.file.path}<p>关键页面的预期效果；模拟操作仅影响本次演示。</p></details>}
-    {!!selected?.scene.states.length && <Select aria-label="关键状态" value={effectiveState} onChange={value => { setState(value); setPosition(undefined); }} options={[{value:'',label:'默认状态'},...selected.scene.states.map(item => ({value:item.id,label:item.title}))]} />}
     <div className={`prototype-reading-layout${notes.open && notes.pinned ? ' has-notes' : ''}`}>
       <div className="prototype-canvas">{selected && (src || documentHtml !== undefined) ? <div className="prototype-viewport"><iframe key={fileKey} ref={frameRef} id="task-prototype-frame" title={selected.scene.title} sandbox="allow-scripts" referrerPolicy="no-referrer" src={src} srcDoc={documentHtml} onLoad={() => { if(loaded.current)return; nonce.current ||= crypto.randomUUID(); loaded.current = true; send(); }} /></div> : <p id="task-prototype-empty">{loading ? '正在读取原型…' : '暂无可查看的界面原型。'}</p>}</div>
       <SideReadingPanel id="prototype-notes" title="功能说明" open={notes.open} pinned={notes.pinned} canPin={notes.canPin} onTogglePin={notes.togglePin} onClose={closeNotes} onPointerEnter={event => notes.enter('panel',event.pointerType)} onPointerLeave={event => notes.exit('panel',event.pointerType)} onFocusCapture={notes.cancel} onBlurCapture={notes.leave}>

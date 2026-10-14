@@ -8,6 +8,11 @@ export type WorkspaceObjectTab = {
   key: string;
   kind: ObjectTabKind;
   title: string;
+  dirty?: boolean;
+  /** Real content identity can differ from a reusable domain tab key. */
+  identity?: string;
+  contentLayout?: 'reading' | 'fill';
+  contentLabel?: string;
   label?: ReactNode;
   accessibleLabel?: string;
   closeLabel?: string;

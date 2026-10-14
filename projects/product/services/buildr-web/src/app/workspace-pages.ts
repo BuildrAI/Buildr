@@ -175,11 +175,11 @@ export function moveTab<T extends { key: string }>(
   return next;
 }
 
-/** The strip omits directory tabs, so its index is within the visible page set. */
+/** The shared strip includes resource directories; code views retain their own internal tabs. */
 export function reorderPageTabs(tabs: WorkspacePageTab[], key: string, index: number): WorkspacePageTab[] {
-  const visible = moveTab(tabs.filter(tab => tab.kind !== 'dir'), key, index);
+  const visible = moveTab(tabs.filter(tab => !tab.key.startsWith('dir:code:')), key, index);
   let next = 0;
-  return tabs.map(tab => tab.kind === 'dir' ? tab : visible[next++]);
+  return tabs.map(tab => tab.key.startsWith('dir:code:') ? tab : visible[next++]);
 }
 
 export function readRatio(raw: string | null): number | null {

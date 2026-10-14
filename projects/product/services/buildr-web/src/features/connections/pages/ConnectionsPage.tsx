@@ -1,12 +1,14 @@
 import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { App, Button, Dropdown, Select, Tag } from 'antd';
 import { MoreOutlined, PlusOutlined } from '@ant-design/icons';
+import { useLocation } from 'react-router-dom';
 import { api } from '../../../api';
 import { useAppShell } from '../../../app/AppShellContext';
 import { WorkspaceViewActiveContext, useWorkspacePageTabs } from '../../../app/pageTabs';
 import { workspaceHref } from '../../../lib/labels';
 import { ResourceDirectory } from '../../../components/ResourceDirectory';
 import { WorkspaceStage } from '../../../components/WorkspaceStage';
+import { useWorkspacePaneHost } from '../../../app/WorkspacePaneContext';
 import { createConnectionClient } from '../api/connection-api';
 import { isEditableConnection, isKibanaConnection, isMySqlConnection, isNacosConnection, type EditableConnection, type ExternalConnection } from '../connection-types';
 import { connectionSearchText, connectionTypeLabel } from '../connection-presentation';
@@ -18,6 +20,7 @@ import '../connections.css';
 
 export function ConnectionsPage() {
   const { workspaceId } = useAppShell(), tabs = useWorkspacePageTabs(workspaceId), active = useContext(WorkspaceViewActiveContext), { message, modal } = App.useApp();
+  const paneHost = useWorkspacePaneHost(), location = useLocation();
   const client = useMemo(() => createConnectionClient(api, workspaceId || ''), [workspaceId]);
   const [connections, setConnections] = useState<ExternalConnection[]>([]), [loading, setLoading] = useState(true), [error, setError] = useState(''), [refresh, setRefresh] = useState(0);
   const [configurationWritable, setConfigurationWritable] = useState(true);
@@ -47,6 +50,7 @@ export function ConnectionsPage() {
   function openQuery(connection: ExternalConnection) {
     if (!isMySqlConnection(connection)) return;
     setEntry({ id: connection.id, nonce: Date.now() }); setQueryOpen(true);
+    paneHost?.revealContent(location.pathname, 'mysql-query');
   }
   const directory = <div className="buildr-connections-directory"><ResourceDirectory<ExternalConnection>
     title="连接" noun="连接" description={configurationWritable ? "管理外部系统连接，供你和智能体（Agent）使用。" : "此预览只支持查询；连接配置请在日常 Buildr 中修改。"}
@@ -76,6 +80,6 @@ export function ConnectionsPage() {
     objectTabs={queryOpen ? [{ key: 'mysql-query', kind: 'doc', title: 'MySQL 查询' }] : []}
     activeObject={queryOpen ? 'mysql-query' : null} onActivateObject={() => setQueryOpen(true)} onCloseObject={() => setQueryOpen(false)}
     objectContentLayout="fill" objectLabel="查询" retainObjectContent
-    objectContent={entry && <MySqlQuery connections={mysqlConnections} client={client} entry={entry} active={queryOpen && active} layoutKey={workspaceId || ''} />}
+    objectContent={({ visible }) => entry && <MySqlQuery connections={mysqlConnections} client={client} entry={entry} active={queryOpen && visible} layoutKey={workspaceId || ''} />}
   >{directory}</WorkspaceStage>{editing !== undefined && <ConnectionEditDrawer key={editing?.id || 'new'} connection={editing || undefined} environments={[...new Set(connections.map(item => item.environment))]} client={client} onClose={() => setEditing(undefined)} onSaved={() => { setEditing(undefined); message.success('连接已保存。'); reload(); }} />}</div>;
 }

@@ -1,0 +1,197 @@
+{
+  "version": 1,
+  "pages": [
+    {
+      "id": "project-docs",
+      "title": "竖向标签 · 第七版",
+      "notes": [
+        {
+          "id": "navigation",
+          "title": "菜单打开页面时直接展开中屏",
+          "text": "左侧菜单保持自己的展开与收起方式。中屏隐藏时点击“服务”或“连接”，中屏直接展开并打开对应页面；已打开的页面会定位到原标签，其他页面和右侧资料继续保留。",
+          "position": "menu-navigation"
+        },
+        {
+          "id": "flow",
+          "title": "从页面打开资料",
+          "text": "从项目页面点击资料，右侧打开对应文档。默认状态从项目页面开始；本次预览先展示已打开的三个页面标签。",
+          "position": "document-list"
+        },
+        {
+          "id": "multiple",
+          "title": "多个标签纵向排列",
+          "text": "中屏和右屏收起后，在原位置保留窄竖栏。顶部按钮独立固定，多个标签在下方纵向排列并可滚动；轻底色和边缘标记提示当前标签。",
+          "position": "page-rail"
+        },
+        {
+          "id": "peek",
+          "title": "悬停只临时查看",
+          "text": "鼠标停在标签名称上，稍停后以浮窗显示对应页面或文档，移入后可操作；点击名称可以保持浮窗。临时查看不替换原先正式选中的标签，点击外部或按 Esc 收回。",
+          "position": "page-peek"
+        },
+        {
+          "id": "expand",
+          "title": "在每个标签附近直接展开",
+          "text": "顶部双箭头恢复整个区域。每个标签下方另有“箭头进入分屏”的图标，只展开并定位该标签；默认轻量显示，悬停或键盘聚焦时高亮并微动。",
+          "position": "page-rail"
+        },
+        {
+          "id": "polish",
+          "title": "更轻的边缘与浮窗",
+          "text": "标签以留白和圆角区分，选中提示靠近内容一侧。浮窗轻阴影并短暂淡入，切换标签不会重复入场；减少动效设置下不播放。",
+          "position": "page-peek"
+        },
+        {
+          "id": "symmetric",
+          "title": "中屏和右屏使用同一套交互",
+          "text": "右侧与中屏沿用同一套交互、间距和图标层级。文档标签可悬停查看并继续操作，附近图标直接展开该文档；顶部双箭头也可恢复区域。尚未保存的内容保留提示。",
+          "position": "content-rail"
+        },
+        {
+          "id": "retained",
+          "title": "每个标签继续原来的工作",
+          "text": "打开的页面和编辑内容保持各自状态。恢复时保留各标签的阅读位置、搜索输入、编辑模式、未保存输入及撤销记录；并排宽度和文件原有自动保存方式继续保留。"
+        },
+        {
+          "id": "scope",
+          "title": "本次页面内演示",
+          "text": "连接（Connection）名称保持。本原型（UI Prototype）使用模拟资料，保存只更新本次页面内存；刷新会重置；主动切换示例状态会重置模拟资料与布局。原型尚未应用到正式分屏。"
+        }
+      ],
+      "states": [
+        {
+          "id": "split",
+          "title": "已打开资料 · 并排查看",
+          "notes": [
+            {
+              "id": "split-note",
+              "title": "已打开资料 · 并排查看",
+              "text": "中间页面与右侧资料并排，可以在各自顶部直接收起对应区域。左侧菜单保持自己的折叠状态。",
+              "position": "content-toggle"
+            }
+          ]
+        },
+        {
+          "id": "page-collapsed",
+          "title": "页面已收起",
+          "notes": [
+            {
+              "id": "page-collapsed-note",
+              "title": "页面已收起",
+              "text": "中屏保留“Buildr 产品”“服务”“连接”三个竖向标签。悬停名称临时查看，点击各自附近的展开图标恢复并选中；左菜单也可直接打开对应页面。",
+              "position": "page-rail"
+            }
+          ]
+        },
+        {
+          "id": "page-peek",
+          "title": "竖向页签 · 浮窗已打开",
+          "notes": [
+            {
+              "id": "page-peek-note",
+              "title": "浮窗已打开，可直接操作",
+              "text": "这就是收起后的对应页面，可选择资料或输入目录搜索；展开图标在当前标签附近，点击恢复该页面。",
+              "position": "page-peek"
+            }
+          ]
+        },
+        {
+          "id": "collapsed",
+          "title": "内容已收起",
+          "notes": [
+            {
+              "id": "collapsed-note",
+              "title": "内容已收起",
+              "text": "右侧打开的文档保留为竖向标签。悬停名称可临时查看；每个标签附近的图标直接展开对应文档。",
+              "position": "content-rail"
+            }
+          ]
+        },
+        {
+          "id": "content-peek",
+          "title": "右侧标签 · 浮窗已打开",
+          "notes": [
+            {
+              "id": "content-peek-note",
+              "title": "右侧浮窗可直接操作",
+              "text": "右侧沿用中屏的临时查看方式：文档仍是同一份内容，附近展开图标直接恢复当前标签。",
+              "position": "content-peek"
+            }
+          ]
+        },
+        {
+          "id": "editing",
+          "title": "正在编辑",
+          "notes": [
+            {
+              "id": "editing-note",
+              "title": "正在编辑",
+              "text": "可以输入几行，再就地收起右侧。恢复后继续编辑，正文、光标位置和撤销记录应保持。模拟保存有短暂等待，尚未完成保存的输入也会保留。",
+              "position": "editor-input"
+            }
+          ]
+        },
+        {
+          "id": "editing-collapsed",
+          "title": "编辑内容已收起",
+          "notes": [
+            {
+              "id": "editing-collapsed-note",
+              "title": "编辑内容已收起",
+              "text": "编辑器暂时收在右侧竖向标签后面，原有自动保存继续运行。悬停临时操作，点击该标签的展开图标回到原文；正文、光标和撤销记录保持。",
+              "position": "content-rail"
+            }
+          ]
+        },
+        {
+          "id": "navigation-expanded",
+          "title": "菜单已展开",
+          "notes": [
+            {
+              "id": "navigation-expanded-note",
+              "title": "菜单已展开",
+              "text": "菜单恢复完整名称，内容区仍保持只显示中间页面。折叠菜单不会打开、关闭或切换右侧资料。",
+              "position": "project-page"
+            }
+          ]
+        },
+        {
+          "id": "navigation-page-collapsed",
+          "title": "菜单展开 · 页面收起",
+          "notes": [
+            {
+              "id": "navigation-page-collapsed-note",
+              "title": "菜单展开 · 页面收起",
+              "text": "菜单保持独立展开，中屏多个竖向标签保留在原位置。点击菜单会展开中屏并打开或定位目标，保留其他页面及右资料。",
+              "position": "page-rail"
+            }
+          ]
+        },
+        {
+          "id": "navigation-content-collapsed",
+          "title": "菜单展开 · 内容收起",
+          "notes": [
+            {
+              "id": "navigation-content-collapsed-note",
+              "title": "菜单展开 · 内容收起",
+              "text": "左菜单继续独立显示；右侧资料按同一套竖向标签保留。各文档可悬停临时操作，点击附近图标展开。",
+              "position": "content-rail"
+            }
+          ]
+        },
+        {
+          "id": "many-tabs",
+          "title": "多个页面标签",
+          "notes": [
+            {
+              "id": "many-tabs-note",
+              "title": "多个页面标签纵向排列",
+              "text": "展示从左菜单打开的多个页面标签。缩短窗口后可滚动竖栏，任一标签都有自己的展开图标；再次点击菜单只定位已打开标签。",
+              "position": "page-rail"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -76,10 +76,10 @@ test('标签移动保留身份与集合，支持向前向后和边界', () => {
  assert.deepEqual(tabs.map(t=>t.key),['a','b','c']);
 });
 
-test('页签重排使用可见索引，目录不占据键盘或拖动的目标位置', () => {
+test('页面和目录使用同一可见重排索引，代码内部布局保持独立', () => {
  const tabs=[{key:'dir:projects',kind:'dir'},{key:'a',kind:'proj'},{key:'dir:services',kind:'dir'},{key:'b',kind:'proj'}];
- assert.deepEqual(reorderPageTabs(tabs,'a',1).map(tab=>tab.key),['dir:projects','b','dir:services','a']);
- assert.deepEqual(reorderPageTabs(tabs,'b',0).map(tab=>tab.key),['dir:projects','b','dir:services','a']);
+ assert.deepEqual(reorderPageTabs(tabs,'a',1).map(tab=>tab.key),['dir:projects','a','dir:services','b']);
+ assert.deepEqual(reorderPageTabs(tabs,'b',0).map(tab=>tab.key),['b','dir:projects','a','dir:services']);
  assert.deepEqual(reorderPageTabs(tabs,'a',99).filter(tab=>tab.kind!=='dir').map(tab=>tab.key),['b','a']);
  assert.deepEqual(tabs.map(tab=>tab.key),['dir:projects','a','dir:services','b']);
 });

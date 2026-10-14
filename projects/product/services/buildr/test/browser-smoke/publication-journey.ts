@@ -422,8 +422,8 @@ export async function runPublicationJourney({ t, page, workspaceRoot, workspaceU
     await readingPane.evaluate((pane: HTMLElement) => { pane.scrollTop = pane.scrollHeight - pane.clientHeight; });
     const readingTop = await readingPane.evaluate((pane: HTMLElement) => pane.scrollTop);
     assert.ok(readingTop > 1000);
-    await visible().getByRole('button', { name: '展开阅读', exact: true }).click();
-    await visible().getByRole('button', { name: '恢复分屏', exact: true }).click();
+    await page.locator('.workspace-pane-host').getByRole('button', { name: '收起页面', exact: true }).click();
+    await page.locator('.workspace-pane-host').getByRole('button', { name: '展开页面', exact: true }).click();
     await page.waitForFunction((top: number) => Math.abs((document.querySelector('.workspace-page:not([hidden]) .pane-right > .pane-body')?.scrollTop || 0) - top) < 3, readingTop);
     await visible().getByRole('button', { name: /浏览器知识说明 项目知识/ }).click();
     const knowledge = visible().locator('[data-knowledge-artifact="browser-explanation"]:visible');
@@ -437,9 +437,10 @@ export async function runPublicationJourney({ t, page, workspaceRoot, workspaceU
     await visible().getByText('这是真实来源说明。', { exact: false }).last().waitFor({ state: 'visible' });
     await visible().getByRole('button', { name: '← 返回浏览器知识说明', exact: true }).click();
     await knowledge.waitFor({ state: 'visible' });
-    await visible().getByRole('button', { name: '展开阅读', exact: true }).click();
-    assert.equal(await primaryTabs().count(), tabCount);
-    await visible().getByRole('button', { name: '恢复分屏', exact: true }).click();
+    await page.locator('.workspace-pane-host').getByRole('button', { name: '收起页面', exact: true }).click();
+    assert.equal(await page.locator('.workspace-pane-host .collapsed-pane-tabs.side-left .collapsed-pane-item').count(), tabCount, '页面收起后保留全部竖向标签');
+    await page.locator('.workspace-pane-host').getByRole('button', { name: '展开页面', exact: true }).click();
+    assert.equal(await primaryTabs().count(), tabCount, '恢复页面后保留原来的横向标签');
     assert.equal(await visible().locator('#articles-search').inputValue(), '浏览器');
     await capture(page, 'article-knowledge-split.png');
     await page.goto(`${workspaceUrl}/articles/product/browser-article/edit`);

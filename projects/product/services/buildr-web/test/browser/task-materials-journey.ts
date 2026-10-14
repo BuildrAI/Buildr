@@ -192,7 +192,10 @@ export async function runTaskMaterialsJourney({ t, page, runtime, workspaceRoot,
     try {
       for (const width of [1920, 390]) {
         await page.setViewportSize({ width, height: 1000 });
-        if (width === 1920) await page.getByRole('button', { name: '展开阅读', exact: true }).click();
+        if (width === 1920) {
+          await page.locator('.workspace-pane-host').getByRole('button', { name: '收起页面', exact: true }).click();
+          await page.locator('.workspace-pane-host').getByRole('button', { name: '展开页面', exact: true }).waitFor({ state: 'visible' });
+        }
         const geometry = await body().locator('[data-task-brief]').evaluate((reader: HTMLElement) => {
           const parent = reader.parentElement!, frame = parent.getBoundingClientRect(), style = getComputedStyle(parent), rect = reader.getBoundingClientRect();
           return { width: rect.width, left: rect.left - frame.left - parseFloat(style.paddingLeft), right: frame.left + parent.clientWidth - parseFloat(style.paddingRight) - rect.right, viewportRight: rect.right, bodyBorder: getComputedStyle(reader.querySelector('.markdown-body')!).borderTopWidth, bodyPadding: getComputedStyle(reader.querySelector('.markdown-body')!).paddingTop, mainWidth: parent.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight) };
@@ -207,7 +210,10 @@ export async function runTaskMaterialsJourney({ t, page, runtime, workspaceRoot,
         if (width === 1920) assert.ok(geometry.width > 1040, '宽屏任务说明使用加宽后的阅读区');
         else assert.ok(geometry.viewportRight <= width + 1, '窄屏任务说明保持可读且不越界');
         await capture(page, `task-record-brief-${width}.png`);
-        if (width === 1920) await page.getByRole('button', { name: '恢复分屏', exact: true }).click();
+        if (width === 1920) {
+          await page.locator('.workspace-pane-host').getByRole('button', { name: '展开页面', exact: true }).click();
+          await page.locator('.workspace-pane-host').getByRole('button', { name: '收起页面', exact: true }).waitFor({ state: 'visible' });
+        }
       }
     } finally { if (originalViewport) await page.setViewportSize(originalViewport); }
     assert.equal(page.url(), listUrl, '沿用任务列表副屏，而不是打开顶部普通链接');

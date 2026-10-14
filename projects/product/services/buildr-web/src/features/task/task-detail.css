@@ -209,6 +209,16 @@
 .pane-body-inner > div:not([hidden]):has(> div:not([hidden]) > .task-detail-page),
 .pane-body-inner > div:not([hidden]) > div:not([hidden]):has(> .task-detail-page) { height:100%; min-height:0; }
 
+/* The shared host keeps portal targets in a fixed slot. Scope the full-height
+   task reader through the visible target so hidden retained tasks cannot affect
+   an unrelated document's scrolling. */
+.workspace-pane-stage .pane-right > .pane-body:has(> .pane-body-inner > .workspace-pane-mount:not([hidden]) > [data-workspace-pane-owner] > .workspace-resource-stack:not([hidden]) > [data-workspace-resource-kind]:not([hidden]) > .task-detail-page) { overflow:hidden; }
+.workspace-pane-stage .pane-right > .pane-body > .pane-body-inner:has(> .workspace-pane-mount:not([hidden]) > [data-workspace-pane-owner] > .workspace-resource-stack:not([hidden]) > [data-workspace-resource-kind]:not([hidden]) > .task-detail-page) { height:100%; min-height:0; padding-bottom:16px; }
+.workspace-pane-stage .workspace-pane-mount:not([hidden]):has(> [data-workspace-pane-owner] > .workspace-resource-stack:not([hidden]) > [data-workspace-resource-kind]:not([hidden]) > .task-detail-page),
+.workspace-pane-stage [data-workspace-pane-owner]:has(> .workspace-resource-stack:not([hidden]) > [data-workspace-resource-kind]:not([hidden]) > .task-detail-page),
+.workspace-pane-stage .workspace-resource-stack:not([hidden]):has(> [data-workspace-resource-kind]:not([hidden]) > .task-detail-page),
+.workspace-pane-stage [data-workspace-resource-kind]:not([hidden]):has(> .task-detail-page) { height:100%; min-height:0; }
+
 #task-checklist-toggle[aria-expanded="true"] { background:var(--soft-primary-soft,#e7efec); }
 
 .task-detail-page > .task-work-path { position:static; display:flex; align-items:stretch; flex:none; gap:12px; margin-bottom:0; border-bottom:1px solid var(--soft-line); }

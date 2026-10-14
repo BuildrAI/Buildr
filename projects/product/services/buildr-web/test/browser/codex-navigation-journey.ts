@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import {runCodexAgentRegistryJourney} from './codex-agent-registry-journey.ts';
+import {reportAgentUiFailure, runCodexAgentRegistryJourney, waitForTaskSessionPopover} from './codex-agent-registry-journey.ts';
 import { runDshDesktopJourney } from './dsh-desktop-journey.ts';
 import { runDshTaskPageJourney } from './dsh-task-page-journey.ts';
 
@@ -102,7 +102,8 @@ export async function runCodexNavigationJourney({t, page, runtime, workspaceRoot
       const box = await section().boundingBox(); assert.ok(box && box.height <= 36, '常驻会话区域只占一行：' + JSON.stringify(box));
       geometry.push({kind: 'collapsed', viewport: page.viewportSize().width, width: box.width, height: box.height});
       assert.equal(await section().locator('[data-codex-session], .task-codex-association, .task-codex-feedback, .ant-alert').count(), 0, '关系明细、指令及反馈均不占据常驻页面');
-      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
+      try { assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true); }
+      catch (error) { await reportAgentUiFailure(page, 'codex-sessions-compact'); throw error; }
     };
     const stubClipboard = () => page.evaluate(() => {
       (window as any).__codexCopied = [];
@@ -145,7 +146,10 @@ export async function runCodexNavigationJourney({t, page, runtime, workspaceRoot
       assert.equal(await page.evaluate(() => (window as any).__selectedCodexHref), 'codex://threads/' + otherNativeId, '点击第二条打开第二个准确会话');
       assert.equal(await page.evaluate((key: string) => sessionStorage.getItem(key), storageKey), JSON.stringify(storedRequest));
       for (const width of [1280, 390]) {
-        await page.setViewportSize({width, height: 900}); await page.waitForFunction(() => {const box = document.querySelector('.task-codex-popover')?.getBoundingClientRect(); return box && box.x >= -1 && box.right <= innerWidth + 1;}); await assertCompact();
+        await page.setViewportSize({width, height: 900});
+        try { await waitForTaskSessionPopover(page); }
+        catch (error) { await reportAgentUiFailure(page, `codex-session-popover-${width}`); throw error; }
+        await assertCompact();
         const box = await page.locator('.task-codex-popover:visible').boundingBox(); assert.ok(box && box.x >= -1 && box.x + box.width <= width + 1 && box.y >= -1 && box.y + box.height <= 901, '会话浮层外框在宽窄视口内：' + JSON.stringify({width, box}));
         geometry.push({kind: 'popover', viewport: width, ...box});
         await capture(page, 'codex-session-compact-popover-' + width + '.png');

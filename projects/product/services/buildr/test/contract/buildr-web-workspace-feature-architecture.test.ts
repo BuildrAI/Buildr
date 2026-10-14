@@ -37,7 +37,12 @@ test('Workspace、Project与Service前端保持独立Feature并共享唯一Works
   for (const relative of retired) assert.equal(fs.existsSync(path.join(webSource, relative)), false, `legacy owner remains: ${relative}`);
 
   const app = source('App.tsx');
-  for (const domain of ['workspace', 'project', 'service']) assert.match(app, new RegExp(`features/${domain}/pages/`));
+  assert.match(app, /import\s*\{\s*CurrentWorkspaceRoute\s*\}\s*from\s*['"]\.\/app\/workspace-routes['"]/);
+  assert.match(app, /path:\s*['"]\/workspaces\/:workspaceId\/\*['"][\s\S]*?children:\s*\[[\s\S]*?element:\s*<CurrentWorkspaceRoute\s*\/>/);
+  const routes = source('app/workspace-routes.tsx');
+  for (const domain of ['workspace', 'project', 'service']) assert.match(routes, new RegExp(`features/${domain}/pages/`));
+  assert.match(routes, /function CurrentWorkspaceRoute\(\)[\s\S]*?return useRoutes\(workspaceRoutes\)/);
+  assert.match(routes, /function RetainedWorkspaceRoute\([\s\S]*?return useRoutes\(workspaceRoutes, location\)/);
   assert.match(source('features/project/pages/ProjectDetailPage.tsx'), /useMarkdownDocumentViewer/);
   assert.match(source('features/workspace/components/AssetHome.tsx'), /ResourceDocumentPane/);
   assert.doesNotMatch(source('features/service/pages/ServiceDetailPage.tsx'), /MarkdownHost|renderMarkdown/);

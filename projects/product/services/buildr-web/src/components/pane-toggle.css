@@ -1,0 +1,14 @@
+.pane-toggle-button.ant-btn {
+  display:inline-flex;
+  flex:none;
+  align-items:center;
+  justify-content:center;
+  width:28px;
+  min-width:28px;
+  height:28px;
+  padding:0;
+  border-radius:6px;
+  font-size:14px;
+}
+.unified-pane-controls .app-sidebar-head { justify-content:flex-end; padding-inline:10px; }
+.unified-pane-controls.sidebar-collapsed .app-sidebar-head { justify-content:center; padding-inline:0; }

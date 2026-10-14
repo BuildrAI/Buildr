@@ -1,8 +1,15 @@
-.prototype-reader { min-width:0; position:relative; }
+.prototype-reader { min-width:0; position:relative; container-name:prototype-reader; container-type:inline-size; }
 .prototype-reader[hidden] { display:none; }
-.prototype-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; flex-wrap:wrap; }
-.prototype-toolbar h2 { font-size:16px; margin:0; }
-.prototype-toolbar > div { display:flex; gap:8px; }
+.prototype-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; }
+.prototype-reader .prototype-toolbar h2 { flex:1 1 0; min-width:80px; font-size:16px; line-height:1.5; margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.prototype-toolbar-actions { display:flex; flex:0 1 auto; align-items:center; justify-content:flex-end; gap:8px; min-width:0; max-width:calc(100% - 92px); }
+.prototype-toolbar-actions > .ant-btn { flex:none; }
+.prototype-state-select { flex:0 1 224px; min-width:80px; width:224px; max-width:100%; }
+@container prototype-reader (max-width:400px) {
+  .prototype-toolbar { flex-wrap:wrap; }
+  .prototype-reader .prototype-toolbar h2 { flex-basis:160px; min-width:0; }
+  .prototype-toolbar-actions { flex-wrap:wrap; max-width:100%; }
+}
 .prototype-source { border:0; background:transparent; padding:0; color:var(--soft-muted); font-size:12px; margin-bottom:12px; overflow-wrap:anywhere; }
 .prototype-reading-layout { position:relative; display:flex; gap:16px; min-height:480px; margin-top:12px; }
 .prototype-canvas { min-width:0; flex:1; }
