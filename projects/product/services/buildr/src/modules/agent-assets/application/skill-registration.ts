@@ -25,7 +25,8 @@ export function createSkillRegistration(d: {
     const file = readSkillText(directory, 'SKILL.md');
     const source = d.inspect(directory);
     if (d.owner(root, `skills/${relative}`)) throw fail('skill_managed', '该技能由组件管理，请使用组件维护入口。');
-    return { path: relative, id: source.metadata.name as string, description: String(source.metadata.description || ''), observation: `sha256-${crypto.createHash('sha256').update(JSON.stringify({ directory, dev: stat.dev, ino: stat.ino, birthtimeMs: stat.birthtimeMs, digest: file.digest })).digest('hex')}` };
+    if (source.metadata.connectionDefinitions?.length && relative !== `connections/${source.metadata.name}`) throw fail('connection_skill_directory_invalid', `连接技能源应放在 skills/connections/${source.metadata.name}/；请整理目录后重新登记。`);
+    return { path: relative, id: source.metadata.name as string, description: String(source.metadata.description || ''), ...(source.metadata.connectionDefinitions !== undefined ? { connectionDefinitions: [...source.metadata.connectionDefinitions] } : {}), observation: `sha256-${crypto.createHash('sha256').update(JSON.stringify({ directory, dev: stat.dev, ino: stat.ino, birthtimeMs: stat.birthtimeMs, digest: file.digest })).digest('hex')}` };
   }
   function skillRegistrationCandidates(root: string) {
     d.assertWorkspace(root); revision(root);
@@ -38,7 +39,7 @@ export function createSkillRegistration(d: {
       if (fs.lstatSync(directory).isSymbolicLink()) throw fail('skill_directory_invalid', '技能根目录不能为符号链接。');
       if (relative && (entries.some(e => e.path === relative) || d.owner(root, `skills/${relative}`))) return;
       if (relative && fs.existsSync(path.join(directory, 'SKILL.md'))) {
-        try { const item = candidate(root, relative); if (!entries.some(e => e.path === relative || e.id === item.id)) candidates.push(item); } catch (error: any) { diagnostics.push(`${relative}：${error.message}`); }
+        try { const item = candidate(root, relative); if (!entries.some(e => e.path === relative || e.id === item.id)) { const { connectionDefinitions: _definitions, ...visible } = item; candidates.push(visible); } } catch (error: any) { diagnostics.push(`${relative}：${error.message}`); }
         return;
       }
       const handle = fs.opendirSync(directory);
@@ -59,7 +60,7 @@ export function createSkillRegistration(d: {
       if (input.path) {
         const current = candidate(root, relative);
         if (!input.observation || current.observation !== input.observation) throw fail('skill_directory_changed', '技能目录或入口已变化，请重新选择。');
-        entry = { id: current.id, path: current.path, description: current.description };
+        entry = { id: current.id, path: current.path, description: current.description, ...(current.connectionDefinitions !== undefined ? { connectionDefinitions: current.connectionDefinitions } : {}) };
       } else {
         d.assertName(input.id, 'Skill id');
         if (d.owner(root, `skills/${relative}`)) throw fail('skill_managed', '该位置由组件管理。');

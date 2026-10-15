@@ -51,6 +51,38 @@
 
 网页接口（API）只增加草稿视图发现，查询与统计不为入口对称而另建接口。远端仍是日志和字段的权威；视图编号不能替代账号权限，展示排除不等于文档过滤。内部接口（Internal API）不兼容、字段不可用或部分执行只影响相关动作，结果不得将这些状态转换为成功零命中。
 
+## 技能声明接入与私有上下文
+
+新接入继续使用普通技能（Skill）源。`agent-assets` 的公开端口 `AGENT_ASSETS_SOURCE_READ` 提供清单及有界、安全的文件读取；连接目录（Connection Catalog）读取当前声明，不启动程序、不探测版本、不复制技能正文。`connectionDefinitions` 透传已有登记、资源交付及投射链，来源方法与程序安装分别观察。实例以技能源身份、定义编号、来源及配置版本绑定，类别（Category）不推导业务动作。[当前接入变更](../../openspec/changes/archive/2026-10-15-connection-skills-nacos/proposal.md)规定新旧并行与共享／本机认证边界。
+
+新连接技能源统一登记 `path: connections/<skill-id>`，完整目录为 `skills/connections/<skill-id>/`。新增本地源与受管资源使用同一规范；非标准位置登记给出明确诊断。它是已有技能（Skill）树的专用分组，不增加加载器。
+
+- **[技能声明接入（connection-skills）](../../services/buildr/src/modules/connection-skills/)** — 新逐实例文件、个人组、声明管理及通用执行；不拥有专业业务命令。
+  - [模块装配（module.ts）](../../services/buildr/src/modules/connection-skills/module.ts) — 使用工作空间（Workspace）和资产公开端口装配命令、网页与应用。
+  - **`domain/`** — 声明、实例及输入约束。
+    - [声明与字段校验（definition.ts）](../../services/buildr/src/modules/connection-skills/domain/definition.ts) — 受限字段、程序和只读槽位，`presentation.groups` 编排字段，`hooks.inputs` 定义发现所需输入；`validateConfig` 与 `validateAuthentication` 为各入口共享校验。
+    - [实例身份与观察（instance.ts）](../../services/buildr/src/modules/connection-skills/domain/instance.ts) — 绑定输入、观察冲突和安全诊断。
+  - **`application/`** — 当前来源及用例。
+    - [重建目录与精确选择（catalog.ts）](../../services/buildr/src/modules/connection-skills/application/catalog.ts) — `list/resolve` 核对技能入口、声明、来源、停用和兼容版本，缺失不改绑。
+    - [连接管理与运行（connection-skills-application.ts）](../../services/buildr/src/modules/connection-skills/application/connection-skills-application.ts) — `save/saveAuth/run/hook` 分开团队与个人保存、版本核对和明确草稿测试。
+  - [团队文件与本机认证（persistence/files.ts）](../../services/buildr/src/modules/connection-skills/persistence/files.ts) — 普通文件边界、原子替换、逐实例锁和加密个人组；旧 SQLite 不参与新实例存储。
+  - [专业程序启动（infrastructure/program.ts）](../../services/buildr/src/modules/connection-skills/infrastructure/program.ts) — 随附及独立程序定位、显式版本检查、私有进程间通信（IPC）、业务标准输入（Standard Input）、超时和有界秘密输出。
+  - [所选来源解析（infrastructure/workspace.ts）](../../services/buildr/src/modules/connection-skills/infrastructure/workspace.ts) — 唯一登记目录维护配置入口，以 Git 公共目录证明关联代码工作树（Git Worktree）；独立克隆（Clone）及多个来源显式冲突，不沿用旧路径的主检出跳转。
+  - [命令入口（interfaces/cli/connection-skills-cli.ts）](../../services/buildr/src/modules/connection-skills/interfaces/cli/connection-skills-cli.ts) 与 [网页入口（interfaces/http/connection-skills-http.ts）](../../services/buildr/src/modules/connection-skills/interfaces/http/connection-skills-http.ts) — 同一应用的输入输出适配。
+- [资产公开源读取（connection-skill-source.ts）](../../services/buildr/src/modules/agent-assets/application/connection-skill-source.ts) — 验证已登记源目录、入口名称、相对文件及实际路径，不从陈旧投射猜执行程序。
+- [Nacos 完整技能源（nacos-connection）](../../services/buildr/resources/workspace/skills/connections/nacos-connection/) — 独立说明、接入声明、程序和详细方法；资源映射安装到 `skills/connections/nacos-connection/`。
+- [接入制作指引（connection-authoring）](../../services/buildr/resources/workspace/skills/buildr/connection-authoring/) — 指导制作标准目录、声明、程序及验证，不承载真实实例配置。
+- [资产影响只读端口（connection-impact.ts）](../../services/buildr/src/modules/agent-assets/application/connection-impact.ts) — 一次装配连接引用回调，取消登记及内置卸载披露编号、名称与文件；读取故障作为诊断，不阻源操作或删除实例、认证。
+- **[新连接页面（connection-skills）](../../services/buildr-web/src/features/connection-skills/)** — 先选择连接系统，再按地址与团队账号、业务范围填写；高级设置和个人账号默认收起。
+  - [页面（ConnectionSkillsPage.tsx）](../../services/buildr-web/src/features/connection-skills/pages/ConnectionSkillsPage.tsx) — 实例列表、新增入口与局部诊断。
+  - [编辑抽屉（ConnectionSkillEditDrawer.tsx）](../../services/buildr-web/src/features/connection-skills/components/ConnectionSkillEditDrawer.tsx) — 装配系统选择、团队表单、个人区和底部固定操作；主测试使用团队候选。
+  - [编辑状态（useConnectionSkillEditor.ts）](../../services/buildr-web/src/features/connection-skills/useConnectionSkillEditor.ts) — 维护两组草稿及独立观察版本、保存、测试、迟到响应与冲突。
+  - [系统选择（ConnectionSystemPicker.tsx）](../../services/buildr-web/src/features/connection-skills/components/ConnectionSystemPicker.tsx) — 类别分组与系统选项，同系统多个方法时才选择接入方式。
+  - [团队表单（ConnectionTeamForm.tsx）](../../services/buildr-web/src/features/connection-skills/components/ConnectionTeamForm.tsx) — 按声明区块编排配置与完整团队认证、发现业务范围，未列字段通用回落。
+  - [个人账号（ConnectionPersonalAuthentication.tsx）](../../services/buildr-web/src/features/connection-skills/components/ConnectionPersonalAuthentication.tsx) — 默认折叠、明确覆盖状态、独立测试和保存。
+
+实际操作为“智能体（Agent）发现绑定 → 读取专业技能（Skill）及程序帮助 → 通用入口启动程序 → 所选程序访问真实系统”。程序写前请求本机上下文再次校验，通用宿主不审批业务；Nacos 随附程序另维护远端版本、授权及结果。既有 `connections` 和 MySQL 查询调用链保持前节事实，新机制不自动迁移旧配置。
+
 ## 对象装配与跨模块依赖
 
 | 入口 | 代表职责 |

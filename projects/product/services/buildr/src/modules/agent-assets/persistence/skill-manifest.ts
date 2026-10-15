@@ -33,6 +33,13 @@ export const CONTRACT_SECTIONS = Object.freeze([
 
 const IDENTITY = /^[a-z][a-z0-9+._:-]*$/;
 
+export function validateConnectionDefinitionReferences(value: unknown, label = 'connectionDefinitions'): asserts value is string[] | undefined {
+  if (value === undefined) return;
+  if (!Array.isArray(value) || value.length > 32 || value.some(item => typeof item !== 'string' || !item || item.includes('\\') || item.includes('\0') || item.startsWith('/') || /^[A-Za-z]:/.test(item) || item.split('/').some((part: string) => !part || part === '.' || part === '..') || !['agents', 'assets', 'examples', 'references', 'scripts', 'templates'].includes(item.split('/')[0])) || new Set(value).size !== value.length) {
+    throw new Error(`${label} must contain unique relative files in supported Skill companion directories.`);
+  }
+}
+
 function stableUuid(value: any): any  {
   const hex = crypto.createHash('sha256').update(value).digest('hex').slice(0, 32).split('');
   hex[12] = '5';
@@ -138,6 +145,7 @@ export function validateSkillsManifestDocument(document: any, manifestPath: any,
     }
     validateDeclarations(skill.provides, `skills[${index}].provides`);
     validateDeclarations(skill.requires, `skills[${index}].requires`, true);
+    if (options.validateConnectionDefinitions !== false) validateConnectionDefinitionReferences(skill.connectionDefinitions, `skills[${index}].connectionDefinitions`);
   }
   const contracts: any = new Set();
   for (const [index, contract] of (document.contracts || []).entries()) {

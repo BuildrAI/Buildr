@@ -263,6 +263,7 @@ function decorateResolvedSkill(resolved: any, manifestEntry: any, manifestPath: 
     workspaceId,
     provides: manifestEntry.provides || [],
     requires: manifestEntry.requires || [],
+    ...(manifestEntry.connectionDefinitions !== undefined ? { connectionDefinitions: [...manifestEntry.connectionDefinitions] } : {}),
     manifestPath,
     declaredScope: declaredScope || (path.dirname(path.dirname(manifestPath)).endsWith(`${path.sep}skills`) ? '.' : undefined),
   };

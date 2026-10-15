@@ -3,6 +3,7 @@ import { CodexEntryNotice } from '../features/agents/components/CodexEntryNotice
 import { SkillsPage } from '../features/agent-assets/pages/SkillsPage';
 import { CodeExplorerPage, CodeSourceControlPage } from '../features/code/pages/CodeExplorerPage';
 import { ConnectionsPage } from '../features/connections/pages/ConnectionsPage';
+import { ConnectionSkillsPage } from '../features/connection-skills/pages/ConnectionSkillsPage';
 import { KnowledgePage } from '../features/knowledge/pages/KnowledgePage';
 import { ProjectCreatePage } from '../features/project/pages/ProjectCreatePage';
 import { ProjectDetailPage } from '../features/project/pages/ProjectDetailPage';
@@ -40,6 +41,7 @@ export const workspaceRoutes: RouteObject[] = [
   { path: 'skills/:skillId', element: <SkillsPage /> },
   { path: 'repositories', element: <RepositoriesPage /> },
   { path: 'connections', element: <ConnectionsPage /> },
+  { path: 'connection-skills', element: <ConnectionSkillsPage /> },
   { path: 'repositories/:assetId', element: <AssetHome kind="repository" /> },
   {
     path: 'tasks', element: <TasksSection />, children: [

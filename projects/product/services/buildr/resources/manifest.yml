@@ -10,6 +10,8 @@ include:
   - resources/contracts/bootstrap.yml
   - resources/installation/launcher/
   - resources/runtime/
+  - resources/workspace/skills/connections/nacos-connection/
+  - resources/workspace/skills/buildr/connection-authoring/
 
 agentSkills:
   - id: buildr
@@ -195,6 +197,17 @@ initialSkillBindings:
 builtins:
   rules: []
   skills:
+    - id: nacos-connection
+      path: resources/workspace/skills/connections/nacos-connection
+      target: skills/connections/nacos-connection
+      description: 使用技能声明的 Nacos 连接发现、读取、比较与受控发布配置时使用；加载所选实例及自带程序帮助。
+      required: false
+      connectionDefinitions: [assets/connection.yml]
+    - id: connection-authoring
+      path: resources/workspace/skills/buildr/connection-authoring
+      target: skills/buildr/connection-authoring
+      description: 用户要为 Buildr 制作或维护自有外部系统接入方法时使用；交付连接声明、专业技能及必要程序，复用现有登记和投射。
+      required: false
     - id: task-triage
       path: resources/workspace/skills/buildr/task-triage
       target: skills/buildr/task-triage

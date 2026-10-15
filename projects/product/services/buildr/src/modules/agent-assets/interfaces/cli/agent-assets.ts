@@ -199,6 +199,8 @@ function printCapabilityImpacts(receipt: any) {
   if (!receipt.impacts?.length) return;
   console.log('Capability dependency impact（写入前）：');
   for (const impact of receipt.impacts) {
+    if (impact.kind === 'connection') { console.log(`  连接：${impact.name} (${impact.id}) · ${impact.sourcePath}；实例与认证保留。`); continue; }
+    if (impact.kind === 'connection-diagnostic') { console.log(`  ${impact.message}`); continue; }
     const next = impact.mode === 'required' ? 'blocked' : 'degraded';
     console.log(`  [${impact.mode}] ${impact.scope}:${impact.consumer} -> ${impact.capability}@${impact.version}; 写入后可能 ${next}`);
   }
@@ -224,7 +226,7 @@ function runMutationDoctor(runtime: any, targetRoot: string, scope: string | nul
 }
 
 function runSkillsAdd(application: any, args: string[]) {
-  const allowed = new Set(['--target', '--scope', '--source', '--remote-source', '--source-kind', '--resolved-source', '--resolved-kind', '--version', '--integrity', '--description', '--replace', '--ignore-unsupported', '--provides', '--requires']);
+  const allowed = new Set(['--target', '--scope', '--source', '--remote-source', '--source-kind', '--resolved-source', '--resolved-kind', '--version', '--integrity', '--description', '--replace', '--ignore-unsupported', '--provides', '--requires', '--connection-definition']);
   assertNoUnknownOptions(args, allowed, new Set(['--replace', '--ignore-unsupported']));
   const [explicitId] = positionalArgs(args, new Set(['--replace', '--ignore-unsupported']));
   const receipt = application.skillsAdd({
@@ -243,6 +245,7 @@ function runSkillsAdd(application: any, args: string[]) {
     ignoreUnsupported: hasFlag(args, '--ignore-unsupported'),
     provides: optionValues(args, '--provides'),
     requires: optionValues(args, '--requires'),
+    ...(optionValues(args, '--connection-definition').length ? { connectionDefinitions: optionValues(args, '--connection-definition') } : {}),
   });
   runMutationDoctor(application, receipt.targetRoot, optionValue(args, '--scope', null), { skipRuntime: Boolean(optionValue(args, '--resolved-source', null)) });
   printSkillsMutationReceipt(receipt);
@@ -419,7 +422,7 @@ export function createAgentAssetsCliContributions(): any  {
       key: 'skills add',
       summary: '只维护 workspace Skills 源资产；Project 使用 capabilities.yml 引用 workspace Skill。',
       usage: [
-        'Usage: buildr skills add [<id>] --source <skill-dir> [--target <workspace>] [--replace] [--ignore-unsupported] [--provides <capability>@<version>] [--requires <capability>@<version>:<required|optional>]',
+        'Usage: buildr skills add [<id>] --source <skill-dir> [--target <workspace>] [--replace] [--ignore-unsupported] [--provides <capability>@<version>] [--requires <capability>@<version>:<required|optional>] [--connection-definition <relative-file> ...]',
         'Usage: buildr skills add <id> --remote-source <url> [--target <workspace>] [--source-kind <kind>] [--description <text>] [--replace]',
         'Usage: buildr skills add <id> --resolved-source <url> [--target <workspace>] [--resolved-kind <kind>] [--remote-source <url>] [--source-kind <kind>] [--version <version>] [--integrity <hash>] [--description <text>] [--replace]',
       ],

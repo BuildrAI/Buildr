@@ -28,7 +28,17 @@
 
 原生会话（Session）关联由 `native-session-links` 聚合 Codex 与 DSH 的多对多关系；`codex-desktop` 保留原有文件和深层链接（Deep Link），`dsh-desktop` 核验桌面范围并确认准确导航。原生程序继续保存对话与持续执行；一次生成不继承已有聊天的内容、工具或记忆。两条链路见[智能体（Agent）接入架构](agent-integration.md)。
 
-外部连接（Connection）由 `connections` 统一维护本机工作空间（Workspace）SQLite 中的身份、配置和观察版本；密码独立加密并绑定真实目标。MySQL、Nacos 和 `logs/kibana` 复用该应用，专业操作按提供者（Provider）选择。Kibana 网页只管理连接和数据视图（Data View），日志发现、只读搜索和统计由命令行接口（CLI）提供；智能体（Agent）根据当前字段和目标组合调查，应用不保存日志或固定故障流程。内部查询通道、实际字段、时间范围、部分结果和遮蔽限制由每次返回说明，账号原生权限继续约束数据访问。职责文件和调用链见[连接专业能力](../../code-map/technical-layers.md#外部连接的公共身份与专业操作)。
+既有外部连接（Connection）由 `connections` 维护本机工作空间（Workspace）SQLite 中的身份、配置和观察版本；密码独立加密并绑定真实目标。MySQL、旧 Nacos、Kibana 和 XXL-JOB 保持原入口与提供者（Provider），MySQL 查询工作区继续使用原工具。Kibana 网页只管理连接和数据视图（Data View），日志发现、只读搜索和统计由命令行接口（CLI）提供；应用不保存日志或固定故障流程。专业结果的完整性、字段、保护范围与账号权限按每次实际返回判断。职责见[既有连接专业能力](../../code-map/technical-layers.md#外部连接的公共身份与专业操作)。
+
+技能声明的接入由 `connection-skills` 独立维护。它通过 `AGENT_ASSETS_SOURCE_READ` 读取技能（Skill）身份及安全源文件，重建声明目录并精确绑定实例；不导入资产模块的内部持久化实现，不新增技能加载器。新团队实例与团队认证在当前目录的逐实例文件保存，个人整组覆盖在本机加密存储；网页和 `buildr connection-skill` 共享该应用。类别（Category）只帮助发现，声明只渲染受限字段及槽位，页面不会自动安装程序或访问真实系统。
+
+新连接技能源统一位于 `skills/connections/<skill-id>/`，由同一技能清单（Skill Manifest）登记；Nacos 产品源在 `resources/workspace/skills/connections/nacos-connection/`，新安装按此映射。本轮是尚未发布的新模块，不提供开发期旧目录迁移层。页面展示系统与类别，接入声明以有序区块组织地址、团队账号和业务范围，高级字段及个人账号默认收起；同系统存在多种方法时才选择接入方式。
+
+声明的 `presentation.groups` 只引用已有配置及认证字段，规定区块顺序与折叠；`categoryLabel/methodLabel` 只提供纯文本展示名。只读发现的 `hooks.inputs` 允许先以地址和完整认证获取业务范围，所有给定配置仍校验，连接测试不因此放宽完整配置检查。主测试使用团队候选，个人账号在次要区独立测试和保存；声明不会注入任意界面代码。
+
+唯一已登记工作空间（Workspace）来源是新连接的配置入口；相关代码目录通过 Git 公共目录证明关联，独立副本和多源冲突不静默选取。资产取消登记和内置卸载复用既有影响披露结果，通过只读回调列出绑定实例并保留配置与认证；局部连接读取故障不阻止合法源操作。
+
+Nacos 自带专业程序属于完整技能源，由通用入口独立启动；帮助及专业参数仍由程序解释，配置认证经私有子进程通道交接，标准输入（Standard Input）保持给业务数据。通用模块只校验本机身份、来源和观察版本；Nacos 负责远端对象、并发保护、生产逐次授权和成功失败未知结果。程序可执行、请求受理、回读一致、服务加载及业务验证不能互相替代，进程隔离不宣称安全沙箱（Sandbox）。调用链见[技能声明接入](../../code-map/technical-layers.md#技能声明接入与私有上下文)，数据位置见[两条连接路径](buildr-data-design.md#两条外部连接路径分别保存事实)。
 
 ## 写入保护和失败边界
 

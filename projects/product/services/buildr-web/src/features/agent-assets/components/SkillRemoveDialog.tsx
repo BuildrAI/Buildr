@@ -8,7 +8,7 @@ export function SkillRemoveDialog({ skill, onClose, onRemoved }: { skill: SkillS
     <p>只移除登记，保留技能源目录和全部文件。已有运行时投射需要另行同步。</p>
     {!data && !error && <p>正在核对登记与引用…</p>}
     {data?.reason && <Alert type="warning" message={data.reason} />}
-    {data?.impacts.length ? <Alert type="warning" message="以下能力引用会受影响，移除后需要重新选择提供者。" description={<ul>{data.impacts.map((impact, index) => <li key={index}>{String(impact.consumer || '引用方')}：{String(impact.capability || '能力引用')} · {String(impact.scope || '工作空间')}</li>)}</ul>} /> : null}
+    {data?.impacts.length ? <Alert type="warning" message="以下引用会受影响；连接实例和认证将保留。" description={<ul>{data.impacts.map((impact, index) => <li key={index}>{impact.kind === 'connection' ? `${String(impact.name)} (${String(impact.id)}) · ${String(impact.sourcePath)}` : impact.kind === 'connection-diagnostic' ? String(impact.message) : `${String(impact.consumer || '引用方')}：${String(impact.capability || '能力引用')} · ${String(impact.scope || '工作空间')}`}</li>)}</ul>} /> : null}
     {error && <Alert type="error" message={error} />}
   </Modal>;
 }

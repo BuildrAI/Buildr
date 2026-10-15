@@ -48,7 +48,7 @@ test('CLI identity remains native TypeScript and the old path is retired', () =>
   assert.match(read('src/bootstrap/cli/registry.ts'), /from '\.\/identity\.ts'/);
 });
 
-test('source-tree JavaScript is limited to public facades and compatibility fixtures', () => {
+test('source-tree JavaScript is limited to facades, independent skill programs and fixtures', () => {
   const scan: any = (directory: any, relative = ''): any[] => fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry: any) => {
     if (entry.isDirectory() && ['build', 'node_modules', 'targets'].includes(entry.name)) return [];
     const childRelative: any = relative ? `${relative}/${entry.name}` : entry.name;
@@ -61,6 +61,17 @@ test('source-tree JavaScript is limited to public facades and compatibility fixt
   });
   assert.deepEqual(scan('.').sort(), [
     'bin/buildr.mjs',
+    // Independent skill payloads run without importing the Buildr application.
+    'resources/workspace/skills/buildr/connection-authoring/templates/client.mjs',
+    'resources/workspace/skills/connections/nacos-connection/scripts/lib/configuration.mjs',
+    'resources/workspace/skills/connections/nacos-connection/scripts/lib/context.mjs',
+    'resources/workspace/skills/connections/nacos-connection/scripts/lib/errors.mjs',
+    'resources/workspace/skills/connections/nacos-connection/scripts/lib/http.mjs',
+    'resources/workspace/skills/connections/nacos-connection/scripts/lib/operations.mjs',
+    'resources/workspace/skills/connections/nacos-connection/scripts/lib/output.mjs',
+    'resources/workspace/skills/connections/nacos-connection/scripts/lib/workflow.mjs',
+    'resources/workspace/skills/connections/nacos-connection/scripts/nacos-client.mjs',
+    'test/fixtures/connection-authoring-example/scripts/client.mjs',
     'test/fixtures/node-test-context/host-failure.fixture.mjs',
     'test/fixtures/node-test-context/host-first.fixture.mjs',
     'test/fixtures/node-test-context/host-second.fixture.mjs',

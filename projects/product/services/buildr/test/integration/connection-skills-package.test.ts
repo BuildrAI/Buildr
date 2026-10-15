@@ -1,0 +1,46 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import test from 'node:test';
+import YAML from 'yaml';
+import { buildApplicationPayload } from '../../tools/release/application-payload.ts';
+import { createReleaseArtifact } from '../../tools/release/release-artifact.ts';
+import { createGeneratedReleaseInputs } from '../helpers/generated-release-inputs.ts';
+import { parseConnectionDefinition } from '../../src/modules/connection-skills/domain/definition.ts';
+
+test('正式包在独立目录消费完整接入资源、投射附件并运行无认证专业帮助', async t => {
+  const root = fs.mkdtempSync(path.join(process.env.BUILDR_SMOKE_ROOT || os.tmpdir(), 'connection-skill-package-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const workspace = path.join(root, 'workspace'); fs.mkdirSync(workspace);
+  const env = { ...process.env, BUILDR_APP_DATA_DIR: path.join(root, 'app-data'), BUILDR_PRODUCT_DATA_DIR: path.join(root, 'product-data') };
+  const generated = createGeneratedReleaseInputs(path.join(root, 'generated'), 'c'.repeat(40));
+  const payload = await buildApplicationPayload(path.join(root, 'payload'), 'c'.repeat(40), { generatedArtifactManifest: generated.manifest, webDistRoot: generated.webDistRoot });
+  const artifact = createReleaseArtifact(payload.root, path.join(root, 'artifact'), { testContextRoot: generated.testContextRoot });
+  const extracted = spawnSync('tar', ['-xzf', artifact.tarball, '-C', root], { encoding: 'utf8', timeout: 60_000 }); assert.equal(extracted.status, 0, extracted.stderr);
+  const cli = path.join(root, 'package/bin/buildr.mjs');
+  const run = (args: string[]) => { const result = spawnSync(process.execPath, [cli, ...args], { cwd: root, env, encoding: 'utf8', timeout: 60_000, maxBuffer: 4 * 1024 * 1024 }); assert.equal(result.status, 0, result.stdout + result.stderr); return result.stdout; };
+  run(['init', '--target', workspace, '--name', 'connection-fixture', '--profile', 'personal', '--source-only']);
+  const manifest = YAML.parse(fs.readFileSync(path.join(workspace, 'skills/manifest.yml'), 'utf8'));
+  const nacos = manifest.skills.find((entry: { id: string }) => entry.id === 'nacos-connection'); assert.deepEqual(nacos.connectionDefinitions, ['assets/connection.yml']);
+  assert.equal(nacos.assetIdentity, 'buildr:skill:nacos-connection');
+  assert.equal(nacos.path, 'connections/nacos-connection');
+  assert.equal(nacos.sourceIdentity, 'package:skills/connections/nacos-connection');
+  assert.equal(fs.existsSync(path.join(workspace, 'skills/buildr/nacos-connection')), false);
+  const definitionPath = path.join(workspace, 'skills/connections/nacos-connection/assets/connection.yml');
+  const definition = parseConnectionDefinition(fs.readFileSync(definitionPath, 'utf8')); assert.equal(definition.definitionId, 'nacos');
+  for (const relative of ['scripts/nacos-client.mjs', 'scripts/lib/context.mjs', 'references/commands-and-results.md']) assert.equal(fs.existsSync(path.join(workspace, 'skills/connections/nacos-connection', relative)), true, relative);
+  assert.equal(fs.existsSync(path.join(workspace, 'skills/buildr/connection-authoring/templates/client.mjs')), true);
+  assert.match(fs.readFileSync(path.join(workspace, 'AGENTS.md'), 'utf8'), /少即是多/);
+  run(['skills', 'render', 'codex', '--target', workspace]);
+  assert.equal(fs.readFileSync(path.join(workspace, '.agents/skills/nacos-connection/assets/connection.yml'), 'utf8'), fs.readFileSync(definitionPath, 'utf8'));
+  if (process.platform !== 'win32') assert.equal(fs.statSync(path.join(workspace, '.agents/skills/nacos-connection/scripts/nacos-client.mjs')).mode & 0o100, fs.statSync(path.join(workspace, 'skills/connections/nacos-connection/scripts/nacos-client.mjs')).mode & 0o100);
+  const catalog = JSON.parse(run(['connection-skill', 'definitions', 'list', '--target', workspace, '--json']));
+  const current = catalog.definitions.find((entry: { definition: { definitionId: string } }) => entry.definition.definitionId === 'nacos'); assert.equal(current.available, true);
+  const input = path.join(root, 'create.json'); fs.writeFileSync(input, JSON.stringify({ id: 'package-nacos', name: 'package example', binding: { skillAssetIdentity: current.skill.assetIdentity, definitionId: 'nacos', sourceIdentity: current.skill.sourceIdentity, configVersion: 1 }, config: { consoleUrl: 'https://example.invalid/nacos/', production: false }, authentication: { intent: 'remove' }, expected: { teamRevision: 'absent', definitionRevision: current.revision } }), { mode: 0o600 });
+  run(['connection-skill', 'create', '--target', workspace, '--file', input, '--json']);
+  const help = JSON.parse(run(['connection-skill', 'help', '--connection', 'package-nacos', '--target', workspace, '--json'])); assert.equal(help.exitCode, 0); assert.match(help.stdout, /diff.*publish/s); assert.doesNotMatch(help.stdout, /EXAMPLE_PASSWORD/);
+  // The independent program is also executable directly from the copied source with no developer imports.
+  const direct = spawnSync(process.execPath, [path.join(workspace, 'skills/connections/nacos-connection/scripts/nacos-client.mjs'), '--help'], { cwd: root, env, encoding: 'utf8', timeout: 5000 }); assert.equal(direct.status, 0, direct.stderr); assert.match(direct.stdout, /--data-id/);
+});

@@ -90,6 +90,9 @@ export function createBuiltinLifecycle(deps: any): any  {
     const found = findBuiltinManifestEntry(targetRoot, id);
     if (found.entry.required === true) throw new Error(`Required Buildr builtin cannot be uninstalled: ${id}`);
     if (found.type === 'skill') discloseBuiltinSkillImpact(targetRoot, id);
+    const connectionImpacts = found.type === 'skill' && deps.connectionImpacts ? deps.connectionImpacts(targetRoot, found.entry.assetIdentity) : { instances: [], diagnostics: [] };
+    for (const instance of connectionImpacts.instances) console.log(`连接引用影响：${instance.name} (${instance.id}) · ${instance.sourcePath}；实例与认证保留。`);
+    for (const message of connectionImpacts.diagnostics) console.log(message);
 
     const updated: any = { ...found.entry, enabled: false, state: 'uninstalled' };
     if (reason) updated.reason = reason;
@@ -145,6 +148,7 @@ export function createBuiltinLifecycle(deps: any): any  {
     }
     console.log(`已卸载 Buildr builtin：${id}`);
     for (const file of [...new Set(changed)]) console.log(`  ${file}`);
+    return { id, connectionImpacts };
   }
 
   function builtinUninstall(args: any): any  {

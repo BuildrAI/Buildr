@@ -1,0 +1,26 @@
+schemaVersion: buildr.connection-definition/v1
+definitionId: local-inspector
+name: 本机未知系统读取样例
+description: 核验私有上下文与完整标准输入，不访问外部系统。
+category: local-inspection
+systemId: standalone-example
+configVersion: 1
+config:
+  fields:
+    - {key: website, label: 示例网站, type: url, required: true}
+authentication:
+  fields:
+    - {key: username, label: 示例账号, type: string, required: true, minLength: 1}
+    - {key: password, label: 示例密码, type: secret, required: true}
+  targetFields: [website]
+programs:
+  cli:
+    kind: bundled
+    runtime: node
+    entry: scripts/client.mjs
+    contextProtocol: buildr.connection-context/v1
+hooks:
+  test: {program: cli, args: [inspect, --json], effect: read}
+presentation:
+  summaryFields: [website]
+  websiteField: website

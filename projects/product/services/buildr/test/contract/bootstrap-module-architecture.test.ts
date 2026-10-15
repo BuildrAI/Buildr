@@ -74,6 +74,7 @@ import {
   AGENT_ASSETS_APPLICATION,
   AGENT_ASSETS_CAPABILITY_QUERY,
   AGENT_ASSETS_DIAGNOSTICS_BINDER,
+  AGENT_ASSETS_CONNECTION_IMPACT_BINDER,
   AGENT_ASSETS_INTERNAL,
   AGENT_ASSETS_OPENSPEC_SUPPORT,
   createOpenSpecAssetSupport,
@@ -165,7 +166,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
   }, {
     id: 'agent-assets',
     requires: [WORKSPACE_ASSET_SUPPORT, AGENT_ASSETS_RUNTIME],
-    provides: [AGENT_ASSETS_APPLICATION, AGENT_ASSETS_SOURCE_READ, AGENT_ASSETS_INTERNAL, AGENT_ASSETS_OPENSPEC_SUPPORT, AGENT_ASSETS_DIAGNOSTICS_READ, AGENT_ASSETS_PACKAGE_CHECK_SUPPORT, AGENT_ASSETS_DIAGNOSTICS_BINDER],
+    provides: [AGENT_ASSETS_APPLICATION, AGENT_ASSETS_SOURCE_READ, AGENT_ASSETS_INTERNAL, AGENT_ASSETS_OPENSPEC_SUPPORT, AGENT_ASSETS_DIAGNOSTICS_READ, AGENT_ASSETS_PACKAGE_CHECK_SUPPORT, AGENT_ASSETS_DIAGNOSTICS_BINDER, AGENT_ASSETS_CONNECTION_IMPACT_BINDER],
     contributions: {
       cli: [
         'package check', 'package build', 'runtime list',
@@ -291,6 +292,12 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     contributions: {cli:['code repositories','code directory','code file','code search','code source-control','code commit-context','code sync-context','code branches','code authors','code history','code commit','code diff','code source-file'],http:['code.files.http', 'code.generation.http'],diagnostics:[]},
     lifecycle: 'none',
   }, {
+    id: 'connection-skills',
+    requires: [WORKSPACE_APPLICATION, WORKSPACE_QUERY, AGENT_ASSETS_SOURCE_READ, AGENT_ASSETS_CONNECTION_IMPACT_BINDER],
+    provides: ['connection-skills.application'],
+    contributions: { cli: ['connection-skill'], http: ['connection-skills.http'], diagnostics: [] },
+    lifecycle: 'none',
+  }, {
     id: 'connections',
     requires: [WORKSPACE_APPLICATION, WORKSPACE_QUERY, WORKSPACE_TASK_SUPPORT],
     provides: ['connections.application'],
@@ -381,7 +388,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
     'dsh', 'dsh link', 'dsh sessions', 'dsh open-task',
     'codex connections', 'codex link', 'codex sessions', 'codex',
     'code repositories', 'code directory', 'code file', 'code search', 'code source-control', 'code commit-context', 'code sync-context', 'code branches', 'code authors', 'code history', 'code commit', 'code diff', 'code source-file',
-    'connection',
+    'connection-skill', 'connection',
     'project verification inspect', 'project verification validate', 'project verification update',
     'task review inspect', 'task review record',
     'task verification inspect', 'task verification record',
@@ -393,7 +400,7 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
   ]);
   assert.deepEqual(runtimeContributions(runtime, 'http').map((item: any) => item.id), [
     'workspace-core.http', 'agent-assets.http', 'knowledge.http', 'publication.http', 'task-work-context.http', 'task.http', 'task.daily-progress.http', 'workbench.http', 'task.commits.http', 'task.changed-files.http', 'task.materials.http', 'change.http', 'agent-operations.http', 'native-session-links.http', 'codex-desktop.http', 'dsh-desktop.http', 'code.files.http', 'code.generation.http',
-    'connections.http',
+    'connection-skills.http', 'connections.http',
     'task-review.http', 'task-verification.http',
     'task-parent-coordination.http', 'system-installation.release-awareness.http',
   ]);

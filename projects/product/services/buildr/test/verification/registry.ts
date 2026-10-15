@@ -390,6 +390,13 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
     'test/integration/docs-quality.test.ts',
   ], { schedulingCostMs: 5000, admission: true, args: ['--test-concurrency=3'] }),
   integrationSlice('integration-runtime', [
+    'test/integration/connection-skill-definitions.test.ts',
+    'test/integration/connection-skills-runtime.test.ts',
+    'test/integration/connection-skills-safety.test.ts',
+    'test/integration/connection-skills-cli.test.ts',
+    'test/integration/connection-skills-workspace.test.ts',
+    'test/integration/connection-skills-package.test.ts',
+    'test/integration/connection-authoring-forward.test.ts',
     'test/integration/native-session-links.test.ts',
     'test/integration/dsh-desktop-backend.test.ts',
     'test/integration/dsh-page-observations.test.ts',

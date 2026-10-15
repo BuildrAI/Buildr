@@ -7,6 +7,8 @@
 
 ### Requirement: 连接身份与类别类型
 
+本条要求及其场景 SHALL 仅适用于既有 `/connections` 网页接口、`buildr connection` 命令和旧连接存储路径；新连接技能（Connection Skill）路径 SHALL 按 `connection-skill-runtime`、`connection-instance-files` 和 `connection-management-ui` 的规范处理，不继承旧路径的本机独占存储或专业类型硬编码。
+
 系统 SHALL 为工作空间连接提供稳定身份，区分类别与具体类型，公共配置与类型专用配置分离，支持数据源类别的 MySQL、配置中心类别的 Nacos，以及日志系统类别 `logs` 的 Kibana 类型 `kibana`。主机、数据库和数据库用户名 SHALL 不成为其他连接类型的通用必填项；环境 SHALL 为自由填写的属性，不根据名称或数据库名推断，不建立独立环境对象。Kibana SHALL 沿用同一连接身份、环境、本机存储和认证机制，专用配置包含网站地址 `consoleUrl`、用户名 `username` 和可为空的默认数据视图（Data View）编号 `dataViewId`；系统 MUST 不为日志类型另建连接登记表，不预置客户地址、账号或真实视图编号。
 
 #### Scenario: 使用自定义环境
@@ -19,6 +21,8 @@
 
 ### Requirement: 连接类型扩展
 
+本条要求及其场景 SHALL 仅适用于既有 `/connections` 网页接口、`buildr connection` 命令和旧连接存储路径；新连接技能（Connection Skill）路径 SHALL 按 `connection-skill-runtime`、`connection-instance-files` 和 `connection-management-ui` 的规范处理，不继承旧路径的本机独占存储或专业类型硬编码。
+
 系统 SHALL 按连接类型选择专业配置校验、认证与操作能力，提供清楚的类型扩展位置；数据库查询 SHALL 为 MySQL 专业能力，不要求每种外部系统实现。未接入的类型或操作 MUST 明确返回不支持，不伪造连接成功。
 
 #### Scenario: 请求尚未接入的类型
@@ -27,6 +31,8 @@
 
 ### Requirement: 连接维护与并发保护
 
+本条要求及其场景 SHALL 仅适用于既有 `/connections` 网页接口、`buildr connection` 命令和旧连接存储路径；新连接技能（Connection Skill）路径 SHALL 按 `connection-skill-runtime`、`connection-instance-files` 和 `connection-management-ui` 的规范处理，不继承旧路径的本机独占存储或专业类型硬编码。
+
 系统 SHALL 支持新增、编辑、删除和测试连接；编辑删除 MUST 校验已观察版本，冲突时保留当前配置。删除 SHALL 只解除登记及本机认证，不删除真实数据库。
 
 #### Scenario: 两个入口编辑同一连接
@@ -34,6 +40,8 @@
 - **THEN** 系统明确返回冲突并保留已保存配置
 
 ### Requirement: 本机认证隔离
+
+本条要求及其场景 SHALL 仅适用于既有 `/connections` 网页接口、`buildr connection` 命令和旧连接存储路径；新连接技能（Connection Skill）路径 SHALL 按 `connection-skill-runtime`、`connection-instance-files` 和 `connection-management-ui` 的规范处理，不继承旧路径的本机独占存储或专业类型硬编码。
 
 系统 MUST 将密码独立保存在受限权限的本机认证存储，并保护静态凭据内容；共享声明、查询输出、日志和任务正文 SHALL 不包含密码。编辑留空密码 SHALL 保留原认证，改变目标地址或用户名时 MUST 避免把旧认证静默交给新目标。
 
@@ -47,6 +55,8 @@
 
 ### Requirement: 同一工作空间引用真实目标
 
+本条要求及其场景 SHALL 仅适用于既有 `/connections` 网页接口、`buildr connection` 命令和旧连接存储路径；新连接技能（Connection Skill）路径 SHALL 按 `connection-skill-runtime`、`connection-instance-files` 和 `connection-management-ui` 的规范处理，不继承旧路径的本机独占存储或专业类型硬编码。该规范来源与本机身份定位规则 MUST 不被用来替换新连接实例（Connection Instance）逐文件观察及共享语义。
+
 同一工作空间的代码工作树（Worktree） SHALL 引用同一真实连接及本机认证身份，不自动复制外部系统。配置已保存、认证已绑定与最近连接测试成功 SHALL 为不同事实。
 
 #### Scenario: 代码工作树中查询
@@ -54,6 +64,8 @@
 - **THEN** 工具定位规范来源中的同一连接，网络或认证失败明确返回，不静默改用其他目标
 
 ### Requirement: 简单连接界面
+
+本条要求及其场景 SHALL 仅适用于既有 `/connections` 网页接口、`buildr connection` 命令和旧连接存储路径；新连接技能（Connection Skill）路径 SHALL 按 `connection-skill-runtime`、`connection-instance-files` 和 `connection-management-ui` 的规范处理，不继承旧路径的本机独占存储或专业类型硬编码。
 
 系统 SHALL 提供与其他资源目录一致的连接列表及新增编辑统一抽屉（Drawer），按所选类型展示专业字段；MySQL 保留名称、环境、主机、端口、用户名、密码及可选默认数据库。Nacos SHALL 提供网站地址、用户名、密码、明确生产标识及默认 `public` / `DEFAULT_GROUP` 的可选专业设置。Kibana SHALL 提供名称、环境、网站地址、用户名、密码、默认数据视图（Data View）及读取视图操作。类型创建后 SHALL 不允许更换。列表 SHALL 支持名称、地址及专业范围搜索、实际环境值过滤、过滤数量与总登记数量，并区分加载、无连接、无匹配及失败；登记数量 MUST 不冒充可连接数量。MySQL SHALL 可直接开始查询或编辑，Nacos SHALL 可编辑或在新浏览器标签页打开原网站，不建设 Nacos 配置浏览编辑界面。Kibana SHALL 可编辑或在新浏览器标签页打开规范化的原网站 Discover 地址，网页只承担连接配置和视图选择，不新增日志查询页面；网站入口 MUST 不附加密码、访问令牌（Access Token）或认证头值。
 
@@ -74,6 +86,8 @@
 - **THEN** 新浏览器标签页打开该连接规范化的 Discover 地址，保留反向代理前缀及网站空间（Space），不携带密码、访问令牌（Access Token）或认证头值，原连接页面保留
 
 ### Requirement: 本机 SQLite 连接存储与兼容迁移
+
+本条要求及其场景 SHALL 仅适用于既有 `/connections` 网页接口、`buildr connection` 命令和旧连接存储路径；新连接技能（Connection Skill）路径 SHALL 按 `connection-skill-runtime`、`connection-instance-files` 和 `connection-management-ui` 的规范处理，不继承旧路径的本机独占存储或专业类型硬编码。旧清单迁移入口 MUST 继续为 `connections/manifest.yml`，新 `connections/instances/<id>.yml` 文件 MUST 不被该迁移器读取、导入或改写。
 
 系统 SHALL 使用 Buildr 本机工作空间 SQLite 作为连接元数据唯一权威，由每位用户配置自己的连接；密码 SHALL 继续独立加密保存。已有旧连接清单 SHALL 在首次使用时完整、幂等迁移，保留连接编号、配置、时间及认证引用；导入失败 MUST 不提交部分连接。导入成功后 SHALL 保留原文件用于恢复，但不再读写它作为当前连接事实。数据库损坏、归属冲突或迁移冲突 MUST 明确失败，不静默回退旧文件或覆盖已保存连接。
 
@@ -135,6 +149,8 @@
 
 ### Requirement: XXL-JOB 调度器连接
 
+本条要求及其场景 SHALL 仅适用于既有 `/connections` 网页接口、`buildr connection` 命令和旧连接存储路径；新连接技能（Connection Skill）路径 SHALL 按 `connection-skill-runtime`、`connection-instance-files` 和 `connection-management-ui` 的规范处理，不继承旧路径的本机独占存储或专业类型硬编码。
+
 系统 SHALL 支持 `scheduling/xxl-job`，复用现有本机身份、SQLite 版本和加密认证。专用配置 SHALL 包含网站、用户名、独立生产标识、适配版本与可为空的本机服务关联。网站与身份变化 MUST 要求新认证；关联变化 SHALL 不改变认证目标。
 
 #### Scenario: 登记不同环境
@@ -148,3 +164,27 @@
 #### Scenario: 打开原站
 - **WHEN** 用户打开已保存 XXL-JOB 连接
 - **THEN** 新标签页打开规范网站，连接页保留，不携带密码或登录凭据（Cookie）
+
+### Requirement: 新连接实例按共享文件规范登记
+
+新连接技能（Connection Skill）路径 SHALL 以 `connections/instances/<id>.yml` 逐实例文件保存团队连接配置及团队用户名、密码，并按 `connection-instance-files` 规范进行共享、版本观察、并发写入及本机个人认证整组覆盖。专业执行及已保存实例测试只有在本机不存在个人认证组时 SHALL 使用团队认证；个人组残缺、失效、目标不匹配或不可读取时 MUST 明确诊断，不静默改用团队认证。草稿只读测试 SHALL 仅验证用户按 `connection-management-ui` 明确选择的完整候选组，不改变持久来源或执行专业写入。新实例 MUST 不写入旧本机 SQLite 连接登记，也不使用 `connections/manifest.yml` 作为新实例清单。普通发现输出、提示词（Prompt）、日志、任务（Task）正文及公开发布物 MUST 不包含实际团队或个人认证值。
+
+#### Scenario: 团队文件由另一成员使用
+- **WHEN** 团队提交新实例文件，另一成员取得该工作空间（Workspace）且本机没有个人认证组
+- **THEN** 新路径依据同一实例文件和明确技能（Skill）绑定使用团队认证，展示实际认证来源，不要求导入旧连接 SQLite，也不把文件取得表述为真实系统已可用
+
+#### Scenario: 个人覆盖失效
+- **WHEN** 某新实例存在个人认证组，但字段不完整、无法读取、目标绑定失效或远端登录失败
+- **THEN** 新路径报告个人认证不可用，不使用团队用户名补全个人密码，也不尝试团队认证；用户明确删除个人覆盖后才恢复团队来源
+
+### Requirement: 新旧连接并行与禁止自动迁移
+
+本阶段系统 SHALL 保持旧 `buildr connection` 命令、`/connections` 接口、MySQL 查询入口、本机 SQLite 实例及加密认证的原有行为；未修改的既有要求及场景 SHALL 继续约束这些旧路径。新连接技能（Connection Skill）的发现、配置及执行 SHALL 使用独立入口，并明确实例属于哪条路径；系统 MUST 不因技能（Skill）安装、工作空间（Workspace）启用、应用升级或打开新页面而自动导入、删除、重新绑定或退役旧实例，MUST 不把旧私人密码公开写入团队文件。相同系统名称或连接显示名称 MUST 不作为合并身份、替换实现或迁移认证的依据。
+
+#### Scenario: 旧与新 Nacos 实例同时存在
+- **WHEN** 用户已有旧 Nacos 连接，又在新路径创建一个由独立连接技能（Connection Skill）绑定的 Nacos 实例
+- **THEN** 两个实例在各自入口保留明确身份、存储和认证来源；旧命令继续操作旧实例，新入口继续操作新实例，不按名称静默选择或替换另一实现
+
+#### Scenario: 打开新管理页面
+- **WHEN** 已使用旧 MySQL、Nacos、Kibana 或 XXL-JOB 连接的用户升级并打开新连接技能（Connection Skill）管理页面
+- **THEN** 旧实例与 MySQL 查询继续可用，新页面只读取新路径的实例事实，不导出旧密码、不迁移旧数据库，也不改写或重新消费旧 `connections/manifest.yml`

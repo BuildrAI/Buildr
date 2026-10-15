@@ -10,7 +10,7 @@ import { executeVerificationCommand } from './support/process-executor.ts';
 
 import { collectChangedProductPaths } from './changed-paths.ts';
 
-export const BROWSER_SELECTORS: any = Object.freeze(['core', 'shell', 'workbench', 'project', 'service', 'change', 'task', 'task-materials', 'articles', 'layout', 'code']);
+export const BROWSER_SELECTORS: any = Object.freeze(['core', 'shell', 'workbench', 'project', 'service', 'change', 'task', 'task-materials', 'articles', 'layout', 'code', 'connection-skills']);
 
 const productRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const projectRoot: any = path.resolve(productRoot, '../..');
@@ -41,7 +41,7 @@ export function planBrowserCommands(selectors: any[], webDistRoot: string, env: 
     const groups = selector === 'code' ? planCodeBrowserGroups(env) : [null];
     return groups.map((group: any) => ({
       id: `browser:${selector}${group ? ':' + group.id : ''}`,
-      argv: [process.execPath, isolationRunner, '--script', browserTest, '--', selector],
+      argv: [process.execPath, isolationRunner, '--script', selector === 'connection-skills' ? path.join(productRoot, 'test/browser-smoke/connection-skills.ts') : browserTest, '--', selector],
       cwd: productRoot,
       timeoutMs: group?.processTimeoutMs ?? (selector === 'task' ? 495_000 : 360_000),
       env: {
@@ -114,6 +114,10 @@ export function selectBrowserSelectors(changedPaths: any): any  {
   const plan: any = { status: 'not-applicable', mode: 'affected', paths, selectors: [], reasons: [], diagnostics: [] };
   for (const originalValue of paths) {
     const value: any = buildrRelative(originalValue);
+    if (value === 'test/browser-smoke/connection-skills.ts') {
+      add(plan, 'connection-skills', originalValue, 'Connection skill page journey changed; verify isolated configuration and candidate authentication.');
+      continue;
+    }
     if (value.startsWith('test/browser-smoke/')) {
       plan.mode = 'full';
       plan.selectors = ['all'];
@@ -145,6 +149,7 @@ export function selectBrowserSelectors(changedPaths: any): any  {
         add(plan, 'layout', originalValue, 'Shared layout, reading or presentation changed; verify representative widths and retained state.');
       }
       if (originalValue.includes('/features/code/') || originalValue.includes('RepositoryFileBrowser') || originalValue.includes('repository-file-browser')) add(plan, 'code', originalValue, 'Code scope, file reader and task file navigation changed.');
+      else if (originalValue.includes('/features/connection-skills/')) add(plan, 'connection-skills', originalValue, 'Declaration-driven connection configuration and separate personal authentication changed.');
       else if (originalValue.includes('/features/workbench/')) add(plan, 'workbench', originalValue, 'Daily workbench overview, preferences or activity interaction changed.');
       else if (originalValue.includes('/features/knowledge/')) {
         for (const selector of ['project', 'service', 'articles']) add(plan, selector, originalValue, 'Knowledge reading is shared by project, service and article journeys.');

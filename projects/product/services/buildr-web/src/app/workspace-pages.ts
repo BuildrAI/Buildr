@@ -92,6 +92,7 @@ export function tabForPath(
       services: "服务目录",
       repositories: "代码库目录",
       connections: "连接",
+      "connection-skills": "连接（新机制）",
       skills: "技能",
       articles: "文章",
       tasks: "任务",

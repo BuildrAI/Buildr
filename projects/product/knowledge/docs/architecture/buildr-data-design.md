@@ -20,6 +20,8 @@
 | 工具可发现的派生入口 | 对应智能体（Agent）的目录 | 可依据当前源生成，写入和清理仍受所有权约束 |
 | 搜索索引（Search Index） | SQLite 的 `task_search` 及辅助表 | 可从任务（Task）重建，不增加业务事实 |
 | 安装登记、投射回执、恢复现场 | 本机 JSON、YAML 与备份文件 | 说明归属和实际操作，不能从目录外观猜出 |
+| 技能声明接入的团队实例与团队认证 | `connections/instances/<id>.yml`，可由团队 Git 共享 | 只属于用户实际工作空间（Workspace），不进入公共技能源或发布物 |
+| 技能声明接入的个人认证及观察密钥 | 应用数据根的 `connection-skills/` | 加密的完整个人组、本机安全观察及提供者状态，不能由共享文件恢复 |
 | 分支、未提交修改、进程和外部登录态 | Git、进程与外部工具 | 每次重新观察，不用旧记录替代 |
 
 ## 从业务身份找到实际位置
@@ -45,6 +47,8 @@
 
 普通技能（Skill）在工作空间（Workspace）的 `skills/` 维护，`assetIdentity` 与 `sourceIdentity` 分别表示资产与来源。项目（Project）只声明需要什么和选择谁，不另存源副本。组合与投射细节见[技能体系](buildr-skill-system.md)。
 
+新连接技能源使用 `skills/connections/<skill-id>/`，保存说明、接入声明和必要程序；它仍由同一 `skills/manifest.yml` 登记。共享目录只定义接入方法，真实团队实例及团队认证另存 `connections/instances/`；个人认证继续属于本机。安装另一同系统方法不改变已有实例绑定。
+
 ### 四份项目声明，各回答一个问题
 
 | 文件 | 回答什么 | 怎么消费 |
@@ -61,6 +65,22 @@
 注册项目或服务、首次使用、构建与测试入口改变时，声明接入（`declaration-intake`）方法对照脚本、锁文件、持续集成（CI）及项目说明给出差异。已有授权覆盖的常规维护直接交给相应维护者；涉及新的业务取舍再请人决定。准备声明由项目维护，测试地图由任务验证方法指导维护，测试结果由对应应用保存。凭证、临时路径和完整执行日志不写入长期声明。
 
 可参照[本项目准备声明](../../../preparation.yml)、[测试地图](../../../verification.yml)及[测试建设与使用](workspace-testing-and-verification-framework.md)。能力契约（Capability Contract）的输入、副作用及结果保证见[契约参考](../../../services/buildr/docs/skill-capability-contracts.md)。
+
+## 两条外部连接路径分别保存事实
+
+旧 `buildr connection` 继续在规范工作空间（Canonical Workspace）的 `.buildr/local/workspace.sqlite` 保存连接元数据，密码沿原本机加密路径维护。MySQL 查询及旧 Nacos、Kibana、XXL-JOB 不因新机制启用而改写或迁移；旧路径的代码工作树（Worktree）引用语义保持。
+
+新 `buildr connection-skill` 从所选工作空间（Workspace）的当前目录读取 `connections/instances/<id>.yml`。团队文件包含实例身份、名称、环境、精确技能源绑定、配置及团队整组认证；不存在就报告未配置，读取不导入旧清单、不写回或为分支（Branch）复制配置。类别（Category）用于展示，不替代 `(skillAssetIdentity, definitionId)`、`sourceIdentity` 和 `configVersion` 的明确绑定。
+
+同一工作空间（Workspace）编号有唯一登记来源时，它就是配置入口。命令从相关代码工作树（Git Worktree）的根或子目录运行，须证明与登记目录具有同一 Git 公共目录后才使用该入口；登记来源自身是关联工作树时仍读取其当前文件，不跳往主检出。无登记时使用实际源目录；同编号的独立克隆（Clone）、多个登记来源或身份变化显式报告，不猜选配置。[来源解析](../../../services/buildr/src/modules/connection-skills/infrastructure/workspace.ts)只读取身份和 Git 事实，不建立分支配置管理。
+
+个人认证保存在应用数据根 `connection-skills/<工作空间与路径摘要>/<id>.json`，整组加密并绑定实例和实际接收方，密钥独立留本机。个人组存在就完整使用该组，不从团队组补字段；失效组仍被发现并报告，直到显式移除覆盖，不能失败后自动采用团队密码。团队保存与个人保存分别核对版本，不宣称跨文件事务（Transaction）。公开观察使用本机安全标识，不能从普通摘要试猜密码。
+
+页面默认展示团队地址、账号与业务范围，个人账号在折叠区单独测试和保存。主“测试连接”只测试上方团队候选，不会因为已有个人组而换用另一个账号；保存团队与保存个人各自保留其已观察版本，保存或测试一方不把另一方的陈旧草稿变成最新事实。声明的展示区块只组织字段，不改变认证存储、完整组选择或写入边界。
+
+声明、配置、个人组和程序来源各有观察依据。编辑和运行先核对当前值；程序写前再校验本机上下文，变化时不静默改用新配置。私有通道向所选程序交接有效认证，普通发现与日志不展开秘密；专业状态位于该提供者的 `privateStateRoot`，不成为通用权限库。依赖安装、连接测试及业务验证分别成立。
+
+换机器可以由 Git 恢复团队实例及技能源，但仍需重新准备程序；本机个人组及密钥不随之恢复。无个人组时使用团队，已有失效个人组不能回退。来源、配置版本或程序接收方变化应核对迁移及认证目标，不能只改显示名称。实现见[文件及本机认证](../../../services/buildr/src/modules/connection-skills/persistence/files.ts)、[应用与版本判断](../../../services/buildr/src/modules/connection-skills/application/connection-skills-application.ts)和[声明目录](../../../services/buildr/src/modules/connection-skills/application/catalog.ts)。本章原有 SQLite 图中的连接对象表示旧路径，新接入文件和本机认证由本节说明。
 
 ## 任务的几类记录为什么分开
 

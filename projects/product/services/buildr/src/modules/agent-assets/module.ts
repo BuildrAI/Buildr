@@ -5,6 +5,8 @@ import { parseSkillsManifestContent } from './persistence/skill-manifest.ts';
 import { sourceRelativePath } from './persistence/source-object-repository.ts';
 import path from 'node:path';
 import { createSkillContentQuery } from './application/skill-content-query.ts';
+import { readConnectionSkillFile, readConnectionSkillSources } from './application/connection-skill-source.ts';
+import { createSkillConnectionImpactPort } from './application/connection-impact.ts';
 import type { DoctorInput } from '../diagnostics/application/doctor-application.ts';
 import { WORKSPACE_ASSET_SUPPORT, type WorkspaceAssetSupport, WORKSPACE_ROOT_GITIGNORE_ENTRIES } from '../workspace/module.ts';
 import { registerDomainsCommands, type CommandsDependencies } from './application/commands.ts';
@@ -52,6 +54,7 @@ export const AGENT_ASSETS_OPENSPEC_SUPPORT = 'agent-assets.openspec-support';
 export const AGENT_ASSETS_DIAGNOSTICS_READ = 'agent-assets.diagnostics-read';
 export const AGENT_ASSETS_PACKAGE_CHECK_SUPPORT = 'agent-assets.package-check-support';
 export const AGENT_ASSETS_DIAGNOSTICS_BINDER = 'agent-assets.diagnostics-binder';
+export const AGENT_ASSETS_CONNECTION_IMPACT_BINDER = 'agent-assets.connection-impact-binder';
 export const AGENT_ASSETS_RUNTIME_MODULE_ID = 'agent-assets-runtime';
 
 type OpenSpecComponentEntry = { id: string; enabled?: boolean; state?: string; path?: string };
@@ -186,6 +189,7 @@ export function createAgentAssetsModule(infrastructure: AgentAssetsInfrastructur
     requires: Object.freeze([WORKSPACE_ASSET_SUPPORT, AGENT_ASSETS_RUNTIME]),
     create(requires: { [WORKSPACE_ASSET_SUPPORT]: WorkspaceAssetSupport; [AGENT_ASSETS_RUNTIME]: ReturnType<typeof runtimeCompositionPort> }): any {
       let diagnosticsApplication: { doctor(input: DoctorInput): any } | null = null;
+      const connectionImpactPort = createSkillConnectionImpactPort();
       const doctor = (input: DoctorInput) => {
         if (!diagnosticsApplication) throw new Error('Agent Assets diagnostics dependency has not been bound.');
         return diagnosticsApplication.doctor(input);
@@ -272,6 +276,7 @@ export function createAgentAssetsModule(infrastructure: AgentAssetsInfrastructur
         addDoctorFinding: infrastructure.addDoctorFinding,
       });
       const skills: ReturnType<typeof registerDomainsSkills> = registerDomainsSkills({
+        connectionImpacts: connectionImpactPort.read,
         isPlainObject: commands.isPlainObject,
         componentOwnerForMember: components.componentOwnerForMember,
         isValidAssetId: (...args: Parameters<SkillsDependencies['isValidAssetId']>) => packageAssets.isValidAssetId(...args),
@@ -287,6 +292,7 @@ export function createAgentAssetsModule(infrastructure: AgentAssetsInfrastructur
         assertInitializedBuildrWorkspace: infrastructure.assertInitializedBuildrWorkspace,
       });
       const packageMaintenance: ReturnType<typeof registerApplicationPackageMaintenance> = registerApplicationPackageMaintenance({
+        connectionImpacts: connectionImpactPort.read,
         WORKSPACE_ROOT_GITIGNORE_ENTRIES: WORKSPACE_ROOT_GITIGNORE_ENTRIES,
         isPlainObject: commands.isPlainObject,
         readCommandsManifestForWrite: commands.readCommandsManifestForWrite,
@@ -494,9 +500,10 @@ export function createAgentAssetsModule(infrastructure: AgentAssetsInfrastructur
               }
               return files;
             },
-            readSkills: (root: string) => { sourceRelativePath(root, 'skills/manifest.yml'); return parseSkillsManifestContent(readSkillText(root, 'skills/manifest.yml', { requireRootProof: true }).content, path.join(root, 'skills', 'manifest.yml'), { validateContracts: false }).skills || []; },
+            readSkills: readConnectionSkillSources,
+            readSkillFile: readConnectionSkillFile,
             readRules: (root: string) => { sourceRelativePath(root, 'rules/manifest.yml'); return rules.readRulesManifestForInspection(root).rules; },
-            readContracts: (root: string) => { sourceRelativePath(root, 'skills/manifest.yml'); return parseSkillsManifestContent(readSkillText(root, 'skills/manifest.yml', { requireRootProof: true }).content, path.join(root, 'skills', 'manifest.yml'), { validateContracts: false }).contracts || []; },
+            readContracts: (root: string) => { sourceRelativePath(root, 'skills/manifest.yml'); return parseSkillsManifestContent(readSkillText(root, 'skills/manifest.yml', { requireRootProof: true }).content, path.join(root, 'skills', 'manifest.yml'), { validateContracts: false, validateConnectionDefinitions: false }).contracts || []; },
             requiredBlock: () => readPackageRequiredBlock({ requireRootProof: true }),
             productSkills: () => packageAssets.readPackageManifest().agentSkills || [],
           }),
@@ -549,6 +556,7 @@ export function createAgentAssetsModule(infrastructure: AgentAssetsInfrastructur
             productInvocationArgs: infrastructure.productInvocationArgs,
           }),
           [AGENT_ASSETS_DIAGNOSTICS_BINDER]: diagnosticsBinder,
+          [AGENT_ASSETS_CONNECTION_IMPACT_BINDER]: Object.freeze({ bindConnectionImpacts: connectionImpactPort.bindConnectionImpacts }),
         },
         contributions: {
           cli: createAgentAssetsCliContributions().map((contribution: any) => Object.freeze({

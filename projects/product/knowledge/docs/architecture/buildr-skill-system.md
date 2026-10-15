@@ -69,4 +69,27 @@ buildr doctor --agent <agent> --target <workspace> --json --detail full
 
 派生正文可以依据当前源重新生成，旧所有权却不能仅凭内容相似重建。遇到冲突应保留现场，核对实际归属；投射成功后仍应分别确认工具能发现入口、当前会话已采用方法，以及实际目标是否完成。
 
-本文依据[投射规范](../../../openspec/specs/workspace-first-runtime-projection/spec.md)、[资源规范](../../../openspec/specs/buildr-package-assets/spec.md)和代码地图列出的实现；适配器（Adapter）的全部平台分支不在本章展开。
+## 连接用途复用同一份技能
+
+连接技能（Connection Skill）是带标准接入声明及必要程序的普通技能（Skill）。清单条目的 `connectionDefinitions` 引用技能源内的附件，例如 `assets/connection.yml`；本地登记可以从 `SKILL.md` 同名字段取得引用，或显式传递 `--connection-definition`。声明、参考文档和程序继续走完整附件投射，不新增加载系统。`resolved.kind: skill-url` 仍只有单个原始 `SKILL.md`，不能据此推测或交付完整程序包。
+
+新连接源统一放在 `skills/connections/<skill-id>/`，包含说明、声明和必要程序；`skills/manifest.yml` 用 `path: connections/<skill-id>` 登记，目录不是另一套加载入口。完整本地源添加自动使用该位置，本地新登记检查目录规范；新模块的非标准位置给出明确目录诊断，不另建兼容或迁移层。制作指引仍属于普通技能（Skill），位于 `skills/buildr/connection-authoring/`。
+
+Buildr 从已登记的当前技能源重建连接目录（Connection Catalog），页面可在尚未投射时解释声明；这不证明当前智能体（Agent）已经加载方法。类别（Category）只用于发现，实例使用 `(assetIdentity, definitionId)` 加来源身份及配置版本明确绑定。自制 Nacos 方法使用独立技能源身份，安装不会替换原实例；来源、程序接收方或配置兼容性变化会局部报告，文档更新不自动要求重新授权。
+
+用户先按类别选择 Nacos 等连接系统；只有同系统存在多个来源时再选择接入方式。`presentation.categoryLabel/methodLabel` 提供展示文本，`presentation.groups` 按声明顺序组合配置与团队认证字段，低频区块可默认折叠。动态发现的 `hooks.inputs` 声明必要输入，支持先填地址和完整账号，再读取命名空间（Namespace）等范围；不把未填写范围当作登录前置。连接测试仍检查完整配置，个人账号默认收起并分别测试、保存。
+
+取消登记的预检及结果、来源替换回执和内置技能（Skill）卸载结果披露已绑定实例的编号、名称和来源文件；连接影响不依附于普通能力声明。资产模块通过一次绑定的只读回调读取这些引用，不保存另一份状态，也不将连接读取故障作为合法源操作的阻碍；实例和认证仍保留。停用、更新或缺失后，连接列表和详情继续解释当前绑定诊断，不自动选择同名方法。
+
+`buildr connection-skill` 发现实例和准确方法入口，帮助由所选程序提供；专业参数由程序解释。实际运行从当前技能源或声明的本机安装定位程序，配置和认证通过私有子进程通道交接，业务标准输入（Standard Input）保持独立；帮助不交认证、不访问真实系统。写前通用再校验只核对本机身份与版本，专业对象、许可和结果判断仍由方法与程序维护。
+
+当前服务（Service）不登记到新连接实例及专业对象的长期绑定。Nacos 专业技能（Skill）指导智能体（Agent）先从准确代码库、目标环境及加载声明定位地址和 `namespaceId/group/dataId`，再匹配已保存连接，以稳定 `id` 和当前观察版本执行。实例编号确保选中准确连接，名称与环境只用于发现；代码变量、外部启动覆盖或多个候选尚未确定时如实说明，不能按服务名猜配置，也不必先新增绑定模块。方法区分代码声明、远端当前内容和服务实际加载事实。
+
+| 技能（Skill） | 负责什么 |
+| --- | --- |
+| [Nacos 接入方法（nacos-connection）](../../../services/buildr/resources/workspace/skills/connections/nacos-connection/SKILL.md) | 从代码定位配置，自带命令行接口（CLI）、只读槽位、配置读取比较发布及专业保护 |
+| [接入开发方法（connection-authoring）](../../../services/buildr/resources/workspace/skills/buildr/connection-authoring/SKILL.md) | 指导制作完整源目录、声明和程序，以代表性用户场景验证对象定位、连接选择、专业执行及结果核验；分别说明源、投射、依赖、实际连接与业务结果 |
+
+技能（Skill）启用不表示程序已经安装或可执行。依赖及安装方式由接入成果自行声明，无需所有专业工具先进入公共命令目录；程序检查与外部测试分别发生。旧 `buildr connection` 及 MySQL 查询工作区保留原路径，不因新接入启用自动导入、删除或迁移旧实例。共享实例和个人认证的存放位置见[数据设计](buildr-data-design.md#两条外部连接路径分别保存事实)，实际职责见[连接接入地图](../../code-map/technical-layers.md#技能声明接入与私有上下文)。
+
+本文依据[投射规范](../../../openspec/specs/workspace-first-runtime-projection/spec.md)、[资源规范](../../../openspec/specs/buildr-package-assets/spec.md)、[当前接入变更](../../../openspec/changes/archive/2026-10-15-connection-skills-nacos/proposal.md)和代码地图列出的实现；适配器（Adapter）的全部平台分支不在本章展开。

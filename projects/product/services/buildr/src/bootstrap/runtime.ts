@@ -1,4 +1,5 @@
 import { AGENT_ASSETS_SOURCE_MODULE } from '../modules/agent-assets/source/module.ts';
+import { createConnectionSkillsModule } from '../modules/connection-skills/module.ts';
 import { CODE_MODULE } from '../modules/code/module.ts';
 import { createConnectionsModule, resolveConnectionWorkspace } from '../modules/connections/module.ts';
 import { AGENT_OPERATIONS_APPLICATION, createAgentOperationsModule } from '../modules/agent-operations/module.ts';
@@ -82,6 +83,7 @@ export function createRuntime(): any  {
   registry.install(createDshDesktopModule({ readProductIdentity: readCurrentProductIdentity, resolveWebProfile: webProfileContract.resolveWebProfile, readOrigin: readCurrentBuildrWebOrigin }));
   registry.provide(NATIVE_SESSION_LINKS_APPLICATION).bindDshDesktop(registry.provide(DSH_DESKTOP_APPLICATION));
   registry.install(CODE_MODULE);
+  registry.install(createConnectionSkillsModule({ readProductIdentity: readCurrentProductIdentity, resolveWebProfile: webProfileContract.resolveWebProfile }));
   const connectionWorkspace = { getWorkspace: registry.provide(WORKSPACE_QUERY).getWorkspace, resolveSourceWorkspaceRoot: registry.provide(WORKSPACE_QUERY).resolveSourceWorkspaceRoot, listRegisteredWorkspaces: registry.provide(WORKSPACE_APPLICATION).listRegisteredWorkspaces };
   const resolvePreviewConnectionScope = (root: string) => resolveConnectionWorkspace(root, connectionWorkspace);
   registry.install(createConnectionsModule({ readProductIdentity: readCurrentProductIdentity, resolveWebProfile: webProfileContract.resolveWebProfile, readPreviewCredentials: productIdentity => readPreviewConnectionCredentials({ productIdentity, productRoot: runtime.productRoot(), resolveScope: resolvePreviewConnectionScope }) }));

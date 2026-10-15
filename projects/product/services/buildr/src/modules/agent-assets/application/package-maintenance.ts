@@ -12,7 +12,9 @@ import { retireLegacyCoreRule, retireOrphanedBuiltinSkills } from './package-mai
 import { createPackageSyncPlan } from './package-maintenance/sync-plan.ts';
 import { createBuiltinLifecycle } from './package-maintenance/builtin-lifecycle.ts';
 import { createCapabilityRetirement } from './package-maintenance/capability-retirement.ts';
+import type { SkillConnectionImpactReader } from './connection-impact.ts';
 export interface PackageMaintenanceDependencies {
+  connectionImpacts?: SkillConnectionImpactReader;
   WORKSPACE_ROOT_GITIGNORE_ENTRIES: readonly string[];
   isPlainObject: ReturnType<typeof import('./commands.ts').registerDomainsCommands>['isPlainObject'];
   readCommandsManifestForWrite: ReturnType<typeof import('./commands.ts').registerDomainsCommands>['readCommandsManifestForWrite'];
@@ -349,6 +351,7 @@ export function registerApplicationPackageMaintenance(dependencies: PackageMaint
   }
 
   const { builtinUninstall, builtinRestore } = createBuiltinLifecycle({
+    connectionImpacts: dependencies.connectionImpacts,
     assertInitializedBuildrWorkspace,
     assertNoUnknownOptions,
     buildRuntimeOrphanRemovalPlan,

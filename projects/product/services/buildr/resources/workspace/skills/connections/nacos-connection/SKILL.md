@@ -1,0 +1,23 @@
+---
+name: nacos-connection
+description: 从服务代码定位 Nacos 配置，使用明确绑定的新连接实例发现、读取、比较及受控发布；不接管旧 buildr connection nacos 实例，不执行服务部署。
+connectionDefinitions: [assets/connection.yml]
+---
+
+# 使用 Nacos 连接
+
+本技能（Skill）与[连接声明](assets/connection.yml)、自带专业程序共同交付。程序使用 Buildr 的 Node.js 运行基线，无需另装网络库；技能（Skill）已投射不代表实例已配置或远端能力已验证。
+
+先从 `buildr connection-skill --help` 发现当前通用入口，明确选择实例及其绑定来源。通过实例发现得到的本技能（Skill）和程序帮助继续工作，不能按系统名称、环境或类别猜测另一实现。旧 `buildr connection nacos` 仍使用旧路径；不自动迁移、借用旧认证或操作同名实例。
+
+专业程序为 `scripts/nacos-client.mjs`。帮助和版本不需要认证；实际操作通过 Buildr 通用启动入口注入私有连接上下文，不能直接把用户名、密码放入命令参数、环境变量或提示词（Prompt）。团队认证由团队实例文件管理；本机个人认证整组覆盖，个人组失效不会回退团队。
+
+读取、比较、发布前按需要阅读[专业命令与结果](references/commands-and-results.md)。程序支持有界命名空间（Namespace）发现、分页、完整原文文件、候选与显式双实例比较，以及现有配置发布；不创建新配置、不删除配置、不自动重启服务（Service）。原网站入口继续承担人工查看。
+
+用户按服务（Service）询问配置时，先读[从代码定位服务配置](references/service-config-discovery.md)：从准确代码库、目标环境及加载声明确定完整 Nacos 位置，再匹配已保存连接并查询。不要按服务名称猜配置编号（dataId），不要把环境名称等同于配置档案（Profile）；不要求先建立服务绑定模块。
+
+发布必须使用当前实例观察版本及已读取 MD5。先取得完整原文、形成候选并比较；生产标识默认 `true`，生产每次实际发布要展示具体目标及差异，取得本次用户授权并提交匹配依据。永久开关、任务（Task）实施授权、团队账号或认证成功不代替本次生产发布授权。程序检查依据的一致性与一次尝试使用事实，不能独立鉴别人类身份。
+
+遇到冲突重新读取并判断；超时、连接中断或未知响应先调查真实配置，不重复提交。分别核对发布受理、内容回读、服务（Service）加载和业务结果；程序的 `published` / `verified` 不代表服务（Service）或业务已生效。
+
+程序及其本机状态不承载公司预置地址或真实认证。运行约定与本机通道见[上下文协议](references/context-protocol.md)，只在适配执行入口或诊断本机通道时读取。

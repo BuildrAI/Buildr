@@ -28,6 +28,7 @@ export function AppNavigation({ onNavigate }: { onNavigate?: () => void }) {
     services: <AppstoreOutlined />,
     repositories: <BranchesOutlined />,
     connections: <DatabaseOutlined />,
+    'connection-skills': <DatabaseOutlined />,
     skills: <ThunderboltOutlined />,
     explorer: <FolderOutlined />,
     'source-control': <BranchesOutlined />,
@@ -61,6 +62,7 @@ export function AppNavigation({ onNavigate }: { onNavigate?: () => void }) {
           {item('/services', '服务', 'services')}
           {item('/repositories', '代码库', 'repositories')}
           {item('/connections', '连接', 'connections')}
+          {item('/connection-skills', '连接（新机制）', 'connection-skills')}
           {item('/skills', '技能', 'skills')}
           {item('/articles', '文章', 'articles')}
         </>
