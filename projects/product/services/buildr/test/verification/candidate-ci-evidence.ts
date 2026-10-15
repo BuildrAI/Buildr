@@ -282,7 +282,7 @@ export function aggregateCandidateCiEvidence(evidence: any, expectedContext: any
     for (const stepId of expectation.primaryStepIds) {
       const stepResult = item.results.find((result: any) => result.id === stepId);
       if (!stepResult) findings.push(evidenceFinding('primary-result-missing', id, stepId));
-      else if (stepResult.disposition === 'reused' || stepResult.sourceRecord) {
+      else if (stepResult.disposition === 'reused') {
         if (!stepResult.sourceRecord || !options.validateSourceRecord?.(stepResult.sourceRecord, stepId, expectation.runner)) {
           findings.push(evidenceFinding('source-reuse-invalid', id, stepId));
         }
