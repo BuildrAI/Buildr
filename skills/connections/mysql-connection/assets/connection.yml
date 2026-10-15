@@ -51,7 +51,7 @@ programs:
       - executable: node
         version:
           args: [--version]
-          constraint: '>=24.15.0 <25'
+          constraint: '>=24.15.0'
     installHint: buildr-mysql 由 Buildr 主包一同安装；请安装或更新 Buildr，并核对当前命令入口。
 hooks:
   test:

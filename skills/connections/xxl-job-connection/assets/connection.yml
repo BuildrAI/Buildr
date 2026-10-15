@@ -45,7 +45,7 @@ programs:
       - executable: node
         version:
           args: [--version]
-          constraint: ">=24.15.0 <25"
+          constraint: ">=24.15.0"
       - executable: buildr
     installHint: 服务与专业操作依赖已安装的 Buildr，使用 buildr assets inspect 核对登记；开发验证将候选入口加入隔离 PATH。
 hooks:
