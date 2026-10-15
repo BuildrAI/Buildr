@@ -38,13 +38,12 @@ export async function runSourceControlActionsJourney({t, page, workspaceUrl, cap
     const executionConfig = {model: 'browser-confirmed-model', modelProvider: 'browser-confirmed-provider', reasoningEffort: 'high'};
     const agent = {id: 'browser-codex', kind: 'codex', label: 'Codex', capabilities: ['structured-generation'], availability: 'available', runtimeStatus: 'running', safeReason: null, lastExecutionConfig: null as typeof executionConfig | null};
     const run = (id: string, status: string) => ({id, agentId: agent.id, registrationRevision: 'browser-registry', status, output: status === 'succeeded' ? {commitMessage: 'feat: 浏览器生成提交说明\n\n验证生成结果可继续编辑。'} : null, error: null, executionConfig: status === 'succeeded' ? executionConfig : null});
-    const handlers: Array<[string, (route: any) => Promise<void>]> = [];
-    const add = async (pattern: string, handler: (route: any) => Promise<void>) => {handlers.push([pattern, handler]); await page.route(pattern, handler);};
+    const add = async (pattern: string, handler: (route: any) => Promise<void>) => {await page.route(pattern, handler);};
     await add('**/api/v1/app/agents', async route => route.fulfill({status: 200, contentType: 'application/json', body: JSON.stringify({revision: 'browser-registry', defaultAgentId: available ? agent.id : null, agents: available ? [agent] : []})}));
     await add('**/code/commit-message', async route => {starts.push(route.request().postDataJSON()); await route.fulfill({status: 202, contentType: 'application/json', body: JSON.stringify(run('browser-run-' + ++counter, 'running'))});});
     await add('**/api/v1/app/agents/runs?*', async route => {const id = new URL(route.request().url()).searchParams.get('runId')!, status = cancelled.has(id) ? 'cancelled' : 'succeeded'; if (status === 'succeeded') agent.lastExecutionConfig = {...executionConfig}; await route.fulfill({status: 200, contentType: 'application/json', body: JSON.stringify(run(id, status))});});
     await add('**/api/v1/app/agents/cancel', async route => {const id = route.request().postDataJSON().runId; cancelled.add(id); await route.fulfill({status: 200, contentType: 'application/json', body: JSON.stringify(run(id, 'cancelled'))});});
-    return {starts, cancelled, setLastExecutionConfig: (config: typeof executionConfig) => {agent.lastExecutionConfig = config;}, dispose: async () => {for (const [pattern, handler] of handlers) await page.unroute(pattern, handler);}};
+    return {starts, cancelled, setLastExecutionConfig: (config: typeof executionConfig) => {agent.lastExecutionConfig = config;}, dispose: () => page.unrouteAll({behavior:'wait'})};
   };
 
   await scenario('统一生成控件刷新与取消保留说明，生成后手改并提交只改变原工作树', async () => {

@@ -4,8 +4,9 @@ import {registerHooks} from 'node:module';
 
 registerHooks({resolve(specifier, context, next) {
   if (!context.parentURL?.endsWith('/hooks/useSourceControl.ts')) return next(specifier, context);
-  if (specifier === 'react') return {url:'data:text/javascript,' + encodeURIComponent(['useMemo', 'useRef', 'useEffect', 'useSyncExternalStore'].map(name => `export const ${name} = (...args) => globalThis.__sourceControlHarness.${name}(...args);`).join('\n')), shortCircuit:true};
+  if (specifier === 'react') return {url:'data:text/javascript,' + encodeURIComponent(['useContext', 'useMemo', 'useRef', 'useEffect', 'useSyncExternalStore'].map(name => `export const ${name} = (...args) => globalThis.__sourceControlHarness.${name}(...args);`).join('\n')), shortCircuit:true};
   if (specifier === '../api/code-api') return {url:'data:text/javascript,' + encodeURIComponent('export const codeApi = globalThis.__sourceControlApi;'), shortCircuit:true};
+  if (specifier === '../../../app/WorkspaceSourceControlProvider') return {url:'data:text/javascript,export const WorkspaceSourceControlContext={};',shortCircuit:true};
   return next(specifier + '.ts', context);
 }});
 const deferred = () => {let resolve, reject; const promise = new Promise((a, b) => {resolve = a; reject = b;}); return {promise, resolve, reject};};
@@ -18,6 +19,7 @@ function harness() {
   const slots = [], effects = []; let cursor = 0;
   const same = (a, b) => a && b && a.length === b.length && a.every((item, index) => Object.is(item, b[index]));
   globalThis.__sourceControlHarness = {
+    useContext() {cursor++; return globalThis.__sourceControlContext || null;},
     useMemo(fn, deps) {const index = cursor++; if (!same(slots[index]?.deps, deps)) slots[index] = {value:fn(), deps}; return slots[index].value;},
     useRef(value) {const index = cursor++; return slots[index] ||= {current:value};},
     useEffect(fn, deps) {const index = cursor++; if (!same(slots[index]?.deps, deps)) {const previous = slots[index]; slots[index] = {deps}; effects.push(() => {previous?.cleanup?.(); slots[index].cleanup = fn();});}},
@@ -49,4 +51,23 @@ test('任务默认来源等完整刷新后一次提供，后续渐进刷新保�
     reads.slice(2).forEach(request => request.resolve(response(repository(request.input.repositoryId)))); await refresh;
     assert.equal(view.render(useSourceControl, 'different').selection, undefined, '新工作空间不能沿用旧任务来源');
   } finally {view.dispose(); delete globalThis.__sourceControlApi;}
+});
+
+test('共享静默初始观察不以spinner判断选择就绪，pending不告警且页激活仍复用observer', async () => {
+  const {createSourceControlCatalog}=await import('../src/features/code/source-control-catalog.ts');
+  let progress,finish,retains=0,reconciles=0;
+  const catalog=createSourceControlCatalog((_id,_signal,onProgress)=>{progress=onProgress;return new Promise(resolve=>{finish=resolve;});});
+  const initial=catalog.check();
+  globalThis.__sourceControlContext={workspaceId:'workspace',observer:{catalog:()=>catalog,retain:()=>{retains++;return()=>{};},reconcile:()=>{reconciles++;},subscribe:()=>()=>{},snapshot:()=>({diagnostics:[]})}};
+  const {useSourceControl}=await import('../src/features/code/hooks/useSourceControl.ts');
+  const view=harness();
+  try {
+    assert.equal(view.render(useSourceControl).selection,undefined);
+    progress(inventory(),'inventory');
+    const pending=view.render(useSourceControl);assert.equal(pending.observation.loading,false);assert.equal(pending.selection,undefined);assert.deepEqual(pending.observation.diagnostics,[]);
+    progress(response(repository('other')),'repository');assert.equal(view.render(useSourceControl).selection,undefined);
+    finish(response(repository('other'),repository('task-repo')));await initial;
+    assert.deepEqual(view.render(useSourceControl).selection.worktrees,[{repositoryId:'task-repo',worktreeId:'task-repo-task'}]);
+    assert.equal(retains,1);assert.equal(reconciles,1);
+  } finally {view.dispose();catalog.dispose();delete globalThis.__sourceControlContext;}
 });

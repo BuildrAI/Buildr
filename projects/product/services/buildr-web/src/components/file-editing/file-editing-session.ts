@@ -1,4 +1,4 @@
-import { Compartment, EditorState, Facet, StateEffect, StateField, Transaction, type Extension } from '@codemirror/state';
+import { ChangeSet, Compartment, EditorState, Facet, StateEffect, StateField, Transaction, type EditorSelection, type Extension } from '@codemirror/state';
 import { Decoration, EditorView, keymap } from '@codemirror/view';
 import { redo, undo, undoDepth } from '@codemirror/commands';
 import { basicSetup } from 'codemirror';
@@ -69,12 +69,12 @@ export class FileEditingSessionStore {
     revisions.add(revision); this.observed.set(id, revisions);
     if (observedAt && observedAt > (this.observedTimes.get(id) || '')) this.observedTimes.set(id, observedAt);
   }
-  private createEditor(file: FileEditingDocument, content = file.content): EditorState {
+  private createEditor(file: FileEditingDocument, content = file.content, selection?: EditorSelection): EditorState {
     const language = new Compartment(); this.languages.set(file.id, language);
     const editability = new Compartment(); this.editability.set(file.id, editability);
     const readOnly = Boolean(file.readOnlyReason);
     const ranges = (file.protectedRanges || []).map(range => ({ from: editorTextOffset(content, range.from), to: editorTextOffset(content, range.to) }));
-    return EditorState.create({ doc: normalizeEditorText(content), extensions: [
+    return EditorState.create({ doc: normalizeEditorText(content), selection, extensions: [
       basicSetup, editorTheme, language.of(this.languageExtensions.get(file.id) || []), editability.of([EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)]), initialRanges.of(ranges), protectedRanges,
       EditorView.contentAttributes.of({ 'aria-label': '文件源码编辑器', 'aria-keyshortcuts': 'Meta+Z Meta+Shift+Z Meta+S Control+Z Control+Shift+Z Control+S', tabindex: '0' }),
       keymap.of([{ key: 'Mod-s', run: () => { void this.saveNow(file.id); return true; } }]),
@@ -165,7 +165,13 @@ export class FileEditingSessionStore {
     if (current.content === file.content) {
       this.update(id, session => ({ ...session, diskContent: file.content, baseContent: file.content, revision: file.revision, file, status: 'saved', conflict: undefined, error: undefined, readError: undefined }));
     } else if (current.content === current.baseContent && !current.conflict && !current.composing) {
-      this.update(id, session => ({ ...session, file, content: file.content, diskContent: file.content, baseContent: file.content, revision: file.revision, editorState: this.createEditor(file), historyIndex: 0, savedAt: null, status: 'saved', error: undefined, readError: undefined, protectedMessage: undefined }));
+      this.update(id, session => {
+        const length = normalizeEditorText(file.content).length, before = session.editorState;
+        // Keep valid cursor/range coordinates. A synthetic tail deletion only clamps
+        // positions beyond the new document and never adds external text to undo.
+        const selection = length < before.doc.length ? before.selection.map(ChangeSet.of({from:length, to:before.doc.length}, before.doc.length)) : before.selection;
+        return { ...session, file, content: file.content, diskContent: file.content, baseContent: file.content, revision: file.revision, editorState: this.createEditor(file, file.content, selection), historyIndex: 0, savedAt: null, status: 'saved', error: undefined, readError: undefined, protectedMessage: undefined };
+      });
     } else {
       this.update(id, session => this.withConflict(session, file));
     }

@@ -11,6 +11,8 @@ import { SourceControlWorkbench } from '../components/SourceControlWorkbench';
 import { codeReturnTarget } from '../code-navigation';
 import { SourceControlCommitPanel } from '../components/SourceControlCommitPanel';
 import { useSourceControlActions } from '../hooks/useSourceControlActions';
+import type { CodeSourceTarget } from '../code-source-selection';
+import { useCodeSourceSelection } from '../hooks/useCodeSourceSelection';
 import { useSourceControl } from '../hooks/useSourceControl';
 import { useSourceControlBranches } from '../hooks/useSourceControlBranches';
 import { useSourceControlFetch } from '../hooks/useSourceControlFetch';
@@ -26,7 +28,8 @@ export function CodeSourceControlPage() {
   useEffect(() => {setCatalogMenuOpen(false);}, [workspaceId, viewActive]);
   const location = useLocation(), navigate = useNavigate();
   const entry = location.state?.sourceControlEntry as {origin?: 'task'; nonce?: string; taskId: string; taskTitle?: string; from: {pathname: string; search: string; hash: string; state: unknown}} | undefined;
-  const observation = useSourceControl(workspaceId || '', entry?.taskId);
+  const observation = useSourceControl(workspaceId || '', entry?.taskId, viewActive);
+  const currentSource = useCodeSourceSelection(workspaceId);
   const actions = useSourceControlActions(workspaceId || '', observation.refresh);
   const fetchActions = useSourceControlFetch(workspaceId || '');
   const syncActions = useSourceControlSync(workspaceId || '');
@@ -49,14 +52,14 @@ export function CodeSourceControlPage() {
     <SourceControlOperationNotices workspaceId={workspaceId || ''} repositories={observation.repositories} fetchResults={fetchActions.feedback} syncResults={syncActions.results} onViewChanges={(repositoryId, worktreeId) => branches.viewChanges?.(repositoryId, worktreeId)} />
     <ObjectTabStrip panelId={panelId} className="code-source-control-tab" tabs={[{key: 'source-control', kind: 'svc', title: '源代码管理'}]} active="source-control" closable={false} onActivate={() => {}} />
     <div className="object-tab-panel" id={panelId} role="tabpanel" aria-labelledby={tabElementId(panelId, 'source-control')} tabIndex={0}>
-    <SourceControlWorkbench repositories={observation.repositories} reader={observation.reader} readKey={observation.readKey}
+    <SourceControlWorkbench sourceEntryKey={entry ? workspaceId+':'+(entry.nonce||location.key) : undefined} currentSourceSelection={currentSource.selection ? {key:workspaceId+':'+currentSource.selection.sequence,targets:currentSource.selection.targets,preferredTarget:currentSource.selection.preferredTarget} : undefined} onCurrentSourceSelect={(target:CodeSourceTarget)=>currentSource.select('source-control',[target],target)} active={viewActive} repositories={observation.repositories} reader={observation.reader} readKey={observation.readKey}
       editableWorkspaceId={workspaceId || undefined}
       observation={observation.observation} onRefresh={observation.refresh} onRetry={observation.refresh}
       catalogActions={<Dropdown open={viewActive && catalogMenuOpen} onOpenChange={setCatalogMenuOpen} trigger={['click']} placement="bottomRight" menu={{'aria-label':'源代码管理操作菜单', items:[{key:'fetch', icon:<CloudDownloadOutlined aria-hidden />, label:'全部获取远程', disabled:fetching || syncing || !observation.repositories.length}], onClick:() => {setCatalogMenuOpen(false); void fetchActions.run(observation.repositories);}}}><Button type="text" size="small" icon={<MoreOutlined rotate={90} />} loading={fetching} aria-label="源代码管理操作菜单" title="源代码管理操作菜单" aria-expanded={catalogMenuOpen} aria-haspopup="menu" /></Dropdown>}
       scene={scene} onScene={setScene} onOpenTask={openTask}
       task={entry ? {id: entry.taskId, title: entry.taskTitle || entry.taskId} : undefined}
       scopeSelection={entry && observation.selection ? {...observation.selection, key: workspaceId + ':' + (entry.nonce || location.key)} : undefined}
-      renderChangeActions={(repository, worktree) => workspaceId ? <SourceControlCommitPanel workspaceId={workspaceId} repository={repository} worktree={worktree} actions={actions} version={repository.readVersion || ''} /> : null}
+      renderChangeActions={(repository, worktree, active) => workspaceId ? <SourceControlCommitPanel active={active} workspaceId={workspaceId} repository={repository} worktree={worktree} actions={actions} version={repository.readVersion || ''} /> : null}
       onViewCurrent={openCurrent} branchExtension={branches} layoutStorageKey={'buildr:source-control:' + workspaceId} />
     </div>
   </div>;

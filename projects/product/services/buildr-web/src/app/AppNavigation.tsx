@@ -6,6 +6,7 @@ import { useWorkbenchPreferences } from '../features/workbench/hooks/useWorkbenc
 import { useAppShell } from './AppShellContext';
 import { navigationState } from './navigation';
 import { workspaceHref } from '../lib/labels';
+import { useSourceControlSummary } from '../features/code/hooks/useSourceControl';
 
 /**
  * 工作台按关注与接续组织；长期内容入口位于工作空间。
@@ -14,6 +15,7 @@ import { workspaceHref } from '../lib/labels';
 export function AppNavigation({ onNavigate }: { onNavigate?: () => void }) {
   const { workspaceId, workspaceMenuTarget, requestWorkspacePage } = useAppShell();
   const { preferences } = useWorkbenchPreferences(workspaceId);
+  const code = useSourceControlSummary(workspaceId);
   const location = useLocation();
   const state = navigationState(location.pathname, location.search, workspaceId);
   const href = (path: string) => workspaceHref(workspaceId, path);
@@ -34,7 +36,7 @@ export function AppNavigation({ onNavigate }: { onNavigate?: () => void }) {
   };
   const item = (path: string, label: string, name: string, onClick?: () => void) => {
     const destination = state.area === 'workspace' && !['projects', 'articles'].includes(name) ? workspaceMenuTarget(name) : { to: href(path), state: undefined };
-    return <AppNavigationItem to={destination.to} state={destination.state} path={path} name={name} label={label} icon={icons[name]} active={location.pathname === href(path) || location.pathname.startsWith(href(path) + '/')} onClick={event => { if (event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey && state.area === 'workspace') { requestWorkspacePage?.(destination.to); if (destination.to === location.pathname + location.search + location.hash) event.preventDefault(); } onClick?.(); onNavigate?.(); }} />;
+    return <AppNavigationItem to={destination.to} state={destination.state} path={path} name={name} label={label} icon={icons[name]} hasChanges={name === 'source-control' ? code.hasChanges : undefined} active={location.pathname === href(path) || location.pathname.startsWith(href(path) + '/')} onClick={event => { if (event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey && state.area === 'workspace') { requestWorkspacePage?.(destination.to); if (destination.to === location.pathname + location.search + location.hash) event.preventDefault(); } onClick?.(); onNavigate?.(); }} />;
   };
 
   return (

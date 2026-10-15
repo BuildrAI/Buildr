@@ -95,7 +95,8 @@ try {
     if (pathname === `/api/v1/workspaces/${initialWorkspaceId}/connections`) reads.legacy++;
   });
   const assertReads = (expected: typeof reads, reason: string) => assert.deepEqual(reads, expected, reason);
-  const editOriginal = () => page!.locator('#connection-skills-table').locator(`[data-row-key="${created.id}"]`).getByRole('button', { name: '编辑', exact: true }).click();
+  const originalEdit = () => page!.locator('#connection-skills-table').locator(`[data-row-key="${created.id}"]`).getByRole('button', { name: '编辑', exact: true });
+  const editOriginal = () => originalEdit().click();
   const directoryPattern = '**/connection-skills/directory';
   await page.route(directoryPattern, async route => {
     const response = await route.fetch(), body = await response.json();
@@ -107,9 +108,10 @@ try {
       { path: `${basePath}/connection-skills`, title: '连接（新机制）' },
     ]));
   }, { workspaceId: initialWorkspaceId, basePath: `/workspaces/${initialWorkspaceId}` });
-  await page.goto(`${base}/connections`, { waitUntil: 'networkidle' });
+  await page.goto(`${base}/connections`, { waitUntil: 'domcontentloaded' });
   await page.waitForURL(`${base}/connection-skills`);
   await page.locator('#connection-skills-table').waitFor();
+  await originalEdit().waitFor();
   assert.equal(await page.locator('[data-nav="connections"]').count(), 0, 'Retired connection navigation is removed.');
   assert.equal(await page.locator('[data-nav="connection-skills"]').getAttribute('aria-label'), '连接');
   assert.equal(await page.getByRole('link', { name: '打开已有连接', exact: true }).count(), 0);
@@ -228,13 +230,14 @@ try {
   await page.locator('#connection-skills-table').getByText('浏览器连接', { exact: true }).waitFor();
   assert.equal(await page.locator('#create-connection-skill').isEnabled(), true, 'A local source diagnostic does not hide valid instances or definitions.');
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
-  await page.waitForLoadState('networkidle');
+  await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
   assertReads(initialReads, 'Window focus is not a connection-data change.');
   await page.locator('.shell-navigation').getByRole('link', { name: '服务', exact: true }).click();
   await page.waitForURL(`${base}/services`);
   await page.locator('[data-tab-key="dir:connection-skills"]:visible').click();
   await page.waitForURL(`${base}/connection-skills`);
-  await page.waitForLoadState('networkidle');
+  await originalEdit().waitFor();
+  await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
   assertReads(initialReads, 'Returning to a completed retained page does not reread its data.');
   const retryPage = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   let retryReads = 0, releaseInitial!: () => void, initialStarted!: () => void, initialFinished!: () => void;
@@ -319,8 +322,10 @@ try {
   assert.equal(await page.locator('#create-connection-skill').isEnabled(), true, 'Malformed directory data cannot clear valid definitions.');
   await page.unroute(directoryPattern);
   assertReads({ ...beforeFailedRefresh, directory: beforeFailedRefresh.directory + 2 }, 'Failed or malformed directory reads do not fall back to independent requests.');
+  const directoryRefresh = page.waitForResponse(response => response.request().method() === 'GET' && new URL(response.url()).pathname === `/api/v1/workspaces/${initialWorkspaceId}/connection-skills/directory`);
   await page.getByRole('button', { name: '刷新连接', exact: true }).click();
-  await page.waitForLoadState('networkidle');
+  await (await directoryRefresh).finished();
+  await page.locator('#create-connection-skill:not([disabled])').waitFor();
   const refreshedReads = { ...reads };
   assertReads({ ...beforeFailedRefresh, directory: beforeFailedRefresh.directory + 3 }, 'Each explicit refresh reads the combined current directory once.');
   await page.screenshot({ animations: 'disabled', path: path.join(screenshots, 'connection-skills-save-closed.png') });
@@ -464,7 +469,8 @@ try {
   await page.screenshot({ animations: 'disabled', path: path.join(screenshots, 'connection-skills-narrow.png') });
   await page.locator('#close-connection-skill-editor').click();
   fs.unlinkSync(path.join(skillRoot, 'assets/connection.yml'));
-  await page.reload({ waitUntil: 'networkidle' });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await originalEdit().waitFor();
   await editOriginal();
   await page.locator('#connection-skill-personal-summary').click();
   await page.locator('#connection-skill-personal-enabled').click();
@@ -498,9 +504,10 @@ try {
   await page.locator('.ant-modal-confirm').getByRole('button', { name: /^删\s*除$/ }).click();
   await addedRow.waitFor({ state: 'hidden' });
   assertReads(beforeDeleteReads, 'Delete removes the selected row without rereading other instances.');
-  await page.goto(`${base}/connections`, { waitUntil: 'networkidle' });
+  await page.goto(`${base}/connections`, { waitUntil: 'domcontentloaded' });
   await page.waitForURL(`${base}/connection-skills`);
   await page.locator('#connection-skills-table').waitFor();
+  await originalEdit().waitFor();
   assert.equal(connections.get(workspaceRoot, created.id).instance.name, '另一入口修改');
   assert.deepEqual(legacyRequests, [], 'Connection navigation never calls a retired API.');
   assert.deepEqual(browserErrors, []);

@@ -25,6 +25,7 @@ import { confirmModal } from '../lib/confirm';
 import { ReleaseAwarenessBanner } from '../features/installation/components/ReleaseAwarenessBanner';
 import { ArticleEditorProvider } from '../features/publication/components/ArticleEditorProvider';
 import { WorkspaceFileEditingProvider, useFileEditingDraftProtection } from './WorkspaceFileEditingProvider';
+import { WorkspaceSourceControlProvider } from './WorkspaceSourceControlProvider';
 import { readOptionalPreference, writeOptionalPreference } from '../lib/optional-preferences';
 
 type PreviewIdentity = {
@@ -312,6 +313,7 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
 
   return (
     <AppShellContext.Provider value={shellValue}>
+      <WorkspaceSourceControlProvider workspaceId={workspaceId}>
       <WorkbenchPreferencesProvider key={workspaceId || "global"} workspaceId={workspaceId}>
       <div className={"app-shell area-" + area}>
         <AppShellHeader isGlobal={isGlobal} brandHref={isGlobal ? '/' : workspaceHref('/overview')} development={webProfile === 'development'} workspaceName={isGlobal ? '全部工作空间' : (workspace?.name || '正在读取…')} workspaceMenuItems={workspaceMenuItems} area={area} workbenchHref={workspaceHref('/overview')} codeHref={workspaceHref('/code/source-control')} workspaceDestination={{to:workspaceDestination.current.path,state:workspaceDestination.current.state}} actions={<>
@@ -385,6 +387,7 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
       <WorkspaceSettingsDrawer open={settingsOpen} workspaceId={settingsWorkspaceId}
         onClose={() => setSettingsOpen(false)} onSaved={workspaceSettingsSaved} />
     </WorkbenchPreferencesProvider>
+    </WorkspaceSourceControlProvider>
     </AppShellContext.Provider>
   );
 }

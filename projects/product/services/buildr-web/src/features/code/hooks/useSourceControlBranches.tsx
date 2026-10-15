@@ -63,14 +63,14 @@ function BranchControl({workspaceId, repository, worktree, version, ready, inlin
     inspect={entry => branchSwitchImpact(repository, worktree, entries, entry)} onUse={use} onOpenPosition={onOpenPosition} onViewChanges={onViewChanges} />;
 }
 
-function HistoryControls({workspaceId, repository, worktree, version, branchRef, authorEmail, query, onBranchChange, onAuthorChange, onClear}: LocationProps & {
-  branchRef: string; authorEmail: string; query: string; onBranchChange(ref: string): void; onAuthorChange(email: string): void; onClear(): void;
+function HistoryControls({active = true, workspaceId, repository, worktree, version, branchRef, authorEmail, query, onBranchChange, onAuthorChange, onClear}: LocationProps & {
+  active?: boolean; branchRef: string; authorEmail: string; query: string; onBranchChange(ref: string): void; onAuthorChange(email: string): void; onClear(): void;
 }) {
   const input: CodeSourceControlInput = {repositoryId: repository.id, worktreeId: worktree.worktreeId};
   const sourceKey = JSON.stringify([workspaceId, input]);
   const branchLoader = useCallback((value: CodeSourceControlInput, signal: AbortSignal) => codeApi.branches(workspaceId, value, signal), [workspaceId]);
   const authorLoader = useCallback((value: CodeSourceControlInput, signal: AbortSignal) => codeApi.authors(workspaceId, value, signal), [workspaceId]);
-  const enabled = Boolean(workspaceId && worktree.status !== 'offline');
+  const enabled = Boolean(active && workspaceId && worktree.status !== 'offline');
   const branches = useSourceControlRead(sourceKey, input, branchLoader, enabled, version);
   const authorInput = {...input, branch: branchRef === 'HEAD' ? undefined : branchRef};
   const authors = useSourceControlRead(JSON.stringify([workspaceId, authorInput]), authorInput, authorLoader, enabled, version);
@@ -102,7 +102,7 @@ export function useSourceControlBranches(workspaceId: string, fetchActions?: Sou
       return {branch: current.branchRef === 'HEAD' ? undefined : current.branchRef, authorEmail: current.authorEmail || undefined};
     },
     selection,
-    rowControl: (repository, worktree, ready, context) => <BranchControl key={JSON.stringify([workspaceId, repository.id, worktree.worktreeId])} workspaceId={workspaceId} repository={repository} worktree={worktree} version={repository.readVersion || ''} ready={ready && !syncing(repository)} inlineVisible={context.branchVisible} rowVisible={context.rowVisible} openRequest={branchRequest.key === key(repository, worktree) ? branchRequest.serial : 0}
+    rowControl: (repository, worktree, ready, context) => <BranchControl key={JSON.stringify([workspaceId, repository.id, worktree.worktreeId])} workspaceId={workspaceId} repository={repository} worktree={worktree} version={repository.refsVersion || repository.readVersion || ''} ready={ready && !syncing(repository)} inlineVisible={context.branchVisible} rowVisible={context.rowVisible} openRequest={branchRequest.key === key(repository, worktree) ? branchRequest.serial : 0}
       onOpenPosition={worktreeId => openPosition(repository.id, worktreeId, 'history')} onViewChanges={() => openPosition(repository.id, worktree.worktreeId, 'changes')} />,
     rowActions: fetchActions && syncActions ? (repository, worktree, ready, context) => {
       const available = ready && worktree.status !== 'offline' && Boolean(repository.gitId && repository.checkoutId);
@@ -117,7 +117,7 @@ export function useSourceControlBranches(workspaceId: string, fetchActions?: Sou
     viewChanges:(repositoryId, worktreeId) => openPosition(repositoryId, worktreeId, 'changes'),
     historyControls(repository, worktree, controls) {
       const id = key(repository, worktree), current = range(repository, worktree);
-      return <HistoryControls key={id} workspaceId={workspaceId} repository={repository} worktree={worktree} version={repository.readVersion || ''} {...current} query={controls.query}
+      return <HistoryControls active={controls.active} key={id} workspaceId={workspaceId} repository={repository} worktree={worktree} version={repository.refsVersion || repository.readVersion || ''} {...current} query={controls.query}
         onBranchChange={branchRef => setRanges(previous => ({...previous, [id]: {...current, branchRef}}))}
         onAuthorChange={authorEmail => setRanges(previous => ({...previous, [id]: {...current, authorEmail}}))}
         onClear={() => { setRanges(previous => ({...previous, [id]: {branchRef: 'HEAD', authorEmail: ''}})); controls.clearSearch(); }} />;

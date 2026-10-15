@@ -29,7 +29,7 @@ function WorktreeLocationCard({repository, worktree, children, visible}: {reposi
   return <WorkspaceViewActiveContext.Provider value={viewActive && visible}><SelectableHoverCard sideBoundary=".source-control-sidebar" focusTrigger="keyboard" closeOnTriggerClick content={<article className="source-control-worktree-info" aria-label="工作树来源信息">
     <p className="source-control-worktree-info-task"><strong>任务：{taskLabel}</strong></p>
     <p className="source-control-worktree-info-location">{repository.name} · 工作树 · {worktree ? worktreeLabel(worktree) : '未读取'}</p>
-    <dl><dt>路径</dt><dd><code>{location || '目录不可读取'}</code></dd><dt>{worktree?.branch ? '分支' : '提交'}</dt><dd><code>{branch}</code></dd></dl>
+    <dl><dt>路径</dt><dd><code>{location || '目录不可读取'}</code></dd><dt>{worktree?.branch ? '分支' : '提交'}</dt><dd><code>{branch}</code></dd><dt>目录角色</dt><dd>{worktree ? [worktree.isRegistered && '工作空间登记目录', worktree.isMain && 'Git 主工作树'].filter(Boolean).join('、') || '独立工作树' : '尚未确认'}</dd></dl>
     {!worktree?.taskId && worktree?.taskDiagnostic && <p className="source-control-worktree-diagnostic">{worktree.taskDiagnostic}</p>}
     {!!worktree?.diagnostics.length && <p className="source-control-worktree-diagnostic">{worktree.diagnostics.join('；')}</p>}
     <Space wrap><Button size="small" aria-label="复制路径" icon={<CopyOutlined />} disabled={!location} onClick={() => void copy(location)}>复制路径</Button><Button size="small" aria-label={worktree?.branch ? '复制分支' : '复制提交标识'} icon={<CopyOutlined />} disabled={branch === '—'} onClick={() => void copy(branch)}>{worktree?.branch ? '复制分支' : '复制提交标识'}</Button></Space>

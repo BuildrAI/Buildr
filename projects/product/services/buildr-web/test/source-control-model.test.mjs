@@ -67,3 +67,10 @@ test('已确认没有工作树的失败首库不阻止默认查看后库，但�
   assert.equal(sourceControlDefaultSource([failed,pending,ready]),undefined,'更早库未完成时仍保持确定的默认顺序');
   assert.equal(sourceControlDefaultSource([failed,failed]),undefined,'全部失败时不伪造默认来源');
 });
+
+test('首登记库完成后优先其实际登记工作树，Git主工作树角色不替代登记目录',()=>{
+  const observed=catalog('first');observed.worktrees[0].isRegistered=false;observed.worktrees[1].isRegistered=true;
+  const first=sourceControlRepository(observed),next=sourceControlRepository(catalog('next'));
+  assert.equal(sourceControlDefaultSource([first,next]).repository,first);
+  assert.equal(sourceControlDefaultSource([first,next]).worktree.worktreeId,'first-linked');
+});

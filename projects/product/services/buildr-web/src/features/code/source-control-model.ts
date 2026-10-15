@@ -47,7 +47,7 @@ export type SourceControlChange = ChangedFileEntry & { worktreeId?: string | nul
 export type SourceControlCommit = Omit<TaskCommit, 'taskId' | 'taskTitle'> & { worktreeId?: string | null; files: SourceControlChange[]; branches: string[]; tags: string[]; taskId?: string | null; taskTitle?: string | null; taskDiagnostic?: string | null };
 export type SourceControlRepository = {
   id: string; name: string; location: string; taskLocation?: string; taskBranch?: string | null; readonly pending?: boolean;
-  gitId?: string | null; checkoutId?: string | null; readVersion?: string;
+  gitId?: string | null; checkoutId?: string | null; readVersion?: string; refsVersion?: string;
   branch: string | null; branches: string[]; ahead: number | null; behind: number | null;
   status: 'ready' | 'clean' | 'offline' | 'partial'; simulated: boolean; services: string[];
   worktrees: SourceControlWorktree[]; worktreeCount?: number | null;
@@ -65,7 +65,7 @@ export type SourceControlWorktree = {
 export function sourceControlDefaultSource(repositories: SourceControlRepository[]) {
   for (const repository of repositories) {
     if (repository.pending) return undefined;
-    const worktree = repository.worktrees.find(item => item.isMain) || repository.worktrees[0];
+    const worktree = repository.worktrees.find(item => item.isRegistered) || repository.worktrees.find(item => item.isMain) || repository.worktrees[0];
     if (worktree) return {repository, worktree};
   }
   return undefined;

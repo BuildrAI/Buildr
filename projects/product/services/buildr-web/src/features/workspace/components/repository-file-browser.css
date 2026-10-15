@@ -38,6 +38,9 @@
 .repository-root-info>.ant-btn { margin-top:8px; }
 .repository-status { font-size:10px; font-style:normal; font-weight:650; padding-left:6px; }
 .repository-status-M { color:#b98923; }.repository-status-U { color:#519565; }
+.repository-status-A { color:#519565; }.repository-status-D,.repository-status-C { color:#c45b5b; }.repository-status-R { color:#5486b7; }
+.repository-tree-directory,.repository-root-name { display:inline-flex; align-items:center; gap:7px; }
+.repository-directory-change-dot { display:inline-block; flex:none; width:5px; height:5px; border-radius:50%; background:#b98923; }
 .repository-tree-footer { padding:10px 16px; font-size:11px; border-top:1px solid var(--soft-line,#e3e9e7); color:var(--soft-muted,#77817e); }
 .repository-browser-columns.tree-hidden .repository-browser-tree { width:44px; flex-basis:44px; }
 .repository-browser-columns.tree-hidden .repository-tree-heading { padding:8px 5px; }

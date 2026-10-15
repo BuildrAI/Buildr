@@ -408,6 +408,7 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
     'test/integration/native-session-links.test.ts',
     'test/integration/dsh-desktop-backend.test.ts',
     'test/integration/dsh-page-observations.test.ts',
+    'test/integration/source-control-observation-http.test.ts',
     'test/integration/agent-operations.test.ts',
     'test/integration/code-commit-application.test.ts',
     'test/integration/code-commit-message-http.test.ts',

@@ -86,9 +86,11 @@ export function FileCodeEditor(props: Props) {
     if (!editor || incoming.current === props.state) return;
     incoming.current = props.state;
     if (editor.state === props.state) return;
-    const scroll = props.initialScrollTop !== undefined && editor.state.doc === props.state.doc ? { top: editor.scrollDOM.scrollTop, left: editor.scrollDOM.scrollLeft } : null;
+    // Restore through CodeMirror so its own layout anchoring cannot move the viewport
+    // again after an external save replaces this document's editor state.
+    const scroll = props.initialScrollTop !== undefined ? editor.scrollSnapshot() : null;
     editor.setState(props.state);
-    if (scroll) editor.requestMeasure({ read: () => scroll, write: position => { if (view.current === editor) { editor.scrollDOM.scrollTop = position.top; editor.scrollDOM.scrollLeft = position.left; } } });
+    if (scroll) editor.dispatch({ effects: scroll, annotations: Transaction.addToHistory.of(false) });
     presentation(editor, false);
     current.current.onViewReady?.(editor);
   }, [props.state]);

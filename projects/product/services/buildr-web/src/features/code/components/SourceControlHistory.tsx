@@ -7,6 +7,7 @@ import { CommitInfoPopover } from './CommitInfoPopover';
 import { layerFile } from './SourceControlRepositories';
 
 type Props = {
+  active?: boolean;
   expanded: Record<string, boolean>; onToggle(key: string, defaultExpanded?: boolean): void;
   commits: SourceControlCommit[]; selectedHash?: string; selectedFileKey: string | null;
   reader: SourceControlReader; readKey: string; version: string; repositoryId: string; worktreeId: string; worktreeLocation: string;
@@ -18,11 +19,11 @@ export function SourceControlHistory(props: Props) {
   return <ol className="source-control-graph">{props.commits.map(commit => <CommitRow key={commit.hash} {...props} commit={commit} />)}</ol>;
 }
 
-function CommitRow({commit, expanded: expansion, onToggle, selectedHash, selectedFileKey, reader, readKey, version, repositoryId, worktreeId, worktreeLocation, onOpenTask, onSelect, onPick}: Props & {commit: SourceControlCommit}) {
+function CommitRow({active = true, commit, expanded: expansion, onToggle, selectedHash, selectedFileKey, reader, readKey, version, repositoryId, worktreeId, worktreeLocation, onOpenTask, onSelect, onPick}: Props & {commit: SourceControlCommit}) {
   const identity = 'history:' + JSON.stringify([repositoryId, worktreeId, commit.hash]);
   const expanded = expansion[identity] ?? false;
   const input = {repositoryId, worktreeId, commitHash: commit.hash};
-  const read = useSourceControlRead(JSON.stringify([readKey, input]), input, reader.commit, expanded, version);
+  const read = useSourceControlRead(JSON.stringify([readKey, input]), input, reader.commit, active && expanded, version);
   const detail = read.data ? sourceControlCommit(read.data.commit, read.data.files) : commit;
   const files = detail.files.map(file => layerFile(file, commit.hash));
   const pathHints = sourceControlFilePathHints(files);

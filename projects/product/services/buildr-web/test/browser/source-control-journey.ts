@@ -2,6 +2,10 @@ import assert from 'node:assert/strict';
 import { runSourceControlActionsJourney } from './source-control-actions-journey.ts';
 import { runSourceControlBranchesJourney } from './source-control-branches-journey.ts';
 import { runSourceControlEditableDiffJourney } from './source-control-editable-diff-journey.ts';
+import { runSourceControlLiveRefreshJourney } from './source-control-live-refresh-journey.ts';
+import { runSourceControlSourceSelectionJourney } from './source-control-source-selection-journey.ts';
+import { runSourceControlSourceFeedbackJourney } from './source-control-source-feedback-journey.ts';
+import { runSourceControlRefreshIntegrationJourney } from './source-control-refresh-integration-journey.ts';
 
 /** The host owns isolated Git data; every successful read below comes from production HTTP. */
 export async function runSourceControlJourney({t, page, workspaceUrl, capture, fixture, expectedBrowserErrors}: any) {
@@ -655,7 +659,7 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
       await page.waitForTimeout(450);
       assert.match(await root().locator('.task-diff-comparison').innerText(), /未暂存/);
       assert.ok((await diff().innerText()).includes('sourceControlWorking = 34'), '迟到暂存响应不能覆盖当前未暂存差异');
-    } finally { release(); await page.unroute('**/code/diff?**', delayed); }
+    } finally { release(); await page.unrouteAll({behavior:'wait'}); }
     const failed = async (route: any) => route.fulfill({status: 503, contentType: 'application/json', body: JSON.stringify({error: {code: 'scm_fixture_unavailable', message: '隔离测试清单暂不可读取'}})});
     const catalogRoute = /\/code\/source-control-inventory(?:\?|$)/;
     expectedBrowserErrors.add('/code/source-control-inventory');
@@ -666,7 +670,7 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
       assert.ok(await root().locator('.source-control-repository').count() >= 2);
       assert.equal(await row('未暂存').count(), 1);
       await diff().getByText('sourceControlWorking = 34', {exact: false}).waitFor();
-    } finally { await page.unroute(catalogRoute, failed); }
+    } finally { await page.unrouteAll({behavior:'wait'}); }
     await root().getByRole('button', {name: '刷新源代码管理', exact: true}).click();
     await root().getByRole('alert').filter({hasText: '隔离测试清单暂不可读取'}).waitFor({state: 'hidden'});
     await noOverflow();
@@ -778,6 +782,9 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
       // Only display metadata changes; the source identities, Git facts and task route remain real.
       await route.fulfill({response, json:{...actual, repositories:actual.repositories.map((repository:any) => repository.id !== value.repositoryId ? repository : {...repository, worktrees:repository.worktrees.map((worktree:any) => worktree.worktreeId !== value.worktreeId ? worktree : {...worktree, name:sourceName})})}});
     };
+    // Install the substitute without an old document's automatic observation
+    // already in flight, and drain it before any later document navigation.
+    await page.goto('about:blank');
     await page.route(matchesCatalog, rename);
     try {
       await open(); await selectWorktree(value);
@@ -873,6 +880,10 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
       assert.equal(await menuButton.evaluate((element:HTMLElement) => document.activeElement === element), true, '关闭管理层焦点返回可见菜单');
       await menuButton.click(); await menu().getByRole('menuitem', {name:'管理分支', exact:true}).click(); await manager.waitFor();
       await parentFold.focus(); await parentFold.press('Enter'); await manager.waitFor({state:'hidden'});
+      assert.equal(await parentFold.getAttribute('aria-expanded'), 'false');
+      // hidden on the parent hides the portal immediately; let its passive close
+      // effect finish before reopening the retained row and checking for replay.
+      await page.evaluate(async () => {await new Promise(requestAnimationFrame); await new Promise(requestAnimationFrame);});
       await parentFold.press('Enter'); assert.equal(await manager.isVisible(), false, '键盘重新展开父库不重播旧管理请求');
       await menuButton.click(); await menu().getByRole('menuitem', {name:'查看状态', exact:true}).click(); const details = statusDetails(); await details.waitFor();
       assert.equal(await details.locator('dd').nth(2).innerText(), '浏览器任务');
@@ -880,8 +891,9 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
       await parentFold.press('Enter'); assert.equal(await details.count(), 0, '键盘重新展开父库不重播旧状态详情');
       await capture(page, 'source-control-name-priority-menu-260px.png'); await noOverflow();
       await menuButton.click(); await menu().getByRole('menuitem', {name:'打开关联任务', exact:true}).click(); await assertTaskIdentity();
+      await page.unrouteAll({behavior:'wait'});
       await page.goto(workspaceUrl + '/code/source-control'); await root().locator('.source-control-repository-copy').first().waitFor(); await separator.dblclick();
-    } finally {await page.unroute(matchesCatalog, rename);}
+    } finally {await page.unrouteAll({behavior:'wait'});}
   });
 
   await scenario('同库全部真实工作树分组，同路径两层及全文保持各自版本', async () => {
@@ -941,6 +953,9 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
           await separator.press('Home');
           await page.waitForFunction(() => (document.querySelector('.code-source-control-page:not([hidden]) .source-control-sidebar')?.getBoundingClientRect().width || Infinity) <= 261);
         }
+        // ResizeObserver schedules row density on the following animation
+        // frame; the containing sidebar's new width alone is not row readiness.
+        await page.evaluate(async () => {await new Promise(requestAnimationFrame); await new Promise(requestAnimationFrame);});
         const sidebar = await root().locator('.source-control-sidebar').boundingBox();
         assert.ok(sidebar && Math.abs(sidebar.width - Number.parseInt(width)) <= 2, '本轮测量实际目录宽度：' + JSON.stringify({width, sidebar}));
         for (const remote of expected.remote) {
@@ -1276,7 +1291,7 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
       await selectWorktree(alpha); await fileRow(alpha.worktreeId, 'unstaged', alpha.path).click(); await started; await selectFile(beta, 'unstaged'); release();
       await page.waitForTimeout(450); assert.ok((await diff().innerText()).includes(beta.workingText.trim()));
       assert.ok(!(await diff().innerText()).includes(alpha.workingText.trim()));
-    } finally { release(); await page.unroute('**/code/diff?**', delayed); }
+    } finally { release(); await page.unrouteAll({behavior:'wait'}); }
     await root().locator('.source-control-browse-tabs').getByText('提交历史', {exact: true}).click();
     const modes = root().locator('.source-control-browse-tabs'); assert.equal(await modes.getByRole('radio', {name: '提交历史', exact: true}).isChecked(), true);
     for (const value of [alpha, peer]) {
@@ -1321,7 +1336,9 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     await root().getByRole('button', {name: '查看主工作树 · ' + repository.name, exact: true}).click();
     assert.equal(await root().locator('[data-change-worktree]:visible').count(), 1);
     assert.equal(await checkoutGroup(mainWorktreeId).isVisible(), true);
-    const refreshed = page.waitForResponse((returned: any) => { const url = new URL(returned.url()); return url.pathname.endsWith('/code/source-control') && url.searchParams.get('taskId') === 'browser-task'; });
+    // Task preselection is retained locally; explicit refresh reconciles the shared
+    // workspace catalog rather than repeating the task's initial selection read.
+    const refreshed = page.waitForRequest((request: any) => { const url = new URL(request.url()); return url.pathname.endsWith('/code/source-control') && !url.searchParams.has('taskId') && !url.searchParams.has('repositoryId'); });
     const refreshButton = root().getByRole('button', {name: '刷新源代码管理', exact: true}); await refreshButton.click(); await refreshed;
     await refreshButton.locator('.anticon-spin').waitFor({state: 'hidden'});
     assert.equal(await root().locator('[data-change-worktree]:visible').count(), 1);
@@ -1337,6 +1354,10 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
   await runSourceControlEditableDiffJourney({t,page,workspaceUrl,capture,fixture,expectedBrowserErrors,scenario});
   await runSourceControlBranchesJourney({t,page,workspaceUrl,capture,fixture,expectedBrowserErrors,scenario});
   await runSourceControlActionsJourney({t,page,workspaceUrl,capture,fixture,scenario});
+  await runSourceControlLiveRefreshJourney({t,page,workspaceUrl,capture,fixture,expectedBrowserErrors,scenario});
+  await runSourceControlSourceSelectionJourney({t,page,workspaceUrl,capture,expectedBrowserErrors,fixture:{...fixture,prepareWorktrees:worktrees},scenario});
+  await runSourceControlSourceFeedbackJourney({t,page,workspaceUrl,capture,fixture:{...fixture,prepareWorktrees:worktrees},expectedBrowserErrors,scenario});
+  await runSourceControlRefreshIntegrationJourney({t,page,workspaceUrl,capture,fixture,expectedBrowserErrors,scenario});
   if (focus) {
     assert.ok(selectedCases.length, '源码管理 focus 必须选择至少一个真实场景');
     process.stderr.write('[buildr-browser-code-focus] ' + JSON.stringify({focus,cases:selectedCases}) + '\n');

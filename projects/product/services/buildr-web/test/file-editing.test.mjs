@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { EditorState, Facet, StateEffect } from '@codemirror/state';
+import { EditorSelection, EditorState, Facet, StateEffect } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import { undoDepth } from '@codemirror/commands';
 import { FileEditingSessionStore } from '../src/components/file-editing/file-editing-session.ts';
@@ -143,6 +143,41 @@ test('failure retains input, leaves other files usable, and retries the current 
     fail = false; store.change('workspace:file', 'latest draft'); await store.saveNow('workspace:file');
     assert.equal(store.getSnapshot()['workspace:file'].diskContent, 'latest draft');
   } finally { store.clearTimers(); }
+});
+
+test('clean external updates preserve valid multiple selections and clear old-content undo history', async () => {
+  const {store,external}=memory(file('original content long enough for selection'));
+  const id='workspace:file';
+  try {
+    store.change(id,'saved local content long enough for selection');await store.saveNow(id);
+    let state=store.getSnapshot()[id].editorState;
+    const selection=EditorSelection.create([EditorSelection.range(1,3),EditorSelection.range(15,7)],1);
+    store.applyTransactions(id,[state.update({selection})]);
+    assert.ok(undoDepth(store.getSnapshot()[id].editorState)>0,'saved input must initially have undo history');
+    const content='externally replaced content still long enough';external(content);await store.refresh(id);
+    state=store.getSnapshot()[id].editorState;
+    assert.ok(state.selection.eq(selection,true),'external refresh keeps the 7..15 selection, its direction, main range and other cursors');
+    assert.equal(state.selection.mainIndex,1);assert.equal(state.selection.main.anchor,15);assert.equal(state.selection.main.head,7);
+    assert.equal(undoDepth(state),0,'external contents never join the previous body undo history');
+    store.undo(id);assert.equal(store.getSnapshot()[id].content,content);
+  } finally {store.clearTimers();}
+});
+
+test('clean external updates clamp selections after a shorter or empty document without replacing another session', async () => {
+  const {store,external}=memory(file('original content long enough for selection'));
+  const id='workspace:file',other=file('another source',{id:'workspace:other'});store.ensure(other);
+  try {
+    const state=store.getSnapshot()[id].editorState;
+    store.applyTransactions(id,[state.update({selection:EditorSelection.create([EditorSelection.range(1,3),EditorSelection.range(15,7)],1)})]);
+    external('short');await store.refresh(id);
+    let updated=store.getSnapshot()[id].editorState;
+    assert.deepEqual(updated.selection.ranges.map(range=>[range.anchor,range.head]),[[1,3],[5,5]]);
+    assert.equal(updated.selection.mainIndex,1);assert.equal(updated.doc.toString(),'short');
+    external('');await store.refresh(id);updated=store.getSnapshot()[id].editorState;
+    assert.deepEqual(updated.selection.ranges.map(range=>[range.anchor,range.head]),[[0,0]]);
+    assert.equal(updated.selection.mainIndex,0);assert.equal(updated.doc.length,0);assert.equal(undoDepth(updated),0);
+    assert.equal(store.getSnapshot()[other.id].content,other.content);
+  } finally {store.clearTimers();}
 });
 
 test('clean external reload and explicit disk adoption replace the correct session only', async () => {

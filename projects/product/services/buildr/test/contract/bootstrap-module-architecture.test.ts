@@ -19,7 +19,7 @@ import { AGENT_OPERATIONS_APPLICATION } from '../../src/modules/agent-operations
 import { CODEX_DESKTOP_APPLICATION } from '../../src/modules/codex-desktop/module.ts';
 import { NATIVE_SESSION_LINKS_APPLICATION } from '../../src/modules/native-session-links/module.ts';
 import { DSH_DESKTOP_APPLICATION, DSH_PAGE_OBSERVATIONS } from '../../src/modules/dsh-desktop/module.ts';
-import { CODE_APPLICATION, CODE_GENERATION_APPLICATION } from '../../src/modules/code/module.ts';
+import { CODE_APPLICATION, CODE_GENERATION_APPLICATION, CODE_SOURCE_CONTROL_OBSERVATIONS } from '../../src/modules/code/module.ts';
 
 test('OpenSpec 独占通用内容查询，任务能力只提供关联组合', () => {
   const runtime = createProductRuntime();
@@ -288,9 +288,9 @@ test('Workspace、Agent Assets、Task、Web 与 Doctor modules 暴露显式 capa
   }, {
     id: 'code',
     requires: [WORKSPACE_APPLICATION, WORKSPACE_QUERY, TASK_QUERY_APPLICATION, TASK_WORKTREE_PROVIDER, AGENT_OPERATIONS_APPLICATION, AGENT_ASSETS_SOURCE_READ],
-    provides: [CODE_APPLICATION, CODE_GENERATION_APPLICATION],
+    provides: [CODE_APPLICATION, CODE_GENERATION_APPLICATION, CODE_SOURCE_CONTROL_OBSERVATIONS],
     contributions: {cli:['code repositories','code directory','code file','code search','code source-control','code source-control-inventory','code commit-context','code sync-context','code branches','code authors','code history','code commit','code diff','code source-file'],http:['code.files.http', 'code.generation.http'],diagnostics:[]},
-    lifecycle: 'none',
+    lifecycle: 'managed',
   }, {
     id: 'connection-skills',
     requires: [WORKSPACE_APPLICATION, WORKSPACE_QUERY, WORKSPACE_TASK_SUPPORT, AGENT_ASSETS_SOURCE_READ, AGENT_ASSETS_CONNECTION_IMPACT_BINDER],

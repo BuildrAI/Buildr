@@ -14,7 +14,8 @@ export async function runLayoutJourney({ t, page, workspaceUrl, capture }: any) 
       await page.setViewportSize({width, height:900});
       await page.goto(`${workspaceUrl}/overview`);
       await page.locator('#workbench-overview').waitFor();
-      await page.waitForLoadState('networkidle');
+      // The workspace menu below proves its own readiness. Shared code
+      // observation deliberately keeps a long-poll request in flight.
       const trigger = page.getByRole('button', {name:'切换工作空间', exact:true});
       await trigger.click();
       const menu = page.locator('.workspace-switcher-popup:visible');
@@ -585,7 +586,8 @@ export async function runLayoutJourney({ t, page, workspaceUrl, capture }: any) 
       await page.waitForFunction(() => document.querySelector('#task-detail-refresh')?.getAttribute('aria-busy') === 'false');
       assert.equal(counts.first, beforeRefresh + 1, '刷新只读取一次任务记录正文');
       assert.equal(counts.diffs, 0, '说明刷新仍不读取文件差异');
-      await page.waitForLoadState('networkidle');
+      // The refreshed heading and idle task refresh control above are the
+      // completion boundary; background code observation remains connected.
     } finally {
       await page.goto('about:blank');
       release?.(); releaseList?.(); page.off('request', scans);

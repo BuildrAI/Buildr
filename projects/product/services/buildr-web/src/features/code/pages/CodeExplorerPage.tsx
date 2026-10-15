@@ -8,6 +8,7 @@ import { ObjectTabStrip } from '../../../components/ObjectTabStrip';
 import { tabElementId } from '../../../lib/tab-navigation';
 import { RepositoryFileBrowser, type RepositoryPreviewFile, type RepositoryTreeScope } from '../../workspace/components/RepositoryFileBrowser';
 import { CodeTreePane } from '../components/CodeTreePane';
+import { CodeExplorerNotices } from '../components/CodeExplorerNotices';
 import { useCodeExplorer } from '../hooks/useCodeExplorer';
 import { codeApi } from '../api/code-api';
 import { useEditableFile } from '../hooks/useEditableFile';
@@ -15,7 +16,8 @@ import { useFileEditingContext } from '../../../app/FileEditingContext';
 import { WorkspaceViewActiveContext } from '../../../app/pageTabs';
 import { FileEditingPane } from '../../../components/file-editing/FileEditingPane';
 import { codeBrowserKey, codeLocationKey, codeReturnTarget, relativeCodeLink, type CodeTaskEntry } from '../code-navigation';
-import { codeWorktreeGroupScope } from '../code-filters';
+import { sourceControlDecorations } from '../source-control-decorations';
+import { codeWorktreeLabel, codeWorktreeGroupLabel } from '../code-source-labels';
 import { workspaceHref } from '../../../lib/labels';
 import type { MarkdownRenderOptions } from '../../../markdown';
 import '../code-explorer.css';
@@ -23,8 +25,9 @@ import '../code-explorer.css';
 export function CodeExplorerPage() {
   const panelId = useId();
   const {workspaceId,setBreadcrumbParts}=useAppShell();
-  const state=useCodeExplorer(workspaceId||'');
+  const viewActive=useContext(WorkspaceViewActiveContext);
   const location=useLocation(),navigate=useNavigate(),{message}=App.useApp();
+  const state=useCodeExplorer(workspaceId||'',viewActive,location.state?.codeEntry?location.key:undefined);
   const [host,setHost]=useState<HTMLDivElement|null>(null),[treeHidden,setTreeHidden]=useState(()=>window.innerWidth<680);
   const [processed,setProcessed]=useState(''),[media,setMedia]=useState<Record<string,string>>({});
   const [selection,setSelection]=useState<{key:string;lines:[number,number]|null}>({key:'',lines:null});
@@ -32,7 +35,6 @@ export function CodeExplorerPage() {
   useEffect(()=>{setBreadcrumbParts(['代码','资源管理器']);},[setBreadcrumbParts]);
   useEffect(()=>{if(processed===location.key)return;setProcessed(location.key);const entry=location.state?.codeEntry as CodeTaskEntry|undefined;if(entry)void state.applyEntry(entry);else state.clearEntry();},[location.key,location.state,processed,state.applyEntry,state.clearEntry]);
   const active=state.active,file=active?state.files[active.key]:undefined;
-  const viewActive=useContext(WorkspaceViewActiveContext);
   const editing=useFileEditingContext();
   const currentText=Boolean(active?.checkoutId&&!active.commitHash&&file&&!file.page&&!file.truncated&&(file.kind==='markdown'||file.kind==='text')&&!state.fileErrors[active.key]);
   const editable=useEditableFile(workspaceId,currentText&&active?.checkoutId?{kind:'code',repositoryId:active.repositoryId,checkoutId:active.checkoutId,path:active.path}:null,file?.observedAt);
@@ -41,17 +43,17 @@ export function CodeExplorerPage() {
   const imageHrefs=useMemo(()=>[...new Set([...markdownContent.matchAll(/!\[[^\]]*\]\(([^\s)]+)(?:\s+[^)]*)?\)/g)].map(match=>match[1]))].slice(0,8),[markdownContent]);
   const selectedRepo=state.catalog?.repositories.find(r=>r.id===active?.repositoryId);
   const selectedMember=state.catalog?.worktrees.find(member=>member.repositoryId===active?.repositoryId&&member.id===active?.checkoutId);
-  const selectedGroup=state.catalog?.worktreeGroups.find(group=>group.id===selectedMember?.groupId);
   const treeRepositories=useMemo<RepositoryTreeScope[]>(()=>state.sources.map(({id,source,member})=>{
     const prefix=state.directoryKey(source,'');
     const directories=Object.entries(state.directories).filter(([key])=>key.startsWith(prefix)).map(([,value])=>value);
     const items=new Map<string,RepositoryPreviewFile>();
-    for(const directory of directories)for(const item of directory.entries)items.set(item.path,{path:item.path,content:'',kind:'text',directory:item.kind==='directory',link:item.kind==='link',ignored:item.ignored});
-    const observed=directories.find(dir=>dir.path===''),group=state.catalog?.worktreeGroups.find(group=>group.id===member.groupId);
-    const locationLabel=source.commitHash?'历史提交':group?.name||'工作树';
+    const decoration=sourceControlDecorations(state.sourceControl.data,source.repositoryId,source.checkoutId,Boolean(source.commitHash));
+    for(const directory of directories)for(const item of directory.entries)items.set(item.path,{path:item.path,content:'',kind:'text',directory:item.kind==='directory',link:item.kind==='link',ignored:item.ignored,status:item.kind==='directory'?undefined:decoration.files.get(item.path),hasChanges:item.kind==='directory'&&decoration.directories.has(item.path)});
+    const observed=directories.find(dir=>dir.path===''),label=codeWorktreeLabel(member,state.catalog?.worktrees);
+    const locationLabel=(source.commitHash?'历史提交 · ':'')+label.name;
     return {id,repositoryId:member.repositoryId,name:state.catalog?.repositories.find(r=>r.id===member.repositoryId)?.name||member.repositoryId,
-      location:observed?.source.location||member.path,locationLabel,version:source.commitHash||observed?.source.version,files:[...items.values()]};
-  }),[state.sources.map(item=>item.id+':'+item.member.available).join(','),state.catalog,state.directories,state.showIgnored,state.directoryKey]);
+      location:observed?.source.location||member.path,locationLabel,version:source.commitHash||observed?.source.version,files:[...items.values()],hasChanges:decoration.hasChanges};
+  }),[state.sources.map(item=>item.id+':'+item.member.available).join(','),state.catalog,state.directories,state.showIgnored,state.directoryKey,state.sourceControl.data]);
   const loadedKeys=state.sources.flatMap(({id,source})=>{
     const prefix=state.directoryKey(source,'');
     return [...new Set([...Object.keys(state.directories),...Object.keys(state.directoryErrors)])].filter(key=>key.startsWith(prefix)).map(key=>id+'::'+key.slice(prefix.length));
@@ -59,14 +61,12 @@ export function CodeExplorerPage() {
   const files:RepositoryPreviewFile[]=file?[{path:file.path,kind:file.kind,content:file.content,image:file.kind==='image'?file.content:undefined}]:[];
   const sourceName=(browserId:string)=>{
     const item=state.sources.find(source=>source.id===browserId),repo=state.catalog?.repositories.find(r=>r.id===item?.source.repositoryId);
-    const group=state.catalog?.worktreeGroups.find(group=>group.id===item?.member.groupId);
-    return (repo?.name||'')+(group?' · '+group.name:'')+(item?.source.commitHash?' · '+item.source.commitHash.slice(0,7):'');
+    return (repo?.name||'')+(item?' · '+codeWorktreeLabel(item.member,state.catalog?.worktrees).name:'')+(item?.source.commitHash?' · '+item.source.commitHash.slice(0,7):'');
   };
   const searchResults=state.searchResults.flatMap(result=>result.matches.map(match=>({path:match.path,kind:'text' as const,content:'',repositoryId:result.browserId,sourceRepositoryId:result.repositoryId,repositoryName:sourceName(result.browserId),line:match.line||undefined,excerpt:match.excerpt,occurrences:match.occurrences})));
-  const diagnostics=[...(state.catalog?.diagnostics.map(d=>d.message)||[]),...state.searchErrors,...state.searchResults.flatMap(result=>result.diagnostics.map(d=>d.message))];
   const searchPartial=state.searchResults.some(result=>result.truncated);
-  const directoryFailures=state.sources.flatMap(({source,id})=>{
-    const prefix=state.directoryKey(source,'');return Object.entries(state.directoryErrors).filter(([key])=>key.startsWith(prefix)).map(([key,error])=>sourceName(id)+' / '+(key.slice(prefix.length)||'根目录')+'：'+error);
+  const directoryFailures=state.sources.flatMap(({source,id,member})=>{
+    const prefix=state.directoryKey(source,'');return Object.entries(state.directoryErrors).filter(([key])=>key.startsWith(prefix)).map(([key,error])=>sourceName(id)+' · '+member.path+(key.slice(prefix.length)?'/'+key.slice(prefix.length):'')+'：'+error);
   });
   const partial=state.sources.some(({source})=>Object.entries(state.directories).some(([key,dir])=>key.startsWith(state.directoryKey(source,''))&&dir.truncated));
   const returnTarget=codeReturnTarget(state.entry,workspaceHref(workspaceId,''));
@@ -95,27 +95,32 @@ export function CodeExplorerPage() {
     const name=tab.path.split('/').at(-1)||tab.path;
     const repo=state.catalog?.repositories.find(r=>r.id===tab.repositoryId);
     const duplicate=state.tabs.some(other=>other.key!==tab.key&&other.path.split('/').at(-1)===name);
-    const member=state.catalog?.worktrees.find(item=>item.id===tab.checkoutId),group=state.catalog?.worktreeGroups.find(item=>item.id===member?.groupId);
-    const sourceLabel=duplicate?(repo?.code||repo?.name||tab.repositoryId)+' · '+(group?.name||'未知工作树')+(tab.commitHash?' · '+tab.commitHash.slice(0,7):''):tab.commitHash?tab.commitHash.slice(0,7):'';
+    const member=state.catalog?.worktrees.find(item=>item.id===tab.checkoutId),worktreeName=member?codeWorktreeLabel(member,state.catalog?.worktrees).name:'未知工作树';
+    const sourceLabel=duplicate?(repo?.code||repo?.name||tab.repositoryId)+' · '+worktreeName+(tab.commitHash?' · '+tab.commitHash.slice(0,7):''):tab.commitHash?tab.commitHash.slice(0,7):'';
     return {key:tab.key,kind:/\.md$/i.test(tab.path)?'doc' as const:'svc' as const,
-      title:(repo?.name||'')+' / '+tab.path+' · '+(group?.name||'')+' · '+(tab.commitHash||member?.path||'当前文件'),
+      title:(repo?.name||'')+' / '+tab.path+' · '+worktreeName+' · '+(tab.commitHash||member?.path||'当前文件'),
       label:<>{name}{sourceLabel&&<Tag color={tab.commitHash?'gold':undefined}>{sourceLabel}</Tag>}</>,
       accessibleLabel:name+(sourceLabel?' '+sourceLabel:''),closeLabel:'关闭文件 '+tab.path};
   });
   const repositoryOptions=[...state.filterOptions.repositories.map(repo=>({value:repo.id,label:repo.name})),...state.scope.filter(id=>!state.filterOptions.repositories.some(repo=>repo.id===id)).map(id=>({value:id,label:state.catalog?(state.catalog.repositories.find(repo=>repo.id===id)?.name||id)+'（不在所选工作树中）':'正在读取代码库…',disabled:true}))];
-  const groupOptions=[...state.filterOptions.groups.map(group=>({value:group.id,label:group.name})),...(state.worktreeScope&&!state.filterOptions.groups.some(group=>group.id===state.worktreeScope)?[state.worktreeScope]:[]).map(id=>({value:id,label:id==='main'?'主目录':state.catalog?(state.catalog.worktreeGroups.find(group=>group.id===id)?.name||id)+'（不在所选代码库中）':'正在读取工作树…',disabled:true}))];
+  const currentGroupLabel=codeWorktreeGroupLabel(state.catalog,state.worktreeScope,state.scope);
+  const groupOptions=[...state.filterOptions.groups.map(group=>{
+    const label=codeWorktreeGroupLabel(state.catalog,group.id,state.scope);
+    const count=state.catalog?.worktrees.filter(member=>member.groupId===group.id&&(!state.scope.length||state.scope.includes(member.repositoryId))).length||0;
+    return {value:group.id,label:label.name,role:label.role+(count>1?' · '+count+' 个目录':''),title:label.description};
+  }),...(state.worktreeScope&&!state.filterOptions.groups.some(group=>group.id===state.worktreeScope)?[state.worktreeScope]:[]).map(id=>({value:id,label:id.startsWith('unavailable:')?'所选工作树暂不可用':state.catalog?codeWorktreeGroupLabel(state.catalog,id).name+'（不在所选代码库中）':'正在读取工作树…',role:'',title:'',disabled:true}))];
   const taskFallback=Boolean(state.entry?.taskId&&state.catalog&&!state.catalog.worktreeGroups.some(group=>group.kind==='task'&&group.taskId===state.entry!.taskId));
   const inScope=Boolean(active&&state.sources.some(item=>codeLocationKey(item.source)===codeLocationKey(active)));
   const includeActive=()=>{
     if(!active)return;const member=state.catalog?.worktrees.find(item=>item.id===active.checkoutId);
     if(!member){message.info('此文件的工作树暂不可确认，请从目录选择实际来源。');return;}
-    if(state.scope.length&&!state.scope.includes(active.repositoryId))state.setScope([...state.scope,active.repositoryId]);
-    if(codeWorktreeGroupScope(state.worktreeScope)!==member.groupId)state.setWorktreeScope(member.groupId);
+    state.setSourceFilters(state.scope.length&&!state.scope.includes(active.repositoryId)?[...state.scope,active.repositoryId]:state.scope,member.groupId);
   };
   const context=<section className="code-root-selectors" aria-label="代码库与工作树筛选">
     <Select mode="multiple" allowClear maxTagCount={1} aria-label="筛选代码库" placeholder="全部代码库" value={state.scope} onChange={state.setScope} options={repositoryOptions} />
-    <Select allowClear showSearch optionFilterProp="label" aria-label="筛选工作树" placeholder="主目录" value={state.worktreeScope} onChange={state.setWorktreeScope} options={groupOptions} />
-    <small>{taskFallback?'任务没有独立工作树，默认查看主目录。':'代码库不选时查看全部；工作树不选时查看主目录'}</small>
+    <Select allowClear showSearch optionFilterProp="label" aria-label="筛选工作树" placeholder="选择工作树" value={state.worktreeScope} onChange={state.setWorktreeScope} options={groupOptions} optionRender={option=><div className="code-worktree-option" data-code-worktree-group={option.value} title={option.data.title}><span>{option.data.label}</span><small>{option.data.role}</small></div>} />
+    <small title={currentGroupLabel.description}>{currentGroupLabel.role}{state.sources.length>1?' · '+state.sources.length+' 个目录':''}</small>
+    <small>{taskFallback?'任务没有独立工作树，默认查看登记目录。':'代码库不选时查看全部；工作树不选时查看登记目录'}</small>
   </section>;
   return <div className="code-explorer-stage">
     <CodeTreePane hidden={treeHidden} onHost={setHost} storageKey={`buildr.code.tree-width.${workspaceId}`} />
@@ -132,7 +137,7 @@ export function CodeExplorerPage() {
       {state.catalog&&state.catalog.repositories.length>0&&!state.sources.length&&<div className="code-range-outside" role="status">所选代码库与工作树没有共同目录，请调整筛选。</div>}
       <div className="object-tab-panel" id={panelId} role={active ? 'tabpanel' : undefined} aria-labelledby={active ? tabElementId(panelId, active.key) : undefined} tabIndex={active ? 0 : undefined}>
       <RepositoryFileBrowser global readerActive={viewActive} defaultCollapsedTree collapseTreeKey={viewActive && !location.state?.codeEntry?.file ? location.key : undefined} revealSelectionRequest={state.selectionRequest} sidebarHost={host} treeRepositories={treeRepositories} files={files} repositoryName={selectedRepo?.name} repositoryId={active?.repositoryId} checkoutId={active?.checkoutId||undefined} observedDigest={currentText?undefined:file?.digest} observedRevision={currentText?editorSession?.file.revision||editable.file?.revision:file?.revision} observedAt={currentText?editorSession?.file.observedAt||editable.file?.observedAt:file?.observedAt} selectedRepositoryId={active?codeBrowserKey(active):undefined} selectedPath={active?.path||''} selectionKey={active?.key}
-        readerSurface={currentText ? editable.file ? <FileEditingPane file={{...editable.file,locationLabel:selectedGroup?.name||editable.file.locationLabel}} editing={editing} active={viewActive} focusLine={active?.line} focusRequest={active?.focusRequest}
+        readerSurface={currentText ? editable.file ? <FileEditingPane file={{...editable.file,locationLabel:selectedMember?codeWorktreeLabel(selectedMember,state.catalog?.worktrees).name:editable.file.locationLabel}} editing={editing} active={viewActive} focusLine={active?.line} focusRequest={active?.focusRequest}
           searchQuery={readQuery} onSelectLines={lines=>{if(active)setSelection({key:active.key,lines});}}
           markdownRevision={Object.keys(media).join(',')} markdownOptions={markdownOptions} /> : editable.error ? <Alert type="error" showIcon message={editable.error} action={<Button onClick={()=>void state.refresh()}>重试</Button>} /> : <div className="repository-reading-empty"><Spin />正在读取文件…</div> : undefined}
         readerContent={currentText?editorSession?.content:undefined} readerSelectedLines={selection.key===active?.key?selection.lines:null}
@@ -142,7 +147,16 @@ export function CodeExplorerPage() {
         onLoadDirectory={state.loadDirectory} loadedDirectoryKeys={loadedKeys} onSearch={onSearch} onShowIgnored={state.setShowIgnored} searchResults={searchResults} searchLoading={state.searchLoading} searchIncomplete={searchPartial||state.searchErrors.length>0}
         treeNotice={<>
           {(searchPartial||partial)&&<div className="code-tree-coverage" role="status"><InfoCircleOutlined /><span>{searchPartial?'搜索未完整返回。每个工作树最多 100 个文件、200 条匹配行，请缩小关键词或范围。':'目录达到读取上限，显示部分文件。'}</span></div>}
-          {(diagnostics.length>0||directoryFailures.length>0)&&<Alert type="warning" showIcon message="部分内容不可读取" description={[...new Set([...diagnostics,...directoryFailures])].join('；')} action={<Button size="small" onClick={()=>void state.refresh().catch(error=>message.error(String(error)))}>重试</Button>} />}
+          <CodeExplorerNotices notices={[
+            {kind:'updates',title:'自动更新暂时中断',details:state.sourceControl.updateDiagnostics},
+            {kind:'status',title:'代码状态暂未更新',details:state.sourceControl.readDiagnostics},
+            {kind:'sources',title:'部分来源信息未能确认',details:state.catalog?.diagnostics.map(d=>d.message)||[]},
+            {kind:'search',title:'部分搜索范围未完整读取',details:[...state.searchErrors,...state.searchResults.flatMap(result=>result.diagnostics.map(d=>d.message))]},
+            {kind:'directories',title:'部分目录暂不可读取',details:directoryFailures},
+          ]} onRetry={kind=>{
+            if(kind==='updates'||kind==='status')state.sourceControl.retry();
+            else void state.refresh().catch(error=>message.error(String(error)));
+          }} />
         </>}
         onRetry={()=>state.refresh()} onViewCurrent={()=>{if(!active)return;if(!active.checkoutId){message.info('此历史文件的当前工作树尚未确认，请从目录选择实际来源。');return;}state.open({repositoryId:active.repositoryId,checkoutId:active.checkoutId},active.path);}} onHideTree={()=>setTreeHidden(true)}
         markdownRevision={Object.keys(media).join(',')} markdownOptions={markdownOptions} />

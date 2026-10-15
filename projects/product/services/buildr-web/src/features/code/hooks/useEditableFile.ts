@@ -53,7 +53,7 @@ export function useEditableFile(workspaceId: string | null, selector: EditableFi
   useEffect(() => {
     if (!workspaceId || !selector) return;
     const abort = new AbortController();
-    setState({ key });
+    setState(previous => previous.key === key ? previous : {key});
     void codeApi.editorFile(workspaceId, selector, abort.signal).then(snapshot => {
       if (!abort.signal.aborted) setState({ key, file: editableDocument(workspaceId, snapshot) });
     }).catch(error => {

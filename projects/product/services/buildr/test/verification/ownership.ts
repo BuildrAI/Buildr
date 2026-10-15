@@ -104,6 +104,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "test/integration/capability-contracts.test.ts",
       "test/integration/capability-runtime.test.ts",
       "test/integration/buildr-web-read-executor.test.ts",
+      "test/integration/source-control-observation-http.test.ts",
       "test/integration/task-materials-application.test.ts",
       "test/integration/task-materials-http-cli.test.ts",
       "test/integration/buildr-web-runtime.test.ts",

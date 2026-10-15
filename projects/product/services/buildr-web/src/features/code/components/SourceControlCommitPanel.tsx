@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import type { TextAreaRef } from 'antd/es/input/TextArea';
 import { Alert, Button, Dropdown, Input, Space, Spin, Tooltip } from 'antd';
 import { CheckOutlined, CopyOutlined, DownOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import { useAgentRuntime } from '../../../app/AgentRuntimeContext';
@@ -10,14 +11,34 @@ import type { SourceControlRepository, SourceControlWorktree } from '../source-c
 import { actionSourceKey, type SourceControlActions } from '../source-control-actions';
 import './source-control-commit.css';
 
-type Props = {workspaceId: string; repository: SourceControlRepository; worktree: SourceControlWorktree; actions: SourceControlActions; version: string};
-export function SourceControlCommitPanel({workspaceId, repository, worktree, actions, version}: Props) {
+type MessageSelection = {start:number; end:number; direction:HTMLTextAreaElement['selectionDirection']};
+// The action owner outlives a hidden history panel. Weak ownership also releases
+// these small presentation facts when the workspace's action adapter is disposed.
+const messageSelections = new WeakMap<SourceControlActions, Map<string, MessageSelection>>();
+
+type Props = {active?: boolean; workspaceId: string; repository: SourceControlRepository; worktree: SourceControlWorktree; actions: SourceControlActions; version: string};
+export function SourceControlCommitPanel({active = true, workspaceId, repository, worktree, actions, version}: Props) {
   const agents = useAgentRuntime();
   const source: CodeActionSource = {workspaceId, repositoryId: repository.id, worktreeId: worktree.worktreeId, branch: worktree.branch};
   const key = actionSourceKey(source), state = actions.state(source);
+  const textarea=useRef<TextAreaRef>(null);
+  let selections=messageSelections.get(actions);
+  if(!selections){selections=new Map();messageSelections.set(actions,selections);}
+  const positions=selections;
+  useLayoutEffect(()=>{
+    const input=textarea.current?.resizableTextArea?.textArea;
+    if(!active||!input)return;
+    const saved=positions.get(key);
+    // Each source owns its textarea node, so its controlled draft is already the
+    // node's value here. Restoration happens once before a user can start typing.
+    if(saved)input.setSelectionRange(Math.min(saved.start,input.value.length),Math.min(saved.end,input.value.length),saved.direction);
+    const remember=()=>positions.set(key,{start:input.selectionStart,end:input.selectionEnd,direction:input.selectionDirection});
+    for(const event of ['select','input','blur','keyup','pointerup'])input.addEventListener(event,remember);
+    return()=>{remember();for(const event of ['select','input','blur','keyup','pointerup'])input.removeEventListener(event,remember);};
+  },[key,active,positions]);
   const [modes, setModes] = useState<Record<string, CommitMode>>({}), [feedback, setFeedback] = useState('');
   const mode = modes[key] || 'commit', context = state.context, generating = Boolean(state.generation), writing = Boolean(state.gitPending);
-  useEffect(() => { void actions.observe(source); setFeedback(''); }, [actions, key, version]);
+  useEffect(() => { if (active) { void actions.observe(source); setFeedback(''); } }, [active, actions, key, version]);
   const options = agents.registry?.agents.map(agentOption) || [];
   const defaultExecutor = options.find(option => option.id === agents.registry?.defaultAgentId) || null;
   const nextExecutor = state.overrideId ? options.find(option => option.id === state.overrideId) || null : defaultExecutor;
@@ -33,7 +54,7 @@ export function SourceControlCommitPanel({workspaceId, repository, worktree, act
   const generationPhase = state.generation?.phase === 'cancelling' ? '正在取消…' : state.generation?.phase === 'running' ? '正在生成…' : '正在准备…';
   const copy = async () => setFeedback(await copyText(state.text) ? '已复制说明' : '无法复制，请选中文字后手动复制。');
   return <section className="source-control-commit-panel" aria-label="提交变更" data-source-commit-key={key}>
-    <div className="source-control-message-input"><Input.TextArea id="commit-message-text" aria-label="提交说明内容" title={provenance ? `${provenance}；${scope}` : scope} placeholder="提交说明" value={state.text} disabled={generating || writing} onChange={event => {actions.setText(source, event.target.value); setFeedback('');}} autoSize={{minRows: expandedMessage ? 6 : 1, maxRows: 12}} />
+    <div className="source-control-message-input"><Input.TextArea key={key} ref={textarea} id="commit-message-text" aria-label="提交说明内容" title={provenance ? `${provenance}；${scope}` : scope} placeholder="提交说明" value={state.text} disabled={generating || writing} onChange={event => {actions.setText(source, event.target.value); setFeedback('');}} autoSize={{minRows: expandedMessage ? 6 : 1, maxRows: 12}} />
       <AgentActionControl id="generate-commit-message" label={state.generatedBy ? '重新生成提交说明' : '生成提交说明'} executor={executor} defaultExecutor={defaultExecutor} options={options} overrideId={state.overrideId} disabled={!ready || noChanges || writing} pending={generating} onAction={() => {if (nextExecutor) void actions.generate(source, nextExecutor);}} onSelect={id => actions.setOverride(source, id)} onOpenAgents={() => agents.setOpen(true)} />
     </div>
     {generating && <div className="source-control-generation-status" role="status"><Spin size="small" /><span>{generationPhase}</span><Button id="cancel-commit-message" size="small" type="text" onClick={() => void actions.cancel(source)}>{state.generation?.phase === 'cancelling' ? '重试取消' : '取消'}</Button></div>}

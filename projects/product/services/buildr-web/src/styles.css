@@ -1765,6 +1765,8 @@ details summary { cursor: pointer; color: var(--soft-ink); font-size: 12px; font
 .shell-nav-item:hover { color: var(--soft-ink); background: #ebedf0; }
 .shell-nav-item.active { color: #306b62; background: #e7efec; font-weight: 600; }
 .shell-nav-item:focus-visible { outline: 2px solid var(--soft-primary); outline-offset: -2px; }
+.shell-nav-status-icon { position:relative; display:inline-flex; flex:none; color:#7b858e; font-size:14px; }
+.shell-nav-change-dot { position:absolute; top:-3px; right:-4px; width:6px; height:6px; border-radius:50%; background:var(--soft-primary); box-shadow:0 0 0 2px var(--soft-surface,#fff); }
 .app-shell .shell-menu-toggle { display: none; }
 .app-frame > #app-view { min-width: 0; }
 /* Both areas share one default content frame; reading panes retain their own layout. */
@@ -2111,6 +2113,7 @@ details summary { cursor: pointer; color: var(--soft-ink); font-size: 12px; font
 .sidebar-collapsed .app-sidebar { flex-basis:var(--sidebar-collapsed-width); width:var(--sidebar-collapsed-width); padding:0; }
 .sidebar-collapsed .shell-nav-caption,.sidebar-collapsed .shell-nav-item > span:not(.anticon) { display:none; }
 .sidebar-collapsed .shell-nav-item { justify-content:center; padding:12px; }
+.sidebar-collapsed .shell-nav-item > span.shell-nav-status-icon { display:inline-flex; }
 .sidebar-collapsed .sidebar-toggle { margin:0 auto; }
 .sidebar-collapsed .shell-navigation { border-right:1px solid var(--soft-line); min-height:calc(100% - 43px); }
 

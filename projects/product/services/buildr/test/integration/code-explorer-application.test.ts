@@ -272,6 +272,22 @@ test('catalog groups actual multi-repository task members and keeps identically 
   const task=f.app.repositories(f.temporary,'feature');assert.deepEqual(task.selectedRepositoryIds,['one','two']);assert.deepEqual(task.selectedWorktreeGroupIds,['task:feature']);
   assert.equal(CODE_HTTP_VALIDATORS.validate(CODE_HTTP_SCHEMAS.repositories.$id,catalog).valid,true);assert.deepEqual(f.locations.map(item=>item.git('status','--porcelain')),before);
 });
+test('workspace directory follows a registered linked checkout and shares its identity with source control',async t=>{
+  const f=worktreeFixture(t),registered=f.locations[0].native;
+  f.repositories[0].source.path=registered;
+  const catalog=f.app.repositories(f.temporary),workspace=catalog.worktrees.find(item=>item.repositoryId==='one'&&item.groupId==='main')!;
+  assert.deepEqual(catalog.selectedWorktreeGroupIds,['main']);
+  assert.equal(catalog.worktreeGroups.find(group=>group.id==='main')?.name,'工作空间目录');
+  assert.equal(workspace.kind,'main');assert.equal(workspace.path,fs.realpathSync(registered));assert.equal(workspace.id,gitCheckoutReadId(registered));
+  const observed=f.app.sourceControl(f.temporary),repository=observed.repositories.find(item=>item.id==='one')!,current=repository.worktrees.find(item=>item.isRegistered)!,gitMain=repository.worktrees.find(item=>item.isMain)!;
+  assert.equal(current.worktreeId,workspace.id);assert.equal(current.location,workspace.path);assert.equal(current.isMain,false);assert.equal(current.branch,'native-shared');
+  assert.notEqual(gitMain.worktreeId,current.worktreeId);assert.equal(gitMain.isRegistered,false);assert.equal(gitMain.location,fs.realpathSync(f.locations[0].root));
+  assert.equal(repository.source?.checkoutId,workspace.id);
+  const file=await f.app.file(f.temporary,{repositoryId:'one',path:'file.ts'});
+  assert.equal(file.source.checkoutId,current.worktreeId);assert.equal(file.source.location,current.location);assert.equal(file.content,'native one sharedNeedle\n');
+  assert.equal(CODE_HTTP_VALIDATORS.validate(CODE_HTTP_SCHEMAS.repositories.$id,catalog).valid,true);
+  assert.equal(CODE_HTTP_VALIDATORS.validate(CODE_HTTP_SCHEMAS.sourceControl.$id,observed).valid,true);
+});
 test('explicit checkout pins tree, search, full text and actual source association independently of navigation task',async t=>{
   const f=worktreeFixture(t),catalog=f.app.repositories(f.temporary),task=catalog.worktrees.find(item=>item.repositoryId==='one'&&item.kind==='task')!,main=catalog.worktrees.find(item=>item.repositoryId==='one'&&item.kind==='main')!,native=catalog.worktrees.find(item=>item.repositoryId==='one'&&item.kind==='worktree')!;
   const input={repositoryId:'one',checkoutId:task.id,taskId:'different-navigation-task'};

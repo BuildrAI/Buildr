@@ -227,7 +227,7 @@ export function readCodeWorktreeCatalog(root: string, repositories: Repository[]
     else diagnostics.push({ code: 'code_worktree_task_ambiguous', message: '一个目录被多个任务关联，保留独立目录选项并请核对关联。', repositoryId: member.repositoryId });
   }
   for (const member of worktrees) {
-    const name = member.kind === 'main' ? '主目录' : member.kind === 'task' ? member.taskId! : (member.branch || '分离版本') + ' · ' + path.basename(path.dirname(member.path)) + '/' + path.basename(member.path);
+    const name = member.kind === 'main' ? '工作空间目录' : member.kind === 'task' ? member.taskId! : (member.branch || '分离版本') + ' · ' + path.basename(path.dirname(member.path)) + '/' + path.basename(member.path);
     addGroup(member.groupId, name, member.kind, member.taskId, member.repositoryId);
   }
   const names = new Map<string, CodeWorktreeGroup[]>();

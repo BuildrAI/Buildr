@@ -36,6 +36,13 @@ export async function runDshDesktopJourney({t, page, workspaceUrl, taskId, captu
       const child = page.getByRole('dialog', {name: '接入 DSH', exact: true}); await child.waitFor({state: 'visible'});
       await child.locator('[data-dsh-candidate]').waitFor({state: 'visible'}); assert.equal(await child.locator('input:not([type="radio"]):not([type="checkbox"]), textarea').count(), 0, '网页不要求输入路径、端口、凭证');
       await child.getByText('桌面后台生成可用', {exact: false}).waitFor({state: 'visible'}); await page.locator('#cancel-local-dsh').click(); assert.equal(writes, 0);
+      await child.waitFor({state: 'hidden'});
+      // The parent slides back after its child closes. Open its hover/click menu at the settled anchor.
+      await parent().evaluate(async (element: HTMLElement) => {
+        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        const wrapper = element.closest('.ant-drawer-content-wrapper') || element;
+        await Promise.all(wrapper.getAnimations().map(animation => animation.finished.catch(() => {})));
+      });
       await page.locator('#add-agent-entry').click(); await page.getByRole('menuitem', {name: 'DSH', exact: true}).click(); await child.waitFor({state: 'visible'});
       await page.locator('#confirm-local-dsh').click(); await child.waitFor({state: 'hidden'}); await row().waitFor({state: 'visible'});
       assert.equal(writes, 1); assert.equal(await parent().getByRole('button', {name: '设为默认智能体 ' + codex.label, exact: true}).getAttribute('aria-pressed'), 'true');

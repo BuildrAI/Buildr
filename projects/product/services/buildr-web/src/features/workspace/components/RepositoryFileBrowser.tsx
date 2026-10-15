@@ -17,14 +17,15 @@ export type RepositoryPreviewFile = {
   path: string;
   content: string;
   kind: 'text' | 'markdown' | 'image' | 'unsupported';
-  status?: 'M' | 'U';
+  status?: 'M' | 'U' | 'A' | 'D' | 'R' | 'C';
+  hasChanges?: boolean;
   ignored?: boolean;
   image?: string;
   directory?: boolean;
   link?: boolean;
 };
 
-export type RepositoryTreeScope = { id: string; repositoryId?: string; name: string; location?: string; locationLabel?: string; version?: string; files: RepositoryPreviewFile[] };
+export type RepositoryTreeScope = { id: string; repositoryId?: string; name: string; location?: string; locationLabel?: string; version?: string; files: RepositoryPreviewFile[]; hasChanges?: boolean };
 type TreeFile = RepositoryPreviewFile & { repositoryId?: string; sourceRepositoryId?: string; repositoryName?: string };
 type SearchResult = RepositoryPreviewFile & {repositoryId?:string;sourceRepositoryId?:string;repositoryName?:string;line?:number;excerpt?:string;occurrences?:Array<{line:number;excerpt:string}>};
 function treeKey(path: string, repositoryId?: string) { return repositoryId ? repositoryId + '::' + path : path; }
@@ -174,35 +175,41 @@ export function RepositoryFileBrowser(props: Props) {
   }, [props.focusLine, props.focusRequest, readingKey, props.readerActive, props.readLoading, refreshing, props.readError, props.unavailable, file?.path]);
 
   const treeData = useMemo(() => {
+    const folderTitle = (path: string, name: string, changed: boolean) => changed ? <span className="repository-tree-directory" data-directory-path={path} data-has-changes="true"><span>{name}</span><i className="repository-directory-change-dot" title="包含未提交变更" aria-label="包含未提交变更" /></span> : name;
     function sort(nodes: DataNode[]) {
       nodes.sort((a, b) => Number(Boolean(a.isLeaf)) - Number(Boolean(b.isLeaf)) || String(a.key).localeCompare(String(b.key)));
       for (const node of nodes) if (node.children) sort(node.children);
     }
     function compact(nodes: DataNode[]): DataNode[] {
       return nodes.map(node => {
-        let current = node, title = node.title;
+        let current = node, title = typeof node.title === 'string' ? node.title : String(node.key).split('::').at(-1)?.split('/').at(-1);
         while (!current.isLeaf && current.children?.length === 1 && !current.children[0].isLeaf) {
-          current = current.children[0]; title = String(title) + ' / ' + String(current.title);
+          current = current.children[0]; title = String(title) + ' / ' + (typeof current.title === 'string' ? current.title : String(current.key).split('::').at(-1)?.split('/').at(-1));
         }
         return { ...current, title, ...(current.children ? { children: compact(current.children) } : {}) };
       });
     }
     function build(items: TreeFile[]) {
       const roots: DataNode[] = [], folders = new Map<string, DataNode>();
+      const changedFolders = new Set<string>();
+      for (const item of items) if (item.status || item.hasChanges) {
+        const parts = item.path.split('/');
+        for (let index = 1; index <= parts.length - Number(!item.directory); index++) changedFolders.add(treeKey(parts.slice(0,index).join('/'),item.repositoryId));
+      }
       for (const item of items) {
         const parts = item.path.split('/'); let siblings = roots;
         for (let index = 0; index < parts.length - 1; index++) {
           const key = treeKey(parts.slice(0, index + 1).join('/'), item.repositoryId);
           let folder = folders.get(key);
-          if (!folder) { folder = { key, title: parts[index], icon: <FolderOutlined />, children: [] }; folders.set(key, folder); siblings.push(folder); }
+          if (!folder) { folder = { key, title: folderTitle(parts.slice(0,index+1).join('/'),parts[index],changedFolders.has(key)), icon: <FolderOutlined />, children: [] }; folders.set(key, folder); siblings.push(folder); }
           siblings = folder.children!;
         }
         if(item.directory) {
           const key=treeKey(item.path,item.repositoryId);
-          if(!folders.has(key)){const folder:DataNode={key,title:shortName(item.path),icon:<FolderOutlined />,isLeaf:false,children:[]};folders.set(key,folder);siblings.push(folder);}
+          if(!folders.has(key)){const folder:DataNode={key,title:folderTitle(item.path,shortName(item.path),changedFolders.has(key)),icon:<FolderOutlined />,isLeaf:false,children:[]};folders.set(key,folder);siblings.push(folder);}
           continue;
         }
-        siblings.push({ key: treeKey(item.path, item.repositoryId), isLeaf: true, disabled:item.link, icon: fileIcon(item), title: <span className="repository-tree-file" data-file-path={item.path}><span>{shortName(item.path)}</span>{item.status && <i className={'repository-status repository-status-' + item.status}>{item.status}</i>}</span> });
+        siblings.push({ key: treeKey(item.path, item.repositoryId), isLeaf: true, disabled:item.link, icon: fileIcon(item), title: <span className="repository-tree-file" data-file-path={item.path} data-code-status={item.status}><span>{shortName(item.path)}</span>{item.status && <i className={'repository-status repository-status-' + item.status}>{item.status}</i>}</span> });
       }
       sort(roots); return props.global && !props.onLoadDirectory ? compact(roots) : roots;
     }
@@ -213,7 +220,7 @@ export function RepositoryFileBrowser(props: Props) {
         <code className="repository-root-location">{repo.location}</code>
         {repo.version && <p className="repository-root-version">版本：{repo.version}</p>}
         {repo.location && <Button type="text" size="small" icon={<CopyOutlined />} aria-label="复制代码库完整路径" onClick={() => void copy(repo.location!)}>复制路径</Button>}
-      </article>}><span tabIndex={0} className="repository-root-name" data-location={repo.location} data-location-label={repo.locationLabel} data-version={repo.version} data-repository-id={repo.repositoryId || repo.id}><strong>{repo.name}</strong></span></SelectableHoverCard>,
+      </article>}><span tabIndex={0} className="repository-root-name" data-location={repo.location} data-location-label={repo.locationLabel} data-version={repo.version} data-repository-id={repo.repositoryId || repo.id} data-has-changes={repo.hasChanges || undefined}><strong>{repo.name}</strong>{repo.hasChanges && <i className="repository-directory-change-dot" title="包含未提交变更" aria-label="包含未提交变更" />}</span></SelectableHoverCard>,
       children: build(visible.filter(item => item.repositoryId === repo.id)),
     })) : build(visible);
   }, [props.files, props.treeRepositories, showIgnored, props.global]);
@@ -325,7 +332,7 @@ export function RepositoryFileBrowser(props: Props) {
           </Space>
         </header>}
         {props.readMessage && <Alert type="warning" message={props.readMessage} />}
-        {props.readPage&&<section className="repository-file-pagination" aria-label="大文件分段阅读">
+        {props.readPage&&!props.readError&&<section className="repository-file-pagination" aria-label="大文件分段阅读">
           <div className="repository-file-page-status">大文件分段阅读 · 第 {props.readPage.index+1} / {props.readPage.total} 段 · 第 {props.readPage.startLine}–{props.readPage.endLine} 行 · 字节 {props.readPage.offset+1}–{props.readPage.endOffset} / {props.sizeBytes}{props.readPage.startsMidLine?' · 首行续自上一段':''}{props.readPage.endsMidLine?' · 末行续至下一段':''}</div>
           <Space size={6}><Button size="small" aria-label="上一段" disabled={props.readPage.index===0||!props.onReadPage||props.readLoading||Boolean(props.readError)} onClick={()=>props.onReadPage?.(props.readPage!.index-1)}>上一段</Button><Button size="small" aria-label="下一段" disabled={props.readPage.index>=props.readPage.total-1||!props.onReadPage||props.readLoading||Boolean(props.readError)} onClick={()=>props.onReadPage?.(props.readPage!.index+1)}>下一段</Button>{!props.readError&&<Button size="small" aria-label="重新读取" onClick={()=>void refresh()}>重新读取</Button>}</Space>
           {(visibleMatch?.continuesAfter||visibleMatch?.continuesBefore)&&<p className="repository-file-match-continuation">{visibleMatch.continuesAfter?'匹配文字跨段，下一段继续':'匹配文字续自上一段'}</p>}

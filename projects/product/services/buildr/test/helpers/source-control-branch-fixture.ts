@@ -10,7 +10,9 @@ export async function withSourceControlBranchFixture(
   verify: (fixture: any) => Promise<void>,
 ) {
   const git = (directory: string, args: string[], env: NodeJS.ProcessEnv = process.env) => {
-    const result = spawnSync('git', args, { cwd: directory, encoding: 'utf8', env });
+    // Snapshot reads must not refresh another checkout's index and create a
+    // filesystem event that masquerades as an external edit during the journey.
+    const result = spawnSync('git', ['--no-optional-locks', ...args], { cwd: directory, encoding: 'utf8', env });
     assert.equal(result.status, 0, result.stderr + '\n' + result.stdout);
     return result.stdout.trim();
   };
@@ -83,6 +85,32 @@ export async function withSourceControlBranchFixture(
       location: fs.realpathSync(location), root, originalBranch, branch, alternate, remote, remoteName, remoteRef,
       historyPath, keepPath, authorName, authorEmail, otherEmail, first, second, tip,
       snapshot, otherPositions, observe, configureAuthor,
+      liveRefresh: {
+        // External tools own these changes. Browser actions still use production
+        // HTTP; only this disposable checkout is written outside the product.
+        path: historyPath,
+        cachePath: 'scm-browser-branches/live-cache',
+        createdDirectory: 'scm-browser-branches/live-auto-directory',
+        createdFile: 'scm-browser-branches/live-auto-directory/nested/new.ts',
+        prepareDirectoryCache: () => {
+          for(let index=0;index<8;index++){
+            const directory=path.join(location,'scm-browser-branches/live-cache/other-'+index);
+            fs.mkdirSync(directory,{recursive:true});fs.writeFileSync(path.join(directory,'file.ts'),'export const unrelated = '+index+';\n');
+          }
+        },
+        createDirectory: () => {
+          const file=path.join(location,'scm-browser-branches/live-auto-directory/nested/new.ts');
+          fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,'export const newlyCreated = true;\n');
+        },
+        removeDirectory: () => fs.rmSync(path.join(location,'scm-browser-branches/live-auto-directory'),{recursive:true}),
+        removeUntrackedKeep: () => {
+          assert.equal(fs.readFileSync(path.join(location, keepPath), 'utf8'), 'preserve current work\n');
+          fs.unlinkSync(path.join(location, keepPath));
+        },
+        write: (text: string) => fs.writeFileSync(path.join(location, historyPath), text),
+        restore: () => fs.writeFileSync(path.join(location, historyPath), git(location, ['show', 'HEAD:' + historyPath]) + '\n'),
+        commit: (message: string, text: string) => commit(authorEmail, message, text),
+      },
       publishRemoteBranch: (name = 'feature/added-after-observation') => {
         // Only the isolated bare remote changes; local remote-tracking refs stay stale until UI Fetch.
         git(remoteDirectory, ['update-ref', 'refs/heads/' + name, second]);

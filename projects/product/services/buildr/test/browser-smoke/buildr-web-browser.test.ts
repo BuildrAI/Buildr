@@ -665,7 +665,20 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
       try { await verify(branches); }
       finally { await page.goto('about:blank').catch(()=>{}); }
     });
-    await runSourceControlJourney({t,page,workspaceUrl,capture,expectedBrowserErrors,fixture:{path:sourceControlPath,location:fs.realpathSync(workspaceRoot),commitHash:history.stdout.trim(),historyText:historicalSource.stdout,indexText,workingText,prepareWorktrees,prepareRemoteStatuses,withStatusDigits,withDuplicateFiles,withImages,withBranches,cleanLocation:codeWorktreeFixture.nativeCheckoutLocation,baselineWorktrees,unrelatedRetiredTaskId:codeWorktreeFixture.worktreeTaskId,unavailableRepositoryLocation,withUnavailableRepository}});
+    const withRegisteredSource=async(location:string,verify:(source:any)=>Promise<void>)=>{
+      const catalog=runtime.assetCatalog(workspaceRoot),repository=catalog.repositories.find((item:any)=>item.id===codeWorktreeFixture.primaryRepositoryId);
+      assert.ok(repository);
+      runtime.updateCatalogAsset(workspaceRoot,'repository',repository.id,{revision:catalog.revision,path:location});
+      try {await verify({repositoryId:repository.id,location:fs.realpathSync(location),mainLocation:fs.realpathSync(workspaceRoot)});}
+      finally {
+        await page.goto('about:blank').catch(()=>{});
+        // The legacy fixture declares a service subdirectory; code readers already
+        // canonicalize it to this Git root. Current edits correctly reject restoring
+        // that legacy child path, so restore the same effective source through its root.
+        runtime.updateCatalogAsset(workspaceRoot,'repository',repository.id,{revision:runtime.assetCatalog(workspaceRoot).revision,path:workspaceRoot,url:repository.source.git?.url||'',remote:repository.source.git?.remote||'origin',integrationBranch:repository.source.integrationBranch||repository.source.git?.integrationBranch||''});
+      }
+    };
+    await runSourceControlJourney({t,page,workspaceUrl,capture,expectedBrowserErrors,fixture:{path:sourceControlPath,location:fs.realpathSync(workspaceRoot),commitHash:history.stdout.trim(),historyText:historicalSource.stdout,indexText,workingText,prepareWorktrees,prepareRemoteStatuses,withStatusDigits,withDuplicateFiles,withImages,withBranches,withRegisteredSource,cleanLocation:codeWorktreeFixture.nativeCheckoutLocation,baselineWorktrees,unrelatedRetiredTaskId:codeWorktreeFixture.worktreeTaskId,unavailableRepositoryLocation,withUnavailableRepository}});
     }
   }
   if (selected('layout')) await runLayoutJourney({ t, page, workspaceUrl, capture });
@@ -2369,7 +2382,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     const focusReads: string[] = [];
     const trackFocusReads = (request: any) => { if (new URL(request.url()).pathname.includes('/tasks/browser-task')) focusReads.push(request.url()); };
     await page.locator('#task-node-content .markdown-body').waitFor({state:'visible'});
-    await page.waitForLoadState('networkidle');
+    await page.locator('#task-detail-refresh[aria-busy="false"]').waitFor({state:'visible'});
     page.on('request',trackFocusReads);
     await page.evaluate(() => { window.dispatchEvent(new Event('focus')); document.dispatchEvent(new Event('visibilitychange')); });
     await page.waitForTimeout(350);
@@ -2734,7 +2747,9 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
     await page.locator('.resource-reader:visible .markdown-body').filter({ hasText: '旧文件保留，通过普通链接读取' }).waitFor({ state: 'visible' });
     assert.equal(fs.readFileSync(historicalBriefPath, 'utf8'), historicalBrief);
     await page.getByRole('button', { name: '关闭 文档', exact: true }).click();
-    await page.waitForLoadState('networkidle');
+    await page.locator('.resource-reader:visible').waitFor({state:'hidden'});
+    await page.locator('#task-node-content .markdown-body').filter({ hasText: '独立文件系统中的最新提案' }).waitFor({state:'visible'});
+    await page.locator('#task-detail-refresh[aria-busy="false"]').waitFor({state:'visible'});
     const prototypeFailureRoute = /\/tasks\/browser-task\/ui-prototypes(?:\?|$)/;
     await page.route(prototypeFailureRoute, async (route: any) => {
       expectedBrowserErrors.add(route.request().url());

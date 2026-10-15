@@ -28,7 +28,7 @@ export type RailRepository = {
 };
 
 /** Persistent master-detail workbench: repository tree on the left, diff pane on the right. */
-export function TaskDiffReader({ repositories, selected, onSelect, notice, taskId, refreshVersion, readScope, onRegisterRefresh, onOpenFile, previewContent, renderDiff, readOnlyReason, filePresentation, railTitle = '文件与提交', defaultCommit = false, showTaskSource = false }: {
+export function TaskDiffReader({ repositories, selected, onSelect, notice, taskId, refreshVersion, readScope, onRegisterRefresh, onOpenFile, previewContent, renderDiff, readOnlyReason, filePresentation, viewMode, onViewModeChange, railTitle = '文件与提交', defaultCommit = false, showTaskSource = false }: {
   taskId?: string;
   refreshVersion?: string;
   readScope?: string;
@@ -42,12 +42,15 @@ export function TaskDiffReader({ repositories, selected, onSelect, notice, taskI
   renderDiff?(mode: DiffMode): ReactNode;
   readOnlyReason?: string;
   filePresentation?: { absolutePath?: string; previousAbsolutePath?: string; comparison: string; comparisonDescription?: string };
+  viewMode?: DiffMode;
+  onViewModeChange?(mode: DiffMode): void;
   railTitle?: string;
   defaultCommit?: boolean;
   showTaskSource?: boolean;
 }) {
   const { message } = App.useApp();
-  const [view, setView] = useState<DiffMode>('split');
+  const [localView, setView] = useState<DiffMode>('split');
+  const view = viewMode || localView;
   const [splitRoom, setSplitRoom] = useState(false);
   const [stacked, setStacked] = useState(false);
   const readerRef = useRef<HTMLElement>(null);
@@ -281,7 +284,7 @@ export function TaskDiffReader({ repositories, selected, onSelect, notice, taskI
           {!commitEntry && current && owner && onOpenFile && <Button size="small" onClick={() => onOpenFile(current, owner.repository, owner.commit)} data-prototype-position="diff-full-file">查看完整文件</Button>}
           {!commitEntry && taskId && current && <span className="task-diff-loading" role="status" aria-label={full.loading ? '正在读取完整差异' : undefined}>{full.loading && <Spin size="small" />}</span>}
           {!commitEntry && current && previewContent === undefined && !renderDiff && parsed && <span className="task-diff-navigation" aria-label="差异定位"><Button size="small" type="text" aria-label="上一个差异" icon={<ArrowUpOutlined />} disabled={!changes.length || selectedChange === 0} onClick={() => revealChange(selectedChange - 1)} /><span aria-live="polite">{changes.length ? `${selectedChange + 1} / ${changes.length}` : '0 处变化'}</span><Button size="small" type="text" aria-label="下一个差异" icon={<ArrowDownOutlined />} disabled={!changes.length || selectedChange >= changes.length - 1} onClick={() => revealChange(selectedChange + 1)} /></span>}
-          {!commitEntry && current && previewContent === undefined && (renderDiff || parsed && (parsed.totalAdd > 0 || parsed.totalDel > 0)) && <Segmented className="task-diff-mode" size="small" value={mode} onChange={value => setView(value as DiffMode)} options={[
+          {!commitEntry && current && previewContent === undefined && (renderDiff || parsed && (parsed.totalAdd > 0 || parsed.totalDel > 0)) && <Segmented className="task-diff-mode" size="small" value={mode} onChange={value => {setView(value as DiffMode); onViewModeChange?.(value as DiffMode);}} options={[
             { value: 'split', disabled: !splitRoom, label: <Tooltip title={splitRoom ? '旧版本与新版本并排对照' : '当前阅读宽度不足，使用上下对比'}><span>左右对比</span></Tooltip> },
             { value: 'unified', label: <Tooltip title='同一视图按顺序显示删除和新增行'><span>上下对比</span></Tooltip> },
           ]} />}
