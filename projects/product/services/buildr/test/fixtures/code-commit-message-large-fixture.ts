@@ -34,7 +34,7 @@ export function largeCommitMessageFixture(t: TestContext) {
   const gitEnvironment = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')));
   const git = (directory: string, args: string[]) => execFileSync('git', ['--no-optional-locks', '-c', 'commit.gpgSign=false', '-c', 'core.hooksPath=/dev/null', '-C', directory, ...args], {encoding: 'utf8', env: {...gitEnvironment, GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0'}, stdio: ['ignore', 'pipe', 'pipe']}).trim();
   git(root, ['init', '--initial-branch=fixture-main']);
-  git(root, ['config', 'user.name', 'Large Generation Fixture']); git(root, ['config', 'user.email', 'large-fixture@example.invalid']);
+  git(root, ['config', 'user.name', 'Large Generation Fixture']); git(root, ['config', 'user.email', 'large-fixture@example.com']);
   const writer = createRuntime(), query = runtimeProvide(writer, WORKSPACE_QUERY);
   let catalog = writer.assetCatalog(root);
   if (catalog.migrationRequired) catalog = writer.migrateAssetCatalog(root, {revision: catalog.revision});

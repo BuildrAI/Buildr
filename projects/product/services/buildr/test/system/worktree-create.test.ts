@@ -12,6 +12,7 @@ import { createTaskProjectDocumentReader, type TaskDocumentWorktreeQuery } from 
 import { materializeCleanProductSource } from '../helpers/clean-product-source.ts';
 import { copyPreparedWorkspace } from '../helpers/prepared-fixtures.ts';
 import { cleanupDefaultTestContextPool } from '../context/node-test.ts';
+import { createVerificationPhaseRecorder, VERIFICATION_PHASE_TIMING_PREFIX } from '../verification/timing/phases.ts';
 
 type JsonObject = Record<string, unknown>;
 type RepositoryResult = JsonObject & {
@@ -33,7 +34,26 @@ type WorktreeResult = JsonObject & {
 
 const sourceProductRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const managerFixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-worktree-provider-'));
-const { root: productRoot, cli } = materializeCleanProductSource(sourceProductRoot, path.join(managerFixtureRoot, 'product'));
+const phaseScope = 'system-worktree-lifecycle';
+const phaseEvidenceOutput = process.env.BUILDR_VERIFICATION_PHASE_OUTPUT;
+if (phaseEvidenceOutput) fs.mkdirSync(path.dirname(path.resolve(phaseEvidenceOutput)), { recursive: true });
+const sourceMaterializationTiming = createVerificationPhaseRecorder(phaseScope, { persistEvidence: true });
+const sourceMaterializationStartedAt = Date.now();
+const sourceMaterializationStarted = `${VERIFICATION_PHASE_TIMING_PREFIX} ${JSON.stringify({
+  scope: phaseScope, id: 'source-materialization', status: 'started', startedAt: new Date(sourceMaterializationStartedAt).toISOString(),
+})}\n`;
+fs.writeSync(process.stderr.fd, sourceMaterializationStarted);
+if (phaseEvidenceOutput) fs.appendFileSync(path.resolve(phaseEvidenceOutput), sourceMaterializationStarted, 'utf8');
+let materializedProductSource: ReturnType<typeof materializeCleanProductSource>;
+let sourceMaterializationStatus = 'failed';
+try {
+  materializedProductSource = materializeCleanProductSource(sourceProductRoot, path.join(managerFixtureRoot, 'product'));
+  sourceMaterializationStatus = 'passed';
+} finally {
+  sourceMaterializationTiming.record('source-materialization', sourceMaterializationStartedAt, Date.now(), sourceMaterializationStatus);
+  sourceMaterializationTiming.emit(process.stderr);
+}
+const { root: productRoot, cli } = materializedProductSource;
 const fixtureRoots: string[] = [];
 
 after(() => {
@@ -493,11 +513,26 @@ test('多独立仓库要求成对覆盖全部selector并按nested-first清理', 
 // Windows run 37985484755 completed all phases and cleanup in 121291 ms;
 // the prior 135-second run expired mid-scenario. Keep per-command and suite bounds.
 test('非 Git 根通过公共入口隔离独立子仓库并保留资料', { timeout: process.platform === 'win32' ? 180_000 : 90_000 }, () => {
-  const result = spawnSync(process.execPath, [
-    path.join(sourceProductRoot, 'tools/development/run-isolated-workspace-smoke.ts'),
-    '--script', path.join(sourceProductRoot, 'test/integration/non-git-workspace-continuity.test.ts'),
-    '--', '--nested-git-isolation-scenario',
-  ], { cwd: sourceProductRoot, encoding: 'utf8', timeout: process.platform === 'win32' ? 175_000 : 85_000, maxBuffer: 8 * 1024 * 1024 });
+  const nestedWrapperTiming = createVerificationPhaseRecorder(phaseScope, { persistEvidence: true });
+  const nestedWrapperStartedAt = Date.now();
+  const nestedWrapperStarted = `${VERIFICATION_PHASE_TIMING_PREFIX} ${JSON.stringify({
+    scope: phaseScope, id: 'nested-wrapper', status: 'started', startedAt: new Date(nestedWrapperStartedAt).toISOString(),
+  })}\n`;
+  fs.writeSync(process.stderr.fd, nestedWrapperStarted);
+  if (phaseEvidenceOutput) fs.appendFileSync(path.resolve(phaseEvidenceOutput), nestedWrapperStarted, 'utf8');
+  let result: SpawnSyncReturns<string>;
+  let nestedWrapperStatus = 'failed';
+  try {
+    result = spawnSync(process.execPath, [
+      path.join(sourceProductRoot, 'tools/development/run-isolated-workspace-smoke.ts'),
+      '--script', path.join(sourceProductRoot, 'test/integration/non-git-workspace-continuity.test.ts'),
+      '--', '--nested-git-isolation-scenario',
+    ], { cwd: sourceProductRoot, encoding: 'utf8', timeout: process.platform === 'win32' ? 175_000 : 85_000, maxBuffer: 8 * 1024 * 1024 });
+    nestedWrapperStatus = result.status === 0 ? 'passed' : 'failed';
+  } finally {
+    nestedWrapperTiming.record('nested-wrapper', nestedWrapperStartedAt, Date.now(), nestedWrapperStatus);
+    nestedWrapperTiming.emit(process.stderr);
+  }
   assert.equal(result.status, 0, `${result.error?.message || ''}\n${result.stdout}\n${result.stderr}`);
   assert.match(result.stdout, /Nested Git public Worktree lifecycle passed/);
   assert.match(result.stdout, /"cleanup":"cleaned"/);

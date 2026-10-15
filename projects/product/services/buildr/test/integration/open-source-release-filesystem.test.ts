@@ -29,6 +29,8 @@ const existingSourceAssets = [
   'projects/product/openspec/changes/archive/2026-10-03-add-code-source-control/prototypes/viewer.html',
   'projects/product/openspec/changes/archive/2026-10-05-add-dsh-buildr-provenance/prototypes/source/reader-preview.htm',
   'projects/product/openspec/changes/archive/2026-10-09-add-source-control-branches/prototypes/source-control-branches-viewer.html',
+  'projects/product/openspec/changes/archive/2026-10-10-codex-source-control/prototype/viewer.html.accepted',
+  'projects/product/openspec/changes/archive/2026-10-13-add-mysql-connections/prototypes/viewer.html',
   'projects/product/services/dsh-plugin/sdk-patches/dsh-v0.2.0-rc.2-event-sources-settings.patch',
   'projects/product/services/dsh-plugin/sdk-patches/dsh-v0.2.0-rc.2-event-sources.patch',
 ];

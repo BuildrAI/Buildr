@@ -884,6 +884,12 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   },
   "managed-mutations": {
     "inputs": [
+      "test/verification/integrity/managed-mutations.ts",
+      "test/verification/integrity/managed-mutation-analysis.ts",
+      "src/modules/code/application/code-commit-application.ts",
+      "src/modules/code/infrastructure/code-fetch-refs.ts",
+      "src/modules/code/infrastructure/editable-file.ts",
+      "src/modules/connection-skills/persistence/files.ts",
       "src/infrastructure/testing/context-runtime/node-test.ts",
       "src/infrastructure/testing/context-runtime/node-runner.ts",
       "src/modules/agent-assets/application/package-maintenance/**",

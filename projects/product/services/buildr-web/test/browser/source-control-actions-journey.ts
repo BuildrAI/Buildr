@@ -48,7 +48,7 @@ export async function runSourceControlActionsJourney({t, page, workspaceUrl, cap
 
   await scenario('统一生成控件刷新与取消保留说明，生成后手改并提交只改变原工作树', async () => {
     await fixture.withBranches(async (branches: any) => {
-      branches.configureAuthor({name: '浏览器提交', email: 'commit-browser@example.invalid'});
+      branches.configureAuthor({name: '浏览器提交', email: 'commit-browser@example.com'});
       const protocol = await model(true);
       try {
         await page.setViewportSize({width: 1440, height: 900}); const {tree} = await open(branches);
@@ -99,7 +99,7 @@ export async function runSourceControlActionsJourney({t, page, workspaceUrl, cap
 
   await scenario('无智能体仍可手写提交并推送，无上游保留已成立提交不猜目标', async () => {
     await fixture.withBranches(async (branches: any) => {
-      branches.configureAuthor({name: '浏览器手写', email: 'manual-browser@example.invalid'});
+      branches.configureAuthor({name: '浏览器手写', email: 'manual-browser@example.com'});
       const protocol = await model(false);
       try {
         await page.setViewportSize({width: 1280, height: 900}); await open(branches);

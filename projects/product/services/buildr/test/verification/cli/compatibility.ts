@@ -8,16 +8,41 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { registerCommandHelp } from '../../../src/bootstrap/cli/help.ts';
 import { COMMAND_CATALOG, COMMAND_REGISTRY } from '../../../src/bootstrap/cli/registry.ts';
+import { createVerificationPhaseRecorder, VERIFICATION_PHASE_TIMING_PREFIX } from '../timing/phases.ts';
 
 const productRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const cli: any = path.join(productRoot, 'bin', 'buildr.mjs');
+const diagnosticCommands: string[] = COMMAND_CATALOG.map((item: any) => item.key).sort((left: string, right: string) => right.length - left.length);
+let commandSequence = 0;
+
+function diagnosticCommand(args: string[]): string {
+  if (args.length === 0) return 'help:root';
+  if (args[0] === '--version' || args[0] === '-V') return 'version';
+  const help = args[0] === 'help' || args.includes('--help');
+  const words = args[0] === 'help' ? args.slice(1) : args;
+  // Emit only a fixed catalog name or fallback, never arbitrary arguments or paths.
+  const command = diagnosticCommands.find(name => name.split(' ').every((word, index) => words[index] === word)) ?? 'unknown-command';
+  return help ? `help:${command}` : command;
+}
 
 function run(args: any, options: any = {}): any  {
-  return spawnSync(process.execPath, [cli, ...args], {
-    cwd: options.cwd || productRoot,
-    encoding: 'utf8',
-    env: { ...process.env, ...(options.env || {}) },
-  });
+  const sequence = ++commandSequence, command = diagnosticCommand(args), id = `${sequence}:${command}`;
+  const scope = 'cli-compatibility', startedAt = Date.now();
+  const recorder = createVerificationPhaseRecorder(scope);
+  process.stderr.write(`${VERIFICATION_PHASE_TIMING_PREFIX} ${JSON.stringify({ scope, id, sequence, command, status: 'started', startedAt: new Date(startedAt).toISOString() })}\n`);
+  let result: ReturnType<typeof spawnSync> | undefined;
+  try {
+    return result = spawnSync(process.execPath, [cli, ...args], {
+      cwd: options.cwd || productRoot,
+      encoding: 'utf8',
+      env: { ...process.env, ...(options.env || {}) },
+    });
+  } finally {
+    // Completion is distinct from compatibility: assertions below own expected nonzero exits.
+    const phase = recorder.record(id, startedAt, Date.now(), Number.isInteger(result?.status) ? 'passed' : 'failed');
+    Object.assign(phase, { sequence, command, exitCode: result?.status ?? null, signal: result?.signal ?? null });
+    recorder.emit(process.stderr);
+  }
 }
 
 const helpTopics: any[] = [[], ...COMMAND_CATALOG.map((item: any) => item.key.split(' '))];

@@ -35,7 +35,7 @@ const root = path.join(base, 'repository'), remote = path.join(base, 'remote.git
 fs.mkdirSync(root);
 const git = (cwd: string, ...args: string[]) => execFileSync('git', ['--no-optional-locks', '-C', cwd, ...args], { encoding: 'utf8', env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_NOSYSTEM: '1' }, stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 git(root, 'init', '--initial-branch=main');
-git(root, 'config', 'user.name', 'Buildr smoke'); git(root, 'config', 'user.email', 'smoke@example.invalid'); git(root, 'config', 'commit.gpgSign', 'false');
+git(root, 'config', 'user.name', 'Buildr smoke'); git(root, 'config', 'user.email', 'smoke@example.com'); git(root, 'config', 'commit.gpgSign', 'false');
 fs.writeFileSync(path.join(root, 'README.md'), '# Smoke\n');
 fs.writeFileSync(path.join(root, 'AGENTS.md'), 'Write Git commit messages in English. Use type(scope): subject; scope is optional.\n');
 fs.writeFileSync(path.join(root, 'icon.bin'), Buffer.from([0, 1, 2, 3]));

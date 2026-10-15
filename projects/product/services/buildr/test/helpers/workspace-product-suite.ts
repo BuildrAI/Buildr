@@ -20,6 +20,13 @@ const BUILDR: any = path.join(PRODUCT_ROOT, 'bin', 'buildr.mjs');
 const APP_PROCESS_TIMEOUT_MS: any = 60_000;
 const APP_COMMAND_TIMEOUT_MS: any = 15_000;
 
+function previewCommandDiagnostic(phase: string, result: any, timeoutMs: number): string {
+  return `[preview-command-result] ${JSON.stringify({
+    phase, status: result.status, errorCode: result.error?.code ?? null, signal: result.signal ?? null, timeoutMs,
+    stdoutBytes: Buffer.byteLength(result.stdout || ''), stderrBytes: Buffer.byteLength(result.stderr || ''),
+  })}`;
+}
+
 function temporaryRoot(t: any): any  {
   const root: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-workspace-product-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -682,7 +689,7 @@ suiteTest('app-process', '独立 checkout preview 并行隔离、输出身份并
   const second: any = await measure('workspace-second', () => initGitWorkspace(t, { name: 'preview-second' }));
   started.push('first-task');
   const firstStart: any = await runPreviewCommand('start-first', ['web', 'preview', 'start', 'first-task', '--target', first, '--no-open', '--json']);
-  assert.equal(firstStart.status, 0, firstStart.stderr);
+  assert.equal(firstStart.status, 0, previewCommandDiagnostic('start-first', firstStart, APP_COMMAND_TIMEOUT_MS));
   const firstPreview: any = JSON.parse(firstStart.stdout);
   assert.equal(firstPreview.status, 'started');
   assert.equal(firstPreview.owner.worktree, first);
@@ -698,30 +705,30 @@ suiteTest('app-process', '独立 checkout preview 并行隔离、输出身份并
 
   started.push('second-task');
   const secondStart: any = await runPreviewCommand('start-second', ['web', 'preview', 'start', 'second-task', '--target', second, '--no-open', '--json']);
-  assert.equal(secondStart.status, 0, secondStart.stderr);
+  assert.equal(secondStart.status, 0, previewCommandDiagnostic('start-second', secondStart, APP_COMMAND_TIMEOUT_MS));
   const secondPreview: any = JSON.parse(secondStart.stdout);
   assert.notEqual(secondPreview.url, firstPreview.url);
   assert.equal(secondPreview.owner.worktree, second);
   assert.equal(secondPreview.owner.identityMode, 'standalone-checkout');
 
   const collision: any = await runPreviewCommand('reject-collision', ['web', 'preview', 'start', 'first-task', '--target', second, '--no-open', '--json']);
-  assert.notEqual(collision.status, 0);
+  assert.notEqual(collision.status, 0, previewCommandDiagnostic('reject-collision', collision, APP_COMMAND_TIMEOUT_MS));
   assert.match(collision.stderr, /无法证明属于当前 worktree/);
 
   const listed: any = await runPreviewCommand('list-both', ['web', 'preview', 'list', '--json']);
-  assert.equal(listed.status, 0, listed.stderr);
+  assert.equal(listed.status, 0, previewCommandDiagnostic('list-both', listed, APP_COMMAND_TIMEOUT_MS));
   assert.deepEqual(JSON.parse(listed.stdout).previews.map((item: any) => item.instance).sort(), ['first-task', 'second-task']);
 
   const stopped: any = await measure('stop-first', () => stopPreview('first-task', { dataRoot: appData, caller: null }));
   started.splice(started.indexOf('first-task'), 1);
   assert.equal(stopped.status, 'stopped');
   const remainingResult: any = await runPreviewCommand('list-remaining', ['web', 'preview', 'list', '--json']);
-  assert.equal(remainingResult.status, 0, remainingResult.stderr);
+  assert.equal(remainingResult.status, 0, previewCommandDiagnostic('list-remaining', remainingResult, APP_COMMAND_TIMEOUT_MS));
   const remaining: any = JSON.parse(remainingResult.stdout).previews;
   assert.deepEqual(remaining.map((item: any) => item.instance), ['second-task']);
   const secondPid: any = secondPreview.pid;
   const secondStopped: any = await runPreviewCommand('stop-second', ['web', 'preview', 'stop', 'second-task', '--json']);
-  assert.equal(secondStopped.status, 0, secondStopped.stderr);
+  assert.equal(secondStopped.status, 0, previewCommandDiagnostic('stop-second', secondStopped, APP_COMMAND_TIMEOUT_MS));
   started.splice(started.indexOf('second-task'), 1);
   await measure('confirm-second-exit', async () => {
     for (let index: any = 0; index < 40; index += 1) {
