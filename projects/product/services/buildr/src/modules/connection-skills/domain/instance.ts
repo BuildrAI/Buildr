@@ -3,9 +3,11 @@ import type { ConnectionBinding } from './definition.ts';
 export type Values = Record<string, unknown>;
 export type ConnectionScope = { rootPath: string; workspaceId: string };
 export type AuthenticationGroup = { targetBinding: string; values: Values };
+export type ConnectionFieldLabels = Record<string, { value: string; label: string }>;
 export type ConnectionInstance = {
   schemaVersion: 'buildr.connection-instance/v1'; id: string; name: string; environment: string;
   enabled: boolean; category: string; binding: ConnectionBinding; config: Values;
+  fieldLabels?: ConnectionFieldLabels;
   authentication: AuthenticationGroup | null;
 };
 export type Expected = { teamRevision: string; definitionRevision: string; localRevision?: string };

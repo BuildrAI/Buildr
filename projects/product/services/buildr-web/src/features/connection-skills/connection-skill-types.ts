@@ -17,8 +17,10 @@ export type CatalogEntry = {
 };
 export type ConnectionBinding = { skillAssetIdentity: string; definitionId: string; sourceIdentity: string; configVersion: number };
 export type AuthState = { configured: boolean; values: Record<string, unknown>; diagnostic: string | null };
+export type ConnectionFieldLabels = Record<string, { value: string; label: string }>;
 export type ConnectionInstance = {
   id: string; name: string; environment: string; enabled: boolean; category: string; binding: ConnectionBinding; config: Record<string, unknown>;
+  fieldLabels?: ConnectionFieldLabels;
   sourcePath: string; revision: string; teamRevision: string; localRevision: string; definitionRevision: string;
   authentication: { source: 'team' | 'personal'; team: AuthState; personal: AuthState & { present: boolean } };
   availability: { ready: boolean; diagnostics: string[] }; programAvailability: Record<string, { ready: boolean; diagnostics: string[] }>;
@@ -37,6 +39,7 @@ export type HookResult = {
 };
 export type TeamInput = {
   id?: string; name: string; environment: string; enabled: boolean; binding: ConnectionBinding; config: Record<string, unknown>;
+  fieldLabels?: ConnectionFieldLabels;
   authentication: { intent: 'keep' | 'replace' | 'remove'; values?: Record<string, unknown> };
   expected: { teamRevision: string; definitionRevision: string };
 };

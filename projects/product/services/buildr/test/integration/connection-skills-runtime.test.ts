@@ -42,15 +42,120 @@ else {
   });
 }
 `);
-  let sourceIdentity = 'source:example'; let enabled = true;
-  const catalog = createConnectionCatalog({ assets: { readSkills: () => [{ id: 'example', path: 'connections/example', assetIdentity: 'asset:example', sourceIdentity, enabled, connectionDefinitions: ['assets/connection.yml'] }], readSkillFile: (_root, _skill, relative) => { const content = fs.readFileSync(path.join(directory, relative), 'utf8'); return { content, digest: digest(content), directory, absolutePath: path.join(directory, relative) }; } } });
+  let sourceIdentity = 'source:example'; let enabled = true; let catalogReads = 0; let beforeCatalogRead: ((count: number) => void) | undefined;
+  const catalog = createConnectionCatalog({ assets: { readSkills: () => { catalogReads++; beforeCatalogRead?.(catalogReads); return [{ id: 'example', path: 'connections/example', assetIdentity: 'asset:example', sourceIdentity, enabled, connectionDefinitions: ['assets/connection.yml'] }]; }, readSkillFile: (_root, _skill, relative) => { const content = fs.readFileSync(path.join(directory, relative), 'utf8'); return { content, digest: digest(content), directory, absolutePath: path.join(directory, relative) }; } } });
   const app = new ConnectionSkillsApplication({ dataRoot: path.join(root, 'local'), catalog, resolveScope: () => ({ rootPath: workspace, workspaceId: 'fixture-workspace' }) });
   const entry = app.definitions(workspace).definitions[0]!;
   const binding = { skillAssetIdentity: entry.skill.assetIdentity, sourceIdentity: entry.skill.sourceIdentity, definitionId: 'example', configVersion: 1 };
   const create = (id = 'example-one') => app.save(workspace, null, { id, name: id, binding, config: { site: 'https://example.invalid/' }, authentication: { intent: 'replace', values: { username: 'team-user', password: 'team-secret-123' } }, expected: { teamRevision: 'absent', definitionRevision: entry.revision } }).instance;
   const expected = (id = 'example-one') => { const v = app.get(workspace, id).instance; return { teamRevision: v.teamRevision, definitionRevision: v.definitionRevision, localRevision: v.localRevision }; };
-  return { root, workspace, directory, declaration, definition, app, create, expected, binding, source: (value: string) => sourceIdentity = value, enabled: (value: boolean) => enabled = value };
+  return { root, workspace, directory, declaration, definition, app, create, expected, binding, source: (value: string) => sourceIdentity = value, enabled: (value: boolean) => enabled = value, catalogReads: () => catalogReads, beforeCatalogRead: (callback?: (count: number) => void) => beforeCatalogRead = callback };
 }
+test('one read phase observes the catalog once and saves retain a separate write observation', async t => {
+  const f = fixture(t);
+  let before = f.catalogReads(); const created = f.create(); assert.equal(f.catalogReads() - before, 2, 'saving observes once for validation and once immediately before writing');
+  before = f.catalogReads(); const current = f.app.get(f.workspace, created.id).instance; assert.equal(f.catalogReads() - before, 1);
+  before = f.catalogReads(); f.app.list(f.workspace); assert.equal(f.catalogReads() - before, 1);
+  before = f.catalogReads(); assert.equal(f.app.check(f.workspace, created.id).ready, true); assert.equal(f.catalogReads() - before, 1);
+  before = f.catalogReads(); assert.match((await f.app.help(f.workspace, created.id)).stdout, /independently supplied help/); assert.equal(f.catalogReads() - before, 1);
+  before = f.catalogReads(); assert.equal(f.app.useSelected(f.workspace, { id: created.id, expectedRevision: current.revision }, selected => selected.connection.config.site), 'https://example.invalid/'); assert.equal(f.catalogReads() - before, 1);
+  before = f.catalogReads(); const saved = f.app.save(f.workspace, created.id, { ...current, name: 'Renamed', authentication: { intent: 'keep' }, expected: { teamRevision: current.teamRevision, definitionRevision: current.definitionRevision } }).instance; assert.equal(saved.name, 'Renamed'); assert.equal(f.catalogReads() - before, 2);
+  before = f.catalogReads(); const personal = f.app.saveAuth(f.workspace, created.id, { intent: 'replace', values: { username: 'person-user', password: 'personal-secret-456' }, expected: { teamRevision: saved.teamRevision, definitionRevision: saved.definitionRevision, localRevision: saved.localRevision } }).instance; assert.equal(personal.authentication.source, 'personal'); assert.equal(f.catalogReads() - before, 2);
+  before = f.catalogReads(); const removed = f.app.saveAuth(f.workspace, created.id, { intent: 'remove', expected: { teamRevision: personal.teamRevision, definitionRevision: personal.definitionRevision, localRevision: personal.localRevision } }).instance; assert.equal(removed.authentication.source, 'team'); assert.equal(f.catalogReads() - before, 1);
+});
+test('saving still rejects declaration and source drift at the independent write observation', t => {
+  for (const drift of ['declaration', 'source'] as const) {
+    const f = fixture(t), created = f.create(), file = path.join(f.workspace, created.sourcePath), original = fs.readFileSync(file, 'utf8'), before = f.catalogReads();
+    f.beforeCatalogRead(count => { if (count !== before + 2) return; if (drift === 'source') f.source('changed-source'); else fs.writeFileSync(f.declaration, YAML.stringify({ ...f.definition, name: 'Changed declaration' })); });
+    assert.throws(() => f.app.save(f.workspace, created.id, { ...created, name: 'Must not persist', authentication: { intent: 'keep' }, expected: { teamRevision: created.teamRevision, definitionRevision: created.definitionRevision } }), { code: drift === 'source' ? 'connection_skill_definition_unavailable' : 'connection_skill_revision_conflict' });
+    assert.equal(f.catalogReads() - before, 2); assert.equal(fs.readFileSync(file, 'utf8'), original);
+  }
+});
+test('personal authentication still rejects a source change before writing its group', t => {
+  const f = fixture(t), created = f.create(), before = f.catalogReads();
+  f.beforeCatalogRead(count => { if (count === before + 2) f.source('changed-source'); });
+  assert.throws(() => f.app.saveAuth(f.workspace, created.id, { intent: 'replace', values: { username: 'person-user', password: 'personal-secret-456' }, expected: { teamRevision: created.teamRevision, definitionRevision: created.definitionRevision, localRevision: created.localRevision } }), { code: 'connection_skill_definition_unavailable' });
+  assert.equal(f.catalogReads() - before, 2); assert.equal(f.app.files.readLocal({ rootPath: f.workspace, workspaceId: 'fixture-workspace' }, created.id).present, false);
+});
+test('multiple contexts share each observation phase while IPC revalidation observes the current source again', async t => {
+  const f = fixture(t), first = f.create(), second = f.create('example-two');
+  let before = f.catalogReads(); const compared = await f.app.run(f.workspace, { id: first.id, expectedRevision: first.revision, contexts: { compare: { id: second.id, revision: second.revision } }, args: ['read'] });
+  assert.equal(JSON.parse(compared.stdout).hasCompare, true); assert.equal(f.catalogReads() - before, 2, 'selection and pre-handoff phases each observe once for all contexts');
+  before = f.catalogReads(); const running = f.app.run(f.workspace, { id: first.id, expectedRevision: first.revision, args: ['wait'] }); f.source('changed-source');
+  assert.equal(JSON.parse((await running).stdout).revalidated, false); assert.equal(f.catalogReads() - before, 3, 'IPC revalidation requires a fresh third observation');
+});
+test('dynamic field labels stay display-only, preserve old clients and protect both authentication groups', t => {
+  const f = fixture(t), definition: any = structuredClone(f.definition);
+  definition.config.fields.push({ key: 'view', label: '视图', type: 'select', required: true, optionsFrom: 'views' });
+  definition.hooks.views = { program: 'cli', args: ['views'], effect: 'read', inputs: ['config.site', 'authentication.username', 'authentication.password'] };
+  fs.writeFileSync(f.declaration, YAML.stringify(definition));
+  const entry = f.app.definitions(f.workspace).definitions[0]!, label = 'Main view team-secret-123 personal-secret-456';
+  const created = f.app.save(f.workspace, null, { id: 'labeled-view', name: 'Labeled', binding: f.binding, config: { site: 'https://example.invalid/', view: 'view-id' }, fieldLabels: { view: { value: 'view-id', label } }, authentication: { intent: 'replace', values: { username: 'team-user', password: 'team-secret-123' } }, expected: { teamRevision: 'absent', definitionRevision: entry.revision } }).instance;
+  assert.equal(created.fieldLabels.view.value, 'view-id'); assert.equal(created.fieldLabels.view.label, 'Main view [已隐藏] personal-secret-456'); assert.equal(created.authentication.team.configured, true);
+  const personal = f.app.saveAuth(f.workspace, created.id, { intent: 'replace', values: { username: 'person-user', password: 'personal-secret-456' }, expected: { teamRevision: created.teamRevision, definitionRevision: created.definitionRevision, localRevision: created.localRevision } }).instance;
+  assert.equal(personal.fieldLabels.view.label, 'Main view [已隐藏] [已隐藏]');
+  f.app.useSelected(f.workspace, { id: created.id, expectedRevision: personal.revision }, selected => {
+    assert.deepEqual(selected.connection.config, { site: 'https://example.invalid/', view: 'view-id' }); assert.equal('fieldLabels' in selected.connection, false);
+  });
+  const { fieldLabels: _labels, ...oldClient } = personal;
+  const preserved = f.app.save(f.workspace, created.id, { ...oldClient, name: 'Old client save', authentication: { intent: 'keep' }, expected: { teamRevision: personal.teamRevision, definitionRevision: personal.definitionRevision } }).instance;
+  const file = path.join(f.workspace, preserved.sourcePath);
+  assert.equal(preserved.fieldLabels.view.label, 'Main view [已隐藏] [已隐藏]'); assert.equal(YAML.parse(fs.readFileSync(file, 'utf8')).fieldLabels.view.label, 'Main view [已隐藏] [已隐藏]', 'team saves remove known private text from stored display metadata');
+  const before = fs.readFileSync(file, 'utf8');
+  assert.throws(() => f.app.save(f.workspace, created.id, { ...preserved, fieldLabels: { site: { value: preserved.config.site, label: 'Invalid label on a URL field' } }, authentication: { intent: 'keep' }, expected: { teamRevision: preserved.teamRevision, definitionRevision: preserved.definitionRevision } }), { code: 'connection_skill_field_labels_invalid' });
+  assert.equal(fs.readFileSync(file, 'utf8'), before);
+  const cleared = f.app.save(f.workspace, created.id, { ...preserved, fieldLabels: {}, authentication: { intent: 'keep' }, expected: { teamRevision: preserved.teamRevision, definitionRevision: preserved.definitionRevision } }).instance;
+  assert.deepEqual(cleared.fieldLabels, {});
+});
+test('stored display names cannot reveal known secrets after account rotation or removal', t => {
+  const f = fixture(t), definition: any = structuredClone(f.definition);
+  definition.config.fields.push({ key: 'view', label: '视图', type: 'select', required: true, optionsFrom: 'views' });
+  definition.hooks.views = { program: 'cli', args: ['views'], effect: 'read', inputs: ['config.site', 'authentication.username', 'authentication.password'] };
+  fs.writeFileSync(f.declaration, YAML.stringify(definition)); const entry = f.app.definitions(f.workspace).definitions[0]!;
+  let current = f.app.save(f.workspace, null, { id: 'safe-label', name: 'Safe label', binding: f.binding, config: { site: 'https://example.invalid/', view: 'view-id' }, fieldLabels: { view: { value: 'view-id', label: 'Main team-secret-123' } }, authentication: { intent: 'replace', values: { username: 'team-user', password: 'team-secret-123' } }, expected: { teamRevision: 'absent', definitionRevision: entry.revision } }).instance;
+  const file = path.join(f.workspace, current.sourcePath); assert.equal(fs.readFileSync(file, 'utf8').includes('label: Main team-secret-123'), false);
+  current = f.app.saveAuth(f.workspace, current.id, { intent: 'replace', values: { username: 'person-user', password: 'personal-secret-456' }, expected: { teamRevision: current.teamRevision, definitionRevision: current.definitionRevision, localRevision: current.localRevision } }).instance;
+  current = f.app.save(f.workspace, current.id, { ...current, fieldLabels: { view: { value: 'view-id', label: 'Main team-secret-123 personal-secret-456 rotated-team-secret' } }, authentication: { intent: 'replace', values: { username: 'rotated-user', password: 'rotated-team-secret' } }, expected: { teamRevision: current.teamRevision, definitionRevision: current.definitionRevision } }).instance;
+  assert.equal(current.fieldLabels.view.label, 'Main [已隐藏] [已隐藏] [已隐藏]');
+  const teamBeforePersonalRemoval = fs.readFileSync(file, 'utf8');
+  current = f.app.saveAuth(f.workspace, current.id, { intent: 'remove', expected: { teamRevision: current.teamRevision, definitionRevision: current.definitionRevision, localRevision: current.localRevision } }).instance;
+  assert.equal(fs.readFileSync(file, 'utf8'), teamBeforePersonalRemoval, 'removing a personal group never changes shared metadata');
+  current = f.app.save(f.workspace, current.id, { ...current, authentication: { intent: 'remove' }, expected: { teamRevision: current.teamRevision, definitionRevision: current.definitionRevision } }).instance;
+  const observed = f.app.get(f.workspace, current.id).instance; assert.equal(observed.fieldLabels.view.label, 'Main [已隐藏] [已隐藏] [已隐藏]');
+  const output = JSON.stringify(observed); for (const secret of ['team-secret-123', 'personal-secret-456', 'rotated-team-secret']) assert.equal(output.includes(secret), false);
+});
+test('stored invalid labels degrade locally and old labels do not follow an authentication target change', t => {
+  const f = fixture(t), definition: any = structuredClone(f.definition);
+  definition.config.fields.push({ key: 'view', label: '视图', type: 'select', required: true, optionsFrom: 'views' });
+  definition.hooks.views = { program: 'cli', args: ['views'], effect: 'read', inputs: ['config.site', 'authentication.username', 'authentication.password'] };
+  fs.writeFileSync(f.declaration, YAML.stringify(definition)); const entry = f.app.definitions(f.workspace).definitions[0]!;
+  const created = f.app.save(f.workspace, null, { id: 'stored-labels', name: 'Stored labels', binding: f.binding, config: { site: 'https://example.invalid/', view: 'view-id' }, fieldLabels: { view: { value: 'view-id', label: 'Original view' } }, authentication: { intent: 'replace', values: { username: 'team-user', password: 'team-secret-123' } }, expected: { teamRevision: 'absent', definitionRevision: entry.revision } }).instance;
+  const file = path.join(f.workspace, created.sourcePath), raw = YAML.parse(fs.readFileSync(file, 'utf8'));
+  raw.fieldLabels = { view: { value: 'different-id', label: 'Must not be displayed' }, site: { value: created.config.site, label: 'Undeclared metadata' }, malformed: ['invalid'] };
+  fs.writeFileSync(file, YAML.stringify(raw)); const current = f.app.get(f.workspace, created.id).instance;
+  assert.deepEqual(current.fieldLabels, {}); assert.equal(current.availability.ready, true); assert.equal(current.authentication.team.configured, true);
+  raw.fieldLabels = { view: { value: 'view-id', label: 'Original view' } }; fs.writeFileSync(file, YAML.stringify(raw)); const source = f.app.get(f.workspace, created.id).instance;
+  const { fieldLabels: _labels, ...oldClient } = source;
+  const moved = f.app.save(f.workspace, created.id, { ...oldClient, config: { ...source.config, site: 'https://changed.invalid/' }, authentication: { intent: 'replace', values: { username: 'team-user', password: 'team-secret-123' } }, expected: { teamRevision: source.teamRevision, definitionRevision: source.definitionRevision } }).instance;
+  assert.deepEqual(moved.fieldLabels, {}); assert.equal(moved.authentication.team.configured, true);
+});
+test('label text cannot reveal stored authentication after source or secret classification drift', t => {
+  const f = fixture(t), definition: any = structuredClone(f.definition);
+  definition.config.fields.push({ key: 'view', label: '视图', type: 'select', required: true, optionsFrom: 'views' });
+  definition.hooks.views = { program: 'cli', args: ['views'], effect: 'read', inputs: ['config.site', 'authentication.username', 'authentication.password'] };
+  fs.writeFileSync(f.declaration, YAML.stringify(definition)); const entry = f.app.definitions(f.workspace).definitions[0]!;
+  const created = f.app.save(f.workspace, null, { id: 'private-label', name: 'Private label', binding: f.binding, config: { site: 'https://example.invalid/', view: 'view-id' }, fieldLabels: { view: { value: 'view-id', label: 'team-secret-123 personal-secret-456' } }, authentication: { intent: 'replace', values: { username: 'team-user', password: 'team-secret-123' } }, expected: { teamRevision: 'absent', definitionRevision: entry.revision } }).instance;
+  f.app.saveAuth(f.workspace, created.id, { intent: 'replace', values: { username: 'person-user', password: 'personal-secret-456' }, expected: { teamRevision: created.teamRevision, definitionRevision: created.definitionRevision, localRevision: created.localRevision } });
+  f.source('replacement-source'); const unavailable = f.app.get(f.workspace, created.id).instance;
+  assert.deepEqual(unavailable.fieldLabels, {}); assert.equal(unavailable.availability.ready, false); assert.equal(unavailable.config.view, 'view-id');
+  f.source('source:example'); definition.authentication.fields.find((field: { key: string }) => field.key === 'password').type = 'string'; fs.writeFileSync(f.declaration, YAML.stringify(definition));
+  const reclassified = f.app.get(f.workspace, created.id).instance;
+  assert.deepEqual(reclassified.fieldLabels, {}); assert.equal(reclassified.authentication.team.configured, false); assert.equal(reclassified.authentication.personal.configured, false); assert.equal(reclassified.config.view, 'view-id');
+  const output = JSON.stringify(f.app.list(f.workspace)); assert.equal(output.includes('team-secret-123'), false); assert.equal(output.includes('personal-secret-456'), false);
+  const repaired = f.app.save(f.workspace, reclassified.id, { ...reclassified, fieldLabels: { view: { value: 'view-id', label: 'team-user team-secret-123 person-user personal-secret-456' } }, authentication: { intent: 'remove' }, expected: { teamRevision: reclassified.teamRevision, definitionRevision: reclassified.definitionRevision } }).instance;
+  const stored = YAML.parse(fs.readFileSync(path.join(f.workspace, repaired.sourcePath), 'utf8'));
+  assert.equal(stored.fieldLabels.view.label, '[已隐藏] [已隐藏] [已隐藏] [已隐藏]', 'invalid historical groups conservatively protect all former string values when resaving labels');
+});
 test('unknown provider: source discovery is read-only, shared files and local complete override stay independent', async t => {
   const f = fixture(t); assert.deepEqual(f.app.list(f.workspace).instances, []); assert.equal(fs.existsSync(path.join(f.root, 'local')), false);
   const created = f.create(); assert.equal(created.authentication.source, 'team'); assert.equal(JSON.stringify(created).includes('team-secret-123'), false);

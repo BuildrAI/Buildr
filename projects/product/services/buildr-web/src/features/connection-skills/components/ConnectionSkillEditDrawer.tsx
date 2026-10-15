@@ -10,7 +10,7 @@ import { ConnectionPersonalAuthentication } from './ConnectionPersonalAuthentica
 import { ConnectionSystemPicker } from './ConnectionSystemPicker';
 import { ConnectionTeamForm } from './ConnectionTeamForm';
 
-type Props = { instance?: ConnectionInstance; definitions: CatalogEntry[]; client: ConnectionSkillsClient; onClose(): void; onSaved(): void };
+type Props = { instance?: ConnectionInstance; definitions: CatalogEntry[]; client: ConnectionSkillsClient; onClose(): void; onSaved(saved: ConnectionInstance): void };
 
 export function ConnectionSkillEditDrawer({ instance: initial, definitions, client, onClose, onSaved }: Props) {
   const editor = useConnectionSkillEditor({ instance: initial, definitions, client, onSaved, onTeamSaved: onClose });
@@ -34,7 +34,7 @@ export function ConnectionSkillEditDrawer({ instance: initial, definitions, clie
         {entry?.diagnostics.map((item, index) => <Alert key={index} showIcon type="warning" message={item.message} />)}
         {instance?.availability.diagnostics.length ? <details className="buildr-connection-availability"><summary>此连接暂不可运行 · 查看原因</summary>{instance.availability.diagnostics.map((item, index) => <p key={index}>{item}</p>)}</details> : null}
         <section className="buildr-connection-skill-identity" aria-label="连接名称和环境"><label htmlFor="connection-skill-name">连接名称<Input id="connection-skill-name" disabled={disabled} value={editor.name} placeholder={`${systemName} 测试环境`} onChange={event => editor.setName(event.target.value)} /></label><label htmlFor="connection-skill-environment">环境 · 可选<Input id="connection-skill-environment" disabled={disabled} value={editor.environment} placeholder="例如：测试、回归、生产" onChange={event => editor.setEnvironment(event.target.value)} /></label></section>
-        {entry && <ConnectionTeamForm entry={entry} instance={instance} config={editor.config} authentication={editor.teamValues} intent={editor.teamIntent} disabled={disabled} options={editor.options} discovering={editor.discovering} discoveryResults={editor.discoveryResults} discoveryReady={discoveryReady} onConfig={editor.changeConfig} onAuthentication={editor.changeTeam} onIntent={editor.changeTeamIntent} onDiscover={hook => void editor.runHook(hook)} />}
+        {entry && <ConnectionTeamForm entry={entry} instance={instance} config={editor.config} fieldLabels={editor.fieldLabels} authentication={editor.teamValues} intent={editor.teamIntent} disabled={disabled} options={editor.options} discovering={editor.discovering} discoveryResults={editor.discoveryResults} discoveryReady={discoveryReady} onConfig={editor.changeConfig} onAuthentication={editor.changeTeam} onIntent={editor.changeTeamIntent} onDiscover={hook => void editor.runHook(hook)} />}
         {instance?.authentication.team.diagnostic && <Alert type="warning" showIcon message={instance.authentication.team.diagnostic} />}
         {editor.teamIntent === 'remove' && <Alert type="warning" showIcon message="下次保存将移除团队账号。" action={<Button size="small" onClick={() => editor.changeTeamIntent(instance?.authentication.team.configured ? 'keep' : 'replace')}>撤销</Button>} />}
         <div className="buildr-connection-test-area"><small className="buildr-connection-skill-muted" id="connection-skill-candidate-source">测试使用团队账号，不会保存当前修改。</small><ConnectionHookResult result={editor.testResult} stale={editor.testStale} saved={Boolean(instance)} /></div>

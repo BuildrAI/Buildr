@@ -1,14 +1,15 @@
 import { Button, Checkbox, Input, InputNumber, Select } from 'antd';
-import type { ConnectionField, HookResult } from '../connection-skill-types';
+import type { ConnectionField, ConnectionFieldLabels, HookResult } from '../connection-skill-types';
 import { diagnosticText, fieldVisible } from '../connection-skill-form';
+import { connectionFieldLabel } from '../connection-skill-summary';
 
 type Option = { value: string | number | boolean; label: string };
 type Props = {
   fields: ConnectionField[]; values: Record<string, unknown>; prefix: string; disabled: boolean; keepSecrets?: boolean;
-  options?: Record<string, Option[]>; discovering?: string; onChange(key: string, value: unknown): void; onDiscover?(hook: string): void;
+  options?: Record<string, Option[]>; fieldLabels?: ConnectionFieldLabels; discovering?: string; onChange(key: string, value: unknown, label?: string): void; onDiscover?(hook: string): void;
   discoveryResults?: Record<string, HookResult>; discoveryReady?: Record<string, boolean>; showGroupHeading?: boolean;
 };
-export function ConnectionFields({ fields, values, prefix, disabled, keepSecrets, options = {}, discovering, onChange, onDiscover, discoveryResults = {}, discoveryReady = {}, showGroupHeading = true }: Props) {
+export function ConnectionFields({ fields, values, prefix, disabled, keepSecrets, options = {}, fieldLabels, discovering, onChange, onDiscover, discoveryResults = {}, discoveryReady = {}, showGroupHeading = true }: Props) {
   const visible = fields.filter(field => fieldVisible(field, values));
   return <div className="buildr-connection-skill-fields">{visible.map((field, index) => {
     const id = `${prefix}-${field.key}`, value = values[field.key];
@@ -19,8 +20,8 @@ export function ConnectionFields({ fields, values, prefix, disabled, keepSecrets
       const choices = field.values?.map(item => ({ value: item, label: item === '' ? '（空值）' : String(item) })) || options[field.optionsFrom || ''] || [];
       const selected = (Array.isArray(value) ? value : value === undefined || value === null ? [] : [value]) as (string | number | boolean)[];
       const hasChoices = Boolean(field.values || field.optionsFrom && Object.hasOwn(options, field.optionsFrom));
-      const all = [...choices, ...selected.filter(item => !choices.some(choice => choice.value === item)).map(item => ({ value: item, label: hasChoices ? `${String(item)}（未在本次结果中）` : String(item) }))];
-      input = <Select id={id} aria-label={field.label} showSearch optionFilterProp="label" allowClear mode={field.type === 'multiselect' ? 'multiple' : undefined} disabled={disabled} value={field.type === 'multiselect' ? selected.map(item => JSON.stringify(item)) : selected.length ? JSON.stringify(selected[0]) : undefined} options={all.map(item => ({ value: JSON.stringify(item.value), label: item.label }))} onChange={(next: string | string[] | undefined) => onChange(field.key, Array.isArray(next) ? next.map(item => JSON.parse(item)) : next === undefined ? undefined : JSON.parse(next))} />;
+      const all = [...choices, ...selected.filter(item => !choices.some(choice => choice.value === item)).map(item => { const label = connectionFieldLabel(field, item, fieldLabels) || String(item); return { value: item, label: hasChoices ? `${label}（未在本次结果中）` : label }; })];
+      input = <Select id={id} aria-label={field.label} showSearch optionFilterProp="label" allowClear mode={field.type === 'multiselect' ? 'multiple' : undefined} disabled={disabled} value={field.type === 'multiselect' ? selected.map(item => JSON.stringify(item)) : selected.length ? JSON.stringify(selected[0]) : undefined} options={all.map(item => ({ value: JSON.stringify(item.value), label: item.label }))} onChange={(next: string | string[] | undefined) => { const decoded: unknown = Array.isArray(next) ? next.map(item => JSON.parse(item)) : next === undefined ? undefined : JSON.parse(next); onChange(field.key, decoded, choices.find(choice => choice.value === decoded)?.label || connectionFieldLabel(field, decoded, fieldLabels)); }} />;
     } else if (field.type === 'secret') input = <Input.Password id={id} aria-label={field.label} value={typeof value === 'string' ? value : ''} autoComplete="new-password" disabled={disabled} placeholder={keepSecrets ? '已配置；保持原认证无需填写' : '填写秘密值'} onChange={event => onChange(field.key, event.target.value)} />;
     else input = <Input id={id} aria-label={field.label} value={typeof value === 'string' ? value : ''} autoComplete="off" disabled={disabled} maxLength={field.maxLength} onChange={event => onChange(field.key, event.target.value)} />;
     const result = discoveryResults[field.optionsFrom || ''];

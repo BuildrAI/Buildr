@@ -9,6 +9,16 @@ import YAML from 'yaml';
 import { ConnectionSkillsApplication } from '../../src/modules/connection-skills/application/connection-skills-application.ts';
 import { createConnectionCatalog } from '../../src/modules/connection-skills/application/catalog.ts';
 import { readConnectionSkillFile } from '../../src/modules/agent-assets/application/connection-skill-source.ts';
+import { parseConnectionDefinition, validateConfig } from '../../src/modules/connection-skills/domain/definition.ts';
+
+test('new builtin Nacos and XXL-JOB default to non-production while saved true values remain true', () => {
+  for (const [skill, config] of [['nacos-connection', { apiBaseUrl: 'https://api.example.invalid/nacos/' }], ['xxl-job-connection', { consoleUrl: 'https://jobs.example.invalid/xxl-job-admin/' }]] as const) {
+    const definition = parseConnectionDefinition(fs.readFileSync(new URL(`../../resources/workspace/skills/connections/${skill}/assets/connection.yml`, import.meta.url), 'utf8'));
+    assert.equal(definition.config.fields.find(field => field.key === 'production')?.default, false);
+    assert.equal(validateConfig(definition.config.fields, config).production, false);
+    assert.equal(validateConfig(definition.config.fields, { ...config, production: true }).production, true);
+  }
+});
 
 test('Nacos declared nonempty account and group reject invalid saves and execution while empty passwords remain valid', async t => {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-nacos-declaration-')));
@@ -31,6 +41,7 @@ test('Nacos declared nonempty account and group reject invalid saves and executi
   assert.throws(() => app.save(workspace, null, { ...input, config: { ...input.config, defaultGroup: '' } }), { code: 'connection_field_invalid', field: 'defaultGroup' });
   const created = app.save(workspace, null, input).instance;
   assert.equal(created.authentication.team.configured, true);
+  assert.equal(created.config.production, false);
   assert.equal(created.websiteUrl, input.config.consoleUrl); assert.equal(created.config.apiBaseUrl, input.config.apiBaseUrl);
   const optional = app.save(workspace, null, { ...input, id: 'api-only', config: { apiBaseUrl: input.config.apiBaseUrl }, authentication: { intent: 'remove' } }).instance;
   assert.equal(optional.websiteUrl, null); assert.equal(optional.config.consoleUrl, undefined);

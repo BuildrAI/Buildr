@@ -11,6 +11,8 @@ import { ConnectionSkillsApplication } from '../../src/modules/connection-skills
 import { ConnectionFiles } from '../../src/modules/connection-skills/persistence/files.ts';
 import { resolveProgram, runProgram } from '../../src/modules/connection-skills/infrastructure/program.ts';
 import { assertRevision } from '../../src/modules/connection-skills/domain/instance.ts';
+import { publicFieldLabels, readFieldLabels, validatedFieldLabels } from '../../src/modules/connection-skills/domain/field-labels.ts';
+import type { ConnectionField } from '../../src/modules/connection-skills/domain/definition.ts';
 
 function fixture(t: { after(action: () => void): void }) {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-connection-safety-'));
@@ -43,6 +45,51 @@ function fixture(t: { after(action: () => void): void }) {
   }
   return { base, root, directory, entryFile, scope, dataRoot, application, available, binding, create, source: (value: string) => sourceIdentity = value };
 }
+
+test('display labels accept only matching dynamic selections and hide secrets without substituting identities', () => {
+  const fields: ConnectionField[] = [{ key: 'view', label: '视图', type: 'select', optionsFrom: 'views' }, { key: 'url', label: '地址', type: 'url' }, { key: 'multiple', label: '多个', type: 'multiselect', optionsFrom: 'views' }];
+  const config = { view: 'view-id', url: 'https://fixture.invalid/', multiple: ['view-id'] }, labels = { view: { value: 'view-id', label: '应用日志' } };
+  assert.deepEqual(validatedFieldLabels(fields, config, labels), labels);
+  for (const raw of [null, [], { view: { value: 'view-id', label: '' } }, { view: { value: 'other', label: '旧名称' } }, { unknown: { value: 'view-id', label: '未知' } }, { url: { value: config.url, label: '非选择' } }, { multiple: { value: 'view-id', label: '多选不接受单值名称' } }, { view: { value: 'view-id', label: 'x'.repeat(2049) } }]) assert.throws(() => validatedFieldLabels(fields, config, raw), { code: 'connection_skill_field_labels_invalid' });
+  assert.deepEqual(readFieldLabels({ ...labels, malformed: 123 }), labels);
+  assert.deepEqual(publicFieldLabels(fields, config, { ...labels, view: { value: 'other', label: '旧名称' } }), {});
+  assert.deepEqual(publicFieldLabels(fields, config, { view: { value: 'view-id', label: 'secret-long secret' } }, ['secret', 'secret-long']), { view: { value: 'view-id', label: '[已隐藏] [已隐藏]' } });
+  assert.deepEqual(publicFieldLabels(fields, config, labels, ['view-id']), {}, 'An identity colliding with a secret is omitted, never replaced by another identity.');
+});
+
+test('saved selection names round-trip without entering execution, survive older clients, and clear on changed identities', t => {
+  const f = fixture(t), definitionFile = path.join(f.directory, 'assets/connection.yml'), definition = YAML.parse(fs.readFileSync(definitionFile, 'utf8'));
+  definition.config.fields.push({ key: 'scope', label: '默认范围', type: 'select', optionsFrom: 'scopes' });
+  definition.hooks.scopes = { program: 'cli', args: ['scopes'], effect: 'read' };
+  fs.writeFileSync(definitionFile, YAML.stringify(definition));
+  const entry = f.application.definitions(f.root).definitions[0]!, labels = { scope: { value: 'scope-id', label: '应用日志视图' } };
+  const input = { id: 'labeled', name: '名称验收', binding: f.binding, config: { url: 'https://fixture.example.invalid/', scope: 'scope-id' }, fieldLabels: labels, authentication: { intent: 'replace', values: { username: 'reader', password: 'fixture-secret' } }, expected: { teamRevision: 'absent', definitionRevision: entry.revision } };
+  let saved = f.application.save(f.root, null, input).instance;
+  assert.deepEqual(saved.fieldLabels, labels); assert.deepEqual(saved.config, input.config);
+  const raw = YAML.parse(fs.readFileSync(path.join(f.root, saved.sourcePath), 'utf8'));
+  assert.deepEqual(raw.fieldLabels, labels); assert.equal(raw.config.scope, 'scope-id');
+  f.application.useSelected(f.root, { id: saved.id, expectedRevision: saved.revision }, selected => { assert.equal(Object.hasOwn(selected.connection, 'fieldLabels'), false); assert.equal(selected.connection.config.scope, 'scope-id'); });
+  const olderInput = () => ({ name: saved.name, binding: saved.binding, config: saved.config, authentication: { intent: 'keep' }, expected: { teamRevision: saved.teamRevision, definitionRevision: saved.definitionRevision } });
+  saved = f.application.save(f.root, saved.id, olderInput()).instance;
+  assert.deepEqual(saved.fieldLabels, labels, 'A client that predates names must preserve matching saved labels.');
+  const before = fs.readFileSync(path.join(f.root, saved.sourcePath));
+  assert.throws(() => f.application.save(f.root, saved.id, { ...olderInput(), fieldLabels: { scope: { value: 'other', label: 'wrong' } } }), { code: 'connection_skill_field_labels_invalid' });
+  assert.deepEqual(fs.readFileSync(path.join(f.root, saved.sourcePath)), before);
+  saved = f.application.save(f.root, saved.id, { ...olderInput(), config: { ...saved.config, scope: 'other' } }).instance;
+  assert.deepEqual(saved.fieldLabels || {}, {}); assert.equal(saved.authentication.team.configured, true);
+});
+
+test('malformed saved display metadata is isolated from valid configuration and never reflected unfiltered', t => {
+  const f = fixture(t), saved = f.create(), file = path.join(f.root, saved.sourcePath), raw = YAML.parse(fs.readFileSync(file, 'utf8'));
+  for (const metadata of [false, ['not-a-record'], { url: { value: saved.config.url, label: 'not-a-select' }, unknown: { value: 'unknown', label: 'fixture-private-password' }, malformed: { label: 123 } }]) {
+    raw.fieldLabels = metadata; fs.writeFileSync(file, YAML.stringify(raw)); const before = fs.readFileSync(file);
+    const current = f.application.get(f.root, saved.id).instance;
+    assert.equal(current.availability.ready, true); assert.equal(current.authentication.team.configured, true);
+    assert.deepEqual(current.fieldLabels || {}, {}); assert.ok(!JSON.stringify(current.fieldLabels || {}).includes('fixture-private-password'));
+    f.application.useSelected(f.root, { id: current.id, expectedRevision: current.revision }, selected => assert.equal(selected.connection.config.url, saved.config.url));
+    assert.deepEqual(fs.readFileSync(file), before, 'Reading optional names never rewrites the source.');
+  }
+});
 
 test('generic connection blocks an externally changed authentication principal before private handoff', async t => {
   const f = fixture(t), instance = f.create();

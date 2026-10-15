@@ -4,6 +4,7 @@ import { createApiClient } from '../src/api/client.ts';
 import { createConnectionSkillsClient } from '../src/features/connection-skills/api/connection-skills-api.ts';
 import { afterPersonalSave, afterTeamSave, authenticationDraftsAfterRead, bindingFor, bindingKey, categoryLabel, connectionSystems, createDraftRequestScope, draftHookInput, draftObservations, fieldDefaults, hooksAvailable, personalDraftDirty, personalDraftFor, validateFields, websiteHref, withFieldValue } from '../src/features/connection-skills/connection-skill-form.ts';
 import { tabForPath } from '../src/app/workspace-pages.ts';
+import { connectionFieldLabel, connectionSummaryLines, displayFieldLabels, fieldLabelsAfterRead } from '../src/features/connection-skills/connection-skill-summary.ts';
 
 const entry = {
   definition: { schemaVersion: 'buildr.connection-definition/v1', definitionId: 'custom', name: '自制接入', category: 'custom', configVersion: 1,
@@ -38,6 +39,47 @@ test('声明默认字段与动态范围保留，字段校验不需要远端测�
   assert.equal(websiteHref('javascript:alert(1)'), null);
   assert.equal(websiteHref('https://user:password@example.test/'), null);
   assert.equal(websiteHref('https://custom.example.test/'), instance.config.endpoint);
+});
+
+test('摘要使用已保存动态选择名称，编号漂移或非选择标签安全回退', () => {
+  const current = { ...instance, definition: { ...entry, definition: { ...entry.definition, presentation: { summaryFields: ['endpoint', 'scope'] } } }, fieldLabels: { scope: { value: 'default', label: '应用日志视图' } } };
+  assert.deepEqual(connectionSummaryLines(current), [instance.config.endpoint, '应用日志视图']);
+  assert.equal(connectionFieldLabel(entry.definition.config.fields[1], 'default', current.fieldLabels), '应用日志视图');
+  assert.deepEqual(connectionSummaryLines({ ...current, fieldLabels: undefined }), [instance.config.endpoint, 'default']);
+  assert.deepEqual(connectionSummaryLines({ ...current, config: { ...instance.config, scope: 'another-id' } }), [instance.config.endpoint, 'another-id']);
+  assert.equal(connectionFieldLabel(entry.definition.config.fields[0], instance.config.endpoint, { endpoint: { value: instance.config.endpoint, label: '错误地址名称' } }), undefined);
+  assert.deepEqual(current.config, instance.config, 'A display name cannot replace the execution target.');
+});
+
+test('地址后多个范围合并为一行且不创建空白摘要', () => {
+  const fields = [...entry.definition.config.fields, { key: 'group', label: '默认分组', type: 'string' }];
+  const current = { ...instance, config: { endpoint: instance.config.endpoint, scope: 'public', group: 'DEFAULT_GROUP' }, definition: { ...entry, definition: { ...entry.definition, config: { fields }, presentation: { summaryFields: ['endpoint', 'scope', 'group'] } } } };
+  assert.deepEqual(connectionSummaryLines(current), [instance.config.endpoint, 'public · DEFAULT_GROUP']);
+  assert.deepEqual(connectionSummaryLines({ ...current, config: { ...current.config, group: '', scope: undefined } }), [instance.config.endpoint]);
+  assert.deepEqual(connectionSummaryLines({ ...current, config: {} }), []);
+});
+
+test('保存个人账号或重读后未修改的名称跟随新公共结果，未保存选择与清除草稿保留', () => {
+  const fields = entry.definition.config.fields, config = instance.config;
+  const baseline = { scope: { value: 'default', label: '旧视图名称' } }, incoming = { scope: { value: 'default', label: '[已隐藏]' } };
+  assert.deepEqual(fieldLabelsAfterRead(fields, config, baseline, baseline, incoming), incoming);
+  assert.deepEqual(fieldLabelsAfterRead(fields, config, baseline, baseline, {}), {}, 'An omitted public name must not remain visible from stale editor state.');
+  const pending = { scope: { value: 'draft-id', label: '尚未保存的选择' } };
+  assert.deepEqual(fieldLabelsAfterRead(fields, { ...config, scope: 'draft-id' }, pending, baseline, incoming), pending);
+  const discovered = { scope: { value: 'default', label: '刚发现的名称' } };
+  assert.deepEqual(fieldLabelsAfterRead(fields, config, discovered, baseline, incoming), discovered);
+  assert.deepEqual(fieldLabelsAfterRead(fields, config, {}, baseline, incoming), {}, 'A deliberate clearing remains a draft.');
+  assert.deepEqual(fieldLabelsAfterRead(fields, config, baseline, baseline, incoming, true), {}, 'A server name from an unchanged old target does not follow a draft target change.');
+  assert.deepEqual(fieldLabelsAfterRead(fields, { ...config, scope: 'another' }, baseline, baseline, incoming), {});
+});
+
+test('草稿名称按已知团队和个人秘密仅作展示遮蔽，保留原始名称与编号作为保存输入', () => {
+  const fields = entry.definition.config.fields, config = instance.config;
+  const labels = { scope: { value: 'default', label: 'team-secret-long personal-secret team-secret' } }, before = structuredClone(labels);
+  assert.deepEqual(displayFieldLabels(fields, config, labels, ['team-secret', 'team-secret-long', 'personal-secret']), { scope: { value: 'default', label: '[已隐藏] [已隐藏] [已隐藏]' } });
+  assert.deepEqual(labels, before);
+  assert.deepEqual(displayFieldLabels(fields, config, labels, ['default']), {}, 'A matching secret never substitutes the actual selection identity.');
+  assert.deepEqual(displayFieldLabels(fields, { ...config, scope: 'changed-id' }, labels, []), {});
 });
 
 test('输入改变、更新请求和关闭后，已取消请求即使返回也不能更新草稿', async () => {

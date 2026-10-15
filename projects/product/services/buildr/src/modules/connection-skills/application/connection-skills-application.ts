@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { validateConfig, validateAuthentication, type ConnectionBinding, type ConnectionDefinition } from '../domain/definition.ts';
 import { assertRevision, diagnostic, failure, identifier, object, text, type AuthenticationGroup, type ConnectionInstance, type ConnectionScope, type Expected, type Values } from '../domain/instance.ts';
 import { normalizeHookOutput } from '../domain/hook-result.ts';
+import { publicFieldLabels, validatedFieldLabels } from '../domain/field-labels.ts';
 import { ConnectionFiles, digest } from '../persistence/files.ts';
 import { createConnectionCatalog, type ConnectionCatalogEntry, type ConnectionCatalogResult } from './catalog.ts';
 import { checkProgram, programRecipient, resolveProgram, runProgram } from '../infrastructure/program.ts';
@@ -13,7 +14,7 @@ function requireDefinitionObservation(expected: Expected): void {
   if (typeof expected.definitionRevision !== 'string' || !expected.definitionRevision) throw failure('connection_skill_revision_required', '必须提供已观察的接入声明版本。', 400);
 }
 type AuthIntent = { intent: 'keep' | 'replace' | 'remove'; values?: Values };
-type TeamInput = { id?: string; name: string; environment?: string; enabled?: boolean; binding: ConnectionBinding; config: Values; authentication: AuthIntent; expected: Expected };
+type TeamInput = { id?: string; name: string; environment?: string; enabled?: boolean; binding: ConnectionBinding; config: Values; fieldLabels?: unknown; authentication: AuthIntent; expected: Expected };
 export class ConnectionSkillsApplication {
   readonly files: ConnectionFiles;
   readonly catalog: Catalog;
@@ -30,10 +31,11 @@ export class ConnectionSkillsApplication {
     } catch { diagnostics.push('连接实例影响当前不可读取；源资产操作仍可继续。'); }
     return { instances, diagnostics };
   }
-  private entry(scope: ConnectionScope, binding: ConnectionBinding, expected?: string, allowDisabled = false): ConnectionCatalogEntry {
+  private observe(scope: ConnectionScope): ConnectionObservation { return { catalog: this.catalog.list(scope.rootPath), programs: new Map() }; }
+  private entry(scope: ConnectionScope, binding: ConnectionBinding, expected?: string, allowDisabled = false, observation?: ConnectionObservation): ConnectionCatalogEntry {
     object(binding);
     if (Object.keys(binding).some(key => !['skillAssetIdentity', 'definitionId', 'sourceIdentity', 'configVersion'].includes(key)) || !['skillAssetIdentity', 'definitionId', 'sourceIdentity'].every(key => typeof (binding as unknown as Values)[key] === 'string')) throw failure('connection_skill_binding_invalid', '连接绑定格式无效。', 400);
-    const resolved = this.catalog.resolve(scope.rootPath, binding);
+    const resolved = this.catalog.resolve(scope.rootPath, binding, observation?.catalog);
     if ((!resolved.available && !(allowDisabled && resolved.diagnostics.length > 0 && resolved.diagnostics.every(item => item.code === 'connection_skill_disabled'))) || !resolved.definition) throw failure('connection_skill_definition_unavailable', resolved.diagnostics.map(item => item.message).join(' '));
     if (expected !== undefined) try { assertRevision(resolved.definition.revision, expected); }
     catch (cause) {
@@ -72,6 +74,13 @@ export class ConnectionSkillsApplication {
     if (observationDiagnostic) diagnostics.push(observationDiagnostic);
     let publicConfig: Values = {};
     if (entry) try { publicConfig = validateConfig(entry.definition.config.fields, instance.config); } catch (cause) { diagnostics.push(diagnostic(cause)); }
+    const teamAuthentication = summary(instance.authentication), personalAuthentication = { present: local.present, ...summary(local.group, local.diagnostic) };
+    const secretFields = entry?.definition.authentication.fields.filter(field => field.type === 'secret') || [];
+    const secrets = secretFields.flatMap(field => [instance.authentication?.values[field.key], local.group?.values[field.key]]).filter((value): value is string => typeof value === 'string');
+    // An unavailable binding or invalid saved group cannot safely classify old label text.
+    // Omit only optional display metadata; the authoritative instance remains readable.
+    const labelsAvailable = resolved.available && (!instance.authentication || !teamAuthentication.diagnostic) && (!local.present || !personalAuthentication.diagnostic);
+    const fieldLabels = entry && labelsAvailable ? publicFieldLabels(entry.definition.config.fields, publicConfig, instance.fieldLabels, secrets) : {};
     if (instance.category !== entry?.definition.category && entry) diagnostics.push('实例类别与绑定声明不一致。');
     let programAvailability: ProgramAvailability = entry && observation?.programs.get(entry) || {};
     if (entry && !observation?.programs.has(entry)) {
@@ -93,22 +102,26 @@ export class ConnectionSkillsApplication {
     const websiteField = entry?.definition.presentation?.websiteField;
     let websiteUrl: string | null = null;
     if (websiteField && typeof publicConfig[websiteField] === 'string') try { const url = new URL(publicConfig[websiteField] as string); if (['https:', 'http:'].includes(url.protocol) && !url.username && !url.password) websiteUrl = url.href; } catch { /* Invalid website never becomes a clickable target. */ }
-    return { ...instance, config: publicConfig, sourcePath, revision, teamRevision, localRevision: local.revision, definitionRevision,
-      authentication: { source: local.present ? 'personal' as const : 'team' as const, team: summary(instance.authentication), personal: { present: local.present, ...summary(local.group, local.diagnostic) } },
+    return { ...instance, config: publicConfig, fieldLabels, sourcePath, revision, teamRevision, localRevision: local.revision, definitionRevision,
+      authentication: { source: local.present ? 'personal' as const : 'team' as const, team: teamAuthentication, personal: personalAuthentication },
       availability: { ready: diagnostics.length === 0, diagnostics }, programAvailability, definition: entry, websiteUrl };
   }
   list(root: string) {
     const scope = this.resolveScope(root), instances: ReturnType<ConnectionSkillsApplication['public']>[] = [], diagnostics: { id?: string; sourcePath?: string; message: string }[] = [];
     let team: ReturnType<ConnectionFiles['listTeam']>; try { team = this.files.listTeam(scope); } catch (error) { return { instances, diagnostics: [{ message: diagnostic(error) }] }; }
-    const observation: ConnectionObservation = { catalog: this.catalog.list(scope.rootPath), programs: new Map() };
+    const observation = this.observe(scope);
     diagnostics.push(...team.diagnostics);
     for (const saved of team.instances) try { instances.push(this.public(scope, saved.value, saved.revision, saved.sourcePath, saved.diagnostic, observation)); } catch (error) { diagnostics.push({ id: saved.value.id, sourcePath: saved.sourcePath, message: diagnostic(error) }); }
     return { instances, diagnostics };
   }
-  get(root: string, id: string) {
-    const scope = this.resolveScope(root), team = this.files.readTeam(scope, identifier(id));
+  private getObserved(scope: ConnectionScope, id: string, observation?: ConnectionObservation) {
+    const team = this.files.readTeam(scope, identifier(id));
     if (!team.value) throw failure('connection_skill_not_found', '当前工作空间未配置此连接。', 404);
-    return { instance: this.public(scope, team.value, team.revision, team.sourcePath, team.diagnostic) };
+    return { instance: this.public(scope, team.value, team.revision, team.sourcePath, team.diagnostic, observation || this.observe(scope)) };
+  }
+  get(root: string, id: string) {
+    const scope = this.resolveScope(root);
+    return this.getObserved(scope, id);
   }
   save(root: string, id: string | null, raw: unknown) {
     const scope = this.resolveScope(root), input = object(raw) as unknown as TeamInput;
@@ -117,19 +130,34 @@ export class ConnectionSkillsApplication {
       const before = this.files.readTeam(scope, instanceId); assertRevision(before.revision, input.expected.teamRevision);
       if (id && !before.value) throw failure('connection_skill_not_found', '当前实例不存在。', 404);
       if (!id && before.value) throw failure('connection_skill_already_exists', '连接编号已存在。');
-      const entry = this.entry(scope, input.binding, input.expected.definitionRevision, Boolean(id));
+      const entry = this.entry(scope, input.binding, input.expected.definitionRevision, Boolean(id), this.observe(scope));
       if (input.enabled !== undefined && typeof input.enabled !== 'boolean') throw failure('connection_skill_input_invalid', '启用状态必须为布尔值。', 400);
       const value: ConnectionInstance = { schemaVersion: 'buildr.connection-instance/v1', id: instanceId, name: text(input.name), environment: typeof input.environment === 'string' ? input.environment.slice(0, 200) : '', enabled: input.enabled ?? true, category: entry.definition.category, binding: input.binding, config: validateConfig(entry.definition.config.fields, input.config), authentication: null };
+      value.fieldLabels = input.fieldLabels === undefined
+        ? before.value && entry.definition.authentication.targetFields.every(key => JSON.stringify(before.value!.config[key]) === JSON.stringify(value.config[key]))
+          ? publicFieldLabels(entry.definition.config.fields, value.config, before.value.fieldLabels) : {}
+        : validatedFieldLabels(entry.definition.config.fields, value.config, input.fieldLabels);
       const intent = object(input.authentication || { intent: 'keep' }) as AuthIntent;
       if (intent.intent === 'replace') value.authentication = { targetBinding: this.target(scope, value, entry, validateAuthentication(entry.definition.authentication.fields, intent.values)), values: validateAuthentication(entry.definition.authentication.fields, intent.values) };
       else if (intent.intent === 'keep') {
         value.authentication = before.value?.authentication ?? null;
         if (value.authentication) this.group(scope, value, entry, value.authentication);
       } else if (intent.intent !== 'remove') throw failure('connection_skill_auth_intent_invalid', '请选择保持、替换或移除认证。', 400);
+      const labelSecrets = (group: AuthenticationGroup | null, previous = false): string[] => {
+        if (!group) return [];
+        if (previous) try { this.group(scope, before.value || value, entry, group); }
+        catch { return Object.values(group.values).filter((item): item is string => typeof item === 'string'); }
+        return entry.definition.authentication.fields.filter(field => field.type === 'secret').map(field => group.values[field.key]).filter((item): item is string => typeof item === 'string');
+      };
+      // Remove known private text from persisted display metadata before an account
+      // can be rotated or removed. Personal saves still never change team files.
+      value.fieldLabels = publicFieldLabels(entry.definition.config.fields, value.config, value.fieldLabels, [...labelSecrets(before.value?.authentication ?? null, true), ...labelSecrets(value.authentication), ...labelSecrets(this.files.readLocal(scope, instanceId).group, true)]);
       // Missing authentication and dependencies are allowed when saving; running still checks them.
-      this.entry(scope, input.binding, input.expected.definitionRevision, Boolean(id));
+      // A new observation is required at the write boundary; only the response reuses it.
+      const currentObservation = this.observe(scope);
+      this.entry(scope, input.binding, input.expected.definitionRevision, Boolean(id), currentObservation);
       this.files.writeTeam(scope, value, input.expected.teamRevision, entry.definition.systemId ?? entry.definition.definitionId);
-      return this.get(scope.rootPath, instanceId);
+      return this.getObserved(scope, instanceId, currentObservation);
     });
   }
   saveAuth(root: string, id: string, raw: unknown) {
@@ -137,32 +165,34 @@ export class ConnectionSkillsApplication {
     return this.files.lock(scope, id, () => {
       const team = this.files.readTeam(scope, id); assertRevision(team.revision, expected.teamRevision);
       if (!team.value) throw failure('connection_skill_not_found', '当前实例不存在。', 404);
-      const entry = input.intent === 'remove' ? null : this.entry(scope, team.value.binding, expected.definitionRevision, true);
+      const entry = input.intent === 'remove' ? null : this.entry(scope, team.value.binding, expected.definitionRevision, true, this.observe(scope));
       let group: AuthenticationGroup | null;
       if (input.intent === 'remove') group = null;
       else if (input.intent === 'replace' && entry) group = { targetBinding: this.target(scope, team.value, entry, validateAuthentication(entry.definition.authentication.fields, input.values)), values: validateAuthentication(entry.definition.authentication.fields, input.values) };
       else throw failure('connection_skill_auth_intent_invalid', '个人认证必须明确整组替换或移除。', 400);
       assertRevision(this.files.readTeam(scope, id).revision, expected.teamRevision);
-      if (input.intent === 'remove') assertRevision(this.catalog.resolve(scope.rootPath, team.value.binding).definition?.revision || 'absent', expected.definitionRevision);
-      else this.entry(scope, team.value.binding, expected.definitionRevision, true);
+      const currentObservation = this.observe(scope);
+      if (input.intent === 'remove') assertRevision(this.catalog.resolve(scope.rootPath, team.value.binding, currentObservation.catalog).definition?.revision || 'absent', expected.definitionRevision);
+      else this.entry(scope, team.value.binding, expected.definitionRevision, true, currentObservation);
       this.files.writeLocal(scope, id, group, expected.localRevision!);
-      return this.get(scope.rootPath, id);
+      return this.getObserved(scope, id, currentObservation);
     });
   }
   remove(root: string, id: string, raw: unknown) {
     const scope = this.resolveScope(root), input = object(raw), expected = object(input.expected) as Expected;
     return this.files.lock(scope, id, () => { this.files.removeTeam(scope, id, expected.teamRevision); return { removed: true }; });
   }
-  private selected(scope: ConnectionScope, id: string, revision?: string) {
+  private selected(scope: ConnectionScope, id: string, revision?: string, observation?: ConnectionObservation) {
     const team = this.files.readTeam(scope, id); if (!team.value) throw failure('connection_skill_not_found', '当前实例不存在。', 404);
-    const instance = team.value, view = this.public(scope, instance, team.revision, team.sourcePath, team.diagnostic);
+    observation ||= this.observe(scope);
+    const instance = team.value, view = this.public(scope, instance, team.revision, team.sourcePath, team.diagnostic, observation);
     try { assertRevision(view.revision, revision ?? view.revision); }
     catch (cause) {
       if ((cause as { code?: string }).code === 'connection_skill_revision_conflict') throw failure('connection_skill_revision_conflict', '连接配置、认证、接入声明或本机程序接收方已变化，请重新读取并核对当前程序路径；未执行。');
       throw cause;
     }
     if (!instance.enabled) throw failure('connection_skill_disabled', '此连接已停用。');
-    const entry = this.entry(scope, instance.binding);
+    const entry = this.entry(scope, instance.binding, undefined, false, observation);
     if (instance.category !== entry.definition.category) throw failure('connection_skill_category_changed', '实例类别与声明不一致。');
     const config = validateConfig(entry.definition.config.fields, instance.config);
     const local = this.files.readLocal(scope, id);
@@ -183,22 +213,22 @@ export class ConnectionSkillsApplication {
       connection: selected.context });
   }
   check(root: string, id: string, program = 'cli') {
-    const scope = this.resolveScope(root), view = this.get(root, id).instance;
-    const entry = this.entry(scope, view.binding); const resolved = resolveProgram(scope.rootPath, entry, program);
+    const scope = this.resolveScope(root), observation = this.observe(scope), view = this.getObserved(scope, id, observation).instance;
+    const entry = this.entry(scope, view.binding, undefined, false, observation); const resolved = resolveProgram(scope.rootPath, entry, program);
     return { program, ...checkProgram(resolved), identity: resolved.identity, installHint: resolved.declaration.installHint || null };
   }
   async help(root: string, id: string, program = 'cli') {
-    const scope = this.resolveScope(root), view = this.get(root, id).instance, entry = this.entry(scope, view.binding), resolved = resolveProgram(scope.rootPath, entry, program);
+    const scope = this.resolveScope(root), observation = this.observe(scope), view = this.getObserved(scope, id, observation).instance, entry = this.entry(scope, view.binding, undefined, false, observation), resolved = resolveProgram(scope.rootPath, entry, program);
     return runProgram(resolved, resolved.declaration.helpArgs || ['--help'], { timeoutMs: 5000 });
   }
   async run(root: string, options: { id: string; expectedRevision: string; program?: string; args: string[]; contexts?: Record<string, { id: string; revision: string }>; input?: string | Buffer; timeoutMs?: number }) {
     if (typeof options.expectedRevision !== 'string') throw failure('connection_skill_revision_required', '运行必须提供所观察的连接版本。', 400);
-    const scope = this.resolveScope(root), selected = this.selected(scope, identifier(options.id), options.expectedRevision), programId = options.program || 'cli';
+    const scope = this.resolveScope(root), observation = this.observe(scope), selected = this.selected(scope, identifier(options.id), options.expectedRevision, observation), programId = options.program || 'cli';
     const selections = { primary: selected, ...Object.fromEntries(Object.entries(options.contexts || {}).map(([name, value]) => {
       if (name === 'primary' || !/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(name)) throw failure('connection_skill_context_invalid', '上下文名称无效。', 400);
       object(value);
       if (typeof value.revision !== 'string' || !value.revision) throw failure('connection_skill_revision_required', '每个附加实例都必须提供所观察的版本。', 400);
-      const other = this.selected(scope, identifier(value.id), value.revision);
+      const other = this.selected(scope, identifier(value.id), value.revision, observation);
       if (other.entry.skill.assetIdentity !== selected.entry.skill.assetIdentity || other.entry.definition.definitionId !== selected.entry.definition.definitionId || other.entry.skill.sourceIdentity !== selected.entry.skill.sourceIdentity) throw failure('connection_skill_context_incompatible', '多个实例必须明确绑定同一接入程序来源。');
       return [name, other];
     })) };
@@ -207,8 +237,9 @@ export class ConnectionSkillsApplication {
     const context = { protocolVersion: 'buildr.connection-context/v1', callId: crypto.randomUUID(), workspace: { id: scope.workspaceId, root: scope.rootPath }, definition: { skillAssetIdentity: selected.entry.skill.assetIdentity, definitionId: selected.entry.definition.definitionId, revision: selected.entry.revision }, connections: Object.fromEntries(Object.entries(selections).map(([name, value]) => [name, value.context])), privateStateRoot: this.files.privateState(scope, selected.entry.skill.assetIdentity) };
     const revalidate = () => {
       const currentScope = this.resolveScope(root); if (JSON.stringify(currentScope) !== JSON.stringify(scope)) throw failure('connection_skill_context_changed', '工作空间身份已变化。');
-      for (const item of Object.values(selections)) this.selected(scope, item.context.id, item.context.revision);
-      const current = this.entry(scope, this.get(root, options.id).instance.binding, selected.entry.revision);
+      const currentObservation = this.observe(scope);
+      for (const item of Object.values(selections)) this.selected(scope, item.context.id, item.context.revision, currentObservation);
+      const current = this.entry(scope, this.getObserved(scope, options.id, currentObservation).instance.binding, selected.entry.revision, false, currentObservation);
       if (resolveProgram(scope.rootPath, current, programId).identity !== program.identity) throw failure('connection_skill_program_changed', '执行程序已变化。');
     };
     revalidate();

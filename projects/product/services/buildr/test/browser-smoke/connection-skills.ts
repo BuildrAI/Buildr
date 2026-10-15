@@ -52,8 +52,52 @@ try {
   page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   const browserErrors: string[] = []; page.on('pageerror', error => browserErrors.push(error.message));
   const base = `${url}/workspaces/${initialWorkspaceId}`;
+  const reads = { instances: 0, definitions: 0, legacy: 0 };
+  page.on('request', request => {
+    if (request.method() !== 'GET') return;
+    const pathname = new URL(request.url()).pathname;
+    if (pathname === `/api/v1/workspaces/${initialWorkspaceId}/connection-skills/instances`) reads.instances++;
+    if (pathname === `/api/v1/workspaces/${initialWorkspaceId}/connection-skills/definitions`) reads.definitions++;
+    if (pathname === `/api/v1/workspaces/${initialWorkspaceId}/connections`) reads.legacy++;
+  });
+  const assertReads = (expected: typeof reads, reason: string) => assert.deepEqual(reads, expected, reason);
   const editOriginal = () => page!.locator('#connection-skills-table').locator(`[data-row-key="${created.id}"]`).getByRole('button', { name: '编辑', exact: true }).click();
   await page.goto(`${base}/connection-skills`, { waitUntil: 'networkidle' });
+  const initialReads = { ...reads };
+  assertReads({ instances: 1, definitions: 1, legacy: 0 }, 'First display reads each directory once.');
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await page.waitForLoadState('networkidle');
+  assertReads(initialReads, 'Window focus is not a connection-data change.');
+  await page.locator('.shell-navigation').getByRole('link', { name: '服务', exact: true }).click();
+  await page.waitForURL(`${base}/services`);
+  await page.locator('[data-tab-key="dir:connection-skills"]:visible').click();
+  await page.waitForURL(`${base}/connection-skills`);
+  await page.waitForLoadState('networkidle');
+  assertReads(initialReads, 'Returning to a completed retained page does not reread its data.');
+  const retryPage = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  let retryReads = 0, releaseInitial!: () => void, initialStarted!: () => void, initialFinished!: () => void;
+  const holdInitial = new Promise<void>(resolve => { releaseInitial = resolve; });
+  const initialRequestStarted = new Promise<void>(resolve => { initialStarted = resolve; });
+  const initialRequestFinished = new Promise<void>(resolve => { initialFinished = resolve; });
+  await retryPage.route('**/connection-skills/instances', async route => {
+    if (route.request().method() !== 'GET' || ++retryReads !== 1) return route.continue();
+    const response = await route.fetch(), body = await response.json(); initialStarted();
+    await holdInitial;
+    try { await route.fulfill({ response, json: { ...body, instances: body.instances.map((instance: any) => ({ ...instance, name: '不能显示迟到列表' })) } }); } catch { /* The view correctly cancelled this request. */ }
+    finally { initialFinished(); }
+  });
+  try {
+    await retryPage.goto(`${base}/connection-skills`, { waitUntil: 'domcontentloaded' });
+    await initialRequestStarted;
+    await retryPage.locator('.shell-navigation').getByRole('link', { name: '服务', exact: true }).click();
+    await retryPage.waitForURL(`${base}/services`);
+    await retryPage.locator('[data-tab-key="dir:connection-skills"]:visible').click();
+    await retryPage.waitForURL(`${base}/connection-skills`);
+    await retryPage.locator('#connection-skills-table').getByText('浏览器连接', { exact: true }).waitFor();
+    releaseInitial(); await initialRequestFinished;
+    assert.equal(retryReads, 2, 'Returning after an interrupted first load retries that incomplete read.');
+    assert.equal(await retryPage.getByText('不能显示迟到列表', { exact: true }).count(), 0, 'Cancelled first-load response never replaces the later current snapshot.');
+  } finally { releaseInitial(); await retryPage.close(); }
   if (!await page.locator('#connection-skills-table').getByRole('button', { name: '编辑', exact: true }).count()) process.stderr.write(JSON.stringify({ url: page.url(), body: (await page.locator('body').innerText()).slice(0, 5000), browserErrors }) + '\n');
   await page.locator('#create-connection-skill').click();
   await page.locator('#connection-system-picker').waitFor();
@@ -76,6 +120,7 @@ try {
   await page.locator('#connection-skill-team-password').fill('fixture-team-password');
   await page.locator('#discover-connection-skill-config-scope').click();
   await page.locator('#connection-skill-discovery-scope').filter({ hasText: '已读取 2 个可选项' }).waitFor();
+  assertReads(initialReads, 'Discovering candidate options does not reload the directory or definitions.');
   assert.equal(await page.locator('#connection-skill-team-password').evaluate(element => Boolean(element.compareDocumentPosition(document.querySelector('#connection-skill-config-scope')!) & Node.DOCUMENT_POSITION_FOLLOWING)), true, 'Authentication precedes dynamic scope selection.');
   await page.locator('#connection-skill-config-scope').click();
   await page.getByTitle('测试空间', { exact: true }).click();
@@ -92,6 +137,16 @@ try {
   await page.locator('#save-connection-skill-team').click();
   await page.locator('#connection-skill-editor').waitFor({ state: 'hidden' });
   await page.locator('#connection-skills-table').getByText('新增保存后关闭', { exact: true }).waitFor();
+  const namedSelectionRow = page.locator('#connection-skills-table tr').filter({ hasText: '新增保存后关闭' });
+  assert.equal(await namedSelectionRow.locator('.buildr-connection-skill-summary > span').nth(1).innerText(), '测试空间', 'Saved dynamic selection uses its chosen name in the list.');
+  await namedSelectionRow.getByRole('button', { name: '编辑', exact: true }).click();
+  assert.equal(await page.locator('.buildr-connection-skill-field').filter({ has: page.locator('#connection-skill-config-scope') }).locator('.ant-select-selection-item').innerText(), '测试空间', 'Reopening a saved connection retains the name without discovery.');
+  await page.locator('#close-connection-skill-editor').click();
+  assertReads(initialReads, 'Create response adds its row without another directory read.');
+  await page.getByRole('button', { name: '刷新连接', exact: true }).click();
+  await page.waitForLoadState('networkidle');
+  const refreshedReads = { ...reads };
+  assertReads({ instances: 2, definitions: 2, legacy: 0 }, 'Explicit refresh rereads both current directories once.');
   await page.screenshot({ animations: 'disabled', path: path.join(screenshots, 'connection-skills-save-closed.png') });
   await editOriginal();
   await page.locator('#connection-skill-editor').waitFor();
@@ -102,9 +157,11 @@ try {
   await page.locator('#connection-skill-personal-password').fill('fixture-person-password');
   await page.locator('#test-connection-skill-personal').click();
   await page.locator('#connection-skill-personal-test-result').filter({ hasText: '只读测试通过' }).waitFor();
+  assertReads(refreshedReads, 'Personal candidate test does not reload the directory.');
   assert.equal(await page.locator('#connection-skill-test-result').count(), 0, 'Personal test result stays next to its own action.');
   await page.locator('#save-connection-skill-personal').click();
   await page.locator('#connection-skill-save-notice').filter({ hasText: '个人账号已保存' }).waitFor();
+  assertReads(refreshedReads, 'Personal save updates the returned row without a list request.');
   assert.equal(fs.readFileSync(teamFile, 'utf8'), teamInitial, 'Personal save never rewrites team source.');
   assert.equal(connections.get(workspaceRoot, created.id).instance.authentication.source, 'personal');
 
@@ -121,6 +178,12 @@ try {
   await page.locator('#test-connection-skill').click();
   await page.locator('#connection-skill-test-result').waitFor();
   assert.match(await page.locator('#connection-skill-test-result').innerText(), /只读测试通过/);
+  assertReads(refreshedReads, 'Team candidate test only updates the editor result.');
+  await page.getByText('接入详情', { exact: true }).click();
+  await page.locator('#check-connection-skill-program').click();
+  await page.locator('#connection-skill-program-result').waitFor();
+  assertReads(refreshedReads, 'Explicit program check does not reload the list or definitions.');
+  await page.getByText('接入详情', { exact: true }).click();
   assert.equal(connections.get(workspaceRoot, created.id).instance.authentication.source, 'personal', 'Team candidate test never removes personal source.');
   await page.locator('#change-connection-skill-team').click();
   await page.locator('#connection-skill-team-username').fill('fixture-team-user');
@@ -129,6 +192,7 @@ try {
   await page.locator('#connection-skill-test-result').filter({ hasText: '测试失败' }).waitFor();
   await page.locator('#save-connection-skill-team').click();
   await page.locator('#connection-skill-editor').waitFor({ state: 'hidden' });
+  assertReads(refreshedReads, 'Updating a saved connection only replaces its row.');
   assert.equal(connections.get(workspaceRoot, created.id).instance.authentication.source, 'personal', 'Failed connection test does not block successful save or change personal authentication.');
 
   await editOriginal();
@@ -156,6 +220,32 @@ try {
   assert.equal(await page.locator('#connection-skill-editor').isVisible(), true, 'Independent personal save never closes the whole editor.');
   await page.locator('#save-connection-skill-team').click();
   await page.locator('#connection-skill-editor').waitFor({ state: 'hidden' });
+  assertReads(refreshedReads, 'Detail reread and subsequent saves remain local to the selected row.');
+  await editOriginal();
+
+  const heldReadPattern = '**/connection-skills/instances';
+  let releaseRefresh!: () => void, refreshStarted!: () => void, refreshFinished!: () => void;
+  const heldRefresh = new Promise<void>(resolve => { releaseRefresh = resolve; });
+  const refreshRequestStarted = new Promise<void>(resolve => { refreshStarted = resolve; });
+  const refreshRequestFinished = new Promise<void>(resolve => { refreshFinished = resolve; });
+  await page.route(heldReadPattern, async route => {
+    if (route.request().method() !== 'GET') return route.continue();
+    const response = await route.fetch(); refreshStarted(); await heldRefresh;
+    try { await route.fulfill({ response }); } catch { /* Local save cancelled the older directory request. */ }
+    finally { refreshFinished(); }
+  });
+  try {
+    await page.locator('#connection-skill-name').fill('保存响应优先');
+    // Exercise overlap deterministically while the editor owns the visible overlay.
+    await page.getByRole('button', { name: '刷新连接', exact: true }).evaluate((button: HTMLElement) => button.click());
+    await refreshRequestStarted;
+    await page.locator('#save-connection-skill-team').click();
+    await page.locator('#connection-skill-editor').waitFor({ state: 'hidden' });
+    await page.locator('#connection-skills-table').getByText('保存响应优先', { exact: true }).waitFor();
+    releaseRefresh(); await refreshRequestFinished;
+    assert.equal(await page.locator('#connection-skills-table').getByText('保存响应优先', { exact: true }).count(), 1, 'An older explicit-refresh result cannot roll back a saved row.');
+    assertReads({ instances: refreshedReads.instances + 1, definitions: refreshedReads.definitions + 1, legacy: 0 }, 'Overlapping save cancels the older read without starting another one.');
+  } finally { releaseRefresh(); await page.unroute(heldReadPattern); }
   await editOriginal();
 
   const beforeRefresh = connections.get(workspaceRoot, created.id).instance;
@@ -210,6 +300,7 @@ try {
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.locator('#create-connection-skill').click();
   await page.locator('[data-connection-system]').filter({ hasText: 'Nacos' }).click();
+  assert.equal(await page.locator('#connection-skill-config-production').isChecked(), false, 'New builtin Nacos starts with production unchecked; the custom fixture retains its own true default.');
   await page.locator('#connection-skill-config-apiBaseUrl').fill('http://admin.example.invalid:8848/nacos');
   await page.locator('#connection-skill-config-consoleUrl').fill('http://console.example.invalid:8080/');
   await page.locator('#connection-skill-team-username').fill('offline-reader');
@@ -221,11 +312,75 @@ try {
   assert.equal(nacos.binding.configVersion, 2);
   assert.equal(nacos.config.apiBaseUrl, 'http://admin.example.invalid:8848/nacos');
   assert.equal(nacos.websiteUrl, 'http://console.example.invalid:8080/');
+  const nacosSummary = page.locator('#connection-skills-table tr').filter({ hasText: '独立接口与网站' }).locator('.buildr-connection-skill-summary > span');
+  assert.equal(await nacosSummary.count(), 2, 'Nacos address and default ranges occupy two logical lines.');
+  assert.match(await nacosSummary.nth(1).innerText(), /public.*DEFAULT_GROUP/, 'Namespace and group share the second summary line.');
+  const beforeDeleteReads = { ...reads };
+  const addedRow = page.locator('#connection-skills-table tr').filter({ hasText: '新增保存后关闭' });
+  await addedRow.getByRole('button', { name: /更多操作/ }).click();
+  await page.getByRole('menuitem', { name: '删除实例', exact: true }).click();
+  await page.locator('.ant-modal-confirm').getByRole('button', { name: /^删\s*除$/ }).click();
+  await addedRow.waitFor({ state: 'hidden' });
+  assertReads(beforeDeleteReads, 'Delete removes the selected row without rereading other instances.');
   await page.goto(`${base}/connections`, { waitUntil: 'networkidle' });
   await page.locator('#connections-table').waitFor();
+  const legacy = { id: 'legacy-fixture', revision: 'legacy-1', name: '旧连接夹具', category: 'data-source', type: 'mysql', environment: 'qa', config: { host: 'fixture.example.test', port: 3306, username: 'fixture-user', defaultDatabase: null, selectedDatabases: [] }, hasCredentials: true, createdAt: '2026-10-15T00:00:00.000Z', updatedAt: '2026-10-15T00:00:00.000Z' };
+  let legacyRows = [legacy];
+  let legacyReadBarrier: Promise<void> | undefined, legacyReadStarted: (() => void) | undefined, legacyReadFinished: (() => void) | undefined;
+  await page.route(`**/api/v1/workspaces/${initialWorkspaceId}/connections{,/**}`, async route => {
+    const request = route.request(), pathname = new URL(request.url()).pathname;
+    const root = `/api/v1/workspaces/${initialWorkspaceId}/connections`;
+    if (request.method() === 'GET' && pathname === root) {
+      const snapshot = structuredClone(legacyRows);
+      if (legacyReadBarrier) { legacyReadStarted?.(); await legacyReadBarrier; }
+      try { await route.fulfill({ json: { connections: snapshot } }); } catch { /* A newer local mutation cancelled this older read. */ }
+      finally { legacyReadFinished?.(); }
+      return;
+    }
+    if (request.method() === 'POST' && pathname === `${root}/test`) return route.fulfill({ json: { elapsedMs: 1, serverVersion: 'offline-fixture' } });
+    if (request.method() === 'PATCH' && pathname === `${root}/${legacy.id}`) {
+      const input = request.postDataJSON(); Object.assign(legacy, { name: input.name, revision: 'legacy-2' });
+      return route.fulfill({ json: { connection: legacy } });
+    }
+    if (request.method() === 'DELETE' && pathname === `${root}/${legacy.id}`) { legacyRows = []; return route.fulfill({ json: { removed: true } }); }
+    return route.continue();
+  });
+  await page.getByRole('button', { name: '刷新连接', exact: true }).click();
+  await page.locator('#connections-table').getByText(legacy.name, { exact: true }).waitFor();
+  const legacyReads = { ...reads };
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await page.locator('.shell-navigation').getByRole('link', { name: '服务', exact: true }).click();
+  await page.waitForURL(`${base}/services`);
+  await page.locator('[data-tab-key="dir:connections"]:visible').click();
+  await page.waitForURL(`${base}/connections`);
+  await page.waitForLoadState('networkidle');
+  assertReads(legacyReads, 'Legacy focus and retained-page display also reuse the loaded list.');
+  await page.locator('#connections-table').getByRole('button', { name: '编辑', exact: true }).click();
+  await page.locator('#test-mysql-connection').click();
+  await page.getByText(/连接成功 · MySQL offline-fixture/).waitFor();
+  assertReads(legacyReads, 'Legacy candidate test does not reload the list.');
+  await page.locator('#mysql-connection-name').fill('旧连接局部保存');
+  await page.locator('#save-mysql-connection').click();
+  await page.locator('#connections-table').getByText('旧连接局部保存', { exact: true }).waitFor();
+  assertReads(legacyReads, 'Legacy editor forwards its saved connection for local replacement.');
+  let releaseLegacyRead!: () => void;
+  legacyReadBarrier = new Promise<void>(resolve => { releaseLegacyRead = resolve; });
+  const legacyReadDidStart = new Promise<void>(resolve => { legacyReadStarted = resolve; });
+  const legacyReadDidFinish = new Promise<void>(resolve => { legacyReadFinished = resolve; });
+  try {
+    await page.getByRole('button', { name: '刷新连接', exact: true }).click();
+    await legacyReadDidStart;
+    await page.locator('#connections-table').getByRole('button', { name: /更多操作/ }).evaluate((button: HTMLElement) => button.click());
+    await page.getByRole('menuitem', { name: '删除连接', exact: true }).click();
+    await page.locator('.ant-modal-confirm').getByRole('button', { name: /^删\s*除$/ }).click();
+    await page.locator('#connections-table').getByText('旧连接局部保存', { exact: true }).waitFor({ state: 'hidden' });
+    releaseLegacyRead(); await legacyReadDidFinish;
+    assert.equal(await page.locator('#connections-table').getByText('旧连接局部保存', { exact: true }).count(), 0, 'An older list response cannot restore a deleted row.');
+    assertReads({ ...legacyReads, legacy: legacyReads.legacy + 1 }, 'Only the explicit legacy refresh reads the list; delete does not.');
+  } finally { releaseLegacyRead(); legacyReadBarrier = undefined; }
   assert.equal(connections.get(workspaceRoot, created.id).instance.name, '另一入口修改');
   assert.deepEqual(browserErrors, []);
-  process.stdout.write(JSON.stringify({ schemaVersion: 'buildr.workspace-smoke-scenario/v1', status: 'passed', checks: ['system-and-explicit-method-selection', 'dependency-ordered-discovery', 'progressive-fields-and-authentication', 'explicit-production-flag', 'new-and-old-entry', 'separate-save', 'unsaved-switch', 'explicit-candidate', 'failed-test-save-independent', 'independent-draft-revisions', 'revision-conflict', 'narrow-and-keyboard', 'missing-skill-personal-removal', 'main-save-closes-and-refreshes', 'failed-save-retains-draft', 'main-save-preserves-personal-draft', 'reread-authentication-identity', 'optional-program-failure-isolated', 'nacos-api-and-website-distinct'], realExternalSystem: false }) + '\n');
+  process.stdout.write(JSON.stringify({ schemaVersion: 'buildr.workspace-smoke-scenario/v1', status: 'passed', checks: ['system-and-explicit-method-selection', 'dependency-ordered-discovery', 'progressive-fields-and-authentication', 'explicit-production-flag', 'new-and-old-entry', 'separate-save', 'unsaved-switch', 'explicit-candidate', 'failed-test-save-independent', 'independent-draft-revisions', 'revision-conflict', 'narrow-and-keyboard', 'missing-skill-personal-removal', 'main-save-closes-and-updates-row', 'failed-save-retains-draft', 'main-save-preserves-personal-draft', 'reread-authentication-identity', 'optional-program-failure-isolated', 'nacos-api-and-website-distinct', 'focus-and-retained-page-no-read', 'test-discovery-check-no-directory-read', 'explicit-refresh-only', 'new-and-old-local-save-delete', 'interrupted-first-read-retried', 'late-list-cannot-rollback-save-or-delete'], realExternalSystem: false }) + '\n');
 } catch (error) {
   if (page) { process.stderr.write(JSON.stringify({ body: (await page.locator('body').innerText()).slice(-5000) }) + '\n'); await page.screenshot({ animations: 'disabled', path: path.join(screenshots, 'connection-skills-failure.png') }); }
   throw error;

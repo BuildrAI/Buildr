@@ -5,6 +5,7 @@ import YAML from 'yaml';
 import { atomicWriteFile, atomicWriteJson } from '../../../infrastructure/filesystem/atomic-files.ts';
 import { withExclusiveFileLock } from '../../../infrastructure/filesystem/exclusive-file-lock.ts';
 import { assertRevision, diagnostic, failure, identifier, object, type AuthenticationGroup, type ConnectionInstance, type ConnectionScope } from '../domain/instance.ts';
+import { readFieldLabels } from '../domain/field-labels.ts';
 
 const keys = new Map<string, Buffer>();
 const CONNECTION_FILE_LIMIT = 256 * 1024;
@@ -87,7 +88,7 @@ export class ConnectionFiles {
         if (doc.errors.length) throw new Error();
         const value = object(doc.toJS({ maxAliasCount: 0 }));
         source.id = identifier(value.id);
-        if (Object.keys(value).some(key => !['schemaVersion', 'id', 'name', 'environment', 'enabled', 'category', 'binding', 'config', 'authentication'].includes(key))) throw new Error();
+        if (Object.keys(value).some(key => !['schemaVersion', 'id', 'name', 'environment', 'enabled', 'category', 'binding', 'config', 'fieldLabels', 'authentication'].includes(key))) throw new Error();
         if (value.schemaVersion !== 'buildr.connection-instance/v1' || typeof value.name !== 'string' || typeof value.enabled !== 'boolean' || typeof value.category !== 'string') throw new Error();
         if (value.environment !== undefined && (typeof value.environment !== 'string' || value.environment.length > 200)) throw new Error();
         if (!(value.name as string).trim() || (value.name as string).length > 200 || (value.category as string).length > 200) throw new Error();
@@ -95,7 +96,7 @@ export class ConnectionFiles {
         if (Object.keys(binding).some(key => !['skillAssetIdentity', 'definitionId', 'sourceIdentity', 'configVersion'].includes(key))) throw new Error();
         if (!['skillAssetIdentity', 'definitionId', 'sourceIdentity'].every(key => typeof binding[key] === 'string') || !Number.isInteger(binding.configVersion)) throw new Error();
         if (value.authentication !== null && value.authentication !== undefined) { const auth = object(value.authentication); if (typeof auth.targetBinding !== 'string' || Object.keys(auth).some(key => !['targetBinding', 'values'].includes(key))) throw new Error(); object(auth.values); }
-        source.value = { ...value, environment: value.environment ?? '', authentication: value.authentication ?? null } as ConnectionInstance;
+        source.value = { ...value, ...(Object.hasOwn(value, 'fieldLabels') ? { fieldLabels: readFieldLabels(value.fieldLabels) } : {}), environment: value.environment ?? '', authentication: value.authentication ?? null } as ConnectionInstance;
       } catch (error) {
         source.error = error instanceof Error && 'code' in error && String(error.code).startsWith('connection_') ? error : failure('connection_skill_file_invalid', '连接文件身份或内容无效，可能存在合并冲突；已保留原文件。');
       }

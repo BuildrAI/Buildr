@@ -1,4 +1,4 @@
-import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { App, Button, Dropdown, Select, Tag } from 'antd';
 import { MoreOutlined, PlusOutlined } from '@ant-design/icons';
 import { useLocation } from 'react-router-dom';
@@ -28,22 +28,36 @@ export function ConnectionsPage() {
   const [queryOpen, setQueryOpen] = useState(false), [editing, setEditing] = useState<EditableConnection | null>(), [removing, setRemoving] = useState('');
   const [query, setQuery] = useState(''), [environment, setEnvironment] = useState<string>();
   const [entry, setEntry] = useState<{ id: string; nonce: number } | null>(null);
+  const current = useRef({ client, refresh }); current.current = { client, refresh };
+  const completed = useRef<{ client: typeof client; refresh: number } | null>(null), reading = useRef<AbortController | null>(null);
   const reload = useCallback(() => setRefresh(value => value + 1), []);
+  useEffect(() => { completed.current = null; setConnections([]); setEditing(undefined); setQueryOpen(false); setEntry(null); setRemoving(''); setConfigurationWritable(true); setError(''); setLoading(true); }, [client]);
   useEffect(() => { tabs.register({ key: 'dir:connections', kind: 'dir', title: '连接', path: workspaceHref(workspaceId, '/connections') }); }, [workspaceId]);
   useEffect(() => {
-    if (!workspaceId || !active) return;
-    const controller = new AbortController(); setLoading(true); setError('');
-    void client.list(controller.signal).then(response => { if (!controller.signal.aborted) { setConnections(response.connections); setConfigurationWritable(response.configurationWritable !== false); } })
-      .catch((cause: Error) => { if (!controller.signal.aborted) setError(cause.message); })
-      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
-    return () => controller.abort();
+    if (!workspaceId || !active || completed.current?.client === client && completed.current.refresh === refresh) return;
+    const controller = new AbortController(); reading.current = controller; setLoading(true); setError('');
+    const isCurrent = () => !controller.signal.aborted && current.current.client === client;
+    void client.list(controller.signal).then(response => { if (isCurrent()) { setConnections(response.connections); setConfigurationWritable(response.configurationWritable !== false); completed.current = { client, refresh }; } })
+      .catch((cause: Error) => { if (isCurrent()) setError(cause.message); })
+      .finally(() => { if (isCurrent()) setLoading(false); if (reading.current === controller) reading.current = null; });
+    return () => { controller.abort(); if (reading.current === controller) reading.current = null; };
   }, [client, workspaceId, refresh, active]);
-  useEffect(() => { if (!active) return; window.addEventListener('focus', reload); return () => window.removeEventListener('focus', reload); }, [active, reload]);
+  function acceptLocalChange() {
+    reading.current?.abort(); reading.current = null;
+    completed.current = { client, refresh: current.current.refresh };
+    setLoading(false); setError('');
+  }
+  function saved(connection: EditableConnection) {
+    if (current.current.client !== client) return;
+    acceptLocalChange();
+    setConnections(previous => previous.some(item => item.id === connection.id) ? previous.map(item => item.id === connection.id ? connection : item) : [...previous, connection]);
+    setEditing(undefined); message.success('连接已保存。');
+  }
   async function remove(connection: ExternalConnection) {
     setRemoving(connection.id); setError('');
-    try { await client.remove(connection.id, connection.revision); setConnections(previous => previous.filter(item => item.id !== connection.id)); message.success('连接已删除。'); reload(); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : '连接删除失败。'); }
-    finally { setRemoving(''); }
+    try { await client.remove(connection.id, connection.revision); if (current.current.client !== client) return; acceptLocalChange(); setConnections(previous => previous.filter(item => item.id !== connection.id)); message.success('连接已删除。'); }
+    catch (cause) { if (current.current.client === client) setError(cause instanceof Error ? cause.message : '连接删除失败。'); }
+    finally { if (current.current.client === client) setRemoving(''); }
   }
   const mysqlConnections = connections.filter(isMySqlConnection);
   const categoryLabels: Record<string, string> = { 'data-source': '数据源', logs: '日志系统', configuration: '配置系统', scheduling: '调度器' };
@@ -63,7 +77,7 @@ export function ConnectionsPage() {
     query={query} onQueryChange={setQuery} searchPlaceholder="搜索名称、地址或范围" searchId="connections-search" tableId="connections-table" countId="connections-count"
     filtered={environment !== undefined} onClearFilters={() => setEnvironment(undefined)}
     filters={<Select aria-label="筛选连接环境" allowClear value={environment} placeholder="全部环境" options={environments.map(value => ({ value, label: value || '未填写环境' }))} onChange={setEnvironment} />}
-    actions={<Button id="create-mysql-connection" disabled={!configurationWritable} type="primary" icon={<PlusOutlined />} onClick={() => setEditing(null)}>新增连接</Button>}
+    actions={<Button id="create-mysql-connection" disabled={loading || !configurationWritable} type="primary" icon={<PlusOutlined />} onClick={() => setEditing(null)}>新增连接</Button>}
     columns={[
       { title: '环境', dataIndex: 'environment', width: 120, render: (value, connection) => <><Tag>{value || '未填写'}</Tag>{(isNacosConnection(connection) || isXxlJobConnection(connection)) && connection.config.production && <Tag color="orange">生产</Tag>}</> },
       { title: '地址 / 默认范围', width: 360, render: (_, connection) => isMySqlConnection(connection) ? <div className="buildr-connection-address"><code>{connection.config.host}:{connection.config.port}</code><small>{connection.config.defaultDatabase || '未设置默认数据库'}</small></div> : isNacosConnection(connection) ? <div className="buildr-connection-address"><code>{connection.config.consoleUrl}</code><small>{connection.config.namespaceId} / {connection.config.defaultGroup}</small></div> : isXxlJobConnection(connection) ? <div className="buildr-connection-address"><code>{connection.config.consoleUrl}</code><small>{connection.config.serviceBindings.length ? `已关联 ${connection.config.serviceBindings.length} 个服务（Service）` : '由智能体（Agent）核对服务（Service）与执行器（Executor）'}</small></div> : isKibanaConnection(connection) ? <div className="buildr-connection-address"><code>{connection.config.consoleUrl}</code><small>{connection.config.dataViewId ? `数据视图（Data View）：${connection.config.dataViewId}` : '未设置默认数据视图（Data View）'}</small></div> : '—' },
@@ -82,5 +96,5 @@ export function ConnectionsPage() {
     activeObject={queryOpen ? 'mysql-query' : null} onActivateObject={() => setQueryOpen(true)} onCloseObject={() => setQueryOpen(false)}
     objectContentLayout="fill" objectLabel="查询" retainObjectContent
     objectContent={({ visible }) => entry && <MySqlQuery connections={mysqlConnections} client={client} entry={entry} active={queryOpen && visible} layoutKey={workspaceId || ''} />}
-  >{directory}</WorkspaceStage>{editing !== undefined && <ConnectionEditDrawer key={editing?.id || 'new'} connection={editing || undefined} environments={[...new Set(connections.map(item => item.environment))]} client={client} onClose={() => setEditing(undefined)} onSaved={() => { setEditing(undefined); message.success('连接已保存。'); reload(); }} />}</div>;
+  >{directory}</WorkspaceStage>{editing !== undefined && <ConnectionEditDrawer key={`${workspaceId}:${editing?.id || 'new'}`} connection={editing || undefined} environments={[...new Set(connections.map(item => item.environment))]} client={client} onClose={() => setEditing(undefined)} onSaved={saved} />}</div>;
 }

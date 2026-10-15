@@ -12,7 +12,7 @@ import { NacosConnectionFields } from './NacosConnectionFields';
 import { KibanaConnectionFields } from './KibanaConnectionFields';
 import { XxlJobConnectionFields } from './XxlJobConnectionFields';
 
-type Props = { connection?: EditableConnection; environments: string[]; client: ConnectionClient; onClose(): void; onSaved(): void };
+type Props = { connection?: EditableConnection; environments: string[]; client: ConnectionClient; onClose(): void; onSaved(connection: EditableConnection): void };
 
 export function ConnectionEditDrawer({ connection, environments, client, onClose, onSaved }: Props) {
   const [type, setType] = useState<EditableConnection['type']>(connection?.type || 'mysql');
@@ -58,8 +58,8 @@ export function ConnectionEditDrawer({ connection, environments, client, onClose
     const request = saveScope.begin();
     try {
       const value = input(); invalidateRequests(); setSaving(true);
-      if (connection) await client.update(connection.id, connection.revision, value); else await client.create(value);
-      if (request.isCurrent()) onSaved();
+      const result = connection ? await client.update(connection.id, connection.revision, value) : await client.create(value);
+      if (request.isCurrent()) onSaved(result.connection);
     } catch (cause) { if (request.isCurrent()) setError(cause instanceof Error ? cause.message : '连接保存失败。'); }
     finally { if (request.isCurrent()) setSaving(false); }
   }
