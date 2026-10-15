@@ -500,6 +500,11 @@ Buildr release workflow 在 `npm publish` 返回后从官方 Registry 回读精�
 - **THEN** 系统 SHALL 保存绑定准确源码与检查配方的插件（Plugin）证明
 - **AND** 该证明 MUST NOT 冒充合入后 `main` 上可公开发布的候选（Candidate）
 
+#### Scenario: 本机源码证明与最终原包分别消费
+- **WHEN** 合法本机或既有远端源码结果匹配当前相关输入
+- **THEN** 发布准备 SHALL复用该证明并只补齐必要平台和最终包检查
+- **AND** 经真实受保护main纳入校验的插件原候选 SHALL可被接纳，不重复完整验证或打包；来源、字节、SDK或对端漂移 MUST停止相应消费
+
 ### Requirement: 联合发布必须保留逐包事实并局部恢复
 两个包 SHALL 继续由各自受保护工作流（Workflow）及确切版本授权发布原候选（Candidate）字节。联合发布 MUST NOT 承诺跨包原子性。公开成功、失败与请求未知 SHALL 分别保存；恢复 MUST 核对同版本原字节，已成功包只回读，未知请求只查询，不得自动重复发送。
 

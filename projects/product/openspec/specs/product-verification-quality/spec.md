@@ -47,6 +47,8 @@ Buildr Product MUST 为development checkout onboarding、init行为、checkout/p
 ### Requirement: 产品验证必须提供分层入口
 Buildr 产品验证 MUST 将测试证据层、主要门禁和故障定位入口明确分离：维护者主要工作流 MUST 收敛为 fast、changed、core 和 candidate 四种门禁，Unit、Component、Contract、Integration 与 System MUST 保留直接定位入口；Fast MUST 只包含可频繁执行的低成本证据，需要多轮真实 Workspace/Git 演进、大量 CLI 子进程或失败恢复矩阵的 verifier MUST 使用独立 affected/full step identity，并 MUST 仍可由 changed/focus 定点选择。Core MUST 表达日常完整回归的 primary evidence，Candidate MUST 在冻结目标上保留完整 Product Candidate 与正式 Release artifact evidence。
 
+源码检查的完整覆盖 SHALL 由本次实际执行或相关输入匹配的完整成功结果满足；MUST区分两者并保留原执行来源。该复用不允许删除required owner、推导未测平台或复用不同最终包字节。
+
 #### Scenario: 普通任务运行默认测试
 - **WHEN** 维护者或 Agent 在 Product checkout 运行 `npm test` 或 `npm run test:fast`
 - **THEN** verifier MUST 运行 Unit、Component、低成本 Contract、架构、canonical spec quality/strict 和全部 runtime adapter 低成本契约
@@ -61,7 +63,7 @@ Buildr 产品验证 MUST 将测试证据层、主要门禁和故障定位入口�
 
 #### Scenario: 运行日常核心 Full
 - **WHEN** 维护者、普通冻结 Task 或 Parent integration feedback 显式运行 `npm run test:core`
-- **THEN** verifier MUST 从唯一 registry 运行全部 core profile steps并执行启动前预算准入
+- **THEN** verifier MUST 从唯一 registry 覆盖全部 core profile steps并执行启动前预算准入
 - **AND** core MUST NOT生成 Candidate tarball，也不得执行 package、Launcher、Host Node、open-source candidate 或 release smoke primary evidence
 - **AND** core 中每个 step MUST 同时属于完整 candidate profile
 
@@ -82,6 +84,11 @@ Buildr 产品验证 MUST 将测试证据层、主要门禁和故障定位入口�
 - **AND** candidate verifier MUST 直接编排全部 candidate profile steps，包括真实 Integration、System、recovery/migration、Workspace/Git、package 和 Release artifact steps
 - **AND** candidate verifier MUST NOT 使用 diff、group、core membership 或 step selector 缩小覆盖范围
 - **AND** candidate verifier MUST 保留产品要求的文档、安全、onboarding、package、runtime adapter、release、managed data、Workspace E2E、OpenSpec 门禁及 timing summary
+
+#### Scenario: 产品验证必须提供分层入口遵循有效结果复用边界
+- **WHEN** 完整计划含已通过且相关输入匹配的源码检查
+- **THEN** 运行器 SHALL保留该检查覆盖并明确复用来源，不重复启动其执行或专属准备
+- **AND** 输入未知、变化、结果失败或清理不净时 MUST重新取得相应证明；最终包消费仍按原字节核验
 
 ### Requirement: Changed 重型验证必须由精确实现所有权触发
 Buildr Product MUST 将 Changed planner 的重型 verification step inputs 限定为其直接实现 owner、公共入口、专属测试和资产边界，并 MUST NOT 仅因产品源码最终可被 CLI 到达而使用无差别 `src/**` 触发 Workspace、tarball、release 或 recovery 生命周期；Candidate profile MUST 继续无条件包含全部 required gates。
@@ -238,6 +245,8 @@ Buildr Product MUST 在改变 Fast 边界、Candidate 调度、System owner topo
 ### Requirement: 产品验证必须记录阶段耗时
 Buildr 产品总验证 MUST 记录每个阶段和整体 wall-clock elapsed milliseconds，MUST 为 Candidate 总耗时和 Workspace E2E suites 声明目标预算，并 MUST 在成功或失败时生成可供 CI 保存的机器可读 timing summary。
 
+命中源码结果 SHALL 明确标为复用，保留原耗时及来源并单独记录本次查询成本；MUST NOT 伪造新spawn、日志路径或把原执行耗时冒充本次执行。
+
 #### Scenario: 完整验证成功
 - **WHEN** 产品总验证全部通过
 - **THEN** 人类输出 MUST 展示每个阶段的耗时和总耗时
@@ -266,8 +275,15 @@ Buildr 产品总验证 MUST 记录每个阶段和整体 wall-clock elapsed milli
 - **WHEN** 有预算的阶段耗时不超过声明预算
 - **THEN** timing summary MUST 将对应 `budgetStatus` 记录为 `within`
 
+#### Scenario: 产品验证必须记录阶段耗时遵循有效结果复用边界
+- **WHEN** 完整计划含已通过且相关输入匹配的源码检查
+- **THEN** 运行器 SHALL保留该检查覆盖并明确复用来源，不重复启动其执行或专属准备
+- **AND** 输入未知、变化、结果失败或清理不净时 MUST重新取得相应证明；最终包消费仍按原字节核验
+
 ### Requirement: Verification timing 必须暴露调度等待
 Buildr verification timing summary MUST 以向后兼容字段记录 step 的调度时间轴，使维护者能够区分排队等待与 executor 执行耗时。
+
+命中源码结果 SHALL 明确标为复用，保留原耗时及来源并单独记录本次查询成本；MUST NOT 伪造新spawn、日志路径或把原执行耗时冒充本次执行。
 
 #### Scenario: Step 成功或失败完成
 - **WHEN** scheduler 启动并完成一个 passed 或 failed step
@@ -284,6 +300,11 @@ Buildr verification timing summary MUST 以向后兼容字段记录 step 的调�
 #### Scenario: 旧消费者读取 timing v1
 - **WHEN** 消费者只读取 `name`、`status`、`exitCode` 和 `durationMs`
 - **THEN** 新增调度字段 MUST NOT 改变这些既有字段的名称或语义
+
+#### Scenario: Verification timing 必须暴露调度等待遵循有效结果复用边界
+- **WHEN** 完整计划含已通过且相关输入匹配的源码检查
+- **THEN** 运行器 SHALL保留该检查覆盖并明确复用来源，不重复启动其执行或专属准备
+- **AND** 输入未知、变化、结果失败或清理不净时 MUST重新取得相应证明；最终包消费仍按原字节核验
 
 ### Requirement: 高耗时 verifier 优化必须保持覆盖
 Buildr Product MUST 在优化高耗时 verifier 时保留稳定 step identity、公开 CLI 边界、既有 adapter/状态语义覆盖和有界并行，不得以删除 Candidate gate 或跳过关键生命周期换取耗时下降。
@@ -488,6 +509,8 @@ Buildr Product MUST 提供 `test:changed`，根据默认 Git diff、显式 `--ba
 ### Requirement: 验证 DAG 必须有界调度并保留失败传播
 Buildr verification scheduler MUST 只在 step 的全部依赖通过且 concurrency class 有容量时启动该 step，MUST 在当前 ready steps 中优先选择已声明调度成本较高者，并 MUST 保留 passed、failed 与 blocked step 的独立结果。
 
+汇总 MUST分别保留准备、原子检查退出、超时及清理事实。超时与先前真实断言失败同时出现时 MUST同时报告；清理失败可使最终动作失败，但 MUST保留原检查已通过事实且不得将该结果写入复用缓存。
+
 #### Scenario: 独立 steps 并发
 - **WHEN** 多个 ready steps 使用允许并发的类别且未超过类别和全局上限
 - **THEN** scheduler MUST 优先启动 `schedulingCostMs` 较高且容量可用的 step
@@ -511,8 +534,15 @@ Buildr verification scheduler MUST 只在 step 的全部依赖通过且 concurre
 - **AND** timing summary MUST 记录实际 `schedulingMode`
 - **AND** 未知模式 MUST 在启动 verifier 子进程前 fail closed
 
+#### Scenario: 验证 DAG 必须有界调度并保留失败传播遵循有效结果复用边界
+- **WHEN** 完整计划含已通过且相关输入匹配的源码检查
+- **THEN** 运行器 SHALL保留该检查覆盖并明确复用来源，不重复启动其执行或专属准备
+- **AND** 输入未知、变化、结果失败或清理不净时 MUST重新取得相应证明；最终包消费仍按原字节核验
+
 ### Requirement: Candidate 必须使用完整 profile 而不依赖 diff
 Buildr Candidate MUST 从统一 registry 选择完整 candidate profile、展开全部真实依赖并生成一次冻结 tarball artifact；Candidate MUST NOT 根据 Git diff、changed inputs、固定 step 数量或人工 selector 缩小发布门禁，并 MUST 包含轻量文档质量验证。
+
+源码检查的完整覆盖 SHALL 由本次实际执行或相关输入匹配的完整成功结果满足；MUST区分两者并保留原执行来源。该复用不允许删除required owner、推导未测平台或复用不同最终包字节。
 
 #### Scenario: 运行完整 Candidate
 - **WHEN** 维护者运行 `npm run test:candidate`
@@ -524,6 +554,11 @@ Buildr Candidate MUST 从统一 registry 选择完整 candidate profile、展开
 - **WHEN** 既有 required gate 不再属于 candidate profile、docs quality 缺失，或 artifact consumer 未声明 artifact dependency
 - **THEN** architecture/registry verification MUST fail before release verification is reported complete
 - **AND** verifier MUST 根据 required gate identity 判断完整性，不得把某个固定 step 数作为质量契约
+
+#### Scenario: Candidate 必须使用完整 profile 而不依赖 diff遵循有效结果复用边界
+- **WHEN** 完整计划含已通过且相关输入匹配的源码检查
+- **THEN** 运行器 SHALL保留该检查覆盖并明确复用来源，不重复启动其执行或专属准备
+- **AND** 输入未知、变化、结果失败或清理不净时 MUST重新取得相应证明；最终包消费仍按原字节核验
 
 ### Requirement: 低成本 Node 验证必须按测试语义分层
 Buildr Product MUST 将 Node tests 按 Unit、Component、Contract、Integration 与 System 的真实执行边界提供稳定入口；Quick MUST 聚合完整低成本 Unit、Component、静态 Contract 和必要静态检查，MUST NOT 因历史文件名、step 名称或暂时较快把真实 filesystem、CLI、Git、网络、Workspace 生命周期或重复重置测试归入低成本入口。
@@ -798,7 +833,9 @@ Buildr 正式发布 MUST 只执行一次 `npm pack`，并 MUST 让 inventory、H
 - **AND** MUST NOT覆盖、撤销或生成替代 version
 
 ### Requirement: CI Candidate 必须由可验证的分布式覆盖计划组成
-Buildr Product MUST 从统一 verification registry 为一个精确 source SHA 生成闭合的 CI Candidate coverage plan，并 MUST 让 preflight、artifact producer、平台 shard、Host Node tuple 和 aggregate gate 共同证明完整发布门禁；本地完整 Candidate MUST 继续从同一 registry运行全部 Candidate steps。
+Buildr Product MUST 从统一 verification registry 为一个精确 source SHA 生成闭合的 CI Candidate coverage plan，并 MUST 让 preflight、artifact producer、平台 shard、Host Node tuple 和 aggregate gate 共同证明完整发布门禁；本地完整 Candidate MUST 继续从同一 registry覆盖全部 Candidate steps。
+
+源码检查的完整覆盖 SHALL 由本次实际执行或相关输入匹配的完整成功结果满足；MUST区分两者并保留原执行来源。该复用不允许删除required owner、推导未测平台或复用不同最终包字节。
 
 #### Scenario: 生成分布式 Candidate 计划
 - **WHEN** CI 为 `dev → main` 的精确 PR head SHA 生成 Candidate plan
@@ -811,6 +848,11 @@ Buildr Product MUST 从统一 verification registry 为一个精确 source SHA �
 - **WHEN** Candidate step 缺少 shard owner、出现未授权重复、引用未知 runner/platform、artifact consumer 没有 artifact source 或 Host Node tuple 不完整
 - **THEN** registry/architecture verifier MUST 在启动昂贵 verifier 前 fail closed
 - **AND** 诊断 MUST 标识缺失、重复或非法的 coverage unit
+
+#### Scenario: CI Candidate 必须由可验证的分布式覆盖计划组成遵循有效结果复用边界
+- **WHEN** 完整计划含已通过且相关输入匹配的源码检查
+- **THEN** 运行器 SHALL保留该检查覆盖并明确复用来源，不重复启动其执行或专属准备
+- **AND** 输入未知、变化、结果失败或清理不净时 MUST重新取得相应证明；最终包消费仍按原字节核验
 
 ### Requirement: 候选 preflight 必须在昂贵作业前形成 phase boundary
 CI Candidate MUST 先运行已登记的低成本确定性 preflight，并 MUST 只在 preflight passed 且 evidence 绑定 current source SHA/registry identity 后启动候选制品和昂贵平台 shard。
@@ -847,6 +889,8 @@ CI Candidate MUST 先运行已登记的低成本确定性 preflight，并 MUST �
 ### Requirement: Candidate shard evidence 必须可独立重跑且可聚合
 每个 Candidate shard和Host Node tuple MUST写出closed机器可读 evidence；稳定 aggregate gate MUST只在全部预期 evidence current、identity一致、覆盖完整且required results passed时通过。
 
+源码检查的完整覆盖 SHALL 由本次实际执行或相关输入匹配的完整成功结果满足；MUST区分两者并保留原执行来源。该复用不允许删除required owner、推导未测平台或复用不同最终包字节。
+
 #### Scenario: 全部分片通过
 - **WHEN** aggregate读取一个Candidate run的全部evidence
 - **THEN** evidence MUST绑定相同source SHA、registry identity和适用的artifact digest
@@ -857,14 +901,19 @@ CI Candidate MUST 先运行已登记的低成本确定性 preflight，并 MUST �
 #### Scenario: 分片失败或证据缺失
 - **WHEN** 任一shard失败、blocked、未启动、evidence缺失/损坏、identity漂移或coverage不完整
 - **THEN** aggregate gate MUST失败并列出精确shard、coverage unit和原因
-- **AND** 不得用其他平台成功或旧run evidence替代
+- **AND** MUST NOT 用其他平台成功或未经相关输入匹配的旧run evidence替代
 
 #### Scenario: 同一SHA重跑失败作业
 - **WHEN** 维护者在同一workflow run内重新运行失败job
 - **THEN** GitHub MAY复用已经通过的job和同一run artifact
 - **AND** 只需重新执行失败shard及依赖它的aggregate gate
 - **AND** 重跑shard MUST以同一逻辑artifact名称替换旧attempt evidence，不得因artifact不可变性产生同名冲突或把新旧结果同时交给aggregate
-- **AND** 新source SHA MUST使旧evidence不可用并重新运行完整当前门禁
+- **AND** 新source SHA MUST触发相关输入重新核验；不匹配结果 MUST失效，完整当前门禁 SHALL 由实际执行或有效源码结果补齐，包字节改变 MUST重新取得对应包消费证明
+
+#### Scenario: Candidate shard evidence 必须可独立重跑且可聚合遵循有效结果复用边界
+- **WHEN** 完整计划含已通过且相关输入匹配的源码检查
+- **THEN** 运行器 SHALL保留该检查覆盖并明确复用来源，不重复启动其执行或专属准备
+- **AND** 输入未知、变化、结果失败或清理不净时 MUST重新取得相应证明；最终包消费仍按原字节核验
 
 ### Requirement: Windows高成本候选必须按失败恢复边界分片
 CI Candidate MUST将Windows runtime/Launcher、Workspace/Task lifecycle与fresh build分成可独立调度和重跑的高成本shard，并 MUST在不降低场景覆盖的前提下控制每个shard的wall-clock和重复准备成本。
@@ -882,6 +931,8 @@ CI Candidate MUST将Windows runtime/Launcher、Workspace/Task lifecycle与fresh 
 ### Requirement: 候选生命周期必须区分产品清理失败与harness残留
 Release smoke、fresh build和其他高成本lifecycle verifier MUST记录阶段timing，并 MUST把产品ownership cleanup失败与断言完成后的harness临时根删除失败区分处理。
 
+汇总 MUST分别保留准备、原子检查退出、超时及清理事实。超时与先前真实断言失败同时出现时 MUST同时报告；清理失败可使最终动作失败，但 MUST保留原检查已通过事实且不得将该结果写入复用缓存。
+
 #### Scenario: 产品owned cleanup失败
 - **WHEN** Launcher、进程、端口、资源owner、Worktree或owned Workspace cleanup无法证明ownership与完成状态
 - **THEN** 对应verifier MUST失败并保留诊断
@@ -896,6 +947,11 @@ Release smoke、fresh build和其他高成本lifecycle verifier MUST记录阶段
 - **WHEN** release smoke或fresh build成功或失败
 - **THEN** timing evidence MUST至少区分准备、安装/构建、启动与状态演进、卸载/最终Doctor以及harness cleanup中的适用阶段
 - **AND** 每个阶段的性能预算 MUST保持非阻断
+
+#### Scenario: 候选生命周期必须区分产品清理失败与harness残留遵循有效结果复用边界
+- **WHEN** 完整计划含已通过且相关输入匹配的源码检查
+- **THEN** 运行器 SHALL保留该检查覆盖并明确复用来源，不重复启动其执行或专属准备
+- **AND** 输入未知、变化、结果失败或清理不净时 MUST重新取得相应证明；最终包消费仍按原字节核验
 
 ### Requirement: Tag publish Host Node 验证必须在隔离 runner 中准备自身依赖
 Buildr正式release workflow的每个Host Node job MUST在独立runner上依据current package lockfile准备checkout verification harness所需依赖，再执行同一冻结正式tarball的Host Node、CLI、Web与Workspace runtime role验证。每个job MUST显式提供同一candidate artifact中的tarball、`npm-pack` metadata与release artifact manifest，并由verifier在安装后identity验证前核对三者绑定的filename、version、application payload digest与immutable bytes。Job MUST NOT假设其他job的工作目录、`node_modules`或进程状态可见，且依赖准备与输入绑定 MUST NOT重建、修改或替换被冻结的tarball。
@@ -1022,6 +1078,8 @@ Buildr Product MUST 为保留的`src/application`与`src/infrastructure`生产�
 ### Requirement: 本地 affected 与 Full 必须先通过同次 admission wave
 Buildr 本地 `test:changed` 与 `test:candidate` MUST 在同一 verification execution 中先运行低成本 Fast steps；当原计划包含验证框架 canary时 MUST 同时纳入 admission wave。所有非 admission steps MUST 等待 admission 全部通过；任一 admission step失败时，尚未启动的重型 Integration、System、Workspace、package 或 artifact steps MUST 被 blocked且不得产生执行副作用。
 
+源码检查的完整覆盖 SHALL 由本次实际执行或相关输入匹配的完整成功结果满足；MUST区分两者并保留原执行来源。该复用不允许删除required owner、推导未测平台或复用不同最终包字节。
+
 #### Scenario: 验证框架变化包含廉价错误
 - **WHEN** registry、planner、changed runner 或 execution contract 变化使 Fast 或 verification canary失败
 - **THEN** 本地 affected/full MUST 在 admission wave结束时返回失败
@@ -1037,8 +1095,15 @@ Buildr 本地 `test:changed` 与 `test:candidate` MUST 在同一 verification ex
 - **THEN** 现有 preflight phase MUST 包含 Fast owners与verification canary，并在失败时阻止 artifact和verification phases
 - **AND** stable `Candidate gate`、artifact复用与后续shard边界 MUST 保持不变
 
+#### Scenario: 本地 affected 与 Full 必须先通过同次 admission wave遵循有效结果复用边界
+- **WHEN** 完整计划含已通过且相关输入匹配的源码检查
+- **THEN** 运行器 SHALL保留该检查覆盖并明确复用来源，不重复启动其执行或专属准备
+- **AND** 输入未知、变化、结果失败或清理不净时 MUST重新取得相应证明；最终包消费仍按原字节核验
+
 ### Requirement: 同一验证执行必须复用 admission evidence
-Buildr MUST 通过单一去重 DAG 组合 admission 与主计划；同一 step identity 在一次 changed/candidate execution中 MUST 最多执行一次，且 timing summary、diagnostics和最终状态 MUST属于同一run。系统 MUST NOT 为复用 admission 结果建立跨 invocation cache、第二Result store或调用方管理的 evidence writer。
+Buildr MUST 通过单一去重 DAG 组合 admission 与主计划；同一 step identity 在一次 changed/candidate execution中 MUST 最多执行一次，且 timing summary、diagnostics和最终状态 MUST属于同一run。系统 SHALL 由现有运行器维护可重建源码结果缓存和可搬运证明，MUST NOT 创建第二正式任务 Result authority 或调用方手工 evidence writer。
+
+源码检查的完整覆盖 SHALL 由本次实际执行或相关输入匹配的完整成功结果满足；MUST区分两者并保留原执行来源。该复用不允许删除required owner、推导未测平台或复用不同最终包字节。
 
 #### Scenario: Fast step同时属于原始 Full plan
 - **WHEN** Candidate plan已经包含 Unit、Contract或其他Fast step
@@ -1049,6 +1114,11 @@ Buildr MUST 通过单一去重 DAG 组合 admission 与主计划；同一 step i
 - **WHEN** admission steps全部passed但后续重型step失败
 - **THEN** 最终 timing summary MUST 同时保留admission与主DAG结果
 - **AND** 整体结果 MUST failed且不得把早期passed evidence误报为独立正式Verification Result
+
+#### Scenario: 同一验证执行必须复用 admission evidence遵循有效结果复用边界
+- **WHEN** 完整计划含已通过且相关输入匹配的源码检查
+- **THEN** 运行器 SHALL保留该检查覆盖并明确复用来源，不重复启动其执行或专属准备
+- **AND** 输入未知、变化、结果失败或清理不净时 MUST重新取得相应证明；最终包消费仍按原字节核验
 
 ### Requirement: 开发 PR 验证必须按证据 owner 分配平台
 Buildr 面向 `dev` 的 PR verification MUST 由 macOS 执行主要 changed/affected plan及其 admission wave，并 MUST 从同一 changed base 条件执行适用的 Browser capability。Windows MUST 只执行单一 verification registry 显式声明的平台敏感 development owners；workflow MUST NOT 复制测试文件清单或在 macOS/Windows 重复完整 affected plan。
@@ -1181,6 +1251,8 @@ Buildr Product MUST 让治理测试优先断言 machine-readable authority、aut
 ### Requirement: 开发反馈、完整Candidate与正式Release不得重复主证据
 Buildr Product MUST让focused/changed/affected开发反馈、冻结release source上的完整Product Candidate与正式Release artifact验证各自只承担其primary evidence；同一执行内每个verification step MUST去重，同一release source SHA/tree MUST只有一个matching Candidate generation和一个不可变tarball，正式publish MUST消费该tarball及matching Candidate evidence而不得重跑完整Candidate regression。
 
+源码检查的完整覆盖 SHALL 由本次实际执行或相关输入匹配的完整成功结果满足；MUST区分两者并保留原执行来源。该复用不允许删除required owner、推导未测平台或复用不同最终包字节。
+
 #### Scenario: 开发阶段选择affected反馈
 - **WHEN** Agent或PR对未冻结内容运行changed、focus或affected入口
 - **THEN** planner MUST只选择真实受影响owner及其admission依赖
@@ -1188,7 +1260,7 @@ Buildr Product MUST让focused/changed/affected开发反馈、冻结release sourc
 
 #### Scenario: 冻结内容形成完整Candidate
 - **WHEN** current release HEAD/tree与planning bytes冻结并启动完整Product Candidate
-- **THEN** verifier MUST运行完整required owner集合且每个step最多一次
+- **THEN** verifier MUST完整覆盖required owner集合且每个step最多一次
 - **AND** Hosted Windows、Host Node、Launcher、exact Node/PATH、primary owner、bounded scheduling、heartbeat/checkpoint与timing MUST继续复用当前registry基线
 - **AND** 所有artifact consumer MUST消费同一个release source、registry与tarball identity
 
@@ -1197,6 +1269,11 @@ Buildr Product MUST让focused/changed/affected开发反馈、冻结release sourc
 - **THEN** workflow MUST验证并消费同一冻结tarball，完成tag、npm integrity、dist-tag、GitHub Release与安装后readback
 - **AND** workflow MUST NOT调用完整Product Candidate入口、重新pack或生成第二份可发布bytes
 - **AND** release SHA、Candidate generation、artifact manifest或main tree任一漂移 MUST在公共mutation前失败关闭
+
+#### Scenario: 开发反馈、完整Candidate与正式Release不得重复主证据遵循有效结果复用边界
+- **WHEN** 完整计划含已通过且相关输入匹配的源码检查
+- **THEN** 运行器 SHALL保留该检查覆盖并明确复用来源，不重复启动其执行或专属准备
+- **AND** 输入未知、变化、结果失败或清理不净时 MUST重新取得相应证明；最终包消费仍按原字节核验
 
 ### Requirement: Release模型适配不得重复建设既有验证能力
 Release source适配 MUST只改变Candidate admission、source/currentness和artifact correlation；现有Hosted Windows、Host Node、Launcher、exact Node/PATH、primary evidence owner、affected/full、bounded scheduling、timeout/heartbeat/checkpoint与timing MUST保持唯一owner和回归覆盖。后续实现 MUST NOT以release需求为由复制registry step、创建第二Candidate workflow或新增重复primary evidence。
@@ -1209,6 +1286,8 @@ Release source适配 MUST只改变Candidate admission、source/currentness和art
 
 ### Requirement: Publish workflow必须复用matching Candidate artifact
 显式dispatch的release workflow MUST从release context声明的successful Candidate run读取`candidate-aggregate`与唯一`candidate-package`，并 MUST在所有Host Node、Launcher、protected transaction与Registry readback前核对source commit/tree、registry identity、artifact manifest、SHA-256、integrity与application payload digest。Publish workflow MUST NOT执行application payload build、`npm pack`或完整Product Candidate。
+
+源码检查的完整覆盖 SHALL 由本次实际执行或相关输入匹配的完整成功结果满足；MUST区分两者并保留原执行来源。该复用不允许删除required owner、推导未测平台或复用不同最终包字节。
 
 #### Scenario: 下载matching Candidate evidence
 - **WHEN** dispatch context引用completed successful Candidate run
@@ -1224,6 +1303,11 @@ Release source适配 MUST只改变Candidate admission、source/currentness和art
 - **WHEN** 唯一protected job准备执行tag或npm mutation
 - **THEN** job MUST再次核对context artifact identity与下载tarball bytes
 - **AND** 任一不一致 MUST在tag mutation前失败关闭并保留current attempt evidence
+
+#### Scenario: Publish workflow必须复用matching Candidate artifact遵循有效结果复用边界
+- **WHEN** 完整计划含已通过且相关输入匹配的源码检查
+- **THEN** 运行器 SHALL保留该检查覆盖并明确复用来源，不重复启动其执行或专属准备
+- **AND** 输入未知、变化、结果失败或清理不净时 MUST重新取得相应证明；最终包消费仍按原字节核验
 
 ### Requirement: changed selection ownership 与 Candidate execution graph 必须具有独立 authority
 Buildr Product MUST 在物理上分离路径 ownership mapping 与 Candidate execution graph。Ownership authority MUST 保存 changed path 到 primary verifier owner 的映射、ignore/delegation 与生产源码 owner 例外；execution graph MUST 保存命令、profile、dependency、resource、timeout、budget 与 Candidate membership。Planner MUST 根据 authority 类型判断 affected 或 Full，MUST NOT 通过中央文件名或任意内容 diff 猜测长期语义。
@@ -1462,6 +1546,8 @@ Context-aware owner的timing report MUST聚合create、cache-hit、wait、acquir
 ### Requirement: 日常 Core 慢 owner 必须具有闭合 primary evidence map
 Buildr Product MUST 从唯一 verification registry 为日常 Core 中的慢 Integration/System owner 派生 primary evidence map。每项 MUST 明确待证明事实、公共可观察结果、反例、证据角色和唯一 `primaryEvidenceOwner`；primary owner 不存在、多个 owner 同时声称同一主证据或 supporting owner 无法解析到 primary owner时，contract MUST在执行前失败关闭。
 
+源码检查的完整覆盖 SHALL 由本次实际执行或相关输入匹配的完整成功结果满足；MUST区分两者并保留原执行来源。该复用不允许删除required owner、推导未测平台或复用不同最终包字节。
+
 #### Scenario: 慢 owner 承担唯一主证据
 - **WHEN** 日常 Core 中一个达到审计阈值的 Integration或System owner由自身承担公共事实主证据
 - **THEN** evidence map MUST将其标为primary并输出公共结果和能使该owner失败的反例
@@ -1475,7 +1561,12 @@ Buildr Product MUST 从唯一 verification registry 为日常 Core 中的慢 Int
 #### Scenario: 真实黄金边界不可替代
 - **WHEN** owner的公共结果依赖真实CLI、Git、进程、Workspace初始化、迁移、Finish、自举或cleanup边界
 - **THEN** evidence map MUST保留至少一个穿过该真实边界的primary owner并说明低层反例不能替代的原因
-- **AND** Test Context、mock或缓存被测结果 MUST不得替代该主证据
+- **AND** Test Context、mock或缓存的产品响应 MUST不得替代该主证据；同输入既有完整成功主证据 SHALL 按统一结果复用约定核销
+
+#### Scenario: 日常 Core 慢 owner 必须具有闭合 primary evidence map遵循有效结果复用边界
+- **WHEN** 完整计划含已通过且相关输入匹配的源码检查
+- **THEN** 运行器 SHALL保留该检查覆盖并明确复用来源，不重复启动其执行或专属准备
+- **AND** 输入未知、变化、结果失败或清理不净时 MUST重新取得相应证明；最终包消费仍按原字节核验
 
 ### Requirement: changed选择审计必须分离selection amplification与owner成本
 Buildr Product MUST提供只读且可重复的changed选择审计，复用权威 ownership mapping、planner与显式Git base/head，输出changed paths、直接owner、依赖扩张、最终step集合、scope mode、结构化Full reason和目标工作量。审计 MUST将选择放大与owner执行成本分开，不得把预算或单次总墙钟冒充根因。
@@ -1527,7 +1618,9 @@ Buildr Product MUST在转移primary evidence、收窄changed ownership或移除�
 - **AND** MUST重新计算总目标工作量、依赖关键路径和资源容量数学下限，不预设无法由数学支持的硬预算
 
 ### Requirement: 黄金生命周期优化必须保留真实主证据并记录分段成本
-Buildr Product MUST 仅复用不承担 primary evidence 的只读准备，并 MUST 为每个被优化黄金 owner 保留独立可写 sandbox、至少一条完整真实初始化与生命周期路径，以及 prepare、body、wait、cleanup 的改造前后实测；优化 MUST NOT 缓存被测结果、扩大全局并发、共享可写状态或削弱 Candidate/Release authority。
+在共享准备与夹具层面，Buildr Product MUST 仅复用不承担 primary evidence 的只读准备，并 MUST 为每个被优化黄金 owner 保留独立可写 sandbox、至少一条完整真实初始化与生命周期路径，以及 prepare、body、wait、cleanup 的改造前后实测；优化 MUST NOT 用缓存的产品响应替代真实主证据、扩大全局并发、共享可写状态或削弱 Candidate/Release authority。
+
+源码检查的完整覆盖 SHALL 由本次实际执行或相关输入匹配的完整成功结果满足；MUST区分两者并保留原执行来源。该复用不允许删除required owner、推导未测平台或复用不同最终包字节。
 
 #### Scenario: 多个 Finish case 使用相同 Git 基线
 - **WHEN** 多个 Finish journey 需要相同的初始 Git remote 与 attached checkout
@@ -1545,6 +1638,11 @@ Buildr Product MUST 仅复用不承担 primary evidence 的只读准备，并 MU
 - **WHEN** 多轮实测证明 Prepared Fixture 物化不快于独立准备，或会模糊唯一 primary evidence
 - **THEN** verifier MUST 保持独立执行并记录原因
 - **AND** 维护者 MUST NOT 为达到预设数字继续扩建基础设施或降低证据强度
+
+#### Scenario: 黄金生命周期优化必须保留真实主证据并记录分段成本遵循有效结果复用边界
+- **WHEN** 完整计划含已通过且相关输入匹配的源码检查
+- **THEN** 运行器 SHALL保留该检查覆盖并明确复用来源，不重复启动其执行或专属准备
+- **AND** 输入未知、变化、结果失败或清理不净时 MUST重新取得相应证明；最终包消费仍按原字节核验
 
 ### Requirement: Product 验证模型必须使用三个正交问题
 Buildr Product MUST 将验证模型分别表达为证据执行边界、选择范围和验证对象/决策节点。证据边界 MUST 使用 Static、Unit、Component、Integration、System；选择范围 MUST 使用 affected 或 full；验证对象 MUST 区分 frozen Task Content、Product Artifact Candidate 和 Published Release。Quick MUST 只表示开发期低成本反馈，不得作为正式 Task Verification Result。
@@ -1593,6 +1691,8 @@ Product验证用户模型 MUST把普通Task交付对象称为当前任务内容�
 ### Requirement: daily-full、Product Artifact Candidate 与 Published Release 必须分离新增证据
 Buildr Product MUST 让 daily-full 只包含完整日常证据；Product Artifact Candidate MUST 在完整日常证据上增加 exact artifact、package、install 和 compatibility evidence；Published Release MUST 复用 matching verified Candidate 并只增加 publish、published install/launcher smoke 与 registry/readback 等 Release-only evidence。普通 Task daily-full MUST NOT吸收 Candidate-only 或 Release-only primary evidence。
 
+源码检查的完整覆盖 SHALL 由本次实际执行或相关输入匹配的完整成功结果满足；MUST区分两者并保留原执行来源。该复用不允许删除required owner、推导未测平台或复用不同最终包字节。
+
 #### Scenario: 执行完整日常证据
 - **WHEN** `product.full-regression` 或合法 Full 升级运行 daily-full
 - **THEN** plan MUST 选择唯一 registry 中完整日常 evidence set
@@ -1600,13 +1700,18 @@ Buildr Product MUST 让 daily-full 只包含完整日常证据；Product Artifac
 
 #### Scenario: 形成 Product Artifact Candidate
 - **WHEN** `product.candidate` 验证 exact source 与候选制品
-- **THEN** verifier MUST 运行完整 daily evidence 与 Candidate artifact evidence
+- **THEN** verifier MUST 核销完整 daily evidence（实际执行或有效源码结果）并执行 Candidate artifact evidence
 - **AND** MUST 保持唯一 Candidate generation、tarball identity 和既有 Host Node/Launcher/package coverage
 
 #### Scenario: 验证 Published Release
 - **WHEN** 正式 Release workflow 消费 matching verified Candidate
 - **THEN** workflow MUST 针对实际发布物和发布结果执行 Release-only evidence
 - **AND** MUST NOT 重跑或重建另一份 Candidate 来替代 matching artifact、publish transaction 或 readback authority
+
+#### Scenario: daily-full、Product Artifact Candidate 与 Published Release 必须分离新增证据遵循有效结果复用边界
+- **WHEN** 完整计划含已通过且相关输入匹配的源码检查
+- **THEN** 运行器 SHALL保留该检查覆盖并明确复用来源，不重复启动其执行或专属准备
+- **AND** 输入未知、变化、结果失败或清理不净时 MUST重新取得相应证明；最终包消费仍按原字节核验
 
 ### Requirement: Changed plan 必须公开逐步 selection trace
 Buildr Product 的 changed plan MUST 从同一权威 planner 输出结构化 selection audit，并 MUST 区分 path-to-owner 直接选择、Full scope 展开与 dependency closure；审计不得重算、mock 或缓存被测选择结果。
@@ -1694,7 +1799,9 @@ Buildr Product verification owner MUST按真实启动的Task lifecycle、Workspa
 - **AND**主机CPU、内存或I/O观察 MUST不成为新的pass/fail门禁
 
 ### Requirement: HTTP 契约 Fresh Build 输入必须在 Fast admission 中闭合
-Buildr Product MUST 为 HTTP contract generator、服务端 Schema、Buildr DTO、Buildr Web DTO 与 Fresh Build fixture 维护一个测试侧闭合 inventory。`test:changed` 与本地完整 Candidate MUST 在同次 Fast admission 中校验该 inventory；校验失败时，尚未启动的重型 Integration、System、Workspace、package、Browser 或 artifact step MUST保持 blocked且不得产生执行副作用。该 inventory MUST只属于 Product test tooling，不得进入 npm runtime、Project verification declaration、Task Result 或跨 invocation cache。
+Buildr Product MUST 为 HTTP contract generator、服务端 Schema、Buildr DTO、Buildr Web DTO 与 Fresh Build fixture 维护一个测试侧闭合 inventory。`test:changed` 与本地完整 Candidate MUST 在同次 Fast admission 中校验该 inventory；校验失败时，尚未启动的重型 Integration、System、Workspace、package、Browser 或 artifact step MUST保持 blocked且不得产生执行副作用。该 inventory MUST只属于 Product test tooling，不得进入 npm runtime、Project verification declaration、Task Result 或运行时业务缓存。
+
+源码检查的完整覆盖 SHALL 由本次实际执行或相关输入匹配的完整成功结果满足；MUST区分两者并保留原执行来源。该复用不允许删除required owner、推导未测平台或复用不同最终包字节。
 
 #### Scenario: 新增 HTTP 契约文件但 fixture 未闭合
 - **WHEN** 一个已登记 HTTP contract generator、Schema 或生成 DTO 未进入 Fresh Build inventory，或 Buildr/Buildr Web 两端输出缺失
@@ -1710,6 +1817,11 @@ Buildr Product MUST 为 HTTP contract generator、服务端 Schema、Buildr DTO�
 - **WHEN** `system-fresh-build` 被 affected、focus 或 Candidate plan选择
 - **THEN** System fixture MUST从闭合 inventory复制最小 HTTP contract inputs并执行真实 npm-ci 与 build:web
 - **AND** Fast 静态检查 MUST不冒充该 System evidence
+
+#### Scenario: HTTP 契约 Fresh Build 输入必须在 Fast admission 中闭合遵循有效结果复用边界
+- **WHEN** 完整计划含已通过且相关输入匹配的源码检查
+- **THEN** 运行器 SHALL保留该检查覆盖并明确复用来源，不重复启动其执行或专属准备
+- **AND** 输入未知、变化、结果失败或清理不净时 MUST重新取得相应证明；最终包消费仍按原字节核验
 
 ### Requirement: 退役任务能力必须具有无残留验收
 Product verification MUST覆盖 fresh/升级 SQLite、Task Record、OpenSpec、Review、Verification、父任务协调、Buildr Web 与发布回归，并证明 Task Overview、Task Environment、Task Development、Planning Identity、Task Candidate、Development Handoff、旧 Finish、Contribution 协调与 Execution Record 没有运行时入口、current 表、能力绑定、兼容转发或专属 owner。Static validation MUST另外扫描非归档 canonical specs、current knowledge、架构/CLI 文档与当前测试 ownership，拒绝对这些能力的正向要求和已迁移 Task `.mjs` 路径；archive、连续 migration 和明确 legacy fixture MUST排除。
@@ -1821,6 +1933,8 @@ Buildr Product MUST让Release Rehearsal与正式Product Artifact Candidate调用
 ### Requirement: 候选环境准备必须由唯一入口按档位提供
 Buildr MUST提供统一候选环境准备（Candidate Environment Preparation）入口，集中拥有Buildr/Buildr Web锁定依赖安装、DTO生成、Test Context生成、源码`web-dist`物化和产物消费者的必要依赖。Candidate与Release Rehearsal jobs MUST只选择统一入口公布的最低充分档位，不得自行拼装这些准备步骤。
 
+环境准备 SHALL 按实际未完成检查的需要供给；命中结果的专属准备 MUST NOT重复执行。准备 operations MUST在开始、完成与失败时保存，准备失败 SHALL表明相应检查未运行。被消费生成物仍 MUST实际存在并匹配。
+
 #### Scenario: 源码运行分片准备环境
 - **WHEN** 候选作业选择`source-runtime`档位
 - **THEN** 统一入口 MUST安装两个Service的锁定依赖、生成DTO与Test Context并物化matching源码`web-dist`
@@ -1830,13 +1944,25 @@ Buildr MUST提供统一候选环境准备（Candidate Environment Preparation）
 - **WHEN** Host Node consumer或其他作业不需要Buildr Web源码工具链
 - **THEN** 作业 MUST选择最低充分档位并不得安装或构建无关前端材料
 
+#### Scenario: 候选环境准备必须由唯一入口按档位提供遵循有效结果复用边界
+- **WHEN** 完整计划含已通过且相关输入匹配的源码检查
+- **THEN** 运行器 SHALL保留该检查覆盖并明确复用来源，不重复启动其执行或专属准备
+- **AND** 输入未知、变化、结果失败或清理不净时 MUST重新取得相应证明；最终包消费仍按原字节核验
+
 ### Requirement: 候选独立分片必须尽可能收集全部失败
 源码分片 MUST只依赖实际必需的准备或产物，不得因无关产物构建失败全部跳过。聚合 MUST区分准备失败、测试失败和依赖缺失未运行，并保留已成功分片证据。
+
+汇总 MUST分别保留准备、原子检查退出、超时及清理事实。超时与先前真实断言失败同时出现时 MUST同时报告；清理失败可使最终动作失败，但 MUST保留原检查已通过事实且不得将该结果写入复用缓存。
 
 #### Scenario: 产物构建失败而源码测试可运行
 - **WHEN** 唯一tarball未能生成但独立源码准备可完成
 - **THEN** 无tarball依赖的分片 MUST继续运行
 - **AND** 产物消费者 MUST记录依赖缺失未运行，聚合不得误报全部测试失败
+
+#### Scenario: 候选独立分片必须尽可能收集全部失败遵循有效结果复用边界
+- **WHEN** 完整计划含已通过且相关输入匹配的源码检查
+- **THEN** 运行器 SHALL保留该检查覆盖并明确复用来源，不重复启动其执行或专属准备
+- **AND** 输入未知、变化、结果失败或清理不净时 MUST重新取得相应证明；最终包消费仍按原字节核验
 
 ### Requirement: 发布工具生命周期必须使用真实判断和故障注入验证
 发布基础设施 MUST使用真实临时Git、可控本地服务和传输故障验证正常准备、纳入、消费、发布恢复与清理。模拟 MUST限制于外部系统边界，MUST不把被测核心公开状态、幂等或冲突判断直接替换为成功。
@@ -1903,3 +2029,32 @@ Buildr 主包完整候选（Candidate）MUST 在唯一验证登记中包含 `ser
 #### Scenario: 已支持来源指向 main
 - **WHEN** 合并请求（Pull Request）来自已支持来源且指向 `main`
 - **THEN** 候选检查（Candidate Gate）MUST 继续校验精确提交及完整分布式候选证据
+
+### Requirement: 源码结果必须按实际输入复用并保留来源
+Buildr 验证 SHALL由现有运行器生成、保存和核验源码结果，匹配代码内容、测试与配方、依赖和必要环境/Git事实；提交与运行编号 SHALL作为追溯信息，MUST NOT无条件使同输入结果失效。未知输入范围 MUST保守匹配完整相关内容或不复用。结果 MUST完整通过、输入执行前后一致且清理干净；新失败或漂移 MUST使同身份旧成功不可继续命中。
+
+#### Scenario: 本机再次执行相同检查
+- **WHEN** 代码、测试、依赖及所需环境均未改变且已有完整成功结果
+- **THEN** 本机运行器 SHALL复用结果并返回原来源，不再次启动该检查
+- **AND** 强制诊断 SHALL真实执行，失败时 MUST使同身份旧成功失效
+
+#### Scenario: 修改相关输入或运行中漂移
+- **WHEN** 相关输入改变、证明范围未知或执行中内容漂移
+- **THEN** 对应旧证明 MUST不可用于通过判断，运行器 SHALL执行需要的检查
+- **AND** 未受影响且可证明有效的结果 SHALL继续保留
+
+### Requirement: 受控候选必须消费合法本机结果并只补齐必要检查
+受控手动候选 SHALL接收运行器生成的可搬运源码结果并按当前实际输入核验，支持合法本机和其他远端运行的来源；MUST NOT接受手工布尔值、失败或不完整结果替代真实证明。核对者所在平台 MUST NOT被冒充为原执行平台。普通不可信合并请求 MUST NOT通过自带结果跳过检查。完整候选 SHALL仍具有全部所需平台及最终原包消费证明。
+
+#### Scenario: 本机完整验证后准备候选
+- **WHEN** 本机已完成适用源码检查且结果与冻结内容及配方匹配
+- **THEN** 远端 SHALL复用这些源码结果，仅执行必要缺项和最终包检查
+- **AND** 计划与汇总 MUST说明执行、复用和缺项，不因换提交或远端运行无差别重跑
+
+#### Scenario: 本机平台不能证明另一平台
+- **WHEN** 提供的结果不满足所需操作系统或明确工具环境条件
+- **THEN** 该平台所需检查 MUST继续实际执行，不从本机通过推导
+
+#### Scenario: 结果运输超过受控输入限制
+- **WHEN** 精简结果仍超过允许体积或结构无法核验
+- **THEN** 派发 MUST在产生新远端执行前给出明确诊断，MUST NOT静默丢弃结果并重新整套执行
