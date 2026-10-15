@@ -172,7 +172,7 @@ function fixture(t: any, changes: { mainRuntime?: boolean; omitSourcePatch?: boo
     }
     assert.fail('Unexpected fixture host command ' + args.join(' '));
   };
-  const dependencies = { execute, runtime, resolveRetainedController: () => ({ workspaceRoot: workspace }),
+  const dependencies = { prepareLocalSourceVerification: () => ({status:'ready',transport:null,missingStepIds:[]}), execute, runtime, resolveRetainedController: () => ({ workspaceRoot: workspace }),
     invokeRetainedController(_controller: any, args: string[]) {
       if (args[0] === 'task' && args[1] === 'create') { task = { taskId, status: 'active', title: 'Plugin release' }; return { status: 'created', record: task, effects: [] }; }
       assert.deepEqual(args.slice(0, 2), ['worktree', 'create']); assert.equal(args[args.indexOf('--start-point') + 1], baseline);

@@ -83,6 +83,25 @@ function archifyFailureContext(error: any, file: string): any {
     ? { lastPhase, childErrorCode, ...(phaseTimings.length ? { phaseTimings } : {}) } : {};
 }
 
+function timeoutIdentity(error: any): { timeout: boolean | null; childErrorCode: string | null } {
+  const visited = new Set<any>();
+  let current = error;
+  let timeout = false;
+  let complete = true;
+  let childErrorCode: string | null = null;
+  for (let depth = 0; depth < 8 && current && typeof current === 'object' && !visited.has(current); depth += 1) {
+    visited.add(current);
+    if (typeof current.message === 'string' && current.message.length > 65_536) complete = false;
+    const message = typeof current.message === 'string' ? current.message.slice(-65_536) : '';
+    if (current.code === 'ETIMEDOUT' || /\bETIMEDOUT\b/u.test(message)) { timeout = true; childErrorCode = 'ETIMEDOUT'; }
+    if (current.failureType === 'testTimeoutFailure' || /\b(?:capability-timeout|process-close-timeout)\b/u.test(message)
+      || /\b(?:timed out|timeout) (?:after|of) \d+\s*(?:ms|milliseconds)\b/iu.test(message)) timeout = true;
+    current = current.cause;
+  }
+  if (current && typeof current === 'object' && !visited.has(current)) complete = false;
+  return { timeout: timeout ? true : complete ? false : null, childErrorCode };
+}
+
 function failureIdentity(error: any, file: string): any {
   return {
     code: safeCode(error?.code),
@@ -91,6 +110,7 @@ function failureIdentity(error: any, file: string): any {
     exitCode: Number.isInteger(error?.exitCode) ? error.exitCode : null,
     signal: typeof error?.signal === 'string' && /^SIG[A-Z0-9]+$/.test(error.signal) ? error.signal : null,
     ...archifyFailureContext(error, file),
+    ...timeoutIdentity(error),
   };
 }
 

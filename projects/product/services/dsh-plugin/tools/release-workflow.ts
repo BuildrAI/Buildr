@@ -1,13 +1,20 @@
 /** Validate manual inputs and remote run facts before consuming release artifacts. */
 import { execFileSync } from 'node:child_process';
-import { appendFileSync, readFileSync } from 'node:fs';
+import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { dirname, join } from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
+import { assertPluginSourceAggregate, releaseCandidateRequirements } from '../../buildr/tools/release/verify-pr-candidate.ts';
+import { assertBoundVerification } from './full-verification.ts';
+import { readReleaseCandidate, sourceSdkIdentityFromFiles, SOURCE_SDK_MANIFEST, PLUGIN_SERVICE_PATH, type ReleaseCandidate } from './release-candidate.ts';
+import { assertPluginCandidateAdoption, createPluginCandidateAdoption, PLUGIN_CANDIDATE_ADOPTION_FILE, type PluginCandidateAdoption, type PluginCandidateMain } from './candidate-adoption.ts';
 
 export const REPOSITORY = 'BuildrAI/Buildr';
 export const WORKFLOW = '.github/workflows/publish-dsh-plugin.yml';
 export const PUBLISH_STEP = 'Publish immutable plugin';
 export const BUILDR_CANDIDATE_WORKFLOW = '.github/workflows/verify.yml';
 export interface BuildrPeerInput { origin: 'registry' | 'candidate'; version: string; integrity: string; candidateRunId?: string }
-export interface WorkflowInput { operation: 'prepare' | 'publish'; version: string; candidateRunId?: string; recoveryRunId?: string; buildrPeer?: BuildrPeerInput }
+export interface WorkflowInput { operation: 'prepare' | 'publish'; version: string; candidateRunId?: string; recoveryRunId?: string; buildrPeer?: BuildrPeerInput; sourceCandidateRunId?: string; sourceCommit?: string; selectionIdentity?: string }
 export interface BuildrPeerCandidateSource { mainCommit: string; candidateCommit: string; mainParents: string[]; mainTree: string; candidateTree: string; workflowId: number }
 type Run = { id: number; workflow_id: number; path: string; event: string; head_branch: string; head_sha: string; status: string; conclusion: string | null; display_title: string; run_attempt: number; run_number: number; repository: { full_name: string } };
 type Job = { name: string; status: string; conclusion: string | null; steps?: Array<{ name: string; status: string; conclusion: string | null }> };
@@ -48,7 +55,48 @@ export function validateWorkflowInput(env: NodeJS.ProcessEnv, source: { commit: 
   if (operation === 'prepare' && (candidateRunId || recoveryRunId)) fail('prepare-cannot-consume-publication');
   if (candidateRunId === env.GITHUB_RUN_ID || recoveryRunId === env.GITHUB_RUN_ID) fail('current-run-cannot-be-source');
   const buildrPeer = buildrPeerInput(env, operation);
-  return { operation, version, candidateRunId, recoveryRunId, ...(buildrPeer ? { buildrPeer } : {}) };
+  const sourceFields = [env.PLUGIN_SOURCE_CANDIDATE_RUN_ID, env.PLUGIN_SOURCE_COMMIT, env.PLUGIN_SELECTION_IDENTITY];
+  if (operation === 'publish' && sourceFields.some(Boolean)) fail('publish-cannot-replace-source');
+  if (operation === 'prepare') {
+    const sourceCandidateRunId = runId(sourceFields[0], true);
+    if (sourceCandidateRunId === env.GITHUB_RUN_ID || !/^[a-f0-9]{40}$/u.test(sourceFields[1] ?? '') || !/^(?:sha256-)?[a-f0-9]{64}$/u.test(sourceFields[2] ?? '')) fail('source-candidate-input');
+    return { operation, version, candidateRunId, recoveryRunId, buildrPeer, sourceCandidateRunId, sourceCommit: sourceFields[1], selectionIdentity: sourceFields[2] };
+  }
+  return { operation, version, candidateRunId, recoveryRunId };
+}
+export function pluginCandidateMain(commit: string, git: (args: string[]) => string = args => execFileSync('git', args, { encoding: 'utf8' }).trim()): PluginCandidateMain {
+  const parents = git(['rev-list', '--parents', '-n', '1', commit]).split(/\s/u);
+  if (parents[0] !== commit) fail('plugin-main-identity');
+  return { commit, parents: parents.slice(1), tree: git(['rev-parse', `${commit}^{tree}`]), serviceTree: git(['rev-parse', `${commit}:${PLUGIN_SERVICE_PATH}`]) };
+}
+export async function verifySourceCandidateAdoption(input: WorkflowInput, main: PluginCandidateMain,
+  candidate: ReturnType<typeof readReleaseCandidate>, aggregate: any, api: GithubRead,
+  git: (args: string[]) => string = args => execFileSync('git', args, { encoding: 'utf8' })): Promise<PluginCandidateAdoption> {
+  if (input.operation !== 'prepare' || !input.sourceCandidateRunId || !input.sourceCommit || !input.selectionIdentity || !input.buildrPeer) fail('source-candidate-input');
+  const sourceCommit = input.sourceCommit, sourceTree = git(['rev-parse', `${sourceCommit}^{tree}`]).trim();
+  if (main.parents.length !== 2 || main.parents[1] !== sourceCommit || main.parents[0] !== aggregate?.selection?.main || main.tree !== sourceTree
+    || candidate.manifest.sourceCommit !== sourceCommit || candidate.manifest.sourceTree !== main.serviceTree || candidate.manifest.version !== input.version
+    || aggregate?.selection?.identity !== input.selectionIdentity || !aggregate.selection.packages.includes('dsh-plugin')) fail('plugin-source-protected-merge-mismatch');
+  const workflow = await api(`/repos/${REPOSITORY}/actions/workflows/verify.yml`);
+  const run: Run = await api(`/repos/${REPOSITORY}/actions/runs/${input.sourceCandidateRunId}`);
+  if (workflow.path !== BUILDR_CANDIDATE_WORKFLOW || !Number.isSafeInteger(workflow.id) || run?.repository?.full_name !== REPOSITORY
+    || run.path?.split('@')[0] !== BUILDR_CANDIDATE_WORKFLOW || run.workflow_id !== workflow.id || run.event !== 'workflow_dispatch'
+    || String(run.id) !== input.sourceCandidateRunId || run.head_sha !== sourceCommit || run.status !== 'completed' || run.conclusion !== 'success'
+    || !Number.isSafeInteger(run.run_attempt) || run.run_attempt < 1 || run.run_attempt > 100) fail('plugin-source-candidate-run-mismatch');
+  const changedPaths = git(['diff', '--no-renames', '--name-only', '-z', main.parents[0]!, sourceCommit, '--']).split('\0').filter(Boolean).sort();
+  const sourceFile = (name: string) => Buffer.from(git(['show', `${sourceCommit}:${PLUGIN_SERVICE_PATH}/${name}`, '--']));
+  const sourceSdk = sourceSdkIdentityFromFiles(sourceFile(SOURCE_SDK_MANIFEST), sourceFile('sdk-patches/dsh-v0.2.0-rc.2-event-sources-settings.patch'));
+  const workflowSha256 = createHash('sha256').update(git(['show', `${sourceCommit}:${BUILDR_CANDIDATE_WORKFLOW}`, '--'])).digest('hex');
+  const peer = input.buildrPeer;
+  const plan = { sourceCommit, sourceTree, serviceTree: main.serviceTree, pluginVersion: input.version, selection: aggregate.selection,
+    requirements: releaseCandidateRequirements({ packages: aggregate.selection.packages, changedPaths }), changedPaths, workflowSha256, sourceSdk,
+    ...(peer.origin === 'registry' ? { registryPeer: { version: peer.version, integrity: peer.integrity } } : {}) };
+  assertPluginSourceAggregate(aggregate, plan, run.id, run.run_attempt);
+  if (aggregate.verification.peer.origin !== peer.origin || aggregate.verification.peer.version !== peer.version || aggregate.verification.peer.integrity !== peer.integrity
+    || !isDeepStrictEqual(aggregate.candidate, { artifactName: `plugin-candidate-v${input.version}`, ...candidate.manifest })) fail('plugin-source-candidate-artifact-mismatch');
+  assertBoundVerification(aggregate.verification, candidate);
+  return createPluginCandidateAdoption({ source: { runId: run.id, runAttempt: aggregate.workflow.runAttempt, commit: sourceCommit,
+    tree: sourceTree, serviceTree: main.serviceTree, selectionIdentity: input.selectionIdentity, workflowSha256 }, main, candidate: candidate.manifest });
 }
 /** A pre-main Buildr candidate is consumed only through its exact protected merge. */
 export function validateBuildrPeerCandidateRun(run: Run, input: BuildrPeerInput, source: BuildrPeerCandidateSource): void {
@@ -148,6 +196,20 @@ if (import.meta.main) {
     const version = JSON.parse(readFileSync('package.json', 'utf8')).version;
     const input = validateWorkflowInput(process.env, { commit, version });
     if (process.argv[2] === 'publish-check') await verifyPublishRuns(input, commit, process.env.GITHUB_RUN_ID!, githubReader(process.env.GH_TOKEN ?? ''));
+    else if (process.argv[2] === 'adopt-candidate') {
+      const args = process.argv.slice(3), values = new Map<string, string>();
+      for (let index = 0; index < args.length; index += 2) {
+        if (!['--candidate', '--aggregate', '--output'].includes(args[index]!) || values.has(args[index]!) || !args[index + 1] || args[index + 1]!.startsWith('--')) fail('adoption-arguments');
+        values.set(args[index]!, args[index + 1]!);
+      }
+      if (values.size !== 3) fail('adoption-arguments');
+      const main = pluginCandidateMain(commit);
+      const candidate = readReleaseCandidate(values.get('--candidate')!, { version: input.version, sourceCommit: input.sourceCommit, sourceTree: main.serviceTree });
+      const aggregate = JSON.parse(readFileSync(values.get('--aggregate')!, 'utf8'));
+      const adoption = await verifySourceCandidateAdoption(input, main, candidate, aggregate, githubReader(process.env.GH_TOKEN ?? ''), args => execFileSync('git', args, { encoding: 'utf8' }));
+      writeFileSync(values.get('--output')!, `${JSON.stringify(adoption, null, 2)}\n`);
+      writeFileSync(join(dirname(values.get('--output')!), 'plugin-full-verification.json'), `${JSON.stringify(aggregate.verification, null, 2)}\n`);
+    }
     else if (process.argv[2] === 'peer-check') {
       if (process.argv.length !== 5 || process.argv[3] !== '--manifest' || !process.argv[4]) fail('peer-manifest-required');
       await verifyBuildrPeerCandidate(input, commit, JSON.parse(readFileSync(process.argv[4], 'utf8')), githubReader(process.env.GH_TOKEN ?? ''));

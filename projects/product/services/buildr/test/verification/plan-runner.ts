@@ -5,6 +5,7 @@ import { runVerificationDag } from './dag-scheduler.ts';
 import { createVerificationExecutor } from './executor.ts';
 import { coordinatedResourcesFromLimits, createVerificationResourceCoordinator, resolveVerificationCoordinationRoot } from './resource-coordinator.ts';
 import { VERIFICATION_CONCURRENCY } from './registry.ts';
+import { createVerificationPlanReuse, reusedVerificationResult } from './verification-reuse.ts';
 
 export const FULL_PLAN_RESOURCE_ID: any = 'product-full-execution';
 export const FULL_PLAN_WAIT_TIMEOUT_MS: any = 30 * 60_000;
@@ -36,6 +37,7 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
   let completed: any = 0;
   const heartbeatIntervalMs: any = Number.isFinite(options.heartbeatIntervalMs) && options.heartbeatIntervalMs > 0 ? options.heartbeatIntervalMs : 15_000;
   const concurrency: any = options.concurrency ?? VERIFICATION_CONCURRENCY;
+  const reuse = createVerificationPlanReuse(plan, options);
   const resourceCoordinator: any = options.resourceCoordinator ?? createVerificationResourceCoordinator({
     root: resolveVerificationCoordinationRoot(options.productRoot, options.env),
     resources: {
@@ -77,7 +79,7 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
     providers: TEST_CONTEXT_PROVIDERS,
     env: { ...process.env, ...(options.env ?? {}) },
   });
-  const contextKeys: any[] = [...new Set(plan.steps.flatMap((step: any) => step.contexts ?? []))];
+  const contextKeys: any[] = [...new Set(plan.steps.filter((step: any) => !reuse?.hits.has(step.id)).flatMap((step: any) => step.contexts ?? []))];
   let preparedContexts: any;
   try {
     preparedContexts = contextPool.prepareAll(contextKeys);
@@ -90,7 +92,7 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
     options.stream?.write(`[${prefix}] context: ${context.provider.key} status=${context.owned ? 'prepared' : 'reused'} prepare=${context.prepareDurationMs}ms identity=${context.marker.identity}\n`);
   }
   const executorFactory: any = options.executorFactory ?? createVerificationExecutor;
-  const execute: any = executorFactory({
+  const executeFresh: any = executorFactory({
     ...options,
     env: { ...(options.env ?? process.env), ...contextPool.environment() },
     diagnosticsDirectory,
@@ -101,6 +103,10 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
       options.onProcessStart?.(step, processIdentity);
     },
   });
+  const execute: any = (step: any, executionContext: any) => {
+    const record = reuse?.hits.get(step.id);
+    return record ? reusedVerificationResult(record) : executeFresh(step, executionContext);
+  };
   const heartbeat: any = setInterval(() => {
     const now: any = Date.now();
     const running: any = [...active.entries()].map(([id, item]: any) => `${id}:${now - item.startedAtMs}ms:pid=${item.pid ?? 'pending'}:pgid=${item.processGroupId ?? 'pending'}`);
@@ -132,7 +138,8 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
         const evidence: any = result.diagnosticDigests
           ? ` evidence=${result.stdoutPath ?? '-'},${result.stderrPath ?? '-'} digest=${result.diagnosticDigests.stdout},${result.diagnosticDigests.stderr}`
           : '';
-        options.stream?.write(`[${prefix}] ${result.status}: ${result.id} (${result.durationMs} ms, pid=${processIdentity.pid ?? 'n/a'}, pgid=${processIdentity.processGroupId ?? 'n/a'})${evidence}\n`);
+        const reused = result.reusedFrom ? ` reused=${result.reusedFrom.origin.runId} original=${result.reusedFrom.durationMs}ms` : '';
+        options.stream?.write(`[${prefix}] ${result.status}: ${result.id} (${result.durationMs} ms, pid=${processIdentity.pid ?? 'n/a'}, pgid=${processIdentity.processGroupId ?? 'n/a'})${reused}${evidence}\n`);
         if (result.status === 'blocked') options.stream?.write(`  ${result.reason}\n`);
         options.onComplete?.(result, step);
       },
@@ -141,16 +148,21 @@ export async function executePlan(plan: any, options: any): Promise<any>  {
     clearInterval(heartbeat);
     try {
       contextCleanup = contextPool.cleanup();
+    } catch (error) {
+      reuse?.invalidate();
+      throw error;
     } finally {
       if (fullPlanLease) fullPlanRelease = await fullPlanLease.release();
     }
   }
   const releaseFailed: any = fullPlanRelease.some((item: any) => item.status !== 'released');
-  if (releaseFailed) throw new Error(`Failed to release ${FULL_PLAN_RESOURCE_ID} shared capacity`);
+  if (releaseFailed) { reuse?.invalidate(); throw new Error(`Failed to release ${FULL_PLAN_RESOURCE_ID} shared capacity`); }
+  const sourceBundle = reuse?.finish(results, contextCleanup?.status === 'cleaned');
   return {
     results,
     diagnosticsDirectory,
     artifactDirectory,
+    ...(sourceBundle ? { sourceBundle } : {}),
     coordinationRoot: resourceCoordinator.root,
     fullPlanCoordination: fullPlanLease ? { waitDurationMs: fullPlanLease.waitDurationMs, release: fullPlanRelease } : null,
     contextLifecycle: { contexts: preparedContexts.map((context: any) => ({ provider: context.provider.key, identity: context.marker.identity, owned: context.owned, prepareDurationMs: context.prepareDurationMs })), events: contextCleanup?.events ?? contextPool.events() },

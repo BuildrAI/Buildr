@@ -6,7 +6,7 @@ Buildr 产品自身是在通用框架下建设测试能力的一个项目实例�
 
 ## 从项目地图到执行工具
 
-[项目测试地图](../../../verification.yml)目前有七个测试族（Testing Family）：`buildr-fast`、`buildr-functional`、`buildr-system`、`buildr-web-unit`、`buildr-web`、`buildr-environment-smoke` 和 `dsh-plugin`。前三项负责后端与工程检查；`buildr-web-unit` 负责前端逻辑；`buildr-web` 负责构建及真实页面交互；`buildr-environment-smoke` 用于明确目标环境中的安装与运行检查；`dsh-plugin` 独立验证桌面插件包。地图供智能体（Agent）发现稳定入口，具体文件发现、路径归属、步骤和资源另由项目工具维护。
+[项目测试地图](../../../verification.yml)目前有九个测试族（Testing Family）：`buildr-source`、`buildr-fast`、`buildr-functional`、`buildr-release-infrastructure`、`buildr-system`、`buildr-web-unit`、`buildr-web`、`buildr-environment-smoke` 和 `dsh-plugin`。`buildr-source` 负责发布前本机适用源码集合，`buildr-fast`、`buildr-functional` 和 `buildr-system` 负责后端与工程检查，`buildr-release-infrastructure` 负责无公开副作用的发布恢复；`buildr-web-unit` 负责前端逻辑；`buildr-web` 负责构建及真实页面交互；`buildr-environment-smoke` 用于明确目标环境中的安装与运行检查；`dsh-plugin` 独立验证桌面插件包。地图供智能体（Agent）发现稳定入口，具体文件发现、路径归属、步骤和资源另由项目工具维护。
 
 | 责任 | 唯一主要位置 | 产生什么 |
 | --- | --- | --- |
@@ -24,10 +24,11 @@ Buildr 产品自身是在通用框架下建设测试能力的一个项目实例�
 
 Buildr 的验证由以下几部分共同组成。**某个入口的“完整”只相对于它声明的集合**，不能把后端、前端逻辑、页面交互和跨平台候选相互替代。
 
-下表的工作目录均相对于 `projects/product/`。后端命令用 `tools/development/run-development-npm run <脚本名>`；前端使用表内给出的相邻服务包装入口（Wrapper），两者都在项目声明的开发 Node 范围内选择 Node.js，声明版本优先；正式 Candidate 环境准备仍锚定声明版本。
+下表的工作目录均相对于 `projects/product/`。后端命令用 `tools/development/run-development-npm run <脚本名>`；前端使用表内给出的相邻服务包装入口（Wrapper），两者都在项目声明的开发 Node 范围内选择 Node.js，声明版本优先；候选（Candidate）准备也接受稳定版 Node >=24.15.0，记录实际程序与版本。
 
 | 测试对象 | 真实入口与工作目录 | 证明范围及独立检查 |
 | --- | --- | --- |
+| 发布前本机源码 | 在 `services/buildr` 执行 `test:source -- --output <bundle.json>`，对应 `buildr-source` | 补齐当前平台适用源码检查，复用有效结果；不打包，不证明其他平台、最终压缩包或公开发布 |
 | 后端行为与工程约束 | 在 `services/buildr` 执行 `test:fast`、`test:integration`、`test:system`；日常较大范围用 `test:daily-full` | 分别检查类型与静态边界、细粒度行为、真实技术集成、完整公共入口及恢复。`test:daily-full` 执行注册表的 `core` 集合；不自动运行前端逻辑或浏览器（Browser）旅程，也不等于完整候选 |
 | 前端逻辑 | 在 `services/buildr-web` 执行 `../buildr/tools/development/run-development-npm test`，对应 `buildr-web-unit` | 运行 `test/*.test.mjs`，检查输入转换、筛选、分页等逻辑；不启动浏览器（Browser），不证明页面已正确呈现或可交互 |
 | 前端构建与真实页面旅程 | 在 `services/buildr` 执行 `test:browser:smoke`；按改动选择用 `test:browser:changed`，对应 `buildr-web` | 准备隔离构建产物并验证页面与后端协作；不执行前端 `test/*.test.mjs`。单独构建可在 `services/buildr-web` 执行 `../buildr/tools/development/run-development-npm run build`，但构建成功没有交互证明 |
@@ -88,9 +89,13 @@ Buildr 的验证由以下几部分共同组成。**某个入口的“完整”�
 
 ## 证据如何支持交付
 
+日常开发继续按受影响范围运行，完成后补必要低成本回归；准备发布时才使用 `npm run test:source` 完成当前平台适用的源码检查。两者使用同一登记和执行器（Executor）。执行前先核对成功结果的实际内容、配方、依赖、平台及必要 Git 事实；有效结果保留覆盖和原执行来源，跳过对应检查及其专属准备。无关任务文字或提交编号改变不会单独使内容证明失效。已核对的运行检查排除项目知识、规范和任务材料的行政变化，文档、规范及源码卫生检查仍覆盖自身材料；其余未知输入保守扩大。失败、输入漂移或清理不完整不能写成可复用成功；`--force` 可要求真实重跑。
+
+本机源码入口不生成最终发布包，也不把 macOS 结果说成 Windows 结果。源码分片（Shard）按声明的操作系统承担责任，保留原执行架构，不虚构在目标处理器上的执行；真正安装包与宿主架构仍由独立消费检查证明。结果导出后，只有受控候选入口接受；计划和最终汇总重新核验当前输入与原执行环境。已证明的源码分片（Shard）不再远端安装和执行，未覆盖平台及唯一原包消费仍真实执行。普通外部合并请求（Pull Request）不能自带“已通过”声明来跳过检查。缓存（Cache）丢失只增加必要执行，不产生成功事实。准备复用另核验安装内容及输出；网页配置明确声明的两份 TypeScript 增量编译缓存不算安装依赖变化，其他依赖字节和未知缓存文件变化仍失效。
+
 日常执行保留实际结果、选择理由、来源身份、排队与资源等待、执行和清理耗时；上下文（Context）执行另记录创建、复用、取得、重置、污染失效和销毁。这些帮助定位失败与性能，属于测试工具的临时证据，不能冒充正式任务完成或发布成功。
 
-跨平台候选（Candidate）由[证据聚合实现](../../../services/buildr/test/verification/candidate-ci-evidence.ts)核对所需分片与宿主组合是否齐全、是否来自相同源码及登记身份、是否消费同一压缩包；新增前端逻辑或核心浏览器证据缺失、失败或身份不符同样使聚合失败。本机 `test:candidate` 的结果不能替代这份聚合。正式任务报告仍须分别说明所需前端逻辑、浏览器（Browser）选择范围及目标环境检查是否实际完成。发布（Release）还涉及当前外部权限、真实发布与回读，流程和恢复由[开源发布说明](../flows/open-source-release.md)单独维护。`integration-candidate-release`、`integration-candidate-release-effects` 与 `integration-candidate-git-convergence` 是发布专用证据，不默认纳入日常 `core`；三者分别覆盖发布契约、发布副作用恢复与真实 Git 收敛清理，在相同分片内分别执行以保持在能力时限内。
+跨平台候选（Candidate）由[证据聚合实现](../../../services/buildr/test/verification/candidate-ci-evidence.ts)核对所需分片与宿主组合是否齐全、是否证明当前源码及登记身份、是否消费同一压缩包；新增前端逻辑或核心浏览器证据缺失、失败或身份不符同样使聚合失败。源码结果可以保留匹配内容的原提交与执行时间，最终包必须绑定最终源码与原字节。本机 `test:source` 或 `test:candidate` 的结果不能独自替代这份聚合。正式任务报告仍须分别说明所需前端逻辑、浏览器（Browser）选择范围及目标环境检查是否实际完成。发布（Release）还涉及当前外部权限、真实发布与回读，流程和恢复由[开源发布说明](../flows/open-source-release.md)单独维护。`integration-candidate-release`、`integration-candidate-release-effects` 与 `integration-candidate-git-convergence` 是发布专用证据，不默认纳入日常 `core`；三者分别覆盖发布契约、发布副作用恢复与真实 Git 收敛清理，在相同分片内分别执行以保持在能力时限内。
 
 后续优化先依据当前耗时找出选择放大、重复准备、执行体或清理瓶颈。不能为追求速度删除正在证明的安装、初始化、迁移、恢复、平台或发布物边界。
 

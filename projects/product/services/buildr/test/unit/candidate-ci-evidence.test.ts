@@ -119,6 +119,25 @@ test('Candidate aggregate accepts one current complete evidence set', () => {
   assert.deepEqual(result.artifact, artifact);
 });
 
+test('Candidate aggregate rechecks reused source records and retains independent failure facts', () => {
+  const complete = passedEvidence();
+  const shard = complete.find((item: any) => item.id === 'preflight-macos');
+  const result = shard.results[0];
+  result.disposition = 'reused';
+  result.reusedFrom = { runId: 'local-source-1', sourceCommit: 'c'.repeat(40) };
+  result.sourceRecord = { identity: { stepId: result.id, key: `sha256-${'a'.repeat(64)}` } };
+  assert.ok(aggregateCandidateCiEvidence(complete, candidateContext).findings.some((item: any) => item.code === 'source-reuse-invalid'));
+  const checked: any[] = [];
+  const accepted = aggregateCandidateCiEvidence(complete, candidateContext, null, {
+    validateSourceRecord(record: any, stepId: string, runner: string) { checked.push({ record, stepId, runner }); return true; },
+  });
+  assert.equal(accepted.status, 'passed');
+  assert.deepEqual(checked, [{ record: result.sourceRecord, stepId: result.id, runner: 'macos' }]);
+  const projected = createCandidateCiEvidence({ ...shard, results: [{ ...result, childExitCode: 7, childSignal: null, childOutcome: 'failed', failureFacts: [{ kind: 'assertion', code: 'ERR_ASSERTION' }, { kind: 'timeout', scope: 'capability' }] }] });
+  assert.equal(projected.results[0].childExitCode, 7);
+  assert.equal(projected.results[0].failureFacts.length, 2);
+});
+
 test('Candidate aggregate accepts mixed attempts from the same workflow run', () => {
   const runId: any = '32807422982';
   const complete: any = passedEvidence({ runId, runAttempt: '1', job: 'candidate-shard' });

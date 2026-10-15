@@ -9,6 +9,8 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { createReleaseCandidate, PLUGIN_PACKAGE, parseReleaseCandidate, readReleaseCandidate, sourceSdkIdentityFromFiles, type SourceSdkIdentity } from '../../tools/release-candidate.ts';
 import { assertReleaseSourceStable, captureReleaseSource, releaseRegistryVersionArguments } from '../../tools/release.ts';
 import { assertPluginHostedIdentity, assertPluginOidcClaims, isolatedPluginNpmEnvironment, PLUGIN_PUBLISH_AUTHORITY, probePluginPublishAuthority, publishPluginCandidate, type PublishDependencies } from '../../tools/trusted-publish.ts';
+import { assertPluginCandidateAdoption, createPluginCandidateAdoption } from '../../tools/candidate-adoption.ts';
+import { writeVerifiedPluginCandidate } from '../../tools/verify-all.ts';
 
 const version = '0.1.0-rc.1', sourceCommit = 'a'.repeat(40), sourceTree = 'b'.repeat(40), workflowSha256 = 'c'.repeat(64), now = Date.parse('2026-10-09T12:00:00Z');
 const sourceSdk: SourceSdkIdentity = { baseline: { tag: 'dsh-v0.2.0-rc.2', commit: '639ed015397290b3745d163aafe02ffee4aa3f84', version: '0.2.0-rc.2' }, manifestSha256: 'd'.repeat(64), patchSha256: 'e'.repeat(64), contracts: { slots: ['conversation.trajectory.column', 'conversation.trajectory.inspector.objects'], rawEventRefs: true } };
@@ -48,9 +50,44 @@ const jwt = (value: Record<string, unknown>) => `${Buffer.from('{"alg":"RS256"}'
 function dependencies(overrides: Partial<PublishDependencies> = {}): PublishDependencies {
   return { env: hostedEnvironment(), now: () => now, source: () => ({ sourceCommit, sourceTree, version, workflowSha256, sourceSdk }), authority: async () => ({ status: 'ready', expected: PLUGIN_PUBLISH_AUTHORITY, workflowSha256, npm: { package: PLUGIN_PACKAGE, tokenType: 'oidc', created: new Date(now - 1000).toISOString(), expires: new Date(now + 3600_000).toISOString() } }), registryWait: { attempts: 2, delayMs: 0 }, ...overrides };
 }
+test('protected adoption preserves original Candidate bytes and tested source while publishing from real main', async t => {
+  const item = fixture(t), mainCommit = 'f'.repeat(40), mainTree = '9'.repeat(40);
+  const main = { commit: mainCommit, tree: mainTree, parents: ['8'.repeat(40), sourceCommit], serviceTree: sourceTree };
+  const adoption = createPluginCandidateAdoption({ candidate: item.manifest, main, source: { runId: 41, runAttempt: 1,
+    commit: sourceCommit, tree: mainTree, serviceTree: sourceTree, selectionIdentity: 'sha256-'+'7'.repeat(64), workflowSha256 } });
+  const adoptionPath = join(item.root, 'plugin-candidate-adoption.json'); writeFileSync(adoptionPath, JSON.stringify(adoption));
+  let published = false, sends = 0;
+  const result = await publishPluginCandidate({ manifestPath: item.manifestPath, version, sourceCommit: mainCommit, adoptionPath }, dependencies({
+    env: { ...hostedEnvironment(), GITHUB_SHA: mainCommit }, source: () => ({ sourceCommit: mainCommit, sourceTree, version, workflowSha256, sourceSdk }), mainProof: () => main,
+    authority: async observed => { assert.equal(observed.sourceCommit, mainCommit); return { status: 'ready', expected: PLUGIN_PUBLISH_AUTHORITY, workflowSha256,
+      npm: { package: PLUGIN_PACKAGE, tokenType: 'oidc', created: new Date(now-1000).toISOString(), expires: new Date(now+3600_000).toISOString() } }; },
+    registry: async () => ({ published, integrity: item.manifest.integrity }), publish: async (tarball, candidate) => {
+      sends++; assert.equal(candidate.sourceCommit, sourceCommit); assert.deepEqual(readFileSync(tarball), item.bytes); published = true; return { status: 0 };
+    },
+  }));
+  assert.equal(result.status, 'passed'); assert.equal(result.sourceCommit, sourceCommit); assert.equal(sends, 1);
+  assert.deepEqual(JSON.parse(readFileSync(item.manifestPath, 'utf8')), item.manifest);
+});
+test('adoption refuses source relabelling, swapped parents, tree or Candidate drift', t => {
+  const item = fixture(t), main = { commit: 'f'.repeat(40), tree: '9'.repeat(40), parents: ['8'.repeat(40), sourceCommit], serviceTree: sourceTree };
+  const adoption = createPluginCandidateAdoption({ candidate: item.manifest, main, source: { runId: 41, runAttempt: 1, commit: sourceCommit,
+    tree: main.tree, serviceTree: sourceTree, selectionIdentity: 'sha256-'+'7'.repeat(64), workflowSha256 } });
+  for (const mutate of [(v:any)=>v.source.commit=main.commit,(v:any)=>v.main.parents.reverse(),(v:any)=>v.source.tree='6'.repeat(40),
+    (v:any)=>v.candidate.sha256='5'.repeat(64),(v:any)=>v.source.runAttempt=0]) {
+    const value = structuredClone(adoption); mutate(value); assert.throws(() => assertPluginCandidateAdoption(value,item.manifest,main));
+  }
+});
 test('release preparation probes the exact prerelease version instead of the latest tag', () => {
   assert.deepEqual(releaseRegistryVersionArguments(version), ['view', `${PLUGIN_PACKAGE}@${version}`, 'version', '--json', '--registry=https://registry.npmjs.org/']);
   assert.throws(() => releaseRegistryVersionArguments('next'), /Invalid/);
+});
+test('final Candidate transports the already tested npm archive exactly once and refuses replacement', t => {
+  const item = fixture(t), pluginRoot = temporary(t), output = join(pluginRoot, 'build', 'release-candidates', version);
+  const candidate = writeVerifiedPluginCandidate({ output, tarball: item.tarball, version, sourceCommit, sourceTree, sourceSdk, fileCount: 2, pluginRoot });
+  assert.deepEqual(candidate, item.manifest); assert.deepEqual(readFileSync(join(output, candidate.filename)), item.bytes);
+  assert.deepEqual(readReleaseCandidate(join(output, 'candidate.json')).manifest, candidate);
+  assert.throws(() => writeVerifiedPluginCandidate({ output, tarball: item.tarball, version, sourceCommit, sourceTree, sourceSdk, fileCount: 2, pluginRoot }));
+  assert.deepEqual(readFileSync(join(output, candidate.filename)), item.bytes);
 });
 test('release source snapshot rejects dirty source and committed changes during preparation', t => {
   const repo = temporary(t), service = join(repo, 'projects/product/services/dsh-plugin'); mkdirSync(service, { recursive: true });

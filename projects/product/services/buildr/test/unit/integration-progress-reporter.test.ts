@@ -76,7 +76,7 @@ test('Archify timeout diagnostics retain the last fixed scenario phase without c
   assert.doesNotMatch(output, /secret-child-output|fixture-tool|spawnSync/);
 });
 
-test('Scenario-looking child output is omitted for other files and non-assertion errors', async () => {
+test('Scenario-looking child output stays private while timeout codes remain observable for other files', async () => {
   async function* events(): Promise<any> {
     for (const [file, code] of [['other.test.ts', 'ERR_ASSERTION'], ['archify-component.test.ts', 'EPERM']]) {
       yield { type: 'test:complete', data: { file, name: 'read boundary', details: {
@@ -88,7 +88,8 @@ test('Scenario-looking child output is omitted for other files and non-assertion
   }
   let output = '';
   for await (const chunk of integrationProgressReporter(events())) output += chunk;
-  assert.doesNotMatch(output, /lastPhase|childErrorCode|fixture-tool|archify-scenario/);
+  assert.doesNotMatch(output, /lastPhase|fixture-tool|archify-scenario/);
+  assert.match(output, /"timeout":true,"childErrorCode":"ETIMEDOUT"/);
 });
 
 test('Archify elapsed and command durations survive the real event shapes as closed numeric records', async () => {
@@ -169,4 +170,25 @@ test('Archify budget diagnostics cannot admit an invented timeout or unsafe meta
     { ...wrapper, caseTimeoutMs: 360_000 }]) {
     assert.deepEqual(archifyWrapperTimings(`[archify-wrapper-timing] ${JSON.stringify(input)}`), []);
   }
+});
+
+test('failure diagnostics distinguish a real assertion from nested subprocess timeout with bounded causes and safe fields', async () => {
+  const cycle: any = { code: 'ERR_TEST_FAILURE', cause: { code: 'ERR_ASSERTION', message: 'secret assertion values' } };
+  cycle.cause.cause = cycle;
+  const deep: any = { code: 'ERR_TEST_FAILURE', cause: { code: 'ERR_ASSERTION' } };
+  let current = deep.cause;
+  for (let index = 0; index < 20; index++) { current.cause = {}; current = current.cause; }
+  current.message = 'ETIMEDOUT secret-too-deep';
+  const errors = [cycle, { code: 'ERR_TEST_FAILURE', cause: { code: 'ERR_ASSERTION', message: 'spawnSync /private/secret-node ETIMEDOUT' } },
+    { code: 'ERR_TEST_FAILURE', failureType: 'testTimeoutFailure' }, deep, { code: 'ERR_TEST_FAILURE', cause: { code: 'ERR_ASSERTION', message: 'secret-oversized-' + 'x'.repeat(70_000) } }];
+  async function* events(): Promise<any> {
+    for (const error of errors) yield { type: 'test:complete', data: { file: '/private/secret-root/fixture.test.ts', name: 'fixed case', details: { duration_ms: 1, passed: false, error } } };
+  }
+  let output = '';
+  for await (const chunk of integrationProgressReporter(events())) output += chunk;
+  const records = output.trim().split('\n').map(line => JSON.parse(line.replace('[buildr-integration-progress] ', '')));
+  assert.deepEqual(records.map(item => item.error.timeout), [false, true, true, null, null]);
+  assert.deepEqual(records.map(item => item.error.childErrorCode), [null, 'ETIMEDOUT', null, null, null]);
+  assert.equal(records[0].error.causeCode, 'ERR_ASSERTION');
+  assert.doesNotMatch(output, /secret-|spawnSync|private/);
 });

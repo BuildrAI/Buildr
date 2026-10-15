@@ -153,6 +153,13 @@ test('prepare creates one isolated release, validates before main, and reuses th
   };
   const candidateEvidence = { aggregate, manifest: artifact.manifest };
   const dependencies = { execute, runtime, observationOptions: { githubApi: api, registry: api }, candidateDependencies: { candidateEvidence },
+    // This fixture owns orchestration and uses a local proof owner in place of
+    // running every source check inside its deliberately minimal repository.
+    prepareLocalSourceVerification: async (input: any) => {
+      assert.equal(input.repo, repo);
+      assert.deepEqual(input.packages, ['buildr']);
+      return { status: 'ready', transport: 'owned-source-proof', recordCount: 1, missingStepIds: [] };
+    },
     resolveRetainedController: () => ({ workspaceRoot: workspace }),
     invokeRetainedController: (_controller: any, args: string[]) => {
       if (args[0] === 'task' && args[1] === 'create') { task = { taskId, title: 'Release fixture', status: 'active' }; return { status: 'created', record: task, effects: [{ type: 'task-created' }] }; }
@@ -168,6 +175,12 @@ test('prepare creates one isolated release, validates before main, and reuses th
     orchestrationDependencies: { transactionDependencies: { execute, runtime, candidateEvidence } },
   };
   const options = { action: 'prepare', workspace, version };
+  const missing = await runReleaseOperation(options, { ...dependencies, prepareLocalSourceVerification: async () => ({
+    status: 'local-verification-required', missingStepIds: ['unit'], recordCount: 0, nextActions: ['Run the missing local source check.'],
+  }) });
+  assert.equal(missing.status, 'local-verification-required');
+  assert.equal(dispatched, 0, 'missing local proof cannot spend a remote Candidate');
+  assert.equal(merges, 0, 'missing local proof cannot mutate main');
   const first = await runReleaseOperation(options, dependencies);
   assert.equal(first.status, 'candidate-running', JSON.stringify(first));
   assert.equal(dispatched, 1, 'lost responses must not dispatch twice');

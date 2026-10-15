@@ -53,24 +53,29 @@ test('Task 读取生命周期去重同一 Task/operation，并在路由离开时
 
 test('React App 路由覆盖 workspace 深链并回退未知路径', () => {
   const app: any = read('../buildr-web/src/App.tsx');
-  assert.match(app, /path="\/workspaces\/:workspaceId"/);
-  assert.match(app, /path="tasks" element=\{<TasksSection \/>\}/);
-  assert.match(app, /<Route index element=\{<Navigate to="overview" replace \/>\} \/>/);
-  assert.match(app, /path="overview" element=\{<WorkbenchPage \/>\}/);
-  assert.match(app, /path="activity" element=\{<WorkbenchActivityPage \/>\}/);
-  assert.doesNotMatch(app, /\bOverviewPage\b/);
-  assert.match(app, /path="workspace-overview" element=\{<WorkspaceOverviewPage \/>\}/);
-  assert.match(app, /path=":taskId"/);
-  assert.match(app, /path=":taskId\/changes\/:projectCode\/:changeCode"/);
-  assert.match(app, /path="projects" element=\{<ProjectsSection \/>\}/);
-  assert.match(app, /path=":projectCode"/);
-  assert.match(app, /path=":projectCode\/edit"/);
-  assert.match(app, /path="services"/);
-  assert.match(app, /path="articles"/);
-  assert.match(app, /path="articles\/:publicationId"/);
-  assert.match(app, /<Route path="\*" element=\{<Navigate to="\." replace \/>\} \/>/);
-  assert.doesNotMatch(app, /path=["']\/changes["']/);
-  assert.doesNotMatch(app, /cdn|unpkg|jsdelivr|googleapis/i);
+  const routes = read('../buildr-web/src/app/workspace-routes.tsx');
+  assert.match(app, /path: '\/workspaces\/:workspaceId\/\*'/);
+  assert.match(app, /element: <CurrentWorkspaceRoute \/>/);
+  assert.match(app, /path: '\*', element: <Navigate to="\/" replace \/>/);
+  assert.match(routes, /CurrentWorkspaceRoute\(\)[\s\S]*useRoutes\(workspaceRoutes\)/);
+  assert.match(routes, /RetainedWorkspaceRoute\([\s\S]*useRoutes\(workspaceRoutes, location\)/);
+  assert.match(routes, /path: 'tasks', element: <TasksSection \/>/);
+  assert.match(routes, /index: true, element: <Navigate to="overview" replace \/>/);
+  assert.match(routes, /path: 'overview', element: <WorkbenchPage \/>/);
+  assert.match(routes, /path: 'activity', element: <WorkbenchActivityPage \/>/);
+  assert.doesNotMatch(routes, /\bOverviewPage\b/);
+  assert.match(routes, /path: 'workspace-overview', element: <WorkspaceOverviewPage \/>/);
+  assert.match(routes, /path: ':taskId'/);
+  assert.match(routes, /path: ':taskId\/changes\/:projectCode\/:changeCode'/);
+  assert.match(routes, /path: 'projects', element: <ProjectsSection \/>/);
+  assert.match(routes, /path: ':projectCode'/);
+  assert.match(routes, /path: ':projectCode\/edit'/);
+  assert.match(routes, /path: 'services'/);
+  assert.match(routes, /path: 'articles'/);
+  assert.match(routes, /path: 'articles\/:publicationId'/);
+  assert.match(routes, /path: '\*', element: <Navigate to="\." replace \/>/);
+  assert.doesNotMatch(app + routes, /path:\s*["']\/changes["']/);
+  assert.doesNotMatch(app + routes, /cdn|unpkg|jsdelivr|googleapis/i);
 });
 
 test('API client 通过 LocalSessionAdapter 为写请求附加 session，并拒绝 filesystem path 字段语义', () => {
@@ -132,6 +137,7 @@ test('Change 仅作为 Task-scoped 只读内容', () => {
 
 test('Buildr Web 在工作空间提供独立文章入口、只读内容视图和受控本地图片资源', () => {
   const app: any = read('../buildr-web/src/App.tsx');
+  const routes = read('../buildr-web/src/app/workspace-routes.tsx');
   const navigation: any = read('../buildr-web/src/app/AppNavigation.tsx');
   const index: any = read('../buildr-web/index.html');
   const server: any = read('src/web/http/server.ts');
@@ -147,9 +153,10 @@ test('Buildr Web 在工作空间提供独立文章入口、只读内容视图和
   assert.match(navigation, /item\('\/articles', '文章', 'articles'\)/);
   assert.match(navigation, /item\('\/overview', '概览', 'overview'\)/);
   assert.match(navigation, /item\('\/activity', '动态', 'activity'\)/);
-  assert.match(app, /path="articles"/);
-  assert.match(app, /path="articles\/:publicationId"/);
-  assert.match(app, /ArticleDetailPage/);
+  assert.match(routes, /path: 'articles', element: <ArticlesPage \/>/);
+  assert.match(routes, /path: 'articles\/:publicationId', element: <ArticleDetailPage \/>/);
+  assert.match(routes, /path: 'articles\/:projectCode\/:publicationId', element: <ArticleDetailPage \/>/);
+  assert.match(app, /CurrentWorkspaceRoute/);
   assert.match(index, /buildr-session/);
   assert.doesNotMatch(index, /cdn|unpkg|jsdelivr|googleapis/i);
   assert.match(staticFiles, /STATIC_ROOT[\s\S]*web-dist/);

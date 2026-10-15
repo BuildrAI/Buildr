@@ -8,6 +8,8 @@ import { assertMinimumNodeVersion, createExactNodeExecutionEnvironment, spawnCom
 import { enforceOfflineVerification } from '../../src/infrastructure/network/verification-network-policy.ts';
 import { executePlan } from './plan-runner.ts';
 import { createCandidateCiShardPlan } from './planner.ts';
+import { candidateSourceImportFromEnvironment, planCandidateSourceReuse } from './candidate-source-reuse.ts';
+import { collectVerificationReuseSnapshot, validateVerificationReuseRecord } from './verification-reuse.ts';
 import { CANDIDATE_CI_HOST_NODE_TUPLES, CANDIDATE_CI_SHARDS, resolveVerificationExecutionProfile } from './registry.ts';
 import {
   aggregateCandidateCiEvidence,
@@ -40,6 +42,12 @@ const workflowIdentity: any = process.env.GITHUB_RUN_ID ? {
   runAttempt: process.env.GITHUB_RUN_ATTEMPT ?? null,
   job: process.env.GITHUB_JOB ?? null,
 } : null;
+
+let sourceSnapshot: any = null;
+function validateSourceRecord(record: any, stepId: string, runner: string): boolean {
+  sourceSnapshot ??= collectVerificationReuseSnapshot({ productRoot, projectRoot });
+  return validateVerificationReuseRecord(record, { productRoot, projectRoot, snapshot: sourceSnapshot, stepId, runner });
+}
 
 function artifactEnvironment(artifact: any): any  {
   return {
@@ -110,6 +118,7 @@ async function runShard(shardId: any): Promise<any>  {
       env: externalArtifact ? artifactEnvironment(externalArtifact) : {},
       runId: process.env.GITHUB_RUN_ID ? `${process.env.GITHUB_RUN_ID}-${shardId}` : `candidate-ci-${shardId}-${process.pid}`,
       taskId: `candidate-ci-${shardId}`,
+      reuse: { imports: candidateSourceImportFromEnvironment(process.env), portableImports: true },
       onComplete(result: any): any  {
         completedResults.push(result);
         writeCheckpoint(result.status === 'passed' ? 'running' : 'failed');
@@ -217,7 +226,7 @@ function aggregate(): any  {
   const sourceCommit: any = resolveCandidateSourceCommit(productRoot, expectedSource);
   const executionContext: any = resolveCandidateExecutionContext(productRoot, sourceCommit);
   const evidenceRoot: any = path.resolve(process.env.BUILDR_CANDIDATE_CI_EVIDENCE_DIR || outputRoot);
-  const result: any = aggregateCandidateCiEvidence(readCandidateCiEvidenceFiles(evidenceRoot), executionContext, workflowIdentity);
+  const result: any = aggregateCandidateCiEvidence(readCandidateCiEvidenceFiles(evidenceRoot), executionContext, workflowIdentity, { validateSourceRecord });
   const output: any = path.resolve(process.env.BUILDR_CANDIDATE_CI_AGGREGATE_OUTPUT || path.join(outputRoot, 'candidate-ci-aggregate.json'));
   fs.mkdirSync(path.dirname(output), { recursive: true });
   fs.writeFileSync(output, `${JSON.stringify(result, null, 2)}\n`, 'utf8');
@@ -227,13 +236,34 @@ function aggregate(): any  {
 
 if (action === 'plan') {
   const platforms: Record<string, string> = { macos: 'macos-15', windows: 'windows-2025', linux: 'ubuntu-24.04' };
+  const reuse = planCandidateSourceReuse(CANDIDATE_CI_SHARDS, candidateSourceImportFromEnvironment(process.env), validateSourceRecord);
+  if (reuse.reusedShards.length > 0) {
+    const sourceCommit = resolveCandidateSourceCommit(productRoot, expectedSource);
+    const executionContext = resolveCandidateExecutionContext(productRoot, sourceCommit);
+    const reuseRoot = path.resolve(process.env.BUILDR_CANDIDATE_CI_EVIDENCE_DIR || outputRoot);
+    for (const { shard, records } of reuse.reusedShards) {
+      const environment = records[0].environment;
+      const now = new Date().toISOString();
+      const evidence = createCandidateCiEvidence({
+        kind: 'shard', id: shard.id, ...executionContext, registryIdentity: candidateCiRegistryIdentity(), workflow: workflowIdentity,
+        platform: environment.platform, arch: environment.arch, nodeVersion: environment.nodeVersion,
+        primaryStepIds: shard.stepIds, artifact: null, startedAt: now, finishedAt: now, durationMs: 0, status: 'passed',
+        results: records.map((record: any) => ({ ...record.result, durationMs: 0, disposition: 'reused',
+          reusedFrom: { ...record.origin, durationMs: record.result.durationMs, identity: record.identity.key }, sourceRecord: record })),
+      });
+      writeCandidateCiEvidence(path.join(reuseRoot, `candidate-ci-evidence-${shard.id}.json`), evidence);
+    }
+  }
   const matrices = {
-    source: CANDIDATE_CI_SHARDS.filter((shard: any) => !shard.requiresArtifact && !shard.producesArtifact).map((shard: any) => ({ shard: shard.id, os: platforms[shard.runner], preparation: shard.id === 'frontend-logic-macos' ? 'frontend' : ['core-project-task-macos', 'release-infrastructure-macos', 'release-infrastructure-windows'].includes(shard.id) ? 'source-runtime' : 'base' })),
+    source: reuse.sourceShards.map((shard: any) => ({ shard: shard.id, os: platforms[shard.runner], preparation: shard.id === 'frontend-logic-macos' ? 'frontend' : ['core-project-task-macos', 'release-infrastructure-macos', 'release-infrastructure-windows'].includes(shard.id) ? 'source-runtime' : 'base' })),
     artifact: CANDIDATE_CI_SHARDS.filter((shard: any) => shard.requiresArtifact).map((shard: any) => ({ shard: shard.id, os: platforms[shard.runner], preparation: shard.id === 'artifact-browser-macos' ? 'browser-artifact' : 'source-runtime' })),
     host: CANDIDATE_CI_HOST_NODE_TUPLES.map((tuple: any) => ({ id: tuple.id, os: platforms[tuple.runner], node: tuple.requestedNode, preparation: tuple.id === 'host-minimum-linux' ? 'publisher' : 'host' })),
   };
   if (process.env.GITHUB_OUTPUT) for (const [key, include] of Object.entries(matrices)) fs.appendFileSync(process.env.GITHUB_OUTPUT, `${key}=${JSON.stringify({ include })}\n`);
-  process.stdout.write(`${JSON.stringify({ schemaVersion: 'buildr.candidate-ci-plan/v1', registryIdentity: candidateCiRegistryIdentity(), matrices, shards: CANDIDATE_CI_SHARDS, hostNodeTuples: CANDIDATE_CI_HOST_NODE_TUPLES }, null, 2)}\n`);
+  if (process.env.GITHUB_OUTPUT) fs.appendFileSync(process.env.GITHUB_OUTPUT, `source_required=${reuse.sourceShards.length > 0}\n`);
+  process.stdout.write(`${JSON.stringify({ schemaVersion: 'buildr.candidate-ci-plan/v1', registryIdentity: candidateCiRegistryIdentity(), matrices,
+    reusedSourceShards: reuse.reusedShards.map(item => item.shard.id), reusedStepIds: reuse.reusedStepIds,
+    shards: CANDIDATE_CI_SHARDS, hostNodeTuples: CANDIDATE_CI_HOST_NODE_TUPLES }, null, 2)}\n`);
 } else if (action === 'run' && id) await runShard(id);
 else if (action === 'host' && id) runHostNode(id);
 else if (action === 'aggregate') aggregate();

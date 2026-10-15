@@ -58,7 +58,21 @@ test('Candidate输入从空暂存生成闭合且可重复的artifact set', async
     'test-context': first.testContextRoot,
     'web-dist': first.webDistRoot,
   });
-  const expectedDtoFiles = ['agent-assets-http-dto.ts', 'code-http-dto.ts', 'knowledge-http-dto.ts', 'runtime-system-http-dto.ts', 'task-dto.ts', 'task-professional-http-dto.ts', 'workbench-dto.ts', 'workspace-http-dto.ts'];
+  const expectedDtoFiles = [
+    'agent-assets-http-dto.ts',
+    'agent-operations-http-dto.ts',
+    'code-generation-http-dto.ts',
+    'code-http-dto.ts',
+    'codex-desktop-http-dto.ts',
+    'dsh-desktop-http-dto.ts',
+    'knowledge-http-dto.ts',
+    'native-session-links-http-dto.ts',
+    'runtime-system-http-dto.ts',
+    'task-dto.ts',
+    'task-professional-http-dto.ts',
+    'workbench-dto.ts',
+    'workspace-http-dto.ts',
+  ];
   for (const id of ['backend-dto', 'web-dto']) {
     assert.deepEqual(first.manifest.artifacts.find(artifact => artifact.id === id)?.files.map(file => file.path).sort(), expectedDtoFiles);
   }

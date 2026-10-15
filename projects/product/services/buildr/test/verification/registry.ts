@@ -233,6 +233,24 @@ export const VERIFICATION_DAILY_CORE_EXCLUSIONS: any = Object.freeze({
   'init-onboarding': 'Runs the complete fresh initialization onboarding journey.',
 });
 
+// Reuse scopes describe complete check inputs, independently of changed-path ownership.
+const BACKEND_REUSE_CHECKS = new Set(['unit', 'component', 'cli-architecture', 'runtime-adapter-contract', 'managed-mutations', 'cli-compatibility']);
+// These bounded fixture suites read runtime/source assets, not this Product's governance records.
+const RUNTIME_REUSE_CHECKS = new Set(['integration-runtime', 'integration-data-store', 'integration-task-read-models', 'integration-task-coordination',
+  'integration-project-daily-progress', 'system-buildr-web-http', 'integration-candidate-release-effects', 'integration-candidate-git-convergence']);
+const NON_REUSABLE_CHECKS = new Set(['typecheck', 'dsh-plugin', 'candidate-tarball', 'application-payload-release', 'release-tarball-smoke', 'artifact-browser-core', 'cli-package-parity', 'host-node-contract', 'host-node-boundaries']);
+const GIT_SOURCE_CHECKS = new Set(['openspec-candidate-audit', 'service-branch-contract', 'open-source-candidate', 'integration-self-bootstrap', 'system-task-lifecycle', 'system-worktree-lifecycle']);
+function sourceReusePolicy(definition: any): any {
+  if (NON_REUSABLE_CHECKS.has(definition.id) || definition.executor?.type === 'candidate-artifact' || definition.executor?.consumesArtifact
+    || definition.id.startsWith('host-')) return false;
+  if (BACKEND_REUSE_CHECKS.has(definition.id)) return Object.freeze({ scope: 'backend' });
+  if (definition.id === 'frontend-logic') return Object.freeze({ scope: 'web' });
+  // Other registered checks conservatively include all Product material;
+  // checks reading source Git identities also bind the observed Git history.
+  const usesGit = VERIFICATION_STEP_TESTING[definition.id]?.environment?.footprints.includes('git');
+  return Object.freeze({ scope: RUNTIME_REUSE_CHECKS.has(definition.id) ? 'runtime' : 'repository', git: GIT_SOURCE_CHECKS.has(definition.id), ...(usesGit ? { tools: ['git'] } : {}) });
+}
+
 const step: any = (definition: any) => {
   const classification: any = VERIFICATION_STEP_TESTING[definition.id];
   const evidence: any = VERIFICATION_STEP_EVIDENCE[definition.id] ?? null;
@@ -283,6 +301,7 @@ const step: any = (definition: any) => {
     inputExclusions: ownership.inputExclusions,
     preflight: definition.preflight ? Object.freeze({ ...definition.preflight, inputs: ownership.preflightInputs }) : null,
     timeoutMs,
+    reuse: sourceReusePolicy(definition),
     budgetMs: classification?.targetDurationMs ?? definition.budgetMs,
     testing: classification ? Object.freeze({
       ...classification,

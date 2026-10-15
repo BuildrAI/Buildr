@@ -15,7 +15,19 @@ on:
         required: true
         type: string
       candidate_run_id:
-        description: Successful prepare run from the same main commit (publish only)
+        description: Successful main adoption or legacy prepare run (publish only)
+        required: false
+        type: string
+      source_candidate_run_id:
+        description: Successful original verify run containing the plugin Candidate (prepare only)
+        required: false
+        type: string
+      source_commit:
+        description: Exact original tested source commit (prepare only)
+        required: false
+        type: string
+      selection_identity:
+        description: Frozen source selection digest (prepare only)
         required: false
         type: string
       recovery_run_id:
@@ -53,6 +65,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     env:
+      PLUGIN_SOURCE_CANDIDATE_RUN_ID: ${{ inputs.source_candidate_run_id }}
+      PLUGIN_SOURCE_COMMIT: ${{ inputs.source_commit }}
+      PLUGIN_SELECTION_IDENTITY: ${{ inputs.selection_identity }}
       PLUGIN_OPERATION: ${{ inputs.operation }}
       PLUGIN_VERSION: ${{ inputs.version }}
       PLUGIN_CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
@@ -75,75 +90,45 @@ jobs:
           package-manager-cache: false
       - name: Validate manual source inputs
         run: node tools/release-workflow.ts input-check
-      - name: Install isolated fixed preparation tooling
-        run: |
-          mkdir -p "${RUNNER_TEMP}/tooling"
-          touch "${RUNNER_TEMP}/tooling/user.npmrc" "${RUNNER_TEMP}/tooling/global.npmrc"
-          cd "${RUNNER_TEMP}/tooling"
-          env -i PATH="${PATH}" NPM_CONFIG_USERCONFIG="${RUNNER_TEMP}/tooling/user.npmrc" NPM_CONFIG_GLOBALCONFIG="${RUNNER_TEMP}/tooling/global.npmrc" \
-            npm install --prefix "${RUNNER_TEMP}/tooling" --ignore-scripts --no-save --no-package-lock --no-audit --no-fund --registry=https://registry.npmjs.org/ npm@11.5.1 pnpm@11.7.0
-      - name: Download the frozen Buildr candidate bytes
-        if: inputs.buildr_peer_origin == 'candidate'
+      - name: Download the original verified plugin Candidate
         uses: actions/download-artifact@v7
         with:
-          name: candidate-package
-          path: ${{ runner.temp }}/buildr-candidate
+          name: plugin-candidate-v${{ inputs.version }}
+          path: ${{ runner.temp }}/candidate
           github-token: ${{ github.token }}
-          run-id: ${{ inputs.buildr_candidate_run_id }}
-      - name: Verify the Buildr candidate and protected merge
-        if: inputs.buildr_peer_origin == 'candidate'
+          run-id: ${{ inputs.source_candidate_run_id }}
+      - name: Download the original source aggregate
+        uses: actions/download-artifact@v7
+        with:
+          name: plugin-candidate-aggregate
+          path: ${{ runner.temp }}/verification
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.source_candidate_run_id }}
+      - name: Adopt original Candidate through its protected main inclusion
         env:
           GH_TOKEN: ${{ github.token }}
-        run: node tools/release-workflow.ts peer-check --manifest "${RUNNER_TEMP}/buildr-candidate/release-artifact.json"
-      - name: Freeze the exact Buildr peer input
-        run: |
-          if [ "${PLUGIN_BUILDR_PEER_ORIGIN}" = "registry" ]; then
-            node ../buildr/tools/release/package-artifact-observation.ts --package buildr \
-              --version "${PLUGIN_BUILDR_PEER_VERSION}" --integrity "${PLUGIN_BUILDR_PEER_INTEGRITY}" \
-              --output "${RUNNER_TEMP}/buildr-peer/input.json" --tarball "${RUNNER_TEMP}/buildr-peer/package.tgz"
-          else
-            node ../buildr/tools/release/package-artifact-observation.ts --package buildr \
-              --version "${PLUGIN_BUILDR_PEER_VERSION}" --integrity "${PLUGIN_BUILDR_PEER_INTEGRITY}" \
-              --candidate-manifest "${RUNNER_TEMP}/buildr-candidate/release-artifact.json" --output "${RUNNER_TEMP}/buildr-peer/input.json"
-          fi
-      - name: Prepare fixed source SDK
-        id: sdk
-        run: |
-          node tools/prepare-release-sdk.ts --node "$(command -v node)" --pnpm "${RUNNER_TEMP}/tooling/node_modules/pnpm/bin/pnpm.cjs" > "${RUNNER_TEMP}/sdk.json"
-          node --input-type=module -e 'import fs from "node:fs"; const result = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); if (result.status !== "prepared" || typeof result.sdk !== "string" || /[\r\n]/.test(result.sdk)) throw new Error("SDK output missing"); fs.appendFileSync(process.env.GITHUB_OUTPUT, `root=${result.sdk}\n`);' "${RUNNER_TEMP}/sdk.json"
-      - name: Verify both plugin variants and real loaders
-        env:
-          PLUGIN_SOURCE_SDK: ${{ steps.sdk.outputs.root }}
         run: >-
-          node tools/verify-all.ts --source-sdk "${PLUGIN_SOURCE_SDK}"
-          --buildr-peer "${RUNNER_TEMP}/buildr-peer/input.json"
-          --output "${RUNNER_TEMP}/plugin-full-verification.json"
-          --npm "${RUNNER_TEMP}/tooling/node_modules/npm/bin/npm-cli.js"
-      - name: Prepare immutable plugin candidate
-        env:
-          PLUGIN_SOURCE_SDK: ${{ steps.sdk.outputs.root }}
-        run: node tools/release.ts prepare --source-sdk "${PLUGIN_SOURCE_SDK}"
-      - name: Bind compatibility proof to the final candidate bytes
-        run: >-
-          node tools/bind-buildr-peer.ts
-          --candidate "build/release-candidates/${PLUGIN_VERSION}/candidate.json"
-          --buildr-peer "${RUNNER_TEMP}/buildr-peer/input.json"
-          --verification "${RUNNER_TEMP}/plugin-full-verification.json"
-          --npm "${RUNNER_TEMP}/tooling/node_modules/npm/bin/npm-cli.js"
+          node tools/release-workflow.ts adopt-candidate
+          --candidate "${RUNNER_TEMP}/candidate/candidate.json"
+          --aggregate "${RUNNER_TEMP}/verification/plugin-candidate-ci-aggregate.json"
+          --output "${RUNNER_TEMP}/verification/plugin-candidate-adoption.json"
       - name: Upload the original candidate bytes
         uses: actions/upload-artifact@v7
         with:
           name: plugin-candidate-v${{ inputs.version }}
           path: |
-            projects/product/services/dsh-plugin/build/release-candidates/${{ inputs.version }}/candidate.json
-            projects/product/services/dsh-plugin/build/release-candidates/${{ inputs.version }}/*.tgz
+            ${{ runner.temp }}/candidate/candidate.json
+            ${{ runner.temp }}/candidate/*.tgz
           if-no-files-found: error
           retention-days: 90
-      - name: Upload exact peer compatibility evidence
+      - name: Preserve original verification and main adoption
         uses: actions/upload-artifact@v7
         with:
           name: plugin-candidate-aggregate
-          path: ${{ runner.temp }}/plugin-full-verification.json
+          path: |
+            ${{ runner.temp }}/verification/plugin-candidate-ci-aggregate.json
+            ${{ runner.temp }}/verification/plugin-full-verification.json
+            ${{ runner.temp }}/verification/plugin-candidate-adoption.json
           if-no-files-found: error
           retention-days: 90
 
@@ -171,6 +156,9 @@ jobs:
       - name: Verify candidate run and complete publication history
         env:
           GH_TOKEN: ${{ github.token }}
+          PLUGIN_SOURCE_CANDIDATE_RUN_ID: ${{ inputs.source_candidate_run_id }}
+          PLUGIN_SOURCE_COMMIT: ${{ inputs.source_commit }}
+          PLUGIN_SELECTION_IDENTITY: ${{ inputs.selection_identity }}
           PLUGIN_OPERATION: ${{ inputs.operation }}
           PLUGIN_VERSION: ${{ inputs.version }}
           PLUGIN_CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
@@ -222,6 +210,7 @@ jobs:
           --version "${PLUGIN_VERSION}"
           --source-commit "${GITHUB_SHA}"
           --verification "${RUNNER_TEMP}/verification/plugin-full-verification.json"
+          --adoption "${RUNNER_TEMP}/verification/plugin-candidate-adoption.json"
           --output "${RUNNER_TEMP}/publication/publication.json"
           --npm-cli "${RUNNER_TEMP}/tooling/node_modules/npm/bin/npm-cli.js"
       - name: Preserve publication evidence even after failure

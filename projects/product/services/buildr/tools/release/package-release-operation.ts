@@ -82,6 +82,7 @@ export async function preparePackageRelease(options: any, scope: any, dependenci
     state.pluginPreparation ??= {};
     const prepared = (dependencies.runPluginHostedOperation ?? runPluginHostedOperation)({ operation: 'prepare', version: targets.versions['dsh-plugin'], repo: options.repo,
       sourceCommit: options.mainCommit, sourceTree: git(['rev-parse', `${options.mainCommit}:projects/product/services/dsh-plugin`], options.repo), peer,
+      sourceCandidateRunId: state.candidate.runId, candidateSourceCommit: options.selection.releaseHead, selectionIdentity: options.selection.selectionIdentity,
       buildrCandidateRunId: state.candidate.runId, pointer: state.pluginPreparation, ghCommand: options.ghCommand }, {
       ...dependencies.pluginDependencies, execute: scope.execute, onPointer: save,
     });
@@ -89,7 +90,8 @@ export async function preparePackageRelease(options: any, scope: any, dependenci
     if (prepared.status !== 'passed') return { status: `plugin-preparation-${prepared.status}`, nextActions: prepared.nextActions ?? [], run: prepared.run };
     const boundPeer = prepared.candidate.buildrPeer ?? prepared.verification.peer;
     if (!boundPeer || !sameArtifactIdentity(boundPeer.artifact ?? boundPeer, peer)) throw new Error('Main-only plugin preparation consumed a different peer artifact.');
-    packages['dsh-plugin'] = { artifact: prepared.artifact, candidate: prepared.candidate, prepareRunId: prepared.run.id, prepareRunAttempt: prepared.run.run_attempt, buildrPeer: peer };
+    packages['dsh-plugin'] = { artifact: prepared.artifact, candidate: prepared.candidate, prepareRunId: prepared.run.id, prepareRunAttempt: prepared.run.run_attempt, buildrPeer: peer,
+      ...(prepared.adoption ? { adoption: prepared.adoption } : {}) };
     candidates['dsh-plugin'] = { artifact: prepared.artifact, bytes: prepared.tarballBytes };
   }
   const counterparts = await observePackageCounterparts(dependencies);
@@ -133,7 +135,7 @@ export function validatePluginRecovery(context: any, observed: any, registryArti
       || journal?.schemaVersion !== 'buildr.dsh-plugin-publication/v1' || !['passed', 'blocked'].includes(journal.status)
       || journal.attempted !== true || journal.packageName !== owned.artifact.packageName || journal.version !== owned.artifact.version
       || journal.integrity !== owned.artifact.integrity || journal.sha256 !== owned.artifact.artifactSha256
-      || journal.sourceCommit !== context.convergence.mainCommit || journal.sourceTree !== owned.candidate.sourceTree
+      || journal.sourceCommit !== owned.artifact.sourceCommit || journal.sourceTree !== owned.candidate.sourceTree
       || journal.request?.workflowRef !== 'BuildrAI/Buildr/.github/workflows/publish-dsh-plugin.yml@refs/heads/main'
       || journal.request.runId !== run.id || journal.request.runAttempt !== 1) throw new Error('Plugin recovery requires the original attempted journal and exact public bytes.');
 }

@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  classifyCandidateFailure,
+  classifyCandidateStructuredFailures,
   inspectCandidateFailedShardRetry,
   retryCandidateFailedShards,
 } from '../../tools/release/candidate-failed-shard-retry.ts';
+import { CANDIDATE_CI_EVIDENCE_SCHEMA } from '../../tools/release/candidate-ci-contract.ts';
 
 const runId: any = 32807422982;
 const sourceCommit: any = 'a'.repeat(40);
@@ -40,7 +43,7 @@ function fixture(overrides: any = {}): any  {
     if (key.startsWith(`gh run rerun ${runId} --failed `)) return { status: 0, stdout: '' };
     return { status: 1, stderr: `unexpected command: ${key}` };
   };
-  return { execute, calls, optionsSeen };
+  return { execute, calls, optionsSeen, readFailureEvidence: () => overrides.evidence ?? [] };
 }
 
 test('Candidate retry inspection selects only failed shards from one matching run', () => {
@@ -82,4 +85,40 @@ test('timeouts and repeated errors require diagnosis rather than another retry',
   assert.ok(inspectCandidateFailedShardRetry({ runId, sourceCommit, repo: '/fixture' }, repeated).findings.some((item: any) => item.code === 'candidate-auto-retry-exhausted'));
   const assertion = fixture({ log: 'AssertionError: expected true; previous ECONNRESET was unrelated' });
   assert.equal(inspectCandidateFailedShardRetry({ runId, sourceCommit, repo: '/fixture' }, assertion).status, 'blocked');
+});
+
+const failedId = 'core-package-runtime-release-macos';
+const expected = { runId, runAttempt: 1, sourceCommit, failedIds: [failedId] };
+const evidence = (results: any[], overrides: any = {}) => [{ schemaVersion: CANDIDATE_CI_EVIDENCE_SCHEMA, id: failedId, status: 'failed', workflow: { runId, runAttempt: 1 }, sourceCommit, results, ...overrides }];
+
+test('structured retry preserves timeout, real assertion and cleanup facts instead of classifying wrapping assertions', () => {
+  const result = (failureFacts: any[], overrides: any = {}) => ({ status: 'failed', processCleanup: { status: 'clean' }, failureFacts, ...overrides });
+  const transient = { stage: 'execution', kind: 'transient', code: 'ECONNRESET' };
+  const timeout = { stage: 'execution', kind: 'timeout', code: 'capability-timeout' };
+  assert.equal(classifyCandidateStructuredFailures(evidence([result([transient])]), expected), 'transient');
+  assert.equal(classifyCandidateStructuredFailures(evidence([result([transient, timeout])]), expected), 'diagnosis-required');
+  assert.equal(classifyCandidateStructuredFailures(evidence([result([timeout, { stage: 'execution', kind: 'assertion', code: 'ERR_ASSERTION' }])]), expected), 'deterministic');
+  assert.equal(classifyCandidateStructuredFailures(evidence([result([transient], { processCleanup: { status: 'failed' } })]), expected), 'diagnosis-required');
+  assert.equal(classifyCandidateStructuredFailures(evidence([result([])]), expected), 'diagnosis-required');
+  assert.equal(classifyCandidateStructuredFailures(evidence([result([transient], { status: 'timed-out' })]), expected), 'diagnosis-required');
+  assert.equal(classifyCandidateStructuredFailures(evidence([result([null])]), expected), 'diagnosis-required');
+  assert.equal(classifyCandidateStructuredFailures(evidence([result([transient])], { sourceCommit: 'b'.repeat(40) }), expected), 'diagnosis-required');
+  assert.equal(classifyCandidateStructuredFailures(evidence([result([transient])]), { ...expected, failedIds: [failedId, 'runtime-windows'] }), 'diagnosis-required');
+});
+
+test('structured preparation failure must be complete, matching and specifically transient', () => {
+  const prep: any = { schemaVersion: 'buildr.candidate-environment-preparation/v1', id: failedId, status: 'failed', workflow: { runId, runAttempt: 1 }, sourceCommit, operations: [{ status: 'passed' }, { status: 'failed', failureClass: 'transient', errorCode: 'EAI_AGAIN' }] };
+  assert.equal(classifyCandidateStructuredFailures([prep], expected), 'transient');
+  assert.equal(classifyCandidateStructuredFailures([{ ...prep, operations: [{ status: 'running' }] }], expected), 'diagnosis-required');
+  assert.equal(classifyCandidateStructuredFailures([{ ...prep, operations: [{ status: 'failed', failureClass: 'timeout', errorCode: 'ETIMEDOUT' }] }], expected), 'diagnosis-required');
+});
+
+test('structured retry facts take precedence over unrelated transient log text', () => {
+  const dependencies = fixture({ evidence: evidence([{ status: 'timed-out', failureFacts: [{ stage: 'execution', kind: 'timeout', code: 'capability-timeout' }] }]) });
+  const result = inspectCandidateFailedShardRetry({ runId, sourceCommit, repo: '/fixture' }, dependencies);
+  assert.equal(result.failureClass, 'diagnosis-required');
+  assert.equal(result.classificationSource, 'structured-evidence');
+  assert.equal(dependencies.calls.some((call: string) => call.includes('--log-failed')), false);
+  assert.equal(classifyCandidateFailure('AssertionError: subprocess status null, ETIMEDOUT; ECONNRESET also mentioned'), 'diagnosis-required');
+  assert.equal(classifyCandidateFailure("not ok 1\n  ---\n  code: 'ERR_ASSERTION'\n  error: actual product mismatch\n  ...\ncapability-timeout"), 'deterministic');
 });

@@ -13,6 +13,7 @@ import { artifactFromTarball, observePublishedPackageArtifact } from '../../buil
 import { evaluatePackageCompatibility, type CompatibilityArtifact } from '../../buildr/tools/release/package-compatibility.ts';
 import { assertBoundVerification } from './full-verification.ts';
 import { assertPairReport, verifyBuildrPluginPair } from './verify-buildr-plugin-pair.ts';
+import { assertPluginCandidateAdoption, type PluginCandidateMain } from './candidate-adoption.ts';
 import { PLUGIN_PACKAGE, PLUGIN_REGISTRY, PLUGIN_SERVICE_PATH, SOURCE_SDK_MANIFEST, readReleaseCandidate, sourceSdkIdentityFromFiles, type ReleaseCandidate, type SourceSdkIdentity } from './release-candidate.ts';
 
 export const PLUGIN_PUBLISH_AUTHORITY = Object.freeze({ provider: 'github-actions', repository: 'BuildrAI/Buildr', workflow: 'publish-dsh-plugin.yml', environment: 'npm-production', allowedActions: ['npm publish'] });
@@ -38,6 +39,7 @@ export interface PublishDependencies {
   publish?: (tarball: string, candidate: ReleaseCandidate) => Promise<{ status: number }>;
   observePeer?: typeof observePublishedPackageArtifact; verifyPair?: typeof verifyBuildrPluginPair;
   sleep?: (milliseconds: number) => Promise<void>; registryWait?: { attempts?: number; delayMs?: number };
+  mainProof?: () => PluginCandidateMain;
 }
 function failure(code: string): never { throw Object.assign(new Error(code), { code }); }
 function required(value: unknown, code: string): string { if (typeof value !== 'string' || !value) failure(code); return value; }
@@ -180,12 +182,28 @@ function saveJournal(output: string, value: PublicationJournal): void {
   writeFileSync(pending, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600, flag: 'wx' });
   renameSync(pending, output);
 }
-export async function publishPluginCandidate(options: { manifestPath: string; version: string; sourceCommit: string; output?: string; repo?: string; npmCli?: string; verificationPath?: string }, dependencies: PublishDependencies = {}): Promise<PublicationJournal> {
+export async function publishPluginCandidate(options: { manifestPath: string; version: string; sourceCommit: string; output?: string; repo?: string; npmCli?: string; verificationPath?: string; adoptionPath?: string }, dependencies: PublishDependencies = {}): Promise<PublicationJournal> {
   const env = dependencies.env ?? process.env, now = dependencies.now ?? Date.now;
   assertPluginHostedIdentity(env, options.sourceCommit);
   const source = (dependencies.source ?? (() => sourceState(resolve(options.repo ?? repositoryRoot))))();
   if (source.sourceCommit !== options.sourceCommit || source.version !== options.version) failure('plugin-publish-source-drift');
-  const artifact = readReleaseCandidate(options.manifestPath, { version: source.version, sourceCommit: source.sourceCommit, sourceTree: source.sourceTree, sourceSdk: source.sourceSdk });
+  let adoption: any = null;
+  if (options.adoptionPath && existsSync(options.adoptionPath)) {
+    const filename = resolve(options.adoptionPath), state = lstatSync(filename);
+    if (!state.isFile() || state.size > 4 * 1024 * 1024 || realpathSync(filename) !== filename) failure('plugin-candidate-adoption-invalid');
+    adoption = JSON.parse(readFileSync(filename, 'utf8'));
+  }
+  const candidateSourceCommit = adoption?.source?.commit ?? source.sourceCommit;
+  const artifact = readReleaseCandidate(options.manifestPath, { version: source.version, sourceCommit: candidateSourceCommit, sourceTree: source.sourceTree, sourceSdk: source.sourceSdk });
+  const checkAdoption = () => {
+    if (!adoption) return;
+    const git = (args: string[]) => execFileSync('git', args, { cwd: resolve(options.repo ?? repositoryRoot), encoding: 'utf8' }).trim();
+    const main = dependencies.mainProof?.() ?? { commit: source.sourceCommit, tree: git(['rev-parse', `${source.sourceCommit}^{tree}`]),
+      parents: git(['rev-list', '--parents', '-n', '1', source.sourceCommit]).split(/\s/u).slice(1), serviceTree: source.sourceTree };
+    if (main.commit !== source.sourceCommit || main.serviceTree !== source.sourceTree) failure('plugin-candidate-adoption-invalid');
+    assertPluginCandidateAdoption(adoption, artifact.manifest, main);
+  };
+  checkAdoption();
   const manifest = artifact.manifest, outputValue = resolve(options.output ?? join(dirname(artifact.manifestPath), 'publication.json'));
   mkdirSync(dirname(outputValue), { recursive: true });
   const output = join(realpathSync(dirname(outputValue)), basename(outputValue));
@@ -208,7 +226,8 @@ export async function publishPluginCandidate(options: { manifestPath: string; ve
     if (authority.status !== 'ready' || authority.npm.package !== PLUGIN_PACKAGE || authority.npm.tokenType !== 'oidc' || !isDeepStrictEqual(authority.expected, PLUGIN_PUBLISH_AUTHORITY) || authority.workflowSha256 !== source.workflowSha256 || !Number.isFinite(Date.parse(authority.npm.expires)) || Date.parse(authority.npm.expires) <= now() || containsCredentialMaterial(authority)) failure('plugin-publish-authority-invalid');
     journal.authority = authority;
     // Recheck the transported bytes immediately before the only public write.
-    const refreshed = readReleaseCandidate(options.manifestPath, { version: source.version, sourceCommit: source.sourceCommit, sourceTree: source.sourceTree, sourceSdk: source.sourceSdk });
+    const refreshed = readReleaseCandidate(options.manifestPath, { version: source.version, sourceCommit: candidateSourceCommit, sourceTree: source.sourceTree, sourceSdk: source.sourceSdk });
+    checkAdoption();
     if (!isDeepStrictEqual(refreshed.manifest, manifest) || refreshed.tarball !== artifact.tarball) failure('plugin-publish-archive-drift');
     const currentSource = (dependencies.source ?? (() => sourceState(resolve(options.repo ?? repositoryRoot))))();
     if (!isDeepStrictEqual(currentSource, source)) failure('plugin-publish-source-drift');
@@ -242,11 +261,11 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const args = process.argv.slice(2), values: Record<string, string> = {};
   for (let index = 0; index < args.length; index += 2) {
     const name = args[index], value = args[index + 1];
-    if (!name || !['--manifest', '--version', '--source-commit', '--output', '--npm-cli', '--verification'].includes(name) || !value || value.startsWith('--') || Object.hasOwn(values, name)) failure('plugin-publish-arguments-invalid');
+    if (!name || !['--manifest', '--version', '--source-commit', '--output', '--npm-cli', '--verification', '--adoption'].includes(name) || !value || value.startsWith('--') || Object.hasOwn(values, name)) failure('plugin-publish-arguments-invalid');
     values[name] = value;
   }
   try {
-    const result = await publishPluginCandidate({ manifestPath: required(values['--manifest'], 'plugin-manifest-required'), version: required(values['--version'], 'plugin-version-required'), sourceCommit: required(values['--source-commit'], 'plugin-source-required'), output: values['--output'], npmCli: values['--npm-cli'], verificationPath: values['--verification'] });
+    const result = await publishPluginCandidate({ manifestPath: required(values['--manifest'], 'plugin-manifest-required'), version: required(values['--version'], 'plugin-version-required'), sourceCommit: required(values['--source-commit'], 'plugin-source-required'), output: values['--output'], npmCli: values['--npm-cli'], verificationPath: values['--verification'], adoptionPath: values['--adoption'] });
     process.stdout.write(`${JSON.stringify(result)}\n`); process.exitCode = result.status === 'passed' ? 0 : 1;
   } catch { process.stderr.write('Plugin publication refused before a public write; check candidate and protected workflow identity.\n'); process.exitCode = 1; }
 }
