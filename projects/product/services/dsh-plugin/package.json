@@ -1,6 +1,6 @@
 {
   "name": "@buildr-ai/buildr-dsh-plugin-source",
-  "version": "0.1.0-rc.1",
+  "version": "0.1.0-rc.2",
   "buildrCompatibility": {
     "schemaVersion": "buildr.package-compatibility/v1",
     "provides": [],

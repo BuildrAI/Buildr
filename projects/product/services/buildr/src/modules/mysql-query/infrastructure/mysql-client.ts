@@ -18,9 +18,16 @@ async function sqlParser() {
   parserPromise ||= import('node-sql-parser').then(module => new (module.Parser || module.default.Parser)());
   return parserPromise;
 }
-function checkNumericPrecision(sql: string): void {
+function scientificNotationFailure(): Error {
+  return mysqlFailure('mysql_query_scientific_notation_unsupported', '科学计数数值无法安全重生成，请改用普通数值，或使用带引号的值和 CAST 明确转换。');
+}
+function checkNumericPrecision(sql: string): { offset: number; dot: number }[] {
   // node-sql-parser preserves large integers, but rounds high-precision decimal
-  // literals. Reject those before parsing instead of silently changing a filter.
+  // literals and treats scientific numbers as column names/arithmetic. Keep
+  // scientific token positions so genuinely qualified identifiers can be spared.
+  const scientific: { offset: number; dot: number }[] = [];
+  const identifierChar = /[\w$\u0080-\uFFFF]/;
+  let dot = -1;
   for (let index = 0; index < sql.length;) {
     const char = sql[index];
     if (["'", '"', '`'].includes(char)) {
@@ -34,11 +41,18 @@ function checkNumericPrecision(sql: string): void {
     }
     if (sql.startsWith('/*', index)) { const end = sql.indexOf('*/', index + 2); index = end < 0 ? sql.length : end + 2; continue; }
     if (char === '#' || sql.startsWith('--', index) && /\s/.test(sql[index + 2] || ' ')) { const end = sql.indexOf('\n', index); index = end < 0 ? sql.length : end + 1; continue; }
-    if (/[0-9.]/.test(char) && !/[\w$]/.test(sql[index - 1] || '')) {
+    if (char === '.') dot = index;
+    if (/[0-9.]/.test(char) && !identifierChar.test(sql[index - 1] || '')) {
       const token = sql.slice(index).match(/^(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?/)?.[0];
       if (token) {
-        if (/[.eE]/.test(token)) {
-          const significant = token.split(/[eE]/)[0].replace('.', '').replace(/^0+/, '');
+        const identifierSuffix = identifierChar.test(sql[index + token.length] || '');
+        const exponentOperator = token.search(/[eE][+-]/);
+        // A name suffix means this was not one numeric token. Do not swallow an
+        // embedded operator: t.1E+2e3 is the column t.1E plus the number 2e3.
+        if (identifierSuffix && exponentOperator >= 0) { index += exponentOperator + 1; continue; }
+        if (!identifierSuffix && /[eE]/.test(token)) scientific.push({ offset: index, dot });
+        else if (!identifierSuffix && token.includes('.')) {
+          const significant = token.replace('.', '').replace(/^0+/, '');
           if (significant.length > 15 || !Number.isFinite(Number(token))) throw mysqlFailure('mysql_query_precision_unsupported', '高精度小数字面量无法安全重生成，请使用带引号的值和 CAST 明确保留精度。');
         }
         index += token.length; continue;
@@ -46,34 +60,47 @@ function checkNumericPrecision(sql: string): void {
     }
     index++;
   }
+  return scientific;
 }
 /** Parse and regenerate only allowed syntax; never execute the submitted text. */
 export async function prepareReadOnlySql(input: unknown): Promise<{ submittedSql: string; executedSql: string; rowLimit: number }> {
   if (typeof input !== 'string' || !input.trim() || Buffer.byteLength(input) > 64 * 1024 || input.includes('\0')) throw mysqlFailure('mysql_query_invalid', '请填写不超过 64 KiB 的单条查询语句（SQL）。');
   if (input.includes('/*!')) throw mysqlFailure('mysql_query_invalid', '首版不支持 MySQL 可执行版本注释，请改为明确的查询语法。');
-  checkNumericPrecision(input);
+  const scientific = checkNumericPrecision(input);
   const parser = await sqlParser(); let ast: Ast;
   try {
-    const parsed = parser.astify(input, { database: 'MySQL' });
+    const parsed = parser.astify(input, { database: 'MySQL', ...(scientific.length ? { parseOptions: { includeLocations: true } } : {}) });
     if (Array.isArray(parsed) && parsed.length !== 1) throw new Error('multiple statements');
     ast = Array.isArray(parsed) ? parsed[0] : parsed;
-  } catch { throw mysqlFailure('mysql_query_invalid', '无法解析为单条受支持的 MySQL 查询；请保留输入并调整语句。'); }
+  } catch {
+    if (scientific.length) throw scientificNotationFailure();
+    throw mysqlFailure('mysql_query_invalid', '无法解析为单条受支持的 MySQL 查询；请保留输入并调整语句。');
+  }
   if (ast?.type !== 'select') throw mysqlFailure('mysql_query_readonly', '当前仅允许单条只读 SELECT 查询。');
   let nodes = 0;
+  const qualifiedIdentifiers: { start: number; end: number }[] = [];
   function check(value: unknown, depth = 0): void {
     if (++nodes > 20_000 || depth > 100) throw mysqlFailure('mysql_query_invalid', '查询语句过于复杂。');
     if (!value || typeof value !== 'object') return;
     if (Array.isArray(value)) { value.forEach(item => check(item, depth + 1)); return; }
     const node = value as Ast;
+    if ((node.type === 'column_ref' && node.table != null || node.db != null && node.table != null)
+      && Number.isSafeInteger(node.loc?.start?.offset) && Number.isSafeInteger(node.loc?.end?.offset)) {
+      qualifiedIdentifiers.push({ start: node.loc.start.offset, end: node.loc.end.offset });
+    }
     if (node.into?.position || node.locking_read || node.type === 'assign' || node.type === 'var' || ['insert', 'update', 'delete', 'replace', 'call', 'set', 'create', 'drop', 'alter'].includes(node.type)) throw mysqlFailure('mysql_query_readonly', '查询不允许文件操作、锁、赋值或数据修改。');
     if (node.type === 'function' || node.type === 'aggr_func') {
       const name = typeof node.name === 'string' ? node.name : node.name?.name?.map((item: Ast) => item.value).join('');
       const quoted = node.type === 'function' && (!Array.isArray(node.name?.name) || node.name.name.length !== 1 || node.name.name[0].type !== 'default');
       if (quoted || node.name?.schema || typeof name !== 'string' || !SAFE_FUNCTIONS.has(name.toUpperCase())) throw mysqlFailure('mysql_query_function_unsupported', '该函数不在首版支持的只读内置函数范围内。');
     }
-    for (const child of Object.values(node)) check(child, depth + 1);
+    for (const [key, child] of Object.entries(node)) if (key !== 'loc') check(child, depth + 1);
   }
   check(ast);
+  // After a qualifier dot MySQL expects an identifier (even t.1e2 or t.1E+2).
+  // A numeric qualifier such as 1e2.column still starts before that dot and is rejected.
+  if (scientific.some(token => !qualifiedIdentifiers.some(range => token.offset >= range.start && token.offset < range.end
+    && token.dot >= range.start && token.dot <= token.offset))) throw scientificNotationFailure();
   let outer = ast;
   // The parser represents a UNION's outer LIMIT on the final branch.
   while (outer._next) {

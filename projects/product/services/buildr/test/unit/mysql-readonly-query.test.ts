@@ -39,3 +39,50 @@ test('MySQL never silently rounds a high-precision decimal filter', async () => 
   assert.match((await prepareReadOnlySql("SELECT CAST('0.123456789012345678901' AS DECIMAL(30,21))")).executedSql, /0\.123456789012345678901/);
   assert.ok((await prepareReadOnlySql('SELECT 12.345 /* 0.123456789012345678901 */')).executedSql);
 });
+test('MySQL rejects scientific numeric literals instead of regenerating them as columns or arithmetic', async () => {
+  for (const literal of ['1e2', '1E2', '1E+2', '1e-2', '+1e2', '-1e2', '1.25e2', '1.e2', '.5e+2', '1e309', '1e-400', '1e2+3', '2*1e2', '1e2/2']) {
+    await assert.rejects(() => prepareReadOnlySql(`SELECT id FROM t WHERE amount > ${literal}`), error => {
+      assert.equal((error as { code?: string }).code, 'mysql_query_scientific_notation_unsupported', literal);
+      assert.match((error as Error).message, /科学计数.*普通数值/);
+      return true;
+    });
+  }
+  await assert.rejects(() => prepareReadOnlySql('SELECT t.1e2 + 1e2 FROM t'), { code: 'mysql_query_scientific_notation_unsupported' });
+  await assert.rejects(() => prepareReadOnlySql('SELECT 1e2.amount FROM t'), { code: 'mysql_query_scientific_notation_unsupported' });
+  for (const expression of ['t.1E+2e3', 't.1E-2e3', 't.1E+2E+3', 't.1E-2E-3', 't.1E+2e-3', 't.1E-2e+3', 't.1E+2e3*3']) {
+    await assert.rejects(() => prepareReadOnlySql(`SELECT ${expression} FROM t`), { code: 'mysql_query_scientific_notation_unsupported' }, expression);
+  }
+  for (const sql of ['SELECT id FROM t WHERE amount > 100', 'SELECT id FROM t WHERE amount > 0.0125', 'SELECT -100, +100']) {
+    const result = await prepareReadOnlySql(sql);
+    assert.equal(result.submittedSql, sql); assert.match(result.executedSql, /LIMIT 100$/);
+  }
+});
+test('scientific-looking strings, comments and real identifier names remain usable', async () => {
+  for (const sql of [
+    "SELECT `1e2`, '1e2', \"1E+2\", '1e309' FROM t",
+    "SELECT 'it''s 1e2', 'escaped\\'1E+2' FROM t",
+    'SELECT value1e2, e2value, 1e2value, 1e309value, 金额1e2 FROM t',
+    'SELECT 100 /* 1e2 1E+2 1e309 */ FROM t',
+    'SELECT 100 FROM t -- 1e2 1E+2\n',
+    'SELECT 100 FROM t # 1e2 1E+2\n',
+  ]) {
+    const result = await prepareReadOnlySql(sql);
+    assert.equal(result.submittedSql, sql); assert.match(result.executedSql, /LIMIT 100$/, sql);
+  }
+  const names = await prepareReadOnlySql('SELECT value1e2, e2value, 1e2value, 1e309value, 金额1e2 FROM t');
+  for (const name of ['value1e2', 'e2value', '1e2value', '1e309value', '金额1e2']) assert.ok(names.executedSql.includes('`' + name + '`'), name);
+  const strings = await prepareReadOnlySql("SELECT `1e2`, '1e2', '1E+2', '1e309' FROM t");
+  for (const spelling of ['`1e2`', "'1e2'", "'1E+2'", "'1e309'"]) assert.ok(strings.executedSql.includes(spelling), spelling);
+});
+test('qualified numeric-looking identifiers keep their original column meaning', async () => {
+  for (const reference of ['t.1e2', 't . 1e2', '`t`.1e2', 't./* qualifier */1e2', 't.1E+2', 't.1E-2', 't.1e309', 't.1E+2e3value', 't.1E+2e3foo', 't.1E+2E']) {
+    const result = await prepareReadOnlySql(`SELECT ${reference} FROM t`);
+    assert.match(result.executedSql, /`t`\.`1[eE](?:2|309)?`/, reference);
+    if (reference === 't.1E+2') assert.match(result.executedSql, /`t`\.`1E` \+ 2/);
+    if (reference === 't.1E-2') assert.match(result.executedSql, /`t`\.`1E` - 2/);
+    if (reference === 't.1E+2e3value') assert.match(result.executedSql, /`t`\.`1E` \+ `2e3value`/);
+    if (reference === 't.1E+2e3foo') assert.match(result.executedSql, /`t`\.`1E` \+ `2e3foo`/);
+    if (reference === 't.1E+2E') assert.match(result.executedSql, /`t`\.`1E` \+ `2E`/);
+    assert.match(result.executedSql, /LIMIT 100$/);
+  }
+});

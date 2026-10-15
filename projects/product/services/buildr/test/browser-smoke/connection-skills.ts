@@ -162,7 +162,9 @@ try {
   await databasePicker.getByText('没有匹配的数据库', { exact: true }).waitFor();
   await databaseSearch.press('Escape');
   await databasePicker.waitFor({ state: 'hidden' });
-  await page.waitForLoadState('networkidle');
+  // Global source-control observation keeps the page network busy. The picker
+  // is closed and ready for another edit only after any preference save settles.
+  await page.locator('#enable-mysql-databases[aria-expanded="false"]:not([disabled])').waitFor();
   assert.equal(preferenceWrites().length, 1, 'Closing an unchanged selection never writes preferences.');
   await openDatabasePicker();
   await databaseSearch.fill('orders');
@@ -195,7 +197,8 @@ try {
   await databasePicker.getByRole('checkbox', { name: 'billing', exact: true }).uncheck();
   await page.getByRole('button', { name: '关闭 MySQL 查询', exact: true }).click();
   await page.locator('#mysql-query-editor').waitFor({ state: 'hidden' });
-  await page.waitForLoadState('networkidle');
+  await databasePicker.waitFor({ state: 'hidden' });
+  await page.locator('#connection-skills-table').locator(`[data-row-key="${queryInstance.id}"]`).getByRole('button', { name: '查询', exact: true }).waitFor();
   assert.equal(preferenceWrites().length, 4, 'Closing the query view discards its picker draft without saving it.');
   await page.locator('#connection-skills-table').locator(`[data-row-key="${queryInstance.id}"]`).getByRole('button', { name: '查询', exact: true }).click();
   for (const width of [1280, 390]) {

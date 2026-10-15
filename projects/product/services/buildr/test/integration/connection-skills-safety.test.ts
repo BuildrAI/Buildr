@@ -100,6 +100,40 @@ test('generic connection blocks an externally changed authentication principal b
   await assert.rejects(() => f.application.run(f.root, { id: instance.id, expectedRevision: observed.revision, args: ['test'] }), { code: 'connection_skill_auth_target_changed' });
 });
 
+test('selected connection never hands off a replaced or removed personal group under its previous observation', async t => {
+  for (const change of ['replace', 'remove'] as const) await t.test(change, t => {
+    const f = fixture(t), instance = f.create();
+    f.application.saveAuth(f.root, instance.id, { intent: 'replace', values: { username: 'personal-before', password: 'private-before' }, expected: { teamRevision: instance.teamRevision, definitionRevision: instance.definitionRevision, localRevision: instance.localRevision } });
+    const observed = f.application.get(f.root, instance.id).instance;
+    const before = f.application.files.readLocal(f.scope, instance.id);
+    f.application.saveAuth(f.root, instance.id, { intent: change, ...(change === 'replace' ? { values: { username: 'personal-after', password: 'private-after' } } : {}), expected: { teamRevision: observed.teamRevision, definitionRevision: observed.definitionRevision, localRevision: observed.localRevision } });
+    const after = f.application.files.readLocal(f.scope, instance.id);
+    assert.notEqual(after.revision, before.revision);
+    // Both snapshots come from real persisted groups. Schedule the external
+    // change between the public revision read and the private handoff read.
+    let reads = 0, consumed = 0;
+    const read = t.mock.method(f.application.files, 'readLocal', () => ++reads === 1 ? before : after);
+    assert.throws(() => f.application.useSelected(f.root, { id: instance.id, expectedRevision: observed.revision }, () => { consumed++; }), { code: 'connection_skill_revision_conflict' });
+    assert.equal(consumed, 0, 'the consumer must not receive another account or fall back to the team group');
+    assert.equal(reads, 2);
+    read.mock.restore();
+    const refreshed = f.application.get(f.root, instance.id).instance;
+    const current = f.application.useSelected(f.root, { id: instance.id, expectedRevision: refreshed.revision }, selected => selected.connection.authentication);
+    assert.equal(current.source, change === 'replace' ? 'personal' : 'team');
+    assert.equal(current.values.username, change === 'replace' ? 'personal-after' : 'fixture-reader');
+  });
+});
+
+test('a personal group that becomes unreadable retains its authentication diagnostic before a revision conflict', t => {
+  const f = fixture(t), instance = f.create();
+  f.application.saveAuth(f.root, instance.id, { intent: 'replace', values: { username: 'personal-reader', password: 'personal-private' }, expected: { teamRevision: instance.teamRevision, definitionRevision: instance.definitionRevision, localRevision: instance.localRevision } });
+  const observed = f.application.get(f.root, instance.id).instance, before = f.application.files.readLocal(f.scope, instance.id);
+  let reads = 0, consumed = 0;
+  t.mock.method(f.application.files, 'readLocal', () => ++reads === 1 ? before : { present: true, revision: 'unavailable', group: null, diagnostic: '本机认证无法读取。' });
+  assert.throws(() => f.application.useSelected(f.root, { id: instance.id, expectedRevision: observed.revision }, () => { consumed++; }), { code: 'connection_skill_auth_unavailable', message: '本机认证无法读取。' });
+  assert.equal(consumed, 0);
+});
+
 test('generic connection does not redact public usernames as secret arguments or corrupt hook JSON keys', async t => {
   const f = fixture(t), instance = f.create('a');
   const result = await f.application.hook(f.root, { id: instance.id, binding: f.binding, config: instance.config, expected: { teamRevision: instance.teamRevision, definitionRevision: instance.definitionRevision }, authentication: { source: 'team', intent: 'keep' } }, 'test');

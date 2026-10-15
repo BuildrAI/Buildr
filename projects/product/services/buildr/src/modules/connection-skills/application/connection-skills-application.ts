@@ -207,6 +207,7 @@ export class ConnectionSkillsApplication {
     const config = validateConfig(entry.definition.config.fields, instance.config);
     const local = this.files.readLocal(scope, id);
     if (local.present && local.diagnostic) throw failure('connection_skill_auth_unavailable', local.diagnostic);
+    assertRevision(local.revision, view.localRevision);
     const source = local.present ? 'personal' as const : 'team' as const, values = this.group(scope, { ...instance, config }, entry, local.present ? local.group : instance.authentication);
     return { entry, context: { id, revision: view.revision, revisions: { teamRevision: view.teamRevision, localRevision: view.localRevision, definitionRevision: view.definitionRevision }, config, authentication: { source, values }, authenticationRevision: local.present ? local.revision : team.revision } };
   }
