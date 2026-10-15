@@ -471,7 +471,7 @@ test('CI and publish workflows use the supported Node runtime', () => {
   assert.equal(verifyDocument.jobs['dev-feedback-windows']['runs-on'], 'windows-latest');
   assert.equal(verifyDocument.jobs['candidate-plan'].if, "(!inputs.diagnostic_scope || inputs.diagnostic_scope == 'none') && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'dev'))");
   assert.deepEqual(verifyDocument.on.workflow_dispatch.inputs.purpose.options, ['candidate', 'release-rehearsal']);
-  assert.deepEqual(verifyDocument.on.workflow_dispatch.inputs.diagnostic_scope.options, ['none', 'core-project-task-macos', 'nested-git-isolation-windows']);
+  assert.deepEqual(verifyDocument.on.workflow_dispatch.inputs.diagnostic_scope.options, ['none', 'core-project-task-macos', 'nested-git-isolation-windows', 'runtime-windows', 'failed-windows']);
   assert.equal(verifyDocument.on.workflow_dispatch.inputs.diagnostic_scope.default, 'none');
   assert.equal(verifyDocument.on.workflow_dispatch.inputs.expected_source_tree.required, false);
   assert.equal(verifyDocument.on.workflow_dispatch.inputs.rehearsal_identity.required, false);
@@ -518,11 +518,40 @@ test('CI and publish workflows use the supported Node runtime', () => {
   assert.match(verifyWorkflow, /^  candidate-artifact-consumers:/m);
   assert.match(verifyWorkflow, /^  candidate-source:/m);
   assert.match(verifyWorkflow, /^  candidate-gate:/m);
-  assert.match(verifyWorkflow, /node-version: 24\.15\.0/);
+  assert.match(verifyWorkflow, /node-version: '24\.x'/);
   assert.equal((verifyWorkflow.match(/release-tarball-smoke/g) || []).length, 0);
   assert.match(verifyWorkflow, /BUILDR_VERIFICATION_PROFILE: ci-workspace-limited/);
   assert.match(publishWorkflow, /node-version: "24\.15\.0"/);
   assert.doesNotMatch(`${verifyWorkflow}\n${publishWorkflow}`, /node-version: ?(?:20|22)|node: \[20, 22\]/);
+});
+
+test('Windows original-package diagnosis remains separate from complete Candidate and publication', () => {
+  const document: any = YAML.parse(fs.readFileSync(path.join(workspaceRoot, '.github/workflows/verify.yml'), 'utf8'));
+  const diagnosis = document.jobs['diagnostic-runtime-windows'];
+  assert.equal(diagnosis.needs, undefined);
+  assert.equal(diagnosis['runs-on'], 'windows-2025');
+  assert.deepEqual(diagnosis.permissions, { contents: 'read', actions: 'read' });
+  assert.equal(diagnosis.strategy['fail-fast'], false);
+  assert.match(diagnosis.if, /github.event_name == 'workflow_dispatch'/u);
+  assert.match(diagnosis.if, /inputs.diagnostic_scope == 'runtime-windows'/u);
+  assert.match(diagnosis.if, /inputs.diagnostic_scope == 'failed-windows'/u);
+  for (const scenario of ['runtime-windows', 'worktree-windows', 'release-contract-windows', 'git-convergence-windows']) assert.ok(diagnosis.strategy.matrix.scenario.includes(scenario));
+  assert.equal(diagnosis.env.DIAGNOSTIC_CANDIDATE_RUN_ID, '${{ inputs.diagnostic_candidate_run_id }}');
+  assert.equal(diagnosis.env.DIAGNOSTIC_CANDIDATE_SOURCE, '${{ inputs.diagnostic_candidate_source }}');
+  assert.equal(diagnosis.env.EXPECTED_SOURCE_TREE, '${{ inputs.expected_source_tree }}');
+  assert.match(diagnosis.steps[0].run, /refs\/heads\/dev/u);
+  assert.match(diagnosis.steps[0].env.EXTRA_INPUTS_PRESENT, /inputs.source_verification != ''/u);
+  const download = diagnosis.steps.find((step: any) => step.uses?.startsWith('actions/download-artifact@'));
+  assert.equal(download.with.name, 'candidate-package');
+  assert.equal(download.with['run-id'], '${{ inputs.diagnostic_candidate_run_id }}');
+  assert.equal(download.with['github-token'], '${{ github.token }}');
+  assert.equal(diagnosis.steps.find((step: any) => step.uses?.startsWith('actions/setup-node@')).with['node-version'], '24.x');
+  const execution = diagnosis.steps.find((step: any) => step.run === 'node test/verification/release/windows-artifact-diagnosis.ts');
+  assert.equal(execution.env.BUILDR_VERIFICATION_PROFILE, 'ci-workspace-limited');
+  assert.equal(diagnosis.steps.filter((step: any) => step.run === 'node tools/verification/candidate-environment.ts prepare --profile source-runtime').length, 1);
+  assert.equal(diagnosis.steps.some((step: any) => /candidate-ci\.ts|aggregate|publish|npm (?:pack|publish)/u.test(step.run || '')), false);
+  assert.equal(diagnosis.steps.at(-1).if, 'always()');
+  assert.equal(diagnosis.steps.at(-1).with.name, 'diagnostic-${{ matrix.scenario }}');
 });
 
 test('Windows nested Git diagnosis keeps closed inputs, original isolated assertions and honest cleanup evidence', () => {
@@ -547,7 +576,7 @@ test('Windows nested Git diagnosis keeps closed inputs, original isolated assert
   assert.equal(checkout.with.ref, '${{ env.CANDIDATE_SOURCE_SHA }}');
   assert.equal(checkout.with['fetch-depth'], 0);
   const node = diagnosis.steps.find((step: any) => step.uses?.startsWith('actions/setup-node@'));
-  assert.equal(node.with['node-version-file'], 'projects/product/.node-version');
+  assert.equal(node.with['node-version'], '24.x');
   const source = diagnosis.steps.find((step: any) => step.name === 'Verify the closed diagnosis source');
   assert.match(source.run, /sourceCommit !== process\.env\.CANDIDATE_SOURCE_SHA \|\| sourceTree !== process\.env\.EXPECTED_SOURCE_TREE/u);
   assert.ok(source.run.includes("assertMinimumNodeVersion(process.versions.node, '24.15.0')"));

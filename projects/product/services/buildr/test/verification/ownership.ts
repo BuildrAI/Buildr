@@ -554,6 +554,21 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
     ],
     "inputExclusions": []
   },
+  "system-nested-git-isolation": {
+    "inputs": [
+      "test/system/worktree-nested-git-isolation.test.ts",
+      "test/integration/non-git-workspace-continuity.test.ts",
+      "tools/development/run-isolated-workspace-smoke.ts",
+      "src/modules/task/infrastructure/**",
+      "src/infrastructure/git/**",
+      "test/helpers/workspace-product-suite.ts",
+      "test/verification/system-suites.ts",
+      "test/verification/system.ts",
+      "test/helpers/task-lifecycle-system-context.ts",
+      "test/verification/system-file-timing-reporter.ts"
+    ],
+    "inputExclusions": []
+  },
   "system-runtime-recovery": {
     "inputs": [
       "test/system/cli-update.test.ts",
@@ -621,6 +636,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "test/system/buildr-web-launcher.test.ts",
       "test/system/workspace-runtime-recovery.test.ts",
       "test/system/worktree-create.test.ts",
+      "test/system/worktree-nested-git-isolation.test.ts",
       "test/helpers/task-finish-sqlite-fixture.ts",
       "src/modules/installation/application/cli-update.ts",
       "src/modules/task/application/finish/**",
@@ -704,6 +720,56 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
     ],
     "inputExclusions": []
   },
+  "integration-candidate-release-selection": {
+    "inputs": [
+      "tools/release/release-targets.ts",
+      "tools/release/package-compatibility.ts",
+      "tools/release/package-artifact-observation.ts",
+      "tools/release/release-package-evidence.ts",
+      "tools/release/plugin-hosted-release.ts",
+      "tools/release/package-release-operation.ts",
+      "test/integration-candidate-release/**",
+      "tools/release/release-git-convergence.ts",
+      "tools/release/release-authority.ts",
+      "tools/release/release-contract.ts",
+      "tools/release/release-task-evidence-correlation.ts",
+      "tools/release/release-transaction-evidence.ts",
+      "tools/release/release-transaction-runner.ts",
+      "tools/release/release-lifecycle.ts",
+      "tools/release/release-phase-timeline.ts",
+      "tools/release/release-orchestration-runner.ts",
+      "tools/release/release-convergence.ts",
+      "tools/release/release-files.ts",
+      "tools/release/release-notes.ts",
+      "src/modules/installation/domain/release-version.ts"
+    ],
+    "inputExclusions": []
+  },
+  "integration-candidate-package-selection": {
+    "inputs": [
+      "tools/release/release-targets.ts",
+      "tools/release/package-compatibility.ts",
+      "tools/release/package-artifact-observation.ts",
+      "tools/release/release-package-evidence.ts",
+      "tools/release/plugin-hosted-release.ts",
+      "tools/release/package-release-operation.ts",
+      "test/integration-candidate-release/**",
+      "tools/release/release-git-convergence.ts",
+      "tools/release/release-authority.ts",
+      "tools/release/release-contract.ts",
+      "tools/release/release-task-evidence-correlation.ts",
+      "tools/release/release-transaction-evidence.ts",
+      "tools/release/release-transaction-runner.ts",
+      "tools/release/release-lifecycle.ts",
+      "tools/release/release-phase-timeline.ts",
+      "tools/release/release-orchestration-runner.ts",
+      "tools/release/release-convergence.ts",
+      "tools/release/release-files.ts",
+      "tools/release/release-notes.ts",
+      "src/modules/installation/domain/release-version.ts"
+    ],
+    "inputExclusions": []
+  },
   "integration-candidate-release-effects": {
     "inputs": [
       "tools/release/release-targets.ts",
@@ -730,6 +796,31 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
     "inputExclusions": []
   },
   "integration-candidate-git-convergence": {
+    "inputs": [
+      "tools/release/release-targets.ts",
+      "tools/release/package-compatibility.ts",
+      "tools/release/package-artifact-observation.ts",
+      "tools/release/release-package-evidence.ts",
+      "tools/release/plugin-hosted-release.ts",
+      "tools/release/package-release-operation.ts",
+      "test/integration-candidate-release/**",
+      "tools/release/release-git-convergence.ts",
+      "tools/release/release-authority.ts",
+      "tools/release/release-contract.ts",
+      "tools/release/release-task-evidence-correlation.ts",
+      "tools/release/release-transaction-evidence.ts",
+      "tools/release/release-transaction-runner.ts",
+      "tools/release/release-lifecycle.ts",
+      "tools/release/release-phase-timeline.ts",
+      "tools/release/release-orchestration-runner.ts",
+      "tools/release/release-convergence.ts",
+      "tools/release/release-files.ts",
+      "tools/release/release-notes.ts",
+      "src/modules/installation/domain/release-version.ts"
+    ],
+    "inputExclusions": []
+  },
+  "integration-candidate-git-selection": {
     "inputs": [
       "tools/release/release-targets.ts",
       "tools/release/package-compatibility.ts",

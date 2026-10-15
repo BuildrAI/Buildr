@@ -24,7 +24,7 @@ Buildr 产品自身是在通用框架下建设测试能力的一个项目实例�
 
 Buildr 的验证由以下几部分共同组成。**某个入口的“完整”只相对于它声明的集合**，不能把后端、前端逻辑、页面交互和跨平台候选相互替代。
 
-下表的工作目录均相对于 `projects/product/`。后端命令用 `tools/development/run-development-npm run <脚本名>`；前端使用表内给出的相邻服务包装入口（Wrapper），两者都在项目声明的开发 Node 范围内选择 Node.js，声明版本优先；候选（Candidate）准备也接受稳定版 Node >=24.15.0，记录实际程序与版本。
+下表的工作目录均相对于 `projects/product/`。后端命令用 `tools/development/run-development-npm run <脚本名>`；前端使用表内给出的相邻服务包装入口（Wrapper），两者都在项目声明的开发 Node 范围内选择 Node.js，声明版本优先；候选（Candidate）准备也接受稳定版 Node >=24.15.0，记录实际程序与版本。远端持续集成（Continuous Integration）的检查程序使用当前 24.x 稳定版；最低版本兼容检查仍在三个操作系统上分别使用 24.15.0，二者职责独立。
 
 | 测试对象 | 真实入口与工作目录 | 证明范围及独立检查 |
 | --- | --- | --- |
@@ -95,7 +95,7 @@ Buildr 的验证由以下几部分共同组成。**某个入口的“完整”�
 
 日常执行保留实际结果、选择理由、来源身份、排队与资源等待、执行和清理耗时；上下文（Context）执行另记录创建、复用、取得、重置、污染失效和销毁。这些帮助定位失败与性能，属于测试工具的临时证据，不能冒充正式任务完成或发布成功。
 
-跨平台候选（Candidate）由[证据聚合实现](../../../services/buildr/test/verification/candidate-ci-evidence.ts)核对所需分片与宿主组合是否齐全、是否证明当前源码及登记身份、是否消费同一压缩包；新增前端逻辑或核心浏览器证据缺失、失败或身份不符同样使聚合失败。源码结果可以保留匹配内容的原提交与执行时间，最终包必须绑定最终源码与原字节。本机 `test:source` 或 `test:candidate` 的结果不能独自替代这份聚合。正式任务报告仍须分别说明所需前端逻辑、浏览器（Browser）选择范围及目标环境检查是否实际完成。发布（Release）还涉及当前外部权限、真实发布与回读，流程和恢复由[开源发布说明](../flows/open-source-release.md)单独维护。`integration-candidate-release`、`integration-candidate-release-effects` 与 `integration-candidate-git-convergence` 是发布专用证据，不默认纳入日常 `core`；三者分别覆盖发布契约、发布副作用恢复与真实 Git 收敛清理，在相同分片内分别执行以保持在能力时限内。
+跨平台候选（Candidate）由[证据聚合实现](../../../services/buildr/test/verification/candidate-ci-evidence.ts)核对所需分片与宿主组合是否齐全、是否证明当前源码及登记身份、是否消费同一压缩包；新增前端逻辑或核心浏览器证据缺失、失败或身份不符同样使聚合失败。源码结果可以保留匹配内容的原提交与执行时间，最终包必须绑定最终源码与原字节。本机 `test:source` 或 `test:candidate` 的结果不能独自替代这份聚合。正式任务报告仍须分别说明所需前端逻辑、浏览器（Browser）选择范围及目标环境检查是否实际完成。发布（Release）还涉及当前外部权限、真实发布与回读，流程和恢复由[开源发布说明](../flows/open-source-release.md)单独维护。`integration-candidate-release`、`integration-candidate-release-selection`、`integration-candidate-package-selection`、`integration-candidate-release-effects`、`integration-candidate-git-convergence` 与 `integration-candidate-git-selection` 是发布专用证据，不默认纳入日常 `core`；它们分别承担发布契约、冻结源码选择、独立包选择、发布副作用恢复、真实 Git 收尾及代际清理、真实 Git 选择及恢复。原有文件逐一分配且不重复，保留各项断言及 300 秒能力时限。嵌套 Git 隔离由 `system-nested-git-isolation` 独立承担，不再占用其他工作树生命周期案例的总时限。
 
 后续优化先依据当前耗时找出选择放大、重复准备、执行体或清理瓶颈。不能为追求速度删除正在证明的安装、初始化、迁移、恢复、平台或发布物边界。
 

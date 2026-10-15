@@ -96,7 +96,7 @@ test('Windows lifecycle owners are partitioned into bounded semantic shards', ()
     },
     {
       id: 'task-worktree-recovery-windows',
-      stepIds: ['system-task-lifecycle', 'system-worktree-lifecycle', 'openspec-convergence-recovery'],
+      stepIds: ['system-task-lifecycle', 'system-worktree-lifecycle', 'system-nested-git-isolation', 'openspec-convergence-recovery'],
     },
     { id: 'task-concurrent-windows', stepIds: ['concurrent-task-acceptance'] },
   ]);

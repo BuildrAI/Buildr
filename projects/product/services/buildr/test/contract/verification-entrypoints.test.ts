@@ -304,7 +304,7 @@ test('core and candidate reuse one runner while retaining distinct evidence resp
   }
   assert.ok(candidatePlan.steps.some((step: any) => step.executor.file === 'test/capability-cli.integration.ts'));
   const systemOwners: any = candidatePlan.steps.filter((step: any) => step.id.startsWith('system-'));
-  assert.equal(systemOwners.length, 10);
+  assert.equal(systemOwners.length, 11);
   for (const owner of systemOwners) {
     assert.equal(owner.executor.file, 'test/verification/system.ts');
     assert.ok(owner.inputs.includes('test/helpers/task-lifecycle-system-context.ts'));

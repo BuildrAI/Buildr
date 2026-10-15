@@ -68,6 +68,7 @@ export const VERIFICATION_STEP_TESTING: any = Object.freeze({
   'system-workspace-lifecycle': testing(PROJECT_OWNER, 'Development', 'System', 55000, 'Project, Service, Workspace catalog, and package capability journeys behave correctly.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'system-task-lifecycle': testing(PROJECT_OWNER, 'Development', 'System', 25000, 'Task Record, Change, Development, Review, and Verification journeys behave correctly.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'system-worktree-lifecycle': testing(PROJECT_OWNER, 'Development', 'System', 45000, 'Real Git Worktree create, inspect, and cleanup journeys behave correctly.', TEST_ENVIRONMENTS.workspaceLifecycle),
+  'system-nested-git-isolation': testing(PROJECT_OWNER, 'Development', 'System', 45000, 'A non-Git Workspace isolates registered Git sources and preserves its retained materials through the public lifecycle.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'system-runtime-recovery': testing(PROJECT_OWNER, 'Development', 'System', 30000, 'Runtime installation and recovery journeys behave correctly.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'system-app-process': testing(PROJECT_OWNER, 'Development', 'System', 25000, 'Buildr Web process and preview lifecycle remain isolated.', TEST_ENVIRONMENTS.workspaceLifecycle),
   contract: testing(PROJECT_OWNER, 'Static Conformance', 'Static', 5000, 'Product source, governance assets, and stable entrypoint declarations conform without mutable fixtures.', TEST_ENVIRONMENTS.sourceReadOnly),
@@ -77,8 +78,11 @@ export const VERIFICATION_STEP_TESTING: any = Object.freeze({
   'runtime-adapter-contract': testing(SERVICE_OWNER, 'Static Conformance', 'Integration', 5000, 'Runtime adapter declarations and isolated filesystem projections satisfy their contract.', TEST_ENVIRONMENTS.repeatedFilesystem),
   'runtime-skill-projection': testing(SERVICE_OWNER, 'Development', 'Integration', 8000, 'Changed packaged Skills bind their source identity and complete projected inventory through every supported runtime adapter.', TEST_ENVIRONMENTS.repeatedFilesystem),
   'integration-candidate-release': testing(PROJECT_OWNER, 'Delivery / Release', 'System', 15000, 'Release contract cold-start and branch convergence behave correctly.', TEST_ENVIRONMENTS.repeatedGitCli),
+  'integration-candidate-release-selection': testing(PROJECT_OWNER, 'Delivery / Release', 'System', 15000, 'Release source selection and frozen generation identities remain isolated.', TEST_ENVIRONMENTS.repeatedGitCli),
+  'integration-candidate-package-selection': testing(PROJECT_OWNER, 'Delivery / Release', 'System', 15000, 'Independent package selection binds its exact source, peer and preparation without repeating dispatch.', TEST_ENVIRONMENTS.repeatedGitCli),
   'integration-candidate-release-effects': testing(PROJECT_OWNER, 'Delivery / Release', 'System', 150000, 'Release publication effects recover external partial results without repeating publication.', TEST_ENVIRONMENTS.repeatedGitCli),
   'integration-candidate-git-convergence': testing(PROJECT_OWNER, 'Delivery / Release', 'System', 60000, 'Release Git convergence, closeout, and generation cleanup behave correctly.', TEST_ENVIRONMENTS.repeatedGitCli),
+  'integration-candidate-git-selection': testing(PROJECT_OWNER, 'Delivery / Release', 'System', 60000, 'Release Git selection, main integration and recovery preserve the frozen source and independent dev history.', TEST_ENVIRONMENTS.repeatedGitCli),
   'concurrent-task-acceptance': testing(PROJECT_OWNER, 'Acceptance', 'System', 40000, 'Concurrent Task workflows satisfy the declared acceptance contract.', TEST_ENVIRONMENTS.workspaceLifecycle),
   'candidate-tarball': testing(SERVICE_OWNER, 'Delivery / Release', 'System', 15000, 'One frozen application payload produces the single npm candidate tarball consumed by later verification.', TEST_ENVIRONMENTS.isolatedGitCli),
   'application-payload-release': testing(SERVICE_OWNER, 'Delivery / Release', 'System', 30000, 'The frozen application payload is deterministic, complete, host-Node compatible, and serves Buildr Web only on demand.', TEST_ENVIRONMENTS.workspaceLifecycle),
@@ -122,6 +126,14 @@ export const VERIFICATION_STEP_EVIDENCE: any = Object.freeze({
     'A release contract, selection, rehearsal, recovery, or Git convergence boundary that drifts from the frozen Candidate source must fail.',
     'real temporary Git repositories, release runner entrypoints, and branch convergence',
   ),
+  'integration-candidate-release-selection': primaryEvidence(
+    'A release selection that changes an unbound branch, loses a frozen generation, or bypasses target identity must fail.',
+    'real isolated Git repositories, source selection, frozen refs and main reconciliation',
+  ),
+  'integration-candidate-package-selection': primaryEvidence(
+    'An independent package selection with the wrong peer, source proof or repeated dispatch must fail before publication.',
+    'real isolated Git repositories and the independent package release operation',
+  ),
   'integration-candidate-release-effects': primaryEvidence(
     'A partial Git or Registry write whose retry repeats publication or erases known effects must fail recovery.',
     'real temporary Git repositories, HTTP services, immutable artifacts and release recovery',
@@ -129,6 +141,10 @@ export const VERIFICATION_STEP_EVIDENCE: any = Object.freeze({
   'integration-candidate-git-convergence': primaryEvidence(
     'A release Git convergence, closeout, or generation cleanup boundary that drifts from the frozen Candidate source must fail.',
     'real temporary Git repositories, release carriers, pull request observation, and generation cleanup',
+  ),
+  'integration-candidate-git-selection': primaryEvidence(
+    'Release main integration or recovery that loses selected source or rewrites independent dev history must fail.',
+    'real isolated Git repositories, release main selection and recovery',
   ),
   'integration-self-bootstrap': primaryEvidence(
     'A retained checkout whose delivered identity or runtime synchronization drifts must fail closeout.',
@@ -153,6 +169,10 @@ export const VERIFICATION_STEP_EVIDENCE: any = Object.freeze({
   'system-worktree-lifecycle': primaryEvidence(
     'A real worktree create or cleanup that targets the wrong ref, repository, or ownership must fail.',
     'real Git worktree lifecycle',
+  ),
+  'system-nested-git-isolation': primaryEvidence(
+    'A non-Git Workspace that isolates the wrong source, loses retained material, or cleans an uncertain group must fail.',
+    'the isolated public CLI lifecycle over independent nested Git repositories',
   ),
   'system-runtime-recovery': primaryEvidence(
     'A runtime install or recovery with mismatched target authority or incomplete projection must fail.',
@@ -216,8 +236,11 @@ export const VERIFICATION_DAILY_CORE_EXCLUSIONS: any = Object.freeze({
   'artifact-browser-core': 'Consumes the unique Candidate tarball through the representative core Browser journey; it does not replace affected or full source Browser checks.',
   'frontend-logic': 'The independent frontend logic suite runs for frontend changes and full Candidate; backend Core does not imply frontend coverage.',
   'integration-candidate-release': 'Exercises release infrastructure lifecycle and recovery; selected only for release-related changes or full Candidate.',
+  'integration-candidate-release-selection': 'Exercises release selection and frozen generations; selected only for release-related changes or full Candidate.',
+  'integration-candidate-package-selection': 'Exercises independent package selection; selected only for release-related changes or full Candidate.',
   'integration-candidate-release-effects': 'Exercises release publication effects and recovery; selected only for release-related changes or full Candidate.',
   'integration-candidate-git-convergence': 'Exercises release Git convergence and cleanup; selected only for release-related changes or full Candidate.',
+  'integration-candidate-git-selection': 'Exercises release Git selection and recovery; selected only for release-related changes or full Candidate.',
   'candidate-tarball': 'Produces the unique release Candidate tarball.',
   'application-payload-release': 'Validates the packaged application payload and npm runtime.',
   'npm-launcher-candidate': 'Validates the Launcher against a verified npm Candidate installation.',
@@ -237,9 +260,9 @@ export const VERIFICATION_DAILY_CORE_EXCLUSIONS: any = Object.freeze({
 const BACKEND_REUSE_CHECKS = new Set(['unit', 'component', 'cli-architecture', 'runtime-adapter-contract', 'managed-mutations', 'cli-compatibility']);
 // These bounded fixture suites read runtime/source assets, not this Product's governance records.
 const RUNTIME_REUSE_CHECKS = new Set(['integration-runtime', 'integration-data-store', 'integration-task-read-models', 'integration-task-coordination',
-  'integration-project-daily-progress', 'system-buildr-web-http', 'integration-candidate-release-effects', 'integration-candidate-git-convergence']);
+  'integration-project-daily-progress', 'system-buildr-web-http', 'integration-candidate-release-effects', 'integration-candidate-git-convergence', 'integration-candidate-git-selection']);
 const NON_REUSABLE_CHECKS = new Set(['typecheck', 'dsh-plugin', 'candidate-tarball', 'application-payload-release', 'release-tarball-smoke', 'artifact-browser-core', 'cli-package-parity', 'host-node-contract', 'host-node-boundaries']);
-const GIT_SOURCE_CHECKS = new Set(['openspec-candidate-audit', 'service-branch-contract', 'open-source-candidate', 'integration-self-bootstrap', 'system-task-lifecycle', 'system-worktree-lifecycle']);
+const GIT_SOURCE_CHECKS = new Set(['openspec-candidate-audit', 'service-branch-contract', 'open-source-candidate', 'integration-self-bootstrap', 'system-task-lifecycle', 'system-worktree-lifecycle', 'system-nested-git-isolation']);
 const REUSE_INPUTS_BY_STEP: Readonly<Record<string, readonly string[]>> = Object.freeze({
   'docs-quality': Object.freeze(['BUILDR_CHANGED_PATHS_JSON']),
   'runtime-skill-projection': Object.freeze(['BUILDR_CHANGED_PATHS_JSON']),
@@ -353,7 +376,7 @@ export const VERIFICATION_RESOURCE_CONTRACTS: any = Object.freeze({
 export const VERIFICATION_EXECUTION_PROFILES: any = Object.freeze({
   local: concurrency(4, 3, 2, { integration: 4, ...Object.fromEntries(SYSTEM_SUITES.map((suite: any) => [suite.id, suite.innerConcurrency])), 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 3 }, { workers: 8, processes: 8, git: 3, workspaceIo: 3 }),
   ci: concurrency(4, 3, 2, { integration: 4, ...Object.fromEntries(SYSTEM_SUITES.map((suite: any) => [suite.id, suite.innerConcurrency])), 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 3 }, { workers: 8, processes: 8, git: 3, workspaceIo: 3 }),
-  'ci-workspace-limited': concurrency(4, 2, 1, { integration: 3, 'integration-runtime': 3, ...Object.fromEntries(SYSTEM_SUITES.map((suite: any) => [suite.id, Math.min(suite.innerConcurrency, 2)])), 'integration-candidate-release': 2, 'integration-candidate-release-effects': 1, 'integration-candidate-git-convergence': 2, 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 2 }, { workers: 3, processes: 3, git: 2, workspaceIo: 2 }),
+  'ci-workspace-limited': concurrency(4, 2, 1, { integration: 3, 'integration-runtime': 3, ...Object.fromEntries(SYSTEM_SUITES.map((suite: any) => [suite.id, Math.min(suite.innerConcurrency, 2)])), 'integration-candidate-release': 2, 'integration-candidate-release-selection': 1, 'integration-candidate-package-selection': 1, 'integration-candidate-release-effects': 1, 'integration-candidate-git-convergence': 2, 'integration-candidate-git-selection': 2, 'openspec-contract-fixtures': 2, 'openspec-convergence-recovery': 2 }, { workers: 3, processes: 3, git: 2, workspaceIo: 2 }),
 });
 
 export const VERIFICATION_CONCURRENCY: any = VERIFICATION_EXECUTION_PROFILES.local;
@@ -543,15 +566,33 @@ export const verificationSteps: any = Object.freeze([
     'test/system/buildr-web-launcher.test.ts',
     'test/system/workspace-runtime-recovery.test.ts',
     'test/system/worktree-create.test.ts',
+    'test/system/worktree-nested-git-isolation.test.ts',
   ], args: ['--test-concurrency=1', '--test-reporter=dot'] }, groups: ['windows-npm-preflight'], selection: 'explicit-only', developmentRunners: ['windows'],  schedulingCostMs: 300000, concurrencyClass: 'workspace-heavy', resources: ['workspace-saturating', 'task-lifecycle-heavy'] }),
   step({ id: 'cli-architecture', name: 'CLI modular architecture', executor: { type: 'node', file: 'test/verification/cli/architecture.ts' }, profiles: ['fast', 'candidate'], }),
   step({ id: 'openspec-spec-quality', name: 'OpenSpec canonical spec quality', executor: { type: 'node', file: 'test/verification/openspec/spec-quality.ts' }, profiles: ['fast', 'candidate'], }),
   step({ id: 'openspec-strict', name: 'openspec strict validation', executor: { type: 'openspec', args: ['validate', '--all', '--strict'] }, profiles: ['fast', 'candidate'], }),
   step({ id: 'runtime-adapter-contract', name: 'runtime adapter contract', executor: { type: 'node', file: 'test/verification/runtime/adapter-contract.ts' }, profiles: ['candidate'], groups: ['runtime'], }),
 
-  step({ id: 'integration-candidate-release', name: 'Candidate integration: release contract and Git convergence', executor: { type: 'node', file: 'test/verification/run-node-tests.ts', args: ['test/integration-candidate-release/release-*.test.ts', 'test/integration-candidate-release/package-*.test.ts', 'test/integration-candidate-release/plugin-hosted-release.test.ts'] }, profiles: ['candidate'], groups: ['release'], schedulingCostMs: 60000, timeoutMs: 300_000, concurrencyClass: 'workspace-heavy' }),
+  step({ id: 'integration-candidate-release', name: 'Candidate integration: release contracts and recovery', executor: { type: 'node', file: 'test/verification/run-node-tests.ts', args: [
+    'test/integration-candidate-release/package-artifact-observation.test.ts',
+    'test/integration-candidate-release/package-publication-evidence.test.ts',
+    'test/integration-candidate-release/package-release-operation.test.ts',
+    'test/integration-candidate-release/plugin-hosted-release.test.ts',
+    'test/integration-candidate-release/release-authority-cli.test.ts',
+    'test/integration-candidate-release/release-contract-cold-start.test.ts',
+    'test/integration-candidate-release/release-convergence.test.ts',
+    'test/integration-candidate-release/release-node-runner.test.ts',
+    'test/integration-candidate-release/release-operation.test.ts',
+    'test/integration-candidate-release/release-orchestration-runner.test.ts',
+    'test/integration-candidate-release/release-recovery.test.ts',
+    'test/integration-candidate-release/release-rehearsal.test.ts',
+    'test/integration-candidate-release/release-source-scope.test.ts',
+  ] }, profiles: ['candidate'], groups: ['release'], schedulingCostMs: 60000, timeoutMs: 300_000, concurrencyClass: 'workspace-heavy' }),
+  step({ id: 'integration-candidate-release-selection', name: 'Candidate integration: frozen release selection', executor: { type: 'node', file: 'test/verification/run-node-tests.ts', args: ['test/integration-candidate-release/release-selection.test.ts'] }, profiles: ['candidate'], groups: ['release'], schedulingCostMs: 60000, timeoutMs: 300_000, concurrencyClass: 'workspace-heavy' }),
+  step({ id: 'integration-candidate-package-selection', name: 'Candidate integration: independent package selection', executor: { type: 'node', file: 'test/verification/run-node-tests.ts', args: ['test/integration-candidate-release/package-release-selection-operation.test.ts'] }, profiles: ['candidate'], groups: ['release'], schedulingCostMs: 60000, timeoutMs: 300_000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'integration-candidate-release-effects', name: 'Candidate integration: release publication effects and recovery', executor: { type: 'node', file: 'test/verification/run-node-tests.ts', args: ['test/integration-candidate-release/publication-effects.test.ts'] }, profiles: ['candidate'], groups: ['release'], schedulingCostMs: 60000, timeoutMs: 300_000, concurrencyClass: 'workspace-heavy' }),
-  step({ id: 'integration-candidate-git-convergence', name: 'Candidate integration: release Git convergence and cleanup', executor: { type: 'node', file: 'test/verification/run-node-tests.ts', args: ['test/integration-candidate-release/git-convergence/*.test.ts'] }, profiles: ['candidate'], groups: ['release'], schedulingCostMs: 60000, timeoutMs: 300_000, concurrencyClass: 'workspace-heavy' }),
+  step({ id: 'integration-candidate-git-convergence', name: 'Candidate integration: release Git closeout and generations', executor: { type: 'node', file: 'test/verification/run-node-tests.ts', args: ['test/integration-candidate-release/git-convergence/release-git-convergence-closeout.test.ts', 'test/integration-candidate-release/git-convergence/release-git-convergence-generations.test.ts'] }, profiles: ['candidate'], groups: ['release'], schedulingCostMs: 60000, timeoutMs: 300_000, concurrencyClass: 'workspace-heavy' }),
+  step({ id: 'integration-candidate-git-selection', name: 'Candidate integration: release Git selection and recovery', executor: { type: 'node', file: 'test/verification/run-node-tests.ts', args: ['test/integration-candidate-release/git-convergence/release-git-convergence-selection.test.ts', 'test/integration-candidate-release/git-convergence/release-git-convergence-recovery.test.ts'] }, profiles: ['candidate'], groups: ['release'], schedulingCostMs: 60000, timeoutMs: 300_000, concurrencyClass: 'workspace-heavy' }),
   step({ id: 'concurrent-task-acceptance', name: 'Concurrent task workflow acceptance', executor: { type: 'node', file: 'test/verification/concurrency/task-acceptance.ts' }, profiles: ['candidate'], groups: ['windows-npm-preflight'],  schedulingCostMs: 40000, concurrencyClass: 'workspace-heavy', resources: ['workspace-saturating', 'task-lifecycle-heavy', 'app-runtime'] }),
 
   step({ id: 'host-node-contract', name: 'Host Node engine contract', executor: { type: 'node', file: 'test/verification/host-node/contract.ts' }, profiles: ['host-node'], }),
@@ -716,8 +757,8 @@ export const CANDIDATE_CI_SHARDS: any = Object.freeze([
     'candidate-tarball',
   ], { producesArtifact: true }),
   ...CORE_MACOS_SHARDS,
-  candidateShard('release-infrastructure-macos', 'macos', 'verification', ['integration-candidate-release', 'integration-candidate-release-effects', 'integration-candidate-git-convergence']),
-  candidateShard('release-infrastructure-windows', 'windows', 'verification', ['integration-candidate-release', 'integration-candidate-release-effects', 'integration-candidate-git-convergence']),
+  candidateShard('release-infrastructure-macos', 'macos', 'verification', ['integration-candidate-release', 'integration-candidate-release-selection', 'integration-candidate-package-selection', 'integration-candidate-release-effects', 'integration-candidate-git-convergence', 'integration-candidate-git-selection']),
+  candidateShard('release-infrastructure-windows', 'windows', 'verification', ['integration-candidate-release', 'integration-candidate-release-selection', 'integration-candidate-package-selection', 'integration-candidate-release-effects', 'integration-candidate-git-convergence', 'integration-candidate-git-selection']),
   candidateShard('runtime-windows', 'windows', 'verification', [
     'system-runtime-recovery',
     'system-app-process',
@@ -732,6 +773,7 @@ export const CANDIDATE_CI_SHARDS: any = Object.freeze([
   candidateShard('task-worktree-recovery-windows', 'windows', 'verification', [
     'system-task-lifecycle',
     'system-worktree-lifecycle',
+    'system-nested-git-isolation',
     'openspec-convergence-recovery',
   ]),
   candidateShard('task-concurrent-windows', 'windows', 'verification', [
@@ -741,8 +783,11 @@ export const CANDIDATE_CI_SHARDS: any = Object.freeze([
 
 export const CANDIDATE_CI_PLATFORM_REPEATS: any = Object.freeze({
   'integration-candidate-release': Object.freeze(['release-infrastructure-macos', 'release-infrastructure-windows']),
+  'integration-candidate-release-selection': Object.freeze(['release-infrastructure-macos', 'release-infrastructure-windows']),
+  'integration-candidate-package-selection': Object.freeze(['release-infrastructure-macos', 'release-infrastructure-windows']),
   'integration-candidate-release-effects': Object.freeze(['release-infrastructure-macos', 'release-infrastructure-windows']),
   'integration-candidate-git-convergence': Object.freeze(['release-infrastructure-macos', 'release-infrastructure-windows']),
+  'integration-candidate-git-selection': Object.freeze(['release-infrastructure-macos', 'release-infrastructure-windows']),
   'npm-launcher-candidate': Object.freeze(['core-package-runtime-release-macos', 'runtime-windows']),
   'release-tarball-smoke': Object.freeze(['core-package-runtime-release-macos', 'runtime-windows']),
 });

@@ -4,13 +4,20 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { getRuntimeAdapter, RUNTIME_ADAPTERS, runtimeAdapterImplementationMatrix, runtimeSkillPath } from '../../../src/modules/agent-assets/infrastructure/runtime/adapter-contract.ts';
 import { parseSkillsManifest } from '../../../src/modules/agent-assets/persistence/skill-manifest.ts';
 import { skillProjectionOwnershipReceiptTarget } from '../../../src/modules/agent-assets/infrastructure/runtime/skills/projection-files.ts';
 import { digestRuntime, mapLimit, RuntimeVerificationHarness } from './fixture.ts';
+import { resolveVerificationWorkerBudget } from '../worker-budget.ts';
 
 const harness: any = new RuntimeVerificationHarness();
 const MAX_PARALLEL_WORKSPACES: any = 3;
+
+export function mapParityWorkspaces(items: any[], worker: (item: any, index: number) => any, env: NodeJS.ProcessEnv = process.env): Promise<any> {
+  const workers = resolveVerificationWorkerBudget({ env, fallback: MAX_PARALLEL_WORKSPACES, maximum: MAX_PARALLEL_WORKSPACES, label: 'runtime adapter parity' });
+  return mapLimit(items, workers, worker);
+}
 
 function prepareSeed(): any  {
   const seed: any = harness.initializeSeed('runtime-parity');
@@ -266,6 +273,7 @@ async function verifyLegacySkillScope(seed: any): Promise<any>  {
   assert.ok(fs.existsSync(plan), 'rejected Project-scoped render must not remove workspace install plans');
 }
 
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
 try {
   const seed: any = prepareSeed();
   const implementationMatrix: any = runtimeAdapterImplementationMatrix();
@@ -273,7 +281,7 @@ try {
   const supportedAdapters: any = implementationMatrix.entries.map((entry: any) => entry.adapterId);
   const lifecycleAdapters: any = new Set(implementationMatrix.representatives.map((entry: any) => entry.adapterId));
 
-  await mapLimit([
+  await mapParityWorkspaces([
     verifySkillSymlinkGuard,
     verifyRulesSymlinkGuard,
     verifyGuardedOrphan,
@@ -281,14 +289,14 @@ try {
     verifyGitBoundaryCleanup,
     verifyRetiredIdentityUsesStandardAdapter,
     verifyLegacySkillScope,
-  ], MAX_PARALLEL_WORKSPACES, (scenario: any) => scenario(seed));
+  ], (scenario: any) => scenario(seed));
 
-  const contexts: any = await mapLimit(supportedAdapters, MAX_PARALLEL_WORKSPACES, (adapterId: any) => prepareAdapterContext(seed, adapterId, lifecycleAdapters));
+  const contexts: any = await mapParityWorkspaces(supportedAdapters, (adapterId: any) => prepareAdapterContext(seed, adapterId, lifecycleAdapters));
   const codexDoctor: any = contexts.find((context: any) => context.adapterId === 'agents-standard').doctor;
   assert.equal(codexDoctor.runtime.claudeCode?.length ?? 0, 0);
   assert.ok(codexDoctor.runtime.agentsStandard.length > 0);
 
-  await mapLimit(contexts.filter((context: any) => lifecycleAdapters.has(context.adapterId)), MAX_PARALLEL_WORKSPACES, verifyLifecycle);
+  await mapParityWorkspaces(contexts.filter((context: any) => lifecycleAdapters.has(context.adapterId)), verifyLifecycle);
 
   console.log(`runtime adapter parity implementation families: ${implementationMatrix.representatives.map((entry: any) => `${entry.family}=${entry.adapterId}`).join(', ')}`);
   console.log(`runtime adapter parity supported adapters: ${supportedAdapters.join(', ')}`);
@@ -296,4 +304,5 @@ try {
   console.log('runtime adapter parity verification passed');
 } finally {
   harness.cleanup();
+}
 }

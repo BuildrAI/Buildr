@@ -14,7 +14,15 @@ on:
         required: false
         default: none
         type: choice
-        options: [none, core-project-task-macos, nested-git-isolation-windows]
+        options: [none, core-project-task-macos, nested-git-isolation-windows, runtime-windows, failed-windows]
+      diagnostic_candidate_run_id:
+        description: Original Candidate run whose immutable package is consumed only by runtime-windows diagnosis
+        required: false
+        type: string
+      diagnostic_candidate_source:
+        description: Exact original Candidate package source, separate from the diagnosis checkout
+        required: false
+        type: string
       expected_source_tree:
         description: Exact source tree required for release rehearsal or source diagnosis
         required: false
@@ -71,7 +79,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: verify-${{ github.workflow }}-${{ github.ref }}
+  group: verify-${{ github.workflow }}-${{ github.ref }}-${{ inputs.diagnostic_scope || 'none' }}
   cancel-in-progress: true
 
 env:
@@ -106,7 +114,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v6
         with:
-          node-version: 24.15.0
+          node-version: '24.x'
           cache: npm
           cache-dependency-path: projects/product/services/buildr/package-lock.json
       - name: Resolve changed verification base
@@ -204,7 +212,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v6
         with:
-          node-version: 24.15.0
+          node-version: '24.x'
           cache: npm
           cache-dependency-path: projects/product/services/buildr/package-lock.json
       - name: Resolve changed verification base
@@ -266,7 +274,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v6
         with:
-          node-version-file: projects/product/.node-version
+          node-version: '24.x'
           package-manager-cache: false
       - name: Resolve checks from the complete frozen source difference
         id: scope
@@ -304,7 +312,7 @@ jobs:
           DISPATCH_REF: ${{ github.ref }}
           DISPATCH_PURPOSE: ${{ inputs.purpose }}
           EXPECTED_SOURCE_TREE: ${{ inputs.expected_source_tree }}
-          RELEASE_INPUTS_PRESENT: ${{ inputs.release_packages != '' || inputs.buildr_version != '' || inputs.plugin_version != '' || inputs.buildr_peer_version != '' || inputs.buildr_peer_integrity != '' || inputs.selection_id != '' || inputs.selection_baseline != '' || inputs.selection_main != '' || inputs.selection_identity != '' || inputs.rehearsal_identity != '' }}
+          RELEASE_INPUTS_PRESENT: ${{ inputs.release_packages != '' || inputs.buildr_version != '' || inputs.plugin_version != '' || inputs.buildr_peer_version != '' || inputs.buildr_peer_integrity != '' || inputs.selection_id != '' || inputs.selection_baseline != '' || inputs.selection_main != '' || inputs.selection_identity != '' || inputs.rehearsal_identity != '' || inputs.diagnostic_candidate_run_id != '' || inputs.diagnostic_candidate_source != '' }}
         run: |
           fail() { printf '%s\n' "$1" >&2; exit 1; }
           [[ "$DIAGNOSTIC_SCOPE" == 'core-project-task-macos' ]] || fail 'Unsupported source diagnosis scope.'
@@ -317,7 +325,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v6
         with:
-          node-version-file: projects/product/.node-version
+          node-version: '24.x'
           cache: npm
           cache-dependency-path: projects/product/services/buildr/package-lock.json
       - name: Verify the closed diagnosis source
@@ -369,7 +377,7 @@ jobs:
           DISPATCH_REF: ${{ github.ref }}
           DISPATCH_PURPOSE: ${{ inputs.purpose }}
           EXPECTED_SOURCE_TREE: ${{ inputs.expected_source_tree }}
-          RELEASE_INPUTS_PRESENT: ${{ inputs.release_packages != '' || inputs.buildr_version != '' || inputs.plugin_version != '' || inputs.buildr_peer_version != '' || inputs.buildr_peer_integrity != '' || inputs.selection_id != '' || inputs.selection_baseline != '' || inputs.selection_main != '' || inputs.selection_identity != '' || inputs.rehearsal_identity != '' }}
+          RELEASE_INPUTS_PRESENT: ${{ inputs.release_packages != '' || inputs.buildr_version != '' || inputs.plugin_version != '' || inputs.buildr_peer_version != '' || inputs.buildr_peer_integrity != '' || inputs.selection_id != '' || inputs.selection_baseline != '' || inputs.selection_main != '' || inputs.selection_identity != '' || inputs.rehearsal_identity != '' || inputs.diagnostic_candidate_run_id != '' || inputs.diagnostic_candidate_source != '' }}
         run: |
           fail() { printf '%s\n' "$1" >&2; exit 1; }
           [[ "$DIAGNOSTIC_SCOPE" == 'nested-git-isolation-windows' ]] || fail 'Unsupported source diagnosis scope.'
@@ -382,7 +390,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v6
         with:
-          node-version-file: projects/product/.node-version
+          node-version: '24.x'
           cache: npm
           cache-dependency-path: projects/product/services/buildr/package-lock.json
       - name: Verify the closed diagnosis source
@@ -466,6 +474,93 @@ jobs:
           if-no-files-found: warn
           overwrite: true
 
+  diagnostic-runtime-windows:
+    name: Independent Windows diagnosis (${{ matrix.scenario }})
+    if: github.event_name == 'workflow_dispatch' && (inputs.diagnostic_scope == 'runtime-windows' || inputs.diagnostic_scope == 'failed-windows')
+    runs-on: windows-2025
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: ${{ fromJSON(inputs.diagnostic_scope == 'failed-windows' && '["runtime-windows","worktree-windows","release-contract-windows","git-convergence-windows"]' || '["runtime-windows"]') }}
+    permissions:
+      contents: read
+      actions: read
+    defaults:
+      run:
+        working-directory: projects/product/services/buildr
+        shell: bash
+    env:
+      DIAGNOSTIC_CANDIDATE_RUN_ID: ${{ inputs.diagnostic_candidate_run_id }}
+      DIAGNOSTIC_CANDIDATE_SOURCE: ${{ inputs.diagnostic_candidate_source }}
+      DIAGNOSTIC_SCENARIO: ${{ matrix.scenario }}
+      EXPECTED_SOURCE_TREE: ${{ inputs.expected_source_tree }}
+      DIAGNOSTIC_RUN_JSON: ${{ runner.temp }}/diagnostic-original-run.json
+      DIAGNOSTIC_ARTIFACT_DIR: ${{ runner.temp }}/diagnostic-original-package
+      DIAGNOSTIC_OUTPUT: ${{ runner.temp }}/diagnostic-${{ matrix.scenario }}
+    steps:
+      - name: Verify closed diagnostic inputs
+        working-directory: .
+        env:
+          DISPATCH_REF: ${{ github.ref }}
+          DISPATCH_PURPOSE: ${{ inputs.purpose }}
+          EXTRA_INPUTS_PRESENT: ${{ inputs.release_packages != '' || inputs.buildr_version != '' || inputs.plugin_version != '' || inputs.buildr_peer_version != '' || inputs.buildr_peer_integrity != '' || inputs.selection_id != '' || inputs.selection_baseline != '' || inputs.selection_main != '' || inputs.selection_identity != '' || inputs.rehearsal_identity != '' || inputs.source_verification != '' }}
+        run: |
+          set -euo pipefail
+          [[ "$DISPATCH_REF" == 'refs/heads/dev' && "$DISPATCH_PURPOSE" == 'candidate' ]] || { echo 'Runtime diagnosis requires the dev Candidate entry.' >&2; exit 1; }
+          [[ "$EXTRA_INPUTS_PRESENT" == 'false' ]] || { echo 'Runtime diagnosis does not accept release or source-result inputs.' >&2; exit 1; }
+          [[ "$DIAGNOSTIC_CANDIDATE_RUN_ID" =~ ^[1-9][0-9]*$ ]] || { echo 'An exact original Candidate run is required.' >&2; exit 1; }
+          [[ "$DIAGNOSTIC_CANDIDATE_SOURCE" =~ ^([a-f0-9]{40}|[a-f0-9]{64})$ && "$EXPECTED_SOURCE_TREE" =~ ^([a-f0-9]{40}|[a-f0-9]{64})$ ]] || { echo 'Exact original source and diagnosis tree are required.' >&2; exit 1; }
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CANDIDATE_SOURCE_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24.x'
+          cache: npm
+          cache-dependency-path: projects/product/services/buildr/package-lock.json
+      - name: Read the original Candidate run identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${DIAGNOSTIC_CANDIDATE_RUN_ID}" > "$DIAGNOSTIC_RUN_JSON"
+      - uses: actions/download-artifact@v7
+        with:
+          name: candidate-package
+          path: ${{ env.DIAGNOSTIC_ARTIFACT_DIR }}
+          run-id: ${{ inputs.diagnostic_candidate_run_id }}
+          github-token: ${{ github.token }}
+      - name: Prepare only the Windows diagnostic environment
+        run: node tools/verification/candidate-environment.ts prepare --profile source-runtime
+      - name: Diagnose the failed consumers with original package bytes
+        env:
+          BUILDR_VERIFICATION_PROFILE: ci-workspace-limited
+          BUILDR_DIAGNOSTICS_OUTPUT: ${{ env.DIAGNOSTIC_OUTPUT }}/diagnostics
+        run: node test/verification/release/windows-artifact-diagnosis.ts
+      - name: Preserve bounded Windows native failure events
+        if: always()
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path $env:DIAGNOSTIC_OUTPUT | Out-Null
+          $events = @(Get-WinEvent -FilterHashtable @{ LogName='Application'; StartTime=(Get-Date).AddMinutes(-20); Id=1000,1001 } -ErrorAction SilentlyContinue | Where-Object { $_.Message -match 'node\.exe' } | Select-Object -First 12 | ForEach-Object {
+            [xml]$eventXml = $_.ToXml()
+            $fields = [ordered]@{}
+            foreach ($field in $eventXml.Event.EventData.Data) {
+              if ($field.Name -in @('AppName','AppVersion','ModuleName','ModuleVersion','ExceptionCode','ProcessId','AppStartTime')) { $fields[$field.Name] = ([string]$field.'#text').Substring(0, [Math]::Min(180, ([string]$field.'#text').Length)) }
+            }
+            [ordered]@{ eventId=$_.Id; provider=$_.ProviderName; time=$_.TimeCreated.ToUniversalTime().ToString('o'); fields=$fields }
+          })
+          ConvertTo-Json -InputObject $events -Depth 5 | Set-Content -Path (Join-Path $env:DIAGNOSTIC_OUTPUT 'windows-native-events.json') -Encoding utf8
+      - name: Upload independent runtime diagnosis
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: diagnostic-${{ matrix.scenario }}
+          path: ${{ env.DIAGNOSTIC_OUTPUT }}
+          if-no-files-found: warn
+          overwrite: true
+
   candidate-bootstrap:
     name: Candidate bootstrap
     needs: candidate-plan
@@ -482,7 +577,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v6
         with:
-          node-version-file: projects/product/.node-version
+          node-version: '24.x'
           cache: npm
           cache-dependency-path: projects/product/services/buildr/package-lock.json
       - name: Prepare Candidate artifact environment
@@ -539,7 +634,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v6
         with:
-          node-version-file: projects/product/.node-version
+          node-version: '24.x'
           cache: npm
           cache-dependency-path: projects/product/services/buildr/package-lock.json
       - name: Prepare Candidate source environment
@@ -585,7 +680,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v6
         with:
-          node-version-file: projects/product/.node-version
+          node-version: '24.x'
           cache: npm
           cache-dependency-path: projects/product/services/buildr/package-lock.json
       - name: Prepare Candidate artifact consumer environment
@@ -684,7 +779,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v6
         with:
-          node-version-file: projects/product/.node-version
+          node-version: '24.x'
           package-manager-cache: false
       - name: Validate the frozen source and complete difference
         working-directory: projects/product/services/buildr
@@ -798,7 +893,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v6
         with:
-          node-version-file: projects/product/.node-version
+          node-version: '24.x'
           package-manager-cache: false
       - name: Verify existing Candidate for release pull request
         if: github.event_name == 'pull_request' && github.head_ref != 'dev'

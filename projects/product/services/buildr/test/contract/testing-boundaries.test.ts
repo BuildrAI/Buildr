@@ -10,8 +10,10 @@ import {
   VERIFICATION_CONTEXT_DISPOSITIONS,
   VERIFICATION_GOLDEN_CONTEXT_AUDIT,
 } from '../context/dispositions.ts';
-import { VERIFICATION_DAILY_CORE_EXCLUSIONS, verificationSteps } from '../verification/registry.ts';
+import { CANDIDATE_CI_SHARDS, VERIFICATION_DAILY_CORE_EXCLUSIONS, VERIFICATION_EXECUTION_PROFILES, verificationSteps } from '../verification/registry.ts';
 import { SYSTEM_SUITES, validateSystemSuiteRegistry } from '../verification/system-suites.ts';
+import { createVerificationPlan } from '../verification/planner.ts';
+import { resolveNodeTestFiles } from '../verification/test-files.ts';
 
 const productRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const contractRoot: any = path.join(productRoot, 'test', 'contract');
@@ -32,7 +34,56 @@ const fullIsolationOwners: any[] = [
   'service-product.test.ts',
   'workspace-manifest-registry.test.ts',
   'worktree-create.test.ts',
+  'worktree-nested-git-isolation.test.ts',
 ];
+
+test('release lifecycle partitions preserve every original file exactly once on both Candidate platforms', () => {
+  const owners = [
+    'integration-candidate-release', 'integration-candidate-release-selection', 'integration-candidate-package-selection',
+    'integration-candidate-release-effects', 'integration-candidate-git-convergence', 'integration-candidate-git-selection',
+  ];
+  const candidate = createVerificationPlan({ profiles: ['candidate'] });
+  const files: string[] = [];
+  for (const id of owners) {
+    const step = candidate.steps.find((item: any) => item.id === id);
+    assert.ok(step, id);
+    assert.equal(step.timeoutMs, 300_000, id);
+    assert.equal(step.contextDisposition.mode, 'full-lifecycle', id);
+    assert.equal(VERIFICATION_DAILY_CORE_EXCLUSIONS[id] !== undefined, true, id);
+    const selected = resolveNodeTestFiles(productRoot, step.executor.args, id);
+    files.push(...selected);
+    const workers = VERIFICATION_EXECUTION_PROFILES['ci-workspace-limited'].innerConcurrency[id];
+    assert.ok(workers <= selected.length, `${id} cannot exceed its real file count`);
+    for (const platform of ['macos', 'windows']) {
+      const shard = CANDIDATE_CI_SHARDS.find((item: any) => item.id === `release-infrastructure-${platform}`);
+      assert.equal(shard.stepIds.filter((owner: string) => owner === id).length, 1, `${platform}:${id}`);
+    }
+  }
+  const original = resolveNodeTestFiles(productRoot, ['test/integration-candidate-release/**/*.test.ts'], 'complete release entry');
+  assert.equal(new Set(files).size, files.length, 'no release file may execute in two partitions');
+  assert.deepEqual(files.sort(), original.sort(), 'the complete npm glob and partitioned Candidate must cover the same files');
+});
+
+test('nested Git isolation is an independent bounded System owner without repeating retained-source materialization', () => {
+  const old = SYSTEM_SUITES.find((suite: any) => suite.id === 'system-worktree-lifecycle');
+  const nested = SYSTEM_SUITES.find((suite: any) => suite.id === 'system-nested-git-isolation');
+  assert.deepEqual(old.files, ['test/system/worktree-create.test.ts']);
+  assert.deepEqual(nested.files, ['test/system/worktree-nested-git-isolation.test.ts']);
+  assert.deepEqual(nested.resources, old.resources);
+  assert.equal(nested.innerConcurrency, old.innerConcurrency);
+  const step = verificationSteps.find((item: any) => item.id === nested.id);
+  assert.equal(step.timeoutMs, 360_000);
+  assert.equal(step.testing.primaryEvidenceOwner, nested.id);
+  assert.ok(step.profiles.includes('core') && step.profiles.includes('candidate'));
+  const windows = CANDIDATE_CI_SHARDS.find((shard: any) => shard.id === 'task-worktree-recovery-windows');
+  assert.equal(windows.stepIds.filter((id: string) => id === nested.id).length, 1);
+  const originalSource = fs.readFileSync(path.join(productRoot, old.files[0]), 'utf8');
+  const nestedSource = fs.readFileSync(path.join(productRoot, nested.files[0]), 'utf8');
+  assert.equal(originalSource.includes("test('非 Git 根通过公共入口隔离独立子仓库并保留资料'"), false);
+  assert.equal(nestedSource.includes("test('非 Git 根通过公共入口隔离独立子仓库并保留资料'"), true);
+  assert.doesNotMatch(nestedSource, /materializeCleanProductSource/u);
+  assert.match(nestedSource, /BUILDR_NESTED_GIT_PHASE_OUTPUT/u);
+});
 
 function directBoundaryImports(layer: any): any  {
   const directory: any = path.join(productRoot, 'test', layer);
@@ -110,6 +161,7 @@ test('Context采用不会削弱Core、Candidate与平台黄金生命周期', () 
     'integration-self-bootstrap',
     'system-workspace-lifecycle',
     'system-worktree-lifecycle',
+    'system-nested-git-isolation',
     'concurrent-task-acceptance',
   ]) {
     assertGolden(id, 'lifecycle-is-primary-evidence');
@@ -218,7 +270,7 @@ test('Task lifecycle System context 只共享不可变基线并保留全生命�
   assert.equal(fs.existsSync(path.join(productRoot, 'test', 'system', 'workspace-product.test.mjs')), false);
   for (const owner of [
     'system-verification-admission', 'system-verification-contracts', 'system-public-json-contracts', 'system-openspec-contract-audit',
-    'system-workspace-lifecycle', 'system-task-lifecycle', 'system-worktree-lifecycle', 'system-runtime-recovery',
+    'system-workspace-lifecycle', 'system-task-lifecycle', 'system-worktree-lifecycle', 'system-nested-git-isolation', 'system-runtime-recovery',
     'system-buildr-web-http', 'system-app-process',
   ]) {
     assert.ok(SYSTEM_SUITES.some((suite: any) => suite.id === owner), `missing System owner ${owner}`);
