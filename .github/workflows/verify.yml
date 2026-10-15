@@ -495,9 +495,6 @@ jobs:
       DIAGNOSTIC_CANDIDATE_SOURCE: ${{ inputs.diagnostic_candidate_source }}
       DIAGNOSTIC_SCENARIO: ${{ matrix.scenario }}
       EXPECTED_SOURCE_TREE: ${{ inputs.expected_source_tree }}
-      DIAGNOSTIC_RUN_JSON: ${{ runner.temp }}/diagnostic-original-run.json
-      DIAGNOSTIC_ARTIFACT_DIR: ${{ runner.temp }}/diagnostic-original-package
-      DIAGNOSTIC_OUTPUT: ${{ runner.temp }}/diagnostic-${{ matrix.scenario }}
     steps:
       - name: Verify closed diagnostic inputs
         working-directory: .
@@ -524,23 +521,29 @@ jobs:
       - name: Read the original Candidate run identity
         env:
           GH_TOKEN: ${{ github.token }}
+          DIAGNOSTIC_RUN_JSON: ${{ runner.temp }}/diagnostic-original-run.json
         run: gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${DIAGNOSTIC_CANDIDATE_RUN_ID}" > "$DIAGNOSTIC_RUN_JSON"
       - uses: actions/download-artifact@v7
         with:
           name: candidate-package
-          path: ${{ env.DIAGNOSTIC_ARTIFACT_DIR }}
+          path: ${{ runner.temp }}/diagnostic-original-package
           run-id: ${{ inputs.diagnostic_candidate_run_id }}
           github-token: ${{ github.token }}
       - name: Prepare only the Windows diagnostic environment
         run: node tools/verification/candidate-environment.ts prepare --profile source-runtime
       - name: Diagnose the failed consumers with original package bytes
         env:
+          DIAGNOSTIC_RUN_JSON: ${{ runner.temp }}/diagnostic-original-run.json
+          DIAGNOSTIC_ARTIFACT_DIR: ${{ runner.temp }}/diagnostic-original-package
+          DIAGNOSTIC_OUTPUT: ${{ runner.temp }}/diagnostic-${{ matrix.scenario }}
           BUILDR_VERIFICATION_PROFILE: ci-workspace-limited
-          BUILDR_DIAGNOSTICS_OUTPUT: ${{ env.DIAGNOSTIC_OUTPUT }}/diagnostics
+          BUILDR_DIAGNOSTICS_OUTPUT: ${{ runner.temp }}/diagnostic-${{ matrix.scenario }}/diagnostics
         run: node test/verification/release/windows-artifact-diagnosis.ts
       - name: Preserve bounded Windows native failure events
         if: always()
         shell: pwsh
+        env:
+          DIAGNOSTIC_OUTPUT: ${{ runner.temp }}/diagnostic-${{ matrix.scenario }}
         run: |
           New-Item -ItemType Directory -Force -Path $env:DIAGNOSTIC_OUTPUT | Out-Null
           $events = @(Get-WinEvent -FilterHashtable @{ LogName='Application'; StartTime=(Get-Date).AddMinutes(-20); Id=1000,1001 } -ErrorAction SilentlyContinue | Where-Object { $_.Message -match 'node\.exe' } | Select-Object -First 12 | ForEach-Object {
@@ -557,7 +560,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: diagnostic-${{ matrix.scenario }}
-          path: ${{ env.DIAGNOSTIC_OUTPUT }}
+          path: ${{ runner.temp }}/diagnostic-${{ matrix.scenario }}
           if-no-files-found: warn
           overwrite: true
 
