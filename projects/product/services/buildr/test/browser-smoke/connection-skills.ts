@@ -55,17 +55,29 @@ try {
   page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   const browserErrors: string[] = []; page.on('pageerror', error => browserErrors.push(error.message));
   const legacyRequests: string[] = []; page.on('request', request => { if (/\/api\/v1\/workspaces\/[^/]+\/connections(?:\/|$)/u.test(new URL(request.url()).pathname)) legacyRequests.push(request.url()); });
-  const queryRequests: { path: string; body: Record<string, unknown> | null }[] = [];
+  const queryRequests: { path: string; method: string; body: Record<string, unknown> | null }[] = [];
+  const queryDatabases = ['orders', 'billing', 'analytics', 'inventory', 'reporting', 'saas_biz_common', 'saas_erp', 'saas_freshx', 'saasx_config', 'saasx_job', 'sys', 'test', 'trading_business', 'wvp', '__recycle_bin__', 'warehouse_reporting_archive_with_a_long_database_name'];
+  let preferenceVersion = 0;
+  let queryPreferences: { enabledDatabases: string[]; currentDatabase: string | null; revision: string } = { enabledDatabases: ['orders'], currentDatabase: 'orders', revision: 'fixture-query-preferences-0' };
   // This fixture proves the query UI contract only; no database or real query backend is contacted.
   await page.route('**/mysql-query/connections/**', async route => {
     const request = route.request(), target = new URL(request.url()), operation = target.pathname.split('/').at(-1);
     const body = request.method() === 'POST' || request.method() === 'PUT' ? request.postDataJSON() as Record<string, unknown> : null;
-    queryRequests.push({ path: target.pathname, body });
+    queryRequests.push({ path: target.pathname, method: request.method(), body });
     assert.ok(target.pathname.includes(`/mysql-query/connections/${queryInstance.id}/`));
     assert.equal(body?.connectionRevision ?? target.searchParams.get('revision'), queryInstance.revision, 'The UI pins every query operation to the observed instance revision.');
     let result: unknown;
-    if (operation === 'databases') result = { connectionId: queryInstance.id, databases: ['orders'] };
-    else if (operation === 'query-preferences') result = { enabledDatabases: ['orders'], currentDatabase: 'orders', revision: 'fixture-query-preferences' };
+    if (operation === 'databases') result = { connectionId: queryInstance.id, databases: queryDatabases };
+    else if (operation === 'query-preferences') {
+      if (request.method() === 'PUT') {
+        assert.equal(body!.expectedRevision, queryPreferences.revision, 'Every preference save uses the last confirmed preference revision.');
+        const enabledDatabases = body!.enabledDatabases as string[];
+        assert.ok(Array.isArray(enabledDatabases) && enabledDatabases.every(database => queryDatabases.includes(database)));
+        assert.ok(body!.currentDatabase === null || enabledDatabases.includes(body!.currentDatabase as string));
+        queryPreferences = { enabledDatabases, currentDatabase: body!.currentDatabase as string | null, revision: `fixture-query-preferences-${++preferenceVersion}` };
+      }
+      result = queryPreferences;
+    }
     else {
       assert.equal(operation, 'query', 'The UI fixture only supports database discovery, preferences and a read query.');
       result = { connectionId: queryInstance.id, database: 'orders', submittedSql: body!.sql, executedSql: body!.sql, columns: [{ name: 'id', type: 'BIGINT' }, { name: 'amount', type: 'DECIMAL' }], rows: [['9007199254740993123', '123456789012345.123456789']], rowCount: 1, rowLimit: 100, elapsedMs: 1, limitReached: false };
@@ -108,6 +120,96 @@ try {
     return tabs.length === 1 && tabs[0].key === 'dir:connection-skills' && tabs[0].title === '连接' && tabs[0].path === `/workspaces/${workspaceId}/connection-skills`;
   }, initialWorkspaceId);
   await page.locator('#connection-skills-table').locator(`[data-row-key="${queryInstance.id}"]`).getByRole('button', { name: '查询', exact: true }).click();
+  const databasePicker = page.locator('#mysql-database-picker');
+  const databaseSearch = databasePicker.getByRole('textbox', { name: '搜索数据库', exact: true });
+  const preferenceWrites = () => queryRequests.filter(request => request.path.endsWith('/query-preferences') && request.method === 'PUT');
+  const openDatabasePicker = async () => {
+    await page!.locator('#enable-mysql-databases:not([disabled])').click();
+    await databasePicker.waitFor({ state: 'visible' });
+    await page!.waitForFunction(() => {
+      const picker = document.querySelector<HTMLElement>('.buildr-database-popover:not(.ant-popover-hidden)');
+      if (!picker) return false;
+      const bounds = picker.getBoundingClientRect();
+      return bounds.width >= Math.min(300, innerWidth - 32) && getComputedStyle(picker).opacity === '1' && picker.getAnimations({ subtree: true }).every(animation => animation.playState === 'finished');
+    });
+  };
+  const closeAndSaveDatabasePicker = async (expectedWrites: number) => {
+    const saved = page!.waitForResponse(response => new URL(response.url()).pathname.endsWith(`/mysql-query/connections/${queryInstance.id}/query-preferences`) && response.request().method() === 'PUT');
+    await page!.locator('.buildr-mysql-target').click({ position: { x: 8, y: 8 } });
+    await databasePicker.waitFor({ state: 'hidden' });
+    assert.equal((await saved).status(), 200);
+    await page!.locator('#enable-mysql-databases:not([disabled])').waitFor();
+    assert.equal(preferenceWrites().length, expectedWrites, 'Closing an edited picker saves exactly once.');
+  };
+  await openDatabasePicker();
+  assert.equal(await databasePicker.getByRole('button', { name: '应用', exact: true }).count(), 0, 'Database choices no longer require an apply button.');
+  await databasePicker.getByText(`已选 1 / ${queryDatabases.length}`, { exact: true }).waitFor();
+  await databaseSearch.fill('BILLING');
+  assert.equal(await databasePicker.getByRole('checkbox').count(), 1, 'Database search is case insensitive.');
+  await databasePicker.getByRole('checkbox', { name: 'billing', exact: true }).check();
+  await databasePicker.getByText(`已选 2 / ${queryDatabases.length}`, { exact: true }).waitFor();
+  await databaseSearch.fill('orders');
+  assert.equal(await databasePicker.getByRole('checkbox', { name: 'orders', exact: true }).isChecked(), true, 'Searching and editing another database preserves hidden selections.');
+  await closeAndSaveDatabasePicker(1);
+  assert.deepEqual(preferenceWrites()[0].body, { enabledDatabases: ['orders', 'billing'], currentDatabase: 'orders', expectedRevision: 'fixture-query-preferences-0', connectionRevision: queryInstance.revision });
+  await openDatabasePicker();
+  assert.equal(await databaseSearch.inputValue(), '', 'Reopening starts with the complete database list.');
+  assert.equal(await databasePicker.getByRole('checkbox', { name: 'orders', exact: true }).isChecked(), true);
+  assert.equal(await databasePicker.getByRole('checkbox', { name: 'billing', exact: true }).isChecked(), true, 'Reopening uses the confirmed saved selection.');
+  await databaseSearch.fill('no-matching-database');
+  await databasePicker.getByText('没有匹配的数据库', { exact: true }).waitFor();
+  await databaseSearch.press('Escape');
+  await databasePicker.waitFor({ state: 'hidden' });
+  await page.waitForLoadState('networkidle');
+  assert.equal(preferenceWrites().length, 1, 'Closing an unchanged selection never writes preferences.');
+  await openDatabasePicker();
+  await databaseSearch.fill('orders');
+  await databasePicker.getByRole('checkbox', { name: 'orders', exact: true }).uncheck();
+  await closeAndSaveDatabasePicker(2);
+  assert.deepEqual(queryPreferences.enabledDatabases, ['billing']);
+  assert.equal(queryPreferences.currentDatabase, null, 'Disabling the current database clears the confirmed query target.');
+  assert.equal(await page.locator('.buildr-mysql-toolbar .ant-select-selection-item').innerText(), '未选择');
+  assert.equal(await page.locator('.buildr-database-resources').getByRole('button', { name: 'orders', exact: true }).count(), 0);
+  await openDatabasePicker();
+  await databasePicker.getByRole('checkbox', { name: 'orders', exact: true }).check();
+  await closeAndSaveDatabasePicker(3);
+  const selectedCurrentDatabase = page.waitForResponse(response => new URL(response.url()).pathname.endsWith(`/mysql-query/connections/${queryInstance.id}/query-preferences`) && response.request().method() === 'PUT');
+  await page.locator('.buildr-database-resources').getByRole('button', { name: 'orders', exact: true }).click();
+  assert.equal((await selectedCurrentDatabase).status(), 200);
+  await page.locator('#enable-mysql-databases:not([disabled])').waitFor();
+  assert.equal(queryPreferences.currentDatabase, 'orders');
+  const databaseReadsBeforeRefresh = queryRequests.filter(request => request.path.endsWith('/databases')).length;
+  await openDatabasePicker();
+  await databasePicker.getByRole('checkbox', { name: 'billing', exact: true }).uncheck();
+  const refreshedDatabases = page.waitForResponse(response => new URL(response.url()).pathname.endsWith(`/mysql-query/connections/${queryInstance.id}/databases`) && response.request().method() === 'GET');
+  await page.getByRole('button', { name: '刷新数据库列表', exact: true }).click();
+  assert.equal((await refreshedDatabases).status(), 200);
+  await databasePicker.waitFor({ state: 'hidden' });
+  await page.locator('#enable-mysql-databases:not([disabled])').waitFor();
+  assert.equal(queryRequests.filter(request => request.path.endsWith('/databases')).length, databaseReadsBeforeRefresh + 1, 'Clicking refresh while editing still performs database discovery.');
+  assert.equal(preferenceWrites().length, 4, 'Refresh discards an invalidated picker draft without saving it.');
+  await openDatabasePicker();
+  assert.equal(await databasePicker.getByRole('checkbox', { name: 'billing', exact: true }).isChecked(), true, 'After refresh the picker uses the saved selection.');
+  await databasePicker.getByRole('checkbox', { name: 'billing', exact: true }).uncheck();
+  await page.getByRole('button', { name: '关闭 MySQL 查询', exact: true }).click();
+  await page.locator('#mysql-query-editor').waitFor({ state: 'hidden' });
+  await page.waitForLoadState('networkidle');
+  assert.equal(preferenceWrites().length, 4, 'Closing the query view discards its picker draft without saving it.');
+  await page.locator('#connection-skills-table').locator(`[data-row-key="${queryInstance.id}"]`).getByRole('button', { name: '查询', exact: true }).click();
+  for (const width of [1280, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    await openDatabasePicker();
+    const bounds = await page.locator('.buildr-database-popover:visible').boundingBox();
+    const triggerBounds = await page.locator('#enable-mysql-databases').boundingBox();
+    await page.screenshot({ animations: 'disabled', path: path.join(screenshots, `mysql-database-picker-${width}.png`) });
+    assert.ok(bounds && bounds.x >= 0 && bounds.x + bounds.width <= width + 1, `The database picker stays inside the viewport: ${JSON.stringify({ width, bounds, triggerBounds })}`);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'The database picker does not create page overflow.');
+    assert.equal(await databasePicker.locator('.buildr-database-options').evaluate(element => element.scrollHeight > element.clientHeight), true, 'Long database lists scroll independently of the picker header and footer.');
+    await databaseSearch.press('Escape');
+    await databasePicker.waitFor({ state: 'hidden' });
+  }
+  await page.setViewportSize({ width: 1280, height: 900 });
+  assert.equal(preferenceWrites().length, 4, 'Opening and closing for layout checks never creates extra writes.');
   await page.locator('#mysql-query-editor .cm-content').fill('SELECT id, amount FROM orders LIMIT 1;');
   await page.locator('#run-mysql-query').click();
   await page.locator('#mysql-query-results').getByText('9007199254740993123', { exact: true }).waitFor();
@@ -402,7 +504,7 @@ try {
   assert.equal(connections.get(workspaceRoot, created.id).instance.name, '另一入口修改');
   assert.deepEqual(legacyRequests, [], 'Connection navigation never calls a retired API.');
   assert.deepEqual(browserErrors, []);
-  process.stdout.write(JSON.stringify({ schemaVersion: 'buildr.workspace-smoke-scenario/v1', status: 'passed', checks: ['system-and-explicit-method-selection', 'dependency-ordered-discovery', 'progressive-fields-and-authentication', 'explicit-production-flag', 'legacy-route-redirect', 'legacy-tabs-merge', 'single-connection-navigation', 'no-legacy-api-requests', 'mysql-query-ui-fixture', 'query-observed-revision-and-original-sql', 'query-precision-display', 'separate-save', 'unsaved-switch', 'explicit-candidate', 'failed-test-save-independent', 'independent-draft-revisions', 'revision-conflict', 'narrow-and-keyboard', 'missing-skill-personal-removal', 'main-save-closes-and-updates-row', 'failed-save-retains-draft', 'main-save-preserves-personal-draft', 'reread-authentication-identity', 'optional-program-failure-isolated', 'nacos-api-and-website-distinct', 'focus-and-retained-page-no-read', 'test-discovery-check-no-directory-read', 'explicit-refresh-only', 'local-save-delete', 'interrupted-first-read-retried', 'late-list-cannot-rollback-save', 'combined-directory-and-local-diagnostics', 'failed-or-malformed-directory-retains-snapshot'], realExternalSystem: false, queryBackend: 'intercepted-ui-fixture' }) + '\n');
+  process.stdout.write(JSON.stringify({ schemaVersion: 'buildr.workspace-smoke-scenario/v1', status: 'passed', checks: ['system-and-explicit-method-selection', 'dependency-ordered-discovery', 'progressive-fields-and-authentication', 'explicit-production-flag', 'legacy-route-redirect', 'legacy-tabs-merge', 'single-connection-navigation', 'no-legacy-api-requests', 'mysql-query-ui-fixture', 'mysql-database-picker-search-and-hidden-selection', 'mysql-database-picker-close-save-once', 'mysql-database-picker-unchanged-no-write', 'mysql-database-picker-current-cleared', 'mysql-database-picker-refresh-and-close-discard', 'mysql-database-picker-reopen-and-viewport', 'query-observed-revision-and-original-sql', 'query-precision-display', 'separate-save', 'unsaved-switch', 'explicit-candidate', 'failed-test-save-independent', 'independent-draft-revisions', 'revision-conflict', 'narrow-and-keyboard', 'missing-skill-personal-removal', 'main-save-closes-and-updates-row', 'failed-save-retains-draft', 'main-save-preserves-personal-draft', 'reread-authentication-identity', 'optional-program-failure-isolated', 'nacos-api-and-website-distinct', 'focus-and-retained-page-no-read', 'test-discovery-check-no-directory-read', 'explicit-refresh-only', 'local-save-delete', 'interrupted-first-read-retried', 'late-list-cannot-rollback-save', 'combined-directory-and-local-diagnostics', 'failed-or-malformed-directory-retains-snapshot'], realExternalSystem: false, queryBackend: 'intercepted-ui-fixture' }) + '\n');
 } catch (error) {
   if (page) { process.stderr.write(JSON.stringify({ body: (await page.locator('body').innerText()).slice(-5000) }) + '\n'); await page.screenshot({ animations: 'disabled', path: path.join(screenshots, 'connection-skills-failure.png') }); }
   throw error;
