@@ -4,10 +4,12 @@ import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import mysql from 'mysql2';
 import type { MySqlProgramContext } from '../../src/modules/mysql-query/interfaces/program/mysql-connection-program.ts';
+import { mysqlConfiguration, passwordInput } from '../../src/modules/mysql-query/domain/mysql.ts';
+import { createMySqlClient, MYSQL_RESULT_BYTES } from '../../src/modules/mysql-query/infrastructure/mysql-client.ts';
 
 const bin = fileURLToPath(new URL('../../bin/buildr-mysql.mjs', import.meta.url));
 async function fixture(t: { after(fn: () => Promise<void>): void }) {
-  const state = { statements: [] as string[], users: [] as string[], reject: false }, sockets = new Set<any>();
+  const state = { statements: [] as string[], users: [] as string[], reject: false, queryValue: '9007199254740993' }, sockets = new Set<any>();
   const server = (mysql as any).createServer();
   server.on('connection', (connection: any) => {
     sockets.add(connection); connection.on('error', () => {}); connection.stream.on('close', () => sockets.delete(connection));
@@ -28,6 +30,7 @@ async function fixture(t: { after(fn: () => Promise<void>): void }) {
       else if (sql.startsWith('SELECT VERSION()')) rows('version', ['8.0.fixture']);
       else if (sql.includes('information_schema.SCHEMATA')) rows('SCHEMA_NAME', ['orders', 'billing']);
       else if (/^(SET SESSION|START TRANSACTION READ ONLY|ROLLBACK)/.test(sql)) connection.writeOk();
+      else if (/^SELECT\b/.test(sql)) rows('sample', [state.queryValue]);
       else connection.writeError({ code: 1064, message: 'Unexpected fixture query' });
     };
     connection.on('query', execute); connection.on('stmt_prepare', execute);
@@ -60,4 +63,21 @@ test('installed MySQL program receives private IPC, uses packaged mysql2 and rea
   f.state.reject = true;
   const denied = await run('test', f.context); assert.equal(denied.code, 1); assert.equal(JSON.parse(denied.stdout).error.code, 'mysql_access_denied');
   assert.equal([tested, discovered, denied].some(result => (result.stdout + result.stderr).includes('fixture-private-password')), false);
+});
+test('the shared MySQL client preserves precise results and read-only session boundaries and rejects oversized results', async t => {
+  const f = await fixture(t), selected = f.context.connections.primary;
+  const config = mysqlConfiguration({ ...selected.config, username: selected.authentication.values.username });
+  const credentials = { password: passwordInput(selected.authentication.values.password) }, client = createMySqlClient();
+  const result = await client.query(config, credentials, { sql: 'SELECT 9007199254740993 AS sample', database: null });
+  assert.deepEqual(result.rows, [['9007199254740993']]); assert.equal(result.database, null);
+  assert.equal(result.rowCount, 1); assert.equal(result.rowLimit, 100); assert.match(result.executedSql, /LIMIT 100$/);
+  assert.equal(f.state.statements.filter(sql => sql === 'START TRANSACTION READ ONLY').length, 1);
+  assert.equal(f.state.statements.filter(sql => sql === 'ROLLBACK').length, 1);
+  const calls = f.state.users.length;
+  await assert.rejects(client.query(config, credentials, { sql: 'UPDATE orders SET id = 1' }), { code: 'mysql_query_readonly' });
+  assert.equal(f.state.users.length, calls, 'unsafe SQL is rejected before opening a database connection');
+  f.state.queryValue = 'x'.repeat(MYSQL_RESULT_BYTES);
+  await assert.rejects(client.query(config, credentials, { sql: 'SELECT 1 AS sample' }), { code: 'mysql_result_too_large', status: 413 });
+  assert.equal(f.state.statements.filter(sql => sql === 'START TRANSACTION READ ONLY').length, 2);
+  assert.equal(f.state.statements.some(sql => sql.includes('fixture-private-password')), false);
 });

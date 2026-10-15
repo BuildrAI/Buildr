@@ -25,6 +25,7 @@ import { runSourceControlJourney } from '../../../buildr-web/test/browser/source
 import { runLayoutJourney } from '../../../buildr-web/test/browser/layout-journey.ts';
 import { runTaskCommitsJourney } from '../../../buildr-web/test/browser/task-commits-journey.ts';
 import { runTaskMaterialsJourney } from '../../../buildr-web/test/browser/task-materials-journey.ts';
+import { runCompositeTaskChildrenJourney } from '../../../buildr-web/test/browser/composite-task-children-journey.ts';
 import { runCodexNavigationJourney } from '../../../buildr-web/test/browser/codex-navigation-journey.ts';
 import { runWorkbenchJourney } from './workbench-journey.ts';
 import { runPublicationJourney, publicationTestPng } from './publication-journey.ts';
@@ -2672,6 +2673,7 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
 
     await page.goto(`${workspaceUrl}/tasks/created-in-app`);
     await closeTaskReading(page); await page.locator('[data-task-node=design]').click(); await page.locator('[data-task-content=review]').click();
+    await page.locator('#task-node-content .task-node-empty').filter({ hasText: '暂无审查记录。' }).waitFor({ state: 'visible' });
     assert.match(await page.locator('#task-node-content').innerText(), /暂无审查记录/);
     assert.equal(await page.getByRole('button', { name: '交给智能体审查', exact: true }).count(), 0);
     await closeTaskReading(page); await page.locator('[data-task-node=implementation]').click(); await page.locator('[data-task-content=verification]').click();
@@ -2880,6 +2882,8 @@ test(`Buildr Web 浏览器集成：${selectorLabel}`, { timeout: SELECTORS.has('
   if (selected('workbench')) await runWorkbenchJourney({ t, page, runtime, workspaceRoot, otherWorkspaceRoot: otherRoot, workspaceUrl, otherWorkspaceUrl: `${url}/workspaces/${otherWorkspaceId}`, expectedBrowserErrors, selectAntdOption, capture });
 
   if (selected('project')) await runWorkspaceCompositionJourney({ t, page, runtime, workspaceRoot, workspaceUrl, expectedBrowserErrors });
+
+  if (selected('task')) await runCompositeTaskChildrenJourney({ t, page, runtime, workspaceRoot, workspaceUrl, capture });
 
   const unexpectedBrowserErrors: any = browserErrors.filter((error: any) => ![...expectedBrowserErrors].some((expected: any) => error.includes(expected)));
   assert.deepEqual(unexpectedBrowserErrors, [], unexpectedBrowserErrors.join('\n'));

@@ -6,6 +6,11 @@ export type ParentCoordinationResult = Partial<CoordinationResponse>;
 export type ParentCompletionDraft = { summary: string; children: Record<string, string>; confirmed: boolean };
 export const emptyParentCompletionDraft = (): ParentCompletionDraft => ({ summary: '', children: {}, confirmed: false });
 
+export function prioritizeOpenChildren<T extends { status: string }>(children: readonly T[]): T[] {
+  const unfinished = (child: T) => child.status === 'active' || child.status === 'todo';
+  return children.filter(unfinished).concat(children.filter(child => !unfinished(child)));
+}
+
 export function parentCompletionInput(snapshot: ParentCoordinationResult, draft: ParentCompletionDraft, taskId: string): ParentCompletion {
   if (!snapshot.isParent || !snapshot.completion?.snapshotIdentity || !draft.confirmed || !draft.summary.trim()) throw new Error('请核对整体目标、填写验收说明并明确授权完成父任务。');
   if (snapshot.completion.openChildTaskIds.length) throw new Error('仍有未结束子任务，不能完成父任务。');

@@ -4,11 +4,10 @@ import { useState, type ReactNode } from 'react';
 import type { TaskDocumentItem, TaskReadTarget } from './taskWorkContent';
 import type { TaskMaterialsState } from '../task-materials';
 import { Alert, Button, Input, Select, Spin, Table } from 'antd';
-import { CloseOutlined } from '@ant-design/icons';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useResourcePreview } from '../../../app/resource-preview';
 import type { TaskDetailResponse } from '../../../../build/generated/task-dto';
-import type { ParentCoordinationResult } from './parentCoordination';
+import { prioritizeOpenChildren, type ParentCoordinationResult } from './parentCoordination';
 import type { TaskChangeState } from '../hooks/useTaskArtifacts';
 import { CreatableResourceSelect } from '../../../components/CreatableResourceSelect';
 import { TaskTypeBadge } from '../../../components/TaskTypeBadge';
@@ -53,7 +52,7 @@ export function CompositeTaskContent({ task, choices, choose, changed, onOpenFil
     finally { setSaving(false); }
   };
   const selectCount = (state: string) => { setFilter(state); setQuery(''); setTab('children'); };
-  const visible = children.filter(child => (filter === 'all' || child.status === filter) && `${child.title} ${child.intent}`.includes(query));
+  const visible = prioritizeOpenChildren(children.filter(child => (filter === 'all' || child.status === filter) && `${child.title} ${child.intent}`.includes(query)));
 
   return <>
     <div className="task-work-path"><div className="task-path-track" role="tablist" aria-label="组合任务内容">{[['overview', '概览'], ['children', '子任务'], ['acceptance', '验收'], ['commits', '提交记录']].map(([key, label]) => <Button key={key} role="tab" aria-selected={tab === key} type="text" className={`task-work-tab ${tab === key ? 'selected' : ''}`} onClick={() => setTab(key)}>{label}</Button>)}</div></div>
@@ -77,7 +76,7 @@ export function CompositeTaskContent({ task, choices, choose, changed, onOpenFil
           columns={[
             { title: '任务', key: 'task', render: (_value, child) => <div className="task-compact-copy"><div className="task-row-heading"><Link className="task-row-main" to={href(`/tasks/${encodeURIComponent(child.taskId)}${child.isParent ? '?taskType=composite' : ''}`)}><strong>{child.title}</strong></Link><TaskTypeBadge isParent={child.isParent} /></div><TaskGoalSummary goal={child.intent} /></div> },
             { title: '状态', key: 'status', width: 88, render: (_value, child) => <span className={`lifecycle-badge ${child.status}`}>{taskStatusLabel(child.status)}</span> },
-            ...(!terminal ? [{ title: '', key: 'unlink', width: 42, render: (_value: unknown, child: NonNullable<ParentCoordinationResult['children']>[number]) => <Button type="text" size="small" icon={<CloseOutlined />} disabled={saving} aria-label={`解除关联 ${child.title}`} onClick={event => { event.stopPropagation(); void associate(child.taskId, true); }} /> }] : []),
+            ...(!terminal ? [{ title: '操作', key: 'unlink', width: 112, align: 'right' as const, className: 'composite-task-actions', render: (_value: unknown, child: NonNullable<ParentCoordinationResult['children']>[number]) => <span className="resource-directory-row-actions"><Button type="text" className="composite-task-unlink" disabled={saving} aria-label={`解除关联 ${child.title}`} onClick={event => { event.stopPropagation(); void associate(child.taskId, true); }}>解除关联</Button></span> }] : []),
           ]}
         /></div>
       </>}

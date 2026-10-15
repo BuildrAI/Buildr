@@ -1,12 +1,12 @@
 ---
 name: kibana-connection
-description: 从服务代码和部署线索定位环境日志，使用明确绑定的新 Kibana 连接发现视图与字段、检索日志和分组统计时使用；不接管旧连接，不执行写入。
+description: 从服务代码和部署线索定位环境日志，使用明确绑定的 Kibana 连接发现视图与字段、检索日志和分组统计时使用；不按同名接管实例，不执行写入。
 connectionDefinitions: [assets/connection.yml]
 ---
 
 # 使用 Kibana 连接
 
-先从 `buildr connection-skill --help` 发现通用入口，明确实例编号、当前观察版本和所绑定的本技能（Skill）。完整方法由[连接声明](assets/connection.yml)、独立专业程序和参考文档共同交付；已投射不代表实例、账号、日志覆盖或业务结果已验证。旧 `buildr connection kibana` 继续独立存在，不按同名接管实例或借用认证。
+先从 `buildr connection-skill --help` 发现通用入口，明确实例编号、当前观察版本和所绑定的本技能（Skill）。完整方法由[连接声明](assets/connection.yml)、独立专业程序和参考文档共同交付；已投射不代表实例、账号、日志覆盖或业务结果已验证。不按同名接管实例或借用另一实例的认证。
 
 用户通常提供服务（Service）、错误时间或调用链编号（Trace ID）。先读[从服务线索定位日志](references/service-log-discovery.md)，核对真实代码及部署目标，定位准确环境、空间（Space）、数据视图（Data View）和过滤字段，再检索。不要把服务登记名猜成部署名，不因零命中就删除过滤或跨环境扩大范围。
 

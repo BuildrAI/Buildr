@@ -19,7 +19,8 @@ export class ConnectionSkillsApplication {
   readonly files: ConnectionFiles;
   readonly catalog: Catalog;
   readonly resolveScope: (root: string) => ConnectionScope;
-  constructor(options: { dataRoot: string; catalog: Catalog; resolveScope(root: string): ConnectionScope }) { this.files = new ConnectionFiles(options.dataRoot); this.catalog = options.catalog; this.resolveScope = options.resolveScope; }
+  private readonly retire: (scope: ConnectionScope) => string[];
+  constructor(options: { dataRoot: string; catalog: Catalog; resolveScope(root: string): ConnectionScope; retire?(scope: ConnectionScope): string[] }) { this.retire = options.retire || (() => []); this.files = new ConnectionFiles(options.dataRoot); this.catalog = options.catalog; this.resolveScope = options.resolveScope; }
   definitions(root: string) { return this.catalog.list(this.resolveScope(root).rootPath); }
   impacts(root: string, assetIdentity: string) {
     const instances: Array<{ id: string; name: string; sourcePath: string; definitionId: string; sourceIdentity: string }> = [], diagnostics: string[] = [];
@@ -107,8 +108,9 @@ export class ConnectionSkillsApplication {
       availability: { ready: diagnostics.length === 0, diagnostics }, programAvailability, definition: entry, websiteUrl };
   }
   list(root: string) {
-    const scope = this.resolveScope(root), instances: ReturnType<ConnectionSkillsApplication['public']>[] = [], diagnostics: { id?: string; sourcePath?: string; message: string }[] = [];
-    let team: ReturnType<ConnectionFiles['listTeam']>; try { team = this.files.listTeam(scope); } catch (error) { return { instances, diagnostics: [{ message: diagnostic(error) }] }; }
+    const scope = this.resolveScope(root), retirementDiagnostics = this.retire(scope);
+    const instances: ReturnType<ConnectionSkillsApplication['public']>[] = [], diagnostics: { id?: string; sourcePath?: string; message: string }[] = retirementDiagnostics.map(message => ({ message }));
+    let team: ReturnType<ConnectionFiles['listTeam']>; try { team = this.files.listTeam(scope); } catch (error) { return { instances, diagnostics: [...diagnostics, { message: diagnostic(error) }] }; }
     const observation = this.observe(scope);
     diagnostics.push(...team.diagnostics);
     for (const saved of team.instances) try { instances.push(this.public(scope, saved.value, saved.revision, saved.sourcePath, saved.diagnostic, observation)); } catch (error) { diagnostics.push({ id: saved.value.id, sourcePath: saved.sourcePath, message: diagnostic(error) }); }
@@ -236,7 +238,7 @@ export class ConnectionSkillsApplication {
     const check = checkProgram(program); if (!check.ready) throw failure('connection_skill_dependency_version', check.diagnostics.join(' '));
     const context = { protocolVersion: 'buildr.connection-context/v1', callId: crypto.randomUUID(), workspace: { id: scope.workspaceId, root: scope.rootPath }, definition: { skillAssetIdentity: selected.entry.skill.assetIdentity, definitionId: selected.entry.definition.definitionId, revision: selected.entry.revision }, connections: Object.fromEntries(Object.entries(selections).map(([name, value]) => [name, value.context])), privateStateRoot: this.files.privateState(scope, selected.entry.skill.assetIdentity) };
     const revalidate = () => {
-      const currentScope = this.resolveScope(root); if (JSON.stringify(currentScope) !== JSON.stringify(scope)) throw failure('connection_skill_context_changed', '工作空间身份已变化。');
+      const currentScope = this.resolveScope(root); if (currentScope.rootPath !== scope.rootPath || currentScope.workspaceId !== scope.workspaceId) throw failure('connection_skill_context_changed', '工作空间身份已变化。');
       const currentObservation = this.observe(scope);
       for (const item of Object.values(selections)) this.selected(scope, item.context.id, item.context.revision, currentObservation);
       const current = this.entry(scope, this.getObserved(scope, options.id, currentObservation).instance.binding, selected.entry.revision, false, currentObservation);
@@ -274,7 +276,8 @@ export class ConnectionSkillsApplication {
     const program = resolveProgram(scope.rootPath, entry, hook.program), checked = checkProgram(program); if (!checked.ready) throw failure('connection_skill_dependency_version', checked.diagnostics.join(' '));
     const context = { protocolVersion: 'buildr.connection-context/v1', callId: crypto.randomUUID(), workspace: { id: scope.workspaceId, root: scope.rootPath }, definition: { skillAssetIdentity: entry.skill.assetIdentity, definitionId: entry.definition.definitionId, revision: entry.revision }, connections: { primary: { id, revision: 'draft', config, authentication: { source, values }, authenticationRevision: 'draft' } }, privateStateRoot: this.files.privateState(scope, entry.skill.assetIdentity) };
     // A version probe may take time or change local files. Re-read before handing over credentials.
-    if (JSON.stringify(this.resolveScope(root)) !== JSON.stringify(scope)) throw failure('connection_skill_context_changed', '工作空间身份已变化。');
+    const currentScope = this.resolveScope(root);
+    if (currentScope.rootPath !== scope.rootPath || currentScope.workspaceId !== scope.workspaceId) throw failure('connection_skill_context_changed', '工作空间身份已变化。');
     const current = this.entry(scope, binding, expected.definitionRevision);
     if (resolveProgram(scope.rootPath, current, hook.program).identity !== program.identity) throw failure('connection_skill_program_changed', '执行程序已变化；未交接认证，请重新读取。');
     if (input.id) assertRevision(this.files.readTeam(scope, id).revision, expected.teamRevision);

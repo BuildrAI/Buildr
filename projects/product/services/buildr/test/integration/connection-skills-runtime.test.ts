@@ -351,3 +351,13 @@ test('disabled or missing methods preserve safe editing and explicit personal re
   assert.equal(f.app.saveAuth(f.workspace, created.id, { intent: 'remove', expected: f.expected() }).instance.authentication.personal.present, false);
   assert.equal(fs.readFileSync(path.join(f.workspace, created.sourcePath), 'utf8'), before);
 });
+
+test('retirement warnings stay separate from instance availability and offline help never retires data', async t => {
+  const f = fixture(t), created = f.create(); let attempts = 0;
+  const app = new ConnectionSkillsApplication({ dataRoot: path.join(f.root, 'local'), catalog: f.app.catalog, resolveScope: f.app.resolveScope, retire: () => { attempts++; return ['旧连接数据清理未完成：测试残留']; } });
+  const result = app.list(f.workspace);
+  assert.equal(result.diagnostics.length, 1); assert.equal(result.instances[0]!.availability.ready, true);
+  assert.equal(attempts, 1); const view = app.get(f.workspace, created.id).instance;
+  await app.help(f.workspace, created.id, 'cli');
+  assert.equal(attempts, 1); assert.equal(view.availability.ready, true);
+});

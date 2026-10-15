@@ -108,9 +108,10 @@ test('测试失败仍能独立保存团队配置，个人保存与测试使用�
   for (const request of requests) { assert.equal(request.url.includes('fictional'), false); assert.equal(request.init.headers.get('x-buildr-session'), 'test'); }
 });
 
-test('新页面可以恢复页签，旧连接仍保留原身份', () => {
-  assert.equal(tabForPath('ws', '/workspaces/ws/connection-skills').key, 'dir:connection-skills');
-  assert.equal(tabForPath('ws', '/workspaces/ws/connections').key, 'dir:connections');
+test('连接页面只恢复现行目录身份，旧页面地址归一', () => {
+  const current = tabForPath('ws', '/workspaces/ws/connection-skills');
+  assert.deepEqual(current, { key: 'dir:connection-skills', kind: 'dir', title: '连接', path: '/workspaces/ws/connection-skills' });
+  assert.deepEqual(tabForPath('ws', '/workspaces/ws/connections'), current);
 });
 
 test('保存团队区不放行陈旧个人草稿，保存个人区不放行陈旧团队草稿', () => {

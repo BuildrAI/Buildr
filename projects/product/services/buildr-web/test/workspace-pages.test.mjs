@@ -3,7 +3,7 @@ import test from 'node:test';
 import { tabForPath, parseTabs, paneDimensions, readRatio, moveTab, reorderPageTabs, ratioStorageKey, resourcePreview, previewOwnerPath, previewOwnerSearch, workspacePageSearch, workspacePageLayout } from '../src/app/workspace-pages.ts';
 
 test('连接查询和代码工具铺满功能面板，文档与跨工作空间路径保持阅读宽度', () => {
- for (const path of ['/connections', '/code/explorer', '/code/source-control']) assert.equal(workspacePageLayout('w', '/workspaces/w' + path), 'functional');
+ for (const path of ['/connection-skills', '/connections', '/code/explorer', '/code/source-control']) assert.equal(workspacePageLayout('w', '/workspaces/w' + path), 'functional');
  for (const path of ['/projects/product', '/articles', '/services', '/tasks']) assert.equal(workspacePageLayout('w', '/workspaces/w' + path), 'reading');
  assert.equal(workspacePageLayout('w', '/workspaces/other/connections'), 'reading');
  assert.equal(workspacePageLayout('w', '/workspaces/w/connections/unknown'), 'reading');
@@ -14,6 +14,20 @@ test('恢复页签只接受当前工作空间已支持的路由并去重', () =>
  assert.deepEqual(parseTabs('a',raw).map(t=>t.key),['dir:skills']);
  assert.deepEqual(parseTabs('a','invalid'),[]);
  assert.equal(tabForPath('a','/workspaces/a/settings'),null);
+});
+
+test('历史连接标签归一到现行目录并去重，其他工作空间和错误子路径不恢复', () => {
+ const current = { key: 'dir:connection-skills', kind: 'dir', title: '连接', path: '/workspaces/w/connection-skills' };
+ const legacy = { path: '/workspaces/w/connections', title: '连接' };
+ const recent = { path: current.path, title: '连接（新机制）' };
+ for (const saved of [[legacy, recent], [recent, legacy], [legacy], [recent]]) {
+  assert.deepEqual(parseTabs('w', JSON.stringify(saved)), [current]);
+ }
+ assert.deepEqual(parseTabs('w', JSON.stringify([
+  { path: '/workspaces/other/connections' },
+  { path: '/workspaces/w/connections/unknown' },
+  { path: '/workspaces/w/connection-skills/unknown' },
+ ])), []);
 });
 
 test('文章阅读编辑复用副屏身份，跨项目不混用，旧主标签恢复被清理', () => {

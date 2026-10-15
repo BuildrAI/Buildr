@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { prepareReadOnlySql } from '../../src/modules/connections/infrastructure/mysql-query.ts';
+import { prepareReadOnlySql } from '../../src/modules/mysql-query/infrastructure/mysql-client.ts';
 
 test('MySQL parses SELECT, CTE, JSON, joins, aggregation, and outer UNION limits', async () => {
   const plain = await prepareReadOnlySql('SELECT id FROM orders_demo.orders WHERE id = 2;');

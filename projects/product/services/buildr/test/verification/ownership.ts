@@ -210,6 +210,8 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "resources/workspace/skills/connections/kibana-connection/**",
       "resources/workspace/skills/connections/xxl-job-connection/**",
       "test/integration/mysql-query-skills.test.ts",
+      "test/integration/retired-connections.test.ts",
+      "test/integration/mysql-client-live.test.ts",
       "test/integration/mysql-connection-program.test.ts",
       "test/integration/kibana-connection-skill.test.ts",
       "test/integration/xxl-job-connection-skill.test.ts",

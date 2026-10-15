@@ -1,5 +1,5 @@
 import type { MySqlQueryApplication } from '../../application/mysql-query-application.ts';
-import { connectionFailure } from '../../../connections/domain/connection.ts';
+import { mysqlFailure } from '../../domain/mysql.ts';
 
 type HttpContext = { request: { method?: string }; suffix: string; searchParams: URLSearchParams; root: string; authorizeWrite(): void; readJsonBody(maxBytes?: number): Promise<unknown> };
 export function createMySqlQueryHttp(application: MySqlQueryApplication) {
@@ -10,7 +10,7 @@ export function createMySqlQueryHttp(application: MySqlQueryApplication) {
     if (!match) return null;
     const [, id, operation] = match;
     const allowed = request.method === 'GET' ? ['revision', ...(operation === 'tables' ? ['database'] : operation === 'columns' ? ['database', 'table'] : [])] : [];
-    if ([...searchParams.keys()].some(key => !allowed.includes(key) || searchParams.getAll(key).length !== 1)) throw connectionFailure('mysql_query_input_invalid', '查询工具的请求参数无效。');
+    if ([...searchParams.keys()].some(key => !allowed.includes(key) || searchParams.getAll(key).length !== 1)) throw mysqlFailure('mysql_query_input_invalid', '查询工具的请求参数无效。');
     const revision = searchParams.get('revision');
     if (request.method === 'GET' && operation === 'databases') return { status: 200, body: await application.databases(root, id, revision) };
     if (request.method === 'GET' && operation === 'tables') return { status: 200, body: await application.tables(root, id, revision, searchParams.get('database')) };

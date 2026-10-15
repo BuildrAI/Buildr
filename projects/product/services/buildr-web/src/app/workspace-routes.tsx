@@ -2,7 +2,6 @@ import { Navigate, useRoutes, type Location, type RouteObject } from 'react-rout
 import { CodexEntryNotice } from '../features/agents/components/CodexEntryNotice';
 import { SkillsPage } from '../features/agent-assets/pages/SkillsPage';
 import { CodeExplorerPage, CodeSourceControlPage } from '../features/code/pages/CodeExplorerPage';
-import { ConnectionsPage } from '../features/connections/pages/ConnectionsPage';
 import { ConnectionSkillsPage } from '../features/connection-skills/pages/ConnectionSkillsPage';
 import { KnowledgePage } from '../features/knowledge/pages/KnowledgePage';
 import { ProjectCreatePage } from '../features/project/pages/ProjectCreatePage';
@@ -40,7 +39,7 @@ export const workspaceRoutes: RouteObject[] = [
   { path: 'skills', element: <SkillsPage /> },
   { path: 'skills/:skillId', element: <SkillsPage /> },
   { path: 'repositories', element: <RepositoriesPage /> },
-  { path: 'connections', element: <ConnectionsPage /> },
+  { path: 'connections', element: <Navigate to="../connection-skills" replace /> },
   { path: 'connection-skills', element: <ConnectionSkillsPage /> },
   { path: 'repositories/:assetId', element: <AssetHome kind="repository" /> },
   {

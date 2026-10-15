@@ -9,7 +9,6 @@ import {
 } from '../modules/installation/module.ts';
 import type { WebInstanceLifecycleRuntime, WebLifecycleOptions } from './application/instance-lifecycle.ts';
 import { readBuildrWebInstance } from './infrastructure/instance-runtime.ts';
-export { readPreviewConnectionCredentials } from './application/preview-lifecycle.ts';
 
 export const WEB_MODULE_ID = 'web-instance-lifecycle';
 export const WEB_INSTANCE_LIFECYCLE = 'web.instance-lifecycle';
@@ -29,7 +28,7 @@ type WebModuleDependency = {
 };
 type WebModuleRequires = Record<string, WebModuleDependency>;
 
-export function createWebModule(runtime: WebInstanceLifecycleRuntime, options: { httpContributions?: unknown[]; closeResources?: () => Promise<void>; resolvePreviewConnectionScope?(root: string): { rootPath: string; workspaceId: string } } = {}) {
+export function createWebModule(runtime: WebInstanceLifecycleRuntime, options: { httpContributions?: unknown[]; closeResources?: () => Promise<void> } = {}) {
   const httpContributions = options.httpContributions || [];
   return Object.freeze({
     id: WEB_MODULE_ID,
@@ -46,8 +45,6 @@ export function createWebModule(runtime: WebInstanceLifecycleRuntime, options: {
         throw new Error('Web module dependencies are incomplete.');
       }
       const composition = Object.assign(Object.create(runtime), {
-        readPreviewProductIdentity: identity.readCurrentProductIdentity,
-        resolvePreviewConnectionScope: options.resolvePreviewConnectionScope,
         assertCanonicalTaskWorkspace: taskQuery.assertCanonicalTaskWorkspace,
         inspectGitWorktrees: worktreeProvider.inspectGitWorktrees,
         readGitWorktreeEvidence: worktreeProvider.readGitWorktreeEvidence,

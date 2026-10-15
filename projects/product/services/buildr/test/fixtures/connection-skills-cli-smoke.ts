@@ -14,6 +14,12 @@ function command(args: string[], input?: string) {
   assert.equal(result.status, 0, result.stderr || result.stdout); return args[0] === 'init' ? {} : JSON.parse(result.stdout);
 }
 command(['init', '--name', 'connection-skill-smoke', '--description', 'Isolated acceptance', '--profile', 'team']);
+const retired = spawnSync(process.execPath, [cli, 'connection', 'list', '--target', root, '--json'], { encoding: 'utf8', env: process.env, timeout: 20_000 });
+assert.equal(retired.status, 2); assert.equal(JSON.parse(retired.stdout).error.code, 'cli.connection_retired');
+assert.ok(JSON.parse(retired.stdout).suggestions.includes('connection-skill --help'));
+const oldPreview = spawnSync(process.execPath, [cli, 'web', 'preview', 'start', 'retired-credentials', '--target', root, '--connection-credentials-from', 'development', '--json'], { encoding: 'utf8', env: process.env, timeout: 20_000 });
+assert.notEqual(oldPreview.status, 0); assert.match(oldPreview.stderr + oldPreview.stdout, /Unknown argument: --connection-credentials-from/);
+
 const definitions = command(['connection-skill', 'definitions', 'list']);
 const entry = definitions.definitions.find((item: any) => item.definition.definitionId === 'nacos');
 assert.ok(entry, JSON.stringify(definitions));
@@ -24,7 +30,6 @@ assert.equal(created.instance.id, 'smoke-nacos'); assert.ok(!JSON.stringify(crea
 assert.ok(fs.readFileSync(path.join(root, created.instance.sourcePath), 'utf8').includes('fixture-password-only'));
 const help = command(['connection-skill', 'help', '--connection', 'smoke-nacos']); assert.equal(help.exitCode, 0); assert.match(help.stdout, /publish/);
 const check = command(['connection-skill', 'check', '--connection', 'smoke-nacos']); assert.equal(check.ready, true);
-assert.equal(command(['connection', 'list']).connections.length, 0);
 const read = command(['connection-skill', 'get', '--connection', 'smoke-nacos']).instance;
 fs.writeFileSync(file, JSON.stringify({ values: { username: 'personal-fixture', password: 'local-fixture-password' }, expected: { teamRevision: read.teamRevision, definitionRevision: read.definitionRevision, localRevision: read.localRevision } }));
 assert.equal(command(['connection-skill', 'auth', 'set', '--connection', 'smoke-nacos', '--file', file]).instance.authentication.source, 'personal');

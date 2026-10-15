@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { MySqlQueryApplication } from '../../application/mysql-query-application.ts';
-import { connectionFailure, inputObject } from '../../../connections/domain/connection.ts';
+import { mysqlFailure, inputObject } from '../../domain/mysql.ts';
 
 function fileInput(file: string): string {
   let fd: number | undefined;
@@ -10,7 +10,7 @@ function fileInput(file: string): string {
     const bytes: Buffer[] = []; let length = 0;
     for (;;) { const block = Buffer.alloc(16 * 1024); const count = fs.readSync(fd, block); if (!count) break; length += count; if (length > 128 * 1024) throw new Error(); bytes.push(block.subarray(0, count)); }
     return new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(bytes));
-  } catch { throw connectionFailure('mysql_query_cli_input_invalid', '无法读取输入文件，或输入超过 128 KiB。'); }
+  } catch { throw mysqlFailure('mysql_query_cli_input_invalid', '无法读取输入文件，或输入超过 128 KiB。'); }
   finally { if (fd !== undefined && fd !== 0) fs.closeSync(fd); }
 }
 export function createMySqlQueryCli(application: MySqlQueryApplication) {
@@ -23,30 +23,30 @@ export function createMySqlQueryCli(application: MySqlQueryApplication) {
     ], match: ({ domain }: { domain?: string }) => domain === 'mysql-query',
     async run(_runtime: unknown, context: { argv: string[] }) {
       const [action, ...args] = context.argv.slice(3), actionFlags: Record<string, string[]> = { databases: [], tables: ['--database'], columns: ['--database', '--table'], query: ['--database', '--sql', '--sql-file'], preferences: [], 'save-preferences': ['--file'] };
-      if (!action || !Object.hasOwn(actionFlags, action)) throw connectionFailure('mysql_query_cli_invalid', '未知查询工具操作，请执行 --help。');
+      if (!action || !Object.hasOwn(actionFlags, action)) throw mysqlFailure('mysql_query_cli_invalid', '未知查询工具操作，请执行 --help。');
       const flags = new Map<string, string>(), allowed = [...actionFlags[action]!, '--connection', '--expected-revision', '--target', '--json'];
       while (args.length) {
         const flag = args.shift()!;
-        if (!allowed.includes(flag) || flags.has(flag)) throw connectionFailure('mysql_query_cli_invalid', '查询参数无效或重复。');
+        if (!allowed.includes(flag) || flags.has(flag)) throw mysqlFailure('mysql_query_cli_invalid', '查询参数无效或重复。');
         if (flag === '--json') { flags.set(flag, 'true'); continue; }
-        const value = args.shift(); if (value === undefined || value.startsWith('--')) throw connectionFailure('mysql_query_cli_invalid', '查询参数缺少值。');
+        const value = args.shift(); if (value === undefined || value.startsWith('--')) throw mysqlFailure('mysql_query_cli_invalid', '查询参数缺少值。');
         flags.set(flag, value);
       }
       const root = path.resolve(flags.get('--target') || process.cwd()), id = flags.get('--connection') || '', revision = flags.get('--expected-revision');
-      if (!id || !revision) throw connectionFailure('connection_skill_revision_required', '必须明确 --connection 和 --expected-revision。', 409);
+      if (!id || !revision) throw mysqlFailure('connection_skill_revision_required', '必须明确 --connection 和 --expected-revision。', 409);
       let result: unknown;
       if (action === 'databases') result = await application.databases(root, id, revision);
       else if (action === 'tables') result = await application.tables(root, id, revision, flags.get('--database'));
       else if (action === 'columns') result = await application.columns(root, id, revision, flags.get('--database'), flags.get('--table'));
       else if (action === 'preferences') result = application.queryPreferences(root, id, revision);
       else if (action === 'save-preferences') {
-        if (!flags.has('--file')) throw connectionFailure('mysql_query_cli_invalid', '保存偏好需要 --file。');
+        if (!flags.has('--file')) throw mysqlFailure('mysql_query_cli_invalid', '保存偏好需要 --file。');
         let input: Record<string, unknown>;
         try { input = inputObject(JSON.parse(fileInput(flags.get('--file')!)), ['enabledDatabases', 'currentDatabase', 'expectedRevision']); }
-        catch { throw connectionFailure('mysql_query_cli_input_invalid', '查询偏好输入必须是有界的 JSON 对象。'); }
+        catch { throw mysqlFailure('mysql_query_cli_input_invalid', '查询偏好输入必须是有界的 JSON 对象。'); }
         result = application.saveQueryPreferences(root, id, { ...input, connectionRevision: revision });
       } else {
-        if (flags.has('--sql') === flags.has('--sql-file')) throw connectionFailure('mysql_query_cli_invalid', '查询需要且只能提供 --sql 或 --sql-file。');
+        if (flags.has('--sql') === flags.has('--sql-file')) throw mysqlFailure('mysql_query_cli_invalid', '查询需要且只能提供 --sql 或 --sql-file。');
         result = await application.query(root, id, { connectionRevision: revision, sql: flags.has('--sql-file') ? fileInput(flags.get('--sql-file')!) : flags.get('--sql'), ...(flags.has('--database') ? { database: flags.get('--database') } : {}) });
       }
       const output = { schemaVersion: 'buildr.mysql-query-result/v1', operation: action, ...(result as Record<string, unknown>) };

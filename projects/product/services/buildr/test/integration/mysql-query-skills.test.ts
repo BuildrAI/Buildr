@@ -10,7 +10,7 @@ import YAML from 'yaml';
 import { ConnectionSkillsApplication } from '../../src/modules/connection-skills/application/connection-skills-application.ts';
 import { createConnectionCatalog } from '../../src/modules/connection-skills/application/catalog.ts';
 import { digest } from '../../src/modules/connection-skills/persistence/files.ts';
-import type { ConnectionProvider } from '../../src/modules/connections/domain/connection.ts';
+import type { MySqlConnectionClient, MySqlQueryClient } from '../../src/modules/mysql-query/domain/mysql.ts';
 import { registerWorkspaceSqlite, applyWorkspaceSqliteMigration, loadWorkspaceSqliteMigrations } from '../../src/infrastructure/sqlite/workspace-sqlite.ts';
 import { DatabaseSync } from 'node:sqlite';
 import { registerSqliteTransaction, transactionDatabase } from '../../src/infrastructure/sqlite/transaction.ts';
@@ -35,7 +35,7 @@ function fixture(t: { after(fn: () => void): void }) {
   const entry = connections.definitions(root).definitions[0]!, binding = { skillAssetIdentity: entry.skill.assetIdentity, sourceIdentity, definitionId: 'mysql', configVersion: 1 };
   const create = (id = 'qa-mysql') => connections.save(root, null, { id, name: 'QA MySQL', binding, config: { host: 'qa.invalid', port: 3306, defaultDatabase: 'orders' }, authentication: { intent: 'replace', values: { username: 'team_reader', password: 'fixture-team-secret' } }, expected: { teamRevision: 'absent', definitionRevision: entry.revision } }).instance;
   const access: { username?: unknown; password?: unknown; sql?: unknown; database?: unknown }[] = [];
-  const mysql: NonNullable<ConnectionProvider['mysql']> = {
+  const mysql: MySqlQueryClient = {
     async databases(config, credentials) { access.push({ username: config.username, password: credentials.password }); return ['orders', 'billing']; },
     async tables(config, credentials, database) { access.push({ username: config.username, password: credentials.password, database }); return [{ name: 'order_header', type: 'BASE TABLE' }]; },
     async columns(config, credentials, database) { access.push({ username: config.username, password: credentials.password, database }); return [{ name: 'id', type: 'bigint', nullable: false, key: 'PRI', comment: '' }]; },
@@ -88,9 +88,7 @@ test('new MySQL preferences use independent SQLite identity, survive reopening a
   assert.equal(f.connections.get(f.root, created.id).instance.revision, created.revision);
   f.store.runWorkspaceTransaction(f.root, context => {
     const database = transactionDatabase(context);
-    assert.equal(database.prepare('SELECT count(*) AS n FROM external_connections').get()!.n, 0);
     assert.equal(database.prepare('SELECT count(*) AS n FROM mysql_skill_query_preferences').get()!.n, 1);
-    assert.equal(database.prepare('SELECT count(*) AS n FROM connection_query_preferences').get()!.n, 0);
   });
   assert.equal(fs.readFileSync(path.join(f.root, '.buildr/local/workspace.sqlite')).includes(Buffer.from('fixture-team-secret')), false);
 });
@@ -103,14 +101,14 @@ test('schema36 preferences and ordinary reads stay read-only until the first exp
   const preference = f.application.queryPreferences(f.root, created.id, created.revision);
   assert.deepEqual(preference.enabledDatabases, []); assert.equal(preference.currentDatabase, null);
   f.store.runWorkspaceSqliteRead(f.root, context => {
-    const db = transactionDatabase(context); assert.equal(db.prepare('SELECT count(*) AS n FROM external_connections').get()!.n, 0);
+    const db = transactionDatabase(context);
     assert.equal(db.prepare('SELECT max(version) AS version FROM schema_migrations').get()!.version, 36);
     assert.equal(db.prepare("SELECT name FROM sqlite_master WHERE name='mysql_skill_query_preferences'").get(), undefined);
   });
   assert.deepEqual(fs.readFileSync(file), before, 'new and existing reads preserve canonical SQLite bytes');
   const saved = f.application.saveQueryPreferences(f.root, created.id, { connectionRevision: created.revision, expectedRevision: preference.revision, enabledDatabases: ['orders'], currentDatabase: 'orders' });
   assert.deepEqual(saved.enabledDatabases, ['orders']);
-  f.store.runWorkspaceSqliteRead(f.root, context => assert.equal(transactionDatabase(context).prepare('SELECT max(version) AS version FROM schema_migrations').get()!.version, 37));
+  f.store.runWorkspaceSqliteRead(f.root, context => assert.equal(transactionDatabase(context).prepare('SELECT max(version) AS version FROM schema_migrations').get()!.version, 38));
 });
 test('a replacement source masquerading as MySQL cannot route another declared program into the builtin query capability', async t => {
   const f = fixture(t), created = f.create(), definitionFile = path.join(f.skill, 'assets/connection.yml'), definition = YAML.parse(fs.readFileSync(definitionFile, 'utf8'));
@@ -149,13 +147,16 @@ test('installed MySQL connection program is offline for help/version, rejects qu
   assert.equal(unsupported.status, 1); assert.equal(JSON.parse(unsupported.stdout).error.code, 'mysql_command_unsupported'); assert.equal(unsupported.stdout.includes('never_run'), false);
   const direct = spawnSync(process.execPath, [bin, 'test'], { encoding: 'utf8', timeout: 10_000 }); assert.equal(JSON.parse(direct.stdout).error.code, 'mysql_context_required');
   const context: MySqlProgramContext = { protocolVersion: 'buildr.connection-context/v1', callId: 'fixture', definition: { definitionId: 'mysql' }, connections: { primary: { id: 'qa', config: { host: 'qa.invalid', port: 3306 }, authentication: { source: 'personal', values: { username: 'person', password: 'never-print' } } } } };
-  const provider: ConnectionProvider = { category: 'data-source', type: 'mysql', validateConfig: value => value as Record<string, unknown>, validateCredentials: value => value as Record<string, unknown>, authenticationTargetIdentity: () => '', async test(config, credentials) { assert.equal(config.username, 'person'); assert.equal(credentials.password, 'never-print'); return { ok: true, serverVersion: '8.fixture', elapsedMs: 1 }; }, mysql: { async databases(config, credentials) { assert.equal(config.username, 'person'); assert.equal(credentials.password, 'never-print'); return ['orders']; }, tables: async () => [], columns: async () => [], query: async () => { throw new Error('query must remain independent'); } } };
-  const tested = await executeMySqlConnectionCommand('test', context, provider), discovered = await executeMySqlConnectionCommand('databases', context, provider);
+  const client: MySqlConnectionClient = {
+    async test(config, credentials) { assert.equal(config.username, 'person'); assert.equal(credentials.password, 'never-print'); return { ok: true, serverVersion: '8.fixture', elapsedMs: 1 }; },
+    async databases(config, credentials) { assert.equal(config.username, 'person'); assert.equal(credentials.password, 'never-print'); return ['orders']; },
+  };
+  const tested = await executeMySqlConnectionCommand('test', context, client), discovered = await executeMySqlConnectionCommand('databases', context, client);
   assert.equal(tested.status, 'success'); assert.deepEqual(discovered.options, [{ value: 'orders', label: 'orders' }]); assert.equal(JSON.stringify([tested, discovered]).includes('never-print'), false);
-  await assert.rejects(executeMySqlConnectionCommand('query', context, provider), { code: 'mysql_command_unsupported' });
-  const longVersion = await executeMySqlConnectionCommand('test', context, { ...provider, async test() { return { ok: true, serverVersion: 'v'.repeat(250) + 'never-print', elapsedMs: 1 }; } });
+  await assert.rejects(executeMySqlConnectionCommand('query', context, client), { code: 'mysql_command_unsupported' });
+  const longVersion = await executeMySqlConnectionCommand('test', context, { ...client, async test() { return { ok: true, serverVersion: 'v'.repeat(250) + 'never-print', elapsedMs: 1 }; } });
   assert.equal(longVersion.serverVersion, 'v'.repeat(250) + '[已隐藏]', 'redact the complete remote value before bounding it, so a cut secret prefix cannot escape');
   const overlapping = structuredClone(context); overlapping.connections.primary.authentication.values.password = 'ord';
-  const overlaps = { ...provider, mysql: { ...provider.mysql!, async databases() { return ['orders']; } } };
+  const overlaps = { ...client, async databases() { return ['orders']; } };
   await assert.rejects(executeMySqlConnectionCommand('databases', overlapping, overlaps), { code: 'mysql_discovery_output_protected' });
 });

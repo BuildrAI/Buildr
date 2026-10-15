@@ -39,6 +39,9 @@ const entry = connections.definitions(workspaceRoot).definitions.find((item: any
 assert.ok(entry, 'Fixture definition must be discoverable.');
 const binding = { skillAssetIdentity: entry.skill.assetIdentity, sourceIdentity: entry.skill.sourceIdentity, definitionId: entry.definition.definitionId, configVersion: 1 };
 const created = connections.save(workspaceRoot, null, { name: '浏览器连接', environment: '测试', enabled: true, binding, config: { endpoint: 'https://fixture.example.test/', scope: 'scope-a' }, authentication: { intent: 'replace', values: { username: 'fixture-team-user', password: 'fixture-team-password' } }, expected: { teamRevision: 'absent', definitionRevision: entry.revision } }).instance;
+const mysqlEntry = connections.definitions(workspaceRoot).definitions.find((item: any) => item.skill.assetIdentity === 'buildr:skill:mysql-connection' && item.definition.definitionId === 'mysql');
+assert.ok(mysqlEntry, 'The builtin MySQL definition must be available for the query UI fixture.');
+const queryInstance = connections.save(workspaceRoot, null, { name: '离线查询界面夹具', environment: '测试', enabled: true, binding: { skillAssetIdentity: mysqlEntry.skill.assetIdentity, sourceIdentity: mysqlEntry.skill.sourceIdentity, definitionId: 'mysql', configVersion: 1 }, config: { host: 'offline-query.example.invalid', port: 3306 }, authentication: { intent: 'replace', values: { username: 'fixture-query-reader', password: 'fixture-query-password' } }, expected: { teamRevision: 'absent', definitionRevision: mysqlEntry.revision } }).instance;
 assert.equal(created.programAvailability.cli.ready, true);
 assert.equal(created.programAvailability.exporter.ready, false, 'A missing optional exporter stays a program-level diagnostic.');
 const teamFile = path.join(workspaceRoot, created.sourcePath), teamInitial = fs.readFileSync(teamFile, 'utf8');
@@ -51,6 +54,24 @@ try {
   const { url, initialWorkspaceId } = await host.ready;
   page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   const browserErrors: string[] = []; page.on('pageerror', error => browserErrors.push(error.message));
+  const legacyRequests: string[] = []; page.on('request', request => { if (/\/api\/v1\/workspaces\/[^/]+\/connections(?:\/|$)/u.test(new URL(request.url()).pathname)) legacyRequests.push(request.url()); });
+  const queryRequests: { path: string; body: Record<string, unknown> | null }[] = [];
+  // This fixture proves the query UI contract only; no database or real query backend is contacted.
+  await page.route('**/mysql-query/connections/**', async route => {
+    const request = route.request(), target = new URL(request.url()), operation = target.pathname.split('/').at(-1);
+    const body = request.method() === 'POST' || request.method() === 'PUT' ? request.postDataJSON() as Record<string, unknown> : null;
+    queryRequests.push({ path: target.pathname, body });
+    assert.ok(target.pathname.includes(`/mysql-query/connections/${queryInstance.id}/`));
+    assert.equal(body?.connectionRevision ?? target.searchParams.get('revision'), queryInstance.revision, 'The UI pins every query operation to the observed instance revision.');
+    let result: unknown;
+    if (operation === 'databases') result = { connectionId: queryInstance.id, databases: ['orders'] };
+    else if (operation === 'query-preferences') result = { enabledDatabases: ['orders'], currentDatabase: 'orders', revision: 'fixture-query-preferences' };
+    else {
+      assert.equal(operation, 'query', 'The UI fixture only supports database discovery, preferences and a read query.');
+      result = { connectionId: queryInstance.id, database: 'orders', submittedSql: body!.sql, executedSql: body!.sql, columns: [{ name: 'id', type: 'BIGINT' }, { name: 'amount', type: 'DECIMAL' }], rows: [['9007199254740993123', '123456789012345.123456789']], rowCount: 1, rowLimit: 100, elapsedMs: 1, limitReached: false };
+    }
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(result) });
+  });
   const base = `${url}/workspaces/${initialWorkspaceId}`;
   const reads = { instances: 0, definitions: 0, legacy: 0 };
   page.on('request', request => {
@@ -62,7 +83,36 @@ try {
   });
   const assertReads = (expected: typeof reads, reason: string) => assert.deepEqual(reads, expected, reason);
   const editOriginal = () => page!.locator('#connection-skills-table').locator(`[data-row-key="${created.id}"]`).getByRole('button', { name: '编辑', exact: true }).click();
-  await page.goto(`${base}/connection-skills`, { waitUntil: 'networkidle' });
+  await page.addInitScript(({ workspaceId, basePath }) => {
+    localStorage.setItem(`buildr.web.page-tabs.${workspaceId}`, JSON.stringify([
+      { path: `${basePath}/connections`, title: '连接' },
+      { path: `${basePath}/connection-skills`, title: '连接（新机制）' },
+    ]));
+  }, { workspaceId: initialWorkspaceId, basePath: `/workspaces/${initialWorkspaceId}` });
+  await page.goto(`${base}/connections`, { waitUntil: 'networkidle' });
+  await page.waitForURL(`${base}/connection-skills`);
+  await page.locator('#connection-skills-table').waitFor();
+  assert.equal(await page.locator('[data-nav="connections"]').count(), 0, 'Retired connection navigation is removed.');
+  assert.equal(await page.locator('[data-nav="connection-skills"]').getAttribute('aria-label'), '连接');
+  assert.equal(await page.getByRole('link', { name: '打开已有连接', exact: true }).count(), 0);
+  assert.equal(await page.locator('[data-page-tab="dir:connections"]').count(), 0, 'Restored legacy tabs never mount a retired page.');
+  assert.ok(await page.locator('[data-page-tab="dir:connection-skills"]').count() > 0);
+  await page.waitForFunction(workspaceId => {
+    const tabs = JSON.parse(localStorage.getItem(`buildr.web.page-tabs.${workspaceId}`) || '[]');
+    return tabs.length === 1 && tabs[0].key === 'dir:connection-skills' && tabs[0].title === '连接' && tabs[0].path === `/workspaces/${workspaceId}/connection-skills`;
+  }, initialWorkspaceId);
+  await page.locator('#connection-skills-table').locator(`[data-row-key="${queryInstance.id}"]`).getByRole('button', { name: '查询', exact: true }).click();
+  await page.locator('#mysql-query-editor .cm-content').fill('SELECT id, amount FROM orders LIMIT 1;');
+  await page.locator('#run-mysql-query').click();
+  await page.locator('#mysql-query-results').getByText('9007199254740993123', { exact: true }).waitFor();
+  await page.locator('#mysql-query-results').getByText('123456789012345.123456789', { exact: true }).waitFor();
+  const submittedQueries = queryRequests.filter(request => request.path.endsWith('/query'));
+  assert.equal(submittedQueries.length, 1);
+  assert.deepEqual(submittedQueries[0].body, { sql: 'SELECT id, amount FROM orders LIMIT 1;', database: 'orders', connectionRevision: queryInstance.revision });
+  assert.doesNotMatch(JSON.stringify(queryRequests), /fixture-query-reader|fixture-query-password/);
+  await page.screenshot({ animations: 'disabled', path: path.join(screenshots, 'connection-skills-query-fixture.png') });
+  await page.getByRole('button', { name: '关闭 MySQL 查询', exact: true }).click();
+  await page.locator('#mysql-query-editor').waitFor({ state: 'hidden' });
   const initialReads = { ...reads };
   assertReads({ instances: 1, definitions: 1, legacy: 0 }, 'First display reads each directory once.');
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
@@ -323,64 +373,12 @@ try {
   await addedRow.waitFor({ state: 'hidden' });
   assertReads(beforeDeleteReads, 'Delete removes the selected row without rereading other instances.');
   await page.goto(`${base}/connections`, { waitUntil: 'networkidle' });
-  await page.locator('#connections-table').waitFor();
-  const legacy = { id: 'legacy-fixture', revision: 'legacy-1', name: '旧连接夹具', category: 'data-source', type: 'mysql', environment: 'qa', config: { host: 'fixture.example.test', port: 3306, username: 'fixture-user', defaultDatabase: null, selectedDatabases: [] }, hasCredentials: true, createdAt: '2026-10-15T00:00:00.000Z', updatedAt: '2026-10-15T00:00:00.000Z' };
-  let legacyRows = [legacy];
-  let legacyReadBarrier: Promise<void> | undefined, legacyReadStarted: (() => void) | undefined, legacyReadFinished: (() => void) | undefined;
-  await page.route(`**/api/v1/workspaces/${initialWorkspaceId}/connections{,/**}`, async route => {
-    const request = route.request(), pathname = new URL(request.url()).pathname;
-    const root = `/api/v1/workspaces/${initialWorkspaceId}/connections`;
-    if (request.method() === 'GET' && pathname === root) {
-      const snapshot = structuredClone(legacyRows);
-      if (legacyReadBarrier) { legacyReadStarted?.(); await legacyReadBarrier; }
-      try { await route.fulfill({ json: { connections: snapshot } }); } catch { /* A newer local mutation cancelled this older read. */ }
-      finally { legacyReadFinished?.(); }
-      return;
-    }
-    if (request.method() === 'POST' && pathname === `${root}/test`) return route.fulfill({ json: { elapsedMs: 1, serverVersion: 'offline-fixture' } });
-    if (request.method() === 'PATCH' && pathname === `${root}/${legacy.id}`) {
-      const input = request.postDataJSON(); Object.assign(legacy, { name: input.name, revision: 'legacy-2' });
-      return route.fulfill({ json: { connection: legacy } });
-    }
-    if (request.method() === 'DELETE' && pathname === `${root}/${legacy.id}`) { legacyRows = []; return route.fulfill({ json: { removed: true } }); }
-    return route.continue();
-  });
-  await page.getByRole('button', { name: '刷新连接', exact: true }).click();
-  await page.locator('#connections-table').getByText(legacy.name, { exact: true }).waitFor();
-  const legacyReads = { ...reads };
-  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
-  await page.locator('.shell-navigation').getByRole('link', { name: '服务', exact: true }).click();
-  await page.waitForURL(`${base}/services`);
-  await page.locator('[data-tab-key="dir:connections"]:visible').click();
-  await page.waitForURL(`${base}/connections`);
-  await page.waitForLoadState('networkidle');
-  assertReads(legacyReads, 'Legacy focus and retained-page display also reuse the loaded list.');
-  await page.locator('#connections-table').getByRole('button', { name: '编辑', exact: true }).click();
-  await page.locator('#test-mysql-connection').click();
-  await page.getByText(/连接成功 · MySQL offline-fixture/).waitFor();
-  assertReads(legacyReads, 'Legacy candidate test does not reload the list.');
-  await page.locator('#mysql-connection-name').fill('旧连接局部保存');
-  await page.locator('#save-mysql-connection').click();
-  await page.locator('#connections-table').getByText('旧连接局部保存', { exact: true }).waitFor();
-  assertReads(legacyReads, 'Legacy editor forwards its saved connection for local replacement.');
-  let releaseLegacyRead!: () => void;
-  legacyReadBarrier = new Promise<void>(resolve => { releaseLegacyRead = resolve; });
-  const legacyReadDidStart = new Promise<void>(resolve => { legacyReadStarted = resolve; });
-  const legacyReadDidFinish = new Promise<void>(resolve => { legacyReadFinished = resolve; });
-  try {
-    await page.getByRole('button', { name: '刷新连接', exact: true }).click();
-    await legacyReadDidStart;
-    await page.locator('#connections-table').getByRole('button', { name: /更多操作/ }).evaluate((button: HTMLElement) => button.click());
-    await page.getByRole('menuitem', { name: '删除连接', exact: true }).click();
-    await page.locator('.ant-modal-confirm').getByRole('button', { name: /^删\s*除$/ }).click();
-    await page.locator('#connections-table').getByText('旧连接局部保存', { exact: true }).waitFor({ state: 'hidden' });
-    releaseLegacyRead(); await legacyReadDidFinish;
-    assert.equal(await page.locator('#connections-table').getByText('旧连接局部保存', { exact: true }).count(), 0, 'An older list response cannot restore a deleted row.');
-    assertReads({ ...legacyReads, legacy: legacyReads.legacy + 1 }, 'Only the explicit legacy refresh reads the list; delete does not.');
-  } finally { releaseLegacyRead(); legacyReadBarrier = undefined; }
+  await page.waitForURL(`${base}/connection-skills`);
+  await page.locator('#connection-skills-table').waitFor();
   assert.equal(connections.get(workspaceRoot, created.id).instance.name, '另一入口修改');
+  assert.deepEqual(legacyRequests, [], 'Connection navigation never calls a retired API.');
   assert.deepEqual(browserErrors, []);
-  process.stdout.write(JSON.stringify({ schemaVersion: 'buildr.workspace-smoke-scenario/v1', status: 'passed', checks: ['system-and-explicit-method-selection', 'dependency-ordered-discovery', 'progressive-fields-and-authentication', 'explicit-production-flag', 'new-and-old-entry', 'separate-save', 'unsaved-switch', 'explicit-candidate', 'failed-test-save-independent', 'independent-draft-revisions', 'revision-conflict', 'narrow-and-keyboard', 'missing-skill-personal-removal', 'main-save-closes-and-updates-row', 'failed-save-retains-draft', 'main-save-preserves-personal-draft', 'reread-authentication-identity', 'optional-program-failure-isolated', 'nacos-api-and-website-distinct', 'focus-and-retained-page-no-read', 'test-discovery-check-no-directory-read', 'explicit-refresh-only', 'new-and-old-local-save-delete', 'interrupted-first-read-retried', 'late-list-cannot-rollback-save-or-delete'], realExternalSystem: false }) + '\n');
+  process.stdout.write(JSON.stringify({ schemaVersion: 'buildr.workspace-smoke-scenario/v1', status: 'passed', checks: ['system-and-explicit-method-selection', 'dependency-ordered-discovery', 'progressive-fields-and-authentication', 'explicit-production-flag', 'legacy-route-redirect', 'legacy-tabs-merge', 'single-connection-navigation', 'no-legacy-api-requests', 'mysql-query-ui-fixture', 'query-observed-revision-and-original-sql', 'query-precision-display', 'separate-save', 'unsaved-switch', 'explicit-candidate', 'failed-test-save-independent', 'independent-draft-revisions', 'revision-conflict', 'narrow-and-keyboard', 'missing-skill-personal-removal', 'main-save-closes-and-updates-row', 'failed-save-retains-draft', 'main-save-preserves-personal-draft', 'reread-authentication-identity', 'optional-program-failure-isolated', 'nacos-api-and-website-distinct', 'focus-and-retained-page-no-read', 'test-discovery-check-no-directory-read', 'explicit-refresh-only', 'local-save-delete', 'interrupted-first-read-retried', 'late-list-cannot-rollback-save'], realExternalSystem: false, queryBackend: 'intercepted-ui-fixture' }) + '\n');
 } catch (error) {
   if (page) { process.stderr.write(JSON.stringify({ body: (await page.locator('body').innerText()).slice(-5000) }) + '\n'); await page.screenshot({ animations: 'disabled', path: path.join(screenshots, 'connection-skills-failure.png') }); }
   throw error;

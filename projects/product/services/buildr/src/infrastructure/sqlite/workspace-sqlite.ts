@@ -154,8 +154,8 @@ function validateAppliedMigrations(database: any, scripts: any, { allowPending }
     if (row.name !== script.name || row.checksum !== script.checksum) throw structuredStoreError('workspace_store_migration_drift', `已应用 migration 与 package script 不一致：${script.name}。`, 409, { version: row.version, appliedName: row.name, expectedName: script.name, appliedChecksum: row.checksum, expectedChecksum: script.checksum }, '恢复原 migration script；修正 schema 只能新增连续 migration。');
   }
   const pending = scripts.slice(applied.length);
-  // This additive migration leaves every existing table readable; reads never apply it.
-  const workbenchReadCompatible = pending.every((script: { name: string }) => ['0033_add_daily_workbench.sql', '0034_add_task_review_history.sql', '0037_add_mysql_skill_query_preferences.sql'].includes(script.name));
+  // These pending migrations preserve current readers; reads never apply them.
+  const workbenchReadCompatible = pending.every((script: { name: string }) => ['0033_add_daily_workbench.sql', '0034_add_task_review_history.sql', '0037_add_mysql_skill_query_preferences.sql', '0038_drop_legacy_external_connections.sql'].includes(script.name));
   if (pending.length && !allowPending && !workbenchReadCompatible) throw structuredStoreError('workspace_store_migration_required', `Workspace structured store 需要应用 ${pending.length} 个 migration。`, 409, { currentVersion: applied.at(-1)?.version ?? null, targetVersion: scripts.at(-1).version }, '执行一个合法 structured-store mutation 以原子升级数据库。');
   return { applied, pending };
 }

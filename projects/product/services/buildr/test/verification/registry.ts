@@ -391,6 +391,8 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
   ], { schedulingCostMs: 5000, admission: true, args: ['--test-concurrency=3'] }),
   integrationSlice('integration-runtime', [
     'test/integration/mysql-query-skills.test.ts',
+    'test/integration/retired-connections.test.ts',
+    'test/integration/mysql-client-live.test.ts',
     'test/integration/mysql-connection-program.test.ts',
     'test/integration/kibana-connection-skill.test.ts',
     'test/integration/xxl-job-connection-skill.test.ts',

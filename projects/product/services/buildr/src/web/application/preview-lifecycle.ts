@@ -10,15 +10,11 @@ import { buildrWebDataRoot } from '../../modules/workspace/module.ts';
 import { sameFilesystemPath } from '../../infrastructure/filesystem/filesystem-path-identity.ts';
 import { workspaceStructuredStoreLocation } from '../../infrastructure/sqlite/workspace-sqlite.ts';
 import { INSTANCE_SCHEMA, healthyBuildrWebInstance, openDefaultBrowser } from '../infrastructure/instance-runtime.ts';
-import { resolveWebProfile } from '../../modules/installation/contracts/web-profile.ts';
 
 const PREVIEW_SCHEMA = 'buildr.local-app-preview/v1';
 const PREVIEW_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
 type PreviewRepository = { selector: string; checkoutPath: string; branch: string | null; head: string | null };
-export type PreviewConnectionCredentials = { profile: 'released' | 'development'; dataRoot: string; workspaceRoot: string; workspaceId: string };
-type ConnectionScope = { rootPath: string; workspaceId: string };
-
 export type TaskPreviewWorktree = {
   taskId: string;
   workspaceRoot: string;
@@ -46,7 +42,6 @@ export type PreviewOwner = {
   identityMode: 'task-worktree-v1' | 'standalone-checkout';
   taskStore?: { source: 'canonical' | 'existing'; seeded: boolean } | null;
   managedProcess?: { pid: number; url?: string; state: 'healthy' | 'cleanup-failed' };
-  connectionCredentials?: PreviewConnectionCredentials;
 };
 
 export type PreviewCaller = {
@@ -77,8 +72,6 @@ export type PreviewRuntime = {
   assertInitializedBuildrWorkspace(root: string): string;
   atomicWriteJson(file: string, value: unknown): void;
   removePath(file: string): void;
-  readPreviewProductIdentity?(): unknown;
-  resolvePreviewConnectionScope?(root: string): ConnectionScope;
 };
 
 type PreviewStartOptions = { cliPath?: string; dataRoot?: string; startupTimeoutMs?: number };
@@ -146,8 +139,6 @@ function parsePreviewOwner(value: unknown, expectedName?: string): PreviewOwner 
   const worktreeEvidencePath = optionalString(item.worktreeEvidencePath);
   const worktreePlanDigest = optionalString(item.worktreePlanDigest);
   if (item.identityMode === 'task-worktree-v1' && (!taskId || !workspaceRoot || !worktreeEvidencePath || !worktreePlanDigest)) return null;
-  const connectionCredentials = parseConnectionCredentials(item.connectionCredentials);
-  if (item.connectionCredentials !== undefined && !connectionCredentials) return null;
   return {
     schemaVersion: PREVIEW_SCHEMA,
     instance: item.instance,
@@ -165,50 +156,7 @@ function parsePreviewOwner(value: unknown, expectedName?: string): PreviewOwner 
     identityMode: item.identityMode,
     taskStore: parseTaskStore(item.taskStore),
     managedProcess: parseManagedProcess(item.managedProcess),
-    ...(connectionCredentials ? { connectionCredentials } : {}),
   };
-}
-
-function parseConnectionCredentials(value: unknown): PreviewConnectionCredentials | null {
-  const item = record(value);
-  if (!item || !['released', 'development'].includes(String(item.profile))
-    || typeof item.dataRoot !== 'string' || !path.isAbsolute(item.dataRoot)
-    || typeof item.workspaceRoot !== 'string' || !path.isAbsolute(item.workspaceRoot)
-    || typeof item.workspaceId !== 'string' || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(item.workspaceId)) return null;
-  return { profile: item.profile as PreviewConnectionCredentials['profile'], dataRoot: item.dataRoot, workspaceRoot: item.workspaceRoot, workspaceId: item.workspaceId };
-}
-
-/** Select only the current channel's default vault, bound to a confirmed canonical workspace. */
-function connectionCredentialSource(productIdentity: unknown, requested: string, target: string, resolveScope: (root: string) => ConnectionScope, env: NodeJS.ProcessEnv): PreviewConnectionCredentials {
-  const profile = resolveWebProfile(productIdentity, { env: { ...env, BUILDR_APP_DATA_DIR: '' } });
-  if (requested !== profile.profile) throw codedError('预览认证来源必须是当前产品的同渠道默认配置，不能指定目录或其他渠道。', 'preview_connection_credentials_profile_invalid');
-  const scope = resolveScope(target);
-  if (!sameFilesystemPath(scope.rootPath, target)) throw codedError('复用认证的预览必须直接选择规范工作空间，不能使用任务工作树或快照。', 'preview_connection_credentials_target_invalid');
-  return { profile: profile.profile, dataRoot: profile.dataRoot, workspaceRoot: fs.realpathSync(scope.rootPath), workspaceId: scope.workspaceId };
-}
-
-/** The composition root supplies the ordinary connection source guard; no fallback profile is searched. */
-export function readPreviewConnectionCredentials(options: { productIdentity: unknown; productRoot: string; resolveScope(root: string): ConnectionScope }, env: NodeJS.ProcessEnv = process.env): PreviewConnectionCredentials | null {
-  const dataRoot = env.BUILDR_APP_DATA_DIR, storedFile = dataRoot ? path.join(path.resolve(dataRoot), 'preview.json') : null;
-  const storedRaw = storedFile ? record(readJson(storedFile)) : null;
-  let raw: Record<string, unknown> | null = null;
-  try { raw = record(JSON.parse(env.BUILDR_LOCAL_APP_PREVIEW || 'null')); } catch { /* A declared stored source must fail below, never become a writable preview. */ }
-  if (raw?.connectionCredentials === undefined && storedRaw?.connectionCredentials === undefined && !(storedFile && fs.existsSync(storedFile) && !storedRaw)) return null;
-  const owner = parsePreviewOwner(raw);
-  if (!owner?.connectionCredentials || owner.identityMode !== 'standalone-checkout' || owner.taskId || owner.taskStore || !dataRoot
-    || !owner.productCheckout || !sameFilesystemPath(owner.productCheckout, options.productRoot)) {
-    throw codedError('预览认证来源缺少有效的运行身份或规范目标绑定。', 'preview_connection_credentials_identity_invalid');
-  }
-  const stored = parsePreviewOwner(storedRaw, owner.instance);
-  if (!stored || !samePreviewOwner(stored, owner) || !sameFilesystemPath(stored.productCheckout, options.productRoot)) {
-    throw codedError('预览认证来源与已保存的预览身份不一致。', 'preview_connection_credentials_identity_invalid');
-  }
-  if (stored.managedProcess && (stored.managedProcess.pid !== process.pid || stored.managedProcess.state !== 'healthy')) throw codedError('预览认证来源属于其他运行进程或实例未确认健康。', 'preview_connection_credentials_identity_invalid');
-  const source = connectionCredentialSource(options.productIdentity, owner.connectionCredentials.profile, owner.worktree, options.resolveScope, env);
-  if (JSON.stringify(source) !== JSON.stringify(owner.connectionCredentials) || sameFilesystemPath(source.dataRoot, dataRoot)) {
-    throw codedError('预览认证来源或工作空间身份已变化，未读取其他认证。', 'preview_connection_credentials_identity_invalid');
-  }
-  return source;
 }
 
 function parseTaskStore(value: unknown): PreviewOwner['taskStore'] {
@@ -295,8 +243,7 @@ function samePreviewOwner(left: PreviewOwner | null, right: PreviewOwner): boole
     && left.taskId === right.taskId
     && left.workspaceRoot === right.workspaceRoot
     && left.worktreeEvidencePath === right.worktreeEvidencePath
-    && left.worktreePlanDigest === right.worktreePlanDigest
-    && JSON.stringify(left.connectionCredentials ?? null) === JSON.stringify(right.connectionCredentials ?? null));
+    && left.worktreePlanDigest === right.worktreePlanDigest);
 }
 
 export function assertPreviewStopOwner(owner: PreviewOwner, caller: PreviewCaller | null): void {
@@ -457,17 +404,9 @@ export async function startPreview(runtime: PreviewRuntime, name: string, args: 
   const dataRoot = options.dataRoot || buildrWebDataRoot();
   const startupTimeoutMs = options.startupTimeoutMs ?? 10_000;
   const instance = assertPreviewName(name);
-  runtime.assertNoUnknownOptions(args, new Set(['--target', '--task', '--port', '--no-open', '--json', '--connection-credentials-from']), new Set(['--no-open', '--json']));
+  runtime.assertNoUnknownOptions(args, new Set(['--target', '--task', '--port', '--no-open', '--json']), new Set(['--no-open', '--json']));
   const requestedRoot = path.resolve(runtime.optionValue(args, '--target', process.cwd()) || process.cwd());
   const taskId = runtime.optionValue(args, '--task', null);
-  const credentialProfile = runtime.optionValue(args, '--connection-credentials-from', null);
-  if (args.includes('--connection-credentials-from') && !credentialProfile) throw codedError('请明确指定同渠道认证来源。', 'preview_connection_credentials_profile_invalid');
-  let connectionCredentials: PreviewConnectionCredentials | undefined;
-  if (credentialProfile) {
-    if (taskId) throw codedError('任务快照预览不能复用日常认证；请使用规范工作空间实时模式。', 'preview_connection_credentials_target_invalid');
-    if (!runtime.readPreviewProductIdentity || !runtime.resolvePreviewConnectionScope) throw codedError('预览认证来源校验能力不可用。', 'preview_connection_credentials_identity_invalid');
-    connectionCredentials = connectionCredentialSource(runtime.readPreviewProductIdentity(), credentialProfile, requestedRoot, runtime.resolvePreviewConnectionScope, process.env);
-  }
   let targetRoot = requestedRoot;
   let taskWorktree: TaskPreviewWorktree | null = null;
   let appInvocation: ProductInvocation = { ...runtime.currentProductInvocation({ cliPath }), sourceRoot: runtime.productRoot() };
@@ -491,7 +430,6 @@ export async function startPreview(runtime: PreviewRuntime, name: string, args: 
   const port = Number(rawPort);
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error(`Invalid app port: ${rawPort}`);
   const owner = previewOwnerForWorktree(instance, targetRoot, appInvocation.sourceRoot, taskWorktree);
-  if (connectionCredentials) owner.connectionCredentials = connectionCredentials;
   const existingOwner = readPreviewOwner(instance, dataRoot);
   const existingInstance = readPreviewInstance(instance, dataRoot);
   const healthy = await healthyInstance(existingInstance);

@@ -71,33 +71,10 @@ buildr doctor --agent <agent> --target <workspace> --json --detail full
 
 ## 连接用途复用同一份技能
 
-连接技能（Connection Skill）是带标准接入声明及必要程序的普通技能（Skill）。清单条目的 `connectionDefinitions` 引用技能源内的附件，例如 `assets/connection.yml`；本地登记可以从 `SKILL.md` 同名字段取得引用，或显式传递 `--connection-definition`。声明、参考文档和程序继续走完整附件投射，不新增加载系统。`resolved.kind: skill-url` 仍只有单个原始 `SKILL.md`，不能据此推测或交付完整程序包。
+连接技能（Connection Skill）是带接入声明和必要程序的普通技能（Skill），完整源位于 `skills/connections/`，沿用已有清单、来源选择和附件投射。连接目录（Connection Catalog）从已登记源读取声明；可发现不代表当前智能体（Agent）已经加载方法，已投射也不代表专业程序可运行。
 
-新连接源统一放在 `skills/connections/<skill-id>/`，包含说明、声明和必要程序；`skills/manifest.yml` 用 `path: connections/<skill-id>` 登记，目录不是另一套加载入口。完整本地源添加自动使用该位置，本地新登记检查目录规范；新模块的非标准位置给出明确目录诊断，不另建兼容或迁移层。制作指引仍属于普通技能（Skill），位于 `skills/buildr/connection-authoring/`。
+实例精确绑定已选来源，安装另一同系统方法不替换已有绑定。来源停用、缺失或不兼容时保留实例并报告局部问题；取消登记和卸载披露受影响实例，不自动删除配置和认证。制作自有方法使用[接入开发方法（connection-authoring）](../../../services/buildr/resources/workspace/skills/buildr/connection-authoring/SKILL.md)，不另建技能（Skill）加载系统。
 
-随包内置来源包含 `nacos-connection`、`mysql-connection`、`kibana-connection` 与 `xxl-job-connection`。前两类的专业操作分别由 Nacos 自带程序与随 Buildr 安装的 `buildr-mysql` 承接；MySQL 查询工具仍是独立内置能力（Builtin），不把编辑器、结果或本机偏好放入连接配置。Kibana 和 XXL-JOB 的程序与参考方法随各自技能源独立投射，实例仍按准确来源选择，不自动接管旧连接。
-
-Buildr 从已登记的当前技能源重建连接目录（Connection Catalog），页面可在尚未投射时解释声明；这不证明当前智能体（Agent）已经加载方法。类别（Category）只用于发现，实例使用 `(assetIdentity, definitionId)` 加来源身份及配置版本明确绑定。自制 Nacos 方法使用独立技能源身份，安装不会替换原实例；来源、程序接收方或配置兼容性变化会局部报告，文档更新不自动要求重新授权。
-
-共享认证只绑定稳定的程序声明与实际远端目标，不绑定本机安装目录。目录项以 `declarationRevision` 说明声明内容，以 `revision` 同时观察本机实际接收方位置；测试、发现和专业执行使用当前观察，路径变化后旧观察被拒绝，重读可核对当前接收方。相同来源的兼容替换保留显式技能（Skill）身份，换来源不因同名继承原来源。每个程序分别报告 `programAvailability`，槽位（Hook）只依赖它实际引用的程序，可选程序缺失不阻断其他动作。槽位（Hook）固定状态由宿主重建，说明文本隐藏秘密；选项编号与已知秘密重合时明确拒绝该次发现，不生成可以误保存的替代编号。
-
-用户先按类别选择 Nacos 等连接系统；只有同系统存在多个来源时再选择接入方式。`presentation.categoryLabel/methodLabel` 提供展示文本，`presentation.groups` 按声明顺序组合配置与团队认证字段，低频区块可默认折叠。动态发现的 `hooks.inputs` 声明必要输入，支持先填地址和完整账号，再读取命名空间（Namespace）等范围；不把未填写范围当作登录前置。连接测试仍检查完整配置，个人账号默认收起并分别测试、保存。
-
-取消登记的预检及结果、来源替换回执和内置技能（Skill）卸载结果披露已绑定实例的编号、名称和来源文件；连接影响不依附于普通能力声明。资产模块通过一次绑定的只读回调读取这些引用，不保存另一份状态，也不将连接读取故障作为合法源操作的阻碍；实例和认证仍保留。停用、更新或缺失后，连接列表和详情继续解释当前绑定诊断，不自动选择同名方法。
-
-`buildr connection-skill` 发现实例和准确方法入口，帮助由所选程序提供；专业参数由程序解释。实际运行从当前技能源或声明的本机安装定位程序，配置和认证通过私有子进程通道交接，业务标准输入（Standard Input）保持独立；帮助不交认证、不访问真实系统。写前通用再校验只核对本机身份与版本，专业对象、许可和结果判断仍由方法与程序维护。
-
-独立 Nacos 使用配置版本 2，`apiBaseUrl` 为明确的专业接口及认证目标，`consoleUrl` 为可选人工网站入口；不猜测端口，也不自动迁移版本 1 认证。第三版接口（API v3）读取不冒充完整管理观察，发布必须取得足以保留格式和元数据（Metadata）的管理详情；不可用时仅拒绝发布。专业命令的 `--result-file` 保存受限本机原样结果，授权范围与原文位置从该文件接续，普通输出仅作展示，不能复制其中已被遮蔽改变的标识作为操作依据。
-
-实例文件按“系统＋环境＋唯一后缀”命名，由 Buildr 管理路径；完整 `id` 不随文件名改变，实际位置从 `sourcePath` 取得，技能（Skill）与程序不拼路径。不同 `id` 的同类同目标实例可以并存；制作指引要求用代表性场景核对目标与用途，并以两条模拟实例验证配置、认证及观察版本（Observed Revision）不串用。同等候选须明确选择，不能按名称、文件名或列表顺序推定；重复正文 `id` 则是局部冲突。
-
-当前服务（Service）不登记到新连接实例及专业对象的长期绑定。Nacos 专业技能（Skill）指导智能体（Agent）先从准确代码库、目标环境及加载声明定位地址和 `namespaceId/group/dataId`，再匹配已保存连接，以稳定 `id` 和当前观察版本执行。实例编号确保选中准确连接，名称与环境只用于发现；代码变量、外部启动覆盖或多个候选尚未确定时如实说明，不能按服务名猜配置，也不必先新增绑定模块。方法区分代码声明、远端当前内容和服务实际加载事实。
-
-| 技能（Skill） | 负责什么 |
-| --- | --- |
-| [Nacos 接入方法（nacos-connection）](../../../services/buildr/resources/workspace/skills/connections/nacos-connection/SKILL.md) | 从代码定位配置，自带命令行接口（CLI）、只读槽位、配置读取比较发布及专业保护 |
-| [接入开发方法（connection-authoring）](../../../services/buildr/resources/workspace/skills/buildr/connection-authoring/SKILL.md) | 指导制作完整源目录、声明和程序，以代表性用户场景验证对象定位、连接选择、专业执行及结果核验；分别说明源、投射、依赖、实际连接与业务结果 |
-
-技能（Skill）启用不表示程序已经安装或可执行。依赖及安装方式由接入成果自行声明，无需所有专业工具先进入公共命令目录；程序检查与外部测试分别发生。旧 `buildr connection` 及 MySQL 查询工作区保留原路径，不因新接入启用自动导入、删除或迁移旧实例。共享实例和个人认证的存放位置见[数据设计](buildr-data-design.md#两条外部连接路径分别保存事实)，实际职责见[连接接入地图](../../code-map/technical-layers.md#技能声明接入与私有上下文)。
+声明、实例、账号及专业职责集中在[外部系统连接](external-connections.md)；实际文件和程序入口见[连接代码地图](../../code-map/technical-layers.md#外部系统接入)。
 
 本文依据[投射规范](../../../openspec/specs/workspace-first-runtime-projection/spec.md)、[资源规范](../../../openspec/specs/buildr-package-assets/spec.md)、[当前接入变更](../../../openspec/changes/archive/2026-10-15-connection-skills-nacos/proposal.md)和代码地图列出的实现；适配器（Adapter）的全部平台分支不在本章展开。

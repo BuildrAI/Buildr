@@ -7,8 +7,7 @@ import test from 'node:test';
 import { execFileSync } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 
-import { assertPreviewStopOwner, previewDataRoot, readPreviewOwner, readPreviewConnectionCredentials, startPreview, stopPreview, type PreviewCaller, type PreviewOwner, type PreviewRuntime } from '../../src/web/application/preview-lifecycle.ts';
-import { defaultWebDataRoot } from '../../src/modules/installation/contracts/web-profile.ts';
+import { assertPreviewStopOwner, previewDataRoot, readPreviewOwner, startPreview, stopPreview, type PreviewCaller, type PreviewOwner, type PreviewRuntime } from '../../src/web/application/preview-lifecycle.ts';
 
 const head = 'a'.repeat(40);
 const owner: PreviewOwner = {
@@ -131,67 +130,6 @@ else {
 function assertProcessExited(pid: number) {
   assert.throws(() => process.kill(pid, 0), (error) => error instanceof Error && 'code' in error && error.code === 'ESRCH');
 }
-
-test('explicit preview credentials bind the same-channel default profile and cannot be reused with a different source checkout', { timeout: 20_000 }, async t => {
-  const f = startupFixture(t, 'ready'), workspaceId = crypto.randomUUID();
-  f.runtime.readPreviewProductIdentity = () => ({ channel: 'development', runtime: { role: 'development' } });
-  f.runtime.resolvePreviewConnectionScope = root => ({ rootPath: root, workspaceId });
-  const args = ['--target', f.target, '--connection-credentials-from', 'development', '--no-open'];
-  const started = await startPreview(f.runtime, 'demo', args, { dataRoot: f.dataRoot });
-  assert.deepEqual(started.owner.connectionCredentials, { profile: 'development', dataRoot: defaultWebDataRoot('development'), workspaceRoot: fs.realpathSync(f.target), workspaceId });
-  assert.equal((await startPreview(f.runtime, 'demo', args, { dataRoot: f.dataRoot })).status, 'reused');
-  f.runtime.productRoot = () => path.join(f.target, 'other-product');
-  await assert.rejects(() => startPreview(f.runtime, 'demo', args, { dataRoot: f.dataRoot }), error => coded(error, 'preview_owner_conflict'));
-});
-
-test('preview credential selection rejects arbitrary paths, other channels, linked targets and task snapshots before spawning', async t => {
-  const f = startupFixture(t, 'ready'), workspaceId = crypto.randomUUID();
-  f.runtime.readPreviewProductIdentity = () => ({ channel: 'development', runtime: { role: 'development' } });
-  f.runtime.resolvePreviewConnectionScope = root => ({ rootPath: root, workspaceId });
-  for (const source of ['/tmp/foreign-vault', 'released', '']) {
-    await assert.rejects(() => startPreview(f.runtime, 'demo', ['--target', f.target, '--connection-credentials-from', source], { dataRoot: f.dataRoot }), error => coded(error, 'preview_connection_credentials_profile_invalid'));
-  }
-  await assert.rejects(() => startPreview(f.runtime, 'demo', ['--target', f.target, '--task', 'some-task', '--connection-credentials-from', 'development'], { dataRoot: f.dataRoot }), error => coded(error, 'preview_connection_credentials_target_invalid'));
-  f.runtime.resolvePreviewConnectionScope = () => ({ rootPath: path.join(f.target, 'canonical'), workspaceId });
-  await assert.rejects(() => startPreview(f.runtime, 'demo', ['--target', f.target, '--connection-credentials-from', 'development'], { dataRoot: f.dataRoot }), error => coded(error, 'preview_connection_credentials_target_invalid'));
-  assert.equal(fs.existsSync(f.pidFile), false); assert.equal(fs.existsSync(f.dataRoot), false);
-});
-
-test('credential runtime checks the persisted owner, product checkout, canonical workspace and profile on every read without fallback', t => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-preview-credentials-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const workspaceId = crypto.randomUUID(), productRoot = path.join(root, 'product'), dataRoot = path.join(root, 'preview');
-  fs.mkdirSync(productRoot); fs.mkdirSync(dataRoot);
-  const source = { profile: 'development' as const, dataRoot: defaultWebDataRoot('development'), workspaceRoot: fs.realpathSync(root), workspaceId };
-  const bound: PreviewOwner = { ...owner, identityMode: 'standalone-checkout', taskId: null, taskStore: null, workspaceRoot: null, worktree: root, productCheckout: productRoot, connectionCredentials: source, managedProcess: { pid: process.pid, state: 'healthy' } };
-  const file = path.join(dataRoot, 'preview.json');
-  const persist = (value: PreviewOwner) => fs.writeFileSync(file, JSON.stringify(value));
-  persist(bound);
-  const env = { BUILDR_APP_DATA_DIR: dataRoot, BUILDR_LOCAL_APP_PREVIEW: JSON.stringify(bound) };
-  let scope = { rootPath: root, workspaceId };
-  const options = { productIdentity: { channel: 'development', runtime: { role: 'development' } }, productRoot, resolveScope: () => scope };
-  assert.deepEqual(readPreviewConnectionCredentials(options, env), source);
-  // Unrelated Git status has no bearing on the bound connection target.
-  persist({ ...bound, head: 'b'.repeat(40), dirty: true });
-  assert.deepEqual(readPreviewConnectionCredentials(options, env), source);
-  for (const invalid of [undefined, '{invalid', JSON.stringify({ ...bound, connectionCredentials: undefined }), JSON.stringify({ ...bound, productCheckout: path.join(root, 'other-product') })]) {
-    assert.throws(() => readPreviewConnectionCredentials(options, { ...env, BUILDR_LOCAL_APP_PREVIEW: invalid }), error => coded(error, 'preview_connection_credentials_identity_invalid'));
-  }
-  scope = { rootPath: root, workspaceId: crypto.randomUUID() };
-  assert.throws(() => readPreviewConnectionCredentials(options, env), error => coded(error, 'preview_connection_credentials_identity_invalid'));
-  scope = { rootPath: path.join(root, 'different-workspace'), workspaceId };
-  assert.throws(() => readPreviewConnectionCredentials(options, env), error => coded(error, 'preview_connection_credentials_target_invalid'));
-  scope = { rootPath: root, workspaceId };
-  persist({ ...bound, connectionCredentials: { ...source, dataRoot: path.join(root, 'arbitrary-vault') } });
-  assert.throws(() => readPreviewConnectionCredentials(options, env), error => coded(error, 'preview_connection_credentials_identity_invalid'));
-  persist(bound);
-  assert.throws(() => readPreviewConnectionCredentials({ ...options, productIdentity: { channel: 'npm', runtime: { role: 'host' } } }, env), error => coded(error, 'preview_connection_credentials_profile_invalid'));
-  persist({ ...bound, managedProcess: { pid: process.pid + 1, state: 'healthy' } });
-  assert.throws(() => readPreviewConnectionCredentials(options, env), error => coded(error, 'preview_connection_credentials_identity_invalid'));
-  persist({ ...bound, connectionCredentials: undefined });
-  assert.throws(() => readPreviewConnectionCredentials(options, env), error => coded(error, 'preview_connection_credentials_identity_invalid'));
-  assert.equal(readPreviewConnectionCredentials(options, { BUILDR_APP_DATA_DIR: dataRoot }), null);
-});
 
 test('preview waits for a healthy slow worker beyond the former four-second polling window', { timeout: 20_000 }, async (t) => {
   const fixture = startupFixture(t, 'slow');

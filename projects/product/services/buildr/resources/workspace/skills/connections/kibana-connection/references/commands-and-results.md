@@ -10,7 +10,7 @@ buildr connection-skill run --connection <id> --expected-revision <revision> --p
 buildr connection-skill run --connection <id> --expected-revision <revision> --program cli -- aggregate --field log.level --since 15m --top 10
 ```
 
-占位须换成本次观察值；不把实例列表顺序、文件名或旧连接编号当作绑定。命令不接收认证，实例另由 Buildr 提供完整组。参数中的业务标识也可能敏感，必要时用受限过滤文件输入条件。
+占位须换成本次观察值；不把实例列表顺序、文件名或另一实例编号当作绑定。命令不接收认证，实例另由 Buildr 提供完整组。参数中的业务标识也可能敏感，必要时用受限过滤文件输入条件。
 
 | 命令 | 作用及限制 |
 | --- | --- |

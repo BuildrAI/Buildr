@@ -36,43 +36,32 @@
 
 项目文档图片由[项目应用](../../services/buildr/src/modules/workspace/application/project-application.ts)复读登记与来源，任务图片由[材料应用](../../services/buildr/src/modules/task/materials/application/task-materials-application.ts)及[项目读取器](../../services/buildr/src/modules/task/materials/application/task-project-document-reader.ts)选择同一本机或候选根。共享[图片文件读取](../../services/buildr/src/infrastructure/filesystem/markdown-images.ts)只负责真实正文引用、有界普通文件、类型签名与前后观察，不拥有任务作用域或登记。前端[图片链接与失败状态](../../services/buildr-web/src/lib/markdownImages.ts)提前过滤明确非法路径，实际身份和权限仍由应用决定。
 
-## 外部连接的公共身份与专业操作
+## 外部系统接入
 
-连接（Connection）维护与专业查询共享同一当前身份和本机认证；工作树（Worktree）解析回规范工作空间（Canonical Workspace），不复制连接。代表链路为 `connection kibana search` → `KibanaLogsApplication.search` → 已绑定的连接访问 → Kibana 提供者（Provider）→ 当前远端数据视图（Data View）和受控结果。
-
-| 职责 | 来源与代表入口 |
-| --- | --- |
-| 公共身份、版本与认证解析 | [connections-application.ts](../../services/buildr/src/modules/connections/application/connections-application.ts) 的 `create/update/test/discoverKibanaViews`；草稿视图发现复用版本保护但不保存草稿 |
-| 当前连接与本机认证存储 | [connection-repository.ts](../../services/buildr/src/modules/connections/persistence/connection-repository.ts)，SQLite 保存元数据、独立本机存储保护密码，不持久保存日志 |
-| Kibana 用例与观察身份 | [kibana-logs-application.ts](../../services/buildr/src/modules/connections/application/kibana-logs-application.ts) 的 `views/fields/search/aggregate`，为结果加入连接编号、版本和环境 |
-| 配置与查询输入约束 | [kibana-connection.ts](../../services/buildr/src/modules/connections/domain/kibana-connection.ts)，目标、数据视图（Data View）和时间；[kibana-types.ts](../../services/buildr/src/modules/connections/domain/kibana-types.ts) 独立公开纯类型，避免公共连接与专业校验循环引用 |
-| 固定协议与安全结果 | [kibana-provider.ts](../../services/buildr/src/modules/connections/infrastructure/kibana-provider.ts)，原生 `fetch`、同步查询、当前元数据、流式上限和秘密遮蔽；[kibana-query.ts](../../services/buildr/src/modules/connections/infrastructure/kibana-query.ts) 解析精确字段、展示字段与受控条件 |
-| 命令与配置页面 | [kibana-cli.ts](../../services/buildr/src/modules/connections/interfaces/cli/kibana-cli.ts) 解析参数与有界过滤文件；[连接抽屉（Drawer）](../../services/buildr-web/src/features/connections/components/ConnectionEditDrawer.tsx) 管理配置、视图发现及迟到响应，专业字段由 [KibanaConnectionFields.tsx](../../services/buildr-web/src/features/connections/components/KibanaConnectionFields.tsx) 承接 |
-
-网页接口（API）只增加草稿视图发现，查询与统计不为入口对称而另建接口。远端仍是日志和字段的权威；视图编号不能替代账号权限，展示排除不等于文档过滤。内部接口（Internal API）不兼容、字段不可用或部分执行只影响相关动作，结果不得将这些状态转换为成功零命中。
-
-## 技能声明接入与私有上下文
+[外部系统连接](../docs/architecture/external-connections.md)解释声明、实例、账号和专业职责。本节定位这些职责的当前实现；约束见[通用运行规范](../../openspec/specs/connection-skill-runtime/spec.md)、[实例规范](../../openspec/specs/connection-instance-files/spec.md)及[独立查询规范](../../openspec/specs/mysql-query/spec.md)。
 
 ### 内置专业技能与独立查询
 
-- **[独立 MySQL 查询（mysql-query）](../../services/buildr/src/modules/mysql-query/)** — 消费明确绑定的新实例；保留单条只读执行约束，不拥有团队连接配置。
+- **[独立 MySQL 查询（mysql-query）](../../services/buildr/src/modules/mysql-query/)** — 消费明确绑定的实例；保留单条只读执行约束，不拥有团队连接配置。
+  - [访问与结果约束（domain/mysql.ts）](../../services/buildr/src/modules/mysql-query/domain/mysql.ts) — MySQL 访问配置、认证、结果类型和输入校验。
+  - [只读执行内核（infrastructure/mysql-client.ts）](../../services/buildr/src/modules/mysql-query/infrastructure/mysql-client.ts) — `createMySqlClient` 提供测试、结构读取及查询，`prepareReadOnlySql` 保留单条只读约束。
   - [查询应用（mysql-query-application.ts）](../../services/buildr/src/modules/mysql-query/application/mysql-query-application.ts) — 核对准确内置来源、完整认证及当前版本，提供结构读取和查询。
-  - [本机偏好（query-preferences.ts）](../../services/buildr/src/modules/mysql-query/persistence/query-preferences.ts) — 独立 SQLite 表及偏好版本，首次读取不迁移旧库。
+  - [本机偏好（query-preferences.ts）](../../services/buildr/src/modules/mysql-query/persistence/query-preferences.ts) — 独立 SQLite 表及偏好版本，不保存查询结果。
   - [专业接入程序（mysql-connection-program.ts）](../../services/buildr/src/modules/mysql-query/interfaces/program/mysql-connection-program.ts) — `buildr-mysql` 的私有上下文（Context）、测试和数据库发现；主包携带运行依赖。
   - [开发辅助命令（tools/development/programs/）](../../services/buildr/tools/development/programs/) — 源码桥接与 macOS 开发启动器（Development Launcher）的进程私有入口，使用已选 Node.js 调用同一程序，保留默认 npm `buildr` 的独立身份。
   - [命令入口（mysql-query-cli.ts）](../../services/buildr/src/modules/mysql-query/interfaces/cli/mysql-query-cli.ts)及[网页入口（mysql-query-http.ts）](../../services/buildr/src/modules/mysql-query/interfaces/http/mysql-query-http.ts) — 同一查询应用的输入输出适配。
-- **[独立查询前端（mysql-query）](../../services/buildr-web/src/features/mysql-query/)** — 新旧连接页共同消费的查询组件（Component）、客户端（Client）、编辑器、结果与本机布局；新实例客户端固定本次实例及观察版本。
+- **[独立查询前端（mysql-query）](../../services/buildr-web/src/features/mysql-query/)** — 连接目录使用的查询组件（Component）、客户端（Client）、编辑器、结果与本机布局；客户端固定本次实例及观察版本。
 - [MySQL 接入方法](../../services/buildr/resources/workspace/skills/connections/mysql-connection/SKILL.md)、[Kibana 日志方法](../../services/buildr/resources/workspace/skills/connections/kibana-connection/SKILL.md)及[XXL-JOB 调度方法](../../services/buildr/resources/workspace/skills/connections/xxl-job-connection/SKILL.md) — 三份完整内置技能源分别维护专业对象定位、操作、结果和局限。
 
-查询代表链路为新连接页 → 独立查询客户端（Client）→ `MySqlQueryApplication` → `ConnectionSkillsApplication.useSelected` → 既有只读执行器。通用内部端口只向装配的查询能力交接已核验认证，不建立可公开读取密码的接口（API）。
+查询代表链路为连接页 → 独立查询客户端（Client）→ `MySqlQueryApplication` → `ConnectionSkillsApplication.useSelected` → MySQL 专用客户端（Client）。通用内部端口只向装配的查询能力交接已核验认证，不建立可公开读取密码的接口（API）。
 
 ### 通用接入与执行
 
-新接入继续使用普通技能（Skill）源。`agent-assets` 的公开端口 `AGENT_ASSETS_SOURCE_READ` 提供清单及有界、安全的文件读取；连接目录（Connection Catalog）读取当前声明，不启动程序、不探测版本、不复制技能正文。`connectionDefinitions` 透传已有登记、资源交付及投射链，来源方法与程序安装分别观察。实例以技能源身份、定义编号、来源及配置版本绑定，类别（Category）不推导业务动作。[当前接入变更](../../openspec/changes/archive/2026-10-15-connection-skills-nacos/proposal.md)规定新旧并行与共享／本机认证边界。
+接入方法使用普通技能（Skill）源。`agent-assets` 的公开端口 `AGENT_ASSETS_SOURCE_READ` 提供清单及有界、安全的文件读取；连接目录（Connection Catalog）读取当前声明，不启动程序、不探测版本、不复制技能正文。`connectionDefinitions` 透传已有登记、资源交付及投射链，来源方法与程序安装分别观察。实例以技能源身份、定义编号、来源及配置版本绑定，类别（Category）不推导业务动作。共享文件和本机认证的边界以当前实例规范为准。
 
-新连接技能源统一登记 `path: connections/<skill-id>`，完整目录为 `skills/connections/<skill-id>/`。新增本地源与受管资源使用同一规范；非标准位置登记给出明确诊断。它是已有技能（Skill）树的专用分组，不增加加载器。
+连接技能源统一登记 `path: connections/<skill-id>`，完整目录为 `skills/connections/<skill-id>/`。新增本地源与受管资源使用同一规范；非标准位置登记给出明确诊断。它是已有技能（Skill）树的专用分组，不增加加载器。
 
-- **[技能声明接入（connection-skills）](../../services/buildr/src/modules/connection-skills/)** — 新逐实例文件、个人组、声明管理及通用执行；不拥有专业业务命令。
+- **[技能声明接入（connection-skills）](../../services/buildr/src/modules/connection-skills/)** — 逐实例文件、个人组、声明管理及通用执行；不拥有专业业务命令。
   - [模块装配（module.ts）](../../services/buildr/src/modules/connection-skills/module.ts) — 使用工作空间（Workspace）和资产公开端口装配命令、网页与应用。
   - **`domain/`** — 声明、实例及输入约束。
     - [声明与字段校验（definition.ts）](../../services/buildr/src/modules/connection-skills/domain/definition.ts) — 受限字段、程序和只读槽位，`presentation.groups` 编排字段，`hooks.inputs` 定义发现所需输入；`validateConfig` 与 `validateAuthentication` 为各入口共享校验。
@@ -81,15 +70,15 @@
   - **`application/`** — 当前来源及用例。
     - [重建目录与精确选择（catalog.ts）](../../services/buildr/src/modules/connection-skills/application/catalog.ts) — `list/resolve` 核对技能入口、声明、来源、停用和兼容版本，缺失不改绑。
     - [连接管理与运行（connection-skills-application.ts）](../../services/buildr/src/modules/connection-skills/application/connection-skills-application.ts) — `save/saveAuth/run/hook` 分开团队与个人保存、版本核对和明确草稿测试；同阶段共享声明目录观察，写前及程序再核验重新观察。
-  - [团队文件与本机认证（persistence/files.ts）](../../services/buildr/src/modules/connection-skills/persistence/files.ts) — 普通文件边界、原子替换、逐实例锁和加密个人组；旧 SQLite 不参与新实例存储。
+  - [团队文件与本机认证（persistence/files.ts）](../../services/buildr/src/modules/connection-skills/persistence/files.ts) — 普通文件边界、原子替换、逐实例锁和加密个人组；实例配置不进入本机 SQLite。
   - [专业程序启动（infrastructure/program.ts）](../../services/buildr/src/modules/connection-skills/infrastructure/program.ts) — 随附及独立程序定位、显式版本检查、私有进程间通信（IPC）、业务标准输入（Standard Input）、超时和有界秘密输出。
-  - [所选来源解析（infrastructure/workspace.ts）](../../services/buildr/src/modules/connection-skills/infrastructure/workspace.ts) — 唯一登记目录维护配置入口，以 Git 公共目录证明关联代码工作树（Git Worktree）；独立克隆（Clone）及多个来源显式冲突，不沿用旧路径的主检出跳转。
+  - [所选来源解析（infrastructure/workspace.ts）](../../services/buildr/src/modules/connection-skills/infrastructure/workspace.ts) — 唯一登记目录维护配置入口，以 Git 公共目录证明关联代码工作树（Git Worktree）；独立克隆（Clone）及多个来源显式冲突。
   - [命令入口（interfaces/cli/connection-skills-cli.ts）](../../services/buildr/src/modules/connection-skills/interfaces/cli/connection-skills-cli.ts) 与 [网页入口（interfaces/http/connection-skills-http.ts）](../../services/buildr/src/modules/connection-skills/interfaces/http/connection-skills-http.ts) — 同一应用的输入输出适配。
 - [资产公开源读取（connection-skill-source.ts）](../../services/buildr/src/modules/agent-assets/application/connection-skill-source.ts) — 验证已登记源目录、入口名称、相对文件及实际路径，不从陈旧投射猜执行程序。
 - [Nacos 完整技能源（nacos-connection）](../../services/buildr/resources/workspace/skills/connections/nacos-connection/) — 独立说明、接入声明、程序和详细方法；资源映射安装到 `skills/connections/nacos-connection/`。
 - [接入制作指引（connection-authoring）](../../services/buildr/resources/workspace/skills/buildr/connection-authoring/) — 指导制作标准目录、声明、程序及验证，不承载真实实例配置。
 - [资产影响只读端口（connection-impact.ts）](../../services/buildr/src/modules/agent-assets/application/connection-impact.ts) — 一次装配连接引用回调，取消登记及内置卸载披露编号、名称与文件；读取故障作为诊断，不阻源操作或删除实例、认证。
-- **[新连接页面（connection-skills）](../../services/buildr-web/src/features/connection-skills/)** — 先选择连接系统，再按地址与团队账号、业务范围填写；高级设置和个人账号默认收起。
+- **[连接页面（connection-skills）](../../services/buildr-web/src/features/connection-skills/)** — 先选择连接系统，再按地址与团队账号、业务范围填写；高级设置和个人账号默认收起。
   - [页面（ConnectionSkillsPage.tsx）](../../services/buildr-web/src/features/connection-skills/pages/ConnectionSkillsPage.tsx) — 实例列表、新增入口与局部诊断；首次或明确刷新读取，保存和删除局部更新，隔离迟到读取。
   - [列表摘要（connection-skill-summary.ts）](../../services/buildr-web/src/features/connection-skills/connection-skill-summary.ts) — 优先使用匹配的选择名称，地址及其余范围压为两逻辑行，不调用外部发现。
   - [编辑抽屉（ConnectionSkillEditDrawer.tsx）](../../services/buildr-web/src/features/connection-skills/components/ConnectionSkillEditDrawer.tsx) — 装配系统选择、团队表单、个人区和底部固定操作；主测试使用团队候选。
@@ -98,7 +87,7 @@
   - [团队表单（ConnectionTeamForm.tsx）](../../services/buildr-web/src/features/connection-skills/components/ConnectionTeamForm.tsx) — 按声明区块编排配置与完整团队认证、发现业务范围，未列字段通用回落。
   - [个人账号（ConnectionPersonalAuthentication.tsx）](../../services/buildr-web/src/features/connection-skills/components/ConnectionPersonalAuthentication.tsx) — 默认折叠、明确覆盖状态、独立测试和保存。
 
-实际操作为“智能体（Agent）发现绑定 → 读取专业技能（Skill）及程序帮助 → 通用入口启动程序 → 所选程序访问真实系统”。程序写前请求本机上下文再次校验，通用宿主不审批业务；Nacos 随附程序另维护远端版本、授权及结果。既有 `connections` 和 MySQL 查询调用链保持前节事实，新机制不自动迁移旧配置。
+实际操作为“智能体（Agent）发现绑定 → 读取专业技能（Skill）及程序帮助 → 通用入口启动程序 → 所选程序访问真实系统”。程序写前请求本机上下文再次校验，通用宿主不审批业务；Nacos 随附程序另维护远端版本、授权及结果。MySQL 另由独立查询应用消费同一明确实例，所有入口保留观察版本及只读边界。
 
 ## 对象装配与跨模块依赖
 

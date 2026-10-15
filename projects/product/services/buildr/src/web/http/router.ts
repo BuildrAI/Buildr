@@ -116,6 +116,10 @@ export function createLocalWorkspaceRequestRouter({
       }
       const workspaceId = apiMatch[1];
       const suffix = apiMatch[2] || '';
+      if (/^\/connections(?:\/|$)/.test(suffix)) {
+        jsonResponse(response, 410, { error: { code: 'connection_retired', message: '旧连接接口已退役，请使用 connection-skills 及 mysql-query。' } });
+        return;
+      }
       const { rootPath: root } = resolveRegisteredWorkspace(workspaceId, { touch: request.method === 'GET' });
       for (const contribution of httpContributions) {
         if (typeof contribution.handle !== 'function') continue;

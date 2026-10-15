@@ -1,8 +1,8 @@
 # 上下文协议与兼容范围
 
-程序仅依赖 Node.js 24 标准库，完整运行源位于 `scripts/` 附件树，不导入 Buildr 开发检出、旧连接实现或运行时投射副本。`--help`、`--version`、`--self-test` 离线运行。其他动作只能通过私有进程间通信（IPC）接收 `buildr.connection-context/v1`，使用 `connections.primary` 的明确实例、配置、完整认证组和观察版本；不从环境或标准输入（Standard Input）发现认证，也不枚举其他实例。关闭或缺失通道就停止。
+程序仅依赖 Node.js 24 标准库，完整运行源位于 `scripts/` 附件树，不导入 Buildr 开发检出或运行时投射副本。`--help`、`--version`、`--self-test` 离线运行。其他动作只能通过私有进程间通信（IPC）接收 `buildr.connection-context/v1`，使用 `connections.primary` 的明确实例、配置、完整认证组和观察版本；不从环境或标准输入（Standard Input）发现认证，也不枚举其他实例。关闭或缺失通道就停止。
 
-配置 `apiBaseUrl` 是实际认证和请求目标，完整保留代理前缀及 `/s/<space>`；默认空间（Space）直接使用站点基址。不得包含 `/app/discover`、查询参数、锚点或嵌入认证。可选 `consoleUrl` 只用于人工查看，可以包含普通页面锚点；不据其推断接口基址。修改实际基址、来源或账号时由宿主核验认证目标与完整组，不自行复用旧凭据。程序不自动迁移旧 `buildr connection kibana` 实例。
+配置 `apiBaseUrl` 是实际认证和请求目标，完整保留代理前缀及 `/s/<space>`；默认空间（Space）直接使用站点基址。不得包含 `/app/discover`、查询参数、锚点或嵌入认证。可选 `consoleUrl` 只用于人工查看，可以包含普通页面锚点；不据其推断接口基址。修改实际基址、来源或账号时由宿主核验认证目标与完整组，不自行复用旧凭据。不按名称接管另一实例。
 
 当前方法沿用 Kibana 8.5.1 的 `/api/data_views`、`/api/data_views/data_view/<encoded-id>` 与同步 `/internal/search/es`。搜索体只含 `params`，内部限定准确视图标题、`track_total_hits: false`、`timeout: 5s` 及受限正文。请求使用基本认证（Basic Authentication），所有重定向拒绝，远端错误正文不回显。其他版本根据实际通道及响应结构核验；登录页、单点登录（SSO）、跨目标跳转、后台搜索生命周期和任意 Elasticsearch 直连不在支持范围。
 

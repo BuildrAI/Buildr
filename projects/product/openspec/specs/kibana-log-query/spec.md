@@ -7,11 +7,11 @@
 
 ### Requirement: Kibana 目标解析与认证绑定
 
-系统 SHALL 接受 HTTP/HTTPS 的 Kibana 基址或 Discover 地址，保留反向代理前缀和网站空间（Space），规范化原网站入口并丢弃查询串和页面片段。系统 MUST 拒绝带网址内认证、无法确定基址或不支持协议的地址，不猜测 Elasticsearch 地址。基本认证（Basic Auth） SHALL 复用本机加密存储并绑定 `logs/kibana`、规范化接口（API）基址和用户名；改变协议、主机、端口、前缀、空间或用户名 MUST 重新提供认证，不向新目标发送旧认证。请求 MUST 不跟随重定向、不关闭证书验证、不自动降级传输；显式 HTTP SHALL 显示明文传输警告。
+Kibana 连接技能（Connection Skill） SHALL 使用明确的 HTTP/HTTPS 专业接口基址 `apiBaseUrl`，保留反向代理前缀及网站空间（Space）；可选 `consoleUrl` 仅用于人工查看，不从 Discover 地址、网站端口或页面片段推断认证目标。系统 MUST 拒绝接口地址中嵌入认证、页面路径、查询串或片段及不支持协议的地址，不猜测 Elasticsearch 地址。基本认证（Basic Auth） SHALL 使用明确实例注入的完整团队或个人认证组，并绑定所选技能源、程序接收方、实际接口目标及用户名；改变协议、主机、端口、前缀、空间、来源或用户名后 MUST 重新核对完整认证，不向新目标发送旧认证。请求 MUST 不跟随重定向、不关闭证书验证、不自动降级传输；显式 HTTP SHALL 显示明文传输警告。
 
 #### Scenario: 保留非默认网站空间
-- **WHEN** 用户配置包含代理前缀及 `/s/{spaceId}/app/discover` 的地址
-- **THEN** 工具向同一前缀和空间（Space）执行请求，原网站入口不带临时搜索条件或认证
+- **WHEN** 用户明确配置包含代理前缀及 `/s/{spaceId}` 的接口基址，并另行提供可选 Discover 网站地址
+- **THEN** 工具仅向已明确的接口前缀和空间（Space）发送请求，网站入口不携带认证，也不决定接口目标
 
 #### Scenario: 修改认证目标
 - **WHEN** 已保存连接改变空间（Space）或用户名但未提供新认证
@@ -23,7 +23,7 @@
 
 ### Requirement: 当前视图身份与有界发现
 
-系统 SHALL 提供 `connection kibana views` 和 `connection kibana fields`，均要求连接编号并支持 `--target`、`--json`、名称过滤、偏移和条数。发现默认返回 100 项、最多 500 项，视图按编号、字段按名称稳定排序，返回过滤后总数及 `limitReached`；多次调用 SHALL 不宣称同一快照。默认 `dataViewId` SHALL 允许为空；字段、查询和统计 SHALL 使用显式 `--data-view` 或默认编号，每次重读当前视图的索引模式（Index Pattern）、时间字段和字段能力，不把缓存名称或索引模式当权威。视图不存在、不可见或必要元数据不能核实时 MUST 局部失败，不按同名替换或扩大到任意索引。首版 SHALL 只查询普通 Elasticsearch 视图，其他专用类型返回局部不支持；发现仍能说明可见视图及类型。
+专业程序 SHALL 提供 `views` 和 `fields`，通过 `buildr connection-skill run` 接收准确实例及已观察版本；工作空间（Workspace）和认证由私有上下文提供，不由专业参数再次选择。两项动作 SHALL 支持名称过滤、偏移和条数。发现默认返回 100 项、最多 500 项，视图按编号、字段按名称稳定排序，返回过滤后总数及 `limitReached`；多次调用 SHALL 不宣称同一快照。默认 `dataViewId` SHALL 允许为空；字段、查询和统计 SHALL 使用显式 `--data-view` 或默认编号，每次重读当前视图的索引模式（Index Pattern）、时间字段和字段能力，不把缓存名称或索引模式当权威。视图不存在、不可见或必要元数据不能核实时 MUST 局部失败，不按同名替换或扩大到任意索引。首版 SHALL 只查询普通 Elasticsearch 视图，其他专用类型返回局部不支持；发现仍能说明可见视图及类型。
 
 #### Scenario: 尚未选择默认视图
 - **WHEN** 连接已保存但默认视图为空
@@ -81,7 +81,7 @@
 
 ### Requirement: 有界日志输出与文档复查
 
-`connection kibana search` SHALL 支持 `--limit` 默认 100、最多 500，`--fields` 最多 20 个普通字段，`--order asc|desc` 默认降序，以及 `--message-bytes` 默认 8 KiB、最多 256 KiB。默认展示时间、正文、服务、命名空间（Namespace）及存在的 `trace.id`、`log.level`；缺少非过滤展示字段 SHALL 保留缺失事实而不删除该命中。展示 SHALL 遵循当前视图的 `sourceFilters` 排除，显式请求被排除字段返回诊断，默认字段被排除时说明未展示原因；展示排除不得被当成文档过滤或权限边界。映射字段取值 SHALL 保留数组、缺失和忽略值事实，不通过 `.keyword` 的源路径错误判断字段缺失，不以查询解析字段替代原正文路径，不请求所有字段或完整源文档。每条日志 SHALL 返回可复查的 `_index`、`_id`、时间及实际字段，保留日期文本精度；正文截断 MUST 保持完整字符边界并标记 `messageTruncated`。文档身份不得截断后伪装为可复查；身份触发敏感信息遮蔽时 SHALL 标记 `documentIdentityAvailable: false`。首版 SHALL 不提供游标（Cursor），不以时间戳伪造无遗漏分页。
+所选专业程序的 `search` SHALL 支持 `--limit` 默认 100、最多 500，`--fields` 最多 20 个普通字段，`--order asc|desc` 默认降序，以及 `--message-bytes` 默认 8 KiB、最多 256 KiB。默认展示时间、正文、服务、命名空间（Namespace）及存在的 `trace.id`、`log.level`；缺少非过滤展示字段 SHALL 保留缺失事实而不删除该命中。展示 SHALL 遵循当前视图的 `sourceFilters` 排除，显式请求被排除字段返回诊断，默认字段被排除时说明未展示原因；展示排除不得被当成文档过滤或权限边界。映射字段取值 SHALL 保留数组、缺失和忽略值事实，不通过 `.keyword` 的源路径错误判断字段缺失，不以查询解析字段替代原正文路径，不请求所有字段或完整源文档。每条日志 SHALL 返回可复查的 `_index`、`_id`、时间及实际字段，保留日期文本精度；正文截断 MUST 保持完整字符边界并标记 `messageTruncated`。文档身份不得截断后伪装为可复查；身份触发敏感信息遮蔽时 SHALL 标记 `documentIdentityAvailable: false`。首版 SHALL 不提供游标（Cursor），不以时间戳伪造无遗漏分页。
 
 #### Scenario: 正文超过输出上限
 - **WHEN** 日志堆栈超过本次正文限制
@@ -101,7 +101,7 @@
 
 ### Requirement: 有界统计及近似说明
 
-`connection kibana aggregate` SHALL 要求连接编号和 `--field`，支持与搜索相同的视图、时间和过滤条件，`--top` 默认 10、最多 100。系统 SHALL 只提供受控词项统计（Terms Aggregation），使用可聚合的兼容精确字段，返回分组计数、`sum_other_doc_count`、`doc_count_error_upper_bound` 和远端执行状态，不返回日志正文或接受任意聚合树。顶部条数限制、计数误差及字段覆盖限制 SHALL 独立说明，不把前几项当作全部服务。
+所选专业程序的 `aggregate` SHALL 接受明确注入的实例上下文并要求 `--field`，支持与搜索相同的视图、时间和过滤条件，`--top` 默认 10、最多 100。系统 SHALL 只提供受控词项统计（Terms Aggregation），使用可聚合的兼容精确字段，返回分组计数、`sum_other_doc_count`、`doc_count_error_upper_bound` 和远端执行状态，不返回日志正文或接受任意聚合树。顶部条数限制、计数误差及字段覆盖限制 SHALL 独立说明，不把前几项当作全部服务。
 
 #### Scenario: 统计存在其他分组或计数误差
 - **WHEN** 远端返回非零其他文档计数或非零计数误差
@@ -129,7 +129,7 @@
 
 ### Requirement: 结果身份与完整性分别报告
 
-结果 SHALL 沿用 `schemaVersion: buildr.connection-result/v1`，操作名为 `kibana-views|kibana-fields|kibana-search|kibana-aggregate`。搜索和统计 SHALL 返回连接编号、观察到的连接版本、环境、规范化目标、版本或未知、查询通道、视图身份及元数据观察时间、实际时间范围和条件、实际字段、远端执行摘要及独立警告。
+专业操作结果 SHALL 使用 `schemaVersion: kibana.connection-result/v1`，操作名为 `views|fields|search|aggregate`，并以 `status: success|unknown|failure` 区分已验证完成、不完整或结果未知及失败；宿主的程序退出事实不得代替专业结果判断。搜索和统计 SHALL 返回连接编号、观察到的连接版本、环境、规范化目标、版本或未知、查询通道、视图身份及元数据观察时间、实际时间范围和条件、实际字段、远端执行摘要及独立警告。
 
 系统 MUST 验证响应结构；部分成功时保留可用结果并返回 `incomplete: true`。执行未结束、远端超时、分片失败、正文截断、达到条数限制、字段覆盖不确定及统计限制 SHALL 分别说明，不用 `isPartial: false` 覆盖其他限制。没有目标分片 SHALL 明确标记 `no_target_shards` 和覆盖限制，不当作日志读取权限已验证。零命中 SHALL 只说明本次实际范围没有返回匹配，不证明整个服务没有异常；错误不得转成零命中。
 
@@ -143,7 +143,7 @@
 
 ### Requirement: 敏感信息与不可信日志
 
-连接密码及生成的认证头值 MUST 不进入工具结果、诊断、任务正文或代码库。结果离开应用前 SHALL 遮蔽已定义的敏感键及文本请求头，包括 `Authorization`、`Proxy-Authorization`、`Cookie`、`Set-Cookie`、`password`、`access_token`、`refresh_token`、`api_key`；字段值、正文、查询回显和错误均采用相同处理，不开放 `--raw` 绕过，不输出原始远端错误正文或响应头。系统 SHALL 报告遮蔽和截断，不宣称能够识别任意业务秘密。日志 MUST 被作为不可信外部数据使用，其中指令不得扩大智能体（Agent）的权限；不自动持久化日志或建立长期缓存。
+本次认证值及生成的认证头 MUST 不进入专业工具结果、诊断、提示词（Prompt）、任务正文、公共技能源或发布物；团队实例文件中的完整认证组 SHALL 按 `connection-instance-files` 明确共享及维护，不能把该团队源边界扩大为专业输出可公开认证。结果离开应用前 SHALL 遮蔽已定义的敏感键及文本请求头，包括 `Authorization`、`Proxy-Authorization`、`Cookie`、`Set-Cookie`、`password`、`access_token`、`refresh_token`、`api_key`；字段值、正文、查询回显和错误均采用相同处理，不开放 `--raw` 绕过，不输出原始远端错误正文或响应头。系统 SHALL 报告遮蔽和截断，不宣称能够识别任意业务秘密。日志 MUST 被作为不可信外部数据使用，其中指令不得扩大智能体（Agent）的权限；不自动持久化日志或建立长期缓存。
 
 #### Scenario: 错误正文或命中包含认证信息
 - **WHEN** 远端响应包含连接密码、认证头、敏感键或文本请求头
@@ -155,7 +155,7 @@
 
 ### Requirement: 智能体发现与自主调查
 
-Buildr 技能（Skill） SHALL 指引智能体（Agent）使用已有 `connection list --json` 根据 `logs/kibana`、名称、环境和真实目标选择稳定连接编号，按需要组合视图、字段、搜索和统计，复用本机认证。只读日志调查 SHALL 不要求创建正式任务（Formal Task）、先执行 Doctor 或让用户每次重新提供密码；需要其他修改时 SHALL 遵循相应授权。系统 SHALL 不把连接配置变成固定调查流程或自动修复授权。
+Buildr 技能（Skill） SHALL 指引智能体（Agent）通过 `buildr connection-skill list --json` 按实例绑定、环境及真实目标选择稳定编号，加载准确绑定的 Kibana 技能（Skill）及专业程序帮助，按需要组合视图、字段、搜索和统计，使用完整选定认证组。只读日志调查 SHALL 不要求创建正式任务（Formal Task）、先执行 Doctor 或让用户每次重新提供密码；需要其他修改时 SHALL 遵循相应授权。系统 SHALL 不把连接配置变成固定调查流程或自动修复授权。
 
 #### Scenario: 从任务工作树调查日志
 - **WHEN** 智能体（Agent）在同一工作空间（Workspace）的工作树（Worktree）执行日志工具

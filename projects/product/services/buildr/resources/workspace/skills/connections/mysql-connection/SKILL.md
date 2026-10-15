@@ -1,6 +1,6 @@
 ---
 name: mysql-connection
-description: 使用明确绑定的 MySQL 连接管理地址与完整认证组、执行只读连接测试和必要数据库发现；不接管旧连接，查询使用独立内置查询工具。
+description: 使用明确绑定的 MySQL 连接管理地址与完整认证组、执行只读连接测试和必要数据库发现；不按同名接管实例，查询使用独立内置查询工具。
 connectionDefinitions:
   - assets/connection.yml
 ---
@@ -9,7 +9,7 @@ connectionDefinitions:
 
 本技能（Skill）维护 MySQL 接入方法。Buildr 的查询工具是独立内置能力（Builtin），负责数据库展示偏好、表结构浏览和受限只读查询；这些内容不写入连接声明或连接配置。
 
-先从用户目标、服务配置与已登记连接找到准确主机、端口、环境和数据库。执行 `buildr connection-skill --help`，再读取 `definitions list --json` 与 `list --json`；核对所选实例明确绑定 `mysql-connection` 的 `mysql` 定义，不按系统名称、类别或同名旧实例推断绑定。仅有旧连接时保留原实例；新建和认证录入使用当前管理入口及其已观察版本，不自动搬运个人密码。
+先从用户目标、服务配置与已登记连接找到准确主机、端口、环境和数据库。执行 `buildr connection-skill --help`，再读取 `definitions list --json` 与 `list --json`；核对所选实例明确绑定 `mysql-connection` 的 `mysql` 定义，不按系统名称、类别或同名旧实例推断绑定。新建和认证录入使用当前管理入口及其已观察版本，不按同名接管实例，不自动搬运个人密码。
 
 团队认证与个人认证均为包含用户名、密码的完整认证组（Authentication Group）；个人组存在但失效时停止，不回退团队组。目标主机、端口、账号或程序接收方变化后重新配置完整认证。允许明确的空密码；不得把用户名保留为共享配置、只覆盖个人密码。
 

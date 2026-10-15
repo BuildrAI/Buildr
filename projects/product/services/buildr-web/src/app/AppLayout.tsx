@@ -103,7 +103,7 @@ function AppLayoutView({ renderResource }: { renderResource: (item: ResourcePrev
   const sectionHistory = useRef<{ workspaceId: string | null; pages: Record<string, { to: string; state?: unknown }> }>({ workspaceId, pages: {} });
   if (sectionHistory.current.workspaceId !== workspaceId) sectionHistory.current = { workspaceId, pages: {} };
   const section = workspaceId ? location.pathname.slice(`/workspaces/${workspaceId}/`.length).split('/')[0] : '';
-  if (workspaceId && ['workspace-overview', 'projects', 'services', 'repositories', 'connections', 'connection-skills', 'skills', 'articles'].includes(section) && !/\/(new|edit)$/.test(location.pathname)) {
+  if (workspaceId && ['workspace-overview', 'projects', 'services', 'repositories', 'connection-skills', 'skills', 'articles'].includes(section) && !/\/(new|edit)$/.test(location.pathname)) {
     sectionHistory.current.pages[section] = { to: location.pathname + retainedSearch + location.hash, state: location.state };
   }
   const workspaceMenuTarget = (name: string) => sectionHistory.current.pages[name] || { to: `/workspaces/${workspaceId}/${name}` };

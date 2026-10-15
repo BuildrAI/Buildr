@@ -106,6 +106,10 @@ documentSections:
         title: "Buildr 怎样实现"
         summary: "理解三个服务（Service）、模块协作、运行和写入保护。"
       - location: scope
+        path: knowledge/docs/architecture/external-connections.md
+        title: "外部系统连接"
+        summary: "理解声明、实例、账号和专业操作的分工与共同边界。"
+      - location: scope
         path: knowledge/docs/architecture/agent-integration.md
         title: "接入方式与职责"
         summary: "从检测、确认接入到原生会话关联与独立生成。"
@@ -407,6 +411,26 @@ artifacts:
     files:
       - file-system
       - file-system-graph
+  - id: external-connections-document
+    title: 外部系统连接
+    kind: document
+    path: knowledge/docs/architecture/external-connections.md
+    objects:
+      - system-structure
+    sources:
+      - connection-runtime-spec
+      - connection-instances-spec
+      - connection-skills-definition
+      - connection-skills-application
+      - connection-skills-files
+      - connection-skills-program
+      - mysql-connection-source
+      - mysql-query-source
+      - mysql-domain-source
+      - mysql-client-source
+      - connection-skills-nacos-source
+      - kibana-connection-source
+      - xxl-job-connection-source
   - id: reference-technical-document
     title: Buildr 怎样实现
     kind: document
@@ -415,8 +439,6 @@ artifacts:
       - system-structure
     sources:
       - technical-http-host-source
-      - external-connections-application
-      - kibana-logs-provider
       - connection-skills-application
       - connection-skills-program
       - connection-skills-workspace
@@ -424,6 +446,8 @@ artifacts:
       - connection-skills-registration
       - connection-skills-nacos-source
       - mysql-query-source
+      - mysql-domain-source
+      - mysql-client-source
       - kibana-connection-source
       - xxl-job-connection-source
       - connection-skills-definition
@@ -456,8 +480,6 @@ artifacts:
       - code-source-control-read
       - code-source-control-image-read
       - code-source-control-image-preview
-      - external-connections-application
-      - kibana-logs-provider
   - id: technical-layers-map
     title: 技术层、对象与代表方法
     kind: code-map
@@ -473,7 +495,6 @@ artifacts:
       - task-source-taskagentaction-7a3c7f
       - markdown-document-images
       - markdown-image-links
-      - external-connections-application
       - connection-skills-source
       - connection-skills-definition
       - connection-skills-catalog
@@ -486,13 +507,12 @@ artifacts:
       - connection-skills-registration
       - connection-skills-nacos-source
       - mysql-query-source
+      - mysql-domain-source
+      - mysql-client-source
       - kibana-connection-source
       - xxl-job-connection-source
       - connection-skills-authoring-source
       - connection-skills-ui
-      - kibana-logs-provider
-      - kibana-logs-query
-      - kibana-connection-ui
   - id: project-relations-article
     title: 项目、服务与代码库如何协作
     kind: document
@@ -599,6 +619,8 @@ artifacts:
       - connection-skills-registration
       - connection-skills-nacos-source
       - mysql-query-source
+      - mysql-domain-source
+      - mysql-client-source
       - kibana-connection-source
       - xxl-job-connection-source
       - connection-skills-authoring-source
@@ -1393,16 +1415,41 @@ artifacts:
       - file-responsibility-graph
       - project-terms
 sources:
+  - id: connection-runtime-spec
+    title: 连接通用运行约定
+    kind: spec
+    path: openspec/specs/connection-skill-runtime/spec.md
+    summary: 声明、明确实例及专业程序交接的通用边界，不预定义业务操作。
+  - id: connection-instances-spec
+    title: 连接实例与完整认证组
+    kind: spec
+    path: openspec/specs/connection-instance-files/spec.md
+    summary: 团队文件、个人完整组、准确绑定和独立观察版本的要求。
+  - id: mysql-connection-source
+    title: MySQL 接入方法
+    kind: code
+    path: services/buildr/resources/workspace/skills/connections/mysql-connection/SKILL.md
+    summary: 维护准确目标与完整账号，随包程序只承担测试和数据库发现。
+  - id: mysql-domain-source
+    title: MySQL 专用访问与结果约束
+    kind: code
+    path: services/buildr/src/modules/mysql-query/domain/mysql.ts
+    summary: 定义 MySQL 访问配置、认证、结果及偏好类型和必要输入校验。
+  - id: mysql-client-source
+    title: MySQL 只读执行内核
+    kind: code
+    path: services/buildr/src/modules/mysql-query/infrastructure/mysql-client.ts
+    summary: 专用客户端共享测试、结构读取及只读执行，保留时间、容量和精度边界。
   - id: mysql-query-source
     title: 独立 MySQL 查询应用
     kind: code
     path: services/buildr/src/modules/mysql-query/application/mysql-query-application.ts
     summary: 核验内置来源、明确实例版本和完整认证，提供只读结构与查询，不拥有连接配置。
   - id: mysql-query-preferences-source
-    title: 新 MySQL 实例本机查询偏好
+    title: MySQL 实例本机查询偏好
     kind: code
     path: services/buildr/src/modules/mysql-query/persistence/query-preferences.ts
-    summary: 独立 SQLite 表按工作空间、实例和绑定区分偏好，读取不升级旧库，保存独立校验版本。
+    summary: 独立 SQLite 表按工作空间、实例和绑定区分偏好，保存独立校验版本，不保存查询结果。
   - id: kibana-connection-source
     title: 独立 Kibana 连接方法
     kind: code
@@ -1449,7 +1496,7 @@ sources:
     path: services/buildr/src/modules/connection-skills/application/catalog.ts
     summary: 从当前技能源重建定义目录，核对来源、兼容版本和停用，不按同系统名称替换实现。
   - id: connection-skills-application
-    title: 新实例管理与专业程序交接
+    title: 实例管理与专业程序交接
     kind: code
     path: services/buildr/src/modules/connection-skills/application/connection-skills-application.ts
     summary: 团队与个人分别保存并核对观察版本，运行按明确实例交接上下文，草稿测试不持久化。
@@ -1462,9 +1509,9 @@ sources:
     title: 团队实例与本机整组认证
     kind: code
     path: services/buildr/src/modules/connection-skills/persistence/files.ts
-    summary: 新逐实例团队文件、独立本机加密个人组、观察标识与局部锁，不迁移旧连接 SQLite。
+    summary: 逐实例团队文件、独立本机加密个人组、观察标识与局部锁，配置与本机状态各自维护。
   - id: connection-skills-workspace
-    title: 新连接的唯一配置来源
+    title: 连接的唯一配置来源
     kind: code
     path: services/buildr/src/modules/connection-skills/infrastructure/workspace.ts
     summary: 已登记来源保持配置权威，以Git公共目录核对关联代码工作树，独立副本和多源冲突不猜选。
@@ -1587,26 +1634,6 @@ sources:
     path: services/buildr/src/web/http/session.ts
     summary: 在路由分发前核对实际监听主机与端口，写入继续校验来源、会话和内容类型。
     observedDigest: bb6e62fda12062a189ad96935de3b0820ee13d9105925d13ea1825da13b43a97
-  - id: external-connections-application
-    title: 外部连接公共身份与认证
-    kind: code
-    path: services/buildr/src/modules/connections/application/connections-application.ts
-    summary: 统一本机连接维护、配置版本及认证绑定，草稿视图发现不保存配置。
-  - id: kibana-logs-provider
-    title: Kibana 固定协议与安全结果
-    kind: code
-    path: services/buildr/src/modules/connections/infrastructure/kibana-provider.ts
-    summary: 当前视图读取、同步只读查询、兼容诊断及有界敏感信息处理。
-  - id: kibana-logs-query
-    title: Kibana 字段与查询范围
-    kind: code
-    path: services/buildr/src/modules/connections/infrastructure/kibana-query.ts
-    summary: 时间、精确字段、展示排除和受控过滤，不接受任意查询或脚本。
-  - id: kibana-connection-ui
-    title: Kibana 连接配置与视图发现
-    kind: code
-    path: services/buildr-web/src/features/connections/components/KibanaConnectionFields.tsx
-    summary: 当前草稿的视图选择、分页和反馈，不提供另一套日志查询控制台。
   - id: technical-prompt-request-source
     title: 生成指令的输入与请求时效
     kind: code
@@ -3437,6 +3464,7 @@ sources:
     path: services/buildr-web/src/features/task/components/PrototypeReaderLayout.tsx
     summary: 独立任务阅读与离线预览共用页面目录和阅读布局，页面选择由入口接入。
 relations:
+  - { from: external-connections-document, to: technical-layers-map, kind: guides }
   - { from: product-overview-article, to: system, kind: guides }
   - { from: reference-technical-document, to: system, kind: guides }
   - { from: reference-technical-document, to: system-services-assets-map, kind: guides }

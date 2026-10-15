@@ -85,14 +85,15 @@ export function tabForPath(
     if (decoded.some((p) => !p || p === "." || p === ".." || /[/?#\\]/.test(p)))
       return null;
     const [area, project, service] = decoded;
+    if (area === "connections" && parts.length === 1)
+      return { key: "dir:connection-skills", kind: "dir", title: "连接", path: `${prefix}connection-skills` };
     if(area==='code'&&parts.length===2&&['explorer','source-control'].includes(project))return {key:`dir:code:${project}`,kind:'dir',title:project==='explorer'?'资源管理器':'源代码管理',path};
     const names: Record<string, string> = {
       "workspace-overview": "工作空间总览",
       projects: "项目目录",
       services: "服务目录",
       repositories: "代码库目录",
-      connections: "连接",
-      "connection-skills": "连接（新机制）",
+      "connection-skills": "连接",
       skills: "技能",
       articles: "文章",
       tasks: "任务",
@@ -123,7 +124,7 @@ export function tabForPath(
 /** Query and code tools use their panel; document-oriented pages retain a reading measure. */
 export function workspacePageLayout(workspaceId: string, path: string): 'functional' | 'reading' {
   const key = tabForPath(workspaceId, path)?.key;
-  return key === 'dir:connections' || key?.startsWith('dir:code:') ? 'functional' : 'reading';
+  return key === 'dir:connection-skills' || key?.startsWith('dir:code:') ? 'functional' : 'reading';
 }
 
 /** Remember the project home, rather than replaying a retired daily-progress redirect. */
@@ -147,7 +148,7 @@ export function parseTabs(id: string, raw: string | null): WorkspacePageTab[] {
       const tab = tabForPath(id, item.path);
       if (!tab || tab.kind === "svc" || result.some((t) => t.key === tab.key))
         continue;
-      if (typeof item.title === "string" && item.title.trim())
+      if (tab.key !== "dir:connection-skills" && typeof item.title === "string" && item.title.trim())
         tab.title = item.title.replace(/ · 知识$/, "").slice(0, 200);
       if (
         typeof item.search === "string" &&
