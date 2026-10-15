@@ -82,6 +82,8 @@
 
 声明、配置、个人组和程序来源各有观察依据。编辑和运行先核对当前值；程序写前再校验本机上下文，变化时不静默改用新配置。私有通道向所选程序交接有效认证，普通发现与日志不展开秘密；专业状态位于该提供者的 `privateStateRoot`，不成为通用权限库。依赖安装、连接测试及业务验证分别成立。
 
+新 MySQL 实例的查询偏好由独立查询工具保存在同一工作空间（Workspace）本机 SQLite 的 `mysql_skill_query_preferences` 表，按工作空间编号、实例编号及完整绑定摘要区分。它不依赖旧连接表外键，不进入团队文件，拥有独立代数及观察版本。旧数据库首次读取没有该表时返回初始空选择，不写库；首次明确保存才通过事务（Transaction）应用新增迁移。查询结果不落库。XXL-JOB 的服务关联与授权使用事实由技能（Skill）私有状态按实例维护，运行前仍重新核验服务登记与远端对象。
+
 独立 Nacos 的版本 2 将专业接口地址与可选网站分开，旧版本保留并明确提示迁移。`--result-file` 在网络操作前独占创建权限为 0600 的本机结果文件，保存完整授权范围及默认原文位置；它是一次操作的私有产物（Artifact），不进入团队文件或长期登记，普通展示值不能替代该原样结果。发布后若结果落盘失败，仍保留已经发生的发布事实。
 
 换机器可以由 Git 恢复团队实例及技能源，但仍需重新准备程序；本机个人组及密钥不随之恢复。无个人组时使用团队，已有失效个人组不能回退。来源、配置版本或程序接收方变化应核对迁移及认证目标，不能只改显示名称。实现见[文件及本机认证](../../../services/buildr/src/modules/connection-skills/persistence/files.ts)、[应用与版本判断](../../../services/buildr/src/modules/connection-skills/application/connection-skills-application.ts)和[声明目录](../../../services/buildr/src/modules/connection-skills/application/catalog.ts)。本章原有 SQLite 图中的连接对象表示旧路径，新接入文件和本机认证由本节说明。

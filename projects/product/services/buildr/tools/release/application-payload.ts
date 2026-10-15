@@ -157,6 +157,7 @@ async function buildApplicationPayload(output: any, sourceCommit: any, options: 
       absWorkingDir: serviceRoot,
       entryPoints: {
         'runtime/buildr': MAIN_ENTRY,
+        'runtime/mysql-connection': path.join(serviceRoot, 'tools/release/mysql-connection-entry.ts'),
         'resources/runtime/read-worker': WORKER_ENTRY,
         'resources/runtime/upstream-openspec-worker': UPSTREAM_OPENSPEC_WORKER_ENTRY,
       },

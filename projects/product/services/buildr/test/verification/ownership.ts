@@ -204,6 +204,16 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
   },
   "integration-runtime": {
     "inputs": [
+      "src/modules/mysql-query/**",
+      "bin/buildr-mysql.mjs",
+      "resources/workspace/skills/connections/mysql-connection/**",
+      "resources/workspace/skills/connections/kibana-connection/**",
+      "resources/workspace/skills/connections/xxl-job-connection/**",
+      "test/integration/mysql-query-skills.test.ts",
+      "test/integration/mysql-connection-program.test.ts",
+      "test/integration/kibana-connection-skill.test.ts",
+      "test/integration/xxl-job-connection-skill.test.ts",
+      "test/integration/builtin-connection-skills-package.test.ts",
       "src/modules/connection-skills/**",
       "src/modules/agent-assets/application/connection-skill-source.ts",
       "src/modules/agent-assets/application/connection-impact.ts",

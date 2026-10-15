@@ -53,6 +53,20 @@
 
 ## 技能声明接入与私有上下文
 
+### 内置专业技能与独立查询
+
+- **[独立 MySQL 查询（mysql-query）](../../services/buildr/src/modules/mysql-query/)** — 消费明确绑定的新实例；保留单条只读执行约束，不拥有团队连接配置。
+  - [查询应用（mysql-query-application.ts）](../../services/buildr/src/modules/mysql-query/application/mysql-query-application.ts) — 核对准确内置来源、完整认证及当前版本，提供结构读取和查询。
+  - [本机偏好（query-preferences.ts）](../../services/buildr/src/modules/mysql-query/persistence/query-preferences.ts) — 独立 SQLite 表及偏好版本，首次读取不迁移旧库。
+  - [专业接入程序（mysql-connection-program.ts）](../../services/buildr/src/modules/mysql-query/interfaces/program/mysql-connection-program.ts) — `buildr-mysql` 的私有上下文（Context）、测试和数据库发现；主包携带运行依赖。
+  - [命令入口（mysql-query-cli.ts）](../../services/buildr/src/modules/mysql-query/interfaces/cli/mysql-query-cli.ts)及[网页入口（mysql-query-http.ts）](../../services/buildr/src/modules/mysql-query/interfaces/http/mysql-query-http.ts) — 同一查询应用的输入输出适配。
+- **[独立查询前端（mysql-query）](../../services/buildr-web/src/features/mysql-query/)** — 新旧连接页共同消费的查询组件（Component）、客户端（Client）、编辑器、结果与本机布局；新实例客户端固定本次实例及观察版本。
+- [MySQL 接入方法](../../services/buildr/resources/workspace/skills/connections/mysql-connection/SKILL.md)、[Kibana 日志方法](../../services/buildr/resources/workspace/skills/connections/kibana-connection/SKILL.md)及[XXL-JOB 调度方法](../../services/buildr/resources/workspace/skills/connections/xxl-job-connection/SKILL.md) — 三份完整内置技能源分别维护专业对象定位、操作、结果和局限。
+
+查询代表链路为新连接页 → 独立查询客户端（Client）→ `MySqlQueryApplication` → `ConnectionSkillsApplication.useSelected` → 既有只读执行器。通用内部端口只向装配的查询能力交接已核验认证，不建立可公开读取密码的接口（API）。
+
+### 通用接入与执行
+
 新接入继续使用普通技能（Skill）源。`agent-assets` 的公开端口 `AGENT_ASSETS_SOURCE_READ` 提供清单及有界、安全的文件读取；连接目录（Connection Catalog）读取当前声明，不启动程序、不探测版本、不复制技能正文。`connectionDefinitions` 透传已有登记、资源交付及投射链，来源方法与程序安装分别观察。实例以技能源身份、定义编号、来源及配置版本绑定，类别（Category）不推导业务动作。[当前接入变更](../../openspec/changes/archive/2026-10-15-connection-skills-nacos/proposal.md)规定新旧并行与共享／本机认证边界。
 
 新连接技能源统一登记 `path: connections/<skill-id>`，完整目录为 `skills/connections/<skill-id>/`。新增本地源与受管资源使用同一规范；非标准位置登记给出明确诊断。它是已有技能（Skill）树的专用分组，不增加加载器。

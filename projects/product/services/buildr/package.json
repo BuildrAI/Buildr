@@ -45,11 +45,13 @@
     "./*": "./*"
   },
   "bin": {
-    "buildr": "bin/buildr.mjs"
+    "buildr": "bin/buildr.mjs",
+    "buildr-mysql": "bin/buildr-mysql.mjs"
   },
   "files": [
     "LICENSE",
     "bin/buildr.mjs",
+    "bin/buildr-mysql.mjs",
     "build/test-context/",
     "src/",
     "README.md",

@@ -11,6 +11,9 @@ include:
   - resources/installation/launcher/
   - resources/runtime/
   - resources/workspace/skills/connections/nacos-connection/
+  - resources/workspace/skills/connections/mysql-connection/
+  - resources/workspace/skills/connections/kibana-connection/
+  - resources/workspace/skills/connections/xxl-job-connection/
   - resources/workspace/skills/buildr/connection-authoring/
 
 agentSkills:
@@ -197,6 +200,24 @@ initialSkillBindings:
 builtins:
   rules: []
   skills:
+    - id: mysql-connection
+      path: resources/workspace/skills/connections/mysql-connection
+      target: skills/connections/mysql-connection
+      description: 配置和核验明确绑定的 MySQL 连接，发现数据库，并使用独立内置查询工具读取结构与数据。
+      required: false
+      connectionDefinitions: [assets/connection.yml]
+    - id: kibana-connection
+      path: resources/workspace/skills/connections/kibana-connection
+      target: skills/connections/kibana-connection
+      description: 使用明确绑定的 Kibana 连接发现视图与字段，执行有界只读日志搜索和统计。
+      required: false
+      connectionDefinitions: [assets/connection.yml]
+    - id: xxl-job-connection
+      path: resources/workspace/skills/connections/xxl-job-connection
+      target: skills/connections/xxl-job-connection
+      description: 从服务配置定位 XXL-JOB 执行器，查询和受控维护调度任务，核验执行记录与日志。
+      required: false
+      connectionDefinitions: [assets/connection.yml]
     - id: nacos-connection
       path: resources/workspace/skills/connections/nacos-connection
       target: skills/connections/nacos-connection

@@ -105,7 +105,7 @@ function stagingPackageJson(payloadManifest: any, productMetadata: any): any  {
       },
       './package.json': './package.json',
     },
-    bin: { buildr: 'bin/buildr.mjs' },
+    bin: { buildr: 'bin/buildr.mjs', 'buildr-mysql': 'bin/buildr-mysql.mjs' },
     scripts: { postinstall: 'node scripts/postinstall.mjs' },
     files: [
       'LICENSE',
@@ -113,10 +113,12 @@ function stagingPackageJson(payloadManifest: any, productMetadata: any): any  {
       'application-payload.json',
       'installation-origin.json',
       'bin/buildr.mjs',
+      'bin/buildr-mysql.mjs',
       'test-context.mjs',
       'build/test-context/',
       'scripts/postinstall.mjs',
       'runtime/buildr.cjs',
+      'runtime/mysql-connection.cjs',
       'payload/',
     ],
     engines: { node: payloadManifest.enginesNode },
@@ -177,6 +179,7 @@ export function createNpmPackStaging(payloadRoot: any, destination: any, options
     fs.mkdirSync(path.join(root, 'build/test-context'), { recursive: true });
     fs.copyFileSync(path.join(frozen.root, APPLICATION_PAYLOAD_MANIFEST), path.join(root, APPLICATION_PAYLOAD_MANIFEST));
     fs.copyFileSync(path.join(frozen.root, 'runtime/buildr.cjs'), path.join(root, 'runtime/buildr.cjs'));
+    fs.copyFileSync(path.join(frozen.root, 'runtime/mysql-connection.cjs'), path.join(root, 'runtime/mysql-connection.cjs'));
     copyTree(path.join(frozen.root, 'resources'), path.join(root, 'payload'));
     const productMetadata: any = JSON.parse(fs.readFileSync(path.join(root, 'payload/product/package.json'), 'utf8'));
     fs.copyFileSync(path.join(root, 'payload/product/LICENSE'), path.join(root, 'LICENSE'));
@@ -186,6 +189,7 @@ export function createNpmPackStaging(payloadRoot: any, destination: any, options
     fs.writeFileSync(path.join(root, 'package.json'), `${JSON.stringify(stagingPackageJson(frozen.manifest, productMetadata), null, 2)}\n`, 'utf8');
     fs.writeFileSync(path.join(root, 'installation-origin.json'), `${JSON.stringify(createNpmInstallationOrigin(frozen.manifest), null, 2)}\n`, 'utf8');
     fs.writeFileSync(path.join(root, 'bin/buildr.mjs'), npmBinSource(), { encoding: 'utf8', mode: 0o755 });
+    fs.writeFileSync(path.join(root, 'bin/buildr-mysql.mjs'), npmBinSource().replace("'buildr.cjs'", "'mysql-connection.cjs'"), { encoding: 'utf8', mode: 0o755 });
     fs.writeFileSync(path.join(root, 'scripts/postinstall.mjs'), npmPostinstallSource(), { encoding: 'utf8', mode: 0o755 });
     verifyApplicationPayload(root, { layout: 'installed' });
     return { root, manifest: frozen.manifest };

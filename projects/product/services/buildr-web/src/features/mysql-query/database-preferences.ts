@@ -1,4 +1,4 @@
-import type { QueryPreferences } from './connection-types';
+import type { QueryPreferences } from './query-types';
 
 /** Display choices are preferences, never an account permission boundary. */
 export function databasePreferenceView(preferences: QueryPreferences | null, accessible: string[]) {

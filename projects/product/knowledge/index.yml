@@ -423,6 +423,9 @@ artifacts:
       - connection-skills-impact
       - connection-skills-registration
       - connection-skills-nacos-source
+      - mysql-query-source
+      - kibana-connection-source
+      - xxl-job-connection-source
       - connection-skills-definition
       - connection-skills-ui
   - id: responsibilities
@@ -477,10 +480,14 @@ artifacts:
       - connection-skills-application
       - connection-skills-program
       - connection-skills-files
+      - mysql-query-preferences-source
       - connection-skills-workspace
       - connection-skills-impact
       - connection-skills-registration
       - connection-skills-nacos-source
+      - mysql-query-source
+      - kibana-connection-source
+      - xxl-job-connection-source
       - connection-skills-authoring-source
       - connection-skills-ui
       - kibana-logs-provider
@@ -591,6 +598,9 @@ artifacts:
       - connection-skills-impact
       - connection-skills-registration
       - connection-skills-nacos-source
+      - mysql-query-source
+      - kibana-connection-source
+      - xxl-job-connection-source
       - connection-skills-authoring-source
       - connection-skills-definition
       - connection-skills-ui
@@ -935,6 +945,7 @@ artifacts:
       - data-convergence-source
       - data-daily-source
       - connection-skills-files
+      - mysql-query-preferences-source
       - connection-skills-application
       - connection-skills-workspace
       - connection-skills-registration
@@ -1382,6 +1393,26 @@ artifacts:
       - file-responsibility-graph
       - project-terms
 sources:
+  - id: mysql-query-source
+    title: 独立 MySQL 查询应用
+    kind: code
+    path: services/buildr/src/modules/mysql-query/application/mysql-query-application.ts
+    summary: 核验内置来源、明确实例版本和完整认证，提供只读结构与查询，不拥有连接配置。
+  - id: mysql-query-preferences-source
+    title: 新 MySQL 实例本机查询偏好
+    kind: code
+    path: services/buildr/src/modules/mysql-query/persistence/query-preferences.ts
+    summary: 独立 SQLite 表按工作空间、实例和绑定区分偏好，读取不升级旧库，保存独立校验版本。
+  - id: kibana-connection-source
+    title: 独立 Kibana 连接方法
+    kind: code
+    path: services/buildr/resources/workspace/skills/connections/kibana-connection/SKILL.md
+    summary: 自包含程序执行视图与字段发现、有界日志搜索和统计，保留部分结果与遮蔽限制。
+  - id: xxl-job-connection-source
+    title: 独立 XXL-JOB 连接方法
+    kind: code
+    path: services/buildr/resources/workspace/skills/connections/xxl-job-connection/SKILL.md
+    summary: 从服务定位执行器，私有状态维护关联和单次授权，核验专业写入及执行记录。
   - id: connection-skills-ui
     title: 按系统选择的连接编辑界面
     kind: code

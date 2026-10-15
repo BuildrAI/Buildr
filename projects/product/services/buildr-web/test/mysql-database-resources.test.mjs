@@ -20,7 +20,7 @@ registerHooks({
     return next(url, context);
   },
 });
-const { DatabaseResources } = await import('../src/features/connections/components/DatabaseResources.tsx');
+const { DatabaseResources } = await import('../src/features/mysql-query/components/DatabaseResources.tsx');
 
 function resourceHarness(visible, onVisible) {
   let cursor = 0;

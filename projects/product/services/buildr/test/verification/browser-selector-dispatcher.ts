@@ -149,7 +149,7 @@ export function selectBrowserSelectors(changedPaths: any): any  {
         add(plan, 'layout', originalValue, 'Shared layout, reading or presentation changed; verify representative widths and retained state.');
       }
       if (originalValue.includes('/features/code/') || originalValue.includes('RepositoryFileBrowser') || originalValue.includes('repository-file-browser')) add(plan, 'code', originalValue, 'Code scope, file reader and task file navigation changed.');
-      else if (originalValue.includes('/features/connection-skills/')) add(plan, 'connection-skills', originalValue, 'Declaration-driven connection configuration and separate personal authentication changed.');
+      else if (originalValue.includes('/features/connection-skills/') || originalValue.includes('/features/mysql-query/')) add(plan, 'connection-skills', originalValue, 'Connection configuration or the independent query tool changed.');
       else if (originalValue.includes('/features/workbench/')) add(plan, 'workbench', originalValue, 'Daily workbench overview, preferences or activity interaction changed.');
       else if (originalValue.includes('/features/knowledge/')) {
         for (const selector of ['project', 'service', 'articles']) add(plan, selector, originalValue, 'Knowledge reading is shared by project, service and article journeys.');

@@ -16,7 +16,7 @@ import { nacosConsoleHref } from '../nacos-connection-form';
 import { kibanaConsoleHref } from '../kibana-connection-form';
 import { xxlJobConsoleHref } from '../xxl-job-connection-form';
 import { ConnectionEditDrawer } from '../components/ConnectionEditDrawer';
-import { MySqlQuery } from '../components/MySqlQuery';
+import { MySqlQuery } from '../../mysql-query';
 import '../connections.css';
 
 export function ConnectionsPage() {

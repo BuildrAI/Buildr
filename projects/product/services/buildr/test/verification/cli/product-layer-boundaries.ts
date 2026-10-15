@@ -35,6 +35,8 @@ const allowedCrossModulePorts: any = new Set([
   'modules/connection-skills/module.ts -> modules/workspace/module.ts',
   'modules/connection-skills/module.ts -> modules/agent-assets/module.ts',
   'modules/connection-skills/module.ts -> modules/connections/module.ts',
+  'modules/mysql-query/module.ts -> modules/connection-skills/module.ts',
+  'modules/mysql-query/module.ts -> modules/workspace/module.ts',
   'modules/code/module.ts -> modules/agent-operations/module.ts',
   'modules/codex-desktop/module.ts -> modules/agent-operations/module.ts',
   'modules/codex-desktop/module.ts -> modules/workspace/module.ts',

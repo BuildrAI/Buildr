@@ -3,8 +3,8 @@ import { App, Button, Empty, Table } from 'antd';
 import { CopyOutlined } from '@ant-design/icons';
 import { DrawerShell } from '../../../components/DrawerShell';
 import { copyText } from '../../../lib/copyText';
-import type { MySqlQueryResult } from '../connection-types';
-import { resultCell } from '../connection-form';
+import type { MySqlQueryResult } from '../query-types';
+import { resultCell } from '../result-cell';
 
 export type DisplayResult = MySqlQueryResult & { label: string; editorSql: string };
 type Cell = { name: string; value: unknown };

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { sqlExecutionTarget } from '../src/features/connections/sql-execution-target.ts';
-import { databasePreferenceView } from '../src/features/connections/database-preferences.ts';
+import { sqlExecutionTarget } from '../src/features/mysql-query/sql-execution-target.ts';
+import { databasePreferenceView } from '../src/features/mysql-query/database-preferences.ts';
 
 const cursor = (sql, at) => sqlExecutionTarget(sql, { from: at, to: at }).sql;
 const selected = sql => sqlExecutionTarget(sql, { from: 0, to: sql.length }).sql;

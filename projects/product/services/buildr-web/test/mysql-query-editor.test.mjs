@@ -20,7 +20,7 @@ registerHooks({
     return next(url, context);
   },
 });
-const { SqlQueryEditor } = await import('../src/features/connections/components/SqlQueryEditor.tsx');
+const { SqlQueryEditor } = await import('../src/features/mysql-query/components/SqlQueryEditor.tsx');
 
 function editor(value, busy, onRun) {
   renderToStaticMarkup(React.createElement(SqlQueryEditor, { value, busy, onRun, onChange() {}, onSelectionChange() {} }));

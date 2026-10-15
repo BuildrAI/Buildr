@@ -355,7 +355,7 @@ test('schema35 first read atomically imports legacy records and preserves identi
   assert.deepEqual(fs.readFileSync(encrypted), before, 'migration does not decrypt or rewrite credentials');
   assert.deepEqual(fs.readFileSync(file), source, 'legacy file is preserved byte for byte');
   const database = new DatabaseSync(databaseFile);
-  assert.equal(database.prepare('SELECT max(version) AS version FROM schema_migrations').get()?.version, 36);
+  assert.equal(database.prepare('SELECT max(version) AS version FROM schema_migrations').get()?.version, loadWorkspaceSqliteMigrations().at(-1)!.version);
   assert.equal(database.prepare('SELECT count(*) AS count FROM external_connection_store').get()?.count, 1);
   database.exec('BEGIN IMMEDIATE');
   try {
@@ -527,7 +527,7 @@ test('concurrent first reads both upgrade schema35 and import exactly once after
   for (const outcome of outcomes) assert.deepEqual(outcome.connections?.map(connection => connection.id), [original.id]);
   const database = new DatabaseSync(file);
   try {
-    assert.equal(database.prepare('SELECT max(version) AS version FROM schema_migrations').get()?.version, 36);
+    assert.equal(database.prepare('SELECT max(version) AS version FROM schema_migrations').get()?.version, loadWorkspaceSqliteMigrations().at(-1)!.version);
     assert.equal(database.prepare('SELECT count(*) AS count FROM external_connection_store').get()?.count, 1);
     assert.equal(database.prepare('SELECT count(*) AS count FROM external_connections').get()?.count, 1);
   } finally { database.close(); }

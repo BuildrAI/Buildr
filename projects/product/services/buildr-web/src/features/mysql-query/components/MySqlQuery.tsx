@@ -1,18 +1,18 @@
+import '../mysql-query.css';
 import { useContext, useEffect, useRef, useState } from 'react';
 import { Alert, Button, Empty, Select } from 'antd';
 import { PlayCircleOutlined } from '@ant-design/icons';
 import { WorkspaceViewActiveContext } from '../../../app/pageTabs';
 import { RefreshButton } from '../../../components/RefreshButton';
 import { ResizablePanels } from '../../../components/ResizablePanels';
-import type { ConnectionClient } from '../api/connection-api';
-import type { MySqlConnection } from '../connection-types';
+import type { MySqlQueryClient, MySqlQueryTarget } from '../query-types';
 import { useDatabasePreferences } from '../hooks/useDatabasePreferences';
 import { sqlExecutionTarget, type SqlSelection } from '../sql-execution-target';
 import { MySqlResults, type DisplayResult } from './MySqlResults';
 import { DatabaseResources } from './DatabaseResources';
 import { SqlQueryEditor } from './SqlQueryEditor';
 
-type Props = { connections: MySqlConnection[]; client: ConnectionClient; entry: { id: string; nonce: number } | null; active: boolean; layoutKey: string };
+type Props = { connections: MySqlQueryTarget[]; client: MySqlQueryClient; entry: { id: string; nonce: number } | null; active: boolean; layoutKey: string };
 
 export function MySqlQuery({ connections, client, entry, active: requestedActive, layoutKey }: Props) {
   const viewActive = useContext(WorkspaceViewActiveContext), active = requestedActive && viewActive;

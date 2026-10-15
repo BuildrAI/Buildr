@@ -75,6 +75,8 @@ buildr doctor --agent <agent> --target <workspace> --json --detail full
 
 新连接源统一放在 `skills/connections/<skill-id>/`，包含说明、声明和必要程序；`skills/manifest.yml` 用 `path: connections/<skill-id>` 登记，目录不是另一套加载入口。完整本地源添加自动使用该位置，本地新登记检查目录规范；新模块的非标准位置给出明确目录诊断，不另建兼容或迁移层。制作指引仍属于普通技能（Skill），位于 `skills/buildr/connection-authoring/`。
 
+随包内置来源包含 `nacos-connection`、`mysql-connection`、`kibana-connection` 与 `xxl-job-connection`。前两类的专业操作分别由 Nacos 自带程序与随 Buildr 安装的 `buildr-mysql` 承接；MySQL 查询工具仍是独立内置能力（Builtin），不把编辑器、结果或本机偏好放入连接配置。Kibana 和 XXL-JOB 的程序与参考方法随各自技能源独立投射，实例仍按准确来源选择，不自动接管旧连接。
+
 Buildr 从已登记的当前技能源重建连接目录（Connection Catalog），页面可在尚未投射时解释声明；这不证明当前智能体（Agent）已经加载方法。类别（Category）只用于发现，实例使用 `(assetIdentity, definitionId)` 加来源身份及配置版本明确绑定。自制 Nacos 方法使用独立技能源身份，安装不会替换原实例；来源、程序接收方或配置兼容性变化会局部报告，文档更新不自动要求重新授权。
 
 共享认证只绑定稳定的程序声明与实际远端目标，不绑定本机安装目录。目录项以 `declarationRevision` 说明声明内容，以 `revision` 同时观察本机实际接收方位置；测试、发现和专业执行使用当前观察，路径变化后旧观察被拒绝，重读可核对当前接收方。相同来源的兼容替换保留显式技能（Skill）身份，换来源不因同名继承原来源。每个程序分别报告 `programAvailability`，槽位（Hook）只依赖它实际引用的程序，可选程序缺失不阻断其他动作。槽位（Hook）固定状态由宿主重建，说明文本隐藏秘密；选项编号与已知秘密重合时明确拒绝该次发现，不生成可以误保存的替代编号。

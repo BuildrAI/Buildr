@@ -18,8 +18,4 @@ export function connectionInput(draft: ConnectionDraft, previous?: MySqlConnecti
   };
 }
 
-export function resultCell(value: unknown): string {
-  if (value === null) return 'NULL';
-  if (typeof value === 'object') return JSON.stringify(value);
-  return String(value ?? '');
-}
+export { resultCell } from '../mysql-query/result-cell.ts';

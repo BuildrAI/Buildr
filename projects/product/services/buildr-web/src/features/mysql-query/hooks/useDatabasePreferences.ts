@@ -1,12 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ApiError } from '../../../api/client';
-import type { ConnectionClient } from '../api/connection-api';
-import type { MySqlConnection, QueryPreferences } from '../connection-types';
+import type { MySqlQueryClient, MySqlQueryTarget, QueryPreferences } from '../query-types';
 import { databasePreferenceView } from '../database-preferences';
 
-type Snapshot = { client: ConnectionClient; target: string; databases: string[]; preferences: QueryPreferences | null; databaseError: string; preferenceError: string; loading: boolean };
+type Snapshot = { client: MySqlQueryClient; target: string; databases: string[]; preferences: QueryPreferences | null; databaseError: string; preferenceError: string; loading: boolean };
 
-export function useDatabasePreferences(client: ConnectionClient, connection: MySqlConnection | undefined, active: boolean) {
+export function useDatabasePreferences(client: MySqlQueryClient, connection: MySqlQueryTarget | undefined, active: boolean) {
   const target = connection ? `${connection.id}:${connection.revision}` : '';
   const [refresh, setRefresh] = useState(0), [snapshot, setSnapshot] = useState<Snapshot | null>(null), [saving, setSaving] = useState(false);
   const requests = useRef<{ serial: number; mutation?: AbortController }>({ serial: 0 });

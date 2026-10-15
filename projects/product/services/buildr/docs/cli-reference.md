@@ -234,6 +234,20 @@ Git provider evidence使用`buildr.git-worktree-evidence/v1`，保存在Git comm
 
 页面初次使用不启用任何数据库；启用库和当前库按工作空间及连接独立保存在 SQLite，刷新后恢复，不用兼容字段 `config.selectedDatabases` 或连接默认库重新填充。当前库只从已启用且可访问的库选择；禁用当前库后清空，限定库名查询和命令行工具（CLI）仍按数据库原生权限工作。页面优先运行选中单条语句，否则运行光标所在语句；选中多条时提示调整选择，不批量执行。结果保持单行，点击单元格可查看并复制全文，查询结果不落库。
 
+## 新连接的独立 MySQL 查询
+
+通过 `buildr connection-skill definitions list`、`list` 及 `get` 选择准确的内置 `mysql-connection` 实例及当前 `revision`。连接配置与完整认证继续由通用新连接入口维护；`buildr-mysql` 随主包安装，只通过私有进程间通信（IPC）执行测试与数据库发现，查询工具使用独立 `buildr mysql-query`。
+
+| 命令 | 用途 |
+|---|---|
+| `buildr mysql-query databases --connection <id> --expected-revision <revision> --target <workspace> --json` | 列出当前账号可访问的数据库。 |
+| `buildr mysql-query tables --connection <id> --expected-revision <revision> --database <name> --json` | 读取当前数据库的表；`columns` 另加 `--table <name>` 读取字段。 |
+| `buildr mysql-query query --connection <id> --expected-revision <revision> --database <name> --sql-file <file|-> --json` | 使用明确实例观察执行单条只读查询，沿用 100/500 行、10 秒和 4 MiB 限制。 |
+| `buildr mysql-query preferences --connection <id> --expected-revision <revision> --json` | 只读取得新实例的本机启用库、当前库和独立偏好版本。 |
+| `buildr mysql-query save-preferences --connection <id> --expected-revision <revision> --file <json-file|-> --json` | 按文件中的 `{enabledDatabases,currentDatabase,expectedRevision}` 保存偏好；不修改连接或认证版本。 |
+
+所有命令可指定 `--target`。版本或完整认证来源变化后重新读取，不回退团队组或同名旧实例。新连接页的“查询”动作打开同一独立查询工作面，旧 `buildr connection query` 和旧页面继续使用原连接身份；不自动迁移账号或偏好。
+
 ## Nacos 配置操作
 
 配置使用 `category: "configuration"`、`type: "nacos"`，`config` 包含完整 `consoleUrl`、`username`、`namespaceId`（默认 public）、`defaultGroup`（默认 DEFAULT_GROUP）、`production`（默认 true）与 `apiVersion`（默认 auto，可选 v1/v2/v3）。认证为独立的 `credentials: {password}`。页面提供原网站新标签页入口，不复制配置控制台。

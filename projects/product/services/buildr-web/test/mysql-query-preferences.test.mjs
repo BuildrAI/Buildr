@@ -20,7 +20,7 @@ registerHooks({
     }
   },
 });
-const { useDatabasePreferences } = await import('../src/features/connections/hooks/useDatabasePreferences.ts');
+const { useDatabasePreferences } = await import('../src/features/mysql-query/hooks/useDatabasePreferences.ts');
 const connection = id => ({ id, revision: 'connection-revision' });
 const pref = (enabledDatabases = [], currentDatabase = null, revision = 'pref-1') => ({ enabledDatabases, currentDatabase, revision });
 const deferred = () => { let resolve, reject; const promise = new Promise((accept, fail) => { resolve = accept; reject = fail; }); return { promise, resolve, reject }; };

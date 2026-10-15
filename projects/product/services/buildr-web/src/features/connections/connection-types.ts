@@ -97,21 +97,4 @@ export type ConnectionTestResult = {
   kibana?: { dataView: KibanaDataView & { timeFieldName: string | null }; searchVerified: true; queryChannel: string; warnings: KibanaWarning[] };
   xxlJob?: { apiVersion: '2.3.0'; readVerified: true; executorCount: number; warnings: string[] };
 };
-export type MySqlQueryResult = {
-  connectionId: string;
-  database: string | null;
-  submittedSql: string;
-  executedSql: string;
-  columns: { name: string; type: string }[];
-  rows: unknown[][];
-  rowCount: number;
-  rowLimit: number;
-  elapsedMs: number;
-  limitReached: boolean;
-};
-
-export type QueryPreferences = {
-  enabledDatabases: string[];
-  currentDatabase: string | null;
-  revision: string;
-};
+export type { MySqlQueryResult, QueryPreferences } from '../mysql-query/query-types';

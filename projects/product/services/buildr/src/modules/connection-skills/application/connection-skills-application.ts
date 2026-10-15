@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { validateConfig, validateAuthentication, type ConnectionBinding } from '../domain/definition.ts';
+import { validateConfig, validateAuthentication, type ConnectionBinding, type ConnectionDefinition } from '../domain/definition.ts';
 import { assertRevision, diagnostic, failure, identifier, object, text, type AuthenticationGroup, type ConnectionInstance, type ConnectionScope, type Expected, type Values } from '../domain/instance.ts';
 import { normalizeHookOutput } from '../domain/hook-result.ts';
 import { ConnectionFiles, digest } from '../persistence/files.ts';
@@ -167,8 +167,20 @@ export class ConnectionSkillsApplication {
     const config = validateConfig(entry.definition.config.fields, instance.config);
     const local = this.files.readLocal(scope, id);
     if (local.present && local.diagnostic) throw failure('connection_skill_auth_unavailable', local.diagnostic);
-    const source = local.present ? 'personal' : 'team', values = this.group(scope, { ...instance, config }, entry, local.present ? local.group : instance.authentication);
+    const source = local.present ? 'personal' as const : 'team' as const, values = this.group(scope, { ...instance, config }, entry, local.present ? local.group : instance.authentication);
     return { entry, context: { id, revision: view.revision, revisions: { teamRevision: view.teamRevision, localRevision: view.localRevision, definitionRevision: view.definitionRevision }, config, authentication: { source, values }, authenticationRevision: local.present ? local.revision : team.revision } };
+  }
+  /** Internal capability for installed builtins. Authentication never becomes a public response. */
+  useSelected<T>(root: string, selection: { id: string; expectedRevision: string }, consume: (selected: {
+    scope: ConnectionScope; skillId: string; binding: ConnectionBinding; definition: ConnectionDefinition;
+    connection: { id: string; revision: string; config: Values; authentication: { source: 'personal' | 'team'; values: Values } };
+  }) => T): T {
+    if (typeof selection.expectedRevision !== 'string' || !selection.expectedRevision) throw failure('connection_skill_revision_required', '必须提供所观察的连接版本。', 400);
+    const scope = this.resolveScope(root), selected = this.selected(scope, identifier(selection.id), selection.expectedRevision);
+    const entry = selected.entry;
+    return consume({ scope, skillId: entry.skill.id, definition: entry.definition,
+      binding: { skillAssetIdentity: entry.skill.assetIdentity, definitionId: entry.definition.definitionId, sourceIdentity: entry.skill.sourceIdentity, configVersion: entry.definition.configVersion },
+      connection: selected.context });
   }
   check(root: string, id: string, program = 'cli') {
     const scope = this.resolveScope(root), view = this.get(root, id).instance;
