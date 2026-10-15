@@ -65,6 +65,7 @@ function fields(value: unknown, authentication: boolean): ConnectionField[] {
     ensure(item.minLength === undefined || item.maxLength === undefined || item.minLength <= item.maxLength, item.key, '长度约束不兼容。');
     ensure(item.minimum === undefined || item.maximum === undefined || item.minimum <= item.maximum, item.key, '数值约束不兼容。');
     if (item.values !== undefined) ensure(Array.isArray(item.values) && item.values.length > 0 && item.values.every(scalar) && new Set(item.values).size === item.values.length, item.key, '固定选项必须是非空、不重复的文本、布尔值或有限数值。');
+    if (item.values !== undefined && ['select', 'multiselect'].includes(item.type)) ensure(item.values.every((value: unknown) => typeof value === 'string'), item.key, '单选和多选的固定编号必须是文本。');
     ensure(item.type !== 'enum' || item.values, item.key, '固定枚举必须声明选项。');
     ensure(!item.optionsFrom || ['select', 'multiselect'].includes(item.type), item.key, '动态选项只适用于选择字段。');
     if (item.dependsOn !== undefined) {

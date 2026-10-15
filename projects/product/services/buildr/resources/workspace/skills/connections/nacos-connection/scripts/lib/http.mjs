@@ -46,7 +46,7 @@ export class NacosHttpClient {
         this.secrets = options.secrets ?? new Set();
         this.secrets.add(password);
         this.config = config;
-        this.baseUrl = nacosApiBase(config.consoleUrl);
+        this.baseUrl = nacosApiBase(config.apiBaseUrl);
         this.password = password;
         this.fetcher = options.fetch || globalThis.fetch;
         this.timeoutMs = options.timeoutMs ?? 10_000;
@@ -118,7 +118,7 @@ export class NacosHttpClient {
         } catch (error) {
             const code = error?.code;
             if (typeof code === 'string' && code.startsWith('nacos_')) throw error;
-            throw connectionFailure(signal.aborted ? 'nacos_timeout' : 'nacos_unreachable', signal.aborted ? 'Nacos 调用超时，未自动重发请求。' : '无法连接 Nacos，请检查网站地址与网络；未自动重发请求。', signal.aborted ? 504 : 502);
+            throw connectionFailure(signal.aborted ? 'nacos_timeout' : 'nacos_unreachable', signal.aborted ? 'Nacos 调用超时，未自动重发请求。' : '无法连接 Nacos，请检查接口地址与网络；未自动重发请求。', signal.aborted ? 504 : 502);
         }
     }
     async login() {

@@ -142,7 +142,7 @@ test('source changes, disabled skills, malformed files and missing programs rema
   f.source('source:example'); f.enabled(false); assert.equal(f.app.get(f.workspace, created.id).instance.availability.ready, false); f.enabled(true);
   fs.writeFileSync(path.join(f.workspace, 'connections/instances/broken.yml'), '<<<<<<< conflict\npassword: do-not-disclose');
   const list = f.app.list(f.workspace); assert.equal(list.instances.length, 1); assert.equal(list.diagnostics.length, 1); assert.equal(JSON.stringify(list).includes('do-not-disclose'), false);
-  fs.unlinkSync(path.join(f.directory, 'scripts/client.mjs')); const view = f.app.get(f.workspace, created.id).instance; assert.equal(view.availability.ready, false);
+  fs.unlinkSync(path.join(f.directory, 'scripts/client.mjs')); const view = f.app.get(f.workspace, created.id).instance; assert.equal(view.availability.ready, true); assert.equal(view.programAvailability.cli.ready, false);
   assert.equal(f.app.save(f.workspace, created.id, { ...view, name: 'Save without dependency', authentication: { intent: 'keep' }, expected: f.expected() }).instance.name, 'Save without dependency');
 });
 test('HTTP routes enforce write authorization and use the same version and secret boundaries', async t => {
@@ -153,20 +153,76 @@ test('HTTP routes enforce write authorization and use the same version and secre
   assert.equal(await http.handle({ ...context, request: { method: 'GET' }, suffix: '/connections' }), null);
   const help = await f.app.help(f.workspace, created.id); assert.match(help.stdout, /independently supplied help/);
 });
-test('independently installed programs need no core business command and PATH replacement cannot receive old authentication', { skip: process.platform === 'win32' }, async t => {
+test('shared installed recipients survive different machine paths while old local execution and hook observations are rejected', { skip: process.platform === 'win32' }, async t => {
   const f = fixture(t), previousPath = process.env.PATH;
   t.after(() => { process.env.PATH = previousPath; });
   const first = path.join(f.root, 'installed-one'), second = path.join(f.root, 'installed-two'); fs.mkdirSync(first); fs.mkdirSync(second);
   const program = '#!' + process.execPath + '\n' + fs.readFileSync(path.join(f.directory, 'scripts/client.mjs'), 'utf8');
   for (const directory of [first, second]) fs.writeFileSync(path.join(directory, 'buildr-private-fixture'), program, { mode: 0o755 });
   process.env.PATH = first + path.delimiter + previousPath;
-  const definition = { ...f.definition, programs: { cli: { kind: 'installed', executable: 'buildr-private-fixture' } } }; fs.writeFileSync(f.declaration, YAML.stringify(definition));
+  const definition = { ...f.definition, programs: { cli: { kind: 'installed', executable: 'buildr-private-fixture' } }, hooks: { ...f.definition.hooks, probe: { program: 'cli', args: ['test'], effect: 'read' } } }; fs.writeFileSync(f.declaration, YAML.stringify(definition));
   // Use the current declaration observation after changing the delivery mechanism.
   const entry = f.app.definitions(f.workspace).definitions[0]!;
   const created = f.app.save(f.workspace, null, { id: 'installed-example', name: 'Private executable', binding: f.binding, config: { site: 'https://example.invalid/' }, authentication: { intent: 'replace', values: { username: 'team-user', password: 'team-secret-123' } }, expected: { teamRevision: 'absent', definitionRevision: entry.revision } }).instance;
+  const sharedFile = path.join(f.workspace, created.sourcePath), before = fs.readFileSync(sharedFile);
+  assert.equal(created.definition!.programRecipients.cli.executable, fs.realpathSync(path.join(first, 'buildr-private-fixture')));
   const result = await f.app.run(f.workspace, { id: created.id, expectedRevision: created.revision, args: ['independent-command'] }); assert.equal(JSON.parse(result.stdout).source, 'team');
   process.env.PATH = second + path.delimiter + previousPath;
-  await assert.rejects(f.app.run(f.workspace, { id: created.id, expectedRevision: created.revision, args: ['independent-command'] }), /接收程序/);
+  await assert.rejects(f.app.run(f.workspace, { id: created.id, expectedRevision: created.revision, args: ['independent-command'] }), /接收方/);
+  const oldHook = { id: created.id, binding: f.binding, config: created.config, expected: { teamRevision: created.teamRevision, definitionRevision: created.definitionRevision }, authentication: { source: 'team', intent: 'keep' }, hook: 'probe' };
+  await assert.rejects(f.app.hook(f.workspace, oldHook, 'test'), /接收方/);
+  await assert.rejects(f.app.hook(f.workspace, oldHook, 'discover'), /接收方/);
+  const otherMachine = new ConnectionSkillsApplication({ dataRoot: path.join(f.root, 'different-machine-profile'), catalog: f.app.catalog, resolveScope: () => ({ rootPath: f.workspace, workspaceId: 'fixture-workspace' }) });
+  const current = otherMachine.get(f.workspace, created.id).instance;
+  assert.equal(current.authentication.team.configured, true); assert.equal(current.authentication.source, 'team');
+  assert.equal(current.definition!.declarationRevision, entry.declarationRevision); assert.notEqual(current.definitionRevision, entry.revision);
+  assert.equal(current.definition!.programRecipients.cli.executable, fs.realpathSync(path.join(second, 'buildr-private-fixture')));
+  assert.equal(JSON.parse((await otherMachine.run(f.workspace, { id: current.id, expectedRevision: current.revision, args: ['independent-command'] })).stdout).source, 'team');
+  assert.equal((await otherMachine.hook(f.workspace, { ...oldHook, expected: { teamRevision: current.teamRevision, definitionRevision: current.definitionRevision } }, 'test')).status, 'success');
+  assert.deepEqual(fs.readFileSync(sharedFile), before, 'machine observations and execution never rewrite shared authentication');
+  process.env.PATH = first + path.delimiter + previousPath;
+  assert.equal(f.app.get(f.workspace, created.id).instance.authentication.team.configured, true, 'another machine cannot invalidate the original shared group');
+});
+test('a missing secondary program only blocks its own actions and shared authentication remains editable without installed programs', { skip: process.platform === 'win32' }, async t => {
+  const f = fixture(t), previousPath = process.env.PATH;
+  t.after(() => { process.env.PATH = previousPath; });
+  const directory = path.join(f.root, 'installed'); fs.mkdirSync(directory);
+  const executable = path.join(directory, 'buildr-private-fixture');
+  fs.writeFileSync(executable, '#!' + process.execPath + '\n' + fs.readFileSync(path.join(f.directory, 'scripts/client.mjs'), 'utf8'), { mode: 0o755 });
+  process.env.PATH = directory + path.delimiter + previousPath;
+  const definition = { ...f.definition, programs: { cli: { kind: 'installed', executable: 'buildr-private-fixture' }, exporter: { kind: 'installed', executable: 'buildr-fixture-missing-exporter' } }, hooks: { ...f.definition.hooks, probe: { program: 'cli', args: ['test'], effect: 'read' }, exportOptions: { program: 'exporter', args: ['options'], effect: 'read' } } };
+  fs.writeFileSync(f.declaration, YAML.stringify(definition));
+  const entry = f.app.definitions(f.workspace).definitions[0]!;
+  const created = f.app.save(f.workspace, null, { id: 'optional-program', name: 'Optional exporter', binding: f.binding, config: { site: 'https://example.invalid/' }, authentication: { intent: 'replace', values: { username: 'team-user', password: 'team-secret-123' } }, expected: { teamRevision: 'absent', definitionRevision: entry.revision } }).instance;
+  assert.equal(created.availability.ready, true); assert.equal(created.programAvailability.cli.ready, true); assert.equal(created.programAvailability.exporter.ready, false);
+  assert.equal(created.definition!.programRecipients.exporter.executable, null);
+  const hook = { id: created.id, binding: f.binding, config: created.config, expected: f.expected(created.id), authentication: { source: 'team', intent: 'keep' }, hook: 'probe' };
+  assert.equal((await f.app.hook(f.workspace, hook, 'test')).status, 'success');
+  assert.equal((await f.app.hook(f.workspace, hook, 'discover')).status, 'success');
+  await assert.rejects(f.app.hook(f.workspace, { ...hook, hook: 'exportOptions' }, 'discover'), /未安装/);
+  fs.unlinkSync(executable);
+  const missing = f.app.get(f.workspace, created.id).instance;
+  assert.equal(missing.authentication.team.configured, true); assert.equal(missing.programAvailability.cli.ready, false);
+  const saved = f.app.save(f.workspace, created.id, { ...missing, name: 'Safely disabled', enabled: false, authentication: { intent: 'keep' }, expected: f.expected(created.id) }).instance;
+  assert.equal(saved.enabled, false); assert.equal(saved.authentication.team.configured, true);
+});
+test('a version probe cannot replace the receiver before a draft hook hands over authentication', { skip: process.platform === 'win32' }, async t => {
+  const f = fixture(t), previousPath = process.env.PATH;
+  t.after(() => { process.env.PATH = previousPath; });
+  const directory = path.join(f.root, 'installed'); fs.mkdirSync(directory);
+  const original = path.join(directory, 'original'), replacement = path.join(directory, 'replacement'), command = path.join(directory, 'buildr-probe-fixture'), received = path.join(f.root, 'received-auth');
+  const consume = `process.on('message',m=>{if(m.type==='buildr.connection-context'){fs.writeFileSync(${JSON.stringify(received)},'received');console.log(JSON.stringify({status:'success'}));process.disconnect();}});`;
+  fs.writeFileSync(replacement, '#!' + process.execPath + "\nimport fs from 'node:fs';\n" + consume, { mode: 0o755 });
+  fs.writeFileSync(original, '#!' + process.execPath + "\nimport fs from 'node:fs';\n" + `if(process.argv.includes('--version')){fs.unlinkSync(${JSON.stringify(command)});fs.symlinkSync(${JSON.stringify(replacement)},${JSON.stringify(command)});console.log('1.0.0');}else{${consume}}`, { mode: 0o755 });
+  fs.symlinkSync(original, command); process.env.PATH = directory + path.delimiter + previousPath;
+  const definition = { ...f.definition, programs: { cli: { kind: 'installed', executable: 'buildr-probe-fixture', version: { args: ['--version'], constraint: '>=1.0.0' } } } };
+  fs.writeFileSync(f.declaration, YAML.stringify(definition));
+  const entry = f.app.definitions(f.workspace).definitions[0]!;
+  const created = f.app.save(f.workspace, null, { id: 'probe-example', name: 'Probe receiver', binding: f.binding, config: { site: 'https://example.invalid/' }, authentication: { intent: 'replace', values: { username: 'team-user', password: 'team-secret-123' } }, expected: { teamRevision: 'absent', definitionRevision: entry.revision } }).instance;
+  assert.equal(fs.existsSync(received), false, 'catalog and saving do not execute a version probe');
+  await assert.rejects(f.app.hook(f.workspace, { id: created.id, binding: f.binding, config: created.config, expected: f.expected(created.id), authentication: { source: 'team', intent: 'keep' } }, 'test'), /接收方/);
+  assert.equal(fs.realpathSync(command), fs.realpathSync(replacement));
+  assert.equal(fs.existsSync(received), false, 'neither old nor replacement program receives a private context after the probe changes its path');
 });
 test('timeout terminates the owned process group even when descendants keep output pipes open', { skip: process.platform === 'win32' }, async t => {
   const f = fixture(t), created = f.create(), started = Date.now();

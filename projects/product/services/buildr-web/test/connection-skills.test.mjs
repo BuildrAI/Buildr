@@ -8,7 +8,8 @@ import { tabForPath } from '../src/app/workspace-pages.ts';
 const entry = {
   definition: { schemaVersion: 'buildr.connection-definition/v1', definitionId: 'custom', name: '自制接入', category: 'custom', configVersion: 1,
     config: { fields: [{ key: 'endpoint', label: '网站地址', type: 'url', required: true }, { key: 'scope', label: '范围', type: 'select', default: 'default', optionsFrom: 'scopes' }] },
-    authentication: { fields: [{ key: 'username', label: '用户名', type: 'string', required: true }, { key: 'password', label: '密码', type: 'secret', required: true }], targetFields: ['endpoint'] } },
+    authentication: { fields: [{ key: 'username', label: '用户名', type: 'string', required: true }, { key: 'password', label: '密码', type: 'secret', required: true }], targetFields: ['endpoint'] },
+    programs: { cli: {} }, hooks: { test: { program: 'cli', args: ['test'], effect: 'read' }, scopes: { program: 'cli', args: ['scopes'], effect: 'read' } } },
   skill: { id: 'custom-method', assetIdentity: 'workspace:custom', sourceIdentity: 'workspace:source' }, revision: 'definition-current', enabled: true, available: true,
 };
 const instance = { id: 'instance-a', binding: bindingFor(entry), config: { endpoint: 'https://custom.example.test/', scope: 'default' }, teamRevision: 'team-current', localRevision: 'local-current',
@@ -85,6 +86,21 @@ test('已知程序不可用禁用相关动作，但不增加保存前测试要�
   assert.equal(hooksAvailable(entry, { ...instance, availability: { ready: true } }, { ready: false }, false), false);
   assert.equal(hooksAvailable(entry, { ...instance, availability: { ready: true } }, { ready: true }, false), true);
   assert.doesNotThrow(() => validateFields(entry.definition.config.fields, instance.config));
+});
+test('次要程序缺失及不同程序检查不阻断正常槽位，未提供槽位不可运行', () => {
+  const multiple = structuredClone(entry);
+  multiple.definition.programs.exporter = {};
+  multiple.definition.hooks.exports = { program: 'exporter', args: ['options'], effect: 'read' };
+  const observed = { ...instance, availability: { ready: true }, programAvailability: { cli: { ready: true }, exporter: { ready: false, diagnostics: ['尚未安装'] } } };
+  assert.equal(hooksAvailable(multiple, observed, undefined, false), true);
+  assert.equal(hooksAvailable(multiple, observed, undefined, false, 'scopes'), true);
+  assert.equal(hooksAvailable(multiple, observed, undefined, false, 'exports'), false);
+  assert.equal(hooksAvailable(multiple, observed, { program: 'exporter', ready: false }, false, 'scopes'), true);
+  assert.equal(hooksAvailable(multiple, observed, { program: 'cli', ready: false }, false, 'scopes'), false);
+  assert.equal(hooksAvailable(multiple, observed, undefined, false, 'absent'), false);
+  const discoverOnly = structuredClone(multiple); delete discoverOnly.definition.hooks.test;
+  assert.equal(hooksAvailable(discoverOnly, observed, undefined, false), false);
+  assert.equal(hooksAvailable(discoverOnly, observed, undefined, false, 'scopes'), true, 'discovery does not depend on a test slot');
 });
 
 test('空密码按声明保全，缺失值不同于显式空值，清空可选整数不提交null', () => {

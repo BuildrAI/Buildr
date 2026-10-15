@@ -313,6 +313,23 @@ export function registerDomainsSkills(dependencies: SkillsDependencies) {
     return impacts;
   }
 
+  function skillSourceDeclaration(entry: any): any  {
+    if (entry.resolved) return ['resolved', entry.resolved.kind || 'skill-url', entry.resolved.url];
+    if (entry.source?.url) return ['remote', entry.source.kind || 'url', entry.source.url];
+    if (entry.path) return ['local', entry.path, ['buildr', 'openspec'].includes(entry.source) ? entry.source : 'workspace'];
+    return ['source', entry.source];
+  }
+
+  function retainReplacementIdentity(entry: any, existing: any): void {
+    if (!existing) return;
+    // The Skill remains the same object; a different declared source must still
+    // receive a new source identity instead of inheriting the old source's trust.
+    if (existing.assetIdentity) entry.assetIdentity = existing.assetIdentity;
+    if (JSON.stringify(skillSourceDeclaration(entry)) === JSON.stringify(skillSourceDeclaration(existing)) && existing.sourceIdentity) {
+      entry.sourceIdentity = existing.sourceIdentity;
+    }
+  }
+
   function skillsAddUnsafe(input: any): any  {
     const {
       explicitId = null, targetRoot, scopeInput = null, sourceInput = null, remoteSourceInput = null,
@@ -365,6 +382,7 @@ export function registerDomainsSkills(dependencies: SkillsDependencies) {
       applyCapabilityDeclarations(manifestEntry, existing, declarations);
       const references = input.connectionDefinitions ?? existing?.connectionDefinitions;
       if (references !== undefined) manifestEntry.connectionDefinitions = [...references];
+      retainReplacementIdentity(manifestEntry, existing);
       if (existingIndex === -1) {
         manifest.push(manifestEntry);
       } else {
@@ -403,6 +421,7 @@ export function registerDomainsSkills(dependencies: SkillsDependencies) {
     if (source.metadata.description) manifestEntry.description = source.metadata.description;
     applyCapabilityDeclarations(manifestEntry, existing, declarations);
     if (references !== undefined) manifestEntry.connectionDefinitions = [...references];
+    retainReplacementIdentity(manifestEntry, existing);
     if (existingIndex === -1) {
       manifest.push(manifestEntry);
     } else {

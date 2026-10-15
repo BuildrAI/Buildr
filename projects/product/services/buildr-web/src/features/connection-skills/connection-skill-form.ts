@@ -98,8 +98,9 @@ export function authenticationDraftsAfterRead(instance: ConnectionInstance, team
     personalBaseline: replacingPersonal ? personalBaseline : freshPersonal,
   };
 }
-export function hooksAvailable(entry: CatalogEntry | undefined, instance: ConnectionInstance | undefined, check: { ready: boolean } | undefined, disabled: boolean): boolean {
-  return Boolean(entry?.enabled && entry.available && instance?.availability.ready !== false && check?.ready !== false && !disabled);
+export function hooksAvailable(entry: CatalogEntry | undefined, instance: ConnectionInstance | undefined, check: { program?: string; ready: boolean } | undefined, disabled: boolean, hook = 'test'): boolean {
+  const program = entry?.definition.hooks?.[hook]?.program;
+  return Boolean(program && entry?.enabled && entry.available && instance?.availability.ready !== false && instance?.programAvailability?.[program]?.ready !== false && ((check?.program || 'cli') !== program || check?.ready !== false) && !disabled);
 }
 
 /** A candidate selects one complete group without changing the persisted source. */

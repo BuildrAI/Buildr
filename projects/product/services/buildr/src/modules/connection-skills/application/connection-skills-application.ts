@@ -3,10 +3,12 @@ import { validateConfig, validateAuthentication, type ConnectionBinding } from '
 import { assertRevision, diagnostic, failure, identifier, object, text, type AuthenticationGroup, type ConnectionInstance, type ConnectionScope, type Expected, type Values } from '../domain/instance.ts';
 import { normalizeHookOutput } from '../domain/hook-result.ts';
 import { ConnectionFiles, digest } from '../persistence/files.ts';
-import { createConnectionCatalog, type ConnectionCatalogEntry } from './catalog.ts';
+import { createConnectionCatalog, type ConnectionCatalogEntry, type ConnectionCatalogResult } from './catalog.ts';
 import { checkProgram, programRecipient, resolveProgram, runProgram } from '../infrastructure/program.ts';
 
 type Catalog = ReturnType<typeof createConnectionCatalog>;
+type ProgramAvailability = Record<string, { ready: boolean; diagnostics: string[] }>;
+type ConnectionObservation = { catalog: ConnectionCatalogResult; programs: Map<ConnectionCatalogEntry, ProgramAvailability> };
 function requireDefinitionObservation(expected: Expected): void {
   if (typeof expected.definitionRevision !== 'string' || !expected.definitionRevision) throw failure('connection_skill_revision_required', '必须提供已观察的接入声明版本。', 400);
 }
@@ -34,7 +36,11 @@ export class ConnectionSkillsApplication {
     if (Object.keys(binding).some(key => !['skillAssetIdentity', 'definitionId', 'sourceIdentity', 'configVersion'].includes(key)) || !['skillAssetIdentity', 'definitionId', 'sourceIdentity'].every(key => typeof (binding as unknown as Values)[key] === 'string')) throw failure('connection_skill_binding_invalid', '连接绑定格式无效。', 400);
     const resolved = this.catalog.resolve(scope.rootPath, binding);
     if ((!resolved.available && !(allowDisabled && resolved.diagnostics.length > 0 && resolved.diagnostics.every(item => item.code === 'connection_skill_disabled'))) || !resolved.definition) throw failure('connection_skill_definition_unavailable', resolved.diagnostics.map(item => item.message).join(' '));
-    if (expected !== undefined) assertRevision(resolved.definition.revision, expected);
+    if (expected !== undefined) try { assertRevision(resolved.definition.revision, expected); }
+    catch (cause) {
+      if ((cause as { code?: string }).code === 'connection_skill_revision_conflict') throw failure('connection_skill_revision_conflict', '接入声明或本机程序接收方已变化，请重新读取并核对当前程序路径；未执行或覆盖内容。');
+      throw cause;
+    }
     return resolved.definition;
   }
   private target(scope: ConnectionScope, instance: Pick<ConnectionInstance, 'id' | 'binding' | 'config'>, entry: ConnectionCatalogEntry, authentication: Values = {}): string {
@@ -50,8 +56,8 @@ export class ConnectionSkillsApplication {
     if (group.targetBinding !== this.target(scope, instance, entry, group.values)) throw failure('connection_skill_auth_target_changed', '所选认证组绑定的目标或接收程序已变化，请重新录入该组；未回退其他来源。');
     return validateAuthentication(entry.definition.authentication.fields, group.values);
   }
-  private public(scope: ConnectionScope, instance: ConnectionInstance, teamRevision: string, observationDiagnostic?: string) {
-    const resolved = this.catalog.resolve(scope.rootPath, instance.binding), entry = resolved.definition;
+  private public(scope: ConnectionScope, instance: ConnectionInstance, teamRevision: string, observationDiagnostic?: string, observation?: ConnectionObservation) {
+    const resolved = this.catalog.resolve(scope.rootPath, instance.binding, observation?.catalog), entry = resolved.definition;
     const local = this.files.readLocal(scope, instance.id);
     const summary = (group: AuthenticationGroup | null, problem?: string | null) => {
       let error = problem || null;
@@ -68,7 +74,14 @@ export class ConnectionSkillsApplication {
     let publicConfig: Values = {};
     if (entry) try { publicConfig = validateConfig(entry.definition.config.fields, instance.config); } catch (cause) { diagnostics.push(diagnostic(cause)); }
     if (instance.category !== entry?.definition.category && entry) diagnostics.push('实例类别与绑定声明不一致。');
-    if (entry) for (const id of Object.keys(entry.definition.programs)) try { resolveProgram(scope.rootPath, entry, id); } catch (cause) { diagnostics.push(diagnostic(cause)); }
+    let programAvailability: ProgramAvailability = entry && observation?.programs.get(entry) || {};
+    if (entry && !observation?.programs.has(entry)) {
+      programAvailability = Object.fromEntries(Object.keys(entry.definition.programs).map(id => {
+        try { resolveProgram(scope.rootPath, entry, id); return [id, { ready: true, diagnostics: [] }]; }
+        catch (cause) { return [id, { ready: false, diagnostics: [diagnostic(cause)] }]; }
+      }));
+      observation?.programs.set(entry, programAvailability);
+    }
     if (!instance.enabled) diagnostics.push('实例已停用。');
     const definitionRevision = entry?.revision || 'absent';
     let revision = 'unavailable';
@@ -83,12 +96,13 @@ export class ConnectionSkillsApplication {
     if (websiteField && typeof publicConfig[websiteField] === 'string') try { const url = new URL(publicConfig[websiteField] as string); if (['https:', 'http:'].includes(url.protocol) && !url.username && !url.password) websiteUrl = url.href; } catch { /* Invalid website never becomes a clickable target. */ }
     return { ...instance, config: publicConfig, sourcePath: `connections/instances/${instance.id}.yml`, revision, teamRevision, localRevision: local.revision, definitionRevision,
       authentication: { source: local.present ? 'personal' as const : 'team' as const, team: summary(instance.authentication), personal: { present: local.present, ...summary(local.group, local.diagnostic) } },
-      availability: { ready: diagnostics.length === 0, diagnostics }, definition: entry, websiteUrl };
+      availability: { ready: diagnostics.length === 0, diagnostics }, programAvailability, definition: entry, websiteUrl };
   }
   list(root: string) {
     const scope = this.resolveScope(root), instances: ReturnType<ConnectionSkillsApplication['public']>[] = [], diagnostics: { id?: string; message: string }[] = [];
     let ids: string[]; try { ids = this.files.ids(scope); } catch (error) { return { instances, diagnostics: [{ message: diagnostic(error) }] }; }
-    for (const id of ids) try { const team = this.files.readTeam(scope, identifier(id)); if (team.value) instances.push(this.public(scope, team.value, team.revision, team.diagnostic)); } catch (error) { diagnostics.push({ id, message: diagnostic(error) }); }
+    const observation: ConnectionObservation = { catalog: this.catalog.list(scope.rootPath), programs: new Map() };
+    for (const id of ids) try { const team = this.files.readTeam(scope, identifier(id)); if (team.value) instances.push(this.public(scope, team.value, team.revision, team.diagnostic, observation)); } catch (error) { diagnostics.push({ id, message: diagnostic(error) }); }
     return { instances, diagnostics };
   }
   get(root: string, id: string) {
@@ -142,7 +156,11 @@ export class ConnectionSkillsApplication {
   private selected(scope: ConnectionScope, id: string, revision?: string) {
     const team = this.files.readTeam(scope, id); if (!team.value) throw failure('connection_skill_not_found', '当前实例不存在。', 404);
     const instance = team.value, view = this.public(scope, instance, team.revision, team.diagnostic);
-    assertRevision(view.revision, revision ?? view.revision);
+    try { assertRevision(view.revision, revision ?? view.revision); }
+    catch (cause) {
+      if ((cause as { code?: string }).code === 'connection_skill_revision_conflict') throw failure('connection_skill_revision_conflict', '连接配置、认证、接入声明或本机程序接收方已变化，请重新读取并核对当前程序路径；未执行。');
+      throw cause;
+    }
     if (!instance.enabled) throw failure('connection_skill_disabled', '此连接已停用。');
     const entry = this.entry(scope, instance.binding);
     if (instance.category !== entry.definition.category) throw failure('connection_skill_category_changed', '实例类别与声明不一致。');
@@ -212,13 +230,23 @@ export class ConnectionSkillsApplication {
     if (authenticationInputs.size) values = validateConfig(entry.definition.authentication.fields, values, { requiredFields: authenticationInputs });
     const program = resolveProgram(scope.rootPath, entry, hook.program), checked = checkProgram(program); if (!checked.ready) throw failure('connection_skill_dependency_version', checked.diagnostics.join(' '));
     const context = { protocolVersion: 'buildr.connection-context/v1', callId: crypto.randomUUID(), workspace: { id: scope.workspaceId, root: scope.rootPath }, definition: { skillAssetIdentity: entry.skill.assetIdentity, definitionId: entry.definition.definitionId, revision: entry.revision }, connections: { primary: { id, revision: 'draft', config, authentication: { source, values }, authenticationRevision: 'draft' } }, privateStateRoot: this.files.privateState(scope, entry.skill.assetIdentity) };
-    // Draft hooks never gain a write revalidation capability.
-    const result = await runProgram(program, hook.args, { context, secrets: entry.definition.authentication.fields.filter(field => field.type === 'secret').map(field => values[field.key]).filter((value): value is string => typeof value === 'string'), timeoutMs: 30_000 });
+    // A version probe may take time or change local files. Re-read before handing over credentials.
+    if (JSON.stringify(this.resolveScope(root)) !== JSON.stringify(scope)) throw failure('connection_skill_context_changed', '工作空间身份已变化。');
+    const current = this.entry(scope, binding, expected.definitionRevision);
+    if (resolveProgram(scope.rootPath, current, hook.program).identity !== program.identity) throw failure('connection_skill_program_changed', '执行程序已变化；未交接认证，请重新读取。');
+    if (input.id) assertRevision(this.files.readTeam(scope, id).revision, expected.teamRevision);
+    if (source === 'personal' && authentication.intent === 'keep') assertRevision(this.files.readLocal(scope, id).revision, expected.localRevision);
     let body: Values = {}, outputDiagnostic = '';
-    try { body = normalizeHookOutput(JSON.parse(result.stdout)); } catch (cause) {
-      if (cause instanceof Error && 'code' in cause && cause.code === 'connection_skill_hook_result_invalid') outputDiagnostic = cause.message;
-      // Malformed output does not prove a successful test.
-    }
+    const secrets = entry.definition.authentication.fields.filter(field => field.type === 'secret').map(field => values[field.key]).filter((value): value is string => typeof value === 'string');
+    // Draft hooks never gain a write revalidation capability. Typed slot data is normalized
+    // before display-only redaction can mutate its control fields or option identities.
+    const result = await runProgram(program, hook.args, { context, secrets, timeoutMs: 30_000, consumeStdout: output => {
+      try { body = normalizeHookOutput(JSON.parse(output), secrets); }
+      catch (cause) {
+        if (cause instanceof Error && 'code' in cause && cause.code === 'connection_skill_hook_result_invalid') outputDiagnostic = cause.message;
+        // Malformed output does not prove a successful test.
+      }
+    } });
     const status = result.status !== 'exited' || body.status === 'unknown' ? 'unknown' : result.exitCode === 0 && body.status === 'success' ? 'success' : 'failure';
     return { ...body, status, checks: Array.isArray(body.checks) ? body.checks : [], observedAt: new Date().toISOString(), diagnostics: [...(Array.isArray(body.diagnostics) ? body.diagnostics : []), ...result.diagnostics, ...(!Object.keys(body).length ? [outputDiagnostic || '程序未返回有效的槽位结果。'] : [])], limitations: Array.isArray(body.limitations) ? body.limitations : [], authenticationSource: source };
   }

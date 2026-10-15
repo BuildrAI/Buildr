@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { parseConnectionDefinition, safeConnectionRelativePath, type ConnectionBinding, type ConnectionDefinition, type ConnectionDiagnostic } from '../domain/definition.ts';
+import { programRecipients, type ProgramRecipient } from '../infrastructure/program.ts';
 
 export interface ConnectionSkillSource {
   id: string; assetIdentity: string; sourceIdentity: string; path?: string; enabled?: boolean; state?: string;
@@ -14,7 +15,7 @@ export interface ConnectionCatalogAssets {
 export interface ConnectionCatalogEntry {
   definition: ConnectionDefinition;
   skill: { id: string; assetIdentity: string; sourceIdentity: string; sourcePath: string; entryPath: string; directory: string };
-  declarationPath: string; revision: string; enabled: boolean; available: boolean; diagnostics: ConnectionDiagnostic[];
+  declarationPath: string; declarationRevision: string; programRecipients: Record<string, ProgramRecipient>; revision: string; enabled: boolean; available: boolean; diagnostics: ConnectionDiagnostic[];
 }
 export interface ConnectionCatalogResult { definitions: ConnectionCatalogEntry[]; diagnostics: ConnectionDiagnostic[] }
 export interface ConnectionBindingResult { definition: ConnectionCatalogEntry | null; available: boolean; diagnostics: ConnectionDiagnostic[] }
@@ -43,10 +44,13 @@ export function createConnectionCatalog({ assets }: { assets: ConnectionCatalogA
           const file = assets.readSkillFile(root, skill.path, relative);
           const definition = parseConnectionDefinition(file.content);
           const enabled = skill.enabled !== false && !['uninstalled', 'missing'].includes(skill.state || '');
+          const source = { id: skill.id, assetIdentity: skill.assetIdentity, sourceIdentity: skill.sourceIdentity, sourcePath: skill.path, entryPath: path.join(file.directory, 'SKILL.md'), directory: file.directory };
+          const recipients = programRecipients(root, { definition, skill: source });
+          const declarationRevision = file.digest || digest(file.content);
           const entry: ConnectionCatalogEntry = {
-            definition, skill: { id: skill.id, assetIdentity: skill.assetIdentity, sourceIdentity: skill.sourceIdentity, sourcePath: skill.path, entryPath: path.join(file.directory, 'SKILL.md'), directory: file.directory },
+            definition, skill: source,
             declarationPath: file.absolutePath,
-            revision: file.digest || digest(file.content), enabled, available: enabled,
+            declarationRevision, programRecipients: recipients, revision: digest(JSON.stringify([declarationRevision, recipients])), enabled, available: enabled,
             diagnostics: enabled ? [] : [diagnostic('connection_skill_disabled', `技能 ${skill.id} 已停用或缺失。`)],
           };
           const identity = JSON.stringify([skill.assetIdentity, definition.definitionId]);
@@ -64,8 +68,8 @@ export function createConnectionCatalog({ assets }: { assets: ConnectionCatalogA
     }
     return { definitions, diagnostics };
   }
-  function resolve(root: string, binding: ConnectionBinding): ConnectionBindingResult {
-    const catalog = list(root);
+  function resolve(root: string, binding: ConnectionBinding, observed?: ConnectionCatalogResult): ConnectionBindingResult {
+    const catalog = observed || list(root);
     const matches = catalog.definitions.filter(entry => entry.skill.assetIdentity === binding.skillAssetIdentity && entry.definition.definitionId === binding.definitionId);
     if (!matches.length) return { definition: null, available: false, diagnostics: [diagnostic('connection_definition_missing', '已绑定定义当前不可用；实例与认证保留，不自动选择其他方法。'), ...catalog.diagnostics] };
     const entry = matches[0]!;

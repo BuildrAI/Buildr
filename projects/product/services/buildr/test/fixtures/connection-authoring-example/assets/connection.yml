@@ -8,6 +8,8 @@ configVersion: 1
 config:
   fields:
     - {key: website, label: 示例网站, type: url, required: true}
+    - {key: scope, label: 模拟范围, type: select, required: true, optionsFrom: scopes}
+    - {key: scenario, label: 离线结果场景, type: enum, values: [success, failure, unknown, invalid-output, mixed-output], default: success}
 authentication:
   fields:
     - {key: username, label: 示例账号, type: string, required: true, minLength: 1}
@@ -20,7 +22,8 @@ programs:
     entry: scripts/client.mjs
     contextProtocol: buildr.connection-context/v1
 hooks:
-  test: {program: cli, args: [inspect, --json], effect: read}
+  test: {program: cli, args: [test], effect: read}
+  scopes: {program: cli, args: [discover], effect: read, inputs: [config.website]}
 presentation:
   summaryFields: [website]
   websiteField: website

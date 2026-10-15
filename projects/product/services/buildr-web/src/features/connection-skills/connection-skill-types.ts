@@ -12,7 +12,8 @@ export type ConnectionDefinition = {
 };
 export type CatalogEntry = {
   definition: ConnectionDefinition; skill: { id: string; assetIdentity: string; sourceIdentity: string; sourcePath: string; entryPath: string };
-  revision: string; enabled: boolean; available: boolean; diagnostics: { code: string; message: string; field?: string }[];
+  revision: string; declarationRevision: string; programRecipients: Record<string, { executable: string | null; entry: string | null }>;
+  enabled: boolean; available: boolean; diagnostics: { code: string; message: string; field?: string }[];
 };
 export type ConnectionBinding = { skillAssetIdentity: string; definitionId: string; sourceIdentity: string; configVersion: number };
 export type AuthState = { configured: boolean; values: Record<string, unknown>; diagnostic: string | null };
@@ -20,7 +21,8 @@ export type ConnectionInstance = {
   id: string; name: string; environment: string; enabled: boolean; category: string; binding: ConnectionBinding; config: Record<string, unknown>;
   sourcePath: string; revision: string; teamRevision: string; localRevision: string; definitionRevision: string;
   authentication: { source: 'team' | 'personal'; team: AuthState; personal: AuthState & { present: boolean } };
-  availability: { ready: boolean; diagnostics: string[] }; definition?: CatalogEntry; websiteUrl?: string | null;
+  availability: { ready: boolean; diagnostics: string[] }; programAvailability: Record<string, { ready: boolean; diagnostics: string[] }>;
+  definition?: CatalogEntry; websiteUrl?: string | null;
 };
 export type AuthenticationInput = { source: 'team' | 'personal'; intent: 'keep' | 'replace'; values?: Record<string, unknown> };
 export type HookInput = {

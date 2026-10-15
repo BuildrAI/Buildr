@@ -28,7 +28,7 @@ export function useConnectionSkillEditor({ instance: initial, definitions, clien
   const [options, setOptions] = useState<Record<string, NonNullable<HookResult['options']>>>({});
   const [discoveryResults, setDiscoveryResults] = useState<Record<string, HookResult>>({}), [error, setError] = useState(''), [notice, setNotice] = useState('');
   const [conflict, setConflict] = useState(false), [reading, setReading] = useState(false);
-  const [programCheck, setProgramCheck] = useState<{ ready: boolean; diagnostics: string[]; installHint: string | null }>(), [checking, setChecking] = useState(false);
+  const [programCheck, setProgramCheck] = useState<{ program: string; ready: boolean; diagnostics: string[]; installHint: string | null }>(), [checking, setChecking] = useState(false);
   const requests = useRef(createDraftRequestScope()).current, mounted = useRef(true);
   function invalidate(clearOptions = true) {
     requests.invalidate(); setTesting(null); setDiscovering(''); setTestStale({ team: true, personal: true }); setNotice('');
@@ -142,7 +142,7 @@ export function useConnectionSkillEditor({ instance: initial, definitions, clien
   return {
     instance, entry, definitionKey, name, environment, enabled, config, teamIntent, teamValues, personalEnabled, personalIntent, personalValues,
     saving, testing, discovering, testResult: testResults.team, testStale: testStale.team, personalTestResult: testResults.personal, personalTestStale: testStale.personal, options, discoveryResults, error, notice, conflict, reading, programCheck, checking,
-    disabled, ready: hooksAvailable(entry, instance, programCheck, disabled), chooseDefinition, saveTeam, savePersonal, reread, checkProgram, runHook, changeTeamIntent,
+    disabled, ready: hooksAvailable(entry, instance, programCheck, disabled), hookReady(hook: string) { return hooksAvailable(entry, instance, programCheck, disabled, hook); }, chooseDefinition, saveTeam, savePersonal, reread, checkProgram, runHook, changeTeamIntent,
     resetDefinition() { if (!instance) { invalidate(); setDefinitionKey(''); setError(''); } },
     setName(value: string) { invalidate(false); setName(value); },
     setEnvironment(value: string) { invalidate(false); setEnvironment(value); },

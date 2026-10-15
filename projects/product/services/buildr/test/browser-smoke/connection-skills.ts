@@ -23,7 +23,7 @@ const definition = {
   schemaVersion: 'buildr.connection-definition/v1', definitionId: 'browser', name: '浏览器夹具', description: '离线测试接入', category: 'configuration', systemId: 'browser-fixture', configVersion: 1,
   config: { fields: [{ key: 'endpoint', label: '网站地址', type: 'url', required: true }, { key: 'scope', label: '命名空间', type: 'select', required: true, optionsFrom: 'scopes' }, { key: 'apiMode', label: '接口版本', type: 'enum', values: ['auto', 'v1'], default: 'auto' }, { key: 'production', label: '生产环境', type: 'boolean', default: true }] },
   authentication: { fields: [{ key: 'username', label: '用户名', type: 'string', required: true }, { key: 'password', label: '密码', type: 'secret', required: true }], targetFields: ['endpoint'] },
-  programs: { cli: { kind: 'bundled', runtime: 'node', entry: 'scripts/client.mjs', contextProtocol: 'buildr.connection-context/v1' } },
+  programs: { cli: { kind: 'bundled', runtime: 'node', entry: 'scripts/client.mjs', contextProtocol: 'buildr.connection-context/v1' }, exporter: { kind: 'installed', executable: 'buildr-browser-fixture-missing-exporter' } },
   hooks: { test: { program: 'cli', args: ['test'], effect: 'read' }, scopes: { program: 'cli', args: ['scopes'], effect: 'read', inputs: ['config.endpoint', 'authentication.username', 'authentication.password'] } },
   presentation: { summaryFields: ['endpoint', 'scope'], websiteField: 'endpoint', categoryLabel: '配置系统', methodLabel: '夹具标准接入', groups: [{ id: 'connection', title: '地址与账号', fields: ['config.endpoint', 'authentication.username', 'authentication.password', 'config.production'] }, { id: 'scope', title: '默认范围', fields: ['config.scope'] }, { id: 'advanced', title: '更多设置', fields: ['config.apiMode'], collapsed: true }] },
 };
@@ -39,6 +39,8 @@ const entry = connections.definitions(workspaceRoot).definitions.find((item: any
 assert.ok(entry, 'Fixture definition must be discoverable.');
 const binding = { skillAssetIdentity: entry.skill.assetIdentity, sourceIdentity: entry.skill.sourceIdentity, definitionId: entry.definition.definitionId, configVersion: 1 };
 const created = connections.save(workspaceRoot, null, { name: '浏览器连接', environment: '测试', enabled: true, binding, config: { endpoint: 'https://fixture.example.test/', scope: 'scope-a' }, authentication: { intent: 'replace', values: { username: 'fixture-team-user', password: 'fixture-team-password' } }, expected: { teamRevision: 'absent', definitionRevision: entry.revision } }).instance;
+assert.equal(created.programAvailability.cli.ready, true);
+assert.equal(created.programAvailability.exporter.ready, false, 'A missing optional exporter stays a program-level diagnostic.');
 const teamFile = path.join(workspaceRoot, created.sourcePath), teamInitial = fs.readFileSync(teamFile, 'utf8');
 const host = createLocalWorkspaceServer(runtime, { targetRoot: workspaceRoot, ensureRegisteredTarget: workspace.ensureRegisteredTarget, resolveRegisteredWorkspace: workspace.resolveRegisteredWorkspace, staticRoot: process.env.BUILDR_BROWSER_WEB_DIST_ROOT || path.join(serviceRoot, 'build/connection-skills-web-dist') });
 const browser = await launchTestBrowser();
@@ -205,11 +207,25 @@ try {
   assert.equal(connections.get(workspaceRoot, created.id).instance.authentication.personal.present, false, 'Missing declaration never prevents explicit local authentication removal.');
   assert.equal(YAML.parse(fs.readFileSync(teamFile, 'utf8')).name, '另一入口修改');
   await page.locator('#close-connection-skill-editor').click();
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.locator('#create-connection-skill').click();
+  await page.locator('[data-connection-system]').filter({ hasText: 'Nacos' }).click();
+  await page.locator('#connection-skill-config-apiBaseUrl').fill('http://admin.example.invalid:8848/nacos');
+  await page.locator('#connection-skill-config-consoleUrl').fill('http://console.example.invalid:8080/');
+  await page.locator('#connection-skill-team-username').fill('offline-reader');
+  await page.locator('#connection-skill-team-password').fill('offline-fixture-password');
+  await page.locator('#connection-skill-name').fill('独立接口与网站');
+  await page.locator('#save-connection-skill-team').click();
+  await page.locator('#connection-skill-editor').waitFor({ state: 'hidden' });
+  const nacos = connections.list(workspaceRoot).instances.find((item: any) => item.name === '独立接口与网站');
+  assert.equal(nacos.binding.configVersion, 2);
+  assert.equal(nacos.config.apiBaseUrl, 'http://admin.example.invalid:8848/nacos');
+  assert.equal(nacos.websiteUrl, 'http://console.example.invalid:8080/');
   await page.goto(`${base}/connections`, { waitUntil: 'networkidle' });
   await page.locator('#connections-table').waitFor();
   assert.equal(connections.get(workspaceRoot, created.id).instance.name, '另一入口修改');
   assert.deepEqual(browserErrors, []);
-  process.stdout.write(JSON.stringify({ schemaVersion: 'buildr.workspace-smoke-scenario/v1', status: 'passed', checks: ['system-and-explicit-method-selection', 'dependency-ordered-discovery', 'progressive-fields-and-authentication', 'explicit-production-flag', 'new-and-old-entry', 'separate-save', 'unsaved-switch', 'explicit-candidate', 'failed-test-save-independent', 'independent-draft-revisions', 'revision-conflict', 'narrow-and-keyboard', 'missing-skill-personal-removal', 'main-save-closes-and-refreshes', 'failed-save-retains-draft', 'main-save-preserves-personal-draft', 'reread-authentication-identity'], realExternalSystem: false }) + '\n');
+  process.stdout.write(JSON.stringify({ schemaVersion: 'buildr.workspace-smoke-scenario/v1', status: 'passed', checks: ['system-and-explicit-method-selection', 'dependency-ordered-discovery', 'progressive-fields-and-authentication', 'explicit-production-flag', 'new-and-old-entry', 'separate-save', 'unsaved-switch', 'explicit-candidate', 'failed-test-save-independent', 'independent-draft-revisions', 'revision-conflict', 'narrow-and-keyboard', 'missing-skill-personal-removal', 'main-save-closes-and-refreshes', 'failed-save-retains-draft', 'main-save-preserves-personal-draft', 'reread-authentication-identity', 'optional-program-failure-isolated', 'nacos-api-and-website-distinct'], realExternalSystem: false }) + '\n');
 } catch (error) {
   if (page) { process.stderr.write(JSON.stringify({ body: (await page.locator('body').innerText()).slice(-5000) }) + '\n'); await page.screenshot({ animations: 'disabled', path: path.join(screenshots, 'connection-skills-failure.png') }); }
   throw error;

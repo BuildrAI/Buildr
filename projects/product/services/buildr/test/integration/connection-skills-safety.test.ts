@@ -38,8 +38,8 @@ function fixture(t: { after(action: () => void): void }) {
   const application = new ConnectionSkillsApplication({ dataRoot, catalog, resolveScope: () => scope });
   const available = catalog.list(root).definitions[0]!;
   const binding = { skillAssetIdentity: available.skill.assetIdentity, definitionId: available.definition.definitionId, sourceIdentity: available.skill.sourceIdentity, configVersion: available.definition.configVersion };
-  function create(username = 'fixture-reader') {
-    return application.save(root, null, { name: '测试', binding, config: { url: 'https://fixture.example.invalid/' }, authentication: { intent: 'replace', values: { username, password: 'fixture-private-password' } }, expected: { teamRevision: 'absent', definitionRevision: available.revision } }).instance;
+  function create(username = 'fixture-reader', password = 'fixture-private-password') {
+    return application.save(root, null, { name: '测试', binding, config: { url: 'https://fixture.example.invalid/' }, authentication: { intent: 'replace', values: { username, password } }, expected: { teamRevision: 'absent', definitionRevision: available.revision } }).instance;
   }
   return { base, root, directory, entryFile, scope, dataRoot, application, available, binding, create, source: (value: string) => sourceIdentity = value };
 }
@@ -57,6 +57,39 @@ test('generic connection does not redact public usernames as secret arguments or
   const f = fixture(t), instance = f.create('a');
   const result = await f.application.hook(f.root, { id: instance.id, binding: f.binding, config: instance.config, expected: { teamRevision: instance.teamRevision, definitionRevision: instance.definitionRevision }, authentication: { source: 'team', intent: 'keep' } }, 'test');
   assert.equal(result.status, 'success'); assert.deepEqual(result.checks, ['observed']);
+});
+test('short secrets cannot corrupt typed hook status or keys and echoed display text remains protected', async t => {
+  const f = fixture(t);
+  fs.writeFileSync(f.entryFile, "process.on('message',m=>{if(m.type==='buildr.connection-context'){const secret=m.context.connections.primary.authentication.values.password;console.log(JSON.stringify({status:'success',checks:[{status:'success',message:secret}],diagnostics:[secret],options:[{value:'alpha',label:secret}]}));process.disconnect();}});\n");
+  const instance = f.create(undefined, 's');
+  const result = await f.application.hook(f.root, { id: instance.id, binding: f.binding, config: instance.config, expected: { teamRevision: instance.teamRevision, definitionRevision: instance.definitionRevision }, authentication: { source: 'team', intent: 'keep' } }, 'test');
+  assert.equal(result.status, 'success');
+  assert.deepEqual(result.checks, [{ status: 'success', message: '[已隐藏]' }]);
+  assert.deepEqual(result.options, [{ value: 'alpha', label: '[已隐藏]' }]);
+  assert.deepEqual(result.diagnostics, ['[已隐藏]']);
+});
+test('an option identity colliding with a secret fails locally without returning a substituted identity', async t => {
+  const f = fixture(t);
+  fs.writeFileSync(f.entryFile, "process.on('message',m=>{if(m.type==='buildr.connection-context'){console.log(JSON.stringify({status:'success',options:[{value:'public',label:'Public namespace'}]}));process.disconnect();}});\n");
+  const instance = f.create(undefined, 'public');
+  const result = await f.application.hook(f.root, { id: instance.id, hook: 'test', binding: f.binding, config: instance.config, expected: { teamRevision: instance.teamRevision, definitionRevision: instance.definitionRevision }, authentication: { source: 'team', intent: 'keep' } }, 'discover');
+  assert.equal(result.status, 'failure'); assert.equal(result.options, undefined);
+  assert.match(JSON.stringify(result.diagnostics), /编号与认证值重合/);
+  assert.ok(!JSON.stringify(result).includes('public')); assert.ok(!JSON.stringify(result).includes('[已隐藏]'), 'a masked value must never become an alternative selectable identity');
+  assert.equal(f.application.get(f.root, instance.id).instance.authentication.team.configured, true, 'only this discovery is rejected');
+});
+test('internal output consumers never receive partial output and errors do not expose raw stdout', async t => {
+  const f = fixture(t), secret = 'consumer-private-value'; let consumed = false;
+  fs.writeFileSync(f.entryFile, "process.stdout.write('" + secret + "');setInterval(()=>{},1000);\n");
+  const hanging = resolveProgram(f.root, f.available, 'cli');
+  const timeout = await runProgram(hanging, [], { secrets: [secret], timeoutMs: 20, consumeStdout: () => { consumed = true; } });
+  assert.equal(timeout.status, 'timeout'); assert.equal(consumed, false); assert.equal(timeout.stdout, '');
+  const limit = await runProgram(hanging, [], { secrets: [secret], maxBytes: 4, consumeStdout: () => { consumed = true; } });
+  assert.equal(limit.status, 'output-limit'); assert.equal(consumed, false); assert.equal(limit.stdout, '');
+  fs.writeFileSync(f.entryFile, "console.log('" + secret + "');\n");
+  const complete = resolveProgram(f.root, f.available, 'cli');
+  const failed = await runProgram(complete, [], { secrets: [secret], consumeStdout: () => { throw new Error(secret); } });
+  assert.equal(failed.status, 'exited'); assert.equal(failed.stdout, ''); assert.ok(!JSON.stringify(failed).includes(secret)); assert.match(failed.diagnostics.join(''), /输出处理失败/);
 });
 
 test('generic program handoff protects JSON escaped authentication values in ordinary output', async t => {

@@ -9,15 +9,22 @@ export function nacosIdentifier(value, label, max = 255, empty = false) {
 export function nacosNamespaceId(value) {
     return value === '' ? 'public' : nacosIdentifier(value, '命名空间编号', 255);
 }
-export function nacosApiBase(consoleUrl) {
-    const url = new URL(consoleUrl);
-    url.hash = '';
-    url.search = '';
-    url.pathname = url.pathname.replace(/\/+$/u, '') || '/nacos';
+export function nacosApiBase(apiBaseUrl) {
+    const url = new URL(apiBaseUrl);
+    url.pathname = url.pathname.replace(/\/+$/u, '');
     return url.href.replace(/\/$/u, '');
+}
+function nacosUrl(value, label, api = false) {
+    const text = nacosIdentifier(value, label, 2048);
+    let url;
+    try { url = new URL(text); }
+    catch { throw connectionFailure('nacos_url_invalid', `${label}必须为完整 HTTP/HTTPS 地址。`); }
+    if (!['http:', 'https:'].includes(url.protocol) || !url.hostname || url.username || url.password || url.search || api && url.hash) throw connectionFailure('nacos_url_invalid', `${label}只接受 HTTP/HTTPS，不能内嵌认证或查询参数；接口基址不能含页面片段。`);
+    return url.href;
 }
 export function nacosConfiguration(value, previous) {
     const input = inputObject(value, [
+        'apiBaseUrl',
         'consoleUrl',
         'username',
         'namespaceId',
@@ -33,17 +40,8 @@ export function nacosConfiguration(value, previous) {
         ...previous,
         ...input
     };
-    const consoleUrl = nacosIdentifier(current.consoleUrl, 'Nacos 网站地址', 2048);
-    let url;
-    try {
-        url = new URL(consoleUrl);
-    } catch  {
-        throw connectionFailure('nacos_url_invalid', '请填写完整 HTTP/HTTPS Nacos 网站地址。');
-    }
-    if (![
-        'http:',
-        'https:'
-    ].includes(url.protocol) || !url.hostname || url.username || url.password || url.search) throw connectionFailure('nacos_url_invalid', 'Nacos 网站地址只接受 HTTP/HTTPS，不能内嵌账号、密码或查询参数。');
+    const apiBaseUrl = nacosApiBase(nacosUrl(current.apiBaseUrl, 'Nacos 接口基址', true));
+    const consoleUrl = current.consoleUrl === undefined ? undefined : nacosUrl(current.consoleUrl, 'Nacos 网站地址');
     if (typeof current.production !== 'boolean') throw connectionFailure('nacos_input_invalid', '请明确选择是否为生产连接。');
     if (![
         'auto',
@@ -52,7 +50,8 @@ export function nacosConfiguration(value, previous) {
         'v3'
     ].includes(String(current.apiVersion))) throw connectionFailure('nacos_input_invalid', 'Nacos 接口版本必须为 auto、v1、v2 或 v3。');
     return {
-        consoleUrl: url.href,
+        apiBaseUrl,
+        ...(consoleUrl === undefined ? {} : { consoleUrl }),
         username: nacosIdentifier(current.username, '用户名', 128),
         namespaceId: nacosNamespaceId(current.namespaceId),
         defaultGroup: nacosIdentifier(current.defaultGroup, '默认分组', 128),

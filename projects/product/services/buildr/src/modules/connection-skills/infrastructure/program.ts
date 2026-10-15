@@ -7,10 +7,11 @@ import { failure } from '../domain/instance.ts';
 import { digest, safePath } from '../persistence/files.ts';
 
 export type ProgramSource = { definition: { programs: Record<string, ConnectionProgram> }; skill: { sourcePath: string; directory?: string } };
+export type ProgramRecipient = { executable: string | null; entry: string | null };
 export type ResolvedProgram = { executable: string; args: string[]; cwd: string; identity: string; recipient: string; declaration: ConnectionProgram };
 const environment = () => Object.fromEntries(['PATH', 'SystemRoot', 'WINDIR', 'PATHEXT', 'TEMP', 'TMP', 'TMPDIR', 'LANG', 'LC_ALL'].filter(key => process.env[key] !== undefined).map(key => [key, process.env[key]!]));
 export function locateExecutable(name: string): string | null {
-  if (name === 'node') return fs.realpathSync(process.execPath);
+  if (name === 'node') try { return fs.realpathSync(process.execPath); } catch { return null; }
   if (!name || /[/\\\s\0]/.test(name)) return null;
   const extensions = process.platform === 'win32' ? ['', ...(process.env.PATHEXT || '.EXE;.CMD').split(';')] : [''];
   for (const directory of (process.env.PATH || '').split(path.delimiter).filter(Boolean)) for (const extension of extensions) {
@@ -37,7 +38,21 @@ function programFiles(directory: string): string {
   visit(directory); return hash.digest('hex');
 }
 export function programRecipient(root: string, source: ProgramSource): string {
-  return digest(Object.entries(source.definition.programs).sort(([a], [b]) => a.localeCompare(b)).map(([id, p]) => [id, p.kind, p.entry ?? null, p.runtime ?? null, p.executable ?? null, p.args ?? [], p.kind === 'installed' ? locateExecutable(p.executable!) : p.runtime && p.runtime !== 'node' ? locateExecutable(p.runtime) : null]));
+  // Preserve the existing bundled Node binding shape; machine paths belong only to observations.
+  return digest(Object.entries(source.definition.programs).sort(([a], [b]) => a.localeCompare(b)).map(([id, p]) => [id, p.kind, p.entry ?? null, p.runtime ?? null, p.executable ?? null, p.args ?? [], null]));
+}
+/** Locating a receiver does not execute it, inspect versions or require every program to exist. */
+export function programRecipients(root: string, source: ProgramSource): Record<string, ProgramRecipient> {
+  const directory = source.skill.directory || path.resolve(root, source.skill.sourcePath);
+  return Object.fromEntries(Object.entries(source.definition.programs).sort(([a], [b]) => a.localeCompare(b)).map(([id, program]) => {
+    let entry: string | null = null;
+    if (program.kind === 'bundled') try {
+      const file = path.resolve(directory, program.entry!); safePath(directory, file);
+      if (fs.statSync(file).isFile()) entry = fs.realpathSync(file);
+    } catch { /* Missing or unsafe programs remain local, observable unavailability. */ }
+    const executable = program.kind === 'installed' ? locateExecutable(program.executable!) : program.runtime ? locateExecutable(program.runtime) : entry;
+    return [id, { executable, entry }];
+  }));
 }
 export function resolveProgram(root: string, source: ProgramSource, id: string): ResolvedProgram {
   const p = source.definition.programs[id]; if (!p) throw failure('connection_skill_program_missing', '接入未声明此程序。', 404);
@@ -84,6 +99,7 @@ export type ProgramResult = { status: 'exited' | 'timeout' | 'output-limit' | 's
 /** Buffer before redaction so credentials split across chunks cannot escape. Never stream raw output. */
 export function runProgram(program: ResolvedProgram, args: string[], options: {
   context?: Record<string, unknown>; input?: string | Buffer; secrets?: string[]; timeoutMs?: number; maxBytes?: number; revalidate?: () => void;
+  consumeStdout?: (completeOutput: string) => void;
 } = {}): Promise<ProgramResult> {
   if (!args.every(value => typeof value === 'string' && !value.includes('\0'))) throw failure('connection_skill_arguments_invalid', '程序参数必须是文本数组。', 400);
   const secrets = [...new Set((options.secrets || []).filter(Boolean))].sort((a, b) => b.length - a.length);
@@ -122,6 +138,11 @@ export function runProgram(program: ResolvedProgram, args: string[], options: {
     child.on('spawn', () => { if (options.context) child.send({ type: 'buildr.connection-context', context: options.context }, () => {}); child.stdin!.end(options.input); });
     const finish = (code: number | null, signal: string | null) => {
       if (finished) return; finished = true; clearTimeout(timer); if (killTimer) clearTimeout(killTimer);
+      const diagnostics: string[] = []; let consumptionFailed = false;
+      // Typed internal consumers see complete output before display redaction can alter identities.
+      // Their failures never escape the process lifecycle or expose the source output.
+      if (state === 'exited' && options.consumeStdout) try { options.consumeStdout(Buffer.concat(stdout).toString('utf8')); }
+      catch { consumptionFailed = true; diagnostics.push('程序输出处理失败；未交付原始输出。'); }
       const redact = (chunks: Buffer[]) => {
         const raw = Buffer.concat(chunks).toString('utf8');
         const cleanText = (value: string): string => { for (const secret of secrets) value = value.split(secret).join('[已隐藏]'); return value; };
@@ -138,7 +159,7 @@ export function runProgram(program: ResolvedProgram, args: string[], options: {
         }
       };
       // Truncated output could end in a partial credential. Withhold all partial output.
-      resolve({ status: state, exitCode: code, signal, stdout: state !== 'exited' ? '' : redact(stdout), stderr: state !== 'exited' ? '' : redact(stderr), diagnostics: state === 'exited' ? [] : [state === 'timeout' ? '程序超时；远端是否已生效未知，请先调查，勿盲目重试。' : state === 'output-limit' ? '输出超过限制，部分输出已隐藏；业务结果需核对。' : '程序无法启动。'] });
+      resolve({ status: state, exitCode: code, signal, stdout: state !== 'exited' || consumptionFailed ? '' : redact(stdout), stderr: state !== 'exited' ? '' : redact(stderr), diagnostics: state === 'exited' ? diagnostics : [state === 'timeout' ? '程序超时；远端是否已生效未知，请先调查，勿盲目重试。' : state === 'output-limit' ? '输出超过限制，部分输出已隐藏；业务结果需核对。' : '程序无法启动。'] });
     };
     child.on('error', () => { state = 'spawn-failed'; finish(null, null); }); child.on('close', (code, signal) => finish(code, signal));
   });

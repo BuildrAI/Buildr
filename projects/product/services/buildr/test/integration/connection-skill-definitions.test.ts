@@ -37,6 +37,14 @@ test('声明保留专业差异并严格校验配置、整组认证与有限表�
   invalid(value => { value.hooks.spaces.effect = 'write'; });
   invalid(value => { value.programs.cli.entry = '../outside.mjs'; });
   invalid(value => { value.config.fields[3]!.optionsFrom = 'missing'; });
+  for (const type of ['select', 'multiselect']) for (const values of [[1, 2], [true, false]]) invalid(value => { Object.assign(value.config.fields[3]!, { type, values }); });
+  for (const type of ['select', 'multiselect']) {
+    const value = sample(); Object.assign(value.config.fields[3]!, { type, values: ['public', 'other'], default: type === 'select' ? 'public' : ['public'] });
+    const parsed = parseConnectionDefinition(YAML.stringify(value));
+    assert.deepEqual(validateConfig(parsed.config.fields, { website: 'https://example.invalid', space: type === 'select' ? 'other' : ['other'] }).space, type === 'select' ? 'other' : ['other']);
+  }
+  const numeric = sample(); Object.assign(numeric.config.fields[3]!, { type: 'enum', values: [1, 2], default: 1 }); delete (numeric.config.fields[3] as any).optionsFrom;
+  assert.equal(validateConfig(parseConnectionDefinition(YAML.stringify(numeric)).config.fields, { website: 'https://example.invalid', space: 2 }).space, 2);
   invalid(value => { value.presentation.summaryFields = ['password']; });
   invalid(value => { Object.assign(value.config.fields[0]!, { dependsOn: { field: 'absent', expression: 'eval(...)' } }); });
   for (const nonFinite of [NaN, Infinity, -Infinity]) {
@@ -97,16 +105,43 @@ test('目录从当前源重建、精确绑定、来源和兼容版本变化局�
   fs.symlinkSync(path.join(root, 'skills/connections/second/assets/connection.yml'), path.join(root, 'skills/connections/second/assets/link.yml')); skills[1]!.connectionDefinitions = ['assets/link.yml']; assert.equal(catalog.list(root).definitions.length, 0);
 });
 
-test('登记、替换及解析链保留连接引用，普通技能不新增连接声明', t => {
+test('同源替换保留自定义身份和实例，来源变化不继承旧来源，普通技能不新增连接声明', t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-skill-definition-')); t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   fs.mkdirSync(path.join(root, 'skills'));
   const source = path.join(root, 'source'); fs.mkdirSync(path.join(source, 'assets'), { recursive: true }); fs.writeFileSync(path.join(source, 'SKILL.md'), '---\nname: company-unknown\ndescription: test\nconnectionDefinitions: [assets/connection.yml]\n---\n'); fs.writeFileSync(path.join(source, 'assets/connection.yml'), YAML.stringify(sample()));
+  fs.mkdirSync(path.join(source, 'scripts')); fs.writeFileSync(path.join(source, 'scripts/client.mjs'), 'process.exit(0);\n');
   const skills = registerDomainsSkills({ isPlainObject: (value: unknown) => Boolean(value) && typeof value === 'object' && !Array.isArray(value), componentOwnerForMember: () => null, isValidAssetId: (value: string) => /^[A-Za-z0-9._-]+$/.test(value), assertName: () => {}, ensureDirectory: (file: string) => fs.mkdirSync(file, { recursive: true }), atomicWriteFile: (file: string, content: string) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, content); }, parseYamlDocument: (text: string) => YAML.parse(text), assertSafeAssetTarget: (_root: string, target: string) => target, withWorkspaceMutation: (_root: string, _id: string, _paths: string[], action: () => unknown) => action(), toPosixRelative: (base: string, file: string) => path.relative(base, file), existsDirectory: (file: string) => fs.existsSync(file) && fs.statSync(file).isDirectory(), existsFile: (file: string) => fs.existsSync(file) && fs.statSync(file).isFile(), assertInitializedBuildrWorkspace: () => {} });
   skills.skillsAdd({ targetRoot: root, sourceInput: source });
   assert.deepEqual(skills.readSkillsManifestForWrite(root)[0].connectionDefinitions, ['assets/connection.yml']);
   assert.equal(skills.readSkillsManifestForWrite(root)[0].path, 'connections/company-unknown');
+  const custom = skills.readSkillsManifestForWrite(root);
+  Object.assign(custom[0], { assetIdentity: 'company:skill:unknown', sourceIdentity: 'company:approved-repository' }); skills.writeSkillsManifest(root, custom);
+  const catalog = createConnectionCatalog({ assets: { readSkills: () => skills.readSkillsManifestForWrite(root), readSkillFile: readConnectionSkillFile } });
+  const scope = { rootPath: root, workspaceId: crypto.randomUUID() }, application = new ConnectionSkillsApplication({ dataRoot: path.join(root, 'profile'), catalog, resolveScope: () => scope });
+  const entry = catalog.list(root).definitions[0]!, binding = { skillAssetIdentity: entry.skill.assetIdentity, definitionId: entry.definition.definitionId, sourceIdentity: entry.skill.sourceIdentity, configVersion: 1 };
+  const instance = application.save(root, null, { id: 'existing-company-instance', name: '既有公司实例', binding, config: { website: 'https://fixture.invalid/' }, authentication: { intent: 'replace', values: { username: 'fixture', password: 'fixture-only' } }, expected: { teamRevision: 'absent', definitionRevision: entry.revision } }).instance;
+  const teamBefore = fs.readFileSync(path.join(root, instance.sourcePath));
   fs.writeFileSync(path.join(source, 'SKILL.md'), '---\nname: company-unknown\ndescription: new docs\n---\n'); skills.skillsAdd({ targetRoot: root, sourceInput: source, replace: true });
-  assert.deepEqual(resolveSkills(root, null, { runtime: 'codex', resolveRemote: false }).find((entry: { id: string }) => entry.id === 'company-unknown')?.connectionDefinitions, ['assets/connection.yml']);
+  const replaced = resolveSkills(root, null, { runtime: 'codex', resolveRemote: false }).find((entry: { id: string }) => entry.id === 'company-unknown');
+  assert.deepEqual(replaced?.connectionDefinitions, ['assets/connection.yml']);
+  assert.equal(replaced?.assetIdentity, binding.skillAssetIdentity); assert.equal(replaced?.sourceIdentity, binding.sourceIdentity);
+  const after = application.get(root, instance.id).instance;
+  assert.deepEqual(after.binding, instance.binding); assert.equal(after.authentication.team.configured, true); assert.equal(after.availability.ready, true);
+  assert.deepEqual(fs.readFileSync(path.join(root, instance.sourcePath)), teamBefore);
+  const external = skills.readSkillsManifestForWrite(root); Object.assign(external[0], { source: 'buildr', sourceIdentity: 'package:skills/connections/company-unknown' }); skills.writeSkillsManifest(root, external);
+  skills.skillsAdd({ targetRoot: root, sourceInput: source, replace: true });
+  const localReplacement = skills.readSkillsManifestForWrite(root)[0];
+  assert.equal(localReplacement.assetIdentity, binding.skillAssetIdentity); assert.notEqual(localReplacement.sourceIdentity, external[0].sourceIdentity);
+  assert.equal(catalog.resolve(root, { ...binding, sourceIdentity: external[0].sourceIdentity }).diagnostics[0]?.code, 'connection_source_changed');
+  assert.deepEqual(fs.readFileSync(path.join(root, instance.sourcePath)), teamBefore, 'source replacement never silently rebinds an existing instance');
+  skills.skillsAdd({ targetRoot: root, explicitId: 'remote-example', resolvedSourceInput: 'https://first.invalid/SKILL.md' });
+  const remote = skills.readSkillsManifestForWrite(root); const remoteEntry = remote.find((item: any) => item.id === 'remote-example');
+  Object.assign(remoteEntry, { assetIdentity: 'company:skill:remote-example', sourceIdentity: 'company:approved-remote' }); skills.writeSkillsManifest(root, remote);
+  skills.skillsAdd({ targetRoot: root, explicitId: 'remote-example', resolvedSourceInput: 'https://first.invalid/SKILL.md', versionInput: '2', replace: true });
+  assert.equal(skills.readSkillsManifestForWrite(root)[1].sourceIdentity, 'company:approved-remote');
+  skills.skillsAdd({ targetRoot: root, explicitId: 'remote-example', resolvedSourceInput: 'https://second.invalid/SKILL.md', replace: true });
+  const newSource = skills.readSkillsManifestForWrite(root)[1];
+  assert.equal(newSource.assetIdentity, 'company:skill:remote-example'); assert.equal(newSource.sourceIdentity, 'resolved:skill-url:https://second.invalid/SKILL.md');
   assert.throws(() => skills.skillsAdd({ targetRoot: root, sourceInput: source, replace: true, connectionDefinitions: ['../outside'] }));
   const ordinary = { schemaVersion: 'buildr.skills/v3', workspaceId: crypto.randomUUID(), skills: [{ id: 'plain', assetIdentity: 'company:plain', sourceIdentity: 'company:plain', path: 'plain' }] };
   assert.equal(Object.hasOwn(parseSkillsManifestContent(YAML.stringify(ordinary), path.join(root, 'skills/manifest.yml')).skills[0], 'connectionDefinitions'), false);

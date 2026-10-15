@@ -342,3 +342,11 @@ resolved `skill-url` 默认具有有限请求时间。维护者可设置：
 一次最多 32 项，输入与返回正文分别限 2 MiB，完整 JSON 输出（含包装和换行）限 2 MiB，单份文本限 512 KiB；标准输入等待和查询检查有 5 秒边界。路径越界、秘密、符号链接、特殊文件和局部回执冲突仅影响相关项。当前只读取明确目标工作空间（Workspace）内的源和投射；用户层或其他工作空间（Workspace）的技能（Skill）位置不因同名被自动授权。本来源观察入口仅返回 Buildr 自身方法与能力内容；`task-brief` 与 `task-material` 返回 `unknown` 和 `source_user_material_excluded`，不调用正文读者。经 Buildr 能力访问资料时仅关联调用和必要对象引用；普通任务（Task）及资料读取接口保持原行为。普通产品源码不是方法来源。
 
 严格来源读取（Strict Source Read）在读取正文前、返回正文前，均通过保持打开的根目录及叶文件的文件描述符（File Descriptor）核对实际内核（Kernel）路径，随后始终读取同一个文件描述符（File Descriptor），不重新按可变路径打开文件。它不把重复路径检查冒充原子目录遍历，也不证明同一文件不存在其他硬链接别名（Hard-link Alias）。Linux 使用 `/proc/self/fd`，当前 macOS 使用固定 `/usr/sbin/lsof` 的本进程两个已持有描述符查询，关闭域名和端口解析，不用外壳（Shell）、不扫描其他描述符，不安装依赖或启动服务；查询输出和等待时间有界。平台机制缺失、模糊或路径已变时，仅相关来源读取失败，不降级到旧路径校验。Windows 的严格来源读取（Strict Source Read）当前未支持；原有普通技能（Skill）及任务（Task）读取接口不会因此整体关闭。
+
+## 技能声明的外部系统接入
+
+新 `buildr connection-skill --help` 提供声明发现、实例及整组认证维护、程序检查、专业帮助和启动入口。实例精确绑定已登记技能（Skill）、来源与配置版本，不按类别猜测专业动作；旧 `buildr connection` 保持原路径。`definitions list` 的 `declarationRevision` 表达源声明内容，`revision` 还观察本机声明接收方的实际位置；查看安全的 `programRecipients` 后使用当前 `definitionRevision`，路径变化后重读，不继续使用旧观察。
+
+Nacos 新声明的配置版本为 2：`apiBaseUrl` 是明确的专业接口基址及认证目标，`consoleUrl` 是可选网站入口。版本 1 实例保留为不兼容，不自动迁移或借用旧认证。专业命令和结果格式由所选程序帮助说明，通用入口不增加 Nacos 业务命令。
+
+Nacos `get/diff/publish` 等专业命令支持 `--result-file <new-file>`，网络操作前独占准备受限本机文件，保存完整原样结果。后续授权范围从该文件读取；原文路径也应从该文件取得，或由调用方明确选择 `--output-file`。普通输出只用于展示，秘密隐藏可能改变其中的业务标识，不作为机器接续依据。已有结果文件不会被覆盖；发布后本机结果保存失败不撤销发布事实，先调查实际配置，不盲目重发。

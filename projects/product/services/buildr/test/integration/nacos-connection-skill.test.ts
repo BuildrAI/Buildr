@@ -19,15 +19,15 @@ const longId = '完整配置名-' + 'a'.repeat(180) + '.yaml';
 const original = '\uFEFF中文: "保留空白"\r\n\r\n  list: [1, 2]\r\n';
 const candidate = '\uFEFF中文: "修改之后"\r\n\r\n  list: [1, 2, 3]\r\n';
 type Request = { pathname: string; query: URLSearchParams; form: URLSearchParams; headers: http.IncomingHttpHeaders };
-async function fixture(t: { after(action: () => Promise<void>): void }, apiVersion: NacosApiVersion = 'v3') {
+async function fixture(t: { after(action: () => Promise<void>): void }, apiVersion: NacosApiVersion = 'v3', dataId = longId) {
   const state = { content: original, version: apiVersion === 'v3' ? '3.1.1' : '2.4.3', tokenCount: 0, writes: 0, failReadAfterPublish: false, mismatchReadAfterPublish: false, failFirstRead: false, publishUnknown: false, race: false, missing: false, pageSize: 20, totalCount: 42, requests: [] as Request[], override: null as ((request: Request, response: http.ServerResponse) => boolean | Promise<boolean>) | null };
-  const metadata = { type: 'yaml', appName: '订单系统', desc: '完整说明', configTags: 'sales,qa', use: '配置用途', effect: '配置效果', schema: '自定义格式' };
+  const metadata: { type: string; appName: string | null; desc: string | null; configTags: string | null; use: string | null; effect: string | null; schema: string | null } = { type: 'yaml', appName: '订单系统', desc: '完整说明', configTags: 'sales,qa', use: '配置用途', effect: '配置效果', schema: '自定义格式' };
   const server = http.createServer(async (request, response) => {
     const url = new URL(request.url!, 'http://127.0.0.1');
     let body = ''; for await (const chunk of request) body += chunk.toString('utf8');
     const current: Request = { pathname: url.pathname.replace('/gateway/nacos', ''), query: url.searchParams, form: new URLSearchParams(body), headers: request.headers };
     state.requests.push(current);
-    const json = (value: unknown, status = 200) => { response.writeHead(status, { 'Content-Type': 'application/json;charset=UTF-8' }); response.end(JSON.stringify(value)); };
+    const json = (value: unknown, status = 200) => { response.writeHead(status, { 'Content-Type': 'application/json;charset=UTF-8' }); response.end(JSON.stringify(value, (_key, item) => item === null ? undefined : item)); };
     if (await state.override?.(current, response)) return;
     if (current.pathname.endsWith('/login')) {
       if (current.pathname.startsWith('/v3/') && apiVersion !== 'v3') { json({ status: 404 }, 404); return; }
@@ -37,12 +37,12 @@ async function fixture(t: { after(action: () => Promise<void>): void }, apiVersi
     if (current.pathname.endsWith('/state')) { json(current.pathname.startsWith('/v3/') ? { code: 0, data: { version: state.version || undefined } } : { version: state.version || undefined }); return; }
     if (!current.headers.authorization) { json({ code: 10001 }, 403); return; }
     const prefix = '/' + apiVersion + '/';
-    const legacyManagement = apiVersion === 'v2' && current.pathname === '/v1/cs/configs' && current.query.get('show') === 'all';
+    const legacyManagement = apiVersion !== 'v1' && current.pathname === '/v1/cs/configs' && current.query.get('show') === 'all';
     if (!current.pathname.startsWith(prefix) && !legacyManagement) { json({ status: 404 }, 404); return; }
     if (current.pathname.includes('/namespace')) { json({ code: apiVersion === 'v1' ? 200 : 0, data: [{ namespace: apiVersion === 'v1' ? '' : 'public', namespaceShowName: 'public', configCount: 42 }] }); return; }
     if (request.method === 'GET' && (current.pathname.endsWith('/list') || current.pathname.endsWith('/searchDetail') || current.query.has('search'))) {
       const pageNo = Number(current.query.get('pageNo')), pageSize = Number(current.query.get('pageSize')); state.pageSize = pageSize;
-      const page = { totalCount: state.totalCount, pageNumber: pageNo, pagesAvailable: Math.ceil(state.totalCount / pageSize), pageItems: [{ dataId: longId, group: 'DEFAULT_GROUP', tenant: apiVersion === 'v1' ? '' : 'public', type: 'yaml', md5: md5(state.content) }] };
+      const page = { totalCount: state.totalCount, pageNumber: pageNo, pagesAvailable: Math.ceil(state.totalCount / pageSize), pageItems: [{ dataId, group: 'DEFAULT_GROUP', tenant: apiVersion === 'v1' ? '' : 'public', type: 'yaml', md5: md5(state.content) }] };
       json(apiVersion === 'v3' ? { code: 0, data: page } : page); return;
     }
     if (request.method === 'GET') {
@@ -51,8 +51,8 @@ async function fixture(t: { after(action: () => Promise<void>): void }, apiVersi
       if (state.failReadAfterPublish && state.writes) { json({ code: 503 }, 503); return; }
       const content = state.mismatchReadAfterPublish && state.writes ? original : state.content;
       response.setHeader('Content-MD5', md5(content)); response.setHeader('Config-Type', 'yaml');
-      if (apiVersion === 'v3') json({ code: 0, data: { namespaceId: 'public', dataId: longId, groupName: 'DEFAULT_GROUP', content, md5: md5(content), ...metadata } });
-      else if (current.query.get('show') === 'all') json({ dataId: longId, group: 'DEFAULT_GROUP', tenant: '', content, md5: md5(content), ...metadata });
+      if (current.query.get('show') === 'all') json({ dataId, group: 'DEFAULT_GROUP', tenant: '', content, md5: md5(content), createTime: 1, modifyTime: 2, ...metadata });
+      else if (apiVersion === 'v3') { const { use, effect, schema, ...v3Metadata } = metadata; json({ code: 0, data: { namespaceId: 'public', dataId, groupName: 'DEFAULT_GROUP', content, md5: md5(content), ...v3Metadata } }); }
       else if (apiVersion === 'v2') json({ code: 0, data: content });
       else response.end(content);
       return;
@@ -62,6 +62,8 @@ async function fixture(t: { after(action: () => Promise<void>): void }, apiVersi
       if (state.race) state.content = '其他入口最新内容\n';
       if (current.headers.casmd5 && current.headers.casmd5 !== md5(state.content)) { json({ code: 20005, message: 'Cas publish fail, server md5 may have changed.' }, 500); return; }
       state.content = current.form.get('content')!;
+      for (const key of ['appName', 'desc', 'configTags', 'use', 'effect', 'schema'] as const) metadata[key] = current.form.get(key === 'configTags' && apiVersion === 'v1' ? 'config_tags' : key);
+      metadata.type = current.form.get('type')!;
       if (state.publishUnknown) { response.end('not a supported result'); return; }
       if (apiVersion === 'v1') response.end('true'); else json({ code: 0, data: true });
       return;
@@ -71,17 +73,21 @@ async function fixture(t: { after(action: () => Promise<void>): void }, apiVersi
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(async () => { server.closeAllConnections(); await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); });
   const address = server.address() as { port: number };
-  const config = nacosConfiguration({ consoleUrl: `http://127.0.0.1:${address.port}/gateway/nacos/#/`, username: 'reader', production: false, apiVersion });
+  const config = nacosConfiguration({ apiBaseUrl: `http://127.0.0.1:${address.port}/gateway/nacos/`, consoleUrl: 'http://console.example.invalid:8080/next/#/', username: 'reader', production: false, apiVersion });
   const credentials = { password: 'only-fixture-secret' }, provider = createNacosProvider();
   return { state, config, credentials, provider, metadata };
 }
 
-test('Nacos configuration retains the website, canonicalizes only the authentication target, and defaults to production', () => {
-  const provider = createNacosProvider(), config = nacosConfiguration({ consoleUrl: 'https://nacos.example.invalid:443/proxy/nacos/#/', username: 'reader' });
+test('Nacos configuration separates the exact API base and optional website without inferring ports or paths', () => {
+  const provider = createNacosProvider(), config = nacosConfiguration({ apiBaseUrl: 'https://api.example.invalid:8848/proxy/nacos/', consoleUrl: 'https://console.example.invalid:8080/next/#/', username: 'reader' });
   assert.equal(config.production, true); assert.equal(config.namespaceId, 'public'); assert.equal(config.defaultGroup, 'DEFAULT_GROUP'); assert.equal(config.apiVersion, 'auto');
-  assert.equal(config.consoleUrl, 'https://nacos.example.invalid/proxy/nacos/#/'); assert.equal(nacosApiBase(config.consoleUrl), 'https://nacos.example.invalid/proxy/nacos');
-  assert.equal(provider.authenticationTargetIdentity(config), provider.authenticationTargetIdentity({ ...config, consoleUrl: 'https://nacos.example.invalid/proxy/nacos#other' }));
-  for (const consoleUrl of ['file:///nacos', 'https://secret:password@nacos.example.invalid/nacos/#/', 'https://nacos.example.invalid/nacos/?accessToken=secret']) assert.throws(() => nacosConfiguration({ consoleUrl, username: 'reader' }), { code: 'nacos_url_invalid' });
+  assert.equal(config.apiBaseUrl, 'https://api.example.invalid:8848/proxy/nacos'); assert.equal(config.consoleUrl, 'https://console.example.invalid:8080/next/#/');
+  assert.equal(nacosApiBase('https://api.example.invalid/'), 'https://api.example.invalid');
+  assert.equal(provider.authenticationTargetIdentity(config), provider.authenticationTargetIdentity({ ...config, consoleUrl: 'https://another-console.example.invalid:8080/' }));
+  assert.notEqual(provider.authenticationTargetIdentity(config), provider.authenticationTargetIdentity({ ...config, apiBaseUrl: 'https://different-api.example.invalid/' }));
+  assert.equal(nacosConfiguration({ apiBaseUrl: 'https://api.example.invalid/', username: 'reader' }).consoleUrl, undefined);
+  for (const apiBaseUrl of ['file:///nacos', 'https://secret:password@api.example.invalid/nacos/', 'https://api.example.invalid/nacos/?accessToken=secret', 'https://api.example.invalid/nacos/#/']) assert.throws(() => nacosConfiguration({ apiBaseUrl, username: 'reader' }), { code: 'nacos_url_invalid' });
+  assert.throws(() => nacosConfiguration({ consoleUrl: 'https://console.example.invalid:8080/', username: 'reader' }), { code: 'nacos_input_invalid' });
   assert.throws(() => nacosConfiguration({ ...config, production: 'false' }), { code: 'nacos_input_invalid' });
 });
 
@@ -102,7 +108,9 @@ for (const version of ['v1', 'v2', 'v3'] as const) {
   });
   test(`Nacos ${version} publishes using atomic native CAS and retains type and existing metadata`, async t => {
     const f = await fixture(t, version);
+    const expectedMetadata = { ...f.metadata };
     const result = await f.provider.nacos.publish(f.config, f.credentials, { dataId: longId, content: candidate, expectedMd5: md5(original) });
+    assert.deepEqual(f.metadata, expectedMetadata); assert.equal(result.metadataVerified, true); assert.equal(result.typeVerified, true);
     assert.equal(result.published, true); assert.equal(result.verified, true); assert.equal(result.md5, md5(candidate)); assert.equal(result.concurrencyProtection, 'native-cas'); assert.match(result.upstreamCasLimit!, /并发删除/u);
     const write = f.state.requests.find(request => request.form.has('content'))!;
     assert.equal(write.headers.casmd5, md5(original)); assert.equal(write.form.get('content'), candidate); assert.equal(write.form.get('type'), 'yaml');
@@ -117,6 +125,64 @@ test('Nacos auto discovers available read APIs without downgrading an authentica
   assert.equal(result.apiVersion, 'v2'); assert.equal(result.content, original);
   f.state.override = (request, response) => { if (!request.pathname.endsWith('/login')) return false; response.writeHead(403); response.end('only-fixture-secret should never leak'); return true; };
   await assert.rejects(() => f.provider.nacos.get({ ...f.config, apiVersion: 'auto' }, f.credentials, { dataId: longId }), error => (error as { code: string }).code === 'nacos_access_denied' && !String(error).includes(f.credentials.password));
+});
+
+test('Nacos only sends authentication and management traffic to the exact API base, including a root context', async () => {
+  const requests: string[] = [];
+  const provider = createNacosProvider({ fetch: async (url: URL) => {
+    requests.push(url.href);
+    if (url.pathname.endsWith('/login')) return Response.json({ accessToken: 'fixture-api-token', tokenTtl: 300 });
+    return Response.json({ code: 0, data: { dataId: 'test', groupName: 'DEFAULT_GROUP', namespaceId: 'public', content: original, md5: md5(original), type: 'yaml' } });
+  } });
+  const config = nacosConfiguration({ apiBaseUrl: 'https://api.example.invalid:8848/', consoleUrl: 'https://console.example.invalid:8080/next/', username: 'reader', apiVersion: 'v3' });
+  assert.equal((await provider.nacos.get(config, { password: 'fixture-password' }, { dataId: 'test' })).content, original);
+  assert.deepEqual(requests.map(value => new URL(value).pathname), ['/v3/auth/user/login', '/v3/admin/cs/config']);
+  assert.ok(requests.every(value => new URL(value).origin === 'https://api.example.invalid:8848'));
+});
+
+test('Nacos v3 requires the full management model while preserving its independent read route', async t => {
+  for (const failure of ['missing-route', 'wrong-dto', 'incomplete-model'] as const) {
+    const f = await fixture(t);
+    f.state.override = (request, response) => {
+      if (request.query.get('show') !== 'all') return false;
+      if (failure === 'missing-route') { response.writeHead(404); response.end(); }
+      else if (failure === 'wrong-dto') response.end(JSON.stringify({ code: 0, data: { dataId: longId, groupName: 'DEFAULT_GROUP', namespaceId: 'public', content: original, md5: md5(original), type: 'yaml' } }));
+      else response.end(JSON.stringify({ dataId: longId, group: 'DEFAULT_GROUP', tenant: '', content: original, md5: md5(original), type: 'yaml', createTime: 1 }));
+      return true;
+    };
+    const detail = await f.provider.nacos.get(f.config, f.credentials, { dataId: longId });
+    assert.equal(detail.content, original); assert.equal(detail.metadata?.use, undefined, '真实 v3 DTO 不提供旧管理字段');
+    await assert.rejects(() => f.provider.nacos.publish(f.config, f.credentials, { dataId: longId, content: candidate, expectedMd5: md5(original) }), { code: 'nacos_metadata_unavailable' });
+    assert.equal(f.state.writes, 0); assert.equal((await f.provider.nacos.get(f.config, f.credentials, { dataId: longId })).content, original);
+  }
+});
+
+test('Nacos full management optional nulls may be explicit or omitted without inventing v3 metadata', async t => {
+  for (const explicit of [false, true]) {
+    const f = await fixture(t);
+    for (const key of ['appName', 'desc', 'configTags', 'use', 'effect', 'schema'] as const) f.metadata[key] = null;
+    if (explicit) f.state.override = (request, response) => {
+      if (request.query.get('show') !== 'all') return false;
+      response.end(JSON.stringify({ dataId: longId, group: 'DEFAULT_GROUP', tenant: '', content: f.state.content, md5: md5(f.state.content), createTime: 1, modifyTime: 2, ...f.metadata })); return true;
+    };
+    const result = await f.provider.nacos.publish(f.config, f.credentials, { dataId: longId, content: candidate, expectedMd5: md5(original) });
+    assert.equal(result.published, true); assert.equal(result.verified, true); assert.equal(result.metadataVerified, true);
+    assert.ok(['appName', 'desc', 'configTags', 'use', 'effect', 'schema'].every(key => !f.state.requests.find(request => request.form.has('content'))!.form.has(key)));
+  }
+});
+
+test('Nacos accepted publication reports a type or metadata readback mismatch separately from matching content', async t => {
+  for (const changed of ['type', 'use'] as const) {
+    const f = await fixture(t);
+    f.state.override = (request, response) => {
+      if (!f.state.writes || request.query.get('show') !== 'all') return false;
+      response.end(JSON.stringify({ dataId: longId, group: 'DEFAULT_GROUP', tenant: '', content: f.state.content, md5: md5(f.state.content), createTime: 1, modifyTime: 2, ...f.metadata, [changed]: 'changed-by-another-entry' })); return true;
+    };
+    const result = await f.provider.nacos.publish(f.config, f.credentials, { dataId: longId, content: candidate, expectedMd5: md5(original) });
+    assert.equal(result.published, true); assert.equal(result.verified, false); assert.equal(result.contentVerified, true);
+    assert.equal(result.typeVerified, changed !== 'type'); assert.equal(result.metadataVerified, changed !== 'use');
+    assert.equal(result.verificationError?.code, 'nacos_verification_mismatch'); assert.equal(f.state.writes, 1);
+  }
 });
 test('Nacos auto rejects malformed successful login responses without trying another authentication API', async t => {
   const f = await fixture(t);
@@ -255,8 +321,8 @@ test('Nacos missing, old and custom version labels use ordinary publishing with 
       assert.equal(write.headers.casmd5, undefined); assert.equal(write.form.get('content'), candidate); assert.equal(write.form.get('type'), 'yaml'); assert.equal(write.form.get('desc'), f.metadata.desc);
       assert.equal(f.state.content, candidate);
       const writeIndex = f.state.requests.indexOf(write), fresh = f.state.requests[writeIndex - 1];
-      assert.equal(fresh.query.get('dataId'), longId); assert.equal(fresh.pathname, apiVersion === 'v3' ? '/v3/admin/cs/config' : '/v1/cs/configs');
-      if (apiVersion !== 'v3') assert.equal(fresh.query.get('show'), 'all', '写入前最后请求应读管理详情，不能使用运行时缓存');
+      assert.equal(fresh.query.get('dataId'), longId); assert.equal(fresh.pathname, '/v1/cs/configs');
+      assert.equal(fresh.query.get('show'), 'all', '写入前最后请求应读完整管理详情，不能使用正文DTO或运行时缓存');
     }
     assert.equal(f.state.writes, 4);
     f.state.missing = true;
@@ -269,11 +335,11 @@ test('Nacos native and ordinary publication both reject content or type drift ob
     if (protection === 'ordinary') f.state.version = '4.6.0-SNAPSHOT';
     let managementReads = 0;
     f.state.override = (request, response) => {
-      const management = request.query.get('dataId') === longId && !request.form.has('content') && (apiVersion === 'v3' ? request.pathname === '/v3/admin/cs/config' : request.query.get('show') === 'all');
+      const management = request.query.get('dataId') === longId && !request.form.has('content') && request.query.get('show') === 'all';
       if (!management || ++managementReads !== 2) return false;
       if (change === 'content') f.state.content = '\uFEFF其他入口最新配置\r\n'; else f.metadata.type = 'json';
-      const detail = { dataId: longId, group: 'DEFAULT_GROUP', tenant: '', namespaceId: 'public', content: f.state.content, md5: md5(f.state.content), ...f.metadata };
-      response.end(JSON.stringify(apiVersion === 'v3' ? { code: 0, data: detail } : detail)); return true;
+      const detail = { dataId: longId, group: 'DEFAULT_GROUP', tenant: '', content: f.state.content, md5: md5(f.state.content), createTime: 1, modifyTime: 2, ...f.metadata };
+      response.end(JSON.stringify(detail)); return true;
     };
     await assert.rejects(() => f.provider.nacos.publish(f.config, f.credentials, { dataId: longId, content: candidate, expectedMd5: md5(original) }), { code: 'nacos_config_conflict' }, `${apiVersion} ${protection} ${change}`);
     assert.equal(managementReads, 2); assert.equal(f.state.writes, 0); assert.equal(f.state.content, change === 'content' ? '\uFEFF其他入口最新配置\r\n' : original);
@@ -391,7 +457,7 @@ function runClient(args: string[], context?: unknown, input = '', revalidation?:
 test('standalone Nacos CLI help/version exit without context and requires private context for operations', async () => {
   const help = await runClient(['--help']);
   assert.equal(help.code, 0); assert.ok(JSON.parse(help.stdout).help.length); assert.equal(help.requests, 0);
-  const version = await runClient(['--version']); assert.equal(version.code, 0); assert.equal(JSON.parse(version.stdout).version, '1.0.0');
+  const version = await runClient(['--version']); assert.equal(version.code, 0); assert.equal(JSON.parse(version.stdout).version, '2.0.0');
 });
 
 test('standalone Nacos workflow preserves complete raw artifacts while ordinary output hides auth and tokens', async t => {
@@ -515,6 +581,24 @@ test('standalone Nacos hooks report verified read scope and options without writ
   assert.equal(discovered.code, 0); assert.deepEqual(JSON.parse(discovered.stdout).options, [{ value: 'public', label: 'public' }]); assert.equal(f.state.writes, 0);
 });
 
+test('standalone Nacos hooks preserve fixed control values and refuse secret-colliding option identities', async t => {
+  for (const password of ['s', 'public']) {
+    const f = await fixture(t), directory = temporaryState(t); f.credentials.password = password;
+    f.state.override = (request, response) => {
+      if (!request.pathname.endsWith('/login')) return false;
+      response.end(JSON.stringify({ accessToken: 'fixture-login-token', tokenTtl: 300 })); return true;
+    };
+    const context = workflowContext(f, directory), tested = await runClient(['test', '--json'], context);
+    assert.equal(tested.code, 0); assert.equal(JSON.parse(tested.stdout).status, 'success'); assert.equal(JSON.parse(tested.stdout).schemaVersion, 'nacos.connection-result/v1');
+    const resultFile = path.join(directory, 'namespaces.json'), discovered = await runClient(['namespaces', '--json', '--result-file', resultFile], context), body = JSON.parse(discovered.stdout);
+    if (password === 'public') {
+      assert.equal(discovered.code, 1); assert.equal(body.status, 'failure'); assert.equal(body.error.code, 'nacos_discovery_identifier_hidden'); assert.equal(body.options, undefined); assert.equal(body.namespaces, undefined);
+      assert.equal(JSON.parse(fs.readFileSync(resultFile, 'utf8')).options[0].value, 'public', '受限私有结果保留真实读取事实');
+    } else { assert.equal(discovered.code, 0); assert.equal(body.status, 'success'); assert.equal(body.options[0].value, 'public'); }
+    assert.equal(f.state.writes, 0);
+  }
+});
+
 test('standalone Nacos CLI rejects double stdin before context or remote requests', async t => {
   const f = await fixture(t);
   const result = await runClient(['publish', '--data-id', longId, '--content-file', '-', '--authorization-file', '-', '--expected-revision', 'observed', '--expected-md5', md5(original)]);
@@ -539,4 +623,57 @@ test('standalone Nacos delivered folder runs from a copied source without Buildr
   assert.equal(help.code, 0); assert.ok(JSON.parse(help.stdout).help.length);
   const read = await runClient(['namespaces', '--json'], workflowContext(f, directory), '', undefined, entry);
   assert.equal(read.code, 0); assert.equal(JSON.parse(read.stdout).status, 'success'); assert.equal(f.state.writes, 0);
+});
+
+test('standalone Nacos private results preserve overlapping secret identities, authorization scope and raw artifact paths', async t => {
+  const f = await fixture(t, 'v3', 'nacos.yaml'), directory = path.join(temporaryState(t), 'nacos-private'); fs.mkdirSync(directory);
+  f.credentials.password = 'nacos';
+  f.state.override = (request, response) => {
+    if (!request.pathname.endsWith('/login')) return false;
+    assert.equal(request.form.get('password'), 'nacos'); response.end(JSON.stringify({ accessToken: 'fixture-login-token', tokenTtl: 300 })); return true;
+  };
+  const context = workflowContext(f, directory, true); context.connections.primary.id = 'nacos-fixture';
+  const getFile = path.join(directory, 'get-result.json');
+  const read = await runClient(['get', '--data-id', 'nacos.yaml', '--result-file', getFile], context);
+  const shown = JSON.parse(read.stdout), exact = JSON.parse(fs.readFileSync(getFile, 'utf8'));
+  assert.equal(read.code, 0); assert.equal(shown.displayOnly, true); assert.equal(shown.privateResultWritten, true);
+  assert.equal(exact.target.dataId, 'nacos.yaml'); assert.equal(fs.readFileSync(exact.outputFile, 'utf8'), original);
+  assert.notEqual(shown.outputFile, exact.outputFile); assert.equal(fs.statSync(getFile).mode & 0o777, 0o600);
+  const diffFile = path.join(directory, 'diff-result.json');
+  const diff = await runClient(['diff', '--data-id', 'nacos.yaml', '--content-file', '-', '--result-file', diffFile], context, candidate);
+  const exactDiff = JSON.parse(fs.readFileSync(diffFile, 'utf8'));
+  assert.equal(diff.code, 0); assert.equal(exactDiff.authorizationScope.dataId, 'nacos.yaml'); assert.equal(JSON.parse(diff.stdout).authorizationScope.dataId, '[REDACTED].yaml');
+  const authorizationFile = path.join(directory, 'authorization.json');
+  fs.writeFileSync(authorizationFile, JSON.stringify({ source: 'fixture:user-turn-1', statement: '批准当前差异的单次发布', scope: exactDiff.authorizationScope }), { mode: 0o600 });
+  const written = await runClient(['publish', '--data-id', 'nacos.yaml', '--content-file', '-', '--expected-revision', exactDiff.expectedRevision, '--expected-md5', exactDiff.expectedMd5, '--authorization-file', authorizationFile], context, candidate);
+  assert.equal(written.code, 0); assert.equal(JSON.parse(written.stdout).published, true); assert.equal(f.state.writes, 1);
+});
+
+test('standalone Nacos reserves private results before networking and never overwrites files or symlinks', async t => {
+  const f = await fixture(t), directory = temporaryState(t), context = workflowContext(f, directory), occupied = path.join(directory, 'occupied.json');
+  fs.writeFileSync(occupied, 'previous', { mode: 0o600 }); const link = path.join(directory, 'link.json'); fs.symlinkSync(occupied, link);
+  for (const filename of [occupied, link, path.join(directory, 'missing-parent', 'result.json')]) {
+    const read = await runClient(['get', '--data-id', longId, '--result-file', filename], context);
+    assert.equal(read.code, 1); assert.equal(JSON.parse(read.stdout).error.code, 'nacos_result_file_invalid'); assert.equal(f.state.requests.length, 0);
+  }
+  assert.equal(fs.readFileSync(occupied, 'utf8'), 'previous');
+});
+
+test('standalone Nacos writes exact failure results into the reserved private file', async t => {
+  const f = await fixture(t), directory = temporaryState(t), resultFile = path.join(directory, 'failure.json'); f.state.missing = true;
+  const read = await runClient(['get', '--data-id', longId, '--result-file', resultFile], workflowContext(f, directory));
+  assert.equal(read.code, 1); assert.equal(JSON.parse(read.stdout).privateResultWritten, true);
+  assert.equal(JSON.parse(fs.readFileSync(resultFile, 'utf8')).error.code, 'nacos_config_missing');
+});
+
+test('standalone Nacos retains accepted publication facts when the reserved private result is replaced', async t => {
+  const f = await fixture(t), directory = temporaryState(t), resultFile = path.join(directory, 'result.json'), context = workflowContext(f, directory);
+  f.state.override = request => {
+    if (request.form.has('content')) { fs.rmSync(resultFile); fs.mkdirSync(resultFile); }
+    return false;
+  };
+  const written = await runClient(['publish', '--data-id', longId, '--content-file', '-', '--expected-revision', context.connections.primary.revision, '--expected-md5', md5(original), '--result-file', resultFile], context, candidate);
+  const result = JSON.parse(written.stdout);
+  assert.equal(written.code, 0); assert.equal(result.published, true); assert.equal(result.verified, true); assert.equal(result.privateResultWritten, false);
+  assert.equal(result.privateResultError.code, 'nacos_result_file_write_failed'); assert.equal(f.state.writes, 1); assert.equal(f.state.content, candidate);
 });
