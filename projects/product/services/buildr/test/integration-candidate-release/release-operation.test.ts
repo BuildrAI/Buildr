@@ -5,13 +5,26 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
-import { reconcilePublicationAfterPreparedContext, runReleaseOperation } from '../../tools/release/release-orchestration-runner.ts';
+import { reconcilePublicationAfterPreparedContext, resolveRetainedController, runReleaseOperation } from '../../tools/release/release-orchestration-runner.ts';
 import { readCandidateEvidence } from '../../tools/release/release-transaction-runner.ts';
 import { createReleaseArtifactFixture } from '../helpers/release-artifact-fixture.ts';
 import { aggregateCandidateCiEvidence, candidateCiRegistryIdentity, createCandidateCiEvidence } from '../verification/candidate-ci-evidence.ts';
 import { CANDIDATE_CI_SHARDS, CANDIDATE_CI_HOST_NODE_TUPLES } from '../verification/registry.ts';
 
 const sourceRoot = path.resolve(import.meta.dirname, '../..');
+
+test('retained release controller accepts a newer Node and rejects an unmet source minimum', t => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-retained-controller-node-'));
+  t.after(() => fs.rmSync(workspace, { recursive: true, force: true }));
+  const project = path.join(workspace, 'projects/product');
+  fs.mkdirSync(path.join(project, 'services/buildr/bin'), { recursive: true });
+  fs.writeFileSync(path.join(project, 'services/buildr/bin/buildr.mjs'), '');
+  fs.writeFileSync(path.join(project, '.node-version'), '24.15.0\n');
+  const controller = resolveRetainedController(workspace);
+  assert.equal(fs.realpathSync(controller.executable), fs.realpathSync(process.execPath));
+  fs.writeFileSync(path.join(project, '.node-version'), '999.0.0\n');
+  assert.throws(() => resolveRetainedController(workspace), /does not meet required minimum 999\.0\.0/u);
+});
 
 test('Candidate artifact readback uses a bounded package download budget and reports timeout', t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-candidate-readback-budget-'));

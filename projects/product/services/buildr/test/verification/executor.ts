@@ -54,10 +54,10 @@ export function createVerificationExecutor(options: any): any  {
   const productRoot: any = path.resolve(options.productRoot);
   const projectRoot: any = path.resolve(options.projectRoot ?? productRoot);
   const nodeVersionPath: any = path.join(projectRoot, '.node-version');
-  const expectedVersion: any = options.expectedNodeVersion === null
+  const minimumVersion: any = options.minimumNodeVersion === null
     ? undefined
-    : options.expectedNodeVersion ?? (fs.statSync(nodeVersionPath, { throwIfNoEntry: false })?.isFile() ? fs.readFileSync(nodeVersionPath, 'utf8').trim() : undefined);
-  const exactNode: any = createExactNodeExecutionEnvironment({ nodeExecutable: process.execPath, env: { ...process.env, ...options.env }, requireNpm: true, expectedVersion });
+    : options.minimumNodeVersion ?? (fs.statSync(nodeVersionPath, { throwIfNoEntry: false })?.isFile() ? fs.readFileSync(nodeVersionPath, 'utf8').trim() : undefined);
+  const exactNode: any = createExactNodeExecutionEnvironment({ nodeExecutable: process.execPath, env: { ...process.env, ...options.env }, requireNpm: true, minimumVersion });
   const nodeBin: any = exactNode.audit.bin;
   const nodeModulesBin: any = path.join(productRoot, 'node_modules', '.bin');
   const npmExecutable: any = exactNode.npmExecutable;

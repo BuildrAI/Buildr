@@ -40,7 +40,7 @@ Buildr 主包 `@buildr-ai/buildr` 与 DSH（DeepSeek Harness）插件（Plugin�
 | 产物消费 | 仅验证所需运行依赖，不生成源码材料、不加载构建工具 |
 | 正式发布消费 | 同一消费准备，加隔离安装的固定 npm；候选已检查其无写入发布路径 |
 
-产品开发入口在 `.node-version` 声明版本的同主版本范围内选择 Node（声明版本优先）；发布编排与候选（Candidate）环境准备仍要求声明版本的精确 Node；宿主 Node 验证覆盖声明支持的平台与版本，记录实际执行版本。缓存只加速下载；干净检出不依赖未声明缓存或本机残留。
+产品开发、验证、候选（Candidate）准备与发布入口统一要求稳定版 Node `>=24.15.0`；`.node-version` 保留基准选择，不再要求实际版本相等或限制同一主版本。持续集成（CI）可选用基准与宿主版本组合，每次执行记录实际 Node 程序与版本，子进程必须使用同一程序。缓存只加速下载；干净检出不依赖未声明缓存或本机残留。
 
 ## 真实包与兼容检查
 
@@ -71,7 +71,7 @@ Buildr 主包不捆绑插件，`artifact` 档位也不获取 DSH 软件开发工
 
 ## 操作入口
 
-使用 `tools/development/run-development-node` 按产品精确 Node 执行[发布入口](../../../services/buildr/tools/release/release-orchestration-runner.ts)。入口以所选包版本、稳定选择标识 `selectionId` 和主工作空间定位任务数据，自动解析实际工作树、引用、关联输入与运行编号。`--selection-id` 可显式提供标识；默认主包选择保留旧版本命名空间，插件和联合选择使用各自命名空间，避免碰撞。
+使用 `tools/development/run-development-node` 按产品最低 Node 要求执行[发布入口](../../../services/buildr/tools/release/release-orchestration-runner.ts)。入口以所选包版本、稳定选择标识 `selectionId` 和主工作空间定位任务数据，自动解析实际工作树、引用、关联输入与运行编号。`--selection-id` 可显式提供标识；默认主包选择保留旧版本命名空间，插件和联合选择使用各自命名空间，避免碰撞。
 
 ```text
 release-orchestration-runner.ts prepare --packages buildr --version <buildr-version> --workspace <workspace> [--baseline <ref>] [--source <sha> ...]

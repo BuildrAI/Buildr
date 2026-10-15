@@ -227,8 +227,8 @@ test('core and candidate reuse one runner while retaining distinct evidence resp
   assert.ok(candidate.includes('BUILDR_VERIFICATION_SCHEDULING'));
   assert.ok(candidate.includes('schedulingMode'));
   assert.match(candidate, /BUILDR_VERIFICATION_SCHEDULING \?\? 'cost'/);
-  assert.match(candidate, /process\.versions\.node !== developmentNodeVersion/);
-  assert.match(candidate, /Buildr Product development Node mismatch/);
+  assert.match(candidate, /assertMinimumNodeVersion\(process\.versions\.node, developmentNodeVersion\)/);
+  assert.doesNotMatch(candidate, /process\.versions\.node !== developmentNodeVersion|Buildr Product development Node mismatch/);
   assert.match(candidate, /enforceOfflineVerification\(\)/);
   assert.ok(candidate.split(/\r?\n/).length < 100);
   const candidatePlan: any = createVerificationPlan({ profiles: ['candidate'] });
@@ -346,7 +346,7 @@ test('Host Node compatibility runs offline without a Workspace Node distribution
   assert.deepEqual(packageManifest.bundleDependencies, ['@vscode/ripgrep-universal', 'ajv', 'mysql2', 'node-sql-parser', 'yaml']);
   assert.match(hostNode, /enforceOfflineVerification\(\)/);
   const executePlanCall: any = hostNode.slice(hostNode.indexOf('await executePlan('), hostNode.indexOf('results = execution.results'));
-  assert.match(executePlanCall, /expectedNodeVersion: null/);
+  assert.match(executePlanCall, /minimumNodeVersion: null/);
   assert.match(policy, /npm_config_offline = 'true'/);
   assert.match(policy, /BUILDR_VERIFICATION_NETWORK_MODE/);
   assert.match(cliSmoke, /\['install', '--offline', '--global'/);

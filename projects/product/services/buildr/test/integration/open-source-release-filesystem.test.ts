@@ -138,20 +138,22 @@ test('release smoke preserves redacted Launcher evidence beside phase diagnostic
 test('Host Node executor can bind the matrix runtime without reading development .node-version', (t: any) => {
   const projectRoot: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-host-node-matrix-'));
   t.after(() => fs.rmSync(projectRoot, { recursive: true, force: true }));
-  fs.writeFileSync(path.join(projectRoot, '.node-version'), '0.0.0\n');
+  fs.writeFileSync(path.join(projectRoot, '.node-version'), '999.0.0\n');
   assert.doesNotThrow(() => createVerificationExecutor({
     productRoot: serviceRoot,
     projectRoot,
     diagnosticsDirectory: path.join(projectRoot, 'diagnostics'),
     artifactDirectory: path.join(projectRoot, 'artifact'),
-    expectedNodeVersion: null,
+    minimumNodeVersion: null,
   }));
   assert.throws(() => createVerificationExecutor({
     productRoot: serviceRoot,
     projectRoot,
     diagnosticsDirectory: path.join(projectRoot, 'diagnostics'),
     artifactDirectory: path.join(projectRoot, 'artifact'),
-  }), /does not match required 0\.0\.0/u);
+  }), /does not meet required minimum 999\.0\.0/u);
+  fs.writeFileSync(path.join(projectRoot, '.node-version'), '24.15.0\n');
+  assert.doesNotThrow(() => createVerificationExecutor({ productRoot: serviceRoot, projectRoot }));
 });
 
 test('open-source candidate ignores tracked paths deleted from the frozen worktree', () => {

@@ -6,7 +6,7 @@ DSH（DeepSeek Harness）插件（Plugin）由独立服务（Service）[插件�
 
 ## 版本与候选
 
-插件（Plugin）保持独立版本，在插件服务根目录使用[项目 Node 版本声明](<../../../.node-version>)对应运行环境。以下窄工具用于查询与产物（Artifact）诊断，正常发布由统一入口编排。构建显式消费已核验的源码软件开发工具包（SDK），完整验证还消费冻结的真实 Buildr 包；查询与打包不使用本机 npm 认证配置：
+插件（Plugin）保持独立版本，在插件服务根目录使用[项目 Node 版本声明](<../../../.node-version>)所示最低要求（当前为稳定版 Node `>=24.15.0`）的运行环境。以下窄工具用于查询与产物（Artifact）诊断，正常发布由统一入口编排。构建显式消费已核验的源码软件开发工具包（SDK），完整验证还消费冻结的真实 Buildr 包；查询与打包不使用本机 npm 认证配置：
 
 ```sh
 node tools/release.ts status
@@ -70,7 +70,7 @@ node tools/build-development-composition.ts --source-sdk <prepared-source-sdk> -
 
 公开 npm 发布和 `dsh-plugin-v<version>` 标签属于插件自己的版本事实，需针对准确版本、源码和同一候选字节单独取得发布授权。候选生成不等于公开发布。发布失败、尚未授权或注册表仍不可见时，不能承诺用户已经能一句话安装。
 
-独立[发布工作流（Workflow）](<../../../../../.github/workflows/publish-dsh-plugin.yml>)只接受 `workflow_dispatch`，不因提交、Buildr 主包发布或标签（Tag）自动发布插件。默认 `operation=prepare`，`version` 必须与服务 `package.json` 相同，不修改版本。准备运行限定 `main`，固定 GitHub 托管执行器（Hosted Runner）、Node `24.15.0`、pnpm `11.7.0`，由[固定准备入口](<../../../services/dsh-plugin/tools/prepare-release-sdk.ts>)取得真实上游 Git 检出 `deepseek-ai/deepseek-harness` 的 `639ed015397290b3745d163aafe02ffee4aa3f84`，验证并应用入库补丁，按补丁后的锁文件冻结安装，再重建源码软件开发工具包（SDK）。完整检查覆盖正式版、开发版及真实装载器（Loader），上传原候选包 `plugin-candidate-v<version>` 和兼容聚合 `plugin-candidate-aggregate`。
+独立[发布工作流（Workflow）](<../../../../../.github/workflows/publish-dsh-plugin.yml>)只接受 `workflow_dispatch`，不因提交、Buildr 主包发布或标签（Tag）自动发布插件。默认 `operation=prepare`，`version` 必须与服务 `package.json` 相同，不修改版本。准备运行限定 `main`，固定 GitHub 托管执行器（Hosted Runner）与 pnpm `11.7.0`，持续集成（CI）选用 Node `24.15.0` 基准（准备入口允许稳定版 `>=24.15.0`），由[固定准备入口](<../../../services/dsh-plugin/tools/prepare-release-sdk.ts>)取得真实上游 Git 检出 `deepseek-ai/deepseek-harness` 的 `639ed015397290b3745d163aafe02ffee4aa3f84`，验证并应用入库补丁，按补丁后的锁文件冻结安装，再重建源码软件开发工具包（SDK）。完整检查覆盖正式版、开发版及真实装载器（Loader），上传原候选包 `plugin-candidate-v<version>` 和兼容聚合 `plugin-candidate-aggregate`。
 
 准备输入必须绑定已冻结的对端：
 

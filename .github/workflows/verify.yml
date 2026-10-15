@@ -375,10 +375,11 @@ jobs:
         run: |
           node --input-type=module <<'NODE'
           import { execFileSync } from 'node:child_process';
+          import { assertMinimumNodeVersion } from './src/infrastructure/process.ts';
           const sourceCommit = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
           const sourceTree = execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { encoding: 'utf8' }).trim();
           if (sourceCommit !== process.env.CANDIDATE_SOURCE_SHA || sourceTree !== process.env.EXPECTED_SOURCE_TREE) throw new Error('Source diagnosis checkout differs from the dispatched source.');
-          if (process.versions.node !== '24.15.0') throw new Error('Source diagnosis requires the original Candidate Node runtime.');
+          assertMinimumNodeVersion(process.versions.node, '24.15.0');
           process.stdout.write(`[source-diagnosis] commit=${sourceCommit} tree=${sourceTree}\n`);
           NODE
       - name: Prepare the original Candidate source environment

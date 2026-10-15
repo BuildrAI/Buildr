@@ -550,7 +550,8 @@ test('Windows nested Git diagnosis keeps closed inputs, original isolated assert
   assert.equal(node.with['node-version-file'], 'projects/product/.node-version');
   const source = diagnosis.steps.find((step: any) => step.name === 'Verify the closed diagnosis source');
   assert.match(source.run, /sourceCommit !== process\.env\.CANDIDATE_SOURCE_SHA \|\| sourceTree !== process\.env\.EXPECTED_SOURCE_TREE/u);
-  assert.match(source.run, /process\.versions\.node !== '24\.15\.0'/u);
+  assert.ok(source.run.includes("assertMinimumNodeVersion(process.versions.node, '24.15.0')"));
+  assert.doesNotMatch(source.run, /process\.versions\.node !== '24\.15\.0'/u);
   assert.equal(diagnosis.steps.filter((step: any) => step.run === 'node tools/verification/candidate-environment.ts prepare --profile base').length, 1);
   const measurement = diagnosis.steps.find((step: any) => step.name === 'Measure the original isolated nested Git scenario');
   assert.match(measurement.run, /'tools\/development\/run-isolated-workspace-smoke\.ts'/u);

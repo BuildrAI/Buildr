@@ -170,7 +170,7 @@ Buildr release workflow MUST 在公开 mutation 前后读取 npm `latest` 与 `n
 
 ### Requirement: Publication 必须从已完成 Task 的权威环境事实重建
 
-Buildr Release MUST在matching release Worktree中使用冻结source的锁文件、Product exact Node和统一消费准备入口，只准备当前动作必需依赖。准备结果 MUST保存source inputs、cwd、command、Node和真实outcome；无需单独准备绑定文件，MUST NOT保存stdout或凭证。无副作用readiness MUST只读取当前执行条件，不得执行依赖安装。
+Buildr Release MUST在matching release Worktree中使用冻结source的锁文件、满足 Product 最低版本要求的 Node和统一消费准备入口，只准备当前动作必需依赖。准备结果 MUST保存source inputs、cwd、command、Node和真实outcome；无需单独准备绑定文件，MUST NOT保存stdout或凭证。无副作用readiness MUST只读取当前执行条件，不得执行依赖安装。
 
 #### Scenario: Release Task Finish 已清理 worktree
 - **WHEN** matching release Worktree已清理且需要恢复发布后登记或清理
@@ -184,7 +184,7 @@ Buildr Release MUST在matching release Worktree中使用冻结source的锁文件
 - **THEN** Release MUST只阻塞依赖该准备的readiness，不改变Task、Candidate、Git或Publication事实
 
 ### Requirement: Candidate 与 Release 子进程必须共同冻结 exact Node executable 和 PATH
-Buildr MUST由一个共享 execution environment helper同时绑定权威 Node executable、对应 bin 的 PATH 首项、npm shim与可审计 Node identity。本地 Candidate、hosted Host Node tuple、release prepare、tarball/Registry smoke、macOS LaunchServices Launcher后代进程和hosted publication helper MUST复用该 contract；任何 consumer MUST NOT只冻结父进程 executable而让子进程从会话 PATH 解析其他 Node。Host Node tuple的权威版本 MUST来自该tuple实际启动verifier的Node，development精确版本只约束development checkout入口。
+Buildr MUST由一个共享 execution environment helper同时绑定权威 Node executable、对应 bin 的 PATH 首项、npm shim与可审计 Node identity。本地 Candidate、hosted Host Node tuple、release prepare、tarball/Registry smoke、macOS LaunchServices Launcher后代进程和hosted publication helper MUST复用该 contract；任何 consumer MUST NOT只冻结父进程 executable而让子进程从会话 PATH 解析其他 Node。Host Node tuple的权威版本 MUST来自该tuple实际启动verifier的Node，开发、验证与发布入口 MUST接受满足 Product 最低版本要求的稳定 Node，MUST NOT因实际版本不等于基准或主版本更高而拒绝；同一次执行内的真实 Node identity继续严格一致。
 
 #### Scenario: inherited PATH 含另一个 Node
 - **WHEN** 权威 executable 与 inherited PATH 中首先可见的 Node 版本或路径不同

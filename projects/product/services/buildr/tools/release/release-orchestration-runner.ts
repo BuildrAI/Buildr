@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 
 import { createReleaseToolRuntime } from './runtime.ts';
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.ts';
+import { createExactNodeExecutionEnvironment } from '../../src/infrastructure/process.ts';
 import { closeoutReleaseGitResources, reconcilePublishedReleaseWithDev, reconcileReleaseToMain, ensureReleaseToMainPullRequest, pushReleaseBranch, releaseCarrierBranchFor } from './release-git-convergence.ts';
 import { createReleaseSelection, selectReleaseCommit, freezeReleaseSelection, reopenReleaseSelection, inspectReleaseSelection } from './release-selection.ts';
 import { resolveReleaseExecutionBinding } from './release-execution-binding.ts';
@@ -156,13 +157,12 @@ export function resolveRetainedController(canonicalWorkspace: any, { nodeExecuta
   const sourceRoot: any = fs.realpathSync(path.join(root, 'projects/product/services/buildr'));
   const relative: any = path.relative(root, sourceRoot);
   if (!relative || relative.startsWith('..') || path.isAbsolute(relative) || relative.split(path.sep).includes('.worktrees')) throw new Error('Release retained controller source is not a retained Workspace checkout.');
-  const executable: any = fs.realpathSync(path.resolve(nodeExecutable));
-  if (!path.isAbsolute(executable)) throw new Error('Release retained controller executable is invalid.');
   const requiredNode: any = fs.readFileSync(path.join(root, 'projects/product/.node-version'), 'utf8').trim();
-  if (process.versions.node !== requiredNode) throw new Error(`Release retained controller requires Product Node ${requiredNode}, actual ${process.versions.node}.`);
+  const execution: any = createExactNodeExecutionEnvironment({ nodeExecutable, minimumVersion: requiredNode });
+  const executable: any = execution.nodeExecutable;
   const entry: any = path.join(sourceRoot, 'bin', 'buildr.mjs');
   if (!fs.statSync(entry, { throwIfNoEntry: false })?.isFile()) throw new Error('Release retained controller CLI is missing.');
-  return { executable, argsPrefix: [entry], sourceRoot, workspaceRoot: root, identity: identity({ executable, sourceRoot, entry, requiredNode }) };
+  return { executable, argsPrefix: [entry], sourceRoot, workspaceRoot: root, identity: identity({ executable, sourceRoot, entry, requiredNode, nodeVersion: execution.audit.version }) };
 }
 
 function defaultInvokeRetained(controller: any, args: any): any  {

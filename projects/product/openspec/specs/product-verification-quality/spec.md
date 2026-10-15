@@ -25,7 +25,7 @@ Buildr Product MUST 为development checkout onboarding、init行为、checkout/p
 
 #### Scenario: 验证 development checkout onboarding
 - **WHEN** repository onboarding verifier 在干净 Git checkout运行
-- **THEN** verifier MUST 使用Product声明的精确development Node执行checkout内显式`projects/product/buildr` Project bridge，并证明development entry identity与development update source
+- **THEN** verifier MUST 使用满足Product最低版本要求的实际development Node执行checkout内显式`projects/product/buildr` Project bridge，并证明development entry identity与development update source
 - **AND** verifier MUST 完成真实sync、development-only Launcher activation和最终Doctor，同时证明PATH默认`buildr`与`buildr.cmd`未被读取、创建、覆盖或删除
 - **AND** verifier MUST NOT安装development PATH CLI，也不得重复持有完整init或npm tarball release lifecycle
 
@@ -964,7 +964,7 @@ Buildr Candidate CI MUST 在不合并 evidence owner 的前提下复用 prefligh
 
 #### Scenario: Candidate bootstrap 成功
 - **WHEN** dev→main 或手工 Candidate run 启动
-- **THEN** 一个bootstrap job MUST在同一checkout、Product精确development Node与依赖上先完成`preflight-macos`再完成`artifact-macos`
+- **THEN** 一个bootstrap job MUST在同一checkout、满足Product最低版本要求的实际development Node与依赖上先完成`preflight-macos`再完成`artifact-macos`
 - **AND** job MUST 分别上传两份 shard evidence与一个不可变 Candidate artifact
 
 #### Scenario: Preflight 失败

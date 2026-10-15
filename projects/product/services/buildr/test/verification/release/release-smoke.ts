@@ -280,8 +280,8 @@ export function cleanupReleaseSmokeRoot(root: any, options: any = {}): any  {
 }
 
 export async function runReleaseSmoke(env: any = process.env): Promise<any>  {
-  const expectedVersion: any = fs.readFileSync(path.resolve(productRoot, '../..', '.node-version'), 'utf8').trim();
-  const exactNode: any = createExactNodeExecutionEnvironment({ nodeExecutable: process.execPath, env, requireNpm: true, expectedVersion });
+  const minimumVersion: any = fs.readFileSync(path.resolve(productRoot, '../..', '.node-version'), 'utf8').trim();
+  const exactNode: any = createExactNodeExecutionEnvironment({ nodeExecutable: process.execPath, env, requireNpm: true, minimumVersion });
   const nodeExecutable: any = exactNode.nodeExecutable;
   const npmExecutable: any = exactNode.npmExecutable;
   const root: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-release-smoke-'));

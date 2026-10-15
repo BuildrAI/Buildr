@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { executePlan } from './plan-runner.ts'; import { parseVerificationSchedulingMode } from './dag-scheduler.ts';
 import { admitVerificationPlanBudget, createVerificationAdmissionPlan, createVerificationPlan } from './planner.ts';
 import { resolveVerificationExecutionProfile } from './registry.ts';
-import { enforceOfflineVerification } from '../../src/infrastructure/network/verification-network-policy.ts';
+import { enforceOfflineVerification } from '../../src/infrastructure/network/verification-network-policy.ts'; import { assertMinimumNodeVersion } from '../../src/infrastructure/process.ts';
 import { CANDIDATE_TOTAL_BUDGET_MS, CORE_TOTAL_BUDGET_MS } from './timing/budgets.ts';
 import { collectVerificationSourceIdentity, createVerificationEvidencePaths, writeVerificationTimingEvidence } from './timing/evidence.ts';
 const productRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..'); const projectRoot: any = path.resolve(productRoot, '../..');
@@ -38,9 +38,9 @@ if (request.json) {
 }
 if (plan.status === 'blocked') throw new Error(plan.diagnostic?.message ?? `${request.profile} verification plan is blocked.`);
 const developmentNodeVersion: any = fs.readFileSync(path.join(projectRoot, '.node-version'), 'utf8').trim();
-if (process.versions.node !== developmentNodeVersion) throw new Error(`Buildr Product development Node mismatch: expected ${developmentNodeVersion}, active ${process.versions.node}.`);
+assertMinimumNodeVersion(process.versions.node, developmentNodeVersion);
 enforceOfflineVerification();
-process.stdout.write(`[verify-product] developmentNode=${developmentNodeVersion} executable=${process.execPath}\n`);
+process.stdout.write(`[verify-product] minimumNode=${developmentNodeVersion} node=${process.versions.node} executable=${process.execPath}\n`);
 const executionRoot: any = fs.mkdtempSync(path.join(os.tmpdir(), `buildr-${lane.kind}-verification-`));
 const evidence: any = createVerificationEvidencePaths(lane.kind);
 const source: any = collectVerificationSourceIdentity(productRoot, { projectRoot });

@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { sameFilesystemPath } from '../../src/infrastructure/filesystem/filesystem-path-identity.ts';
 import { longRunningOperationSummary } from '../../src/infrastructure/contracts/public-json.ts';
 import { createReleaseToolRuntime } from './runtime.ts';
-import { createExactNodeExecutionEnvironment } from '../../src/infrastructure/process.ts';
+import { assertMinimumNodeVersion, createExactNodeExecutionEnvironment } from '../../src/infrastructure/process.ts';
 import {
   releasePublishAuthority,
   releaseWorkflowPath,
@@ -176,7 +176,7 @@ function taskCorrelationProjection(value: any): any  {
 
 export async function runHostedReleaseTransaction(options: any = {}, dependencies: any = {}): Promise<any>  {
   const rawExecute: any = dependencies.execute ?? defaultExecute;
-  const exactNode: any = createExactNodeExecutionEnvironment({ nodeExecutable: process.execPath, env: process.env, requireNpm: true });
+  const exactNode: any = createExactNodeExecutionEnvironment({ nodeExecutable: process.execPath, env: process.env, requireNpm: true, minimumVersion: '24.15.0' });
   const execute: any = (command: any, args: any, executeOptions: any = {}) => rawExecute(command, args, { ...executeOptions, env: executeOptions.env ?? exactNode.env });
   const wait: any = dependencies.wait ?? defaultWait;
   const onStatus: any = dependencies.onStatus ?? ((message: any) => process.stderr.write(`${message}\n`));
@@ -199,7 +199,7 @@ export async function runHostedReleaseTransaction(options: any = {}, dependencie
   const workflowSource: any = invoke(execute, 'git', ['show', `${sourceCommit}:${releaseWorkflowPath}`], repo);
   const workflowSha256: any = sha256(workflowSource);
   const productNodeVersion: any = invoke(execute, 'git', ['show', `${sourceCommit}:projects/product/.node-version`], repo).trim();
-  if (exactNode.audit.version !== productNodeVersion) throw new Error(`Release runner Node ${exactNode.audit.version} does not match Product exact Node ${productNodeVersion}.`);
+  assertMinimumNodeVersion(exactNode.audit.version, productNodeVersion);
   let context: any;
   if (options.releaseContext) context = validateReleaseContext(options.releaseContext);
   else {

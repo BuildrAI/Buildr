@@ -49,7 +49,7 @@ programs:
       - executable: node
         version:
           args: [--version]
-          constraint: ">=24.15.0 <25"
+          constraint: ">=24.15.0"
 hooks:
   test:
     program: cli

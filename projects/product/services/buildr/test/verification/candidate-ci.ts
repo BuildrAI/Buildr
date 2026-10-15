@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
-import { createExactNodeExecutionEnvironment, spawnCommandSync } from '../../src/infrastructure/process.ts';
+import { assertMinimumNodeVersion, createExactNodeExecutionEnvironment, spawnCommandSync } from '../../src/infrastructure/process.ts';
 import { enforceOfflineVerification } from '../../src/infrastructure/network/verification-network-policy.ts';
 import { executePlan } from './plan-runner.ts';
 import { createCandidateCiShardPlan } from './planner.ts';
@@ -51,7 +51,7 @@ function artifactEnvironment(artifact: any): any  {
 
 function assertManagedNode(): any  {
   const version: any = fs.readFileSync(path.join(projectRoot, '.node-version'), 'utf8').trim();
-  if (!version || process.versions.node !== version) throw new Error(`Candidate CI shard must run through the exact Buildr Product Node runtime ${version || '(missing .node-version)'}, active ${process.versions.node}.`);
+  assertMinimumNodeVersion(process.versions.node, version);
 }
 
 async function runShard(shardId: any): Promise<any>  {
@@ -154,9 +154,8 @@ async function runShard(shardId: any): Promise<any>  {
 }
 
 function assertHostNode(tuple: any): any  {
-  const [major, minor]: any = process.versions.node.split('.').map(Number);
   if (tuple.expectation === 'minimum' && process.versions.node !== '24.15.0') throw new Error(`Host Node minimum tuple requires 24.15.0, active ${process.versions.node}`);
-  if (tuple.expectation === 'current' && (major !== 24 || minor < 15)) throw new Error(`Host Node current tuple requires current Node 24, active ${process.versions.node}`);
+  if (tuple.expectation === 'current') assertMinimumNodeVersion(process.versions.node, '24.15.0');
 }
 
 function runHostNode(tupleId: any): any  {
@@ -166,7 +165,7 @@ function runHostNode(tupleId: any): any  {
   const runner: any = process.platform === 'darwin' ? 'macos' : process.platform === 'win32' ? 'windows' : process.platform;
   if (runner !== tuple.runner) throw new Error(`Host Node tuple ${tupleId} requires ${tuple.runner}, active runner is ${runner}`);
   assertHostNode(tuple);
-  const exactNode: any = createExactNodeExecutionEnvironment({ nodeExecutable: process.execPath, env: process.env, requireNpm: true });
+  const exactNode: any = createExactNodeExecutionEnvironment({ nodeExecutable: process.execPath, env: process.env, requireNpm: true, minimumVersion: '24.15.0' });
   const sourceCommit: any = resolveCandidateSourceCommit(productRoot, expectedSource);
   const executionContext: any = resolveCandidateExecutionContext(productRoot, sourceCommit);
   const artifact: any = readCandidateCiArtifact(process.env.BUILDR_CANDIDATE_CI_ARTIFACT_DIR || path.join(outputRoot, 'candidate-package'), sourceCommit);

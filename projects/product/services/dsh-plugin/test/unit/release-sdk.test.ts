@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { test, type TestContext } from 'node:test';
 import { DSH_SDK_BASELINES, DSH_SDK_REPOSITORY } from '../../tools/sdk-baselines.ts';
@@ -18,7 +18,8 @@ test('release inputs preserve registered rc.2 and reviewed settings manifest ide
   assert.equal(plan.manifestFile, join(service, RELEASE_SDK_MANIFEST));
   assert.deepEqual(plan.manifest.upstream, DSH_SDK_BASELINES.find(item => item.commit === '639ed015397290b3745d163aafe02ffee4aa3f84'));
   assert.deepEqual(plan.manifest.clientPackages, ['packages/client/ui-settings-agent-loop']);
-  assert.equal(plan.nodeVersion, JSON.parse(readFileSync(join(service, 'package.json'), 'utf8')).engines.node);
+  assert.equal(plan.nodeRequirement, '>=24.15.0');
+  assert.equal(plan.nodeRequirement, JSON.parse(readFileSync(join(service, 'package.json'), 'utf8')).engines.node);
   assert.equal(plan.pnpmVersion, RELEASE_SDK_PNPM_VERSION);
   assert.deepEqual(parseReleaseSdkInput(['--node', process.execPath, '--pnpm', '/tmp/pnpm.cjs']), { node: process.execPath, pnpm: '/tmp/pnpm.cjs' });
   for (const args of [[], ['--node', process.execPath], ['--node', process.execPath, '--pnpm', '/tmp/pnpm.cjs', '--node', process.execPath], ['--node', '--pnpm'], ['--repository', 'https://example.invalid/evil.git'], ['--ref', 'main'], ['--source', '/tmp/existing'], ['--manifest', '/tmp/other'], ['--output', '/tmp/sdk']]) assert.throws(() => parseReleaseSdkInput(args), /dsh_release_sdk_invalid/);
@@ -85,7 +86,7 @@ function collaborators(t: TestContext, options: FakeOptions = {}) {
     assert.equal(request.env.NPM_TOKEN, undefined); assert.equal(request.env.NODE_AUTH_TOKEN, undefined);
     assert.equal(readFileSync(request.env.NPM_CONFIG_USERCONFIG!, 'utf8'), '');
     assert.equal(readFileSync(request.env.NPM_CONFIG_GLOBALCONFIG!, 'utf8'), '');
-    if (args[0] === '--version') { t.after(() => rmSync(request.cwd, { recursive: true, force: true })); return options.nodeVersion ?? `v${plan.nodeVersion}`; }
+    if (args[0] === '--version') { t.after(() => rmSync(request.cwd, { recursive: true, force: true })); return options.nodeVersion ?? process.version; }
     if (args[0] === pnpm && args[1] === '--version') return options.pnpmVersion ?? plan.pnpmVersion;
     if (file === 'git') {
       source = request.cwd;
@@ -131,6 +132,8 @@ test('preparer fetches only the fixed tag, installs frozen patched dependencies,
   const fake = collaborators(t);
   const result = await prepareReleaseSdk(fake.input, fake.dependencies);
   assert.equal(result.status, 'prepared'); assert.equal(result.sdk, fake.getSdk());
+  assert.equal(result.nodeRequirement, plan.nodeRequirement); assert.equal(result.nodeVersion, process.versions.node);
+  assert.equal(result.nodeExecutable, realpathSync(process.execPath));
   assert.deepEqual(result.baseline, plan.manifest.upstream); assert.equal(result.runtimeActivated, false);
   assert.equal(fake.getPatchChecks(), 2);
   assert.deepEqual(fake.calls.find(call => call.args[0] === 'remote' && call.args[1] === 'add')?.args, ['remote', 'add', 'origin', RELEASE_SDK_REPOSITORY]);
@@ -162,13 +165,34 @@ test('default input and final validation also run under explicit Node with isola
 });
 test('source mismatch, incompatible tools, failed install and lock drift cannot produce a prepared output', async t => {
   for (const [options, message] of [
-    [{ wrongTag: true }, /registered exact commit/], [{ nodeVersion: 'v22.0.0' }, /declared Node/], [{ pnpmVersion: '11.0.0' }, /pnpm 11.7.0/], [{ installFailure: true }, /install failed/], [{ lockDrift: true }, /lockfile changed/],
+    [{ wrongTag: true }, /registered exact commit/], [{ nodeVersion: 'v22.0.0' }, /Node must satisfy >=24.15.0/], [{ pnpmVersion: '11.0.0' }, /pnpm 11.7.0/], [{ installFailure: true }, /install failed/], [{ lockDrift: true }, /lockfile changed/],
   ] as const) {
     const fake = collaborators(t, options);
     await assert.rejects(prepareReleaseSdk(fake.input, fake.dependencies), message);
     assert.equal(fake.getSdk(), '');
     assert.ok(!fake.calls.some(call => call.args[0] === join(service, 'tools/prepare-source-sdk.ts')));
   }
+});
+test('minimum, newer patch, minor and major Node versions retain their actual selected identity', async t => {
+  for (const nodeVersion of ['v24.15.0', 'v24.15.1', 'v24.21.0', 'v25.0.0', 'v26.0.0']) {
+    const fake = collaborators(t, { nodeVersion });
+    const result = await prepareReleaseSdk(fake.input, fake.dependencies);
+    assert.equal(result.nodeVersion, nodeVersion.slice(1));
+    assert.equal(result.nodeRequirement, '>=24.15.0');
+    assert.equal(result.nodeExecutable, realpathSync(process.execPath));
+  }
+});
+test('below-minimum, prerelease and malformed Node versions fail before upstream or SDK work', async t => {
+  for (const nodeVersion of ['v24.14.9', 'v24.0.99', 'v23.99.99', 'v24.15.0-rc.1', 'v25.0.0-rc.1', 'v24.21', 'v024.21.0', 'v9007199254740992.0.0']) {
+    const fake = collaborators(t, { nodeVersion });
+    await assert.rejects(prepareReleaseSdk(fake.input, fake.dependencies), /Node must satisfy >=24.15.0/);
+    assert.equal(fake.getSource(), ''); assert.equal(fake.getSdk(), '');
+  }
+});
+test('a compatible version cannot authorize another executable than the running preparer', async t => {
+  const fake = collaborators(t);
+  await assert.rejects(prepareReleaseSdk({ ...fake.input, node: fake.input.pnpm }, fake.dependencies), /pass that exact executable/);
+  assert.equal(fake.getSource(), ''); assert.equal(fake.getSdk(), '');
 });
 test('failed final verification withdraws only this invocation ready receipt and preserves output diagnosis', async t => {
   const fake = collaborators(t, { validationFailure: true });

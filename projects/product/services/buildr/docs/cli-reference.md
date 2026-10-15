@@ -23,7 +23,7 @@
 
 ### 安装 Buildr
 
-当前产品要求运行它的 Node.js 满足 `>=24.15.0 <25`；安装包不会自动下载替代版本。工作空间（Workspace）声明的受管 Node.js 只供该范围拥有的子进程使用，不能替代产品的安装要求。先检查 `node --version` 和 `npm --version`，再查询 npm 官方仓库：
+当前产品要求运行它的 Node.js 满足 `>=24.15.0`；安装包不会自动下载替代版本。工作空间（Workspace）声明的受管 Node.js 只供该范围拥有的子进程使用，不能替代产品的安装要求。先检查 `node --version` 和 `npm --version`，再查询 npm 官方仓库：
 
 ```bash
 npm view @buildr-ai/buildr dist-tags --json --registry https://registry.npmjs.org/

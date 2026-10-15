@@ -194,7 +194,7 @@ test('release transaction runner dispatches and follows exactly one frozen workf
     if (key === 'git rev-parse origin/main') return { status: 0, stdout: `${fixtureCommit}\n` };
     if (key === `git rev-parse ${fixtureCommit}^{tree}`) return { status: 0, stdout: `${candidateTree}\n` };
     if (key === `git show ${fixtureCommit}:projects/product/services/buildr/package.json`) return { status: 0, stdout: JSON.stringify({ version }) };
-    if (key === `git show ${fixtureCommit}:projects/product/.node-version`) return { status: 0, stdout: `${process.versions.node}\n` };
+    if (key === `git show ${fixtureCommit}:projects/product/.node-version`) return { status: 0, stdout: '24.15.0\n' };
     if (key === `git show ${fixtureCommit}:.github/workflows/publish.yml`) return { status: 0, stdout: workflow };
     if (key.startsWith('gh workflow run publish.yml ')) { dispatched = true; return { status: 0, stdout: '' }; }
     if (key.startsWith('gh run list ')) return { status: 0, stdout: JSON.stringify(dispatched ? [{ databaseId: runId, displayTitle: `Release ${version} (fixture-release-id)`, headSha: fixtureCommit, status: 'queued', conclusion: null, url: currentRun.html_url }] : []) };

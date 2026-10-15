@@ -69,7 +69,7 @@ export function prepareCandidateEnvironment({
     nodeExecutable,
     env,
     requireNpm: true,
-    ...(profile === 'host' ? {} : { expectedVersion: requiredVersion }),
+    ...(profile === 'host' ? {} : { minimumVersion: requiredVersion }),
   });
   const startedAt = now();
   const operations = [];

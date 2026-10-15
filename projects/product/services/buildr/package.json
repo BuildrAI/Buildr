@@ -121,7 +121,7 @@
     "pack:check": "npm pack --dry-run"
   },
   "engines": {
-    "node": ">=24.15.0 <25"
+    "node": ">=24.15.0"
   },
   "dependencies": {
     "@vscode/ripgrep-universal": "1.18.0",

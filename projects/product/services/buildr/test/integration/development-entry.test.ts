@@ -6,6 +6,7 @@ import process from 'node:process';
 import { spawn, spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import vm from 'node:vm';
 
 // Integration: every case crosses a real launcher process and temporary filesystem boundary.
 
@@ -14,6 +15,23 @@ const runner: any = path.join(serviceRoot, 'tools/development/run-development-cl
 const npmRunner: any = path.join(serviceRoot, 'tools/development/run-development-npm');
 const projectBridge: any = path.resolve(serviceRoot, '../../buildr');
 const programs: string = path.join(serviceRoot, 'tools/development/programs');
+
+test('Windows Node 选择器按完整稳定版本比较下限且不设主版本上限', () => {
+  const source = fs.readFileSync(path.join(serviceRoot, 'tools/development/resolve-development-node.cmd'), 'utf8');
+  const program = source.match(/"%CANDIDATE%" -e "([^"]+)" "%REQUIRED_VERSION%"/)?.[1];
+  assert.ok(program, 'the Windows entry checks the selected executable with a bounded Node version predicate');
+  const status = (version: string) => {
+    let code: number | null = null;
+    const stopped = {};
+    try { vm.runInNewContext(program, { process: { versions: { node: version }, argv: ['node', '24.15.0'], exit(value: number) { code = value; throw stopped; } } }); }
+    catch (error) { if (error !== stopped) throw error; }
+    return code;
+  };
+  for (const version of ['24.15.0', '24.21.0', '25.0.0', '26.0.0']) assert.equal(status(version), 0, version);
+  for (const version of ['23.99.99', '24.14.99', '24.15', '26..0', '026.0.0', '26.00.0', '26.0.00', '26.0.0.1', '26.0.0-nightly', '9007199254740992.0.0']) assert.equal(status(version), 1, version);
+  assert.match(source, /if errorlevel 1 exit \/b 1/);
+  assert.doesNotMatch(source, /NEXT_MAJOR|same major line/);
+});
 
 function fakeNode(target: any, version: any, marker: any): any  {
   fs.mkdirSync(path.dirname(target), { recursive: true });
@@ -69,7 +87,37 @@ test('PATH 上的声明版本之后更新 minor 被接受', { skip: process.plat
   const belowFloorOnly: any = run(runner, ['--help'], { PATH: `${olderBin}:/usr/bin:/bin` });
   assert.equal(belowFloorOnly.status, 1);
   assert.equal(belowFloorOnly.stdout, '');
-  assert.match(belowFloorOnly.stderr, /requires Node\.js >=24\.15\.0 <25/u);
+  assert.match(belowFloorOnly.stderr, /requires Node\.js >=24\.15\.0/u);
+});
+
+test('开发入口按 PATH 顺序接受后续主版本并跳过无效及预发布版本', { skip: process.platform === 'win32' }, () => {
+  const fixture: any = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-node-future-path-'));
+  try {
+    const invalidBin = path.join(fixture, 'invalid'), prereleaseBin = path.join(fixture, 'prerelease');
+    const firstBin = path.join(fixture, 'first'), secondBin = path.join(fixture, 'second');
+    fakeNode(path.join(invalidBin, 'node'), '26..0', 'invalid');
+    fakeNode(path.join(prereleaseBin, 'node'), '26.0.0-nightly', 'prerelease');
+    fakeNode(path.join(firstBin, 'node'), '25.0.0', 'first-new-major');
+    fakeNode(path.join(secondBin, 'node'), '26.0.0', 'second-new-major');
+    const result = run(runner, ['--help'], { PATH: `${invalidBin}:${prereleaseBin}:${firstBin}:${secondBin}:/usr/bin:/bin` });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /^first-new-major\|.*bin\/buildr\.mjs --help\n$/u);
+    assert.equal(result.stderr, '');
+  } finally { fs.rmSync(fixture, { recursive: true, force: true }); }
+});
+
+test('开发入口拒绝前导零及超出安全整数的无效版本', { skip: process.platform === 'win32' }, () => {
+  const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-node-invalid-version-'));
+  try {
+    const candidate = path.join(fixture, 'node');
+    for (const version of ['024.15.0', '24.015.0', '26.0.00', '9007199254740992.0.0']) {
+      fakeNode(candidate, version, 'invalid');
+      const result = run(runner, ['--help'], { BUILDR_NODE: candidate, PATH: '/usr/bin:/bin' });
+      assert.equal(result.status, 1, version);
+      assert.equal(result.stdout, '', version);
+      assert.match(result.stderr, /requires Node\.js >=24\.15\.0; BUILDR_NODE/u);
+    }
+  } finally { fs.rmSync(fixture, { recursive: true, force: true }); }
 });
 
 test('hostile PATH 下优先使用显式 NVM_DIR 中的声明版本', { skip: process.platform === 'win32' }, () => {
@@ -202,15 +250,16 @@ test('BUILDR_NODE 优先于 PATH 且范围外 override 会 fail fast', { skip: p
   fakeNode(incompatibleNode, '18', 'incompatible');
   const rejected: any = run(runner, ['--help'], { PATH: path.dirname(pathNode), BUILDR_NODE: incompatibleNode });
   assert.equal(rejected.status, 1);
-  assert.match(rejected.stderr, /requires Node\.js >=24\.15\.0 <25; BUILDR_NODE/u);
+  assert.match(rejected.stderr, /requires Node\.js >=24\.15\.0; BUILDR_NODE/u);
   assert.equal(rejected.stdout, '');
 
   const futureNode: any = path.join(fixture, 'future', 'node');
-  fakeNode(futureNode, '25.0.0', 'future');
-  const futureRejected: any = run(runner, ['--help'], { PATH: path.dirname(pathNode), BUILDR_NODE: futureNode });
-  assert.equal(futureRejected.status, 1);
-  assert.match(futureRejected.stderr, /requires Node\.js >=24\.15\.0 <25; BUILDR_NODE/u);
-  assert.equal(futureRejected.stdout, '');
+  for (const version of ['25.0.0', '26.0.0']) {
+    fakeNode(futureNode, version, 'future');
+    const futureSelected: any = run(runner, ['--help'], { PATH: path.dirname(pathNode), BUILDR_NODE: futureNode });
+    assert.equal(futureSelected.status, 0, futureSelected.stderr);
+    assert.match(futureSelected.stdout, /^future\|.*bin\/buildr\.mjs --help\n$/u);
+  }
 });
 
 test('开发入口可发现 Agent runtime PATH 相邻的 bundled Node', { skip: process.platform === 'win32' }, () => {
@@ -232,7 +281,7 @@ test('没有范围内 Product Node 时返回所需范围和恢复动作', { skip
   const result: any = run(runner, ['doctor'], { PATH: oldBin });
   assert.equal(result.status, 1);
   assert.equal(result.stdout, '');
-  assert.match(result.stderr, /requires Node\.js >=24\.15\.0 <25/u);
+  assert.match(result.stderr, /requires Node\.js >=24\.15\.0/u);
   assert.match(result.stderr, /Set BUILDR_NODE.*activate the Product \.node-version/u);
   assert.doesNotMatch(result.stderr, /SyntaxError/u);
 });
@@ -242,7 +291,7 @@ test('开发启动器读取声明版本且 package engines 保留发布兼容范
   const source: any = fs.readFileSync(runner, 'utf8');
   const declared: any = fs.readFileSync(path.resolve(serviceRoot, '../..', '.node-version'), 'utf8').trim();
   assert.equal(declared, '24.15.0');
-  assert.equal(packageJson.engines.node, `>=${declared} <${Number(declared.split('.')[0]) + 1}`);
+  assert.equal(packageJson.engines.node, `>=${declared}`);
   assert.match(source, /resolve-development-node/u);
   assert.doesNotMatch(source, /workspace\.yml|Workspace Node runtime|BUILDR_NODE_RUNTIME_DATA_DIR/u);
 });

@@ -254,7 +254,7 @@ testing:
       - 自动受影响选择通过 dsh-plugin 调用完整入口并准备固定 SDK 与 pnpm@11.7.0；本族不进入独立 Buildr
         主包候选（Candidate）集合
     requirements:
-      - node 24.15.0
+      - node >=24.15.0
       - pnpm
       - 与明确 Node 配套的 npm 入口，或 --npm 指定的固定
         npm；对端在独占临时前缀（Prefix）按原字节安装，使用空认证配置（Configuration）且禁用安装脚本

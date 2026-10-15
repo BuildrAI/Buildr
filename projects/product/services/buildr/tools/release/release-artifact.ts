@@ -131,9 +131,10 @@ import path from 'node:path';
 import process from 'node:process';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 
-const [major, minor] = process.versions.node.split('.').map(Number);
-if (major !== 24 || minor < 15) {
-  console.error('Buildr requires a host Node matching >=24.15.0 <25; it will not download or select another Node runtime.');
+const versionParts = process.versions.node.split('.');
+const [major, minor] = versionParts.map(Number);
+if (versionParts.length !== 3 || versionParts.some(part => !/^(0|[1-9][0-9]*)$/.test(part) || !Number.isSafeInteger(Number(part))) || major < 24 || (major === 24 && minor < 15)) {
+  console.error('Buildr requires a host Node matching >=24.15.0; it will not download or select another Node runtime.');
   process.exit(1);
 }
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');

@@ -42,9 +42,23 @@ export function releaseSdkPlan() {
   const manifestFile = join(SERVICE_ROOT, RELEASE_SDK_MANIFEST);
   const manifest = parseSourcePatchManifest(JSON.parse(readFileSync(manifestFile, 'utf8')));
   if (manifest.schemaVersion !== 'buildr.dsh-source-patch/v2' || JSON.stringify(manifest.clientPackages) !== JSON.stringify(['packages/client/ui-settings-agent-loop'])) fail('release requires the reviewed settings source patch');
-  const nodeVersion = JSON.parse(readFileSync(join(SERVICE_ROOT, 'package.json'), 'utf8')).engines?.node;
-  if (typeof nodeVersion !== 'string' || !/^\d+\.\d+\.\d+$/.test(nodeVersion)) fail('service must declare one exact Node version');
-  return { manifestFile, manifest, nodeVersion, pnpmVersion: RELEASE_SDK_PNPM_VERSION, repository: RELEASE_SDK_REPOSITORY };
+  const nodeRequirement = JSON.parse(readFileSync(join(SERVICE_ROOT, 'package.json'), 'utf8')).engines?.node;
+  if (typeof nodeRequirement !== 'string' || !/^>=(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/.test(nodeRequirement)) fail('service must declare a minimum stable Node version');
+  return { manifestFile, manifest, nodeRequirement, pnpmVersion: RELEASE_SDK_PNPM_VERSION, repository: RELEASE_SDK_REPOSITORY };
+}
+function selectedNodeVersion(output: string, requirement: string): string {
+  const version = /^v((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))$/.exec(output.trim())?.[1];
+  if (version !== undefined) {
+    const actual = version.split('.').map(Number), minimum = requirement.slice(2).split('.').map(Number);
+    if ([...actual, ...minimum].every(Number.isSafeInteger)) {
+      for (let index = 0; index < minimum.length; index++) {
+        if (actual[index]! > minimum[index]!) return version;
+        if (actual[index]! < minimum[index]!) break;
+        if (index === minimum.length - 1) return version;
+      }
+    }
+  }
+  return fail(`selected Node must satisfy ${requirement} with a stable version`);
 }
 const command: ReleaseSdkCommand = (executable, args, options) => execFileSync(executable, args, {
   cwd: options.cwd, env: options.env, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024,
@@ -124,7 +138,8 @@ export async function prepareReleaseSdk(input: ReleaseSdkInput, dependencies: De
   writeFileSync(userConfig, '', { flag: 'wx', mode: 0o600 }); writeFileSync(globalConfig, '', { flag: 'wx', mode: 0o600 });
   mkdirSync(join(stage, 'tmp'));
   const env = releaseSdkEnvironment(node, userConfig, globalConfig);
-  if (run(node, ['--version'], { cwd: stage, env }).trim() !== `v${plan.nodeVersion}` || realpathSync(process.execPath) !== node) fail(`run this preparer with the declared Node ${plan.nodeVersion} and pass that exact executable`);
+  const nodeVersion = selectedNodeVersion(run(node, ['--version'], { cwd: stage, env }), plan.nodeRequirement);
+  if (realpathSync(process.execPath) !== node) fail('run this preparer with the selected Node and pass that exact executable');
   if (run(node, [pnpm, '--version'], { cwd: stage, env }).trim() !== plan.pnpmVersion) fail(`pnpm ${plan.pnpmVersion} is required`);
   const source = join(stage, 'source'); mkdirSync(source);
   git(source, ['init', '--quiet'], run, env);
@@ -158,7 +173,7 @@ export async function prepareReleaseSdk(input: ReleaseSdkInput, dependencies: De
     if (existsSync(ready)) unlinkSync(ready);
     throw error;
   }
-  return { schemaVersion: 'buildr.dsh-release-sdk/v1', status: 'prepared', sdk, baseline: receipt.baseline, sourceManifestSha256: receipt.sourceManifest.sha256, patchSha256: receipt.patchSha256, nodeVersion: plan.nodeVersion, pnpmVersion: plan.pnpmVersion, runtimeActivated: false, desktopValidated: false };
+  return { schemaVersion: 'buildr.dsh-release-sdk/v1', status: 'prepared', sdk, baseline: receipt.baseline, sourceManifestSha256: receipt.sourceManifest.sha256, patchSha256: receipt.patchSha256, nodeRequirement: plan.nodeRequirement, nodeVersion, nodeExecutable: node, pnpmVersion: plan.pnpmVersion, runtimeActivated: false, desktopValidated: false };
 }
 
 if (import.meta.main) console.log(JSON.stringify(await prepareReleaseSdk(parseReleaseSdkInput(process.argv.slice(2)))));

@@ -22,7 +22,7 @@ test('frontend real leaf obeys one- and two-worker grants without dropping eithe
       fs.writeFileSync(path.join(webRoot, 'test', `${file}.test.mjs`), `import test from 'node:test';\nimport fs from 'node:fs';\nimport path from 'node:path';\nimport {setTimeout} from 'node:timers/promises';\ntest('${file} leaf', async () => {\nconst active=path.join(import.meta.dirname,'active');fs.mkdirSync(active,{recursive:true});\nconst marker=path.join(active,'${file}');fs.writeFileSync(marker,'active');\nconsole.log('observedConcurrentTestWorkers:'+fs.readdirSync(active).length);\nawait setTimeout(250);fs.rmSync(marker);\n});\n`);
     }
     // A nested Node test runner must be a new process, not inherit node:test's internal child marker.
-    const execute = createVerificationExecutor({ productRoot: backendRoot, expectedNodeVersion: process.versions.node, env: { NODE_TEST_CONTEXT: undefined } });
+    const execute = createVerificationExecutor({ productRoot: backendRoot, minimumNodeVersion: '24.15.0', env: { NODE_TEST_CONTEXT: undefined } });
     const leafPath = path.join(webRoot, 'tools/run-logic-tests.mjs');
     const actualLeaf = fs.readFileSync(leafPath, 'utf8');
     // Controlled old failure: the leaf ignores a one-worker grant and starts two workers.

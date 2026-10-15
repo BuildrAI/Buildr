@@ -12,7 +12,6 @@ done
 script_root=$(CDPATH= cd "${self%/*}" && pwd)
 product_root=$(CDPATH= cd "$script_root/../../../.." && pwd)
 IFS= read -r required_version < "$product_root/.node-version"
-next_major=$(( ${required_version%%.*} + 1 ))
 
 node_version() {
   "$1" -p 'process.versions.node' 2>/dev/null
@@ -23,23 +22,35 @@ is_declared_node() {
   [ "$(node_version "$1")" = "$required_version" ]
 }
 
-# Accept the declared version and any newer Node on the same major line;
-# the major match is the upper bound (< next major).
+# Accept the declared minimum and any newer stable Node version.
 is_acceptable_node() {
   [ -x "$1" ] || return 1
   candidate_version=$(node_version "$1") || return 1
   case "$candidate_version" in
-    *[!0-9.]*) return 1 ;;
+    ''|.*|*.|*..*|*[!0-9.]*) return 1 ;;
     *.*.*) ;;
     *) return 1 ;;
   esac
-  [ "${candidate_version%%.*}" = "${required_version%%.*}" ] || return 1
-  req_minor=${required_version#*.}; req_minor=${req_minor%%.*}
+  got_patch=${candidate_version#*.*.}
+  case "$got_patch" in
+    ''|*.*) return 1 ;;
+  esac
+  got_major=${candidate_version%%.*}
   got_minor=${candidate_version#*.}; got_minor=${got_minor%%.*}
+  for version_part in "$got_major" "$got_minor" "$got_patch"; do
+    case "$version_part" in
+      ''|0?*) return 1 ;;
+    esac
+    [ "${#version_part}" -le 16 ] || return 1
+    [ "$version_part" -le 9007199254740991 ] || return 1
+  done
+  req_major=${required_version%%.*}
+  [ "$got_major" -gt "$req_major" ] && return 0
+  [ "$got_major" -eq "$req_major" ] || return 1
+  req_minor=${required_version#*.}; req_minor=${req_minor%%.*}
   [ "$got_minor" -gt "$req_minor" ] && return 0
   [ "$got_minor" -eq "$req_minor" ] || return 1
   req_patch=${required_version#*.*.}
-  got_patch=${candidate_version#*.*.}
   [ "$got_patch" -ge "$req_patch" ]
 }
 
@@ -69,7 +80,7 @@ select_node() {
 
 if [ "${BUILDR_NODE+x}" = x ]; then
   select_node "$BUILDR_NODE"
-  echo "Buildr Product checkout requires Node.js >=${required_version} <${next_major}; BUILDR_NODE resolved to an out-of-range or invalid executable." >&2
+  echo "Buildr Product checkout requires Node.js >=${required_version}; BUILDR_NODE resolved to an out-of-range or invalid executable." >&2
   exit 1
 fi
 
@@ -89,5 +100,5 @@ for path_entry in ${PATH:-}; do
 done
 IFS=$old_ifs
 
-echo "Buildr Product checkout requires Node.js >=${required_version} <${next_major}. Set BUILDR_NODE to a compatible executable or activate the Product .node-version (Node ${required_version}) before running checkout commands." >&2
+echo "Buildr Product checkout requires Node.js >=${required_version}. Set BUILDR_NODE to a compatible executable or activate the Product .node-version (Node ${required_version}) before running checkout commands." >&2
 exit 1
