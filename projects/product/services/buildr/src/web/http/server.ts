@@ -32,7 +32,7 @@ export function createLocalWorkspaceServer(runtime: any, {
 
   const initialWorkspaceId = ensureRegisteredTarget(targetRoot);
   const ownsReadExecutor = !readExecutor;
-  const taskReadExecutor = readExecutor || createBoundedBuildrWebReadExecutor({ warm: true });
+  const taskReadExecutor = readExecutor || createBoundedBuildrWebReadExecutor();
   const sessionToken = crypto.randomBytes(32).toString('hex');
   const healthSecret = instanceSecret || crypto.randomBytes(32).toString('hex');
   let origin: any = null;

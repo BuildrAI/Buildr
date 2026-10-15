@@ -64,6 +64,8 @@ Buildr 主包不捆绑插件，`artifact` 档位也不获取 DSH 软件开发工
 
 Windows 原包运行失败时，可从 `dev` 的 `verify.yml` 选择 `diagnostic_scope=runtime-windows`；需要同时诊断工作树和发布恢复失败时选择 `failed-windows`；仅补跑原包消费边界时选择 `package-consumer-windows`，仅补跑嵌套仓库检查时选择 `nested-lifecycle-windows`。这些入口都须提供 `expected_source_tree`、`diagnostic_candidate_run_id` 和 `diagnostic_candidate_source`。入口分别绑定当前检查源码和原候选压缩包，只接受测试、诊断工具以及本页和验证架构说明的变化，复核运行身份与原包字节后，只执行所选失败边界；纯源码场景不称为已消费原包。诊断保留原断言、时限、独立摘要及最后进入的子阶段，不产生可用于发布的完整候选证明；确认必要修复后，再准备最终源码和完整候选。
 
+生产源码修复后的 Windows 预览检查使用 `diagnostic_scope=app-process-windows`，只接受当前 `expected_source_tree`；它在当前源码执行原登记检查，不下载或借用旧包，不形成完整候选证明。此入口只用于修复定位，最终仍须冻结新源码、验证新包。
+
 | 变化 | 处理 |
 |---|---|
 | 同一源码、字节、配方、锁文件、Node/平台等相关输入 | 复用匹配完整结果，保留原运行编号与执行时间 |

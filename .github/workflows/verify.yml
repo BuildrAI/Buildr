@@ -14,7 +14,7 @@ on:
         required: false
         default: none
         type: choice
-        options: [none, core-project-task-macos, nested-git-isolation-windows, runtime-windows, failed-windows, package-consumer-windows, nested-lifecycle-windows]
+        options: [none, core-project-task-macos, nested-git-isolation-windows, runtime-windows, failed-windows, package-consumer-windows, nested-lifecycle-windows, app-process-windows]
       diagnostic_candidate_run_id:
         description: Original Candidate run whose immutable package is consumed only by an independent Windows diagnosis
         required: false
@@ -568,6 +568,59 @@ jobs:
         with:
           name: diagnostic-${{ matrix.scenario }}
           path: ${{ runner.temp }}/diagnostic-${{ matrix.scenario }}
+          if-no-files-found: warn
+          overwrite: true
+
+  diagnostic-app-process-windows:
+    name: Independent Windows source diagnosis (app-process-windows)
+    if: github.event_name == 'workflow_dispatch' && inputs.diagnostic_scope == 'app-process-windows'
+    runs-on: windows-2025
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: projects/product/services/buildr
+    steps:
+      - name: Verify closed source diagnosis inputs
+        working-directory: .
+        shell: bash
+        env:
+          DISPATCH_REF: ${{ github.ref }}
+          DISPATCH_PURPOSE: ${{ inputs.purpose }}
+          EXPECTED_SOURCE_TREE: ${{ inputs.expected_source_tree }}
+          EXTRA_INPUTS_PRESENT: ${{ inputs.release_packages != '' || inputs.buildr_version != '' || inputs.plugin_version != '' || inputs.buildr_peer_version != '' || inputs.buildr_peer_integrity != '' || inputs.selection_id != '' || inputs.selection_baseline != '' || inputs.selection_main != '' || inputs.selection_identity != '' || inputs.rehearsal_identity != '' || inputs.source_verification != '' || inputs.diagnostic_candidate_run_id != '' || inputs.diagnostic_candidate_source != '' }}
+        run: |
+          set -euo pipefail
+          [[ "$DISPATCH_REF" == 'refs/heads/dev' && "$DISPATCH_PURPOSE" == 'candidate' ]] || { echo 'Source diagnosis requires the dev Candidate entry.' >&2; exit 1; }
+          [[ "$EXTRA_INPUTS_PRESENT" == 'false' ]] || { echo 'Source diagnosis does not accept release, source-result or previous artifact inputs.' >&2; exit 1; }
+          [[ "$EXPECTED_SOURCE_TREE" =~ ^([a-f0-9]{40}|[a-f0-9]{64})$ ]] || { echo 'An exact current source tree is required.' >&2; exit 1; }
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.CANDIDATE_SOURCE_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24.x'
+          cache: npm
+          cache-dependency-path: projects/product/services/buildr/package-lock.json
+      - name: Prepare the current Windows source environment
+        run: node tools/verification/candidate-environment.ts prepare --profile source-runtime
+      - name: Diagnose only the registered application process owner
+        env:
+          EXPECTED_SOURCE_TREE: ${{ inputs.expected_source_tree }}
+          DIAGNOSTIC_SCENARIO: app-process-windows
+          DIAGNOSTIC_OUTPUT: ${{ runner.temp }}/diagnostic-app-process-windows
+          BUILDR_DIAGNOSTICS_OUTPUT: ${{ runner.temp }}/diagnostic-app-process-windows/diagnostics
+          BUILDR_VERIFICATION_PROFILE: ci-workspace-limited
+        run: node test/verification/release/windows-source-diagnosis.ts
+      - name: Upload independent source diagnosis
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: diagnostic-app-process-windows
+          path: ${{ runner.temp }}/diagnostic-app-process-windows
           if-no-files-found: warn
           overwrite: true
 
