@@ -52,6 +52,84 @@ test('System reporter preserves only the bounded preview timing diagnostic', asy
   assert.equal(await collect(systemFileTimingReporter(events())), `${timing}\n[preview-isolation-timing] current=completed cleanup=1ms\n[buildr-system-file-timing] scope=transient files=0 slowest-first=\n`);
 });
 
+const taskReviewPrefix = '[task-review-http] ';
+const taskReviewBase = '/api/v1/workspaces/:workspaceId';
+const taskReviewRequests = [
+  ['empty-slots', 'GET', `${taskReviewBase}/tasks/review-task/reviews`],
+  ['target-query-refused', 'GET', `${taskReviewBase}/tasks/review-task/reviews`],
+  ['missing-task', 'GET', `${taskReviewBase}/tasks/missing-task/reviews`],
+  ['result-writer-refused', 'POST', `${taskReviewBase}/tasks/review-task/reviews`],
+  ['recorded-planning', 'GET', `${taskReviewBase}/tasks/review-task/reviews`],
+  ['prompt-writer-refused', 'POST', `${taskReviewBase}/prompts/task-review`],
+];
+function httpProgress(overrides: Record<string, unknown> = {}): any {
+  return { phase: 'empty-slots', method: 'GET', pathname: `${taskReviewBase}/tasks/review-task/reviews`, status: 'started', durationMs: 0, ...overrides };
+}
+async function taskReviewOutput(messages: string[]): Promise<string> {
+  async function* events() { for (const message of messages) yield { type: 'test:diagnostic', data: { message } }; }
+  return collect(systemFileTimingReporter(events()));
+}
+function taskReviewRecords(output: string): any[] {
+  return output.split('\n').filter(line => line.startsWith(taskReviewPrefix)).map(line => JSON.parse(line.slice(taskReviewPrefix.length)));
+}
+
+test('System reporter forwards all six fixed task review HTTP requests and their completion facts', async () => {
+  const records = taskReviewRequests.flatMap(([phase, method, pathname]) => [
+    httpProgress({ phase, method, pathname }),
+    httpProgress({ phase, method, pathname, status: 'passed', durationMs: 23, httpStatus: method === 'POST' ? 404 : 200 }),
+  ]);
+  const output = await taskReviewOutput(records.map(record => `${taskReviewPrefix}${JSON.stringify(record)}\n`));
+  assert.deepEqual(taskReviewRecords(output), records);
+});
+
+test('System reporter projects safe task review transport and body failures without messages or private fields', async () => {
+  const failures = [httpProgress({ status: 'failed', stage: 'fetch', durationMs: 14,
+    error: { name: 'TypeError', code: 'ERR_INVALID_STATE', message: 'private-message', sessionToken: 'private-token' },
+    cause: { name: 'Error', code: 'ECONNRESET', errno: -4077, syscall: 'read', message: 'private-cause', headers: 'private-header' },
+    headers: 'private-header', body: 'private-body', origin: 'private-origin' }),
+  httpProgress({ phase: 'recorded-planning', status: 'failed', stage: 'body-json', durationMs: 30, httpStatus: 200,
+    error: { name: 'SyntaxError', message: 'private-response-content' }, cause: {} })];
+  const output = await taskReviewOutput(failures.map(record => `${taskReviewPrefix}${JSON.stringify(record)}`));
+  assert.deepEqual(taskReviewRecords(output), [
+    httpProgress({ status: 'failed', stage: 'fetch', durationMs: 14, error: { name: 'TypeError', code: 'ERR_INVALID_STATE' }, cause: { name: 'Error', code: 'ECONNRESET', errno: -4077, syscall: 'read' } }),
+    httpProgress({ phase: 'recorded-planning', status: 'failed', stage: 'body-json', durationMs: 30, httpStatus: 200, error: { name: 'SyntaxError' }, cause: {} }),
+  ]);
+  assert.doesNotMatch(output, /private|message|sessionToken|headers|body"|origin/u);
+});
+
+test('System reporter rejects malformed or unbounded task review HTTP diagnostics and keeps other output private', async () => {
+  const invalid = [
+    { phase: 'private-phase' }, { phase: ['empty-slots'] }, { method: 'PUT' }, { method: 'POST' }, { pathname: `${taskReviewBase}/tasks/review-task/reviews?token=private` },
+    { pathname: '/api/v1/workspaces/private-workspace/tasks/review-task/reviews' }, { status: 'unknown' },
+    { durationMs: -1 }, { durationMs: 1.5 }, { durationMs: Number.MAX_SAFE_INTEGER + 1 }, { httpStatus: 200 },
+    { status: 'passed' }, { status: 'passed', httpStatus: 600 }, { status: 'failed', stage: 'private-stage' },
+    { status: 'failed', stage: 'body-json' }, { status: 'failed', stage: 'fetch', httpStatus: 200 },
+    { status: 'failed', stage: 'fetch', error: { name: 'Error\nprivate' } },
+    { status: 'failed', stage: 'fetch', error: { name: 'x'.repeat(200) } },
+    { status: 'failed', stage: 'fetch', error: { name: 'PrivateError' } },
+    { status: 'failed', stage: 'fetch', error: { code: 'PRIVATE_TOKEN' } },
+    { status: 'failed', stage: 'fetch', error: { message: 'private\nsecond-line' } },
+    { status: 'failed', stage: 'fetch', error: { message: 'x'.repeat(401) } },
+    { status: 'failed', stage: 'fetch', cause: { errno: 0.5 } },
+    { status: 'failed', stage: 'fetch', cause: { syscall: '/private/path' } },
+    { status: 'failed', stage: 'fetch', cause: [] },
+  ].map(value => `${taskReviewPrefix}${JSON.stringify(httpProgress(value))}`);
+  invalid.push(`${taskReviewPrefix}not-json`, `${taskReviewPrefix}null`, `${taskReviewPrefix}[]`,
+    `${taskReviewPrefix}${JSON.stringify(httpProgress())}\nprivate`, `${taskReviewPrefix}${' '.repeat(4096)}{}`);
+  const output = await taskReviewOutput(invalid);
+  assert.deepEqual(taskReviewRecords(output), []);
+  async function* privateEvents() {
+    yield { type: 'test:stderr', data: { message: `${taskReviewPrefix}${JSON.stringify(httpProgress())}` } };
+    yield { type: 'test:diagnostic', data: { message: 'ordinary-private-diagnostic' } };
+  }
+  assert.equal(await collect(systemFileTimingReporter(privateEvents())), '[buildr-system-file-timing] scope=transient files=0 slowest-first=\n');
+});
+
+test('System reporter bounds the number of projected task review diagnostics', async () => {
+  const output = await taskReviewOutput(Array(40).fill(`${taskReviewPrefix}${JSON.stringify(httpProgress())}`));
+  assert.equal(taskReviewRecords(output).length, 24);
+});
+
 test('System case progress uses per-file ordinals and never copies names or absolute paths', async () => {
   const first = { file: '/private/workspace/test/system/first.test.ts', name: 'private-title', line: 10, column: 1, nesting: 0 };
   const second = { ...first, line: 20, name: '/private/title-path' };
