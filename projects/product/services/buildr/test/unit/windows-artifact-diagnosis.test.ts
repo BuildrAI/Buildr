@@ -98,7 +98,7 @@ test('package-consumer diagnosis executes and summarizes only the unchanged orig
 
 test('source-only diagnoses select only their failed owner and never pass artifact inputs to it', async () => {
   for (const [scenario, definition] of Object.entries(WINDOWS_DIAGNOSIS_SCENARIOS).filter(([, value]) => !value.artifactConsumer)) {
-    const plan = createWindowsArtifactDiagnosisPlan(scenario), original = createCandidateCiShardPlan(definition.shard, { externalArtifact: false });
+    const plan = createWindowsArtifactDiagnosisPlan(scenario), original = createCandidateCiShardPlan(definition.shard, { externalArtifact: true });
     assert.deepEqual(plan.steps.map((step: any) => step.id).sort(), [...definition.stepIds].sort());
     assert.equal(plan.steps.some((step: any) => step.executor.type === 'candidate-artifact' || step.executor.consumesArtifact), false);
     for (const selected of plan.steps) assert.deepEqual(selected, original.steps.find((step: any) => step.id === selected.id));

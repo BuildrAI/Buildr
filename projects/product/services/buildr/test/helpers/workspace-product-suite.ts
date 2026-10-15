@@ -21,9 +21,16 @@ const APP_PROCESS_TIMEOUT_MS: any = 60_000;
 const APP_COMMAND_TIMEOUT_MS: any = 15_000;
 
 function previewCommandDiagnostic(phase: string, result: any, timeoutMs: number): string {
+  const stdout = Buffer.from(result.stdout || ''), stderr = Buffer.from(result.stderr || '');
+  const outputLimit = 8 * 1024;
+  const boundedOutput = (bytes: Buffer) => new TextDecoder().decode(bytes.subarray(0, outputLimit), { stream: true });
   return `[preview-command-result] ${JSON.stringify({
     phase, status: result.status, errorCode: result.error?.code ?? null, signal: result.signal ?? null, timeoutMs,
-    stdoutBytes: Buffer.byteLength(result.stdout || ''), stderrBytes: Buffer.byteLength(result.stderr || ''),
+    stdoutBytes: stdout.length, stderrBytes: stderr.length,
+    ...(result.status !== 0 || result.error || result.signal ? {
+      stdout: boundedOutput(stdout), stderr: boundedOutput(stderr),
+      stdoutTruncated: stdout.length > outputLimit, stderrTruncated: stderr.length > outputLimit,
+    } : {}),
   })}`;
 }
 

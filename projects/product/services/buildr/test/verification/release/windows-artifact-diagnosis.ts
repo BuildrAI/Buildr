@@ -19,6 +19,9 @@ export const WINDOWS_DIAGNOSIS_SCENARIOS = Object.freeze({
   'package-consumer-windows': { shard: 'runtime-windows', artifactConsumer: true, stepIds: ['release-tarball-smoke'] },
   'worktree-windows': { shard: 'task-worktree-recovery-windows', artifactConsumer: false, stepIds: ['system-worktree-lifecycle', 'system-nested-git-isolation'] },
   'nested-lifecycle-windows': { shard: 'task-worktree-recovery-windows', artifactConsumer: false, stepIds: ['system-nested-git-isolation'] },
+  'task-lifecycle-windows': { shard: 'task-worktree-recovery-windows', artifactConsumer: false, stepIds: ['system-task-lifecycle'] },
+  'preview-lifecycle-windows': { shard: 'runtime-windows', artifactConsumer: false, stepIds: ['system-app-process'] },
+  'publication-effects-windows': { shard: 'release-infrastructure-windows', artifactConsumer: false, stepIds: ['integration-candidate-release-effects'] },
   'release-contract-windows': { shard: 'release-infrastructure-windows', artifactConsumer: false, stepIds: ['integration-candidate-release', 'integration-candidate-release-selection', 'integration-candidate-package-selection'] },
   'git-convergence-windows': { shard: 'release-infrastructure-windows', artifactConsumer: false, stepIds: ['integration-candidate-git-convergence', 'integration-candidate-git-selection'] },
 });
@@ -55,7 +58,8 @@ export function validateWindowsArtifactDiagnosis(env: NodeJS.ProcessEnv, run: an
 export function createWindowsArtifactDiagnosisPlan(scenario = 'runtime-windows'): any {
   const definition = Object.hasOwn(WINDOWS_DIAGNOSIS_SCENARIOS, scenario) && WINDOWS_DIAGNOSIS_SCENARIOS[scenario as keyof typeof WINDOWS_DIAGNOSIS_SCENARIOS];
   if (!definition) fail('diagnosis-unknown-scenario');
-  const plan = createCandidateCiShardPlan(definition.shard, { externalArtifact: definition.artifactConsumer });
+  // The original shard may contain artifact consumers; the selected source-only owner receives no package inputs below.
+  const plan = createCandidateCiShardPlan(definition.shard, { externalArtifact: true });
   const steps = plan.steps.filter((step: any) => definition.stepIds.includes(step.id));
   const selected = new Set(steps.map((step: any) => step.id));
   if (steps.length !== definition.stepIds.length || steps.some((step: any) => step.dependsOn.some((id: string) => !selected.has(id)))) fail('diagnosis-plan-coverage-mismatch');

@@ -471,7 +471,7 @@ test('CI and publish workflows use the supported Node runtime', () => {
   assert.equal(verifyDocument.jobs['dev-feedback-windows']['runs-on'], 'windows-latest');
   assert.equal(verifyDocument.jobs['candidate-plan'].if, "(!inputs.diagnostic_scope || inputs.diagnostic_scope == 'none') && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'dev'))");
   assert.deepEqual(verifyDocument.on.workflow_dispatch.inputs.purpose.options, ['candidate', 'release-rehearsal']);
-  assert.deepEqual(verifyDocument.on.workflow_dispatch.inputs.diagnostic_scope.options, ['none', 'core-project-task-macos', 'nested-git-isolation-windows', 'runtime-windows', 'failed-windows', 'package-consumer-windows', 'nested-lifecycle-windows', 'app-process-windows']);
+  assert.deepEqual(verifyDocument.on.workflow_dispatch.inputs.diagnostic_scope.options, ['none', 'core-project-task-macos', 'nested-git-isolation-windows', 'runtime-windows', 'failed-windows', 'package-consumer-windows', 'nested-lifecycle-windows', 'app-process-windows', 'task-lifecycle-windows', 'preview-lifecycle-windows', 'publication-effects-windows']);
   assert.equal(verifyDocument.on.workflow_dispatch.inputs.diagnostic_scope.default, 'none');
   assert.equal(verifyDocument.on.workflow_dispatch.inputs.expected_source_tree.required, false);
   assert.equal(verifyDocument.on.workflow_dispatch.inputs.rehearsal_identity.required, false);
@@ -537,7 +537,11 @@ test('Windows original-package diagnosis remains separate from complete Candidat
   assert.match(diagnosis.if, /github.event_name == 'workflow_dispatch'/u);
   assert.match(diagnosis.if, /inputs.diagnostic_scope == 'runtime-windows'/u);
   assert.match(diagnosis.if, /inputs.diagnostic_scope == 'failed-windows'/u);
-  for (const scenario of ['runtime-windows', 'worktree-windows', 'release-contract-windows', 'git-convergence-windows', 'package-consumer-windows', 'nested-lifecycle-windows']) assert.ok(diagnosis.strategy.matrix.scenario.includes(scenario));
+  for (const scenario of ['runtime-windows', 'worktree-windows', 'release-contract-windows', 'git-convergence-windows', 'package-consumer-windows', 'nested-lifecycle-windows', 'task-lifecycle-windows', 'preview-lifecycle-windows', 'publication-effects-windows']) assert.ok(diagnosis.strategy.matrix.scenario.includes(scenario));
+  for (const scenario of ['task-lifecycle-windows', 'preview-lifecycle-windows', 'publication-effects-windows']) {
+    assert.ok(document.on.workflow_dispatch.inputs.diagnostic_scope.options.includes(scenario));
+    assert.ok(diagnosis.if.includes(`inputs.diagnostic_scope == '${scenario}'`));
+  }
   assert.equal(diagnosis.env.DIAGNOSTIC_CANDIDATE_RUN_ID, '${{ inputs.diagnostic_candidate_run_id }}');
   assert.equal(diagnosis.env.DIAGNOSTIC_CANDIDATE_SOURCE, '${{ inputs.diagnostic_candidate_source }}');
   assert.equal(diagnosis.env.EXPECTED_SOURCE_TREE, '${{ inputs.expected_source_tree }}');

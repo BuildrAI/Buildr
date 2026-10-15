@@ -94,23 +94,42 @@ test('Buildr Web 只读查看双槽位且不提供后台Prompt或Result writer',
   const { url, initialWorkspaceId, sessionToken } = await instance.ready;
   const endpoint = `${url}/api/v1/workspaces/${initialWorkspaceId}`;
   const writeHeaders = { origin: url, 'x-buildr-session': sessionToken, 'content-type': 'application/json' };
-  const request = async (resource, options = {}) => {
-    const response = await fetch(resource, options);
-    return { status: response.status, headers: response.headers, body: await response.json() };
+  const request = async (phase, resource, options = {}) => {
+    const startedAt = performance.now();
+    const identity = { phase, method: options.method || 'GET', pathname: new URL(resource).pathname.replace(`/workspaces/${initialWorkspaceId}/`, '/workspaces/:workspaceId/') };
+    let stage = 'fetch', httpStatus;
+    t.diagnostic(`[task-review-http] ${JSON.stringify({ ...identity, status: 'started', durationMs: 0 })}`);
+    try {
+      const response = await fetch(resource, options);
+      httpStatus = response.status;
+      stage = 'body-json';
+      const body = await response.json();
+      t.diagnostic(`[task-review-http] ${JSON.stringify({ ...identity, status: 'passed', httpStatus, durationMs: Math.round(performance.now() - startedAt) })}`);
+      return { status: response.status, headers: response.headers, body };
+    } catch (error) {
+      try {
+        const fields = value => Object.fromEntries(['name', 'code', 'errno', 'syscall'].filter(key => typeof value?.[key] === 'string' || typeof value?.[key] === 'number').map(key => [key, typeof value[key] === 'string' ? value[key].slice(0, 160) : value[key]]));
+        // SyntaxError messages may embed response contents; retain the boundary instead.
+        const message = stage === 'body-json' && error?.name === 'SyntaxError' ? 'Response JSON parsing failed; content omitted.' : String(error?.message || '').slice(0, 400);
+        t.diagnostic(`[task-review-http] ${JSON.stringify({ ...identity, status: 'failed', stage, httpStatus, durationMs: Math.round(performance.now() - startedAt), error: { ...fields(error), message }, cause: fields(error?.cause) })}`);
+      } finally {
+        throw error;
+      }
+    }
   };
 
-  let response = await request(`${endpoint}/tasks/review-task/reviews`);
+  let response = await request('empty-slots', `${endpoint}/tasks/review-task/reviews`);
   assert.equal(response.status, 200);
   assert.equal(response.headers.get('cache-control'), 'no-store');
   assert.equal(response.body.slots.planning.present, false);
   assert.equal(response.body.slots.completion.present, false);
-  response = await request(`${endpoint}/tasks/review-task/reviews?target=plan:v1`);
+  response = await request('target-query-refused', `${endpoint}/tasks/review-task/reviews?target=plan:v1`);
   assert.equal(response.status, 400);
   assert.equal(response.body.error.code, 'target_forbidden');
-  response = await request(`${endpoint}/tasks/missing-task/reviews`);
+  response = await request('missing-task', `${endpoint}/tasks/missing-task/reviews`);
   assert.equal(response.status, 404);
   assert.equal(response.body.error.code, 'task_record_not_found');
-  response = await request(`${endpoint}/tasks/review-task/reviews`, { method: 'POST', headers: writeHeaders, body: '{}' });
+  response = await request('result-writer-refused', `${endpoint}/tasks/review-task/reviews`, { method: 'POST', headers: writeHeaders, body: '{}' });
   assert.equal(response.status, 404, 'Buildr Web must not expose direct Review Result writer');
 
   const environmentFile = path.join(root, '.buildr', 'tasks', 'review-task', 'environment.json');
@@ -121,7 +140,7 @@ test('Buildr Web 只读查看双槽位且不提供后台Prompt或Result writer',
   runtime.recordTaskReview(root, 'review-task', {
     reviewType: 'planning', subjectIdentity: 'plan:local-app', method: 'self', reviewed: ['task intent'], uncovered: [], findings: [], conclusion: { outcome: 'accepted', summary: 'Plan accepted' }, expectedCurrentDigest: 'absent',
   });
-  response = await request(`${endpoint}/tasks/review-task/reviews`);
+  response = await request('recorded-planning', `${endpoint}/tasks/review-task/reviews`);
   assert.equal(response.body.slots.planning.present, true);
   assert.equal('applicability' in response.body.slots.planning, false);
   assert.equal(response.body.slots.completion.present, false);
@@ -130,7 +149,7 @@ test('Buildr Web 只读查看双槽位且不提供后台Prompt或Result writer',
   assert.deepEqual(taskAfter.record, taskBefore.record);
   assert.deepEqual(fs.readFileSync(environmentFile), environmentBytes);
 
-  response = await request(`${endpoint}/prompts/task-review`, { method: 'POST', headers: writeHeaders, body: JSON.stringify({ taskId: 'review-task', reviewType: 'planning' }) });
+  response = await request('prompt-writer-refused', `${endpoint}/prompts/task-review`, { method: 'POST', headers: writeHeaders, body: JSON.stringify({ taskId: 'review-task', reviewType: 'planning' }) });
   assert.equal(response.status, 404);
   const taskAtEnd = runtime.inspectTask(root, 'review-task');
   assert.equal(taskAtEnd.recordDigest, taskBefore.recordDigest);
