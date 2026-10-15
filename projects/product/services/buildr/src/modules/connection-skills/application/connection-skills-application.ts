@@ -24,10 +24,9 @@ export class ConnectionSkillsApplication {
     const instances: Array<{ id: string; name: string; sourcePath: string; definitionId: string; sourceIdentity: string }> = [], diagnostics: string[] = [];
     try {
       const scope = this.resolveScope(root);
-      for (const id of this.files.ids(scope)) {
-        try { const entry = this.files.readTeam(scope, id).value; if (entry?.binding.skillAssetIdentity === assetIdentity) instances.push({ id, name: entry.name, sourcePath: `connections/instances/${id}.yml`, definitionId: entry.binding.definitionId, sourceIdentity: entry.binding.sourceIdentity }); }
-        catch { diagnostics.push('某项连接实例无法读取，影响范围未完整核实；实例和认证保留。'); }
-      }
+      const team = this.files.listTeam(scope);
+      for (const saved of team.instances) { const entry = saved.value; if (entry.binding.skillAssetIdentity === assetIdentity) instances.push({ id: entry.id, name: entry.name, sourcePath: saved.sourcePath, definitionId: entry.binding.definitionId, sourceIdentity: entry.binding.sourceIdentity }); }
+      if (team.diagnostics.length) diagnostics.push('某项连接实例无法读取，影响范围未完整核实；实例和认证保留。');
     } catch { diagnostics.push('连接实例影响当前不可读取；源资产操作仍可继续。'); }
     return { instances, diagnostics };
   }
@@ -56,7 +55,7 @@ export class ConnectionSkillsApplication {
     if (group.targetBinding !== this.target(scope, instance, entry, group.values)) throw failure('connection_skill_auth_target_changed', '所选认证组绑定的目标或接收程序已变化，请重新录入该组；未回退其他来源。');
     return validateAuthentication(entry.definition.authentication.fields, group.values);
   }
-  private public(scope: ConnectionScope, instance: ConnectionInstance, teamRevision: string, observationDiagnostic?: string, observation?: ConnectionObservation) {
+  private public(scope: ConnectionScope, instance: ConnectionInstance, teamRevision: string, sourcePath: string, observationDiagnostic?: string, observation?: ConnectionObservation) {
     const resolved = this.catalog.resolve(scope.rootPath, instance.binding, observation?.catalog), entry = resolved.definition;
     const local = this.files.readLocal(scope, instance.id);
     const summary = (group: AuthenticationGroup | null, problem?: string | null) => {
@@ -94,21 +93,22 @@ export class ConnectionSkillsApplication {
     const websiteField = entry?.definition.presentation?.websiteField;
     let websiteUrl: string | null = null;
     if (websiteField && typeof publicConfig[websiteField] === 'string') try { const url = new URL(publicConfig[websiteField] as string); if (['https:', 'http:'].includes(url.protocol) && !url.username && !url.password) websiteUrl = url.href; } catch { /* Invalid website never becomes a clickable target. */ }
-    return { ...instance, config: publicConfig, sourcePath: `connections/instances/${instance.id}.yml`, revision, teamRevision, localRevision: local.revision, definitionRevision,
+    return { ...instance, config: publicConfig, sourcePath, revision, teamRevision, localRevision: local.revision, definitionRevision,
       authentication: { source: local.present ? 'personal' as const : 'team' as const, team: summary(instance.authentication), personal: { present: local.present, ...summary(local.group, local.diagnostic) } },
       availability: { ready: diagnostics.length === 0, diagnostics }, programAvailability, definition: entry, websiteUrl };
   }
   list(root: string) {
-    const scope = this.resolveScope(root), instances: ReturnType<ConnectionSkillsApplication['public']>[] = [], diagnostics: { id?: string; message: string }[] = [];
-    let ids: string[]; try { ids = this.files.ids(scope); } catch (error) { return { instances, diagnostics: [{ message: diagnostic(error) }] }; }
+    const scope = this.resolveScope(root), instances: ReturnType<ConnectionSkillsApplication['public']>[] = [], diagnostics: { id?: string; sourcePath?: string; message: string }[] = [];
+    let team: ReturnType<ConnectionFiles['listTeam']>; try { team = this.files.listTeam(scope); } catch (error) { return { instances, diagnostics: [{ message: diagnostic(error) }] }; }
     const observation: ConnectionObservation = { catalog: this.catalog.list(scope.rootPath), programs: new Map() };
-    for (const id of ids) try { const team = this.files.readTeam(scope, identifier(id)); if (team.value) instances.push(this.public(scope, team.value, team.revision, team.diagnostic, observation)); } catch (error) { diagnostics.push({ id, message: diagnostic(error) }); }
+    diagnostics.push(...team.diagnostics);
+    for (const saved of team.instances) try { instances.push(this.public(scope, saved.value, saved.revision, saved.sourcePath, saved.diagnostic, observation)); } catch (error) { diagnostics.push({ id: saved.value.id, sourcePath: saved.sourcePath, message: diagnostic(error) }); }
     return { instances, diagnostics };
   }
   get(root: string, id: string) {
     const scope = this.resolveScope(root), team = this.files.readTeam(scope, identifier(id));
     if (!team.value) throw failure('connection_skill_not_found', '当前工作空间未配置此连接。', 404);
-    return { instance: this.public(scope, team.value, team.revision, team.diagnostic) };
+    return { instance: this.public(scope, team.value, team.revision, team.sourcePath, team.diagnostic) };
   }
   save(root: string, id: string | null, raw: unknown) {
     const scope = this.resolveScope(root), input = object(raw) as unknown as TeamInput;
@@ -128,8 +128,8 @@ export class ConnectionSkillsApplication {
       } else if (intent.intent !== 'remove') throw failure('connection_skill_auth_intent_invalid', '请选择保持、替换或移除认证。', 400);
       // Missing authentication and dependencies are allowed when saving; running still checks them.
       this.entry(scope, input.binding, input.expected.definitionRevision, Boolean(id));
-      this.files.writeTeam(scope, value, input.expected.teamRevision);
-      return { instance: this.public(scope, value, this.files.readTeam(scope, instanceId).revision) };
+      this.files.writeTeam(scope, value, input.expected.teamRevision, entry.definition.systemId ?? entry.definition.definitionId);
+      return this.get(scope.rootPath, instanceId);
     });
   }
   saveAuth(root: string, id: string, raw: unknown) {
@@ -155,7 +155,7 @@ export class ConnectionSkillsApplication {
   }
   private selected(scope: ConnectionScope, id: string, revision?: string) {
     const team = this.files.readTeam(scope, id); if (!team.value) throw failure('connection_skill_not_found', '当前实例不存在。', 404);
-    const instance = team.value, view = this.public(scope, instance, team.revision, team.diagnostic);
+    const instance = team.value, view = this.public(scope, instance, team.revision, team.sourcePath, team.diagnostic);
     try { assertRevision(view.revision, revision ?? view.revision); }
     catch (cause) {
       if ((cause as { code?: string }).code === 'connection_skill_revision_conflict') throw failure('connection_skill_revision_conflict', '连接配置、认证、接入声明或本机程序接收方已变化，请重新读取并核对当前程序路径；未执行。');

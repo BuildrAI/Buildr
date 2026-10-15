@@ -54,7 +54,7 @@ else {
 test('unknown provider: source discovery is read-only, shared files and local complete override stay independent', async t => {
   const f = fixture(t); assert.deepEqual(f.app.list(f.workspace).instances, []); assert.equal(fs.existsSync(path.join(f.root, 'local')), false);
   const created = f.create(); assert.equal(created.authentication.source, 'team'); assert.equal(JSON.stringify(created).includes('team-secret-123'), false);
-  const shared = path.join(f.workspace, 'connections/instances/example-one.yml'), before = fs.readFileSync(shared, 'utf8'); assert.ok(before.includes('team-secret-123'));
+  const shared = path.join(f.workspace, created.sourcePath), before = fs.readFileSync(shared, 'utf8'); assert.ok(before.includes('team-secret-123'));
   f.app.saveAuth(f.workspace, created.id, { intent: 'replace', values: { username: 'person-user', password: 'personal-secret-456' }, expected: f.expected() });
   assert.equal(fs.readFileSync(shared, 'utf8'), before);
   const view = f.app.get(f.workspace, created.id).instance;

@@ -392,6 +392,7 @@ export const INTEGRATION_PRIMARY_SLICES: any = Object.freeze([
   integrationSlice('integration-runtime', [
     'test/integration/connection-skill-definitions.test.ts',
     'test/integration/connection-skills-runtime.test.ts',
+    'test/integration/connection-instance-filenames.test.ts',
     'test/integration/connection-skills-safety.test.ts',
     'test/integration/connection-skills-cli.test.ts',
     'test/integration/connection-skills-workspace.test.ts',

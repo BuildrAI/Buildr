@@ -211,6 +211,7 @@ export const VERIFICATION_STEP_OWNERSHIP: any = Object.freeze(Object.fromEntries
       "resources/workspace/skills/buildr/connection-authoring/**",
       "test/integration/connection-skill-definitions.test.ts",
       "test/integration/connection-skills-runtime.test.ts",
+      "test/integration/connection-instance-filenames.test.ts",
       "test/integration/connection-skills-safety.test.ts",
       "test/integration/connection-skills-cli.test.ts",
       "test/integration/connection-skills-workspace.test.ts",

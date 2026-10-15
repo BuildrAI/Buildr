@@ -20,7 +20,7 @@
 | 工具可发现的派生入口 | 对应智能体（Agent）的目录 | 可依据当前源生成，写入和清理仍受所有权约束 |
 | 搜索索引（Search Index） | SQLite 的 `task_search` 及辅助表 | 可从任务（Task）重建，不增加业务事实 |
 | 安装登记、投射回执、恢复现场 | 本机 JSON、YAML 与备份文件 | 说明归属和实际操作，不能从目录外观猜出 |
-| 技能声明接入的团队实例与团队认证 | `connections/instances/<id>.yml`，可由团队 Git 共享 | 只属于用户实际工作空间（Workspace），不进入公共技能源或发布物 |
+| 技能声明接入的团队实例与团队认证 | `connections/instances/<系统>-<环境>--<唯一后缀>.yml`，可由团队 Git 共享 | 正文完整 `id` 是身份；只属于用户实际工作空间（Workspace），不进入公共技能源或发布物 |
 | 技能声明接入的个人认证及观察密钥 | 应用数据根的 `connection-skills/` | 加密的完整个人组、本机安全观察及提供者状态，不能由共享文件恢复 |
 | 分支、未提交修改、进程和外部登录态 | Git、进程与外部工具 | 每次重新观察，不用旧记录替代 |
 
@@ -70,7 +70,9 @@
 
 旧 `buildr connection` 继续在规范工作空间（Canonical Workspace）的 `.buildr/local/workspace.sqlite` 保存连接元数据，密码沿原本机加密路径维护。MySQL 查询及旧 Nacos、Kibana、XXL-JOB 不因新机制启用而改写或迁移；旧路径的代码工作树（Worktree）引用语义保持。
 
-新 `buildr connection-skill` 从所选工作空间（Workspace）的当前目录读取 `connections/instances/<id>.yml`。团队文件包含实例身份、名称、环境、精确技能源绑定、配置及团队整组认证；不存在就报告未配置，读取不导入旧清单、不写回或为分支（Branch）复制配置。类别（Category）用于展示，不替代 `(skillAssetIdentity, definitionId)`、`sourceIdentity` 和 `configVersion` 的明确绑定。
+新 `buildr connection-skill` 从所选工作空间（Workspace）的当前 `connections/instances/*.yml` 正文发现实例。新建及保存时文件名使用“系统＋环境＋唯一后缀”，例如 `nacos-qa--<12位后缀>.yml`；完整 `id` 独立稳定，实际路径由 `sourcePath` 返回。系统来自已绑定声明的 `systemId` 或 `definitionId`，空环境使用 `default`；片段规范化并限长，后缀由完整 `id` 派生。已有 `<id>.yml` 或人工改名文件只在保存时整理，读取不改名；仅路径变化不改变内容观察版本（Observed Revision）或个人认证归属。
+
+团队文件包含实例身份、名称、环境、精确技能源绑定、配置及团队整组认证；不存在就报告未配置，读取不导入旧清单、不写回或为分支（Branch）复制配置。类别（Category）用于展示，不替代 `(skillAssetIdentity, definitionId)`、`sourceIdentity` 和 `configVersion` 的明确绑定。同类、同目标的不同 `id` 可以共存，但仍访问同一外部环境；选择依据目标范围和用途，执行明确使用 `id` 及当前观察版本（Observed Revision），同等候选不能按名称、文件名或顺序猜选。重复正文 `id` 的文件局部报告冲突并保留，不影响其他唯一实例。
 
 同一工作空间（Workspace）编号有唯一登记来源时，它就是配置入口。命令从相关代码工作树（Git Worktree）的根或子目录运行，须证明与登记目录具有同一 Git 公共目录后才使用该入口；登记来源自身是关联工作树时仍读取其当前文件，不跳往主检出。无登记时使用实际源目录；同编号的独立克隆（Clone）、多个登记来源或身份变化显式报告，不猜选配置。[来源解析](../../../services/buildr/src/modules/connection-skills/infrastructure/workspace.ts)只读取身份和 Git 事实，不建立分支配置管理。
 
