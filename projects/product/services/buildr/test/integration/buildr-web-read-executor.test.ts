@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHook } from 'node:async_hooks';
 import { EventEmitter } from 'node:events';
 import test from 'node:test';
 import crypto from 'node:crypto';
@@ -184,7 +185,7 @@ test('交付资料HTTP和有界读取器保留相对路径与已观察来源，�
   } finally { await executor.close(); }
 });
 
-test('交付资料公开HTTP路由穿过全局查询校验和真实Worker，精确接受来源身份', async t => {
+test('Web 默认按需创建读取 Worker，首次交付资料 HTTP 读取正确并复用同一线程', async t => {
   const { base, root } = copyPreparedProjectWorkspace(t, 'change-asset-worker');
   const priorApp = process.env.BUILDR_APP_DATA_DIR, priorProduct = process.env.BUILDR_PRODUCT_DATA_DIR;
   process.env.BUILDR_APP_DATA_DIR = path.join(base, 'asset-app-data');
@@ -205,13 +206,23 @@ test('交付资料公开HTTP路由穿过全局查询校验和真实Worker，精�
   fs.writeFileSync(path.join(changeRoot, 'custom/screen.png'), png);
   runtime.createTask(root, { taskId: 'asset-worker', title: '交付资料读取', intent: '只读资料', projects: ['demo'], services: [], changes: [{ project: 'demo', change: 'worker-assets' }] });
   const before = runtime.readTask(root, 'asset-worker');
+  let createdWorkers = 0;
+  const workerHook = createHook({ init(_id, type) { if (type === 'WORKER') createdWorkers += 1; } }).enable();
+  t.after(() => workerHook.disable());
   const instance = createLocalWorkspaceServer(runtime, { targetRoot: root });
   t.after(() => new Promise<void>(resolve => instance.server.close(() => resolve())));
-  const { url, initialWorkspaceId } = await instance.ready;
+  const { url, initialWorkspaceId, instanceSecret } = await instance.ready;
+  assert.equal(createdWorkers, 0, '监听就绪前没有任务读取，不得创建读取线程');
+  const health = await fetch(`${url}/api/v1/health`, { headers: { 'x-buildr-instance': instanceSecret } });
+  assert.equal(health.status, 200);
+  assert.equal((await health.json() as any).status, 'ready');
+  assert.equal(createdWorkers, 0, '健康检查不得启动任务读取线程');
   const prefix = `${url}/api/v1/workspaces/${initialWorkspaceId}/tasks/asset-worker`;
   const detailResponse = await fetch(`${prefix}/changes/demo/worker-assets`);
   assert.equal(detailResponse.status, 200, await detailResponse.clone().text());
   const detail = await detailResponse.json() as any;
+  assert.equal(createdWorkers, 1, '首次读取才创建一个真实线程');
+  assert.equal(detail.resolution.workingCopy.change.assets.length, 3);
   for (const asset of detail.resolution.workingCopy.change.assets) {
     const endpoint = `${prefix}/changes/demo/worker-assets/assets/${asset.relativePath.split('/').map(encodeURIComponent).join('/')}`;
     const query = new URLSearchParams({ expectedSourceIdentity: asset.sourceIdentity });
@@ -240,6 +251,7 @@ test('交付资料公开HTTP路由穿过全局查询校验和真实Worker，精�
     assert.equal(denied.status, 400);
     assert.equal((await denied.json() as any).error.code, 'task_api_query_forbidden');
   }
+  assert.equal(createdWorkers, 1, '顺序读取继续复用已有线程');
   assert.deepEqual(runtime.readTask(root, 'asset-worker'), before);
 });
 

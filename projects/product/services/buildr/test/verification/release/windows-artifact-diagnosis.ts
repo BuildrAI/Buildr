@@ -70,7 +70,7 @@ function readGitFacts(productRoot: string, originalSource: string): GitFacts {
     dirty: git(['status', '--porcelain', '--untracked-files=all', '-z']).length > 0 };
 }
 
-function projectResult(result: any): any {
+export function projectResult(result: any): any {
   const projected: any = {};
   for (const key of ['id', 'status', 'exitCode', 'childExitCode', 'childSignal', 'childOutcome', 'durationMs', 'queueDurationMs', 'startedAt', 'finishedAt', 'failureCode']) {
     if (typeof result[key] === 'string' || typeof result[key] === 'number' || result[key] === null) projected[key] = result[key];
