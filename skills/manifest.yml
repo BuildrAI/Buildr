@@ -374,6 +374,28 @@ skills:
     required: false
     state: installed
     runtimePath: feature-design
+  - id: nacos-connection
+    assetIdentity: buildr:skill:nacos-connection
+    sourceIdentity: package:skills/connections/nacos-connection
+    source: buildr
+    path: connections/nacos-connection
+    description: 使用技能声明的 Nacos 连接发现、读取、比较与受控发布配置时使用；加载所选实例及自带程序帮助。
+    enabled: true
+    required: false
+    state: installed
+    runtimePath: nacos-connection
+    connectionDefinitions:
+      - assets/connection.yml
+  - id: connection-authoring
+    assetIdentity: buildr:skill:connection-authoring
+    sourceIdentity: package:skills/buildr/connection-authoring
+    source: buildr
+    path: buildr/connection-authoring
+    description: 用户要为 Buildr 制作或维护自有外部系统接入方法时使用；交付连接声明、专业技能及必要程序，复用现有登记和投射。
+    enabled: true
+    required: false
+    state: installed
+    runtimePath: connection-authoring
 contracts:
   - id: buildr.terminology-governance
     version: 1
