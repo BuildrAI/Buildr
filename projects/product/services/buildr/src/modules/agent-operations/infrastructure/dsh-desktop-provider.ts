@@ -20,7 +20,8 @@ export class DshDesktopProvider implements AgentExecutionProvider {
   async generate(input: AgentProviderGenerationInput): Promise<unknown> {
     if (input.environment) throw agentFailure('agent_dsh_environment_unsupported', 'DSH 桌面生成仅支持给定材料；本次原生文件读取未启用。', 422);
     await this.start();
-    const text = await this.client!.generate({ ...input, timeoutMs: input.execution?.timeoutMs });
+    const text = await this.client!.generate({ ...input, timeoutMs: input.execution?.timeoutMs,
+      ...(input.execution?.reasoningEffort === 'low' ? { reasoningEffort: 'lowest-supported' as const } : {}) });
     try { return JSON.parse(text.trim().replace(/^```(?:json)?\s*\n([\s\S]*?)\n```$/i, '$1')); }
     catch { throw agentFailure('agent_output_invalid', 'DSH 生成结果不符合结构要求，已有说明保持。', 502); }
   }

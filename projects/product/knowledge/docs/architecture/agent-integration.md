@@ -21,7 +21,7 @@ Buildr 的“智能体”入口发现本机 Codex 和 DSH，用户确认候选�
 
 **DSH**：Buildr 通过本机回环连接（Loopback TCP）连接已运行桌面中的 Buildr 插件，再调用同一宿主（Host）的模型服务。正式调用由 `DshDesktopProvider` 承担；桌面、插件或准确范围不可用时返回可恢复错误，不另起 DSH 生成进程，也不退回旧智能体客户端协议（Agent Client Protocol，ACP）链路。
 
-DSH 在每次请求时读取桌面当前默认的模型、提供者（Provider）和推理级别（Reasoning Effort），实际采用值随运行（Run）记录。它共享当前模型服务及其生效的模型中间件；这不等于继承当前聊天所选模型或完整聊天执行环境。调用不带 `sessionId`，不会创建原生聊天记录，也不运行会话（Session）级工具、技能（Skill）、记忆和执行钩子（Hook）。
+DSH 在每次请求时读取桌面当前默认的模型（Model）及提供者（Provider）。普通调用继承桌面推理级别（Reasoning Effort）；提交说明明确请求轻量生成，由同一模型（Model）的原生声明选择最低受支持级别，经准备调用确认后只作用于本次请求，桌面聊天设置保持。实际采用值随运行（Run）记录，详见[提交说明怎样生成](agent-integration-generation.md)。它共享当前模型服务及其生效的模型中间件；这不等于继承当前聊天所选模型（Model）或完整聊天执行环境。调用不带 `sessionId`，不会创建原生聊天记录，也不运行会话（Session）级工具、技能（Skill）、记忆和执行钩子（Hook）。
 
 ## 会话（Session）与任务怎样关联
 

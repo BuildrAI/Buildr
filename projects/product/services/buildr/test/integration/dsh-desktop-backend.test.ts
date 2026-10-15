@@ -22,6 +22,7 @@ async function fixture(t: test.TestContext, old = false) {
   fs.mkdirSync(dshHome, { mode: 0o700 }); fs.mkdirSync(path.join(dshHome, 'buildr'), { mode: 0o700 });
   const dir = path.join(dshHome, 'buildr/desktop-bridges'); fs.mkdirSync(dir, { mode: 0o700 });
   const sockets = new Set<net.Socket>(), generated: any[] = [], cancelled: string[] = [], calls: any[] = [], active = new Map<string, { socket: net.Socket; id: string }>();
+  let lightweight: boolean | undefined = true;
   let output = JSON.stringify({ commitMessage: 'feat: desktop result' }), model = 'desktop-one', slow = false, fault = '';
   const server = net.createServer(socket => {
     sockets.add(socket); let buffer = '', authenticated = false;
@@ -29,11 +30,11 @@ async function fixture(t: test.TestContext, old = false) {
     socket.on('data', chunk => { buffer += chunk.toString(); let index: number; while ((index = buffer.indexOf('\n')) >= 0) {
       const request = JSON.parse(buffer.slice(0, index)); buffer = buffer.slice(index + 1); calls.push(request);
       const result = (value: unknown) => send({ id: request.id, type: 'result', output: value });
-      const inspection = () => ({ ...identity(), capabilities: { generate: true, currentSession: true, openSession: true, openTask: true }, modelConfig: { model, modelProvider: 'desktop-provider', reasoningEffort: 'max' }, clients: [{ clientId: 'desktop-client', sessionId: 'existing-chat', desktop: true }] });
+      const inspection = () => ({ ...identity(), capabilities: { generate: true, ...(lightweight === undefined ? {} : { lightweightGeneration: lightweight }), currentSession: true, openSession: true, openTask: true }, modelConfig: { model, modelProvider: 'desktop-provider', reasoningEffort: 'max' }, clients: [{ clientId: 'desktop-client', sessionId: 'existing-chat', desktop: true }] });
       if (request.method === 'hello') { authenticated = request.params.credential === discovery.credential && request.params.hostInstanceId === discovery.hostInstanceId; if (!authenticated) socket.destroy(); else result(inspection()); continue; }
       if (!authenticated) { socket.destroy(); continue; }
       if (request.method === 'inspect') { result(inspection()); continue; }
-      if (request.method === 'generate') { generated.push(request); if (fault === 'leak') { send({ id: request.id, type: 'error', error: { code: 'agent_dsh_request_failed', message: discovery.credential + ' private prompt' } }); continue; } if (fault !== 'no-config') send({ id: request.id, type: 'configured', config: { model, modelProvider: 'desktop-provider', reasoningEffort: 'max' } }); if (fault === 'duplicate-config') send({ id: request.id, type: 'configured', config: { model: 'conflict', modelProvider: 'other', reasoningEffort: 'low' } }); send({ id: request.id, type: 'running' }); if (slow) active.set(request.id, { socket, id: request.id }); else result(output); continue; }
+      if (request.method === 'generate') { generated.push(request); if (fault === 'leak') { send({ id: request.id, type: 'error', error: { code: 'agent_dsh_request_failed', message: discovery.credential + ' private prompt' } }); continue; } if (fault !== 'no-config') send({ id: request.id, type: 'configured', config: { model, modelProvider: 'desktop-provider', reasoningEffort: request.params.reasoningEffort === 'lowest-supported' ? 'medium' : 'max' } }); if (fault === 'duplicate-config') send({ id: request.id, type: 'configured', config: { model: 'conflict', modelProvider: 'other', reasoningEffort: 'low' } }); send({ id: request.id, type: 'running' }); if (slow) active.set(request.id, { socket, id: request.id }); else result(output); continue; }
       if (request.method === 'cancel') { const pending = active.get(request.params.requestId); if (fault === 'ack-only') { result({ requestId: request.params.requestId, cancelled: true, settled: true }); continue; } if (pending?.socket === socket) { cancelled.push(pending.id); active.delete(pending.id); send({ id: pending.id, type: 'error', error: { code: 'agent_run_cancelled', message: '本次生成已取消。' } }); } result({ requestId: request.params.requestId, cancelled: !!pending, settled: true }); continue; }
       if (request.method === 'openSession' || request.method === 'openTask') { if (fault === 'navigation-hang') { active.set(request.id, { socket, id: request.id }); continue; } result({ clientId: 'desktop-client', sessionId: request.params.sessionId, opened: true, ...(request.params.taskUrl ? { taskUrl: request.params.taskUrl } : {}) }); continue; }
     }});
@@ -51,7 +52,7 @@ async function fixture(t: test.TestContext, old = false) {
   const connect = async () => { const observed = application.listDshDiscovery(); return application.connectDsh({ candidateId: observed.candidates[0].id, expectedDiscoveryRevision: observed.revision, expectedRevision: application.listRegistry().revision, ...(old ? { existingAgentId: agentId } : {}) }); };
   const generate = (extra = {}) => application.startGeneration({ cwd: root, prompt: 'Supplied changes only', outputSchema, execution: { reasoningEffort: 'low', timeoutMs: 2000 }, ...extra });
   const finish = async (id: string) => { await wait(() => ['succeeded', 'failed', 'cancelled'].includes(application.getRun(id).status)); return application.getRun(id); };
-  return { root, file, discovery, application, desktop, connect, generate, finish, generated, cancelled, calls, active, agentId, codexId, change: (value: { output?: string; model?: string; slow?: boolean; fault?: string }) => { if (value.output !== undefined) output = value.output; if (value.model !== undefined) model = value.model; if (value.slow !== undefined) slow = value.slow; if (value.fault !== undefined) fault = value.fault; } };
+  return { root, file, discovery, application, desktop, connect, generate, finish, generated, cancelled, calls, active, agentId, codexId, change: (value: { output?: string; model?: string; slow?: boolean; fault?: string; lightweight?: boolean | null }) => { if (value.lightweight !== undefined) lightweight = value.lightweight ?? undefined; if (value.output !== undefined) output = value.output; if (value.model !== undefined) model = value.model; if (value.slow !== undefined) slow = value.slow; if (value.fault !== undefined) fault = value.fault; } };
 }
 
 test('old DSH migrates in place only after authenticated desktop confirmation, preserving names, default and Codex', async t => {
@@ -72,14 +73,29 @@ test('old DSH migrates in place only after authenticated desktop confirmation, p
   const fresh = f.application.listDshDiscovery(); await assert.rejects(f.application.connectDsh({ candidateId: fresh.candidates[0].id, expectedDiscoveryRevision: fresh.revision, expectedRevision: f.application.listRegistry().revision }), code('agent_dsh_already_connected'));
 });
 
-test('DSH uses desktop current config with one raw call, validates output, serializes, recycles only its socket', async t => {
+test('DSH uses the same desktop model with declared lightweight effort, validates output and recycles only its socket', async t => {
   const f = await fixture(t); await f.connect();
-  const first = await f.generate(), one = await f.finish(first.id); assert.equal(one.status, 'succeeded'); assert.equal(one.executionConfig?.reasoningEffort, 'max'); assert.equal(one.executionConfig?.model, 'desktop-one');
+  const first = await f.generate(), one = await f.finish(first.id); assert.equal(one.status, 'succeeded'); assert.equal(one.executionConfig?.reasoningEffort, 'medium'); assert.equal(one.executionConfig?.model, 'desktop-one');
   f.change({ model: 'desktop-two' }); const second = await f.generate(), two = await f.finish(second.id); assert.equal(two.executionConfig?.model, 'desktop-two'); assert.equal(one.executionConfig?.model, 'desktop-one');
-  for (const request of f.generated) { assert.equal(request.params.sessionId, undefined); assert.equal(request.params.reasoningEffort, undefined); }
+  for (const request of f.generated) { assert.equal(request.params.sessionId, undefined); assert.equal(request.params.reasoningEffort, 'lowest-supported'); }
   f.change({ output: 'invalid' }); const invalid = await f.generate(); assert.equal((await f.finish(invalid.id)).error?.code, 'agent_output_invalid'); assert.equal(f.generated.length, 3, 'No repair model request');
   f.change({ output: '{"wrong":true}' }); const wrong = await f.generate(); assert.equal((await f.finish(wrong.id)).error?.code, 'agent_output_invalid');
   await wait(() => f.application.listRegistry().agents[0].runtimeStatus === 'stopped'); assert.equal(f.discovery.hostPid, process.pid); assert.equal(process.kill(process.pid, 0), true);
+});
+
+test('ordinary DSH generation inherits desktop effort and old plugins reject only lightweight calls', async t => {
+  const f = await fixture(t); f.change({ lightweight: null }); await f.connect();
+  const ordinary = await f.generate({ execution: { timeoutMs: 2000 } });
+  assert.equal((await f.finish(ordinary.id)).executionConfig?.reasoningEffort, 'max');
+  assert.equal(f.generated[0].params.reasoningEffort, undefined);
+  const lightweight = await f.generate();
+  const failed = await f.finish(lightweight.id);
+  assert.equal(failed.status, 'failed');
+  assert.equal(failed.error?.code, 'agent_dsh_lightweight_unavailable');
+  assert.match(failed.error!.message, /更新插件/);
+  assert.equal(f.generated.length, 1, 'Unsupported request never reaches the old plugin');
+  assert.equal(f.application.listRegistry().agents[0].availability, 'available');
+  assert.equal(f.application.listRegistry().defaultAgentId, ordinary.agentId);
 });
 
 test('cancel, queued expiry and shutdown affect only owned requests and never publish late results', async t => {

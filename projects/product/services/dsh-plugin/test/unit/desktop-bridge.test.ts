@@ -102,6 +102,130 @@ test('one-shot generation inherits each native selection, has no session or tool
   c.send('inspect', 'inspect'); const inspected = (await c.next('inspect')).output;
   assert.equal(Object.hasOwn(inspected, 'credential'), false);
 });
+test('lightweight generation selects the lowest declared level rather than the display order and leaves the desktop selection intact', async t => {
+  const calls: Record<string, unknown>[] = [], lookups: Array<{ provider: string; model: string; signal?: AbortSignal }> = [];
+  const selected = Object.freeze({ provider: 'desktop', model: 'exact-model', reasoningEffort: 'max' });
+  const services = native(calls, { selection: () => selected });
+  let efforts = ['max', 'high', 'low', 'off'];
+  services.llm.resolveModelInfo = async (provider, model, signal) => {
+    lookups.push({ provider, model, signal });
+    return { provider, id: model, reasoning: { efforts: efforts.map(id => ({ id, name: 'display label' })), defaultEffort: efforts[0] } };
+  };
+  const { discovery } = await fixture(t, services), c = await client(discovery); t.after(() => c.socket.destroy());
+  c.send('inspect', 'inspect'); assert.equal((await c.next('inspect')).output.capabilities.lightweightGeneration, true);
+  for (const [index, entry] of [
+    { efforts: ['max', 'high', 'low', 'off'], expected: 'off' },
+    { efforts: ['max', 'xhigh', 'minimal', 'medium'], expected: 'minimal' },
+    { efforts: ['high', 'medium', 'low'], expected: 'low' },
+    { efforts: ['high'], expected: 'high' },
+    { efforts: ['max', 'high', 'medium'], expected: 'medium' },
+  ].entries()) {
+    efforts = entry.efforts;
+    c.send('light-' + index, 'generate', { prompt: 'one-shot', outputSchema: {}, reasoningEffort: 'lowest-supported' });
+    assert.deepEqual((await c.next('light-' + index, 'configured')).config, { model: selected.model, modelProvider: selected.provider, reasoningEffort: entry.expected });
+    assert.equal((await c.next('light-' + index, 'result')).output, '{"commitMessage":"generated"}');
+    assert.equal(calls.at(-1)!.reasoningEffort, entry.expected);
+  }
+  assert.equal(lookups.length, 5); assert.equal(calls.length, 5);
+  for (const lookup of lookups) { assert.equal(lookup.provider, selected.provider); assert.equal(lookup.model, selected.model); assert.ok(lookup.signal instanceof AbortSignal); }
+  for (const call of calls) { assert.equal(call.provider, selected.provider); assert.equal(call.model, selected.model); assert.deepEqual(call.tools, []); assert.equal(Object.hasOwn(call, 'sessionId'), false); assert.equal(Object.hasOwn(call, 'context'), false); }
+  assert.deepEqual(services.agentDefaultModel.currentSelection(), { provider: 'desktop', model: 'exact-model', reasoningEffort: 'max' });
+  c.send('ordinary', 'generate', { prompt: 'ordinary', outputSchema: {} });
+  assert.equal((await c.next('ordinary', 'configured')).config.reasoningEffort, 'max'); await c.next('ordinary', 'result');
+  assert.equal(lookups.length, 5);
+});
+test('a model without selectable reasoning omits the inherited effort and preserves the unselected native default', async t => {
+  const calls: Record<string, unknown>[] = [], inputs: Record<string, unknown>[] = [], services = native(calls);
+  services.llm.resolveModelInfo = async (provider, model) => ({ provider, id: model });
+  const prepare = services.llm.prepareCall;
+  services.llm.prepareCall = async (config, signal) => {
+    inputs.push({ ...config }); return prepare(config, signal);
+  };
+  const { discovery } = await fixture(t, services), c = await client(discovery); t.after(() => c.socket.destroy());
+  c.send('default', 'generate', { prompt: 'normal', outputSchema: {}, reasoningEffort: 'lowest-supported' });
+  assert.equal((await c.next('default', 'configured')).config.reasoningEffort, null); await c.next('default', 'result');
+  assert.equal(Object.hasOwn(inputs[0], 'reasoningEffort'), false); assert.equal(Object.hasOwn(calls[0], 'reasoningEffort'), false);
+  assert.equal(services.agentDefaultModel.currentSelection().reasoningEffort, 'max');
+});
+test('a newly materialized effort after a no-reasoning lookup is rejected before streaming', async t => {
+  const calls: Record<string, unknown>[] = [], services = native(calls);
+  services.llm.resolveModelInfo = async (provider, model) => ({ provider, id: model });
+  const prepare = services.llm.prepareCall;
+  services.llm.prepareCall = async (config, signal) => {
+    assert.equal(Object.hasOwn(config, 'reasoningEffort'), false);
+    const prepared = await prepare(config, signal);
+    return { ...prepared, config: { ...prepared.config, reasoningEffort: 'max' } };
+  };
+  const { discovery } = await fixture(t, services), c = await client(discovery); t.after(() => c.socket.destroy());
+  c.send('changed', 'generate', { prompt: 'normal', outputSchema: {}, reasoningEffort: 'lowest-supported' });
+  const frame = await c.next('changed');
+  assert.equal(frame.type, 'error'); assert.equal(frame.error.code, 'agent_dsh_model_unconfirmed');
+  assert.equal(calls.length, 0); assert.equal(c.frames.some(row => row.type === 'configured' || row.type === 'running' || row.type === 'result'), false);
+});
+test('older native services advertise no lightweight capability while ordinary generation remains available', async t => {
+  const calls: Record<string, unknown>[] = [], { discovery } = await fixture(t, native(calls));
+  const c = await client(discovery); t.after(() => c.socket.destroy());
+  c.send('inspect', 'inspect'); const capabilities = (await c.next('inspect')).output.capabilities;
+  assert.equal(capabilities.generate, true); assert.equal(capabilities.lightweightGeneration, false);
+  c.send('light', 'generate', { prompt: 'normal', outputSchema: {}, reasoningEffort: 'lowest-supported' });
+  assert.equal((await c.next('light', 'error')).error.code, 'agent_dsh_generation_unavailable');
+  c.send('ordinary', 'generate', { prompt: 'ordinary', outputSchema: {} });
+  assert.equal((await c.next('ordinary', 'configured')).config.reasoningEffort, 'max'); await c.next('ordinary', 'result');
+  assert.equal(calls.length, 1);
+});
+test('unknown or mixed effort identifiers and mismatched metadata routes fail before model dispatch', async t => {
+  const calls: Record<string, unknown>[] = [], services = native(calls);
+  let metadata: { provider: string; id: string; reasoning?: { efforts: Array<{ id: string; name: string }> } };
+  services.llm.resolveModelInfo = async () => metadata;
+  let prepared = 0; const prepare = services.llm.prepareCall;
+  services.llm.prepareCall = async (config, signal) => { prepared++; return prepare(config, signal); };
+  const { discovery } = await fixture(t, services), c = await client(discovery); t.after(() => c.socket.destroy());
+  for (const [index, entry] of [
+    { provider: 'native', id: 'model-a', reasoning: { efforts: [{ id: 'opaque', name: 'Lowest' }] } },
+    { provider: 'native', id: 'model-a', reasoning: { efforts: [{ id: 'low', name: 'Low' }, { id: 'opaque', name: 'High' }] } },
+    { provider: 'native', id: 'model-a', reasoning: { efforts: [] } },
+    { provider: 'other', id: 'model-a' },
+    { provider: 'native', id: 'other' },
+  ].entries()) {
+    metadata = entry;
+    c.send('invalid-' + index, 'generate', { prompt: 'normal', outputSchema: {}, reasoningEffort: 'lowest-supported' });
+    assert.equal((await c.next('invalid-' + index, 'error')).error.code, 'agent_dsh_model_unconfirmed');
+  }
+  assert.equal(prepared, 0); assert.equal(calls.length, 0);
+  assert.equal(c.frames.some(row => row.type === 'configured' || row.type === 'running' || row.type === 'result'), false);
+});
+test('prepared route or lightweight effort drift is rejected before configured or streaming events', async t => {
+  const calls: Record<string, unknown>[] = [], services = native(calls);
+  services.llm.resolveModelInfo = async (provider, model) => ({ provider, id: model, reasoning: { efforts: [{ id: 'low', name: 'Low' }] } });
+  const prepare = services.llm.prepareCall;
+  let drift: Record<string, string> = {};
+  services.llm.prepareCall = async (config, signal) => { const prepared = await prepare(config, signal); return { ...prepared, config: { ...prepared.config, ...drift } }; };
+  const { discovery } = await fixture(t, services), c = await client(discovery); t.after(() => c.socket.destroy());
+  const changes: Array<Record<string, string>> = [{ provider: 'other' }, { model: 'other' }, { reasoningEffort: 'high' }];
+  for (const [index, fields] of changes.entries()) {
+    drift = fields;
+    c.send('drift-' + index, 'generate', { prompt: 'normal', outputSchema: {}, reasoningEffort: 'lowest-supported' });
+    assert.equal((await c.next('drift-' + index, 'error')).error.code, 'agent_dsh_model_unconfirmed');
+  }
+  assert.equal(calls.length, 0); assert.equal(c.frames.some(row => row.type === 'configured' || row.type === 'running' || row.type === 'result'), false);
+});
+test('metadata lookup shares request cancellation and timeout without affecting ordinary generation', async t => {
+  const calls: Record<string, unknown>[] = [], services = native(calls), started = new EventEmitter();
+  services.llm.resolveModelInfo = async (_provider, _model, signal) => new Promise((_resolve, reject) => {
+    started.emit('lookup'); const abort = () => reject(signal!.reason);
+    if (signal!.aborted) abort(); else signal!.addEventListener('abort', abort, { once: true });
+  });
+  const { discovery } = await fixture(t, services), c = await client(discovery); t.after(() => c.socket.destroy());
+  c.send('timeout', 'generate', { prompt: 'normal', outputSchema: {}, reasoningEffort: 'lowest-supported', timeoutMs: 10 });
+  assert.equal((await c.next('timeout', 'error')).error.code, 'agent_dsh_generation_timeout');
+  const lookup = once(started, 'lookup');
+  c.send('cancelled', 'generate', { prompt: 'normal', outputSchema: {}, reasoningEffort: 'lowest-supported' }); await lookup;
+  c.send('cancel', 'cancel', { requestId: 'cancelled' });
+  assert.equal((await c.next('cancelled', 'error')).error.code, 'agent_dsh_generation_cancelled');
+  assert.deepEqual((await c.next('cancel')).output, { requestId: 'cancelled', cancelled: true, settled: true });
+  c.send('ordinary', 'generate', { prompt: 'ordinary', outputSchema: {} }); await c.next('ordinary', 'result');
+  assert.equal(calls.length, 1);
+});
 test('cancel ownership, disconnect and plugin disposal isolate native requests and settle before acknowledgement', async t => {
   const calls: Record<string, unknown>[] = [], aborted: string[] = [];
   const { discovery, server } = await fixture(t, native(calls, { waiting: new Set(['one', 'two', 'three']), aborted }));

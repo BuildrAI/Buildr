@@ -191,3 +191,14 @@ test('material patch reads do not execute configured Git clean filters or change
   assert.equal(f.git(f.repository, 'config', '--get', 'filter.sample.clean'), filter); assert.equal(f.git(f.repository, 'config', '--get', 'filter.sample.required'), 'true');
   assert.deepEqual(fs.readFileSync(snapshot.indexPath), beforeIndex); assert.equal(fs.readFileSync(path.join(f.repository, 'src/filtered.ts'), 'utf8'), 'export const enabled = true;\n');
 });
+
+test('the shipped workspace commit language reaches the bounded generation prompt', async t => {
+  const f = fixture(t);
+  f.write('AGENTS.md', fs.readFileSync(new URL('../../resources/workspace/AGENTS.md', import.meta.url), 'utf8'), f.root);
+  f.write('feature.ts', 'export const enabled = true;\n');
+  const g = f.generation(); await g.application.generateCommitMessage(f.root, g.input());
+  const material = JSON.parse(g.captured().prompt.split('<materials>\n')[1].split('\n</materials>')[0]);
+  assert.match(material.rules[0].text, /Git 提交信息默认使用中文/);
+  assert.match(material.rules[0].text, /Conventional Commits/);
+  assert.match(material.rules[0].text, /更具体作用域的约定优先/);
+});

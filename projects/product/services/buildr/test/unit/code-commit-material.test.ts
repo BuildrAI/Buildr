@@ -56,6 +56,50 @@ test('normative excerpts prioritize actual language and message rules without lo
   assert.doesNotMatch(excerpt, /用户授权后|Run every build|register tasks/);
 });
 
+test('bounded excerpts retain output language from continuous Markdown lists after long communication guidance', () => {
+  const language = '- 所有思考和回复必须使用中文。';
+  const text = [
+    '# 工作空间规则', '', '## 用户沟通', '',
+    '- 面向用户时，使用直接、简练的表达。',
+    '- 回复需要说明结果。' + '其他沟通说明。'.repeat(100),
+    '- 专业术语必须使用“中文（English Term）”。', '',
+    '## 常驻边界', '', language,
+    '- 长期资产写回源目录。',
+    '- 未经授权不得执行开发命令。',
+  ].join('\n');
+  const observations = observed(); observations.ruleSources = 1;
+  observations.rules = [{ source: 'AGENTS.md', scope: 'workspace', text: commitRuleExcerpt(text), partial: true }];
+  const result = formatCodeCommitMaterial(source(), guidance, observations, 4096), data = JSON.parse(result.text);
+  assert.match(data.rules[0].text, /^- 所有思考和回复必须使用中文。/);
+  assert.ok(data.rules[0].text.includes(language));
+  assert.doesNotMatch(data.rules[0].text, /其他沟通说明|长期资产|开发命令/);
+  assert.equal(result.coverage.rulesPartial, true);
+  assert.ok(Buffer.byteLength(JSON.stringify(data.rules)) <= CODE_COMMIT_MATERIAL_LIMITS.rulesBytes);
+});
+
+test('general English communication language precedes long commit format guidance', () => {
+  const text = '## Commit format\n\n- Commit messages use type(scope): subject. ' + 'The subject should describe the change. '.repeat(45)
+    + '\n\n## Communication\n\n- All communication must be in English.';
+  const observations = observed(); observations.ruleSources = 1;
+  observations.rules = [{ source: 'AGENTS.md', scope: 'workspace', text: commitRuleExcerpt(text), partial: true }];
+  const data = JSON.parse(formatCodeCommitMaterial(source(), guidance, observations, 4096).text);
+  assert.match(data.rules[0].text, /^- All communication must be in English\./);
+});
+
+test('bounded excerpts preserve explicit repository English alongside the workspace Chinese convention', () => {
+  const observations = observed(); observations.ruleSources = 2;
+  observations.rules = [
+    { source: 'AGENTS.md', scope: 'workspace', text: commitRuleExcerpt('- 回复应清晰。\n- 提交说明默认使用中文。'), partial: true },
+    { source: 'repository/AGENTS.md', scope: 'repository', text: commitRuleExcerpt('# Repository rules\n\n- Explain technical terms in Chinese and English.\n- Commit messages must be written in English.\n  Keep identifiers in their original form.\n- Use type(scope): subject.\n- Run the complete development workflow.'), partial: true },
+  ];
+  const data = JSON.parse(formatCodeCommitMaterial(source(), guidance, observations, 4096).text);
+  assert.deepEqual(data.rules.map((rule: { scope: string }) => rule.scope), ['workspace', 'repository']);
+  assert.match(data.rules[0].text, /提交说明默认使用中文/);
+  assert.match(data.rules[1].text, /^- Commit messages must be written in English\.\n  Keep identifiers in their original form\./);
+  assert.match(data.rules[1].text, /type\(scope\): subject/);
+  assert.doesNotMatch(data.rules[1].text, /complete development workflow/);
+});
+
 test('rule scopes receive bounded shares and retain explicit partial status and verified task identity', () => {
   const observations = observed(); observations.ruleSources = 4;
   observations.rules = ['workspace', 'project', 'service-a', 'service-b'].map(scope => ({ source: 'AGENTS.md', scope, text: 'Use English for commit messages.\n' + 'Additional condition. '.repeat(100), partial: true }));

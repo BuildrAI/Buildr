@@ -123,16 +123,24 @@ export function formatCodeCommitMaterial(snapshot: CodeCommitSnapshot, guidance:
 }
 
 const relevant = /提交(?:说明|信息|消息|标题)|commit[ -]?(?:message|subject)|conventional.?commits?|Buildr-Task|BREAKING CHANGE|\bsubject\b|语言|language|中文|英文|\b(?:English|Chinese)\b/i;
-/** Retain original normative paragraphs; no inferred language, format or development workflow. */
+/** Retain original normative paragraphs or list items; no inferred language or workflow. */
 export function commitRuleExcerpt(text: string): string {
-  const paragraphs = text.split(/\n[ \t]*\n/); const selected: string[] = [];
+  // Markdown lists commonly have no blank lines. Keep each item and its continuation
+  // together so unrelated earlier bullets cannot consume a language rule's budget.
+  const paragraphs = text.split(/\n[ \t]*\n|\n(?=[ \t]*(?:[-+*]|\d+[.)])\s+)/); const selected: string[] = [];
   let selectedSection = 0;
   for (const paragraph of paragraphs) {
     const heading = /^(#{1,6})\s+(.+)/.exec(paragraph);
     if (heading) { if (relevant.test(heading[2])) selectedSection = heading[1].length; else if (heading[1].length <= selectedSection) selectedSection = 0; }
     if (selectedSection || relevant.test(paragraph)) selected.push(paragraph);
   }
-  const priority = (paragraph: string) => /(?:默认|使用|遵循|write|respond|reply|output).*(?:中文|英文|English|Chinese)|^#{1,6}\s+.*(?:语言|language)/im.test(paragraph) ? 0 : /提交(?:说明|信息|消息|标题)|commit[ -]?(?:message|subject)|conventional.?commits?|\bsubject\b/i.test(paragraph) ? 1 : 2;
+  const priority = (paragraph: string) => {
+    const language = /中文|英文|\b(?:English|Chinese)\b/i.test(paragraph);
+    const message = /提交(?:说明|信息|消息|标题)|commit[ -]?(?:message|subject)|\b(?:subject|body)\b/i.test(paragraph);
+    if (language && message) return 0;
+    if (language && /思考|回复|回答|输出|文本|文档|\b(?:responses?|replies|answers?|output|communication|writing|documentation|write|respond|reply)\b|^(?:[-+*]|\d+[.)])?\s*(?:默认|必须|始终)?(?:使用|采用)(?:中文|英文)|^(?:[-+*]|\d+[.)])?\s*use\s+(?:English|Chinese)\b/im.test(paragraph)) return 1;
+    return /提交(?:说明|信息|消息|标题)|commit[ -]?(?:message|subject)|conventional.?commits?|Buildr-Task|BREAKING CHANGE|\bsubject\b/i.test(paragraph) ? 2 : 3;
+  };
   return selected.map((text, index) => ({ text, index })).sort((left, right) => priority(left.text) - priority(right.text) || left.index - right.index).map(item => item.text).join('\n\n');
 }
 

@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
-import { DSH_DESKTOP_BRIDGE_SCHEMA, DSH_DESKTOP_BRIDGE_DISCOVERY_SEGMENTS, DSH_DESKTOP_BRIDGE_LIMITS, dshDesktopDiscoveryFilename, readDshDesktopDiscovery, dshDesktopRecord, type DshDesktopChannel, type DshDesktopDiscovery, type DshDesktopInspection, type DshDesktopRequest, type DshDesktopFrame } from '../contracts/dsh-desktop-bridge.ts';
+import { DSH_DESKTOP_BRIDGE_SCHEMA, DSH_DESKTOP_BRIDGE_DISCOVERY_SEGMENTS, DSH_DESKTOP_BRIDGE_LIMITS, dshDesktopDiscoveryFilename, readDshDesktopDiscovery, dshDesktopRecord, type DshDesktopChannel, type DshDesktopDiscovery, type DshDesktopGenerate, type DshDesktopInspection, type DshDesktopRequest, type DshDesktopFrame } from '../contracts/dsh-desktop-bridge.ts';
 import { agentFailure, readAgentExecutionConfig, type AgentExecutionConfig } from '../domain/agent-operations.ts';
 
 export function readDesktopDiscovery(home: string, channel: DshDesktopChannel): DshDesktopDiscovery {
@@ -62,7 +62,7 @@ export class DshDesktopTransport {
   }
   private validateInspection(value: unknown): DshDesktopInspection {
     const row = dshDesktopRecord(value), d = this.discovery, caps = dshDesktopRecord(row.capabilities);
-    if (row.schemaVersion !== d.schemaVersion || row.channel !== d.channel || row.profileKey !== d.profileKey || row.hostInstanceId !== d.hostInstanceId || row.appPath !== d.appPath || row.executable !== d.executable || row.dshVersion !== d.dshVersion || !['generate', 'currentSession', 'openSession', 'openTask'].every(key => typeof caps[key] === 'boolean') || !Array.isArray(row.clients)) throw agentFailure('agent_dsh_desktop_scope_changed', 'DSH 桌面范围或连接协议已变化，请重新发现并确认。', 409);
+    if (row.schemaVersion !== d.schemaVersion || row.channel !== d.channel || row.profileKey !== d.profileKey || row.hostInstanceId !== d.hostInstanceId || row.appPath !== d.appPath || row.executable !== d.executable || row.dshVersion !== d.dshVersion || !['generate', 'currentSession', 'openSession', 'openTask'].every(key => typeof caps[key] === 'boolean') || caps.lightweightGeneration !== undefined && typeof caps.lightweightGeneration !== 'boolean' || !Array.isArray(row.clients)) throw agentFailure('agent_dsh_desktop_scope_changed', 'DSH 桌面范围或连接协议已变化，请重新发现并确认。', 409);
     return value as DshDesktopInspection;
   }
   async inspect(): Promise<DshDesktopInspection> { await this.start(); return this.validateInspection(await this.request('inspect')); }
@@ -103,9 +103,10 @@ export class DshDesktopTransport {
     }
   }
   private fail(error: unknown) { this.ready = false; for (const p of this.pending.values()) { clearTimeout(p.timer); p.reject(error); } this.pending.clear(); }
-  async generate(input: { prompt: string; outputSchema: unknown; timeoutMs?: number; signal: AbortSignal; onConfigured(config: AgentExecutionConfig): void; onRunning(): void }): Promise<string> {
+  async generate(input: DshDesktopGenerate & { signal: AbortSignal; onConfigured(config: AgentExecutionConfig): void; onRunning(): void }): Promise<string> {
     const inspection = await this.start();
     if (!inspection.capabilities.generate) throw agentFailure('agent_dsh_generation_unavailable', '当前 DSH 桌面插件尚未提供生成能力。', 503);
+    if (input.reasoningEffort && inspection.capabilities.lightweightGeneration !== true) throw agentFailure('agent_dsh_lightweight_unavailable', '当前 DSH 桌面插件尚未提供轻量生成能力，请更新插件后重试；已有说明保留。', 503);
     if (input.signal.aborted) throw agentFailure('agent_run_cancelled', '本次生成已取消。', 409);
     const id = crypto.randomUUID();
     let aborted = false, configured = false;
@@ -118,7 +119,8 @@ export class DshDesktopTransport {
     input.signal.addEventListener('abort', abort, { once: true });
     try {
       const timeoutMs = Math.min(input.timeoutMs ?? DSH_DESKTOP_BRIDGE_LIMITS.defaultTimeoutMs, DSH_DESKTOP_BRIDGE_LIMITS.maxTimeoutMs);
-      const output = await this.request('generate', { prompt: input.prompt, outputSchema: input.outputSchema, timeoutMs }, timeoutMs + DSH_DESKTOP_BRIDGE_LIMITS.cancelTimeoutMs, { configured: config => { if (configured || !config.model || !config.modelProvider) throw agentFailure('agent_dsh_model_unconfirmed', 'DSH 未确认唯一有效的本次模型配置。', 502); configured = true; input.onConfigured(config); }, running: () => { if (!configured) throw agentFailure('agent_dsh_model_unconfirmed', 'DSH 未确认本次模型配置。', 502); input.onRunning(); } }, id);
+      const output = await this.request('generate', { prompt: input.prompt, outputSchema: input.outputSchema, timeoutMs,
+        ...(input.reasoningEffort ? { reasoningEffort: input.reasoningEffort } : {}) }, timeoutMs + DSH_DESKTOP_BRIDGE_LIMITS.cancelTimeoutMs, { configured: config => { if (configured || !config.model || !config.modelProvider) throw agentFailure('agent_dsh_model_unconfirmed', 'DSH 未确认唯一有效的本次模型配置。', 502); configured = true; input.onConfigured(config); }, running: () => { if (!configured) throw agentFailure('agent_dsh_model_unconfirmed', 'DSH 未确认本次模型配置。', 502); input.onRunning(); } }, id);
       if (!configured) throw agentFailure('agent_dsh_model_unconfirmed', 'DSH 未确认本次模型配置，结果未采用。', 502);
       if (aborted || input.signal.aborted) throw agentFailure('agent_run_cancelled', '本次生成已取消。', 409);
       if (typeof output !== 'string' || Buffer.byteLength(output) > DSH_DESKTOP_BRIDGE_LIMITS.outputBytes) throw agentFailure('agent_output_invalid', 'DSH 生成结果格式无效，已有说明保持。', 502);

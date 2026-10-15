@@ -12,13 +12,13 @@ export type DshDesktopIdentity = { schemaVersion: typeof DSH_DESKTOP_BRIDGE_SCHE
   appPath: string; executable: string };
 /** Private transport material: must never be included in a web response or log. */
 export type DshDesktopDiscovery = DshDesktopIdentity & { address: { host: '127.0.0.1'; port: number }; credential: string };
-export type DshDesktopCapabilities = { generate: boolean; currentSession: boolean; openSession: boolean; openTask: boolean };
+export type DshDesktopCapabilities = { generate: boolean; lightweightGeneration?: boolean; currentSession: boolean; openSession: boolean; openTask: boolean };
 export type DshDesktopClientState = { clientId: string; sessionId: string | null; desktop: boolean };
 export type DshDesktopInspection = DshDesktopIdentity & { capabilities: DshDesktopCapabilities;
   modelConfig: DshDesktopModelConfig | null; clients: DshDesktopClientState[] };
 export type DshDesktopHello = { schemaVersion: typeof DSH_DESKTOP_BRIDGE_SCHEMA; channel: DshDesktopChannel;
   profileKey: string; hostInstanceId: string; credential: string };
-export type DshDesktopGenerate = { prompt: string; outputSchema: unknown; timeoutMs?: number };
+export type DshDesktopGenerate = { prompt: string; outputSchema: unknown; timeoutMs?: number; reasoningEffort?: 'lowest-supported' };
 export type DshDesktopSessionTarget = { sessionId: string; clientId?: string };
 export type DshDesktopTaskTarget = DshDesktopSessionTarget & { taskUrl: string };
 export type DshDesktopRequest =
