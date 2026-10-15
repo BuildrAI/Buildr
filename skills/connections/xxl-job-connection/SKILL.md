@@ -1,12 +1,12 @@
 ---
 name: xxl-job-connection
-description: 使用明确绑定的新连接发现 XXL-JOB 执行器、核对服务调度、维护 BEAN 任务并读取运行日志时使用；加载所选实例及自带程序帮助，不接管旧连接。
+description: 使用明确绑定的连接发现 XXL-JOB 执行器、核对服务调度、维护 BEAN 任务并读取运行日志时使用；加载所选实例及自带程序帮助，不按同名接管实例。
 connectionDefinitions: [assets/connection.yml]
 ---
 
 # XXL-JOB 服务调度
 
-使用本技能（Skill）明确绑定的新连接实例，按任务、环境和网站核对目标，不按类别（Category）或名称自动接管旧 `buildr connection xxl-job` 实例。团队认证与个人覆盖由 Buildr 管理，每次使用完整用户名和密码组；不混合来源、不从旧存储取认证。安装本技能不迁移实例、认证或服务关联。
+使用本技能（Skill）明确绑定的连接实例，按任务、环境和网站核对目标，不按类别（Category）或名称自动接管另一实例。团队认证与个人覆盖由 Buildr 管理，每次使用完整用户名和密码组；不混合来源、不借用其他实例认证。安装本技能不迁移实例、认证或服务关联。
 
 先运行 `buildr connection-skill --help`，通过 `definitions list`、`list` 与 `get --connection <id>` 发现准确绑定及当前版本，再读取所选程序帮助。使用 `run --connection <id> --expected-revision <observed> -- <专业参数>`；实际参数以当前帮助为准。专业程序为本目录 `scripts/xxl-job-client.mjs`，只从本次私有进程间通信（IPC）取得所选连接；不要直接运行程序并自行拼认证。帮助、版本及 `node --check` 离线可用，不接认证、不访问真实系统。
 

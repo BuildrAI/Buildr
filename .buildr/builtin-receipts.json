@@ -189,11 +189,11 @@
       "type": "skill",
       "id": "kibana-connection",
       "target": "skills/connections/kibana-connection",
-      "integrity": "sha256-cea6806964710067caccd45ca96c548ae706ea071784861d21f026b60393cba0",
+      "integrity": "sha256-c30fdf9b01ad59ab63a34d423da1baaf6dd680bad39429122fc822e410525c33",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-a51f7f4e3c102bf17f9e553a76cce643fa2e27a8984e71eb6fd3da44ffb7cedb"
+          "integrity": "sha256-62670d8b6602da4505e5a7132a2ed0b31734f94fb0d88a1f50214429b86f9fea"
         },
         {
           "path": "assets/connection.yml",
@@ -201,11 +201,11 @@
         },
         {
           "path": "references/commands-and-results.md",
-          "integrity": "sha256-138c349b23c465a6e7f986b3712d2224658166caa334046a6fe7d3398f8947d4"
+          "integrity": "sha256-12afeb2baa21750dac22a688326e18358f207b73f85ef13bcb78987811a6358e"
         },
         {
           "path": "references/context-protocol.md",
-          "integrity": "sha256-76cc2a79274f75f3c514ffec5bb6313e22fe9c1d0952d35a43020dbedfbd4a36"
+          "integrity": "sha256-919ead316aa7c81d1ab12c81bd3bb2c7832a0746b1b42dd0183ec6c601a621cd"
         },
         {
           "path": "references/service-log-discovery.md",
@@ -245,11 +245,11 @@
       "type": "skill",
       "id": "mysql-connection",
       "target": "skills/connections/mysql-connection",
-      "integrity": "sha256-4225d0d98b21c5ee7d2945ccd18ccb2b21b077419a267b98cfd87c38b181f8d7",
+      "integrity": "sha256-bed6ba350223603c666631522339f7a46b4f5afa36cd2a0f35486e0f553fea59",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-9bb8cec999cc56d259ae84a2a33fecf762ed5d5075439eba1feae22b220b3454"
+          "integrity": "sha256-53bb408eadbf4bbbc569c7d9e723aafa995be75d717aca6e39797b8b07f5d824"
         },
         {
           "path": "assets/connection.yml",
@@ -257,7 +257,7 @@
         },
         {
           "path": "references/commands-and-results.md",
-          "integrity": "sha256-9c12fae5e31518ce875e0cdd0bce75bee70ba7cac8251a4800663274a6add687"
+          "integrity": "sha256-1062cce1ed0f1993d0ef78f34c81f45a6f00dba914f45130f0110bca99d72bc9"
         }
       ]
     },
@@ -265,11 +265,11 @@
       "type": "skill",
       "id": "nacos-connection",
       "target": "skills/connections/nacos-connection",
-      "integrity": "sha256-1c5f8de70894f5fffcc07814847f16e722e61e501ac879d3faebeab58247808a",
+      "integrity": "sha256-56c347bfad3d2fe6e508ab3e6b5dc4c63dad5dc0106b76e2c5ef774c4531ef85",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-4c81d4359c652973d2c9ac1264bf1b30814f8fba272ce2bb8c8fd1ed60296936"
+          "integrity": "sha256-f7692a019f69fe523096ae0080c88b85db0093a6826550486de39bfca11edec3"
         },
         {
           "path": "assets/connection.yml",
@@ -597,11 +597,11 @@
       "type": "skill",
       "id": "xxl-job-connection",
       "target": "skills/connections/xxl-job-connection",
-      "integrity": "sha256-623bde9786d1d10464aed4f096cd0994ec31539421649b43e96fe67a9caf5a4c",
+      "integrity": "sha256-e60da2da8207dce8220b2a3c1155b04f953bc8d1e1971612a3118cd003f091cc",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-cc50acaa2cd0aa530425076c1519b4a8ea3859d9e91410b95e48ab45ec74b764"
+          "integrity": "sha256-7f16ada32a6802d67befa5e34052e72936bf7efca484919cbe356af044014130"
         },
         {
           "path": "assets/connection.yml",
@@ -609,7 +609,7 @@
         },
         {
           "path": "references/commands-and-results.md",
-          "integrity": "sha256-df4e83d7f50262600b5103b9b6c56c528fbbd2be95d3d9640314a340058f2a84"
+          "integrity": "sha256-fc5916b0dabbb9e33b9638c4fc546ef1e4d8f452e2087e2a8e74db68dd385e12"
         },
         {
           "path": "scripts/lib/configuration.mjs",

@@ -1,6 +1,6 @@
 ---
 name: nacos-connection
-description: 从服务代码定位 Nacos 配置，使用明确绑定的新连接实例发现、读取、比较及受控发布；不接管旧 buildr connection nacos 实例，不执行服务部署。
+description: 从服务代码定位 Nacos 配置，使用明确绑定的连接实例发现、读取、比较及受控发布；不按同名接管实例，不执行服务部署。
 connectionDefinitions: [assets/connection.yml]
 ---
 
@@ -8,7 +8,7 @@ connectionDefinitions: [assets/connection.yml]
 
 本技能（Skill）与[连接声明](assets/connection.yml)、自带专业程序共同交付。程序使用 Buildr 的 Node.js 运行基线，无需另装网络库；技能（Skill）已投射不代表实例已配置或远端能力已验证。
 
-先从 `buildr connection-skill --help` 发现当前通用入口，明确选择实例及其绑定来源。通过实例发现得到的本技能（Skill）和程序帮助继续工作，不能按系统名称、环境或类别猜测另一实现。旧 `buildr connection nacos` 仍使用旧路径；不自动迁移、借用旧认证或操作同名实例。
+先从 `buildr connection-skill --help` 发现当前通用入口，明确选择实例及其绑定来源。通过实例发现得到的本技能（Skill）和程序帮助继续工作，不能按系统名称、环境或类别猜测另一实现。不按同名接管另一实例，不从已退役存储借用认证。
 
 专业程序为 `scripts/nacos-client.mjs`。帮助和版本不需要认证；实际操作通过 Buildr 通用启动入口注入私有连接上下文，不能直接把用户名、密码放入命令参数、环境变量或提示词（Prompt）。团队认证由团队实例文件管理；本机个人认证整组覆盖，个人组失效不会回退团队。
 
