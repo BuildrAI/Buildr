@@ -73,7 +73,9 @@ test('publication effects use the real artifact and recover each external partia
     catch (error) { progress('root-cleanup', 'failed', startedAt, { cleanup: 'failed', ...childFacts(error) }); throw error; }
   });
   const npmCache = path.join(root, 'npm-content-cache');
-  let installCount = 0;
+  let realInstallCount = 0;
+  let consumerChecks = 0;
+  let injectedConsumerFailures = 0;
   let installDurationMs = 0;
   const sourceRepo = path.join(root, 'source');
   fs.mkdirSync(sourceRepo);
@@ -88,6 +90,34 @@ test('publication effects use the real artifact and recover each external partia
   const version = artifact.manifest.version;
   const tag = `v${version}`;
   const notes = 'Concrete fixture release notes.\n';
+  const prefix = path.join(root, 'installed');
+  const installedMetadataPath = path.join(prefix, 'node_modules/@buildr-ai/buildr/package.json');
+  const assertInstalledPackage = () => {
+    const metadata = JSON.parse(fs.readFileSync(installedMetadataPath, 'utf8'));
+    assert.equal(metadata.name, artifact.manifest.packageName);
+    assert.equal(metadata.version, version);
+  };
+  // The artifact and consumer input are identical in every recovery scenario.
+  // Prove the real offline installation once; the scenarios below exercise the
+  // publication protocol and independently inspect that installed package.
+  const installStartedAt = Date.now();
+  const cli = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+  realInstallCount++;
+  progress('registry-install', 'started', installStartedAt, { realInstallCount });
+  const installation = spawnSync(cli, ['install', '--offline', '--ignore-scripts', '--prefix', prefix, artifact.tarball], { encoding: 'utf8', shell: process.platform === 'win32', env: { ...process.env, npm_config_cache: npmCache } });
+  installDurationMs += Date.now() - installStartedAt;
+  progress('registry-install', installation.status === 0 ? 'passed' : 'failed', installStartedAt, {
+    realInstallCount, ...childFacts(installation),
+    ...(installation.status === 0 ? {} : retainInstallFailure(installation, realInstallCount)),
+  });
+  assert.equal(installation.status, 0, installation.stderr);
+  assertInstalledPackage();
+  const installedMetadata = fs.readFileSync(installedMetadataPath, 'utf8');
+  try {
+    fs.writeFileSync(installedMetadataPath, JSON.stringify({ ...JSON.parse(installedMetadata), version: '0.0.0-wrong' }));
+    assert.throws(assertInstalledPackage, assert.AssertionError, 'a stale installed package cannot satisfy a recovery check');
+  } finally { fs.writeFileSync(installedMetadataPath, installedMetadata); }
+  assertInstalledPackage();
   for (const failure of ['none', 'tag-before-npm', 'npm-response-lost', 'github-denied', 'github-response-lost', 'registry-smoke', 'integrity-conflict']) {
     await t.test(failure, async sub => {
       const scenarioStartedAt = Date.now();
@@ -107,7 +137,7 @@ test('publication effects use the real artifact and recover each external partia
         let failed = false;
         let writes = 0;
         let releaseWrites = 0;
-        let installed = 0;
+        let scenarioConsumerChecks = 0;
         let repaired = false;
         const server = http.createServer((req, res) => {
           const json = (status: number, body: unknown) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(body)); };
@@ -160,26 +190,17 @@ test('publication effects use the real artifact and recover each external partia
           registryWait: { attempts: 2, delayMs: 1 },
           registryInstall: () => {
             if (failure === 'registry-smoke' && !repaired) {
+              injectedConsumerFailures++;
               const startedAt = Date.now();
-              progress('registry-install-injected-failure', 'started', startedAt, { failure, installCount, injected: true });
-              progress('registry-install-injected-failure', 'passed', startedAt, { failure, installCount, injected: true, expectedFailure: true });
+              progress('registry-install-injected-failure', 'started', startedAt, { failure, consumerChecks, injected: true });
+              progress('registry-install-injected-failure', 'passed', startedAt, { failure, consumerChecks, injected: true, expectedFailure: true });
               throw new Error('injected install read failure');
             }
-            installed++;
-            installCount++;
-            const installStartedAt = Date.now();
-            const prefix = path.join(repo, 'installed');
-            const cli = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-            progress('registry-install', 'started', installStartedAt, { failure, installCount, scenarioInstallCount: installed });
-            const result = spawnSync(cli, ['install', '--offline', '--ignore-scripts', '--prefix', prefix, artifact.tarball], { encoding: 'utf8', shell: process.platform === 'win32', env: { ...process.env, npm_config_cache: npmCache } });
-            installDurationMs += Date.now() - installStartedAt;
-            progress('registry-install', result.status === 0 ? 'passed' : 'failed', installStartedAt, {
-              failure, installCount, scenarioInstallCount: installed, ...childFacts(result),
-              ...(result.status === 0 ? {} : retainInstallFailure(result, installCount)),
-            });
-            assert.equal(result.status, 0, result.stderr);
-            const metadata = JSON.parse(fs.readFileSync(path.join(prefix, 'node_modules/@buildr-ai/buildr/package.json'), 'utf8'));
-            assert.equal(metadata.version, version);
+            const checkStartedAt = Date.now();
+            scenarioConsumerChecks++;
+            consumerChecks++;
+            assertInstalledPackage();
+            progress('installed-package-check', 'passed', checkStartedAt, { failure, consumerChecks, scenarioConsumerChecks, realInstallCount });
             return { status: 'passed' };
           },
         };
@@ -188,6 +209,7 @@ test('publication effects use the real artifact and recover each external partia
         if (failure === 'integrity-conflict') {
           assert.equal(first.status, 'failed');
           assert.equal(writes, 0);
+          assert.equal(scenarioConsumerChecks, 0, 'conflicting bytes never reach the package consumer');
           assert.equal(git(repo, ['ls-remote', 'origin', `refs/tags/${tag}`]), '');
           return;
         }
@@ -205,18 +227,21 @@ test('publication effects use the real artifact and recover each external partia
         assert.equal(third.status, 'passed');
         assert.equal(writes, writesBefore);
         assert.equal(releaseWrites, 1);
-        assert.equal(installed, 2, 'each successful recovery retains both real package-consumer installations');
+        assert.equal(scenarioConsumerChecks, 2, 'recovery and idempotent continuation both request package consumption');
       } catch (error) {
         scenarioStatus = 'failed';
         scenarioFailureFacts = childFacts(error);
         throw error;
       } finally {
-        progress(`scenario-${failure}`, scenarioStatus, scenarioStartedAt, { failure, installCount, bodyCompleted: true, ...scenarioFailureFacts });
+        progress(`scenario-${failure}`, scenarioStatus, scenarioStartedAt, { failure, consumerChecks, realInstallCount, bodyCompleted: true, ...scenarioFailureFacts });
       }
     });
   }
-  assert.equal(installCount, 12);
-  t.diagnostic(`publication package-consumer installs=${installCount} durationMs=${installDurationMs}`);
+  assert.equal(realInstallCount, 1);
+  assert.equal(consumerChecks, 12);
+  assert.equal(injectedConsumerFailures, 1);
+  assert.equal(readReleaseArtifact(built.manifestPath).manifest.sha256, artifact.manifest.sha256, 'all scenarios retain the original frozen bytes');
+  t.diagnostic(`publication real installs=${realInstallCount} durationMs=${installDurationMs} protocol consumer checks=${consumerChecks}`);
 });
 
 test('publishFrozenArtifact converges on delayed registry propagation without republishing', async t => {
