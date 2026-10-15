@@ -11,6 +11,7 @@ import { createReleaseTransactionEvidence } from '../../tools/release/release-tr
 import { runReleaseOperation } from '../../tools/release/release-orchestration-runner.ts';
 import { spawnSync } from 'node:child_process';
 import { checkPublicationCompatibility } from '../../tools/release/release-publication.ts';
+import { runPluginHostedOperation } from '../../tools/release/plugin-hosted-release.ts';
 import { createReleaseArtifactFixture } from '../helpers/release-artifact-fixture.ts';
 
 const hash = (digit: string) => digit.repeat(40), digest = (digit: string) => `sha256-${digit.repeat(64)}`;
@@ -93,6 +94,81 @@ test('plugin-only preparation does not create a main transaction or require a ne
   const result = await preparePackageRelease({ repo: '/fixture', mainCommit: hash('c'), selection: f.selection }, f.scope, f.dependencies);
   assert.equal(result.status, 'awaiting-publication-authorization'); assert.equal(result.context.selection.version, null);
   assert.equal(result.context.packages.buildr, undefined); assert.equal(f.state.transactions.buildr, undefined);
+});
+
+test('a new frozen selection archives a verified failed plugin preparation before requesting its new exact source', async () => {
+  const f = fixture(), saved: any[] = [], calls: string[] = [];
+  const previous = { requested: true, version: '0.1.0', sourceCommit: hash('e'), runId: 800,
+    sourceCandidate: { runId: 89, commit: hash('9'), selectionIdentity: digest('8') } };
+  f.state.pluginPreparation = structuredClone(previous);
+  f.scope.save = () => saved.push(structuredClone(f.state));
+  let lists = 0;
+  f.scope.execute = (command: string, args: string[]) => {
+    assert.equal(command, 'gh'); calls.push(args.slice(0, 2).join(' '));
+    if (args[0] === 'api') {
+      const old = args[1].endsWith('/800');
+      return { status: 0, stdout: JSON.stringify({ ...f.run('dsh-plugin', old ? 800 : 801, old ? 'failure' : null),
+        display_title: 'DSH prepare 0.1.0', head_sha: old ? previous.sourceCommit : hash('c'), status: old ? 'completed' : 'in_progress' }) };
+    }
+    if (args[0] === 'run') return { status: 0, stdout: JSON.stringify(lists++ === 0 ? [] : [{ databaseId: 801, displayTitle: 'DSH prepare 0.1.0', headSha: hash('c') }]) };
+    assert.deepEqual(args.slice(0, 2), ['workflow', 'run']);
+    assert.ok(args.includes(`source_commit=${f.selection.releaseHead}`));
+    assert.ok(args.includes(`selection_identity=${f.selection.selectionIdentity}`));
+    assert.deepEqual(saved.at(-1).pluginPreparationHistory[0].pointer, previous, 'the original complete request is saved before a new dispatch');
+    return { status: 0, stdout: '' };
+  };
+  f.dependencies.runPluginHostedOperation = runPluginHostedOperation;
+  const result = await preparePackageRelease({ repo: '/fixture', mainCommit: hash('c'), selection: f.selection }, f.scope, f.dependencies);
+  assert.equal(result.status, 'plugin-preparation-running');
+  assert.deepEqual(f.state.pluginPreparationHistory[0].pointer, previous);
+  assert.equal(f.state.pluginPreparationHistory[0].failure.runId, 800);
+  assert.equal(f.state.pluginPreparationHistory[0].failure.conclusion, 'failure');
+  assert.equal(f.state.pluginPreparation.runId, 801); assert.equal(f.state.pluginPreparation.sourceCommit, hash('c'));
+  assert.deepEqual(f.state.pluginPreparation.sourceCandidate, { runId: 90, commit: f.selection.releaseHead, selectionIdentity: f.selection.selectionIdentity });
+  assert.equal(calls.filter(call => call === 'workflow run').length, 1);
+  assert.equal(f.scope.effects.filter((effect: any) => effect.type === 'plugin-failed-preparation-replaced').length, 1);
+});
+
+test('publication authority or any recorded publication request prevents replacing the plugin prepare pointer', async () => {
+  for (const publication of [
+    { publicationAuthorization: { contextIdentity: digest('9') } }, { publication: { requested: true, runId: null } },
+    { publicationEvidence: { status: 'passed' } }, { packagePublications: { buildr: { requested: true, runId: null } } },
+    { packagePublications: { 'dsh-plugin': { requested: false, runId: 900 } } },
+    { packagePublications: { 'dsh-plugin': { evidence: { status: 'passed' } } } },
+  ]) {
+    const f = fixture();
+    const previous = { requested: true, version: '0.1.0', sourceCommit: hash('e'), runId: 800,
+      sourceCandidate: { runId: 89, commit: hash('9'), selectionIdentity: digest('8') } };
+    f.state.pluginPreparation = structuredClone(previous); Object.assign(f.state, publication);
+    f.dependencies.runPluginHostedOperation = () => assert.fail('a publication-owned operation cannot start a new preparation');
+    await assert.rejects(() => preparePackageRelease({ repo: '/fixture', mainCommit: hash('c'), selection: f.selection }, f.scope, f.dependencies), /no publication authorization or request/u);
+    assert.deepEqual(f.state.pluginPreparation, previous); assert.equal(f.state.pluginPreparationHistory, undefined);
+    assert.deepEqual(f.scope.effects, []); assert.equal(f.counts().saved, 0);
+  }
+});
+
+test('a lost new dispatch preserves the observed failed original request and its history before returning unknown', async () => {
+  const f = fixture(), saved: any[] = [];
+  const previous = { requested: true, version: '0.1.0', sourceCommit: hash('e'), runId: null,
+    sourceCandidate: { runId: 89, commit: hash('9'), selectionIdentity: digest('8') } };
+  f.state.pluginPreparation = structuredClone(previous); f.scope.save = () => saved.push(structuredClone(f.state));
+  let lists = 0, dispatches = 0;
+  f.scope.execute = (command: string, args: string[]) => {
+    assert.equal(command, 'gh');
+    if (args[0] === 'run') return { status: 0, stdout: JSON.stringify(lists++ === 0
+      ? [{ databaseId: 800, displayTitle: 'DSH prepare 0.1.0', headSha: previous.sourceCommit }] : []) };
+    if (args[0] === 'api') return { status: 0, stdout: JSON.stringify({ ...f.run('dsh-plugin', 800, 'failure'), display_title: 'DSH prepare 0.1.0', head_sha: previous.sourceCommit }) };
+    assert.deepEqual(args.slice(0, 2), ['workflow', 'run']); dispatches++;
+    assert.deepEqual(saved.at(-1).pluginPreparationHistory[0].pointer, { ...previous, runId: 800 });
+    return { status: 1, stderr: 'lost response' };
+  };
+  f.dependencies.runPluginHostedOperation = runPluginHostedOperation;
+  const result = await preparePackageRelease({ repo: '/fixture', mainCommit: hash('c'), selection: f.selection }, f.scope, f.dependencies);
+  assert.equal(result.status, 'plugin-preparation-dispatch-unconfirmed'); assert.equal(dispatches, 1);
+  assert.deepEqual(f.state.pluginPreparationHistory[0].pointer, { ...previous, runId: 800 });
+  assert.equal(f.state.pluginPreparationHistory[0].failure.conclusion, 'failure');
+  assert.equal(f.state.pluginPreparation.runId, null); assert.equal(f.state.pluginPreparation.requested, true);
+  assert.equal(f.state.pluginPreparation.sourceCommit, hash('c'));
 });
 
 test('plugin-only continuation binds authorization, original bytes and all owner readback before cleanup', async () => {

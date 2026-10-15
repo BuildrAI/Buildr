@@ -5,7 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { gzipSync } from 'node:zlib';
 import { artifactFromTarball } from '../../tools/release/package-artifact-observation.ts';
-import { readHostedPluginCandidate, readHostedPluginJournal, runPluginHostedOperation, validatePluginHostedRun } from '../../tools/release/plugin-hosted-release.ts';
+import { readHostedPluginCandidate, readHostedPluginJournal, reconcilePluginPreparationPointer, runPluginHostedOperation, validatePluginHostedRun } from '../../tools/release/plugin-hosted-release.ts';
 import { createReleaseCandidate, PLUGIN_SERVICE_PATH, SOURCE_SDK_MANIFEST, sourceSdkIdentityFromFiles } from '../../../dsh-plugin/tools/release-candidate.ts';
 import { archiveTreeIdentity } from '../../../dsh-plugin/tools/verify-all.ts';
 import { identity } from '../../../dsh-plugin/tools/verify-buildr-plugin-pair.ts';
@@ -112,6 +112,64 @@ test('changed original pointer source or version fails before host calls; missin
 test('a partially lost original pointer cannot bypass its stored version binding', () => {
   const pointer = { requested: true, version: '0.1.0-rc.8', runId: 22 }, hosted = harness();
   assert.throws(() => runPluginHostedOperation(options(pointer), hosted.dependencies), /pointer identity/);
+  assert.deepEqual(hosted.calls, []);
+});
+
+test('failed preparation reconciliation reads the original identity and retains its complete request without dispatch', () => {
+  for (const runId of [22, null]) {
+    const pointer: any = { requested: true, version, sourceCommit: 'a'.repeat(40), runId,
+      sourceCandidate: { runId: 9, commit: 'd'.repeat(40), selectionIdentity: 'sha256-' + '3'.repeat(64) } };
+    const before = structuredClone(pointer);
+    const hosted = harness({ rows: [{ ...row(22), headSha: pointer.sourceCommit }], run: run('prepare', 22, { head_sha: pointer.sourceCommit, conclusion: 'failure' }) });
+    const reconciled = reconcilePluginPreparationPointer({ ...options(pointer), allowReplacement: true }, hosted.dependencies);
+    assert.deepEqual(pointer, before, 'the observer does not mutate the retained operation');
+    assert.deepEqual(reconciled.pointer, {});
+    assert.deepEqual(reconciled.previousPointer, { ...before, runId: 22 });
+    assert.equal(reconciled.failure.runId, 22); assert.equal(reconciled.failure.conclusion, 'failure');
+    assert.equal(reconciled.failure.sourceCommit, before.sourceCommit);
+    assert.equal(reconciled.effects[0].type, 'plugin-failed-preparation-replaced');
+    assert.equal(hosted.dispatches(), 0);
+    assert.equal(hosted.calls.filter((call: any) => call.args[0] === 'run').length, runId === null ? 1 : 0);
+  }
+});
+
+test('unconfirmed, ambiguous, active, successful, unreadable and mismatched preparations keep their original pointer', () => {
+  const pointer = { requested: true, version, sourceCommit: 'a'.repeat(40), runId: 22,
+    sourceCandidate: { runId: 9, commit: 'd'.repeat(40), selectionIdentity: 'sha256-' + '3'.repeat(64) } };
+  const oldRun = run('prepare', 22, { head_sha: pointer.sourceCommit, conclusion: 'failure' });
+  for (const change of [
+    { status: 'in_progress', conclusion: null }, { status: 'queued', conclusion: null }, { conclusion: 'success' },
+    { conclusion: null }, { conclusion: 'cancelled' }, { conclusion: 'timed_out' }, { head_sha: mainSource }, { run_attempt: 2 },
+    { repository: { full_name: 'Other/Buildr' } }, { path: '.github/workflows/publish.yml' }, { event: 'push' },
+    { head_branch: 'dev' }, { display_title: `DSH publish ${version}` }, { id: 23 },
+  ]) {
+    const retained = structuredClone(pointer), hosted = harness({ run: { ...oldRun, ...change } });
+    assert.throws(() => reconcilePluginPreparationPointer({ ...options(retained), allowReplacement: true }, hosted.dependencies));
+    assert.deepEqual(retained, pointer); assert.equal(hosted.dispatches(), 0);
+  }
+  for (const rows of [[], [22, 23].map(id => ({ ...row(id), headSha: pointer.sourceCommit }))]) {
+    const retained = { ...structuredClone(pointer), runId: null }, before = structuredClone(retained), hosted = harness({ rows });
+    assert.throws(() => reconcilePluginPreparationPointer({ ...options(retained), allowReplacement: true }, hosted.dependencies));
+    assert.deepEqual(retained, before); assert.equal(hosted.dispatches(), 0);
+  }
+  const retained = structuredClone(pointer);
+  assert.throws(() => reconcilePluginPreparationPointer({ ...options(retained), allowReplacement: true }, { execute: () => { throw new Error('unreadable'); } }), /unreadable/u);
+  assert.deepEqual(retained, pointer);
+});
+
+test('preparation replacement refuses missing intent, version drift and invalid new selection before remote reads', () => {
+  const pointer = { requested: true, version, sourceCommit: 'a'.repeat(40), runId: 22,
+    sourceCandidate: { runId: 9, commit: 'd'.repeat(40), selectionIdentity: 'sha256-' + '3'.repeat(64) } };
+  for (const change of [{ allowReplacement: false }, { operation: 'publish' }, { version: '0.1.0-rc.8' },
+    { sourceCandidateRunId: 0 }, { candidateSourceCommit: 'HEAD' }, { selectionIdentity: 'unknown' }, { peer: null },
+    { pointer: { ...pointer, requested: false } }, { pointer: { ...pointer, sourceCandidate: undefined } }]) {
+    const request: any = { ...options(structuredClone(pointer)), allowReplacement: true, ...change }, before = structuredClone(request.pointer);
+    const hosted = harness();
+    assert.throws(() => reconcilePluginPreparationPointer(request, hosted.dependencies));
+    assert.deepEqual(request.pointer, before); assert.deepEqual(hosted.calls, []);
+  }
+  const hosted = harness(), same = options({ requested: true, version, sourceCommit: mainSource, runId: 22 });
+  assert.equal(reconcilePluginPreparationPointer(same, hosted.dependencies).pointer, same.pointer);
   assert.deepEqual(hosted.calls, []);
 });
 

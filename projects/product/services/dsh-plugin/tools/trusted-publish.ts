@@ -57,7 +57,7 @@ function sourceState(repo: string): SourceState {
   git(['diff', '--exit-code', 'HEAD', '--', PLUGIN_SERVICE_PATH, PLUGIN_WORKFLOW_PATH]);
   const workflow = execFileSync('git', ['show', `${sourceCommit}:${PLUGIN_WORKFLOW_PATH}`], { cwd: repo, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
   if (readFileSync(join(repo, PLUGIN_WORKFLOW_PATH), 'utf8') !== workflow) failure('plugin-workflow-drift');
-  const committed = (path: string) => execFileSync('git', ['show', `${sourceCommit}:${PLUGIN_SERVICE_PATH}/${path}`], { cwd: repo, stdio: ['ignore', 'pipe', 'pipe'] });
+  const committed = (path: string) => execFileSync('git', ['show', `${sourceCommit}:${PLUGIN_SERVICE_PATH}/${path}`], { cwd: repo, maxBuffer: 8 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] });
   const sourceSdk = sourceSdkIdentityFromFiles(committed(SOURCE_SDK_MANIFEST), committed('sdk-patches/dsh-v0.2.0-rc.2-event-sources-settings.patch'));
   return { sourceCommit, sourceTree: git(['rev-parse', `${sourceCommit}:${PLUGIN_SERVICE_PATH}`]), version: metadata.version, workflowSha256: createHash('sha256').update(workflow).digest('hex'), sourceSdk };
 }
