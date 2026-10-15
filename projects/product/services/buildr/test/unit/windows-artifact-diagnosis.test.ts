@@ -72,6 +72,30 @@ test('diagnosis reads back original bytes and executes only the Windows plan wit
   assert.doesNotMatch(JSON.stringify(summary), /private-|forged|sourceRecord/u);
 });
 
+test('package-consumer diagnosis executes and summarizes only the unchanged original package consumer', async () => {
+  const scenario = 'package-consumer-windows', plan = createWindowsArtifactDiagnosisPlan(scenario);
+  const original = createCandidateCiShardPlan('runtime-windows', { externalArtifact: true });
+  assert.deepEqual(plan.steps.map((step: any) => step.id), ['release-tarball-smoke']);
+  assert.deepEqual(plan.steps[0], original.steps.find((step: any) => step.id === 'release-tarball-smoke'));
+  const saved: any[] = []; let executions = 0;
+  const summary = await runWindowsArtifactDiagnosis({ env: { ...env, DIAGNOSTIC_SCENARIO: scenario } }, {
+    platform: 'win32', readRun: () => run, readGitFacts: () => facts, readArtifact: () => artifact,
+    writeSummary: (_directory, value) => saved.push(structuredClone(value)),
+    execute: async (selected, options) => {
+      executions++; assert.deepEqual(selected.steps, plan.steps); assert.equal(options.reuse, false);
+      assert.equal(options.env.BUILDR_CANDIDATE_TARBALL, artifact.tarball);
+      const results = selected.steps.map((step: any) => result(step.id));
+      options.onComplete(results[0]); return { passed: true, results };
+    },
+  });
+  assert.equal(executions, 1); assert.equal(summary.status, 'passed'); assert.equal(summary.scenario, scenario);
+  assert.equal(summary.artifactConsumed, true); assert.equal(summary.aggregateEligible, false);
+  assert.equal(summary.checkSourceCommit, checkSource); assert.equal(summary.artifactSourceCommit, oldSource);
+  assert.deepEqual(summary.results.map((item: any) => item.id), ['release-tarball-smoke']);
+  assert.ok(saved.every(value => value.results.length <= 1));
+  assert.deepEqual(saved.at(-1).results, summary.results);
+});
+
 test('source-only diagnoses select only their failed owner and never pass artifact inputs to it', async () => {
   for (const [scenario, definition] of Object.entries(WINDOWS_DIAGNOSIS_SCENARIOS).filter(([, value]) => !value.artifactConsumer)) {
     const plan = createWindowsArtifactDiagnosisPlan(scenario), original = createCandidateCiShardPlan(definition.shard, { externalArtifact: false });

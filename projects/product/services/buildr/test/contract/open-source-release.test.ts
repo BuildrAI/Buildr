@@ -471,7 +471,7 @@ test('CI and publish workflows use the supported Node runtime', () => {
   assert.equal(verifyDocument.jobs['dev-feedback-windows']['runs-on'], 'windows-latest');
   assert.equal(verifyDocument.jobs['candidate-plan'].if, "(!inputs.diagnostic_scope || inputs.diagnostic_scope == 'none') && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'dev'))");
   assert.deepEqual(verifyDocument.on.workflow_dispatch.inputs.purpose.options, ['candidate', 'release-rehearsal']);
-  assert.deepEqual(verifyDocument.on.workflow_dispatch.inputs.diagnostic_scope.options, ['none', 'core-project-task-macos', 'nested-git-isolation-windows', 'runtime-windows', 'failed-windows']);
+  assert.deepEqual(verifyDocument.on.workflow_dispatch.inputs.diagnostic_scope.options, ['none', 'core-project-task-macos', 'nested-git-isolation-windows', 'runtime-windows', 'failed-windows', 'package-consumer-windows']);
   assert.equal(verifyDocument.on.workflow_dispatch.inputs.diagnostic_scope.default, 'none');
   assert.equal(verifyDocument.on.workflow_dispatch.inputs.expected_source_tree.required, false);
   assert.equal(verifyDocument.on.workflow_dispatch.inputs.rehearsal_identity.required, false);
@@ -530,12 +530,14 @@ test('Windows original-package diagnosis remains separate from complete Candidat
   const diagnosis = document.jobs['diagnostic-runtime-windows'];
   assert.equal(diagnosis.needs, undefined);
   assert.equal(diagnosis['runs-on'], 'windows-2025');
+  assert.equal(diagnosis.defaults.run.shell, undefined);
+  assert.equal(diagnosis.steps[0].shell, 'bash');
   assert.deepEqual(diagnosis.permissions, { contents: 'read', actions: 'read' });
   assert.equal(diagnosis.strategy['fail-fast'], false);
   assert.match(diagnosis.if, /github.event_name == 'workflow_dispatch'/u);
   assert.match(diagnosis.if, /inputs.diagnostic_scope == 'runtime-windows'/u);
   assert.match(diagnosis.if, /inputs.diagnostic_scope == 'failed-windows'/u);
-  for (const scenario of ['runtime-windows', 'worktree-windows', 'release-contract-windows', 'git-convergence-windows']) assert.ok(diagnosis.strategy.matrix.scenario.includes(scenario));
+  for (const scenario of ['runtime-windows', 'worktree-windows', 'release-contract-windows', 'git-convergence-windows', 'package-consumer-windows']) assert.ok(diagnosis.strategy.matrix.scenario.includes(scenario));
   assert.equal(diagnosis.env.DIAGNOSTIC_CANDIDATE_RUN_ID, '${{ inputs.diagnostic_candidate_run_id }}');
   assert.equal(diagnosis.env.DIAGNOSTIC_CANDIDATE_SOURCE, '${{ inputs.diagnostic_candidate_source }}');
   assert.equal(diagnosis.env.EXPECTED_SOURCE_TREE, '${{ inputs.expected_source_tree }}');
@@ -549,6 +551,12 @@ test('Windows original-package diagnosis remains separate from complete Candidat
   assert.equal(diagnosis.steps.find((step: any) => step.uses?.startsWith('actions/setup-node@')).with['node-version'], '24.x');
   const execution = diagnosis.steps.find((step: any) => step.run === 'node test/verification/release/windows-artifact-diagnosis.ts');
   assert.equal(execution.env.BUILDR_VERIFICATION_PROFILE, 'ci-workspace-limited');
+  assert.equal(execution.shell, undefined);
+  assert.match(diagnosis.if, /inputs.diagnostic_scope == 'package-consumer-windows'/u);
+  const resolution = diagnosis.steps.find((step: any) => step.name === 'Record native Windows command resolution');
+  assert.match(resolution.run, /Get-Command tar -CommandType Application/u);
+  assert.match(resolution.run, /native-command-resolution\.json/u);
+  assert.equal(resolution.env.DIAGNOSTIC_OUTPUT, execution.env.DIAGNOSTIC_OUTPUT);
   assert.equal(execution.env.DIAGNOSTIC_RUN_JSON, '${{ runner.temp }}/diagnostic-original-run.json');
   assert.equal(execution.env.DIAGNOSTIC_ARTIFACT_DIR, download.with.path);
   assert.equal(execution.env.DIAGNOSTIC_OUTPUT, diagnosis.steps.at(-1).with.path);
