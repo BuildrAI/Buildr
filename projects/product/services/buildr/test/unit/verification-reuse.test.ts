@@ -97,3 +97,30 @@ test('only reviewed fixture runtime checks exclude Product governance material w
   assert.notEqual(createVerificationReuseIdentity({ ...runtime, executor: { ...runtime.executor, args: ['--different-recipe'] } }, complete)?.key, identity.key);
   assert.notEqual(createVerificationReuseIdentity(runtime, { ...complete, contentIdentities: { ...complete.contentIdentities, runtime: `sha256-${'b'.repeat(64)}` } })?.key, identity.key);
 });
+
+test('declared semantic inputs distinguish subsets and bases without changing unrelated check identities', () => {
+  const names = ['BUILDR_CHANGED_PATHS_JSON', 'BUILDR_VERIFICATION_BASE'];
+  const scoped: VerificationReuseStep = { ...step, reuse: { scope: 'backend', inputs: names } };
+  const inputs = { ...snapshot, inputIdentities: { BUILDR_CHANGED_PATHS_JSON: sha, BUILDR_VERIFICATION_BASE: sha } };
+  const identity = createVerificationReuseIdentity(scoped, inputs);
+  assert.ok(identity);
+  assert.equal(createVerificationReuseIdentity(scoped, snapshot), null, 'missing declared input summaries cannot imply full coverage');
+  for (const name of names) {
+    const changed = { ...inputs, inputIdentities: { ...inputs.inputIdentities, [name]: `sha256-${'b'.repeat(64)}` } };
+    assert.notEqual(createVerificationReuseIdentity(scoped, changed)?.key, identity.key, name);
+    assert.deepEqual(createVerificationReuseIdentity(step, changed), createVerificationReuseIdentity(step, snapshot));
+  }
+  const unrelated = createVerificationReuseIdentity(step, inputs);
+  assert.ok(unrelated); assert.equal('inputIdentity' in unrelated, false);
+  const value = { ...record(), identity, identityAfter: identity.key };
+  const checker = { ...inputs, environment: { ...inputs.environment, platform: 'linux', arch: 'x64' } };
+  assert.equal(validateVerificationReuseRecord(value, { productRoot: '/unused', step: scoped, snapshot: checker, runner: 'macos' }), true);
+  assert.equal(validateVerificationReuseRecord(value, { productRoot: '/unused', step: scoped,
+    snapshot: { ...checker, inputIdentities: { ...inputs.inputIdentities, BUILDR_CHANGED_PATHS_JSON: `sha256-${'c'.repeat(64)}` } }, runner: 'macos' }), false);
+});
+
+test('only the observed semantic input consumers declare selectors; artifact browser checks remain non-reusable', () => {
+  const inputs = Object.fromEntries(verificationSteps.flatMap((item: VerificationReuseStep) => item.reuse && item.reuse.inputs ? [[item.id, item.reuse.inputs]] : []));
+  assert.deepEqual(inputs, { 'openspec-candidate-audit': ['BUILDR_VERIFICATION_BASE'], 'runtime-skill-projection': ['BUILDR_CHANGED_PATHS_JSON'], 'docs-quality': ['BUILDR_CHANGED_PATHS_JSON'] });
+  assert.equal(verificationSteps.find((item: VerificationReuseStep) => item.id === 'artifact-browser-core').reuse, false);
+});

@@ -6,6 +6,7 @@ import { execFileSync } from 'node:child_process';
 import test from 'node:test';
 import { collectVerificationReuseSnapshot, collectVerificationReuseBundle, createVerificationReuseIdentity, createVerificationReuseStore, createVerificationPlanReuse, reusedVerificationResult, validateVerificationReuseRecord } from '../verification/verification-reuse.ts';
 import { executePlan } from '../verification/plan-runner.ts';
+import { runVerificationStep } from '../verification/timing/parallel-runner.ts';
 
 function fixture(t: test.TestContext) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-source-reuse-'));
@@ -186,4 +187,27 @@ test('a changed real verification network mode cannot reuse the local offline re
   const changed = collectVerificationReuseSnapshot(online);
   assert.notEqual(changed.environment.variablesIdentity, snapshot.environment.variablesIdentity);
   assert.equal(createVerificationReuseStore({ ...online, snapshot: changed, imports: [bundle] }).lookup(f.step), null);
+});
+
+test('a real subset success cannot skip a failing full check or another subset or base', async t => {
+  const f = fixture(t), file = path.join(f.productRoot, 'check.mjs');
+  fs.writeFileSync(file, "import fs from 'node:fs'; const selected=JSON.parse(process.env.BUILDR_CHANGED_PATHS_JSON||'[]'); for(const file of selected.length?selected:['good.txt','bad.txt']) if(fs.readFileSync(file,'utf8')!=='ok') process.exit(23);\n");
+  fs.writeFileSync(path.join(f.productRoot, 'good.txt'), 'ok'); fs.writeFileSync(path.join(f.productRoot, 'bad.txt'), 'broken');
+  const step = { ...f.step, executor: { type: 'node', file: 'check.mjs' }, reuse: { scope: 'backend' as const, inputs: ['BUILDR_CHANGED_PATHS_JSON', 'BUILDR_VERIFICATION_BASE'] } };
+  const env = { ...f.options.env, BUILDR_CHANGED_PATHS_JSON: '["good.txt"]', BUILDR_VERIFICATION_BASE: 'base-one' };
+  const options = { ...f.options, env, steps: [step] }, snapshot = collectVerificationReuseSnapshot(options);
+  const store = createVerificationReuseStore({ ...options, snapshot });
+  const result = await runVerificationStep({ name: step.id, command: process.execPath, args: [file], cwd: f.productRoot, env });
+  assert.equal(result.status, 'passed'); store.stage(step, result, origin(snapshot.sourceCommit));
+  const bundle = store.commit(collectVerificationReuseSnapshot(options), true); assert.equal(bundle.records.length, 1);
+  assert.equal(JSON.stringify(snapshot.inputIdentities ?? {}).includes('good.txt'), false, 'only digests of selector values may be retained');
+  assert.equal(createVerificationReuseStore({ ...options, snapshot: collectVerificationReuseSnapshot(options) }).lookup(step)?.result.status, 'passed');
+  for (const changed of [{ BUILDR_CHANGED_PATHS_JSON: '' }, { BUILDR_CHANGED_PATHS_JSON: '["bad.txt"]' }, { BUILDR_VERIFICATION_BASE: 'base-two' }]) {
+    const current = { ...options, env: { ...env, ...changed } }, after = collectVerificationReuseSnapshot(current);
+    assert.equal(createVerificationReuseStore({ ...current, snapshot: after, imports: [bundle], portableImports: true }).lookup(step), null);
+    assert.equal(validateVerificationReuseRecord(bundle.records[0], { ...current, snapshot: after, step }), false);
+    assert.deepEqual(createVerificationReuseIdentity(f.step, after), createVerificationReuseIdentity(f.step, snapshot));
+  }
+  const full = await runVerificationStep({ name: step.id, command: process.execPath, args: [file], cwd: f.productRoot, env: { ...env, BUILDR_CHANGED_PATHS_JSON: '' } });
+  assert.equal(full.status, 'failed'); assert.equal(full.childExitCode, 23);
 });

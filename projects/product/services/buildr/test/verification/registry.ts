@@ -240,6 +240,11 @@ const RUNTIME_REUSE_CHECKS = new Set(['integration-runtime', 'integration-data-s
   'integration-project-daily-progress', 'system-buildr-web-http', 'integration-candidate-release-effects', 'integration-candidate-git-convergence']);
 const NON_REUSABLE_CHECKS = new Set(['typecheck', 'dsh-plugin', 'candidate-tarball', 'application-payload-release', 'release-tarball-smoke', 'artifact-browser-core', 'cli-package-parity', 'host-node-contract', 'host-node-boundaries']);
 const GIT_SOURCE_CHECKS = new Set(['openspec-candidate-audit', 'service-branch-contract', 'open-source-candidate', 'integration-self-bootstrap', 'system-task-lifecycle', 'system-worktree-lifecycle']);
+const REUSE_INPUTS_BY_STEP: Readonly<Record<string, readonly string[]>> = Object.freeze({
+  'docs-quality': Object.freeze(['BUILDR_CHANGED_PATHS_JSON']),
+  'runtime-skill-projection': Object.freeze(['BUILDR_CHANGED_PATHS_JSON']),
+  'openspec-candidate-audit': Object.freeze(['BUILDR_VERIFICATION_BASE']),
+});
 function sourceReusePolicy(definition: any): any {
   if (NON_REUSABLE_CHECKS.has(definition.id) || definition.executor?.type === 'candidate-artifact' || definition.executor?.consumesArtifact
     || definition.id.startsWith('host-')) return false;
@@ -248,7 +253,8 @@ function sourceReusePolicy(definition: any): any {
   // Other registered checks conservatively include all Product material;
   // checks reading source Git identities also bind the observed Git history.
   const usesGit = VERIFICATION_STEP_TESTING[definition.id]?.environment?.footprints.includes('git');
-  return Object.freeze({ scope: RUNTIME_REUSE_CHECKS.has(definition.id) ? 'runtime' : 'repository', git: GIT_SOURCE_CHECKS.has(definition.id), ...(usesGit ? { tools: ['git'] } : {}) });
+  return Object.freeze({ scope: RUNTIME_REUSE_CHECKS.has(definition.id) ? 'runtime' : 'repository', git: GIT_SOURCE_CHECKS.has(definition.id),
+    ...(usesGit ? { tools: ['git'] } : {}), ...(REUSE_INPUTS_BY_STEP[definition.id] ? { inputs: REUSE_INPUTS_BY_STEP[definition.id] } : {}) });
 }
 
 const step: any = (definition: any) => {

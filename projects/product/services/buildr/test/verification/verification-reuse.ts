@@ -10,13 +10,14 @@ import { withExclusiveFileLock } from '../../src/infrastructure/filesystem/exclu
 
 export type ReuseDigest = `sha256-${string}`;
 export type VerificationReuseScope = 'backend' | 'web' | 'product' | 'repository' | 'plugin' | 'runtime';
-export interface VerificationReusePolicy { scope: VerificationReuseScope; git?: boolean; exactNode?: boolean; tools?: string[] }
+export interface VerificationReusePolicy { scope: VerificationReuseScope; git?: boolean; exactNode?: boolean; tools?: string[]; inputs?: readonly string[] }
 export interface VerificationReuseStep { id: string; executor: Record<string, any>; reuse?: VerificationReusePolicy | false; dependsOn?: string[]; contexts?: string[]; timeoutMs?: number; [key: string]: any }
 export interface VerificationReuseEnvironment { platform: string; arch: string; nodeVersion: string; tools: Record<string, string>; variablesIdentity: ReuseDigest }
 export interface VerificationReuseSnapshot {
   productRoot: string; repositoryRoot: string; contentIdentities: Record<VerificationReuseScope, ReuseDigest>;
   gitIdentity: ReuseDigest; sourceCommit: string; environment: VerificationReuseEnvironment;
   unavailableScopes?: VerificationReuseScope[];
+  inputIdentities?: Record<string, ReuseDigest>;
 }
 export interface VerificationReuseIdentity {
   key: ReuseDigest; stepId: string; contentIdentity: ReuseDigest; recipeIdentity: ReuseDigest; environmentIdentity: ReuseDigest; gitIdentity?: ReuseDigest;
@@ -75,6 +76,9 @@ export function collectVerificationReuseSnapshot(options: VerificationReuseOptio
     runtime: entries.filter(([file]) => !['knowledge', 'openspec', 'tasks'].some(directory => file.startsWith(`projects/product/${directory}/`))),
   };
   const contentIdentities = Object.fromEntries(Object.entries(selected).map(([scope, items]) => [scope, digest(items)])) as Record<VerificationReuseScope, ReuseDigest>;
+  const inputNames = [...new Set([...(options.steps ?? verificationSteps), ...(options.step ? [options.step] : [])]
+    .flatMap((step: VerificationReuseStep) => step.reuse && step.reuse.inputs || []))].sort();
+  const inputIdentities = Object.fromEntries(inputNames.map(name => [name, digest(env[name] ?? '')]));
   const variables = Object.fromEntries(['TZ', 'LANG', 'LC_ALL', 'NODE_OPTIONS', 'BUILDR_VERIFICATION_PROFILE', 'BUILDR_VERIFICATION_NETWORK_MODE'].map(key => [key, env[key] ?? '']));
   const exactNode = createExactNodeExecutionEnvironment({ nodeExecutable: process.execPath, env, requireNpm: true });
   const npm = spawnCommandSync(exactNode.npmExecutable!, ['--version'], { env: exactNode.env, encoding: 'utf8', timeout: 10_000 });
@@ -82,7 +86,7 @@ export function collectVerificationReuseSnapshot(options: VerificationReuseOptio
     'backend-dependencies': preparationContentDigest([path.join(productRoot, 'node_modules')], { optional: true }) ?? 'unavailable',
     'web-dependencies': preparationContentDigest([path.resolve(productRoot, '../buildr-web/node_modules')], { optional: true, webDependencyCache: true }) ?? 'unavailable',
     'plugin-dependencies': preparationContentDigest([path.resolve(productRoot, '../dsh-plugin/node_modules')], { optional: true }) ?? 'unavailable' };
-  return { productRoot, repositoryRoot, contentIdentities, unavailableScopes: Object.entries(selected).filter(([, items]) => items.some(([file]) => unavailable.has(file))).map(([scope]) => scope as VerificationReuseScope), sourceCommit: git(repositoryRoot, ['rev-parse', 'HEAD']).trim(),
+  return { productRoot, repositoryRoot, contentIdentities, inputIdentities, unavailableScopes: Object.entries(selected).filter(([, items]) => items.some(([file]) => unavailable.has(file))).map(([scope]) => scope as VerificationReuseScope), sourceCommit: git(repositoryRoot, ['rev-parse', 'HEAD']).trim(),
     gitIdentity: digest([git(repositoryRoot, ['rev-parse', 'HEAD']), git(repositoryRoot, ['show-ref', '--head']), git(repositoryRoot, ['log', '--all', '--format=%H:%P'])]),
     environment: options.environment ? { ...options.environment, tools: { ...tools, ...options.environment.tools } }
       : { platform: process.platform, arch: process.arch, nodeVersion: process.versions.node, tools, variablesIdentity: digest(variables) } };
@@ -103,7 +107,11 @@ export function createVerificationReuseIdentity(step: VerificationReuseStep, sna
   const { platform, arch, nodeVersion, tools, variablesIdentity } = snapshot.environment;
   const requiredTools = Object.fromEntries(requiredToolKeys(step).map(key => [key, tools[key] ?? 'unavailable']));
   if (Object.values(requiredTools).includes('unavailable')) return null;
-  const environmentIdentity = digest({ platform, arch, node: step.reuse.exactNode ? nodeVersion : '>=24.15.0', tools: sorted(requiredTools), variablesIdentity });
+  const inputNames = step.reuse.inputs ?? [];
+  if (inputNames.some(name => !digestPattern.test(snapshot.inputIdentities?.[name] ?? ''))) return null;
+  const inputs = Object.fromEntries(inputNames.map(name => [name, snapshot.inputIdentities![name]]));
+  const environmentIdentity = digest({ platform, arch, node: step.reuse.exactNode ? nodeVersion : '>=24.15.0', tools: sorted(requiredTools), variablesIdentity,
+    ...(inputNames.length > 0 ? { inputs: sorted(inputs) } : {}) });
   const identity = { stepId: step.id, contentIdentity, recipeIdentity, environmentIdentity, ...(step.reuse.git ? { gitIdentity: snapshot.gitIdentity } : {}) };
   return { key: digest(identity), ...identity };
 }
