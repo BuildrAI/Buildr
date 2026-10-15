@@ -115,7 +115,7 @@ test('旧库只读报告所需迁移且不写入，合法替换后保留原审�
   const { root, runtime } = fixture(t);
   const first = runtime.recordTaskReview(root, 'demo-task', input());
   const opened = runtime.openWorkspaceStructuredStore(root, { writable: true });
-  opened.database.exec('DROP TABLE task_review_history; ALTER TABLE tasks DROP COLUMN brief; ALTER TABLE tasks DROP COLUMN brief_digest; ALTER TABLE tasks DROP COLUMN result_history_digest; DELETE FROM schema_migrations WHERE version >= 34;');
+  opened.database.exec('DROP TABLE task_review_history; DROP TABLE mysql_skill_query_preferences; ALTER TABLE tasks DROP COLUMN brief; ALTER TABLE tasks DROP COLUMN brief_digest; ALTER TABLE tasks DROP COLUMN result_history_digest; DELETE FROM schema_migrations WHERE version >= 34;');
   opened.database.close();
   const file = path.join(root, '.buildr', 'local', 'workspace.sqlite');
   const before = fs.readFileSync(file);
@@ -123,7 +123,9 @@ test('旧库只读报告所需迁移且不写入，合法替换后保留原审�
   assert.deepEqual(fs.readFileSync(file), before);
   const checked = { database: new DatabaseSync(file, { readOnly: true }) };
   assert.equal(checked.database.prepare('SELECT max(version) AS version FROM schema_migrations').get().version, 33);
+  assert.deepEqual(checked.database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('task_review_history', 'mysql_skill_query_preferences')").all(), []);
   checked.database.close();
   const next = runtime.recordTaskReview(root, 'demo-task', input('planning', first.slots.planning.resultDigest, { subjectIdentity: 'planning:identity-2' }));
   assert.deepEqual(next.slots.planning.history[0].result, first.slots.planning.result);
+  assert.equal(next.slots.planning.history[0].resultDigest, first.slots.planning.resultDigest);
 });

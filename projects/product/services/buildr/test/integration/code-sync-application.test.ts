@@ -18,13 +18,13 @@ function fixture(t: test.TestContext, format = 'sha1') {
   fs.mkdirSync(root); t.after(() => fs.rmSync(base, { recursive: true, force: true }));
   const gitAt = (location: string, ...args: string[]) => execFileSync('git', ['-C', location, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
   const git = (...args: string[]) => gitAt(root, ...args);
-  git('init', '--initial-branch=main', '--object-format=' + format); git('config', 'user.name', 'Sync Fixture'); git('config', 'user.email', 'sync@example.invalid'); git('config', 'commit.gpgSign', 'false');
+  git('init', '--initial-branch=main', '--object-format=' + format); git('config', 'user.name', 'Sync Fixture'); git('config', 'user.email', 'sync@example.com'); git('config', 'commit.gpgSign', 'false');
   const write = (file: string, content: string, location = root) => fs.writeFileSync(path.join(location, file), content);
   const commitAt = (location: string, message: string) => { gitAt(location, 'add', '--all'); gitAt(location, 'commit', '-qm', message); return gitAt(location, 'rev-parse', 'HEAD'); };
   const commit = (message = 'local') => commitAt(root, message);
   write('base.txt', 'base\n'); const initial = commit('base');
   gitAt(base, 'init', '--bare', '--initial-branch=main', '--object-format=' + format, remote); git('remote', 'add', 'origin', remote); git('push', '-u', 'origin', 'main');
-  gitAt(base, 'clone', '--branch=main', remote, peer); gitAt(peer, 'config', 'user.name', 'Peer Fixture'); gitAt(peer, 'config', 'user.email', 'peer@example.invalid'); gitAt(peer, 'config', 'commit.gpgSign', 'false');
+  gitAt(base, 'clone', '--branch=main', remote, peer); gitAt(peer, 'config', 'user.name', 'Peer Fixture'); gitAt(peer, 'config', 'user.email', 'peer@example.com'); gitAt(peer, 'config', 'commit.gpgSign', 'false');
   let registered = root;
   const app = createCodeApplication({ assetCatalog: () => ({ repositories: [{ id: 'repo', code: 'repo', name: 'Sync Fixture', source: { path: registered } }], services: [], projects: [] }), resolveSourceRoot: (_root, source) => source.path, readTaskScope: () => ({ projects: [], services: [] }), readGitWorktreeEvidence: () => null });
   const input = () => ({ repositoryId: 'repo', worktreeId: app.sourceControl(root).repositories[0].worktrees.find(item => item.isRegistered)!.worktreeId });

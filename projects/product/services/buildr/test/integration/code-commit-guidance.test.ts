@@ -14,7 +14,7 @@ function fixture(t: test.TestContext) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-commit-guidance-')), repository = path.join(root, 'repository');
   fs.mkdirSync(repository); t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const git = (directory: string, ...args: string[]) => execFileSync('git', ['-C', directory, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-  git(repository, 'init', '--initial-branch=main'); git(repository, 'config', 'user.name', 'Guidance Fixture'); git(repository, 'config', 'user.email', 'guidance@example.invalid'); git(repository, 'config', 'commit.gpgSign', 'false');
+  git(repository, 'init', '--initial-branch=main'); git(repository, 'config', 'user.name', 'Guidance Fixture'); git(repository, 'config', 'user.email', 'guidance@example.com'); git(repository, 'config', 'commit.gpgSign', 'false');
   const write = (file: string, content: string | Buffer, directory = repository) => { const target = path.join(directory, file); fs.mkdirSync(path.dirname(target), { recursive: true }); fs.writeFileSync(target, content); };
   const catalog = { repositories: [{ id: 'repo', code: 'repo', name: 'Fixture', source: { type: 'workspace', path: 'repository' } }], projects: [{ code: 'one', serviceIds: ['service'], source: { type: 'workspace', path: 'repository/project-one' } }, { code: 'other', serviceIds: ['service'], source: { type: 'workspace', path: 'repository/project-other' } }], services: [{ id: 'service', code: 'service', repositoryId: 'repo', modulePath: 'project-one' }] };
   const tasks = new Map<string, { taskId: string; title: string; intent: string; scope: { projects: string[]; services: Array<{ project: string; service: string }> } }>();

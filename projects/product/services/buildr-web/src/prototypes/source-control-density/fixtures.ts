@@ -21,7 +21,7 @@ export function densityRepositories(state = ''):SourceControlRepository[] {
       const worktreeId = 'demo-' + item.id, count = state === 'many-counts' && item.id === 'office' ? 321 : item.files;
       const changes = makeChanges(sample.id, worktreeId, count || 0);
       const task = item.task && state !== 'no-task';
-      const commit:SourceControlCommit = {repositoryId:sample.id, worktreeId, hash:'a'.repeat(40), shortHash:'aaaaaaaa', subject:'完善当前服务的工作能力', message:'完善当前服务的工作能力\n\n这是一条模拟提交，用于对照目录和阅读交互。', authorName:'演示用户', authorEmail:'demo@example.invalid', authoredAt:date, committedAt:date, branches:[item.branch, 'dev'], tags:[], files:changes.slice(0, 2)};
+      const commit:SourceControlCommit = {repositoryId:sample.id, worktreeId, hash:'a'.repeat(40), shortHash:'aaaaaaaa', subject:'完善当前服务的工作能力', message:'完善当前服务的工作能力\n\n这是一条模拟提交，用于对照目录和阅读交互。', authorName:'演示用户', authorEmail:'demo@example.com', authoredAt:date, committedAt:date, branches:[item.branch, 'dev'], tags:[], files:changes.slice(0, 2)};
       return {worktreeId, name:item.name, location:main ? `/演示工作空间/${sample.id}` : `/演示工作空间/${sample.id}/.worktrees/${item.name}`, isMain:main, isRegistered:main, branch:item.branch, head:commit.hash,
         ahead:state === 'many-counts' && item.id === 'office' ? 123 : item.ahead, behind:state === 'many-counts' && item.id === 'office' ? 45 : item.behind,
         upstream:item.upstream === undefined ? 'origin/' + item.branch : item.upstream, status:item.offline ? 'offline' : item.unknown ? 'partial' : count ? 'ready' : 'clean', fileCount:count, changes, commits:[commit], observedRevision:'demo:' + item.id, diagnostics:item.offline ? ['模拟目录当前不可读取。'] : [],

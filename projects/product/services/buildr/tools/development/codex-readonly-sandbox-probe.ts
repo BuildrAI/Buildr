@@ -59,7 +59,7 @@ const checks: Record<string, boolean> = {};
 try {
   for (const directory of [main, second, external]) fs.mkdirSync(directory);
   git(main, 'init', '--initial-branch=main');
-  git(main, 'config', 'user.name', 'Buildr readonly probe'); git(main, 'config', 'user.email', 'probe@example.invalid'); git(main, 'config', 'commit.gpgSign', 'false');
+  git(main, 'config', 'user.name', 'Buildr readonly probe'); git(main, 'config', 'user.email', 'probe@example.com'); git(main, 'config', 'commit.gpgSign', 'false');
   fs.writeFileSync(path.join(main, 'tracked.txt'), 'Original tracked contents.\n');
   git(main, 'add', '--', 'tracked.txt'); git(main, 'commit', '-m', 'initial fixture');
   git(main, 'worktree', 'add', '-b', 'probe-worktree', worktree);

@@ -38,6 +38,14 @@ const frozenSourceAssets: Record<string, FrozenSourceAsset> = {
     role: 'prototype-reader', bytes: 1166245,
     sha256: '2131f42cda631dfb4adb24d40581aeb06db9c7a1a4e53e234f86a7a5adb80fc8',
   },
+  'projects/product/openspec/changes/archive/2026-10-10-codex-source-control/prototype/viewer.html.accepted': {
+    role: 'prototype-reader', bytes: 1182809,
+    sha256: 'cf45b61dac72b6d45218717534998b5c0b7d0f7a8ed450b3c4a15780a0b5f080',
+  },
+  'projects/product/openspec/changes/archive/2026-10-13-add-mysql-connections/prototypes/viewer.html': {
+    role: 'prototype-reader', bytes: 1350482,
+    sha256: 'a5ebeab78898f9594b956f455fa8690450911f3c47b2b2380386f5f1586c4dda',
+  },
   'projects/product/services/dsh-plugin/sdk-patches/dsh-v0.2.0-rc.2-event-sources-settings.patch': {
     role: 'sdk-source-patch', bytes: 1587539,
     sha256: '4e7b3dcba52721577aad27923d5e1a865e24d3b593ef489ec6a1f5b642d2bd7b',

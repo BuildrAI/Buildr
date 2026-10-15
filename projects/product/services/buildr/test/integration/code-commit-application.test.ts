@@ -15,7 +15,7 @@ function fixture(t: test.TestContext, format = 'sha1') {
   fs.mkdirSync(root); t.after(() => fs.rmSync(base, { recursive: true, force: true }));
   const gitAt = (location: string, ...args: string[]) => execFileSync('git', ['-C', location, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
   const git = (...args: string[]) => gitAt(root, ...args);
-  git('init', '--initial-branch=main', '--object-format=' + format); git('config', 'user.name', 'Commit Fixture'); git('config', 'user.email', 'fixture@example.invalid'); git('config', 'commit.gpgSign', 'false');
+  git('init', '--initial-branch=main', '--object-format=' + format); git('config', 'user.name', 'Commit Fixture'); git('config', 'user.email', 'fixture@example.com'); git('config', 'commit.gpgSign', 'false');
   const write = (file: string, value: string, directory = root) => fs.writeFileSync(path.join(directory, file), value);
   const commit = (message = 'base') => { git('add', '--all'); git('commit', '-qm', message); return git('rev-parse', 'HEAD'); };
   const app = createCodeApplication({ assetCatalog: () => ({ repositories: [{ id: 'repo-one', code: 'repo', name: 'Fixture', source: { type: 'workspace', path: root } }], services: [], projects: [] }), resolveSourceRoot: (_root, source) => source.path, readTaskScope: () => ({ projects: [], services: [] }), readGitWorktreeEvidence: () => null });
@@ -122,7 +122,7 @@ test('missing upstream preserves the successful local commit and stale push targ
 });
 
 test('a changed advertised remote tip refuses the stale push range without undoing the local commit', async t => {
-  const f = fixture(t); f.write('same.txt', 'base\n'); f.commit(); const remote = f.remote(); f.gitAt(remote, 'config', 'user.name', 'Remote Fixture'); f.gitAt(remote, 'config', 'user.email', 'remote@example.invalid');
+  const f = fixture(t); f.write('same.txt', 'base\n'); f.commit(); const remote = f.remote(); f.gitAt(remote, 'config', 'user.name', 'Remote Fixture'); f.gitAt(remote, 'config', 'user.email', 'remote@example.com');
   const remoteHash = f.gitAt(remote, '-c', 'commit.gpgSign=false', 'commit-tree', f.gitAt(remote, 'rev-parse', 'main^{tree}'), '-p', f.gitAt(remote, 'rev-parse', 'main'), '-m', 'remote writer'); f.gitAt(remote, 'update-ref', 'refs/heads/main', remoteHash); f.write('same.txt', 'local current\n');
   const result = await f.app.commitChanges(f.root, f.request('local writer', 'commit-push')); assert.equal(result.commit.completed, true); assert.equal(result.push.status, 'unavailable'); assert.equal(f.gitAt(remote, 'rev-parse', 'refs/heads/main'), remoteHash); assert.equal(f.git('status', '--porcelain'), '');
 });

@@ -168,7 +168,7 @@ test('候选预览只升级自身旧库副本，保留库保持原版本与字�
   prepareTaskPreviewStructuredStore(runtime, validation, owner);
   const snapshot = new DatabaseSync(path.join(validation, '.buildr', 'local', 'workspace.sqlite'), { readOnly: true });
   try {
-    assert.equal(snapshot.prepare('SELECT max(version) AS version FROM schema_migrations').get()?.version, 35);
+    assert.equal(snapshot.prepare('SELECT max(version) AS version FROM schema_migrations').get()?.version, loadWorkspaceSqliteMigrations().at(-1).version);
     assert.equal(snapshot.prepare('SELECT brief FROM tasks WHERE task_id = ?').get('preview-old')?.brief, null);
   } finally { snapshot.close(); }
   assert.deepEqual(fs.readFileSync(store), before);

@@ -9,6 +9,8 @@ import {
 } from '../../plugin/process.ts';
 import { launcherExecutable, launcherIdentityFile, launcherRoots } from '../../plugin/platform.ts';
 
+const launcherPlatform = 'darwin';
+
 /** A machine-local pointer plus a launcher pair Buildr itself would report. */
 async function fixture(t: any) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'buildr-dsh-process-'));
@@ -20,10 +22,10 @@ async function fixture(t: any) {
   const roots = { released: path.join(home, 'Applications', 'Buildr Web.app'), development: path.join(root, 'Buildr Web Dev.app') };
   for (const [channel, target] of Object.entries(roots)) {
     const internal = channel === 'released' ? 'npm' : 'development';
-    const executable = launcherExecutable(target, internal as 'npm' | 'development');
+    const executable = launcherExecutable(target, internal as 'npm' | 'development', launcherPlatform);
     await fs.mkdir(path.dirname(executable), { recursive: true });
-    await fs.mkdir(path.dirname(launcherIdentityFile(target)), { recursive: true });
-    await fs.writeFile(launcherIdentityFile(target), JSON.stringify({ schemaVersion: 'buildr.launcher-identity/v1', channel: internal }));
+    await fs.mkdir(path.dirname(launcherIdentityFile(target, launcherPlatform)), { recursive: true });
+    await fs.writeFile(launcherIdentityFile(target, launcherPlatform), JSON.stringify({ schemaVersion: 'buildr.launcher-identity/v1', channel: internal }));
     await fs.writeFile(executable, '#!/bin/sh\nprintf "%s,%s,%s" "$BUILDR_LAUNCHER_NO_OPEN" "$BUILDR_LAUNCHER_NO_NOTIFY" "$BUILDR_APP_DATA_DIR" > "$(dirname "$0")/observed.txt"\n', { mode: 0o755 });
   }
   const status = (channel: 'released' | 'development', state = 'absent') => ({
@@ -50,11 +52,11 @@ test('DSH executes the registered CLI with exact arguments and does not inherit 
 test('DSH launches the launcher of the requested channel with no-open scoped to the child', async t => {
   const { home, binding, roots, status } = await fixture(t);
   const environment = withHome(home, { BUILDR_APP_DATA_DIR: '/must-not-use' });
-  await launchInstallation(binding, 'npm', status('released'), new AbortController().signal, { environment });
-  const observedFor = (target: string, channel: 'npm' | 'development') => path.join(path.dirname(launcherExecutable(target, channel)), 'observed.txt');
+  await launchInstallation(binding, 'npm', status('released'), new AbortController().signal, { environment, platform: launcherPlatform });
+  const observedFor = (target: string, channel: 'npm' | 'development') => path.join(path.dirname(launcherExecutable(target, channel, launcherPlatform)), 'observed.txt');
   assert.equal(await fs.readFile(observedFor(roots.released, 'npm'), 'utf8'), '1,1,');
   // A development entry uses a different launcher from the same machine pointer.
-  await launchInstallation(binding, 'development', status('development'), new AbortController().signal, { environment });
+  await launchInstallation(binding, 'development', status('development'), new AbortController().signal, { environment, platform: launcherPlatform });
   assert.equal(await fs.readFile(observedFor(roots.development, 'development'), 'utf8'), '1,1,');
   assert.equal(environment.BUILDR_LAUNCHER_NO_OPEN, undefined);
   assert.equal(environment.BUILDR_APP_DATA_DIR, '/must-not-use');
@@ -63,9 +65,20 @@ test('DSH launches the launcher of the requested channel with no-open scoped to 
 test('DSH refuses to launch when no launcher can be resolved', async t => {
   const { binding } = await fixture(t);
   await assert.rejects(
-    launchInstallation(binding, 'npm', { channels: {}, launcher: {}, launchers: {}, instances: {} }, new AbortController().signal, { environment: { ...process.env, HOME: '/nonexistent-home' } }),
+    launchInstallation(binding, 'npm', { channels: {}, launcher: {}, launchers: {}, instances: {} }, new AbortController().signal, { environment: { ...process.env, HOME: '/nonexistent-home' }, platform: launcherPlatform }),
     { code: 'launcher-mismatch' },
   );
+});
+
+test('DSH rejects Linux launcher requests before executing either channel', async t => {
+  const { binding, status } = await fixture(t);
+  let executions = 0;
+  const exec = async () => { executions++; return { stdout: '' }; };
+  for (const [channel, external] of [['npm', 'released'], ['development', 'development']] as const) {
+    await assert.rejects(launchInstallation(binding, channel, status(external), new AbortController().signal, { platform: 'linux', exec }),
+      /只支持 macOS 与 Windows 桌面版；当前平台是 linux/);
+  }
+  assert.equal(executions, 0);
 });
 
 test('DSH detects CLI drift before execution and sanitizes subprocess parse failure', async t => {

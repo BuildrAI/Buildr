@@ -3,6 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { findManagedMutationViolations } from './managed-mutation-analysis.ts';
 
 const productRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const packageManifest: any = JSON.parse(fs.readFileSync(path.join(productRoot, 'package.json'), 'utf8'));
@@ -29,7 +30,7 @@ for (const entry of packageManifest.files.filter((file: any) => file === 'src/' 
 productionFiles.sort();
 const allowed: any = new Map([
   ['src/infrastructure/testing/context-runtime/node-test.ts', new Set(['defaultNodeTestContextRuntime'])],
-  ['src/infrastructure/testing/context-runtime/node-runner.ts', new Set(['runHost'])],
+  ['src/infrastructure/testing/context-runtime/node-runner.ts', new Set(['runNodeTestContextHosts'])],
   ['src/infrastructure/filesystem/index.ts', new Set(['copyDirectory', 'removePath'])],
   ['src/infrastructure/filesystem/atomic-files.ts', new Set(['atomicWriteFile'])],
   ['src/infrastructure/filesystem/exclusive-file-lock.ts', new Set(['publishCandidate', 'moveAndRemove'])],
@@ -74,18 +75,15 @@ const allowed: any = new Map([
   ['src/modules/agent-assets/infrastructure/runtime/runtime-reconciler.ts', new Set(['reconcileRuntimePlan'])],
   ['src/modules/agent-assets/infrastructure/runtime/skills/render-plan.ts', new Set(['applySkillRenderPlan'])],
   ['src/modules/agent-assets/infrastructure/runtime/rule-projection.ts', new Set(['applyRulesRenderPlan'])],
+  ['src/modules/code/application/code-commit-application.ts', new Set(['commitChanges'])],
+  ['src/modules/code/infrastructure/code-fetch-refs.ts', new Set(['fetchCodeRemoteRefs'])],
+  ['src/modules/code/infrastructure/editable-file.ts', new Set(['replaceEditableFile'])],
+  ['src/modules/connection-skills/persistence/files.ts', new Set(['key', 'writeTeam', 'writeLocal'])],
 ]);
 
 const violations: any[] = [];
 for (const relativeFile of productionFiles) {
-  const lines: any = fs.readFileSync(path.join(productRoot, relativeFile), 'utf8').split(/\r?\n/);
-  let currentFunction: any = '<top-level>';
-  for (const [index, line] of lines.entries()) {
-    const declaration: any = line.match(/^\s*(?:export\s+)?function\s+([A-Za-z0-9_]+)/);
-    if (declaration) currentFunction = declaration[1];
-    if (!/fs\.(?:rmSync|writeFileSync|appendFileSync|copyFileSync|cpSync|renameSync)\s*\(/.test(line)) continue;
-    if (!allowed.get(relativeFile)?.has(currentFunction)) violations.push(`${relativeFile}:${index + 1}: direct mutation in ${currentFunction}`);
-  }
+  violations.push(...findManagedMutationViolations(fs.readFileSync(path.join(productRoot, relativeFile), 'utf8'), relativeFile, allowed.get(relativeFile)));
 }
 
 if (violations.length) {

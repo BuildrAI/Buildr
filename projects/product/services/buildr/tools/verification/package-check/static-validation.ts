@@ -77,6 +77,30 @@ export function validatePackageSkillPublications(skill: { id: string; runtimes?:
   return [...new Set(problems)];
 }
 
+type BuiltinSkillPaths = { id: string; path: string; target: string; component?: string };
+function relativeAssetPath(value: string): boolean {
+  return typeof value === 'string' && !value.includes('\\') && value.split('/').every(part => Boolean(part) && part !== '.' && part !== '..');
+}
+export function validateBuiltinSkillPaths(skill: BuiltinSkillPaths, resourceRoot: string, label: string): string[] {
+  const problems: string[] = [];
+  if (!skill || typeof skill.id !== 'string' || typeof skill.path !== 'string' || typeof skill.target !== 'string') return [`${label} must declare id, path and target.`];
+  const isOpenSpecUpstream = skill.component === 'openspec' && skill.id.startsWith('openspec-') && skill.id !== 'openspec-contract-guard';
+  const expectedRoot = isOpenSpecUpstream ? 'skills/openspec/'
+    : skill.path.startsWith(`${resourceRoot}/skills/connections/`) ? 'skills/connections/' : 'skills/buildr/';
+  if (!skill.target.startsWith(expectedRoot)) problems.push(`${label}.target must be under ${expectedRoot}.`);
+  if (!skill.path.startsWith(`${resourceRoot}/skills/`)) problems.push(`${label}.path must be under ${resourceRoot}/skills/.`);
+  if (![skill.path, skill.target].every(relativeAssetPath)) problems.push(`${label} paths must stay relative without traversal.`);
+  return problems;
+}
+
+export function builtinSkillOwnsSourceFile(file: string, skills: BuiltinSkillPaths[], resourceRoot: string, includes: string[]): boolean {
+  // Explicitly included builtin directories install scripts and references as
+  // one asset. Broad includes and neighbouring directories do not claim files.
+  return relativeAssetPath(file) && !file.includes('AGENTS.private')
+    && skills.some(skill => validateBuiltinSkillPaths(skill, resourceRoot, skill?.id || '<missing>').length === 0
+      && includes.some(include => include.replace(/\/$/, '') === skill.path) && file.startsWith(`${skill.path}/`));
+}
+
 export function createPackageStaticValidator(deps: any): any  {
   const {
     GENERATED_USER_REGISTRY_RESOURCE_SOURCES,
@@ -759,7 +783,8 @@ export function createPackageStaticValidator(deps: any): any  {
     const workspaceSourceRoot = resourceWorkspaceRoot();
     for (const workspaceFile of collectFiles(workspaceSourceRoot)) {
       const relativeFile = toPosixRelative(root, workspaceFile);
-      if (!mappedSources.has(relativeFile) && !componentOwnedWorkspaceFiles.has(relativeFile)) {
+      if (!mappedSources.has(relativeFile) && !componentOwnedWorkspaceFiles.has(relativeFile)
+        && !builtinSkillOwnsSourceFile(relativeFile, manifest.builtins.skills, RESOURCE_WORKSPACE_ROOT, manifest.include)) {
         problems.push(`Package workspace source file must be explicitly mapped in resources/manifest.yml: ${relativeFile}`);
       }
     }
@@ -1037,18 +1062,10 @@ export function createPackageStaticValidator(deps: any): any  {
       if (builtinIds.has(`skill:${skill.id}`)) problems.push(`Duplicate builtin skill id: ${skill.id}`);
       builtinIds.add(`skill:${skill.id}`);
       const isOpenSpecUpstreamSkill = skill.component === 'openspec' && skill.id.startsWith('openspec-') && skill.id !== 'openspec-contract-guard';
-      const expectedSkillRoot = isOpenSpecUpstreamSkill ? 'skills/openspec/' : 'skills/buildr/';
-      if (!skill.target.startsWith(expectedSkillRoot)) {
-        problems.push(`${label}.target must be under ${expectedSkillRoot}.`);
-      }
-      if (!skill.path.startsWith(`${RESOURCE_WORKSPACE_ROOT}/skills/`)) {
-        problems.push(`${label}.path must be under ${RESOURCE_WORKSPACE_ROOT}/skills/.`);
-      }
+      const pathProblems = validateBuiltinSkillPaths(skill, RESOURCE_WORKSPACE_ROOT, label);
+      problems.push(...pathProblems);
       problems.push(...validatePackageSkillRuntimes(skill.runtimes, label));
-      if (path.isAbsolute(skill.path) || skill.path.startsWith('..') || path.isAbsolute(skill.target) || skill.target.startsWith('..')) {
-        problems.push(`${label} paths must stay relative.`);
-        continue;
-      }
+      if (pathProblems.length) continue;
       const skillDir = path.resolve(root, skill.path);
       const skillFile = path.join(skillDir, 'SKILL.md');
       if (!existsFile(skillFile)) {
