@@ -115,6 +115,28 @@ test('source-only diagnoses select only their failed owner and never pass artifa
   }
 });
 
+test('nested-lifecycle diagnosis retains one original owner and explicitly masks inherited package inputs', async () => {
+  const scenario = 'nested-lifecycle-windows', plan = createWindowsArtifactDiagnosisPlan(scenario);
+  const original = createCandidateCiShardPlan('task-worktree-recovery-windows', { externalArtifact: false });
+  assert.deepEqual(plan.steps.map((step: any) => step.id), ['system-nested-git-isolation']);
+  assert.deepEqual(plan.steps[0], original.steps.find((step: any) => step.id === 'system-nested-git-isolation'));
+  let executions = 0;
+  const summary = await runWindowsArtifactDiagnosis({ env: { ...env, DIAGNOSTIC_SCENARIO: scenario } }, {
+    platform: 'win32', readRun: () => run, readGitFacts: () => facts, readArtifact: () => artifact, writeSummary: () => {},
+    execute: async (selected, options) => {
+      executions++; assert.deepEqual(selected.steps, plan.steps); assert.equal(options.reuse, false);
+      for (const key of ['BUILDR_CANDIDATE_TARBALL', 'BUILDR_CANDIDATE_PACK_METADATA', 'BUILDR_CANDIDATE_RELEASE_MANIFEST', 'BUILDR_RELEASE_ARTIFACT_MANIFEST', 'BUILDR_RELEASE_PACKAGE_SPEC']) {
+        assert.equal(Object.hasOwn(options.env, key), true, key); assert.equal(options.env[key], undefined, key);
+      }
+      const results = selected.steps.map((step: any) => result(step.id));
+      options.onComplete(results[0]); return { passed: true, results };
+    },
+  });
+  assert.equal(executions, 1); assert.equal(summary.status, 'passed'); assert.equal(summary.scenario, scenario);
+  assert.equal(summary.artifactConsumed, false); assert.equal(summary.artifactConsumerSelected, false);
+  assert.deepEqual(summary.results.map((item: any) => item.id), ['system-nested-git-isolation']);
+});
+
 test('non-Windows, artifact readback, failed checks and exceptions always save a failed independent summary', async () => {
   for (const failure of ['platform', 'artifact', 'artifact-source', 'assertion', 'exception', 'incomplete', 'validation', 'source-drift', 'scenario', 'run-json']) {
     const saved: any[] = []; let executed = 0, sourceReads = 0;

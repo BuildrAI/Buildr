@@ -18,6 +18,7 @@ export const WINDOWS_DIAGNOSIS_SCENARIOS = Object.freeze({
   'runtime-windows': { shard: 'runtime-windows', artifactConsumer: true, stepIds: WINDOWS_ARTIFACT_DIAGNOSIS_STEPS },
   'package-consumer-windows': { shard: 'runtime-windows', artifactConsumer: true, stepIds: ['release-tarball-smoke'] },
   'worktree-windows': { shard: 'task-worktree-recovery-windows', artifactConsumer: false, stepIds: ['system-worktree-lifecycle', 'system-nested-git-isolation'] },
+  'nested-lifecycle-windows': { shard: 'task-worktree-recovery-windows', artifactConsumer: false, stepIds: ['system-nested-git-isolation'] },
   'release-contract-windows': { shard: 'release-infrastructure-windows', artifactConsumer: false, stepIds: ['integration-candidate-release', 'integration-candidate-release-selection', 'integration-candidate-package-selection'] },
   'git-convergence-windows': { shard: 'release-infrastructure-windows', artifactConsumer: false, stepIds: ['integration-candidate-git-convergence', 'integration-candidate-git-selection'] },
 });

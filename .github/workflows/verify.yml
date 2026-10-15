@@ -14,7 +14,7 @@ on:
         required: false
         default: none
         type: choice
-        options: [none, core-project-task-macos, nested-git-isolation-windows, runtime-windows, failed-windows, package-consumer-windows]
+        options: [none, core-project-task-macos, nested-git-isolation-windows, runtime-windows, failed-windows, package-consumer-windows, nested-lifecycle-windows]
       diagnostic_candidate_run_id:
         description: Original Candidate run whose immutable package is consumed only by an independent Windows diagnosis
         required: false
@@ -476,13 +476,13 @@ jobs:
 
   diagnostic-runtime-windows:
     name: Independent Windows diagnosis (${{ matrix.scenario }})
-    if: github.event_name == 'workflow_dispatch' && (inputs.diagnostic_scope == 'runtime-windows' || inputs.diagnostic_scope == 'failed-windows' || inputs.diagnostic_scope == 'package-consumer-windows')
+    if: github.event_name == 'workflow_dispatch' && (inputs.diagnostic_scope == 'runtime-windows' || inputs.diagnostic_scope == 'failed-windows' || inputs.diagnostic_scope == 'package-consumer-windows' || inputs.diagnostic_scope == 'nested-lifecycle-windows')
     runs-on: windows-2025
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        scenario: ${{ fromJSON(inputs.diagnostic_scope == 'failed-windows' && '["runtime-windows","worktree-windows","release-contract-windows","git-convergence-windows"]' || inputs.diagnostic_scope == 'package-consumer-windows' && '["package-consumer-windows"]' || '["runtime-windows"]') }}
+        scenario: ${{ fromJSON(inputs.diagnostic_scope == 'failed-windows' && '["runtime-windows","worktree-windows","release-contract-windows","git-convergence-windows"]' || inputs.diagnostic_scope == 'package-consumer-windows' && '["package-consumer-windows"]' || inputs.diagnostic_scope == 'nested-lifecycle-windows' && '["nested-lifecycle-windows"]' || '["runtime-windows"]') }}
     permissions:
       contents: read
       actions: read
