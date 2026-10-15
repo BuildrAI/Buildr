@@ -66,6 +66,8 @@ Windows 原包运行失败时，可从 `dev` 的 `verify.yml` 选择 `diagnostic
 
 生产源码修复后的 Windows 预览检查使用 `diagnostic_scope=app-process-windows`，只接受当前 `expected_source_tree`；它在当前源码执行原登记检查，不下载或借用旧包，不形成完整候选证明。此入口只用于修复定位，最终仍须冻结新源码、验证新包。
 
+仅需定位任务生命周期、预览生命周期或发布效果恢复失败时，分别使用 `task-lifecycle-windows`、`preview-lifecycle-windows`、`publication-effects-windows`。三者沿用原包诊断的运行、源码和字节校验，每次只执行对应原登记检查，保留原断言和时限；它们执行当前源码检查，摘要明确 `artifactConsumed: false`，不重复已通过的包消费或其他检查。
+
 | 变化 | 处理 |
 |---|---|
 | 同一源码、字节、配方、锁文件、Node/平台等相关输入 | 复用匹配完整结果，保留原运行编号与执行时间 |
