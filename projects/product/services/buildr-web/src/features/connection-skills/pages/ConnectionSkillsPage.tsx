@@ -34,14 +34,12 @@ export function ConnectionSkillsPage() {
     if (!workspaceId || !active || completed.current?.client === client && completed.current.refresh === refresh) return;
     const controller = new AbortController(); reading.current = controller; setLoading(true); setError('');
     const isCurrent = () => !controller.signal.aborted && current.current.client === client;
-    void Promise.allSettled([client.list(controller.signal), client.definitions(controller.signal)]).then(([list, catalog]) => {
+    void client.directory(controller.signal).then(directory => {
       if (!isCurrent()) return;
-      const notices: unknown[] = [];
-      if (list.status === 'fulfilled') { setInstances(list.value.instances); notices.push(...list.value.diagnostics); } else setError((list.reason as Error).message);
-      if (catalog.status === 'fulfilled') { setDefinitions(catalog.value.definitions); notices.push(...catalog.value.diagnostics); } else notices.push((catalog.reason as Error).message);
-      setDiagnostics(notices);
-      if (list.status === 'fulfilled' && catalog.status === 'fulfilled') completed.current = { client, refresh };
-    }).finally(() => { if (isCurrent()) setLoading(false); if (reading.current === controller) reading.current = null; });
+      setInstances(directory.instances); setDefinitions(directory.definitions); setDiagnostics(directory.diagnostics);
+      completed.current = { client, refresh };
+    }).catch(cause => { if (isCurrent()) setError((cause as Error).message); })
+      .finally(() => { if (isCurrent()) setLoading(false); if (reading.current === controller) reading.current = null; });
     return () => { controller.abort(); if (reading.current === controller) reading.current = null; };
   }, [client, workspaceId, active, refresh]);
   function acceptLocalChange() {
@@ -69,14 +67,15 @@ export function ConnectionSkillsPage() {
     setQueryEntry({ id: instance.id, nonce: Date.now() }); setQueryOpen(true);
     paneHost?.revealContent(location.pathname, 'mysql-query');
   }
+  const directoryLoaded = completed.current?.client === client;
   return <><WorkspaceStage pageTabs={tabs.tabs} onClosePageTab={tabs.close}
     objectTabs={queryOpen ? [{ key: 'mysql-query', kind: 'doc', title: 'MySQL 查询' }] : []}
     activeObject={queryOpen ? 'mysql-query' : null} onActivateObject={() => setQueryOpen(true)} onCloseObject={() => setQueryOpen(false)}
     objectContentLayout="fill" objectLabel="查询" retainObjectContent
     objectContent={({ visible }) => queryEntry && <MySqlQuery connections={queryTargets} client={queryClient} entry={queryEntry} active={queryOpen && visible} layoutKey={workspaceId || ''} />}
   >
-    <ResourceDirectory<ConnectionInstance> title="连接" noun="连接" description="管理团队使用的外部系统，供你和智能体（Agent）使用。" data={instances} total={instances.length} showTotal loading={loading} error={error} rowKey={instance => instance.id} name={instance => instance.name} summary={summary} onRefresh={reload} searchId="connection-skills-search" tableId="connection-skills-table" countId="connection-skills-count" searchText={instance => `${instance.name} ${instance.environment} ${summary(instance)} ${connectionSummaryLines(instance).join(' ')} ${Object.values(instance.config).join(' ')}`} searchPlaceholder="搜索名称、系统或范围"
-      notice={<><p className="buildr-connection-skill-muted">连接配置随当前工作空间（Workspace）的团队文件共享。</p>{diagnostics.map((item, index) => <Alert key={index} showIcon type="warning" message={diagnosticText(item)} />)}</>}
+    <ResourceDirectory<ConnectionInstance> title="连接" noun="连接" description="管理团队使用的外部系统，供你和智能体（Agent）使用。" data={instances} total={instances.length} showTotal loading={loading} error={directoryLoaded ? undefined : error} rowKey={instance => instance.id} name={instance => instance.name} summary={summary} onRefresh={reload} searchId="connection-skills-search" tableId="connection-skills-table" countId="connection-skills-count" searchText={instance => `${instance.name} ${instance.environment} ${summary(instance)} ${connectionSummaryLines(instance).join(' ')} ${Object.values(instance.config).join(' ')}`} searchPlaceholder="搜索名称、系统或范围"
+      notice={<><p className="buildr-connection-skill-muted">连接配置随当前工作空间（Workspace）的团队文件共享。</p>{directoryLoaded && error && <Alert showIcon type="error" message={error} />}{diagnostics.map((item, index) => <Alert key={index} showIcon type="warning" message={diagnosticText(item)} />)}</>}
       actions={<Button id="create-connection-skill" type="primary" icon={<PlusOutlined />} disabled={loading || !definitions.some(entry => entry.enabled)} onClick={() => setEditing(null)}>新增连接</Button>}
       columns={[
         { title: '环境 / 状态', width: 180, render: (_, instance) => <><Tag>{instance.environment || '未填写环境'}</Tag><Tag>{instance.enabled ? '已启用' : '已停用'}</Tag><Tag color={instance.availability.ready ? undefined : 'orange'}>{instance.availability.ready ? '已配置' : '需检查'}</Tag></> },

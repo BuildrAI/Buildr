@@ -108,6 +108,34 @@ test('测试失败仍能独立保存团队配置，个人保存与测试使用�
   for (const request of requests) { assert.equal(request.url.includes('fictional'), false); assert.equal(request.init.headers.get('x-buildr-session'), 'test'); }
 });
 
+test('目录一次请求交付实例、定义及局部诊断，旧独立读取保持兼容', async () => {
+  const requests = [], controller = new AbortController();
+  const directory = { instances: [instance], definitions: [entry], diagnostics: [{ code: 'fixture', message: '部分来源不可用' }] };
+  const client = createConnectionSkillsClient(async (url, init) => {
+    requests.push({ url, init });
+    if (url.endsWith('/directory')) return directory;
+    return url.endsWith('/instances') ? { instances: directory.instances, diagnostics: [] } : { definitions: directory.definitions, diagnostics: [] };
+  }, 'chosen/workspace');
+  assert.deepEqual(await client.directory(controller.signal), directory);
+  assert.deepEqual(requests.map(request => request.url), ['/api/v1/workspaces/chosen%2Fworkspace/connection-skills/directory']);
+  assert.equal(requests[0].init.signal, controller.signal);
+  assert.deepEqual(await client.list(), { instances: [instance], diagnostics: [] });
+  assert.deepEqual(await client.definitions(), { definitions: [entry], diagnostics: [] });
+  assert.deepEqual(requests.slice(1).map(request => request.url), ['/api/v1/workspaces/chosen%2Fworkspace/connection-skills/instances', '/api/v1/workspaces/chosen%2Fworkspace/connection-skills/definitions']);
+});
+
+test('目录拒绝错误结构和旧接口结果，不静默补发独立读取', async () => {
+  for (const result of [null, {}, { instances: [], diagnostics: [] }, { definitions: [], diagnostics: [] }, { instances: [], definitions: [], diagnostics: null }]) {
+    const requests = [];
+    const client = createConnectionSkillsClient(async url => { requests.push(url); return result; }, 'workspace');
+    await assert.rejects(client.directory(), /连接目录响应格式无效/);
+    assert.deepEqual(requests, ['/api/v1/workspaces/workspace/connection-skills/directory']);
+  }
+  const cause = new Error('无法读取连接目录');
+  const client = createConnectionSkillsClient(async () => { throw cause; }, 'workspace');
+  await assert.rejects(client.directory(), error => error === cause);
+});
+
 test('连接页面只恢复现行目录身份，旧页面地址归一', () => {
   const current = tabForPath('ws', '/workspaces/ws/connection-skills');
   assert.deepEqual(current, { key: 'dir:connection-skills', kind: 'dir', title: '连接', path: '/workspaces/ws/connection-skills' });

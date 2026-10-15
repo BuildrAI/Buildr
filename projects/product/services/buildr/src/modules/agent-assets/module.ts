@@ -5,7 +5,7 @@ import { parseSkillsManifestContent } from './persistence/skill-manifest.ts';
 import { sourceRelativePath } from './persistence/source-object-repository.ts';
 import path from 'node:path';
 import { createSkillContentQuery } from './application/skill-content-query.ts';
-import { readConnectionSkillFile, readConnectionSkillSources } from './application/connection-skill-source.ts';
+import { readConnectionSkillFile, readConnectionSkillFiles, readConnectionSkillSources } from './application/connection-skill-source.ts';
 import { createSkillConnectionImpactPort } from './application/connection-impact.ts';
 import type { DoctorInput } from '../diagnostics/application/doctor-application.ts';
 import { WORKSPACE_ASSET_SUPPORT, type WorkspaceAssetSupport, WORKSPACE_ROOT_GITIGNORE_ENTRIES } from '../workspace/module.ts';
@@ -502,6 +502,7 @@ export function createAgentAssetsModule(infrastructure: AgentAssetsInfrastructur
             },
             readSkills: readConnectionSkillSources,
             readSkillFile: readConnectionSkillFile,
+            readSkillFiles: readConnectionSkillFiles,
             readRules: (root: string) => { sourceRelativePath(root, 'rules/manifest.yml'); return rules.readRulesManifestForInspection(root).rules; },
             readContracts: (root: string) => { sourceRelativePath(root, 'skills/manifest.yml'); return parseSkillsManifestContent(readSkillText(root, 'skills/manifest.yml', { requireRootProof: true }).content, path.join(root, 'skills', 'manifest.yml'), { validateContracts: false, validateConnectionDefinitions: false }).contracts || []; },
             requiredBlock: () => readPackageRequiredBlock({ requireRootProof: true }),

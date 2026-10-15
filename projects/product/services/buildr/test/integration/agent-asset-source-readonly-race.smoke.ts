@@ -112,5 +112,34 @@ if (process.argv.includes('--root-only')) {
 race('rules/src', 'policy.md', { id: 'rule-parent-swap', type: 'file', locator: { path: 'rules/src/policy.md' } });
 write('.buildr/local/task-materials/task/docs/policy.md', 'Selected task material');
 write('.buildr/local/task-materials/task/materials.json', JSON.stringify({ schemaVersion: 'buildr.task-materials/v2', documents: [{ id: 'policy', role: 'solution', title: 'Policy', source: { kind: 'task', path: 'docs/policy.md' } }] }));
-race('.buildr/local/task-materials/task/docs', 'policy.md', { id: 'task-parent-swap', type: 'task-material', taskId: 'task', materialId: 'policy' });
-console.log(JSON.stringify({ schemaVersion: 'buildr.source-readonly-race-smoke/v1', status: 'passed', cases: ['registered-rule-parent-replace', 'selected-task-material-parent-replace'], foreignBodyReads: 0, otherCoreDetected: true, profilesUnchanged: true, effects: [] }));
+// User task materials are deliberately outside source observations, so no leaf-read race is reachable.
+const materialFile = path.join(root, '.buildr/local/task-materials/task/docs/policy.md'), materialStat = fs.statSync(materialFile);
+const sourcesBefore = snapshot(root), originalOpen = fs.openSync, originalRead = fs.readSync, originalReadFile = fs.readFileSync;
+let materialOpens = 0, materialBodyReads = 0, excluded: ReturnType<typeof inspect>;
+const isMaterialDescriptor = (fd: number) => {
+ try { const opened = fs.fstatSync(fd); return opened.dev === materialStat.dev && opened.ino === materialStat.ino; } catch { return false; }
+};
+try {
+ fs.openSync = ((file: fs.PathLike, flags: number | string, mode?: fs.Mode) => {
+  if (String(file) === materialFile) materialOpens++;
+  return originalOpen(file, flags, mode);
+ }) as typeof fs.openSync;
+ fs.readSync = ((...args: Parameters<typeof fs.readSync>) => {
+  if (isMaterialDescriptor(args[0])) materialBodyReads++;
+  return Reflect.apply(originalRead, fs, args);
+ }) as typeof fs.readSync;
+ fs.readFileSync = ((...args: Parameters<typeof fs.readFileSync>) => {
+  if (typeof args[0] === 'number' ? isMaterialDescriptor(args[0]) : String(args[0]) === materialFile) materialBodyReads++;
+  return Reflect.apply(originalReadFile, fs, args);
+ }) as typeof fs.readFileSync;
+ excluded = inspect({ id: 'task-material-excluded', type: 'task-material', taskId: 'task', materialId: 'policy' });
+} finally { fs.openSync = originalOpen; fs.readSync = originalRead; fs.readFileSync = originalReadFile; }
+assert.equal(materialOpens, 0, 'excluded task material never opens its body');
+assert.equal(materialBodyReads, 0, 'excluded task material never reads its body');
+assert.equal(excluded.items[0].status, 'unknown'); assert.deepEqual(excluded.items[0].objects, []);
+assert.equal(excluded.items[0].diagnostic?.code, 'source_user_material_excluded');
+assert.equal(excluded.items[1].status, 'detected'); assert.deepEqual(excluded.effects, []);
+assert.ok(!JSON.stringify(excluded).includes('Selected task material'));
+assert.deepEqual(snapshot(root), sourcesBefore, 'excluded source observation writes no workspace content');
+assert.deepEqual({ app: snapshot(process.env.BUILDR_APP_DATA_DIR!), product: snapshot(process.env.BUILDR_PRODUCT_DATA_DIR!) }, profiles);
+console.log(JSON.stringify({ schemaVersion: 'buildr.source-readonly-race-smoke/v1', status: 'passed', cases: ['registered-rule-parent-replace', 'task-material-excluded-without-body-read'], foreignBodyReads: 0, taskMaterialOpens: 0, taskMaterialBodyReads: 0, otherCoreDetected: true, sourcesUnchanged: true, profilesUnchanged: true, effects: [] }));

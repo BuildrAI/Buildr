@@ -7,6 +7,7 @@ export function createConnectionSkillsHttp(application: ConnectionSkillsApplicat
     if (!suffix.startsWith('/connection-skills/')) return null;
     if ([...searchParams.keys()].length) throw failure('connection_skill_query_invalid', '不支持的查询参数。', 400);
     const subpath = suffix.slice('/connection-skills'.length);
+    if (request.method === 'GET' && subpath === '/directory') return { status: 200, body: application.directory(root) };
     if (request.method === 'GET' && subpath === '/definitions') return { status: 200, body: application.definitions(root) };
     if (request.method === 'GET' && subpath === '/instances') return { status: 200, body: application.list(root) };
     const match = subpath.match(/^\/instances\/([a-zA-Z0-9_-]+)(?:\/(auth|check|help))?$/);

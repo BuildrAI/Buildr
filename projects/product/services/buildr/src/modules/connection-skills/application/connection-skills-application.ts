@@ -108,10 +108,18 @@ export class ConnectionSkillsApplication {
       availability: { ready: diagnostics.length === 0, diagnostics }, programAvailability, definition: entry, websiteUrl };
   }
   list(root: string) {
-    const scope = this.resolveScope(root), retirementDiagnostics = this.retire(scope);
+    return this.listObserved(this.resolveScope(root));
+  }
+  directory(root: string) {
+    const scope = this.resolveScope(root), observation = this.observe(scope);
+    const listing = this.listObserved(scope, observation);
+    return { instances: listing.instances, definitions: observation.catalog.definitions, diagnostics: [...observation.catalog.diagnostics, ...listing.diagnostics] };
+  }
+  private listObserved(scope: ConnectionScope, observation?: ConnectionObservation) {
+    const retirementDiagnostics = this.retire(scope);
     const instances: ReturnType<ConnectionSkillsApplication['public']>[] = [], diagnostics: { id?: string; sourcePath?: string; message: string }[] = retirementDiagnostics.map(message => ({ message }));
     let team: ReturnType<ConnectionFiles['listTeam']>; try { team = this.files.listTeam(scope); } catch (error) { return { instances, diagnostics: [...diagnostics, { message: diagnostic(error) }] }; }
-    const observation = this.observe(scope);
+    observation ||= this.observe(scope);
     diagnostics.push(...team.diagnostics);
     for (const saved of team.instances) try { instances.push(this.public(scope, saved.value, saved.revision, saved.sourcePath, saved.diagnostic, observation)); } catch (error) { diagnostics.push({ id: saved.value.id, sourcePath: saved.sourcePath, message: diagnostic(error) }); }
     return { instances, diagnostics };

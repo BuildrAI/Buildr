@@ -56,12 +56,34 @@ test('one read phase observes the catalog once and saves retain a separate write
   let before = f.catalogReads(); const created = f.create(); assert.equal(f.catalogReads() - before, 2, 'saving observes once for validation and once immediately before writing');
   before = f.catalogReads(); const current = f.app.get(f.workspace, created.id).instance; assert.equal(f.catalogReads() - before, 1);
   before = f.catalogReads(); f.app.list(f.workspace); assert.equal(f.catalogReads() - before, 1);
+  before = f.catalogReads(); const directory = f.app.directory(f.workspace); assert.equal(f.catalogReads() - before, 1); assert.equal(directory.instances[0]?.definition, directory.definitions[0], 'directory rows and choices use the same observed entry');
   before = f.catalogReads(); assert.equal(f.app.check(f.workspace, created.id).ready, true); assert.equal(f.catalogReads() - before, 1);
   before = f.catalogReads(); assert.match((await f.app.help(f.workspace, created.id)).stdout, /independently supplied help/); assert.equal(f.catalogReads() - before, 1);
   before = f.catalogReads(); assert.equal(f.app.useSelected(f.workspace, { id: created.id, expectedRevision: current.revision }, selected => selected.connection.config.site), 'https://example.invalid/'); assert.equal(f.catalogReads() - before, 1);
   before = f.catalogReads(); const saved = f.app.save(f.workspace, created.id, { ...current, name: 'Renamed', authentication: { intent: 'keep' }, expected: { teamRevision: current.teamRevision, definitionRevision: current.definitionRevision } }).instance; assert.equal(saved.name, 'Renamed'); assert.equal(f.catalogReads() - before, 2);
   before = f.catalogReads(); const personal = f.app.saveAuth(f.workspace, created.id, { intent: 'replace', values: { username: 'person-user', password: 'personal-secret-456' }, expected: { teamRevision: saved.teamRevision, definitionRevision: saved.definitionRevision, localRevision: saved.localRevision } }).instance; assert.equal(personal.authentication.source, 'personal'); assert.equal(f.catalogReads() - before, 2);
   before = f.catalogReads(); const removed = f.app.saveAuth(f.workspace, created.id, { intent: 'remove', expected: { teamRevision: personal.teamRevision, definitionRevision: personal.definitionRevision, localRevision: personal.localRevision } }).instance; assert.equal(removed.authentication.source, 'team'); assert.equal(f.catalogReads() - before, 1);
+});
+test('directory requests observe current sources independently and retain valid definitions beside broken instances', t => {
+  const f = fixture(t), created = f.create();
+  let before = f.catalogReads(); const first = f.app.directory(f.workspace); assert.equal(f.catalogReads() - before, 1); assert.equal(first.instances[0]?.availability.ready, true);
+  assert.equal(JSON.stringify(first).includes('team-secret-123'), false);
+  fs.writeFileSync(f.declaration, YAML.stringify({ ...f.definition, name: 'Fresh source' }));
+  before = f.catalogReads(); const next = f.app.directory(f.workspace); assert.equal(f.catalogReads() - before, 1); assert.equal(next.definitions[0]?.definition.name, 'Fresh source'); assert.notEqual(next.definitions[0]?.revision, first.definitions[0]?.revision);
+  const file = path.join(f.workspace, created.sourcePath); fs.writeFileSync(file, '<<<<<<< conflict\npassword: hidden-fixture-secret');
+  before = f.catalogReads(); const broken = f.app.directory(f.workspace); assert.equal(f.catalogReads() - before, 1); assert.equal(broken.instances.length, 0); assert.equal(broken.definitions.length, 1); assert.equal(broken.diagnostics.length, 1); assert.equal(JSON.stringify(broken).includes('hidden-fixture-secret'), false);
+  fs.unlinkSync(path.join(f.directory, 'SKILL.md'));
+  before = f.catalogReads(); const unavailable = f.app.directory(f.workspace); assert.equal(f.catalogReads() - before, 1); assert.equal(unavailable.definitions.length, 0); assert.equal(unavailable.diagnostics.filter(item => 'code' in item && item.code === 'connection_skill_entry_invalid').length, 1, 'catalog diagnostics appear once');
+});
+test('directory resolves scope once and source failure does not hide team-file diagnostics', t => {
+  const f = fixture(t), created = f.create(); let scopeReads = 0;
+  const app = new ConnectionSkillsApplication({ dataRoot: path.join(f.root, 'local'), catalog: f.app.catalog, resolveScope: () => { scopeReads++; return { rootPath: f.workspace, workspaceId: 'fixture-workspace' }; } });
+  f.source('changed-source');
+  const result = app.directory(f.workspace); assert.equal(scopeReads, 1); assert.equal(result.instances[0]?.id, created.id); assert.equal(result.instances[0]?.availability.ready, false); assert.equal(result.definitions.length, 1);
+  // A team-directory defect is independent from catalog availability.
+  const list = t.mock.method(app.files, 'listTeam', () => { throw new Error('Team directory unavailable'); });
+  const broken = app.directory(f.workspace); assert.equal(broken.instances.length, 0); assert.equal(broken.definitions.length, 1); assert.equal(broken.diagnostics.length, 1);
+  list.mock.restore();
 });
 test('saving still rejects declaration and source drift at the independent write observation', t => {
   for (const drift of ['declaration', 'source'] as const) {
@@ -254,6 +276,8 @@ test('HTTP routes enforce write authorization and use the same version and secre
   const f = fixture(t), created = f.create(), http = createConnectionSkillsHttp(f.app); let authorized = 0;
   const context = { root: f.workspace, searchParams: new URLSearchParams(), authorizeWrite: () => { authorized++; }, readJsonBody: async () => ({ intent: 'replace', values: { username: 'person-user', password: 'personal-secret-456' }, expected: f.expected() }) };
   const read = await http.handle({ ...context, request: { method: 'GET' }, suffix: '/connection-skills/instances' }); assert.equal(authorized, 0); assert.equal(JSON.stringify(read).includes('team-secret-123'), false);
+  const before = f.catalogReads(), directory = await http.handle({ ...context, request: { method: 'GET' }, suffix: '/connection-skills/directory' }); assert.equal(directory?.status, 200); assert.equal(authorized, 0); assert.equal(f.catalogReads() - before, 1); assert.deepEqual(Object.keys(directory!.body).sort(), ['definitions', 'diagnostics', 'instances']); assert.equal(JSON.stringify(directory).includes('team-secret-123'), false);
+  await assert.rejects(() => http.handle({ ...context, request: { method: 'GET' }, suffix: '/connection-skills/directory', searchParams: new URLSearchParams('unknown=1') }), { code: 'connection_skill_query_invalid' });
   const save = await http.handle({ ...context, request: { method: 'PUT' }, suffix: '/connection-skills/instances/example-one/auth' }); assert.equal(save?.status, 200); assert.equal(authorized, 1); assert.equal(JSON.stringify(save).includes('personal-secret-456'), false);
   assert.equal(await http.handle({ ...context, request: { method: 'GET' }, suffix: '/connections' }), null);
   const help = await f.app.help(f.workspace, created.id); assert.match(help.stdout, /independently supplied help/);
@@ -357,7 +381,22 @@ test('retirement warnings stay separate from instance availability and offline h
   const app = new ConnectionSkillsApplication({ dataRoot: path.join(f.root, 'local'), catalog: f.app.catalog, resolveScope: f.app.resolveScope, retire: () => { attempts++; return ['旧连接数据清理未完成：测试残留']; } });
   const result = app.list(f.workspace);
   assert.equal(result.diagnostics.length, 1); assert.equal(result.instances[0]!.availability.ready, true);
-  assert.equal(attempts, 1); const view = app.get(f.workspace, created.id).instance;
+  assert.equal(attempts, 1);
+  const before = f.catalogReads(), directory = app.directory(f.workspace);
+  assert.equal(attempts, 2); assert.equal(f.catalogReads() - before, 1);
+  assert.equal(directory.diagnostics.length, 1); assert.equal(directory.instances[0]!.availability.ready, true); assert.equal(directory.definitions.length, 1);
+  const view = app.get(f.workspace, created.id).instance;
   await app.help(f.workspace, created.id, 'cli');
-  assert.equal(attempts, 1); assert.equal(view.availability.ready, true);
+  assert.equal(attempts, 2); assert.equal(view.availability.ready, true);
+  const beforeTeamRead: number[] = [];
+  const list = t.mock.method(app.files, 'listTeam', () => { beforeTeamRead.push(attempts); throw new Error('Team directory unavailable'); });
+  try {
+    const brokenList = app.list(f.workspace);
+    assert.equal(attempts, 3); assert.equal(brokenList.instances.length, 0);
+    assert.deepEqual(brokenList.diagnostics.map(item => item.message), ['旧连接数据清理未完成：测试残留', '连接资料不可读取或格式无效；已保留原文件。']);
+    const brokenDirectory = app.directory(f.workspace);
+    assert.equal(attempts, 4); assert.equal(brokenDirectory.instances.length, 0); assert.equal(brokenDirectory.definitions.length, 1);
+    assert.deepEqual(brokenDirectory.diagnostics.map(item => item.message), ['旧连接数据清理未完成：测试残留', '连接资料不可读取或格式无效；已保留原文件。']);
+    assert.deepEqual(beforeTeamRead, [3, 4], 'Each directory path retires once before reading team files.');
+  } finally { list.mock.restore(); }
 });

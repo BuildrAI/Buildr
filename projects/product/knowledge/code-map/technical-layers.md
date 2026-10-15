@@ -68,18 +68,19 @@
     - [实例身份与观察（instance.ts）](../../services/buildr/src/modules/connection-skills/domain/instance.ts) — 绑定输入、观察冲突和安全诊断。
     - [选择名称（field-labels.ts）](../../services/buildr/src/modules/connection-skills/domain/field-labels.ts) — 有界展示记录的严格保存、容错读取、编号匹配及公开秘密遮蔽，不参与远端身份。
   - **`application/`** — 当前来源及用例。
-    - [重建目录与精确选择（catalog.ts）](../../services/buildr/src/modules/connection-skills/application/catalog.ts) — `list/resolve` 核对技能入口、声明、来源、停用和兼容版本，缺失不改绑。
-    - [连接管理与运行（connection-skills-application.ts）](../../services/buildr/src/modules/connection-skills/application/connection-skills-application.ts) — `save/saveAuth/run/hook` 分开团队与个人保存、版本核对和明确草稿测试；同阶段共享声明目录观察，写前及程序再核验重新观察。
+    - [重建目录与精确选择（catalog.ts）](../../services/buildr/src/modules/connection-skills/application/catalog.ts) — `list/resolve` 核对技能入口、声明、来源、停用和兼容版本；入口与有效声明分阶段批读，局部失败不改绑。
+    - [连接管理与运行（connection-skills-application.ts）](../../services/buildr/src/modules/connection-skills/application/connection-skills-application.ts) — `directory` 共同返回实例、定义及诊断；`save/saveAuth/run/hook` 分开团队与个人保存、版本核对和明确草稿测试；同阶段共享声明目录观察，写前及程序再核验重新观察。
   - [团队文件与本机认证（persistence/files.ts）](../../services/buildr/src/modules/connection-skills/persistence/files.ts) — 普通文件边界、原子替换、逐实例锁和加密个人组；实例配置不进入本机 SQLite。
   - [专业程序启动（infrastructure/program.ts）](../../services/buildr/src/modules/connection-skills/infrastructure/program.ts) — 随附及独立程序定位、显式版本检查、私有进程间通信（IPC）、业务标准输入（Standard Input）、超时和有界秘密输出。
   - [所选来源解析（infrastructure/workspace.ts）](../../services/buildr/src/modules/connection-skills/infrastructure/workspace.ts) — 唯一登记目录维护配置入口，以 Git 公共目录证明关联代码工作树（Git Worktree）；独立克隆（Clone）及多个来源显式冲突。
   - [命令入口（interfaces/cli/connection-skills-cli.ts）](../../services/buildr/src/modules/connection-skills/interfaces/cli/connection-skills-cli.ts) 与 [网页入口（interfaces/http/connection-skills-http.ts）](../../services/buildr/src/modules/connection-skills/interfaces/http/connection-skills-http.ts) — 同一应用的输入输出适配。
-- [资产公开源读取（connection-skill-source.ts）](../../services/buildr/src/modules/agent-assets/application/connection-skill-source.ts) — 验证已登记源目录、入口名称、相对文件及实际路径，不从陈旧投射猜执行程序。
+- [资产公开源读取（connection-skill-source.ts）](../../services/buildr/src/modules/agent-assets/application/connection-skill-source.ts) — 验证已登记源目录、入口名称、相对文件及实际路径，提供逐项和有界批量读取，不从陈旧投射猜执行程序。
+- [严格文件读取（verified-readonly-file.ts）](../../services/buildr/src/infrastructure/filesystem/verified-readonly-file.ts) — 持有根目录和叶文件句柄，批量证明读前、读后内核位置及逐项文件身份，保留单文件兼容和局部失败边界。
 - [Nacos 完整技能源（nacos-connection）](../../services/buildr/resources/workspace/skills/connections/nacos-connection/) — 独立说明、接入声明、程序和详细方法；资源映射安装到 `skills/connections/nacos-connection/`。
 - [接入制作指引（connection-authoring）](../../services/buildr/resources/workspace/skills/buildr/connection-authoring/) — 指导制作标准目录、声明、程序及验证，不承载真实实例配置。
 - [资产影响只读端口（connection-impact.ts）](../../services/buildr/src/modules/agent-assets/application/connection-impact.ts) — 一次装配连接引用回调，取消登记及内置卸载披露编号、名称与文件；读取故障作为诊断，不阻源操作或删除实例、认证。
 - **[连接页面（connection-skills）](../../services/buildr-web/src/features/connection-skills/)** — 先选择连接系统，再按地址与团队账号、业务范围填写；高级设置和个人账号默认收起。
-  - [页面（ConnectionSkillsPage.tsx）](../../services/buildr-web/src/features/connection-skills/pages/ConnectionSkillsPage.tsx) — 实例列表、新增入口与局部诊断；首次或明确刷新读取，保存和删除局部更新，隔离迟到读取。
+  - [页面（ConnectionSkillsPage.tsx）](../../services/buildr-web/src/features/connection-skills/pages/ConnectionSkillsPage.tsx) — 实例列表、新增入口与局部诊断；首次或明确刷新仅请求共同目录，保存和删除局部更新，隔离迟到读取。
   - [列表摘要（connection-skill-summary.ts）](../../services/buildr-web/src/features/connection-skills/connection-skill-summary.ts) — 优先使用匹配的选择名称，地址及其余范围压为两逻辑行，不调用外部发现。
   - [编辑抽屉（ConnectionSkillEditDrawer.tsx）](../../services/buildr-web/src/features/connection-skills/components/ConnectionSkillEditDrawer.tsx) — 装配系统选择、团队表单、个人区和底部固定操作；主测试使用团队候选。
   - [编辑状态（useConnectionSkillEditor.ts）](../../services/buildr-web/src/features/connection-skills/useConnectionSkillEditor.ts) — 维护两组草稿及独立观察版本、保存、测试、迟到响应与冲突。

@@ -73,16 +73,22 @@ try {
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(result) });
   });
   const base = `${url}/workspaces/${initialWorkspaceId}`;
-  const reads = { instances: 0, definitions: 0, legacy: 0 };
+  const reads = { directory: 0, instances: 0, definitions: 0, legacy: 0 };
   page.on('request', request => {
     if (request.method() !== 'GET') return;
     const pathname = new URL(request.url()).pathname;
+    if (pathname === `/api/v1/workspaces/${initialWorkspaceId}/connection-skills/directory`) reads.directory++;
     if (pathname === `/api/v1/workspaces/${initialWorkspaceId}/connection-skills/instances`) reads.instances++;
     if (pathname === `/api/v1/workspaces/${initialWorkspaceId}/connection-skills/definitions`) reads.definitions++;
     if (pathname === `/api/v1/workspaces/${initialWorkspaceId}/connections`) reads.legacy++;
   });
   const assertReads = (expected: typeof reads, reason: string) => assert.deepEqual(reads, expected, reason);
   const editOriginal = () => page!.locator('#connection-skills-table').locator(`[data-row-key="${created.id}"]`).getByRole('button', { name: '编辑', exact: true }).click();
+  const directoryPattern = '**/connection-skills/directory';
+  await page.route(directoryPattern, async route => {
+    const response = await route.fetch(), body = await response.json();
+    await route.fulfill({ response, json: { ...body, diagnostics: [...body.diagnostics, { code: 'fixture-local-source', message: '目录局部诊断夹具' }] } });
+  });
   await page.addInitScript(({ workspaceId, basePath }) => {
     localStorage.setItem(`buildr.web.page-tabs.${workspaceId}`, JSON.stringify([
       { path: `${basePath}/connections`, title: '连接' },
@@ -113,8 +119,12 @@ try {
   await page.screenshot({ animations: 'disabled', path: path.join(screenshots, 'connection-skills-query-fixture.png') });
   await page.getByRole('button', { name: '关闭 MySQL 查询', exact: true }).click();
   await page.locator('#mysql-query-editor').waitFor({ state: 'hidden' });
+  await page.unroute(directoryPattern);
   const initialReads = { ...reads };
-  assertReads({ instances: 1, definitions: 1, legacy: 0 }, 'First display reads each directory once.');
+  assertReads({ directory: 1, instances: 0, definitions: 0, legacy: 0 }, 'First display reads the combined directory once without independent reads.');
+  await page.getByText('目录局部诊断夹具', { exact: true }).waitFor();
+  await page.locator('#connection-skills-table').getByText('浏览器连接', { exact: true }).waitFor();
+  assert.equal(await page.locator('#create-connection-skill').isEnabled(), true, 'A local source diagnostic does not hide valid instances or definitions.');
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
   await page.waitForLoadState('networkidle');
   assertReads(initialReads, 'Window focus is not a connection-data change.');
@@ -129,7 +139,7 @@ try {
   const holdInitial = new Promise<void>(resolve => { releaseInitial = resolve; });
   const initialRequestStarted = new Promise<void>(resolve => { initialStarted = resolve; });
   const initialRequestFinished = new Promise<void>(resolve => { initialFinished = resolve; });
-  await retryPage.route('**/connection-skills/instances', async route => {
+  await retryPage.route(directoryPattern, async route => {
     if (route.request().method() !== 'GET' || ++retryReads !== 1) return route.continue();
     const response = await route.fetch(), body = await response.json(); initialStarted();
     await holdInitial;
@@ -193,10 +203,24 @@ try {
   assert.equal(await page.locator('.buildr-connection-skill-field').filter({ has: page.locator('#connection-skill-config-scope') }).locator('.ant-select-selection-item').innerText(), '测试空间', 'Reopening a saved connection retains the name without discovery.');
   await page.locator('#close-connection-skill-editor').click();
   assertReads(initialReads, 'Create response adds its row without another directory read.');
+  const beforeFailedRefresh = { ...reads };
+  await page.route(directoryPattern, route => route.fulfill({ status: 503, json: { error: { message: '模拟目录读取失败' } } }));
+  await page.getByRole('button', { name: '刷新连接', exact: true }).click();
+  await page.getByText('模拟目录读取失败', { exact: true }).waitFor();
+  assert.equal(await namedSelectionRow.count(), 1, 'A directory failure preserves the last completed list.');
+  assert.equal(await page.locator('#create-connection-skill').isEnabled(), true, 'A directory failure preserves the last completed definitions.');
+  await page.unroute(directoryPattern);
+  await page.route(directoryPattern, route => route.fulfill({ json: { instances: [], diagnostics: [] } }));
+  await page.getByRole('button', { name: '刷新连接', exact: true }).click();
+  await page.getByText('连接目录响应格式无效，请刷新后重试。', { exact: true }).waitFor();
+  assert.equal(await namedSelectionRow.count(), 1, 'An old list response shape cannot clear a combined directory.');
+  assert.equal(await page.locator('#create-connection-skill').isEnabled(), true, 'Malformed directory data cannot clear valid definitions.');
+  await page.unroute(directoryPattern);
+  assertReads({ ...beforeFailedRefresh, directory: beforeFailedRefresh.directory + 2 }, 'Failed or malformed directory reads do not fall back to independent requests.');
   await page.getByRole('button', { name: '刷新连接', exact: true }).click();
   await page.waitForLoadState('networkidle');
   const refreshedReads = { ...reads };
-  assertReads({ instances: 2, definitions: 2, legacy: 0 }, 'Explicit refresh rereads both current directories once.');
+  assertReads({ ...beforeFailedRefresh, directory: beforeFailedRefresh.directory + 3 }, 'Each explicit refresh reads the combined current directory once.');
   await page.screenshot({ animations: 'disabled', path: path.join(screenshots, 'connection-skills-save-closed.png') });
   await editOriginal();
   await page.locator('#connection-skill-editor').waitFor();
@@ -273,7 +297,7 @@ try {
   assertReads(refreshedReads, 'Detail reread and subsequent saves remain local to the selected row.');
   await editOriginal();
 
-  const heldReadPattern = '**/connection-skills/instances';
+  const heldReadPattern = directoryPattern;
   let releaseRefresh!: () => void, refreshStarted!: () => void, refreshFinished!: () => void;
   const heldRefresh = new Promise<void>(resolve => { releaseRefresh = resolve; });
   const refreshRequestStarted = new Promise<void>(resolve => { refreshStarted = resolve; });
@@ -294,7 +318,7 @@ try {
     await page.locator('#connection-skills-table').getByText('保存响应优先', { exact: true }).waitFor();
     releaseRefresh(); await refreshRequestFinished;
     assert.equal(await page.locator('#connection-skills-table').getByText('保存响应优先', { exact: true }).count(), 1, 'An older explicit-refresh result cannot roll back a saved row.');
-    assertReads({ instances: refreshedReads.instances + 1, definitions: refreshedReads.definitions + 1, legacy: 0 }, 'Overlapping save cancels the older read without starting another one.');
+    assertReads({ ...refreshedReads, directory: refreshedReads.directory + 1 }, 'Overlapping save cancels the older combined read without starting another one.');
   } finally { releaseRefresh(); await page.unroute(heldReadPattern); }
   await editOriginal();
 
@@ -378,7 +402,7 @@ try {
   assert.equal(connections.get(workspaceRoot, created.id).instance.name, '另一入口修改');
   assert.deepEqual(legacyRequests, [], 'Connection navigation never calls a retired API.');
   assert.deepEqual(browserErrors, []);
-  process.stdout.write(JSON.stringify({ schemaVersion: 'buildr.workspace-smoke-scenario/v1', status: 'passed', checks: ['system-and-explicit-method-selection', 'dependency-ordered-discovery', 'progressive-fields-and-authentication', 'explicit-production-flag', 'legacy-route-redirect', 'legacy-tabs-merge', 'single-connection-navigation', 'no-legacy-api-requests', 'mysql-query-ui-fixture', 'query-observed-revision-and-original-sql', 'query-precision-display', 'separate-save', 'unsaved-switch', 'explicit-candidate', 'failed-test-save-independent', 'independent-draft-revisions', 'revision-conflict', 'narrow-and-keyboard', 'missing-skill-personal-removal', 'main-save-closes-and-updates-row', 'failed-save-retains-draft', 'main-save-preserves-personal-draft', 'reread-authentication-identity', 'optional-program-failure-isolated', 'nacos-api-and-website-distinct', 'focus-and-retained-page-no-read', 'test-discovery-check-no-directory-read', 'explicit-refresh-only', 'local-save-delete', 'interrupted-first-read-retried', 'late-list-cannot-rollback-save'], realExternalSystem: false, queryBackend: 'intercepted-ui-fixture' }) + '\n');
+  process.stdout.write(JSON.stringify({ schemaVersion: 'buildr.workspace-smoke-scenario/v1', status: 'passed', checks: ['system-and-explicit-method-selection', 'dependency-ordered-discovery', 'progressive-fields-and-authentication', 'explicit-production-flag', 'legacy-route-redirect', 'legacy-tabs-merge', 'single-connection-navigation', 'no-legacy-api-requests', 'mysql-query-ui-fixture', 'query-observed-revision-and-original-sql', 'query-precision-display', 'separate-save', 'unsaved-switch', 'explicit-candidate', 'failed-test-save-independent', 'independent-draft-revisions', 'revision-conflict', 'narrow-and-keyboard', 'missing-skill-personal-removal', 'main-save-closes-and-updates-row', 'failed-save-retains-draft', 'main-save-preserves-personal-draft', 'reread-authentication-identity', 'optional-program-failure-isolated', 'nacos-api-and-website-distinct', 'focus-and-retained-page-no-read', 'test-discovery-check-no-directory-read', 'explicit-refresh-only', 'local-save-delete', 'interrupted-first-read-retried', 'late-list-cannot-rollback-save', 'combined-directory-and-local-diagnostics', 'failed-or-malformed-directory-retains-snapshot'], realExternalSystem: false, queryBackend: 'intercepted-ui-fixture' }) + '\n');
 } catch (error) {
   if (page) { process.stderr.write(JSON.stringify({ body: (await page.locator('body').innerText()).slice(-5000) }) + '\n'); await page.screenshot({ animations: 'disabled', path: path.join(screenshots, 'connection-skills-failure.png') }); }
   throw error;
