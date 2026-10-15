@@ -69,19 +69,19 @@
       "type": "skill",
       "id": "connection-authoring",
       "target": "skills/buildr/connection-authoring",
-      "integrity": "sha256-f2b7ce4a5d8b47cc0d03d82a4eee606c628a4115ca66a936ddcf9e634392019d",
+      "integrity": "sha256-9806543eb51dd6efcea3c8418df7c6f4c0c6008cf9236b56eebd3c3f734985f3",
       "files": [
         {
           "path": "SKILL.md",
-          "integrity": "sha256-7da4b91e51f499a28ab59300c336740a70ab8751fc3765917f21e4dba168d271"
+          "integrity": "sha256-8038d9e86afd4c619a3689d7285ac1713f9f2365d977294f307d6f425e61872d"
         },
         {
           "path": "references/connection-contract.md",
-          "integrity": "sha256-87082292117033d27b472389d824a6d49d438985ed18c635aed20791b1b4f8b4"
+          "integrity": "sha256-2d0c22d6177374b9fb19ec8851f1df0343783a327ff334ddc2986180280c5bbe"
         },
         {
           "path": "templates/SKILL.md",
-          "integrity": "sha256-237db82e569c3c429d6080831f57337164bfb9b0a523cd4c6733bc0b517d7113"
+          "integrity": "sha256-5cd584a7c2621e821461eba648f46975bc9a5afca30e438f5a0200381fd013e4"
         },
         {
           "path": "templates/client.mjs",

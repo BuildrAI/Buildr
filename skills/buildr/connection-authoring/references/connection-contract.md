@@ -87,6 +87,14 @@ Node.js 随附程序通过独立进程间通信（IPC）接收 `{type: 'buildr.c
 
 Node.js 程序及进程间通信（IPC）模板提供本轮已验证的路径；其他语言的私有通道适配、独立程序内部依赖及其他操作系统（Operating System）应记录实际验证范围，未实测不能根据声明或安装状态推断已经可用。
 
+## 实例身份与文件定位
+
+Buildr 在 `connections/instances/` 管理一实例一文件。新建及保存时，文件名使用 `<系统>-<环境>--<唯一后缀>.yml`，例如 `nacos-qa--<12位后缀>.yml`；系统取声明的 `systemId`，未声明时取 `definitionId`，环境为空或清理后为空时用 `default`。片段会规范化并限制长度，保留中文；后缀由完整 `id` 的 SHA-256 摘要前 12 位生成。命名和路径整理属于通用应用，不由专业技能（Skill）或程序实现。
+
+正文完整 `id` 是身份权威，名称与文件名只帮助辨认。列表、详情及来源影响说明中的 `sourcePath` 才是实际路径，不从 `id`、系统或环境手拼。只读发现保留已有 `<id>.yml` 或人工改名文件，下一次保存时整理名称；仅改文件名不改变内容观察版本（Observed Revision）及按 `id` 归属的个人认证。正文环境改变仍需当前观察版本保存。
+
+不同 `id` 的同类、同地址甚至同名实例可以共存。先核对绑定来源、完整目标范围和用途；仍无法唯一确认就请用户明确选择，不能按文件名、名称或列表顺序取第一个。运行使用所选完整 `id` 和新读取的 `revision`；同目标实例仍访问同一外部环境。两个文件含相同 `id` 是身份冲突，不能当作两个可选实例；相关文件保留并局部诊断，其余唯一实例继续可用。
+
 ## 实例管理输入示例
 
 先读 `definitions list --json` 得到准确绑定字段与声明 `revision`。下面仅用虚构值和占位；所有认证输入写入用户授权的受限文件或标准输入（Standard Input），不放在命令参数。创建使用 `buildr connection-skill create --file <input.json> --json`：
@@ -105,6 +113,8 @@ Node.js 程序及进程间通信（IPC）模板提供本轮已验证的路径；
 ```
 
 更新先读 `get --connection <id> --json`，提交完整当前绑定、配置及名称，使用 `update --connection <id> --file <input.json>`。`expected.teamRevision` 和 `expected.definitionRevision` 取刚读值；团队认证用 `intent: keep` 保持、`replace` 提交完整组、`remove` 移除。账号、认证目标或接收方变化不能仅保持旧组。未知或冲突后重读，不用旧输入盲目重试。
+
+运行先读取所选实例，再使用 `run --connection <完整id> --expected-revision <刚读revision> --program <程序编号> -- <专业参数>`。交付前在隔离现场创建两条同类同目标、不同 `id` 的实例，分别调用并核对上下文；用虚构配置及认证确认没有串用，不把认证值输出作证据。
 
 个人保存使用 `auth set --connection <id> --file <auth.json>`，输入 `{ "values": {"username": "EXAMPLE_USER", "password": "EXAMPLE_PASSWORD"}, "expected": {"teamRevision": "<observed-team-revision>", "localRevision": "<observed-local-revision>", "definitionRevision": "<observed-definition-revision>"} }`。显式恢复团队使用 `auth use-team`，提交同一 `expected`，不含 `values`；不存在个人组的观察值为 `absent`。个人组存在但不完整或失效时不自动恢复团队。
 
