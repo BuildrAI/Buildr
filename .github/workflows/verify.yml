@@ -14,9 +14,9 @@ on:
         required: false
         default: none
         type: choice
-        options: [none, core-project-task-macos, nested-git-isolation-windows, runtime-windows, failed-windows]
+        options: [none, core-project-task-macos, nested-git-isolation-windows, runtime-windows, failed-windows, package-consumer-windows]
       diagnostic_candidate_run_id:
-        description: Original Candidate run whose immutable package is consumed only by runtime-windows diagnosis
+        description: Original Candidate run whose immutable package is consumed only by an independent Windows diagnosis
         required: false
         type: string
       diagnostic_candidate_source:
@@ -476,20 +476,19 @@ jobs:
 
   diagnostic-runtime-windows:
     name: Independent Windows diagnosis (${{ matrix.scenario }})
-    if: github.event_name == 'workflow_dispatch' && (inputs.diagnostic_scope == 'runtime-windows' || inputs.diagnostic_scope == 'failed-windows')
+    if: github.event_name == 'workflow_dispatch' && (inputs.diagnostic_scope == 'runtime-windows' || inputs.diagnostic_scope == 'failed-windows' || inputs.diagnostic_scope == 'package-consumer-windows')
     runs-on: windows-2025
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        scenario: ${{ fromJSON(inputs.diagnostic_scope == 'failed-windows' && '["runtime-windows","worktree-windows","release-contract-windows","git-convergence-windows"]' || '["runtime-windows"]') }}
+        scenario: ${{ fromJSON(inputs.diagnostic_scope == 'failed-windows' && '["runtime-windows","worktree-windows","release-contract-windows","git-convergence-windows"]' || inputs.diagnostic_scope == 'package-consumer-windows' && '["package-consumer-windows"]' || '["runtime-windows"]') }}
     permissions:
       contents: read
       actions: read
     defaults:
       run:
         working-directory: projects/product/services/buildr
-        shell: bash
     env:
       DIAGNOSTIC_CANDIDATE_RUN_ID: ${{ inputs.diagnostic_candidate_run_id }}
       DIAGNOSTIC_CANDIDATE_SOURCE: ${{ inputs.diagnostic_candidate_source }}
@@ -497,6 +496,7 @@ jobs:
       EXPECTED_SOURCE_TREE: ${{ inputs.expected_source_tree }}
     steps:
       - name: Verify closed diagnostic inputs
+        shell: bash
         working-directory: .
         env:
           DISPATCH_REF: ${{ github.ref }}
@@ -519,6 +519,7 @@ jobs:
           cache: npm
           cache-dependency-path: projects/product/services/buildr/package-lock.json
       - name: Read the original Candidate run identity
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           DIAGNOSTIC_RUN_JSON: ${{ runner.temp }}/diagnostic-original-run.json
@@ -531,6 +532,12 @@ jobs:
           github-token: ${{ github.token }}
       - name: Prepare only the Windows diagnostic environment
         run: node tools/verification/candidate-environment.ts prepare --profile source-runtime
+      - name: Record native Windows command resolution
+        env:
+          DIAGNOSTIC_OUTPUT: ${{ runner.temp }}/diagnostic-${{ matrix.scenario }}
+        run: |
+          New-Item -ItemType Directory -Force -Path $env:DIAGNOSTIC_OUTPUT | Out-Null
+          [ordered]@{ shell='pwsh'; tarExecutable=(Get-Command tar -CommandType Application | Select-Object -First 1).Source; nodeExecutable=(Get-Command node -CommandType Application | Select-Object -First 1).Source } | ConvertTo-Json | Set-Content -Path (Join-Path $env:DIAGNOSTIC_OUTPUT 'native-command-resolution.json') -Encoding utf8
       - name: Diagnose the failed consumers with original package bytes
         env:
           DIAGNOSTIC_RUN_JSON: ${{ runner.temp }}/diagnostic-original-run.json
