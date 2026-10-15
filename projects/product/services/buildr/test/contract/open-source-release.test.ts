@@ -539,6 +539,7 @@ test('Windows original-package diagnosis remains separate from complete Candidat
   assert.equal(diagnosis.env.DIAGNOSTIC_CANDIDATE_RUN_ID, '${{ inputs.diagnostic_candidate_run_id }}');
   assert.equal(diagnosis.env.DIAGNOSTIC_CANDIDATE_SOURCE, '${{ inputs.diagnostic_candidate_source }}');
   assert.equal(diagnosis.env.EXPECTED_SOURCE_TREE, '${{ inputs.expected_source_tree }}');
+  assert.doesNotMatch(JSON.stringify(diagnosis.env), /runner\./u);
   assert.match(diagnosis.steps[0].run, /refs\/heads\/dev/u);
   assert.match(diagnosis.steps[0].env.EXTRA_INPUTS_PRESENT, /inputs.source_verification != ''/u);
   const download = diagnosis.steps.find((step: any) => step.uses?.startsWith('actions/download-artifact@'));
@@ -548,6 +549,11 @@ test('Windows original-package diagnosis remains separate from complete Candidat
   assert.equal(diagnosis.steps.find((step: any) => step.uses?.startsWith('actions/setup-node@')).with['node-version'], '24.x');
   const execution = diagnosis.steps.find((step: any) => step.run === 'node test/verification/release/windows-artifact-diagnosis.ts');
   assert.equal(execution.env.BUILDR_VERIFICATION_PROFILE, 'ci-workspace-limited');
+  assert.equal(execution.env.DIAGNOSTIC_RUN_JSON, '${{ runner.temp }}/diagnostic-original-run.json');
+  assert.equal(execution.env.DIAGNOSTIC_ARTIFACT_DIR, download.with.path);
+  assert.equal(execution.env.DIAGNOSTIC_OUTPUT, diagnosis.steps.at(-1).with.path);
+  const nativeEvents = diagnosis.steps.find((step: any) => step.name === 'Preserve bounded Windows native failure events');
+  assert.equal(nativeEvents.env.DIAGNOSTIC_OUTPUT, execution.env.DIAGNOSTIC_OUTPUT);
   assert.equal(diagnosis.steps.filter((step: any) => step.run === 'node tools/verification/candidate-environment.ts prepare --profile source-runtime').length, 1);
   assert.equal(diagnosis.steps.some((step: any) => /candidate-ci\.ts|aggregate|publish|npm (?:pack|publish)/u.test(step.run || '')), false);
   assert.equal(diagnosis.steps.at(-1).if, 'always()');
