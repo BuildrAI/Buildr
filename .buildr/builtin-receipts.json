@@ -69,7 +69,7 @@
       "type": "skill",
       "id": "connection-authoring",
       "target": "skills/buildr/connection-authoring",
-      "integrity": "sha256-9806543eb51dd6efcea3c8418df7c6f4c0c6008cf9236b56eebd3c3f734985f3",
+      "integrity": "sha256-0be08fa2393152be9a538d9d8279c89453bb2dca9b743990b806e1d08e18cc6e",
       "files": [
         {
           "path": "SKILL.md",
@@ -77,7 +77,7 @@
         },
         {
           "path": "references/connection-contract.md",
-          "integrity": "sha256-2d0c22d6177374b9fb19ec8851f1df0343783a327ff334ddc2986180280c5bbe"
+          "integrity": "sha256-ec7770054e61e9785d847efb6aaf3ae659a50102e65608bf428b1e027a7e18ff"
         },
         {
           "path": "templates/SKILL.md",
@@ -265,7 +265,7 @@
       "type": "skill",
       "id": "nacos-connection",
       "target": "skills/connections/nacos-connection",
-      "integrity": "sha256-88152a0841e33dfc57f6a1816bcaacb07bd1385cf2a556781b482a816ff09aa8",
+      "integrity": "sha256-1c5f8de70894f5fffcc07814847f16e722e61e501ac879d3faebeab58247808a",
       "files": [
         {
           "path": "SKILL.md",
@@ -273,7 +273,7 @@
         },
         {
           "path": "assets/connection.yml",
-          "integrity": "sha256-fda7224465207a6bd6373fc83169a7b22c7b3a39b3cfa2203c5e4cb89e108af4"
+          "integrity": "sha256-59488ec9a0c18679acd910265a9bb5500780e7faef15ae3dbf6943ee60dd2252"
         },
         {
           "path": "references/api-compatibility.md",
@@ -597,7 +597,7 @@
       "type": "skill",
       "id": "xxl-job-connection",
       "target": "skills/connections/xxl-job-connection",
-      "integrity": "sha256-6d6c40479a092373cad98342617334993c12e7db05343bdc0cbfd2bc99ad3a52",
+      "integrity": "sha256-623bde9786d1d10464aed4f096cd0994ec31539421649b43e96fe67a9caf5a4c",
       "files": [
         {
           "path": "SKILL.md",
@@ -605,7 +605,7 @@
         },
         {
           "path": "assets/connection.yml",
-          "integrity": "sha256-2e4d5c58c3a86284af8711e6844e246da13c023cc3229f09ad751f1bcf772c84"
+          "integrity": "sha256-e88f23247051835a47a4c851a585f56e6107b54d9ebd98a66773f756080ff3db"
         },
         {
           "path": "references/commands-and-results.md",

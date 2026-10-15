@@ -39,7 +39,7 @@ config:
       label: 生产环境
       description: 生产实际发布须展示具体目标与差异，并取得此次用户授权。
       type: boolean
-      default: true
+      default: false
 authentication:
   fields:
     - key: username

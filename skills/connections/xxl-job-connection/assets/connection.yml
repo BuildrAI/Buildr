@@ -16,7 +16,7 @@ config:
       label: 生产环境
       description: 每次生产实际创建、修改、启停或触发须展示具体目标与差异，取得此次用户授权。
       type: boolean
-      default: true
+      default: false
     - key: apiVersion
       label: 接口版本
       type: enum
