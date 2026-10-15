@@ -413,7 +413,14 @@ test('changed verification writes a persistent run-level timing summary', () => 
     const result: any = spawnSync(process.execPath, [path.join(productRoot, 'test', 'verification', 'changed.ts'), 'knowledge/docs/overview.md'], {
       cwd: productRoot,
       encoding: 'utf8',
-      env: { ...process.env, BUILDR_TIMING_OUTPUT: timingOutput, BUILDR_DIAGNOSTICS_OUTPUT: diagnosticsOutput },
+      env: {
+        ...process.env,
+        BUILDR_TIMING_OUTPUT: timingOutput,
+        BUILDR_DIAGNOSTICS_OUTPUT: diagnosticsOutput,
+        BUILDR_VERIFICATION_REUSE_DIR: path.join(root, 'reuse'),
+        BUILDR_VERIFICATION_REUSE_IMPORT: '',
+        BUILDR_VERIFICATION_REUSE_EXPORT: '',
+      },
     });
     assert.equal(result.status, 0, result.stderr);
     const summary: any = JSON.parse(fs.readFileSync(timingOutput, 'utf8'));
