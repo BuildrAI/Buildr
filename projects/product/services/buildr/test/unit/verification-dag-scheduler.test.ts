@@ -206,6 +206,80 @@ test('受限 CI 可完整调度全部登记检查并保留完整工作额度', a
   assert.equal(results.find((item: any) => item.id === 'integration-runtime').scheduling.grant.workers, 3);
 });
 
+test('受限 CI 将真实 App 与适配器重型检查互斥，轻量检查仍可并行', async () => {
+  const ids = ['system-app-process', 'runtime-adapter-parity', 'docs-quality'];
+  const steps = ids.map(id => verificationSteps.find((item: any) => item.id === id));
+  const executionProfile = resolveVerificationExecutionProfile('ci-workspace-limited');
+  const active = new Set<string>(), started: string[] = [];
+  let heavyOverlap = false, lightOverlap = false;
+  let release: () => void = () => {};
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const execution = runVerificationDag(plan(steps), {
+    concurrency: executionProfile.limits,
+    executionProfile,
+    schedulingMode: 'declaration',
+    execute: async (item: any) => {
+      started.push(item.id); active.add(item.id);
+      heavyOverlap ||= active.has(ids[0]) && active.has(ids[1]);
+      lightOverlap ||= active.has(ids[2]) && (active.has(ids[0]) || active.has(ids[1]));
+      await gate;
+      active.delete(item.id);
+      return { status: 'passed', exitCode: 0, durationMs: 1 };
+    },
+  });
+  let results: any;
+  try {
+    await new Promise<void>(resolve => setImmediate(resolve));
+    assert.deepEqual([...started], [ids[0], ids[2]], '适配器必须排队，轻量检查应在 App 占用期间启动');
+  } finally {
+    release();
+    results = await execution;
+  }
+  assert.equal(heavyOverlap, false);
+  assert.equal(lightOverlap, true);
+  assert.deepEqual(results.map((item: any) => [item.id, item.status]), ids.map(id => [id, 'passed']));
+  assert.equal(results[0].scheduling.grant.workers, 2);
+  assert.equal(results[1].scheduling.grant.workers, 1);
+});
+
+test('真实发布效果检查独占执行，结束后其他 owner 恢复并行', async () => {
+  const ids = ['integration-candidate-release-effects', 'docs-quality', 'managed-mutations'];
+  const steps = ids.map(id => verificationSteps.find((item: any) => item.id === id));
+  const executionProfile = resolveVerificationExecutionProfile('ci-workspace-limited');
+  const active = new Set<string>(), started: string[] = [];
+  let effectsOverlap = false, otherOwnersOverlap = false;
+  let releaseEffects: () => void = () => {}, releaseOthers: () => void = () => {};
+  const effectsGate = new Promise<void>(resolve => { releaseEffects = resolve; });
+  const othersGate = new Promise<void>(resolve => { releaseOthers = resolve; });
+  const execution = runVerificationDag(plan(steps), {
+    concurrency: executionProfile.limits,
+    executionProfile,
+    schedulingMode: 'declaration',
+    execute: async (item: any) => {
+      started.push(item.id); active.add(item.id);
+      effectsOverlap ||= active.has(ids[0]) && active.size > 1;
+      otherOwnersOverlap ||= active.has(ids[1]) && active.has(ids[2]);
+      await (item.id === ids[0] ? effectsGate : othersGate);
+      active.delete(item.id);
+      return { status: 'passed', exitCode: 0, durationMs: 1 };
+    },
+  });
+  let results: any;
+  try {
+    await new Promise<void>(resolve => setImmediate(resolve));
+    assert.deepEqual([...started], [ids[0]], '发布效果检查占用期间其他 owner 必须排队');
+    releaseEffects();
+    await new Promise<void>(resolve => setImmediate(resolve));
+    assert.deepEqual([...active], ids.slice(1), '独占检查结束后不应串行化其他 owner');
+  } finally {
+    releaseEffects(); releaseOthers();
+    results = await execution;
+  }
+  assert.equal(effectsOverlap, false);
+  assert.equal(otherOwnersOverlap, true);
+  assert.deepEqual(results.map((item: any) => [item.id, item.status]), ids.map(id => [id, 'passed']));
+});
+
 test('critical-path 同分时优先 fan-out producer，再按自身成本和声明顺序稳定回退', async () => {
   const started: any[] = [];
   await runVerificationDag(plan([
