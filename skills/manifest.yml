@@ -396,6 +396,42 @@ skills:
     required: false
     state: installed
     runtimePath: connection-authoring
+  - id: mysql-connection
+    assetIdentity: buildr:skill:mysql-connection
+    sourceIdentity: package:skills/connections/mysql-connection
+    source: buildr
+    path: connections/mysql-connection
+    description: 配置和核验明确绑定的 MySQL 连接，发现数据库，并使用独立内置查询工具读取结构与数据。
+    enabled: true
+    required: false
+    state: installed
+    runtimePath: mysql-connection
+    connectionDefinitions:
+      - assets/connection.yml
+  - id: kibana-connection
+    assetIdentity: buildr:skill:kibana-connection
+    sourceIdentity: package:skills/connections/kibana-connection
+    source: buildr
+    path: connections/kibana-connection
+    description: 使用明确绑定的 Kibana 连接发现视图与字段，执行有界只读日志搜索和统计。
+    enabled: true
+    required: false
+    state: installed
+    runtimePath: kibana-connection
+    connectionDefinitions:
+      - assets/connection.yml
+  - id: xxl-job-connection
+    assetIdentity: buildr:skill:xxl-job-connection
+    sourceIdentity: package:skills/connections/xxl-job-connection
+    source: buildr
+    path: connections/xxl-job-connection
+    description: 从服务配置定位 XXL-JOB 执行器，查询和受控维护调度任务，核验执行记录与日志。
+    enabled: true
+    required: false
+    state: installed
+    runtimePath: xxl-job-connection
+    connectionDefinitions:
+      - assets/connection.yml
 contracts:
   - id: buildr.terminology-governance
     version: 1

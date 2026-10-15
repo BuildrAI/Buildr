@@ -187,6 +187,82 @@
     },
     {
       "type": "skill",
+      "id": "kibana-connection",
+      "target": "skills/connections/kibana-connection",
+      "integrity": "sha256-cea6806964710067caccd45ca96c548ae706ea071784861d21f026b60393cba0",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "integrity": "sha256-a51f7f4e3c102bf17f9e553a76cce643fa2e27a8984e71eb6fd3da44ffb7cedb"
+        },
+        {
+          "path": "assets/connection.yml",
+          "integrity": "sha256-90f692d35857af745effbbaa41756684a6fe54e181f7135772c6413825eb2a0c"
+        },
+        {
+          "path": "references/commands-and-results.md",
+          "integrity": "sha256-138c349b23c465a6e7f986b3712d2224658166caa334046a6fe7d3398f8947d4"
+        },
+        {
+          "path": "references/context-protocol.md",
+          "integrity": "sha256-76cc2a79274f75f3c514ffec5bb6313e22fe9c1d0952d35a43020dbedfbd4a36"
+        },
+        {
+          "path": "references/service-log-discovery.md",
+          "integrity": "sha256-32297a02d5ac453dbd26a90ff89fe40581786c45594374c66f5203bdeba16731"
+        },
+        {
+          "path": "scripts/kibana-client.mjs",
+          "integrity": "sha256-76db8f8db02885b15144d53456b45416588acce144c15ae9d499c50ee17ec048"
+        },
+        {
+          "path": "scripts/lib/cli.mjs",
+          "integrity": "sha256-d382d38e7c1aef814f9c7267fc851bccfe7c3925dbf9f021564cd716d7c745b1"
+        },
+        {
+          "path": "scripts/lib/configuration.mjs",
+          "integrity": "sha256-a5e480579603014299358a5e254ee2c1f1e96729a5b417c6ed5a23a4c50d7401"
+        },
+        {
+          "path": "scripts/lib/context.mjs",
+          "integrity": "sha256-7b219f36e293a05115224f2298a3fafcd3def98951f2612c398770103481be2d"
+        },
+        {
+          "path": "scripts/lib/errors.mjs",
+          "integrity": "sha256-23496e341869cd1a28bcbedeea5a598c4d493f8ee8cfd8f7b4fd38fd41e9eaa2"
+        },
+        {
+          "path": "scripts/lib/operations.mjs",
+          "integrity": "sha256-b46f0a65178a36d311ab3294921b46de04612ce755149b79193500224e7b351b"
+        },
+        {
+          "path": "scripts/lib/query.mjs",
+          "integrity": "sha256-95cf0cc16b068cc3332f0fa305ee8ccc52a60c22424b9a073a05ae5c51fd1dfe"
+        }
+      ]
+    },
+    {
+      "type": "skill",
+      "id": "mysql-connection",
+      "target": "skills/connections/mysql-connection",
+      "integrity": "sha256-4225d0d98b21c5ee7d2945ccd18ccb2b21b077419a267b98cfd87c38b181f8d7",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "integrity": "sha256-9bb8cec999cc56d259ae84a2a33fecf762ed5d5075439eba1feae22b220b3454"
+        },
+        {
+          "path": "assets/connection.yml",
+          "integrity": "sha256-da29176e55786466fe3ae0618b1da42ca99568bc2bd79431347aa14a379ff7d3"
+        },
+        {
+          "path": "references/commands-and-results.md",
+          "integrity": "sha256-9c12fae5e31518ce875e0cdd0bce75bee70ba7cac8251a4800663274a6add687"
+        }
+      ]
+    },
+    {
+      "type": "skill",
       "id": "nacos-connection",
       "target": "skills/connections/nacos-connection",
       "integrity": "sha256-88152a0841e33dfc57f6a1816bcaacb07bd1385cf2a556781b482a816ff09aa8",
@@ -514,6 +590,66 @@
         {
           "path": "references/visual-perception-and-layout.md",
           "integrity": "sha256-e7d1f7a60935b9ec3ebc97377b7bb2f7bf4ded1d5de36d6b53989119641a7d16"
+        }
+      ]
+    },
+    {
+      "type": "skill",
+      "id": "xxl-job-connection",
+      "target": "skills/connections/xxl-job-connection",
+      "integrity": "sha256-6d6c40479a092373cad98342617334993c12e7db05343bdc0cbfd2bc99ad3a52",
+      "files": [
+        {
+          "path": "SKILL.md",
+          "integrity": "sha256-cc50acaa2cd0aa530425076c1519b4a8ea3859d9e91410b95e48ab45ec74b764"
+        },
+        {
+          "path": "assets/connection.yml",
+          "integrity": "sha256-2e4d5c58c3a86284af8711e6844e246da13c023cc3229f09ad751f1bcf772c84"
+        },
+        {
+          "path": "references/commands-and-results.md",
+          "integrity": "sha256-df4e83d7f50262600b5103b9b6c56c528fbbd2be95d3d9640314a340058f2a84"
+        },
+        {
+          "path": "scripts/lib/configuration.mjs",
+          "integrity": "sha256-5718c15ba64c5cb10c406004c5b7523a560e24f4b2f3e89475b0cb54cca1b166"
+        },
+        {
+          "path": "scripts/lib/context.mjs",
+          "integrity": "sha256-7c659ef34161dcfc65132511ac10c4be7a0f910172264e9b8a0a516597fecd12"
+        },
+        {
+          "path": "scripts/lib/errors.mjs",
+          "integrity": "sha256-1bea7900a0de07d939baba48b4c21c3325d4619e82fe993203e76f2831eac87a"
+        },
+        {
+          "path": "scripts/lib/http.mjs",
+          "integrity": "sha256-936893f29e5db0be16589ddd5035da8539afb534ba2dc5c1af5030d0999fe27a"
+        },
+        {
+          "path": "scripts/lib/job.mjs",
+          "integrity": "sha256-d7698d785461798b1f70c40b58996c61ca42c04b5e6e163513487ab8c70e0826"
+        },
+        {
+          "path": "scripts/lib/operations.mjs",
+          "integrity": "sha256-d785fb5ce622a658f01627140882de3511ceb40b8d476a9d3b3cc6aa069702cc"
+        },
+        {
+          "path": "scripts/lib/output.mjs",
+          "integrity": "sha256-95202a198977f7abae4777fe9ea1f8ef31f43e1123a902e39898fe840d9a4872"
+        },
+        {
+          "path": "scripts/lib/state.mjs",
+          "integrity": "sha256-fa7ea3a050e73fd8340a38eb65aadf7dc33aca3eefe24e5793de8967a9b80cc1"
+        },
+        {
+          "path": "scripts/lib/workflow.mjs",
+          "integrity": "sha256-3d41d686d9474244ff78702608746a58a23acb27a338a869d182adcc048d14b6"
+        },
+        {
+          "path": "scripts/xxl-job-client.mjs",
+          "integrity": "sha256-ad6590101407c8582233f8ebdb3a7300371d2f5921fffb719070d240da0e5853"
         }
       ]
     }

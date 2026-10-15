@@ -1,0 +1,78 @@
+schemaVersion: buildr.connection-definition/v1
+definitionId: kibana
+name: Kibana
+description: 发现数据视图与字段，按明确范围只读检索日志和分组统计。
+category: logs
+systemId: kibana
+configVersion: 1
+config:
+  fields:
+    - key: apiBaseUrl
+      label: 接口基址
+      description: 实际 Kibana 基址，保留反向代理前缀及 /s/<space>；不含 /app/discover、查询或锚点。
+      type: url
+      required: true
+      maxLength: 2048
+    - key: consoleUrl
+      label: 网站地址
+      description: 可选人工查看入口，不用于推断实际接口目标。
+      type: url
+      maxLength: 2048
+    - key: dataViewId
+      label: 默认数据视图（Data View）
+      type: select
+      required: true
+      minLength: 1
+      maxLength: 1024
+      optionsFrom: dataViews
+authentication:
+  fields:
+    - key: username
+      label: 用户名
+      type: string
+      required: true
+      minLength: 1
+      maxLength: 128
+    - key: password
+      label: 密码
+      type: secret
+      required: true
+      maxLength: 4096
+  targetFields: [apiBaseUrl]
+programs:
+  cli:
+    kind: bundled
+    runtime: node
+    entry: scripts/kibana-client.mjs
+    contextProtocol: buildr.connection-context/v1
+    dependencies:
+      - executable: node
+        version:
+          args: [--version]
+          constraint: ">=24.15.0 <25"
+hooks:
+  test:
+    program: cli
+    args: [test, --json]
+    effect: read
+  dataViews:
+    program: cli
+    args: [discover, --json]
+    effect: read
+    inputs: [config.apiBaseUrl, authentication.username, authentication.password]
+presentation:
+  categoryLabel: 日志系统
+  methodLabel: Buildr 标准接入
+  summaryFields: [apiBaseUrl, dataViewId]
+  websiteField: consoleUrl
+  groups:
+    - id: connection
+      title: 连接信息
+      fields: [config.apiBaseUrl, authentication.username, authentication.password]
+    - id: scope
+      title: 使用范围
+      fields: [config.dataViewId]
+    - id: advanced
+      title: 高级设置
+      fields: [config.consoleUrl]
+      collapsed: true
