@@ -144,7 +144,7 @@ export const SYSTEM_SUITES: any = Object.freeze([
     innerConcurrency: 2,
     schedulingCostMs: 25000,
     concurrencyClass: 'workspace-heavy',
-    resources: Object.freeze(['app-runtime']),
+    resources: Object.freeze(['workspace-saturating', 'app-runtime']),
     files: Object.freeze([
       'test/system/development-workspace-smoke-isolation.test.ts',
       'test/system/buildr-web-channel-isolation.test.ts',

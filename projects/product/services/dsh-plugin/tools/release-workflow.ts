@@ -19,6 +19,10 @@ export interface BuildrPeerCandidateSource { mainCommit: string; candidateCommit
 type Run = { id: number; workflow_id: number; path: string; event: string; head_branch: string; head_sha: string; status: string; conclusion: string | null; display_title: string; run_attempt: number; run_number: number; repository: { full_name: string } };
 type Job = { name: string; status: string; conclusion: string | null; steps?: Array<{ name: string; status: string; conclusion: string | null }> };
 export type GithubRead = (path: string) => Promise<any>;
+// The fixed SDK patch exceeds execFileSync's default 1 MiB output limit.
+function readSourceGit(args: string[]): string {
+  return execFileSync('git', args, { encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 });
+}
 function fail(code: string): never { throw new Error(`plugin_workflow_invalid: ${code}`); }
 function runId(value: string | undefined, required: boolean): string | undefined {
   if (!value && !required) return undefined;
@@ -71,7 +75,7 @@ export function pluginCandidateMain(commit: string, git: (args: string[]) => str
 }
 export async function verifySourceCandidateAdoption(input: WorkflowInput, main: PluginCandidateMain,
   candidate: ReturnType<typeof readReleaseCandidate>, aggregate: any, api: GithubRead,
-  git: (args: string[]) => string = args => execFileSync('git', args, { encoding: 'utf8' })): Promise<PluginCandidateAdoption> {
+  git: (args: string[]) => string = readSourceGit): Promise<PluginCandidateAdoption> {
   if (input.operation !== 'prepare' || !input.sourceCandidateRunId || !input.sourceCommit || !input.selectionIdentity || !input.buildrPeer) fail('source-candidate-input');
   const sourceCommit = input.sourceCommit, sourceTree = git(['rev-parse', `${sourceCommit}^{tree}`]).trim();
   if (main.parents.length !== 2 || main.parents[1] !== sourceCommit || main.parents[0] !== aggregate?.selection?.main || main.tree !== sourceTree
@@ -206,7 +210,7 @@ if (import.meta.main) {
       const main = pluginCandidateMain(commit);
       const candidate = readReleaseCandidate(values.get('--candidate')!, { version: input.version, sourceCommit: input.sourceCommit, sourceTree: main.serviceTree });
       const aggregate = JSON.parse(readFileSync(values.get('--aggregate')!, 'utf8'));
-      const adoption = await verifySourceCandidateAdoption(input, main, candidate, aggregate, githubReader(process.env.GH_TOKEN ?? ''), args => execFileSync('git', args, { encoding: 'utf8' }));
+      const adoption = await verifySourceCandidateAdoption(input, main, candidate, aggregate, githubReader(process.env.GH_TOKEN ?? ''));
       writeFileSync(values.get('--output')!, `${JSON.stringify(adoption, null, 2)}\n`);
       writeFileSync(join(dirname(values.get('--output')!), 'plugin-full-verification.json'), `${JSON.stringify(aggregate.verification, null, 2)}\n`);
     }
