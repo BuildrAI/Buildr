@@ -138,6 +138,50 @@ test('Candidate aggregate rechecks reused source records and retains independent
   assert.equal(projected.results[0].failureFacts.length, 2);
 });
 
+test('Candidate aggregate preserves fresh Windows execution when its optional future reuse record is not portable', () => {
+  const workflow = { runId: '38797032896', runAttempt: '1' };
+  const complete = passedEvidence(workflow);
+  const shard = complete.find((item: any) => item.id === 'runtime-windows');
+  for (const id of ['system-app-process', 'runtime-adapter-parity']) {
+    const result = shard.results.find((item: any) => item.id === id);
+    result.durationMs = 12_345;
+    result.sourceRecord = { identity: { stepId: id, key: `sha256-${'a'.repeat(64)}` } };
+  }
+  let checked = 0;
+  const accepted = aggregateCandidateCiEvidence(complete, candidateContext, workflow, {
+    validateSourceRecord() { checked++; return false; },
+  });
+  assert.equal(accepted.status, 'passed');
+  assert.deepEqual(accepted.findings, []);
+  assert.equal(checked, 0, 'fresh same-run results do not use the optional future reuse proof');
+  assert.equal(shard.results.find((item: any) => item.id === 'system-app-process').durationMs, 12_345);
+});
+
+test('Candidate aggregate still rejects an invalid or missing record for explicitly reused results', () => {
+  for (const hasRecord of [true, false]) {
+    const complete = passedEvidence();
+    const result = complete.find((item: any) => item.id === 'runtime-windows').results.find((item: any) => item.id === 'system-app-process');
+    result.disposition = 'reused';
+    if (hasRecord) result.sourceRecord = { identity: { stepId: result.id, key: `sha256-${'a'.repeat(64)}` } };
+    const rejected = aggregateCandidateCiEvidence(complete, candidateContext, null, { validateSourceRecord: () => !hasRecord });
+    assert.equal(rejected.status, 'failed');
+    assert.ok(rejected.findings.some((item: any) => item.code === 'source-reuse-invalid' && item.id === 'runtime-windows' && item.detail === result.id));
+  }
+});
+
+test('an optional source record cannot bypass fresh Browser phase coverage or failed phases', () => {
+  for (const failure of ['missing', 'failed']) {
+    const complete = passedEvidence();
+    const result = complete.find((item: any) => item.id === 'artifact-browser-macos').results.find((item: any) => item.id === 'artifact-browser-core');
+    result.sourceRecord = { identity: { stepId: result.id, key: `sha256-${'a'.repeat(64)}` } };
+    if (failure === 'missing') result.phases = [];
+    else result.phases.find((phase: any) => phase.id === 'browser:core').status = 'failed';
+    const rejected = aggregateCandidateCiEvidence(complete, candidateContext, null, { validateSourceRecord: () => true });
+    assert.equal(rejected.status, 'failed', failure);
+    assert.ok(rejected.findings.some((item: any) => item.code === (failure === 'missing' ? 'browser-phase-missing' : 'browser-phase-not-passed')), failure);
+  }
+});
+
 test('Candidate aggregate accepts mixed attempts from the same workflow run', () => {
   const runId: any = '32807422982';
   const complete: any = passedEvidence({ runId, runAttempt: '1', job: 'candidate-shard' });
