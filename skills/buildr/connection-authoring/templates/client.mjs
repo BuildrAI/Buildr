@@ -31,16 +31,22 @@ export function revalidate(context, timeoutMs = 5000) {
 }
 
 try {
-  if (process.argv.includes('--help') || process.argv.length === 2) {
-    console.log('Usage: client.mjs --self-test\n仅检查上下文与业务输入协议；未实现真实系统动作。');
-  } else if (process.argv.includes('--self-test')) {
+  const [action = '--help', ...args] = process.argv.slice(2);
+  if (args.length) throw new Error('模板命令不接受额外参数。');
+  if (action === '--help') {
+    console.log('Usage: client.mjs --self-test | test | discover\n--self-test: 无上下文或认证的离线模板检查。\ntest/discover: 经 Buildr 私有通道检查模拟上下文并返回固定示例范围；未实现真实系统能力。');
+  } else if (action === '--self-test') {
+    console.log(JSON.stringify({ status: 'success', templateParsed: true, businessImplemented: false, limitations: ['仅离线模板检查；未接收认证，未验证私有通道或真实系统。'] }));
+  } else if (action === 'test' || action === 'discover') {
     const context = await receiveContext();
-    let bytes = 0; for await (const chunk of process.stdin) bytes += chunk.length;
-    await revalidate(context); // A real adapter also checks professional object versions and authorization before each write.
-    console.log(JSON.stringify({ protocolVerified: true, inputBytes: bytes, businessImplemented: false }));
+    const primary = context.connections.primary;
+    if (!['team', 'personal'].includes(primary.authentication?.source) || !primary.authentication.values || !primary.config) throw new Error('模拟上下文不完整。');
+    // Draft hooks are read-only and cannot request write revalidation. A real
+    // write command must await revalidate(context), then check remote versions.
+    console.log(JSON.stringify({ status: 'success', checks: ['已接收明确选择的模拟实例上下文'], diagnostics: [], limitations: ['模板业务未实现；只验证私有协议，未访问或认证真实系统。'], warnings: [], ...(action === 'discover' ? { options: [{ value: 'example-scope', label: '本机模拟范围' }], truncated: false } : {}) }));
   } else {
     throw new Error('示例程序尚未实现此动作，未访问任何外部系统。');
   }
 } catch (error) {
-  console.error(error instanceof Error ? error.message : '示例失败。'); process.exitCode = 2;
+  console.log(JSON.stringify({ status: 'failure', checks: [], diagnostics: [error instanceof Error ? error.message : '示例失败。'], limitations: ['模板业务未实现，未访问真实系统。'], warnings: [] })); process.exitCode = 2;
 } finally { if (process.connected) process.disconnect(); }

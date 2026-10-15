@@ -5,7 +5,7 @@ import { connectionFailure } from './lib/errors.mjs';
 import { NACOS_CONTENT_BYTES } from './lib/configuration.mjs';
 import { openContextChannel } from './lib/context.mjs';
 import { createNacosWorkflow } from './lib/workflow.mjs';
-import { createOutputProtection } from './lib/output.mjs';
+import { createOutputProtection, openPrivateResult } from './lib/output.mjs';
 
 const FLAGS = {
   test: [], namespaces: [], list: ['--data-id', '--group', '--page', '--page-size'], get: ['--data-id', '--group', '--output-file'],
@@ -23,6 +23,8 @@ const HELP = [
   '相同内容不发布。写前核对本机上下文、远端完整正文与格式；原生比较并交换（CAS）或二次读取的实际保护范围分别说明。',
   '受理、内容回读、服务加载与业务成功是不同事实；超时或未知结果先调查，不盲目重发。',
   '认证只从私有进程通道取得。专业标准输入可提交内容或授权，但两者不能同时占用同一标准输入。',
+  '所有实际命令可加 --result-file <new-file>：网络前独占创建0600私有文件，保存准确JSON；普通输出displayOnly，仅用于展示。',
+  '授权scope和默认原文路径从私有结果读取；get可显式 --output-file，不能复制展示处理后的标识或路径继续操作。',
 ];
 function parse(argv) {
   const [action = 'help', ...args] = argv;
@@ -34,7 +36,7 @@ function parse(argv) {
   const values = new Map();
   for (let index = 0; index < args.length; index++) {
     const flag = args[index];
-    if (values.has(flag) || ![...FLAGS[action], '--json'].includes(flag)) throw connectionFailure('nacos_cli_invalid', '参数无效或重复。');
+    if (values.has(flag) || ![...FLAGS[action], '--json', '--result-file'].includes(flag)) throw connectionFailure('nacos_cli_invalid', '参数无效或重复。');
     if (flag === '--json') { values.set(flag, true); continue; }
     const value = args[++index];
     if (value === undefined || value.startsWith('--')) throw connectionFailure('nacos_cli_invalid', '参数缺少值。');
@@ -74,15 +76,27 @@ function readText(filename, limit) {
     } finally { if (descriptor !== 0) fs.closeSync(descriptor); }
   } catch { throw connectionFailure('nacos_cli_input_invalid', '输入文件不可安全读取、无效 UTF-8 或超过大小限制。'); }
 }
+function displayResult(exact, protection, saved) {
+  const output = protection.visit({ ...exact, displayOnly: true, ...saved });
+  if (!['test', 'namespaces'].includes(exact.operation)) return output;
+  // Hook control values are a fixed protocol, not display text or credentials.
+  for (const key of ['schemaVersion', 'operation', 'status']) if (Object.hasOwn(exact, key)) output[key] = exact[key];
+  if (exact.operation === 'namespaces' && exact.options?.some(option => protection.text(option.value) !== option.value)) {
+    process.exitCode = 1;
+    return { schemaVersion: exact.schemaVersion, operation: exact.operation, ok: false, status: 'failure', displayOnly: true, ...saved, checks: ['namespace-discovery-read'], diagnostics: ['命名空间读取已完成，但选项编号与已知认证秘密重合，未返回被改写的选项；准确结果可通过显式私有文件核对。'], limitations: [], error: { code: 'nacos_discovery_identifier_hidden', message: '无法安全地交付准确发现编号；没有返回替代编号或执行发布。', status: 409 } };
+  }
+  return output;
+}
 
-let channel;
+let channel, privateResult;
 const protection = createOutputProtection();
 try {
   const { action, values, input } = parse(process.argv.slice(2));
   let result;
-  if (action === '--version') result = { version: '1.0.0', contextProtocol: 'buildr.connection-context/v1' };
+  if (action === '--version') result = { version: '2.0.0', configVersion: 2, contextProtocol: 'buildr.connection-context/v1' };
   else if (['help', '--help', '-h'].includes(action)) result = { help: HELP };
   else {
+    privateResult = openPrivateResult(values.get('--result-file'));
     channel = openContextChannel();
     const context = await channel.ready;
     const workflow = createNacosWorkflow(context, { protection, revalidate: channel.revalidate });
@@ -93,14 +107,19 @@ try {
     }
     result = action === 'test' || action === 'namespaces' ? await workflow[action]() : action === 'get' ? await workflow.get(input, values.get('--output-file')) : await workflow[action](input);
   }
-  const output = protection.visit({ schemaVersion: 'nacos.connection-result/v1', operation: action, ...result });
+  const exactResult = { schemaVersion: 'nacos.connection-result/v1', operation: action, ...result };
+  const saved = privateResult?.write(exactResult) ?? { privateResultWritten: false };
+  const output = displayResult(exactResult, protection, saved);
   await new Promise(resolve => process.stdout.write(JSON.stringify(output) + '\n', resolve));
 } catch (error) {
   const message = error.code ? error.message : 'Nacos 程序未完成，请保留现场并核对当前事实。';
-  const output = protection.visit({ schemaVersion: 'nacos.connection-result/v1', ok: false, status: error.code === 'nacos_publish_outcome_unknown' ? 'unknown' : 'failure', checks: [], diagnostics: [message], limitations: [], observedAt: new Date().toISOString(), error: { code: error.code || 'nacos_execution_failed', message, status: error.status || 500 } });
+  const exactResult = { schemaVersion: 'nacos.connection-result/v1', operation: process.argv[2], ok: false, status: error.code === 'nacos_publish_outcome_unknown' ? 'unknown' : 'failure', checks: [], diagnostics: [message], limitations: [], observedAt: new Date().toISOString(), error: { code: error.code || 'nacos_execution_failed', message, status: error.status || 500 } };
+  const saved = privateResult?.write(exactResult) ?? { privateResultWritten: false };
+  const output = displayResult(exactResult, protection, saved);
   await new Promise(resolve => process.stdout.write(JSON.stringify(output) + '\n', resolve));
   process.exitCode = 1;
 } finally {
+  privateResult?.close();
   if (channel) channel.close();
   else if (process.connected) process.disconnect();
 }

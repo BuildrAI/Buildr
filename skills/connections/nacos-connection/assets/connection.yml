@@ -4,13 +4,19 @@ name: Nacos
 description: 命名空间发现、完整配置读取、比较及受控发布。
 category: configuration
 systemId: nacos
-configVersion: 1
+configVersion: 2
 config:
   fields:
-    - key: consoleUrl
-      label: 网站地址
+    - key: apiBaseUrl
+      label: 接口基址
+      description: 实际管理接口及认证目标，包含准确端口与根路径；不从网站地址推断。
       type: url
       required: true
+      maxLength: 2048
+    - key: consoleUrl
+      label: 网站地址
+      description: 可选人工网站入口，可以与接口使用不同主机、端口和路径。
+      type: url
       maxLength: 2048
     - key: namespaceId
       label: 命名空间（Namespace）编号
@@ -46,7 +52,7 @@ authentication:
       label: 密码
       type: secret
       required: true
-  targetFields: [consoleUrl]
+  targetFields: [apiBaseUrl]
 programs:
   cli:
     kind: bundled
@@ -67,16 +73,16 @@ hooks:
     program: cli
     args: [namespaces, --json]
     effect: read
-    inputs: [config.consoleUrl, authentication.username, authentication.password]
+    inputs: [config.apiBaseUrl, authentication.username, authentication.password]
 presentation:
   categoryLabel: 配置系统
   methodLabel: Buildr 标准接入
-  summaryFields: [consoleUrl, namespaceId, defaultGroup]
+  summaryFields: [apiBaseUrl, namespaceId, defaultGroup]
   websiteField: consoleUrl
   groups:
     - id: connection
       title: 连接信息
-      fields: [config.consoleUrl, authentication.username, authentication.password, config.production]
+      fields: [config.apiBaseUrl, config.consoleUrl, authentication.username, authentication.password, config.production]
     - id: scope
       title: 使用范围
       fields: [config.namespaceId]

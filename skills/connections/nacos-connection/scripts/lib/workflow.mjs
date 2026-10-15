@@ -43,13 +43,13 @@ function access(connection, secrets) {
   }
   const values = inputObject(connection.authentication.values, ['username', 'password']);
   if (!Object.hasOwn(values, 'username') || !Object.hasOwn(values, 'password')) throw connectionFailure('nacos_credentials_missing', '所选认证组必须同时含用户名和密码，不混合其他来源。', 409);
-  const config = inputObject(connection.config, ['consoleUrl', 'namespaceId', 'defaultGroup', 'production', 'apiVersion']);
+  const config = inputObject(connection.config, ['apiBaseUrl', 'consoleUrl', 'namespaceId', 'defaultGroup', 'production', 'apiVersion']);
   const credentials = { password: passwordInput(values.password) };
   secrets.add(credentials.password);
   return { connection, config: nacosConfiguration({ ...config, username: values.username }), credentials };
 }
 function target(current, detail) {
-  return { connectionId: current.connection.id, consoleUrl: current.config.consoleUrl, namespaceId: detail.namespaceId, group: detail.group, dataId: detail.dataId, apiVersion: detail.apiVersion };
+  return { connectionId: current.connection.id, apiBaseUrl: current.config.apiBaseUrl, ...(current.config.consoleUrl === undefined ? {} : { consoleUrl: current.config.consoleUrl }), namespaceId: detail.namespaceId, group: detail.group, dataId: detail.dataId, apiVersion: detail.apiVersion };
 }
 function publicationScope(context, current, detail, content) {
   return { workspaceId: context.workspace.id, connectionId: current.connection.id, expectedRevision: current.connection.revision, namespaceId: detail.namespaceId, group: detail.group, dataId: detail.dataId, type: detail.type, expectedMd5: detail.md5, contentSha256: sha256(content) };
@@ -87,10 +87,10 @@ export function createNacosWorkflow(context, options = {}) {
     },
     async namespaces() {
       const namespaces = await provider.nacos.namespaces(primary.config, primary.credentials);
-      return { status: 'success', checks: ['login', 'namespace-discovery'], diagnostics: [], limitations: ['返回当前账号可见范围，未运行发布。'], observedAt: new Date().toISOString(), connectionId: primary.connection.id, consoleUrl: primary.config.consoleUrl, namespaces, options: namespaces.map(value => ({ value: value.namespaceId, label: value.namespaceName })) };
+      return { status: 'success', checks: ['login', 'namespace-discovery'], diagnostics: [], limitations: ['返回当前账号可见范围，未运行发布。'], observedAt: new Date().toISOString(), connectionId: primary.connection.id, apiBaseUrl: primary.config.apiBaseUrl, namespaces, options: namespaces.map(value => ({ value: value.namespaceId, label: value.namespaceName })) };
     },
     async list(input) {
-      return { connectionId: primary.connection.id, consoleUrl: primary.config.consoleUrl, ...await provider.nacos.configs(primary.config, primary.credentials, input) };
+      return { connectionId: primary.connection.id, apiBaseUrl: primary.config.apiBaseUrl, ...await provider.nacos.configs(primary.config, primary.credentials, input) };
     },
     async get(input, outputFile) {
       const detail = await provider.nacos.get(primary.config, primary.credentials, input);

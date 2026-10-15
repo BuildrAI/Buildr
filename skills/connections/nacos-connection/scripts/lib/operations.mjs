@@ -13,16 +13,10 @@ function responseString(value, label) {
 function optionalString(value) {
     return value === undefined || value === null ? null : responseString(value, '配置元数据');
 }
+const metadataKeys = ['appName', 'desc', 'configTags', 'use', 'effect', 'schema'];
 function metadata(value) {
     const result = {};
-    for (const key of [
-        'appName',
-        'desc',
-        'configTags',
-        'use',
-        'effect',
-        'schema'
-    ])if (value[key] !== undefined && value[key] !== null) result[key] = responseString(value[key], '配置元数据');
+    for (const key of metadataKeys) if (value[key] !== undefined && value[key] !== null) result[key] = responseString(value[key], '配置元数据');
     return result;
 }
 function digest(content) {
@@ -173,7 +167,6 @@ function supportedCas(version, apiVersion) {
     return !!parsed && (parsed[1] === '3' ? apiVersion === 'v3' : (Number(parsed[2]) >= 4 || Number(parsed[2]) === 3 && Number(parsed[3]) >= 2) && apiVersion !== 'v3');
 }
 async function publicationDetail(client, target, version) {
-    if (version === 'v3') return get(client, target, version);
     let detail;
     try {
         const value = nacosJson((await client.request('/v1/cs/configs', {
@@ -185,6 +178,10 @@ async function publicationDetail(client, target, version) {
         })).text);
         if (value === null) throw connectionFailure('nacos_config_missing', '指定 Nacos 配置不存在，未发布。', 404);
         detail = object(value);
+        // ConfigAllInfo is a different wire model from v3 ConfigDetailInfo. Its
+        // optional nulls may be omitted by Nacos NON_NULL serialization, but the
+        // full management route must still prove its required identity/schema.
+        if (version === 'v3' && (!Object.hasOwn(detail, 'tenant') || typeof detail.tenant !== 'string' || !Object.hasOwn(detail, 'group') || typeof detail.content !== 'string' || typeof detail.md5 !== 'string' || !['createTime', 'modifyTime'].every(key => Number.isSafeInteger(detail[key]) && detail[key] >= 0))) throw connectionFailure('nacos_metadata_unavailable', '管理详情不是完整 ConfigAllInfo 响应，未猜测缺少的元数据或发布；第三版接口读取仍可用。', 409);
     } catch (error) {
         if ([
             'nacos_config_missing',
@@ -221,7 +218,7 @@ async function publish(client, input) {
     const target = identity(client.config, input), content = nacosContent(input.content), expectedMd5 = nacosMd5(input.expectedMd5);
     const requestedType = input.type === undefined ? undefined : nacosIdentifier(input.type, '配置类型', 64);
     const observed = await get(client, target);
-    const baseline = observed.apiVersion === 'v3' ? observed : await publicationDetail(client, target, observed.apiVersion);
+    const baseline = await publicationDetail(client, target, observed.apiVersion);
     checkPublicationObservation(baseline, observed, expectedMd5, requestedType);
     const serverVersion = await client.serverVersion();
     const nativeCas = supportedCas(serverVersion, baseline.apiVersion);
@@ -287,10 +284,13 @@ async function publish(client, input) {
     try {
         const observed = await publicationDetail(client, target, version);
         result.md5 = observed.md5;
-        result.verified = observed.content === content;
+        result.contentVerified = observed.content === content;
+        result.typeVerified = observed.type === publicationType;
+        result.metadataVerified = metadataKeys.every(key => (observed.metadata?.[key] ?? null) === (current.metadata?.[key] ?? null));
+        result.verified = result.contentVerified && result.typeVerified && result.metadataVerified;
         if (!result.verified) result.verificationError = {
             code: 'nacos_verification_mismatch',
-            message: 'Nacos 已接受发布，但回读内容与候选不同，请重新观察；未自动覆盖或重发。'
+            message: 'Nacos 已接受发布，但回读正文、格式或应保留元数据与候选不同，请重新观察；未自动覆盖或重发。'
         };
     } catch (error) {
         result.verificationError = {
@@ -320,7 +320,7 @@ export function createNacosProvider(options = {}) {
         authenticationTargetIdentity: (config)=>{
             const current = nacosConfiguration(config);
             return JSON.stringify([
-                nacosApiBase(current.consoleUrl),
+                nacosApiBase(current.apiBaseUrl),
                 current.username
             ]);
         },

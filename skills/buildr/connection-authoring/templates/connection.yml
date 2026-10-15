@@ -8,6 +8,7 @@ configVersion: 1
 config:
   fields:
     - { key: website, label: 网站地址, type: url, required: true }
+    - { key: scope, label: 模拟业务范围, type: select, optionsFrom: scopes }
 authentication:
   fields:
     - { key: username, label: 用户名, type: string, required: true, minLength: 1 }
@@ -19,6 +20,9 @@ programs:
     runtime: node
     entry: scripts/client.mjs
     contextProtocol: buildr.connection-context/v1
+hooks:
+  test: { program: cli, args: [test], effect: read }
+  scopes: { program: cli, args: [discover], effect: read, inputs: [config.website] }
 presentation:
   categoryLabel: 配置系统
   methodLabel: 组织标准接入
@@ -26,5 +30,8 @@ presentation:
     - id: access
       title: 访问方式
       fields: [config.website, authentication.username, authentication.password]
+    - id: scope
+      title: 模拟业务范围
+      fields: [config.scope]
   summaryFields: [website]
   websiteField: website

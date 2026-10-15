@@ -8,15 +8,80 @@
 
 字段支持 `string`、`url`、`integer`、`boolean`、`enum`、`select`、`multiselect`，认证组另支持 `secret`。`required` 检查字段存在；需要非空文本时声明 `minLength: 1`，允许空密码时不增加该约束。使用 `minLength/maxLength`、`minimum/maximum`、固定 `values`、`optionsFrom` 及 `dependsOn: {field, equals}` 表达简单条件。不允许任意脚本表达式；秘密字段不能有默认值，不能进入摘要或网站字段。网站只接受不嵌账号密码的 HTTP/HTTPS 地址，不能用查询或锚点参数承载密码、令牌；普通页面锚点保留。
 
-动态选项使用 `options: [{value: string, label: string}]`，单选与多选分别保存文本编号和文本编号数组。程序将数值编号规范为文本后返回，不依赖页面静默转换；非法选项只使该次发现失败，不使连接整体不可用。固定枚举及条件相等值可使用文本、布尔值或有限数值，不能使用 `NaN` 或无穷值。
+动态选项使用 `options: [{value: string, label: string}]`，单选与多选分别保存文本编号和文本编号数组。程序将数值编号规范为文本后返回，不依赖页面静默转换；非法选项只使该次发现失败，不使连接整体不可用。提供者（Provider）不能预先用隐藏文本改写选项编号；编号与已知秘密重合时由宿主明确拒绝该次发现，不生成替代身份，可按该方法支持的准确只读定位或私有产物（Artifact）接续。单选与多选的固定 `values` 同样必须为文本编号；数值或布尔固定值使用 `enum`。固定枚举及条件相等值可使用文本、布尔值或有限数值，不能使用 `NaN` 或无穷值。
 
 `presentation.categoryLabel` 与 `methodLabel` 仅提供类别和接入方式的纯文本展示名，不参与选择或授权。`groups` 是有序区块数组，每项为 `{id, title, fields, collapsed?}`；`fields` 使用 `config.<key>` 或 `authentication.<key>` 引用，可混合编排地址、团队认证与业务范围，每个字段至多出现一次。未列字段由通用页面回落展示；低频内容声明 `collapsed: true`，不能隐藏必需保护或通过任意界面代码执行操作。实例名称、环境、启用状态与默认收起的个人账号入口由 Buildr 维护，不重复声明。
 
 `programs` 是命名程序对象：`bundled` 使用技能（Skill）目录相对 `entry` 和可选 `runtime`；`installed` 使用独立 `executable` 名称。二者可以声明参数数组、`helpArgs`、`dependencies` 和 `installHint`；版本检查使用 `version: {args, constraint}`。所有随附运行代码放在声明入口所属的同一附件树，通常为 `scripts/`，例如 `scripts/bin/client.mjs` 与 `scripts/lib/`；通用启动会观察该树的当前文件，文档与配置附件继续按各自职责保存。独立安装程序的内部依赖不由启动入口完整证明，应声明依赖及版本检查并由该方法自行核验实际可用性。只读测试与动态选择在 `hooks` 引用程序并声明 `effect: read`，不得借测试发布配置或部署。动态发现可使用 `inputs` 列出所需字段引用，让地址与认证齐备后先发现业务范围；只降低该发现动作对未给配置字段的必填要求，所有已给值仍校验，完整认证和认证目标边界不变。省略 `inputs` 沿用完整配置检查，连接测试始终检查完整配置。
 
-Node.js 随附程序使用独立进程间通信（IPC）接收 `{type: buildr.connection-context, context}`，`context.protocolVersion` 为 `buildr.connection-context/v1`。认证不进入业务标准输入（Standard Input）、参数或普通环境。上下文包括调用及工作空间（Workspace）身份、定义观察、显式命名的实例及配置认证和提供者隔离的 `privateStateRoot`；程序只使用本次明确选择的实例。外部写入前发送 `{type: buildr.connection-revalidate, requestId, callId: context.callId}`，等待相同 `requestId` 的 `buildr.connection-revalidated` 消息中 `ok: true`；失败时停止旧上下文，不自行换认证重试。此校验只核对本机版本，专业授权、对象版本和副作用保护仍由专业程序执行。
+共享认证绑定的是声明接收方 `kind/entry/runtime/executable/args`，不保存本机程序绝对路径。目录返回 `declarationRevision`（声明文件摘要）、`programRecipients`（本机实际接收方位置或缺失）及当前 `revision`；后者同时观察声明与本机位置。输入 `expected.definitionRevision` 使用刚读到的 `revision`，不得用 `declarationRevision` 替代。目录读取只定位程序，不执行版本探测或登录；缺失程序仅影响使用它的动作。相同机器程序位置变化后重读当前接收方再继续；换机器在声明相同、依赖可用且没有个人组时使用团队组，不为路径差异改写团队文件。旧版独立程序的路径耦合认证若被诊断为失效，须明确重新录入该组，不能猜测迁移。
 
-程序不打印认证、登录令牌或远端认证回显；诊断保持有界。通用启动成功、请求受理、构建或发布成功、回读一致、服务加载和业务验证分开表达。超时不证明远端未执行；结果未知先查询记录再判断，不能盲目重复提交。原始业务内容作为专业产物保留，不能把遮蔽文本冒充原文继续用于摘要和写入。
+## 私有上下文与写前再核验
+
+Node.js 随附程序通过独立进程间通信（IPC）接收 `{type: 'buildr.connection-context', context}`。认证不进入业务标准输入（Standard Input）、参数或普通环境；只消费本次明确命名的实例。精简结构如下，尖括号均为占位，不能写入真实秘密：
+
+```json
+{
+  "protocolVersion": "buildr.connection-context/v1",
+  "callId": "<本次调用编号>",
+  "workspace": {"id": "<工作空间编号>", "root": "<本机工作空间目录>"},
+  "definition": {"skillAssetIdentity": "<技能资产身份>", "definitionId": "example", "revision": "<本次定义观察>"},
+  "connections": {
+    "primary": {
+      "id": "<明确选择的实例编号>",
+      "revision": "<实例观察>",
+      "revisions": {"teamRevision": "<团队观察>", "localRevision": "<个人观察或absent>", "definitionRevision": "<定义观察>"},
+      "config": {"website": "https://example.invalid/"},
+      "authentication": {"source": "team", "values": {"username": "EXAMPLE_USER", "password": "EXAMPLE_PASSWORD"}},
+      "authenticationRevision": "<所选整组认证观察>"
+    }
+  },
+  "privateStateRoot": "<宿主提供的本机私有状态目录>"
+}
+```
+
+`run` 的主实例名固定为 `primary`；显式 `--context <name>=<id>@<revision>` 可增加同一接入来源的命名实例，不按类别（Category）自行选取。草稿测试和发现只提供 `primary`，其 `revision/authenticationRevision` 为 `draft`，没有 `revisions`。个人认证整组替换团队认证，缺失或失效不能自行回退。`privateStateRoot` 用于提供者（Provider）自己的受限本机状态，不是其他连接的认证发现入口，也不进入共享身份。
+
+外部写入前发送 `{type: 'buildr.connection-revalidate', requestId: '<唯一编号>', callId: context.callId}`，等待相同 `requestId` 的 `{type: 'buildr.connection-revalidated', ok: true}`。失败、断开或超时就停止旧上下文（Context），不换认证重试。此校验只核对本机当前事实；专业授权、远端对象版本和副作用保护仍由专业程序执行。草稿槽位（Hook）没有写前再核验能力，不能把它用于真实写入；其只读测试无需请求这项能力。
+
+## 槽位输出与退出结果
+
+`test/discover` 的标准输出（Standard Output）必须只有一个 JSON 对象，前后可有空白，不能夹杂日志、进度行或多个对象。必需 `status` 为 `success`、`failure` 或 `unknown`，固定状态及字段名属于协议控制，不按密码子串改写；诊断日志使用标准错误（Standard Error），且不能包含认证或远端秘密回显。`run` 的专业结果由该方法定义，不受以下槽位（Hook）字段限制。
+
+| 字段 | 约定 |
+| --- | --- |
+| `status` | 必需；`success/failure/unknown` |
+| `checks` | 可选数组；本次实际执行的检查 |
+| `diagnostics` | 可选数组；失败、冲突或未知原因 |
+| `limitations` | 可选数组；未证明的范围 |
+| `warnings` | 可选数组；不等同失败的观察 |
+| `options` | 动态发现的 `{value: string, label: string}` 数组；不能返回数值编号 |
+| `truncated` | 可选布尔值；选项是否不完整 |
+
+宿主每类说明数组最多保留 100 项，动态选项最多 1000 项，标签最长 2048 个字符；超限选项截断并标记限制。除上述字段与 `error.message`（并入诊断）外，不依赖其他字段进入通用表单。完整专业结果另走 `run` 或明确的私有产物（Artifact）。
+
+```json
+{"status":"success","checks":["已读取本机模拟上下文"],"diagnostics":[],"limitations":["未访问真实系统"],"warnings":[],"options":[{"value":"example-scope","label":"模拟范围"}],"truncated":false}
+```
+
+```json
+{"status":"failure","checks":[],"diagnostics":["必要输入不符合已知要求，未执行请求"],"limitations":[],"warnings":[]}
+```
+
+```json
+{"status":"unknown","checks":["请求已发出"],"diagnostics":["无法确认结果，先查询记录再判断"],"limitations":["没有取得可核验响应"],"warnings":[]}
+```
+
+| 程序与输出 | 宿主结果 |
+| --- | --- |
+| 正常退出且退出码为 0，合法 `status: success` | `success`；只证明声明的检查范围 |
+| 正常退出，合法 `status: unknown` | `unknown`，不因退出码为 0 宣称成功 |
+| 正常退出但非零退出码、`status: failure` 或无效输出 | `failure`；不能仅凭退出码推断远端没有执行 |
+| 超时、输出超限或无法启动 | `unknown`；部分输出不作为接续依据 |
+
+只输出 `{"options":[]}`、混入普通日志、返回数值选项均为无效结果。模板 `--self-test` 不接收上下文（Context）或认证；声明中的 `test/discover` 则用虚构实例经 Buildr 私有通道验证上述协议，只返回固定模拟范围。替换为真实适配后按实际证明范围修改检查和限制，不沿用模拟成功作为真实能力证据。
+
+程序不打印认证、登录令牌或远端认证回显；诊断保持有界。通用启动成功、请求受理、构建或发布成功、回读一致、服务加载和业务验证分开表达。超时不证明远端未执行；结果未知先查询记录再判断，不能盲目重复提交。原始业务内容作为专业产物（Artifact）保留，不能把隐藏秘密后改变的文本冒充原文继续用于摘要和写入。需要准确标识、原文或后续授权依据时，由方法提供调用方明确选择的受限本机文件或等效私有产物（Artifact）；预检冲突和写入权限，说明原样读取、权限和失败后的接续方式，不能因本机保存失败否定已成立的外部事实。参数名称和格式由专业方法定义，不扩展通用启动协议。
 
 程序安装、本机登录、技能（Skill）投射与真实验证分别维护。现有远端 `resolved.kind: skill-url` 只有单个 `SKILL.md`，不能视为完整附件包；完整私有成果可由组织自己的代码库（Repository）分发，再使用本地登记。实际共享配置与团队认证属于用户实例文件，个人覆盖属于本机整组认证，不进入技能源和公开交付物。
 
