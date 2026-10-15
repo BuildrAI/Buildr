@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { AgentOperationsApplication } from '../../src/modules/agent-operations/application/agent-operations-application.ts';
+import { AgentRegistrationRepository } from '../../src/modules/agent-operations/persistence/agent-registration-repository.ts';
 import { createAgentOperationsHttpContribution } from '../../src/modules/agent-operations/interfaces/http/agent-operations-http.ts';
 import { AGENT_OPERATIONS_HTTP_SCHEMAS, AGENT_OPERATIONS_HTTP_VALIDATORS } from '../../src/modules/agent-operations/interfaces/http/agent-operations-http-contracts.ts';
 import type { AgentRegistration, AgentRunView } from '../../src/modules/agent-operations/domain/agent-operations.ts';
@@ -34,7 +36,14 @@ function fixture(t: test.TestContext, options: { idleMs?: number } = {}) {
   t.after(async () => { for (const release of cleanup) release(); try { await app.close(); } catch { /* Fault fixtures own no OS process. */ } fs.rmSync(root, { recursive: true, force: true }); });
   const a = app.registerCodex({ executable: process.execPath, codexHome: homes[0], label: 'Codex（ChatGPT）', expectedRevision: app.listRegistry().revision }).defaultAgentId!;
   const b = app.registerCodex({ executable: process.execPath, codexHome: homes[1], label: 'Other Codex', expectedRevision: app.listRegistry().revision }).agents.find(record => record.id !== a)!.id;
-  const dsh = app.registerDsh({ executable: process.execPath, dshHome: homes[2], expectedRevision: app.listRegistry().revision }).agents.find(record => record.kind === 'dsh')!.id;
+  // The unrelated DSH is an existing registration. Registering a new desktop
+  // now requires its actual discovery/handshake, outside this Codex fixture.
+  const dsh = 'agent-' + randomUUID(), repository = new AgentRegistrationRepository(dataRoot);
+  repository.mutate(app.listRegistry().revision, registry => {
+    registry.agents.push({ id: dsh, kind: 'dsh', executable: process.execPath, dshHome: homes[2], label: 'DSH', version: 'test' });
+    return registry;
+  });
+  assert.equal(app.listRegistry().agents.find(record => record.kind === 'dsh')?.id, dsh);
   const disconnects: string[] = [];
   app.bindCodexDesktopConnector({ connect: async registration => ({ id: 'desktop-a', agentId: registration.id, label: 'Codex', installationLabel: 'Codex 桌面', configurationLabel: '测试配置', status: 'configured', safeReason: null }), disconnect: id => { events.push('disconnect:' + id); disconnects.push(id); } });
   const generate = (agentId = a) => app.startGeneration({ agentId, cwd: root, prompt: 'Supplied changes only.', outputSchema });

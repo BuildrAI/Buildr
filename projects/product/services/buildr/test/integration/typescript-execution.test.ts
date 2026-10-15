@@ -1,11 +1,14 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 import { isVersionRequest, readCliIdentity } from '../../src/bootstrap/cli/identity.ts';
+import { assertMinimumNodeVersion } from '../../src/infrastructure/process.ts';
 
-test('Node 24 loads the stable mjs entry and real TypeScript CLI graph', () => {
-  assert.equal(process.versions.node, '24.15.0');
+test('Supported Node loads the stable mjs entry and real TypeScript CLI graph', () => {
+  const minimumNodeVersion = readFileSync(new URL('../../../../.node-version', import.meta.url), 'utf8').trim();
+  assertMinimumNodeVersion(process.versions.node, minimumNodeVersion);
   assert.equal(isVersionRequest(['--version']), true);
   assert.equal(isVersionRequest(['version', '--json']), true);
   assert.equal(isVersionRequest(['--help']), false);

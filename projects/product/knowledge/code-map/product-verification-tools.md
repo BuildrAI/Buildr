@@ -9,6 +9,10 @@ Buildr 产品是[通用项目与服务测试验证框架](../docs/architecture/w
 这些文件服务 Buildr 产品自己的工程验证。`changed.ts` 收集差异后调用规划器（Planner），组合前置检查并将执行交给 `executePlan()`；后者通过依赖调度和执行器（Executor）调用真实工具。依赖方向是项目工具消费测试及公共技术能力，不是通用项目地图模块反向执行这些脚本。
 
 - **`services/buildr/test/verification/`** — 产品自己的测试编排
+  - [source.ts](../../services/buildr/test/verification/source.ts) — 本机发布准备的适用源码集合，不生产或消费最终原包；与远端共享登记及执行器（Executor）
+  - [verification-reuse.ts](../../services/buildr/test/verification/verification-reuse.ts) — 内容、配方、环境和必要 Git 身份，成功结果持久复用与可搬运证明；输入漂移或清理失败不得写成成功
+  - [local-source-verification.ts](../../services/buildr/test/verification/local-source-verification.ts) — 发布派发前核对冻结工作树的本机适用源码证明，合并合法插件阶段，缺项只返回必要补齐动作
+  - [candidate-source-reuse.ts](../../services/buildr/test/verification/candidate-source-reuse.ts) — 有界受控交接、源码分片（Shard）覆盖计算；实际身份由复用模块核验
   - [test-files.ts](../../services/buildr/test/verification/test-files.ts) — 解析安全路径、展开文件匹配并去重，空集合失败
   - [system-suites.ts](../../services/buildr/test/verification/system-suites.ts) — 系统测试（System）分组、实际文件和有关资源
   - [ownership.ts](../../services/buildr/test/verification/ownership.ts) — 改动路径归属、排除项、委托与扩大范围的依据
@@ -36,7 +40,8 @@ Buildr 产品是[通用项目与服务测试验证框架](../docs/architecture/w
   - [run-development-npm.ts](../../services/buildr/tools/development/run-development-npm.ts) — 检查当前 Node.js 在项目声明范围内并调用相邻 npm；无扩展名的同名入口负责在声明范围内选择 Node.js（声明版本优先）
   - [run-isolated-workspace-smoke.ts](../../services/buildr/tools/development/run-isolated-workspace-smoke.ts) — 隔离工作目录和两类应用数据目录，统一成功与失败清理
 - **`services/buildr/tools/verification/`** — 候选环境准备
-  - [candidate-environment.ts](../../services/buildr/tools/verification/candidate-environment.ts) — 唯一准备入口按档位（Profile）安装实际运行依赖；`frontend` 提供前端测试输入，`browser-artifact` 提供测试运行时（Runtime）和明确 Chromium，均不替代候选网页载荷
+  - [candidate-preparation-reuse.ts](../../services/buildr/tools/verification/candidate-preparation-reuse.ts) — 本机准备按输入及完整输出内容核验可重建回执（Receipt），输出缺失或变化只重做相关操作；持续集成（CI）默认保留干净安装
+  - [candidate-environment.ts](../../services/buildr/tools/verification/candidate-environment.ts) — 唯一准备入口即时保存准备状态，按档位（Profile）安装实际运行依赖；`frontend` 提供前端测试输入，`browser-artifact` 提供测试运行时（Runtime）和明确 Chromium，均不替代候选网页载荷
 
 ## 上下文复用：公共能力与项目适配
 

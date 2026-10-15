@@ -34,6 +34,13 @@ const workspaceRoot: any = path.resolve(serviceRoot, '../../../..');
 const VERSION: any = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u;
 const TASK: any = /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/u;
 
+async function prepareLocalSourceVerification(options: any): Promise<any> {
+  // Source execution tools stay outside the production import graph. This
+  // source-checkout release owner loads them only before a new dispatch.
+  const owner = await import(new URL('../../test/verification/local-source-verification.ts', import.meta.url).href);
+  return owner.prepareLocalSourceVerification(options);
+}
+
 function identity(value: any): any  {
   return `sha256-${crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex')}`;
 }
@@ -630,6 +637,14 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
       const find = () => JSON.parse(gh(['run', 'list', '--repo', releasePublishAuthority.repository, '--workflow', 'verify.yml', '--branch', carrier, '--event', 'workflow_dispatch', '--limit', '100', '--json', 'databaseId,headSha,status,conclusion'])).find((run: any) => run.headSha === sourceCommit);
       let existing = find();
       if (!existing && !state.candidate.dispatchRequested) {
+        const localSource = await (dependencies.prepareLocalSourceVerification ?? prepareLocalSourceVerification)({
+          repo, sourceFile: options.sourceVerification,
+          packages: [...(!scoped || plan.requirements.buildr ? ['buildr'] : []), ...(scoped && plan.requirements.plugin ? ['dsh-plugin'] : [])],
+        });
+        if (localSource.status !== 'ready') {
+          save();
+          return answer('local-verification-required', localSource.nextActions, { localSource });
+        }
         ensureCandidateBranch(carrier);
         state.candidate.dispatchRequested = true;
         writeOperation(file, state);
@@ -639,6 +654,9 @@ export async function runReleaseOperation(options: any, dependencies: any = {}):
           `plugin_version=${plan.pluginVersion}`, `selection_id=${key}`, `selection_baseline=${baseline}`, `selection_main=${plan.selection.main}`,
           `selection_identity=${selection.selectionIdentity}`, ...(!targets.packages.includes('buildr') && plan.requirements.plugin
             ? [`buildr_peer_version=${state.preparationPeer.version}`, `buildr_peer_integrity=${state.preparationPeer.integrity}`] : [])] : [];
+        if (localSource.transport) fields.push(`source_verification=${localSource.transport}`);
+        state.candidate.sourceVerification = { recordCount: localSource.recordCount ?? 0, digest: identity(localSource.transport ?? '') };
+        writeOperation(file, state);
         try { gh(['workflow', 'run', 'verify.yml', '--repo', releasePublishAuthority.repository, '--ref', carrier, '-f', 'purpose=candidate', ...fields.flatMap(field => ['-f', field])]); effect.state = 'confirmed'; }
         catch { /* Resolve response loss by the same source/carrier readback. */ }
         existing = find();
@@ -728,6 +746,7 @@ function parseOptions(argv: any): any  {
   if (!options.input && ['prepare', 'inspect', 'publish', 'resume'].includes(action)) return {
     ...options, normalOperation: true, candidateRunId: options['candidate-run-id'] ? Number(options['candidate-run-id']) : null,
     pluginVersion: options['plugin-version'], selectionId: options['selection-id'],
+    sourceVerification: options['source-verification'],
     supportTasks: options['support-tasks'] ? options['support-tasks'].split(',').filter(Boolean) : undefined,
   };
   if (!options.input) throw new Error('Usage: release-orchestration-runner.ts <prepare|inspect|publish|resume> --workspace <root> [--packages buildr|dsh-plugin|buildr,dsh-plugin] [--version <main-version>] [--plugin-version <plugin-version>] [--baseline <ref>] [--source <sha> ...] [--authorized]');

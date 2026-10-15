@@ -60,6 +60,10 @@ on:
         description: Frozen source selection digest
         required: false
         type: string
+      source_verification:
+        description: Bounded runner-produced source results for the controlled Candidate entry
+        required: false
+        type: string
   pull_request:
     branches: [dev, main]
 
@@ -84,6 +88,7 @@ env:
   BUILDR_SELECTION_IDENTITY: ${{ inputs.selection_identity || '' }}
   BUILDR_BUILDR_PEER_VERSION: ${{ inputs.buildr_peer_version || '' }}
   BUILDR_BUILDR_PEER_INTEGRITY: ${{ inputs.buildr_peer_integrity || '' }}
+  BUILDR_SOURCE_VERIFICATION: ${{ github.event_name == 'workflow_dispatch' && inputs.source_verification || '' }}
 
 jobs:
   dev-feedback-macos:
@@ -246,6 +251,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       source: ${{ steps.plan.outputs.source }}
+      source_required: ${{ steps.plan.outputs.source_required }}
       artifact: ${{ steps.plan.outputs.artifact }}
       host: ${{ steps.plan.outputs.host }}
       buildr: ${{ steps.scope.outputs.buildr }}
@@ -269,7 +275,17 @@ jobs:
       - id: plan
         if: steps.scope.outputs.buildr == 'true'
         working-directory: projects/product/services/buildr
+        env:
+          BUILDR_CANDIDATE_CI_EVIDENCE_DIR: ${{ runner.temp }}/candidate-reused-source
         run: node test/verification/candidate-ci.ts plan
+      - name: Preserve validated source result reuse
+        if: steps.scope.outputs.buildr == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: candidate-evidence-reused-source
+          path: ${{ runner.temp }}/candidate-reused-source
+          if-no-files-found: ignore
+          overwrite: true
 
   diagnostic-core-project-task-macos:
     name: Independent diagnosis (core-project-task-macos)
@@ -470,6 +486,9 @@ jobs:
           cache: npm
           cache-dependency-path: projects/product/services/buildr/package-lock.json
       - name: Prepare Candidate artifact environment
+        env:
+          BUILDR_CANDIDATE_PREPARATION_ID: artifact-macos
+          BUILDR_CANDIDATE_PREPARATION_OUTPUT: ${{ runner.temp }}/candidate-evidence/artifact-macos-preparation.json
         run: node tools/verification/candidate-environment.ts prepare --profile artifact
       - name: Build the single Candidate artifact
         env:
@@ -504,7 +523,7 @@ jobs:
   candidate-source:
     name: Candidate source (${{ matrix.shard }})
     needs: candidate-plan
-    if: needs.candidate-plan.outputs.buildr == 'true'
+    if: needs.candidate-plan.outputs.buildr == 'true' && needs.candidate-plan.outputs.source_required == 'true'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
@@ -524,6 +543,9 @@ jobs:
           cache: npm
           cache-dependency-path: projects/product/services/buildr/package-lock.json
       - name: Prepare Candidate source environment
+        env:
+          BUILDR_CANDIDATE_PREPARATION_ID: ${{ matrix.shard }}
+          BUILDR_CANDIDATE_PREPARATION_OUTPUT: ${{ runner.temp }}/candidate-evidence/${{ matrix.shard }}-preparation.json
         run: node tools/verification/candidate-environment.ts prepare --profile ${{ matrix.preparation }}
       - name: Run independent source shard
         env:
@@ -567,6 +589,9 @@ jobs:
           cache: npm
           cache-dependency-path: projects/product/services/buildr/package-lock.json
       - name: Prepare Candidate artifact consumer environment
+        env:
+          BUILDR_CANDIDATE_PREPARATION_ID: ${{ matrix.shard }}
+          BUILDR_CANDIDATE_PREPARATION_OUTPUT: ${{ runner.temp }}/candidate-evidence/${{ matrix.shard }}-preparation.json
         run: node tools/verification/candidate-environment.ts prepare --profile ${{ matrix.preparation }}
       - uses: actions/download-artifact@v7
         with:
@@ -615,6 +640,9 @@ jobs:
           cache: npm
           cache-dependency-path: projects/product/services/buildr/package-lock.json
       - name: Prepare Candidate Host Node environment
+        env:
+          BUILDR_CANDIDATE_PREPARATION_ID: ${{ matrix.id }}
+          BUILDR_CANDIDATE_PREPARATION_OUTPUT: ${{ runner.temp }}/candidate-evidence/${{ matrix.id }}-preparation.json
         run: node tools/verification/candidate-environment.ts prepare --profile ${{ matrix.preparation }}
       - uses: actions/download-artifact@v7
         with:
@@ -643,7 +671,7 @@ jobs:
     name: Plugin source Candidate
     needs: [candidate-plan, candidate-bootstrap]
     if: always() && needs.candidate-plan.result == 'success' && needs.candidate-plan.outputs.plugin == 'true' && (needs.candidate-plan.outputs.candidate_peer != 'true' || needs.candidate-bootstrap.result == 'success')
-    runs-on: ubuntu-24.04
+    runs-on: macos-15
     timeout-minutes: 40
     defaults:
       run:
@@ -726,23 +754,12 @@ jobs:
       - name: Verify complete plugin against the exact peer
         env:
           PLUGIN_SOURCE_SDK: ${{ steps.sdk.outputs.root }}
+          PLUGIN_VERSION: ${{ needs.candidate-plan.outputs.plugin_version }}
         run: >-
           node tools/verify-all.ts --source-sdk "${PLUGIN_SOURCE_SDK}"
           --buildr-peer "${RUNNER_TEMP}/plugin-buildr-peer.json"
           --output "${RUNNER_TEMP}/plugin-full-verification.json"
-          --npm "${RUNNER_TEMP}/plugin-tooling/node_modules/npm/bin/npm-cli.js"
-      - name: Prepare plugin source Candidate bytes
-        env:
-          PLUGIN_SOURCE_SDK: ${{ steps.sdk.outputs.root }}
-        run: node tools/release.ts prepare --source-sdk "${PLUGIN_SOURCE_SDK}"
-      - name: Bind full verification to the final source Candidate bytes
-        env:
-          PLUGIN_VERSION: ${{ needs.candidate-plan.outputs.plugin_version }}
-        run: >-
-          node tools/bind-buildr-peer.ts
-          --candidate "build/release-candidates/${PLUGIN_VERSION}/candidate.json"
-          --buildr-peer "${RUNNER_TEMP}/plugin-buildr-peer.json"
-          --verification "${RUNNER_TEMP}/plugin-full-verification.json"
+          --candidate-output "build/release-candidates/${PLUGIN_VERSION}"
           --npm "${RUNNER_TEMP}/plugin-tooling/node_modules/npm/bin/npm-cli.js"
       - name: Bind plugin source-admission aggregate
         working-directory: projects/product/services/buildr

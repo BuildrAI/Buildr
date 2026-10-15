@@ -5,6 +5,36 @@ import process from 'node:process';
 import { spawn, spawnSync } from 'node:child_process';
 import { parseVerificationPhaseTimings } from './phases.ts';
 
+// Preserve multiple failures without treating an assertion wrapping a timed-out
+// subprocess as a product assertion. Only Node test diagnostic blocks supply
+// assertion facts; arbitrary titles and log mentions are not assertions.
+export function verificationFailureFacts({ stdout = '', stderr = '', failureCode = null, errorCode = null, childOutcome = 'unknown', processCleanup = null }: any): any[] {
+  const facts: any[] = [];
+  const add = (stage: string, kind: string, code: string) => {
+    if (!facts.some(item => item.stage === stage && item.kind === kind && item.code === code)) facts.push({ stage, kind, code });
+  };
+  for (const line of `${stdout}\n${stderr}`.split(/\r?\n/u)) {
+    if (!line.startsWith('[buildr-integration-progress] ') || line.length > 16_384) continue;
+    let record: any;
+    try { record = JSON.parse(line.slice('[buildr-integration-progress] '.length)); } catch { continue; }
+    if (record?.status !== 'failed' || !record.error) continue;
+    if (record.error.timeout === true || record.error.childErrorCode === 'ETIMEDOUT') add('execution', 'timeout', 'nested-process-timeout');
+    else if (record.error.causeCode === 'ERR_ASSERTION') add('execution', record.error.timeout === false ? 'assertion' : 'unknown', 'ERR_ASSERTION');
+  }
+  for (const block of `${stdout}\n${stderr}`.matchAll(/^\s*---\s*\r?\n([\s\S]*?)^\s*\.\.\.\s*$/gmu)) {
+    if (!/^\s*code:\s*['"]?ERR_ASSERTION['"]?\s*$/mu.test(block[1])) continue;
+    if (/ETIMEDOUT|capability-timeout|process-close-timeout|\b(?:timed out|timeout)\b/iu.test(block[1])) add('execution', 'timeout', 'nested-process-timeout');
+    else add('execution', 'assertion', 'ERR_ASSERTION');
+  }
+  if (failureCode === 'capability-timeout' || failureCode === 'process-close-timeout' || errorCode === 'ETIMEDOUT') add('execution', 'timeout', failureCode ?? errorCode);
+  else if (failureCode === 'capability-cancelled') add('execution', 'cancelled', failureCode);
+  else if (['ECONNRESET', 'EAI_AGAIN'].includes(errorCode)) add('execution', 'transient', errorCode);
+  else if (errorCode) add('execution', 'execution', /^[A-Z][A-Z_0-9]{0,63}$/u.test(errorCode) ? errorCode : 'child-process-error');
+  if (childOutcome === 'failed' && !facts.some(item => item.stage === 'execution')) add('execution', 'unknown', 'child-exited-unsuccessfully');
+  if (processCleanup?.status === 'failed') add('cleanup', 'cleanup', 'process-cleanup-failed');
+  return facts;
+}
+
 function diagnosticBaseName(step: any): any  {
   return String(step.diagnosticId ?? step.name ?? 'verification-step')
     .toLowerCase()
@@ -237,6 +267,7 @@ export async function runVerificationStep(step: any, runtime: any = {}): Promise
     let wallTimer: any = null;
     let abortListener: any = null;
     let exitResult: any = null;
+    let childErrorCode: any = null;
     const requestedExitCloseGraceMs: any = runtime.exitCloseGraceMs ?? 10_000;
     const exitCloseGraceMs: any = Number.isFinite(requestedExitCloseGraceMs) && requestedExitCloseGraceMs >= 0 ? requestedExitCloseGraceMs : 10_000;
     const scheduleTimeout: any = runtime.setTimeout ?? setTimeout;
@@ -282,10 +313,15 @@ export async function runVerificationStep(step: any, runtime: any = {}): Promise
       const phaseOutput: any = phaseOutputPath && fs.existsSync(phaseOutputPath)
         ? fs.readFileSync(phaseOutputPath, 'utf8')
         : '';
+      const childOutcome = !exitResult || exitResult.interrupted ? 'unknown' : exitResult.code === 0 && !exitResult.signal ? 'passed' : 'failed';
       resolve({
         name: step.name,
         status: statusOverride ?? (exitCode === 0 ? 'passed' : 'failed'),
         exitCode,
+        childExitCode: exitResult?.code ?? null,
+        childSignal: exitResult?.signal ?? null,
+        childOutcome,
+        failureFacts: verificationFailureFacts({ stdout, stderr, failureCode, errorCode: childErrorCode, childOutcome, processCleanup }),
         durationMs,
         process: Number.isInteger(child?.pid) ? { pid: child.pid, processGroupId: platform === 'win32' ? null : child.pid } : null,
         stdout,
@@ -388,10 +424,11 @@ export async function runVerificationStep(step: any, runtime: any = {}): Promise
     }
     child.stdout.on('data', (chunk: any) => { stdout += chunk; });
     child.stderr.on('data', (chunk: any) => { stderr += chunk; });
-    child.on('error', (error: any) => finish(1, error));
+    child.on('error', (error: any) => { childErrorCode = error.code ?? null; finish(1, error, 'child-process-error'); });
     child.on('exit', (code: any, signal: any) => {
-      if (settled || terminating || exitResult) return;
-      exitResult = { code: Number.isInteger(code) ? code : 1, signal };
+      if (exitResult) return;
+      exitResult = { code: Number.isInteger(code) ? code : null, signal: signal ?? null, interrupted: terminating };
+      if (settled || terminating) return;
       cleanup();
       exitCloseTimer = scheduleTimeout(() => {
         stderr += `process-close-timeout: verification stdio did not close within ${exitCloseGraceMs} ms after child exit.\n`;
@@ -399,6 +436,7 @@ export async function runVerificationStep(step: any, runtime: any = {}): Promise
       }, exitCloseGraceMs);
     });
     child.on('close', (code: any, signal: any) => {
+      if (!exitResult) exitResult = { code: Number.isInteger(code) ? code : null, signal: signal ?? null, interrupted: terminating };
       if (terminating) return;
       const finalSignal: any = signal ?? exitResult?.signal;
       if (finalSignal) stderr += `terminated by signal ${finalSignal}\n`;

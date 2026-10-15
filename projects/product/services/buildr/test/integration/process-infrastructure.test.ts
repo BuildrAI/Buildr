@@ -14,6 +14,7 @@ import {
   findExecutableOnPath,
   quoteWindowsCommandArgument,
 } from '../../src/infrastructure/process.ts';
+import { preparationContentDigest } from '../../tools/verification/candidate-preparation-reuse.ts';
 import { prepareCandidateEnvironment } from '../../tools/verification/candidate-environment.ts';
 
 test('Candidate preparation accepts the minimum, audits the active Node and rejects a higher floor before installing', t => {
@@ -118,4 +119,89 @@ test('exact Node environment同时冻结父进程 executable 与子进程 PATH i
   assert.throws(() => createExactNodeExecutionEnvironment({ nodeExecutable: process.execPath, expectedVersion: '0.0.0' }), /does not match required/);
   assert.throws(() => createExactNodeExecutionEnvironment({ nodeExecutable: 'node' }), /absolute executable path/u);
   assert.throws(() => createExactNodeExecutionEnvironment({ nodeExecutable: path.join(root, 'missing-node') }), /is not executable/u);
+});
+
+test('Candidate preparation saves running stages, complete prior operations and safe timeout facts', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-candidate-preparation-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, '.node-version'), '24.15.0\n');
+  const output = path.join(root, 'evidence', 'base-preparation.json');
+  const snapshots: any[] = [];
+  const run = (fail: boolean) => prepareCandidateEnvironment({
+    profile: 'base', output, roots: { serviceRoot: root, webRoot: root, projectRoot: root },
+    env: { ...process.env, GITHUB_RUN_ID: '123', GITHUB_RUN_ATTEMPT: '1', CANDIDATE_SOURCE_SHA: 'a'.repeat(40), BUILDR_CANDIDATE_PREPARATION_ID: 'fixture-shard' }, stream: { write: () => true },
+    execute: (() => {
+      snapshots.push(JSON.parse(fs.readFileSync(output, 'utf8')));
+      return fail && snapshots.length === 2 ? { status: null, signal: 'SIGTERM', error: Object.assign(new Error('private URL with secret'), { code: 'ETIMEDOUT' }) } : { status: 0 };
+    }) as any,
+  });
+  assert.throws(() => run(true), /preparation failed at generated-contracts/);
+  assert.equal(snapshots[0].status, 'running');
+  assert.equal(snapshots[0].operations[0].status, 'running');
+  assert.deepEqual(snapshots[1].operations.map((item: any) => item.status), ['passed', 'running']);
+  const failure = JSON.parse(fs.readFileSync(output, 'utf8'));
+  assert.equal(failure.status, 'failed');
+  assert.equal(failure.checks, 'not-started');
+  assert.equal(failure.id, 'fixture-shard');
+  assert.deepEqual(failure.operations.map((item: any) => item.status), ['passed', 'failed']);
+  assert.equal(failure.operations[1].exitCode, null);
+  assert.equal(failure.operations[1].errorCode, 'ETIMEDOUT');
+  assert.equal(failure.operations[1].failureClass, 'timeout');
+  assert.equal(JSON.stringify(failure).includes('private URL'), false);
+  snapshots.length = 0;
+  const success = run(false);
+  assert.equal(success.status, 'passed');
+  assert.deepEqual(JSON.parse(fs.readFileSync(output, 'utf8')).operations.map((item: any) => item.status), ['passed', 'passed']);
+  fs.writeFileSync(path.join(root, '.node-version'), '999.0.0\n');
+  assert.throws(() => run(false), /does not meet required minimum/);
+  const setup = JSON.parse(fs.readFileSync(output, 'utf8'));
+  assert.equal(setup.failureCode, 'candidate_environment_setup_failed');
+  assert.equal(setup.operations.length, 0);
+});
+
+test('local preparation reports actual executed and reused operations and repairs only drifted outputs', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-prepared-operations-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, '.node-version'), '24.15.0\n');
+  const receipts = new Map<string, any>();
+  const outputs = new Map<string, string>();
+  let calls = 0;
+  const run = () => prepareCandidateEnvironment({
+    profile: 'base', roots: { serviceRoot: root, webRoot: root, projectRoot: root }, reusePrepared: true, stream: { write: () => true },
+    preparationReuseOptions: {
+      fingerprint: (item: any, role: string) => role === 'input' ? `sha256-input-${item.id}` : outputs.get(item.id) ?? null,
+      read: (id: string) => receipts.get(id), write: (id: string, value: any) => receipts.set(id, value), remove: (id: string) => receipts.delete(id),
+    },
+    execute: ((_command: string, args: string[]) => {
+      calls++;
+      const id = args[0] === 'ci' ? 'buildr-dependencies' : 'generated-contracts-and-test-context';
+      outputs.set(id, `sha256-output-${id}`);
+      return { status: 0 };
+    }) as any,
+  });
+  assert.deepEqual(run().operations.map((operation: any) => operation.disposition), ['executed', 'executed']);
+  assert.deepEqual(run().operations.map((operation: any) => operation.disposition), ['reused', 'reused']);
+  assert.equal(calls, 2);
+  outputs.set('generated-contracts-and-test-context', 'sha256-output-drift');
+  assert.deepEqual(run().operations.map((operation: any) => operation.disposition), ['reused', 'executed']);
+  assert.equal(calls, 3);
+});
+
+test('preparation content identity checks bytes and nested build helpers while excluding only generated root outputs', t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-preparation-content-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.join(root, 'tools/build'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'build'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'tools/build/web.ts'), 'source-v1');
+  fs.writeFileSync(path.join(root, 'build/output'), 'generated-v1');
+  const first = preparationContentDigest([root], { source: true });
+  assert.ok(first);
+  fs.writeFileSync(path.join(root, 'build/output'), 'generated-v2');
+  assert.equal(preparationContentDigest([root], { source: true }), first);
+  fs.writeFileSync(path.join(root, 'tools/build/web.ts'), 'source-v2');
+  assert.notEqual(preparationContentDigest([root], { source: true }), first);
+  const output = preparationContentDigest([path.join(root, 'build')]);
+  fs.writeFileSync(path.join(root, 'build/output'), 'tampered-v3');
+  assert.notEqual(preparationContentDigest([path.join(root, 'build')]), output);
+  assert.equal(preparationContentDigest([path.join(root, 'missing')]), null);
 });

@@ -5,6 +5,7 @@ import { parseCompatibilityArtifact, sameArtifactIdentity } from './package-comp
 import { releaseContextIdentity, validateReleaseContext } from './release-readiness.ts';
 import { validateReleaseTransactionEvidence } from './release-transaction-evidence.ts';
 import { containsCredentialMaterial } from './release-authority.ts';
+import { assertPluginCandidateAdoption } from '../../../dsh-plugin/tools/candidate-adoption.ts';
 
 export const packageReleaseContextSchema = 'buildr.package-release-context/v1';
 export const packagePublicationEvidenceSchema = 'buildr.package-publication-evidence/v1';
@@ -55,15 +56,20 @@ export function createPackageReleaseContext(input: any): any {
       const candidate = owned.candidate;
       if (candidate?.schemaVersion !== 'buildr.dsh-plugin-release-candidate/v1' || candidate.packageName !== artifact.packageName
           || candidate.version !== artifact.version || candidate.integrity !== artifact.integrity || candidate.sha256 !== artifact.artifactSha256
-          || candidate.sourceCommit !== convergence.mainCommit || artifact.sourceCommit !== convergence.mainCommit
+          || candidate.sourceCommit !== artifact.sourceCommit || (!owned.adoption && candidate.sourceCommit !== convergence.mainCommit)
           || candidate.sourceTree !== convergence.pluginTree || !sha.test(candidate.sourceTree ?? '')
           || !Number.isSafeInteger(owned.prepareRunId) || owned.prepareRunId < 1 || owned.prepareRunAttempt !== 1) fail('Plugin package requires its own exact main-only preparation.');
+      if (owned.adoption) {
+        assertPluginCandidateAdoption(owned.adoption, candidate, { commit: convergence.mainCommit, tree: convergence.mainTree, parents: convergence.mergeParents, serviceTree: convergence.pluginTree });
+        if (owned.adoption.source.commit !== selection.releaseHead || owned.adoption.source.selectionIdentity !== selection.identity
+          || owned.adoption.source.runId !== input.candidate?.runId) fail('Plugin Candidate adoption differs from shared selection.');
+      }
       const peer = owned.buildrPeer ? parseCompatibilityArtifact(owned.buildrPeer) : null;
       if (peer && (peer.packageName !== '@buildr-ai/buildr' || (targets.packages.includes('buildr')
           ? !sameArtifactIdentity(peer, input.packages.buildr.artifact) || peer.sourceCommit !== selection.releaseHead
           : peer.origin !== 'registry'))) fail('Plugin preparation peer differs from the selected Candidate or exact registry bytes.');
       packages[name] = { artifact, candidate, prepareRunId: owned.prepareRunId, prepareRunAttempt: owned.prepareRunAttempt,
-        ...(peer ? { buildrPeer: peer } : {}) };
+        ...(peer ? { buildrPeer: peer } : {}), ...(owned.adoption ? { adoption: owned.adoption } : {}) };
     }
   }
   const value: any = { schemaVersion: packageReleaseContextSchema, targets, selection: { ...selection }, convergence: { ...convergence },
@@ -105,7 +111,7 @@ export function validatePackageOwnerPublication(context: any, name: string, publ
         || ownerEvidence.registry !== 'present' || ownerEvidence.publishedObserved !== true
         || ownerEvidence.packageName !== artifact.packageName || ownerEvidence.version !== artifact.version
         || ownerEvidence.integrity !== artifact.integrity || ownerEvidence.sha256 !== artifact.artifactSha256
-        || ownerEvidence.sourceCommit !== context.convergence.mainCommit || ownerEvidence.sourceTree !== candidate.candidate.sourceTree
+        || ownerEvidence.sourceCommit !== candidate.artifact.sourceCommit || ownerEvidence.sourceTree !== candidate.candidate.sourceTree
         || ownerEvidence.request?.workflowRef !== `${repository}/.github/workflows/publish-dsh-plugin.yml@refs/heads/main`
         || ownerEvidence.request.runAttempt !== 1
         || !Number.isSafeInteger(ownerEvidence.request.runId) || ownerEvidence.request.runId < 1

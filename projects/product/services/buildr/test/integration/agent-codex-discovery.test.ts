@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { AgentOperationsApplication } from '../../src/modules/agent-operations/application/agent-operations-application.ts';
+import { AgentRegistrationRepository } from '../../src/modules/agent-operations/persistence/agent-registration-repository.ts';
 import { discoverCodexInstallations } from '../../src/modules/agent-operations/infrastructure/codex-discovery.ts';
 import { createAgentOperationsHttpContribution } from '../../src/modules/agent-operations/interfaces/http/agent-operations-http.ts';
 import { AGENT_OPERATIONS_HTTP_SCHEMAS, AGENT_OPERATIONS_HTTP_VALIDATORS } from '../../src/modules/agent-operations/interfaces/http/agent-operations-http-contracts.ts';
@@ -26,8 +28,20 @@ function inventory(t: test.TestContext) {
   };
   const createApplication = () => new AgentOperationsApplication({ dataRoot: path.join(root, 'profile'), inspectEntry, inspectDshEntry: input => ({ executable: fs.realpathSync(input.executable), dshHome: fs.realpathSync(input.dshHome!), label: input.label ?? 'DSH', version: fs.readFileSync(input.executable, 'utf8') }), available: () => true, discoverCodex: registrations => discoverCodexInstallations({ registrations, inspectEntry, platform: 'darwin', homeDirectory: home, applicationRoots: [applications], env: { PATH: bin } }) });
   const application = createApplication();
+  // These Codex scenarios start with a retained DSH registration, not a new
+  // desktop connection (which now requires discovery and a real handshake).
+  const seedLegacyDsh = (input: { executable: string; dshHome: string; label?: string }) => {
+    const repository = new AgentRegistrationRepository(path.join(root, 'profile'));
+    repository.mutate(application.listRegistry().revision, registry => {
+      const id = 'agent-' + randomUUID();
+      registry.agents.push({ id, kind: 'dsh', executable: fs.realpathSync(input.executable), dshHome: fs.realpathSync(input.dshHome), label: input.label ?? 'DSH', version: fs.readFileSync(input.executable, 'utf8') });
+      registry.defaultAgentId ??= id;
+      return registry;
+    });
+    return application.listRegistry();
+  };
   t.after(async () => { await application.close(); fs.rmSync(root, { recursive: true, force: true }); });
-  return { root, home, codexHome, applications, bin, executable, app, inspectEntry, application, createApplication };
+  return { root, home, codexHome, applications, bin, executable, app, inspectEntry, application, createApplication, seedLegacyDsh };
 }
 function selected(f: ReturnType<typeof inventory>, id: string, makeDefault?: boolean, existingAgentId?: string) {
   return f.application.connectCodex({ candidateId: id, expectedDiscoveryRevision: f.application.listCodexDiscovery().revision, expectedRevision: f.application.listRegistry().revision, ...(makeDefault === undefined ? {} : { makeDefault }), ...(existingAgentId === undefined ? {} : { existingAgentId }) });
@@ -57,7 +71,7 @@ test('bounded discovery pairs desktop/bundled CLI, PATH and old registrations wi
 
 test('new confirmation retains DSH identity/default and blocks repeated preparation', async t => {
   const f = inventory(t), old = f.executable(path.join(f.bin, 'codex')), desktop = f.app('ChatGPT.app', '2.0');
-  const legacy = f.application.registerDsh({ executable: old, dshHome: f.codexHome, label: 'DSH', expectedRevision: f.application.listRegistry().revision });
+  const legacy = f.seedLegacyDsh({ executable: old, dshHome: f.codexHome, label: 'DSH' });
   const connected: unknown[] = [];
   f.application.bindCodexDesktopConnector({ disconnect() {}, connect: async (registration, installation) => {
     connected.push({ registration, installation });
@@ -92,7 +106,7 @@ test('desktop failure retains successful generation registration and reports onl
 
 test('a later default selection remains authoritative while desktop preparation is pending', async t => {
   const f = inventory(t), old = f.executable(path.join(f.bin, 'codex')); f.app('ChatGPT.app', '2.0');
-  const initial = f.application.registerDsh({ executable: old, dshHome: f.codexHome, expectedRevision: f.application.listRegistry().revision });
+  const initial = f.seedLegacyDsh({ executable: old, dshHome: f.codexHome });
   let release!: () => void;
   const pending = new Promise<void>(resolve => { release = resolve; });
   t.after(() => release());
@@ -167,7 +181,7 @@ test('a different existing Codex also blocks new connection while legacy registr
 
 test('maintenance cannot change default, create a missing target, or replace a different candidate', async t => {
   const f = inventory(t), desktop = f.app('ChatGPT.app'), other = f.app('Codex Beta.app', '2.0');
-  const dsh = f.application.registerDsh({ executable: f.executable(path.join(f.bin, 'dsh')), dshHome: f.codexHome, expectedRevision: f.application.listRegistry().revision });
+  const dsh = f.seedLegacyDsh({ executable: f.executable(path.join(f.bin, 'dsh')), dshHome: f.codexHome });
   const candidate = f.application.listCodexDiscovery().candidates.find(item => item.installationLabel.includes('ChatGPT.app'))!;
   const connected: string[] = [];
   f.application.bindCodexDesktopConnector({ disconnect() {}, connect: async registration => { connected.push(registration.id); return { id: 'connection-one', agentId: registration.id, label: registration.label, installationLabel: 'Codex', configurationLabel: '~/.codex', status: 'configured', safeReason: null }; } });

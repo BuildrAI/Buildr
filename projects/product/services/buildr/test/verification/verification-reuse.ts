@@ -1,0 +1,353 @@
+import crypto from 'node:crypto';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { assertMinimumNodeVersion, createExactNodeExecutionEnvironment, spawnCommandSync } from '../../src/infrastructure/process.ts';
+import { verificationSteps } from './registry.ts';
+import { preparationContentDigest } from '../../tools/verification/candidate-preparation-reuse.ts';
+import { withExclusiveFileLock } from '../../src/infrastructure/filesystem/exclusive-file-lock.ts';
+
+export type ReuseDigest = `sha256-${string}`;
+export type VerificationReuseScope = 'backend' | 'web' | 'product' | 'repository' | 'plugin' | 'runtime';
+export interface VerificationReusePolicy { scope: VerificationReuseScope; git?: boolean; exactNode?: boolean; tools?: string[] }
+export interface VerificationReuseStep { id: string; executor: Record<string, any>; reuse?: VerificationReusePolicy | false; dependsOn?: string[]; contexts?: string[]; timeoutMs?: number; [key: string]: any }
+export interface VerificationReuseEnvironment { platform: string; arch: string; nodeVersion: string; tools: Record<string, string>; variablesIdentity: ReuseDigest }
+export interface VerificationReuseSnapshot {
+  productRoot: string; repositoryRoot: string; contentIdentities: Record<VerificationReuseScope, ReuseDigest>;
+  gitIdentity: ReuseDigest; sourceCommit: string; environment: VerificationReuseEnvironment;
+  unavailableScopes?: VerificationReuseScope[];
+}
+export interface VerificationReuseIdentity {
+  key: ReuseDigest; stepId: string; contentIdentity: ReuseDigest; recipeIdentity: ReuseDigest; environmentIdentity: ReuseDigest; gitIdentity?: ReuseDigest;
+}
+export interface VerificationReuseOrigin {
+  kind: 'local' | 'ci'; runId: string; sourceCommit: string; startedAt: string; finishedAt: string;
+  workflow?: { runId: string; runAttempt: number };
+}
+export interface VerificationReuseRecord {
+  schemaVersion: 'buildr.verification-source-result/v1'; identity: VerificationReuseIdentity;
+  environment: VerificationReuseEnvironment; origin: VerificationReuseOrigin; cleanup: 'clean'; identityAfter: ReuseDigest;
+  result: { id: string; status: 'passed'; exitCode: 0; durationMs: number; childOutcome: 'passed'; childExitCode: 0; childSignal: null };
+}
+export interface VerificationReuseBundle { schemaVersion: 'buildr.verification-source-bundle/v1'; records: VerificationReuseRecord[] }
+export interface VerificationReuseOptions {
+  productRoot: string; projectRoot?: string; env?: NodeJS.ProcessEnv; snapshot?: VerificationReuseSnapshot;
+  step?: VerificationReuseStep; stepId?: string; stepIds?: string[]; steps?: VerificationReuseStep[];
+  runner?: string; arch?: string; environment?: VerificationReuseEnvironment;
+}
+export const VERIFICATION_REUSE_BUNDLE_SCHEMA = 'buildr.verification-source-bundle/v1';
+export const VERIFICATION_REUSE_RECORD_SCHEMA = 'buildr.verification-source-result/v1';
+const digestPattern = /^sha256-[a-f0-9]{64}$/u;
+const digest = (value: unknown): ReuseDigest => `sha256-${crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex')}`;
+const runnerPlatform = (runner: string) => runner === 'macos' ? 'darwin' : runner === 'windows' ? 'win32' : runner;
+const sorted = (value: Record<string, string>) => Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)));
+const git = (root: string, args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] });
+
+/** Hash actual source bytes, modes and link targets. HEAD is provenance, never the content key. */
+export function collectVerificationReuseSnapshot(options: VerificationReuseOptions): VerificationReuseSnapshot {
+  const productRoot = path.resolve(options.productRoot), repositoryRoot = git(productRoot, ['rev-parse', '--show-toplevel']).trim();
+  const env = options.env ?? process.env;
+  const files = [...new Set(git(repositoryRoot, ['ls-files', '--cached', '--others', '--exclude-standard', '-z']).split('\0').filter(Boolean))].sort();
+  const prefix = 'projects/product/services/', backend = `${prefix}buildr/`, web = `${prefix}buildr-web/`, plugin = `${prefix}dsh-plugin/`;
+  const unavailable = new Set<string>();
+  const entries = files.map(file => {
+    const absolute = path.join(repositoryRoot, file), stat = fs.lstatSync(absolute, { throwIfNoEntry: false });
+    if (!stat) return [file, 'absent'];
+    if (stat.isSymbolicLink()) {
+      try {
+        const target = fs.realpathSync(absolute), relative = path.relative(repositoryRoot, target);
+        if (relative.startsWith('..') || path.isAbsolute(relative) || !fs.statSync(target).isFile()) unavailable.add(file);
+        return [file, 'link', fs.readlinkSync(absolute), unavailable.has(file) ? 'unknown-target' : crypto.createHash('sha256').update(fs.readFileSync(target)).digest('hex')];
+      } catch { unavailable.add(file); return [file, 'link', 'unknown-target']; }
+    }
+    if (!stat.isFile()) return [file, 'other'];
+    return [file, stat.mode & 0o111 ? 'executable' : 'file', crypto.createHash('sha256').update(fs.readFileSync(absolute)).digest('hex')];
+  });
+  const common = (file: string) => ['projects/product/.node-version', 'projects/product/buildr', 'projects/product/preparation.yml', 'projects/product/verification.yml'].includes(file);
+  const inBackend = (file: string) => file.startsWith(backend) || common(file);
+  const selected: Record<VerificationReuseScope, typeof entries> = {
+    backend: entries.filter(([file]) => inBackend(file)),
+    web: entries.filter(([file]) => inBackend(file) || file.startsWith(web)),
+    plugin: entries.filter(([file]) => inBackend(file) || file.startsWith(web) || file.startsWith(plugin) || file.startsWith('.github/')),
+    product: entries.filter(([file]) => file.startsWith('projects/product/') || file === 'CHANGELOG.md' || file.startsWith('.github/')),
+    repository: entries,
+    runtime: entries.filter(([file]) => !['knowledge', 'openspec', 'tasks'].some(directory => file.startsWith(`projects/product/${directory}/`))),
+  };
+  const contentIdentities = Object.fromEntries(Object.entries(selected).map(([scope, items]) => [scope, digest(items)])) as Record<VerificationReuseScope, ReuseDigest>;
+  const variables = Object.fromEntries(['TZ', 'LANG', 'LC_ALL', 'NODE_OPTIONS', 'BUILDR_VERIFICATION_PROFILE', 'BUILDR_VERIFICATION_NETWORK_MODE'].map(key => [key, env[key] ?? '']));
+  const exactNode = createExactNodeExecutionEnvironment({ nodeExecutable: process.execPath, env, requireNpm: true });
+  const npm = spawnCommandSync(exactNode.npmExecutable!, ['--version'], { env: exactNode.env, encoding: 'utf8', timeout: 10_000 });
+  const tools = { git: git(repositoryRoot, ['--version']).trim().replace(/^git version /u, '').replace(/[^a-z0-9.+:-]/giu, '-'), npm: npm.status === 0 ? String(npm.stdout).trim() : 'unavailable',
+    'backend-dependencies': preparationContentDigest([path.join(productRoot, 'node_modules')], { optional: true }) ?? 'unavailable',
+    'web-dependencies': preparationContentDigest([path.resolve(productRoot, '../buildr-web/node_modules')], { optional: true, webDependencyCache: true }) ?? 'unavailable',
+    'plugin-dependencies': preparationContentDigest([path.resolve(productRoot, '../dsh-plugin/node_modules')], { optional: true }) ?? 'unavailable' };
+  return { productRoot, repositoryRoot, contentIdentities, unavailableScopes: Object.entries(selected).filter(([, items]) => items.some(([file]) => unavailable.has(file))).map(([scope]) => scope as VerificationReuseScope), sourceCommit: git(repositoryRoot, ['rev-parse', 'HEAD']).trim(),
+    gitIdentity: digest([git(repositoryRoot, ['rev-parse', 'HEAD']), git(repositoryRoot, ['show-ref', '--head']), git(repositoryRoot, ['log', '--all', '--format=%H:%P'])]),
+    environment: options.environment ? { ...options.environment, tools: { ...tools, ...options.environment.tools } }
+      : { platform: process.platform, arch: process.arch, nodeVersion: process.versions.node, tools, variablesIdentity: digest(variables) } };
+}
+
+function requiredToolKeys(step: VerificationReuseStep): string[] {
+  const scope = step.reuse && step.reuse.scope;
+  return [...new Set(['backend-dependencies', ...(scope !== 'backend' ? ['web-dependencies'] : []), ...(scope === 'plugin' ? ['plugin-dependencies'] : []), ...(step.reuse && step.reuse.tools || [])])];
+}
+
+export function createVerificationReuseIdentity(step: VerificationReuseStep, snapshot: VerificationReuseSnapshot): VerificationReuseIdentity | null {
+  if (!step.reuse || step.executor?.type === 'candidate-artifact' || step.executor?.consumesArtifact) return null;
+  if (snapshot.unavailableScopes?.includes(step.reuse.scope)) return null;
+  const contentIdentity = snapshot.contentIdentities[step.reuse.scope];
+  if (!contentIdentity) return null;
+  const declared = verificationSteps.find((item: VerificationReuseStep) => item.id === step.id);
+  const recipeIdentity = digest({ version: 1, id: step.id, executor: step.executor, dependsOn: declared?.dependsOn ?? step.dependsOn ?? [], contexts: step.contexts ?? [], timeoutMs: step.timeoutMs ?? null, reuse: step.reuse });
+  const { platform, arch, nodeVersion, tools, variablesIdentity } = snapshot.environment;
+  const requiredTools = Object.fromEntries(requiredToolKeys(step).map(key => [key, tools[key] ?? 'unavailable']));
+  if (Object.values(requiredTools).includes('unavailable')) return null;
+  const environmentIdentity = digest({ platform, arch, node: step.reuse.exactNode ? nodeVersion : '>=24.15.0', tools: sorted(requiredTools), variablesIdentity });
+  const identity = { stepId: step.id, contentIdentity, recipeIdentity, environmentIdentity, ...(step.reuse.git ? { gitIdentity: snapshot.gitIdentity } : {}) };
+  return { key: digest(identity), ...identity };
+}
+
+function validEnvironment(value: any): value is VerificationReuseEnvironment {
+  if (!value || !['darwin', 'win32', 'linux'].includes(value.platform) || !['arm64', 'x64', 'ia32', 'arm', 'ppc64', 's390x', 'riscv64'].includes(value.arch)
+    || typeof value.nodeVersion !== 'string' || !digestPattern.test(value.variablesIdentity ?? '') || !value.tools || typeof value.tools !== 'object' || Array.isArray(value.tools)) return false;
+  try { assertMinimumNodeVersion(value.nodeVersion, '24.15.0'); } catch { return false; }
+  return Object.entries(value.tools).every(([key, item]) => /^[a-z0-9._:-]{1,80}$/iu.test(key) && typeof item === 'string' && /^[a-z0-9._:+@=-]{1,180}$/iu.test(item));
+}
+
+function closed(value: any, required: string[], optional: string[] = []): boolean {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    && required.every(key => Object.hasOwn(value, key)) && Object.keys(value).every(key => required.includes(key) || optional.includes(key));
+}
+
+/** The checker may run on Ubuntu while validating a macOS execution environment. */
+export function validateVerificationReuseRecord(record: unknown, options: VerificationReuseOptions): record is VerificationReuseRecord {
+  try {
+    const value = record as VerificationReuseRecord;
+    const step = options.step ?? (options.steps ?? verificationSteps).find((item: VerificationReuseStep) => item.id === (options.stepId ?? value?.identity?.stepId));
+    if (!step || !closed(value, ['schemaVersion', 'identity', 'environment', 'origin', 'cleanup', 'identityAfter', 'result'])
+      || !closed(value.identity, ['key', 'stepId', 'contentIdentity', 'recipeIdentity', 'environmentIdentity'], ['gitIdentity'])
+      || !closed(value.environment, ['platform', 'arch', 'nodeVersion', 'tools', 'variablesIdentity'])
+      || value?.schemaVersion !== VERIFICATION_REUSE_RECORD_SCHEMA || !validEnvironment(value.environment) || value.cleanup !== 'clean'
+      || value.identity?.stepId !== step.id || value.identityAfter !== value.identity.key || !digestPattern.test(value.identity.key)) return false;
+    if (options.runner && runnerPlatform(options.runner) !== value.environment.platform || options.arch && options.arch !== value.environment.arch) return false;
+    if (options.environment && (options.environment.variablesIdentity !== value.environment.variablesIdentity || requiredToolKeys(step).some(key => options.environment!.tools[key] !== value.environment.tools[key])
+      || step.reuse && step.reuse.exactNode && options.environment.nodeVersion !== value.environment.nodeVersion)) return false;
+    const result = value.result, origin = value.origin;
+    if (!closed(result, ['id', 'status', 'exitCode', 'durationMs', 'childOutcome', 'childExitCode', 'childSignal'])
+      || !closed(origin, ['kind', 'runId', 'sourceCommit', 'startedAt', 'finishedAt'], ['workflow'])
+      || result.id !== step.id || result.status !== 'passed' || result.exitCode !== 0 || result.childOutcome !== 'passed' || result.childExitCode !== 0 || result.childSignal !== null
+      || !Number.isFinite(result.durationMs) || result.durationMs < 0 || !origin || !['local', 'ci'].includes(origin.kind)
+      || !/^[a-z0-9._:-]{1,180}$/iu.test(origin.runId) || !/^[a-f0-9]{40,64}$/u.test(origin.sourceCommit)
+      || !Number.isFinite(Date.parse(origin.startedAt)) || !Number.isFinite(Date.parse(origin.finishedAt)) || Date.parse(origin.finishedAt) < Date.parse(origin.startedAt)) return false;
+    if (origin.workflow && (!closed(origin.workflow, ['runId', 'runAttempt']) || !/^[1-9]\d*$/u.test(origin.workflow.runId) || !Number.isSafeInteger(origin.workflow.runAttempt) || origin.workflow.runAttempt < 1)) return false;
+    const snapshot = options.snapshot ?? collectVerificationReuseSnapshot(options);
+    const identity = createVerificationReuseIdentity(step, { ...snapshot, environment: value.environment });
+    return identity !== null && JSON.stringify(identity) === JSON.stringify(value.identity);
+  } catch { return false; }
+}
+
+export function reusedVerificationResult(record: VerificationReuseRecord): any {
+  return { ...record.result, durationMs: 0, stdout: '', stderr: '', processCleanup: { status: 'clean', ownership: 'prior-execution' },
+    disposition: 'reused', reusedFrom: { key: record.identity.key, origin: record.origin, environment: record.environment, durationMs: record.result.durationMs }, sourceRecord: record };
+}
+
+export function resolveVerificationReuseDirectory(options: VerificationReuseOptions): string {
+  const override = (options.env ?? process.env).BUILDR_VERIFICATION_REUSE_DIR;
+  if (override) { if (!path.isAbsolute(override)) throw new Error('BUILDR_VERIFICATION_REUSE_DIR must be absolute'); return override; }
+  const common = fs.realpathSync(path.resolve(options.productRoot, git(options.productRoot, ['rev-parse', '--git-common-dir']).trim()));
+  return path.join(os.tmpdir(), 'buildr-verification-reuse', digest(common).slice(7, 31), 'v1');
+}
+
+export function readVerificationReuseBundle(file: string): VerificationReuseBundle {
+  if (fs.statSync(file).size > 2 * 1024 * 1024) throw new Error('Source result bundle exceeds its byte budget');
+  const value = JSON.parse(fs.readFileSync(file, 'utf8'));
+  if (value?.schemaVersion !== VERIFICATION_REUSE_BUNDLE_SCHEMA || !Array.isArray(value.records) || value.records.length > 512) throw new Error('Invalid source result bundle');
+  return value;
+}
+
+export function writeVerificationReuseBundle(file: string, bundle: VerificationReuseBundle): void {
+  const text = `${JSON.stringify(bundle)}\n`;
+  if (Buffer.byteLength(text) > 2 * 1024 * 1024 || bundle.records.length > 512) throw new Error('Source result bundle exceeds its byte budget');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const temporary = `${file}.${process.pid}.${crypto.randomUUID()}.tmp`;
+  fs.writeFileSync(temporary, text); fs.renameSync(temporary, file);
+}
+
+function writeCacheValue(file: string, record: unknown): void {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const temporary = `${file}.${process.pid}.${crypto.randomUUID()}.tmp`;
+  fs.writeFileSync(temporary, `${JSON.stringify(record)}\n`); fs.renameSync(temporary, file);
+}
+
+export function collectVerificationReuseBundle(options: VerificationReuseOptions): VerificationReuseBundle {
+  const snapshot = options.snapshot ?? collectVerificationReuseSnapshot(options);
+  const records: VerificationReuseRecord[] = [];
+  const store = createVerificationReuseStore({ ...options, snapshot });
+  for (const step of options.steps ?? verificationSteps) {
+    if (options.stepIds && !options.stepIds.includes(step.id)) continue;
+    const record = store.lookup(step);
+    if (record) records.push(record);
+  }
+  return { schemaVersion: VERIFICATION_REUSE_BUNDLE_SCHEMA, records: records.sort((a, b) => a.identity.key.localeCompare(b.identity.key)) };
+}
+
+export function createVerificationReuseStore(options: VerificationReuseOptions & { imports?: VerificationReuseBundle[]; portableImports?: boolean }) {
+  const directory = resolveVerificationReuseDirectory(options);
+  const snapshot = options.snapshot ?? collectVerificationReuseSnapshot(options);
+  const staged = new Map<string, VerificationReuseRecord>();
+  const generations = new Map<string, string | null>(), invalidKeys = new Set<string>();
+  let available = true;
+  const fileFor = (key: string) => path.join(directory, `${key}.json`);
+  const markerFor = (key: string): { generation: string | null; invalidatedAt: number; accepted?: ReuseDigest } => {
+    try {
+      const marker = JSON.parse(fs.readFileSync(`${fileFor(key)}.invalid`, 'utf8'));
+      if (!closed(marker, ['generation', 'invalidatedAt'], ['accepted'])
+        || marker.generation !== null && !/^[a-f0-9-]{36}$/u.test(marker.generation ?? '')
+        || !Number.isFinite(marker.invalidatedAt) || marker.invalidatedAt < 0 || marker.accepted !== undefined && !digestPattern.test(marker.accepted)) throw new Error('Invalid marker');
+      return marker;
+    } catch (error: any) { return { generation: error.code === 'ENOENT' ? null : 'invalid', invalidatedAt: 0 }; }
+  };
+  const observeGeneration = (key: string) => { if (!generations.has(key)) generations.set(key, markerFor(key).generation); };
+  for (const step of options.steps ?? verificationSteps) { const identity = createVerificationReuseIdentity(step, snapshot); if (identity) observeGeneration(identity.key); }
+  const locked = <T>(key: string, operation: () => T): T => {
+    fs.mkdirSync(directory, { recursive: true });
+    return withExclusiveFileLock(`${fileFor(key)}.lock`, fileFor(key), operation);
+  };
+  const acceptsMarker = (record: VerificationReuseRecord) => {
+    if (invalidKeys.has(record.identity.key)) return false;
+    const marker = markerFor(record.identity.key);
+    // Foreign clocks never order executions. A local invalidation rejects every
+    // imported older proof until this generation accepts a fresh real result.
+    return marker.generation === null || marker.accepted === digest(record);
+  };
+  try {
+    fs.mkdirSync(directory, { recursive: true });
+    const probe = path.join(directory, `.probe-${process.pid}-${crypto.randomUUID()}`);
+    fs.writeFileSync(probe, ''); fs.rmSync(probe);
+  } catch { available = false; }
+  const invalidate = (identity: VerificationReuseIdentity) => {
+    staged.delete(identity.key); invalidKeys.add(identity.key);
+    if (!available) return;
+    try { locked(identity.key, () => {
+      const generation = crypto.randomUUID();
+      writeCacheValue(`${fileFor(identity.key)}.invalid`, { generation, invalidatedAt: Date.now() });
+      generations.set(identity.key, generation); fs.rmSync(fileFor(identity.key), { force: true });
+    }); } catch { available = false; }
+  };
+  return {
+    snapshot, directory,
+    cacheAvailable: () => available,
+    isCurrent(record: VerificationReuseRecord): boolean { return acceptsMarker(record); },
+    isCurrentFresh(record: VerificationReuseRecord): boolean {
+      const key = record.identity.key;
+      return acceptsMarker(record) || !available && staged.get(key) === record && !invalidKeys.has(key)
+        && markerFor(key).generation === generations.get(key);
+    },
+    lookup(step: VerificationReuseStep): VerificationReuseRecord | null {
+      const identity = createVerificationReuseIdentity(step, snapshot);
+      if (!identity) return null;
+      observeGeneration(identity.key);
+      let local: any = null;
+      try { if (available) local = JSON.parse(fs.readFileSync(fileFor(identity.key), 'utf8')); } catch { /* Cache miss. */ }
+      if (local && acceptsMarker(local) && validateVerificationReuseRecord(local, { ...options, snapshot, step, runner: snapshot.environment.platform, arch: snapshot.environment.arch, environment: snapshot.environment })) return local;
+      return (options.imports ?? []).flatMap(bundle => bundle.records).find(record => acceptsMarker(record)
+        && validateVerificationReuseRecord(record, { ...options, snapshot, step, runner: snapshot.environment.platform,
+          ...(options.portableImports ? {} : { arch: snapshot.environment.arch, environment: snapshot.environment }) })) ?? null;
+    },
+    invalidate,
+    stage(step: VerificationReuseStep, result: any, origin: VerificationReuseOrigin): VerificationReuseRecord | null {
+      const identity = createVerificationReuseIdentity(step, snapshot);
+      if (!identity) return null;
+      if (result.status === 'blocked' || result.status === 'skipped') return null;
+      if (result.status !== 'passed' || result.exitCode !== 0 || result.childOutcome !== 'passed' || result.childExitCode !== 0 || result.childSignal !== null || result.processCleanup?.status !== 'clean') { invalidate(identity); return null; }
+      observeGeneration(identity.key);
+      const record: VerificationReuseRecord = { schemaVersion: VERIFICATION_REUSE_RECORD_SCHEMA, identity, environment: snapshot.environment, origin, cleanup: 'clean', identityAfter: identity.key,
+        result: { id: step.id, status: 'passed', exitCode: 0, durationMs: result.durationMs, childOutcome: 'passed', childExitCode: 0, childSignal: null } };
+      staged.set(identity.key, record); return record;
+    },
+    commit(after: VerificationReuseSnapshot, cleanupClean: boolean): VerificationReuseBundle {
+      const records: VerificationReuseRecord[] = [];
+      for (const record of staged.values()) {
+        const step = (options.steps ?? verificationSteps).find((item: VerificationReuseStep) => item.id === record.identity.stepId);
+        const identity = step ? createVerificationReuseIdentity(step, after) : null;
+        if (!cleanupClean || identity?.key !== record.identity.key) { invalidate(record.identity); continue; }
+        if (!validateVerificationReuseRecord(record, { ...options, snapshot: after, step })) { invalidate(record.identity); continue; }
+        if (!available) { records.push(record); continue; }
+        try { locked(record.identity.key, () => {
+          const marker = markerFor(record.identity.key);
+          if (marker.generation !== generations.get(record.identity.key)) return;
+          writeCacheValue(fileFor(record.identity.key), record);
+          writeCacheValue(`${fileFor(record.identity.key)}.invalid`, { ...marker, generation: marker.generation === 'invalid' ? crypto.randomUUID() : marker.generation, accepted: digest(record) });
+          invalidKeys.delete(record.identity.key); records.push(record);
+        }); } catch { available = false; records.push(record); }
+      }
+      return { schemaVersion: VERIFICATION_REUSE_BUNDLE_SCHEMA, records };
+    },
+  };
+}
+
+/** One execution owns cache writes; callers cannot manufacture a passed source result. */
+export function createVerificationPlanReuse(plan: any, options: any): any {
+  if (options.reuse === false || !plan.steps.some((step: VerificationReuseStep) => step.reuse)) return null;
+  const env = { ...process.env, ...options.env }, config = options.reuse ?? {};
+  const imports = config.imports ? Array.isArray(config.imports) ? config.imports : [config.imports] : [];
+  if (env.BUILDR_VERIFICATION_REUSE_IMPORT) imports.push(readVerificationReuseBundle(env.BUILDR_VERIFICATION_REUSE_IMPORT));
+  const snapshotOptions = { productRoot: options.productRoot, projectRoot: options.projectRoot, env, steps: plan.steps };
+  const snapshot = collectVerificationReuseSnapshot(snapshotOptions);
+  const store = createVerificationReuseStore({ ...snapshotOptions, snapshot, imports, portableImports: config.portableImports === true });
+  const force = config.force === true || env.BUILDR_VERIFICATION_FORCE === '1';
+  const hits = new Map<string, VerificationReuseRecord>();
+  for (const step of plan.steps) {
+    const identity = createVerificationReuseIdentity(step, snapshot);
+    if (identity && force) store.invalidate(identity);
+    const record = !force ? store.lookup(step) : null;
+    if (record) hits.set(step.id, record);
+  }
+  return {
+    hits,
+    finish(results: any[], cleanupClean: boolean): VerificationReuseBundle {
+      const after = collectVerificationReuseSnapshot(snapshotOptions);
+      for (const result of results) {
+        const step = plan.steps.find((item: VerificationReuseStep) => item.id === result.id);
+        if (!step || result.disposition === 'reused') continue;
+        const start = result.startedAt ?? new Date().toISOString(), finish = result.finishedAt ?? start;
+        store.stage(step, result, { kind: env.GITHUB_RUN_ID ? 'ci' : 'local', runId: options.runId ?? `verification-${process.pid}`,
+          sourceCommit: snapshot.sourceCommit, startedAt: start, finishedAt: finish,
+          ...(env.GITHUB_RUN_ID ? { workflow: { runId: env.GITHUB_RUN_ID, runAttempt: Number(env.GITHUB_RUN_ATTEMPT || 1) } } : {}) });
+      }
+      const written = store.commit(after, cleanupClean);
+      const records = new Map(written.records.map(record => [record.identity.key, record]));
+      for (const result of results) {
+        const step = plan.steps.find((item: VerificationReuseStep) => item.id === result.id), prior = hits.get(result.id);
+        if (!step || result.status === 'blocked' || result.status === 'skipped') continue;
+        const identity = createVerificationReuseIdentity(step, snapshot), current = createVerificationReuseIdentity(step, after);
+        if (!identity) continue;
+        if (!cleanupClean || identity.key !== current?.key) {
+          store.invalidate(identity);
+          result.sourceRecord = undefined;
+          result.failureFacts = [...(result.failureFacts ?? []), { stage: 'execution', kind: 'execution', code: 'verification-reuse-input-drift' }];
+          if (result.status === 'passed') Object.assign(result, { status: 'failed', exitCode: 1, failureCode: 'verification-reuse-input-drift' });
+          continue;
+        }
+        if (prior && result.status === 'passed') {
+          if (store.isCurrent(prior)) records.set(prior.identity.key, prior);
+          else { Object.assign(result, { status: 'failed', exitCode: 1, failureCode: 'verification-reuse-superseded', sourceRecord: undefined }); continue; }
+        }
+        const record = records.get(identity.key);
+        if (record) result.sourceRecord = record;
+        else if (!prior && result.status === 'passed' && result.childOutcome === 'passed' && result.processCleanup?.status === 'clean') {
+          Object.assign(result, { status: 'failed', exitCode: 1, failureCode: 'verification-reuse-superseded', sourceRecord: undefined });
+        }
+      }
+      const bundle: VerificationReuseBundle = { schemaVersion: VERIFICATION_REUSE_BUNDLE_SCHEMA, records: [...records.values()] };
+      const output = config.output ?? env.BUILDR_VERIFICATION_REUSE_EXPORT;
+      if (output) writeVerificationReuseBundle(path.resolve(output), bundle);
+      if (!store.cacheAvailable()) options.stream?.write('[verification-reuse] cache unavailable; actual check results retained without cache writes\n');
+      return bundle;
+    },
+    invalidate(): void {
+      for (const step of plan.steps) { const identity = createVerificationReuseIdentity(step, snapshot); if (identity) store.invalidate(identity); }
+    },
+  };
+}

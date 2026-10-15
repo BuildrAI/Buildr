@@ -9,6 +9,10 @@ import { readHostedPluginCandidate, readHostedPluginJournal, runPluginHostedOper
 import { createReleaseCandidate, PLUGIN_SERVICE_PATH, SOURCE_SDK_MANIFEST, sourceSdkIdentityFromFiles } from '../../../dsh-plugin/tools/release-candidate.ts';
 import { archiveTreeIdentity } from '../../../dsh-plugin/tools/verify-all.ts';
 import { identity } from '../../../dsh-plugin/tools/verify-buildr-plugin-pair.ts';
+import { createPluginCandidateAdoption } from '../../../dsh-plugin/tools/candidate-adoption.ts';
+import { createPackageReleaseContext, validatePackageReleaseContext } from '../../tools/release/release-package-evidence.ts';
+import { normalizeReleaseTargets, evaluateReleasePlan } from '../../tools/release/release-targets.ts';
+import { validatePluginRecovery } from '../../tools/release/package-release-operation.ts';
 
 const version = '0.1.0-rc.7', mainSource = 'c'.repeat(40), selectedSource = 'b'.repeat(40), serviceTree = 'e'.repeat(40);
 const repository = 'BuildrAI/Buildr';
@@ -21,7 +25,7 @@ function run(operation = 'prepare', id = 22, changes: any = {}): any {
 }
 const row = (id: number, operation = 'prepare') => ({ databaseId: id, displayTitle: `DSH ${operation} ${version}`, headSha: mainSource, status: 'completed', conclusion: 'success' });
 const options = (pointer: any, operation = 'prepare') => ({ operation, pointer, version, sourceCommit: mainSource, sourceTree: serviceTree, repo: '/unused-recorded-repo',
-  peer, buildrCandidateRunId: 10, candidateRunId: 11, authorized: true, ghCommand: 'recorded-gh' });
+  peer, buildrCandidateRunId: 10, sourceCandidateRunId: 10, candidateSourceCommit: selectedSource, selectionIdentity: 'sha256-'+'2'.repeat(64), candidateRunId: 11, authorized: true, ghCommand: 'recorded-gh' });
 function harness(input: any = {}): any {
   const calls: any[] = [], events: any[] = [];
   let lists = 0, dispatches = 0;
@@ -45,7 +49,8 @@ test('lost dispatch response persists intent before one request and resumes by o
     owned: { artifact: { sourceCommit: mainSource }, candidate: { sourceCommit: mainSource }, tarballBytes: Buffer.from('owned-owner-fixture') } });
   const first = runPluginHostedOperation(options(pointer), hosted.dependencies);
   assert.equal(first.status, 'dispatch-unconfirmed'); assert.equal(first.effects[0].state, 'unknown');
-  assert.deepEqual(snapshots[0], { requested: true, version, sourceCommit: mainSource, runId: null });
+  assert.deepEqual(snapshots[0], { requested: true, version, sourceCommit: mainSource, runId: null,
+    sourceCandidate: { runId: 10, commit: selectedSource, selectionIdentity: 'sha256-'+'2'.repeat(64) } });
   assert.ok(hosted.events.indexOf('pointer saved') < hosted.events.indexOf('workflow run'));
   const resumed = runPluginHostedOperation(options(pointer), hosted.dependencies);
   assert.equal(resumed.status, 'passed'); assert.equal(pointer.runId, 22); assert.equal(hosted.dispatches(), 1);
@@ -58,6 +63,15 @@ test('unknown dispatch remains a single request even when no run is visible on r
   const pointer: any = {}, hosted = harness({ lostResponse: true });
   for (let attempt = 0; attempt < 3; attempt++) assert.equal(runPluginHostedOperation(options(pointer), hosted.dependencies).status, 'dispatch-unconfirmed');
   assert.equal(hosted.dispatches(), 1); assert.equal(pointer.requested, true); assert.equal(pointer.runId, null);
+});
+test('an uncertain main adoption request cannot swap its original source Candidate or selection', () => {
+  const pointer:any={},hosted=harness({lostResponse:true});
+  assert.equal(runPluginHostedOperation(options(pointer),hosted.dependencies).status,'dispatch-unconfirmed');
+  const count=hosted.calls.length;
+  for(const changed of [{sourceCandidateRunId:42},{candidateSourceCommit:'a'.repeat(40)},{selectionIdentity:'sha256-'+'3'.repeat(64)}]){
+    assert.throws(()=>runPluginHostedOperation({...options(pointer),...changed},hosted.dependencies),/request identity changed/);
+  }
+  assert.equal(hosted.calls.length,count);assert.equal(hosted.dispatches(),1);
 });
 
 test('adopting one matching owner run retains a complete identity for the next resume', () => {
@@ -160,18 +174,21 @@ function candidateFixture(changes: any = {}): any {
     buildrCompatibility: { schemaVersion: 'buildr.package-compatibility/v1', provides: [], requires: [{ packageName: '@buildr-ai/buildr', feature: 'entry', required: true,
       versions: { minInclusive: '0.1.0-rc.0', maxExclusive: '0.2.0', includePrerelease: true }, contracts: ['buildr.entry/v1'] }] },
     buildrDshSourceSdk: { upstream: sourceSdk.baseline, sourceManifestSha256: sourceSdk.manifestSha256, sourcePatchSha256: sourceSdk.patchSha256, compiledContracts: sourceSdk.contracts } };
-  const bytes = archive(metadata), candidate = createReleaseCandidate({ version, sourceCommit: mainSource, sourceTree: serviceTree, filename: 'owned-plugin.tgz', bytes, sourceSdk, fileCount: 1 });
-  const consumer = { ...artifactFromTarball(bytes, { origin: 'candidate', packageName: candidate.packageName, version, integrity: candidate.integrity, sourceCommit: mainSource }), sourceTree: serviceTree };
-  const verificationSource = { observedCommit: mainSource, dirty: false, contentSha256: '4'.repeat(64) };
-  const verification: any = { schemaVersion: 'buildr.dsh-full-verification/v1', status: 'passed', candidateBound: true, sourceCommit: mainSource, sourceTree: serviceTree,
+  const testedSource = changes.adopted ? selectedSource : mainSource;
+  const bytes = archive(metadata), candidate = createReleaseCandidate({ version, sourceCommit: testedSource, sourceTree: serviceTree, filename: 'owned-plugin.tgz', bytes, sourceSdk, fileCount: 1 });
+  const consumer = { ...artifactFromTarball(bytes, { origin: 'candidate', packageName: candidate.packageName, version, integrity: candidate.integrity, sourceCommit: testedSource }), sourceTree: serviceTree };
+  const verificationSource = { observedCommit: testedSource, dirty: false, contentSha256: '4'.repeat(64) };
+  const verification: any = { schemaVersion: 'buildr.dsh-full-verification/v1', status: 'passed', candidateBound: true, sourceCommit: testedSource, sourceTree: serviceTree,
     consumer, consumerTreeSha256: archiveTreeIdentity(bytes), peer: structuredClone(peer), pair: pairFixture(consumer, peer), sourceSdk, verificationSource,
     sourceBinding: { method: 'git-tree-content-equivalence', testedGitHead: verificationSource.observedCommit, testedWorkingTreeDirty: verificationSource.dirty,
-      verifiedContentSha256: verificationSource.contentSha256, candidateSourceCommit: mainSource, candidateSourceTree: serviceTree },
+      verifiedContentSha256: verificationSource.contentSha256, candidateSourceCommit: testedSource, candidateSourceTree: serviceTree },
     checks: ['unit', 'integration', 'source-ui', 'released-loader', 'development-loader', 'actual-package-pair'], variants: ['released', 'development'], runtimeActivated: false, desktopValidated: false };
   const calls: any[] = [], downloadRoots: string[] = [];
   const execute = (command: string, args: string[], config: any): any => {
     calls.push({ command, args: [...args], config });
     if (command === 'git') {
+      if (args[0] === 'rev-parse') return {status:0,stdout:'f'.repeat(40)};
+      if (args[0] === 'rev-list') return {status:0,stdout:[mainSource,'1'.repeat(40),selectedSource].join(' ')};
       assert.equal(args[0], 'show'); assert.equal(args.at(-1), '--'); assert.ok(args[1].startsWith(mainSource + ':' + PLUGIN_SERVICE_PATH + '/'));
       return { status: 0, stdout: args[1].endsWith('.json') ? manifestBytes.toString('utf8') : patchBytes.toString('utf8') };
     }
@@ -189,6 +206,10 @@ function candidateFixture(changes: any = {}): any {
       assert.equal(name, 'plugin-candidate-aggregate');
       const value = structuredClone(verification); changes.verification?.(value);
       fs.writeFileSync(path.join(destination, 'plugin-full-verification.json'), JSON.stringify(value));
+      if(changes.adopted){
+        const adoption=createPluginCandidateAdoption({candidate,main:{commit:mainSource,tree:'f'.repeat(40),parents:['1'.repeat(40),selectedSource],serviceTree},source:{runId:10,runAttempt:1,commit:selectedSource,tree:'f'.repeat(40),serviceTree,selectionIdentity:'sha256-'+'2'.repeat(64),workflowSha256:'3'.repeat(64)}});
+        changes.adoption?.(adoption);fs.writeFileSync(path.join(destination,'plugin-candidate-adoption.json'),JSON.stringify(adoption));
+      }
     }
     return { status: 0, stdout: '' };
   };
@@ -250,4 +271,24 @@ test('publication journal readback downloads only the original owned artifact an
   } });
   assert.equal(observed.request.runId, 22); assert.equal(calls.length, 1); assert.equal(calls[0].config.timeout, 60_000);
   assert.ok(roots.every(root => !fs.existsSync(root)));
+});
+
+test('main adoption readback and context preserve tested source separately from main and legacy recovery', () => {
+  const data=candidateFixture({adopted:true});
+  const observed=readHostedPluginCandidate({...options({}),runId:11},data.dependencies);
+  assert.equal(observed.artifact.sourceCommit,selectedSource);assert.equal(observed.candidate.sourceCommit,selectedSource);
+  assert.equal(observed.adoption.main.commit,mainSource);assert.deepEqual(observed.tarballBytes,data.bytes);
+  const targets=normalizeReleaseTargets({packages:'dsh-plugin',pluginVersion:version});
+  const registryPeer={...peer,origin:'registry'};delete registryPeer.sourceCommit;
+  const compatibility=evaluateReleasePlan({targets,candidates:{'dsh-plugin':observed.artifact},published:{buildr:{status:'present',artifact:registryPeer},'dsh-plugin':{status:'absent',packageName:'@buildr-ai/buildr-dsh-plugin'}}});
+  const context=createPackageReleaseContext({targets,selection:{selectionId:targets.selectionId,version:null,targets,status:'frozen',identity:observed.adoption.source.selectionIdentity,releaseHead:selectedSource,releaseTree:'f'.repeat(40),generation:1},
+    convergence:{mainCommit:mainSource,mainTree:'f'.repeat(40),devCommit:'0'.repeat(40),mergeParents:['1'.repeat(40),selectedSource],pluginTree:serviceTree},
+    compatibility,packages:{'dsh-plugin':{...observed,prepareRunId:11,prepareRunAttempt:1,buildrPeer:registryPeer}},candidate:{runId:10,sourceCommit:selectedSource}});
+  assert.equal(validatePackageReleaseContext(context).packages['dsh-plugin'].artifact.sourceCommit,selectedSource);
+  const journal={...observed.candidate,schemaVersion:'buildr.dsh-plugin-publication/v1',status:'passed',attempted:true,request:{workflowRef:'BuildrAI/Buildr/.github/workflows/publish-dsh-plugin.yml@refs/heads/main',runId:22,runAttempt:1}};
+  assert.doesNotThrow(()=>validatePluginRecovery(context,{run:run('publish'),journal},{...observed.artifact,origin:'registry'}));
+  assert.throws(()=>validatePluginRecovery(context,{run:run('publish'),journal:{...journal,sourceCommit:mainSource}},{...observed.artifact,origin:'registry'}));
+  for(const changes of [{adopted:true,adoption:(v:any)=>v.source.selectionIdentity='sha256-'+'4'.repeat(64)},{adopted:true,adoption:(v:any)=>v.main.parents.reverse()}]){
+    const changed=candidateFixture(changes);assert.throws(()=>readHostedPluginCandidate({...options({}),runId:11},changed.dependencies));
+  }
 });

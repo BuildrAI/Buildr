@@ -18,6 +18,7 @@ import {
   verificationSteps,
 } from './registry.ts';
 import { validateCandidateCiCoverage } from './planner.ts';
+import { CANDIDATE_SOURCE_REUSE_POLICY } from './candidate-source-reuse.ts';
 
 export { CANDIDATE_CI_AGGREGATE_SCHEMA, CANDIDATE_CI_CHECKPOINT_SCHEMA, CANDIDATE_CI_EVIDENCE_SCHEMA };
 
@@ -27,6 +28,7 @@ const platformRunner: any = (platform: any = process.platform) => platform === '
 function registryProjection(): any  {
   return {
     consumption: releaseConsumptionIdentity(),
+    sourceReuse: CANDIDATE_SOURCE_REUSE_POLICY,
     shards: CANDIDATE_CI_SHARDS,
     platformRepeats: CANDIDATE_CI_PLATFORM_REPEATS,
     hostNodeTuples: CANDIDATE_CI_HOST_NODE_TUPLES,
@@ -109,6 +111,13 @@ function resultProjection(results: any): any  {
     phases: item.phases ?? [],
     failureCode: item.failureCode ?? null,
     processCleanup: item.processCleanup ?? null,
+    ...(item.childExitCode !== undefined ? { childExitCode: item.childExitCode } : {}),
+    ...(item.childSignal !== undefined ? { childSignal: item.childSignal } : {}),
+    ...(item.childOutcome !== undefined ? { childOutcome: item.childOutcome } : {}),
+    ...(item.failureFacts ? { failureFacts: item.failureFacts } : {}),
+    ...(item.disposition ? { disposition: item.disposition } : {}),
+    ...(item.reusedFrom ? { reusedFrom: item.reusedFrom } : {}),
+    ...(item.sourceRecord ? { sourceRecord: item.sourceRecord } : {}),
     ...(item.process ? { process: item.process } : {}),
     diagnostics: item.diagnostics ?? (item.stdoutPath || item.stderrPath ? {
       stdoutFile: item.stdoutPath ? diagnosticFileName(item.stdoutPath) : null,
@@ -223,7 +232,7 @@ function workflowAttempt(value: any): any  {
   return Number.isSafeInteger(attempt) && attempt > 0 ? attempt : null;
 }
 
-export function aggregateCandidateCiEvidence(evidence: any, expectedContext: any, expectedWorkflow: any = null): any  {
+export function aggregateCandidateCiEvidence(evidence: any, expectedContext: any, expectedWorkflow: any = null, options: any = {}): any  {
   const findings: any[] = [];
   const registryIdentity: any = candidateCiRegistryIdentity();
   const expectedRunId: any = expectedWorkflow?.runId == null ? null : String(expectedWorkflow.runId);
@@ -273,6 +282,11 @@ export function aggregateCandidateCiEvidence(evidence: any, expectedContext: any
     for (const stepId of expectation.primaryStepIds) {
       const stepResult = item.results.find((result: any) => result.id === stepId);
       if (!stepResult) findings.push(evidenceFinding('primary-result-missing', id, stepId));
+      else if (stepResult.disposition === 'reused' || stepResult.sourceRecord) {
+        if (!stepResult.sourceRecord || !options.validateSourceRecord?.(stepResult.sourceRecord, stepId, expectation.runner)) {
+          findings.push(evidenceFinding('source-reuse-invalid', id, stepId));
+        }
+      }
       else if (stepId === 'artifact-browser-core') {
         for (const phaseId of ['artifact-unpack', 'artifact-verify', 'browser:core', 'artifact-cleanup']) {
           const phases = (stepResult.phases ?? []).filter((phase: any) => phase.scope === 'candidate-browser-core' && phase.id === phaseId);

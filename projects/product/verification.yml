@@ -1,5 +1,36 @@
 schemaVersion: buildr.project-verification/v4
 testing:
+  - id: buildr-source
+    title: Buildr 发布前本机源码检查
+    scope:
+      project: product
+      services:
+        - buildr
+        - buildr-web
+    purpose: 使用候选登记完成当前平台适用源码检查并复用有效结果，不证明其他平台或最终发布包
+    sourcePaths:
+      - services/buildr/src/**
+      - services/buildr/resources/**
+      - services/buildr/tools/**
+      - services/buildr-web/src/**
+      - services/buildr-web/tools/**
+    testRoots:
+      - services/buildr/test/**
+      - services/buildr-web/test/**
+    full:
+      kind: command
+      argv:
+        - tools/development/run-development-npm
+        - run
+        - test:source
+      cwd: services/buildr
+    selection:
+      - 普通开发继续选择受影响检查；准备发布时按当前平台候选源码登记补齐有效结果
+      - 按实际内容、配方、依赖和原环境复用；最终包和未覆盖平台仍单独验证
+      - 传入 --json 只看计划；--force 强制重跑；--output 导出可搬运源码结果
+    requirements:
+      - 稳定版 Node >=24.15.0 与相邻 npm，通过项目 wrapper 执行
+      - git
   - id: buildr-fast
     title: Buildr 后端低成本完整回归
     scope:

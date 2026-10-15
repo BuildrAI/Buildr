@@ -11,6 +11,7 @@ import {hash} from '../../tools/buildr-peer.ts';
 import {archiveTreeIdentity} from '../../tools/verify-all.ts';
 import {assertBoundVerification,assertBoundVerificationManifest,type BoundVerification} from '../../tools/full-verification.ts';
 import {identity} from '../../tools/verify-buildr-plugin-pair.ts';
+import { verifySourceCandidateAdoption } from '../../tools/release-workflow.ts';
 function archive(metadata:unknown):Buffer {
  const chunks:Buffer[]=[];
  for(const [name,text] of [['package/package.json',JSON.stringify(metadata)],['package/lib/index.js','export default class Host {}']]) {
@@ -34,6 +35,25 @@ function fixture(t:TestContext) {
  const report:BoundVerification={schemaVersion:'buildr.dsh-full-verification/v1',status:'passed',candidateBound:true,sourceCommit,sourceTree,consumer,peer,pair,sourceSdk,consumerTreeSha256:archiveTreeIdentity(bytes),verificationSource,sourceBinding:{method:'git-tree-content-equivalence',testedGitHead:verificationSource.observedCommit,testedWorkingTreeDirty:true,verifiedContentSha256:verificationSource.contentSha256,candidateSourceCommit:sourceCommit,candidateSourceTree:sourceTree},checks:['unit','integration','source-ui','released-loader','development-loader','actual-package-pair'],variants:['released','development'],runtimeActivated:false,desktopValidated:false};return{candidate,report};
 }
 test('portable final evidence retains dirty feedback baseline with exact byte-bound legacy pair',t=>{const f=fixture(t);assert.equal(assertBoundVerification(f.report,f.candidate).verificationSource.observedCommit,'d'.repeat(40));});
+test('source Candidate adoption validates the actual original run, full proof, peer and protected merge before reuse', async t => {
+ const f=fixture(t),commit=f.candidate.manifest.sourceCommit,tree='f'.repeat(40),base='1'.repeat(40),main={commit:'9'.repeat(40),tree,parents:[base,commit],serviceTree:f.candidate.manifest.sourceTree};
+ const selection={id:'fixture',packages:['dsh-plugin'],versions:{'dsh-plugin':f.candidate.manifest.version},baseline:'0'.repeat(40),main:base,identity:'sha256-'+'2'.repeat(64)};
+ const workflow='name: Verify\n',workflowSha=createHash('sha256').update(workflow).digest('hex');
+ const aggregate={schemaVersion:'buildr.dsh-plugin-source-ci-aggregate/v1',status:'passed',purpose:'source-admission',repository:'BuildrAI/Buildr',sourceCommit:commit,sourceTree:tree,serviceTree:main.serviceTree,
+  selection,requirements:{buildr:false,plugin:true},changedPaths:[],workflow:{path:'.github/workflows/verify.yml',sha256:workflowSha,runId:'41',runAttempt:1},
+  candidate:{artifactName:`plugin-candidate-v${f.candidate.manifest.version}`,...f.candidate.manifest},verification:f.report,checks:[{id:'plugin-full',status:'passed'},{id:'plugin-candidate-bytes',status:'passed'}]};
+ const input={operation:'prepare' as const,version:f.candidate.manifest.version,sourceCandidateRunId:'41',sourceCommit:commit,selectionIdentity:selection.identity,
+  buildrPeer:{origin:'registry' as const,version:f.report.peer.version,integrity:f.report.peer.integrity}};
+ const git=(args:string[])=>args[0]==='rev-parse'?tree:args[0]==='diff'?'':args[1]!.endsWith('.yml')?workflow:readFileSync(new URL(args[1]!.endsWith('.patch')?'../../sdk-patches/dsh-v0.2.0-rc.2-event-sources-settings.patch':'../../sdk-patches/dsh-v0.2.0-rc.2-event-sources-settings.json',import.meta.url),'utf8');
+ const api=async(path:string)=>path.endsWith('/workflows/verify.yml')?{id:7,path:'.github/workflows/verify.yml'}:{id:41,workflow_id:7,path:'.github/workflows/verify.yml',repository:{full_name:'BuildrAI/Buildr'},event:'workflow_dispatch',head_sha:commit,status:'completed',conclusion:'success',run_attempt:2};
+ const result=await verifySourceCandidateAdoption(input,main,f.candidate,aggregate,api,git);
+ assert.equal(result.source.commit,commit);assert.equal(result.source.runAttempt,1);assert.equal(result.main.commit,main.commit);
+ for(const mutate of [(a:any)=>a.verification.checks.pop(),(a:any)=>a.candidate.sha256='4'.repeat(64),(a:any)=>a.workflow.sha256='5'.repeat(64),(a:any)=>a.verification.peer.integrity='sha512-'+Buffer.alloc(64,3).toString('base64')]){
+  const value=structuredClone(aggregate);mutate(value);await assert.rejects(verifySourceCandidateAdoption(input,main,f.candidate,value,api,git));
+ }
+ await assert.rejects(verifySourceCandidateAdoption(input,{...main,parents:[commit,base]},f.candidate,aggregate,api,git),/protected-merge/);
+ await assert.rejects(verifySourceCandidateAdoption(input,main,f.candidate,aggregate,async p=>({...await api(p),conclusion:'failure'}),git),/run-mismatch/);
+});
 test('remote manifest validation shares full source and pair guards without claiming local archive readback',t=>{
  const f=fixture(t);rmSync(f.candidate.tarball);assert.equal(assertBoundVerificationManifest(f.report,f.candidate.manifest).status,'passed');assert.throws(()=>assertBoundVerification(f.report,f.candidate));
  for(const field of ['verificationSource','sourceBinding','variants','runtimeActivated','desktopValidated']){const incomplete={...f.report};delete(incomplete as any)[field];assert.throws(()=>assertBoundVerificationManifest(incomplete,f.candidate.manifest));}

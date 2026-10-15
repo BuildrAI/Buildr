@@ -10,13 +10,14 @@ DSH（DeepSeek Harness）插件（Plugin）由独立服务（Service）[插件�
 
 ```sh
 node tools/release.ts status
-node tools/verify-all.ts --source-sdk <prepared-source-sdk> --buildr-peer <exact-package-input.json> --output <plugin-full-verification.json>
-node tools/release.ts prepare --source-sdk <prepared-source-sdk>
+node tools/verify-all.ts --source-sdk <prepared-source-sdk> --buildr-peer <exact-package-input.json> --output <plugin-full-verification.json> --candidate-output build/release-candidates/<version>
 ```
 
-`status` 对照插件版本、最近的 `dsh-plugin-v*` 标签（Tag）、插件服务路径的源码变化和 npm 注册表（Registry）的公开版本，给出 `not-public`、`changes-pending` 或 `up-to-date`。注册表（Registry）查询失败会报错，不推测“已发布”。准备要求源码已提交且该版本尚未公开，依次构建、用真实 DSH 装载器（Loader）验证和压缩。`build/release-candidates/<version>/candidate.json` 记录准确提交、服务源码树、软件开发工具包（SDK）的基线与补丁摘要、相对压缩包名、大小、SHA-256 和 npm 完整性（Integrity）；候选目录已存在时拒绝覆盖。将说明和原压缩包整体搬运后仍须验证同一字节，发布不重新打包。本次代码交付不证明公开候选或 npm 版本已生成。
+`status` 对照插件版本、最近的 `dsh-plugin-v*` 标签（Tag）、插件服务路径的源码变化和 npm 注册表（Registry）的公开版本，给出 `not-public`、`changes-pending` 或 `up-to-date`。注册表（Registry）查询失败会报错，不推测“已发布”。准备要求源码已提交且该版本尚未公开，依次构建、用真实 DSH 装载器（Loader）验证和压缩。`build/release-candidates/<version>/candidate.json` 记录准确提交、服务源码树、软件开发工具包（SDK）的基线与补丁摘要、相对压缩包名、大小、SHA-256 和 npm 完整性（Integrity）；候选目录已存在时拒绝覆盖。完整验证只构建、打包一次并输出候选目录；不再另跑准备和对端绑定制造第二份字节。将说明和原压缩包整体搬运后仍须验证同一字节，发布不重新打包。本次代码交付不证明公开候选或 npm 版本已生成。
 
 压缩包必须只含预编译插件、默认启用的组合补丁和许可文件，不含本机路径、凭证或安装脚本。正式版包名是 `@buildr-ai/buildr-dsh-plugin`。开发版变体 `@buildr-ai/buildr-dsh-plugin-dev` 仅在开发者机器构建、安装，不公开发布。
+
+源码候选（Candidate）的单元和集成阶段按各自内容、配方及实际依赖复用有效结果；固定软件开发工具包（SDK）的装载、真实 Buildr 对端及最终压缩包检查仍绑定真实输入。受保护 main 准备直接接纳源码运行的原候选和完整聚合，核对合并双亲、整树、SDK、对端和原字节，保存 plugin-candidate-adoption.json；不重复完整验证、构建或打包。原候选的 sourceCommit 保持被测源码，接纳回执（Receipt）另记 mainCommit，开放身份连接（OIDC）仍绑定真实 main。既有 candidate_run_id 继续表示发布消费的主线接纳运行；旧准备记录沿原身份恢复，不伪造新回执。
 
 ## 官方应用与正常装卸
 

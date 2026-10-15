@@ -6,6 +6,7 @@ import { spawnSync } from 'node:child_process';
 import { readReleaseCandidate, sourceSdkIdentityFromFiles, SOURCE_SDK_MANIFEST, PLUGIN_SERVICE_PATH } from '../../../dsh-plugin/tools/release-candidate.ts';
 import { artifactFromTarball } from './package-artifact-observation.ts';
 import { assertBoundPluginVerification } from './verify-pr-candidate.ts';
+import { assertPluginCandidateAdoption, PLUGIN_CANDIDATE_ADOPTION_FILE } from '../../../dsh-plugin/tools/candidate-adoption.ts';
 import { parseCompatibilityArtifact } from './package-compatibility.ts';
 
 const repository = 'BuildrAI/Buildr';
@@ -14,7 +15,7 @@ const workflowPath = `.github/workflows/${workflow}`;
 const sourceHash = /^[a-f0-9]{40}$/u;
 const defaultExecute = (command: string, args: string[], options: any) => spawnSync(command, args, { ...options, encoding: 'utf8', timeout: options.timeout ?? 30_000 });
 
-function singleFile(root: string, filename: string): string {
+function singleFile(root: string, filename: string, optional = false): string {
   const matches: string[] = [];
   const visit = (directory: string) => {
     for (const item of fs.readdirSync(directory, { withFileTypes: true })) {
@@ -25,6 +26,7 @@ function singleFile(root: string, filename: string): string {
     }
   };
   visit(root);
+  if (matches.length === 0 && optional) return '';
   if (matches.length !== 1) throw new Error(`Plugin artifact requires one ${filename}.`);
   return matches[0]!;
 }
@@ -65,16 +67,27 @@ export function readHostedPluginCandidate(options: any, dependencies: any = {}):
     gh(['run', 'download', String(options.runId), '--repo', repository, '--name', `plugin-candidate-v${options.version}`, '--dir', path.join(root, 'candidate')], 120_000);
     const committed = (file: string) => Buffer.from(git(['show', `${options.sourceCommit}:${PLUGIN_SERVICE_PATH}/${file}`, '--']));
     const sourceSdk = sourceSdkIdentityFromFiles(committed(SOURCE_SDK_MANIFEST), committed('sdk-patches/dsh-v0.2.0-rc.2-event-sources-settings.patch'));
-    const owned = readReleaseCandidate(singleFile(path.join(root, 'candidate'), 'candidate.json'), { version: options.version, sourceCommit: options.sourceCommit, sourceTree: options.sourceTree, sourceSdk });
+    gh(['run', 'download', String(options.runId), '--repo', repository, '--name', 'plugin-candidate-aggregate', '--dir', path.join(root, 'verification')], 60_000);
+    const adoptionFile = singleFile(path.join(root, 'verification'), PLUGIN_CANDIDATE_ADOPTION_FILE, true);
+    const adoption = adoptionFile ? JSON.parse(fs.readFileSync(adoptionFile, 'utf8')) : null;
+    const candidateSourceCommit = adoption?.source?.commit ?? options.sourceCommit;
+    const owned = readReleaseCandidate(singleFile(path.join(root, 'candidate'), 'candidate.json'), { version: options.version, sourceCommit: candidateSourceCommit, sourceTree: options.sourceTree, sourceSdk });
+    if (adoption) {
+      assertPluginCandidateAdoption(adoption, owned.manifest, { commit: options.sourceCommit, tree: git(['rev-parse', `${options.sourceCommit}^{tree}`]).trim(),
+        parents: git(['rev-list', '--parents', '-n', '1', options.sourceCommit]).trim().split(/\s/u).slice(1), serviceTree: options.sourceTree });
+      if (git(['rev-parse', `${candidateSourceCommit}^{tree}`]).trim() !== adoption.source.tree
+        || options.selectionIdentity && adoption.source.selectionIdentity !== options.selectionIdentity
+        || options.candidateSourceCommit && candidateSourceCommit !== options.candidateSourceCommit
+        || options.sourceCandidateRunId && adoption.source.runId !== options.sourceCandidateRunId) throw new Error('Plugin source adoption differs from the frozen selection.');
+    }
     const tarballBytes = fs.readFileSync(owned.tarball);
     const artifact = artifactFromTarball(tarballBytes, { origin: 'candidate', packageName: '@buildr-ai/buildr-dsh-plugin', version: options.version,
-      integrity: owned.manifest.integrity, sourceCommit: options.sourceCommit });
-    gh(['run', 'download', String(options.runId), '--repo', repository, '--name', 'plugin-candidate-aggregate', '--dir', path.join(root, 'verification')], 60_000);
+      integrity: owned.manifest.integrity, sourceCommit: candidateSourceCommit });
     const verification = JSON.parse(fs.readFileSync(singleFile(path.join(root, 'verification'), 'plugin-full-verification.json'), 'utf8'));
-    assertBoundPluginVerification({ sourceCommit: options.sourceCommit, serviceTree: owned.manifest.sourceTree,
+    assertBoundPluginVerification({ sourceCommit: candidateSourceCommit, serviceTree: owned.manifest.sourceTree,
       expectedPeer: options.peer, peerSourceCommit: options.peer?.sourceCommit ?? verification.peer?.sourceCommit,
       selection: { packages: verification.peer?.origin === 'candidate' ? ['buildr'] : [] } }, owned.manifest, verification);
-    return { artifact, candidate: owned.manifest, tarballBytes, verification };
+    return { artifact, candidate: owned.manifest, tarballBytes, verification, ...(adoption ? { adoption } : {}) };
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 }
 
@@ -117,20 +130,26 @@ export function runPluginHostedOperation(options: any, dependencies: any = {}): 
   if (!pointer || typeof pointer !== 'object') throw new Error('Plugin operation requires its existing orchestration pointer.');
   if ((pointer.sourceCommit !== undefined && pointer.sourceCommit !== options.sourceCommit) || (pointer.version !== undefined && pointer.version !== options.version)
       || ((pointer.requested || pointer.runId) && (!pointer.sourceCommit || !pointer.version))) throw new Error('Plugin operation pointer identity changed or is incomplete.');
+  if (options.operation === 'prepare' && pointer.sourceCandidate && (pointer.sourceCandidate.runId !== options.sourceCandidateRunId
+    || pointer.sourceCandidate.commit !== options.candidateSourceCommit || pointer.sourceCandidate.selectionIdentity !== options.selectionIdentity)) throw new Error('Plugin source Candidate request identity changed.');
   if (options.operation === 'publish' && (!options.authorized || !Number.isSafeInteger(options.candidateRunId) || options.candidateRunId < 1)) return { status: 'authorization-required', effects: [] };
   if (options.operation === 'prepare') {
     const peer = parseCompatibilityArtifact(options.peer);
     if (peer.packageName !== '@buildr-ai/buildr' || (peer.origin === 'candidate' && (!Number.isSafeInteger(options.buildrCandidateRunId) || options.buildrCandidateRunId < 1))) throw new Error('Plugin preparation requires its exact peer and original Candidate run.');
+    if (!pointer.requested && !pointer.runId && (!Number.isSafeInteger(options.sourceCandidateRunId) || options.sourceCandidateRunId < 1
+      || !sourceHash.test(options.candidateSourceCommit ?? '') || !/^(?:sha256-)?[a-f0-9]{64}$/u.test(options.selectionIdentity ?? ''))) throw new Error('Plugin adoption requires the original verified source Candidate.');
   }
   const effects: any[] = [];
   let found = pointer.runId ? { databaseId: pointer.runId } : locateRun(gh, options, options.operation);
   if (!found && !pointer.requested) {
     Object.assign(pointer, { requested: true, version: options.version, sourceCommit: options.sourceCommit, runId: null });
+    if (options.operation === 'prepare') pointer.sourceCandidate = { runId: options.sourceCandidateRunId, commit: options.candidateSourceCommit, selectionIdentity: options.selectionIdentity };
     dependencies.onPointer?.(pointer);
     const effect = { type: `plugin-${options.operation}-dispatched`, sourceCommit: options.sourceCommit, version: options.version, state: 'unknown' };
     effects.push(effect);
     const fields = options.operation === 'prepare'
       ? [`buildr_peer_origin=${options.peer.origin}`, `buildr_peer_version=${options.peer.version}`, `buildr_peer_integrity=${options.peer.integrity}`,
+        `source_candidate_run_id=${options.sourceCandidateRunId}`, `source_commit=${options.candidateSourceCommit}`, `selection_identity=${options.selectionIdentity}`,
         ...(options.peer.origin === 'candidate' ? [`buildr_candidate_run_id=${options.buildrCandidateRunId}`] : [])]
       : [`candidate_run_id=${options.candidateRunId}`, ...(pointer.recoveryRunId ? [`recovery_run_id=${pointer.recoveryRunId}`] : [])];
     try { gh(['workflow', 'run', workflow, '--repo', repository, '--ref', 'main', '-f', `operation=${options.operation}`, '-f', `version=${options.version}`, ...fields.flatMap(field => ['-f', field])]); effect.state = 'confirmed'; }

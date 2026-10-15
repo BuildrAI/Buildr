@@ -27,7 +27,7 @@ function api(history: any[] = [], attempts: Record<string, any[]> = {}) {
 }
 const input = () => validateWorkflowInput(env, { commit, version });
 const peerVersion = '0.1.0-rc.38', peerIntegrity = `sha512-${Buffer.alloc(64, 1).toString('base64')}`;
-const prepareEnv = { ...env, PLUGIN_OPERATION: 'prepare', PLUGIN_CANDIDATE_RUN_ID: '', PLUGIN_BUILDR_PEER_ORIGIN: 'registry', PLUGIN_BUILDR_PEER_VERSION: peerVersion, PLUGIN_BUILDR_PEER_INTEGRITY: peerIntegrity };
+const prepareEnv = { ...env, PLUGIN_OPERATION: 'prepare', PLUGIN_SOURCE_CANDIDATE_RUN_ID: '41', PLUGIN_SOURCE_COMMIT: 'f'.repeat(40), PLUGIN_SELECTION_IDENTITY: 'sha256-' + 'e'.repeat(64), PLUGIN_CANDIDATE_RUN_ID: '', PLUGIN_BUILDR_PEER_ORIGIN: 'registry', PLUGIN_BUILDR_PEER_VERSION: peerVersion, PLUGIN_BUILDR_PEER_INTEGRITY: peerIntegrity };
 
 test('manual version/source/main inputs are checked before remote reads', () => {
   assert.deepEqual(input(), { operation: 'publish', version, candidateRunId: '10', recoveryRunId: undefined });
@@ -156,36 +156,26 @@ test('workflow declares the same publication step and default preparation withou
   assert.ok(workflow.includes('persist-credentials: false'));
 });
 
-test('plugin preparation verifies frozen original peer bytes and preserves its compatibility aggregate', () => {
-  const path = fileURLToPath(new URL('../../../../../../.github/workflows/publish-dsh-plugin.yml', import.meta.url));
-  const workflow = readFileSync(path, 'utf8');
+test('main preparation adopts the original verified Candidate without building or packing again', () => {
+  const workflow = readFileSync(fileURLToPath(new URL('../../../../../../.github/workflows/publish-dsh-plugin.yml', import.meta.url)), 'utf8');
   const prepare = workflow.slice(workflow.indexOf('\n  prepare:'), workflow.indexOf('\n  publish:'));
-  const tooling = prepare.indexOf('- name: Install isolated fixed preparation tooling');
-  const peer = prepare.indexOf('- name: Freeze the exact Buildr peer input');
-  const candidate = prepare.indexOf('- name: Verify the Buildr candidate and protected merge');
-  const sdk = prepare.indexOf('- name: Prepare fixed source SDK');
-  const verify = prepare.indexOf('- name: Verify both plugin variants and real loaders');
-  const pack = prepare.indexOf('- name: Prepare immutable plugin candidate');
-  const bind = prepare.indexOf('- name: Bind compatibility proof to the final candidate bytes');
+  const download = prepare.indexOf('- name: Download the original verified plugin Candidate');
+  const adopt = prepare.indexOf('node tools/release-workflow.ts adopt-candidate');
   const upload = prepare.indexOf('- name: Upload the original candidate bytes');
-  assert.ok(tooling >= 0 && candidate > tooling && peer > candidate && sdk > peer && verify > sdk);
-  assert.ok(pack > verify && bind > pack && upload > bind);
-  assert.ok(prepare.includes('name: candidate-package'));
-  assert.ok(prepare.includes('run-id: ${{ inputs.buildr_candidate_run_id }}'));
-  const frozen = prepare.slice(peer, sdk);
-  assert.equal((frozen.match(/package-artifact-observation\.ts --package buildr/g) ?? []).length, 2);
-  assert.equal((frozen.match(/--integrity "\$\{PLUGIN_BUILDR_PEER_INTEGRITY\}"/g) ?? []).length, 2);
-  assert.ok(frozen.includes('--candidate-manifest "${RUNNER_TEMP}/buildr-candidate/release-artifact.json"'));
-  assert.ok(prepare.includes('--buildr-peer "${RUNNER_TEMP}/buildr-peer/input.json"'));
-  assert.ok(prepare.includes('--output "${RUNNER_TEMP}/plugin-full-verification.json"'));
-  assert.ok(prepare.includes('name: plugin-candidate-aggregate'));
-  assert.equal((prepare.match(/--npm "\$\{RUNNER_TEMP\}\/tooling\/node_modules\/npm\/bin\/npm-cli\.js"/g) ?? []).length, 2);
-  assert.ok(prepare.includes('--candidate "build/release-candidates/${PLUGIN_VERSION}/candidate.json"'));
-  assert.doesNotMatch(prepare, /Install locked Buildr CLI dependencies|working-directory: projects\/product\/services\/buildr\n|npm-cli\.js" ci|id-token: write/);
+  assert.ok(download >= 0 && adopt > download && upload > adopt);
+  assert.ok(prepare.includes('run-id: ${{ inputs.source_candidate_run_id }}'));
+  assert.ok(prepare.includes('plugin-candidate-ci-aggregate.json'));
+  assert.ok(prepare.includes('plugin-candidate-adoption.json'));
+  assert.doesNotMatch(prepare, /verify-all\.ts|release\.ts prepare|bind-buildr-peer\.ts|npm pack|prepare-release-sdk|npm install|id-token: write/);
   const publish = workflow.slice(workflow.indexOf('\n  publish:'));
-  assert.ok(publish.includes('PLUGIN_BUILDR_PEER_INTEGRITY: ${{ inputs.buildr_peer_integrity }}'));
-  assert.ok(publish.includes('- name: Download the original prepare compatibility evidence\n        continue-on-error: true'));
-  assert.ok(publish.includes('name: plugin-candidate-aggregate'));
-  assert.ok(publish.includes('--verification "${RUNNER_TEMP}/verification/plugin-full-verification.json"'));
-  assert.doesNotMatch(publish, /--buildr-peer|package-artifact-observation\.ts/);
+  assert.ok(publish.includes('--source-commit "${GITHUB_SHA}"'));
+  assert.ok(publish.includes('--adoption "${RUNNER_TEMP}/verification/plugin-candidate-adoption.json"'));
+});
+test('new preparation requires an exact source Candidate; publication cannot replace it', () => {
+  for (const changed of [{PLUGIN_SOURCE_CANDIDATE_RUN_ID:''},{PLUGIN_SOURCE_CANDIDATE_RUN_ID:'50'},{PLUGIN_SOURCE_COMMIT:''},{PLUGIN_SOURCE_COMMIT:'main'},{PLUGIN_SELECTION_IDENTITY:'wrong'}]) {
+    assert.throws(() => validateWorkflowInput({...prepareEnv,...changed},{commit,version}));
+  }
+  for (const name of ['PLUGIN_SOURCE_CANDIDATE_RUN_ID','PLUGIN_SOURCE_COMMIT','PLUGIN_SELECTION_IDENTITY']) {
+    assert.throws(() => validateWorkflowInput({...env,[name]:'replacement'},{commit,version}),/publish-cannot-replace-source/);
+  }
 });

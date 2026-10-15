@@ -106,6 +106,7 @@
     "coverage:unit": "node --import ./test/register-development-entry.ts test/verification/unit-coverage.ts",
     "test:changed": "node --import ./test/register-development-entry.ts test/verification/changed.ts",
     "test:audit:verification": "node --import ./test/register-development-entry.ts test/verification/audit.ts",
+    "test:source": "node --import ./test/register-development-entry.ts test/verification/source.ts",
     "test:focus": "node --import ./test/register-development-entry.ts test/verification/focus.ts",
     "test:host-node": "node --import ./test/register-development-entry.ts test/verification/host-node.ts",
     "benchmark:task-query-million": "node tools/performance/task-query-million.ts",
