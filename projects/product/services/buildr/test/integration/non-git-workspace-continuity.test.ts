@@ -205,7 +205,7 @@ async function scenario({ nestedGit = false } = {}) {
   }
 }
 
-async function nestedGitIsolationScenario() {
+async function nestedGitIsolationScenario(section: 'full' | 'lifecycle' | 'safety' = 'full') {
   const scenarioStarted = performance.now();
   type Phase = 'preconditions' | 'workspace-init' | 'source-registration' | 'worktree-selection'
     | 'materials-provenance' | 'anchor-conflict' | 'association-ambiguity' | 'delivery'
@@ -291,8 +291,13 @@ async function nestedGitIsolationScenario() {
   const taskId = 'nested-code', branch = `codex/${taskId}`;
   const task = run(['task', 'create', taskId, '--title', '隔离嵌套代码', '--intent', '修改两个实际 Git 来源并保留普通资料', '--project', 'demo', '--service', 'demo/api', '--service', 'demo/api-view', '--service', 'demo/worker']);
   completePhase();
-  completePhase = startPhase('worktree-selection');
   const create = ['worktree', 'create', taskId, '--branch', branch, '--include', 'service:demo/api', '--include', 'service:demo/api-view', '--include', 'service:demo/worker'];
+  let sourceRecords: Array<{ selector: string; sourceRepository: string; checkoutPath: string; branch: string }> = [];
+  const sourceHeads: Record<string, string> = {}, deliveredHeads: Record<string, string> = {};
+  let groupDocument: string, groupContent: string;
+  const cleanup = (records = sourceRecords) => ['worktree', 'cleanup', taskId, ...records.flatMap(item => ['--expected-source', `${item.selector}=${sourceHeads[item.selector]}`, '--delivered-ref', `${item.selector}=${deliveredHeads[item.selector]}`])];
+  if (section !== 'safety') {
+  completePhase = startPhase('worktree-selection');
   const created = run(create);
   assert.equal(created.status, 'ready');
   assert.deepEqual(created.repositories.map((item: { selector: string }) => item.selector), ['service:demo/api', 'service:demo/worker']);
@@ -338,7 +343,7 @@ async function nestedGitIsolationScenario() {
   completePhase = startPhase('anchor-conflict');
 
   // The second Git source must not hold another authority for the same group.
-  const sourceRecords = created.repositories as Array<{ selector: string; sourceRepository: string; checkoutPath: string; branch: string }>;
+  sourceRecords = created.repositories as Array<{ selector: string; sourceRepository: string; checkoutPath: string; branch: string }>;
   const originalEvidence = fs.readFileSync(created.evidencePath, 'utf8');
   const otherDirectory = path.join(path.resolve(workerRoot, git(workerRoot, ['rev-parse', '--git-common-dir'])), 'buildr/task-worktrees');
   fs.mkdirSync(otherDirectory, { recursive: true });
@@ -407,10 +412,9 @@ async function nestedGitIsolationScenario() {
   assert.ok(taskMembers.every((item: { taskId: string; available: boolean }) => item.taskId === taskId && item.available));
   assertSameDirectories(taskMembers.map((item: { path: string }) => item.path), currentPaths);
   const groupRoot = path.join(workspace, '.worktrees', taskId);
-  const groupDocument = path.join(groupRoot, 'implementation.md');
+  groupDocument = path.join(groupRoot, 'implementation.md');
   fs.writeFileSync(groupDocument, '# 组内资料\n\n清理 Git 对象必须保留本文件。\n');
-  const groupContent = fs.readFileSync(groupDocument, 'utf8');
-  const sourceHeads: Record<string, string> = {}, deliveredHeads: Record<string, string> = {};
+  groupContent = fs.readFileSync(groupDocument, 'utf8');
   for (const item of sourceRecords) {
     fs.writeFileSync(path.join(item.checkoutPath, 'result.txt'), `${item.selector} result\n`);
     git(item.checkoutPath, ['add', '--', 'result.txt']);
@@ -431,7 +435,6 @@ async function nestedGitIsolationScenario() {
   }
   completePhase();
   completePhase = startPhase('group-cleanup');
-  const cleanup = (records = sourceRecords) => ['worktree', 'cleanup', taskId, ...records.flatMap(item => ['--expected-source', `${item.selector}=${sourceHeads[item.selector]}`, '--delivered-ref', `${item.selector}=${deliveredHeads[item.selector]}`])];
   const partialDelivery = run(cleanup(sourceRecords.slice(0, 1)), 1);
   assert.equal(partialDelivery.status, 'blocked');
   assert.deepEqual(partialDelivery.effects, []);
@@ -473,6 +476,23 @@ async function nestedGitIsolationScenario() {
   assert.equal(fs.readFileSync(groupDocument, 'utf8'), groupContent);
   currentRecords.forEach((item: { checkoutPath: string }) => assert.equal(fs.existsSync(item.checkoutPath), false));
   completePhase();
+  } else {
+    // This independent boundary starts with retained group material and unchanged
+    // healthy Git tips; it does not replay delivery, ambiguity or recovery.
+    const groupRoot = path.join(workspace, '.worktrees', taskId);
+    fs.mkdirSync(groupRoot, { recursive: true });
+    groupDocument = path.join(groupRoot, 'implementation.md');
+    fs.writeFileSync(groupDocument, '# 组内资料\n\n清理 Git 对象必须保留本文件。\n');
+    groupContent = fs.readFileSync(groupDocument, 'utf8');
+    for (const [selector, repository] of [['service:demo/api', apiRoot], ['service:demo/worker', workerRoot]]) {
+      sourceHeads[selector] = git(repository, ['rev-parse', 'HEAD']);
+      deliveredHeads[selector] = sourceHeads[selector];
+    }
+  }
+  if (section === 'lifecycle') {
+    process.stdout.write('Nested Git public Worktree lifecycle passed.\n');
+    return;
+  }
   completePhase = startPhase('unrelated-source');
 
   // A damaged, unrelated declaration cannot stop healthy selected work or data.
@@ -495,6 +515,7 @@ async function nestedGitIsolationScenario() {
   assert.equal(docsCompleted.record.status, 'completed');
   const healthy = run(create);
   assert.equal(healthy.status, 'ready');
+  sourceRecords = healthy.repositories as typeof sourceRecords;
   assert.equal(run(['worktree', 'inspect', taskId]).status, 'ready');
   const uncertainHealthyCatalog = run(['code', 'repositories', '--task', taskId]);
   const healthyPaths = healthy.repositories.map((item: { checkoutPath: string }) => item.checkoutPath);
@@ -536,11 +557,15 @@ async function nestedGitIsolationScenario() {
   assert.equal(fs.lstatSync(path.join(unsafeRoot, 'repositories')).isSymbolicLink(), true);
   assertRootHasNoGit();
   completePhase();
-  process.stdout.write('Nested Git public Worktree lifecycle passed.\n');
+  process.stdout.write(section === 'safety' ? 'Nested Git public Worktree safety boundaries passed.\n' : 'Nested Git public Worktree lifecycle passed.\n');
 }
 
 if (process.argv.includes('--nested-git-isolation-scenario')) {
-  await nestedGitIsolationScenario();
+  const sections = process.argv.filter(argument => argument === '--section');
+  assert.ok(sections.length <= 1, 'Nested Git scenario accepts one closed section.');
+  const section = sections.length ? process.argv[process.argv.indexOf('--section') + 1] : 'full';
+  assert.ok(section === 'full' || section === 'lifecycle' || section === 'safety', 'Unknown Nested Git scenario section.');
+  await nestedGitIsolationScenario(section);
 } else if (process.argv.includes('--mixed-document-scenario')) {
   await scenario({ nestedGit: true });
 } else if (process.argv.includes('--non-git-scenario')) {

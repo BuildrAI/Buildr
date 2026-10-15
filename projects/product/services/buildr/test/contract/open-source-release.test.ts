@@ -471,7 +471,7 @@ test('CI and publish workflows use the supported Node runtime', () => {
   assert.equal(verifyDocument.jobs['dev-feedback-windows']['runs-on'], 'windows-latest');
   assert.equal(verifyDocument.jobs['candidate-plan'].if, "(!inputs.diagnostic_scope || inputs.diagnostic_scope == 'none') && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'dev'))");
   assert.deepEqual(verifyDocument.on.workflow_dispatch.inputs.purpose.options, ['candidate', 'release-rehearsal']);
-  assert.deepEqual(verifyDocument.on.workflow_dispatch.inputs.diagnostic_scope.options, ['none', 'core-project-task-macos', 'nested-git-isolation-windows', 'runtime-windows', 'failed-windows', 'package-consumer-windows']);
+  assert.deepEqual(verifyDocument.on.workflow_dispatch.inputs.diagnostic_scope.options, ['none', 'core-project-task-macos', 'nested-git-isolation-windows', 'runtime-windows', 'failed-windows', 'package-consumer-windows', 'nested-lifecycle-windows']);
   assert.equal(verifyDocument.on.workflow_dispatch.inputs.diagnostic_scope.default, 'none');
   assert.equal(verifyDocument.on.workflow_dispatch.inputs.expected_source_tree.required, false);
   assert.equal(verifyDocument.on.workflow_dispatch.inputs.rehearsal_identity.required, false);
@@ -537,7 +537,7 @@ test('Windows original-package diagnosis remains separate from complete Candidat
   assert.match(diagnosis.if, /github.event_name == 'workflow_dispatch'/u);
   assert.match(diagnosis.if, /inputs.diagnostic_scope == 'runtime-windows'/u);
   assert.match(diagnosis.if, /inputs.diagnostic_scope == 'failed-windows'/u);
-  for (const scenario of ['runtime-windows', 'worktree-windows', 'release-contract-windows', 'git-convergence-windows', 'package-consumer-windows']) assert.ok(diagnosis.strategy.matrix.scenario.includes(scenario));
+  for (const scenario of ['runtime-windows', 'worktree-windows', 'release-contract-windows', 'git-convergence-windows', 'package-consumer-windows', 'nested-lifecycle-windows']) assert.ok(diagnosis.strategy.matrix.scenario.includes(scenario));
   assert.equal(diagnosis.env.DIAGNOSTIC_CANDIDATE_RUN_ID, '${{ inputs.diagnostic_candidate_run_id }}');
   assert.equal(diagnosis.env.DIAGNOSTIC_CANDIDATE_SOURCE, '${{ inputs.diagnostic_candidate_source }}');
   assert.equal(diagnosis.env.EXPECTED_SOURCE_TREE, '${{ inputs.expected_source_tree }}');
@@ -553,6 +553,7 @@ test('Windows original-package diagnosis remains separate from complete Candidat
   assert.equal(execution.env.BUILDR_VERIFICATION_PROFILE, 'ci-workspace-limited');
   assert.equal(execution.shell, undefined);
   assert.match(diagnosis.if, /inputs.diagnostic_scope == 'package-consumer-windows'/u);
+  assert.match(diagnosis.if, /inputs.diagnostic_scope == 'nested-lifecycle-windows'/u);
   const resolution = diagnosis.steps.find((step: any) => step.name === 'Record native Windows command resolution');
   assert.match(resolution.run, /Get-Command tar -CommandType Application/u);
   assert.match(resolution.run, /native-command-resolution\.json/u);
@@ -614,7 +615,10 @@ test('Windows nested Git diagnosis keeps closed inputs, original isolated assert
   assert.equal(diagnosis.steps.some((step: any) => /aggregate|publish|npm (?:pack|publish)/u.test(step.run || '')), false);
   const scenario = fs.readFileSync(path.join(serviceRoot, 'test/integration/non-git-workspace-continuity.test.ts'), 'utf8');
   assert.match(scenario, /timeout: 30_000/u);
-  assert.match(scenario, /await nestedGitIsolationScenario\(\)/u);
+  assert.match(scenario, /await nestedGitIsolationScenario\(section\)/u);
+  assert.ok(scenario.includes("process.argv[process.argv.indexOf('--section') + 1] : 'full'"));
+  assert.ok(scenario.includes("section === 'full' || section === 'lifecycle' || section === 'safety'"));
+  assert.ok(scenario.includes("sections.length <= 1"));
 });
 
 test('release convergence and self-bootstrap runner fail closed on unmatched authority evidence', () => {
