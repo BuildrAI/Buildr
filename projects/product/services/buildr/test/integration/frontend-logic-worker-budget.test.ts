@@ -5,9 +5,37 @@ import path from 'node:path';
 import test from 'node:test';
 import { createVerificationExecutor } from '../verification/executor.ts';
 import { verificationSteps } from '../verification/registry.ts';
+import { mapParityWorkspaces } from '../verification/runtime/adapter-parity.ts';
 
 const serviceRoot = path.resolve(import.meta.dirname, '../..');
 const frontend = verificationSteps.find((step: any) => step.id === 'frontend-logic');
+
+test('runtime parity workspaces obey outer worker grants while retaining every scenario', async () => {
+  const scenarios = [0, 1, 2, 3, 4, 5, 6];
+  for (const workers of [1, 2, 3]) {
+    let active = 0, peak = 0;
+    const result = await mapParityWorkspaces(scenarios, async scenario => {
+      active++; peak = Math.max(peak, active);
+      await new Promise<void>(resolve => setImmediate(resolve));
+      active--; return scenario;
+    }, { BUILDR_VERIFICATION_WORKER_BUDGET: String(workers) });
+    assert.deepEqual(result, scenarios);
+    assert.equal(active, 0); assert.equal(peak, workers);
+  }
+});
+
+test('runtime parity retains its standalone limit and rejects invalid grants before scheduling work', async () => {
+  let active = 0, peak = 0, calls = 0;
+  await mapParityWorkspaces([0, 1, 2, 3], async () => {
+    active++; peak = Math.max(peak, active);
+    await new Promise<void>(resolve => setImmediate(resolve)); active--;
+  }, {});
+  assert.equal(peak, 3);
+  for (const value of ['0', '-1', '1.5', 'many', '4']) {
+    assert.throws(() => mapParityWorkspaces([0], () => { calls++; }, { BUILDR_VERIFICATION_WORKER_BUDGET: value }), /worker budget/u);
+  }
+  assert.equal(calls, 0);
+});
 
 test('frontend real leaf obeys one- and two-worker grants without dropping either test file', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-frontend-worker-grant-'));

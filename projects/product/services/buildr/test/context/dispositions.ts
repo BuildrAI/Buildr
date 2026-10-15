@@ -57,6 +57,7 @@ const entries: any[] = [
     'system-openspec-contract-audit',
     'system-workspace-lifecycle',
     'system-worktree-lifecycle',
+    'system-nested-git-isolation',
     'system-runtime-recovery',
     'system-app-process',
     'system-windows-platform',
@@ -71,8 +72,11 @@ const entries: any[] = [
   ]),
   ...disposition('full-lifecycle', 'release-artifact-is-primary-evidence', 'The unique Candidate, installed package, launcher, onboarding, or release journey is the primary evidence.', [
     'integration-candidate-release',
+    'integration-candidate-release-selection',
+    'integration-candidate-package-selection',
     'integration-candidate-release-effects',
     'integration-candidate-git-convergence',
+    'integration-candidate-git-selection',
     'artifact-browser-core',
     'candidate-tarball',
     'application-payload-release',
@@ -128,7 +132,7 @@ export const VERIFICATION_GOLDEN_CONTEXT_AUDIT: any = Object.freeze({
     'Cleanup must prove removal, retention, ownership, rollback, and repeatability against state created by the same case.',
   ),
   candidate: goldenJourney(
-    ['integration-candidate-release', 'integration-candidate-release-effects', 'integration-candidate-git-convergence', 'candidate-tarball'],
+    ['integration-candidate-release', 'integration-candidate-release-selection', 'integration-candidate-package-selection', 'integration-candidate-release-effects', 'integration-candidate-git-convergence', 'integration-candidate-git-selection', 'candidate-tarball'],
     'full-lifecycle',
     'artifact-only',
     'Candidate generation and the unique artifact are the observed outputs; an in-source Application Context cannot replace artifact construction.',

@@ -210,13 +210,22 @@ async function nestedGitIsolationScenario() {
   type Phase = 'preconditions' | 'workspace-init' | 'source-registration' | 'worktree-selection'
     | 'materials-provenance' | 'anchor-conflict' | 'association-ambiguity' | 'delivery'
     | 'group-cleanup' | 'observed-recovery' | 'unrelated-source' | 'escape-guard';
+  const persistPhase = (record: unknown) => {
+    const line = `${JSON.stringify(record)}\n`;
+    fs.writeSync(process.stderr.fd, line);
+    // A parent spawnSync can be terminated before returning its buffered output.
+    // Persist these fixed phase records independently without changing the scenario.
+    if (process.env.BUILDR_NESTED_GIT_PHASE_OUTPUT) {
+      try { fs.appendFileSync(process.env.BUILDR_NESTED_GIT_PHASE_OUTPUT, line, 'utf8'); } catch {}
+    }
+  };
   const startPhase = (phase: Phase) => {
     const started = performance.now();
     const record = { schemaVersion: 'buildr.nested-git-phase/v1', operation: 'nested-git-isolation', phase };
-    fs.writeSync(process.stderr.fd, `${JSON.stringify({ ...record, event: 'started', elapsedMs: Math.round(started - scenarioStarted) })}\n`);
+    persistPhase({ ...record, event: 'started', elapsedMs: Math.round(started - scenarioStarted) });
     return () => {
       const completed = performance.now();
-      fs.writeSync(process.stderr.fd, `${JSON.stringify({ ...record, event: 'completed', elapsedMs: Math.round(completed - scenarioStarted), durationMs: Math.round(completed - started) })}\n`);
+      persistPhase({ ...record, event: 'completed', elapsedMs: Math.round(completed - scenarioStarted), durationMs: Math.round(completed - started) });
     };
   };
   let completePhase = startPhase('preconditions');

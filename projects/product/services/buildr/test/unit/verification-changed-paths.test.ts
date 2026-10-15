@@ -149,7 +149,7 @@ test('independent package release helpers select pure feedback and the real life
     for (const owner of ['unit', 'typecheck']) {
       assert.ok(selected.includes(owner), `${source} must select ${owner}`);
     }
-    for (const owner of ['integration-candidate-release', 'integration-candidate-release-effects', 'integration-candidate-git-convergence']) {
+    for (const owner of ['integration-candidate-release', 'integration-candidate-release-selection', 'integration-candidate-package-selection', 'integration-candidate-release-effects', 'integration-candidate-git-convergence', 'integration-candidate-git-selection']) {
       assert.ok(verificationStepOwnership(owner).inputs.includes(source), `${source} must belong to ${owner}`);
       assert.equal(selected.includes(owner), false, 'daily feedback keeps publication lifecycle checks in their explicit release scope');
       assert.ok(ids(createVerificationPlan({ paths: [source], groups: ['release'] })).includes(owner));

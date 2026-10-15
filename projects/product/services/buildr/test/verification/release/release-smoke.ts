@@ -27,6 +27,67 @@ export const RELEASE_PACKAGE_SPEC_ENV: any = 'BUILDR_RELEASE_PACKAGE_SPEC';
 export const RELEASE_LAUNCHER_READINESS_TIMEOUT_MS: any = 15_000;
 export const RELEASE_READINESS_POLL_INTERVAL_MS: any = 50;
 
+const progressStages = new Set([
+  'package-installation', 'update-check', 'direct-web-start', 'direct-web-readiness', 'direct-web-stop',
+  'launcher-install', 'launcher-port-probe', 'launcher-launch-default', 'launcher-readiness-default', 'launcher-stop-default',
+  'launcher-launch-repeat', 'launcher-repeat-log', 'launcher-readiness-repeat', 'launcher-repair-occupied',
+  'launcher-launch-occupied', 'launcher-readiness-occupied', 'launcher-stop-occupied', 'launcher-repair-random',
+  'launcher-launch-random', 'launcher-readiness-random', 'launcher-stop-random', 'launcher-drift', 'launcher-status-drift',
+  'launcher-repair-drift', 'launcher-uninstall', 'workspace-init', 'workspace-sync', 'workspace-doctor-before',
+  'workspace-component-uninstall', 'workspace-doctor-after', 'cleanup-direct-web', 'cleanup-launcher', 'cleanup-root',
+]);
+
+function progressChild(value: any): any {
+  if (!value) return {};
+  const exitCode = value.childExitCode !== undefined ? value.childExitCode : value.status !== undefined ? value.status : value.exitCode;
+  const signal = value.childSignal !== undefined ? value.childSignal : value.signal !== undefined ? value.signal : value.signalCode;
+  const errorCode = value.childErrorCode ?? value.error?.code;
+  const pid = value.childPid ?? value.pid;
+  const signals = ['SIGTERM', 'SIGKILL', 'SIGABRT', 'SIGSEGV', 'SIGBUS', 'SIGILL', 'SIGFPE', 'SIGHUP', 'SIGINT', 'SIGQUIT', 'SIGBREAK'];
+  const errors = ['ETIMEDOUT', 'ENOENT', 'EACCES', 'EPERM', 'ENOEXEC', 'EPIPE', 'ECONNRESET', 'ENOTDIR', 'E2BIG', 'ENOMEM', 'ENFILE', 'EMFILE', 'UNKNOWN', 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER'];
+  return {
+    ...(Number.isSafeInteger(pid) && pid > 0 ? { childPid: pid } : {}),
+    ...(exitCode === null || Number.isSafeInteger(exitCode) ? { childExitCode: exitCode } : {}),
+    ...(signal === null || signals.includes(signal) ? { childSignal: signal } : {}),
+    ...(errors.includes(errorCode) ? { childErrorCode: errorCode } : {}),
+  };
+}
+
+/** Independent crash breadcrumbs: no started status is added to completed phase evidence. */
+export function createReleaseSmokeProgressRecorder(options: any = {}): any {
+  const directory = (options.env ?? process.env).BUILDR_DIAGNOSTICS_OUTPUT;
+  const file = typeof directory === 'string' && directory ? path.join(path.resolve(directory), `release-smoke-progress-${process.pid}.jsonl`) : null;
+  let sequence = 0, available = Boolean(file);
+  const write = (stage: string, status: string, startedAt: number, observation: any = null) => {
+    if (!available || !progressStages.has(stage) || sequence >= 256) return;
+    try {
+      const now = Date.now();
+      const record = { schemaVersion: 'buildr.release-smoke-progress/v1', scope: 'release-tarball-smoke', pid: process.pid,
+        sequence: sequence + 1, stage, status, at: new Date(now).toISOString(),
+        ...(status === 'started' ? {} : { durationMs: Math.max(0, now - startedAt) }), ...progressChild(observation) };
+      fs.mkdirSync(path.dirname(file!), { recursive: true });
+      fs.writeFileSync(file!, `${JSON.stringify(record)}\n`, { encoding: 'utf8', flag: sequence === 0 ? 'w' : 'a' });
+      sequence += 1;
+    } catch { available = false; } // Diagnostics never replace the actual operation outcome.
+  };
+  const observe = (reader: any, error?: any) => {
+    try { return { ...progressChild(reader?.()), ...progressChild(error) }; } catch { return {}; }
+  };
+  return {
+    file,
+    runSync(stage: string, operation: any, observation?: any) {
+      const startedAt = Date.now(); write(stage, 'started', startedAt, observe(observation));
+      try { const value = operation(); write(stage, 'passed', startedAt, observe(observation)); return value; }
+      catch (error) { write(stage, 'failed', startedAt, observe(observation, error)); throw error; }
+    },
+    async run(stage: string, operation: any, observation?: any) {
+      const startedAt = Date.now(); write(stage, 'started', startedAt, observe(observation));
+      try { const value = await operation(); write(stage, 'passed', startedAt, observe(observation)); return value; }
+      catch (error) { write(stage, 'failed', startedAt, observe(observation, error)); throw error; }
+    },
+  };
+}
+
 export function resolveReleaseSmokeSource(env: any = process.env): any  {
   const candidateRequested: any = Boolean(env.BUILDR_CANDIDATE_TARBALL || env.BUILDR_CANDIDATE_PACK_METADATA);
   const artifactRequested: any = Boolean(env[RELEASE_ARTIFACT_MANIFEST_ENV]);
@@ -68,18 +129,26 @@ export function resolveReleaseSmokeSource(env: any = process.env): any  {
   return { kind: 'standalone-pack', installTarget: null, expectedName: packageName, expectedVersion: null, offline: true };
 }
 
-function run(command: any, args: any, options: any = {}): any  {
+export function runReleaseSmokeCommand(command: any, args: any, options: any = {}): any  {
+  let observed: any = null;
+  const execute = () => {
   const result: any = spawnSync(command, args, {
     cwd: options.cwd ?? productRoot,
     encoding: 'utf8',
     env: { ...process.env, ...options.env },
     shell: process.platform === 'win32' && /\.cmd$/i.test(command),
   });
+  observed = result;
   if (result.status !== (options.expectedStatus ?? 0)) {
-    throw new Error(`${command} ${args.join(' ')} exited ${result.status}:\n${result.stdout}\n${result.stderr}`);
+    throw Object.assign(new Error(`${command} ${args.join(' ')} exited ${result.status}:\n${result.stdout}\n${result.stderr}`), {
+      childExitCode: result.status, childSignal: result.signal, childErrorCode: result.error?.code ?? null,
+    });
   }
   return result.stdout;
+  };
+  return options.progress ? options.progress.runSync(options.progressStage, execute, () => observed) : execute();
 }
+const run = runReleaseSmokeCommand;
 
 function parseJson(label: any, output: any, schemaVersion: any): any  {
   const payload: any = JSON.parse(output);
@@ -300,6 +369,7 @@ export async function runReleaseSmoke(env: any = process.env): Promise<any>  {
   process.stdout.write(`[release-smoke] node=${JSON.stringify(exactNode.audit)}\n`);
   const source: any = resolveReleaseSmokeSource(env);
   const phase: any = createVerificationPhaseRecorder('release-tarball-smoke', { persistEvidence: true });
+  const progress = createReleaseSmokeProgressRecorder({ env });
   let web: any = null;
   let launcherProcess: any = null;
   let installedMetadata: any = null;
@@ -307,10 +377,11 @@ export async function runReleaseSmoke(env: any = process.env): Promise<any>  {
   let launcherTarget: any = null;
   let launcherHome: any = null;
 
-  function runBuildr(buildrScript: any, args: any): any  {
+  function runBuildr(buildrScript: any, args: any, progressStage?: string): any  {
     return run(nodeExecutable, [buildrScript, ...args], {
       cwd: workspace,
       env: runtimeEnv,
+      ...(progressStage ? { progress, progressStage } : {}),
     });
   }
 
@@ -345,7 +416,7 @@ export async function runReleaseSmoke(env: any = process.env): Promise<any>  {
       const installArgs: any = source.offline
         ? ['install', '--offline', '--global', '--prefix', prefix, installTarget]
         : ['install', '--prefer-online', '--global', '--prefix', prefix, '--registry', officialRegistry, installTarget];
-      run(npmExecutable, installArgs, { env: runtimeEnv });
+      run(npmExecutable, installArgs, { env: runtimeEnv, progress, progressStage: 'package-installation' });
       const modulesRoot: any = process.platform === 'win32' ? path.join(prefix, 'node_modules') : path.join(prefix, 'lib', 'node_modules');
       installedPackageRoot = path.join(modulesRoot, '@buildr-ai', 'buildr');
       installedMetadata = JSON.parse(fs.readFileSync(path.join(installedPackageRoot, 'package.json'), 'utf8'));
@@ -365,6 +436,7 @@ export async function runReleaseSmoke(env: any = process.env): Promise<any>  {
       const updateCheck: any = parseJson('registry update check', run(nodeExecutable, [buildrScript, 'update', 'check', '--json'], {
       cwd: workspace,
       expectedStatus: 1,
+      progress, progressStage: 'update-check',
       env: {
         ...runtimeEnv,
         npm_config_registry: 'http://127.0.0.1:9',
@@ -379,21 +451,21 @@ export async function runReleaseSmoke(env: any = process.env): Promise<any>  {
 
     assert.equal(fs.existsSync(path.join(appData, 'instance.json')), false, 'ordinary CLI must not start HTTP');
     let webStderr: any = '';
-    web = spawn(nodeExecutable, [buildrScript, 'web', '--no-open', '--port', '0'], {
+    progress.runSync('direct-web-start', () => { web = spawn(nodeExecutable, [buildrScript, 'web', '--no-open', '--port', '0'], {
       cwd: workspace,
       env: { ...process.env, ...runtimeEnv },
       stdio: ['ignore', 'pipe', 'pipe'],
-    });
+    }); }, () => web);
     web.stderr.setEncoding('utf8');
     web.stderr.on('data', (chunk: any) => { webStderr += chunk; });
-    const health: any = await waitForWebReadiness({ appData, child: web, stderr: () => webStderr });
+    const health: any = await progress.run('direct-web-readiness', () => waitForWebReadiness({ appData, child: web, stderr: () => webStderr }), () => web);
     assert.equal(health.productIdentity.channel, 'npm');
     assertExactRuntimeIdentity(health, 'direct Web');
-    await stopChildProcess(web);
+    await progress.run('direct-web-stop', () => stopChildProcess(web), () => web);
     web = null;
 
       if (launcherTarget) {
-      const installedLauncher: any = parseJson('launcher install', runBuildr(buildrScript, ['web', 'launcher', 'install', '--target', launcherTarget, '--json']), 'buildr.launcher-status/v1');
+      const installedLauncher: any = parseJson('launcher install', runBuildr(buildrScript, ['web', 'launcher', 'install', '--target', launcherTarget, '--json'], 'launcher-install'), 'buildr.launcher-status/v1');
       assert.equal(installedLauncher.status, 'ready');
       assert.equal(installedLauncher.binding.schemaVersion, 'buildr.npm-launcher-binding/v2');
       assert.deepEqual(installedLauncher.binding.webPort, { preferred: 4457, fallback: 'random' });
@@ -401,7 +473,9 @@ export async function runReleaseSmoke(env: any = process.env): Promise<any>  {
       assert.equal(sameFilesystemPath(installedLauncher.binding.packageEntry.path, buildrScript), true);
       assert.equal(installedLauncher.binding.installationOwnershipIdentity, health.productIdentity.installationIdentity);
 
-      const launchLauncher: any = async () => {
+      const launchLauncher: any = async (progressStage: string) => {
+        let launchObservation: any = null;
+        return progress.run(progressStage, async () => {
         launcherHome = path.join(root, 'launcher-home');
         fs.mkdirSync(launcherHome, { recursive: true });
         const launcherEnvironment: any = {
@@ -418,12 +492,14 @@ export async function runReleaseSmoke(env: any = process.env): Promise<any>  {
           const { launchPlatformLauncher }: any = await import('./platform-launcher-invocation.ts');
           const launched: any = launchPlatformLauncher({ target: launcherTarget, workspace, environment: launcherEnvironment });
           launcherProcess = launched.process;
+          launchObservation = launcherProcess;
           assert.doesNotMatch(launched.output, /already running/i, 'platform Launcher must execute the short-lived entry');
           return;
         }
         if (process.platform === 'darwin') {
           const executable: any = path.join(launcherTarget, 'Contents', 'MacOS', 'Buildr Web');
           const launched: any = spawnSync(executable, [], { cwd: workspace, env: launcherEnvironment, encoding: 'utf8' });
+          launchObservation = launched;
           if (launched.status !== 0) throw new Error(`${executable} exited ${launched.status}:\n${launched.stdout}\n${launched.stderr}`);
           return;
         }
@@ -432,14 +508,16 @@ export async function runReleaseSmoke(env: any = process.env): Promise<any>  {
           env: launcherEnvironment,
           stdio: ['ignore', 'ignore', 'pipe'],
         });
+        launchObservation = launcherProcess;
+        }, () => launchObservation);
       };
-      const stopLauncherServer: any = async (launcherHealth: any) => {
+      const stopLauncherServer: any = async (launcherHealth: any, progressStage: string) => progress.run(progressStage, async () => {
         try { process.kill(launcherHealth.pid, 'SIGTERM'); } catch {}
         await waitForProcessExit(launcherHealth.pid);
         await stopChildProcess(launcherProcess);
         launcherProcess = null;
-      };
-      const waitForLauncherReadiness: any = async (startup: any) => {
+      }, () => ({ pid: launcherHealth.pid }));
+      const waitForLauncherReadiness: any = async (startup: any, progressStage: string) => progress.run(progressStage, async () => {
         const startedAt: any = Date.now();
         try {
           const launcherHealth: any = await waitForWebReadiness({ appData });
@@ -459,11 +537,11 @@ export async function runReleaseSmoke(env: any = process.env): Promise<any>  {
           error.message = `${error.message}\nLauncher failure evidence: ${retained.evidencePath}${retained.retainedLogPath ? `\nLauncher log: ${retained.retainedLogPath}` : ''}`;
           throw error;
         }
-      };
+      }, () => launcherProcess);
 
-      const defaultPortAvailable: any = await canBindLoopbackPort(4457);
-      await launchLauncher();
-      const launcherHealth: any = await waitForLauncherReadiness('default-port');
+      const defaultPortAvailable: any = await progress.run('launcher-port-probe', () => canBindLoopbackPort(4457));
+      await launchLauncher('launcher-launch-default');
+      const launcherHealth: any = await waitForLauncherReadiness('default-port', 'launcher-readiness-default');
       assert.equal(launcherHealth.productIdentity.installationIdentity, health.productIdentity.installationIdentity);
       assert.equal(launcherHealth.launcherIdentity.bindingIdentity, installedLauncher.binding.bindingIdentity);
       assert.equal(Number(new URL(launcherHealth.url).port) === 4457, defaultPortAvailable, 'default Launcher uses 4457 exactly when it is available');
@@ -471,7 +549,8 @@ export async function runReleaseSmoke(env: any = process.env): Promise<any>  {
         await new Promise((resolve: any) => setTimeout(resolve, 2_000));
         const launcherLogPath: any = path.join(root, 'launcher-home', 'Library', 'Logs', 'Buildr', 'launcher.log');
         const launcherLogBeforeRepeatedOpen: any = fs.readFileSync(launcherLogPath);
-        await launchLauncher();
+        await launchLauncher('launcher-launch-repeat');
+        await progress.run('launcher-repeat-log', async () => {
         const repeatedOpenDeadline: any = Date.now() + RELEASE_LAUNCHER_READINESS_TIMEOUT_MS;
         let repeatedLauncherLog: any = '';
         while (Date.now() < repeatedOpenDeadline && !/Buildr Web 已运行：/.test(repeatedLauncherLog)) {
@@ -481,10 +560,11 @@ export async function runReleaseSmoke(env: any = process.env): Promise<any>  {
           if (!/Buildr Web 已运行：/.test(repeatedLauncherLog)) await new Promise((resolve: any) => setTimeout(resolve, RELEASE_READINESS_POLL_INTERVAL_MS));
         }
         assert.match(repeatedLauncherLog, /Buildr Web 已运行：/, 'repeated macOS open executes the CLI reuse path within the shared Launcher readiness budget');
-        const repeated: any = await waitForLauncherReadiness('repeated-open');
+        });
+        const repeated: any = await waitForLauncherReadiness('repeated-open', 'launcher-readiness-repeat');
         assert.equal(repeated.pid, launcherHealth.pid, 'repeated macOS open reuses the released instance');
       }
-      await stopLauncherServer(launcherHealth);
+      await stopLauncherServer(launcherHealth, 'launcher-stop-default');
 
       const occupied: any = net.createServer();
       await new Promise((resolve: any, reject: any) => {
@@ -493,25 +573,26 @@ export async function runReleaseSmoke(env: any = process.env): Promise<any>  {
       });
       try {
         const occupiedPort: any = occupied.address().port;
-        const occupiedPolicy: any = parseJson('launcher repair occupied port', runBuildr(buildrScript, ['web', 'launcher', 'repair', '--target', launcherTarget, '--port', String(occupiedPort), '--json']), 'buildr.launcher-status/v1');
+        const occupiedPolicy: any = parseJson('launcher repair occupied port', runBuildr(buildrScript, ['web', 'launcher', 'repair', '--target', launcherTarget, '--port', String(occupiedPort), '--json'], 'launcher-repair-occupied'), 'buildr.launcher-status/v1');
         assert.deepEqual(occupiedPolicy.binding.webPort, { preferred: occupiedPort, fallback: 'random' });
-        await launchLauncher();
-        const fallbackHealth: any = await waitForLauncherReadiness('occupied-port-fallback');
+        await launchLauncher('launcher-launch-occupied');
+        const fallbackHealth: any = await waitForLauncherReadiness('occupied-port-fallback', 'launcher-readiness-occupied');
         assert.notEqual(Number(new URL(fallbackHealth.url).port), occupiedPort);
         assert.equal(fallbackHealth.launcherIdentity.bindingIdentity, occupiedPolicy.binding.bindingIdentity);
-        await stopLauncherServer(fallbackHealth);
+        await stopLauncherServer(fallbackHealth, 'launcher-stop-occupied');
       } finally {
         await new Promise((resolve: any) => occupied.close(resolve));
       }
 
-      const randomPolicy: any = parseJson('launcher repair random port', runBuildr(buildrScript, ['web', 'launcher', 'repair', '--target', launcherTarget, '--port', '0', '--json']), 'buildr.launcher-status/v1');
+      const randomPolicy: any = parseJson('launcher repair random port', runBuildr(buildrScript, ['web', 'launcher', 'repair', '--target', launcherTarget, '--port', '0', '--json'], 'launcher-repair-random'), 'buildr.launcher-status/v1');
       assert.deepEqual(randomPolicy.binding.webPort, { preferred: 0, fallback: 'random' });
-      await launchLauncher();
-      const randomHealth: any = await waitForLauncherReadiness('random-port');
+      await launchLauncher('launcher-launch-random');
+      const randomHealth: any = await waitForLauncherReadiness('random-port', 'launcher-readiness-random');
       assert.ok(Number(new URL(randomHealth.url).port) > 0);
       assert.equal(randomHealth.launcherIdentity.bindingIdentity, randomPolicy.binding.bindingIdentity);
-      await stopLauncherServer(randomHealth);
+      await stopLauncherServer(randomHealth, 'launcher-stop-random');
 
+      progress.runSync('launcher-drift', () => {
       if (process.platform === 'darwin') {
         fs.appendFileSync(path.join(launcherTarget, 'Contents', 'MacOS', 'Buildr Web'), '\n# drift\n');
       } else {
@@ -521,30 +602,32 @@ export async function runReleaseSmoke(env: any = process.env): Promise<any>  {
           env: { ...runtimeEnv, BUILDR_LAUNCHER_SHORTCUT: launcherTarget },
         });
       }
+      });
       const stale: any = parseJson('launcher drift status', run(nodeExecutable, [buildrScript, 'web', 'launcher', 'status', '--target', launcherTarget, '--json'], {
         cwd: workspace,
         env: runtimeEnv,
         expectedStatus: 1,
+        progress, progressStage: 'launcher-status-drift',
       }), 'buildr.launcher-status/v1');
       assert.ok(['stale', 'invalid'].includes(stale.status));
-      const repaired: any = parseJson('launcher repair', runBuildr(buildrScript, ['web', 'launcher', 'repair', '--target', launcherTarget, '--json']), 'buildr.launcher-status/v1');
+      const repaired: any = parseJson('launcher repair', runBuildr(buildrScript, ['web', 'launcher', 'repair', '--target', launcherTarget, '--json'], 'launcher-repair-drift'), 'buildr.launcher-status/v1');
       assert.equal(repaired.status, 'ready');
-      const uninstalled: any = parseJson('launcher uninstall', runBuildr(buildrScript, ['web', 'launcher', 'uninstall', '--target', launcherTarget, '--json']), 'buildr.launcher-status/v1');
+      const uninstalled: any = parseJson('launcher uninstall', runBuildr(buildrScript, ['web', 'launcher', 'uninstall', '--target', launcherTarget, '--json'], 'launcher-uninstall'), 'buildr.launcher-status/v1');
       assert.equal(uninstalled.status, 'absent');
       assert.equal(fs.existsSync(installedPackageRoot), true, 'Launcher uninstall must retain the npm package');
       }
     });
 
     await phase.run('workspace-lifecycle', async () => {
-      runBuildr(buildrScript, ['init', '--agent', 'codex', '--target', workspace, '--name', 'release-smoke', '--profile', 'team']);
-      runBuildr(buildrScript, ['sync', 'codex', '--target', workspace]);
-      const doctorBefore: any = parseJson('doctor before uninstall', runBuildr(buildrScript, ['doctor', '--agent', 'codex', '--target', workspace, '--json']), 'buildr.doctor/v2');
+      runBuildr(buildrScript, ['init', '--agent', 'codex', '--target', workspace, '--name', 'release-smoke', '--profile', 'team'], 'workspace-init');
+      runBuildr(buildrScript, ['sync', 'codex', '--target', workspace], 'workspace-sync');
+      const doctorBefore: any = parseJson('doctor before uninstall', runBuildr(buildrScript, ['doctor', '--agent', 'codex', '--target', workspace, '--json'], 'workspace-doctor-before'), 'buildr.doctor/v2');
       assert.equal(doctorBefore.summary.error, 0);
     });
 
     await phase.run('uninstall-final-doctor', async () => {
-      runBuildr(buildrScript, ['component', 'uninstall', 'openspec', '--agent', 'codex', '--target', workspace, '--reason', 'release-smoke']);
-      const doctorAfter: any = parseJson('doctor after uninstall', runBuildr(buildrScript, ['doctor', '--agent', 'codex', '--target', workspace, '--json']), 'buildr.doctor/v2');
+      runBuildr(buildrScript, ['component', 'uninstall', 'openspec', '--agent', 'codex', '--target', workspace, '--reason', 'release-smoke'], 'workspace-component-uninstall');
+      const doctorAfter: any = parseJson('doctor after uninstall', runBuildr(buildrScript, ['doctor', '--agent', 'codex', '--target', workspace, '--json'], 'workspace-doctor-after'), 'buildr.doctor/v2');
       assert.equal(doctorAfter.summary.error, 0);
       assert.equal(fs.existsSync(path.join(workspace, '.agents', 'skills', 'openspec-explore')), false);
     });
@@ -555,15 +638,15 @@ export async function runReleaseSmoke(env: any = process.env): Promise<any>  {
     let cleanupFailure: any = null;
     try {
       await phase.run('owned-process-cleanup', async () => {
-        await stopChildProcess(web);
-        await stopChildProcess(launcherProcess);
+        await progress.run('cleanup-direct-web', () => stopChildProcess(web), () => web);
+        await progress.run('cleanup-launcher', () => stopChildProcess(launcherProcess), () => launcherProcess);
       });
     } catch (error: any) {
       cleanupFailure = error;
     }
     const cleanupStartedAt: any = Date.now();
     try {
-      const cleanup: any = cleanupReleaseSmokeRoot(root);
+      const cleanup: any = progress.runSync('cleanup-root', () => cleanupReleaseSmokeRoot(root));
       phase.record('harness-root-cleanup', cleanupStartedAt, Date.now(), cleanup.status === 'retained' ? 'retained' : 'passed');
     } catch (error: any) {
       phase.record('harness-root-cleanup', cleanupStartedAt, Date.now(), 'failed');
