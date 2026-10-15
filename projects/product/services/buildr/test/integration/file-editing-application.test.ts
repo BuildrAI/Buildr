@@ -116,6 +116,45 @@ test('the explicit selected worktree remains independent from the registered mai
   assert.equal(fs.readFileSync(path.join(f.root, 'project', 'README.md'), 'utf8'), '# Original\r\n');
 });
 
+test('exact editor checkouts skip task association discovery while foreign and retired identities cannot read or save', t => {
+  const f = fixture(t), checkout = path.join(f.temporary, 'editor-checkout');
+  f.git('worktree', 'add', '--detach', checkout, 'HEAD');
+  let associationDiscovery = 0, evidenceReads = 0;
+  const app = createCodeApplication({
+    assetCatalog: () => ({ repositories: [{ id: 'repo', code: 'repo', name: 'Repo', source: { type: 'git', path: f.root } }], services: [], projects: [] }),
+    resolveSourceRoot: (_root, source) => source.path,
+    readTaskScope: () => { throw Error('An exact editor checkout does not need task scope.'); },
+    gitWorktreeEvidenceDirectories: () => { associationDiscovery++; throw Error('Task associations are unavailable.'); },
+    readGitWorktreeEvidence: () => { evidenceReads++; throw Error('Task evidence is unavailable.'); },
+  });
+  const selector: EditorFileSelector = { kind: 'code', repositoryId: 'repo', checkoutId: gitCheckoutReadId(checkout), path: 'project/README.md' };
+  const observed = app.editorFile(f.root, selector);
+  assert.deepEqual(observed.selector, selector);
+  assert.equal(observed.rootPath, fs.realpathSync(checkout));
+  assert.equal(observed.content, '# Original\r\n');
+  const saved = app.saveFile(f.root, { selector, expectedFileId: observed.fileId, expectedSourceRevision: observed.sourceRevision, expectedRevision: observed.revision, content: 'only this checkout\n' });
+  assert.equal(fs.readFileSync(path.join(checkout, selector.path), 'utf8'), saved.content);
+  assert.equal(fs.readFileSync(path.join(f.root, selector.path), 'utf8'), '# Original\r\n');
+  assert.equal(associationDiscovery, 0); assert.equal(evidenceReads, 0);
+
+  const foreign = path.join(f.temporary, 'foreign'); fs.mkdirSync(foreign);
+  execFileSync('git', ['-C', foreign, 'init', '--initial-branch=main'], { stdio: 'ignore' });
+  fs.mkdirSync(path.join(foreign, 'project')); fs.writeFileSync(path.join(foreign, selector.path), 'foreign file\n');
+  const foreignSelector = { ...selector, checkoutId: gitCheckoutReadId(foreign) };
+  assert.throws(() => app.editorFile(f.root, foreignSelector), errorCode('code_worktree_not_registered'));
+  assert.throws(() => app.saveFile(f.root, { selector: foreignSelector, expectedFileId: saved.fileId, expectedSourceRevision: saved.sourceRevision, expectedRevision: saved.revision, content: 'must not reach foreign file\n' }), errorCode('code_worktree_not_registered'));
+  assert.equal(fs.readFileSync(path.join(foreign, selector.path), 'utf8'), 'foreign file\n');
+
+  const pending: SaveEditorFileInput = { selector, expectedFileId: saved.fileId, expectedSourceRevision: saved.sourceRevision, expectedRevision: saved.revision, content: 'must not reach a replacement\n' };
+  f.git('worktree', 'remove', '--force', checkout);
+  fs.mkdirSync(path.join(checkout, 'project'), { recursive: true });
+  const replacement = path.join(checkout, selector.path); fs.writeFileSync(replacement, 'replacement directory\n');
+  assert.throws(() => app.editorFile(f.root, selector), errorCode('code_worktree_not_registered'));
+  assert.throws(() => app.saveFile(f.root, pending), errorCode('code_worktree_not_registered'));
+  assert.equal(fs.readFileSync(replacement, 'utf8'), 'replacement directory\n');
+  assert.equal(associationDiscovery, 0); assert.equal(evidenceReads, 0);
+});
+
 test('managed blocks are immutable while custom text remains editable, and damaged markers are locally read-only', t => {
   const f = fixture(t), file = path.join(f.root, 'project', 'README.md'), block = '<!-- buildr:required begin -->\r\nprotected\r\n<!-- buildr:required end -->';
   fs.writeFileSync(file, block + '\r\ncustom\r\n');

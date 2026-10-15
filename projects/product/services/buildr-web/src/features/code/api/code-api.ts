@@ -35,7 +35,11 @@ export const codeApi = {
   directory:(id:string,input:CodeReadInput,signal?:AbortSignal)=>request<CodeDirectory>(id,'directory',input,signal),
   file:(id:string,input:CodeReadInput,signal?:AbortSignal)=>request<CodeFile>(id,'file',input,signal),
   editorFile:(id:string,selector:EditableFileSelector,signal?:AbortSignal)=>request<EditableFileSnapshot>(id,'editor-file',selector,signal),
-  saveFile:(id:string,input:SaveFileInput)=>api(`/api/v1/workspaces/${encodeURIComponent(id)}/code/save-file`,{method:'POST',body:JSON.stringify(input)}) as Promise<CodeSaveFileSaveFile>,
+  saveFile:async (id:string,input:SaveFileInput):Promise<CodeSaveFileSaveFile>=>{
+    const saved = await api(`/api/v1/workspaces/${encodeURIComponent(id)}/code/save-file`,{method:'POST',body:JSON.stringify(input)}) as CodeSaveFileSaveFile;
+    if (input.selector.kind === 'code') notifySourceControlChange({workspaceId:id, repositoryId:input.selector.repositoryId, worktreeId:input.selector.checkoutId});
+    return saved;
+  },
   search:(id:string,input:CodeReadInput,signal?:AbortSignal)=>request<CodeSearch>(id,'search',input,signal),
   sourceControl:(id:string,input:CodeSourceControlInput={},signal?:AbortSignal)=>request<CodeSourceControlResponse>(id,'source-control',input,signal),
   history:(id:string,input:CodeSourceControlInput,signal?:AbortSignal)=>request<CodeHistoryResponse>(id,'history',input,signal),

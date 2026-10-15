@@ -107,6 +107,10 @@
 .source-control-checkout>small { display:block; margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--soft-muted); font-size:12px; }
 .source-control-reader>.ant-alert { flex:none; margin:9px 14px; font-size:12px; }
 .source-control-diff { flex:1; min-height:0; }
+.source-control-editable-diff { display:flex; flex:1; flex-direction:column; min-width:0; min-height:0; overflow:hidden; }
+.source-control-diff-loading { display:flex; justify-content:center; align-items:center; flex:1; gap:10px; font-size:12px; color:var(--soft-muted); }
+.source-control-diff-fallback { min-height:0; overflow:auto; }
+.source-control-diff-fallback>pre { margin:0; padding:14px; font:12px/1.85 ui-monospace,SFMono-Regular,Menlo,monospace; }
 /* The candidate owns its repository and file navigation; reuse the existing diff pane without a second file rail. */
 .source-control-diff>.task-diff-reader>.task-diff-rail { display:none; }
 .source-control-diff>.task-diff-reader.is-narrow-layout { flex-direction:row; }

@@ -50,6 +50,7 @@ export function CodeSourceControlPage() {
     <ObjectTabStrip panelId={panelId} className="code-source-control-tab" tabs={[{key: 'source-control', kind: 'svc', title: '源代码管理'}]} active="source-control" closable={false} onActivate={() => {}} />
     <div className="object-tab-panel" id={panelId} role="tabpanel" aria-labelledby={tabElementId(panelId, 'source-control')} tabIndex={0}>
     <SourceControlWorkbench repositories={observation.repositories} reader={observation.reader} readKey={observation.readKey}
+      editableWorkspaceId={workspaceId || undefined}
       observation={observation.observation} onRefresh={observation.refresh} onRetry={observation.refresh}
       catalogActions={<Dropdown open={viewActive && catalogMenuOpen} onOpenChange={setCatalogMenuOpen} trigger={['click']} placement="bottomRight" menu={{'aria-label':'源代码管理操作菜单', items:[{key:'fetch', icon:<CloudDownloadOutlined aria-hidden />, label:'全部获取远程', disabled:fetching || syncing || !observation.repositories.length}], onClick:() => {setCatalogMenuOpen(false); void fetchActions.run(observation.repositories);}}}><Button type="text" size="small" icon={<MoreOutlined rotate={90} />} loading={fetching} aria-label="源代码管理操作菜单" title="源代码管理操作菜单" aria-expanded={catalogMenuOpen} aria-haspopup="menu" /></Dropdown>}
       scene={scene} onScene={setScene} onOpenTask={openTask}

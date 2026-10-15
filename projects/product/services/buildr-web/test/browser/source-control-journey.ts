@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { runSourceControlActionsJourney } from './source-control-actions-journey.ts';
 import { runSourceControlBranchesJourney } from './source-control-branches-journey.ts';
+import { runSourceControlEditableDiffJourney } from './source-control-editable-diff-journey.ts';
 
 /** The host owns isolated Git data; every successful read below comes from production HTTP. */
 export async function runSourceControlJourney({t, page, workspaceUrl, capture, fixture, expectedBrowserErrors}: any) {
@@ -267,15 +268,15 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     await row('未暂存').click(); await diff().getByText('export const sourceControlWorking = 34;', {exact: false}).waitFor();
     const absoluteMain = fixture.location + '/' + fixture.path;
     assert.equal(await root().getByLabel('完整绝对路径', {exact: true}).innerText(), absoluteMain);
-    assert.equal(await diff().locator('.task-diff-split-side').first().locator('.task-diff-row').first().innerText(), fixture.indexText.trim(), '左右对比直接从真实代码开始，没有机器补丁头');
-    assert.equal(await diff().locator('.task-diff-split-side').last().locator('.task-diff-row').first().innerText(), fixture.workingText.trim());
+    assert.equal(await diff().locator('.file-diff-original .cm-line').first().innerText(), fixture.indexText.trim(), '左右对比直接从真实代码开始，没有机器补丁头');
+    assert.equal(await diff().locator('.file-diff-current .cm-line').first().innerText(), fixture.workingText.trim());
     await root().locator('.task-diff-actions').getByText('上下对比', {exact:true}).click();
-    await diff().locator('.task-diff-text').waitFor();
+    await diff().locator('.file-diff-editor[data-diff-mode="unified"]').waitFor();
     assert.equal(await diff().locator('.line-meta,.line-hunk').count(), 0, '单区块上下对比不展示机器头或首个区块标记');
-    assert.equal(await diff().locator('.task-diff-line').first().locator('em').innerText(), '−' + fixture.indexText.trim());
-    assert.equal(await diff().locator('.task-diff-line').last().locator('em').innerText(), '+' + fixture.workingText.trim());
+    assert.equal(await diff().locator('.cm-deletedChunk .cm-deletedLine').first().innerText(), fixture.indexText.trim());
+    assert.equal(await diff().locator('.file-diff-current .cm-line').first().innerText(), fixture.workingText.trim());
     await root().locator('.task-diff-actions').getByText('左右对比', {exact:true}).click();
-    await diff().getByRole('region', {name:'并排差异',exact:true}).waitFor();
+    await diff().locator('.file-diff-editor[data-diff-mode="split"]').waitFor();
     await root().locator('.task-diff-toolbar').getByRole('button', {name: '复制路径', exact: true}).click();
     assert.equal(await page.evaluate(() => navigator.clipboard.readText()), absoluteMain);
     const mainFileRow = row('未暂存');
@@ -1285,6 +1286,7 @@ export async function runSourceControlJourney({t, page, workspaceUrl, capture, f
     assert.ok((await reader.getByRole('region', {name: '差异内容', exact: true}).innerText()).includes(alpha.workingText.trim()));
     await noOverflow(); await capture(page, 'source-control-fixture-task-worktree-return.png');
   });
+  await runSourceControlEditableDiffJourney({t,page,workspaceUrl,capture,fixture,expectedBrowserErrors,scenario});
   await runSourceControlBranchesJourney({t,page,workspaceUrl,capture,fixture,expectedBrowserErrors,scenario});
   await runSourceControlActionsJourney({t,page,workspaceUrl,capture,fixture,scenario});
   if (focus) {

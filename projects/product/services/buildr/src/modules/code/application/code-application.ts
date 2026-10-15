@@ -154,7 +154,9 @@ export function createCodeApplication(dependencies:CodeDependencies) {
   }
   const sourceControlApplication=createSourceControlApplication({repositories:repositoryScope,source:(root,input)=>source(root,input as CodeInput),worktrees:sourceControlWorktrees,taskAssociations:(root,repositories,taskId,deadline)=>readSourceControlTaskAssociations(root,repositories,dependencies,taskId,deadline),readTask:dependencies.readTask});
   return Object.freeze({
-    ...createFileEditingApplication({codeSource:source,projectSource:dependencies.projectDetail,builtinManagedFiles:dependencies.builtinManagedFiles,projectDocumentImageContext:dependencies.projectDocumentImageContext}),
+    // Editing already selects an exact live checkout. Task associations enrich
+    // catalogs, but must not be rediscovered around each complete file read.
+    ...createFileEditingApplication({codeSource:(root,input)=>source(root,{repositoryId:input.repositoryId,worktreeId:input.checkoutId}),projectSource:dependencies.projectDetail,builtinManagedFiles:dependencies.builtinManagedFiles,projectDocumentImageContext:dependencies.projectDocumentImageContext}),
     ...sourceControlApplication,
     ...createCodeBranchApplication({ source: (root, input) => source(root, input as CodeInput), observation: (root,input) => {
       if(!input.repositoryId||!input.worktreeId||!/^checkout-[a-f0-9]{64}$/.test(input.worktreeId||'')||input.taskId||input.commitHash||input.checkoutId!==undefined)return undefined;

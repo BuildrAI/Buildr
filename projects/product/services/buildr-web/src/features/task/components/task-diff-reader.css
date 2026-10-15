@@ -60,6 +60,8 @@
 .task-diff-file small { font-size:11px; color:var(--soft-muted); overflow-wrap:anywhere; }
 .task-diff-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
 .task-diff-body { flex:1; min-height:0; overflow:auto; padding:0; }
+.task-diff-body.has-editor { display:flex; flex-direction:column; overflow:hidden; }
+.task-diff-navigation { display:inline-flex; align-items:center; gap:3px; color:var(--soft-muted); font-size:11px; white-space:nowrap; }
 .task-diff-text { margin:0; padding:14px 0; font:12px/1.85 ui-monospace,SFMono-Regular,Menlo,monospace; white-space:pre; overflow-x:auto; }
 .task-diff-line { display:flex; align-items:baseline; gap:10px; padding:0 14px; min-width:max-content; }
 .task-diff-line.line-add { background:#e7f4e7; }

@@ -8,6 +8,7 @@ import { ReadingToggle } from '../../../components/ReadingToggle';
 import { ResizablePanels } from '../../../components/ResizablePanels';
 import { SourceControlHistory } from './SourceControlHistory';
 import { SourceControlImagePreview } from './SourceControlImagePreview';
+import { SourceControlDiffEditor } from './SourceControlDiffEditor';
 import { CommitInfoPopover } from './CommitInfoPopover';
 import { CommitInfoContent } from './CommitInfoContent';
 import { CodeLocationDetails, CodeLocationSummary } from './CodeLocationSummary';
@@ -36,12 +37,13 @@ type Props = {
   onScene(scene: SourceControlScene): void; onOpenTask(taskId: string): void;
   onOpenFile?(target: SourceControlFileTarget): void; onViewCurrent?(target: SourceControlFileTarget): void;
   renderChangeActions?(repository: SourceControlRepository, worktree: SourceControlWorktree): ReactNode;
+  editableWorkspaceId?: string;
   task?: { id: string; title: string }; scopeSelection?: SourceControlScopeSelection; layoutStorageKey?: string; branchExtension?: SourceControlBranchExtension;
 };
 const readNote = (data: { coverage: { limit: number; truncated: boolean }; diagnostics: Array<{message: string}> } | null) => data ? [data.coverage.truncated ? '当前读取范围不完整。' : '', ...data.diagnostics.map(item => item.message)].filter(Boolean).join('；') : '';
 
 /** Shared view: all observed facts and reads come from the caller, including in the offline prototype. */
-export function SourceControlWorkbench({ repositories, scene, reader, readKey, observation, onRefresh, onRetry, onScene, onOpenTask, onOpenFile, onViewCurrent, task, scopeSelection, layoutStorageKey, branchExtension, renderChangeActions, catalogActions, catalogFeedback }: Props) {
+export function SourceControlWorkbench({ repositories, scene, reader, readKey, observation, onRefresh, onRetry, onScene, onOpenTask, onOpenFile, onViewCurrent, task, scopeSelection, layoutStorageKey, branchExtension, renderChangeActions, catalogActions, catalogFeedback, editableWorkspaceId }: Props) {
   const [selectedWorktreeKey, setSelectedWorktreeKey] = useState('');
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [catalogExpanded, setCatalogExpanded] = useState(true);
@@ -125,15 +127,35 @@ export function SourceControlWorkbench({ repositories, scene, reader, readKey, o
   const commits = historyRead.data?.commits.map(commit => sourceControlCommit(commit)) || [];
   const selectedCommit = commitSummary?.hash === commitHash ? commitSummary : undefined;
   const candidateFiles = !selectedWorktree || selectedWorktree.status === 'offline' ? [] : history ? selectedCommit?.files || [] : selectedWorktree.changes;
-  const currentFile = history && historyReaderMode === 'detail' ? undefined : candidateFiles.find(file => fileIdentity(file) === fileKey) || (!history ? candidateFiles[0] : undefined);
+  const listedFile = history && historyReaderMode === 'detail' ? undefined : candidateFiles.find(file => fileIdentity(file) === fileKey) || (!history && !fileKey ? candidateFiles[0] : undefined);
+  const fileScope = JSON.stringify([readKey, selectedIdentity, history, selectionEpoch]);
+  const observedFile = useRef<{ scope: string; file: NonNullable<typeof listedFile> } | null>(null);
+  if (listedFile) observedFile.current = {scope: fileScope, file: listedFile};
+  // Saving or restoring the last change can remove its list row. Keep this exact
+  // current file open so its shared undo history and unsaved input remain reachable.
+  const currentFile = listedFile || (!history && editableWorkspaceId && observedFile.current?.scope === fileScope && fileIdentity(observedFile.current.file) === fileKey ? observedFile.current.file : undefined);
   useEffect(() => { if (currentFile && !fileKey) setFileKey(previous => previous || fileIdentity(currentFile)); }, [currentFile, fileKey, setFileKey]);
   const associatedTask = selectedWorktree?.taskId ? {id: selectedWorktree.taskId, title: selectedWorktree.taskTitle || selectedWorktree.taskId} : undefined;
   const location = selectedWorktree?.location || '';
   const target: CodeSourceControlInput = { repositoryId: selectedRepository?.id, worktreeId: selectedWorktree?.worktreeId, path: currentFile?.path, area: history ? 'commit' : currentFile?.area,
     commitHash: history ? selectedCommit?.hash : undefined, expectedRevision: history ? undefined : selectedWorktree?.observedRevision || undefined };
-  const targetKey = JSON.stringify([readKey, target]);
-  const diffRead = useSourceControlRead(targetKey, target, reader.diff, Boolean(currentFile && scene !== 'full-file'), version);
+  const targetKey = JSON.stringify([readKey, {...target, expectedRevision: undefined}]);
+  // An invalidation counter can change before the refreshed catalog arrives.
+  // Current diffs wait for that actual observation, avoiding a request with the
+  // preceding SCM revision after every autosave. Explicit refresh still rereads.
+  const diffVersion = history ? version : (target.expectedRevision || '') + ':' + refreshToken;
+  // The live entry reads the selected comparison as it exists now. Its list may
+  // still be refreshing after a save; the server verifies its own read revision.
+  // Fixed/task readers retain their original snapshot precondition.
+  const diffInput = editableWorkspaceId && !history ? { ...target, expectedRevision: undefined } : target;
+  const diffRead = useSourceControlRead(targetKey, diffInput, reader.diff, Boolean(currentFile && scene !== 'full-file' && (listedFile || !editableWorkspaceId)), diffVersion);
   const imagePreview = diffRead.data?.imagePreview;
+  const liveDiff = editableWorkspaceId && diffRead.data && !history && ['unstaged', 'untracked'].includes(diffRead.data.area)
+    && !diffRead.data.binary && !diffRead.data.file.previewTruncated && !['deleted', 'conflicted'].includes(diffRead.data.file.status)
+    && diffRead.data.source.checkoutId ? diffRead.data : undefined;
+  const readonlyDiffReason = history ? '历史版本仅供查看。' : currentFile?.area === 'staged' ? '暂存版本仅供查看；选择未暂存变更可编辑当前文件。'
+    : currentFile?.status === 'deleted' ? '当前文件已删除。' : diffRead.data?.binary ? '非文本内容不支持直接编辑。'
+    : diffRead.data?.file.previewTruncated ? '内容达到读取上限，当前比较不完整。' : currentFile?.status === 'conflicted' ? '索引仍有冲突，请先核对当前文件。' : undefined;
   const fullImage = imagePreview?.after === null && imagePreview.before?.kind === 'image' ? imagePreview.before : undefined;
   const displayedFile = currentFile && diffRead.data ? { ...currentFile, ...sourceControlChange(diffRead.data.file), area: currentFile.area, preview: diffRead.data.patch } : currentFile;
   const effectiveFileKey = displayedFile ? changedFileKey(layerFile(displayedFile, history ? selectedCommit?.hash : undefined)) : null;
@@ -210,10 +232,10 @@ export function SourceControlWorkbench({ repositories, scene, reader, readKey, o
       {(observation.error || observation.diagnostics.length || observation.truncated) && <Alert type="warning" showIcon message={observation.error ? '读取失败，保留已有内容。' : '部分范围未能完整读取。'} description={[observation.error, ...observation.diagnostics, observation.truncated ? '代码库读取达到上限。' : ''].filter(Boolean).join('；')} action={<Button size="small" onClick={() => void retry()}>重新读取</Button>} />}
       {history && historyRead.error && <Alert type="warning" showIcon message={historyRead.data ? '历史刷新失败，保留已读取记录。' : '历史暂不可读取。'} description={historyRead.error} action={<Button size="small" onClick={() => void historyRead.refresh()}>重试</Button>} />}
 
-      {diffRead.error && scene !== 'full-file' && <Alert type="warning" showIcon message={diffRead.data ? '差异刷新失败，保留已读取内容。' : '差异暂不可读取。'} description={diffRead.error} action={<Button size="small" onClick={() => void diffRead.refresh()}>重试</Button>} />}
+      {diffRead.error && scene !== 'full-file' && !(editableWorkspaceId && !listedFile && diffRead.data) && <Alert type="warning" showIcon message={diffRead.data ? '差异刷新失败，保留已读取内容。' : '差异暂不可读取。'} description={diffRead.error} action={<Button size="small" onClick={() => void diffRead.refresh()}>重试</Button>} />}
       {observation.loading && !repositories.length ? <div className="source-control-reader-state"><Spin /><p>正在读取代码库…</p></div> : <>
         {history && selectedCommit && historyReaderMode === 'detail' ? <div className="source-control-commit-detail"><CommitInfoContent commit={selectedCommit} onOpenTask={onOpenTask} /></div> : !currentFile ? <div className="source-control-reader-state"><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={history ? '选择提交查看详情，展开后选择文件查看差异' : selectedWorktree?.status === 'offline' ? '当前工作树暂不可读取' : selectedWorktree ? '当前工作树没有未提交文件' : selectedWorktreeKey ? '所选工作树已不可用，请重新选择' : '选择代码库或工作树查看内容'} /></div> : <>
-        {scene === 'full-file' && currentFile ? <div className="source-control-full-file"><header><strong>{imagePreview?.after === null && fullImage ? '删除前图片' : '完整文件'}</strong><Button size="small" onClick={() => changeScene(returnScene)}>返回差异</Button></header><RepositoryFileBrowser global readerActive files={fullFiles} selectedPath={currentFile.path} onSelect={() => {}} repositoryName={selectedRepository?.name} repositoryId={selectedRepository?.id} checkoutId={selectedWorktree?.worktreeId} context={null} location={file?.source.location || location} version={fileVersion} historical={Boolean(file?.source.commitHash || history)} onRetry={() => { if (fullImage) { changeScene(returnScene); setRefreshToken(value => value + 1); } else { setFilePage({key: '', page: 0}); setFileReload(value => ({key: targetKey, version: value.version + 1})); } }} onViewCurrent={() => onViewCurrent?.({repositoryId: selectedRepository!.id, worktreeId: selectedWorktree?.worktreeId, path: currentFile.path, location, area: 'unstaged'})} canModify={false} observedRevision={file?.revision} observedDigest={file?.digest} observedAt={file?.observedAt} readLoading={!fullImage && fullRead.loading} readError={fullImage ? undefined : fullRead.error} readMessage={[file?.message, readNote(file)].filter(Boolean).join('；')} readPage={file?.page} sizeBytes={file?.sizeBytes} selectionKey={targetKey} onReadPage={page => setFilePage({key: targetKey, page, revision: file?.revision})} /></div> : <div className={'source-control-diff' + (history ? ' is-history' : '')}>{diffRead.loading && <div className="source-control-read-status" role="status"><Spin size="small" /> 正在读取差异…</div>}{diffRead.data?.file.previewTruncated && <Alert type="warning" showIcon message="差异达到读取上限，当前内容不完整。" />}{diffRead.data?.binary && !imagePreview && <Alert type="info" showIcon message="非文本内容，不提供文本差异。" />}<TaskDiffReader key={(selectedRepository?.id || '') + ':' + (selectedWorktree?.worktreeId || '') + ':' + (history ? selectedCommit?.hash || 'empty' : 'current')} repositories={rail} filePresentation={filePresentation} previewContent={imagePreview ? <SourceControlImagePreview key={targetKey} preview={imagePreview} area={diffRead.data!.area} /> : undefined} selected={effectiveFileKey} onSelect={key => { const selected = candidateFiles.find(candidate => changedFileKey(layerFile(candidate, history ? selectedCommit?.hash : undefined)) === key); if (selected) setFileKey(fileIdentity(selected)); }} onOpenFile={openFullFile} notice={readNote(diffRead.data)} /></div>}
+        {scene === 'full-file' && currentFile ? <div className="source-control-full-file"><header><strong>{imagePreview?.after === null && fullImage ? '删除前图片' : '完整文件'}</strong><Button size="small" onClick={() => changeScene(returnScene)}>返回差异</Button></header><RepositoryFileBrowser global readerActive files={fullFiles} selectedPath={currentFile.path} onSelect={() => {}} repositoryName={selectedRepository?.name} repositoryId={selectedRepository?.id} checkoutId={selectedWorktree?.worktreeId} context={null} location={file?.source.location || location} version={fileVersion} historical={Boolean(file?.source.commitHash || history)} onRetry={() => { if (fullImage) { changeScene(returnScene); setRefreshToken(value => value + 1); } else { setFilePage({key: '', page: 0}); setFileReload(value => ({key: targetKey, version: value.version + 1})); } }} onViewCurrent={() => onViewCurrent?.({repositoryId: selectedRepository!.id, worktreeId: selectedWorktree?.worktreeId, path: currentFile.path, location, area: 'unstaged'})} canModify={false} observedRevision={file?.revision} observedDigest={file?.digest} observedAt={file?.observedAt} readLoading={!fullImage && fullRead.loading} readError={fullImage ? undefined : fullRead.error} readMessage={[file?.message, readNote(file)].filter(Boolean).join('；')} readPage={file?.page} sizeBytes={file?.sizeBytes} selectionKey={targetKey} onReadPage={page => setFilePage({key: targetKey, page, revision: file?.revision})} /></div> : <div className={'source-control-diff' + (history ? ' is-history' : '')}>{diffRead.loading && <div className="source-control-read-status" role="status"><Spin size="small" /> 正在读取差异…</div>}{diffRead.data?.file.previewTruncated && <Alert type="warning" showIcon message="差异达到读取上限，当前内容不完整。" />}{diffRead.data?.binary && !imagePreview && <Alert type="info" showIcon message="非文本内容，不提供文本差异。" />}<TaskDiffReader key={(selectedRepository?.id || '') + ':' + (selectedWorktree?.worktreeId || '') + ':' + (history ? selectedCommit?.hash || 'empty' : 'current')} repositories={rail} filePresentation={filePresentation} readOnlyReason={readonlyDiffReason} renderDiff={liveDiff ? mode => <SourceControlDiffEditor workspaceId={editableWorkspaceId!} diff={liveDiff} reader={reader} mode={mode} /> : undefined} previewContent={imagePreview ? <SourceControlImagePreview key={targetKey} preview={imagePreview} area={diffRead.data!.area} /> : undefined} selected={effectiveFileKey} onSelect={key => { const selected = candidateFiles.find(candidate => changedFileKey(layerFile(candidate, history ? selectedCommit?.hash : undefined)) === key); if (selected) setFileKey(fileIdentity(selected)); }} onOpenFile={openFullFile} notice={readNote(diffRead.data)} /></div>}
         </>}
       </>}
     </section>} />
