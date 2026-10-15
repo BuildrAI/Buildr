@@ -7,7 +7,7 @@ import { evaluateReleasePlan, normalizeReleaseTargets } from './release-targets.
 import { sameArtifactIdentity } from './package-compatibility.ts';
 import { observePublishedPackageArtifact } from './package-artifact-observation.ts';
 import { createPackageReleaseContext, createPackagePublicationEvidence, validatePackageReleaseContext, validatePackageOwnerPublication } from './release-package-evidence.ts';
-import { runPluginHostedOperation, readHostedPluginCandidate } from './plugin-hosted-release.ts';
+import { runPluginHostedOperation, readHostedPluginCandidate, reconcilePluginPreparationPointer } from './plugin-hosted-release.ts';
 import { runHostedReleaseTransaction } from './release-transaction-runner.ts';
 import { inspectHostedReleaseTransaction } from './release-transaction-evidence.ts';
 import { reconcilePublishedReleaseWithDev, closeoutReleaseGitResources } from './release-git-convergence.ts';
@@ -80,10 +80,21 @@ export async function preparePackageRelease(options: any, scope: any, dependenci
     const peer = targets.packages.includes('buildr') ? candidates.buildr?.artifact : state.preparationPeer;
     if (!peer) return { status: 'peer-observation-blocked', nextActions: ['核对准确公开主包对端；不借同版本开发源码代替。'] };
     state.pluginPreparation ??= {};
-    const prepared = (dependencies.runPluginHostedOperation ?? runPluginHostedOperation)({ operation: 'prepare', version: targets.versions['dsh-plugin'], repo: options.repo,
+    const request = { operation: 'prepare', version: targets.versions['dsh-plugin'], repo: options.repo,
       sourceCommit: options.mainCommit, sourceTree: git(['rev-parse', `${options.mainCommit}:projects/product/services/dsh-plugin`], options.repo), peer,
       sourceCandidateRunId: state.candidate.runId, candidateSourceCommit: options.selection.releaseHead, selectionIdentity: options.selection.selectionIdentity,
-      buildrCandidateRunId: state.candidate.runId, pointer: state.pluginPreparation, ghCommand: options.ghCommand }, {
+      buildrCandidateRunId: state.candidate.runId, pointer: state.pluginPreparation, ghCommand: options.ghCommand };
+    const replacement = reconcilePluginPreparationPointer({ ...request, allowReplacement: !state.publicationAuthorization && !state.publication
+      && !state.publicationEvidence && !Object.values(state.packagePublications ?? {}).some((value: any) => value.requested || value.runId || value.evidence) }, {
+      ...dependencies.pluginDependencies, execute: scope.execute,
+    });
+    if (replacement.previousPointer) {
+      state.pluginPreparationHistory ??= [];
+      state.pluginPreparationHistory.push({ pointer: replacement.previousPointer, failure: replacement.failure });
+      state.pluginPreparation = replacement.pointer;
+      effects.push(...replacement.effects); save();
+    }
+    const prepared = (dependencies.runPluginHostedOperation ?? runPluginHostedOperation)({ ...request, pointer: state.pluginPreparation }, {
       ...dependencies.pluginDependencies, execute: scope.execute, onPointer: save,
     });
     effects.push(...(prepared.effects ?? [])); save();

@@ -59,6 +59,41 @@ function locateRun(gh: any, options: any, operation: string): any {
   return current[0] ?? null;
 }
 
+/** Replace only an observed failed prepare request; publication remains a separate owner. */
+export function reconcilePluginPreparationPointer(options: any, dependencies: any = {}): any {
+  const pointer = options.pointer;
+  const changed = pointer && ((pointer.sourceCommit !== undefined && pointer.sourceCommit !== options.sourceCommit)
+    || (pointer.version !== undefined && pointer.version !== options.version)
+    || (pointer.sourceCandidate && (pointer.sourceCandidate.runId !== options.sourceCandidateRunId
+      || pointer.sourceCandidate.commit !== options.candidateSourceCommit || pointer.sourceCandidate.selectionIdentity !== options.selectionIdentity)));
+  if (!changed) return { pointer, effects: [] };
+  if (options.allowReplacement !== true) throw new Error('Plugin preparation replacement requires no publication authorization or request.');
+  if (options.operation !== 'prepare' || pointer.requested !== true || pointer.version !== options.version
+    || !sourceHash.test(pointer.sourceCommit ?? '') || !Number.isSafeInteger(pointer.sourceCandidate?.runId) || pointer.sourceCandidate.runId < 1
+    || !sourceHash.test(pointer.sourceCandidate?.commit ?? '') || !/^(?:sha256-)?[a-f0-9]{64}$/u.test(pointer.sourceCandidate?.selectionIdentity ?? '')) {
+    throw new Error('Original plugin preparation identity is incomplete or differs from the selected version.');
+  }
+  const peer = parseCompatibilityArtifact(options.peer);
+  if (!sourceHash.test(options.sourceCommit ?? '') || !Number.isSafeInteger(options.sourceCandidateRunId) || options.sourceCandidateRunId < 1
+    || !sourceHash.test(options.candidateSourceCommit ?? '') || !/^(?:sha256-)?[a-f0-9]{64}$/u.test(options.selectionIdentity ?? '')
+    || peer.packageName !== '@buildr-ai/buildr' || (peer.origin === 'candidate' && (!Number.isSafeInteger(options.buildrCandidateRunId) || options.buildrCandidateRunId < 1))) {
+    throw new Error('New plugin preparation requires its exact selected source and peer.');
+  }
+  const { gh } = tools(options, dependencies);
+  const found = pointer.runId == null ? locateRun(gh, { ...options, version: pointer.version, sourceCommit: pointer.sourceCommit }, 'prepare') : { databaseId: pointer.runId };
+  if (!found || !Number.isSafeInteger(found.databaseId) || found.databaseId < 1) throw new Error('Original plugin preparation request is still unconfirmed.');
+  const run = JSON.parse(gh(['api', `repos/${repository}/actions/runs/${found.databaseId}`]));
+  validatePluginHostedRun(run, { operation: 'prepare', version: pointer.version, sourceCommit: pointer.sourceCommit, runId: found.databaseId });
+  if (run.status !== 'completed' || run.conclusion !== 'failure') throw new Error('Original plugin preparation is not an observed terminal failure.');
+  return {
+    pointer: {},
+    previousPointer: { ...structuredClone(pointer), runId: run.id },
+    failure: { runId: run.id, runAttempt: run.run_attempt, repository: run.repository.full_name, workflow: run.path,
+      sourceCommit: run.head_sha, status: run.status, conclusion: run.conclusion },
+    effects: [{ type: 'plugin-failed-preparation-replaced', previousRunId: run.id, previousSourceCommit: pointer.sourceCommit, sourceCommit: options.sourceCommit }],
+  };
+}
+
 export function readHostedPluginCandidate(options: any, dependencies: any = {}): any {
   if (dependencies.readCandidate) return dependencies.readCandidate(options);
   const { gh, git } = tools(options, dependencies);
