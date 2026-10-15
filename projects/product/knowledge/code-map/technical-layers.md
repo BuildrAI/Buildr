@@ -59,6 +59,7 @@
   - [查询应用（mysql-query-application.ts）](../../services/buildr/src/modules/mysql-query/application/mysql-query-application.ts) — 核对准确内置来源、完整认证及当前版本，提供结构读取和查询。
   - [本机偏好（query-preferences.ts）](../../services/buildr/src/modules/mysql-query/persistence/query-preferences.ts) — 独立 SQLite 表及偏好版本，首次读取不迁移旧库。
   - [专业接入程序（mysql-connection-program.ts）](../../services/buildr/src/modules/mysql-query/interfaces/program/mysql-connection-program.ts) — `buildr-mysql` 的私有上下文（Context）、测试和数据库发现；主包携带运行依赖。
+  - [开发辅助命令（tools/development/programs/）](../../services/buildr/tools/development/programs/) — 源码桥接与 macOS 开发启动器（Development Launcher）的进程私有入口，使用已选 Node.js 调用同一程序，保留默认 npm `buildr` 的独立身份。
   - [命令入口（mysql-query-cli.ts）](../../services/buildr/src/modules/mysql-query/interfaces/cli/mysql-query-cli.ts)及[网页入口（mysql-query-http.ts）](../../services/buildr/src/modules/mysql-query/interfaces/http/mysql-query-http.ts) — 同一查询应用的输入输出适配。
 - **[独立查询前端（mysql-query）](../../services/buildr-web/src/features/mysql-query/)** — 新旧连接页共同消费的查询组件（Component）、客户端（Client）、编辑器、结果与本机布局；新实例客户端固定本次实例及观察版本。
 - [MySQL 接入方法](../../services/buildr/resources/workspace/skills/connections/mysql-connection/SKILL.md)、[Kibana 日志方法](../../services/buildr/resources/workspace/skills/connections/kibana-connection/SKILL.md)及[XXL-JOB 调度方法](../../services/buildr/resources/workspace/skills/connections/xxl-job-connection/SKILL.md) — 三份完整内置技能源分别维护专业对象定位、操作、结果和局限。

@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
@@ -13,6 +13,7 @@ const serviceRoot: any = path.resolve(path.dirname(fileURLToPath(import.meta.url
 const runner: any = path.join(serviceRoot, 'tools/development/run-development-cli');
 const npmRunner: any = path.join(serviceRoot, 'tools/development/run-development-npm');
 const projectBridge: any = path.resolve(serviceRoot, '../../buildr');
+const programs: string = path.join(serviceRoot, 'tools/development/programs');
 
 function fakeNode(target: any, version: any, marker: any): any  {
   fs.mkdirSync(path.dirname(target), { recursive: true });
@@ -121,6 +122,51 @@ test('runner-only identity inspection返回launcher、CLI entry和实际Node', {
   assert.equal(identity.launcher, runner);
   assert.equal(identity.cliEntry, path.join(serviceRoot, 'bin', 'buildr.mjs'));
   assert.equal(fs.realpathSync(identity.nodeExecutable), fs.realpathSync(exactNode));
+});
+
+test('Project bridge为continuity提供仅进程局部的辅助PATH，保留默认npm buildr身份', { skip: process.platform === 'win32' }, t => {
+  const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'buildr-development-program-path-'));
+  t.after(() => fs.rmSync(fixture, { recursive: true, force: true }));
+  const runtime = path.join(fixture, 'runtime'), defaultBin = path.join(fixture, 'npm-bin'), selectedNode = path.join(runtime, 'node'), probe = path.join(fixture, 'probe.mjs');
+  fs.mkdirSync(runtime); fs.mkdirSync(defaultBin);
+  const defaultBuildr = path.join(defaultBin, 'buildr'); fs.writeFileSync(defaultBuildr, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+  const programModule = new URL('../../src/modules/connection-skills/infrastructure/program.ts', import.meta.url).href;
+  fs.writeFileSync(probe, `import {spawnSync} from 'node:child_process';\nimport { locateExecutable } from ${JSON.stringify(programModule)};\nconst args=process.argv.slice(2);\nif(args[0].endsWith('/bin/buildr-mysql.mjs')) console.log(JSON.stringify({args}));\nelse {const mysql=locateExecutable('buildr-mysql');const helper=spawnSync(mysql,['two words','literal$(should-not-run)','asterisk*'],{env:process.env,encoding:'utf8'});console.log(JSON.stringify({path:process.env.PATH,args,mysql,buildr:locateExecutable('buildr'),helper:{status:helper.status,value:JSON.parse(helper.stdout)}}));}\n`);
+  fs.writeFileSync(selectedNode, `#!/bin/sh\nif [ "\${1:-}" = -p ]; then exec '${process.execPath}' "$@"; fi\nexec '${process.execPath}' '${probe}' "$@"\n`, { mode: 0o755 });
+  const originalPath = process.env.PATH;
+  const result = run(projectBridge, ['web', '--port', '4458', '--no-open'], { PATH: defaultBin, BUILDR_NODE: selectedNode });
+  assert.equal(result.status, 0, result.stderr);
+  const observed = JSON.parse(result.stdout);
+  assert.deepEqual(observed.path.split(path.delimiter), [programs, runtime, defaultBin]);
+  assert.equal(observed.mysql, fs.realpathSync(path.join(programs, 'buildr-mysql')));
+  assert.equal(observed.buildr, fs.realpathSync(defaultBuildr));
+  assert.deepEqual(observed.args, [path.join(serviceRoot, 'bin/buildr.mjs'), 'web', '--port', '4458', '--no-open']);
+  assert.deepEqual(observed.helper, { status: 0, value: { args: [path.join(serviceRoot, 'bin/buildr-mysql.mjs'), 'two words', 'literal$(should-not-run)', 'asterisk*'] } });
+  assert.equal(process.env.PATH, originalPath);
+  assert.deepEqual(fs.readdirSync(programs), ['buildr-mysql'], 'the private PATH must never project the default buildr command');
+});
+
+test('开发MySQL薄入口保持离线帮助、版本、所选Node和私有IPC，缺少通用PATH仍不猜替代程序', { skip: process.platform === 'win32' }, async () => {
+  const helper = path.join(programs, 'buildr-mysql'), env = { ...process.env, BUILDR_NODE: process.execPath, PATH: `${path.dirname(process.execPath)}:/usr/bin:/bin` };
+  for (const args of [['--help'], ['--version']]) {
+    const result = spawnSync(helper, args, { env, encoding: 'utf8', timeout: 10_000 });
+    assert.equal(result.status, 0, result.stderr);
+    if (args[0] === '--version') assert.equal(result.stdout.trim(), 'buildr-mysql 1.0.0');
+    else assert.ok(JSON.parse(result.stdout).help.length > 0);
+  }
+  const result = await new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve, reject) => {
+    const child = spawn(helper, ['test', '--json'], { env, stdio: ['pipe', 'pipe', 'pipe', 'ipc'] }); let stdout = '', stderr = '';
+    const timer = setTimeout(() => { child.kill('SIGKILL'); reject(new Error('development helper IPC timed out')); }, 10_000);
+    child.stdout!.on('data', chunk => stdout += chunk.toString()); child.stderr!.on('data', chunk => stderr += chunk.toString());
+    child.on('spawn', () => { child.send!({ type: 'buildr.connection-context', context: { protocolVersion: 'buildr.connection-context/v1', callId: 'offline-ipc', definition: { definitionId: 'offline-invalid-target' } } }); child.stdin!.end('business input remains separate'); });
+    child.on('error', error => { clearTimeout(timer); reject(error); });
+    child.on('close', code => { clearTimeout(timer); resolve({ code, stdout, stderr }); });
+  });
+  assert.equal(result.code, 1); assert.equal(JSON.parse(result.stdout).error.code, 'mysql_context_invalid', 'exec must retain the private IPC descriptor rather than produce mysql_context_required');
+  assert.equal(result.stderr, '');
+  const programModule = new URL('../../src/modules/connection-skills/infrastructure/program.ts', import.meta.url).href;
+  const missing = spawnSync(process.execPath, ['--input-type=module', '-e', `import { locateExecutable } from ${JSON.stringify(programModule)}; console.log(JSON.stringify(locateExecutable('buildr-mysql')));`], { env: { ...env, PATH: '/usr/bin:/bin' }, encoding: 'utf8' });
+  assert.equal(missing.status, 0, missing.stderr); assert.equal(JSON.parse(missing.stdout), null);
 });
 
 test('Workspace 未声明 runtime.node 不会阻断 development main process', { skip: process.platform === 'win32' }, () => {

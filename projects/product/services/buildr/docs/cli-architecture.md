@@ -108,6 +108,7 @@ module.ts → private composition
 - `tools/release/application-payload.ts` 构建产品运行闭包；`package.json#files` 与 manifest 约束 npm 文件集合。
 - `resources/runtime/` 与 `resources/workspace/` 保存文件型交付源。
 - `tools/build/launcher/` 只构建/维护 Development Launcher。
+- 源码桥接与 macOS 开发启动器（Development Launcher）将 `tools/development/programs/` 和已选 Node.js 的目录加入当前进程的 `PATH`，提供 `buildr-mysql` 辅助命令。该私有目录不含 `buildr`，默认 npm 安装入口保持独立；通用连接程序继续按实际依赖判断可用性。
 - `package/` 已无职责；派生测试库位于 Git 忽略的 `build/test-context/`。
 - 安装后的用户命令只依赖安装包内运行闭包；开发维护命令 `package check` 不属于该范围。
 - 现有 `docs/cli-reference.md` 随应用负载（Application Payload）交付，供命令无法启动或离线时读取安装与恢复依据；其他开发文档和源码链接仍以仓库为准，不为安装包复制整套手册。
